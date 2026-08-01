@@ -2,7 +2,6 @@
 
 namespace
 {
-    const juce::Colour kBg        = ShardColours::chassis;
     const juce::Colour kPadEmpty  = ShardColours::padTop;
     const juce::Colour kPadLoaded = ShardColours::amber;
     const juce::Colour kAccent    = ShardColours::amber;
@@ -191,7 +190,7 @@ MainComponent::MainComponent()
     addAndMakeVisible (status);
 
     startTimer (60);
-    setSize (480, 1040);
+    setSize (500, 1080);
 }
 
 MainComponent::~MainComponent()
@@ -225,11 +224,67 @@ void MainComponent::releaseResources()
 
 void MainComponent::paint (juce::Graphics& g)
 {
-    g.fillAll (kBg);
+    auto full = getLocalBounds().toFloat();
 
-    // Knob names above each FX knob.
-    g.setColour (ShardColours::amber.withAlpha (0.7f));
-    g.setFont (juce::Font (juce::FontOptions (10.0f)).withExtraKerningFactor (0.1f));
+    // 1. Warm chassis: top-lit vertical gradient + edge vignette.
+    g.setGradientFill (juce::ColourGradient (ShardColours::chassisTop, full.getCentreX(), 0.0f,
+                                             ShardColours::chassisBot, full.getCentreX(), full.getHeight(), false));
+    g.fillRect (full);
+    g.setGradientFill (juce::ColourGradient (juce::Colours::transparentBlack, full.getCentreX(), full.getCentreY(),
+                                             juce::Colour (0x55000000), full.getX(), full.getY(), true));
+    g.fillRect (full);
+
+    // Helper: a raised sub-panel with a bevel (groups controls like hardware).
+    auto panel = [&g] (juce::Rectangle<int> ri, float rad = 9.0f)
+    {
+        if (ri.isEmpty()) return;
+        auto r = ri.toFloat();
+        g.setColour (ShardColours::panel);
+        g.fillRoundedRectangle (r, rad);
+        g.setColour (ShardColours::panelHi.withAlpha (0.7f));
+        g.drawLine (r.getX() + rad, r.getY() + 0.8f, r.getRight() - rad, r.getY() + 0.8f, 1.0f);
+        g.setColour (ShardColours::panelLo);
+        g.drawRoundedRectangle (r.reduced (0.5f), rad, 1.0f);
+    };
+    panel (fxPanelArea);
+    panel (seqPanelArea);
+    panel (editPanelArea);
+
+    // 2. Recessed screen bezel around the scope.
+    if (! screenBezel.isEmpty())
+    {
+        auto r = screenBezel.toFloat();
+        g.setColour (ShardColours::panelLo);
+        g.fillRoundedRectangle (r.expanded (3.0f), 9.0f);
+        g.setColour (ShardColours::knobEdge.withAlpha (0.5f));
+        g.drawRoundedRectangle (r.expanded (3.0f).reduced (0.5f), 9.0f, 1.0f);
+    }
+
+    // 3. Header: ARTiFACTS wordmark + SHARD model badge.
+    if (! headerArea.isEmpty())
+    {
+        auto h = headerArea;
+        g.setColour (ShardColours::cream);
+        g.setFont (juce::Font (juce::FontOptions (19.0f, juce::Font::bold)).withExtraKerningFactor (0.14f));
+        g.drawText ("ARTiFACTS", h.getX(), h.getY(), 160, h.getHeight(), juce::Justification::centredLeft);
+
+        auto badge = juce::Rectangle<int> (h.getRight() - 158, h.getY() + 2, 158, h.getHeight() - 4);
+        g.setColour (ShardColours::screenBg);
+        g.fillRoundedRectangle (badge.toFloat(), 5.0f);
+        g.setColour (ShardColours::amberDim.withAlpha (0.85f));
+        g.drawRoundedRectangle (badge.toFloat().reduced (0.5f), 5.0f, 1.0f);
+        auto bin = badge.reduced (10, 0);
+        g.setColour (ShardColours::amber);
+        g.setFont (juce::Font (juce::FontOptions (14.0f, juce::Font::bold)).withExtraKerningFactor (0.24f));
+        g.drawText ("SHARD", bin.removeFromLeft (74), juce::Justification::centredLeft);
+        g.setColour (ShardColours::engrave);
+        g.setFont (juce::Font (juce::FontOptions (8.5f)).withExtraKerningFactor (0.24f));
+        g.drawText ("SAMPLER", bin, juce::Justification::centredRight);
+    }
+
+    // 4. Knob names above each FX knob.
+    g.setColour (ShardColours::amber.withAlpha (0.72f));
+    g.setFont (juce::Font (juce::FontOptions (9.5f)).withExtraKerningFactor (0.12f));
     auto name = [&g] (juce::Slider& s, const char* t)
     {
         auto r = s.getBounds();
@@ -237,17 +292,29 @@ void MainComponent::paint (juce::Graphics& g)
     };
     name (cutoffSlider, "CUTOFF"); name (resoSlider, "RESO");  name (driveSlider, "DRIVE");
     name (dlyTimeSlider, "TIME");  name (dlyFbSlider, "FBK");  name (dlyMixSlider, "MIX");
+
+    // 5. Corner screws (chassis structure).
+    const float m = 9.0f;
+    for (auto pt : { juce::Point<float> (m, m), juce::Point<float> (full.getRight() - m, m),
+                     juce::Point<float> (m, full.getBottom() - m), juce::Point<float> (full.getRight() - m, full.getBottom() - m) })
+        ShardColours::drawScrew (g, pt.x, pt.y, 5.0f);
 }
 
 void MainComponent::resized()
 {
-    auto area = getLocalBounds().reduced (10);
+    auto area = getLocalBounds().reduced (12);
 
-    // The screen (spectrum) on top.
-    spectrum.setBounds (area.removeFromTop (92));
+    // Header (wordmark + badge drawn in paint).
+    headerArea = area.removeFromTop (30);
+    area.removeFromTop (10);
+
+    // The screen (scope) inside a recessed bezel.
+    screenBezel = area.removeFromTop (94);
+    spectrum.setBounds (screenBezel);
+    area.removeFromTop (10);
+
+    status.setBounds (area.removeFromTop (18));
     area.removeFromTop (6);
-    status.setBounds (area.removeFromTop (20));
-    area.removeFromTop (4);
 
     // Transport row (6 items incl. the filter type toggle).
     {
@@ -260,47 +327,58 @@ void MainComponent::resized()
         clearButton.setBounds (row.removeFromLeft (w).reduced (2));
         fxTypeButton.setBounds (row.reduced (2));
     }
-    area.removeFromTop (2);
+    area.removeFromTop (8);
 
-    // FX knob row (labels drawn in paint over each knob).
+    // FX panel: knob row + BPM grouped in one raised panel.
     {
-        auto row = area.removeFromTop (78);
-        row.removeFromTop (12);                         // gap for knob names
+        fxPanelArea = area.removeFromTop (104);
+        auto inner  = fxPanelArea.reduced (8, 6);
+        auto krow   = inner.removeFromTop (68);
+        krow.removeFromTop (12);                         // gap for knob names
         juce::Slider* knobs[6] = { &cutoffSlider, &resoSlider, &driveSlider,
                                    &dlyTimeSlider, &dlyFbSlider, &dlyMixSlider };
-        const int w = row.getWidth() / 6;
-        for (auto* k : knobs) k->setBounds (row.removeFromLeft (w).reduced (2, 0));
+        const int w = krow.getWidth() / 6;
+        for (auto* k : knobs) k->setBounds (krow.removeFromLeft (w).reduced (2, 0));
+        inner.removeFromTop (4);
+        bpmSlider.setBounds (inner.removeFromTop (22));
     }
-    bpmSlider.setBounds (area.removeFromTop (24));
-    area.removeFromTop (6);
+    area.removeFromTop (10);
 
-    // Bottom-up: sequencer, per-pad controls, waveform.
+    // Sequencer panel.
     {
-        auto row = area.removeFromBottom (32);
+        seqPanelArea = area.removeFromBottom (42);
+        auto row = seqPanelArea.reduced (8, 6);
         const int w = row.getWidth() / kNumSteps;
         for (int s = 0; s < kNumSteps; ++s)
             stepButtons[s]->setBounds (row.removeFromLeft (w).reduced (1));
     }
-    area.removeFromBottom (6);
+    area.removeFromBottom (8);
+
+    // Per-pad edit panel (waveform + controls grouped).
     {
-        auto row = area.removeFromBottom (28);
-        reverseButton.setBounds (row.removeFromLeft (row.getWidth() / 2).reduced (2));
-        loopButton.setBounds (row.reduced (2));
+        editPanelArea = area.removeFromBottom (196);
+        auto inner = editPanelArea.reduced (8, 8);
+        waveform.setBounds  (inner.removeFromTop (56));
+        inner.removeFromTop (4);
+        editLabel.setBounds (inner.removeFromTop (16));
+        {
+            auto row = inner.removeFromTop (24);
+            pitchSlider.setBounds (row.removeFromLeft (row.getWidth() / 2).reduced (2, 0));
+            volSlider.setBounds (row.reduced (2, 0));
+        }
+        {
+            auto row = inner.removeFromTop (24);
+            startSlider.setBounds (row.removeFromLeft (row.getWidth() / 2).reduced (2, 0));
+            endSlider.setBounds (row.reduced (2, 0));
+        }
+        chokeSlider.setBounds (inner.removeFromTop (24));
+        {
+            auto row = inner.removeFromTop (28);
+            reverseButton.setBounds (row.removeFromLeft (row.getWidth() / 2).reduced (2));
+            loopButton.setBounds (row.reduced (2));
+        }
     }
-    chokeSlider.setBounds (area.removeFromBottom (24));
-    {
-        auto row = area.removeFromBottom (24);
-        startSlider.setBounds (row.removeFromLeft (row.getWidth() / 2).reduced (2, 0));
-        endSlider.setBounds (row.reduced (2, 0));
-    }
-    {
-        auto row = area.removeFromBottom (24);
-        pitchSlider.setBounds (row.removeFromLeft (row.getWidth() / 2).reduced (2, 0));
-        volSlider.setBounds (row.reduced (2, 0));
-    }
-    editLabel.setBounds (area.removeFromBottom (18));
-    waveform.setBounds  (area.removeFromBottom (58));
-    area.removeFromBottom (6);
+    area.removeFromBottom (10);
 
     // Middle: pad grid.
     juce::Grid grid;
@@ -336,11 +414,14 @@ void MainComponent::refreshPad (int index)
 {
     if (auto* p = pads[index])
     {
-        auto base = padHasSample[(size_t) index] ? kPadLoaded.withBrightness (0.55f) : kPadEmpty;
-        if (index == selectedPad) base = base.brighter (0.25f);
+        const bool has = padHasSample[(size_t) index];
+        auto base = has ? ShardColours::padTop.brighter (0.12f) : kPadEmpty;
+        if (index == selectedPad) base = base.brighter (0.18f);
         const float f = padFlash[(size_t) index];
         if (f > 0.0f) base = base.interpolatedWith (ShardColours::amber, juce::jlimit (0.0f, 1.0f, f));
         p->setColour (juce::TextButton::buttonColourId, base);
+        p->setColour (juce::TextButton::textColourOffId,
+                      has ? ShardColours::amber : ShardColours::cream.withAlpha (0.45f));
     }
 }
 
