@@ -3,19 +3,12 @@
 #include <JuceHeader.h>
 #include "AudioEngine.h"
 #include "SampleLoader.h"
+#include "WaveformDisplay.h"
 
 // ============================================================================
-//  MainComponent — audio + UI surface (P1 step 1: 16-pad matrix).
-//
-//  * AudioAppComponent: owns the device, forwards callbacks to AudioEngine.
-//  * 4x4 pad grid. Two modes toggled by the LOAD button:
-//      - LOAD off  : tapping a pad triggers its sample.
-//      - LOAD on   : tapping a pad opens the file picker to assign a sample.
-//  * Loaded pads are lit (accent colour); empty pads are dim.
-//  * Android-safe loading: the picker returns a content:// URL, read via stream.
-//  * A Timer drives message-thread GC of retired sample buffers.
-//
-//  Original visual identity (no SP-404 skin) — high-contrast dark + one accent.
+//  MainComponent — Shard UI (P1): 16-pad matrix, per-pad controls (pitch, vol,
+//  trim, reverse, loop), waveform, a 16-step sequencer with BPM, and mic
+//  recording. Original high-contrast look (no SP-404 skin).
 // ============================================================================
 class MainComponent : public juce::AudioAppComponent,
                       private juce::Timer
@@ -33,22 +26,56 @@ public:
 
 private:
     void timerCallback() override;
+
     void padClicked (int index);
+    void stepClicked (int step);
     void openChooserForPad (int index);
     void refreshPad (int index);
+    void selectPad (int index);
+    void updateControlsFromPad (int index);
+    void assignSampleToPad (int index, SampleBuffer::Ptr sb);
+    void toggleRecording();
+    int  firstEmptyPad() const;
 
-    static constexpr int kNumPads = AudioEngine::kNumPads;   // 16
+    static constexpr int kNumPads  = AudioEngine::kNumPads;    // 16
+    static constexpr int kNumSteps = AudioEngine::kNumSteps;   // 16
 
     AudioEngine  engine;
     SampleLoader loader { engine };
 
     juce::OwnedArray<juce::TextButton> pads;
-    juce::TextButton  loadButton { "REASSIGN" };
-    juce::TextButton  testButton { "TEST TONE" };
-    juce::Label       status;
+    juce::OwnedArray<juce::TextButton> stepButtons;
 
-    std::array<bool, kNumPads> padHasSample {};   // all false
-    bool loadMode = false;
+    juce::TextButton loadButton { "REASSIGN" };
+    juce::TextButton testButton { "TEST" };
+    juce::TextButton recButton  { "REC" };
+    juce::TextButton playButton { "PLAY" };
+    juce::TextButton clearButton { "CLR" };
+    juce::TextButton reverseButton { "REV" };
+    juce::TextButton loopButton { "LOOP" };
+
+    juce::Slider pitchSlider, volSlider, startSlider, endSlider, bpmSlider;
+    juce::Label  status, editLabel;
+    WaveformDisplay waveform;
+
+    // Per-pad UI state.
+    std::array<bool,  kNumPads> padHasSample {};
+    std::array<float, kNumPads> padPitch {};
+    std::array<float, kNumPads> padGain {};
+    std::array<float, kNumPads> padStart01 {};
+    std::array<float, kNumPads> padEnd01 {};
+    std::array<bool,  kNumPads> padLoop {};
+    std::array<bool,  kNumPads> padReverse {};
+    std::array<SampleBuffer::Ptr, kNumPads> uiSample;
+
+    // Pattern mirror [step][pad] for the sequencer UI.
+    std::array<std::array<bool, kNumPads>, kNumSteps> pattern {};
+
+    int  selectedPad   = -1;
+    bool loadMode      = false;
+    bool recordingActive = false;
+    int  recordingSlot = -1;
+    int  lastPlayStep  = -1;
 
     std::unique_ptr<juce::FileChooser> chooser;
 

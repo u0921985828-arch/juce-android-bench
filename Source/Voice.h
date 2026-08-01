@@ -5,56 +5,53 @@
 #include "SampleBuffer.h"
 
 // ============================================================================
-//  Voice — one playing sample. POD-ish, header-only, inline-friendly.
-//
-//  DSP: fractional phase accumulator + Hermite 4-point interpolation.
-//    delta = (F_src / F_sys) * 2^(semitones / 12)
-//    pos  += delta            (per output sample)
-//
-//  P1: a short linear gain envelope removes clicks —
-//    * fade-IN  (~2 ms) at start (no attack click),
-//    * fade-OUT (~3 ms) on stop / retrigger (no release click).
-//  The voice frees itself (active=false) once the fade-out reaches 0.
-//
-//  Indexing convention (keep exact): idx = (int) pos is y0; hermite4 reads
-//  y[idx-1..idx+2], so render needs idx+2 < srcLen (end guard) and clamps the
-//  start boundary inside hermite4.
+//  Voice — one playing sample. Phase accumulator + Hermite interpolation,
+//  with a playback window (trim start/end), optional reverse and loop, and a
+//  short anti-click gain envelope. POD-ish, header-only.
 // ============================================================================
 struct Voice
 {
     bool   active    = false;
     bool   releasing = false;
-    double pos       = 0.0;    // fractional read position (double: float drifts)
-    double delta     = 0.0;    // phase increment per output sample
+    bool   loop      = false;
+    bool   reverse   = false;
+    double pos       = 0.0;
+    double delta     = 0.0;
     int    slot      = -1;
+    int    winStart  = 1;      // playback window [winStart, winEnd) in samples
+    int    winEnd    = 2;
 
-    float  gain      = 0.0f;   // current envelope gain
-    float  target    = 0.0f;   // velocity (fade-in destination)
-    float  stepUp    = 0.0f;   // per-sample fade-in increment
-    float  stepDown  = 0.0f;   // per-sample fade-out decrement (positive magnitude)
+    float  gain      = 0.0f;
+    float  target    = 0.0f;
+    float  stepUp    = 0.0f;
+    float  stepDown  = 0.0f;
 
     void start (int slotIndex, float semitones, float velocity,
-                double fSrc, double fSys) noexcept
+                double fSrc, double fSys,
+                int startSamp, int endSamp, bool loopOn, bool rev, int srcLen) noexcept
     {
-        slot      = slotIndex;
-        pos       = 0.0;
-        delta     = (fSrc / fSys) * std::pow (2.0, (double) semitones / 12.0);
+        slot     = slotIndex;
+        winStart = juce::jlimit (1, juce::jmax (1, srcLen - 3), startSamp);
+        winEnd   = juce::jlimit (winStart + 1, juce::jmax (winStart + 1, srcLen - 2), endSamp);
+        loop     = loopOn;
+        reverse  = rev;
+
+        const double base = (fSrc / fSys) * std::pow (2.0, (double) semitones / 12.0);
+        delta = rev ? -base : base;
+        pos   = rev ? (double) (winEnd - 1) : (double) winStart;
+
         target    = velocity;
         gain      = 0.0f;
         releasing = false;
-
-        const double fadeIn  = juce::jmax (1.0, 0.002 * fSys);   // ~2 ms
-        const double fadeOut = juce::jmax (1.0, 0.003 * fSys);   // ~3 ms
+        const double fadeIn  = juce::jmax (1.0, 0.002 * fSys);
+        const double fadeOut = juce::jmax (1.0, 0.003 * fSys);
         stepUp    = (float) (velocity / fadeIn);
         stepDown  = (float) (velocity / fadeOut);
         active    = true;
     }
 
-    // Begin a fade-out; the voice frees itself when it reaches 0.
     void release() noexcept { releasing = true; }
-
-    // Hard stop (panic) — immediate, no fade.
-    void kill() noexcept { active = false; releasing = false; gain = 0.0f; }
+    void kill()    noexcept { active = false; releasing = false; gain = 0.0f; }
 
     void render (juce::AudioBuffer<float>& out, int start, int num,
                  const SampleBuffer* sb) noexcept
@@ -68,19 +65,34 @@ struct Voice
 
         const float* srcL = sb->buffer.getReadPointer (0);
         const float* srcR = (srcCh > 1) ? sb->buffer.getReadPointer (1) : srcL;
-
-        const int outCh = out.getNumChannels();
+        const int    outCh = out.getNumChannels();
         float* dstL = out.getWritePointer (0);
         float* dstR = (outCh > 1) ? out.getWritePointer (1) : dstL;
 
         for (int i = 0; i < num; ++i)
         {
-            const int    idx  = (int) pos;
+            // Window bounds / loop.
+            if (! reverse)
+            {
+                if (pos >= (double) (winEnd - 1))
+                {
+                    if (loop) pos = (double) winStart;
+                    else      { active = false; break; }
+                }
+            }
+            else
+            {
+                if (pos <= (double) winStart)
+                {
+                    if (loop) pos = (double) (winEnd - 1);
+                    else      { active = false; break; }
+                }
+            }
+
+            const int idx = (int) pos;
+            if (idx < 1 || idx + 2 >= srcLen) { active = false; break; }   // safety
             const double frac = pos - (double) idx;
 
-            if (idx + 2 >= srcLen) { active = false; break; }   // one-shot end
-
-            // Update the envelope.
             if (releasing)
             {
                 gain -= stepDown;
@@ -101,19 +113,16 @@ struct Voice
     }
 
 private:
-    // Hermite 4-point, 3rd-order interpolation (Laurent de Soras coefficients).
     static inline float hermite4 (float frac, const float* y, int idx) noexcept
     {
-        const float ym1 = (idx >= 1) ? y[idx - 1] : y[idx];   // start-boundary clamp
+        const float ym1 = y[idx - 1];
         const float y0  = y[idx];
         const float y1  = y[idx + 1];
         const float y2  = y[idx + 2];
-
         const float c0 = y0;
         const float c1 = 0.5f * (y1 - ym1);
         const float c2 = ym1 - 2.5f * y0 + 2.0f * y1 - 0.5f * y2;
         const float c3 = 0.5f * (y2 - ym1) + 1.5f * (y0 - y1);
-
         return ((c3 * frac + c2) * frac + c1) * frac + c0;
     }
 };

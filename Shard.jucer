@@ -14,6 +14,7 @@
       <FILE id="srcVh"   name="Voice.h"           compile="0" resource="0" file="Source/Voice.h"/>
       <FILE id="srcSbh"  name="SampleBuffer.h"    compile="0" resource="0" file="Source/SampleBuffer.h"/>
       <FILE id="srcCfh"  name="CommandFifo.h"     compile="0" resource="0" file="Source/CommandFifo.h"/>
+      <FILE id="srcWfh"  name="WaveformDisplay.h" compile="0" resource="0" file="Source/WaveformDisplay.h"/>
       <FILE id="srcLcpp" name="SampleLoader.cpp"  compile="1" resource="0" file="Source/SampleLoader.cpp"/>
       <FILE id="srcLh"   name="SampleLoader.h"    compile="0" resource="0" file="Source/SampleLoader.h"/>
     </GROUP>
@@ -22,7 +23,7 @@
     <ANDROIDSTUDIO targetFolder="Builds/Android"
                    androidActivityClass="com.artifacts.shard.Shard"
                    androidMinimumSDK="24" androidTargetSDK="34"
-                   androidInternetNeeded="0" androidCpp11="1">
+                   androidInternetNeeded="0" androidMicNeeded="1" androidCpp11="1">
       <CONFIGURATIONS>
         <CONFIGURATION name="Debug"   isDebug="1" targetName="Shard" androidArchitectures="arm64-v8a"/>
         <CONFIGURATION name="Release" isDebug="0" targetName="Shard" optimisation="3" androidArchitectures="arm64-v8a"/>

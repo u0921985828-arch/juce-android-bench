@@ -11,12 +11,13 @@ SampleLoader::SampleLoader (AudioEngine& engineToLoadInto)
 }
 
 void SampleLoader::loadAsync (const juce::URL& url, int slot,
-                              std::function<void (bool, juce::String)> onFinished)
+                              std::function<void (bool, juce::String, SampleBuffer::Ptr)> onFinished)
 {
     pool.addJob ([this, url, slot, callback = std::move (onFinished)]
     {
-        bool         success = false;
-        juce::String detail;
+        bool              success = false;
+        juce::String      detail;
+        SampleBuffer::Ptr loaded;
 
         // 1. Open a stream. On Android the picker returns a content:// URL that
         //    must be opened through AndroidDocument (URL::createInputStream is
@@ -67,6 +68,7 @@ void SampleLoader::loadAsync (const juce::URL& url, int slot,
                     sb->sourceSampleRate = reader->sampleRate;
 
                     engine.publishSample (slot, sb);
+                    loaded  = sb;
                     success = true;
                     detail  = juce::String (numChannels) + "ch "
                             + juce::String ((int) reader->sampleRate) + "Hz";
@@ -82,10 +84,10 @@ void SampleLoader::loadAsync (const juce::URL& url, int slot,
             }
         }
 
-        juce::MessageManager::callAsync ([callback, success, detail]
+        juce::MessageManager::callAsync ([callback, success, detail, loaded]
         {
             if (callback)
-                callback (success, detail);
+                callback (success, detail, loaded);
         });
     });
 }
