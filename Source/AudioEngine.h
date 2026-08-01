@@ -41,6 +41,10 @@ public:
     void postNoteOff (int slot) noexcept;
     void postPanic() noexcept;
 
+    // Diagnostic: emit a ~0.4 s 440 Hz sine directly (no sample needed) to prove
+    // the audio output path works independently of sample loading/triggering.
+    void postTestTone() noexcept;
+
     // Adopt a freshly decoded buffer into pad `slot` (keeps it alive across the
     // raw-pointer trip with one explicit reference).
     void publishSample (int slot, SampleBuffer::Ptr newBuffer) noexcept;
@@ -90,6 +94,10 @@ private:
 
     double systemSampleRate = 44100.0;   // F_sys
     int    maxBlock         = 512;
+
+    // Diagnostic test-tone state.
+    std::atomic<int> testToneRemaining { 0 };   // samples of tone left to emit
+    double           testPhase = 0.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AudioEngine)
 };

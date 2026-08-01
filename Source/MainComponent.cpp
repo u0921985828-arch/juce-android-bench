@@ -28,15 +28,24 @@ MainComponent::MainComponent()
     loadButton.onClick = [this]
     {
         loadMode = loadButton.getToggleState();
-        status.setText (loadMode ? "LOAD: tap a pad to assign a sample"
-                                 : "Tap a pad to play. LOAD to assign samples.",
+        status.setText (loadMode ? "REASSIGN: tap any pad to (re)load its sample"
+                                 : "Tap an empty pad to load, a lit pad to play.",
                         juce::dontSendNotification);
     };
     addAndMakeVisible (loadButton);
 
+    testButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff394150));
+    testButton.onClick = [this]
+    {
+        engine.postTestTone();
+        status.setText ("Test tone (440 Hz) — should beep if audio output works.",
+                        juce::dontSendNotification);
+    };
+    addAndMakeVisible (testButton);
+
     status.setJustificationType (juce::Justification::centred);
     status.setColour (juce::Label::textColourId, juce::Colours::white.withAlpha (0.8f));
-    status.setText ("Tap a pad to play. LOAD to assign samples.", juce::dontSendNotification);
+    status.setText ("Tap an empty pad to load, a lit pad to play.", juce::dontSendNotification);
     addAndMakeVisible (status);
 
     startTimer (200);            // retired-buffer GC
@@ -82,7 +91,11 @@ void MainComponent::resized()
 
     status.setBounds (area.removeFromTop (26));
     area.removeFromTop (6);
-    loadButton.setBounds (area.removeFromTop (44).reduced (2));
+    {
+        auto topRow = area.removeFromTop (44);
+        testButton.setBounds (topRow.removeFromRight (topRow.getWidth() / 2).reduced (2));
+        loadButton.setBounds (topRow.reduced (2));
+    }
     area.removeFromTop (10);
 
     juce::Grid grid;
@@ -100,9 +113,10 @@ void MainComponent::resized()
 
 void MainComponent::padClicked (int index)
 {
-    if (loadMode)
+    // Empty pad (or REASSIGN mode) -> load a sample. Lit pad -> play it.
+    if (loadMode || ! padHasSample[(size_t) index])
         openChooserForPad (index);
-    else if (padHasSample[(size_t) index])
+    else
         engine.postNoteOn (index, 0.0f, 0.85f);   // one-shot, original pitch
 }
 

@@ -81,6 +81,39 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     }
     if (cursor < numSamples)
         renderVoices (startSample + cursor, numSamples - cursor);
+
+    // 5. Diagnostic test tone (added on top): a 440 Hz sine, ~0.4 s, with a
+    //    quick 5 ms fade at each end so it doesn't click.
+    int tt = testToneRemaining.load (std::memory_order_relaxed);
+    if (tt > 0)
+    {
+        const int total = juce::jmax (1, (int) (0.4 * systemSampleRate));
+        const int fade  = juce::jmax (1, (int) (0.005 * systemSampleRate));
+        const double inc = 2.0 * juce::MathConstants<double>::pi * 440.0 / systemSampleRate;
+
+        const int outCh = out.getNumChannels();
+        float* dL = out.getWritePointer (0);
+        float* dR = (outCh > 1) ? out.getWritePointer (1) : dL;
+
+        const int nOut = juce::jmin (tt, numSamples);
+        for (int i = 0; i < nOut; ++i)
+        {
+            const int done = total - tt;                 // samples already played
+            float amp = 0.2f;
+            if (done < fade)          amp *= (float) done / (float) fade;         // fade in
+            else if (tt < fade)       amp *= (float) tt   / (float) fade;         // fade out
+            const float s = amp * (float) std::sin (testPhase);
+
+            dL[startSample + i] += s;
+            if (outCh > 1) dR[startSample + i] += s;
+
+            testPhase += inc;
+            if (testPhase > 2.0 * juce::MathConstants<double>::pi)
+                testPhase -= 2.0 * juce::MathConstants<double>::pi;
+            --tt;
+        }
+        testToneRemaining.store (tt, std::memory_order_relaxed);
+    }
 }
 
 void AudioEngine::handleCommand (const Command& c) noexcept
@@ -128,6 +161,12 @@ void AudioEngine::postPanic() noexcept
 {
     Command c; c.type = Command::Type::Panic;
     commands.push (c);
+}
+
+void AudioEngine::postTestTone() noexcept
+{
+    // Arm ~0.4 s of tone; the audio thread reads this atomically.
+    testToneRemaining.store ((int) (0.4 * systemSampleRate), std::memory_order_relaxed);
 }
 
 void AudioEngine::publishSample (int slot, SampleBuffer::Ptr newBuffer) noexcept

@@ -43,7 +43,8 @@ private:
     SampleLoader loader { engine };
 
     juce::OwnedArray<juce::TextButton> pads;
-    juce::TextButton  loadButton { "LOAD" };
+    juce::TextButton  loadButton { "REASSIGN" };
+    juce::TextButton  testButton { "TEST TONE" };
     juce::Label       status;
 
     std::array<bool, kNumPads> padHasSample {};   // all false

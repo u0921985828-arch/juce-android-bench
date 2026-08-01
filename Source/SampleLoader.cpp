@@ -18,16 +18,25 @@ void SampleLoader::loadAsync (const juce::URL& url, int slot, std::function<void
 
         // Android's file picker hands back a content:// URI (Storage Access
         // Framework), NOT a real file path — so read via URL/stream, not File.
+        // Crucially, that stream is usually NON-SEEKABLE, which breaks WAV/format
+        // parsing; so slurp the whole thing into memory first (samples live in
+        // RAM anyway) to get a fully seekable stream the reader can rewind.
         juce::AudioFormatReader* rawReader = nullptr;
 
+        std::unique_ptr<juce::InputStream> source;
         if (url.isLocalFile())
+            source = std::make_unique<juce::FileInputStream> (url.getLocalFile());
+        else
+            source = url.createInputStream (
+                juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress));
+
+        if (source != nullptr)
         {
-            rawReader = formatManager.createReaderFor (url.getLocalFile());
-        }
-        else if (auto stream = url.createInputStream (
-                     juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)))
-        {
-            rawReader = formatManager.createReaderFor (std::move (stream));
+            juce::MemoryBlock mb;
+            source->readIntoMemoryBlock (mb);
+            if (mb.getSize() > 44)   // at least a WAV header's worth
+                rawReader = formatManager.createReaderFor (
+                    std::make_unique<juce::MemoryInputStream> (mb.getData(), mb.getSize(), true));
         }
 
         if (rawReader != nullptr)
