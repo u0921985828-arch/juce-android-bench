@@ -48,10 +48,13 @@ jobs:
 
       - name: Install Android SDK packages (NDK, cmake, platform)
         run: |
+          # NDK + CMake versions MUST match what Projucer writes into the
+          # generated app/build.gradle for JUCE 8.0.4 (ndkVersion 26.2.11394342,
+          # cmake 3.22.1). If a JUCE bump changes these, update them here too.
           sdkmanager --install \
             "platforms;android-34" \
             "build-tools;34.0.0" \
-            "ndk;26.1.10909125" \
+            "ndk;26.2.11394342" \
             "cmake;3.22.1"
 
       - name: Checkout JUCE ${{ env.JUCE_TAG }}

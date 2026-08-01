@@ -6,8 +6,9 @@ out/
 # JUCE is fetched via FetchContent into the build tree — never vendored
 _deps/
 
-# Projucer-generated Android project (CI regenerates it via --resave)
+# Projucer-generated output (CI regenerates both via --resave)
 Builds/
+JuceLibraryCode/
 
 # Local validation scaffolding (not part of the repo)
 JUCE
