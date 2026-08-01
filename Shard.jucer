@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<JUCERPROJECT id="Fx404A" name="ARTiFACTS" projectType="guiapp" version="0.0.1"
-              bundleIdentifier="com.artifacts.sampler" companyName="ARTiFACTS"
+<JUCERPROJECT id="Fx404A" name="Shard" projectType="guiapp" version="0.0.1"
+              bundleIdentifier="com.artifacts.shard" companyName="ARTiFACTS"
               companyCopyright="ARTiFACTS" useAppConfig="0" addUsingNamespaceToJuceHeader="1"
               displaySplashScreen="1" jucerFormatVersion="1">
-  <MAINGROUP id="Fx404Root" name="ARTiFACTS">
+  <MAINGROUP id="Fx404Root" name="Shard">
     <GROUP id="Fx404Src" name="Source">
       <FILE id="srcMain" name="Main.cpp"          compile="1" resource="0" file="Source/Main.cpp"/>
       <FILE id="srcMcpp" name="MainComponent.cpp" compile="1" resource="0" file="Source/MainComponent.cpp"/>
@@ -20,12 +20,12 @@
   </MAINGROUP>
   <EXPORTFORMATS>
     <ANDROIDSTUDIO targetFolder="Builds/Android"
-                   androidActivityClass="com.artifacts.sampler.Artifacts"
+                   androidActivityClass="com.artifacts.shard.Shard"
                    androidMinimumSDK="24" androidTargetSDK="34"
                    androidInternetNeeded="0" androidCpp11="1">
       <CONFIGURATIONS>
-        <CONFIGURATION name="Debug"   isDebug="1" targetName="ARTiFACTS"/>
-        <CONFIGURATION name="Release" isDebug="0" targetName="ARTiFACTS" optimisation="3"/>
+        <CONFIGURATION name="Debug"   isDebug="1" targetName="Shard"/>
+        <CONFIGURATION name="Release" isDebug="0" targetName="Shard" optimisation="3"/>
       </CONFIGURATIONS>
       <MODULEPATHS>
         <MODULEPATH id="juce_core"              path="JUCE/modules"/>

@@ -1,10 +1,10 @@
 name: Build Android APK
 
-# Builds the native JUCE app into an Android APK.
+# Builds the native JUCE app (Shard, by ARTiFACTS) into an Android APK.
 #
 # JUCE's CMake API does NOT support Android ("Android targets are not currently
 # supported"), so the only supported path is: build the Projucer, have it
-# generate an Android Gradle project from ARTiFACTS.jucer, then Gradle-build it.
+# generate an Android Gradle project from Shard.jucer, then Gradle-build it.
 # JUCE is pinned to the same tag as the desktop CMake build (8.0.4). Oboe
 # (bundled in JUCE) is enabled for the low-latency audio path.
 
@@ -14,7 +14,7 @@ on:
     branches: [ claude/new-session-bgeba4 ]
     paths:
       - 'Source/**'
-      - 'ARTiFACTS.jucer'
+      - 'Shard.jucer'
       - '.github/workflows/build-apk.yml'
 
 permissions:
@@ -65,11 +65,11 @@ jobs:
           cmake -B JUCE/cmake-build -S JUCE -DJUCE_BUILD_EXTRAS=ON -DCMAKE_BUILD_TYPE=Release
           cmake --build JUCE/cmake-build --target Projucer -j"$(nproc)"
 
-      - name: Generate Android project from ARTiFACTS.jucer
+      - name: Generate Android project from Shard.jucer
         run: |
           PROJUCER="$(find JUCE/cmake-build -name Projucer -type f -executable | head -1)"
           echo "Using Projucer: $PROJUCER"
-          "$PROJUCER" --resave ARTiFACTS.jucer
+          "$PROJUCER" --resave Shard.jucer
 
       - name: Point Gradle at the Android SDK
         run: echo "sdk.dir=${ANDROID_SDK_ROOT}" > Builds/Android/local.properties
@@ -106,28 +106,28 @@ jobs:
           REL="$(find Builds/Android -name '*-release.apk' | head -1)"
           test -n "$DBG" || { echo "No debug APK produced";   exit 1; }
           test -n "$REL" || { echo "No release APK produced"; exit 1; }
-          cp "$DBG" ARTiFACTS-debug.apk
-          cp "$REL" ARTiFACTS-release.apk
+          cp "$DBG" Shard-debug.apk
+          cp "$REL" Shard-release.apk
           echo "Debug:   $DBG"
           echo "Release: $REL"
-          ls -la ARTiFACTS-*.apk
+          ls -la Shard-*.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ARTiFACTS-apk
+          name: Shard-apk
           path: |
-            ARTiFACTS-debug.apk
-            ARTiFACTS-release.apk
+            Shard-debug.apk
+            Shard-release.apk
           if-no-files-found: error
 
       # Also attach both APKs to a rolling release tag for easy phone download.
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: apk-latest
-          name: Latest ARTiFACTS APKs (debug + release)
+          name: Latest Shard APKs (debug + release)
           files: |
-            ARTiFACTS-debug.apk
-            ARTiFACTS-release.apk
+            Shard-debug.apk
+            Shard-release.apk
           make_latest: false
 
   # Optional, best-effort: boot an x86_64 emulator and confirm the app launches
@@ -141,7 +141,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: ARTiFACTS-apk
+          name: Shard-apk
 
       - name: Enable KVM
         run: |
@@ -164,12 +164,12 @@ jobs:
           # NOTE: android-emulator-runner executes each line as its own /bin/sh
           # command, so every check must be a single line (no multi-line if/fi).
           script: |
-            adb install -r ARTiFACTS-debug.apk
-            adb shell am start -n com.artifacts.sampler/com.rmsl.juce.JuceActivity
+            adb install -r Shard-debug.apk
+            adb shell am start -n com.artifacts.shard/com.rmsl.juce.JuceActivity
             sleep 12
             adb exec-out screencap -p > screenshot.png
             adb logcat -d | grep -q 'FATAL EXCEPTION' && { echo "App crashed on launch"; adb logcat -d | tail -80; exit 1; } || echo "No FATAL EXCEPTION"
-            adb shell dumpsys activity activities | grep -q 'com.artifacts.sampler' && echo "Activity running OK" || { echo "Activity not running"; exit 1; }
+            adb shell dumpsys activity activities | grep -q 'com.artifacts.shard' && echo "Activity running OK" || { echo "Activity not running"; exit 1; }
 
       - uses: actions/upload-artifact@v4
         if: always()
