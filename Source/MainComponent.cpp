@@ -372,6 +372,16 @@ void MainComponent::assignSampleToPad (int index, SampleBuffer::Ptr sb)
     uiSample[(size_t) index]     = sb;
     padStart01[(size_t) index]   = 0.0f;
     padEnd01[(size_t) index]     = 1.0f;
+
+    // Push this pad's UI params into the engine. The engine's per-pad gain
+    // defaults to 0 (silent); setVal(dontSendNotification) never fires the
+    // slider callbacks, so without this the pad plays at zero gain.
+    engine.setPadGain    (index, padGain[(size_t) index]);
+    engine.setPadPitch   (index, padPitch[(size_t) index]);
+    engine.setPadLoop    (index, padLoop[(size_t) index]);
+    engine.setPadReverse (index, padReverse[(size_t) index]);
+    engine.setPadChoke   (index, padChokeUI[(size_t) index]);
+
     selectPad (index);
 }
 
