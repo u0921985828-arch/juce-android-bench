@@ -66,6 +66,7 @@ private:
     juce::TextButton fxTypeButton { "LPF" };
     juce::Slider cutoffSlider, resoSlider, driveSlider;
     juce::Slider dlyTimeSlider, dlyFbSlider, dlyMixSlider;
+    juce::Slider macroFilter, macroDrive, macroSend;   // quick FX on the perform screen
     juce::Label  status, editLabel, fxLabel;
     WaveformDisplay waveform;
     SpectrumDisplay spectrum;

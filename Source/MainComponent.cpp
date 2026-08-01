@@ -199,12 +199,17 @@ MainComponent::MainComponent()
         s.onValueChange = std::move (cb);
         addAndMakeVisible (s);
     };
-    initKnob (cutoffSlider, 20.0, 20000.0, 1.0, 20000.0, 1000.0, [this] { engine.setFxCutoff ((float) cutoffSlider.getValue()); });
+    initKnob (cutoffSlider, 20.0, 20000.0, 1.0, 20000.0, 1000.0, [this] { const float v=(float) cutoffSlider.getValue(); engine.setFxCutoff (v); macroFilter.setValue (v, juce::dontSendNotification); });
     initKnob (resoSlider,    0.3,  4.0, 0.01, 0.707, 0.0,       [this] { engine.setFxReso   ((float) resoSlider.getValue()); });
-    initKnob (driveSlider,   0.0,  1.0, 0.01, 0.0,   0.0,       [this] { engine.setFxDrive  ((float) driveSlider.getValue()); });
+    initKnob (driveSlider,   0.0,  1.0, 0.01, 0.0,   0.0,       [this] { const float v=(float) driveSlider.getValue(); engine.setFxDrive (v); macroDrive.setValue (v, juce::dontSendNotification); });
     initKnob (dlyTimeSlider, 20.0, 1000.0, 1.0, 250.0, 0.0,     [this] { engine.setDlyTime  ((float) dlyTimeSlider.getValue()); });
     initKnob (dlyFbSlider,   0.0,  0.95, 0.01, 0.35, 0.0,       [this] { engine.setDlyFb    ((float) dlyFbSlider.getValue()); });
-    initKnob (dlyMixSlider,  0.0,  1.0, 0.01, 0.0,   0.0,       [this] { engine.setDlyMix   ((float) dlyMixSlider.getValue()); });
+    initKnob (dlyMixSlider,  0.0,  1.0, 0.01, 0.0,   0.0,       [this] { const float v=(float) dlyMixSlider.getValue(); engine.setDlyMix (v); macroSend.setValue (v, juce::dontSendNotification); });
+
+    // Quick-access macros on the perform screen (shared engine params).
+    initKnob (macroFilter, 20.0, 20000.0, 1.0, 20000.0, 1000.0, [this] { const float v=(float) macroFilter.getValue(); engine.setFxCutoff (v); cutoffSlider.setValue (v, juce::dontSendNotification); });
+    initKnob (macroDrive,   0.0, 1.0, 0.01, 0.0, 0.0,           [this] { const float v=(float) macroDrive.getValue();  engine.setFxDrive  (v); driveSlider.setValue  (v, juce::dontSendNotification); });
+    initKnob (macroSend,    0.0, 1.0, 0.01, 0.0, 0.0,           [this] { const float v=(float) macroSend.getValue();   engine.setDlyMix   (v); dlyMixSlider.setValue (v, juce::dontSendNotification); });
 
     addAndMakeVisible (waveform);
 
@@ -246,6 +251,8 @@ void MainComponent::setMode (Mode m)
     cutoffSlider.setVisible (fx); resoSlider.setVisible (fx); driveSlider.setVisible (fx);
     dlyTimeSlider.setVisible (fx); dlyFbSlider.setVisible (fx); dlyMixSlider.setVisible (fx);
     fxTypeButton.setVisible (fx); testButton.setVisible (fx);
+
+    macroFilter.setVisible (perform); macroDrive.setVisible (perform); macroSend.setVisible (perform);
 
     clearButton.setVisible (seq);
     bpmSlider.setVisible (seq);
@@ -344,7 +351,18 @@ void MainComponent::paint (juce::Graphics& g)
     }
 
     // 4. Mode-specific labels.
-    if (mode == Mode::Fx)
+    if (mode == Mode::Perform)
+    {
+        g.setColour (ShardColours::ink.withAlpha (0.85f));
+        g.setFont (ShardColours::monoFont (10.0f, true).withExtraKerningFactor (0.16f));
+        auto mn = [&g] (juce::Slider& s, const char* t)
+        {
+            auto r = s.getBounds();
+            g.drawText (t, r.getX() - 6, r.getY() - 14, r.getWidth() + 12, 12, juce::Justification::centred);
+        };
+        mn (macroFilter, "FILTER"); mn (macroDrive, "DRIVE"); mn (macroSend, "SEND");
+    }
+    else if (mode == Mode::Fx)
     {
         g.setColour (ShardColours::ink.withAlpha (0.85f));
         g.setFont (ShardColours::monoFont (10.5f, true).withExtraKerningFactor (0.12f));
@@ -434,7 +452,17 @@ void MainComponent::resized()
     // --- Mode body ---
     if (mode == Mode::Perform)
     {
-        layoutPadGrid (area, 4, 4, 6);
+        auto mrow = area.removeFromTop (86);             // 3 quick macros
+        juce::Slider* mk[3] = { &macroFilter, &macroDrive, &macroSend };
+        const int w = mrow.getWidth() / 3;
+        for (int i = 0; i < 3; ++i)
+        {
+            auto cell = (i < 2 ? mrow.removeFromLeft (w) : mrow);
+            cell.removeFromTop (14);                     // gap for label
+            mk[i]->setBounds (cell.reduced (10, 0));
+        }
+        area.removeFromTop (8);
+        layoutPadGrid (area, 4, 4, 8);
     }
     else if (mode == Mode::Fx)
     {
