@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<JUCERPROJECT id="Fx404A" name="ARTiFACTS" projectType="guiapp" version="0.0.1"
+              bundleIdentifier="com.artifacts.fx404" companyName="ARTiFACTS"
+              companyCopyright="ARTiFACTS" useAppConfig="0" addUsingNamespaceToJuceHeader="1"
+              displaySplashScreen="1" jucerFormatVersion="1">
+  <MAINGROUP id="Fx404Root" name="ARTiFACTS">
+    <GROUP id="Fx404Src" name="Source">
+      <FILE id="srcMain" name="Main.cpp"          compile="1" resource="0" file="Source/Main.cpp"/>
+      <FILE id="srcMcpp" name="MainComponent.cpp" compile="1" resource="0" file="Source/MainComponent.cpp"/>
+      <FILE id="srcMh"   name="MainComponent.h"   compile="0" resource="0" file="Source/MainComponent.h"/>
+      <FILE id="srcEcpp" name="AudioEngine.cpp"   compile="1" resource="0" file="Source/AudioEngine.cpp"/>
+      <FILE id="srcEh"   name="AudioEngine.h"     compile="0" resource="0" file="Source/AudioEngine.h"/>
+      <FILE id="srcVh"   name="Voice.h"           compile="0" resource="0" file="Source/Voice.h"/>
+      <FILE id="srcSbh"  name="SampleBuffer.h"    compile="0" resource="0" file="Source/SampleBuffer.h"/>
+      <FILE id="srcCfh"  name="CommandFifo.h"     compile="0" resource="0" file="Source/CommandFifo.h"/>
+      <FILE id="srcLcpp" name="SampleLoader.cpp"  compile="1" resource="0" file="Source/SampleLoader.cpp"/>
+      <FILE id="srcLh"   name="SampleLoader.h"    compile="0" resource="0" file="Source/SampleLoader.h"/>
+    </GROUP>
+  </MAINGROUP>
+  <EXPORTFORMATS>
+    <ANDROIDSTUDIO targetFolder="Builds/Android"
+                   androidActivityClass="com.artifacts.fx404.Artifacts"
+                   androidMinimumSDK="24" androidTargetSDK="34"
+                   androidInternetNeeded="0" androidCpp11="1">
+      <CONFIGURATIONS>
+        <CONFIGURATION name="Debug"   isDebug="1" targetName="ARTiFACTS"/>
+        <CONFIGURATION name="Release" isDebug="0" targetName="ARTiFACTS" optimisation="3"/>
+      </CONFIGURATIONS>
+      <MODULEPATHS>
+        <MODULEPATH id="juce_core"              path="JUCE/modules"/>
+        <MODULEPATH id="juce_events"            path="JUCE/modules"/>
+        <MODULEPATH id="juce_graphics"          path="JUCE/modules"/>
+        <MODULEPATH id="juce_data_structures"   path="JUCE/modules"/>
+        <MODULEPATH id="juce_gui_basics"        path="JUCE/modules"/>
+        <MODULEPATH id="juce_gui_extra"         path="JUCE/modules"/>
+        <MODULEPATH id="juce_audio_basics"      path="JUCE/modules"/>
+        <MODULEPATH id="juce_audio_devices"     path="JUCE/modules"/>
+        <MODULEPATH id="juce_audio_formats"     path="JUCE/modules"/>
+        <MODULEPATH id="juce_audio_processors"  path="JUCE/modules"/>
+        <MODULEPATH id="juce_audio_utils"       path="JUCE/modules"/>
+        <MODULEPATH id="juce_dsp"               path="JUCE/modules"/>
+      </MODULEPATHS>
+    </ANDROIDSTUDIO>
+  </EXPORTFORMATS>
+  <MODULES>
+    <MODULE id="juce_audio_basics"     showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_audio_devices"    showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_audio_formats"    showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_audio_processors" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_audio_utils"      showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_core"             showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_data_structures"  showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_dsp"              showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_events"           showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_graphics"         showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_gui_basics"       showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_gui_extra"        showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+  </MODULES>
+  <JUCEOPTIONS JUCE_USE_ANDROID_OBOE="1" JUCE_STRICT_REFCOUNTEDPOINTER="1"
+               JUCE_WEB_BROWSER="0" JUCE_USE_CURL="0"/>
+  <LIVE_SETTINGS>
+    <LINUX/>
+  </LIVE_SETTINGS>
+</JUCERPROJECT>
