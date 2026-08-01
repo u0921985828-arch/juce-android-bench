@@ -15,9 +15,11 @@ public:
     explicit SampleLoader (AudioEngine& engineToLoadInto);
 
     // Decode `url` in the background into pad `slot`. On Android the file picker
-    // returns a content:// URL (not a File), so we take a URL and read via a
-    // stream. `onFinished(success)` is invoked on the MESSAGE thread.
-    void loadAsync (const juce::URL& url, int slot, std::function<void (bool)> onFinished);
+    // returns a content:// URL opened via AndroidDocument. `onFinished(success,
+    // detail)` is invoked on the MESSAGE thread; `detail` describes the result
+    // or the exact failure point (for on-screen diagnostics).
+    void loadAsync (const juce::URL& url, int slot,
+                    std::function<void (bool, juce::String)> onFinished);
 
 private:
     AudioEngine&             engine;

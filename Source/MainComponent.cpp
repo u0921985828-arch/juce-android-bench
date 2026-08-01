@@ -148,18 +148,18 @@ void MainComponent::openChooserForPad (int index)
         status.setText ("Loading pad " + juce::String (index + 1) + " ...",
                         juce::dontSendNotification);
 
-        loader.loadAsync (url, index, [this, index] (bool ok)
+        loader.loadAsync (url, index, [this, index] (bool ok, juce::String detail)
         {
             if (ok)
             {
                 padHasSample[(size_t) index] = true;
                 refreshPad (index);
-                status.setText ("Pad " + juce::String (index + 1) + " loaded.",
+                status.setText ("Pad " + juce::String (index + 1) + " loaded  [" + detail + "]",
                                 juce::dontSendNotification);
             }
             else
             {
-                status.setText ("Couldn't load that file (try WAV/FLAC/MP3).",
+                status.setText ("Load failed: " + detail,
                                 juce::dontSendNotification);
             }
         });
