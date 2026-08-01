@@ -70,6 +70,9 @@ public:
     void setDlyFb    (float f)    noexcept { dlyFb.store    (f,   std::memory_order_relaxed); }
     void setDlyMix   (float m)    noexcept { dlyMix.store   (m,   std::memory_order_relaxed); }
 
+    // --- Scope (message thread): copy the last n post-FX master samples ---
+    void copyScope (float* dst, int n) noexcept;
+
     // --- Recording (message thread) ---
     void              startRecording (int slot) noexcept;
     SampleBuffer::Ptr finishRecording() noexcept;   // stop + build + publish; returns the buffer
@@ -156,6 +159,11 @@ private:
     std::atomic<float> dlyTime { 250.0f };       // ms
     std::atomic<float> dlyFb   { 0.35f };        // 0..0.95
     std::atomic<float> dlyMix  { 0.0f };         // 0..1
+
+    // Scope ring (post-FX mono), written by the audio thread.
+    static constexpr int kScopeSize = 2048;   // power of two
+    std::array<float, kScopeSize> scope {};
+    std::atomic<int> scopeWrite { 0 };
 
     // Diagnostic test tone.
     std::atomic<int> testToneRemaining { 0 };

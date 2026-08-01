@@ -15,6 +15,8 @@
       <FILE id="srcSbh"  name="SampleBuffer.h"    compile="0" resource="0" file="Source/SampleBuffer.h"/>
       <FILE id="srcCfh"  name="CommandFifo.h"     compile="0" resource="0" file="Source/CommandFifo.h"/>
       <FILE id="srcWfh"  name="WaveformDisplay.h" compile="0" resource="0" file="Source/WaveformDisplay.h"/>
+      <FILE id="srcSph"  name="SpectrumDisplay.h" compile="0" resource="0" file="Source/SpectrumDisplay.h"/>
+      <FILE id="srcLnf"  name="ShardLookAndFeel.h" compile="0" resource="0" file="Source/ShardLookAndFeel.h"/>
       <FILE id="srcLcpp" name="SampleLoader.cpp"  compile="1" resource="0" file="Source/SampleLoader.cpp"/>
       <FILE id="srcLh"   name="SampleLoader.h"    compile="0" resource="0" file="Source/SampleLoader.h"/>
     </GROUP>

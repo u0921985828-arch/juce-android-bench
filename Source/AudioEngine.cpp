@@ -202,6 +202,20 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         }
     }
 
+    // 5c. Feed the scope ring (post-FX mono sum) for the spectrum display.
+    {
+        int wi = scopeWrite.load (std::memory_order_relaxed);
+        const int outCh = out.getNumChannels();
+        const float* l = out.getReadPointer (0, startSample);
+        const float* r = (outCh > 1) ? out.getReadPointer (1, startSample) : l;
+        for (int i = 0; i < numSamples; ++i)
+        {
+            scope[(size_t) wi] = 0.5f * (l[i] + r[i]);
+            wi = (wi + 1) & (kScopeSize - 1);
+        }
+        scopeWrite.store (wi, std::memory_order_release);
+    }
+
     // 6. Diagnostic test tone.
     int tt = testToneRemaining.load (std::memory_order_relaxed);
     if (tt > 0)
@@ -291,6 +305,13 @@ void AudioEngine::publishSample (int slot, SampleBuffer::Ptr newBuffer) noexcept
 void AudioEngine::collectRetiredSamples() noexcept
 {
     retired.drain ([] (SampleBuffer* p) { if (p) p->decReferenceCount(); });
+}
+
+void AudioEngine::copyScope (float* dst, int n) noexcept
+{
+    const int wi = scopeWrite.load (std::memory_order_acquire);
+    for (int i = 0; i < n; ++i)
+        dst[i] = scope[(size_t) ((wi - n + i) & (kScopeSize - 1))];
 }
 
 void AudioEngine::setStep (int step, int pad, bool on) noexcept

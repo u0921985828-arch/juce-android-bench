@@ -4,6 +4,8 @@
 #include "AudioEngine.h"
 #include "SampleLoader.h"
 #include "WaveformDisplay.h"
+#include "SpectrumDisplay.h"
+#include "ShardLookAndFeel.h"
 
 // ============================================================================
 //  MainComponent — Shard UI (P1): 16-pad matrix, per-pad controls (pitch, vol,
@@ -60,6 +62,9 @@ private:
     juce::Slider dlyTimeSlider, dlyFbSlider, dlyMixSlider;
     juce::Label  status, editLabel, fxLabel;
     WaveformDisplay waveform;
+    SpectrumDisplay spectrum;
+    ShardLookAndFeel lnf;
+    float scopeTmp[1024] {};
 
     // Per-pad UI state.
     std::array<bool,  kNumPads> padHasSample {};

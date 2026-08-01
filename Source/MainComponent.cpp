@@ -2,12 +2,12 @@
 
 namespace
 {
-    const juce::Colour kBg        { 0xff15171c };
-    const juce::Colour kPadEmpty  { 0xff262a33 };
-    const juce::Colour kPadLoaded { 0xff1fb6a6 };
-    const juce::Colour kAccent    { 0xffe0a13a };
+    const juce::Colour kBg        = ShardColours::chassis;
+    const juce::Colour kPadEmpty  = ShardColours::padTop;
+    const juce::Colour kPadLoaded = ShardColours::amber;
+    const juce::Colour kAccent    = ShardColours::amber;
     const juce::Colour kRec       { 0xffd0433a };
-    const juce::Colour kStepOff   { 0xff2a2f3a };
+    const juce::Colour kStepOff   = ShardColours::panel;
 
     void styleButton (juce::TextButton& b, juce::Colour c)
     {
@@ -19,6 +19,9 @@ namespace
 
 MainComponent::MainComponent()
 {
+    setLookAndFeel (&lnf);
+    addAndMakeVisible (spectrum);
+
     // 1 input (mic, for recording) + 2 outputs. Requests RECORD_AUDIO on Android.
     setAudioChannels (1, 2);
 
@@ -152,51 +155,27 @@ MainComponent::MainComponent()
     };
     addAndMakeVisible (fxTypeButton);
 
-    cutoffSlider.setSliderStyle (juce::Slider::LinearHorizontal);
-    cutoffSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 60, 20);
-    cutoffSlider.setRange (20.0, 20000.0, 1.0);
-    cutoffSlider.setSkewFactorFromMidPoint (1000.0);
-    cutoffSlider.setValue (20000.0, juce::dontSendNotification);
-    cutoffSlider.setTextValueSuffix (" Hz");
-    cutoffSlider.setColour (juce::Slider::trackColourId, kAccent);
-    cutoffSlider.onValueChange = [this] { engine.setFxCutoff ((float) cutoffSlider.getValue()); };
-    addAndMakeVisible (cutoffSlider);
-
-    resoSlider.setSliderStyle (juce::Slider::LinearHorizontal);
-    resoSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 48, 20);
-    resoSlider.setRange (0.3, 4.0, 0.01);
-    resoSlider.setValue (0.707, juce::dontSendNotification);
-    resoSlider.setColour (juce::Slider::trackColourId, kAccent);
-    resoSlider.onValueChange = [this] { engine.setFxReso ((float) resoSlider.getValue()); };
-    addAndMakeVisible (resoSlider);
-
-    driveSlider.setSliderStyle (juce::Slider::LinearHorizontal);
-    driveSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 48, 20);
-    driveSlider.setRange (0.0, 1.0, 0.01);
-    driveSlider.setValue (0.0, juce::dontSendNotification);
-    driveSlider.setColour (juce::Slider::trackColourId, kAccent);
-    driveSlider.onValueChange = [this] { engine.setFxDrive ((float) driveSlider.getValue()); };
-    addAndMakeVisible (driveSlider);
-
-    auto initFxSlider = [this] (juce::Slider& s, double lo, double hi, double step, double def, const juce::String& suffix)
+    // FX as rotary KNOBS (vintage identity).
+    auto initKnob = [this] (juce::Slider& s, double lo, double hi, double step, double def,
+                            double skewMid, std::function<void()> cb)
     {
-        s.setSliderStyle (juce::Slider::LinearHorizontal);
-        s.setTextBoxStyle (juce::Slider::TextBoxRight, false, 56, 20);
+        s.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+        s.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 56, 15);
         s.setRange (lo, hi, step);
+        if (skewMid > 0.0) s.setSkewFactorFromMidPoint (skewMid);
         s.setValue (def, juce::dontSendNotification);
-        s.setTextValueSuffix (suffix);
-        s.setColour (juce::Slider::trackColourId, kAccent);
+        s.onValueChange = std::move (cb);
         addAndMakeVisible (s);
     };
-    initFxSlider (dlyTimeSlider, 20.0, 1000.0, 1.0, 250.0, " ms");
-    initFxSlider (dlyFbSlider,    0.0, 0.95, 0.01, 0.35, "");
-    initFxSlider (dlyMixSlider,   0.0, 1.0,  0.01, 0.0,  "");
-    dlyTimeSlider.onValueChange = [this] { engine.setDlyTime ((float) dlyTimeSlider.getValue()); };
-    dlyFbSlider.onValueChange   = [this] { engine.setDlyFb   ((float) dlyFbSlider.getValue()); };
-    dlyMixSlider.onValueChange  = [this] { engine.setDlyMix  ((float) dlyMixSlider.getValue()); };
+    initKnob (cutoffSlider, 20.0, 20000.0, 1.0, 20000.0, 1000.0, [this] { engine.setFxCutoff ((float) cutoffSlider.getValue()); });
+    initKnob (resoSlider,    0.3,  4.0, 0.01, 0.707, 0.0,       [this] { engine.setFxReso   ((float) resoSlider.getValue()); });
+    initKnob (driveSlider,   0.0,  1.0, 0.01, 0.0,   0.0,       [this] { engine.setFxDrive  ((float) driveSlider.getValue()); });
+    initKnob (dlyTimeSlider, 20.0, 1000.0, 1.0, 250.0, 0.0,     [this] { engine.setDlyTime  ((float) dlyTimeSlider.getValue()); });
+    initKnob (dlyFbSlider,   0.0,  0.95, 0.01, 0.35, 0.0,       [this] { engine.setDlyFb    ((float) dlyFbSlider.getValue()); });
+    initKnob (dlyMixSlider,  0.0,  1.0, 0.01, 0.0,   0.0,       [this] { engine.setDlyMix   ((float) dlyMixSlider.getValue()); });
 
     fxLabel.setColour (juce::Label::textColourId, kAccent.withAlpha (0.9f));
-    fxLabel.setText ("MASTER FX  ·  filter + drive + delay", juce::dontSendNotification);
+    fxLabel.setText ("FX", juce::dontSendNotification);
     addAndMakeVisible (fxLabel);
 
     addAndMakeVisible (waveform);
@@ -211,12 +190,13 @@ MainComponent::MainComponent()
     addAndMakeVisible (status);
 
     startTimer (60);
-    setSize (480, 900);
+    setSize (480, 1040);
 }
 
 MainComponent::~MainComponent()
 {
     shutdownAudio();
+    setLookAndFeel (nullptr);
 }
 
 // ---------------------------------------------------------------------------
@@ -242,68 +222,84 @@ void MainComponent::releaseResources()
 //  UI
 // ---------------------------------------------------------------------------
 
-void MainComponent::paint (juce::Graphics& g) { g.fillAll (kBg); }
+void MainComponent::paint (juce::Graphics& g)
+{
+    g.fillAll (kBg);
+
+    // Knob names above each FX knob.
+    g.setColour (ShardColours::amber.withAlpha (0.7f));
+    g.setFont (juce::Font (juce::FontOptions (10.0f)).withExtraKerningFactor (0.1f));
+    auto name = [&g] (juce::Slider& s, const char* t)
+    {
+        auto r = s.getBounds();
+        g.drawText (t, r.getX() - 4, r.getY() - 13, r.getWidth() + 8, 12, juce::Justification::centred);
+    };
+    name (cutoffSlider, "CUTOFF"); name (resoSlider, "RESO");  name (driveSlider, "DRIVE");
+    name (dlyTimeSlider, "TIME");  name (dlyFbSlider, "FBK");  name (dlyMixSlider, "MIX");
+}
 
 void MainComponent::resized()
 {
     auto area = getLocalBounds().reduced (10);
 
-    status.setBounds (area.removeFromTop (22));
+    // The screen (spectrum) on top.
+    spectrum.setBounds (area.removeFromTop (92));
+    area.removeFromTop (6);
+    status.setBounds (area.removeFromTop (20));
     area.removeFromTop (4);
 
+    // Transport row (6 items incl. the filter type toggle).
     {
-        auto row = area.removeFromTop (40);
-        const int w = row.getWidth() / 5;
-        loadButton.setBounds (row.removeFromLeft (w).reduced (2));
-        testButton.setBounds (row.removeFromLeft (w).reduced (2));
-        recButton.setBounds  (row.removeFromLeft (w).reduced (2));
-        playButton.setBounds (row.removeFromLeft (w).reduced (2));
-        clearButton.setBounds (row.reduced (2));
+        auto row = area.removeFromTop (38);
+        const int w = row.getWidth() / 6;
+        loadButton.setBounds  (row.removeFromLeft (w).reduced (2));
+        testButton.setBounds  (row.removeFromLeft (w).reduced (2));
+        recButton.setBounds   (row.removeFromLeft (w).reduced (2));
+        playButton.setBounds  (row.removeFromLeft (w).reduced (2));
+        clearButton.setBounds (row.removeFromLeft (w).reduced (2));
+        fxTypeButton.setBounds (row.reduced (2));
     }
-    bpmSlider.setBounds (area.removeFromTop (28));
+    area.removeFromTop (2);
+
+    // FX knob row (labels drawn in paint over each knob).
+    {
+        auto row = area.removeFromTop (78);
+        row.removeFromTop (12);                         // gap for knob names
+        juce::Slider* knobs[6] = { &cutoffSlider, &resoSlider, &driveSlider,
+                                   &dlyTimeSlider, &dlyFbSlider, &dlyMixSlider };
+        const int w = row.getWidth() / 6;
+        for (auto* k : knobs) k->setBounds (row.removeFromLeft (w).reduced (2, 0));
+    }
+    bpmSlider.setBounds (area.removeFromTop (24));
     area.removeFromTop (6);
 
-    // Master FX section.
+    // Bottom-up: sequencer, per-pad controls, waveform.
     {
-        auto r = area.removeFromTop (20);
-        fxTypeButton.setBounds (r.removeFromRight (66).reduced (1));
-        fxLabel.setBounds (r);
-    }
-    cutoffSlider.setBounds (area.removeFromTop (24));
-    {
-        auto r = area.removeFromTop (24);
-        resoSlider.setBounds (r.removeFromLeft (r.getWidth() / 2).reduced (2, 0));
-        driveSlider.setBounds (r.reduced (2, 0));
-    }
-    dlyTimeSlider.setBounds (area.removeFromTop (24));
-    {
-        auto r = area.removeFromTop (24);
-        dlyFbSlider.setBounds (r.removeFromLeft (r.getWidth() / 2).reduced (2, 0));
-        dlyMixSlider.setBounds (r.reduced (2, 0));
-    }
-    area.removeFromTop (6);
-
-    // Bottom-up: sequencer, controls, waveform.
-    {
-        auto row = area.removeFromBottom (34);
+        auto row = area.removeFromBottom (32);
         const int w = row.getWidth() / kNumSteps;
         for (int s = 0; s < kNumSteps; ++s)
             stepButtons[s]->setBounds (row.removeFromLeft (w).reduced (1));
     }
     area.removeFromBottom (6);
     {
-        auto row = area.removeFromBottom (30);
+        auto row = area.removeFromBottom (28);
         reverseButton.setBounds (row.removeFromLeft (row.getWidth() / 2).reduced (2));
         loopButton.setBounds (row.reduced (2));
     }
-    chokeSlider.setBounds (area.removeFromBottom (26));
-    endSlider.setBounds   (area.removeFromBottom (26));
-    startSlider.setBounds (area.removeFromBottom (26));
-    volSlider.setBounds   (area.removeFromBottom (26));
-    pitchSlider.setBounds (area.removeFromBottom (26));
-    editLabel.setBounds   (area.removeFromBottom (20));
-    waveform.setBounds    (area.removeFromBottom (70));
-    area.removeFromBottom (8);
+    chokeSlider.setBounds (area.removeFromBottom (24));
+    {
+        auto row = area.removeFromBottom (24);
+        startSlider.setBounds (row.removeFromLeft (row.getWidth() / 2).reduced (2, 0));
+        endSlider.setBounds (row.reduced (2, 0));
+    }
+    {
+        auto row = area.removeFromBottom (24);
+        pitchSlider.setBounds (row.removeFromLeft (row.getWidth() / 2).reduced (2, 0));
+        volSlider.setBounds (row.reduced (2, 0));
+    }
+    editLabel.setBounds (area.removeFromBottom (18));
+    waveform.setBounds  (area.removeFromBottom (58));
+    area.removeFromBottom (6);
 
     // Middle: pad grid.
     juce::Grid grid;
@@ -448,8 +444,16 @@ void MainComponent::timerCallback()
 {
     engine.collectRetiredSamples();
 
-    // Sequencer step colours + playhead.
+    // Feed the spectrum screen + readout.
+    juce::String rd = (selectedPad >= 0) ? ("PAD " + juce::String (selectedPad + 1)) : juce::String ("SHARD");
     const int ps = engine.getPlayStep();
+    if (engine.isPlaying() && ps >= 0) rd += "   STEP " + juce::String (ps + 1);
+    if (recordingActive)               rd = "REC " + juce::String (engine.getRecordSeconds(), 1) + "s";
+    spectrum.setReadout (rd);
+    engine.copyScope (scopeTmp, 1024);
+    spectrum.setSamples (scopeTmp, 1024);
+
+    // Sequencer step colours + playhead (reuse ps from above).
     for (int s = 0; s < kNumSteps; ++s)
     {
         const bool on = (selectedPad >= 0) && pattern[(size_t) s][(size_t) selectedPad];
