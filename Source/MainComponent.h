@@ -54,7 +54,7 @@ private:
     juce::TextButton reverseButton { "REV" };
     juce::TextButton loopButton { "LOOP" };
 
-    juce::Slider pitchSlider, volSlider, startSlider, endSlider, bpmSlider;
+    juce::Slider pitchSlider, volSlider, startSlider, endSlider, bpmSlider, chokeSlider;
     juce::TextButton fxTypeButton { "LPF" };
     juce::Slider cutoffSlider, resoSlider, driveSlider;
     juce::Label  status, editLabel, fxLabel;
@@ -68,6 +68,7 @@ private:
     std::array<float, kNumPads> padEnd01 {};
     std::array<bool,  kNumPads> padLoop {};
     std::array<bool,  kNumPads> padReverse {};
+    std::array<int,   kNumPads> padChokeUI {};   // 0 = none
     std::array<SampleBuffer::Ptr, kNumPads> uiSample;
 
     // Pattern mirror [step][pad] for the sequencer UI.

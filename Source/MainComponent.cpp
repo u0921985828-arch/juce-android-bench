@@ -132,6 +132,14 @@ MainComponent::MainComponent()
     loopButton.onClick = [this] { if (selectedPad >= 0) { padLoop[(size_t) selectedPad] = loopButton.getToggleState(); engine.setPadLoop (selectedPad, loopButton.getToggleState()); } };
     addAndMakeVisible (loopButton);
 
+    chokeSlider.setSliderStyle (juce::Slider::IncDecButtons);
+    chokeSlider.setRange (0.0, 8.0, 1.0);
+    chokeSlider.setValue (0.0, juce::dontSendNotification);
+    chokeSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 90, 22);
+    chokeSlider.textFromValueFunction = [] (double v) { return v <= 0.0 ? juce::String ("CHOKE: off") : "CHOKE: " + juce::String ((int) v); };
+    chokeSlider.onValueChange = [this] { if (selectedPad >= 0) { padChokeUI[(size_t) selectedPad] = (int) chokeSlider.getValue(); engine.setPadChoke (selectedPad, (int) chokeSlider.getValue()); } };
+    addAndMakeVisible (chokeSlider);
+
     // Master FX (filter + drive).
     fxTypeButton.setClickingTogglesState (true);
     styleButton (fxTypeButton, juce::Colour (0xff394150));
@@ -265,6 +273,7 @@ void MainComponent::resized()
         reverseButton.setBounds (row.removeFromLeft (row.getWidth() / 2).reduced (2));
         loopButton.setBounds (row.reduced (2));
     }
+    chokeSlider.setBounds (area.removeFromBottom (26));
     endSlider.setBounds   (area.removeFromBottom (26));
     startSlider.setBounds (area.removeFromBottom (26));
     volSlider.setBounds   (area.removeFromBottom (26));
@@ -331,6 +340,7 @@ void MainComponent::updateControlsFromPad (int index)
     endSlider.setValue   (padEnd01[(size_t) index],   juce::dontSendNotification);
     reverseButton.setToggleState (padReverse[(size_t) index], juce::dontSendNotification);
     loopButton.setToggleState    (padLoop[(size_t) index],    juce::dontSendNotification);
+    chokeSlider.setValue (padChokeUI[(size_t) index], juce::dontSendNotification);
 }
 
 void MainComponent::assignSampleToPad (int index, SampleBuffer::Ptr sb)

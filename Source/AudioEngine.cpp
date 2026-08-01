@@ -45,6 +45,13 @@ void AudioEngine::triggerPad (int slot) noexcept
     if (sb == nullptr)
         return;
 
+    // Choke group: fade out any other pad's voice sharing this pad's group.
+    const int group = padChoke[(size_t) slot].load (std::memory_order_relaxed);
+    if (group > 0)
+        for (int j = 0; j < kNumPads; ++j)
+            if (j != slot && padChoke[(size_t) j].load (std::memory_order_relaxed) == group)
+                voices[(size_t) j].release();
+
     const int len = sb->buffer.getNumSamples();
     int st = padStart[(size_t) slot].load (std::memory_order_relaxed);
     int en = padEnd[(size_t) slot].load (std::memory_order_relaxed);

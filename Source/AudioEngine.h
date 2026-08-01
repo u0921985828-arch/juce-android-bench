@@ -46,6 +46,7 @@ public:
     void setPadEnd     (int slot, int e)       noexcept { store (padEnd,     slot, e); }
     void setPadLoop    (int slot, bool b)      noexcept { store (padLoop,    slot, b); }
     void setPadReverse (int slot, bool b)      noexcept { store (padReverse, slot, b); }
+    void setPadChoke   (int slot, int group)   noexcept { store (padChoke,   slot, group); }   // 0 = none
     int  getSampleLength (int slot) const noexcept;   // 0 if none
 
     // --- Samples (message thread) ---
@@ -123,6 +124,7 @@ private:
     std::array<std::atomic<int>,   kNumPads> padEnd {};
     std::array<std::atomic<bool>,  kNumPads> padLoop {};
     std::array<std::atomic<bool>,  kNumPads> padReverse {};
+    std::array<std::atomic<int>,   kNumPads> padChoke {};   // 0 = none, 1..8 = choke group
 
     // Sequencer.
     std::atomic<bool>   playing { false };
