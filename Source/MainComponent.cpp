@@ -2,7 +2,6 @@
 
 namespace
 {
-    const juce::Colour kPadEmpty  = ShardColours::padTop;
     const juce::Colour kPadLoaded = ShardColours::amber;
     const juce::Colour kAccent    = ShardColours::amber;
     const juce::Colour kRec       = ShardColours::red;
@@ -50,11 +49,31 @@ MainComponent::MainComponent()
         stepButtons.add (b);
     }
 
+    // Mode tabs.
+    const char* tabNames[] = { "TOCAR", "EDITAR", "SEC", "FX" };
+    const Mode  tabModes[] = { Mode::Perform, Mode::Edit, Mode::Seq, Mode::Fx };
+    for (int i = 0; i < 4; ++i)
+    {
+        auto* t = new juce::TextButton (tabNames[i]);
+        styleButton (*t, kKey);
+        t->setColour (juce::TextButton::buttonOnColourId, kAccent);
+        t->setClickingTogglesState (true);
+        const Mode m = tabModes[i];
+        t->onClick = [this, m] { setMode (m); };
+        addAndMakeVisible (t);
+        tabButtons.add (t);
+    }
+
     // Transport / actions.
     loadButton.setClickingTogglesState (true);
-    styleButton (loadButton, kPadEmpty);
+    styleButton (loadButton, kKey);
     loadButton.setColour (juce::TextButton::buttonOnColourId, kAccent);
-    loadButton.onClick = [this] { loadMode = loadButton.getToggleState(); };
+    loadButton.onClick = [this]
+    {
+        loadArmed = loadButton.getToggleState();
+        status.setText (loadArmed ? "LOAD armed — tap a pad to load a sample"
+                                  : "Tap a pad to play", juce::dontSendNotification);
+    };
     addAndMakeVisible (loadButton);
 
     styleButton (testButton, kKey);
@@ -187,10 +206,6 @@ MainComponent::MainComponent()
     initKnob (dlyFbSlider,   0.0,  0.95, 0.01, 0.35, 0.0,       [this] { engine.setDlyFb    ((float) dlyFbSlider.getValue()); });
     initKnob (dlyMixSlider,  0.0,  1.0, 0.01, 0.0,   0.0,       [this] { engine.setDlyMix   ((float) dlyMixSlider.getValue()); });
 
-    fxLabel.setColour (juce::Label::textColourId, kAccent.withAlpha (0.9f));
-    fxLabel.setText ("FX", juce::dontSendNotification);
-    addAndMakeVisible (fxLabel);
-
     addAndMakeVisible (waveform);
 
     editLabel.setColour (juce::Label::textColourId, ShardColours::inkDim);
@@ -199,11 +214,47 @@ MainComponent::MainComponent()
 
     status.setJustificationType (juce::Justification::centred);
     status.setColour (juce::Label::textColourId, ShardColours::inkDim);
-    status.setText ("Tap empty pad = load   /   lit pad = play   /   REC = mic", juce::dontSendNotification);
+    status.setText ("Tap a pad to play", juce::dontSendNotification);
     addAndMakeVisible (status);
 
     startTimer (60);
     setSize (500, 1080);
+    setMode (Mode::Perform);
+}
+
+// Show only the controls relevant to the active mode, then re-layout.
+void MainComponent::setMode (Mode m)
+{
+    mode = m;
+    for (int i = 0; i < 4; ++i)
+        if (auto* t = tabButtons[i]) t->setToggleState (i == (int) m, juce::dontSendNotification);
+
+    const bool perform = (m == Mode::Perform);
+    const bool edit    = (m == Mode::Edit);
+    const bool seq     = (m == Mode::Seq);
+    const bool fx      = (m == Mode::Fx);
+
+    for (auto* p : pads) p->setVisible (! fx);          // pads used in perform/edit/seq
+    for (auto* s : stepButtons) s->setVisible (seq);
+
+    waveform.setVisible (edit);
+    editLabel.setVisible (edit);
+    pitchSlider.setVisible (edit); volSlider.setVisible (edit);
+    startSlider.setVisible (edit); endSlider.setVisible (edit);
+    chokeSlider.setVisible (edit); reverseButton.setVisible (edit); loopButton.setVisible (edit);
+
+    cutoffSlider.setVisible (fx); resoSlider.setVisible (fx); driveSlider.setVisible (fx);
+    dlyTimeSlider.setVisible (fx); dlyFbSlider.setVisible (fx); dlyMixSlider.setVisible (fx);
+    fxTypeButton.setVisible (fx); testButton.setVisible (fx);
+
+    clearButton.setVisible (seq);
+    bpmSlider.setVisible (seq);
+
+    if ((edit || seq) && selectedPad < 0)
+        selectPad (0);
+
+    resized();
+    repaint();
 }
 
 MainComponent::~MainComponent()
@@ -292,118 +343,196 @@ void MainComponent::paint (juce::Graphics& g)
         g.drawText ("SAMPLER", bin, juce::Justification::centredRight);
     }
 
-    // 4. Knob names above each FX knob.
-    g.setColour (ShardColours::ink.withAlpha (0.85f));
-    g.setFont (ShardColours::monoFont (10.5f, true).withExtraKerningFactor (0.12f));
-    auto name = [&g] (juce::Slider& s, const char* t)
+    // 4. Mode-specific labels.
+    if (mode == Mode::Fx)
     {
-        auto r = s.getBounds();
-        g.drawText (t, r.getX() - 6, r.getY() - 15, r.getWidth() + 12, 13, juce::Justification::centred);
-    };
-    name (cutoffSlider, "CUTOFF"); name (resoSlider, "RESO");  name (driveSlider, "DRIVE");
-    name (dlyTimeSlider, "TIME");  name (dlyFbSlider, "FBK");  name (dlyMixSlider, "MIX");
+        g.setColour (ShardColours::ink.withAlpha (0.85f));
+        g.setFont (ShardColours::monoFont (10.5f, true).withExtraKerningFactor (0.12f));
+        auto name = [&g] (juce::Slider& s, const char* t)
+        {
+            auto r = s.getBounds();
+            g.drawText (t, r.getX() - 6, r.getY() - 15, r.getWidth() + 12, 13, juce::Justification::centred);
+        };
+        name (cutoffSlider, "CUTOFF"); name (resoSlider, "RESO");  name (driveSlider, "DRIVE");
+        name (dlyTimeSlider, "TIME");  name (dlyFbSlider, "FBK");  name (dlyMixSlider, "MIX");
+    }
+    else if (mode == Mode::Edit)
+    {
+        g.setColour (ShardColours::ink.withAlpha (0.9f));
+        g.setFont (ShardColours::monoFont (11.0f, true).withExtraKerningFactor (0.06f));
+        auto lab = [&g] (juce::Slider& s, const char* t)
+        {
+            auto r = s.getBounds();
+            g.drawText (t, r.getX() - 66, r.getY(), 60, r.getHeight(), juce::Justification::centredLeft);
+        };
+        lab (pitchSlider, "PITCH"); lab (volSlider, "VOLUME");
+        lab (startSlider, "START"); lab (endSlider, "END");
+        lab (chokeSlider, "CHOKE");
+    }
+    else if (mode == Mode::Seq && ! seqPanelArea.isEmpty())
+    {
+        g.setColour (ShardColours::ink.withAlpha (0.9f));
+        g.setFont (ShardColours::monoFont (11.0f, true).withExtraKerningFactor (0.14f));
+        const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
+        const int sp = juce::jmax (0, selectedPad);
+        const juce::String t = "STEPS  " + dot + "  PAD " + juce::String (sp + 1)
+                             + (padName[(size_t) sp].isNotEmpty() ? "   " + padName[(size_t) sp] : juce::String());
+        g.drawText (t, seqPanelArea.reduced (12, 6).removeFromTop (16), juce::Justification::centredLeft);
+    }
 }
 
-void MainComponent::resized()
+void MainComponent::layoutPadGrid (juce::Rectangle<int> area, int cols, int rows, int gap)
 {
-    auto area = getLocalBounds().reduced (8);
-
-    // Header (wordmark + badge drawn in paint).
-    headerArea = area.removeFromTop (30);
-    area.removeFromTop (10);
-
-    // The screen (scope) inside a recessed bezel.
-    screenBezel = area.removeFromTop (94);
-    spectrum.setBounds (screenBezel);
-    area.removeFromTop (10);
-
-    status.setBounds (area.removeFromTop (18));
-    area.removeFromTop (6);
-
-    // Transport row (6 items incl. the filter type toggle).
-    {
-        auto row = area.removeFromTop (38);
-        const int w = row.getWidth() / 6;
-        loadButton.setBounds  (row.removeFromLeft (w).reduced (2));
-        testButton.setBounds  (row.removeFromLeft (w).reduced (2));
-        recButton.setBounds   (row.removeFromLeft (w).reduced (2));
-        playButton.setBounds  (row.removeFromLeft (w).reduced (2));
-        clearButton.setBounds (row.removeFromLeft (w).reduced (2));
-        fxTypeButton.setBounds (row.reduced (2));
-    }
-    area.removeFromTop (8);
-
-    // FX panel: knob row + BPM grouped in one raised panel.
-    {
-        fxPanelArea = area.removeFromTop (114);
-        auto inner  = fxPanelArea.reduced (8, 6);
-        auto krow   = inner.removeFromTop (78);
-        krow.removeFromTop (15);                         // gap for knob names
-        juce::Slider* knobs[6] = { &cutoffSlider, &resoSlider, &driveSlider,
-                                   &dlyTimeSlider, &dlyFbSlider, &dlyMixSlider };
-        const int w = krow.getWidth() / 6;
-        for (auto* k : knobs) k->setBounds (krow.removeFromLeft (w).reduced (2, 0));
-        inner.removeFromTop (4);
-        bpmSlider.setBounds (inner.removeFromTop (22));
-    }
-    area.removeFromTop (10);
-
-    // Sequencer panel.
-    {
-        seqPanelArea = area.removeFromBottom (42);
-        auto row = seqPanelArea.reduced (8, 6);
-        const int w = row.getWidth() / kNumSteps;
-        for (int s = 0; s < kNumSteps; ++s)
-            stepButtons[s]->setBounds (row.removeFromLeft (w).reduced (1));
-    }
-    area.removeFromBottom (8);
-
-    // Per-pad edit panel (waveform + controls grouped).
-    {
-        editPanelArea = area.removeFromBottom (196);
-        auto inner = editPanelArea.reduced (8, 8);
-        waveform.setBounds  (inner.removeFromTop (56));
-        inner.removeFromTop (4);
-        editLabel.setBounds (inner.removeFromTop (16));
-        {
-            auto row = inner.removeFromTop (24);
-            pitchSlider.setBounds (row.removeFromLeft (row.getWidth() / 2).reduced (2, 0));
-            volSlider.setBounds (row.reduced (2, 0));
-        }
-        {
-            auto row = inner.removeFromTop (24);
-            startSlider.setBounds (row.removeFromLeft (row.getWidth() / 2).reduced (2, 0));
-            endSlider.setBounds (row.reduced (2, 0));
-        }
-        chokeSlider.setBounds (inner.removeFromTop (24));
-        {
-            auto row = inner.removeFromTop (28);
-            reverseButton.setBounds (row.removeFromLeft (row.getWidth() / 2).reduced (2));
-            loopButton.setBounds (row.reduced (2));
-        }
-    }
-    area.removeFromBottom (10);
-
-    // Middle: pad grid.
     juce::Grid grid;
     using Track = juce::Grid::TrackInfo;
     using Fr = juce::Grid::Fr;
-    grid.templateColumns = { Track (Fr (1)), Track (Fr (1)), Track (Fr (1)), Track (Fr (1)) };
-    grid.templateRows    = { Track (Fr (1)), Track (Fr (1)), Track (Fr (1)), Track (Fr (1)) };
-    grid.setGap (juce::Grid::Px (6));
+    for (int c = 0; c < cols; ++c) grid.templateColumns.add (Track (Fr (1)));
+    for (int r = 0; r < rows; ++r) grid.templateRows.add (Track (Fr (1)));
+    grid.setGap (juce::Grid::Px ((float) gap));
     for (auto* p : pads) grid.items.add (juce::GridItem (*p));
     grid.performLayout (area);
 }
 
+void MainComponent::resized()
+{
+    fxPanelArea = seqPanelArea = editPanelArea = editCtrlArea = {};
+
+    auto area = getLocalBounds().reduced (8);
+
+    // --- Always-visible top chrome ---
+    headerArea = area.removeFromTop (30);
+    area.removeFromTop (8);
+
+    screenBezel = area.removeFromTop (82);
+    spectrum.setBounds (screenBezel);
+    area.removeFromTop (8);
+
+    // Tab bar.
+    tabBarArea = area.removeFromTop (36);
+    {
+        auto row = tabBarArea;
+        const int w = row.getWidth() / 4;
+        for (int i = 0; i < 4; ++i)
+            tabButtons[i]->setBounds ((i < 3 ? row.removeFromLeft (w) : row).reduced (2));
+    }
+    area.removeFromTop (6);
+
+    // Transport: LOAD | PLAY | REC (always).
+    {
+        auto row = area.removeFromTop (38);
+        const int w = row.getWidth() / 3;
+        loadButton.setBounds (row.removeFromLeft (w).reduced (2));
+        playButton.setBounds (row.removeFromLeft (w).reduced (2));
+        recButton.setBounds  (row.reduced (2));
+    }
+    area.removeFromTop (8);
+
+    // Status pinned to the bottom.
+    status.setBounds (area.removeFromBottom (18));
+    area.removeFromBottom (6);
+
+    // --- Mode body ---
+    if (mode == Mode::Perform)
+    {
+        layoutPadGrid (area, 4, 4, 6);
+    }
+    else if (mode == Mode::Fx)
+    {
+        fxPanelArea = area;
+        auto inner = area.reduced (12, 14);
+        auto ctrl  = inner.removeFromBottom (40);
+        fxTypeButton.setBounds (ctrl.removeFromLeft (ctrl.getWidth() / 2).reduced (3));
+        testButton.setBounds   (ctrl.reduced (3));
+        inner.removeFromBottom (10);
+
+        juce::Slider* r1[3] = { &cutoffSlider, &resoSlider, &driveSlider };
+        juce::Slider* r2[3] = { &dlyTimeSlider, &dlyFbSlider, &dlyMixSlider };
+        const int rowH = inner.getHeight() / 2;
+        auto place = [] (juce::Rectangle<int> row, juce::Slider** ks)
+        {
+            const int w = row.getWidth() / 3;
+            for (int i = 0; i < 3; ++i)
+            {
+                auto cell = (i < 2 ? row.removeFromLeft (w) : row);
+                cell.removeFromTop (16);                 // gap for knob name
+                ks[i]->setBounds (cell.reduced (6, 2));
+            }
+        };
+        place (inner.removeFromTop (rowH), r1);
+        place (inner, r2);
+    }
+    else // Edit or Seq: compact pad selector on top, panel below.
+    {
+        auto padArea = area.removeFromTop ((int) (area.getHeight() * (mode == Mode::Edit ? 0.40f : 0.34f)));
+        layoutPadGrid (padArea, 4, 4, 5);
+        area.removeFromTop (8);
+
+        if (mode == Mode::Edit)
+        {
+            editPanelArea = area;
+            auto inner = area.reduced (10, 8);
+            editLabel.setBounds (inner.removeFromTop (18));
+            inner.removeFromTop (2);
+            waveform.setBounds (inner.removeFromTop (60));
+            inner.removeFromTop (8);
+            editCtrlArea = inner;                        // labels drawn in paint
+
+            const int labelW = 64;
+            auto ctrlRow = [&inner, labelW] (int h) { auto r = inner.removeFromTop (h); r.removeFromLeft (labelW); return r; };
+            pitchSlider.setBounds (ctrlRow (26)); inner.removeFromTop (4);
+            volSlider.setBounds   (ctrlRow (26)); inner.removeFromTop (4);
+            startSlider.setBounds (ctrlRow (26)); inner.removeFromTop (4);
+            endSlider.setBounds   (ctrlRow (26)); inner.removeFromTop (6);
+            chokeSlider.setBounds (ctrlRow (26)); inner.removeFromTop (6);
+            {
+                auto rr = inner.removeFromTop (30);
+                reverseButton.setBounds (rr.removeFromLeft (rr.getWidth() / 2).reduced (3, 0));
+                loopButton.setBounds (rr.reduced (3, 0));
+            }
+        }
+        else // Seq
+        {
+            seqPanelArea = area;
+            auto inner = area.reduced (10, 8);
+            inner.removeFromTop (18);                     // title drawn in paint
+            auto bottom = inner.removeFromBottom (30);
+            bpmSlider.setBounds (bottom.removeFromLeft ((int) (bottom.getWidth() * 0.66f)).reduced (2, 0));
+            clearButton.setBounds (bottom.reduced (3, 0));
+            inner.removeFromBottom (8);
+
+            // Keep the step pad roughly square — cap its height, top-aligned.
+            auto steps = inner.removeFromTop (juce::jmin (inner.getHeight(), 170));
+            const int rowH = steps.getHeight() / 2;
+            for (int r = 0; r < 2; ++r)
+            {
+                auto row = (r == 0 ? steps.removeFromTop (rowH) : steps);
+                const int w = row.getWidth() / 8;
+                for (int c = 0; c < 8; ++c)
+                {
+                    const int idx = r * 8 + c;
+                    stepButtons[idx]->setBounds ((c < 7 ? row.removeFromLeft (w) : row).reduced (3));
+                }
+            }
+        }
+    }
+}
+
 void MainComponent::padClicked (int index)
 {
-    if (loadMode || ! padHasSample[(size_t) index])
+    if (loadArmed)
     {
+        loadArmed = false;
+        loadButton.setToggleState (false, juce::dontSendNotification);
         openChooserForPad (index);
         return;
     }
-    engine.postNoteOn (index);
-    selectPad (index);
+
+    if (padHasSample[(size_t) index])
+        engine.postNoteOn (index);
+    else
+        status.setText ("Empty pad — press LOAD, then tap to load a sample", juce::dontSendNotification);
+
+    selectPad (index);   // selection drives EDIT and SEC
 }
 
 void MainComponent::stepClicked (int step)
@@ -436,7 +565,10 @@ void MainComponent::selectPad (int index)
     updateControlsFromPad (index);
     waveform.setSample (uiSample[(size_t) index]);
     waveform.setTrim (padStart01[(size_t) index], padEnd01[(size_t) index]);
-    editLabel.setText ("Editing pad " + juce::String (index + 1), juce::dontSendNotification);
+    const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
+    editLabel.setText ("PAD " + juce::String (index + 1)
+                       + (padName[(size_t) index].isNotEmpty() ? "  " + dot + "  " + padName[(size_t) index] : juce::String()),
+                       juce::dontSendNotification);
     for (int i = 0; i < kNumPads; ++i) refreshPad (i);
 }
 

@@ -29,6 +29,9 @@ public:
 private:
     void timerCallback() override;
 
+    enum class Mode { Perform, Edit, Seq, Fx };
+    void setMode (Mode m);
+
     void padClicked (int index);
     void stepClicked (int step);
     void openChooserForPad (int index);
@@ -38,6 +41,7 @@ private:
     void assignSampleToPad (int index, SampleBuffer::Ptr sb, const juce::String& name = {});
     void toggleRecording();
     int  firstEmptyPad() const;
+    void layoutPadGrid (juce::Rectangle<int> area, int cols, int rows, int gap);
 
     static constexpr int kNumPads  = AudioEngine::kNumPads;    // 16
     static constexpr int kNumSteps = AudioEngine::kNumSteps;   // 16
@@ -47,8 +51,9 @@ private:
 
     juce::OwnedArray<juce::TextButton> pads;
     juce::OwnedArray<juce::TextButton> stepButtons;
+    juce::OwnedArray<juce::TextButton> tabButtons;   // TOCAR / EDITAR / SEC / FX
 
-    juce::TextButton loadButton { "REASSIGN" };
+    juce::TextButton loadButton { "LOAD" };
     juce::TextButton testButton { "TEST" };
     juce::TextButton recButton  { "REC" };
     juce::TextButton playButton { "PLAY" };
@@ -84,10 +89,11 @@ private:
     std::array<float, kNumPads> padFlash {};   // 1.0 on trigger, decays -> lit feedback
     // Chassis layout regions (set in resized(), drawn in paint()).
     juce::Rectangle<int> headerArea, screenBezel, fxPanelArea, seqPanelArea,
-                         editPanelArea;
+                         editPanelArea, tabBarArea, editCtrlArea;
 
+    Mode mode { Mode::Perform };
     int  selectedPad   = -1;
-    bool loadMode      = false;
+    bool loadArmed     = false;
     bool recordingActive = false;
     int  recordingSlot = -1;
     int  lastPlayStep  = -1;
