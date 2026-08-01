@@ -157,6 +157,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     //     neutral, so the default signal path is untouched (a bug here must
     //     never silence the whole output).
     {
+        const int   outCh = out.getNumChannels();
         const int   ft   = fxType.load   (std::memory_order_relaxed);
         const float cut  = fxCutoff.load (std::memory_order_relaxed);
         const float reso = fxReso.load   (std::memory_order_relaxed);
@@ -165,7 +166,6 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         const bool filterActive = ! (ft == 0 && cut >= 19000.0f && reso <= 0.72f);
         if (filterActive)
         {
-            const int outCh = out.getNumChannels();
             juce::dsp::AudioBlock<float> block (out.getArrayOfWritePointers(), (size_t) outCh,
                                                 (size_t) startSample, (size_t) numSamples);
             masterFilter.setType (ft == 0 ? juce::dsp::StateVariableTPTFilterType::lowpass
