@@ -62,6 +62,7 @@ void AudioEngine::triggerPad (int slot) noexcept
     if (en <= 0 || en > len) en = len;
     if (st < 0 || st >= en)  st = 0;
 
+    triggeredMask.fetch_or ((std::uint32_t) (1u << slot), std::memory_order_relaxed);
     voices[(size_t) slot].start (slot,
                                  padPitch[(size_t) slot].load (std::memory_order_relaxed),
                                  padGain[(size_t) slot].load (std::memory_order_relaxed),

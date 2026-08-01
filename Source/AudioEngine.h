@@ -61,6 +61,9 @@ public:
     void clearPattern() noexcept;
     int  getPlayStep() const noexcept { return playStep.load (std::memory_order_relaxed); }
 
+    // UI feedback: bitmask of pads triggered since the last call (taps + sequencer).
+    std::uint32_t fetchTriggered() noexcept { return triggeredMask.exchange (0, std::memory_order_relaxed); }
+
     // --- Master FX: filter + drive (message thread setters) ---
     void setFxType   (int t)     noexcept { fxType.store   (t, std::memory_order_relaxed); }   // 0 LPF, 1 HPF
     void setFxCutoff (float hz)  noexcept { fxCutoff.store (hz, std::memory_order_relaxed); }
@@ -137,6 +140,7 @@ private:
     std::atomic<double> bpm { 120.0 };
     std::array<std::atomic<std::uint16_t>, kNumSteps> stepMask {};
     std::atomic<int>    playStep { -1 };
+    std::atomic<std::uint32_t> triggeredMask { 0 };   // pads triggered, read by UI
     double stepAccum = 0.0;      // audio-thread only
     int    currentStep = 0;      // audio-thread only
     bool   wasPlaying = false;   // audio-thread only

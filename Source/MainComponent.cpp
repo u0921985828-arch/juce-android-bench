@@ -22,8 +22,9 @@ MainComponent::MainComponent()
     setLookAndFeel (&lnf);
     addAndMakeVisible (spectrum);
 
-    // 1 input (mic, for recording) + 2 outputs. Requests RECORD_AUDIO on Android.
-    setAudioChannels (1, 2);
+    // Output only at startup so the app always makes sound; the mic input is
+    // opened on demand when recording (avoids risking output on a denied perm).
+    setAudioChannels (0, 2);
 
     padGain.fill (0.85f);
     padEnd01.fill (1.0f);
@@ -335,8 +336,10 @@ void MainComponent::refreshPad (int index)
 {
     if (auto* p = pads[index])
     {
-        auto base = padHasSample[(size_t) index] ? kPadLoaded : kPadEmpty;
-        if (index == selectedPad) base = base.brighter (0.4f);
+        auto base = padHasSample[(size_t) index] ? kPadLoaded.withBrightness (0.55f) : kPadEmpty;
+        if (index == selectedPad) base = base.brighter (0.25f);
+        const float f = padFlash[(size_t) index];
+        if (f > 0.0f) base = base.interpolatedWith (ShardColours::amber, juce::jlimit (0.0f, 1.0f, f));
         p->setColour (juce::TextButton::buttonColourId, base);
     }
 }
@@ -416,6 +419,7 @@ void MainComponent::toggleRecording()
         int slot = (selectedPad >= 0) ? selectedPad : firstEmptyPad();
         if (slot < 0) slot = 0;
         recordingSlot = slot;
+        setAudioChannels (1, 2);          // open mic input (requests RECORD_AUDIO on Android)
         engine.startRecording (slot);
         recordingActive = true;
         styleButton (recButton, kRec);
@@ -426,6 +430,7 @@ void MainComponent::toggleRecording()
     {
         recordingActive = false;
         auto sb = engine.finishRecording();
+        setAudioChannels (0, 2);          // release the mic input, back to output-only
         styleButton (recButton, juce::Colour (0xff394150));
         recButton.setButtonText ("REC");
         if (sb != nullptr)
@@ -452,6 +457,22 @@ void MainComponent::timerCallback()
     spectrum.setReadout (rd);
     engine.copyScope (scopeTmp, 1024);
     spectrum.setSamples (scopeTmp, 1024);
+
+    // Pad trigger feedback (taps + sequencer): flash then decay.
+    const std::uint32_t trig = engine.fetchTriggered();
+    bool anyFlash = false;
+    for (int i = 0; i < kNumPads; ++i)
+    {
+        if ((trig & (std::uint32_t) (1u << i)) != 0) padFlash[(size_t) i] = 1.0f;
+        if (padFlash[(size_t) i] > 0.0f)
+        {
+            padFlash[(size_t) i] *= 0.8f;
+            if (padFlash[(size_t) i] < 0.02f) padFlash[(size_t) i] = 0.0f;
+            refreshPad (i);
+            anyFlash = true;
+        }
+    }
+    juce::ignoreUnused (anyFlash);
 
     // Sequencer step colours + playhead (reuse ps from above).
     for (int s = 0; s < kNumSteps; ++s)

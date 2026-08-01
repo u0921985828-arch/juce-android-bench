@@ -80,6 +80,7 @@ private:
     // Pattern mirror [step][pad] for the sequencer UI.
     std::array<std::array<bool, kNumPads>, kNumSteps> pattern {};
 
+    std::array<float, kNumPads> padFlash {};   // 1.0 on trigger, decays -> lit feedback
     int  selectedPad   = -1;
     bool loadMode      = false;
     bool recordingActive = false;
