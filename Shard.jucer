@@ -12,6 +12,7 @@
       <FILE id="srcEcpp" name="AudioEngine.cpp"   compile="1" resource="0" file="Source/AudioEngine.cpp"/>
       <FILE id="srcEh"   name="AudioEngine.h"     compile="0" resource="0" file="Source/AudioEngine.h"/>
       <FILE id="srcVh"   name="Voice.h"           compile="0" resource="0" file="Source/Voice.h"/>
+      <FILE id="srcPbh"  name="PadButton.h"       compile="0" resource="0" file="Source/PadButton.h"/>
       <FILE id="srcSbh"  name="SampleBuffer.h"    compile="0" resource="0" file="Source/SampleBuffer.h"/>
       <FILE id="srcCfh"  name="CommandFifo.h"     compile="0" resource="0" file="Source/CommandFifo.h"/>
       <FILE id="srcWfh"  name="WaveformDisplay.h" compile="0" resource="0" file="Source/WaveformDisplay.h"/>

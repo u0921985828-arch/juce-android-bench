@@ -6,6 +6,7 @@
 #include "WaveformDisplay.h"
 #include "SpectrumDisplay.h"
 #include "ShardLookAndFeel.h"
+#include "PadButton.h"
 
 // ============================================================================
 //  MainComponent — Shard UI (P1): 16-pad matrix, per-pad controls (pitch, vol,
@@ -49,7 +50,7 @@ private:
     AudioEngine  engine;
     SampleLoader loader { engine };
 
-    juce::OwnedArray<juce::TextButton> pads;
+    juce::OwnedArray<PadButton> pads;
     juce::OwnedArray<juce::TextButton> stepButtons;
     juce::OwnedArray<juce::TextButton> tabButtons;   // TOCAR / EDITAR / SEC / FX
 

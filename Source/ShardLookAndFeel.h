@@ -34,6 +34,9 @@ namespace ShardColours
     const juce::Colour amber      { 0xff4fa3ff };   // (accent blue) — name kept for compat
     const juce::Colour amberBright { 0xff7dbcff };
     const juce::Colour amberDim   { 0xff2f7ad1 };
+    const juce::Colour accent      { 0xff4fa3ff };   // preferred names
+    const juce::Colour accentBright { 0xff7dbcff };
+    const juce::Colour accentDim   { 0xff2f7ad1 };
     const juce::Colour red        { 0xffc1123b };
     const juce::Colour ink        { 0xff0d2438 };   // primary text on light
     const juce::Colour inkDim     { 0xff3f6a8f };   // secondary text

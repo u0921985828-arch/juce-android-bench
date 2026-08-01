@@ -32,8 +32,7 @@ MainComponent::MainComponent()
 
     for (int i = 0; i < kNumPads; ++i)
     {
-        auto* p = new juce::TextButton (juce::String (i + 1));
-        p->getProperties().set ("pad", true);
+        auto* p = new PadButton (i);
         p->onClick = [this, i] { padClicked (i); };
         addAndMakeVisible (p);
         pads.add (p);
@@ -547,15 +546,8 @@ void MainComponent::refreshPad (int index)
 {
     if (auto* p = pads[index])
     {
-        const bool has = padHasSample[(size_t) index];
-        auto base = has ? ShardColours::padTop : ShardColours::padBg2;
-        if (index == selectedPad) base = base.darker (0.06f);
-        const float f = padFlash[(size_t) index];
-        if (f > 0.0f) base = base.interpolatedWith (ShardColours::amber, juce::jlimit (0.0f, 1.0f, f));
-        p->setColour (juce::TextButton::buttonColourId, base);
-        p->setColour (juce::TextButton::textColourOffId,
-                      has ? ShardColours::amberDim : ShardColours::inkDim.withAlpha (0.55f));
-        p->getProperties().set ("fn", has ? padName[(size_t) index] : juce::String());
+        p->setSelected (index == selectedPad);
+        p->setFlash (padFlash[(size_t) index]);
     }
 }
 
@@ -601,6 +593,8 @@ void MainComponent::assignSampleToPad (int index, SampleBuffer::Ptr sb, const ju
     engine.setPadLoop    (index, padLoop[(size_t) index]);
     engine.setPadReverse (index, padReverse[(size_t) index]);
     engine.setPadChoke   (index, padChokeUI[(size_t) index]);
+
+    if (auto* p = pads[index]) p->setSampleInfo (uiSample[(size_t) index], padName[(size_t) index]);
 
     selectPad (index);
 }
