@@ -21,7 +21,6 @@ namespace
 MainComponent::MainComponent()
 {
     setLookAndFeel (&lnf);
-    addAndMakeVisible (spectrum);
 
     // Output only at startup so the app always makes sound; the mic input is
     // opened on demand when recording (avoids risking output on a denied perm).
@@ -84,8 +83,10 @@ MainComponent::MainComponent()
     addAndMakeVisible (recButton);
 
     playButton.setClickingTogglesState (true);
-    styleButton (playButton, kKey);
-    playButton.setColour (juce::TextButton::buttonOnColourId, kPadLoaded);
+    styleButton (playButton, kAccent);                   // PLAY is the accent hero button
+    playButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+    playButton.setColour (juce::TextButton::textColourOnId,  juce::Colours::white);
+    playButton.setColour (juce::TextButton::buttonOnColourId, ShardColours::accentDim);
     playButton.onClick = [this]
     {
         const bool on = playButton.getToggleState();
@@ -236,7 +237,7 @@ void MainComponent::setMode (Mode m)
     for (auto* p : pads) p->setVisible (! fx);          // pads used in perform/edit/seq
     for (auto* s : stepButtons) s->setVisible (seq);
 
-    waveform.setVisible (edit);
+    waveform.setVisible (true);                          // hero screen, all modes
     editLabel.setVisible (edit);
     pitchSlider.setVisible (edit); volSlider.setVisible (edit);
     startSlider.setVisible (edit); endSlider.setVisible (edit);
@@ -402,8 +403,8 @@ void MainComponent::resized()
     headerArea = area.removeFromTop (30);
     area.removeFromTop (8);
 
-    screenBezel = area.removeFromTop (82);
-    spectrum.setBounds (screenBezel);
+    screenBezel = area.removeFromTop (96);
+    waveform.setBounds (screenBezel);
     area.removeFromTop (8);
 
     // Tab bar.
@@ -416,13 +417,13 @@ void MainComponent::resized()
     }
     area.removeFromTop (6);
 
-    // Transport: LOAD | PLAY | REC (always).
+    // Transport: LOAD | REC | PLAY (PLAY is the wide accent hero).
     {
-        auto row = area.removeFromTop (38);
-        const int w = row.getWidth() / 3;
-        loadButton.setBounds (row.removeFromLeft (w).reduced (2));
-        playButton.setBounds (row.removeFromLeft (w).reduced (2));
-        recButton.setBounds  (row.reduced (2));
+        auto row = area.removeFromTop (40);
+        const int u = row.getWidth() / 4;
+        loadButton.setBounds (row.removeFromLeft (u).reduced (2));
+        recButton.setBounds  (row.removeFromLeft (u).reduced (2));
+        playButton.setBounds (row.reduced (2));
     }
     area.removeFromTop (8);
 
@@ -471,8 +472,6 @@ void MainComponent::resized()
             editPanelArea = area;
             auto inner = area.reduced (10, 8);
             editLabel.setBounds (inner.removeFromTop (18));
-            inner.removeFromTop (2);
-            waveform.setBounds (inner.removeFromTop (60));
             inner.removeFromTop (8);
             editCtrlArea = inner;                        // labels drawn in paint
 
@@ -557,6 +556,16 @@ void MainComponent::selectPad (int index)
     updateControlsFromPad (index);
     waveform.setSample (uiSample[(size_t) index]);
     waveform.setTrim (padStart01[(size_t) index], padEnd01[(size_t) index]);
+    if (auto sb = uiSample[(size_t) index])
+    {
+        const double sr = sb->sourceSampleRate;
+        const double secs = sr > 0.0 ? (double) sb->buffer.getNumSamples() / sr : 0.0;
+        const juce::String tag = juce::String (index + 1).paddedLeft ('0', 2)
+                               + (padName[(size_t) index].isNotEmpty() ? "  " + padName[(size_t) index].toUpperCase() : juce::String());
+        waveform.setInfo (tag, sr, secs, sb->buffer.getNumChannels());
+    }
+    else
+        waveform.setInfo ("PAD " + juce::String (index + 1), 0.0, 0.0, 0);
     const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
     editLabel.setText ("PAD " + juce::String (index + 1)
                        + (padName[(size_t) index].isNotEmpty() ? "  " + dot + "  " + padName[(size_t) index] : juce::String()),
@@ -674,15 +683,7 @@ void MainComponent::timerCallback()
 {
     engine.collectRetiredSamples();
 
-    // Feed the spectrum screen + readout.
-    juce::String rd = (selectedPad >= 0) ? ("PAD " + juce::String (selectedPad + 1)) : juce::String ("SHARD");
     const int ps = engine.getPlayStep();
-    if (engine.isPlaying() && ps >= 0) rd += "   STEP " + juce::String (ps + 1);
-    if (recordingActive)               rd = "REC " + juce::String (engine.getRecordSeconds(), 1) + "s";
-    spectrum.setReadout (rd);
-    spectrum.setBpm (bpmSlider.getValue());
-    engine.copyScope (scopeTmp, 1024);
-    spectrum.setSamples (scopeTmp, 1024);
 
     // Pad trigger feedback (taps + sequencer): flash then decay.
     const std::uint32_t trig = engine.fetchTriggered();

@@ -2,11 +2,12 @@
 
 #include <JuceHeader.h>
 #include "SampleBuffer.h"
+#include "ShardLookAndFeel.h"
 
 // ============================================================================
-//  WaveformDisplay — draws the selected pad's sample (min/max per column) and
-//  the trim window (start/end handles). Message-thread only; holds a
-//  ref-counted copy of the buffer so it stays alive while displayed.
+//  WaveformDisplay — the hero LCD screen: the selected pad's sample drawn as a
+//  filled min/max envelope on a dark panel, with a tick ruler, blue trim
+//  handles and name / sample-rate readouts. Message-thread only.
 // ============================================================================
 class WaveformDisplay : public juce::Component
 {
@@ -18,15 +19,19 @@ public:
         repaint();
     }
 
-    void clear()
+    void setInfo (const juce::String& name, double sampleRate, double seconds, int channels)
     {
-        sample = nullptr;
-        mins.clearQuick();
-        maxs.clearQuick();
+        infoName = name;
+        infoRight = (sampleRate > 0.0)
+                      ? juce::String (sampleRate / 1000.0, 1) + "k " + juce::String (juce::CharPointer_UTF8 ("\xc2\xb7"))
+                        + (channels > 1 ? " STEREO " : " MONO ") + juce::String (juce::CharPointer_UTF8 ("\xc2\xb7")) + " "
+                        + juce::String (seconds, 2) + "s"
+                      : juce::String();
         repaint();
     }
 
-    // Normalised trim positions (0..1).
+    void clear() { sample = nullptr; mins.clearQuick(); maxs.clearQuick(); infoName = {}; infoRight = {}; repaint(); }
+
     void setTrim (float startNorm, float endNorm)
     {
         start01 = juce::jlimit (0.0f, 1.0f, startNorm);
@@ -36,37 +41,98 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        g.fillAll (juce::Colour (0xff11141a));
         auto b = getLocalBounds().toFloat();
+
+        // LCD panel.
+        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff112232), b.getCentreX(), b.getY(),
+                                                 ShardColours::screenBg, b.getCentreX(), b.getBottom(), false));
+        g.fillRoundedRectangle (b, 2.0f);
+
+        const auto lcdFg = ShardColours::lcdFg, lcdDim = ShardColours::lcdDim, accent = ShardColours::accent;
 
         if (sample == nullptr || mins.isEmpty())
         {
-            g.setColour (juce::Colours::white.withAlpha (0.35f));
-            g.drawText ("select a pad to see its waveform", getLocalBounds(),
-                        juce::Justification::centred);
+            g.setColour (lcdDim);
+            g.setFont (ShardColours::monoFont (11.0f, true).withExtraKerningFactor (0.18f));
+            g.drawText ("TAP A PAD TO LOAD ITS WAVEFORM", getLocalBounds(), juce::Justification::centred);
+            g.setColour (ShardColours::knobEdge.withAlpha (0.25f));
+            g.drawRoundedRectangle (b.reduced (1.0f), 2.0f, 1.2f);
             return;
         }
 
+        // Waveform region (between readout rows).
+        auto wave = b.reduced (10.0f, 0.0f);
+        wave.removeFromTop (22.0f);
+        wave.removeFromBottom (20.0f);
+        const float midY = wave.getCentreY();
+        const float h    = wave.getHeight() * 0.5f - 2.0f;
         const int   W    = mins.size();
-        const float midY = b.getCentreY();
-        const float h    = b.getHeight() * 0.48f;
 
-        g.setColour (juce::Colour (0xff1fb6a6));
+        // baseline
+        g.setColour (accent.withAlpha (0.28f));
+        g.fillRect (wave.getX(), midY - 0.5f, wave.getWidth(), 1.0f);
+
+        // filled envelope
+        juce::Path top;
         for (int x = 0; x < W; ++x)
         {
-            const float px = b.getX() + (float) x / (float) W * b.getWidth();
-            g.drawLine (px, midY - maxs[x] * h, px, midY - mins[x] * h, 1.0f);
+            const float px = wave.getX() + (float) x / (float) (W - 1) * wave.getWidth();
+            (x == 0 ? top.startNewSubPath (px, midY - maxs[x] * h) : top.lineTo (px, midY - maxs[x] * h));
+        }
+        for (int x = W - 1; x >= 0; --x)
+        {
+            const float px = wave.getX() + (float) x / (float) (W - 1) * wave.getWidth();
+            top.lineTo (px, midY - mins[x] * h);
+        }
+        top.closeSubPath();
+        g.setColour (accent.withAlpha (0.18f));
+        g.fillPath (top);
+        g.setColour (accent);
+        g.strokePath (top, juce::PathStrokeType (1.3f));
+
+        // dim trimmed-out regions
+        const float sx = wave.getX() + start01 * wave.getWidth();
+        const float ex = wave.getX() + end01   * wave.getWidth();
+        g.setColour (ShardColours::screenBg.withAlpha (0.62f));
+        g.fillRect (wave.getX(), wave.getY(), sx - wave.getX(), wave.getHeight());
+        g.fillRect (ex, wave.getY(), wave.getRight() - ex, wave.getHeight());
+
+        // trim handles
+        g.setColour (accent);
+        for (float hx : { sx, ex })
+        {
+            g.drawLine (hx, wave.getY(), hx, wave.getBottom(), 1.6f);
+            g.fillRect (hx - 3.0f, wave.getY(), 6.0f, 5.0f);
+            g.fillRect (hx - 3.0f, wave.getBottom() - 5.0f, 6.0f, 5.0f);
         }
 
-        // Dim the trimmed-out regions + draw the handles.
-        const float sx = b.getX() + start01 * b.getWidth();
-        const float ex = b.getX() + end01   * b.getWidth();
-        g.setColour (juce::Colours::black.withAlpha (0.45f));
-        g.fillRect (b.getX(), b.getY(), sx - b.getX(), b.getHeight());
-        g.fillRect (ex, b.getY(), b.getRight() - ex, b.getHeight());
-        g.setColour (juce::Colour (0xffe0a13a));
-        g.drawLine (sx, b.getY(), sx, b.getBottom(), 2.0f);
-        g.drawLine (ex, b.getY(), ex, b.getBottom(), 2.0f);
+        // tick ruler
+        g.setColour (lcdDim.withAlpha (0.45f));
+        for (int k = 0; k <= 32; ++k)
+        {
+            const float tx = wave.getX() + wave.getWidth() * (float) k / 32.0f;
+            const float th = (k % 4 == 0) ? 4.0f : 2.0f;
+            g.fillRect (tx, wave.getBottom() + 6.0f, 1.0f, th);
+        }
+
+        // readouts
+        g.setFont (ShardColours::monoFont (10.5f, true).withExtraKerningFactor (0.08f));
+        auto top2 = b.reduced (11.0f, 7.0f).removeFromTop (13.0f);
+        g.setColour (accent);
+        g.fillEllipse (top2.getX(), top2.getCentreY() - 3.0f, 6.0f, 6.0f);
+        g.setColour (lcdFg);
+        g.drawText (infoName, top2.withTrimmedLeft (12), juce::Justification::topLeft);
+        g.setColour (lcdDim);
+        g.drawText (infoRight, top2, juce::Justification::topRight);
+
+        auto bot = b.reduced (11.0f, 6.0f).removeFromBottom (12.0f);
+        g.setColour (lcdDim);
+        g.setFont (ShardColours::monoFont (9.5f, true));
+        g.drawText ("TRIM " + juce::String (start01, 2) + juce::String (juce::CharPointer_UTF8 (" \xe2\x86\x92 ")) + juce::String (end01, 2),
+                    bot, juce::Justification::bottomLeft);
+
+        g.setColour (ShardColours::knobEdge.withAlpha (0.25f));
+        g.drawRoundedRectangle (b.reduced (1.0f), 2.0f, 1.2f);
     }
 
     void resized() override { computeMinMax(); repaint(); }
@@ -74,15 +140,13 @@ public:
 private:
     void computeMinMax()
     {
-        mins.clearQuick();
-        maxs.clearQuick();
+        mins.clearQuick(); maxs.clearQuick();
         if (sample == nullptr) return;
-
         auto& buf = sample->buffer;
         const int len = buf.getNumSamples();
         if (len < 1 || buf.getNumChannels() < 1) return;
 
-        const int W = juce::jmax (1, getWidth() > 0 ? getWidth() : 320);
+        const int W = juce::jmax (1, getWidth() > 0 ? getWidth() - 20 : 320);
         const float* d = buf.getReadPointer (0);
         for (int x = 0; x < W; ++x)
         {
@@ -92,12 +156,13 @@ private:
             if (e > len) e = len;
             float mn = 1.0f, mx = -1.0f;
             for (int i = a; i < e; ++i) { const float s = d[i]; mn = juce::jmin (mn, s); mx = juce::jmax (mx, s); }
-            mins.add (mn);
-            maxs.add (mx);
+            mins.add (juce::jlimit (-1.0f, 1.0f, mn));
+            maxs.add (juce::jlimit (-1.0f, 1.0f, mx));
         }
     }
 
     SampleBuffer::Ptr sample;
     juce::Array<float> mins, maxs;
     float start01 = 0.0f, end01 = 1.0f;
+    juce::String infoName, infoRight;
 };
