@@ -4,81 +4,126 @@
 #include "ShardLookAndFeel.h"
 
 // ============================================================================
-//  SpectrumDisplay — the "screen": a real-time FFT spectrum on a dark phosphor
-//  panel. Fed mono master samples via setSamples() (message thread), does its
-//  own FFT, and draws amber bars with a decay. Cosmetic (benign data race ok).
+//  SpectrumDisplay — the "screen": a real-time waveform OSCILLOSCOPE on a dark
+//  amber-phosphor LCD panel (flat baseline when idle, the output waveform
+//  bulges in when a pad plays). Fed post-FX mono master samples via
+//  setSamples() from the message thread. Cosmetic (benign data race ok).
+//
+//  Chrome mirrors a hardware sampler display: corner labels, centred BPM, a
+//  faint tick ruler and a bottom status line. Our own palette and layout.
 // ============================================================================
 class SpectrumDisplay : public juce::Component
 {
 public:
-    SpectrumDisplay()
-        : fft (fftOrder),
-          window ((size_t) fftSize, juce::dsp::WindowingFunction<float>::hann)
-    {}
+    SpectrumDisplay() = default;
 
     void setSamples (const float* src, int n)
     {
-        const int c = juce::jmin (n, fftSize);
-        for (int i = 0; i < c; ++i)        fftData[i] = src[i];
-        for (int i = c; i < 2 * fftSize; ++i) fftData[i] = 0.0f;
-
-        window.multiplyWithWindowingTable (fftData, (size_t) fftSize);
-        fft.performFrequencyOnlyForwardTransform (fftData);
-
-        for (int i = 0; i < numBars; ++i)
+        count = juce::jmin (n, kCap);
+        float pk = 0.0f;
+        for (int i = 0; i < count; ++i)
         {
-            const float prop = (float) i / (float) numBars;
-            const int   bin  = juce::jlimit (1, fftSize / 2 - 1,
-                                             (int) (std::pow (prop, 2.0f) * (fftSize / 2)));
-            const float db   = juce::Decibels::gainToDecibels (fftData[bin])
-                             - juce::Decibels::gainToDecibels ((float) fftSize);
-            const float norm = juce::jmap (juce::jlimit (-60.0f, 0.0f, db), -60.0f, 0.0f, 0.0f, 1.0f);
-            mags[i] = juce::jmax (norm, mags[i] * 0.82f);   // peak + decay
+            const float s = src[i];
+            buf[i] = s;
+            pk = juce::jmax (pk, std::abs (s));
         }
+        peak = juce::jmax (peak * 0.72f, pk);   // meter with a soft decay
         repaint();
     }
 
     void setReadout (const juce::String& s) { readout = s; repaint(); }
+    void setBpm     (double b)              { bpm = b; }
 
     void paint (juce::Graphics& g) override
     {
         auto b = getLocalBounds().toFloat();
+
+        // Panel + subtle top phosphor glow.
         g.setColour (ShardColours::screenBg);
         g.fillRoundedRectangle (b, 6.0f);
+        juce::ColourGradient glow (ShardColours::amber.withAlpha (0.06f), b.getCentreX(), b.getY(),
+                                   ShardColours::screenBg.withAlpha (0.0f), b.getCentreX(), b.getY() + b.getHeight() * 0.6f, false);
+        g.setGradientFill (glow);
+        g.fillRoundedRectangle (b, 6.0f);
 
-        // faint baseline grid
-        g.setColour (ShardColours::amber.withAlpha (0.08f));
-        for (int k = 1; k < 4; ++k)
+        const juce::Font lcd (juce::FontOptions (11.0f, juce::Font::plain).withStyle ("Bold").withName (juce::Font::getDefaultMonospacedFontName()));
+        g.setFont (lcd.withExtraKerningFactor (0.08f));
+
+        // Corner + centre labels (top row).
+        auto top = b.reduced (10.0f, 6.0f).removeFromTop (13.0f);
+        g.setColour (ShardColours::amber.withAlpha (0.85f));
+        g.drawText (readout, top, juce::Justification::topLeft);
+        g.drawText ("BPM:" + juce::String (bpm, 1), top, juce::Justification::topRight);
+        g.setColour (ShardColours::amber.withAlpha (0.5f));
+        g.drawText (juce::String ("OUT ") + peakDb(), top, juce::Justification::centredTop);
+
+        // Waveform area (between the top labels and the bottom status line).
+        auto wave = b.reduced (8.0f, 0.0f);
+        wave.removeFromTop (22.0f);
+        wave.removeFromBottom (20.0f);
+        const float cy = wave.getCentreY();
+        const float halfH = wave.getHeight() * 0.5f - 2.0f;
+
+        // Flat baseline (shows through when idle).
+        g.setColour (ShardColours::amber.withAlpha (0.28f));
+        g.fillRect (wave.getX(), cy - 0.6f, wave.getWidth(), 1.2f);
+
+        // Min/max waveform envelope, one vertical segment per pixel column.
+        if (count > 1)
         {
-            const float yy = b.getY() + b.getHeight() * (float) k / 4.0f;
-            g.drawHorizontalLine ((int) yy, b.getX() + 4.0f, b.getRight() - 4.0f);
+            const int cols = juce::jmax (1, (int) wave.getWidth());
+            const float gain = 2.6f;   // lift quiet output into view
+            for (int x = 0; x < cols; ++x)
+            {
+                const int i0 = (int) ((float)  x      / (float) cols * (float) count);
+                const int i1 = (int) ((float) (x + 1) / (float) cols * (float) count);
+                float mn = 0.0f, mx = 0.0f;
+                for (int i = i0; i < i1 && i < count; ++i)
+                {
+                    mn = juce::jmin (mn, buf[i]);
+                    mx = juce::jmax (mx, buf[i]);
+                }
+                const float yTop = cy - juce::jlimit (-halfH, halfH, mx * gain * halfH);
+                const float yBot = cy - juce::jlimit (-halfH, halfH, mn * gain * halfH);
+                const float amp  = juce::jlimit (0.0f, 1.0f, (mx - mn) * gain);
+                const float fx   = wave.getX() + (float) x;
+                g.setColour (ShardColours::amber.withAlpha (0.35f + 0.6f * amp));
+                g.fillRect (fx, yTop, 1.0f, juce::jmax (1.0f, yBot - yTop));
+            }
         }
 
-        const float bw = (b.getWidth() - 8.0f) / (float) numBars;
-        for (int i = 0; i < numBars; ++i)
+        // Bottom: faint tick ruler + status line.
+        const float ry = b.getBottom() - 17.0f;
+        g.setColour (ShardColours::amber.withAlpha (0.14f));
+        for (int k = 0; k <= 32; ++k)
         {
-            const float bh = mags[i] * (b.getHeight() - 22.0f);
-            const float bx = b.getX() + 4.0f + i * bw;
-            g.setColour (ShardColours::amber.withAlpha (0.35f + 0.55f * mags[i]));
-            g.fillRect (bx + 0.5f, b.getBottom() - 6.0f - bh, bw - 1.0f, bh);
+            const float tx = wave.getX() + wave.getWidth() * (float) k / 32.0f;
+            const float th = (k % 4 == 0) ? 4.0f : 2.0f;
+            g.fillRect (tx, ry - th, 1.0f, th);
         }
 
-        g.setColour (ShardColours::amber.withAlpha (0.9f));
-        g.setFont (juce::Font (juce::FontOptions (12.0f)).withExtraKerningFactor (0.15f));
-        g.drawText (readout, getLocalBounds().reduced (10, 6), juce::Justification::topLeft);
+        auto status = b.reduced (10.0f, 5.0f).removeFromBottom (12.0f);
+        g.setColour (ShardColours::amber.withAlpha (0.5f));
+        g.setFont (lcd.withHeight (10.0f));
+        g.drawText ("SCOPE", status, juce::Justification::bottomLeft);
+        g.drawText (peak > 0.0005f ? "SIG" : "--", status, juce::Justification::bottomRight);
 
-        g.setColour (ShardColours::amber.withAlpha (0.25f));
+        // Screen bezel.
+        g.setColour (ShardColours::amber.withAlpha (0.22f));
         g.drawRoundedRectangle (b.reduced (1.0f), 6.0f, 1.4f);
     }
 
 private:
-    static constexpr int fftOrder = 10;
-    static constexpr int fftSize   = 1 << fftOrder;   // 1024
-    static constexpr int numBars   = 56;
+    juce::String peakDb() const
+    {
+        if (peak < 0.0005f) return juce::String ("-inf");
+        return juce::String ((int) juce::Decibels::gainToDecibels (peak)) + "dB";
+    }
 
-    juce::dsp::FFT fft;
-    juce::dsp::WindowingFunction<float> window;
-    float fftData[2 * fftSize] {};
-    float mags[numBars] {};
+    static constexpr int kCap = 1024;
+    float        buf[kCap] {};
+    int          count { 0 };
+    float        peak  { 0.0f };
+    double       bpm   { 120.0 };
     juce::String readout { "SHARD" };
 };

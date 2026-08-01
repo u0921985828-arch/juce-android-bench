@@ -465,6 +465,7 @@ void MainComponent::timerCallback()
     if (engine.isPlaying() && ps >= 0) rd += "   STEP " + juce::String (ps + 1);
     if (recordingActive)               rd = "REC " + juce::String (engine.getRecordSeconds(), 1) + "s";
     spectrum.setReadout (rd);
+    spectrum.setBpm (bpmSlider.getValue());
     engine.copyScope (scopeTmp, 1024);
     spectrum.setSamples (scopeTmp, 1024);
 
