@@ -149,17 +149,15 @@ jobs:
           target: google_apis
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          # NOTE: android-emulator-runner executes each line as its own /bin/sh
+          # command, so every check must be a single line (no multi-line if/fi).
           script: |
             adb install -r ARTiFACTS-debug.apk
             adb shell am start -n com.artifacts.fx404/com.rmsl.juce.JuceActivity
             sleep 12
             adb exec-out screencap -p > screenshot.png
-            if adb logcat -d | grep -q 'FATAL EXCEPTION'; then
-              echo "App crashed on launch"; adb logcat -d | tail -60; exit 1
-            fi
-            adb shell dumpsys activity activities | grep -q 'com.artifacts.fx404' || {
-              echo "Activity not running"; exit 1; }
-            echo "Launched OK"
+            adb logcat -d | grep -q 'FATAL EXCEPTION' && { echo "App crashed on launch"; adb logcat -d | tail -80; exit 1; } || echo "No FATAL EXCEPTION"
+            adb shell dumpsys activity activities | grep -q 'com.artifacts.fx404' && echo "Activity running OK" || { echo "Activity not running"; exit 1; }
 
       - uses: actions/upload-artifact@v4
         if: always()
