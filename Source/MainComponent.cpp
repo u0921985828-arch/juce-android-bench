@@ -5,8 +5,9 @@ namespace
     const juce::Colour kPadEmpty  = ShardColours::padTop;
     const juce::Colour kPadLoaded = ShardColours::amber;
     const juce::Colour kAccent    = ShardColours::amber;
-    const juce::Colour kRec       { 0xffd0433a };
-    const juce::Colour kStepOff   = ShardColours::panel;
+    const juce::Colour kRec       = ShardColours::red;
+    const juce::Colour kStepOff   = ShardColours::key;
+    const juce::Colour kKey       = ShardColours::key;
 
     void styleButton (juce::TextButton& b, juce::Colour c)
     {
@@ -53,16 +54,16 @@ MainComponent::MainComponent()
     loadButton.onClick = [this] { loadMode = loadButton.getToggleState(); };
     addAndMakeVisible (loadButton);
 
-    styleButton (testButton, juce::Colour (0xff394150));
+    styleButton (testButton, kKey);
     testButton.onClick = [this] { engine.postTestTone(); status.setText ("Test tone", juce::dontSendNotification); };
     addAndMakeVisible (testButton);
 
-    styleButton (recButton, juce::Colour (0xff394150));
+    styleButton (recButton, kKey);
     recButton.onClick = [this] { toggleRecording(); };
     addAndMakeVisible (recButton);
 
     playButton.setClickingTogglesState (true);
-    styleButton (playButton, juce::Colour (0xff394150));
+    styleButton (playButton, kKey);
     playButton.setColour (juce::TextButton::buttonOnColourId, kPadLoaded);
     playButton.onClick = [this]
     {
@@ -72,7 +73,7 @@ MainComponent::MainComponent()
     };
     addAndMakeVisible (playButton);
 
-    styleButton (clearButton, juce::Colour (0xff394150));
+    styleButton (clearButton, kKey);
     clearButton.onClick = [this]
     {
         engine.clearPattern();
@@ -145,7 +146,7 @@ MainComponent::MainComponent()
 
     // Master FX (filter + drive).
     fxTypeButton.setClickingTogglesState (true);
-    styleButton (fxTypeButton, juce::Colour (0xff394150));
+    styleButton (fxTypeButton, kKey);
     fxTypeButton.setColour (juce::TextButton::buttonOnColourId, kAccent);
     fxTypeButton.onClick = [this]
     {
@@ -226,65 +227,71 @@ void MainComponent::paint (juce::Graphics& g)
 {
     auto full = getLocalBounds().toFloat();
 
-    // 1. Warm chassis: top-lit vertical gradient + edge vignette.
-    g.setGradientFill (juce::ColourGradient (ShardColours::chassisTop, full.getCentreX(), 0.0f,
-                                             ShardColours::chassisBot, full.getCentreX(), full.getHeight(), false));
-    g.fillRect (full);
-    g.setGradientFill (juce::ColourGradient (juce::Colours::transparentBlack, full.getCentreX(), full.getCentreY(),
-                                             juce::Colour (0x55000000), full.getX(), full.getY(), true));
-    g.fillRect (full);
+    // 1. Chassis "unit": rounded grey plate (14px) on a near-black stage.
+    g.fillAll (juce::Colour (0xff0a0a0b));
+    auto unit = full.reduced (3.0f);
+    g.setGradientFill (juce::ColourGradient (ShardColours::chassisTop, unit.getCentreX(), unit.getY(),
+                                             ShardColours::chassisBot, unit.getCentreX(), unit.getBottom(), false));
+    g.fillRoundedRectangle (unit, 14.0f);
+    g.setColour (juce::Colour (0x22ffffff));                       // top edge glint
+    g.drawLine (unit.getX() + 16, unit.getY() + 1.2f, unit.getRight() - 16, unit.getY() + 1.2f, 1.2f);
+    g.setGradientFill (juce::ColourGradient (juce::Colours::transparentBlack, unit.getCentreX(), unit.getCentreY(),
+                                             juce::Colour (0x44000000), unit.getX(), unit.getBottom(), true));
+    g.fillRoundedRectangle (unit, 14.0f);
+    g.setColour (juce::Colour (0xff09090a));
+    g.drawRoundedRectangle (unit, 14.0f, 1.2f);
 
-    // Helper: a raised sub-panel with a bevel (groups controls like hardware).
-    auto panel = [&g] (juce::Rectangle<int> ri, float rad = 9.0f)
+    // Helper: a square raised sub-panel (2px bevel), controls grouped like hardware.
+    auto panel = [&g] (juce::Rectangle<int> ri)
     {
         if (ri.isEmpty()) return;
         auto r = ri.toFloat();
-        g.setColour (ShardColours::panel);
-        g.fillRoundedRectangle (r, rad);
-        g.setColour (ShardColours::panelHi.withAlpha (0.7f));
-        g.drawLine (r.getX() + rad, r.getY() + 0.8f, r.getRight() - rad, r.getY() + 0.8f, 1.0f);
+        g.setColour (ShardColours::panelDark);
+        g.fillRoundedRectangle (r, 2.0f);
+        g.setColour (ShardColours::panelHi.withAlpha (0.55f));
+        g.drawLine (r.getX() + 2, r.getY() + 1.0f, r.getRight() - 2, r.getY() + 1.0f, 1.2f);
         g.setColour (ShardColours::panelLo);
-        g.drawRoundedRectangle (r.reduced (0.5f), rad, 1.0f);
+        g.drawRoundedRectangle (r.reduced (0.5f), 2.0f, 1.4f);
     };
     panel (fxPanelArea);
     panel (seqPanelArea);
     panel (editPanelArea);
 
-    // 2. Recessed screen bezel around the scope.
+    // 2. Recessed LCD bezel around the scope (square).
     if (! screenBezel.isEmpty())
     {
         auto r = screenBezel.toFloat();
-        g.setColour (ShardColours::panelLo);
-        g.fillRoundedRectangle (r.expanded (3.0f), 9.0f);
-        g.setColour (ShardColours::knobEdge.withAlpha (0.5f));
-        g.drawRoundedRectangle (r.expanded (3.0f).reduced (0.5f), 9.0f, 1.0f);
+        g.setColour (ShardColours::padBorder);
+        g.fillRoundedRectangle (r.expanded (3.0f), 3.0f);
+        g.setColour (ShardColours::knobEdge.withAlpha (0.55f));
+        g.drawRoundedRectangle (r.expanded (3.0f).reduced (0.5f), 3.0f, 1.2f);
     }
 
-    // 3. Header: ARTiFACTS wordmark + SHARD model badge.
+    // 3. Header: ARTiFACTS wordmark + SHARD model badge (LCD chip).
     if (! headerArea.isEmpty())
     {
         auto h = headerArea;
-        g.setColour (ShardColours::cream);
-        g.setFont (juce::Font (juce::FontOptions (19.0f, juce::Font::bold)).withExtraKerningFactor (0.14f));
-        g.drawText ("ARTiFACTS", h.getX(), h.getY(), 160, h.getHeight(), juce::Justification::centredLeft);
+        g.setColour (ShardColours::white);
+        g.setFont (ShardColours::displayFont (22.0f).withExtraKerningFactor (0.10f));
+        g.drawText ("ARTiFACTS", h.getX(), h.getY(), 170, h.getHeight(), juce::Justification::centredLeft);
 
-        auto badge = juce::Rectangle<int> (h.getRight() - 158, h.getY() + 2, 158, h.getHeight() - 4);
+        auto badge = juce::Rectangle<int> (h.getRight() - 156, h.getY() + 2, 156, h.getHeight() - 4);
         g.setColour (ShardColours::screenBg);
-        g.fillRoundedRectangle (badge.toFloat(), 5.0f);
-        g.setColour (ShardColours::amberDim.withAlpha (0.85f));
-        g.drawRoundedRectangle (badge.toFloat().reduced (0.5f), 5.0f, 1.0f);
+        g.fillRoundedRectangle (badge.toFloat(), 2.0f);
+        g.setColour (ShardColours::amberDim.withAlpha (0.9f));
+        g.drawRoundedRectangle (badge.toFloat().reduced (0.5f), 2.0f, 1.2f);
         auto bin = badge.reduced (10, 0);
         g.setColour (ShardColours::amber);
-        g.setFont (juce::Font (juce::FontOptions (14.0f, juce::Font::bold)).withExtraKerningFactor (0.24f));
+        g.setFont (ShardColours::monoFont (14.0f, true).withExtraKerningFactor (0.22f));
         g.drawText ("SHARD", bin.removeFromLeft (74), juce::Justification::centredLeft);
-        g.setColour (ShardColours::engrave);
-        g.setFont (juce::Font (juce::FontOptions (8.5f)).withExtraKerningFactor (0.24f));
+        g.setColour (ShardColours::lcdDim);
+        g.setFont (ShardColours::monoFont (8.5f, true).withExtraKerningFactor (0.24f));
         g.drawText ("SAMPLER", bin, juce::Justification::centredRight);
     }
 
     // 4. Knob names above each FX knob.
-    g.setColour (ShardColours::amber.withAlpha (0.72f));
-    g.setFont (juce::Font (juce::FontOptions (9.5f)).withExtraKerningFactor (0.12f));
+    g.setColour (ShardColours::engrave.withAlpha (0.8f));
+    g.setFont (ShardColours::monoFont (9.0f, true).withExtraKerningFactor (0.14f));
     auto name = [&g] (juce::Slider& s, const char* t)
     {
         auto r = s.getBounds();
@@ -294,10 +301,10 @@ void MainComponent::paint (juce::Graphics& g)
     name (dlyTimeSlider, "TIME");  name (dlyFbSlider, "FBK");  name (dlyMixSlider, "MIX");
 
     // 5. Corner screws (chassis structure).
-    const float m = 9.0f;
+    const float m = 13.0f;
     for (auto pt : { juce::Point<float> (m, m), juce::Point<float> (full.getRight() - m, m),
                      juce::Point<float> (m, full.getBottom() - m), juce::Point<float> (full.getRight() - m, full.getBottom() - m) })
-        ShardColours::drawScrew (g, pt.x, pt.y, 5.0f);
+        ShardColours::drawScrew (g, pt.x, pt.y, 4.5f);
 }
 
 void MainComponent::resized()
@@ -415,13 +422,13 @@ void MainComponent::refreshPad (int index)
     if (auto* p = pads[index])
     {
         const bool has = padHasSample[(size_t) index];
-        auto base = has ? ShardColours::padTop.brighter (0.12f) : kPadEmpty;
-        if (index == selectedPad) base = base.brighter (0.18f);
+        auto base = has ? ShardColours::padTop.brighter (0.06f) : ShardColours::padTop.darker (0.18f);
+        if (index == selectedPad) base = base.brighter (0.16f);
         const float f = padFlash[(size_t) index];
         if (f > 0.0f) base = base.interpolatedWith (ShardColours::amber, juce::jlimit (0.0f, 1.0f, f));
         p->setColour (juce::TextButton::buttonColourId, base);
         p->setColour (juce::TextButton::textColourOffId,
-                      has ? ShardColours::amber : ShardColours::cream.withAlpha (0.45f));
+                      has ? ShardColours::amber : ShardColours::amber.withAlpha (0.30f));
     }
 }
 
@@ -522,7 +529,7 @@ void MainComponent::toggleRecording()
         recordingActive = false;
         auto sb = engine.finishRecording();
         setAudioChannels (0, 2);          // release the mic input, back to output-only
-        styleButton (recButton, juce::Colour (0xff394150));
+        styleButton (recButton, kKey);
         recButton.setButtonText ("REC");
         if (sb != nullptr)
         {

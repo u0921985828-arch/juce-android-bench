@@ -38,23 +38,22 @@ public:
     {
         auto b = getLocalBounds().toFloat();
 
-        // Panel + subtle top phosphor glow.
+        // LCD panel (square) + subtle top scan glow.
         g.setColour (ShardColours::screenBg);
-        g.fillRoundedRectangle (b, 6.0f);
-        juce::ColourGradient glow (ShardColours::amber.withAlpha (0.06f), b.getCentreX(), b.getY(),
+        g.fillRoundedRectangle (b, 2.0f);
+        juce::ColourGradient glow (ShardColours::lcdFg.withAlpha (0.05f), b.getCentreX(), b.getY(),
                                    ShardColours::screenBg.withAlpha (0.0f), b.getCentreX(), b.getY() + b.getHeight() * 0.6f, false);
         g.setGradientFill (glow);
-        g.fillRoundedRectangle (b, 6.0f);
+        g.fillRoundedRectangle (b, 2.0f);
 
-        const juce::Font lcd (juce::FontOptions (11.0f, juce::Font::plain).withStyle ("Bold").withName (juce::Font::getDefaultMonospacedFontName()));
-        g.setFont (lcd.withExtraKerningFactor (0.08f));
+        g.setFont (ShardColours::monoFont (11.0f, true).withExtraKerningFactor (0.08f));
 
-        // Corner + centre labels (top row).
+        // Corner + centre labels (top row) — cool LCD ink.
         auto top = b.reduced (10.0f, 6.0f).removeFromTop (13.0f);
-        g.setColour (ShardColours::amber.withAlpha (0.85f));
+        g.setColour (ShardColours::lcdFg.withAlpha (0.9f));
         g.drawText (readout, top, juce::Justification::topLeft);
         g.drawText ("BPM:" + juce::String (bpm, 1), top, juce::Justification::topRight);
-        g.setColour (ShardColours::amber.withAlpha (0.5f));
+        g.setColour (ShardColours::lcdDim);
         g.drawText (juce::String ("OUT ") + peakDb(), top, juce::Justification::centredTop);
 
         // Waveform area (between the top labels and the bottom status line).
@@ -64,11 +63,11 @@ public:
         const float cy = wave.getCentreY();
         const float halfH = wave.getHeight() * 0.5f - 2.0f;
 
-        // Flat baseline (shows through when idle).
-        g.setColour (ShardColours::amber.withAlpha (0.28f));
+        // Flat baseline (shows through when idle) — accent.
+        g.setColour (ShardColours::amber.withAlpha (0.30f));
         g.fillRect (wave.getX(), cy - 0.6f, wave.getWidth(), 1.2f);
 
-        // Min/max waveform envelope, one vertical segment per pixel column.
+        // Min/max waveform envelope, one vertical segment per pixel column — accent.
         if (count > 1)
         {
             const int cols = juce::jmax (1, (int) wave.getWidth());
@@ -87,14 +86,14 @@ public:
                 const float yBot = cy - juce::jlimit (-halfH, halfH, mn * gain * halfH);
                 const float amp  = juce::jlimit (0.0f, 1.0f, (mx - mn) * gain);
                 const float fx   = wave.getX() + (float) x;
-                g.setColour (ShardColours::amber.withAlpha (0.35f + 0.6f * amp));
+                g.setColour (ShardColours::amber.withAlpha (0.4f + 0.55f * amp));
                 g.fillRect (fx, yTop, 1.0f, juce::jmax (1.0f, yBot - yTop));
             }
         }
 
         // Bottom: faint tick ruler + status line.
         const float ry = b.getBottom() - 17.0f;
-        g.setColour (ShardColours::amber.withAlpha (0.14f));
+        g.setColour (ShardColours::lcdDim.withAlpha (0.5f));
         for (int k = 0; k <= 32; ++k)
         {
             const float tx = wave.getX() + wave.getWidth() * (float) k / 32.0f;
@@ -103,14 +102,15 @@ public:
         }
 
         auto status = b.reduced (10.0f, 5.0f).removeFromBottom (12.0f);
-        g.setColour (ShardColours::amber.withAlpha (0.5f));
-        g.setFont (lcd.withHeight (10.0f));
+        g.setColour (ShardColours::lcdDim);
+        g.setFont (ShardColours::monoFont (9.5f, true));
         g.drawText ("SCOPE", status, juce::Justification::bottomLeft);
+        g.setColour (peak > 0.0005f ? ShardColours::amber : ShardColours::lcdDim);
         g.drawText (peak > 0.0005f ? "SIG" : "--", status, juce::Justification::bottomRight);
 
-        // Screen bezel.
-        g.setColour (ShardColours::amber.withAlpha (0.22f));
-        g.drawRoundedRectangle (b.reduced (1.0f), 6.0f, 1.4f);
+        // LCD inner bezel.
+        g.setColour (ShardColours::knobEdge.withAlpha (0.25f));
+        g.drawRoundedRectangle (b.reduced (1.0f), 2.0f, 1.2f);
     }
 
 private:
