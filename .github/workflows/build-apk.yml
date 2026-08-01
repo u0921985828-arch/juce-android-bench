@@ -9,13 +9,7 @@ name: Build Android APK
 # (bundled in JUCE) is enabled for the low-latency audio path.
 
 on:
-  workflow_dispatch:
-  push:
-    branches: [ claude/new-session-bgeba4 ]
-    paths:
-      - 'Source/**'
-      - 'Shard.jucer'
-      - '.github/workflows/build-apk.yml'
+  workflow_dispatch:   # APK builds are MANUAL ONLY (run from the Actions tab / on request)
 
 permissions:
   contents: write
