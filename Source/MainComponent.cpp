@@ -11,9 +11,11 @@ namespace
 
     void styleButton (juce::TextButton& b, juce::Colour c)
     {
+        // Text follows the cap luminance: dark ink on light caps, light on dark.
+        const bool darkCap = c.getPerceivedBrightness() < 0.5f;
         b.setColour (juce::TextButton::buttonColourId, c);
-        b.setColour (juce::TextButton::textColourOffId, juce::Colours::white.withAlpha (0.9f));
-        b.setColour (juce::TextButton::textColourOnId,  juce::Colours::white);
+        b.setColour (juce::TextButton::textColourOffId, darkCap ? ShardColours::inkLight : ShardColours::ink);
+        b.setColour (juce::TextButton::textColourOnId,  ShardColours::ink);
     }
 }
 
@@ -181,12 +183,12 @@ MainComponent::MainComponent()
 
     addAndMakeVisible (waveform);
 
-    editLabel.setColour (juce::Label::textColourId, juce::Colours::white.withAlpha (0.7f));
+    editLabel.setColour (juce::Label::textColourId, ShardColours::inkDim);
     editLabel.setText ("select a pad", juce::dontSendNotification);
     addAndMakeVisible (editLabel);
 
     status.setJustificationType (juce::Justification::centred);
-    status.setColour (juce::Label::textColourId, juce::Colours::white.withAlpha (0.8f));
+    status.setColour (juce::Label::textColourId, ShardColours::inkDim);
     status.setText ("Tap empty pad = load   /   lit pad = play   /   REC = mic", juce::dontSendNotification);
     addAndMakeVisible (status);
 
@@ -227,70 +229,61 @@ void MainComponent::paint (juce::Graphics& g)
 {
     auto full = getLocalBounds().toFloat();
 
-    // 1. Chassis "unit": rounded grey plate (14px) on a near-black stage.
-    g.fillAll (juce::Colour (0xff0a0a0b));
-    auto unit = full.reduced (3.0f);
-    g.setGradientFill (juce::ColourGradient (ShardColours::chassisTop, unit.getCentreX(), unit.getY(),
-                                             ShardColours::chassisBot, unit.getCentreX(), unit.getBottom(), false));
-    g.fillRoundedRectangle (unit, 14.0f);
-    g.setColour (juce::Colour (0x22ffffff));                       // top edge glint
-    g.drawLine (unit.getX() + 16, unit.getY() + 1.2f, unit.getRight() - 16, unit.getY() + 1.2f, 1.2f);
-    g.setGradientFill (juce::ColourGradient (juce::Colours::transparentBlack, unit.getCentreX(), unit.getCentreY(),
-                                             juce::Colour (0x44000000), unit.getX(), unit.getBottom(), true));
-    g.fillRoundedRectangle (unit, 14.0f);
-    g.setColour (juce::Colour (0xff09090a));
-    g.drawRoundedRectangle (unit, 14.0f, 1.2f);
+    // 1. Full-bleed light chassis (edge to edge — the whole screen is the face).
+    g.setGradientFill (juce::ColourGradient (ShardColours::chassisTop, full.getCentreX(), full.getY(),
+                                             ShardColours::chassisBot, full.getCentreX(), full.getBottom(), false));
+    g.fillRect (full);
 
-    // Helper: a square raised sub-panel (2px bevel), controls grouped like hardware.
+    // Helper: a square raised sub-panel with a soft border, controls grouped.
     auto panel = [&g] (juce::Rectangle<int> ri)
     {
         if (ri.isEmpty()) return;
         auto r = ri.toFloat();
-        g.setColour (ShardColours::panelDark);
-        g.fillRoundedRectangle (r, 2.0f);
-        g.setColour (ShardColours::panelHi.withAlpha (0.55f));
-        g.drawLine (r.getX() + 2, r.getY() + 1.0f, r.getRight() - 2, r.getY() + 1.0f, 1.2f);
-        g.setColour (ShardColours::panelLo);
-        g.drawRoundedRectangle (r.reduced (0.5f), 2.0f, 1.4f);
+        g.setColour (ShardColours::panel);
+        g.fillRoundedRectangle (r, 3.0f);
+        g.setColour (ShardColours::panelHi.withAlpha (0.8f));
+        g.drawLine (r.getX() + 3, r.getY() + 1.0f, r.getRight() - 3, r.getY() + 1.0f, 1.2f);
+        g.setColour (ShardColours::panelLo.withAlpha (0.7f));
+        g.drawRoundedRectangle (r.reduced (0.5f), 3.0f, 1.2f);
     };
     panel (fxPanelArea);
     panel (seqPanelArea);
     panel (editPanelArea);
 
-    // 2. Recessed LCD bezel around the scope (square).
+    // 2. Recessed LCD bezel around the scope (square, dark inset on a light face).
     if (! screenBezel.isEmpty())
     {
         auto r = screenBezel.toFloat();
-        g.setColour (ShardColours::padBorder);
+        g.setColour (ShardColours::knobBody2);
         g.fillRoundedRectangle (r.expanded (3.0f), 3.0f);
-        g.setColour (ShardColours::knobEdge.withAlpha (0.55f));
+        g.setColour (ShardColours::knobEdge.withAlpha (0.7f));
         g.drawRoundedRectangle (r.expanded (3.0f).reduced (0.5f), 3.0f, 1.2f);
     }
 
-    // 3. Header: ARTiFACTS wordmark + SHARD model badge (LCD chip).
+    // 3. Header: ARTiFACTS wordmark + SHARD model badge (dark LCD chip).
     if (! headerArea.isEmpty())
     {
         auto h = headerArea;
-        g.setColour (ShardColours::white);
+        g.setColour (ShardColours::ink);
         g.setFont (ShardColours::displayFont (22.0f).withExtraKerningFactor (0.10f));
-        g.drawText ("ARTiFACTS", h.getX(), h.getY(), 170, h.getHeight(), juce::Justification::centredLeft);
+        g.drawText ("ARTiFACTS", h.getX(), h.getY(), 180, h.getHeight(), juce::Justification::centredLeft);
 
         auto badge = juce::Rectangle<int> (h.getRight() - 156, h.getY() + 2, 156, h.getHeight() - 4);
         g.setColour (ShardColours::screenBg);
         g.fillRoundedRectangle (badge.toFloat(), 2.0f);
-        g.setColour (ShardColours::amberDim.withAlpha (0.9f));
+        g.setColour (ShardColours::amber.withAlpha (0.8f));
         g.drawRoundedRectangle (badge.toFloat().reduced (0.5f), 2.0f, 1.2f);
         auto bin = badge.reduced (10, 0);
-        g.setColour (ShardColours::amber);
+        g.setColour (ShardColours::amberBright);
         g.setFont (ShardColours::monoFont (14.0f, true).withExtraKerningFactor (0.22f));
         g.drawText ("SHARD", bin.removeFromLeft (74), juce::Justification::centredLeft);
-        g.setColour (ShardColours::lcdDim);
+        g.setColour (ShardColours::lcdFg.withAlpha (0.6f));
         g.setFont (ShardColours::monoFont (8.5f, true).withExtraKerningFactor (0.24f));
         g.drawText ("SAMPLER", bin, juce::Justification::centredRight);
     }
 
     // 4. Knob names above each FX knob.
-    g.setColour (ShardColours::engrave.withAlpha (0.8f));
+    g.setColour (ShardColours::inkDim);
     g.setFont (ShardColours::monoFont (9.0f, true).withExtraKerningFactor (0.14f));
     auto name = [&g] (juce::Slider& s, const char* t)
     {
@@ -299,17 +292,11 @@ void MainComponent::paint (juce::Graphics& g)
     };
     name (cutoffSlider, "CUTOFF"); name (resoSlider, "RESO");  name (driveSlider, "DRIVE");
     name (dlyTimeSlider, "TIME");  name (dlyFbSlider, "FBK");  name (dlyMixSlider, "MIX");
-
-    // 5. Corner screws (chassis structure).
-    const float m = 13.0f;
-    for (auto pt : { juce::Point<float> (m, m), juce::Point<float> (full.getRight() - m, m),
-                     juce::Point<float> (m, full.getBottom() - m), juce::Point<float> (full.getRight() - m, full.getBottom() - m) })
-        ShardColours::drawScrew (g, pt.x, pt.y, 4.5f);
 }
 
 void MainComponent::resized()
 {
-    auto area = getLocalBounds().reduced (12);
+    auto area = getLocalBounds().reduced (8);
 
     // Header (wordmark + badge drawn in paint).
     headerArea = area.removeFromTop (30);
@@ -422,13 +409,13 @@ void MainComponent::refreshPad (int index)
     if (auto* p = pads[index])
     {
         const bool has = padHasSample[(size_t) index];
-        auto base = has ? ShardColours::padTop.brighter (0.06f) : ShardColours::padTop.darker (0.18f);
-        if (index == selectedPad) base = base.brighter (0.16f);
+        auto base = has ? ShardColours::padTop : ShardColours::padBg2;
+        if (index == selectedPad) base = base.darker (0.06f);
         const float f = padFlash[(size_t) index];
         if (f > 0.0f) base = base.interpolatedWith (ShardColours::amber, juce::jlimit (0.0f, 1.0f, f));
         p->setColour (juce::TextButton::buttonColourId, base);
         p->setColour (juce::TextButton::textColourOffId,
-                      has ? ShardColours::amber : ShardColours::amber.withAlpha (0.30f));
+                      has ? ShardColours::amberDim : ShardColours::inkDim.withAlpha (0.4f));
     }
 }
 

@@ -13,41 +13,48 @@
 // ============================================================================
 namespace ShardColours
 {
-    // --- Chassis / structure ---
-    const juce::Colour chassisTop { 0xff4a4d52 };
-    const juce::Colour chassis    { 0xff3a3c40 };
-    const juce::Colour chassisBot { 0xff28292c };
-    const juce::Colour panel      { 0xff3f4247 };
-    const juce::Colour panelDark  { 0xff2c2e32 };
-    const juce::Colour panelHi    { 0xff5a5d63 };   // panel top bevel
-    const juce::Colour panelLo    { 0xff141517 };   // panel shadow / hard border
-    const juce::Colour key        { 0xff1c1d20 };
-    const juce::Colour keyLit     { 0xff2a2c30 };
-    const juce::Colour screw      { 0xff1a1b1d };
+    //  ARTiFACTS skin: ARCTIC-PRECISION — light "lab instrument", cold blue
+    //  accent. Distinct from any dark/orange hardware. Light surfaces, navy ink,
+    //  dark metallic knobs, a dark LCD with a blue trace.
+
+    // --- Chassis / structure (light ice) ---
+    const juce::Colour chassisTop { 0xfff4f8fc };
+    const juce::Colour chassis    { 0xffe8eef5 };
+    const juce::Colour chassisBot { 0xffd6e2ee };
+    const juce::Colour panel      { 0xffe4eef8 };
+    const juce::Colour panelDark  { 0xffdceafb };   // key surface
+    const juce::Colour panelHi    { 0xffffffff };   // panel top bevel
+    const juce::Colour panelLo    { 0xff9fb8d0 };   // panel shadow / soft border
+    const juce::Colour key        { 0xffdceafb };
+    const juce::Colour keyLit     { 0xffc8dcf0 };
+    const juce::Colour screw      { 0xff8fa6bd };
 
     // --- Accent / semantic ---
-    const juce::Colour amber      { 0xffff9a3d };   // (accent) — name kept for compat
-    const juce::Colour amberBright { 0xffffbf6b };
-    const juce::Colour amberDim   { 0xffc9772c };
-    const juce::Colour red        { 0xffff3d6e };
-    const juce::Colour white      { 0xffe8e9eb };
-    const juce::Colour cream      { 0xffe8e9eb };    // name kept for compat
-    const juce::Colour engrave    { 0xffaeb1b8 };    // text-dim
+    const juce::Colour amber      { 0xff4fa3ff };   // (accent blue) — name kept for compat
+    const juce::Colour amberBright { 0xff7dbcff };
+    const juce::Colour amberDim   { 0xff2f7ad1 };
+    const juce::Colour red        { 0xffc1123b };
+    const juce::Colour ink        { 0xff0d2438 };   // primary text on light
+    const juce::Colour inkDim     { 0xff3f6a8f };   // secondary text
+    const juce::Colour inkLight   { 0xfff4f8fc };   // text on dark surfaces
+    const juce::Colour white      { 0xff0d2438 };   // name kept for compat = ink
+    const juce::Colour cream      { 0xff0d2438 };   // name kept for compat = ink
+    const juce::Colour engrave    { 0xff3f6a8f };   // text-dim
 
-    // --- LCD ---
+    // --- LCD (stays dark — pops on a light machine) ---
     const juce::Colour screenBg   { 0xff0a0e13 };
     const juce::Colour lcdFg      { 0xffdfe6f0 };
     const juce::Colour lcdDim     { 0xff4a5768 };
 
-    // --- Pads ---
-    const juce::Colour padTop     { 0xff26282b };    // padbtn bg1
-    const juce::Colour padBg2     { 0xff111214 };
-    const juce::Colour padBorder  { 0xff050506 };
-    const juce::Colour padLit     { 0xffff9a3d };
+    // --- Pads (white -> ice) ---
+    const juce::Colour padTop     { 0xffffffff };    // padbtn bg1
+    const juce::Colour padBg2     { 0xffeaf2fb };
+    const juce::Colour padBorder  { 0xffbcd4ee };
+    const juce::Colour padLit     { 0xff4fa3ff };
 
-    // --- Knob body ---
-    const juce::Colour knobWell   { 0xff0a0a0b };
-    const juce::Colour knobEdge   { 0xff45484d };
+    // --- Knob body (dark metallic) ---
+    const juce::Colour knobWell   { 0xffc4d3e2 };
+    const juce::Colour knobEdge   { 0xff7fa8cf };
     const juce::Colour knobBody1  { 0xff3c3e42 };
     const juce::Colour knobBody2  { 0xff1c1d1f };
     const juce::Colour knobBody3  { 0xff0a0a0b };
@@ -85,14 +92,14 @@ class ShardLookAndFeel : public juce::LookAndFeel_V4
 public:
     ShardLookAndFeel()
     {
-        setColour (juce::Slider::textBoxTextColourId, ShardColours::lcdFg);
+        setColour (juce::Slider::textBoxTextColourId, ShardColours::ink);
         setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
         setColour (juce::Slider::trackColourId, ShardColours::amber);
-        setColour (juce::Slider::backgroundColourId, ShardColours::key);
+        setColour (juce::Slider::backgroundColourId, ShardColours::key.darker (0.08f));
         setColour (juce::Slider::thumbColourId, ShardColours::amber);
-        setColour (juce::Label::textColourId, ShardColours::white.withAlpha (0.85f));
-        setColour (juce::TextButton::textColourOffId, ShardColours::white.withAlpha (0.9f));
-        setColour (juce::TextButton::textColourOnId, juce::Colour (0xff0a0b0d));
+        setColour (juce::Label::textColourId, ShardColours::ink.withAlpha (0.9f));
+        setColour (juce::TextButton::textColourOffId, ShardColours::ink.withAlpha (0.92f));
+        setColour (juce::TextButton::textColourOnId, ShardColours::ink);
     }
 
     // ---- Physical rotary knob: knurled ring, double bevel, drawn needle.
@@ -171,12 +178,13 @@ public:
         g.setColour (juce::Colour (0x50000000));
         g.drawLine (r.getX() + rad, r.getBottom() - 0.9f, r.getRight() - rad, r.getBottom() - 0.9f, 1.2f);
 
-        // Border: accent when lit/triggered, otherwise a hard dark hairline.
+        // Border: accent when lit/triggered, otherwise a soft hairline.
         const float lum = base.getPerceivedBrightness();
-        const bool accenty = base.getHue() > 0.03f && base.getHue() < 0.13f && base.getSaturation() > 0.3f;
-        if (on || (accenty && lum > 0.45f))
+        const float accentHue = ShardColours::amber.getHue();
+        const bool accenty = std::abs (base.getHue() - accentHue) < 0.06f && base.getSaturation() > 0.28f;
+        if (on || accenty)
         {
-            g.setColour (ShardColours::amberBright.withAlpha (juce::jlimit (0.3f, 0.95f, lum)));
+            g.setColour (ShardColours::amberDim.withAlpha (0.95f));
             g.drawRoundedRectangle (r.reduced (0.6f), rad, 1.6f);
         }
         else
@@ -184,6 +192,7 @@ public:
             g.setColour (ShardColours::padBorder);
             g.drawRoundedRectangle (r.reduced (0.5f), rad, 1.2f);
         }
+        juce::ignoreUnused (lum);
     }
 
     void drawButtonText (juce::Graphics& g, juce::TextButton& b, bool, bool) override
