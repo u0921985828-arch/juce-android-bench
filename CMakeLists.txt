@@ -46,6 +46,7 @@ target_compile_definitions(Shard PRIVATE
     JUCE_REPORT_APP_USAGE=1
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
+    JUCE_USE_MP3AUDIOFORMAT=1          # decode MP3 (common on phones)
     JUCE_STRICT_REFCOUNTEDPOINTER=1   # catches ref-count misuse at compile time
 )
 

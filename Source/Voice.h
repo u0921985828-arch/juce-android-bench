@@ -10,78 +10,91 @@
 //  DSP: fractional phase accumulator + Hermite 4-point interpolation.
 //    delta = (F_src / F_sys) * 2^(semitones / 12)
 //    pos  += delta            (per output sample)
-//  The integer part of `pos` indexes the source; the fractional part feeds
-//  interpolation.
 //
-//  IMPORTANT — indexing convention (top off-by-one bug site, keep it exact):
-//    `idx = (int) pos` is the sample AT/just-before the read position (y0).
-//    hermite4() reads y[idx-1], y[idx], y[idx+1], y[idx+2].
-//    render() therefore needs `idx-1 >= 0` and `idx+2 < srcLen`. The start
-//    boundary (idx == 0) is handled inside hermite4 by clamping ym1 = y[idx];
-//    the end boundary is the `idx + 2 >= srcLen` guard in render().
+//  P1: a short linear gain envelope removes clicks —
+//    * fade-IN  (~2 ms) at start (no attack click),
+//    * fade-OUT (~3 ms) on stop / retrigger (no release click).
+//  The voice frees itself (active=false) once the fade-out reaches 0.
 //
-//  P0 has no envelope: stop() is a hard flag flip. No heap, no virtuals.
+//  Indexing convention (keep exact): idx = (int) pos is y0; hermite4 reads
+//  y[idx-1..idx+2], so render needs idx+2 < srcLen (end guard) and clamps the
+//  start boundary inside hermite4.
 // ============================================================================
 struct Voice
 {
-    bool   active = false;
-    double pos    = 0.0;    // fractional read position, in source samples (double: float drifts)
-    double delta  = 0.0;    // phase increment per output sample
-    float  gain   = 1.0f;   // velocity
-    int    slot   = -1;
+    bool   active    = false;
+    bool   releasing = false;
+    double pos       = 0.0;    // fractional read position (double: float drifts)
+    double delta     = 0.0;    // phase increment per output sample
+    int    slot      = -1;
 
-    void start (int slotIndex, float semitones, float velocity, double fSrc, double fSys) noexcept
+    float  gain      = 0.0f;   // current envelope gain
+    float  target    = 0.0f;   // velocity (fade-in destination)
+    float  stepUp    = 0.0f;   // per-sample fade-in increment
+    float  stepDown  = 0.0f;   // per-sample fade-out decrement (positive magnitude)
+
+    void start (int slotIndex, float semitones, float velocity,
+                double fSrc, double fSys) noexcept
     {
-        slot   = slotIndex;
-        pos    = 0.0;
-        delta  = (fSrc / fSys) * std::pow (2.0, (double) semitones / 12.0);   // computed once
-        gain   = velocity;
-        active = true;
+        slot      = slotIndex;
+        pos       = 0.0;
+        delta     = (fSrc / fSys) * std::pow (2.0, (double) semitones / 12.0);
+        target    = velocity;
+        gain      = 0.0f;
+        releasing = false;
+
+        const double fadeIn  = juce::jmax (1.0, 0.002 * fSys);   // ~2 ms
+        const double fadeOut = juce::jmax (1.0, 0.003 * fSys);   // ~3 ms
+        stepUp    = (float) (velocity / fadeIn);
+        stepDown  = (float) (velocity / fadeOut);
+        active    = true;
     }
 
-    void stop() noexcept { active = false; }   // P0: hard stop, flag flip only
+    // Begin a fade-out; the voice frees itself when it reaches 0.
+    void release() noexcept { releasing = true; }
 
-    // Additive render of this voice into a stereo output buffer over
-    // [start, start + num). Does not clear — the engine clears once per block.
+    // Hard stop (panic) — immediate, no fade.
+    void kill() noexcept { active = false; releasing = false; gain = 0.0f; }
+
     void render (juce::AudioBuffer<float>& out, int start, int num,
                  const SampleBuffer* sb) noexcept
     {
         if (! active || sb == nullptr)
             return;
 
-        const int    srcLen = sb->buffer.getNumSamples();
-        const int    srcCh  = sb->buffer.getNumChannels();
-        if (srcLen < 4 || srcCh < 1)
-        {
-            active = false;
-            return;
-        }
+        const int srcLen = sb->buffer.getNumSamples();
+        const int srcCh  = sb->buffer.getNumChannels();
+        if (srcLen < 4 || srcCh < 1) { active = false; return; }
 
         const float* srcL = sb->buffer.getReadPointer (0);
         const float* srcR = (srcCh > 1) ? sb->buffer.getReadPointer (1) : srcL;
 
-        const int    outCh = out.getNumChannels();
-        float*       dstL  = out.getWritePointer (0);
-        float*       dstR  = (outCh > 1) ? out.getWritePointer (1) : dstL;
+        const int outCh = out.getNumChannels();
+        float* dstL = out.getWritePointer (0);
+        float* dstR = (outCh > 1) ? out.getWritePointer (1) : dstL;
 
         for (int i = 0; i < num; ++i)
         {
             const int    idx  = (int) pos;
             const double frac = pos - (double) idx;
 
-            // One-shot end guard (hermite reads up to idx+2).
-            if (idx + 2 >= srcLen)
+            if (idx + 2 >= srcLen) { active = false; break; }   // one-shot end
+
+            // Update the envelope.
+            if (releasing)
             {
-                active = false;
-                break;
+                gain -= stepDown;
+                if (gain <= 0.0f) { active = false; gain = 0.0f; break; }
+            }
+            else if (gain < target)
+            {
+                gain += stepUp;
+                if (gain > target) gain = target;
             }
 
-            const float l = gain * hermite4 ((float) frac, srcL, idx);
-            const float r = gain * hermite4 ((float) frac, srcR, idx);
-
-            dstL[start + i] += l;
+            dstL[start + i] += gain * hermite4 ((float) frac, srcL, idx);
             if (outCh > 1)
-                dstR[start + i] += r;
+                dstR[start + i] += gain * hermite4 ((float) frac, srcR, idx);
 
             pos += delta;
         }
@@ -89,7 +102,6 @@ struct Voice
 
 private:
     // Hermite 4-point, 3rd-order interpolation (Laurent de Soras coefficients).
-    // Reads y[idx-1 .. idx+2]; ym1 is clamped at the start boundary.
     static inline float hermite4 (float frac, const float* y, int idx) noexcept
     {
         const float ym1 = (idx >= 1) ? y[idx - 1] : y[idx];   // start-boundary clamp

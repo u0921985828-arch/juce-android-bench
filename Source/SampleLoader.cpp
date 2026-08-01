@@ -4,16 +4,33 @@
 SampleLoader::SampleLoader (AudioEngine& engineToLoadInto)
     : engine (engineToLoadInto)
 {
-    formatManager.registerBasicFormats();   // WAV, AIFF, FLAC, Ogg, MP3 (per build flags)
+    formatManager.registerBasicFormats();          // WAV, AIFF, FLAC, Ogg
+   #if JUCE_USE_MP3AUDIOFORMAT
+    formatManager.registerFormat (new juce::MP3AudioFormat(), false);   // + MP3
+   #endif
 }
 
-void SampleLoader::loadAsync (const juce::File& file, std::function<void (bool)> onFinished)
+void SampleLoader::loadAsync (const juce::URL& url, int slot, std::function<void (bool)> onFinished)
 {
-    pool.addJob ([this, file, callback = std::move (onFinished)]
+    pool.addJob ([this, url, slot, callback = std::move (onFinished)]
     {
         bool success = false;
 
-        if (auto* rawReader = formatManager.createReaderFor (file))
+        // Android's file picker hands back a content:// URI (Storage Access
+        // Framework), NOT a real file path — so read via URL/stream, not File.
+        juce::AudioFormatReader* rawReader = nullptr;
+
+        if (url.isLocalFile())
+        {
+            rawReader = formatManager.createReaderFor (url.getLocalFile());
+        }
+        else if (auto stream = url.createInputStream (
+                     juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)))
+        {
+            rawReader = formatManager.createReaderFor (std::move (stream));
+        }
+
+        if (rawReader != nullptr)
         {
             std::unique_ptr<juce::AudioFormatReader> reader (rawReader);
 
@@ -27,12 +44,11 @@ void SampleLoader::loadAsync (const juce::File& file, std::function<void (bool)>
                 reader->read (&sb->buffer, 0, numSamples, 0, true, true);
                 sb->sourceSampleRate = reader->sampleRate;   // F_src
 
-                engine.publishSample (sb);   // thread-safe atomic hand-off
+                engine.publishSample (slot, sb);   // thread-safe atomic hand-off
                 success = true;
             }
         }
 
-        // Notify the UI on the message thread.
         juce::MessageManager::callAsync ([callback, success]
         {
             if (callback)

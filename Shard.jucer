@@ -58,7 +58,7 @@
     <MODULE id="juce_gui_extra"        showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
   </MODULES>
   <JUCEOPTIONS JUCE_USE_ANDROID_OBOE="1" JUCE_STRICT_REFCOUNTEDPOINTER="1"
-               JUCE_WEB_BROWSER="0" JUCE_USE_CURL="0"/>
+               JUCE_WEB_BROWSER="0" JUCE_USE_CURL="0" JUCE_USE_MP3AUDIOFORMAT="1"/>
   <LIVE_SETTINGS>
     <LINUX/>
   </LIVE_SETTINGS>

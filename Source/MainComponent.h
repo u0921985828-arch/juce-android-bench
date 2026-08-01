@@ -5,15 +5,17 @@
 #include "SampleLoader.h"
 
 // ============================================================================
-//  MainComponent — the app's audio + UI surface.
+//  MainComponent — audio + UI surface (P1 step 1: 16-pad matrix).
 //
-//  * Subclasses AudioAppComponent: owns the audio device, forwards the audio
-//    callbacks straight into AudioEngine.
-//  * UI: two pad buttons + a "Load sample" button. Pad clicks post NoteOn
-//    commands to the engine's lock-free FIFO (no audio work on the message
-//    thread). Load opens an async FileChooser and kicks a background decode.
-//  * A Timer drives message-thread garbage collection of retired sample
-//    buffers (the only place SampleBuffers are deleted).
+//  * AudioAppComponent: owns the device, forwards callbacks to AudioEngine.
+//  * 4x4 pad grid. Two modes toggled by the LOAD button:
+//      - LOAD off  : tapping a pad triggers its sample.
+//      - LOAD on   : tapping a pad opens the file picker to assign a sample.
+//  * Loaded pads are lit (accent colour); empty pads are dim.
+//  * Android-safe loading: the picker returns a content:// URL, read via stream.
+//  * A Timer drives message-thread GC of retired sample buffers.
+//
+//  Original visual identity (no SP-404 skin) — high-contrast dark + one accent.
 // ============================================================================
 class MainComponent : public juce::AudioAppComponent,
                       private juce::Timer
@@ -22,29 +24,32 @@ public:
     MainComponent();
     ~MainComponent() override;
 
-    // AudioAppComponent
     void prepareToPlay (int samplesPerBlockExpected, double sampleRate) override;
     void getNextAudioBlock (const juce::AudioSourceChannelInfo& info) override;
     void releaseResources() override;
 
-    // Component
     void paint (juce::Graphics& g) override;
     void resized() override;
 
 private:
     void timerCallback() override;
-    void openFileChooser();
+    void padClicked (int index);
+    void openChooserForPad (int index);
+    void refreshPad (int index);
+
+    static constexpr int kNumPads = AudioEngine::kNumPads;   // 16
 
     AudioEngine  engine;
     SampleLoader loader { engine };
 
-    juce::TextButton padA   { "PAD A" };        // slot 0, pitch 0
-    juce::TextButton padB   { "PAD B (+5)" };   // slot 1, +5 semitones (proves pitch math)
-    juce::TextButton loadBtn { "Load sample" };
-    juce::Label      status;
+    juce::OwnedArray<juce::TextButton> pads;
+    juce::TextButton  loadButton { "LOAD" };
+    juce::Label       status;
+
+    std::array<bool, kNumPads> padHasSample {};   // all false
+    bool loadMode = false;
 
     std::unique_ptr<juce::FileChooser> chooser;
-    bool sampleLoaded = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
 };
