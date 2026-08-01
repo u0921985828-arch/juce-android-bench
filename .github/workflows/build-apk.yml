@@ -90,32 +90,44 @@ jobs:
               -storetype JKS
           fi
 
-      - name: Build debug APK
+      - name: Build APKs (debug + release)
         working-directory: Builds/Android
+        # Release is the optimised (-O3) build — better DSP performance and the
+        # representative latency for the P0 gate. Both are signed with the debug
+        # keystore (juceSigning), so both sideload fine for testing. Release is
+        # NOT Play-Store-ready (would need a real upload key) — that's later.
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon assembleDebug
+          ./gradlew --no-daemon assembleDebug assembleRelease
 
-      - name: Collect APK
-        id: apk
+      - name: Collect APKs
         run: |
-          APK="$(find Builds/Android -name '*-debug.apk' | head -1)"
-          test -n "$APK" || { echo "No APK produced"; exit 1; }
-          cp "$APK" ARTiFACTS-debug.apk
-          echo "Built: $APK"
+          DBG="$(find Builds/Android -name '*-debug.apk' | head -1)"
+          REL="$(find Builds/Android -name '*-release.apk' | head -1)"
+          test -n "$DBG" || { echo "No debug APK produced";   exit 1; }
+          test -n "$REL" || { echo "No release APK produced"; exit 1; }
+          cp "$DBG" ARTiFACTS-debug.apk
+          cp "$REL" ARTiFACTS-release.apk
+          echo "Debug:   $DBG"
+          echo "Release: $REL"
+          ls -la ARTiFACTS-*.apk
 
       - uses: actions/upload-artifact@v4
         with:
           name: ARTiFACTS-apk
-          path: ARTiFACTS-debug.apk
+          path: |
+            ARTiFACTS-debug.apk
+            ARTiFACTS-release.apk
           if-no-files-found: error
 
-      # Optional: also attach the APK to a rolling release tag for easy phone download.
+      # Also attach both APKs to a rolling release tag for easy phone download.
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: apk-latest
-          name: Latest ARTiFACTS debug APK
-          files: ARTiFACTS-debug.apk
+          name: Latest ARTiFACTS APKs (debug + release)
+          files: |
+            ARTiFACTS-debug.apk
+            ARTiFACTS-release.apk
           make_latest: false
 
   # Optional, best-effort: boot an x86_64 emulator and confirm the app launches
