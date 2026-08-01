@@ -24,8 +24,8 @@
                    androidMinimumSDK="24" androidTargetSDK="34"
                    androidInternetNeeded="0" androidCpp11="1">
       <CONFIGURATIONS>
-        <CONFIGURATION name="Debug"   isDebug="1" targetName="Shard"/>
-        <CONFIGURATION name="Release" isDebug="0" targetName="Shard" optimisation="3"/>
+        <CONFIGURATION name="Debug"   isDebug="1" targetName="Shard" androidArchitectures="arm64-v8a"/>
+        <CONFIGURATION name="Release" isDebug="0" targetName="Shard" optimisation="3" androidArchitectures="arm64-v8a"/>
       </CONFIGURATIONS>
       <MODULEPATHS>
         <MODULEPATH id="juce_core"              path="JUCE/modules"/>

@@ -130,50 +130,8 @@ jobs:
             Shard-release.apk
           make_latest: false
 
-  # Optional, best-effort: boot an x86_64 emulator and confirm the app launches
-  # without crashing. Never fails the APK build (continue-on-error) — it only
-  # produces a screenshot + a pass/fail signal. The app builds an x86_64 ABI,
-  # so it can run on the emulator even though the phone target is arm64.
-  smoke-test:
-    needs: build
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: Shard-apk
-
-      - name: Enable KVM
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 30
-          arch: x86_64
-          target: google_apis
-          disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
-          # NOTE: android-emulator-runner executes each line as its own /bin/sh
-          # command, so every check must be a single line (no multi-line if/fi).
-          script: |
-            adb install -r Shard-debug.apk
-            adb shell am start -n com.artifacts.shard/com.rmsl.juce.JuceActivity
-            sleep 12
-            adb exec-out screencap -p > screenshot.png
-            adb logcat -d | grep -q 'FATAL EXCEPTION' && { echo "App crashed on launch"; adb logcat -d | tail -80; exit 1; } || echo "No FATAL EXCEPTION"
-            adb shell dumpsys activity activities | grep -q 'com.artifacts.shard' && echo "Activity running OK" || { echo "Activity not running"; exit 1; }
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: smoke-screenshot
-          path: screenshot.png
-          if-no-files-found: warn
+  # NOTE: the emulator smoke-test job was removed because the APK is now built
+  # for arm64-v8a only (the phone target), and GitHub's runners are x86_64 — the
+  # emulator could no longer install an arm64-only APK. A prior run already
+  # confirmed Shard installs and launches without crashing. To re-enable it,
+  # temporarily add "x86_64" back to androidArchitectures in Shard.jucer.
