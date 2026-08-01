@@ -20,6 +20,12 @@
       <FILE id="srcLcpp" name="SampleLoader.cpp"  compile="1" resource="0" file="Source/SampleLoader.cpp"/>
       <FILE id="srcLh"   name="SampleLoader.h"    compile="0" resource="0" file="Source/SampleLoader.h"/>
     </GROUP>
+    <GROUP id="Fx404Fonts" name="fonts">
+      <FILE id="fntOsB" name="OswaldBold.ttf"          compile="0" resource="1" file="Source/fonts/OswaldBold.ttf"/>
+      <FILE id="fntOsM" name="OswaldMedium.ttf"        compile="0" resource="1" file="Source/fonts/OswaldMedium.ttf"/>
+      <FILE id="fntJbR" name="JetBrainsMonoRegular.ttf" compile="0" resource="1" file="Source/fonts/JetBrainsMonoRegular.ttf"/>
+      <FILE id="fntJbB" name="JetBrainsMonoBold.ttf"    compile="0" resource="1" file="Source/fonts/JetBrainsMonoBold.ttf"/>
+    </GROUP>
   </MAINGROUP>
   <EXPORTFORMATS>
     <ANDROIDSTUDIO targetFolder="Builds/Android"

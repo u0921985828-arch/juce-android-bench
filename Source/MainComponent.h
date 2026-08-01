@@ -35,7 +35,7 @@ private:
     void refreshPad (int index);
     void selectPad (int index);
     void updateControlsFromPad (int index);
-    void assignSampleToPad (int index, SampleBuffer::Ptr sb);
+    void assignSampleToPad (int index, SampleBuffer::Ptr sb, const juce::String& name = {});
     void toggleRecording();
     int  firstEmptyPad() const;
 
@@ -76,6 +76,7 @@ private:
     std::array<bool,  kNumPads> padReverse {};
     std::array<int,   kNumPads> padChokeUI {};   // 0 = none
     std::array<SampleBuffer::Ptr, kNumPads> uiSample;
+    std::array<juce::String, kNumPads> padName {};
 
     // Pattern mirror [step][pad] for the sequencer UI.
     std::array<std::array<bool, kNumPads>, kNumSteps> pattern {};

@@ -34,6 +34,7 @@ MainComponent::MainComponent()
     for (int i = 0; i < kNumPads; ++i)
     {
         auto* p = new juce::TextButton (juce::String (i + 1));
+        p->getProperties().set ("pad", true);
         p->onClick = [this, i] { padClicked (i); };
         addAndMakeVisible (p);
         pads.add (p);
@@ -88,7 +89,10 @@ MainComponent::MainComponent()
     auto initSlider = [this] (juce::Slider& s, double lo, double hi, double step, double def)
     {
         s.setSliderStyle (juce::Slider::LinearHorizontal);
-        s.setTextBoxStyle (juce::Slider::TextBoxRight, false, 56, 20);
+        s.setColour (juce::Slider::textBoxTextColourId, ShardColours::lcdFg);
+        s.setColour (juce::Slider::textBoxBackgroundColourId, ShardColours::screenBg);
+        s.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+        s.setTextBoxStyle (juce::Slider::TextBoxRight, false, 66, 22);
         s.setRange (lo, hi, step);
         s.setValue (def, juce::dontSendNotification);
         s.setColour (juce::Slider::trackColourId, kPadLoaded);
@@ -141,6 +145,9 @@ MainComponent::MainComponent()
     chokeSlider.setSliderStyle (juce::Slider::IncDecButtons);
     chokeSlider.setRange (0.0, 8.0, 1.0);
     chokeSlider.setValue (0.0, juce::dontSendNotification);
+    chokeSlider.setColour (juce::Slider::textBoxTextColourId, ShardColours::lcdFg);
+    chokeSlider.setColour (juce::Slider::textBoxBackgroundColourId, ShardColours::screenBg);
+    chokeSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     chokeSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 90, 22);
     chokeSlider.textFromValueFunction = [] (double v) { return v <= 0.0 ? juce::String ("CHOKE: off") : "CHOKE: " + juce::String ((int) v); };
     chokeSlider.onValueChange = [this] { if (selectedPad >= 0) { padChokeUI[(size_t) selectedPad] = (int) chokeSlider.getValue(); engine.setPadChoke (selectedPad, (int) chokeSlider.getValue()); } };
@@ -163,7 +170,10 @@ MainComponent::MainComponent()
                             double skewMid, std::function<void()> cb)
     {
         s.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-        s.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 56, 15);
+        s.setColour (juce::Slider::textBoxTextColourId, ShardColours::lcdFg);
+        s.setColour (juce::Slider::textBoxBackgroundColourId, ShardColours::screenBg);
+        s.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+        s.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 62, 20);
         s.setRange (lo, hi, step);
         if (skewMid > 0.0) s.setSkewFactorFromMidPoint (skewMid);
         s.setValue (def, juce::dontSendNotification);
@@ -283,12 +293,12 @@ void MainComponent::paint (juce::Graphics& g)
     }
 
     // 4. Knob names above each FX knob.
-    g.setColour (ShardColours::inkDim);
-    g.setFont (ShardColours::monoFont (9.0f, true).withExtraKerningFactor (0.14f));
+    g.setColour (ShardColours::ink.withAlpha (0.85f));
+    g.setFont (ShardColours::monoFont (10.5f, true).withExtraKerningFactor (0.12f));
     auto name = [&g] (juce::Slider& s, const char* t)
     {
         auto r = s.getBounds();
-        g.drawText (t, r.getX() - 4, r.getY() - 13, r.getWidth() + 8, 12, juce::Justification::centred);
+        g.drawText (t, r.getX() - 6, r.getY() - 15, r.getWidth() + 12, 13, juce::Justification::centred);
     };
     name (cutoffSlider, "CUTOFF"); name (resoSlider, "RESO");  name (driveSlider, "DRIVE");
     name (dlyTimeSlider, "TIME");  name (dlyFbSlider, "FBK");  name (dlyMixSlider, "MIX");
@@ -325,10 +335,10 @@ void MainComponent::resized()
 
     // FX panel: knob row + BPM grouped in one raised panel.
     {
-        fxPanelArea = area.removeFromTop (104);
+        fxPanelArea = area.removeFromTop (114);
         auto inner  = fxPanelArea.reduced (8, 6);
-        auto krow   = inner.removeFromTop (68);
-        krow.removeFromTop (12);                         // gap for knob names
+        auto krow   = inner.removeFromTop (78);
+        krow.removeFromTop (15);                         // gap for knob names
         juce::Slider* knobs[6] = { &cutoffSlider, &resoSlider, &driveSlider,
                                    &dlyTimeSlider, &dlyFbSlider, &dlyMixSlider };
         const int w = krow.getWidth() / 6;
@@ -415,7 +425,8 @@ void MainComponent::refreshPad (int index)
         if (f > 0.0f) base = base.interpolatedWith (ShardColours::amber, juce::jlimit (0.0f, 1.0f, f));
         p->setColour (juce::TextButton::buttonColourId, base);
         p->setColour (juce::TextButton::textColourOffId,
-                      has ? ShardColours::amberDim : ShardColours::inkDim.withAlpha (0.4f));
+                      has ? ShardColours::amberDim : ShardColours::inkDim.withAlpha (0.55f));
+        p->getProperties().set ("fn", has ? padName[(size_t) index] : juce::String());
     }
 }
 
@@ -440,13 +451,15 @@ void MainComponent::updateControlsFromPad (int index)
     chokeSlider.setValue (padChokeUI[(size_t) index], juce::dontSendNotification);
 }
 
-void MainComponent::assignSampleToPad (int index, SampleBuffer::Ptr sb)
+void MainComponent::assignSampleToPad (int index, SampleBuffer::Ptr sb, const juce::String& name)
 {
     if (sb == nullptr) return;
     padHasSample[(size_t) index] = true;
     uiSample[(size_t) index]     = sb;
     padStart01[(size_t) index]   = 0.0f;
     padEnd01[(size_t) index]     = 1.0f;
+    if (name.isNotEmpty())
+        padName[(size_t) index] = name.upToLastOccurrenceOf (".", false, false);
 
     // Push this pad's UI params into the engine. The engine's per-pad gain
     // defaults to 0 (silent); setVal(dontSendNotification) never fires the
@@ -482,11 +495,12 @@ void MainComponent::openChooserForPad (int index)
         if (url.isEmpty()) return;
 
         status.setText ("Loading pad " + juce::String (index + 1) + " ...", juce::dontSendNotification);
-        loader.loadAsync (url, index, [this, index] (bool ok, juce::String detail, SampleBuffer::Ptr sb)
+        const juce::String fileName = url.getFileName();
+        loader.loadAsync (url, index, [this, index, fileName] (bool ok, juce::String detail, SampleBuffer::Ptr sb)
         {
             if (ok)
             {
-                assignSampleToPad (index, sb);
+                assignSampleToPad (index, sb, fileName);
                 status.setText ("Pad " + juce::String (index + 1) + " loaded  [" + detail + "]", juce::dontSendNotification);
             }
             else
@@ -520,7 +534,7 @@ void MainComponent::toggleRecording()
         recButton.setButtonText ("REC");
         if (sb != nullptr)
         {
-            assignSampleToPad (recordingSlot, sb);
+            assignSampleToPad (recordingSlot, sb, "REC " + juce::String (recordingSlot + 1));
             status.setText ("Recorded pad " + juce::String (recordingSlot + 1), juce::dontSendNotification);
         }
         else

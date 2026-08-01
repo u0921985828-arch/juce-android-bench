@@ -30,6 +30,14 @@ juce_add_gui_app(Shard
 
 juce_generate_juce_header(Shard)
 
+# Bundled fonts (Oswald display + JetBrains Mono) as binary data.
+juce_add_binary_data(ShardData SOURCES
+    Source/fonts/OswaldBold.ttf
+    Source/fonts/OswaldMedium.ttf
+    Source/fonts/JetBrainsMonoRegular.ttf
+    Source/fonts/JetBrainsMonoBold.ttf
+)
+
 target_sources(Shard PRIVATE
     Source/Main.cpp
     Source/MainComponent.cpp
@@ -54,6 +62,7 @@ target_compile_definitions(Shard PRIVATE
 #  juce_audio_utils transitively pulls audio_basics/devices/formats/processors,
 #  gui_basics, events, core, data_structures, graphics — and AudioAppComponent.
 target_link_libraries(Shard PRIVATE
+    ShardData
     juce::juce_audio_utils
     juce::juce_dsp
     juce::juce_gui_extra

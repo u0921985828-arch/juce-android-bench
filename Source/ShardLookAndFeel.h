@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "BinaryData.h"
 
 // ============================================================================
 //  ShardLookAndFeel — ARTiFACTS design system (IVORY skin default).
@@ -59,18 +60,25 @@ namespace ShardColours
     const juce::Colour knobBody2  { 0xff1c1d1f };
     const juce::Colour knobBody3  { 0xff0a0a0b };
 
-    // Condensed display face (Oswald stand-in) — big pad numerals / wordmark.
+    // Bundled typefaces (Oswald display + JetBrains Mono). Cached once.
+    inline juce::Typeface::Ptr face (const char* data, int size)
+    {
+        return juce::Typeface::createSystemTypefaceFor (data, (size_t) size);
+    }
+    inline juce::Typeface::Ptr oswaldBold ()   { static auto t = face (BinaryData::OswaldBold_ttf,   BinaryData::OswaldBold_ttfSize);   return t; }
+    inline juce::Typeface::Ptr oswaldMedium () { static auto t = face (BinaryData::OswaldMedium_ttf, BinaryData::OswaldMedium_ttfSize); return t; }
+    inline juce::Typeface::Ptr monoRegular ()  { static auto t = face (BinaryData::JetBrainsMonoRegular_ttf, BinaryData::JetBrainsMonoRegular_ttfSize); return t; }
+    inline juce::Typeface::Ptr monoBold ()     { static auto t = face (BinaryData::JetBrainsMonoBold_ttf,    BinaryData::JetBrainsMonoBold_ttfSize);    return t; }
+
+    // Condensed display face (Oswald) — big pad numerals / wordmark.
     inline juce::Font displayFont (float h, bool bold = true)
     {
-        return juce::Font (juce::FontOptions (h, bold ? juce::Font::bold : juce::Font::plain))
-                 .withHorizontalScale (0.86f);
+        return juce::Font (juce::FontOptions().withTypeface (bold ? oswaldBold() : oswaldMedium()).withHeight (h));
     }
-    // Monospaced UI/LCD face (JetBrains Mono stand-in).
+    // Monospaced UI/LCD face (JetBrains Mono).
     inline juce::Font monoFont (float h, bool bold = false)
     {
-        return juce::Font (juce::FontOptions (h)
-                             .withName (juce::Font::getDefaultMonospacedFontName())
-                             .withStyle (bold ? "Bold" : "Regular"));
+        return juce::Font (juce::FontOptions().withTypeface (bold ? monoBold() : monoRegular()).withHeight (h));
     }
 
     // A recessed screw head with a slot.
@@ -92,7 +100,9 @@ class ShardLookAndFeel : public juce::LookAndFeel_V4
 public:
     ShardLookAndFeel()
     {
-        setColour (juce::Slider::textBoxTextColourId, ShardColours::ink);
+        // Value readouts as little dark LCD chips (guaranteed contrast on a light face).
+        setColour (juce::Slider::textBoxTextColourId, ShardColours::lcdFg);
+        setColour (juce::Slider::textBoxBackgroundColourId, ShardColours::screenBg);
         setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
         setColour (juce::Slider::trackColourId, ShardColours::amber);
         setColour (juce::Slider::backgroundColourId, ShardColours::key.darker (0.08f));
@@ -198,21 +208,36 @@ public:
     void drawButtonText (juce::Graphics& g, juce::TextButton& b, bool, bool) override
     {
         const auto t = b.getButtonText();
-        const bool bigNum = t.length() <= 2 && t.containsOnly ("0123456789") && b.getHeight() > 60;
+        const auto off = b.findColour (juce::TextButton::textColourOffId);
+        const auto on  = b.findColour (juce::TextButton::textColourOnId);
 
-        if (bigNum)
-            g.setFont (ShardColours::displayFont (juce::jmin (46.0f, (float) b.getHeight() * 0.42f)));
-        else
-            g.setFont (ShardColours::monoFont (juce::jlimit (10.0f, 14.5f, (float) b.getHeight() * 0.38f), true)
-                         .withExtraKerningFactor (0.06f));
+        // Pads: big Oswald numeral top, sample name (mono) along the bottom.
+        if ((bool) b.getProperties().getWithDefault ("pad", false))
+        {
+            auto area = b.getLocalBounds();
+            auto strip = area.removeFromBottom (16);
+            g.setColour (off);
+            g.setFont (ShardColours::displayFont (juce::jmin (48.0f, (float) b.getHeight() * 0.44f)));
+            g.drawText (t, area, juce::Justification::centred);
 
-        g.setColour (b.getToggleState() ? b.findColour (juce::TextButton::textColourOnId)
-                                        : b.findColour (juce::TextButton::textColourOffId));
+            const auto fn = b.getProperties().getWithDefault ("fn", juce::String()).toString();
+            if (fn.isNotEmpty())
+            {
+                g.setColour (ShardColours::inkDim);
+                g.setFont (ShardColours::monoFont (11.0f).withExtraKerningFactor (0.02f));
+                g.drawFittedText (fn, strip.reduced (6, 0), juce::Justification::centred, 1, 0.85f);
+            }
+            return;
+        }
+
+        g.setFont (ShardColours::monoFont (juce::jlimit (10.0f, 14.5f, (float) b.getHeight() * 0.38f), true)
+                     .withExtraKerningFactor (0.06f));
+        g.setColour (b.getToggleState() ? on : off);
         g.drawFittedText (t, b.getLocalBounds().reduced (5, 2), juce::Justification::centred, 2, 0.9f);
     }
 
     juce::Font getLabelFont (juce::Label&) override
     {
-        return ShardColours::monoFont (12.0f);
+        return ShardColours::monoFont (13.5f, true);
     }
 };
