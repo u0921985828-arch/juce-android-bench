@@ -1,0 +1,13 @@
+# Build output
+build/
+cmake-build-*/
+out/
+
+# JUCE is fetched via FetchContent into the build tree — never vendored
+_deps/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+*.user
