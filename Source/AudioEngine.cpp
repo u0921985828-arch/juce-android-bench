@@ -25,6 +25,10 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize) noexcept
     // ~20 s mono record buffer (allocated here, never in the callback).
     recordBuffer.setSize (1, (int) (20.0 * systemSampleRate));
     recordBuffer.clear();
+
+    juce::dsp::ProcessSpec spec { systemSampleRate, (juce::uint32) juce::jmax (1, maxBlock), 2 };
+    masterFilter.prepare (spec);
+    masterFilter.reset();
 }
 
 void AudioEngine::releaseResources() noexcept
@@ -136,6 +140,34 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
 
     // 5. Render all voices over the whole block.
     renderVoices (startSample, numSamples);
+
+    // 5b. Master FX: filter -> drive (applied to the block region only).
+    {
+        const int outCh = out.getNumChannels();
+        juce::dsp::AudioBlock<float> block (out.getArrayOfWritePointers(), (size_t) outCh,
+                                            (size_t) startSample, (size_t) numSamples);
+
+        masterFilter.setType (fxType.load (std::memory_order_relaxed) == 0
+                                  ? juce::dsp::StateVariableTPTFilterType::lowpass
+                                  : juce::dsp::StateVariableTPTFilterType::highpass);
+        masterFilter.setCutoffFrequency (juce::jlimit (20.0f, 20000.0f, fxCutoff.load (std::memory_order_relaxed)));
+        masterFilter.setResonance (juce::jlimit (0.1f, 4.0f, fxReso.load (std::memory_order_relaxed)));
+        juce::dsp::ProcessContextReplacing<float> ctx (block);
+        masterFilter.process (ctx);
+
+        const float d = fxDrive.load (std::memory_order_relaxed);
+        if (d > 0.0001f)
+        {
+            const float k  = 1.0f + d * 24.0f;                 // drive gain into tanh
+            const float mk = 1.0f / std::tanh (k);             // makeup to keep level
+            for (int ch = 0; ch < outCh; ++ch)
+            {
+                float* w = out.getWritePointer (ch, startSample);
+                for (int i = 0; i < numSamples; ++i)
+                    w[i] = std::tanh (k * w[i]) * mk;
+            }
+        }
+    }
 
     // 6. Diagnostic test tone.
     int tt = testToneRemaining.load (std::memory_order_relaxed);

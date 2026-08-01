@@ -60,6 +60,12 @@ public:
     void clearPattern() noexcept;
     int  getPlayStep() const noexcept { return playStep.load (std::memory_order_relaxed); }
 
+    // --- Master FX: filter + drive (message thread setters) ---
+    void setFxType   (int t)     noexcept { fxType.store   (t, std::memory_order_relaxed); }   // 0 LPF, 1 HPF
+    void setFxCutoff (float hz)  noexcept { fxCutoff.store (hz, std::memory_order_relaxed); }
+    void setFxReso   (float q)   noexcept { fxReso.store   (q, std::memory_order_relaxed); }
+    void setFxDrive  (float amt) noexcept { fxDrive.store  (amt, std::memory_order_relaxed); }  // 0..1
+
     // --- Recording (message thread) ---
     void              startRecording (int slot) noexcept;
     SampleBuffer::Ptr finishRecording() noexcept;   // stop + build + publish; returns the buffer
@@ -132,6 +138,13 @@ private:
     std::atomic<int>  recordPos { 0 };
     juce::AudioBuffer<float> recordBuffer;   // mono, allocated in prepareToPlay
     int recordSlot = 0;
+
+    // Master FX: filter + drive.
+    juce::dsp::StateVariableTPTFilter<float> masterFilter;
+    std::atomic<int>   fxType   { 0 };          // 0 LPF, 1 HPF
+    std::atomic<float> fxCutoff { 20000.0f };
+    std::atomic<float> fxReso   { 0.707f };
+    std::atomic<float> fxDrive  { 0.0f };        // 0..1
 
     // Diagnostic test tone.
     std::atomic<int> testToneRemaining { 0 };

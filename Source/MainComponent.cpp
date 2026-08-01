@@ -132,6 +132,48 @@ MainComponent::MainComponent()
     loopButton.onClick = [this] { if (selectedPad >= 0) { padLoop[(size_t) selectedPad] = loopButton.getToggleState(); engine.setPadLoop (selectedPad, loopButton.getToggleState()); } };
     addAndMakeVisible (loopButton);
 
+    // Master FX (filter + drive).
+    fxTypeButton.setClickingTogglesState (true);
+    styleButton (fxTypeButton, juce::Colour (0xff394150));
+    fxTypeButton.setColour (juce::TextButton::buttonOnColourId, kAccent);
+    fxTypeButton.onClick = [this]
+    {
+        const bool hp = fxTypeButton.getToggleState();
+        fxTypeButton.setButtonText (hp ? "HPF" : "LPF");
+        engine.setFxType (hp ? 1 : 0);
+    };
+    addAndMakeVisible (fxTypeButton);
+
+    cutoffSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    cutoffSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 60, 20);
+    cutoffSlider.setRange (20.0, 20000.0, 1.0);
+    cutoffSlider.setSkewFactorFromMidPoint (1000.0);
+    cutoffSlider.setValue (20000.0, juce::dontSendNotification);
+    cutoffSlider.setTextValueSuffix (" Hz");
+    cutoffSlider.setColour (juce::Slider::trackColourId, kAccent);
+    cutoffSlider.onValueChange = [this] { engine.setFxCutoff ((float) cutoffSlider.getValue()); };
+    addAndMakeVisible (cutoffSlider);
+
+    resoSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    resoSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 48, 20);
+    resoSlider.setRange (0.3, 4.0, 0.01);
+    resoSlider.setValue (0.707, juce::dontSendNotification);
+    resoSlider.setColour (juce::Slider::trackColourId, kAccent);
+    resoSlider.onValueChange = [this] { engine.setFxReso ((float) resoSlider.getValue()); };
+    addAndMakeVisible (resoSlider);
+
+    driveSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    driveSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 48, 20);
+    driveSlider.setRange (0.0, 1.0, 0.01);
+    driveSlider.setValue (0.0, juce::dontSendNotification);
+    driveSlider.setColour (juce::Slider::trackColourId, kAccent);
+    driveSlider.onValueChange = [this] { engine.setFxDrive ((float) driveSlider.getValue()); };
+    addAndMakeVisible (driveSlider);
+
+    fxLabel.setColour (juce::Label::textColourId, kAccent.withAlpha (0.9f));
+    fxLabel.setText ("MASTER FX", juce::dontSendNotification);
+    addAndMakeVisible (fxLabel);
+
     addAndMakeVisible (waveform);
 
     editLabel.setColour (juce::Label::textColourId, juce::Colours::white.withAlpha (0.7f));
@@ -140,7 +182,7 @@ MainComponent::MainComponent()
 
     status.setJustificationType (juce::Justification::centred);
     status.setColour (juce::Label::textColourId, juce::Colours::white.withAlpha (0.8f));
-    status.setText ("Tap empty pad = load  •  lit pad = play  •  REC = mic", juce::dontSendNotification);
+    status.setText ("Tap empty pad = load   /   lit pad = play   /   REC = mic", juce::dontSendNotification);
     addAndMakeVisible (status);
 
     startTimer (60);
@@ -194,6 +236,20 @@ void MainComponent::resized()
         clearButton.setBounds (row.reduced (2));
     }
     bpmSlider.setBounds (area.removeFromTop (28));
+    area.removeFromTop (6);
+
+    // Master FX section.
+    {
+        auto r = area.removeFromTop (20);
+        fxTypeButton.setBounds (r.removeFromRight (66).reduced (1));
+        fxLabel.setBounds (r);
+    }
+    cutoffSlider.setBounds (area.removeFromTop (24));
+    {
+        auto r = area.removeFromTop (24);
+        resoSlider.setBounds (r.removeFromLeft (r.getWidth() / 2).reduced (2, 0));
+        driveSlider.setBounds (r.reduced (2, 0));
+    }
     area.removeFromTop (6);
 
     // Bottom-up: sequencer, controls, waveform.

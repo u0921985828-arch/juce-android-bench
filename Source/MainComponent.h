@@ -55,7 +55,9 @@ private:
     juce::TextButton loopButton { "LOOP" };
 
     juce::Slider pitchSlider, volSlider, startSlider, endSlider, bpmSlider;
-    juce::Label  status, editLabel;
+    juce::TextButton fxTypeButton { "LPF" };
+    juce::Slider cutoffSlider, resoSlider, driveSlider;
+    juce::Label  status, editLabel, fxLabel;
     WaveformDisplay waveform;
 
     // Per-pad UI state.
