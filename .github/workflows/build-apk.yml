@@ -165,11 +165,11 @@ jobs:
           # command, so every check must be a single line (no multi-line if/fi).
           script: |
             adb install -r ARTiFACTS-debug.apk
-            adb shell am start -n com.artifacts.fx404/com.rmsl.juce.JuceActivity
+            adb shell am start -n com.artifacts.sampler/com.rmsl.juce.JuceActivity
             sleep 12
             adb exec-out screencap -p > screenshot.png
             adb logcat -d | grep -q 'FATAL EXCEPTION' && { echo "App crashed on launch"; adb logcat -d | tail -80; exit 1; } || echo "No FATAL EXCEPTION"
-            adb shell dumpsys activity activities | grep -q 'com.artifacts.fx404' && echo "Activity running OK" || { echo "Activity not running"; exit 1; }
+            adb shell dumpsys activity activities | grep -q 'com.artifacts.sampler' && echo "Activity running OK" || { echo "Activity not running"; exit 1; }
 
       - uses: actions/upload-artifact@v4
         if: always()

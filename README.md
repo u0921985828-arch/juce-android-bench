@@ -113,3 +113,25 @@ Oboe/AAudio), sample rate (F_sys) and buffer size, and the two measured numbers
 - No envelope: `NoteOff`/one-shot end is a hard stop (may click). P1 adds AHDSR.
 - A sample swap mid-note may glitch the note in flight — acceptable for a
   latency prototype.
+
+## UI design constraint for P1 (original look — avoid trade dress)
+
+The real UI is built in P1 (P0 is just two test pads + a Load button, no skin).
+To keep the product commercially clear of Roland SP-404 trade dress, P1 must use
+an **original visual identity**, not a reproduction of the hardware:
+
+- **Own layout & aesthetic** — do not copy the SP-404's specific colours,
+  typography, chassis textures, or exact control placement. A 4×4 pad grid is a
+  functional industry standard (MPC, Maschine, Push) and fine to use; the risk is
+  cloning the specific look-and-feel, so design a distinct high-contrast/digital
+  theme instead of a skeuomorphic chassis.
+- **Generic effect names** — avoid Roland's product terms. E.g. "DJFX Looper" →
+  "Beat Repeat", "Isolator" → "Multiband EQ". Describe the DSP, don't borrow the
+  brand's labels.
+- **Naming** — the app is "ARTiFACTS" (no "404"); the package id is
+  `com.artifacts.sampler`. Keep "404" and Roland terminology out of user-facing
+  strings, package ids, and store metadata.
+
+The C++/JUCE DSP engine is original IP and is not the concern here — this is
+purely a presentation-layer guideline. (Not legal advice; confirm with an IP
+lawyer before shipping.)
