@@ -66,6 +66,9 @@ public:
     void setFxCutoff (float hz)  noexcept { fxCutoff.store (hz, std::memory_order_relaxed); }
     void setFxReso   (float q)   noexcept { fxReso.store   (q, std::memory_order_relaxed); }
     void setFxDrive  (float amt) noexcept { fxDrive.store  (amt, std::memory_order_relaxed); }  // 0..1
+    void setDlyTime  (float ms)  noexcept { dlyTime.store  (ms,  std::memory_order_relaxed); }
+    void setDlyFb    (float f)    noexcept { dlyFb.store    (f,   std::memory_order_relaxed); }
+    void setDlyMix   (float m)    noexcept { dlyMix.store   (m,   std::memory_order_relaxed); }
 
     // --- Recording (message thread) ---
     void              startRecording (int slot) noexcept;
@@ -147,6 +150,12 @@ private:
     std::atomic<float> fxCutoff { 20000.0f };
     std::atomic<float> fxReso   { 0.707f };
     std::atomic<float> fxDrive  { 0.0f };        // 0..1
+
+    // Master delay.
+    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Linear> delayLine { 96000 };
+    std::atomic<float> dlyTime { 250.0f };       // ms
+    std::atomic<float> dlyFb   { 0.35f };        // 0..0.95
+    std::atomic<float> dlyMix  { 0.0f };         // 0..1
 
     // Diagnostic test tone.
     std::atomic<int> testToneRemaining { 0 };

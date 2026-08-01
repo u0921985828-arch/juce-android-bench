@@ -29,6 +29,10 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize) noexcept
     juce::dsp::ProcessSpec spec { systemSampleRate, (juce::uint32) juce::jmax (1, maxBlock), 2 };
     masterFilter.prepare (spec);
     masterFilter.reset();
+
+    delayLine.prepare (spec);
+    delayLine.setMaximumDelayInSamples (juce::jmax (1, (int) (systemSampleRate * 1.0)));
+    delayLine.reset();
 }
 
 void AudioEngine::releaseResources() noexcept
@@ -173,6 +177,28 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 for (int i = 0; i < numSamples; ++i)
                     w[i] = std::tanh (k * w[i]) * mk;
             }
+        }
+
+        // Delay (feedback) after the filter/drive.
+        const float mix = dlyMix.load (std::memory_order_relaxed);
+        if (mix > 0.001f)
+        {
+            const float fb = juce::jlimit (0.0f, 0.95f, dlyFb.load (std::memory_order_relaxed));
+            const float ds = juce::jlimit (1.0f, (float) (systemSampleRate - 1.0),
+                                           dlyTime.load (std::memory_order_relaxed) * (float) systemSampleRate / 1000.0f);
+            delayLine.setDelay (ds);
+
+            float* w0 = out.getWritePointer (0, startSample);
+            float* w1 = (outCh > 1) ? out.getWritePointer (1, startSample) : w0;
+            for (int i = 0; i < numSamples; ++i)
+                for (int ch = 0; ch < juce::jmin (2, outCh); ++ch)
+                {
+                    float* w = (ch == 0) ? w0 : w1;
+                    const float in = w[i];
+                    const float d  = delayLine.popSample (ch);
+                    delayLine.pushSample (ch, in + d * fb);
+                    w[i] = in * (1.0f - mix) + d * mix;
+                }
         }
     }
 

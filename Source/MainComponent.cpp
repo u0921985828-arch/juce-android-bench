@@ -178,8 +178,25 @@ MainComponent::MainComponent()
     driveSlider.onValueChange = [this] { engine.setFxDrive ((float) driveSlider.getValue()); };
     addAndMakeVisible (driveSlider);
 
+    auto initFxSlider = [this] (juce::Slider& s, double lo, double hi, double step, double def, const juce::String& suffix)
+    {
+        s.setSliderStyle (juce::Slider::LinearHorizontal);
+        s.setTextBoxStyle (juce::Slider::TextBoxRight, false, 56, 20);
+        s.setRange (lo, hi, step);
+        s.setValue (def, juce::dontSendNotification);
+        s.setTextValueSuffix (suffix);
+        s.setColour (juce::Slider::trackColourId, kAccent);
+        addAndMakeVisible (s);
+    };
+    initFxSlider (dlyTimeSlider, 20.0, 1000.0, 1.0, 250.0, " ms");
+    initFxSlider (dlyFbSlider,    0.0, 0.95, 0.01, 0.35, "");
+    initFxSlider (dlyMixSlider,   0.0, 1.0,  0.01, 0.0,  "");
+    dlyTimeSlider.onValueChange = [this] { engine.setDlyTime ((float) dlyTimeSlider.getValue()); };
+    dlyFbSlider.onValueChange   = [this] { engine.setDlyFb   ((float) dlyFbSlider.getValue()); };
+    dlyMixSlider.onValueChange  = [this] { engine.setDlyMix  ((float) dlyMixSlider.getValue()); };
+
     fxLabel.setColour (juce::Label::textColourId, kAccent.withAlpha (0.9f));
-    fxLabel.setText ("MASTER FX", juce::dontSendNotification);
+    fxLabel.setText ("MASTER FX  ·  filter + drive + delay", juce::dontSendNotification);
     addAndMakeVisible (fxLabel);
 
     addAndMakeVisible (waveform);
@@ -257,6 +274,12 @@ void MainComponent::resized()
         auto r = area.removeFromTop (24);
         resoSlider.setBounds (r.removeFromLeft (r.getWidth() / 2).reduced (2, 0));
         driveSlider.setBounds (r.reduced (2, 0));
+    }
+    dlyTimeSlider.setBounds (area.removeFromTop (24));
+    {
+        auto r = area.removeFromTop (24);
+        dlyFbSlider.setBounds (r.removeFromLeft (r.getWidth() / 2).reduced (2, 0));
+        dlyMixSlider.setBounds (r.reduced (2, 0));
     }
     area.removeFromTop (6);
 

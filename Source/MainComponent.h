@@ -57,6 +57,7 @@ private:
     juce::Slider pitchSlider, volSlider, startSlider, endSlider, bpmSlider, chokeSlider;
     juce::TextButton fxTypeButton { "LPF" };
     juce::Slider cutoffSlider, resoSlider, driveSlider;
+    juce::Slider dlyTimeSlider, dlyFbSlider, dlyMixSlider;
     juce::Label  status, editLabel, fxLabel;
     WaveformDisplay waveform;
 
