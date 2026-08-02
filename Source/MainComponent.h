@@ -47,8 +47,11 @@ private:
     int  firstEmptyPad() const;
     void layoutPadGrid (juce::Rectangle<int> area, int cols, int rows, int gap);
 
-    static constexpr int kNumPads  = AudioEngine::kNumPads;    // 16
-    static constexpr int kNumSteps = AudioEngine::kNumSteps;   // 16
+    static constexpr int kNumPads   = AudioEngine::kNumPads;     // 16
+    static constexpr int kNumSteps  = AudioEngine::kNumSteps;    // 64 (max pattern length)
+    static constexpr int kMinPatLen = AudioEngine::kMinPatLen;   // 16
+    static constexpr int kMaxPatLen = AudioEngine::kMaxPatLen;   // 64
+    static constexpr int kStepCols  = 8;                         // step grid is always 8 columns wide
 
     AudioEngine  engine;
     SampleLoader loader { engine };

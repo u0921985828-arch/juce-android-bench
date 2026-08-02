@@ -22,10 +22,12 @@
 class AudioEngine
 {
 public:
-    static constexpr int kNumPads     = 16;
-    static constexpr int kNumSteps    = 16;
-    static constexpr int kNumPatterns = 8;    // pattern banks
-    static constexpr int kMaxChain    = 16;   // chain slots (pattern indices, in play order)
+    static constexpr int kNumPads       = 16;
+    static constexpr int kNumSteps      = 48;   // max steps per pattern (length is variable, see below)
+    static constexpr int kMinPatLen     = 16;
+    static constexpr int kMaxPatLen     = kNumSteps;   // 48 = 6 rows of 8 — keeps step cells readable
+    static constexpr int kNumPatterns   = 8;    // pattern banks
+    static constexpr int kMaxChain      = 16;   // chain slots (pattern indices, in play order)
 
     AudioEngine();
     ~AudioEngine();
@@ -67,8 +69,9 @@ public:
     int  getPlayStep() const noexcept { return playStep.load (std::memory_order_relaxed); }
 
     // --- Pattern length (message thread) ---
-    //  How many of the 16 steps play before this bank loops/hands off to the
-    //  next chain entry — FL-Studio-style variable pattern length.
+    //  How many steps (kMinPatLen..kMaxPatLen, i.e. 16..64) play before this
+    //  bank loops/hands off to the next chain entry — FL-Studio-style
+    //  variable pattern length.
     void setPatternLength (int patternIdx, int len) noexcept;
     int  getPatternLength (int patternIdx) const noexcept;
 
@@ -178,7 +181,7 @@ private:
     bool   wasPlaying = false;   // audio-thread only
 
     // Pattern chain.
-    std::array<std::atomic<int>, kNumPatterns> patternLength {};   // steps, 1..kNumSteps
+    std::array<std::atomic<int>, kNumPatterns> patternLength {};   // steps, kMinPatLen..kMaxPatLen
     std::atomic<int> editPattern { 0 };                        // bank the UI is editing
     std::array<std::atomic<int>, kMaxChain> chainSlots {};
     std::atomic<int> chainLength { 0 };

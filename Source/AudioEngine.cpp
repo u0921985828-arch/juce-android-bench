@@ -6,7 +6,7 @@
 
 AudioEngine::AudioEngine()
 {
-    for (auto& l : patternLength) l.store (kNumSteps, std::memory_order_relaxed);
+    for (auto& l : patternLength) l.store (kMinPatLen, std::memory_order_relaxed);
 }
 
 AudioEngine::~AudioEngine()
@@ -150,7 +150,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         {
             stepAccum -= samplesPerStep;
             const int prevStep = currentStep;
-            const int len = juce::jlimit (1, kNumSteps, patternLength[(size_t) patternIdx].load (std::memory_order_relaxed));
+            const int len = juce::jlimit (kMinPatLen, kMaxPatLen, patternLength[(size_t) patternIdx].load (std::memory_order_relaxed));
             currentStep = (currentStep + 1) % len;
 
             // This bank's pattern (its own length, not always 16) just
@@ -367,12 +367,12 @@ void AudioEngine::clearPattern (int patternIdx) noexcept
 void AudioEngine::setPatternLength (int patternIdx, int len) noexcept
 {
     if (patternIdx < 0 || patternIdx >= kNumPatterns) return;
-    patternLength[(size_t) patternIdx].store (juce::jlimit (1, kNumSteps, len), std::memory_order_relaxed);
+    patternLength[(size_t) patternIdx].store (juce::jlimit (kMinPatLen, kMaxPatLen, len), std::memory_order_relaxed);
 }
 
 int AudioEngine::getPatternLength (int patternIdx) const noexcept
 {
-    if (patternIdx < 0 || patternIdx >= kNumPatterns) return kNumSteps;
+    if (patternIdx < 0 || patternIdx >= kNumPatterns) return kMinPatLen;
     return patternLength[(size_t) patternIdx].load (std::memory_order_relaxed);
 }
 

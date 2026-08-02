@@ -218,25 +218,28 @@ MainComponent::MainComponent()
         selectedStep = -1;
         noteSlider.setValue (0.0, juce::dontSendNotification);
         lengthSlider.setValue (engine.getPatternLength (selectedPattern), juce::dontSendNotification);
-        repaint();
+        resized();
     };
     addAndMakeVisible (patternSlider);
 
-    // Pattern length (FL-Studio-style): how many of the 16 steps this bank
-    // actually plays before looping / handing off to the next chain entry.
-    lengthSlider.setSliderStyle (juce::Slider::IncDecButtons);
-    lengthSlider.setRange (2.0, (double) kNumSteps, 2.0);
-    lengthSlider.setValue ((double) kNumSteps, juce::dontSendNotification);
+    // Pattern length (FL-Studio-style fader): how many steps this bank plays
+    // before looping / handing off to the next chain entry — 16 up to 64,
+    // one row of 8 at a time. Changing it reflows the step grid itself
+    // (more/fewer rows), so it forces a full resized(), not just a repaint.
+    lengthSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    lengthSlider.setRange ((double) kMinPatLen, (double) kMaxPatLen, (double) kStepCols);
+    lengthSlider.setValue ((double) kMinPatLen, juce::dontSendNotification);
     lengthSlider.setColour (juce::Slider::textBoxTextColourId, ShardColours::lcdFg);
     lengthSlider.setColour (juce::Slider::textBoxBackgroundColourId, ShardColours::screenBg);
     lengthSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    lengthSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 90, 22);
+    lengthSlider.setColour (juce::Slider::trackColourId, ShardColours::accent);
+    lengthSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 56, 22);
     lengthSlider.textFromValueFunction = [] (double v) { return "LEN " + juce::String ((int) v); };
     lengthSlider.updateText();
     lengthSlider.onValueChange = [this]
     {
         engine.setPatternLength (selectedPattern, (int) lengthSlider.getValue());
-        repaint();
+        resized();
     };
     addAndMakeVisible (lengthSlider);
 
@@ -722,27 +725,31 @@ void MainComponent::resized()
             clearButton.setBounds (bottom.reduced (3, 0));
             inner.removeFromBottom (8);
 
-            // Step grid: real square cells (capped, not stretched to fill the
-            // panel), gapped and centred so 16 small pads read cleanly.
+            // Step grid: always 8 columns, rows = pattern length / 8 (2..8,
+            // i.e. 16..64 steps). Real square cells, sized to fill whatever
+            // vertical room is left (bigger with fewer rows, smaller with
+            // more), capped so they never get silly at either extreme.
             {
-                const int cols = 8, rows = 2, gap = 6;
-                const int maxCellW = (inner.getWidth()  - (cols - 1) * gap) / cols;
-                const int maxCellH = (juce::jmin (inner.getHeight(), 130) - (rows - 1) * gap) / rows;
-                const int cell = juce::jmin (juce::jmin (maxCellW, maxCellH), 46);
+                const int patLen = engine.getPatternLength (selectedPattern);
+                const int cols = kStepCols;
+                const int rows = juce::jmax (1, patLen / cols);
+                const int gap  = 4;
 
-                auto steps = inner.removeFromTop (rows * cell + (rows - 1) * gap);
+                const int maxCellW = (inner.getWidth()  - (cols - 1) * gap) / cols;
+                const int maxCellH = (inner.getHeight() - (rows - 1) * gap) / rows;
+                const int cell = juce::jlimit (20, 70, juce::jmin (maxCellW, maxCellH));
+
+                auto steps = inner.removeFromTop (juce::jmin (inner.getHeight(), rows * cell + (rows - 1) * gap));
                 steps = steps.withSizeKeepingCentre (cols * cell + (cols - 1) * gap, steps.getHeight());
 
-                for (int r = 0; r < rows; ++r)
+                for (int s = 0; s < kNumSteps; ++s)
                 {
-                    auto row = steps.removeFromTop (cell);
-                    if (r == 0) steps.removeFromTop (gap);
-                    for (int c = 0; c < cols; ++c)
-                    {
-                        const int idx = r * cols + c;
-                        stepButtons[idx]->setBounds (row.removeFromLeft (cell));
-                        if (c < cols - 1) row.removeFromLeft (gap);
-                    }
+                    if (s >= patLen) { stepButtons[s]->setVisible (false); continue; }
+                    const int r = s / cols, c = s % cols;
+                    stepButtons[s]->setVisible (true);
+                    stepButtons[s]->setBounds (steps.getX() + c * (cell + gap),
+                                               steps.getY() + r * (cell + gap),
+                                               cell, cell);
                 }
             }
         }
@@ -1001,24 +1008,24 @@ void MainComponent::timerCallback()
 
     // Sequencer step colours (flat fill only — see paintOverChildren() for
     // the selection/playhead rings). Steps beyond the pattern's own length
-    // (FL-Studio-style variable length) are disabled and shown faded — they
-    // never play, so they shouldn't look editable.
+    // (FL-Studio-style variable length, 16..64) aren't laid out at all — see
+    // resized() — so only the visible ones need colouring here.
     const int patLen = engine.getPatternLength (selectedPattern);
-    for (int s = 0; s < kNumSteps; ++s)
+    for (int s = 0; s < patLen; ++s)
     {
-        const bool active = s < patLen;
-        // Shade alternating groups of 4 steps (the beats within the 16-step
-        // bar) so the grid reads at a glance, even with nothing programmed.
-        const bool  altBeat = ((s / 4) % 2) != 0;
-        const bool  on = active && (selectedPad >= 0) && pattern[(size_t) selectedPattern][(size_t) s][(size_t) selectedPad];
-        // Flat fill: blue = hit, white/grey = resting (with the alternating
-        // beat-group shade). Selection (yellow) and the playhead (red) are
-        // drawn as rings on top in paintOverChildren(), not blended into the
-        // fill, so the flat colours never muddy together.
-        auto col = on ? kPadLoaded : (altBeat ? kStepOff.darker (0.13f) : kStepOff);
-        if (! active) col = col.withAlpha (0.35f);
-        stepButtons[s]->setColour (juce::TextButton::buttonColourId, col);
-        stepButtons[s]->setEnabled (active);
+        // Every 16 steps ("page") gets a faint primary-colour wash on the
+        // resting fill, cycling blue/red/yellow, so a long pattern reads at
+        // a glance; alternating groups of 4 (the beats within a page) shade
+        // a touch darker on top of that.
+        const bool altBeat = ((s / 4) % 2) != 0;
+        const bool on = (selectedPad >= 0) && pattern[(size_t) selectedPattern][(size_t) s][(size_t) selectedPad];
+        auto rest = kStepOff.interpolatedWith (patternRowColour (s / 16), 0.16f);
+        if (altBeat) rest = rest.darker (0.13f);
+        // Flat fill: blue = hit, tinted white/grey = resting. Selection
+        // (yellow) and the playhead (red) are drawn as rings on top in
+        // paintOverChildren(), not blended into the fill, so states never
+        // muddy together.
+        stepButtons[s]->setColour (juce::TextButton::buttonColourId, on ? kPadLoaded : rest);
     }
     lastPlayStep = ps;
 
