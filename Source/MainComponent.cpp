@@ -154,7 +154,7 @@ MainComponent::MainComponent()
     addAndMakeVisible (loadButton);
 
     styleButton (testButton, kKey);
-    testButton.onClick = [this] { engine.postTestTone(); status.setText ("Test tone", juce::dontSendNotification); };
+    testButton.onClick = [this] { engine.postTestTone(); status.setText ("Tono de prueba", juce::dontSendNotification); };
     addAndMakeVisible (testButton);
 
     styleButton (recButton, kKey);
@@ -1571,13 +1571,34 @@ void MainComponent::toggleRecording()
     {
         int slot = (selectedPad >= 0) ? selectedPad : firstEmptyPad();
         if (slot < 0) slot = 0;
-        recordingSlot = slot;
-        setAudioChannels (1, 2);          // open mic input (requests RECORD_AUDIO on Android)
-        engine.startRecording (slot);
-        recordingActive = true;
-        styleButton (recButton, kRec);
-        recButton.setButtonText ("STOP");
-        status.setText ("Recording pad " + juce::String (slot + 1) + " ...", juce::dontSendNotification);
+
+        // Ask for the mic explicitly: opening the input without the grant
+        // silently yields a dead stream, which reads as "REC does nothing".
+        using RP = juce::RuntimePermissions;
+        auto begin = [this, slot]
+        {
+            recordingSlot = slot;
+            setAudioChannels (1, 2);      // open mic input
+            engine.startRecording (slot);
+            recordingActive = true;
+            styleButton (recButton, kRec);
+            recButton.setButtonText ("STOP");
+            status.setText ("Grabando pad " + juce::String (slot + 1) + " ...", juce::dontSendNotification);
+        };
+
+        if (! RP::isRequired (RP::recordAudio) || RP::isGranted (RP::recordAudio))
+        {
+            begin();
+        }
+        else
+        {
+            RP::request (RP::recordAudio, [this, begin] (bool granted)
+            {
+                if (granted) begin();
+                else status.setText ("Sin permiso de microfono: no puedo grabar",
+                                     juce::dontSendNotification);
+            });
+        }
     }
     else
     {
@@ -1589,11 +1610,11 @@ void MainComponent::toggleRecording()
         if (sb != nullptr)
         {
             assignSampleToPad (recordingSlot, sb, "REC " + juce::String (recordingSlot + 1));
-            status.setText ("Recorded pad " + juce::String (recordingSlot + 1), juce::dontSendNotification);
+            status.setText ("Grabado en el pad " + juce::String (recordingSlot + 1), juce::dontSendNotification);
         }
         else
         {
-            status.setText ("Nothing recorded", juce::dontSendNotification);
+            status.setText ("No se grabo nada", juce::dontSendNotification);
         }
     }
 }
@@ -1663,7 +1684,7 @@ void MainComponent::timerCallback()
     }
 
     if (recordingActive)
-        status.setText ("Recording pad " + juce::String (recordingSlot + 1)
+        status.setText ("Grabando pad " + juce::String (recordingSlot + 1)
                         + "  " + juce::String (engine.getRecordSeconds(), 1) + "s",
                         juce::dontSendNotification);
 }

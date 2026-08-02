@@ -32,8 +32,9 @@
     <ANDROIDSTUDIO targetFolder="Builds/Android"
                    androidActivityClass="com.artifacts.shard.Shard"
                    androidMinimumSDK="24" androidTargetSDK="34"
-                   androidInternetNeeded="0" androidMicNeeded="1" androidCpp11="1"
-                   androidReadMediaAudioPermission="1" androidExternalReadNeeded="1"
+                   androidInternetNeeded="0" androidCpp11="1"
+                   microphonePermissionNeeded="1"
+                   androidReadMediaAudioPermission="1"
                    androidTheme="@android:style/Theme.Material.Light.NoActionBar">
       <CONFIGURATIONS>
         <CONFIGURATION name="Debug"   isDebug="1" targetName="Shard" androidArchitectures="arm64-v8a"/>
