@@ -122,7 +122,8 @@ private:
     void selectPad (int index);
     void updateControlsFromPad (int index);
     void assignSampleToPad (int index, SampleBuffer::Ptr sb, const juce::String& name = {});
-    void toggleRecording();
+    void toggleRecordArm();     // REC: live pad performance -> the pattern
+    void toggleMicSampling();   // PADS sheet: mic -> the selected pad
     void autoChopSelected();
     void rebuildChain();
     int  firstEmptyPad() const;
@@ -169,6 +170,8 @@ private:
     juce::TextButton reverseButton { "REV" };
     juce::TextButton loopButton { "LOOP" };
     juce::TextButton chopButton { "AUTO CHOP" };
+    juce::TextButton micButton  { "GRABAR MIC" };   // lives in the PADS sheet
+    bool recArmed = false;                          // REC writes hits into the pattern
 
     juce::Slider pitchSlider, volSlider, startSlider, endSlider, bpmSlider, chokeSlider;
     juce::Slider panSlider, attackSlider, releaseSlider;

@@ -216,6 +216,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 fireStep();   // voices started here render from the next segment on
             }
         }
+        stepPhase.store ((float) (stepAccum / samplesPerStep), std::memory_order_relaxed);
     }
 
     // 5b. Master FX: filter -> drive -> delay. Each stage is BYPASSED when

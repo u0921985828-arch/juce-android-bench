@@ -70,6 +70,11 @@ public:
     void setStep (int patternIdx, int step, int pad, bool on) noexcept;
     void clearPattern (int patternIdx) noexcept;
     int  getPlayStep() const noexcept { return playStep.load (std::memory_order_relaxed); }
+    // How far through the current step we are, 0..1. The UI needs it to
+    // quantise a live pad hit to the NEAREST step instead of always the one
+    // that happens to be sounding — a hit landing just before the beat would
+    // otherwise be written a whole 16th late.
+    float getStepPhase() const noexcept { return stepPhase.load (std::memory_order_relaxed); }
 
     // --- Pattern length (message thread) ---
     //  How many steps (kMinPatLen..kMaxPatLen, i.e. 16..64) play before this
@@ -188,6 +193,7 @@ private:
     std::atomic<float>  bpm { 120.0f };   // float: lock-free on 32-bit ARM too
     std::array<std::array<std::atomic<std::uint16_t>, kNumSteps>, kNumPatterns> patternBank {};
     std::atomic<int>    playStep { -1 };
+    std::atomic<float>  stepPhase { 0.0f };   // 0..1 within the current step
     std::atomic<std::uint32_t> triggeredMask { 0 };   // pads triggered, read by UI
     double stepAccum = 0.0;      // audio-thread only
     int    currentStep = 0;      // audio-thread only

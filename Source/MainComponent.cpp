@@ -228,8 +228,12 @@ MainComponent::MainComponent()
     addAndMakeVisible (testButton);
 
     styleButton (recButton, kKey);
-    recButton.onClick = [this] { toggleRecording(); };
+    recButton.onClick = [this] { toggleRecordArm(); };
     addAndMakeVisible (recButton);
+
+    styleButton (micButton, kKey);
+    micButton.onClick = [this] { toggleMicSampling(); };
+    padSheet.addAndMakeVisible (micButton);
 
     playButton.setClickingTogglesState (true);
     styleButton (playButton, kAccent);                   // PLAY is the accent hero button
@@ -1218,7 +1222,7 @@ void MainComponent::resized()
 
     // PADS sheet: per-pad knobs, trim, REV/LOOP + AUTO CHOP, sample-info card.
     {
-        auto inner = sheetFromBottom (padSheet, 496);
+        auto inner = sheetFromBottom (padSheet, 531);
         auto titleRow = inner.removeFromTop (32);
         padCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
 
@@ -1234,9 +1238,12 @@ void MainComponent::resized()
         endSlider.setBounds   (ctrlRow (26)); inner.removeFromTop (8);
 
         auto rr = inner.removeFromTop (30);
-        reverseButton.setBounds (rr.removeFromLeft (rr.getWidth() / 3).reduced (3, 0));
-        loopButton.setBounds    (rr.removeFromLeft (rr.getWidth() / 2).reduced (3, 0));
-        chopButton.setBounds    (rr.reduced (3, 0));
+        reverseButton.setBounds (rr.removeFromLeft (rr.getWidth() / 2).reduced (3, 0));
+        loopButton.setBounds    (rr.reduced (3, 0));
+        inner.removeFromTop (5);
+        auto rr2 = inner.removeFromTop (30);
+        chopButton.setBounds (rr2.removeFromLeft (rr2.getWidth() / 2).reduced (3, 0));
+        micButton.setBounds  (rr2.reduced (3, 0));
         inner.removeFromTop (8);
 
         editInfoArea = inner;      // sample-info card (drawn in paintPadSheetContent)
@@ -1374,6 +1381,28 @@ void MainComponent::padClicked (int index)
         engine.postNoteOn (index);
     else
         status.setText ("Pad vacio - pulsa LOAD y toca el pad para cargarlo", juce::dontSendNotification);
+
+    // REC armed + transport rolling: write the hit into the bank that is
+    // actually sounding, quantised to the NEAREST step. Past the half-way
+    // point of a step the intent was the next one, so round up and wrap.
+    if (recArmed && engine.isPlaying() && padHasSample[(size_t) index])
+    {
+        const int bank = engine.getPlayingPattern();
+        const int len  = engine.getPatternLength (bank);
+        const int cur  = engine.getPlayStep();
+
+        if (cur >= 0 && len > 0)
+        {
+            const int step = (cur + (engine.getStepPhase() > 0.5f ? 1 : 0)) % len;
+            pattern[(size_t) bank][(size_t) step][(size_t) index] = true;
+            engine.setStep (bank, step, index, true);
+            status.setText ("Grabado pad " + juce::String (index + 1)
+                                + " en paso " + juce::String (step + 1)
+                                + " (P" + juce::String (bank + 1) + ")",
+                            juce::dontSendNotification);
+            if (seqSheet.isVisible()) seqSheet.repaint();
+        }
+    }
 
     selectPad (index);   // selection drives EDIT and SEC
 }
@@ -2019,7 +2048,30 @@ void MainComponent::paintBrowseSheetContent (juce::Graphics& g)
                 inner.removeFromTop (14), juce::Justification::centredLeft);
 }
 
-void MainComponent::toggleRecording()
+// REC on the transport arms PATTERN recording: pads you hit while the
+// sequencer runs are written into the playing bank, quantised to the nearest
+// step. Sampling from the mic is a per-pad action and lives in the PADS sheet.
+void MainComponent::toggleRecordArm()
+{
+    recArmed = ! recArmed;
+    styleButton (recButton, recArmed ? kRec : kKey);
+    recButton.setButtonText (recArmed ? "REC ON" : "REC");
+
+    if (recArmed && ! engine.isPlaying())
+    {
+        // Arming with the transport stopped is a dead end — roll it.
+        playButton.setToggleState (true, juce::dontSendNotification);
+        playButton.setButtonText ("STOP");
+        engine.setPlaying (true);
+    }
+
+    status.setText (recArmed ? "REC: toca pads para grabarlos en el patron"
+                             : "REC apagado",
+                    juce::dontSendNotification);
+    repaint();
+}
+
+void MainComponent::toggleMicSampling()
 {
     if (! recordingActive)
     {
@@ -2035,8 +2087,8 @@ void MainComponent::toggleRecording()
             setAudioChannels (1, 2);      // open mic input
             engine.startRecording (slot);
             recordingActive = true;
-            styleButton (recButton, kRec);
-            recButton.setButtonText ("STOP");
+            styleButton (micButton, kRec);
+            micButton.setButtonText ("PARAR");
             status.setText ("Grabando pad " + juce::String (slot + 1) + " ...", juce::dontSendNotification);
         };
 
@@ -2059,8 +2111,8 @@ void MainComponent::toggleRecording()
         recordingActive = false;
         auto sb = engine.finishRecording();
         setAudioChannels (0, 2);          // release the mic input, back to output-only
-        styleButton (recButton, kKey);
-        recButton.setButtonText ("REC");
+        styleButton (micButton, kKey);
+        micButton.setButtonText ("GRABAR MIC");
         if (sb != nullptr)
         {
             assignSampleToPad (recordingSlot, sb, "REC " + juce::String (recordingSlot + 1));
