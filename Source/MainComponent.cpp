@@ -478,6 +478,16 @@ MainComponent::MainComponent()
     initKnob (macroCtrl3, 0.0, 1.0, 0.001, 0.0, 0.0, [this] { macroMoved (2); });
 
     {
+        juce::Slider* ks[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
+        for (int i = 0; i < 3; ++i)
+        {
+            ks[i]->setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);   // the readout row measures
+            ks[i]->onDragStart = [this, i] { setMacroTouched (i, true); };
+            ks[i]->onDragEnd   = [this, i] { setMacroTouched (i, false); };
+        }
+    }
+
+    {
         const char* bankNames[3] = { "FILTRO", "DELAY", "PAD" };
         for (int i = 0; i < 3; ++i)
         {
@@ -571,6 +581,66 @@ void MainComponent::applySkin()
     repaint();
 }
 
+juce::String MainComponent::macroBaseLabel (int idx) const
+{
+    return "CTRL " + juce::String (idx + 1);
+}
+
+juce::String MainComponent::macroParamLabel (int idx) const
+{
+    static const char* names[3][3] = { { "CUTOFF", "RESO",  "DRIVE" },
+                                       { "TIME",   "FBK",   "MIX"   },
+                                       { "PITCH",  "START", "END"   } };
+    return names[juce::jlimit (0, 2, macroBank)][juce::jlimit (0, 2, idx)];
+}
+
+// The readout measures; it always carries a unit so the number means something
+// on its own. Monospaced so digits do not shift as the value changes.
+juce::String MainComponent::macroReadout (int idx) const
+{
+    const juce::Slider* ks[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
+    const double v = ks[juce::jlimit (0, 2, idx)]->getValue();
+
+    if (macroBank == 0)
+    {
+        if (idx == 0) return v >= 1000.0 ? juce::String (v / 1000.0, 1) + " kHz"
+                                         : juce::String ((int) v) + " Hz";
+        if (idx == 1) return "Q " + juce::String (v, 2);
+        return juce::String (juce::roundToInt (v * 100.0)) + " %";
+    }
+    if (macroBank == 1)
+    {
+        if (idx == 0) return juce::String ((int) v) + " ms";
+        return juce::String (juce::roundToInt (v * 100.0)) + " %";
+    }
+    if (idx == 0) return (v > 0 ? "+" : "") + juce::String ((int) v) + " st";
+    return juce::String (juce::roundToInt (v * 100.0)) + " %";
+}
+
+void MainComponent::setMacroTouched (int idx, bool touched)
+{
+    if (! juce::isPositiveAndBelow (idx, 3)) return;
+
+    if (touched)
+    {
+        macroLabelTimer.stopTimer();
+        macroTouched[(size_t) idx] = true;
+    }
+    else
+    {
+        // Hold the parameter name briefly after release: letting it snap back
+        // the instant the finger lifts makes the name unreadable on a quick
+        // tweak, which is when you most want to know what you just moved.
+        macroLabelTimer.onFire = [this]
+        {
+            macroTouched.fill (false);
+            repaint();
+        };
+        macroLabelTimer.startTimer (800);
+    }
+    repaint();
+}
+
 // --- Context-sensitive CTRL 1-3 ---------------------------------------------
 // Bank 0 FILTRO: cutoff / reso / drive.  Bank 1 DELAY: time / feedback / mix.
 // Bank 2 PAD: pitch / start / end of the selected pad.
@@ -639,6 +709,8 @@ void MainComponent::refreshMacroValues()
 
 void MainComponent::macroMoved (int idx)
 {
+    repaint();   // the readout tracks the value live
+
     juce::Slider* ms[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
     const double v = ms[idx]->getValue();
 
@@ -770,17 +842,27 @@ void MainComponent::paint (juce::Graphics& g)
     {
         g.setColour (ShardColours::ink.withAlpha (0.85f));
         g.setFont (ShardColours::monoFont (10.0f, true).withExtraKerningFactor (0.16f));
-        auto mn = [&g] (juce::Slider& s, const juce::String& t)
+        juce::Slider* ks[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
+        for (int i = 0; i < 3; ++i)
         {
-            auto r = s.getBounds();
-            g.drawText (t, r.getX() - 6, r.getY() - 14, r.getWidth() + 12, 12, juce::Justification::centred);
-        };
-        static const char* bankLabels[3][3] = { { "CUTOFF", "RESO", "DRIVE" },
-                                                { "TIME",   "FBK",  "MIX"   },
-                                                { "PITCH",  "START","END"   } };
-        mn (macroCtrl1, bankLabels[macroBank][0]);
-        mn (macroCtrl2, bankLabels[macroBank][1]);
-        mn (macroCtrl3, bankLabels[macroBank][2]);
+            auto r = ks[i]->getBounds();
+            const bool touched = macroTouched[(size_t) i];
+
+            // Label names, readout measures — never the other way round.
+            g.setColour (touched ? ShardColours::ink : ShardColours::ink.withAlpha (0.55f));
+            g.setFont (ShardColours::monoFont (touched ? 10.5f : 10.0f, true)
+                         .withExtraKerningFactor (0.16f));
+            g.drawText (touched ? macroParamLabel (i) : macroBaseLabel (i),
+                        r.getX() - 8, r.getY() - 14, r.getWidth() + 16, 12,
+                        juce::Justification::centred);
+
+            auto chip = juce::Rectangle<int> (r.getX() - 2, r.getBottom() + 2, r.getWidth() + 4, 20);
+            g.setColour (ShardColours::screenBg);
+            g.fillRoundedRectangle (chip.toFloat(), 2.0f);
+            g.setColour (touched ? ShardColours::lcdFg : ShardColours::lcdFg.withAlpha (0.8f));
+            g.setFont (ShardColours::monoFont (11.0f, true));
+            g.drawText (macroReadout (i), chip, juce::Justification::centred);
+        }
 
         // Stereo VU: two segmented LED rows (L/R) on a recessed strip.
         if (! vuArea.isEmpty())
@@ -1200,13 +1282,14 @@ void MainComponent::resized()
             macroBankBtns[i]->setBounds ((i < 2 ? bankRow.removeFromLeft (bw) : bankRow).reduced (34, 0));
         area.removeFromTop (4);
 
-        auto mrow = area.removeFromTop (86);             // the 3 CTRL macros
+        auto mrow = area.removeFromTop (92);             // 3 CTRL macros + their readout chips
         juce::Slider* mk[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
         const int w = mrow.getWidth() / 3;
         for (int i = 0; i < 3; ++i)
         {
             auto cell = (i < 2 ? mrow.removeFromLeft (w) : mrow);
-            cell.removeFromTop (14);                     // gap for label
+            cell.removeFromTop (15);                     // gap for the name above
+            cell.removeFromBottom (23);                  // gap for the readout chip below
             mk[i]->setBounds (cell.reduced (10, 0));
         }
         area.removeFromTop (6);

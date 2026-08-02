@@ -155,6 +155,24 @@ private:
     // Context-sensitive macro strip: the 3 physical CTRL knobs switch banks.
     juce::OwnedArray<juce::TextButton> macroBankBtns;   // FILTRO / DELAY / PAD
     int macroBank = 0;
+
+    // Dynamic knob labels (spec Zone 4): at rest the knob shows its permanent
+    // name (CTRL 1/2/3); while it is being touched it shows the parameter it
+    // currently drives, and returns to the base label ~800 ms after release.
+    // One element names, the other measures — the label never shows figures.
+    class LabelTimer : public juce::Timer
+    {
+    public:
+        std::function<void()> onFire;
+        void timerCallback() override { stopTimer(); if (onFire) onFire(); }
+    };
+    LabelTimer macroLabelTimer;
+    std::array<bool, 3> macroTouched { { false, false, false } };
+    juce::String macroBaseLabel (int idx) const;
+    juce::String macroParamLabel (int idx) const;
+    juce::String macroReadout (int idx) const;
+    void setMacroTouched (int idx, bool touched);
+
     void setMacroBank (int bank);
     void refreshMacroValues();
     void macroMoved (int idx);
