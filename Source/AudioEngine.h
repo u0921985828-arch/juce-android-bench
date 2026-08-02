@@ -63,7 +63,10 @@ public:
     // --- Sequencer (message thread) ---
     void setPlaying (bool p) noexcept { playing.store (p, std::memory_order_relaxed); }
     bool isPlaying() const noexcept   { return playing.load (std::memory_order_relaxed); }
-    void setBpm (double b) noexcept   { bpm.store (b, std::memory_order_relaxed); }
+    // float, not double: atomic<double> is NOT lock-free on 32-bit ARM, and
+    // this is read inside the audio callback (the Android armeabi-v7a build
+    // would otherwise take a runtime lock there).
+    void setBpm (double b) noexcept   { bpm.store ((float) b, std::memory_order_relaxed); }
     void setStep (int patternIdx, int step, int pad, bool on) noexcept;
     void clearPattern (int patternIdx) noexcept;
     int  getPlayStep() const noexcept { return playStep.load (std::memory_order_relaxed); }
@@ -155,7 +158,13 @@ private:
         std::array<SampleBuffer*, cap> store {};
     };
 
-    std::array<Voice, kNumPads> voices {};
+    // Two voices per pad, round-robin: a retrigger steals the previous
+    // instance with a fast declick fade instead of hard-resetting it (the
+    // single-voice reset produced a waveform discontinuity = audible click).
+    static constexpr int kVoicesPerPad = 2;
+    static constexpr int kNumVoices    = kNumPads * kVoicesPerPad;
+    std::array<Voice, kNumVoices>       voices {};
+    std::array<std::uint8_t, kNumPads>  voiceFlip {};   // audio-thread only
     CommandFifo commands;
 
     std::array<SampleBuffer*, kNumPads>              padSample {};
@@ -176,7 +185,7 @@ private:
 
     // Sequencer.
     std::atomic<bool>   playing { false };
-    std::atomic<double> bpm { 120.0 };
+    std::atomic<float>  bpm { 120.0f };   // float: lock-free on 32-bit ARM too
     std::array<std::array<std::atomic<std::uint16_t>, kNumSteps>, kNumPatterns> patternBank {};
     std::atomic<int>    playStep { -1 };
     std::atomic<std::uint32_t> triggeredMask { 0 };   // pads triggered, read by UI
@@ -207,6 +216,17 @@ private:
     std::atomic<float> fxCutoff { 20000.0f };
     std::atomic<float> fxReso   { 0.707f };
     std::atomic<float> fxDrive  { 0.0f };        // 0..1
+
+    // Audio-thread-only smoothed FX params (one-pole toward the atomics):
+    // knob moves arrive as per-block jumps otherwise — zipper on the filter,
+    // crackle on the delay time. ~20 ms time constant.
+    float smCutoff  = 20000.0f;
+    float smReso    = 0.707f;
+    float smDrive   = 0.0f;
+    float smDlyMix  = 0.0f;
+    float smDlyFb   = 0.35f;
+    float smDlySamp = 0.0f;      // delay time in samples, smoothed per sample
+    bool  filterWasActive = false;
 
     // Master delay.
     juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Linear> delayLine { 96000 };

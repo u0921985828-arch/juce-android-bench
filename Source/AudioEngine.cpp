@@ -54,12 +54,13 @@ void AudioEngine::triggerPad (int slot, int extraSemis) noexcept
     if (sb == nullptr)
         return;
 
-    // Choke group: fade out any other pad's voice sharing this pad's group.
+    // Choke group: fade out any other pad's voices sharing this pad's group.
     const int group = padChoke[(size_t) slot].load (std::memory_order_relaxed);
     if (group > 0)
         for (int j = 0; j < kNumPads; ++j)
             if (j != slot && padChoke[(size_t) j].load (std::memory_order_relaxed) == group)
-                voices[(size_t) j].release();
+                for (int k = 0; k < kVoicesPerPad; ++k)
+                    voices[(size_t) (j * kVoicesPerPad + k)].release();
 
     const int len = sb->buffer.getNumSamples();
     int st = padStart[(size_t) slot].load (std::memory_order_relaxed);
@@ -68,7 +69,11 @@ void AudioEngine::triggerPad (int slot, int extraSemis) noexcept
     if (st < 0 || st >= en)  st = 0;
 
     triggeredMask.fetch_or ((std::uint32_t) (1u << slot), std::memory_order_relaxed);
-    voices[(size_t) slot].start (slot,
+
+    // Round-robin voice pair: declick-steal the old instance, start the new.
+    voices[(size_t) (slot * kVoicesPerPad + voiceFlip[(size_t) slot])].steal (systemSampleRate);
+    voiceFlip[(size_t) slot] ^= 1;
+    voices[(size_t) (slot * kVoicesPerPad + voiceFlip[(size_t) slot])].start (slot,
                                  padPitch[(size_t) slot].load (std::memory_order_relaxed) + (float) extraSemis,
                                  padGain[(size_t) slot].load (std::memory_order_relaxed),
                                  sb->sourceSampleRate, systemSampleRate,
@@ -115,11 +120,22 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
 
     auto renderVoices = [this, &out] (int s, int nn) noexcept
     {
-        for (int i = 0; i < kNumPads; ++i)
-            voices[(size_t) i].render (out, s, nn, padSample[(size_t) i]);
+        // Control-rate retarget first: looping/long voices keep following
+        // their pad's VOLUME/PAN knobs instead of freezing start() values.
+        for (int v = 0; v < kNumVoices; ++v)
+        {
+            auto& vc = voices[(size_t) v];
+            if (vc.active && vc.slot >= 0)
+                vc.retarget (padGain[(size_t) vc.slot].load (std::memory_order_relaxed),
+                             padPan [(size_t) vc.slot].load (std::memory_order_relaxed));
+        }
+        for (int v = 0; v < kNumVoices; ++v)
+            if (voices[(size_t) v].slot >= 0)
+                voices[(size_t) v].render (out, s, nn, padSample[(size_t) voices[(size_t) v].slot]);
     };
 
-    // 3. Drain UI trigger commands.
+    // 3. Drain UI trigger commands (taps fire at block start — human jitter
+    //    dwarfs one block; the sequencer below is the sample-accurate path).
     constexpr int kMaxCmds = 256;
     Command local[kMaxCmds];
     int n = 0;
@@ -127,28 +143,40 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     for (int i = 0; i < n; ++i)
         handleCommand (local[i]);
 
-    // 4. Sequencer transport (block-quantised stepping — good enough for P1).
+    // 4+5. Sequencer transport + voice rendering, sample-accurate: the block
+    //      is split at step boundaries, each step fires exactly on its frame
+    //      (the old version quantised every step to frame 0 of the block —
+    //      up to ~12 ms of jitter and flams at high BPM/large blocks).
     const bool isPlaying = playing.load (std::memory_order_relaxed);
-    if (isPlaying)
+    if (isPlaying && ! wasPlaying)
     {
-        if (! wasPlaying) { currentStep = -1; stepAccum = 0.0; chainPos = 0; playStep.store (-1, std::memory_order_relaxed); }
+        currentStep = -1; stepAccum = 0.0; chainPos = 0;
+        playStep.store (-1, std::memory_order_relaxed);
+    }
+    else if (! isPlaying && wasPlaying)
+    {
+        playStep.store (-1, std::memory_order_relaxed);
+    }
+    wasPlaying = isPlaying;
 
+    if (! isPlaying)
+    {
+        renderVoices (startSample, numSamples);
+    }
+    else
+    {
         const int chainLen = chainLength.load (std::memory_order_relaxed);
+        if (chainLen <= 0) chainPos = 0;
         int patternIdx = chainLen > 0 ? chainSlots[(size_t) chainPos].load (std::memory_order_relaxed)
                                       : editPattern.load (std::memory_order_relaxed);
         playingPattern.store (patternIdx, std::memory_order_relaxed);
 
-        const double beatsPerStep = 0.25;   // 16th notes
-        const double secPerStep   = (60.0 / juce::jmax (20.0, bpm.load (std::memory_order_relaxed))) * beatsPerStep;
+        const double beatsPerStep   = 0.25;   // 16th notes
+        const double secPerStep     = (60.0 / juce::jmax (20.0, (double) bpm.load (std::memory_order_relaxed))) * beatsPerStep;
         const double samplesPerStep = juce::jmax (1.0, secPerStep * systemSampleRate);
 
-        stepAccum += numSamples;
-        // Fire the first step immediately on start.
-        if (currentStep < 0) { stepAccum = samplesPerStep; }
-
-        while (stepAccum >= samplesPerStep)
+        auto fireStep = [this, chainLen, &patternIdx]() noexcept
         {
-            stepAccum -= samplesPerStep;
             const int prevStep = currentStep;
             const int len = juce::jlimit (kMinPatLen, kMaxPatLen, patternLength[(size_t) patternIdx].load (std::memory_order_relaxed));
             currentStep = (currentStep + 1) % len;
@@ -167,44 +195,72 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 if ((mask & (std::uint16_t) (1u << p)) != 0)
                     triggerPad (p, (int) stepNote[(size_t) patternIdx][(size_t) currentStep][(size_t) p].load (std::memory_order_relaxed));
             playStep.store (currentStep, std::memory_order_relaxed);
+        };
+
+        if (currentStep < 0)
+            fireStep();   // first step exactly at transport start
+
+        int offset    = startSample;
+        int remaining = numSamples;
+        while (remaining > 0)
+        {
+            const double toBoundary = samplesPerStep - stepAccum;
+            const int seg = juce::jlimit (1, remaining, (int) std::ceil (toBoundary));
+            renderVoices (offset, seg);
+            stepAccum += seg;
+            offset    += seg;
+            remaining -= seg;
+            if (stepAccum >= samplesPerStep - 1.0e-9)
+            {
+                stepAccum -= samplesPerStep;
+                fireStep();   // voices started here render from the next segment on
+            }
         }
     }
-    else if (wasPlaying)
-    {
-        playStep.store (-1, std::memory_order_relaxed);
-    }
-    wasPlaying = isPlaying;
-
-    // 5. Render all voices over the whole block.
-    renderVoices (startSample, numSamples);
 
     // 5b. Master FX: filter -> drive -> delay. Each stage is BYPASSED when
     //     neutral, so the default signal path is untouched (a bug here must
-    //     never silence the whole output).
+    //     never silence the whole output). All knob-driven params are
+    //     one-pole smoothed here (~20 ms) — the atomics jump per block and
+    //     applying them raw produced zipper (filter) and crackle (delay time).
     {
-        const int   outCh = out.getNumChannels();
-        const int   ft   = fxType.load   (std::memory_order_relaxed);
-        const float cut  = fxCutoff.load (std::memory_order_relaxed);
-        const float reso = fxReso.load   (std::memory_order_relaxed);
+        const int outCh = out.getNumChannels();
 
-        // LPF fully open (high cutoff, low resonance) = transparent -> skip.
-        const bool filterActive = ! (ft == 0 && cut >= 19000.0f && reso <= 0.72f);
+        // Block-rate smoothing coefficient for a ~20 ms time constant.
+        const float kBlock = 1.0f - std::exp ((float) -numSamples / (0.020f * (float) systemSampleRate));
+
+        const int   ft      = fxType.load   (std::memory_order_relaxed);
+        const float cutT    = juce::jlimit (20.0f, (float) (systemSampleRate * 0.45), fxCutoff.load (std::memory_order_relaxed));
+        const float resoT   = juce::jlimit (0.1f, 4.0f, fxReso.load (std::memory_order_relaxed));
+        smCutoff += kBlock * (cutT  - smCutoff);
+        smReso   += kBlock * (resoT - smReso);
+
+        // LPF fully open (high cutoff, low resonance) = transparent -> skip,
+        // but only when both the smoothed value AND the target agree, so the
+        // stage never pops in/out mid-glide. State is reset on re-entry —
+        // stale integrator state from minutes ago is not a valid IC.
+        const bool filterActive = ! (ft == 0 && smCutoff >= 19000.0f && cutT >= 19000.0f
+                                             && smReso <= 0.72f && resoT <= 0.72f);
         if (filterActive)
         {
+            if (! filterWasActive)
+                masterFilter.reset();
             juce::dsp::AudioBlock<float> block (out.getArrayOfWritePointers(), (size_t) outCh,
                                                 (size_t) startSample, (size_t) numSamples);
             masterFilter.setType (ft == 0 ? juce::dsp::StateVariableTPTFilterType::lowpass
                                           : juce::dsp::StateVariableTPTFilterType::highpass);
-            masterFilter.setCutoffFrequency (juce::jlimit (20.0f, (float) (systemSampleRate * 0.45), cut));
-            masterFilter.setResonance (juce::jlimit (0.1f, 4.0f, reso));
+            masterFilter.setCutoffFrequency (smCutoff);
+            masterFilter.setResonance (smReso);
             juce::dsp::ProcessContextReplacing<float> ctx (block);
             masterFilter.process (ctx);
         }
+        filterWasActive = filterActive;
 
-        const float d = fxDrive.load (std::memory_order_relaxed);
-        if (d > 0.0001f)
+        const float driveT = fxDrive.load (std::memory_order_relaxed);
+        smDrive += kBlock * (driveT - smDrive);
+        if (smDrive > 0.0001f || driveT > 0.0001f)
         {
-            const float k  = 1.0f + d * 24.0f;                 // drive gain into tanh
+            const float k  = 1.0f + smDrive * 24.0f;           // drive gain into tanh
             const float mk = 1.0f / std::tanh (k);             // makeup to keep level
             for (int ch = 0; ch < outCh; ++ch)
             {
@@ -214,26 +270,35 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             }
         }
 
-        // Delay (feedback) after the filter/drive.
-        const float mix = dlyMix.load (std::memory_order_relaxed);
-        if (mix > 0.001f)
-        {
-            const float fb = juce::jlimit (0.0f, 0.95f, dlyFb.load (std::memory_order_relaxed));
-            const float ds = juce::jlimit (1.0f, (float) (systemSampleRate - 1.0),
-                                           dlyTime.load (std::memory_order_relaxed) * (float) systemSampleRate / 1000.0f);
-            delayLine.setDelay (ds);
+        // Delay (feedback) after the filter/drive. Time is smoothed PER
+        // SAMPLE — a per-block jump through a linear-interp delay line is a
+        // hard discontinuity (crackle on every TIME move).
+        const float mixT = dlyMix.load (std::memory_order_relaxed);
+        const float fbT  = juce::jlimit (0.0f, 0.95f, dlyFb.load (std::memory_order_relaxed));
+        const float dsT  = juce::jlimit (1.0f, (float) (systemSampleRate - 1.0),
+                                         dlyTime.load (std::memory_order_relaxed) * (float) systemSampleRate / 1000.0f);
+        smDlyMix += kBlock * (mixT - smDlyMix);
+        smDlyFb  += kBlock * (fbT  - smDlyFb);
+        if (smDlySamp <= 0.0f) smDlySamp = dsT;                // first block: no sweep from 0
+        const float kSamp = 1.0f - std::exp (-1.0f / (0.020f * (float) systemSampleRate));
 
+        if (smDlyMix > 0.001f || mixT > 0.001f)
+        {
             float* w0 = out.getWritePointer (0, startSample);
             float* w1 = (outCh > 1) ? out.getWritePointer (1, startSample) : w0;
             for (int i = 0; i < numSamples; ++i)
+            {
+                smDlySamp += kSamp * (dsT - smDlySamp);
+                delayLine.setDelay (smDlySamp);
                 for (int ch = 0; ch < juce::jmin (2, outCh); ++ch)
                 {
                     float* w = (ch == 0) ? w0 : w1;
                     const float in = w[i];
                     const float d  = delayLine.popSample (ch);
-                    delayLine.pushSample (ch, in + d * fb);
-                    w[i] = in * (1.0f - mix) + d * mix;
+                    delayLine.pushSample (ch, in + d * smDlyFb);
+                    w[i] = in * (1.0f - smDlyMix) + d * smDlyMix;
                 }
+            }
         }
     }
 
@@ -249,17 +314,6 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             wi = (wi + 1) & (kScopeSize - 1);
         }
         scopeWrite.store (wi, std::memory_order_release);
-    }
-
-    // 5d. Output peaks for the perform-screen VU (max-hold until the UI reads).
-    {
-        const int outCh = out.getNumChannels();
-        const float pl = out.getMagnitude (0, startSample, numSamples);
-        const float pr = (outCh > 1) ? out.getMagnitude (1, startSample, numSamples) : pl;
-        float prev = outPeakL.load (std::memory_order_relaxed);
-        if (pl > prev) outPeakL.store (pl, std::memory_order_relaxed);
-        prev = outPeakR.load (std::memory_order_relaxed);
-        if (pr > prev) outPeakR.store (pr, std::memory_order_relaxed);
     }
 
     // 6. Diagnostic test tone.
@@ -288,6 +342,18 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         }
         testToneRemaining.store (tt, std::memory_order_relaxed);
     }
+
+    // 7. Output peaks for the VU (max-hold until the UI reads) — last stage,
+    //    after every contributor including the test tone.
+    {
+        const int outCh = out.getNumChannels();
+        const float pl = out.getMagnitude (0, startSample, numSamples);
+        const float pr = (outCh > 1) ? out.getMagnitude (1, startSample, numSamples) : pl;
+        float prev = outPeakL.load (std::memory_order_relaxed);
+        if (pl > prev) outPeakL.store (pl, std::memory_order_relaxed);
+        prev = outPeakR.load (std::memory_order_relaxed);
+        if (pr > prev) outPeakR.store (pr, std::memory_order_relaxed);
+    }
 }
 
 void AudioEngine::handleCommand (const Command& c) noexcept
@@ -295,7 +361,11 @@ void AudioEngine::handleCommand (const Command& c) noexcept
     switch (c.type)
     {
         case Command::Type::NoteOn:  triggerPad (c.slot); break;
-        case Command::Type::NoteOff: if (c.slot >= 0 && c.slot < kNumPads) voices[(size_t) c.slot].release(); break;
+        case Command::Type::NoteOff:
+            if (c.slot >= 0 && c.slot < kNumPads)
+                for (int k = 0; k < kVoicesPerPad; ++k)
+                    voices[(size_t) (c.slot * kVoicesPerPad + k)].release();
+            break;
         case Command::Type::Panic:   for (auto& v : voices) v.kill(); break;
     }
 }

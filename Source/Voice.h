@@ -28,6 +28,8 @@ struct Voice
 
     float  panL      = 0.7071f;   // equal-power pan gains, precomputed in start()
     float  panR      = 0.7071f;
+    float  panTL     = 0.7071f;   // pan targets — retarget() moves these, render() slews
+    float  panTR     = 0.7071f;
 
     void start (int slotIndex, float semitones, float velocity,
                 double fSrc, double fSys,
@@ -46,8 +48,8 @@ struct Voice
 
         // Equal-power pan law: pan in [-1, 1], 0 = centre.
         const float panAngle = (juce::jlimit (-1.0f, 1.0f, pan) * 0.5f + 0.5f) * juce::MathConstants<float>::halfPi;
-        panL = std::cos (panAngle);
-        panR = std::sin (panAngle);
+        panL = panTL = std::cos (panAngle);
+        panR = panTR = std::sin (panAngle);
 
         target    = velocity;
         gain      = 0.0f;
@@ -61,6 +63,28 @@ struct Voice
 
     void release() noexcept { releasing = true; }
     void kill()    noexcept { active = false; releasing = false; gain = 0.0f; }
+
+    // Voice steal: fast fixed declick fade (~1.5 ms) regardless of the pad's
+    // musical release — used when the same pad retriggers and this instance
+    // must get out of the way without a click.
+    void steal (double fSys) noexcept
+    {
+        if (! active) return;
+        releasing = true;
+        stepDown  = (float) (juce::jmax (gain, 0.05f) / juce::jmax (1.0, 0.0015 * fSys));
+    }
+
+    // Control-rate update (once per block, audio thread): a looping/long voice
+    // keeps following its pad's VOLUME and PAN instead of freezing the values
+    // captured at start(). Gain ramps in render(); pan slews there too.
+    void retarget (float g, float pan) noexcept
+    {
+        if (! active || releasing) return;
+        target = g;
+        const float panAngle = (juce::jlimit (-1.0f, 1.0f, pan) * 0.5f + 0.5f) * juce::MathConstants<float>::halfPi;
+        panTL = std::cos (panAngle);
+        panTR = std::sin (panAngle);
+    }
 
     void render (juce::AudioBuffer<float>& out, int start, int num,
                  const SampleBuffer* sb) noexcept
@@ -112,6 +136,15 @@ struct Voice
                 gain += stepUp;
                 if (gain > target) gain = target;
             }
+            else if (gain > target)          // retarget() lowered the pad volume
+            {
+                gain -= stepUp;
+                if (gain < target) gain = target;
+            }
+
+            // Pan slew toward retarget()'s values (~ms-scale, clickless).
+            panL += 0.002f * (panTL - panL);
+            panR += 0.002f * (panTR - panR);
 
             dstL[start + i] += gain * panL * hermite4 ((float) frac, srcL, idx);
             if (outCh > 1)
