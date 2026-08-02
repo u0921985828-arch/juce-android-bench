@@ -22,8 +22,10 @@
 class AudioEngine
 {
 public:
-    static constexpr int kNumPads  = 16;
-    static constexpr int kNumSteps = 16;
+    static constexpr int kNumPads     = 16;
+    static constexpr int kNumSteps    = 16;
+    static constexpr int kNumPatterns = 8;    // pattern banks
+    static constexpr int kMaxChain    = 16;   // chain slots (pattern indices, in play order)
 
     AudioEngine() = default;
     ~AudioEngine();
@@ -47,6 +49,9 @@ public:
     void setPadLoop    (int slot, bool b)      noexcept { store (padLoop,    slot, b); }
     void setPadReverse (int slot, bool b)      noexcept { store (padReverse, slot, b); }
     void setPadChoke   (int slot, int group)   noexcept { store (padChoke,   slot, group); }   // 0 = none
+    void setPadPan     (int slot, float p)     noexcept { store (padPan,     slot, p); }        // -1..1
+    void setPadAttack  (int slot, float ms)    noexcept { store (padAttack,  slot, ms); }
+    void setPadRelease (int slot, float ms)    noexcept { store (padRelease, slot, ms); }
     int  getSampleLength (int slot) const noexcept;   // 0 if none
 
     // --- Samples (message thread) ---
@@ -57,9 +62,27 @@ public:
     void setPlaying (bool p) noexcept { playing.store (p, std::memory_order_relaxed); }
     bool isPlaying() const noexcept   { return playing.load (std::memory_order_relaxed); }
     void setBpm (double b) noexcept   { bpm.store (b, std::memory_order_relaxed); }
-    void setStep (int step, int pad, bool on) noexcept;
-    void clearPattern() noexcept;
+    void setStep (int patternIdx, int step, int pad, bool on) noexcept;
+    void clearPattern (int patternIdx) noexcept;
     int  getPlayStep() const noexcept { return playStep.load (std::memory_order_relaxed); }
+
+    // --- Pattern chain (message thread) ---
+    //  editPattern is the bank the UI edits/steps; when the chain is empty,
+    //  playback simply loops editPattern (legacy single-pattern behaviour).
+    //  A non-empty chain plays its pattern banks in order, looping the chain.
+    void setEditPattern (int p) noexcept { editPattern.store (juce::jlimit (0, kNumPatterns - 1, p), std::memory_order_relaxed); }
+    int  getEditPattern() const noexcept { return editPattern.load (std::memory_order_relaxed); }
+    bool addToChain (int patternIdx) noexcept;
+    void clearChain() noexcept { chainLength.store (0, std::memory_order_relaxed); }
+    int  getChainLength() const noexcept { return chainLength.load (std::memory_order_relaxed); }
+    int  getChainSlot (int i) const noexcept { return (i >= 0 && i < kMaxChain) ? chainSlots[(size_t) i].load (std::memory_order_relaxed) : 0; }
+    int  getPlayingPattern() const noexcept { return playingPattern.load (std::memory_order_relaxed); }
+
+    // --- Piano roll: per-step semitone offset from the pad's own pitch ---
+    //  (message thread). Lets one pad's sample play a melody across the
+    //  16-step grid instead of one fixed pitch per pad.
+    void setStepNote (int patternIdx, int step, int pad, int semis) noexcept;
+    int  getStepNote  (int patternIdx, int step, int pad) const noexcept;
 
     // UI feedback: bitmask of pads triggered since the last call (taps + sequencer).
     std::uint32_t fetchTriggered() noexcept { return triggeredMask.exchange (0, std::memory_order_relaxed); }
@@ -83,8 +106,8 @@ public:
     float getRecordSeconds() const noexcept;
 
 private:
-    void handleCommand (const Command& c) noexcept;   // audio thread
-    void triggerPad (int slot) noexcept;              // audio thread
+    void handleCommand (const Command& c) noexcept;               // audio thread
+    void triggerPad (int slot, int extraSemis = 0) noexcept;      // audio thread
 
     template <typename Arr, typename V>
     static void store (Arr& a, int slot, V v) noexcept
@@ -134,16 +157,29 @@ private:
     std::array<std::atomic<bool>,  kNumPads> padLoop {};
     std::array<std::atomic<bool>,  kNumPads> padReverse {};
     std::array<std::atomic<int>,   kNumPads> padChoke {};   // 0 = none, 1..8 = choke group
+    std::array<std::atomic<float>, kNumPads> padPan {};      // -1 (L) .. 0 (centre) .. 1 (R)
+    std::array<std::atomic<float>, kNumPads> padAttack {};   // ms
+    std::array<std::atomic<float>, kNumPads> padRelease {};  // ms
 
     // Sequencer.
     std::atomic<bool>   playing { false };
     std::atomic<double> bpm { 120.0 };
-    std::array<std::atomic<std::uint16_t>, kNumSteps> stepMask {};
+    std::array<std::array<std::atomic<std::uint16_t>, kNumSteps>, kNumPatterns> patternBank {};
     std::atomic<int>    playStep { -1 };
     std::atomic<std::uint32_t> triggeredMask { 0 };   // pads triggered, read by UI
     double stepAccum = 0.0;      // audio-thread only
     int    currentStep = 0;      // audio-thread only
     bool   wasPlaying = false;   // audio-thread only
+
+    // Pattern chain.
+    std::atomic<int> editPattern { 0 };                        // bank the UI is editing
+    std::array<std::atomic<int>, kMaxChain> chainSlots {};
+    std::atomic<int> chainLength { 0 };
+    std::atomic<int> playingPattern { 0 };                     // bank actually sounding, for UI
+    int chainPos = 0;            // audio-thread only
+
+    // Piano roll: per-(pattern, step, pad) semitone offset from the pad's own pitch.
+    std::array<std::array<std::array<std::atomic<std::int8_t>, kNumPads>, kNumSteps>, kNumPatterns> stepNote {};
 
     // Recording.
     std::atomic<bool> recording { false };

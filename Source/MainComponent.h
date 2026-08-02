@@ -41,6 +41,7 @@ private:
     void updateControlsFromPad (int index);
     void assignSampleToPad (int index, SampleBuffer::Ptr sb, const juce::String& name = {});
     void toggleRecording();
+    void autoChopSelected();
     int  firstEmptyPad() const;
     void layoutPadGrid (juce::Rectangle<int> area, int cols, int rows, int gap);
 
@@ -61,8 +62,12 @@ private:
     juce::TextButton clearButton { "CLR" };
     juce::TextButton reverseButton { "REV" };
     juce::TextButton loopButton { "LOOP" };
+    juce::TextButton chopButton { "AUTO CHOP" };
 
     juce::Slider pitchSlider, volSlider, startSlider, endSlider, bpmSlider, chokeSlider;
+    juce::Slider panSlider, attackSlider, releaseSlider;
+    juce::Slider patternSlider, noteSlider;
+    juce::TextButton chainAddButton { "+CHAIN" }, chainClearButton { "CLR CHAIN" };
     juce::TextButton fxTypeButton { "LPF" };
     juce::Slider cutoffSlider, resoSlider, driveSlider;
     juce::Slider dlyTimeSlider, dlyFbSlider, dlyMixSlider;
@@ -82,11 +87,17 @@ private:
     std::array<bool,  kNumPads> padLoop {};
     std::array<bool,  kNumPads> padReverse {};
     std::array<int,   kNumPads> padChokeUI {};   // 0 = none
+    std::array<float, kNumPads> padPan {};        // -1..1, 0 = centre
+    std::array<float, kNumPads> padAttack {};     // ms
+    std::array<float, kNumPads> padRelease {};    // ms
     std::array<SampleBuffer::Ptr, kNumPads> uiSample;
     std::array<juce::String, kNumPads> padName {};
 
-    // Pattern mirror [step][pad] for the sequencer UI.
-    std::array<std::array<bool, kNumPads>, kNumSteps> pattern {};
+    // Pattern mirror [bank][step][pad] for the sequencer UI.
+    static constexpr int kNumPatterns = AudioEngine::kNumPatterns;   // 8
+    std::array<std::array<std::array<bool, kNumPads>, kNumSteps>, kNumPatterns> pattern {};
+    int selectedPattern = 0;
+    int selectedStep    = -1;
 
     std::array<float, kNumPads> padFlash {};   // 1.0 on trigger, decays -> lit feedback
     // Chassis layout regions (set in resized(), drawn in paint()).

@@ -28,6 +28,8 @@ MainComponent::MainComponent()
 
     padGain.fill (0.85f);
     padEnd01.fill (1.0f);
+    padAttack.fill (2.0f);
+    padRelease.fill (5.0f);
 
     for (int i = 0; i < kNumPads; ++i)
     {
@@ -98,8 +100,8 @@ MainComponent::MainComponent()
     styleButton (clearButton, kKey);
     clearButton.onClick = [this]
     {
-        engine.clearPattern();
-        for (auto& row : pattern) row.fill (false);
+        engine.clearPattern (selectedPattern);
+        for (auto& row : pattern[(size_t) selectedPattern]) row.fill (false);
         if (selectedPad >= 0) selectPad (selectedPad);
     };
     addAndMakeVisible (clearButton);
@@ -122,13 +124,27 @@ MainComponent::MainComponent()
     initSlider (startSlider,   0.0,  1.0, 0.001, 0.0);
     initSlider (endSlider,     0.0,  1.0, 0.001, 1.0);
     initSlider (bpmSlider,    60.0, 200.0, 1.0, 120.0);
+    initSlider (panSlider,    -1.0,  1.0, 0.01, 0.0);
+    initSlider (attackSlider,  0.0, 200.0, 1.0, 2.0);
+    initSlider (releaseSlider, 1.0, 800.0, 1.0, 5.0);
 
     pitchSlider.setTextValueSuffix (" st");
     bpmSlider.setTextValueSuffix (" bpm");
+    attackSlider.setTextValueSuffix (" ms");
+    releaseSlider.setTextValueSuffix (" ms");
+    panSlider.textFromValueFunction = [] (double v)
+    {
+        if (std::abs (v) < 0.005) return juce::String ("C");
+        return (v < 0 ? "L" : "R") + juce::String ((int) std::round (std::abs (v) * 100.0));
+    };
+    panSlider.updateText();   // refresh textbox with the new formatter
 
     pitchSlider.onValueChange = [this] { if (selectedPad >= 0) { padPitch[(size_t) selectedPad] = (float) pitchSlider.getValue(); engine.setPadPitch (selectedPad, (float) pitchSlider.getValue()); } };
     volSlider.onValueChange   = [this] { if (selectedPad >= 0) { padGain[(size_t) selectedPad]  = (float) volSlider.getValue();   engine.setPadGain  (selectedPad, (float) volSlider.getValue()); } };
     bpmSlider.onValueChange   = [this] { engine.setBpm (bpmSlider.getValue()); };
+    panSlider.onValueChange     = [this] { if (selectedPad >= 0) { padPan[(size_t) selectedPad]     = (float) panSlider.getValue();     engine.setPadPan     (selectedPad, (float) panSlider.getValue()); } };
+    attackSlider.onValueChange  = [this] { if (selectedPad >= 0) { padAttack[(size_t) selectedPad]  = (float) attackSlider.getValue();  engine.setPadAttack  (selectedPad, (float) attackSlider.getValue()); } };
+    releaseSlider.onValueChange = [this] { if (selectedPad >= 0) { padRelease[(size_t) selectedPad] = (float) releaseSlider.getValue(); engine.setPadRelease (selectedPad, (float) releaseSlider.getValue()); } };
 
     startSlider.onValueChange = [this]
     {
@@ -161,6 +177,10 @@ MainComponent::MainComponent()
     loopButton.onClick = [this] { if (selectedPad >= 0) { padLoop[(size_t) selectedPad] = loopButton.getToggleState(); engine.setPadLoop (selectedPad, loopButton.getToggleState()); } };
     addAndMakeVisible (loopButton);
 
+    styleButton (chopButton, kKey);
+    chopButton.onClick = [this] { autoChopSelected(); };
+    addAndMakeVisible (chopButton);
+
     chokeSlider.setSliderStyle (juce::Slider::IncDecButtons);
     chokeSlider.setRange (0.0, 8.0, 1.0);
     chokeSlider.setValue (0.0, juce::dontSendNotification);
@@ -169,8 +189,55 @@ MainComponent::MainComponent()
     chokeSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     chokeSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 90, 22);
     chokeSlider.textFromValueFunction = [] (double v) { return v <= 0.0 ? juce::String ("CHOKE: off") : "CHOKE: " + juce::String ((int) v); };
+    chokeSlider.updateText();   // refresh textbox with the new formatter
     chokeSlider.onValueChange = [this] { if (selectedPad >= 0) { padChokeUI[(size_t) selectedPad] = (int) chokeSlider.getValue(); engine.setPadChoke (selectedPad, (int) chokeSlider.getValue()); } };
     addAndMakeVisible (chokeSlider);
+
+    // Pattern bank selector (drives what the step grid shows/edits).
+    patternSlider.setSliderStyle (juce::Slider::IncDecButtons);
+    patternSlider.setRange (0.0, (double) (kNumPatterns - 1), 1.0);
+    patternSlider.setValue (0.0, juce::dontSendNotification);
+    patternSlider.setColour (juce::Slider::textBoxTextColourId, ShardColours::lcdFg);
+    patternSlider.setColour (juce::Slider::textBoxBackgroundColourId, ShardColours::screenBg);
+    patternSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+    patternSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 90, 22);
+    patternSlider.textFromValueFunction = [] (double v) { return "PATTERN " + juce::String ((int) v + 1); };
+    patternSlider.updateText();   // refresh textbox with the new formatter
+    patternSlider.onValueChange = [this]
+    {
+        selectedPattern = (int) patternSlider.getValue();
+        engine.setEditPattern (selectedPattern);
+        selectedStep = -1;
+        noteSlider.setValue (0.0, juce::dontSendNotification);
+        repaint();
+    };
+    addAndMakeVisible (patternSlider);
+
+    styleButton (chainAddButton, kKey);
+    chainAddButton.onClick = [this] { engine.addToChain (selectedPattern); repaint(); };
+    addAndMakeVisible (chainAddButton);
+
+    styleButton (chainClearButton, kKey);
+    chainClearButton.onClick = [this] { engine.clearChain(); repaint(); };
+    addAndMakeVisible (chainClearButton);
+
+    // Piano roll: per-step semitone offset for the selected pad (tap a step
+    // to select it, then dial its pitch here — melodies from one sample).
+    noteSlider.setSliderStyle (juce::Slider::IncDecButtons);
+    noteSlider.setRange (-24.0, 24.0, 1.0);
+    noteSlider.setValue (0.0, juce::dontSendNotification);
+    noteSlider.setColour (juce::Slider::textBoxTextColourId, ShardColours::lcdFg);
+    noteSlider.setColour (juce::Slider::textBoxBackgroundColourId, ShardColours::screenBg);
+    noteSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+    noteSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 90, 22);
+    noteSlider.textFromValueFunction = [] (double v) { return "NOTE " + (v > 0 ? juce::String ("+") : juce::String()) + juce::String ((int) v); };
+    noteSlider.updateText();   // refresh textbox with the new formatter
+    noteSlider.onValueChange = [this]
+    {
+        if (selectedPad >= 0 && selectedStep >= 0)
+            engine.setStepNote (selectedPattern, selectedStep, selectedPad, (int) noteSlider.getValue());
+    };
+    addAndMakeVisible (noteSlider);
 
     // Master FX (filter + drive).
     fxTypeButton.setClickingTogglesState (true);
@@ -247,6 +314,8 @@ void MainComponent::setMode (Mode m)
     pitchSlider.setVisible (edit); volSlider.setVisible (edit);
     startSlider.setVisible (edit); endSlider.setVisible (edit);
     chokeSlider.setVisible (edit); reverseButton.setVisible (edit); loopButton.setVisible (edit);
+    panSlider.setVisible (edit); attackSlider.setVisible (edit); releaseSlider.setVisible (edit);
+    chopButton.setVisible (edit);
 
     cutoffSlider.setVisible (fx); resoSlider.setVisible (fx); driveSlider.setVisible (fx);
     dlyTimeSlider.setVisible (fx); dlyFbSlider.setVisible (fx); dlyMixSlider.setVisible (fx);
@@ -256,6 +325,8 @@ void MainComponent::setMode (Mode m)
 
     clearButton.setVisible (seq);
     bpmSlider.setVisible (seq);
+    patternSlider.setVisible (seq); chainAddButton.setVisible (seq); chainClearButton.setVisible (seq);
+    noteSlider.setVisible (seq);
 
     if ((edit || seq) && selectedPad < 0)
         selectPad (0);
@@ -383,19 +454,40 @@ void MainComponent::paint (juce::Graphics& g)
             auto r = s.getBounds();
             g.drawText (t, r.getX() - 66, r.getY(), 60, r.getHeight(), juce::Justification::centredLeft);
         };
-        lab (pitchSlider, "PITCH"); lab (volSlider, "VOLUME");
+        lab (pitchSlider, "PITCH"); lab (volSlider, "VOLUME"); lab (panSlider, "PAN");
         lab (startSlider, "START"); lab (endSlider, "END");
+        lab (attackSlider, "ATTACK"); lab (releaseSlider, "RELEASE");
         lab (chokeSlider, "CHOKE");
     }
     else if (mode == Mode::Seq && ! seqPanelArea.isEmpty())
     {
-        g.setColour (ShardColours::ink.withAlpha (0.9f));
-        g.setFont (ShardColours::monoFont (11.0f, true).withExtraKerningFactor (0.14f));
         const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
         const int sp = juce::jmax (0, selectedPad);
+        auto inner = seqPanelArea.reduced (12, 6);
+
+        g.setColour (ShardColours::ink.withAlpha (0.9f));
+        g.setFont (ShardColours::monoFont (11.0f, true).withExtraKerningFactor (0.14f));
         const juce::String t = "STEPS  " + dot + "  PAD " + juce::String (sp + 1)
-                             + (padName[(size_t) sp].isNotEmpty() ? "   " + padName[(size_t) sp] : juce::String());
-        g.drawText (t, seqPanelArea.reduced (12, 6).removeFromTop (16), juce::Justification::centredLeft);
+                             + (padName[(size_t) sp].isNotEmpty() ? "   " + padName[(size_t) sp] : juce::String())
+                             + "   " + dot + "   P" + juce::String (selectedPattern + 1);
+        g.drawText (t, inner.removeFromTop (16), juce::Justification::centredLeft);
+
+        // Chain summary: which banks are queued, and which one is actually
+        // sounding right now (may differ from the one being viewed/edited).
+        const int cl = engine.getChainLength();
+        juce::String chainStr;
+        if (cl <= 0)
+            chainStr = "CHAIN off " + dot + " looping P" + juce::String (selectedPattern + 1);
+        else
+        {
+            chainStr = "CHAIN ";
+            for (int i = 0; i < cl; ++i)
+                chainStr += juce::String (engine.getChainSlot (i) + 1) + (i < cl - 1 ? "-" : "");
+            chainStr += "  " + dot + "  playing P" + juce::String (engine.getPlayingPattern() + 1);
+        }
+        g.setColour (ShardColours::inkDim);
+        g.setFont (ShardColours::monoFont (9.5f, true).withExtraKerningFactor (0.10f));
+        g.drawText (chainStr, inner.removeFromTop (14), juce::Justification::centredLeft);
     }
 }
 
@@ -507,36 +599,66 @@ void MainComponent::resized()
             auto ctrlRow = [&inner, labelW] (int h) { auto r = inner.removeFromTop (h); r.removeFromLeft (labelW); return r; };
             pitchSlider.setBounds (ctrlRow (26)); inner.removeFromTop (4);
             volSlider.setBounds   (ctrlRow (26)); inner.removeFromTop (4);
+            panSlider.setBounds   (ctrlRow (26)); inner.removeFromTop (4);
             startSlider.setBounds (ctrlRow (26)); inner.removeFromTop (4);
-            endSlider.setBounds   (ctrlRow (26)); inner.removeFromTop (6);
+            endSlider.setBounds   (ctrlRow (26)); inner.removeFromTop (4);
+            attackSlider.setBounds  (ctrlRow (26)); inner.removeFromTop (4);
+            releaseSlider.setBounds (ctrlRow (26)); inner.removeFromTop (6);
             chokeSlider.setBounds (ctrlRow (26)); inner.removeFromTop (6);
             {
                 auto rr = inner.removeFromTop (30);
                 reverseButton.setBounds (rr.removeFromLeft (rr.getWidth() / 2).reduced (3, 0));
                 loopButton.setBounds (rr.reduced (3, 0));
             }
+            inner.removeFromTop (6);
+            chopButton.setBounds (inner.removeFromTop (30).reduced (3, 0));
         }
         else // Seq
         {
             seqPanelArea = area;
             auto inner = area.reduced (10, 8);
-            inner.removeFromTop (18);                     // title drawn in paint
+            inner.removeFromTop (32);                     // 2-line title drawn in paint (STEPS + CHAIN)
+
+            // Pattern bank + chain controls (2x2).
+            {
+                auto row1 = inner.removeFromTop (26);
+                const int w1 = row1.getWidth() / 2;
+                patternSlider.setBounds  (row1.removeFromLeft (w1).reduced (2, 0));
+                chainAddButton.setBounds (row1.reduced (2, 0));
+                inner.removeFromTop (4);
+                auto row2 = inner.removeFromTop (26);
+                const int w2 = row2.getWidth() / 2;
+                chainClearButton.setBounds (row2.removeFromLeft (w2).reduced (2, 0));
+                noteSlider.setBounds       (row2.reduced (2, 0));
+            }
+            inner.removeFromTop (6);
+
             auto bottom = inner.removeFromBottom (30);
             bpmSlider.setBounds (bottom.removeFromLeft ((int) (bottom.getWidth() * 0.66f)).reduced (2, 0));
             clearButton.setBounds (bottom.reduced (3, 0));
             inner.removeFromBottom (8);
 
-            // Keep the step pad roughly square — cap its height, top-aligned.
-            auto steps = inner.removeFromTop (juce::jmin (inner.getHeight(), 170));
-            const int rowH = steps.getHeight() / 2;
-            for (int r = 0; r < 2; ++r)
+            // Step grid: real square cells (capped, not stretched to fill the
+            // panel), gapped and centred so 16 small pads read cleanly.
             {
-                auto row = (r == 0 ? steps.removeFromTop (rowH) : steps);
-                const int w = row.getWidth() / 8;
-                for (int c = 0; c < 8; ++c)
+                const int cols = 8, rows = 2, gap = 6;
+                const int maxCellW = (inner.getWidth()  - (cols - 1) * gap) / cols;
+                const int maxCellH = (juce::jmin (inner.getHeight(), 130) - (rows - 1) * gap) / rows;
+                const int cell = juce::jmin (juce::jmin (maxCellW, maxCellH), 46);
+
+                auto steps = inner.removeFromTop (rows * cell + (rows - 1) * gap);
+                steps = steps.withSizeKeepingCentre (cols * cell + (cols - 1) * gap, steps.getHeight());
+
+                for (int r = 0; r < rows; ++r)
                 {
-                    const int idx = r * 8 + c;
-                    stepButtons[idx]->setBounds ((c < 7 ? row.removeFromLeft (w) : row).reduced (3));
+                    auto row = steps.removeFromTop (cell);
+                    if (r == 0) steps.removeFromTop (gap);
+                    for (int c = 0; c < cols; ++c)
+                    {
+                        const int idx = r * cols + c;
+                        stepButtons[idx]->setBounds (row.removeFromLeft (cell));
+                        if (c < cols - 1) row.removeFromLeft (gap);
+                    }
                 }
             }
         }
@@ -563,10 +685,13 @@ void MainComponent::padClicked (int index)
 
 void MainComponent::stepClicked (int step)
 {
+    selectedStep = step;
+    noteSlider.setValue (engine.getStepNote (selectedPattern, step, juce::jmax (0, selectedPad)), juce::dontSendNotification);
+
     if (selectedPad < 0) return;
-    const bool nv = ! pattern[(size_t) step][(size_t) selectedPad];
-    pattern[(size_t) step][(size_t) selectedPad] = nv;
-    engine.setStep (step, selectedPad, nv);
+    const bool nv = ! pattern[(size_t) selectedPattern][(size_t) step][(size_t) selectedPad];
+    pattern[(size_t) selectedPattern][(size_t) step][(size_t) selectedPad] = nv;
+    engine.setStep (selectedPattern, step, selectedPad, nv);
 }
 
 void MainComponent::refreshPad (int index)
@@ -610,6 +735,9 @@ void MainComponent::updateControlsFromPad (int index)
     reverseButton.setToggleState (padReverse[(size_t) index], juce::dontSendNotification);
     loopButton.setToggleState    (padLoop[(size_t) index],    juce::dontSendNotification);
     chokeSlider.setValue (padChokeUI[(size_t) index], juce::dontSendNotification);
+    panSlider.setValue     (padPan[(size_t) index],     juce::dontSendNotification);
+    attackSlider.setValue  (padAttack[(size_t) index],  juce::dontSendNotification);
+    releaseSlider.setValue (padRelease[(size_t) index], juce::dontSendNotification);
 }
 
 void MainComponent::assignSampleToPad (int index, SampleBuffer::Ptr sb, const juce::String& name)
@@ -630,10 +758,57 @@ void MainComponent::assignSampleToPad (int index, SampleBuffer::Ptr sb, const ju
     engine.setPadLoop    (index, padLoop[(size_t) index]);
     engine.setPadReverse (index, padReverse[(size_t) index]);
     engine.setPadChoke   (index, padChokeUI[(size_t) index]);
+    engine.setPadPan     (index, padPan[(size_t) index]);
+    engine.setPadAttack  (index, padAttack[(size_t) index]);
+    engine.setPadRelease (index, padRelease[(size_t) index]);
 
     if (auto* p = pads[index]) p->setSampleInfo (uiSample[(size_t) index], padName[(size_t) index]);
 
     selectPad (index);
+}
+
+void MainComponent::autoChopSelected()
+{
+    if (selectedPad < 0) return;
+    auto src = uiSample[(size_t) selectedPad];
+    if (src == nullptr) return;
+    const int len = src->buffer.getNumSamples();
+    if (len < kNumPads) return;
+
+    const juce::String baseName = padName[(size_t) selectedPad].isNotEmpty()
+                                 ? padName[(size_t) selectedPad] : juce::String ("CHOP");
+
+    for (int i = 0; i < kNumPads; ++i)
+    {
+        const int st = (int) ((juce::int64) i * len / kNumPads);
+        const int en = (int) ((juce::int64) (i + 1) * len / kNumPads);
+
+        padHasSample[(size_t) i] = true;
+        uiSample[(size_t) i]     = src;
+        padStart01[(size_t) i]   = (float) st / (float) len;
+        padEnd01[(size_t) i]     = (float) en / (float) len;
+        padLoop[(size_t) i]      = false;
+        padReverse[(size_t) i]   = false;
+        padChokeUI[(size_t) i]   = 0;
+        padName[(size_t) i]      = baseName + " " + juce::String (i + 1).paddedLeft ('0', 2);
+
+        engine.publishSample (i, src);   // resets trim to full length — override right after
+        engine.setPadStart   (i, st);
+        engine.setPadEnd     (i, en);
+        engine.setPadGain    (i, padGain[(size_t) i]);
+        engine.setPadPitch   (i, padPitch[(size_t) i]);
+        engine.setPadLoop    (i, false);
+        engine.setPadReverse (i, false);
+        engine.setPadChoke   (i, 0);
+        engine.setPadPan     (i, padPan[(size_t) i]);
+        engine.setPadAttack  (i, padAttack[(size_t) i]);
+        engine.setPadRelease (i, padRelease[(size_t) i]);
+
+        if (auto* p = pads[i]) p->setSampleInfo (uiSample[(size_t) i], padName[(size_t) i]);
+    }
+
+    selectPad (0);
+    status.setText ("Auto-chopped into " + juce::String (kNumPads) + " pads", juce::dontSendNotification);
 }
 
 int MainComponent::firstEmptyPad() const
@@ -729,15 +904,27 @@ void MainComponent::timerCallback()
     }
     juce::ignoreUnused (anyFlash);
 
-    // Sequencer step colours + playhead (reuse ps from above).
+    // Sequencer step colours + playhead (reuse ps from above). The playhead
+    // only lights up while viewing the pattern that's actually sounding —
+    // otherwise a chain playing a different bank would light the wrong grid.
+    const bool viewingPlayingPattern = (engine.getPlayingPattern() == selectedPattern);
     for (int s = 0; s < kNumSteps; ++s)
     {
-        const bool on = (selectedPad >= 0) && pattern[(size_t) s][(size_t) selectedPad];
-        auto col = on ? kPadLoaded : kStepOff;
-        if (s == ps) col = col.brighter (0.7f);
+        // Shade alternating groups of 4 steps (the beats within the 16-step
+        // bar) so the grid reads at a glance, even with nothing programmed.
+        const bool  altBeat = ((s / 4) % 2) != 0;
+        const bool  on = (selectedPad >= 0) && pattern[(size_t) selectedPattern][(size_t) s][(size_t) selectedPad];
+        auto col = on ? kPadLoaded : (altBeat ? kStepOff.darker (0.13f) : kStepOff);
+        if (s == selectedStep) col = col.interpolatedWith (ShardColours::accent, 0.35f);
+        if (s == ps && viewingPlayingPattern) col = col.brighter (0.7f);
         stepButtons[s]->setColour (juce::TextButton::buttonColourId, col);
     }
     lastPlayStep = ps;
+
+    // Keep the SEQ panel's chain/playing-pattern readout live while the
+    // sequencer runs (it's drawn in paint(), not owned by a Component).
+    if (mode == Mode::Seq && engine.isPlaying())
+        repaint (seqPanelArea);
 
     if (recordingActive)
         status.setText ("Recording pad " + juce::String (recordingSlot + 1)

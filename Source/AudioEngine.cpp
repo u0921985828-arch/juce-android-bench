@@ -41,7 +41,7 @@ void AudioEngine::releaseResources() noexcept
         v.kill();
 }
 
-void AudioEngine::triggerPad (int slot) noexcept
+void AudioEngine::triggerPad (int slot, int extraSemis) noexcept
 {
     if (slot < 0 || slot >= kNumPads)
         return;
@@ -64,13 +64,16 @@ void AudioEngine::triggerPad (int slot) noexcept
 
     triggeredMask.fetch_or ((std::uint32_t) (1u << slot), std::memory_order_relaxed);
     voices[(size_t) slot].start (slot,
-                                 padPitch[(size_t) slot].load (std::memory_order_relaxed),
+                                 padPitch[(size_t) slot].load (std::memory_order_relaxed) + (float) extraSemis,
                                  padGain[(size_t) slot].load (std::memory_order_relaxed),
                                  sb->sourceSampleRate, systemSampleRate,
                                  st, en,
                                  padLoop[(size_t) slot].load (std::memory_order_relaxed),
                                  padReverse[(size_t) slot].load (std::memory_order_relaxed),
-                                 len);
+                                 len,
+                                 padPan[(size_t) slot].load (std::memory_order_relaxed),
+                                 padAttack[(size_t) slot].load (std::memory_order_relaxed),
+                                 padRelease[(size_t) slot].load (std::memory_order_relaxed));
 }
 
 void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
@@ -123,7 +126,12 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     const bool isPlaying = playing.load (std::memory_order_relaxed);
     if (isPlaying)
     {
-        if (! wasPlaying) { currentStep = -1; stepAccum = 0.0; playStep.store (-1, std::memory_order_relaxed); }
+        if (! wasPlaying) { currentStep = -1; stepAccum = 0.0; chainPos = 0; playStep.store (-1, std::memory_order_relaxed); }
+
+        const int chainLen = chainLength.load (std::memory_order_relaxed);
+        int patternIdx = chainLen > 0 ? chainSlots[(size_t) chainPos].load (std::memory_order_relaxed)
+                                      : editPattern.load (std::memory_order_relaxed);
+        playingPattern.store (patternIdx, std::memory_order_relaxed);
 
         const double beatsPerStep = 0.25;   // 16th notes
         const double secPerStep   = (60.0 / juce::jmax (20.0, bpm.load (std::memory_order_relaxed))) * beatsPerStep;
@@ -136,11 +144,21 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         while (stepAccum >= samplesPerStep)
         {
             stepAccum -= samplesPerStep;
+            const int prevStep = currentStep;
             currentStep = (currentStep + 1) % kNumSteps;
-            const std::uint16_t mask = stepMask[(size_t) currentStep].load (std::memory_order_relaxed);
+
+            // A full pattern (16 steps) just completed — advance the chain.
+            if (currentStep == 0 && prevStep >= 0 && chainLen > 0)
+            {
+                chainPos   = (chainPos + 1) % chainLen;
+                patternIdx = chainSlots[(size_t) chainPos].load (std::memory_order_relaxed);
+                playingPattern.store (patternIdx, std::memory_order_relaxed);
+            }
+
+            const std::uint16_t mask = patternBank[(size_t) patternIdx][(size_t) currentStep].load (std::memory_order_relaxed);
             for (int p = 0; p < kNumPads; ++p)
                 if ((mask & (std::uint16_t) (1u << p)) != 0)
-                    triggerPad (p);
+                    triggerPad (p, (int) stepNote[(size_t) patternIdx][(size_t) currentStep][(size_t) p].load (std::memory_order_relaxed));
             playStep.store (currentStep, std::memory_order_relaxed);
         }
     }
@@ -324,18 +342,41 @@ void AudioEngine::copyScope (float* dst, int n) noexcept
         dst[i] = scope[(size_t) ((wi - n + i) & (kScopeSize - 1))];
 }
 
-void AudioEngine::setStep (int step, int pad, bool on) noexcept
+void AudioEngine::setStep (int patternIdx, int step, int pad, bool on) noexcept
 {
-    if (step < 0 || step >= kNumSteps || pad < 0 || pad >= kNumPads) return;
+    if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps || pad < 0 || pad >= kNumPads) return;
     const std::uint16_t bit = (std::uint16_t) (1u << pad);
-    std::uint16_t cur = stepMask[(size_t) step].load (std::memory_order_relaxed);
+    std::uint16_t cur = patternBank[(size_t) patternIdx][(size_t) step].load (std::memory_order_relaxed);
     cur = on ? (std::uint16_t) (cur | bit) : (std::uint16_t) (cur & ~bit);
-    stepMask[(size_t) step].store (cur, std::memory_order_relaxed);
+    patternBank[(size_t) patternIdx][(size_t) step].store (cur, std::memory_order_relaxed);
 }
 
-void AudioEngine::clearPattern() noexcept
+void AudioEngine::clearPattern (int patternIdx) noexcept
 {
-    for (auto& m : stepMask) m.store (0, std::memory_order_relaxed);
+    if (patternIdx < 0 || patternIdx >= kNumPatterns) return;
+    for (auto& m : patternBank[(size_t) patternIdx]) m.store (0, std::memory_order_relaxed);
+}
+
+void AudioEngine::setStepNote (int patternIdx, int step, int pad, int semis) noexcept
+{
+    if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps || pad < 0 || pad >= kNumPads) return;
+    stepNote[(size_t) patternIdx][(size_t) step][(size_t) pad].store ((std::int8_t) juce::jlimit (-24, 24, semis), std::memory_order_relaxed);
+}
+
+int AudioEngine::getStepNote (int patternIdx, int step, int pad) const noexcept
+{
+    if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps || pad < 0 || pad >= kNumPads) return 0;
+    return stepNote[(size_t) patternIdx][(size_t) step][(size_t) pad].load (std::memory_order_relaxed);
+}
+
+bool AudioEngine::addToChain (int patternIdx) noexcept
+{
+    if (patternIdx < 0 || patternIdx >= kNumPatterns) return false;
+    const int len = chainLength.load (std::memory_order_relaxed);
+    if (len >= kMaxChain) return false;
+    chainSlots[(size_t) len].store (patternIdx, std::memory_order_relaxed);
+    chainLength.store (len + 1, std::memory_order_relaxed);
+    return true;
 }
 
 // ---------------------------------------------------------------------------

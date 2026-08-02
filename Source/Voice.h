@@ -26,9 +26,13 @@ struct Voice
     float  stepUp    = 0.0f;
     float  stepDown  = 0.0f;
 
+    float  panL      = 0.7071f;   // equal-power pan gains, precomputed in start()
+    float  panR      = 0.7071f;
+
     void start (int slotIndex, float semitones, float velocity,
                 double fSrc, double fSys,
-                int startSamp, int endSamp, bool loopOn, bool rev, int srcLen) noexcept
+                int startSamp, int endSamp, bool loopOn, bool rev, int srcLen,
+                float pan = 0.0f, float attackMs = 2.0f, float releaseMs = 3.0f) noexcept
     {
         slot     = slotIndex;
         winStart = juce::jlimit (1, juce::jmax (1, srcLen - 3), startSamp);
@@ -40,11 +44,16 @@ struct Voice
         delta = rev ? -base : base;
         pos   = rev ? (double) (winEnd - 1) : (double) winStart;
 
+        // Equal-power pan law: pan in [-1, 1], 0 = centre.
+        const float panAngle = (juce::jlimit (-1.0f, 1.0f, pan) * 0.5f + 0.5f) * juce::MathConstants<float>::halfPi;
+        panL = std::cos (panAngle);
+        panR = std::sin (panAngle);
+
         target    = velocity;
         gain      = 0.0f;
         releasing = false;
-        const double fadeIn  = juce::jmax (1.0, 0.002 * fSys);
-        const double fadeOut = juce::jmax (1.0, 0.003 * fSys);
+        const double fadeIn  = juce::jmax (1.0, 0.001 * (double) juce::jmax (0.1f, attackMs)  * fSys);
+        const double fadeOut = juce::jmax (1.0, 0.001 * (double) juce::jmax (0.1f, releaseMs) * fSys);
         stepUp    = (float) (velocity / fadeIn);
         stepDown  = (float) (velocity / fadeOut);
         active    = true;
@@ -104,9 +113,9 @@ struct Voice
                 if (gain > target) gain = target;
             }
 
-            dstL[start + i] += gain * hermite4 ((float) frac, srcL, idx);
+            dstL[start + i] += gain * panL * hermite4 ((float) frac, srcL, idx);
             if (outCh > 1)
-                dstR[start + i] += gain * hermite4 ((float) frac, srcR, idx);
+                dstR[start + i] += gain * panR * hermite4 ((float) frac, srcR, idx);
 
             pos += delta;
         }
