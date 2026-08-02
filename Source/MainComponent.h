@@ -43,6 +43,7 @@ private:
     void assignSampleToPad (int index, SampleBuffer::Ptr sb, const juce::String& name = {});
     void toggleRecording();
     void autoChopSelected();
+    void rebuildChain();
     int  firstEmptyPad() const;
     void layoutPadGrid (juce::Rectangle<int> area, int cols, int rows, int gap);
 
@@ -54,7 +55,8 @@ private:
 
     juce::OwnedArray<PadButton> pads;
     juce::OwnedArray<juce::TextButton> stepButtons;
-    juce::OwnedArray<juce::TextButton> tabButtons;   // TOCAR / EDITAR / SEC / FX
+    juce::OwnedArray<juce::TextButton> tabButtons;      // TOCAR / EDITAR / SEC / FX
+    juce::OwnedArray<juce::TextButton> patternButtons;  // P1..P8 — chain include toggles
 
     juce::TextButton loadButton { "LOAD" };
     juce::TextButton testButton { "TEST" };
@@ -68,7 +70,7 @@ private:
     juce::Slider pitchSlider, volSlider, startSlider, endSlider, bpmSlider, chokeSlider;
     juce::Slider panSlider, attackSlider, releaseSlider;
     juce::Slider patternSlider, noteSlider, lengthSlider;
-    juce::TextButton chainAddButton { "+CHAIN" }, chainClearButton { "CLR CHAIN" };
+    juce::TextButton chainClearButton { "CLR CHAIN" };
     juce::TextButton fxTypeButton { "LPF" };
     juce::Slider cutoffSlider, resoSlider, driveSlider;
     juce::Slider dlyTimeSlider, dlyFbSlider, dlyMixSlider;
@@ -99,6 +101,7 @@ private:
     std::array<std::array<std::array<bool, kNumPads>, kNumSteps>, kNumPatterns> pattern {};
     int selectedPattern = 0;
     int selectedStep    = -1;
+    std::array<bool, kNumPatterns> patternActiveUI {};   // which banks are in the chain
 
     std::array<float, kNumPads> padFlash {};   // 1.0 on trigger, decays -> lit feedback
     // Chassis layout regions (set in resized(), drawn in paint()).

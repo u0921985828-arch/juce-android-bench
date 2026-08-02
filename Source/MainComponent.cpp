@@ -16,6 +16,14 @@ namespace
         b.setColour (juce::TextButton::textColourOffId, darkCap ? ShardColours::inkLight : ShardColours::ink);
         b.setColour (juce::TextButton::textColourOnId,  ShardColours::ink);
     }
+
+    // Cycle the 3 primaries across the 8 pattern banks so each has its own
+    // colour identity in the chain-include row.
+    juce::Colour patternRowColour (int idx)
+    {
+        static const juce::Colour primaries[3] = { ShardColours::accent, ShardColours::red, ShardColours::yellow };
+        return primaries[(size_t) (idx % 3)];
+    }
 }
 
 MainComponent::MainComponent()
@@ -232,12 +240,31 @@ MainComponent::MainComponent()
     };
     addAndMakeVisible (lengthSlider);
 
-    styleButton (chainAddButton, kKey);
-    chainAddButton.onClick = [this] { engine.addToChain (selectedPattern); repaint(); };
-    addAndMakeVisible (chainAddButton);
+    // Chain include row: 8 coloured toggles, one per pattern bank — tap to
+    // put that bank in (or out of) the played sequence. 0 active = fall back
+    // to just looping whichever bank is being edited (unchanged behaviour).
+    for (int i = 0; i < kNumPatterns; ++i)
+    {
+        auto* b = new juce::TextButton (juce::String (i + 1));
+        styleButton (*b, kKey);
+        b->setColour (juce::TextButton::buttonOnColourId, patternRowColour (i));
+        b->setClickingTogglesState (true);
+        b->onClick = [this, i]
+        {
+            patternActiveUI[(size_t) i] = patternButtons[i]->getToggleState();
+            rebuildChain();
+        };
+        addAndMakeVisible (b);
+        patternButtons.add (b);
+    }
 
     styleButton (chainClearButton, kKey);
-    chainClearButton.onClick = [this] { engine.clearChain(); repaint(); };
+    chainClearButton.onClick = [this]
+    {
+        patternActiveUI.fill (false);
+        for (auto* b : patternButtons) b->setToggleState (false, juce::dontSendNotification);
+        rebuildChain();
+    };
     addAndMakeVisible (chainClearButton);
 
     // Piano roll: per-step semitone offset for the selected pad (tap a step
@@ -344,8 +371,9 @@ void MainComponent::setMode (Mode m)
 
     clearButton.setVisible (seq);
     bpmSlider.setVisible (seq);
-    patternSlider.setVisible (seq); chainAddButton.setVisible (seq); chainClearButton.setVisible (seq);
+    patternSlider.setVisible (seq); chainClearButton.setVisible (seq);
     noteSlider.setVisible (seq); lengthSlider.setVisible (seq);
+    for (auto* b : patternButtons) b->setVisible (seq);
 
     if ((edit || seq) && selectedPad < 0)
         selectPad (0);
@@ -491,19 +519,11 @@ void MainComponent::paint (juce::Graphics& g)
                              + "   " + dot + "   P" + juce::String (selectedPattern + 1);
         g.drawText (t, inner.removeFromTop (16), juce::Justification::centredLeft);
 
-        // Chain summary: which banks are queued, and which one is actually
-        // sounding right now (may differ from the one being viewed/edited).
-        const int cl = engine.getChainLength();
-        juce::String chainStr;
-        if (cl <= 0)
-            chainStr = "CHAIN off " + dot + " looping P" + juce::String (selectedPattern + 1);
-        else
-        {
-            chainStr = "CHAIN ";
-            for (int i = 0; i < cl; ++i)
-                chainStr += juce::String (engine.getChainSlot (i) + 1) + (i < cl - 1 ? "-" : "");
-            chainStr += "  " + dot + "  playing P" + juce::String (engine.getPlayingPattern() + 1);
-        }
+        // Which bank is actually sounding right now (may differ from the one
+        // being viewed/edited) — the coloured row below shows chain membership.
+        const juce::String chainStr = (engine.getChainLength() <= 0)
+            ? "looping P" + juce::String (selectedPattern + 1)
+            : "playing P" + juce::String (engine.getPlayingPattern() + 1);
         g.setColour (ShardColours::inkDim);
         g.setFont (ShardColours::monoFont (9.5f, true).withExtraKerningFactor (0.10f));
         g.drawText (chainStr, inner.removeFromTop (14), juce::Justification::centredLeft);
@@ -535,6 +555,15 @@ void MainComponent::paintOverChildren (juce::Graphics& g)
             g.setColour (ShardColours::red);
             g.drawRect (b->getBounds(), 2);
         }
+    }
+
+    // Ring the pattern bank currently being viewed/edited (its colour fill,
+    // if lit, shows chain membership; this ring is purely "you're looking
+    // at this one").
+    if (auto* b = patternButtons[selectedPattern])
+    {
+        g.setColour (ShardColours::ink.withAlpha (0.7f));
+        g.drawRect (b->getBounds(), 2);
     }
 }
 
@@ -666,19 +695,25 @@ void MainComponent::resized()
             auto inner = area.reduced (10, 8);
             inner.removeFromTop (32);                     // 2-line title drawn in paint (STEPS + CHAIN)
 
-            // Pattern bank + length + chain controls (3x2).
+            // Pattern bank + length, chain-include row, note (3 rows).
             {
                 auto row1 = inner.removeFromTop (26);
                 const int w1 = row1.getWidth() / 2;
                 patternSlider.setBounds (row1.removeFromLeft (w1).reduced (2, 0));
                 lengthSlider.setBounds  (row1.reduced (2, 0));
                 inner.removeFromTop (4);
-                auto row2 = inner.removeFromTop (26);
-                const int w2 = row2.getWidth() / 2;
-                chainAddButton.setBounds   (row2.removeFromLeft (w2).reduced (2, 0));
-                chainClearButton.setBounds (row2.reduced (2, 0));
+
+                // 8 coloured chain-include toggles, one per pattern bank.
+                auto row2 = inner.removeFromTop (28);
+                const int pw = row2.getWidth() / kNumPatterns;
+                for (int i = 0; i < kNumPatterns; ++i)
+                    patternButtons[i]->setBounds ((i < kNumPatterns - 1 ? row2.removeFromLeft (pw) : row2).reduced (2));
                 inner.removeFromTop (4);
-                noteSlider.setBounds (inner.removeFromTop (26).reduced (2, 0));
+
+                auto row3 = inner.removeFromTop (26);
+                const int w3 = row3.getWidth() / 2;
+                chainClearButton.setBounds (row3.removeFromLeft (w3).reduced (2, 0));
+                noteSlider.setBounds       (row3.reduced (2, 0));
             }
             inner.removeFromTop (6);
 
@@ -816,6 +851,15 @@ void MainComponent::assignSampleToPad (int index, SampleBuffer::Ptr sb, const ju
     if (auto* p = pads[index]) p->setSampleInfo (uiSample[(size_t) index], padName[(size_t) index]);
 
     selectPad (index);
+}
+
+void MainComponent::rebuildChain()
+{
+    engine.clearChain();
+    for (int i = 0; i < kNumPatterns; ++i)
+        if (patternActiveUI[(size_t) i])
+            engine.addToChain (i);
+    repaint();
 }
 
 void MainComponent::autoChopSelected()
