@@ -211,7 +211,7 @@ public:
     // ---- Flat dark knob: plain rim, subtle body shade, white needle, blue tip dot.
     void drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h,
                            float pos, float startAng, float endAng,
-                           juce::Slider&) override
+                           juce::Slider& s) override
     {
         auto area = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h).reduced (3.0f);
         const float r  = juce::jmin (area.getWidth(), area.getHeight()) * 0.5f;
@@ -239,8 +239,14 @@ public:
         g.fillPath (p);
         auto tip = juce::Point<float> (0.0f, -br + 4.5f)
                      .transformedBy (juce::AffineTransform::rotation (ang).translated (cx, cy));
-        g.setColour (ShardColours::amber);
-        g.fillEllipse (tip.x - 2.6f, tip.y - 2.6f, 5.2f, 5.2f);
+        // The look-and-feel owns the SHAPE; the pointer colour is injected by
+        // the component via rotarySliderFillColourId. That split is what stops
+        // a new skin from ever being able to break the zati colour system.
+        const auto tipCol = s.isColourSpecified (juce::Slider::rotarySliderFillColourId)
+                              ? s.findColour (juce::Slider::rotarySliderFillColourId)
+                              : ShardColours::amber;
+        g.setColour (tipCol);
+        g.fillEllipse (tip.x - 3.0f, tip.y - 3.0f, 6.0f, 6.0f);
     }
 
     // ---- Flat button cap: solid fill, thin hairline border, no gradient/bevel.

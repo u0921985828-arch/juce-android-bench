@@ -120,6 +120,7 @@ private:
     void refreshPad (int index);
     void selectPad (int index);
     void updateControlsFromPad (int index);
+    void refreshWaveformSegments();   // fragments sharing the selected pad's buffer
     void assignSampleToPad (int index, SampleBuffer::Ptr sb, const juce::String& name = {});
     void toggleRecordArm();     // REC: live pad performance -> the pattern
     void toggleMicSampling();   // PADS sheet: mic -> the selected pad

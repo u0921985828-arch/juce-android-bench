@@ -328,6 +328,7 @@ MainComponent::MainComponent()
         const int len = engine.getSampleLength (selectedPad);
         engine.setPadStart (selectedPad, (int) (v * len));
         waveform.setTrim ((float) v, padEnd01[(size_t) selectedPad]);
+        refreshWaveformSegments();
         repaint (editInfoArea.expanded (4));
     };
     endSlider.onValueChange = [this]
@@ -338,6 +339,7 @@ MainComponent::MainComponent()
         const int len = engine.getSampleLength (selectedPad);
         engine.setPadEnd (selectedPad, (int) (v * len));
         waveform.setTrim (padStart01[(size_t) selectedPad], (float) v);
+        refreshWaveformSegments();
         repaint (editInfoArea.expanded (4));
     };
 
@@ -1464,10 +1466,57 @@ void MainComponent::selectPad (int index)
     }
     else
         waveform.setInfo ("PAD " + juce::String (index + 1), 0.0, 0.0, 0);
+    refreshWaveformSegments();
+
+    // Last link of CUT -> PAD -> WAVEFORM -> KNOBS: the selected pad tints the
+    // three CTRL pointers, so the knobs always say which fragment they act on.
+    {
+        const auto frag = padHasSample[(size_t) index] ? Zati::colour (padZati[(size_t) index])
+                                                       : ShardColours::accent;
+        for (juce::Slider* k : { &macroCtrl1, &macroCtrl2, &macroCtrl3 })
+        {
+            k->setColour (juce::Slider::rotarySliderFillColourId, frag);
+            k->repaint();
+        }
+    }
+
     for (int i = 0; i < kNumPads; ++i) refreshPad (i);
     repaint (headerArea);          // the fragment strip tracks which zatis are loaded
     if (macroBank == 2) refreshMacroValues();      // PAD bank tracks the selection
     if (padSheet.isVisible()) padSheet.repaint();  // its title/card follow the selection
+}
+
+// The display shows the whole cut, not one pad: every pad pointing at the
+// selected pad's buffer contributes its trim window as a coloured fragment.
+// Auto-chop leaves exactly that — one shared buffer, sixteen windows.
+void MainComponent::refreshWaveformSegments()
+{
+    juce::Array<WaveformDisplay::Segment> segs;
+
+    if (selectedPad >= 0)
+    {
+        if (auto src = uiSample[(size_t) selectedPad])
+        {
+            for (int i = 0; i < kNumPads; ++i)
+            {
+                if (uiSample[(size_t) i] != src) continue;
+
+                WaveformDisplay::Segment s;
+                s.start01   = padStart01[(size_t) i];
+                s.end01     = padEnd01[(size_t) i];
+                s.colour    = Zati::colour (padZati[(size_t) i]);
+                s.padNumber = i + 1;
+                s.selected  = (i == selectedPad);
+                segs.add (s);
+            }
+
+            std::sort (segs.begin(), segs.end(),
+                       [] (const WaveformDisplay::Segment& a, const WaveformDisplay::Segment& b)
+                       { return a.start01 < b.start01; });
+        }
+    }
+
+    waveform.setSegments (std::move (segs));
 }
 
 void MainComponent::updateControlsFromPad (int index)
