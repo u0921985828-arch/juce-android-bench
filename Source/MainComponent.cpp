@@ -94,6 +94,76 @@ MainComponent::MainComponent()
         }
     }
 
+    // Projects sheet — reached from the header chip, not the module bar (the
+    // bar stays a rule of three: PADS / SEC / FX).
+    {
+        addAndMakeVisible (projSheet);
+        projSheet.setVisible (false);
+        projSheet.onDismiss = [this] { closeAllSheets(); };
+        projSheet.paintContent = [this] (juce::Graphics& g) { paintProjSheetContent (g); };
+
+        styleButton (projButton, kKey);
+        projButton.setColour (juce::TextButton::buttonOnColourId, kAccent);
+        projButton.onClick = [this]
+        {
+            if (projSheet.isVisible()) closeAllSheets();
+            else { refreshProjectList(); openSheet (projSheet, projButton); }
+        };
+        addAndMakeVisible (projButton);
+
+        projList.setColour (juce::ListBox::backgroundColourId, ShardColours::chassisTop);
+        projList.setRowHeight (34);
+        projModel.onChosen = [this] (int row)
+        {
+            if (juce::isPositiveAndBelow (row, projModel.names.size()))
+                loadProject (projModel.names[row]);
+        };
+        projSheet.addAndMakeVisible (projList);
+
+        styleButton (projCloseButton, kKey);
+        projCloseButton.onClick = [this] { closeAllSheets(); };
+        projSheet.addAndMakeVisible (projCloseButton);
+
+        styleButton (projSaveButton, kAccent);
+        projSaveButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+        projSaveButton.onClick = [this]
+        {
+            // Reuse the highlighted name when there is one, so GUARDAR
+            // overwrites the project you are looking at rather than silently
+            // spawning near-duplicates.
+            const int sel = projList.getSelectedRow();
+            juce::String name = juce::isPositiveAndBelow (sel, projModel.names.size())
+                                  ? projModel.names[sel]
+                                  : currentProject;
+            if (name.isEmpty())
+                name = "PROYECTO " + juce::String (ProjectStore::list().size() + 1);
+            saveProject (name);
+        };
+        projSheet.addAndMakeVisible (projSaveButton);
+
+        styleButton (projLoadButton, kKey);
+        projLoadButton.onClick = [this]
+        {
+            const int sel = projList.getSelectedRow();
+            if (juce::isPositiveAndBelow (sel, projModel.names.size()))
+                loadProject (projModel.names[sel]);
+        };
+        projSheet.addAndMakeVisible (projLoadButton);
+
+        styleButton (projNewButton, kKey);
+        projNewButton.onClick = [this] { newProject(); };
+        projSheet.addAndMakeVisible (projNewButton);
+
+        styleButton (projDeleteButton, kRec);
+        projDeleteButton.onClick = [this]
+        {
+            const int sel = projList.getSelectedRow();
+            if (juce::isPositiveAndBelow (sel, projModel.names.size()))
+                deleteProject (projModel.names[sel]);
+        };
+        projSheet.addAndMakeVisible (projDeleteButton);
+    }
+
     // Sample browser sheet — no module button of its own: it is opened by the
     // LOAD flow (arm LOAD, tap a pad) and targets that pad.
     {
@@ -607,6 +677,8 @@ void MainComponent::closeAllSheets()
         sh[i]->setVisible (false);
     }
     browseSheet.setVisible (false);
+    projSheet.setVisible (false);
+    projButton.setToggleState (false, juce::dontSendNotification);
     repaint();
 }
 
@@ -1059,7 +1131,10 @@ void MainComponent::resized()
 
     // --- Top chrome ---
     headerArea = area.removeFromTop (30);
-    skinButton.setBounds (headerArea.withLeft (headerArea.getRight() - 156).reduced (0, 2));
+    skinButton.setBounds (headerArea.withLeft (headerArea.getRight() - 150).reduced (0, 2));
+    // Project chip between the wordmark and the skin badge.
+    projButton.setBounds (headerArea.withLeft (headerArea.getX() + 138)
+                                    .withRight (headerArea.getRight() - 154).reduced (0, 3));
     area.removeFromTop (8);
 
     screenBezel = area.removeFromTop (screenH);
@@ -1198,6 +1273,23 @@ void MainComponent::resized()
         browseLoadButton.setBounds   (actions.reduced (2, 0));
         inner.removeFromBottom (8);
         if (browser != nullptr) browser->setBounds (inner);
+    }
+
+    // PROJECT sheet: list of saved projects + the four actions.
+    {
+        auto inner = sheetFromBottom (projSheet, (int) (full.getHeight() * 0.7f));
+        auto titleRow = inner.removeFromTop (32);
+        projCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
+
+        auto actions = inner.removeFromBottom (38);
+        const int aw = actions.getWidth() / 4;
+        projSaveButton.setBounds   (actions.removeFromLeft (aw).reduced (2, 0));
+        projLoadButton.setBounds   (actions.removeFromLeft (aw).reduced (2, 0));
+        projNewButton.setBounds    (actions.removeFromLeft (aw).reduced (2, 0));
+        projDeleteButton.setBounds (actions.reduced (2, 0));
+        inner.removeFromBottom (8);
+
+        projList.setBounds (inner);
     }
 
     // SEC sheet: pattern/len, chain row, chain-clear/note, step grid, bpm/clear.
@@ -1484,6 +1576,368 @@ void MainComponent::fileDoubleClicked (const juce::File& f)
 {
     if (f.existsAsFile())
         loadBrowserSelection();              // double-tap a file = load it straight away
+}
+
+// --- Projects ---------------------------------------------------------------
+
+void MainComponent::ProjectList::paintListBoxItem (int row, juce::Graphics& g, int w, int h, bool selected)
+{
+    if (! juce::isPositiveAndBelow (row, names.size())) return;
+
+    auto r = juce::Rectangle<int> (0, 0, w, h);
+    if (selected)      { g.setColour (ShardColours::accent);                 g.fillRect (r); }
+    else if (row % 2)  { g.setColour (ShardColours::ink.withAlpha (0.035f)); g.fillRect (r); }
+
+    const auto fg = selected
+        ? (ShardColours::accent.getPerceivedBrightness() < 0.5f ? ShardColours::inkLight : ShardColours::ink)
+        : ShardColours::ink;
+    g.setColour (fg);
+    g.setFont (ShardColours::monoFont (12.5f, true).withExtraKerningFactor (0.04f));
+    g.drawFittedText (names[row], r.reduced (10, 0), juce::Justification::centredLeft, 1, 0.9f);
+}
+
+juce::ValueTree MainComponent::captureState() const
+{
+    juce::ValueTree s ("COLORS");
+    s.setProperty ("version", 1, nullptr);
+    s.setProperty ("bpm", bpmSlider.getValue(), nullptr);
+    s.setProperty ("skin", ShardColours::currentSkin, nullptr);
+    s.setProperty ("macroBank", macroBank, nullptr);
+    s.setProperty ("selectedPattern", selectedPattern, nullptr);
+
+    juce::ValueTree fx ("FX");
+    fx.setProperty ("type",   fxTypeButton.getToggleState() ? 1 : 0, nullptr);
+    fx.setProperty ("cutoff", cutoffSlider.getValue(),  nullptr);
+    fx.setProperty ("reso",   resoSlider.getValue(),    nullptr);
+    fx.setProperty ("drive",  driveSlider.getValue(),   nullptr);
+    fx.setProperty ("dlyTime", dlyTimeSlider.getValue(), nullptr);
+    fx.setProperty ("dlyFb",   dlyFbSlider.getValue(),   nullptr);
+    fx.setProperty ("dlyMix",  dlyMixSlider.getValue(),  nullptr);
+    s.addChild (fx, -1, nullptr);
+
+    juce::ValueTree pads ("PADS");
+    for (int i = 0; i < kNumPads; ++i)
+    {
+        juce::ValueTree p ("PAD");
+        p.setProperty ("i", i, nullptr);
+        p.setProperty ("name",    padName[(size_t) i],    nullptr);
+        p.setProperty ("has",     padHasSample[(size_t) i], nullptr);
+        p.setProperty ("pitch",   padPitch[(size_t) i],   nullptr);
+        p.setProperty ("gain",    padGain[(size_t) i],    nullptr);
+        p.setProperty ("start",   padStart01[(size_t) i], nullptr);
+        p.setProperty ("end",     padEnd01[(size_t) i],   nullptr);
+        p.setProperty ("loop",    padLoop[(size_t) i],    nullptr);
+        p.setProperty ("reverse", padReverse[(size_t) i], nullptr);
+        p.setProperty ("choke",   padChokeUI[(size_t) i], nullptr);
+        p.setProperty ("pan",     padPan[(size_t) i],     nullptr);
+        p.setProperty ("attack",  padAttack[(size_t) i],  nullptr);
+        p.setProperty ("release", padRelease[(size_t) i], nullptr);
+        pads.addChild (p, -1, nullptr);
+    }
+    s.addChild (pads, -1, nullptr);
+
+    juce::ValueTree banks ("BANKS");
+    for (int b = 0; b < kNumPatterns; ++b)
+    {
+        juce::ValueTree bk ("BANK");
+        bk.setProperty ("i", b, nullptr);
+        bk.setProperty ("len", engine.getPatternLength (b), nullptr);
+        bk.setProperty ("inChain", patternActiveUI[(size_t) b], nullptr);
+
+        // One hex word per step (16 pads = 16 bits), plus the step pitches —
+        // compact enough to stay readable in the XML.
+        juce::String steps, notes;
+        for (int st = 0; st < kNumSteps; ++st)
+        {
+            int mask = 0;
+            for (int p = 0; p < kNumPads; ++p)
+                if (pattern[(size_t) b][(size_t) st][(size_t) p]) mask |= (1 << p);
+            steps << juce::String::toHexString (mask) << " ";
+
+            for (int p = 0; p < kNumPads; ++p)
+                notes << engine.getStepNote (b, st, p) << " ";
+        }
+        bk.setProperty ("steps", steps.trim(), nullptr);
+        bk.setProperty ("notes", notes.trim(), nullptr);
+        banks.addChild (bk, -1, nullptr);
+    }
+    s.addChild (banks, -1, nullptr);
+    return s;
+}
+
+void MainComponent::applyState (const juce::ValueTree& s)
+{
+    if (! s.hasType ("COLORS")) return;
+
+    ShardColours::setSkin ((int) s.getProperty ("skin", 0));
+    applySkin();
+
+    bpmSlider.setValue ((double) s.getProperty ("bpm", 120.0), juce::sendNotification);
+
+    if (auto fx = s.getChildWithName ("FX"); fx.isValid())
+    {
+        fxTypeButton.setToggleState ((int) fx.getProperty ("type", 0) != 0, juce::dontSendNotification);
+        fxTypeButton.setButtonText (fxTypeButton.getToggleState() ? "HPF" : "LPF");
+        engine.setFxType (fxTypeButton.getToggleState() ? 1 : 0);
+        cutoffSlider.setValue  ((double) fx.getProperty ("cutoff", 20000.0), juce::sendNotification);
+        resoSlider.setValue    ((double) fx.getProperty ("reso",   0.707),   juce::sendNotification);
+        driveSlider.setValue   ((double) fx.getProperty ("drive",  0.0),     juce::sendNotification);
+        dlyTimeSlider.setValue ((double) fx.getProperty ("dlyTime", 250.0),  juce::sendNotification);
+        dlyFbSlider.setValue   ((double) fx.getProperty ("dlyFb",   0.35),   juce::sendNotification);
+        dlyMixSlider.setValue  ((double) fx.getProperty ("dlyMix",  0.0),    juce::sendNotification);
+    }
+
+    if (auto pads = s.getChildWithName ("PADS"); pads.isValid())
+    {
+        for (const auto& p : pads)
+        {
+            const int i = (int) p.getProperty ("i", -1);
+            if (! juce::isPositiveAndBelow (i, kNumPads)) continue;
+
+            padName[(size_t) i]    = p.getProperty ("name", juce::String()).toString();
+            padPitch[(size_t) i]   = (float) p.getProperty ("pitch", 0.0);
+            padGain[(size_t) i]    = (float) p.getProperty ("gain", 0.85);
+            padStart01[(size_t) i] = (float) p.getProperty ("start", 0.0);
+            padEnd01[(size_t) i]   = (float) p.getProperty ("end", 1.0);
+            padLoop[(size_t) i]    = (bool)  p.getProperty ("loop", false);
+            padReverse[(size_t) i] = (bool)  p.getProperty ("reverse", false);
+            padChokeUI[(size_t) i] = (int)   p.getProperty ("choke", 0);
+            padPan[(size_t) i]     = (float) p.getProperty ("pan", 0.0);
+            padAttack[(size_t) i]  = (float) p.getProperty ("attack", 2.0);
+            padRelease[(size_t) i] = (float) p.getProperty ("release", 5.0);
+
+            // Trim is stored 0..1 but the engine wants samples, and
+            // publishSample has just reset the window to the whole file — so
+            // it must be pushed back explicitly or every load plays untrimmed.
+            if (const int len = engine.getSampleLength (i); len > 0)
+            {
+                engine.setPadStart (i, (int) (padStart01[(size_t) i] * len));
+                engine.setPadEnd   (i, (int) (padEnd01[(size_t) i]   * len));
+            }
+
+            engine.setPadPitch   (i, padPitch[(size_t) i]);
+            engine.setPadGain    (i, padGain[(size_t) i]);
+            engine.setPadLoop    (i, padLoop[(size_t) i]);
+            engine.setPadReverse (i, padReverse[(size_t) i]);
+            engine.setPadChoke   (i, padChokeUI[(size_t) i]);
+            engine.setPadPan     (i, padPan[(size_t) i]);
+            engine.setPadAttack  (i, padAttack[(size_t) i]);
+            engine.setPadRelease (i, padRelease[(size_t) i]);
+        }
+    }
+
+    if (auto banks = s.getChildWithName ("BANKS"); banks.isValid())
+    {
+        for (const auto& bk : banks)
+        {
+            const int b = (int) bk.getProperty ("i", -1);
+            if (! juce::isPositiveAndBelow (b, kNumPatterns)) continue;
+
+            engine.setPatternLength (b, (int) bk.getProperty ("len", kMinPatLen));
+            patternActiveUI[(size_t) b] = (bool) bk.getProperty ("inChain", false);
+            if (auto* btn = patternButtons[b])
+                btn->setToggleState (patternActiveUI[(size_t) b], juce::dontSendNotification);
+
+            juce::StringArray st, nt;
+            st.addTokens (bk.getProperty ("steps", "").toString(), " ", "");
+            nt.addTokens (bk.getProperty ("notes", "").toString(), " ", "");
+            st.removeEmptyStrings(); nt.removeEmptyStrings();
+
+            for (int s2 = 0; s2 < kNumSteps; ++s2)
+            {
+                const int mask = s2 < st.size() ? (int) st[s2].getHexValue32() : 0;
+                for (int p = 0; p < kNumPads; ++p)
+                {
+                    const bool on = (mask & (1 << p)) != 0;
+                    pattern[(size_t) b][(size_t) s2][(size_t) p] = on;
+                    engine.setStep (b, s2, p, on);
+
+                    const int ni = s2 * kNumPads + p;
+                    engine.setStepNote (b, s2, p, ni < nt.size() ? nt[ni].getIntValue() : 0);
+                }
+            }
+        }
+        rebuildChain();
+    }
+
+    selectedPattern = juce::jlimit (0, kNumPatterns - 1, (int) s.getProperty ("selectedPattern", 0));
+    patternSlider.setValue (selectedPattern, juce::dontSendNotification);   // 0-based; its text adds the +1
+    patternSlider.updateText();
+    engine.setEditPattern (selectedPattern);
+    lengthSlider.setValue (engine.getPatternLength (selectedPattern), juce::dontSendNotification);
+
+    setMacroBank ((int) s.getProperty ("macroBank", 0));
+    selectPad (juce::jmax (0, selectedPad));
+    for (int i = 0; i < kNumPads; ++i) refreshPad (i);
+    resized();
+    repaint();
+}
+
+void MainComponent::saveProject (const juce::String& rawName)
+{
+    const auto name   = ProjectStore::sanitise (rawName);
+    const auto folder = ProjectStore::folderFor (name);
+    folder.createDirectory();
+
+    int written = 0, failed = 0;
+    for (int i = 0; i < kNumPads; ++i)
+    {
+        const auto dest = ProjectStore::sampleFile (folder, i);
+        if (auto sb = uiSample[(size_t) i]; sb != nullptr && sb->buffer.getNumSamples() > 0)
+        {
+            if (ProjectStore::writeSample (dest, sb->buffer, sb->sourceSampleRate)) ++written;
+            else                                                                    ++failed;
+        }
+        else
+        {
+            dest.deleteFile();      // pad emptied since the last save
+        }
+    }
+
+    const auto xml = captureState().toXmlString();
+    const bool ok  = folder.getChildFile ("project.xml").replaceWithText (xml);
+
+    currentProject = name;
+    refreshProjectList();
+    projButton.setButtonText (name);
+
+    status.setText (ok && failed == 0
+                        ? "Guardado \"" + name + "\"  [" + juce::String (written) + " pads]"
+                        : "Guardado con fallos: " + juce::String (failed) + " pads no se escribieron",
+                    juce::dontSendNotification);
+    projSheet.repaint();
+}
+
+void MainComponent::loadProject (const juce::String& name)
+{
+    const auto folder = ProjectStore::folderFor (name);
+    const auto xmlFile = folder.getChildFile ("project.xml");
+    if (! xmlFile.existsAsFile())
+    {
+        status.setText ("No encuentro el proyecto \"" + name + "\"", juce::dontSendNotification);
+        return;
+    }
+
+    auto xml = juce::parseXML (xmlFile);
+    if (xml == nullptr)
+    {
+        status.setText ("Proyecto ilegible: " + name, juce::dontSendNotification);
+        return;
+    }
+
+    // Stop first: loading rewrites every pattern bank and pad under the
+    // sequencer's feet otherwise.
+    playButton.setToggleState (false, juce::dontSendNotification);
+    playButton.setButtonText ("PLAY");
+    engine.setPlaying (false);
+
+    int restored = 0, missing = 0;
+    for (int i = 0; i < kNumPads; ++i)
+    {
+        auto sb = ProjectStore::readSample (ProjectStore::sampleFile (folder, i));
+        if (sb != nullptr) { assignSampleToPad (i, sb, padName[(size_t) i]); ++restored; }
+        else
+        {
+            uiSample[(size_t) i] = nullptr;
+            padHasSample[(size_t) i] = false;
+            padName[(size_t) i] = {};
+            if (auto* p = pads[i]) p->setSampleInfo (nullptr, {});
+        }
+    }
+
+    applyState (juce::ValueTree::fromXml (*xml));
+
+    // Names live in the state, so re-stamp the tiles after applyState.
+    for (int i = 0; i < kNumPads; ++i)
+        if (auto* p = pads[i])
+            p->setSampleInfo (uiSample[(size_t) i], padName[(size_t) i]);
+
+    for (const auto& c : juce::ValueTree::fromXml (*xml).getChildWithName ("PADS"))
+        if ((bool) c.getProperty ("has", false)
+            && uiSample[(size_t) (int) c.getProperty ("i", 0)] == nullptr)
+            ++missing;
+
+    currentProject = name;
+    projButton.setButtonText (name);
+    closeAllSheets();
+    status.setText ("Abierto \"" + name + "\"  [" + juce::String (restored) + " pads"
+                        + (missing > 0 ? ", " + juce::String (missing) + " sin audio]" : "]"),
+                    juce::dontSendNotification);
+}
+
+void MainComponent::deleteProject (const juce::String& name)
+{
+    ProjectStore::folderFor (name).deleteRecursively();
+    if (currentProject == name)
+    {
+        currentProject = {};
+        projButton.setButtonText ("PROYECTO");
+    }
+    refreshProjectList();
+    status.setText ("Borrado \"" + name + "\"", juce::dontSendNotification);
+    projSheet.repaint();
+}
+
+void MainComponent::newProject()
+{
+    playButton.setToggleState (false, juce::dontSendNotification);
+    playButton.setButtonText ("PLAY");
+    engine.setPlaying (false);
+
+    for (int i = 0; i < kNumPads; ++i)
+    {
+        uiSample[(size_t) i] = nullptr;
+        padHasSample[(size_t) i] = false;
+        padName[(size_t) i] = {};
+        if (auto* p = pads[i]) p->setSampleInfo (nullptr, {});
+    }
+    for (int b = 0; b < kNumPatterns; ++b)
+    {
+        engine.clearPattern (b);
+        engine.setPatternLength (b, kMinPatLen);
+        for (auto& row : pattern[(size_t) b]) row.fill (false);
+        patternActiveUI[(size_t) b] = false;
+        if (auto* btn = patternButtons[b]) btn->setToggleState (false, juce::dontSendNotification);
+    }
+    rebuildChain();
+
+    selectedPattern = 0;
+    selectedStep = -1;
+    currentProject = {};
+    projButton.setButtonText ("PROYECTO");
+    selectPad (0);
+    closeAllSheets();
+    status.setText ("Proyecto nuevo", juce::dontSendNotification);
+}
+
+void MainComponent::refreshProjectList()
+{
+    projModel.names = ProjectStore::list();
+    projList.updateContent();
+
+    const int sel = projModel.names.indexOf (currentProject);
+    if (sel >= 0) projList.selectRow (sel);
+    else          projList.deselectAllRows();
+    projList.repaint();
+}
+
+void MainComponent::paintProjSheetContent (juce::Graphics& g)
+{
+    if (projSheet.sheetBounds.isEmpty()) return;
+
+    auto inner = projSheet.sheetBounds.reduced (12, 6);
+    g.setColour (ShardColours::ink.withAlpha (0.9f));
+    g.setFont (ShardColours::monoFont (11.0f, true).withExtraKerningFactor (0.14f));
+    g.drawText ("PROYECTOS", inner.removeFromTop (16), juce::Justification::centredLeft);
+
+    g.setColour (ShardColours::inkDim);
+    g.setFont (ShardColours::monoFont (9.5f, true).withExtraKerningFactor (0.08f));
+    g.drawText (currentProject.isNotEmpty()
+                    ? "abierto: " + currentProject
+                    : juce::String (projModel.names.isEmpty()
+                                        ? "sin proyectos guardados - GUARDAR crea el primero"
+                                        : "elige uno de la lista"),
+                inner.removeFromTop (14), juce::Justification::centredLeft);
 }
 
 void MainComponent::launchSystemPicker()

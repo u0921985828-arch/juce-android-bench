@@ -7,6 +7,7 @@
 #include "SpectrumDisplay.h"
 #include "ShardLookAndFeel.h"
 #include "PadButton.h"
+#include "ProjectStore.h"
 
 // ============================================================================
 //  MainComponent — COLORS UI (P1): 16-pad matrix, per-pad controls (pitch, vol,
@@ -50,13 +51,47 @@ private:
                 onDismiss();
         }
     };
-    Sheet padSheet, seqSheet, fxSheet, browseSheet;
+    Sheet padSheet, seqSheet, fxSheet, browseSheet, projSheet;
     void openSheet (Sheet& s, juce::TextButton& toggle);
     void closeAllSheets();
     void paintSeqSheetContent (juce::Graphics& g);
     void paintPadSheetContent (juce::Graphics& g);
     void paintFxSheetContent (juce::Graphics& g);
     void paintBrowseSheetContent (juce::Graphics& g);
+    void paintProjSheetContent (juce::Graphics& g);
+
+    // --- Projects ---------------------------------------------------------
+    //  The whole machine (pads + their samples, the 8 pattern banks, the
+    //  chain, BPM, FX and skin) serialises to one folder per project.
+    juce::ValueTree captureState() const;
+    void applyState (const juce::ValueTree& state);
+    void saveProject (const juce::String& name);
+    void loadProject (const juce::String& name);
+    void deleteProject (const juce::String& name);
+    void newProject();
+    void refreshProjectList();
+
+    class ProjectList : public juce::ListBoxModel
+    {
+    public:
+        juce::StringArray names;
+        std::function<void (int)> onChosen;
+        int getNumRows() override { return names.size(); }
+        void paintListBoxItem (int row, juce::Graphics& g, int w, int h, bool selected) override;
+        void listBoxItemDoubleClicked (int row, const juce::MouseEvent&) override
+        {
+            if (onChosen) onChosen (row);
+        }
+    };
+    ProjectList  projModel;
+    juce::ListBox projList { "proyectos", &projModel };
+    juce::TextButton projButton { "PROYECTO" };          // header chip
+    juce::TextButton projCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
+    juce::TextButton projSaveButton { "GUARDAR" };
+    juce::TextButton projLoadButton { "ABRIR" };
+    juce::TextButton projNewButton  { "NUEVO" };
+    juce::TextButton projDeleteButton { "BORRAR" };
+    juce::String currentProject;
 
     // --- In-app sample browser -------------------------------------------
     //  A native FileChooser is a system dialog: it ignores the app's skin and
