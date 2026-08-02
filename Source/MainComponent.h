@@ -49,13 +49,11 @@ private:
                 onDismiss();
         }
     };
-    Sheet padSheet, seqSheet, chainSheet, chopSheet, fxSheet;
+    Sheet padSheet, seqSheet, fxSheet;
     void openSheet (Sheet& s, juce::TextButton& toggle);
     void closeAllSheets();
     void paintSeqSheetContent (juce::Graphics& g);
     void paintPadSheetContent (juce::Graphics& g);
-    void paintChainSheetContent (juce::Graphics& g);
-    void paintChopSheetContent (juce::Graphics& g);
     void paintFxSheetContent (juce::Graphics& g);
 
     void padClicked (int index);
@@ -83,16 +81,13 @@ private:
     juce::OwnedArray<PadButton> pads;
     juce::OwnedArray<juce::TextButton> stepButtons;
 
-    // Module bar: each button opens its floating sheet (never a mode switch).
+    // Module bar — rule of three: PADS / SEC / FX, each opening its floating
+    // sheet (never a mode switch). CHOP lives inside PADS; CHAIN inside SEC.
     juce::TextButton padsButton  { "PADS" };
     juce::TextButton secButton   { "SEC" };
-    juce::TextButton chainButton { "CHAIN" };
-    juce::TextButton chopOpenButton { "CHOP" };
     juce::TextButton fxOpenButton   { "FX" };
     juce::TextButton seqCloseButton   { juce::CharPointer_UTF8 ("\xc3\x97") },
                      padCloseButton   { juce::CharPointer_UTF8 ("\xc3\x97") },
-                     chainCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") },
-                     chopCloseButton  { juce::CharPointer_UTF8 ("\xc3\x97") },
                      fxCloseButton    { juce::CharPointer_UTF8 ("\xc3\x97") };
     juce::OwnedArray<juce::TextButton> patternButtons;  // P1..P8 — chain include toggles
 

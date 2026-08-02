@@ -57,12 +57,13 @@ MainComponent::MainComponent()
         stepButtons.add (b);
     }
 
-    // Module bar: one perform screen, five floating sheets. Each button
-    // opens its editor as a pop-up — nothing ever replaces the machine face.
+    // Module bar — rule of three: PADS / SEC / FX, one floating sheet each.
+    // Nothing ever replaces the machine face; CHOP is a button inside the
+    // PADS sheet and the pattern chain is a row inside the SEC sheet.
     {
-        juce::TextButton* mb[5]  = { &padsButton, &secButton, &chainButton, &chopOpenButton, &fxOpenButton };
-        Sheet*            sh[5]  = { &padSheet, &seqSheet, &chainSheet, &chopSheet, &fxSheet };
-        for (int i = 0; i < 5; ++i)
+        juce::TextButton* mb[3]  = { &padsButton, &secButton, &fxOpenButton };
+        Sheet*            sh[3]  = { &padSheet, &seqSheet, &fxSheet };
+        for (int i = 0; i < 3; ++i)
         {
             styleButton (*mb[i], kKey);
             mb[i]->setColour (juce::TextButton::buttonOnColourId, kAccent);
@@ -71,16 +72,14 @@ MainComponent::MainComponent()
             addAndMakeVisible (b);
         }
 
-        juce::TextButton* cb[5] = { &padCloseButton, &seqCloseButton, &chainCloseButton, &chopCloseButton, &fxCloseButton };
-        std::function<void (juce::Graphics&)> pc[5] =
+        juce::TextButton* cb[3] = { &padCloseButton, &seqCloseButton, &fxCloseButton };
+        std::function<void (juce::Graphics&)> pc[3] =
         {
             [this] (juce::Graphics& g) { paintPadSheetContent (g); },
             [this] (juce::Graphics& g) { paintSeqSheetContent (g); },
-            [this] (juce::Graphics& g) { paintChainSheetContent (g); },
-            [this] (juce::Graphics& g) { paintChopSheetContent (g); },
             [this] (juce::Graphics& g) { paintFxSheetContent (g); },
         };
-        for (int i = 0; i < 5; ++i)
+        for (int i = 0; i < 3; ++i)
         {
             auto* s = sh[i];
             addAndMakeVisible (s);
@@ -290,7 +289,7 @@ MainComponent::MainComponent()
             patternActiveUI[(size_t) i] = patternButtons[i]->getToggleState();
             rebuildChain();
         };
-        chainSheet.addAndMakeVisible (b);
+        seqSheet.addAndMakeVisible (b);
         patternButtons.add (b);
     }
 
@@ -301,7 +300,7 @@ MainComponent::MainComponent()
         for (auto* b : patternButtons) b->setToggleState (false, juce::dontSendNotification);
         rebuildChain();
     };
-    chainSheet.addAndMakeVisible (chainClearButton);
+    seqSheet.addAndMakeVisible (chainClearButton);
 
     // Piano roll: per-step semitone offset for the selected pad (tap a step
     // to select it, then dial its pitch here — melodies from one sample).
@@ -371,7 +370,7 @@ MainComponent::MainComponent()
                                 (juce::Component*) &startSlider, (juce::Component*) &endSlider,
                                 (juce::Component*) &reverseButton, (juce::Component*) &loopButton })
         padSheet.addAndMakeVisible (c);
-    chopSheet.addAndMakeVisible (chopButton);
+    padSheet.addAndMakeVisible (chopButton);
     for (juce::Component* c : { (juce::Component*) &cutoffSlider, (juce::Component*) &resoSlider, (juce::Component*) &driveSlider,
                                 (juce::Component*) &dlyTimeSlider, (juce::Component*) &dlyFbSlider, (juce::Component*) &dlyMixSlider,
                                 (juce::Component*) &testButton })
@@ -492,9 +491,9 @@ void MainComponent::openSheet (Sheet& s, juce::TextButton& toggle)
 
 void MainComponent::closeAllSheets()
 {
-    juce::TextButton* mb[5] = { &padsButton, &secButton, &chainButton, &chopOpenButton, &fxOpenButton };
-    Sheet*            sh[5] = { &padSheet, &seqSheet, &chainSheet, &chopSheet, &fxSheet };
-    for (int i = 0; i < 5; ++i)
+    juce::TextButton* mb[3] = { &padsButton, &secButton, &fxOpenButton };
+    Sheet*            sh[3] = { &padSheet, &seqSheet, &fxSheet };
+    for (int i = 0; i < 3; ++i)
     {
         mb[i]->setToggleState (false, juce::dontSendNotification);
         sh[i]->setVisible (false);
@@ -892,51 +891,12 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
             g.drawRect (b->getBounds(), 2);
         }
     }
-}
-
-// CHAIN sheet: which pattern banks play, in order, plus live status.
-void MainComponent::paintChainSheetContent (juce::Graphics& g)
-{
-    if (chainSheet.sheetBounds.isEmpty()) return;
-
-    auto inner = chainSheet.sheetBounds.reduced (12, 6);
-    g.setColour (ShardColours::ink.withAlpha (0.9f));
-    g.setFont (ShardColours::monoFont (11.0f, true).withExtraKerningFactor (0.14f));
-    g.drawText ("PATTERN CHAIN", inner.removeFromTop (16), juce::Justification::centredLeft);
-
-    const juce::String chainStr = (engine.getChainLength() <= 0)
-        ? "sin cadena - loop de P" + juce::String (selectedPattern + 1)
-        : "sonando P" + juce::String (engine.getPlayingPattern() + 1);
-    g.setColour (ShardColours::inkDim);
-    g.setFont (ShardColours::monoFont (9.5f, true).withExtraKerningFactor (0.10f));
-    g.drawText (chainStr, inner.removeFromTop (14), juce::Justification::centredLeft);
-
-    // Ring the bank being edited (the one open in the SEC sheet).
+    // Ring the bank being edited on the chain-include row.
     if (auto* b = patternButtons[selectedPattern])
     {
         g.setColour (ShardColours::ink.withAlpha (0.7f));
         g.drawRect (b->getBounds(), 2);
     }
-}
-
-// CHOP sheet: what auto-chop will do to the selected pad's sample.
-void MainComponent::paintChopSheetContent (juce::Graphics& g)
-{
-    if (chopSheet.sheetBounds.isEmpty()) return;
-
-    const int sp = juce::jmax (0, selectedPad);
-    auto inner = chopSheet.sheetBounds.reduced (12, 6);
-    g.setColour (ShardColours::ink.withAlpha (0.9f));
-    g.setFont (ShardColours::monoFont (11.0f, true).withExtraKerningFactor (0.14f));
-    g.drawText ("AUTO CHOP", inner.removeFromTop (16), juce::Justification::centredLeft);
-
-    g.setColour (ShardColours::inkDim);
-    g.setFont (ShardColours::monoFont (9.5f, true).withExtraKerningFactor (0.08f));
-    const auto sb = uiSample[(size_t) sp];
-    const juce::String info = (sb == nullptr)
-        ? "pad " + juce::String (sp + 1) + " vacio - carga o graba una muestra primero"
-        : "corta la muestra del pad " + juce::String (sp + 1) + " en 16 partes iguales, una por pad";
-    g.drawText (info, inner.removeFromTop (14), juce::Justification::centredLeft);
 }
 
 void MainComponent::Sheet::paint (juce::Graphics& g)
@@ -990,9 +950,9 @@ void MainComponent::resized()
     // width-bound squares) — the screen is the protagonist.
     int screenH;
     {
-        const int chromeBelow = 8 + 36 + 6 + 40 + 8 + 18 + 6;          // gaps + module bar + transport + status
+        const int chromeBelow = 8 + 42 + 6 + 40 + 8 + 18 + 6;          // gaps + module bar + transport + status
         const int cell = (area.getWidth() - 3 * 8) / 4;                // square pad cells, 4 cols, gap 8
-        const int bodyNeed = 20 + 6 + 20 + 4 + 86 + 6 + 20 + 8        // VU + bank chips + CTRL knobs + step LEDs
+        const int bodyNeed = 20 + 6 + 18 + 4 + 86 + 6 + 20 + 8        // VU + bank chips + CTRL knobs + step LEDs
                            + (4 * cell + 3 * 8);                       // + pads
         screenH = juce::jmax (96, area.getHeight() - (30 + 8) - chromeBelow - bodyNeed);
     }
@@ -1005,14 +965,15 @@ void MainComponent::resized()
     waveform.setBounds (screenBezel);
     area.removeFromTop (8);
 
-    // Module bar: PADS / SEC / CHAIN / CHOP / FX — each opens its sheet.
-    tabBarArea = area.removeFromTop (36);
+    // Module bar — rule of three: PADS / SEC / FX, taller than the transport
+    // row so "opens a window" and "does something" read as different shapes.
+    tabBarArea = area.removeFromTop (42);
     {
         auto row = tabBarArea;
-        juce::TextButton* mb[5] = { &padsButton, &secButton, &chainButton, &chopOpenButton, &fxOpenButton };
-        const int w = row.getWidth() / 5;
-        for (int i = 0; i < 5; ++i)
-            mb[i]->setBounds ((i < 4 ? row.removeFromLeft (w) : row).reduced (2));
+        juce::TextButton* mb[3] = { &padsButton, &secButton, &fxOpenButton };
+        const int w = row.getWidth() / 3;
+        for (int i = 0; i < 3; ++i)
+            mb[i]->setBounds ((i < 2 ? row.removeFromLeft (w) : row).reduced (2));
     }
     area.removeFromTop (6);
 
@@ -1035,10 +996,10 @@ void MainComponent::resized()
         vuArea = area.removeFromTop (20).reduced (2, 0);
         area.removeFromTop (6);
 
-        auto bankRow = area.removeFromTop (20);
+        auto bankRow = area.removeFromTop (18);      // chips, deliberately small
         const int bw = bankRow.getWidth() / 3;
         for (int i = 0; i < 3; ++i)
-            macroBankBtns[i]->setBounds ((i < 2 ? bankRow.removeFromLeft (bw) : bankRow).reduced (24, 0));
+            macroBankBtns[i]->setBounds ((i < 2 ? bankRow.removeFromLeft (bw) : bankRow).reduced (34, 0));
         area.removeFromTop (4);
 
         auto mrow = area.removeFromTop (86);             // the 3 CTRL macros
@@ -1079,9 +1040,9 @@ void MainComponent::resized()
         }
     };
 
-    // PADS sheet: per-pad knobs, trim, REV/LOOP, sample-info card.
+    // PADS sheet: per-pad knobs, trim, REV/LOOP + AUTO CHOP, sample-info card.
     {
-        auto inner = sheetFromBottom (padSheet, 460);
+        auto inner = sheetFromBottom (padSheet, 496);
         auto titleRow = inner.removeFromTop (32);
         padCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
 
@@ -1097,33 +1058,12 @@ void MainComponent::resized()
         endSlider.setBounds   (ctrlRow (26)); inner.removeFromTop (8);
 
         auto rr = inner.removeFromTop (30);
-        reverseButton.setBounds (rr.removeFromLeft (rr.getWidth() / 2).reduced (3, 0));
-        loopButton.setBounds (rr.reduced (3, 0));
+        reverseButton.setBounds (rr.removeFromLeft (rr.getWidth() / 3).reduced (3, 0));
+        loopButton.setBounds    (rr.removeFromLeft (rr.getWidth() / 2).reduced (3, 0));
+        chopButton.setBounds    (rr.reduced (3, 0));
         inner.removeFromTop (8);
 
         editInfoArea = inner;      // sample-info card (drawn in paintPadSheetContent)
-    }
-
-    // CHAIN sheet: the 8 bank toggles + clear.
-    {
-        auto inner = sheetFromBottom (chainSheet, 148);
-        auto titleRow = inner.removeFromTop (32);
-        chainCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
-
-        auto row = inner.removeFromTop (34);
-        const int pw = row.getWidth() / kNumPatterns;
-        for (int i = 0; i < kNumPatterns; ++i)
-            patternButtons[i]->setBounds ((i < kNumPatterns - 1 ? row.removeFromLeft (pw) : row).reduced (2));
-        inner.removeFromTop (4);
-        chainClearButton.setBounds (inner.removeFromTop (30).reduced (2, 0));
-    }
-
-    // CHOP sheet: one action, clearly explained.
-    {
-        auto inner = sheetFromBottom (chopSheet, 122);
-        auto titleRow = inner.removeFromTop (36);
-        chopCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
-        chopButton.setBounds (inner.removeFromTop (34).reduced (2, 0));
     }
 
     // FX sheet: tight knob boxes + the live filter curve.
@@ -1146,12 +1086,12 @@ void MainComponent::resized()
         fxCurveArea = inner;       // live filter response (paintFxSheetContent)
     }
 
-    // SEC sheet: pattern/len, note, step grid, bpm/clear.
+    // SEC sheet: pattern/len, chain row, chain-clear/note, step grid, bpm/clear.
     {
         const int patLen = engine.getPatternLength (selectedPattern);
         const int rows   = juce::jmax (1, patLen / kStepCols);
         const int gap    = 4;
-        const int fixedRowsH = 132;   // title + pattern/len + note + bpm/clear rows, incl. gaps
+        const int fixedRowsH = 164;   // title + pattern/len + chain + clr/note + bpm/clear rows, incl. gaps
 
         const int maxCellW  = (full.getWidth() - 16 /*outer reduce*/ - 28 /*inner reduce*/ - (kStepCols - 1) * gap) / kStepCols;
         const int comfyCell = juce::jlimit (36, 64, maxCellW);
@@ -1168,7 +1108,17 @@ void MainComponent::resized()
             lengthSlider.setBounds  (row1.reduced (2, 0));
             inner.removeFromTop (4);
 
-            noteSlider.setBounds (inner.removeFromTop (26).reduced (2, 0));
+            // Chain: the 8 coloured include-toggles, then clear + note.
+            auto row2 = inner.removeFromTop (28);
+            const int pw = row2.getWidth() / kNumPatterns;
+            for (int i = 0; i < kNumPatterns; ++i)
+                patternButtons[i]->setBounds ((i < kNumPatterns - 1 ? row2.removeFromLeft (pw) : row2).reduced (2));
+            inner.removeFromTop (4);
+
+            auto row3 = inner.removeFromTop (26);
+            const int w3 = row3.getWidth() / 2;
+            chainClearButton.setBounds (row3.removeFromLeft (w3).reduced (2, 0));
+            noteSlider.setBounds       (row3.reduced (2, 0));
         }
         inner.removeFromTop (6);
 
@@ -1262,8 +1212,7 @@ void MainComponent::selectPad (int index)
         waveform.setInfo ("PAD " + juce::String (index + 1), 0.0, 0.0, 0);
     for (int i = 0; i < kNumPads; ++i) refreshPad (i);
     if (macroBank == 2) refreshMacroValues();      // PAD bank tracks the selection
-    for (Sheet* s : { &padSheet, &chopSheet })     // their titles/cards follow it too
-        if (s->isVisible()) s->repaint();
+    if (padSheet.isVisible()) padSheet.repaint();  // its title/card follow the selection
 }
 
 void MainComponent::updateControlsFromPad (int index)
@@ -1477,10 +1426,9 @@ void MainComponent::timerCallback()
     const int prevPlayStep = lastPlayStep;
     lastPlayStep = ps;
 
-    // Keep live sheets' readouts/rings fresh while the sequencer runs.
-    if (engine.isPlaying())
-        for (Sheet* s : { &seqSheet, &chainSheet })
-            if (s->isVisible()) s->repaint();
+    // Keep the SEC sheet's readout/rings fresh while the sequencer runs.
+    if (engine.isPlaying() && seqSheet.isVisible())
+        seqSheet.repaint();
 
     // Face strips: VU ballistics (fast attack, ~0.8 decay/frame) and the
     // step-LED playhead.
