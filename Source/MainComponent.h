@@ -14,7 +14,8 @@
 //  recording. Original high-contrast look (no SP-404 skin).
 // ============================================================================
 class MainComponent : public juce::AudioAppComponent,
-                      private juce::Timer
+                      private juce::Timer,
+                      private juce::FileBrowserListener
 {
 public:
     MainComponent();
@@ -49,16 +50,33 @@ private:
                 onDismiss();
         }
     };
-    Sheet padSheet, seqSheet, fxSheet;
+    Sheet padSheet, seqSheet, fxSheet, browseSheet;
     void openSheet (Sheet& s, juce::TextButton& toggle);
     void closeAllSheets();
     void paintSeqSheetContent (juce::Graphics& g);
     void paintPadSheetContent (juce::Graphics& g);
     void paintFxSheetContent (juce::Graphics& g);
+    void paintBrowseSheetContent (juce::Graphics& g);
+
+    // --- In-app sample browser -------------------------------------------
+    //  A native FileChooser is a system dialog: it ignores the app's skin and
+    //  on a tall phone screen its buttons fall outside the viewport. This is
+    //  the same JUCE browser embedded in one of our own sheets instead.
+    void openBrowseForPad (int index);
+    void loadBrowserSelection();
+    void selectionChanged() override;
+    void fileClicked (const juce::File&, const juce::MouseEvent&) override {}
+    void fileDoubleClicked (const juce::File& f) override;
+    void browserRootChanged (const juce::File&) override {}
+
+    std::unique_ptr<juce::WildcardFileFilter>   browseFilter;   // declared first: outlives the browser
+    std::unique_ptr<juce::FileBrowserComponent> browser;
+    juce::TextButton browseCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
+    juce::TextButton browseLoadButton  { "CARGAR" };
+    int browseTargetPad = -1;
 
     void padClicked (int index);
     void stepClicked (int step);
-    void openChooserForPad (int index);
     void refreshPad (int index);
     void selectPad (int index);
     void updateControlsFromPad (int index);
@@ -97,6 +115,10 @@ private:
     void setMacroBank (int bank);
     void refreshMacroValues();
     void macroMoved (int idx);
+
+    // COLORS badge = skin cycler (AZUL/ROJO/AMARILLO/TINTA accent colorways).
+    juce::TextButton skinButton { "COLORS" };
+    void applySkin();
 
     juce::TextButton loadButton { "LOAD" };
     juce::TextButton testButton { "TEST" };
@@ -155,7 +177,6 @@ private:
     int  recordingSlot = -1;
     int  lastPlayStep  = -1;
 
-    std::unique_ptr<juce::FileChooser> chooser;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
 };

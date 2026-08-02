@@ -29,14 +29,25 @@ namespace ShardColours
     const juce::Colour screw      { 0xffb4b4ac };
 
     // --- Accent / semantic — the three primaries + white/grey base ---
-    const juce::Colour amber      { 0xff2f6fed };   // blue — main accent (name kept for compat)
-    const juce::Colour amberBright { 0xff5f92f4 };
-    const juce::Colour amberDim   { 0xff1f52b8 };
-    const juce::Colour accent      { 0xff2f6fed };   // preferred names
-    const juce::Colour accentBright { 0xff5f92f4 };
-    const juce::Colour accentDim   { 0xff1f52b8 };
+    //  The accent set is MUTABLE: COLORS ships 4 skins (AZUL / ROJO /
+    //  AMARILLO / TINTA) that swap only the accent colour — the white/grey
+    //  chassis and the semantic red/yellow stay fixed. Components read these
+    //  at paint time, so setSkin() + a full repaint restyles the machine.
+    inline juce::Colour amber       { 0xff2f6fed };   // = accent (name kept for compat)
+    inline juce::Colour amberBright { 0xff5f92f4 };
+    inline juce::Colour amberDim    { 0xff1f52b8 };
+    inline juce::Colour accent      { 0xff2f6fed };   // preferred names
+    inline juce::Colour accentBright{ 0xff5f92f4 };
+    inline juce::Colour accentDim   { 0xff1f52b8 };
     const juce::Colour red        { 0xffe0222c };   // true red — REC / destructive
     const juce::Colour yellow     { 0xfff0b400 };   // true yellow — selection / highlight
+
+    inline int currentSkin = 0;
+    inline const char* skinName (int i)
+    {
+        static const char* names[4] = { "AZUL", "ROJO", "AMARILLO", "TINTA" };
+        return names[((i % 4) + 4) % 4];
+    }
     const juce::Colour ink        { 0xff1c1c1a };   // primary text on white/grey
     const juce::Colour inkDim     { 0xff6f6f68 };   // secondary text
     const juce::Colour inkLight   { 0xfff5f5f2 };   // text on dark surfaces (knobs/LCD chips)
@@ -49,11 +60,27 @@ namespace ShardColours
     const juce::Colour lcdFg      { 0xffe6e6e2 };
     const juce::Colour lcdDim     { 0xff5c5c56 };
 
-    // --- Pads (white/grey flat, blue when loaded) ---
+    // --- Pads (white/grey flat, accent when loaded) ---
     const juce::Colour padTop     { 0xffe3e3dd };
     const juce::Colour padBg2     { 0xffeeeeea };
     const juce::Colour padBorder  { 0xffd0d0c8 };
-    const juce::Colour padLit     { 0xff2f6fed };
+    inline juce::Colour padLit    { 0xff2f6fed };   // follows the skin accent
+
+    inline void setSkin (int i)
+    {
+        currentSkin = ((i % 4) + 4) % 4;
+        struct S { juce::uint32 a, ab, ad; };
+        static constexpr S skins[4] = {
+            { 0xff2f6fed, 0xff5f92f4, 0xff1f52b8 },   // AZUL     (default)
+            { 0xffe0222c, 0xffef5a62, 0xffab141c },   // ROJO
+            { 0xffdda400, 0xfff5c832, 0xffa87d00 },   // AMARILLO (darkened for contrast)
+            { 0xff2b2b28, 0xff55554f, 0xff101010 },   // TINTA    (near-black)
+        };
+        const auto s = skins[currentSkin];
+        amber = accent = padLit    = juce::Colour (s.a);
+        amberBright = accentBright = juce::Colour (s.ab);
+        amberDim = accentDim       = juce::Colour (s.ad);
+    }
 
     // --- Knob body (dark — physical-instrument contrast on a white face) ---
     const juce::Colour knobWell   { 0xffe3e3dd };
@@ -112,6 +139,73 @@ public:
         setColour (juce::Label::textColourId, ShardColours::ink.withAlpha (0.9f));
         setColour (juce::TextButton::textColourOffId, ShardColours::ink.withAlpha (0.92f));
         setColour (juce::TextButton::textColourOnId, ShardColours::ink);
+        applyBrowserColours();
+    }
+
+    // The in-app sample browser reads these; re-applied on every skin change.
+    void applyBrowserColours()
+    {
+        setColour (juce::FileBrowserComponent::currentPathBoxBackgroundColourId, ShardColours::key);
+        setColour (juce::FileBrowserComponent::currentPathBoxTextColourId,       ShardColours::ink);
+        setColour (juce::FileBrowserComponent::currentPathBoxArrowColourId,      ShardColours::ink);
+        setColour (juce::FileBrowserComponent::filenameBoxBackgroundColourId,    ShardColours::screenBg);
+        setColour (juce::FileBrowserComponent::filenameBoxTextColourId,          ShardColours::lcdFg);
+        setColour (juce::DirectoryContentsDisplayComponent::highlightColourId,       ShardColours::accent);
+        setColour (juce::DirectoryContentsDisplayComponent::textColourId,            ShardColours::ink);
+        setColour (juce::DirectoryContentsDisplayComponent::highlightedTextColourId,
+                   ShardColours::accent.getPerceivedBrightness() < 0.5f ? ShardColours::inkLight : ShardColours::ink);
+        setColour (juce::ListBox::backgroundColourId, ShardColours::chassisTop);
+        setColour (juce::ListBox::outlineColourId,    ShardColours::panelLo);
+        setColour (juce::ComboBox::backgroundColourId, ShardColours::key);
+        setColour (juce::ComboBox::textColourId,       ShardColours::ink);
+        setColour (juce::ComboBox::arrowColourId,      ShardColours::ink);
+        setColour (juce::ComboBox::outlineColourId,    ShardColours::panelLo);
+    }
+
+    // ---- Browser row: flat, mono type, a coloured tick for directories.
+    void drawFileBrowserRow (juce::Graphics& g, int w, int h,
+                             const juce::File&, const juce::String& filename,
+                             juce::Image* /*icon*/, const juce::String& fileSizeDescription,
+                             const juce::String& /*fileTimeDescription*/,
+                             bool isDirectory, bool isItemSelected,
+                             int itemIndex, juce::DirectoryContentsDisplayComponent&) override
+    {
+        auto r = juce::Rectangle<int> (0, 0, w, h);
+
+        if (isItemSelected)
+        {
+            g.setColour (ShardColours::accent);
+            g.fillRect (r);
+        }
+        else if (itemIndex % 2)
+        {
+            g.setColour (ShardColours::ink.withAlpha (0.035f));
+            g.fillRect (r);
+        }
+
+        const bool onAccent = isItemSelected;
+        const juce::Colour fg = onAccent
+            ? (ShardColours::accent.getPerceivedBrightness() < 0.5f ? ShardColours::inkLight : ShardColours::ink)
+            : ShardColours::ink;
+
+        // Kind marker: a filled square for folders, a hollow one for files.
+        auto mark = r.removeFromLeft (h).reduced ((h - 9) / 2);
+        g.setColour (isDirectory ? (onAccent ? fg : ShardColours::accent) : fg.withAlpha (0.45f));
+        if (isDirectory) g.fillRect (mark);
+        else             g.drawRect (mark, 1);
+
+        // Size on the right for files (folders have none).
+        auto sizeArea = r.removeFromRight (72);
+        if (! isDirectory && fileSizeDescription.isNotEmpty())
+        {
+            g.setColour (fg.withAlpha (0.55f));
+            g.setFont (ShardColours::monoFont (9.5f));
+            g.drawText (fileSizeDescription, sizeArea.reduced (6, 0), juce::Justification::centredRight);
+        }
+
+        g.setColour (fg);
+        g.setFont (ShardColours::monoFont (12.0f, isDirectory).withExtraKerningFactor (0.02f));
+        g.drawFittedText (filename, r.reduced (6, 0), juce::Justification::centredLeft, 1, 0.9f);
     }
 
     // ---- Flat dark knob: plain rim, subtle body shade, white needle, blue tip dot.
@@ -161,6 +255,10 @@ public:
         auto base = backgroundColour;
         if (down)      base = base.brighter (0.10f);
         else if (over) base = base.brighter (0.05f);
+        // A disabled cap reads as inert: desaturated and washed toward the face.
+        if (! b.isEnabled())
+            base = base.withSaturation (base.getSaturation() * 0.25f)
+                       .interpolatedWith (ShardColours::chassis, 0.55f);
 
         g.setColour (base);
         g.fillRoundedRectangle (r, rad);
@@ -207,7 +305,7 @@ public:
 
         g.setFont (ShardColours::monoFont (juce::jlimit (10.0f, 14.5f, (float) b.getHeight() * 0.38f), true)
                      .withExtraKerningFactor (0.06f));
-        g.setColour (b.getToggleState() ? on : off);
+        g.setColour ((b.getToggleState() ? on : off).withMultipliedAlpha (b.isEnabled() ? 1.0f : 0.45f));
         g.drawFittedText (t, b.getLocalBounds().reduced (5, 2), juce::Justification::centred, 2, 0.9f);
     }
 

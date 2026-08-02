@@ -2,11 +2,12 @@
 
 namespace
 {
-    const juce::Colour kPadLoaded = ShardColours::amber;
-    const juce::Colour kAccent    = ShardColours::amber;
-    const juce::Colour kRec       = ShardColours::red;
-    const juce::Colour kStepOff   = ShardColours::key;
-    const juce::Colour kKey       = ShardColours::key;
+    // References, not copies: the accent tokens are mutable (skins).
+    const juce::Colour& kPadLoaded = ShardColours::amber;
+    const juce::Colour& kAccent    = ShardColours::amber;
+    const juce::Colour  kRec       = ShardColours::red;
+    const juce::Colour  kStepOff   = ShardColours::key;
+    const juce::Colour  kKey       = ShardColours::key;
 
     void styleButton (juce::TextButton& b, juce::Colour c)
     {
@@ -21,7 +22,8 @@ namespace
     // colour identity in the chain-include row.
     juce::Colour patternRowColour (int idx)
     {
-        static const juce::Colour primaries[3] = { ShardColours::accent, ShardColours::red, ShardColours::yellow };
+        // Not static: accent is skin-mutable, so re-read it on every call.
+        const juce::Colour primaries[3] = { ShardColours::accent, ShardColours::red, ShardColours::yellow };
         return primaries[(size_t) (idx % 3)];
     }
 }
@@ -90,6 +92,39 @@ MainComponent::MainComponent()
             cb[i]->onClick = [this] { closeAllSheets(); };
             s->addAndMakeVisible (cb[i]);
         }
+    }
+
+    // Sample browser sheet — no module button of its own: it is opened by the
+    // LOAD flow (arm LOAD, tap a pad) and targets that pad.
+    {
+        addAndMakeVisible (browseSheet);
+        browseSheet.setVisible (false);
+        browseSheet.onDismiss = [this] { closeAllSheets(); };
+        browseSheet.paintContent = [this] (juce::Graphics& g) { paintBrowseSheetContent (g); };
+
+        browseFilter = std::make_unique<juce::WildcardFileFilter> (
+            "*.wav;*.aiff;*.aif;*.flac;*.ogg;*.mp3", "*", "Muestras de audio");
+
+        auto start = juce::File::getSpecialLocation (juce::File::userMusicDirectory);
+        if (! start.isDirectory())
+            start = juce::File::getSpecialLocation (juce::File::userHomeDirectory);
+
+        browser = std::make_unique<juce::FileBrowserComponent> (
+            juce::FileBrowserComponent::openMode
+          | juce::FileBrowserComponent::canSelectFiles
+          | juce::FileBrowserComponent::filenameBoxIsReadOnly,   // no keyboard on mobile
+            start, browseFilter.get(), nullptr);
+        browser->addListener (this);
+        browseSheet.addAndMakeVisible (*browser);
+
+        styleButton (browseCloseButton, kKey);
+        browseCloseButton.onClick = [this] { closeAllSheets(); };
+        browseSheet.addAndMakeVisible (browseCloseButton);
+
+        styleButton (browseLoadButton, kAccent);
+        browseLoadButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+        browseLoadButton.onClick = [this] { loadBrowserSelection(); };
+        browseSheet.addAndMakeVisible (browseLoadButton);
     }
 
     // Transport / actions.
@@ -166,6 +201,7 @@ MainComponent::MainComponent()
         s.setRange (lo, hi, step);
         if (skewMid > 0.0) s.setSkewFactorFromMidPoint (skewMid);
         s.setValue (def, juce::dontSendNotification);
+        s.setDoubleClickReturnValue (true, def);     // double-tap = back to default
         s.onValueChange = std::move (cb);
         addAndMakeVisible (s);
     };
@@ -364,6 +400,17 @@ MainComponent::MainComponent()
 
     addAndMakeVisible (waveform);
 
+    // COLORS badge in the header: taps cycle the 4 accent skins.
+    skinButton.setColour (juce::TextButton::buttonColourId, ShardColours::screenBg);
+    skinButton.setColour (juce::TextButton::textColourOffId, ShardColours::accentBright);
+    skinButton.setColour (juce::TextButton::textColourOnId,  ShardColours::accentBright);
+    skinButton.onClick = [this]
+    {
+        ShardColours::setSkin (ShardColours::currentSkin + 1);
+        applySkin();
+    };
+    addAndMakeVisible (skinButton);
+
     // Controls live inside their sheets, not on the machine face.
     for (juce::Component* c : { (juce::Component*) &pitchSlider, (juce::Component*) &volSlider, (juce::Component*) &panSlider,
                                 (juce::Component*) &attackSlider, (juce::Component*) &releaseSlider, (juce::Component*) &chokeSlider,
@@ -384,6 +431,52 @@ MainComponent::MainComponent()
     startTimer (60);
     setSize (500, 1080);
     setMacroBank (0);
+    applySkin();
+}
+
+// Restyle everything that captured accent-coloured values at construction —
+// the rest of the UI reads ShardColours at paint time and only needs repaint.
+void MainComponent::applySkin()
+{
+    const auto acc = ShardColours::accent;
+    // Lit-state text must stay legible on a dark accent (TINTA skin).
+    const auto onTxt = acc.getPerceivedBrightness() < 0.5f ? ShardColours::inkLight : ShardColours::ink;
+
+    juce::TextButton* accented[] = { &padsButton, &secButton, &fxOpenButton,
+                                     &loadButton, &fxTypeButton };
+    for (auto* b : accented)
+    {
+        b->setColour (juce::TextButton::buttonOnColourId, acc);
+        b->setColour (juce::TextButton::textColourOnId, onTxt);
+    }
+    for (auto* b : macroBankBtns)
+    {
+        b->setColour (juce::TextButton::buttonOnColourId, acc);
+        b->setColour (juce::TextButton::textColourOnId, onTxt);
+    }
+    for (int i = 0; i < patternButtons.size(); ++i)
+        patternButtons[i]->setColour (juce::TextButton::buttonOnColourId, patternRowColour (i));
+
+    styleButton (playButton, acc);
+    playButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+    playButton.setColour (juce::TextButton::textColourOnId,  juce::Colours::white);
+    playButton.setColour (juce::TextButton::buttonOnColourId, ShardColours::accentDim);
+
+    juce::Slider* tracks[] = { &startSlider, &endSlider, &bpmSlider, &patternSlider, &lengthSlider };
+    for (auto* s : tracks)
+        s->setColour (juce::Slider::trackColourId, acc);
+    lnf.setColour (juce::Slider::trackColourId, acc);
+    lnf.setColour (juce::Slider::thumbColourId, acc);
+    lnf.applyBrowserColours();                     // the file list follows the skin too
+    styleButton (browseLoadButton, acc);
+    browseLoadButton.setColour (juce::TextButton::textColourOffId, onTxt);
+
+    skinButton.setButtonText (juce::String ("COLORS ") + juce::String::charToString ((juce::juce_wchar) 0x00B7)
+                              + " " + ShardColours::skinName (ShardColours::currentSkin));
+    skinButton.setColour (juce::TextButton::textColourOffId, ShardColours::accentBright);
+    skinButton.setColour (juce::TextButton::textColourOnId,  ShardColours::accentBright);
+
+    repaint();
 }
 
 // --- Context-sensitive CTRL 1-3 ---------------------------------------------
@@ -395,32 +488,33 @@ void MainComponent::setMacroBank (int bank)
     for (int i = 0; i < 3; ++i)
         if (auto* b = macroBankBtns[i]) b->setToggleState (i == macroBank, juce::dontSendNotification);
 
-    auto config = [] (juce::Slider& s, double lo, double hi, double step, double skewMid,
+    auto config = [] (juce::Slider& s, double lo, double hi, double step, double skewMid, double def,
                       std::function<juce::String (double)> fmt)
     {
         s.setRange (lo, hi, step);
         if (skewMid > 0.0) s.setSkewFactorFromMidPoint (skewMid);
         else               s.setSkewFactor (1.0);
+        s.setDoubleClickReturnValue (true, def);     // double-tap = bank default
         s.textFromValueFunction = std::move (fmt);
     };
 
     if (macroBank == 0)
     {
-        config (macroCtrl1, 20.0, 20000.0, 1.0, 1000.0, [] (double v) { return v >= 1000.0 ? juce::String (v / 1000.0, 1) + "k" : juce::String ((int) v); });
-        config (macroCtrl2, 0.3, 4.0, 0.01, 0.0,        [] (double v) { return juce::String (v, 2); });
-        config (macroCtrl3, 0.0, 1.0, 0.01, 0.0,        [] (double v) { return juce::String (v, 2); });
+        config (macroCtrl1, 20.0, 20000.0, 1.0, 1000.0, 20000.0, [] (double v) { return v >= 1000.0 ? juce::String (v / 1000.0, 1) + "k" : juce::String ((int) v); });
+        config (macroCtrl2, 0.3, 4.0, 0.01, 0.0, 0.707,          [] (double v) { return juce::String (v, 2); });
+        config (macroCtrl3, 0.0, 1.0, 0.01, 0.0, 0.0,            [] (double v) { return juce::String (v, 2); });
     }
     else if (macroBank == 1)
     {
-        config (macroCtrl1, 20.0, 1000.0, 1.0, 0.0,     [] (double v) { return juce::String ((int) v) + " ms"; });
-        config (macroCtrl2, 0.0, 0.95, 0.01, 0.0,       [] (double v) { return juce::String (v, 2); });
-        config (macroCtrl3, 0.0, 1.0, 0.01, 0.0,        [] (double v) { return juce::String (v, 2); });
+        config (macroCtrl1, 20.0, 1000.0, 1.0, 0.0, 250.0,       [] (double v) { return juce::String ((int) v) + " ms"; });
+        config (macroCtrl2, 0.0, 0.95, 0.01, 0.0, 0.35,          [] (double v) { return juce::String (v, 2); });
+        config (macroCtrl3, 0.0, 1.0, 0.01, 0.0, 0.0,            [] (double v) { return juce::String (v, 2); });
     }
     else
     {
-        config (macroCtrl1, -24.0, 24.0, 1.0, 0.0,      [] (double v) { return (v > 0 ? "+" : "") + juce::String ((int) v) + " st"; });
-        config (macroCtrl2, 0.0, 1.0, 0.001, 0.0,       [] (double v) { return juce::String (v, 3); });
-        config (macroCtrl3, 0.0, 1.0, 0.001, 0.0,       [] (double v) { return juce::String (v, 3); });
+        config (macroCtrl1, -24.0, 24.0, 1.0, 0.0, 0.0,          [] (double v) { return (v > 0 ? "+" : "") + juce::String ((int) v) + " st"; });
+        config (macroCtrl2, 0.0, 1.0, 0.001, 0.0, 0.0,           [] (double v) { return juce::String (v, 3); });
+        config (macroCtrl3, 0.0, 1.0, 0.001, 0.0, 1.0,           [] (double v) { return juce::String (v, 3); });
     }
 
     refreshMacroValues();
@@ -498,6 +592,7 @@ void MainComponent::closeAllSheets()
         mb[i]->setToggleState (false, juce::dontSendNotification);
         sh[i]->setVisible (false);
     }
+    browseSheet.setVisible (false);
     repaint();
 }
 
@@ -549,26 +644,14 @@ void MainComponent::paint (juce::Graphics& g)
         g.drawRoundedRectangle (r.expanded (3.0f).reduced (0.5f), 3.0f, 1.2f);
     }
 
-    // 3. Header: ARTiFACTS wordmark + COLORS model badge (dark LCD chip).
+    // 3. Header: ARTiFACTS wordmark (the COLORS badge is now skinButton —
+    //    a real button that cycles the 4 accent skins).
     if (! headerArea.isEmpty())
     {
         auto h = headerArea;
         g.setColour (ShardColours::ink);
         g.setFont (ShardColours::displayFont (22.0f).withExtraKerningFactor (0.10f));
         g.drawText ("ARTiFACTS", h.getX(), h.getY(), 180, h.getHeight(), juce::Justification::centredLeft);
-
-        auto badge = juce::Rectangle<int> (h.getRight() - 156, h.getY() + 2, 156, h.getHeight() - 4);
-        g.setColour (ShardColours::screenBg);
-        g.fillRoundedRectangle (badge.toFloat(), 2.0f);
-        g.setColour (ShardColours::amber.withAlpha (0.8f));
-        g.drawRoundedRectangle (badge.toFloat().reduced (0.5f), 2.0f, 1.2f);
-        auto bin = badge.reduced (10, 0);
-        g.setColour (ShardColours::amberBright);
-        g.setFont (ShardColours::monoFont (14.0f, true).withExtraKerningFactor (0.22f));
-        g.drawText ("COLORS", bin.removeFromLeft (86), juce::Justification::centredLeft);
-        g.setColour (ShardColours::lcdFg.withAlpha (0.6f));
-        g.setFont (ShardColours::monoFont (8.5f, true).withExtraKerningFactor (0.24f));
-        g.drawText ("SAMPLER", bin, juce::Justification::centredRight);
     }
 
     // 4. Machine face: CTRL labels (bank-dependent), VU strip, step LEDs.
@@ -928,13 +1011,16 @@ void MainComponent::layoutPadGrid (juce::Rectangle<int> area, int cols, int rows
     auto grid = area.withSizeKeepingCentre (cols * cell + (cols - 1) * gap,
                                             rows * cell + (rows - 1) * gap);
 
+    // SP-style numbering: pad 01 sits BOTTOM-left, 16 top-right — logical row
+    // r of the pad index maps to visual row (rows-1-r).
     for (int r = 0; r < rows; ++r)
         for (int c = 0; c < cols; ++c)
         {
             const int idx = r * cols + c;
+            const int vr  = rows - 1 - r;
             if (auto* p = pads[idx])
                 p->setBounds (grid.getX() + c * (cell + gap),
-                             grid.getY() + r * (cell + gap),
+                             grid.getY() + vr * (cell + gap),
                              cell, cell);
         }
 }
@@ -959,6 +1045,7 @@ void MainComponent::resized()
 
     // --- Top chrome ---
     headerArea = area.removeFromTop (30);
+    skinButton.setBounds (headerArea.withLeft (headerArea.getRight() - 156).reduced (0, 2));
     area.removeFromTop (8);
 
     screenBezel = area.removeFromTop (screenH);
@@ -1086,6 +1173,17 @@ void MainComponent::resized()
         fxCurveArea = inner;       // live filter response (paintFxSheetContent)
     }
 
+    // BROWSE sheet: the tallest of them all — the file list wants the room.
+    {
+        auto inner = sheetFromBottom (browseSheet, full.getHeight());   // clamps to the 86% cap
+        auto titleRow = inner.removeFromTop (32);
+        browseCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
+
+        browseLoadButton.setBounds (inner.removeFromBottom (38).reduced (2, 0));
+        inner.removeFromBottom (8);
+        if (browser != nullptr) browser->setBounds (inner);
+    }
+
     // SEC sheet: pattern/len, chain row, chain-clear/note, step grid, bpm/clear.
     {
         const int patLen = engine.getPatternLength (selectedPattern);
@@ -1160,7 +1258,7 @@ void MainComponent::padClicked (int index)
     {
         loadArmed = false;
         loadButton.setToggleState (false, juce::dontSendNotification);
-        openChooserForPad (index);
+        openBrowseForPad (index);
         return;
     }
 
@@ -1316,35 +1414,78 @@ int MainComponent::firstEmptyPad() const
     return -1;
 }
 
-void MainComponent::openChooserForPad (int index)
+void MainComponent::openBrowseForPad (int index)
 {
-    chooser = std::make_unique<juce::FileChooser> (
-        "Assign a sample to pad " + juce::String (index + 1),
-        juce::File{}, "*.wav;*.aiff;*.aif;*.flac;*.ogg;*.mp3");
+    browseTargetPad = index;
+    selectPad (index);                       // the target pad reads as selected behind the sheet
+    closeAllSheets();
+    browseSheet.setVisible (true);
+    browseSheet.toFront (false);
+    if (browser != nullptr) browser->refresh();
+    selectionChanged();                      // sync the CARGAR button to the current selection
+    resized();
+    repaint();
+}
 
-    const auto flags = juce::FileBrowserComponent::openMode
-                     | juce::FileBrowserComponent::canSelectFiles;
+// A file is only loadable once one is actually picked (folders don't count).
+void MainComponent::selectionChanged()
+{
+    const bool ready = browser != nullptr
+                    && browser->getNumSelectedFiles() > 0
+                    && browser->getSelectedFile (0).existsAsFile();
+    browseLoadButton.setEnabled (ready);
+    browseSheet.repaint();                   // the header shows the pick
+}
 
-    chooser->launchAsync (flags, [this, index] (const juce::FileChooser& fc)
+void MainComponent::fileDoubleClicked (const juce::File& f)
+{
+    if (f.existsAsFile())
+        loadBrowserSelection();              // double-tap a file = load it straight away
+}
+
+void MainComponent::loadBrowserSelection()
+{
+    if (browser == nullptr || browseTargetPad < 0) return;
+    const auto f = browser->getSelectedFile (0);
+    if (! f.existsAsFile()) return;
+
+    const int index = browseTargetPad;
+    const juce::String fileName = f.getFileName();
+    closeAllSheets();
+
+    status.setText ("Cargando pad " + juce::String (index + 1) + " ...", juce::dontSendNotification);
+    loader.loadAsync (juce::URL (f), index, [this, index, fileName] (bool ok, juce::String detail, SampleBuffer::Ptr sb)
     {
-        const auto url = fc.getURLResult();
-        if (url.isEmpty()) return;
-
-        status.setText ("Loading pad " + juce::String (index + 1) + " ...", juce::dontSendNotification);
-        const juce::String fileName = url.getFileName();
-        loader.loadAsync (url, index, [this, index, fileName] (bool ok, juce::String detail, SampleBuffer::Ptr sb)
+        if (ok)
         {
-            if (ok)
-            {
-                assignSampleToPad (index, sb, fileName);
-                status.setText ("Pad " + juce::String (index + 1) + " loaded  [" + detail + "]", juce::dontSendNotification);
-            }
-            else
-            {
-                status.setText ("Load failed: " + detail, juce::dontSendNotification);
-            }
-        });
+            assignSampleToPad (index, sb, fileName);
+            status.setText ("Pad " + juce::String (index + 1) + " cargado  [" + detail + "]", juce::dontSendNotification);
+        }
+        else
+        {
+            status.setText ("Fallo al cargar: " + detail, juce::dontSendNotification);
+        }
     });
+}
+
+// Sheet header: which pad is being filled and what is currently picked.
+void MainComponent::paintBrowseSheetContent (juce::Graphics& g)
+{
+    if (browseSheet.sheetBounds.isEmpty()) return;
+
+    auto inner = browseSheet.sheetBounds.reduced (12, 6);
+    g.setColour (ShardColours::ink.withAlpha (0.9f));
+    g.setFont (ShardColours::monoFont (11.0f, true).withExtraKerningFactor (0.14f));
+    g.drawText ("CARGAR EN PAD " + juce::String (juce::jmax (0, browseTargetPad) + 1),
+                inner.removeFromTop (16), juce::Justification::centredLeft);
+
+    const bool picked = browser != nullptr && browser->getNumSelectedFiles() > 0
+                     && browser->getSelectedFile (0).existsAsFile();
+    g.setColour (ShardColours::inkDim);
+    g.setFont (ShardColours::monoFont (9.5f, true).withExtraKerningFactor (0.08f));
+    g.drawText (picked ? browser->getSelectedFile (0).getFileName()
+                       : juce::String ("elige una muestra  -  wav / aiff / flac / ogg / mp3"),
+                inner.removeFromTop (14), juce::Justification::centredLeft);
 }
 
 void MainComponent::toggleRecording()
