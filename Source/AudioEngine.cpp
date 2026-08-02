@@ -251,6 +251,17 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         scopeWrite.store (wi, std::memory_order_release);
     }
 
+    // 5d. Output peaks for the perform-screen VU (max-hold until the UI reads).
+    {
+        const int outCh = out.getNumChannels();
+        const float pl = out.getMagnitude (0, startSample, numSamples);
+        const float pr = (outCh > 1) ? out.getMagnitude (1, startSample, numSamples) : pl;
+        float prev = outPeakL.load (std::memory_order_relaxed);
+        if (pl > prev) outPeakL.store (pl, std::memory_order_relaxed);
+        prev = outPeakR.load (std::memory_order_relaxed);
+        if (pr > prev) outPeakR.store (pr, std::memory_order_relaxed);
+    }
+
     // 6. Diagnostic test tone.
     int tt = testToneRemaining.load (std::memory_order_relaxed);
     if (tt > 0)

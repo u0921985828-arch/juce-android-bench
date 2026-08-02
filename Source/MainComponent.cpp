@@ -195,6 +195,7 @@ MainComponent::MainComponent()
         const int len = engine.getSampleLength (selectedPad);
         engine.setPadStart (selectedPad, (int) (v * len));
         waveform.setTrim ((float) v, padEnd01[(size_t) selectedPad]);
+        repaint (editInfoArea.expanded (4));
     };
     endSlider.onValueChange = [this]
     {
@@ -204,6 +205,7 @@ MainComponent::MainComponent()
         const int len = engine.getSampleLength (selectedPad);
         engine.setPadEnd (selectedPad, (int) (v * len));
         waveform.setTrim (padStart01[(size_t) selectedPad], (float) v);
+        repaint (editInfoArea.expanded (4));
     };
 
     reverseButton.setClickingTogglesState (true);
@@ -240,6 +242,7 @@ MainComponent::MainComponent()
         noteSlider.setValue (0.0, juce::dontSendNotification);
         lengthSlider.setValue (engine.getPatternLength (selectedPattern), juce::dontSendNotification);
         resized();
+        seqOverlay.repaint();   // sheet card itself can grow/shrink with the bank's LEN
     };
     seqOverlay.addAndMakeVisible (patternSlider);
 
@@ -261,6 +264,7 @@ MainComponent::MainComponent()
     {
         engine.setPatternLength (selectedPattern, (int) lengthSlider.getValue());
         resized();
+        seqOverlay.repaint();   // sheet card grows/shrinks with LEN
     };
     seqOverlay.addAndMakeVisible (lengthSlider);
 
@@ -318,12 +322,13 @@ MainComponent::MainComponent()
         const bool hp = fxTypeButton.getToggleState();
         fxTypeButton.setButtonText (hp ? "HPF" : "LPF");
         engine.setFxType (hp ? 1 : 0);
+        repaint (fxCurveArea.expanded (4));
     };
     addAndMakeVisible (fxTypeButton);
 
     // FX as rotary KNOBS (vintage identity).
-    initKnob (cutoffSlider, 20.0, 20000.0, 1.0, 20000.0, 1000.0, [this] { const float v=(float) cutoffSlider.getValue(); engine.setFxCutoff (v); macroFilter.setValue (v, juce::dontSendNotification); });
-    initKnob (resoSlider,    0.3,  4.0, 0.01, 0.707, 0.0,       [this] { engine.setFxReso   ((float) resoSlider.getValue()); });
+    initKnob (cutoffSlider, 20.0, 20000.0, 1.0, 20000.0, 1000.0, [this] { const float v=(float) cutoffSlider.getValue(); engine.setFxCutoff (v); macroFilter.setValue (v, juce::dontSendNotification); repaint (fxCurveArea.expanded (4)); });
+    initKnob (resoSlider,    0.3,  4.0, 0.01, 0.707, 0.0,       [this] { engine.setFxReso   ((float) resoSlider.getValue()); repaint (fxCurveArea.expanded (4)); });
     initKnob (driveSlider,   0.0,  1.0, 0.01, 0.0,   0.0,       [this] { const float v=(float) driveSlider.getValue(); engine.setFxDrive (v); macroDrive.setValue (v, juce::dontSendNotification); });
     initKnob (dlyTimeSlider, 20.0, 1000.0, 1.0, 250.0, 0.0,     [this] { engine.setDlyTime  ((float) dlyTimeSlider.getValue()); });
     initKnob (dlyFbSlider,   0.0,  0.95, 0.01, 0.35, 0.0,       [this] { engine.setDlyFb    ((float) dlyFbSlider.getValue()); });
@@ -499,6 +504,73 @@ void MainComponent::paint (juce::Graphics& g)
             g.drawText (t, r.getX() - 6, r.getY() - 14, r.getWidth() + 12, 12, juce::Justification::centred);
         };
         mn (macroFilter, "FILTER"); mn (macroDrive, "DRIVE"); mn (macroSend, "SEND");
+
+        // Stereo VU: two segmented LED rows (L/R) on a recessed strip.
+        if (! vuArea.isEmpty())
+        {
+            auto scr = vuArea.toFloat();
+            g.setColour (ShardColours::screenBg);
+            g.fillRoundedRectangle (scr, 2.0f);
+
+            auto in = vuArea.reduced (24, 3);
+            const int nSeg = 28;
+            const float segW = (float) in.getWidth() / (float) nSeg;
+
+            g.setColour (ShardColours::lcdFg.withAlpha (0.55f));
+            g.setFont (ShardColours::monoFont (8.0f, true));
+            g.drawText ("L", vuArea.getX() + 6, in.getY() - 1, 12, in.getHeight() / 2, juce::Justification::centredLeft);
+            g.drawText ("R", vuArea.getX() + 6, in.getCentreY(), 12, in.getHeight() / 2, juce::Justification::centredLeft);
+
+            auto drawRow = [&] (float level, juce::Rectangle<float> row)
+            {
+                const int lit = (int) std::round (std::sqrt (juce::jlimit (0.0f, 1.0f, level)) * (float) nSeg);
+                for (int i = 0; i < nSeg; ++i)
+                {
+                    const bool hot = i >= (int) (nSeg * 0.82f);
+                    juce::Colour c = i < lit ? (hot ? ShardColours::red : ShardColours::accent)
+                                             : ShardColours::lcdFg.withAlpha (0.10f);
+                    g.setColour (c);
+                    g.fillRect (juce::Rectangle<float> (row.getX() + (float) i * segW + 1.0f, row.getY(),
+                                                        segW - 2.0f, row.getHeight()));
+                }
+            };
+            auto rows = in.toFloat();
+            auto top  = rows.removeFromTop (rows.getHeight() * 0.5f).reduced (0, 1.0f);
+            auto bot  = rows.reduced (0, 1.0f);
+            drawRow (vuL, top);
+            drawRow (vuR, bot);
+        }
+
+        // Step LEDs: 16 segments, the playhead lit in the page's primary
+        // colour — the beat stays visible without opening the SEC sheet.
+        if (! stepStripArea.isEmpty())
+        {
+            auto scr = stepStripArea.toFloat();
+            g.setColour (ShardColours::screenBg);
+            g.fillRoundedRectangle (scr, 2.0f);
+
+            auto in = stepStripArea.reduced (8, 4);
+            const float segW = (float) in.getWidth() / 16.0f;
+            const int ps = engine.getPlayStep();
+            const int page = ps >= 0 ? ps / 16 : 0;
+            const int cur  = ps >= 0 ? ps % 16 : -1;
+
+            for (int i = 0; i < 16; ++i)
+            {
+                auto r = juce::Rectangle<float> (in.getX() + (float) i * segW + 1.5f, (float) in.getY(),
+                                                 segW - 3.0f, (float) in.getHeight());
+                if (i == cur)
+                {
+                    g.setColour (patternRowColour (page));
+                    g.fillRoundedRectangle (r, 1.5f);
+                }
+                else
+                {
+                    g.setColour (ShardColours::lcdFg.withAlpha ((i % 4 == 0) ? 0.30f : 0.12f));
+                    g.drawRoundedRectangle (r.reduced (0.5f), 1.5f, 1.0f);
+                }
+            }
+        }
     }
     else if (mode == Mode::Fx)
     {
@@ -511,6 +583,63 @@ void MainComponent::paint (juce::Graphics& g)
         };
         name (cutoffSlider, "CUTOFF"); name (resoSlider, "RESO");  name (driveSlider, "DRIVE");
         name (dlyTimeSlider, "TIME");  name (dlyFbSlider, "FBK");  name (dlyMixSlider, "MIX");
+
+        // Live filter response: a 2-pole magnitude curve on a recessed LCD,
+        // redrawn as CUTOFF/RESO/LPF-HPF change — see the shape, not just Hz.
+        if (! fxCurveArea.isEmpty())
+        {
+            auto scr = fxCurveArea.toFloat();
+            g.setColour (ShardColours::knobBody2);
+            g.fillRoundedRectangle (scr.expanded (3.0f), 3.0f);
+            g.setColour (ShardColours::screenBg);
+            g.fillRect (scr);
+
+            auto plot = scr.reduced (10.0f, 14.0f);
+            const float fLo = 20.0f, fHi = 20000.0f;
+            const float dbTop = 24.0f, dbBot = -36.0f;
+            auto xForF  = [&plot, fLo, fHi] (float f)  { return plot.getX() + plot.getWidth() * (std::log (f / fLo) / std::log (fHi / fLo)); };
+            auto yForDb = [&plot, dbTop, dbBot] (float db) { return plot.getY() + plot.getHeight() * ((dbTop - db) / (dbTop - dbBot)); };
+
+            // Grid: decades + 0 dB line, dim LCD green.
+            g.setColour (ShardColours::lcdFg.withAlpha (0.18f));
+            for (float f : { 100.0f, 1000.0f, 10000.0f })
+                g.drawVerticalLine ((int) xForF (f), plot.getY(), plot.getBottom());
+            g.drawHorizontalLine ((int) yForDb (0.0f), plot.getX(), plot.getRight());
+            g.setColour (ShardColours::lcdFg.withAlpha (0.45f));
+            g.setFont (ShardColours::monoFont (8.5f, true));
+            g.drawText ("100",  (int) xForF (100.0f) - 14,   (int) plot.getBottom() + 1, 28, 10, juce::Justification::centred);
+            g.drawText ("1K",   (int) xForF (1000.0f) - 14,  (int) plot.getBottom() + 1, 28, 10, juce::Justification::centred);
+            g.drawText ("10K",  (int) xForF (10000.0f) - 14, (int) plot.getBottom() + 1, 28, 10, juce::Justification::centred);
+
+            const float fc = juce::jmax (20.0f, (float) cutoffSlider.getValue());
+            const float q  = juce::jmax (0.05f, (float) resoSlider.getValue());
+            const bool  hp = fxTypeButton.getToggleState();
+
+            juce::Path curve;
+            const int n = juce::jmax (32, (int) plot.getWidth() / 2);
+            for (int i = 0; i <= n; ++i)
+            {
+                const float f  = fLo * std::pow (fHi / fLo, (float) i / (float) n);
+                const float r2 = (f / fc) * (f / fc);
+                const float den = std::sqrt ((1.0f - r2) * (1.0f - r2) + r2 / (q * q));
+                const float mag = (hp ? r2 : 1.0f) / juce::jmax (1.0e-6f, den);
+                const float db  = juce::jlimit (dbBot, dbTop, 20.0f * std::log10 (juce::jmax (1.0e-6f, mag)));
+                const float x = xForF (f), y = yForDb (db);
+                if (i == 0) curve.startNewSubPath (x, y); else curve.lineTo (x, y);
+            }
+            g.setColour (ShardColours::accent);
+            g.strokePath (curve, juce::PathStrokeType (2.2f, juce::PathStrokeType::curved));
+
+            // Cutoff marker + readout.
+            g.setColour (ShardColours::yellow.withAlpha (0.8f));
+            g.drawVerticalLine ((int) xForF (juce::jlimit (fLo, fHi, fc)), plot.getY(), plot.getBottom());
+            g.setColour (ShardColours::lcdFg);
+            g.setFont (ShardColours::monoFont (10.0f, true).withExtraKerningFactor (0.12f));
+            const juce::String fcTxt = fc >= 1000.0f ? juce::String (fc / 1000.0f, 1) + " kHz" : juce::String ((int) fc) + " Hz";
+            g.drawText ((hp ? "HPF  " : "LPF  ") + fcTxt + "   Q " + juce::String (q, 2),
+                        (int) scr.getX() + 8, (int) scr.getY() + 3, (int) scr.getWidth() - 16, 12,
+                        juce::Justification::centredLeft);
+        }
     }
     else if (mode == Mode::Edit)
     {
@@ -533,6 +662,82 @@ void MainComponent::paint (juce::Graphics& g)
             g.drawText (t, r.getX() - 66, r.getY(), 60, r.getHeight(), juce::Justification::centredLeft);
         };
         lab (startSlider, "START"); lab (endSlider, "END");
+
+        // Sample-info card: what exactly is on this pad — mini waveform with
+        // the trim window shaded, plus duration / channels / rate / size.
+        if (! editInfoArea.isEmpty() && editInfoArea.getHeight() > 40)
+        {
+            auto scr = editInfoArea.toFloat();
+            g.setColour (ShardColours::knobBody2);
+            g.fillRoundedRectangle (scr.expanded (3.0f), 3.0f);
+            g.setColour (ShardColours::screenBg);
+            g.fillRect (scr);
+
+            const int sp = selectedPad;
+            const auto sb = (sp >= 0 ? uiSample[(size_t) sp] : SampleBuffer::Ptr());
+
+            if (sb == nullptr || sb->buffer.getNumSamples() <= 0)
+            {
+                g.setColour (ShardColours::lcdFg.withAlpha (0.5f));
+                g.setFont (ShardColours::monoFont (11.0f, true).withExtraKerningFactor (0.16f));
+                g.drawText ("PAD VACIO  -  LOAD O REC PARA CARGAR", editInfoArea, juce::Justification::centred);
+            }
+            else
+            {
+                auto in    = editInfoArea.reduced (10, 8);
+                auto meta  = in.removeFromBottom (14);
+                in.removeFromBottom (4);
+                auto plotR = in.toFloat();
+
+                const auto& buf = sb->buffer;
+                const int   nSamps = buf.getNumSamples();
+                const int   nCh    = buf.getNumChannels();
+                const float s0 = padStart01[(size_t) sp], s1 = padEnd01[(size_t) sp];
+
+                // Trim window shading (kept region slightly lit).
+                g.setColour (ShardColours::lcdFg.withAlpha (0.07f));
+                g.fillRect (plotR.getX() + plotR.getWidth() * s0, plotR.getY(),
+                            plotR.getWidth() * juce::jmax (0.0f, s1 - s0), plotR.getHeight());
+
+                // Min/max column waveform.
+                juce::Path wf;
+                const int cols = juce::jmax (16, (int) plotR.getWidth());
+                const float midY = plotR.getCentreY(), half = plotR.getHeight() * 0.48f;
+                for (int c = 0; c < cols; ++c)
+                {
+                    const int a = (int) ((juce::int64) nSamps * c / cols);
+                    const int b = juce::jmax (a + 1, (int) ((juce::int64) nSamps * (c + 1) / cols));
+                    float lo = 0.0f, hi = 0.0f;
+                    for (int ch = 0; ch < nCh; ++ch)
+                    {
+                        const auto range = buf.findMinMax (ch, a, b - a);
+                        lo = juce::jmin (lo, range.getStart());
+                        hi = juce::jmax (hi, range.getEnd());
+                    }
+                    const float x = plotR.getX() + (float) c * plotR.getWidth() / (float) cols;
+                    wf.addLineSegment ({ x, midY - hi * half, x, midY - lo * half }, 1.0f);
+                }
+                g.setColour (ShardColours::accent.withAlpha (0.9f));
+                g.fillPath (wf);
+
+                // Trim edges.
+                g.setColour (ShardColours::yellow.withAlpha (0.85f));
+                g.drawVerticalLine ((int) (plotR.getX() + plotR.getWidth() * s0), plotR.getY(), plotR.getBottom());
+                g.drawVerticalLine ((int) (plotR.getX() + plotR.getWidth() * s1) - 1, plotR.getY(), plotR.getBottom());
+
+                // Facts row: duration / channels / rate / size.
+                const double sr   = sb->sourceSampleRate;
+                const double secs = sr > 0.0 ? (double) nSamps / sr : 0.0;
+                const int    kb   = (int) ((juce::int64) nSamps * nCh * (int) sizeof (float) / 1024);
+                const juce::String facts = juce::String (secs, 2) + " s   "
+                                         + (nCh >= 2 ? "STEREO" : "MONO") + "   "
+                                         + juce::String (sr / 1000.0, 1) + " kHz   "
+                                         + juce::String (kb) + " KB";
+                g.setColour (ShardColours::lcdFg);
+                g.setFont (ShardColours::monoFont (9.5f, true).withExtraKerningFactor (0.10f));
+                g.drawText (facts, meta, juce::Justification::centredLeft);
+            }
+        }
     }
 }
 
@@ -631,15 +836,28 @@ void MainComponent::layoutPadGrid (juce::Rectangle<int> area, int cols, int rows
 
 void MainComponent::resized()
 {
-    fxPanelArea = seqPanelArea = editPanelArea = editCtrlArea = {};
+    fxPanelArea = seqPanelArea = editPanelArea = editCtrlArea = fxCurveArea = editInfoArea = {};
+    vuArea = stepStripArea = {};
 
     auto area = getLocalBounds().reduced (8);
+
+    // In TOCAR the LCD grows to absorb whatever the perform body doesn't
+    // need (its pads are width-bound squares) — the screen is the protagonist.
+    int screenH = 96;
+    if (mode == Mode::Perform)
+    {
+        const int chromeBelow = 8 + 36 + 6 + 40 + 8 + 18 + 6;          // gaps + tabs + transport + status
+        const int cell = (area.getWidth() - 3 * 8) / 4;                // square pad cells, 4 cols, gap 8
+        const int bodyNeed = 20 + 6 + 86 + 6 + 20 + 8 + (4 * cell + 3 * 8);   // VU + knobs + step LEDs + pads
+        const int avail = area.getHeight() - (30 + 8) - chromeBelow - bodyNeed;
+        screenH = juce::jmax (96, avail);
+    }
 
     // --- Always-visible top chrome ---
     headerArea = area.removeFromTop (30);
     area.removeFromTop (8);
 
-    screenBezel = area.removeFromTop (96);
+    screenBezel = area.removeFromTop (screenH);
     waveform.setBounds (screenBezel);
     area.removeFromTop (8);
 
@@ -671,6 +889,10 @@ void MainComponent::resized()
     // --- Mode body ---
     if (mode == Mode::Perform)
     {
+        // Sketch order: VU strip, macro knobs, step-LED strip, pads.
+        vuArea = area.removeFromTop (20).reduced (2, 0);
+        area.removeFromTop (6);
+
         auto mrow = area.removeFromTop (86);             // 3 quick macros
         juce::Slider* mk[3] = { &macroFilter, &macroDrive, &macroSend };
         const int w = mrow.getWidth() / 3;
@@ -680,6 +902,9 @@ void MainComponent::resized()
             cell.removeFromTop (14);                     // gap for label
             mk[i]->setBounds (cell.reduced (10, 0));
         }
+        area.removeFromTop (6);
+
+        stepStripArea = area.removeFromTop (20).reduced (2, 0);
         area.removeFromTop (8);
         layoutPadGrid (area, 4, 4, 8);
     }
@@ -692,9 +917,12 @@ void MainComponent::resized()
         testButton.setBounds   (ctrl.reduced (3));
         inner.removeFromBottom (10);
 
+        // Knob boxes sized to the knob's real visual footprint (label gap +
+        // rotary + value chip ≈ 140px), not half the panel — the old half-split
+        // made each box ~365px of mostly-invisible drag area.
         juce::Slider* r1[3] = { &cutoffSlider, &resoSlider, &driveSlider };
         juce::Slider* r2[3] = { &dlyTimeSlider, &dlyFbSlider, &dlyMixSlider };
-        const int rowH = inner.getHeight() / 2;
+        const int rowH = juce::jmin (140, inner.getHeight() / 3);
         auto place = [] (juce::Rectangle<int> row, juce::Slider** ks)
         {
             const int w = row.getWidth() / 3;
@@ -706,7 +934,12 @@ void MainComponent::resized()
             }
         };
         place (inner.removeFromTop (rowH), r1);
-        place (inner, r2);
+        place (inner.removeFromTop (rowH), r2);
+        inner.removeFromTop (12);
+
+        // The recovered space becomes a live filter response display
+        // (drawn in paint(), reacts to CUTOFF/RESO/LPF-HPF).
+        fxCurveArea = inner;
     }
     else // Edit: compact pad selector on top, panel below.
     {
@@ -751,13 +984,34 @@ void MainComponent::resized()
         }
         inner.removeFromTop (6);
         chopButton.setBounds (inner.removeFromTop (30).reduced (3, 0));
+        inner.removeFromTop (10);
+
+        // Sample-info card fills the former dead space below AUTO CHOP:
+        // mini waveform + the sample's real facts (drawn in paint()).
+        editInfoArea = inner;
     }
 
     // --- Sequencer sheet: pops up over whichever tab is showing ---
     {
         seqOverlay.setBounds (getLocalBounds());
         auto full = getLocalBounds();
-        auto sheet = full.removeFromBottom ((int) (full.getHeight() * 0.86f)).reduced (8);
+
+        // Sheet height follows its content (title + controls + step grid) instead
+        // of always claiming 86% of the screen — a 16-step pattern opens a
+        // compact sheet, a 48-step one grows, and only a very long pattern hits
+        // the 86% cap and shrinks its own cells to fit.
+        const int patLen = engine.getPatternLength (selectedPattern);
+        const int rows    = juce::jmax (1, patLen / kStepCols);
+        const int gap     = 4;
+        const int fixedRowsH = 164;   // title + pattern/len + chain row + note row + bpm/clear row, incl. their gaps
+
+        const int maxCellW  = (full.getWidth() - 16 /*outer reduce*/ - 28 /*inner reduce*/ - (kStepCols - 1) * gap) / kStepCols;
+        const int comfyCell = juce::jlimit (36, 64, maxCellW);
+        const int gridH     = rows * comfyCell + (rows - 1) * gap;
+
+        const int desiredH = fixedRowsH + 24 /*inner reduce v*/ + 16 /*outer reduce v*/ + gridH;
+        const int cappedH  = (int) (full.getHeight() * 0.86f);
+        auto sheet = full.removeFromBottom (juce::jmin (desiredH, cappedH)).reduced (8);
         seqOverlay.sheetBounds = sheet;
 
         seqPanelArea = sheet;
@@ -797,14 +1051,11 @@ void MainComponent::resized()
         // sheet gives them (bigger with fewer rows, smaller with more),
         // capped so they never get silly at either extreme.
         {
-            const int patLen = engine.getPatternLength (selectedPattern);
             const int cols = kStepCols;
-            const int rows = juce::jmax (1, patLen / cols);
-            const int gap  = 4;
 
-            const int maxCellW = (inner.getWidth()  - (cols - 1) * gap) / cols;
-            const int maxCellH = (inner.getHeight() - (rows - 1) * gap) / rows;
-            const int cell = juce::jlimit (20, 70, juce::jmin (maxCellW, maxCellH));
+            const int gridMaxCellW = (inner.getWidth()  - (cols - 1) * gap) / cols;
+            const int gridMaxCellH = (inner.getHeight() - (rows - 1) * gap) / rows;
+            const int cell = juce::jlimit (20, 70, juce::jmin (gridMaxCellW, gridMaxCellH));
 
             auto steps = inner.removeFromTop (juce::jmin (inner.getHeight(), rows * cell + (rows - 1) * gap));
             steps = steps.withSizeKeepingCentre (cols * cell + (cols - 1) * gap, steps.getHeight());
@@ -883,6 +1134,7 @@ void MainComponent::selectPad (int index)
                        + (padName[(size_t) index].isNotEmpty() ? "  " + dot + "  " + padName[(size_t) index] : juce::String()),
                        juce::dontSendNotification);
     for (int i = 0; i < kNumPads; ++i) refreshPad (i);
+    repaint (editInfoArea.expanded (4));   // the sample-info card follows the selection
 }
 
 void MainComponent::updateControlsFromPad (int index)
@@ -1093,12 +1345,28 @@ void MainComponent::timerCallback()
         // muddy together.
         stepButtons[s]->setColour (juce::TextButton::buttonColourId, on ? kPadLoaded : rest);
     }
+    const int prevPlayStep = lastPlayStep;
     lastPlayStep = ps;
 
     // Keep the sheet's chain/playing-pattern readout + rings live while the
     // sequencer runs and the sheet is open.
     if (seqOverlay.isVisible() && engine.isPlaying())
         seqOverlay.repaint();
+
+    // Perform-screen strips: VU ballistics (fast attack, ~0.8 decay/frame)
+    // and the step-LED playhead.
+    if (mode == Mode::Perform)
+    {
+        const float pl = engine.readOutPeakL();
+        const float pr = engine.readOutPeakR();
+        const float prevL = vuL, prevR = vuR;
+        vuL = juce::jmax (pl, vuL * 0.80f); if (vuL < 0.004f) vuL = 0.0f;
+        vuR = juce::jmax (pr, vuR * 0.80f); if (vuR < 0.004f) vuR = 0.0f;
+        if ((vuL != prevL || vuR != prevR) && ! vuArea.isEmpty())
+            repaint (vuArea.expanded (2));
+        if (ps != prevPlayStep && ! stepStripArea.isEmpty())
+            repaint (stepStripArea.expanded (2));
+    }
 
     if (recordingActive)
         status.setText ("Recording pad " + juce::String (recordingSlot + 1)

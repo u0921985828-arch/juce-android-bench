@@ -134,7 +134,9 @@ private:
     std::array<float, kNumPads> padFlash {};   // 1.0 on trigger, decays -> lit feedback
     // Chassis layout regions (set in resized(), drawn in paint()).
     juce::Rectangle<int> headerArea, screenBezel, fxPanelArea, seqPanelArea,
-                         editPanelArea, tabBarArea, editCtrlArea;
+                         editPanelArea, tabBarArea, editCtrlArea, fxCurveArea,
+                         editInfoArea, vuArea, stepStripArea;
+    float vuL = 0.0f, vuR = 0.0f;   // smoothed output peaks for the VU strip
 
     Mode mode { Mode::Perform };
     int  selectedPad   = -1;

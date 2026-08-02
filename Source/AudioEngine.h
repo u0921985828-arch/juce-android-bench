@@ -108,6 +108,10 @@ public:
     // --- Scope (message thread): copy the last n post-FX master samples ---
     void copyScope (float* dst, int n) noexcept;
 
+    // --- Output peak meters (message thread): max |sample| since last read ---
+    float readOutPeakL() noexcept { return outPeakL.exchange (0.0f, std::memory_order_relaxed); }
+    float readOutPeakR() noexcept { return outPeakR.exchange (0.0f, std::memory_order_relaxed); }
+
     // --- Recording (message thread) ---
     void              startRecording (int slot) noexcept;
     SampleBuffer::Ptr finishRecording() noexcept;   // stop + build + publish; returns the buffer
@@ -214,6 +218,9 @@ private:
     static constexpr int kScopeSize = 2048;   // power of two
     std::array<float, kScopeSize> scope {};
     std::atomic<int> scopeWrite { 0 };
+
+    // Running output peak per channel; UI consumes-and-resets via readOutPeak*.
+    std::atomic<float> outPeakL { 0.0f }, outPeakR { 0.0f };
 
     // Diagnostic test tone.
     std::atomic<int> testToneRemaining { 0 };
