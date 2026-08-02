@@ -85,7 +85,6 @@ private:
     };
     ProjectList  projModel;
     juce::ListBox projList { "proyectos", &projModel };
-    juce::TextButton projButton { "PROYECTO" };          // header chip
     juce::TextButton projCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
     juce::TextButton projSaveButton { "GUARDAR" };
     juce::TextButton projLoadButton { "ABRIR" };
@@ -146,6 +145,7 @@ private:
     juce::TextButton padsButton  { "PADS" };
     juce::TextButton secButton   { "SEC" };
     juce::TextButton fxOpenButton   { "FX" };
+    juce::TextButton setButton      { "SET" };   // skins + proyectos (spec: SET)
     juce::TextButton seqCloseButton   { juce::CharPointer_UTF8 ("\xc3\x97") },
                      padCloseButton   { juce::CharPointer_UTF8 ("\xc3\x97") },
                      fxCloseButton    { juce::CharPointer_UTF8 ("\xc3\x97") };
@@ -201,6 +201,7 @@ private:
     std::array<float, kNumPads> padRelease {};    // ms
     std::array<SampleBuffer::Ptr, kNumPads> uiSample;
     std::array<juce::String, kNumPads> padName {};
+    std::array<int, kNumPads> padZati {};       // fragment colour per pad (cut order)
 
     // Pattern mirror [bank][step][pad] for the sequencer UI.
     static constexpr int kNumPatterns = AudioEngine::kNumPatterns;   // 8

@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include "SampleBuffer.h"
 #include "ShardLookAndFeel.h"
+#include "Zati.h"
 
 // ============================================================================
 //  PadButton — a sample pad tile: big index (Oswald), sample name (mono), and
@@ -21,6 +22,8 @@ public:
         buildSpark (sb.get());
         repaint();
     }
+    void setZati (int z) { if (zati != z) { zati = z; repaint(); } }
+    int  getZati() const { return zati; }
     void setSelected (bool s) { if (selected != s) { selected = s; repaint(); } }
     void setPlaying  (bool p) { if (playing  != p) { playing  = p; repaint(); } }
     void setFlash    (float f) { flash = f; repaint(); }
@@ -30,32 +33,46 @@ public:
         auto r = getLocalBounds().toFloat().reduced (0.5f);
         const float rad = 3.0f;   // square, not rounded — matches the flat button caps
 
-        juce::Colour base   = loaded ? ShardColours::padTop : ShardColours::padBg2;
-        juce::Colour edge   = ShardColours::padBorder;
+        // A loaded pad wears its zati colour: 30% fill, full-strength border,
+        // and a solid top stripe. The stripe plus the always-drawn number are
+        // the non-chromatic reinforcement the spec requires — the pad must
+        // still be readable when the hue is not.
+        const juce::Colour frag = Zati::colour (zati);
+
+        juce::Colour base   = loaded ? frag.withMultipliedAlpha (0.30f) : ShardColours::padBg2;
+        juce::Colour edge   = loaded ? frag : ShardColours::padBorder;
         juce::Colour idxCol = loaded ? ShardColours::ink.withAlpha (0.92f)
                                      : ShardColours::ink.withAlpha (0.30f);
         juce::Colour nmCol  = ShardColours::inkDim;
-        juce::Colour sparkCol = ShardColours::accent.withAlpha (0.55f);
+        juce::Colour sparkCol = loaded ? frag.darker (0.35f) : ShardColours::accent.withAlpha (0.55f);
         bool onAccent = false;
 
         if (playing || flash > 0.55f)
         {
             onAccent = true;
-            base   = ShardColours::accent;
-            edge   = ShardColours::accentBright;
-            idxCol = juce::Colours::white;
-            nmCol  = juce::Colours::white.withAlpha (0.9f);
-            sparkCol = juce::Colours::white.withAlpha (0.9f);
+            base   = frag;
+            edge   = frag.brighter (0.35f);
+            const bool darkFrag = frag.getPerceivedBrightness() < 0.55f;
+            idxCol = darkFrag ? juce::Colours::white : ShardColours::ink;
+            nmCol  = idxCol.withAlpha (0.9f);
+            sparkCol = idxCol.withAlpha (0.85f);
         }
         else if (flash > 0.0f)
         {
-            base   = base.interpolatedWith (ShardColours::accent, juce::jlimit (0.0f, 1.0f, flash));
+            base = base.interpolatedWith (frag, juce::jlimit (0.0f, 1.0f, flash));
         }
         if (down) base = base.darker (0.06f);
 
         // Body — flat fill, no gradient/sheen.
         g.setColour (base);
         g.fillRoundedRectangle (r, rad);
+
+        // Top stripe (5px): the zati's identity, independent of the fill.
+        if (loaded && ! onAccent)
+        {
+            g.setColour (frag);
+            g.fillRect (r.withHeight (5.0f).reduced (1.0f, 0.0f).withY (r.getY() + 1.0f));
+        }
 
         // Sparkline (behind the labels).
         if (loaded && spark.size() > 2)
@@ -136,6 +153,7 @@ private:
     }
 
     int index = 0;
+    int zati = 0;                 // fragment colour, assigned by cut order
     bool loaded = false, selected = false, playing = false;
     float flash = 0.0f;
     juce::String padName;

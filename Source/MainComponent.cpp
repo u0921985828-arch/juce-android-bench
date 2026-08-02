@@ -44,6 +44,8 @@ MainComponent::MainComponent()
     for (int i = 0; i < kNumPads; ++i)
     {
         auto* p = new PadButton (i);
+        padZati[(size_t) i] = Zati::forPad (i);      // cut order: zati 1 is always red
+        p->setZati (padZati[(size_t) i]);
         p->onClick = [this, i] { padClicked (i); };
         addAndMakeVisible (p);
         pads.add (p);
@@ -102,14 +104,14 @@ MainComponent::MainComponent()
         projSheet.onDismiss = [this] { closeAllSheets(); };
         projSheet.paintContent = [this] (juce::Graphics& g) { paintProjSheetContent (g); };
 
-        styleButton (projButton, kKey);
-        projButton.setColour (juce::TextButton::buttonOnColourId, kAccent);
-        projButton.onClick = [this]
+        styleButton (setButton, kKey);
+        setButton.setColour (juce::TextButton::buttonOnColourId, kAccent);
+        setButton.onClick = [this]
         {
             if (projSheet.isVisible()) closeAllSheets();
-            else { refreshProjectList(); openSheet (projSheet, projButton); }
+            else { refreshProjectList(); openSheet (projSheet, setButton); }
         };
-        addAndMakeVisible (projButton);
+        addAndMakeVisible (setButton);
 
         projList.setColour (juce::ListBox::backgroundColourId, ShardColours::chassisTop);
         projList.setRowHeight (34);
@@ -497,7 +499,7 @@ MainComponent::MainComponent()
         ShardColours::setSkin (ShardColours::currentSkin + 1);
         applySkin();
     };
-    addAndMakeVisible (skinButton);
+    projSheet.addAndMakeVisible (skinButton);
 
     // Controls live inside their sheets, not on the machine face.
     for (juce::Component* c : { (juce::Component*) &pitchSlider, (juce::Component*) &volSlider, (juce::Component*) &panSlider,
@@ -682,7 +684,7 @@ void MainComponent::closeAllSheets()
     }
     browseSheet.setVisible (false);
     projSheet.setVisible (false);
-    projButton.setToggleState (false, juce::dontSendNotification);
+    setButton.setToggleState (false, juce::dontSendNotification);
     repaint();
 }
 
@@ -734,14 +736,32 @@ void MainComponent::paint (juce::Graphics& g)
         g.drawRoundedRectangle (r.expanded (3.0f).reduced (0.5f), 3.0f, 1.2f);
     }
 
-    // 3. Header: ARTiFACTS wordmark (the COLORS badge is now skinButton —
-    //    a real button that cycles the 4 accent skins).
+    // 3. Header: ZATI wordmark left, fragment strip right. No touch targets
+    //    here — the strip is a readout, not a control: it is the state of the
+    //    kit at a glance, one swatch per fragment colour, dimmed where no pad
+    //    of that colour is loaded.
     if (! headerArea.isEmpty())
     {
         auto h = headerArea;
         g.setColour (ShardColours::ink);
-        g.setFont (ShardColours::displayFont (22.0f).withExtraKerningFactor (0.10f));
-        g.drawText ("ARTiFACTS", h.getX(), h.getY(), 180, h.getHeight(), juce::Justification::centredLeft);
+        g.setFont (ShardColours::displayFont (24.0f).withExtraKerningFactor (0.16f));
+        g.drawText ("ZATI", h.getX(), h.getY(), 140, h.getHeight(), juce::Justification::centredLeft);
+
+        const int sw = 9, sh = 13, gap = 4;
+        const int stripW = Zati::kNumColours * sw + (Zati::kNumColours - 1) * gap;
+        int x = h.getRight() - stripW;
+        const int y = h.getCentreY() - sh / 2;
+
+        for (int i = 0; i < Zati::kNumColours; ++i)
+        {
+            bool used = false;
+            for (int p = 0; p < kNumPads && ! used; ++p)
+                used = padHasSample[(size_t) p] && padZati[(size_t) p] == i;
+
+            g.setColour (used ? Zati::colour (i) : Zati::colour (i).withAlpha (0.25f));
+            g.fillRect (x, y, sw, sh);
+            x += sw + gap;
+        }
     }
 
     // 4. Machine face: CTRL labels (bank-dependent), VU strip, step LEDs.
@@ -1135,10 +1155,6 @@ void MainComponent::resized()
 
     // --- Top chrome ---
     headerArea = area.removeFromTop (30);
-    skinButton.setBounds (headerArea.withLeft (headerArea.getRight() - 150).reduced (0, 2));
-    // Project chip between the wordmark and the skin badge.
-    projButton.setBounds (headerArea.withLeft (headerArea.getX() + 138)
-                                    .withRight (headerArea.getRight() - 154).reduced (0, 3));
     area.removeFromTop (8);
 
     screenBezel = area.removeFromTop (screenH);
@@ -1150,10 +1166,10 @@ void MainComponent::resized()
     tabBarArea = area.removeFromTop (42);
     {
         auto row = tabBarArea;
-        juce::TextButton* mb[3] = { &padsButton, &secButton, &fxOpenButton };
-        const int w = row.getWidth() / 3;
-        for (int i = 0; i < 3; ++i)
-            mb[i]->setBounds ((i < 2 ? row.removeFromLeft (w) : row).reduced (2));
+        juce::TextButton* mb[4] = { &padsButton, &secButton, &fxOpenButton, &setButton };
+        const int w = row.getWidth() / 4;
+        for (int i = 0; i < 4; ++i)
+            mb[i]->setBounds ((i < 3 ? row.removeFromLeft (w) : row).reduced (2));
     }
     area.removeFromTop (6);
 
@@ -1287,6 +1303,9 @@ void MainComponent::resized()
         auto inner = sheetFromBottom (projSheet, (int) (full.getHeight() * 0.7f));
         auto titleRow = inner.removeFromTop (32);
         projCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
+
+        skinButton.setBounds (inner.removeFromTop (32).reduced (2, 0));
+        inner.removeFromTop (8);
 
         auto actions = inner.removeFromBottom (38);
         const int aw = actions.getWidth() / 4;
@@ -1446,6 +1465,7 @@ void MainComponent::selectPad (int index)
     else
         waveform.setInfo ("PAD " + juce::String (index + 1), 0.0, 0.0, 0);
     for (int i = 0; i < kNumPads; ++i) refreshPad (i);
+    repaint (headerArea);          // the fragment strip tracks which zatis are loaded
     if (macroBank == 2) refreshMacroValues();      // PAD bank tracks the selection
     if (padSheet.isVisible()) padSheet.repaint();  // its title/card follow the selection
 }
@@ -1661,6 +1681,7 @@ juce::ValueTree MainComponent::captureState() const
         p.setProperty ("pan",     padPan[(size_t) i],     nullptr);
         p.setProperty ("attack",  padAttack[(size_t) i],  nullptr);
         p.setProperty ("release", padRelease[(size_t) i], nullptr);
+        p.setProperty ("zati",    padZati[(size_t) i],    nullptr);
         pads.addChild (p, -1, nullptr);
     }
     s.addChild (pads, -1, nullptr);
@@ -1734,6 +1755,7 @@ void MainComponent::applyState (const juce::ValueTree& s)
             padPan[(size_t) i]     = (float) p.getProperty ("pan", 0.0);
             padAttack[(size_t) i]  = (float) p.getProperty ("attack", 2.0);
             padRelease[(size_t) i] = (float) p.getProperty ("release", 5.0);
+            padZati[(size_t) i]    = (int)   p.getProperty ("zati", Zati::forPad (i));
 
             // Trim is stored 0..1 but the engine wants samples, and
             // publishSample has just reset the window to the whole file — so
@@ -1789,6 +1811,9 @@ void MainComponent::applyState (const juce::ValueTree& s)
         rebuildChain();
     }
 
+    for (int i = 0; i < kNumPads; ++i)
+        if (auto* pb = pads[i]) pb->setZati (padZati[(size_t) i]);
+
     selectedPattern = juce::jlimit (0, kNumPatterns - 1, (int) s.getProperty ("selectedPattern", 0));
     patternSlider.setValue (selectedPattern, juce::dontSendNotification);   // 0-based; its text adds the +1
     patternSlider.updateText();
@@ -1828,7 +1853,7 @@ void MainComponent::saveProject (const juce::String& rawName)
 
     currentProject = name;
     refreshProjectList();
-    projButton.setButtonText (name);
+    currentProject = name;
 
     status.setText (ok && failed == 0
                         ? "Guardado \"" + name + "\"  [" + juce::String (written) + " pads]"
@@ -1887,7 +1912,7 @@ void MainComponent::loadProject (const juce::String& name)
             ++missing;
 
     currentProject = name;
-    projButton.setButtonText (name);
+    currentProject = name;
     closeAllSheets();
     status.setText ("Abierto \"" + name + "\"  [" + juce::String (restored) + " pads"
                         + (missing > 0 ? ", " + juce::String (missing) + " sin audio]" : "]"),
@@ -1900,7 +1925,7 @@ void MainComponent::deleteProject (const juce::String& name)
     if (currentProject == name)
     {
         currentProject = {};
-        projButton.setButtonText ("PROYECTO");
+        currentProject = {};
     }
     refreshProjectList();
     status.setText ("Borrado \"" + name + "\"", juce::dontSendNotification);
@@ -1933,7 +1958,7 @@ void MainComponent::newProject()
     selectedPattern = 0;
     selectedStep = -1;
     currentProject = {};
-    projButton.setButtonText ("PROYECTO");
+    currentProject = {};
     selectPad (0);
     closeAllSheets();
     status.setText ("Proyecto nuevo", juce::dontSendNotification);

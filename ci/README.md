@@ -23,8 +23,8 @@ ability to update the listing.
 
 The launcher icon, generated rather than hand-drawn so it stays in step with
 the app's palette. `make_icon.py` reads the same colour values as
-`ShardColours` and draws the pad matrix with four lit pads — blue, red, yellow
-and ink — on the white chassis. Re-run it after any palette change:
+`ShardColours`/`Zati` and draws the pad matrix with four lit pads taken from the fixed
+fragment palette in `Zati.h`, on the white chassis. Re-run it after any palette change:
 
     python3 ci/make_icon.py
 

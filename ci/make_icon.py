@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Draw the COLORS launcher icon.
+"""Draw the ZATI launcher icon.
 
 The mark is the instrument itself, reduced to what survives at 48px: a pad
-grid on the app's white chassis. Three of the sixteen pads are lit in the
-three primaries the whole product is built on (blue / red / yellow) — the
-name stated in the only vocabulary the app uses. Everything is flat, with
-the same square-ish corner radius as the real pads: no gradients, no bevels,
-no lettering (type is illegible at launcher size).
+grid on the app's white chassis, with four pads lit from the fixed fragment
+palette in cut order. That palette IS the product, so the icon states it
+rather than describing it. Everything is flat, with the same square-ish
+corner radius as the real pads: no gradients, no bevels, no lettering (type
+is illegible at launcher size).
 
 Run: python3 ci/make_icon.py   ->   ci/icon.png (1024x1024)
 """
@@ -15,15 +15,17 @@ from PIL import Image, ImageDraw
 S = 1024                      # master size; Android downsamples from here
 CHASSIS = (255, 255, 255)
 PAD_OFF = (227, 227, 221)     # ShardColours::padTop
-AZUL = (47, 111, 237)         # accent
-ROJO = (224, 34, 44)          # red
-AMARILLO = (240, 180, 0)      # yellow
-INK = (28, 28, 26)            # ink
+# Four evenly spaced hues from the fixed 8-fragment ZATI palette (Zati.h).
+ROJO     = (232, 84, 74)      # zati 1
+AMBAR    = (240, 190, 68)     # zati 3
+TURQUESA = (74, 196, 168)     # zati 5
+VIOLETA  = (140, 110, 224)    # zati 7
 
-# Lit pads in SP order (01 = bottom-left), climbing the diagonal: blue, red,
-# yellow, then ink — the four colours the whole product is built from. The
-# diagonal keeps the mark balanced instead of bottom-heavy.
-LIT = {0: AZUL, 5: ROJO, 10: AMARILLO, 15: INK}
+# Lit pads in SP order (01 = bottom-left), climbing the diagonal. The colours
+# are taken from the fixed fragment palette in cut order, which is the whole
+# idea of the product: the mark IS the colour system. The diagonal keeps it
+# balanced instead of bottom-heavy.
+LIT = {0: ROJO, 5: AMBAR, 10: TURQUESA, 15: VIOLETA}
 
 
 def main() -> None:
