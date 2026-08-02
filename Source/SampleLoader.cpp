@@ -19,28 +19,42 @@ void SampleLoader::loadAsync (const juce::URL& url, int slot,
         juce::String      detail;
         SampleBuffer::Ptr loaded;
 
-        // 1. Open a stream. On Android the picker returns a content:// URL that
-        //    must be opened through AndroidDocument (URL::createInputStream is
-        //    for http and returns null for content URIs).
+        // 1. Open a stream. Two kinds of URL reach here and they open
+        //    differently on Android:
+        //      * a real path (file://) from the in-app browser, and
+        //      * a content:// document URI from the system picker, which only
+        //        AndroidDocument can open.
+        //    Branching on the URL kind rather than the platform is what
+        //    matters: keying it off JUCE_ANDROID alone sent the browser's
+        //    file:// URLs into AndroidDocument, which always rejects them.
         std::unique_ptr<juce::InputStream> source;
 
-       #if JUCE_ANDROID
-        auto doc = juce::AndroidDocument::fromDocument (url);
-        if (doc.hasValue())
-            source = doc.createInputStream();
-        else
-            detail = "cannot open document";
-       #else
         if (url.isLocalFile())
-            source = std::make_unique<juce::FileInputStream> (url.getLocalFile());
+        {
+            const auto f = url.getLocalFile();
+            auto fis = std::make_unique<juce::FileInputStream> (f);
+
+            if (fis->openedOk())        source = std::move (fis);
+            else if (! f.existsAsFile()) detail = "no existe el archivo";
+            else                         detail = "sin permiso de lectura";
+        }
         else
+        {
+           #if JUCE_ANDROID
+            auto doc = juce::AndroidDocument::fromDocument (url);
+            if (doc.hasValue())
+                source = doc.createInputStream();
+            else
+                detail = "documento no accesible";
+           #else
             source = url.createInputStream (
                 juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress));
-       #endif
+           #endif
+        }
 
         if (source == nullptr)
         {
-            if (detail.isEmpty()) detail = "no stream";
+            if (detail.isEmpty()) detail = "sin flujo de datos";
         }
         else
         {
@@ -51,7 +65,7 @@ void SampleLoader::loadAsync (const juce::URL& url, int slot,
 
             if (mb.getSize() <= 44)
             {
-                detail = "read " + juce::String ((int) mb.getSize()) + " bytes";
+                detail = "solo " + juce::String ((int) mb.getSize()) + " bytes";
             }
             else if (auto* rawReader = formatManager.createReaderFor (
                          std::make_unique<juce::MemoryInputStream> (mb.getData(), mb.getSize(), true)))
@@ -75,12 +89,12 @@ void SampleLoader::loadAsync (const juce::URL& url, int slot,
                 }
                 else
                 {
-                    detail = "empty audio";
+                    detail = "audio vacio";
                 }
             }
             else
             {
-                detail = "unknown format (" + juce::String ((int) mb.getSize()) + "B)";
+                detail = "formato no reconocido (" + juce::String ((int) mb.getSize()) + "B)";
             }
         }
 
