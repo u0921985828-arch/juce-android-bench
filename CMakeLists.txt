@@ -23,7 +23,7 @@ FetchContent_MakeAvailable(JUCE)
 
 # --- Standalone GUI app -----------------------------------------------------
 juce_add_gui_app(Shard
-    PRODUCT_NAME "Shard"
+    PRODUCT_NAME "Colors"
     COMPANY_NAME "ARTiFACTS"
     BUNDLE_ID    "com.artifacts.shard"
 )

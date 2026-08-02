@@ -53,14 +53,15 @@ MainComponent::MainComponent()
         auto* b = new juce::TextButton();
         b->onClick = [this, s] { stepClicked (s); };
         styleButton (*b, kStepOff);
-        addAndMakeVisible (b);
+        seqOverlay.addAndMakeVisible (b);
         stepButtons.add (b);
     }
 
-    // Mode tabs.
-    const char* tabNames[] = { "TOCAR", "EDITAR", "SEC", "FX" };
-    const Mode  tabModes[] = { Mode::Perform, Mode::Edit, Mode::Seq, Mode::Fx };
-    for (int i = 0; i < 4; ++i)
+    // Mode tabs (TOCAR/EDITAR/FX). SEC is a separate button that opens the
+    // sequencer as a pop-up sheet instead of switching the visible tab.
+    const char* tabNames[] = { "TOCAR", "EDITAR", "FX" };
+    const Mode  tabModes[] = { Mode::Perform, Mode::Edit, Mode::Fx };
+    for (int i = 0; i < 3; ++i)
     {
         auto* t = new juce::TextButton (tabNames[i]);
         styleButton (*t, kKey);
@@ -71,6 +72,18 @@ MainComponent::MainComponent()
         addAndMakeVisible (t);
         tabButtons.add (t);
     }
+    styleButton (secButton, kKey);
+    secButton.setColour (juce::TextButton::buttonOnColourId, kAccent);
+    secButton.onClick = [this] { if (seqOverlay.isVisible()) closeSeqSheet(); else openSeqSheet(); };
+    addAndMakeVisible (secButton);
+
+    addAndMakeVisible (seqOverlay);
+    seqOverlay.setVisible (false);
+    seqOverlay.onDismiss = [this] { closeSeqSheet(); };
+    seqOverlay.paintContent = [this] (juce::Graphics& g) { paintSeqSheetContent (g); };
+    styleButton (seqCloseButton, kKey);
+    seqCloseButton.onClick = [this] { closeSeqSheet(); };
+    seqOverlay.addAndMakeVisible (seqCloseButton);
 
     // Transport / actions.
     loadButton.setClickingTogglesState (true);
@@ -112,7 +125,7 @@ MainComponent::MainComponent()
         for (auto& row : pattern[(size_t) selectedPattern]) row.fill (false);
         if (selectedPad >= 0) selectPad (selectedPad);
     };
-    addAndMakeVisible (clearButton);
+    seqOverlay.addAndMakeVisible (clearButton);
 
     // Per-pad edit controls.
     auto initSlider = [this] (juce::Slider& s, double lo, double hi, double step, double def)
@@ -127,17 +140,42 @@ MainComponent::MainComponent()
         s.setColour (juce::Slider::trackColourId, kPadLoaded);
         addAndMakeVisible (s);
     };
-    initSlider (pitchSlider, -24.0, 24.0, 1.0, 0.0);
-    initSlider (volSlider,     0.0,  1.0, 0.01, 0.85);
     initSlider (startSlider,   0.0,  1.0, 0.001, 0.0);
     initSlider (endSlider,     0.0,  1.0, 0.001, 1.0);
     initSlider (bpmSlider,    60.0, 200.0, 1.0, 120.0);
-    initSlider (panSlider,    -1.0,  1.0, 0.01, 0.0);
-    initSlider (attackSlider,  0.0, 200.0, 1.0, 2.0);
-    initSlider (releaseSlider, 1.0, 800.0, 1.0, 5.0);
+    bpmSlider.setTextValueSuffix (" bpm");
+    bpmSlider.onValueChange = [this] { engine.setBpm (bpmSlider.getValue()); };
+    seqOverlay.addAndMakeVisible (bpmSlider);   // lives in the sequencer sheet, not the main tabs
+
+    // Per-pad controls as rotary KNOBS, not faders — "nops, no faders".
+    auto initKnob = [this] (juce::Slider& s, double lo, double hi, double step, double def,
+                            double skewMid, std::function<void()> cb)
+    {
+        s.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+        s.setColour (juce::Slider::textBoxTextColourId, ShardColours::lcdFg);
+        s.setColour (juce::Slider::textBoxBackgroundColourId, ShardColours::screenBg);
+        s.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+        s.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 62, 20);
+        s.setRange (lo, hi, step);
+        if (skewMid > 0.0) s.setSkewFactorFromMidPoint (skewMid);
+        s.setValue (def, juce::dontSendNotification);
+        s.onValueChange = std::move (cb);
+        addAndMakeVisible (s);
+    };
+    initKnob (pitchSlider, -24.0, 24.0, 1.0, 0.0, 0.0,
+             [this] { if (selectedPad >= 0) { padPitch[(size_t) selectedPad] = (float) pitchSlider.getValue(); engine.setPadPitch (selectedPad, (float) pitchSlider.getValue()); } });
+    initKnob (volSlider, 0.0, 1.0, 0.01, 0.85, 0.0,
+             [this] { if (selectedPad >= 0) { padGain[(size_t) selectedPad] = (float) volSlider.getValue(); engine.setPadGain (selectedPad, (float) volSlider.getValue()); } });
+    initKnob (panSlider, -1.0, 1.0, 0.01, 0.0, 0.0,
+             [this] { if (selectedPad >= 0) { padPan[(size_t) selectedPad] = (float) panSlider.getValue(); engine.setPadPan (selectedPad, (float) panSlider.getValue()); } });
+    initKnob (attackSlider, 0.0, 200.0, 1.0, 2.0, 20.0,
+             [this] { if (selectedPad >= 0) { padAttack[(size_t) selectedPad] = (float) attackSlider.getValue(); engine.setPadAttack (selectedPad, (float) attackSlider.getValue()); } });
+    initKnob (releaseSlider, 1.0, 800.0, 1.0, 5.0, 40.0,
+             [this] { if (selectedPad >= 0) { padRelease[(size_t) selectedPad] = (float) releaseSlider.getValue(); engine.setPadRelease (selectedPad, (float) releaseSlider.getValue()); } });
+    initKnob (chokeSlider, 0.0, 8.0, 1.0, 0.0, 0.0,
+             [this] { if (selectedPad >= 0) { padChokeUI[(size_t) selectedPad] = (int) chokeSlider.getValue(); engine.setPadChoke (selectedPad, (int) chokeSlider.getValue()); } });
 
     pitchSlider.setTextValueSuffix (" st");
-    bpmSlider.setTextValueSuffix (" bpm");
     attackSlider.setTextValueSuffix (" ms");
     releaseSlider.setTextValueSuffix (" ms");
     panSlider.textFromValueFunction = [] (double v)
@@ -145,14 +183,9 @@ MainComponent::MainComponent()
         if (std::abs (v) < 0.005) return juce::String ("C");
         return (v < 0 ? "L" : "R") + juce::String ((int) std::round (std::abs (v) * 100.0));
     };
-    panSlider.updateText();   // refresh textbox with the new formatter
-
-    pitchSlider.onValueChange = [this] { if (selectedPad >= 0) { padPitch[(size_t) selectedPad] = (float) pitchSlider.getValue(); engine.setPadPitch (selectedPad, (float) pitchSlider.getValue()); } };
-    volSlider.onValueChange   = [this] { if (selectedPad >= 0) { padGain[(size_t) selectedPad]  = (float) volSlider.getValue();   engine.setPadGain  (selectedPad, (float) volSlider.getValue()); } };
-    bpmSlider.onValueChange   = [this] { engine.setBpm (bpmSlider.getValue()); };
-    panSlider.onValueChange     = [this] { if (selectedPad >= 0) { padPan[(size_t) selectedPad]     = (float) panSlider.getValue();     engine.setPadPan     (selectedPad, (float) panSlider.getValue()); } };
-    attackSlider.onValueChange  = [this] { if (selectedPad >= 0) { padAttack[(size_t) selectedPad]  = (float) attackSlider.getValue();  engine.setPadAttack  (selectedPad, (float) attackSlider.getValue()); } };
-    releaseSlider.onValueChange = [this] { if (selectedPad >= 0) { padRelease[(size_t) selectedPad] = (float) releaseSlider.getValue(); engine.setPadRelease (selectedPad, (float) releaseSlider.getValue()); } };
+    panSlider.updateText();
+    chokeSlider.textFromValueFunction = [] (double v) { return v <= 0.0 ? juce::String ("off") : juce::String ((int) v); };
+    chokeSlider.updateText();
 
     startSlider.onValueChange = [this]
     {
@@ -189,18 +222,6 @@ MainComponent::MainComponent()
     chopButton.onClick = [this] { autoChopSelected(); };
     addAndMakeVisible (chopButton);
 
-    chokeSlider.setSliderStyle (juce::Slider::IncDecButtons);
-    chokeSlider.setRange (0.0, 8.0, 1.0);
-    chokeSlider.setValue (0.0, juce::dontSendNotification);
-    chokeSlider.setColour (juce::Slider::textBoxTextColourId, ShardColours::lcdFg);
-    chokeSlider.setColour (juce::Slider::textBoxBackgroundColourId, ShardColours::screenBg);
-    chokeSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    chokeSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 90, 22);
-    chokeSlider.textFromValueFunction = [] (double v) { return v <= 0.0 ? juce::String ("CHOKE: off") : "CHOKE: " + juce::String ((int) v); };
-    chokeSlider.updateText();   // refresh textbox with the new formatter
-    chokeSlider.onValueChange = [this] { if (selectedPad >= 0) { padChokeUI[(size_t) selectedPad] = (int) chokeSlider.getValue(); engine.setPadChoke (selectedPad, (int) chokeSlider.getValue()); } };
-    addAndMakeVisible (chokeSlider);
-
     // Pattern bank selector (drives what the step grid shows/edits).
     patternSlider.setSliderStyle (juce::Slider::IncDecButtons);
     patternSlider.setRange (0.0, (double) (kNumPatterns - 1), 1.0);
@@ -220,7 +241,7 @@ MainComponent::MainComponent()
         lengthSlider.setValue (engine.getPatternLength (selectedPattern), juce::dontSendNotification);
         resized();
     };
-    addAndMakeVisible (patternSlider);
+    seqOverlay.addAndMakeVisible (patternSlider);
 
     // Pattern length (FL-Studio-style fader): how many steps this bank plays
     // before looping / handing off to the next chain entry — 16 up to 64,
@@ -241,7 +262,7 @@ MainComponent::MainComponent()
         engine.setPatternLength (selectedPattern, (int) lengthSlider.getValue());
         resized();
     };
-    addAndMakeVisible (lengthSlider);
+    seqOverlay.addAndMakeVisible (lengthSlider);
 
     // Chain include row: 8 coloured toggles, one per pattern bank — tap to
     // put that bank in (or out of) the played sequence. 0 active = fall back
@@ -257,7 +278,7 @@ MainComponent::MainComponent()
             patternActiveUI[(size_t) i] = patternButtons[i]->getToggleState();
             rebuildChain();
         };
-        addAndMakeVisible (b);
+        seqOverlay.addAndMakeVisible (b);
         patternButtons.add (b);
     }
 
@@ -268,7 +289,7 @@ MainComponent::MainComponent()
         for (auto* b : patternButtons) b->setToggleState (false, juce::dontSendNotification);
         rebuildChain();
     };
-    addAndMakeVisible (chainClearButton);
+    seqOverlay.addAndMakeVisible (chainClearButton);
 
     // Piano roll: per-step semitone offset for the selected pad (tap a step
     // to select it, then dial its pitch here — melodies from one sample).
@@ -286,7 +307,7 @@ MainComponent::MainComponent()
         if (selectedPad >= 0 && selectedStep >= 0)
             engine.setStepNote (selectedPattern, selectedStep, selectedPad, (int) noteSlider.getValue());
     };
-    addAndMakeVisible (noteSlider);
+    seqOverlay.addAndMakeVisible (noteSlider);
 
     // Master FX (filter + drive).
     fxTypeButton.setClickingTogglesState (true);
@@ -301,20 +322,6 @@ MainComponent::MainComponent()
     addAndMakeVisible (fxTypeButton);
 
     // FX as rotary KNOBS (vintage identity).
-    auto initKnob = [this] (juce::Slider& s, double lo, double hi, double step, double def,
-                            double skewMid, std::function<void()> cb)
-    {
-        s.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-        s.setColour (juce::Slider::textBoxTextColourId, ShardColours::lcdFg);
-        s.setColour (juce::Slider::textBoxBackgroundColourId, ShardColours::screenBg);
-        s.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-        s.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 62, 20);
-        s.setRange (lo, hi, step);
-        if (skewMid > 0.0) s.setSkewFactorFromMidPoint (skewMid);
-        s.setValue (def, juce::dontSendNotification);
-        s.onValueChange = std::move (cb);
-        addAndMakeVisible (s);
-    };
     initKnob (cutoffSlider, 20.0, 20000.0, 1.0, 20000.0, 1000.0, [this] { const float v=(float) cutoffSlider.getValue(); engine.setFxCutoff (v); macroFilter.setValue (v, juce::dontSendNotification); });
     initKnob (resoSlider,    0.3,  4.0, 0.01, 0.707, 0.0,       [this] { engine.setFxReso   ((float) resoSlider.getValue()); });
     initKnob (driveSlider,   0.0,  1.0, 0.01, 0.0,   0.0,       [this] { const float v=(float) driveSlider.getValue(); engine.setFxDrive (v); macroDrive.setValue (v, juce::dontSendNotification); });
@@ -347,16 +354,14 @@ MainComponent::MainComponent()
 void MainComponent::setMode (Mode m)
 {
     mode = m;
-    for (int i = 0; i < 4; ++i)
+    for (int i = 0; i < 3; ++i)
         if (auto* t = tabButtons[i]) t->setToggleState (i == (int) m, juce::dontSendNotification);
 
     const bool perform = (m == Mode::Perform);
     const bool edit    = (m == Mode::Edit);
-    const bool seq     = (m == Mode::Seq);
     const bool fx      = (m == Mode::Fx);
 
-    for (auto* p : pads) p->setVisible (! fx);          // pads used in perform/edit/seq
-    for (auto* s : stepButtons) s->setVisible (seq);
+    for (auto* p : pads) p->setVisible (! fx);          // pads used in perform/edit
 
     waveform.setVisible (true);                          // hero screen, all modes
     editLabel.setVisible (edit);
@@ -372,16 +377,29 @@ void MainComponent::setMode (Mode m)
 
     macroFilter.setVisible (perform); macroDrive.setVisible (perform); macroSend.setVisible (perform);
 
-    clearButton.setVisible (seq);
-    bpmSlider.setVisible (seq);
-    patternSlider.setVisible (seq); chainClearButton.setVisible (seq);
-    noteSlider.setVisible (seq); lengthSlider.setVisible (seq);
-    for (auto* b : patternButtons) b->setVisible (seq);
-
-    if ((edit || seq) && selectedPad < 0)
+    if (edit && selectedPad < 0)
         selectPad (0);
 
     resized();
+    repaint();
+}
+
+// The sequencer sheet pops up over whichever tab is showing — it doesn't
+// change `mode` at all, just shows the overlay on top.
+void MainComponent::openSeqSheet()
+{
+    if (selectedPad < 0) selectPad (0);
+    secButton.setToggleState (true, juce::dontSendNotification);
+    seqOverlay.setVisible (true);
+    seqOverlay.toFront (false);
+    resized();
+    repaint();
+}
+
+void MainComponent::closeSeqSheet()
+{
+    secButton.setToggleState (false, juce::dontSendNotification);
+    seqOverlay.setVisible (false);
     repaint();
 }
 
@@ -436,7 +454,6 @@ void MainComponent::paint (juce::Graphics& g)
         g.drawRoundedRectangle (r.reduced (0.5f), 3.0f, 1.2f);
     };
     panel (fxPanelArea);
-    panel (seqPanelArea);
     panel (editPanelArea);
 
     // 2. Recessed LCD bezel around the scope (square, dark inset on a light face).
@@ -449,7 +466,7 @@ void MainComponent::paint (juce::Graphics& g)
         g.drawRoundedRectangle (r.expanded (3.0f).reduced (0.5f), 3.0f, 1.2f);
     }
 
-    // 3. Header: ARTiFACTS wordmark + SHARD model badge (dark LCD chip).
+    // 3. Header: ARTiFACTS wordmark + COLORS model badge (dark LCD chip).
     if (! headerArea.isEmpty())
     {
         auto h = headerArea;
@@ -465,7 +482,7 @@ void MainComponent::paint (juce::Graphics& g)
         auto bin = badge.reduced (10, 0);
         g.setColour (ShardColours::amberBright);
         g.setFont (ShardColours::monoFont (14.0f, true).withExtraKerningFactor (0.22f));
-        g.drawText ("SHARD", bin.removeFromLeft (74), juce::Justification::centredLeft);
+        g.drawText ("COLORS", bin.removeFromLeft (86), juce::Justification::centredLeft);
         g.setColour (ShardColours::lcdFg.withAlpha (0.6f));
         g.setFont (ShardColours::monoFont (8.5f, true).withExtraKerningFactor (0.24f));
         g.drawText ("SAMPLER", bin, juce::Justification::centredRight);
@@ -498,49 +515,56 @@ void MainComponent::paint (juce::Graphics& g)
     else if (mode == Mode::Edit)
     {
         g.setColour (ShardColours::ink.withAlpha (0.9f));
+        // Knobs: label above (same convention as FX).
+        g.setFont (ShardColours::monoFont (10.0f, true).withExtraKerningFactor (0.10f));
+        auto name = [&g] (juce::Slider& s, const char* t)
+        {
+            auto r = s.getBounds();
+            g.drawText (t, r.getX() - 6, r.getY() - 14, r.getWidth() + 12, 12, juce::Justification::centred);
+        };
+        name (pitchSlider, "PITCH"); name (volSlider, "VOLUME"); name (panSlider, "PAN");
+        name (attackSlider, "ATTACK"); name (releaseSlider, "RELEASE"); name (chokeSlider, "CHOKE");
+
+        // Start/End stay linear (a trim range, not a knob): label to the left.
         g.setFont (ShardColours::monoFont (11.0f, true).withExtraKerningFactor (0.06f));
         auto lab = [&g] (juce::Slider& s, const char* t)
         {
             auto r = s.getBounds();
             g.drawText (t, r.getX() - 66, r.getY(), 60, r.getHeight(), juce::Justification::centredLeft);
         };
-        lab (pitchSlider, "PITCH"); lab (volSlider, "VOLUME"); lab (panSlider, "PAN");
         lab (startSlider, "START"); lab (endSlider, "END");
-        lab (attackSlider, "ATTACK"); lab (releaseSlider, "RELEASE");
-        lab (chokeSlider, "CHOKE");
-    }
-    else if (mode == Mode::Seq && ! seqPanelArea.isEmpty())
-    {
-        const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
-        const int sp = juce::jmax (0, selectedPad);
-        auto inner = seqPanelArea.reduced (12, 6);
-
-        g.setColour (ShardColours::ink.withAlpha (0.9f));
-        g.setFont (ShardColours::monoFont (11.0f, true).withExtraKerningFactor (0.14f));
-        const juce::String t = "STEPS  " + dot + "  PAD " + juce::String (sp + 1)
-                             + (padName[(size_t) sp].isNotEmpty() ? "   " + padName[(size_t) sp] : juce::String())
-                             + "   " + dot + "   P" + juce::String (selectedPattern + 1);
-        g.drawText (t, inner.removeFromTop (16), juce::Justification::centredLeft);
-
-        // Which bank is actually sounding right now (may differ from the one
-        // being viewed/edited) — the coloured row below shows chain membership.
-        const juce::String chainStr = (engine.getChainLength() <= 0)
-            ? "looping P" + juce::String (selectedPattern + 1)
-            : "playing P" + juce::String (engine.getPlayingPattern() + 1);
-        g.setColour (ShardColours::inkDim);
-        g.setFont (ShardColours::monoFont (9.5f, true).withExtraKerningFactor (0.10f));
-        g.drawText (chainStr, inner.removeFromTop (14), juce::Justification::centredLeft);
     }
 }
 
-// Flat-style overlay rings (drawn over the step buttons' plain fill, never
-// blended into it): yellow marks the step selected for NOTE editing, red
-// marks the live playhead — only when viewing the pattern that's actually
-// sounding, so a chain playing a different bank doesn't ring the wrong grid.
-void MainComponent::paintOverChildren (juce::Graphics& g)
+// Sequencer sheet content: title/chain text + step-selection/playhead rings.
+// Called from SeqOverlay::paint() (set as its paintContent callback) so it
+// draws in the overlay's own paint pass, on top of everything else.
+void MainComponent::paintSeqSheetContent (juce::Graphics& g)
 {
-    if (mode != Mode::Seq) return;
+    if (seqPanelArea.isEmpty()) return;
 
+    const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
+    const int sp = juce::jmax (0, selectedPad);
+    auto inner = seqPanelArea.reduced (12, 6);
+
+    g.setColour (ShardColours::ink.withAlpha (0.9f));
+    g.setFont (ShardColours::monoFont (11.0f, true).withExtraKerningFactor (0.14f));
+    const juce::String t = "STEPS  " + dot + "  PAD " + juce::String (sp + 1)
+                         + (padName[(size_t) sp].isNotEmpty() ? "   " + padName[(size_t) sp] : juce::String())
+                         + "   " + dot + "   P" + juce::String (selectedPattern + 1);
+    g.drawText (t, inner.removeFromTop (16), juce::Justification::centredLeft);
+
+    // Which bank is actually sounding right now (may differ from the one
+    // being viewed/edited) — the coloured row below shows chain membership.
+    const juce::String chainStr = (engine.getChainLength() <= 0)
+        ? "looping P" + juce::String (selectedPattern + 1)
+        : "playing P" + juce::String (engine.getPlayingPattern() + 1);
+    g.setColour (ShardColours::inkDim);
+    g.setFont (ShardColours::monoFont (9.5f, true).withExtraKerningFactor (0.10f));
+    g.drawText (chainStr, inner.removeFromTop (14), juce::Justification::centredLeft);
+
+    // Selection (yellow) and playhead (red) rings — flat fills never blend,
+    // these are drawn as outlines on top instead.
     if (selectedStep >= 0)
     {
         if (auto* b = stepButtons[selectedStep])
@@ -549,7 +573,6 @@ void MainComponent::paintOverChildren (juce::Graphics& g)
             g.drawRect (b->getBounds(), 2);
         }
     }
-
     const int ps = engine.getPlayStep();
     if (ps >= 0 && engine.getPlayingPattern() == selectedPattern)
     {
@@ -559,10 +582,6 @@ void MainComponent::paintOverChildren (juce::Graphics& g)
             g.drawRect (b->getBounds(), 2);
         }
     }
-
-    // Ring the pattern bank currently being viewed/edited (its colour fill,
-    // if lit, shows chain membership; this ring is purely "you're looking
-    // at this one").
     if (auto* b = patternButtons[selectedPattern])
     {
         g.setColour (ShardColours::ink.withAlpha (0.7f));
@@ -570,16 +589,44 @@ void MainComponent::paintOverChildren (juce::Graphics& g)
     }
 }
 
+void MainComponent::SeqOverlay::paint (juce::Graphics& g)
+{
+    g.fillAll (juce::Colours::black.withAlpha (0.45f));
+    if (sheetBounds.isEmpty()) return;
+
+    g.setColour (ShardColours::chassisTop);
+    g.fillRoundedRectangle (sheetBounds.toFloat(), 14.0f);
+    g.setColour (ShardColours::ink.withAlpha (0.55f));
+    g.drawRoundedRectangle (sheetBounds.toFloat().reduced (0.5f), 14.0f, 1.5f);
+
+    if (paintContent) paintContent (g);
+}
+
+// Flat-style overlay rings (drawn over the step buttons' plain fill, never
+// blended into it): yellow marks the step selected for NOTE editing, red
+// marks the live playhead — only when viewing the pattern that's actually
+// sounding, so a chain playing a different bank doesn't ring the wrong grid.
 void MainComponent::layoutPadGrid (juce::Rectangle<int> area, int cols, int rows, int gap)
 {
-    juce::Grid grid;
-    using Track = juce::Grid::TrackInfo;
-    using Fr = juce::Grid::Fr;
-    for (int c = 0; c < cols; ++c) grid.templateColumns.add (Track (Fr (1)));
-    for (int r = 0; r < rows; ++r) grid.templateRows.add (Track (Fr (1)));
-    grid.setGap (juce::Grid::Px ((float) gap));
-    for (auto* p : pads) grid.items.add (juce::GridItem (*p));
-    grid.performLayout (area);
+    // True square pads (Akai-style) — sized by whichever dimension is
+    // tighter, then centred in the given area rather than stretched to fill
+    // it (which would make them rectangular).
+    const int cellW = (area.getWidth()  - (cols - 1) * gap) / cols;
+    const int cellH = (area.getHeight() - (rows - 1) * gap) / rows;
+    const int cell  = juce::jmin (cellW, cellH);
+
+    auto grid = area.withSizeKeepingCentre (cols * cell + (cols - 1) * gap,
+                                            rows * cell + (rows - 1) * gap);
+
+    for (int r = 0; r < rows; ++r)
+        for (int c = 0; c < cols; ++c)
+        {
+            const int idx = r * cols + c;
+            if (auto* p = pads[idx])
+                p->setBounds (grid.getX() + c * (cell + gap),
+                             grid.getY() + r * (cell + gap),
+                             cell, cell);
+        }
 }
 
 void MainComponent::resized()
@@ -596,13 +643,14 @@ void MainComponent::resized()
     waveform.setBounds (screenBezel);
     area.removeFromTop (8);
 
-    // Tab bar.
+    // Tab bar: TOCAR / EDITAR / FX, plus SEC (opens the sequencer sheet).
     tabBarArea = area.removeFromTop (36);
     {
         auto row = tabBarArea;
         const int w = row.getWidth() / 4;
-        for (int i = 0; i < 4; ++i)
-            tabButtons[i]->setBounds ((i < 3 ? row.removeFromLeft (w) : row).reduced (2));
+        for (int i = 0; i < 3; ++i)
+            tabButtons[i]->setBounds (row.removeFromLeft (w).reduced (2));
+        secButton.setBounds (row.reduced (2));
     }
     area.removeFromTop (6);
 
@@ -660,97 +708,115 @@ void MainComponent::resized()
         place (inner.removeFromTop (rowH), r1);
         place (inner, r2);
     }
-    else // Edit or Seq: compact pad selector on top, panel below.
+    else // Edit: compact pad selector on top, panel below.
     {
-        auto padArea = area.removeFromTop ((int) (area.getHeight() * (mode == Mode::Edit ? 0.40f : 0.34f)));
+        auto padArea = area.removeFromTop ((int) (area.getHeight() * 0.40f));
         layoutPadGrid (padArea, 4, 4, 5);
         area.removeFromTop (8);
 
-        if (mode == Mode::Edit)
-        {
-            editPanelArea = area;
-            auto inner = area.reduced (10, 8);
-            editLabel.setBounds (inner.removeFromTop (18));
-            inner.removeFromTop (8);
-            editCtrlArea = inner;                        // labels drawn in paint
+        editPanelArea = area;
+        auto inner = area.reduced (10, 8);
+        editLabel.setBounds (inner.removeFromTop (18));
+        inner.removeFromTop (8);
+        editCtrlArea = inner;                        // labels drawn in paint
 
-            const int labelW = 64;
-            auto ctrlRow = [&inner, labelW] (int h) { auto r = inner.removeFromTop (h); r.removeFromLeft (labelW); return r; };
-            pitchSlider.setBounds (ctrlRow (26)); inner.removeFromTop (4);
-            volSlider.setBounds   (ctrlRow (26)); inner.removeFromTop (4);
-            panSlider.setBounds   (ctrlRow (26)); inner.removeFromTop (4);
-            startSlider.setBounds (ctrlRow (26)); inner.removeFromTop (4);
-            endSlider.setBounds   (ctrlRow (26)); inner.removeFromTop (4);
-            attackSlider.setBounds  (ctrlRow (26)); inner.removeFromTop (4);
-            releaseSlider.setBounds (ctrlRow (26)); inner.removeFromTop (6);
-            chokeSlider.setBounds (ctrlRow (26)); inner.removeFromTop (6);
+        // Knobs, not faders: PITCH/VOLUME/PAN, then ATTACK/RELEASE/CHOKE.
+        juce::Slider* k1[3] = { &pitchSlider, &volSlider, &panSlider };
+        juce::Slider* k2[3] = { &attackSlider, &releaseSlider, &chokeSlider };
+        auto placeKnobs = [] (juce::Rectangle<int> row, juce::Slider** ks)
+        {
+            const int w = row.getWidth() / 3;
+            for (int i = 0; i < 3; ++i)
             {
-                auto rr = inner.removeFromTop (30);
-                reverseButton.setBounds (rr.removeFromLeft (rr.getWidth() / 2).reduced (3, 0));
-                loopButton.setBounds (rr.reduced (3, 0));
+                auto cell = (i < 2 ? row.removeFromLeft (w) : row);
+                cell.removeFromTop (16);                 // gap for knob name
+                ks[i]->setBounds (cell.reduced (6, 2));
             }
-            inner.removeFromTop (6);
-            chopButton.setBounds (inner.removeFromTop (30).reduced (3, 0));
+        };
+        const int knobRowH = juce::jmin (86, inner.getHeight() / 3);
+        placeKnobs (inner.removeFromTop (knobRowH), k1);
+        placeKnobs (inner.removeFromTop (knobRowH), k2);
+        inner.removeFromTop (6);
+
+        // Start/End: a trim range on the waveform, stays a linear slider pair.
+        const int labelW = 64;
+        auto ctrlRow = [&inner, labelW] (int h) { auto r = inner.removeFromTop (h); r.removeFromLeft (labelW); return r; };
+        startSlider.setBounds (ctrlRow (26)); inner.removeFromTop (4);
+        endSlider.setBounds   (ctrlRow (26)); inner.removeFromTop (8);
+
+        {
+            auto rr = inner.removeFromTop (30);
+            reverseButton.setBounds (rr.removeFromLeft (rr.getWidth() / 2).reduced (3, 0));
+            loopButton.setBounds (rr.reduced (3, 0));
         }
-        else // Seq
+        inner.removeFromTop (6);
+        chopButton.setBounds (inner.removeFromTop (30).reduced (3, 0));
+    }
+
+    // --- Sequencer sheet: pops up over whichever tab is showing ---
+    {
+        seqOverlay.setBounds (getLocalBounds());
+        auto full = getLocalBounds();
+        auto sheet = full.removeFromBottom ((int) (full.getHeight() * 0.86f)).reduced (8);
+        seqOverlay.sheetBounds = sheet;
+
+        seqPanelArea = sheet;
+        auto inner = sheet.reduced (14, 12);
+        auto titleRow = inner.removeFromTop (32);          // 2-line title drawn by paintSeqSheetContent
+        seqCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
+
+        // Pattern bank + length, chain-include row, note (3 rows).
         {
-            seqPanelArea = area;
-            auto inner = area.reduced (10, 8);
-            inner.removeFromTop (32);                     // 2-line title drawn in paint (STEPS + CHAIN)
+            auto row1 = inner.removeFromTop (26);
+            const int w1 = row1.getWidth() / 2;
+            patternSlider.setBounds (row1.removeFromLeft (w1).reduced (2, 0));
+            lengthSlider.setBounds  (row1.reduced (2, 0));
+            inner.removeFromTop (4);
 
-            // Pattern bank + length, chain-include row, note (3 rows).
+            // 8 coloured chain-include toggles, one per pattern bank.
+            auto row2 = inner.removeFromTop (28);
+            const int pw = row2.getWidth() / kNumPatterns;
+            for (int i = 0; i < kNumPatterns; ++i)
+                patternButtons[i]->setBounds ((i < kNumPatterns - 1 ? row2.removeFromLeft (pw) : row2).reduced (2));
+            inner.removeFromTop (4);
+
+            auto row3 = inner.removeFromTop (26);
+            const int w3 = row3.getWidth() / 2;
+            chainClearButton.setBounds (row3.removeFromLeft (w3).reduced (2, 0));
+            noteSlider.setBounds       (row3.reduced (2, 0));
+        }
+        inner.removeFromTop (6);
+
+        auto bottom = inner.removeFromBottom (30);
+        bpmSlider.setBounds (bottom.removeFromLeft ((int) (bottom.getWidth() * 0.66f)).reduced (2, 0));
+        clearButton.setBounds (bottom.reduced (3, 0));
+        inner.removeFromBottom (8);
+
+        // Step grid: always 8 columns, rows = pattern length / 8 (2..8, i.e.
+        // 16..64 steps). Real square cells, sized to fill whatever room the
+        // sheet gives them (bigger with fewer rows, smaller with more),
+        // capped so they never get silly at either extreme.
+        {
+            const int patLen = engine.getPatternLength (selectedPattern);
+            const int cols = kStepCols;
+            const int rows = juce::jmax (1, patLen / cols);
+            const int gap  = 4;
+
+            const int maxCellW = (inner.getWidth()  - (cols - 1) * gap) / cols;
+            const int maxCellH = (inner.getHeight() - (rows - 1) * gap) / rows;
+            const int cell = juce::jlimit (20, 70, juce::jmin (maxCellW, maxCellH));
+
+            auto steps = inner.removeFromTop (juce::jmin (inner.getHeight(), rows * cell + (rows - 1) * gap));
+            steps = steps.withSizeKeepingCentre (cols * cell + (cols - 1) * gap, steps.getHeight());
+
+            for (int s = 0; s < kNumSteps; ++s)
             {
-                auto row1 = inner.removeFromTop (26);
-                const int w1 = row1.getWidth() / 2;
-                patternSlider.setBounds (row1.removeFromLeft (w1).reduced (2, 0));
-                lengthSlider.setBounds  (row1.reduced (2, 0));
-                inner.removeFromTop (4);
-
-                // 8 coloured chain-include toggles, one per pattern bank.
-                auto row2 = inner.removeFromTop (28);
-                const int pw = row2.getWidth() / kNumPatterns;
-                for (int i = 0; i < kNumPatterns; ++i)
-                    patternButtons[i]->setBounds ((i < kNumPatterns - 1 ? row2.removeFromLeft (pw) : row2).reduced (2));
-                inner.removeFromTop (4);
-
-                auto row3 = inner.removeFromTop (26);
-                const int w3 = row3.getWidth() / 2;
-                chainClearButton.setBounds (row3.removeFromLeft (w3).reduced (2, 0));
-                noteSlider.setBounds       (row3.reduced (2, 0));
-            }
-            inner.removeFromTop (6);
-
-            auto bottom = inner.removeFromBottom (30);
-            bpmSlider.setBounds (bottom.removeFromLeft ((int) (bottom.getWidth() * 0.66f)).reduced (2, 0));
-            clearButton.setBounds (bottom.reduced (3, 0));
-            inner.removeFromBottom (8);
-
-            // Step grid: always 8 columns, rows = pattern length / 8 (2..8,
-            // i.e. 16..64 steps). Real square cells, sized to fill whatever
-            // vertical room is left (bigger with fewer rows, smaller with
-            // more), capped so they never get silly at either extreme.
-            {
-                const int patLen = engine.getPatternLength (selectedPattern);
-                const int cols = kStepCols;
-                const int rows = juce::jmax (1, patLen / cols);
-                const int gap  = 4;
-
-                const int maxCellW = (inner.getWidth()  - (cols - 1) * gap) / cols;
-                const int maxCellH = (inner.getHeight() - (rows - 1) * gap) / rows;
-                const int cell = juce::jlimit (20, 70, juce::jmin (maxCellW, maxCellH));
-
-                auto steps = inner.removeFromTop (juce::jmin (inner.getHeight(), rows * cell + (rows - 1) * gap));
-                steps = steps.withSizeKeepingCentre (cols * cell + (cols - 1) * gap, steps.getHeight());
-
-                for (int s = 0; s < kNumSteps; ++s)
-                {
-                    if (s >= patLen) { stepButtons[s]->setVisible (false); continue; }
-                    const int r = s / cols, c = s % cols;
-                    stepButtons[s]->setVisible (true);
-                    stepButtons[s]->setBounds (steps.getX() + c * (cell + gap),
-                                               steps.getY() + r * (cell + gap),
-                                               cell, cell);
-                }
+                if (s >= patLen) { stepButtons[s]->setVisible (false); continue; }
+                const int r = s / cols, c = s % cols;
+                stepButtons[s]->setVisible (true);
+                stepButtons[s]->setBounds (steps.getX() + c * (cell + gap),
+                                           steps.getY() + r * (cell + gap),
+                                           cell, cell);
             }
         }
     }
@@ -1029,10 +1095,10 @@ void MainComponent::timerCallback()
     }
     lastPlayStep = ps;
 
-    // Keep the SEQ panel's chain/playing-pattern readout live while the
-    // sequencer runs (it's drawn in paint(), not owned by a Component).
-    if (mode == Mode::Seq && engine.isPlaying())
-        repaint (seqPanelArea);
+    // Keep the sheet's chain/playing-pattern readout + rings live while the
+    // sequencer runs and the sheet is open.
+    if (seqOverlay.isVisible() && engine.isPlaying())
+        seqOverlay.repaint();
 
     if (recordingActive)
         status.setText ("Recording pad " + juce::String (recordingSlot + 1)

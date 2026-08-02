@@ -28,12 +28,12 @@ public:
     void paintButton (juce::Graphics& g, bool over, bool down) override
     {
         auto r = getLocalBounds().toFloat().reduced (0.5f);
-        const float rad = 13.0f;
+        const float rad = 3.0f;   // square, not rounded — matches the flat button caps
 
         juce::Colour base   = loaded ? ShardColours::padTop : ShardColours::padBg2;
         juce::Colour edge   = ShardColours::padBorder;
-        juce::Colour idxCol = loaded ? ShardColours::inkLight.withAlpha (0.95f)
-                                     : ShardColours::inkLight.withAlpha (0.30f);
+        juce::Colour idxCol = loaded ? ShardColours::ink.withAlpha (0.92f)
+                                     : ShardColours::ink.withAlpha (0.30f);
         juce::Colour nmCol  = ShardColours::inkDim;
         juce::Colour sparkCol = ShardColours::accent.withAlpha (0.55f);
         bool onAccent = false;
@@ -53,15 +53,9 @@ public:
         }
         if (down) base = base.darker (0.06f);
 
-        // Body.
-        juce::ColourGradient grad (base.brighter (onAccent ? 0.10f : 0.04f), r.getX(), r.getY(),
-                                   base.darker (onAccent ? 0.10f : 0.06f),  r.getX(), r.getBottom(), false);
-        g.setGradientFill (grad);
+        // Body — flat fill, no gradient/sheen.
+        g.setColour (base);
         g.fillRoundedRectangle (r, rad);
-
-        // Top sheen.
-        g.setColour (juce::Colours::white.withAlpha (onAccent ? 0.18f : 0.55f));
-        g.drawLine (r.getX() + rad, r.getY() + 1.2f, r.getRight() - rad, r.getY() + 1.2f, 1.2f);
 
         // Sparkline (behind the labels).
         if (loaded && spark.size() > 2)

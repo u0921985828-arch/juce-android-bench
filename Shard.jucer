@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<JUCERPROJECT id="Fx404A" name="Shard" projectType="guiapp" version="0.0.1"
+<JUCERPROJECT id="Fx404A" name="Colors" projectType="guiapp" version="0.0.1"
               bundleIdentifier="com.artifacts.shard" companyName="ARTiFACTS"
               companyCopyright="ARTiFACTS" useAppConfig="0" addUsingNamespaceToJuceHeader="1"
               displaySplashScreen="1" jucerFormatVersion="1">

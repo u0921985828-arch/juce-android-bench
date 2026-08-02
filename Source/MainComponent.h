@@ -9,7 +9,7 @@
 #include "PadButton.h"
 
 // ============================================================================
-//  MainComponent — Shard UI (P1): 16-pad matrix, per-pad controls (pitch, vol,
+//  MainComponent — COLORS UI (P1): 16-pad matrix, per-pad controls (pitch, vol,
 //  trim, reverse, loop), waveform, a 16-step sequencer with BPM, and mic
 //  recording. Original high-contrast look (no SP-404 skin).
 // ============================================================================
@@ -25,14 +25,37 @@ public:
     void releaseResources() override;
 
     void paint (juce::Graphics& g) override;
-    void paintOverChildren (juce::Graphics& g) override;
     void resized() override;
 
 private:
     void timerCallback() override;
 
-    enum class Mode { Perform, Edit, Seq, Fx };
+    enum class Mode { Perform, Edit, Fx };
     void setMode (Mode m);
+    void openSeqSheet();
+    void closeSeqSheet();
+
+    // The sequencer lives in a pop-up sheet over whatever tab is showing
+    // (TOCAR/EDITAR/FX), not as a 4th flat tab — a dim scrim + a bottom
+    // sheet, closed by tapping outside it or the close button. All of the
+    // SEQ controls are children of this overlay, not of MainComponent, so
+    // it naturally blocks clicks to whatever is behind it while open.
+    class SeqOverlay : public juce::Component
+    {
+    public:
+        std::function<void()> onDismiss;
+        std::function<void (juce::Graphics&)> paintContent;   // title/chain text + rings
+        juce::Rectangle<int> sheetBounds;
+
+        void paint (juce::Graphics& g) override;
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            if (! sheetBounds.contains (e.getPosition()) && onDismiss)
+                onDismiss();
+        }
+    };
+    SeqOverlay seqOverlay;
+    void paintSeqSheetContent (juce::Graphics& g);
 
     void padClicked (int index);
     void stepClicked (int step);
@@ -58,7 +81,9 @@ private:
 
     juce::OwnedArray<PadButton> pads;
     juce::OwnedArray<juce::TextButton> stepButtons;
-    juce::OwnedArray<juce::TextButton> tabButtons;      // TOCAR / EDITAR / SEC / FX
+    juce::OwnedArray<juce::TextButton> tabButtons;      // TOCAR / EDITAR / FX
+    juce::TextButton secButton { "SEC" };               // opens the sequencer sheet
+    juce::TextButton seqCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };   // "x"
     juce::OwnedArray<juce::TextButton> patternButtons;  // P1..P8 — chain include toggles
 
     juce::TextButton loadButton { "LOAD" };

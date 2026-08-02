@@ -4,61 +4,62 @@
 #include "BinaryData.h"
 
 // ============================================================================
-//  ShardLookAndFeel — ARTiFACTS design system (FX-404 skin).
-//  Dark near-black chassis, warm cream control surfaces, flat square-ish caps
-//  (no gradient/bevel), orange primary accent + pink-magenta for record /
-//  destructive actions, dark knobs with an orange position dot, a dark LCD
-//  with warm grey text. All components read tokens (ShardColours) — no
-//  hardcoded colour in components. Fonts: Oswald/JetBrains Mono, bundled.
+//  ShardLookAndFeel — ARTiFACTS design system (COLORS skin).
+//  White + grey base, flat square-ish caps (no gradient/bevel), the three
+//  primaries — blue/red/yellow — as the only accent colours (blue is the
+//  default "main" one), dark knobs with a blue position dot, a dark LCD with
+//  warm grey text. A toy-sampler look, powerful underneath. All components
+//  read tokens (ShardColours) — no hardcoded colour in components. Fonts:
+//  Oswald/JetBrains Mono, bundled.
 // ============================================================================
 namespace ShardColours
 {
-    //  ARTiFACTS skin: FX-404 — dark chassis, cream surfaces, flat orange.
+    //  ARTiFACTS skin: COLORS — white/grey base, three primary accents.
 
-    // --- Chassis / structure ---
-    const juce::Colour chassisTop { 0xfff1e9d4 };   // cream surface gradient top
-    const juce::Colour chassis    { 0xffe8dfc9 };
-    const juce::Colour chassisBot { 0xffddd2b8 };
-    const juce::Colour panel      { 0xffefe6d0 };   // section card surface
-    const juce::Colour panelDark  { 0xff1c1c1c };   // flat button cap (off state)
+    // --- Chassis / structure (white + grey) ---
+    const juce::Colour chassisTop { 0xffffffff };
+    const juce::Colour chassis    { 0xfff5f5f2 };
+    const juce::Colour chassisBot { 0xffe8e8e3 };
+    const juce::Colour panel      { 0xfff2f2ee };   // section card surface
+    const juce::Colour panelDark  { 0xffe3e3dd };   // flat button cap (off state)
     const juce::Colour panelHi    { 0xffffffff };   // panel top bevel
-    const juce::Colour panelLo    { 0xffcabf9f };   // panel shadow / soft border
-    const juce::Colour key        { 0xff1c1c1c };   // flat button cap (off state)
-    const juce::Colour keyLit     { 0xff2a2a2a };
-    const juce::Colour screw      { 0xff3a3a3a };
+    const juce::Colour panelLo    { 0xffcfcfc7 };   // panel shadow / soft border
+    const juce::Colour key        { 0xffe3e3dd };   // flat button cap (off state)
+    const juce::Colour keyLit     { 0xffd4d4cc };
+    const juce::Colour screw      { 0xffb4b4ac };
 
-    // --- Accent / semantic ---
-    const juce::Colour amber      { 0xffe8823c };   // orange accent — name kept for compat
-    const juce::Colour amberBright { 0xfff5a565 };
-    const juce::Colour amberDim   { 0xffb5642c };
-    const juce::Colour accent      { 0xffe8823c };   // preferred names
-    const juce::Colour accentBright { 0xfff5a565 };
-    const juce::Colour accentDim   { 0xffb5642c };
-    const juce::Colour red        { 0xffe0538f };   // pink-magenta — REC / destructive
-    const juce::Colour yellow     { 0xffe0a318 };   // third primary — sequencer selection only
-    const juce::Colour ink        { 0xff262117 };   // primary text on cream
-    const juce::Colour inkDim     { 0xff8a8064 };   // secondary text on cream
-    const juce::Colour inkLight   { 0xffe8823c };   // text on dark (flat button) caps — orange
-    const juce::Colour white      { 0xfff1ece0 };   // near-white, for knob needles etc.
-    const juce::Colour cream      { 0xffe8dfc9 };   // name kept for compat = chassis cream
-    const juce::Colour engrave    { 0xff8a8064 };   // text-dim
+    // --- Accent / semantic — the three primaries + white/grey base ---
+    const juce::Colour amber      { 0xff2f6fed };   // blue — main accent (name kept for compat)
+    const juce::Colour amberBright { 0xff5f92f4 };
+    const juce::Colour amberDim   { 0xff1f52b8 };
+    const juce::Colour accent      { 0xff2f6fed };   // preferred names
+    const juce::Colour accentBright { 0xff5f92f4 };
+    const juce::Colour accentDim   { 0xff1f52b8 };
+    const juce::Colour red        { 0xffe0222c };   // true red — REC / destructive
+    const juce::Colour yellow     { 0xfff0b400 };   // true yellow — selection / highlight
+    const juce::Colour ink        { 0xff1c1c1a };   // primary text on white/grey
+    const juce::Colour inkDim     { 0xff6f6f68 };   // secondary text
+    const juce::Colour inkLight   { 0xfff5f5f2 };   // text on dark surfaces (knobs/LCD chips)
+    const juce::Colour white      { 0xffffffff };
+    const juce::Colour cream      { 0xffffffff };   // name kept for compat = white
+    const juce::Colour engrave    { 0xff6f6f68 };   // text-dim
 
-    // --- LCD (stays dark — pops on a cream machine) ---
-    const juce::Colour screenBg   { 0xff0a0a0a };
-    const juce::Colour lcdFg      { 0xffd8d2c4 };   // warm grey-white
-    const juce::Colour lcdDim     { 0xff5c584c };
+    // --- LCD (dark, pops on the white face) ---
+    const juce::Colour screenBg   { 0xff101010 };
+    const juce::Colour lcdFg      { 0xffe6e6e2 };
+    const juce::Colour lcdDim     { 0xff5c5c56 };
 
-    // --- Pads (flat dark, orange numerals) ---
-    const juce::Colour padTop     { 0xff1c1c1c };
-    const juce::Colour padBg2     { 0xff141414 };
-    const juce::Colour padBorder  { 0xff333026 };
-    const juce::Colour padLit     { 0xffe8823c };
+    // --- Pads (white/grey flat, blue when loaded) ---
+    const juce::Colour padTop     { 0xffe3e3dd };
+    const juce::Colour padBg2     { 0xffeeeeea };
+    const juce::Colour padBorder  { 0xffd0d0c8 };
+    const juce::Colour padLit     { 0xff2f6fed };
 
-    // --- Knob body (dark, flat-ish) ---
-    const juce::Colour knobWell   { 0xff141414 };
+    // --- Knob body (dark — physical-instrument contrast on a white face) ---
+    const juce::Colour knobWell   { 0xffe3e3dd };
     const juce::Colour knobEdge   { 0xff3a3a3a };
-    const juce::Colour knobBody1  { 0xff2c2c2c };
-    const juce::Colour knobBody2  { 0xff1c1c1c };
+    const juce::Colour knobBody1  { 0xff3c3c3c };
+    const juce::Colour knobBody2  { 0xff1e1e1e };
     const juce::Colour knobBody3  { 0xff0e0e0e };
 
     // Bundled typefaces (Oswald display + JetBrains Mono). Cached once.
@@ -101,19 +102,19 @@ class ShardLookAndFeel : public juce::LookAndFeel_V4
 public:
     ShardLookAndFeel()
     {
-        // Value readouts as little dark LCD chips (guaranteed contrast on a cream face).
+        // Value readouts as little dark LCD chips (guaranteed contrast on a white face).
         setColour (juce::Slider::textBoxTextColourId, ShardColours::lcdFg);
         setColour (juce::Slider::textBoxBackgroundColourId, ShardColours::screenBg);
         setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
         setColour (juce::Slider::trackColourId, ShardColours::amber);
-        setColour (juce::Slider::backgroundColourId, ShardColours::key.brighter (0.08f));
+        setColour (juce::Slider::backgroundColourId, ShardColours::key.darker (0.08f));
         setColour (juce::Slider::thumbColourId, ShardColours::amber);
         setColour (juce::Label::textColourId, ShardColours::ink.withAlpha (0.9f));
-        setColour (juce::TextButton::textColourOffId, ShardColours::inkLight.withAlpha (0.95f));
+        setColour (juce::TextButton::textColourOffId, ShardColours::ink.withAlpha (0.92f));
         setColour (juce::TextButton::textColourOnId, ShardColours::ink);
     }
 
-    // ---- Flat dark knob: plain rim, subtle body shade, white needle, orange tip dot.
+    // ---- Flat dark knob: plain rim, subtle body shade, white needle, blue tip dot.
     void drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h,
                            float pos, float startAng, float endAng,
                            juce::Slider&) override
