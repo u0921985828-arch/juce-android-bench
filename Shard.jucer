@@ -27,9 +27,13 @@
       <FILE id="fntJbR" name="JetBrainsMonoRegular.ttf" compile="0" resource="1" file="Source/fonts/JetBrainsMonoRegular.ttf"/>
       <FILE id="fntJbB" name="JetBrainsMonoBold.ttf"    compile="0" resource="1" file="Source/fonts/JetBrainsMonoBold.ttf"/>
     </GROUP>
+    <GROUP id="Fx404Icons" name="icons">
+      <FILE id="icoApp" name="icon.png" compile="0" resource="0" file="ci/icon.png"/>
+    </GROUP>
   </MAINGROUP>
   <EXPORTFORMATS>
     <ANDROIDSTUDIO targetFolder="Builds/Android"
+                   smallIcon="icoApp" bigIcon="icoApp"
                    androidActivityClass="com.artifacts.shard.Shard"
                    androidMinimumSDK="24" androidTargetSDK="34"
                    androidInternetNeeded="0" androidCpp11="1"

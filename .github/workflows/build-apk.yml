@@ -59,6 +59,23 @@ jobs:
           cmake -B JUCE/cmake-build -S JUCE -DJUCE_BUILD_EXTRAS=ON -DCMAKE_BUILD_TYPE=Release
           cmake --build JUCE/cmake-build --target Projucer -j"$(nproc)"
 
+      - name: Stamp a monotonic versionCode
+        # Android only treats a build as an upgrade when versionCode increases.
+        # The workflow run number is monotonic, so use it directly.
+        run: |
+          python3 - "$GITHUB_RUN_NUMBER" <<'PY'
+          import re, sys
+          code = sys.argv[1]
+          p = "Shard.jucer"
+          s = open(p, encoding="utf-8").read()
+          if re.search(r'androidVersionCode="[^"]*"', s):
+              s = re.sub(r'androidVersionCode="[^"]*"', f'androidVersionCode="{code}"', s, count=1)
+          else:
+              s = re.sub(r'(<ANDROIDSTUDIO\b)', rf'\1 androidVersionCode="{code}"', s, count=1)
+          open(p, "w", encoding="utf-8").write(s)
+          print("androidVersionCode =", code)
+          PY
+
       - name: Generate Android project from Shard.jucer
         run: |
           PROJUCER="$(find JUCE/cmake-build -name Projucer -type f -executable | head -1)"
@@ -68,21 +85,18 @@ jobs:
       - name: Point Gradle at the Android SDK
         run: echo "sdk.dir=${ANDROID_SDK_ROOT}" > Builds/Android/local.properties
 
-      - name: Create Android debug keystore
-        # Projucer's generated 'juceSigning' config points at the standard debug
-        # keystore (~/.android/debug.keystore, storepass/keypass "android", alias
-        # androiddebugkey). A fresh runner has none, so generate the canonical one.
+      - name: Install the repo's debug keystore
+        # MUST be the same key on every run. Generating one per build (what this
+        # step used to do) gave every APK a different signing certificate, and
+        # Android refuses to update an installed app whose signature changed —
+        # you had to uninstall before each new build. ci/colors-debug.keystore is
+        # a DEBUG key (password "android", the canonical Android debug password);
+        # it is not a Play Store upload key and must never become one.
         run: |
           mkdir -p "$HOME/.android"
-          if [ ! -f "$HOME/.android/debug.keystore" ]; then
-            keytool -genkeypair -v \
-              -keystore "$HOME/.android/debug.keystore" \
-              -storepass android -keypass android \
-              -alias androiddebugkey \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -dname "CN=Android Debug,O=Android,C=US" \
-              -storetype JKS
-          fi
+          cp ci/colors-debug.keystore "$HOME/.android/debug.keystore"
+          keytool -list -keystore "$HOME/.android/debug.keystore" \
+                  -storepass android -alias androiddebugkey
 
       - name: Build APKs (debug + release)
         working-directory: Builds/Android
