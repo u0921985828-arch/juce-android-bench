@@ -32,8 +32,8 @@ public:
 
         juce::Colour base   = loaded ? ShardColours::padTop : ShardColours::padBg2;
         juce::Colour edge   = ShardColours::padBorder;
-        juce::Colour idxCol = loaded ? ShardColours::ink.withAlpha (0.92f)
-                                     : ShardColours::ink.withAlpha (0.30f);
+        juce::Colour idxCol = loaded ? ShardColours::inkLight.withAlpha (0.95f)
+                                     : ShardColours::inkLight.withAlpha (0.30f);
         juce::Colour nmCol  = ShardColours::inkDim;
         juce::Colour sparkCol = ShardColours::accent.withAlpha (0.55f);
         bool onAccent = false;
