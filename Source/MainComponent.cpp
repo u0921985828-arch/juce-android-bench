@@ -53,37 +53,45 @@ MainComponent::MainComponent()
         auto* b = new juce::TextButton();
         b->onClick = [this, s] { stepClicked (s); };
         styleButton (*b, kStepOff);
-        seqOverlay.addAndMakeVisible (b);
+        seqSheet.addAndMakeVisible (b);
         stepButtons.add (b);
     }
 
-    // Mode tabs (TOCAR/EDITAR/FX). SEC is a separate button that opens the
-    // sequencer as a pop-up sheet instead of switching the visible tab.
-    const char* tabNames[] = { "TOCAR", "EDITAR", "FX" };
-    const Mode  tabModes[] = { Mode::Perform, Mode::Edit, Mode::Fx };
-    for (int i = 0; i < 3; ++i)
+    // Module bar: one perform screen, five floating sheets. Each button
+    // opens its editor as a pop-up — nothing ever replaces the machine face.
     {
-        auto* t = new juce::TextButton (tabNames[i]);
-        styleButton (*t, kKey);
-        t->setColour (juce::TextButton::buttonOnColourId, kAccent);
-        t->setClickingTogglesState (true);
-        const Mode m = tabModes[i];
-        t->onClick = [this, m] { setMode (m); };
-        addAndMakeVisible (t);
-        tabButtons.add (t);
-    }
-    styleButton (secButton, kKey);
-    secButton.setColour (juce::TextButton::buttonOnColourId, kAccent);
-    secButton.onClick = [this] { if (seqOverlay.isVisible()) closeSeqSheet(); else openSeqSheet(); };
-    addAndMakeVisible (secButton);
+        juce::TextButton* mb[5]  = { &padsButton, &secButton, &chainButton, &chopOpenButton, &fxOpenButton };
+        Sheet*            sh[5]  = { &padSheet, &seqSheet, &chainSheet, &chopSheet, &fxSheet };
+        for (int i = 0; i < 5; ++i)
+        {
+            styleButton (*mb[i], kKey);
+            mb[i]->setColour (juce::TextButton::buttonOnColourId, kAccent);
+            auto* s = sh[i]; auto* b = mb[i];
+            b->onClick = [this, s, b] { if (s->isVisible()) closeAllSheets(); else openSheet (*s, *b); };
+            addAndMakeVisible (b);
+        }
 
-    addAndMakeVisible (seqOverlay);
-    seqOverlay.setVisible (false);
-    seqOverlay.onDismiss = [this] { closeSeqSheet(); };
-    seqOverlay.paintContent = [this] (juce::Graphics& g) { paintSeqSheetContent (g); };
-    styleButton (seqCloseButton, kKey);
-    seqCloseButton.onClick = [this] { closeSeqSheet(); };
-    seqOverlay.addAndMakeVisible (seqCloseButton);
+        juce::TextButton* cb[5] = { &padCloseButton, &seqCloseButton, &chainCloseButton, &chopCloseButton, &fxCloseButton };
+        std::function<void (juce::Graphics&)> pc[5] =
+        {
+            [this] (juce::Graphics& g) { paintPadSheetContent (g); },
+            [this] (juce::Graphics& g) { paintSeqSheetContent (g); },
+            [this] (juce::Graphics& g) { paintChainSheetContent (g); },
+            [this] (juce::Graphics& g) { paintChopSheetContent (g); },
+            [this] (juce::Graphics& g) { paintFxSheetContent (g); },
+        };
+        for (int i = 0; i < 5; ++i)
+        {
+            auto* s = sh[i];
+            addAndMakeVisible (s);
+            s->setVisible (false);
+            s->onDismiss = [this] { closeAllSheets(); };
+            s->paintContent = pc[i];
+            styleButton (*cb[i], kKey);
+            cb[i]->onClick = [this] { closeAllSheets(); };
+            s->addAndMakeVisible (cb[i]);
+        }
+    }
 
     // Transport / actions.
     loadButton.setClickingTogglesState (true);
@@ -125,7 +133,7 @@ MainComponent::MainComponent()
         for (auto& row : pattern[(size_t) selectedPattern]) row.fill (false);
         if (selectedPad >= 0) selectPad (selectedPad);
     };
-    seqOverlay.addAndMakeVisible (clearButton);
+    seqSheet.addAndMakeVisible (clearButton);
 
     // Per-pad edit controls.
     auto initSlider = [this] (juce::Slider& s, double lo, double hi, double step, double def)
@@ -145,7 +153,7 @@ MainComponent::MainComponent()
     initSlider (bpmSlider,    60.0, 200.0, 1.0, 120.0);
     bpmSlider.setTextValueSuffix (" bpm");
     bpmSlider.onValueChange = [this] { engine.setBpm (bpmSlider.getValue()); };
-    seqOverlay.addAndMakeVisible (bpmSlider);   // lives in the sequencer sheet, not the main tabs
+    seqSheet.addAndMakeVisible (bpmSlider);   // lives in the sequencer sheet, not the main tabs
 
     // Per-pad controls as rotary KNOBS, not faders — "nops, no faders".
     auto initKnob = [this] (juce::Slider& s, double lo, double hi, double step, double def,
@@ -242,9 +250,9 @@ MainComponent::MainComponent()
         noteSlider.setValue (0.0, juce::dontSendNotification);
         lengthSlider.setValue (engine.getPatternLength (selectedPattern), juce::dontSendNotification);
         resized();
-        seqOverlay.repaint();   // sheet card itself can grow/shrink with the bank's LEN
+        seqSheet.repaint();   // sheet card itself can grow/shrink with the bank's LEN
     };
-    seqOverlay.addAndMakeVisible (patternSlider);
+    seqSheet.addAndMakeVisible (patternSlider);
 
     // Pattern length (FL-Studio-style fader): how many steps this bank plays
     // before looping / handing off to the next chain entry — 16 up to 64,
@@ -264,9 +272,9 @@ MainComponent::MainComponent()
     {
         engine.setPatternLength (selectedPattern, (int) lengthSlider.getValue());
         resized();
-        seqOverlay.repaint();   // sheet card grows/shrinks with LEN
+        seqSheet.repaint();   // sheet card grows/shrinks with LEN
     };
-    seqOverlay.addAndMakeVisible (lengthSlider);
+    seqSheet.addAndMakeVisible (lengthSlider);
 
     // Chain include row: 8 coloured toggles, one per pattern bank — tap to
     // put that bank in (or out of) the played sequence. 0 active = fall back
@@ -282,7 +290,7 @@ MainComponent::MainComponent()
             patternActiveUI[(size_t) i] = patternButtons[i]->getToggleState();
             rebuildChain();
         };
-        seqOverlay.addAndMakeVisible (b);
+        chainSheet.addAndMakeVisible (b);
         patternButtons.add (b);
     }
 
@@ -293,7 +301,7 @@ MainComponent::MainComponent()
         for (auto* b : patternButtons) b->setToggleState (false, juce::dontSendNotification);
         rebuildChain();
     };
-    seqOverlay.addAndMakeVisible (chainClearButton);
+    chainSheet.addAndMakeVisible (chainClearButton);
 
     // Piano roll: per-step semitone offset for the selected pad (tap a step
     // to select it, then dial its pitch here — melodies from one sample).
@@ -311,7 +319,7 @@ MainComponent::MainComponent()
         if (selectedPad >= 0 && selectedStep >= 0)
             engine.setStepNote (selectedPattern, selectedStep, selectedPad, (int) noteSlider.getValue());
     };
-    seqOverlay.addAndMakeVisible (noteSlider);
+    seqSheet.addAndMakeVisible (noteSlider);
 
     // Master FX (filter + drive).
     fxTypeButton.setClickingTogglesState (true);
@@ -322,28 +330,52 @@ MainComponent::MainComponent()
         const bool hp = fxTypeButton.getToggleState();
         fxTypeButton.setButtonText (hp ? "HPF" : "LPF");
         engine.setFxType (hp ? 1 : 0);
-        repaint (fxCurveArea.expanded (4));
+        fxSheet.repaint();
+        refreshMacroValues();
     };
-    addAndMakeVisible (fxTypeButton);
+    fxSheet.addAndMakeVisible (fxTypeButton);
 
     // FX as rotary KNOBS (vintage identity).
-    initKnob (cutoffSlider, 20.0, 20000.0, 1.0, 20000.0, 1000.0, [this] { const float v=(float) cutoffSlider.getValue(); engine.setFxCutoff (v); macroFilter.setValue (v, juce::dontSendNotification); repaint (fxCurveArea.expanded (4)); });
-    initKnob (resoSlider,    0.3,  4.0, 0.01, 0.707, 0.0,       [this] { engine.setFxReso   ((float) resoSlider.getValue()); repaint (fxCurveArea.expanded (4)); });
-    initKnob (driveSlider,   0.0,  1.0, 0.01, 0.0,   0.0,       [this] { const float v=(float) driveSlider.getValue(); engine.setFxDrive (v); macroDrive.setValue (v, juce::dontSendNotification); });
-    initKnob (dlyTimeSlider, 20.0, 1000.0, 1.0, 250.0, 0.0,     [this] { engine.setDlyTime  ((float) dlyTimeSlider.getValue()); });
-    initKnob (dlyFbSlider,   0.0,  0.95, 0.01, 0.35, 0.0,       [this] { engine.setDlyFb    ((float) dlyFbSlider.getValue()); });
-    initKnob (dlyMixSlider,  0.0,  1.0, 0.01, 0.0,   0.0,       [this] { const float v=(float) dlyMixSlider.getValue(); engine.setDlyMix (v); macroSend.setValue (v, juce::dontSendNotification); });
+    initKnob (cutoffSlider, 20.0, 20000.0, 1.0, 20000.0, 1000.0, [this] { engine.setFxCutoff ((float) cutoffSlider.getValue()); fxSheet.repaint(); refreshMacroValues(); });
+    initKnob (resoSlider,    0.3,  4.0, 0.01, 0.707, 0.0,       [this] { engine.setFxReso   ((float) resoSlider.getValue()); fxSheet.repaint(); refreshMacroValues(); });
+    initKnob (driveSlider,   0.0,  1.0, 0.01, 0.0,   0.0,       [this] { engine.setFxDrive  ((float) driveSlider.getValue()); refreshMacroValues(); });
+    initKnob (dlyTimeSlider, 20.0, 1000.0, 1.0, 250.0, 0.0,     [this] { engine.setDlyTime  ((float) dlyTimeSlider.getValue()); refreshMacroValues(); });
+    initKnob (dlyFbSlider,   0.0,  0.95, 0.01, 0.35, 0.0,       [this] { engine.setDlyFb    ((float) dlyFbSlider.getValue()); refreshMacroValues(); });
+    initKnob (dlyMixSlider,  0.0,  1.0, 0.01, 0.0,   0.0,       [this] { engine.setDlyMix   ((float) dlyMixSlider.getValue()); refreshMacroValues(); });
 
-    // Quick-access macros on the perform screen (shared engine params).
-    initKnob (macroFilter, 20.0, 20000.0, 1.0, 20000.0, 1000.0, [this] { const float v=(float) macroFilter.getValue(); engine.setFxCutoff (v); cutoffSlider.setValue (v, juce::dontSendNotification); });
-    initKnob (macroDrive,   0.0, 1.0, 0.01, 0.0, 0.0,           [this] { const float v=(float) macroDrive.getValue();  engine.setFxDrive  (v); driveSlider.setValue  (v, juce::dontSendNotification); });
-    initKnob (macroSend,    0.0, 1.0, 0.01, 0.0, 0.0,           [this] { const float v=(float) macroSend.getValue();   engine.setDlyMix   (v); dlyMixSlider.setValue (v, juce::dontSendNotification); });
+    // CTRL 1-3: context-sensitive macro knobs. Which parameters they touch
+    // depends on the active bank (FILTRO / DELAY / PAD) — groovebox style,
+    // three big knobs that are always the three most useful ones.
+    initKnob (macroCtrl1, 0.0, 1.0, 0.001, 0.0, 0.0, [this] { macroMoved (0); });
+    initKnob (macroCtrl2, 0.0, 1.0, 0.001, 0.0, 0.0, [this] { macroMoved (1); });
+    initKnob (macroCtrl3, 0.0, 1.0, 0.001, 0.0, 0.0, [this] { macroMoved (2); });
+
+    {
+        const char* bankNames[3] = { "FILTRO", "DELAY", "PAD" };
+        for (int i = 0; i < 3; ++i)
+        {
+            auto* b = new juce::TextButton (bankNames[i]);
+            styleButton (*b, kKey);
+            b->setColour (juce::TextButton::buttonOnColourId, kAccent);
+            b->onClick = [this, i] { setMacroBank (i); };
+            addAndMakeVisible (b);
+            macroBankBtns.add (b);
+        }
+    }
 
     addAndMakeVisible (waveform);
 
-    editLabel.setColour (juce::Label::textColourId, ShardColours::inkDim);
-    editLabel.setText ("select a pad", juce::dontSendNotification);
-    addAndMakeVisible (editLabel);
+    // Controls live inside their sheets, not on the machine face.
+    for (juce::Component* c : { (juce::Component*) &pitchSlider, (juce::Component*) &volSlider, (juce::Component*) &panSlider,
+                                (juce::Component*) &attackSlider, (juce::Component*) &releaseSlider, (juce::Component*) &chokeSlider,
+                                (juce::Component*) &startSlider, (juce::Component*) &endSlider,
+                                (juce::Component*) &reverseButton, (juce::Component*) &loopButton })
+        padSheet.addAndMakeVisible (c);
+    chopSheet.addAndMakeVisible (chopButton);
+    for (juce::Component* c : { (juce::Component*) &cutoffSlider, (juce::Component*) &resoSlider, (juce::Component*) &driveSlider,
+                                (juce::Component*) &dlyTimeSlider, (juce::Component*) &dlyFbSlider, (juce::Component*) &dlyMixSlider,
+                                (juce::Component*) &testButton })
+        fxSheet.addAndMakeVisible (c);
 
     status.setJustificationType (juce::Justification::centred);
     status.setColour (juce::Label::textColourId, ShardColours::inkDim);
@@ -352,59 +384,121 @@ MainComponent::MainComponent()
 
     startTimer (60);
     setSize (500, 1080);
-    setMode (Mode::Perform);
+    setMacroBank (0);
 }
 
-// Show only the controls relevant to the active mode, then re-layout.
-void MainComponent::setMode (Mode m)
+// --- Context-sensitive CTRL 1-3 ---------------------------------------------
+// Bank 0 FILTRO: cutoff / reso / drive.  Bank 1 DELAY: time / feedback / mix.
+// Bank 2 PAD: pitch / start / end of the selected pad.
+void MainComponent::setMacroBank (int bank)
 {
-    mode = m;
+    macroBank = juce::jlimit (0, 2, bank);
     for (int i = 0; i < 3; ++i)
-        if (auto* t = tabButtons[i]) t->setToggleState (i == (int) m, juce::dontSendNotification);
+        if (auto* b = macroBankBtns[i]) b->setToggleState (i == macroBank, juce::dontSendNotification);
 
-    const bool perform = (m == Mode::Perform);
-    const bool edit    = (m == Mode::Edit);
-    const bool fx      = (m == Mode::Fx);
+    auto config = [] (juce::Slider& s, double lo, double hi, double step, double skewMid,
+                      std::function<juce::String (double)> fmt)
+    {
+        s.setRange (lo, hi, step);
+        if (skewMid > 0.0) s.setSkewFactorFromMidPoint (skewMid);
+        else               s.setSkewFactor (1.0);
+        s.textFromValueFunction = std::move (fmt);
+    };
 
-    for (auto* p : pads) p->setVisible (! fx);          // pads used in perform/edit
+    if (macroBank == 0)
+    {
+        config (macroCtrl1, 20.0, 20000.0, 1.0, 1000.0, [] (double v) { return v >= 1000.0 ? juce::String (v / 1000.0, 1) + "k" : juce::String ((int) v); });
+        config (macroCtrl2, 0.3, 4.0, 0.01, 0.0,        [] (double v) { return juce::String (v, 2); });
+        config (macroCtrl3, 0.0, 1.0, 0.01, 0.0,        [] (double v) { return juce::String (v, 2); });
+    }
+    else if (macroBank == 1)
+    {
+        config (macroCtrl1, 20.0, 1000.0, 1.0, 0.0,     [] (double v) { return juce::String ((int) v) + " ms"; });
+        config (macroCtrl2, 0.0, 0.95, 0.01, 0.0,       [] (double v) { return juce::String (v, 2); });
+        config (macroCtrl3, 0.0, 1.0, 0.01, 0.0,        [] (double v) { return juce::String (v, 2); });
+    }
+    else
+    {
+        config (macroCtrl1, -24.0, 24.0, 1.0, 0.0,      [] (double v) { return (v > 0 ? "+" : "") + juce::String ((int) v) + " st"; });
+        config (macroCtrl2, 0.0, 1.0, 0.001, 0.0,       [] (double v) { return juce::String (v, 3); });
+        config (macroCtrl3, 0.0, 1.0, 0.001, 0.0,       [] (double v) { return juce::String (v, 3); });
+    }
 
-    waveform.setVisible (true);                          // hero screen, all modes
-    editLabel.setVisible (edit);
-    pitchSlider.setVisible (edit); volSlider.setVisible (edit);
-    startSlider.setVisible (edit); endSlider.setVisible (edit);
-    chokeSlider.setVisible (edit); reverseButton.setVisible (edit); loopButton.setVisible (edit);
-    panSlider.setVisible (edit); attackSlider.setVisible (edit); releaseSlider.setVisible (edit);
-    chopButton.setVisible (edit);
-
-    cutoffSlider.setVisible (fx); resoSlider.setVisible (fx); driveSlider.setVisible (fx);
-    dlyTimeSlider.setVisible (fx); dlyFbSlider.setVisible (fx); dlyMixSlider.setVisible (fx);
-    fxTypeButton.setVisible (fx); testButton.setVisible (fx);
-
-    macroFilter.setVisible (perform); macroDrive.setVisible (perform); macroSend.setVisible (perform);
-
-    if (edit && selectedPad < 0)
-        selectPad (0);
-
-    resized();
-    repaint();
+    refreshMacroValues();
+    repaint();   // the knob-name labels above CTRL 1-3 change with the bank
 }
 
-// The sequencer sheet pops up over whichever tab is showing — it doesn't
-// change `mode` at all, just shows the overlay on top.
-void MainComponent::openSeqSheet()
+// Load the bank's current engine/pad values into the three knobs (silently).
+void MainComponent::refreshMacroValues()
 {
+    auto set = [] (juce::Slider& s, double v) { s.setValue (v, juce::dontSendNotification); s.updateText(); };
+    if (macroBank == 0)
+    {
+        set (macroCtrl1, cutoffSlider.getValue());
+        set (macroCtrl2, resoSlider.getValue());
+        set (macroCtrl3, driveSlider.getValue());
+    }
+    else if (macroBank == 1)
+    {
+        set (macroCtrl1, dlyTimeSlider.getValue());
+        set (macroCtrl2, dlyFbSlider.getValue());
+        set (macroCtrl3, dlyMixSlider.getValue());
+    }
+    else if (selectedPad >= 0)
+    {
+        set (macroCtrl1, padPitch[(size_t) selectedPad]);
+        set (macroCtrl2, padStart01[(size_t) selectedPad]);
+        set (macroCtrl3, padEnd01[(size_t) selectedPad]);
+    }
+}
+
+void MainComponent::macroMoved (int idx)
+{
+    juce::Slider* ms[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
+    const double v = ms[idx]->getValue();
+
+    if (macroBank == 0)
+    {
+        if (idx == 0) { cutoffSlider.setValue (v, juce::dontSendNotification); engine.setFxCutoff ((float) v); }
+        if (idx == 1) { resoSlider.setValue   (v, juce::dontSendNotification); engine.setFxReso   ((float) v); }
+        if (idx == 2) { driveSlider.setValue  (v, juce::dontSendNotification); engine.setFxDrive  ((float) v); }
+    }
+    else if (macroBank == 1)
+    {
+        if (idx == 0) { dlyTimeSlider.setValue (v, juce::dontSendNotification); engine.setDlyTime ((float) v); }
+        if (idx == 1) { dlyFbSlider.setValue   (v, juce::dontSendNotification); engine.setDlyFb   ((float) v); }
+        if (idx == 2) { dlyMixSlider.setValue  (v, juce::dontSendNotification); engine.setDlyMix  ((float) v); }
+    }
+    else if (selectedPad >= 0)
+    {
+        const int sp = selectedPad;
+        if (idx == 0) { padPitch[(size_t) sp] = (float) v; pitchSlider.setValue (v, juce::dontSendNotification); engine.setPadPitch (sp, (float) v); }
+        if (idx == 1) { startSlider.setValue (v, juce::sendNotification); }   // reuse its clamping + trim logic
+        if (idx == 2) { endSlider.setValue   (v, juce::sendNotification); }
+    }
+}
+
+// --- Sheets ------------------------------------------------------------------
+void MainComponent::openSheet (Sheet& s, juce::TextButton& toggle)
+{
+    closeAllSheets();
     if (selectedPad < 0) selectPad (0);
-    secButton.setToggleState (true, juce::dontSendNotification);
-    seqOverlay.setVisible (true);
-    seqOverlay.toFront (false);
+    toggle.setToggleState (true, juce::dontSendNotification);
+    s.setVisible (true);
+    s.toFront (false);
     resized();
     repaint();
 }
 
-void MainComponent::closeSeqSheet()
+void MainComponent::closeAllSheets()
 {
-    secButton.setToggleState (false, juce::dontSendNotification);
-    seqOverlay.setVisible (false);
+    juce::TextButton* mb[5] = { &padsButton, &secButton, &chainButton, &chopOpenButton, &fxOpenButton };
+    Sheet*            sh[5] = { &padSheet, &seqSheet, &chainSheet, &chopSheet, &fxSheet };
+    for (int i = 0; i < 5; ++i)
+    {
+        mb[i]->setToggleState (false, juce::dontSendNotification);
+        sh[i]->setVisible (false);
+    }
     repaint();
 }
 
@@ -446,21 +540,6 @@ void MainComponent::paint (juce::Graphics& g)
                                              ShardColours::chassisBot, full.getCentreX(), full.getBottom(), false));
     g.fillRect (full);
 
-    // Helper: a square raised sub-panel with a soft border, controls grouped.
-    auto panel = [&g] (juce::Rectangle<int> ri)
-    {
-        if (ri.isEmpty()) return;
-        auto r = ri.toFloat();
-        g.setColour (ShardColours::panel);
-        g.fillRoundedRectangle (r, 3.0f);
-        g.setColour (ShardColours::panelHi.withAlpha (0.8f));
-        g.drawLine (r.getX() + 3, r.getY() + 1.0f, r.getRight() - 3, r.getY() + 1.0f, 1.2f);
-        g.setColour (ShardColours::panelLo.withAlpha (0.7f));
-        g.drawRoundedRectangle (r.reduced (0.5f), 3.0f, 1.2f);
-    };
-    panel (fxPanelArea);
-    panel (editPanelArea);
-
     // 2. Recessed LCD bezel around the scope (square, dark inset on a light face).
     if (! screenBezel.isEmpty())
     {
@@ -493,17 +572,21 @@ void MainComponent::paint (juce::Graphics& g)
         g.drawText ("SAMPLER", bin, juce::Justification::centredRight);
     }
 
-    // 4. Mode-specific labels.
-    if (mode == Mode::Perform)
+    // 4. Machine face: CTRL labels (bank-dependent), VU strip, step LEDs.
     {
         g.setColour (ShardColours::ink.withAlpha (0.85f));
         g.setFont (ShardColours::monoFont (10.0f, true).withExtraKerningFactor (0.16f));
-        auto mn = [&g] (juce::Slider& s, const char* t)
+        auto mn = [&g] (juce::Slider& s, const juce::String& t)
         {
             auto r = s.getBounds();
             g.drawText (t, r.getX() - 6, r.getY() - 14, r.getWidth() + 12, 12, juce::Justification::centred);
         };
-        mn (macroFilter, "FILTER"); mn (macroDrive, "DRIVE"); mn (macroSend, "SEND");
+        static const char* bankLabels[3][3] = { { "CUTOFF", "RESO", "DRIVE" },
+                                                { "TIME",   "FBK",  "MIX"   },
+                                                { "PITCH",  "START","END"   } };
+        mn (macroCtrl1, bankLabels[macroBank][0]);
+        mn (macroCtrl2, bankLabels[macroBank][1]);
+        mn (macroCtrl3, bankLabels[macroBank][2]);
 
         // Stereo VU: two segmented LED rows (L/R) on a recessed strip.
         if (! vuArea.isEmpty())
@@ -572,7 +655,17 @@ void MainComponent::paint (juce::Graphics& g)
             }
         }
     }
-    else if (mode == Mode::Fx)
+}
+
+// FX sheet: knob labels + the live filter response display.
+void MainComponent::paintFxSheetContent (juce::Graphics& g)
+{
+    if (fxSheet.sheetBounds.isEmpty()) return;
+
+    g.setColour (ShardColours::ink.withAlpha (0.9f));
+    g.setFont (ShardColours::monoFont (11.0f, true).withExtraKerningFactor (0.14f));
+    g.drawText ("FX", fxSheet.sheetBounds.reduced (14, 12).removeFromTop (16), juce::Justification::centredLeft);
+
     {
         g.setColour (ShardColours::ink.withAlpha (0.85f));
         g.setFont (ShardColours::monoFont (10.5f, true).withExtraKerningFactor (0.12f));
@@ -641,9 +734,22 @@ void MainComponent::paint (juce::Graphics& g)
                         juce::Justification::centredLeft);
         }
     }
-    else if (mode == Mode::Edit)
+}
+
+// PADS sheet: per-pad knob labels, trim labels, and the sample-info card.
+void MainComponent::paintPadSheetContent (juce::Graphics& g)
+{
+    if (padSheet.sheetBounds.isEmpty()) return;
+
+    const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
+    const int sp = juce::jmax (0, selectedPad);
+    g.setColour (ShardColours::ink.withAlpha (0.9f));
+    g.setFont (ShardColours::monoFont (11.0f, true).withExtraKerningFactor (0.14f));
+    g.drawText ("PAD " + juce::String (sp + 1)
+                + (padName[(size_t) sp].isNotEmpty() ? "  " + dot + "  " + padName[(size_t) sp].toUpperCase() : juce::String()),
+                padSheet.sheetBounds.reduced (14, 12).removeFromTop (16), juce::Justification::centredLeft);
+
     {
-        g.setColour (ShardColours::ink.withAlpha (0.9f));
         // Knobs: label above (same convention as FX).
         g.setFont (ShardColours::monoFont (10.0f, true).withExtraKerningFactor (0.10f));
         auto name = [&g] (juce::Slider& s, const char* t)
@@ -673,8 +779,7 @@ void MainComponent::paint (juce::Graphics& g)
             g.setColour (ShardColours::screenBg);
             g.fillRect (scr);
 
-            const int sp = selectedPad;
-            const auto sb = (sp >= 0 ? uiSample[(size_t) sp] : SampleBuffer::Ptr());
+            const auto sb = uiSample[(size_t) sp];
 
             if (sb == nullptr || sb->buffer.getNumSamples() <= 0)
             {
@@ -746,11 +851,11 @@ void MainComponent::paint (juce::Graphics& g)
 // draws in the overlay's own paint pass, on top of everything else.
 void MainComponent::paintSeqSheetContent (juce::Graphics& g)
 {
-    if (seqPanelArea.isEmpty()) return;
+    if (seqSheet.sheetBounds.isEmpty()) return;
 
     const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
     const int sp = juce::jmax (0, selectedPad);
-    auto inner = seqPanelArea.reduced (12, 6);
+    auto inner = seqSheet.sheetBounds.reduced (12, 6);
 
     g.setColour (ShardColours::ink.withAlpha (0.9f));
     g.setFont (ShardColours::monoFont (11.0f, true).withExtraKerningFactor (0.14f));
@@ -760,7 +865,7 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     g.drawText (t, inner.removeFromTop (16), juce::Justification::centredLeft);
 
     // Which bank is actually sounding right now (may differ from the one
-    // being viewed/edited) — the coloured row below shows chain membership.
+    // being viewed/edited).
     const juce::String chainStr = (engine.getChainLength() <= 0)
         ? "looping P" + juce::String (selectedPattern + 1)
         : "playing P" + juce::String (engine.getPlayingPattern() + 1);
@@ -787,6 +892,26 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
             g.drawRect (b->getBounds(), 2);
         }
     }
+}
+
+// CHAIN sheet: which pattern banks play, in order, plus live status.
+void MainComponent::paintChainSheetContent (juce::Graphics& g)
+{
+    if (chainSheet.sheetBounds.isEmpty()) return;
+
+    auto inner = chainSheet.sheetBounds.reduced (12, 6);
+    g.setColour (ShardColours::ink.withAlpha (0.9f));
+    g.setFont (ShardColours::monoFont (11.0f, true).withExtraKerningFactor (0.14f));
+    g.drawText ("PATTERN CHAIN", inner.removeFromTop (16), juce::Justification::centredLeft);
+
+    const juce::String chainStr = (engine.getChainLength() <= 0)
+        ? "sin cadena - loop de P" + juce::String (selectedPattern + 1)
+        : "sonando P" + juce::String (engine.getPlayingPattern() + 1);
+    g.setColour (ShardColours::inkDim);
+    g.setFont (ShardColours::monoFont (9.5f, true).withExtraKerningFactor (0.10f));
+    g.drawText (chainStr, inner.removeFromTop (14), juce::Justification::centredLeft);
+
+    // Ring the bank being edited (the one open in the SEC sheet).
     if (auto* b = patternButtons[selectedPattern])
     {
         g.setColour (ShardColours::ink.withAlpha (0.7f));
@@ -794,7 +919,27 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     }
 }
 
-void MainComponent::SeqOverlay::paint (juce::Graphics& g)
+// CHOP sheet: what auto-chop will do to the selected pad's sample.
+void MainComponent::paintChopSheetContent (juce::Graphics& g)
+{
+    if (chopSheet.sheetBounds.isEmpty()) return;
+
+    const int sp = juce::jmax (0, selectedPad);
+    auto inner = chopSheet.sheetBounds.reduced (12, 6);
+    g.setColour (ShardColours::ink.withAlpha (0.9f));
+    g.setFont (ShardColours::monoFont (11.0f, true).withExtraKerningFactor (0.14f));
+    g.drawText ("AUTO CHOP", inner.removeFromTop (16), juce::Justification::centredLeft);
+
+    g.setColour (ShardColours::inkDim);
+    g.setFont (ShardColours::monoFont (9.5f, true).withExtraKerningFactor (0.08f));
+    const auto sb = uiSample[(size_t) sp];
+    const juce::String info = (sb == nullptr)
+        ? "pad " + juce::String (sp + 1) + " vacio - carga o graba una muestra primero"
+        : "corta la muestra del pad " + juce::String (sp + 1) + " en 16 partes iguales, una por pad";
+    g.drawText (info, inner.removeFromTop (14), juce::Justification::centredLeft);
+}
+
+void MainComponent::Sheet::paint (juce::Graphics& g)
 {
     g.fillAll (juce::Colours::black.withAlpha (0.45f));
     if (sheetBounds.isEmpty()) return;
@@ -836,24 +981,23 @@ void MainComponent::layoutPadGrid (juce::Rectangle<int> area, int cols, int rows
 
 void MainComponent::resized()
 {
-    fxPanelArea = seqPanelArea = editPanelArea = editCtrlArea = fxCurveArea = editInfoArea = {};
+    fxCurveArea = editInfoArea = {};
     vuArea = stepStripArea = {};
 
     auto area = getLocalBounds().reduced (8);
 
-    // In TOCAR the LCD grows to absorb whatever the perform body doesn't
-    // need (its pads are width-bound squares) — the screen is the protagonist.
-    int screenH = 96;
-    if (mode == Mode::Perform)
+    // The LCD grows to absorb whatever the face doesn't need (the pads are
+    // width-bound squares) — the screen is the protagonist.
+    int screenH;
     {
-        const int chromeBelow = 8 + 36 + 6 + 40 + 8 + 18 + 6;          // gaps + tabs + transport + status
+        const int chromeBelow = 8 + 36 + 6 + 40 + 8 + 18 + 6;          // gaps + module bar + transport + status
         const int cell = (area.getWidth() - 3 * 8) / 4;                // square pad cells, 4 cols, gap 8
-        const int bodyNeed = 20 + 6 + 86 + 6 + 20 + 8 + (4 * cell + 3 * 8);   // VU + knobs + step LEDs + pads
-        const int avail = area.getHeight() - (30 + 8) - chromeBelow - bodyNeed;
-        screenH = juce::jmax (96, avail);
+        const int bodyNeed = 20 + 6 + 20 + 4 + 86 + 6 + 20 + 8        // VU + bank chips + CTRL knobs + step LEDs
+                           + (4 * cell + 3 * 8);                       // + pads
+        screenH = juce::jmax (96, area.getHeight() - (30 + 8) - chromeBelow - bodyNeed);
     }
 
-    // --- Always-visible top chrome ---
+    // --- Top chrome ---
     headerArea = area.removeFromTop (30);
     area.removeFromTop (8);
 
@@ -861,14 +1005,14 @@ void MainComponent::resized()
     waveform.setBounds (screenBezel);
     area.removeFromTop (8);
 
-    // Tab bar: TOCAR / EDITAR / FX, plus SEC (opens the sequencer sheet).
+    // Module bar: PADS / SEC / CHAIN / CHOP / FX — each opens its sheet.
     tabBarArea = area.removeFromTop (36);
     {
         auto row = tabBarArea;
-        const int w = row.getWidth() / 4;
-        for (int i = 0; i < 3; ++i)
-            tabButtons[i]->setBounds (row.removeFromLeft (w).reduced (2));
-        secButton.setBounds (row.reduced (2));
+        juce::TextButton* mb[5] = { &padsButton, &secButton, &chainButton, &chopOpenButton, &fxOpenButton };
+        const int w = row.getWidth() / 5;
+        for (int i = 0; i < 5; ++i)
+            mb[i]->setBounds ((i < 4 ? row.removeFromLeft (w) : row).reduced (2));
     }
     area.removeFromTop (6);
 
@@ -886,15 +1030,19 @@ void MainComponent::resized()
     status.setBounds (area.removeFromBottom (18));
     area.removeFromBottom (6);
 
-    // --- Mode body ---
-    if (mode == Mode::Perform)
+    // --- Machine face: VU, bank chips, CTRL 1-3, step LEDs, pads ---
     {
-        // Sketch order: VU strip, macro knobs, step-LED strip, pads.
         vuArea = area.removeFromTop (20).reduced (2, 0);
         area.removeFromTop (6);
 
-        auto mrow = area.removeFromTop (86);             // 3 quick macros
-        juce::Slider* mk[3] = { &macroFilter, &macroDrive, &macroSend };
+        auto bankRow = area.removeFromTop (20);
+        const int bw = bankRow.getWidth() / 3;
+        for (int i = 0; i < 3; ++i)
+            macroBankBtns[i]->setBounds ((i < 2 ? bankRow.removeFromLeft (bw) : bankRow).reduced (24, 0));
+        area.removeFromTop (4);
+
+        auto mrow = area.removeFromTop (86);             // the 3 CTRL macros
+        juce::Slider* mk[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
         const int w = mrow.getWidth() / 3;
         for (int i = 0; i < 3; ++i)
         {
@@ -908,118 +1056,111 @@ void MainComponent::resized()
         area.removeFromTop (8);
         layoutPadGrid (area, 4, 4, 8);
     }
-    else if (mode == Mode::Fx)
-    {
-        fxPanelArea = area;
-        auto inner = area.reduced (12, 14);
-        auto ctrl  = inner.removeFromBottom (40);
-        fxTypeButton.setBounds (ctrl.removeFromLeft (ctrl.getWidth() / 2).reduced (3));
-        testButton.setBounds   (ctrl.reduced (3));
-        inner.removeFromBottom (10);
 
-        // Knob boxes sized to the knob's real visual footprint (label gap +
-        // rotary + value chip ≈ 140px), not half the panel — the old half-split
-        // made each box ~365px of mostly-invisible drag area.
-        juce::Slider* r1[3] = { &cutoffSlider, &resoSlider, &driveSlider };
-        juce::Slider* r2[3] = { &dlyTimeSlider, &dlyFbSlider, &dlyMixSlider };
-        const int rowH = juce::jmin (140, inner.getHeight() / 3);
-        auto place = [] (juce::Rectangle<int> row, juce::Slider** ks)
+    // --- Floating sheets (each sized by its own content, capped at 86%) ---
+    const auto full = getLocalBounds();
+    auto sheetFromBottom = [&full] (Sheet& s, int desiredH)
+    {
+        s.setBounds (full);
+        auto f = full;
+        const int cappedH = (int) (f.getHeight() * 0.86f);
+        auto sheet = f.removeFromBottom (juce::jmin (desiredH, cappedH)).reduced (8);
+        s.sheetBounds = sheet;
+        return sheet.reduced (14, 12);
+    };
+    auto placeKnobRow = [] (juce::Rectangle<int> row, juce::Slider** ks)
+    {
+        const int w = row.getWidth() / 3;
+        for (int i = 0; i < 3; ++i)
         {
-            const int w = row.getWidth() / 3;
-            for (int i = 0; i < 3; ++i)
-            {
-                auto cell = (i < 2 ? row.removeFromLeft (w) : row);
-                cell.removeFromTop (16);                 // gap for knob name
-                ks[i]->setBounds (cell.reduced (6, 2));
-            }
-        };
-        place (inner.removeFromTop (rowH), r1);
-        place (inner.removeFromTop (rowH), r2);
-        inner.removeFromTop (12);
+            auto cell = (i < 2 ? row.removeFromLeft (w) : row);
+            cell.removeFromTop (16);                     // gap for knob name
+            ks[i]->setBounds (cell.reduced (6, 2));
+        }
+    };
 
-        // The recovered space becomes a live filter response display
-        // (drawn in paint(), reacts to CUTOFF/RESO/LPF-HPF).
-        fxCurveArea = inner;
-    }
-    else // Edit: compact pad selector on top, panel below.
+    // PADS sheet: per-pad knobs, trim, REV/LOOP, sample-info card.
     {
-        auto padArea = area.removeFromTop ((int) (area.getHeight() * 0.40f));
-        layoutPadGrid (padArea, 4, 4, 5);
-        area.removeFromTop (8);
+        auto inner = sheetFromBottom (padSheet, 460);
+        auto titleRow = inner.removeFromTop (32);
+        padCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
 
-        editPanelArea = area;
-        auto inner = area.reduced (10, 8);
-        editLabel.setBounds (inner.removeFromTop (18));
-        inner.removeFromTop (8);
-        editCtrlArea = inner;                        // labels drawn in paint
-
-        // Knobs, not faders: PITCH/VOLUME/PAN, then ATTACK/RELEASE/CHOKE.
         juce::Slider* k1[3] = { &pitchSlider, &volSlider, &panSlider };
         juce::Slider* k2[3] = { &attackSlider, &releaseSlider, &chokeSlider };
-        auto placeKnobs = [] (juce::Rectangle<int> row, juce::Slider** ks)
-        {
-            const int w = row.getWidth() / 3;
-            for (int i = 0; i < 3; ++i)
-            {
-                auto cell = (i < 2 ? row.removeFromLeft (w) : row);
-                cell.removeFromTop (16);                 // gap for knob name
-                ks[i]->setBounds (cell.reduced (6, 2));
-            }
-        };
-        const int knobRowH = juce::jmin (86, inner.getHeight() / 3);
-        placeKnobs (inner.removeFromTop (knobRowH), k1);
-        placeKnobs (inner.removeFromTop (knobRowH), k2);
+        placeKnobRow (inner.removeFromTop (86), k1);
+        placeKnobRow (inner.removeFromTop (86), k2);
         inner.removeFromTop (6);
 
-        // Start/End: a trim range on the waveform, stays a linear slider pair.
         const int labelW = 64;
         auto ctrlRow = [&inner, labelW] (int h) { auto r = inner.removeFromTop (h); r.removeFromLeft (labelW); return r; };
         startSlider.setBounds (ctrlRow (26)); inner.removeFromTop (4);
         endSlider.setBounds   (ctrlRow (26)); inner.removeFromTop (8);
 
-        {
-            auto rr = inner.removeFromTop (30);
-            reverseButton.setBounds (rr.removeFromLeft (rr.getWidth() / 2).reduced (3, 0));
-            loopButton.setBounds (rr.reduced (3, 0));
-        }
-        inner.removeFromTop (6);
-        chopButton.setBounds (inner.removeFromTop (30).reduced (3, 0));
-        inner.removeFromTop (10);
+        auto rr = inner.removeFromTop (30);
+        reverseButton.setBounds (rr.removeFromLeft (rr.getWidth() / 2).reduced (3, 0));
+        loopButton.setBounds (rr.reduced (3, 0));
+        inner.removeFromTop (8);
 
-        // Sample-info card fills the former dead space below AUTO CHOP:
-        // mini waveform + the sample's real facts (drawn in paint()).
-        editInfoArea = inner;
+        editInfoArea = inner;      // sample-info card (drawn in paintPadSheetContent)
     }
 
-    // --- Sequencer sheet: pops up over whichever tab is showing ---
+    // CHAIN sheet: the 8 bank toggles + clear.
     {
-        seqOverlay.setBounds (getLocalBounds());
-        auto full = getLocalBounds();
+        auto inner = sheetFromBottom (chainSheet, 148);
+        auto titleRow = inner.removeFromTop (32);
+        chainCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
 
-        // Sheet height follows its content (title + controls + step grid) instead
-        // of always claiming 86% of the screen — a 16-step pattern opens a
-        // compact sheet, a 48-step one grows, and only a very long pattern hits
-        // the 86% cap and shrinks its own cells to fit.
+        auto row = inner.removeFromTop (34);
+        const int pw = row.getWidth() / kNumPatterns;
+        for (int i = 0; i < kNumPatterns; ++i)
+            patternButtons[i]->setBounds ((i < kNumPatterns - 1 ? row.removeFromLeft (pw) : row).reduced (2));
+        inner.removeFromTop (4);
+        chainClearButton.setBounds (inner.removeFromTop (30).reduced (2, 0));
+    }
+
+    // CHOP sheet: one action, clearly explained.
+    {
+        auto inner = sheetFromBottom (chopSheet, 122);
+        auto titleRow = inner.removeFromTop (36);
+        chopCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
+        chopButton.setBounds (inner.removeFromTop (34).reduced (2, 0));
+    }
+
+    // FX sheet: tight knob boxes + the live filter curve.
+    {
+        auto inner = sheetFromBottom (fxSheet, 566);
+        auto titleRow = inner.removeFromTop (28);
+        fxCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
+
+        auto ctrl = inner.removeFromBottom (40);
+        fxTypeButton.setBounds (ctrl.removeFromLeft (ctrl.getWidth() / 2).reduced (3));
+        testButton.setBounds   (ctrl.reduced (3));
+        inner.removeFromBottom (8);
+
+        juce::Slider* r1[3] = { &cutoffSlider, &resoSlider, &driveSlider };
+        juce::Slider* r2[3] = { &dlyTimeSlider, &dlyFbSlider, &dlyMixSlider };
+        placeKnobRow (inner.removeFromTop (140), r1);
+        placeKnobRow (inner.removeFromTop (140), r2);
+        inner.removeFromTop (10);
+
+        fxCurveArea = inner;       // live filter response (paintFxSheetContent)
+    }
+
+    // SEC sheet: pattern/len, note, step grid, bpm/clear.
+    {
         const int patLen = engine.getPatternLength (selectedPattern);
-        const int rows    = juce::jmax (1, patLen / kStepCols);
-        const int gap     = 4;
-        const int fixedRowsH = 164;   // title + pattern/len + chain row + note row + bpm/clear row, incl. their gaps
+        const int rows   = juce::jmax (1, patLen / kStepCols);
+        const int gap    = 4;
+        const int fixedRowsH = 132;   // title + pattern/len + note + bpm/clear rows, incl. gaps
 
         const int maxCellW  = (full.getWidth() - 16 /*outer reduce*/ - 28 /*inner reduce*/ - (kStepCols - 1) * gap) / kStepCols;
         const int comfyCell = juce::jlimit (36, 64, maxCellW);
         const int gridH     = rows * comfyCell + (rows - 1) * gap;
 
-        const int desiredH = fixedRowsH + 24 /*inner reduce v*/ + 16 /*outer reduce v*/ + gridH;
-        const int cappedH  = (int) (full.getHeight() * 0.86f);
-        auto sheet = full.removeFromBottom (juce::jmin (desiredH, cappedH)).reduced (8);
-        seqOverlay.sheetBounds = sheet;
-
-        seqPanelArea = sheet;
-        auto inner = sheet.reduced (14, 12);
+        auto inner = sheetFromBottom (seqSheet, fixedRowsH + 24 + 16 + gridH);
         auto titleRow = inner.removeFromTop (32);          // 2-line title drawn by paintSeqSheetContent
         seqCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
 
-        // Pattern bank + length, chain-include row, note (3 rows).
         {
             auto row1 = inner.removeFromTop (26);
             const int w1 = row1.getWidth() / 2;
@@ -1027,17 +1168,7 @@ void MainComponent::resized()
             lengthSlider.setBounds  (row1.reduced (2, 0));
             inner.removeFromTop (4);
 
-            // 8 coloured chain-include toggles, one per pattern bank.
-            auto row2 = inner.removeFromTop (28);
-            const int pw = row2.getWidth() / kNumPatterns;
-            for (int i = 0; i < kNumPatterns; ++i)
-                patternButtons[i]->setBounds ((i < kNumPatterns - 1 ? row2.removeFromLeft (pw) : row2).reduced (2));
-            inner.removeFromTop (4);
-
-            auto row3 = inner.removeFromTop (26);
-            const int w3 = row3.getWidth() / 2;
-            chainClearButton.setBounds (row3.removeFromLeft (w3).reduced (2, 0));
-            noteSlider.setBounds       (row3.reduced (2, 0));
+            noteSlider.setBounds (inner.removeFromTop (26).reduced (2, 0));
         }
         inner.removeFromTop (6);
 
@@ -1129,12 +1260,10 @@ void MainComponent::selectPad (int index)
     }
     else
         waveform.setInfo ("PAD " + juce::String (index + 1), 0.0, 0.0, 0);
-    const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
-    editLabel.setText ("PAD " + juce::String (index + 1)
-                       + (padName[(size_t) index].isNotEmpty() ? "  " + dot + "  " + padName[(size_t) index] : juce::String()),
-                       juce::dontSendNotification);
     for (int i = 0; i < kNumPads; ++i) refreshPad (i);
-    repaint (editInfoArea.expanded (4));   // the sample-info card follows the selection
+    if (macroBank == 2) refreshMacroValues();      // PAD bank tracks the selection
+    for (Sheet* s : { &padSheet, &chopSheet })     // their titles/cards follow it too
+        if (s->isVisible()) s->repaint();
 }
 
 void MainComponent::updateControlsFromPad (int index)
@@ -1348,14 +1477,13 @@ void MainComponent::timerCallback()
     const int prevPlayStep = lastPlayStep;
     lastPlayStep = ps;
 
-    // Keep the sheet's chain/playing-pattern readout + rings live while the
-    // sequencer runs and the sheet is open.
-    if (seqOverlay.isVisible() && engine.isPlaying())
-        seqOverlay.repaint();
+    // Keep live sheets' readouts/rings fresh while the sequencer runs.
+    if (engine.isPlaying())
+        for (Sheet* s : { &seqSheet, &chainSheet })
+            if (s->isVisible()) s->repaint();
 
-    // Perform-screen strips: VU ballistics (fast attack, ~0.8 decay/frame)
-    // and the step-LED playhead.
-    if (mode == Mode::Perform)
+    // Face strips: VU ballistics (fast attack, ~0.8 decay/frame) and the
+    // step-LED playhead.
     {
         const float pl = engine.readOutPeakL();
         const float pr = engine.readOutPeakR();

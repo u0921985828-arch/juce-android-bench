@@ -30,21 +30,16 @@ public:
 private:
     void timerCallback() override;
 
-    enum class Mode { Perform, Edit, Fx };
-    void setMode (Mode m);
-    void openSeqSheet();
-    void closeSeqSheet();
-
-    // The sequencer lives in a pop-up sheet over whatever tab is showing
-    // (TOCAR/EDITAR/FX), not as a 4th flat tab — a dim scrim + a bottom
-    // sheet, closed by tapping outside it or the close button. All of the
-    // SEQ controls are children of this overlay, not of MainComponent, so
-    // it naturally blocks clicks to whatever is behind it while open.
-    class SeqOverlay : public juce::Component
+    // One perform screen; every deep feature (pad settings, sequencer,
+    // pattern chain, auto chop, FX) opens as a pop-up sheet over it — a dim
+    // scrim + a bottom card, closed by tapping outside or the x button.
+    // Controls are children of their sheet, not of MainComponent, so an
+    // open sheet naturally blocks clicks to the machine face behind it.
+    class Sheet : public juce::Component
     {
     public:
         std::function<void()> onDismiss;
-        std::function<void (juce::Graphics&)> paintContent;   // title/chain text + rings
+        std::function<void (juce::Graphics&)> paintContent;   // titles, readouts, rings
         juce::Rectangle<int> sheetBounds;
 
         void paint (juce::Graphics& g) override;
@@ -54,8 +49,14 @@ private:
                 onDismiss();
         }
     };
-    SeqOverlay seqOverlay;
+    Sheet padSheet, seqSheet, chainSheet, chopSheet, fxSheet;
+    void openSheet (Sheet& s, juce::TextButton& toggle);
+    void closeAllSheets();
     void paintSeqSheetContent (juce::Graphics& g);
+    void paintPadSheetContent (juce::Graphics& g);
+    void paintChainSheetContent (juce::Graphics& g);
+    void paintChopSheetContent (juce::Graphics& g);
+    void paintFxSheetContent (juce::Graphics& g);
 
     void padClicked (int index);
     void stepClicked (int step);
@@ -81,10 +82,26 @@ private:
 
     juce::OwnedArray<PadButton> pads;
     juce::OwnedArray<juce::TextButton> stepButtons;
-    juce::OwnedArray<juce::TextButton> tabButtons;      // TOCAR / EDITAR / FX
-    juce::TextButton secButton { "SEC" };               // opens the sequencer sheet
-    juce::TextButton seqCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };   // "x"
+
+    // Module bar: each button opens its floating sheet (never a mode switch).
+    juce::TextButton padsButton  { "PADS" };
+    juce::TextButton secButton   { "SEC" };
+    juce::TextButton chainButton { "CHAIN" };
+    juce::TextButton chopOpenButton { "CHOP" };
+    juce::TextButton fxOpenButton   { "FX" };
+    juce::TextButton seqCloseButton   { juce::CharPointer_UTF8 ("\xc3\x97") },
+                     padCloseButton   { juce::CharPointer_UTF8 ("\xc3\x97") },
+                     chainCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") },
+                     chopCloseButton  { juce::CharPointer_UTF8 ("\xc3\x97") },
+                     fxCloseButton    { juce::CharPointer_UTF8 ("\xc3\x97") };
     juce::OwnedArray<juce::TextButton> patternButtons;  // P1..P8 — chain include toggles
+
+    // Context-sensitive macro strip: the 3 physical CTRL knobs switch banks.
+    juce::OwnedArray<juce::TextButton> macroBankBtns;   // FILTRO / DELAY / PAD
+    int macroBank = 0;
+    void setMacroBank (int bank);
+    void refreshMacroValues();
+    void macroMoved (int idx);
 
     juce::TextButton loadButton { "LOAD" };
     juce::TextButton testButton { "TEST" };
@@ -102,8 +119,8 @@ private:
     juce::TextButton fxTypeButton { "LPF" };
     juce::Slider cutoffSlider, resoSlider, driveSlider;
     juce::Slider dlyTimeSlider, dlyFbSlider, dlyMixSlider;
-    juce::Slider macroFilter, macroDrive, macroSend;   // quick FX on the perform screen
-    juce::Label  status, editLabel, fxLabel;
+    juce::Slider macroCtrl1, macroCtrl2, macroCtrl3;   // CTRL 1-3, bank-dependent
+    juce::Label  status, fxLabel;
     WaveformDisplay waveform;
     SpectrumDisplay spectrum;
     ShardLookAndFeel lnf;
@@ -133,12 +150,10 @@ private:
 
     std::array<float, kNumPads> padFlash {};   // 1.0 on trigger, decays -> lit feedback
     // Chassis layout regions (set in resized(), drawn in paint()).
-    juce::Rectangle<int> headerArea, screenBezel, fxPanelArea, seqPanelArea,
-                         editPanelArea, tabBarArea, editCtrlArea, fxCurveArea,
+    juce::Rectangle<int> headerArea, screenBezel, tabBarArea, fxCurveArea,
                          editInfoArea, vuArea, stepStripArea;
     float vuL = 0.0f, vuR = 0.0f;   // smoothed output peaks for the VU strip
 
-    Mode mode { Mode::Perform };
     int  selectedPad   = -1;
     bool loadArmed     = false;
     bool recordingActive = false;
