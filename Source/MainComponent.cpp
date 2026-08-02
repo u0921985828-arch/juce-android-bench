@@ -105,7 +105,12 @@ MainComponent::MainComponent()
         browseFilter = std::make_unique<juce::WildcardFileFilter> (
             "*.wav;*.aiff;*.aif;*.flac;*.ogg;*.mp3", "*", "Muestras de audio");
 
+        // Start one level above Music: on Android that is the shared-storage
+        // root, so Music AND Download (where most samples land) are one tap
+        // away instead of buried. On desktop it lands on the home folder.
         auto start = juce::File::getSpecialLocation (juce::File::userMusicDirectory);
+        if (auto parent = start.getParentDirectory(); parent.isDirectory())
+            start = parent;
         if (! start.isDirectory())
             start = juce::File::getSpecialLocation (juce::File::userHomeDirectory);
 
@@ -125,6 +130,13 @@ MainComponent::MainComponent()
         browseLoadButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
         browseLoadButton.onClick = [this] { loadBrowserSelection(); };
         browseSheet.addAndMakeVisible (browseLoadButton);
+
+        // Escape hatch: hand off to the OS picker. Some Android ROMs hide media
+        // files from a direct directory listing no matter what is granted; the
+        // system picker always reaches them (and gets its own access grant).
+        styleButton (browseSystemButton, kKey);
+        browseSystemButton.onClick = [this] { launchSystemPicker(); };
+        browseSheet.addAndMakeVisible (browseSystemButton);
     }
 
     // Transport / actions.
@@ -134,8 +146,10 @@ MainComponent::MainComponent()
     loadButton.onClick = [this]
     {
         loadArmed = loadButton.getToggleState();
-        status.setText (loadArmed ? "LOAD armed — tap a pad to load a sample"
-                                  : "Tap a pad to play", juce::dontSendNotification);
+        // ASCII only: a raw UTF-8 dash in a literal renders as mojibake on the
+        // Android build (different execution charset), so keep these plain.
+        status.setText (loadArmed ? "LOAD armado - toca un pad para cargarlo"
+                                  : "Toca un pad para sonar", juce::dontSendNotification);
     };
     addAndMakeVisible (loadButton);
 
@@ -425,7 +439,7 @@ MainComponent::MainComponent()
 
     status.setJustificationType (juce::Justification::centred);
     status.setColour (juce::Label::textColourId, ShardColours::inkDim);
-    status.setText ("Tap a pad to play", juce::dontSendNotification);
+    status.setText ("Toca un pad para sonar", juce::dontSendNotification);
     addAndMakeVisible (status);
 
     startTimer (60);
@@ -1179,7 +1193,9 @@ void MainComponent::resized()
         auto titleRow = inner.removeFromTop (32);
         browseCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
 
-        browseLoadButton.setBounds (inner.removeFromBottom (38).reduced (2, 0));
+        auto actions = inner.removeFromBottom (38);
+        browseSystemButton.setBounds (actions.removeFromRight (actions.getWidth() / 3).reduced (2, 0));
+        browseLoadButton.setBounds   (actions.reduced (2, 0));
         inner.removeFromBottom (8);
         if (browser != nullptr) browser->setBounds (inner);
     }
@@ -1265,7 +1281,7 @@ void MainComponent::padClicked (int index)
     if (padHasSample[(size_t) index])
         engine.postNoteOn (index);
     else
-        status.setText ("Empty pad — press LOAD, then tap to load a sample", juce::dontSendNotification);
+        status.setText ("Pad vacio - pulsa LOAD y toca el pad para cargarlo", juce::dontSendNotification);
 
     selectPad (index);   // selection drives EDIT and SEC
 }
@@ -1414,6 +1430,27 @@ int MainComponent::firstEmptyPad() const
     return -1;
 }
 
+// Ask once for audio-read access, then run `then` either way — a refusal must
+// still open the browser (internal/app storage is always readable).
+void MainComponent::ensureStoragePermission (std::function<void()> then)
+{
+    using RP = juce::RuntimePermissions;
+
+    if (! RP::isRequired (RP::readMediaAudio) || RP::isGranted (RP::readMediaAudio))
+    {
+        if (then) then();
+        return;
+    }
+
+    RP::request (RP::readMediaAudio, [this, then] (bool granted)
+    {
+        if (! granted)
+            status.setText ("Sin permiso de audio: no puedo leer tus carpetas de muestras",
+                            juce::dontSendNotification);
+        if (then) then();
+    });
+}
+
 void MainComponent::openBrowseForPad (int index)
 {
     browseTargetPad = index;
@@ -1421,10 +1458,16 @@ void MainComponent::openBrowseForPad (int index)
     closeAllSheets();
     browseSheet.setVisible (true);
     browseSheet.toFront (false);
-    if (browser != nullptr) browser->refresh();
-    selectionChanged();                      // sync the CARGAR button to the current selection
     resized();
     repaint();
+
+    // The permission dialog is async: refresh the listing once it resolves, so
+    // a folder that read as empty before the grant fills in straight away.
+    ensureStoragePermission ([this]
+    {
+        if (browser != nullptr) browser->refresh();
+        selectionChanged();                  // sync the CARGAR button to the selection
+    });
 }
 
 // A file is only loadable once one is actually picked (folders don't count).
@@ -1441,6 +1484,40 @@ void MainComponent::fileDoubleClicked (const juce::File& f)
 {
     if (f.existsAsFile())
         loadBrowserSelection();              // double-tap a file = load it straight away
+}
+
+void MainComponent::launchSystemPicker()
+{
+    if (browseTargetPad < 0) return;
+    const int index = browseTargetPad;
+
+    chooser = std::make_unique<juce::FileChooser> (
+        "Muestra para el pad " + juce::String (index + 1),
+        juce::File{}, "*.wav;*.aiff;*.aif;*.flac;*.ogg;*.mp3");
+
+    chooser->launchAsync (juce::FileBrowserComponent::openMode
+                        | juce::FileBrowserComponent::canSelectFiles,
+        [this, index] (const juce::FileChooser& fc)
+        {
+            const auto url = fc.getURLResult();
+            if (url.isEmpty()) return;
+
+            closeAllSheets();
+            const juce::String fileName = url.getFileName();
+            status.setText ("Cargando pad " + juce::String (index + 1) + " ...", juce::dontSendNotification);
+            loader.loadAsync (url, index, [this, index, fileName] (bool ok, juce::String detail, SampleBuffer::Ptr sb)
+            {
+                if (ok)
+                {
+                    assignSampleToPad (index, sb, fileName);
+                    status.setText ("Pad " + juce::String (index + 1) + " cargado  [" + detail + "]", juce::dontSendNotification);
+                }
+                else
+                {
+                    status.setText ("Fallo al cargar: " + detail, juce::dontSendNotification);
+                }
+            });
+        });
 }
 
 void MainComponent::loadBrowserSelection()

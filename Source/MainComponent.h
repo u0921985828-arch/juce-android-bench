@@ -64,6 +64,9 @@ private:
     //  the same JUCE browser embedded in one of our own sheets instead.
     void openBrowseForPad (int index);
     void loadBrowserSelection();
+    // Android 13+ hides shared storage behind READ_MEDIA_AUDIO: without it the
+    // browser lists an empty directory even when the folder is full of WAVs.
+    void ensureStoragePermission (std::function<void()> then);
     void selectionChanged() override;
     void fileClicked (const juce::File&, const juce::MouseEvent&) override {}
     void fileDoubleClicked (const juce::File& f) override;
@@ -73,6 +76,9 @@ private:
     std::unique_ptr<juce::FileBrowserComponent> browser;
     juce::TextButton browseCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
     juce::TextButton browseLoadButton  { "CARGAR" };
+    juce::TextButton browseSystemButton { "SISTEMA" };   // SAF / OS picker fallback
+    std::unique_ptr<juce::FileChooser> chooser;          // only for that fallback
+    void launchSystemPicker();
     int browseTargetPad = -1;
 
     void padClicked (int index);
