@@ -27,7 +27,7 @@ public:
     static constexpr int kNumPatterns = 8;    // pattern banks
     static constexpr int kMaxChain    = 16;   // chain slots (pattern indices, in play order)
 
-    AudioEngine() = default;
+    AudioEngine();
     ~AudioEngine();
 
     // --- Audio thread ---
@@ -65,6 +65,12 @@ public:
     void setStep (int patternIdx, int step, int pad, bool on) noexcept;
     void clearPattern (int patternIdx) noexcept;
     int  getPlayStep() const noexcept { return playStep.load (std::memory_order_relaxed); }
+
+    // --- Pattern length (message thread) ---
+    //  How many of the 16 steps play before this bank loops/hands off to the
+    //  next chain entry — FL-Studio-style variable pattern length.
+    void setPatternLength (int patternIdx, int len) noexcept;
+    int  getPatternLength (int patternIdx) const noexcept;
 
     // --- Pattern chain (message thread) ---
     //  editPattern is the bank the UI edits/steps; when the chain is empty,
@@ -172,6 +178,7 @@ private:
     bool   wasPlaying = false;   // audio-thread only
 
     // Pattern chain.
+    std::array<std::atomic<int>, kNumPatterns> patternLength {};   // steps, 1..kNumSteps
     std::atomic<int> editPattern { 0 };                        // bank the UI is editing
     std::array<std::atomic<int>, kMaxChain> chainSlots {};
     std::atomic<int> chainLength { 0 };

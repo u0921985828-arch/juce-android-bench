@@ -4,6 +4,11 @@
 //  AudioEngine implementation. See AudioEngine.h for the threading contract.
 // ============================================================================
 
+AudioEngine::AudioEngine()
+{
+    for (auto& l : patternLength) l.store (kNumSteps, std::memory_order_relaxed);
+}
+
 AudioEngine::~AudioEngine()
 {
     for (auto*& p : padSample)
@@ -145,9 +150,11 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         {
             stepAccum -= samplesPerStep;
             const int prevStep = currentStep;
-            currentStep = (currentStep + 1) % kNumSteps;
+            const int len = juce::jlimit (1, kNumSteps, patternLength[(size_t) patternIdx].load (std::memory_order_relaxed));
+            currentStep = (currentStep + 1) % len;
 
-            // A full pattern (16 steps) just completed — advance the chain.
+            // This bank's pattern (its own length, not always 16) just
+            // completed a full loop — advance the chain.
             if (currentStep == 0 && prevStep >= 0 && chainLen > 0)
             {
                 chainPos   = (chainPos + 1) % chainLen;
@@ -355,6 +362,18 @@ void AudioEngine::clearPattern (int patternIdx) noexcept
 {
     if (patternIdx < 0 || patternIdx >= kNumPatterns) return;
     for (auto& m : patternBank[(size_t) patternIdx]) m.store (0, std::memory_order_relaxed);
+}
+
+void AudioEngine::setPatternLength (int patternIdx, int len) noexcept
+{
+    if (patternIdx < 0 || patternIdx >= kNumPatterns) return;
+    patternLength[(size_t) patternIdx].store (juce::jlimit (1, kNumSteps, len), std::memory_order_relaxed);
+}
+
+int AudioEngine::getPatternLength (int patternIdx) const noexcept
+{
+    if (patternIdx < 0 || patternIdx >= kNumPatterns) return kNumSteps;
+    return patternLength[(size_t) patternIdx].load (std::memory_order_relaxed);
 }
 
 void AudioEngine::setStepNote (int patternIdx, int step, int pad, int semis) noexcept

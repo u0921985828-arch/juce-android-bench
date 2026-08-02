@@ -209,9 +209,28 @@ MainComponent::MainComponent()
         engine.setEditPattern (selectedPattern);
         selectedStep = -1;
         noteSlider.setValue (0.0, juce::dontSendNotification);
+        lengthSlider.setValue (engine.getPatternLength (selectedPattern), juce::dontSendNotification);
         repaint();
     };
     addAndMakeVisible (patternSlider);
+
+    // Pattern length (FL-Studio-style): how many of the 16 steps this bank
+    // actually plays before looping / handing off to the next chain entry.
+    lengthSlider.setSliderStyle (juce::Slider::IncDecButtons);
+    lengthSlider.setRange (2.0, (double) kNumSteps, 2.0);
+    lengthSlider.setValue ((double) kNumSteps, juce::dontSendNotification);
+    lengthSlider.setColour (juce::Slider::textBoxTextColourId, ShardColours::lcdFg);
+    lengthSlider.setColour (juce::Slider::textBoxBackgroundColourId, ShardColours::screenBg);
+    lengthSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+    lengthSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 90, 22);
+    lengthSlider.textFromValueFunction = [] (double v) { return "LEN " + juce::String ((int) v); };
+    lengthSlider.updateText();
+    lengthSlider.onValueChange = [this]
+    {
+        engine.setPatternLength (selectedPattern, (int) lengthSlider.getValue());
+        repaint();
+    };
+    addAndMakeVisible (lengthSlider);
 
     styleButton (chainAddButton, kKey);
     chainAddButton.onClick = [this] { engine.addToChain (selectedPattern); repaint(); };
@@ -326,7 +345,7 @@ void MainComponent::setMode (Mode m)
     clearButton.setVisible (seq);
     bpmSlider.setVisible (seq);
     patternSlider.setVisible (seq); chainAddButton.setVisible (seq); chainClearButton.setVisible (seq);
-    noteSlider.setVisible (seq);
+    noteSlider.setVisible (seq); lengthSlider.setVisible (seq);
 
     if ((edit || seq) && selectedPad < 0)
         selectPad (0);
@@ -491,6 +510,34 @@ void MainComponent::paint (juce::Graphics& g)
     }
 }
 
+// Flat-style overlay rings (drawn over the step buttons' plain fill, never
+// blended into it): yellow marks the step selected for NOTE editing, red
+// marks the live playhead — only when viewing the pattern that's actually
+// sounding, so a chain playing a different bank doesn't ring the wrong grid.
+void MainComponent::paintOverChildren (juce::Graphics& g)
+{
+    if (mode != Mode::Seq) return;
+
+    if (selectedStep >= 0)
+    {
+        if (auto* b = stepButtons[selectedStep])
+        {
+            g.setColour (ShardColours::yellow);
+            g.drawRect (b->getBounds(), 2);
+        }
+    }
+
+    const int ps = engine.getPlayStep();
+    if (ps >= 0 && engine.getPlayingPattern() == selectedPattern)
+    {
+        if (auto* b = stepButtons[ps])
+        {
+            g.setColour (ShardColours::red);
+            g.drawRect (b->getBounds(), 2);
+        }
+    }
+}
+
 void MainComponent::layoutPadGrid (juce::Rectangle<int> area, int cols, int rows, int gap)
 {
     juce::Grid grid;
@@ -619,17 +666,19 @@ void MainComponent::resized()
             auto inner = area.reduced (10, 8);
             inner.removeFromTop (32);                     // 2-line title drawn in paint (STEPS + CHAIN)
 
-            // Pattern bank + chain controls (2x2).
+            // Pattern bank + length + chain controls (3x2).
             {
                 auto row1 = inner.removeFromTop (26);
                 const int w1 = row1.getWidth() / 2;
-                patternSlider.setBounds  (row1.removeFromLeft (w1).reduced (2, 0));
-                chainAddButton.setBounds (row1.reduced (2, 0));
+                patternSlider.setBounds (row1.removeFromLeft (w1).reduced (2, 0));
+                lengthSlider.setBounds  (row1.reduced (2, 0));
                 inner.removeFromTop (4);
                 auto row2 = inner.removeFromTop (26);
                 const int w2 = row2.getWidth() / 2;
-                chainClearButton.setBounds (row2.removeFromLeft (w2).reduced (2, 0));
-                noteSlider.setBounds       (row2.reduced (2, 0));
+                chainAddButton.setBounds   (row2.removeFromLeft (w2).reduced (2, 0));
+                chainClearButton.setBounds (row2.reduced (2, 0));
+                inner.removeFromTop (4);
+                noteSlider.setBounds (inner.removeFromTop (26).reduced (2, 0));
             }
             inner.removeFromTop (6);
 
@@ -685,8 +734,10 @@ void MainComponent::padClicked (int index)
 
 void MainComponent::stepClicked (int step)
 {
+    if (step >= engine.getPatternLength (selectedPattern)) return;   // past the pattern's own length
     selectedStep = step;
     noteSlider.setValue (engine.getStepNote (selectedPattern, step, juce::jmax (0, selectedPad)), juce::dontSendNotification);
+    repaint();   // move the selection ring (drawn in paintOverChildren)
 
     if (selectedPad < 0) return;
     const bool nv = ! pattern[(size_t) selectedPattern][(size_t) step][(size_t) selectedPad];
@@ -904,20 +955,26 @@ void MainComponent::timerCallback()
     }
     juce::ignoreUnused (anyFlash);
 
-    // Sequencer step colours + playhead (reuse ps from above). The playhead
-    // only lights up while viewing the pattern that's actually sounding —
-    // otherwise a chain playing a different bank would light the wrong grid.
-    const bool viewingPlayingPattern = (engine.getPlayingPattern() == selectedPattern);
+    // Sequencer step colours (flat fill only — see paintOverChildren() for
+    // the selection/playhead rings). Steps beyond the pattern's own length
+    // (FL-Studio-style variable length) are disabled and shown faded — they
+    // never play, so they shouldn't look editable.
+    const int patLen = engine.getPatternLength (selectedPattern);
     for (int s = 0; s < kNumSteps; ++s)
     {
+        const bool active = s < patLen;
         // Shade alternating groups of 4 steps (the beats within the 16-step
         // bar) so the grid reads at a glance, even with nothing programmed.
         const bool  altBeat = ((s / 4) % 2) != 0;
-        const bool  on = (selectedPad >= 0) && pattern[(size_t) selectedPattern][(size_t) s][(size_t) selectedPad];
+        const bool  on = active && (selectedPad >= 0) && pattern[(size_t) selectedPattern][(size_t) s][(size_t) selectedPad];
+        // Flat fill: blue = hit, white/grey = resting (with the alternating
+        // beat-group shade). Selection (yellow) and the playhead (red) are
+        // drawn as rings on top in paintOverChildren(), not blended into the
+        // fill, so the flat colours never muddy together.
         auto col = on ? kPadLoaded : (altBeat ? kStepOff.darker (0.13f) : kStepOff);
-        if (s == selectedStep) col = col.interpolatedWith (ShardColours::accent, 0.35f);
-        if (s == ps && viewingPlayingPattern) col = col.brighter (0.7f);
+        if (! active) col = col.withAlpha (0.35f);
         stepButtons[s]->setColour (juce::TextButton::buttonColourId, col);
+        stepButtons[s]->setEnabled (active);
     }
     lastPlayStep = ps;
 

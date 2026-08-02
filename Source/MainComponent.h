@@ -25,6 +25,7 @@ public:
     void releaseResources() override;
 
     void paint (juce::Graphics& g) override;
+    void paintOverChildren (juce::Graphics& g) override;
     void resized() override;
 
 private:
@@ -66,7 +67,7 @@ private:
 
     juce::Slider pitchSlider, volSlider, startSlider, endSlider, bpmSlider, chokeSlider;
     juce::Slider panSlider, attackSlider, releaseSlider;
-    juce::Slider patternSlider, noteSlider;
+    juce::Slider patternSlider, noteSlider, lengthSlider;
     juce::TextButton chainAddButton { "+CHAIN" }, chainClearButton { "CLR CHAIN" };
     juce::TextButton fxTypeButton { "LPF" };
     juce::Slider cutoffSlider, resoSlider, driveSlider;

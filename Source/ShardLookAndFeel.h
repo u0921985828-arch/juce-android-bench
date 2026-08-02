@@ -38,6 +38,7 @@ namespace ShardColours
     const juce::Colour accentBright { 0xff7dbcff };
     const juce::Colour accentDim   { 0xff2f7ad1 };
     const juce::Colour red        { 0xffc1123b };
+    const juce::Colour yellow     { 0xffe0a318 };   // third primary — selection / highlight only
     const juce::Colour ink        { 0xff0d2438 };   // primary text on light
     const juce::Colour inkDim     { 0xff3f6a8f };   // secondary text
     const juce::Colour inkLight   { 0xfff4f8fc };   // text on dark surfaces
