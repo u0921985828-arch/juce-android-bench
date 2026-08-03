@@ -136,6 +136,19 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             recording.store (false, std::memory_order_release);   // full -> auto stop
     }
 
+    // 0b. Latency probe: arm on the first block after the request, so the
+    //     record index and the click's frame share one timeline (the capture
+    //     above and this counter both advance by numSamples per callback).
+    if (probeArm.exchange (false, std::memory_order_acq_rel))
+    {
+        probeCounter = 0;
+        probeClickAt = (int) (0.30 * systemSampleRate);   // let the stream settle first
+        probeLength  = (int) (1.20 * systemSampleRate);
+        recordPos.store (0, std::memory_order_relaxed);
+        recording.store (true, std::memory_order_release);
+        probing.store (true, std::memory_order_release);
+    }
+
     // 1. Adopt freshly published per-pad samples.
     for (int slot = 0; slot < kNumPads; ++slot)
         if (auto* incoming = pendingPad[(size_t) slot].exchange (nullptr, std::memory_order_acquire))
@@ -551,6 +564,35 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         }
     }
 
+    // 5b-probe. The click, written AFTER the effects so nothing colours or
+    //     delays it. A single sample would never leave a phone speaker, so it
+    //     is a short decaying 3 kHz burst: a hard onset the microphone can
+    //     find, and high enough to sit clear of room rumble.
+    if (probing.load (std::memory_order_acquire))
+    {
+        const int outCh = juce::jmin (2, out.getNumChannels());
+        constexpr int burst = 192;
+        for (int i = 0; i < numSamples; ++i)
+        {
+            const int t = probeCounter + i - probeClickAt;
+            if (t >= 0 && t < burst)
+            {
+                const float env = std::exp (-(float) t / 45.0f);
+                const float v = 0.9f * env * std::sin (2.0f * juce::MathConstants<float>::pi
+                                                       * 3000.0f * (float) t / (float) systemSampleRate);
+                for (int ch = 0; ch < outCh; ++ch)
+                    out.getWritePointer (ch, startSample)[i] = v;
+            }
+        }
+
+        probeCounter += numSamples;
+        if (probeCounter >= probeLength)
+        {
+            recording.store (false, std::memory_order_release);
+            probing.store (false, std::memory_order_release);
+        }
+    }
+
     // 5c. Feed the scope ring (post-FX mono sum) for the spectrum display.
     {
         int wi = scopeWrite.load (std::memory_order_relaxed);
@@ -909,4 +951,42 @@ bool AudioEngine::hasContentToRender() const noexcept
     }
 
     return bankHasNotes (juce::jlimit (0, kNumPatterns - 1, editPattern.load (std::memory_order_relaxed)));
+}
+
+// ---------------------------------------------------------------------------
+//  Latency probe (message thread)
+// ---------------------------------------------------------------------------
+
+void AudioEngine::startLatencyProbe() noexcept
+{
+    probeArm.store (true, std::memory_order_release);
+}
+
+//  Find the click in what the microphone heard. The threshold is derived from
+//  the room's own noise in the 300 ms BEFORE the click rather than being a
+//  constant: a quiet room and a busy street need different bars, and a fixed
+//  one would either miss the click or trigger on a passing car.
+float AudioEngine::finishLatencyProbe() const noexcept
+{
+    if (probing.load (std::memory_order_acquire)) return -1.0f;
+
+    const int captured = recordPos.load (std::memory_order_acquire);
+    const int emitted  = probeClickAt;
+    if (captured <= emitted + 64 || recordBuffer.getNumSamples() <= emitted) return -1.0f;
+
+    const float* r = recordBuffer.getReadPointer (0);
+
+    double noise = 0.0;
+    const int noiseTo = juce::jmax (1, emitted - 1024);
+    for (int i = 0; i < noiseTo; ++i) noise += (double) r[i] * r[i];
+    const float floorRms = (float) std::sqrt (noise / (double) noiseTo);
+    const float thresh   = juce::jmax (8.0f * floorRms, 0.02f);
+
+    // A round trip past half a second is not a measurement, it is a car door.
+    const int limit = juce::jmin (captured, emitted + (int) (0.5 * systemSampleRate));
+    for (int i = emitted; i < limit; ++i)
+        if (std::abs (r[i]) > thresh)
+            return (float) ((double) (i - emitted) * 1000.0 / systemSampleRate);
+
+    return -1.0f;
 }

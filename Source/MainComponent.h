@@ -11,6 +11,7 @@
 #include "StepGrid.h"
 #include "Playlist.h"
 #include "Exporter.h"
+#include "AudioPath.h"
 
 // ============================================================================
 //  MainComponent — ZATI: a 16-pad matrix whose fragments carry the colour, an
@@ -129,6 +130,15 @@ private:
     juce::OwnedArray<juce::TextButton> bufButtons, rateButtons;
     juce::Rectangle<int> bufRowArea, rateRowArea;
     void useLowestLatency();     // one native burst, not JUCE's 40 ms default
+
+    //  The measurement. Everything else in this panel is the device's own
+    //  claim about itself; this is a click emitted and heard back.
+    juce::TextButton measureButton { "MEDIR" };
+    float measuredMs = -1.0f;          // last round trip, -1 = never measured
+    bool  measuring  = false;
+    juce::String measureNote;
+    void startMeasure();
+    void finishMeasure();
     void refreshAudioOptions();
     void applyAudioSetup (int bufferSize, double rate);
 

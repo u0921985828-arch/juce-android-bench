@@ -16,6 +16,7 @@
       <FILE id="srcSbh"  name="SampleBuffer.h"    compile="0" resource="0" file="Source/SampleBuffer.h"/>
       <FILE id="srcPl"   name="Playlist.h"        compile="0" resource="0" file="Source/Playlist.h"/>
       <FILE id="srcSgd"  name="StepGrid.h"        compile="0" resource="0" file="Source/StepGrid.h"/>
+      <FILE id="srcAp"   name="AudioPath.h"       compile="0" resource="0" file="Source/AudioPath.h"/>
       <FILE id="srcExp"  name="Exporter.h"        compile="0" resource="0" file="Source/Exporter.h"/>
       <FILE id="srcCfh"  name="CommandFifo.h"     compile="0" resource="0" file="Source/CommandFifo.h"/>
       <FILE id="srcWfh"  name="WaveformDisplay.h" compile="0" resource="0" file="Source/WaveformDisplay.h"/>

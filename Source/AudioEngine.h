@@ -241,6 +241,16 @@ public:
     //  bars of silence.
     bool hasContentToRender() const noexcept;
 
+    // --- Latency probe (message thread) ----------------------------------
+    //  The only honest way to know what the round trip really is: emit a
+    //  click at a frame we chose, record the microphone through the same
+    //  callback, and measure how far apart the two ended up. Everything the
+    //  device reports is a claim; this is a measurement.
+    void  startLatencyProbe() noexcept;
+    bool  isProbing() const noexcept { return probing.load (std::memory_order_acquire); }
+    //  Milliseconds from emitting to hearing, or -1 if nothing was heard.
+    float finishLatencyProbe() const noexcept;
+
     // --- Recording (message thread) ---
     void              startRecording (int slot) noexcept;
     SampleBuffer::Ptr finishRecording() noexcept;   // stop + build + publish; returns the buffer
@@ -349,6 +359,15 @@ private:
     int  lanePattern[kSongLanes] { -1, -1, -1, -1 };
     int  laneStartStep[kSongLanes] { 0, 0, 0, 0 };
     int  songStep = 0;                    // absolute step within the song
+
+    // Latency probe. The click is emitted a moment AFTER the stream starts,
+    // so the measurement is of a settled stream rather than of its first
+    // fumbling blocks.
+    std::atomic<bool> probeArm { false };
+    std::atomic<bool> probing  { false };
+    int probeCounter = 0;            // audio-thread only
+    int probeClickAt = 0;
+    int probeLength  = 0;
 
     // Recording.
     std::atomic<bool> recording { false };

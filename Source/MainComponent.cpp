@@ -196,6 +196,10 @@ MainComponent::MainComponent()
             openSheet (exportSheet, setButton);
         };
         projSheet.addAndMakeVisible (projExportButton);
+
+        styleButton (measureButton, kKey);
+        measureButton.onClick = [this] { startMeasure(); };
+        projSheet.addAndMakeVisible (measureButton);
     }
 
     // EXPORT sheet — the only door out of the app. Two products: the master,
@@ -1726,12 +1730,13 @@ void MainComponent::resized()
         projCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
         // TEST is a diagnostic — it belongs with the housekeeping, not among
         // the effects, where it was one more button that made no music.
-        testButton.setBounds (titleRow.removeFromRight (64).reduced (2));
+        testButton.setBounds    (titleRow.removeFromRight (56).reduced (2));
+        measureButton.setBounds (titleRow.removeFromRight (64).reduced (2));
 
         // What the audio device is giving us, at the top where you cannot
         // miss it. It is the only number in the app that says whether this
         // thing is playable, so it does not live behind another tap.
-        audioInfoArea = inner.removeFromTop (86);
+        audioInfoArea = inner.removeFromTop (126);
         inner.removeFromTop (Metrics::xs);
 
         auto chipRow = [&inner] (juce::OwnedArray<juce::TextButton>& btns, int labelW)
@@ -2939,6 +2944,7 @@ void MainComponent::pollExport()
     // The audio path can change under us (headphones in, a call, a route
     // switch), so the readout is refreshed while you are looking at it.
     if (projSheet.isVisible()) projSheet.repaint();
+    if (measuring && ! engine.isProbing()) finishMeasure();
 
     if (exportJob == nullptr) return;
 
@@ -3061,10 +3067,12 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
     const int    outL  = dev->getOutputLatencyInSamples();
     auto msOf = [sr] (double samples) { return sr > 0.0 ? samples * 1000.0 / sr : 0.0; };
 
-    // What the app is responsible for: the device's own output latency plus
-    // the block we are handed. The touchscreen and the compositor sit on top
-    // of this and no program can see them from the inside.
-    const double totalMs = msOf ((double) outL + (double) block);
+    //  Oboe's figure is already the whole path from writing a block to the
+    //  speaker moving, buffer included, so adding our block size to it was
+    //  counting the same milliseconds twice.
+    const double devMs   = msOf ((double) outL);
+    const double blockMs = msOf ((double) block);
+    const double totalMs = devMs > 0.0 ? devMs : blockMs;
 
     auto line = [&g, &inner] (const juce::String& k, const juce::String& v, juce::Colour c)
     {
@@ -3092,10 +3100,43 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
                     + juce::String (totalMs <= 15.0 ? "  rapida"
                                   : totalMs <= 30.0 ? "  aceptable" : "  LENTA"), verdict);
 
-    g.setColour (ZatiColours::lcdDim.withAlpha (0.8f));
+    //  Say WHOSE milliseconds these are. Our share is the block; everything
+    //  past it belongs to the phone's audio path, and no setting in this app
+    //  can give it back. Without this split a bad phone reads as a bad app.
+    g.setColour (ZatiColours::lcdDim.withAlpha (0.85f));
     g.setFont (ZatiColours::monoFont (9.0f, false));
-    g.drawText ("no incluye la pantalla tactil - eso se mide con un micro",
-                inner.removeFromTop (12), juce::Justification::centredLeft);
+    const bool atBurst = ! dev->getAvailableBufferSizes().isEmpty()
+                            && block <= dev->getAvailableBufferSizes().getFirst();
+    juce::String note = "de esos, " + juce::String (blockMs, 1) + " ms son el bufer";
+    if (totalMs - blockMs > 20.0)
+        note += atBurst ? " - el resto es el telefono, ya estas al minimo"
+                        : " - baja el bufer";
+    g.drawText (note, inner.removeFromTop (11), juce::Justification::centredLeft);
+
+    //  Whether the phone allows the fast lane at all. JUCE already asks Oboe
+    //  for exclusive + low latency, so if the answer here is "no soportado"
+    //  the remaining milliseconds are the device's and no build of this app
+    //  will get them back.
+    const auto policy = AudioPath::mmapPolicy();
+    line ("mmap", AudioPath::describe (policy),
+          policy == AudioPath::Mmap::Never ? ZatiColours::red
+        : policy == AudioPath::Mmap::Unknown ? ZatiColours::lcdDim
+                                             : ZatiColours::lcdFg);
+
+    //  The measurement, kept visually apart from everything the device
+    //  merely claims about itself.
+    if (measuring)
+        line ("medido", "escuchando...", ZatiColours::yellow);
+    else if (measuredMs >= 0.0f)
+        line ("medido", juce::String (measuredMs, 1) + " ms ida y vuelta",
+              measuredMs <= 30.0f ? ZatiColours::lcdFg
+            : measuredMs <= 60.0f ? ZatiColours::yellow : ZatiColours::red);
+
+    g.setColour (ZatiColours::lcdDim.withAlpha (0.85f));
+    g.setFont (ZatiColours::monoFont (9.0f, false));
+    g.drawText (measureNote.isNotEmpty() ? measureNote
+                                         : juce::String ("MEDIR emite un click y lo escucha con el micro"),
+                inner.removeFromTop (11), juce::Justification::centredLeft);
 }
 
 //  Take the smallest buffer the driver offers, which on Android is exactly
@@ -3137,6 +3178,57 @@ void MainComponent::useLowestLatency()
     auto setup = deviceManager.getAudioDeviceSetup();
     setup.bufferSize = burst;
     deviceManager.setAudioDeviceSetup (setup, true);
+}
+
+//  Emit a click, hear it back, and report the gap. This needs the microphone
+//  open, which means the stream is reopened as input+output for the duration:
+//  what comes out is the ROUND TRIP, mic path included, not the output path
+//  alone. That is the figure OboeTester quotes and the one worth comparing,
+//  but it is a ceiling — the real output-only latency is lower.
+void MainComponent::startMeasure()
+{
+    if (measuring) return;
+
+    using RP = juce::RuntimePermissions;
+    auto begin = [this]
+    {
+        measuring = true;
+        measuredMs = -1.0f;
+        measureNote = "midiendo...";
+        measureButton.setEnabled (false);
+        setAudioChannels (1, 2);         // the probe has to hear itself
+        useLowestLatency();
+        engine.startLatencyProbe();
+        projSheet.repaint();
+    };
+
+    if (! RP::isRequired (RP::recordAudio) || RP::isGranted (RP::recordAudio))
+        begin();
+    else
+        RP::request (RP::recordAudio, [this, begin] (bool granted)
+        {
+            if (granted) begin();
+            else { measureNote = "sin permiso de microfono"; projSheet.repaint(); }
+        });
+}
+
+void MainComponent::finishMeasure()
+{
+    if (! measuring || engine.isProbing()) return;
+
+    measuredMs = engine.finishLatencyProbe();
+    measuring = false;
+    setAudioChannels (0, 2);             // back to output-only
+    useLowestLatency();
+    measureButton.setEnabled (true);
+
+    //  Sound travels about 34 cm per millisecond, so holding the phone at
+    //  arm's length adds a couple of ms of air. Worth saying, because at
+    //  these numbers a couple of ms is not noise.
+    measureNote = measuredMs < 0.0f
+                    ? "no oi el click - sube el volumen y no tapes el micro"
+                    : "ida y vuelta por el aire, micro incluido";
+    refreshAudioOptions();
 }
 
 // Build the chips from what THIS device actually offers. Nothing is
@@ -3185,10 +3277,20 @@ void MainComponent::refreshAudioOptions()
         }
     }
 
+    //  Only rates worth using, and always the one we are on. Taking the
+    //  first four of the driver's list gave 8k / 11k / 12k / 16k — telephone
+    //  rates, none of them the 48k the device was actually running, and one
+    //  tap away from wrecking the audio quality of the whole instrument.
+    juce::Array<double> rates;
     for (double r : dev->getAvailableSampleRates())
+        if (r >= 44000.0) rates.add (r);
+    if (! rates.contains (curRate) && curRate > 0.0) rates.add (curRate);
+    rates.sort();
+
+    for (double r : rates)
     {
         if (rateButtons.size() >= 4) break;
-        auto* b = new juce::TextButton (juce::String (juce::roundToInt (r / 1000.0)) + "k");
+        auto* b = new juce::TextButton (juce::String (r / 1000.0, (r == (double) (int) (r / 1000.0) * 1000.0) ? 0 : 1) + "k");
         styleButton (*b, ZatiColours::key);
         b->setColour (juce::TextButton::buttonOnColourId, ZatiColours::accent);
         b->setColour (juce::TextButton::textColourOnId, ZatiColours::inkLight);
