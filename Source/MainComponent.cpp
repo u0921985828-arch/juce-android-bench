@@ -1407,7 +1407,7 @@ void MainComponent::resized()
     // width-bound squares) — the screen is the protagonist.
     int screenH;
     {
-        const int chromeBelow = 16 + 4 + 16 + 8 + 32 + 8 + 40 + 8 + 18 + 6;   // VU + strip + module bar + transport + status          // gaps + module bar + transport + status
+        const int chromeBelow = 16 + 4 + 16 + 8 + 44 + 8 + 18 + 6;   // VU + strip + the single module/transport row + status          // gaps + module bar + transport + status
         const int cell = (area.getWidth() - 3 * 8) / 4;                // square pad cells, 4 cols, gap 8
         const int bodyNeed = 16 + 4 + 88 + 8                            // chip readout + CTRL knobs
                            + 4 + 32 + 8                                // + FX slot row
@@ -1432,31 +1432,28 @@ void MainComponent::resized()
     stepStripArea = area.removeFromTop (Metrics::lg).reduced (2, 0);
     area.removeFromTop (Metrics::sm);
 
-    // Module bar — rule of three: PADS / SEC / FX, taller than the transport
-    // row so "opens a window" and "does something" read as different shapes.
-    //  32, not 42: this bar only opens windows, so it must not carry the same
-    //  weight as PLAY. Laid out as one segmented strip (1px between caps, no
-    //  per-button margin) instead of four separate boxes, which is what made
-    //  it read as four actions. The 10px saved goes back to the pads.
-    tabBarArea = area.removeFromTop (Metrics::tab);
+    //  Modules and transport share ONE row. Two stacked rows of near-identical
+    //  caps were the heaviest thing on the face and read as one big menu; the
+    //  freed 48px goes to the pads. They still read as two kinds of control:
+    //  the module tabs are a tight segmented group (1px apart, inset) while
+    //  the transport keeps separated caps and PLAY keeps the accent.
+    tabBarArea = area.removeFromTop (Metrics::btn);
     {
-        auto row = tabBarArea;
+        auto row  = tabBarArea;
+        auto mods = row.removeFromLeft ((int) (row.getWidth() * 0.54f));
+        row.removeFromLeft (Metrics::md);                 // air between the groups
+
         juce::TextButton* mb[4] = { &padsButton, &secButton, &fxOpenButton, &setButton };
-        const int w = row.getWidth() / 4;
+        const int w = mods.getWidth() / 4;
         for (int i = 0; i < 4; ++i)
-            mb[i]->setBounds ((i < 3 ? row.removeFromLeft (w) : row).reduced (1, 0));
+            mb[i]->setBounds ((i < 3 ? mods.removeFromLeft (w) : mods).reduced (1, 3));
+
+        const int u = row.getWidth() / 4;
+        loadButton.setBounds (row.removeFromLeft (u).reduced (2, 0));
+        recButton.setBounds  (row.removeFromLeft (u).reduced (2, 0));
+        playButton.setBounds (row.reduced (2, 0));
     }
     area.removeFromTop (Metrics::sm);
-
-    // Transport: LOAD | REC | PLAY (PLAY is the wide accent hero).
-    {
-        auto row = area.removeFromTop (40);
-        const int u = row.getWidth() / 4;
-        loadButton.setBounds (row.removeFromLeft (u).reduced (2));
-        recButton.setBounds  (row.removeFromLeft (u).reduced (2));
-        playButton.setBounds (row.reduced (2));
-    }
-    area.removeFromTop (8);
 
     // Status pinned to the bottom.
     status.setBounds (area.removeFromBottom (Metrics::lg));
