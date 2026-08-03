@@ -40,6 +40,13 @@ MainComponent::MainComponent()
     // in Samples/, projects save into Projects/, REC writes to Recordings/.
     ProjectStore::ensureTree();
 
+    // Ask the phone what it will actually grant BEFORE opening the real
+    // device - the answer decides how the real device gets opened, and the
+    // probe needs the output free to ask for an exclusive stream at all.
+    fastPath = AudioPath::probeFastPath (48000, 2);
+    zatiOboeUsage    = fastPath.exclusive ? fastPath.usage : 0;
+    zatiOboeForceI16 = (fastPath.exclusive && fastPath.useI16) ? 1 : 0;
+
     // Output only at startup so the app always makes sound; the mic input is
     // opened on demand when recording (avoids risking output on a denied perm).
     setAudioChannels (0, 2);
@@ -1660,7 +1667,7 @@ void MainComponent::resized()
         // What the audio device is giving us, at the top where you cannot
         // miss it. It is the only number in the app that says whether this
         // thing is playable, so it does not live behind another tap.
-        audioInfoArea = inner.removeFromTop (126);
+        audioInfoArea = inner.removeFromTop (142);
         inner.removeFromTop (Metrics::xs);
 
         auto chipRow = [&inner] (juce::OwnedArray<juce::TextButton>& btns, int labelW)
@@ -3046,6 +3053,13 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
           policy == AudioPath::Mmap::Never ? ZatiColours::red
         : policy == AudioPath::Mmap::Unknown ? ZatiColours::lcdDim
                                              : ZatiColours::lcdFg);
+
+    //  ...and whether it granted it to US. "disponible" above is a capability;
+    //  this line is the verdict on an actual stream, which is the only one
+    //  that decides what the pads feel like.
+    line ("via", AudioPath::describe (fastPath),
+          fastPath.exclusive ? ZatiColours::lcdFg
+        : fastPath.ran       ? ZatiColours::red : ZatiColours::lcdDim);
 
     //  The measurement, kept visually apart from everything the device
     //  merely claims about itself.

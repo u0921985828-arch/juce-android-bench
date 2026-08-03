@@ -131,6 +131,11 @@ private:
     juce::Rectangle<int> bufRowArea, rateRowArea;
     void useLowestLatency();     // one native burst, not JUCE's 40 ms default
 
+    //  What AAudio granted a bare exclusive request at startup, before any
+    //  device of ours existed. This is the only honest answer to "are we on
+    //  the fast lane", and it also configures the real stream.
+    AudioPath::Fast fastPath;
+
     //  The measurement. Everything else in this panel is the device's own
     //  claim about itself; this is a click emitted and heard back.
     juce::TextButton measureButton { "MEDIR" };

@@ -1,6 +1,12 @@
 #include <JuceHeader.h>
 #include "MainComponent.h"
 
+//  Storage for the two Oboe dials declared in AudioPath.h. They live here so
+//  that the patched JUCE module finds them at link time on Android, and so
+//  that every other platform links a pair of harmless zeroes.
+extern "C" int zatiOboeUsage    = 0;
+extern "C" int zatiOboeForceI16 = 0;
+
 // ============================================================================
 //  Application entry — standard JUCEApplication + a resizable DocumentWindow
 //  hosting MainComponent.

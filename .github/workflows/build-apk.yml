@@ -54,6 +54,14 @@ jobs:
       - name: Checkout JUCE ${{ env.JUCE_TAG }}
         run: git clone --depth 1 --branch "${JUCE_TAG}" https://github.com/juce-framework/JUCE.git JUCE
 
+      - name: Let the app choose its Oboe stream configuration
+        # JUCE hardcodes the usage and sample format of the Android output
+        # stream, and both decide whether Android grants the stream MMAP.
+        # The patch makes JUCE read two globals the app sets from its startup
+        # probe. It exits non-zero if JUCE's source moved, so a silently
+        # unpatched build cannot ship.
+        run: python3 ci/patch_juce_oboe.py
+
       - name: Build Projucer
         run: |
           cmake -B JUCE/cmake-build -S JUCE -DJUCE_BUILD_EXTRAS=ON -DCMAKE_BUILD_TYPE=Release
