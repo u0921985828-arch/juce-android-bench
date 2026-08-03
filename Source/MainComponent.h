@@ -120,6 +120,7 @@ private:
     void padClicked (int index);
     void stepCellToggled (int pad, int step);
     void refreshPad (int index);
+    void refreshPadArt (int index);   // rebuild the tile waveform for its trim window
     void selectPad (int index);
     void updateControlsFromPad (int index);
     void refreshWaveformSegments();   // fragments sharing the selected pad's buffer
@@ -127,6 +128,11 @@ private:
     void toggleRecordArm();     // REC: live pad performance -> the pattern
     void toggleMicSampling();   // PADS sheet: mic -> the selected pad
     void autoChopSelected();
+    void pushUndo (const juce::String& what);   // snapshot before a destructive action
+    void performUndo();
+    juce::ValueTree undoState;
+    juce::String    undoLabel;
+    juce::TextButton undoButton { "DESHACER" };
     void rebuildChain();
     int  firstEmptyPad() const;
     void layoutPadGrid (juce::Rectangle<int> area, int cols, int rows, int gap);

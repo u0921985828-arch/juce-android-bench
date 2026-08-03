@@ -15,11 +15,16 @@ class PadButton : public juce::Button
 public:
     explicit PadButton (int idx) : juce::Button (juce::String (idx + 1)), index (idx) {}
 
-    void setSampleInfo (SampleBuffer::Ptr sb, const juce::String& name)
+    //  start01/end01 are the pad's own trim window. After an auto-chop all
+    //  sixteen pads point at ONE buffer with sixteen windows, so a sparkline
+    //  drawn from the whole buffer made every tile identical — half the tile
+    //  carrying no information at all. Each pad draws only its slice.
+    void setSampleInfo (SampleBuffer::Ptr sb, const juce::String& name,
+                        float start01 = 0.0f, float end01 = 1.0f)
     {
         loaded = (sb != nullptr);
         padName = name;
-        buildSpark (sb.get());
+        buildSpark (sb.get(), start01, end01);
         repaint();
     }
     void setZati (int z) { if (zati != z) { zati = z; repaint(); } }
@@ -141,22 +146,35 @@ public:
     }
 
 private:
-    void buildSpark (const SampleBuffer* sb)
+    void buildSpark (const SampleBuffer* sb, float start01, float end01)
     {
         spark.clearQuick();
         if (sb == nullptr) return;
         const int len = sb->buffer.getNumSamples();
         if (len < 4) return;
+
+        const int a = juce::jlimit (0, len - 2, (int) (juce::jlimit (0.0f, 1.0f, start01) * (float) len));
+        const int b = juce::jlimit (a + 1, len, (int) (juce::jlimit (0.0f, 1.0f, end01)   * (float) len));
+        const int n = b - a;
+        if (n < 2) return;
+
+        // Normalise each slice to its own peak: a quiet tail slice would
+        // otherwise draw as a flat line next to a loud transient one, and the
+        // point of the tile art is telling them apart.
         const float* d = sb->buffer.getReadPointer (0);
+        float peak = 0.0f;
+        for (int i = a; i < b; ++i) peak = juce::jmax (peak, std::abs (d[i]));
+        const float norm = peak > 1.0e-4f ? 0.95f / peak : 1.4f;
+
         const int cols = 44;
         for (int c = 0; c < cols; ++c)
         {
-            const int i0 = (int) ((juce::int64) c       * len / cols);
-            const int i1 = (int) ((juce::int64) (c + 1) * len / cols);
+            const int i0 = a + (int) ((juce::int64) c       * n / cols);
+            const int i1 = a + (int) ((juce::int64) (c + 1) * n / cols);
             float mn = 0.0f, mx = 0.0f;
-            for (int i = i0; i < i1 && i < len; ++i) { mn = juce::jmin (mn, d[i]); mx = juce::jmax (mx, d[i]); }
-            spark.add (juce::jlimit (-1.0f, 1.0f, mn * 1.4f));
-            spark.add (juce::jlimit (-1.0f, 1.0f, mx * 1.4f));
+            for (int i = i0; i < i1 && i < b; ++i) { mn = juce::jmin (mn, d[i]); mx = juce::jmax (mx, d[i]); }
+            spark.add (juce::jlimit (-1.0f, 1.0f, mn * norm));
+            spark.add (juce::jlimit (-1.0f, 1.0f, mx * norm));
         }
     }
 

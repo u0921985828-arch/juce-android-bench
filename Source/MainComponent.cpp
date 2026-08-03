@@ -337,8 +337,14 @@ MainComponent::MainComponent()
              [this] { if (selectedPad >= 0) { padAttack[(size_t) selectedPad] = (float) attackSlider.getValue(); engine.setPadAttack (selectedPad, (float) attackSlider.getValue()); } });
     initKnob (releaseSlider, 1.0, 800.0, 1.0, 5.0, 40.0,
              [this] { if (selectedPad >= 0) { padRelease[(size_t) selectedPad] = (float) releaseSlider.getValue(); engine.setPadRelease (selectedPad, (float) releaseSlider.getValue()); } });
+    //  A choke group is off or 1..8 — nine discrete positions. A rotary asks
+    //  you to aim for 4 and land on 3; increment buttons hit it first try and
+    //  show the state without reading a number off a dial.
     initKnob (chokeSlider, 0.0, 8.0, 1.0, 0.0, 0.0,
              [this] { if (selectedPad >= 0) { padChokeUI[(size_t) selectedPad] = (int) chokeSlider.getValue(); engine.setPadChoke (selectedPad, (int) chokeSlider.getValue()); } });
+    chokeSlider.setSliderStyle (juce::Slider::IncDecButtons);
+    chokeSlider.setIncDecButtonsMode (juce::Slider::incDecButtonsDraggable_Vertical);
+    chokeSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 64, Metrics::chip);
 
     pitchSlider.setTextValueSuffix (" st");
     attackSlider.setTextValueSuffix (" ms");
@@ -360,6 +366,7 @@ MainComponent::MainComponent()
         const int len = engine.getSampleLength (selectedPad);
         engine.setPadStart (selectedPad, (int) (v * len));
         waveform.setTrim ((float) v, padEnd01[(size_t) selectedPad]);
+        refreshPadArt (selectedPad);
         refreshWaveformSegments();
         repaint (editInfoArea.expanded (4));
     };
@@ -371,6 +378,7 @@ MainComponent::MainComponent()
         const int len = engine.getSampleLength (selectedPad);
         engine.setPadEnd (selectedPad, (int) (v * len));
         waveform.setTrim (padStart01[(size_t) selectedPad], (float) v);
+        refreshPadArt (selectedPad);
         refreshWaveformSegments();
         repaint (editInfoArea.expanded (4));
     };
@@ -556,6 +564,22 @@ MainComponent::MainComponent()
         }
     }
 
+    //  Dragging the hero's handles is the same edit as the START/END faders in
+    //  the PADS sheet — one model, two ways in.
+    waveform.onTrimDragged = [this] (float s, float e)
+    {
+        if (selectedPad < 0) return;
+        padStart01[(size_t) selectedPad] = s;
+        padEnd01[(size_t) selectedPad]   = e;
+        const int len = engine.getSampleLength (selectedPad);
+        engine.setPadStart (selectedPad, (int) (s * len));
+        engine.setPadEnd   (selectedPad, (int) (e * len));
+        startSlider.setValue (s, juce::dontSendNotification);
+        endSlider.setValue   (e, juce::dontSendNotification);
+        refreshPadArt (selectedPad);
+        refreshWaveformSegments();
+        if (padSheet.isVisible()) padSheet.repaint();
+    };
     addAndMakeVisible (waveform);
 
     // ZATI badge in the header: taps cycle the 4 accent skins.
@@ -580,6 +604,12 @@ MainComponent::MainComponent()
                                 (juce::Component*) &dlyTimeSlider, (juce::Component*) &dlyFbSlider, (juce::Component*) &dlyMixSlider,
                                 (juce::Component*) &testButton })
         fxSheet.addAndMakeVisible (c);
+
+    styleButton (undoButton, ZatiColours::red);
+    undoButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+    undoButton.onClick = [this] { performUndo(); };
+    undoButton.setVisible (false);
+    addAndMakeVisible (undoButton);
 
     status.setJustificationType (juce::Justification::centred);
     status.setColour (juce::Label::textColourId, ZatiColours::inkDim);
@@ -1455,8 +1485,14 @@ void MainComponent::resized()
     }
     area.removeFromTop (Metrics::sm);
 
-    // Status pinned to the bottom.
-    status.setBounds (area.removeFromBottom (Metrics::lg));
+    // Status pinned to the bottom; DESHACER sits on its right when armed, so
+    // an undoable action announces itself where the result was reported.
+    {
+        auto strip = area.removeFromBottom (Metrics::lg);
+        if (undoButton.isVisible())
+            undoButton.setBounds (strip.removeFromRight (96).reduced (1, 0));
+        status.setBounds (strip);
+    }
     area.removeFromBottom (Metrics::sm);
 
     // --- Machine face: CTRL 1-3 and their readout, FX slots, pads ---
@@ -1763,6 +1799,16 @@ void MainComponent::refreshStepGrid()
         }
 }
 
+// The tile art is the pad's own slice, so it has to be rebuilt whenever the
+// trim window moves, not only when a sample is assigned.
+void MainComponent::refreshPadArt (int index)
+{
+    if (index < 0 || index >= kNumPads) return;
+    if (auto* p = pads[index])
+        p->setSampleInfo (uiSample[(size_t) index], padName[(size_t) index],
+                          padStart01[(size_t) index], padEnd01[(size_t) index]);
+}
+
 void MainComponent::refreshPad (int index)
 {
     if (auto* p = pads[index])
@@ -1877,7 +1923,8 @@ void MainComponent::assignSampleToPad (int index, SampleBuffer::Ptr sb, const ju
     engine.setPadAttack  (index, padAttack[(size_t) index]);
     engine.setPadRelease (index, padRelease[(size_t) index]);
 
-    if (auto* p = pads[index]) p->setSampleInfo (uiSample[(size_t) index], padName[(size_t) index]);
+    if (auto* p = pads[index]) p->setSampleInfo (uiSample[(size_t) index], padName[(size_t) index],
+                                                 padStart01[(size_t) index], padEnd01[(size_t) index]);
 
     selectPad (index);
 }
@@ -1910,6 +1957,29 @@ void MainComponent::shiftZati (int delta)
                     juce::dontSendNotification);
 }
 
+//  AUTO CHOP overwrites up to fifteen pads AND the source pad — after it, the
+//  pad that held your break holds its first slice instead. That is a lot to do
+//  with no way back, so the whole machine is snapshotted first and DESHACER in
+//  the status bar puts it back.
+void MainComponent::pushUndo (const juce::String& what)
+{
+    undoState = captureState();
+    undoLabel = what;
+    undoButton.setVisible (true);
+    resized();
+}
+
+void MainComponent::performUndo()
+{
+    if (! undoState.isValid()) return;
+    auto restore = undoState;
+    undoState = {};
+    undoButton.setVisible (false);
+    applyState (restore);
+    status.setText ("Deshecho: " + undoLabel, juce::dontSendNotification);
+    resized();
+}
+
 void MainComponent::autoChopSelected()
 {
     if (selectedPad < 0) return;
@@ -1917,6 +1987,8 @@ void MainComponent::autoChopSelected()
     if (src == nullptr) return;
     const int len = src->buffer.getNumSamples();
     if (len < kNumPads) return;
+
+    pushUndo ("auto chop");
 
     const juce::String baseName = padName[(size_t) selectedPad].isNotEmpty()
                                  ? padName[(size_t) selectedPad] : juce::String ("CHOP");
@@ -1947,7 +2019,7 @@ void MainComponent::autoChopSelected()
         engine.setPadAttack  (i, padAttack[(size_t) i]);
         engine.setPadRelease (i, padRelease[(size_t) i]);
 
-        if (auto* p = pads[i]) p->setSampleInfo (uiSample[(size_t) i], padName[(size_t) i]);
+        if (auto* p = pads[i]) p->setSampleInfo (uiSample[(size_t) i], padName[(size_t) i], padStart01[(size_t) i], padEnd01[(size_t) i]);
     }
 
     selectPad (0);
@@ -2294,7 +2366,7 @@ void MainComponent::loadProject (const juce::String& name)
     // Names live in the state, so re-stamp the tiles after applyState.
     for (int i = 0; i < kNumPads; ++i)
         if (auto* p = pads[i])
-            p->setSampleInfo (uiSample[(size_t) i], padName[(size_t) i]);
+            p->setSampleInfo (uiSample[(size_t) i], padName[(size_t) i], padStart01[(size_t) i], padEnd01[(size_t) i]);
 
     for (const auto& c : juce::ValueTree::fromXml (*xml).getChildWithName ("PADS"))
         if ((bool) c.getProperty ("has", false)

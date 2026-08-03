@@ -58,6 +58,35 @@ public:
         repaint();
     }
 
+    //  Trim by dragging the handles, which is the gesture the drawn handles
+    //  have been promising all along. Editing the start of a sound by typing
+    //  0.062 is the wrong instrument: you want to grab it and listen.
+    std::function<void (float start01, float end01)> onTrimDragged;
+
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        if (sample == nullptr) return;
+        const float t  = xToNorm ((float) e.x);
+        const float ds = std::abs (t - start01), de = std::abs (t - end01);
+        // Grab whichever handle is nearer, but only within a finger's width;
+        // a tap in open water should not yank an edge across the sample.
+        const float grab = 24.0f / juce::jmax (1.0f, (float) waveArea().getWidth());
+        dragging = (juce::jmin (ds, de) > grab) ? 0 : (ds <= de ? 1 : 2);
+    }
+
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        if (dragging == 0 || sample == nullptr) return;
+        const float t = xToNorm ((float) e.x);
+        float s = start01, en = end01;
+        if (dragging == 1) s  = juce::jlimit (0.0f, en - 0.005f, t);
+        else               en = juce::jlimit (s + 0.005f, 1.0f, t);
+        setTrim (s, en);
+        if (onTrimDragged) onTrimDragged (s, en);
+    }
+
+    void mouseUp (const juce::MouseEvent&) override { dragging = 0; }
+
     void paint (juce::Graphics& g) override
     {
         auto b = getLocalBounds().toFloat();
@@ -227,6 +256,20 @@ public:
     void resized() override { computeMinMax(); repaint(); }
 
 private:
+    juce::Rectangle<float> waveArea() const
+    {
+        auto w = getLocalBounds().toFloat().reduced (10.0f, 0.0f);
+        w.removeFromTop (22.0f);
+        w.removeFromBottom (20.0f);
+        return w;
+    }
+    float xToNorm (float x) const
+    {
+        auto w = waveArea();
+        return juce::jlimit (0.0f, 1.0f, (x - w.getX()) / juce::jmax (1.0f, w.getWidth()));
+    }
+    int dragging = 0;   // 0 none, 1 start, 2 end
+
     void computeMinMax()
     {
         mins.clearQuick(); maxs.clearQuick();
