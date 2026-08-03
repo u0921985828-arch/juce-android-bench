@@ -1,10 +1,10 @@
 name: Build Android APK
 
-# Builds the native JUCE app (Shard, by ARTiFACTS) into an Android APK.
+# Builds the native JUCE app (Zati, by ARTiFACTS) into an Android APK.
 #
 # JUCE's CMake API does NOT support Android ("Android targets are not currently
 # supported"), so the only supported path is: build the Projucer, have it
-# generate an Android Gradle project from Shard.jucer, then Gradle-build it.
+# generate an Android Gradle project from Zati.jucer, then Gradle-build it.
 # JUCE is pinned to the same tag as the desktop CMake build (8.0.4). Oboe
 # (bundled in JUCE) is enabled for the low-latency audio path.
 
@@ -66,7 +66,7 @@ jobs:
           python3 - "$GITHUB_RUN_NUMBER" <<'PY'
           import re, sys
           code = sys.argv[1]
-          p = "Shard.jucer"
+          p = "Zati.jucer"
           s = open(p, encoding="utf-8").read()
           if re.search(r'androidVersionCode="[^"]*"', s):
               s = re.sub(r'androidVersionCode="[^"]*"', f'androidVersionCode="{code}"', s, count=1)
@@ -76,11 +76,11 @@ jobs:
           print("androidVersionCode =", code)
           PY
 
-      - name: Generate Android project from Shard.jucer
+      - name: Generate Android project from Zati.jucer
         run: |
           PROJUCER="$(find JUCE/cmake-build -name Projucer -type f -executable | head -1)"
           echo "Using Projucer: $PROJUCER"
-          "$PROJUCER" --resave Shard.jucer
+          "$PROJUCER" --resave Zati.jucer
 
       - name: Point Gradle at the Android SDK
         run: echo "sdk.dir=${ANDROID_SDK_ROOT}" > Builds/Android/local.properties
@@ -89,12 +89,12 @@ jobs:
         # MUST be the same key on every run. Generating one per build (what this
         # step used to do) gave every APK a different signing certificate, and
         # Android refuses to update an installed app whose signature changed —
-        # you had to uninstall before each new build. ci/colors-debug.keystore is
+        # you had to uninstall before each new build. ci/zati-debug.keystore is
         # a DEBUG key (password "android", the canonical Android debug password);
         # it is not a Play Store upload key and must never become one.
         run: |
           mkdir -p "$HOME/.android"
-          cp ci/colors-debug.keystore "$HOME/.android/debug.keystore"
+          cp ci/zati-debug.keystore "$HOME/.android/debug.keystore"
           keytool -list -keystore "$HOME/.android/debug.keystore" \
                   -storepass android -alias androiddebugkey
 
@@ -114,32 +114,32 @@ jobs:
           REL="$(find Builds/Android -name '*-release.apk' | head -1)"
           test -n "$DBG" || { echo "No debug APK produced";   exit 1; }
           test -n "$REL" || { echo "No release APK produced"; exit 1; }
-          cp "$DBG" Shard-debug.apk
-          cp "$REL" Shard-release.apk
+          cp "$DBG" Zati-debug.apk
+          cp "$REL" Zati-release.apk
           echo "Debug:   $DBG"
           echo "Release: $REL"
-          ls -la Shard-*.apk
+          ls -la Zati-*.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Shard-apk
+          name: Zati-apk
           path: |
-            Shard-debug.apk
-            Shard-release.apk
+            Zati-debug.apk
+            Zati-release.apk
           if-no-files-found: error
 
       # Also attach both APKs to a rolling release tag for easy phone download.
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: apk-latest
-          name: Latest Shard APKs (debug + release)
+          name: Latest Zati APKs (debug + release)
           files: |
-            Shard-debug.apk
-            Shard-release.apk
+            Zati-debug.apk
+            Zati-release.apk
           make_latest: false
 
   # NOTE: the emulator smoke-test job was removed because the APK is now built
   # for arm64-v8a only (the phone target), and GitHub's runners are x86_64 — the
   # emulator could no longer install an arm64-only APK. A prior run already
-  # confirmed Shard installs and launches without crashing. To re-enable it,
-  # temporarily add "x86_64" back to androidArchitectures in Shard.jucer.
+  # confirmed Zati installs and launches without crashing. To re-enable it,
+  # temporarily add "x86_64" back to androidArchitectures in Zati.jucer.

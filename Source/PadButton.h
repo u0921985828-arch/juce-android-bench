@@ -2,7 +2,7 @@
 
 #include <JuceHeader.h>
 #include "SampleBuffer.h"
-#include "ShardLookAndFeel.h"
+#include "ZatiLookAndFeel.h"
 #include "Zati.h"
 
 // ============================================================================
@@ -39,17 +39,17 @@ public:
         // still be readable when the hue is not.
         const juce::Colour frag = Zati::colour (zati);
 
-        juce::Colour base   = loaded ? frag.withMultipliedAlpha (0.30f) : ShardColours::padBg2;
-        juce::Colour edge   = loaded ? frag : ShardColours::padBorder;
-        juce::Colour idxCol = loaded ? ShardColours::ink.withAlpha (0.92f)
-                                     : ShardColours::ink.withAlpha (0.30f);
+        juce::Colour base   = loaded ? frag.withMultipliedAlpha (0.30f) : ZatiColours::padBg2;
+        juce::Colour edge   = loaded ? frag : ZatiColours::padBorder;
+        juce::Colour idxCol = loaded ? ZatiColours::ink.withAlpha (0.92f)
+                                     : ZatiColours::ink.withAlpha (0.30f);
         //  inkDim on a 30% fragment fill measured 3.25-4.02:1 across the eight
         //  colours — under the 4.5 needed for 9px text on every one of them.
         //  Ink at 0.75 clears it on the worst (5.84:1) and still reads as
         //  secondary against the pad's own numeral.
-        juce::Colour nmCol  = loaded ? ShardColours::ink.withAlpha (0.75f)
-                                     : ShardColours::inkDim;
-        juce::Colour sparkCol = loaded ? frag.darker (0.35f) : ShardColours::ink.withAlpha (0.30f);
+        juce::Colour nmCol  = loaded ? ZatiColours::ink.withAlpha (0.75f)
+                                     : ZatiColours::inkDim;
+        juce::Colour sparkCol = loaded ? frag.darker (0.35f) : ZatiColours::ink.withAlpha (0.30f);
         bool onAccent = false;
 
         if (playing || flash > 0.55f)
@@ -61,7 +61,7 @@ public:
             //  old 0.55 cut put red and violet on white at 3.6:1 and 3.9:1
             //  when ink beats white on all eight fragment colours — the
             //  threshold was simply the wrong test.
-            idxCol = ShardColours::bestOn (frag, ShardColours::ink, juce::Colours::white);
+            idxCol = ZatiColours::bestOn (frag, ZatiColours::ink, juce::Colours::white);
             nmCol  = idxCol.withAlpha (0.9f);
             sparkCol = idxCol.withAlpha (0.85f);
         }
@@ -109,14 +109,14 @@ public:
 
         // Index (Oswald) top-left.
         g.setColour (idxCol);
-        g.setFont (ShardColours::displayFont (juce::jmin (26.0f, r.getHeight() * 0.30f)));
+        g.setFont (ZatiColours::displayFont (juce::jmin (26.0f, r.getHeight() * 0.30f)));
         g.drawText (juce::String (index + 1).paddedLeft ('0', 2),
                     r.reduced (9.0f, 6.0f).removeFromTop (r.getHeight() * 0.42f),
                     juce::Justification::topLeft);
 
         // Name (mono) bottom.
         g.setColour (nmCol);
-        g.setFont (ShardColours::monoFont (Metrics::fMeta).withExtraKerningFactor (0.06f));
+        g.setFont (ZatiColours::monoFont (Metrics::fMeta).withExtraKerningFactor (0.06f));
         g.drawText (loaded ? padName.toUpperCase() : juce::String (juce::CharPointer_UTF8 ("\xe2\x80\x94")),
                     r.reduced (10.0f, 7.0f).removeFromBottom (12.0f), juce::Justification::bottomLeft, true);
 
@@ -128,14 +128,14 @@ public:
 
         if (selected && ! onAccent)
         {
-            g.setColour (ShardColours::ink.withAlpha (0.85f));
+            g.setColour (ZatiColours::ink.withAlpha (0.85f));
             g.drawRoundedRectangle (r.reduced (2.4f), juce::jmax (1.0f, rad - 1.5f), 1.4f);
         }
 
         // Playing: brighten the pad's own colour rather than adding another.
         if (playing)
         {
-            g.setColour ((loaded ? frag : ShardColours::ink).brighter (0.45f).withAlpha (0.6f));
+            g.setColour ((loaded ? frag : ZatiColours::ink).brighter (0.45f).withAlpha (0.6f));
             g.drawRoundedRectangle (r.reduced (0.6f), rad, 1.8f);
         }
     }

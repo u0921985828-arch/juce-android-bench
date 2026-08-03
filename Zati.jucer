@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <JUCERPROJECT id="Fx404A" name="Zati" projectType="guiapp" version="0.0.1"
-              bundleIdentifier="com.artifacts.shard" companyName="ARTiFACTS"
+              bundleIdentifier="com.artifacts.zati" companyName="ARTiFACTS"
               companyCopyright="ARTiFACTS" useAppConfig="0" addUsingNamespaceToJuceHeader="1"
               displaySplashScreen="1" jucerFormatVersion="1">
-  <MAINGROUP id="Fx404Root" name="Shard">
+  <MAINGROUP id="Fx404Root" name="Zati">
     <GROUP id="Fx404Src" name="Source">
       <FILE id="srcMain" name="Main.cpp"          compile="1" resource="0" file="Source/Main.cpp"/>
       <FILE id="srcMcpp" name="MainComponent.cpp" compile="1" resource="0" file="Source/MainComponent.cpp"/>
@@ -17,7 +17,7 @@
       <FILE id="srcCfh"  name="CommandFifo.h"     compile="0" resource="0" file="Source/CommandFifo.h"/>
       <FILE id="srcWfh"  name="WaveformDisplay.h" compile="0" resource="0" file="Source/WaveformDisplay.h"/>
       <FILE id="srcSph"  name="SpectrumDisplay.h" compile="0" resource="0" file="Source/SpectrumDisplay.h"/>
-      <FILE id="srcLnf"  name="ShardLookAndFeel.h" compile="0" resource="0" file="Source/ShardLookAndFeel.h"/>
+      <FILE id="srcLnf"  name="ZatiLookAndFeel.h" compile="0" resource="0" file="Source/ZatiLookAndFeel.h"/>
       <FILE id="srcLcpp" name="SampleLoader.cpp"  compile="1" resource="0" file="Source/SampleLoader.cpp"/>
       <FILE id="srcLh"   name="SampleLoader.h"    compile="0" resource="0" file="Source/SampleLoader.h"/>
       <FILE id="srcPsh"  name="ProjectStore.h"    compile="0" resource="0" file="Source/ProjectStore.h"/>
@@ -36,15 +36,15 @@
   <EXPORTFORMATS>
     <ANDROIDSTUDIO targetFolder="Builds/Android"
                    smallIcon="icoApp" bigIcon="icoApp"
-                   androidActivityClass="com.artifacts.shard.Shard"
+                   androidActivityClass="com.artifacts.zati.Zati"
                    androidMinimumSDK="24" androidTargetSDK="34"
                    androidInternetNeeded="0" androidCpp11="1"
                    microphonePermissionNeeded="1"
                    androidReadMediaAudioPermission="1"
                    androidTheme="@android:style/Theme.Material.Light.NoActionBar">
       <CONFIGURATIONS>
-        <CONFIGURATION name="Debug"   isDebug="1" targetName="Shard" androidArchitectures="arm64-v8a"/>
-        <CONFIGURATION name="Release" isDebug="0" targetName="Shard" optimisation="3" androidArchitectures="arm64-v8a"/>
+        <CONFIGURATION name="Debug"   isDebug="1" targetName="Zati" androidArchitectures="arm64-v8a"/>
+        <CONFIGURATION name="Release" isDebug="0" targetName="Zati" optimisation="3" androidArchitectures="arm64-v8a"/>
       </CONFIGURATIONS>
       <MODULEPATHS>
         <MODULEPATH id="juce_core"              path="JUCE/modules"/>

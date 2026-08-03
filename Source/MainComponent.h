@@ -5,7 +5,7 @@
 #include "SampleLoader.h"
 #include "WaveformDisplay.h"
 #include "SpectrumDisplay.h"
-#include "ShardLookAndFeel.h"
+#include "ZatiLookAndFeel.h"
 #include "PadButton.h"
 #include "ProjectStore.h"
 
@@ -262,7 +262,7 @@ private:
     juce::Label  status, fxLabel;
     WaveformDisplay waveform;
     SpectrumDisplay spectrum;
-    ShardLookAndFeel lnf;
+    ZatiLookAndFeel lnf;
     float scopeTmp[1024] {};
 
     // Per-pad UI state.

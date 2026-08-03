@@ -10,7 +10,7 @@ class ArtifactsApplication : public juce::JUCEApplication
 public:
     ArtifactsApplication() = default;
 
-    const juce::String getApplicationName() override       { return "Shard"; }
+    const juce::String getApplicationName() override       { return "Zati"; }
     const juce::String getApplicationVersion() override    { return "0.0.1"; }
     bool moreThanOneInstanceAllowed() override             { return true; }
 

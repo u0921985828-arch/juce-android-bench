@@ -2,7 +2,7 @@
 
 #include <JuceHeader.h>
 #include "SampleBuffer.h"
-#include "ShardLookAndFeel.h"
+#include "ZatiLookAndFeel.h"
 
 // ============================================================================
 //  WaveformDisplay — the hero LCD screen: the selected pad's sample drawn as a
@@ -64,21 +64,21 @@ public:
 
         // LCD panel.
         g.setGradientFill (juce::ColourGradient (juce::Colour (0xff112232), b.getCentreX(), b.getY(),
-                                                 ShardColours::screenBg, b.getCentreX(), b.getBottom(), false));
+                                                 ZatiColours::screenBg, b.getCentreX(), b.getBottom(), false));
         g.fillRoundedRectangle (b, 2.0f);
 
-        const auto lcdFg = ShardColours::lcdFg, lcdDim = ShardColours::lcdDim;
+        const auto lcdFg = ZatiColours::lcdFg, lcdDim = ZatiColours::lcdDim;
         // Fallback trace when nothing carries a zati yet: the LCD's own
         // foreground, so an un-chopped sample stays achromatic like the rest
         // of the chassis instead of borrowing a hue it has not earned.
-        const auto accent = ShardColours::lcdFg;
+        const auto accent = ZatiColours::lcdFg;
 
         if (sample == nullptr || mins.isEmpty())
         {
             g.setColour (lcdDim);
-            g.setFont (ShardColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.18f));
+            g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.18f));
             g.drawText ("TAP A PAD TO LOAD ITS WAVEFORM", getLocalBounds(), juce::Justification::centred);
-            g.setColour (ShardColours::knobEdge.withAlpha (0.25f));
+            g.setColour (ZatiColours::knobEdge.withAlpha (0.25f));
             g.drawRoundedRectangle (b.reduced (1.0f), 2.0f, 1.2f);
             return;
         }
@@ -141,7 +141,7 @@ public:
             // Non-chromatic reinforcement: a 4px bar per fragment under the
             // wave, plus the pad number. Colour alone is never the signal.
             const float barY = wave.getBottom() + 1.0f;
-            g.setFont (ShardColours::monoFont (Metrics::fMeta, true));
+            g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
             for (const auto& s : segments)
             {
                 const float x0 = wave.getX() + s.start01 * wave.getWidth();
@@ -171,7 +171,7 @@ public:
             // dim trimmed-out regions
             const float sx = wave.getX() + start01 * wave.getWidth();
             const float ex = wave.getX() + end01   * wave.getWidth();
-            g.setColour (ShardColours::screenBg.withAlpha (0.62f));
+            g.setColour (ZatiColours::screenBg.withAlpha (0.62f));
             g.fillRect (wave.getX(), wave.getY(), sx - wave.getX(), wave.getHeight());
             g.fillRect (ex, wave.getY(), wave.getRight() - ex, wave.getHeight());
 
@@ -199,7 +199,7 @@ public:
         }
 
         // readouts
-        g.setFont (ShardColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.08f));
+        g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.08f));
         auto top2 = b.reduced (11.0f, 7.0f).removeFromTop (13.0f);
         g.setColour (activeColour (accent));
         g.fillEllipse (top2.getX(), top2.getCentreY() - 3.0f, 6.0f, 6.0f);
@@ -215,12 +215,12 @@ public:
         {
             auto bot = b.reduced (11.0f, 6.0f).removeFromBottom (12.0f);
             g.setColour (lcdDim);
-            g.setFont (ShardColours::monoFont (Metrics::fMeta, true));
+            g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
             g.drawText ("TRIM " + juce::String (start01, 2) + juce::String (juce::CharPointer_UTF8 (" \xe2\x86\x92 ")) + juce::String (end01, 2),
                         bot, juce::Justification::bottomLeft);
         }
 
-        g.setColour (ShardColours::knobEdge.withAlpha (0.25f));
+        g.setColour (ZatiColours::knobEdge.withAlpha (0.25f));
         g.drawRoundedRectangle (b.reduced (1.0f), 2.0f, 1.2f);
     }
 

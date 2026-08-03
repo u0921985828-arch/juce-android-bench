@@ -4,7 +4,7 @@
 #include "BinaryData.h"
 
 // ============================================================================
-//  ShardLookAndFeel — ARTiFACTS design system (ZATI chassis).
+//  ZatiLookAndFeel — ARTiFACTS design system (ZATI chassis).
 //
 //  The chassis is deliberately ACHROMATIC: white and greys, flat square-ish
 //  caps (no gradient, no bevel), dark knobs, a dark LCD with warm grey text.
@@ -16,10 +16,10 @@
 //  also glowed in a colour, it would compete with the fragments for the same
 //  meaning and "one colour per zati" would stop being readable.
 //
-//  All components read tokens from ShardColours — no hardcoded colour in a
+//  All components read tokens from ZatiColours — no hardcoded colour in a
 //  component. Fonts: Oswald/JetBrains Mono, bundled.
 // ============================================================================
-namespace ShardColours
+namespace ZatiColours
 {
 
     // --- Chassis / structure (white + grey) ---
@@ -160,7 +160,7 @@ namespace Metrics
     static constexpr float fTitle = 26.0f;
 }
 
-namespace ShardColours
+namespace ZatiColours
 {
 
     //  Real WCAG contrast, not a brightness proxy. Perceived brightness is a
@@ -204,42 +204,42 @@ namespace ShardColours
     }
 }
 
-class ShardLookAndFeel : public juce::LookAndFeel_V4
+class ZatiLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
-    ShardLookAndFeel()
+    ZatiLookAndFeel()
     {
         // Value readouts as little dark LCD chips (guaranteed contrast on a white face).
-        setColour (juce::Slider::textBoxTextColourId, ShardColours::lcdFg);
-        setColour (juce::Slider::textBoxBackgroundColourId, ShardColours::screenBg);
+        setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
+        setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
         setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-        setColour (juce::Slider::trackColourId, ShardColours::amber);
-        setColour (juce::Slider::backgroundColourId, ShardColours::key.darker (0.08f));
-        setColour (juce::Slider::thumbColourId, ShardColours::amber);
-        setColour (juce::Label::textColourId, ShardColours::ink.withAlpha (0.9f));
-        setColour (juce::TextButton::textColourOffId, ShardColours::ink.withAlpha (0.92f));
-        setColour (juce::TextButton::textColourOnId, ShardColours::ink);
+        setColour (juce::Slider::trackColourId, ZatiColours::amber);
+        setColour (juce::Slider::backgroundColourId, ZatiColours::key.darker (0.08f));
+        setColour (juce::Slider::thumbColourId, ZatiColours::amber);
+        setColour (juce::Label::textColourId, ZatiColours::ink.withAlpha (0.9f));
+        setColour (juce::TextButton::textColourOffId, ZatiColours::ink.withAlpha (0.92f));
+        setColour (juce::TextButton::textColourOnId, ZatiColours::ink);
         applyBrowserColours();
     }
 
     // The in-app sample browser reads these; re-applied on every skin change.
     void applyBrowserColours()
     {
-        setColour (juce::FileBrowserComponent::currentPathBoxBackgroundColourId, ShardColours::key);
-        setColour (juce::FileBrowserComponent::currentPathBoxTextColourId,       ShardColours::ink);
-        setColour (juce::FileBrowserComponent::currentPathBoxArrowColourId,      ShardColours::ink);
-        setColour (juce::FileBrowserComponent::filenameBoxBackgroundColourId,    ShardColours::screenBg);
-        setColour (juce::FileBrowserComponent::filenameBoxTextColourId,          ShardColours::lcdFg);
-        setColour (juce::DirectoryContentsDisplayComponent::highlightColourId,       ShardColours::accent);
-        setColour (juce::DirectoryContentsDisplayComponent::textColourId,            ShardColours::ink);
+        setColour (juce::FileBrowserComponent::currentPathBoxBackgroundColourId, ZatiColours::key);
+        setColour (juce::FileBrowserComponent::currentPathBoxTextColourId,       ZatiColours::ink);
+        setColour (juce::FileBrowserComponent::currentPathBoxArrowColourId,      ZatiColours::ink);
+        setColour (juce::FileBrowserComponent::filenameBoxBackgroundColourId,    ZatiColours::screenBg);
+        setColour (juce::FileBrowserComponent::filenameBoxTextColourId,          ZatiColours::lcdFg);
+        setColour (juce::DirectoryContentsDisplayComponent::highlightColourId,       ZatiColours::accent);
+        setColour (juce::DirectoryContentsDisplayComponent::textColourId,            ZatiColours::ink);
         setColour (juce::DirectoryContentsDisplayComponent::highlightedTextColourId,
-                   ShardColours::accent.getPerceivedBrightness() < 0.5f ? ShardColours::inkLight : ShardColours::ink);
-        setColour (juce::ListBox::backgroundColourId, ShardColours::chassisTop);
-        setColour (juce::ListBox::outlineColourId,    ShardColours::panelLo);
-        setColour (juce::ComboBox::backgroundColourId, ShardColours::key);
-        setColour (juce::ComboBox::textColourId,       ShardColours::ink);
-        setColour (juce::ComboBox::arrowColourId,      ShardColours::ink);
-        setColour (juce::ComboBox::outlineColourId,    ShardColours::panelLo);
+                   ZatiColours::accent.getPerceivedBrightness() < 0.5f ? ZatiColours::inkLight : ZatiColours::ink);
+        setColour (juce::ListBox::backgroundColourId, ZatiColours::chassisTop);
+        setColour (juce::ListBox::outlineColourId,    ZatiColours::panelLo);
+        setColour (juce::ComboBox::backgroundColourId, ZatiColours::key);
+        setColour (juce::ComboBox::textColourId,       ZatiColours::ink);
+        setColour (juce::ComboBox::arrowColourId,      ZatiColours::ink);
+        setColour (juce::ComboBox::outlineColourId,    ZatiColours::panelLo);
     }
 
     // ---- Browser row: flat, mono type, a coloured tick for directories.
@@ -254,23 +254,23 @@ public:
 
         if (isItemSelected)
         {
-            g.setColour (ShardColours::accent);
+            g.setColour (ZatiColours::accent);
             g.fillRect (r);
         }
         else if (itemIndex % 2)
         {
-            g.setColour (ShardColours::ink.withAlpha (0.035f));
+            g.setColour (ZatiColours::ink.withAlpha (0.035f));
             g.fillRect (r);
         }
 
         const bool onAccent = isItemSelected;
         const juce::Colour fg = onAccent
-            ? (ShardColours::accent.getPerceivedBrightness() < 0.5f ? ShardColours::inkLight : ShardColours::ink)
-            : ShardColours::ink;
+            ? (ZatiColours::accent.getPerceivedBrightness() < 0.5f ? ZatiColours::inkLight : ZatiColours::ink)
+            : ZatiColours::ink;
 
         // Kind marker: a filled square for folders, a hollow one for files.
         auto mark = r.removeFromLeft (h).reduced ((h - 9) / 2);
-        g.setColour (isDirectory ? (onAccent ? fg : ShardColours::accent) : fg.withAlpha (0.45f));
+        g.setColour (isDirectory ? (onAccent ? fg : ZatiColours::accent) : fg.withAlpha (0.45f));
         if (isDirectory) g.fillRect (mark);
         else             g.drawRect (mark, 1);
 
@@ -279,12 +279,12 @@ public:
         if (! isDirectory && fileSizeDescription.isNotEmpty())
         {
             g.setColour (fg.withAlpha (0.55f));
-            g.setFont (ShardColours::monoFont (Metrics::fMeta));
+            g.setFont (ZatiColours::monoFont (Metrics::fMeta));
             g.drawText (fileSizeDescription, sizeArea.reduced (6, 0), juce::Justification::centredRight);
         }
 
         g.setColour (fg);
-        g.setFont (ShardColours::monoFont (Metrics::fValue, isDirectory).withExtraKerningFactor (0.02f));
+        g.setFont (ZatiColours::monoFont (Metrics::fValue, isDirectory).withExtraKerningFactor (0.02f));
         g.drawFittedText (filename, r.reduced (6, 0), juce::Justification::centredLeft, 1, 0.9f);
     }
 
@@ -300,14 +300,14 @@ public:
         const float ang = startAng + pos * (endAng - startAng);
 
         // Plain rim.
-        g.setColour (ShardColours::knobEdge.withAlpha (0.8f));
+        g.setColour (ZatiColours::knobEdge.withAlpha (0.8f));
         g.fillEllipse (cx - r, cy - r, r * 2.0f, r * 2.0f);
 
         // Body — a soft top-lit radial shade, flat enough to read as "flat".
         const float br = r - 3.0f;
-        juce::ColourGradient body (ShardColours::knobBody1, cx, cy - br * 0.6f,
-                                   ShardColours::knobBody3, cx, cy + br, true);
-        body.addColour (0.6, ShardColours::knobBody2);
+        juce::ColourGradient body (ZatiColours::knobBody1, cx, cy - br * 0.6f,
+                                   ZatiColours::knobBody3, cx, cy + br, true);
+        body.addColour (0.6, ZatiColours::knobBody2);
         g.setGradientFill (body);
         g.fillEllipse (cx - br, cy - br, br * 2.0f, br * 2.0f);
 
@@ -315,7 +315,7 @@ public:
         juce::Path p;
         p.addRoundedRectangle (-1.3f, -br + 3.0f, 2.6f, br * 0.62f, 1.0f);
         p.applyTransform (juce::AffineTransform::rotation (ang).translated (cx, cy));
-        g.setColour (ShardColours::white);
+        g.setColour (ZatiColours::white);
         g.fillPath (p);
         auto tip = juce::Point<float> (0.0f, -br + 4.5f)
                      .transformedBy (juce::AffineTransform::rotation (ang).translated (cx, cy));
@@ -324,7 +324,7 @@ public:
         // a new skin from ever being able to break the zati colour system.
         const auto tipCol = s.isColourSpecified (juce::Slider::rotarySliderFillColourId)
                               ? s.findColour (juce::Slider::rotarySliderFillColourId)
-                              : ShardColours::amber;
+                              : ZatiColours::amber;
         g.setColour (tipCol);
         g.fillEllipse (tip.x - 3.0f, tip.y - 3.0f, 6.0f, 6.0f);
     }
@@ -344,7 +344,7 @@ public:
         // A disabled cap reads as inert: desaturated and washed toward the face.
         if (! b.isEnabled())
             base = base.withSaturation (base.getSaturation() * 0.25f)
-                       .interpolatedWith (ShardColours::chassis, 0.55f);
+                       .interpolatedWith (ZatiColours::chassis, 0.55f);
 
         g.setColour (base);
         g.fillRoundedRectangle (r, rad);
@@ -354,11 +354,11 @@ public:
         // compares against the accent tone directly. And the border must
         // contrast with the cap it sits on: for an active (near-black) cap
         // that means a LIGHT hairline, not a darker one.
-        const bool accented = (base == ShardColours::accent || base == ShardColours::accentDim);
+        const bool accented = (base == ZatiColours::accent || base == ZatiColours::accentDim);
         if (on || accented)
         {
             const bool darkCap = base.getPerceivedBrightness() < 0.5f;
-            g.setColour (darkCap ? ShardColours::inkLight.withAlpha (0.55f)
+            g.setColour (darkCap ? ZatiColours::inkLight.withAlpha (0.55f)
                                  : juce::Colours::black.withAlpha (0.55f));
             g.drawRoundedRectangle (r.reduced (0.6f), rad, 1.4f);
         }
@@ -381,20 +381,20 @@ public:
             auto area = b.getLocalBounds();
             auto strip = area.removeFromBottom (16);
             g.setColour (off);
-            g.setFont (ShardColours::displayFont (juce::jmin (48.0f, (float) b.getHeight() * 0.44f)));
+            g.setFont (ZatiColours::displayFont (juce::jmin (48.0f, (float) b.getHeight() * 0.44f)));
             g.drawText (t, area, juce::Justification::centred);
 
             const auto fn = b.getProperties().getWithDefault ("fn", juce::String()).toString();
             if (fn.isNotEmpty())
             {
-                g.setColour (ShardColours::inkDim);
-                g.setFont (ShardColours::monoFont (Metrics::fLabel).withExtraKerningFactor (0.02f));
+                g.setColour (ZatiColours::inkDim);
+                g.setFont (ZatiColours::monoFont (Metrics::fLabel).withExtraKerningFactor (0.02f));
                 g.drawFittedText (fn, strip.reduced (6, 0), juce::Justification::centred, 1, 0.85f);
             }
             return;
         }
 
-        g.setFont (ShardColours::monoFont (juce::jlimit (10.0f, 14.5f, (float) b.getHeight() * 0.38f), true)
+        g.setFont (ZatiColours::monoFont (juce::jlimit (10.0f, 14.5f, (float) b.getHeight() * 0.38f), true)
                      .withExtraKerningFactor (0.06f));
         g.setColour ((b.getToggleState() ? on : off).withMultipliedAlpha (b.isEnabled() ? 1.0f : 0.45f));
         g.drawFittedText (t, b.getLocalBounds().reduced (5, 2), juce::Justification::centred, 2, 0.9f);
@@ -402,6 +402,6 @@ public:
 
     juce::Font getLabelFont (juce::Label&) override
     {
-        return ShardColours::monoFont (Metrics::fValue, true);
+        return ZatiColours::monoFont (Metrics::fValue, true);
     }
 };

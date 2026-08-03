@@ -4,11 +4,28 @@
 #include "SampleBuffer.h"
 
 // ============================================================================
-//  ProjectStore — where a COLORS project lives on disk and how it is named.
+//  ProjectStore — the ZATI folder tree, and where a project lives inside it.
+//
+//  The app owns ONE home directory and creates the whole tree on first run, so
+//  there is always somewhere obvious to put things:
+//
+//      ZATI/
+//        Samples/      drop your own audio here — the browser opens here
+//        Projects/     one folder per project (see below)
+//        Presets/      saved pad settings
+//        Recordings/   what REC captures from the mic
+//        Exports/      bounces
+//
+//  Home is the user's Music folder when that is writable, because a sampler is
+//  useless if you cannot get audio into it: Music is visible over USB and in
+//  any file manager, so you can drop a pack in from the desktop. If it is not
+//  writable (an Android version that hides shared storage behind a permission
+//  the user declined) it falls back to app-data, which is always writable —
+//  saving must never fail because of a permission prompt.
 //
 //  A project is a FOLDER, not a single file:
 //
-//      <app data>/COLORS/Projects/<name>/
+//      Projects/<name>/
 //          project.xml        the whole machine state
 //          samples/pad01.wav  a copy of every loaded pad
 //
@@ -16,27 +33,54 @@
 //  pad recorded with REC has no file behind it at all, and any sample the user
 //  later moves or deletes would silently empty a pad. A self-contained folder
 //  survives both, and can be copied to another device as-is.
-//
-//  The app-data location is used rather than shared Music because it is
-//  writable on every Android version without a storage permission — projects
-//  must never fail to save because of a permission prompt.
 // ============================================================================
 class ProjectStore
 {
 public:
-    static juce::File root()
+    // The tree's home. Resolved once, then remembered.
+    static juce::File home()
     {
-        auto dir = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-                       .getChildFile ("COLORS")
-                       .getChildFile ("Projects");
-        dir.createDirectory();
-        return dir;
+        static juce::File cached = [
+        ]
+        {
+            auto music = juce::File::getSpecialLocation (juce::File::userMusicDirectory);
+            if (music != juce::File() && music.isDirectory() && music.hasWriteAccess())
+                return music.getChildFile ("ZATI");
+
+            return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                       .getChildFile ("ZATI");
+        }();
+        return cached;
     }
+
+    static juce::File samples()    { return sub ("Samples"); }
+    static juce::File presets()    { return sub ("Presets"); }
+    static juce::File recordings() { return sub ("Recordings"); }
+    static juce::File exports()    { return sub ("Exports"); }
+
+    // Creates the whole tree. Safe to call every launch.
+    static void ensureTree()
+    {
+        for (auto* n : { "Samples", "Projects", "Presets", "Recordings", "Exports" })
+            home().getChildFile (n).createDirectory();
+    }
+
+    static juce::File root() { return sub ("Projects"); }
 
     static juce::File folderFor (const juce::String& name)
     {
         return root().getChildFile (sanitise (name));
     }
+
+private:
+    static juce::File sub (const char* name)
+    {
+        auto dir = home().getChildFile (name);
+        dir.createDirectory();
+        return dir;
+    }
+
+public:
 
     // Names become folder names, so strip anything a filesystem dislikes and
     // keep it short enough to stay readable in the list.

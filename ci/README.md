@@ -2,7 +2,7 @@
 
 Build inputs for the Android APK workflow.
 
-## colors-debug.keystore
+## zati-debug.keystore
 
 The signing key for CI-built APKs. **It is a debug key**: alias
 `androiddebugkey`, store and key password `android` — the canonical Android
@@ -28,5 +28,5 @@ fragment palette in `Zati.h`, on the white chassis. Re-run it after any palette 
 
     python3 ci/make_icon.py
 
-`Shard.jucer` references `ci/icon.png` as both `smallIcon` and `bigIcon`;
+`Zati.jucer` references `ci/icon.png` as both `smallIcon` and `bigIcon`;
 Projucer generates the Android mipmap set from it.

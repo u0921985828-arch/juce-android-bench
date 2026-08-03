@@ -1,7 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include "ShardLookAndFeel.h"
+#include "ZatiLookAndFeel.h"
 
 // ============================================================================
 //  SpectrumDisplay — the "screen": a real-time waveform OSCILLOSCOPE on a dark
@@ -39,21 +39,21 @@ public:
         auto b = getLocalBounds().toFloat();
 
         // LCD panel (square) + subtle top scan glow.
-        g.setColour (ShardColours::screenBg);
+        g.setColour (ZatiColours::screenBg);
         g.fillRoundedRectangle (b, 2.0f);
-        juce::ColourGradient glow (ShardColours::lcdFg.withAlpha (0.05f), b.getCentreX(), b.getY(),
-                                   ShardColours::screenBg.withAlpha (0.0f), b.getCentreX(), b.getY() + b.getHeight() * 0.6f, false);
+        juce::ColourGradient glow (ZatiColours::lcdFg.withAlpha (0.05f), b.getCentreX(), b.getY(),
+                                   ZatiColours::screenBg.withAlpha (0.0f), b.getCentreX(), b.getY() + b.getHeight() * 0.6f, false);
         g.setGradientFill (glow);
         g.fillRoundedRectangle (b, 2.0f);
 
-        g.setFont (ShardColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.08f));
+        g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.08f));
 
         // Corner + centre labels (top row) — cool LCD ink.
         auto top = b.reduced (10.0f, 6.0f).removeFromTop (13.0f);
-        g.setColour (ShardColours::lcdFg.withAlpha (0.9f));
+        g.setColour (ZatiColours::lcdFg.withAlpha (0.9f));
         g.drawText (readout, top, juce::Justification::topLeft);
         g.drawText ("BPM:" + juce::String (bpm, 1), top, juce::Justification::topRight);
-        g.setColour (ShardColours::lcdDim);
+        g.setColour (ZatiColours::lcdDim);
         g.drawText (juce::String ("OUT ") + peakDb(), top, juce::Justification::centredTop);
 
         // Waveform area (between the top labels and the bottom status line).
@@ -64,7 +64,7 @@ public:
         const float halfH = wave.getHeight() * 0.5f - 2.0f;
 
         // Flat baseline (shows through when idle) — accent.
-        g.setColour (ShardColours::amber.withAlpha (0.30f));
+        g.setColour (ZatiColours::amber.withAlpha (0.30f));
         g.fillRect (wave.getX(), cy - 0.6f, wave.getWidth(), 1.2f);
 
         // Min/max waveform envelope, one vertical segment per pixel column — accent.
@@ -86,14 +86,14 @@ public:
                 const float yBot = cy - juce::jlimit (-halfH, halfH, mn * gain * halfH);
                 const float amp  = juce::jlimit (0.0f, 1.0f, (mx - mn) * gain);
                 const float fx   = wave.getX() + (float) x;
-                g.setColour (ShardColours::amber.withAlpha (0.4f + 0.55f * amp));
+                g.setColour (ZatiColours::amber.withAlpha (0.4f + 0.55f * amp));
                 g.fillRect (fx, yTop, 1.0f, juce::jmax (1.0f, yBot - yTop));
             }
         }
 
         // Bottom: faint tick ruler + status line.
         const float ry = b.getBottom() - 17.0f;
-        g.setColour (ShardColours::lcdDim.withAlpha (0.5f));
+        g.setColour (ZatiColours::lcdDim.withAlpha (0.5f));
         for (int k = 0; k <= 32; ++k)
         {
             const float tx = wave.getX() + wave.getWidth() * (float) k / 32.0f;
@@ -102,14 +102,14 @@ public:
         }
 
         auto status = b.reduced (10.0f, 5.0f).removeFromBottom (12.0f);
-        g.setColour (ShardColours::lcdDim);
-        g.setFont (ShardColours::monoFont (Metrics::fMeta, true));
+        g.setColour (ZatiColours::lcdDim);
+        g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
         g.drawText ("SCOPE", status, juce::Justification::bottomLeft);
-        g.setColour (peak > 0.0005f ? ShardColours::amber : ShardColours::lcdDim);
+        g.setColour (peak > 0.0005f ? ZatiColours::amber : ZatiColours::lcdDim);
         g.drawText (peak > 0.0005f ? "SIG" : "--", status, juce::Justification::bottomRight);
 
         // LCD inner bezel.
-        g.setColour (ShardColours::knobEdge.withAlpha (0.25f));
+        g.setColour (ZatiColours::knobEdge.withAlpha (0.25f));
         g.drawRoundedRectangle (b.reduced (1.0f), 2.0f, 1.2f);
     }
 
@@ -125,5 +125,5 @@ private:
     int          count { 0 };
     float        peak  { 0.0f };
     double       bpm   { 120.0 };
-    juce::String readout { "SHARD" };
+    juce::String readout { "ZATI" };
 };

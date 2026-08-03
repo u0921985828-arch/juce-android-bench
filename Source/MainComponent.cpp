@@ -3,19 +3,19 @@
 namespace
 {
     // References, not copies: the accent tokens are mutable (skins).
-    const juce::Colour& kPadLoaded = ShardColours::amber;
-    const juce::Colour& kAccent    = ShardColours::amber;
-    const juce::Colour  kRec       = ShardColours::red;
-    const juce::Colour  kStepOff   = ShardColours::key;
-    const juce::Colour  kKey       = ShardColours::key;
+    const juce::Colour& kPadLoaded = ZatiColours::amber;
+    const juce::Colour& kAccent    = ZatiColours::amber;
+    const juce::Colour  kRec       = ZatiColours::red;
+    const juce::Colour  kStepOff   = ZatiColours::key;
+    const juce::Colour  kKey       = ZatiColours::key;
 
     void styleButton (juce::TextButton& b, juce::Colour c)
     {
         // Text follows the cap luminance: dark ink on light caps, light on dark.
         const bool darkCap = c.getPerceivedBrightness() < 0.5f;
         b.setColour (juce::TextButton::buttonColourId, c);
-        b.setColour (juce::TextButton::textColourOffId, darkCap ? ShardColours::inkLight : ShardColours::ink);
-        b.setColour (juce::TextButton::textColourOnId,  ShardColours::ink);
+        b.setColour (juce::TextButton::textColourOffId, darkCap ? ZatiColours::inkLight : ZatiColours::ink);
+        b.setColour (juce::TextButton::textColourOnId,  ZatiColours::ink);
     }
 
     // Cycle the 3 primaries across the 8 pattern banks so each has its own
@@ -25,9 +25,9 @@ namespace
     // three primaries. Re-read every call — the skin shifts the base tone.
     juce::Colour patternRowColour (int idx)
     {
-        const juce::Colour tones[3] = { ShardColours::accent,
-                                        ShardColours::accent.brighter (0.60f),
-                                        ShardColours::accent.brighter (1.25f) };
+        const juce::Colour tones[3] = { ZatiColours::accent,
+                                        ZatiColours::accent.brighter (0.60f),
+                                        ZatiColours::accent.brighter (1.25f) };
         return tones[(size_t) (idx % 3)];
     }
 }
@@ -35,6 +35,10 @@ namespace
 MainComponent::MainComponent()
 {
     setLookAndFeel (&lnf);
+
+    // Build the ZATI folder tree before anything can need it: the browser opens
+    // in Samples/, projects save into Projects/, REC writes to Recordings/.
+    ProjectStore::ensureTree();
 
     // Output only at startup so the app always makes sound; the mic input is
     // opened on demand when recording (avoids risking output on a denied perm).
@@ -117,7 +121,7 @@ MainComponent::MainComponent()
         };
         addAndMakeVisible (setButton);
 
-        projList.setColour (juce::ListBox::backgroundColourId, ShardColours::chassisTop);
+        projList.setColour (juce::ListBox::backgroundColourId, ZatiColours::chassisTop);
         projList.setRowHeight (34);
         projModel.onChosen = [this] (int row)
         {
@@ -184,9 +188,11 @@ MainComponent::MainComponent()
         // Start one level above Music: on Android that is the shared-storage
         // root, so Music AND Download (where most samples land) are one tap
         // away instead of buried. On desktop it lands on the home folder.
-        auto start = juce::File::getSpecialLocation (juce::File::userMusicDirectory);
-        if (auto parent = start.getParentDirectory(); parent.isDirectory())
-            start = parent;
+        // Open in the app's own Samples folder. It always exists (the tree is
+        // created at launch) and it is where the user is told to put audio, so
+        // the first thing the browser shows is their own material instead of
+        // whatever the OS considers home — which on desktop is an empty /root.
+        auto start = ProjectStore::samples();
         if (! start.isDirectory())
             start = juce::File::getSpecialLocation (juce::File::userHomeDirectory);
 
@@ -253,7 +259,7 @@ MainComponent::MainComponent()
     styleButton (playButton, kAccent);                   // PLAY is the accent hero button
     playButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
     playButton.setColour (juce::TextButton::textColourOnId,  juce::Colours::white);
-    playButton.setColour (juce::TextButton::buttonOnColourId, ShardColours::accentDim);
+    playButton.setColour (juce::TextButton::buttonOnColourId, ZatiColours::accentDim);
     playButton.onClick = [this]
     {
         const bool on = playButton.getToggleState();
@@ -275,8 +281,8 @@ MainComponent::MainComponent()
     auto initSlider = [this] (juce::Slider& s, double lo, double hi, double step, double def)
     {
         s.setSliderStyle (juce::Slider::LinearHorizontal);
-        s.setColour (juce::Slider::textBoxTextColourId, ShardColours::lcdFg);
-        s.setColour (juce::Slider::textBoxBackgroundColourId, ShardColours::screenBg);
+        s.setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
+        s.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
         s.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
         s.setTextBoxStyle (juce::Slider::TextBoxRight, false, 66, 22);
         s.setRange (lo, hi, step);
@@ -296,8 +302,8 @@ MainComponent::MainComponent()
                             double skewMid, std::function<void()> cb)
     {
         s.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-        s.setColour (juce::Slider::textBoxTextColourId, ShardColours::lcdFg);
-        s.setColour (juce::Slider::textBoxBackgroundColourId, ShardColours::screenBg);
+        s.setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
+        s.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
         s.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
         s.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 62, 20);
         s.setRange (lo, hi, step);
@@ -375,8 +381,8 @@ MainComponent::MainComponent()
     patternSlider.setSliderStyle (juce::Slider::IncDecButtons);
     patternSlider.setRange (0.0, (double) (kNumPatterns - 1), 1.0);
     patternSlider.setValue (0.0, juce::dontSendNotification);
-    patternSlider.setColour (juce::Slider::textBoxTextColourId, ShardColours::lcdFg);
-    patternSlider.setColour (juce::Slider::textBoxBackgroundColourId, ShardColours::screenBg);
+    patternSlider.setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
+    patternSlider.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
     patternSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     patternSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 90, 22);
     patternSlider.textFromValueFunction = [] (double v) { return "PATTERN " + juce::String ((int) v + 1); };
@@ -400,10 +406,10 @@ MainComponent::MainComponent()
     lengthSlider.setSliderStyle (juce::Slider::LinearHorizontal);
     lengthSlider.setRange ((double) kMinPatLen, (double) kMaxPatLen, (double) kStepCols);
     lengthSlider.setValue ((double) kMinPatLen, juce::dontSendNotification);
-    lengthSlider.setColour (juce::Slider::textBoxTextColourId, ShardColours::lcdFg);
-    lengthSlider.setColour (juce::Slider::textBoxBackgroundColourId, ShardColours::screenBg);
+    lengthSlider.setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
+    lengthSlider.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
     lengthSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    lengthSlider.setColour (juce::Slider::trackColourId, ShardColours::accent);
+    lengthSlider.setColour (juce::Slider::trackColourId, ZatiColours::accent);
     lengthSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 56, 22);
     lengthSlider.textFromValueFunction = [] (double v) { return "LEN " + juce::String ((int) v); };
     lengthSlider.updateText();
@@ -447,8 +453,8 @@ MainComponent::MainComponent()
     noteSlider.setSliderStyle (juce::Slider::IncDecButtons);
     noteSlider.setRange (-24.0, 24.0, 1.0);
     noteSlider.setValue (0.0, juce::dontSendNotification);
-    noteSlider.setColour (juce::Slider::textBoxTextColourId, ShardColours::lcdFg);
-    noteSlider.setColour (juce::Slider::textBoxBackgroundColourId, ShardColours::screenBg);
+    noteSlider.setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
+    noteSlider.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
     noteSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     noteSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 90, 22);
     noteSlider.textFromValueFunction = [] (double v) { return "NOTE " + (v > 0 ? juce::String ("+") : juce::String()) + juce::String ((int) v); };
@@ -530,13 +536,13 @@ MainComponent::MainComponent()
 
     addAndMakeVisible (waveform);
 
-    // COLORS badge in the header: taps cycle the 4 accent skins.
-    skinButton.setColour (juce::TextButton::buttonColourId, ShardColours::screenBg);
-    skinButton.setColour (juce::TextButton::textColourOffId, ShardColours::lcdFg);
-    skinButton.setColour (juce::TextButton::textColourOnId,  ShardColours::lcdFg);
+    // ZATI badge in the header: taps cycle the 4 accent skins.
+    skinButton.setColour (juce::TextButton::buttonColourId, ZatiColours::screenBg);
+    skinButton.setColour (juce::TextButton::textColourOffId, ZatiColours::lcdFg);
+    skinButton.setColour (juce::TextButton::textColourOnId,  ZatiColours::lcdFg);
     skinButton.onClick = [this]
     {
-        ShardColours::setSkin (ShardColours::currentSkin + 1);
+        ZatiColours::setSkin (ZatiColours::currentSkin + 1);
         applySkin();
     };
     projSheet.addAndMakeVisible (skinButton);
@@ -554,7 +560,7 @@ MainComponent::MainComponent()
         fxSheet.addAndMakeVisible (c);
 
     status.setJustificationType (juce::Justification::centred);
-    status.setColour (juce::Label::textColourId, ShardColours::inkDim);
+    status.setColour (juce::Label::textColourId, ZatiColours::inkDim);
     status.setText ("Toca un pad para sonar", juce::dontSendNotification);
     addAndMakeVisible (status);
 
@@ -565,12 +571,12 @@ MainComponent::MainComponent()
 }
 
 // Restyle everything that captured accent-coloured values at construction —
-// the rest of the UI reads ShardColours at paint time and only needs repaint.
+// the rest of the UI reads ZatiColours at paint time and only needs repaint.
 void MainComponent::applySkin()
 {
-    const auto acc = ShardColours::accent;
+    const auto acc = ZatiColours::accent;
     // Lit-state text must stay legible on a dark accent (TINTA skin).
-    const auto onTxt = acc.getPerceivedBrightness() < 0.5f ? ShardColours::inkLight : ShardColours::ink;
+    const auto onTxt = acc.getPerceivedBrightness() < 0.5f ? ZatiColours::inkLight : ZatiColours::ink;
 
     juce::TextButton* accented[] = { &padsButton, &secButton, &fxOpenButton,
                                      &loadButton, &fxTypeButton };
@@ -595,7 +601,7 @@ void MainComponent::applySkin()
     styleButton (playButton, acc);
     playButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
     playButton.setColour (juce::TextButton::textColourOnId,  juce::Colours::white);
-    playButton.setColour (juce::TextButton::buttonOnColourId, ShardColours::accentDim);
+    playButton.setColour (juce::TextButton::buttonOnColourId, ZatiColours::accentDim);
 
     juce::Slider* tracks[] = { &startSlider, &endSlider, &bpmSlider, &patternSlider, &lengthSlider };
     for (auto* s : tracks)
@@ -607,9 +613,9 @@ void MainComponent::applySkin()
     browseLoadButton.setColour (juce::TextButton::textColourOffId, onTxt);
 
     skinButton.setButtonText (juce::String ("SKIN ") + juce::String::charToString ((juce::juce_wchar) 0x00B7)
-                              + " " + ShardColours::skinName (ShardColours::currentSkin));
-    skinButton.setColour (juce::TextButton::textColourOffId, ShardColours::lcdFg);
-    skinButton.setColour (juce::TextButton::textColourOnId,  ShardColours::lcdFg);
+                              + " " + ZatiColours::skinName (ZatiColours::currentSkin));
+    skinButton.setColour (juce::TextButton::textColourOffId, ZatiColours::lcdFg);
+    skinButton.setColour (juce::TextButton::textColourOnId,  ZatiColours::lcdFg);
 
     repaint();
 }
@@ -932,17 +938,17 @@ void MainComponent::paint (juce::Graphics& g)
     auto full = getLocalBounds().toFloat();
 
     // 1. Full-bleed light chassis (edge to edge — the whole screen is the face).
-    g.setGradientFill (juce::ColourGradient (ShardColours::chassisTop, full.getCentreX(), full.getY(),
-                                             ShardColours::chassisBot, full.getCentreX(), full.getBottom(), false));
+    g.setGradientFill (juce::ColourGradient (ZatiColours::chassisTop, full.getCentreX(), full.getY(),
+                                             ZatiColours::chassisBot, full.getCentreX(), full.getBottom(), false));
     g.fillRect (full);
 
     // 2. Recessed LCD bezel around the scope (square, dark inset on a light face).
     if (! screenBezel.isEmpty())
     {
         auto r = screenBezel.toFloat();
-        g.setColour (ShardColours::knobBody2);
+        g.setColour (ZatiColours::knobBody2);
         g.fillRoundedRectangle (r.expanded (3.0f), 3.0f);
-        g.setColour (ShardColours::knobEdge.withAlpha (0.7f));
+        g.setColour (ZatiColours::knobEdge.withAlpha (0.7f));
         g.drawRoundedRectangle (r.expanded (3.0f).reduced (0.5f), 3.0f, 1.2f);
     }
 
@@ -953,8 +959,8 @@ void MainComponent::paint (juce::Graphics& g)
     if (! headerArea.isEmpty())
     {
         auto h = headerArea;
-        g.setColour (ShardColours::ink);
-        g.setFont (ShardColours::displayFont (Metrics::fTitle).withExtraKerningFactor (0.16f));
+        g.setColour (ZatiColours::ink);
+        g.setFont (ZatiColours::displayFont (Metrics::fTitle).withExtraKerningFactor (0.16f));
         g.drawText ("ZATI", h.getX(), h.getY(), 140, h.getHeight(), juce::Justification::centredLeft);
 
         const int sw = 9, sh = 13, gap = 4;
@@ -976,8 +982,8 @@ void MainComponent::paint (juce::Graphics& g)
 
     // 4. Machine face: CTRL labels (bank-dependent), VU strip, step LEDs.
     {
-        g.setColour (ShardColours::ink.withAlpha (0.85f));
-        g.setFont (ShardColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.16f));
+        g.setColour (ZatiColours::ink.withAlpha (0.85f));
+        g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.16f));
         juce::Slider* ks[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
         for (int i = 0; i < 3; ++i)
         {
@@ -985,18 +991,18 @@ void MainComponent::paint (juce::Graphics& g)
             const bool touched = macroTouched[(size_t) i];
 
             // Label names, readout measures — never the other way round.
-            g.setColour (touched ? ShardColours::ink : ShardColours::ink.withAlpha (0.55f));
-            g.setFont (ShardColours::monoFont (touched ? 10.5f : 10.0f, true)
+            g.setColour (touched ? ZatiColours::ink : ZatiColours::ink.withAlpha (0.55f));
+            g.setFont (ZatiColours::monoFont (touched ? 10.5f : 10.0f, true)
                          .withExtraKerningFactor (0.16f));
             g.drawText (touched ? macroParamLabel (i) : macroBaseLabel (i),
                         r.getX() - 8, r.getY() - 14, r.getWidth() + 16, 12,
                         juce::Justification::centred);
 
             auto chip = juce::Rectangle<int> (r.getX() - 2, r.getBottom() + 2, r.getWidth() + 4, 20);
-            g.setColour (ShardColours::screenBg);
+            g.setColour (ZatiColours::screenBg);
             g.fillRoundedRectangle (chip.toFloat(), 2.0f);
-            g.setColour (touched ? ShardColours::lcdFg : ShardColours::lcdFg.withAlpha (0.8f));
-            g.setFont (ShardColours::monoFont (Metrics::fLabel, true));
+            g.setColour (touched ? ZatiColours::lcdFg : ZatiColours::lcdFg.withAlpha (0.8f));
+            g.setFont (ZatiColours::monoFont (Metrics::fLabel, true));
             g.drawText (macroReadout (i), chip, juce::Justification::centred);
         }
 
@@ -1004,15 +1010,15 @@ void MainComponent::paint (juce::Graphics& g)
         if (! vuArea.isEmpty())
         {
             auto scr = vuArea.toFloat();
-            g.setColour (ShardColours::screenBg);
+            g.setColour (ZatiColours::screenBg);
             g.fillRoundedRectangle (scr, 2.0f);
 
             auto in = vuArea.reduced (24, 3);
             const int nSeg = 28;
             const float segW = (float) in.getWidth() / (float) nSeg;
 
-            g.setColour (ShardColours::lcdFg.withAlpha (0.55f));
-            g.setFont (ShardColours::monoFont (Metrics::fMeta, true));
+            g.setColour (ZatiColours::lcdFg.withAlpha (0.55f));
+            g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
             g.drawText ("L", vuArea.getX() + 6, in.getY() - 1, 12, in.getHeight() / 2, juce::Justification::centredLeft);
             g.drawText ("R", vuArea.getX() + 6, in.getCentreY(), 12, in.getHeight() / 2, juce::Justification::centredLeft);
 
@@ -1024,8 +1030,8 @@ void MainComponent::paint (juce::Graphics& g)
                     const bool hot = i >= (int) (nSeg * 0.82f);
                     // Lit segments in LCD ink: accent is near-black on this dark
                     // strip, so a "lit" segment read the same as an unlit one.
-                    juce::Colour c = i < lit ? (hot ? ShardColours::red : ShardColours::lcdFg)
-                                             : ShardColours::lcdFg.withAlpha (0.10f);
+                    juce::Colour c = i < lit ? (hot ? ZatiColours::red : ZatiColours::lcdFg)
+                                             : ZatiColours::lcdFg.withAlpha (0.10f);
                     g.setColour (c);
                     g.fillRect (juce::Rectangle<float> (row.getX() + (float) i * segW + 1.0f, row.getY(),
                                                         segW - 2.0f, row.getHeight()));
@@ -1043,7 +1049,7 @@ void MainComponent::paint (juce::Graphics& g)
         if (! stepStripArea.isEmpty())
         {
             auto scr = stepStripArea.toFloat();
-            g.setColour (ShardColours::screenBg);
+            g.setColour (ZatiColours::screenBg);
             g.fillRoundedRectangle (scr, 2.0f);
 
             auto in = stepStripArea.reduced (8, 4);
@@ -1063,7 +1069,7 @@ void MainComponent::paint (juce::Graphics& g)
                 }
                 else
                 {
-                    g.setColour (ShardColours::lcdFg.withAlpha ((i % 4 == 0) ? 0.30f : 0.12f));
+                    g.setColour (ZatiColours::lcdFg.withAlpha ((i % 4 == 0) ? 0.30f : 0.12f));
                     g.drawRoundedRectangle (r.reduced (0.5f), 1.5f, 1.0f);
                 }
             }
@@ -1076,13 +1082,13 @@ void MainComponent::paintFxSheetContent (juce::Graphics& g)
 {
     if (fxSheet.sheetBounds.isEmpty()) return;
 
-    g.setColour (ShardColours::ink.withAlpha (0.9f));
-    g.setFont (ShardColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
+    g.setColour (ZatiColours::ink.withAlpha (0.9f));
+    g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
     g.drawText ("FX", fxSheet.sheetBounds.reduced (14, 12).removeFromTop (16), juce::Justification::centredLeft);
 
     {
-        g.setColour (ShardColours::ink.withAlpha (0.85f));
-        g.setFont (ShardColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.12f));
+        g.setColour (ZatiColours::ink.withAlpha (0.85f));
+        g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.12f));
         auto name = [&g] (juce::Slider& s, const char* t)
         {
             auto r = s.getBounds();
@@ -1096,9 +1102,9 @@ void MainComponent::paintFxSheetContent (juce::Graphics& g)
         if (! fxCurveArea.isEmpty())
         {
             auto scr = fxCurveArea.toFloat();
-            g.setColour (ShardColours::knobBody2);
+            g.setColour (ZatiColours::knobBody2);
             g.fillRoundedRectangle (scr.expanded (3.0f), 3.0f);
-            g.setColour (ShardColours::screenBg);
+            g.setColour (ZatiColours::screenBg);
             g.fillRect (scr);
 
             auto plot = scr.reduced (10.0f, 14.0f);
@@ -1108,12 +1114,12 @@ void MainComponent::paintFxSheetContent (juce::Graphics& g)
             auto yForDb = [&plot, dbTop, dbBot] (float db) { return plot.getY() + plot.getHeight() * ((dbTop - db) / (dbTop - dbBot)); };
 
             // Grid: decades + 0 dB line, dim LCD green.
-            g.setColour (ShardColours::lcdFg.withAlpha (0.18f));
+            g.setColour (ZatiColours::lcdFg.withAlpha (0.18f));
             for (float f : { 100.0f, 1000.0f, 10000.0f })
                 g.drawVerticalLine ((int) xForF (f), plot.getY(), plot.getBottom());
             g.drawHorizontalLine ((int) yForDb (0.0f), plot.getX(), plot.getRight());
-            g.setColour (ShardColours::lcdFg.withAlpha (0.45f));
-            g.setFont (ShardColours::monoFont (Metrics::fMeta, true));
+            g.setColour (ZatiColours::lcdFg.withAlpha (0.45f));
+            g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
             g.drawText ("100",  (int) xForF (100.0f) - 14,   (int) plot.getBottom() + 1, 28, 10, juce::Justification::centred);
             g.drawText ("1K",   (int) xForF (1000.0f) - 14,  (int) plot.getBottom() + 1, 28, 10, juce::Justification::centred);
             g.drawText ("10K",  (int) xForF (10000.0f) - 14, (int) plot.getBottom() + 1, 28, 10, juce::Justification::centred);
@@ -1136,14 +1142,14 @@ void MainComponent::paintFxSheetContent (juce::Graphics& g)
             }
             // lcdFg, not accent: accent is the achromatic chassis ink and sits
             // at ~1.06:1 on this dark plot — the curve simply vanished.
-            g.setColour (ShardColours::lcdFg);
+            g.setColour (ZatiColours::lcdFg);
             g.strokePath (curve, juce::PathStrokeType (2.2f, juce::PathStrokeType::curved));
 
             // Cutoff marker + readout.
-            g.setColour (ShardColours::yellow.withAlpha (0.8f));
+            g.setColour (ZatiColours::yellow.withAlpha (0.8f));
             g.drawVerticalLine ((int) xForF (juce::jlimit (fLo, fHi, fc)), plot.getY(), plot.getBottom());
-            g.setColour (ShardColours::lcdFg);
-            g.setFont (ShardColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.12f));
+            g.setColour (ZatiColours::lcdFg);
+            g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.12f));
             const juce::String fcTxt = fc >= 1000.0f ? juce::String (fc / 1000.0f, 1) + " kHz" : juce::String ((int) fc) + " Hz";
             g.drawText ((hp ? "HPF  " : "LPF  ") + fcTxt + "   Q " + juce::String (q, 2),
                         (int) scr.getX() + 8, (int) scr.getY() + 3, (int) scr.getWidth() - 16, 12,
@@ -1159,15 +1165,15 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
 
     const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
     const int sp = juce::jmax (0, selectedPad);
-    g.setColour (ShardColours::ink.withAlpha (0.9f));
-    g.setFont (ShardColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
+    g.setColour (ZatiColours::ink.withAlpha (0.9f));
+    g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
     g.drawText ("PAD " + juce::String (sp + 1)
                 + (padName[(size_t) sp].isNotEmpty() ? "  " + dot + "  " + padName[(size_t) sp].toUpperCase() : juce::String()),
                 padSheet.sheetBounds.reduced (14, 12).removeFromTop (16), juce::Justification::centredLeft);
 
     {
         // Knobs: label above (same convention as FX).
-        g.setFont (ShardColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
+        g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
         auto name = [&g] (juce::Slider& s, const char* t)
         {
             auto r = s.getBounds();
@@ -1177,7 +1183,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
         name (attackSlider, "ATTACK"); name (releaseSlider, "RELEASE"); name (chokeSlider, "CHOKE");
 
         // Start/End stay linear (a trim range, not a knob): label to the left.
-        g.setFont (ShardColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.06f));
+        g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.06f));
         auto lab = [&g] (juce::Slider& s, const char* t)
         {
             auto r = s.getBounds();
@@ -1194,8 +1200,8 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
             g.fillRoundedRectangle (zatiSwatchArea.toFloat(), 3.0f);
 
             const bool darkFrag = Zati::colour (z).getPerceivedBrightness() < 0.55f;
-            g.setColour (darkFrag ? ShardColours::inkLight : ShardColours::ink);
-            g.setFont (ShardColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
+            g.setColour (darkFrag ? ZatiColours::inkLight : ZatiColours::ink);
+            g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
             g.drawText ("ZATI " + juce::String (z + 1) + "  " + Zati::name (z),
                         zatiSwatchArea, juce::Justification::centred);
         }
@@ -1205,17 +1211,17 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
         if (! editInfoArea.isEmpty() && editInfoArea.getHeight() > 40)
         {
             auto scr = editInfoArea.toFloat();
-            g.setColour (ShardColours::knobBody2);
+            g.setColour (ZatiColours::knobBody2);
             g.fillRoundedRectangle (scr.expanded (3.0f), 3.0f);
-            g.setColour (ShardColours::screenBg);
+            g.setColour (ZatiColours::screenBg);
             g.fillRect (scr);
 
             const auto sb = uiSample[(size_t) sp];
 
             if (sb == nullptr || sb->buffer.getNumSamples() <= 0)
             {
-                g.setColour (ShardColours::lcdFg.withAlpha (0.5f));
-                g.setFont (ShardColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.16f));
+                g.setColour (ZatiColours::lcdFg.withAlpha (0.5f));
+                g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.16f));
                 g.drawText ("PAD VACIO  -  LOAD O REC PARA CARGAR", editInfoArea, juce::Justification::centred);
             }
             else
@@ -1231,7 +1237,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
                 const float s0 = padStart01[(size_t) sp], s1 = padEnd01[(size_t) sp];
 
                 // Trim window shading (kept region slightly lit).
-                g.setColour (ShardColours::lcdFg.withAlpha (0.07f));
+                g.setColour (ZatiColours::lcdFg.withAlpha (0.07f));
                 g.fillRect (plotR.getX() + plotR.getWidth() * s0, plotR.getY(),
                             plotR.getWidth() * juce::jmax (0.0f, s1 - s0), plotR.getHeight());
 
@@ -1269,7 +1275,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
                 g.fillPath (wfIn);
 
                 // Trim edges.
-                g.setColour (ShardColours::yellow.withAlpha (0.85f));
+                g.setColour (ZatiColours::yellow.withAlpha (0.85f));
                 g.drawVerticalLine ((int) (plotR.getX() + plotR.getWidth() * s0), plotR.getY(), plotR.getBottom());
                 g.drawVerticalLine ((int) (plotR.getX() + plotR.getWidth() * s1) - 1, plotR.getY(), plotR.getBottom());
 
@@ -1281,8 +1287,8 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
                                          + (nCh >= 2 ? "STEREO" : "MONO") + "   "
                                          + juce::String (sr / 1000.0, 1) + " kHz   "
                                          + juce::String (kb) + " KB";
-                g.setColour (ShardColours::lcdFg);
-                g.setFont (ShardColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
+                g.setColour (ZatiColours::lcdFg);
+                g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
                 g.drawText (facts, meta, juce::Justification::centredLeft);
             }
         }
@@ -1300,8 +1306,8 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     const int sp = juce::jmax (0, selectedPad);
     auto inner = seqSheet.sheetBounds.reduced (12, 6);
 
-    g.setColour (ShardColours::ink.withAlpha (0.9f));
-    g.setFont (ShardColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
+    g.setColour (ZatiColours::ink.withAlpha (0.9f));
+    g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
     const juce::String t = "STEPS  " + dot + "  PAD " + juce::String (sp + 1)
                          + (padName[(size_t) sp].isNotEmpty() ? "   " + padName[(size_t) sp] : juce::String())
                          + "   " + dot + "   P" + juce::String (selectedPattern + 1);
@@ -1312,8 +1318,8 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     const juce::String chainStr = (engine.getChainLength() <= 0)
         ? "looping P" + juce::String (selectedPattern + 1)
         : "playing P" + juce::String (engine.getPlayingPattern() + 1);
-    g.setColour (ShardColours::inkDim);
-    g.setFont (ShardColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
+    g.setColour (ZatiColours::inkDim);
+    g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
     g.drawText (chainStr, inner.removeFromTop (14), juce::Justification::centredLeft);
 
     // Selection (yellow) and playhead (red) rings — flat fills never blend,
@@ -1322,7 +1328,7 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     {
         if (auto* b = stepButtons[selectedStep])
         {
-            g.setColour (ShardColours::yellow);
+            g.setColour (ZatiColours::yellow);
             g.drawRect (b->getBounds(), 2);
         }
     }
@@ -1331,14 +1337,14 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     {
         if (auto* b = stepButtons[ps])
         {
-            g.setColour (ShardColours::red);
+            g.setColour (ZatiColours::red);
             g.drawRect (b->getBounds(), 2);
         }
     }
     // Ring the bank being edited on the chain-include row.
     if (auto* b = patternButtons[selectedPattern])
     {
-        g.setColour (ShardColours::ink.withAlpha (0.7f));
+        g.setColour (ZatiColours::ink.withAlpha (0.7f));
         g.drawRect (b->getBounds(), 2);
     }
 }
@@ -1348,9 +1354,9 @@ void MainComponent::Sheet::paint (juce::Graphics& g)
     g.fillAll (juce::Colours::black.withAlpha (0.45f));
     if (sheetBounds.isEmpty()) return;
 
-    g.setColour (ShardColours::chassisTop);
+    g.setColour (ZatiColours::chassisTop);
     g.fillRoundedRectangle (sheetBounds.toFloat(), 14.0f);
-    g.setColour (ShardColours::ink.withAlpha (0.55f));
+    g.setColour (ZatiColours::ink.withAlpha (0.55f));
     g.drawRoundedRectangle (sheetBounds.toFloat().reduced (0.5f), 14.0f, 1.5f);
 
     if (paintContent) paintContent (g);
@@ -1748,7 +1754,7 @@ void MainComponent::selectPad (int index)
     // three CTRL pointers, so the knobs always say which fragment they act on.
     {
         const auto frag = padHasSample[(size_t) index] ? Zati::colour (padZati[(size_t) index])
-                                                       : ShardColours::accent;
+                                                       : ZatiColours::accent;
         for (juce::Slider* k : { &macroCtrl1, &macroCtrl2, &macroCtrl3 })
         {
             k->setColour (juce::Slider::rotarySliderFillColourId, frag);
@@ -1978,23 +1984,23 @@ void MainComponent::ProjectList::paintListBoxItem (int row, juce::Graphics& g, i
     if (! juce::isPositiveAndBelow (row, names.size())) return;
 
     auto r = juce::Rectangle<int> (0, 0, w, h);
-    if (selected)      { g.setColour (ShardColours::accent);                 g.fillRect (r); }
-    else if (row % 2)  { g.setColour (ShardColours::ink.withAlpha (0.035f)); g.fillRect (r); }
+    if (selected)      { g.setColour (ZatiColours::accent);                 g.fillRect (r); }
+    else if (row % 2)  { g.setColour (ZatiColours::ink.withAlpha (0.035f)); g.fillRect (r); }
 
     const auto fg = selected
-        ? (ShardColours::accent.getPerceivedBrightness() < 0.5f ? ShardColours::inkLight : ShardColours::ink)
-        : ShardColours::ink;
+        ? (ZatiColours::accent.getPerceivedBrightness() < 0.5f ? ZatiColours::inkLight : ZatiColours::ink)
+        : ZatiColours::ink;
     g.setColour (fg);
-    g.setFont (ShardColours::monoFont (Metrics::fValue, true).withExtraKerningFactor (0.04f));
+    g.setFont (ZatiColours::monoFont (Metrics::fValue, true).withExtraKerningFactor (0.04f));
     g.drawFittedText (names[row], r.reduced (10, 0), juce::Justification::centredLeft, 1, 0.9f);
 }
 
 juce::ValueTree MainComponent::captureState() const
 {
-    juce::ValueTree s ("COLORS");
+    juce::ValueTree s ("ZATI");
     s.setProperty ("version", 1, nullptr);
     s.setProperty ("bpm", bpmSlider.getValue(), nullptr);
-    s.setProperty ("skin", ShardColours::currentSkin, nullptr);
+    s.setProperty ("skin", ZatiColours::currentSkin, nullptr);
     s.setProperty ("macroBank", macroBank, nullptr);
     s.setProperty ("selectedPattern", selectedPattern, nullptr);
 
@@ -2061,9 +2067,9 @@ juce::ValueTree MainComponent::captureState() const
 
 void MainComponent::applyState (const juce::ValueTree& s)
 {
-    if (! s.hasType ("COLORS")) return;
+    if (! s.hasType ("ZATI") && ! s.hasType ("COLORS")) return;   // COLORS: proyectos anteriores al renombrado
 
-    ShardColours::setSkin ((int) s.getProperty ("skin", 0));
+    ZatiColours::setSkin ((int) s.getProperty ("skin", 0));
     applySkin();
 
     bpmSlider.setValue ((double) s.getProperty ("bpm", 120.0), juce::sendNotification);
@@ -2324,12 +2330,12 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
     if (projSheet.sheetBounds.isEmpty()) return;
 
     auto inner = projSheet.sheetBounds.reduced (12, 6);
-    g.setColour (ShardColours::ink.withAlpha (0.9f));
-    g.setFont (ShardColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
+    g.setColour (ZatiColours::ink.withAlpha (0.9f));
+    g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
     g.drawText ("PROYECTOS", inner.removeFromTop (16), juce::Justification::centredLeft);
 
-    g.setColour (ShardColours::inkDim);
-    g.setFont (ShardColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
+    g.setColour (ZatiColours::inkDim);
+    g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
     g.drawText (currentProject.isNotEmpty()
                     ? "abierto: " + currentProject
                     : juce::String (projModel.names.isEmpty()
@@ -2403,15 +2409,15 @@ void MainComponent::paintBrowseSheetContent (juce::Graphics& g)
     if (browseSheet.sheetBounds.isEmpty()) return;
 
     auto inner = browseSheet.sheetBounds.reduced (12, 6);
-    g.setColour (ShardColours::ink.withAlpha (0.9f));
-    g.setFont (ShardColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
+    g.setColour (ZatiColours::ink.withAlpha (0.9f));
+    g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
     g.drawText ("CARGAR EN PAD " + juce::String (juce::jmax (0, browseTargetPad) + 1),
                 inner.removeFromTop (16), juce::Justification::centredLeft);
 
     const bool picked = browser != nullptr && browser->getNumSelectedFiles() > 0
                      && browser->getSelectedFile (0).existsAsFile();
-    g.setColour (ShardColours::inkDim);
-    g.setFont (ShardColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
+    g.setColour (ZatiColours::inkDim);
+    g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
     g.drawText (picked ? browser->getSelectedFile (0).getFileName()
                        : juce::String ("elige una muestra  -  wav / aiff / flac / ogg / mp3"),
                 inner.removeFromTop (14), juce::Justification::centredLeft);

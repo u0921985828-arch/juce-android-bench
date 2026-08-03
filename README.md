@@ -1,4 +1,4 @@
-# Shard — P0 native sampler prototype (JUCE / C++)  ·  by ARTiFACTS
+# Zati — native sampler (JUCE / C++)  ·  by ARTiFACTS
 
 **P0 is a latency-validation gate**, not a product. It is a minimal but
 *architecturally correct* JUCE skeleton whose only job is to prove that
@@ -67,7 +67,7 @@ Source/
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release -j
 ```
-The binary lands under `build/Shard_artefacts/Release/` (exact path varies by
+The binary lands under `build/Zati_artefacts/Release/` (exact path varies by
 OS/generator). Launch it, click **Load sample**, pick a file, then tap the pads.
 
 > The desktop build only validates the DSP and threading plumbing. Desktop audio
@@ -128,8 +128,8 @@ an **original visual identity**, not a reproduction of the hardware:
 - **Generic effect names** — avoid Roland's product terms. E.g. "DJFX Looper" →
   "Beat Repeat", "Isolator" → "Multiband EQ". Describe the DSP, don't borrow the
   brand's labels.
-- **Naming** — the app is "Shard" (studio: ARTiFACTS), no "404"; the package id is
-  `com.artifacts.shard`. Keep "404" and Roland terminology out of user-facing
+- **Naming** — the app is "Zati" (studio: ARTiFACTS), no "404"; the package id is
+  `com.artifacts.zati`. Keep "404" and Roland terminology out of user-facing
   strings, package ids, and store metadata.
 
 The C++/JUCE DSP engine is original IP and is not the concern here — this is
