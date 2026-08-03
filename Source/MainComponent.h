@@ -159,6 +159,38 @@ private:
     //  the FX sheet stays the rack where you choose and set up. Tapping a slot
     //  arms its effect AND hands it the three CTRL knobs, which is what makes
     //  a single row worth more than a paged strip of every effect.
+    // A slot has two gestures on one target: tap = fire, long press =
+    // reassign. TextButton only reports the click, so the press duration is
+    // measured here and a long hold suppresses the click that would follow.
+    class HoldButton : public juce::TextButton
+    {
+    public:
+        using juce::TextButton::TextButton;
+        std::function<void()> onHold;
+        static constexpr int kHoldMs = 550;
+
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            held = false;
+            juce::TextButton::mouseDown (e);
+        }
+        void mouseUp (const juce::MouseEvent& e) override
+        {
+            if (e.getLengthOfMousePress() >= kHoldMs)
+            {
+                held = true;
+                if (onHold) onHold();
+                setState (buttonNormal);   // swallow the click this press would fire
+                return;
+            }
+            juce::TextButton::mouseUp (e);
+        }
+        bool wasHeld() const { return held; }
+
+    private:
+        bool held = false;
+    };
+
     static constexpr int kNumSlots = 4;
     enum class SlotFx { Filtro = 0, Delay, Drive, Loop };
     struct Slot
@@ -168,8 +200,9 @@ private:
     };
     std::array<Slot, kNumSlots> slots {};
     int activeSlot = -1;
-    juce::OwnedArray<juce::TextButton> slotButtons;
+    juce::OwnedArray<HoldButton> slotButtons;
     void slotTapped (int i);
+    void cycleSlotFx (int i);
     void applySlotState (int i);
     const char* slotLabel (SlotFx fx) const;
     juce::Rectangle<int> slotRowArea;
@@ -212,6 +245,10 @@ private:
     juce::TextButton loopButton { "LOOP" };
     juce::TextButton chopButton { "AUTO CHOP" };
     juce::TextButton micButton  { "GRABAR MIC" };   // lives in the PADS sheet
+    juce::TextButton zatiPrevButton { juce::CharPointer_UTF8 ("\xe2\x97\x80") },
+                     zatiNextButton { juce::CharPointer_UTF8 ("\xe2\x96\xb6") };
+    juce::Rectangle<int> zatiSwatchArea;
+    void shiftZati (int delta);
     bool recArmed = false;                          // REC writes hits into the pattern
 
     juce::Slider pitchSlider, volSlider, startSlider, endSlider, bpmSlider, chokeSlider;

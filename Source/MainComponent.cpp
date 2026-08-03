@@ -241,6 +241,14 @@ MainComponent::MainComponent()
     micButton.onClick = [this] { toggleMicSampling(); };
     padSheet.addAndMakeVisible (micButton);
 
+    for (auto* zb : { &zatiPrevButton, &zatiNextButton })
+    {
+        styleButton (*zb, kKey);
+        padSheet.addAndMakeVisible (zb);
+    }
+    zatiPrevButton.onClick = [this] { shiftZati (-1); };
+    zatiNextButton.onClick = [this] { shiftZati (+1); };
+
     playButton.setClickingTogglesState (true);
     styleButton (playButton, kAccent);                   // PLAY is the accent hero button
     playButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
@@ -497,10 +505,11 @@ MainComponent::MainComponent()
         for (int i = 0; i < kNumSlots; ++i)
         {
             slots[(size_t) i].fx = defaults[i];
-            auto* b = new juce::TextButton (slotLabel (defaults[i]));
+            auto* b = new HoldButton (slotLabel (defaults[i]));
             styleButton (*b, kKey);
             b->setColour (juce::TextButton::buttonOnColourId, kAccent);
             b->onClick = [this, i] { slotTapped (i); };
+            b->onHold  = [this, i] { cycleSlotFx (i); };
             addAndMakeVisible (b);
             slotButtons.add (b);
         }
@@ -714,6 +723,30 @@ void MainComponent::applySlotState (int i)
             }
             break;
     }
+}
+
+// Long press reassigns the slot. Turning it off first matters: leaving the
+// outgoing effect engaged while the button starts controlling a different one
+// would strand a filter or a delay with no visible switch to undo it.
+void MainComponent::cycleSlotFx (int i)
+{
+    if (! juce::isPositiveAndBelow (i, kNumSlots)) return;
+
+    auto& s = slots[(size_t) i];
+    if (s.on)
+    {
+        s.on = false;
+        applySlotState (i);
+        slotButtons[i]->setToggleState (false, juce::dontSendNotification);
+    }
+
+    s.fx = (SlotFx) (((int) s.fx + 1) % 4);
+    slotButtons[i]->setButtonText (slotLabel (s.fx));
+    if (activeSlot == i) activeSlot = -1;
+
+    status.setText ("Slot " + juce::String (i + 1) + " -> " + slotLabel (s.fx),
+                    juce::dontSendNotification);
+    repaint();
 }
 
 void MainComponent::slotTapped (int i)
@@ -1148,6 +1181,21 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
         };
         lab (startSlider, "START"); lab (endSlider, "END");
 
+        // ZATI row: the fragment colour this pad carries, named as well as
+        // shown — the number and the name are the non-chromatic half.
+        if (! zatiSwatchArea.isEmpty())
+        {
+            const int z = padZati[(size_t) sp];
+            g.setColour (Zati::colour (z));
+            g.fillRoundedRectangle (zatiSwatchArea.toFloat(), 3.0f);
+
+            const bool darkFrag = Zati::colour (z).getPerceivedBrightness() < 0.55f;
+            g.setColour (darkFrag ? ShardColours::inkLight : ShardColours::ink);
+            g.setFont (ShardColours::monoFont (11.0f, true).withExtraKerningFactor (0.14f));
+            g.drawText ("ZATI " + juce::String (z + 1) + "  " + Zati::name (z),
+                        zatiSwatchArea, juce::Justification::centred);
+        }
+
         // Sample-info card: what exactly is on this pad — mini waveform with
         // the trim window shaded, plus duration / channels / rate / size.
         if (! editInfoArea.isEmpty() && editInfoArea.getHeight() > 40)
@@ -1438,7 +1486,7 @@ void MainComponent::resized()
 
     // PADS sheet: per-pad knobs, trim, REV/LOOP + AUTO CHOP, sample-info card.
     {
-        auto inner = sheetFromBottom (padSheet, 531);
+        auto inner = sheetFromBottom (padSheet, 566);
         auto titleRow = inner.removeFromTop (32);
         padCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
 
@@ -1460,6 +1508,12 @@ void MainComponent::resized()
         auto rr2 = inner.removeFromTop (30);
         chopButton.setBounds (rr2.removeFromLeft (rr2.getWidth() / 2).reduced (3, 0));
         micButton.setBounds  (rr2.reduced (3, 0));
+        inner.removeFromTop (5);
+
+        auto zr = inner.removeFromTop (30);
+        zatiPrevButton.setBounds (zr.removeFromLeft (56).reduced (3, 0));
+        zatiNextButton.setBounds (zr.removeFromRight (56).reduced (3, 0));
+        zatiSwatchArea = zr.reduced (4, 2);      // drawn in paintPadSheetContent
         inner.removeFromTop (8);
 
         editInfoArea = inner;      // sample-info card (drawn in paintPadSheetContent)
@@ -1681,7 +1735,7 @@ void MainComponent::selectPad (int index)
     for (int i = 0; i < kNumPads; ++i) refreshPad (i);
     repaint (headerArea);          // the fragment strip tracks which zatis are loaded
     if (macroBank == 2) refreshMacroValues();      // PAD bank tracks the selection
-    if (padSheet.isVisible()) padSheet.repaint();  // its title/card follow the selection
+    if (padSheet.isVisible()) padSheet.repaint();  // title, zati swatch and card follow the selection
 }
 
 // The display shows the whole cut, not one pad: every pad pointing at the
@@ -1765,6 +1819,25 @@ void MainComponent::rebuildChain()
         if (patternActiveUI[(size_t) i])
             engine.addToChain (i);
     repaint();
+}
+
+// Assignment follows cut order by default; this is the spec's manual override,
+// for organising a kit by kind of sound instead of by position.
+void MainComponent::shiftZati (int delta)
+{
+    if (selectedPad < 0) return;
+
+    auto& z = padZati[(size_t) selectedPad];
+    z = ((z + delta) % Zati::kNumColours + Zati::kNumColours) % Zati::kNumColours;
+
+    if (auto* p = pads[selectedPad]) p->setZati (z);
+    refreshWaveformSegments();
+    repaint();
+    padSheet.repaint();
+
+    status.setText ("Pad " + juce::String (selectedPad + 1) + " -> zati "
+                        + juce::String (z + 1) + " " + Zati::name (z),
+                    juce::dontSendNotification);
 }
 
 void MainComponent::autoChopSelected()
