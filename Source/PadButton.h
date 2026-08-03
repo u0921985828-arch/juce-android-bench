@@ -43,7 +43,12 @@ public:
         juce::Colour edge   = loaded ? frag : ShardColours::padBorder;
         juce::Colour idxCol = loaded ? ShardColours::ink.withAlpha (0.92f)
                                      : ShardColours::ink.withAlpha (0.30f);
-        juce::Colour nmCol  = ShardColours::inkDim;
+        //  inkDim on a 30% fragment fill measured 3.25-4.02:1 across the eight
+        //  colours — under the 4.5 needed for 9px text on every one of them.
+        //  Ink at 0.75 clears it on the worst (5.84:1) and still reads as
+        //  secondary against the pad's own numeral.
+        juce::Colour nmCol  = loaded ? ShardColours::ink.withAlpha (0.75f)
+                                     : ShardColours::inkDim;
         juce::Colour sparkCol = loaded ? frag.darker (0.35f) : ShardColours::ink.withAlpha (0.30f);
         bool onAccent = false;
 
@@ -52,8 +57,11 @@ public:
             onAccent = true;
             base   = frag;
             edge   = frag.brighter (0.35f);
-            const bool darkFrag = frag.getPerceivedBrightness() < 0.55f;
-            idxCol = darkFrag ? juce::Colours::white : ShardColours::ink;
+            //  Pick by measured contrast, not by a brightness threshold. The
+            //  old 0.55 cut put red and violet on white at 3.6:1 and 3.9:1
+            //  when ink beats white on all eight fragment colours — the
+            //  threshold was simply the wrong test.
+            idxCol = ShardColours::bestOn (frag, ShardColours::ink, juce::Colours::white);
             nmCol  = idxCol.withAlpha (0.9f);
             sparkCol = idxCol.withAlpha (0.85f);
         }

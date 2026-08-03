@@ -72,7 +72,10 @@ namespace ShardColours
     // --- LCD (dark, pops on the white face) ---
     const juce::Colour screenBg   { 0xff101010 };
     const juce::Colour lcdFg      { 0xffe6e6e2 };
-    const juce::Colour lcdDim     { 0xff5c5c56 };
+    //  Raised from 0xff5c5c56: that was 2.83:1 on the LCD, below the 4.5
+    //  minimum, and it carries real information (ruler, cut lines, fragment
+    //  numbers, empty-state text), not decoration. Now 5.48:1.
+    const juce::Colour lcdDim     { 0xff8a8a83 };
 
     // --- Pads (neutral when empty; a loaded pad wears its zati colour) ---
     const juce::Colour padTop     { 0xffe3e3dd };
@@ -125,6 +128,33 @@ namespace ShardColours
     inline juce::Font monoFont (float h, bool bold = false)
     {
         return juce::Font (juce::FontOptions().withTypeface (bold ? monoBold() : monoRegular()).withHeight (h));
+    }
+
+    //  Real WCAG contrast, not a brightness proxy. Perceived brightness is a
+    //  different curve and it disagrees with the standard exactly where it
+    //  matters — picking text over mid-tone fragment colours.
+    inline float relativeLuminance (juce::Colour c)
+    {
+        auto ch = [] (float v)
+        {
+            v /= 255.0f;
+            return v <= 0.03928f ? v / 12.92f : std::pow ((v + 0.055f) / 1.055f, 2.4f);
+        };
+        return 0.2126f * ch ((float) c.getRed())
+             + 0.7152f * ch ((float) c.getGreen())
+             + 0.0722f * ch ((float) c.getBlue());
+    }
+
+    inline float contrastRatio (juce::Colour a, juce::Colour b)
+    {
+        const float la = relativeLuminance (a), lb = relativeLuminance (b);
+        return (juce::jmax (la, lb) + 0.05f) / (juce::jmin (la, lb) + 0.05f);
+    }
+
+    //  The legible one of two candidates against a background.
+    inline juce::Colour bestOn (juce::Colour bg, juce::Colour a, juce::Colour b)
+    {
+        return contrastRatio (a, bg) >= contrastRatio (b, bg) ? a : b;
     }
 
     // A recessed screw head with a slot.
