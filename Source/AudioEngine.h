@@ -23,9 +23,9 @@ class AudioEngine
 {
 public:
     static constexpr int kNumPads       = 16;
-    static constexpr int kNumSteps      = 48;   // max steps per pattern (length is variable, see below)
+    static constexpr int kNumSteps      = 64;   // max steps per pattern (length is variable, see below)
     static constexpr int kMinPatLen     = 16;
-    static constexpr int kMaxPatLen     = kNumSteps;   // 48 = 6 rows of 8 — keeps step cells readable
+    static constexpr int kMaxPatLen     = kNumSteps;   // 64 = four bars of 16
     static constexpr int kNumPatterns   = 8;    // pattern banks
     static constexpr int kMaxChain      = 16;   // chain slots (pattern indices, in play order)
 

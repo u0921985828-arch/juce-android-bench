@@ -60,14 +60,28 @@ MainComponent::MainComponent()
         refreshPad (i);
     }
 
-    for (int s = 0; s < kNumSteps; ++s)
+    stepGrid.onCell = [this] (int pad, int step) { stepCellToggled (pad, step); };
+    seqSheet.addAndMakeVisible (stepGrid);
+
+    // Bar selector: 64 steps will not fit across a phone at a size worth
+    // tapping, so the grid pages a bar at a time instead of shrinking.
+    for (int b = 0; b < kNumSteps / kStepCols; ++b)
     {
-        auto* b = new juce::TextButton();
-        b->onClick = [this, s] { stepClicked (s); };
-        styleButton (*b, kStepOff);
-        seqSheet.addAndMakeVisible (b);
-        stepButtons.add (b);
+        auto* t = new juce::TextButton (juce::String (b + 1));
+        styleButton (*t, kStepOff);
+        t->setColour (juce::TextButton::buttonOnColourId, kAccent);
+        t->setClickingTogglesState (true);
+        t->onClick = [this, b]
+        {
+            selectedBar = b;
+            for (int i = 0; i < barButtons.size(); ++i)
+                barButtons[i]->setToggleState (i == b, juce::dontSendNotification);
+            refreshStepGrid();
+        };
+        seqSheet.addAndMakeVisible (t);
+        barButtons.add (t);
     }
+    barButtons[0]->setToggleState (true, juce::dontSendNotification);
 
     // Module bar — rule of three: PADS / SEC / FX, one floating sheet each.
     // Nothing ever replaces the machine face; CHOP is a button inside the
@@ -394,7 +408,9 @@ MainComponent::MainComponent()
         selectedStep = -1;
         noteSlider.setValue (0.0, juce::dontSendNotification);
         lengthSlider.setValue (engine.getPatternLength (selectedPattern), juce::dontSendNotification);
+        selectedBar = 0;
         resized();
+        refreshStepGrid();
         seqSheet.repaint();   // sheet card itself can grow/shrink with the bank's LEN
     };
     seqSheet.addAndMakeVisible (patternSlider);
@@ -404,7 +420,7 @@ MainComponent::MainComponent()
     // one row of 8 at a time. Changing it reflows the step grid itself
     // (more/fewer rows), so it forces a full resized(), not just a repaint.
     lengthSlider.setSliderStyle (juce::Slider::LinearHorizontal);
-    lengthSlider.setRange ((double) kMinPatLen, (double) kMaxPatLen, (double) kStepCols);
+    lengthSlider.setRange ((double) kMinPatLen, (double) kMaxPatLen, (double) kStepCols);   // whole bars
     lengthSlider.setValue ((double) kMinPatLen, juce::dontSendNotification);
     lengthSlider.setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
     lengthSlider.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
@@ -417,6 +433,7 @@ MainComponent::MainComponent()
     {
         engine.setPatternLength (selectedPattern, (int) lengthSlider.getValue());
         resized();
+        refreshStepGrid();
         seqSheet.repaint();   // sheet card grows/shrinks with LEN
     };
     seqSheet.addAndMakeVisible (lengthSlider);
@@ -528,7 +545,12 @@ MainComponent::MainComponent()
             auto* b = new juce::TextButton (bankNames[i]);
             styleButton (*b, kKey);
             b->setColour (juce::TextButton::buttonOnColourId, kAccent);
-            b->onClick = [this, i] { setMacroBank (i); };
+            //  This chip used to be tappable, and that is what produced "there
+            //  are two delays": you could point CTRL at DELAY here WITHOUT
+            //  arming the delay slot, while the FX sheet held a third copy of
+            //  the same parameters. One effect, three switches, no winner.
+            //  It is a READOUT now — only a slot can hand over the knobs.
+            b->setInterceptsMouseClicks (false, false);
             addAndMakeVisible (b);
             macroBankBtns.add (b);
         }
@@ -1322,25 +1344,7 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
     g.drawText (chainStr, inner.removeFromTop (14), juce::Justification::centredLeft);
 
-    // Selection (yellow) and playhead (red) rings — flat fills never blend,
-    // these are drawn as outlines on top instead.
-    if (selectedStep >= 0)
-    {
-        if (auto* b = stepButtons[selectedStep])
-        {
-            g.setColour (ZatiColours::yellow);
-            g.drawRect (b->getBounds(), 2);
-        }
-    }
-    const int ps = engine.getPlayStep();
-    if (ps >= 0 && engine.getPlayingPattern() == selectedPattern)
-    {
-        if (auto* b = stepButtons[ps])
-        {
-            g.setColour (ZatiColours::red);
-            g.drawRect (b->getBounds(), 2);
-        }
-    }
+    // The grid paints its own playhead and lane colours (see StepGrid).
     // Ring the bank being edited on the chain-include row.
     if (auto* b = patternButtons[selectedPattern])
     {
@@ -1403,11 +1407,10 @@ void MainComponent::resized()
     // width-bound squares) — the screen is the protagonist.
     int screenH;
     {
-        const int chromeBelow = 8 + 42 + 6 + 40 + 8 + 18 + 6;          // gaps + module bar + transport + status
+        const int chromeBelow = 16 + 4 + 16 + 8 + 32 + 8 + 40 + 8 + 18 + 6;   // VU + strip + module bar + transport + status          // gaps + module bar + transport + status
         const int cell = (area.getWidth() - 3 * 8) / 4;                // square pad cells, 4 cols, gap 8
-        const int bodyNeed = 20 + 6 + 18 + 4 + 92 + 6                  // VU + bank chips + CTRL knobs
-                           + 4 + 30 + 5                                // + FX slot row
-                           + 20 + 8                                    // + step LEDs
+        const int bodyNeed = 16 + 4 + 88 + 8                            // chip readout + CTRL knobs
+                           + 4 + 32 + 8                                // + FX slot row
                            + (4 * cell + 3 * 8);                       // + pads
         screenH = juce::jmax (96, area.getHeight() - (30 + 8) - chromeBelow - bodyNeed);
     }
@@ -1416,9 +1419,18 @@ void MainComponent::resized()
     headerArea = area.removeFromTop (Metrics::tab);
     area.removeFromTop (8);
 
+    //  VU above the screen and the step strip below it, so the two readouts
+    //  frame the LCD instead of sitting among the controls. Both are watched,
+    //  not touched, so they belong together up here.
+    vuArea = area.removeFromTop (Metrics::lg).reduced (2, 0);
+    area.removeFromTop (Metrics::xs);
+
     screenBezel = area.removeFromTop (screenH);
     waveform.setBounds (screenBezel);
-    area.removeFromTop (8);
+    area.removeFromTop (Metrics::xs);
+
+    stepStripArea = area.removeFromTop (Metrics::lg).reduced (2, 0);
+    area.removeFromTop (Metrics::sm);
 
     // Module bar — rule of three: PADS / SEC / FX, taller than the transport
     // row so "opens a window" and "does something" read as different shapes.
@@ -1450,11 +1462,8 @@ void MainComponent::resized()
     status.setBounds (area.removeFromBottom (Metrics::lg));
     area.removeFromBottom (Metrics::sm);
 
-    // --- Machine face: VU, bank chips, CTRL 1-3, step LEDs, pads ---
+    // --- Machine face: CTRL 1-3 and their readout, FX slots, pads ---
     {
-        vuArea = area.removeFromTop (20).reduced (2, 0);
-        area.removeFromTop (Metrics::sm);
-
         auto bankRow = area.removeFromTop (Metrics::lg);      // chips, deliberately small
         const int bw = bankRow.getWidth() / 3;
         for (int i = 0; i < 3; ++i)
@@ -1481,11 +1490,8 @@ void MainComponent::resized()
             for (int i = 0; i < kNumSlots; ++i)
                 slotButtons[i]->setBounds ((i < kNumSlots - 1 ? row.removeFromLeft (sw) : row).reduced (2, 0));
         }
-        area.removeFromTop (5);
-
-        stepStripArea = area.removeFromTop (20).reduced (2, 0);
-        area.removeFromTop (8);
-        layoutPadGrid (area, 4, 4, 8);
+        area.removeFromTop (Metrics::sm);
+        layoutPadGrid (area, 4, 4, Metrics::sm);
     }
 
     // --- Floating sheets (each sized by its own content, capped at 86%) ---
@@ -1602,19 +1608,15 @@ void MainComponent::resized()
         projList.setBounds (inner);
     }
 
-    // SEC sheet: pattern/len, chain row, chain-clear/note, step grid, bpm/clear.
+    // SEC sheet: pattern/len, chain, bar selector, the pads x steps grid, bpm.
     {
-        const int patLen = engine.getPatternLength (selectedPattern);
-        const int rows   = juce::jmax (1, patLen / kStepCols);
-        const int gap    = 4;
-        const int fixedRowsH = 164;   // title + pattern/len + chain + clr/note + bpm/clear rows, incl. gaps
+        const int lanes  = StepGrid::kLanes;
+        const int laneH  = 22;                    // 16 lanes -> 352, comfortable to tap
+        const int gridH  = lanes * laneH;
+        const int fixedRowsH = 196;               // title + rows above and below the grid
 
-        const int maxCellW  = (full.getWidth() - 16 /*outer reduce*/ - 28 /*inner reduce*/ - (kStepCols - 1) * gap) / kStepCols;
-        const int comfyCell = juce::jlimit (36, 64, maxCellW);
-        const int gridH     = rows * comfyCell + (rows - 1) * gap;
-
-        auto inner = sheetFromBottom (seqSheet, fixedRowsH + 24 + 16 + gridH);
-        auto titleRow = inner.removeFromTop (32);          // 2-line title drawn by paintSeqSheetContent
+        auto inner = sheetFromBottom (seqSheet, fixedRowsH + gridH);
+        auto titleRow = inner.removeFromTop (32);
         seqCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
 
         {
@@ -1622,51 +1624,50 @@ void MainComponent::resized()
             const int w1 = row1.getWidth() / 2;
             patternSlider.setBounds (row1.removeFromLeft (w1).reduced (2, 0));
             lengthSlider.setBounds  (row1.reduced (2, 0));
-            inner.removeFromTop (4);
+            inner.removeFromTop (Metrics::xs);
 
-            // Chain: the 8 coloured include-toggles, then clear + note.
             auto row2 = inner.removeFromTop (Metrics::xl);
             const int pw = row2.getWidth() / kNumPatterns;
-            for (int i = 0; i < kNumPatterns; ++i)
-                patternButtons[i]->setBounds ((i < kNumPatterns - 1 ? row2.removeFromLeft (pw) : row2).reduced (2));
-            inner.removeFromTop (4);
+            for (int i2 = 0; i2 < kNumPatterns; ++i2)
+                patternButtons[i2]->setBounds ((i2 < kNumPatterns - 1 ? row2.removeFromLeft (pw) : row2).reduced (2));
+            inner.removeFromTop (Metrics::xs);
 
             auto row3 = inner.removeFromTop (Metrics::xl);
             const int w3 = row3.getWidth() / 2;
             chainClearButton.setBounds (row3.removeFromLeft (w3).reduced (2, 0));
             noteSlider.setBounds       (row3.reduced (2, 0));
+            inner.removeFromTop (Metrics::sm);
+
+            // Bar row: only when the pattern is longer than one bar. A single
+            // lone "1" would be a control that never does anything.
+            const int patLen = engine.getPatternLength (selectedPattern);
+            const int bars   = juce::jmax (1, patLen / kStepCols);
+            if (selectedBar >= bars) selectedBar = 0;
+
+            if (bars > 1)
+            {
+                auto row4 = inner.removeFromTop (Metrics::xl);
+                const int bw = row4.getWidth() / bars;
+                for (int b = 0; b < barButtons.size(); ++b)
+                {
+                    barButtons[b]->setVisible (b < bars);
+                    if (b < bars)
+                        barButtons[b]->setBounds ((b < bars - 1 ? row4.removeFromLeft (bw) : row4).reduced (2, 0));
+                }
+                inner.removeFromTop (Metrics::sm);
+            }
+            else
+            {
+                for (auto* b : barButtons) b->setVisible (false);
+            }
         }
-        inner.removeFromTop (Metrics::sm);
 
         auto bottom = inner.removeFromBottom (Metrics::tab);
         bpmSlider.setBounds (bottom.removeFromLeft ((int) (bottom.getWidth() * 0.66f)).reduced (2, 0));
         clearButton.setBounds (bottom.reduced (3, 0));
-        inner.removeFromBottom (8);
+        inner.removeFromBottom (Metrics::sm);
 
-        // Step grid: always 8 columns, rows = pattern length / 8 (2..8, i.e.
-        // 16..64 steps). Real square cells, sized to fill whatever room the
-        // sheet gives them (bigger with fewer rows, smaller with more),
-        // capped so they never get silly at either extreme.
-        {
-            const int cols = kStepCols;
-
-            const int gridMaxCellW = (inner.getWidth()  - (cols - 1) * gap) / cols;
-            const int gridMaxCellH = (inner.getHeight() - (rows - 1) * gap) / rows;
-            const int cell = juce::jlimit (20, 70, juce::jmin (gridMaxCellW, gridMaxCellH));
-
-            auto steps = inner.removeFromTop (juce::jmin (inner.getHeight(), rows * cell + (rows - 1) * gap));
-            steps = steps.withSizeKeepingCentre (cols * cell + (cols - 1) * gap, steps.getHeight());
-
-            for (int s = 0; s < kNumSteps; ++s)
-            {
-                if (s >= patLen) { stepButtons[s]->setVisible (false); continue; }
-                const int r = s / cols, c = s % cols;
-                stepButtons[s]->setVisible (true);
-                stepButtons[s]->setBounds (steps.getX() + c * (cell + gap),
-                                           steps.getY() + r * (cell + gap),
-                                           cell, cell);
-            }
-        }
+        stepGrid.setBounds (inner);
     }
 }
 
@@ -1710,17 +1711,40 @@ void MainComponent::padClicked (int index)
     selectPad (index);   // selection drives EDIT and SEC
 }
 
-void MainComponent::stepClicked (int step)
+void MainComponent::stepCellToggled (int pad, int step)
 {
-    if (step >= engine.getPatternLength (selectedPattern)) return;   // past the pattern's own length
+    if (step >= engine.getPatternLength (selectedPattern)) return;
     selectedStep = step;
-    noteSlider.setValue (engine.getStepNote (selectedPattern, step, juce::jmax (0, selectedPad)), juce::dontSendNotification);
-    repaint();   // move the selection ring (drawn in paintOverChildren)
+    selectPad (pad);                 // the lane you touched becomes the pad you edit
+    noteSlider.setValue (engine.getStepNote (selectedPattern, step, pad), juce::dontSendNotification);
 
-    if (selectedPad < 0) return;
-    const bool nv = ! pattern[(size_t) selectedPattern][(size_t) step][(size_t) selectedPad];
-    pattern[(size_t) selectedPattern][(size_t) step][(size_t) selectedPad] = nv;
-    engine.setStep (selectedPattern, step, selectedPad, nv);
+    const bool nv = ! pattern[(size_t) selectedPattern][(size_t) step][(size_t) pad];
+    pattern[(size_t) selectedPattern][(size_t) step][(size_t) pad] = nv;
+    engine.setStep (selectedPattern, step, pad, nv);
+    refreshStepGrid();
+    seqSheet.repaint();
+}
+
+// Copy the pattern into the flat buffer the grid reads, plus each pad's colour
+// and whether it holds a sample, then hand it the live playhead.
+void MainComponent::refreshStepGrid()
+{
+    for (int st = 0; st < kNumSteps; ++st)
+        for (int p = 0; p < kNumPads; ++p)
+            gridCells[st * kNumPads + p] = pattern[(size_t) selectedPattern][(size_t) st][(size_t) p];
+
+    for (int p = 0; p < kNumPads; ++p)
+    {
+        gridZati[p]   = padZati[(size_t) p];
+        gridLoaded[p] = padHasSample[(size_t) p];
+    }
+
+    const int ps = (engine.isPlaying() && engine.getPlayingPattern() == selectedPattern)
+                     ? engine.getPlayStep() : -1;
+
+    stepGrid.setSource (gridCells, gridZati, gridLoaded,
+                        engine.getPatternLength (selectedPattern),
+                        selectedBar, ps, selectedPad);
 }
 
 void MainComponent::refreshPad (int index)
@@ -2523,26 +2547,9 @@ void MainComponent::timerCallback()
     juce::ignoreUnused (anyFlash);
 
     // Sequencer step colours (flat fill only — see paintOverChildren() for
-    // the selection/playhead rings). Steps beyond the pattern's own length
-    // (FL-Studio-style variable length, 16..64) aren't laid out at all — see
-    // resized() — so only the visible ones need colouring here.
-    const int patLen = engine.getPatternLength (selectedPattern);
-    for (int s = 0; s < patLen; ++s)
-    {
-        // Every 16 steps ("page") gets a faint primary-colour wash on the
-        // resting fill, cycling blue/red/yellow, so a long pattern reads at
-        // a glance; alternating groups of 4 (the beats within a page) shade
-        // a touch darker on top of that.
-        const bool altBeat = ((s / 4) % 2) != 0;
-        const bool on = (selectedPad >= 0) && pattern[(size_t) selectedPattern][(size_t) s][(size_t) selectedPad];
-        auto rest = kStepOff.interpolatedWith (patternRowColour (s / 16), 0.16f);
-        if (altBeat) rest = rest.darker (0.13f);
-        // Flat fill: blue = hit, tinted white/grey = resting. Selection
-        // (yellow) and the playhead (red) are drawn as rings on top in
-        // paintOverChildren(), not blended into the fill, so states never
-        // muddy together.
-        stepButtons[s]->setColour (juce::TextButton::buttonColourId, on ? kPadLoaded : rest);
-    }
+    // The grid reads the pattern straight from our mirror; just refresh it.
+    refreshStepGrid();
+
     const int prevPlayStep = lastPlayStep;
     lastPlayStep = ps;
 

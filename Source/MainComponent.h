@@ -8,6 +8,7 @@
 #include "ZatiLookAndFeel.h"
 #include "PadButton.h"
 #include "ProjectStore.h"
+#include "StepGrid.h"
 
 // ============================================================================
 //  MainComponent — ZATI: a 16-pad matrix whose fragments carry the colour, an
@@ -117,7 +118,7 @@ private:
     int browseTargetPad = -1;
 
     void padClicked (int index);
-    void stepClicked (int step);
+    void stepCellToggled (int pad, int step);
     void refreshPad (int index);
     void selectPad (int index);
     void updateControlsFromPad (int index);
@@ -134,13 +135,19 @@ private:
     static constexpr int kNumSteps  = AudioEngine::kNumSteps;    // 64 (max pattern length)
     static constexpr int kMinPatLen = AudioEngine::kMinPatLen;   // 16
     static constexpr int kMaxPatLen = AudioEngine::kMaxPatLen;   // 64
-    static constexpr int kStepCols  = 8;                         // step grid is always 8 columns wide
+    static constexpr int kStepCols  = StepGrid::kBarSteps;       // one bar of 16 across
 
     AudioEngine  engine;
     SampleLoader loader { engine };
 
     juce::OwnedArray<PadButton> pads;
-    juce::OwnedArray<juce::TextButton> stepButtons;
+    StepGrid stepGrid;
+    juce::OwnedArray<juce::TextButton> barButtons;   // bar 1..4 when the pattern is longer than one
+    bool  gridCells[AudioEngine::kNumSteps * AudioEngine::kNumPads] {};
+    int   gridZati[AudioEngine::kNumPads] {};
+    bool  gridLoaded[AudioEngine::kNumPads] {};
+    int   selectedBar = 0;
+    void  refreshStepGrid();
 
     // Module bar — rule of three: PADS / SEC / FX, each opening its floating
     // sheet (never a mode switch). CHOP lives inside PADS; CHAIN inside SEC.
