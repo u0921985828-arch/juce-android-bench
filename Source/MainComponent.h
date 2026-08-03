@@ -135,6 +135,8 @@ private:
     //  claim about itself; this is a click emitted and heard back.
     juce::TextButton measureButton { "MEDIR" };
     float measuredMs = -1.0f;          // last round trip, -1 = never measured
+    float measuredOutMs = 0.0f;        // what the device claimed while measuring
+    float measuredInMs  = 0.0f;
     bool  measuring  = false;
     juce::String measureNote;
     void startMeasure();

@@ -20,3 +20,6 @@ pj_*.log
 .vscode/
 .DS_Store
 *.user
+.agents/
+.claude/
+skills-lock.json

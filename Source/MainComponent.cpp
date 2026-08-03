@@ -3122,6 +3122,15 @@ void MainComponent::startMeasure()
         measureButton.setEnabled (false);
         setAudioChannels (1, 2);         // the probe has to hear itself
         useLowestLatency();
+        //  Read both halves while the duplex stream is actually open. This
+        //  is the only moment the input figure exists, and without it the
+        //  round trip is one number with nowhere to put the blame.
+        if (auto* dev = deviceManager.getCurrentAudioDevice())
+        {
+            const double sr = dev->getCurrentSampleRate() > 0.0 ? dev->getCurrentSampleRate() : 48000.0;
+            measuredOutMs = (float) (dev->getOutputLatencyInSamples() * 1000.0 / sr);
+            measuredInMs  = (float) (dev->getInputLatencyInSamples()  * 1000.0 / sr);
+        }
         engine.startLatencyProbe();
         projSheet.repaint();
     };
@@ -3149,9 +3158,16 @@ void MainComponent::finishMeasure()
     //  Sound travels about 34 cm per millisecond, so holding the phone at
     //  arm's length adds a couple of ms of air. Worth saying, because at
     //  these numbers a couple of ms is not noise.
+    //  Say where the milliseconds went. Measuring needs the microphone, and
+    //  opening an input stream drops BOTH streams off the fast path, so this
+    //  figure is the duplex configuration — not the one you play in. Without
+    //  that split the number reads as an indictment of the app when most of
+    //  it is the phone's capture path.
     measureNote = measuredMs < 0.0f
                     ? "no oi el click - sube el volumen y no tapes el micro"
-                    : "ida y vuelta por el aire, micro incluido";
+                    : "con micro abierto: salida " + juce::String (measuredOutMs, 0)
+                        + " + entrada " + juce::String (measuredInMs, 0)
+                        + " ms. Tocando solo sales " + juce::String (measuredOutMs, 0) + " ms";
     refreshAudioOptions();
 }
 
