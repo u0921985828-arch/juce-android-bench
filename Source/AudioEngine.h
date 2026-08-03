@@ -54,6 +54,26 @@ public:
     void setPadPan     (int slot, float p)     noexcept { store (padPan,     slot, p); }        // -1..1
     void setPadAttack  (int slot, float ms)    noexcept { store (padAttack,  slot, ms); }
     void setPadRelease (int slot, float ms)    noexcept { store (padRelease, slot, ms); }
+    //  Mute and solo fold into the SAME gain the voices already follow at
+    //  control rate, so they take hold on notes that are already sounding —
+    //  a mute you have to wait out is not a mute.
+    void setPadMute    (int slot, bool m)      noexcept { store (padMute, slot, m); refreshSolo(); }
+    void setPadSolo    (int slot, bool s)      noexcept { store (padSolo, slot, s); refreshSolo(); }
+    bool isPadMuted    (int slot) const noexcept { return slot >= 0 && slot < kNumPads && padMute[(size_t) slot].load (std::memory_order_relaxed); }
+    bool isPadSoloed   (int slot) const noexcept { return slot >= 0 && slot < kNumPads && padSolo[(size_t) slot].load (std::memory_order_relaxed); }
+    bool anySolo() const noexcept { return soloActive.load (std::memory_order_relaxed); }
+    void clearSolo() noexcept { for (auto& s : padSolo) s.store (false, std::memory_order_relaxed); refreshSolo(); }
+
+    // Audible gain for a pad = its own level, silenced by mute or by someone
+    // else's solo.
+    float effectiveGain (int slot) const noexcept
+    {
+        if (slot < 0 || slot >= kNumPads) return 0.0f;
+        if (padMute[(size_t) slot].load (std::memory_order_relaxed)) return 0.0f;
+        if (soloActive.load (std::memory_order_relaxed)
+            && ! padSolo[(size_t) slot].load (std::memory_order_relaxed)) return 0.0f;
+        return padGain[(size_t) slot].load (std::memory_order_relaxed);
+    }
     int  getSampleLength (int slot) const noexcept;   // 0 if none
 
     // --- Samples (message thread) ---
@@ -187,6 +207,15 @@ private:
     std::array<std::atomic<float>, kNumPads> padPan {};      // -1 (L) .. 0 (centre) .. 1 (R)
     std::array<std::atomic<float>, kNumPads> padAttack {};   // ms
     std::array<std::atomic<float>, kNumPads> padRelease {};  // ms
+    std::array<std::atomic<bool>,  kNumPads> padMute {};
+    std::array<std::atomic<bool>,  kNumPads> padSolo {};
+    std::atomic<bool> soloActive { false };   // cached: is anything soloed
+    void refreshSolo() noexcept
+    {
+        bool any = false;
+        for (auto& s : padSolo) any = any || s.load (std::memory_order_relaxed);
+        soloActive.store (any, std::memory_order_relaxed);
+    }
 
     // Sequencer.
     std::atomic<bool>   playing { false };

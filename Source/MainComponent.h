@@ -53,7 +53,7 @@ private:
                 onDismiss();
         }
     };
-    Sheet padSheet, seqSheet, fxSheet, browseSheet, projSheet;
+    Sheet padSheet, seqSheet, fxSheet, browseSheet, projSheet, mixSheet;
     void openSheet (Sheet& s, juce::TextButton& toggle);
     void closeAllSheets();
     void paintSeqSheetContent (juce::Graphics& g);
@@ -61,6 +61,7 @@ private:
     void paintFxSheetContent (juce::Graphics& g);
     void paintBrowseSheetContent (juce::Graphics& g);
     void paintProjSheetContent (juce::Graphics& g);
+    void paintMixSheetContent (juce::Graphics& g);
 
     // --- Projects ---------------------------------------------------------
     //  The whole machine (pads + their samples, the 8 pattern banks, the
@@ -167,10 +168,18 @@ private:
     juce::TextButton padsButton  { "PADS" };
     juce::TextButton secButton   { "SEC" };
     juce::TextButton fxOpenButton   { "FX" };
+    juce::TextButton mixButton      { "MIX" };   // the 16-channel mixer sheet
     juce::TextButton setButton      { "SET" };   // skins + proyectos (spec: SET)
     juce::TextButton seqCloseButton   { juce::CharPointer_UTF8 ("\xc3\x97") },
                      padCloseButton   { juce::CharPointer_UTF8 ("\xc3\x97") },
-                     fxCloseButton    { juce::CharPointer_UTF8 ("\xc3\x97") };
+                     fxCloseButton    { juce::CharPointer_UTF8 ("\xc3\x97") },
+                     mixCloseButton   { juce::CharPointer_UTF8 ("\xc3\x97") };
+    //  A studio is where a track gets finished, and nothing gets finished
+    //  without balancing it. One strip per pad: level, mute, solo.
+    juce::OwnedArray<juce::Slider>     mixFaders;
+    juce::OwnedArray<juce::TextButton> mixMutes, mixSolos;
+    juce::TextButton mixClearSolo { "SIN SOLO" };
+    void refreshMixStrip();
     juce::OwnedArray<juce::TextButton> patternButtons;  // P1..P8 — chain include toggles
 
     // --- FX slots (spec Zone 5) -------------------------------------------

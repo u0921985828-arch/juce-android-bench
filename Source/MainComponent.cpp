@@ -598,6 +598,69 @@ MainComponent::MainComponent()
         refreshWaveformSegments();
         if (padSheet.isVisible()) padSheet.repaint();
     };
+    //  MIX: one strip per pad — level, mute, solo. Mute and solo reach voices
+    //  that are already sounding, so they work as performance controls too.
+    for (int i = 0; i < kNumPads; ++i)
+    {
+        auto* f = new juce::Slider (juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight);
+        f->setRange (0.0, 1.0, 0.01);
+        f->setValue (padGain[(size_t) i], juce::dontSendNotification);
+        f->setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
+        f->setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
+        f->setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+        f->setColour (juce::Slider::trackColourId, Zati::colour (i));
+        f->setTextBoxStyle (juce::Slider::TextBoxRight, false, 46, 20);
+        f->textFromValueFunction = [] (double v) { return juce::String ((int) std::round (v * 100.0)); };
+        f->onValueChange = [this, i, f]
+        {
+            padGain[(size_t) i] = (float) f->getValue();
+            engine.setPadGain (i, (float) f->getValue());
+            if (i == selectedPad) volSlider.setValue (f->getValue(), juce::dontSendNotification);
+        };
+        mixSheet.addAndMakeVisible (f);
+        mixFaders.add (f);
+
+        auto* m = new juce::TextButton ("M");
+        styleButton (*m, kStepOff);
+        m->setColour (juce::TextButton::buttonOnColourId, ZatiColours::red);
+        m->setColour (juce::TextButton::textColourOnId, juce::Colours::white);
+        m->setClickingTogglesState (true);
+        m->onClick = [this, i, m] { engine.setPadMute (i, m->getToggleState()); refreshMixStrip(); };
+        mixSheet.addAndMakeVisible (m);
+        mixMutes.add (m);
+
+        auto* so = new juce::TextButton ("S");
+        styleButton (*so, kStepOff);
+        so->setColour (juce::TextButton::buttonOnColourId, ZatiColours::yellow);
+        so->setClickingTogglesState (true);
+        so->onClick = [this, i, so] { engine.setPadSolo (i, so->getToggleState()); refreshMixStrip(); };
+        mixSheet.addAndMakeVisible (so);
+        mixSolos.add (so);
+    }
+    styleButton (mixClearSolo, kKey);
+    mixClearSolo.onClick = [this] { engine.clearSolo(); refreshMixStrip(); };
+    mixSheet.addAndMakeVisible (mixClearSolo);
+
+    styleButton (mixCloseButton, kKey);
+    mixCloseButton.onClick = [this] { closeAllSheets(); };
+    mixSheet.addAndMakeVisible (mixCloseButton);
+    addAndMakeVisible (mixSheet);
+    mixSheet.setVisible (false);
+    mixSheet.onDismiss = [this] { closeAllSheets(); };
+    mixSheet.paintContent = [this] (juce::Graphics& g) { paintMixSheetContent (g); };
+
+    styleButton (mixButton, kKey);
+    mixButton.setColour (juce::TextButton::buttonOnColourId, kAccent);
+    mixButton.onClick = [this]
+    {
+        if (mixSheet.isVisible()) { closeAllSheets(); return; }
+        for (int i = 0; i < kNumPads; ++i)
+            if (mixFaders[i] != nullptr) mixFaders[i]->setValue (padGain[(size_t) i], juce::dontSendNotification);
+        openSheet (mixSheet, mixButton);
+        refreshMixStrip();
+    };
+    addAndMakeVisible (mixButton);
+
     addAndMakeVisible (waveform);
 
     // ZATI badge in the header: taps cycle the 4 accent skins.
@@ -966,9 +1029,9 @@ void MainComponent::openSheet (Sheet& s, juce::TextButton& toggle)
 
 void MainComponent::closeAllSheets()
 {
-    juce::TextButton* mb[3] = { &padsButton, &secButton, &fxOpenButton };
-    Sheet*            sh[3] = { &padSheet, &seqSheet, &fxSheet };
-    for (int i = 0; i < 3; ++i)
+    juce::TextButton* mb[4] = { &padsButton, &secButton, &fxOpenButton, &mixButton };
+    Sheet*            sh[4] = { &padSheet, &seqSheet, &fxSheet, &mixSheet };
+    for (int i = 0; i < 4; ++i)
     {
         mb[i]->setToggleState (false, juce::dontSendNotification);
         sh[i]->setVisible (false);
@@ -1534,13 +1597,13 @@ void MainComponent::resized()
     tabBarArea = area.removeFromTop (Metrics::btn);
     {
         auto row  = tabBarArea;
-        auto mods = row.removeFromLeft ((int) (row.getWidth() * 0.54f));
+        auto mods = row.removeFromLeft ((int) (row.getWidth() * 0.60f));
         row.removeFromLeft (Metrics::md);                 // air between the groups
 
-        juce::TextButton* mb[4] = { &padsButton, &secButton, &fxOpenButton, &setButton };
-        const int w = mods.getWidth() / 4;
-        for (int i = 0; i < 4; ++i)
-            mb[i]->setBounds ((i < 3 ? mods.removeFromLeft (w) : mods).reduced (1, 0));
+        juce::TextButton* mb[5] = { &padsButton, &secButton, &mixButton, &fxOpenButton, &setButton };
+        const int w = mods.getWidth() / 5;
+        for (int i = 0; i < 5; ++i)
+            mb[i]->setBounds ((i < 4 ? mods.removeFromLeft (w) : mods).reduced (1, 0));
 
         const int u = row.getWidth() / 4;
         loadButton.setBounds (row.removeFromLeft (u).reduced (2, 0));
@@ -1705,6 +1768,27 @@ void MainComponent::resized()
         inner.removeFromBottom (8);
 
         projList.setBounds (inner);
+    }
+
+    // MIX sheet: sixteen channel strips.
+    {
+        const int rowH = 30;
+        auto inner = sheetFromBottom (mixSheet, 32 + Metrics::sm + kNumPads * rowH + Metrics::btn + Metrics::lg);
+        auto titleRow = inner.removeFromTop (32);
+        mixCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
+
+        auto bottom = inner.removeFromBottom (Metrics::btn);
+        mixClearSolo.setBounds (bottom.reduced (3, 4));
+        inner.removeFromBottom (Metrics::xs);
+
+        for (int i = 0; i < kNumPads; ++i)
+        {
+            auto row = inner.removeFromTop (rowH).reduced (0, 1);
+            row.removeFromLeft (76);                       // colour chip + number + name
+            mixSolos[i]->setBounds (row.removeFromRight (30).reduced (1, 2));
+            mixMutes[i]->setBounds (row.removeFromRight (30).reduced (1, 2));
+            mixFaders[i]->setBounds (row.reduced (4, 0));
+        }
     }
 
     // SEC sheet: pattern/len, chain, bar selector, the pads x steps grid, bpm.
@@ -2272,6 +2356,9 @@ juce::ValueTree MainComponent::captureState() const
         p.setProperty ("has",     padHasSample[(size_t) i], nullptr);
         p.setProperty ("pitch",   padPitch[(size_t) i],   nullptr);
         p.setProperty ("gain",    padGain[(size_t) i],    nullptr);
+        // The mix is part of the track, not of the session.
+        p.setProperty ("mute",    engine.isPadMuted (i),  nullptr);
+        p.setProperty ("solo",    engine.isPadSoloed (i), nullptr);
         p.setProperty ("start",   padStart01[(size_t) i], nullptr);
         p.setProperty ("end",     padEnd01[(size_t) i],   nullptr);
         p.setProperty ("loop",    padLoop[(size_t) i],    nullptr);
@@ -2346,6 +2433,8 @@ void MainComponent::applyState (const juce::ValueTree& s)
             padName[(size_t) i]    = p.getProperty ("name", juce::String()).toString();
             padPitch[(size_t) i]   = (float) p.getProperty ("pitch", 0.0);
             padGain[(size_t) i]    = (float) p.getProperty ("gain", 0.85);
+            engine.setPadMute (i, (bool) p.getProperty ("mute", false));
+            engine.setPadSolo (i, (bool) p.getProperty ("solo", false));
             padStart01[(size_t) i] = (float) p.getProperty ("start", 0.0);
             padEnd01[(size_t) i]   = (float) p.getProperty ("end", 1.0);
             padLoop[(size_t) i]    = (bool)  p.getProperty ("loop", false);
@@ -2420,6 +2509,9 @@ void MainComponent::applyState (const juce::ValueTree& s)
     lengthSlider.setValue (engine.getPatternLength (selectedPattern), juce::dontSendNotification);
 
     setMacroBank ((int) s.getProperty ("macroBank", 0));
+    for (int i = 0; i < kNumPads; ++i)
+        if (mixFaders[i] != nullptr) mixFaders[i]->setValue (padGain[(size_t) i], juce::dontSendNotification);
+    refreshMixStrip();
     selectPad (juce::jmax (0, selectedPad));
     for (int i = 0; i < kNumPads; ++i) refreshPad (i);
     resized();
@@ -2572,6 +2664,59 @@ void MainComponent::refreshProjectList()
     if (sel >= 0) projList.selectRow (sel);
     else          projList.deselectAllRows();
     projList.repaint();
+}
+
+//  Each strip is named the way the pad is: its colour, its number, its sample.
+//  A mixer that says "01..16" and nothing else makes you count pads.
+void MainComponent::paintMixSheetContent (juce::Graphics& g)
+{
+    if (mixSheet.sheetBounds.isEmpty()) return;
+
+    g.setColour (ZatiColours::ink.withAlpha (0.9f));
+    g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
+    g.drawText (engine.anySolo() ? "MIX  ·  SOLO ACTIVO" : "MIX",
+                mixSheet.sheetBounds.reduced (14, 12).removeFromTop (16), juce::Justification::centredLeft);
+
+    for (int i = 0; i < kNumPads; ++i)
+    {
+        if (mixFaders[i] == nullptr) continue;
+        const auto fr = mixFaders[i]->getBounds();
+        const auto frag = Zati::colour (padZati[(size_t) i]);
+        const bool has = padHasSample[(size_t) i];
+
+        auto chip = juce::Rectangle<int> (mixSheet.sheetBounds.getX() + 18, fr.getY() + 4, 22, fr.getHeight() - 8);
+        g.setColour (has ? frag : ZatiColours::padBorder.withAlpha (0.4f));
+        g.fillRect (chip);
+        g.setColour (has ? ZatiColours::bestOn (frag, ZatiColours::ink, juce::Colours::white)
+                         : ZatiColours::inkDim);
+        g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
+        g.drawText (juce::String (i + 1).paddedLeft ('0', 2), chip, juce::Justification::centred);
+
+        g.setColour (has ? ZatiColours::ink.withAlpha (0.8f) : ZatiColours::inkDim.withAlpha (0.5f));
+        g.setFont (ZatiColours::monoFont (Metrics::fMeta));
+        g.drawText (has && padName[(size_t) i].isNotEmpty() ? padName[(size_t) i].toUpperCase()
+                                                            : juce::String (juce::CharPointer_UTF8 ("\xe2\x80\x94")),
+                    chip.getRight() + 6, fr.getY(), 40, fr.getHeight(), juce::Justification::centredLeft, true);
+    }
+}
+
+//  Solo is a state of the whole mixer, not of one strip: every other channel
+//  has to look silenced or you cannot tell why they went quiet.
+void MainComponent::refreshMixStrip()
+{
+    const bool any = engine.anySolo();
+    for (int i = 0; i < kNumPads; ++i)
+    {
+        if (mixMutes[i] != nullptr) mixMutes[i]->setToggleState (engine.isPadMuted (i), juce::dontSendNotification);
+        if (mixSolos[i] != nullptr) mixSolos[i]->setToggleState (engine.isPadSoloed (i), juce::dontSendNotification);
+        if (mixFaders[i] != nullptr)
+        {
+            const bool audible = ! engine.isPadMuted (i) && (! any || engine.isPadSoloed (i));
+            mixFaders[i]->setAlpha (audible ? 1.0f : 0.45f);
+        }
+    }
+    mixClearSolo.setEnabled (any);
+    mixSheet.repaint();
 }
 
 void MainComponent::paintProjSheetContent (juce::Graphics& g)

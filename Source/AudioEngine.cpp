@@ -75,7 +75,7 @@ void AudioEngine::triggerPad (int slot, int extraSemis) noexcept
     voiceFlip[(size_t) slot] ^= 1;
     voices[(size_t) (slot * kVoicesPerPad + voiceFlip[(size_t) slot])].start (slot,
                                  padPitch[(size_t) slot].load (std::memory_order_relaxed) + (float) extraSemis,
-                                 padGain[(size_t) slot].load (std::memory_order_relaxed),
+                                 effectiveGain (slot),
                                  sb->sourceSampleRate, systemSampleRate,
                                  st, en,
                                  padLoop[(size_t) slot].load (std::memory_order_relaxed),
@@ -126,7 +126,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         {
             auto& vc = voices[(size_t) v];
             if (vc.active && vc.slot >= 0)
-                vc.retarget (padGain[(size_t) vc.slot].load (std::memory_order_relaxed),
+                vc.retarget (effectiveGain (vc.slot),
                              padPan [(size_t) vc.slot].load (std::memory_order_relaxed));
         }
         for (int v = 0; v < kNumVoices; ++v)
