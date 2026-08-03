@@ -629,6 +629,11 @@ MainComponent::MainComponent()
     undoButton.setVisible (false);
     addAndMakeVisible (undoButton);
 
+    styleButton (redoButton, ZatiColours::key);
+    redoButton.onClick = [this] { performRedo(); };
+    redoButton.setVisible (false);
+    addAndMakeVisible (redoButton);
+
     status.setJustificationType (juce::Justification::centred);
     status.setColour (juce::Label::textColourId, ZatiColours::inkDim);
     status.setText ("Toca un pad para sonar", juce::dontSendNotification);
@@ -1535,7 +1540,7 @@ void MainComponent::resized()
         juce::TextButton* mb[4] = { &padsButton, &secButton, &fxOpenButton, &setButton };
         const int w = mods.getWidth() / 4;
         for (int i = 0; i < 4; ++i)
-            mb[i]->setBounds ((i < 3 ? mods.removeFromLeft (w) : mods).reduced (1, 3));
+            mb[i]->setBounds ((i < 3 ? mods.removeFromLeft (w) : mods).reduced (1, 0));
 
         const int u = row.getWidth() / 4;
         loadButton.setBounds (row.removeFromLeft (u).reduced (2, 0));
@@ -1548,8 +1553,8 @@ void MainComponent::resized()
     // an undoable action announces itself where the result was reported.
     {
         auto strip = area.removeFromBottom (Metrics::lg);
-        if (undoButton.isVisible())
-            undoButton.setBounds (strip.removeFromRight (96).reduced (1, 0));
+        if (undoButton.isVisible()) undoButton.setBounds (strip.removeFromRight (96).reduced (1, 0));
+        if (redoButton.isVisible()) redoButton.setBounds (strip.removeFromRight (96).reduced (1, 0));
         status.setBounds (strip);
     }
     area.removeFromBottom (Metrics::sm);
@@ -2030,18 +2035,38 @@ void MainComponent::pushUndo (const juce::String& what)
 {
     undoState = captureState();
     undoLabel = what;
+    redoState = {};                 // a new action ends the old redo branch
     undoButton.setVisible (true);
+    redoButton.setVisible (false);
     resized();
 }
 
+//  Undo and redo are the same move in opposite directions: each keeps what it
+//  is about to replace, so you can step back and forth over one action instead
+//  of the one-way trip DESHACER was on its own.
 void MainComponent::performUndo()
 {
     if (! undoState.isValid()) return;
     auto restore = undoState;
+    redoState = captureState();
     undoState = {};
     undoButton.setVisible (false);
+    redoButton.setVisible (true);
     applyState (restore);
     status.setText ("Deshecho: " + undoLabel, juce::dontSendNotification);
+    resized();
+}
+
+void MainComponent::performRedo()
+{
+    if (! redoState.isValid()) return;
+    auto restore = redoState;
+    undoState = captureState();
+    redoState = {};
+    redoButton.setVisible (false);
+    undoButton.setVisible (true);
+    applyState (restore);
+    status.setText ("Rehecho: " + undoLabel, juce::dontSendNotification);
     resized();
 }
 

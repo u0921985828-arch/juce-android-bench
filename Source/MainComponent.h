@@ -134,9 +134,11 @@ private:
     void autoChopSelected();
     void pushUndo (const juce::String& what);   // snapshot before a destructive action
     void performUndo();
-    juce::ValueTree undoState;
+    void performRedo();
+    juce::ValueTree undoState, redoState;
     juce::String    undoLabel;
     juce::TextButton undoButton { "DESHACER" };
+    juce::TextButton redoButton { "REHACER" };
     void rebuildChain();
     int  firstEmptyPad() const;
     void layoutPadGrid (juce::Rectangle<int> area, int cols, int rows, int gap);
