@@ -104,6 +104,7 @@ public:
     // this is read inside the audio callback (the Android armeabi-v7a build
     // would otherwise take a runtime lock there).
     void setBpm (double b) noexcept   { bpm.store ((float) b, std::memory_order_relaxed); }
+    double getBpm() const noexcept    { return (double) bpm.load (std::memory_order_relaxed); }
     void setStep (int patternIdx, int step, int pad, bool on) noexcept;
     void clearPattern (int patternIdx) noexcept;
     int  getPlayStep() const noexcept { return playStep.load (std::memory_order_relaxed); }
@@ -170,6 +171,13 @@ public:
     void setDlyTime  (float ms)  noexcept { dlyTime.store  (ms,  std::memory_order_relaxed); }
     void setDlyFb    (float f)    noexcept { dlyFb.store    (f,   std::memory_order_relaxed); }
     void setDlyMix   (float m)    noexcept { dlyMix.store   (m,   std::memory_order_relaxed); }
+    // Only the audible delay counts: a long time with the mix at zero must
+    // not add ten seconds of silence to every bounce.
+    double getDelayTimeSeconds() const noexcept
+    {
+        return dlyMix.load (std::memory_order_relaxed) > 0.001f
+                 ? (double) dlyTime.load (std::memory_order_relaxed) * 0.001 : 0.0;
+    }
 
     // --- Scope (message thread): copy the last n post-FX master samples ---
     void copyScope (float* dst, int n) noexcept;
@@ -177,6 +185,30 @@ public:
     // --- Output peak meters (message thread): max |sample| since last read ---
     float readOutPeakL() noexcept { return outPeakL.exchange (0.0f, std::memory_order_relaxed); }
     float readOutPeakR() noexcept { return outPeakR.exchange (0.0f, std::memory_order_relaxed); }
+
+    // --- Offline bounce (message thread) --------------------------------
+    //  An export does NOT render through this engine. It builds a SECOND
+    //  engine, copies the whole machine into it and drives that one from a
+    //  background thread as fast as the CPU allows. Two reasons: the live
+    //  audio callback is never disturbed (you can keep playing while a
+    //  bounce runs), and the render is not tied to real time — three minutes
+    //  of music does not take three minutes to write.
+    void setOffline (bool o) noexcept { offlineMode = o; }
+
+    //  Copies every parameter, pattern, note, chain slot and song cell.
+    //  Samples are NOT copied here: the caller publishes the same
+    //  ref-counted buffers, so a bounce costs no extra audio memory.
+    void copyStateFrom (const AudioEngine& src) noexcept;
+
+    //  How long a bounce of the CURRENT mode would be, in 16th-note steps:
+    //  the song's bars, or the chain's patterns end to end, or just the
+    //  pattern being edited. Zero means there is nothing to render.
+    int  lengthInSteps() const noexcept;
+
+    //  Is there actually a note anywhere in what would be rendered? A pattern
+    //  bank always has a LENGTH, so length alone would happily export two
+    //  bars of silence.
+    bool hasContentToRender() const noexcept;
 
     // --- Recording (message thread) ---
     void              startRecording (int slot) noexcept;
@@ -331,6 +363,7 @@ private:
 
     double systemSampleRate = 44100.0;
     int    maxBlock         = 512;
+    bool   offlineMode      = false;   // a bounce clone: no record buffer, no meters
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AudioEngine)
 };

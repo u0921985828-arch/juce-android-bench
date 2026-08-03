@@ -10,6 +10,7 @@
 #include "ProjectStore.h"
 #include "StepGrid.h"
 #include "Playlist.h"
+#include "Exporter.h"
 
 // ============================================================================
 //  MainComponent — ZATI: a 16-pad matrix whose fragments carry the colour, an
@@ -54,7 +55,7 @@ private:
                 onDismiss();
         }
     };
-    Sheet padSheet, seqSheet, fxSheet, browseSheet, projSheet, mixSheet, songSheet;
+    Sheet padSheet, seqSheet, fxSheet, browseSheet, projSheet, mixSheet, songSheet, exportSheet;
     void openSheet (Sheet& s, juce::TextButton& toggle);
     void closeAllSheets();
     void paintSeqSheetContent (juce::Graphics& g);
@@ -64,6 +65,7 @@ private:
     void paintProjSheetContent (juce::Graphics& g);
     void paintMixSheetContent (juce::Graphics& g);
     void paintSongSheetContent (juce::Graphics& g);
+    void paintExportSheetContent (juce::Graphics& g);
 
     // --- Projects ---------------------------------------------------------
     //  The whole machine (pads + their samples, the 8 pattern banks, the
@@ -95,7 +97,24 @@ private:
     juce::TextButton projLoadButton { "ABRIR" };
     juce::TextButton projNewButton  { "NUEVO" };
     juce::TextButton projDeleteButton { "BORRAR" };
+    juce::TextButton projExportButton { "EXPORTAR" };
     juce::String currentProject;
+
+    // --- Export -----------------------------------------------------------
+    //  The bounce runs on its own thread through a clone of the engine (see
+    //  Exporter.h). The UI only starts it, polls its progress from the timer
+    //  that is already running, and reports what came out.
+    juce::TextButton exportCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
+    juce::TextButton exportMasterButton { "MASTER" };
+    juce::TextButton exportStemsButton  { "PISTAS" };
+    juce::TextButton exportCancelButton { "CANCELAR" };
+    std::unique_ptr<Exporter> exportJob;
+    double deviceSampleRate = 44100.0;
+    juce::String exportStatus;
+    bool         exportOk = false;
+    void startExport (bool stems);
+    void pollExport();
+    juce::String exportSourceLabel() const;
 
     // --- In-app sample browser -------------------------------------------
     //  A native FileChooser is a system dialog: it ignores the app's skin and
@@ -281,7 +300,6 @@ private:
     void macroMoved (int idx);
 
     // Skin cycler: four chassis TONES (TINTA/GRAFITO/ACERO/PLOMO), no hues.
-    juce::TextButton skinButton { "SKIN" };
     void applySkin();
 
     juce::TextButton loadButton { "LOAD" };

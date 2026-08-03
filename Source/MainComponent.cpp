@@ -186,6 +186,45 @@ MainComponent::MainComponent()
                 deleteProject (projModel.names[sel]);
         };
         projSheet.addAndMakeVisible (projDeleteButton);
+
+        styleButton (projExportButton, kKey);
+        projExportButton.onClick = [this]
+        {
+            exportStatus.clear();
+            exportOk = false;
+            openSheet (exportSheet, setButton);
+        };
+        projSheet.addAndMakeVisible (projExportButton);
+    }
+
+    // EXPORT sheet — the only door out of the app. Two products: the master,
+    // or the master plus one file per loaded pad.
+    {
+        addAndMakeVisible (exportSheet);
+        exportSheet.setVisible (false);
+        exportSheet.onDismiss = [this] { if (exportJob == nullptr) closeAllSheets(); };
+        exportSheet.paintContent = [this] (juce::Graphics& g) { paintExportSheetContent (g); };
+
+        styleButton (exportCloseButton, kKey);
+        exportCloseButton.onClick = [this] { if (exportJob == nullptr) closeAllSheets(); };
+        exportSheet.addAndMakeVisible (exportCloseButton);
+
+        styleButton (exportMasterButton, kAccent);
+        exportMasterButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+        exportMasterButton.onClick = [this] { startExport (false); };
+        exportSheet.addAndMakeVisible (exportMasterButton);
+
+        styleButton (exportStemsButton, kKey);
+        exportStemsButton.onClick = [this] { startExport (true); };
+        exportSheet.addAndMakeVisible (exportStemsButton);
+
+        styleButton (exportCancelButton, kRec);
+        exportCancelButton.onClick = [this]
+        {
+            if (exportJob != nullptr) exportJob->signalThreadShouldExit();
+        };
+        exportSheet.addAndMakeVisible (exportCancelButton);
+        exportCancelButton.setVisible (false);
     }
 
     // Sample browser sheet — no module button of its own: it is opened by the
@@ -791,16 +830,11 @@ MainComponent::MainComponent()
 
     addAndMakeVisible (waveform);
 
-    // ZATI badge in the header: taps cycle the 4 accent skins.
-    skinButton.setColour (juce::TextButton::buttonColourId, ZatiColours::screenBg);
-    skinButton.setColour (juce::TextButton::textColourOffId, ZatiColours::lcdFg);
-    skinButton.setColour (juce::TextButton::textColourOnId,  ZatiColours::lcdFg);
-    skinButton.onClick = [this]
-    {
-        ZatiColours::setSkin (ZatiColours::currentSkin + 1);
-        applySkin();
-    };
-    projSheet.addAndMakeVisible (skinButton);
+    //  There is no skin picker. ZATI has one look; a strip of alternative
+    //  accents sitting on top of the project menu was a preference masquerading
+    //  as a feature, and it stole the first line of a sheet that exists to
+    //  manage work. Projects saved with another skin still load — the stored
+    //  value is applied, it just cannot be changed from here.
 
     // Controls live inside their sheets, not on the machine face.
     for (juce::Component* c : { (juce::Component*) &pitchSlider, (juce::Component*) &volSlider, (juce::Component*) &panSlider,
@@ -877,11 +911,6 @@ void MainComponent::applySkin()
     lnf.applyBrowserColours();                     // the file list follows the skin too
     styleButton (browseLoadButton, acc);
     browseLoadButton.setColour (juce::TextButton::textColourOffId, onTxt);
-
-    skinButton.setButtonText (juce::String ("SKIN ") + juce::String::charToString ((juce::juce_wchar) 0x00B7)
-                              + " " + ZatiColours::skinName (ZatiColours::currentSkin));
-    skinButton.setColour (juce::TextButton::textColourOffId, ZatiColours::lcdFg);
-    skinButton.setColour (juce::TextButton::textColourOnId,  ZatiColours::lcdFg);
 
     repaint();
 }
@@ -1166,12 +1195,16 @@ void MainComponent::closeAllSheets()
     }
     browseSheet.setVisible (false);
     projSheet.setVisible (false);
+    exportSheet.setVisible (false);
     setButton.setToggleState (false, juce::dontSendNotification);
     repaint();
 }
 
 MainComponent::~MainComponent()
 {
+    // The bounce thread holds a reference to the engine and to the pad
+    // buffers, so it must be gone before either can be.
+    if (exportJob != nullptr) { exportJob->signalThreadShouldExit(); exportJob.reset(); }
     shutdownAudio();
     setLookAndFeel (nullptr);
 }
@@ -1183,6 +1216,9 @@ MainComponent::~MainComponent()
 void MainComponent::prepareToPlay (int samplesPerBlockExpected, double sampleRate)
 {
     engine.prepareToPlay (sampleRate, samplesPerBlockExpected);
+    // A bounce renders at the device's own rate, so the file sounds exactly
+    // like what came out of the speaker — no resampling in between.
+    deviceSampleRate = (sampleRate > 0.0) ? sampleRate : 44100.0;
 }
 
 void MainComponent::getNextAudioBlock (const juce::AudioSourceChannelInfo& info)
@@ -1884,8 +1920,10 @@ void MainComponent::resized()
         auto titleRow = inner.removeFromTop (32);
         projCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
 
-        skinButton.setBounds (inner.removeFromTop (32).reduced (2, 0));
-        inner.removeFromTop (8);
+        // EXPORTAR sits on its own row: it is the only action here that
+        // produces something outside the app, and it needs room for its name.
+        projExportButton.setBounds (inner.removeFromBottom (Metrics::btn).reduced (2, 0));
+        inner.removeFromBottom (Metrics::xs);
 
         auto actions = inner.removeFromBottom (Metrics::btn);
         const int aw = actions.getWidth() / 4;
@@ -1896,6 +1934,21 @@ void MainComponent::resized()
         inner.removeFromBottom (8);
 
         projList.setBounds (inner);
+    }
+
+    // EXPORT sheet: what will be rendered, then the two products.
+    {
+        auto inner = sheetFromBottom (exportSheet, 32 + 96 + Metrics::btn * 2 + Metrics::sm * 2);
+        auto titleRow = inner.removeFromTop (32);
+        exportCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
+
+        inner.removeFromTop (96);   // painted: source, length, destination, status
+
+        auto row = inner.removeFromBottom (Metrics::btn);
+        exportCancelButton.setBounds (row);
+        const int hw = row.getWidth() / 2;
+        exportMasterButton.setBounds (row.removeFromLeft (hw).reduced (2, 0));
+        exportStemsButton.setBounds  (row.reduced (2, 0));
     }
 
     // SONG sheet: palette, timeline, page row.
@@ -2980,6 +3033,141 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
                 inner.removeFromTop (14), juce::Justification::centredLeft);
 }
 
+// ---------------------------------------------------------------------------
+//  Export — the bounce
+// ---------------------------------------------------------------------------
+
+juce::String MainComponent::exportSourceLabel() const
+{
+    if (engine.isSongMode())        return "CANCION";
+    if (engine.getChainLength() > 0) return "CADENA (" + juce::String (engine.getChainLength()) + " patrones)";
+    return "PATRON P" + juce::String (engine.getEditPattern() + 1);
+}
+
+void MainComponent::startExport (bool stems)
+{
+    if (exportJob != nullptr) return;
+
+    if (engine.lengthInSteps() <= 0 || ! engine.hasContentToRender())
+    {
+        exportOk = false;
+        exportStatus = "no hay nada grabado en " + exportSourceLabel().toLowerCase();
+        exportSheet.repaint();
+        return;
+    }
+
+    auto base = (currentProject.isNotEmpty() ? currentProject : juce::String ("ZATI"))
+                  .retainCharacters ("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_ ")
+                  .trim().replaceCharacter (' ', '-');
+    if (base.isEmpty()) base = "ZATI";
+
+    exportOk = false;
+    exportStatus = "renderizando...";
+    exportJob = std::make_unique<Exporter> (engine, uiSample, padName,
+                                            ProjectStore::exports().getChildFile (base),
+                                            base, stems, deviceSampleRate);
+
+    exportMasterButton.setVisible (false);
+    exportStemsButton.setVisible (false);
+    exportCancelButton.setVisible (true);
+    exportJob->startThread (juce::Thread::Priority::normal);
+    exportSheet.repaint();
+}
+
+void MainComponent::pollExport()
+{
+    if (exportJob == nullptr) return;
+
+    if (! exportJob->finished.load (std::memory_order_acquire))
+    {
+        exportSheet.repaint();
+        return;
+    }
+
+    exportOk     = exportJob->resultOk;
+    exportStatus = exportJob->resultText;
+    exportJob.reset();
+
+    exportMasterButton.setVisible (true);
+    exportStemsButton.setVisible (true);
+    exportCancelButton.setVisible (false);
+    exportSheet.repaint();
+}
+
+void MainComponent::paintExportSheetContent (juce::Graphics& g)
+{
+    if (exportSheet.sheetBounds.isEmpty()) return;
+
+    auto inner = exportSheet.sheetBounds.reduced (Metrics::lg, Metrics::md);
+    inner.removeFromTop (2);
+
+    g.setColour (ZatiColours::ink.withAlpha (0.9f));
+    g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
+    g.drawText ("EXPORTAR", inner.removeFromTop (18), juce::Justification::centredLeft);
+    inner.removeFromTop (10);
+
+    // What is going to be rendered, and how long it will be. Stated before
+    // you press, not after: a bounce is the one action here you cannot undo
+    // by tapping again.
+    const int steps = engine.lengthInSteps();
+    const double secs = steps * (60.0 / juce::jmax (20.0, engine.getBpm())) * 0.25;
+    int loaded = 0;
+    for (auto& s : uiSample) if (s != nullptr) ++loaded;
+
+    auto line = [&g, &inner] (const juce::String& k, const juce::String& v, juce::Colour vc)
+    {
+        auto r = inner.removeFromTop (17);
+        g.setColour (ZatiColours::inkDim);
+        g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
+        g.drawText (k, r.removeFromLeft (76), juce::Justification::centredLeft);
+        g.setColour (vc);
+        g.setFont (ZatiColours::monoFont (Metrics::fValue, true));
+        g.drawText (v, r, juce::Justification::centredLeft);
+    };
+
+    line ("fuente", exportSourceLabel(), ZatiColours::ink);
+    line ("duracion", steps > 0 ? juce::String (secs, 1) + " s  ·  " + juce::String (steps / 16) + " compases"
+                                : juce::String ("vacio"),
+          steps > 0 ? ZatiColours::ink : ZatiColours::red);
+    line ("pistas", juce::String (loaded) + " pads con muestra", ZatiColours::ink);
+    line ("destino", "ZATI/Exports/" + (currentProject.isNotEmpty() ? currentProject : juce::String ("ZATI")),
+          ZatiColours::inkDim);
+
+    inner.removeFromTop (6);
+
+    // Progress, then the verdict.
+    if (exportJob != nullptr)
+    {
+        auto bar = inner.removeFromTop (8).reduced (0, 2);
+        g.setColour (ZatiColours::padBorder.withAlpha (0.4f));
+        g.fillRect (bar);
+        g.setColour (ZatiColours::accent);
+        g.fillRect (bar.withWidth ((int) ((float) bar.getWidth()
+                        * juce::jlimit (0.0f, 1.0f, exportJob->progress.load (std::memory_order_relaxed)))));
+
+        g.setColour (ZatiColours::inkDim);
+        g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
+        g.drawText ("escribiendo " + juce::String (exportJob->passDone.load (std::memory_order_relaxed) + 1)
+                        + "/" + juce::String (exportJob->passTotal.load (std::memory_order_relaxed)),
+                    inner.removeFromTop (16), juce::Justification::centredLeft);
+    }
+    else if (exportStatus.isNotEmpty())
+    {
+        g.setColour (exportOk ? ZatiColours::accent : ZatiColours::red);
+        g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
+        g.drawFittedText ((exportOk ? "listo: " : "") + exportStatus,
+                          inner.removeFromTop (24), juce::Justification::topLeft, 2);
+    }
+    else
+    {
+        g.setColour (ZatiColours::inkDim.withAlpha (0.75f));
+        g.setFont (ZatiColours::monoFont (Metrics::fMeta, false));
+        g.drawFittedText ("MASTER = un WAV con lo que oyes.  PISTAS = el master mas un WAV "
+                          "por pad, para mezclar fuera.",
+                          inner.removeFromTop (26), juce::Justification::topLeft, 2);
+    }
+}
+
 void MainComponent::launchSystemPicker()
 {
     if (browseTargetPad < 0) return;
@@ -3143,6 +3331,7 @@ void MainComponent::toggleMicSampling()
 void MainComponent::timerCallback()
 {
     engine.collectRetiredSamples();
+    pollExport();
 
     const int ps = engine.getPlayStep();
 

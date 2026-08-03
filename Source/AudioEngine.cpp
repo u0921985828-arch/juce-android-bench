@@ -28,8 +28,12 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize) noexcept
     maxBlock         = (maxBlockSize > 0) ? maxBlockSize : 512;
 
     // ~20 s mono record buffer (allocated here, never in the callback).
-    recordBuffer.setSize (1, (int) (20.0 * systemSampleRate));
-    recordBuffer.clear();
+    // A bounce clone never records, so it does not pay for one.
+    if (! offlineMode)
+    {
+        recordBuffer.setSize (1, (int) (20.0 * systemSampleRate));
+        recordBuffer.clear();
+    }
 
     juce::dsp::ProcessSpec spec { systemSampleRate, (juce::uint32) juce::jmax (1, maxBlock), 2 };
     masterFilter.prepare (spec);
@@ -570,4 +574,140 @@ SampleBuffer::Ptr AudioEngine::finishRecording() noexcept
 float AudioEngine::getRecordSeconds() const noexcept
 {
     return (float) (recordPos.load (std::memory_order_relaxed) / systemSampleRate);
+}
+
+// ---------------------------------------------------------------------------
+//  Offline bounce (message thread)
+// ---------------------------------------------------------------------------
+
+void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
+{
+    // Straight atomic-to-atomic copies. Both engines are touched from the
+    // message thread here; the source may be sounding, which only means a
+    // knob moved mid-copy could land on either side of the export. Nothing
+    // tears — every field is an independent atomic.
+    auto copyArr = [] (auto& dst, const auto& src)
+    {
+        for (size_t i = 0; i < dst.size(); ++i)
+            dst[i].store (src[i].load (std::memory_order_relaxed), std::memory_order_relaxed);
+    };
+
+    copyArr (padPitch,   s.padPitch);
+    copyArr (padGain,    s.padGain);
+    copyArr (padStart,   s.padStart);
+    copyArr (padEnd,     s.padEnd);
+    copyArr (padLoop,    s.padLoop);
+    copyArr (padReverse, s.padReverse);
+    copyArr (padChoke,   s.padChoke);
+    copyArr (padPan,     s.padPan);
+    copyArr (padAttack,  s.padAttack);
+    copyArr (padRelease, s.padRelease);
+    copyArr (padMute,    s.padMute);
+    copyArr (padSolo,    s.padSolo);
+    refreshSolo();
+
+    bpm.store (s.bpm.load (std::memory_order_relaxed), std::memory_order_relaxed);
+    editPattern.store (s.editPattern.load (std::memory_order_relaxed), std::memory_order_relaxed);
+    copyArr (patternLength, s.patternLength);
+    copyArr (chainSlots,    s.chainSlots);
+    chainLength.store (s.chainLength.load (std::memory_order_relaxed), std::memory_order_relaxed);
+
+    for (size_t b = 0; b < patternBank.size(); ++b)
+    {
+        copyArr (patternBank[b], s.patternBank[b]);
+        for (size_t st = 0; st < stepNote[b].size(); ++st)
+            copyArr (stepNote[b][st], s.stepNote[b][st]);
+    }
+
+    songMode.store (s.songMode.load (std::memory_order_relaxed), std::memory_order_relaxed);
+    songBars.store (s.songBars.load (std::memory_order_relaxed), std::memory_order_relaxed);
+    for (size_t ln = 0; ln < songCell.size(); ++ln)
+        copyArr (songCell[ln], s.songCell[ln]);
+
+    fxType.store   (s.fxType.load   (std::memory_order_relaxed), std::memory_order_relaxed);
+    fxCutoff.store (s.fxCutoff.load (std::memory_order_relaxed), std::memory_order_relaxed);
+    fxReso.store   (s.fxReso.load   (std::memory_order_relaxed), std::memory_order_relaxed);
+    fxDrive.store  (s.fxDrive.load  (std::memory_order_relaxed), std::memory_order_relaxed);
+    dlyTime.store  (s.dlyTime.load  (std::memory_order_relaxed), std::memory_order_relaxed);
+    dlyFb.store    (s.dlyFb.load    (std::memory_order_relaxed), std::memory_order_relaxed);
+    dlyMix.store   (s.dlyMix.load   (std::memory_order_relaxed), std::memory_order_relaxed);
+
+    // Start the FX smoothers already AT their targets. A live engine glides
+    // over ~20 ms because a knob just moved; a bounce has no such history,
+    // and gliding from the defaults would fade the filter in over the first
+    // bar of every export.
+    smCutoff = fxCutoff.load (std::memory_order_relaxed);
+    smReso   = fxReso.load   (std::memory_order_relaxed);
+    smDrive  = fxDrive.load  (std::memory_order_relaxed);
+    smDlyMix = dlyMix.load   (std::memory_order_relaxed);
+    smDlyFb  = dlyFb.load    (std::memory_order_relaxed);
+    smDlySamp = (float) (dlyTime.load (std::memory_order_relaxed) * 0.001 * systemSampleRate);
+}
+
+int AudioEngine::lengthInSteps() const noexcept
+{
+    if (songMode.load (std::memory_order_relaxed))
+    {
+        // The song is as long as its LAST occupied bar, not as long as the
+        // slider says: exporting eight bars of silence after the track ends
+        // is the kind of thing you only notice once the file is uploaded.
+        const int bars = juce::jlimit (1, kSongBars, songBars.load (std::memory_order_relaxed));
+        int last = -1;
+        for (int ln = 0; ln < kSongLanes; ++ln)
+            for (int b = 0; b < bars; ++b)
+                if (songCell[(size_t) ln][(size_t) b].load (std::memory_order_relaxed) != 0)
+                    last = juce::jmax (last, b);
+        return (last < 0) ? 0 : (last + 1) * kBarSteps;
+    }
+
+    const int chainLen = chainLength.load (std::memory_order_relaxed);
+    if (chainLen > 0)
+    {
+        int total = 0;
+        for (int i = 0; i < chainLen; ++i)
+        {
+            const int bank = juce::jlimit (0, kNumPatterns - 1, chainSlots[(size_t) i].load (std::memory_order_relaxed));
+            total += juce::jlimit (kMinPatLen, kMaxPatLen, patternLength[(size_t) bank].load (std::memory_order_relaxed));
+        }
+        return total;
+    }
+
+    const int bank = juce::jlimit (0, kNumPatterns - 1, editPattern.load (std::memory_order_relaxed));
+    return juce::jlimit (kMinPatLen, kMaxPatLen, patternLength[(size_t) bank].load (std::memory_order_relaxed));
+}
+
+bool AudioEngine::hasContentToRender() const noexcept
+{
+    auto bankHasNotes = [this] (int bank) noexcept
+    {
+        const int len = juce::jlimit (kMinPatLen, kMaxPatLen, patternLength[(size_t) bank].load (std::memory_order_relaxed));
+        for (int s = 0; s < len; ++s)
+            if (patternBank[(size_t) bank][(size_t) s].load (std::memory_order_relaxed) != 0)
+                return true;
+        return false;
+    };
+
+    if (songMode.load (std::memory_order_relaxed))
+    {
+        const int bars = juce::jlimit (1, kSongBars, songBars.load (std::memory_order_relaxed));
+        for (int ln = 0; ln < kSongLanes; ++ln)
+            for (int b = 0; b < bars; ++b)
+            {
+                const int cell = songCell[(size_t) ln][(size_t) b].load (std::memory_order_relaxed);
+                if (cell < 0) return true;                                   // a one-shot always sounds
+                if (cell > 0 && cell <= kNumPatterns && bankHasNotes (cell - 1)) return true;
+            }
+        return false;
+    }
+
+    const int chainLen = chainLength.load (std::memory_order_relaxed);
+    if (chainLen > 0)
+    {
+        for (int i = 0; i < chainLen; ++i)
+            if (bankHasNotes (juce::jlimit (0, kNumPatterns - 1, chainSlots[(size_t) i].load (std::memory_order_relaxed))))
+                return true;
+        return false;
+    }
+
+    return bankHasNotes (juce::jlimit (0, kNumPatterns - 1, editPattern.load (std::memory_order_relaxed)));
 }
