@@ -76,7 +76,7 @@ public:
         if (sample == nullptr || mins.isEmpty())
         {
             g.setColour (lcdDim);
-            g.setFont (ShardColours::monoFont (11.0f, true).withExtraKerningFactor (0.18f));
+            g.setFont (ShardColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.18f));
             g.drawText ("TAP A PAD TO LOAD ITS WAVEFORM", getLocalBounds(), juce::Justification::centred);
             g.setColour (ShardColours::knobEdge.withAlpha (0.25f));
             g.drawRoundedRectangle (b.reduced (1.0f), 2.0f, 1.2f);
@@ -141,7 +141,7 @@ public:
             // Non-chromatic reinforcement: a 4px bar per fragment under the
             // wave, plus the pad number. Colour alone is never the signal.
             const float barY = wave.getBottom() + 1.0f;
-            g.setFont (ShardColours::monoFont (8.0f, true));
+            g.setFont (ShardColours::monoFont (Metrics::fMeta, true));
             for (const auto& s : segments)
             {
                 const float x0 = wave.getX() + s.start01 * wave.getWidth();
@@ -199,7 +199,7 @@ public:
         }
 
         // readouts
-        g.setFont (ShardColours::monoFont (10.5f, true).withExtraKerningFactor (0.08f));
+        g.setFont (ShardColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.08f));
         auto top2 = b.reduced (11.0f, 7.0f).removeFromTop (13.0f);
         g.setColour (activeColour (accent));
         g.fillEllipse (top2.getX(), top2.getCentreY() - 3.0f, 6.0f, 6.0f);
@@ -215,7 +215,7 @@ public:
         {
             auto bot = b.reduced (11.0f, 6.0f).removeFromBottom (12.0f);
             g.setColour (lcdDim);
-            g.setFont (ShardColours::monoFont (9.5f, true));
+            g.setFont (ShardColours::monoFont (Metrics::fMeta, true));
             g.drawText ("TRIM " + juce::String (start01, 2) + juce::String (juce::CharPointer_UTF8 (" \xe2\x86\x92 ")) + juce::String (end01, 2),
                         bot, juce::Justification::bottomLeft);
         }

@@ -46,7 +46,7 @@ public:
         g.setGradientFill (glow);
         g.fillRoundedRectangle (b, 2.0f);
 
-        g.setFont (ShardColours::monoFont (11.0f, true).withExtraKerningFactor (0.08f));
+        g.setFont (ShardColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.08f));
 
         // Corner + centre labels (top row) — cool LCD ink.
         auto top = b.reduced (10.0f, 6.0f).removeFromTop (13.0f);
@@ -103,7 +103,7 @@ public:
 
         auto status = b.reduced (10.0f, 5.0f).removeFromBottom (12.0f);
         g.setColour (ShardColours::lcdDim);
-        g.setFont (ShardColours::monoFont (9.5f, true));
+        g.setFont (ShardColours::monoFont (Metrics::fMeta, true));
         g.drawText ("SCOPE", status, juce::Justification::bottomLeft);
         g.setColour (peak > 0.0005f ? ShardColours::amber : ShardColours::lcdDim);
         g.drawText (peak > 0.0005f ? "SIG" : "--", status, juce::Justification::bottomRight);

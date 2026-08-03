@@ -116,7 +116,7 @@ public:
 
         // Name (mono) bottom.
         g.setColour (nmCol);
-        g.setFont (ShardColours::monoFont (9.0f).withExtraKerningFactor (0.06f));
+        g.setFont (ShardColours::monoFont (Metrics::fMeta).withExtraKerningFactor (0.06f));
         g.drawText (loaded ? padName.toUpperCase() : juce::String (juce::CharPointer_UTF8 ("\xe2\x80\x94")),
                     r.reduced (10.0f, 7.0f).removeFromBottom (12.0f), juce::Justification::bottomLeft, true);
 

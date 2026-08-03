@@ -954,7 +954,7 @@ void MainComponent::paint (juce::Graphics& g)
     {
         auto h = headerArea;
         g.setColour (ShardColours::ink);
-        g.setFont (ShardColours::displayFont (24.0f).withExtraKerningFactor (0.16f));
+        g.setFont (ShardColours::displayFont (Metrics::fTitle).withExtraKerningFactor (0.16f));
         g.drawText ("ZATI", h.getX(), h.getY(), 140, h.getHeight(), juce::Justification::centredLeft);
 
         const int sw = 9, sh = 13, gap = 4;
@@ -977,7 +977,7 @@ void MainComponent::paint (juce::Graphics& g)
     // 4. Machine face: CTRL labels (bank-dependent), VU strip, step LEDs.
     {
         g.setColour (ShardColours::ink.withAlpha (0.85f));
-        g.setFont (ShardColours::monoFont (10.0f, true).withExtraKerningFactor (0.16f));
+        g.setFont (ShardColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.16f));
         juce::Slider* ks[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
         for (int i = 0; i < 3; ++i)
         {
@@ -996,7 +996,7 @@ void MainComponent::paint (juce::Graphics& g)
             g.setColour (ShardColours::screenBg);
             g.fillRoundedRectangle (chip.toFloat(), 2.0f);
             g.setColour (touched ? ShardColours::lcdFg : ShardColours::lcdFg.withAlpha (0.8f));
-            g.setFont (ShardColours::monoFont (11.0f, true));
+            g.setFont (ShardColours::monoFont (Metrics::fLabel, true));
             g.drawText (macroReadout (i), chip, juce::Justification::centred);
         }
 
@@ -1012,7 +1012,7 @@ void MainComponent::paint (juce::Graphics& g)
             const float segW = (float) in.getWidth() / (float) nSeg;
 
             g.setColour (ShardColours::lcdFg.withAlpha (0.55f));
-            g.setFont (ShardColours::monoFont (8.0f, true));
+            g.setFont (ShardColours::monoFont (Metrics::fMeta, true));
             g.drawText ("L", vuArea.getX() + 6, in.getY() - 1, 12, in.getHeight() / 2, juce::Justification::centredLeft);
             g.drawText ("R", vuArea.getX() + 6, in.getCentreY(), 12, in.getHeight() / 2, juce::Justification::centredLeft);
 
@@ -1077,12 +1077,12 @@ void MainComponent::paintFxSheetContent (juce::Graphics& g)
     if (fxSheet.sheetBounds.isEmpty()) return;
 
     g.setColour (ShardColours::ink.withAlpha (0.9f));
-    g.setFont (ShardColours::monoFont (11.0f, true).withExtraKerningFactor (0.14f));
+    g.setFont (ShardColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
     g.drawText ("FX", fxSheet.sheetBounds.reduced (14, 12).removeFromTop (16), juce::Justification::centredLeft);
 
     {
         g.setColour (ShardColours::ink.withAlpha (0.85f));
-        g.setFont (ShardColours::monoFont (10.5f, true).withExtraKerningFactor (0.12f));
+        g.setFont (ShardColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.12f));
         auto name = [&g] (juce::Slider& s, const char* t)
         {
             auto r = s.getBounds();
@@ -1113,7 +1113,7 @@ void MainComponent::paintFxSheetContent (juce::Graphics& g)
                 g.drawVerticalLine ((int) xForF (f), plot.getY(), plot.getBottom());
             g.drawHorizontalLine ((int) yForDb (0.0f), plot.getX(), plot.getRight());
             g.setColour (ShardColours::lcdFg.withAlpha (0.45f));
-            g.setFont (ShardColours::monoFont (8.5f, true));
+            g.setFont (ShardColours::monoFont (Metrics::fMeta, true));
             g.drawText ("100",  (int) xForF (100.0f) - 14,   (int) plot.getBottom() + 1, 28, 10, juce::Justification::centred);
             g.drawText ("1K",   (int) xForF (1000.0f) - 14,  (int) plot.getBottom() + 1, 28, 10, juce::Justification::centred);
             g.drawText ("10K",  (int) xForF (10000.0f) - 14, (int) plot.getBottom() + 1, 28, 10, juce::Justification::centred);
@@ -1143,7 +1143,7 @@ void MainComponent::paintFxSheetContent (juce::Graphics& g)
             g.setColour (ShardColours::yellow.withAlpha (0.8f));
             g.drawVerticalLine ((int) xForF (juce::jlimit (fLo, fHi, fc)), plot.getY(), plot.getBottom());
             g.setColour (ShardColours::lcdFg);
-            g.setFont (ShardColours::monoFont (10.0f, true).withExtraKerningFactor (0.12f));
+            g.setFont (ShardColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.12f));
             const juce::String fcTxt = fc >= 1000.0f ? juce::String (fc / 1000.0f, 1) + " kHz" : juce::String ((int) fc) + " Hz";
             g.drawText ((hp ? "HPF  " : "LPF  ") + fcTxt + "   Q " + juce::String (q, 2),
                         (int) scr.getX() + 8, (int) scr.getY() + 3, (int) scr.getWidth() - 16, 12,
@@ -1160,14 +1160,14 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
     const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
     const int sp = juce::jmax (0, selectedPad);
     g.setColour (ShardColours::ink.withAlpha (0.9f));
-    g.setFont (ShardColours::monoFont (11.0f, true).withExtraKerningFactor (0.14f));
+    g.setFont (ShardColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
     g.drawText ("PAD " + juce::String (sp + 1)
                 + (padName[(size_t) sp].isNotEmpty() ? "  " + dot + "  " + padName[(size_t) sp].toUpperCase() : juce::String()),
                 padSheet.sheetBounds.reduced (14, 12).removeFromTop (16), juce::Justification::centredLeft);
 
     {
         // Knobs: label above (same convention as FX).
-        g.setFont (ShardColours::monoFont (10.0f, true).withExtraKerningFactor (0.10f));
+        g.setFont (ShardColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
         auto name = [&g] (juce::Slider& s, const char* t)
         {
             auto r = s.getBounds();
@@ -1177,7 +1177,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
         name (attackSlider, "ATTACK"); name (releaseSlider, "RELEASE"); name (chokeSlider, "CHOKE");
 
         // Start/End stay linear (a trim range, not a knob): label to the left.
-        g.setFont (ShardColours::monoFont (11.0f, true).withExtraKerningFactor (0.06f));
+        g.setFont (ShardColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.06f));
         auto lab = [&g] (juce::Slider& s, const char* t)
         {
             auto r = s.getBounds();
@@ -1195,7 +1195,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
 
             const bool darkFrag = Zati::colour (z).getPerceivedBrightness() < 0.55f;
             g.setColour (darkFrag ? ShardColours::inkLight : ShardColours::ink);
-            g.setFont (ShardColours::monoFont (11.0f, true).withExtraKerningFactor (0.14f));
+            g.setFont (ShardColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
             g.drawText ("ZATI " + juce::String (z + 1) + "  " + Zati::name (z),
                         zatiSwatchArea, juce::Justification::centred);
         }
@@ -1215,7 +1215,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
             if (sb == nullptr || sb->buffer.getNumSamples() <= 0)
             {
                 g.setColour (ShardColours::lcdFg.withAlpha (0.5f));
-                g.setFont (ShardColours::monoFont (11.0f, true).withExtraKerningFactor (0.16f));
+                g.setFont (ShardColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.16f));
                 g.drawText ("PAD VACIO  -  LOAD O REC PARA CARGAR", editInfoArea, juce::Justification::centred);
             }
             else
@@ -1282,7 +1282,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
                                          + juce::String (sr / 1000.0, 1) + " kHz   "
                                          + juce::String (kb) + " KB";
                 g.setColour (ShardColours::lcdFg);
-                g.setFont (ShardColours::monoFont (9.5f, true).withExtraKerningFactor (0.10f));
+                g.setFont (ShardColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
                 g.drawText (facts, meta, juce::Justification::centredLeft);
             }
         }
@@ -1301,7 +1301,7 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     auto inner = seqSheet.sheetBounds.reduced (12, 6);
 
     g.setColour (ShardColours::ink.withAlpha (0.9f));
-    g.setFont (ShardColours::monoFont (11.0f, true).withExtraKerningFactor (0.14f));
+    g.setFont (ShardColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
     const juce::String t = "STEPS  " + dot + "  PAD " + juce::String (sp + 1)
                          + (padName[(size_t) sp].isNotEmpty() ? "   " + padName[(size_t) sp] : juce::String())
                          + "   " + dot + "   P" + juce::String (selectedPattern + 1);
@@ -1313,7 +1313,7 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
         ? "looping P" + juce::String (selectedPattern + 1)
         : "playing P" + juce::String (engine.getPlayingPattern() + 1);
     g.setColour (ShardColours::inkDim);
-    g.setFont (ShardColours::monoFont (9.5f, true).withExtraKerningFactor (0.10f));
+    g.setFont (ShardColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
     g.drawText (chainStr, inner.removeFromTop (14), juce::Justification::centredLeft);
 
     // Selection (yellow) and playhead (red) rings — flat fills never blend,
@@ -1407,7 +1407,7 @@ void MainComponent::resized()
     }
 
     // --- Top chrome ---
-    headerArea = area.removeFromTop (30);
+    headerArea = area.removeFromTop (Metrics::tab);
     area.removeFromTop (8);
 
     screenBezel = area.removeFromTop (screenH);
@@ -1416,15 +1416,19 @@ void MainComponent::resized()
 
     // Module bar — rule of three: PADS / SEC / FX, taller than the transport
     // row so "opens a window" and "does something" read as different shapes.
-    tabBarArea = area.removeFromTop (42);
+    //  32, not 42: this bar only opens windows, so it must not carry the same
+    //  weight as PLAY. Laid out as one segmented strip (1px between caps, no
+    //  per-button margin) instead of four separate boxes, which is what made
+    //  it read as four actions. The 10px saved goes back to the pads.
+    tabBarArea = area.removeFromTop (Metrics::tab);
     {
         auto row = tabBarArea;
         juce::TextButton* mb[4] = { &padsButton, &secButton, &fxOpenButton, &setButton };
         const int w = row.getWidth() / 4;
         for (int i = 0; i < 4; ++i)
-            mb[i]->setBounds ((i < 3 ? row.removeFromLeft (w) : row).reduced (2));
+            mb[i]->setBounds ((i < 3 ? row.removeFromLeft (w) : row).reduced (1, 0));
     }
-    area.removeFromTop (6);
+    area.removeFromTop (Metrics::sm);
 
     // Transport: LOAD | REC | PLAY (PLAY is the wide accent hero).
     {
@@ -1437,34 +1441,34 @@ void MainComponent::resized()
     area.removeFromTop (8);
 
     // Status pinned to the bottom.
-    status.setBounds (area.removeFromBottom (18));
-    area.removeFromBottom (6);
+    status.setBounds (area.removeFromBottom (Metrics::lg));
+    area.removeFromBottom (Metrics::sm);
 
     // --- Machine face: VU, bank chips, CTRL 1-3, step LEDs, pads ---
     {
         vuArea = area.removeFromTop (20).reduced (2, 0);
-        area.removeFromTop (6);
+        area.removeFromTop (Metrics::sm);
 
-        auto bankRow = area.removeFromTop (18);      // chips, deliberately small
+        auto bankRow = area.removeFromTop (Metrics::lg);      // chips, deliberately small
         const int bw = bankRow.getWidth() / 3;
         for (int i = 0; i < 3; ++i)
-            macroBankBtns[i]->setBounds ((i < 2 ? bankRow.removeFromLeft (bw) : bankRow).reduced (34, 0));
+            macroBankBtns[i]->setBounds ((i < 2 ? bankRow.removeFromLeft (bw) : bankRow).reduced (32, 0));
         area.removeFromTop (4);
 
-        auto mrow = area.removeFromTop (92);             // 3 CTRL macros + their readout chips
+        auto mrow = area.removeFromTop (88);             // 3 CTRL macros + their readout chips
         juce::Slider* mk[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
         const int w = mrow.getWidth() / 3;
         for (int i = 0; i < 3; ++i)
         {
             auto cell = (i < 2 ? mrow.removeFromLeft (w) : mrow);
-            cell.removeFromTop (15);                     // gap for the name above
-            cell.removeFromBottom (23);                  // gap for the readout chip below
+            cell.removeFromTop (Metrics::lg);                     // gap for the name above
+            cell.removeFromBottom (Metrics::xl);                  // gap for the readout chip below
             mk[i]->setBounds (cell.reduced (10, 0));
         }
-        area.removeFromTop (6);
+        area.removeFromTop (Metrics::sm);
 
         area.removeFromTop (4);
-        slotRowArea = area.removeFromTop (30);
+        slotRowArea = area.removeFromTop (Metrics::tab);
         {
             auto row = slotRowArea;
             const int sw = row.getWidth() / kNumSlots;
@@ -1480,14 +1484,18 @@ void MainComponent::resized()
 
     // --- Floating sheets (each sized by its own content, capped at 86%) ---
     const auto full = getLocalBounds();
+    //  Centred, not risen from the bottom. A bottom sheet at 86% buried the pad
+    //  grid exactly while you were editing a pad — you lost sight of the thing
+    //  you were adjusting. Centred at 78% x 92% the instrument stays visible
+    //  behind the scrim and the window reads as temporary.
     auto sheetFromBottom = [&full] (Sheet& s, int desiredH)
     {
         s.setBounds (full);
-        auto f = full;
-        const int cappedH = (int) (f.getHeight() * 0.86f);
-        auto sheet = f.removeFromBottom (juce::jmin (desiredH, cappedH)).reduced (8);
+        const int h = juce::jmin (desiredH, (int) (full.getHeight() * 0.78f));
+        const int w = (int) (full.getWidth() * 0.92f);
+        auto sheet = juce::Rectangle<int> (0, 0, w, h).withCentre (full.getCentre());
         s.sheetBounds = sheet;
-        return sheet.reduced (14, 12);
+        return sheet.reduced (Metrics::lg, Metrics::md);
     };
     auto placeKnobRow = [] (juce::Rectangle<int> row, juce::Slider** ks)
     {
@@ -1510,23 +1518,23 @@ void MainComponent::resized()
         juce::Slider* k2[3] = { &attackSlider, &releaseSlider, &chokeSlider };
         placeKnobRow (inner.removeFromTop (86), k1);
         placeKnobRow (inner.removeFromTop (86), k2);
-        inner.removeFromTop (6);
+        inner.removeFromTop (Metrics::sm);
 
         const int labelW = 64;
         auto ctrlRow = [&inner, labelW] (int h) { auto r = inner.removeFromTop (h); r.removeFromLeft (labelW); return r; };
         startSlider.setBounds (ctrlRow (26)); inner.removeFromTop (4);
         endSlider.setBounds   (ctrlRow (26)); inner.removeFromTop (8);
 
-        auto rr = inner.removeFromTop (30);
+        auto rr = inner.removeFromTop (Metrics::tab);
         reverseButton.setBounds (rr.removeFromLeft (rr.getWidth() / 2).reduced (3, 0));
         loopButton.setBounds    (rr.reduced (3, 0));
         inner.removeFromTop (5);
-        auto rr2 = inner.removeFromTop (30);
+        auto rr2 = inner.removeFromTop (Metrics::tab);
         chopButton.setBounds (rr2.removeFromLeft (rr2.getWidth() / 2).reduced (3, 0));
         micButton.setBounds  (rr2.reduced (3, 0));
         inner.removeFromTop (5);
 
-        auto zr = inner.removeFromTop (30);
+        auto zr = inner.removeFromTop (Metrics::tab);
         zatiPrevButton.setBounds (zr.removeFromLeft (56).reduced (3, 0));
         zatiNextButton.setBounds (zr.removeFromRight (56).reduced (3, 0));
         zatiSwatchArea = zr.reduced (4, 2);      // drawn in paintPadSheetContent
@@ -1538,7 +1546,7 @@ void MainComponent::resized()
     // FX sheet: tight knob boxes + the live filter curve.
     {
         auto inner = sheetFromBottom (fxSheet, 566);
-        auto titleRow = inner.removeFromTop (28);
+        auto titleRow = inner.removeFromTop (Metrics::xl);
         fxCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
 
         auto ctrl = inner.removeFromBottom (40);
@@ -1550,7 +1558,7 @@ void MainComponent::resized()
         juce::Slider* r2[3] = { &dlyTimeSlider, &dlyFbSlider, &dlyMixSlider };
         placeKnobRow (inner.removeFromTop (140), r1);
         placeKnobRow (inner.removeFromTop (140), r2);
-        inner.removeFromTop (10);
+        inner.removeFromTop (Metrics::md);
 
         fxCurveArea = inner;       // live filter response (paintFxSheetContent)
     }
@@ -1561,7 +1569,7 @@ void MainComponent::resized()
         auto titleRow = inner.removeFromTop (32);
         browseCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
 
-        auto actions = inner.removeFromBottom (38);
+        auto actions = inner.removeFromBottom (Metrics::btn);
         browseSystemButton.setBounds (actions.removeFromRight (actions.getWidth() / 3).reduced (2, 0));
         browseLoadButton.setBounds   (actions.reduced (2, 0));
         inner.removeFromBottom (8);
@@ -1577,7 +1585,7 @@ void MainComponent::resized()
         skinButton.setBounds (inner.removeFromTop (32).reduced (2, 0));
         inner.removeFromTop (8);
 
-        auto actions = inner.removeFromBottom (38);
+        auto actions = inner.removeFromBottom (Metrics::btn);
         const int aw = actions.getWidth() / 4;
         projSaveButton.setBounds   (actions.removeFromLeft (aw).reduced (2, 0));
         projLoadButton.setBounds   (actions.removeFromLeft (aw).reduced (2, 0));
@@ -1604,27 +1612,27 @@ void MainComponent::resized()
         seqCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
 
         {
-            auto row1 = inner.removeFromTop (26);
+            auto row1 = inner.removeFromTop (Metrics::xl);
             const int w1 = row1.getWidth() / 2;
             patternSlider.setBounds (row1.removeFromLeft (w1).reduced (2, 0));
             lengthSlider.setBounds  (row1.reduced (2, 0));
             inner.removeFromTop (4);
 
             // Chain: the 8 coloured include-toggles, then clear + note.
-            auto row2 = inner.removeFromTop (28);
+            auto row2 = inner.removeFromTop (Metrics::xl);
             const int pw = row2.getWidth() / kNumPatterns;
             for (int i = 0; i < kNumPatterns; ++i)
                 patternButtons[i]->setBounds ((i < kNumPatterns - 1 ? row2.removeFromLeft (pw) : row2).reduced (2));
             inner.removeFromTop (4);
 
-            auto row3 = inner.removeFromTop (26);
+            auto row3 = inner.removeFromTop (Metrics::xl);
             const int w3 = row3.getWidth() / 2;
             chainClearButton.setBounds (row3.removeFromLeft (w3).reduced (2, 0));
             noteSlider.setBounds       (row3.reduced (2, 0));
         }
-        inner.removeFromTop (6);
+        inner.removeFromTop (Metrics::sm);
 
-        auto bottom = inner.removeFromBottom (30);
+        auto bottom = inner.removeFromBottom (Metrics::tab);
         bpmSlider.setBounds (bottom.removeFromLeft ((int) (bottom.getWidth() * 0.66f)).reduced (2, 0));
         clearButton.setBounds (bottom.reduced (3, 0));
         inner.removeFromBottom (8);
@@ -1977,7 +1985,7 @@ void MainComponent::ProjectList::paintListBoxItem (int row, juce::Graphics& g, i
         ? (ShardColours::accent.getPerceivedBrightness() < 0.5f ? ShardColours::inkLight : ShardColours::ink)
         : ShardColours::ink;
     g.setColour (fg);
-    g.setFont (ShardColours::monoFont (12.5f, true).withExtraKerningFactor (0.04f));
+    g.setFont (ShardColours::monoFont (Metrics::fValue, true).withExtraKerningFactor (0.04f));
     g.drawFittedText (names[row], r.reduced (10, 0), juce::Justification::centredLeft, 1, 0.9f);
 }
 
@@ -2317,11 +2325,11 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
 
     auto inner = projSheet.sheetBounds.reduced (12, 6);
     g.setColour (ShardColours::ink.withAlpha (0.9f));
-    g.setFont (ShardColours::monoFont (11.0f, true).withExtraKerningFactor (0.14f));
+    g.setFont (ShardColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
     g.drawText ("PROYECTOS", inner.removeFromTop (16), juce::Justification::centredLeft);
 
     g.setColour (ShardColours::inkDim);
-    g.setFont (ShardColours::monoFont (9.5f, true).withExtraKerningFactor (0.08f));
+    g.setFont (ShardColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
     g.drawText (currentProject.isNotEmpty()
                     ? "abierto: " + currentProject
                     : juce::String (projModel.names.isEmpty()
@@ -2396,14 +2404,14 @@ void MainComponent::paintBrowseSheetContent (juce::Graphics& g)
 
     auto inner = browseSheet.sheetBounds.reduced (12, 6);
     g.setColour (ShardColours::ink.withAlpha (0.9f));
-    g.setFont (ShardColours::monoFont (11.0f, true).withExtraKerningFactor (0.14f));
+    g.setFont (ShardColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
     g.drawText ("CARGAR EN PAD " + juce::String (juce::jmax (0, browseTargetPad) + 1),
                 inner.removeFromTop (16), juce::Justification::centredLeft);
 
     const bool picked = browser != nullptr && browser->getNumSelectedFiles() > 0
                      && browser->getSelectedFile (0).existsAsFile();
     g.setColour (ShardColours::inkDim);
-    g.setFont (ShardColours::monoFont (9.5f, true).withExtraKerningFactor (0.08f));
+    g.setFont (ShardColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
     g.drawText (picked ? browser->getSelectedFile (0).getFileName()
                        : juce::String ("elige una muestra  -  wav / aiff / flac / ogg / mp3"),
                 inner.removeFromTop (14), juce::Justification::centredLeft);

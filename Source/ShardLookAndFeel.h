@@ -129,6 +129,39 @@ namespace ShardColours
     {
         return juce::Font (juce::FontOptions().withTypeface (bold ? monoBold() : monoRegular()).withHeight (h));
     }
+}
+
+// ============================================================================
+//  Metrics — one scale for every screen.
+//
+//  The face had grown ten font sizes (8, 8.5, 9, 9.5, 10, 10.5, 11, 12, 12.5,
+//  13.5) and gaps off any grid (6, 15, 18, 23, 34, 42, 92). That reads as
+//  untidy even when you cannot name why. Everything here is a multiple of 4,
+//  and every size comes from a closed list: if a value is not below, it is
+//  wrong.
+// ============================================================================
+namespace Metrics
+{
+    // Spacing — multiples of 4 only.
+    static constexpr int xs = 4, sm = 8, md = 12, lg = 16, xl = 24;
+
+    // Controls.
+    static constexpr int knobSm = 44, knobMd = 56, knobLg = 72;
+    static constexpr int btn = 44;    // minimum comfortable touch target
+    static constexpr int chip = 24;   // value readout
+    static constexpr int tab = 32;    // module bar: it opens windows, it does not act
+    static constexpr int row = 44;    // list row
+
+    // Type — four sizes, each with one job.
+    static constexpr float fMeta = 10.0f;   // units, secondary facts
+    static constexpr float fLabel = 11.0f;  // control names
+    static constexpr float fValue = 13.0f;  // readouts
+    static constexpr float fDisplay = 20.0f;
+    static constexpr float fTitle = 26.0f;
+}
+
+namespace ShardColours
+{
 
     //  Real WCAG contrast, not a brightness proxy. Perceived brightness is a
     //  different curve and it disagrees with the standard exactly where it
@@ -246,12 +279,12 @@ public:
         if (! isDirectory && fileSizeDescription.isNotEmpty())
         {
             g.setColour (fg.withAlpha (0.55f));
-            g.setFont (ShardColours::monoFont (9.5f));
+            g.setFont (ShardColours::monoFont (Metrics::fMeta));
             g.drawText (fileSizeDescription, sizeArea.reduced (6, 0), juce::Justification::centredRight);
         }
 
         g.setColour (fg);
-        g.setFont (ShardColours::monoFont (12.0f, isDirectory).withExtraKerningFactor (0.02f));
+        g.setFont (ShardColours::monoFont (Metrics::fValue, isDirectory).withExtraKerningFactor (0.02f));
         g.drawFittedText (filename, r.reduced (6, 0), juce::Justification::centredLeft, 1, 0.9f);
     }
 
@@ -355,7 +388,7 @@ public:
             if (fn.isNotEmpty())
             {
                 g.setColour (ShardColours::inkDim);
-                g.setFont (ShardColours::monoFont (11.0f).withExtraKerningFactor (0.02f));
+                g.setFont (ShardColours::monoFont (Metrics::fLabel).withExtraKerningFactor (0.02f));
                 g.drawFittedText (fn, strip.reduced (6, 0), juce::Justification::centred, 1, 0.85f);
             }
             return;
@@ -369,6 +402,6 @@ public:
 
     juce::Font getLabelFont (juce::Label&) override
     {
-        return ShardColours::monoFont (13.5f, true);
+        return ShardColours::monoFont (Metrics::fValue, true);
     }
 };
