@@ -55,12 +55,11 @@ private:
                 onDismiss();
         }
     };
-    Sheet padSheet, seqSheet, fxSheet, browseSheet, projSheet, mixSheet, songSheet, exportSheet;
+    Sheet padSheet, seqSheet, browseSheet, projSheet, mixSheet, songSheet, exportSheet;
     void openSheet (Sheet& s, juce::TextButton& toggle);
     void closeAllSheets();
     void paintSeqSheetContent (juce::Graphics& g);
     void paintPadSheetContent (juce::Graphics& g);
-    void paintFxSheetContent (juce::Graphics& g);
     void paintBrowseSheetContent (juce::Graphics& g);
     void paintProjSheetContent (juce::Graphics& g);
     void paintMixSheetContent (juce::Graphics& g);
@@ -188,7 +187,6 @@ private:
     // sheet (never a mode switch). CHOP lives inside PADS; CHAIN inside SEC.
     juce::TextButton padsButton  { "PADS" };
     juce::TextButton secButton   { "SEC" };
-    juce::TextButton fxOpenButton   { "FX" };
     juce::TextButton mixButton      { "MIX" };   // the 16-channel mixer sheet
     juce::TextButton songButton     { "SONG" };  // the arrangement timeline
 
@@ -210,7 +208,6 @@ private:
     juce::TextButton setButton      { "SET" };   // skins + proyectos (spec: SET)
     juce::TextButton seqCloseButton   { juce::CharPointer_UTF8 ("\xc3\x97") },
                      padCloseButton   { juce::CharPointer_UTF8 ("\xc3\x97") },
-                     fxCloseButton    { juce::CharPointer_UTF8 ("\xc3\x97") },
                      mixCloseButton   { juce::CharPointer_UTF8 ("\xc3\x97") };
     //  A studio is where a track gets finished, and nothing gets finished
     //  without balancing it. One strip per pad: level, mute, solo.
@@ -258,25 +255,36 @@ private:
         bool held = false;
     };
 
-    static constexpr int kNumSlots = 4;
-    enum class SlotFx { Filtro = 0, Delay, Drive, Loop };
-    struct Slot
+    // --- The six effects --------------------------------------------------
+    //  One row, six buttons, one effect each: ISO, HPF, DRV, DLY, CRSH, REV.
+    //  There used to be four re-assignable slots plus three bank chips above
+    //  the knobs, which meant an effect could be pointed at, switched on and
+    //  edited from three different places — the "there are two delays" bug.
+    //  Now a button IS its effect: tapping it hands the three CTRL knobs its
+    //  three parameters and tapping it again switches it off. Six effects,
+    //  six switches, no modes.
+    static constexpr int kNumFx = 6;
+    struct FxDef
     {
-        SlotFx fx = SlotFx::Filtro;
-        bool   on = false;
+        const char* name;                  // face button
+        const char* param[3];              // what CTRL 1-3 become
+        struct Spec { double lo, hi, step, skewMid, def; int fmt; } spec[3];
+        double onMix;                      // MIX applied when you switch it on
     };
-    std::array<Slot, kNumSlots> slots {};
-    int activeSlot = -1;
-    juce::OwnedArray<HoldButton> slotButtons;
-    void slotTapped (int i);
-    void cycleSlotFx (int i);
-    void applySlotState (int i);
-    const char* slotLabel (SlotFx fx) const;
-    juce::Rectangle<int> slotRowArea;
+    static const FxDef fxDefs[kNumFx];
 
-    // Context-sensitive macro strip: the 3 physical CTRL knobs switch banks.
-    juce::OwnedArray<juce::TextButton> macroBankBtns;   // FILTRO / DELAY / PAD
-    int macroBank = 0;
+    std::array<bool, kNumFx> fxOn {};
+    int focusedFx = 0;                     // whose parameters CTRL 1-3 hold
+    juce::OwnedArray<juce::TextButton> fxButtons;
+    juce::OwnedArray<juce::Slider>     fxParams;   // kNumFx * 3, the real values
+    juce::Rectangle<int> fxRowArea;
+
+    void fxTapped (int fx);
+    void setFxEnabled (int fx, bool on);
+    void focusFx (int fx);
+    void pushFxParam (int fx, int p);              // slider -> engine
+    juce::Slider& fxParam (int fx, int p) { return *fxParams[fx * 3 + p]; }
+    static juce::String fxFormat (const FxDef::Spec& sp, double v);
 
     // Dynamic knob labels (spec Zone 4): at rest the knob shows its permanent
     // name (CTRL 1/2/3); while it is being touched it shows the parameter it
@@ -295,7 +303,6 @@ private:
     juce::String macroReadout (int idx) const;
     void setMacroTouched (int idx, bool touched);
 
-    void setMacroBank (int bank);
     void refreshMacroValues();
     void macroMoved (int idx);
 
@@ -321,9 +328,6 @@ private:
     juce::Slider panSlider, attackSlider, releaseSlider;
     juce::Slider patternSlider, noteSlider, lengthSlider;
     juce::TextButton chainClearButton { "CLR CHAIN" };
-    juce::TextButton fxTypeButton { "LPF" };
-    juce::Slider cutoffSlider, resoSlider, driveSlider;
-    juce::Slider dlyTimeSlider, dlyFbSlider, dlyMixSlider;
     juce::Slider macroCtrl1, macroCtrl2, macroCtrl3;   // CTRL 1-3, bank-dependent
     juce::Label  status, fxLabel;
     WaveformDisplay waveform;
@@ -356,7 +360,7 @@ private:
 
     std::array<float, kNumPads> padFlash {};   // 1.0 on trigger, decays -> lit feedback
     // Chassis layout regions (set in resized(), drawn in paint()).
-    juce::Rectangle<int> headerArea, screenBezel, tabBarArea, fxCurveArea,
+    juce::Rectangle<int> headerArea, screenBezel, tabBarArea,
                          editInfoArea, vuArea, stepStripArea;
     float vuL = 0.0f, vuR = 0.0f;   // smoothed output peaks for the VU strip
 

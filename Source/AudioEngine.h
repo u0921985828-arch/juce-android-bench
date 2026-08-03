@@ -171,12 +171,43 @@ public:
     void setDlyTime  (float ms)  noexcept { dlyTime.store  (ms,  std::memory_order_relaxed); }
     void setDlyFb    (float f)    noexcept { dlyFb.store    (f,   std::memory_order_relaxed); }
     void setDlyMix   (float m)    noexcept { dlyMix.store   (m,   std::memory_order_relaxed); }
-    // Only the audible delay counts: a long time with the mix at zero must
-    // not add ten seconds of silence to every bounce.
-    double getDelayTimeSeconds() const noexcept
+
+    // --- The six effects -------------------------------------------------
+    //  ISO, HPF, DRIVE, DELAY, CRUSH, REVERB. Six independent stages in that
+    //  order, three parameters each, and the third is always MIX. MIX is the
+    //  switch as well as the amount: at zero the stage is skipped outright,
+    //  so an effect you are not using costs nothing and cannot colour the
+    //  sound. Nothing is shared between stages, which is what lets ISO and
+    //  HPF run at once as a band-pass instead of fighting over one filter.
+    void setIsoCutoff (float hz) noexcept { fxCutoff.store (hz, std::memory_order_relaxed); }
+    void setIsoReso   (float q)  noexcept { fxReso.store   (q,  std::memory_order_relaxed); }
+    void setIsoMix    (float m)  noexcept { fxMix.store    (m,  std::memory_order_relaxed); }
+
+    void setHpFreq (float hz) noexcept { hpFreq.store (hz, std::memory_order_relaxed); }
+    void setHpReso (float q)  noexcept { hpReso.store (q,  std::memory_order_relaxed); }
+    void setHpMix  (float m)  noexcept { hpMix.store  (m,  std::memory_order_relaxed); }
+
+    void setDrvTone (float hz) noexcept { drvTone.store (hz, std::memory_order_relaxed); }
+    void setDrvMix  (float m)  noexcept { drvMix.store  (m,  std::memory_order_relaxed); }
+
+    void setCrushBits (float b) noexcept { crBits.store (b, std::memory_order_relaxed); }
+    void setCrushRate (float r) noexcept { crRate.store (r, std::memory_order_relaxed); }
+    void setCrushMix  (float m) noexcept { crMix.store  (m, std::memory_order_relaxed); }
+
+    void setRevSize (float s) noexcept { rvSize.store (s, std::memory_order_relaxed); }
+    void setRevDamp (float d) noexcept { rvDamp.store (d, std::memory_order_relaxed); }
+    void setRevMix  (float m) noexcept { rvMix.store  (m, std::memory_order_relaxed); }
+    // How much silence a bounce must keep past the last note so the tail is
+    // not guillotined. Only AUDIBLE stages count — a ten-second delay with
+    // its mix at zero must not pad every export.
+    double getFxTailSeconds() const noexcept
     {
-        return dlyMix.load (std::memory_order_relaxed) > 0.001f
-                 ? (double) dlyTime.load (std::memory_order_relaxed) * 0.001 : 0.0;
+        double t = 0.0;
+        if (dlyMix.load (std::memory_order_relaxed) > 0.001f)
+            t = juce::jmax (t, 4.0 * (double) dlyTime.load (std::memory_order_relaxed) * 0.001);
+        if (rvMix.load (std::memory_order_relaxed) > 0.001f)
+            t = juce::jmax (t, 3.0);
+        return t;
     }
 
     // --- Scope (message thread): copy the last n post-FX master samples ---
@@ -348,6 +379,44 @@ private:
     std::atomic<float> dlyTime { 250.0f };       // ms
     std::atomic<float> dlyFb   { 0.35f };        // 0..0.95
     std::atomic<float> dlyMix  { 0.0f };         // 0..1
+
+    // ISO wet/dry, so the low-pass can be blended rather than only replacing.
+    std::atomic<float> fxMix { 0.0f };
+    float smFxMix = 0.0f;
+
+    // HPF: its OWN filter, not the ISO one switched to high-pass. Two objects
+    // cost a few hundred bytes and buy a band-pass you can sweep from both
+    // ends — one shared filter would have made them mutually exclusive.
+    juce::dsp::StateVariableTPTFilter<float> hpFilter;
+    std::atomic<float> hpFreq { 200.0f };
+    std::atomic<float> hpReso { 0.707f };
+    std::atomic<float> hpMix  { 0.0f };
+    float smHpFreq = 200.0f, smHpReso = 0.707f, smHpMix = 0.0f;
+
+    // Drive tone: a one-pole low-pass after the tanh, because saturation
+    // without somewhere for the harmonics to go is just harsh.
+    std::atomic<float> drvTone { 20000.0f };
+    std::atomic<float> drvMix  { 0.0f };
+    float smDrvTone = 20000.0f, smDrvMix = 0.0f;
+    float drvLp[2] { 0.0f, 0.0f };
+
+    // Crush: bit depth and sample-and-hold rate, the two halves of lo-fi.
+    std::atomic<float> crBits { 8.0f };
+    std::atomic<float> crRate { 4.0f };
+    std::atomic<float> crMix  { 0.0f };
+    float smCrMix = 0.0f;
+    float crHold[2] { 0.0f, 0.0f };
+    float crPhase = 0.0f;
+
+    // Reverb, last in the chain so everything ahead of it lands in the room.
+    juce::dsp::Reverb reverb;
+    std::atomic<float> rvSize { 0.55f };
+    std::atomic<float> rvDamp { 0.45f };
+    std::atomic<float> rvMix  { 0.0f };
+    float smRvMix = 0.0f;
+
+    // Dry copy for the wet/dry stages. Sized in prepareToPlay, never here.
+    juce::AudioBuffer<float> fxDry;
 
     // Scope ring (post-FX mono), written by the audio thread.
     static constexpr int kScopeSize = 2048;   // power of two

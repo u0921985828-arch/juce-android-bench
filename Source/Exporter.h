@@ -90,7 +90,7 @@ public:
         // repeats all fit inside the file instead of being cut off.
         const double secPerStep = (60.0 / juce::jmax (20.0, live.getBpm())) * 0.25;
         const juce::int64 bodyLen = (juce::int64) (secPerStep * (double) steps * sampleRate);
-        const juce::int64 tailLen = (juce::int64) (juce::jmax (2.0, 4.0 * live.getDelayTimeSeconds()) * sampleRate);
+        const juce::int64 tailLen = (juce::int64) (juce::jmax (2.0, live.getFxTailSeconds()) * sampleRate);
         const juce::int64 totalLen = bodyLen + tailLen;
 
         if (! dir.createDirectory())

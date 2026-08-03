@@ -83,13 +83,14 @@ MainComponent::MainComponent()
     }
     barButtons[0]->setToggleState (true, juce::dontSendNotification);
 
-    // Module bar — rule of three: PADS / SEC / FX, one floating sheet each.
-    // Nothing ever replaces the machine face; CHOP is a button inside the
-    // PADS sheet and the pattern chain is a row inside the SEC sheet.
+    // Module bar. FX is NOT a module any more: the six effects live in their
+    // own row on the machine face, where you can reach them mid-take without
+    // covering the pads. A sheet for them would only be a second way to switch
+    // the same six things on.
     {
-        juce::TextButton* mb[3]  = { &padsButton, &secButton, &fxOpenButton };
-        Sheet*            sh[3]  = { &padSheet, &seqSheet, &fxSheet };
-        for (int i = 0; i < 3; ++i)
+        juce::TextButton* mb[2]  = { &padsButton, &secButton };
+        Sheet*            sh[2]  = { &padSheet, &seqSheet };
+        for (int i = 0; i < 2; ++i)
         {
             styleButton (*mb[i], kKey);
             mb[i]->setColour (juce::TextButton::buttonOnColourId, kAccent);
@@ -98,14 +99,13 @@ MainComponent::MainComponent()
             addAndMakeVisible (b);
         }
 
-        juce::TextButton* cb[3] = { &padCloseButton, &seqCloseButton, &fxCloseButton };
-        std::function<void (juce::Graphics&)> pc[3] =
+        juce::TextButton* cb[2] = { &padCloseButton, &seqCloseButton };
+        std::function<void (juce::Graphics&)> pc[2] =
         {
             [this] (juce::Graphics& g) { paintPadSheetContent (g); },
             [this] (juce::Graphics& g) { paintSeqSheetContent (g); },
-            [this] (juce::Graphics& g) { paintFxSheetContent (g); },
         };
-        for (int i = 0; i < 3; ++i)
+        for (int i = 0; i < 2; ++i)
         {
             auto* s = sh[i];
             addAndMakeVisible (s);
@@ -295,7 +295,7 @@ MainComponent::MainComponent()
 
     styleButton (testButton, kKey);
     testButton.onClick = [this] { engine.postTestTone(); status.setText ("Tono de prueba", juce::dontSendNotification); };
-    addAndMakeVisible (testButton);
+    projSheet.addAndMakeVisible (testButton);
 
     styleButton (recButton, kKey);
     recButton.onClick = [this] { toggleRecordArm(); };
@@ -536,39 +536,27 @@ MainComponent::MainComponent()
     };
     seqSheet.addAndMakeVisible (noteSlider);
 
-    // Master FX (filter + drive).
-    fxTypeButton.setClickingTogglesState (true);
-    styleButton (fxTypeButton, kKey);
-    fxTypeButton.setColour (juce::TextButton::buttonOnColourId, kAccent);
-    fxTypeButton.onClick = [this]
-    {
-        const bool hp = fxTypeButton.getToggleState();
-        fxTypeButton.setButtonText (hp ? "HPF" : "LPF");
-        engine.setFxType (hp ? 1 : 0);
-        fxSheet.repaint();
-        refreshMacroValues();
-    };
-    fxSheet.addAndMakeVisible (fxTypeButton);
-
-    // FX as rotary KNOBS (vintage identity).
-    initKnob (cutoffSlider, 20.0, 20000.0, 1.0, 20000.0, 1000.0, [this] { engine.setFxCutoff ((float) cutoffSlider.getValue()); fxSheet.repaint(); refreshMacroValues(); });
-    initKnob (resoSlider,    0.3,  4.0, 0.01, 0.707, 0.0,       [this] { engine.setFxReso   ((float) resoSlider.getValue()); fxSheet.repaint(); refreshMacroValues(); });
-    initKnob (driveSlider,   0.0,  1.0, 0.01, 0.0,   0.0,       [this] { engine.setFxDrive  ((float) driveSlider.getValue()); refreshMacroValues(); });
-    initKnob (dlyTimeSlider, 20.0, 1000.0, 1.0, 250.0, 0.0,     [this] { engine.setDlyTime  ((float) dlyTimeSlider.getValue()); refreshMacroValues(); });
-    initKnob (dlyFbSlider,   0.0,  0.95, 0.01, 0.35, 0.0,       [this] { engine.setDlyFb    ((float) dlyFbSlider.getValue()); refreshMacroValues(); });
-    initKnob (dlyMixSlider,  0.0,  1.0, 0.01, 0.0,   0.0,       [this] { engine.setDlyMix   ((float) dlyMixSlider.getValue()); refreshMacroValues(); });
-
-    //  Same parameter, same words. The rack used to read "20000" and "0.71"
-    //  while the face read "20.0 kHz" and "Q 0.71" for the very same filter,
-    //  which made one control look like two different settings.
-    cutoffSlider.textFromValueFunction  = [] (double v) { return v >= 1000.0 ? juce::String (v / 1000.0, 1) + " kHz" : juce::String ((int) v) + " Hz"; };
-    resoSlider.textFromValueFunction    = [] (double v) { return "Q " + juce::String (v, 2); };
-    driveSlider.textFromValueFunction   = [] (double v) { return juce::String ((int) std::round (v * 100.0)) + " %"; };
-    dlyTimeSlider.textFromValueFunction = [] (double v) { return juce::String ((int) v) + " ms"; };
-    dlyFbSlider.textFromValueFunction   = [] (double v) { return juce::String ((int) std::round (v * 100.0)) + " %"; };
-    dlyMixSlider.textFromValueFunction  = [] (double v) { return juce::String ((int) std::round (v * 100.0)) + " %"; };
-    for (auto* k : { &cutoffSlider, &resoSlider, &driveSlider, &dlyTimeSlider, &dlyFbSlider, &dlyMixSlider })
-        k->updateText();
+    // The six effects. Each row of the fxDefs table is one effect: its face
+    // label, the three names CTRL 1-3 take when it holds the knobs, the range
+    // and format of each, and the MIX it wakes up with. MIX is always the
+    // third parameter and it is also the on/off switch — the engine skips a
+    // stage whose mix is zero, so "off" and "inaudible" cannot disagree.
+    //
+    // These sliders are never parented to anything. They are where a value
+    // LIVES; the three CTRL knobs are just the window onto whichever effect
+    // currently has focus. One value, one owner — which is what the old four
+    // re-assignable slots plus three bank chips could never manage.
+    for (int f = 0; f < kNumFx; ++f)
+        for (int pi = 0; pi < 3; ++pi)
+        {
+            const auto& sp = fxDefs[f].spec[pi];
+            auto* sl = new juce::Slider (juce::Slider::RotaryVerticalDrag, juce::Slider::NoTextBox);
+            sl->setRange (sp.lo, sp.hi, sp.step);
+            if (sp.skewMid > 0.0) sl->setSkewFactorFromMidPoint (sp.skewMid);
+            sl->setValue (sp.def, juce::dontSendNotification);
+            sl->onValueChange = [this, f, pi] { pushFxParam (f, pi); };
+            fxParams.add (sl);
+        }
 
     // CTRL 1-3: context-sensitive macro knobs. Which parameters they touch
     // depends on the active bank (FILTRO / DELAY / PAD) — groovebox style,
@@ -587,37 +575,20 @@ MainComponent::MainComponent()
         }
     }
 
-    // FX slots: four one-tap effects beside the pads.
+    // Six effects, six buttons, one row. A button IS its effect: tapping it
+    // hands the three CTRL knobs that effect's three parameters, tapping the
+    // one that already has them switches it off. No slots to re-assign, no
+    // bank chips above the knobs — those were three ways to reach one delay,
+    // which is how there came to be two of them.
     {
-        const SlotFx defaults[kNumSlots] = { SlotFx::Filtro, SlotFx::Delay, SlotFx::Drive, SlotFx::Loop };
-        for (int i = 0; i < kNumSlots; ++i)
+        for (int f = 0; f < kNumFx; ++f)
         {
-            slots[(size_t) i].fx = defaults[i];
-            auto* b = new HoldButton (slotLabel (defaults[i]));
+            auto* b = new juce::TextButton (fxDefs[f].name);
             styleButton (*b, kKey);
             b->setColour (juce::TextButton::buttonOnColourId, kAccent);
-            b->onClick = [this, i] { slotTapped (i); };
-            b->onHold  = [this, i] { cycleSlotFx (i); };
+            b->onClick = [this, f] { fxTapped (f); };
             addAndMakeVisible (b);
-            slotButtons.add (b);
-        }
-    }
-
-    {
-        const char* bankNames[3] = { "FILTRO", "DELAY", "PAD" };
-        for (int i = 0; i < 3; ++i)
-        {
-            auto* b = new juce::TextButton (bankNames[i]);
-            styleButton (*b, kKey);
-            b->setColour (juce::TextButton::buttonOnColourId, kAccent);
-            //  This chip used to be tappable, and that is what produced "there
-            //  are two delays": you could point CTRL at DELAY here WITHOUT
-            //  arming the delay slot, while the FX sheet held a third copy of
-            //  the same parameters. One effect, three switches, no winner.
-            //  It is a READOUT now — only a slot can hand over the knobs.
-            b->setInterceptsMouseClicks (false, false);
-            addAndMakeVisible (b);
-            macroBankBtns.add (b);
+            fxButtons.add (b);
         }
     }
 
@@ -843,10 +814,6 @@ MainComponent::MainComponent()
                                 (juce::Component*) &reverseButton, (juce::Component*) &loopButton })
         padSheet.addAndMakeVisible (c);
     padSheet.addAndMakeVisible (chopButton);
-    for (juce::Component* c : { (juce::Component*) &cutoffSlider, (juce::Component*) &resoSlider, (juce::Component*) &driveSlider,
-                                (juce::Component*) &dlyTimeSlider, (juce::Component*) &dlyFbSlider, (juce::Component*) &dlyMixSlider,
-                                (juce::Component*) &testButton })
-        fxSheet.addAndMakeVisible (c);
 
     styleButton (undoButton, ZatiColours::red);
     undoButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
@@ -864,9 +831,15 @@ MainComponent::MainComponent()
     status.setText ("Toca un pad para sonar", juce::dontSendNotification);
     addAndMakeVisible (status);
 
+    // Every parameter reaches the engine once, so the DSP and the knobs agree
+    // before anything is touched.
+    for (int f = 0; f < kNumFx; ++f)
+        for (int pi = 0; pi < 3; ++pi)
+            pushFxParam (f, pi);
+
     startTimer (60);
     setSize (500, 1080);
-    setMacroBank (0);
+    focusFx (0);
     applySkin();
 }
 
@@ -878,19 +851,13 @@ void MainComponent::applySkin()
     // Lit-state text must stay legible on a dark accent (TINTA skin).
     const auto onTxt = acc.getPerceivedBrightness() < 0.5f ? ZatiColours::inkLight : ZatiColours::ink;
 
-    juce::TextButton* accented[] = { &padsButton, &secButton, &fxOpenButton,
-                                     &loadButton, &fxTypeButton };
+    juce::TextButton* accented[] = { &padsButton, &secButton, &loadButton };
     for (auto* b : accented)
     {
         b->setColour (juce::TextButton::buttonOnColourId, acc);
         b->setColour (juce::TextButton::textColourOnId, onTxt);
     }
-    for (auto* b : macroBankBtns)
-    {
-        b->setColour (juce::TextButton::buttonOnColourId, acc);
-        b->setColour (juce::TextButton::textColourOnId, onTxt);
-    }
-    for (auto* b : slotButtons)
+    for (auto* b : fxButtons)
     {
         b->setColour (juce::TextButton::buttonOnColourId, acc);
         b->setColour (juce::TextButton::textColourOnId, onTxt);
@@ -922,10 +889,7 @@ juce::String MainComponent::macroBaseLabel (int idx) const
 
 juce::String MainComponent::macroParamLabel (int idx) const
 {
-    static const char* names[3][3] = { { "CUTOFF", "RESO",  "DRIVE" },
-                                       { "TIME",   "FBK",   "MIX"   },
-                                       { "PITCH",  "START", "END"   } };
-    return names[juce::jlimit (0, 2, macroBank)][juce::jlimit (0, 2, idx)];
+    return fxDefs[juce::jlimit (0, kNumFx - 1, focusedFx)].param[juce::jlimit (0, 2, idx)];
 }
 
 // The readout measures; it always carries a unit so the number means something
@@ -933,22 +897,8 @@ juce::String MainComponent::macroParamLabel (int idx) const
 juce::String MainComponent::macroReadout (int idx) const
 {
     const juce::Slider* ks[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
-    const double v = ks[juce::jlimit (0, 2, idx)]->getValue();
-
-    if (macroBank == 0)
-    {
-        if (idx == 0) return v >= 1000.0 ? juce::String (v / 1000.0, 1) + " kHz"
-                                         : juce::String ((int) v) + " Hz";
-        if (idx == 1) return "Q " + juce::String (v, 2);
-        return juce::String (juce::roundToInt (v * 100.0)) + " %";
-    }
-    if (macroBank == 1)
-    {
-        if (idx == 0) return juce::String ((int) v) + " ms";
-        return juce::String (juce::roundToInt (v * 100.0)) + " %";
-    }
-    if (idx == 0) return (v > 0 ? "+" : "") + juce::String ((int) v) + " st";
-    return juce::String (juce::roundToInt (v * 100.0)) + " %";
+    const int p = juce::jlimit (0, 2, idx);
+    return fxFormat (fxDefs[juce::jlimit (0, kNumFx - 1, focusedFx)].spec[p], ks[p]->getValue());
 }
 
 void MainComponent::setMacroTouched (int idx, bool touched)
@@ -975,201 +925,175 @@ void MainComponent::setMacroTouched (int idx, bool touched)
     repaint();
 }
 
-const char* MainComponent::slotLabel (SlotFx fx) const
+// Everything the UI knows about the six effects, in signal order. One table,
+// so the wiring below can be read against it line for line.
+const MainComponent::FxDef MainComponent::fxDefs[MainComponent::kNumFx] =
 {
-    switch (fx)
+    { "ISO",  { "CUTOFF", "RESO", "MIX" },
+      { {   20.0, 20000.0, 1.00, 1000.0,  1200.0, 0 },
+        {    0.3,     4.0, 0.01,    0.0,   0.707, 1 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
+
+    { "HPF",  { "FREQ", "RESO", "MIX" },
+      { {   20.0, 20000.0, 1.00,  400.0,   200.0, 0 },
+        {    0.3,     4.0, 0.01,    0.0,   0.707, 1 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
+
+    { "DRV",  { "DRIVE", "TONE", "MIX" },
+      { {    0.0,     1.0, 0.01,    0.0,    0.55, 2 },
+        {  200.0, 20000.0, 1.00, 2000.0,  8000.0, 0 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 0.80 },
+
+    { "DLY",  { "TIME", "FBK", "MIX" },
+      { {   20.0,  1000.0, 1.00,    0.0,   250.0, 3 },
+        {    0.0,    0.95, 0.01,    0.0,    0.35, 2 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 0.35 },
+
+    { "CRSH", { "BITS", "RATE", "MIX" },
+      { {    1.0,    16.0, 1.00,    0.0,     8.0, 4 },
+        {    1.0,    64.0, 1.00,    8.0,     4.0, 5 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 0.60 },
+
+    { "REV",  { "SIZE", "DAMP", "MIX" },
+      { {    0.0,     1.0, 0.01,    0.0,    0.55, 2 },
+        {    0.0,     1.0, 0.01,    0.0,    0.45, 2 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 0.30 },
+};
+
+// The readout always carries a unit, so a number means something on its own.
+juce::String MainComponent::fxFormat (const FxDef::Spec& sp, double v)
+{
+    switch (sp.fmt)
     {
-        case SlotFx::Filtro: return "ISO";
-        case SlotFx::Delay:  return "DLY";
-        case SlotFx::Drive:  return "DRV";
-        case SlotFx::Loop:   return "LOOP";
+        case 0:  return v >= 1000.0 ? juce::String (v / 1000.0, 1) + " kHz"
+                                    : juce::String ((int) v) + " Hz";
+        case 1:  return "Q " + juce::String (v, 2);
+        case 3:  return juce::String ((int) v) + " ms";
+        case 4:  return juce::String ((int) v) + " bit";
+        case 5:  return juce::String ((int) v) + "x";
+        default: return juce::String (juce::roundToInt (v * 100.0)) + " %";
     }
-    return "--";
 }
 
-// A slot is a live switch, so it must reach the engine directly rather than
-// going through the FX sheet's knobs: those only exist while that sheet is
-// built, and the slot has to work from the perform screen.
-void MainComponent::applySlotState (int i)
+// Slider -> engine, in the same order as the table above.
+void MainComponent::pushFxParam (int f, int pi)
 {
-    if (! juce::isPositiveAndBelow (i, kNumSlots)) return;
-    const auto& s = slots[(size_t) i];
+    if (! juce::isPositiveAndBelow (f, kNumFx) || ! juce::isPositiveAndBelow (pi, 3)) return;
+    const float v = (float) fxParam (f, pi).getValue();
 
-    switch (s.fx)
+    switch (f * 3 + pi)
     {
-        case SlotFx::Filtro:
-            // Off is a fully open filter, not a bypass flag: the engine skips
-            // the stage on its own when it is transparent.
-            cutoffSlider.setValue (s.on ? 800.0 : 20000.0, juce::sendNotification);
-            resoSlider.setValue   (s.on ? 2.20  : 0.707,   juce::sendNotification);
-            break;
-
-        case SlotFx::Delay:
-            dlyMixSlider.setValue (s.on ? 0.35 : 0.0, juce::sendNotification);
-            break;
-
-        case SlotFx::Drive:
-            driveSlider.setValue (s.on ? 0.55 : 0.0, juce::sendNotification);
-            break;
-
-        case SlotFx::Loop:
-            // A momentary beat-repeat needs engine support that does not exist
-            // yet; until it does, the slot loops the selected pad so the
-            // control is honest about what it currently does.
-            if (selectedPad >= 0)
-            {
-                padLoop[(size_t) selectedPad] = s.on;
-                engine.setPadLoop (selectedPad, s.on);
-                loopButton.setToggleState (s.on, juce::dontSendNotification);
-            }
-            break;
+        case  0: engine.setIsoCutoff (v); break;
+        case  1: engine.setIsoReso   (v); break;
+        case  2: engine.setIsoMix    (v); break;
+        case  3: engine.setHpFreq    (v); break;
+        case  4: engine.setHpReso    (v); break;
+        case  5: engine.setHpMix     (v); break;
+        case  6: engine.setFxDrive   (v); break;
+        case  7: engine.setDrvTone   (v); break;
+        case  8: engine.setDrvMix    (v); break;
+        case  9: engine.setDlyTime   (v); break;
+        case 10: engine.setDlyFb     (v); break;
+        case 11: engine.setDlyMix    (v); break;
+        case 12: engine.setCrushBits (v); break;
+        case 13: engine.setCrushRate (v); break;
+        case 14: engine.setCrushMix  (v); break;
+        case 15: engine.setRevSize   (v); break;
+        case 16: engine.setRevDamp   (v); break;
+        case 17: engine.setRevMix    (v); break;
+        default: break;
     }
 }
 
-// Long press reassigns the slot. Turning it off first matters: leaving the
-// outgoing effect engaged while the button starts controlling a different one
-// would strand a filter or a delay with no visible switch to undo it.
-void MainComponent::cycleSlotFx (int i)
+// On/off is a MIX move, not a separate flag: one truth, and it is the same
+// number the knob shows. Switching back on restores the effect's own default
+// amount, so the button behaves like a switch rather than a fader you have to
+// go and find again.
+void MainComponent::setFxEnabled (int f, bool on)
 {
-    if (! juce::isPositiveAndBelow (i, kNumSlots)) return;
-
-    auto& s = slots[(size_t) i];
-    if (s.on)
-    {
-        s.on = false;
-        applySlotState (i);
-        slotButtons[i]->setToggleState (false, juce::dontSendNotification);
-    }
-
-    s.fx = (SlotFx) (((int) s.fx + 1) % 4);
-    slotButtons[i]->setButtonText (slotLabel (s.fx));
-    if (activeSlot == i) activeSlot = -1;
-
-    status.setText ("Slot " + juce::String (i + 1) + " -> " + slotLabel (s.fx),
+    if (! juce::isPositiveAndBelow (f, kNumFx)) return;
+    fxOn[(size_t) f] = on;
+    fxButtons[f]->setToggleState (on, juce::dontSendNotification);
+    fxParam (f, 2).setValue (on ? fxDefs[f].onMix : 0.0, juce::dontSendNotification);
+    pushFxParam (f, 2);
+    refreshMacroValues();
+    status.setText (juce::String (fxDefs[f].name) + (on ? " ON" : " OFF"),
                     juce::dontSendNotification);
+}
+
+// Give an effect the three knobs: re-range them to its parameters and load its
+// current values in silently.
+void MainComponent::focusFx (int f)
+{
+    focusedFx = juce::jlimit (0, kNumFx - 1, f);
+
+    juce::Slider* ks[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
+    for (int pi = 0; pi < 3; ++pi)
+    {
+        const auto& sp = fxDefs[focusedFx].spec[pi];
+        ks[pi]->setRange (sp.lo, sp.hi, sp.step);
+        if (sp.skewMid > 0.0) ks[pi]->setSkewFactorFromMidPoint (sp.skewMid);
+        else                  ks[pi]->setSkewFactor (1.0);
+        ks[pi]->setDoubleClickReturnValue (true, sp.def);   // double-tap = this effect's default
+    }
+    refreshMacroValues();
     repaint();
 }
 
-void MainComponent::slotTapped (int i)
+// Tap once to take the knobs (switching the effect on if it was off); tap the
+// one that already has them to switch it off.
+void MainComponent::fxTapped (int f)
 {
-    if (! juce::isPositiveAndBelow (i, kNumSlots)) return;
+    if (! juce::isPositiveAndBelow (f, kNumFx)) return;
 
-    auto& s = slots[(size_t) i];
-    s.on = ! s.on;
-    slotButtons[i]->setToggleState (s.on, juce::dontSendNotification);
-    applySlotState (i);
-
-    // The active slot takes the three knobs, so whatever you just switched on
-    // is immediately the thing under your fingers.
-    if (s.on)
+    if (focusedFx != f)
     {
-        activeSlot = i;
-        if (s.fx == SlotFx::Filtro) setMacroBank (0);
-        else if (s.fx == SlotFx::Delay) setMacroBank (1);
-        else if (s.fx == SlotFx::Drive) setMacroBank (0);
-    }
-    else if (activeSlot == i)
-    {
-        activeSlot = -1;
-    }
-
-    status.setText (juce::String (slotLabel (s.fx)) + (s.on ? " ON" : " OFF"),
-                    juce::dontSendNotification);
-    repaint();
-}
-
-// --- Context-sensitive CTRL 1-3 ---------------------------------------------
-// Bank 0 FILTRO: cutoff / reso / drive.  Bank 1 DELAY: time / feedback / mix.
-// Bank 2 PAD: pitch / start / end of the selected pad.
-void MainComponent::setMacroBank (int bank)
-{
-    macroBank = juce::jlimit (0, 2, bank);
-    for (int i = 0; i < 3; ++i)
-        if (auto* b = macroBankBtns[i]) b->setToggleState (i == macroBank, juce::dontSendNotification);
-
-    auto config = [] (juce::Slider& s, double lo, double hi, double step, double skewMid, double def,
-                      std::function<juce::String (double)> fmt)
-    {
-        s.setRange (lo, hi, step);
-        if (skewMid > 0.0) s.setSkewFactorFromMidPoint (skewMid);
-        else               s.setSkewFactor (1.0);
-        s.setDoubleClickReturnValue (true, def);     // double-tap = bank default
-        s.textFromValueFunction = std::move (fmt);
-    };
-
-    if (macroBank == 0)
-    {
-        config (macroCtrl1, 20.0, 20000.0, 1.0, 1000.0, 20000.0, [] (double v) { return v >= 1000.0 ? juce::String (v / 1000.0, 1) + "k" : juce::String ((int) v); });
-        config (macroCtrl2, 0.3, 4.0, 0.01, 0.0, 0.707,          [] (double v) { return juce::String (v, 2); });
-        config (macroCtrl3, 0.0, 1.0, 0.01, 0.0, 0.0,            [] (double v) { return juce::String (v, 2); });
-    }
-    else if (macroBank == 1)
-    {
-        config (macroCtrl1, 20.0, 1000.0, 1.0, 0.0, 250.0,       [] (double v) { return juce::String ((int) v) + " ms"; });
-        config (macroCtrl2, 0.0, 0.95, 0.01, 0.0, 0.35,          [] (double v) { return juce::String (v, 2); });
-        config (macroCtrl3, 0.0, 1.0, 0.01, 0.0, 0.0,            [] (double v) { return juce::String (v, 2); });
+        focusFx (f);
+        if (! fxOn[(size_t) f]) setFxEnabled (f, true);
     }
     else
     {
-        config (macroCtrl1, -24.0, 24.0, 1.0, 0.0, 0.0,          [] (double v) { return (v > 0 ? "+" : "") + juce::String ((int) v) + " st"; });
-        config (macroCtrl2, 0.0, 1.0, 0.001, 0.0, 0.0,           [] (double v) { return juce::String (v, 3); });
-        config (macroCtrl3, 0.0, 1.0, 0.001, 0.0, 1.0,           [] (double v) { return juce::String (v, 3); });
+        setFxEnabled (f, ! fxOn[(size_t) f]);
     }
-
-    refreshMacroValues();
-    repaint();   // the knob-name labels above CTRL 1-3 change with the bank
+    repaint();
 }
 
-// Load the bank's current engine/pad values into the three knobs (silently).
+// --- CTRL 1-3 ------------------------------------------------------------
+// The three knobs are a window onto the focused effect's three parameters.
+// They own nothing: every move writes straight through to the parameter that
+// holds the value, and every read comes back from it.
+
 void MainComponent::refreshMacroValues()
 {
-    auto set = [] (juce::Slider& s, double v) { s.setValue (v, juce::dontSendNotification); s.updateText(); };
-    if (macroBank == 0)
+    juce::Slider* ks[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
+    for (int pi = 0; pi < 3; ++pi)
     {
-        set (macroCtrl1, cutoffSlider.getValue());
-        set (macroCtrl2, resoSlider.getValue());
-        set (macroCtrl3, driveSlider.getValue());
+        ks[pi]->setValue (fxParam (focusedFx, pi).getValue(), juce::dontSendNotification);
+        ks[pi]->updateText();
     }
-    else if (macroBank == 1)
-    {
-        set (macroCtrl1, dlyTimeSlider.getValue());
-        set (macroCtrl2, dlyFbSlider.getValue());
-        set (macroCtrl3, dlyMixSlider.getValue());
-    }
-    else if (selectedPad >= 0)
-    {
-        set (macroCtrl1, padPitch[(size_t) selectedPad]);
-        set (macroCtrl2, padStart01[(size_t) selectedPad]);
-        set (macroCtrl3, padEnd01[(size_t) selectedPad]);
-    }
+    repaint();
 }
 
 void MainComponent::macroMoved (int idx)
 {
+    if (! juce::isPositiveAndBelow (idx, 3)) return;
+    juce::Slider* ks[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
+    fxParam (focusedFx, idx).setValue (ks[idx]->getValue(), juce::dontSendNotification);
+    pushFxParam (focusedFx, idx);
+
+    // Moving MIX off zero (or onto it) IS switching the effect on or off —
+    // the button has to agree with the knob, or you get a lit button over a
+    // silent effect.
+    if (idx == 2)
+    {
+        const bool on = ks[2]->getValue() > 0.001;
+        if (on != fxOn[(size_t) focusedFx])
+        {
+            fxOn[(size_t) focusedFx] = on;
+            fxButtons[focusedFx]->setToggleState (on, juce::dontSendNotification);
+        }
+    }
     repaint();   // the readout tracks the value live
-
-    juce::Slider* ms[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
-    const double v = ms[idx]->getValue();
-
-    if (macroBank == 0)
-    {
-        if (idx == 0) { cutoffSlider.setValue (v, juce::dontSendNotification); engine.setFxCutoff ((float) v); }
-        if (idx == 1) { resoSlider.setValue   (v, juce::dontSendNotification); engine.setFxReso   ((float) v); }
-        if (idx == 2) { driveSlider.setValue  (v, juce::dontSendNotification); engine.setFxDrive  ((float) v); }
-    }
-    else if (macroBank == 1)
-    {
-        if (idx == 0) { dlyTimeSlider.setValue (v, juce::dontSendNotification); engine.setDlyTime ((float) v); }
-        if (idx == 1) { dlyFbSlider.setValue   (v, juce::dontSendNotification); engine.setDlyFb   ((float) v); }
-        if (idx == 2) { dlyMixSlider.setValue  (v, juce::dontSendNotification); engine.setDlyMix  ((float) v); }
-    }
-    else if (selectedPad >= 0)
-    {
-        const int sp = selectedPad;
-        if (idx == 0) { padPitch[(size_t) sp] = (float) v; pitchSlider.setValue (v, juce::dontSendNotification); engine.setPadPitch (sp, (float) v); }
-        if (idx == 1) { startSlider.setValue (v, juce::sendNotification); }   // reuse its clamping + trim logic
-        if (idx == 2) { endSlider.setValue   (v, juce::sendNotification); }
-    }
 }
 
 // --- Sheets ------------------------------------------------------------------
@@ -1186,9 +1110,9 @@ void MainComponent::openSheet (Sheet& s, juce::TextButton& toggle)
 
 void MainComponent::closeAllSheets()
 {
-    juce::TextButton* mb[5] = { &padsButton, &secButton, &fxOpenButton, &mixButton, &songButton };
-    Sheet*            sh[5] = { &padSheet, &seqSheet, &fxSheet, &mixSheet, &songSheet };
-    for (int i = 0; i < 5; ++i)
+    juce::TextButton* mb[4] = { &padsButton, &secButton, &mixButton, &songButton };
+    Sheet*            sh[4] = { &padSheet, &seqSheet, &mixSheet, &songSheet };
+    for (int i = 0; i < 4; ++i)
     {
         mb[i]->setToggleState (false, juce::dontSendNotification);
         sh[i]->setVisible (false);
@@ -1380,104 +1304,6 @@ void MainComponent::paint (juce::Graphics& g)
 }
 
 // FX sheet: knob labels + the live filter response display.
-void MainComponent::paintFxSheetContent (juce::Graphics& g)
-{
-    if (fxSheet.sheetBounds.isEmpty()) return;
-
-    g.setColour (ZatiColours::ink.withAlpha (0.9f));
-    g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
-    g.drawText ("FX", fxSheet.sheetBounds.reduced (14, 12).removeFromTop (16), juce::Justification::centredLeft);
-
-    {
-        g.setColour (ZatiColours::ink.withAlpha (0.85f));
-        g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.12f));
-        auto name = [&g] (juce::Slider& s, const char* t)
-        {
-            auto r = s.getBounds();
-            g.drawText (t, r.getX() - 6, r.getY() - 15, r.getWidth() + 12, 13, juce::Justification::centred);
-        };
-        name (cutoffSlider, "CUTOFF"); name (resoSlider, "RESO");  name (driveSlider, "DRIVE");
-        name (dlyTimeSlider, "TIME");  name (dlyFbSlider, "FBK");  name (dlyMixSlider, "MIX");
-
-        //  Six identical knobs in two rows never said which three belong to
-        //  the filter and which to the delay. A rule with its name does.
-        auto groupRule = [&g, this] (juce::Slider& first, const char* title)
-        {
-            const auto r = first.getBounds();
-            auto line = juce::Rectangle<int> (fxSheet.sheetBounds.getX() + 14, r.getY() - 32,
-                                              fxSheet.sheetBounds.getWidth() - 28, 12);
-            g.setColour (ZatiColours::inkDim);
-            g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.20f));
-            g.drawText (title, line, juce::Justification::centredLeft);
-            const int tw = 8 + (int) g.getCurrentFont().getStringWidth (title);
-            g.setColour (ZatiColours::padBorder);
-            g.fillRect (line.getX() + tw, line.getCentreY(), line.getWidth() - tw, 1);
-        };
-        groupRule (cutoffSlider,  "FILTRO");
-        groupRule (dlyTimeSlider, "DELAY");
-
-        // Live filter response: a 2-pole magnitude curve on a recessed LCD,
-        // redrawn as CUTOFF/RESO/LPF-HPF change — see the shape, not just Hz.
-        if (! fxCurveArea.isEmpty())
-        {
-            auto scr = fxCurveArea.toFloat();
-            g.setColour (ZatiColours::knobBody2);
-            g.fillRoundedRectangle (scr.expanded (3.0f), 3.0f);
-            g.setColour (ZatiColours::screenBg);
-            g.fillRect (scr);
-
-            auto plot = scr.reduced (10.0f, 14.0f);
-            const float fLo = 20.0f, fHi = 20000.0f;
-            const float dbTop = 24.0f, dbBot = -36.0f;
-            auto xForF  = [&plot, fLo, fHi] (float f)  { return plot.getX() + plot.getWidth() * (std::log (f / fLo) / std::log (fHi / fLo)); };
-            auto yForDb = [&plot, dbTop, dbBot] (float db) { return plot.getY() + plot.getHeight() * ((dbTop - db) / (dbTop - dbBot)); };
-
-            // Grid: decades + 0 dB line, dim LCD green.
-            g.setColour (ZatiColours::lcdFg.withAlpha (0.18f));
-            for (float f : { 100.0f, 1000.0f, 10000.0f })
-                g.drawVerticalLine ((int) xForF (f), plot.getY(), plot.getBottom());
-            g.drawHorizontalLine ((int) yForDb (0.0f), plot.getX(), plot.getRight());
-            g.setColour (ZatiColours::lcdFg.withAlpha (0.45f));
-            g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
-            g.drawText ("100",  (int) xForF (100.0f) - 14,   (int) plot.getBottom() + 1, 28, 10, juce::Justification::centred);
-            g.drawText ("1K",   (int) xForF (1000.0f) - 14,  (int) plot.getBottom() + 1, 28, 10, juce::Justification::centred);
-            g.drawText ("10K",  (int) xForF (10000.0f) - 14, (int) plot.getBottom() + 1, 28, 10, juce::Justification::centred);
-
-            const float fc = juce::jmax (20.0f, (float) cutoffSlider.getValue());
-            const float q  = juce::jmax (0.05f, (float) resoSlider.getValue());
-            const bool  hp = fxTypeButton.getToggleState();
-
-            juce::Path curve;
-            const int n = juce::jmax (32, (int) plot.getWidth() / 2);
-            for (int i = 0; i <= n; ++i)
-            {
-                const float f  = fLo * std::pow (fHi / fLo, (float) i / (float) n);
-                const float r2 = (f / fc) * (f / fc);
-                const float den = std::sqrt ((1.0f - r2) * (1.0f - r2) + r2 / (q * q));
-                const float mag = (hp ? r2 : 1.0f) / juce::jmax (1.0e-6f, den);
-                const float db  = juce::jlimit (dbBot, dbTop, 20.0f * std::log10 (juce::jmax (1.0e-6f, mag)));
-                const float x = xForF (f), y = yForDb (db);
-                if (i == 0) curve.startNewSubPath (x, y); else curve.lineTo (x, y);
-            }
-            // lcdFg, not accent: accent is the achromatic chassis ink and sits
-            // at ~1.06:1 on this dark plot — the curve simply vanished.
-            g.setColour (ZatiColours::lcdFg);
-            g.strokePath (curve, juce::PathStrokeType (2.2f, juce::PathStrokeType::curved));
-
-            // Cutoff marker + readout.
-            g.setColour (ZatiColours::yellow.withAlpha (0.8f));
-            g.drawVerticalLine ((int) xForF (juce::jlimit (fLo, fHi, fc)), plot.getY(), plot.getBottom());
-            g.setColour (ZatiColours::lcdFg);
-            g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.12f));
-            const juce::String fcTxt = fc >= 1000.0f ? juce::String (fc / 1000.0f, 1) + " kHz" : juce::String ((int) fc) + " Hz";
-            g.drawText ((hp ? "HPF  " : "LPF  ") + fcTxt + "   Q " + juce::String (q, 2),
-                        (int) scr.getX() + 8, (int) scr.getY() + 3, (int) scr.getWidth() - 16, 12,
-                        juce::Justification::centredLeft);
-        }
-    }
-}
-
-// PADS sheet: per-pad knob labels, trim labels, and the sample-info card.
 void MainComponent::paintPadSheetContent (juce::Graphics& g)
 {
     if (padSheet.sheetBounds.isEmpty()) return;
@@ -1693,15 +1519,17 @@ void MainComponent::Sheet::paint (juce::Graphics& g)
 // sounding, so a chain playing a different bank doesn't ring the wrong grid.
 void MainComponent::layoutPadGrid (juce::Rectangle<int> area, int cols, int rows, int gap)
 {
-    // True square pads (Akai-style) — sized by whichever dimension is
-    // tighter, then centred in the given area rather than stretched to fill
-    // it (which would make them rectangular).
+    // The pads are the instrument, so they take the room rather than leaving
+    // it. They were true squares, centred, which on a tall phone left a band
+    // of dead chassis above and below while the targets stayed small. Now the
+    // cell fills the height it is given and is allowed to run up to a fifth
+    // taller than it is wide — past that they stop reading as pads.
     const int cellW = (area.getWidth()  - (cols - 1) * gap) / cols;
-    const int cellH = (area.getHeight() - (rows - 1) * gap) / rows;
-    const int cell  = juce::jmin (cellW, cellH);
+    const int cellH = juce::jlimit (cellW * 3 / 4, cellW * 6 / 5,
+                                    (area.getHeight() - (rows - 1) * gap) / rows);
 
-    auto grid = area.withSizeKeepingCentre (cols * cell + (cols - 1) * gap,
-                                            rows * cell + (rows - 1) * gap);
+    auto grid = area.withSizeKeepingCentre (cols * cellW + (cols - 1) * gap,
+                                            rows * cellH + (rows - 1) * gap);
 
     // SP-style numbering: pad 01 sits BOTTOM-left, 16 top-right — logical row
     // r of the pad index maps to visual row (rows-1-r).
@@ -1711,15 +1539,15 @@ void MainComponent::layoutPadGrid (juce::Rectangle<int> area, int cols, int rows
             const int idx = r * cols + c;
             const int vr  = rows - 1 - r;
             if (auto* p = pads[idx])
-                p->setBounds (grid.getX() + c * (cell + gap),
-                             grid.getY() + vr * (cell + gap),
-                             cell, cell);
+                p->setBounds (grid.getX() + c * (cellW + gap),
+                             grid.getY() + vr * (cellH + gap),
+                             cellW, cellH);
         }
 }
 
 void MainComponent::resized()
 {
-    fxCurveArea = editInfoArea = {};
+    editInfoArea = {};
     vuArea = stepStripArea = {};
 
     auto area = getLocalBounds().reduced (8);
@@ -1729,10 +1557,11 @@ void MainComponent::resized()
     int screenH;
     {
         const int chromeBelow = 16 + 4 + 16 + 8 + 32 + 4 + 44 + 8 + 18 + 6;   // VU + strip + module bar + transport + status          // gaps + module bar + transport + status
-        const int cell = (area.getWidth() - 3 * 8) / 4;                // square pad cells, 4 cols, gap 8
-        const int bodyNeed = 16 + 4 + 88 + 8                            // chip readout + CTRL knobs
-                           + 4 + 32 + 8                                // + FX slot row
-                           + (4 * cell + 3 * 8);                       // + pads
+        //  The pads are allowed to grow 20% past square before the screen
+        //  takes any of what is left, which is the opposite of the old rule.
+        const int cellW = (area.getWidth() - 3 * Metrics::xs) / 4;
+        const int padsNeed = 4 * (cellW * 6 / 5) + 3 * Metrics::xs;
+        const int bodyNeed = 88 + 8 + 4 + 32 + 8 + padsNeed;           // CTRL knobs + FX row + pads
         screenH = juce::jmax (96, area.getHeight() - (30 + 8) - chromeBelow - bodyNeed);
     }
 
@@ -1760,10 +1589,10 @@ void MainComponent::resized()
     tabBarArea = area.removeFromTop (Metrics::tab);
     {
         auto row = tabBarArea;
-        juce::TextButton* mb[6] = { &padsButton, &secButton, &songButton, &mixButton, &fxOpenButton, &setButton };
-        const int w = row.getWidth() / 6;
-        for (int i = 0; i < 6; ++i)
-            mb[i]->setBounds ((i < 5 ? row.removeFromLeft (w) : row).reduced (1, 0));
+        juce::TextButton* mb[5] = { &padsButton, &secButton, &songButton, &mixButton, &setButton };
+        const int w = row.getWidth() / 5;
+        for (int i = 0; i < 5; ++i)
+            mb[i]->setBounds ((i < 4 ? row.removeFromLeft (w) : row).reduced (1, 0));
     }
     area.removeFromTop (Metrics::xs);
 
@@ -1786,14 +1615,8 @@ void MainComponent::resized()
     }
     area.removeFromBottom (Metrics::sm);
 
-    // --- Machine face: CTRL 1-3 and their readout, FX slots, pads ---
+    // --- Machine face: CTRL 1-3 and their readout, the six FX, pads ---
     {
-        auto bankRow = area.removeFromTop (Metrics::lg);      // chips, deliberately small
-        const int bw = bankRow.getWidth() / 3;
-        for (int i = 0; i < 3; ++i)
-            macroBankBtns[i]->setBounds ((i < 2 ? bankRow.removeFromLeft (bw) : bankRow).reduced (32, 0));
-        area.removeFromTop (4);
-
         auto mrow = area.removeFromTop (88);             // 3 CTRL macros + their readout chips
         juce::Slider* mk[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
         const int w = mrow.getWidth() / 3;
@@ -1807,15 +1630,15 @@ void MainComponent::resized()
         area.removeFromTop (Metrics::sm);
 
         area.removeFromTop (4);
-        slotRowArea = area.removeFromTop (Metrics::tab);
+        fxRowArea = area.removeFromTop (Metrics::tab);
         {
-            auto row = slotRowArea;
-            const int sw = row.getWidth() / kNumSlots;
-            for (int i = 0; i < kNumSlots; ++i)
-                slotButtons[i]->setBounds ((i < kNumSlots - 1 ? row.removeFromLeft (sw) : row).reduced (2, 0));
+            auto row = fxRowArea;
+            const int sw = row.getWidth() / kNumFx;
+            for (int f = 0; f < kNumFx; ++f)
+                fxButtons[f]->setBounds ((f < kNumFx - 1 ? row.removeFromLeft (sw) : row).reduced (1, 0));
         }
         area.removeFromTop (Metrics::sm);
-        layoutPadGrid (area, 4, 4, Metrics::sm);
+        layoutPadGrid (area, 4, 4, Metrics::xs);
     }
 
     // --- Floating sheets (each sized by its own content, capped at 86%) ---
@@ -1879,28 +1702,6 @@ void MainComponent::resized()
         editInfoArea = inner;      // sample-info card (drawn in paintPadSheetContent)
     }
 
-    // FX sheet: tight knob boxes + the live filter curve.
-    {
-        auto inner = sheetFromBottom (fxSheet, 606);
-        auto titleRow = inner.removeFromTop (Metrics::xl);
-        fxCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
-
-        auto ctrl = inner.removeFromBottom (40);
-        fxTypeButton.setBounds (ctrl.removeFromLeft (ctrl.getWidth() / 2).reduced (3));
-        testButton.setBounds   (ctrl.reduced (3));
-        inner.removeFromBottom (8);
-
-        juce::Slider* r1[3] = { &cutoffSlider, &resoSlider, &driveSlider };
-        juce::Slider* r2[3] = { &dlyTimeSlider, &dlyFbSlider, &dlyMixSlider };
-        inner.removeFromTop (Metrics::lg);                 // room for the FILTRO rule
-        placeKnobRow (inner.removeFromTop (140), r1);
-        inner.removeFromTop (Metrics::lg);                 // room for the DELAY rule
-        placeKnobRow (inner.removeFromTop (140), r2);
-        inner.removeFromTop (Metrics::md);
-
-        fxCurveArea = inner;       // live filter response (paintFxSheetContent)
-    }
-
     // BROWSE sheet: the tallest of them all — the file list wants the room.
     {
         auto inner = sheetFromBottom (browseSheet, full.getHeight());   // clamps to the 86% cap
@@ -1919,6 +1720,9 @@ void MainComponent::resized()
         auto inner = sheetFromBottom (projSheet, (int) (full.getHeight() * 0.7f));
         auto titleRow = inner.removeFromTop (32);
         projCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
+        // TEST is a diagnostic — it belongs with the housekeeping, not among
+        // the effects, where it was one more button that made no music.
+        testButton.setBounds (titleRow.removeFromRight (64).reduced (2));
 
         // EXPORTAR sits on its own row: it is the only action here that
         // produces something outside the app, and it needs room for its name.
@@ -2231,7 +2035,6 @@ void MainComponent::selectPad (int index)
 
     for (int i = 0; i < kNumPads; ++i) refreshPad (i);
     repaint (headerArea);          // the fragment strip tracks which zatis are loaded
-    if (macroBank == 2) refreshMacroValues();      // PAD bank tracks the selection
     if (padSheet.isVisible()) padSheet.repaint();  // title, zati swatch and card follow the selection
 }
 
@@ -2575,17 +2378,14 @@ juce::ValueTree MainComponent::captureState() const
     s.setProperty ("version", 1, nullptr);
     s.setProperty ("bpm", bpmSlider.getValue(), nullptr);
     s.setProperty ("skin", ZatiColours::currentSkin, nullptr);
-    s.setProperty ("macroBank", macroBank, nullptr);
+    s.setProperty ("focusedFx", focusedFx, nullptr);
     s.setProperty ("selectedPattern", selectedPattern, nullptr);
 
     juce::ValueTree fx ("FX");
-    fx.setProperty ("type",   fxTypeButton.getToggleState() ? 1 : 0, nullptr);
-    fx.setProperty ("cutoff", cutoffSlider.getValue(),  nullptr);
-    fx.setProperty ("reso",   resoSlider.getValue(),    nullptr);
-    fx.setProperty ("drive",  driveSlider.getValue(),   nullptr);
-    fx.setProperty ("dlyTime", dlyTimeSlider.getValue(), nullptr);
-    fx.setProperty ("dlyFb",   dlyFbSlider.getValue(),   nullptr);
-    fx.setProperty ("dlyMix",  dlyMixSlider.getValue(),  nullptr);
+    for (int f = 0; f < kNumFx; ++f)
+        for (int pi = 0; pi < 3; ++pi)
+            fx.setProperty (juce::String (fxDefs[f].name) + juce::String (pi),
+                            fxParams[f * 3 + pi]->getValue(), nullptr);
     s.addChild (fx, -1, nullptr);
 
     juce::ValueTree pads ("PADS");
@@ -2653,15 +2453,38 @@ void MainComponent::applyState (const juce::ValueTree& s)
 
     if (auto fx = s.getChildWithName ("FX"); fx.isValid())
     {
-        fxTypeButton.setToggleState ((int) fx.getProperty ("type", 0) != 0, juce::dontSendNotification);
-        fxTypeButton.setButtonText (fxTypeButton.getToggleState() ? "HPF" : "LPF");
-        engine.setFxType (fxTypeButton.getToggleState() ? 1 : 0);
-        cutoffSlider.setValue  ((double) fx.getProperty ("cutoff", 20000.0), juce::sendNotification);
-        resoSlider.setValue    ((double) fx.getProperty ("reso",   0.707),   juce::sendNotification);
-        driveSlider.setValue   ((double) fx.getProperty ("drive",  0.0),     juce::sendNotification);
-        dlyTimeSlider.setValue ((double) fx.getProperty ("dlyTime", 250.0),  juce::sendNotification);
-        dlyFbSlider.setValue   ((double) fx.getProperty ("dlyFb",   0.35),   juce::sendNotification);
-        dlyMixSlider.setValue  ((double) fx.getProperty ("dlyMix",  0.0),    juce::sendNotification);
+        // Projects saved before the six-effect rework carry the old three
+        // parameters; map what is there and leave the rest at its default.
+        auto legacy = [&fx, this] (const char* key, int f, int pi, double dflt)
+        {
+            fxParam (f, pi).setValue ((double) fx.getProperty (key, dflt), juce::dontSendNotification);
+        };
+        for (int f = 0; f < kNumFx; ++f)
+            for (int pi = 0; pi < 3; ++pi)
+            {
+                const auto k = juce::String (fxDefs[f].name) + juce::String (pi);
+                if (fx.hasProperty (k))
+                    fxParam (f, pi).setValue ((double) fx.getProperty (k), juce::dontSendNotification);
+                else
+                    fxParam (f, pi).setValue (fxDefs[f].spec[pi].def, juce::dontSendNotification);
+            }
+        if (fx.hasProperty ("cutoff"))
+        {
+            legacy ("cutoff",  0, 0, 20000.0);
+            legacy ("reso",    0, 1, 0.707);
+            legacy ("drive",   2, 0, 0.0);
+            legacy ("dlyTime", 3, 0, 250.0);
+            legacy ("dlyFb",   3, 1, 0.35);
+            legacy ("dlyMix",  3, 2, 0.0);
+            fxParam (2, 2).setValue ((double) fx.getProperty ("drive", 0.0) > 0.0 ? 1.0 : 0.0,
+                                     juce::dontSendNotification);
+        }
+        for (int f = 0; f < kNumFx; ++f)
+        {
+            pushFxParam (f, 0); pushFxParam (f, 1); pushFxParam (f, 2);
+            fxOn[(size_t) f] = fxParam (f, 2).getValue() > 0.001;
+            fxButtons[f]->setToggleState (fxOn[(size_t) f], juce::dontSendNotification);
+        }
     }
 
     if (auto pads = s.getChildWithName ("PADS"); pads.isValid())
@@ -2767,7 +2590,7 @@ void MainComponent::applyState (const juce::ValueTree& s)
         refreshSong();
     }
 
-    setMacroBank ((int) s.getProperty ("macroBank", 0));
+    focusFx ((int) s.getProperty ("focusedFx", 0));
     for (int i = 0; i < kNumPads; ++i)
         if (mixFaders[i] != nullptr) mixFaders[i]->setValue (padGain[(size_t) i], juce::dontSendNotification);
     refreshMixStrip();

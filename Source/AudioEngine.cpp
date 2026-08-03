@@ -39,6 +39,15 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize) noexcept
     masterFilter.prepare (spec);
     masterFilter.reset();
 
+    hpFilter.prepare (spec);
+    hpFilter.reset();
+    hpFilter.setType (juce::dsp::StateVariableTPTFilterType::highpass);
+
+    reverb.prepare (spec);
+    reverb.reset();
+
+    fxDry.setSize (2, juce::jmax (1, maxBlock));
+
     delayLine.prepare (spec);
     delayLine.setMaximumDelayInSamples (juce::jmax (1, (int) (systemSampleRate * 1.0)));
     delayLine.reset();
@@ -282,86 +291,207 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         stepPhase.store ((float) (stepAccum / samplesPerStep), std::memory_order_relaxed);
     }
 
-    // 5b. Master FX: filter -> drive -> delay. Each stage is BYPASSED when
-    //     neutral, so the default signal path is untouched (a bug here must
-    //     never silence the whole output). All knob-driven params are
-    //     one-pole smoothed here (~20 ms) — the atomics jump per block and
-    //     applying them raw produced zipper (filter) and crackle (delay time).
+    // 5b. Master FX: ISO -> HPF -> DRIVE -> CRUSH -> DELAY -> REVERB.
+    //     Six independent stages, three parameters each, MIX always the
+    //     third. MIX is both the amount and the switch: at zero the stage is
+    //     skipped entirely, so an unused effect costs nothing and cannot
+    //     colour the sound (a bug in here must never silence the output).
+    //     Every knob-driven value is one-pole smoothed at ~20 ms — the
+    //     atomics jump once per block, and applying them raw produced zipper
+    //     on the filters and crackle on the delay time.
     {
         const int outCh = out.getNumChannels();
+        const int chans = juce::jmin (2, outCh);
 
         // Block-rate smoothing coefficient for a ~20 ms time constant.
         const float kBlock = 1.0f - std::exp ((float) -numSamples / (0.020f * (float) systemSampleRate));
+        const float nyq    = (float) (systemSampleRate * 0.45);
 
-        const int   ft      = fxType.load   (std::memory_order_relaxed);
-        const float cutT    = juce::jlimit (20.0f, (float) (systemSampleRate * 0.45), fxCutoff.load (std::memory_order_relaxed));
-        const float resoT   = juce::jlimit (0.1f, 4.0f, fxReso.load (std::memory_order_relaxed));
-        smCutoff += kBlock * (cutT  - smCutoff);
-        smReso   += kBlock * (resoT - smReso);
-
-        // LPF fully open (high cutoff, low resonance) = transparent -> skip,
-        // but only when both the smoothed value AND the target agree, so the
-        // stage never pops in/out mid-glide. State is reset on re-entry —
-        // stale integrator state from minutes ago is not a valid IC.
-        const bool filterActive = ! (ft == 0 && smCutoff >= 19000.0f && cutT >= 19000.0f
-                                             && smReso <= 0.72f && resoT <= 0.72f);
-        if (filterActive)
+        // Keeps a dry copy of the current block so a stage can blend rather
+        // than replace. Cheap, and it is the only way MIX means anything.
+        auto stashDry = [this, &out, startSample, numSamples, chans]() noexcept
         {
-            if (! filterWasActive)
-                masterFilter.reset();
-            juce::dsp::AudioBlock<float> block (out.getArrayOfWritePointers(), (size_t) outCh,
-                                                (size_t) startSample, (size_t) numSamples);
-            masterFilter.setType (ft == 0 ? juce::dsp::StateVariableTPTFilterType::lowpass
-                                          : juce::dsp::StateVariableTPTFilterType::highpass);
-            masterFilter.setCutoffFrequency (smCutoff);
-            masterFilter.setResonance (smReso);
-            juce::dsp::ProcessContextReplacing<float> ctx (block);
-            masterFilter.process (ctx);
-        }
-        filterWasActive = filterActive;
-
-        const float driveT = fxDrive.load (std::memory_order_relaxed);
-        smDrive += kBlock * (driveT - smDrive);
-        if (smDrive > 0.0001f || driveT > 0.0001f)
+            for (int ch = 0; ch < chans; ++ch)
+                fxDry.copyFrom (ch, 0, out.getReadPointer (ch, startSample), numSamples);
+        };
+        auto blendDry = [this, &out, startSample, numSamples, chans] (float mix) noexcept
         {
-            const float k  = 1.0f + smDrive * 24.0f;           // drive gain into tanh
-            const float mk = 1.0f / std::tanh (k);             // makeup to keep level
-            for (int ch = 0; ch < outCh; ++ch)
+            for (int ch = 0; ch < chans; ++ch)
             {
                 float* w = out.getWritePointer (ch, startSample);
+                const float* d = fxDry.getReadPointer (ch);
                 for (int i = 0; i < numSamples; ++i)
-                    w[i] = std::tanh (k * w[i]) * mk;
+                    w[i] = d[i] * (1.0f - mix) + w[i] * mix;
+            }
+        };
+
+        // --- 1. ISO: low-pass, the one you sweep on a break. --------------
+        {
+            const float cutT = juce::jlimit (20.0f, nyq, fxCutoff.load (std::memory_order_relaxed));
+            const float resT = juce::jlimit (0.1f, 4.0f, fxReso.load (std::memory_order_relaxed));
+            const float mixT = juce::jlimit (0.0f, 1.0f, fxMix.load (std::memory_order_relaxed));
+            smCutoff += kBlock * (cutT - smCutoff);
+            smReso   += kBlock * (resT - smReso);
+            smFxMix  += kBlock * (mixT - smFxMix);
+
+            const bool active = (smFxMix > 0.001f || mixT > 0.001f);
+            if (active)
+            {
+                if (! filterWasActive) masterFilter.reset();
+                stashDry();
+                masterFilter.setType (juce::dsp::StateVariableTPTFilterType::lowpass);
+                masterFilter.setCutoffFrequency (smCutoff);
+                masterFilter.setResonance (smReso);
+                juce::dsp::AudioBlock<float> block (out.getArrayOfWritePointers(), (size_t) outCh,
+                                                    (size_t) startSample, (size_t) numSamples);
+                juce::dsp::ProcessContextReplacing<float> ctx (block);
+                masterFilter.process (ctx);
+                blendDry (smFxMix);
+            }
+            filterWasActive = active;
+        }
+
+        // --- 2. HPF: its own filter, so ISO + HPF = band-pass. ------------
+        {
+            const float frqT = juce::jlimit (20.0f, nyq, hpFreq.load (std::memory_order_relaxed));
+            const float resT = juce::jlimit (0.1f, 4.0f, hpReso.load (std::memory_order_relaxed));
+            const float mixT = juce::jlimit (0.0f, 1.0f, hpMix.load (std::memory_order_relaxed));
+            smHpFreq += kBlock * (frqT - smHpFreq);
+            smHpReso += kBlock * (resT - smHpReso);
+            const float prev = smHpMix;
+            smHpMix  += kBlock * (mixT - smHpMix);
+
+            if (smHpMix > 0.001f || mixT > 0.001f)
+            {
+                if (prev <= 0.001f) hpFilter.reset();
+                stashDry();
+                hpFilter.setCutoffFrequency (smHpFreq);
+                hpFilter.setResonance (smHpReso);
+                juce::dsp::AudioBlock<float> block (out.getArrayOfWritePointers(), (size_t) outCh,
+                                                    (size_t) startSample, (size_t) numSamples);
+                juce::dsp::ProcessContextReplacing<float> ctx (block);
+                hpFilter.process (ctx);
+                blendDry (smHpMix);
             }
         }
 
-        // Delay (feedback) after the filter/drive. Time is smoothed PER
-        // SAMPLE — a per-block jump through a linear-interp delay line is a
-        // hard discontinuity (crackle on every TIME move).
-        const float mixT = dlyMix.load (std::memory_order_relaxed);
-        const float fbT  = juce::jlimit (0.0f, 0.95f, dlyFb.load (std::memory_order_relaxed));
-        const float dsT  = juce::jlimit (1.0f, (float) (systemSampleRate - 1.0),
-                                         dlyTime.load (std::memory_order_relaxed) * (float) systemSampleRate / 1000.0f);
-        smDlyMix += kBlock * (mixT - smDlyMix);
-        smDlyFb  += kBlock * (fbT  - smDlyFb);
-        if (smDlySamp <= 0.0f) smDlySamp = dsT;                // first block: no sweep from 0
-        const float kSamp = 1.0f - std::exp (-1.0f / (0.020f * (float) systemSampleRate));
-
-        if (smDlyMix > 0.001f || mixT > 0.001f)
+        // --- 3. DRIVE: tanh, then a tone control, then blend. -------------
         {
-            float* w0 = out.getWritePointer (0, startSample);
-            float* w1 = (outCh > 1) ? out.getWritePointer (1, startSample) : w0;
-            for (int i = 0; i < numSamples; ++i)
+            const float drvT  = juce::jlimit (0.0f, 1.0f, fxDrive.load (std::memory_order_relaxed));
+            const float toneT = juce::jlimit (200.0f, 20000.0f, drvTone.load (std::memory_order_relaxed));
+            const float mixT  = juce::jlimit (0.0f, 1.0f, drvMix.load (std::memory_order_relaxed));
+            smDrive   += kBlock * (drvT  - smDrive);
+            smDrvTone += kBlock * (toneT - smDrvTone);
+            smDrvMix  += kBlock * (mixT  - smDrvMix);
+
+            if (smDrvMix > 0.001f || mixT > 0.001f)
             {
-                smDlySamp += kSamp * (dsT - smDlySamp);
-                delayLine.setDelay (smDlySamp);
-                for (int ch = 0; ch < juce::jmin (2, outCh); ++ch)
+                const float k  = 1.0f + smDrive * 24.0f;      // gain into the tanh
+                //  Compensate by the gain going IN, not by tanh's own ceiling:
+                //  tanh(k) is ~1 for any useful k, so that "makeup" was a
+                //  no-op and DRIVE at 70% came out three times louder than
+                //  dry — a distortion knob that is really a volume knob.
+                const float mk = 1.0f / (1.0f + smDrive * 2.5f);
+                const float a  = juce::jlimit (0.0f, 1.0f,
+                                    1.0f - std::exp (-2.0f * juce::MathConstants<float>::pi
+                                                     * smDrvTone / (float) systemSampleRate));
+                for (int ch = 0; ch < chans; ++ch)
                 {
-                    float* w = (ch == 0) ? w0 : w1;
-                    const float in = w[i];
-                    const float d  = delayLine.popSample (ch);
-                    delayLine.pushSample (ch, in + d * smDlyFb);
-                    w[i] = in * (1.0f - smDlyMix) + d * smDlyMix;
+                    float* w = out.getWritePointer (ch, startSample);
+                    float lp = drvLp[ch];
+                    for (int i = 0; i < numSamples; ++i)
+                    {
+                        const float dry = w[i];
+                        lp += a * (std::tanh (k * dry) * mk - lp);
+                        w[i] = dry * (1.0f - smDrvMix) + lp * smDrvMix;
+                    }
+                    drvLp[ch] = lp;
                 }
+            }
+        }
+
+        // --- 4. CRUSH: bit depth and sample-and-hold, the two halves of lo-fi.
+        {
+            const float mixT = juce::jlimit (0.0f, 1.0f, crMix.load (std::memory_order_relaxed));
+            smCrMix += kBlock * (mixT - smCrMix);
+
+            if (smCrMix > 0.001f || mixT > 0.001f)
+            {
+                const float bits   = juce::jlimit (1.0f, 16.0f, crBits.load (std::memory_order_relaxed));
+                const float levels = juce::jmax (1.0f, std::pow (2.0f, bits) * 0.5f);
+                const float step   = juce::jmax (1.0f, crRate.load (std::memory_order_relaxed));
+
+                float* w0 = out.getWritePointer (0, startSample);
+                float* w1 = (chans > 1) ? out.getWritePointer (1, startSample) : w0;
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    crPhase += 1.0f;
+                    const bool take = (crPhase >= step);
+                    if (take) crPhase -= step;
+                    for (int ch = 0; ch < chans; ++ch)
+                    {
+                        float* w = (ch == 0) ? w0 : w1;
+                        const float dry = w[i];
+                        if (take) crHold[ch] = std::round (dry * levels) / levels;
+                        w[i] = dry * (1.0f - smCrMix) + crHold[ch] * smCrMix;
+                    }
+                }
+            }
+        }
+
+        // --- 5. DELAY. Time is smoothed PER SAMPLE: a per-block jump through
+        //        a linear-interp line is a hard discontinuity (crackle on
+        //        every TIME move).
+        {
+            const float mixT = juce::jlimit (0.0f, 1.0f, dlyMix.load (std::memory_order_relaxed));
+            const float fbT  = juce::jlimit (0.0f, 0.95f, dlyFb.load (std::memory_order_relaxed));
+            const float dsT  = juce::jlimit (1.0f, (float) (systemSampleRate - 1.0),
+                                             dlyTime.load (std::memory_order_relaxed) * (float) systemSampleRate / 1000.0f);
+            smDlyMix += kBlock * (mixT - smDlyMix);
+            smDlyFb  += kBlock * (fbT  - smDlyFb);
+            if (smDlySamp <= 0.0f) smDlySamp = dsT;            // first block: no sweep from 0
+            const float kSamp = 1.0f - std::exp (-1.0f / (0.020f * (float) systemSampleRate));
+
+            if (smDlyMix > 0.001f || mixT > 0.001f)
+            {
+                float* w0 = out.getWritePointer (0, startSample);
+                float* w1 = (chans > 1) ? out.getWritePointer (1, startSample) : w0;
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    smDlySamp += kSamp * (dsT - smDlySamp);
+                    delayLine.setDelay (smDlySamp);
+                    for (int ch = 0; ch < chans; ++ch)
+                    {
+                        float* w = (ch == 0) ? w0 : w1;
+                        const float in = w[i];
+                        const float d  = delayLine.popSample (ch);
+                        delayLine.pushSample (ch, in + d * smDlyFb);
+                        w[i] = in * (1.0f - smDlyMix) + d * smDlyMix;
+                    }
+                }
+            }
+        }
+
+        // --- 6. REVERB, last, so everything ahead of it lands in the room.
+        {
+            const float mixT = juce::jlimit (0.0f, 1.0f, rvMix.load (std::memory_order_relaxed));
+            smRvMix += kBlock * (mixT - smRvMix);
+
+            if (smRvMix > 0.001f || mixT > 0.001f)
+            {
+                juce::Reverb::Parameters p;
+                p.roomSize   = juce::jlimit (0.0f, 1.0f, rvSize.load (std::memory_order_relaxed));
+                p.damping    = juce::jlimit (0.0f, 1.0f, rvDamp.load (std::memory_order_relaxed));
+                p.wetLevel   = smRvMix;
+                p.dryLevel   = 1.0f - smRvMix;
+                p.width      = 1.0f;
+                p.freezeMode = 0.0f;
+                reverb.setParameters (p);
+
+                juce::dsp::AudioBlock<float> block (out.getArrayOfWritePointers(), (size_t) outCh,
+                                                    (size_t) startSample, (size_t) numSamples);
+                juce::dsp::ProcessContextReplacing<float> ctx (block);
+                reverb.process (ctx);
             }
         }
     }
@@ -624,23 +754,37 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     for (size_t ln = 0; ln < songCell.size(); ++ln)
         copyArr (songCell[ln], s.songCell[ln]);
 
-    fxType.store   (s.fxType.load   (std::memory_order_relaxed), std::memory_order_relaxed);
-    fxCutoff.store (s.fxCutoff.load (std::memory_order_relaxed), std::memory_order_relaxed);
-    fxReso.store   (s.fxReso.load   (std::memory_order_relaxed), std::memory_order_relaxed);
-    fxDrive.store  (s.fxDrive.load  (std::memory_order_relaxed), std::memory_order_relaxed);
-    dlyTime.store  (s.dlyTime.load  (std::memory_order_relaxed), std::memory_order_relaxed);
-    dlyFb.store    (s.dlyFb.load    (std::memory_order_relaxed), std::memory_order_relaxed);
-    dlyMix.store   (s.dlyMix.load   (std::memory_order_relaxed), std::memory_order_relaxed);
+    auto copyOne = [] (auto& dst, const auto& src)
+    {
+        dst.store (src.load (std::memory_order_relaxed), std::memory_order_relaxed);
+    };
+    for (auto pair : { std::pair<std::atomic<float>*, const std::atomic<float>*>
+                         { &fxCutoff, &s.fxCutoff }, { &fxReso,  &s.fxReso  }, { &fxMix,   &s.fxMix   },
+                         { &hpFreq,   &s.hpFreq   }, { &hpReso,  &s.hpReso  }, { &hpMix,   &s.hpMix   },
+                         { &fxDrive,  &s.fxDrive  }, { &drvTone, &s.drvTone }, { &drvMix,  &s.drvMix  },
+                         { &dlyTime,  &s.dlyTime  }, { &dlyFb,   &s.dlyFb   }, { &dlyMix,  &s.dlyMix  },
+                         { &crBits,   &s.crBits   }, { &crRate,  &s.crRate  }, { &crMix,   &s.crMix   },
+                         { &rvSize,   &s.rvSize   }, { &rvDamp,  &s.rvDamp  }, { &rvMix,   &s.rvMix   } })
+        copyOne (*pair.first, *pair.second);
+    fxType.store (s.fxType.load (std::memory_order_relaxed), std::memory_order_relaxed);
 
     // Start the FX smoothers already AT their targets. A live engine glides
     // over ~20 ms because a knob just moved; a bounce has no such history,
     // and gliding from the defaults would fade the filter in over the first
     // bar of every export.
-    smCutoff = fxCutoff.load (std::memory_order_relaxed);
-    smReso   = fxReso.load   (std::memory_order_relaxed);
-    smDrive  = fxDrive.load  (std::memory_order_relaxed);
-    smDlyMix = dlyMix.load   (std::memory_order_relaxed);
-    smDlyFb  = dlyFb.load    (std::memory_order_relaxed);
+    smCutoff  = fxCutoff.load (std::memory_order_relaxed);
+    smReso    = fxReso.load   (std::memory_order_relaxed);
+    smFxMix   = fxMix.load    (std::memory_order_relaxed);
+    smHpFreq  = hpFreq.load   (std::memory_order_relaxed);
+    smHpReso  = hpReso.load   (std::memory_order_relaxed);
+    smHpMix   = hpMix.load    (std::memory_order_relaxed);
+    smDrive   = fxDrive.load  (std::memory_order_relaxed);
+    smDrvTone = drvTone.load  (std::memory_order_relaxed);
+    smDrvMix  = drvMix.load   (std::memory_order_relaxed);
+    smCrMix   = crMix.load    (std::memory_order_relaxed);
+    smRvMix   = rvMix.load    (std::memory_order_relaxed);
+    smDlyMix  = dlyMix.load   (std::memory_order_relaxed);
+    smDlyFb   = dlyFb.load    (std::memory_order_relaxed);
     smDlySamp = (float) (dlyTime.load (std::memory_order_relaxed) * 0.001 * systemSampleRate);
 }
 
