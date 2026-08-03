@@ -41,7 +41,7 @@
                    androidInternetNeeded="0" androidCpp11="1"
                    microphonePermissionNeeded="1"
                    androidReadMediaAudioPermission="1"
-                   androidTheme="@android:style/Theme.Material.Light.NoActionBar.Fullscreen">
+                   androidTheme="@android:style/Theme.Material.Light.NoActionBar">
       <CONFIGURATIONS>
         <CONFIGURATION name="Debug"   isDebug="1" targetName="Shard" androidArchitectures="arm64-v8a"/>
         <CONFIGURATION name="Release" isDebug="0" targetName="Shard" optimisation="3" androidArchitectures="arm64-v8a"/>
