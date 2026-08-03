@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "sleek-design-mobile-apps": {
+      "source": "sleekdotdesign/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/design-mobile-apps/SKILL.md",
+      "computedHash": "9592721c0ab7adb0065be4d7619a7677b82785cddba6f46a20a0ac128d84c978"
+    }
+  }
+}
