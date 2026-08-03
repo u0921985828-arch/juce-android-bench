@@ -153,6 +153,27 @@ private:
                      fxCloseButton    { juce::CharPointer_UTF8 ("\xc3\x97") };
     juce::OwnedArray<juce::TextButton> patternButtons;  // P1..P8 — chain include toggles
 
+    // --- FX slots (spec Zone 5) -------------------------------------------
+    //  Four one-tap effects that live next to the pads and never cover them,
+    //  so they can be fired while playing. They are execution, not editing:
+    //  the FX sheet stays the rack where you choose and set up. Tapping a slot
+    //  arms its effect AND hands it the three CTRL knobs, which is what makes
+    //  a single row worth more than a paged strip of every effect.
+    static constexpr int kNumSlots = 4;
+    enum class SlotFx { Filtro = 0, Delay, Drive, Loop };
+    struct Slot
+    {
+        SlotFx fx = SlotFx::Filtro;
+        bool   on = false;
+    };
+    std::array<Slot, kNumSlots> slots {};
+    int activeSlot = -1;
+    juce::OwnedArray<juce::TextButton> slotButtons;
+    void slotTapped (int i);
+    void applySlotState (int i);
+    const char* slotLabel (SlotFx fx) const;
+    juce::Rectangle<int> slotRowArea;
+
     // Context-sensitive macro strip: the 3 physical CTRL knobs switch banks.
     juce::OwnedArray<juce::TextButton> macroBankBtns;   // FILTRO / DELAY / PAD
     int macroBank = 0;

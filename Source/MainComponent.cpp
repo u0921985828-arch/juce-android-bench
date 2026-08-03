@@ -491,6 +491,21 @@ MainComponent::MainComponent()
         }
     }
 
+    // FX slots: four one-tap effects beside the pads.
+    {
+        const SlotFx defaults[kNumSlots] = { SlotFx::Filtro, SlotFx::Delay, SlotFx::Drive, SlotFx::Loop };
+        for (int i = 0; i < kNumSlots; ++i)
+        {
+            slots[(size_t) i].fx = defaults[i];
+            auto* b = new juce::TextButton (slotLabel (defaults[i]));
+            styleButton (*b, kKey);
+            b->setColour (juce::TextButton::buttonOnColourId, kAccent);
+            b->onClick = [this, i] { slotTapped (i); };
+            addAndMakeVisible (b);
+            slotButtons.add (b);
+        }
+    }
+
     {
         const char* bankNames[3] = { "FILTRO", "DELAY", "PAD" };
         for (int i = 0; i < 3; ++i)
@@ -556,6 +571,11 @@ void MainComponent::applySkin()
         b->setColour (juce::TextButton::textColourOnId, onTxt);
     }
     for (auto* b : macroBankBtns)
+    {
+        b->setColour (juce::TextButton::buttonOnColourId, acc);
+        b->setColour (juce::TextButton::textColourOnId, onTxt);
+    }
+    for (auto* b : slotButtons)
     {
         b->setColour (juce::TextButton::buttonOnColourId, acc);
         b->setColour (juce::TextButton::textColourOnId, onTxt);
@@ -642,6 +662,85 @@ void MainComponent::setMacroTouched (int idx, bool touched)
         };
         macroLabelTimer.startTimer (800);
     }
+    repaint();
+}
+
+const char* MainComponent::slotLabel (SlotFx fx) const
+{
+    switch (fx)
+    {
+        case SlotFx::Filtro: return "ISO";
+        case SlotFx::Delay:  return "DLY";
+        case SlotFx::Drive:  return "DRV";
+        case SlotFx::Loop:   return "LOOP";
+    }
+    return "--";
+}
+
+// A slot is a live switch, so it must reach the engine directly rather than
+// going through the FX sheet's knobs: those only exist while that sheet is
+// built, and the slot has to work from the perform screen.
+void MainComponent::applySlotState (int i)
+{
+    if (! juce::isPositiveAndBelow (i, kNumSlots)) return;
+    const auto& s = slots[(size_t) i];
+
+    switch (s.fx)
+    {
+        case SlotFx::Filtro:
+            // Off is a fully open filter, not a bypass flag: the engine skips
+            // the stage on its own when it is transparent.
+            cutoffSlider.setValue (s.on ? 800.0 : 20000.0, juce::sendNotification);
+            resoSlider.setValue   (s.on ? 2.20  : 0.707,   juce::sendNotification);
+            break;
+
+        case SlotFx::Delay:
+            dlyMixSlider.setValue (s.on ? 0.35 : 0.0, juce::sendNotification);
+            break;
+
+        case SlotFx::Drive:
+            driveSlider.setValue (s.on ? 0.55 : 0.0, juce::sendNotification);
+            break;
+
+        case SlotFx::Loop:
+            // A momentary beat-repeat needs engine support that does not exist
+            // yet; until it does, the slot loops the selected pad so the
+            // control is honest about what it currently does.
+            if (selectedPad >= 0)
+            {
+                padLoop[(size_t) selectedPad] = s.on;
+                engine.setPadLoop (selectedPad, s.on);
+                loopButton.setToggleState (s.on, juce::dontSendNotification);
+            }
+            break;
+    }
+}
+
+void MainComponent::slotTapped (int i)
+{
+    if (! juce::isPositiveAndBelow (i, kNumSlots)) return;
+
+    auto& s = slots[(size_t) i];
+    s.on = ! s.on;
+    slotButtons[i]->setToggleState (s.on, juce::dontSendNotification);
+    applySlotState (i);
+
+    // The active slot takes the three knobs, so whatever you just switched on
+    // is immediately the thing under your fingers.
+    if (s.on)
+    {
+        activeSlot = i;
+        if (s.fx == SlotFx::Filtro) setMacroBank (0);
+        else if (s.fx == SlotFx::Delay) setMacroBank (1);
+        else if (s.fx == SlotFx::Drive) setMacroBank (0);
+    }
+    else if (activeSlot == i)
+    {
+        activeSlot = -1;
+    }
+
+    status.setText (juce::String (slotLabel (s.fx)) + (s.on ? " ON" : " OFF"),
+                    juce::dontSendNotification);
     repaint();
 }
 
@@ -1236,7 +1335,9 @@ void MainComponent::resized()
     {
         const int chromeBelow = 8 + 42 + 6 + 40 + 8 + 18 + 6;          // gaps + module bar + transport + status
         const int cell = (area.getWidth() - 3 * 8) / 4;                // square pad cells, 4 cols, gap 8
-        const int bodyNeed = 20 + 6 + 18 + 4 + 86 + 6 + 20 + 8        // VU + bank chips + CTRL knobs + step LEDs
+        const int bodyNeed = 20 + 6 + 18 + 4 + 92 + 6                  // VU + bank chips + CTRL knobs
+                           + 4 + 30 + 5                                // + FX slot row
+                           + 20 + 8                                    // + step LEDs
                            + (4 * cell + 3 * 8);                       // + pads
         screenH = juce::jmax (96, area.getHeight() - (30 + 8) - chromeBelow - bodyNeed);
     }
@@ -1297,6 +1398,16 @@ void MainComponent::resized()
             mk[i]->setBounds (cell.reduced (10, 0));
         }
         area.removeFromTop (6);
+
+        area.removeFromTop (4);
+        slotRowArea = area.removeFromTop (30);
+        {
+            auto row = slotRowArea;
+            const int sw = row.getWidth() / kNumSlots;
+            for (int i = 0; i < kNumSlots; ++i)
+                slotButtons[i]->setBounds ((i < kNumSlots - 1 ? row.removeFromLeft (sw) : row).reduced (2, 0));
+        }
+        area.removeFromTop (5);
 
         stepStripArea = area.removeFromTop (20).reduced (2, 0);
         area.removeFromTop (8);
