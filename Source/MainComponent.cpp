@@ -1742,6 +1742,25 @@ void MainComponent::refreshStepGrid()
     stepGrid.setSource (gridCells, gridZati, gridLoaded,
                         engine.getPatternLength (selectedPattern),
                         selectedBar, ps, selectedPad);
+
+    //  The grid can only ring the live column when that column is on screen,
+    //  so at four bars you would lose the beat entirely while editing bar 1
+    //  and bar 3 played. The bar buttons carry it instead: the one sounding
+    //  goes red, which keeps you oriented without yanking the view away from
+    //  what you are editing.
+    const int playingBar = ps >= 0 ? ps / kStepCols : -1;
+    for (int b = 0; b < barButtons.size(); ++b)
+        if (auto* t = barButtons[b])
+        {
+            //  Both colours, because the bar you are editing is usually also
+            //  the one playing: the toggle-on colour would otherwise win and
+            //  swallow the red exactly when you most want to see it.
+            const bool live = (b == playingBar);
+            t->setColour (juce::TextButton::buttonColourId,   live ? ZatiColours::red : kStepOff);
+            t->setColour (juce::TextButton::buttonOnColourId, live ? ZatiColours::red : kAccent);
+            t->setColour (juce::TextButton::textColourOffId,  live ? juce::Colours::white : ZatiColours::ink);
+            t->setColour (juce::TextButton::textColourOnId,   juce::Colours::white);
+        }
 }
 
 void MainComponent::refreshPad (int index)
