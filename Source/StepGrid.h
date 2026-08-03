@@ -33,9 +33,10 @@ public:
     void setSource (const bool* cells,          // [step][pad] flattened, stride = kLanes
                     const int*  zati,           // per pad
                     const bool* loaded,         // per pad
+                    const signed char* notes,   // [step][pad] semitone offset, same stride
                     int patternLength, int bar, int playStep, int selectedPad)
     {
-        data = cells; zatiOf = zati; loadedOf = loaded;
+        data = cells; zatiOf = zati; loadedOf = loaded; noteOf = notes;
         patLen = patternLength; barIndex = bar; playing = playStep; selPad = selectedPad;
         repaint();
     }
@@ -89,6 +90,21 @@ public:
                 {
                     g.setColour (has ? frag : ZatiColours::ink.withAlpha (0.55f));
                     g.fillRect (cell);
+
+                    //  The pitch of a step used to exist only as a number in a
+                    //  field, so a melody was something you had to remember
+                    //  rather than see. Drawn inside the cell as a mark whose
+                    //  HEIGHT is the semitone (-12 at the floor, +12 at the
+                    //  ceiling), a lane becomes a contour you can read.
+                    const int semis = noteOf != nullptr ? (int) noteOf[step * kLanes + pad] : 0;
+                    if (semis != 0)
+                    {
+                        const float t = 0.5f - juce::jlimit (-1.0f, 1.0f, (float) semis / 12.0f) * 0.42f;
+                        const float y = cell.getY() + cell.getHeight() * t;
+                        g.setColour (ZatiColours::bestOn (has ? frag : ZatiColours::ink,
+                                                          ZatiColours::ink, juce::Colours::white));
+                        g.fillRect (cell.getX() + 1.5f, y - 1.0f, cell.getWidth() - 3.0f, 2.0f);
+                    }
                 }
                 else
                 {
@@ -143,5 +159,6 @@ private:
     const bool* data = nullptr;
     const int*  zatiOf = nullptr;
     const bool* loadedOf = nullptr;
+    const signed char* noteOf = nullptr;
     int patLen = 16, barIndex = 0, playing = -1, selPad = -1, lastKey = -1;
 };

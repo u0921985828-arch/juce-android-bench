@@ -216,10 +216,15 @@ MainComponent::MainComponent()
           | juce::FileBrowserComponent::filenameBoxIsReadOnly,   // no keyboard on mobile
             start, browseFilter.get(), nullptr);
         browser->addListener (this);
+        //  JUCE's default row is about 22px — half a comfortable touch target.
+        //  Choosing a sample is the one thing you do before anything else, so
+        //  it should not be the fiddliest tap in the app.
+        if (auto* list = dynamic_cast<juce::FileListComponent*> (browser->getDisplayComponent()))
+            list->setRowHeight (Metrics::row);
         browseSheet.addAndMakeVisible (*browser);
 
         styleButton (browseCloseButton, kKey);
-        browseCloseButton.onClick = [this] { closeAllSheets(); };
+        browseCloseButton.onClick = [this] { cancelAudition(); closeAllSheets(); };
         browseSheet.addAndMakeVisible (browseCloseButton);
 
         styleButton (browseLoadButton, kAccent);
@@ -488,6 +493,7 @@ MainComponent::MainComponent()
     {
         if (selectedPad >= 0 && selectedStep >= 0)
             engine.setStepNote (selectedPattern, selectedStep, selectedPad, (int) noteSlider.getValue());
+            refreshStepGrid();
     };
     seqSheet.addAndMakeVisible (noteSlider);
 
@@ -512,6 +518,18 @@ MainComponent::MainComponent()
     initKnob (dlyTimeSlider, 20.0, 1000.0, 1.0, 250.0, 0.0,     [this] { engine.setDlyTime  ((float) dlyTimeSlider.getValue()); refreshMacroValues(); });
     initKnob (dlyFbSlider,   0.0,  0.95, 0.01, 0.35, 0.0,       [this] { engine.setDlyFb    ((float) dlyFbSlider.getValue()); refreshMacroValues(); });
     initKnob (dlyMixSlider,  0.0,  1.0, 0.01, 0.0,   0.0,       [this] { engine.setDlyMix   ((float) dlyMixSlider.getValue()); refreshMacroValues(); });
+
+    //  Same parameter, same words. The rack used to read "20000" and "0.71"
+    //  while the face read "20.0 kHz" and "Q 0.71" for the very same filter,
+    //  which made one control look like two different settings.
+    cutoffSlider.textFromValueFunction  = [] (double v) { return v >= 1000.0 ? juce::String (v / 1000.0, 1) + " kHz" : juce::String ((int) v) + " Hz"; };
+    resoSlider.textFromValueFunction    = [] (double v) { return "Q " + juce::String (v, 2); };
+    driveSlider.textFromValueFunction   = [] (double v) { return juce::String ((int) std::round (v * 100.0)) + " %"; };
+    dlyTimeSlider.textFromValueFunction = [] (double v) { return juce::String ((int) v) + " ms"; };
+    dlyFbSlider.textFromValueFunction   = [] (double v) { return juce::String ((int) std::round (v * 100.0)) + " %"; };
+    dlyMixSlider.textFromValueFunction  = [] (double v) { return juce::String ((int) std::round (v * 100.0)) + " %"; };
+    for (auto* k : { &cutoffSlider, &resoSlider, &driveSlider, &dlyTimeSlider, &dlyFbSlider, &dlyMixSlider })
+        k->updateText();
 
     // CTRL 1-3: context-sensitive macro knobs. Which parameters they touch
     // depends on the active bank (FILTRO / DELAY / PAD) — groovebox style,
@@ -1149,6 +1167,23 @@ void MainComponent::paintFxSheetContent (juce::Graphics& g)
         name (cutoffSlider, "CUTOFF"); name (resoSlider, "RESO");  name (driveSlider, "DRIVE");
         name (dlyTimeSlider, "TIME");  name (dlyFbSlider, "FBK");  name (dlyMixSlider, "MIX");
 
+        //  Six identical knobs in two rows never said which three belong to
+        //  the filter and which to the delay. A rule with its name does.
+        auto groupRule = [&g, this] (juce::Slider& first, const char* title)
+        {
+            const auto r = first.getBounds();
+            auto line = juce::Rectangle<int> (fxSheet.sheetBounds.getX() + 14, r.getY() - 32,
+                                              fxSheet.sheetBounds.getWidth() - 28, 12);
+            g.setColour (ZatiColours::inkDim);
+            g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.20f));
+            g.drawText (title, line, juce::Justification::centredLeft);
+            const int tw = 8 + (int) g.getCurrentFont().getStringWidth (title);
+            g.setColour (ZatiColours::padBorder);
+            g.fillRect (line.getX() + tw, line.getCentreY(), line.getWidth() - tw, 1);
+        };
+        groupRule (cutoffSlider,  "FILTRO");
+        groupRule (dlyTimeSlider, "DELAY");
+
         // Live filter response: a 2-pole magnitude curve on a recessed LCD,
         // redrawn as CUTOFF/RESO/LPF-HPF change — see the shape, not just Hz.
         if (! fxCurveArea.isEmpty())
@@ -1365,14 +1400,38 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
                          + "   " + dot + "   P" + juce::String (selectedPattern + 1);
     g.drawText (t, inner.removeFromTop (16), juce::Justification::centredLeft);
 
-    // Which bank is actually sounding right now (may differ from the one
-    // being viewed/edited).
-    const juce::String chainStr = (engine.getChainLength() <= 0)
-        ? "looping P" + juce::String (selectedPattern + 1)
-        : "playing P" + juce::String (engine.getPlayingPattern() + 1);
+    //  The bank selector and the chain toggles used to sit adjacent, look
+    //  identical and never say which does what. Now each row is named, and the
+    //  chain shows its ACTUAL ORDER — "P1 P1 P2 P3" — instead of eight
+    //  switches you have to decode.
+    juce::String chainStr;
+    if (engine.getChainLength() <= 0)
+        chainStr = "sin cadena " + dot + " repite P" + juce::String (selectedPattern + 1);
+    else
+    {
+        chainStr = "cadena: ";
+        for (int i = 0; i < engine.getChainLength(); ++i)
+            chainStr += "P" + juce::String (engine.getChainSlot (i) + 1) + (i + 1 < engine.getChainLength() ? " " : "");
+        if (engine.isPlaying())
+            chainStr += "   " + dot + "  suena P" + juce::String (engine.getPlayingPattern() + 1);
+    }
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
     g.drawText (chainStr, inner.removeFromTop (14), juce::Justification::centredLeft);
+
+    //  Row names, so the two pattern controls stop looking like one.
+    {
+        g.setColour (ZatiColours::inkDim);
+        g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.20f));
+        auto rowName = [&g, this] (juce::Component& c, const char* t)
+        {
+            const auto r = c.getBounds();
+            g.drawText (t, seqSheet.sheetBounds.getX() + 14, r.getY() - 13,
+                        seqSheet.sheetBounds.getWidth() - 28, 12, juce::Justification::centredLeft);
+        };
+        if (patternButtons[0] != nullptr) rowName (*patternButtons[0], "CADENA");
+        rowName (patternSlider, "EDITANDO");
+    }
 
     // The grid paints its own playhead and lane colours (see StepGrid).
     // Ring the bank being edited on the chain-include row.
@@ -1590,7 +1649,7 @@ void MainComponent::resized()
 
     // FX sheet: tight knob boxes + the live filter curve.
     {
-        auto inner = sheetFromBottom (fxSheet, 566);
+        auto inner = sheetFromBottom (fxSheet, 606);
         auto titleRow = inner.removeFromTop (Metrics::xl);
         fxCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
 
@@ -1601,7 +1660,9 @@ void MainComponent::resized()
 
         juce::Slider* r1[3] = { &cutoffSlider, &resoSlider, &driveSlider };
         juce::Slider* r2[3] = { &dlyTimeSlider, &dlyFbSlider, &dlyMixSlider };
+        inner.removeFromTop (Metrics::lg);                 // room for the FILTRO rule
         placeKnobRow (inner.removeFromTop (140), r1);
+        inner.removeFromTop (Metrics::lg);                 // room for the DELAY rule
         placeKnobRow (inner.removeFromTop (140), r2);
         inner.removeFromTop (Metrics::md);
 
@@ -1646,18 +1707,19 @@ void MainComponent::resized()
         const int lanes  = StepGrid::kLanes;
         const int laneH  = 22;                    // 16 lanes -> 352, comfortable to tap
         const int gridH  = lanes * laneH;
-        const int fixedRowsH = 196;               // title + rows above and below the grid
+        const int fixedRowsH = 216;               // title + rows above and below the grid
 
         auto inner = sheetFromBottom (seqSheet, fixedRowsH + gridH);
         auto titleRow = inner.removeFromTop (32);
         seqCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
 
         {
+            inner.removeFromTop (Metrics::md);            // room for the EDITANDO rule
             auto row1 = inner.removeFromTop (Metrics::xl);
             const int w1 = row1.getWidth() / 2;
             patternSlider.setBounds (row1.removeFromLeft (w1).reduced (2, 0));
             lengthSlider.setBounds  (row1.reduced (2, 0));
-            inner.removeFromTop (Metrics::xs);
+            inner.removeFromTop (Metrics::md);            // room for the CADENA rule
 
             auto row2 = inner.removeFromTop (Metrics::xl);
             const int pw = row2.getWidth() / kNumPatterns;
@@ -1764,7 +1826,10 @@ void MainComponent::refreshStepGrid()
 {
     for (int st = 0; st < kNumSteps; ++st)
         for (int p = 0; p < kNumPads; ++p)
+        {
             gridCells[st * kNumPads + p] = pattern[(size_t) selectedPattern][(size_t) st][(size_t) p];
+            gridNotes[st * kNumPads + p] = (signed char) engine.getStepNote (selectedPattern, st, p);
+        }
 
     for (int p = 0; p < kNumPads; ++p)
     {
@@ -1775,7 +1840,7 @@ void MainComponent::refreshStepGrid()
     const int ps = (engine.isPlaying() && engine.getPlayingPattern() == selectedPattern)
                      ? engine.getPlayStep() : -1;
 
-    stepGrid.setSource (gridCells, gridZati, gridLoaded,
+    stepGrid.setSource (gridCells, gridZati, gridLoaded, gridNotes,
                         engine.getPatternLength (selectedPattern),
                         selectedBar, ps, selectedPad);
 
@@ -2054,9 +2119,38 @@ void MainComponent::ensureStoragePermission (std::function<void()> then)
     });
 }
 
+//  Leaving the browser without confirming puts back whatever the pad held
+//  before you started listening — otherwise auditioning through a folder would
+//  quietly destroy the sample you already had.
+void MainComponent::cancelAudition()
+{
+    if (browseTargetPad < 0 || auditionedFile == juce::File()) return;
+    const int slot = browseTargetPad;
+    if (preAuditionSample != nullptr)
+    {
+        engine.publishSample (slot, preAuditionSample);
+        assignSampleToPad (slot, preAuditionSample, preAuditionName);
+    }
+    else
+    {
+        padHasSample[(size_t) slot] = false;
+        uiSample[(size_t) slot] = nullptr;
+        padName[(size_t) slot] = {};
+        engine.publishSample (slot, nullptr);
+        if (auto* p = pads[slot]) p->setSampleInfo (nullptr, {});
+        selectPad (slot);
+    }
+    auditionedFile = juce::File();
+    preAuditionSample = nullptr;
+}
+
 void MainComponent::openBrowseForPad (int index)
 {
     browseTargetPad = index;
+    auditionedFile = juce::File();
+    // Remember what the pad held so cancelling an audition puts it back.
+    preAuditionSample = uiSample[(size_t) index];
+    preAuditionName   = padName[(size_t) index];
     selectPad (index);                       // the target pad reads as selected behind the sheet
     closeAllSheets();
     browseSheet.setVisible (true);
@@ -2081,6 +2175,24 @@ void MainComponent::selectionChanged()
                     && browser->getSelectedFile (0).existsAsFile();
     browseLoadButton.setEnabled (ready);
     browseSheet.repaint();                   // the header shows the pick
+
+    //  Audition: one tap loads the file into the pad you are filling AND fires
+    //  it, so you choose by ear instead of by filename. CARGAR then just
+    //  confirms and closes; the x restores whatever the pad held before, so
+    //  browsing through a folder never costs you the old sample.
+    if (! ready || browseTargetPad < 0) return;
+    const auto f = browser->getSelectedFile (0);
+    if (f == auditionedFile) return;          // same pick, do not reload
+    auditionedFile = f;
+
+    const int slot = browseTargetPad;
+    loader.loadAsync (juce::URL (f), slot, [this, slot, f] (bool ok, juce::String detail, SampleBuffer::Ptr sb)
+    {
+        if (! ok || sb == nullptr) { status.setText ("No se pudo leer: " + detail, juce::dontSendNotification); return; }
+        assignSampleToPad (slot, sb, f.getFileName());
+        engine.postNoteOn (slot);
+        status.setText (f.getFileName(), juce::dontSendNotification);
+    });
 }
 
 void MainComponent::fileDoubleClicked (const juce::File& f)
@@ -2492,6 +2604,10 @@ void MainComponent::launchSystemPicker()
 
 void MainComponent::loadBrowserSelection()
 {
+    // Confirming keeps the audition: drop the undo snapshot.
+    auditionedFile = juce::File();
+    preAuditionSample = nullptr;
+
     if (browser == nullptr || browseTargetPad < 0) return;
     const auto f = browser->getSelectedFile (0);
     if (! f.existsAsFile()) return;

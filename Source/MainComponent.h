@@ -115,6 +115,10 @@ private:
     juce::TextButton browseSystemButton { "SISTEMA" };   // SAF / OS picker fallback
     std::unique_ptr<juce::FileChooser> chooser;          // only for that fallback
     void launchSystemPicker();
+    void cancelAudition();               // restore the pad if you leave without confirming
+    juce::File        auditionedFile;
+    SampleBuffer::Ptr preAuditionSample;
+    juce::String      preAuditionName;
     int browseTargetPad = -1;
 
     void padClicked (int index);
@@ -150,6 +154,7 @@ private:
     StepGrid stepGrid;
     juce::OwnedArray<juce::TextButton> barButtons;   // bar 1..4 when the pattern is longer than one
     bool  gridCells[AudioEngine::kNumSteps * AudioEngine::kNumPads] {};
+    signed char gridNotes[AudioEngine::kNumSteps * AudioEngine::kNumPads] {};
     int   gridZati[AudioEngine::kNumPads] {};
     bool  gridLoaded[AudioEngine::kNumPads] {};
     int   selectedBar = 0;
