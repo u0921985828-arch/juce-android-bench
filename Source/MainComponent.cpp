@@ -1022,7 +1022,9 @@ void MainComponent::paint (juce::Graphics& g)
                 for (int i = 0; i < nSeg; ++i)
                 {
                     const bool hot = i >= (int) (nSeg * 0.82f);
-                    juce::Colour c = i < lit ? (hot ? ShardColours::red : ShardColours::accent)
+                    // Lit segments in LCD ink: accent is near-black on this dark
+                    // strip, so a "lit" segment read the same as an unlit one.
+                    juce::Colour c = i < lit ? (hot ? ShardColours::red : ShardColours::lcdFg)
                                              : ShardColours::lcdFg.withAlpha (0.10f);
                     g.setColour (c);
                     g.fillRect (juce::Rectangle<float> (row.getX() + (float) i * segW + 1.0f, row.getY(),
@@ -1132,7 +1134,9 @@ void MainComponent::paintFxSheetContent (juce::Graphics& g)
                 const float x = xForF (f), y = yForDb (db);
                 if (i == 0) curve.startNewSubPath (x, y); else curve.lineTo (x, y);
             }
-            g.setColour (ShardColours::accent);
+            // lcdFg, not accent: accent is the achromatic chassis ink and sits
+            // at ~1.06:1 on this dark plot — the curve simply vanished.
+            g.setColour (ShardColours::lcdFg);
             g.strokePath (curve, juce::PathStrokeType (2.2f, juce::PathStrokeType::curved));
 
             // Cutoff marker + readout.
@@ -1231,8 +1235,16 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
                 g.fillRect (plotR.getX() + plotR.getWidth() * s0, plotR.getY(),
                             plotR.getWidth() * juce::jmax (0.0f, s1 - s0), plotR.getHeight());
 
-                // Min/max column waveform.
-                juce::Path wf;
+                // Min/max column waveform, in the pad's own fragment colour.
+                //  NOT accent: the chassis is achromatic, so accent is near-black
+                //  ink meant for the light face — on this dark card it measured
+                //  1.06:1 against screenBg, i.e. invisible. The zati is both
+                //  guaranteed vivid on the LCD and the right signal: this card
+                //  belongs to one pad, so it should wear that pad's colour.
+                //  Outside the trim the wave stays drawn but dimmed, so you can
+                //  see the part you are cutting away instead of losing it.
+                const juce::Colour frag = Zati::colour (padZati[(size_t) sp]);
+                juce::Path wfIn, wfOut;
                 const int cols = juce::jmax (16, (int) plotR.getWidth());
                 const float midY = plotR.getCentreY(), half = plotR.getHeight() * 0.48f;
                 for (int c = 0; c < cols; ++c)
@@ -1247,10 +1259,14 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
                         hi = juce::jmax (hi, range.getEnd());
                     }
                     const float x = plotR.getX() + (float) c * plotR.getWidth() / (float) cols;
-                    wf.addLineSegment ({ x, midY - hi * half, x, midY - lo * half }, 1.0f);
+                    const float t = (float) c / (float) cols;
+                    auto& path = (t >= s0 && t < s1) ? wfIn : wfOut;
+                    path.addLineSegment ({ x, midY - hi * half, x, midY - lo * half }, 1.0f);
                 }
-                g.setColour (ShardColours::accent.withAlpha (0.9f));
-                g.fillPath (wf);
+                g.setColour (frag.withAlpha (0.30f));
+                g.fillPath (wfOut);
+                g.setColour (frag);
+                g.fillPath (wfIn);
 
                 // Trim edges.
                 g.setColour (ShardColours::yellow.withAlpha (0.85f));
