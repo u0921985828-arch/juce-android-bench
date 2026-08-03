@@ -804,7 +804,13 @@ MainComponent::MainComponent()
     };
     addAndMakeVisible (songButton);
 
-    addAndMakeVisible (waveform);
+    //  The screen is the MASTER, not the selected pad. Trimming already has
+    //  a whole popup of its own, so putting the same waveform and the same
+    //  trim handles on the face was one job done twice — and it meant the
+    //  biggest element on the instrument showed a sample sitting still
+    //  instead of the sound actually coming out.
+    addAndMakeVisible (spectrum);
+    padSheet.addAndMakeVisible (waveform);
 
     //  There is no skin picker. ZATI has one look; a strip of alternative
     //  accents sitting on top of the project menu was a preference masquerading
@@ -1359,92 +1365,6 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
                         zatiSwatchArea, juce::Justification::centred);
         }
 
-        // Sample-info card: what exactly is on this pad — mini waveform with
-        // the trim window shaded, plus duration / channels / rate / size.
-        if (! editInfoArea.isEmpty() && editInfoArea.getHeight() > 40)
-        {
-            auto scr = editInfoArea.toFloat();
-            g.setColour (ZatiColours::knobBody2);
-            g.fillRoundedRectangle (scr.expanded (3.0f), 3.0f);
-            g.setColour (ZatiColours::screenBg);
-            g.fillRect (scr);
-
-            const auto sb = uiSample[(size_t) sp];
-
-            if (sb == nullptr || sb->buffer.getNumSamples() <= 0)
-            {
-                g.setColour (ZatiColours::lcdFg.withAlpha (0.5f));
-                g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.16f));
-                g.drawText ("PAD VACIO  -  LOAD O REC PARA CARGAR", editInfoArea, juce::Justification::centred);
-            }
-            else
-            {
-                auto in    = editInfoArea.reduced (10, 8);
-                auto meta  = in.removeFromBottom (14);
-                in.removeFromBottom (4);
-                auto plotR = in.toFloat();
-
-                const auto& buf = sb->buffer;
-                const int   nSamps = buf.getNumSamples();
-                const int   nCh    = buf.getNumChannels();
-                const float s0 = padStart01[(size_t) sp], s1 = padEnd01[(size_t) sp];
-
-                // Trim window shading (kept region slightly lit).
-                g.setColour (ZatiColours::lcdFg.withAlpha (0.07f));
-                g.fillRect (plotR.getX() + plotR.getWidth() * s0, plotR.getY(),
-                            plotR.getWidth() * juce::jmax (0.0f, s1 - s0), plotR.getHeight());
-
-                // Min/max column waveform, in the pad's own fragment colour.
-                //  NOT accent: the chassis is achromatic, so accent is near-black
-                //  ink meant for the light face — on this dark card it measured
-                //  1.06:1 against screenBg, i.e. invisible. The zati is both
-                //  guaranteed vivid on the LCD and the right signal: this card
-                //  belongs to one pad, so it should wear that pad's colour.
-                //  Outside the trim the wave stays drawn but dimmed, so you can
-                //  see the part you are cutting away instead of losing it.
-                const juce::Colour frag = Zati::colour (padZati[(size_t) sp]);
-                juce::Path wfIn, wfOut;
-                const int cols = juce::jmax (16, (int) plotR.getWidth());
-                const float midY = plotR.getCentreY(), half = plotR.getHeight() * 0.48f;
-                for (int c = 0; c < cols; ++c)
-                {
-                    const int a = (int) ((juce::int64) nSamps * c / cols);
-                    const int b = juce::jmax (a + 1, (int) ((juce::int64) nSamps * (c + 1) / cols));
-                    float lo = 0.0f, hi = 0.0f;
-                    for (int ch = 0; ch < nCh; ++ch)
-                    {
-                        const auto range = buf.findMinMax (ch, a, b - a);
-                        lo = juce::jmin (lo, range.getStart());
-                        hi = juce::jmax (hi, range.getEnd());
-                    }
-                    const float x = plotR.getX() + (float) c * plotR.getWidth() / (float) cols;
-                    const float t = (float) c / (float) cols;
-                    auto& path = (t >= s0 && t < s1) ? wfIn : wfOut;
-                    path.addLineSegment ({ x, midY - hi * half, x, midY - lo * half }, 1.0f);
-                }
-                g.setColour (frag.withAlpha (0.30f));
-                g.fillPath (wfOut);
-                g.setColour (frag);
-                g.fillPath (wfIn);
-
-                // Trim edges.
-                g.setColour (ZatiColours::yellow.withAlpha (0.85f));
-                g.drawVerticalLine ((int) (plotR.getX() + plotR.getWidth() * s0), plotR.getY(), plotR.getBottom());
-                g.drawVerticalLine ((int) (plotR.getX() + plotR.getWidth() * s1) - 1, plotR.getY(), plotR.getBottom());
-
-                // Facts row: duration / channels / rate / size.
-                const double sr   = sb->sourceSampleRate;
-                const double secs = sr > 0.0 ? (double) nSamps / sr : 0.0;
-                const int    kb   = (int) ((juce::int64) nSamps * nCh * (int) sizeof (float) / 1024);
-                const juce::String facts = juce::String (secs, 2) + " s   "
-                                         + (nCh >= 2 ? "STEREO" : "MONO") + "   "
-                                         + juce::String (sr / 1000.0, 1) + " kHz   "
-                                         + juce::String (kb) + " KB";
-                g.setColour (ZatiColours::lcdFg);
-                g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
-                g.drawText (facts, meta, juce::Justification::centredLeft);
-            }
-        }
     }
 }
 
@@ -1584,7 +1504,7 @@ void MainComponent::resized()
     area.removeFromTop (Metrics::xs);
 
     screenBezel = area.removeFromTop (screenH);
-    waveform.setBounds (screenBezel);
+    spectrum.setBounds (screenBezel);
     area.removeFromTop (Metrics::xs);
 
     stepStripArea = area.removeFromTop (Metrics::lg).reduced (2, 0);
@@ -1707,7 +1627,11 @@ void MainComponent::resized()
         zatiSwatchArea = zr.reduced (4, 2);      // drawn in paintPadSheetContent
         inner.removeFromTop (8);
 
-        editInfoArea = inner;      // sample-info card (drawn in paintPadSheetContent)
+        //  The cut itself, with its fragments and its draggable trim handles.
+        //  It used to be a painted, untouchable card here while the real one
+        //  lived on the face; now the interactive one is where the editing is.
+        editInfoArea = inner;
+        waveform.setBounds (inner);
     }
 
     // BROWSE sheet: the tallest of them all — the file list wants the room.
@@ -3491,6 +3415,12 @@ void MainComponent::timerCallback()
 {
     engine.collectRetiredSamples();
     pollExport();
+
+    //  The master oscilloscope: post-FX mono sum, straight from the engine's
+    //  ring. Cosmetic, so a benign race with the audio thread is fine.
+    engine.copyScope (scopeTmp, (int) (sizeof (scopeTmp) / sizeof (scopeTmp[0])));
+    spectrum.setSamples (scopeTmp, (int) (sizeof (scopeTmp) / sizeof (scopeTmp[0])));
+    spectrum.setBpm (bpmSlider.getValue());
 
     const int ps = engine.getPlayStep();
 
