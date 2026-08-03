@@ -1724,6 +1724,12 @@ void MainComponent::resized()
         // the effects, where it was one more button that made no music.
         testButton.setBounds (titleRow.removeFromRight (64).reduced (2));
 
+        // What the audio device is giving us, at the top where you cannot
+        // miss it. It is the only number in the app that says whether this
+        // thing is playable, so it does not live behind another tap.
+        audioInfoArea = inner.removeFromTop (86);
+        inner.removeFromTop (Metrics::sm);
+
         // EXPORTAR sits on its own row: it is the only action here that
         // produces something outside the app, and it needs room for its name.
         projExportButton.setBounds (inner.removeFromBottom (Metrics::btn).reduced (2, 0));
@@ -2854,6 +2860,8 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
                                         ? "sin proyectos guardados - GUARDAR crea el primero"
                                         : "elige uno de la lista"),
                 inner.removeFromTop (14), juce::Justification::centredLeft);
+
+    paintAudioInfo (g, audioInfoArea);
 }
 
 // ---------------------------------------------------------------------------
@@ -2899,6 +2907,10 @@ void MainComponent::startExport (bool stems)
 
 void MainComponent::pollExport()
 {
+    // The audio path can change under us (headphones in, a call, a route
+    // switch), so the readout is refreshed while you are looking at it.
+    if (projSheet.isVisible()) projSheet.repaint();
+
     if (exportJob == nullptr) return;
 
     if (! exportJob->finished.load (std::memory_order_acquire))
@@ -2989,6 +3001,72 @@ void MainComponent::paintExportSheetContent (juce::Graphics& g)
                           "por pad, para mezclar fuera.",
                           inner.removeFromTop (26), juce::Justification::topLeft, 2);
     }
+}
+
+// The audio path, measured rather than assumed. Everything here comes from
+// the device itself; nothing is a constant we hope is true.
+void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area)
+{
+    if (area.isEmpty()) return;
+
+    g.setColour (ZatiColours::screenBg);
+    g.fillRoundedRectangle (area.toFloat(), 3.0f);
+    auto inner = area.reduced (10, 7);
+
+    auto* dev = deviceManager.getCurrentAudioDevice();
+
+    g.setColour (ZatiColours::lcdDim);
+    g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.20f));
+    g.drawText ("AUDIO", inner.removeFromTop (12), juce::Justification::centredLeft);
+
+    if (dev == nullptr)
+    {
+        g.setColour (ZatiColours::red);
+        g.setFont (ZatiColours::monoFont (Metrics::fValue, true));
+        g.drawText ("sin dispositivo de audio", inner, juce::Justification::centredLeft);
+        return;
+    }
+
+    const double sr    = dev->getCurrentSampleRate();
+    const int    block = dev->getCurrentBufferSizeSamples();
+    const int    outL  = dev->getOutputLatencyInSamples();
+    auto msOf = [sr] (double samples) { return sr > 0.0 ? samples * 1000.0 / sr : 0.0; };
+
+    // What the app is responsible for: the device's own output latency plus
+    // the block we are handed. The touchscreen and the compositor sit on top
+    // of this and no program can see them from the inside.
+    const double totalMs = msOf ((double) outL + (double) block);
+
+    auto line = [&g, &inner] (const juce::String& k, const juce::String& v, juce::Colour c)
+    {
+        auto r = inner.removeFromTop (14);
+        g.setColour (ZatiColours::lcdDim);
+        g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
+        g.drawText (k, r.removeFromLeft (54), juce::Justification::centredLeft);
+        g.setColour (c);
+        g.setFont (ZatiColours::monoFont (Metrics::fValue, true));
+        g.drawText (v, r, juce::Justification::centredLeft);
+    };
+
+    line ("ruta",  dev->getTypeName() + " / " + dev->getName(), ZatiColours::lcdFg);
+    line ("reloj", juce::String ((int) sr) + " Hz", ZatiColours::lcdFg);
+    line ("bufer", juce::String (block) + " · " + juce::String (msOf (block), 1) + " ms",
+          ZatiColours::lcdFg);
+
+    //  Under ~15 ms a pad feels like a pad. Past ~30 ms you hear yourself
+    //  arrive late and you start compensating, which is when an instrument
+    //  stops being one.
+    const auto verdict = totalMs <= 15.0 ? ZatiColours::lcdFg
+                       : totalMs <= 30.0 ? ZatiColours::yellow
+                                         : ZatiColours::red;
+    line ("salida", juce::String (totalMs, 1) + " ms"
+                    + juce::String (totalMs <= 15.0 ? "  rapida"
+                                  : totalMs <= 30.0 ? "  aceptable" : "  LENTA"), verdict);
+
+    g.setColour (ZatiColours::lcdDim.withAlpha (0.8f));
+    g.setFont (ZatiColours::monoFont (9.0f, false));
+    g.drawText ("no incluye la pantalla tactil - eso se mide con un micro",
+                inner.removeFromTop (12), juce::Justification::centredLeft);
 }
 
 void MainComponent::launchSystemPicker()

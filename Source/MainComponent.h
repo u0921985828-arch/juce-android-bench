@@ -115,6 +115,14 @@ private:
     void pollExport();
     juce::String exportSourceLabel() const;
 
+    // --- What the audio device is actually giving us ----------------------
+    //  The one latency figure the app can know on its own. It is NOT the
+    //  tap-to-sound number — that includes the touchscreen and the compositor
+    //  and can only be caught with a microphone — but it does tell you
+    //  whether Android handed us the fast path or the slow one, which is the
+    //  difference between playable and not.
+    void paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area);
+
     // --- In-app sample browser -------------------------------------------
     //  A native FileChooser is a system dialog: it ignores the app's skin and
     //  on a tall phone screen its buttons fall outside the viewport. This is
@@ -361,7 +369,7 @@ private:
     std::array<float, kNumPads> padFlash {};   // 1.0 on trigger, decays -> lit feedback
     // Chassis layout regions (set in resized(), drawn in paint()).
     juce::Rectangle<int> headerArea, screenBezel, tabBarArea,
-                         editInfoArea, vuArea, stepStripArea;
+                         editInfoArea, vuArea, stepStripArea, audioInfoArea;
     float vuL = 0.0f, vuR = 0.0f;   // smoothed output peaks for the VU strip
 
     int  selectedPad   = -1;
