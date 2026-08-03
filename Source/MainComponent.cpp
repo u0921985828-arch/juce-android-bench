@@ -43,6 +43,7 @@ MainComponent::MainComponent()
     // Output only at startup so the app always makes sound; the mic input is
     // opened on demand when recording (avoids risking output on a denied perm).
     setAudioChannels (0, 2);
+    useLowestLatency();
 
     padGain.fill (0.85f);
     padEnd01.fill (1.0f);
@@ -131,7 +132,7 @@ MainComponent::MainComponent()
         setButton.onClick = [this]
         {
             if (projSheet.isVisible()) closeAllSheets();
-            else { refreshProjectList(); openSheet (projSheet, setButton); }
+            else { refreshProjectList(); refreshAudioOptions(); openSheet (projSheet, setButton); }
         };
         addAndMakeVisible (setButton);
 
@@ -1093,7 +1094,10 @@ void MainComponent::macroMoved (int idx)
             fxButtons[focusedFx]->setToggleState (on, juce::dontSendNotification);
         }
     }
-    repaint();   // the readout tracks the value live
+    //  Only the knob strip, not the whole face: a full repaint during a drag
+    //  redrew sixteen pad tiles and their waveform art on every mouse move.
+    repaint (macroCtrl1.getBounds().getUnion (macroCtrl3.getBounds())
+                                   .expanded (12, 26));
 }
 
 // --- Sheets ------------------------------------------------------------------
@@ -1728,7 +1732,22 @@ void MainComponent::resized()
         // miss it. It is the only number in the app that says whether this
         // thing is playable, so it does not live behind another tap.
         audioInfoArea = inner.removeFromTop (86);
-        inner.removeFromTop (Metrics::sm);
+        inner.removeFromTop (Metrics::xs);
+
+        auto chipRow = [&inner] (juce::OwnedArray<juce::TextButton>& btns, int labelW)
+        {
+            auto row = inner.removeFromTop (Metrics::tab);
+            auto r = row.withTrimmedLeft (labelW);
+            const int n = juce::jmax (1, btns.size());
+            const int w = r.getWidth() / n;
+            for (int i = 0; i < btns.size(); ++i)
+                btns[i]->setBounds ((i < n - 1 ? r.removeFromLeft (w) : r).reduced (2, 2));
+            inner.removeFromTop (Metrics::xs);
+            return row;
+        };
+        bufRowArea  = chipRow (bufButtons, 54);
+        rateRowArea = chipRow (rateButtons, 54);
+        inner.removeFromTop (Metrics::xs);
 
         // EXPORTAR sits on its own row: it is the only action here that
         // produces something outside the app, and it needs room for its name.
@@ -2862,6 +2881,16 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
                 inner.removeFromTop (14), juce::Justification::centredLeft);
 
     paintAudioInfo (g, audioInfoArea);
+
+    // Row labels for the two chip rows. The asterisk marks the driver's own
+    // burst size: on Android that is the fast path, and anything below it
+    // buys nothing.
+    g.setColour (ZatiColours::inkDim);
+    g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.12f));
+    if (! bufRowArea.isEmpty())
+        g.drawText ("BUFER", bufRowArea.withWidth (52), juce::Justification::centredLeft);
+    if (! rateRowArea.isEmpty())
+        g.drawText ("RELOJ", rateRowArea.withWidth (52), juce::Justification::centredLeft);
 }
 
 // ---------------------------------------------------------------------------
@@ -3069,6 +3098,132 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
                 inner.removeFromTop (12), juce::Justification::centredLeft);
 }
 
+//  Take the smallest buffer the driver offers, which on Android is exactly
+//  one native burst.
+//
+//  This is not a micro-optimisation, it is the difference between an
+//  instrument and a toy. JUCE's own default targets a 40 ms buffer on a
+//  low-latency device (juce_HighPerformanceAudioHelpers_android.h,
+//  getDefaultBufferSize), so on a phone whose burst is 256 frames it stacks
+//  EIGHT of them: 2048 frames, 42.7 ms of buffer and ~127 ms from callback to
+//  speaker. Measured on the target device, that is what we were shipping.
+//
+//  getAvailableBufferSizes() is built as multiples of the native burst
+//  starting at one, so element zero IS the burst — the fast path Oboe was
+//  opened for in the first place.
+//
+//  One burst can glitch on a busy phone. That is why the BUFER chips exist:
+//  if it crackles, step up one and lose ~5 ms. Better to start tight and let
+//  you back off than to start slow and never tell you.
+void MainComponent::useLowestLatency()
+{
+    auto* dev = deviceManager.getCurrentAudioDevice();
+    if (dev == nullptr) return;
+
+    const auto sizes = dev->getAvailableBufferSizes();
+    if (sizes.isEmpty()) return;
+
+    //  The smallest size worth at least ~3 ms. On Android that lands exactly
+    //  on the native burst; on a desktop driver whose list starts at 16
+    //  frames it avoids picking something that can only xrun.
+    const double sr = dev->getCurrentSampleRate() > 0.0 ? dev->getCurrentSampleRate() : 48000.0;
+    const int floorFrames = (int) (0.003 * sr);
+    int burst = sizes.getLast();
+    for (int v : sizes)
+        if (v >= floorFrames) { burst = v; break; }
+
+    if (burst <= 0 || burst == dev->getCurrentBufferSizeSamples()) return;
+
+    auto setup = deviceManager.getAudioDeviceSetup();
+    setup.bufferSize = burst;
+    deviceManager.setAudioDeviceSetup (setup, true);
+}
+
+// Build the chips from what THIS device actually offers. Nothing is
+// hardcoded: a phone that only does 48 kHz shows one clock, and the burst
+// sizes are the ones the driver will really accept.
+void MainComponent::refreshAudioOptions()
+{
+    bufButtons.clear();
+    rateButtons.clear();
+
+    auto* dev = deviceManager.getCurrentAudioDevice();
+    if (dev == nullptr) { resized(); return; }
+
+    const int    curBuf  = dev->getCurrentBufferSizeSamples();
+    const double curRate = dev->getCurrentSampleRate();
+    //  The burst, not getDefaultBufferSize(): that one is JUCE's 40 ms
+    //  target and marking it "native" is what hid this problem.
+    const int    natBuf  = dev->getAvailableBufferSizes().isEmpty()
+                             ? dev->getCurrentBufferSizeSamples()
+                             : dev->getAvailableBufferSizes().getFirst();
+
+    // Buffer sizes: at most five, always including the driver's own default —
+    // on Android that is the native burst, and going below it does not lower
+    // latency, it just costs you the fast path.
+    {
+        auto all = dev->getAvailableBufferSizes();
+        juce::Array<int> pick;
+        if (all.contains (natBuf)) pick.add (natBuf);
+        for (int i = 0; i < all.size() && pick.size() < 5; ++i)
+        {
+            const int v = all[i];
+            if (! pick.contains (v) && v >= natBuf / 4) pick.add (v);
+        }
+        pick.sort();
+
+        for (int v : pick)
+        {
+            auto* b = new juce::TextButton (juce::String (v) + (v == natBuf ? "*" : ""));
+            styleButton (*b, ZatiColours::key);
+            b->setColour (juce::TextButton::buttonOnColourId, ZatiColours::accent);
+            b->setColour (juce::TextButton::textColourOnId, ZatiColours::inkLight);
+            b->setToggleState (v == curBuf, juce::dontSendNotification);
+            b->onClick = [this, v] { applyAudioSetup (v, 0.0); };
+            projSheet.addAndMakeVisible (b);
+            bufButtons.add (b);
+        }
+    }
+
+    for (double r : dev->getAvailableSampleRates())
+    {
+        if (rateButtons.size() >= 4) break;
+        auto* b = new juce::TextButton (juce::String (juce::roundToInt (r / 1000.0)) + "k");
+        styleButton (*b, ZatiColours::key);
+        b->setColour (juce::TextButton::buttonOnColourId, ZatiColours::accent);
+        b->setColour (juce::TextButton::textColourOnId, ZatiColours::inkLight);
+        b->setToggleState (std::abs (r - curRate) < 1.0, juce::dontSendNotification);
+        b->onClick = [this, r] { applyAudioSetup (0, r); };
+        projSheet.addAndMakeVisible (b);
+        rateButtons.add (b);
+    }
+
+    resized();
+    projSheet.repaint();
+}
+
+// Zero means "leave this one alone", so a chip only ever changes its own
+// setting. The device is restarted by setAudioDeviceSetup, which calls
+// prepareToPlay again — every buffer the engine owns is resized there, so
+// nothing downstream has to know this happened.
+void MainComponent::applyAudioSetup (int bufferSize, double rate)
+{
+    auto setup = deviceManager.getAudioDeviceSetup();
+    if (bufferSize > 0) setup.bufferSize = bufferSize;
+    if (rate > 0.0)     setup.sampleRate = rate;
+
+    const auto err = deviceManager.setAudioDeviceSetup (setup, true);
+
+    if (err.isNotEmpty())
+        status.setText ("audio: " + err, juce::dontSendNotification);
+    else if (auto* dev = deviceManager.getCurrentAudioDevice())
+        status.setText (juce::String (dev->getCurrentBufferSizeSamples()) + " muestras · "
+                            + juce::String ((int) dev->getCurrentSampleRate()) + " Hz",
+                        juce::dontSendNotification);
+
+    refreshAudioOptions();
+}
+
 void MainComponent::launchSystemPicker()
 {
     if (browseTargetPad < 0) return;
@@ -3215,6 +3370,7 @@ void MainComponent::toggleMicSampling()
         recordingActive = false;
         auto sb = engine.finishRecording();
         setAudioChannels (0, 2);          // release the mic input, back to output-only
+        useLowestLatency();               // ...and take the fast path back with it
         styleButton (micButton, kKey);
         micButton.setButtonText ("GRABAR MIC");
         if (sb != nullptr)

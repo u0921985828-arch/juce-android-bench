@@ -25,6 +25,7 @@ struct Voice
     float  target    = 0.0f;
     float  stepUp    = 0.0f;
     float  stepDown  = 0.0f;
+    float  stepCtl   = 0.0f;   // volume-cut rate: fixed ~10 ms, not the attack
 
     float  panL      = 0.7071f;   // equal-power pan gains, precomputed in start()
     float  panR      = 0.7071f;
@@ -58,6 +59,7 @@ struct Voice
         const double fadeOut = juce::jmax (1.0, 0.001 * (double) juce::jmax (0.1f, releaseMs) * fSys);
         stepUp    = (float) (velocity / fadeIn);
         stepDown  = (float) (velocity / fadeOut);
+        stepCtl   = (float) (1.0 / juce::jmax (1.0, 0.010 * fSys));
         active    = true;
     }
 
@@ -89,69 +91,100 @@ struct Voice
     void render (juce::AudioBuffer<float>& out, int start, int num,
                  const SampleBuffer* sb) noexcept
     {
-        if (! active || sb == nullptr)
+        if (! active || sb == nullptr || num <= 0)
             return;
 
         const int srcLen = sb->buffer.getNumSamples();
         const int srcCh  = sb->buffer.getNumChannels();
         if (srcLen < 4 || srcCh < 1) { active = false; return; }
 
+        //  Clamp the window against THIS buffer once per block. The pad's
+        //  sample can be swapped underneath a sounding voice, so the window
+        //  captured at start() may no longer fit. Doing it here means the
+        //  inner loop needs no per-sample safety test at all: inside
+        //  [winStart, winEnd) the Hermite taps idx-1 .. idx+2 are provably in
+        //  range, and that test used to run on every single sample.
+        if (winStart < 1)          winStart = 1;
+        if (winEnd   > srcLen - 2) winEnd   = srcLen - 2;
+        if (winStart >= winEnd)    { active = false; return; }
+        if (pos < (double) winStart)        pos = (double) winStart;
+        if (pos > (double) (winEnd - 1))    pos = (double) (winEnd - 1);
+
         const float* srcL = sb->buffer.getReadPointer (0);
-        const float* srcR = (srcCh > 1) ? sb->buffer.getReadPointer (1) : srcL;
+        const float* srcR = (srcCh > 1) ? sb->buffer.getReadPointer (1) : nullptr;
         const int    outCh = out.getNumChannels();
-        float* dstL = out.getWritePointer (0);
-        float* dstR = (outCh > 1) ? out.getWritePointer (1) : dstL;
+        const bool   stereoOut = outCh > 1;
+        float* dstL = out.getWritePointer (0, start);
+        float* dstR = stereoOut ? out.getWritePointer (1, start) : nullptr;
 
-        for (int i = 0; i < num; ++i)
+        //  Pan glides to its target across exactly one block. The old version
+        //  used a fixed per-sample coefficient, which made the glide twice as
+        //  slow at 96 kHz as at 48 — a control whose speed depended on the
+        //  sound card.
+        const float panIncL = (panTL - panL) / (float) num;
+        const float panIncR = (panTR - panR) / (float) num;
+
+        const double step = reverse ? -delta : delta;   // always positive magnitude
+        int i = 0;
+
+        while (i < num && active)
         {
-            // Window bounds / loop.
-            if (! reverse)
+            // How far to the edge of the window, and therefore how many
+            // samples can run before anything needs deciding again.
+            const double dist = reverse ? (pos - (double) winStart)
+                                        : ((double) (winEnd - 1) - pos);
+            if (dist <= 0.0)
             {
-                if (pos >= (double) (winEnd - 1))
+                if (! loop) { active = false; break; }
+                pos = reverse ? (double) (winEnd - 1) : (double) winStart;
+                continue;
+            }
+
+            int run = (int) (dist / step) + 1;
+            if (run > num - i) run = num - i;
+            if (run < 1)       run = 1;
+
+            for (int k = 0; k < run; ++k, ++i)
+            {
+                if (releasing)
                 {
-                    if (loop) pos = (double) winStart;
-                    else      { active = false; break; }
+                    gain -= stepDown;
+                    if (gain <= 0.0f) { active = false; gain = 0.0f; break; }
                 }
-            }
-            else
-            {
-                if (pos <= (double) winStart)
+                else if (gain < target)
                 {
-                    if (loop) pos = (double) (winEnd - 1);
-                    else      { active = false; break; }
+                    gain += stepUp;
+                    if (gain > target) gain = target;
                 }
+                else if (gain > target)
+                {
+                    // A volume CUT is not a musical release: it used to fall
+                    // at the pad's attack rate, so a pad with a one-second
+                    // attack took a second to get quieter.
+                    gain -= stepCtl;
+                    if (gain < target) gain = target;
+                }
+
+                panL += panIncL;
+                panR += panIncR;
+
+                const int   idx  = (int) pos;
+                const float frac = (float) (pos - (double) idx);
+
+                //  A mono sample is the normal case for a drum hit, and the
+                //  old code ran the four-point interpolation twice over the
+                //  identical data to fill two identical channels.
+                const float l = hermite4 (frac, srcL, idx);
+                dstL[i] += gain * panL * l;
+                if (stereoOut)
+                    dstR[i] += gain * panR * (srcR != nullptr ? hermite4 (frac, srcR, idx) : l);
+
+                pos += delta;
             }
-
-            const int idx = (int) pos;
-            if (idx < 1 || idx + 2 >= srcLen) { active = false; break; }   // safety
-            const double frac = pos - (double) idx;
-
-            if (releasing)
-            {
-                gain -= stepDown;
-                if (gain <= 0.0f) { active = false; gain = 0.0f; break; }
-            }
-            else if (gain < target)
-            {
-                gain += stepUp;
-                if (gain > target) gain = target;
-            }
-            else if (gain > target)          // retarget() lowered the pad volume
-            {
-                gain -= stepUp;
-                if (gain < target) gain = target;
-            }
-
-            // Pan slew toward retarget()'s values (~ms-scale, clickless).
-            panL += 0.002f * (panTL - panL);
-            panR += 0.002f * (panTR - panR);
-
-            dstL[start + i] += gain * panL * hermite4 ((float) frac, srcL, idx);
-            if (outCh > 1)
-                dstR[start + i] += gain * panR * hermite4 ((float) frac, srcR, idx);
-
-            pos += delta;
         }
+
+        panL = juce::jlimit (0.0f, 1.0f, panL);
+        panR = juce::jlimit (0.0f, 1.0f, panR);
     }
 
 private:

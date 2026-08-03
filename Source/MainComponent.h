@@ -123,6 +123,15 @@ private:
     //  difference between playable and not.
     void paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area);
 
+    //  ...and the two knobs that actually move it. Buffer and clock are the
+    //  only settings in the app that change how the instrument FEELS rather
+    //  than how it sounds, so they sit next to the number they affect.
+    juce::OwnedArray<juce::TextButton> bufButtons, rateButtons;
+    juce::Rectangle<int> bufRowArea, rateRowArea;
+    void useLowestLatency();     // one native burst, not JUCE's 40 ms default
+    void refreshAudioOptions();
+    void applyAudioSetup (int bufferSize, double rate);
+
     // --- In-app sample browser -------------------------------------------
     //  A native FileChooser is a system dialog: it ignores the app's skin and
     //  on a tall phone screen its buttons fall outside the viewport. This is

@@ -1,5 +1,21 @@
 #include "AudioEngine.h"
 
+namespace
+{
+    //  Padé approximant of tanh. std::tanh is a libm call of ~30 cycles and
+    //  the drive stage runs it on every sample of every channel; this is a
+    //  handful of multiplies, accurate to well under a dB inside the range
+    //  that matters, and clamped so the ratio cannot run away for large
+    //  arguments (drive pushes |x| up to ~25).
+    inline float fastTanh (float x) noexcept
+    {
+        const float x2 = x * x;
+        const float a  = x  * (135135.0f + x2 * (17325.0f + x2 * (378.0f + x2)));
+        const float b  = 135135.0f + x2 * (62370.0f + x2 * (3150.0f + x2 * 28.0f));
+        return juce::jlimit (-1.0f, 1.0f, a / b);
+    }
+}
+
 // ============================================================================
 //  AudioEngine implementation. See AudioEngine.h for the threading contract.
 // ============================================================================
@@ -142,9 +158,14 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 vc.retarget (effectiveGain (vc.slot),
                              padPan [(size_t) vc.slot].load (std::memory_order_relaxed));
         }
+        //  Only the voices that are actually sounding. A silent voice keeps
+        //  its slot, so the old test entered render() for all 32 every time.
         for (int v = 0; v < kNumVoices; ++v)
-            if (voices[(size_t) v].slot >= 0)
-                voices[(size_t) v].render (out, s, nn, padSample[(size_t) voices[(size_t) v].slot]);
+        {
+            auto& vc = voices[(size_t) v];
+            if (vc.active && vc.slot >= 0)
+                vc.render (out, s, nn, padSample[(size_t) vc.slot]);
+        }
     };
 
     // 3. Drain UI trigger commands (taps fire at block start — human jitter
@@ -309,13 +330,18 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
 
         // Keeps a dry copy of the current block so a stage can blend rather
         // than replace. Cheap, and it is the only way MIX means anything.
-        auto stashDry = [this, &out, startSample, numSamples, chans]() noexcept
+        //  ISO and HPF wake up at full wet, which is most of the time, and a
+        //  full block copy per stage per callback is not free on a phone.
+        auto stashDry = [this, &out, startSample, numSamples, chans] (float mix) noexcept
         {
+            if (mix >= 0.999f) return;
             for (int ch = 0; ch < chans; ++ch)
-                fxDry.copyFrom (ch, 0, out.getReadPointer (ch, startSample), numSamples);
+                fxDry.copyFrom (ch, 0, out.getReadPointer (ch, startSample),
+                                juce::jmin (numSamples, fxDry.getNumSamples()));
         };
         auto blendDry = [this, &out, startSample, numSamples, chans] (float mix) noexcept
         {
+            if (mix >= 0.999f) return;      // fully wet: the copy would be a no-op
             for (int ch = 0; ch < chans; ++ch)
             {
                 float* w = out.getWritePointer (ch, startSample);
@@ -338,7 +364,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             if (active)
             {
                 if (! filterWasActive) masterFilter.reset();
-                stashDry();
+                stashDry (smFxMix);
                 masterFilter.setType (juce::dsp::StateVariableTPTFilterType::lowpass);
                 masterFilter.setCutoffFrequency (smCutoff);
                 masterFilter.setResonance (smReso);
@@ -364,7 +390,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             if (smHpMix > 0.001f || mixT > 0.001f)
             {
                 if (prev <= 0.001f) hpFilter.reset();
-                stashDry();
+                stashDry (smHpMix);
                 hpFilter.setCutoffFrequency (smHpFreq);
                 hpFilter.setResonance (smHpReso);
                 juce::dsp::AudioBlock<float> block (out.getArrayOfWritePointers(), (size_t) outCh,
@@ -402,7 +428,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     for (int i = 0; i < numSamples; ++i)
                     {
                         const float dry = w[i];
-                        lp += a * (std::tanh (k * dry) * mk - lp);
+                        lp += a * (fastTanh (k * dry) * mk - lp);
                         w[i] = dry * (1.0f - smDrvMix) + lp * smDrvMix;
                     }
                     drvLp[ch] = lp;
@@ -492,6 +518,35 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                                                     (size_t) startSample, (size_t) numSamples);
                 juce::dsp::ProcessContextReplacing<float> ctx (block);
                 reverb.process (ctx);
+            }
+        }
+    }
+
+    // 5d. Master safety. Sixteen pads at full level plus a delay with
+    //     feedback and a reverb tail will pass 0 dBFS, and what comes out of
+    //     an integer DAC then is hard clipping: the ugliest sound a sampler
+    //     can make, and one the user cannot see coming.
+    //
+    //     This is NOT a loudness stage. Below -0.5 dBFS it is mathematically
+    //     transparent — the branch does nothing at all — and above it the
+    //     signal is bent rather than cut, which is audible as saturation
+    //     instead of as tearing. The export already measured and compensated;
+    //     the thing you actually listen to had nothing.
+    {
+        constexpr float thresh = 0.944f;      // -0.5 dBFS
+        const int outCh = juce::jmin (2, out.getNumChannels());
+        for (int ch = 0; ch < outCh; ++ch)
+        {
+            float* w = out.getWritePointer (ch, startSample);
+            for (int i = 0; i < numSamples; ++i)
+            {
+                const float v = w[i];
+                if (v > thresh || v < -thresh)
+                {
+                    const float sign = (v < 0.0f) ? -1.0f : 1.0f;
+                    const float over = (v * sign - thresh) / (1.0f - thresh);
+                    w[i] = sign * (thresh + (1.0f - thresh) * fastTanh (over));
+                }
             }
         }
     }
