@@ -14,6 +14,8 @@
       <FILE id="srcVh"   name="Voice.h"           compile="0" resource="0" file="Source/Voice.h"/>
       <FILE id="srcPbh"  name="PadButton.h"       compile="0" resource="0" file="Source/PadButton.h"/>
       <FILE id="srcSbh"  name="SampleBuffer.h"    compile="0" resource="0" file="Source/SampleBuffer.h"/>
+      <FILE id="srcPl"   name="Playlist.h"        compile="0" resource="0" file="Source/Playlist.h"/>
+      <FILE id="srcSgd"  name="StepGrid.h"        compile="0" resource="0" file="Source/StepGrid.h"/>
       <FILE id="srcCfh"  name="CommandFifo.h"     compile="0" resource="0" file="Source/CommandFifo.h"/>
       <FILE id="srcWfh"  name="WaveformDisplay.h" compile="0" resource="0" file="Source/WaveformDisplay.h"/>
       <FILE id="srcSph"  name="SpectrumDisplay.h" compile="0" resource="0" file="Source/SpectrumDisplay.h"/>

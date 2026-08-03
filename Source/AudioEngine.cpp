@@ -151,6 +151,8 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     if (isPlaying && ! wasPlaying)
     {
         currentStep = -1; stepAccum = 0.0; chainPos = 0;
+        songStep = -1; songBar.store (-1, std::memory_order_relaxed);
+        for (int ln = 0; ln < kSongLanes; ++ln) { lanePattern[ln] = -1; laneStartStep[ln] = 0; }
         playStep.store (-1, std::memory_order_relaxed);
     }
     else if (! isPlaying && wasPlaying)
@@ -175,8 +177,68 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         const double secPerStep     = (60.0 / juce::jmax (20.0, (double) bpm.load (std::memory_order_relaxed))) * beatsPerStep;
         const double samplesPerStep = juce::jmax (1.0, secPerStep * systemSampleRate);
 
-        auto fireStep = [this, chainLen, &patternIdx]() noexcept
+        auto firePatternStep = [this] (int bank, int stepInPattern) noexcept
         {
+            const std::uint16_t mask = patternBank[(size_t) bank][(size_t) stepInPattern].load (std::memory_order_relaxed);
+            for (int p = 0; p < kNumPads; ++p)
+                if ((mask & (std::uint16_t) (1u << p)) != 0)
+                    triggerPad (p, (int) stepNote[(size_t) bank][(size_t) stepInPattern][(size_t) p].load (std::memory_order_relaxed));
+        };
+
+        auto fireStep = [this, chainLen, &patternIdx, &firePatternStep]() noexcept
+        {
+            //  Song mode: the timeline drives everything. Several lanes run at
+            //  once, so a pattern, a break and a one-shot can all land on the
+            //  same bar — which a single queue of banks could never express.
+            if (songMode.load (std::memory_order_relaxed))
+            {
+                const int bars = juce::jlimit (1, kSongBars, songBars.load (std::memory_order_relaxed));
+                const int total = bars * kBarSteps;
+                songStep = (songStep + 1) % total;
+                const int bar = songStep / kBarSteps;
+                songBar.store (bar, std::memory_order_relaxed);
+
+                // At the top of a bar, read what each lane starts here.
+                if (songStep % kBarSteps == 0)
+                {
+                    for (int ln = 0; ln < kSongLanes; ++ln)
+                    {
+                        const int cell = songCell[(size_t) ln][(size_t) bar].load (std::memory_order_relaxed);
+                        if (cell == kContinued)
+                            continue;                         // a pattern from an earlier bar still owns this lane
+                        if (cell > 0 && cell <= kNumPatterns)
+                        {
+                            lanePattern[ln]   = cell - 1;
+                            laneStartStep[ln] = songStep;
+                        }
+                        else if (cell < 0)
+                        {
+                            lanePattern[ln] = -1;             // a one-shot owns no lane time
+                            triggerPad (-cell - 1);
+                        }
+                        else
+                        {
+                            lanePattern[ln] = -1;             // empty: this lane rests
+                        }
+                    }
+                }
+
+                for (int ln = 0; ln < kSongLanes; ++ln)
+                {
+                    const int bank = lanePattern[ln];
+                    if (bank < 0) continue;
+                    const int len = juce::jlimit (kMinPatLen, kMaxPatLen, patternLength[(size_t) bank].load (std::memory_order_relaxed));
+                    const int off = songStep - laneStartStep[ln];
+                    if (off < 0 || off >= len) { lanePattern[ln] = -1; continue; }
+                    firePatternStep (bank, off);
+                    if (ln == 0) playingPattern.store (bank, std::memory_order_relaxed);
+                }
+
+                currentStep = songStep % kBarSteps;
+                playStep.store (currentStep, std::memory_order_relaxed);
+                return;
+            }
+
             const int prevStep = currentStep;
             const int len = juce::jlimit (kMinPatLen, kMaxPatLen, patternLength[(size_t) patternIdx].load (std::memory_order_relaxed));
             currentStep = (currentStep + 1) % len;
@@ -190,10 +252,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 playingPattern.store (patternIdx, std::memory_order_relaxed);
             }
 
-            const std::uint16_t mask = patternBank[(size_t) patternIdx][(size_t) currentStep].load (std::memory_order_relaxed);
-            for (int p = 0; p < kNumPads; ++p)
-                if ((mask & (std::uint16_t) (1u << p)) != 0)
-                    triggerPad (p, (int) stepNote[(size_t) patternIdx][(size_t) currentStep][(size_t) p].load (std::memory_order_relaxed));
+            firePatternStep (patternIdx, currentStep);
             playStep.store (currentStep, std::memory_order_relaxed);
         };
 

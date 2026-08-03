@@ -29,6 +29,23 @@ public:
     static constexpr int kNumPatterns   = 8;    // pattern banks
     static constexpr int kMaxChain      = 16;   // chain slots (pattern indices, in play order)
 
+    //  --- Song / playlist -------------------------------------------------
+    //  The chain was one queue of banks: a track in a straight line. A song is
+    //  a TIMELINE — several lanes running at once, each holding either a
+    //  pattern (which occupies as many bars as its own length needs) or a
+    //  single sample fired at that bar. That is what lets a break, a vocal
+    //  one-shot and a drum pattern all land on bar 9 together.
+    static constexpr int kSongLanes = 4;
+    static constexpr int kSongBars  = 64;
+    static constexpr int kBarSteps  = 16;
+
+    //  Cell encoding, kept as one int so the audio thread reads it atomically:
+    //     0            empty
+    //     1..8         a pattern STARTS here (value = bank + 1)
+    //     -(pad+1)     a one-shot: fire this pad at the top of the bar
+    //     kContinued   this bar is still covered by a pattern started earlier
+    static constexpr int kContinued = 1000;
+
     AudioEngine();
     ~AudioEngine();
 
@@ -114,6 +131,27 @@ public:
     int  getChainLength() const noexcept { return chainLength.load (std::memory_order_relaxed); }
     int  getChainSlot (int i) const noexcept { return (i >= 0 && i < kMaxChain) ? chainSlots[(size_t) i].load (std::memory_order_relaxed) : 0; }
     int  getPlayingPattern() const noexcept { return playingPattern.load (std::memory_order_relaxed); }
+
+    // --- Song / playlist (message thread) --------------------------------
+    void setSongMode (bool on) noexcept { songMode.store (on, std::memory_order_relaxed); }
+    bool isSongMode() const noexcept    { return songMode.load (std::memory_order_relaxed); }
+    void setSongCell (int lane, int bar, int value) noexcept
+    {
+        if (lane < 0 || lane >= kSongLanes || bar < 0 || bar >= kSongBars) return;
+        songCell[(size_t) lane][(size_t) bar].store (value, std::memory_order_relaxed);
+    }
+    int getSongCell (int lane, int bar) const noexcept
+    {
+        if (lane < 0 || lane >= kSongLanes || bar < 0 || bar >= kSongBars) return 0;
+        return songCell[(size_t) lane][(size_t) bar].load (std::memory_order_relaxed);
+    }
+    void clearSong() noexcept
+    {
+        for (auto& lane : songCell) for (auto& c : lane) c.store (0, std::memory_order_relaxed);
+    }
+    void setSongLength (int bars) noexcept { songBars.store (juce::jlimit (1, kSongBars, bars), std::memory_order_relaxed); }
+    int  getSongLength() const noexcept    { return songBars.load (std::memory_order_relaxed); }
+    int  getSongBar() const noexcept       { return songBar.load (std::memory_order_relaxed); }
 
     // --- Piano roll: per-step semitone offset from the pad's own pitch ---
     //  (message thread). Lets one pad's sample play a melody across the
@@ -238,6 +276,16 @@ private:
 
     // Piano roll: per-(pattern, step, pad) semitone offset from the pad's own pitch.
     std::array<std::array<std::array<std::atomic<std::int8_t>, kNumPads>, kNumSteps>, kNumPatterns> stepNote {};
+
+    // Song / playlist.
+    std::atomic<bool> songMode { false };
+    std::array<std::array<std::atomic<int>, kSongBars>, kSongLanes> songCell {};
+    std::atomic<int> songBars { 8 };      // how many bars the song is long
+    std::atomic<int> songBar  { -1 };     // live playhead bar, for the UI
+    // Audio-thread only: what each lane is currently running.
+    int  lanePattern[kSongLanes] { -1, -1, -1, -1 };
+    int  laneStartStep[kSongLanes] { 0, 0, 0, 0 };
+    int  songStep = 0;                    // absolute step within the song
 
     // Recording.
     std::atomic<bool> recording { false };

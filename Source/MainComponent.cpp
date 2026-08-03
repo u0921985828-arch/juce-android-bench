@@ -661,6 +661,134 @@ MainComponent::MainComponent()
     };
     addAndMakeVisible (mixButton);
 
+    //  SONG: the arrangement. Pick a block from the palette, tap a bar to
+    //  place it, tap it again to clear.
+    for (int i = 0; i < kNumPatterns; ++i)
+    {
+        auto* b = new juce::TextButton ("P" + juce::String (i + 1));
+        styleButton (*b, kStepOff);
+        b->setColour (juce::TextButton::buttonOnColourId, Zati::colour (i));
+        b->setClickingTogglesState (true);
+        b->onClick = [this, i] { songBrush = i + 1; refreshSong(); };
+        songSheet.addAndMakeVisible (b);
+        songPatBtns.add (b);
+    }
+    songPatBtns[0]->setToggleState (true, juce::dontSendNotification);
+
+    styleButton (songPadModeBtn, kStepOff);
+    songPadModeBtn.setColour (juce::TextButton::buttonOnColourId, kAccent);
+    songPadModeBtn.setClickingTogglesState (true);
+    songPadModeBtn.onClick = [this]
+    {
+        // The selected pad becomes the brush: a one-shot dropped on a bar.
+        songBrush = songPadModeBtn.getToggleState() ? -(juce::jmax (0, selectedPad) + 1) : 1;
+        refreshSong();
+    };
+    songSheet.addAndMakeVisible (songPadModeBtn);
+
+    styleButton (songClearBtn, kStepOff);
+    songClearBtn.setColour (juce::TextButton::buttonOnColourId, ZatiColours::red);
+    songClearBtn.setClickingTogglesState (true);
+    songClearBtn.onClick = [this] { songBrush = songClearBtn.getToggleState() ? 0 : 1; refreshSong(); };
+    songSheet.addAndMakeVisible (songClearBtn);
+
+    styleButton (songModeBtn, kStepOff);
+    songModeBtn.setColour (juce::TextButton::buttonOnColourId, kAccent);
+    songModeBtn.setClickingTogglesState (true);
+    songModeBtn.onClick = [this]
+    {
+        engine.setSongMode (songModeBtn.getToggleState());
+        status.setText (songModeBtn.getToggleState() ? "PLAY toca la cancion"
+                                                     : "PLAY toca el patron / la cadena",
+                        juce::dontSendNotification);
+    };
+    songSheet.addAndMakeVisible (songModeBtn);
+
+    songLenSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    songLenSlider.setRange (1.0, (double) AudioEngine::kSongBars, 1.0);
+    songLenSlider.setValue (8.0, juce::dontSendNotification);
+    songLenSlider.setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
+    songLenSlider.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
+    songLenSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+    songLenSlider.setColour (juce::Slider::trackColourId, kAccent);
+    songLenSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 64, Metrics::chip);
+    songLenSlider.textFromValueFunction = [] (double v) { return juce::String ((int) v) + " comp"; };
+    songLenSlider.updateText();
+    songLenSlider.onValueChange = [this]
+    {
+        engine.setSongLength ((int) songLenSlider.getValue());
+        resized(); refreshSong();
+    };
+    songSheet.addAndMakeVisible (songLenSlider);
+
+    for (int i = 0; i < AudioEngine::kSongBars / Playlist::kBarsView; ++i)
+    {
+        auto* b = new juce::TextButton (juce::String (i * Playlist::kBarsView + 1));
+        styleButton (*b, kStepOff);
+        b->setColour (juce::TextButton::buttonOnColourId, kAccent);
+        b->setClickingTogglesState (true);
+        b->onClick = [this, i]
+        {
+            songPage = i;
+            for (int k = 0; k < songPageBtns.size(); ++k)
+                songPageBtns[k]->setToggleState (k == i, juce::dontSendNotification);
+            refreshSong();
+        };
+        songSheet.addAndMakeVisible (b);
+        songPageBtns.add (b);
+    }
+    songPageBtns[0]->setToggleState (true, juce::dontSendNotification);
+
+    songGrid.onCell = [this] (int lane, int bar)
+    {
+        // Placing a pattern claims as many bars as its length needs; the tail
+        // bars are marked as continuation so the block reads as one thing.
+        if (songBrush == 0 || engine.getSongCell (lane, bar) != 0)
+        {
+            // Clear this block, tail included.
+            int start = bar;
+            while (start > 0 && engine.getSongCell (lane, start) == AudioEngine::kContinued) --start;
+            engine.setSongCell (lane, start, 0);
+            for (int b = start + 1; b < engine.getSongLength(); ++b)
+            {
+                if (engine.getSongCell (lane, b) != AudioEngine::kContinued) break;
+                engine.setSongCell (lane, b, 0);
+            }
+        }
+        else if (songBrush > 0)
+        {
+            const int bank = songBrush - 1;
+            const int bars = juce::jmax (1, (engine.getPatternLength (bank) + AudioEngine::kBarSteps - 1) / AudioEngine::kBarSteps);
+            engine.setSongCell (lane, bar, songBrush);
+            for (int b = bar + 1; b < bar + bars && b < engine.getSongLength(); ++b)
+                engine.setSongCell (lane, b, AudioEngine::kContinued);
+        }
+        else
+        {
+            engine.setSongCell (lane, bar, songBrush);      // one-shot
+        }
+        refreshSong();
+    };
+    songSheet.addAndMakeVisible (songGrid);
+
+    styleButton (songCloseButton, kKey);
+    songCloseButton.onClick = [this] { closeAllSheets(); };
+    songSheet.addAndMakeVisible (songCloseButton);
+    addAndMakeVisible (songSheet);
+    songSheet.setVisible (false);
+    songSheet.onDismiss = [this] { closeAllSheets(); };
+    songSheet.paintContent = [this] (juce::Graphics& g) { paintSongSheetContent (g); };
+
+    styleButton (songButton, kKey);
+    songButton.setColour (juce::TextButton::buttonOnColourId, kAccent);
+    songButton.onClick = [this]
+    {
+        if (songSheet.isVisible()) { closeAllSheets(); return; }
+        openSheet (songSheet, songButton);
+        refreshSong();
+    };
+    addAndMakeVisible (songButton);
+
     addAndMakeVisible (waveform);
 
     // ZATI badge in the header: taps cycle the 4 accent skins.
@@ -1029,9 +1157,9 @@ void MainComponent::openSheet (Sheet& s, juce::TextButton& toggle)
 
 void MainComponent::closeAllSheets()
 {
-    juce::TextButton* mb[4] = { &padsButton, &secButton, &fxOpenButton, &mixButton };
-    Sheet*            sh[4] = { &padSheet, &seqSheet, &fxSheet, &mixSheet };
-    for (int i = 0; i < 4; ++i)
+    juce::TextButton* mb[5] = { &padsButton, &secButton, &fxOpenButton, &mixButton, &songButton };
+    Sheet*            sh[5] = { &padSheet, &seqSheet, &fxSheet, &mixSheet, &songSheet };
+    for (int i = 0; i < 5; ++i)
     {
         mb[i]->setToggleState (false, juce::dontSendNotification);
         sh[i]->setVisible (false);
@@ -1564,7 +1692,7 @@ void MainComponent::resized()
     // width-bound squares) — the screen is the protagonist.
     int screenH;
     {
-        const int chromeBelow = 16 + 4 + 16 + 8 + 44 + 8 + 18 + 6;   // VU + strip + the single module/transport row + status          // gaps + module bar + transport + status
+        const int chromeBelow = 16 + 4 + 16 + 8 + 32 + 4 + 44 + 8 + 18 + 6;   // VU + strip + module bar + transport + status          // gaps + module bar + transport + status
         const int cell = (area.getWidth() - 3 * 8) / 4;                // square pad cells, 4 cols, gap 8
         const int bodyNeed = 16 + 4 + 88 + 8                            // chip readout + CTRL knobs
                            + 4 + 32 + 8                                // + FX slot row
@@ -1589,22 +1717,22 @@ void MainComponent::resized()
     stepStripArea = area.removeFromTop (Metrics::lg).reduced (2, 0);
     area.removeFromTop (Metrics::sm);
 
-    //  Modules and transport share ONE row. Two stacked rows of near-identical
-    //  caps were the heaviest thing on the face and read as one big menu; the
-    //  freed 48px goes to the pads. They still read as two kinds of control:
-    //  the module tabs are a tight segmented group (1px apart, inset) while
-    //  the transport keeps separated caps and PLAY keeps the accent.
-    tabBarArea = area.removeFromTop (Metrics::btn);
+    //  Six modules and three transport keys will not fit across a phone in one
+    //  row: LOAD came out as "LO...". They split again, but the module bar
+    //  stays slim at 32 while the transport keeps its full 44 — the original
+    //  complaint was that the menu was as heavy as PLAY, and that still holds.
+    tabBarArea = area.removeFromTop (Metrics::tab);
     {
-        auto row  = tabBarArea;
-        auto mods = row.removeFromLeft ((int) (row.getWidth() * 0.60f));
-        row.removeFromLeft (Metrics::md);                 // air between the groups
+        auto row = tabBarArea;
+        juce::TextButton* mb[6] = { &padsButton, &secButton, &songButton, &mixButton, &fxOpenButton, &setButton };
+        const int w = row.getWidth() / 6;
+        for (int i = 0; i < 6; ++i)
+            mb[i]->setBounds ((i < 5 ? row.removeFromLeft (w) : row).reduced (1, 0));
+    }
+    area.removeFromTop (Metrics::xs);
 
-        juce::TextButton* mb[5] = { &padsButton, &secButton, &mixButton, &fxOpenButton, &setButton };
-        const int w = mods.getWidth() / 5;
-        for (int i = 0; i < 5; ++i)
-            mb[i]->setBounds ((i < 4 ? mods.removeFromLeft (w) : mods).reduced (1, 0));
-
+    {
+        auto row = area.removeFromTop (Metrics::btn);
         const int u = row.getWidth() / 4;
         loadButton.setBounds (row.removeFromLeft (u).reduced (2, 0));
         recButton.setBounds  (row.removeFromLeft (u).reduced (2, 0));
@@ -1768,6 +1896,52 @@ void MainComponent::resized()
         inner.removeFromBottom (8);
 
         projList.setBounds (inner);
+    }
+
+    // SONG sheet: palette, timeline, page row.
+    {
+        const int laneH = 40;
+        auto inner = sheetFromBottom (songSheet, 32 + Metrics::xl * 2 + Metrics::sm * 3
+                                                  + Playlist::kLanes * laneH + Metrics::xl + Metrics::btn);
+        auto titleRow = inner.removeFromTop (32);
+        songCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
+
+        // Palette: P1..P8.
+        {
+            auto row = inner.removeFromTop (Metrics::xl);
+            const int w = row.getWidth() / kNumPatterns;
+            for (int i = 0; i < kNumPatterns; ++i)
+                songPatBtns[i]->setBounds ((i < kNumPatterns - 1 ? row.removeFromLeft (w) : row).reduced (1, 0));
+            inner.removeFromTop (Metrics::xs);
+        }
+        // Brush modes + song mode.
+        {
+            auto row = inner.removeFromTop (Metrics::xl);
+            const int w = row.getWidth() / 3;
+            songPadModeBtn.setBounds (row.removeFromLeft (w).reduced (2, 0));
+            songClearBtn.setBounds   (row.removeFromLeft (w).reduced (2, 0));
+            songModeBtn.setBounds    (row.reduced (2, 0));
+            inner.removeFromTop (Metrics::sm);
+        }
+
+        auto bottom = inner.removeFromBottom (Metrics::btn);
+        songLenSlider.setBounds (bottom.reduced (3, 6));
+        inner.removeFromBottom (Metrics::xs);
+
+        auto pageRow = inner.removeFromBottom (Metrics::xl);
+        {
+            const int n = songPageBtns.size();
+            const int w = pageRow.getWidth() / juce::jmax (1, n);
+            for (int i = 0; i < n; ++i)
+            {
+                const bool used = i * Playlist::kBarsView < engine.getSongLength();
+                songPageBtns[i]->setVisible (used);
+                songPageBtns[i]->setBounds ((i < n - 1 ? pageRow.removeFromLeft (w) : pageRow).reduced (1, 0));
+            }
+        }
+        inner.removeFromBottom (Metrics::xs);
+
+        songGrid.setBounds (inner);
     }
 
     // MIX sheet: sixteen channel strips.
@@ -2331,6 +2505,20 @@ void MainComponent::ProjectList::paintListBoxItem (int row, juce::Graphics& g, i
 juce::ValueTree MainComponent::captureState() const
 {
     juce::ValueTree s ("ZATI");
+    {
+        // The arrangement is the track. Stored as one row of ints per lane.
+        juce::ValueTree song ("song");
+        song.setProperty ("bars", engine.getSongLength(), nullptr);
+        song.setProperty ("mode", engine.isSongMode(), nullptr);
+        for (int lane = 0; lane < Playlist::kLanes; ++lane)
+        {
+            juce::String row;
+            for (int b = 0; b < AudioEngine::kSongBars; ++b)
+                row += juce::String (engine.getSongCell (lane, b)) + (b + 1 < AudioEngine::kSongBars ? "," : "");
+            song.setProperty ("lane" + juce::String (lane), row, nullptr);
+        }
+        s.addChild (song, -1, nullptr);
+    }
     s.setProperty ("version", 1, nullptr);
     s.setProperty ("bpm", bpmSlider.getValue(), nullptr);
     s.setProperty ("skin", ZatiColours::currentSkin, nullptr);
@@ -2508,6 +2696,24 @@ void MainComponent::applyState (const juce::ValueTree& s)
     engine.setEditPattern (selectedPattern);
     lengthSlider.setValue (engine.getPatternLength (selectedPattern), juce::dontSendNotification);
 
+    if (auto song = s.getChildWithName ("song"); song.isValid())
+    {
+        engine.clearSong();
+        engine.setSongLength ((int) song.getProperty ("bars", 8));
+        songLenSlider.setValue ((double) engine.getSongLength(), juce::dontSendNotification);
+        const bool sm = (bool) song.getProperty ("mode", false);
+        engine.setSongMode (sm);
+        songModeBtn.setToggleState (sm, juce::dontSendNotification);
+        for (int lane = 0; lane < Playlist::kLanes; ++lane)
+        {
+            auto toks = juce::StringArray::fromTokens (song.getProperty ("lane" + juce::String (lane)).toString(), ",", "");
+            for (int b = 0; b < juce::jmin (toks.size(), AudioEngine::kSongBars); ++b)
+                engine.setSongCell (lane, b, toks[b].getIntValue());
+        }
+        songPage = 0;
+        refreshSong();
+    }
+
     setMacroBank ((int) s.getProperty ("macroBank", 0));
     for (int i = 0; i < kNumPads; ++i)
         if (mixFaders[i] != nullptr) mixFaders[i]->setValue (padGain[(size_t) i], juce::dontSendNotification);
@@ -2668,6 +2874,42 @@ void MainComponent::refreshProjectList()
 
 //  Each strip is named the way the pad is: its colour, its number, its sample.
 //  A mixer that says "01..16" and nothing else makes you count pads.
+//  Feed the timeline from the engine and keep the palette honest about which
+//  brush is loaded — placing the wrong block is the easiest mistake here.
+void MainComponent::refreshSong()
+{
+    const int bars = engine.getSongLength();
+    for (int lane = 0; lane < Playlist::kLanes; ++lane)
+        for (int b = 0; b < bars; ++b)
+            songCells[lane * bars + b] = engine.getSongCell (lane, b);
+
+    for (int i = 0; i < songPatBtns.size(); ++i)
+        songPatBtns[i]->setToggleState (songBrush == i + 1, juce::dontSendNotification);
+    songPadModeBtn.setToggleState (songBrush < 0, juce::dontSendNotification);
+    songClearBtn.setToggleState   (songBrush == 0, juce::dontSendNotification);
+    songPadModeBtn.setButtonText (songBrush < 0
+        ? "SONIDO " + juce::String (-songBrush).paddedLeft ('0', 2) : juce::String ("SONIDO"));
+
+    songGrid.setSource (songCells, gridZati, bars, songPage,
+                        engine.isSongMode() && engine.isPlaying() ? engine.getSongBar() : -1);
+    songSheet.repaint();
+}
+
+void MainComponent::paintSongSheetContent (juce::Graphics& g)
+{
+    if (songSheet.sheetBounds.isEmpty()) return;
+    g.setColour (ZatiColours::ink.withAlpha (0.9f));
+    g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
+    g.drawText ("SONG", songSheet.sheetBounds.reduced (14, 10).removeFromTop (16), juce::Justification::centredLeft);
+
+    g.setColour (ZatiColours::inkDim);
+    g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
+    const juce::String hint = songBrush == 0 ? "toca un bloque para borrarlo"
+                            : songBrush < 0  ? "toca un compas para soltar el sonido"
+                                             : "toca un compas para poner el patron";
+    g.drawText (hint, songSheet.sheetBounds.reduced (14, 10).removeFromTop (16), juce::Justification::centredRight);
+}
+
 void MainComponent::paintMixSheetContent (juce::Graphics& g)
 {
     if (mixSheet.sheetBounds.isEmpty()) return;
@@ -2923,6 +3165,7 @@ void MainComponent::timerCallback()
     // Sequencer step colours (flat fill only — see paintOverChildren() for
     // The grid reads the pattern straight from our mirror; just refresh it.
     refreshStepGrid();
+    if (songSheet.isVisible() && engine.isPlaying()) refreshSong();
 
     const int prevPlayStep = lastPlayStep;
     lastPlayStep = ps;

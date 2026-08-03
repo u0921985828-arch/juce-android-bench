@@ -9,6 +9,7 @@
 #include "PadButton.h"
 #include "ProjectStore.h"
 #include "StepGrid.h"
+#include "Playlist.h"
 
 // ============================================================================
 //  MainComponent — ZATI: a 16-pad matrix whose fragments carry the colour, an
@@ -53,7 +54,7 @@ private:
                 onDismiss();
         }
     };
-    Sheet padSheet, seqSheet, fxSheet, browseSheet, projSheet, mixSheet;
+    Sheet padSheet, seqSheet, fxSheet, browseSheet, projSheet, mixSheet, songSheet;
     void openSheet (Sheet& s, juce::TextButton& toggle);
     void closeAllSheets();
     void paintSeqSheetContent (juce::Graphics& g);
@@ -62,6 +63,7 @@ private:
     void paintBrowseSheetContent (juce::Graphics& g);
     void paintProjSheetContent (juce::Graphics& g);
     void paintMixSheetContent (juce::Graphics& g);
+    void paintSongSheetContent (juce::Graphics& g);
 
     // --- Projects ---------------------------------------------------------
     //  The whole machine (pads + their samples, the 8 pattern banks, the
@@ -169,6 +171,23 @@ private:
     juce::TextButton secButton   { "SEC" };
     juce::TextButton fxOpenButton   { "FX" };
     juce::TextButton mixButton      { "MIX" };   // the 16-channel mixer sheet
+    juce::TextButton songButton     { "SONG" };  // the arrangement timeline
+
+    //  SONG: pick what to place from the palette, then tap a cell. Choosing
+    //  first and placing second beats drag-and-drop on a phone — a drag from a
+    //  palette to a 20px cell is a gesture you lose halfway.
+    Playlist songGrid;
+    juce::OwnedArray<juce::TextButton> songPatBtns;   // P1..P8
+    juce::TextButton songPadModeBtn { "SONIDO" };     // place a one-shot instead
+    juce::TextButton songClearBtn   { "VACIAR" };
+    juce::TextButton songModeBtn    { "CANCION" };    // song transport vs pattern/chain
+    juce::TextButton songCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
+    juce::Slider     songLenSlider;
+    juce::OwnedArray<juce::TextButton> songPageBtns;
+    int songBrush   = 1;      // >0 pattern bank+1, <0 -(pad+1), 0 = eraser
+    int songPage    = 0;
+    int songCells[Playlist::kLanes * AudioEngine::kSongBars] {};
+    void refreshSong();
     juce::TextButton setButton      { "SET" };   // skins + proyectos (spec: SET)
     juce::TextButton seqCloseButton   { juce::CharPointer_UTF8 ("\xc3\x97") },
                      padCloseButton   { juce::CharPointer_UTF8 ("\xc3\x97") },
