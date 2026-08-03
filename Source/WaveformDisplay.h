@@ -67,7 +67,11 @@ public:
                                                  ShardColours::screenBg, b.getCentreX(), b.getBottom(), false));
         g.fillRoundedRectangle (b, 2.0f);
 
-        const auto lcdFg = ShardColours::lcdFg, lcdDim = ShardColours::lcdDim, accent = ShardColours::accent;
+        const auto lcdFg = ShardColours::lcdFg, lcdDim = ShardColours::lcdDim;
+        // Fallback trace when nothing carries a zati yet: the LCD's own
+        // foreground, so an un-chopped sample stays achromatic like the rest
+        // of the chassis instead of borrowing a hue it has not earned.
+        const auto accent = ShardColours::lcdFg;
 
         if (sample == nullptr || mins.isEmpty())
         {

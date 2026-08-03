@@ -44,7 +44,7 @@ public:
         juce::Colour idxCol = loaded ? ShardColours::ink.withAlpha (0.92f)
                                      : ShardColours::ink.withAlpha (0.30f);
         juce::Colour nmCol  = ShardColours::inkDim;
-        juce::Colour sparkCol = loaded ? frag.darker (0.35f) : ShardColours::accent.withAlpha (0.55f);
+        juce::Colour sparkCol = loaded ? frag.darker (0.35f) : ShardColours::ink.withAlpha (0.30f);
         bool onAccent = false;
 
         if (playing || flash > 0.55f)
@@ -112,22 +112,22 @@ public:
         g.drawText (loaded ? padName.toUpperCase() : juce::String (juce::CharPointer_UTF8 ("\xe2\x80\x94")),
                     r.reduced (10.0f, 7.0f).removeFromBottom (12.0f), juce::Justification::bottomLeft, true);
 
-        // Border / selection.
+        // Border, then focus. A loaded pad's border is its zati; focus is a
+        // second, achromatic ring outside it, so selection never overwrites
+        // the fragment's colour with the chassis tone.
+        g.setColour (edge);
+        g.drawRoundedRectangle (r.reduced (0.5f), rad, loaded ? 2.0f : 1.2f);
+
         if (selected && ! onAccent)
         {
-            g.setColour (ShardColours::accent);
-            g.drawRoundedRectangle (r.reduced (0.6f), rad, 1.6f);
-        }
-        else
-        {
-            g.setColour (edge);
-            g.drawRoundedRectangle (r.reduced (0.5f), rad, 1.2f);
+            g.setColour (ShardColours::ink.withAlpha (0.85f));
+            g.drawRoundedRectangle (r.reduced (2.4f), juce::jmax (1.0f, rad - 1.5f), 1.4f);
         }
 
-        // Playing glow ring.
+        // Playing: brighten the pad's own colour rather than adding another.
         if (playing)
         {
-            g.setColour (ShardColours::accentBright.withAlpha (0.5f));
+            g.setColour ((loaded ? frag : ShardColours::ink).brighter (0.45f).withAlpha (0.6f));
             g.drawRoundedRectangle (r.reduced (0.6f), rad, 1.8f);
         }
     }

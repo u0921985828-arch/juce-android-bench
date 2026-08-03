@@ -10,9 +10,10 @@
 #include "ProjectStore.h"
 
 // ============================================================================
-//  MainComponent — COLORS UI (P1): 16-pad matrix, per-pad controls (pitch, vol,
-//  trim, reverse, loop), waveform, a 16-step sequencer with BPM, and mic
-//  recording. Original high-contrast look (no SP-404 skin).
+//  MainComponent — ZATI: a 16-pad matrix whose fragments carry the colour, an
+//  achromatic chassis, a hero waveform that maps the whole cut, a variable
+//  sequencer with pattern banks and chaining, per-pad settings, master FX and
+//  self-contained projects.
 // ============================================================================
 class MainComponent : public juce::AudioAppComponent,
                       private juce::Timer,
@@ -177,8 +178,8 @@ private:
     void refreshMacroValues();
     void macroMoved (int idx);
 
-    // COLORS badge = skin cycler (AZUL/ROJO/AMARILLO/TINTA accent colorways).
-    juce::TextButton skinButton { "COLORS" };
+    // Skin cycler: four chassis TONES (TINTA/GRAFITO/ACERO/PLOMO), no hues.
+    juce::TextButton skinButton { "SKIN" };
     void applySkin();
 
     juce::TextButton loadButton { "LOAD" };

@@ -20,11 +20,15 @@ namespace
 
     // Cycle the 3 primaries across the 8 pattern banks so each has its own
     // colour identity in the chain-include row.
+    // Pattern banks are told apart by TONE, not hue: the chassis carries no
+    // colour of its own, so three steps of ink stand in for what used to be
+    // three primaries. Re-read every call — the skin shifts the base tone.
     juce::Colour patternRowColour (int idx)
     {
-        // Not static: accent is skin-mutable, so re-read it on every call.
-        const juce::Colour primaries[3] = { ShardColours::accent, ShardColours::red, ShardColours::yellow };
-        return primaries[(size_t) (idx % 3)];
+        const juce::Colour tones[3] = { ShardColours::accent,
+                                        ShardColours::accent.brighter (0.60f),
+                                        ShardColours::accent.brighter (1.25f) };
+        return tones[(size_t) (idx % 3)];
     }
 }
 
@@ -504,8 +508,8 @@ MainComponent::MainComponent()
 
     // COLORS badge in the header: taps cycle the 4 accent skins.
     skinButton.setColour (juce::TextButton::buttonColourId, ShardColours::screenBg);
-    skinButton.setColour (juce::TextButton::textColourOffId, ShardColours::accentBright);
-    skinButton.setColour (juce::TextButton::textColourOnId,  ShardColours::accentBright);
+    skinButton.setColour (juce::TextButton::textColourOffId, ShardColours::lcdFg);
+    skinButton.setColour (juce::TextButton::textColourOnId,  ShardColours::lcdFg);
     skinButton.onClick = [this]
     {
         ShardColours::setSkin (ShardColours::currentSkin + 1);
@@ -573,10 +577,10 @@ void MainComponent::applySkin()
     styleButton (browseLoadButton, acc);
     browseLoadButton.setColour (juce::TextButton::textColourOffId, onTxt);
 
-    skinButton.setButtonText (juce::String ("COLORS ") + juce::String::charToString ((juce::juce_wchar) 0x00B7)
+    skinButton.setButtonText (juce::String ("SKIN ") + juce::String::charToString ((juce::juce_wchar) 0x00B7)
                               + " " + ShardColours::skinName (ShardColours::currentSkin));
-    skinButton.setColour (juce::TextButton::textColourOffId, ShardColours::accentBright);
-    skinButton.setColour (juce::TextButton::textColourOnId,  ShardColours::accentBright);
+    skinButton.setColour (juce::TextButton::textColourOffId, ShardColours::lcdFg);
+    skinButton.setColour (juce::TextButton::textColourOnId,  ShardColours::lcdFg);
 
     repaint();
 }

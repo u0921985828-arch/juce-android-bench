@@ -4,17 +4,23 @@
 #include "BinaryData.h"
 
 // ============================================================================
-//  ShardLookAndFeel — ARTiFACTS design system (COLORS skin).
-//  White + grey base, flat square-ish caps (no gradient/bevel), the three
-//  primaries — blue/red/yellow — as the only accent colours (blue is the
-//  default "main" one), dark knobs with a blue position dot, a dark LCD with
-//  warm grey text. A toy-sampler look, powerful underneath. All components
-//  read tokens (ShardColours) — no hardcoded colour in components. Fonts:
-//  Oswald/JetBrains Mono, bundled.
+//  ShardLookAndFeel — ARTiFACTS design system (ZATI chassis).
+//
+//  The chassis is deliberately ACHROMATIC: white and greys, flat square-ish
+//  caps (no gradient, no bevel), dark knobs, a dark LCD with warm grey text.
+//  An active control announces itself by TONE — a near-black cap with light
+//  text — never by hue.
+//
+//  That restraint is the point. All hue in this instrument belongs to the
+//  zati fragment system (see Zati.h); if a pressed button or an armed effect
+//  also glowed in a colour, it would compete with the fragments for the same
+//  meaning and "one colour per zati" would stop being readable.
+//
+//  All components read tokens from ShardColours — no hardcoded colour in a
+//  component. Fonts: Oswald/JetBrains Mono, bundled.
 // ============================================================================
 namespace ShardColours
 {
-    //  ARTiFACTS skin: COLORS — white/grey base, three primary accents.
 
     // --- Chassis / structure (white + grey) ---
     const juce::Colour chassisTop { 0xffffffff };
@@ -28,24 +34,32 @@ namespace ShardColours
     const juce::Colour keyLit     { 0xffd4d4cc };
     const juce::Colour screw      { 0xffb4b4ac };
 
-    // --- Accent / semantic — the three primaries + white/grey base ---
-    //  The accent set is MUTABLE: COLORS ships 4 skins (AZUL / ROJO /
-    //  AMARILLO / TINTA) that swap only the accent colour — the white/grey
-    //  chassis and the semantic red/yellow stay fixed. Components read these
-    //  at paint time, so setSkin() + a full repaint restyles the machine.
-    inline juce::Colour amber       { 0xff2f6fed };   // = accent (name kept for compat)
-    inline juce::Colour amberBright { 0xff5f92f4 };
-    inline juce::Colour amberDim    { 0xff1f52b8 };
-    inline juce::Colour accent      { 0xff2f6fed };   // preferred names
-    inline juce::Colour accentBright{ 0xff5f92f4 };
-    inline juce::Colour accentDim   { 0xff1f52b8 };
-    const juce::Colour red        { 0xffe0222c };   // true red — REC / destructive
-    const juce::Colour yellow     { 0xfff0b400 };   // true yellow — selection / highlight
+    // --- Accent / semantic ------------------------------------------------
+    //  The chassis is MONOCHROME on purpose. Hue belongs to the zati fragment
+    //  system and nothing else: if a pressed button or an armed effect also
+    //  glowed in a colour, that colour would compete with the fragments for
+    //  the same meaning and the "one colour per zati" rule would stop reading.
+    //  So an active control states itself with TONE — a near-black cap with
+    //  light text — never with a hue.
+    //
+    //  Still mutable, because the skins shift that tone (see setSkin).
+    inline juce::Colour amber       { 0xff1f1f1d };   // = accent (name kept for compat)
+    inline juce::Colour amberBright { 0xff44443f };
+    inline juce::Colour amberDim    { 0xff0d0d0c };
+    inline juce::Colour accent      { 0xff1f1f1d };   // preferred names
+    inline juce::Colour accentBright{ 0xff44443f };
+    inline juce::Colour accentDim   { 0xff0d0d0c };
+
+    //  The only two hues left in the chassis, and both are strictly semantic,
+    //  never decorative: red = recording / live playhead, yellow = the step
+    //  picked for editing. Neither is ever used to make something look nice.
+    const juce::Colour red        { 0xffe0222c };
+    const juce::Colour yellow     { 0xfff0b400 };
 
     inline int currentSkin = 0;
     inline const char* skinName (int i)
     {
-        static const char* names[4] = { "AZUL", "ROJO", "AMARILLO", "TINTA" };
+        static const char* names[4] = { "TINTA", "GRAFITO", "ACERO", "PLOMO" };
         return names[((i % 4) + 4) % 4];
     }
     const juce::Colour ink        { 0xff1c1c1a };   // primary text on white/grey
@@ -60,21 +74,24 @@ namespace ShardColours
     const juce::Colour lcdFg      { 0xffe6e6e2 };
     const juce::Colour lcdDim     { 0xff5c5c56 };
 
-    // --- Pads (white/grey flat, accent when loaded) ---
+    // --- Pads (neutral when empty; a loaded pad wears its zati colour) ---
     const juce::Colour padTop     { 0xffe3e3dd };
     const juce::Colour padBg2     { 0xffeeeeea };
     const juce::Colour padBorder  { 0xffd0d0c8 };
-    inline juce::Colour padLit    { 0xff2f6fed };   // follows the skin accent
+    inline juce::Colour padLit    { 0xff1f1f1d };   // follows the skin tone
 
+    //  Skins move the chassis TONE, not its hue. Four steps of ink, from
+    //  near-black to a mid grey, so an active control reads at whatever
+    //  contrast the room needs without ever borrowing a fragment's colour.
     inline void setSkin (int i)
     {
         currentSkin = ((i % 4) + 4) % 4;
         struct S { juce::uint32 a, ab, ad; };
         static constexpr S skins[4] = {
-            { 0xff2f6fed, 0xff5f92f4, 0xff1f52b8 },   // AZUL     (default)
-            { 0xffe0222c, 0xffef5a62, 0xffab141c },   // ROJO
-            { 0xffdda400, 0xfff5c832, 0xffa87d00 },   // AMARILLO (darkened for contrast)
-            { 0xff2b2b28, 0xff55554f, 0xff101010 },   // TINTA    (near-black)
+            { 0xff1f1f1d, 0xff44443f, 0xff0d0d0c },   // TINTA   (default, near-black)
+            { 0xff333330, 0xff5b5b55, 0xff1c1c1a },   // GRAFITO
+            { 0xff4a4a45, 0xff70706a, 0xff2e2e2b },   // ACERO
+            { 0xff62625c, 0xff8a8a83, 0xff424240 },   // PLOMO
         };
         const auto s = skins[currentSkin];
         amber = accent = padLit    = juce::Colour (s.a);
@@ -269,12 +286,17 @@ public:
         g.setColour (base);
         g.fillRoundedRectangle (r, rad);
 
-        // Border: accent when lit/triggered, otherwise a soft hairline.
-        const float accentHue = ShardColours::amber.getHue();
-        const bool accenty = std::abs (base.getHue() - accentHue) < 0.06f && base.getSaturation() > 0.28f;
-        if (on || accenty)
+        // Border. The old test sniffed the cap's HUE to decide whether it was
+        // "accented" — meaningless now that the accent is monochrome, so it
+        // compares against the accent tone directly. And the border must
+        // contrast with the cap it sits on: for an active (near-black) cap
+        // that means a LIGHT hairline, not a darker one.
+        const bool accented = (base == ShardColours::accent || base == ShardColours::accentDim);
+        if (on || accented)
         {
-            g.setColour (ShardColours::amberBright.withAlpha (0.9f));
+            const bool darkCap = base.getPerceivedBrightness() < 0.5f;
+            g.setColour (darkCap ? ShardColours::inkLight.withAlpha (0.55f)
+                                 : juce::Colours::black.withAlpha (0.55f));
             g.drawRoundedRectangle (r.reduced (0.6f), rad, 1.4f);
         }
         else
