@@ -228,14 +228,27 @@ public:
         }
 
         // readouts
-        g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.08f));
+        const auto infoFont = ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.08f);
+        g.setFont (infoFont);
         auto top2 = b.reduced (11.0f, 7.0f).removeFromTop (13.0f);
         g.setColour (activeColour (accent));
         g.fillEllipse (top2.getX(), top2.getCentreY() - 3.0f, 6.0f, 6.0f);
+
+        //  These two used to be drawn into the same strip, one flush left and
+        //  one flush right, which works right up until the sample is called
+        //  something long - and then the file name runs straight through the
+        //  channel count and both become unreadable. Measure the right-hand
+        //  readout, give it its room, and let the name have what is left.
+        auto nameRow = top2.withTrimmedLeft (12.0f);
+        if (infoRight.isNotEmpty())
+        {
+            auto rightRow = nameRow.removeFromRight (juce::GlyphArrangement::getStringWidth (infoFont, infoRight) + 8.0f);
+            g.setColour (lcdDim);
+            g.drawText (infoRight, rightRow, juce::Justification::topRight);
+        }
+
         g.setColour (lcdFg);
-        g.drawText (infoName, top2.withTrimmedLeft (12), juce::Justification::topLeft);
-        g.setColour (lcdDim);
-        g.drawText (infoRight, top2, juce::Justification::topRight);
+        g.drawFittedText (infoName, nameRow.toNearestInt(), juce::Justification::topLeft, 1, 0.7f);
 
         // TRIM only makes sense for a single window; on a chopped source each
         // fragment carries its own, and the text would collide with their

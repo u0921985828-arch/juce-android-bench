@@ -329,6 +329,20 @@ public:
         g.fillEllipse (tip.x - 3.0f, tip.y - 3.0f, 6.0f, 6.0f);
     }
 
+    //  The +/- caps JUCE builds for an IncDecButtons slider are plain
+    //  TextButtons wearing whatever the base look-and-feel last set, which
+    //  here came out as a dark slate cap with dark text on it - a control you
+    //  can see and cannot read. They sit against a value chip, so they take
+    //  the chip's palette and read as one unit with it.
+    juce::Button* createSliderButton (juce::Slider&, bool isIncrement) override
+    {
+        auto* b = new juce::TextButton (isIncrement ? "+" : "-", juce::String());
+        b->setColour (juce::TextButton::buttonColourId,  ZatiColours::screenBg);
+        b->setColour (juce::TextButton::textColourOffId, ZatiColours::lcdFg);
+        b->setColour (juce::TextButton::textColourOnId,  ZatiColours::lcdFg);
+        return b;
+    }
+
     // ---- Flat button cap: solid fill, thin hairline border, no gradient/bevel.
     void drawButtonBackground (juce::Graphics& g, juce::Button& b,
                                const juce::Colour& backgroundColour,
@@ -396,7 +410,20 @@ public:
 
         g.setFont (ZatiColours::monoFont (juce::jlimit (10.0f, 14.5f, (float) b.getHeight() * 0.38f), true)
                      .withExtraKerningFactor (0.06f));
-        g.setColour ((b.getToggleState() ? on : off).withMultipliedAlpha (b.isEnabled() ? 1.0f : 0.45f));
+        //  Text colour is chosen when a button is built, but the cap it lands
+        //  on can change afterwards - a button styled for a light cap and then
+        //  given a dark one for its ON state ends up with dark text on dark,
+        //  which is a label you cannot read at exactly the moment it matters.
+        //  Decide against the cap that is actually being painted.
+        const bool lit = b.getToggleState();
+        auto col = lit ? on : off;
+        const auto cap = b.findColour (lit ? juce::TextButton::buttonOnColourId
+                                           : juce::TextButton::buttonColourId);
+
+        if (std::abs (cap.getPerceivedBrightness() - col.getPerceivedBrightness()) < 0.30f)
+            col = cap.getPerceivedBrightness() < 0.5f ? ZatiColours::inkLight : ZatiColours::ink;
+
+        g.setColour (col.withMultipliedAlpha (b.isEnabled() ? 1.0f : 0.45f));
         g.drawFittedText (t, b.getLocalBounds().reduced (5, 2), juce::Justification::centred, 2, 0.9f);
     }
 

@@ -400,7 +400,7 @@ MainComponent::MainComponent()
              [this] { if (selectedPad >= 0) { padChokeUI[(size_t) selectedPad] = (int) chokeSlider.getValue(); engine.setPadChoke (selectedPad, (int) chokeSlider.getValue()); } });
     chokeSlider.setSliderStyle (juce::Slider::IncDecButtons);
     chokeSlider.setIncDecButtonsMode (juce::Slider::incDecButtonsDraggable_Vertical);
-    chokeSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 64, Metrics::chip);
+    chokeSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 56, Metrics::chip);
 
     pitchSlider.setTextValueSuffix (" st");
     attackSlider.setTextValueSuffix (" ms");
@@ -1333,9 +1333,14 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
     const int sp = juce::jmax (0, selectedPad);
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
-    g.drawText ("PAD " + juce::String (sp + 1)
-                + (padName[(size_t) sp].isNotEmpty() ? "  " + dot + "  " + padName[(size_t) sp].toUpperCase() : juce::String()),
-                padSheet.sheetBounds.reduced (14, 12).removeFromTop (16), juce::Justification::centredLeft);
+    //  The pad's name is a file name and files are named by whoever made
+    //  them, so this line has no length it can count on. Stop it before the
+    //  close button and let it shrink rather than run underneath.
+    auto padTitleRow = padSheet.sheetBounds.reduced (14, 12).removeFromTop (16);
+    padTitleRow.removeFromRight (Metrics::tab + Metrics::xs);
+    g.drawFittedText ("PAD " + juce::String (sp + 1)
+                      + (padName[(size_t) sp].isNotEmpty() ? "  " + dot + "  " + padName[(size_t) sp].toUpperCase() : juce::String()),
+                      padTitleRow, juce::Justification::centredLeft, 1, 0.75f);
 
     {
         // Knobs: label above (same convention as FX).
@@ -1346,7 +1351,13 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
             g.drawText (t, r.getX() - 6, r.getY() - 14, r.getWidth() + 12, 12, juce::Justification::centred);
         };
         name (pitchSlider, "PITCH"); name (volSlider, "VOLUME"); name (panSlider, "PAN");
-        name (attackSlider, "ATTACK"); name (releaseSlider, "RELEASE"); name (chokeSlider, "CHOKE");
+        name (attackSlider, "ATTACK"); name (releaseSlider, "RELEASE");
+
+        //  CHOKE's control sits lower than the two dials beside it, so its
+        //  label takes their line rather than its own — a row of names should
+        //  read as a row.
+        g.drawText ("CHOKE", chokeSlider.getX() - 6, attackSlider.getY() - 14,
+                    chokeSlider.getWidth() + 12, 12, juce::Justification::centred);
 
         // Start/End stay linear (a trim range, not a knob): label to the left.
         g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.06f));
@@ -1612,6 +1623,19 @@ void MainComponent::resized()
         juce::Slider* k2[3] = { &attackSlider, &releaseSlider, &chokeSlider };
         placeKnobRow (inner.removeFromTop (86), k1);
         placeKnobRow (inner.removeFromTop (86), k2);
+
+        //  CHOKE is inc/dec buttons, not a dial, and JUCE sizes those buttons
+        //  to whatever height it is given — a knob-sized cell turns them into
+        //  two tall slabs that swallow the cell and shoulder the readout out
+        //  of line with PITCH, VOLUME and the rest. Hand it just the strip the
+        //  other knobs use for their value, and the buttons come out square,
+        //  side by side, on the same baseline as every other number here.
+        {
+            const auto cell = chokeSlider.getBounds();
+            chokeSlider.setBounds (juce::Rectangle<int> (0, 0, juce::jmin (116, cell.getWidth()), 26)
+                                     .withCentre ({ cell.getCentreX(), cell.getBottom() - 10 }));
+        }
+
         inner.removeFromTop (Metrics::sm);
 
         const int labelW = 64;
@@ -1656,7 +1680,18 @@ void MainComponent::resized()
 
     // PROJECT sheet: list of saved projects + the four actions.
     {
-        auto inner = sheetFromBottom (projSheet, (int) (full.getHeight() * 0.7f));
+        //  Height follows the list, instead of claiming 70% of the screen and
+        //  leaving whatever the projects did not fill as a white hole. With no
+        //  projects saved that hole was most of the card, which reads as
+        //  something failing to load rather than as an empty list.
+        const int listRowH = juce::jmax (22, projList.getRowHeight());
+        const int listH    = juce::jlimit (1, 8, projModel.names.size()) * listRowH;
+        const int wanted   = 32 + 142 + Metrics::xs
+                               + (Metrics::tab + Metrics::xs) * 2 + Metrics::xs
+                               + Metrics::btn * 2 + Metrics::xs + 8
+                               + listH + Metrics::sm;
+
+        auto inner = sheetFromBottom (projSheet, wanted);
         auto titleRow = inner.removeFromTop (32);
         projCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
         // TEST is a diagnostic — it belongs with the housekeeping, not among
@@ -2707,6 +2742,11 @@ void MainComponent::refreshProjectList()
     if (sel >= 0) projList.selectRow (sel);
     else          projList.deselectAllRows();
     projList.repaint();
+
+    //  The sheet is as tall as this list, so saving or deleting a project
+    //  changes its height. Without this the card keeps the size it had when
+    //  it opened and the list scrolls inside a box that no longer fits it.
+    resized();
 }
 
 //  Each strip is named the way the pad is: its colour, its number, its sample.
@@ -2744,7 +2784,13 @@ void MainComponent::paintSongSheetContent (juce::Graphics& g)
     const juce::String hint = songBrush == 0 ? "toca un bloque para borrarlo"
                             : songBrush < 0  ? "toca un compas para soltar el sonido"
                                              : "toca un compas para poner el patron";
-    g.drawText (hint, songSheet.sheetBounds.reduced (14, 10).removeFromTop (16), juce::Justification::centredRight);
+    //  The close button lives in this same row, so the hint has to stop short
+    //  of it - right-aligning into the full width ran the sentence underneath
+    //  the X and off the card. Fitted, so a longer wording shrinks instead of
+    //  losing its last word.
+    auto hintRow = songSheet.sheetBounds.reduced (14, 10).removeFromTop (16);
+    hintRow.removeFromRight (Metrics::tab + Metrics::xs);
+    g.drawFittedText (hint, hintRow, juce::Justification::centredRight, 1, 0.85f);
 }
 
 void MainComponent::paintMixSheetContent (juce::Graphics& g)
@@ -2773,9 +2819,14 @@ void MainComponent::paintMixSheetContent (juce::Graphics& g)
 
         g.setColour (has ? ZatiColours::ink.withAlpha (0.8f) : ZatiColours::inkDim.withAlpha (0.5f));
         g.setFont (ZatiColours::monoFont (Metrics::fMeta));
+        //  The name gets everything between its colour chip and the fader,
+        //  rather than a fixed 40 px that left a gap on one side and cut the
+        //  name to eight characters on the other.
+        const int nameX = chip.getRight() + 6;
         g.drawText (has && padName[(size_t) i].isNotEmpty() ? padName[(size_t) i].toUpperCase()
                                                             : juce::String (juce::CharPointer_UTF8 ("\xe2\x80\x94")),
-                    chip.getRight() + 6, fr.getY(), 40, fr.getHeight(), juce::Justification::centredLeft, true);
+                    nameX, fr.getY(), juce::jmax (24, fr.getX() - 6 - nameX), fr.getHeight(),
+                    juce::Justification::centredLeft, true);
     }
 }
 
@@ -2809,12 +2860,18 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
-    g.drawText (currentProject.isNotEmpty()
-                    ? "abierto: " + currentProject
-                    : juce::String (projModel.names.isEmpty()
-                                        ? "sin proyectos guardados - GUARDAR crea el primero"
-                                        : "elige uno de la lista"),
-                inner.removeFromTop (14), juce::Justification::centredLeft);
+    //  MEDIR, TEST and the close button all hang off the right of this same
+    //  band, so the subtitle has to end before they start - written across
+    //  the full width it disappeared under MEDIR mid-sentence.
+    auto subRow = inner.removeFromTop (14);
+    subRow.removeFromRight (projCloseButton.getWidth() + testButton.getWidth()
+                              + measureButton.getWidth() + Metrics::sm);
+    g.drawFittedText (currentProject.isNotEmpty()
+                          ? "abierto: " + currentProject
+                          : juce::String (projModel.names.isEmpty()
+                                              ? "sin proyectos guardados - GUARDAR crea el primero"
+                                              : "elige uno de la lista"),
+                      subRow, juce::Justification::centredLeft, 1, 0.8f);
 
     paintAudioInfo (g, audioInfoArea);
 
@@ -3359,9 +3416,13 @@ void MainComponent::paintBrowseSheetContent (juce::Graphics& g)
                      && browser->getSelectedFile (0).existsAsFile();
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
-    g.drawText (picked ? browser->getSelectedFile (0).getFileName()
-                       : juce::String ("elige una muestra  -  wav / aiff / flac / ogg / mp3"),
-                inner.removeFromTop (14), juce::Justification::centredLeft);
+    //  Same reason as the pad sheet: this is a file name, and the close button
+    //  shares the band.
+    auto browseSubRow = inner.removeFromTop (14);
+    browseSubRow.removeFromRight (Metrics::tab + Metrics::xs);
+    g.drawFittedText (picked ? browser->getSelectedFile (0).getFileName()
+                             : juce::String ("elige una muestra  -  wav / aiff / flac / ogg / mp3"),
+                      browseSubRow, juce::Justification::centredLeft, 1, 0.75f);
 }
 
 // REC on the transport arms PATTERN recording: pads you hit while the
