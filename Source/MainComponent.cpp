@@ -1835,12 +1835,14 @@ void MainComponent::resized()
             const int n = juce::jmax (1, btns.size());
             const int w = r.getWidth() / n;
             for (int i = 0; i < btns.size(); ++i)
-                btns[i]->setBounds ((i < n - 1 ? r.removeFromLeft (w) : r).reduced (2, 2));
+                btns[i]->setBounds ((i < n - 1 ? r.removeFromLeft (w) : r).reduced (1, 2));
             inner.removeFromTop (Metrics::xs);
             return row;
         };
-        bufRowArea  = chipRow (bufButtons, 54);
-        rateRowArea = chipRow (rateButtons, 54);
+        //  A narrower gutter for the row names: six chips need the width more
+        //  than "BUFER" needs the air around it.
+        bufRowArea  = chipRow (bufButtons, 44);
+        rateRowArea = chipRow (rateButtons, 44);
         inner.removeFromTop (Metrics::xs);
 
         // EXPORTAR sits on its own row: it is the only action here that
@@ -3330,7 +3332,11 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
 
     line ("ruta",  dev->getTypeName() + " / " + dev->getName(), ZatiColours::lcdFg);
     line ("reloj", juce::String ((int) sr) + " Hz", ZatiColours::lcdFg);
-    line ("bufer", juce::String (block) + " · " + juce::String (msOf (block), 1) + " ms",
+    const auto sizes = dev->getAvailableBufferSizes();
+    const int  burst  = sizes.isEmpty() ? block : sizes.getFirst();
+    line ("bufer", juce::String (block) + " · " + juce::String (msOf (block), 1) + " ms"
+                     + (block <= burst ? juce::String ("  (rafaga, el minimo)")
+                                       : "  (rafaga " + juce::String (burst) + ")"),
           ZatiColours::lcdFg);
 
     //  Under ~15 ms a pad feels like a pad. Past ~30 ms you hear yourself
@@ -3348,12 +3354,10 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
     //  can give it back. Without this split a bad phone reads as a bad app.
     g.setColour (ZatiColours::lcdDim.withAlpha (0.85f));
     g.setFont (ZatiColours::monoFont (9.0f, false));
-    const bool atBurst = ! dev->getAvailableBufferSizes().isEmpty()
-                            && block <= dev->getAvailableBufferSizes().getFirst();
     juce::String note = "de esos, " + juce::String (blockMs, 1) + " ms son el bufer";
     if (totalMs - blockMs > 20.0)
-        note += atBurst ? " - el resto es el telefono, ya estas al minimo"
-                        : " - baja el bufer";
+        note += (block <= burst) ? " - el resto es el telefono, no lo pone nadie mas bajo"
+                                 : " - baja el bufer";
     g.drawFittedText (note, inner.removeFromTop (11), juce::Justification::centredLeft, 1, 0.7f);
 
     //  Whether the phone allows the fast lane at all. JUCE already asks Oboe
@@ -3415,14 +3419,16 @@ void MainComponent::useLowestLatency()
     const auto sizes = dev->getAvailableBufferSizes();
     if (sizes.isEmpty()) return;
 
-    //  The smallest size worth at least ~3 ms. On Android that lands exactly
-    //  on the native burst; on a desktop driver whose list starts at 16
-    //  frames it avoids picking something that can only xrun.
-    const double sr = dev->getCurrentSampleRate() > 0.0 ? dev->getCurrentSampleRate() : 48000.0;
-    const int floorFrames = (int) (0.003 * sr);
-    int burst = sizes.getLast();
-    for (int v : sizes)
-        if (v >= floorFrames) { burst = v; break; }
+    //  The smallest the driver offers, full stop. On Android that list is
+    //  built as multiples of the hardware burst starting at one, so the first
+    //  entry IS the burst and nothing below it exists to ask for.
+    //
+    //  There used to be a "worth at least 3 ms" guard here. On a phone whose
+    //  burst is 256 it changes nothing, but on one whose burst is 96 or 128 it
+    //  would have quietly skipped past the fast path and doubled the latency
+    //  to protect against a problem that only desktop drivers have.
+    int burst = sizes.getFirst();
+    for (int v : sizes) if (v > 0 && v < burst) burst = v;
 
     if (burst <= 0 || burst == dev->getCurrentBufferSizeSamples()) return;
 
@@ -3517,17 +3523,20 @@ void MainComponent::refreshAudioOptions()
                              ? dev->getCurrentBufferSizeSamples()
                              : dev->getAvailableBufferSizes().getFirst();
 
-    // Buffer sizes: at most five, always including the driver's own default —
-    // on Android that is the native burst, and going below it does not lower
-    // latency, it just costs you the fast path.
+    // Buffer sizes. Everything the driver offers from the burst up, six of
+    // them rather than five - they share the row, so more of them just means
+    // narrower chips, and the choice is worth more than the width.
+    //
+    // Nothing below the burst is listed because nothing below it exists: the
+    // list Android hands us starts there, and it is one hardware period.
     {
         auto all = dev->getAvailableBufferSizes();
         juce::Array<int> pick;
         if (all.contains (natBuf)) pick.add (natBuf);
-        for (int i = 0; i < all.size() && pick.size() < 5; ++i)
+        for (int i = 0; i < all.size() && pick.size() < 6; ++i)
         {
             const int v = all[i];
-            if (! pick.contains (v) && v >= natBuf / 4) pick.add (v);
+            if (! pick.contains (v) && v >= natBuf) pick.add (v);
         }
         pick.sort();
 
