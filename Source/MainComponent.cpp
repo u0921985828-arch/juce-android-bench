@@ -388,7 +388,8 @@ MainComponent::MainComponent()
     initKnob (volSlider, 0.0, 1.0, 0.01, 0.85, 0.0,
              [this] { if (selectedPad >= 0) { padGain[(size_t) selectedPad] = (float) volSlider.getValue(); engine.setPadGain (selectedPad, (float) volSlider.getValue()); } });
     initKnob (panSlider, -1.0, 1.0, 0.01, 0.0, 0.0,
-             [this] { if (selectedPad >= 0) { padPan[(size_t) selectedPad] = (float) panSlider.getValue(); engine.setPadPan (selectedPad, (float) panSlider.getValue()); } });
+             [this] { if (selectedPad >= 0) { padPan[(size_t) selectedPad] = (float) panSlider.getValue(); engine.setPadPan (selectedPad, (float) panSlider.getValue());
+                                              if (auto* mp = mixPans[selectedPad]) mp->setValue (panSlider.getValue(), juce::dontSendNotification); } });
     initKnob (attackSlider, 0.0, 200.0, 1.0, 2.0, 20.0,
              [this] { if (selectedPad >= 0) { padAttack[(size_t) selectedPad] = (float) attackSlider.getValue(); engine.setPadAttack (selectedPad, (float) attackSlider.getValue()); } });
     initKnob (releaseSlider, 1.0, 800.0, 1.0, 5.0, 40.0,
@@ -642,6 +643,29 @@ MainComponent::MainComponent()
         mixSheet.addAndMakeVisible (f);
         mixFaders.add (f);
 
+        //  Pan on the strip, next to the level it belongs to. Placing a sound
+        //  is half of mixing and it was only reachable one pad at a time, in
+        //  another sheet - which is the wrong place to decide where things sit
+        //  relative to each other. No number: the thumb against its centre
+        //  tick says it, a double tap puts it back, and the PADS knob still
+        //  gives the exact figure when you want one.
+        auto* p = new juce::Slider();
+        p->setSliderStyle (juce::Slider::LinearHorizontal);
+        p->setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+        p->setRange (-1.0, 1.0, 0.01);
+        p->setValue (padPan[(size_t) i], juce::dontSendNotification);
+        p->setDoubleClickReturnValue (true, 0.0);
+        p->setColour (juce::Slider::trackColourId, ZatiColours::inkDim.withAlpha (0.55f));
+        p->getProperties().set ("pan", true);
+        p->onValueChange = [this, i, p]
+        {
+            padPan[(size_t) i] = (float) p->getValue();
+            engine.setPadPan (i, (float) p->getValue());
+            if (i == selectedPad) panSlider.setValue (p->getValue(), juce::dontSendNotification);
+        };
+        mixSheet.addAndMakeVisible (p);
+        mixPans.add (p);
+
         auto* m = new juce::TextButton ("M");
         styleButton (*m, kStepOff);
         m->setColour (juce::TextButton::buttonOnColourId, ZatiColours::red);
@@ -677,7 +701,10 @@ MainComponent::MainComponent()
     {
         if (mixSheet.isVisible()) { closeAllSheets(); return; }
         for (int i = 0; i < kNumPads; ++i)
+        {
             if (mixFaders[i] != nullptr) mixFaders[i]->setValue (padGain[(size_t) i], juce::dontSendNotification);
+            if (mixPans[i]   != nullptr) mixPans[i]  ->setValue (padPan[(size_t) i],  juce::dontSendNotification);
+        }
         openSheet (mixSheet, mixButton);
         refreshMixStrip();
     };
@@ -1337,7 +1364,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
     //  them, so this line has no length it can count on. Stop it before the
     //  close button and let it shrink rather than run underneath.
     auto padTitleRow = padSheet.sheetBounds.reduced (14, 12).removeFromTop (16);
-    padTitleRow.removeFromRight (Metrics::tab + Metrics::xs);
+    padTitleRow.setRight (juce::jmin (padTitleRow.getRight(), padCloseButton.getX() - Metrics::xs));
     g.drawFittedText ("PAD " + juce::String (sp + 1)
                       + (padName[(size_t) sp].isNotEmpty() ? "  " + dot + "  " + padName[(size_t) sp].toUpperCase() : juce::String()),
                       padTitleRow, juce::Justification::centredLeft, 1, 0.75f);
@@ -1814,6 +1841,7 @@ void MainComponent::resized()
             row.removeFromLeft (76);                       // colour chip + number + name
             mixSolos[i]->setBounds (row.removeFromRight (30).reduced (1, 2));
             mixMutes[i]->setBounds (row.removeFromRight (30).reduced (1, 2));
+            mixPans[i]->setBounds  (row.removeFromRight (juce::jmin (74, row.getWidth() / 3)).reduced (4, 5));
             mixFaders[i]->setBounds (row.reduced (4, 0));
         }
     }
@@ -2588,7 +2616,10 @@ void MainComponent::applyState (const juce::ValueTree& s)
 
     focusFx ((int) s.getProperty ("focusedFx", 0));
     for (int i = 0; i < kNumPads; ++i)
+    {
         if (mixFaders[i] != nullptr) mixFaders[i]->setValue (padGain[(size_t) i], juce::dontSendNotification);
+        if (mixPans[i]   != nullptr) mixPans[i]  ->setValue (padPan[(size_t) i],  juce::dontSendNotification);
+    }
     refreshMixStrip();
     selectPad (juce::jmax (0, selectedPad));
     for (int i = 0; i < kNumPads; ++i) refreshPad (i);
@@ -2789,7 +2820,7 @@ void MainComponent::paintSongSheetContent (juce::Graphics& g)
     //  the X and off the card. Fitted, so a longer wording shrinks instead of
     //  losing its last word.
     auto hintRow = songSheet.sheetBounds.reduced (14, 10).removeFromTop (16);
-    hintRow.removeFromRight (Metrics::tab + Metrics::xs);
+    hintRow.setRight (juce::jmin (hintRow.getRight(), songCloseButton.getX() - Metrics::xs));
     g.drawFittedText (hint, hintRow, juce::Justification::centredRight, 1, 0.85f);
 }
 
@@ -2843,6 +2874,7 @@ void MainComponent::refreshMixStrip()
         {
             const bool audible = ! engine.isPadMuted (i) && (! any || engine.isPadSoloed (i));
             mixFaders[i]->setAlpha (audible ? 1.0f : 0.45f);
+            if (mixPans[i] != nullptr) mixPans[i]->setAlpha (audible ? 1.0f : 0.45f);
         }
     }
     mixClearSolo.setEnabled (any);
@@ -2864,12 +2896,11 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
     //  band, so the subtitle has to end before they start - written across
     //  the full width it disappeared under MEDIR mid-sentence.
     auto subRow = inner.removeFromTop (14);
-    subRow.removeFromRight (projCloseButton.getWidth() + testButton.getWidth()
-                              + measureButton.getWidth() + Metrics::sm);
+    subRow.setRight (juce::jmin (subRow.getRight(), measureButton.getX() - Metrics::xs));
     g.drawFittedText (currentProject.isNotEmpty()
                           ? "abierto: " + currentProject
                           : juce::String (projModel.names.isEmpty()
-                                              ? "sin proyectos guardados - GUARDAR crea el primero"
+                                              ? "sin proyectos - GUARDAR crea el primero"
                                               : "elige uno de la lista"),
                       subRow, juce::Justification::centredLeft, 1, 0.8f);
 
@@ -3070,7 +3101,9 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
         g.drawText (k, r.removeFromLeft (54), juce::Justification::centredLeft);
         g.setColour (c);
         g.setFont (ZatiColours::monoFont (Metrics::fValue, true));
-        g.drawText (v, r, juce::Justification::centredLeft);
+        //  Half of these values come from the OS - device names, granted
+        //  stream terms - so none of them has a length we can plan around.
+        g.drawFittedText (v, r, juce::Justification::centredLeft, 1, 0.7f);
     };
 
     line ("ruta",  dev->getTypeName() + " / " + dev->getName(), ZatiColours::lcdFg);
@@ -3099,7 +3132,7 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
     if (totalMs - blockMs > 20.0)
         note += atBurst ? " - el resto es el telefono, ya estas al minimo"
                         : " - baja el bufer";
-    g.drawText (note, inner.removeFromTop (11), juce::Justification::centredLeft);
+    g.drawFittedText (note, inner.removeFromTop (11), juce::Justification::centredLeft, 1, 0.7f);
 
     //  Whether the phone allows the fast lane at all. JUCE already asks Oboe
     //  for exclusive + low latency, so if the answer here is "no soportado"
@@ -3130,9 +3163,9 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
 
     g.setColour (ZatiColours::lcdDim.withAlpha (0.85f));
     g.setFont (ZatiColours::monoFont (9.0f, false));
-    g.drawText (measureNote.isNotEmpty() ? measureNote
-                                         : juce::String ("MEDIR emite un click y lo escucha con el micro"),
-                inner.removeFromTop (11), juce::Justification::centredLeft);
+    g.drawFittedText (measureNote.isNotEmpty() ? measureNote
+                                               : juce::String ("MEDIR emite un click y lo escucha con el micro"),
+                      inner.removeFromTop (11), juce::Justification::centredLeft, 1, 0.7f);
 }
 
 //  Take the smallest buffer the driver offers, which on Android is exactly
@@ -3419,7 +3452,7 @@ void MainComponent::paintBrowseSheetContent (juce::Graphics& g)
     //  Same reason as the pad sheet: this is a file name, and the close button
     //  shares the band.
     auto browseSubRow = inner.removeFromTop (14);
-    browseSubRow.removeFromRight (Metrics::tab + Metrics::xs);
+    browseSubRow.setRight (juce::jmin (browseSubRow.getRight(), browseCloseButton.getX() - Metrics::xs));
     g.drawFittedText (picked ? browser->getSelectedFile (0).getFileName()
                              : juce::String ("elige una muestra  -  wav / aiff / flac / ogg / mp3"),
                       browseSubRow, juce::Justification::centredLeft, 1, 0.75f);

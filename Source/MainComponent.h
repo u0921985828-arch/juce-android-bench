@@ -245,7 +245,7 @@ private:
                      mixCloseButton   { juce::CharPointer_UTF8 ("\xc3\x97") };
     //  A studio is where a track gets finished, and nothing gets finished
     //  without balancing it. One strip per pad: level, mute, solo.
-    juce::OwnedArray<juce::Slider>     mixFaders;
+    juce::OwnedArray<juce::Slider>     mixFaders, mixPans;
     juce::OwnedArray<juce::TextButton> mixMutes, mixSolos;
     juce::TextButton mixClearSolo { "SIN SOLO" };
     void refreshMixStrip();

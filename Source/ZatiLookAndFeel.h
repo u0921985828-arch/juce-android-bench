@@ -334,6 +334,39 @@ public:
     //  here came out as a dark slate cap with dark text on it - a control you
     //  can see and cannot read. They sit against a value chip, so they take
     //  the chip's palette and read as one unit with it.
+    //  A pan control is not a level: its rest position is the middle, not the
+    //  left end, so a bar that fills from the left says the wrong thing about
+    //  every value it shows. Sliders marked "pan" fill OUT FROM CENTRE and
+    //  keep a centre mark drawn over the track, so how far off-centre a
+    //  channel sits is readable without a number next to it.
+    void drawLinearSlider (juce::Graphics& g, int x, int y, int w, int h,
+                           float sliderPos, float minPos, float maxPos,
+                           juce::Slider::SliderStyle style, juce::Slider& s) override
+    {
+        if (! (bool) s.getProperties().getWithDefault ("pan", false))
+        {
+            juce::LookAndFeel_V4::drawLinearSlider (g, x, y, w, h, sliderPos, minPos, maxPos, style, s);
+            return;
+        }
+
+        const auto track = juce::Rectangle<float> ((float) x, (float) y + (float) h * 0.5f - 2.0f,
+                                                   (float) w, 4.0f);
+        g.setColour (s.findColour (juce::Slider::backgroundColourId));
+        g.fillRoundedRectangle (track, 2.0f);
+
+        const float centre = (float) x + (float) w * 0.5f;
+        g.setColour (s.findColour (juce::Slider::trackColourId));
+        g.fillRect (juce::Rectangle<float> (juce::jmin (centre, sliderPos), track.getY(),
+                                            std::abs (sliderPos - centre), track.getHeight()));
+
+        g.setColour (ZatiColours::inkDim.withAlpha (0.75f));
+        g.fillRect (centre - 0.5f, (float) y + 1.0f, 1.0f, (float) h - 2.0f);
+
+        const float r = juce::jmin (5.5f, (float) h * 0.42f);
+        g.setColour (ZatiColours::ink);
+        g.fillEllipse (sliderPos - r, track.getCentreY() - r, r * 2.0f, r * 2.0f);
+    }
+
     juce::Button* createSliderButton (juce::Slider&, bool isIncrement) override
     {
         auto* b = new juce::TextButton (isIncrement ? "+" : "-", juce::String());

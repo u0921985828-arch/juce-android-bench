@@ -262,7 +262,7 @@ namespace AudioPath
                                  + (f.channels > 0 ? " " + juce::String (f.channels) + "ch" : "")
                                  + (f.useI16 ? " 16b" : " float");
 
-        if (! f.exclusive) return "compartida - ni en" + terms;
+        if (! f.exclusive) return "compartida - ni en " + terms.trim();
 
         return juce::String ("EXCLUSIVA")
                  + (f.usage == kUsageGame ? " · game" : "")
