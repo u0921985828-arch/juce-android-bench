@@ -1,137 +1,99 @@
-# Zati — native sampler (JUCE / C++)  ·  by ARTiFACTS
+# ZATI — sampler nativo para Android (JUCE / C++) · por ARTiFACTS
 
-**P0 is a latency-validation gate**, not a product. It is a minimal but
-*architecturally correct* JUCE skeleton whose only job is to prove that
-tap → sound feels **"Koala-tight" (~10–25 ms by cable)** on the target Android
-device. If it convinces, the project proceeds to P1 (64-voice matrix, choke
-groups, the 6 FX, time-stretch, sequencer, streaming). If it doesn't, the
-approach is revisited before committing months of work.
+Un sampler de 16 pads escrito en C++ sobre JUCE 8, con motor propio y camino de
+audio de baja latencia por Oboe/AAudio. Nació como prueba de latencia contra un
+prototipo en WebView y hoy es la aplicación entera: pads, secuenciador,
+mezclador, efectos, proyectos y exportación.
 
-This repo is the **native rewrite**, separate from the FX-404 WebView. It shares
-no code with the WebView — FX-404's UI/UX only serves as *specification* for P1+.
+El repositorio se compila de dos formas y las dos importan:
 
-## What P0 does
+- **Escritorio (CMake):** para desarrollar y verificar DSP y lógica sin teléfono.
+- **Android (Projucer → Gradle):** el objetivo real. JUCE no soporta Android
+  desde su API de CMake, así que el APK sale de `Zati.jucer` por el workflow
+  `.github/workflows/build-apk.yml`.
 
-- Standalone desktop app (JUCE 8, fetched & pinned via CMake FetchContent).
-- Loads **one** audio sample (WAV/AIFF/FLAC/Ogg/MP3) into a `juce::AudioBuffer<float>`.
-- Two pads:
-  - **PAD A** — plays the sample at original pitch.
-  - **PAD B** — plays it **+5 semitones** (audibly proves the pitch-accumulator math).
-- Playback engine: fractional **phase accumulator** + **Hermite 4-point** interpolation.
-- Triggers cross UI → audio via a **lock-free FIFO** (`juce::AbstractFifo`).
-- `getNextAudioBlock` does **zero** allocation / lock / I/O / `std::string` / free.
+## Qué hace
 
-Deliberately **out of scope for P0**: envelopes, choke, more than 2 voices,
-FX, sequencer, recording, streaming.
+- **16 pads** con color propio (zati), velocidad por posición del dedo y una
+  reserva común de 48 voces con robo por antigüedad.
+- **Motor**: acumulador de fase fraccionario + interpolación Hermite de 4
+  puntos, dos modos de tono — CINTA (varispeed) y TONO (mantiene la duración
+  con granos solapados) —, recorte, bucle, reverso, choke, paneo y envolvente.
+- **Secuenciador** de 8 bancos, longitud variable de 16 a 64 pasos, cadena de
+  bancos, nota por paso y una línea de tiempo de canción.
+- **Seis efectos** de envío por pad: ISO, HPF, DRV, DLY, CRSH, REV.
+- **Grabación por micro** a un pad y grabación de la interpretación al patrón,
+  con compensación de la latencia de salida.
+- **Proyectos** autocontenidos (audio incluido) y **sesión recuperable**: lo que
+  estabas haciendo vuelve al abrir aunque el sistema matara el proceso.
+- **Exportación** a WAV, master o pistas.
 
-## Thread model (the core discipline)
+## Disciplina de hilos (el núcleo)
 
-| Thread | Does | Never does |
+| Hilo | Hace | Nunca hace |
 | --- | --- | --- |
-| **Message** | UI, async file decode, **all memory frees** | audio DSP |
-| **Audio** (`getNextAudioBlock`) | render only | alloc, lock, I/O, `std::string`, **free** |
+| **Mensajes** | interfaz, decodificación, **todas las liberaciones de memoria** | DSP |
+| **Audio** (`getNextAudioBlock`) | renderizar | reservar, bloquear, E/S, `std::string`, **liberar** |
+| **Fondo** | decodificar samples, escribir la sesión, exportar | tocar la interfaz directamente |
 
-Transport:
-- **Triggers**: `CommandFifo` (single-producer message thread → single-consumer audio thread).
-- **Sample data**: atomic raw-pointer swap. The audio thread only *reads* buffer
-  data and does atomic ref-count *increments* — it never decrements, so it can
-  never trigger a `delete`. Old buffers are retired to a mailbox and deleted by a
-  message-thread timer (`AudioEngine::collectRetiredSamples`).
+- **Disparos**: `CommandFifo`, un productor (mensajes) y un consumidor (audio).
+- **Samples**: intercambio atómico de puntero. El hilo de audio sólo *lee* y sólo
+  *incrementa* referencias — nunca decrementa, así que no puede provocar un
+  `delete`. Los búferes retirados los borra un temporizador del hilo de mensajes
+  (`AudioEngine::collectRetiredSamples`).
 
-## Layout
+## Compilar en escritorio
 
-```
-CMakeLists.txt            FetchContent JUCE 8.0.4 (pinned), standalone GUI app, GPL/trial defs
-Source/
-  Main.cpp                JUCEApplication + DocumentWindow
-  MainComponent.*         AudioAppComponent: pads + Load button + GC timer
-  AudioEngine.*           RT engine: voices, command FIFO, atomic sample swap, render loop
-  Voice.h                 phase accumulator + Hermite 4-pt interpolation
-  SampleBuffer.h          ref-counted AudioBuffer<float> + sourceSampleRate (F_src)
-  CommandFifo.h           AbstractFifo-backed SPSC trigger queue
-  SampleLoader.*          background decode → publish ref-counted buffer
-```
+Requisitos: CMake ≥ 3.22, compilador C++17 y, en Linux, las cabeceras de audio y
+GUI que pide JUCE:
 
-## Build & run (desktop)
-
-**Prerequisites**
-- CMake ≥ 3.22 and a C++17 compiler.
-- **macOS**: Xcode command-line tools.
-- **Windows**: Visual Studio 2022 (MSVC).
-- **Linux**: `build-essential`, plus JUCE's audio/GUI dev headers, e.g.:
-  `sudo apt install libasound2-dev libjack-jackd2-dev libx11-dev libxext-dev libxinerama-dev libxrandr-dev libxcursor-dev libfreetype6-dev libcurl4-openssl-dev libwebkit2gtk-4.1-dev`
-- Network access on first configure (FetchContent clones JUCE `8.0.4`).
-
-**Configure, build, run**
 ```sh
+sudo apt install libasound2-dev libjack-jackd2-dev libx11-dev libxext-dev \
+     libxinerama-dev libxrandr-dev libxcursor-dev libfreetype6-dev \
+     libcurl4-openssl-dev libwebkit2gtk-4.1-dev
 cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --config Release -j
+cmake --build build -j
+./build/Zati_artefacts/Release/Zati
 ```
-The binary lands under `build/Zati_artefacts/Release/` (exact path varies by
-OS/generator). Launch it, click **Load sample**, pick a file, then tap the pads.
 
-> The desktop build only validates the DSP and threading plumbing. Desktop audio
-> latency (especially Windows WASAPI shared mode) is **not** representative of the
-> Android low-latency path — the gate verdict is the Android number below.
+La primera configuración clona JUCE 8.0.4 (versión fijada).
 
-## Android export (done by you, later, in Android Studio)
+> El escritorio sólo valida DSP y fontanería. La latencia que cuenta es la del
+> teléfono: en un móvil sin MMAP el mezclador del sistema pone un suelo de unos
+> 40 ms que ninguna aplicación puede bajar. El panel SET lo dice con todas las
+> letras — `via: compartida MEZCLADOR` significa que el camino rápido no existe
+> en ese aparato.
 
-P0 is written to be Android-exportable in principle (no desktop-only assumptions),
-but is validated desktop-first. When ready:
+## Compilar el APK
 
-1. Install the Android SDK + NDK.
-2. Configure with the NDK CMake toolchain, e.g.
-   `-DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake`
-   plus `-DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-26`.
-3. Enable Oboe for the low-latency audio path:
-   add `JUCE_USE_ANDROID_OBOE=1` to the target's compile definitions.
-4. Build/run the generated Android project from Android Studio on the device.
+El workflow es manual (`workflow_dispatch`). Construye el Projucer, genera el
+proyecto Gradle desde `Zati.jucer`, compila debug y release y los cuelga de la
+etiqueta `apk-latest`. Firma con la clave de subida si están configurados los
+secretos, y con la de debug si no — ver `GOOGLE-PLAY.md`.
 
-The `applicationId`/package and the JUCE licence (GPLv3 vs commercial) are
-deferred business decisions — P0 ships in **GPLv3 / trial** mode (splash screen on).
+## Antes de publicar
 
-## The GATE — latency measurement (acceptance)
+Tres documentos, y ninguno es opcional:
 
-Measure and record, on the **Redmi by cable**:
+- **`GOOGLE-PLAY.md`** — qué falta para subirla, separado entre lo que se
+  arregla en el repositorio y lo que sólo puedes hacer tú.
+- **`THIRD-PARTY.md`** — qué lleva dentro y con qué licencia. La decisión de
+  JUCE (GPLv3 o licencia comercial) se toma **antes** del primer release.
+- **`PRIVACY.md`** — la política de privacidad, lista para publicar y enlazar
+  desde la ficha.
 
-- **Round-trip audio latency** — via **OboeTester** (loopback / round-trip test)
-  or a physical loopback cable, to isolate the audio stack from touch latency.
-- **Tap → sound** — capture the finger-tap transient and the resulting audio with
-  an external mic/scope and measure the delta.
+## Identidad visual — mantenerse lejos del trade dress
 
-Record in a gate note: device + OS, audio backend (desktop default vs Android
-Oboe/AAudio), sample rate (F_sys) and buffer size, and the two measured numbers
-(ms). Prior Stage-0 data (do **not** re-measure): internal speaker ~47–62 ms
-(HyperOS smart-amp wall), **cable/USB ~12–25 ms**.
+El motor es propiedad intelectual original y no es el problema; la presentación
+sí lo sería si imitara un aparato existente. Las reglas que sigue el proyecto:
 
-**Pass** → proceed to P1. **Fail** → revisit the approach before scaling.
+- **Estética propia.** Una rejilla de 4×4 pads es un estándar funcional de la
+  industria y se puede usar; copiar los colores, la tipografía, las texturas o
+  la disposición exacta de un aparato concreto, no.
+- **Nombres de efecto genéricos**, que describen el DSP en lugar de tomar
+  prestada la etiqueta de una marca.
+- **Sin "404" ni terminología de terceros** en cadenas visibles, en el
+  identificador de paquete (`com.artifacts.zati`) ni en la ficha de la tienda.
+  Comprobado: no hay ninguna mención a marcas ajenas en `Source/`.
 
-## Known P0 limitations (by design)
-
-- Single retiree mailbox slot: reloads are serialized (Load button disabled until
-  the GC timer drains). P1 replaces it with a small SPSC free-list.
-- No envelope: `NoteOff`/one-shot end is a hard stop (may click). P1 adds AHDSR.
-- A sample swap mid-note may glitch the note in flight — acceptable for a
-  latency prototype.
-
-## UI design constraint for P1 (original look — avoid trade dress)
-
-The real UI is built in P1 (P0 is just two test pads + a Load button, no skin).
-To keep the product commercially clear of Roland SP-404 trade dress, P1 must use
-an **original visual identity**, not a reproduction of the hardware:
-
-- **Own layout & aesthetic** — do not copy the SP-404's specific colours,
-  typography, chassis textures, or exact control placement. A 4×4 pad grid is a
-  functional industry standard (MPC, Maschine, Push) and fine to use; the risk is
-  cloning the specific look-and-feel, so design a distinct high-contrast/digital
-  theme instead of a skeuomorphic chassis.
-- **Generic effect names** — avoid Roland's product terms. E.g. "DJFX Looper" →
-  "Beat Repeat", "Isolator" → "Multiband EQ". Describe the DSP, don't borrow the
-  brand's labels.
-- **Naming** — the app is "Zati" (studio: ARTiFACTS), no "404"; the package id is
-  `com.artifacts.zati`. Keep "404" and Roland terminology out of user-facing
-  strings, package ids, and store metadata.
-
-The C++/JUCE DSP engine is original IP and is not the concern here — this is
-purely a presentation-layer guideline. (Not legal advice; confirm with an IP
-lawyer before shipping.)
+(Esto no es asesoramiento legal. Antes de publicar, que lo mire alguien que sepa.)

@@ -45,9 +45,13 @@ jobs:
           # NDK + CMake versions MUST match what Projucer writes into the
           # generated app/build.gradle for JUCE 8.0.4 (ndkVersion 26.2.11394342,
           # cmake 3.22.1). If a JUCE bump changes these, update them here too.
+          # The platform is 35 because Play requires a new app to target an API
+          # released within the last year, and compileSdk follows targetSdk -
+          # which is also why Zati.jucer pins AGP 8.6.1 / Gradle 8.7, the oldest
+          # pair that accepts compileSdk 35.
           sdkmanager --install \
-            "platforms;android-34" \
-            "build-tools;34.0.0" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
             "ndk;26.2.11394342" \
             "cmake;3.22.1"
 
@@ -127,6 +131,38 @@ jobs:
           echo "Debug:   $DBG"
           echo "Release: $REL"
           ls -la Zati-*.apk
+
+      - name: Re-sign the release APK with the upload key
+        # Only when the four secrets exist. Gradle has already signed both APKs
+        # with the debug key (JUCE's juceSigning), which is fine for sideload
+        # and rejected by Play; apksigner replaces that signature with the real
+        # upload one in place. Without the secrets this step does nothing and
+        # the release APK stays exactly as before, so the phone-testing loop is
+        # never blocked on having a keystore.
+        env:
+          KS_B64:   ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS:  ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KS_B64" ] || [ -z "$KS_PASS" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASS" ]; then
+            echo "No upload keystore configured - the release APK keeps the debug signature."
+            echo "It can be sideloaded, but Google Play will reject it. See GOOGLE-PLAY.md."
+            exit 0
+          fi
+
+          echo "$KS_B64" | base64 -d > upload.jks
+          APKSIGNER="$(find "$ANDROID_SDK_ROOT/build-tools" -name apksigner | sort | tail -1)"
+          "$APKSIGNER" sign \
+            --ks upload.jks \
+            --ks-pass "pass:$KS_PASS" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --key-pass "pass:$KEY_PASS" \
+            --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
+            Zati-release.apk
+          "$APKSIGNER" verify --print-certs Zati-release.apk
+          rm -f upload.jks
+          echo "Release APK signed with the upload key."
 
       - uses: actions/upload-artifact@v4
         with:
