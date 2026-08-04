@@ -426,7 +426,8 @@ private:
     std::array<float, kNumPads> padFlash {};   // 1.0 on trigger, decays -> lit feedback
     // Chassis layout regions (set in resized(), drawn in paint()).
     juce::Rectangle<int> headerArea, screenBezel, tabBarArea,
-                         editInfoArea, vuArea, stepStripArea, audioInfoArea;
+                         editInfoArea, vuArea, stepStripArea, audioInfoArea,
+                         padPlateArea, ctrlPlateArea;
     float vuL = 0.0f, vuR = 0.0f;   // smoothed output peaks for the VU strip
 
     int  selectedPad   = -1;

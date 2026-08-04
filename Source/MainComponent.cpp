@@ -1344,14 +1344,97 @@ void MainComponent::paint (juce::Graphics& g)
                                              ZatiColours::chassisBot, full.getCentreX(), full.getBottom(), false));
     g.fillRect (full);
 
-    // 2. Recessed LCD bezel around the scope (square, dark inset on a light face).
+    //  1b. Structure. A white field with rows of caps on it is a list of
+    //  buttons; an instrument has plates, seams and engraved lettering, and
+    //  all three are drawn with lines rather than shaded. These cost no
+    //  layout height at all - the seams live in gaps that already existed and
+    //  the plate is drawn behind controls that were already positioned.
+    auto rule = [&g] (float x1, float x2, float y, float alpha)
+    {
+        g.setColour (ZatiColours::ink.withAlpha (alpha));
+        g.fillRect (x1, y, x2 - x1, 1.0f);
+        g.setColour (ZatiColours::white.withAlpha (0.9f));      // the engraved highlight
+        g.fillRect (x1, y + 1.0f, x2 - x1, 1.0f);
+    };
+
+    //  A label that rides its seam, the way silkscreen does on hardware: the
+    //  line breaks for the word instead of running behind it.
+    auto engrave = [&g, &rule, &full] (const juce::String& text, float y)
+    {
+        g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.30f));
+        const float tw = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), text) + 10.0f;
+        const float x0 = full.getX() + 10.0f;
+
+        rule (x0 + tw, full.getRight() - 10.0f, y, 0.16f);
+        g.setColour (ZatiColours::ink.withAlpha (0.42f));
+        g.drawText (text, (int) x0, (int) (y - 5.0f), (int) tw, 11, juce::Justification::centredLeft);
+    };
+
+    // 2. The pad plate: the pads are bolted to a recessed panel, not floating
+    //    on the face. One tone step down, one hairline, four screws.
+    if (! padPlateArea.isEmpty())
+    {
+        //  The tonal step has to be big enough to see. At 3% the plate was
+        //  technically there and read as a rendering artefact; the face needs
+        //  three distinct values - chassis, plate, cap - or the whole thing
+        //  stays white on white however many lines are drawn on it.
+        auto pp = padPlateArea.toFloat();
+        g.setColour (ZatiColours::chassisBot.darker (0.10f));
+        g.fillRoundedRectangle (pp, 4.0f);
+        g.setColour (ZatiColours::ink.withAlpha (0.30f));
+        g.drawRoundedRectangle (pp.reduced (0.5f), 4.0f, 1.0f);
+        g.setColour (ZatiColours::white.withAlpha (0.55f));      // lip catching the light
+        g.drawRoundedRectangle (pp.reduced (1.6f), 4.0f, 1.0f);
+
+        //  No engraved label above this one: child components paint over their
+        //  parent, and the FX row's caps sit exactly where the lettering would
+        //  land. The plate and its screws say what it is without the word.
+        for (int corner = 0; corner < 4; ++corner)
+            ZatiColours::drawScrew (g,
+                                    (corner & 1) ? pp.getRight() - 6.0f : pp.getX() + 6.0f,
+                                    (corner & 2) ? pp.getBottom() - 6.0f : pp.getY() + 6.0f,
+                                    2.6f);
+    }
+
+    //  The control plate: CTRL 1-3 and the six modules are one zone, and
+    //  giving it its own plate is what turns the middle of the face from a
+    //  white field with rows on it into a section of an instrument.
+    if (! ctrlPlateArea.isEmpty())
+    {
+        auto cp = ctrlPlateArea.toFloat();
+        g.setColour (ZatiColours::chassisBot.darker (0.10f));
+        g.fillRoundedRectangle (cp, 4.0f);
+        g.setColour (ZatiColours::ink.withAlpha (0.30f));
+        g.drawRoundedRectangle (cp.reduced (0.5f), 4.0f, 1.0f);
+        g.setColour (ZatiColours::white.withAlpha (0.55f));
+        g.drawRoundedRectangle (cp.reduced (1.6f), 4.0f, 1.0f);
+
+        for (int corner = 0; corner < 4; ++corner)
+            ZatiColours::drawScrew (g,
+                                    (corner & 1) ? cp.getRight() - 5.0f : cp.getX() + 5.0f,
+                                    (corner & 2) ? cp.getBottom() - 5.0f : cp.getY() + 5.0f,
+                                    2.2f);
+    }
+
+    if (! fxRowArea.isEmpty())
+        engrave ("EFECTOS", (float) fxRowArea.getY() - 6.0f);
+
+    // 3. Recessed LCD bezel around the scope, with the screws that hold the
+    //    window down. This is the one object on the face that should read as
+    //    hardware rather than as a rectangle of dark paint.
     if (! screenBezel.isEmpty())
     {
         auto r = screenBezel.toFloat();
         g.setColour (ZatiColours::knobBody2);
-        g.fillRoundedRectangle (r.expanded (3.0f), 3.0f);
+        g.fillRoundedRectangle (r.expanded (5.0f), 3.0f);
         g.setColour (ZatiColours::knobEdge.withAlpha (0.7f));
-        g.drawRoundedRectangle (r.expanded (3.0f).reduced (0.5f), 3.0f, 1.2f);
+        g.drawRoundedRectangle (r.expanded (5.0f).reduced (0.5f), 3.0f, 1.2f);
+
+        for (int corner = 0; corner < 4; ++corner)
+            ZatiColours::drawScrew (g,
+                                    (corner & 1) ? r.getRight() + 1.0f : r.getX() - 1.0f,
+                                    (corner & 2) ? r.getBottom() + 1.0f : r.getY() - 1.0f,
+                                    2.4f);
     }
 
     // 3. Header: ZATI wordmark left, fragment strip right. No touch targets
@@ -1364,6 +1447,30 @@ void MainComponent::paint (juce::Graphics& g)
         g.setColour (ZatiColours::ink);
         g.setFont (ZatiColours::displayFont (Metrics::fTitle).withExtraKerningFactor (0.16f));
         g.drawText ("ZATI", h.getX(), h.getY(), 140, h.getHeight(), juce::Justification::centredLeft);
+
+        //  Maker's mark, struck at an angle the way a rubber stamp lands. It
+        //  is the one deliberately imperfect thing on the face, and it is what
+        //  stops the header from reading as a title bar.
+        {
+            const float sx = (float) h.getX() + 96.0f;
+            const float sy = (float) h.getCentreY();
+            juce::Graphics::ScopedSaveState keep (g);
+            g.addTransform (juce::AffineTransform::rotation (-0.070f, sx, sy));   // ~4 degrees
+
+            auto badge = juce::Rectangle<float> (sx, sy - 11.0f, 74.0f, 22.0f);
+            g.setColour (ZatiColours::ink.withAlpha (0.62f));
+            g.drawRoundedRectangle (badge, 2.0f, 2.0f);       // struck, not printed
+
+            auto inner = badge.reduced (3.0f, 2.0f);
+            g.setFont (ZatiColours::monoFont (8.5f, true).withExtraKerningFactor (0.20f));
+            g.drawText ("ARTiFACTS", inner.removeFromTop (inner.getHeight() * 0.55f),
+                        juce::Justification::centred);
+            g.setColour (ZatiColours::ink.withAlpha (0.45f));
+            g.setFont (ZatiColours::monoFont (7.0f, true).withExtraKerningFactor (0.30f));
+            g.drawText ("SAMPLER 01", inner, juce::Justification::centred);
+        }
+
+        rule ((float) h.getX(), (float) h.getRight(), (float) h.getBottom() + 2.0f, 0.22f);
 
         const int sw = 9, sh = 13, gap = 4;
         const int stripW = Zati::kNumColours * sw + (Zati::kNumColours - 1) * gap;
@@ -1663,6 +1770,11 @@ void MainComponent::layoutPadGrid (juce::Rectangle<int> area, int cols, int rows
     auto grid = area.withSizeKeepingCentre (cols * cellW + (cols - 1) * gap,
                                             rows * cellH + (rows - 1) * gap);
 
+    //  The plate the pads are bolted to. Remembered rather than recomputed in
+    //  paint(), because the grid is centred inside whatever room is left and
+    //  only this function knows where that landed.
+    padPlateArea = grid.expanded (Metrics::sm, Metrics::sm);
+
     // SP-style numbering: pad 01 sits BOTTOM-left, 16 top-right — logical row
     // r of the pad index maps to visual row (rows-1-r).
     for (int r = 0; r < rows; ++r)
@@ -1681,6 +1793,9 @@ void MainComponent::resized()
 {
     editInfoArea = {};
     vuArea = stepStripArea = {};
+    //  Both plates are only laid out on the main face; clearing them here
+    //  stops a stale rectangle from being painted under another view.
+    padPlateArea = ctrlPlateArea = {};
 
     auto area = getLocalBounds().reduced (8);
 
@@ -1750,6 +1865,7 @@ void MainComponent::resized()
     // --- Machine face: CTRL 1-3 and their readout, the six FX, pads ---
     {
         auto mrow = area.removeFromTop (88);             // 3 CTRL macros + their readout chips
+        ctrlPlateArea = mrow.expanded (4, 2);            // the plate they sit on
         juce::Slider* mk[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
         const int w = mrow.getWidth() / 3;
         for (int i = 0; i < 3; ++i)
