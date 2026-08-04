@@ -231,6 +231,7 @@ MainComponent::MainComponent()
             sl->setRange (0.0, 1.0, 0.01);
             sl->setValue (1.0, juce::dontSendNotification);
             sl->setDoubleClickReturnValue (true, 1.0);
+            sl->setSliderSnapsToMousePosition (false);
             sl->textFromValueFunction = [] (double v) { return juce::String ((int) std::round (v * 100.0)); };
             sl->updateText();
             sl->onValueChange = [this, f, sl] { engine.setPadSend (rackPad, f, (float) sl->getValue()); rackSheet.repaint(); };
@@ -422,6 +423,11 @@ MainComponent::MainComponent()
         if (skewMid > 0.0) s.setSkewFactorFromMidPoint (skewMid);
         s.setValue (def, juce::dontSendNotification);
         s.setDoubleClickReturnValue (true, def);     // double-tap = back to default
+        //  How far you drag for the whole range. JUCE's default crosses it in
+        //  a flick, which on a touchscreen means you cannot land on a value,
+        //  only near one; this asks for a deliberate movement and gives back
+        //  a knob you can actually set.
+        s.setMouseDragSensitivity (320);
         s.onValueChange = std::move (cb);
         addAndMakeVisible (s);
     };
@@ -675,6 +681,10 @@ MainComponent::MainComponent()
         f->setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
         f->setColour (juce::Slider::trackColourId, Zati::colour (i));
         f->setTextBoxStyle (juce::Slider::TextBoxRight, false, 46, 20);
+        //  A tap must not become a value. Snapping to the touch point turns a
+        //  brushed finger into a channel slammed to zero; relative dragging
+        //  means you take hold of the level and move it from where it was.
+        f->setSliderSnapsToMousePosition (false);
         f->textFromValueFunction = [] (double v) { return juce::String ((int) std::round (v * 100.0)); };
         f->onValueChange = [this, i, f]
         {
@@ -699,6 +709,7 @@ MainComponent::MainComponent()
         p->setDoubleClickReturnValue (true, 0.0);
         p->setColour (juce::Slider::trackColourId, ZatiColours::inkDim.withAlpha (0.55f));
         p->getProperties().set ("pan", true);
+        p->setSliderSnapsToMousePosition (false);
         p->onValueChange = [this, i, p]
         {
             padPan[(size_t) i] = (float) p->getValue();
@@ -1649,7 +1660,7 @@ void MainComponent::resized()
         area.removeFromTop (Metrics::sm);
 
         area.removeFromTop (4);
-        fxRowArea = area.removeFromTop (Metrics::tab);
+        fxRowArea = area.removeFromTop (Metrics::hit);
         {
             auto row = fxRowArea;
             const int sw = row.getWidth() / kNumFx;
@@ -1688,7 +1699,7 @@ void MainComponent::resized()
 
     // PADS sheet: per-pad knobs, trim, REV/LOOP + AUTO CHOP, sample-info card.
     {
-        auto inner = sheetFromBottom (padSheet, 566);
+        auto inner = sheetFromBottom (padSheet, 614);
         auto titleRow = inner.removeFromTop (32);
         padCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
 
@@ -1705,27 +1716,27 @@ void MainComponent::resized()
         //  side by side, on the same baseline as every other number here.
         {
             const auto cell = chokeSlider.getBounds();
-            chokeSlider.setBounds (juce::Rectangle<int> (0, 0, juce::jmin (116, cell.getWidth()), 26)
-                                     .withCentre ({ cell.getCentreX(), cell.getBottom() - 10 }));
+            chokeSlider.setBounds (juce::Rectangle<int> (0, 0, juce::jmin (120, cell.getWidth()), 32)
+                                     .withCentre ({ cell.getCentreX(), cell.getBottom() - 8 }));
         }
 
         inner.removeFromTop (Metrics::sm);
 
         const int labelW = 64;
         auto ctrlRow = [&inner, labelW] (int h) { auto r = inner.removeFromTop (h); r.removeFromLeft (labelW); return r; };
-        startSlider.setBounds (ctrlRow (26)); inner.removeFromTop (4);
-        endSlider.setBounds   (ctrlRow (26)); inner.removeFromTop (8);
+        startSlider.setBounds (ctrlRow (34)); inner.removeFromTop (4);
+        endSlider.setBounds   (ctrlRow (34)); inner.removeFromTop (8);
 
-        auto rr = inner.removeFromTop (Metrics::tab);
+        auto rr = inner.removeFromTop (Metrics::hit);
         reverseButton.setBounds (rr.removeFromLeft (rr.getWidth() / 2).reduced (3, 0));
         loopButton.setBounds    (rr.reduced (3, 0));
         inner.removeFromTop (5);
-        auto rr2 = inner.removeFromTop (Metrics::tab);
+        auto rr2 = inner.removeFromTop (Metrics::hit);
         chopButton.setBounds (rr2.removeFromLeft (rr2.getWidth() / 2).reduced (3, 0));
         micButton.setBounds  (rr2.reduced (3, 0));
         inner.removeFromTop (5);
 
-        auto zr = inner.removeFromTop (Metrics::tab);
+        auto zr = inner.removeFromTop (Metrics::hit);
         zatiPrevButton.setBounds (zr.removeFromLeft (56).reduced (3, 0));
         zatiNextButton.setBounds (zr.removeFromRight (56).reduced (3, 0));
         zatiSwatchArea = zr.reduced (4, 2);      // drawn in paintPadSheetContent
@@ -1759,8 +1770,8 @@ void MainComponent::resized()
         //  something failing to load rather than as an empty list.
         const int listRowH = juce::jmax (22, projList.getRowHeight());
         const int listH    = juce::jlimit (1, 8, projModel.names.size()) * listRowH;
-        const int wanted   = 32 + 142 + Metrics::xs
-                               + (Metrics::tab + Metrics::xs) * 2 + Metrics::xs
+        const int wanted   = Metrics::md * 2 + 32 + 142 + Metrics::xs
+                               + (Metrics::hit + Metrics::xs) * 2 + Metrics::xs
                                + Metrics::btn * 2 + Metrics::xs + 8
                                + listH + Metrics::sm;
 
@@ -1780,7 +1791,7 @@ void MainComponent::resized()
 
         auto chipRow = [&inner] (juce::OwnedArray<juce::TextButton>& btns, int labelW)
         {
-            auto row = inner.removeFromTop (Metrics::tab);
+            auto row = inner.removeFromTop (Metrics::hit);
             auto r = row.withTrimmedLeft (labelW);
             const int n = juce::jmax (1, btns.size());
             const int w = r.getWidth() / n;
@@ -1826,13 +1837,13 @@ void MainComponent::resized()
 
     // RACK sheet: which pad, and how much of it reaches each effect.
     {
-        const int chipRowH = Metrics::tab;
+        const int chipRowH = Metrics::hit;
         //  sheetFromBottom takes the card's OUTER height and hands back the
         //  inside, so the vertical margin it removes has to be part of what we
         //  ask for - without it the last send row fell off the bottom edge.
         auto inner = sheetFromBottom (rackSheet, Metrics::md * 2 + 32 + 14
                                                    + (chipRowH + Metrics::xs) * 2
-                                                   + Metrics::sm + kNumFx * 34 + Metrics::sm);
+                                                   + Metrics::sm + kNumFx * 48 + Metrics::sm);
         auto titleRow = inner.removeFromTop (32);
         rackCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
         inner.removeFromTop (14);                       // painted: which pad this is
@@ -1854,34 +1865,34 @@ void MainComponent::resized()
         //  the width instead of a label component competing for it.
         for (int f = 0; f < kNumFx; ++f)
         {
-            auto row = inner.removeFromTop (34);
-            rackSends[f]->setBounds (row.withTrimmedLeft (54).reduced (2, 5));
+            auto row = inner.removeFromTop (48);
+            rackSends[f]->setBounds (row.withTrimmedLeft (54).reduced (2, 6));
         }
     }
 
     // SONG sheet: palette, timeline, page row.
     {
         const int laneH = 40;
-        auto inner = sheetFromBottom (songSheet, 32 + Metrics::xl * 2 + Metrics::sm * 3
-                                                  + Playlist::kLanes * laneH + Metrics::xl + Metrics::btn);
+        auto inner = sheetFromBottom (songSheet, Metrics::md * 2 + 32 + Metrics::hit * 2 + Metrics::sm * 3
+                                                  + Playlist::kLanes * laneH + Metrics::hit + Metrics::btn);
         auto titleRow = inner.removeFromTop (32);
         songCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
 
         // Palette: P1..P8.
         {
-            auto row = inner.removeFromTop (Metrics::xl);
+            auto row = inner.removeFromTop (Metrics::hit);
             const int w = row.getWidth() / kNumPatterns;
             for (int i = 0; i < kNumPatterns; ++i)
-                songPatBtns[i]->setBounds ((i < kNumPatterns - 1 ? row.removeFromLeft (w) : row).reduced (1, 0));
+                songPatBtns[i]->setBounds ((i < kNumPatterns - 1 ? row.removeFromLeft (w) : row).reduced (1, 2));
             inner.removeFromTop (Metrics::xs);
         }
         // Brush modes + song mode.
         {
-            auto row = inner.removeFromTop (Metrics::xl);
+            auto row = inner.removeFromTop (Metrics::hit);
             const int w = row.getWidth() / 3;
-            songPadModeBtn.setBounds (row.removeFromLeft (w).reduced (2, 0));
-            songClearBtn.setBounds   (row.removeFromLeft (w).reduced (2, 0));
-            songModeBtn.setBounds    (row.reduced (2, 0));
+            songPadModeBtn.setBounds (row.removeFromLeft (w).reduced (2, 2));
+            songClearBtn.setBounds   (row.removeFromLeft (w).reduced (2, 2));
+            songModeBtn.setBounds    (row.reduced (2, 2));
             inner.removeFromTop (Metrics::sm);
         }
 
@@ -1889,7 +1900,7 @@ void MainComponent::resized()
         songLenSlider.setBounds (bottom.reduced (3, 6));
         inner.removeFromBottom (Metrics::xs);
 
-        auto pageRow = inner.removeFromBottom (Metrics::xl);
+        auto pageRow = inner.removeFromBottom (Metrics::hit);
         {
             const int n = songPageBtns.size();
             const int w = pageRow.getWidth() / juce::jmax (1, n);
@@ -1897,7 +1908,7 @@ void MainComponent::resized()
             {
                 const bool used = i * Playlist::kBarsView < engine.getSongLength();
                 songPageBtns[i]->setVisible (used);
-                songPageBtns[i]->setBounds ((i < n - 1 ? pageRow.removeFromLeft (w) : pageRow).reduced (1, 0));
+                songPageBtns[i]->setBounds ((i < n - 1 ? pageRow.removeFromLeft (w) : pageRow).reduced (1, 2));
             }
         }
         inner.removeFromBottom (Metrics::xs);
@@ -1907,8 +1918,14 @@ void MainComponent::resized()
 
     // MIX sheet: sixteen channel strips.
     {
-        const int rowH = 30;
-        auto inner = sheetFromBottom (mixSheet, 32 + Metrics::sm + kNumPads * rowH + Metrics::btn + Metrics::lg);
+        //  Sixteen rows at finger height is what this sheet WANTS; on a short
+        //  screen it is more than the card is allowed to be. Rather than lay
+        //  out rows that fall off the bottom, work out what is left after the
+        //  furniture and share it - never below 30, never above the target.
+        const int mixFurniture = Metrics::md * 2 + 32 + Metrics::sm + Metrics::btn + Metrics::lg;
+        const int mixRoom = (int) (full.getHeight() * 0.78f) - mixFurniture;
+        const int rowH = juce::jlimit (30, Metrics::hit, mixRoom / kNumPads);
+        auto inner = sheetFromBottom (mixSheet, mixFurniture + kNumPads * rowH);
         auto titleRow = inner.removeFromTop (32);
         mixCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
 
@@ -1921,19 +1938,21 @@ void MainComponent::resized()
         {
             auto row = inner.removeFromTop (rowH).reduced (0, 1);
             row.removeFromLeft (76);                       // colour chip + number + name
-            mixSolos[i]->setBounds (row.removeFromRight (30).reduced (1, 2));
-            mixMutes[i]->setBounds (row.removeFromRight (30).reduced (1, 2));
-            mixPans[i]->setBounds  (row.removeFromRight (juce::jmin (74, row.getWidth() / 3)).reduced (4, 5));
-            mixFaders[i]->setBounds (row.reduced (4, 0));
+            mixSolos[i]->setBounds (row.removeFromRight (Metrics::hit).reduced (2, 3));
+            mixMutes[i]->setBounds (row.removeFromRight (Metrics::hit).reduced (2, 3));
+            mixPans[i]->setBounds  (row.removeFromRight (juce::jmin (78, row.getWidth() / 3)).reduced (4, 6));
+            mixFaders[i]->setBounds (row.reduced (4, 2));
         }
     }
 
     // SEC sheet: pattern/len, chain, bar selector, the pads x steps grid, bpm.
     {
         const int lanes  = StepGrid::kLanes;
-        const int laneH  = 22;                    // 16 lanes -> 352, comfortable to tap
+        const int fixedRowsH = 288;               // title + rows above and below the grid
+        //  Same bargain as the mixer: the grid gets the room that is left,
+        //  down to the density it had before rather than off the card.
+        const int laneH  = juce::jlimit (20, 24, ((int) (full.getHeight() * 0.78f) - fixedRowsH) / lanes);
         const int gridH  = lanes * laneH;
-        const int fixedRowsH = 216;               // title + rows above and below the grid
 
         auto inner = sheetFromBottom (seqSheet, fixedRowsH + gridH);
         auto titleRow = inner.removeFromTop (32);
@@ -1941,22 +1960,22 @@ void MainComponent::resized()
 
         {
             inner.removeFromTop (Metrics::md);            // room for the EDITANDO rule
-            auto row1 = inner.removeFromTop (Metrics::xl);
+            auto row1 = inner.removeFromTop (Metrics::hit);
             const int w1 = row1.getWidth() / 2;
-            patternSlider.setBounds (row1.removeFromLeft (w1).reduced (2, 0));
-            lengthSlider.setBounds  (row1.reduced (2, 0));
+            patternSlider.setBounds (row1.removeFromLeft (w1).reduced (2, 2));
+            lengthSlider.setBounds  (row1.reduced (2, 2));
             inner.removeFromTop (Metrics::md);            // room for the CADENA rule
 
-            auto row2 = inner.removeFromTop (Metrics::xl);
+            auto row2 = inner.removeFromTop (Metrics::hit);
             const int pw = row2.getWidth() / kNumPatterns;
             for (int i2 = 0; i2 < kNumPatterns; ++i2)
                 patternButtons[i2]->setBounds ((i2 < kNumPatterns - 1 ? row2.removeFromLeft (pw) : row2).reduced (2));
             inner.removeFromTop (Metrics::xs);
 
-            auto row3 = inner.removeFromTop (Metrics::xl);
+            auto row3 = inner.removeFromTop (Metrics::hit);
             const int w3 = row3.getWidth() / 2;
-            chainClearButton.setBounds (row3.removeFromLeft (w3).reduced (2, 0));
-            noteSlider.setBounds       (row3.reduced (2, 0));
+            chainClearButton.setBounds (row3.removeFromLeft (w3).reduced (2, 2));
+            noteSlider.setBounds       (row3.reduced (2, 2));
             inner.removeFromTop (Metrics::sm);
 
             // Bar row: only when the pattern is longer than one bar. A single
@@ -1967,13 +1986,13 @@ void MainComponent::resized()
 
             if (bars > 1)
             {
-                auto row4 = inner.removeFromTop (Metrics::xl);
+                auto row4 = inner.removeFromTop (Metrics::hit);
                 const int bw = row4.getWidth() / bars;
                 for (int b = 0; b < barButtons.size(); ++b)
                 {
                     barButtons[b]->setVisible (b < bars);
                     if (b < bars)
-                        barButtons[b]->setBounds ((b < bars - 1 ? row4.removeFromLeft (bw) : row4).reduced (2, 0));
+                        barButtons[b]->setBounds ((b < bars - 1 ? row4.removeFromLeft (bw) : row4).reduced (2, 2));
                 }
                 inner.removeFromTop (Metrics::sm);
             }
@@ -1983,9 +2002,9 @@ void MainComponent::resized()
             }
         }
 
-        auto bottom = inner.removeFromBottom (Metrics::tab);
-        bpmSlider.setBounds (bottom.removeFromLeft ((int) (bottom.getWidth() * 0.66f)).reduced (2, 0));
-        clearButton.setBounds (bottom.reduced (3, 0));
+        auto bottom = inner.removeFromBottom (Metrics::hit);
+        bpmSlider.setBounds (bottom.removeFromLeft ((int) (bottom.getWidth() * 0.66f)).reduced (2, 2));
+        clearButton.setBounds (bottom.reduced (3, 2));
         inner.removeFromBottom (Metrics::sm);
 
         stepGrid.setBounds (inner);

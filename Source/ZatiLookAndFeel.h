@@ -148,6 +148,11 @@ namespace Metrics
     // Controls.
     static constexpr int knobSm = 44, knobMd = 56, knobLg = 72;
     static constexpr int btn = 44;    // minimum comfortable touch target
+    //  The floor for anything a finger has to hit inside a sheet. Rows of
+    //  24 and 30 read fine on a desktop screenshot and are a coin toss on a
+    //  phone; this is a phone. Where sixteen of something have to fit at
+    //  once the card grows instead of the rows shrinking.
+    static constexpr int hit = 40;
     static constexpr int chip = 24;   // value readout
     static constexpr int tab = 32;    // module bar: it opens windows, it does not act
     static constexpr int row = 44;    // list row
