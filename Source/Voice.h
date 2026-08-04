@@ -17,6 +17,19 @@ struct Voice
     bool   reverse   = false;
     double pos       = 0.0;
     double delta     = 0.0;
+
+    //  TAPE vs TONE. Tape is what a sampler does by nature: read faster and
+    //  the sound goes up AND gets shorter, because pitch and time are the
+    //  same knob. Tone keeps the length: the read head still travels at real
+    //  speed, and the pitch comes from two overlapping grains resampled
+    //  against it and crossfaded, so a vocal can go up a fifth without
+    //  turning into a chipmunk in half the time.
+    bool   pitchMode = false;   // false = tape (varispeed), true = pitch only
+    double timeStep  = 0.0;     // source samples per output sample at unity pitch, signed
+    double ratio     = 1.0;     // 2^(semitones/12)
+    double gLen      = 2048.0;  // grain length, output samples
+    double gPhase    = 0.0;
+    double gOffA     = 0.0, gOffB = 0.0;
     int    slot      = -1;
     int    winStart  = 1;      // playback window [winStart, winEnd) in samples
     int    winEnd    = 2;
@@ -35,7 +48,8 @@ struct Voice
     void start (int slotIndex, float semitones, float velocity,
                 double fSrc, double fSys,
                 int startSamp, int endSamp, bool loopOn, bool rev, int srcLen,
-                float pan = 0.0f, float attackMs = 2.0f, float releaseMs = 3.0f) noexcept
+                float pan = 0.0f, float attackMs = 2.0f, float releaseMs = 3.0f,
+                bool keepLength = false) noexcept
     {
         slot     = slotIndex;
         winStart = juce::jlimit (1, juce::jmax (1, srcLen - 3), startSamp);
@@ -43,9 +57,18 @@ struct Voice
         loop     = loopOn;
         reverse  = rev;
 
-        const double base = (fSrc / fSys) * std::pow (2.0, (double) semitones / 12.0);
-        delta = rev ? -base : base;
-        pos   = rev ? (double) (winEnd - 1) : (double) winStart;
+        ratio    = std::pow (2.0, (double) semitones / 12.0);
+        timeStep = rev ? -(fSrc / fSys) : (fSrc / fSys);
+        delta    = timeStep * ratio;
+        pos      = rev ? (double) (winEnd - 1) : (double) winStart;
+
+        //  45 ms grains: long enough that the crossfade does not buzz at the
+        //  grain rate, short enough that the smearing stays inside a drum hit.
+        pitchMode = keepLength;
+        gLen      = juce::jmax (64.0, 0.045 * fSys);
+        gPhase    = 0.0;
+        gOffA     = 0.0;
+        gOffB     = 0.0;
 
         // Equal-power pan law: pan in [-1, 1], 0 = centre.
         const float panAngle = (juce::jlimit (-1.0f, 1.0f, pan) * 0.5f + 0.5f) * juce::MathConstants<float>::halfPi;
@@ -124,6 +147,133 @@ struct Voice
         const float panIncL = (panTL - panL) / (float) num;
         const float panIncR = (panTR - panR) / (float) num;
 
+        //  Gain envelope and pan slew, identical in both modes.
+        auto advanceEnvelope = [this] () noexcept -> bool
+        {
+            if (releasing)
+            {
+                gain -= stepDown;
+                if (gain <= 0.0f) { active = false; gain = 0.0f; return false; }
+            }
+            else if (gain < target)
+            {
+                gain += stepUp;
+                if (gain > target) gain = target;
+            }
+            else if (gain > target)
+            {
+                // A volume CUT is not a musical release: it used to fall
+                // at the pad's attack rate, so a pad with a one-second
+                // attack took a second to get quieter.
+                gain -= stepCtl;
+                if (gain < target) gain = target;
+            }
+            return true;
+        };
+
+        //  TONE mode: the position still walks at real speed, and the pitch
+        //  comes from two grains reading against it at the pitch ratio, half a
+        //  grain apart, under triangular windows that sum to exactly one. Each
+        //  head is re-anchored to the position when its own window is at zero,
+        //  so the splice happens where it cannot be heard.
+        if (pitchMode && std::abs (ratio - 1.0) > 1.0e-9)
+        {
+            const double lo = (double) winStart, hi = (double) (winEnd - 1);
+            const double drift    = timeStep * (ratio - 1.0);
+            const double phaseInc = 1.0 / gLen;
+
+            //  Which side of the playing position a grain reads from. Shifting
+            //  UP the head runs ahead of the position, so it starts on it;
+            //  shifting DOWN it runs behind, and starting on the position
+            //  would send it looking for material BEFORE the sample begins -
+            //  where it found the clamp instead and held one value for most of
+            //  every grain. Starting a grain-span ahead and letting it fall
+            //  back onto the position puts the ragged edge at the end of a
+            //  sound instead of at its attack.
+            const double gStart = (drift < 0.0) ? -drift * gLen : 0.0;
+            if (gPhase == 0.0 && gOffA == 0.0 && gOffB == 0.0)
+                gOffA = gOffB = gStart;
+
+            //  Where exactly the incoming grain starts. Restarting it at the
+            //  nominal offset splices two copies of the same sound at an
+            //  arbitrary phase, and when that phase lands near opposite the
+            //  crossfade CANCELS: a sine dropped 33 dB an octave down while
+            //  the same shift upwards came through untouched, purely because
+            //  of where the numbers happened to fall.
+            //
+            //  So the start is chosen rather than assumed. Around the nominal
+            //  point, take the offset whose material correlates best with what
+            //  the outgoing grain is about to play - which is a plain
+            //  autocorrelation of the source at that moment. The two grains
+            //  then add instead of fighting, and the crossfade stops being a
+            //  gamble. (This is WSOLA; the search is ~120 candidates twice per
+            //  grain, a few hundred thousand multiplies a second per voice.)
+            auto alignedStart = [&] (double outgoingOff) noexcept -> double
+            {
+                constexpr int N = 192;      // correlation window
+                constexpr int S = 240;      // search radius, samples
+                const int ref = (int) (pos + outgoingOff);
+                if (ref < winStart || ref + N >= winEnd) return gStart;
+
+                const int base = (int) (pos + gStart);
+                double best = -1.0e30;
+                int    bestD = 0;
+                for (int d = -S; d <= S; d += 2)
+                {
+                    const int a = base + d;
+                    if (a < winStart || a + N >= winEnd) continue;
+                    double acc = 0.0;
+                    for (int k = 0; k < N; k += 2)
+                        acc += (double) srcL[ref + k] * (double) srcL[a + k];
+                    if (acc > best) { best = acc; bestD = d; }
+                }
+                return gStart + (double) bestD;
+            };
+
+            for (int i = 0; i < num; ++i)
+            {
+                if (! advanceEnvelope()) break;
+                panL += panIncL;
+                panR += panIncR;
+
+                const double pA = juce::jlimit (lo, hi, pos + gOffA);
+                const double pB = juce::jlimit (lo, hi, pos + gOffB);
+                const double phB = (gPhase < 0.5) ? gPhase + 0.5 : gPhase - 0.5;
+                const float  wA = grainWindow (gPhase);
+                const float  wB = grainWindow (phB);
+
+                const int   ia = (int) pA; const float fa = (float) (pA - (double) ia);
+                const int   ib = (int) pB; const float fb = (float) (pB - (double) ib);
+
+                const float l = wA * hermite4 (fa, srcL, ia) + wB * hermite4 (fb, srcL, ib);
+                dstL[i] += gain * panL * l;
+                if (stereoOut)
+                    dstR[i] += gain * panR * (srcR != nullptr
+                                                ? wA * hermite4 (fa, srcR, ia) + wB * hermite4 (fb, srcR, ib)
+                                                : l);
+
+                pos   += timeStep;
+                gOffA += drift;
+                gOffB += drift;
+
+                const double prevPhase = gPhase;
+                gPhase += phaseInc;
+                if (gPhase >= 1.0)                          { gPhase -= 1.0; gOffA = alignedStart (gOffB); }
+                else if (gPhase >= 0.5 && prevPhase < 0.5)  { gOffB = alignedStart (gOffA); }
+
+                if (reverse ? (pos < lo) : (pos > hi))
+                {
+                    if (! loop) { active = false; break; }
+                    pos   = reverse ? hi : lo;
+                    gOffA = gOffB = gStart;
+                }
+            }
+
+            panL = juce::jlimit (0.0f, 1.0f, panL);
+            panR = juce::jlimit (0.0f, 1.0f, panR);
+            return;
+        }
+
         const double step = reverse ? -delta : delta;   // always positive magnitude
         int i = 0;
 
@@ -146,24 +296,7 @@ struct Voice
 
             for (int k = 0; k < run; ++k, ++i)
             {
-                if (releasing)
-                {
-                    gain -= stepDown;
-                    if (gain <= 0.0f) { active = false; gain = 0.0f; break; }
-                }
-                else if (gain < target)
-                {
-                    gain += stepUp;
-                    if (gain > target) gain = target;
-                }
-                else if (gain > target)
-                {
-                    // A volume CUT is not a musical release: it used to fall
-                    // at the pad's attack rate, so a pad with a one-second
-                    // attack took a second to get quieter.
-                    gain -= stepCtl;
-                    if (gain < target) gain = target;
-                }
+                if (! advanceEnvelope()) break;
 
                 panL += panIncL;
                 panR += panIncR;
@@ -188,6 +321,23 @@ struct Voice
     }
 
 private:
+    //  Trapezoid, not triangle. Two heads reading the same source a fixed
+    //  distance apart comb-filter each other wherever they overlap, and a
+    //  triangular pair overlaps ALL the time - on a held note the two copies
+    //  can land half a period out and cancel, which is heard as the pitch
+    //  wandering rather than as a shift. This holds one head alone at full
+    //  gain for most of its turn and crosses over in a tenth of a grain, so
+    //  the interference exists only in that sliver. The pair still sums to
+    //  exactly one everywhere.
+    static constexpr double kXFade = 0.03;
+    static inline float grainWindow (double p) noexcept
+    {
+        if (p < kXFade)         return (float) (p / kXFade);
+        if (p < 0.5)            return 1.0f;
+        if (p < 0.5 + kXFade)   return (float) (1.0 - (p - 0.5) / kXFade);
+        return 0.0f;
+    }
+
     static inline float hermite4 (float frac, const float* y, int idx) noexcept
     {
         const float ym1 = y[idx - 1];

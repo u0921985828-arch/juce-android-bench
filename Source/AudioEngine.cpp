@@ -133,7 +133,8 @@ void AudioEngine::triggerPad (int slot, int extraSemis) noexcept
                                  len,
                                  padPan[(size_t) slot].load (std::memory_order_relaxed),
                                  padAttack[(size_t) slot].load (std::memory_order_relaxed),
-                                 padRelease[(size_t) slot].load (std::memory_order_relaxed));
+                                 padRelease[(size_t) slot].load (std::memory_order_relaxed),
+                                 padKeepLength[(size_t) slot].load (std::memory_order_relaxed));
 }
 
 void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
@@ -915,6 +916,7 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     copyArr (padEnd,     s.padEnd);
     copyArr (padLoop,    s.padLoop);
     copyArr (padReverse, s.padReverse);
+    copyArr (padKeepLength, s.padKeepLength);
     copyArr (padChoke,   s.padChoke);
     copyArr (padPan,     s.padPan);
     copyArr (padAttack,  s.padAttack);

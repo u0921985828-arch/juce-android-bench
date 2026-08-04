@@ -68,6 +68,10 @@ public:
     void setPadEnd     (int slot, int e)       noexcept { store (padEnd,     slot, e); }
     void setPadLoop    (int slot, bool b)      noexcept { store (padLoop,    slot, b); }
     void setPadReverse (int slot, bool b)      noexcept { store (padReverse, slot, b); }
+    //  Whether pitch drags the length with it (tape) or not (tone).
+    void setPadKeepLength (int slot, bool b)   noexcept { store (padKeepLength, slot, b); }
+    bool getPadKeepLength (int slot) const noexcept
+    { return slot >= 0 && slot < kNumPads && padKeepLength[(size_t) slot].load (std::memory_order_relaxed); }
     void setPadChoke   (int slot, int group)   noexcept { store (padChoke,   slot, group); }   // 0 = none
     void setPadPan     (int slot, float p)     noexcept { store (padPan,     slot, p); }        // -1..1
     void setPadAttack  (int slot, float ms)    noexcept { store (padAttack,  slot, ms); }
@@ -329,6 +333,7 @@ private:
     std::array<std::atomic<int>,   kNumPads> padEnd {};
     std::array<std::atomic<bool>,  kNumPads> padLoop {};
     std::array<std::atomic<bool>,  kNumPads> padReverse {};
+    std::array<std::atomic<bool>,  kNumPads> padKeepLength {};   // true = pitch only, false = tape
     std::array<std::atomic<int>,   kNumPads> padChoke {};   // 0 = none, 1..8 = choke group
     std::array<std::atomic<float>, kNumPads> padPan {};      // -1 (L) .. 0 (centre) .. 1 (R)
     std::array<std::atomic<float>, kNumPads> padAttack {};   // ms

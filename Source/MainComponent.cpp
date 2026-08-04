@@ -431,8 +431,19 @@ MainComponent::MainComponent()
         s.onValueChange = std::move (cb);
         addAndMakeVisible (s);
     };
-    initKnob (pitchSlider, -24.0, 24.0, 1.0, 0.0, 0.0,
-             [this] { if (selectedPad >= 0) { padPitch[(size_t) selectedPad] = (float) pitchSlider.getValue(); engine.setPadPitch (selectedPad, (float) pitchSlider.getValue()); } });
+    //  Pitch is two controls because it is two decisions. Twenty-four
+    //  semitones on one dial cannot be nudged by a cent - you would be asking
+    //  for one part in 4800 out of a thumb - so the note and the tuning get a
+    //  knob each, and the engine is handed their sum.
+    auto sendPitch = [this]
+    {
+        if (selectedPad < 0) return;
+        padPitch[(size_t) selectedPad] = (float) pitchSlider.getValue();
+        padCents[(size_t) selectedPad] = (float) fineSlider.getValue();
+        engine.setPadPitch (selectedPad, (float) (pitchSlider.getValue() + fineSlider.getValue() / 100.0));
+    };
+    initKnob (pitchSlider, -24.0, 24.0, 1.0, 0.0, 0.0, sendPitch);
+    initKnob (fineSlider, -100.0, 100.0, 1.0, 0.0, 0.0, sendPitch);
     initKnob (volSlider, 0.0, 1.0, 0.01, 0.85, 0.0,
              [this] { if (selectedPad >= 0) { padGain[(size_t) selectedPad] = (float) volSlider.getValue(); engine.setPadGain (selectedPad, (float) volSlider.getValue()); } });
     initKnob (panSlider, -1.0, 1.0, 0.01, 0.0, 0.0,
@@ -452,6 +463,11 @@ MainComponent::MainComponent()
     chokeSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 56, Metrics::chip);
 
     pitchSlider.setTextValueSuffix (" st");
+    fineSlider.textFromValueFunction = [] (double v)
+    {
+        return (v > 0.0 ? "+" : "") + juce::String ((int) v) + " c";
+    };
+    fineSlider.updateText();
     attackSlider.setTextValueSuffix (" ms");
     releaseSlider.setTextValueSuffix (" ms");
     panSlider.textFromValueFunction = [] (double v)
@@ -462,6 +478,22 @@ MainComponent::MainComponent()
     panSlider.updateText();
     chokeSlider.textFromValueFunction = [] (double v) { return v <= 0.0 ? juce::String ("off") : juce::String ((int) v); };
     chokeSlider.updateText();
+
+    //  CINTA is what a sampler does by nature - pitch and length are the same
+    //  knob - and TONO keeps the length, which is the difference between a
+    //  vocal you can transpose and a chipmunk.
+    styleButton (modeButton, kKey);
+    modeButton.setClickingTogglesState (true);
+    modeButton.setColour (juce::TextButton::buttonOnColourId, kAccent);
+    modeButton.onClick = [this]
+    {
+        if (selectedPad < 0) return;
+        const bool keep = modeButton.getToggleState();
+        padKeepLen[(size_t) selectedPad] = keep;
+        engine.setPadKeepLength (selectedPad, keep);
+        modeButton.setButtonText (keep ? "TONO" : "CINTA");
+    };
+    padSheet.addAndMakeVisible (modeButton);
 
     startSlider.onValueChange = [this]
     {
@@ -906,7 +938,8 @@ MainComponent::MainComponent()
     //  value is applied, it just cannot be changed from here.
 
     // Controls live inside their sheets, not on the machine face.
-    for (juce::Component* c : { (juce::Component*) &pitchSlider, (juce::Component*) &volSlider, (juce::Component*) &panSlider,
+    for (juce::Component* c : { (juce::Component*) &pitchSlider, (juce::Component*) &fineSlider,
+                                (juce::Component*) &volSlider, (juce::Component*) &panSlider,
                                 (juce::Component*) &attackSlider, (juce::Component*) &releaseSlider, (juce::Component*) &chokeSlider,
                                 (juce::Component*) &startSlider, (juce::Component*) &endSlider,
                                 (juce::Component*) &reverseButton, (juce::Component*) &loopButton })
@@ -1434,14 +1467,13 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
             auto r = s.getBounds();
             g.drawText (t, r.getX() - 6, r.getY() - 14, r.getWidth() + 12, 12, juce::Justification::centred);
         };
-        name (pitchSlider, "PITCH"); name (volSlider, "VOLUME"); name (panSlider, "PAN");
+        name (pitchSlider, "PITCH"); name (fineSlider, "FINO"); name (volSlider, "VOLUME");
+        name (panSlider, "PAN");
         name (attackSlider, "ATTACK"); name (releaseSlider, "RELEASE");
+        name (chokeSlider, "CHOKE");
 
-        //  CHOKE's control sits lower than the two dials beside it, so its
-        //  label takes their line rather than its own — a row of names should
-        //  read as a row.
-        g.drawText ("CHOKE", chokeSlider.getX() - 6, attackSlider.getY() - 14,
-                    chokeSlider.getWidth() + 12, 12, juce::Justification::centred);
+        g.drawText ("MODO", modeButton.getX() - 6, modeButton.getY() - 14,
+                    modeButton.getWidth() + 12, 12, juce::Justification::centred);
 
         // Start/End stay linear (a trim range, not a knob): label to the left.
         g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.06f));
@@ -1699,25 +1731,25 @@ void MainComponent::resized()
 
     // PADS sheet: per-pad knobs, trim, REV/LOOP + AUTO CHOP, sample-info card.
     {
-        auto inner = sheetFromBottom (padSheet, 614);
+        auto inner = sheetFromBottom (padSheet, 670);
         auto titleRow = inner.removeFromTop (32);
         padCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
 
-        juce::Slider* k1[3] = { &pitchSlider, &volSlider, &panSlider };
-        juce::Slider* k2[3] = { &attackSlider, &releaseSlider, &chokeSlider };
+        juce::Slider* k1[3] = { &pitchSlider, &fineSlider, &volSlider };
+        juce::Slider* k2[3] = { &panSlider, &attackSlider, &releaseSlider };
         placeKnobRow (inner.removeFromTop (86), k1);
         placeKnobRow (inner.removeFromTop (86), k2);
 
-        //  CHOKE is inc/dec buttons, not a dial, and JUCE sizes those buttons
-        //  to whatever height it is given — a knob-sized cell turns them into
-        //  two tall slabs that swallow the cell and shoulder the readout out
-        //  of line with PITCH, VOLUME and the rest. Hand it just the strip the
-        //  other knobs use for their value, and the buttons come out square,
-        //  side by side, on the same baseline as every other number here.
+        //  A third row for the two controls that are not dials: CHOKE, which
+        //  is a pair of increment buttons, and the tape/tone switch. Giving
+        //  them a knob-sized cell was what turned CHOKE into two tall slabs
+        //  that swallowed their column.
         {
-            const auto cell = chokeSlider.getBounds();
-            chokeSlider.setBounds (juce::Rectangle<int> (0, 0, juce::jmin (120, cell.getWidth()), 32)
-                                     .withCentre ({ cell.getCentreX(), cell.getBottom() - 8 }));
+            auto r3 = inner.removeFromTop (16 + Metrics::hit);
+            r3.removeFromTop (16);                       // gap for the names
+            const int w3 = r3.getWidth() / 3;
+            chokeSlider.setBounds (r3.removeFromLeft (w3).reduced (6, 3));
+            modeButton.setBounds  (r3.removeFromLeft (w3).reduced (6, 3));
         }
 
         inner.removeFromTop (Metrics::sm);
@@ -2199,6 +2231,9 @@ void MainComponent::refreshWaveformSegments()
 void MainComponent::updateControlsFromPad (int index)
 {
     pitchSlider.setValue (padPitch[(size_t) index], juce::dontSendNotification);
+    fineSlider.setValue  (padCents[(size_t) index], juce::dontSendNotification);
+    modeButton.setToggleState (padKeepLen[(size_t) index], juce::dontSendNotification);
+    modeButton.setButtonText (padKeepLen[(size_t) index] ? "TONO" : "CINTA");
     volSlider.setValue   (padGain[(size_t) index],  juce::dontSendNotification);
     startSlider.setValue (padStart01[(size_t) index], juce::dontSendNotification);
     endSlider.setValue   (padEnd01[(size_t) index],   juce::dontSendNotification);
@@ -2224,7 +2259,8 @@ void MainComponent::assignSampleToPad (int index, SampleBuffer::Ptr sb, const ju
     // defaults to 0 (silent); setVal(dontSendNotification) never fires the
     // slider callbacks, so without this the pad plays at zero gain.
     engine.setPadGain    (index, padGain[(size_t) index]);
-    engine.setPadPitch   (index, padPitch[(size_t) index]);
+    engine.setPadPitch   (index, padPitch[(size_t) index] + padCents[(size_t) index] / 100.0f);
+    engine.setPadKeepLength (index, padKeepLen[(size_t) index]);
     engine.setPadLoop    (index, padLoop[(size_t) index]);
     engine.setPadReverse (index, padReverse[(size_t) index]);
     engine.setPadChoke   (index, padChokeUI[(size_t) index]);
@@ -2340,7 +2376,8 @@ void MainComponent::autoChopSelected()
         engine.setPadStart   (i, st);
         engine.setPadEnd     (i, en);
         engine.setPadGain    (i, padGain[(size_t) i]);
-        engine.setPadPitch   (i, padPitch[(size_t) i]);
+        engine.setPadPitch   (i, padPitch[(size_t) i] + padCents[(size_t) i] / 100.0f);
+        engine.setPadKeepLength (i, padKeepLen[(size_t) i]);
         engine.setPadLoop    (i, false);
         engine.setPadReverse (i, false);
         engine.setPadChoke   (i, 0);
@@ -2521,6 +2558,8 @@ juce::ValueTree MainComponent::captureState() const
         p.setProperty ("name",    padName[(size_t) i],    nullptr);
         p.setProperty ("has",     padHasSample[(size_t) i], nullptr);
         p.setProperty ("pitch",   padPitch[(size_t) i],   nullptr);
+        p.setProperty ("cents",   padCents[(size_t) i],   nullptr);
+        p.setProperty ("keeplen", padKeepLen[(size_t) i], nullptr);
         p.setProperty ("gain",    padGain[(size_t) i],    nullptr);
         // The mix is part of the track, not of the session.
         p.setProperty ("mute",    engine.isPadMuted (i),  nullptr);
@@ -2628,6 +2667,8 @@ void MainComponent::applyState (const juce::ValueTree& s)
 
             padName[(size_t) i]    = p.getProperty ("name", juce::String()).toString();
             padPitch[(size_t) i]   = (float) p.getProperty ("pitch", 0.0);
+            padCents[(size_t) i]   = (float) p.getProperty ("cents", 0.0);
+            padKeepLen[(size_t) i] = (bool)  p.getProperty ("keeplen", false);
             padGain[(size_t) i]    = (float) p.getProperty ("gain", 0.85);
             engine.setPadMute (i, (bool) p.getProperty ("mute", false));
             engine.setPadSolo (i, (bool) p.getProperty ("solo", false));
@@ -2657,7 +2698,8 @@ void MainComponent::applyState (const juce::ValueTree& s)
                 engine.setPadEnd   (i, (int) (padEnd01[(size_t) i]   * len));
             }
 
-            engine.setPadPitch   (i, padPitch[(size_t) i]);
+            engine.setPadPitch   (i, padPitch[(size_t) i] + padCents[(size_t) i] / 100.0f);
+            engine.setPadKeepLength (i, padKeepLen[(size_t) i]);
             engine.setPadGain    (i, padGain[(size_t) i]);
             engine.setPadLoop    (i, padLoop[(size_t) i]);
             engine.setPadReverse (i, padReverse[(size_t) i]);

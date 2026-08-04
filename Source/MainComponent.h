@@ -368,7 +368,9 @@ private:
     void shiftZati (int delta);
     bool recArmed = false;                          // REC writes hits into the pattern
 
-    juce::Slider pitchSlider, volSlider, startSlider, endSlider, bpmSlider, chokeSlider;
+    juce::Slider pitchSlider, fineSlider, volSlider, startSlider, endSlider, bpmSlider, chokeSlider;
+    //  CINTA moves pitch and length together, TONO keeps the length.
+    juce::TextButton modeButton { "CINTA" };
     juce::Slider panSlider, attackSlider, releaseSlider;
     juce::Slider patternSlider, noteSlider, lengthSlider;
     juce::TextButton chainClearButton { "CLR CHAIN" };
@@ -381,7 +383,9 @@ private:
 
     // Per-pad UI state.
     std::array<bool,  kNumPads> padHasSample {};
-    std::array<float, kNumPads> padPitch {};
+    std::array<float, kNumPads> padPitch {};      // whole semitones
+    std::array<float, kNumPads> padCents {};      // -100..100, the part between them
+    std::array<bool,  kNumPads> padKeepLen {};
     std::array<float, kNumPads> padGain {};
     std::array<float, kNumPads> padStart01 {};
     std::array<float, kNumPads> padEnd01 {};
