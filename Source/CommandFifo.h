@@ -25,7 +25,11 @@ struct Command
     Type  type       = Type::NoteOn;
     int   slot       = 0;
     float semitones  = 0.0f;
-    float velocity   = 0.8f;
+    //  Default full, not 0.8: anything that does not measure a strike - the
+    //  sequencer, a chain one-shot, a test tone - means "as loud as this pad
+    //  is set to", and scaling those by 0.8 would quietly cost every one of
+    //  them 2 dB against a hard tap.
+    float velocity   = 1.0f;
     int   startFrame = 0;
 };
 

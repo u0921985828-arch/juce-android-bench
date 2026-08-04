@@ -56,7 +56,7 @@ public:
     void renderNextBlock (juce::AudioBuffer<float>& out, int startSample, int numSamples) noexcept;
 
     // --- Triggers (message thread) ---
-    void postNoteOn  (int slot) noexcept;   // uses the pad's stored params
+    void postNoteOn  (int slot, float vel = 1.0f) noexcept;   // uses the pad's stored params
     void postNoteOff (int slot) noexcept;
     void postPanic() noexcept;
     void postTestTone() noexcept;
@@ -97,6 +97,16 @@ public:
         return padGain[(size_t) slot].load (std::memory_order_relaxed);
     }
     int  getSampleLength (int slot) const noexcept;   // 0 if none
+
+    //  How much of the pool is in use. Read by the UI for a polyphony readout
+    //  and by the offline checks; a benign race with the audio thread is fine
+    //  for both, since neither acts on the number.
+    int getActiveVoiceCount() const noexcept
+    {
+        int n = 0;
+        for (const auto& v : voices) if (v.active) ++n;
+        return n;
+    }
 
     // --- Samples (message thread) ---
     void publishSample (int slot, SampleBuffer::Ptr newBuffer) noexcept;
@@ -278,7 +288,7 @@ public:
 
 private:
     void handleCommand (const Command& c) noexcept;               // audio thread
-    void triggerPad (int slot, int extraSemis = 0) noexcept;      // audio thread
+    void triggerPad (int slot, int extraSemis = 0, float vel = 1.0f) noexcept;   // audio thread
 
     template <typename Arr, typename V>
     static void store (Arr& a, int slot, V v) noexcept
@@ -316,10 +326,20 @@ private:
     // Two voices per pad, round-robin: a retrigger steals the previous
     // instance with a fast declick fade instead of hard-resetting it (the
     // single-voice reset produced a waveform discontinuity = audible click).
-    static constexpr int kVoicesPerPad = 2;
-    static constexpr int kNumVoices    = kNumPads * kVoicesPerPad;
+    //  One shared pool, not two voices bolted to each pad.
+    //
+    //  Two per pad meant a three second break cut itself off on the third hit
+    //  while fifteen silent pads sat on thirty voices nobody was using. A pool
+    //  spends the polyphony where it is actually being played, which is what
+    //  every sampler does and what anyone reaching for a stand demo will try
+    //  within about ten seconds.
+    //
+    //  The per-pad cap stays, just far higher: without one a single held pad
+    //  could take the whole pool and starve the other fifteen.
+    static constexpr int kNumVoices     = 48;
+    static constexpr int kMaxVoicesOnPad = 8;
     std::array<Voice, kNumVoices>       voices {};
-    std::array<std::uint8_t, kNumPads>  voiceFlip {};   // audio-thread only
+    std::uint32_t                       voiceSerial = 0;   // audio-thread only, for oldest-steal
     CommandFifo commands;
 
     std::array<SampleBuffer*, kNumPads>              padSample {};

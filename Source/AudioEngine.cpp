@@ -96,7 +96,7 @@ void AudioEngine::releaseResources() noexcept
         v.kill();
 }
 
-void AudioEngine::triggerPad (int slot, int extraSemis) noexcept
+void AudioEngine::triggerPad (int slot, int extraSemis, float vel) noexcept
 {
     if (slot < 0 || slot >= kNumPads)
         return;
@@ -107,10 +107,10 @@ void AudioEngine::triggerPad (int slot, int extraSemis) noexcept
     // Choke group: fade out any other pad's voices sharing this pad's group.
     const int group = padChoke[(size_t) slot].load (std::memory_order_relaxed);
     if (group > 0)
-        for (int j = 0; j < kNumPads; ++j)
-            if (j != slot && padChoke[(size_t) j].load (std::memory_order_relaxed) == group)
-                for (int k = 0; k < kVoicesPerPad; ++k)
-                    voices[(size_t) (j * kVoicesPerPad + k)].release();
+        for (auto& v : voices)
+            if (v.active && v.slot >= 0 && v.slot != slot
+                && padChoke[(size_t) v.slot].load (std::memory_order_relaxed) == group)
+                v.release();
 
     const int len = sb->buffer.getNumSamples();
     int st = padStart[(size_t) slot].load (std::memory_order_relaxed);
@@ -120,21 +120,70 @@ void AudioEngine::triggerPad (int slot, int extraSemis) noexcept
 
     triggeredMask.fetch_or ((std::uint32_t) (1u << slot), std::memory_order_relaxed);
 
-    // Round-robin voice pair: declick-steal the old instance, start the new.
-    voices[(size_t) (slot * kVoicesPerPad + voiceFlip[(size_t) slot])].steal (systemSampleRate);
-    voiceFlip[(size_t) slot] ^= 1;
-    voices[(size_t) (slot * kVoicesPerPad + voiceFlip[(size_t) slot])].start (slot,
-                                 padPitch[(size_t) slot].load (std::memory_order_relaxed) + (float) extraSemis,
-                                 effectiveGain (slot),
-                                 sb->sourceSampleRate, systemSampleRate,
-                                 st, en,
-                                 padLoop[(size_t) slot].load (std::memory_order_relaxed),
-                                 padReverse[(size_t) slot].load (std::memory_order_relaxed),
-                                 len,
-                                 padPan[(size_t) slot].load (std::memory_order_relaxed),
-                                 padAttack[(size_t) slot].load (std::memory_order_relaxed),
-                                 padRelease[(size_t) slot].load (std::memory_order_relaxed),
-                                 padKeepLength[(size_t) slot].load (std::memory_order_relaxed));
+    //  Pick a voice out of the shared pool. A free one if there is one, and
+    //  otherwise the oldest - by serial, so "oldest" means the one that has
+    //  been sounding longest rather than whichever slot the counter happens
+    //  to be pointing at. Two caps decide when we steal: the pad's own share
+    //  of the pool, so one held pad cannot starve the other fifteen, and the
+    //  pool itself.
+    //
+    //  A stolen voice gets steal(), which is a fast fade rather than a cut -
+    //  it keeps the same voice alive for a few milliseconds while the new
+    //  note starts elsewhere. Only when the WHOLE pool is busy does the new
+    //  note have to land on the voice being taken, and then the fade has
+    //  nowhere to happen. At 48 voices that is rare and it is buried.
+    Voice* chosen  = nullptr;
+    Voice* oldest  = nullptr;
+    Voice* oldestOnPad = nullptr;
+    int    onPad   = 0;
+
+    for (auto& v : voices)
+    {
+        if (! v.active)
+        {
+            if (chosen == nullptr) chosen = &v;
+            continue;
+        }
+
+        if (oldest == nullptr || v.serial < oldest->serial)
+            oldest = &v;
+
+        if (v.slot == slot)
+        {
+            ++onPad;
+            if (oldestOnPad == nullptr || v.serial < oldestOnPad->serial)
+                oldestOnPad = &v;
+        }
+    }
+
+    if (onPad >= kMaxVoicesOnPad && oldestOnPad != nullptr)
+    {
+        oldestOnPad->steal (systemSampleRate);
+        if (chosen == nullptr) chosen = oldestOnPad;
+    }
+    else if (chosen == nullptr && oldest != nullptr)
+    {
+        oldest->steal (systemSampleRate);
+        chosen = oldest;
+    }
+
+    if (chosen == nullptr)
+        return;
+
+    chosen->serial = ++voiceSerial;
+    chosen->start (slot,
+                   padPitch[(size_t) slot].load (std::memory_order_relaxed) + (float) extraSemis,
+                   effectiveGain (slot),
+                   sb->sourceSampleRate, systemSampleRate,
+                   st, en,
+                   padLoop[(size_t) slot].load (std::memory_order_relaxed),
+                   padReverse[(size_t) slot].load (std::memory_order_relaxed),
+                   len,
+                   padPan[(size_t) slot].load (std::memory_order_relaxed),
+                   padAttack[(size_t) slot].load (std::memory_order_relaxed),
+                   padRelease[(size_t) slot].load (std::memory_order_relaxed),
+                   padKeepLength[(size_t) slot].load (std::memory_order_relaxed),
+                   vel);
 }
 
 void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
@@ -742,11 +791,12 @@ void AudioEngine::handleCommand (const Command& c) noexcept
 {
     switch (c.type)
     {
-        case Command::Type::NoteOn:  triggerPad (c.slot); break;
+        case Command::Type::NoteOn:  triggerPad (c.slot, 0, c.velocity); break;
         case Command::Type::NoteOff:
             if (c.slot >= 0 && c.slot < kNumPads)
-                for (int k = 0; k < kVoicesPerPad; ++k)
-                    voices[(size_t) (c.slot * kVoicesPerPad + k)].release();
+                for (auto& v : voices)
+                    if (v.active && v.slot == c.slot)
+                        v.release();
             break;
         case Command::Type::Panic:   for (auto& v : voices) v.kill(); break;
     }
@@ -756,9 +806,9 @@ void AudioEngine::handleCommand (const Command& c) noexcept
 //  Message thread
 // ---------------------------------------------------------------------------
 
-void AudioEngine::postNoteOn (int slot) noexcept
+void AudioEngine::postNoteOn (int slot, float vel) noexcept
 {
-    Command c; c.type = Command::Type::NoteOn; c.slot = slot;
+    Command c; c.type = Command::Type::NoteOn; c.slot = slot; c.velocity = vel;
     commands.push (c);
 }
 

@@ -33,6 +33,31 @@ public:
     void setPlaying  (bool p) { if (playing  != p) { playing  = p; repaint(); } }
     void setFlash    (float f) { flash = f; repaint(); }
 
+    //  How hard the last strike was, 0.10 to 1.
+    //
+    //  A touchscreen has no strike force, so the pad has to get it from
+    //  somewhere else. Pressure (MouseEvent::pressure) is the obvious answer
+    //  and the wrong one: most Android panels report a constant, and a control
+    //  that works on one phone and not the next is worse than none.
+    //
+    //  Position is what every pad instrument without real sensors uses, and it
+    //  is the one thing a touchscreen always knows: low on the tile is soft,
+    //  high is hard, the way a drum reads its own head. It also stays playable
+    //  with one thumb, which pressure never was.
+    float getLastVelocity() const noexcept { return lastVelocity; }
+
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        const float h = (float) juce::jmax (1, getHeight());
+        const float y = juce::jlimit (0.0f, 1.0f, (float) e.position.y / h);
+
+        //  Struck at the top = 1, at the bottom = 0.35 rather than silence:
+        //  the softest edge of the pad still has to make a sound, and a floor
+        //  of 0.35 is about 9 dB of range, which is what a finger can aim for.
+        lastVelocity = juce::jmap (1.0f - y, 0.35f, 1.0f);
+        juce::Button::mouseDown (e);
+    }
+
     void paintButton (juce::Graphics& g, bool over, bool down) override
     {
         //  Same construction as every other cap in the instrument: the pad is
@@ -190,7 +215,8 @@ private:
 
     int index = 0;
     int zati = 0;                 // fragment colour, assigned by cut order
-    bool loaded = false, selected = false, playing = false;
+    bool  loaded = false, selected = false, playing = false;
+    float lastVelocity = 1.0f;   // set by mouseDown, read by padClicked
     float flash = 0.0f;
     juce::String padName;
     juce::Array<float> spark;   // interleaved min,max per column

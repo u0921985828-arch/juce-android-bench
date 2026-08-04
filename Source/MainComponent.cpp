@@ -2255,7 +2255,7 @@ void MainComponent::padClicked (int index)
     }
 
     if (padHasSample[(size_t) index])
-        engine.postNoteOn (index);
+        engine.postNoteOn (index, pads[index] != nullptr ? pads[index]->getLastVelocity() : 1.0f);
     else
         status.setText ("Pad vacio - pulsa LOAD y toca el pad para cargarlo", juce::dontSendNotification);
 

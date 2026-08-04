@@ -31,6 +31,13 @@ struct Voice
     double gPhase    = 0.0;
     double gOffA     = 0.0, gOffB = 0.0;
     int    slot      = -1;
+    std::uint32_t serial = 0;   // when this voice was started; lowest = oldest
+
+    //  How hard this note was struck, kept for the life of the voice. It has
+    //  to live here rather than being folded into the start gain, because the
+    //  mixer retargets a sounding voice whenever a fader moves - and that
+    //  would otherwise reset every note to full strength mid-flight.
+    float  velocity  = 1.0f;
     int    winStart  = 1;      // playback window [winStart, winEnd) in samples
     int    winEnd    = 2;
 
@@ -45,11 +52,14 @@ struct Voice
     float  panTL     = 0.7071f;   // pan targets — retarget() moves these, render() slews
     float  panTR     = 0.7071f;
 
-    void start (int slotIndex, float semitones, float velocity,
+    //  padGain is the pad's level (volume knob, mute, solo); vel is how hard
+    //  this particular note was struck. They were one number, which is why
+    //  every hit came out the same: there was nowhere to put the difference.
+    void start (int slotIndex, float semitones, float padGain,
                 double fSrc, double fSys,
                 int startSamp, int endSamp, bool loopOn, bool rev, int srcLen,
                 float pan = 0.0f, float attackMs = 2.0f, float releaseMs = 3.0f,
-                bool keepLength = false) noexcept
+                bool keepLength = false, float vel = 1.0f) noexcept
     {
         slot     = slotIndex;
         winStart = juce::jlimit (1, juce::jmax (1, srcLen - 3), startSamp);
@@ -75,13 +85,17 @@ struct Voice
         panL = panTL = std::cos (panAngle);
         panR = panTR = std::sin (panAngle);
 
-        target    = velocity;
+        //  Floored rather than allowed to reach zero: the softest playable
+        //  tap has to make a sound, or the pad reads as broken.
+        velocity  = juce::jlimit (0.10f, 1.0f, vel);
+
+        target    = padGain * velocity;
         gain      = 0.0f;
         releasing = false;
         const double fadeIn  = juce::jmax (1.0, 0.001 * (double) juce::jmax (0.1f, attackMs)  * fSys);
         const double fadeOut = juce::jmax (1.0, 0.001 * (double) juce::jmax (0.1f, releaseMs) * fSys);
-        stepUp    = (float) (velocity / fadeIn);
-        stepDown  = (float) (velocity / fadeOut);
+        stepUp    = (float) (target / fadeIn);
+        stepDown  = (float) (target / fadeOut);
         stepCtl   = (float) (1.0 / juce::jmax (1.0, 0.010 * fSys));
         active    = true;
     }
@@ -105,7 +119,7 @@ struct Voice
     void retarget (float g, float pan) noexcept
     {
         if (! active || releasing) return;
-        target = g;
+        target = g * velocity;
         const float panAngle = (juce::jlimit (-1.0f, 1.0f, pan) * 0.5f + 0.5f) * juce::MathConstants<float>::halfPi;
         panTL = std::cos (panAngle);
         panTR = std::sin (panAngle);
