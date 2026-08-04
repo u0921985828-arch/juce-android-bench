@@ -255,6 +255,44 @@ MainComponent::MainComponent()
         rackSheet.onDismiss = [this] { closeAllSheets(); };
         rackSheet.paintContent = [this] (juce::Graphics& g) { paintRackSheetContent (g); };
 
+        // --- AUTO CHOP: the confirmation the destruction always deserved ---
+        for (int i = 0; i < 4; ++i)
+        {
+            const int n = kChopCounts[i];
+            auto* b = new juce::TextButton (juce::String (n));
+            styleButton (*b, kStepOff);
+            b->setColour (juce::TextButton::buttonOnColourId, kAccent);
+            b->setClickingTogglesState (true);
+            b->setRadioGroupId (7301);
+            b->onClick = [this, n] { chopSlices = n; refreshChopSheet(); };
+            chopSheet.addAndMakeVisible (b);
+            chopCountBtns.add (b);
+        }
+
+        styleButton (chopSafeButton, kKey);
+        chopSafeButton.setClickingTogglesState (true);
+        chopSafeButton.setToggleState (true, juce::dontSendNotification);
+        chopSafeButton.setColour (juce::TextButton::buttonOnColourId, kAccent);
+        chopSafeButton.onClick = [this]
+        {
+            chopOnlyEmpty = chopSafeButton.getToggleState();
+            refreshChopSheet();
+        };
+        chopSheet.addAndMakeVisible (chopSafeButton);
+
+        styleButton (chopGoButton, ZatiColours::red);
+        chopGoButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+        chopGoButton.onClick = [this] { applyAutoChop(); };
+        chopSheet.addAndMakeVisible (chopGoButton);
+
+        styleButton (chopCloseButton, kKey);
+        chopCloseButton.onClick = [this] { closeAllSheets(); };
+        chopSheet.addAndMakeVisible (chopCloseButton);
+        addAndMakeVisible (chopSheet);
+        chopSheet.setVisible (false);
+        chopSheet.onDismiss = [this] { closeAllSheets(); };
+        chopSheet.paintContent = [this] (juce::Graphics& g) { paintChopSheetContent (g); };
+
         styleButton (measureButton, kKey);
         measureButton.onClick = [this] { startMeasure(); };
         projSheet.addAndMakeVisible (measureButton);
@@ -541,7 +579,7 @@ MainComponent::MainComponent()
     addAndMakeVisible (loopButton);
 
     styleButton (chopButton, kKey);
-    chopButton.onClick = [this] { autoChopSelected(); };
+    chopButton.onClick = [this] { openChopSheet(); };
     addAndMakeVisible (chopButton);
 
     // Pattern bank selector (drives what the step grid shows/edits).
@@ -552,7 +590,7 @@ MainComponent::MainComponent()
     patternSlider.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
     patternSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     patternSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 90, 22);
-    patternSlider.textFromValueFunction = [] (double v) { return "PATTERN " + juce::String ((int) v + 1); };
+    patternSlider.textFromValueFunction = [] (double v) { return "P" + juce::String ((int) v + 1); };
     patternSlider.updateText();   // refresh textbox with the new formatter
     patternSlider.onValueChange = [this]
     {
@@ -579,8 +617,8 @@ MainComponent::MainComponent()
     lengthSlider.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
     lengthSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     lengthSlider.setColour (juce::Slider::trackColourId, ZatiColours::accent);
-    lengthSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 56, 22);
-    lengthSlider.textFromValueFunction = [] (double v) { return "LEN " + juce::String ((int) v); };
+    lengthSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 72, 22);
+    lengthSlider.textFromValueFunction = [] (double v) { return juce::String ((int) v) + " pasos"; };
     lengthSlider.updateText();
     lengthSlider.onValueChange = [this]
     {
@@ -627,13 +665,14 @@ MainComponent::MainComponent()
     noteSlider.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
     noteSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     noteSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 90, 22);
-    noteSlider.textFromValueFunction = [] (double v) { return "NOTE " + (v > 0 ? juce::String ("+") : juce::String()) + juce::String ((int) v); };
+    noteSlider.textFromValueFunction = [] (double v) { return (v > 0 ? juce::String ("+") : juce::String()) + juce::String ((int) v) + " st"; };
     noteSlider.updateText();   // refresh textbox with the new formatter
     noteSlider.onValueChange = [this]
     {
         if (selectedPad >= 0 && selectedStep >= 0)
             engine.setStepNote (selectedPattern, selectedStep, selectedPad, (int) noteSlider.getValue());
-            refreshStepGrid();
+
+        refreshStepGrid();
     };
     seqSheet.addAndMakeVisible (noteSlider);
 
@@ -709,6 +748,28 @@ MainComponent::MainComponent()
         refreshWaveformSegments();
         if (padSheet.isVisible()) padSheet.repaint();
     };
+
+    //  Tap the wave, hear the wave. On a chopped source the fragment under the
+    //  finger belongs to a particular pad, and that is the pad that speaks -
+    //  otherwise auditioning the fifth slice would play the first one through
+    //  the selected pad's settings, which is a different sound entirely.
+    waveform.onAudition = [this] (float t)
+    {
+        int pad = selectedPad;
+        if (pad < 0) return;
+
+        if (auto src = uiSample[(size_t) pad])
+            for (int i = 0; i < kNumPads; ++i)
+                if (uiSample[(size_t) i] == src
+                    && t >= padStart01[(size_t) i] && t < padEnd01[(size_t) i])
+                {
+                    pad = i;
+                    break;
+                }
+
+        engine.postNoteOnFrom (pad, t);
+    };
+
     //  MIX: one strip per pad — level, mute, solo. Mute and solo reach voices
     //  that are already sounding, so they work as performance controls too.
     for (int i = 0; i < kNumPads; ++i)
@@ -954,16 +1015,34 @@ MainComponent::MainComponent()
         padSheet.addAndMakeVisible (c);
     padSheet.addAndMakeVisible (chopButton);
 
+    //  Play what is on screen. It sits on the sheet's own title row rather
+    //  than in a row of its own, because the one thing this sheet is short of
+    //  is height, and a transport button is not worth a fader's worth of it.
+    styleButton (previewButton, kKey);
+    previewButton.onClick = [this]
+    {
+        if (selectedPad < 0) return;
+
+        //  Sounding: stop it. A loop with no way back off is the reason this
+        //  is a toggle rather than a re-trigger.
+        if (engine.getPadPosition01 (selectedPad) >= 0.0f)
+            engine.postNoteOff (selectedPad);
+        else
+            engine.postNoteOn (selectedPad);
+    };
+    padSheet.addAndMakeVisible (previewButton);
+
     styleButton (undoButton, ZatiColours::red);
     undoButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
     undoButton.onClick = [this] { performUndo(); };
-    undoButton.setVisible (false);
-    addAndMakeVisible (undoButton);
+    //  addChildComponent, not addAndMakeVisible: the latter turns the child
+    //  visible, which is how DESHACER came to sit on the face from launch
+    //  offering to undo something that had not happened yet.
+    addChildComponent (undoButton);
 
     styleButton (redoButton, ZatiColours::key);
     redoButton.onClick = [this] { performRedo(); };
-    redoButton.setVisible (false);
-    addAndMakeVisible (redoButton);
+    addChildComponent (redoButton);
 
     status.setJustificationType (juce::Justification::centred);
     status.setColour (juce::Label::textColourId, ZatiColours::inkDim);
@@ -1303,6 +1382,7 @@ void MainComponent::closeAllSheets()
     projSheet.setVisible (false);
     exportSheet.setVisible (false);
     rackSheet.setVisible (false);
+    chopSheet.setVisible (false);
     setButton.setToggleState (false, juce::dontSendNotification);
     repaint();
 }
@@ -1312,6 +1392,12 @@ MainComponent::~MainComponent()
     // The bounce thread holds a reference to the engine and to the pad
     // buffers, so it must be gone before either can be.
     if (exportJob != nullptr) { exportJob->signalThreadShouldExit(); exportJob.reset(); }
+
+    //  A clean exit is still an exit: leave the session where the next launch
+    //  will find it.
+    autosave();
+    session.flush (2000);
+
     shutdownAudio();
     setLookAndFeel (nullptr);
 }
@@ -1584,7 +1670,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
     //  them, so this line has no length it can count on. Stop it before the
     //  close button and let it shrink rather than run underneath.
     auto padTitleRow = padSheet.sheetBounds.reduced (14, 12).removeFromTop (16);
-    padTitleRow.setRight (juce::jmin (padTitleRow.getRight(), padCloseButton.getX() - Metrics::xs));
+    padTitleRow.setRight (juce::jmin (padTitleRow.getRight(), previewButton.getX() - Metrics::xs));
     //  Ellipsised rather than squeezed: a name long enough to need shrinking
     //  is long enough that shrinking will not save it, and a sentence cut off
     //  mid-letter reads as a bug where "..." reads as a long name.
@@ -1648,7 +1734,7 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
-    const juce::String t = "STEPS  " + dot + "  PAD " + juce::String (sp + 1)
+    const juce::String t = "PASOS  " + dot + "  PAD " + juce::String (sp + 1)
                          + (padName[(size_t) sp].isNotEmpty() ? "   " + padName[(size_t) sp] : juce::String())
                          + "   " + dot + "   P" + juce::String (selectedPattern + 1);
     g.drawText (t, inner.removeFromTop (16), juce::Justification::centredLeft);
@@ -1672,18 +1758,28 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
     g.drawText (chainStr, inner.removeFromTop (14), juce::Justification::centredLeft);
 
-    //  Row names, so the two pattern controls stop looking like one.
+    //  Every control is named, over the control itself rather than over the
+    //  row - two things sharing a line are two different jobs, and one label
+    //  stretched across both was how NOTA came to look like part of the chain.
     {
         g.setColour (ZatiColours::inkDim);
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.20f));
-        auto rowName = [&g, this] (juce::Component& c, const char* t)
+
+        auto over = [&g] (const juce::Component* c, const char* t)
         {
-            const auto r = c.getBounds();
-            g.drawText (t, seqSheet.sheetBounds.getX() + 14, r.getY() - 13,
-                        seqSheet.sheetBounds.getWidth() - 28, 12, juce::Justification::centredLeft);
+            if (c == nullptr) return;
+            const auto r = c->getBounds();
+            g.drawText (t, r.getX() + 2, r.getY() - 14, juce::jmax (60, r.getWidth()), 13,
+                        juce::Justification::centredLeft);
         };
-        if (patternButtons[0] != nullptr) rowName (*patternButtons[0], "CADENA");
-        rowName (patternSlider, "EDITANDO");
+
+        over (&patternSlider,      "PATRON");
+        over (&lengthSlider,       "LARGO");
+        over (patternButtons[0],   "CADENA");
+        over (&noteSlider,         "NOTA DEL PASO");
+        over (&bpmSlider,          "TEMPO");
+        if (barButtons[0] != nullptr && barButtons[0]->isVisible())
+            over (barButtons[0],   "COMPAS");
     }
 
     // The grid paints its own playhead and lane colours (see StepGrid).
@@ -1924,6 +2020,8 @@ void MainComponent::resized()
         auto inner = sheetFromBottom (padSheet, 670);
         auto titleRow = inner.removeFromTop (32);
         padCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
+        titleRow.removeFromRight (Metrics::xs);
+        previewButton.setBounds (titleRow.removeFromRight (68).reduced (0, 2));
 
         juce::Slider* k1[3] = { &pitchSlider, &fineSlider, &volSlider };
         juce::Slider* k2[3] = { &panSlider, &attackSlider, &releaseSlider };
@@ -2101,6 +2199,37 @@ void MainComponent::resized()
         }
     }
 
+    // AUTO CHOP sheet: how many pieces, where they land, and one red verb.
+    {
+        const int explainH = 34, plannedH = 40;
+        auto inner = sheetFromBottom (chopSheet, Metrics::md * 2 + 32 + explainH
+                                                   + Metrics::md + 14 + Metrics::hit
+                                                   + Metrics::sm + Metrics::hit
+                                                   + Metrics::md + plannedH
+                                                   + Metrics::sm + Metrics::btn);
+        auto titleRow = inner.removeFromTop (32);
+        chopCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
+
+        inner.removeFromTop (explainH);                 // painted: what this does
+        inner.removeFromTop (Metrics::md);
+        inner.removeFromTop (14);                       // painted: "TROZOS"
+
+        {
+            auto row = inner.removeFromTop (Metrics::hit);
+            const int w = row.getWidth() / chopCountBtns.size();
+            for (int i = 0; i < chopCountBtns.size(); ++i)
+                chopCountBtns[i]->setBounds ((i < chopCountBtns.size() - 1 ? row.removeFromLeft (w) : row)
+                                                 .reduced (2, 0));
+        }
+
+        inner.removeFromTop (Metrics::sm);
+        chopSafeButton.setBounds (inner.removeFromTop (Metrics::hit).reduced (2, 0));
+        inner.removeFromTop (Metrics::md);
+        inner.removeFromTop (plannedH);                 // painted: where they land
+        inner.removeFromTop (Metrics::sm);
+        chopGoButton.setBounds (inner.removeFromTop (Metrics::btn).reduced (2, 0));
+    }
+
     // SONG sheet: palette, timeline, page row.
     {
         const int laneH = 40;
@@ -2185,7 +2314,9 @@ void MainComponent::resized()
     // SEC sheet: pattern/len, chain, bar selector, the pads x steps grid, bpm.
     {
         const int lanes  = StepGrid::kLanes;
-        const int fixedRowsH = 288;               // title + rows above and below the grid
+        //  Every control row now carries its own name, and a name is 14px of
+        //  height that has to be budgeted rather than borrowed from the grid.
+        const int fixedRowsH = 350;               // title + named rows above and below the grid
         //  Same bargain as the mixer: the grid gets the room that is left,
         //  down to the density it had before rather than off the card.
         const int laneH  = juce::jlimit (20, 24, ((int) (full.getHeight() * 0.78f) - fixedRowsH) / lanes);
@@ -2196,22 +2327,40 @@ void MainComponent::resized()
         seqCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
 
         {
-            inner.removeFromTop (Metrics::md);            // room for the EDITANDO rule
+            //  Named groups, in the order the work happens: pick the bank and
+            //  its length, build the chain, tune the step you tapped, choose
+            //  the bar. Every one of those rows used to be an unlabelled strip
+            //  of look-alike buttons.
+            constexpr int nameH = 14;
+
+            inner.removeFromTop (nameH);                  // painted: PATRON / LARGO
             auto row1 = inner.removeFromTop (Metrics::hit);
             const int w1 = row1.getWidth() / 2;
+            //  An IncDecButtons slider gives its two buttons whatever the text
+            //  box does not take, so a narrow box on a wide row turns them into
+            //  a pair of slabs twice the size of anything else on the sheet.
+            //  Reserve the box first and the buttons come out finger-sized.
+            patternSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false,
+                                           juce::jmax (40, w1 - 4 - 2 * 40), 22);
             patternSlider.setBounds (row1.removeFromLeft (w1).reduced (2, 2));
             lengthSlider.setBounds  (row1.reduced (2, 2));
-            inner.removeFromTop (Metrics::md);            // room for the CADENA rule
 
+            inner.removeFromTop (Metrics::sm);
+            inner.removeFromTop (nameH);                  // painted: CADENA
             auto row2 = inner.removeFromTop (Metrics::hit);
             const int pw = row2.getWidth() / kNumPatterns;
             for (int i2 = 0; i2 < kNumPatterns; ++i2)
                 patternButtons[i2]->setBounds ((i2 < kNumPatterns - 1 ? row2.removeFromLeft (pw) : row2).reduced (2));
             inner.removeFromTop (Metrics::xs);
 
+            //  QUITAR CADENA belongs to the row above it, NOTA to the step you
+            //  tapped: two different jobs that happen to fit on one line, so
+            //  the note half is the one that gets the name.
+            inner.removeFromTop (nameH);                  // painted: NOTA DEL PASO
             auto row3 = inner.removeFromTop (Metrics::hit);
-            const int w3 = row3.getWidth() / 2;
-            chainClearButton.setBounds (row3.removeFromLeft (w3).reduced (2, 2));
+            chainClearButton.setBounds (row3.removeFromLeft (row3.getWidth() * 5 / 12).reduced (2, 2));
+            noteSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false,
+                                        juce::jmax (40, row3.getWidth() - 4 - 2 * 40), 22);
             noteSlider.setBounds       (row3.reduced (2, 2));
             inner.removeFromTop (Metrics::sm);
 
@@ -2223,6 +2372,7 @@ void MainComponent::resized()
 
             if (bars > 1)
             {
+                inner.removeFromTop (nameH);              // painted: COMPAS
                 auto row4 = inner.removeFromTop (Metrics::hit);
                 const int bw = row4.getWidth() / bars;
                 for (int b = 0; b < barButtons.size(); ++b)
@@ -2242,6 +2392,7 @@ void MainComponent::resized()
         auto bottom = inner.removeFromBottom (Metrics::hit);
         bpmSlider.setBounds (bottom.removeFromLeft ((int) (bottom.getWidth() * 0.66f)).reduced (2, 2));
         clearButton.setBounds (bottom.reduced (3, 2));
+        inner.removeFromBottom (14);                      // painted: TEMPO
         inner.removeFromBottom (Metrics::sm);
 
         stepGrid.setBounds (inner);
@@ -2339,7 +2490,8 @@ void MainComponent::refreshStepGrid()
 
     stepGrid.setSource (gridCells, gridZati, gridLoaded, gridNotes,
                         engine.getPatternLength (selectedPattern),
-                        selectedBar, ps, selectedPad);
+                        selectedBar, ps, selectedPad,
+                        ps >= 0 ? engine.getStepPhase() : 0.0f);
 
     //  The grid can only ring the live column when that column is on screen,
     //  so at four bars you would lose the beat entirely while editing bar 1
@@ -2576,23 +2728,90 @@ void MainComponent::performRedo()
     resized();
 }
 
-void MainComponent::autoChopSelected()
+// ============================================================================
+//  AUTO CHOP.
+//
+//  What it used to do, on a single tap and with no warning: cut the selected
+//  sample into sixteen equal pieces and write every one of them over every
+//  pad. If you had spent an hour building a kit and then tapped it to see what
+//  it did, the kit was gone - DESHACER got it back, but only if you knew the
+//  button existed and reached it before doing anything else.
+//
+//  Three things changed. It asks first, in a sheet that says exactly which
+//  pads it is about to write. It cuts into as many pieces as you choose, not
+//  always sixteen. And by default it will not touch a pad that already holds a
+//  sound: the slices go to the source pad and then to whatever is empty. Turn
+//  that off and it behaves like it always did - which is a real thing to want,
+//  just not the default for someone who does not yet know what the button is.
+// ============================================================================
+
+//  Which pads a chop of `slices` pieces would land on, in order. The first is
+//  always the source: the break is already there, and slice one IS the break's
+//  own beginning, so it costs nothing.
+juce::Array<int> MainComponent::chopTargets (int slices, bool onlyEmpty) const
+{
+    juce::Array<int> t;
+    if (selectedPad < 0) return t;
+
+    t.add (selectedPad);
+
+    for (int k = 1; k < kNumPads && t.size() < slices; ++k)
+    {
+        const int i = (selectedPad + k) % kNumPads;
+        if (onlyEmpty && padHasSample[(size_t) i]) continue;
+        t.add (i);
+    }
+
+    return t;
+}
+
+void MainComponent::openChopSheet()
+{
+    if (selectedPad < 0) selectPad (0);
+
+    for (int i = 0; i < chopCountBtns.size(); ++i)
+        chopCountBtns[i]->setToggleState (kChopCounts[i] == chopSlices, juce::dontSendNotification);
+
+    chopSafeButton.setToggleState (chopOnlyEmpty, juce::dontSendNotification);
+
+    openSheet (chopSheet, padsButton);
+    refreshChopSheet();
+}
+
+void MainComponent::refreshChopSheet()
+{
+    const int fits = chopTargets (chopSlices, chopOnlyEmpty).size();
+    const bool can = selectedPad >= 0 && uiSample[(size_t) selectedPad] != nullptr && fits >= 2;
+
+    chopGoButton.setEnabled (can);
+    chopGoButton.setButtonText (can ? "CORTAR EN " + juce::String (fits) : "CORTAR");
+    chopSheet.repaint();
+}
+
+void MainComponent::applyAutoChop()
 {
     if (selectedPad < 0) return;
     auto src = uiSample[(size_t) selectedPad];
     if (src == nullptr) return;
+
     const int len = src->buffer.getNumSamples();
-    if (len < kNumPads) return;
+    const auto targets = chopTargets (chopSlices, chopOnlyEmpty);
+    const int  n = targets.size();
+
+    //  Two pieces is the least that is still a chop, and a source shorter than
+    //  one sample per piece has nothing to divide.
+    if (n < 2 || len < n) return;
 
     pushUndo ("auto chop");
 
     const juce::String baseName = padName[(size_t) selectedPad].isNotEmpty()
                                  ? padName[(size_t) selectedPad] : juce::String ("CHOP");
 
-    for (int i = 0; i < kNumPads; ++i)
+    for (int k = 0; k < n; ++k)
     {
-        const int st = (int) ((juce::int64) i * len / kNumPads);
-        const int en = (int) ((juce::int64) (i + 1) * len / kNumPads);
+        const int i  = targets[k];
+        const int st = (int) ((juce::int64) k * len / n);
+        const int en = (int) ((juce::int64) (k + 1) * len / n);
 
         padHasSample[(size_t) i] = true;
         uiSample[(size_t) i]     = src;
@@ -2601,7 +2820,7 @@ void MainComponent::autoChopSelected()
         padLoop[(size_t) i]      = false;
         padReverse[(size_t) i]   = false;
         padChokeUI[(size_t) i]   = 0;
-        padName[(size_t) i]      = baseName + " " + juce::String (i + 1).paddedLeft ('0', 2);
+        padName[(size_t) i]      = baseName + " " + juce::String (k + 1).paddedLeft ('0', 2);
 
         engine.publishSample (i, src);   // resets trim to full length — override right after
         engine.setPadStart   (i, st);
@@ -2616,11 +2835,19 @@ void MainComponent::autoChopSelected()
         engine.setPadAttack  (i, padAttack[(size_t) i]);
         engine.setPadRelease (i, padRelease[(size_t) i]);
 
-        if (auto* p = pads[i]) p->setSampleInfo (uiSample[(size_t) i], padName[(size_t) i], padStart01[(size_t) i], padEnd01[(size_t) i]);
+        if (auto* p = pads[i]) p->setSampleInfo (uiSample[(size_t) i], padName[(size_t) i],
+                                                 padStart01[(size_t) i], padEnd01[(size_t) i]);
     }
 
-    selectPad (0);
-    status.setText ("Auto-chopped into " + juce::String (kNumPads) + " pads", juce::dontSendNotification);
+    const int askedFor = chopSlices;
+    closeAllSheets();
+    selectPad (targets[0]);
+
+    status.setText (n < askedFor
+                        ? "Cortado en " + juce::String (n) + " (no cabian " + juce::String (askedFor)
+                            + ") - DESHACER para volver"
+                        : "Cortado en " + juce::String (n) + " trozos - DESHACER para volver",
+                    juce::dontSendNotification);
 }
 
 int MainComponent::firstEmptyPad() const
@@ -3042,7 +3269,6 @@ void MainComponent::saveProject (const juce::String& rawName)
 
     currentProject = name;
     refreshProjectList();
-    currentProject = name;
 
     status.setText (ok && failed == 0
                         ? "Guardado \"" + name + "\"  [" + juce::String (written) + " pads]"
@@ -3101,7 +3327,6 @@ void MainComponent::loadProject (const juce::String& name)
             ++missing;
 
     currentProject = name;
-    currentProject = name;
     closeAllSheets();
     status.setText ("Abierto \"" + name + "\"  [" + juce::String (restored) + " pads"
                         + (missing > 0 ? ", " + juce::String (missing) + " sin audio]" : "]"),
@@ -3112,10 +3337,7 @@ void MainComponent::deleteProject (const juce::String& name)
 {
     ProjectStore::folderFor (name).deleteRecursively();
     if (currentProject == name)
-    {
         currentProject = {};
-        currentProject = {};
-    }
     refreshProjectList();
     status.setText ("Borrado \"" + name + "\"", juce::dontSendNotification);
     projSheet.repaint();
@@ -3147,7 +3369,12 @@ void MainComponent::newProject()
     selectedPattern = 0;
     selectedStep = -1;
     currentProject = {};
-    currentProject = {};
+
+    //  A new project means there is nothing to come back to: without this the
+    //  next launch would restore the machine the user just emptied.
+    session.clear();
+    session.adopt (uiSample.data(), kNumPads);
+
     selectPad (0);
     closeAllSheets();
     status.setText ("Proyecto nuevo", juce::dontSendNotification);
@@ -3284,6 +3511,78 @@ void MainComponent::refreshRack()
 //  all, and how much of THIS pad is going into it. The middle one matters
 //  because a send at 100 into an effect whose own MIX is down makes no
 //  sound, and without saying so the fader looks broken.
+//  The sheet says three things, in the order you need them: what the button is
+//  about to do, in words; how many pieces; and the exact list of pads it will
+//  write. Nothing here is a surprise by the time the red button is reachable.
+void MainComponent::paintChopSheetContent (juce::Graphics& g)
+{
+    if (chopSheet.sheetBounds.isEmpty()) return;
+
+    const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
+    const int sp = juce::jmax (0, selectedPad);
+    auto inner = chopSheet.sheetBounds.reduced (Metrics::lg, Metrics::md);
+
+    auto titleRow = inner.removeFromTop (32).withTrimmedTop (8);
+    titleRow.setRight (juce::jmin (titleRow.getRight(), chopCloseButton.getX() - Metrics::xs));
+    g.setColour (ZatiColours::ink.withAlpha (0.9f));
+    g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
+    g.drawText ("AUTO CHOP  " + dot + "  PAD " + juce::String (sp + 1)
+                + (padName[(size_t) sp].isNotEmpty() ? "  " + dot + "  " + padName[(size_t) sp].toUpperCase()
+                                                     : juce::String()),
+                titleRow, juce::Justification::centredLeft, true);
+
+    g.setColour (ZatiColours::inkDim);
+    g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.06f));
+    g.drawFittedText ("Parte este sample en trozos iguales y los reparte por los pads. "
+                      "El pad de origen se queda con el primero.",
+                      inner.removeFromTop (34), juce::Justification::topLeft, 2, 0.85f);
+
+    inner.removeFromTop (Metrics::md);
+    g.setColour (ZatiColours::ink.withAlpha (0.75f));
+    g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.16f));
+    g.drawText ("TROZOS", inner.removeFromTop (14), juce::Justification::centredLeft);
+
+    inner.removeFromTop (Metrics::hit + Metrics::sm + Metrics::hit + Metrics::md);
+
+    //  The plan, in pad numbers. This is the whole point of the sheet: the
+    //  old one-tap chop was destructive precisely because it never said this.
+    const auto targets = chopTargets (chopSlices, chopOnlyEmpty);
+    auto planned = inner.removeFromTop (40);
+
+    if (uiSample[(size_t) sp] == nullptr)
+    {
+        g.setColour (ZatiColours::red);
+        g.setFont (ZatiColours::monoFont (Metrics::fLabel, true));
+        g.drawFittedText ("Este pad no tiene sonido que cortar.",
+                          planned, juce::Justification::topLeft, 1, 0.8f);
+        return;
+    }
+
+    juce::StringArray nums;
+    for (int i = 0; i < targets.size(); ++i)
+        nums.add (juce::String (targets[i] + 1).paddedLeft ('0', 2));
+
+    int overwritten = 0;
+    for (int i = 1; i < targets.size(); ++i)
+        if (padHasSample[(size_t) targets[i]]) ++overwritten;
+
+    g.setColour (ZatiColours::ink.withAlpha (0.85f));
+    g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.06f));
+    g.drawFittedText ("va a pads: " + nums.joinIntoString (" "),
+                      planned.removeFromTop (22), juce::Justification::topLeft, 2, 0.8f);
+
+    juce::String warn;
+    if (targets.size() < chopSlices)
+        warn = "solo caben " + juce::String (targets.size()) + " sin pisar nada";
+    else if (overwritten > 0)
+        warn = "PISA " + juce::String (overwritten) + (overwritten == 1 ? " pad con sonido" : " pads con sonido");
+    else
+        warn = "no pisa ningun pad con sonido";
+
+    g.setColour (overwritten > 0 ? ZatiColours::red : ZatiColours::inkDim);
+    g.drawFittedText (warn, planned, juce::Justification::topLeft, 1, 0.8f);
+}
+
 void MainComponent::paintRackSheetContent (juce::Graphics& g)
 {
     if (rackSheet.sheetBounds.isEmpty()) return;
@@ -4023,6 +4322,12 @@ void MainComponent::appSuspended()
 
     engine.postPanic();          // no voice is left ringing into the silence
     autosave();
+
+    //  Anything the background writer had not got to yet - a pad recorded
+    //  seconds ago - gets a bounded moment to land. Bounded because Android
+    //  counts a slow onPause as a hang.
+    session.flush (1500);
+
     shutdownAudio();             // releases the output stream and the mic
     audioFocus.abandon();        // ...and hand the speaker back
     pausedByFocus = false;
@@ -4083,20 +4388,82 @@ void MainComponent::audioFocusGained()
     refreshDeviceStatusLine (true);
 }
 
-//  Write the state of the open project back over its own project.xml. The
-//  samples on disk are already whatever the last save wrote, so this is small
-//  and fast - which matters, because onPause is not a moment Android lets an
-//  app take its time in. With no project open there is nowhere to put it: the
-//  pads may hold recordings that exist nowhere else, and inventing a folder
-//  for them behind the user's back is not this function's decision to make.
+//  Two copies, and they answer different questions.
+//
+//  The session copy is unconditional: it is the only trace of work that was
+//  never given a name, which is the state a sampler spends its first hour in.
+//  The audio behind it has been written continuously by SessionKeeper's own
+//  thread, so all that is left here is the small XML - which matters, because
+//  onPause is not a moment Android lets an app take its time in.
+//
+//  The project copy only exists when a project is open, and it goes over that
+//  project's own project.xml, next to the samples its last save wrote.
 void MainComponent::autosave()
 {
+    const auto state = captureState();
+
+    session.sync (uiSample.data(), kNumPads);
+    session.writeState (state, currentProject);
+
     if (currentProject.isEmpty()) return;
 
     const auto folder = ProjectStore::folderFor (currentProject);
     if (! folder.isDirectory()) return;
 
-    folder.getChildFile ("project.xml").replaceWithText (captureState().toXmlString());
+    folder.getChildFile ("project.xml").replaceWithText (state.toXmlString());
+}
+
+//  Coming back from a cold start. Same shape as loadProject, from the folder
+//  nobody had to remember to save into.
+//
+//  It runs off the first timer tick rather than the constructor: reading
+//  sixteen WAVs takes long enough to be seen, and being seen as a face that
+//  fills in is much better than being seen as a launch that hangs.
+void MainComponent::restoreSession()
+{
+    if (! SessionKeeper::exists())
+    {
+        session.adopt (uiSample.data(), kNumPads);
+        return;
+    }
+
+    auto xml = juce::parseXML (SessionKeeper::stateFile());
+    if (xml == nullptr)
+    {
+        session.adopt (uiSample.data(), kNumPads);
+        return;
+    }
+
+    const auto tree = juce::ValueTree::fromXml (*xml);
+
+    int restored = 0;
+    for (int i = 0; i < kNumPads; ++i)
+        if (auto sb = ProjectStore::readSample (SessionKeeper::padFile (i)))
+        {
+            assignSampleToPad (i, sb);
+            ++restored;
+        }
+
+    applyState (tree);
+
+    //  Names live in the state, so the tiles are stamped after applyState.
+    for (int i = 0; i < kNumPads; ++i)
+        if (auto* p = pads[i])
+            p->setSampleInfo (uiSample[(size_t) i], padName[(size_t) i],
+                              padStart01[(size_t) i], padEnd01[(size_t) i]);
+
+    currentProject = tree.getProperty ("proyecto", "").toString();
+    refreshProjectList();
+
+    //  These buffers came off this very folder: nothing to write back.
+    session.adopt (uiSample.data(), kNumPads);
+
+    if (restored > 0 || currentProject.isNotEmpty())
+        status.setText (currentProject.isNotEmpty()
+                            ? "Sesion recuperada - " + currentProject
+                            : "Sesion recuperada  [" + juce::String (restored)
+                                + (restored == 1 ? " pad]" : " pads]"),
+                        juce::dontSendNotification);
 }
 
 void MainComponent::toggleMicSampling()
@@ -4182,6 +4549,32 @@ void MainComponent::toggleMicSampling()
 
 void MainComponent::timerCallback()
 {
+    //  Once, on the first tick: the face is up by now, so a restore that takes
+    //  a second reads as filling in rather than as a hang.
+    if (sessionRestorePending)
+    {
+        sessionRestorePending = false;
+        restoreSession();
+    }
+
+    //  ...and from then on, every couple of seconds, hand the live pads to the
+    //  writer. With nothing changed this is sixteen pointer comparisons.
+    if (++sessionSyncTick >= 33)
+    {
+        sessionSyncTick = 0;
+        session.sync (uiSample.data(), kNumPads);
+
+        //  ...and the state itself every twenty seconds or so. onPause writes
+        //  it too, but a process killed without one - a crash, a battery pull,
+        //  a task-switcher swipe on some OEM builds - never gets there, and
+        //  audio on disk with no state beside it restores nothing.
+        if (++sessionStateTick >= 10)
+        {
+            sessionStateTick = 0;
+            session.writeState (captureState(), currentProject);
+        }
+    }
+
     engine.collectRetiredSamples();
     pollExport();
     refreshDeviceStatusLine();      // Oboe settles a beat after we ask it to
@@ -4217,6 +4610,28 @@ void MainComponent::timerCallback()
 
     const int prevPlayStep = lastPlayStep;
     lastPlayStep = ps;
+
+    //  The read head over the wave, while the sheet that shows it is open.
+    //  Any pad sharing the source counts: on a chopped break the fragment that
+    //  is sounding is rarely the one that is selected.
+    if (padSheet.isVisible() && selectedPad >= 0)
+    {
+        float head = -1.0f;
+        if (auto src = uiSample[(size_t) selectedPad])
+            for (int i = 0; i < kNumPads; ++i)
+                if (uiSample[(size_t) i] == src)
+                    head = juce::jmax (head, engine.getPadPosition01 (i));
+
+        waveform.setPlayhead (head);
+
+        const bool sounding = head >= 0.0f;
+        if (sounding != previewSounding)
+        {
+            previewSounding = sounding;
+            previewButton.setButtonText (sounding ? juce::CharPointer_UTF8 ("\xe2\x96\xa0 STOP")
+                                                  : juce::CharPointer_UTF8 ("\xe2\x96\xb6 OIR"));
+        }
+    }
 
     // Keep the SEC sheet's readout/rings fresh while the sequencer runs.
     if (engine.isPlaying() && seqSheet.isVisible())

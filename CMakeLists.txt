@@ -44,6 +44,7 @@ target_sources(Zati PRIVATE
     Source/AudioEngine.cpp
     Source/SampleLoader.cpp
     Source/AudioFocus.cpp
+    Source/SessionKeeper.cpp
 )
 
 # --- Compile definitions ----------------------------------------------------
@@ -71,3 +72,5 @@ target_link_libraries(Zati PRIVATE
     juce::juce_recommended_lto_flags
     juce::juce_recommended_warning_flags
 )
+
+

@@ -34,10 +34,12 @@ public:
                     const int*  zati,           // per pad
                     const bool* loaded,         // per pad
                     const signed char* notes,   // [step][pad] semitone offset, same stride
-                    int patternLength, int bar, int playStep, int selectedPad)
+                    int patternLength, int bar, int playStep, int selectedPad,
+                    float stepPhase = 0.0f)
     {
         data = cells; zatiOf = zati; loadedOf = loaded; noteOf = notes;
         patLen = patternLength; barIndex = bar; playing = playStep; selPad = selectedPad;
+        phase = juce::jlimit (0.0f, 1.0f, stepPhase);
         repaint();
     }
 
@@ -115,11 +117,6 @@ public:
                     g.fillRect (cell);
                 }
 
-                if (step == playing)                      // live column
-                {
-                    g.setColour (ZatiColours::red.withAlpha (on ? 0.9f : 0.55f));
-                    g.drawRect (cell, 1.5f);
-                }
             }
         }
 
@@ -128,6 +125,27 @@ public:
         for (int c = 4; c < kBarSteps; c += 4)
             g.fillRect ((float) r.getX() + gutter + cellW * (float) c - 0.5f,
                         (float) r.getY(), 1.0f, (float) r.getHeight());
+
+        //  The playhead. It used to be a red outline drawn around each of the
+        //  sixteen cells of the live column, which is sixteen boxes announcing
+        //  one position - the eye reads a stack of empty frames, not a beat.
+        //  One bar instead: the column it is over, and a line sliding across it
+        //  with the step, so the grid has a hand sweeping over it.
+        if (playing >= base && playing < base + kBarSteps && playing < patLen)
+        {
+            const float col = (float) r.getX() + gutter + cellW * (float) (playing - base);
+            const float y0  = (float) r.getY();
+            const float hh  = (float) r.getHeight();
+
+            g.setColour (ZatiColours::red.withAlpha (0.13f));
+            g.fillRect (col, y0, cellW, hh);
+
+            g.setColour (ZatiColours::red);
+            const float x = col + cellW * phase;
+            g.fillRect (x - 1.0f, y0, 2.0f, hh);
+            g.fillRect (x - 4.0f, y0, 8.0f, 3.0f);            // the head, top
+            g.fillRect (x - 4.0f, y0 + hh - 3.0f, 8.0f, 3.0f); // ...and bottom
+        }
     }
 
     void mouseDown (const juce::MouseEvent& e) override { hit (e); }
@@ -161,4 +179,5 @@ private:
     const bool* loadedOf = nullptr;
     const signed char* noteOf = nullptr;
     int patLen = 16, barIndex = 0, playing = -1, selPad = -1, lastKey = -1;
+    float phase = 0.0f;   // how far through the live step, 0..1
 };

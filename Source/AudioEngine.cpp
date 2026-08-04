@@ -24,6 +24,10 @@ AudioEngine::AudioEngine()
 {
     for (auto& l : patternLength) l.store (kMinPatLen, std::memory_order_relaxed);
 
+    //  -1 is "silent". Zero-initialised would mean "parked at the very start",
+    //  and the UI would draw a read head on a pad that has never played.
+    for (auto& p : padPos) p.store (-1.0f, std::memory_order_relaxed);
+
     //  Every pad fully sent to every effect. An effect only becomes audible
     //  when its own MIX is raised, so this default means switching one on
     //  still affects the whole kit, exactly as it did before pads could be
@@ -96,7 +100,7 @@ void AudioEngine::releaseResources() noexcept
         v.kill();
 }
 
-void AudioEngine::triggerPad (int slot, int extraSemis, float vel) noexcept
+void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01) noexcept
 {
     if (slot < 0 || slot >= kNumPads)
         return;
@@ -117,6 +121,15 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel) noexcept
     int en = padEnd[(size_t) slot].load (std::memory_order_relaxed);
     if (en <= 0 || en > len) en = len;
     if (st < 0 || st >= en)  st = 0;
+
+    //  Auditioning from a point in the waveform: start there and keep the
+    //  pad's end, so a tap plays the rest of the sound and not a slice of it.
+    //  A tap past the end would start a voice with nothing left to read.
+    if (from01 >= 0.0f)
+    {
+        const int at = (int) (juce::jlimit (0.0f, 1.0f, from01) * (float) len);
+        if (at < en - 2) st = juce::jmax (0, at);
+    }
 
     triggeredMask.fetch_or ((std::uint32_t) (1u << slot), std::memory_order_relaxed);
 
@@ -774,6 +787,31 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         testToneRemaining.store (tt, std::memory_order_relaxed);
     }
 
+    //  Where each pad's read head is, as a fraction of its whole source. The
+    //  UI draws it over the waveform, so what you hear and what you see are
+    //  the same thing moving. Sixteen relaxed stores a block; nothing reads
+    //  back, so there is no ordering to get wrong.
+    {
+        float p[(size_t) kNumPads];
+        for (auto& x : p) x = -1.0f;
+
+        for (const auto& v : voices)
+        {
+            if (! v.active || v.slot < 0 || v.slot >= kNumPads) continue;
+
+            if (auto* sb = padSample[(size_t) v.slot])
+            {
+                const int srcLen = sb->buffer.getNumSamples();
+                if (srcLen > 1)
+                    p[(size_t) v.slot] = juce::jmax (p[(size_t) v.slot],
+                                                     (float) (v.pos / (double) srcLen));
+            }
+        }
+
+        for (int i = 0; i < kNumPads; ++i)
+            padPos[(size_t) i].store (p[(size_t) i], std::memory_order_relaxed);
+    }
+
     // 7. Output peaks for the VU (max-hold until the UI reads) — last stage,
     //    after every contributor including the test tone.
     {
@@ -791,7 +829,7 @@ void AudioEngine::handleCommand (const Command& c) noexcept
 {
     switch (c.type)
     {
-        case Command::Type::NoteOn:  triggerPad (c.slot, 0, c.velocity); break;
+        case Command::Type::NoteOn:  triggerPad (c.slot, 0, c.velocity, c.from01); break;
         case Command::Type::NoteOff:
             if (c.slot >= 0 && c.slot < kNumPads)
                 for (auto& v : voices)
@@ -809,6 +847,13 @@ void AudioEngine::handleCommand (const Command& c) noexcept
 void AudioEngine::postNoteOn (int slot, float vel) noexcept
 {
     Command c; c.type = Command::Type::NoteOn; c.slot = slot; c.velocity = vel;
+    commands.push (c);
+}
+
+void AudioEngine::postNoteOnFrom (int slot, float from01, float vel) noexcept
+{
+    Command c; c.type = Command::Type::NoteOn; c.slot = slot; c.velocity = vel;
+    c.from01 = from01;
     commands.push (c);
 }
 

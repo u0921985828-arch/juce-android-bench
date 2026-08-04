@@ -11,6 +11,7 @@
 #include "StepGrid.h"
 #include "Playlist.h"
 #include "AudioFocus.h"
+#include "SessionKeeper.h"
 #include "Exporter.h"
 #include "AudioPath.h"
 
@@ -58,7 +59,8 @@ private:
                 onDismiss();
         }
     };
-    Sheet padSheet, seqSheet, browseSheet, projSheet, mixSheet, songSheet, exportSheet, rackSheet;
+    Sheet padSheet, seqSheet, browseSheet, projSheet, mixSheet, songSheet, exportSheet, rackSheet,
+          chopSheet;
     void openSheet (Sheet& s, juce::TextButton& toggle);
     void closeAllSheets();
     void paintSeqSheetContent (juce::Graphics& g);
@@ -69,6 +71,7 @@ private:
     void paintSongSheetContent (juce::Graphics& g);
     void paintExportSheetContent (juce::Graphics& g);
     void paintRackSheetContent (juce::Graphics& g);
+    void paintChopSheetContent (juce::Graphics& g);
 
     // --- Projects ---------------------------------------------------------
     //  The whole machine (pads + their samples, the 8 pattern banks, the
@@ -170,6 +173,15 @@ public:
 private:
     void autosave();
 
+    //  The work that was never given a name. Written continuously in the
+    //  background and read back on the next launch, so a process the system
+    //  reclaimed does not take the session with it.
+    SessionKeeper session;
+    void restoreSession();
+    bool sessionRestorePending = true;   // done on the first timer tick
+    int  sessionSyncTick  = 0;
+    int  sessionStateTick = 0;
+
     //  Android arbitrates the speaker between apps. Without asking for the
     //  focus we play over calls and can be silenced without ever being told.
     AudioFocus audioFocus { *this };
@@ -214,7 +226,22 @@ private:
     void assignSampleToPad (int index, SampleBuffer::Ptr sb, const juce::String& name = {});
     void toggleRecordArm();     // REC: live pad performance -> the pattern
     void toggleMicSampling();   // PADS sheet: mic -> the selected pad
-    void autoChopSelected();
+    // --- AUTO CHOP --------------------------------------------------------
+    //  Slicing a break is the most destructive thing in the app: it used to
+    //  fire on one tap, always cut sixteen ways, and write over all sixteen
+    //  pads including everything already on them. Now it asks: how many, and
+    //  whether pads that already hold a sound are off limits.
+    juce::TextButton chopCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") },
+                     chopGoButton    { "CORTAR" },
+                     chopSafeButton  { "RESPETAR PADS CON SONIDO" };
+    juce::OwnedArray<juce::TextButton> chopCountBtns;
+    static constexpr int kChopCounts[4] = { 2, 4, 8, 16 };
+    int  chopSlices    = 8;
+    bool chopOnlyEmpty = true;
+    void openChopSheet();
+    void applyAutoChop();
+    juce::Array<int> chopTargets (int slices, bool onlyEmpty) const;
+    void refreshChopSheet();
     void pushUndo (const juce::String& what);   // snapshot before a destructive action
     void performUndo();
     void performRedo();
@@ -384,11 +411,16 @@ private:
     juce::TextButton testButton { "TEST" };
     juce::TextButton recButton  { "REC" };
     juce::TextButton playButton { "PLAY" };
-    juce::TextButton clearButton { "CLR" };
+    juce::TextButton clearButton { "VACIAR" };
     juce::TextButton reverseButton { "REV" };
     juce::TextButton loopButton { "LOOP" };
     juce::TextButton chopButton { "AUTO CHOP" };
     juce::TextButton micButton  { "GRABAR MIC" };   // lives in the PADS sheet
+
+    //  Auditioning from the PADS sheet: the wave answers a tap, and this plays
+    //  it from the top without having to reach past the sheet for the pad.
+    juce::TextButton previewButton { juce::CharPointer_UTF8 ("\xe2\x96\xb6 OIR") };
+    bool previewSounding = false;
     juce::TextButton zatiPrevButton { juce::CharPointer_UTF8 ("\xe2\x97\x80") },
                      zatiNextButton { juce::CharPointer_UTF8 ("\xe2\x96\xb6") };
     juce::Rectangle<int> zatiSwatchArea;
@@ -400,7 +432,7 @@ private:
     juce::TextButton modeButton { "CINTA" };
     juce::Slider panSlider, attackSlider, releaseSlider;
     juce::Slider patternSlider, noteSlider, lengthSlider;
-    juce::TextButton chainClearButton { "CLR CHAIN" };
+    juce::TextButton chainClearButton { "QUITAR CADENA" };
     juce::Slider macroCtrl1, macroCtrl2, macroCtrl3;   // CTRL 1-3, bank-dependent
     juce::Label  status, fxLabel;
     WaveformDisplay waveform;

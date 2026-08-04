@@ -31,6 +31,11 @@ struct Command
     //  them 2 dB against a hard tap.
     float velocity   = 1.0f;
     int   startFrame = 0;
+
+    //  Where in the SOURCE to start, 0..1, or negative for "wherever the pad's
+    //  trim says". Only the preview uses it: tapping the waveform has to play
+    //  from the point that was tapped without moving the pad's own start.
+    float from01     = -1.0f;
 };
 
 class CommandFifo

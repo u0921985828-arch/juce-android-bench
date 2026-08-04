@@ -63,6 +63,20 @@ public:
     //  0.062 is the wrong instrument: you want to grab it and listen.
     std::function<void (float start01, float end01)> onTrimDragged;
 
+    //  Tap anywhere that is not a handle and hear the sound from there. A
+    //  waveform you can only look at is a picture; this is the difference
+    //  between finding the downbeat by eye and finding it by ear.
+    std::function<void (float pos01)> onAudition;
+
+    //  Where the read head is, 0..1, or negative for nothing sounding.
+    void setPlayhead (float pos01)
+    {
+        const float p = (pos01 >= 0.0f && pos01 <= 1.0f) ? pos01 : -1.0f;
+        if (std::abs (p - playhead) < 0.0005f && (p < 0.0f) == (playhead < 0.0f)) return;
+        playhead = p;
+        repaint();
+    }
+
     void mouseDown (const juce::MouseEvent& e) override
     {
         if (sample == nullptr) return;
@@ -72,6 +86,13 @@ public:
         // a tap in open water should not yank an edge across the sample.
         const float grab = 24.0f / juce::jmax (1.0f, (float) waveArea().getWidth());
         dragging = (juce::jmin (ds, de) > grab) ? 0 : (ds <= de ? 1 : 2);
+
+        //  Open water: audition. On a chopped source the fragments are what is
+        //  drawn, and the pad that owns the fragment under the finger is the
+        //  one that should speak - so the tap is reported and the owner
+        //  decides, rather than being assumed to be the selected pad.
+        if (dragging == 0 && onAudition)
+            onAudition (t);
     }
 
     void mouseDrag (const juce::MouseEvent& e) override
@@ -214,6 +235,22 @@ public:
             }
         }
 
+        //  The read head, and behind it the ground it has covered. A line
+        //  alone says where; the trail says how far through, which is what
+        //  "progress" means and what a bare cursor never showed.
+        if (playhead >= 0.0f)
+        {
+            const float px = wave.getX() + playhead * wave.getWidth();
+            const float from = wave.getX() + juce::jmin (start01, playhead) * wave.getWidth();
+
+            g.setColour (lcdFg.withAlpha (0.16f));
+            g.fillRect (from, wave.getY(), juce::jmax (0.0f, px - from), wave.getHeight());
+
+            g.setColour (ZatiColours::red);
+            g.fillRect (px - 1.0f, wave.getY() - 3.0f, 2.0f, wave.getHeight() + 6.0f);
+            g.fillRect (px - 3.5f, wave.getY() - 5.0f, 7.0f, 3.0f);
+        }
+
         // tick ruler — only when the source is not already carrying the
         // per-fragment bars, which occupy the same strip.
         if (segments.size() <= 1)
@@ -317,5 +354,6 @@ private:
     SampleBuffer::Ptr sample;
     juce::Array<float> mins, maxs;
     float start01 = 0.0f, end01 = 1.0f;
+    float playhead = -1.0f;
     juce::String infoName, infoRight;
 };

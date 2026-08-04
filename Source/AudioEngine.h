@@ -57,6 +57,9 @@ public:
 
     // --- Triggers (message thread) ---
     void postNoteOn  (int slot, float vel = 1.0f) noexcept;   // uses the pad's stored params
+    //  Audition: same note, but read from a point in the source instead of
+    //  from the pad's trim. Nothing about the pad changes.
+    void postNoteOnFrom (int slot, float from01, float vel = 1.0f) noexcept;
     void postNoteOff (int slot) noexcept;
     void postPanic() noexcept;
     void postTestTone() noexcept;
@@ -97,6 +100,15 @@ public:
         return padGain[(size_t) slot].load (std::memory_order_relaxed);
     }
     int  getSampleLength (int slot) const noexcept;   // 0 if none
+
+    //  Where this pad's read head is inside its whole source, 0..1, or -1 when
+    //  nothing of it is sounding. Cosmetic: the UI draws it, nobody acts on it,
+    //  so a block's worth of staleness is exactly right.
+    float getPadPosition01 (int slot) const noexcept
+    {
+        return (slot >= 0 && slot < kNumPads)
+                 ? padPos[(size_t) slot].load (std::memory_order_relaxed) : -1.0f;
+    }
 
     //  How much of the pool is in use. Read by the UI for a polyphony readout
     //  and by the offline checks; a benign race with the audio thread is fine
@@ -288,7 +300,8 @@ public:
 
 private:
     void handleCommand (const Command& c) noexcept;               // audio thread
-    void triggerPad (int slot, int extraSemis = 0, float vel = 1.0f) noexcept;   // audio thread
+    void triggerPad (int slot, int extraSemis = 0, float vel = 1.0f,
+                     float from01 = -1.0f) noexcept;   // audio thread
 
     template <typename Arr, typename V>
     static void store (Arr& a, int slot, V v) noexcept
@@ -375,6 +388,7 @@ private:
     std::atomic<int>    playStep { -1 };
     std::atomic<float>  stepPhase { 0.0f };   // 0..1 within the current step
     std::atomic<std::uint32_t> triggeredMask { 0 };   // pads triggered, read by UI
+    std::array<std::atomic<float>, (size_t) kNumPads> padPos {};   // read head, 0..1, -1 = silent
     double stepAccum = 0.0;      // audio-thread only
     int    currentStep = 0;      // audio-thread only
     bool   wasPlaying = false;   // audio-thread only
