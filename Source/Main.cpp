@@ -35,6 +35,12 @@ public:
         quit();
     }
 
+    //  Android calls these from the activity's onPause/onResume. Without them
+    //  the audio stream, the microphone and the unsaved session all survived
+    //  into the background, where none of the three does anything useful.
+    void suspended() override   { if (auto* c = content()) c->appSuspended(); }
+    void resumed()   override   { if (auto* c = content()) c->appResumed(); }
+
     // ---- Top-level window ----
     class MainWindow : public juce::DocumentWindow
     {
@@ -68,6 +74,13 @@ public:
     };
 
 private:
+    MainComponent* content() const
+    {
+        return mainWindow != nullptr
+                 ? dynamic_cast<MainComponent*> (mainWindow->getContentComponent())
+                 : nullptr;
+    }
+
     std::unique_ptr<MainWindow> mainWindow;
 };
 

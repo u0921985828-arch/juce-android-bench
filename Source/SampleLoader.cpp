@@ -1,6 +1,39 @@
 #include "SampleLoader.h"
 #include "AudioEngine.h"
 
+namespace
+{
+    // ========================================================================
+    //  Loading used to be able to kill the process, twice over.
+    //
+    //  The file went into a MemoryBlock whole, and then the decoded audio was
+    //  allocated whole again as float - so a five minute 24-bit stereo WAV
+    //  cost ~85 MB of file plus ~230 MB of buffer, over 300 MB of peak for one
+    //  pad. Nothing checked a size, and AudioBuffer::setSize throws
+    //  std::bad_alloc, which nobody caught: on Android that is not an
+    //  exception, it is the process disappearing with no dialog.
+    //
+    //  Two changes. A local file is already seekable, so it is handed to the
+    //  decoder directly and never slurped - that alone halves the peak for
+    //  everything the in-app browser opens. And every allocation is now bounded
+    //  and wrapped, so an oversized file is a message on screen instead of a
+    //  crash.
+    //
+    //  The three limits are the same ceiling seen from different sides: what we
+    //  will read, how long we will decode, and what the result may cost in RAM.
+    // ========================================================================
+    constexpr juce::int64 kMaxFileBytes  = 192ll * 1024 * 1024;   // compressed or packed
+    constexpr double      kMaxSeconds    = 600.0;                 // ten minutes
+    constexpr juce::int64 kMaxFloatBytes = 256ll * 1024 * 1024;   // decoded, in RAM
+
+    //  Rounded through an int, not juce::String (x, 0) - zero decimal places
+    //  makes JUCE skip the fixed format and print the lot.
+    juce::String asMB (juce::int64 bytes)
+    {
+        return juce::String ((int) ((bytes + 524288) / (1024 * 1024))) + " MB";
+    }
+}
+
 SampleLoader::SampleLoader (AudioEngine& engineToLoadInto)
     : engine (engineToLoadInto)
 {
@@ -58,43 +91,109 @@ void SampleLoader::loadAsync (const juce::URL& url, int slot,
         }
         else
         {
-            // 2. Slurp into memory -> a seekable stream the WAV/format parser can
-            //    rewind (Android content streams are typically non-seekable).
-            juce::MemoryBlock mb;
-            source->readIntoMemoryBlock (mb);
+            // 2. Refuse the file before touching it, whenever its size is
+            //    knowable. This is the cheapest of the three guards and the
+            //    only one that costs nothing when it passes.
+            const juce::int64 declared = source->getTotalLength();
 
-            if (mb.getSize() <= 44)
+            if (declared > kMaxFileBytes)
             {
-                detail = "solo " + juce::String ((int) mb.getSize()) + " bytes";
-            }
-            else if (auto* rawReader = formatManager.createReaderFor (
-                         std::make_unique<juce::MemoryInputStream> (mb.getData(), mb.getSize(), true)))
-            {
-                std::unique_ptr<juce::AudioFormatReader> reader (rawReader);
-                const int numChannels = (int) reader->numChannels;
-                const int numSamples  = (int) reader->lengthInSamples;
-
-                if (numChannels > 0 && numSamples > 3)
-                {
-                    SampleBuffer::Ptr sb = new SampleBuffer();
-                    sb->buffer.setSize (numChannels, numSamples);
-                    reader->read (&sb->buffer, 0, numSamples, 0, true, true);
-                    sb->sourceSampleRate = reader->sampleRate;
-
-                    engine.publishSample (slot, sb);
-                    loaded  = sb;
-                    success = true;
-                    detail  = juce::String (numChannels) + "ch "
-                            + juce::String ((int) reader->sampleRate) + "Hz";
-                }
-                else
-                {
-                    detail = "audio vacio";
-                }
+                detail = "demasiado grande: " + asMB (declared)
+                           + " (tope " + asMB (kMaxFileBytes) + ")";
             }
             else
             {
-                detail = "formato no reconocido (" + juce::String ((int) mb.getSize()) + "B)";
+                // 3. Get a seekable stream to the decoder. A file already is
+                //    one, so it goes straight in and never doubles its own
+                //    size in RAM; a content:// stream usually is not, so it
+                //    still has to be slurped - but now with a ceiling.
+                std::unique_ptr<juce::InputStream> seekable;
+                juce::int64 sourceBytes = declared;
+
+                if (url.isLocalFile())
+                {
+                    seekable = std::move (source);
+                }
+                else
+                {
+                    try
+                    {
+                        juce::MemoryBlock block;
+                        source->readIntoMemoryBlock (block, (ssize_t) kMaxFileBytes);
+                        sourceBytes = (juce::int64) block.getSize();
+
+                        if (sourceBytes >= kMaxFileBytes)
+                            detail = "demasiado grande: pasa de " + asMB (kMaxFileBytes);
+                        else
+                            seekable = std::make_unique<juce::MemoryInputStream> (std::move (block));
+                    }
+                    catch (const std::bad_alloc&)
+                    {
+                        detail = "sin memoria al leer el archivo";
+                    }
+                }
+
+                if (seekable != nullptr)
+                {
+                    if (sourceBytes >= 0 && sourceBytes <= 44)
+                    {
+                        detail = "solo " + juce::String ((int) sourceBytes) + " bytes";
+                    }
+                    else if (auto* rawReader = formatManager.createReaderFor (std::move (seekable)))
+                    {
+                        std::unique_ptr<juce::AudioFormatReader> reader (rawReader);
+                        const int    numChannels = (int) reader->numChannels;
+                        const auto   lengthIn    = reader->lengthInSamples;
+                        const double rate        = reader->sampleRate > 0.0 ? reader->sampleRate : 48000.0;
+                        const double seconds     = (double) lengthIn / rate;
+
+                        //  What the decoded audio will actually cost. int64
+                        //  throughout: a length that overflows int is exactly
+                        //  the case this guard exists for.
+                        const juce::int64 floatBytes = lengthIn * (juce::int64) juce::jmax (1, numChannels)
+                                                                * (juce::int64) sizeof (float);
+
+                        if (numChannels <= 0 || lengthIn <= 3)
+                            detail = "audio vacio";
+                        else if (seconds > kMaxSeconds)
+                            detail = "dura " + juce::String ((int) (seconds / 60.0)) + " min (tope "
+                                       + juce::String ((int) (kMaxSeconds / 60.0)) + ")";
+                        else if (floatBytes > kMaxFloatBytes)
+                            detail = "ocuparia " + asMB (floatBytes)
+                                       + " en memoria (tope " + asMB (kMaxFloatBytes) + ")";
+                        else
+                        {
+                            //  The allocation that used to take the process
+                            //  down with it. Bounded above, and caught here.
+                            try
+                            {
+                                const int numSamples = (int) lengthIn;
+                                SampleBuffer::Ptr sb = new SampleBuffer();
+                                sb->buffer.setSize (numChannels, numSamples);
+                                reader->read (&sb->buffer, 0, numSamples, 0, true, true);
+                                sb->sourceSampleRate = reader->sampleRate;
+
+                                engine.publishSample (slot, sb);
+                                loaded  = sb;
+                                success = true;
+                                detail  = juce::String (numChannels) + "ch "
+                                        + juce::String ((int) reader->sampleRate) + "Hz";
+                            }
+                            catch (const std::bad_alloc&)
+                            {
+                                detail = "sin memoria para " + asMB (floatBytes);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        detail = "formato no reconocido";
+                    }
+                }
+                else if (detail.isEmpty())
+                {
+                    detail = "no pude abrir el archivo";
+                }
             }
         }
 

@@ -66,6 +66,7 @@ MainComponent::MainComponent()
         addAndMakeVisible (p);
         pads.add (p);
         refreshPad (i);
+        refreshPadArt (i);          // also gives the pad its accessible name
     }
 
     stepGrid.onCell = [this] (int pad, int step) { stepCellToggled (pad, step); };
@@ -967,6 +968,46 @@ MainComponent::MainComponent()
     for (int f = 0; f < kNumFx; ++f)
         for (int pi = 0; pi < 3; ++pi)
             pushFxParam (f, pi);
+
+    //  Accessible names.
+    //
+    //  A TextButton already announces its own caption, so the buttons were
+    //  fine. Sliders are not: JUCE has no text to fall back on and every knob
+    //  in the app came out as an anonymous "Slider", which makes the whole
+    //  thing unusable with TalkBack on. The pads are named in refreshPadArt,
+    //  where the sample name is known; these are the rest.
+    struct Named { juce::Slider& s; const char* title; const char* what; };
+    for (auto& n : { Named { pitchSlider,   "Tono",      "semitonos" },
+                     Named { fineSlider,    "Afinado",   "centesimas" },
+                     Named { volSlider,     "Volumen",   "del pad" },
+                     Named { panSlider,     "Paneo",     "del pad" },
+                     Named { attackSlider,  "Ataque",    "milisegundos" },
+                     Named { releaseSlider, "Caida",     "milisegundos" },
+                     Named { startSlider,   "Inicio",    "recorte" },
+                     Named { endSlider,     "Fin",       "recorte" },
+                     Named { chokeSlider,   "Choke",     "grupo de corte" },
+                     Named { bpmSlider,     "Tempo",     "pulsos por minuto" },
+                     Named { patternSlider, "Patron",    "del secuenciador" },
+                     Named { noteSlider,    "Nota",      "del paso" },
+                     Named { lengthSlider,  "Compases",  "del patron" },
+                     Named { macroCtrl1,    "Control 1", "del efecto" },
+                     Named { macroCtrl2,    "Control 2", "del efecto" },
+                     Named { macroCtrl3,    "Control 3", "del efecto" } })
+    {
+        n.s.setTitle (n.title);
+        n.s.setDescription (n.what);
+    }
+
+    //  The mixer builds its strips per pad, so they get named where they are
+    //  made - but the channel number is the whole point of the name.
+    for (int i = 0; i < kNumPads; ++i)
+    {
+        const auto ch = " canal " + juce::String (i + 1);
+        if (auto* f = mixFaders[i]) { f->setTitle ("Volumen" + ch); f->setDescription ("del mezclador"); }
+        if (auto* p = mixPans[i])   { p->setTitle ("Paneo"   + ch); p->setDescription ("del mezclador"); }
+        if (auto* m = mixMutes[i])  { m->setTitle ("Silencio" + ch); }
+        if (auto* s = mixSolos[i])  { s->setTitle ("Solo"    + ch); }
+    }
 
     startTimer (60);
     setSize (500, 1080);
@@ -2162,8 +2203,19 @@ void MainComponent::refreshPadArt (int index)
 {
     if (index < 0 || index >= kNumPads) return;
     if (auto* p = pads[index])
+    {
         p->setSampleInfo (uiSample[(size_t) index], padName[(size_t) index],
                           padStart01[(size_t) index], padEnd01[(size_t) index]);
+
+        //  A pad draws its number and its waveform, so with a screen reader on
+        //  there was nothing to announce - every one of the sixteen came out as
+        //  "Button". The name has to be set here rather than once at startup,
+        //  because this is the one place that knows what the pad now holds.
+        p->setTitle ("Pad " + juce::String (index + 1));
+        p->setDescription (padName[(size_t) index].isNotEmpty()
+                               ? padName[(size_t) index]
+                               : juce::String ("vacio"));
+    }
 }
 
 void MainComponent::refreshPad (int index)
@@ -3356,8 +3408,17 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
     g.setFont (ZatiColours::monoFont (9.0f, false));
     juce::String note = "de esos, " + juce::String (blockMs, 1) + " ms son el bufer";
     if (totalMs - blockMs > 20.0)
-        note += (block <= burst) ? " - el resto es el telefono, no lo pone nadie mas bajo"
-                                 : " - baja el bufer";
+    {
+        //  Once the probe has told us we never got an MMAP stream, the leftover
+        //  milliseconds have a name. Saying "el telefono" invited another week
+        //  of looking for a setting; naming AudioFlinger closes the question.
+        if (block > burst)
+            note += " - baja el bufer";
+        else if (fastPath.ran && fastPath.mmapKnown && ! fastPath.mmapUsed)
+            note += " - el resto es el mezclador de Android, sin MMAP en este movil";
+        else
+            note += " - el resto es el telefono, no lo pone nadie mas bajo";
+    }
     g.drawFittedText (note, inner.removeFromTop (11), juce::Justification::centredLeft, 1, 0.7f);
 
     //  Whether the phone allows the fast lane at all. JUCE already asks Oboe
@@ -3503,14 +3564,25 @@ void MainComponent::finishMeasure()
     //  figure is the duplex configuration — not the one you play in. Without
     //  that split the number reads as an indictment of the app when most of
     //  it is the phone's capture path.
+    //  One decimal, not zero: juce::String (x, 0) does not mean "no decimals" -
+    //  it falls through to the generic format and prints 4.79167 in a line that
+    //  has no room for it.
+    //
+    //  And an input latency of 0 is not a measurement. Oboe only reports one
+    //  when the driver supports timestamps on the capture stream, which this
+    //  one does not (isInputLatencyDetectionSupported comes back false), so
+    //  JUCE leaves it at zero. Printing that zero blamed the whole round trip
+    //  on the output. What we can honestly say is the subtraction.
+    const float outMs = measuredOutMs;
+    const float inMs  = measuredInMs > 0.0f ? measuredInMs
+                                            : juce::jmax (0.0f, measuredMs - outMs);
+
     measureNote = measuredMs < 0.0f
                     ? "no oi el click - sube el volumen y no tapes el micro"
-                    //  One decimal, not zero: juce::String (x, 0) does not mean
-                    //  "no decimals" - it falls through to the generic format
-                    //  and prints 4.79167 in a line that has no room for it.
-                    : "con micro abierto: salida " + juce::String (measuredOutMs, 1)
-                        + " + entrada " + juce::String (measuredInMs, 1)
-                        + " ms. Tocando solo sales " + juce::String (measuredOutMs, 1) + " ms";
+                    : "con micro abierto: salida " + juce::String (outMs, 1)
+                        + " + entrada " + juce::String (inMs, 1) + " ms"
+                        + (measuredInMs > 0.0f ? juce::String() : " (por resta)")
+                        + ". Tocando solo sales " + juce::String (outMs, 1) + " ms";
     refreshAudioOptions();
 }
 
@@ -3745,6 +3817,57 @@ void MainComponent::toggleRecordArm()
                              : "REC apagado",
                     juce::dontSendNotification);
     repaint();
+}
+
+// ============================================================================
+//  Going to the background, and coming back.
+//
+//  Nothing used to happen here at all, and three things went wrong for it.
+//  The Oboe stream stayed open, so a real-time thread and its wakeups kept
+//  running behind whatever the phone was doing. If REC was on, the microphone
+//  stayed open too - and from Android 12 the system cuts background capture
+//  without telling the app, so the recording kept "running" and recorded
+//  silence. And nothing was written anywhere, so a process the system decided
+//  to reclaim took the session with it.
+//
+//  A phone call, another app, or the screen going off all pause the activity,
+//  which is why stopping here also covers the case that reads worst in a demo:
+//  ZATI playing on top of a call.
+// ============================================================================
+void MainComponent::appSuspended()
+{
+    //  Stop the recording first, while the input stream is still alive and its
+    //  buffer can still be collected. Doing it after shutdownAudio would throw
+    //  away whatever had been captured.
+    if (recordingActive)
+        toggleMicSampling();
+
+    engine.postPanic();          // no voice is left ringing into the silence
+    autosave();
+    shutdownAudio();             // releases the output stream and the mic
+}
+
+void MainComponent::appResumed()
+{
+    setAudioChannels (0, 2);
+    useLowestLatency();
+    refreshDeviceStatusLine (true);
+}
+
+//  Write the state of the open project back over its own project.xml. The
+//  samples on disk are already whatever the last save wrote, so this is small
+//  and fast - which matters, because onPause is not a moment Android lets an
+//  app take its time in. With no project open there is nowhere to put it: the
+//  pads may hold recordings that exist nowhere else, and inventing a folder
+//  for them behind the user's back is not this function's decision to make.
+void MainComponent::autosave()
+{
+    if (currentProject.isEmpty()) return;
+
+    const auto folder = ProjectStore::folderFor (currentProject);
+    if (! folder.isDirectory()) return;
+
+    folder.getChildFile ("project.xml").replaceWithText (captureState().toXmlString());
 }
 
 void MainComponent::toggleMicSampling()

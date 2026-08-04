@@ -158,6 +158,15 @@ private:
     juce::String deviceLine;
     void refreshDeviceStatusLine (bool force = false);
 
+public:
+    //  Called from the application object when Android pauses or resumes the
+    //  activity. Public because that is who calls them.
+    void appSuspended();
+    void appResumed();
+
+private:
+    void autosave();
+
     // --- In-app sample browser -------------------------------------------
     //  A native FileChooser is a system dialog: it ignores the app's skin and
     //  on a tall phone screen its buttons fall outside the viewport. This is
