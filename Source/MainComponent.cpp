@@ -191,15 +191,29 @@ MainComponent::MainComponent()
         projSheet.addAndMakeVisible (projLoadButton);
 
         styleButton (projNewButton, kKey);
-        projNewButton.onClick = [this] { newProject(); };
+        //  NUEVO empties every pad and every pattern. Two taps.
+        projNewButton.onClick = [this]
+        {
+            if (! armConfirm (projNewButton, "BORRA TODO?")) return;
+            newProject();
+        };
         projSheet.addAndMakeVisible (projNewButton);
 
         styleButton (projDeleteButton, kRec);
+        //  ...and BORRAR takes a folder off the disk, audio and all, with no
+        //  undo anywhere. The armed button names the project it will take.
         projDeleteButton.onClick = [this]
         {
             const int sel = projList.getSelectedRow();
-            if (juce::isPositiveAndBelow (sel, projModel.names.size()))
-                deleteProject (projModel.names[sel]);
+            if (! juce::isPositiveAndBelow (sel, projModel.names.size()))
+            {
+                disarmConfirm();
+                status.setText ("Elige un proyecto de la lista", juce::dontSendNotification);
+                return;
+            }
+
+            if (! armConfirm (projDeleteButton, "BORRAR " + projModel.names[sel] + "?")) return;
+            deleteProject (projModel.names[sel]);
         };
         projSheet.addAndMakeVisible (projDeleteButton);
 
@@ -430,6 +444,9 @@ MainComponent::MainComponent()
     styleButton (clearButton, kKey);
     clearButton.onClick = [this]
     {
+        //  Emptying a whole pattern used to be one tap with nothing behind it.
+        //  It is the same size of loss as a chop, so it gets the same net.
+        pushUndo ("vaciar patron");
         engine.clearPattern (selectedPattern);
         for (auto& row : pattern[(size_t) selectedPattern]) row.fill (false);
         if (selectedPad >= 0) selectPad (selectedPad);
@@ -1371,6 +1388,8 @@ void MainComponent::openSheet (Sheet& s, juce::TextButton& toggle)
 
 void MainComponent::closeAllSheets()
 {
+    disarmConfirm();   // an armed button must not survive its own sheet closing
+
     juce::TextButton* mb[4] = { &padsButton, &secButton, &mixButton, &songButton };
     Sheet*            sh[4] = { &padSheet, &seqSheet, &mixSheet, &songSheet };
     for (int i = 0; i < 4; ++i)
@@ -2717,6 +2736,38 @@ void MainComponent::shiftZati (int delta)
 //  pad that held your break holds its first slice instead. That is a lot to do
 //  with no way back, so the whole machine is snapshotted first and DESHACER in
 //  the status bar puts it back.
+bool MainComponent::armConfirm (juce::TextButton& b, const juce::String& armedText)
+{
+    if (confirmPending == &b)          // second tap: go ahead
+    {
+        disarmConfirm();
+        return true;
+    }
+
+    disarmConfirm();                   // never leave two buttons armed at once
+
+    confirmPending = &b;
+    confirmOldText = b.getButtonText();
+    confirmTicks   = 50;               // ~3 s at the 60 ms UI timer
+    b.setButtonText (armedText);
+    b.setColour (juce::TextButton::buttonColourId, ZatiColours::red);
+    b.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+    b.repaint();
+    return false;
+}
+
+void MainComponent::disarmConfirm()
+{
+    if (confirmPending == nullptr) return;
+
+    auto* b = confirmPending;
+    confirmPending = nullptr;
+    confirmTicks   = 0;
+    b->setButtonText (confirmOldText);
+    styleButton (*b, b == &projDeleteButton ? kRec : kKey);
+    b->repaint();
+}
+
 void MainComponent::pushUndo (const juce::String& what)
 {
     undoState = captureState();
@@ -4660,6 +4711,11 @@ void MainComponent::timerCallback()
                                                   : juce::CharPointer_UTF8 ("\xe2\x96\xb6 OIR"));
         }
     }
+
+    //  An armed confirmation that nobody answered goes back to being an
+    //  ordinary button, so a red SEGURO? is never left lying on a sheet.
+    if (confirmPending != nullptr && --confirmTicks <= 0)
+        disarmConfirm();
 
     // Keep the SEC sheet's readout/rings fresh while the sequencer runs.
     if (engine.isPlaying() && seqSheet.isVisible())

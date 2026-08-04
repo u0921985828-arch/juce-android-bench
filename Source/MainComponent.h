@@ -242,6 +242,17 @@ private:
     void applyAutoChop();
     juce::Array<int> chopTargets (int slices, bool onlyEmpty) const;
     void refreshChopSheet();
+    //  Two-tap confirmation for the actions that destroy work and cannot be
+    //  undone: deleting a project takes its folder off the disk, and starting
+    //  a new one empties sixteen pads. The first tap arms the button and says
+    //  so; the second does it; three seconds of not deciding disarms it.
+    //  Cheaper than a sheet, and a sheet would be the third one deep here.
+    bool armConfirm (juce::TextButton& b, const juce::String& armedText = "SEGURO?");
+    void disarmConfirm();
+    juce::TextButton* confirmPending = nullptr;
+    juce::String      confirmOldText;
+    int               confirmTicks = 0;
+
     void pushUndo (const juce::String& what);   // snapshot before a destructive action
     void performUndo();
     void performRedo();
