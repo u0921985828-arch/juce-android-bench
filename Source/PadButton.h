@@ -35,8 +35,18 @@ public:
 
     void paintButton (juce::Graphics& g, bool over, bool down) override
     {
-        auto r = getLocalBounds().toFloat().reduced (0.5f);
+        //  Same construction as every other cap in the instrument: the pad is
+        //  a printed plate resting on a solid block of ink, and striking it
+        //  moves the plate down onto the block. Sixteen of these are the
+        //  largest thing on screen, so if they stayed flat while the buttons
+        //  gained depth the two would read as belonging to different machines.
+        const float lift = ZatiLookAndFeel::kCapLift;
+        auto r = getLocalBounds().toFloat().reduced (0.5f).withTrimmedBottom (lift);
         const float rad = 3.0f;   // square, not rounded — matches the flat button caps
+
+        if (down) r = r.translated (0.0f, lift);
+        else      { g.setColour (ZatiColours::ink.withAlpha (0.32f));
+                    g.fillRoundedRectangle (r.translated (0.0f, lift), rad); }
 
         // A loaded pad wears its zati colour: 30% fill, full-strength border,
         // and a solid top stripe. The stripe plus the always-drawn number are

@@ -1608,10 +1608,39 @@ void MainComponent::Sheet::paint (juce::Graphics& g)
     g.fillAll (juce::Colours::black.withAlpha (0.45f));
     if (sheetBounds.isEmpty()) return;
 
-    g.setColour (ZatiColours::chassisTop);
-    g.fillRoundedRectangle (sheetBounds.toFloat(), 14.0f);
+    //  The card is a printed plate, not a floating dialog: square corners, a
+    //  solid ink block under it instead of a blur, one ruled border, and
+    //  registration brackets at the corners. The brackets are the piece that
+    //  does the work - they say "this is a panel of an instrument" with four
+    //  lines and no texture at all.
+    const auto card = sheetBounds.toFloat();
+    constexpr float rad = 2.0f;
+
     g.setColour (ZatiColours::ink.withAlpha (0.55f));
-    g.drawRoundedRectangle (sheetBounds.toFloat().reduced (0.5f), 14.0f, 1.5f);
+    g.fillRoundedRectangle (card.translated (0.0f, 5.0f), rad);
+
+    g.setColour (ZatiColours::chassisTop);
+    g.fillRoundedRectangle (card, rad);
+    g.setColour (ZatiColours::ink.withAlpha (0.85f));
+    g.drawRoundedRectangle (card.reduced (0.75f), rad, 1.5f);
+
+    {
+        auto b = card.reduced (5.0f);
+        const float arm = 12.0f;
+        g.setColour (ZatiColours::ink.withAlpha (0.45f));
+        for (int corner = 0; corner < 4; ++corner)
+        {
+            const bool right  = (corner & 1) != 0;
+            const bool bottom = (corner & 2) != 0;
+            const float x = right  ? b.getRight()  : b.getX();
+            const float y = bottom ? b.getBottom() : b.getY();
+            const float dx = right  ? -arm : arm;
+            const float dy = bottom ? -arm : arm;
+
+            g.drawLine (x, y, x + dx, y, 1.2f);
+            g.drawLine (x, y, x, y + dy, 1.2f);
+        }
+    }
 
     if (paintContent) paintContent (g);
 }

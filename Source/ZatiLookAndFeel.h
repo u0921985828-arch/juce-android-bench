@@ -212,6 +212,11 @@ namespace ZatiColours
 class ZatiLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
+    //  How far a cap sits above the solid block it is printed on, and how far
+    //  it travels when pressed. Everything that draws a cap or a label on one
+    //  reads this, so the press stays a single number.
+    static constexpr float kCapLift = 3.0f;
+
     ZatiLookAndFeel()
     {
         // Value readouts as little dark LCD chips (guaranteed contrast on a white face).
@@ -304,25 +309,49 @@ public:
         const float cy = area.getCentreY();
         const float ang = startAng + pos * (endAng - startAng);
 
-        // Plain rim.
-        g.setColour (ZatiColours::knobEdge.withAlpha (0.8f));
-        g.fillEllipse (cx - r, cy - r, r * 2.0f, r * 2.0f);
+        //  A knob drawn rather than shaded: a ring, a dial ruled with ticks,
+        //  and a straight pointer. The old one was a dark radial gradient with
+        //  a needle on it - a photograph of a knob. This is the drawing of
+        //  one, which is what the rest of the instrument now looks like, and
+        //  it also says more: the ticks give the eye something to read the
+        //  position against instead of the needle alone.
+        const float br = r - 2.0f;
 
-        // Body — a soft top-lit radial shade, flat enough to read as "flat".
-        const float br = r - 3.0f;
-        juce::ColourGradient body (ZatiColours::knobBody1, cx, cy - br * 0.6f,
-                                   ZatiColours::knobBody3, cx, cy + br, true);
-        body.addColour (0.6, ZatiColours::knobBody2);
-        g.setGradientFill (body);
-        g.fillEllipse (cx - br, cy - br, br * 2.0f, br * 2.0f);
+        //  Ticks around the travel, brighter at the ends and at the centre
+        //  detent so the three positions that matter are findable without
+        //  looking at the number.
+        constexpr int kTicks = 11;
+        for (int i = 0; i < kTicks; ++i)
+        {
+            const float t  = (float) i / (float) (kTicks - 1);
+            const float a  = startAng + t * (endAng - startAng);
+            const bool  key = (i == 0 || i == kTicks - 1 || i == kTicks / 2);
+            const float len = key ? 5.0f : 3.0f;
 
-        // Needle (drawn) + orange marker dot at the tip.
+            const auto dir = juce::Point<float> (std::sin (a), -std::cos (a));
+            const auto p1  = juce::Point<float> (cx, cy) + dir * r;
+            const auto p2  = juce::Point<float> (cx, cy) + dir * (r - len);
+
+            g.setColour (ZatiColours::ink.withAlpha (key ? 0.75f : 0.35f));
+            g.drawLine ({ p1, p2 }, key ? 1.4f : 1.0f);
+        }
+
+        //  The dial face: hollow, so the chassis shows through and the knob
+        //  stops being a dark blob in a light panel.
+        const float dial = br - 6.0f;
+        g.setColour (ZatiColours::panel);
+        g.fillEllipse (cx - dial, cy - dial, dial * 2.0f, dial * 2.0f);
+        g.setColour (ZatiColours::ink.withAlpha (0.85f));
+        g.drawEllipse (cx - dial, cy - dial, dial * 2.0f, dial * 2.0f, 1.6f);
+
+        // Pointer: a ruled line from the centre out to the rim.
         juce::Path p;
-        p.addRoundedRectangle (-1.3f, -br + 3.0f, 2.6f, br * 0.62f, 1.0f);
+        p.addRectangle (-1.0f, -dial, 2.0f, dial);
         p.applyTransform (juce::AffineTransform::rotation (ang).translated (cx, cy));
-        g.setColour (ZatiColours::white);
+        g.setColour (ZatiColours::ink);
         g.fillPath (p);
-        auto tip = juce::Point<float> (0.0f, -br + 4.5f)
+
+        auto tip = juce::Point<float> (0.0f, -dial + 1.0f)
                      .transformedBy (juce::AffineTransform::rotation (ang).translated (cx, cy));
         // The look-and-feel owns the SHAPE; the pointer colour is injected by
         // the component via rotarySliderFillColourId. That split is what stops
@@ -386,17 +415,34 @@ public:
                                const juce::Colour& backgroundColour,
                                bool over, bool down) override
     {
-        auto r = b.getLocalBounds().toFloat().reduced (0.5f);
-        const float rad = 8.0f;                                   // flat, softly rounded
-        const bool on = b.getToggleState();
+        //  A cap is a printed shape sitting on the face, not a soft plastic
+        //  key: the depth is a SOLID offset block underneath it, no blur and
+        //  no bevel, and pressing moves the cap down onto it. Blurred shadows
+        //  read as a phone app; a hard offset reads as an object that was
+        //  screen-printed, which is the whole C40 idea.
+        const float lift = kCapLift;
+        const float rad  = 3.0f;                                  // drawn, not rounded off
+        const bool  on   = b.getToggleState();
+
+        auto full = b.getLocalBounds().toFloat().reduced (0.5f);
+        auto r    = full.withTrimmedBottom (lift);
 
         auto base = backgroundColour;
-        if (down)      base = base.brighter (0.10f);
-        else if (over) base = base.brighter (0.05f);
+        if (over && ! down) base = base.brighter (0.05f);
         // A disabled cap reads as inert: desaturated and washed toward the face.
         if (! b.isEnabled())
             base = base.withSaturation (base.getSaturation() * 0.25f)
                        .interpolatedWith (ZatiColours::chassis, 0.55f);
+
+        if (down)
+        {
+            r = r.translated (0.0f, lift);          // pressed onto the block
+        }
+        else if (b.isEnabled())
+        {
+            g.setColour (ZatiColours::ink.withAlpha (0.42f));
+            g.fillRoundedRectangle (r.translated (0.0f, lift), rad);
+        }
 
         g.setColour (base);
         g.fillRoundedRectangle (r, rad);
@@ -416,7 +462,7 @@ public:
         }
         else
         {
-            g.setColour (juce::Colours::black.withAlpha (0.35f));
+            g.setColour (ZatiColours::ink.withAlpha (0.55f));
             g.drawRoundedRectangle (r.reduced (0.5f), rad, 1.0f);
         }
     }
@@ -462,7 +508,16 @@ public:
             col = cap.getPerceivedBrightness() < 0.5f ? ZatiColours::inkLight : ZatiColours::ink;
 
         g.setColour (col.withMultipliedAlpha (b.isEnabled() ? 1.0f : 0.45f));
-        g.drawFittedText (t, b.getLocalBounds().reduced (5, 2), juce::Justification::centred, 2, 0.9f);
+
+        //  The label belongs to the cap, not to the component: the cap sits
+        //  kCapLift above the block it is printed on and travels down onto it
+        //  when pressed, so text centred on the full bounds would float low at
+        //  rest and stay put during the press - which reads as a wobble.
+        auto area = b.getLocalBounds().reduced (5, 2);
+        area = b.isDown() ? area.withTrimmedTop ((int) kCapLift)
+                          : area.withTrimmedBottom ((int) kCapLift);
+
+        g.drawFittedText (t, area, juce::Justification::centred, 2, 0.9f);
     }
 
     juce::Font getLabelFont (juce::Label&) override
