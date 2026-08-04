@@ -63,6 +63,9 @@ MainComponent::MainComponent()
     padEnd01.fill (1.0f);
     padAttack.fill (2.0f);
     padRelease.fill (5.0f);
+    //  AUTOCUT on everywhere, matching the engine. A pad that stacks over
+    //  its own tail is the special case, not the normal one.
+    padSelfCut.fill (true);
 
     for (int i = 0; i < kNumPads; ++i)
     {
@@ -3234,7 +3237,10 @@ void MainComponent::applyState (const juce::ValueTree& s)
             padStart01[(size_t) i] = (float) p.getProperty ("start", 0.0);
             padEnd01[(size_t) i]   = (float) p.getProperty ("end", 1.0);
             padLoop[(size_t) i]    = (bool)  p.getProperty ("loop", false);
-            padSelfCut[(size_t) i] = (bool)  p.getProperty ("autocut", false);
+            //  Default true: a project saved before AUTOCUT existed has no
+            //  such property, and it should come back behaving like every
+            //  other pad rather than as the one that stacks.
+            padSelfCut[(size_t) i] = (bool)  p.getProperty ("autocut", true);
             padReverse[(size_t) i] = (bool)  p.getProperty ("reverse", false);
             padChokeUI[(size_t) i] = (int)   p.getProperty ("choke", 0);
             padPan[(size_t) i]     = (float) p.getProperty ("pan", 0.0);

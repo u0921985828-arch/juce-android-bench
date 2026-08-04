@@ -465,7 +465,10 @@ private:
     std::array<float, kNumPads> padStart01 {};
     std::array<float, kNumPads> padEnd01 {};
     std::array<bool,  kNumPads> padLoop {};
-    std::array<bool,  kNumPads> padSelfCut {};   // AUTOCUT: retrigger cuts its own tail
+    //  AUTOCUT, on by default - see AudioEngine's constructor. Filled in
+    //  MainComponent's, because a std::array of bool cannot say "all true"
+    //  in its declaration.
+    std::array<bool,  kNumPads> padSelfCut {};
     std::array<bool,  kNumPads> padReverse {};
     std::array<int,   kNumPads> padChokeUI {};   // 0 = none
     std::array<float, kNumPads> padPan {};        // -1..1, 0 = centre

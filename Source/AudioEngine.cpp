@@ -28,6 +28,12 @@ AudioEngine::AudioEngine()
     //  and the UI would draw a read head on a pad that has never played.
     for (auto& p : padPos) p.store (-1.0f, std::memory_order_relaxed);
 
+    //  AUTOCUT on, on every pad. Retriggering a pad over its own tail is the
+    //  exception, not the rule: it is what a held chord wants and what a hat,
+    //  a stab or a vocal played fast does not. The switch is still there to
+    //  turn it off per pad.
+    for (auto& c : padSelfCut) c.store (true, std::memory_order_relaxed);
+
     //  Every pad fully sent to every effect. An effect only becomes audible
     //  when its own MIX is raised, so this default means switching one on
     //  still affects the whole kit, exactly as it did before pads could be
