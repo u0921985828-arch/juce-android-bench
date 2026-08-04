@@ -10,6 +10,7 @@
 #include "ProjectStore.h"
 #include "StepGrid.h"
 #include "Playlist.h"
+#include "AudioFocus.h"
 #include "Exporter.h"
 #include "AudioPath.h"
 
@@ -21,7 +22,8 @@
 // ============================================================================
 class MainComponent : public juce::AudioAppComponent,
                       private juce::Timer,
-                      private juce::FileBrowserListener
+                      private juce::FileBrowserListener,
+                      private AudioFocus::Listener
 {
 public:
     MainComponent();
@@ -167,6 +169,13 @@ public:
 
 private:
     void autosave();
+
+    //  Android arbitrates the speaker between apps. Without asking for the
+    //  focus we play over calls and can be silenced without ever being told.
+    AudioFocus audioFocus { *this };
+    bool pausedByFocus = false;          // ...so GAIN only resumes what WE paused
+    void audioFocusLost (bool permanently) override;
+    void audioFocusGained() override;
 
     // --- In-app sample browser -------------------------------------------
     //  A native FileChooser is a system dialog: it ignores the app's skin and

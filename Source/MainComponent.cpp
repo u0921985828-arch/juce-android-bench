@@ -47,6 +47,13 @@ MainComponent::MainComponent()
     zatiOboeUsage    = fastPath.exclusive ? fastPath.usage : 0;
     zatiOboeForceI16 = (fastPath.exclusive && fastPath.useI16) ? 1 : 0;
 
+    //  Ask for the speaker before opening the stream. A refusal is not fatal -
+    //  we open anyway, because a silent instrument is a worse answer than one
+    //  the system happens to be ducking - but asking is what puts us in the
+    //  queue to be TOLD when somebody else takes it, which is the half that
+    //  was missing.
+    audioFocus.request();
+
     // Output only at startup so the app always makes sound; the mic input is
     // opened on demand when recording (avoids risking output on a denied perm).
     setAudioChannels (0, 2);
@@ -4020,10 +4027,60 @@ void MainComponent::appSuspended()
     engine.postPanic();          // no voice is left ringing into the silence
     autosave();
     shutdownAudio();             // releases the output stream and the mic
+    audioFocus.abandon();        // ...and hand the speaker back
+    pausedByFocus = false;
 }
 
 void MainComponent::appResumed()
 {
+    audioFocus.request();
+    pausedByFocus = false;
+    setAudioChannels (0, 2);
+    useLowestLatency();
+    refreshDeviceStatusLine (true);
+}
+
+// ============================================================================
+//  Audio focus. Android decides which app owns the speaker, and until now we
+//  never asked and never listened - so ZATI played over calls, and when an OEM
+//  build silenced us for it we could not tell: the meters kept moving with
+//  nothing coming out, which reads as the app being broken.
+//
+//  A loss stops us the same way going to the background does. A transient one
+//  remembers that it was US who paused, so the GAIN that follows resumes only
+//  what we stopped and never something the user had deliberately left silent.
+// ============================================================================
+void MainComponent::audioFocusLost (bool permanently)
+{
+    if (recordingActive)
+        toggleMicSampling();
+
+    if (engine.isPlaying())
+    {
+        engine.setPlaying (false);
+        playButton.setToggleState (false, juce::dontSendNotification);
+    }
+
+    engine.postPanic();
+    shutdownAudio();
+
+    //  Only a transient loss is worth remembering. After a permanent one
+    //  Android will not send us a GAIN unless we ask again, which is what
+    //  coming back to the foreground does.
+    pausedByFocus = ! permanently;
+
+    status.setText (permanently ? "Audio cedido a otra app"
+                                : "En pausa: otra app tiene el audio",
+                    juce::dontSendNotification);
+    deviceLine.clear();
+}
+
+void MainComponent::audioFocusGained()
+{
+    if (! pausedByFocus)
+        return;
+
+    pausedByFocus = false;
     setAudioChannels (0, 2);
     useLowestLatency();
     refreshDeviceStatusLine (true);

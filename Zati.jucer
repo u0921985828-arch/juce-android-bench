@@ -23,6 +23,8 @@
       <FILE id="srcSph"  name="SpectrumDisplay.h" compile="0" resource="0" file="Source/SpectrumDisplay.h"/>
       <FILE id="srcLnf"  name="ZatiLookAndFeel.h" compile="0" resource="0" file="Source/ZatiLookAndFeel.h"/>
       <FILE id="srcLcpp" name="SampleLoader.cpp"  compile="1" resource="0" file="Source/SampleLoader.cpp"/>
+      <FILE id="srcFcpp" name="AudioFocus.cpp"    compile="1" resource="0" file="Source/AudioFocus.cpp"/>
+      <FILE id="srcFh"   name="AudioFocus.h"      compile="0" resource="0" file="Source/AudioFocus.h"/>
       <FILE id="srcLh"   name="SampleLoader.h"    compile="0" resource="0" file="Source/SampleLoader.h"/>
       <FILE id="srcPsh"  name="ProjectStore.h"    compile="0" resource="0" file="Source/ProjectStore.h"/>
       <FILE id="srcZth"  name="Zati.h"            compile="0" resource="0" file="Source/Zati.h"/>

@@ -43,6 +43,7 @@ target_sources(Zati PRIVATE
     Source/MainComponent.cpp
     Source/AudioEngine.cpp
     Source/SampleLoader.cpp
+    Source/AudioFocus.cpp
 )
 
 # --- Compile definitions ----------------------------------------------------
