@@ -1,3 +1,11 @@
+//  juce_core hides its JNI helpers - LocalRef, GlobalRef, DECLARE_JNI_CLASS,
+//  getAppContext, AndroidInterfaceImplementer - behind this switch, and even
+//  <jni.h> itself. Without it the Android build fails on jobject before it
+//  gets as far as anything of ours. It has to be set before the first include
+//  of JuceHeader.h in this translation unit, which is why it sits above the
+//  header that pulls it in.
+#define JUCE_CORE_INCLUDE_JNI_HELPERS 1
+
 #include "AudioFocus.h"
 
 #if JUCE_ANDROID

@@ -1455,28 +1455,6 @@ void MainComponent::paint (juce::Graphics& g)
         g.setFont (ZatiColours::displayFont (Metrics::fTitle).withExtraKerningFactor (0.16f));
         g.drawText ("ZATI", h.getX(), h.getY(), 140, h.getHeight(), juce::Justification::centredLeft);
 
-        //  Maker's mark, struck at an angle the way a rubber stamp lands. It
-        //  is the one deliberately imperfect thing on the face, and it is what
-        //  stops the header from reading as a title bar.
-        {
-            const float sx = (float) h.getX() + 96.0f;
-            const float sy = (float) h.getCentreY();
-            juce::Graphics::ScopedSaveState keep (g);
-            g.addTransform (juce::AffineTransform::rotation (-0.070f, sx, sy));   // ~4 degrees
-
-            auto badge = juce::Rectangle<float> (sx, sy - 11.0f, 74.0f, 22.0f);
-            g.setColour (ZatiColours::ink.withAlpha (0.62f));
-            g.drawRoundedRectangle (badge, 2.0f, 2.0f);       // struck, not printed
-
-            auto inner = badge.reduced (3.0f, 2.0f);
-            g.setFont (ZatiColours::monoFont (8.5f, true).withExtraKerningFactor (0.20f));
-            g.drawText ("ARTiFACTS", inner.removeFromTop (inner.getHeight() * 0.55f),
-                        juce::Justification::centred);
-            g.setColour (ZatiColours::ink.withAlpha (0.45f));
-            g.setFont (ZatiColours::monoFont (7.0f, true).withExtraKerningFactor (0.30f));
-            g.drawText ("SAMPLER 01", inner, juce::Justification::centred);
-        }
-
         rule ((float) h.getX(), (float) h.getRight(), (float) h.getBottom() + 2.0f, 0.22f);
 
         const int sw = 9, sh = 13, gap = 4;
@@ -1804,34 +1782,55 @@ void MainComponent::resized()
     //  stops a stale rectangle from being painted under another view.
     padPlateArea = ctrlPlateArea = {};
 
-    auto area = getLocalBounds().reduced (8);
+    //  Margin. Everything used to start 8 px from the glass, which on a phone
+    //  reads as the app being too big for the screen rather than as a machine
+    //  sitting on it. The extra costs the LCD height, not the controls, since
+    //  the screen is what absorbs whatever is left.
+    auto area = getLocalBounds().reduced (ZatiLookAndFeel::kFaceMargin);
 
     // The LCD grows to absorb whatever the face doesn't need (the pads are
     // width-bound squares) — the screen is the protagonist.
     int screenH;
     {
-        const int chromeBelow = 16 + 4 + 16 + 8 + 32 + 4 + 44 + 8 + 18 + 6;   // VU + strip + module bar + transport + status          // gaps + module bar + transport + status
+        //  Spelled out term by term and in layout order, because this used to
+        //  be two hand-totalled constants that had drifted: the header was
+        //  counted as 30 when it is Metrics::tab, and the FX row as 32 when it
+        //  is Metrics::hit. Fourteen pixels the pads were assumed to have and
+        //  did not - and since layoutPadGrid clamps its cell to a MINIMUM
+        //  height, missing room becomes overflow rather than smaller pads.
+        const int aboveScreen = Metrics::tab + ZatiLookAndFeel::kAir   // header + gap
+                              + Metrics::lg  + Metrics::sm;             // VU + bezel gap
+        const int belowScreen = Metrics::sm + Metrics::lg        // bezel gap + step strip
+                              + Metrics::sm + Metrics::tab       // gap + module bar
+                              + Metrics::xs + Metrics::btn       // gap + transport
+                              + ZatiLookAndFeel::kAir;                            // gap before the body
+        const int bottomStrip = Metrics::lg + Metrics::sm;       // status + gap
+
         //  The pads are allowed to grow 20% past square before the screen
         //  takes any of what is left, which is the opposite of the old rule.
-        const int cellW = (area.getWidth() - 3 * Metrics::xs) / 4;
-        const int padsNeed = 4 * (cellW * 6 / 5) + 3 * Metrics::xs;
-        const int bodyNeed = 88 + 8 + 4 + 32 + 8 + padsNeed;           // CTRL knobs + FX row + pads
-        screenH = juce::jmax (96, area.getHeight() - (30 + 8) - chromeBelow - bodyNeed);
+        const int cellW    = (area.getWidth() - 3 * ZatiLookAndFeel::kPadGap) / 4;
+        const int padsNeed = 4 * (cellW * 6 / 5) + 3 * ZatiLookAndFeel::kPadGap;
+        const int bodyNeed = 88 + ZatiLookAndFeel::kAir + Metrics::sm   // CTRL plate + the EFECTOS rule
+                           + Metrics::hit + ZatiLookAndFeel::kAir                 // FX row + gap
+                           + padsNeed;
+
+        screenH = juce::jmax (96, area.getHeight()
+                                    - aboveScreen - belowScreen - bottomStrip - bodyNeed);
     }
 
     // --- Top chrome ---
     headerArea = area.removeFromTop (Metrics::tab);
-    area.removeFromTop (8);
+    area.removeFromTop (ZatiLookAndFeel::kAir);
 
     //  VU above the screen and the step strip below it, so the two readouts
     //  frame the LCD instead of sitting among the controls. Both are watched,
     //  not touched, so they belong together up here.
     vuArea = area.removeFromTop (Metrics::lg).reduced (2, 0);
-    area.removeFromTop (Metrics::xs);
+    area.removeFromTop (Metrics::sm);          // the bezel is drawn 5 px proud
 
     screenBezel = area.removeFromTop (screenH);
     spectrum.setBounds (screenBezel);
-    area.removeFromTop (Metrics::xs);
+    area.removeFromTop (Metrics::sm);
 
     stepStripArea = area.removeFromTop (Metrics::lg).reduced (2, 0);
     area.removeFromTop (Metrics::sm);
@@ -1857,7 +1856,7 @@ void MainComponent::resized()
         recButton.setBounds  (row.removeFromLeft (u).reduced (2, 0));
         playButton.setBounds (row.reduced (2, 0));
     }
-    area.removeFromTop (Metrics::sm);
+    area.removeFromTop (ZatiLookAndFeel::kAir);
 
     // Status pinned to the bottom; DESHACER sits on its right when armed, so
     // an undoable action announces itself where the result was reported.
@@ -1882,9 +1881,7 @@ void MainComponent::resized()
             cell.removeFromBottom (Metrics::xl);                  // gap for the readout chip below
             mk[i]->setBounds (cell.reduced (10, 0));
         }
-        area.removeFromTop (Metrics::sm);
-
-        area.removeFromTop (4);
+        area.removeFromTop (ZatiLookAndFeel::kAir + Metrics::sm);   // the EFECTOS rule lives here
         fxRowArea = area.removeFromTop (Metrics::hit);
         {
             auto row = fxRowArea;
@@ -1892,8 +1889,8 @@ void MainComponent::resized()
             for (int f = 0; f < kNumFx; ++f)
                 fxButtons[f]->setBounds ((f < kNumFx - 1 ? row.removeFromLeft (sw) : row).reduced (1, 0));
         }
-        area.removeFromTop (Metrics::sm);
-        layoutPadGrid (area, 4, 4, Metrics::xs);
+        area.removeFromTop (ZatiLookAndFeel::kAir);
+        layoutPadGrid (area, 4, 4, ZatiLookAndFeel::kPadGap);
     }
 
     // --- Floating sheets (each sized by its own content, capped at 86%) ---

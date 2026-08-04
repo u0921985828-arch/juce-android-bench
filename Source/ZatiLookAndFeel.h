@@ -217,6 +217,15 @@ public:
     //  reads this, so the press stays a single number.
     static constexpr float kCapLift = 3.0f;
 
+    //  Breathing room on the main face. These are the three numbers that
+    //  decide whether the instrument looks like it is sitting on the screen or
+    //  bursting out of it, so they are named rather than sprinkled: the margin
+    //  to the glass, the gap between the big sections, and the gap between
+    //  pads. All of it comes out of the LCD, which absorbs whatever is left.
+    static constexpr int kFaceMargin = 14;
+    static constexpr int kAir        = 12;
+    static constexpr int kPadGap     = 8;
+
     ZatiLookAndFeel()
     {
         // Value readouts as little dark LCD chips (guaranteed contrast on a white face).
