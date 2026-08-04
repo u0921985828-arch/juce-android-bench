@@ -595,6 +595,22 @@ MainComponent::MainComponent()
     loopButton.onClick = [this] { if (selectedPad >= 0) { padLoop[(size_t) selectedPad] = loopButton.getToggleState(); engine.setPadLoop (selectedPad, loopButton.getToggleState()); } };
     addAndMakeVisible (loopButton);
 
+    //  AUTOCUT — the pad cuts itself. Off by default, because layering a pad
+    //  over its own tail is what this sampler has always done and some pads
+    //  want it; on, a second tap kills the first with a 1.5 ms declick, which
+    //  is how a hardware one-shot behaves and what keeps a stab from turning
+    //  into a chorus of itself when you play it fast.
+    autocutButton.setClickingTogglesState (true);
+    styleButton (autocutButton, kStepOff);
+    autocutButton.setColour (juce::TextButton::buttonOnColourId, kAccent);
+    autocutButton.onClick = [this]
+    {
+        if (selectedPad < 0) return;
+        padSelfCut[(size_t) selectedPad] = autocutButton.getToggleState();
+        engine.setPadSelfCut (selectedPad, autocutButton.getToggleState());
+    };
+    addAndMakeVisible (autocutButton);
+
     styleButton (chopButton, kKey);
     chopButton.onClick = [this] { openChopSheet(); };
     addAndMakeVisible (chopButton);
@@ -1028,7 +1044,8 @@ MainComponent::MainComponent()
                                 (juce::Component*) &volSlider, (juce::Component*) &panSlider,
                                 (juce::Component*) &attackSlider, (juce::Component*) &releaseSlider, (juce::Component*) &chokeSlider,
                                 (juce::Component*) &startSlider, (juce::Component*) &endSlider,
-                                (juce::Component*) &reverseButton, (juce::Component*) &loopButton })
+                                (juce::Component*) &reverseButton, (juce::Component*) &loopButton,
+                                (juce::Component*) &autocutButton })
         padSheet.addAndMakeVisible (c);
     padSheet.addAndMakeVisible (chopButton);
 
@@ -2102,8 +2119,10 @@ void MainComponent::resized()
 
         padSectionArea[2] = inner.removeFromTop (secH);   // painted: EL PAD
         auto rr = inner.removeFromTop (Metrics::hit);
-        reverseButton.setBounds (rr.removeFromLeft (rr.getWidth() / 2).reduced (3, 0));
-        loopButton.setBounds    (rr.reduced (3, 0));
+        const int rw = rr.getWidth() / 3;
+        reverseButton.setBounds (rr.removeFromLeft (rw).reduced (3, 0));
+        loopButton.setBounds    (rr.removeFromLeft (rw).reduced (3, 0));
+        autocutButton.setBounds (rr.reduced (3, 0));
         inner.removeFromTop (5);
         auto rr2 = inner.removeFromTop (Metrics::hit);
         chopButton.setBounds (rr2.removeFromLeft (rr2.getWidth() / 2).reduced (3, 0));
@@ -2669,6 +2688,7 @@ void MainComponent::updateControlsFromPad (int index)
     endSlider.setValue   (padEnd01[(size_t) index],   juce::dontSendNotification);
     reverseButton.setToggleState (padReverse[(size_t) index], juce::dontSendNotification);
     loopButton.setToggleState    (padLoop[(size_t) index],    juce::dontSendNotification);
+    autocutButton.setToggleState (padSelfCut[(size_t) index], juce::dontSendNotification);
     chokeSlider.setValue (padChokeUI[(size_t) index], juce::dontSendNotification);
     panSlider.setValue     (padPan[(size_t) index],     juce::dontSendNotification);
     attackSlider.setValue  (padAttack[(size_t) index],  juce::dontSendNotification);
@@ -2694,6 +2714,7 @@ void MainComponent::assignSampleToPad (int index, SampleBuffer::Ptr sb, const ju
     engine.setPadLoop    (index, padLoop[(size_t) index]);
     engine.setPadReverse (index, padReverse[(size_t) index]);
     engine.setPadChoke   (index, padChokeUI[(size_t) index]);
+    engine.setPadSelfCut (index, padSelfCut[(size_t) index]);
     engine.setPadPan     (index, padPan[(size_t) index]);
     engine.setPadAttack  (index, padAttack[(size_t) index]);
     engine.setPadRelease (index, padRelease[(size_t) index]);
@@ -3104,6 +3125,7 @@ juce::ValueTree MainComponent::captureState() const
         p.setProperty ("start",   padStart01[(size_t) i], nullptr);
         p.setProperty ("end",     padEnd01[(size_t) i],   nullptr);
         p.setProperty ("loop",    padLoop[(size_t) i],    nullptr);
+        p.setProperty ("autocut", padSelfCut[(size_t) i], nullptr);
         p.setProperty ("reverse", padReverse[(size_t) i], nullptr);
         p.setProperty ("choke",   padChokeUI[(size_t) i], nullptr);
         p.setProperty ("pan",     padPan[(size_t) i],     nullptr);
@@ -3212,6 +3234,7 @@ void MainComponent::applyState (const juce::ValueTree& s)
             padStart01[(size_t) i] = (float) p.getProperty ("start", 0.0);
             padEnd01[(size_t) i]   = (float) p.getProperty ("end", 1.0);
             padLoop[(size_t) i]    = (bool)  p.getProperty ("loop", false);
+            padSelfCut[(size_t) i] = (bool)  p.getProperty ("autocut", false);
             padReverse[(size_t) i] = (bool)  p.getProperty ("reverse", false);
             padChokeUI[(size_t) i] = (int)   p.getProperty ("choke", 0);
             padPan[(size_t) i]     = (float) p.getProperty ("pan", 0.0);
@@ -3239,6 +3262,7 @@ void MainComponent::applyState (const juce::ValueTree& s)
             engine.setPadKeepLength (i, padKeepLen[(size_t) i]);
             engine.setPadGain    (i, padGain[(size_t) i]);
             engine.setPadLoop    (i, padLoop[(size_t) i]);
+            engine.setPadSelfCut (i, padSelfCut[(size_t) i]);
             engine.setPadReverse (i, padReverse[(size_t) i]);
             engine.setPadChoke   (i, padChokeUI[(size_t) i]);
             engine.setPadPan     (i, padPan[(size_t) i]);

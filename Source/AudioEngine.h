@@ -76,6 +76,14 @@ public:
     bool getPadKeepLength (int slot) const noexcept
     { return slot >= 0 && slot < kNumPads && padKeepLength[(size_t) slot].load (std::memory_order_relaxed); }
     void setPadChoke   (int slot, int group)   noexcept { store (padChoke,   slot, group); }   // 0 = none
+    //  AUTOCUT: a pad that cuts ITSELF. CHOKE settles arguments between
+    //  different pads (the open hat and the closed one); this one is about a
+    //  pad retriggering over its own tail, which is what a hardware sampler
+    //  does by default and what makes a stab or a vocal sound like one
+    //  instrument instead of a chorus of itself.
+    void setPadSelfCut (int slot, bool on)     noexcept { store (padSelfCut, slot, on); }
+    bool getPadSelfCut (int slot) const noexcept
+    { return slot >= 0 && slot < kNumPads && padSelfCut[(size_t) slot].load (std::memory_order_relaxed); }
     void setPadPan     (int slot, float p)     noexcept { store (padPan,     slot, p); }        // -1..1
     void setPadAttack  (int slot, float ms)    noexcept { store (padAttack,  slot, ms); }
     void setPadRelease (int slot, float ms)    noexcept { store (padRelease, slot, ms); }
@@ -389,6 +397,7 @@ private:
     std::atomic<float>  stepPhase { 0.0f };   // 0..1 within the current step
     std::atomic<std::uint32_t> triggeredMask { 0 };   // pads triggered, read by UI
     std::array<std::atomic<float>, (size_t) kNumPads> padPos {};   // read head, 0..1, -1 = silent
+    std::array<std::atomic<bool>,  (size_t) kNumPads> padSelfCut {};   // retrigger cuts its own tail
     double stepAccum = 0.0;      // audio-thread only
     int    currentStep = 0;      // audio-thread only
     bool   wasPlaying = false;   // audio-thread only

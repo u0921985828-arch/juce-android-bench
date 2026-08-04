@@ -116,6 +116,16 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01)
                 && padChoke[(size_t) v.slot].load (std::memory_order_relaxed) == group)
                 v.release();
 
+    //  AUTOCUT: this pad cuts its own tail. steal() rather than release() -
+    //  the point is that the previous hit is GONE by the time the new one
+    //  speaks, so it gets the 1.5 ms declick fade and not the pad's musical
+    //  release, which on a long tail would leave the two overlapping for as
+    //  long as the release lasts and defeat the whole thing.
+    if (padSelfCut[(size_t) slot].load (std::memory_order_relaxed))
+        for (auto& v : voices)
+            if (v.active && v.slot == slot)
+                v.steal (systemSampleRate);
+
     const int len = sb->buffer.getNumSamples();
     int st = padStart[(size_t) slot].load (std::memory_order_relaxed);
     int en = padEnd[(size_t) slot].load (std::memory_order_relaxed);

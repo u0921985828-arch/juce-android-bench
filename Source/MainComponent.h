@@ -425,6 +425,7 @@ private:
     juce::TextButton clearButton { "VACIAR" };
     juce::TextButton reverseButton { "REV" };
     juce::TextButton loopButton { "LOOP" };
+    juce::TextButton autocutButton { "AUTOCUT" };
     juce::TextButton chopButton { "AUTO CHOP" };
     juce::TextButton micButton  { "GRABAR MIC" };   // lives in the PADS sheet
 
@@ -464,6 +465,7 @@ private:
     std::array<float, kNumPads> padStart01 {};
     std::array<float, kNumPads> padEnd01 {};
     std::array<bool,  kNumPads> padLoop {};
+    std::array<bool,  kNumPads> padSelfCut {};   // AUTOCUT: retrigger cuts its own tail
     std::array<bool,  kNumPads> padReverse {};
     std::array<int,   kNumPads> padChokeUI {};   // 0 = none
     std::array<float, kNumPads> padPan {};        // -1..1, 0 = centre
