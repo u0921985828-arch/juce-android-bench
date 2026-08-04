@@ -150,6 +150,14 @@ private:
     void refreshAudioOptions();
     void applyAudioSetup (int bufferSize, double rate);
 
+    //  Oboe restarts the device asynchronously, so reading the rate straight
+    //  after setAudioDeviceSetup() can still return the OLD one - which is how
+    //  the status bar ended up claiming 44100 Hz under a panel reading 48000.
+    //  The timer re-reads it until it settles; deviceLine remembers what we
+    //  last wrote so a real message (an error, a permission) is never clobbered.
+    juce::String deviceLine;
+    void refreshDeviceStatusLine (bool force = false);
+
     // --- In-app sample browser -------------------------------------------
     //  A native FileChooser is a system dialog: it ignores the app's skin and
     //  on a tall phone screen its buttons fall outside the viewport. This is

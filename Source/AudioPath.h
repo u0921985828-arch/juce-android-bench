@@ -125,6 +125,8 @@ namespace AudioPath
     {
         bool ran        = false;  // libaaudio was there and a stream opened
         bool exclusive  = false;  // Android granted MMAP
+        bool mmapKnown  = false;  // the hidden symbol was there to ask
+        bool mmapUsed   = false;  // ...and said we are on an MMAP ring buffer
         bool lowLatency = false;
         bool useI16     = false;  // exclusivity needed 16-bit
         int  usage      = 0;      // the usage that won, 0 = none did
@@ -166,6 +168,14 @@ namespace AudioPath
         auto getRate  = (int32_t (*) (Stream))         sym ("AAudioStream_getSampleRate");
         auto getFmt   = (int32_t (*) (Stream))         sym ("AAudioStream_getFormat");
         auto closeIt  = (int  (*) (Stream))            sym ("AAudioStream_close");
+
+        //  Not in the NDK headers, but exported by libaaudio and the only way
+        //  to tell the two shared paths apart: a SHARED stream can still be
+        //  MMAP (the kernel ring buffer, mixed in the DSP) or it can be plain
+        //  AudioFlinger. Both report SHARED, and they differ by tens of
+        //  milliseconds. Oboe reads it exactly like this. If the symbol is
+        //  missing we simply do not claim to know.
+        auto isMmap   = (bool (*) (Stream))            sym ("AAudioStream_isMMapUsed");
 
         if (create == nullptr || openIt == nullptr || closeIt == nullptr
              || setDir == nullptr || setShare == nullptr || setPerf == nullptr
@@ -229,6 +239,8 @@ namespace AudioPath
             {
                 r.ran        = true;
                 r.exclusive  = exclusive;
+                r.mmapKnown  = (isMmap != nullptr);
+                r.mmapUsed   = (isMmap != nullptr && isMmap (s));
                 r.lowLatency = (getPerf != nullptr && getPerf (s) == 12);
                 r.useI16     = (getFmt  != nullptr && getFmt  (s) == 1);
                 r.usage      = exclusive ? a.usage : 0;
@@ -262,7 +274,15 @@ namespace AudioPath
                                  + (f.channels > 0 ? " " + juce::String (f.channels) + "ch" : "")
                                  + (f.useI16 ? " 16b" : " float");
 
-        if (! f.exclusive) return "compartida - ni en " + terms.trim();
+        //  Shared is not one answer but two, and the difference is the whole
+        //  question: shared MMAP still talks to the hardware ring buffer and
+        //  costs a handful of milliseconds, while AudioFlinger's mixer costs
+        //  tens. Saying only "compartida" hides which of the two we are on.
+        if (! f.exclusive)
+            return "compartida " + juce::String (! f.mmapKnown ? "(?)"
+                                               : f.mmapUsed    ? "MMAP"
+                                                               : "MEZCLADOR")
+                     + " - ni en " + terms.trim();
 
         return juce::String ("EXCLUSIVA")
                  + (f.usage == kUsageGame ? " · game" : "")

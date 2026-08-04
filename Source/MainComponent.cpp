@@ -3376,7 +3376,9 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
     //  that decides what the pads feel like.
     line ("via", AudioPath::describe (fastPath),
           fastPath.exclusive ? ZatiColours::lcdFg
-        : fastPath.ran       ? ZatiColours::red : ZatiColours::lcdDim);
+        : ! fastPath.ran     ? ZatiColours::lcdDim
+        : fastPath.mmapUsed  ? ZatiColours::yellow   // shared, but still MMAP
+                             : ZatiColours::red);    // AudioFlinger's mixer
 
     //  The measurement, kept visually apart from everything the device
     //  merely claims about itself.
@@ -3455,15 +3457,7 @@ void MainComponent::startMeasure()
         measureButton.setEnabled (false);
         setAudioChannels (1, 2);         // the probe has to hear itself
         useLowestLatency();
-        //  Read both halves while the duplex stream is actually open. This
-        //  is the only moment the input figure exists, and without it the
-        //  round trip is one number with nowhere to put the blame.
-        if (auto* dev = deviceManager.getCurrentAudioDevice())
-        {
-            const double sr = dev->getCurrentSampleRate() > 0.0 ? dev->getCurrentSampleRate() : 48000.0;
-            measuredOutMs = (float) (dev->getOutputLatencyInSamples() * 1000.0 / sr);
-            measuredInMs  = (float) (dev->getInputLatencyInSamples()  * 1000.0 / sr);
-        }
+        measuredOutMs = measuredInMs = 0.0f;   // filled in finishMeasure()
         engine.startLatencyProbe();
         projSheet.repaint();
     };
@@ -3484,6 +3478,19 @@ void MainComponent::finishMeasure()
 
     measuredMs = engine.finishLatencyProbe();
     measuring = false;
+
+    //  Read the two halves HERE, while the duplex stream is still open and has
+    //  been running for the whole probe. Reading them right after asking for
+    //  the input - which is what this used to do - reads a device that Oboe
+    //  has not finished reopening: it answered 4.79 ms out and 0 ms in, and an
+    //  input latency of zero does not exist.
+    if (auto* dev = deviceManager.getCurrentAudioDevice())
+    {
+        const double sr = dev->getCurrentSampleRate() > 0.0 ? dev->getCurrentSampleRate() : 48000.0;
+        measuredOutMs = (float) (dev->getOutputLatencyInSamples() * 1000.0 / sr);
+        measuredInMs  = (float) (dev->getInputLatencyInSamples()  * 1000.0 / sr);
+    }
+
     setAudioChannels (0, 2);             // back to output-only
     useLowestLatency();
     measureButton.setEnabled (true);
@@ -3498,9 +3505,12 @@ void MainComponent::finishMeasure()
     //  it is the phone's capture path.
     measureNote = measuredMs < 0.0f
                     ? "no oi el click - sube el volumen y no tapes el micro"
-                    : "con micro abierto: salida " + juce::String (measuredOutMs, 0)
-                        + " + entrada " + juce::String (measuredInMs, 0)
-                        + " ms. Tocando solo sales " + juce::String (measuredOutMs, 0) + " ms";
+                    //  One decimal, not zero: juce::String (x, 0) does not mean
+                    //  "no decimals" - it falls through to the generic format
+                    //  and prints 4.79167 in a line that has no room for it.
+                    : "con micro abierto: salida " + juce::String (measuredOutMs, 1)
+                        + " + entrada " + juce::String (measuredInMs, 1)
+                        + " ms. Tocando solo sales " + juce::String (measuredOutMs, 1) + " ms";
     refreshAudioOptions();
 }
 
@@ -3593,13 +3603,38 @@ void MainComponent::applyAudioSetup (int bufferSize, double rate)
     const auto err = deviceManager.setAudioDeviceSetup (setup, true);
 
     if (err.isNotEmpty())
+    {
         status.setText ("audio: " + err, juce::dontSendNotification);
-    else if (auto* dev = deviceManager.getCurrentAudioDevice())
-        status.setText (juce::String (dev->getCurrentBufferSizeSamples()) + " muestras · "
-                            + juce::String ((int) dev->getCurrentSampleRate()) + " Hz",
-                        juce::dontSendNotification);
+        deviceLine.clear();          // a real message: the timer must not touch it
+    }
+    else
+    {
+        refreshDeviceStatusLine (true);
+    }
 
     refreshAudioOptions();
+}
+
+//  Write the "N muestras · R Hz" line from what the device reports RIGHT NOW,
+//  and only over our own previous line. Called from applyAudioSetup and again
+//  from the timer, because Oboe's restart is asynchronous and the first read
+//  lands before the new rate is in effect.
+void MainComponent::refreshDeviceStatusLine (bool force)
+{
+    auto* dev = deviceManager.getCurrentAudioDevice();
+    if (dev == nullptr) return;
+
+    const auto line = juce::String (dev->getCurrentBufferSizeSamples()) + " muestras · "
+                        + juce::String ((int) dev->getCurrentSampleRate()) + " Hz";
+
+    if (line == deviceLine) return;
+
+    //  Anything else in the status bar is somebody's message. We only correct
+    //  a stale line of our own - unless the setup call itself asked for it.
+    if (! force && status.getText() != deviceLine) return;
+
+    deviceLine = line;
+    status.setText (line, juce::dontSendNotification);
 }
 
 void MainComponent::launchSystemPicker()
@@ -3771,6 +3806,7 @@ void MainComponent::timerCallback()
 {
     engine.collectRetiredSamples();
     pollExport();
+    refreshDeviceStatusLine();      // Oboe settles a beat after we ask it to
 
     //  The master oscilloscope: post-FX mono sum, straight from the engine's
     //  ring. Cosmetic, so a benign race with the audio thread is fine.
