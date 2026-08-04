@@ -23,6 +23,7 @@ class AudioEngine
 {
 public:
     static constexpr int kNumPads       = 16;
+    static constexpr int kNumFx         = 6;    // ISO, HPF, DRV, DLY, CRSH, REV — the order the UI shows
     static constexpr int kNumSteps      = 64;   // max steps per pattern (length is variable, see below)
     static constexpr int kMinPatLen     = 16;
     static constexpr int kMaxPatLen     = kNumSteps;   // 64 = four bars of 16
@@ -193,6 +194,20 @@ public:
     void setCrushBits (float b) noexcept { crBits.store (b, std::memory_order_relaxed); }
     void setCrushRate (float r) noexcept { crRate.store (r, std::memory_order_relaxed); }
     void setCrushMix  (float m) noexcept { crMix.store  (m, std::memory_order_relaxed); }
+
+    //  How much of one pad reaches one effect. 1 is everything, which is the
+    //  default so that switching an effect on still colours the whole kit the
+    //  way it always did; pull a pad down and that pad stops being sent.
+    void setPadSend (int slot, int fx, float v) noexcept
+    {
+        if (slot >= 0 && slot < kNumPads && fx >= 0 && fx < kNumFx)
+            padSend[(size_t) slot][(size_t) fx].store (juce::jlimit (0.0f, 1.0f, v), std::memory_order_relaxed);
+    }
+    float getPadSend (int slot, int fx) const noexcept
+    {
+        if (slot < 0 || slot >= kNumPads || fx < 0 || fx >= kNumFx) return 0.0f;
+        return padSend[(size_t) slot][(size_t) fx].load (std::memory_order_relaxed);
+    }
 
     void setRevSize (float s) noexcept { rvSize.store (s, std::memory_order_relaxed); }
     void setRevDamp (float d) noexcept { rvDamp.store (d, std::memory_order_relaxed); }
@@ -392,6 +407,7 @@ private:
     float smDlyFb   = 0.35f;
     float smDlySamp = 0.0f;      // delay time in samples, smoothed per sample
     bool  filterWasActive = false;
+    bool  hpWasActive     = false;
 
     // Master delay.
     juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Linear> delayLine { 96000 };
@@ -436,6 +452,26 @@ private:
 
     // Dry copy for the wet/dry stages. Sized in prepareToPlay, never here.
     juce::AudioBuffer<float> fxDry;
+
+    // ------------------------------------------------------------------
+    //  Sends. Each effect is a bus with its own input, and every pad decides
+    //  how much of itself goes into each one. That is what makes an effect
+    //  belong to a channel rather than to the whole instrument, and it is
+    //  also what makes cutting one behave the way it does on hardware: the
+    //  SEND closes, the RETURN stays open, so whatever was already inside a
+    //  delay or a reverb rings out instead of being amputated.
+    //
+    //  The four tone effects also take the pad OFF the dry path by the same
+    //  amount they take it on to theirs — a filter you can hear around is
+    //  not a filter. Delay and reverb add on top, as sends do.
+    // ------------------------------------------------------------------
+    static constexpr bool fxIsTone[kNumFx] = { true, true, true, false, true, false };
+
+    std::array<std::array<std::atomic<float>, kNumFx>, kNumPads> padSend {};
+    std::array<std::array<float, kNumFx>, kNumPads> smSend {};    // audio thread only
+    std::array<juce::AudioBuffer<float>, kNumFx> fxBus;
+    std::array<bool, kNumFx> busRinging {};
+    juce::AudioBuffer<float> padScratch;
 
     // Scope ring (post-FX mono), written by the audio thread.
     static constexpr int kScopeSize = 2048;   // power of two

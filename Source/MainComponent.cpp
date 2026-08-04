@@ -204,6 +204,48 @@ MainComponent::MainComponent()
         };
         projSheet.addAndMakeVisible (projExportButton);
 
+        // --- RACK: one pad's sends, opened from the mixer. ---------------
+        styleButton (rackButton, kKey);
+        rackButton.onClick = [this] { rackPad = juce::jmax (0, selectedPad); openSheet (rackSheet, mixButton); refreshRack(); };
+        mixSheet.addAndMakeVisible (rackButton);
+
+        for (int i = 0; i < kNumPads; ++i)
+        {
+            auto* b = new juce::TextButton (juce::String (i + 1).paddedLeft ('0', 2));
+            styleButton (*b, kStepOff);
+            b->setColour (juce::TextButton::buttonOnColourId, ZatiColours::accent);
+            b->setClickingTogglesState (true);
+            b->onClick = [this, i] { rackPad = i; selectPad (i); refreshRack(); };
+            rackSheet.addAndMakeVisible (b);
+            rackPadBtns.add (b);
+        }
+
+        for (int f = 0; f < kNumFx; ++f)
+        {
+            auto* sl = new juce::Slider();
+            sl->setSliderStyle (juce::Slider::LinearHorizontal);
+            sl->setTextBoxStyle (juce::Slider::TextBoxRight, false, 44, 20);
+            sl->setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
+            sl->setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
+            sl->setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+            sl->setRange (0.0, 1.0, 0.01);
+            sl->setValue (1.0, juce::dontSendNotification);
+            sl->setDoubleClickReturnValue (true, 1.0);
+            sl->textFromValueFunction = [] (double v) { return juce::String ((int) std::round (v * 100.0)); };
+            sl->updateText();
+            sl->onValueChange = [this, f, sl] { engine.setPadSend (rackPad, f, (float) sl->getValue()); rackSheet.repaint(); };
+            rackSheet.addAndMakeVisible (sl);
+            rackSends.add (sl);
+        }
+
+        styleButton (rackCloseButton, kKey);
+        rackCloseButton.onClick = [this] { closeAllSheets(); };
+        rackSheet.addAndMakeVisible (rackCloseButton);
+        addAndMakeVisible (rackSheet);
+        rackSheet.setVisible (false);
+        rackSheet.onDismiss = [this] { closeAllSheets(); };
+        rackSheet.paintContent = [this] (juce::Graphics& g) { paintRackSheetContent (g); };
+
         styleButton (measureButton, kKey);
         measureButton.onClick = [this] { startMeasure(); };
         projSheet.addAndMakeVisible (measureButton);
@@ -1168,6 +1210,7 @@ void MainComponent::closeAllSheets()
     browseSheet.setVisible (false);
     projSheet.setVisible (false);
     exportSheet.setVisible (false);
+    rackSheet.setVisible (false);
     setButton.setToggleState (false, juce::dontSendNotification);
     repaint();
 }
@@ -1778,6 +1821,41 @@ void MainComponent::resized()
         exportStemsButton.setBounds  (row.reduced (2, 0));
     }
 
+    // RACK sheet: which pad, and how much of it reaches each effect.
+    {
+        const int chipRowH = Metrics::tab;
+        //  sheetFromBottom takes the card's OUTER height and hands back the
+        //  inside, so the vertical margin it removes has to be part of what we
+        //  ask for - without it the last send row fell off the bottom edge.
+        auto inner = sheetFromBottom (rackSheet, Metrics::md * 2 + 32 + 14
+                                                   + (chipRowH + Metrics::xs) * 2
+                                                   + Metrics::sm + kNumFx * 34 + Metrics::sm);
+        auto titleRow = inner.removeFromTop (32);
+        rackCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
+        inner.removeFromTop (14);                       // painted: which pad this is
+
+        for (int r = 0; r < 2; ++r)
+        {
+            auto row = inner.removeFromTop (chipRowH);
+            const int w = row.getWidth() / 8;
+            for (int c = 0; c < 8; ++c)
+            {
+                const int i = r * 8 + c;
+                rackPadBtns[i]->setBounds ((c < 7 ? row.removeFromLeft (w) : row).reduced (1, 1));
+            }
+            inner.removeFromTop (Metrics::xs);
+        }
+        inner.removeFromTop (Metrics::sm);
+
+        //  The name of the effect is painted in the gutter, so the fader gets
+        //  the width instead of a label component competing for it.
+        for (int f = 0; f < kNumFx; ++f)
+        {
+            auto row = inner.removeFromTop (34);
+            rackSends[f]->setBounds (row.withTrimmedLeft (54).reduced (2, 5));
+        }
+    }
+
     // SONG sheet: palette, timeline, page row.
     {
         const int laneH = 40;
@@ -1832,6 +1910,7 @@ void MainComponent::resized()
         mixCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
 
         auto bottom = inner.removeFromBottom (Metrics::btn);
+        rackButton.setBounds (bottom.removeFromRight (bottom.getWidth() / 3).reduced (3, 4));
         mixClearSolo.setBounds (bottom.reduced (3, 4));
         inner.removeFromBottom (Metrics::xs);
 
@@ -2433,6 +2512,13 @@ juce::ValueTree MainComponent::captureState() const
         p.setProperty ("attack",  padAttack[(size_t) i],  nullptr);
         p.setProperty ("release", padRelease[(size_t) i], nullptr);
         p.setProperty ("zati",    padZati[(size_t) i],    nullptr);
+
+        //  The six sends, as one string, so adding a seventh effect later
+        //  does not need a seventh property or a migration.
+        juce::StringArray sends;
+        for (int f = 0; f < kNumFx; ++f)
+            sends.add (juce::String (engine.getPadSend (i, f), 3));
+        p.setProperty ("sends", sends.joinIntoString (","), nullptr);
         pads.addChild (p, -1, nullptr);
     }
     s.addChild (pads, -1, nullptr);
@@ -2533,6 +2619,13 @@ void MainComponent::applyState (const juce::ValueTree& s)
             padRelease[(size_t) i] = (float) p.getProperty ("release", 5.0);
             padZati[(size_t) i]    = (int)   p.getProperty ("zati", Zati::forPad (i));
 
+            //  Older projects have no sends; those pads go to every effect in
+            //  full, which is what they sounded like when they were saved.
+            juce::StringArray sends;
+            sends.addTokens (p.getProperty ("sends", juce::String()).toString(), ",", "");
+            for (int f = 0; f < kNumFx; ++f)
+                engine.setPadSend (i, f, f < sends.size() ? sends[f].getFloatValue() : 1.0f);
+
             // Trim is stored 0..1 but the engine wants samples, and
             // publishSample has just reset the window to the whole file — so
             // it must be pushed back explicitly or every load plays untrimmed.
@@ -2615,6 +2708,7 @@ void MainComponent::applyState (const juce::ValueTree& s)
     }
 
     focusFx ((int) s.getProperty ("focusedFx", 0));
+    refreshRack();
     for (int i = 0; i < kNumPads; ++i)
     {
         if (mixFaders[i] != nullptr) mixFaders[i]->setValue (padGain[(size_t) i], juce::dontSendNotification);
@@ -2879,6 +2973,57 @@ void MainComponent::refreshMixStrip()
     }
     mixClearSolo.setEnabled (any);
     mixSheet.repaint();
+}
+
+void MainComponent::refreshRack()
+{
+    rackPad = juce::jlimit (0, kNumPads - 1, rackPad);
+    for (int i = 0; i < rackPadBtns.size(); ++i)
+        rackPadBtns[i]->setToggleState (i == rackPad, juce::dontSendNotification);
+    for (int f = 0; f < rackSends.size(); ++f)
+        rackSends[f]->setValue (engine.getPadSend (rackPad, f), juce::dontSendNotification);
+    rackSheet.repaint();
+}
+
+//  Each row says three things: which effect, whether it is switched on at
+//  all, and how much of THIS pad is going into it. The middle one matters
+//  because a send at 100 into an effect whose own MIX is down makes no
+//  sound, and without saying so the fader looks broken.
+void MainComponent::paintRackSheetContent (juce::Graphics& g)
+{
+    if (rackSheet.sheetBounds.isEmpty()) return;
+
+    auto inner = rackSheet.sheetBounds.reduced (Metrics::lg, Metrics::md);
+    g.setColour (ZatiColours::ink.withAlpha (0.9f));
+    g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
+    const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
+    const juce::String nm  = padName[(size_t) rackPad];
+    auto titleRow = inner.removeFromTop (16);
+    titleRow.setRight (juce::jmin (titleRow.getRight(), rackCloseButton.getX() - Metrics::xs));
+    g.drawFittedText ("RACK  " + dot + "  PAD " + juce::String (rackPad + 1)
+                        + (nm.isNotEmpty() ? "  " + dot + "  " + nm.toUpperCase() : juce::String()),
+                      titleRow, juce::Justification::centredLeft, 1, 0.7f);
+
+    g.setColour (ZatiColours::inkDim);
+    g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
+    g.drawFittedText ("cuanto de este pad entra en cada efecto",
+                      inner.removeFromTop (14), juce::Justification::centredLeft, 1, 0.75f);
+
+    for (int f = 0; f < kNumFx; ++f)
+    {
+        if (rackSends[f] == nullptr) continue;
+        const auto r = rackSends[f]->getBounds();
+        const bool on = fxOn[(size_t) f];
+
+        g.setColour (on ? ZatiColours::ink : ZatiColours::inkDim.withAlpha (0.55f));
+        g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.10f));
+        g.drawText (fxDefs[f].name, rackSheet.sheetBounds.getX() + Metrics::lg, r.getY(),
+                    50, r.getHeight(), juce::Justification::centredLeft);
+
+        //  An effect that is switched off is not hidden, it is greyed: the
+        //  send you set now is the send it will use when you switch it on.
+        rackSends[f]->setAlpha (on ? 1.0f : 0.5f);
+    }
 }
 
 void MainComponent::paintProjSheetContent (juce::Graphics& g)

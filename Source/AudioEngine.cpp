@@ -23,6 +23,18 @@ namespace
 AudioEngine::AudioEngine()
 {
     for (auto& l : patternLength) l.store (kMinPatLen, std::memory_order_relaxed);
+
+    //  Every pad fully sent to every effect. An effect only becomes audible
+    //  when its own MIX is raised, so this default means switching one on
+    //  still affects the whole kit, exactly as it did before pads could be
+    //  taken off a send individually.
+    for (auto& pad : padSend)  for (auto& s : pad) s.store (1.0f, std::memory_order_relaxed);
+    //  The SMOOTHER, though, starts closed. What it follows is the pad send
+    //  times the effect's own MIX, and every MIX starts at zero - starting it
+    //  at the pad value instead opened all six sends for the first 20 ms of
+    //  the app's life, which with the tone effects meant the dry path was
+    //  nearly muted for exactly as long.
+    for (auto& pad : smSend)   pad.fill (0.0f);
 }
 
 AudioEngine::~AudioEngine()
@@ -63,6 +75,15 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize) noexcept
     reverb.reset();
 
     fxDry.setSize (2, juce::jmax (1, maxBlock));
+
+    //  One buffer per effect bus plus the scratch a single pad is rendered
+    //  into before it is split between the dry path and its sends. Allocated
+    //  here for the same reason as everything else in this function: the
+    //  callback is not allowed to.
+    padScratch.setSize (2, juce::jmax (1, maxBlock));
+    padScratch.clear();
+    for (auto& b : fxBus) { b.setSize (2, juce::jmax (1, maxBlock)); b.clear(); }
+    busRinging.fill (false);
 
     delayLine.prepare (spec);
     delayLine.setMaximumDelayInSamples (juce::jmax (1, (int) (systemSampleRate * 1.0)));
@@ -160,7 +181,54 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     // 2. Clear output.
     out.clear (startSample, numSamples);
 
-    auto renderVoices = [this, &out] (int s, int nn) noexcept
+    // 2b. Work out, once per block, where each pad's signal is going: how
+    //     much of it into each effect bus, and how much is left for the dry
+    //     path. The tone effects take a pad off dry by the same amount they
+    //     take it on to their own bus, so a fully-sent filter replaces the
+    //     sound instead of sitting beside it. Delay and reverb add on top.
+    //
+    //     Sends are smoothed per block for the same reason every other knob
+    //     here is: a raw jump in a gain that is being summed is a click.
+    const int  busChans = juce::jmin (2, out.getNumChannels());
+    const float kSend   = 1.0f - std::exp ((float) -numSamples / (0.020f * (float) systemSampleRate));
+    const float fxMixNow[kNumFx] =
+    {
+        juce::jlimit (0.0f, 1.0f, fxMix.load  (std::memory_order_relaxed)),
+        juce::jlimit (0.0f, 1.0f, hpMix.load  (std::memory_order_relaxed)),
+        juce::jlimit (0.0f, 1.0f, drvMix.load (std::memory_order_relaxed)),
+        juce::jlimit (0.0f, 1.0f, dlyMix.load (std::memory_order_relaxed)),
+        juce::jlimit (0.0f, 1.0f, crMix.load  (std::memory_order_relaxed)),
+        juce::jlimit (0.0f, 1.0f, rvMix.load  (std::memory_order_relaxed))
+    };
+
+    float sendGain[kNumPads][kNumFx];
+    float dryGain[kNumPads];
+    bool  busFed[kNumFx] = {};
+    bool  padSplit[kNumPads];
+
+    for (int p = 0; p < kNumPads; ++p)
+    {
+        float dry = 1.0f;
+        bool  any = false;
+        for (int f = 0; f < kNumFx; ++f)
+        {
+            const float target = fxMixNow[f] * padSend[(size_t) p][(size_t) f].load (std::memory_order_relaxed);
+            float& sm = smSend[(size_t) p][(size_t) f];
+            sm += kSend * (target - sm);
+            const float g = (sm < 0.0005f && target < 0.0005f) ? 0.0f : sm;
+            sendGain[p][f] = g;
+            if (g > 0.0f) { any = true; busFed[f] = true; }
+            if (fxIsTone[f]) dry *= (1.0f - g);
+        }
+        dryGain[p]  = dry;
+        padSplit[p] = any;
+    }
+
+    for (int f = 0; f < kNumFx; ++f)
+        if (busFed[f] || busRinging[f])
+            fxBus[(size_t) f].clear (startSample, numSamples);
+
+    auto renderVoices = [&] (int s, int nn) noexcept
     {
         // Control-rate retarget first: looping/long voices keep following
         // their pad's VOLUME/PAN knobs instead of freezing start() values.
@@ -171,13 +239,49 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 vc.retarget (effectiveGain (vc.slot),
                              padPan [(size_t) vc.slot].load (std::memory_order_relaxed));
         }
-        //  Only the voices that are actually sounding. A silent voice keeps
-        //  its slot, so the old test entered render() for all 32 every time.
-        for (int v = 0; v < kNumVoices; ++v)
+
+        //  A pad that sends nowhere goes straight to the master, exactly as
+        //  before. One that does is rendered on its own first, because you
+        //  cannot take a share of a signal that has already been summed with
+        //  fifteen others.
+        for (int p = 0; p < kNumPads; ++p)
         {
-            auto& vc = voices[(size_t) v];
-            if (vc.active && vc.slot >= 0)
-                vc.render (out, s, nn, padSample[(size_t) vc.slot]);
+            bool sounding = false;
+            for (int v = 0; v < kNumVoices && ! sounding; ++v)
+                sounding = voices[(size_t) v].active && voices[(size_t) v].slot == p;
+
+            if (! sounding)
+                continue;
+
+            if (! padSplit[p])
+            {
+                for (int v = 0; v < kNumVoices; ++v)
+                {
+                    auto& vc = voices[(size_t) v];
+                    if (vc.active && vc.slot == p)
+                        vc.render (out, s, nn, padSample[(size_t) p]);
+                }
+                continue;
+            }
+
+            for (int ch = 0; ch < 2; ++ch)
+                padScratch.clear (ch, s, nn);
+
+            for (int v = 0; v < kNumVoices; ++v)
+            {
+                auto& vc = voices[(size_t) v];
+                if (vc.active && vc.slot == p)
+                    vc.render (padScratch, s, nn, padSample[(size_t) p]);
+            }
+
+            if (dryGain[p] > 0.0005f)
+                for (int ch = 0; ch < busChans; ++ch)
+                    out.addFrom (ch, s, padScratch, ch, s, nn, dryGain[p]);
+
+            for (int f = 0; f < kNumFx; ++f)
+                if (sendGain[p][f] > 0.0f)
+                    for (int ch = 0; ch < busChans; ++ch)
+                        fxBus[(size_t) f].addFrom (ch, s, padScratch, ch, s, nn, sendGain[p][f]);
         }
     };
 
@@ -325,67 +429,63 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         stepPhase.store ((float) (stepAccum / samplesPerStep), std::memory_order_relaxed);
     }
 
-    // 5b. Master FX: ISO -> HPF -> DRIVE -> CRUSH -> DELAY -> REVERB.
-    //     Six independent stages, three parameters each, MIX always the
-    //     third. MIX is both the amount and the switch: at zero the stage is
-    //     skipped entirely, so an unused effect costs nothing and cannot
-    //     colour the sound (a bug in here must never silence the output).
-    //     Every knob-driven value is one-pole smoothed at ~20 ms — the
-    //     atomics jump once per block, and applying them raw produced zipper
-    //     on the filters and crackle on the delay time.
+    // 5b. The six effect buses: ISO, HPF, DRIVE, CRUSH, DELAY, REVERB.
+    //     Each one runs on its own input, made upstream out of the pads that
+    //     were sent to it, and returns into the master at full level. The
+    //     wet/dry balance that used to live here now lives in the send, which
+    //     is what lets a single pad be soaked in delay while the rest stay
+    //     dry - impossible while the effects were inserts across everything.
+    //
+    //     A bus runs while it is being fed AND for as long as it keeps making
+    //     sound after the feed stops. That is the whole point of a send: shut
+    //     it and the delay repeats already inside the line still come out and
+    //     die away on their own, instead of being cut off mid-tail. When a
+    //     bus finally falls silent it is left alone entirely, so effects
+    //     nobody is using cost nothing.
     {
-        const int outCh = out.getNumChannels();
-        const int chans = juce::jmin (2, outCh);
+        const int chans = busChans;
 
         // Block-rate smoothing coefficient for a ~20 ms time constant.
         const float kBlock = 1.0f - std::exp ((float) -numSamples / (0.020f * (float) systemSampleRate));
         const float nyq    = (float) (systemSampleRate * 0.45);
 
-        // Keeps a dry copy of the current block so a stage can blend rather
-        // than replace. Cheap, and it is the only way MIX means anything.
-        //  ISO and HPF wake up at full wet, which is most of the time, and a
-        //  full block copy per stage per callback is not free on a phone.
-        auto stashDry = [this, &out, startSample, numSamples, chans] (float mix) noexcept
+        auto live = [&] (int f) noexcept { return busFed[f] || busRinging[f]; };
+
+        auto blockFor = [this, startSample, numSamples, chans] (int f) noexcept
         {
-            if (mix >= 0.999f) return;
-            for (int ch = 0; ch < chans; ++ch)
-                fxDry.copyFrom (ch, 0, out.getReadPointer (ch, startSample),
-                                juce::jmin (numSamples, fxDry.getNumSamples()));
+            return juce::dsp::AudioBlock<float> (fxBus[(size_t) f].getArrayOfWritePointers(),
+                                                 (size_t) chans, (size_t) startSample, (size_t) numSamples);
         };
-        auto blendDry = [this, &out, startSample, numSamples, chans] (float mix) noexcept
+
+        //  Return the bus to the master and decide whether it is still alive.
+        //  The threshold is far below anything audible; it exists so a reverb
+        //  tail is not processed forever after it has decayed to nothing.
+        auto returnBus = [this, &out, startSample, numSamples, chans] (int f) noexcept
         {
-            if (mix >= 0.999f) return;      // fully wet: the copy would be a no-op
+            auto& bus = fxBus[(size_t) f];
             for (int ch = 0; ch < chans; ++ch)
-            {
-                float* w = out.getWritePointer (ch, startSample);
-                const float* d = fxDry.getReadPointer (ch);
-                for (int i = 0; i < numSamples; ++i)
-                    w[i] = d[i] * (1.0f - mix) + w[i] * mix;
-            }
+                out.addFrom (ch, startSample, bus, ch, startSample, numSamples);
+            busRinging[(size_t) f] = (bus.getMagnitude (startSample, numSamples) > 1.0e-5f);
         };
 
         // --- 1. ISO: low-pass, the one you sweep on a break. --------------
         {
             const float cutT = juce::jlimit (20.0f, nyq, fxCutoff.load (std::memory_order_relaxed));
             const float resT = juce::jlimit (0.1f, 4.0f, fxReso.load (std::memory_order_relaxed));
-            const float mixT = juce::jlimit (0.0f, 1.0f, fxMix.load (std::memory_order_relaxed));
             smCutoff += kBlock * (cutT - smCutoff);
             smReso   += kBlock * (resT - smReso);
-            smFxMix  += kBlock * (mixT - smFxMix);
 
-            const bool active = (smFxMix > 0.001f || mixT > 0.001f);
+            const bool active = live (0);
             if (active)
             {
                 if (! filterWasActive) masterFilter.reset();
-                stashDry (smFxMix);
                 masterFilter.setType (juce::dsp::StateVariableTPTFilterType::lowpass);
                 masterFilter.setCutoffFrequency (smCutoff);
                 masterFilter.setResonance (smReso);
-                juce::dsp::AudioBlock<float> block (out.getArrayOfWritePointers(), (size_t) outCh,
-                                                    (size_t) startSample, (size_t) numSamples);
-                juce::dsp::ProcessContextReplacing<float> ctx (block);
+                auto b = blockFor (0);
+                juce::dsp::ProcessContextReplacing<float> ctx (b);
                 masterFilter.process (ctx);
-                blendDry (smFxMix);
+                returnBus (0);
             }
             filterWasActive = active;
         }
@@ -394,74 +494,66 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         {
             const float frqT = juce::jlimit (20.0f, nyq, hpFreq.load (std::memory_order_relaxed));
             const float resT = juce::jlimit (0.1f, 4.0f, hpReso.load (std::memory_order_relaxed));
-            const float mixT = juce::jlimit (0.0f, 1.0f, hpMix.load (std::memory_order_relaxed));
             smHpFreq += kBlock * (frqT - smHpFreq);
             smHpReso += kBlock * (resT - smHpReso);
-            const float prev = smHpMix;
-            smHpMix  += kBlock * (mixT - smHpMix);
 
-            if (smHpMix > 0.001f || mixT > 0.001f)
+            const bool active = live (1);
+            if (active)
             {
-                if (prev <= 0.001f) hpFilter.reset();
-                stashDry (smHpMix);
+                if (! hpWasActive) hpFilter.reset();
                 hpFilter.setCutoffFrequency (smHpFreq);
                 hpFilter.setResonance (smHpReso);
-                juce::dsp::AudioBlock<float> block (out.getArrayOfWritePointers(), (size_t) outCh,
-                                                    (size_t) startSample, (size_t) numSamples);
-                juce::dsp::ProcessContextReplacing<float> ctx (block);
+                auto b = blockFor (1);
+                juce::dsp::ProcessContextReplacing<float> ctx (b);
                 hpFilter.process (ctx);
-                blendDry (smHpMix);
+                returnBus (1);
             }
+            hpWasActive = active;
         }
 
-        // --- 3. DRIVE: tanh, then a tone control, then blend. -------------
+        // --- 3. DRIVE: tanh, then a tone control. -------------------------
         {
             const float drvT  = juce::jlimit (0.0f, 1.0f, fxDrive.load (std::memory_order_relaxed));
             const float toneT = juce::jlimit (200.0f, 20000.0f, drvTone.load (std::memory_order_relaxed));
-            const float mixT  = juce::jlimit (0.0f, 1.0f, drvMix.load (std::memory_order_relaxed));
             smDrive   += kBlock * (drvT  - smDrive);
             smDrvTone += kBlock * (toneT - smDrvTone);
-            smDrvMix  += kBlock * (mixT  - smDrvMix);
 
-            if (smDrvMix > 0.001f || mixT > 0.001f)
+            if (live (2))
             {
                 const float k  = 1.0f + smDrive * 24.0f;      // gain into the tanh
                 //  Compensate by the gain going IN, not by tanh's own ceiling:
                 //  tanh(k) is ~1 for any useful k, so that "makeup" was a
                 //  no-op and DRIVE at 70% came out three times louder than
-                //  dry — a distortion knob that is really a volume knob.
+                //  dry - a distortion knob that is really a volume knob.
                 const float mk = 1.0f / (1.0f + smDrive * 2.5f);
                 const float a  = juce::jlimit (0.0f, 1.0f,
                                     1.0f - std::exp (-2.0f * juce::MathConstants<float>::pi
                                                      * smDrvTone / (float) systemSampleRate));
                 for (int ch = 0; ch < chans; ++ch)
                 {
-                    float* w = out.getWritePointer (ch, startSample);
+                    float* w = fxBus[2].getWritePointer (ch, startSample);
                     float lp = drvLp[ch];
                     for (int i = 0; i < numSamples; ++i)
                     {
-                        const float dry = w[i];
-                        lp += a * (fastTanh (k * dry) * mk - lp);
-                        w[i] = dry * (1.0f - smDrvMix) + lp * smDrvMix;
+                        lp += a * (fastTanh (k * w[i]) * mk - lp);
+                        w[i] = lp;
                     }
                     drvLp[ch] = lp;
                 }
+                returnBus (2);
             }
         }
 
         // --- 4. CRUSH: bit depth and sample-and-hold, the two halves of lo-fi.
         {
-            const float mixT = juce::jlimit (0.0f, 1.0f, crMix.load (std::memory_order_relaxed));
-            smCrMix += kBlock * (mixT - smCrMix);
-
-            if (smCrMix > 0.001f || mixT > 0.001f)
+            if (live (4))
             {
                 const float bits   = juce::jlimit (1.0f, 16.0f, crBits.load (std::memory_order_relaxed));
                 const float levels = juce::jmax (1.0f, std::pow (2.0f, bits) * 0.5f);
                 const float step   = juce::jmax (1.0f, crRate.load (std::memory_order_relaxed));
 
-                float* w0 = out.getWritePointer (0, startSample);
-                float* w1 = (chans > 1) ? out.getWritePointer (1, startSample) : w0;
+                float* w0 = fxBus[4].getWritePointer (0, startSample);
+                float* w1 = (chans > 1) ? fxBus[4].getWritePointer (1, startSample) : w0;
                 for (int i = 0; i < numSamples; ++i)
                 {
                     crPhase += 1.0f;
@@ -470,11 +562,11 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     for (int ch = 0; ch < chans; ++ch)
                     {
                         float* w = (ch == 0) ? w0 : w1;
-                        const float dry = w[i];
-                        if (take) crHold[ch] = std::round (dry * levels) / levels;
-                        w[i] = dry * (1.0f - smCrMix) + crHold[ch] * smCrMix;
+                        if (take) crHold[ch] = std::round (w[i] * levels) / levels;
+                        w[i] = crHold[ch];
                     }
                 }
+                returnBus (4);
             }
         }
 
@@ -482,19 +574,17 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         //        a linear-interp line is a hard discontinuity (crackle on
         //        every TIME move).
         {
-            const float mixT = juce::jlimit (0.0f, 1.0f, dlyMix.load (std::memory_order_relaxed));
             const float fbT  = juce::jlimit (0.0f, 0.95f, dlyFb.load (std::memory_order_relaxed));
             const float dsT  = juce::jlimit (1.0f, (float) (systemSampleRate - 1.0),
                                              dlyTime.load (std::memory_order_relaxed) * (float) systemSampleRate / 1000.0f);
-            smDlyMix += kBlock * (mixT - smDlyMix);
             smDlyFb  += kBlock * (fbT  - smDlyFb);
             if (smDlySamp <= 0.0f) smDlySamp = dsT;            // first block: no sweep from 0
             const float kSamp = 1.0f - std::exp (-1.0f / (0.020f * (float) systemSampleRate));
 
-            if (smDlyMix > 0.001f || mixT > 0.001f)
+            if (live (3))
             {
-                float* w0 = out.getWritePointer (0, startSample);
-                float* w1 = (chans > 1) ? out.getWritePointer (1, startSample) : w0;
+                float* w0 = fxBus[3].getWritePointer (0, startSample);
+                float* w1 = (chans > 1) ? fxBus[3].getWritePointer (1, startSample) : w0;
                 for (int i = 0; i < numSamples; ++i)
                 {
                     smDlySamp += kSamp * (dsT - smDlySamp);
@@ -505,32 +595,32 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                         const float in = w[i];
                         const float d  = delayLine.popSample (ch);
                         delayLine.pushSample (ch, in + d * smDlyFb);
-                        w[i] = in * (1.0f - smDlyMix) + d * smDlyMix;
+                        w[i] = d;
                     }
                 }
+                returnBus (3);
             }
         }
 
-        // --- 6. REVERB, last, so everything ahead of it lands in the room.
+        // --- 6. REVERB. Wet only: the dry it would mix back already reached
+        //        the master by the direct path, and adding it twice would
+        //        only comb-filter the sound.
         {
-            const float mixT = juce::jlimit (0.0f, 1.0f, rvMix.load (std::memory_order_relaxed));
-            smRvMix += kBlock * (mixT - smRvMix);
-
-            if (smRvMix > 0.001f || mixT > 0.001f)
+            if (live (5))
             {
-                juce::Reverb::Parameters p;
-                p.roomSize   = juce::jlimit (0.0f, 1.0f, rvSize.load (std::memory_order_relaxed));
-                p.damping    = juce::jlimit (0.0f, 1.0f, rvDamp.load (std::memory_order_relaxed));
-                p.wetLevel   = smRvMix;
-                p.dryLevel   = 1.0f - smRvMix;
-                p.width      = 1.0f;
-                p.freezeMode = 0.0f;
-                reverb.setParameters (p);
+                juce::Reverb::Parameters prm;
+                prm.roomSize   = juce::jlimit (0.0f, 1.0f, rvSize.load (std::memory_order_relaxed));
+                prm.damping    = juce::jlimit (0.0f, 1.0f, rvDamp.load (std::memory_order_relaxed));
+                prm.wetLevel   = 1.0f;
+                prm.dryLevel   = 0.0f;
+                prm.width      = 1.0f;
+                prm.freezeMode = 0.0f;
+                reverb.setParameters (prm);
 
-                juce::dsp::AudioBlock<float> block (out.getArrayOfWritePointers(), (size_t) outCh,
-                                                    (size_t) startSample, (size_t) numSamples);
-                juce::dsp::ProcessContextReplacing<float> ctx (block);
+                auto b = blockFor (5);
+                juce::dsp::ProcessContextReplacing<float> ctx (b);
                 reverb.process (ctx);
+                returnBus (5);
             }
         }
     }
@@ -831,6 +921,8 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     copyArr (padRelease, s.padRelease);
     copyArr (padMute,    s.padMute);
     copyArr (padSolo,    s.padSolo);
+    for (size_t i = 0; i < padSend.size(); ++i) copyArr (padSend[i], s.padSend[i]);
+    for (size_t i = 0; i < smSend.size();  ++i) smSend[i] = s.smSend[i];
     refreshSolo();
 
     bpm.store (s.bpm.load (std::memory_order_relaxed), std::memory_order_relaxed);

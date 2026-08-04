@@ -56,7 +56,7 @@ private:
                 onDismiss();
         }
     };
-    Sheet padSheet, seqSheet, browseSheet, projSheet, mixSheet, songSheet, exportSheet;
+    Sheet padSheet, seqSheet, browseSheet, projSheet, mixSheet, songSheet, exportSheet, rackSheet;
     void openSheet (Sheet& s, juce::TextButton& toggle);
     void closeAllSheets();
     void paintSeqSheetContent (juce::Graphics& g);
@@ -66,6 +66,7 @@ private:
     void paintMixSheetContent (juce::Graphics& g);
     void paintSongSheetContent (juce::Graphics& g);
     void paintExportSheetContent (juce::Graphics& g);
+    void paintRackSheetContent (juce::Graphics& g);
 
     // --- Projects ---------------------------------------------------------
     //  The whole machine (pads + their samples, the 8 pattern banks, the
@@ -246,6 +247,15 @@ private:
     //  A studio is where a track gets finished, and nothing gets finished
     //  without balancing it. One strip per pad: level, mute, solo.
     juce::OwnedArray<juce::Slider>     mixFaders, mixPans;
+
+    //  The rack: one pad's six sends, opened from the mixer. An effect here
+    //  is not on or off, it is how much of THIS channel goes into it - which
+    //  is the only place where "the delay belongs to the snare" can be said.
+    juce::TextButton rackButton { "RACK" }, rackCloseButton { "x" };
+    juce::OwnedArray<juce::TextButton> rackPadBtns;
+    juce::OwnedArray<juce::Slider>     rackSends;
+    int rackPad = 0;
+    void refreshRack();
     juce::OwnedArray<juce::TextButton> mixMutes, mixSolos;
     juce::TextButton mixClearSolo { "SIN SOLO" };
     void refreshMixStrip();
