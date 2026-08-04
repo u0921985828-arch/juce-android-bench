@@ -1679,6 +1679,29 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
                 padTitleRow, juce::Justification::centredLeft, true);
 
     {
+        //  Group headers, each with a hairline running out to the right edge -
+        //  the same engraved rule the machine face uses, so a sheet reads as
+        //  three blocks (what the sound is, where it is cut, what the pad is)
+        //  instead of eleven controls in a column.
+        static const char* secNames[3] = { "SONIDO", "RECORTE", "EL PAD" };
+        for (int i = 0; i < 3; ++i)
+        {
+            const auto r = padSectionArea[(size_t) i];
+            if (r.isEmpty()) continue;
+
+            g.setColour (ZatiColours::ink.withAlpha (0.55f));
+            g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.22f));
+            g.drawText (secNames[i], r, juce::Justification::bottomLeft);
+
+            const float tw = juce::GlyphArrangement::getStringWidth (
+                                 ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.22f),
+                                 secNames[i]);
+            const float ly = (float) r.getBottom() - 5.0f;
+            g.setColour (ZatiColours::ink.withAlpha (0.18f));
+            g.fillRect ((float) r.getX() + tw + 8.0f, ly,
+                        juce::jmax (0.0f, (float) r.getRight() - ((float) r.getX() + tw + 8.0f)), 1.0f);
+        }
+
         // Knobs: label above (same convention as FX).
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
         auto name = [&g] (juce::Slider& s, const char* t)
@@ -2017,11 +2040,14 @@ void MainComponent::resized()
 
     // PADS sheet: per-pad knobs, trim, REV/LOOP + AUTO CHOP, sample-info card.
     {
-        auto inner = sheetFromBottom (padSheet, 670);
+        constexpr int secH = 15;
+        auto inner = sheetFromBottom (padSheet, 670 + 3 * secH);
         auto titleRow = inner.removeFromTop (32);
         padCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
         titleRow.removeFromRight (Metrics::xs);
         previewButton.setBounds (titleRow.removeFromRight (68).reduced (0, 2));
+
+        padSectionArea[0] = inner.removeFromTop (secH);   // painted: SONIDO
 
         juce::Slider* k1[3] = { &pitchSlider, &fineSlider, &volSlider };
         juce::Slider* k2[3] = { &panSlider, &attackSlider, &releaseSlider };
@@ -2048,12 +2074,14 @@ void MainComponent::resized()
         }
 
         inner.removeFromTop (Metrics::sm);
+        padSectionArea[1] = inner.removeFromTop (secH);   // painted: RECORTE
 
         const int labelW = 64;
         auto ctrlRow = [&inner, labelW] (int h) { auto r = inner.removeFromTop (h); r.removeFromLeft (labelW); return r; };
         startSlider.setBounds (ctrlRow (34)); inner.removeFromTop (4);
         endSlider.setBounds   (ctrlRow (34)); inner.removeFromTop (8);
 
+        padSectionArea[2] = inner.removeFromTop (secH);   // painted: EL PAD
         auto rr = inner.removeFromTop (Metrics::hit);
         reverseButton.setBounds (rr.removeFromLeft (rr.getWidth() / 2).reduced (3, 0));
         loopButton.setBounds    (rr.reduced (3, 0));
@@ -2201,7 +2229,7 @@ void MainComponent::resized()
 
     // AUTO CHOP sheet: how many pieces, where they land, and one red verb.
     {
-        const int explainH = 34, plannedH = 40;
+        const int explainH = 40, plannedH = 40;
         auto inner = sheetFromBottom (chopSheet, Metrics::md * 2 + 32 + explainH
                                                    + Metrics::md + 14 + Metrics::hit
                                                    + Metrics::sm + Metrics::hit
@@ -3535,7 +3563,7 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.06f));
     g.drawFittedText ("Parte este sample en trozos iguales y los reparte por los pads. "
                       "El pad de origen se queda con el primero.",
-                      inner.removeFromTop (34), juce::Justification::topLeft, 2, 0.85f);
+                      inner.removeFromTop (40), juce::Justification::topLeft, 3, 1.0f);
 
     inner.removeFromTop (Metrics::md);
     g.setColour (ZatiColours::ink.withAlpha (0.75f));

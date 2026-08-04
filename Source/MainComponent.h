@@ -424,6 +424,10 @@ private:
     juce::TextButton zatiPrevButton { juce::CharPointer_UTF8 ("\xe2\x97\x80") },
                      zatiNextButton { juce::CharPointer_UTF8 ("\xe2\x96\xb6") };
     juce::Rectangle<int> zatiSwatchArea;
+    //  The three group headers of the PADS sheet, placed in resized() and
+    //  drawn in paintPadSheetContent: a sheet with eleven controls on it needs
+    //  to say which of them belong together.
+    std::array<juce::Rectangle<int>, 3> padSectionArea {};
     void shiftZati (int delta);
     bool recArmed = false;                          // REC writes hits into the pattern
 
