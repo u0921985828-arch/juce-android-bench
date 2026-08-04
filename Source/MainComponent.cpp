@@ -1748,7 +1748,14 @@ void MainComponent::resized()
             auto r3 = inner.removeFromTop (16 + Metrics::hit);
             r3.removeFromTop (16);                       // gap for the names
             const int w3 = r3.getWidth() / 3;
-            chokeSlider.setBounds (r3.removeFromLeft (w3).reduced (6, 3));
+            auto chokeCell = r3.removeFromLeft (w3).reduced (6, 3);
+            //  JUCE stacks a slider's +/- buttons whenever the space left for
+            //  them is taller than it is wide, and on a narrow screen the
+            //  readout was eating enough of the cell to trigger exactly that -
+            //  two 17-pixel slivers. Reserve the buttons their width first.
+            chokeSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false,
+                                         juce::jmax (30, chokeCell.getWidth() - 70), Metrics::chip);
+            chokeSlider.setBounds (chokeCell);
             modeButton.setBounds  (r3.removeFromLeft (w3).reduced (6, 3));
         }
 
@@ -1956,7 +1963,10 @@ void MainComponent::resized()
         //  furniture and share it - never below 30, never above the target.
         const int mixFurniture = Metrics::md * 2 + 32 + Metrics::sm + Metrics::btn + Metrics::lg;
         const int mixRoom = (int) (full.getHeight() * 0.78f) - mixFurniture;
-        const int rowH = juce::jlimit (30, Metrics::hit, mixRoom / kNumPads);
+        //  Floor low enough that sixteen rows ALWAYS fit. A higher minimum
+        //  looks better right up to the screen where it does not fit, and
+        //  then the last rows are laid out with no height at all.
+        const int rowH = juce::jlimit (24, Metrics::hit, mixRoom / kNumPads);
         auto inner = sheetFromBottom (mixSheet, mixFurniture + kNumPads * rowH);
         auto titleRow = inner.removeFromTop (32);
         mixCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
@@ -1970,10 +1980,13 @@ void MainComponent::resized()
         {
             auto row = inner.removeFromTop (rowH).reduced (0, 1);
             row.removeFromLeft (76);                       // colour chip + number + name
-            mixSolos[i]->setBounds (row.removeFromRight (Metrics::hit).reduced (2, 3));
-            mixMutes[i]->setBounds (row.removeFromRight (Metrics::hit).reduced (2, 3));
-            mixPans[i]->setBounds  (row.removeFromRight (juce::jmin (78, row.getWidth() / 3)).reduced (4, 6));
-            mixFaders[i]->setBounds (row.reduced (4, 2));
+            //  Padding here is not decoration, it is the hit area coming off
+            //  the control. The pan was losing twelve pixels of a forty-pixel
+            //  row to margins and ending up shorter than the M and S beside it.
+            mixSolos[i]->setBounds (row.removeFromRight (Metrics::hit).reduced (2, 1));
+            mixMutes[i]->setBounds (row.removeFromRight (Metrics::hit).reduced (2, 1));
+            mixPans[i]->setBounds  (row.removeFromRight (juce::jmin (78, row.getWidth() / 3)).reduced (4, 1));
+            mixFaders[i]->setBounds (row.reduced (4, 1));
         }
     }
 
