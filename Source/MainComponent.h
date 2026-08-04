@@ -157,6 +157,7 @@ private:
     //  last wrote so a real message (an error, a permission) is never clobbered.
     juce::String deviceLine;
     void refreshDeviceStatusLine (bool force = false);
+    double outputLatencyMs() const;
 
 public:
     //  Called from the application object when Android pauses or resumes the

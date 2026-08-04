@@ -2260,8 +2260,17 @@ void MainComponent::padClicked (int index)
         status.setText ("Pad vacio - pulsa LOAD y toca el pad para cargarlo", juce::dontSendNotification);
 
     // REC armed + transport rolling: write the hit into the bank that is
-    // actually sounding, quantised to the NEAREST step. Past the half-way
-    // point of a step the intent was the next one, so round up and wrap.
+    // actually sounding, quantised to the NEAREST step - and compensated for
+    // the milliseconds the phone spends between us writing a block and the
+    // speaker moving.
+    //
+    //  You play along to what you HEAR, and what you hear left the app 47 ms
+    //  ago on this device. So a hit that felt exactly on the beat arrives here
+    //  47 ms after the beat, and quantising the arrival time records it late -
+    //  at fast tempi late enough to land on the following step. Subtracting the
+    //  output latency before rounding puts the hit where the player put it.
+    //  This is what every DAW calls record delay compensation, and it is the
+    //  one part of the latency we can actually give back.
     if (recArmed && engine.isPlaying() && padHasSample[(size_t) index])
     {
         const int bank = engine.getPlayingPattern();
@@ -2270,7 +2279,13 @@ void MainComponent::padClicked (int index)
 
         if (cur >= 0 && len > 0)
         {
-            const int step = (cur + (engine.getStepPhase() > 0.5f ? 1 : 0)) % len;
+            const double stepMs = (60000.0 / juce::jmax (20.0, engine.getBpm())) * 0.25;   // 16ths
+            //  Clamped: a driver that reports nonsense should cost us a
+            //  rounding error, never a hit two steps from where it was played.
+            const double back = juce::jlimit (0.0, 2.0, outputLatencyMs() / stepMs);
+
+            const double at   = (double) cur + (double) engine.getStepPhase() - back;
+            const int    step = (int) (((juce::roundToInt (at) % len) + len) % len);
             pattern[(size_t) bank][(size_t) step][(size_t) index] = true;
             engine.setStep (bank, step, index, true);
             status.setText ("Grabado pad " + juce::String (index + 1)
@@ -3836,6 +3851,21 @@ void MainComponent::applyAudioSetup (int bufferSize, double rate)
 //  and only over our own previous line. Called from applyAudioSetup and again
 //  from the timer, because Oboe's restart is asynchronous and the first read
 //  lands before the new rate is in effect.
+//  What the phone adds between us writing a block and the speaker moving.
+//  Oboe reports the whole path, buffer included, so this is the figure the
+//  panel shows and the one record compensation has to give back. Zero when
+//  there is no device or the driver will not say.
+double MainComponent::outputLatencyMs() const
+{
+    auto* dev = deviceManager.getCurrentAudioDevice();
+    if (dev == nullptr) return 0.0;
+
+    const double sr = dev->getCurrentSampleRate();
+    if (sr <= 0.0) return 0.0;
+
+    return juce::jmax (0.0, (double) dev->getOutputLatencyInSamples() * 1000.0 / sr);
+}
+
 void MainComponent::refreshDeviceStatusLine (bool force)
 {
     auto* dev = deviceManager.getCurrentAudioDevice();
@@ -4054,6 +4084,32 @@ void MainComponent::toggleMicSampling()
     {
         recordingActive = false;
         auto sb = engine.finishRecording();
+
+        //  Everything the microphone hears arrives late by the capture path's
+        //  own latency, so the take opens with that many samples of whatever
+        //  was in the room before the sound - and a pad triggered on it fires
+        //  into that gap. Read the figure while the duplex stream is still
+        //  open (this is the last moment it exists) and cut the front off.
+        //
+        //  Only when the driver actually reports one. Oboe leaves it at zero
+        //  on devices whose capture stream has no timestamps - this phone is
+        //  one - and trimming by a guess would be worse than not trimming.
+        if (sb != nullptr)
+            if (auto* dev = deviceManager.getCurrentAudioDevice())
+            {
+                const int lead = dev->getInputLatencyInSamples();
+                const int have = sb->buffer.getNumSamples();
+
+                if (lead > 0 && lead < have / 2)
+                {
+                    juce::AudioBuffer<float> trimmed (sb->buffer.getNumChannels(), have - lead);
+                    for (int ch = 0; ch < trimmed.getNumChannels(); ++ch)
+                        trimmed.copyFrom (ch, 0, sb->buffer, ch, lead, have - lead);
+
+                    sb->buffer = std::move (trimmed);
+                }
+            }
+
         setAudioChannels (0, 2);          // release the mic input, back to output-only
         useLowestLatency();               // ...and take the fast path back with it
         styleButton (micButton, kKey);
