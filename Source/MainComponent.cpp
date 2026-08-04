@@ -1408,9 +1408,12 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
     //  close button and let it shrink rather than run underneath.
     auto padTitleRow = padSheet.sheetBounds.reduced (14, 12).removeFromTop (16);
     padTitleRow.setRight (juce::jmin (padTitleRow.getRight(), padCloseButton.getX() - Metrics::xs));
-    g.drawFittedText ("PAD " + juce::String (sp + 1)
-                      + (padName[(size_t) sp].isNotEmpty() ? "  " + dot + "  " + padName[(size_t) sp].toUpperCase() : juce::String()),
-                      padTitleRow, juce::Justification::centredLeft, 1, 0.75f);
+    //  Ellipsised rather than squeezed: a name long enough to need shrinking
+    //  is long enough that shrinking will not save it, and a sentence cut off
+    //  mid-letter reads as a bug where "..." reads as a long name.
+    g.drawText ("PAD " + juce::String (sp + 1)
+                + (padName[(size_t) sp].isNotEmpty() ? "  " + dot + "  " + padName[(size_t) sp].toUpperCase() : juce::String()),
+                padTitleRow, juce::Justification::centredLeft, true);
 
     {
         // Knobs: label above (same convention as FX).
@@ -3000,9 +3003,9 @@ void MainComponent::paintRackSheetContent (juce::Graphics& g)
     const juce::String nm  = padName[(size_t) rackPad];
     auto titleRow = inner.removeFromTop (16);
     titleRow.setRight (juce::jmin (titleRow.getRight(), rackCloseButton.getX() - Metrics::xs));
-    g.drawFittedText ("RACK  " + dot + "  PAD " + juce::String (rackPad + 1)
-                        + (nm.isNotEmpty() ? "  " + dot + "  " + nm.toUpperCase() : juce::String()),
-                      titleRow, juce::Justification::centredLeft, 1, 0.7f);
+    g.drawText ("RACK  " + dot + "  PAD " + juce::String (rackPad + 1)
+                + (nm.isNotEmpty() ? "  " + dot + "  " + nm.toUpperCase() : juce::String()),
+                titleRow, juce::Justification::centredLeft, true);
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
@@ -3598,9 +3601,9 @@ void MainComponent::paintBrowseSheetContent (juce::Graphics& g)
     //  shares the band.
     auto browseSubRow = inner.removeFromTop (14);
     browseSubRow.setRight (juce::jmin (browseSubRow.getRight(), browseCloseButton.getX() - Metrics::xs));
-    g.drawFittedText (picked ? browser->getSelectedFile (0).getFileName()
-                             : juce::String ("elige una muestra  -  wav / aiff / flac / ogg / mp3"),
-                      browseSubRow, juce::Justification::centredLeft, 1, 0.75f);
+    g.drawText (picked ? browser->getSelectedFile (0).getFileName()
+                       : juce::String ("elige una muestra  -  wav / aiff / flac / ogg / mp3"),
+                browseSubRow, juce::Justification::centredLeft, true);
 }
 
 // REC on the transport arms PATTERN recording: pads you hit while the
