@@ -3049,8 +3049,9 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
     //  the remaining milliseconds are the device's and no build of this app
     //  will get them back.
     const auto policy = AudioPath::mmapPolicy();
-    line ("mmap", AudioPath::describe (policy),
-          policy == AudioPath::Mmap::Never ? ZatiColours::red
+    const auto excl   = AudioPath::exclusivePolicy();
+    line ("mmap", AudioPath::describe (policy) + " · excl " + AudioPath::describe (excl),
+          policy == AudioPath::Mmap::Never || excl == AudioPath::Mmap::Never ? ZatiColours::red
         : policy == AudioPath::Mmap::Unknown ? ZatiColours::lcdDim
                                              : ZatiColours::lcdFg);
 

@@ -46,11 +46,9 @@ namespace AudioPath
     //  AAUDIO_POLICY_NEVER = 1, _AUTO = 2, _ALWAYS = 3 (see AAudio's
     //  aaudio_policy_t). Vendors also ship the same answer under their own
     //  key, so both are consulted before giving up.
-    inline Mmap mmapPolicy()
+    inline Mmap policyFrom (std::initializer_list<const char*> keys)
     {
-        for (auto* key : { "aaudio.mmap_policy",
-                           "persist.vendor.audio.aaudio.mmap_policy",
-                           "ro.vendor.audio.aaudio.mmap_policy" })
+        for (auto* key : keys)
         {
             const auto v = readProperty (key).trim();
             if (v.isNotEmpty())
@@ -62,6 +60,24 @@ namespace AudioPath
             }
         }
         return Mmap::Unknown;
+    }
+
+    inline Mmap mmapPolicy()
+    {
+        return policyFrom ({ "aaudio.mmap_policy",
+                             "persist.vendor.audio.aaudio.mmap_policy",
+                             "ro.vendor.audio.aaudio.mmap_policy" });
+    }
+
+    //  A separate switch, and the one that actually decides. A device can
+    //  advertise MMAP under policy AUTO and still ship exclusive_policy NEVER,
+    //  which means MMAP only ever in shared mode - no app on the phone gets an
+    //  exclusive endpoint, and no request we make will change it.
+    inline Mmap exclusivePolicy()
+    {
+        return policyFrom ({ "aaudio.mmap_exclusive_policy",
+                             "persist.vendor.audio.aaudio.mmap_exclusive_policy",
+                             "ro.vendor.audio.aaudio.mmap_exclusive_policy" });
     }
 
     inline juce::String describe (Mmap m)
@@ -114,6 +130,8 @@ namespace AudioPath
         int  usage      = 0;      // the usage that won, 0 = none did
         int  burst      = 0;
         int  capacity   = 0;
+        int  channels   = 0;      // what the granted stream actually is
+        int  rate       = 0;
     };
 
    #if JUCE_ANDROID
@@ -144,6 +162,9 @@ namespace AudioPath
         auto getPerf  = (int32_t (*) (Stream))         sym ("AAudioStream_getPerformanceMode");
         auto getBurst = (int32_t (*) (Stream))         sym ("AAudioStream_getFramesPerBurst");
         auto getCap   = (int32_t (*) (Stream))         sym ("AAudioStream_getBufferCapacityInFrames");
+        auto getChans = (int32_t (*) (Stream))         sym ("AAudioStream_getChannelCount");
+        auto getRate  = (int32_t (*) (Stream))         sym ("AAudioStream_getSampleRate");
+        auto getFmt   = (int32_t (*) (Stream))         sym ("AAudioStream_getFormat");
         auto closeIt  = (int  (*) (Stream))            sym ("AAudioStream_close");
 
         if (create == nullptr || openIt == nullptr || closeIt == nullptr
@@ -154,11 +175,28 @@ namespace AudioPath
             return r;
         }
 
-        //  GAME before MEDIA, and float before 16-bit, so that the first
-        //  EXCLUSIVE we see is also the least intrusive change to make.
-        struct Attempt { int usage; bool i16; };
-        const Attempt attempts[] = { { kUsageGame,  false }, { kUsageGame,  true },
-                                     { kUsageMedia, false }, { kUsageMedia, true } };
+        //  The first attempt constrains NOTHING. An exclusive endpoint is a
+        //  piece of hardware with one native rate, one channel count and one
+        //  sample format, and AAudio refuses exclusivity whenever the request
+        //  does not match it exactly - so pinning 48 kHz / stereo / float, as
+        //  the obvious version of this probe does, can manufacture the very
+        //  refusal it set out to detect. Ask for nothing but the sharing mode
+        //  and let the device answer with its own terms.
+        //
+        //  Only then do we start pinning things, GAME before MEDIA and float
+        //  before 16-bit, so the first EXCLUSIVE we see is also the smallest
+        //  change to the real stream.
+        constexpr int kAny = 0;   // AAUDIO_UNSPECIFIED
+        struct Attempt { int usage; int format; int chans; int rate; };
+        const Attempt attempts[] =
+        {
+            { kAny,        kAny, kAny,     kAny       },   // the device's own terms
+            { kUsageGame,  kAny, kAny,     kAny       },
+            { kUsageGame,  2,    channels, sampleRate },   // 2 = AAUDIO_FORMAT_PCM_FLOAT
+            { kUsageGame,  1,    channels, sampleRate },   // 1 = AAUDIO_FORMAT_PCM_I16
+            { kUsageMedia, 2,    channels, sampleRate },
+            { kUsageMedia, 1,    channels, sampleRate }
+        };
 
         for (const auto& a : attempts)
         {
@@ -169,10 +207,10 @@ namespace AudioPath
             setDir   (b, 0);                       // AAUDIO_DIRECTION_OUTPUT
             setShare (b, 0);                       // AAUDIO_SHARING_MODE_EXCLUSIVE
             setPerf  (b, 12);                      // AAUDIO_PERFORMANCE_MODE_LOW_LATENCY
-            if (setFmt   != nullptr) setFmt   (b, a.i16 ? 1 : 2);   // I16 : FLOAT
-            if (setChans != nullptr) setChans (b, channels);
-            if (setRate  != nullptr) setRate  (b, sampleRate);
-            if (setUsage != nullptr) setUsage (b, a.usage);
+            if (setFmt   != nullptr && a.format != kAny) setFmt   (b, a.format);
+            if (setChans != nullptr && a.chans  != kAny) setChans (b, a.chans);
+            if (setRate  != nullptr && a.rate   != kAny) setRate  (b, a.rate);
+            if (setUsage != nullptr && a.usage  != kAny) setUsage (b, a.usage);
 
             Stream s = nullptr;
             const int result = openIt (b, &s);
@@ -192,10 +230,12 @@ namespace AudioPath
                 r.ran        = true;
                 r.exclusive  = exclusive;
                 r.lowLatency = (getPerf != nullptr && getPerf (s) == 12);
-                r.useI16     = a.i16;
+                r.useI16     = (getFmt  != nullptr && getFmt  (s) == 1);
                 r.usage      = exclusive ? a.usage : 0;
                 r.burst      = getBurst != nullptr ? getBurst (s) : 0;
                 r.capacity   = getCap   != nullptr ? getCap   (s) : 0;
+                r.channels   = getChans != nullptr ? getChans (s) : 0;
+                r.rate       = getRate  != nullptr ? getRate  (s) : 0;
             }
 
             closeIt (s);
@@ -214,10 +254,19 @@ namespace AudioPath
     inline juce::String describe (const Fast& f)
     {
         if (! f.ran)       return "sin respuesta";
-        if (! f.exclusive) return "compartida (el telefono no la concede)";
 
-        return juce::String ("EXCLUSIVA · ") + (f.usage == kUsageGame ? "game" : "media")
-                 + (f.useI16 ? " · 16 bit" : "")
+        //  When it is refused, say what we were refused ON - a shared stream
+        //  still reports the device's real native terms, and those are the
+        //  terms an exclusive one would have had.
+        const juce::String terms = (f.rate > 0 ? juce::String (f.rate / 1000) + "k" : juce::String())
+                                 + (f.channels > 0 ? " " + juce::String (f.channels) + "ch" : "")
+                                 + (f.useI16 ? " 16b" : " float");
+
+        if (! f.exclusive) return "compartida - ni en" + terms;
+
+        return juce::String ("EXCLUSIVA")
+                 + (f.usage == kUsageGame ? " · game" : "")
+                 + (f.useI16 ? " · 16b" : "")
                  + (f.burst > 0 ? " · burst " + juce::String (f.burst) : juce::String());
     }
 }
