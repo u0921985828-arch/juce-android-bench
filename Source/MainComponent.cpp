@@ -1525,6 +1525,8 @@ void MainComponent::prepareToPlay (int samplesPerBlockExpected, double sampleRat
         ins = dev->getActiveInputChannels().countNumberOfSetBits();
 
     engine.prepareToPlay (sampleRate, samplesPerBlockExpected, ins);
+    enginePreparedRate  = sampleRate;
+    enginePreparedBlock = samplesPerBlockExpected;
     // A bounce renders at the device's own rate, so the file sounds exactly
     // like what came out of the speaker — no resampling in between.
     deviceSampleRate = (sampleRate > 0.0) ? sampleRate : 44100.0;
@@ -4886,6 +4888,56 @@ void MainComponent::toggleMicSampling()
     }
 }
 
+// ============================================================================
+//  The stream is not something we set up once.
+//
+//  Unplugging headphones does not pause a phone, it REBUILDS the audio path,
+//  and the app finds out afterwards or not at all. Two things can go wrong
+//  and both of them are silent:
+//
+//    * the stream comes back at a different rate or block size without
+//      passing through prepareToPlay, and every number the engine derives
+//      from the rate - playback increment, envelope times, delay length,
+//      smoothing coefficients - is now computed against a stream that no
+//      longer exists;
+//
+//    * the tear-down and the build-up overlap, two callback threads meet
+//      inside the transport queue, and it wedges. The engine survives that
+//      now (the queue has a lifeboat), but a queue that is refusing work is
+//      still telling us the device underneath it is not healthy.
+//
+//  So we watch, every tick, and repair rather than wait to be told. Both
+//  repairs are cheap and neither interrupts anything that is sounding.
+// ============================================================================
+void MainComponent::watchAudioDevice()
+{
+    auto* dev = deviceManager.getCurrentAudioDevice();
+    if (dev == nullptr)
+        return;
+
+    const double rate  = dev->getCurrentSampleRate();
+    const int    block = dev->getCurrentBufferSizeSamples();
+
+    //  Re-sync on drift. jmap-free comparison on purpose: any difference at
+    //  all matters, because the engine multiplies by this number.
+    if (rate > 0.0 && block > 0
+        && (std::abs (rate - enginePreparedRate) > 0.5 || block != enginePreparedBlock))
+    {
+        int ins = dev->getActiveInputChannels().countNumberOfSetBits();
+        engine.prepareToPlay (rate, block, ins);
+        enginePreparedRate  = rate;
+        enginePreparedBlock = block;
+        deviceSampleRate    = rate;
+        ++engineResyncs;
+    }
+
+    //  A queue that refused a trigger is a queue that met two consumers. The
+    //  lifeboat already carried the tap, so the user heard their pad; this
+    //  puts the transport itself back on its feet for the next one.
+    if (engine.takeDroppedCommands() > 0)
+        deviceManager.restartLastAudioDevice();
+}
+
 void MainComponent::timerCallback()
 {
     //  Once, on the first tick: the face is up by now, so a restore that takes
@@ -4918,6 +4970,7 @@ void MainComponent::timerCallback()
     engine.collectRetiredSamples();
     pollExport();
     refreshDeviceStatusLine();      // Oboe settles a beat after we ask it to
+    watchAudioDevice();
 
     //  The master oscilloscope: post-FX mono sum, straight from the engine's
     //  ring. Cosmetic, so a benign race with the audio thread is fine.

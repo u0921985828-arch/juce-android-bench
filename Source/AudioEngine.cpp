@@ -127,6 +127,10 @@ void AudioEngine::releaseResources() noexcept
 {
     for (auto& v : voices)
         v.kill();
+
+    //  A tap that arrived while the stream was going away must not fire into
+    //  the one that replaces it, seconds later and out of nowhere.
+    fallbackTriggers.store (0, std::memory_order_relaxed);
 }
 
 void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01) noexcept
@@ -247,6 +251,30 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                                    int startSample, int numSamples) noexcept
 {
     juce::ScopedNoDenormals noDenormals;
+
+    //  0a. One renderer at a time. A phone changes audio route by tearing the
+    //      stream down and building a new one, and the old callback thread can
+    //      still be in here when the new one arrives. Everything below assumes
+    //      it is alone: the command queue is single-consumer by contract, and
+    //      two consumers do not glitch it, they WEDGE it - permanently, for
+    //      the life of the process. This is the whole bug behind "I unplugged
+    //      my headphones and the pads went dead while TEST still beeped": the
+    //      test tone is a lone atomic and survived, the pads went through the
+    //      queue and did not.
+    //
+    //      Losing one block during a route change is inaudible. Losing the
+    //      transport is the app.
+    if (inRender.exchange (true, std::memory_order_acquire))
+    {
+        out.clear (startSample, numSamples);
+        return;
+    }
+
+    struct RenderGuard
+    {
+        std::atomic<bool>& flag;
+        ~RenderGuard() { flag.store (false, std::memory_order_release); }
+    } renderGuard { inRender };
 
     // 0. Capture mic input BEFORE clearing (input is in channel 0 on entry).
     if (recording.load (std::memory_order_acquire) && out.getNumChannels() > 0)
@@ -412,6 +440,14 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     commands.drain ([&local, &n] (const Command& c) noexcept { if (n < kMaxCmds) local[n++] = c; });
     for (int i = 0; i < n; ++i)
         handleCommand (local[i]);
+
+    //  3b. The lifeboat. Anything the queue refused arrives here instead, as
+    //      one bit per pad. It fires at the pad's own settings because that is
+    //      all a bit can carry, which is exactly enough to keep playing.
+    if (const auto mask = fallbackTriggers.exchange (0, std::memory_order_acquire))
+        for (int p = 0; p < kNumPads; ++p)
+            if ((mask & (std::uint32_t) (1u << p)) != 0)
+                triggerPad (p);
 
     // 4+5. Sequencer transport + voice rendering, sample-accurate: the block
     //      is split at step boundaries, each step fires exactly on its frame
@@ -900,17 +936,37 @@ void AudioEngine::handleCommand (const Command& c) noexcept
 //  Message thread
 // ---------------------------------------------------------------------------
 
+//  A refused trigger used to be a trigger that never happened: push() has
+//  always returned false when the queue cannot take it, and nobody has ever
+//  looked at the answer. So the one failure the transport can actually have
+//  was also the one it reported to nobody - the pad simply made no sound, and
+//  the app looked broken with nothing in it to see.
+//
+//  Now a refusal falls back to a single atomic word (see fallbackTriggers).
+//  It loses the velocity and the audition point, which is the right thing to
+//  lose: a pad that speaks at its own level beats a pad that does not speak.
 void AudioEngine::postNoteOn (int slot, float vel) noexcept
 {
     Command c; c.type = Command::Type::NoteOn; c.slot = slot; c.velocity = vel;
-    commands.push (c);
+    if (! commands.push (c))
+        noteOnByLifeboat (slot);
 }
 
 void AudioEngine::postNoteOnFrom (int slot, float from01, float vel) noexcept
 {
     Command c; c.type = Command::Type::NoteOn; c.slot = slot; c.velocity = vel;
     c.from01 = from01;
-    commands.push (c);
+    if (! commands.push (c))
+        noteOnByLifeboat (slot);
+}
+
+void AudioEngine::noteOnByLifeboat (int slot) noexcept
+{
+    if (slot < 0 || slot >= kNumPads)
+        return;
+
+    droppedCommands.fetch_add (1, std::memory_order_relaxed);
+    fallbackTriggers.fetch_or ((std::uint32_t) (1u << slot), std::memory_order_release);
 }
 
 void AudioEngine::postNoteOff (int slot) noexcept
@@ -922,7 +978,8 @@ void AudioEngine::postNoteOff (int slot) noexcept
 void AudioEngine::postPanic() noexcept
 {
     Command c; c.type = Command::Type::Panic;
-    commands.push (c);
+    if (! commands.push (c))
+        droppedCommands.fetch_add (1, std::memory_order_relaxed);
 }
 
 void AudioEngine::postTestTone() noexcept

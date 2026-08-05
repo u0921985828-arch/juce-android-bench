@@ -39,6 +39,7 @@ public:
 
 private:
     void timerCallback() override;
+    void watchAudioDevice();
 
     // One perform screen; every deep feature (pad settings, sequencer,
     // pattern chain, auto chop, FX) opens as a pop-up sheet over it — a dim
@@ -162,6 +163,15 @@ private:
     //  last wrote so a real message (an error, a permission) is never clobbered.
     juce::String deviceLine;
     int lastDeviceBlock = 0, lastDeviceRate = 0;   // compared before a string is built
+
+    //  What the ENGINE was last told the stream is, as opposed to what the
+    //  stream actually is now. A phone changes audio route by rebuilding the
+    //  stream, and it does not always come back through prepareToPlay - so
+    //  these two can drift apart, and when they do everything the engine
+    //  computes from the rate is wrong. Checked once a tick; see timerCallback.
+    double enginePreparedRate  = 0.0;
+    int    enginePreparedBlock = 0;
+    int    engineResyncs       = 0;
     void refreshDeviceStatusLine (bool force = false);
     double outputLatencyMs() const;
 

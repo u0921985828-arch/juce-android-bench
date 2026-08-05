@@ -64,6 +64,14 @@ public:
     void postPanic() noexcept;
     void postTestTone() noexcept;
 
+    void noteOnByLifeboat (int slot) noexcept;   // see postNoteOn
+
+    //  How many triggers the command queue has refused since the last check.
+    //  Reading it clears it. A non-zero answer means taps are reaching the
+    //  audio thread by the lifeboat rather than by the queue, which is worth
+    //  rebuilding the device over.
+    int takeDroppedCommands() noexcept { return droppedCommands.exchange (0, std::memory_order_relaxed); }
+
     // --- Per-pad params (message thread) ---
     void setPadPitch   (int slot, float semis) noexcept { store (padPitch,   slot, semis); }
     void setPadGain    (int slot, float g)     noexcept { store (padGain,    slot, g); }
@@ -402,6 +410,31 @@ private:
     std::array<int, kNumVoices>  voiceNextInPad {};
     std::uint32_t                       voiceSerial = 0;   // audio-thread only, for oldest-steal
     CommandFifo commands;
+
+    //  THE LIFEBOAT. See postNoteOn / renderNextBlock.
+    //
+    //  One bit per pad, OR'd by the message thread, exchanged to zero by the
+    //  audio thread. It carries no velocity and no start point, so it is a
+    //  worse trigger than the queue in every way except the only one that
+    //  matters here: a single atomic word cannot be left in a broken state,
+    //  so it cannot stop working. It is what the test tone has always used,
+    //  and the test tone is the thing that kept sounding when the pads did
+    //  not.
+    std::atomic<std::uint32_t> fallbackTriggers { 0 };
+
+    //  How many triggers the queue has refused. Nothing in the audio path
+    //  reads it; the UI does, because a queue that starts refusing is the
+    //  app telling us it is wedged and wants the device rebuilt.
+    std::atomic<int> droppedCommands { 0 };
+
+    //  Two audio callbacks must never be inside the drain at once. During a
+    //  route change the old stream's thread can still be in here when the new
+    //  one arrives, and AbstractFifo is single-consumer BY CONTRACT: two
+    //  readers move validStart and validEnd past each other and the queue is
+    //  wedged for the rest of the process - every push refused, every drain
+    //  empty. That is not a glitch that passes, it is permanent, and it looks
+    //  exactly like "the pads stopped working but the test tone still beeps".
+    std::atomic<bool> inRender { false };
 
     std::array<SampleBuffer*, kNumPads>              padSample {};
     std::array<std::atomic<SampleBuffer*>, kNumPads> pendingPad {};
