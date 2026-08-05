@@ -1683,74 +1683,6 @@ void MainComponent::paint (juce::Graphics& g)
             g.drawText (macroReadout (i), chip, juce::Justification::centred);
         }
 
-        // Stereo VU: two segmented LED rows (L/R) on a recessed strip.
-        if (! vuArea.isEmpty())
-        {
-            auto scr = vuArea.toFloat();
-            g.setColour (ZatiColours::screenBg);
-            g.fillRoundedRectangle (scr, 2.0f);
-
-            auto in = vuArea.reduced (24, 3);
-            const int nSeg = 28;
-            const float segW = (float) in.getWidth() / (float) nSeg;
-
-            g.setColour (ZatiColours::lcdFg.withAlpha (0.55f));
-            g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
-            g.drawText ("L", vuArea.getX() + 6, in.getY() - 1, 12, in.getHeight() / 2, juce::Justification::centredLeft);
-            g.drawText ("R", vuArea.getX() + 6, in.getCentreY(), 12, in.getHeight() / 2, juce::Justification::centredLeft);
-
-            auto drawRow = [&] (float level, juce::Rectangle<float> row)
-            {
-                const int lit = (int) std::round (std::sqrt (juce::jlimit (0.0f, 1.0f, level)) * (float) nSeg);
-                for (int i = 0; i < nSeg; ++i)
-                {
-                    const bool hot = i >= (int) (nSeg * 0.82f);
-                    // Lit segments in LCD ink: accent is near-black on this dark
-                    // strip, so a "lit" segment read the same as an unlit one.
-                    juce::Colour c = i < lit ? (hot ? ZatiColours::red : ZatiColours::lcdFg)
-                                             : ZatiColours::lcdFg.withAlpha (0.10f);
-                    g.setColour (c);
-                    g.fillRect (juce::Rectangle<float> (row.getX() + (float) i * segW + 1.0f, row.getY(),
-                                                        segW - 2.0f, row.getHeight()));
-                }
-            };
-            auto rows = in.toFloat();
-            auto top  = rows.removeFromTop (rows.getHeight() * 0.5f).reduced (0, 1.0f);
-            auto bot  = rows.reduced (0, 1.0f);
-            drawRow (vuL, top);
-            drawRow (vuR, bot);
-        }
-
-        // Step LEDs: 16 segments, the playhead lit in the page's primary
-        // colour — the beat stays visible without opening the SEC sheet.
-        if (! stepStripArea.isEmpty())
-        {
-            auto scr = stepStripArea.toFloat();
-            g.setColour (ZatiColours::screenBg);
-            g.fillRoundedRectangle (scr, 2.0f);
-
-            auto in = stepStripArea.reduced (8, 4);
-            const float segW = (float) in.getWidth() / 16.0f;
-            const int ps = engine.getPlayStep();
-            const int page = ps >= 0 ? ps / 16 : 0;
-            const int cur  = ps >= 0 ? ps % 16 : -1;
-
-            for (int i = 0; i < 16; ++i)
-            {
-                auto r = juce::Rectangle<float> (in.getX() + (float) i * segW + 1.5f, (float) in.getY(),
-                                                 segW - 3.0f, (float) in.getHeight());
-                if (i == cur)
-                {
-                    g.setColour (patternRowColour (page));
-                    g.fillRoundedRectangle (r, 1.5f);
-                }
-                else
-                {
-                    g.setColour (ZatiColours::lcdFg.withAlpha ((i % 4 == 0) ? 0.30f : 0.12f));
-                    g.drawRoundedRectangle (r.reduced (0.5f), 1.5f, 1.0f);
-                }
-            }
-        }
     }
 }
 
@@ -1994,7 +1926,7 @@ void MainComponent::layoutPadGrid (juce::Rectangle<int> area, int cols, int rows
 void MainComponent::resized()
 {
     editInfoArea = {};
-    vuArea = stepStripArea = {};
+    vuArea = stepStripArea = {};   // gone from the face; the screen draws them
     //  Both plates are only laid out on the main face; clearing them here
     //  stops a stale rectangle from being painted under another view.
     padPlateArea = ctrlPlateArea = {};
@@ -2021,10 +1953,11 @@ void MainComponent::resized()
         //  is Metrics::hit. Fourteen pixels the pads were assumed to have and
         //  did not - and since layoutPadGrid clamps its cell to a MINIMUM
         //  height, missing room becomes overflow rather than smaller pads.
-        const int aboveScreen = ZatiLookAndFeel::kHeader + ZatiLookAndFeel::kAir
-                              + ZatiLookAndFeel::kStrip  + Metrics::sm;
-        const int belowScreen = Metrics::sm + ZatiLookAndFeel::kStrip
-                              + Metrics::sm + ZatiLookAndFeel::kModule
+        //  The VU and the step LEDs live inside the screen now, so the face
+        //  no longer spends two strips and four gaps on them - all of it goes
+        //  back to the panel that shows them.
+        const int aboveScreen = ZatiLookAndFeel::kHeader + ZatiLookAndFeel::kAir;
+        const int belowScreen = ZatiLookAndFeel::kAir + ZatiLookAndFeel::kModule
                               + Metrics::xs + ZatiLookAndFeel::kTransport
                               + ZatiLookAndFeel::kAir;
         const int bottomStrip = ZatiLookAndFeel::kStatus + Metrics::sm;
@@ -2048,15 +1981,9 @@ void MainComponent::resized()
     //  VU above the screen and the step strip below it, so the two readouts
     //  frame the LCD instead of sitting among the controls. Both are watched,
     //  not touched, so they belong together up here.
-    vuArea = area.removeFromTop (ZatiLookAndFeel::kStrip).reduced (2, 0);
-    area.removeFromTop (Metrics::sm);          // the bezel is drawn 5 px proud
-
     screenBezel = area.removeFromTop (screenH);
     spectrum.setBounds (screenBezel);
-    area.removeFromTop (Metrics::sm);
-
-    stepStripArea = area.removeFromTop (ZatiLookAndFeel::kStrip).reduced (2, 0);
-    area.removeFromTop (Metrics::sm);
+    area.removeFromTop (ZatiLookAndFeel::kAir);   // the bezel is drawn 5 px proud
 
     //  Six modules and three transport keys will not fit across a phone in one
     //  row: LOAD came out as "LO...". They split again, but the module bar
@@ -4949,10 +4876,9 @@ void MainComponent::timerCallback()
         const float prevL = vuL, prevR = vuR;
         vuL = juce::jmax (pl, vuL * 0.80f); if (vuL < 0.004f) vuL = 0.0f;
         vuR = juce::jmax (pr, vuR * 0.80f); if (vuR < 0.004f) vuR = 0.0f;
-        if ((vuL != prevL || vuR != prevR) && ! vuArea.isEmpty())
-            repaint (vuArea.expanded (2));
-        if (ps != prevPlayStep && ! stepStripArea.isEmpty())
-            repaint (stepStripArea.expanded (2));
+        juce::ignoreUnused (prevL, prevR, prevPlayStep);
+        spectrum.setVu (vuL, vuR);
+        spectrum.setStep (ps, patternRowColour (ps >= 0 ? ps / 16 : 0));
     }
 
     if (recordingActive)

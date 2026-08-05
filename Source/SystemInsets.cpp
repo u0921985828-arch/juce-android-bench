@@ -59,19 +59,38 @@ juce::BorderSize<int> SystemInsets::get()
 
     auto* env = juce::getEnv();
 
-    juce::LocalRef<jobject> window (env->CallObjectMethod (juce::getAppContext().get(),
-                                                           juce::ZatiActivity.getWindow));
-    if (window == nullptr) return {};
+    //  Every step is checked, and any pending Java exception is cleared before
+    //  returning: an exception left on the thread makes the NEXT JNI call from
+    //  anywhere in the app abort the process, which would turn a cosmetic
+    //  margin into a crash somewhere else entirely.
+    const auto failed = [env]
+    {
+        if (! env->ExceptionCheck()) return false;
+        env->ExceptionClear();
+        return true;
+    };
+
+    //  The ACTIVITY, not the app context. getAppContext() hands back an
+    //  android.content.Context which on this app is the Application, and
+    //  calling Activity.getWindow() on it is a JNI type error that ART turns
+    //  into an immediate abort - the app closing the instant it opened.
+    juce::LocalRef<jobject> activity (juce::getMainActivity());
+    if (activity == nullptr) return {};
+
+    juce::LocalRef<jobject> window (env->CallObjectMethod (activity, juce::ZatiActivity.getWindow));
+    if (failed() || window == nullptr) return {};
 
     juce::LocalRef<jobject> decor (env->CallObjectMethod (window, juce::ZatiWindow.getDecorView));
-    if (decor == nullptr) return {};
+    if (failed() || decor == nullptr) return {};
 
     juce::LocalRef<jobject> windowInsets (env->CallObjectMethod (decor, juce::ZatiView.getRootWindowInsets));
-    if (windowInsets == nullptr) return {};
+    if (failed() || windowInsets == nullptr) return {};
 
     const jint mask = env->CallStaticIntMethod (juce::ZatiInsetsType, juce::ZatiInsetsType.systemBars);
+    if (failed()) return {};
+
     juce::LocalRef<jobject> insets (env->CallObjectMethod (windowInsets, juce::ZatiWindowInsets.getInsets, mask));
-    if (insets == nullptr) return {};
+    if (failed() || insets == nullptr) return {};
 
     //  Android answers in physical pixels; everything above this line is in
     //  logical ones.
@@ -80,10 +99,13 @@ juce::BorderSize<int> SystemInsets::get()
                          : 1.0;
     const auto toLogical = [scale] (jint px) { return (int) std::ceil ((double) px / juce::jmax (0.1, scale)); };
 
-    return { toLogical (env->GetIntField (insets, juce::ZatiInsets.top)),
-             toLogical (env->GetIntField (insets, juce::ZatiInsets.left)),
-             toLogical (env->GetIntField (insets, juce::ZatiInsets.bottom)),
-             toLogical (env->GetIntField (insets, juce::ZatiInsets.right)) };
+    const juce::BorderSize<int> result { toLogical (env->GetIntField (insets, juce::ZatiInsets.top)),
+                                         toLogical (env->GetIntField (insets, juce::ZatiInsets.left)),
+                                         toLogical (env->GetIntField (insets, juce::ZatiInsets.bottom)),
+                                         toLogical (env->GetIntField (insets, juce::ZatiInsets.right)) };
+    if (failed()) return {};
+
+    return result;
 }
 
 #else

@@ -34,6 +34,29 @@ public:
     void setReadout (const juce::String& s) { readout = s; repaint(); }
     void setBpm     (double b)              { bpm = b; }
 
+    //  The two meters that used to live outside, on strips of their own above
+    //  and below the panel. A hardware sampler puts them ON the screen: the
+    //  level and the playhead are things you read WHILE watching the wave, and
+    //  splitting them across three separate boxes made the face taller and the
+    //  screen smaller for no gain at all.
+    void setVu (float l, float r)
+    {
+        if (std::abs (l - vuL) < 0.002f && std::abs (r - vuR) < 0.002f) return;
+        vuL = l; vuR = r;
+        repaint();
+    }
+
+    //  step is the absolute step, or negative when the transport is stopped;
+    //  the colour is the bank that is playing, so the strip says WHICH pattern
+    //  as well as where in it.
+    void setStep (int absoluteStep, juce::Colour bankColour)
+    {
+        if (absoluteStep == step && bankColour == stepColour) return;
+        step = absoluteStep;
+        stepColour = bankColour;
+        repaint();
+    }
+
     void paint (juce::Graphics& g) override
     {
         auto b = getLocalBounds().toFloat();
@@ -56,10 +79,40 @@ public:
         g.setColour (ZatiColours::lcdDim);
         g.drawText (juce::String ("OUT ") + peakDb(), top, juce::Justification::centredTop);
 
-        // Waveform area (between the top labels and the bottom status line).
+        //  Stereo VU, immediately under the labels: two rows of segments in a
+        //  gutter narrow enough for the L and the R to sit beside them.
+        {
+            auto vu = b.reduced (8.0f, 0.0f).withY (b.getY() + 22.0f).withHeight (16.0f);
+            auto gutter = vu.removeFromLeft (12.0f);
+
+            g.setColour (ZatiColours::lcdFg.withAlpha (0.55f));
+            g.setFont (ZatiColours::monoFont (8.0f, true));
+            g.drawText ("L", gutter.withHeight (8.0f), juce::Justification::centredLeft);
+            g.drawText ("R", gutter.withHeight (8.0f).withY (gutter.getY() + 8.0f), juce::Justification::centredLeft);
+
+            const int nSeg = 32;
+            const float segW = vu.getWidth() / (float) nSeg;
+
+            auto row = [&] (float level, juce::Rectangle<float> r)
+            {
+                const int lit = (int) std::round (std::sqrt (juce::jlimit (0.0f, 1.0f, level)) * (float) nSeg);
+                for (int i = 0; i < nSeg; ++i)
+                {
+                    const bool hot = i >= (int) ((float) nSeg * 0.82f);
+                    g.setColour (i < lit ? (hot ? ZatiColours::red : ZatiColours::amber)
+                                         : ZatiColours::lcdFg.withAlpha (0.10f));
+                    g.fillRect (vu.getX() + (float) i * segW + 0.5f, r.getY(), segW - 1.0f, r.getHeight());
+                }
+            };
+
+            row (vuL, vu.withHeight (5.0f).withY (vu.getY() + 1.0f));
+            row (vuR, vu.withHeight (5.0f).withY (vu.getY() + 8.0f));
+        }
+
+        // Waveform area (between the meters and the bottom furniture).
         auto wave = b.reduced (8.0f, 0.0f);
-        wave.removeFromTop (22.0f);
-        wave.removeFromBottom (20.0f);
+        wave.removeFromTop (22.0f + 16.0f);
+        wave.removeFromBottom (20.0f + 10.0f);
         const float cy = wave.getCentreY();
         const float halfH = wave.getHeight() * 0.5f - 2.0f;
 
@@ -91,14 +144,30 @@ public:
             }
         }
 
-        // Bottom: faint tick ruler + status line.
-        const float ry = b.getBottom() - 17.0f;
-        g.setColour (ZatiColours::lcdDim.withAlpha (0.5f));
-        for (int k = 0; k <= 32; ++k)
+        //  Sixteen step LEDs where the tick ruler used to be. The ruler was
+        //  decoration measuring nothing; this measures the bar, and the beats
+        //  are the ones that stay lit when the transport is stopped.
         {
-            const float tx = wave.getX() + wave.getWidth() * (float) k / 32.0f;
-            const float th = (k % 4 == 0) ? 4.0f : 2.0f;
-            g.fillRect (tx, ry - th, 1.0f, th);
+            auto strip = juce::Rectangle<float> (wave.getX(), b.getBottom() - 28.0f,
+                                                 wave.getWidth(), 8.0f);
+            const float segW = strip.getWidth() / 16.0f;
+            const int cur = step >= 0 ? step % 16 : -1;
+
+            for (int i = 0; i < 16; ++i)
+            {
+                auto r = juce::Rectangle<float> (strip.getX() + (float) i * segW + 1.5f, strip.getY(),
+                                                 segW - 3.0f, strip.getHeight());
+                if (i == cur)
+                {
+                    g.setColour (stepColour);
+                    g.fillRoundedRectangle (r, 1.5f);
+                }
+                else
+                {
+                    g.setColour (ZatiColours::lcdFg.withAlpha ((i % 4 == 0) ? 0.30f : 0.12f));
+                    g.drawRoundedRectangle (r.reduced (0.5f), 1.5f, 1.0f);
+                }
+            }
         }
 
         auto status = b.reduced (10.0f, 5.0f).removeFromBottom (12.0f);
@@ -125,5 +194,8 @@ private:
     int          count { 0 };
     float        peak  { 0.0f };
     double       bpm   { 120.0 };
+    float        vuL   { 0.0f }, vuR { 0.0f };
+    int          step  { -1 };
+    juce::Colour stepColour { ZatiColours::amber };
     juce::String readout { "ZATI" };
 };
