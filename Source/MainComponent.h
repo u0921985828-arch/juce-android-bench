@@ -161,6 +161,7 @@ private:
     //  The timer re-reads it until it settles; deviceLine remembers what we
     //  last wrote so a real message (an error, a permission) is never clobbered.
     juce::String deviceLine;
+    int lastDeviceBlock = 0, lastDeviceRate = 0;   // compared before a string is built
     void refreshDeviceStatusLine (bool force = false);
     double outputLatencyMs() const;
 

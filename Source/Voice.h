@@ -230,17 +230,62 @@ struct Voice
                 if (ref < winStart || ref + N >= winEnd) return gStart;
 
                 const int base = (int) (pos + gStart);
-                double best = -1.0e30;
-                int    bestD = 0;
-                for (int d = -S; d <= S; d += 2)
+                const float* r = srcL + ref;
+
+                //  The correlation itself. Four independent accumulators
+                //  rather than one: floating-point addition is not
+                //  associative, so a single running sum is a dependency chain
+                //  the compiler is not allowed to vectorise or pipeline. Four
+                //  chains it can do both to, and over 192 samples the
+                //  precision difference is far below anything an argmax cares
+                //  about. Float, not double, for the same reason - twice the
+                //  lanes per register, and we are comparing candidates, not
+                //  measuring anything.
+                auto correlate = [r] (const float* c) noexcept
+                {
+                    float a0 = 0.0f, a1 = 0.0f, a2 = 0.0f, a3 = 0.0f;
+                    for (int k = 0; k < N; k += 4)
+                    {
+                        a0 += r[k]     * c[k];
+                        a1 += r[k + 1] * c[k + 1];
+                        a2 += r[k + 2] * c[k + 2];
+                        a3 += r[k + 3] * c[k + 3];
+                    }
+                    return (a0 + a1) + (a2 + a3);
+                };
+
+                const auto usable = [&] (int d) noexcept
                 {
                     const int a = base + d;
-                    if (a < winStart || a + N >= winEnd) continue;
-                    double acc = 0.0;
-                    for (int k = 0; k < N; k += 2)
-                        acc += (double) srcL[ref + k] * (double) srcL[a + k];
+                    return a >= winStart && a + N < winEnd;
+                };
+
+                //  ...and the search, coarse then fine. Sweeping all 481
+                //  offsets two at a time was 241 correlations for a surface
+                //  whose peak is a period wide - far broader than the step. A
+                //  pass at sixteen finds which period we are on and a pass at
+                //  one lands on it: forty correlations instead of two hundred
+                //  and forty, and the same answer.
+                float best = -1.0e30f;
+                int   bestD = 0;
+
+                for (int d = -S; d <= S; d += 16)
+                {
+                    if (! usable (d)) continue;
+                    const float acc = correlate (srcL + base + d);
                     if (acc > best) { best = acc; bestD = d; }
                 }
+
+                const int lo2 = juce::jmax (-S, bestD - 8);
+                const int hi2 = juce::jmin ( S, bestD + 8);
+
+                for (int d = lo2; d <= hi2; ++d)
+                {
+                    if (d % 16 == 0 || ! usable (d)) continue;   // the coarse pass had these
+                    const float acc = correlate (srcL + base + d);
+                    if (acc > best) { best = acc; bestD = d; }
+                }
+
                 return gStart + (double) bestD;
             };
 

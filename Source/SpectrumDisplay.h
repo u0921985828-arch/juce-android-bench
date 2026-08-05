@@ -29,6 +29,16 @@ public:
             pk = juce::jmax (pk, std::abs (s));
         }
         peak = juce::jmax (peak * 0.72f, pk);   // meter with a soft decay
+
+        //  Silence twice running draws the same flat line, and this is the
+        //  largest component on the face: repainting it thirty times a second
+        //  while nothing is playing is the app's biggest idle cost. The VU and
+        //  the step LEDs ask for their own repaints when THEY change, so
+        //  nothing is missed by sitting still here.
+        const bool silent = (pk <= 0.0f && peak < 0.0005f);
+        if (silent && wasSilent) return;
+
+        wasSilent = silent;
         repaint();
     }
 
@@ -197,6 +207,7 @@ private:
     double       bpm   { 120.0 };
     float        vuL   { 0.0f }, vuR { 0.0f };
     int          step  { -1 };
+    bool         wasSilent { false };
     juce::Colour stepColour { ZatiColours::amber };
     juce::String readout { "ZATI" };
 };

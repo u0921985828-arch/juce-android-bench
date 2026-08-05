@@ -343,14 +343,32 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
 
     auto renderVoices = [&] (int s, int nn) noexcept
     {
-        // Control-rate retarget first: looping/long voices keep following
-        // their pad's VOLUME/PAN knobs instead of freezing start() values.
-        for (int v = 0; v < voiceLimit; ++v)
+        //  One pass over the pool: bucket the live voices by pad, and read
+        //  each pad's gain and pan ONCE instead of once per voice that
+        //  happens to be on it.
+        padFirstVoice.fill (-1);
+
+        float padGainNow[kNumPads], padPanNow[kNumPads];
+        bool  padTouched[kNumPads] = {};
+
+        for (int v = voiceLimit - 1; v >= 0; --v)
         {
             auto& vc = voices[(size_t) v];
-            if (vc.active && vc.slot >= 0)
-                vc.retarget (effectiveGain (vc.slot),
-                             padPan [(size_t) vc.slot].load (std::memory_order_relaxed));
+            if (! vc.active || vc.slot < 0 || vc.slot >= kNumPads) continue;
+
+            if (! padTouched[vc.slot])
+            {
+                padTouched[vc.slot] = true;
+                padGainNow[vc.slot] = effectiveGain (vc.slot);
+                padPanNow [vc.slot] = padPan[(size_t) vc.slot].load (std::memory_order_relaxed);
+            }
+
+            // Control-rate retarget: a looping or long voice keeps following
+            // its pad's VOLUME and PAN instead of freezing start()'s values.
+            vc.retarget (padGainNow[vc.slot], padPanNow[vc.slot]);
+
+            voiceNextInPad[(size_t) v] = padFirstVoice[(size_t) vc.slot];
+            padFirstVoice[(size_t) vc.slot] = v;
         }
 
         //  A pad that sends nowhere goes straight to the master, exactly as
@@ -359,33 +377,21 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         //  fifteen others.
         for (int p = 0; p < kNumPads; ++p)
         {
-            bool sounding = false;
-            for (int v = 0; v < voiceLimit && ! sounding; ++v)
-                sounding = voices[(size_t) v].active && voices[(size_t) v].slot == p;
-
-            if (! sounding)
+            if (padFirstVoice[(size_t) p] < 0)      // nothing of this pad is sounding
                 continue;
 
             if (! padSplit[p])
             {
-                for (int v = 0; v < voiceLimit; ++v)
-                {
-                    auto& vc = voices[(size_t) v];
-                    if (vc.active && vc.slot == p)
-                        vc.render (out, s, nn, padSample[(size_t) p]);
-                }
+                for (int v = padFirstVoice[(size_t) p]; v >= 0; v = voiceNextInPad[(size_t) v])
+                    voices[(size_t) v].render (out, s, nn, padSample[(size_t) p]);
                 continue;
             }
 
             for (int ch = 0; ch < 2; ++ch)
                 padScratch.clear (ch, s, nn);
 
-            for (int v = 0; v < voiceLimit; ++v)
-            {
-                auto& vc = voices[(size_t) v];
-                if (vc.active && vc.slot == p)
-                    vc.render (padScratch, s, nn, padSample[(size_t) p]);
-            }
+            for (int v = padFirstVoice[(size_t) p]; v >= 0; v = voiceNextInPad[(size_t) v])
+                voices[(size_t) v].render (padScratch, s, nn, padSample[(size_t) p]);
 
             if (dryGain[p] > 0.0005f)
                 for (int ch = 0; ch < busChans; ++ch)

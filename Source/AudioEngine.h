@@ -390,6 +390,16 @@ private:
     std::array<Voice, kNumVoices>       voices {};
     int voiceLimit      = 48;   // <= kNumVoices, message thread sets, audio reads
     int maxVoicesOnPad  = 8;
+
+    //  Which voices belong to which pad, rebuilt once per render segment.
+    //  Without it the block cost was pads x voices - sixteen scans of the
+    //  whole pool to answer "does this pad have anything sounding", and
+    //  sixteen more to render, so a thousand iterations of pure bookkeeping
+    //  whether one voice was playing or sixty-four. One pass over the pool
+    //  builds a per-pad chain and every later loop touches only its own.
+    //  Audio thread only.
+    std::array<int, kNumPads>    padFirstVoice {};
+    std::array<int, kNumVoices>  voiceNextInPad {};
     std::uint32_t                       voiceSerial = 0;   // audio-thread only, for oldest-steal
     CommandFifo commands;
 

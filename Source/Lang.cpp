@@ -260,6 +260,7 @@ namespace
         { "RELOJ",          "",         "CLOCK",      "时钟",       "الساعة" },
         { "IDIOMA",         "",         "LANGUAGE",   "语言",       "اللغة" },
         { "EQUIPO",         "",         "DEVICE",     "设备",       "الجهاز" },
+        { "muestras",       "",         "samples",    "采样",       "عينة" },
         { "%1 nucleos",     "",         "%1 cores",   "%1 核",      "%1 أنوية" },
         { "%1 voces",       "",         "%1 voices",  "%1 复音",    "%1 صوتًا" },
         { "basica",         "",         "entry",      "入门",       "أساسي" },

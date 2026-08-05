@@ -4440,8 +4440,20 @@ void MainComponent::refreshDeviceStatusLine (bool force)
     auto* dev = deviceManager.getCurrentAudioDevice();
     if (dev == nullptr) return;
 
-    const auto line = juce::String (dev->getCurrentBufferSizeSamples()) + " muestras · "
-                        + juce::String ((int) dev->getCurrentSampleRate()) + " Hz";
+    //  Compare the two numbers before building anything. This runs on every
+    //  UI tick, and it used to allocate two strings a tick - thirty a second,
+    //  for their lifetime - only to find they said what the last pair said.
+    const int blockNow = dev->getCurrentBufferSizeSamples();
+    const int rateNow  = (int) dev->getCurrentSampleRate();
+
+    if (! force && blockNow == lastDeviceBlock && rateNow == lastDeviceRate)
+        return;
+
+    lastDeviceBlock = blockNow;
+    lastDeviceRate  = rateNow;
+
+    const auto line = juce::String (blockNow) + " " + T ("muestras") + " · "
+                        + juce::String (rateNow) + " Hz";
 
     if (line == deviceLine) return;
 
@@ -4879,9 +4891,14 @@ void MainComponent::timerCallback()
     }
     juce::ignoreUnused (anyFlash);
 
-    // Sequencer step colours (flat fill only — see paintOverChildren() for
-    // The grid reads the pattern straight from our mirror; just refresh it.
-    refreshStepGrid();
+    //  The grid reads the pattern straight from our mirror - but only when
+    //  the sheet that shows it is open. It used to run on every tick whether
+    //  the sequencer was on screen or not, and it is not cheap: 64 steps x 16
+    //  pads copied out of the mirror plus the same number of atomic loads for
+    //  the step pitches, thirty times a second, to feed a component nobody
+    //  was looking at.
+    if (seqSheet.isVisible())
+        refreshStepGrid();
     if (songSheet.isVisible() && engine.isPlaying()) refreshSong();
 
     const int prevPlayStep = lastPlayStep;
