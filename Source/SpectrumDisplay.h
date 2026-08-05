@@ -5,9 +5,9 @@
 #include "Lang.h"
 
 // ============================================================================
-//  SpectrumDisplay — the "screen": a real-time waveform OSCILLOSCOPE on a dark
-//  amber-phosphor LCD panel (flat baseline when idle, the output waveform
-//  bulges in when a pad plays). Fed post-FX mono master samples via
+//  SpectrumDisplay — the "screen": a real-time FFT SPECTRUM ANALYSER on a dark
+//  LCD panel, rebuilt to behave like the Web Audio AnalyserNode FX-404 drew
+//  its spectrum with (see analyse()). Fed post-FX mono master samples via
 //  setSamples() from the message thread. Cosmetic (benign data race ok).
 //
 //  Chrome mirrors a hardware sampler display: corner labels, centred BPM, a
@@ -30,12 +30,22 @@ public:
         }
         peak = juce::jmax (peak * 0.72f, pk);   // meter with a soft decay
 
+        analyse();
+
         //  Silence twice running draws the same flat line, and this is the
         //  largest component on the face: repainting it thirty times a second
         //  while nothing is playing is the app's biggest idle cost. The VU and
         //  the step LEDs ask for their own repaints when THEY change, so
         //  nothing is missed by sitting still here.
-        const bool silent = (pk <= 0.0f && peak < 0.0005f);
+        //  Bars and peak caps have to keep FALLING after the sound stops, so
+        //  the screen can only be left alone once everything has actually
+        //  reached the floor - not on the first silent block.
+        bool settled = true;
+        for (const auto m : mag)      if (m > 1.0e-5f) { settled = false; break; }
+        if (settled)
+            for (const auto c : capLevel) if (c > 0.02f) { settled = false; break; }
+
+        const bool silent = (pk <= 0.0f && peak < 0.0005f && settled);
         if (silent && wasSilent) return;
 
         wasSilent = silent;
@@ -44,6 +54,65 @@ public:
 
     void setReadout (const juce::String& s) { readout = s; repaint(); }
     void setBpm     (double b)              { bpm = b; }
+
+    //  ------------------------------------------------------------------
+    //  The analyser, rebuilt from what FX-404 was.
+    //
+    //  FX-404 drew its spectrum in a WebView, and a WebView has exactly one
+    //  way to do that: an AnalyserNode and getByteFrequencyData. So the
+    //  behaviour is not a matter of taste, it is a specification - and these
+    //  are its numbers, straight out of the Web Audio defaults:
+    //
+    //      fftSize               2048   (we use 1024; the LCD is 300 px wide)
+    //      minDecibels           -100
+    //      maxDecibels            -30
+    //      smoothingTimeConstant  0.8
+    //
+    //  The smoothing is the part that makes it LOOK like the browser rather
+    //  than like an engineering plot: the running average is taken over the
+    //  MAGNITUDES, before the decibel conversion, which is why the bars fall
+    //  slowly and rise instantly. Averaging the dB values instead gives a
+    //  sluggish, mushy meter that nobody would recognise.
+    //  ------------------------------------------------------------------
+    void analyse()
+    {
+        //  A ring, not the batch we were just handed. How much arrives per
+        //  tick is a DEVICE decision - DeviceTier hands an entry-level phone
+        //  256 scope points and a flagship 1024 - so a window taken from one
+        //  batch would be full on one phone and impossible on another, and
+        //  the analyser would simply not exist on the cheap ones.
+        for (int i = 0; i < count; ++i)
+        {
+            ring[(size_t) ringPos] = buf[i];
+            ringPos = (ringPos + 1) & (kFftSize - 1);
+        }
+        ringFilled = juce::jmin (kFftSize, ringFilled + count);
+
+        if (ringFilled < kFftSize)
+        {
+            for (auto& m : mag) m *= kSmoothing;    // not enough history yet
+            return;
+        }
+
+        //  Hann window over the newest kFftSize samples, oldest first. Without
+        //  it every bar leaks into its neighbours and the whole spectrum turns
+        //  into one wide blur.
+        for (int i = 0; i < kFftSize; ++i)
+        {
+            const float w = 0.5f * (1.0f - std::cos (2.0f * juce::MathConstants<float>::pi
+                                                     * (float) i / (float) (kFftSize - 1)));
+            fftData[(size_t) i] = ring[(size_t) ((ringPos + i) & (kFftSize - 1))] * w;
+        }
+        std::fill (fftData.begin() + kFftSize, fftData.end(), 0.0f);
+
+        fft.performFrequencyOnlyForwardTransform (fftData.data());
+
+        //  Web Audio's smoothing, on the magnitudes, exactly as specified.
+        const float norm = 2.0f / (float) kFftSize;
+        for (int i = 0; i < kNumBins; ++i)
+            mag[(size_t) i] = kSmoothing * mag[(size_t) i]
+                            + (1.0f - kSmoothing) * fftData[(size_t) i] * norm;
+    }
 
     //  The two meters that used to live outside, on strips of their own above
     //  and below the panel. A hardware sampler puts them ON the screen: the
@@ -140,32 +209,67 @@ public:
         const float cy = wave.getCentreY();
         const float halfH = wave.getHeight() * 0.5f - 2.0f;
 
-        //  Flat baseline. Same story as the meter above: this was drawn in
-        //  the chassis accent, which is near-black, on a near-black panel.
-        g.setColour (ZatiColours::lcdFg.withAlpha (0.30f));
-        g.fillRect (wave.getX(), cy - 0.6f, wave.getWidth(), 1.2f);
+        //  THE SPECTRUM. Bars standing on a floor, not a trace through a
+        //  middle: a spectrum has no negative half, so anchoring it to the
+        //  centre - which is what the oscilloscope that used to live here did
+        //  - would waste half the screen and read as the wrong instrument.
+        const float floorY = wave.getBottom();
+        const float fullH  = wave.getHeight() - 1.0f;
+        juce::ignoreUnused (cy, halfH);
 
-        // Min/max waveform envelope, one vertical segment per pixel column — accent.
-        if (count > 1)
+        //  Baseline the bars stand on.
+        g.setColour (ZatiColours::lcdFg.withAlpha (0.30f));
+        g.fillRect (wave.getX(), floorY - 0.6f, wave.getWidth(), 1.2f);
+
         {
-            const int cols = juce::jmax (1, (int) wave.getWidth());
-            const float gain = 2.6f;   // lift quiet output into view
-            for (int x = 0; x < cols; ++x)
+            //  Linear bins across the band, the way getByteFrequencyData
+            //  hands them over. Only the bottom slice is drawn: above about
+            //  14 kHz a sampler's output is empty on every phone speaker
+            //  there is, and eleven dead bars on the right would only make
+            //  the live ones narrower.
+            const int   usable = (int) (kNumBins * 0.58f);
+            const float barGap = 1.0f;
+            const float slotW  = wave.getWidth() / (float) kNumBars;
+
+            for (int bIdx = 0; bIdx < kNumBars; ++bIdx)
             {
-                const int i0 = (int) ((float)  x      / (float) cols * (float) count);
-                const int i1 = (int) ((float) (x + 1) / (float) cols * (float) count);
-                float mn = 0.0f, mx = 0.0f;
-                for (int i = i0; i < i1 && i < count; ++i)
+                const int i0 = (int) ((float)  bIdx      / (float) kNumBars * (float) usable);
+                const int i1 = juce::jmax (i0 + 1,
+                              (int) ((float) (bIdx + 1) / (float) kNumBars * (float) usable));
+
+                float m = 0.0f;
+                for (int i = i0; i < i1 && i < kNumBins; ++i)
+                    m = juce::jmax (m, mag[(size_t) i]);
+
+                //  Magnitude -> dB -> 0..1 over [minDecibels, maxDecibels].
+                //  This is byteValue/255 with the division left out.
+                const float db  = juce::Decibels::gainToDecibels (m, kMinDb);
+                const float lvl = juce::jlimit (0.0f, 1.0f, (db - kMinDb) / (kMaxDb - kMinDb));
+
+                const float h = lvl * fullH;
+                const float x = wave.getX() + (float) bIdx * slotW;
+
+                //  A floor of one pixel so the analyser reads as an analyser
+                //  when it is quiet, instead of vanishing into the baseline.
+                g.setColour (ZatiColours::lcdFg.withAlpha (0.16f));
+                g.fillRect (x, floorY - 1.0f, slotW - barGap, 1.0f);
+
+                if (h > 1.0f)
                 {
-                    mn = juce::jmin (mn, buf[i]);
-                    mx = juce::jmax (mx, buf[i]);
+                    g.setColour (ZatiColours::lcdFg.withAlpha (0.45f + 0.55f * lvl));
+                    g.fillRect (x, floorY - h, slotW - barGap, h);
                 }
-                const float yTop = cy - juce::jlimit (-halfH, halfH, mx * gain * halfH);
-                const float yBot = cy - juce::jlimit (-halfH, halfH, mn * gain * halfH);
-                const float amp  = juce::jlimit (0.0f, 1.0f, (mx - mn) * gain);
-                const float fx   = wave.getX() + (float) x;
-                g.setColour (ZatiColours::lcdFg.withAlpha (0.4f + 0.55f * amp));
-                g.fillRect (fx, yTop, 1.0f, juce::jmax (1.0f, yBot - yTop));
+
+                //  Peak caps: the mark that hangs above a bar and slides
+                //  down after it. It is what makes a bar chart read as a
+                //  METER - without it you cannot see what you just missed.
+                float& cap = capLevel[(size_t) bIdx];
+                cap = (lvl >= cap) ? lvl : juce::jmax (0.0f, cap - 0.025f);
+                if (cap > 0.02f)
+                {
+                    g.setColour (ZatiColours::lcdFg.withAlpha (0.85f));
+                    g.fillRect (x, floorY - cap * fullH - 1.5f, slotW - barGap, 1.5f);
+                }
             }
         }
 
@@ -198,7 +302,7 @@ public:
         auto status = b.reduced (10.0f, 5.0f).removeFromBottom (12.0f);
         g.setColour (ZatiColours::lcdDim);
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
-        g.drawText (T ("SCOPE"), status, juce::Justification::bottomLeft);
+        g.drawText (T ("ESPECTRO"), status, juce::Justification::bottomLeft);
         g.setColour (peak > 0.0005f ? ZatiColours::lcdFg : ZatiColours::lcdDim);
         g.drawText (peak > 0.0005f ? "SIG" : "--", status, juce::Justification::bottomRight);
 
@@ -219,6 +323,23 @@ private:
     int          count { 0 };
     float        peak  { 0.0f };
     double       bpm   { 120.0 };
+    //  Analyser state. kCap is the scope ring the engine fills; the FFT
+    //  reads the newest kFftSize of it.
+    static constexpr int   kFftSize   = 1024;
+    static constexpr int   kNumBins   = kFftSize / 2;
+    static constexpr int   kNumBars   = 48;
+    static constexpr float kSmoothing = 0.8f;    // Web Audio smoothingTimeConstant
+    static constexpr float kMinDb     = -100.0f; // Web Audio minDecibels
+    static constexpr float kMaxDb     = -30.0f;  // Web Audio maxDecibels
+
+    juce::dsp::FFT                        fft { 10 };   // 2^10 = kFftSize
+    std::array<float, (size_t) kFftSize>     ring {};
+    int                                      ringPos    = 0;
+    int                                      ringFilled = 0;
+    std::array<float, (size_t) kFftSize * 2> fftData {};
+    std::array<float, (size_t) kNumBins>     mag {};
+    std::array<float, (size_t) kNumBars>     capLevel {};
+
     float        vuL   { 0.0f }, vuR { 0.0f };
     int          step  { -1 };
     bool         wasSilent { false };
