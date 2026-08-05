@@ -456,10 +456,14 @@ MainComponent::MainComponent()
     zatiNextButton.onClick = [this] { shiftZati (+1); };
 
     playButton.setClickingTogglesState (true);
-    styleButton (playButton, kAccent);                   // PLAY is the accent hero button
-    playButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
-    playButton.setColour (juce::TextButton::textColourOnId,  juce::Colours::white);
-    playButton.setColour (juce::TextButton::buttonOnColourId, ZatiColours::accentDim);
+    //  PLAY is the widest key on the face, and it used to be the dark one as
+    //  well - which in this system means ENGAGED. A stopped transport was
+    //  wearing the colour of a running one. It is a key like the others now
+    //  and goes dark only while it is actually playing, which is what the
+    //  toggle state is for.
+    styleButton (playButton, kKey);
+    playButton.setColour (juce::TextButton::buttonOnColourId, ZatiColours::accent);
+    playButton.setColour (juce::TextButton::textColourOnId,  ZatiColours::inkLight);
     playButton.onClick = [this]
     {
         const bool on = playButton.getToggleState();
@@ -1208,10 +1212,9 @@ void MainComponent::applySkin()
     for (int i = 0; i < patternButtons.size(); ++i)
         patternButtons[i]->setColour (juce::TextButton::buttonOnColourId, patternRowColour (i));
 
-    styleButton (playButton, acc);
-    playButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
-    playButton.setColour (juce::TextButton::textColourOnId,  juce::Colours::white);
-    playButton.setColour (juce::TextButton::buttonOnColourId, ZatiColours::accentDim);
+    styleButton (playButton, kKey);
+    playButton.setColour (juce::TextButton::buttonOnColourId, acc);
+    playButton.setColour (juce::TextButton::textColourOnId,  ZatiColours::inkLight);
 
     juce::Slider* tracks[] = { &startSlider, &endSlider, &bpmSlider, &patternSlider, &lengthSlider };
     for (auto* s : tracks)
@@ -1225,9 +1228,15 @@ void MainComponent::applySkin()
     repaint();
 }
 
+//  What the knob does, not what it is called.
+//
+//  At rest these read CTRL 1 / CTRL 2 / CTRL 3 and only named the parameter
+//  while a finger was on them - so the one moment you could not see what you
+//  were about to turn was before you turned it. The wedge over the FX row
+//  already says WHICH effect owns them; this says WHAT each one moves.
 juce::String MainComponent::macroBaseLabel (int idx) const
 {
-    return "CTRL " + juce::String (idx + 1);
+    return macroParamLabel (idx);
 }
 
 juce::String MainComponent::macroParamLabel (int idx) const
@@ -1628,8 +1637,12 @@ void MainComponent::paint (juce::Graphics& g)
         if (juce::isPositiveAndBelow (focusedFx, fxButtons.size()))
             if (auto* fb = fxButtons[focusedFx])
             {
+                //  Above the rule, not below it: the engraved word sits in
+                //  the eleven pixels between the rule and the buttons, and a
+                //  wedge over the first effect landed inside the lettering -
+                //  EFEC(wedge)OS. The band over the rule is empty.
                 const float cx = (float) fb->getBounds().getCentreX();
-                const float y  = (float) fb->getY() - 2.0f;
+                const float y  = (float) fb->getY() - 12.0f;
                 juce::Path wedge;
                 wedge.addTriangle (cx - 5.0f, y - 6.0f, cx + 5.0f, y - 6.0f, cx, y);
                 g.setColour (ZatiColours::ink.withAlpha (0.75f));
@@ -1671,6 +1684,24 @@ void MainComponent::paint (juce::Graphics& g)
         const int stripW = Zati::kNumColours * sw + (Zati::kNumColours - 1) * gap;
         int x = h.getRight() - stripW;
         const int y = h.getCentreY() - sh / 2;
+
+        //  The band between the wordmark and the strip was empty across the
+        //  whole width of the machine, while the one thing you cannot see
+        //  anywhere on the face - which project is open - was buried three
+        //  taps deep in PROJ. It goes here, on the baseline of the wordmark.
+        {
+            const int nameX = h.getX() + 138;
+            const int nameW = (x - Metrics::md) - nameX;
+            if (nameW > 40)
+            {
+                const bool named = currentProject.isNotEmpty();
+                g.setColour (ZatiColours::ink.withAlpha (named ? 0.55f : 0.28f));
+                g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
+                g.drawText (named ? currentProject.toUpperCase() : T ("SIN GUARDAR"),
+                            nameX, h.getY(), nameW, h.getHeight(),
+                            juce::Justification::bottomLeft, true);
+            }
+        }
 
         for (int i = 0; i < Zati::kNumColours; ++i)
         {
@@ -3520,6 +3551,7 @@ void MainComponent::saveProject (const juce::String& rawName)
     const bool ok  = folder.getChildFile ("project.xml").replaceWithText (xml);
 
     currentProject = name;
+    repaint (headerArea);
     refreshProjectList();
 
     status.setText (ok && failed == 0
@@ -3579,6 +3611,7 @@ void MainComponent::loadProject (const juce::String& name)
             ++missing;
 
     currentProject = name;
+    repaint (headerArea);
     closeAllSheets();
     status.setText (missing > 0
                         ? T ("Abierto \"%1\"  [%2 pads, %3 sin audio]", name,
@@ -3591,7 +3624,10 @@ void MainComponent::deleteProject (const juce::String& name)
 {
     ProjectStore::folderFor (name).deleteRecursively();
     if (currentProject == name)
+    {
         currentProject = {};
+        repaint (headerArea);
+    }
     refreshProjectList();
     status.setText (T ("Borrado \"%1\"", name), juce::dontSendNotification);
     projSheet.repaint();
@@ -3623,6 +3659,7 @@ void MainComponent::newProject()
     selectedPattern = 0;
     selectedStep = -1;
     currentProject = {};
+    repaint (headerArea);
 
     //  A new project means there is nothing to come back to: without this the
     //  next launch would restore the machine the user just emptied.
@@ -4747,6 +4784,7 @@ void MainComponent::restoreSession()
                               padStart01[(size_t) i], padEnd01[(size_t) i]);
 
     currentProject = tree.getProperty ("proyecto", "").toString();
+    repaint (headerArea);
     refreshProjectList();
 
     //  These buffers came off this very folder: nothing to write back.

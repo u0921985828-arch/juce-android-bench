@@ -118,7 +118,12 @@ public:
                 for (int i = 0; i < nSeg; ++i)
                 {
                     const bool hot = i >= (int) ((float) nSeg * 0.82f);
-                    g.setColour (i < lit ? (hot ? ZatiColours::red : ZatiColours::amber)
+                    //  A LIT segment has to be the LCD's ink, not the
+                    //  chassis accent. The accent is a near-black - it is what
+                    //  a pressed key wears on a paper face - and painting it
+                    //  on a near-black screen made a lit segment look exactly
+                    //  like an unlit one. The meter has never shown a level.
+                    g.setColour (i < lit ? (hot ? ZatiColours::red : ZatiColours::lcdFg)
                                          : ZatiColours::lcdFg.withAlpha (0.10f));
                     g.fillRect (vu.getX() + (float) i * segW + 0.5f, r.getY(), segW - 1.0f, r.getHeight());
                 }
@@ -135,8 +140,9 @@ public:
         const float cy = wave.getCentreY();
         const float halfH = wave.getHeight() * 0.5f - 2.0f;
 
-        // Flat baseline (shows through when idle) — accent.
-        g.setColour (ZatiColours::amber.withAlpha (0.30f));
+        //  Flat baseline. Same story as the meter above: this was drawn in
+        //  the chassis accent, which is near-black, on a near-black panel.
+        g.setColour (ZatiColours::lcdFg.withAlpha (0.30f));
         g.fillRect (wave.getX(), cy - 0.6f, wave.getWidth(), 1.2f);
 
         // Min/max waveform envelope, one vertical segment per pixel column — accent.
@@ -158,7 +164,7 @@ public:
                 const float yBot = cy - juce::jlimit (-halfH, halfH, mn * gain * halfH);
                 const float amp  = juce::jlimit (0.0f, 1.0f, (mx - mn) * gain);
                 const float fx   = wave.getX() + (float) x;
-                g.setColour (ZatiColours::amber.withAlpha (0.4f + 0.55f * amp));
+                g.setColour (ZatiColours::lcdFg.withAlpha (0.4f + 0.55f * amp));
                 g.fillRect (fx, yTop, 1.0f, juce::jmax (1.0f, yBot - yTop));
             }
         }
@@ -193,7 +199,7 @@ public:
         g.setColour (ZatiColours::lcdDim);
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
         g.drawText (T ("SCOPE"), status, juce::Justification::bottomLeft);
-        g.setColour (peak > 0.0005f ? ZatiColours::amber : ZatiColours::lcdDim);
+        g.setColour (peak > 0.0005f ? ZatiColours::lcdFg : ZatiColours::lcdDim);
         g.drawText (peak > 0.0005f ? "SIG" : "--", status, juce::Justification::bottomRight);
 
         // LCD inner bezel.
@@ -216,6 +222,6 @@ private:
     float        vuL   { 0.0f }, vuR { 0.0f };
     int          step  { -1 };
     bool         wasSilent { false };
-    juce::Colour stepColour { ZatiColours::amber };
+    juce::Colour stepColour { ZatiColours::lcdFg };
     juce::String readout { "ZATI" };
 };

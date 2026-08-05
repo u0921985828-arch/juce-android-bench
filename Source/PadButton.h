@@ -99,7 +99,7 @@ public:
         //  spectrum from across a table, far too little to be mistaken for a
         //  pad that has a sound in it.
         juce::Colour base   = loaded ? frag.withMultipliedAlpha (0.30f)
-                                     : ZatiColours::padBg2.overlaidWith (frag.withAlpha (0.055f));
+                                     : ZatiColours::padBg2.overlaidWith (frag.withAlpha (0.09f));
         juce::Colour edge   = loaded ? frag : ZatiColours::padBorder;
         juce::Colour idxCol = loaded ? ZatiColours::ink.withAlpha (0.92f)
                                      : ZatiColours::ink.withAlpha (0.30f);
@@ -185,7 +185,10 @@ public:
         // Name (mono) bottom.
         g.setColour (nmCol);
         g.setFont (ZatiColours::monoFont (Metrics::fMeta).withExtraKerningFactor (0.06f));
-        g.drawText (loaded ? padName.toUpperCase() : juce::String (juce::CharPointer_UTF8 ("\xe2\x80\x94")),
+        //  Nothing where there is nothing. An em dash on every empty tile was
+        //  sixteen marks that carried no information: the tile already says it
+        //  is empty by having no waveform and no name.
+        g.drawText (loaded ? padName.toUpperCase() : juce::String(),
                     r.reduced (10.0f, 7.0f).removeFromBottom (12.0f), juce::Justification::bottomLeft, true);
 
         // Border, then focus. A loaded pad's border is its zati; focus is a
