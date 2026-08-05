@@ -1682,8 +1682,8 @@ void MainComponent::paint (juce::Graphics& g)
             g.setFont (ZatiColours::monoFont (touched ? 10.5f : 10.0f, true)
                          .withExtraKerningFactor (0.16f));
             g.drawText (touched ? macroParamLabel (i) : macroBaseLabel (i),
-                        r.getX() - 8, r.getY() - ZatiLookAndFeel::kCtrlName,
-                        r.getWidth() + 16, ZatiLookAndFeel::kCtrlName - 2,
+                        r.getX() - 8, r.getY() - ZatiLookAndFeel::kCtrlName + ZatiLookAndFeel::kTextPad,
+                        r.getWidth() + 16, ZatiLookAndFeel::kCtrlName - 2 * ZatiLookAndFeel::kTextPad,
                         juce::Justification::centred);
 
             auto chip = juce::Rectangle<int> (r.getX() - 2, r.getBottom() + 2, r.getWidth() + 4,
@@ -1732,13 +1732,17 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
 
             g.setColour (ZatiColours::ink.withAlpha (0.55f));
             g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.22f));
+            //  Sitting on the bottom edge of its band put the word straight
+            //  onto the control under it. It keeps its own padding now, and
+            //  the rule it rides moves with it.
             const auto secText = T (secNames[i]);
-            g.drawText (secText, r, juce::Justification::bottomLeft);
+            const auto textRow = r.withTrimmedBottom (ZatiLookAndFeel::kTextPad);
+            g.drawText (secText, textRow, juce::Justification::bottomLeft);
 
             const float tw = juce::GlyphArrangement::getStringWidth (
                                  ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.22f),
                                  secText);
-            const float ly = (float) r.getBottom() - 5.0f;
+            const float ly = (float) textRow.getBottom() - 5.0f;
             g.setColour (ZatiColours::ink.withAlpha (0.18f));
             g.fillRect ((float) r.getX() + tw + 8.0f, ly,
                         juce::jmax (0.0f, (float) r.getRight() - ((float) r.getX() + tw + 8.0f)), 1.0f);
@@ -1749,14 +1753,14 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
         auto name = [&g] (juce::Slider& s, const char* t)
         {
             auto r = s.getBounds();
-            g.drawText (T (t), r.getX() - 6, r.getY() - 14, r.getWidth() + 12, 12, juce::Justification::centred);
+            g.drawText (T (t), r.getX() - 6, r.getY() - 15, r.getWidth() + 12, 12, juce::Justification::centred);
         };
         name (pitchSlider, "PITCH"); name (fineSlider, "FINO"); name (volSlider, "VOLUME");
         name (panSlider, "PAN");
         name (attackSlider, "ATTACK"); name (releaseSlider, "RELEASE");
         name (chokeSlider, "CHOKE");
 
-        g.drawText (T ("MODO"), modeButton.getX() - 6, modeButton.getY() - 14,
+        g.drawText (T ("MODO"), modeButton.getX() - 6, modeButton.getY() - 15,
                     modeButton.getWidth() + 12, 12, juce::Justification::centred);
 
         // Start/End stay linear (a trim range, not a knob): label to the left.
@@ -1834,7 +1838,8 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
         {
             if (c == nullptr) return;
             const auto r = c->getBounds();
-            g.drawText (t, r.getX() + 2, r.getY() - 14, juce::jmax (60, r.getWidth()), 13,
+            g.drawText (t, r.getX() + 2, r.getY() - 17 + ZatiLookAndFeel::kTextPad,
+                        juce::jmax (60, r.getWidth()), 13,
                         juce::Justification::centredLeft);
         };
 
@@ -1972,7 +1977,8 @@ void MainComponent::resized()
         const int belowScreen = ZatiLookAndFeel::kAir + ZatiLookAndFeel::kModule
                               + Metrics::xs + ZatiLookAndFeel::kTransport
                               + ZatiLookAndFeel::kAir;
-        const int bottomStrip = ZatiLookAndFeel::kStatus + Metrics::sm;
+        const int bottomStrip = ZatiLookAndFeel::kStatus
+                              + ZatiLookAndFeel::kAir + Metrics::sm;
 
         //  The pads are allowed to grow 20% past square before the screen
         //  takes any of what is left, which is the opposite of the old rule.
@@ -2024,6 +2030,8 @@ void MainComponent::resized()
     // an undoable action announces itself where the result was reported.
     {
         auto strip = area.removeFromBottom (ZatiLookAndFeel::kStatus);
+        //  ...and the pads do not sit on the sentence.
+        area.removeFromBottom (ZatiLookAndFeel::kAir);
         if (undoButton.isVisible()) undoButton.setBounds (strip.removeFromRight (96).reduced (1, 0));
         if (redoButton.isVisible()) redoButton.setBounds (strip.removeFromRight (96).reduced (1, 0));
         status.setBounds (strip);
@@ -2086,7 +2094,7 @@ void MainComponent::resized()
 
     // PADS sheet: per-pad knobs, trim, REV/LOOP + AUTO CHOP, sample-info card.
     {
-        constexpr int secH = 15;
+        constexpr int secH = 15 + 2 * ZatiLookAndFeel::kTextPad;
         auto inner = sheetFromBottom (padSheet, 670 + 3 * secH);
         auto titleRow = inner.removeFromTop (32);
         padCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
@@ -2411,7 +2419,7 @@ void MainComponent::resized()
             //  its length, build the chain, tune the step you tapped, choose
             //  the bar. Every one of those rows used to be an unlabelled strip
             //  of look-alike buttons.
-            constexpr int nameH = 14;
+            constexpr int nameH = 14 + ZatiLookAndFeel::kTextPad;
 
             inner.removeFromTop (nameH);                  // painted: PATRON / LARGO
             auto row1 = inner.removeFromTop (Metrics::hit);
@@ -2472,7 +2480,7 @@ void MainComponent::resized()
         auto bottom = inner.removeFromBottom (Metrics::hit);
         bpmSlider.setBounds (bottom.removeFromLeft ((int) (bottom.getWidth() * 0.66f)).reduced (2, 2));
         clearButton.setBounds (bottom.reduced (3, 2));
-        inner.removeFromBottom (14);                      // painted: TEMPO
+        inner.removeFromBottom (14 + ZatiLookAndFeel::kTextPad);   // painted: TEMPO
         inner.removeFromBottom (Metrics::sm);
 
         stepGrid.setBounds (inner);
