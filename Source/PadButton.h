@@ -27,6 +27,18 @@ public:
         buildSpark (sb.get(), start01, end01);
         repaint();
     }
+    //  Sixteen envelopes redrawn on every flash is the one cost on this tile
+    //  with no musical return, so an entry-level phone spends it on the voice
+    //  pool instead (see DeviceTier). The tile keeps its number, its colour
+    //  and its name.
+    void setArtEnabled (bool shouldDrawArt)
+    {
+        if (art == shouldDrawArt) return;
+        art = shouldDrawArt;
+        if (! art) spark.clearQuick();
+        repaint();
+    }
+
     void setZati (int z) { if (zati != z) { zati = z; repaint(); } }
     int  getZati() const { return zati; }
     void setSelected (bool s) { if (selected != s) { selected = s; repaint(); } }
@@ -79,7 +91,15 @@ public:
         // still be readable when the hue is not.
         const juce::Colour frag = Zati::colour (zati);
 
-        juce::Colour base   = loaded ? frag.withMultipliedAlpha (0.30f) : ZatiColours::padBg2;
+        //  An EMPTY pad used to be sixteen identical grey squares: the whole
+        //  face went colourless the moment a project was closed, and the grid
+        //  said nothing about which pad was which until something was loaded
+        //  into it. It carries its own colour now, at a twelfth of the
+        //  strength a loaded one does - enough for the matrix to read as a
+        //  spectrum from across a table, far too little to be mistaken for a
+        //  pad that has a sound in it.
+        juce::Colour base   = loaded ? frag.withMultipliedAlpha (0.30f)
+                                     : ZatiColours::padBg2.overlaidWith (frag.withAlpha (0.055f));
         juce::Colour edge   = loaded ? frag : ZatiColours::padBorder;
         juce::Colour idxCol = loaded ? ZatiColours::ink.withAlpha (0.92f)
                                      : ZatiColours::ink.withAlpha (0.30f);
@@ -120,6 +140,14 @@ public:
         {
             g.setColour (frag);
             g.fillRect (r.withHeight (5.0f).reduced (1.0f, 0.0f).withY (r.getY() + 1.0f));
+        }
+        else if (! loaded)
+        {
+            //  The same stripe, drawn as an outline instead of a fill: the
+            //  slot is there and it is that colour, it just has nothing in it
+            //  yet. Empty and full read as the same instrument.
+            g.setColour (frag.withAlpha (0.30f));
+            g.fillRect (r.withHeight (2.0f).reduced (1.0f, 0.0f).withY (r.getY() + 1.0f));
         }
 
         // Sparkline (behind the labels).
@@ -184,7 +212,7 @@ private:
     void buildSpark (const SampleBuffer* sb, float start01, float end01)
     {
         spark.clearQuick();
-        if (sb == nullptr) return;
+        if (sb == nullptr || ! art) return;
         const int len = sb->buffer.getNumSamples();
         if (len < 4) return;
 
@@ -220,4 +248,5 @@ private:
     float flash = 0.0f;
     juce::String padName;
     juce::Array<float> spark;   // interleaved min,max per column
+    bool art = true;            // whether this tile draws its waveform at all
 };

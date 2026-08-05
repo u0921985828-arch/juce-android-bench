@@ -1,6 +1,7 @@
 #include "MainComponent.h"
 #include "Lang.h"
 #include "SystemInsets.h"
+#include "DeviceTier.h"
 
 namespace
 {
@@ -1168,7 +1169,18 @@ MainComponent::MainComponent()
     //  and the bars are drawn over it.
     systemInsets = SystemInsets::get();
 
-    startTimer (60);
+    //  What this particular phone can carry. Everything that costs CPU or
+    //  memory is read from here rather than from a constant written on the
+    //  machine the app was developed on: the size of the voice pool, how often
+    //  the interface redraws, how much of the master goes into the scope, how
+    //  long a mic take may be, and whether pad tiles draw their waveform.
+    {
+        const auto& dev = DeviceTier::profile();
+        engine.setPolyphony  (dev.voices, dev.voicesPerPad);
+        engine.setRecordLimit (dev.recordSeconds, dev.recordStereo);
+        for (auto* p : pads) if (p != nullptr) p->setArtEnabled (dev.padWaveformArt);
+        startTimer (dev.uiIntervalMs);
+    }
     setSize (500, 1080);
     focusFx (0);
     applySkin();
@@ -2161,7 +2173,7 @@ void MainComponent::resized()
         //  something failing to load rather than as an empty list.
         const int listRowH = juce::jmax (22, projList.getRowHeight());
         const int listH    = juce::jlimit (1, 8, projModel.names.size()) * listRowH;
-        const int wanted   = Metrics::md * 2 + 32 + 142 + Metrics::xs
+        const int wanted   = Metrics::md * 2 + 32 + 158 + Metrics::xs
                                + (Metrics::hit + Metrics::xs) * 3 + Metrics::xs
                                + Metrics::btn * 2 + Metrics::xs + 8
                                + listH + Metrics::sm;
@@ -2177,7 +2189,10 @@ void MainComponent::resized()
         // What the audio device is giving us, at the top where you cannot
         // miss it. It is the only number in the app that says whether this
         // thing is playable, so it does not live behind another tap.
-        audioInfoArea = inner.removeFromTop (142);
+        //  One line taller than it was: the panel now opens with what the
+        //  app decided this phone can carry, before anything about the
+        //  stream it opened.
+        audioInfoArea = inner.removeFromTop (158);
         inner.removeFromTop (Metrics::xs);
 
         auto chipRow = [&inner] (juce::OwnedArray<juce::TextButton>& btns, int labelW)
@@ -4029,6 +4044,18 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.20f));
     g.drawText (T ("AUDIO"), inner.removeFromTop (12), juce::Justification::centredLeft);
 
+    //  What the app decided this phone can carry. It is not a setting, it is
+    //  a report - and it is true whether or not a stream ever opened, so it
+    //  goes above the part that needs one.
+    {
+        auto r = inner.removeFromTop (14);
+        g.setColour (ZatiColours::lcdDim);
+        g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
+        g.drawText (T ("EQUIPO"), r.removeFromLeft (54), juce::Justification::centredLeft);
+        g.setFont (ZatiColours::monoFont (Metrics::fValue, true));
+        g.drawFittedText (DeviceTier::describe(), r, juce::Justification::centredLeft, 1, 0.7f);
+    }
+
     if (dev == nullptr)
     {
         g.setColour (ZatiColours::red);
@@ -4062,13 +4089,13 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
         g.drawFittedText (v, r, juce::Justification::centredLeft, 1, 0.7f);
     };
 
-    line ("ruta",  dev->getTypeName() + " / " + dev->getName(), ZatiColours::lcdFg);
-    line ("reloj", juce::String ((int) sr) + " Hz", ZatiColours::lcdFg);
+    line (T ("ruta"),  dev->getTypeName() + " / " + dev->getName(), ZatiColours::lcdFg);
+    line (T ("reloj"), juce::String ((int) sr) + " Hz", ZatiColours::lcdFg);
     const auto sizes = dev->getAvailableBufferSizes();
     const int  burst  = sizes.isEmpty() ? block : sizes.getFirst();
-    line ("bufer", juce::String (block) + " · " + juce::String (msOf (block), 1) + " ms"
-                     + (block <= burst ? juce::String ("  (rafaga, el minimo)")
-                                       : "  (rafaga " + juce::String (burst) + ")"),
+    line (T ("bufer"), juce::String (block) + " · " + juce::String (msOf (block), 1) + " ms"
+                     + (block <= burst ? "  (" + T ("rafaga, el minimo") + ")"
+                                       : "  (" + T ("rafaga %1", juce::String (burst)) + ")"),
           ZatiColours::lcdFg);
 
     //  Under ~15 ms a pad feels like a pad. Past ~30 ms you hear yourself
@@ -4077,27 +4104,27 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
     const auto verdict = totalMs <= 15.0 ? ZatiColours::lcdFg
                        : totalMs <= 30.0 ? ZatiColours::yellow
                                          : ZatiColours::red;
-    line ("salida", juce::String (totalMs, 1) + " ms"
-                    + juce::String (totalMs <= 15.0 ? "  rapida"
-                                  : totalMs <= 30.0 ? "  aceptable" : "  LENTA"), verdict);
+    line (T ("salida"), juce::String (totalMs, 1) + " ms  "
+                    + (totalMs <= 15.0 ? T ("rapida")
+                     : totalMs <= 30.0 ? T ("aceptable") : T ("LENTA")), verdict);
 
     //  Say WHOSE milliseconds these are. Our share is the block; everything
     //  past it belongs to the phone's audio path, and no setting in this app
     //  can give it back. Without this split a bad phone reads as a bad app.
     g.setColour (ZatiColours::lcdDim.withAlpha (0.85f));
     g.setFont (ZatiColours::monoFont (9.0f, false));
-    juce::String note = "de esos, " + juce::String (blockMs, 1) + " ms son el bufer";
+    juce::String note = T ("de esos, %1 ms son el bufer", juce::String (blockMs, 1));
     if (totalMs - blockMs > 20.0)
     {
         //  Once the probe has told us we never got an MMAP stream, the leftover
         //  milliseconds have a name. Saying "el telefono" invited another week
         //  of looking for a setting; naming AudioFlinger closes the question.
         if (block > burst)
-            note += " - baja el bufer";
+            note += " - " + T ("baja el bufer");
         else if (fastPath.ran && fastPath.mmapKnown && ! fastPath.mmapUsed)
-            note += " - el resto es el mezclador de Android, sin MMAP en este movil";
+            note += " - " + T ("el resto es el mezclador de Android, sin MMAP en este movil");
         else
-            note += " - el resto es el telefono, no lo pone nadie mas bajo";
+            note += " - " + T ("el resto es el telefono, no lo pone nadie mas bajo");
     }
     g.drawFittedText (note, inner.removeFromTop (11), juce::Justification::centredLeft, 1, 0.7f);
 
@@ -4107,7 +4134,7 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
     //  will get them back.
     const auto policy = AudioPath::mmapPolicy();
     const auto excl   = AudioPath::exclusivePolicy();
-    line ("mmap", AudioPath::describe (policy) + " · excl " + AudioPath::describe (excl),
+    line (T ("mmap"), AudioPath::describe (policy) + " · " + T ("excl") + " " + AudioPath::describe (excl),
           policy == AudioPath::Mmap::Never || excl == AudioPath::Mmap::Never ? ZatiColours::red
         : policy == AudioPath::Mmap::Unknown ? ZatiColours::lcdDim
                                              : ZatiColours::lcdFg);
@@ -4115,7 +4142,7 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
     //  ...and whether it granted it to US. "disponible" above is a capability;
     //  this line is the verdict on an actual stream, which is the only one
     //  that decides what the pads feel like.
-    line ("via", AudioPath::describe (fastPath),
+    line (T ("via"), AudioPath::describe (fastPath),
           fastPath.exclusive ? ZatiColours::lcdFg
         : ! fastPath.ran     ? ZatiColours::lcdDim
         : fastPath.mmapUsed  ? ZatiColours::yellow   // shared, but still MMAP
@@ -4124,16 +4151,16 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
     //  The measurement, kept visually apart from everything the device
     //  merely claims about itself.
     if (measuring)
-        line ("medido", "escuchando...", ZatiColours::yellow);
+        line (T ("medido"), T ("escuchando..."), ZatiColours::yellow);
     else if (measuredMs >= 0.0f)
-        line ("medido", juce::String (measuredMs, 1) + " ms ida y vuelta",
+        line (T ("medido"), T ("%1 ms ida y vuelta", juce::String (measuredMs, 1)),
               measuredMs <= 30.0f ? ZatiColours::lcdFg
             : measuredMs <= 60.0f ? ZatiColours::yellow : ZatiColours::red);
 
     g.setColour (ZatiColours::lcdDim.withAlpha (0.85f));
     g.setFont (ZatiColours::monoFont (9.0f, false));
     g.drawFittedText (measureNote.isNotEmpty() ? measureNote
-                                               : juce::String ("MEDIR emite un click y lo escucha con el micro"),
+                                               : T ("MEDIR emite un click y lo escucha con el micro"),
                       inner.removeFromTop (11), juce::Justification::centredLeft, 1, 0.7f);
 }
 
@@ -4173,6 +4200,20 @@ void MainComponent::useLowestLatency()
     int burst = sizes.getFirst();
     for (int v : sizes) if (v > 0 && v < burst) burst = v;
 
+    //  ...times what the device can actually keep up with. One burst is the
+    //  fast path and what any decent phone gets; on an entry-level one a block
+    //  that cannot be rendered in time is an under-run, and an under-run is a
+    //  click - worse than the extra milliseconds it costs to avoid it.
+    burst *= juce::jmax (1, DeviceTier::profile().bufferBursts);
+
+    //  Only among the sizes the driver actually offers.
+    if (! sizes.contains (burst))
+    {
+        int best = sizes.getFirst();
+        for (int v : sizes) if (v >= burst && (best < burst || v < best)) best = v;
+        burst = best;
+    }
+
     if (burst <= 0 || burst == dev->getCurrentBufferSizeSamples()) return;
 
     auto setup = deviceManager.getAudioDeviceSetup();
@@ -4194,7 +4235,7 @@ void MainComponent::startMeasure()
     {
         measuring = true;
         measuredMs = -1.0f;
-        measureNote = "midiendo...";
+        measureNote = T ("midiendo...");
         measureButton.setEnabled (false);
         setAudioChannels (1, 2);         // the probe has to hear itself
         useLowestLatency();
@@ -4209,7 +4250,7 @@ void MainComponent::startMeasure()
         RP::request (RP::recordAudio, [this, begin] (bool granted)
         {
             if (granted) begin();
-            else { measureNote = "sin permiso de microfono"; projSheet.repaint(); }
+            else { measureNote = T ("sin permiso de microfono"); projSheet.repaint(); }
         });
 }
 
@@ -4258,11 +4299,11 @@ void MainComponent::finishMeasure()
                                             : juce::jmax (0.0f, measuredMs - outMs);
 
     measureNote = measuredMs < 0.0f
-                    ? "no oi el click - sube el volumen y no tapes el micro"
-                    : "con micro abierto: salida " + juce::String (outMs, 1)
-                        + " + entrada " + juce::String (inMs, 1) + " ms"
-                        + (measuredInMs > 0.0f ? juce::String() : " (por resta)")
-                        + ". Tocando solo sales " + juce::String (outMs, 1) + " ms";
+                    ? T ("no oi el click - sube el volumen y no tapes el micro")
+                    : T ("con micro abierto: salida %1 + entrada %2 ms%3",
+                         juce::String (outMs, 1), juce::String (inMs, 1),
+                         measuredInMs > 0.0f ? juce::String() : " " + T ("(por resta)"))
+                        + ". " + T ("Tocando solo sales %1 ms", juce::String (outMs, 1));
     refreshAudioOptions();
 }
 
@@ -4806,8 +4847,10 @@ void MainComponent::timerCallback()
 
     //  The master oscilloscope: post-FX mono sum, straight from the engine's
     //  ring. Cosmetic, so a benign race with the audio thread is fine.
-    engine.copyScope (scopeTmp, (int) (sizeof (scopeTmp) / sizeof (scopeTmp[0])));
-    spectrum.setSamples (scopeTmp, (int) (sizeof (scopeTmp) / sizeof (scopeTmp[0])));
+    const int scopeN = juce::jmin ((int) (sizeof (scopeTmp) / sizeof (scopeTmp[0])),
+                                   DeviceTier::profile().scopePoints);
+    engine.copyScope (scopeTmp, scopeN);
+    spectrum.setSamples (scopeTmp, scopeN);
     spectrum.setBpm (bpmSlider.getValue());
 
     const int ps = engine.getPlayStep();

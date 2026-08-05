@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "Lang.h"
 
 #if JUCE_ANDROID
  #include <sys/system_properties.h>
@@ -84,10 +85,10 @@ namespace AudioPath
     {
         switch (m)
         {
-            case Mmap::Never:  return "no soportado";
-            case Mmap::Auto:   return "disponible";
-            case Mmap::Always: return "forzado";
-            default:           return "desconocido";
+            case Mmap::Never:  return T ("no soportado");
+            case Mmap::Auto:   return T ("disponible");
+            case Mmap::Always: return T ("forzado");
+            default:           return T ("desconocido");
         }
     }
 
@@ -265,7 +266,7 @@ namespace AudioPath
 
     inline juce::String describe (const Fast& f)
     {
-        if (! f.ran)       return "sin respuesta";
+        if (! f.ran)       return T ("sin respuesta");
 
         //  When it is refused, say what we were refused ON - a shared stream
         //  still reports the device's real native terms, and those are the
@@ -279,12 +280,12 @@ namespace AudioPath
         //  costs a handful of milliseconds, while AudioFlinger's mixer costs
         //  tens. Saying only "compartida" hides which of the two we are on.
         if (! f.exclusive)
-            return "compartida " + juce::String (! f.mmapKnown ? "(?)"
-                                               : f.mmapUsed    ? "MMAP"
-                                                               : "MEZCLADOR")
-                     + " - ni en " + terms.trim();
+            return T ("compartida %1 - ni en %2",
+                      ! f.mmapKnown ? juce::String ("(?)")
+                                    : f.mmapUsed ? T ("MMAP") : T ("MEZCLADOR"),
+                      terms.trim());
 
-        return juce::String ("EXCLUSIVA")
+        return T ("EXCLUSIVA")
                  + (f.usage == kUsageGame ? " · game" : "")
                  + (f.useI16 ? " · 16b" : "")
                  + (f.burst > 0 ? " · burst " + juce::String (f.burst) : juce::String());

@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include "ZatiLookAndFeel.h"
+#include "Lang.h"
 
 // ============================================================================
 //  SpectrumDisplay — the "screen": a real-time waveform OSCILLOSCOPE on a dark
@@ -77,7 +78,7 @@ public:
         g.drawText (readout, top, juce::Justification::topLeft);
         g.drawText ("BPM:" + juce::String (bpm, 1), top, juce::Justification::topRight);
         g.setColour (ZatiColours::lcdDim);
-        g.drawText (juce::String ("OUT ") + peakDb(), top, juce::Justification::centredTop);
+        g.drawText (T ("OUT") + " " + peakDb(), top, juce::Justification::centredTop);
 
         //  Stereo VU, immediately under the labels: two rows of segments in a
         //  gutter narrow enough for the L and the R to sit beside them.
@@ -173,7 +174,7 @@ public:
         auto status = b.reduced (10.0f, 5.0f).removeFromBottom (12.0f);
         g.setColour (ZatiColours::lcdDim);
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
-        g.drawText ("SCOPE", status, juce::Justification::bottomLeft);
+        g.drawText (T ("SCOPE"), status, juce::Justification::bottomLeft);
         g.setColour (peak > 0.0005f ? ZatiColours::amber : ZatiColours::lcdDim);
         g.drawText (peak > 0.0005f ? "SIG" : "--", status, juce::Justification::bottomRight);
 

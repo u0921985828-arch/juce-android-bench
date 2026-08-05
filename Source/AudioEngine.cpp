@@ -77,14 +77,15 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize, int inputC
     //  A bounce clone never records, so it does not pay for any of it.
     if (! offlineMode)
     {
-        recordChannels = juce::jlimit (1, 2, inputChannels > 0 ? inputChannels : 1);
+        recordChannels = juce::jlimit (1, recordAllowStereo ? 2 : 1,
+                                       inputChannels > 0 ? inputChannels : 1);
 
         //  A minute of stereo float at 48 kHz is 23 MB. If the allocation
         //  fails, fall back to something small rather than leaving the
         //  microphone with nowhere to write.
         try
         {
-            recordBuffer.setSize (recordChannels, (int) (kRecordSeconds * systemSampleRate));
+            recordBuffer.setSize (recordChannels, (int) (recordSeconds * systemSampleRate));
         }
         catch (const std::bad_alloc&)
         {
@@ -188,8 +189,13 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01)
     Voice* oldestOnPad = nullptr;
     int    onPad   = 0;
 
-    for (auto& v : voices)
+    //  Only as far as the device's pool goes. The array is always 64; a
+    //  low-tier phone plays the first sixteen of it and never pays for the
+    //  rest, which is the whole point of the tier.
+    for (int vi = 0; vi < voiceLimit; ++vi)
     {
+        auto& v = voices[(size_t) vi];
+
         if (! v.active)
         {
             if (chosen == nullptr) chosen = &v;
@@ -207,7 +213,7 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01)
         }
     }
 
-    if (onPad >= kMaxVoicesOnPad && oldestOnPad != nullptr)
+    if (onPad >= maxVoicesOnPad && oldestOnPad != nullptr)
     {
         oldestOnPad->steal (systemSampleRate);
         if (chosen == nullptr) chosen = oldestOnPad;
@@ -339,7 +345,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     {
         // Control-rate retarget first: looping/long voices keep following
         // their pad's VOLUME/PAN knobs instead of freezing start() values.
-        for (int v = 0; v < kNumVoices; ++v)
+        for (int v = 0; v < voiceLimit; ++v)
         {
             auto& vc = voices[(size_t) v];
             if (vc.active && vc.slot >= 0)
@@ -354,7 +360,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         for (int p = 0; p < kNumPads; ++p)
         {
             bool sounding = false;
-            for (int v = 0; v < kNumVoices && ! sounding; ++v)
+            for (int v = 0; v < voiceLimit && ! sounding; ++v)
                 sounding = voices[(size_t) v].active && voices[(size_t) v].slot == p;
 
             if (! sounding)
@@ -362,7 +368,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
 
             if (! padSplit[p])
             {
-                for (int v = 0; v < kNumVoices; ++v)
+                for (int v = 0; v < voiceLimit; ++v)
                 {
                     auto& vc = voices[(size_t) v];
                     if (vc.active && vc.slot == p)
@@ -374,7 +380,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             for (int ch = 0; ch < 2; ++ch)
                 padScratch.clear (ch, s, nn);
 
-            for (int v = 0; v < kNumVoices; ++v)
+            for (int v = 0; v < voiceLimit; ++v)
             {
                 auto& vc = voices[(size_t) v];
                 if (vc.active && vc.slot == p)

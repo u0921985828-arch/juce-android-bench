@@ -109,6 +109,16 @@ public:
     }
     int  getSampleLength (int slot) const noexcept;   // 0 if none
 
+    //  Polyphony, decided by the device rather than by a constant. Called once
+    //  before any audio runs; both values are plain ints because nothing reads
+    //  them except the audio thread, and it reads them after they are set.
+    void setPolyphony (int totalVoices, int perPad) noexcept
+    {
+        voiceLimit     = juce::jlimit (4, kNumVoices, totalVoices);
+        maxVoicesOnPad = juce::jlimit (2, voiceLimit, perPad);
+    }
+    int getPolyphony() const noexcept { return voiceLimit; }
+
     //  Where this pad's read head is inside its whole source, 0..1, or -1 when
     //  nothing of it is sounding. Cosmetic: the UI draws it, nobody acts on it,
     //  so a block's worth of staleness is exactly right.
@@ -305,8 +315,15 @@ public:
     //  stereo at 48 kHz is 23 MB, which a phone that is already holding
     //  sixteen samples will not notice, and it is the difference between
     //  sampling a phrase and sampling a hit.
-    static constexpr double kRecordSeconds = 60.0;
-    float getRecordLimitSeconds() const noexcept { return (float) kRecordSeconds; }
+    //  Sixty seconds of stereo float at 48 kHz is 23 MB, which a phone that
+    //  is already holding sixteen samples will not notice - unless it is an
+    //  entry-level phone, which is why the device decides (see DeviceTier).
+    void setRecordLimit (double seconds, bool allowStereo) noexcept
+    {
+        recordSeconds = juce::jlimit (5.0, 300.0, seconds);
+        recordAllowStereo = allowStereo;
+    }
+    float getRecordLimitSeconds() const noexcept { return (float) recordSeconds; }
     int   getRecordChannels() const noexcept { return juce::jmax (1, recordBuffer.getNumChannels()); }
 
     void              startRecording (int slot) noexcept;
@@ -365,9 +382,14 @@ private:
     //
     //  The per-pad cap stays, just far higher: without one a single held pad
     //  could take the whole pool and starve the other fifteen.
-    static constexpr int kNumVoices     = 48;
-    static constexpr int kMaxVoicesOnPad = 8;
+    //  The array is the ceiling; how much of it is USED is the device's
+    //  answer, set once at startup (see DeviceTier). Sized rather than
+    //  allocated, so nothing about a tier decision can ever reach the audio
+    //  thread as a reallocation.
+    static constexpr int kNumVoices     = 64;
     std::array<Voice, kNumVoices>       voices {};
+    int voiceLimit      = 48;   // <= kNumVoices, message thread sets, audio reads
+    int maxVoicesOnPad  = 8;
     std::uint32_t                       voiceSerial = 0;   // audio-thread only, for oldest-steal
     CommandFifo commands;
 
@@ -444,7 +466,9 @@ private:
     std::atomic<bool> recording { false };
     std::atomic<int>  recordPos { 0 };
     juce::AudioBuffer<float> recordBuffer;   // allocated in prepareToPlay, never in the callback
-    int recordChannels = 1;                  // how many of the input channels we keep
+    int    recordChannels = 1;               // how many of the input channels we keep
+    double recordSeconds  = 60.0;
+    bool   recordAllowStereo = true;
     int recordSlot = 0;
 
     // Master FX: filter + drive.

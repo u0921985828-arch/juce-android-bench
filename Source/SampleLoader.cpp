@@ -1,4 +1,5 @@
 #include "SampleLoader.h"
+#include "DeviceTier.h"
 #include "AudioEngine.h"
 
 namespace
@@ -22,9 +23,18 @@ namespace
     //  The three limits are the same ceiling seen from different sides: what we
     //  will read, how long we will decode, and what the result may cost in RAM.
     // ========================================================================
-    constexpr juce::int64 kMaxFileBytes  = 192ll * 1024 * 1024;   // compressed or packed
-    constexpr double      kMaxSeconds    = 600.0;                 // ten minutes
-    constexpr juce::int64 kMaxFloatBytes = 256ll * 1024 * 1024;   // decoded, in RAM
+    //  The ceilings scale with the phone: a device with 3 GB has no business
+    //  decoding a quarter of a gigabyte of float, and one with 16 should not
+    //  be told a forty-megabyte break is "too big". DeviceTier decides the
+    //  budget once at startup and everything here is derived from it.
+    inline juce::int64 budgetBytes()
+    {
+        return (juce::int64) DeviceTier::profile().sampleBudgetMB * 1024 * 1024;
+    }
+
+    inline juce::int64 maxFileBytes()  { return budgetBytes(); }
+    inline juce::int64 maxFloatBytes() { return budgetBytes() * 4 / 3; }
+    inline double      maxSeconds()    { return (double) DeviceTier::profile().sampleBudgetMB * 3.0; }
 
     //  Rounded through an int, not juce::String (x, 0) - zero decimal places
     //  makes JUCE skip the fixed format and print the lot.
@@ -96,10 +106,10 @@ void SampleLoader::loadAsync (const juce::URL& url, int slot,
             //    only one that costs nothing when it passes.
             const juce::int64 declared = source->getTotalLength();
 
-            if (declared > kMaxFileBytes)
+            if (declared > maxFileBytes())
             {
                 detail = "demasiado grande: " + asMB (declared)
-                           + " (tope " + asMB (kMaxFileBytes) + ")";
+                           + " (tope " + asMB (maxFileBytes()) + ")";
             }
             else
             {
@@ -119,11 +129,11 @@ void SampleLoader::loadAsync (const juce::URL& url, int slot,
                     try
                     {
                         juce::MemoryBlock block;
-                        source->readIntoMemoryBlock (block, (ssize_t) kMaxFileBytes);
+                        source->readIntoMemoryBlock (block, (ssize_t) maxFileBytes());
                         sourceBytes = (juce::int64) block.getSize();
 
-                        if (sourceBytes >= kMaxFileBytes)
-                            detail = "demasiado grande: pasa de " + asMB (kMaxFileBytes);
+                        if (sourceBytes >= maxFileBytes())
+                            detail = "demasiado grande: pasa de " + asMB (maxFileBytes());
                         else
                             seekable = std::make_unique<juce::MemoryInputStream> (std::move (block));
                     }
@@ -155,12 +165,12 @@ void SampleLoader::loadAsync (const juce::URL& url, int slot,
 
                         if (numChannels <= 0 || lengthIn <= 3)
                             detail = "audio vacio";
-                        else if (seconds > kMaxSeconds)
+                        else if (seconds > maxSeconds())
                             detail = "dura " + juce::String ((int) (seconds / 60.0)) + " min (tope "
-                                       + juce::String ((int) (kMaxSeconds / 60.0)) + ")";
-                        else if (floatBytes > kMaxFloatBytes)
+                                       + juce::String ((int) (maxSeconds() / 60.0)) + ")";
+                        else if (floatBytes > maxFloatBytes())
                             detail = "ocuparia " + asMB (floatBytes)
-                                       + " en memoria (tope " + asMB (kMaxFloatBytes) + ")";
+                                       + " en memoria (tope " + asMB (maxFloatBytes()) + ")";
                         else
                         {
                             //  The allocation that used to take the process
