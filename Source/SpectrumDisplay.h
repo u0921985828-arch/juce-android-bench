@@ -80,6 +80,14 @@ public:
         g.setGradientFill (glow);
         g.fillRoundedRectangle (b, 2.0f);
 
+        //  Scan lines. A black rectangle on paper reads as a hole cut in the
+        //  panel; the same rectangle with a line structure in it reads as a
+        //  screen switched on. Three pixels apart and barely there - at full
+        //  strength it would be a texture competing with the waveform.
+        g.setColour (ZatiColours::lcdFg.withAlpha (0.035f));
+        for (float y = b.getY() + 2.0f; y < b.getBottom() - 1.0f; y += 3.0f)
+            g.fillRect (b.getX() + 1.0f, y, b.getWidth() - 2.0f, 1.0f);
+
         g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.08f));
 
         // Corner + centre labels (top row) — cool LCD ink.

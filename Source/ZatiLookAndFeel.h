@@ -22,17 +22,26 @@
 namespace ZatiColours
 {
 
-    // --- Chassis / structure (white + grey) ---
-    const juce::Colour chassisTop { 0xffffffff };
-    const juce::Colour chassis    { 0xfff5f5f2 };
-    const juce::Colour chassisBot { 0xffe8e8e3 };
-    const juce::Colour panel      { 0xfff2f2ee };   // section card surface
-    const juce::Colour panelDark  { 0xffe3e3dd };   // flat button cap (off state)
-    const juce::Colour panelHi    { 0xffffffff };   // panel top bevel
-    const juce::Colour panelLo    { 0xffcfcfc7 };   // panel shadow / soft border
-    const juce::Colour key        { 0xffe3e3dd };   // flat button cap (off state)
-    const juce::Colour keyLit     { 0xffd4d4cc };
-    const juce::Colour screw      { 0xffb4b4ac };
+    // --- Chassis / structure -----------------------------------------------
+    //  Paper, not plastic. The chassis was pure white and three neutral greys,
+    //  which on a phone reads as a wireframe of an instrument rather than as
+    //  one: nothing in the room it is held in is that colour. These are the
+    //  same values warmed onto a kraft/bone axis - the substrate of the studio
+    //  it belongs to - and nothing else about the system changes.
+    //
+    //  It costs the fragments nothing, which is the whole reason it is allowed:
+    //  warm neutral is not a hue with a meaning, so it cannot compete with the
+    //  zati colours for one.
+    const juce::Colour chassisTop { 0xfff4efe3 };
+    const juce::Colour chassis    { 0xffece6d8 };
+    const juce::Colour chassisBot { 0xffe0d9c8 };
+    const juce::Colour panel      { 0xffeee9dc };   // section card surface
+    const juce::Colour panelDark  { 0xffded7c6 };   // flat button cap (off state)
+    const juce::Colour panelHi    { 0xfffffdf7 };   // panel top bevel
+    const juce::Colour panelLo    { 0xffc7bfac };   // panel shadow / soft border
+    const juce::Colour key        { 0xffded7c6 };   // flat button cap (off state)
+    const juce::Colour keyLit     { 0xffcfc7b4 };
+    const juce::Colour screw      { 0xffb3ab98 };
 
     // --- Accent / semantic ------------------------------------------------
     //  The chassis is MONOCHROME on purpose. Hue belongs to the zati fragment
@@ -43,12 +52,12 @@ namespace ZatiColours
     //  light text — never with a hue.
     //
     //  Still mutable, because the skins shift that tone (see setSkin).
-    inline juce::Colour amber       { 0xff1f1f1d };   // = accent (name kept for compat)
-    inline juce::Colour amberBright { 0xff44443f };
-    inline juce::Colour amberDim    { 0xff0d0d0c };
-    inline juce::Colour accent      { 0xff1f1f1d };   // preferred names
-    inline juce::Colour accentBright{ 0xff44443f };
-    inline juce::Colour accentDim   { 0xff0d0d0c };
+    inline juce::Colour amber       { 0xff26221b };   // = accent (name kept for compat)
+    inline juce::Colour amberBright { 0xff4a4438 };
+    inline juce::Colour amberDim    { 0xff14120e };
+    inline juce::Colour accent      { 0xff26221b };   // preferred names
+    inline juce::Colour accentBright{ 0xff4a4438 };
+    inline juce::Colour accentDim   { 0xff14120e };
 
     //  The only two hues left in the chassis, and both are strictly semantic,
     //  never decorative: red = recording / live playhead, yellow = the step
@@ -62,26 +71,26 @@ namespace ZatiColours
         static const char* names[4] = { "TINTA", "GRAFITO", "ACERO", "PLOMO" };
         return names[((i % 4) + 4) % 4];
     }
-    const juce::Colour ink        { 0xff1c1c1a };   // primary text on white/grey
-    const juce::Colour inkDim     { 0xff6f6f68 };   // secondary text
-    const juce::Colour inkLight   { 0xfff5f5f2 };   // text on dark surfaces (knobs/LCD chips)
-    const juce::Colour white      { 0xffffffff };
-    const juce::Colour cream      { 0xffffffff };   // name kept for compat = white
-    const juce::Colour engrave    { 0xff6f6f68 };   // text-dim
+    const juce::Colour ink        { 0xff26221b };   // primary text on the paper
+    const juce::Colour inkDim     { 0xff6b6355 };   // secondary text
+    const juce::Colour inkLight   { 0xfff4efe3 };   // text on dark surfaces (knobs/LCD chips)
+    const juce::Colour white      { 0xfffffdf7 };   // the highlight in an engraved line
+    const juce::Colour cream      { 0xfffffdf7 };   // name kept for compat
+    const juce::Colour engrave    { 0xff6b6355 };   // text-dim
 
     // --- LCD (dark, pops on the white face) ---
-    const juce::Colour screenBg   { 0xff101010 };
-    const juce::Colour lcdFg      { 0xffe6e6e2 };
+    const juce::Colour screenBg   { 0xff14120f };
+    const juce::Colour lcdFg      { 0xffece7d9 };
     //  Raised from 0xff5c5c56: that was 2.83:1 on the LCD, below the 4.5
     //  minimum, and it carries real information (ruler, cut lines, fragment
     //  numbers, empty-state text), not decoration. Now 5.48:1.
-    const juce::Colour lcdDim     { 0xff8a8a83 };
+    const juce::Colour lcdDim     { 0xff8b8375 };
 
     // --- Pads (neutral when empty; a loaded pad wears its zati colour) ---
-    const juce::Colour padTop     { 0xffe3e3dd };
-    const juce::Colour padBg2     { 0xffeeeeea };
-    const juce::Colour padBorder  { 0xffd0d0c8 };
-    inline juce::Colour padLit    { 0xff1f1f1d };   // follows the skin tone
+    const juce::Colour padTop     { 0xffded7c6 };
+    const juce::Colour padBg2     { 0xffe9e3d4 };
+    const juce::Colour padBorder  { 0xffcdc5b2 };
+    inline juce::Colour padLit    { 0xff26221b };   // follows the skin tone
 
     //  Skins move the chassis TONE, not its hue. Four steps of ink, from
     //  near-black to a mid grey, so an active control reads at whatever
@@ -91,10 +100,10 @@ namespace ZatiColours
         currentSkin = ((i % 4) + 4) % 4;
         struct S { juce::uint32 a, ab, ad; };
         static constexpr S skins[4] = {
-            { 0xff1f1f1d, 0xff44443f, 0xff0d0d0c },   // TINTA   (default, near-black)
-            { 0xff333330, 0xff5b5b55, 0xff1c1c1a },   // GRAFITO
-            { 0xff4a4a45, 0xff70706a, 0xff2e2e2b },   // ACERO
-            { 0xff62625c, 0xff8a8a83, 0xff424240 },   // PLOMO
+            { 0xff26221b, 0xff4a4438, 0xff14120e },   // TINTA   (default, warm near-black)
+            { 0xff3a352b, 0xff5f5849, 0xff23201a },   // GRAFITO
+            { 0xff504839, 0xff756c58, 0xff332f26 },   // ACERO
+            { 0xff6b6355, 0xff8b8375, 0xff474134 },   // PLOMO
         };
         const auto s = skins[currentSkin];
         amber = accent = padLit    = juce::Colour (s.a);
@@ -103,7 +112,7 @@ namespace ZatiColours
     }
 
     // --- Knob body (dark — physical-instrument contrast on a white face) ---
-    const juce::Colour knobWell   { 0xffe3e3dd };
+    const juce::Colour knobWell   { 0xffded7c6 };
     const juce::Colour knobEdge   { 0xff3a3a3a };
     const juce::Colour knobBody1  { 0xff3c3c3c };
     const juce::Colour knobBody2  { 0xff1e1e1e };
@@ -128,6 +137,22 @@ namespace ZatiColours
     inline juce::Font monoFont (float h, bool bold = false)
     {
         return juce::Font (juce::FontOptions().withTypeface (bold ? monoBold() : monoRegular()).withHeight (h));
+    }
+
+    //  The NAME of a thing, as opposed to its value.
+    //
+    //  Everything on the face was set in the same monospaced face, titles and
+    //  readouts alike, which is why it read flat: one voice saying two
+    //  different kinds of thing. Names go in the condensed display face,
+    //  tracked wide the way lettering is silkscreened onto a panel; values
+    //  stay monospaced, where digits line up under each other and a number
+    //  that changes does not move the ones beside it.
+    //
+    //  Oswald is condensed, so it needs a couple of pixels of height to match
+    //  the mono it sits next to.
+    inline juce::Font labelFont (float h, float tracking = 0.18f)
+    {
+        return displayFont (h + 2.0f, true).withExtraKerningFactor (tracking);
     }
 }
 

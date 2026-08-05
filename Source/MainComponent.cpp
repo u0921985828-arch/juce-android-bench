@@ -1561,7 +1561,7 @@ void MainComponent::paint (juce::Graphics& g)
     //  line breaks for the word instead of running behind it.
     auto engrave = [&g, &rule, &full] (const juce::String& text, float y)
     {
-        g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.30f));
+        g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.30f));
         const float tw = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), text) + 10.0f;
         const float x0 = full.getX() + 10.0f;
 
@@ -1619,6 +1619,23 @@ void MainComponent::paint (juce::Graphics& g)
     if (! fxRowArea.isEmpty())
         engrave (T ("EFECTOS"), (float) fxRowArea.getY() - 6.0f);
 
+        //  Which of the six owns the three knobs. A tap both switches an
+        //  effect and hands it the knobs, and until now only the switching
+        //  showed - so with two effects on there was nothing on screen saying
+        //  whose parameters CTRL 1-3 were holding. A wedge in the seam above
+        //  the button, pointing from the knobs down at the effect they
+        //  belong to.
+        if (juce::isPositiveAndBelow (focusedFx, fxButtons.size()))
+            if (auto* fb = fxButtons[focusedFx])
+            {
+                const float cx = (float) fb->getBounds().getCentreX();
+                const float y  = (float) fb->getY() - 2.0f;
+                juce::Path wedge;
+                wedge.addTriangle (cx - 5.0f, y - 6.0f, cx + 5.0f, y - 6.0f, cx, y);
+                g.setColour (ZatiColours::ink.withAlpha (0.75f));
+                g.fillPath (wedge);
+            }
+
     // 3. Recessed LCD bezel around the scope, with the screws that hold the
     //    window down. This is the one object on the face that should read as
     //    hardware rather than as a rectangle of dark paint.
@@ -1670,7 +1687,7 @@ void MainComponent::paint (juce::Graphics& g)
     // 4. Machine face: CTRL labels (bank-dependent), VU strip, step LEDs.
     {
         g.setColour (ZatiColours::ink.withAlpha (0.85f));
-        g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.16f));
+        g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.16f));
         juce::Slider* ks[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
         for (int i = 0; i < 3; ++i)
         {
@@ -1679,8 +1696,7 @@ void MainComponent::paint (juce::Graphics& g)
 
             // Label names, readout measures — never the other way round.
             g.setColour (touched ? ZatiColours::ink : ZatiColours::ink.withAlpha (0.55f));
-            g.setFont (ZatiColours::monoFont (touched ? 10.5f : 10.0f, true)
-                         .withExtraKerningFactor (0.16f));
+            g.setFont (ZatiColours::labelFont (touched ? 10.5f : 10.0f, 0.16f));
             g.drawText (touched ? macroParamLabel (i) : macroBaseLabel (i),
                         r.getX() - 8, r.getY() - ZatiLookAndFeel::kCtrlName + ZatiLookAndFeel::kTextPad,
                         r.getWidth() + 16, ZatiLookAndFeel::kCtrlName - 2 * ZatiLookAndFeel::kTextPad,
@@ -1706,7 +1722,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
     const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
     const int sp = juce::jmax (0, selectedPad);
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
-    g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
+    g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
     //  The pad's name is a file name and files are named by whoever made
     //  them, so this line has no length it can count on. Stop it before the
     //  close button and let it shrink rather than run underneath.
@@ -1731,7 +1747,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
             if (r.isEmpty()) continue;
 
             g.setColour (ZatiColours::ink.withAlpha (0.55f));
-            g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.22f));
+            g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.22f));
             //  Sitting on the bottom edge of its band put the word straight
             //  onto the control under it. It keeps its own padding now, and
             //  the rule it rides moves with it.
@@ -1740,7 +1756,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
             g.drawText (secText, textRow, juce::Justification::bottomLeft);
 
             const float tw = juce::GlyphArrangement::getStringWidth (
-                                 ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.22f),
+                                 ZatiColours::labelFont (Metrics::fMeta, 0.22f),
                                  secText);
             const float ly = (float) textRow.getBottom() - 5.0f;
             g.setColour (ZatiColours::ink.withAlpha (0.18f));
@@ -1782,7 +1798,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
 
             const bool darkFrag = Zati::colour (z).getPerceivedBrightness() < 0.55f;
             g.setColour (darkFrag ? ZatiColours::inkLight : ZatiColours::ink);
-            g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
+            g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
             g.drawText ("ZATI " + juce::String (z + 1) + "  " + T (Zati::name (z)),
                         zatiSwatchArea, juce::Justification::centred);
         }
@@ -1802,7 +1818,7 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     auto inner = seqSheet.sheetBounds.reduced (12, 6);
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
-    g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
+    g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
     const juce::String t = T ("PASOS") + "  " + dot + "  " + T ("PAD %1", juce::String (sp + 1))
                          + (padName[(size_t) sp].isNotEmpty() ? "   " + padName[(size_t) sp] : juce::String())
                          + "   " + dot + "   P" + juce::String (selectedPattern + 1);
@@ -1832,7 +1848,7 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     //  stretched across both was how NOTA came to look like part of the chain.
     {
         g.setColour (ZatiColours::inkDim);
-        g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.20f));
+        g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.20f));
 
         auto over = [&g] (const juce::Component* c, const juce::String& t)
         {
@@ -3662,7 +3678,7 @@ void MainComponent::paintSongSheetContent (juce::Graphics& g)
 {
     if (songSheet.sheetBounds.isEmpty()) return;
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
-    g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
+    g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
     g.drawText (T ("SONG"), songSheet.sheetBounds.reduced (14, 10).removeFromTop (16), juce::Justification::centredLeft);
 
     g.setColour (ZatiColours::inkDim);
@@ -3684,7 +3700,7 @@ void MainComponent::paintMixSheetContent (juce::Graphics& g)
     if (mixSheet.sheetBounds.isEmpty()) return;
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
-    g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
+    g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
     g.drawText (engine.anySolo() ? "MIX  ·  SOLO ACTIVO" : "MIX",
                 mixSheet.sheetBounds.reduced (14, 12).removeFromTop (16), juce::Justification::centredLeft);
 
@@ -3764,7 +3780,7 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
     auto titleRow = inner.removeFromTop (32).withTrimmedTop (8);
     titleRow.setRight (juce::jmin (titleRow.getRight(), chopCloseButton.getX() - Metrics::xs));
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
-    g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
+    g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
     g.drawText (T ("AUTO CHOP") + "  " + dot + "  " + T ("PAD %1", juce::String (sp + 1))
                 + (padName[(size_t) sp].isNotEmpty() ? "  " + dot + "  " + padName[(size_t) sp].toUpperCase()
                                                      : juce::String()),
@@ -3778,7 +3794,7 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
 
     inner.removeFromTop (Metrics::md);
     g.setColour (ZatiColours::ink.withAlpha (0.75f));
-    g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.16f));
+    g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.16f));
     g.drawText (T ("TROZOS"), inner.removeFromTop (14), juce::Justification::centredLeft);
 
     inner.removeFromTop (Metrics::hit + Metrics::sm + Metrics::hit + Metrics::md);
@@ -3828,7 +3844,7 @@ void MainComponent::paintRackSheetContent (juce::Graphics& g)
 
     auto inner = rackSheet.sheetBounds.reduced (Metrics::lg, Metrics::md);
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
-    g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
+    g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
     const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
     const juce::String nm  = padName[(size_t) rackPad];
     auto titleRow = inner.removeFromTop (16);
@@ -3865,7 +3881,7 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
 
     auto inner = projSheet.sheetBounds.reduced (12, 6);
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
-    g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
+    g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
     g.drawText (T ("PROYECTOS"), inner.removeFromTop (16), juce::Justification::centredLeft);
 
     g.setColour (ZatiColours::inkDim);
@@ -3970,7 +3986,7 @@ void MainComponent::paintExportSheetContent (juce::Graphics& g)
     inner.removeFromTop (2);
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
-    g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
+    g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
     g.drawText (T ("EXPORTAR"), inner.removeFromTop (18), juce::Justification::centredLeft);
     inner.removeFromTop (10);
 
@@ -4049,7 +4065,7 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
     auto* dev = deviceManager.getCurrentAudioDevice();
 
     g.setColour (ZatiColours::lcdDim);
-    g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.20f));
+    g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.20f));
     g.drawText (T ("AUDIO"), inner.removeFromTop (12), juce::Justification::centredLeft);
 
     //  What the app decided this phone can carry. It is not a setting, it is
@@ -4535,7 +4551,7 @@ void MainComponent::paintBrowseSheetContent (juce::Graphics& g)
 
     auto inner = browseSheet.sheetBounds.reduced (12, 6);
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
-    g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
+    g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
     g.drawText (T ("CARGAR EN PAD %1", juce::String (juce::jmax (0, browseTargetPad) + 1)),
                 inner.removeFromTop (16), juce::Justification::centredLeft);
 
