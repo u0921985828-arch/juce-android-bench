@@ -781,10 +781,14 @@ MainComponent::MainComponent()
     {
         for (int f = 0; f < kNumFx; ++f)
         {
-            auto* b = new juce::TextButton (fxDefs[f].name);
+            auto* b = new HoldButton (fxDefs[f].name);
             styleButton (*b, kKey);
             b->setColour (juce::TextButton::buttonOnColourId, kAccent);
             b->onClick = [this, f] { fxTapped (f); };
+            //  Hold to take the knobs without touching the switch: the only
+            //  way to tune an effect that is already running now that a tap
+            //  always means on/off.
+            b->onHold  = [this, f] { fxFocusOnly (f); };
             addAndMakeVisible (b);
             fxButtons.add (b);
         }
@@ -1364,19 +1368,32 @@ void MainComponent::focusFx (int f)
 
 // Tap once to take the knobs (switching the effect on if it was off); tap the
 // one that already has them to switch it off.
+//  One tap, one meaning: this effect goes on or off. It used to mean two
+//  different things depending on which effect the knobs happened to be
+//  pointing at - tapping an effect that was ON but not focused only moved the
+//  knobs to it, so switching off the first of two effects took two taps and
+//  the first one appeared to do nothing at all.
+//
+//  The knobs follow the tap, because you want to see what you just switched
+//  on. To reach the knobs of an effect that is already running without
+//  switching it off, hold the button.
 void MainComponent::fxTapped (int f)
 {
     if (! juce::isPositiveAndBelow (f, kNumFx)) return;
 
-    if (focusedFx != f)
-    {
-        focusFx (f);
-        if (! fxOn[(size_t) f]) setFxEnabled (f, true);
-    }
-    else
-    {
-        setFxEnabled (f, ! fxOn[(size_t) f]);
-    }
+    setFxEnabled (f, ! fxOn[(size_t) f]);
+    focusFx (f);
+    repaint();
+}
+
+void MainComponent::fxFocusOnly (int f)
+{
+    if (! juce::isPositiveAndBelow (f, kNumFx)) return;
+
+    focusFx (f);
+    //  Say so: a gesture nobody can see needs to announce what it did, or the
+    //  hold reads as a tap that failed.
+    status.setText (T ("CTRL -> %1", fxDefs[f].name), juce::dontSendNotification);
     repaint();
 }
 

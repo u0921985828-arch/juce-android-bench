@@ -31,6 +31,7 @@ namespace
         { "EFECTOS",        "",         "EFFECTS",    "效果",       "مؤثرات" },
         { "CTRL %1",        "",         "CTRL %1",    "旋钮 %1",    "مقبض %1" },
         { "SCOPE",          "",         "SCOPE",      "波形",       "راسم" },
+        { "CTRL -> %1",     "",         "CTRL -> %1", "旋钮 -> %1", "المقابض ← %1" },
         { "TEST",           "",         "TEST",       "测试",       "اختبار" },
         { "MEDIR",          "",         "MEASURE",    "测量",       "قياس" },
         { "elige uno de la lista", "",   "pick one from the list", "从列表中选一个", "اختر واحدًا من القائمة" },

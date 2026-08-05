@@ -397,6 +397,7 @@ private:
     juce::Rectangle<int> fxRowArea;
 
     void fxTapped (int fx);
+    void fxFocusOnly (int fx);      // long press: take the knobs, leave the switch
     void setFxEnabled (int fx, bool on);
     void focusFx (int fx);
     void pushFxParam (int fx, int p);              // slider -> engine
