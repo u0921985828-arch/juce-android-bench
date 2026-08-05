@@ -1,4 +1,5 @@
 #include "MainComponent.h"
+#include "Lang.h"
 
 namespace
 {
@@ -211,7 +212,7 @@ MainComponent::MainComponent()
             if (! juce::isPositiveAndBelow (sel, projModel.names.size()))
             {
                 disarmConfirm();
-                status.setText ("Elige un proyecto de la lista", juce::dontSendNotification);
+                status.setText (T ("Elige un proyecto de la lista"), juce::dontSendNotification);
                 return;
             }
 
@@ -310,6 +311,27 @@ MainComponent::MainComponent()
         chopSheet.onDismiss = [this] { closeAllSheets(); };
         chopSheet.paintContent = [this] (juce::Graphics& g) { paintChopSheetContent (g); };
 
+        //  Four chips, each written the way that language writes itself:
+        //  someone who cannot read the current one still recognises their own.
+        for (int i = 0; i < Lang::numLanguages; ++i)
+        {
+            //  fromUTF8, not the char* constructor: juce::String (const char*)
+            //  is documented as ASCII-only and turns 中文 into mojibake.
+            auto* b = new juce::TextButton (juce::String::fromUTF8 (Lang::nativeName ((Lang::Id) i)));
+            styleButton (*b, kStepOff);
+            b->setColour (juce::TextButton::buttonOnColourId, kAccent);
+            b->setClickingTogglesState (true);
+            b->setRadioGroupId (7411);
+            b->onClick = [this, i]
+            {
+                Lang::set ((Lang::Id) i);
+                Lang::savePreference();
+                retranslateUi();
+            };
+            projSheet.addAndMakeVisible (b);
+            langButtons.add (b);
+        }
+
         styleButton (measureButton, kKey);
         measureButton.onClick = [this] { startMeasure(); };
         projSheet.addAndMakeVisible (measureButton);
@@ -406,13 +428,13 @@ MainComponent::MainComponent()
         loadArmed = loadButton.getToggleState();
         // ASCII only: a raw UTF-8 dash in a literal renders as mojibake on the
         // Android build (different execution charset), so keep these plain.
-        status.setText (loadArmed ? "LOAD armado - toca un pad para cargarlo"
-                                  : "Toca un pad para sonar", juce::dontSendNotification);
+        status.setText (loadArmed ? T ("LOAD armado - toca un pad para cargarlo")
+                                  : T ("Toca un pad para sonar"), juce::dontSendNotification);
     };
     addAndMakeVisible (loadButton);
 
     styleButton (testButton, kKey);
-    testButton.onClick = [this] { engine.postTestTone(); status.setText ("Tono de prueba", juce::dontSendNotification); };
+    testButton.onClick = [this] { engine.postTestTone(); status.setText (T ("Tono de prueba"), juce::dontSendNotification); };
     projSheet.addAndMakeVisible (testButton);
 
     styleButton (recButton, kKey);
@@ -440,7 +462,7 @@ MainComponent::MainComponent()
     {
         const bool on = playButton.getToggleState();
         engine.setPlaying (on);
-        playButton.setButtonText (on ? "STOP" : "PLAY");
+        playButton.setButtonText (on ? T ("STOP") : T ("PLAY"));
     };
     addAndMakeVisible (playButton);
 
@@ -542,7 +564,7 @@ MainComponent::MainComponent()
         return (v < 0 ? "L" : "R") + juce::String ((int) std::round (std::abs (v) * 100.0));
     };
     panSlider.updateText();
-    chokeSlider.textFromValueFunction = [] (double v) { return v <= 0.0 ? juce::String ("off") : juce::String ((int) v); };
+    chokeSlider.textFromValueFunction = [] (double v) { return v <= 0.0 ? T ("off") : juce::String ((int) v); };
     chokeSlider.updateText();
 
     //  CINTA is what a sampler does by nature - pitch and length are the same
@@ -557,7 +579,7 @@ MainComponent::MainComponent()
         const bool keep = modeButton.getToggleState();
         padKeepLen[(size_t) selectedPad] = keep;
         engine.setPadKeepLength (selectedPad, keep);
-        modeButton.setButtonText (keep ? "TONO" : "CINTA");
+        modeButton.setButtonText (keep ? T ("TONO") : T ("CINTA"));
     };
     padSheet.addAndMakeVisible (modeButton);
 
@@ -654,7 +676,7 @@ MainComponent::MainComponent()
     lengthSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     lengthSlider.setColour (juce::Slider::trackColourId, ZatiColours::accent);
     lengthSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 72, 22);
-    lengthSlider.textFromValueFunction = [] (double v) { return juce::String ((int) v) + " pasos"; };
+    lengthSlider.textFromValueFunction = [] (double v) { return T ("%1 pasos", juce::String ((int) v)); };
     lengthSlider.updateText();
     lengthSlider.onValueChange = [this]
     {
@@ -937,8 +959,8 @@ MainComponent::MainComponent()
     songModeBtn.onClick = [this]
     {
         engine.setSongMode (songModeBtn.getToggleState());
-        status.setText (songModeBtn.getToggleState() ? "PLAY toca la cancion"
-                                                     : "PLAY toca el patron / la cadena",
+        status.setText (songModeBtn.getToggleState() ? T ("PLAY toca la cancion")
+                                                     : T ("PLAY toca el patron / la cadena"),
                         juce::dontSendNotification);
     };
     songSheet.addAndMakeVisible (songModeBtn);
@@ -1083,7 +1105,7 @@ MainComponent::MainComponent()
 
     status.setJustificationType (juce::Justification::centred);
     status.setColour (juce::Label::textColourId, ZatiColours::inkDim);
-    status.setText ("Toca un pad para sonar", juce::dontSendNotification);
+    status.setText (T ("Toca un pad para sonar"), juce::dontSendNotification);
     addAndMakeVisible (status);
 
     // Every parameter reaches the engine once, so the DSP and the knobs agree
@@ -1131,6 +1153,11 @@ MainComponent::MainComponent()
         if (auto* m = mixMutes[i])  { m->setTitle ("Silencio" + ch); }
         if (auto* s = mixSolos[i])  { s->setTitle ("Solo"    + ch); }
     }
+
+    //  Captions last: every button above was built with whatever text its
+    //  declaration carried, and this is what makes them say it in the user's
+    //  language. Lang itself was loaded before the window existed (Main.cpp).
+    retranslateUi();
 
     startTimer (60);
     setSize (500, 1080);
@@ -1549,7 +1576,7 @@ void MainComponent::paint (juce::Graphics& g)
     }
 
     if (! fxRowArea.isEmpty())
-        engrave ("EFECTOS", (float) fxRowArea.getY() - 6.0f);
+        engrave (T ("EFECTOS"), (float) fxRowArea.getY() - 6.0f);
 
     // 3. Recessed LCD bezel around the scope, with the screws that hold the
     //    window down. This is the one object on the face that should read as
@@ -1713,7 +1740,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
     //  Ellipsised rather than squeezed: a name long enough to need shrinking
     //  is long enough that shrinking will not save it, and a sentence cut off
     //  mid-letter reads as a bug where "..." reads as a long name.
-    g.drawText ("PAD " + juce::String (sp + 1)
+    g.drawText (T ("PAD %1", juce::String (sp + 1))
                 + (padName[(size_t) sp].isNotEmpty() ? "  " + dot + "  " + padName[(size_t) sp].toUpperCase() : juce::String()),
                 padTitleRow, juce::Justification::centredLeft, true);
 
@@ -1730,11 +1757,12 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
 
             g.setColour (ZatiColours::ink.withAlpha (0.55f));
             g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.22f));
-            g.drawText (secNames[i], r, juce::Justification::bottomLeft);
+            const auto secText = T (secNames[i]);
+            g.drawText (secText, r, juce::Justification::bottomLeft);
 
             const float tw = juce::GlyphArrangement::getStringWidth (
                                  ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.22f),
-                                 secNames[i]);
+                                 secText);
             const float ly = (float) r.getBottom() - 5.0f;
             g.setColour (ZatiColours::ink.withAlpha (0.18f));
             g.fillRect ((float) r.getX() + tw + 8.0f, ly,
@@ -1746,14 +1774,14 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
         auto name = [&g] (juce::Slider& s, const char* t)
         {
             auto r = s.getBounds();
-            g.drawText (t, r.getX() - 6, r.getY() - 14, r.getWidth() + 12, 12, juce::Justification::centred);
+            g.drawText (T (t), r.getX() - 6, r.getY() - 14, r.getWidth() + 12, 12, juce::Justification::centred);
         };
         name (pitchSlider, "PITCH"); name (fineSlider, "FINO"); name (volSlider, "VOLUME");
         name (panSlider, "PAN");
         name (attackSlider, "ATTACK"); name (releaseSlider, "RELEASE");
         name (chokeSlider, "CHOKE");
 
-        g.drawText ("MODO", modeButton.getX() - 6, modeButton.getY() - 14,
+        g.drawText (T ("MODO"), modeButton.getX() - 6, modeButton.getY() - 14,
                     modeButton.getWidth() + 12, 12, juce::Justification::centred);
 
         // Start/End stay linear (a trim range, not a knob): label to the left.
@@ -1761,7 +1789,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
         auto lab = [&g] (juce::Slider& s, const char* t)
         {
             auto r = s.getBounds();
-            g.drawText (t, r.getX() - 66, r.getY(), 60, r.getHeight(), juce::Justification::centredLeft);
+            g.drawText (T (t), r.getX() - 66, r.getY(), 60, r.getHeight(), juce::Justification::centredLeft);
         };
         lab (startSlider, "START"); lab (endSlider, "END");
 
@@ -1776,7 +1804,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
             const bool darkFrag = Zati::colour (z).getPerceivedBrightness() < 0.55f;
             g.setColour (darkFrag ? ZatiColours::inkLight : ZatiColours::ink);
             g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
-            g.drawText ("ZATI " + juce::String (z + 1) + "  " + Zati::name (z),
+            g.drawText ("ZATI " + juce::String (z + 1) + "  " + T (Zati::name (z)),
                         zatiSwatchArea, juce::Justification::centred);
         }
 
@@ -1796,7 +1824,7 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
-    const juce::String t = "PASOS  " + dot + "  PAD " + juce::String (sp + 1)
+    const juce::String t = T ("PASOS") + "  " + dot + "  " + T ("PAD %1", juce::String (sp + 1))
                          + (padName[(size_t) sp].isNotEmpty() ? "   " + padName[(size_t) sp] : juce::String())
                          + "   " + dot + "   P" + juce::String (selectedPattern + 1);
     g.drawText (t, inner.removeFromTop (16), juce::Justification::centredLeft);
@@ -1807,14 +1835,14 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     //  switches you have to decode.
     juce::String chainStr;
     if (engine.getChainLength() <= 0)
-        chainStr = "sin cadena " + dot + " repite P" + juce::String (selectedPattern + 1);
+        chainStr = T ("sin cadena - repite P%1", juce::String (selectedPattern + 1));
     else
     {
-        chainStr = "cadena: ";
+        chainStr = T ("cadena: ");
         for (int i = 0; i < engine.getChainLength(); ++i)
             chainStr += "P" + juce::String (engine.getChainSlot (i) + 1) + (i + 1 < engine.getChainLength() ? " " : "");
         if (engine.isPlaying())
-            chainStr += "   " + dot + "  suena P" + juce::String (engine.getPlayingPattern() + 1);
+            chainStr += "   " + dot + "  " + T ("suena P%1", juce::String (engine.getPlayingPattern() + 1));
     }
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
@@ -1827,7 +1855,7 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
         g.setColour (ZatiColours::inkDim);
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.20f));
 
-        auto over = [&g] (const juce::Component* c, const char* t)
+        auto over = [&g] (const juce::Component* c, const juce::String& t)
         {
             if (c == nullptr) return;
             const auto r = c->getBounds();
@@ -1835,13 +1863,13 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
                         juce::Justification::centredLeft);
         };
 
-        over (&patternSlider,      "PATRON");
-        over (&lengthSlider,       "LARGO");
-        over (patternButtons[0],   "CADENA");
-        over (&noteSlider,         "NOTA DEL PASO");
-        over (&bpmSlider,          "TEMPO");
+        over (&patternSlider,      T ("PATRON"));
+        over (&lengthSlider,       T ("LARGO"));
+        over (patternButtons[0],   T ("CADENA"));
+        over (&noteSlider,         T ("NOTA DEL PASO"));
+        over (&bpmSlider,          T ("TEMPO"));
         if (barButtons[0] != nullptr && barButtons[0]->isVisible())
-            over (barButtons[0],   "COMPAS");
+            over (barButtons[0],   T ("COMPAS"));
     }
 
     // The grid paints its own playhead and lane colours (see StepGrid).
@@ -2167,7 +2195,7 @@ void MainComponent::resized()
         const int listRowH = juce::jmax (22, projList.getRowHeight());
         const int listH    = juce::jlimit (1, 8, projModel.names.size()) * listRowH;
         const int wanted   = Metrics::md * 2 + 32 + 142 + Metrics::xs
-                               + (Metrics::hit + Metrics::xs) * 2 + Metrics::xs
+                               + (Metrics::hit + Metrics::xs) * 3 + Metrics::xs
                                + Metrics::btn * 2 + Metrics::xs + 8
                                + listH + Metrics::sm;
 
@@ -2200,6 +2228,7 @@ void MainComponent::resized()
         //  than "BUFER" needs the air around it.
         bufRowArea  = chipRow (bufButtons, 44);
         rateRowArea = chipRow (rateButtons, 44);
+        langRowArea = chipRow (langButtons, 44);
         inner.removeFromTop (Metrics::xs);
 
         // EXPORTAR sits on its own row: it is the only action here that
@@ -2481,7 +2510,7 @@ void MainComponent::padClicked (int index)
     if (padHasSample[(size_t) index])
         engine.postNoteOn (index, pads[index] != nullptr ? pads[index]->getLastVelocity() : 1.0f);
     else
-        status.setText ("Pad vacio - pulsa LOAD y toca el pad para cargarlo", juce::dontSendNotification);
+        status.setText (T ("Pad vacio - pulsa LOAD y toca el pad para cargarlo"), juce::dontSendNotification);
 
     // REC armed + transport rolling: write the hit into the bank that is
     // actually sounding, quantised to the NEAREST step - and compensated for
@@ -2512,9 +2541,9 @@ void MainComponent::padClicked (int index)
             const int    step = (int) (((juce::roundToInt (at) % len) + len) % len);
             pattern[(size_t) bank][(size_t) step][(size_t) index] = true;
             engine.setStep (bank, step, index, true);
-            status.setText ("Grabado pad " + juce::String (index + 1)
-                                + " en paso " + juce::String (step + 1)
-                                + " (P" + juce::String (bank + 1) + ")",
+            status.setText (T ("Grabado pad %1 en paso %2 (P%3)",
+                               juce::String (index + 1), juce::String (step + 1),
+                               juce::String (bank + 1)),
                             juce::dontSendNotification);
             if (seqSheet.isVisible()) seqSheet.repaint();
         }
@@ -2685,7 +2714,7 @@ void MainComponent::updateControlsFromPad (int index)
     pitchSlider.setValue (padPitch[(size_t) index], juce::dontSendNotification);
     fineSlider.setValue  (padCents[(size_t) index], juce::dontSendNotification);
     modeButton.setToggleState (padKeepLen[(size_t) index], juce::dontSendNotification);
-    modeButton.setButtonText (padKeepLen[(size_t) index] ? "TONO" : "CINTA");
+    modeButton.setButtonText (padKeepLen[(size_t) index] ? T ("TONO") : T ("CINTA"));
     volSlider.setValue   (padGain[(size_t) index],  juce::dontSendNotification);
     startSlider.setValue (padStart01[(size_t) index], juce::dontSendNotification);
     endSlider.setValue   (padEnd01[(size_t) index],   juce::dontSendNotification);
@@ -2751,8 +2780,8 @@ void MainComponent::shiftZati (int delta)
     repaint();
     padSheet.repaint();
 
-    status.setText ("Pad " + juce::String (selectedPad + 1) + " -> zati "
-                        + juce::String (z + 1) + " " + Zati::name (z),
+    status.setText (T ("Pad %1 -> zati %2 %3", juce::String (selectedPad + 1),
+                       juce::String (z + 1), T (Zati::name (z))),
                     juce::dontSendNotification);
 }
 
@@ -2760,6 +2789,88 @@ void MainComponent::shiftZati (int delta)
 //  pad that held your break holds its first slice instead. That is a lot to do
 //  with no way back, so the whole machine is snapshotted first and DESHACER in
 //  the status bar puts it back.
+// ============================================================================
+//  Every caption on the machine, in one place.
+//
+//  A button's text is set here and not where the button is declared, because a
+//  declaration runs once and a language can change at any moment. Anything
+//  that depends on state - PLAY vs STOP, CINTA vs TONO - is re-derived from
+//  that state rather than assumed, so switching language mid-take does not
+//  quietly claim the transport is stopped when it is running.
+// ============================================================================
+void MainComponent::retranslateUi()
+{
+    padsButton  .setButtonText (T ("PADS"));
+    secButton   .setButtonText (T ("SEC"));
+    songButton  .setButtonText (T ("SONG"));
+    mixButton   .setButtonText (T ("MIX"));
+    setButton   .setButtonText (T ("SET"));
+
+    loadButton  .setButtonText (T ("LOAD"));
+    testButton  .setButtonText (T ("TEST"));
+    measureButton.setButtonText (T ("MEDIR"));
+    recButton   .setButtonText (recArmed ? T ("REC ON") : T ("REC"));
+    playButton  .setButtonText (engine.isPlaying() ? T ("STOP") : T ("PLAY"));
+    clearButton .setButtonText (T ("VACIAR"));
+    undoButton  .setButtonText (T ("DESHACER"));
+    redoButton  .setButtonText (T ("REHACER"));
+
+    reverseButton.setButtonText (T ("REV|reverso"));
+    loopButton   .setButtonText (T ("LOOP"));
+    autocutButton.setButtonText (T ("AUTOCUT"));
+    chopButton   .setButtonText (T ("AUTO CHOP"));
+    micButton    .setButtonText (recordingActive ? T ("PARAR") : T ("GRABAR MIC"));
+    previewButton.setButtonText (juce::String::fromUTF8 (previewSounding ? "\xe2\x96\xa0 " : "\xe2\x96\xb6 ")
+                                   + T (previewSounding ? "STOP" : "OIR"));
+    modeButton   .setButtonText (selectedPad >= 0 && padKeepLen[(size_t) selectedPad]
+                                   ? T ("TONO") : T ("CINTA"));
+
+    chainClearButton.setButtonText (T ("QUITAR CADENA"));
+
+    projSaveButton  .setButtonText (T ("GUARDAR"));
+    projLoadButton  .setButtonText (T ("ABRIR"));
+    projNewButton   .setButtonText (T ("NUEVO"));
+    projDeleteButton.setButtonText (T ("BORRAR"));
+    projExportButton.setButtonText (T ("EXPORTAR"));
+
+    browseLoadButton  .setButtonText (T ("CARGAR"));
+    browseSystemButton.setButtonText (T ("SISTEMA"));
+
+    exportMasterButton.setButtonText (T ("MASTER"));
+    exportStemsButton .setButtonText (T ("PISTAS"));
+    exportCancelButton.setButtonText (T ("CANCELAR"));
+
+    rackButton   .setButtonText (T ("RACK"));
+    mixClearSolo .setButtonText (T ("SIN SOLO"));
+    songClearBtn .setButtonText (T ("VACIAR"));
+    songModeBtn  .setButtonText (T ("CANCION"));
+
+    chopSafeButton.setButtonText (T ("RESPETAR PADS CON SONIDO"));
+
+    //  A slider that formats its own readout has to be told to run the
+    //  formatter again; the text it is showing was made in the old language.
+    for (auto* sl : { &lengthSlider, &chokeSlider })
+        sl->updateText();
+    refreshChopSheet();          // its verb carries the piece count
+    refreshSong();               // the brush chip names itself
+
+    //  An armed confirmation holds the old caption to put back, and that
+    //  caption is now in the wrong language. Simplest correct answer: the
+    //  confirmation does not survive the change.
+    disarmConfirm();
+
+    //  The idle line is part of the furniture, not a message someone is
+    //  waiting to read: it says the same thing in the new language.
+    status.setText (T ("Toca un pad para sonar"), juce::dontSendNotification);
+
+    for (int i = 0; i < langButtons.size(); ++i)
+        if (auto* b = langButtons[i])
+            b->setToggleState (i == (int) Lang::current(), juce::dontSendNotification);
+
+    resized();
+    repaint();
+}
+
 bool MainComponent::armConfirm (juce::TextButton& b, const juce::String& armedText)
 {
     if (confirmPending == &b)          // second tap: go ahead
@@ -2814,7 +2925,7 @@ void MainComponent::performUndo()
     undoButton.setVisible (false);
     redoButton.setVisible (true);
     applyState (restore);
-    status.setText ("Deshecho: " + undoLabel, juce::dontSendNotification);
+    status.setText (T ("Deshecho: %1", undoLabel), juce::dontSendNotification);
     resized();
 }
 
@@ -2827,7 +2938,7 @@ void MainComponent::performRedo()
     redoButton.setVisible (false);
     undoButton.setVisible (true);
     applyState (restore);
-    status.setText ("Rehecho: " + undoLabel, juce::dontSendNotification);
+    status.setText (T ("Rehecho: %1", undoLabel), juce::dontSendNotification);
     resized();
 }
 
@@ -2887,7 +2998,7 @@ void MainComponent::refreshChopSheet()
     const bool can = selectedPad >= 0 && uiSample[(size_t) selectedPad] != nullptr && fits >= 2;
 
     chopGoButton.setEnabled (can);
-    chopGoButton.setButtonText (can ? "CORTAR EN " + juce::String (fits) : "CORTAR");
+    chopGoButton.setButtonText (can ? T ("CORTAR EN %1", juce::String (fits)) : T ("CORTAR"));
     chopSheet.repaint();
 }
 
@@ -2947,9 +3058,9 @@ void MainComponent::applyAutoChop()
     selectPad (targets[0]);
 
     status.setText (n < askedFor
-                        ? "Cortado en " + juce::String (n) + " (no cabian " + juce::String (askedFor)
-                            + ") - DESHACER para volver"
-                        : "Cortado en " + juce::String (n) + " trozos - DESHACER para volver",
+                        ? T ("Cortado en %1 (no cabian %2) - DESHACER para volver",
+                             juce::String (n), juce::String (askedFor))
+                        : T ("Cortado en %1 trozos - DESHACER para volver", juce::String (n)),
                     juce::dontSendNotification);
 }
 
@@ -2975,7 +3086,7 @@ void MainComponent::ensureStoragePermission (std::function<void()> then)
     RP::request (RP::readMediaAudio, [this, then] (bool granted)
     {
         if (! granted)
-            status.setText ("Sin permiso de audio: no puedo leer tus carpetas de muestras",
+            status.setText (T ("Sin permiso de audio: no puedo leer tus carpetas de muestras"),
                             juce::dontSendNotification);
         if (then) then();
     });
@@ -3050,7 +3161,7 @@ void MainComponent::selectionChanged()
     const int slot = browseTargetPad;
     loader.loadAsync (juce::URL (f), slot, [this, slot, f] (bool ok, juce::String detail, SampleBuffer::Ptr sb)
     {
-        if (! ok || sb == nullptr) { status.setText ("No se pudo leer: " + detail, juce::dontSendNotification); return; }
+        if (! ok || sb == nullptr) { status.setText (T ("No se pudo leer: %1", detail), juce::dontSendNotification); return; }
         assignSampleToPad (slot, sb, f.getFileName());
         engine.postNoteOn (slot);
         status.setText (f.getFileName(), juce::dontSendNotification);
@@ -3380,8 +3491,8 @@ void MainComponent::saveProject (const juce::String& rawName)
     refreshProjectList();
 
     status.setText (ok && failed == 0
-                        ? "Guardado \"" + name + "\"  [" + juce::String (written) + " pads]"
-                        : "Guardado con fallos: " + juce::String (failed) + " pads no se escribieron",
+                        ? T ("Guardado \"%1\"  [%2 pads]", name, juce::String (written))
+                        : T ("Guardado con fallos: %1 pads no se escribieron", juce::String (failed)),
                     juce::dontSendNotification);
     projSheet.repaint();
 }
@@ -3392,21 +3503,21 @@ void MainComponent::loadProject (const juce::String& name)
     const auto xmlFile = folder.getChildFile ("project.xml");
     if (! xmlFile.existsAsFile())
     {
-        status.setText ("No encuentro el proyecto \"" + name + "\"", juce::dontSendNotification);
+        status.setText (T ("No encuentro el proyecto \"%1\"", name), juce::dontSendNotification);
         return;
     }
 
     auto xml = juce::parseXML (xmlFile);
     if (xml == nullptr)
     {
-        status.setText ("Proyecto ilegible: " + name, juce::dontSendNotification);
+        status.setText (T ("Proyecto ilegible: %1", name), juce::dontSendNotification);
         return;
     }
 
     // Stop first: loading rewrites every pattern bank and pad under the
     // sequencer's feet otherwise.
     playButton.setToggleState (false, juce::dontSendNotification);
-    playButton.setButtonText ("PLAY");
+    playButton.setButtonText (T ("PLAY"));
     engine.setPlaying (false);
 
     int restored = 0, missing = 0;
@@ -3437,8 +3548,10 @@ void MainComponent::loadProject (const juce::String& name)
 
     currentProject = name;
     closeAllSheets();
-    status.setText ("Abierto \"" + name + "\"  [" + juce::String (restored) + " pads"
-                        + (missing > 0 ? ", " + juce::String (missing) + " sin audio]" : "]"),
+    status.setText (missing > 0
+                        ? T ("Abierto \"%1\"  [%2 pads, %3 sin audio]", name,
+                             juce::String (restored), juce::String (missing))
+                        : T ("Abierto \"%1\"  [%2 pads]", name, juce::String (restored)),
                     juce::dontSendNotification);
 }
 
@@ -3448,14 +3561,14 @@ void MainComponent::deleteProject (const juce::String& name)
     if (currentProject == name)
         currentProject = {};
     refreshProjectList();
-    status.setText ("Borrado \"" + name + "\"", juce::dontSendNotification);
+    status.setText (T ("Borrado \"%1\"", name), juce::dontSendNotification);
     projSheet.repaint();
 }
 
 void MainComponent::newProject()
 {
     playButton.setToggleState (false, juce::dontSendNotification);
-    playButton.setButtonText ("PLAY");
+    playButton.setButtonText (T ("PLAY"));
     engine.setPlaying (false);
 
     for (int i = 0; i < kNumPads; ++i)
@@ -3486,7 +3599,7 @@ void MainComponent::newProject()
 
     selectPad (0);
     closeAllSheets();
-    status.setText ("Proyecto nuevo", juce::dontSendNotification);
+    status.setText (T ("Proyecto nuevo"), juce::dontSendNotification);
 }
 
 void MainComponent::refreshProjectList()
@@ -3521,7 +3634,8 @@ void MainComponent::refreshSong()
     songPadModeBtn.setToggleState (songBrush < 0, juce::dontSendNotification);
     songClearBtn.setToggleState   (songBrush == 0, juce::dontSendNotification);
     songPadModeBtn.setButtonText (songBrush < 0
-        ? "SONIDO " + juce::String (-songBrush).paddedLeft ('0', 2) : juce::String ("SONIDO"));
+        ? T ("SONIDO|cancion") + " " + juce::String (-songBrush).paddedLeft ('0', 2)
+        : T ("SONIDO|cancion"));
 
     songGrid.setSource (songCells, gridZati, bars, songPage,
                         engine.isSongMode() && engine.isPlaying() ? engine.getSongBar() : -1);
@@ -3533,7 +3647,7 @@ void MainComponent::paintSongSheetContent (juce::Graphics& g)
     if (songSheet.sheetBounds.isEmpty()) return;
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
-    g.drawText ("SONG", songSheet.sheetBounds.reduced (14, 10).removeFromTop (16), juce::Justification::centredLeft);
+    g.drawText (T ("SONG"), songSheet.sheetBounds.reduced (14, 10).removeFromTop (16), juce::Justification::centredLeft);
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
@@ -3635,21 +3749,21 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
     titleRow.setRight (juce::jmin (titleRow.getRight(), chopCloseButton.getX() - Metrics::xs));
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
-    g.drawText ("AUTO CHOP  " + dot + "  PAD " + juce::String (sp + 1)
+    g.drawText (T ("AUTO CHOP") + "  " + dot + "  " + T ("PAD %1", juce::String (sp + 1))
                 + (padName[(size_t) sp].isNotEmpty() ? "  " + dot + "  " + padName[(size_t) sp].toUpperCase()
                                                      : juce::String()),
                 titleRow, juce::Justification::centredLeft, true);
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.06f));
-    g.drawFittedText ("Parte este sample en trozos iguales y los reparte por los pads. "
-                      "El pad de origen se queda con el primero.",
+    g.drawFittedText (T ("Parte este sample en trozos iguales y los reparte por los pads. "
+                         "El pad de origen se queda con el primero."),
                       inner.removeFromTop (40), juce::Justification::topLeft, 3, 1.0f);
 
     inner.removeFromTop (Metrics::md);
     g.setColour (ZatiColours::ink.withAlpha (0.75f));
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.16f));
-    g.drawText ("TROZOS", inner.removeFromTop (14), juce::Justification::centredLeft);
+    g.drawText (T ("TROZOS"), inner.removeFromTop (14), juce::Justification::centredLeft);
 
     inner.removeFromTop (Metrics::hit + Metrics::sm + Metrics::hit + Metrics::md);
 
@@ -3662,7 +3776,7 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
     {
         g.setColour (ZatiColours::red);
         g.setFont (ZatiColours::monoFont (Metrics::fLabel, true));
-        g.drawFittedText ("Este pad no tiene sonido que cortar.",
+        g.drawFittedText (T ("Este pad no tiene sonido que cortar."),
                           planned, juce::Justification::topLeft, 1, 0.8f);
         return;
     }
@@ -3677,7 +3791,7 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
 
     g.setColour (ZatiColours::ink.withAlpha (0.85f));
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.06f));
-    g.drawFittedText ("va a pads: " + nums.joinIntoString (" "),
+    g.drawFittedText (T ("va a pads: %1", nums.joinIntoString (" ")),
                       planned.removeFromTop (22), juce::Justification::topLeft, 2, 0.8f);
 
     juce::String warn;
@@ -3703,13 +3817,13 @@ void MainComponent::paintRackSheetContent (juce::Graphics& g)
     const juce::String nm  = padName[(size_t) rackPad];
     auto titleRow = inner.removeFromTop (16);
     titleRow.setRight (juce::jmin (titleRow.getRight(), rackCloseButton.getX() - Metrics::xs));
-    g.drawText ("RACK  " + dot + "  PAD " + juce::String (rackPad + 1)
+    g.drawText (T ("RACK") + "  " + dot + "  " + T ("PAD %1", juce::String (rackPad + 1))
                 + (nm.isNotEmpty() ? "  " + dot + "  " + nm.toUpperCase() : juce::String()),
                 titleRow, juce::Justification::centredLeft, true);
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
-    g.drawFittedText ("cuanto de este pad entra en cada efecto",
+    g.drawFittedText (T ("cuanto de este pad entra en cada efecto"),
                       inner.removeFromTop (14), juce::Justification::centredLeft, 1, 0.75f);
 
     for (int f = 0; f < kNumFx; ++f)
@@ -3736,7 +3850,7 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
     auto inner = projSheet.sheetBounds.reduced (12, 6);
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
-    g.drawText ("PROYECTOS", inner.removeFromTop (16), juce::Justification::centredLeft);
+    g.drawText (T ("PROYECTOS"), inner.removeFromTop (16), juce::Justification::centredLeft);
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
@@ -3746,10 +3860,10 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
     auto subRow = inner.removeFromTop (14);
     subRow.setRight (juce::jmin (subRow.getRight(), measureButton.getX() - Metrics::xs));
     g.drawFittedText (currentProject.isNotEmpty()
-                          ? "abierto: " + currentProject
-                          : juce::String (projModel.names.isEmpty()
-                                              ? "sin proyectos - GUARDAR crea el primero"
-                                              : "elige uno de la lista"),
+                          ? T ("abierto: %1", currentProject)
+                          : (projModel.names.isEmpty()
+                                 ? T ("sin proyectos - GUARDAR crea el primero")
+                                 : T ("elige uno de la lista")),
                       subRow, juce::Justification::centredLeft, 1, 0.8f);
 
     paintAudioInfo (g, audioInfoArea);
@@ -3760,9 +3874,10 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.12f));
     if (! bufRowArea.isEmpty())
-        g.drawText ("BUFER", bufRowArea.withWidth (52), juce::Justification::centredLeft);
+        g.drawText (T ("BUFER"), bufRowArea.withWidth (52), juce::Justification::centredLeft);
     if (! rateRowArea.isEmpty())
-        g.drawText ("RELOJ", rateRowArea.withWidth (52), juce::Justification::centredLeft);
+        g.drawText (T ("RELOJ"), rateRowArea.withWidth (52), juce::Justification::centredLeft);
+        g.drawText (T ("IDIOMA"), langRowArea.withWidth (52), juce::Justification::centredLeft);
 }
 
 // ---------------------------------------------------------------------------
@@ -3840,7 +3955,7 @@ void MainComponent::paintExportSheetContent (juce::Graphics& g)
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
-    g.drawText ("EXPORTAR", inner.removeFromTop (18), juce::Justification::centredLeft);
+    g.drawText (T ("EXPORTAR"), inner.removeFromTop (18), juce::Justification::centredLeft);
     inner.removeFromTop (10);
 
     // What is going to be rendered, and how long it will be. Stated before
@@ -3884,23 +3999,23 @@ void MainComponent::paintExportSheetContent (juce::Graphics& g)
 
         g.setColour (ZatiColours::inkDim);
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
-        g.drawText ("escribiendo " + juce::String (exportJob->passDone.load (std::memory_order_relaxed) + 1)
-                        + "/" + juce::String (exportJob->passTotal.load (std::memory_order_relaxed)),
+        g.drawText (T ("escribiendo %1", juce::String (exportJob->passDone.load (std::memory_order_relaxed) + 1)
+                                       + "/" + juce::String (exportJob->passTotal.load (std::memory_order_relaxed))),
                     inner.removeFromTop (16), juce::Justification::centredLeft);
     }
     else if (exportStatus.isNotEmpty())
     {
         g.setColour (exportOk ? ZatiColours::accent : ZatiColours::red);
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
-        g.drawFittedText ((exportOk ? "listo: " : "") + exportStatus,
+        g.drawFittedText (exportOk ? T ("listo: %1", exportStatus) : exportStatus,
                           inner.removeFromTop (24), juce::Justification::topLeft, 2);
     }
     else
     {
         g.setColour (ZatiColours::inkDim.withAlpha (0.75f));
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, false));
-        g.drawFittedText ("MASTER = un WAV con lo que oyes.  PISTAS = el master mas un WAV "
-                          "por pad, para mezclar fuera.",
+        g.drawFittedText (T ("MASTER = un WAV con lo que oyes.  PISTAS = el master mas un WAV "
+                             "por pad, para mezclar fuera."),
                           inner.removeFromTop (26), juce::Justification::topLeft, 2);
     }
 }
@@ -3919,13 +4034,13 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
 
     g.setColour (ZatiColours::lcdDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.20f));
-    g.drawText ("AUDIO", inner.removeFromTop (12), juce::Justification::centredLeft);
+    g.drawText (T ("AUDIO"), inner.removeFromTop (12), juce::Justification::centredLeft);
 
     if (dev == nullptr)
     {
         g.setColour (ZatiColours::red);
         g.setFont (ZatiColours::monoFont (Metrics::fValue, true));
-        g.drawText ("sin dispositivo de audio", inner, juce::Justification::centredLeft);
+        g.drawText (T ("sin dispositivo de audio"), inner, juce::Justification::centredLeft);
         return;
     }
 
@@ -4248,7 +4363,7 @@ void MainComponent::applyAudioSetup (int bufferSize, double rate)
 
     if (err.isNotEmpty())
     {
-        status.setText ("audio: " + err, juce::dontSendNotification);
+        status.setText (T ("AUDIO") + ": " + err, juce::dontSendNotification);
         deviceLine.clear();          // a real message: the timer must not touch it
     }
     else
@@ -4314,17 +4429,17 @@ void MainComponent::launchSystemPicker()
 
             closeAllSheets();
             const juce::String fileName = url.getFileName();
-            status.setText ("Cargando pad " + juce::String (index + 1) + " ...", juce::dontSendNotification);
+            status.setText (T ("Cargando pad %1...", juce::String (index + 1)), juce::dontSendNotification);
             loader.loadAsync (url, index, [this, index, fileName] (bool ok, juce::String detail, SampleBuffer::Ptr sb)
             {
                 if (ok)
                 {
                     assignSampleToPad (index, sb, fileName);
-                    status.setText ("Pad " + juce::String (index + 1) + " cargado  [" + detail + "]", juce::dontSendNotification);
+                    status.setText (T ("Pad %1 cargado  [%2]", juce::String (index + 1), detail), juce::dontSendNotification);
                 }
                 else
                 {
-                    status.setText ("Fallo al cargar: " + detail, juce::dontSendNotification);
+                    status.setText (T ("Fallo al cargar: %1", detail), juce::dontSendNotification);
                 }
             });
         });
@@ -4344,17 +4459,17 @@ void MainComponent::loadBrowserSelection()
     const juce::String fileName = f.getFileName();
     closeAllSheets();
 
-    status.setText ("Cargando pad " + juce::String (index + 1) + " ...", juce::dontSendNotification);
+    status.setText (T ("Cargando pad %1...", juce::String (index + 1)), juce::dontSendNotification);
     loader.loadAsync (juce::URL (f), index, [this, index, fileName] (bool ok, juce::String detail, SampleBuffer::Ptr sb)
     {
         if (ok)
         {
             assignSampleToPad (index, sb, fileName);
-            status.setText ("Pad " + juce::String (index + 1) + " cargado  [" + detail + "]", juce::dontSendNotification);
+            status.setText (T ("Pad %1 cargado  [%2]", juce::String (index + 1), detail), juce::dontSendNotification);
         }
         else
         {
-            status.setText ("Fallo al cargar: " + detail, juce::dontSendNotification);
+            status.setText (T ("Fallo al cargar: %1", detail), juce::dontSendNotification);
         }
     });
 }
@@ -4367,7 +4482,7 @@ void MainComponent::paintBrowseSheetContent (juce::Graphics& g)
     auto inner = browseSheet.sheetBounds.reduced (12, 6);
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.14f));
-    g.drawText ("CARGAR EN PAD " + juce::String (juce::jmax (0, browseTargetPad) + 1),
+    g.drawText (T ("CARGAR EN PAD %1", juce::String (juce::jmax (0, browseTargetPad) + 1)),
                 inner.removeFromTop (16), juce::Justification::centredLeft);
 
     const bool picked = browser != nullptr && browser->getNumSelectedFiles() > 0
@@ -4379,7 +4494,7 @@ void MainComponent::paintBrowseSheetContent (juce::Graphics& g)
     auto browseSubRow = inner.removeFromTop (14);
     browseSubRow.setRight (juce::jmin (browseSubRow.getRight(), browseCloseButton.getX() - Metrics::xs));
     g.drawText (picked ? browser->getSelectedFile (0).getFileName()
-                       : juce::String ("elige una muestra  -  wav / aiff / flac / ogg / mp3"),
+                       : T ("elige una muestra  -  wav / aiff / flac / ogg / mp3"),
                 browseSubRow, juce::Justification::centredLeft, true);
 }
 
@@ -4390,18 +4505,18 @@ void MainComponent::toggleRecordArm()
 {
     recArmed = ! recArmed;
     styleButton (recButton, recArmed ? kRec : kKey);
-    recButton.setButtonText (recArmed ? "REC ON" : "REC");
+    recButton.setButtonText (recArmed ? T ("REC ON") : T ("REC"));
 
     if (recArmed && ! engine.isPlaying())
     {
         // Arming with the transport stopped is a dead end — roll it.
         playButton.setToggleState (true, juce::dontSendNotification);
-        playButton.setButtonText ("STOP");
+        playButton.setButtonText (T ("STOP"));
         engine.setPlaying (true);
     }
 
-    status.setText (recArmed ? "REC: toca pads para grabarlos en el patron"
-                             : "REC apagado",
+    status.setText (recArmed ? T ("REC: toca pads para grabarlos en el patron")
+                             : T ("REC apagado"),
                     juce::dontSendNotification);
     repaint();
 }
@@ -4480,8 +4595,8 @@ void MainComponent::audioFocusLost (bool permanently)
     //  coming back to the foreground does.
     pausedByFocus = ! permanently;
 
-    status.setText (permanently ? "Audio cedido a otra app"
-                                : "En pausa: otra app tiene el audio",
+    status.setText (permanently ? T ("Audio cedido a otra app")
+                                : T ("En pausa: otra app tiene el audio"),
                     juce::dontSendNotification);
     deviceLine.clear();
 }
@@ -4569,9 +4684,9 @@ void MainComponent::restoreSession()
 
     if (restored > 0 || currentProject.isNotEmpty())
         status.setText (currentProject.isNotEmpty()
-                            ? "Sesion recuperada - " + currentProject
-                            : "Sesion recuperada  [" + juce::String (restored)
-                                + (restored == 1 ? " pad]" : " pads]"),
+                            ? T ("Sesion recuperada - %1", currentProject)
+                            : (restored == 1 ? T ("Sesion recuperada  [1 pad]")
+                                             : T ("Sesion recuperada  [%1 pads]", juce::String (restored))),
                         juce::dontSendNotification);
 }
 
@@ -4592,8 +4707,8 @@ void MainComponent::toggleMicSampling()
             engine.startRecording (slot);
             recordingActive = true;
             styleButton (micButton, kRec);
-            micButton.setButtonText ("PARAR");
-            status.setText ("Grabando pad " + juce::String (slot + 1) + " ...", juce::dontSendNotification);
+            micButton.setButtonText (T ("PARAR"));
+            status.setText (T ("Grabando pad %1  %2s", juce::String (slot + 1), "0.0"), juce::dontSendNotification);
         };
 
         if (! RP::isRequired (RP::recordAudio) || RP::isGranted (RP::recordAudio))
@@ -4605,7 +4720,7 @@ void MainComponent::toggleMicSampling()
             RP::request (RP::recordAudio, [this, begin] (bool granted)
             {
                 if (granted) begin();
-                else status.setText ("Sin permiso de microfono: no puedo grabar",
+                else status.setText (T ("Sin permiso de microfono: no puedo grabar"),
                                      juce::dontSendNotification);
             });
         }
@@ -4643,15 +4758,16 @@ void MainComponent::toggleMicSampling()
         setAudioChannels (0, 2);          // release the mic input, back to output-only
         useLowestLatency();               // ...and take the fast path back with it
         styleButton (micButton, kKey);
-        micButton.setButtonText ("GRABAR MIC");
+        micButton.setButtonText (T ("GRABAR MIC"));
         if (sb != nullptr)
         {
             assignSampleToPad (recordingSlot, sb, "REC " + juce::String (recordingSlot + 1));
-            status.setText ("Grabado en el pad " + juce::String (recordingSlot + 1), juce::dontSendNotification);
+            status.setText (T ("Grabado en el pad %1  [%2s]", juce::String (recordingSlot + 1),
+                               juce::String (engine.getRecordSeconds(), 1)), juce::dontSendNotification);
         }
         else
         {
-            status.setText ("No se grabo nada", juce::dontSendNotification);
+            status.setText (T ("No se grabo nada"), juce::dontSendNotification);
         }
     }
 }
@@ -4737,8 +4853,9 @@ void MainComponent::timerCallback()
         if (sounding != previewSounding)
         {
             previewSounding = sounding;
-            previewButton.setButtonText (sounding ? juce::CharPointer_UTF8 ("\xe2\x96\xa0 STOP")
-                                                  : juce::CharPointer_UTF8 ("\xe2\x96\xb6 OIR"));
+            previewButton.setButtonText (sounding
+                                             ? juce::String::fromUTF8 ("\xe2\x96\xa0 ") + T ("STOP")
+                                             : juce::String::fromUTF8 ("\xe2\x96\xb6 ") + T ("OIR"));
         }
     }
 
@@ -4766,7 +4883,7 @@ void MainComponent::timerCallback()
     }
 
     if (recordingActive)
-        status.setText ("Grabando pad " + juce::String (recordingSlot + 1)
-                        + "  " + juce::String (engine.getRecordSeconds(), 1) + "s",
+        status.setText (T ("Grabando pad %1  %2s", juce::String (recordingSlot + 1),
+                           juce::String (engine.getRecordSeconds(), 1)),
                         juce::dontSendNotification);
 }

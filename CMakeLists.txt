@@ -44,6 +44,7 @@ target_sources(Zati PRIVATE
     Source/AudioEngine.cpp
     Source/SampleLoader.cpp
     Source/AudioFocus.cpp
+    Source/Lang.cpp
     Source/SessionKeeper.cpp
 )
 

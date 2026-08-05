@@ -1,5 +1,7 @@
 #include <JuceHeader.h>
 #include "MainComponent.h"
+#include "Lang.h"
+#include "ProjectStore.h"
 
 //  Storage for the two Oboe dials declared in AudioPath.h. They live here so
 //  that the patched JUCE module finds them at link time on Android, and so
@@ -17,11 +19,17 @@ public:
     ArtifactsApplication() = default;
 
     const juce::String getApplicationName() override       { return "Zati"; }
-    const juce::String getApplicationVersion() override    { return "0.0.1"; }
+    const juce::String getApplicationVersion() override    { return "1.0.0"; }
     bool moreThanOneInstanceAllowed() override             { return true; }
 
     void initialise (const juce::String&) override
     {
+        //  Before the window: every caption the interface builds is read
+        //  through the table, and a component built in one language and then
+        //  retranslated flickers on the first frame.
+        ProjectStore::ensureTree();
+        Lang::loadPreference();
+
         mainWindow = std::make_unique<MainWindow> (getApplicationName());
     }
 

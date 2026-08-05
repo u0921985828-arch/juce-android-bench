@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include "SampleBuffer.h"
 #include "ZatiLookAndFeel.h"
+#include "Lang.h"
 
 // ============================================================================
 //  WaveformDisplay — the hero LCD screen: the selected pad's sample drawn as a
@@ -127,7 +128,7 @@ public:
         {
             g.setColour (lcdDim);
             g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.18f));
-            g.drawText ("TAP A PAD TO LOAD ITS WAVEFORM", getLocalBounds(), juce::Justification::centred);
+            g.drawText (T ("TAP A PAD TO LOAD ITS WAVEFORM"), getLocalBounds(), juce::Justification::centred);
             g.setColour (ZatiColours::knobEdge.withAlpha (0.25f));
             g.drawRoundedRectangle (b.reduced (1.0f), 2.0f, 1.2f);
             return;
@@ -295,7 +296,7 @@ public:
             auto bot = b.reduced (11.0f, 6.0f).removeFromBottom (12.0f);
             g.setColour (lcdDim);
             g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
-            g.drawText ("TRIM " + juce::String (start01, 2) + juce::String (juce::CharPointer_UTF8 (" \xe2\x86\x92 ")) + juce::String (end01, 2),
+            g.drawText (T ("TRIM") + " " + juce::String (start01, 2) + juce::String (juce::CharPointer_UTF8 (" \xe2\x86\x92 ")) + juce::String (end01, 2),
                         bot, juce::Justification::bottomLeft);
         }
 

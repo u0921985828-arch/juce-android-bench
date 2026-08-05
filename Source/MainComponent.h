@@ -253,6 +253,14 @@ private:
     juce::String      confirmOldText;
     int               confirmTicks = 0;
 
+    // --- Language ---------------------------------------------------------
+    //  Every static caption on the machine is set from one place, so changing
+    //  language is one call rather than forty. Called from the constructor
+    //  too, which is why no button's text is authoritative in its declaration.
+    void retranslateUi();
+    juce::OwnedArray<juce::TextButton> langButtons;
+    juce::Rectangle<int> langRowArea;
+
     void pushUndo (const juce::String& what);   // snapshot before a destructive action
     void performUndo();
     void performRedo();
