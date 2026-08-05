@@ -223,8 +223,29 @@ public:
     //  to the glass, the gap between the big sections, and the gap between
     //  pads. All of it comes out of the LCD, which absorbs whatever is left.
     static constexpr int kFaceMargin = 14;
-    static constexpr int kAir        = 12;
+    static constexpr int kAir        = 10;
     static constexpr int kPadGap     = 8;
+
+    //  ...plus extra room top and bottom, on top of the margin and of whatever
+    //  the system bars are already taking. The two horizontal edges are held
+    //  by the pad grid's width, so they need no help; the vertical ones are
+    //  where a phone feels crowded.
+    static constexpr int kEdgeV      = 10;
+
+    //  The height of every band on the face, in one place. The rule they
+    //  follow: what you WATCH and what you NAVIGATE with are as small as they
+    //  can be read at, and every pixel that saves goes to what you PLAY with -
+    //  the pads, the three knobs and the screen. A module bar as tall as a
+    //  transport key is a menu claiming to be an instrument.
+    static constexpr int kHeader    = 24;   // the wordmark strip
+    static constexpr int kStrip     = 14;   // VU and the step LEDs: read, never touched
+    static constexpr int kModule    = 26;   // PADS / SEC / SONG / MIX / SET - they open windows
+    static constexpr int kTransport = 36;   // LOAD / REC / PLAY - they act
+    static constexpr int kFxRow     = 34;   // the six effects
+    static constexpr int kStatus    = 12;   // the line at the foot
+    static constexpr int kCtrlPlate = 82;   // CTRL 1-3 and their readouts
+    static constexpr int kCtrlName  = 12;   // ...of which the name above
+    static constexpr int kCtrlChip  = 18;   // ...and the readout below. The rest is knob.
 
     ZatiLookAndFeel()
     {

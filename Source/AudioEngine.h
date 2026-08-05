@@ -51,7 +51,7 @@ public:
     ~AudioEngine();
 
     // --- Audio thread ---
-    void prepareToPlay (double sampleRate, int maxBlockSize) noexcept;
+    void prepareToPlay (double sampleRate, int maxBlockSize, int inputChannels = 0) noexcept;
     void releaseResources() noexcept;
     void renderNextBlock (juce::AudioBuffer<float>& out, int startSample, int numSamples) noexcept;
 
@@ -301,6 +301,14 @@ public:
     float finishLatencyProbe() const noexcept;
 
     // --- Recording (message thread) ---
+    //  How long a take can be, and how many channels it keeps. Sixty seconds
+    //  stereo at 48 kHz is 23 MB, which a phone that is already holding
+    //  sixteen samples will not notice, and it is the difference between
+    //  sampling a phrase and sampling a hit.
+    static constexpr double kRecordSeconds = 60.0;
+    float getRecordLimitSeconds() const noexcept { return (float) kRecordSeconds; }
+    int   getRecordChannels() const noexcept { return juce::jmax (1, recordBuffer.getNumChannels()); }
+
     void              startRecording (int slot) noexcept;
     SampleBuffer::Ptr finishRecording() noexcept;   // stop + build + publish; returns the buffer
     bool isRecording() const noexcept { return recording.load (std::memory_order_relaxed); }
@@ -435,7 +443,8 @@ private:
     // Recording.
     std::atomic<bool> recording { false };
     std::atomic<int>  recordPos { 0 };
-    juce::AudioBuffer<float> recordBuffer;   // mono, allocated in prepareToPlay
+    juce::AudioBuffer<float> recordBuffer;   // allocated in prepareToPlay, never in the callback
+    int recordChannels = 1;                  // how many of the input channels we keep
     int recordSlot = 0;
 
     // Master FX: filter + drive.

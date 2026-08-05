@@ -60,16 +60,38 @@ AudioEngine::~AudioEngine()
 //  Audio thread
 // ---------------------------------------------------------------------------
 
-void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize) noexcept
+void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize, int inputChannels) noexcept
 {
     systemSampleRate = (sampleRate > 0.0) ? sampleRate : 44100.0;
     maxBlock         = (maxBlockSize > 0) ? maxBlockSize : 512;
 
-    // ~20 s mono record buffer (allocated here, never in the callback).
-    // A bounce clone never records, so it does not pay for one.
+    //  The record buffer, allocated here and never in the callback. This is
+    //  the only moment it can safely change size: JUCE calls prepareToPlay
+    //  before the stream starts, so no callback is inside it.
+    //
+    //  It used to be twenty seconds of mono, which is a hit and not a phrase.
+    //  Now it is a minute, and it keeps both channels when the device actually
+    //  gives us two - most phones have one microphone and hand back one, and
+    //  the take is mono then, honestly rather than by duplication.
+    //
+    //  A bounce clone never records, so it does not pay for any of it.
     if (! offlineMode)
     {
-        recordBuffer.setSize (1, (int) (20.0 * systemSampleRate));
+        recordChannels = juce::jlimit (1, 2, inputChannels > 0 ? inputChannels : 1);
+
+        //  A minute of stereo float at 48 kHz is 23 MB. If the allocation
+        //  fails, fall back to something small rather than leaving the
+        //  microphone with nowhere to write.
+        try
+        {
+            recordBuffer.setSize (recordChannels, (int) (kRecordSeconds * systemSampleRate));
+        }
+        catch (const std::bad_alloc&)
+        {
+            recordChannels = 1;
+            recordBuffer.setSize (1, (int) (5.0 * systemSampleRate));
+        }
+
         recordBuffer.clear();
     }
 
@@ -228,7 +250,13 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         const int n = juce::jmin (numSamples, cap - rp);
         if (n > 0)
         {
-            recordBuffer.copyFrom (0, rp, out.getReadPointer (0, startSample), n);
+            //  However many channels the device is giving us, up to what the
+            //  buffer was sized for. On a phone with one microphone that is
+            //  one, and the take stays mono.
+            const int chans = juce::jmin (recordBuffer.getNumChannels(), out.getNumChannels());
+            for (int ch = 0; ch < chans; ++ch)
+                recordBuffer.copyFrom (ch, rp, out.getReadPointer (ch, startSample), n);
+
             rp += n;
             recordPos.store (rp, std::memory_order_relaxed);
         }
@@ -991,9 +1019,29 @@ SampleBuffer::Ptr AudioEngine::finishRecording() noexcept
     const int len = recordPos.load (std::memory_order_acquire);
     if (len > 4)
     {
+        //  Two channels that are bit-for-bit identical are one channel that
+        //  the device duplicated, which is what a single microphone routed
+        //  into a stereo stream looks like. Keeping both would double the
+        //  file, the project and the memory to say the same thing twice.
+        int chans = juce::jmax (1, recordBuffer.getNumChannels());
+
+        if (chans == 2)
+        {
+            const float* l = recordBuffer.getReadPointer (0);
+            const float* r = recordBuffer.getReadPointer (1);
+            bool identical = true;
+
+            for (int i = 0; i < len && identical; ++i)
+                identical = (l[i] == r[i]);
+
+            if (identical) chans = 1;
+        }
+
         sb = new SampleBuffer();
-        sb->buffer.setSize (1, len);
-        sb->buffer.copyFrom (0, 0, recordBuffer, 0, 0, len);
+        sb->buffer.setSize (chans, len);
+        for (int ch = 0; ch < chans; ++ch)
+            sb->buffer.copyFrom (ch, 0, recordBuffer, ch, 0, len);
+
         sb->sourceSampleRate = systemSampleRate;
         publishSample (recordSlot, sb);
     }

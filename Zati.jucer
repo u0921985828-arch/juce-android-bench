@@ -26,6 +26,8 @@
       <FILE id="srcFcpp" name="AudioFocus.cpp"    compile="1" resource="0" file="Source/AudioFocus.cpp"/>
       <FILE id="srcLgc"  name="Lang.cpp"          compile="1" resource="0" file="Source/Lang.cpp"/>
       <FILE id="srcLgh"  name="Lang.h"            compile="0" resource="0" file="Source/Lang.h"/>
+      <FILE id="srcSIc"  name="SystemInsets.cpp"  compile="1" resource="0" file="Source/SystemInsets.cpp"/>
+      <FILE id="srcSIh"  name="SystemInsets.h"    compile="0" resource="0" file="Source/SystemInsets.h"/>
       <FILE id="srcFh"   name="AudioFocus.h"      compile="0" resource="0" file="Source/AudioFocus.h"/>
       <FILE id="srcSKc"  name="SessionKeeper.cpp" compile="1" resource="0" file="Source/SessionKeeper.cpp"/>
       <FILE id="srcSKh"  name="SessionKeeper.h"   compile="0" resource="0" file="Source/SessionKeeper.h"/>

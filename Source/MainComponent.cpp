@@ -1,5 +1,6 @@
 #include "MainComponent.h"
 #include "Lang.h"
+#include "SystemInsets.h"
 
 namespace
 {
@@ -1163,6 +1164,10 @@ MainComponent::MainComponent()
     //  language. Lang itself was loaded before the window existed (Main.cpp).
     retranslateUi();
 
+    //  Before the first layout: on Android 15 the window is the whole screen
+    //  and the bars are drawn over it.
+    systemInsets = SystemInsets::get();
+
     startTimer (60);
     setSize (500, 1080);
     focusFx (0);
@@ -1491,7 +1496,14 @@ MainComponent::~MainComponent()
 
 void MainComponent::prepareToPlay (int samplesPerBlockExpected, double sampleRate)
 {
-    engine.prepareToPlay (sampleRate, samplesPerBlockExpected);
+    //  How many input channels the device actually gave us. The record buffer
+    //  is sized from it, and this is the only moment it can be: JUCE calls
+    //  this before the stream starts, so no callback is inside the buffer.
+    int ins = 0;
+    if (auto* dev = deviceManager.getCurrentAudioDevice())
+        ins = dev->getActiveInputChannels().countNumberOfSetBits();
+
+    engine.prepareToPlay (sampleRate, samplesPerBlockExpected, ins);
     // A bounce renders at the device's own rate, so the file sounds exactly
     // like what came out of the speaker — no resampling in between.
     deviceSampleRate = (sampleRate > 0.0) ? sampleRate : 44100.0;
@@ -1658,10 +1670,12 @@ void MainComponent::paint (juce::Graphics& g)
             g.setFont (ZatiColours::monoFont (touched ? 10.5f : 10.0f, true)
                          .withExtraKerningFactor (0.16f));
             g.drawText (touched ? macroParamLabel (i) : macroBaseLabel (i),
-                        r.getX() - 8, r.getY() - 14, r.getWidth() + 16, 12,
+                        r.getX() - 8, r.getY() - ZatiLookAndFeel::kCtrlName,
+                        r.getWidth() + 16, ZatiLookAndFeel::kCtrlName - 2,
                         juce::Justification::centred);
 
-            auto chip = juce::Rectangle<int> (r.getX() - 2, r.getBottom() + 2, r.getWidth() + 4, 20);
+            auto chip = juce::Rectangle<int> (r.getX() - 2, r.getBottom() + 2, r.getWidth() + 4,
+                                              ZatiLookAndFeel::kCtrlChip - 4);
             g.setColour (ZatiColours::screenBg);
             g.fillRoundedRectangle (chip.toFloat(), 2.0f);
             g.setColour (touched ? ZatiColours::lcdFg : ZatiColours::lcdFg.withAlpha (0.8f));
@@ -1952,7 +1966,7 @@ void MainComponent::layoutPadGrid (juce::Rectangle<int> area, int cols, int rows
     // cell fills the height it is given and is allowed to run up to a fifth
     // taller than it is wide — past that they stop reading as pads.
     const int cellW = (area.getWidth()  - (cols - 1) * gap) / cols;
-    const int cellH = juce::jlimit (cellW * 3 / 4, cellW * 6 / 5,
+    const int cellH = juce::jlimit (cellW * 3 / 4, cellW * 5 / 4,
                                     (area.getHeight() - (rows - 1) * gap) / rows);
 
     auto grid = area.withSizeKeepingCentre (cols * cellW + (cols - 1) * gap,
@@ -1989,7 +2003,13 @@ void MainComponent::resized()
     //  reads as the app being too big for the screen rather than as a machine
     //  sitting on it. The extra costs the LCD height, not the controls, since
     //  the screen is what absorbs whatever is left.
-    auto area = getLocalBounds().reduced (ZatiLookAndFeel::kFaceMargin);
+    //  ...and inside that, whatever the system is painting on top of us.
+    //  From Android 15 the window is the whole screen and the status bar and
+    //  the gesture pill sit over it, so the header was under the clock and the
+    //  status line under the pill. safeArea is zero everywhere else.
+    auto area = safeArea().reduced (ZatiLookAndFeel::kFaceMargin);
+    area.removeFromTop    (ZatiLookAndFeel::kEdgeV);
+    area.removeFromBottom (ZatiLookAndFeel::kEdgeV);
 
     // The LCD grows to absorb whatever the face doesn't need (the pads are
     // width-bound squares) — the screen is the protagonist.
@@ -2001,20 +2021,20 @@ void MainComponent::resized()
         //  is Metrics::hit. Fourteen pixels the pads were assumed to have and
         //  did not - and since layoutPadGrid clamps its cell to a MINIMUM
         //  height, missing room becomes overflow rather than smaller pads.
-        const int aboveScreen = Metrics::tab + ZatiLookAndFeel::kAir   // header + gap
-                              + Metrics::lg  + Metrics::sm;             // VU + bezel gap
-        const int belowScreen = Metrics::sm + Metrics::lg        // bezel gap + step strip
-                              + Metrics::sm + Metrics::tab       // gap + module bar
-                              + Metrics::xs + Metrics::btn       // gap + transport
-                              + ZatiLookAndFeel::kAir;                            // gap before the body
-        const int bottomStrip = Metrics::lg + Metrics::sm;       // status + gap
+        const int aboveScreen = ZatiLookAndFeel::kHeader + ZatiLookAndFeel::kAir
+                              + ZatiLookAndFeel::kStrip  + Metrics::sm;
+        const int belowScreen = Metrics::sm + ZatiLookAndFeel::kStrip
+                              + Metrics::sm + ZatiLookAndFeel::kModule
+                              + Metrics::xs + ZatiLookAndFeel::kTransport
+                              + ZatiLookAndFeel::kAir;
+        const int bottomStrip = ZatiLookAndFeel::kStatus + Metrics::sm;
 
         //  The pads are allowed to grow 20% past square before the screen
         //  takes any of what is left, which is the opposite of the old rule.
         const int cellW    = (area.getWidth() - 3 * ZatiLookAndFeel::kPadGap) / 4;
-        const int padsNeed = 4 * (cellW * 6 / 5) + 3 * ZatiLookAndFeel::kPadGap;
-        const int bodyNeed = 88 + ZatiLookAndFeel::kAir + Metrics::sm   // CTRL plate + the EFECTOS rule
-                           + Metrics::hit + ZatiLookAndFeel::kAir                 // FX row + gap
+        const int padsNeed = 4 * (cellW * 5 / 4) + 3 * ZatiLookAndFeel::kPadGap;
+        const int bodyNeed = ZatiLookAndFeel::kCtrlPlate + ZatiLookAndFeel::kAir + Metrics::sm
+                           + ZatiLookAndFeel::kFxRow + ZatiLookAndFeel::kAir
                            + padsNeed;
 
         screenH = juce::jmax (96, area.getHeight()
@@ -2022,27 +2042,27 @@ void MainComponent::resized()
     }
 
     // --- Top chrome ---
-    headerArea = area.removeFromTop (Metrics::tab);
+    headerArea = area.removeFromTop (ZatiLookAndFeel::kHeader);
     area.removeFromTop (ZatiLookAndFeel::kAir);
 
     //  VU above the screen and the step strip below it, so the two readouts
     //  frame the LCD instead of sitting among the controls. Both are watched,
     //  not touched, so they belong together up here.
-    vuArea = area.removeFromTop (Metrics::lg).reduced (2, 0);
+    vuArea = area.removeFromTop (ZatiLookAndFeel::kStrip).reduced (2, 0);
     area.removeFromTop (Metrics::sm);          // the bezel is drawn 5 px proud
 
     screenBezel = area.removeFromTop (screenH);
     spectrum.setBounds (screenBezel);
     area.removeFromTop (Metrics::sm);
 
-    stepStripArea = area.removeFromTop (Metrics::lg).reduced (2, 0);
+    stepStripArea = area.removeFromTop (ZatiLookAndFeel::kStrip).reduced (2, 0);
     area.removeFromTop (Metrics::sm);
 
     //  Six modules and three transport keys will not fit across a phone in one
     //  row: LOAD came out as "LO...". They split again, but the module bar
     //  stays slim at 32 while the transport keeps its full 44 — the original
     //  complaint was that the menu was as heavy as PLAY, and that still holds.
-    tabBarArea = area.removeFromTop (Metrics::tab);
+    tabBarArea = area.removeFromTop (ZatiLookAndFeel::kModule);
     {
         auto row = tabBarArea;
         juce::TextButton* mb[5] = { &padsButton, &secButton, &songButton, &mixButton, &setButton };
@@ -2053,7 +2073,7 @@ void MainComponent::resized()
     area.removeFromTop (Metrics::xs);
 
     {
-        auto row = area.removeFromTop (Metrics::btn);
+        auto row = area.removeFromTop (ZatiLookAndFeel::kTransport);
         const int u = row.getWidth() / 4;
         loadButton.setBounds (row.removeFromLeft (u).reduced (2, 0));
         recButton.setBounds  (row.removeFromLeft (u).reduced (2, 0));
@@ -2064,7 +2084,7 @@ void MainComponent::resized()
     // Status pinned to the bottom; DESHACER sits on its right when armed, so
     // an undoable action announces itself where the result was reported.
     {
-        auto strip = area.removeFromBottom (Metrics::lg);
+        auto strip = area.removeFromBottom (ZatiLookAndFeel::kStatus);
         if (undoButton.isVisible()) undoButton.setBounds (strip.removeFromRight (96).reduced (1, 0));
         if (redoButton.isVisible()) redoButton.setBounds (strip.removeFromRight (96).reduced (1, 0));
         status.setBounds (strip);
@@ -2073,19 +2093,22 @@ void MainComponent::resized()
 
     // --- Machine face: CTRL 1-3 and their readout, the six FX, pads ---
     {
-        auto mrow = area.removeFromTop (88);             // 3 CTRL macros + their readout chips
+        auto mrow = area.removeFromTop (ZatiLookAndFeel::kCtrlPlate);
         ctrlPlateArea = mrow.expanded (4, 2);            // the plate they sit on
         juce::Slider* mk[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
         const int w = mrow.getWidth() / 3;
         for (int i = 0; i < 3; ++i)
         {
             auto cell = (i < 2 ? mrow.removeFromLeft (w) : mrow);
-            cell.removeFromTop (Metrics::lg);                     // gap for the name above
-            cell.removeFromBottom (Metrics::xl);                  // gap for the readout chip below
+            //  The plate keeps its height and the two labels give theirs
+            //  up, so the knob inside grows by ten pixels without the section
+            //  taking one from the pads.
+            cell.removeFromTop (ZatiLookAndFeel::kCtrlName);
+            cell.removeFromBottom (ZatiLookAndFeel::kCtrlChip);
             mk[i]->setBounds (cell.reduced (10, 0));
         }
         area.removeFromTop (ZatiLookAndFeel::kAir + Metrics::sm);   // the EFECTOS rule lives here
-        fxRowArea = area.removeFromTop (Metrics::hit);
+        fxRowArea = area.removeFromTop (ZatiLookAndFeel::kFxRow);
         {
             auto row = fxRowArea;
             const int sw = row.getWidth() / kNumFx;
@@ -2097,7 +2120,7 @@ void MainComponent::resized()
     }
 
     // --- Floating sheets (each sized by its own content, capped at 86%) ---
-    const auto full = getLocalBounds();
+    const auto full = safeArea();
     //  Centred, not risen from the bottom. A bottom sheet at 86% buried the pad
     //  grid exactly while you were editing a pad — you lost sight of the thing
     //  you were adjusting. Centred at 78% x 92% the instrument stays visible
@@ -2884,6 +2907,32 @@ void MainComponent::retranslateUi()
         if (auto* b = langButtons[i])
             b->setToggleState (i == (int) Lang::current(), juce::dontSendNotification);
 
+    resized();
+    repaint();
+}
+
+//  The part of the window the system is not covering. Cached rather than
+//  asked for on every layout pass: resized() runs on every sheet that opens
+//  and every project that is saved, and this is a JNI round trip.
+juce::Rectangle<int> MainComponent::safeArea() const
+{
+    return systemInsets.subtractedFrom (getLocalBounds());
+}
+
+//  The bars can come and go - a keyboard, a rotation, an immersive app handing
+//  the screen back - so this is re-read every couple of seconds and the face is
+//  laid out again only when the answer actually changed.
+void MainComponent::refreshSystemInsets()
+{
+    const auto now = SystemInsets::get();
+
+    if (now.getTop()    == systemInsets.getTop()
+        && now.getLeft()   == systemInsets.getLeft()
+        && now.getBottom() == systemInsets.getBottom()
+        && now.getRight()  == systemInsets.getRight())
+        return;
+
+    systemInsets = now;
     resized();
     repaint();
 }
@@ -4720,12 +4769,18 @@ void MainComponent::toggleMicSampling()
         auto begin = [this, slot]
         {
             recordingSlot = slot;
-            setAudioChannels (1, 2);      // open mic input
+            //  Two in, not one: a phone with a stereo microphone records in
+            //  stereo, and one that has a single capsule hands back one
+            //  channel and the take stays mono. Asking for two and being
+            //  given one is the normal case, not a failure.
+            setAudioChannels (2, 2);
             engine.startRecording (slot);
             recordingActive = true;
             styleButton (micButton, kRec);
             micButton.setButtonText (T ("PARAR"));
-            status.setText (T ("Grabando pad %1  %2s", juce::String (slot + 1), "0.0"), juce::dontSendNotification);
+            status.setText (T ("Grabando pad %1  %2s / %3s", juce::String (slot + 1), "0.0",
+                               juce::String ((int) engine.getRecordLimitSeconds())),
+                            juce::dontSendNotification);
         };
 
         if (! RP::isRequired (RP::recordAudio) || RP::isGranted (RP::recordAudio))
@@ -4805,6 +4860,7 @@ void MainComponent::timerCallback()
     {
         sessionSyncTick = 0;
         session.sync (uiSample.data(), kNumPads);
+        refreshSystemInsets();
 
         //  ...and the state itself every twenty seconds or so. onPause writes
         //  it too, but a process killed without one - a crash, a battery pull,
@@ -4900,7 +4956,15 @@ void MainComponent::timerCallback()
     }
 
     if (recordingActive)
-        status.setText (T ("Grabando pad %1  %2s", juce::String (recordingSlot + 1),
-                           juce::String (engine.getRecordSeconds(), 1)),
-                        juce::dontSendNotification);
+    {
+        //  The take stops itself when the buffer fills; say so rather than
+        //  letting the counter freeze and look like a hang.
+        if (! engine.isRecording())
+            toggleMicSampling();
+        else
+            status.setText (T ("Grabando pad %1  %2s / %3s", juce::String (recordingSlot + 1),
+                               juce::String (engine.getRecordSeconds(), 1),
+                               juce::String ((int) engine.getRecordLimitSeconds())),
+                            juce::dontSendNotification);
+    }
 }
