@@ -96,6 +96,12 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize, int inputC
         recordBuffer.clear();
     }
 
+    //  How many frames one silhouette column covers. FX-404 v232 puts the
+    //  analyser's whole window on screen at 1x, and its window is fftSize -
+    //  32768 frames, about 0.74 s at 44.1 kHz. Same span here, expressed as a
+    //  duration so it holds at any device rate.
+    scopeColLen = juce::jmax (1, (int) (0.74 * systemSampleRate / (double) kScopeCols));
+
     juce::dsp::ProcessSpec spec { systemSampleRate, (juce::uint32) juce::jmax (1, maxBlock), 2 };
     masterFilter.prepare (spec);
     masterFilter.reset();
@@ -838,18 +844,51 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         }
     }
 
-    // 5c. Feed the scope ring (post-FX mono sum) for the spectrum display.
+    // 5c. Feed the scope ring (post-FX mono sum) for the LCD.
+    //
+    //     Two rings, because the screen wants two different things. The plain
+    //     sample ring is 2048 frames - 43 ms, an instant - and that is all the
+    //     old display ever needed.
+    //
+    //     The waveform silhouette wants nearly a second of signal on screen at
+    //     once, which is 35000 frames. Copying THAT to the message thread every
+    //     tick would be 140 KB a frame, and it is the largest recurring cost in
+    //     the whole UI. So the audio thread decimates as it goes: a running
+    //     min/max per column, one column emitted every scopeColLen frames. The
+    //     UI copies 256 columns instead of 35000 samples, and re-bucketing
+    //     columns into however many the screen is wide is exact - the min of
+    //     mins is the min.
     {
         int wi = scopeWrite.load (std::memory_order_relaxed);
         const int outCh = out.getNumChannels();
         const float* l = out.getReadPointer (0, startSample);
         const float* r = (outCh > 1) ? out.getReadPointer (1, startSample) : l;
+
+        int   ci = scopeColWrite.load (std::memory_order_relaxed);
+        float mn = colMin, mx = colMax;
+        int   ct = colCount;
+
         for (int i = 0; i < numSamples; ++i)
         {
-            scope[(size_t) wi] = 0.5f * (l[i] + r[i]);
+            const float m = 0.5f * (l[i] + r[i]);
+            scope[(size_t) wi] = m;
             wi = (wi + 1) & (kScopeSize - 1);
+
+            mn = juce::jmin (mn, m);
+            mx = juce::jmax (mx, m);
+
+            if (++ct >= scopeColLen)
+            {
+                scopeColMin[(size_t) ci] = mn;
+                scopeColMax[(size_t) ci] = mx;
+                ci = (ci + 1) & (kScopeCols - 1);
+                mn =  1.0e9f; mx = -1.0e9f; ct = 0;
+            }
         }
+
+        colMin = mn; colMax = mx; colCount = ct;
         scopeWrite.store (wi, std::memory_order_release);
+        scopeColWrite.store (ci, std::memory_order_release);
     }
 
     // 6. Diagnostic test tone.
@@ -1011,6 +1050,21 @@ void AudioEngine::publishSample (int slot, SampleBuffer::Ptr newBuffer) noexcept
 void AudioEngine::collectRetiredSamples() noexcept
 {
     retired.drain ([] (SampleBuffer* p) { if (p) p->decReferenceCount(); });
+}
+
+//  The silhouette's columns, oldest first. Cosmetic like copyScope: a torn
+//  column while the audio thread writes one is a pixel, not a fault.
+int AudioEngine::copyScopeColumns (float* dstMin, float* dstMax, int n) noexcept
+{
+    n = juce::jlimit (0, kScopeCols, n);
+    const int ci = scopeColWrite.load (std::memory_order_acquire);
+    for (int i = 0; i < n; ++i)
+    {
+        const int k = (ci - n + i) & (kScopeCols - 1);
+        dstMin[i] = scopeColMin[(size_t) k];
+        dstMax[i] = scopeColMax[(size_t) k];
+    }
+    return n;
 }
 
 void AudioEngine::copyScope (float* dst, int n) noexcept

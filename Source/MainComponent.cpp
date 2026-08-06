@@ -4972,8 +4972,15 @@ void MainComponent::timerCallback()
     refreshDeviceStatusLine();      // Oboe settles a beat after we ask it to
     watchAudioDevice();
 
-    //  The master oscilloscope: post-FX mono sum, straight from the engine's
-    //  ring. Cosmetic, so a benign race with the audio thread is fine.
+    //  The master silhouette. The engine has already decimated its ~0.74 s
+    //  window into min/max columns, so this copies 256 pairs instead of the
+    //  35000 samples the window actually holds.
+    {
+        float cmn[AudioEngine::kMaxScopeColumns], cmx[AudioEngine::kMaxScopeColumns];
+        const int nc = engine.copyScopeColumns (cmn, cmx, AudioEngine::kMaxScopeColumns);
+        spectrum.setColumns (cmn, cmx, nc);
+    }
+
     const int scopeN = juce::jmin ((int) (sizeof (scopeTmp) / sizeof (scopeTmp[0])),
                                    DeviceTier::profile().scopePoints);
     engine.copyScope (scopeTmp, scopeN);

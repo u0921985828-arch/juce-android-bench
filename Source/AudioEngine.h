@@ -280,6 +280,11 @@ public:
     // --- Scope (message thread): copy the last n post-FX master samples ---
     void copyScope (float* dst, int n) noexcept;
 
+    //  Min/max columns spanning ~0.74 s of master output, oldest first.
+    //  Returns how many were written. See renderNextBlock section 5c.
+    int  copyScopeColumns (float* dstMin, float* dstMax, int n) noexcept;
+    static constexpr int kMaxScopeColumns = 256;
+
     // --- Output peak meters (message thread): max |sample| since last read ---
     float readOutPeakL() noexcept { return outPeakL.exchange (0.0f, std::memory_order_relaxed); }
     float readOutPeakR() noexcept { return outPeakR.exchange (0.0f, std::memory_order_relaxed); }
@@ -601,6 +606,16 @@ private:
     static constexpr int kScopeSize = 2048;   // power of two
     std::array<float, kScopeSize> scope {};
     std::atomic<int> scopeWrite { 0 };
+
+    //  The decimated silhouette ring: one min/max column per scopeColLen
+    //  frames. Audio thread writes, message thread copies.
+    static constexpr int kScopeCols = kMaxScopeColumns;   // power of two
+    std::array<float, kScopeCols> scopeColMin {};
+    std::array<float, kScopeCols> scopeColMax {};
+    std::atomic<int> scopeColWrite { 0 };
+    int   scopeColLen = 740;              // set from the rate in prepareToPlay
+    float colMin =  1.0e9f, colMax = -1.0e9f;   // audio-thread accumulators
+    int   colCount = 0;
 
     // Running output peak per channel; UI consumes-and-resets via readOutPeak*.
     std::atomic<float> outPeakL { 0.0f }, outPeakR { 0.0f };
