@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<JUCERPROJECT id="Fx404A" name="Zati" projectType="guiapp" version="1.0.0"
+<JUCERPROJECT id="ZatiApp" name="Zati" projectType="guiapp" version="1.0.0"
               bundleIdentifier="com.artifacts.zati" companyName="ARTiFACTS"
               companyCopyright="ARTiFACTS" useAppConfig="0" addUsingNamespaceToJuceHeader="1"
               displaySplashScreen="1" jucerFormatVersion="1">
-  <MAINGROUP id="Fx404Root" name="Zati">
-    <GROUP id="Fx404Src" name="Source">
+  <MAINGROUP id="ZatiRoot" name="Zati">
+    <GROUP id="ZatiSrc" name="Source">
       <FILE id="srcMain" name="Main.cpp"          compile="1" resource="0" file="Source/Main.cpp"/>
       <FILE id="srcMcpp" name="MainComponent.cpp" compile="1" resource="0" file="Source/MainComponent.cpp"/>
       <FILE id="srcMh"   name="MainComponent.h"   compile="0" resource="0" file="Source/MainComponent.h"/>
@@ -37,13 +37,13 @@
       <FILE id="srcPsh"  name="ProjectStore.h"    compile="0" resource="0" file="Source/ProjectStore.h"/>
       <FILE id="srcZth"  name="Zati.h"            compile="0" resource="0" file="Source/Zati.h"/>
     </GROUP>
-    <GROUP id="Fx404Fonts" name="fonts">
+    <GROUP id="ZatiFonts" name="fonts">
       <FILE id="fntOsB" name="OswaldBold.ttf"          compile="0" resource="1" file="Source/fonts/OswaldBold.ttf"/>
       <FILE id="fntOsM" name="OswaldMedium.ttf"        compile="0" resource="1" file="Source/fonts/OswaldMedium.ttf"/>
       <FILE id="fntJbR" name="JetBrainsMonoRegular.ttf" compile="0" resource="1" file="Source/fonts/JetBrainsMonoRegular.ttf"/>
       <FILE id="fntJbB" name="JetBrainsMonoBold.ttf"    compile="0" resource="1" file="Source/fonts/JetBrainsMonoBold.ttf"/>
     </GROUP>
-    <GROUP id="Fx404Icons" name="icons">
+    <GROUP id="ZatiIcons" name="icons">
       <FILE id="icoApp" name="icon.png" compile="0" resource="0" file="ci/icon.png"/>
     </GROUP>
   </MAINGROUP>
