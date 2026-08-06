@@ -5,10 +5,19 @@
 #include "Lang.h"
 
 // ============================================================================
-//  SpectrumDisplay — the "screen": a real-time FFT SPECTRUM ANALYSER on a dark
-//  LCD panel, rebuilt to behave like the Web Audio AnalyserNode FX-404 drew
-//  its spectrum with (see analyse()). Fed post-FX mono master samples via
-//  setSamples() from the message thread. Cosmetic (benign data race ok).
+//  SpectrumDisplay — the "screen", ported from FX-404's own drawSpectrum().
+//
+//  Despite every name in it, this is NOT a frequency analyser. FX-404 called
+//  it a spectrum and then used the FFT for exactly one number: a broadband
+//  loudness proxy, the mean of getByteFrequencyData across all bins. What the
+//  bars actually show is the SHAPE OF THE LOOP - 28 time-slices of the
+//  current pattern, each holding the loudest moment the playhead saw while it
+//  sat on that slice. By the time a pass finishes the whole strip reads as
+//  the shape of the beat: kick here, snare there, hats running through.
+//
+//  That is a far better thing to put on a sampler than a frequency plot, and
+//  it is why an instantaneous analyser looked wrong. Fed post-FX mono master
+//  samples via setSamples() from the message thread (benign data race ok).
 //
 //  Chrome mirrors a hardware sampler display: corner labels, centred BPM, a
 //  faint tick ruler and a bottom status line. Our own palette and layout.
@@ -16,7 +25,7 @@
 class SpectrumDisplay : public juce::Component
 {
 public:
-    SpectrumDisplay() = default;
+    SpectrumDisplay() { barLevels.fill (kFloorPct); }
 
     void setSamples (const float* src, int n)
     {
@@ -37,15 +46,13 @@ public:
         //  while nothing is playing is the app's biggest idle cost. The VU and
         //  the step LEDs ask for their own repaints when THEY change, so
         //  nothing is missed by sitting still here.
-        //  Bars and peak caps have to keep FALLING after the sound stops, so
-        //  the screen can only be left alone once everything has actually
-        //  reached the floor - not on the first silent block.
+        //  The shape has to keep SETTLING after the sound stops - that is the
+        //  whole point of the decay curve - so the screen can only be left
+        //  alone once every bar has actually reached the floor.
         bool settled = true;
-        for (const auto m : mag)      if (m > 1.0e-5f) { settled = false; break; }
-        if (settled)
-            for (const auto c : capLevel) if (c > 0.02f) { settled = false; break; }
+        for (const auto lv : barLevels) if (lv > kFloorPct + 0.01f) { settled = false; break; }
 
-        const bool silent = (pk <= 0.0f && peak < 0.0005f && settled);
+        const bool silent = (pk <= 0.0f && peak < 0.0005f && settled && ! playing);
         if (silent && wasSilent) return;
 
         wasSilent = silent;
@@ -56,23 +63,17 @@ public:
     void setBpm     (double b)              { bpm = b; }
 
     //  ------------------------------------------------------------------
-    //  The analyser, rebuilt from what FX-404 was.
+    //  The analyser. FX-404's settings verbatim:
     //
-    //  FX-404 drew its spectrum in a WebView, and a WebView has exactly one
-    //  way to do that: an AnalyserNode and getByteFrequencyData. So the
-    //  behaviour is not a matter of taste, it is a specification - and these
-    //  are its numbers, straight out of the Web Audio defaults:
+    //      analyser.fftSize              = 2048
+    //      analyser.smoothingTimeConstant = 0.35
+    //      minDecibels / maxDecibels      = -100 / -30   (Web Audio defaults,
+    //                                                     never overridden)
     //
-    //      fftSize               2048   (we use 1024; the LCD is 300 px wide)
-    //      minDecibels           -100
-    //      maxDecibels            -30
-    //      smoothingTimeConstant  0.8
-    //
-    //  The smoothing is the part that makes it LOOK like the browser rather
-    //  than like an engineering plot: the running average is taken over the
-    //  MAGNITUDES, before the decibel conversion, which is why the bars fall
-    //  slowly and rise instantly. Averaging the dB values instead gives a
-    //  sluggish, mushy meter that nobody would recognise.
+    //  and its output is used for exactly one thing, which its own comment
+    //  spells out: "used only as a broadband loudness proxy now". The mean of
+    //  getByteFrequencyData over every bin. That single number is what drives
+    //  the bars; the shape on screen is TIME, not frequency.
     //  ------------------------------------------------------------------
     void analyse()
     {
@@ -89,14 +90,9 @@ public:
         ringFilled = juce::jmin (kFftSize, ringFilled + count);
 
         if (ringFilled < kFftSize)
-        {
-            for (auto& m : mag) m *= kSmoothing;    // not enough history yet
-            return;
-        }
+            return;                       // not enough history yet
 
-        //  Hann window over the newest kFftSize samples, oldest first. Without
-        //  it every bar leaks into its neighbours and the whole spectrum turns
-        //  into one wide blur.
+        //  Hann window over the newest kFftSize samples, oldest first.
         for (int i = 0; i < kFftSize; ++i)
         {
             const float w = 0.5f * (1.0f - std::cos (2.0f * juce::MathConstants<float>::pi
@@ -107,11 +103,84 @@ public:
 
         fft.performFrequencyOnlyForwardTransform (fftData.data());
 
-        //  Web Audio's smoothing, on the magnitudes, exactly as specified.
+        //  Web Audio's smoothing, on the magnitudes, before the dB conversion.
         const float norm = 2.0f / (float) kFftSize;
+        double sum = 0.0;
         for (int i = 0; i < kNumBins; ++i)
-            mag[(size_t) i] = kSmoothing * mag[(size_t) i]
-                            + (1.0f - kSmoothing) * fftData[(size_t) i] * norm;
+        {
+            float& m = mag[(size_t) i];
+            m = kSmoothing * m + (1.0f - kSmoothing) * fftData[(size_t) i] * norm;
+
+            //  getByteFrequencyData, without the quantisation to a byte:
+            //  255 * (dB - minDb) / (maxDb - minDb), clamped.
+            const float db = juce::Decibels::gainToDecibels (m, kMinDb);
+            sum += juce::jlimit (0.0f, 1.0f, (db - kMinDb) / (kMaxDb - kMinDb));
+        }
+
+        //  const loudnessPct = Math.max(4, (sum/freqData.length/255)*100)
+        loudnessPct = juce::jmax (kFloorPct, (float) (sum / (double) kNumBins) * 100.0f);
+
+        advanceBars();
+    }
+
+    //  ------------------------------------------------------------------
+    //  drawSpectrum()'s bar logic, line for line.
+    //
+    //  While the transport runs, the bar under the playhead holds the loudest
+    //  moment it has seen this pass and keeps that height until the loop comes
+    //  round again - which is what turns a flicker-per-hit into the shape of a
+    //  whole beat. When it stops, the shape settles back down rather than
+    //  freezing forever.
+    //  ------------------------------------------------------------------
+    void advanceBars()
+    {
+        //  FX-404 ran this on requestAnimationFrame, so its decay is per
+        //  60 fps frame. ZATI's tick is whatever the device tier chose - 100,
+        //  60, 40 or 33 ms - so the same decay has to be scaled by the time
+        //  that actually passed, or the shape would settle four times faster
+        //  on a flagship than on an entry-level phone.
+        const auto now = juce::Time::getMillisecondCounter();
+        const float dtFrames = (lastTickMs == 0) ? 1.0f
+                             : juce::jlimit (0.5f, 8.0f, (float) (now - lastTickMs) / 16.667f);
+        lastTickMs = now;
+
+        if (playing && step >= 0 && patternLen > 0)
+        {
+            if (step < lastStepForWave)
+                barLevels.fill (kFloorPct);          // wrapped - this pass starts fresh
+
+            lastStepForWave = step;
+
+            //  FX-404 mapped STEP -> bar. Its patterns were 24 to 64 steps, so
+            //  every one of the 28 bars got a step and the strip was solid.
+            //  ZATI's start at 16, and that same mapping leaves twelve bars
+            //  permanently at the floor - a comb with holes in it rather than
+            //  the shape of a beat.
+            //
+            //  So the mapping runs the other way here: each BAR claims its own
+            //  slice of the loop. Long patterns behave exactly as they did in
+            //  FX-404, one step per bar; short ones let neighbouring bars share
+            //  a step and light together, which reads as a wider block for that
+            //  step instead of a gap beside it.
+            currentBarIdx = -1;
+            for (int i = 0; i < kNumBars; ++i)
+                if ((int) ((float) i * (float) patternLen / (float) kNumBars) == step)
+                {
+                    barLevels[(size_t) i] = juce::jmax (barLevels[(size_t) i], loudnessPct);
+                    if (currentBarIdx < 0) currentBarIdx = i;
+                    barIsPlayhead[(size_t) i] = true;
+                }
+                else
+                    barIsPlayhead[(size_t) i] = false;
+        }
+        else
+        {
+            lastStepForWave = -1;
+            currentBarIdx   = -1;
+            barIsPlayhead.fill (false);
+            for (auto& lv : barLevels)
+                lv = juce::jmax (kFloorPct, lv - kDecayPerFrame * dtFrames);
+        }
     }
 
     //  The two meters that used to live outside, on strips of their own above
@@ -126,13 +195,18 @@ public:
         repaint();
     }
 
-    //  step is the absolute step, or negative when the transport is stopped;
-    //  the colour is the bank that is playing, so the strip says WHICH pattern
-    //  as well as where in it.
-    void setStep (int absoluteStep, juce::Colour bankColour)
+    //  step is the step within the playing PATTERN, or negative when the
+    //  transport is stopped; patternLength is how long that pattern is, which
+    //  is what maps a step onto one of the 28 slices; the colour is the bank
+    //  that is playing, so the strip says WHICH pattern as well as where in it.
+    void setStep (int stepInPattern, int patternLength, bool isPlaying, juce::Colour bankColour)
     {
-        if (absoluteStep == step && bankColour == stepColour) return;
-        step = absoluteStep;
+        if (stepInPattern == step && patternLength == patternLen
+            && isPlaying == playing && bankColour == stepColour) return;
+
+        step       = stepInPattern;
+        patternLen = juce::jmax (1, patternLength);
+        playing    = isPlaying;
         stepColour = bankColour;
         repaint();
     }
@@ -209,67 +283,48 @@ public:
         const float cy = wave.getCentreY();
         const float halfH = wave.getHeight() * 0.5f - 2.0f;
 
-        //  THE SPECTRUM. Bars standing on a floor, not a trace through a
-        //  middle: a spectrum has no negative half, so anchoring it to the
-        //  centre - which is what the oscilloscope that used to live here did
-        //  - would waste half the screen and read as the wrong instrument.
-        const float floorY = wave.getBottom();
-        const float fullH  = wave.getHeight() - 1.0f;
-        juce::ignoreUnused (cy, halfH);
-
-        //  Baseline the bars stand on.
-        g.setColour (ZatiColours::lcdFg.withAlpha (0.30f));
-        g.fillRect (wave.getX(), floorY - 0.6f, wave.getWidth(), 1.2f);
-
+        //  THE LOOP SHAPE. FX-404's strip was
+        //      .lcd-wave   { height:68px; display:flex; align-items:center; gap:1px }
+        //      .lcd-wave i { flex:1; background:var(--lcd-fg); border-radius:1px }
+        //  so the bars are CENTRED, not standing on a floor: each one grows
+        //  symmetrically out of the middle line. That centring is most of why
+        //  the strip reads as a waveform of the bar rather than as a chart.
+        juce::ignoreUnused (halfH);
         {
-            //  Linear bins across the band, the way getByteFrequencyData
-            //  hands them over. Only the bottom slice is drawn: above about
-            //  14 kHz a sampler's output is empty on every phone speaker
-            //  there is, and eleven dead bars on the right would only make
-            //  the live ones narrower.
-            const int   usable = (int) (kNumBins * 0.58f);
-            const float barGap = 1.0f;
-            const float slotW  = wave.getWidth() / (float) kNumBars;
+            const float gap   = 1.0f;
+            const float slotW = wave.getWidth() / (float) kNumBars;
+            const float fullH = wave.getHeight();
 
-            for (int bIdx = 0; bIdx < kNumBars; ++bIdx)
+            for (int i = 0; i < kNumBars; ++i)
             {
-                const int i0 = (int) ((float)  bIdx      / (float) kNumBars * (float) usable);
-                const int i1 = juce::jmax (i0 + 1,
-                              (int) ((float) (bIdx + 1) / (float) kNumBars * (float) usable));
+                const float pct = barLevels[(size_t) i];
+                const float lvl = juce::jmin (1.0f, pct * 0.01f);
+                const bool  isPlayhead = barIsPlayhead[(size_t) i];
 
-                float m = 0.0f;
-                for (int i = i0; i < i1 && i < kNumBins; ++i)
-                    m = juce::jmax (m, mag[(size_t) i]);
+                const float h = juce::jmax (1.0f, pct * 0.01f * fullH);
+                const float x = wave.getX() + (float) i * slotW;
+                const float w = juce::jmax (1.0f, slotW - gap);
+                auto r = juce::Rectangle<float> (x, cy - h * 0.5f, w, h);
 
-                //  Magnitude -> dB -> 0..1 over [minDecibels, maxDecibels].
-                //  This is byteValue/255 with the division left out.
-                const float db  = juce::Decibels::gainToDecibels (m, kMinDb);
-                const float lvl = juce::jlimit (0.0f, 1.0f, (db - kMinDb) / (kMaxDb - kMinDb));
+                //  waveBars[i].style.opacity =
+                //      isPlayhead ? 1 : (0.45 + lvl*0.55)
+                const float alpha = isPlayhead ? 1.0f : (0.45f + lvl * 0.55f);
 
-                const float h = lvl * fullH;
-                const float x = wave.getX() + (float) bIdx * slotW;
-
-                //  A floor of one pixel so the analyser reads as an analyser
-                //  when it is quiet, instead of vanishing into the baseline.
-                g.setColour (ZatiColours::lcdFg.withAlpha (0.16f));
-                g.fillRect (x, floorY - 1.0f, slotW - barGap, 1.0f);
-
-                if (h > 1.0f)
+                //  boxShadow when isPlayhead || lvl > 0.55. JUCE has no box
+                //  shadow, so the halo is drawn as two soft passes behind the
+                //  bar - same read, no blur pass.
+                if (isPlayhead || lvl > 0.55f)
                 {
-                    g.setColour (ZatiColours::lcdFg.withAlpha (0.45f + 0.55f * lvl));
-                    g.fillRect (x, floorY - h, slotW - barGap, h);
+                    const float rad = juce::jmax (lvl, isPlayhead ? 0.8f : 0.0f) * 6.0f;
+                    const auto  glowCol = isPlayhead ? stepColour : ZatiColours::lcdFg;
+                    g.setColour (glowCol.withAlpha (0.16f));
+                    g.fillRoundedRectangle (r.expanded (rad * 0.5f, rad * 0.5f), 2.0f);
+                    g.setColour (glowCol.withAlpha (0.22f));
+                    g.fillRoundedRectangle (r.expanded (rad * 0.25f, rad * 0.25f), 1.5f);
                 }
 
-                //  Peak caps: the mark that hangs above a bar and slides
-                //  down after it. It is what makes a bar chart read as a
-                //  METER - without it you cannot see what you just missed.
-                float& cap = capLevel[(size_t) bIdx];
-                cap = (lvl >= cap) ? lvl : juce::jmax (0.0f, cap - 0.025f);
-                if (cap > 0.02f)
-                {
-                    g.setColour (ZatiColours::lcdFg.withAlpha (0.85f));
-                    g.fillRect (x, floorY - cap * fullH - 1.5f, slotW - barGap, 1.5f);
-                }
+                g.setColour ((isPlayhead ? stepColour : ZatiColours::lcdFg).withAlpha (alpha));
+                g.fillRoundedRectangle (r, 1.0f);
             }
         }
 
@@ -327,8 +382,14 @@ private:
     //  reads the newest kFftSize of it.
     static constexpr int   kFftSize   = 1024;
     static constexpr int   kNumBins   = kFftSize / 2;
-    static constexpr int   kNumBars   = 48;
-    static constexpr float kSmoothing = 0.8f;    // Web Audio smoothingTimeConstant
+    static constexpr int   kNumBars   = 28;   // waveBars.length
+    static constexpr float kFloorPct  = 4.0f; // new Array(...).fill(4)
+    static constexpr float kDecayPerFrame = 2.2f;  // DECAY_PER_FRAME, per 60 fps frame
+    //  FX-404's own value, and its comment on it: "kept low on purpose -
+    //  attack speed lives here, the release/trail character is handled
+    //  explicitly in drawSpectrum()'s own decay curve, not by blurring the
+    //  raw FFT data further".
+    static constexpr float kSmoothing = 0.35f;   // analyser.smoothingTimeConstant
     static constexpr float kMinDb     = -100.0f; // Web Audio minDecibels
     static constexpr float kMaxDb     = -30.0f;  // Web Audio maxDecibels
 
@@ -338,7 +399,14 @@ private:
     int                                      ringFilled = 0;
     std::array<float, (size_t) kFftSize * 2> fftData {};
     std::array<float, (size_t) kNumBins>     mag {};
-    std::array<float, (size_t) kNumBars>     capLevel {};
+    std::array<float, (size_t) kNumBars>     barLevels;   // const barLevels = new Array(28).fill(4)
+    float                                    loudnessPct     = kFloorPct;
+    int                                      currentBarIdx   = -1;
+    std::array<bool, (size_t) kNumBars>      barIsPlayhead {};
+    int                                      lastStepForWave = -1;
+    int                                      patternLen      = 16;
+    bool                                     playing         = false;
+    juce::uint32                             lastTickMs      = 0;
 
     float        vuL   { 0.0f }, vuR { 0.0f };
     int          step  { -1 };
