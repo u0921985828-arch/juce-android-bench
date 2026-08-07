@@ -1963,8 +1963,12 @@ void MainComponent::layoutPadGrid (juce::Rectangle<int> area, int cols, int rows
     // of dead chassis above and below while the targets stayed small. Now the
     // cell fills the height it is given and is allowed to run up to a fifth
     // taller than it is wide — past that they stop reading as pads.
+    //  Never taller than wide. The ceiling used to be a fifth over square,
+    //  which is where the "the pads change shape while the app is opening"
+    //  came from: the first pass had the room to hit that ceiling and the
+    //  second did not. A pad is a square, and resized() now books it as one.
     const int cellW = (area.getWidth()  - (cols - 1) * gap) / cols;
-    const int cellH = juce::jlimit (cellW * 3 / 4, cellW * 5 / 4,
+    const int cellH = juce::jlimit (cellW * 3 / 4, cellW,
                                     (area.getHeight() - (rows - 1) * gap) / rows);
 
     auto grid = area.withSizeKeepingCentre (cols * cellW + (cols - 1) * gap,
@@ -2029,28 +2033,55 @@ void MainComponent::resized()
         const int bottomStrip = ZatiLookAndFeel::kStatus
                               + ZatiLookAndFeel::kAir + Metrics::sm;
 
-        //  The pads are allowed to grow 20% past square before the screen
-        //  takes any of what is left, which is the opposite of the old rule.
+        //  A pad is a SQUARE, and the budget says so.
+        //
+        //  It used to reserve room for pads a fifth taller than they are wide,
+        //  and then layoutPadGrid clamped them back down and centred what was
+        //  left - so the difference between what was booked and what was used
+        //  turned into two bands of dead chassis, one above the grid and one
+        //  below. On this phone that was the pads arriving at 1.19 x wide on
+        //  the first layout pass and settling at 1.03 x once the safe area
+        //  came through: a fifth of a pad row, reserved and then thrown away.
+        //
+        //  Booking them square recovers all of it at once, and it also means
+        //  the pads no longer change SHAPE between the first pass and the
+        //  second - they only move.
         const int cellW    = (area.getWidth() - 3 * ZatiLookAndFeel::kPadGap) / 4;
-        const int padsNeed = 4 * (cellW * 5 / 4) + 3 * ZatiLookAndFeel::kPadGap;
+        const int padsNeed = 4 * cellW + 3 * ZatiLookAndFeel::kPadGap;
         const int bodyNeed = ZatiLookAndFeel::kCtrlPlate + ZatiLookAndFeel::kAir + Metrics::sm
                            + ZatiLookAndFeel::kFxRow + ZatiLookAndFeel::kAir
                            + padsNeed;
 
-        screenH = juce::jmax (96, area.getHeight()
-                                    - aboveScreen - belowScreen - bottomStrip - bodyNeed);
+        //  ...and what it recovers goes into the SEAMS, not into one pool.
+        //
+        //  Height left over is worth more spread along the six places where
+        //  one section meets the next than added to any single box: it is what
+        //  makes a face read as laid out rather than as packed. The LCD keeps
+        //  whatever the seams do not take, so on a short screen the seams stay
+        //  at their base and the screen is the one that gives.
+        constexpr int kSeams   = 6;
+        constexpr int kAirMax  = 11;   // past this the face reads as loose
+        constexpr int kMinScreen = 96;
+
+        const int freeH = area.getHeight() - aboveScreen - belowScreen - bottomStrip - bodyNeed;
+
+        layoutAir = (freeH > kMinScreen)
+                      ? juce::jlimit (0, kAirMax, (freeH - kMinScreen) / (kSeams + 2))
+                      : 0;
+
+        screenH = juce::jmax (kMinScreen, freeH - layoutAir * kSeams);
     }
 
     // --- Top chrome ---
     headerArea = area.removeFromTop (ZatiLookAndFeel::kHeader);
-    area.removeFromTop (ZatiLookAndFeel::kAir);
+    area.removeFromTop (ZatiLookAndFeel::kAir + layoutAir);
 
     //  VU above the screen and the step strip below it, so the two readouts
     //  frame the LCD instead of sitting among the controls. Both are watched,
     //  not touched, so they belong together up here.
     screenBezel = area.removeFromTop (screenH);
     spectrum.setBounds (screenBezel);
-    area.removeFromTop (ZatiLookAndFeel::kAir);   // the bezel is drawn 5 px proud
+    area.removeFromTop (ZatiLookAndFeel::kAir + layoutAir);   // the bezel is drawn 5 px proud
 
     //  Six modules and three transport keys will not fit across a phone in one
     //  row: LOAD came out as "LO...". They split again, but the module bar
@@ -2073,14 +2104,14 @@ void MainComponent::resized()
         recButton.setBounds  (row.removeFromLeft (u).reduced (2, 0));
         playButton.setBounds (row.reduced (2, 0));
     }
-    area.removeFromTop (ZatiLookAndFeel::kAir);
+    area.removeFromTop (ZatiLookAndFeel::kAir + layoutAir);
 
     // Status pinned to the bottom; DESHACER sits on its right when armed, so
     // an undoable action announces itself where the result was reported.
     {
         auto strip = area.removeFromBottom (ZatiLookAndFeel::kStatus);
         //  ...and the pads do not sit on the sentence.
-        area.removeFromBottom (ZatiLookAndFeel::kAir);
+        area.removeFromBottom (ZatiLookAndFeel::kAir + layoutAir);
         if (undoButton.isVisible()) undoButton.setBounds (strip.removeFromRight (96).reduced (1, 0));
         if (redoButton.isVisible()) redoButton.setBounds (strip.removeFromRight (96).reduced (1, 0));
         status.setBounds (strip);
@@ -2103,7 +2134,7 @@ void MainComponent::resized()
             cell.removeFromBottom (ZatiLookAndFeel::kCtrlChip);
             mk[i]->setBounds (cell.reduced (10, 0));
         }
-        area.removeFromTop (ZatiLookAndFeel::kAir + Metrics::sm);   // the EFECTOS rule lives here
+        area.removeFromTop (ZatiLookAndFeel::kAir + Metrics::sm + layoutAir);   // the EFECTOS rule lives here
         fxRowArea = area.removeFromTop (ZatiLookAndFeel::kFxRow);
         {
             auto row = fxRowArea;
@@ -2111,7 +2142,7 @@ void MainComponent::resized()
             for (int f = 0; f < kNumFx; ++f)
                 fxButtons[f]->setBounds ((f < kNumFx - 1 ? row.removeFromLeft (sw) : row).reduced (1, 0));
         }
-        area.removeFromTop (ZatiLookAndFeel::kAir);
+        area.removeFromTop (ZatiLookAndFeel::kAir + layoutAir);
         layoutPadGrid (area, 4, 4, ZatiLookAndFeel::kPadGap);
     }
 
@@ -4946,6 +4977,21 @@ void MainComponent::timerCallback()
     {
         sessionRestorePending = false;
         restoreSession();
+    }
+
+    //  The safe area, on EVERY tick for the first second and then on the slow
+    //  cadence with the rest of the housekeeping.
+    //
+    //  It used to be asked for only once a second, together with the session
+    //  sync - so the face was laid out with an inset of zero, drawn with the
+    //  wordmark under the status bar, and then jumped a full second later when
+    //  the real numbers arrived. Android does not have the insets ready at the
+    //  moment the first frame goes up; the answer is to keep asking until it
+    //  does, not to ask slowly.
+    if (insetSettleTicks < 30)
+    {
+        ++insetSettleTicks;
+        refreshSystemInsets();
     }
 
     //  ...and from then on, every couple of seconds, hand the live pads to the

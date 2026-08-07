@@ -162,6 +162,13 @@ private:
     //  The timer re-reads it until it settles; deviceLine remembers what we
     //  last wrote so a real message (an error, a permission) is never clobbered.
     juce::String deviceLine;
+    //  Extra height handed to every seam between sections, computed once
+    //  per layout out of whatever the square pad grid did not need.
+    int layoutAir = 0;
+
+    //  Ticks spent chasing the safe area at startup; see timerCallback.
+    int insetSettleTicks = 0;
+
     int lastDeviceBlock = 0, lastDeviceRate = 0;   // compared before a string is built
 
     //  What the ENGINE was last told the stream is, as opposed to what the

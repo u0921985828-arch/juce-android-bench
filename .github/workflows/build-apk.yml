@@ -94,6 +94,33 @@ jobs:
           echo "Using Projucer: $PROJUCER"
           "$PROJUCER" --resave Zati.jucer
 
+      #  The launch window. Until JUCE puts up its first frame the window is
+      #  whatever the theme's windowBackground says, and Theme.Material.Light
+      #  says WHITE - so the app opened onto a second and a half of blank white
+      #  before the face appeared, which reads as a hang and not as a load. A
+      #  theme whose background is the chassis colour makes that same second
+      #  and a half look like the machine already being there.
+      #
+      #  Projucer writes res/values/string.xml but never a styles.xml, so this
+      #  goes in after the resave and before Gradle.
+      - name: Launch theme (chassis-coloured window background)
+        run: |
+          set -euo pipefail
+          for d in main debug release; do
+            mkdir -p "Builds/Android/app/src/$d/res/values"
+            printf '%s\n' \
+              '<?xml version="1.0" encoding="utf-8"?>' \
+              '<resources>' \
+              '  <color name="zatiChassis">#FFF4EFE3</color>' \
+              '  <style name="ZatiLaunch" parent="@android:style/Theme.Material.Light.NoActionBar">' \
+              '    <item name="android:windowBackground">@color/zatiChassis</item>' \
+              '  </style>' \
+              '</resources>' \
+              > "Builds/Android/app/src/$d/res/values/zati_theme.xml"
+          done
+          cat Builds/Android/app/src/main/res/values/zati_theme.xml
+          grep -n 'android:theme' Builds/Android/app/src/main/AndroidManifest.xml
+
       - name: Point Gradle at the Android SDK
         run: echo "sdk.dir=${ANDROID_SDK_ROOT}" > Builds/Android/local.properties
 

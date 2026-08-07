@@ -55,7 +55,7 @@
                    androidInternetNeeded="0" androidCpp11="1"
                    microphonePermissionNeeded="1"
                    androidReadMediaAudioPermission="1"
-                   androidTheme="@android:style/Theme.Material.Light.NoActionBar"
+                   androidTheme="@style/ZatiLaunch"
                    androidScreenOrientation="portrait"
                    gradleVersion="8.7" androidPluginVersion="8.6.1"
                    extraLinkerFlags="-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384">
