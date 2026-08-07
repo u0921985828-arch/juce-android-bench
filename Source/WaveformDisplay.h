@@ -296,7 +296,9 @@ public:
             auto bot = b.reduced (11.0f, 6.0f).removeFromBottom (12.0f);
             g.setColour (lcdDim);
             g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
-            g.drawText (T ("TRIM") + " " + juce::String (start01, 2) + juce::String (juce::CharPointer_UTF8 (" \xe2\x86\x92 ")) + juce::String (end01, 2),
+            g.drawText (T ("TRIM") + " " + Lang::ltr (juce::String (start01, 2)
+                                                + juce::String (juce::CharPointer_UTF8 (" \xe2\x86\x92 "))
+                                                + juce::String (end01, 2)),
                         bot, juce::Justification::bottomLeft);
         }
 

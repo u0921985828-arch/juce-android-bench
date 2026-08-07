@@ -111,8 +111,11 @@ juce::String describe()
     const int cores = juce::jmax (1, juce::SystemStats::getNumCpus());
     const int ramMB = juce::jmax (512, juce::SystemStats::getMemorySizeInMegabytes());
 
+    //  "15.7 GB" is a latin run inside a sentence that may be Arabic, so it
+    //  is fenced: without it bidi moves the decimal point and the unit and
+    //  the line stops meaning a size at all.
     return T ("%1 nucleos", juce::String (cores))
-             + " · " + juce::String (ramMB / 1024.0, 1) + " GB · "
+             + " · " + Lang::ltr (juce::String (ramMB / 1024.0, 1) + " GB") + " · "
              + tierName (profile().tier)
              + " · " + T ("%1 voces", juce::String (profile().voices));
 }

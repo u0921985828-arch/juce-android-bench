@@ -4487,7 +4487,7 @@ void MainComponent::finishMeasure()
                     : T ("con micro abierto: salida %1 + entrada %2 ms%3",
                          juce::String (outMs, 1), juce::String (inMs, 1),
                          measuredInMs > 0.0f ? juce::String() : " " + T ("(por resta)"))
-                        + ". " + T ("Tocando solo sales %1 ms", juce::String (outMs, 1));
+                        + ". " + T ("Tocando solo sales %1 ms", Lang::ltr (juce::String (outMs, 1)));
     refreshAudioOptions();
 }
 
@@ -4581,7 +4581,7 @@ void MainComponent::applyAudioSetup (int bufferSize, double rate)
 
     if (err.isNotEmpty())
     {
-        status.setText (T ("AUDIO") + ": " + err, juce::dontSendNotification);
+        status.setText (T ("AUDIO") + ": " + Lang::ltr (err), juce::dontSendNotification);
         deviceLine.clear();          // a real message: the timer must not touch it
     }
     else
@@ -4628,7 +4628,7 @@ void MainComponent::refreshDeviceStatusLine (bool force)
     lastDeviceBlock = blockNow;
     lastDeviceRate  = rateNow;
 
-    const auto line = juce::String (blockNow) + " " + T ("muestras") + " · "
+    const auto line = Lang::ltr (juce::String (blockNow)) + " " + T ("muestras") + " · "
                         + juce::String (rateNow) + " Hz";
 
     if (line == deviceLine) return;

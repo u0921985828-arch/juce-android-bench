@@ -118,7 +118,7 @@ public:
         g.drawText (readout, top, juce::Justification::topLeft);
         g.drawText ("BPM:" + juce::String (bpm, 1), top, juce::Justification::topRight);
         g.setColour (ZatiColours::lcdDim);
-        g.drawText (T ("OUT") + " " + peakDb(), top, juce::Justification::centredTop);
+        g.drawText (T ("OUT") + " " + Lang::ltr (peakDb()), top, juce::Justification::centredTop);
 
         //  Stereo VU, immediately under the labels: two rows of segments in a
         //  gutter narrow enough for the L and the R to sit beside them.

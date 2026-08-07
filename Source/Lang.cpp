@@ -23,7 +23,7 @@ namespace
         { "SET",            "AJUSTES",  "SETUP",      "设置",       "إعداد" },
         { "LOAD",           "CARGAR",   "LOAD",       "载入",       "تحميل" },
         { "REC",            "",         "REC",        "录音",       "تسجيل" },
-        { "REC ON",         "",         "REC ON",     "录音中", "جارٍ" },
+        { "REC ON",         "",         "REC ON",     "录音中", "يسجّل" },
         { "PLAY",           "",         "PLAY",       "播放",       "تشغيل" },
         { "STOP",           "",         "STOP",       "停止",       "إيقاف" },
         { "DESHACER",       "",         "UNDO",       "撤销",       "تراجع" },
@@ -81,11 +81,11 @@ namespace
         { "off",            "",         "off",        "关",         "مغلق" },
 
         // --- SEC sheet -----------------------------------------------------
-        { "PASOS",          "",         "STEPS",      "步进",       "خطوات" },
+        { "PASOS",          "",         "STEPS",      "步数",       "خطوات" },
         { "PATRON",         "",         "PATTERN",    "乐句",       "نمط" },
         { "LARGO",          "",         "LENGTH",     "长度",       "الطول" },
         { "CADENA",         "",         "CHAIN",      "链接",       "سلسلة" },
-        { "NOTA DEL PASO",  "",         "STEP NOTE",  "步进音符", "نغمة الخطوة" },
+        { "NOTA DEL PASO",  "",         "STEP NOTE",  "该步音符", "نغمة الخطوة" },
         { "COMPAS",         "",         "BAR",        "小节",       "مازورة" },
         { "TEMPO",          "",         "TEMPO",      "速度",       "الإيقاع" },
         { "QUITAR CADENA",  "",         "CLEAR CHAIN","清除链接", "مسح السلسلة" },
@@ -101,14 +101,14 @@ namespace
         { "TROZOS",         "",         "PIECES",     "片数",       "عدد القطع" },
         { "RESPETAR PADS CON SONIDO", "", "KEEP PADS THAT HAVE SOUND",
                                         "保留已有声音的音垫",
-                                        "لا تمسّ الوسائد المشغولة" },
+                                        "لا تمسّ الباد المشغول" },
         { "CORTAR",         "",         "CHOP",       "切片",       "قطّع" },
         { "CORTAR EN %1",   "",         "CHOP INTO %1","切成 %1 片", "قطّع إلى %1" },
         { "Parte este sample en trozos iguales y los reparte por los pads. El pad de origen se queda con el primero.",
           "", "Cuts this sample into equal pieces and spreads them over the pads. The source pad keeps the first one.",
           "把这个采样切成等分的几段，分配到各个音垫。原音垫保留第一段。",
           "يقطّع هذه العينة إلى أجزاء متساوية ويوزّعها على الوسائد، ويحتفظ الباد الأصلي بالجزء الأول." },
-        { "va a pads: %1",  "",         "goes to pads: %1", "分配到音垫：%1", "إلى الوسائد: %1" },
+        { "va a pads: %1",  "",         "goes to pads: %1", "分配到音垫：%1", "إلى الباد: %1" },
         { "no pisa ningun pad con sonido", "", "does not overwrite any pad that has sound",
                                         "不会覆盖任何有声音的音垫",
                                         "لن يطمس أي باد فيه صوت" },
@@ -200,7 +200,7 @@ namespace
           "باد فارغ — اضغط تحميل ثم المس الباد" },
         { "REC: toca pads para grabarlos en el patron", "", "REC: tap pads to write them into the pattern",
                                         "录音：点音垫就会写进乐句",
-                                        "تسجيل: المس الوسائد لتُكتب في النمط" },
+                                        "تسجيل: المس الباد لتُكتب في النمط" },
         { "REC apagado",    "",         "REC off",    "录音已关", "التسجيل متوقف" },
         { "Grabado pad %1 en paso %2 (P%3)", "", "Pad %1 written into step %2 (P%3)",
                                         "音垫 %1 已写入第 %2 步（P%3）",
@@ -317,7 +317,6 @@ namespace
                                         "只演奏时是 %1 毫秒",
                                         "عند العزف فقط: %1 مللي" },
         { "midiendo...",    "",         "measuring...", "正在测量…", "جارٍ القياس…" },
-        { "escuchando...",  "",         "listening...", "正在监听…", "جارٍ الإنصات…" },
         { "MEDIR emite un click y lo escucha con el micro", "",
           "MEASURE plays a click and listens for it with the mic",
           "测量会发出一个声音并用麦克风听回来",
@@ -433,6 +432,16 @@ void Lang::savePreference()
 //  called REV; when there is no translation it is cut off, because the reader
 //  wants the word and not the note we left ourselves.
 // ============================================================================
+juce::String Lang::ltr (const juce::String& latinRun)
+{
+    if (! isRightToLeft (current()))
+        return latinRun;
+
+    static const auto open  = juce::String::fromUTF8 ("\xe2\x81\xa6");   // U+2066 LRI
+    static const auto close = juce::String::fromUTF8 ("\xe2\x81\xa9");   // U+2069 PDI
+    return open + latinRun + close;
+}
+
 juce::String T (const juce::String& key)
 {
     const auto& t = table();

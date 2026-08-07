@@ -52,6 +52,20 @@ public:
     static const char* nativeName (Id id);    // as that language writes itself
     static bool isRightToLeft (Id id) noexcept { return id == ar; }
 
+    //  Fence a run of NUMBERS or Latin around so Arabic does not reorder it.
+    //
+    //  "OUT " + "-inf" came out on screen as "خرج inf-" : bidi saw a minus at
+    //  the boundary of a right-to-left run and moved it to the other end, so a
+    //  reading of minus infinity turned into something that is not a number at
+    //  all. Same for "-12 dB", for "4 cores - 15.7 GB", for a file name, for
+    //  anything latin sitting inside a translated sentence.
+    //
+    //  U+2066 LEFT-TO-RIGHT ISOLATE ... U+2069 POP DIRECTIONAL ISOLATE says
+    //  "this piece has its own direction and it does not take part in the
+    //  bidi of what is around it". Outside Arabic it costs nothing: the
+    //  characters are invisible and the string is returned untouched.
+    static juce::String ltr (const juce::String& latinRun);
+
     //  Remembered between launches next to the rest of the ZATI folder. This
     //  is a preference, not project state: it does not belong in a song.
     static void loadPreference();
