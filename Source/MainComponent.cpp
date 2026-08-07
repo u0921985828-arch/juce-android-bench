@@ -1570,15 +1570,26 @@ void MainComponent::paint (juce::Graphics& g)
 
     //  A label that rides its seam, the way silkscreen does on hardware: the
     //  line breaks for the word instead of running behind it.
+    //
+    //  Centred, with the rule coming in from BOTH edges to meet it. Hung off
+    //  the left it read as a caption sitting on top of a line; brought to the
+    //  middle with the line arriving from either side it reads as one piece of
+    //  lettering that the seam was engraved around - which is what it is, and
+    //  what the three of them together are supposed to say about the face.
     auto engrave = [&g, &rule, &full] (const juce::String& text, float y)
     {
         g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.30f));
-        const float tw = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), text) + 10.0f;
-        const float x0 = full.getX() + 10.0f;
+        const float tw  = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), text);
+        const float cx  = full.getCentreX();
+        const float x0  = cx - tw * 0.5f;
+        const float gap = 9.0f;                       // air the rule leaves around the word
 
-        rule (x0 + tw, full.getRight() - 10.0f, y, 0.16f);
+        rule (full.getX() + 10.0f, x0 - gap, y, 0.16f);
+        rule (x0 + tw + gap, full.getRight() - 10.0f, y, 0.16f);
+
         g.setColour (ZatiColours::ink.withAlpha (0.42f));
-        g.drawText (text, (int) x0, (int) (y - 5.0f), (int) tw, 11, juce::Justification::centredLeft);
+        g.drawText (text, (int) x0 - 1, (int) (y - 5.0f), (int) tw + 3, 11,
+                    juce::Justification::centred);
     };
 
     // 2. The pad plate: the pads are bolted to a recessed panel, not floating
