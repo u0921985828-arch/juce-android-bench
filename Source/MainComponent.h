@@ -166,6 +166,10 @@ private:
     //  per layout out of whatever the square pad grid did not need.
     int layoutAir = 0;
 
+    //  Top of each seam that carries an engraved name, so paint() can centre
+    //  the lettering in the gap instead of hanging it off the section below.
+    int ctrlSeamTop = 0, fxSeamTop = 0, padSeamTop = 0;
+
     //  Ticks spent chasing the safe area at startup; see timerCallback.
     int insetSettleTicks = 0;
 

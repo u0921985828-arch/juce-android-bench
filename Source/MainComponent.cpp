@@ -1546,6 +1546,27 @@ void MainComponent::releaseResources()
 //  UI
 // ---------------------------------------------------------------------------
 
+//  THE BAND A LABEL LIVES IN.
+//
+//  Every caption on this face names the thing directly under it, and the
+//  layout always reserves a strip for it - placeKnobRow takes 16, the SEC
+//  rows take 14 + kTextPad, and so on. What kept going wrong is that the
+//  PAINTING then ignored that strip and used its own offset instead: draw
+//  twelve pixels of text fifteen above the control and you get three
+//  pixels of air over the word and one under it, every time, everywhere.
+//
+//  So the band is stated once, as a rectangle, and the text is centred in
+//  it. Symmetric by construction rather than by arithmetic that has to be
+//  redone correctly at each of the places that needs it.
+static juce::Rectangle<int> bandAbove (const juce::Component& c, int bandH,
+                                       int gapToTop, int sideBleed = 0)
+{
+    return { c.getX() - sideBleed,
+             c.getY() - gapToTop - bandH,
+             c.getWidth() + 2 * sideBleed,
+             bandH };
+}
+
 void MainComponent::paint (juce::Graphics& g)
 {
     auto full = getLocalBounds().toFloat();
@@ -1576,10 +1597,19 @@ void MainComponent::paint (juce::Graphics& g)
     //  middle with the line arriving from either side it reads as one piece of
     //  lettering that the seam was engraved around - which is what it is, and
     //  what the three of them together are supposed to say about the face.
-    auto engrave = [&g, &rule, &full] (const juce::String& text, float y)
+    //  ...and centred in the seam, not hung from the top of the section below
+    //  it. Placing the word a fixed six pixels over the zone put every bit of
+    //  the seam's slack ABOVE the lettering and none under it, so the label
+    //  read as glued to the plate beneath rather than as sitting in its own
+    //  band. It takes the two edges of the gap and puts itself in the middle
+    //  of them, so the air is the same above and below whatever the seam is
+    //  worth on this screen.
+    auto engraveIn = [&g, &full, &rule] (const juce::String& text, int seamTop, int zoneTop)
     {
+        auto engrave = [&g, &rule, &full] (const juce::String& t, float y)
+        {
         g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.30f));
-        const float tw  = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), text);
+        const float tw  = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), t);
         const float cx  = full.getCentreX();
         const float x0  = cx - tw * 0.5f;
         const float gap = 9.0f;                       // air the rule leaves around the word
@@ -1588,8 +1618,11 @@ void MainComponent::paint (juce::Graphics& g)
         rule (x0 + tw + gap, full.getRight() - 10.0f, y, 0.16f);
 
         g.setColour (ZatiColours::ink.withAlpha (0.42f));
-        g.drawText (text, (int) x0 - 1, (int) (y - 5.0f), (int) tw + 3, 11,
+        g.drawText (t, (int) x0 - 1, (int) (y - 5.0f), (int) tw + 3, 11,
                     juce::Justification::centred);
+        };
+
+        engrave (text, (float) (seamTop + zoneTop) * 0.5f);
     };
 
     // 2. The pad plate: the pads are bolted to a recessed panel, not floating
@@ -1639,13 +1672,13 @@ void MainComponent::paint (juce::Graphics& g)
     //  labelled LOAD, REC and PLAY. resized() reserves the seam height for
     //  these, so they can never land on the section above.
     if (! ctrlPlateArea.isEmpty())
-        engrave (T ("CONTROL"), (float) ctrlPlateArea.getY() - 6.0f);
+        engraveIn (T ("CONTROL"), ctrlSeamTop, ctrlPlateArea.getY());
 
     if (! fxRowArea.isEmpty())
-        engrave (T ("EFECTOS"), (float) fxRowArea.getY() - 6.0f);
+        engraveIn (T ("EFECTOS"), fxSeamTop, fxRowArea.getY());
 
     if (! padPlateArea.isEmpty())
-        engrave (T ("PADS"), (float) padPlateArea.getY() - 6.0f);
+        engraveIn (T ("PADS"), padSeamTop, padPlateArea.getY());
 
         //  Which of the six owns the three knobs. A tap both switches an
         //  effect and hands it the knobs, and until now only the switching
@@ -1656,12 +1689,13 @@ void MainComponent::paint (juce::Graphics& g)
         if (juce::isPositiveAndBelow (focusedFx, fxButtons.size()))
             if (auto* fb = fxButtons[focusedFx])
             {
-                //  Above the rule, not below it: the engraved word sits in
-                //  the eleven pixels between the rule and the buttons, and a
-                //  wedge over the first effect landed inside the lettering -
-                //  EFEC(wedge)OS. The band over the rule is empty.
+                //  In the band BELOW the rule, which is now empty: the word
+                //  moved to the middle of the seam and takes the rule's line
+                //  with it, so the pixels between that line and the caps are
+                //  free - and they are the right place for a pointer, because
+                //  it is nearer the thing it points at than to the lettering.
                 const float cx = (float) fb->getBounds().getCentreX();
-                const float y  = (float) fb->getY() - 12.0f;
+                const float y  = (float) fb->getY() - 3.0f;
                 juce::Path wedge;
                 wedge.addTriangle (cx - 5.0f, y - 6.0f, cx + 5.0f, y - 6.0f, cx, y);
                 g.setColour (ZatiColours::ink.withAlpha (0.75f));
@@ -1801,14 +1835,17 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
             //  Sitting on the bottom edge of its band put the word straight
             //  onto the control under it. It keeps its own padding now, and
             //  the rule it rides moves with it.
+            //  Centred in its band, not sunk to the bottom of it: trimming
+            //  only the bottom left seven pixels of air over the word and
+            //  three under it.
             const auto secText = T (secNames[i]);
-            const auto textRow = r.withTrimmedBottom (ZatiLookAndFeel::kTextPad);
-            g.drawText (secText, textRow, juce::Justification::bottomLeft);
+            const auto textRow = r;
+            g.drawText (secText, textRow, juce::Justification::centredLeft);
 
             const float tw = juce::GlyphArrangement::getStringWidth (
                                  ZatiColours::labelFont (Metrics::fMeta, 0.22f),
                                  secText);
-            const float ly = (float) textRow.getBottom() - 5.0f;
+            const float ly = (float) textRow.getCentreY() + 1.0f;
             g.setColour (ZatiColours::ink.withAlpha (0.18f));
             g.fillRect ((float) r.getX() + tw + 8.0f, ly,
                         juce::jmax (0.0f, (float) r.getRight() - ((float) r.getX() + tw + 8.0f)), 1.0f);
@@ -1816,18 +1853,19 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
 
         // Knobs: label above (same convention as FX).
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
+        //  placeKnobRow reserves 16 for the name and then insets the knob by
+        //  2, so the band is the sixteen pixels that end two above the dial.
         auto name = [&g] (juce::Slider& s, const char* t)
         {
-            auto r = s.getBounds();
-            g.drawText (T (t), r.getX() - 6, r.getY() - 15, r.getWidth() + 12, 12, juce::Justification::centred);
+            g.drawText (T (t), bandAbove (s, 16, 2, 6), juce::Justification::centred);
         };
         name (pitchSlider, "PITCH"); name (fineSlider, "FINO"); name (volSlider, "VOLUME");
         name (panSlider, "PAN");
         name (attackSlider, "ATTACK"); name (releaseSlider, "RELEASE");
         name (chokeSlider, "CHOKE");
 
-        g.drawText (T ("MODO"), modeButton.getX() - 6, modeButton.getY() - 15,
-                    modeButton.getWidth() + 12, 12, juce::Justification::centred);
+        //  Same band, one pixel lower: the third row insets its cells by 3.
+        g.drawText (T ("MODO"), bandAbove (modeButton, 16, 3, 6), juce::Justification::centred);
 
         // Start/End stay linear (a trim range, not a knob): label to the left.
         g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.06f));
@@ -1900,13 +1938,15 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
         g.setColour (ZatiColours::inkDim);
         g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.20f));
 
+        //  The SEC rows reserve 14 + kTextPad and then inset their controls
+        //  by 2. Drawn thirteen pixels tall at -17 + kTextPad it ended up with
+        //  five pixels over the word and a pixel of the word INSIDE the row.
         auto over = [&g] (const juce::Component* c, const juce::String& t)
         {
             if (c == nullptr) return;
-            const auto r = c->getBounds();
-            g.drawText (t, r.getX() + 2, r.getY() - 17 + ZatiLookAndFeel::kTextPad,
-                        juce::jmax (60, r.getWidth()), 13,
-                        juce::Justification::centredLeft);
+            auto band = bandAbove (*c, 14 + ZatiLookAndFeel::kTextPad, 2);
+            band.setWidth (juce::jmax (60, band.getWidth()));
+            g.drawText (t, band.translated (2, 0), juce::Justification::centredLeft);
         };
 
         over (&patternSlider,      T ("PATRON"));
@@ -2073,7 +2113,7 @@ void MainComponent::resized()
         const int padsNeed = 4 * cellW + 3 * ZatiLookAndFeel::kPadGap;
         const int bodyNeed = ZatiLookAndFeel::kCtrlPlate + ZatiLookAndFeel::kAir + Metrics::sm
                            + ZatiLookAndFeel::kFxRow + ZatiLookAndFeel::kAir
-                           + padsNeed + 2 * kSeamLabelH;
+                           + padsNeed + 3 * kSeamLabelH;
 
         //  ...and what it recovers goes into the SEAMS, not into one pool.
         //
@@ -2132,6 +2172,7 @@ void MainComponent::resized()
         recButton.setBounds  (row.removeFromLeft (u).reduced (2, 0));
         playButton.setBounds (row.reduced (2, 0));
     }
+    ctrlSeamTop = area.getY();
     area.removeFromTop (ZatiLookAndFeel::kAir + layoutAir + kSeamLabelH);   // CONTROL rides here
 
     // Status pinned to the bottom; DESHACER sits on its right when armed, so
@@ -2162,7 +2203,8 @@ void MainComponent::resized()
             cell.removeFromBottom (ZatiLookAndFeel::kCtrlChip);
             mk[i]->setBounds (cell.reduced (10, 0));
         }
-        area.removeFromTop (ZatiLookAndFeel::kAir + Metrics::sm + layoutAir);   // the EFECTOS rule lives here
+        fxSeamTop = area.getY();
+        area.removeFromTop (ZatiLookAndFeel::kAir + Metrics::sm + layoutAir + kSeamLabelH);
         fxRowArea = area.removeFromTop (ZatiLookAndFeel::kFxRow);
         {
             auto row = fxRowArea;
@@ -2170,6 +2212,7 @@ void MainComponent::resized()
             for (int f = 0; f < kNumFx; ++f)
                 fxButtons[f]->setBounds ((f < kNumFx - 1 ? row.removeFromLeft (sw) : row).reduced (1, 0));
         }
+        padSeamTop = area.getY();
         area.removeFromTop (ZatiLookAndFeel::kAir + layoutAir + kSeamLabelH);   // PADS rides here
         layoutPadGrid (area, 4, 4, ZatiLookAndFeel::kPadGap);
     }
