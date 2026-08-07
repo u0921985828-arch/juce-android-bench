@@ -289,6 +289,7 @@ private:
     //  language is one call rather than forty. Called from the constructor
     //  too, which is why no button's text is authoritative in its declaration.
     void retranslateUi();
+    void refreshAccessibleNames();
 
     //  What the system is drawing over the window (Android 15 edge to edge).
     juce::BorderSize<int> systemInsets;

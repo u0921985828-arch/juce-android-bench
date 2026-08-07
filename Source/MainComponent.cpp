@@ -329,6 +329,10 @@ MainComponent::MainComponent()
                 Lang::set ((Lang::Id) i);
                 Lang::savePreference();
                 retranslateUi();
+                //  Arabic moves the sheets' furniture, not just their words,
+                //  so the language is a layout change now and has to run one.
+                resized();
+                repaint();
             };
             projSheet.addAndMakeVisible (b);
             langButtons.add (b);
@@ -1133,38 +1137,7 @@ MainComponent::MainComponent()
     //  in the app came out as an anonymous "Slider", which makes the whole
     //  thing unusable with TalkBack on. The pads are named in refreshPadArt,
     //  where the sample name is known; these are the rest.
-    struct Named { juce::Slider& s; const char* title; const char* what; };
-    for (auto& n : { Named { pitchSlider,   "Tono",      "semitonos" },
-                     Named { fineSlider,    "Afinado",   "centesimas" },
-                     Named { volSlider,     "Volumen",   "del pad" },
-                     Named { panSlider,     "Paneo",     "del pad" },
-                     Named { attackSlider,  "Ataque",    "milisegundos" },
-                     Named { releaseSlider, "Caida",     "milisegundos" },
-                     Named { startSlider,   "Inicio",    "recorte" },
-                     Named { endSlider,     "Fin",       "recorte" },
-                     Named { chokeSlider,   "Choke",     "grupo de corte" },
-                     Named { bpmSlider,     "Tempo",     "pulsos por minuto" },
-                     Named { patternSlider, "Patron",    "del secuenciador" },
-                     Named { noteSlider,    "Nota",      "del paso" },
-                     Named { lengthSlider,  "Compases",  "del patron" },
-                     Named { macroCtrl1,    "Control 1", "del efecto" },
-                     Named { macroCtrl2,    "Control 2", "del efecto" },
-                     Named { macroCtrl3,    "Control 3", "del efecto" } })
-    {
-        n.s.setTitle (n.title);
-        n.s.setDescription (n.what);
-    }
-
-    //  The mixer builds its strips per pad, so they get named where they are
-    //  made - but the channel number is the whole point of the name.
-    for (int i = 0; i < kNumPads; ++i)
-    {
-        const auto ch = " canal " + juce::String (i + 1);
-        if (auto* f = mixFaders[i]) { f->setTitle ("Volumen" + ch); f->setDescription ("del mezclador"); }
-        if (auto* p = mixPans[i])   { p->setTitle ("Paneo"   + ch); p->setDescription ("del mezclador"); }
-        if (auto* m = mixMutes[i])  { m->setTitle ("Silencio" + ch); }
-        if (auto* s = mixSolos[i])  { s->setTitle ("Solo"    + ch); }
-    }
+    refreshAccessibleNames();
 
     //  Captions last: every button above was built with whatever text its
     //  declaration carried, and this is what makes them say it in the user's
@@ -1819,7 +1792,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
     //  mid-letter reads as a bug where "..." reads as a long name.
     g.drawText (T ("PAD %1", juce::String (sp + 1))
                 + (padName[(size_t) sp].isNotEmpty() ? "  " + dot + "  " + padName[(size_t) sp].toUpperCase() : juce::String()),
-                padTitleRow, juce::Justification::centredLeft, true);
+                padTitleRow, Lang::start(), true);
 
     {
         //  Group headers, each with a hairline running out to the right edge -
@@ -1842,7 +1815,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
             //  three under it.
             const auto secText = T (secNames[i]);
             const auto textRow = r;
-            g.drawText (secText, textRow, juce::Justification::centredLeft);
+            g.drawText (secText, textRow, Lang::start());
 
             const float tw = juce::GlyphArrangement::getStringWidth (
                                  ZatiColours::labelFont (Metrics::fMeta, 0.22f),
@@ -1874,7 +1847,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
         auto lab = [&g] (juce::Slider& s, const char* t)
         {
             auto r = s.getBounds();
-            g.drawText (T (t), r.getX() - 66, r.getY(), 60, r.getHeight(), juce::Justification::centredLeft);
+            g.drawText (T (t), r.getX() - 66, r.getY(), 60, r.getHeight(), Lang::start());
         };
         lab (startSlider, "START"); lab (endSlider, "END");
 
@@ -2263,9 +2236,9 @@ void MainComponent::resized()
         constexpr int secH = 15 + 2 * ZatiLookAndFeel::kTextPad;
         auto inner = sheetFromBottom (padSheet, 670 + 3 * secH);
         auto titleRow = inner.removeFromTop (32);
-        padCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
-        titleRow.removeFromRight (Metrics::xs);
-        previewButton.setBounds (titleRow.removeFromRight (68).reduced (0, 2));
+        padCloseButton.setBounds (Lang::takeEnd (titleRow, 32).reduced (2));
+        Lang::takeEnd (titleRow, Metrics::xs);
+        previewButton.setBounds (Lang::takeEnd (titleRow, 68).reduced (0, 2));
 
         padSectionArea[0] = inner.removeFromTop (secH);   // painted: SONIDO
 
@@ -2333,7 +2306,7 @@ void MainComponent::resized()
     {
         auto inner = sheetFromBottom (browseSheet, full.getHeight());   // clamps to the 86% cap
         auto titleRow = inner.removeFromTop (32);
-        browseCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
+        browseCloseButton.setBounds (Lang::takeEnd (titleRow, 32).reduced (2));
 
         auto actions = inner.removeFromBottom (Metrics::btn);
         browseSystemButton.setBounds (actions.removeFromRight (actions.getWidth() / 3).reduced (2, 0));
@@ -2357,11 +2330,11 @@ void MainComponent::resized()
 
         auto inner = sheetFromBottom (projSheet, wanted);
         auto titleRow = inner.removeFromTop (32);
-        projCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
+        projCloseButton.setBounds (Lang::takeEnd (titleRow, 32).reduced (2));
         // TEST is a diagnostic — it belongs with the housekeeping, not among
         // the effects, where it was one more button that made no music.
-        testButton.setBounds    (titleRow.removeFromRight (56).reduced (2));
-        measureButton.setBounds (titleRow.removeFromRight (64).reduced (2));
+        testButton.setBounds    (Lang::takeEnd (titleRow, 56).reduced (2));
+        measureButton.setBounds (Lang::takeEnd (titleRow, 64).reduced (2));
 
         // What the audio device is giving us, at the top where you cannot
         // miss it. It is the only number in the app that says whether this
@@ -2375,11 +2348,16 @@ void MainComponent::resized()
         auto chipRow = [&inner] (juce::OwnedArray<juce::TextButton>& btns, int labelW)
         {
             auto row = inner.removeFromTop (Metrics::hit);
-            auto r = row.withTrimmedLeft (labelW);
+            //  The gutter the row's NAME sits in goes on the leading side, so
+            //  in Arabic it is the right one; drawing the word right-aligned
+            //  inside a box still pinned to the left only shifted it by a few
+            //  pixels and left it on top of the first chip.
+            auto r = row;
+            Lang::takeStart (r, labelW);
             const int n = juce::jmax (1, btns.size());
             const int w = r.getWidth() / n;
             for (int i = 0; i < btns.size(); ++i)
-                btns[i]->setBounds ((i < n - 1 ? r.removeFromLeft (w) : r).reduced (1, 2));
+                btns[i]->setBounds ((i < n - 1 ? Lang::takeStart (r, w) : r).reduced (1, 2));
             inner.removeFromTop (Metrics::xs);
             return row;
         };
@@ -2410,7 +2388,7 @@ void MainComponent::resized()
     {
         auto inner = sheetFromBottom (exportSheet, 32 + 96 + Metrics::btn * 2 + Metrics::sm * 2);
         auto titleRow = inner.removeFromTop (32);
-        exportCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
+        exportCloseButton.setBounds (Lang::takeEnd (titleRow, 32).reduced (2));
 
         inner.removeFromTop (96);   // painted: source, length, destination, status
 
@@ -2431,7 +2409,7 @@ void MainComponent::resized()
                                                    + (chipRowH + Metrics::xs) * 2
                                                    + Metrics::sm + kNumFx * 48 + Metrics::sm);
         auto titleRow = inner.removeFromTop (32);
-        rackCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
+        rackCloseButton.setBounds (Lang::takeEnd (titleRow, 32).reduced (2));
         inner.removeFromTop (14);                       // painted: which pad this is
 
         for (int r = 0; r < 2; ++r)
@@ -2465,7 +2443,7 @@ void MainComponent::resized()
                                                    + Metrics::md + plannedH
                                                    + Metrics::sm + Metrics::btn);
         auto titleRow = inner.removeFromTop (32);
-        chopCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
+        chopCloseButton.setBounds (Lang::takeEnd (titleRow, 32).reduced (2));
 
         inner.removeFromTop (explainH);                 // painted: what this does
         inner.removeFromTop (Metrics::md);
@@ -2493,7 +2471,7 @@ void MainComponent::resized()
         auto inner = sheetFromBottom (songSheet, Metrics::md * 2 + 32 + Metrics::hit * 2 + Metrics::sm * 3
                                                   + Playlist::kLanes * laneH + Metrics::hit + Metrics::btn);
         auto titleRow = inner.removeFromTop (32);
-        songCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
+        songCloseButton.setBounds (Lang::takeEnd (titleRow, 32).reduced (2));
 
         // Palette: P1..P8.
         {
@@ -2547,7 +2525,7 @@ void MainComponent::resized()
         const int rowH = juce::jlimit (24, Metrics::hit, mixRoom / kNumPads);
         auto inner = sheetFromBottom (mixSheet, mixFurniture + kNumPads * rowH);
         auto titleRow = inner.removeFromTop (32);
-        mixCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
+        mixCloseButton.setBounds (Lang::takeEnd (titleRow, 32).reduced (2));
 
         auto bottom = inner.removeFromBottom (Metrics::btn);
         rackButton.setBounds (bottom.removeFromRight (bottom.getWidth() / 3).reduced (3, 4));
@@ -2581,7 +2559,7 @@ void MainComponent::resized()
 
         auto inner = sheetFromBottom (seqSheet, fixedRowsH + gridH);
         auto titleRow = inner.removeFromTop (32);
-        seqCloseButton.setBounds (titleRow.removeFromRight (32).reduced (2));
+        seqCloseButton.setBounds (Lang::takeEnd (titleRow, 32).reduced (2));
 
         {
             //  Named groups, in the order the work happens: pick the bank and
@@ -2958,8 +2936,58 @@ void MainComponent::setZati (int newZati)
 //  that state rather than assumed, so switching language mid-take does not
 //  quietly claim the transport is stopped when it is running.
 // ============================================================================
+//  The names TalkBack reads out.
+//
+//  These were sixteen sliders and sixty-four mixer controls named in Spanish
+//  with string literals, in the constructor, once. So the app spoke four
+//  languages to anyone who could see it and exactly one to anyone who could
+//  not - and a language change did not reach them at all, because nothing ever
+//  set them again. They go through T() now and retranslateUi calls this.
+void MainComponent::refreshAccessibleNames()
+{
+    struct Named { juce::Slider& s; const char* title; const char* what; };
+    for (auto& n : { Named { pitchSlider,   "Tono",      "semitonos" },
+                     Named { fineSlider,    "Afinado",   "centesimas" },
+                     Named { volSlider,     "Volumen",   "del pad" },
+                     Named { panSlider,     "Paneo",     "del pad" },
+                     Named { attackSlider,  "Ataque",    "milisegundos" },
+                     Named { releaseSlider, "Caida",     "milisegundos" },
+                     Named { startSlider,   "Inicio",    "recorte" },
+                     Named { endSlider,     "Fin",       "recorte" },
+                     Named { chokeSlider,   "Choke",     "grupo de corte" },
+                     Named { bpmSlider,     "Tempo|nombre", "pulsos por minuto" },
+                     Named { patternSlider, "Patron",    "del secuenciador" },
+                     Named { noteSlider,    "Nota",      "del paso" },
+                     Named { lengthSlider,  "Compases",  "del patron" } })
+    {
+        n.s.setTitle (T (n.title));
+        n.s.setDescription (T (n.what));
+    }
+
+    juce::Slider* macros[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
+    for (int i = 0; i < 3; ++i)
+    {
+        macros[i]->setTitle (T ("Control %1", juce::String (i + 1)));
+        macros[i]->setDescription (T ("del efecto"));
+    }
+
+    //  The mixer builds its strips per pad, and the channel number is the
+    //  whole point of the name - so it goes in as an argument rather than
+    //  glued on, which is the only way it lands correctly in every language.
+    for (int i = 0; i < kNumPads; ++i)
+    {
+        const auto ch = juce::String (i + 1);
+        if (auto* f = mixFaders[i]) { f->setTitle (T ("Volumen canal %1", ch)); f->setDescription (T ("del mezclador")); }
+        if (auto* p = mixPans[i])   { p->setTitle (T ("Paneo canal %1",   ch)); p->setDescription (T ("del mezclador")); }
+        if (auto* m = mixMutes[i])  { m->setTitle (T ("Silencio %1", ch)); }
+        if (auto* s = mixSolos[i])  { s->setTitle (T ("Solo %1",     ch)); }
+    }
+}
+
 void MainComponent::retranslateUi()
 {
+    refreshAccessibleNames();
+
     padsButton  .setButtonText (T ("PADS"));
     secButton   .setButtonText (T ("SEC"));
     songButton  .setButtonText (T ("SONG"));
@@ -3839,7 +3867,7 @@ void MainComponent::paintSongSheetContent (juce::Graphics& g)
     if (songSheet.sheetBounds.isEmpty()) return;
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
-    g.drawText (T ("SONG"), songSheet.sheetBounds.reduced (14, 10).removeFromTop (16), juce::Justification::centredLeft);
+    g.drawText (T ("SONG"), songSheet.sheetBounds.reduced (14, 10).removeFromTop (16), Lang::start());
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
@@ -3862,7 +3890,7 @@ void MainComponent::paintMixSheetContent (juce::Graphics& g)
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
     g.drawText (engine.anySolo() ? "MIX  ·  SOLO ACTIVO" : "MIX",
-                mixSheet.sheetBounds.reduced (14, 12).removeFromTop (16), juce::Justification::centredLeft);
+                mixSheet.sheetBounds.reduced (14, 12).removeFromTop (16), Lang::start());
 
     for (int i = 0; i < kNumPads; ++i)
     {
@@ -3888,7 +3916,7 @@ void MainComponent::paintMixSheetContent (juce::Graphics& g)
         g.drawText (has && padName[(size_t) i].isNotEmpty() ? padName[(size_t) i].toUpperCase()
                                                             : juce::String (juce::CharPointer_UTF8 ("\xe2\x80\x94")),
                     nameX, fr.getY(), juce::jmax (24, fr.getX() - 6 - nameX), fr.getHeight(),
-                    juce::Justification::centredLeft, true);
+                    Lang::start(), true);
     }
 }
 
@@ -3944,18 +3972,18 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
     g.drawText (T ("AUTO CHOP") + "  " + dot + "  " + T ("PAD %1", juce::String (sp + 1))
                 + (padName[(size_t) sp].isNotEmpty() ? "  " + dot + "  " + padName[(size_t) sp].toUpperCase()
                                                      : juce::String()),
-                titleRow, juce::Justification::centredLeft, true);
+                titleRow, Lang::start(), true);
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.06f));
     g.drawFittedText (T ("Parte este sample en trozos iguales y los reparte por los pads. "
                          "El pad de origen se queda con el primero."),
-                      inner.removeFromTop (40), juce::Justification::topLeft, 3, 1.0f);
+                      inner.removeFromTop (40), Lang::start (juce::Justification::top), 3, 1.0f);
 
     inner.removeFromTop (Metrics::md);
     g.setColour (ZatiColours::ink.withAlpha (0.75f));
     g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.16f));
-    g.drawText (T ("TROZOS"), inner.removeFromTop (14), juce::Justification::centredLeft);
+    g.drawText (T ("TROZOS"), inner.removeFromTop (14), Lang::start());
 
     inner.removeFromTop (Metrics::hit + Metrics::sm + Metrics::hit + Metrics::md);
 
@@ -3969,7 +3997,7 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
         g.setColour (ZatiColours::red);
         g.setFont (ZatiColours::monoFont (Metrics::fLabel, true));
         g.drawFittedText (T ("Este pad no tiene sonido que cortar."),
-                          planned, juce::Justification::topLeft, 1, 0.8f);
+                          planned, Lang::start (juce::Justification::top), 1, 0.8f);
         return;
     }
 
@@ -3984,7 +4012,7 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
     g.setColour (ZatiColours::ink.withAlpha (0.85f));
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.06f));
     g.drawFittedText (T ("va a pads: %1", nums.joinIntoString (" ")),
-                      planned.removeFromTop (22), juce::Justification::topLeft, 2, 0.8f);
+                      planned.removeFromTop (22), Lang::start (juce::Justification::top), 2, 0.8f);
 
     juce::String warn;
     if (targets.size() < chopSlices)
@@ -3995,7 +4023,7 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
         warn = "no pisa ningun pad con sonido";
 
     g.setColour (overwritten > 0 ? ZatiColours::red : ZatiColours::inkDim);
-    g.drawFittedText (warn, planned, juce::Justification::topLeft, 1, 0.8f);
+    g.drawFittedText (warn, planned, Lang::start (juce::Justification::top), 1, 0.8f);
 }
 
 void MainComponent::paintRackSheetContent (juce::Graphics& g)
@@ -4011,12 +4039,12 @@ void MainComponent::paintRackSheetContent (juce::Graphics& g)
     titleRow.setRight (juce::jmin (titleRow.getRight(), rackCloseButton.getX() - Metrics::xs));
     g.drawText (T ("RACK") + "  " + dot + "  " + T ("PAD %1", juce::String (rackPad + 1))
                 + (nm.isNotEmpty() ? "  " + dot + "  " + nm.toUpperCase() : juce::String()),
-                titleRow, juce::Justification::centredLeft, true);
+                titleRow, Lang::start(), true);
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
     g.drawFittedText (T ("cuanto de este pad entra en cada efecto"),
-                      inner.removeFromTop (14), juce::Justification::centredLeft, 1, 0.75f);
+                      inner.removeFromTop (14), Lang::start(), 1, 0.75f);
 
     for (int f = 0; f < kNumFx; ++f)
     {
@@ -4027,7 +4055,7 @@ void MainComponent::paintRackSheetContent (juce::Graphics& g)
         g.setColour (on ? ZatiColours::ink : ZatiColours::inkDim.withAlpha (0.55f));
         g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.10f));
         g.drawText (fxDefs[f].name, rackSheet.sheetBounds.getX() + Metrics::lg, r.getY(),
-                    50, r.getHeight(), juce::Justification::centredLeft);
+                    50, r.getHeight(), Lang::start());
 
         //  An effect that is switched off is not hidden, it is greyed: the
         //  send you set now is the send it will use when you switch it on.
@@ -4042,7 +4070,7 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
     auto inner = projSheet.sheetBounds.reduced (12, 6);
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
-    g.drawText (T ("PROYECTOS"), inner.removeFromTop (16), juce::Justification::centredLeft);
+    g.drawText (T ("PROYECTOS"), inner.removeFromTop (16), Lang::start());
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
@@ -4056,7 +4084,7 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
                           : (projModel.names.isEmpty()
                                  ? T ("sin proyectos - GUARDAR crea el primero")
                                  : T ("elige uno de la lista")),
-                      subRow, juce::Justification::centredLeft, 1, 0.8f);
+                      subRow, Lang::start(), 1, 0.8f);
 
     paintAudioInfo (g, audioInfoArea);
 
@@ -4066,10 +4094,10 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.12f));
     if (! bufRowArea.isEmpty())
-        g.drawText (T ("BUFER"), bufRowArea.withWidth (52), juce::Justification::centredLeft);
+        { auto r = bufRowArea; g.drawText (T ("BUFER"), Lang::takeStart (r, 44), Lang::start()); }
     if (! rateRowArea.isEmpty())
-        g.drawText (T ("RELOJ"), rateRowArea.withWidth (52), juce::Justification::centredLeft);
-        g.drawText (T ("IDIOMA"), langRowArea.withWidth (52), juce::Justification::centredLeft);
+        { auto r = rateRowArea; g.drawText (T ("RELOJ"), Lang::takeStart (r, 44), Lang::start()); }
+        { auto r = langRowArea; g.drawText (T ("IDIOMA"), Lang::takeStart (r, 44), Lang::start()); }
 }
 
 // ---------------------------------------------------------------------------
@@ -4078,9 +4106,9 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
 
 juce::String MainComponent::exportSourceLabel() const
 {
-    if (engine.isSongMode())        return "CANCION";
-    if (engine.getChainLength() > 0) return "CADENA (" + juce::String (engine.getChainLength()) + " patrones)";
-    return "PATRON P" + juce::String (engine.getEditPattern() + 1);
+    if (engine.isSongMode())        return T ("CANCION");
+    if (engine.getChainLength() > 0) return T ("CADENA (%1 patrones)", juce::String (engine.getChainLength()));
+    return T ("PATRON P%1", juce::String (engine.getEditPattern() + 1));
 }
 
 void MainComponent::startExport (bool stems)
@@ -4090,7 +4118,7 @@ void MainComponent::startExport (bool stems)
     if (engine.lengthInSteps() <= 0 || ! engine.hasContentToRender())
     {
         exportOk = false;
-        exportStatus = "no hay nada grabado en " + exportSourceLabel().toLowerCase();
+        exportStatus = T ("no hay nada grabado en %1", exportSourceLabel().toLowerCase());
         exportSheet.repaint();
         return;
     }
@@ -4147,7 +4175,7 @@ void MainComponent::paintExportSheetContent (juce::Graphics& g)
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
-    g.drawText (T ("EXPORTAR"), inner.removeFromTop (18), juce::Justification::centredLeft);
+    g.drawText (T ("EXPORTAR"), inner.removeFromTop (18), Lang::start());
     inner.removeFromTop (10);
 
     // What is going to be rendered, and how long it will be. Stated before
@@ -4163,18 +4191,19 @@ void MainComponent::paintExportSheetContent (juce::Graphics& g)
         auto r = inner.removeFromTop (17);
         g.setColour (ZatiColours::inkDim);
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
-        g.drawText (k, r.removeFromLeft (76), juce::Justification::centredLeft);
+        g.drawText (k, Lang::takeStart (r, 76), Lang::start());
         g.setColour (vc);
         g.setFont (ZatiColours::monoFont (Metrics::fValue, true));
-        g.drawText (v, r, juce::Justification::centredLeft);
+        g.drawText (v, r, Lang::start());
     };
 
-    line ("fuente", exportSourceLabel(), ZatiColours::ink);
-    line ("duracion", steps > 0 ? juce::String (secs, 1) + " s  ·  " + juce::String (steps / 16) + " compases"
-                                : juce::String ("vacio"),
+    line (T ("fuente"), exportSourceLabel(), ZatiColours::ink);
+    line (T ("duracion"), steps > 0 ? Lang::ltr (juce::String (secs, 1) + " s") + "  ·  "
+                                        + T ("%1 compases", juce::String (steps / 16))
+                                    : T ("vacio"),
           steps > 0 ? ZatiColours::ink : ZatiColours::red);
-    line ("pistas", juce::String (loaded) + " pads con muestra", ZatiColours::ink);
-    line ("destino", "ZATI/Exports/" + (currentProject.isNotEmpty() ? currentProject : juce::String ("ZATI")),
+    line (T ("pistas"), T ("%1 pads con muestra", juce::String (loaded)), ZatiColours::ink);
+    line (T ("destino"), Lang::ltr ("ZATI/Exports/" + (currentProject.isNotEmpty() ? currentProject : juce::String ("ZATI"))),
           ZatiColours::inkDim);
 
     inner.removeFromTop (6);
@@ -4193,14 +4222,14 @@ void MainComponent::paintExportSheetContent (juce::Graphics& g)
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
         g.drawText (T ("escribiendo %1", juce::String (exportJob->passDone.load (std::memory_order_relaxed) + 1)
                                        + "/" + juce::String (exportJob->passTotal.load (std::memory_order_relaxed))),
-                    inner.removeFromTop (16), juce::Justification::centredLeft);
+                    inner.removeFromTop (16), Lang::start());
     }
     else if (exportStatus.isNotEmpty())
     {
         g.setColour (exportOk ? ZatiColours::accent : ZatiColours::red);
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
         g.drawFittedText (exportOk ? T ("listo: %1", exportStatus) : exportStatus,
-                          inner.removeFromTop (24), juce::Justification::topLeft, 2);
+                          inner.removeFromTop (24), Lang::start (juce::Justification::top), 2);
     }
     else
     {
@@ -4208,7 +4237,7 @@ void MainComponent::paintExportSheetContent (juce::Graphics& g)
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, false));
         g.drawFittedText (T ("MASTER = un WAV con lo que oyes.  PISTAS = el master mas un WAV "
                              "por pad, para mezclar fuera."),
-                          inner.removeFromTop (26), juce::Justification::topLeft, 2);
+                          inner.removeFromTop (26), Lang::start (juce::Justification::top), 2);
     }
 }
 
@@ -4713,7 +4742,7 @@ void MainComponent::paintBrowseSheetContent (juce::Graphics& g)
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
     g.drawText (T ("CARGAR EN PAD %1", juce::String (juce::jmax (0, browseTargetPad) + 1)),
-                inner.removeFromTop (16), juce::Justification::centredLeft);
+                inner.removeFromTop (16), Lang::start());
 
     const bool picked = browser != nullptr && browser->getNumSelectedFiles() > 0
                      && browser->getSelectedFile (0).existsAsFile();
@@ -4725,7 +4754,7 @@ void MainComponent::paintBrowseSheetContent (juce::Graphics& g)
     browseSubRow.setRight (juce::jmin (browseSubRow.getRight(), browseCloseButton.getX() - Metrics::xs));
     g.drawText (picked ? browser->getSelectedFile (0).getFileName()
                        : T ("elige una muestra  -  wav / aiff / flac / ogg / mp3"),
-                browseSubRow, juce::Justification::centredLeft, true);
+                browseSubRow, Lang::start(), true);
 }
 
 // REC on the transport arms PATTERN recording: pads you hit while the

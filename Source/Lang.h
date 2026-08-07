@@ -66,6 +66,41 @@ public:
     //  characters are invisible and the string is returned untouched.
     static juce::String ltr (const juce::String& latinRun);
 
+    //  Where a line of text STARTS and where it ENDS, which is not the same as
+    //  left and right once Arabic is one of the languages.
+    //
+    //  The machine face stays as it is on purpose: pads, knobs and transport
+    //  are muscle memory and a position, not a column of prose. But the sheets
+    //  are rows of label-and-value, and a label pinned to the left of an Arabic
+    //  row reads as badly as an English one pinned to the right.
+    static juce::Justification start (int extraFlags = juce::Justification::verticallyCentred)
+    {
+        return juce::Justification ((isRightToLeft (current()) ? juce::Justification::right
+                                                               : juce::Justification::left) | extraFlags);
+    }
+    static juce::Justification end (int extraFlags = juce::Justification::verticallyCentred)
+    {
+        return juce::Justification ((isRightToLeft (current()) ? juce::Justification::left
+                                                               : juce::Justification::right) | extraFlags);
+    }
+
+    //  Take the leading slice of a row - the left one normally, the right one
+    //  in Arabic - so a label/value pair swaps sides with the language.
+    static juce::Rectangle<int> takeStart (juce::Rectangle<int>& row, int amount)
+    {
+        return isRightToLeft (current()) ? row.removeFromRight (amount)
+                                         : row.removeFromLeft  (amount);
+    }
+    //  ...and the trailing slice, which is where a card's close button and its
+    //  corner keys live. Mirroring the TEXT of a sheet without mirroring these
+    //  too is worse than not mirroring at all: the title moves to the right in
+    //  Arabic and lands straight on top of the buttons that were already there.
+    static juce::Rectangle<int> takeEnd (juce::Rectangle<int>& row, int amount)
+    {
+        return isRightToLeft (current()) ? row.removeFromLeft  (amount)
+                                         : row.removeFromRight (amount);
+    }
+
     //  Remembered between launches next to the rest of the ZATI folder. This
     //  is a preference, not project state: it does not belong in a song.
     static void loadPreference();

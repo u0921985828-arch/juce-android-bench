@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "Lang.h"
 #include "BinaryData.h"
 
 // ============================================================================
@@ -152,6 +153,14 @@ namespace ZatiColours
     //  the mono it sits next to.
     inline juce::Font labelFont (float h, float tracking = 0.18f)
     {
+        //  No tracking in Arabic. Letter-spacing is what makes Latin lettering
+        //  look silkscreened, and it is what BREAKS Arabic: the script is
+        //  joined, and pushing the glyphs apart cuts every join - the word for
+        //  pad came out as three loose letters, which is not a spaced word, it
+        //  is a different thing that does not read.
+        if (Lang::isRightToLeft (Lang::current()))
+            return displayFont (h + 2.0f, true);
+
         return displayFont (h + 2.0f, true).withExtraKerningFactor (tracking);
     }
 }
