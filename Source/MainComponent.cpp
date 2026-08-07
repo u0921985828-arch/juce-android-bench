@@ -447,13 +447,15 @@ MainComponent::MainComponent()
     micButton.onClick = [this] { toggleMicSampling(); };
     padSheet.addAndMakeVisible (micButton);
 
-    for (auto* zb : { &zatiPrevButton, &zatiNextButton })
+    //  The zati row is painted, not built out of components: eight swatches
+    //  in a strip of chip height. See paintPadSheetContent.
+    padSheet.onContentClick = [this] (juce::Point<int> p)
     {
-        styleButton (*zb, kKey);
-        padSheet.addAndMakeVisible (zb);
-    }
-    zatiPrevButton.onClick = [this] { shiftZati (-1); };
-    zatiNextButton.onClick = [this] { shiftZati (+1); };
+        if (selectedPad < 0 || ! zatiSwatchArea.contains (p)) return;
+        const float w = (float) zatiSwatchArea.getWidth() / (float) Zati::kNumColours;
+        setZati (juce::jlimit (0, Zati::kNumColours - 1,
+                               (int) ((float) (p.x - zatiSwatchArea.getX()) / w)));
+    };
 
     playButton.setClickingTogglesState (true);
     //  PLAY is the widest key on the face, and it used to be the dark one as
@@ -1880,15 +1882,28 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
         // shown — the number and the name are the non-chromatic half.
         if (! zatiSwatchArea.isEmpty())
         {
-            const int z = padZati[(size_t) sp];
-            g.setColour (Zati::colour (z));
-            g.fillRoundedRectangle (zatiSwatchArea.toFloat(), 3.0f);
+            const int sel = padZati[(size_t) sp];
+            const auto r  = zatiSwatchArea.toFloat();
+            const float w = r.getWidth() / (float) Zati::kNumColours;
 
-            const bool darkFrag = Zati::colour (z).getPerceivedBrightness() < 0.55f;
-            g.setColour (darkFrag ? ZatiColours::inkLight : ZatiColours::ink);
-            g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
-            g.drawText ("ZATI " + juce::String (z + 1) + "  " + T (Zati::name (z)),
-                        zatiSwatchArea, juce::Justification::centred);
+            for (int i = 0; i < Zati::kNumColours; ++i)
+            {
+                auto cell = juce::Rectangle<float> (r.getX() + (float) i * w, r.getY(),
+                                                    w, r.getHeight()).reduced (2.0f, 0.0f);
+
+                //  The one it carries is the only one at full strength and the
+                //  only one wearing an outline. The other seven are there to
+                //  be picked, not to be looked at.
+                const bool on = (i == sel);
+                g.setColour (Zati::colour (i).withAlpha (on ? 1.0f : 0.38f));
+                g.fillRoundedRectangle (cell, 2.0f);
+
+                if (on)
+                {
+                    g.setColour (ZatiColours::ink.withAlpha (0.75f));
+                    g.drawRoundedRectangle (cell.reduced (0.5f), 2.0f, 1.4f);
+                }
+            }
         }
 
     }
@@ -2298,10 +2313,13 @@ void MainComponent::resized()
         micButton.setBounds  (rr2.reduced (3, 0));
         inner.removeFromTop (5);
 
-        auto zr = inner.removeFromTop (Metrics::hit);
-        zatiPrevButton.setBounds (zr.removeFromLeft (56).reduced (3, 0));
-        zatiNextButton.setBounds (zr.removeFromRight (56).reduced (3, 0));
-        zatiSwatchArea = zr.reduced (4, 2);      // drawn in paintPadSheetContent
+        //  Colour is a TAG, not sound design, and it used to be the loudest
+        //  thing on this card: a full 44 px row with two stepper keys and a
+        //  bar of saturated colour across the middle, shouting over PITCH and
+        //  TRIM. It is eight swatches in a chip-high strip now - a third of
+        //  the height, none of the shouting, and one tap instead of stepping
+        //  round a ring of eight.
+        zatiSwatchArea = inner.removeFromTop (Metrics::chip).reduced (4, 0);
         inner.removeFromTop (8);
 
         //  The cut itself, with its fragments and its draggable trim handles.
@@ -2909,12 +2927,13 @@ void MainComponent::rebuildChain()
 
 // Assignment follows cut order by default; this is the spec's manual override,
 // for organising a kit by kind of sound instead of by position.
-void MainComponent::shiftZati (int delta)
+void MainComponent::setZati (int newZati)
 {
     if (selectedPad < 0) return;
 
     auto& z = padZati[(size_t) selectedPad];
-    z = ((z + delta) % Zati::kNumColours + Zati::kNumColours) % Zati::kNumColours;
+    if (z == newZati) return;
+    z = juce::jlimit (0, Zati::kNumColours - 1, newZati);
 
     if (auto* p = pads[selectedPad]) p->setZati (z);
     refreshWaveformSegments();

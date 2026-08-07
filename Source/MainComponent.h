@@ -51,13 +51,22 @@ private:
     public:
         std::function<void()> onDismiss;
         std::function<void (juce::Graphics&)> paintContent;   // titles, readouts, rings
+        //  A click INSIDE the card. Painted controls - things with no
+        //  component of their own, like the zati swatches - hang off this.
+        std::function<void (juce::Point<int>)> onContentClick;
         juce::Rectangle<int> sheetBounds;
 
         void paint (juce::Graphics& g) override;
         void mouseDown (const juce::MouseEvent& e) override
         {
-            if (! sheetBounds.contains (e.getPosition()) && onDismiss)
-                onDismiss();
+            if (! sheetBounds.contains (e.getPosition()))
+            {
+                if (onDismiss) onDismiss();
+            }
+            else if (onContentClick)
+            {
+                onContentClick (e.getPosition());
+            }
         }
     };
     Sheet padSheet, seqSheet, browseSheet, projSheet, mixSheet, songSheet, exportSheet, rackSheet,
@@ -470,14 +479,13 @@ private:
     //  it from the top without having to reach past the sheet for the pad.
     juce::TextButton previewButton { juce::CharPointer_UTF8 ("\xe2\x96\xb6 OIR") };
     bool previewSounding = false;
-    juce::TextButton zatiPrevButton { juce::CharPointer_UTF8 ("\xe2\x97\x80") },
-                     zatiNextButton { juce::CharPointer_UTF8 ("\xe2\x96\xb6") };
+
     juce::Rectangle<int> zatiSwatchArea;
     //  The three group headers of the PADS sheet, placed in resized() and
     //  drawn in paintPadSheetContent: a sheet with eleven controls on it needs
     //  to say which of them belong together.
     std::array<juce::Rectangle<int>, 3> padSectionArea {};
-    void shiftZati (int delta);
+    void setZati (int z);
     bool recArmed = false;                          // REC writes hits into the pattern
 
     juce::Slider pitchSlider, fineSlider, volSlider, startSlider, endSlider, bpmSlider, chokeSlider;
