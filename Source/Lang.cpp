@@ -139,6 +139,7 @@ namespace
         { "NUEVO",          "",         "NEW",        "新建",       "جديد" },
         { "BORRAR",         "",         "DELETE",     "删除",       "حذف" },
         { "EXPORTAR",       "",         "EXPORT",     "导出",       "تصدير" },
+        { "CONTROL",        "",         "CONTROL",    "控制",       "تحكم" },
         { "SIN GUARDAR",    "",         "UNSAVED",    "未保存",     "غير محفوظ" },
         { "BORRA TODO?",    "",         "ERASE ALL?", "全部清空？", "مسح الكل؟" },
         { "BORRAR %1?",     "",         "DELETE %1?", "删除 %1？", "حذف %1؟" },

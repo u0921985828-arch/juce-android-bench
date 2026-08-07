@@ -1597,14 +1597,6 @@ void MainComponent::paint (juce::Graphics& g)
         g.setColour (ZatiColours::white.withAlpha (0.55f));      // lip catching the light
         g.drawRoundedRectangle (pp.reduced (1.6f), 4.0f, 1.0f);
 
-        //  No engraved label above this one: child components paint over their
-        //  parent, and the FX row's caps sit exactly where the lettering would
-        //  land. The plate and its screws say what it is without the word.
-        for (int corner = 0; corner < 4; ++corner)
-            ZatiColours::drawScrew (g,
-                                    (corner & 1) ? pp.getRight() - 6.0f : pp.getX() + 6.0f,
-                                    (corner & 2) ? pp.getBottom() - 6.0f : pp.getY() + 6.0f,
-                                    2.6f);
     }
 
     //  The control plate: CTRL 1-3 and the six modules are one zone, and
@@ -1620,15 +1612,29 @@ void MainComponent::paint (juce::Graphics& g)
         g.setColour (ZatiColours::white.withAlpha (0.55f));
         g.drawRoundedRectangle (cp.reduced (1.6f), 4.0f, 1.0f);
 
-        for (int corner = 0; corner < 4; ++corner)
-            ZatiColours::drawScrew (g,
-                                    (corner & 1) ? cp.getRight() - 5.0f : cp.getX() + 5.0f,
-                                    (corner & 2) ? cp.getBottom() - 5.0f : cp.getY() + 5.0f,
-                                    2.2f);
     }
+
+    //  A plate, a name. EFECTOS used to be the only engraved word on the
+    //  face, which made it look like a caption someone forgot to remove
+    //  rather than like silkscreen: the other two plated zones - the knobs
+    //  and the pads - had no title at all, and the eye reads one label among
+    //  three unlabelled neighbours as an accident.
+    //
+    //  So the rule is now literal and it is the same for all three: every
+    //  zone that sits on a PLATE gets its name engraved on the seam directly
+    //  above it, left-aligned at the same inset, with the rule breaking for
+    //  the word. Nothing that is not on a plate gets one - the LCD says what
+    //  it is by being a screen, and the transport keys say it by being
+    //  labelled LOAD, REC and PLAY. resized() reserves the seam height for
+    //  these, so they can never land on the section above.
+    if (! ctrlPlateArea.isEmpty())
+        engrave (T ("CONTROL"), (float) ctrlPlateArea.getY() - 6.0f);
 
     if (! fxRowArea.isEmpty())
         engrave (T ("EFECTOS"), (float) fxRowArea.getY() - 6.0f);
+
+    if (! padPlateArea.isEmpty())
+        engrave (T ("PADS"), (float) padPlateArea.getY() - 6.0f);
 
         //  Which of the six owns the three knobs. A tap both switches an
         //  effect and hands it the knobs, and until now only the switching
@@ -1657,16 +1663,16 @@ void MainComponent::paint (juce::Graphics& g)
     if (! screenBezel.isEmpty())
     {
         auto r = screenBezel.toFloat();
+        //  A thinner bezel, now that nothing is bolted through it. The five
+        //  pixels were there to give twelve screw heads somewhere to sit, and
+        //  twelve screw heads on a phone are twelve dots of noise at the exact
+        //  size where they stop reading as hardware and start reading as
+        //  dirt. Three pixels of frame say the same thing and hand the other
+        //  two back to the glass.
         g.setColour (ZatiColours::knobBody2);
-        g.fillRoundedRectangle (r.expanded (5.0f), 3.0f);
+        g.fillRoundedRectangle (r.expanded (3.0f), 3.0f);
         g.setColour (ZatiColours::knobEdge.withAlpha (0.7f));
-        g.drawRoundedRectangle (r.expanded (5.0f).reduced (0.5f), 3.0f, 1.2f);
-
-        for (int corner = 0; corner < 4; ++corner)
-            ZatiColours::drawScrew (g,
-                                    (corner & 1) ? r.getRight() + 1.0f : r.getX() - 1.0f,
-                                    (corner & 2) ? r.getBottom() + 1.0f : r.getY() - 1.0f,
-                                    2.4f);
+        g.drawRoundedRectangle (r.expanded (3.0f).reduced (0.5f), 3.0f, 1.2f);
     }
 
     // 3. Header: ZATI wordmark left, fragment strip right. No touch targets
@@ -1977,7 +1983,10 @@ void MainComponent::layoutPadGrid (juce::Rectangle<int> area, int cols, int rows
     //  The plate the pads are bolted to. Remembered rather than recomputed in
     //  paint(), because the grid is centred inside whatever room is left and
     //  only this function knows where that landed.
-    padPlateArea = grid.expanded (Metrics::sm, Metrics::sm);
+    //  Five, not eight: the eight were the room four screw heads needed at
+    //  the corners. Without them the plate can hug the pads, and the three
+    //  pixels it gives back become distance to the section above it.
+    padPlateArea = grid.expanded (5, 5);
 
     // SP-style numbering: pad 01 sits BOTTOM-left, 16 top-right — logical row
     // r of the pad index maps to visual row (rows-1-r).
@@ -1995,6 +2004,9 @@ void MainComponent::layoutPadGrid (juce::Rectangle<int> area, int cols, int rows
 
 void MainComponent::resized()
 {
+    //  Height reserved on a seam that carries an engraved name.
+    constexpr int kSeamLabelH = 12;
+
     editInfoArea = {};
     vuArea = stepStripArea = {};   // gone from the face; the screen draws them
     //  Both plates are only laid out on the main face; clearing them here
@@ -2050,7 +2062,7 @@ void MainComponent::resized()
         const int padsNeed = 4 * cellW + 3 * ZatiLookAndFeel::kPadGap;
         const int bodyNeed = ZatiLookAndFeel::kCtrlPlate + ZatiLookAndFeel::kAir + Metrics::sm
                            + ZatiLookAndFeel::kFxRow + ZatiLookAndFeel::kAir
-                           + padsNeed;
+                           + padsNeed + 2 * kSeamLabelH;
 
         //  ...and what it recovers goes into the SEAMS, not into one pool.
         //
@@ -2059,6 +2071,11 @@ void MainComponent::resized()
         //  makes a face read as laid out rather than as packed. The LCD keeps
         //  whatever the seams do not take, so on a short screen the seams stay
         //  at their base and the screen is the one that gives.
+        //  Two of the six seams carry an engraved name (CONTROL over the knob
+        //  plate, PADS over the pad plate; EFECTOS already had room in its
+        //  own). Reserving the lettering here rather than hoping the seam is
+        //  fat enough is what makes those two labels safe on a short screen:
+        //  they are laid out, not squeezed in.
         constexpr int kSeams   = 6;
         constexpr int kAirMax  = 11;   // past this the face reads as loose
         constexpr int kMinScreen = 96;
@@ -2104,7 +2121,7 @@ void MainComponent::resized()
         recButton.setBounds  (row.removeFromLeft (u).reduced (2, 0));
         playButton.setBounds (row.reduced (2, 0));
     }
-    area.removeFromTop (ZatiLookAndFeel::kAir + layoutAir);
+    area.removeFromTop (ZatiLookAndFeel::kAir + layoutAir + kSeamLabelH);   // CONTROL rides here
 
     // Status pinned to the bottom; DESHACER sits on its right when armed, so
     // an undoable action announces itself where the result was reported.
@@ -2142,7 +2159,7 @@ void MainComponent::resized()
             for (int f = 0; f < kNumFx; ++f)
                 fxButtons[f]->setBounds ((f < kNumFx - 1 ? row.removeFromLeft (sw) : row).reduced (1, 0));
         }
-        area.removeFromTop (ZatiLookAndFeel::kAir + layoutAir);
+        area.removeFromTop (ZatiLookAndFeel::kAir + layoutAir + kSeamLabelH);   // PADS rides here
         layoutPadGrid (area, 4, 4, ZatiLookAndFeel::kPadGap);
     }
 
