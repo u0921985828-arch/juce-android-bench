@@ -156,7 +156,11 @@ MainComponent::MainComponent()
         projSheet.paintContent  = [this] (juce::Graphics& g) { paintProjSheetContent (g); };
         audioSheet.paintContent = [this] (juce::Graphics& g) { paintAudioSheetContent (g); };
 
-        styleButton (setButton, kKey);
+        //  Same treatment as the other four: the module bar is one row and
+        //  has to read as one row. PADS and SEC were flattened and these three
+        //  were not, so five tabs came out as two kinds of object.
+        styleButton (setButton, ZatiColours::panel);
+        setButton.getProperties().set ("flat", true);
         setButton.setColour (juce::TextButton::buttonOnColourId, kAccent);
         setButton.onClick = [this]
         {
@@ -985,7 +989,8 @@ MainComponent::MainComponent()
     mixSheet.onDismiss = [this] { closeAllSheets(); };
     mixSheet.paintContent = [this] (juce::Graphics& g) { paintMixSheetContent (g); };
 
-    styleButton (mixButton, kKey);
+    styleButton (mixButton, ZatiColours::panel);
+    mixButton.getProperties().set ("flat", true);
     mixButton.setColour (juce::TextButton::buttonOnColourId, kAccent);
     mixButton.onClick = [this]
     {
@@ -1118,7 +1123,8 @@ MainComponent::MainComponent()
     songSheet.onDismiss = [this] { closeAllSheets(); };
     songSheet.paintContent = [this] (juce::Graphics& g) { paintSongSheetContent (g); };
 
-    styleButton (songButton, kKey);
+    styleButton (songButton, ZatiColours::panel);
+    songButton.getProperties().set ("flat", true);
     songButton.setColour (juce::TextButton::buttonOnColourId, kAccent);
     songButton.onClick = [this]
     {
