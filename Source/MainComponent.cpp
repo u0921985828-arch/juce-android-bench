@@ -146,14 +146,19 @@ MainComponent::MainComponent()
         addAndMakeVisible (projSheet);
         projSheet.setVisible (false);
         projSheet.onDismiss = [this] { closeAllSheets(); };
-        projSheet.paintContent = [this] (juce::Graphics& g) { paintProjSheetContent (g); };
+
+        addAndMakeVisible (audioSheet);
+        audioSheet.setVisible (false);
+        audioSheet.onDismiss = [this] { closeAllSheets(); };
+        projSheet.paintContent  = [this] (juce::Graphics& g) { paintProjSheetContent (g); };
+        audioSheet.paintContent = [this] (juce::Graphics& g) { paintAudioSheetContent (g); };
 
         styleButton (setButton, kKey);
         setButton.setColour (juce::TextButton::buttonOnColourId, kAccent);
         setButton.onClick = [this]
         {
-            if (projSheet.isVisible()) closeAllSheets();
-            else { refreshProjectList(); refreshAudioOptions(); openSheet (projSheet, setButton); }
+            if (audioSheet.isVisible()) closeAllSheets();
+            else { refreshAudioOptions(); openSheet (audioSheet, setButton); }
         };
         addAndMakeVisible (setButton);
 
@@ -255,7 +260,7 @@ MainComponent::MainComponent()
                 return;
             }
 
-            if (! armConfirm (projDeleteButton, "BORRAR " + projModel.names[sel] + "?")) return;
+            if (! armConfirm (projDeleteButton, T ("BORRAR %1?", projModel.names[sel]))) return;
             deleteProject (projModel.names[sel]);
         };
         projSheet.addAndMakeVisible (projDeleteButton);
@@ -371,13 +376,30 @@ MainComponent::MainComponent()
                 resized();
                 repaint();
             };
-            projSheet.addAndMakeVisible (b);
+            audioSheet.addAndMakeVisible (b);
             langButtons.add (b);
         }
 
         styleButton (measureButton, kKey);
         measureButton.onClick = [this] { startMeasure(); };
-        projSheet.addAndMakeVisible (measureButton);
+        audioSheet.addAndMakeVisible (measureButton);
+
+        styleButton (audioCloseButton, kKey);
+        audioCloseButton.onClick = [this] { closeAllSheets(); };
+        audioSheet.addAndMakeVisible (audioCloseButton);
+
+        //  ...and the way from the machine to your work. AJUSTES is where you
+        //  land from the tab bar, so the projects have to be reachable from
+        //  it - and the header's project name opens them too, which is the
+        //  shorter road once you know it is there.
+        styleButton (openProjectsButton, kKey);
+        openProjectsButton.onClick = [this]
+        {
+            closeAllSheets();
+            refreshProjectList();
+            openSheet (projSheet, setButton);
+        };
+        audioSheet.addAndMakeVisible (openProjectsButton);
     }
 
     // EXPORT sheet — the only door out of the app. Two products: the master,
@@ -478,7 +500,7 @@ MainComponent::MainComponent()
 
     styleButton (testButton, kKey);
     testButton.onClick = [this] { engine.postTestTone(); status.setText (T ("Tono de prueba"), juce::dontSendNotification); };
-    projSheet.addAndMakeVisible (testButton);
+    audioSheet.addAndMakeVisible (testButton);
 
     styleButton (recButton, kKey);
     recButton.onClick = [this] { toggleRecordArm(); };
@@ -1501,6 +1523,7 @@ void MainComponent::closeAllSheets()
     }
     browseSheet.setVisible (false);
     projSheet.setVisible (false);
+    audioSheet.setVisible (false);
     exportSheet.setVisible (false);
     rackSheet.setVisible (false);
     chopSheet.setVisible (false);
@@ -2363,30 +2386,53 @@ void MainComponent::resized()
         //  leaving whatever the projects did not fill as a white hole. With no
         //  projects saved that hole was most of the card, which reads as
         //  something failing to load rather than as an empty list.
+        //  AUDIO card: what the device is doing, and the language. Nothing
+        //  about your projects - that is the other card.
+        {
+            auto inner = sheetFromBottom (audioSheet,
+                                          Metrics::md * 2 + 32 + 158 + Metrics::xs
+                                            + (Metrics::hit + Metrics::xs) * 3
+                                            + Metrics::xs + Metrics::btn + Metrics::sm);
+            auto titleRow = inner.removeFromTop (32);
+            audioCloseButton.setBounds (Lang::takeEnd (titleRow, 32).reduced (2));
+            testButton.setBounds       (Lang::takeEnd (titleRow, 56).reduced (2));
+            measureButton.setBounds    (Lang::takeEnd (titleRow, 64).reduced (2));
+
+            audioInfoArea = inner.removeFromTop (158);
+            inner.removeFromTop (Metrics::xs);
+
+            auto chipRow = [&inner] (juce::OwnedArray<juce::TextButton>& btns, int labelW)
+            {
+                auto row = inner.removeFromTop (Metrics::hit);
+                auto r = row;
+                Lang::takeStart (r, labelW);
+                const int n = juce::jmax (1, btns.size());
+                const int w = r.getWidth() / n;
+                for (int i = 0; i < btns.size(); ++i)
+                    btns[i]->setBounds ((i < n - 1 ? Lang::takeStart (r, w) : r).reduced (1, 2));
+                inner.removeFromTop (Metrics::xs);
+                return row;
+            };
+            bufRowArea  = chipRow (bufButtons, 44);
+            rateRowArea = chipRow (rateButtons, 44);
+            langRowArea = chipRow (langButtons, 44);
+
+            inner.removeFromTop (Metrics::xs);
+            openProjectsButton.setBounds (inner.removeFromTop (Metrics::btn).reduced (2, 0));
+        }
+
+        //  PROJECTS card: the name, where it lives, the list, and what you can
+        //  do to it.
         const int listRowH = juce::jmax (22, projList.getRowHeight());
         const int listH    = juce::jlimit (1, 8, projModel.names.size()) * listRowH;
-        const int wanted   = Metrics::md * 2 + 32 + Metrics::hit + 14 + Metrics::xs
-                               + 158 + Metrics::xs
-                               + (Metrics::hit + Metrics::xs) * 3 + Metrics::xs
-                               + Metrics::btn * 2 + Metrics::xs + 8
+        const int wanted   = Metrics::md * 2 + 32 + Metrics::hit + 14 + Metrics::sm
+                               + Metrics::btn * 2 + Metrics::xs * 2 + 8
                                + listH + Metrics::sm;
 
         auto inner = sheetFromBottom (projSheet, wanted);
         auto titleRow = inner.removeFromTop (32);
         projCloseButton.setBounds (Lang::takeEnd (titleRow, 32).reduced (2));
-        // TEST is a diagnostic — it belongs with the housekeeping, not among
-        // the effects, where it was one more button that made no music.
-        testButton.setBounds    (Lang::takeEnd (titleRow, 56).reduced (2));
-        measureButton.setBounds (Lang::takeEnd (titleRow, 64).reduced (2));
 
-        // What the audio device is giving us, at the top where you cannot
-        // miss it. It is the only number in the app that says whether this
-        // thing is playable, so it does not live behind another tap.
-        //  One line taller than it was: the panel now opens with what the
-        //  app decided this phone can carry, before anything about the
-        //  stream it opened.
-        //  The name of the thing this card is about, at the top where the
-        //  gap already was. It is the first question the card answers.
         projNameRowArea = inner.removeFromTop (Metrics::hit);
         {
             auto r = projNameRowArea;
@@ -2394,36 +2440,8 @@ void MainComponent::resized()
             projNameBox.setBounds (r.reduced (2, 4));
         }
         projPathRowArea = inner.removeFromTop (14);
-        inner.removeFromTop (Metrics::xs);
+        inner.removeFromTop (Metrics::sm);
 
-        audioInfoArea = inner.removeFromTop (158);
-        inner.removeFromTop (Metrics::xs);
-
-        auto chipRow = [&inner] (juce::OwnedArray<juce::TextButton>& btns, int labelW)
-        {
-            auto row = inner.removeFromTop (Metrics::hit);
-            //  The gutter the row's NAME sits in goes on the leading side, so
-            //  in Arabic it is the right one; drawing the word right-aligned
-            //  inside a box still pinned to the left only shifted it by a few
-            //  pixels and left it on top of the first chip.
-            auto r = row;
-            Lang::takeStart (r, labelW);
-            const int n = juce::jmax (1, btns.size());
-            const int w = r.getWidth() / n;
-            for (int i = 0; i < btns.size(); ++i)
-                btns[i]->setBounds ((i < n - 1 ? Lang::takeStart (r, w) : r).reduced (1, 2));
-            inner.removeFromTop (Metrics::xs);
-            return row;
-        };
-        //  A narrower gutter for the row names: six chips need the width more
-        //  than "BUFER" needs the air around it.
-        bufRowArea  = chipRow (bufButtons, 44);
-        rateRowArea = chipRow (rateButtons, 44);
-        langRowArea = chipRow (langButtons, 44);
-        inner.removeFromTop (Metrics::xs);
-
-        // EXPORTAR sits on its own row: it is the only action here that
-        // produces something outside the app, and it needs room for its name.
         projExportButton.setBounds (inner.removeFromBottom (Metrics::btn).reduced (2, 0));
         inner.removeFromBottom (Metrics::xs);
 
@@ -4140,6 +4158,32 @@ void MainComponent::paintRackSheetContent (juce::Graphics& g)
     }
 }
 
+//  The AUDIO card. What the device is doing, and the language it says it in.
+void MainComponent::paintAudioSheetContent (juce::Graphics& g)
+{
+    if (audioSheet.sheetBounds.isEmpty()) return;
+
+    auto inner = audioSheet.sheetBounds.reduced (12, 6);
+    g.setColour (ZatiColours::ink.withAlpha (0.9f));
+    g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
+    g.drawText (T ("AUDIO"), inner.removeFromTop (16), Lang::start());
+
+    paintAudioInfo (g, audioInfoArea);
+
+    //  Row names for the three chip rows. The asterisk marks the driver's own
+    //  burst size: on Android that is the fast path, and anything below it
+    //  buys nothing.
+    g.setColour (ZatiColours::inkDim);
+    g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.12f));
+    if (! bufRowArea.isEmpty())
+        { auto r = bufRowArea;  g.drawText (T ("BUFER"),  Lang::takeStart (r, 44), Lang::start()); }
+    if (! rateRowArea.isEmpty())
+        { auto r = rateRowArea; g.drawText (T ("RELOJ"),  Lang::takeStart (r, 44), Lang::start()); }
+    if (! langRowArea.isEmpty())
+        { auto r = langRowArea; g.drawText (T ("IDIOMA"), Lang::takeStart (r, 44), Lang::start()); }
+}
+
+//  The PROJECTS card. The name, where it lives, and the list.
 void MainComponent::paintProjSheetContent (juce::Graphics& g)
 {
     if (projSheet.sheetBounds.isEmpty()) return;
@@ -4151,11 +4195,10 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
-    //  MEDIR, TEST and the close button all hang off the right of this same
-    //  band, so the subtitle has to end before they start - written across
-    //  the full width it disappeared under MEDIR mid-sentence.
+    //  The close button hangs off the end of this same band, so the subtitle
+    //  has to stop before it starts.
     auto subRow = inner.removeFromTop (14);
-    subRow.setRight (juce::jmin (subRow.getRight(), measureButton.getX() - Metrics::xs));
+    subRow.setRight (juce::jmin (subRow.getRight(), projCloseButton.getX() - Metrics::xs));
     g.drawFittedText (currentProject.isNotEmpty()
                           ? T ("abierto: %1", currentProject)
                           : (projModel.names.isEmpty()
@@ -4163,15 +4206,6 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
                                  : T ("elige uno de la lista")),
                       subRow, Lang::start(), 1, 0.8f);
 
-    paintAudioInfo (g, audioInfoArea);
-
-    // Row labels for the two chip rows. The asterisk marks the driver's own
-    // burst size: on Android that is the fast path, and anything below it
-    // buys nothing.
-    g.setColour (ZatiColours::inkDim);
-    g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.12f));
-    if (! bufRowArea.isEmpty())
-        { auto r = bufRowArea; g.drawText (T ("BUFER"), Lang::takeStart (r, 44), Lang::start()); }
     //  NAME, and under it the folder these projects actually live in. The
     //  path is there because when a save goes missing the answer is almost
     //  always "it went somewhere else", and until now there was no way to see
@@ -4192,10 +4226,6 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
         g.drawFittedText (Lang::ltr (ProjectStore::root().getFullPathName()),
                           r, Lang::start(), 1, 0.7f);
     }
-
-    if (! rateRowArea.isEmpty())
-        { auto r = rateRowArea; g.drawText (T ("RELOJ"), Lang::takeStart (r, 44), Lang::start()); }
-        { auto r = langRowArea; g.drawText (T ("IDIOMA"), Lang::takeStart (r, 44), Lang::start()); }
 }
 
 // ---------------------------------------------------------------------------
@@ -4701,7 +4731,7 @@ void MainComponent::refreshAudioOptions()
             b->setColour (juce::TextButton::textColourOnId, ZatiColours::inkLight);
             b->setToggleState (v == curBuf, juce::dontSendNotification);
             b->onClick = [this, v] { applyAudioSetup (v, 0.0); };
-            projSheet.addAndMakeVisible (b);
+            audioSheet.addAndMakeVisible (b);
             bufButtons.add (b);
         }
     }
@@ -4725,7 +4755,7 @@ void MainComponent::refreshAudioOptions()
         b->setColour (juce::TextButton::textColourOnId, ZatiColours::inkLight);
         b->setToggleState (std::abs (r - curRate) < 1.0, juce::dontSendNotification);
         b->onClick = [this, r] { applyAudioSetup (0, r); };
-        projSheet.addAndMakeVisible (b);
+        audioSheet.addAndMakeVisible (b);
         rateButtons.add (b);
     }
 

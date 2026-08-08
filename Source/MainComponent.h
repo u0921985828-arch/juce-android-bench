@@ -69,10 +69,15 @@ private:
             }
         }
     };
-    Sheet padSheet, seqSheet, browseSheet, projSheet, mixSheet, songSheet, exportSheet, rackSheet,
-          chopSheet;
+    //  Two cards, not one. AJUSTES was doing two unrelated jobs at once - what
+    //  the audio device is doing, and what your projects are called - and they
+    //  have nothing to say to each other. audioSheet is the machine; projSheet
+    //  is your work.
+    Sheet padSheet, seqSheet, browseSheet, audioSheet, projSheet, mixSheet, songSheet,
+          exportSheet, rackSheet, chopSheet;
     void openSheet (Sheet& s, juce::TextButton& toggle);
     void closeAllSheets();
+    void paintAudioSheetContent (juce::Graphics& g);
     void paintSeqSheetContent (juce::Graphics& g);
     void paintPadSheetContent (juce::Graphics& g);
     void paintBrowseSheetContent (juce::Graphics& g);
@@ -118,6 +123,8 @@ private:
     juce::TextButton projNewButton  { "NUEVO" };
     juce::TextButton projDeleteButton { "BORRAR" };
     juce::TextButton projExportButton { "EXPORTAR" };
+    juce::TextButton audioCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
+    juce::TextButton openProjectsButton { "PROYECTOS" };
     juce::String currentProject;
 
     // --- Export -----------------------------------------------------------
