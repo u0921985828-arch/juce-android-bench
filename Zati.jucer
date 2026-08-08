@@ -32,6 +32,8 @@
       <FILE id="srcDTh"  name="DeviceTier.h"      compile="0" resource="0" file="Source/DeviceTier.h"/>
       <FILE id="srcFh"   name="AudioFocus.h"      compile="0" resource="0" file="Source/AudioFocus.h"/>
       <FILE id="srcSKc"  name="SessionKeeper.cpp" compile="1" resource="0" file="Source/SessionKeeper.cpp"/>
+      <FILE id="srcASh"  name="AppStorage.h"    compile="0" resource="0" file="Source/AppStorage.h"/>
+      <FILE id="srcASc"  name="AppStorage.cpp"  compile="1" resource="0" file="Source/AppStorage.cpp"/>
       <FILE id="srcSKh"  name="SessionKeeper.h"   compile="0" resource="0" file="Source/SessionKeeper.h"/>
       <FILE id="srcLh"   name="SampleLoader.h"    compile="0" resource="0" file="Source/SampleLoader.h"/>
       <FILE id="srcPsh"  name="ProjectStore.h"    compile="0" resource="0" file="Source/ProjectStore.h"/>

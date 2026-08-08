@@ -48,6 +48,7 @@ target_sources(Zati PRIVATE
     Source/SystemInsets.cpp
     Source/DeviceTier.cpp
     Source/SessionKeeper.cpp
+    Source/AppStorage.cpp
 )
 
 # --- Compile definitions ----------------------------------------------------
@@ -75,5 +76,3 @@ target_link_libraries(Zati PRIVATE
     juce::juce_recommended_lto_flags
     juce::juce_recommended_warning_flags
 )
-
-

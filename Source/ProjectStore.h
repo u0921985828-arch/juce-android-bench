@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include "SampleBuffer.h"
+#include "AppStorage.h"
 
 // ============================================================================
 //  ProjectStore — the ZATI folder tree, and where a project lives inside it.
@@ -78,6 +79,20 @@ public:
                     return candidate;
             }
 
+            //  Shared Music said no. Next best is the app's OWN folder on
+            //  external storage: writable with no permission, and - unlike
+            //  internal app data - it turns up over a USB cable, which is how
+            //  a sample pack actually gets onto a phone. A library nothing can
+            //  reach is not a library.
+            if (auto ext = AppStorage::externalFilesDir(); ext != juce::File())
+            {
+                auto candidate = ext.getChildFile ("ZATI");
+                if (canReallyWriteInto (candidate))
+                    return candidate;
+            }
+
+            //  Last resort. Always writable, visible to nothing - but a save
+            //  that lands somewhere private beats a save that does not land.
             auto fallback = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
                                 .getChildFile ("ZATI");
             fallback.createDirectory();
@@ -123,6 +138,17 @@ public:
             "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -_");
         s = s.trim().substring (0, 40);
         return s.isEmpty() ? "SIN NOMBRE" : s;
+    }
+
+    //  A file name we can put on disk. Unlike sanitise() for project folders
+    //  this keeps the dot, because an extension is how the loader knows what
+    //  it is looking at.
+    static juce::String sanitiseFileName (const juce::String& name)
+    {
+        auto s = name.trim().retainCharacters (
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -_.");
+        s = s.trim();
+        return s.length() > 80 ? s.substring (s.length() - 80) : s;
     }
 
     static juce::StringArray list()

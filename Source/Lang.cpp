@@ -183,6 +183,9 @@ namespace
 
         // --- Browser -------------------------------------------------------
         { "CARGAR EN PAD %1", "",       "LOAD INTO PAD %1", "载入音垫 %1", "تحميل في باد %1" },
+        { "Muestra para el pad %1", "", "Sample for pad %1",
+                                        "音垫 %1 的采样",
+                                        "عينة للباد %1" },
         { "elige una muestra  -  wav / aiff / flac / ogg / mp3", "",
           "pick a sample  -  wav / aiff / flac / ogg / mp3",
           "选一个采样  -  wav / aiff / flac / ogg / mp3",

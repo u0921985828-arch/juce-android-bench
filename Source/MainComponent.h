@@ -260,6 +260,7 @@ private:
     juce::TextButton browseSystemButton { "SISTEMA" };   // SAF / OS picker fallback
     std::unique_ptr<juce::FileChooser> chooser;          // only for that fallback
     void launchSystemPicker();
+    void importIntoLibrary (const juce::URL& url);
     void cancelAudition();               // restore the pad if you leave without confirming
     juce::File        auditionedFile;
     SampleBuffer::Ptr preAuditionSample;

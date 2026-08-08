@@ -4878,13 +4878,45 @@ void MainComponent::refreshDeviceStatusLine (bool force)
     status.setText (line, juce::dontSendNotification);
 }
 
+//  Copy a picked file into ZATI/Samples, without ever overwriting something
+//  already there: a second "kick.wav" becomes "kick 2.wav" rather than
+//  quietly replacing the one you had.
+void MainComponent::importIntoLibrary (const juce::URL& url)
+{
+    const auto name = ProjectStore::sanitiseFileName (url.getFileName());
+    if (name.isEmpty()) return;
+
+    auto dest = ProjectStore::samples().getChildFile (name);
+    if (dest.existsAsFile())
+    {
+        const auto stem = dest.getFileNameWithoutExtension();
+        const auto ext  = dest.getFileExtension();
+        for (int n = 2; n < 500 && dest.existsAsFile(); ++n)
+            dest = ProjectStore::samples().getChildFile (stem + " " + juce::String (n) + ext);
+        if (dest.existsAsFile()) return;
+    }
+
+    std::unique_ptr<juce::InputStream> in (url.createInputStream (
+        juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)));
+    if (in == nullptr) return;
+
+    juce::FileOutputStream out (dest);
+    if (! out.openedOk()) return;
+    out.writeFromInputStream (*in, -1);
+    out.flush();
+
+    //  An empty file is worse than no file: it shows up in the browser and
+    //  fails when you tap it.
+    if (dest.getSize() <= 0) dest.deleteFile();
+}
+
 void MainComponent::launchSystemPicker()
 {
     if (browseTargetPad < 0) return;
     const int index = browseTargetPad;
 
     chooser = std::make_unique<juce::FileChooser> (
-        "Muestra para el pad " + juce::String (index + 1),
+        T ("Muestra para el pad %1", juce::String (index + 1)),
         juce::File{}, "*.wav;*.aiff;*.aif;*.flac;*.ogg;*.mp3");
 
     chooser->launchAsync (juce::FileBrowserComponent::openMode
@@ -4897,6 +4929,17 @@ void MainComponent::launchSystemPicker()
             closeAllSheets();
             const juce::String fileName = url.getFileName();
             status.setText (T ("Cargando pad %1...", juce::String (index + 1)), juce::dontSendNotification);
+
+            //  BRING IT INTO THE LIBRARY, do not just read it where it lies.
+            //
+            //  The system picker hands back a content:// URL that we are
+            //  allowed to read once. Load from it and the pad works today and
+            //  is empty after a reboot, because the grant is gone and the file
+            //  was never ours. Copying it into ZATI/Samples is what makes a
+            //  sound part of the instrument instead of a link to somewhere on
+            //  the phone - and it is what fills the browser, which is
+            //  otherwise a folder tree with nothing in it.
+            importIntoLibrary (url);
             loader.loadAsync (url, index, [this, index, fileName] (bool ok, juce::String detail, SampleBuffer::Ptr sb)
             {
                 if (ok)
