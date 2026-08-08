@@ -2060,9 +2060,14 @@ void MainComponent::resized()
     //  From Android 15 the window is the whole screen and the status bar and
     //  the gesture pill sit over it, so the header was under the clock and the
     //  status line under the pill. safeArea is zero everywhere else.
-    auto area = safeArea().reduced (ZatiLookAndFeel::kFaceMargin);
-    area.removeFromTop    (ZatiLookAndFeel::kEdgeV);
-    area.removeFromBottom (ZatiLookAndFeel::kEdgeV);
+    //  The margin to the glass is a HORIZONTAL idea: it is what stops the pad
+    //  grid touching the sides. Vertically the system bars already hold the
+    //  face off the clock and the gesture pill, so the same fourteen applied
+    //  top and bottom - and then ten more on each - was margin stacked behind
+    //  margin, and the instrument ended up floating in the middle of its own
+    //  screen with dead paper above and below it.
+    auto area = safeArea().reduced (ZatiLookAndFeel::kFaceMargin,
+                                    ZatiLookAndFeel::kEdgeV);
 
     // The LCD grows to absorb whatever the face doesn't need (the pads are
     // width-bound squares) — the screen is the protagonist.

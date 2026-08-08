@@ -260,11 +260,19 @@ public:
     static constexpr int kAir        = 10;
     static constexpr int kPadGap     = 8;
 
-    //  ...plus extra room top and bottom, on top of the margin and of whatever
-    //  the system bars are already taking. The two horizontal edges are held
-    //  by the pad grid's width, so they need no help; the vertical ones are
-    //  where a phone feels crowded.
-    static constexpr int kEdgeV      = 10;
+    //  The vertical margin is NOT the horizontal one.
+    //
+    //  It used to be kFaceMargin plus another ten on each side - twenty-four
+    //  above the wordmark and twenty-four under the status line - and all of
+    //  that ON TOP of what the system bars already reserve. The clock and the
+    //  gesture pill are the phone's, drawn over our window since targetSdk 35,
+    //  and safeArea() already keeps the face clear of them; adding a second
+    //  margin behind a margin only pushed the instrument into the middle of
+    //  its own screen.
+    //
+    //  Six is enough to keep the wordmark off the clock. The other eighteen go
+    //  where they are worth something: the LCD and the seams between sections.
+    static constexpr int kEdgeV      = 6;
 
     //  The height of every band on the face, in one place. The rule they
     //  follow: what you WATCH and what you NAVIGATE with are as small as they
