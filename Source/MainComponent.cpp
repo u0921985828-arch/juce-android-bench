@@ -1785,8 +1785,16 @@ void MainComponent::paint (juce::Graphics& g)
         //  anywhere on the face - which project is open - was buried three
         //  taps deep in PROJ. It goes here, on the baseline of the wordmark.
         {
+            //  Hard to the far edge, not trailing after the wordmark.
+            //
+            //  Floating just to the right of ZATI it read as a subtitle - part
+            //  of the logo, drifting to a different place with every project
+            //  name. Pinned to the opposite end it becomes the other half of a
+            //  header: the machine on one side, what is loaded in it on the
+            //  other, both anchored. That is how a piece of gear labels
+            //  itself, and it stops moving when the name changes.
             const int nameX = h.getX() + 138;
-            const int nameW = h.getRight() - Metrics::md - nameX;
+            const int nameW = h.getRight() - nameX;
             if (nameW > 40)
             {
                 const bool named = currentProject.isNotEmpty();
@@ -1794,7 +1802,7 @@ void MainComponent::paint (juce::Graphics& g)
                 g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
                 g.drawText (named ? currentProject.toUpperCase() : T ("SIN GUARDAR"),
                             nameX, h.getY(), nameW, h.getHeight(),
-                            juce::Justification::bottomLeft, true);
+                            juce::Justification::bottomRight, true);
             }
         }
 
