@@ -519,15 +519,7 @@ public:
         //  no bevel, and pressing moves the cap down onto it. Blurred shadows
         //  read as a phone app; a hard offset reads as an object that was
         //  screen-printed, which is the whole C40 idea.
-        //  NAVIGATION IS NOT A CONTROL.
-        //
-        //  Every cap on the face was drawn the same: same colour, same border,
-        //  same solid block of depth underneath. Fourteen of them, and the eye
-        //  had no way to tell PLAY - which you strike - from CANCION, which
-        //  only takes you somewhere. A tab is a label you touch, not a key you
-        //  hit, so it loses the block and sits nearly flush with the face.
-        const bool  flat = (bool) b.getProperties().getWithDefault ("flat", false);
-        const float lift = flat ? 0.0f : kCapLift;
+        const float lift = kCapLift;
         const float rad  = 3.0f;                                  // drawn, not rounded off
         const bool  on   = b.getToggleState();
 

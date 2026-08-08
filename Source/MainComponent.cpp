@@ -114,10 +114,7 @@ MainComponent::MainComponent()
         Sheet*            sh[2]  = { &padSheet, &seqSheet };
         for (int i = 0; i < 2; ++i)
         {
-            //  The module bar recedes: flat, and a shade closer to the face
-            //  than the keys below it. It is where you ARE, not what you do.
-            styleButton (*mb[i], ZatiColours::panel);
-            mb[i]->getProperties().set ("flat", true);
+            styleButton (*mb[i], kKey);
             mb[i]->setColour (juce::TextButton::buttonOnColourId, kAccent);
             auto* s = sh[i]; auto* b = mb[i];
             b->onClick = [this, s, b] { if (s->isVisible()) closeAllSheets(); else openSheet (*s, *b); };
@@ -156,11 +153,7 @@ MainComponent::MainComponent()
         projSheet.paintContent  = [this] (juce::Graphics& g) { paintProjSheetContent (g); };
         audioSheet.paintContent = [this] (juce::Graphics& g) { paintAudioSheetContent (g); };
 
-        //  Same treatment as the other four: the module bar is one row and
-        //  has to read as one row. PADS and SEC were flattened and these three
-        //  were not, so five tabs came out as two kinds of object.
-        styleButton (setButton, ZatiColours::panel);
-        setButton.getProperties().set ("flat", true);
+        styleButton (setButton, kKey);
         setButton.setColour (juce::TextButton::buttonOnColourId, kAccent);
         setButton.onClick = [this]
         {
@@ -989,8 +982,7 @@ MainComponent::MainComponent()
     mixSheet.onDismiss = [this] { closeAllSheets(); };
     mixSheet.paintContent = [this] (juce::Graphics& g) { paintMixSheetContent (g); };
 
-    styleButton (mixButton, ZatiColours::panel);
-    mixButton.getProperties().set ("flat", true);
+    styleButton (mixButton, kKey);
     mixButton.setColour (juce::TextButton::buttonOnColourId, kAccent);
     mixButton.onClick = [this]
     {
@@ -1123,8 +1115,7 @@ MainComponent::MainComponent()
     songSheet.onDismiss = [this] { closeAllSheets(); };
     songSheet.paintContent = [this] (juce::Graphics& g) { paintSongSheetContent (g); };
 
-    styleButton (songButton, ZatiColours::panel);
-    songButton.getProperties().set ("flat", true);
+    styleButton (songButton, kKey);
     songButton.setColour (juce::TextButton::buttonOnColourId, kAccent);
     songButton.onClick = [this]
     {
