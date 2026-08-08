@@ -4366,7 +4366,10 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
     if (measuring)
         line (T ("medido"), T ("escuchando..."), ZatiColours::yellow);
     else if (measuredMs >= 0.0f)
-        line (T ("medido"), T ("%1 ms ida y vuelta", juce::String (measuredMs, 1)),
+        line (T ("medido"), T ("%1 ms ida y vuelta", juce::String (measuredMs, 1))
+                              + (measuredRate > 0.0
+                                   ? "  " + Lang::ltr (juce::String (measuredRate / 1000.0, 1) + "k")
+                                   : juce::String()),
               measuredMs <= 30.0f ? ZatiColours::lcdFg
             : measuredMs <= 60.0f ? ZatiColours::yellow : ZatiColours::red);
 
@@ -4394,6 +4397,32 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
 //  One burst can glitch on a busy phone. That is why the BUFER chips exist:
 //  if it crackles, step up one and lose ~5 ms. Better to start tight and let
 //  you back off than to start slow and never tell you.
+//  Put the user's clock back after a reopen.
+//
+//  MEDIR needs the microphone, so it reopens the stream as input+output with
+//  setAudioChannels(1, 2) - and that goes through AudioDeviceManager::initialise,
+//  which builds the device from defaults. The 44.1 kHz you picked was gone
+//  before the click was even emitted, so the app measured 48 and told you 48
+//  while the chip still said 44.1. The measurement has to be of the thing you
+//  actually chose or it is not a measurement.
+void MainComponent::keepChosenRate()
+{
+    if (chosenRate <= 0.0) return;
+
+    auto* dev = deviceManager.getCurrentAudioDevice();
+    if (dev == nullptr) return;
+    if (std::abs (dev->getCurrentSampleRate() - chosenRate) < 0.5) return;
+
+    //  Only if the device can still do it in this configuration: opening an
+    //  input can shrink the list of rates on offer, and asking for one that is
+    //  gone would fail the whole setup rather than just the rate.
+    if (! dev->getAvailableSampleRates().contains (chosenRate)) return;
+
+    auto setup = deviceManager.getAudioDeviceSetup();
+    setup.sampleRate = chosenRate;
+    deviceManager.setAudioDeviceSetup (setup, true);
+}
+
 void MainComponent::useLowestLatency()
 {
     auto* dev = deviceManager.getCurrentAudioDevice();
@@ -4451,6 +4480,7 @@ void MainComponent::startMeasure()
         measureNote = T ("midiendo...");
         measureButton.setEnabled (false);
         setAudioChannels (1, 2);         // the probe has to hear itself
+        keepChosenRate();                // ...at the clock YOU picked
         useLowestLatency();
         measuredOutMs = measuredInMs = 0.0f;   // filled in finishMeasure()
         engine.startLatencyProbe();
@@ -4487,6 +4517,7 @@ void MainComponent::finishMeasure()
     }
 
     setAudioChannels (0, 2);             // back to output-only
+    keepChosenRate();
     useLowestLatency();
     measureButton.setEnabled (true);
 
@@ -4510,6 +4541,14 @@ void MainComponent::finishMeasure()
     const float outMs = measuredOutMs;
     const float inMs  = measuredInMs > 0.0f ? measuredInMs
                                             : juce::jmax (0.0f, measuredMs - outMs);
+
+    //  ...and at WHAT CLOCK. Opening the microphone can force the driver off
+    //  the rate you picked - some phones only capture at 48 - and a latency
+    //  in milliseconds means nothing without the rate it was taken at. If it
+    //  had to move, the line says so instead of quietly reporting a number
+    //  from a configuration you did not choose.
+    if (auto* d = deviceManager.getCurrentAudioDevice())
+        measuredRate = d->getCurrentSampleRate();
 
     measureNote = measuredMs < 0.0f
                     ? T ("no oi el click - sube el volumen y no tapes el micro")
@@ -4604,7 +4643,7 @@ void MainComponent::applyAudioSetup (int bufferSize, double rate)
 {
     auto setup = deviceManager.getAudioDeviceSetup();
     if (bufferSize > 0) setup.bufferSize = bufferSize;
-    if (rate > 0.0)     setup.sampleRate = rate;
+    if (rate > 0.0)   { setup.sampleRate = rate; chosenRate = rate; }
 
     const auto err = deviceManager.setAudioDeviceSetup (setup, true);
 
@@ -4821,6 +4860,7 @@ void MainComponent::appResumed()
     audioFocus.request();
     pausedByFocus = false;
     setAudioChannels (0, 2);
+    keepChosenRate();
     useLowestLatency();
     refreshDeviceStatusLine (true);
 }
@@ -4867,6 +4907,7 @@ void MainComponent::audioFocusGained()
 
     pausedByFocus = false;
     setAudioChannels (0, 2);
+    keepChosenRate();
     useLowestLatency();
     refreshDeviceStatusLine (true);
 }
@@ -5085,7 +5126,10 @@ void MainComponent::watchAudioDevice()
     //  lifeboat already carried the tap, so the user heard their pad; this
     //  puts the transport itself back on its feet for the next one.
     if (engine.takeDroppedCommands() > 0)
+    {
         deviceManager.restartLastAudioDevice();
+        keepChosenRate();
+    }
 }
 
 void MainComponent::timerCallback()

@@ -126,6 +126,13 @@ private:
     juce::TextButton exportCancelButton { "CANCELAR" };
     std::unique_ptr<Exporter> exportJob;
     double deviceSampleRate = 44100.0;
+
+    //  The clock the USER picked, as opposed to whatever the driver last
+    //  handed us. setAudioChannels() re-initialises the device from scratch
+    //  and loses it, so it has to be remembered and put back. Zero means
+    //  "never chosen, let the device decide". See keepChosenRate().
+    double chosenRate = 0.0;
+    void   keepChosenRate();
     juce::String exportStatus;
     bool         exportOk = false;
     void startExport (bool stems);
@@ -156,6 +163,7 @@ private:
     //  claim about itself; this is a click emitted and heard back.
     juce::TextButton measureButton { "MEDIR" };
     float measuredMs = -1.0f;          // last round trip, -1 = never measured
+    double measuredRate = 0.0;         // the clock it was actually taken at
     float measuredOutMs = 0.0f;        // what the device claimed while measuring
     float measuredInMs  = 0.0f;
     bool  measuring  = false;
