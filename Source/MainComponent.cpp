@@ -5274,16 +5274,7 @@ void MainComponent::timerCallback()
         vuR = juce::jmax (pr, vuR * 0.80f); if (vuR < 0.004f) vuR = 0.0f;
         juce::ignoreUnused (prevL, prevR, prevPlayStep);
         spectrum.setVu (vuL, vuR);
-        //  The loop-shape strip needs three things, not one: where the
-        //  playhead is INSIDE the pattern, how long that pattern is (ZATI's
-        //  are variable, 16 to 64 steps), and whether the transport is
-        //  actually rolling - because a stopped transport settles the shape
-        //  instead of holding it.
-        const int playingBank = engine.getPlayingPattern();
-        spectrum.setStep (ps,
-                          engine.getPatternLength (playingBank),
-                          engine.isPlaying(),
-                          patternRowColour (juce::jmax (0, playingBank)));
+        // (the LCD no longer carries a step strip)
     }
 
     if (recordingActive)

@@ -75,21 +75,6 @@ public:
         repaint();
     }
 
-    //  step is the step within the playing pattern, or negative when the
-    //  transport is stopped; the colour is the bank that is playing, so the
-    //  LED strip says WHICH pattern as well as where in it.
-    void setStep (int stepInPattern, int patternLength, bool isPlaying, juce::Colour bankColour)
-    {
-        if (stepInPattern == step && patternLength == patternLen
-            && isPlaying == playing && bankColour == stepColour) return;
-
-        step       = stepInPattern;
-        patternLen = juce::jmax (1, patternLength);
-        playing    = isPlaying;
-        stepColour = bankColour;
-        repaint();
-    }
-
     void paint (juce::Graphics& g) override
     {
         auto b = getLocalBounds().toFloat();
@@ -158,7 +143,9 @@ public:
         // Waveform area (between the meters and the bottom furniture).
         auto wave = b.reduced (8.0f, 0.0f);
         wave.removeFromTop (22.0f + 16.0f);
-        wave.removeFromBottom (20.0f + 10.0f);
+        //  Only the status line now. The ten pixels the step strip took go to
+        //  the waveform, which is the one thing this screen is for.
+        wave.removeFromBottom (20.0f);
         const float cy = wave.getCentreY();
         const float halfH = wave.getHeight() * 0.5f - 2.0f;
 
@@ -231,32 +218,6 @@ public:
             }
         }
 
-        //  Sixteen step LEDs where the tick ruler used to be. The ruler was
-        //  decoration measuring nothing; this measures the bar, and the beats
-        //  are the ones that stay lit when the transport is stopped.
-        {
-            auto strip = juce::Rectangle<float> (wave.getX(), b.getBottom() - 28.0f,
-                                                 wave.getWidth(), 8.0f);
-            const float segW = strip.getWidth() / 16.0f;
-            const int cur = step >= 0 ? step % 16 : -1;
-
-            for (int i = 0; i < 16; ++i)
-            {
-                auto r = juce::Rectangle<float> (strip.getX() + (float) i * segW + 1.5f, strip.getY(),
-                                                 segW - 3.0f, strip.getHeight());
-                if (i == cur)
-                {
-                    g.setColour (stepColour);
-                    g.fillRoundedRectangle (r, 1.5f);
-                }
-                else
-                {
-                    g.setColour (ZatiColours::lcdFg.withAlpha ((i % 4 == 0) ? 0.30f : 0.12f));
-                    g.drawRoundedRectangle (r.reduced (0.5f), 1.5f, 1.0f);
-                }
-            }
-        }
-
         auto status = b.reduced (10.0f, 5.0f).removeFromBottom (12.0f);
         g.setColour (ZatiColours::lcdDim);
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
@@ -285,12 +246,8 @@ private:
     static constexpr int kMaxCols = AudioEngine::kMaxScopeColumns;
     float srcMin[kMaxCols] {}, srcMax[kMaxCols] {};
     int   colCount   = 0;
-    int   patternLen = 16;
-    bool  playing    = false;
 
     float        vuL   { 0.0f }, vuR { 0.0f };
-    int          step  { -1 };
     bool         wasSilent { false };
-    juce::Colour stepColour { ZatiColours::lcdFg };
     juce::String readout { "ZATI" };
 };
