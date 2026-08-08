@@ -38,17 +38,50 @@ class ProjectStore
 {
 public:
     // The tree's home. Resolved once, then remembered.
+    //  ASK BY WRITING, not by asking.
+    //
+    //  This used to pick Music whenever hasWriteAccess() said yes, and on a
+    //  modern Android that question does not mean what it says: shared storage
+    //  answers "yes, writable" to a stat() and then refuses the write, because
+    //  scoped storage decides per app and not per directory bit. The result is
+    //  the worst kind of failure - GUARDAR appears to work, the folder is
+    //  never created, and the project is gone the next time you open the app.
+    //
+    //  So the probe is a real file: create it, write a byte, read it back,
+    //  delete it. Anywhere that survives that is somewhere we can keep your
+    //  work; anywhere that does not is not, whatever its permission bits say.
+    //  App-data is the fallback and is always writable - a save must never
+    //  fail because shared storage changed its mind.
+    static bool canReallyWriteInto (const juce::File& dir)
+    {
+        if (dir == juce::File()) return false;
+        if (! dir.createDirectory()) return false;
+
+        auto probe = dir.getChildFile (".zati-write-test");
+        probe.deleteFile();
+        if (! probe.replaceWithText ("z")) return false;
+
+        const bool ok = probe.existsAsFile() && probe.loadFileAsString() == "z";
+        probe.deleteFile();
+        return ok;
+    }
+
     static juce::File home()
     {
-        static juce::File cached = [
-        ]
+        static juce::File cached = []
         {
             auto music = juce::File::getSpecialLocation (juce::File::userMusicDirectory);
-            if (music != juce::File() && music.isDirectory() && music.hasWriteAccess())
-                return music.getChildFile ("ZATI");
+            if (music != juce::File())
+            {
+                auto candidate = music.getChildFile ("ZATI");
+                if (canReallyWriteInto (candidate))
+                    return candidate;
+            }
 
-            return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-                       .getChildFile ("ZATI");
+            auto fallback = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                                .getChildFile ("ZATI");
+            fallback.createDirectory();
+            return fallback;
         }();
         return cached;
     }

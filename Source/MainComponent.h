@@ -99,7 +99,11 @@ private:
     public:
         juce::StringArray names;
         std::function<void (int)> onChosen;
+        //  Tapping a row once should fill the name box with it: picking a
+        //  project from the list IS saying which one you mean.
+        std::function<void (int)> onSelected;
         int getNumRows() override { return names.size(); }
+        void selectedRowsChanged (int row) override { if (onSelected) onSelected (row); }
         void paintListBoxItem (int row, juce::Graphics& g, int w, int h, bool selected) override;
         void listBoxItemDoubleClicked (int row, const juce::MouseEvent&) override
         {
@@ -489,6 +493,11 @@ private:
     juce::TextButton previewButton { juce::CharPointer_UTF8 ("\xe2\x96\xb6 OIR") };
     bool previewSounding = false;
 
+    //  The project name you type, and where the folder actually is. GUARDAR
+    //  used to invent "PROYECTO N" with no way to say otherwise, so every save
+    //  was a new near-duplicate and none of them was called what you wanted.
+    juce::TextEditor     projNameBox;
+    juce::Rectangle<int> projNameRowArea, projPathRowArea;
     juce::Rectangle<int> zatiSwatchArea;
     //  The three group headers of the PADS sheet, placed in resized() and
     //  drawn in paintPadSheetContent: a sheet with eleven controls on it needs

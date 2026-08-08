@@ -159,6 +159,12 @@ MainComponent::MainComponent()
 
         projList.setColour (juce::ListBox::backgroundColourId, ZatiColours::chassisTop);
         projList.setRowHeight (34);
+        projModel.onSelected = [this] (int row)
+        {
+            if (juce::isPositiveAndBelow (row, projModel.names.size()))
+                projNameBox.setText (projModel.names[row], juce::dontSendNotification);
+        };
+
         projModel.onChosen = [this] (int row)
         {
             if (juce::isPositiveAndBelow (row, projModel.names.size()))
@@ -172,17 +178,48 @@ MainComponent::MainComponent()
 
         styleButton (projSaveButton, kAccent);
         projSaveButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+        //  The name box. It fills itself from whatever you have selected or
+        //  open, so GUARDAR still overwrites the obvious thing by default -
+        //  but now you can type over it, which is how you rename, how you
+        //  save-as, and how a project ends up called what it is.
+        projNameBox.setMultiLine (false);
+        projNameBox.setReturnKeyStartsNewLine (false);
+        projNameBox.setJustification (juce::Justification::centredLeft);
+        projNameBox.setFont (ZatiColours::monoFont (Metrics::fValue, true));
+        projNameBox.setColour (juce::TextEditor::backgroundColourId, ZatiColours::screenBg);
+        projNameBox.setColour (juce::TextEditor::textColourId,       ZatiColours::lcdFg);
+        projNameBox.setColour (juce::TextEditor::outlineColourId,    ZatiColours::ink.withAlpha (0.35f));
+        projNameBox.setColour (juce::TextEditor::highlightColourId,  ZatiColours::accent.withAlpha (0.35f));
+        projNameBox.setColour (juce::TextEditor::focusedOutlineColourId, ZatiColours::ink);
+        projNameBox.onReturnKey = [this] { projSaveButton.triggerClick(); };
+        projSheet.addAndMakeVisible (projNameBox);
+
         projSaveButton.onClick = [this]
         {
-            // Reuse the highlighted name when there is one, so GUARDAR
-            // overwrites the project you are looking at rather than silently
-            // spawning near-duplicates.
-            const int sel = projList.getSelectedRow();
-            juce::String name = juce::isPositiveAndBelow (sel, projModel.names.size())
-                                  ? projModel.names[sel]
-                                  : currentProject;
+            auto name = ProjectStore::sanitise (projNameBox.getText().trim());
+
+            //  Fall back to what is selected or open, and only then to a
+            //  generated name - and put it in the box so you can see what it
+            //  is about to be called before it is called that.
+            if (name.isEmpty())
+            {
+                const int sel = projList.getSelectedRow();
+                name = juce::isPositiveAndBelow (sel, projModel.names.size())
+                         ? projModel.names[sel] : currentProject;
+            }
             if (name.isEmpty())
                 name = "PROYECTO " + juce::String (ProjectStore::list().size() + 1);
+
+            projNameBox.setText (name, juce::dontSendNotification);
+
+            //  Overwriting someone else's project is a two-tap decision, the
+            //  same as BORRAR. Saving over the one you already have open is
+            //  not - that is just saving.
+            if (name != currentProject && ProjectStore::list().contains (name)
+                && ! armConfirm (projSaveButton, T ("Sobrescribir \"%1\"?", name)))
+                return;
+
+            disarmConfirm();
             saveProject (name);
         };
         projSheet.addAndMakeVisible (projSaveButton);
@@ -2328,7 +2365,8 @@ void MainComponent::resized()
         //  something failing to load rather than as an empty list.
         const int listRowH = juce::jmax (22, projList.getRowHeight());
         const int listH    = juce::jlimit (1, 8, projModel.names.size()) * listRowH;
-        const int wanted   = Metrics::md * 2 + 32 + 158 + Metrics::xs
+        const int wanted   = Metrics::md * 2 + 32 + Metrics::hit + 14 + Metrics::xs
+                               + 158 + Metrics::xs
                                + (Metrics::hit + Metrics::xs) * 3 + Metrics::xs
                                + Metrics::btn * 2 + Metrics::xs + 8
                                + listH + Metrics::sm;
@@ -2347,6 +2385,17 @@ void MainComponent::resized()
         //  One line taller than it was: the panel now opens with what the
         //  app decided this phone can carry, before anything about the
         //  stream it opened.
+        //  The name of the thing this card is about, at the top where the
+        //  gap already was. It is the first question the card answers.
+        projNameRowArea = inner.removeFromTop (Metrics::hit);
+        {
+            auto r = projNameRowArea;
+            Lang::takeStart (r, 60);
+            projNameBox.setBounds (r.reduced (2, 4));
+        }
+        projPathRowArea = inner.removeFromTop (14);
+        inner.removeFromTop (Metrics::xs);
+
         audioInfoArea = inner.removeFromTop (158);
         inner.removeFromTop (Metrics::xs);
 
@@ -3703,14 +3752,31 @@ void MainComponent::saveProject (const juce::String& rawName)
         }
     }
 
-    const auto xml = captureState().toXmlString();
-    const bool ok  = folder.getChildFile ("project.xml").replaceWithText (xml);
+    //  Write it, then READ IT BACK. replaceWithText returning true is the
+    //  filesystem saying it accepted the call, not that the bytes are there:
+    //  on Android shared storage it can accept and quietly drop. The only
+    //  honest confirmation is a file that exists, is not empty, and parses.
+    const auto xml     = captureState().toXmlString();
+    const auto xmlFile = folder.getChildFile ("project.xml");
+    bool ok = xmlFile.replaceWithText (xml);
+    if (ok)
+        ok = xmlFile.existsAsFile() && xmlFile.getSize() > 0 && juce::parseXML (xmlFile) != nullptr;
+
+    if (! ok)
+    {
+        //  Nothing was saved. Say so and say WHERE it tried, because the
+        //  answer to this is almost always the folder, not the app.
+        status.setText (T ("NO se pudo guardar en %1", Lang::ltr (folder.getFullPathName())),
+                        juce::dontSendNotification);
+        projSheet.repaint();
+        return;
+    }
 
     currentProject = name;
     repaint (headerArea);
     refreshProjectList();
 
-    status.setText (ok && failed == 0
+    status.setText (failed == 0
                         ? T ("Guardado \"%1\"  [%2 pads]", name, juce::String (written))
                         : T ("Guardado con fallos: %1 pads no se escribieron", juce::String (failed)),
                     juce::dontSendNotification);
@@ -3835,6 +3901,12 @@ void MainComponent::refreshProjectList()
     const int sel = projModel.names.indexOf (currentProject);
     if (sel >= 0) projList.selectRow (sel);
     else          projList.deselectAllRows();
+
+    //  Keep the box showing what GUARDAR would do if you pressed it now.
+    //  Only when it is not being typed in - taking the caret away from
+    //  somebody mid-word is worse than a stale suggestion.
+    if (! projNameBox.hasKeyboardFocus (true))
+        projNameBox.setText (currentProject, juce::dontSendNotification);
     projList.repaint();
 
     //  The sheet is as tall as this list, so saving or deleting a project
@@ -4100,6 +4172,27 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.12f));
     if (! bufRowArea.isEmpty())
         { auto r = bufRowArea; g.drawText (T ("BUFER"), Lang::takeStart (r, 44), Lang::start()); }
+    //  NAME, and under it the folder these projects actually live in. The
+    //  path is there because when a save goes missing the answer is almost
+    //  always "it went somewhere else", and until now there was no way to see
+    //  where that was from inside the app.
+    if (! projNameRowArea.isEmpty())
+    {
+        auto r = projNameRowArea;
+        g.setColour (ZatiColours::inkDim);
+        g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
+        g.drawText (T ("NOMBRE"), Lang::takeStart (r, 60), Lang::start());
+    }
+    if (! projPathRowArea.isEmpty())
+    {
+        auto r = projPathRowArea;
+        g.setColour (ZatiColours::inkDim.withAlpha (0.75f));
+        g.setFont (ZatiColours::monoFont (8.5f, false));
+        g.drawText (T ("CARPETA"), Lang::takeStart (r, 60), Lang::start());
+        g.drawFittedText (Lang::ltr (ProjectStore::root().getFullPathName()),
+                          r, Lang::start(), 1, 0.7f);
+    }
+
     if (! rateRowArea.isEmpty())
         { auto r = rateRowArea; g.drawText (T ("RELOJ"), Lang::takeStart (r, 44), Lang::start()); }
         { auto r = langRowArea; g.drawText (T ("IDIOMA"), Lang::takeStart (r, 44), Lang::start()); }
