@@ -98,7 +98,14 @@ public:
         //  strength a loaded one does - enough for the matrix to read as a
         //  spectrum from across a table, far too little to be mistaken for a
         //  pad that has a sound in it.
-        juce::Colour base   = loaded ? frag.withMultipliedAlpha (0.30f)
+        //  A LOADED pad wears its colour. It was at 30% - a wash so pale that
+        //  the zati system, which is the whole way you find a sound on this
+        //  grid, said almost nothing. Now that the pads sit on a kraft plate
+        //  instead of on paper the same colour has something to read against,
+        //  so it can carry its real weight. Empty stays a whisper: the
+        //  difference between "this pad IS turquoise" and "this pad would be
+        //  turquoise" has to survive a glance.
+        juce::Colour base   = loaded ? frag.withMultipliedAlpha (0.62f)
                                      : ZatiColours::padBg2.overlaidWith (frag.withAlpha (0.16f));
         juce::Colour edge   = loaded ? frag : ZatiColours::padBorder;
         //  The number on an empty pad was ink at 30%, on a tint that was barely

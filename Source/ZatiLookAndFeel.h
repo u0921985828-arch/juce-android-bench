@@ -80,6 +80,14 @@ namespace ZatiColours
     const juce::Colour red        { 0xffe0222c };
     const juce::Colour yellow     { 0xfff0b400 };
 
+    //  ...and the third state colour: a transport that is ROLLING. PLAY going
+    //  dark said "engaged" in the same ink a focused effect uses, which on a
+    //  face where six other things are also dark is not an answer. Green is
+    //  the one convention nobody has to be taught, and it is the only place on
+    //  the machine that wears it - so when it appears it means exactly one
+    //  thing.
+    const juce::Colour green      { 0xff3f9e56 };
+
     inline int currentSkin = 0;
     inline const char* skinName (int i)
     {

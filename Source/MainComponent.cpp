@@ -530,8 +530,8 @@ MainComponent::MainComponent()
     //  and goes dark only while it is actually playing, which is what the
     //  toggle state is for.
     styleButton (playButton, kKey);
-    playButton.setColour (juce::TextButton::buttonOnColourId, ZatiColours::accent);
-    playButton.setColour (juce::TextButton::textColourOnId,  ZatiColours::inkLight);
+    playButton.setColour (juce::TextButton::buttonOnColourId, ZatiColours::green);
+    playButton.setColour (juce::TextButton::textColourOnId,  ZatiColours::white);
     playButton.onClick = [this]
     {
         const bool on = playButton.getToggleState();
@@ -1250,8 +1250,8 @@ void MainComponent::applySkin()
         patternButtons[i]->setColour (juce::TextButton::buttonOnColourId, patternRowColour (i));
 
     styleButton (playButton, kKey);
-    playButton.setColour (juce::TextButton::buttonOnColourId, acc);
-    playButton.setColour (juce::TextButton::textColourOnId,  ZatiColours::inkLight);
+    playButton.setColour (juce::TextButton::buttonOnColourId, ZatiColours::green);
+    playButton.setColour (juce::TextButton::textColourOnId,  ZatiColours::white);
 
     juce::Slider* tracks[] = { &startSlider, &endSlider, &bpmSlider, &patternSlider, &lengthSlider };
     for (auto* s : tracks)
@@ -1758,10 +1758,19 @@ void MainComponent::paint (juce::Graphics& g)
         g.drawRoundedRectangle (r.expanded (3.0f).reduced (0.5f), 3.0f, 1.2f);
     }
 
-    // 3. Header: ZATI wordmark left, fragment strip right. No touch targets
-    //    here — the strip is a readout, not a control: it is the state of the
-    //    kit at a glance, one swatch per fragment colour, dimmed where no pad
-    //    of that colour is loaded.
+    // 3. Header: the wordmark, the open project, and a printed colour band
+    //    across the whole face.
+    //
+    //    The band is the only colour on the chassis, and it is not decoration:
+    //    it is the state of the kit, one segment per zati, lit where a pad of
+    //    that colour has a sound in it and nearly out where none does. It used
+    //    to be eight nine-pixel squares hiding in the top right corner - the
+    //    same information, but small enough that nobody would ever look at it,
+    //    and cramped into a corner instead of belonging to the machine.
+    //
+    //    Across the width it reads the way a printed stripe on a piece of
+    //    studio gear reads: it tells you what the box is before it tells you
+    //    anything else. No touch targets here - a readout, not a control.
     if (! headerArea.isEmpty())
     {
         auto h = headerArea;
@@ -1771,18 +1780,13 @@ void MainComponent::paint (juce::Graphics& g)
 
         rule ((float) h.getX(), (float) h.getRight(), (float) h.getBottom() + 2.0f, 0.22f);
 
-        const int sw = 9, sh = 13, gap = 4;
-        const int stripW = Zati::kNumColours * sw + (Zati::kNumColours - 1) * gap;
-        int x = h.getRight() - stripW;
-        const int y = h.getCentreY() - sh / 2;
-
         //  The band between the wordmark and the strip was empty across the
         //  whole width of the machine, while the one thing you cannot see
         //  anywhere on the face - which project is open - was buried three
         //  taps deep in PROJ. It goes here, on the baseline of the wordmark.
         {
             const int nameX = h.getX() + 138;
-            const int nameW = (x - Metrics::md) - nameX;
+            const int nameW = h.getRight() - Metrics::md - nameX;
             if (nameW > 40)
             {
                 const bool named = currentProject.isNotEmpty();
@@ -1794,15 +1798,30 @@ void MainComponent::paint (juce::Graphics& g)
             }
         }
 
-        for (int i = 0; i < Zati::kNumColours; ++i)
+        //  The band itself: eight segments, edge to edge, sitting on the rule.
         {
-            bool used = false;
-            for (int p = 0; p < kNumPads && ! used; ++p)
-                used = padHasSample[(size_t) p] && padZati[(size_t) p] == i;
+            const float x0 = (float) h.getX();
+            const float w  = (float) h.getWidth() / (float) Zati::kNumColours;
+            const float y0 = (float) h.getBottom() + 4.0f;
+            const float bh = 4.0f;
 
-            g.setColour (used ? Zati::colour (i) : Zati::colour (i).withAlpha (0.25f));
-            g.fillRect (x, y, sw, sh);
-            x += sw + gap;
+            for (int i = 0; i < Zati::kNumColours; ++i)
+            {
+                bool used = false;
+                for (int p = 0; p < kNumPads && ! used; ++p)
+                    used = padHasSample[(size_t) p] && padZati[(size_t) p] == i;
+
+                //  Lit or nearly out - never absent. A gap in the stripe would
+                //  read as a printing fault; a dim segment reads as a colour
+                //  you have not used yet.
+                //  Even unused it has to READ as a printed stripe. At a fifth
+                //  it was a smudge you would take for a rendering artefact;
+                //  the difference between used and not is still obvious at
+                //  these two values, and the machine keeps its colour whether
+                //  you have loaded anything or not.
+                g.setColour (Zati::colour (i).withAlpha (used ? 1.0f : 0.45f));
+                g.fillRect (x0 + (float) i * w, y0, w - 1.0f, bh);
+            }
         }
     }
 
