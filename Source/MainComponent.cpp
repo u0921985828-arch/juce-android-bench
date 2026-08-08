@@ -114,7 +114,10 @@ MainComponent::MainComponent()
         Sheet*            sh[2]  = { &padSheet, &seqSheet };
         for (int i = 0; i < 2; ++i)
         {
-            styleButton (*mb[i], kKey);
+            //  The module bar recedes: flat, and a shade closer to the face
+            //  than the keys below it. It is where you ARE, not what you do.
+            styleButton (*mb[i], ZatiColours::panel);
+            mb[i]->getProperties().set ("flat", true);
             mb[i]->setColour (juce::TextButton::buttonOnColourId, kAccent);
             auto* s = sh[i]; auto* b = mb[i];
             b->onClick = [this, s, b] { if (s->isVisible()) closeAllSheets(); else openSheet (*s, *b); };
@@ -1669,9 +1672,9 @@ void MainComponent::paint (juce::Graphics& g)
         //  three distinct values - chassis, plate, cap - or the whole thing
         //  stays white on white however many lines are drawn on it.
         auto pp = padPlateArea.toFloat();
-        g.setColour (ZatiColours::chassisBot.darker (0.10f));
+        g.setColour (ZatiColours::plate);
         g.fillRoundedRectangle (pp, 4.0f);
-        g.setColour (ZatiColours::ink.withAlpha (0.30f));
+        g.setColour (ZatiColours::plateEdge);
         g.drawRoundedRectangle (pp.reduced (0.5f), 4.0f, 1.0f);
         g.setColour (ZatiColours::white.withAlpha (0.55f));      // lip catching the light
         g.drawRoundedRectangle (pp.reduced (1.6f), 4.0f, 1.0f);
@@ -1684,9 +1687,9 @@ void MainComponent::paint (juce::Graphics& g)
     if (! ctrlPlateArea.isEmpty())
     {
         auto cp = ctrlPlateArea.toFloat();
-        g.setColour (ZatiColours::chassisBot.darker (0.10f));
+        g.setColour (ZatiColours::plate);
         g.fillRoundedRectangle (cp, 4.0f);
-        g.setColour (ZatiColours::ink.withAlpha (0.30f));
+        g.setColour (ZatiColours::plateEdge);
         g.drawRoundedRectangle (cp.reduced (0.5f), 4.0f, 1.0f);
         g.setColour (ZatiColours::white.withAlpha (0.55f));
         g.drawRoundedRectangle (cp.reduced (1.6f), 4.0f, 1.0f);

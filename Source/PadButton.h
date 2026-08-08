@@ -99,10 +99,13 @@ public:
         //  spectrum from across a table, far too little to be mistaken for a
         //  pad that has a sound in it.
         juce::Colour base   = loaded ? frag.withMultipliedAlpha (0.30f)
-                                     : ZatiColours::padBg2.overlaidWith (frag.withAlpha (0.09f));
+                                     : ZatiColours::padBg2.overlaidWith (frag.withAlpha (0.16f));
         juce::Colour edge   = loaded ? frag : ZatiColours::padBorder;
+        //  The number on an empty pad was ink at 30%, on a tint that was barely
+        //  there, on a plate the same value as everything else - three weak
+        //  contrasts stacked. It is the only thing an empty pad has to say.
         juce::Colour idxCol = loaded ? ZatiColours::ink.withAlpha (0.92f)
-                                     : ZatiColours::ink.withAlpha (0.30f);
+                                     : ZatiColours::ink.withAlpha (0.55f);
         //  inkDim on a 30% fragment fill measured 3.25-4.02:1 across the eight
         //  colours — under the 4.5 needed for 9px text on every one of them.
         //  Ink at 0.75 clears it on the worst (5.84:1) and still reads as

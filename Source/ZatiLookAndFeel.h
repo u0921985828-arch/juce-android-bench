@@ -44,6 +44,20 @@ namespace ZatiColours
     const juce::Colour keyLit     { 0xffcfc7b4 };
     const juce::Colour screw      { 0xffb3ab98 };
 
+    //  THE MISSING MIDDLE.
+    //
+    //  Measured, the whole face lived between luminance 197 and 253 - the
+    //  chassis, the plates, every key and every pad inside fifty-six points of
+    //  each other - and then jumped straight to ink at 34. Nothing in between.
+    //  That is why fourteen keys and sixteen pads all read as the same object:
+    //  they are the same VALUE, and value is what the eye sorts by first.
+    //
+    //  This is the step that was missing. Same kraft hue as the chassis, two
+    //  thirds of its brightness: dark enough that a plate reads as a recess
+    //  cut into the face, light enough that it is still paper and not a hole.
+    const juce::Colour plate      { 0xffb3aa93 };   // lum ~170
+    const juce::Colour plateEdge  { 0xff8f8774 };
+
     // --- Accent / semantic ------------------------------------------------
     //  The chassis is MONOCHROME on purpose. Hue belongs to the zati fragment
     //  system and nothing else: if a pressed button or an armed effect also
@@ -497,7 +511,15 @@ public:
         //  no bevel, and pressing moves the cap down onto it. Blurred shadows
         //  read as a phone app; a hard offset reads as an object that was
         //  screen-printed, which is the whole C40 idea.
-        const float lift = kCapLift;
+        //  NAVIGATION IS NOT A CONTROL.
+        //
+        //  Every cap on the face was drawn the same: same colour, same border,
+        //  same solid block of depth underneath. Fourteen of them, and the eye
+        //  had no way to tell PLAY - which you strike - from CANCION, which
+        //  only takes you somewhere. A tab is a label you touch, not a key you
+        //  hit, so it loses the block and sits nearly flush with the face.
+        const bool  flat = (bool) b.getProperties().getWithDefault ("flat", false);
+        const float lift = flat ? 0.0f : kCapLift;
         const float rad  = 3.0f;                                  // drawn, not rounded off
         const bool  on   = b.getToggleState();
 
