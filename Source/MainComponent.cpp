@@ -1951,7 +1951,7 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
 
     const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
     const int sp = juce::jmax (0, selectedPad);
-    auto inner = seqSheet.sheetBounds.reduced (12, 6);
+    auto inner = seqSheet.sheetBounds.reduced (Metrics::lg, Metrics::md);
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
@@ -2390,13 +2390,14 @@ void MainComponent::resized()
         //  about your projects - that is the other card.
         {
             auto inner = sheetFromBottom (audioSheet,
-                                          Metrics::md * 2 + 32 + 158 + Metrics::xs
+                                          Metrics::md * 2 + 32 + Metrics::sm + 158 + Metrics::xs
                                             + (Metrics::hit + Metrics::xs) * 3
                                             + Metrics::xs + Metrics::btn + Metrics::sm);
             auto titleRow = inner.removeFromTop (32);
             audioCloseButton.setBounds (Lang::takeEnd (titleRow, 32).reduced (2));
             testButton.setBounds       (Lang::takeEnd (titleRow, 56).reduced (2));
             measureButton.setBounds    (Lang::takeEnd (titleRow, 64).reduced (2));
+            inner.removeFromTop (Metrics::sm);          // air under the title
 
             audioInfoArea = inner.removeFromTop (158);
             inner.removeFromTop (Metrics::xs);
@@ -2425,13 +2426,17 @@ void MainComponent::resized()
         //  do to it.
         const int listRowH = juce::jmax (22, projList.getRowHeight());
         const int listH    = juce::jlimit (1, 8, projModel.names.size()) * listRowH;
-        const int wanted   = Metrics::md * 2 + 32 + Metrics::hit + 14 + Metrics::sm
+        const int wanted   = Metrics::md * 2 + 32 + 14 + Metrics::sm
+                               + Metrics::hit + 14 + Metrics::sm
                                + Metrics::btn * 2 + Metrics::xs * 2 + 8
                                + listH + Metrics::sm;
 
         auto inner = sheetFromBottom (projSheet, wanted);
         auto titleRow = inner.removeFromTop (32);
         projCloseButton.setBounds (Lang::takeEnd (titleRow, 32).reduced (2));
+        //  The subtitle is PAINTED into this band, so the layout has to leave
+        //  it: 14 for the line, then air before the name box.
+        inner.removeFromTop (14 + Metrics::sm);
 
         projNameRowArea = inner.removeFromTop (Metrics::hit);
         {
@@ -4163,7 +4168,7 @@ void MainComponent::paintAudioSheetContent (juce::Graphics& g)
 {
     if (audioSheet.sheetBounds.isEmpty()) return;
 
-    auto inner = audioSheet.sheetBounds.reduced (12, 6);
+    auto inner = audioSheet.sheetBounds.reduced (Metrics::lg, Metrics::md);
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
     g.drawText (T ("AUDIO"), inner.removeFromTop (16), Lang::start());
@@ -4188,7 +4193,7 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
 {
     if (projSheet.sheetBounds.isEmpty()) return;
 
-    auto inner = projSheet.sheetBounds.reduced (12, 6);
+    auto inner = projSheet.sheetBounds.reduced (Metrics::lg, Metrics::md);
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
     g.drawText (T ("PROYECTOS"), inner.removeFromTop (16), Lang::start());
@@ -4197,8 +4202,14 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
     //  The close button hangs off the end of this same band, so the subtitle
     //  has to stop before it starts.
+    //  Stop before the corner keys - on whichever side they are. In Arabic
+    //  the close button is on the LEFT, and clamping the right edge to its x
+    //  collapsed the row to nothing and the subtitle vanished entirely.
     auto subRow = inner.removeFromTop (14);
-    subRow.setRight (juce::jmin (subRow.getRight(), projCloseButton.getX() - Metrics::xs));
+    if (Lang::isRightToLeft (Lang::current()))
+        subRow.setLeft (juce::jmax (subRow.getX(), projCloseButton.getRight() + Metrics::xs));
+    else
+        subRow.setRight (juce::jmin (subRow.getRight(), projCloseButton.getX() - Metrics::xs));
     g.drawFittedText (currentProject.isNotEmpty()
                           ? T ("abierto: %1", currentProject)
                           : (projModel.names.isEmpty()
@@ -4905,7 +4916,7 @@ void MainComponent::paintBrowseSheetContent (juce::Graphics& g)
 {
     if (browseSheet.sheetBounds.isEmpty()) return;
 
-    auto inner = browseSheet.sheetBounds.reduced (12, 6);
+    auto inner = browseSheet.sheetBounds.reduced (Metrics::lg, Metrics::md);
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
     g.drawText (T ("CARGAR EN PAD %1", juce::String (juce::jmax (0, browseTargetPad) + 1)),
