@@ -5703,6 +5703,42 @@ void MainComponent::timerCallback()
         refreshSystemInsets();
     }
 
+    //  The lamps under the effect keys.
+    //
+    //  Every effect that is ON breathes, focused or not - that is the whole
+    //  point: the one holding the knobs already says so with the wedge in the
+    //  seam above it, and what was missing was any sign at all from the ones
+    //  still running behind it.
+    //
+    //  Two beats per cycle at the project's tempo, so the row breathes WITH
+    //  the music instead of against it, and six lit keys are in phase with
+    //  each other rather than six separate blinkers. Nothing lit means nothing
+    //  repainted: the cost of this is zero on a face with no effects on.
+    {
+        const double periodMs = juce::jlimit (500.0, 3000.0,
+                                              2.0 * 60000.0 / juce::jmax (20.0, engine.getBpm()));
+        fxPulsePhase += (double) DeviceTier::profile().uiIntervalMs / periodMs;
+        if (fxPulsePhase >= 1.0) fxPulsePhase -= std::floor (fxPulsePhase);
+
+        //  A raised cosine: never fully off, so a running effect is lit even
+        //  at the bottom of its breath. A lamp that goes dark once a second is
+        //  a fault indicator, not a power light.
+        const double lit = 0.42 + 0.58 * (0.5 - 0.5 * std::cos (fxPulsePhase * juce::MathConstants<double>::twoPi));
+
+        for (int f = 0; f < kNumFx; ++f)
+        {
+            auto* b = fxButtons[f];
+            if (b == nullptr) continue;
+
+            const double want = fxOn[(size_t) f] ? lit : 0.0;
+            const double had  = (double) b->getProperties().getWithDefault ("pulse", 0.0);
+            if (std::abs (want - had) < 0.004) continue;
+
+            b->getProperties().set ("pulse", want);
+            b->repaint();
+        }
+    }
+
     //  ...and from then on, every couple of seconds, hand the live pads to the
     //  writer. With nothing changed this is sixteen pointer comparisons.
     if (++sessionSyncTick >= 33)

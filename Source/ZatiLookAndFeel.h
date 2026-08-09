@@ -612,6 +612,62 @@ public:
         g.setColour (base);
         g.fillRoundedRectangle (r, rad);
 
+        //  THE LAMP UNDER THE CAP.
+        //
+        //  An effect that is running but does not hold the three knobs had
+        //  nothing to say for itself: it wore the same near-black cap as the
+        //  focused one and the same near-black cap it would wear if it were
+        //  simply the one you last pressed. Switch the knobs to the delay and
+        //  the reverb goes quiet on screen while it is still very much on.
+        //
+        //  A halo around the cap would say it, and it would say it wrong: a
+        //  glow on the OUTSIDE reads as selection - the thing the seam wedge
+        //  already means - and it would bleed onto the chassis, which on this
+        //  face is paper. This is a bulb INSIDE the key: a soft pool of warm
+        //  light rising from just below centre, clipped to the cap so not one
+        //  pixel of it escapes onto the panel, the way a lit switch on real
+        //  gear glows through its own legend rather than around its edge.
+        //
+        //  Driven by a "pulse" property (0..1) the app breathes at the
+        //  project's tempo, so six lit effects blink together and the row
+        //  reads as one machine keeping time rather than six blinking parts.
+        const float pulse = (float) b.getProperties().getWithDefault ("pulse", 0.0);
+        if (pulse > 0.001f && b.isEnabled())
+        {
+            juce::Graphics::ScopedSaveState clip (g);
+            juce::Path capPath;
+            capPath.addRoundedRectangle (r, rad);
+            g.reduceClipRegion (capPath);
+
+            //  The bulb sits low, like a lamp behind the bottom half of a
+            //  legend plate, and its reach is a little wider than the key is
+            //  tall so the light fades out inside the cap and never at a hard
+            //  edge.
+            const float cx = r.getCentreX();
+            const float cy = r.getCentreY() + r.getHeight() * 0.16f;
+            //  Tight, not diffuse. Spread across the whole cap it read as the
+            //  key changing shade; concentrated into a pool a little wider
+            //  than the key is tall it reads as a bulb behind the legend,
+            //  which is the thing being imitated.
+            const float rr = juce::jmax (r.getWidth() * 0.40f, r.getHeight() * 0.85f);
+
+            //  Warm, and light or dark to suit the cap it is inside: on the
+            //  near-black cap of an active key this is a filament; on a pale
+            //  one it would have to be a shadow to read at all.
+            const bool darkCap = base.getPerceivedBrightness() < 0.5f;
+            const auto lampCol = darkCap ? ZatiColours::inkLight : ZatiColours::ink;
+            const float a = (darkCap ? 0.46f : 0.20f) * pulse;
+
+            juce::ColourGradient lamp (lampCol.withAlpha (a), cx, cy,
+                                       lampCol.withAlpha (0.0f), cx, cy - rr, true);
+            //  Steep: most of the light in the middle third, then gone. A
+            //  linear falloff is a gradient; this is a lamp.
+            lamp.addColour (0.35, lampCol.withAlpha (a * 0.52f));
+            lamp.addColour (0.70, lampCol.withAlpha (a * 0.12f));
+            g.setGradientFill (lamp);
+            g.fillRoundedRectangle (r, rad);
+        }
+
         // Border. The old test sniffed the cap's HUE to decide whether it was
         // "accented" — meaningless now that the accent is monochrome, so it
         // compares against the accent tone directly. And the border must

@@ -208,6 +208,9 @@ private:
     //  splits into a column you watch and set, and a column you play. Empty
     //  in portrait, where the whole width is one column.
     bool pressureAnnounced = false;
+    //  Where in its breath the effect lamps are, 0..1. Advanced by the UI
+    //  timer at two beats per cycle; see timerCallback.
+    double fxPulsePhase = 0.0;
     bool wideFace = false;
     juce::Rectangle<int> faceColumn;
 
