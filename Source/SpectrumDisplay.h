@@ -112,7 +112,7 @@ public:
             auto gutter = vu.removeFromLeft (12.0f);
 
             g.setColour (ZatiColours::lcdFg.withAlpha (0.55f));
-            g.setFont (ZatiColours::monoFont (8.0f, true));
+            g.setFont (ZatiColours::monoFont (Metrics::fTiny, true));
             g.drawText ("L", gutter.withHeight (8.0f), juce::Justification::centredLeft);
             g.drawText ("R", gutter.withHeight (8.0f).withY (gutter.getY() + 8.0f), juce::Justification::centredLeft);
 

@@ -210,10 +210,24 @@ namespace Metrics
     //  once the card grows instead of the rows shrinking.
     static constexpr int hit = 40;
     static constexpr int chip = 24;   // value readout
+
+    //  ONE height for every value box, and ONE width for a stepper's keys.
+    //
+    //  These were being written out by hand at each control: readouts came out
+    //  20 tall in one row and 22 in the next, and an IncDecButtons slider hands
+    //  its two keys whatever the text box does not take - so a wide row grew
+    //  sixty-pixel plus and minus keys next to forty-pixel ones two rows up.
+    //  Same job, same size, wherever it is.
+    static constexpr int readout = 22;   // the box a number lives in
+    static constexpr int stepKey = 40;   // the - and + of a stepper
     static constexpr int tab = 32;    // module bar: it opens windows, it does not act
     static constexpr int row = 44;    // list row
 
     // Type — four sizes, each with one job.
+    //  Below fMeta there was nothing named, so five places wrote 8, 8.5 and 9
+    //  by hand and no two of them agreed. Fine print is a size, not a guess.
+    static constexpr float fTiny = 8.0f;    // labels inside an 8px gutter
+    static constexpr float fFine = 9.0f;    // footnotes, paths, cell text
     static constexpr float fMeta = 10.0f;   // units, secondary facts
     static constexpr float fLabel = 11.0f;  // control names
     static constexpr float fValue = 13.0f;  // readouts

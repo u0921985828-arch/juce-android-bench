@@ -109,7 +109,7 @@ public:
 
         // Bar numbers along the top edge of the first lane.
         g.setColour (ZatiColours::inkDim.withAlpha (0.7f));
-        g.setFont (ZatiColours::monoFont (8.0f, true));
+        g.setFont (ZatiColours::monoFont (Metrics::fTiny, true));
         for (int c = 0; c < kBarsView; c += 2)
             g.drawText (juce::String (base + c + 1),
                         (int) ((float) r.getX() + gutter + barW * (float) c) + 2, r.getY(),

@@ -293,7 +293,7 @@ MainComponent::MainComponent()
         {
             auto* sl = new juce::Slider();
             sl->setSliderStyle (juce::Slider::LinearHorizontal);
-            sl->setTextBoxStyle (juce::Slider::TextBoxRight, false, 44, 20);
+            sl->setTextBoxStyle (juce::Slider::TextBoxRight, false, 44, Metrics::readout);
             sl->setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
             sl->setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
             sl->setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
@@ -555,7 +555,7 @@ MainComponent::MainComponent()
         s.setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
         s.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
         s.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-        s.setTextBoxStyle (juce::Slider::TextBoxRight, false, 66, 22);
+        s.setTextBoxStyle (juce::Slider::TextBoxRight, false, 66, Metrics::readout);
         s.setRange (lo, hi, step);
         s.setValue (def, juce::dontSendNotification);
         s.setColour (juce::Slider::trackColourId, kPadLoaded);
@@ -576,7 +576,7 @@ MainComponent::MainComponent()
         s.setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
         s.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
         s.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-        s.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 62, 20);
+        s.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 62, Metrics::readout);
         s.setRange (lo, hi, step);
         if (skewMid > 0.0) s.setSkewFactorFromMidPoint (skewMid);
         s.setValue (def, juce::dontSendNotification);
@@ -618,7 +618,7 @@ MainComponent::MainComponent()
              [this] { if (selectedPad >= 0) { padChokeUI[(size_t) selectedPad] = (int) chokeSlider.getValue(); engine.setPadChoke (selectedPad, (int) chokeSlider.getValue()); } });
     chokeSlider.setSliderStyle (juce::Slider::IncDecButtons);
     chokeSlider.setIncDecButtonsMode (juce::Slider::incDecButtonsDraggable_Vertical);
-    chokeSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 56, Metrics::chip);
+    chokeSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 56, Metrics::readout);
 
     pitchSlider.setTextValueSuffix (" st");
     fineSlider.textFromValueFunction = [] (double v)
@@ -717,7 +717,7 @@ MainComponent::MainComponent()
     patternSlider.setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
     patternSlider.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
     patternSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    patternSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 90, 22);
+    patternSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 90, Metrics::readout);
     patternSlider.textFromValueFunction = [] (double v) { return "P" + juce::String ((int) v + 1); };
     patternSlider.updateText();   // refresh textbox with the new formatter
     patternSlider.onValueChange = [this]
@@ -747,7 +747,7 @@ MainComponent::MainComponent()
     lengthSlider.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
     lengthSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     lengthSlider.setColour (juce::Slider::trackColourId, ZatiColours::accent);
-    lengthSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 72, 22);
+    lengthSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 72, Metrics::readout);
     lengthSlider.textFromValueFunction = [] (double v) { return T ("%1 pasos", juce::String ((int) v)); };
     lengthSlider.updateText();
     lengthSlider.onValueChange = [this]
@@ -794,7 +794,7 @@ MainComponent::MainComponent()
     noteSlider.setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
     noteSlider.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
     noteSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    noteSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 90, 22);
+    noteSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 90, Metrics::readout);
     noteSlider.textFromValueFunction = [] (double v) { return (v > 0 ? juce::String ("+") : juce::String()) + juce::String ((int) v) + " st"; };
     noteSlider.updateText();   // refresh textbox with the new formatter
     noteSlider.onValueChange = [this]
@@ -814,7 +814,7 @@ MainComponent::MainComponent()
     velSlider.setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
     velSlider.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
     velSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    velSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 54, 22);
+    velSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 54, Metrics::readout);
     velSlider.textFromValueFunction = [] (double v) { return juce::String ((int) std::round (v * 100.0 / 127.0)) + " %"; };
     velSlider.updateText();
     velSlider.onValueChange = [this]
@@ -834,7 +834,7 @@ MainComponent::MainComponent()
     rollSlider.setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
     rollSlider.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
     rollSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    rollSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 60, 22);
+    rollSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 60, Metrics::readout);
     rollSlider.textFromValueFunction = [] (double v)
     { return (v <= 1.0) ? juce::String ("1") : ("x" + juce::String ((int) v)); };
     rollSlider.updateText();
@@ -854,7 +854,7 @@ MainComponent::MainComponent()
     swingSlider.setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
     swingSlider.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
     swingSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    swingSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 54, 22);
+    swingSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 54, Metrics::readout);
     swingSlider.textFromValueFunction = [] (double v)
     { return (v <= 50.5) ? juce::String ("recto") : (juce::String ((int) v) + " %"); };
     swingSlider.updateText();
@@ -970,7 +970,7 @@ MainComponent::MainComponent()
         f->setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
         f->setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
         f->setColour (juce::Slider::trackColourId, Zati::colour (i));
-        f->setTextBoxStyle (juce::Slider::TextBoxRight, false, 46, 20);
+        f->setTextBoxStyle (juce::Slider::TextBoxRight, false, 46, Metrics::readout);
         //  A tap must not become a value. Snapping to the touch point turns a
         //  brushed finger into a channel slammed to zero; relative dragging
         //  means you take hold of the level and move it from where it was.
@@ -1103,7 +1103,7 @@ MainComponent::MainComponent()
     songLenSlider.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
     songLenSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     songLenSlider.setColour (juce::Slider::trackColourId, kAccent);
-    songLenSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 64, Metrics::chip);
+    songLenSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 64, Metrics::readout);
     songLenSlider.textFromValueFunction = [] (double v) { return juce::String ((int) v) + " comp"; };
     songLenSlider.updateText();
     songLenSlider.onValueChange = [this]
@@ -2443,8 +2443,11 @@ void MainComponent::resized()
             //  them is taller than it is wide, and on a narrow screen the
             //  readout was eating enough of the cell to trigger exactly that -
             //  two 17-pixel slivers. Reserve the buttons their width first.
+            //  70 was a hand-picked number that made CHOKE's keys a different
+            //  size from every other stepper's. Same reservation as the rest.
             chokeSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false,
-                                         juce::jmax (30, chokeCell.getWidth() - 70), Metrics::chip);
+                                         juce::jmax (30, chokeCell.getWidth() - 2 * Metrics::stepKey),
+                                         Metrics::readout);
             chokeSlider.setBounds (chokeCell);
             modeButton.setBounds  (r3.removeFromLeft (w3).reduced (6, 3));
         }
@@ -2786,7 +2789,8 @@ void MainComponent::resized()
             //  a pair of slabs twice the size of anything else on the sheet.
             //  Reserve the box first and the buttons come out finger-sized.
             patternSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false,
-                                           juce::jmax (40, w1 - 4 - 2 * 40), 22);
+                                           juce::jmax (40, w1 - 4 - 2 * Metrics::stepKey),
+                                           Metrics::readout);
             patternSlider.setBounds (row1.removeFromLeft (w1).reduced (2, 2));
             lengthSlider.setBounds  (row1.reduced (2, 2));
 
@@ -2805,7 +2809,8 @@ void MainComponent::resized()
             auto row3 = inner.removeFromTop (Metrics::hit);
             chainClearButton.setBounds (row3.removeFromLeft (row3.getWidth() * 5 / 12).reduced (2, 2));
             noteSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false,
-                                        juce::jmax (40, row3.getWidth() - 4 - 2 * 40), 22);
+                                        juce::jmax (40, row3.getWidth() - 4 - 2 * Metrics::stepKey),
+                                        Metrics::readout);
             noteSlider.setBounds       (row3.reduced (2, 2));
             inner.removeFromTop (Metrics::sm);
 
@@ -2815,8 +2820,16 @@ void MainComponent::resized()
             inner.removeFromTop (nameH);                  // painted: GOLPE
             {
                 auto row = inner.removeFromTop (Metrics::hit);
-                velSlider.setBounds  (Lang::takeStart (row, row.getWidth() * 7 / 12).reduced (2, 2));
-                rollSlider.setBounds (row.reduced (2, 2));
+                auto rollCell = row;
+                velSlider.setBounds (Lang::takeStart (row, row.getWidth() * 7 / 12).reduced (2, 2));
+                rollCell = row.reduced (2, 2);
+                //  Reserve the box first and the two keys come out the same
+                //  size as every other stepper's, instead of swallowing what
+                //  the number did not need.
+                rollSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false,
+                                            juce::jmax (36, rollCell.getWidth() - 2 * Metrics::stepKey),
+                                            Metrics::readout);
+                rollSlider.setBounds (rollCell);
             }
             inner.removeFromTop (Metrics::sm);
 
@@ -4401,7 +4414,7 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
     {
         auto r = projPathRowArea;
         g.setColour (ZatiColours::inkDim.withAlpha (0.75f));
-        g.setFont (ZatiColours::monoFont (8.5f, false));
+        g.setFont (ZatiColours::monoFont (Metrics::fFine, false));
         g.drawText (T ("CARPETA"), Lang::takeStart (r, 60), Lang::start());
         g.drawFittedText (Lang::ltr (ProjectStore::root().getFullPathName()),
                           r, Lang::start(), 1, 0.7f);
@@ -4633,7 +4646,7 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
     //  past it belongs to the phone's audio path, and no setting in this app
     //  can give it back. Without this split a bad phone reads as a bad app.
     g.setColour (ZatiColours::lcdDim.withAlpha (0.85f));
-    g.setFont (ZatiColours::monoFont (9.0f, false));
+    g.setFont (ZatiColours::monoFont (Metrics::fFine, false));
     juce::String note = T ("de esos, %1 ms son el bufer", juce::String (blockMs, 1));
     if (totalMs - blockMs > 20.0)
     {
@@ -4682,7 +4695,7 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
             : measuredMs <= 60.0f ? ZatiColours::yellow : ZatiColours::red);
 
     g.setColour (ZatiColours::lcdDim.withAlpha (0.85f));
-    g.setFont (ZatiColours::monoFont (9.0f, false));
+    g.setFont (ZatiColours::monoFont (Metrics::fFine, false));
     g.drawFittedText (measureNote.isNotEmpty() ? measureNote
                                                : T ("MEDIR emite un click y lo escucha con el micro"),
                       inner.removeFromTop (11), juce::Justification::centredLeft, 1, 0.7f);
