@@ -67,36 +67,82 @@ public:
         return ok;
     }
 
+    //  WHERE THE LIBRARY LIVES - and it must not move.
+    //
+    //  This used to be a pure probe: try shared Music, then the app's external
+    //  files folder, then internal app data, first one that accepts a real
+    //  write wins. Correct on any single launch and quietly catastrophic
+    //  across two, because the probe has no memory. externalFilesDir() is a
+    //  JNI call; let it fail once - the context not ready, a storage volume
+    //  still mounting, an OEM quirk - and the app silently relocates its whole
+    //  library to the internal folder. Everything written before, including
+    //  the invisible session that holds the sounds on your pads, is still on
+    //  disk and is now in a place nothing looks at. The pads come back empty
+    //  and nothing anywhere says why.
+    //
+    //  So the choice is made once and REMEMBERED, in the one directory on
+    //  Android that can never move: the app's own internal data. The probe
+    //  only runs when there is nothing remembered, or when what was remembered
+    //  is gone.
+    static juce::File anchorFile()
+    {
+        return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                   .getChildFile ("zati-home.txt");
+    }
+
     static juce::File home()
     {
         static juce::File cached = []
         {
-            auto music = juce::File::getSpecialLocation (juce::File::userMusicDirectory);
-            if (music != juce::File())
+            //  1. Where we put it last time, if it is still there and still
+            //     takes a write. This is the answer on every launch but the
+            //     first, which is the whole point.
+            if (const auto a = anchorFile(); a.existsAsFile())
             {
-                auto candidate = music.getChildFile ("ZATI");
-                if (canReallyWriteInto (candidate))
-                    return candidate;
+                const auto text = a.loadFileAsString().trim();
+                if (text.isNotEmpty() && juce::File::isAbsolutePath (text))
+                {
+                    const juce::File remembered (text);
+                    if (remembered.isDirectory() && canReallyWriteInto (remembered))
+                        return remembered;
+                }
             }
 
-            //  Shared Music said no. Next best is the app's OWN folder on
-            //  external storage: writable with no permission, and - unlike
-            //  internal app data - it turns up over a USB cable, which is how
-            //  a sample pack actually gets onto a phone. A library nothing can
-            //  reach is not a library.
-            if (auto ext = AppStorage::externalFilesDir(); ext != juce::File())
+            const auto chosen = [] () -> juce::File
             {
-                auto candidate = ext.getChildFile ("ZATI");
-                if (canReallyWriteInto (candidate))
-                    return candidate;
-            }
+                auto music = juce::File::getSpecialLocation (juce::File::userMusicDirectory);
+                if (music != juce::File())
+                {
+                    auto candidate = music.getChildFile ("ZATI");
+                    if (canReallyWriteInto (candidate))
+                        return candidate;
+                }
 
-            //  Last resort. Always writable, visible to nothing - but a save
-            //  that lands somewhere private beats a save that does not land.
-            auto fallback = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-                                .getChildFile ("ZATI");
-            fallback.createDirectory();
-            return fallback;
+                //  Shared Music said no. Next best is the app's OWN folder on
+                //  external storage: writable with no permission, and - unlike
+                //  internal app data - it turns up over a USB cable, which is
+                //  how a sample pack actually gets onto a phone. A library
+                //  nothing can reach is not a library.
+                if (auto ext = AppStorage::externalFilesDir(); ext != juce::File())
+                {
+                    auto candidate = ext.getChildFile ("ZATI");
+                    if (canReallyWriteInto (candidate))
+                        return candidate;
+                }
+
+                //  Last resort. Always writable, visible to nothing - but a
+                //  save that lands somewhere private beats a save that does
+                //  not land.
+                auto fallback = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                                    .getChildFile ("ZATI");
+                fallback.createDirectory();
+                return fallback;
+            }();
+
+            //  Remember it before anything is written into it.
+            anchorFile().getParentDirectory().createDirectory();
+            anchorFile().replaceWithText (chosen.getFullPathName());
+            return chosen;
         }();
         return cached;
     }

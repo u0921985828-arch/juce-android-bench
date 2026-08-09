@@ -39,6 +39,12 @@ public:
         repaint();
     }
 
+    //  What is on this pad, for the bench (see UiAudit.h). "Did the sound
+    //  survive leaving the app" is the one piece of state a layout dump has
+    //  to carry, because it is the one the user keeps losing.
+    bool hasSample() const noexcept { return loaded; }
+    const juce::String& sampleName() const noexcept { return padName; }
+
     void setZati (int z) { if (zati != z) { zati = z; repaint(); } }
     int  getZati() const { return zati; }
     void setSelected (bool s) { if (selected != s) { selected = s; repaint(); } }

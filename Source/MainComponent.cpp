@@ -3998,7 +3998,19 @@ void MainComponent::applyState (const juce::ValueTree& s)
             // Trim is stored 0..1 but the engine wants samples, and
             // publishSample has just reset the window to the whole file — so
             // it must be pushed back explicitly or every load plays untrimmed.
-            if (const int len = engine.getSampleLength (i); len > 0)
+            //
+            //  The LENGTH has to come from the buffer the interface is holding,
+            //  not from the engine. engine.getSampleLength reads the pointer
+            //  the AUDIO THREAD has adopted, and adoption happens at the top of
+            //  a render block - so on a cold start, before the device is open,
+            //  it is still null and this whole branch was skipped. Every pad in
+            //  a restored session came back playing the entire source file
+            //  instead of its slice, which after a chop is sixteen copies of
+            //  the same break.
+            const int len = uiSample[(size_t) i] != nullptr
+                                ? uiSample[(size_t) i]->buffer.getNumSamples()
+                                : engine.getSampleLength (i);
+            if (len > 0)
             {
                 engine.setPadStart (i, (int) (padStart01[(size_t) i] * len));
                 engine.setPadEnd   (i, (int) (padEnd01[(size_t) i]   * len));
@@ -5394,15 +5406,20 @@ void MainComponent::appSuspended()
     //  Anything the background writer had not got to yet - a pad recorded
     //  seconds ago - gets a bounded moment to land. Bounded because Android
     //  counts a slow onPause as a hang.
-    session.flush (1500);
+    //  2500, not 1500: Android allows a few seconds in onPause before it
+    //  calls the app hung, and what is being bought with them is the audio of
+    //  pads that have no other copy anywhere.
+    session.flush (2500);
 
     shutdownAudio();             // releases the output stream and the mic
     audioFocus.abandon();        // ...and hand the speaker back
     pausedByFocus = false;
+    appInForeground = false;
 }
 
 void MainComponent::appResumed()
 {
+    appInForeground = true;
     audioFocus.request();
     pausedByFocus = false;
     setAudioChannels (0, 2);
@@ -5557,6 +5574,25 @@ void MainComponent::restoreSession()
 
     applyState (tree);
 
+    //  A pad the state says had a sound, and whose audio did not come back.
+    //
+    //  This used to be silent. The session would restore, report "recovered",
+    //  and hand back a grid of empty pads with no explanation - which is
+    //  exactly what "I left the app and the sounds are no longer on the pads"
+    //  looks like from the outside. The project loader has always counted
+    //  these; the session, which is the copy that matters most because nobody
+    //  chose to make it, did not.
+    int missing = 0;
+    if (auto padsTree = tree.getChildWithName ("PADS"); padsTree.isValid())
+        for (const auto& p : padsTree)
+        {
+            const int i = (int) p.getProperty ("i", -1);
+            if (juce::isPositiveAndBelow (i, kNumPads)
+                && (bool) p.getProperty ("has", false)
+                && uiSample[(size_t) i] == nullptr)
+                ++missing;
+        }
+
     //  Names live in the state, so the tiles are stamped after applyState.
     for (int i = 0; i < kNumPads; ++i)
         if (auto* p = pads[i])
@@ -5570,7 +5606,11 @@ void MainComponent::restoreSession()
     //  These buffers came off this very folder: nothing to write back.
     session.adopt (uiSample.data(), kNumPads);
 
-    if (restored > 0 || currentProject.isNotEmpty())
+    if (missing > 0)
+        status.setText (T ("Sesion recuperada  [%1 pads, %2 sin audio]",
+                           juce::String (restored), juce::String (missing)),
+                        juce::dontSendNotification);
+    else if (restored > 0 || currentProject.isNotEmpty())
         status.setText (currentProject.isNotEmpty()
                             ? T ("Sesion recuperada - %1", currentProject)
                             : (restored == 1 ? T ("Sesion recuperada  [1 pad]")
@@ -5764,7 +5804,12 @@ void MainComponent::timerCallback()
     //  returns early on a null device - so a stream that failed to come back
     //  after an interruption stayed missing for the rest of the session, with
     //  the face fully alive and nothing coming out.
-    if (! pausedByFocus && deviceManager.getCurrentAudioDevice() == nullptr)
+    //  ...and only while the app is actually in FRONT. appSuspended releases
+    //  the stream on purpose, and the timer keeps ticking in the background:
+    //  without this the revival would grab the audio device back a second
+    //  after you left the app, fight whatever took it, and hand appResumed a
+    //  device it did not open.
+    if (appInForeground && ! pausedByFocus && deviceManager.getCurrentAudioDevice() == nullptr)
     {
         if (++deviceRevivalTicks >= 16)          // ~1 s: do not fight a device that is mid-open
         {

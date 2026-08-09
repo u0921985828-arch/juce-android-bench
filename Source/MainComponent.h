@@ -270,6 +270,8 @@ private:
     bool duckedByFocus = false;
     int  duckTicksLeft = 0;
     int  deviceRevivalTicks = 0;
+    //  The app starts in front; appSuspended/appResumed move it.
+    bool appInForeground = true;
     static constexpr int kDuckWatchdogTicks = 100;   // ~6 s at the UI cadence
     void audioFocusDucked() override;
     void audioFocusLost (bool permanently) override;

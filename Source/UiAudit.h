@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include "ZatiLookAndFeel.h"
+#include "PadButton.h"
 
 // ============================================================================
 //  UiAudit — the interface measuring itself.
@@ -27,6 +28,7 @@
 //      ZATI_SIZE=412x915         lay out at this size first
 //      ZATI_LANG=es|en|zh|ar     in this language
 //      ZATI_OPEN=pads|sec|...    with this sheet open
+//      ZATI_CYCLE=3              suspend and resume this many times first
 // ============================================================================
 namespace UiAudit
 {
@@ -60,7 +62,7 @@ namespace UiAudit
         {
             //  A pad's caption is its number in the display face and its
             //  sample name in a strip of its own; neither is measured here.
-            if ((bool) tb->getProperties().getWithDefault ("pad", false))
+            if (dynamic_cast<PadButton*> (&c) != nullptr)
                 return r;
 
             r.has  = true;
@@ -126,6 +128,14 @@ namespace UiAudit
              << ",\"hit\":" << (interactive && ! insideSlider ? 1 : 0)
              << ",\"inSlider\":" << (insideSlider ? 1 : 0)
              << ",\"scrolled\":" << (scrolled ? 1 : 0);
+
+        //  WHAT IS ON THE PAD. The one piece of state worth carrying in a
+        //  layout dump: after leaving the app and coming back, is the sound
+        //  still on the pad it was on? That is a question about the session,
+        //  not about pixels, and it is the question this app keeps failing.
+        if (auto* pb = dynamic_cast<PadButton*> (&c))
+            line << ",\"pad\":1,\"loaded\":" << (pb->hasSample() ? 1 : 0)
+                 << ",\"sample\":\"" << esc (pb->sampleName()) << "\"";
 
         if (cap.has && cap.text.isNotEmpty())
             line << ",\"text\":\"" << esc (cap.text) << "\""

@@ -68,6 +68,19 @@ public:
             }
         }
 
+        //  LEAVE THE APP AND COME BACK, n times, before measuring anything.
+        //
+        //  "I go out of the app for a while, or I lock the phone, and when I
+        //  come back the sounds are no longer on the pads" is not a thing you
+        //  can catch by looking at one launch. It is the suspend/resume pair,
+        //  and it is exactly two calls - so the bench makes them.
+        const int cycles = UiAudit::env ("ZATI_CYCLE").getIntValue();
+        for (int i = 0; i < cycles; ++i)
+        {
+            c->appSuspended();
+            c->appResumed();
+        }
+
         c->auditOpen (UiAudit::env ("ZATI_OPEN"));
 
         juce::Timer::callAfterDelay (400, [this]

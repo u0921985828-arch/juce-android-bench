@@ -3,7 +3,18 @@
 
 SessionKeeper::SessionKeeper() : juce::Thread ("zati-session")
 {
-    startThread (juce::Thread::Priority::background);
+    //  NOT background priority.
+    //
+    //  This thread's whole job is to get the user's work onto disk before
+    //  Android decides to reclaim the process, and that decision can arrive at
+    //  any moment. A background-priority thread on a busy phone may not be
+    //  scheduled for seconds at a time, which leaves exactly the window this
+    //  file exists to close: sixteen pads chopped, the app backgrounded, the
+    //  process reaped, and half the WAVs never written.
+    //
+    //  It still never touches the message thread or the audio thread, so
+    //  normal priority costs the instrument nothing.
+    startThread (juce::Thread::Priority::normal);
 }
 
 SessionKeeper::~SessionKeeper()
@@ -93,6 +104,12 @@ bool SessionKeeper::isIdle() const
 
 bool SessionKeeper::flush (int timeoutMs)
 {
+    //  A flush is somebody waiting. onPause gives an app a few seconds before
+    //  Android calls it a hang, and every millisecond of that spent NOT
+    //  writing is a pad that may not survive the next kill.
+    setPriority (juce::Thread::Priority::high);
+    const juce::ScopeGuard restore { [this] { setPriority (juce::Thread::Priority::normal); } };
+
     const auto deadline = juce::Time::getMillisecondCounter() + (juce::uint32) juce::jmax (0, timeoutMs);
 
     while (! isIdle())
