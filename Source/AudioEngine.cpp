@@ -1,4 +1,5 @@
 #include "AudioEngine.h"
+#include <limits>
 
 namespace
 {
@@ -462,7 +463,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     const bool isPlaying = playing.load (std::memory_order_relaxed);
     if (isPlaying && ! wasPlaying)
     {
-        currentStep = -1; stepAccum = 0.0; chainPos = 0;
+        currentStep = -1; stepAccum = 0.0; chainPos = 0; numPending = 0;
         songStep = -1; songBar.store (-1, std::memory_order_relaxed);
         for (int ln = 0; ln < kSongLanes; ++ln) { lanePattern[ln] = -1; laneStartStep[ln] = 0; }
         playStep.store (-1, std::memory_order_relaxed);
@@ -489,12 +490,43 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         const double secPerStep     = (60.0 / juce::jmax (20.0, (double) bpm.load (std::memory_order_relaxed))) * beatsPerStep;
         const double samplesPerStep = juce::jmax (1.0, secPerStep * systemSampleRate);
 
-        auto firePatternStep = [this] (int bank, int stepInPattern) noexcept
+        //  A step no longer speaks once, on the beat. Swing pushes it late and
+        //  a roll makes it speak several times, so what a step produces is a
+        //  little list of hits with sample offsets, and the render loop below
+        //  stops at each of them.
+        auto firePatternStep = [this, samplesPerStep] (int bank, int stepInPattern) noexcept
         {
             const std::uint16_t mask = patternBank[(size_t) bank][(size_t) stepInPattern].load (std::memory_order_relaxed);
+            if (mask == 0) return;
+
+            //  Swing: the odd sixteenths arrive late by a fraction of a step.
+            //  The even ones never move - that is what keeps the bar where it
+            //  was while the feel changes.
+            const float sw = swing.load (std::memory_order_relaxed);
+            const int lateBy = ((stepInPattern & 1) != 0)
+                                 ? (int) ((double) (sw - 0.5f) * 2.0 * samplesPerStep * 0.5)
+                                 : 0;
+
             for (int p = 0; p < kNumPads; ++p)
-                if ((mask & (std::uint16_t) (1u << p)) != 0)
-                    triggerPad (p, (int) stepNote[(size_t) bank][(size_t) stepInPattern][(size_t) p].load (std::memory_order_relaxed));
+            {
+                if ((mask & (std::uint16_t) (1u << p)) == 0) continue;
+
+                const int semis = (int) stepNote[(size_t) bank][(size_t) stepInPattern][(size_t) p].load (std::memory_order_relaxed);
+
+                //  Zero means "never set", which is every pattern made before
+                //  these existed - so zero reads as full and as a single hit.
+                const int rawV = (int) stepVel [(size_t) bank][(size_t) stepInPattern][(size_t) p].load (std::memory_order_relaxed);
+                const int rawR = (int) stepRoll[(size_t) bank][(size_t) stepInPattern][(size_t) p].load (std::memory_order_relaxed);
+                const float vel  = rawV <= 0 ? 1.0f : juce::jlimit (0.02f, 1.0f, (float) rawV / 127.0f);
+                const int   hits = rawR <= 0 ? 1    : juce::jlimit (1, 8, rawR);
+
+                for (int h = 0; h < hits; ++h)
+                {
+                    if (numPending >= (int) pending.size()) break;
+                    const int at = lateBy + (int) (samplesPerStep * (double) h / (double) hits);
+                    pending[(size_t) numPending++] = { at, p, semis, vel };
+                }
+            }
         };
 
         auto fireStep = [this, chainLen, &patternIdx, &firePatternStep]() noexcept
@@ -571,21 +603,56 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         if (currentStep < 0)
             fireStep();   // first step exactly at transport start
 
+        //  Anything already due speaks before a sample is rendered.
+        auto fireDueHits = [this]() noexcept
+        {
+            for (int i = 0; i < numPending; )
+            {
+                if (pending[(size_t) i].countdown <= 0)
+                {
+                    const auto h = pending[(size_t) i];
+                    pending[(size_t) i] = pending[(size_t) --numPending];
+                    triggerPad (h.pad, h.semis, h.vel);
+                }
+                else ++i;
+            }
+        };
+
+        auto nextHitIn = [this]() noexcept
+        {
+            int best = std::numeric_limits<int>::max();
+            for (int i = 0; i < numPending; ++i)
+                best = juce::jmin (best, pending[(size_t) i].countdown);
+            return best;
+        };
+
+        fireDueHits();
+
         int offset    = startSample;
         int remaining = numSamples;
         while (remaining > 0)
         {
+            //  Stop at whichever comes first: the next step boundary, or the
+            //  next hit inside the step this one already queued.
             const double toBoundary = samplesPerStep - stepAccum;
-            const int seg = juce::jlimit (1, remaining, (int) std::ceil (toBoundary));
+            int seg = juce::jlimit (1, remaining, (int) std::ceil (toBoundary));
+            seg = juce::jlimit (1, seg, nextHitIn());
+
             renderVoices (offset, seg);
             stepAccum += seg;
             offset    += seg;
             remaining -= seg;
+
+            for (int i = 0; i < numPending; ++i)
+                pending[(size_t) i].countdown -= seg;
+
             if (stepAccum >= samplesPerStep - 1.0e-9)
             {
                 stepAccum -= samplesPerStep;
                 fireStep();   // voices started here render from the next segment on
             }
+
+            fireDueHits();
         }
         stepPhase.store ((float) (stepAccum / samplesPerStep), std::memory_order_relaxed);
     }
@@ -1105,6 +1172,36 @@ void AudioEngine::setStepNote (int patternIdx, int step, int pad, int semis) noe
 {
     if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps || pad < 0 || pad >= kNumPads) return;
     stepNote[(size_t) patternIdx][(size_t) step][(size_t) pad].store ((std::int8_t) juce::jlimit (-24, 24, semis), std::memory_order_relaxed);
+}
+
+//  Velocity and roll, same shape as the note. Zero means "never set" in both,
+//  which is what every pattern written before they existed says - and it has
+//  to keep meaning full level and one hit, or old patterns would come back
+//  silent or stuttering.
+void AudioEngine::setStepVel (int patternIdx, int step, int pad, int vel) noexcept
+{
+    if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps || pad < 0 || pad >= kNumPads) return;
+    stepVel[(size_t) patternIdx][(size_t) step][(size_t) pad].store ((std::uint8_t) juce::jlimit (1, 127, vel), std::memory_order_relaxed);
+}
+
+void AudioEngine::setStepRoll (int patternIdx, int step, int pad, int hits) noexcept
+{
+    if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps || pad < 0 || pad >= kNumPads) return;
+    stepRoll[(size_t) patternIdx][(size_t) step][(size_t) pad].store ((std::uint8_t) juce::jlimit (1, 8, hits), std::memory_order_relaxed);
+}
+
+int AudioEngine::getStepVel (int patternIdx, int step, int pad) const noexcept
+{
+    if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps || pad < 0 || pad >= kNumPads) return 127;
+    const int v = (int) stepVel[(size_t) patternIdx][(size_t) step][(size_t) pad].load (std::memory_order_relaxed);
+    return v <= 0 ? 127 : v;
+}
+
+int AudioEngine::getStepRoll (int patternIdx, int step, int pad) const noexcept
+{
+    if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps || pad < 0 || pad >= kNumPads) return 1;
+    const int r = (int) stepRoll[(size_t) patternIdx][(size_t) step][(size_t) pad].load (std::memory_order_relaxed);
+    return r <= 0 ? 1 : r;
 }
 
 int AudioEngine::getStepNote (int patternIdx, int step, int pad) const noexcept

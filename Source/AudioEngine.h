@@ -211,6 +211,14 @@ public:
     //  (message thread). Lets one pad's sample play a melody across the
     //  16-step grid instead of one fixed pitch per pad.
     void setStepNote (int patternIdx, int step, int pad, int semis) noexcept;
+    void setStepVel   (int patternIdx, int step, int pad, int vel)  noexcept;
+    void setStepRoll  (int patternIdx, int step, int pad, int hits) noexcept;
+    int  getStepVel   (int patternIdx, int step, int pad) const noexcept;
+    int  getStepRoll  (int patternIdx, int step, int pad) const noexcept;
+
+    //  0.5 straight .. 0.75 hard shuffle.
+    void  setSwing (float s) noexcept { swing.store (juce::jlimit (0.5f, 0.75f, s), std::memory_order_relaxed); }
+    float getSwing() const noexcept   { return swing.load (std::memory_order_relaxed); }
     int  getStepNote  (int patternIdx, int step, int pad) const noexcept;
 
     // UI feedback: bitmask of pads triggered since the last call (taps + sequencer).
@@ -490,6 +498,33 @@ private:
 
     // Piano roll: per-(pattern, step, pad) semitone offset from the pad's own pitch.
     std::array<std::array<std::array<std::atomic<std::int8_t>, kNumPads>, kNumSteps>, kNumPatterns> stepNote {};
+
+    //  What a step DOES, beyond which pads it fires.
+    //
+    //  A pattern that can only say "this pad, this step" plays like a typewriter:
+    //  every hit identical, every hit on the grid. These are the two things
+    //  that turn a grid into a performance, and they are per pad and per step
+    //  because that is the only place they mean anything.
+    //
+    //    stepVel   how hard, 1..127, 127 = as loud as the pad is set to.
+    //    stepRoll  how MANY, 1..8 evenly spaced inside the step. A roll is not
+    //              a shorter step - the grid does not get finer - it is one
+    //              step that speaks more than once.
+    std::array<std::array<std::array<std::atomic<std::uint8_t>, kNumPads>, kNumSteps>, kNumPatterns> stepVel {};
+    std::array<std::array<std::array<std::atomic<std::uint8_t>, kNumPads>, kNumSteps>, kNumPatterns> stepRoll {};
+
+    //  SWING. 0.5 is straight; above it the odd sixteenths are pushed late by
+    //  that fraction of a step. It is the difference between a machine playing
+    //  a pattern and somebody playing it.
+    std::atomic<float> swing { 0.5f };
+
+    //  Hits waiting to speak inside the current step. Swing moves a hit off the
+    //  boundary and a roll puts several between boundaries, so a step is no
+    //  longer a single instant and the render loop has to be able to stop
+    //  between them.
+    struct PendingHit { int countdown; int pad; int semis; float vel; };
+    std::array<PendingHit, 96> pending {};
+    int numPending = 0;
 
     // Song / playlist.
     std::atomic<bool> songMode { false };

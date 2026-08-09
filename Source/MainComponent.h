@@ -524,7 +524,9 @@ private:
     //  CINTA moves pitch and length together, TONO keeps the length.
     juce::TextButton modeButton { "CINTA" };
     juce::Slider panSlider, attackSlider, releaseSlider;
-    juce::Slider patternSlider, noteSlider, lengthSlider;
+    //  What a step DOES, not just which pads it fires: how hard, how many
+    //  times, and how far off the grid the odd ones sit.
+    juce::Slider patternSlider, noteSlider, lengthSlider, velSlider, rollSlider, swingSlider;
     juce::TextButton chainClearButton { "QUITAR CADENA" };
     juce::Slider macroCtrl1, macroCtrl2, macroCtrl3;   // CTRL 1-3, bank-dependent
     juce::Label  status, fxLabel;

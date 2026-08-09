@@ -726,6 +726,8 @@ MainComponent::MainComponent()
         engine.setEditPattern (selectedPattern);
         selectedStep = -1;
         noteSlider.setValue (0.0, juce::dontSendNotification);
+        velSlider.setValue  (127.0, juce::dontSendNotification);
+        rollSlider.setValue (1.0, juce::dontSendNotification);
         lengthSlider.setValue (engine.getPatternLength (selectedPattern), juce::dontSendNotification);
         selectedBar = 0;
         resized();
@@ -803,6 +805,61 @@ MainComponent::MainComponent()
         refreshStepGrid();
     };
     seqSheet.addAndMakeVisible (noteSlider);
+
+    //  How HARD this step hits. The pattern was a typewriter without it: every
+    //  strike identical, which is the one thing a drummer never does.
+    velSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    velSlider.setRange (1.0, 127.0, 1.0);
+    velSlider.setValue (127.0, juce::dontSendNotification);
+    velSlider.setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
+    velSlider.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
+    velSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+    velSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 54, 22);
+    velSlider.textFromValueFunction = [] (double v) { return juce::String ((int) std::round (v * 100.0 / 127.0)) + " %"; };
+    velSlider.updateText();
+    velSlider.onValueChange = [this]
+    {
+        if (selectedPad >= 0 && selectedStep >= 0)
+            engine.setStepVel (selectedPattern, selectedStep, selectedPad, (int) velSlider.getValue());
+        refreshStepGrid();
+    };
+    seqSheet.addAndMakeVisible (velSlider);
+
+    //  How MANY times. A roll is not a finer grid - the pattern keeps its
+    //  sixteen steps - it is one step that speaks up to eight times inside
+    //  its own slot, which is how a fill gets made without changing the bar.
+    rollSlider.setSliderStyle (juce::Slider::IncDecButtons);
+    rollSlider.setRange (1.0, 8.0, 1.0);
+    rollSlider.setValue (1.0, juce::dontSendNotification);
+    rollSlider.setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
+    rollSlider.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
+    rollSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+    rollSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 60, 22);
+    rollSlider.textFromValueFunction = [] (double v)
+    { return (v <= 1.0) ? juce::String ("1") : ("x" + juce::String ((int) v)); };
+    rollSlider.updateText();
+    rollSlider.onValueChange = [this]
+    {
+        if (selectedPad >= 0 && selectedStep >= 0)
+            engine.setStepRoll (selectedPattern, selectedStep, selectedPad, (int) rollSlider.getValue());
+        refreshStepGrid();
+    };
+    seqSheet.addAndMakeVisible (rollSlider);
+
+    //  SWING is the whole pattern's, not one step's: it is a feel, and a feel
+    //  you can set per step is just a step in the wrong place.
+    swingSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    swingSlider.setRange (50.0, 75.0, 1.0);
+    swingSlider.setValue (50.0, juce::dontSendNotification);
+    swingSlider.setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
+    swingSlider.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
+    swingSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+    swingSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 54, 22);
+    swingSlider.textFromValueFunction = [] (double v)
+    { return (v <= 50.5) ? juce::String ("recto") : (juce::String ((int) v) + " %"); };
+    swingSlider.updateText();
+    swingSlider.onValueChange = [this] { engine.setSwing ((float) (swingSlider.getValue() / 100.0)); };
+    seqSheet.addAndMakeVisible (swingSlider);
 
     // The six effects. Each row of the fxDefs table is one effect: its face
     // label, the three names CTRL 1-3 take when it holds the knobs, the range
@@ -2060,6 +2117,8 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
         over (&lengthSlider,       T ("LARGO"));
         over (patternButtons[0],   T ("CADENA"));
         over (&noteSlider,         T ("NOTA DEL PASO"));
+        over (&velSlider,          T ("GOLPE"));
+        over (&swingSlider,        T ("SWING"));
         over (&bpmSlider,          T ("TEMPO"));
         if (barButtons[0] != nullptr && barButtons[0]->isVisible())
             over (barButtons[0],   T ("COMPAS"));
@@ -2699,7 +2758,10 @@ void MainComponent::resized()
         const int lanes  = StepGrid::kLanes;
         //  Every control row now carries its own name, and a name is 14px of
         //  height that has to be budgeted rather than borrowed from the grid.
-        const int fixedRowsH = 350;               // title + named rows above and below the grid
+        //  Two rows more than before: GOLPE (velocity + roll) and SWING. Each
+        //  is a name, a control and its air, and all of it has to be
+        //  budgeted or it comes out of the grid.
+        const int fixedRowsH = 350 + 2 * (14 + ZatiLookAndFeel::kTextPad + Metrics::hit + Metrics::sm);
         //  Same bargain as the mixer: the grid gets the room that is left,
         //  down to the density it had before rather than off the card.
         const int laneH  = juce::jlimit (20, 24, ((int) (full.getHeight() * 0.78f) - fixedRowsH) / lanes);
@@ -2745,6 +2807,21 @@ void MainComponent::resized()
             noteSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false,
                                         juce::jmax (40, row3.getWidth() - 4 - 2 * 40), 22);
             noteSlider.setBounds       (row3.reduced (2, 2));
+            inner.removeFromTop (Metrics::sm);
+
+            //  What the step DOES: how hard, and how many times. Same band as
+            //  the note, because they are all answers about the one step you
+            //  have selected.
+            inner.removeFromTop (nameH);                  // painted: GOLPE
+            {
+                auto row = inner.removeFromTop (Metrics::hit);
+                velSlider.setBounds  (Lang::takeStart (row, row.getWidth() * 7 / 12).reduced (2, 2));
+                rollSlider.setBounds (row.reduced (2, 2));
+            }
+            inner.removeFromTop (Metrics::sm);
+
+            inner.removeFromTop (nameH);                  // painted: SWING
+            swingSlider.setBounds (inner.removeFromTop (Metrics::hit).reduced (2, 2));
             inner.removeFromTop (Metrics::sm);
 
             // Bar row: only when the pattern is longer than one bar. A single
@@ -2842,7 +2919,11 @@ void MainComponent::stepCellToggled (int pad, int step)
     if (step >= engine.getPatternLength (selectedPattern)) return;
     selectedStep = step;
     selectPad (pad);                 // the lane you touched becomes the pad you edit
+    //  The three step controls follow whatever you just touched, so what they
+    //  show is always the step under your finger and never the last one.
     noteSlider.setValue (engine.getStepNote (selectedPattern, step, pad), juce::dontSendNotification);
+    velSlider.setValue  (engine.getStepVel  (selectedPattern, step, pad), juce::dontSendNotification);
+    rollSlider.setValue (engine.getStepRoll (selectedPattern, step, pad), juce::dontSendNotification);
 
     const bool nv = ! pattern[(size_t) selectedPattern][(size_t) step][(size_t) pad];
     pattern[(size_t) selectedPattern][(size_t) step][(size_t) pad] = nv;
@@ -3572,6 +3653,7 @@ juce::ValueTree MainComponent::captureState() const
         s.addChild (song, -1, nullptr);
     }
     s.setProperty ("version", 1, nullptr);
+    s.setProperty ("swing", engine.getSwing(), nullptr);
     s.setProperty ("bpm", bpmSlider.getValue(), nullptr);
     s.setProperty ("skin", ZatiColours::currentSkin, nullptr);
     s.setProperty ("focusedFx", focusedFx, nullptr);
@@ -3629,7 +3711,7 @@ juce::ValueTree MainComponent::captureState() const
 
         // One hex word per step (16 pads = 16 bits), plus the step pitches —
         // compact enough to stay readable in the XML.
-        juce::String steps, notes;
+        juce::String steps, notes, vels, rolls;
         for (int st = 0; st < kNumSteps; ++st)
         {
             int mask = 0;
@@ -3638,10 +3720,19 @@ juce::ValueTree MainComponent::captureState() const
             steps << juce::String::toHexString (mask) << " ";
 
             for (int p = 0; p < kNumPads; ++p)
+            {
                 notes << engine.getStepNote (b, st, p) << " ";
+                vels  << engine.getStepVel  (b, st, p) << " ";
+                rolls << engine.getStepRoll (b, st, p) << " ";
+            }
         }
         bk.setProperty ("steps", steps.trim(), nullptr);
         bk.setProperty ("notes", notes.trim(), nullptr);
+        //  New in this version. A project written before them simply has no
+        //  such property, and the loader falls back to full level and one hit
+        //  - which is exactly how those patterns already sounded.
+        bk.setProperty ("vels",  vels.trim(),  nullptr);
+        bk.setProperty ("rolls", rolls.trim(), nullptr);
         banks.addChild (bk, -1, nullptr);
     }
     s.addChild (banks, -1, nullptr);
@@ -3656,6 +3747,9 @@ void MainComponent::applyState (const juce::ValueTree& s)
     applySkin();
 
     bpmSlider.setValue ((double) s.getProperty ("bpm", 120.0), juce::sendNotification);
+    //  Straight is the default, so a project written before swing existed
+    //  comes back playing exactly as it did.
+    swingSlider.setValue ((double) s.getProperty ("swing", 0.5) * 100.0, juce::sendNotification);
 
     if (auto fx = s.getChildWithName ("FX"); fx.isValid())
     {
@@ -3762,9 +3856,11 @@ void MainComponent::applyState (const juce::ValueTree& s)
             if (auto* btn = patternButtons[b])
                 btn->setToggleState (patternActiveUI[(size_t) b], juce::dontSendNotification);
 
-            juce::StringArray st, nt;
+            juce::StringArray st, nt, vl, rl;
             st.addTokens (bk.getProperty ("steps", "").toString(), " ", "");
             nt.addTokens (bk.getProperty ("notes", "").toString(), " ", "");
+            vl.addTokens (bk.getProperty ("vels",  "").toString(), " ", "");
+            rl.addTokens (bk.getProperty ("rolls", "").toString(), " ", "");
             st.removeEmptyStrings(); nt.removeEmptyStrings();
 
             for (int s2 = 0; s2 < kNumSteps; ++s2)
@@ -3778,6 +3874,8 @@ void MainComponent::applyState (const juce::ValueTree& s)
 
                     const int ni = s2 * kNumPads + p;
                     engine.setStepNote (b, s2, p, ni < nt.size() ? nt[ni].getIntValue() : 0);
+                    engine.setStepVel  (b, s2, p, ni < vl.size() ? vl[ni].getIntValue() : 127);
+                    engine.setStepRoll (b, s2, p, ni < rl.size() ? rl[ni].getIntValue() : 1);
                 }
             }
         }
