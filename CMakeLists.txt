@@ -76,3 +76,31 @@ target_link_libraries(Zati PRIVATE
     juce::juce_recommended_lto_flags
     juce::juce_recommended_warning_flags
 )
+
+# ---------------------------------------------------------------------------
+#  The bench.
+#
+#  Two halves, and neither is a unit test: they are the app under the load a
+#  stand puts on it. The interface half needs no target at all — the app
+#  measures itself when ZATI_AUDIT is set (see Source/UiAudit.h). This is the
+#  audio half: the engine driven the way a demo drives it, with the output
+#  checked for the three things that end one — silence, a NaN, and a block
+#  that took longer than it had.
+#
+#      cmake -B build -DZATI_BENCH=ON && cmake --build build --target StressTest
+#      ./build/StressTest_artefacts/StressTest
+# ---------------------------------------------------------------------------
+option(ZATI_BENCH "Build the engine stress bench" OFF)
+
+if(ZATI_BENCH)
+    juce_add_console_app(StressTest PRODUCT_NAME "StressTest")
+    juce_generate_juce_header(StressTest)
+    target_sources(StressTest PRIVATE Tests/StressTest.cpp Source/AudioEngine.cpp)
+    target_compile_definitions(StressTest PRIVATE
+        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_STRICT_REFCOUNTEDPOINTER=1)
+    target_link_libraries(StressTest PRIVATE
+        juce::juce_audio_utils
+        juce::juce_dsp
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags)
+endif()

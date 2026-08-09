@@ -56,7 +56,7 @@
                    androidMinimumSDK="24" androidTargetSDK="35"
                    androidInternetNeeded="0" androidCpp11="1"
                    microphonePermissionNeeded="1"
-                   androidReadMediaAudioPermission="1"
+                   androidReadMediaAudioPermission="1" androidReadMediaImagesPermission="0" androidReadMediaVideoPermission="0" androidExternalWriteNeeded="0"
                    androidTheme="@style/ZatiLaunch"
                    androidScreenOrientation="portrait"
                    gradleVersion="8.7" androidPluginVersion="8.6.1"
