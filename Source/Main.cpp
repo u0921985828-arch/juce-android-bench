@@ -73,24 +73,38 @@ public:
         //  "I go out of the app for a while, or I lock the phone, and when I
         //  come back the sounds are no longer on the pads" is not a thing you
         //  can catch by looking at one launch. It is the suspend/resume pair,
-        //  and it is exactly two calls - so the bench makes them.
+        //  and it is exactly two calls.
+        //
+        //  But NOT YET: the session is restored on the first timer tick, and
+        //  appSuspended autosaves whatever the machine holds. Suspending from
+        //  here, before that tick, wrote an EMPTY state over the session's own
+        //  state.xml - the bench destroying the thing it was built to measure,
+        //  and reporting a clean pass while doing it. So the cycles wait for
+        //  the same settle everything else waits for.
         const int cycles = UiAudit::env ("ZATI_CYCLE").getIntValue();
-        for (int i = 0; i < cycles; ++i)
-        {
-            c->appSuspended();
-            c->appResumed();
-        }
 
-        c->auditOpen (UiAudit::env ("ZATI_OPEN"));
-
-        juce::Timer::callAfterDelay (400, [this]
+        juce::Timer::callAfterDelay (400, [this, cycles]
         {
-            if (auto* cc = content())
+            auto* cc = content();
+            if (cc == nullptr) { quit(); return; }
+
+            for (int i = 0; i < cycles; ++i)
             {
-                cc->resized();
-                UiAudit::dump (*cc);
+                cc->appSuspended();
+                cc->appResumed();
             }
-            quit();
+
+            cc->auditOpen (UiAudit::env ("ZATI_OPEN"));
+
+            juce::Timer::callAfterDelay (400, [this]
+            {
+                if (auto* c2 = content())
+                {
+                    c2->resized();
+                    UiAudit::dump (*c2);
+                }
+                quit();
+            });
         });
     }
 

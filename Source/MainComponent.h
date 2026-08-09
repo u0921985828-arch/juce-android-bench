@@ -268,11 +268,14 @@ private:
     //  builds never send it after a CAN_DUCK, and "quiet for ever" is the
     //  exact failure this whole path exists to make unreachable.
     bool duckedByFocus = false;
-    int  duckTicksLeft = 0;
+    int  duckTicksLeft = 0;   // milliseconds remaining, not ticks
     int  deviceRevivalTicks = 0;
     //  The app starts in front; appSuspended/appResumed move it.
     bool appInForeground = true;
-    static constexpr int kDuckWatchdogTicks = 100;   // ~6 s at the UI cadence
+    //  Somebody else owns the speaker until we ask again. Set by a PERMANENT
+    //  focus loss, cleared by coming back to the foreground.
+    bool focusGivenAway = false;
+    static constexpr int kDuckWatchdogMs = 6000;     // longer than any notification
     void audioFocusDucked() override;
     void audioFocusLost (bool permanently) override;
     void audioFocusGained() override;
@@ -312,6 +315,7 @@ private:
     void selectPad (int index);
     void updateControlsFromPad (int index);
     void refreshWaveformSegments();   // fragments sharing the selected pad's buffer
+    int  padSourceLength (int pad) const;
     void assignSampleToPad (int index, SampleBuffer::Ptr sb, const juce::String& name = {});
     void toggleRecordArm();     // REC: live pad performance -> the pattern
     void toggleMicSampling();   // PADS sheet: mic -> the selected pad
@@ -358,6 +362,24 @@ private:
     juce::Rectangle<int> langRowArea;
 
     void pushUndo (const juce::String& what);   // snapshot before a destructive action
+
+    //  ...and WHICH SOUND was on each pad, which the ValueTree does not carry.
+    //
+    //  captureState stores names, trims and parameters; it does not store the
+    //  buffer a pad points at, and applyState cannot put one back. So undo
+    //  could reverse every number and nothing that MOVED AUDIO BETWEEN PADS -
+    //  which is the one action the sheet asks you to confirm. AUTO CHOP over
+    //  sixteen pads, then DESHACER: the status said "undone", every pad still
+    //  held the chop source, and each now played the whole break because the
+    //  trims had been restored to 0..1. Sixteen bars of the same loop, and no
+    //  way back.
+    //
+    //  Sixteen reference-counted pointers is the whole cost, and they are
+    //  released on the message thread like every other copy.
+    using PadSet = std::array<SampleBuffer::Ptr, 16>;
+    PadSet undoPads, redoPads;
+    void capturePads (PadSet& into) const;
+    void restorePads (const PadSet& from);
     void performUndo();
     void performRedo();
     juce::ValueTree undoState, redoState;

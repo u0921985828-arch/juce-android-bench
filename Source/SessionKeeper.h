@@ -83,5 +83,10 @@ private:
     std::array<bool, kMaxPads> dirty {};
     bool writing = false;
 
+    //  Set by flush(), read by the writer. Not guarded by `lock`: it is a
+    //  hint, and taking the lock to read a hint from the thread that holds it
+    //  most of the time is how a flush ends up waiting on itself.
+    std::atomic<bool> hurry { false };
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SessionKeeper)
 };

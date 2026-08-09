@@ -94,16 +94,29 @@ public:
     {
         static juce::File cached = []
         {
-            //  1. Where we put it last time, if it is still there and still
-            //     takes a write. This is the answer on every launch but the
-            //     first, which is the whole point.
+            //  1. Where we put it last time. This is the answer on every
+            //     launch but the first, which is the whole point.
+            //
+            //  And it is honoured even when the probe FAILS today, which is
+            //  the part that took a second pass to get right. "Not writable
+            //  right now" and "gone for good" look identical from here -
+            //  external storage still mounting at cold boot, a permission
+            //  revoked and re-granted, an OEM volume quirk - and re-probing on
+            //  the first of those, then rewriting the anchor with the answer,
+            //  relocates the whole library permanently and erases the only
+            //  record of where it used to be. That is the exact disaster this
+            //  anchor was added to prevent, reintroduced one line lower down.
+            //
+            //  So: if the remembered directory EXISTS, it wins, writable today
+            //  or not. Only a path that is gone, or an anchor that was never
+            //  written, sends us back to the probe.
             if (const auto a = anchorFile(); a.existsAsFile())
             {
                 const auto text = a.loadFileAsString().trim();
                 if (text.isNotEmpty() && juce::File::isAbsolutePath (text))
                 {
                     const juce::File remembered (text);
-                    if (remembered.isDirectory() && canReallyWriteInto (remembered))
+                    if (remembered.isDirectory())
                         return remembered;
                 }
             }
@@ -180,10 +193,36 @@ public:
     // keep it short enough to stay readable in the list.
     static juce::String sanitise (const juce::String& name)
     {
-        auto s = name.trim().retainCharacters (
-            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -_");
-        s = s.trim().substring (0, 40);
-        return s.isEmpty() ? "SIN NOMBRE" : s;
+        //  TWO DIFFERENT NAMES MUST NEVER BECOME ONE FOLDER.
+        //
+        //  The whitelist is ASCII, and the app ships in Chinese and Arabic.
+        //  Every name written in either of them - and every Spanish name with
+        //  an accent in it - was stripped to nothing and collapsed onto the
+        //  same literal folder. Save two of them and the second one silently
+        //  destroyed the first, and it skipped the overwrite warning too,
+        //  because by then currentProject already WAS that literal.
+        //
+        //  Non-Latin letters stay: a filesystem takes them and a person needs
+        //  them. Only what a path cannot survive is removed. And when nothing
+        //  legible is left, the fallback carries a digest of the original, so
+        //  two different names still land in two different folders.
+        juce::String s;
+        for (auto c : name.trim())
+        {
+            if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"'
+                || c == '<' || c == '>' || c == '|' || c == 0 || c < 32 || c == '.')
+                continue;
+            s << (juce::juce_wchar) c;
+        }
+
+        s = s.trim().substring (0, 40).trim();
+
+        if (s.isNotEmpty())
+            return s;
+
+        const auto digest = juce::String::toHexString (name.trim().hashCode()).toUpperCase();
+        return name.trim().isEmpty() ? juce::String ("SIN NOMBRE")
+                                     : "SIN NOMBRE " + digest.getLastCharacters (6);
     }
 
     //  A file name we can put on disk. Unlike sanitise() for project folders
@@ -230,7 +269,29 @@ public:
             return false;
 
         out.release();                       // the writer owns the stream now
-        return writer->writeFromAudioSampleBuffer (buffer, 0, buffer.getNumSamples());
+        const bool wrote = writer->writeFromAudioSampleBuffer (buffer, 0, buffer.getNumSamples());
+
+        //  THE ANSWER IS NOT KNOWN UNTIL THE WRITER IS GONE.
+        //
+        //  writeFromAudioSampleBuffer can return true on a buffered stream that
+        //  has not touched the disk yet: the final flush and the WAV header
+        //  rewrite happen in ~AudioFormatWriter, after that value is fixed. Out
+        //  of space, that meant this function reported success, SessionKeeper
+        //  took it as permission to delete the previous take and move a
+        //  headerless stub over it, and saveProject counted it as saved.
+        //
+        //  Destroy the writer first, then ask the file whether anything real
+        //  is there - a WAV of a buffer this size cannot be smaller than its
+        //  own header plus a frame.
+        writer.reset();
+
+        if (! wrote || ! dest.existsAsFile() || dest.getSize() < 64)
+        {
+            dest.deleteFile();
+            return false;
+        }
+
+        return true;
     }
 
     // Read a WAV back into a SampleBuffer. Returns nullptr when the file is
@@ -248,11 +309,44 @@ public:
         if (reader == nullptr || reader->numChannels == 0 || reader->lengthInSamples < 4)
             return nullptr;
 
-        SampleBuffer::Ptr sb = new SampleBuffer();
-        sb->buffer.setSize ((int) reader->numChannels, (int) reader->lengthInSamples);
-        reader->read (&sb->buffer, 0, (int) reader->lengthInSamples, 0, true, true);
-        sb->sourceSampleRate = reader->sampleRate;
-        return sb;
+        //  BELIEVE THE FILE, NOT ITS HEADER.
+        //
+        //  lengthInSamples comes from the DECLARED size of the data chunk;
+        //  JUCE does not clamp it to how many bytes are actually there. A WAV
+        //  truncated by a process that was killed mid-write, or copied off
+        //  another phone half-finished, therefore asks for an allocation of
+        //  whatever number happens to sit in those four bytes - gigabytes, or
+        //  a negative int after the cast. setSize throws, nothing catches it,
+        //  and the process aborts.
+        //
+        //  Which would be survivable anywhere except here: restoreSession runs
+        //  this over all sixteen pads on the first timer tick of EVERY launch,
+        //  so one bad byte is a boot loop with no way out from inside the app.
+        //
+        //  So the declared length is checked against the bytes on disk before
+        //  a single one is allocated, and the allocation is caught anyway.
+        const auto declared = reader->lengthInSamples;
+        const auto frameBytes = (juce::int64) reader->numChannels
+                              * (juce::int64) juce::jmax (1u, reader->bitsPerSample / 8);
+        const auto possible = juce::jmax ((juce::int64) 0, src.getSize() / juce::jmax ((juce::int64) 1, frameBytes));
+
+        if (declared <= 0 || declared > possible || declared > 0x3fffffff)
+            return nullptr;
+
+        const int n = (int) declared;
+
+        try
+        {
+            SampleBuffer::Ptr sb = new SampleBuffer();
+            sb->buffer.setSize ((int) reader->numChannels, n);
+            reader->read (&sb->buffer, 0, n, 0, true, true);
+            sb->sourceSampleRate = reader->sampleRate;
+            return sb;
+        }
+        catch (const std::bad_alloc&)
+        {
+            return nullptr;
+        }
     }
 
     static juce::File sampleFile (const juce::File& projectFolder, int pad)

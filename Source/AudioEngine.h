@@ -117,6 +117,21 @@ public:
     }
     int  getSampleLength (int slot) const noexcept;   // 0 if none
 
+    //  Does the engine have a sound for this pad - adopted OR on its way?
+    //
+    //  getSampleLength answers only the first, because it reads the pointer
+    //  the audio thread owns and adoption happens at the top of a render
+    //  block. With no device open no block ever runs, so a freshly published
+    //  pad reads as empty forever. That is fine for the audio thread and
+    //  useless for anyone asking "did this land", which is what the bench and
+    //  the interface actually want to know.
+    bool hasSampleFor (int slot) const noexcept
+    {
+        if (! juce::isPositiveAndBelow (slot, kNumPads)) return false;
+        return padSample[(size_t) slot] != nullptr
+            || pendingPad[(size_t) slot].load (std::memory_order_acquire) != nullptr;
+    }
+
     //  Polyphony, decided by the device rather than by a constant. Called once
     //  before any audio runs; both values are plain ints because nothing reads
     //  them except the audio thread, and it reads them after they are set.
@@ -148,6 +163,25 @@ public:
 
     // --- Samples (message thread) ---
     void publishSample (int slot, SampleBuffer::Ptr newBuffer) noexcept;
+
+    //  TAKE THE SOUND OFF A PAD - and mean it.
+    //
+    //  publishSample (slot, nullptr) reads like the way to do this and is a
+    //  no-op: it returns early on a null buffer. So every place that emptied a
+    //  pad - cancelling an audition, opening a project with fewer pads, NUEVO -
+    //  emptied only the INTERFACE. The engine kept the buffer, the sequencer
+    //  kept triggering it, and the pad you had just cleared went on making the
+    //  sound of whatever used to be there.
+    //
+    //  A pad cannot be cleared by publishing, because "nothing" is exactly the
+    //  value publishing uses to mean "no change". It needs a flag of its own,
+    //  which the audio thread consumes at the top of a block the same way it
+    //  adopts an incoming buffer.
+    void clearPad (int slot) noexcept
+    {
+        if (juce::isPositiveAndBelow (slot, kNumPads))
+            pendingClear[(size_t) slot].store (true, std::memory_order_release);
+    }
     void collectRetiredSamples() noexcept;
 
     // --- Sequencer (message thread) ---
@@ -466,6 +500,7 @@ private:
 
     std::array<SampleBuffer*, kNumPads>              padSample {};
     std::array<std::atomic<SampleBuffer*>, kNumPads> pendingPad {};
+    std::array<std::atomic<bool>, kNumPads> pendingClear {};
     RetiredQueue retired;
 
     // Per-pad params (message writes, audio reads).

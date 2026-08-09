@@ -187,11 +187,24 @@ private:
 
         off.setOffline (true);
         off.prepareToPlay (sampleRate, kBlock);
-        off.copyStateFrom (live);
 
+        //  PUBLISH FIRST, COPY SECOND.
+        //
+        //  publishSample resets the pad's trim window to the whole file - it
+        //  has to, since a new sound in a pad cannot inherit the old one's
+        //  in and out points. Done AFTER copyStateFrom it threw away every
+        //  trim the copy had just brought over, so a bounce ignored START and
+        //  END on every pad. On a chopped kit, where all sixteen pads share
+        //  one buffer and differ ONLY by trim, the exported file was sixteen
+        //  overlapping copies of the whole break.
+        //
+        //  Publishing before the copy costs nothing and lets the state have
+        //  the last word, which is the order applyState already uses.
         for (int i = 0; i < kNumPads; ++i)
             if (pads[(size_t) i] != nullptr)
                 off.publishSample (i, pads[(size_t) i]);
+
+        off.copyStateFrom (live);
 
         if (soloPad >= 0)
         {

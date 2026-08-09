@@ -345,6 +345,22 @@ struct Voice
             if (dist <= 0.0)
             {
                 if (! loop) { active = false; break; }
+
+                //  A LOOP NEEDS SOMEWHERE TO GO.
+                //
+                //  When the window is a single sample - winEnd == winStart + 1,
+                //  which a four-frame file or a trim dragged shut both produce -
+                //  dist is zero at the wrap point too, so resetting pos and
+                //  continuing arrives back here with nothing changed. That is
+                //  not a glitch, it is an infinite loop INSIDE THE AUDIO
+                //  CALLBACK: the block never returns, the stream never feeds,
+                //  and the app is silent and then killed for not responding.
+                //
+                //  Two samples is the floor for anything that can advance. Below
+                //  it the voice stops, which is the honest answer to "loop this
+                //  one sample forever".
+                if (winEnd - winStart < 2) { active = false; break; }
+
                 pos = reverse ? (double) (winEnd - 1) : (double) winStart;
                 continue;
             }

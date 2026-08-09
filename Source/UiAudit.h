@@ -99,6 +99,9 @@ namespace UiAudit
         return "other";
     }
 
+    //  Set by the app before a dump: how long the ENGINE thinks pad n is.
+    inline std::function<int (int)> engineLength;
+
     inline void walk (juce::Component& c, juce::Component& root, const juce::String& path, int depth,
                       bool underSlider = false, bool underViewport = false)
     {
@@ -136,6 +139,14 @@ namespace UiAudit
         if (auto* pb = dynamic_cast<PadButton*> (&c))
             line << ",\"pad\":1,\"loaded\":" << (pb->hasSample() ? 1 : 0)
                  << ",\"sample\":\"" << esc (pb->sampleName()) << "\"";
+
+        //  ...and what the ENGINE thinks, which is the half that was missing.
+        //  "loaded" is the tile's own belief; a pad can look perfectly loaded
+        //  and be silent, and for every restored session it was. The dump now
+        //  carries both, so the two can be compared instead of trusted.
+        if (engineLength != nullptr)
+            if (auto* pb = dynamic_cast<PadButton*> (&c))
+                line << ",\"engine\":" << engineLength (pb->getIndex());
 
         if (cap.has && cap.text.isNotEmpty())
             line << ",\"text\":\"" << esc (cap.text) << "\""

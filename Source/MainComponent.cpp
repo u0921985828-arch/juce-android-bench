@@ -1,4 +1,5 @@
 #include "MainComponent.h"
+#include "UiAudit.h"
 #include "Lang.h"
 #include "SystemInsets.h"
 #include "DeviceTier.h"
@@ -658,8 +659,8 @@ MainComponent::MainComponent()
         if (selectedPad < 0) return;
         double v = juce::jmin (startSlider.getValue(), endSlider.getValue() - 0.01);
         padStart01[(size_t) selectedPad] = (float) v;
-        const int len = engine.getSampleLength (selectedPad);
-        engine.setPadStart (selectedPad, (int) (v * len));
+        const int len = padSourceLength (selectedPad);
+        if (len > 0) engine.setPadStart (selectedPad, (int) (v * len));
         waveform.setTrim ((float) v, padEnd01[(size_t) selectedPad]);
         refreshPadArt (selectedPad);
         refreshWaveformSegments();
@@ -670,8 +671,8 @@ MainComponent::MainComponent()
         if (selectedPad < 0) return;
         double v = juce::jmax (endSlider.getValue(), startSlider.getValue() + 0.01);
         padEnd01[(size_t) selectedPad] = (float) v;
-        const int len = engine.getSampleLength (selectedPad);
-        engine.setPadEnd (selectedPad, (int) (v * len));
+        const int len = padSourceLength (selectedPad);
+        if (len > 0) engine.setPadEnd (selectedPad, (int) (v * len));
         waveform.setTrim (padStart01[(size_t) selectedPad], (float) v);
         refreshPadArt (selectedPad);
         refreshWaveformSegments();
@@ -928,9 +929,12 @@ MainComponent::MainComponent()
         if (selectedPad < 0) return;
         padStart01[(size_t) selectedPad] = s;
         padEnd01[(size_t) selectedPad]   = e;
-        const int len = engine.getSampleLength (selectedPad);
-        engine.setPadStart (selectedPad, (int) (s * len));
-        engine.setPadEnd   (selectedPad, (int) (e * len));
+        const int len = padSourceLength (selectedPad);
+        if (len > 0)
+        {
+            engine.setPadStart (selectedPad, (int) (s * len));
+            engine.setPadEnd   (selectedPad, (int) (e * len));
+        }
         startSlider.setValue (s, juce::dontSendNotification);
         endSlider.setValue   (e, juce::dontSendNotification);
         refreshPadArt (selectedPad);
@@ -2524,9 +2528,21 @@ void MainComponent::resized()
     //  grid exactly while you were editing a pad — you lost sight of the thing
     //  you were adjusting. Centred at 78% x 92% the instrument stays visible
     //  behind the scrim and the window reads as temporary.
-    auto sheetFromBottom = [&full] (Sheet& s, int desiredH)
+    //  The sheet covers the WHOLE window, not just the safe area.
+    //
+    //  Every rectangle below - the card and each control in it - is worked out
+    //  in MainComponent coordinates from `full`, and then handed to children
+    //  of the sheet. That only lines up if the sheet's own origin is (0,0):
+    //  setBounds(full) put it at the system inset instead, so on Android 15
+    //  the whole card and its contents were displaced downward by the height
+    //  of the status bar, and sideways by the left inset in landscape. On a
+    //  desktop, where the insets are zero, it was invisible.
+    //
+    //  Covering everything is also the better scrim: a dimmed sheet that stops
+    //  short of the status bar reads as a panel with a gap behind it.
+    auto sheetFromBottom = [&full, this] (Sheet& s, int desiredH)
     {
-        s.setBounds (full);
+        s.setBounds (getLocalBounds());
         const int h = juce::jmin (desiredH, (int) (full.getHeight() * 0.78f));
         const int w = (int) (full.getWidth() * 0.92f);
         auto sheet = juce::Rectangle<int> (0, 0, w, h).withCentre (full.getCentre());
@@ -3034,18 +3050,28 @@ void MainComponent::padClicked (int index)
     }
 
     if (padHasSample[(size_t) index])
+    {
         engine.postNoteOn (index, pads[index] != nullptr ? pads[index]->getLastVelocity() : 1.0f);
 
         //  Said once, the first time this phone turns out to have a force
         //  sensor under the glass. A feature nobody is told about is a
         //  feature that reads as the app being inconsistent.
+        //
+        //  BRACES. Without them the announcement's `if` swallowed the `else`
+        //  below it, so every tap on a LOADED pad played the sound and then
+        //  reported "this pad is empty". The indentation said one thing and
+        //  the compiler read another - which is the whole reason a one-line
+        //  body does not stay a one-line body once something is added to it.
         if (! pressureAnnounced && pads[index] != nullptr && pads[index]->lastStrikeUsedPressure())
         {
             pressureAnnounced = true;
             status.setText (T ("Pads sensibles a la fuerza del golpe"), juce::dontSendNotification);
         }
+    }
     else
+    {
         status.setText (T ("Pad vacio - pulsa LOAD y toca el pad para cargarlo"), juce::dontSendNotification);
+    }
 
     // REC armed + transport rolling: write the hit into the bank that is
     // actually sounding, quantised to the NEAREST step - and compensated for
@@ -3266,15 +3292,56 @@ void MainComponent::updateControlsFromPad (int index)
     releaseSlider.setValue (padRelease[(size_t) index], juce::dontSendNotification);
 }
 
+//  How long a pad's sound is, asked of the copy the INTERFACE holds.
+//
+//  engine.getSampleLength reads the pointer the audio thread has adopted, and
+//  adoption happens at the top of a render block - so it is zero before the
+//  first block after a load, and zero for as long as there is no device at
+//  all. Every trim edit multiplied by it, so dragging a handle in either of
+//  those moments wrote start=0 and end=0 and the pad lost its slice while the
+//  interface went on showing a normal window. It is also a plain data race:
+//  that pointer belongs to the audio thread.
+int MainComponent::padSourceLength (int pad) const
+{
+    if (! juce::isPositiveAndBelow (pad, kNumPads)) return 0;
+    if (auto& sb = uiSample[(size_t) pad]; sb != nullptr)
+        return sb->buffer.getNumSamples();
+    return 0;
+}
+
 void MainComponent::assignSampleToPad (int index, SampleBuffer::Ptr sb, const juce::String& name)
 {
-    if (sb == nullptr) return;
+    if (sb == nullptr || ! juce::isPositiveAndBelow (index, kNumPads)) return;
     padHasSample[(size_t) index] = true;
     uiSample[(size_t) index]     = sb;
     padStart01[(size_t) index]   = 0.0f;
     padEnd01[(size_t) index]     = 1.0f;
     if (name.isNotEmpty())
         padName[(size_t) index] = name.upToLastOccurrenceOf (".", false, false);
+
+    //  AND THE ENGINE HAS TO BE TOLD.
+    //
+    //  This is the function that means "this buffer is now on this pad", and
+    //  it did not publish. Only SampleLoader did, on its own thread, for the
+    //  one path that goes through it - so LOAD worked and every other path
+    //  did not. A restored session and an opened project read their WAVs with
+    //  ProjectStore::readSample and handed them here: the tile drew the
+    //  waveform, the name appeared, padHasSample went true, and
+    //  AudioEngine::padSample stayed NULL. Sixteen pads that look loaded and
+    //  make no sound. Open a project on top of another and it is worse - the
+    //  pads play the PREVIOUS project's audio, because that is what the
+    //  engine is still holding.
+    //
+    //  Publishing here, at the one place that owns the fact, is what makes
+    //  the loader's own publish redundant rather than load-bearing. Two
+    //  publishes of the same pointer are safe: each takes a reference and the
+    //  exchange releases the one it displaces.
+    //
+    //  It also resets the engine's trim to the whole file, which is exactly
+    //  what the two lines above just did to the interface's copy - so the two
+    //  now say the same thing, and whoever restores a real trim (applyState)
+    //  overrides both.
+    engine.publishSample (index, sb);
 
     // Push this pad's UI params into the engine. The engine's per-pad gain
     // defaults to 0 (silent); setVal(dontSendNotification) never fires the
@@ -3515,15 +3582,53 @@ void MainComponent::disarmConfirm()
     confirmPending = nullptr;
     confirmTicks   = 0;
     b->setButtonText (confirmOldText);
-    styleButton (*b, b == &projDeleteButton ? kRec : kKey);
+    //  Each button gets back the style it was BUILT with, not a guess.
+    //  GUARDAR is an accent cap with white text (it is the only primary action
+    //  in its row); restyling it as a plain key on disarm stripped that for
+    //  the rest of the session, every time a name collision was armed and then
+    //  confirmed or timed out.
+    styleButton (*b, b == &projDeleteButton ? kRec
+                   : b == &projSaveButton   ? kAccent : kKey);
+    if (b == &projSaveButton)
+        b->setColour (juce::TextButton::textColourOffId, juce::Colours::white);
     b->repaint();
+}
+
+void MainComponent::capturePads (PadSet& into) const
+{
+    for (int i = 0; i < kNumPads; ++i)
+        into[(size_t) i] = uiSample[(size_t) i];
+}
+
+//  Put the buffers back, then let applyState put the numbers back over them:
+//  assignSampleToPad resets the trim to the whole file, so it has to run
+//  BEFORE the state that knows the real one.
+void MainComponent::restorePads (const PadSet& from)
+{
+    for (int i = 0; i < kNumPads; ++i)
+    {
+        if (from[(size_t) i] != nullptr)
+        {
+            assignSampleToPad (i, from[(size_t) i], padName[(size_t) i]);
+        }
+        else if (uiSample[(size_t) i] != nullptr)
+        {
+            uiSample[(size_t) i]     = nullptr;
+            padHasSample[(size_t) i] = false;
+            padName[(size_t) i]      = {};
+            engine.clearPad (i);
+            if (auto* p = pads[i]) p->setSampleInfo (nullptr, {});
+        }
+    }
 }
 
 void MainComponent::pushUndo (const juce::String& what)
 {
     undoState = captureState();
+    capturePads (undoPads);
     undoLabel = what;
     redoState = {};                 // a new action ends the old redo branch
+    redoPads = {};
     undoButton.setVisible (true);
     redoButton.setVisible (false);
     resized();
@@ -3536,10 +3641,14 @@ void MainComponent::performUndo()
 {
     if (! undoState.isValid()) return;
     auto restore = undoState;
+    auto restoreP = undoPads;
     redoState = captureState();
+    capturePads (redoPads);
     undoState = {};
+    undoPads = {};
     undoButton.setVisible (false);
     redoButton.setVisible (true);
+    restorePads (restoreP);
     applyState (restore);
     status.setText (T ("Deshecho: %1", undoLabel), juce::dontSendNotification);
     resized();
@@ -3549,10 +3658,14 @@ void MainComponent::performRedo()
 {
     if (! redoState.isValid()) return;
     auto restore = redoState;
+    auto restoreP = redoPads;
     undoState = captureState();
+    capturePads (undoPads);
     redoState = {};
+    redoPads = {};
     redoButton.setVisible (false);
     undoButton.setVisible (true);
+    restorePads (restoreP);
     applyState (restore);
     status.setText (T ("Rehecho: %1", undoLabel), juce::dontSendNotification);
     resized();
@@ -3725,7 +3838,7 @@ void MainComponent::cancelAudition()
         padHasSample[(size_t) slot] = false;
         uiSample[(size_t) slot] = nullptr;
         padName[(size_t) slot] = {};
-        engine.publishSample (slot, nullptr);
+        engine.clearPad (slot);
         if (auto* p = pads[slot]) p->setSampleInfo (nullptr, {});
         selectPad (slot);
     }
@@ -4193,6 +4306,9 @@ void MainComponent::loadProject (const juce::String& name)
             uiSample[(size_t) i] = nullptr;
             padHasSample[(size_t) i] = false;
             padName[(size_t) i] = {};
+            //  ...and in the engine, or this pad keeps playing the project
+            //  that was open before this one.
+            engine.clearPad (i);
             if (auto* p = pads[i]) p->setSampleInfo (nullptr, {});
         }
     }
@@ -4243,6 +4359,7 @@ void MainComponent::newProject()
         uiSample[(size_t) i] = nullptr;
         padHasSample[(size_t) i] = false;
         padName[(size_t) i] = {};
+        engine.clearPad (i);            // NUEVO has to empty the engine too
         if (auto* p = pads[i]) p->setSampleInfo (nullptr, {});
     }
     for (int b = 0; b < kNumPatterns; ++b)
@@ -5379,6 +5496,11 @@ void MainComponent::toggleRecordArm()
 // ============================================================================
 void MainComponent::auditOpen (const juce::String& which)
 {
+    //  Let the bench ask the ENGINE what it is holding, not just the tile.
+    //  A pad that looks loaded and is silent is the failure this whole round
+    //  was about, and a dump that only reports the tile cannot see it.
+    UiAudit::engineLength = [this] (int pad) { return engine.hasSampleFor (pad) ? 1 : 0; };
+
     if (which.isEmpty()) return;
 
     if      (which == "pads") openSheet (padSheet,  padsButton);
@@ -5420,11 +5542,33 @@ void MainComponent::appSuspended()
 void MainComponent::appResumed()
 {
     appInForeground = true;
+    focusGivenAway  = false;
     audioFocus.request();
     pausedByFocus = false;
     setAudioChannels (0, 2);
     keepChosenRate();
     useLowestLatency();
+
+    //  A transport stranded by a trip to the background.
+    //
+    //  audioFocusLost remembers that the sequencer was rolling and
+    //  audioFocusGained puts it back - but only if it is still the one that
+    //  paused, and appSuspended clears that flag. Lose the focus, get
+    //  backgrounded before the GAIN arrives, come back: the device returns and
+    //  the music does not. Coming to the front is the other place that owes
+    //  the answer.
+    if (wasRollingBeforeFocus)
+    {
+        wasRollingBeforeFocus = false;
+        engine.setPlaying (true);
+        playButton.setToggleState (true, juce::dontSendNotification);
+    }
+
+    //  Whatever else happened out there, the master comes back up.
+    duckedByFocus = false;
+    duckTicksLeft = 0;
+    engine.setMasterGain (1.0f);
+
     refreshDeviceStatusLine (true);
 }
 
@@ -5461,7 +5605,13 @@ void MainComponent::audioFocusLost (bool permanently)
     //  Only a transient loss is worth remembering. After a permanent one
     //  Android will not send us a GAIN unless we ask again, which is what
     //  coming back to the foreground does.
-    pausedByFocus = ! permanently;
+    pausedByFocus  = ! permanently;
+    //  A PERMANENT loss means the speaker belongs to another app until we ask
+    //  for it again, which is what coming back to the foreground does. Without
+    //  this the revival watchdog below reopened the stream a second later and
+    //  played straight over whatever had taken it - the exact behaviour the
+    //  focus contract exists to prevent.
+    focusGivenAway = permanently;
     if (permanently) wasRollingBeforeFocus = false;
 
     status.setText (permanently ? T ("Audio cedido a otra app")
@@ -5478,7 +5628,7 @@ void MainComponent::audioFocusLost (bool permanently)
 void MainComponent::audioFocusDucked()
 {
     duckedByFocus = true;
-    duckTicksLeft = kDuckWatchdogTicks;
+    duckTicksLeft = kDuckWatchdogMs;
     engine.setMasterGain (0.28f);
     status.setText (T ("Bajando un momento por un aviso del sistema"),
                     juce::dontSendNotification);
@@ -5736,17 +5886,28 @@ void MainComponent::watchAudioDevice()
     const double rate  = dev->getCurrentSampleRate();
     const int    block = dev->getCurrentBufferSizeSamples();
 
-    //  Re-sync on drift. jmap-free comparison on purpose: any difference at
-    //  all matters, because the engine multiplies by this number.
+    //  Re-sync on drift - by RESTARTING the device, not by re-preparing the
+    //  engine underneath it.
+    //
+    //  This used to call engine.prepareToPlay() straight from the timer. That
+    //  function resizes padScratch, fxDry, fxBus, recordBuffer and the delay
+    //  line, and the function above returns early only when the device is
+    //  NULL - so it ran with the stream live and the callback holding raw
+    //  pointers into every one of those buffers. A route change is exactly
+    //  when it fires. It is a use-after-free on the audio thread, on the one
+    //  path this function exists to repair.
+    //
+    //  inRender stops a second audio callback; it says nothing about the
+    //  message thread. The safe way to re-prepare is the one JUCE already
+    //  provides: stop the device and let it call prepareToPlay back, which is
+    //  what restartLastAudioDevice does.
     if (rate > 0.0 && block > 0
         && (std::abs (rate - enginePreparedRate) > 0.5 || block != enginePreparedBlock))
     {
-        int ins = dev->getActiveInputChannels().countNumberOfSetBits();
-        engine.prepareToPlay (rate, block, ins);
-        enginePreparedRate  = rate;
-        enginePreparedBlock = block;
-        deviceSampleRate    = rate;
         ++engineResyncs;
+        deviceManager.restartLastAudioDevice();
+        keepChosenRate();
+        return;                       // prepareToPlay will land on its own
     }
 
     //  A queue that refused a trigger is a queue that met two consumers. The
@@ -5792,7 +5953,11 @@ void MainComponent::timerCallback()
     //  One: ducked and never told to come back. Android owes us a GAIN after
     //  a CAN_DUCK and some builds never send it. Six seconds is far longer
     //  than any notification and far shorter than a person's patience.
-    if (duckedByFocus && --duckTicksLeft <= 0)
+    //  Counted in MILLISECONDS, not in ticks. uiIntervalMs is a device-tier
+    //  number and it ranges from 33 to 100, so "100 ticks, about six seconds"
+    //  was anything from 3.3 to 10 - un-ducking in the middle of the very
+    //  notification it was making room for on a fast phone.
+    if (duckedByFocus && (duckTicksLeft -= DeviceTier::profile().uiIntervalMs) <= 0)
     {
         duckedByFocus = false;
         engine.setMasterGain (1.0f);
@@ -5809,9 +5974,11 @@ void MainComponent::timerCallback()
     //  without this the revival would grab the audio device back a second
     //  after you left the app, fight whatever took it, and hand appResumed a
     //  device it did not open.
-    if (appInForeground && ! pausedByFocus && deviceManager.getCurrentAudioDevice() == nullptr)
+    if (appInForeground && ! pausedByFocus && ! focusGivenAway
+        && deviceManager.getCurrentAudioDevice() == nullptr)
     {
-        if (++deviceRevivalTicks >= 16)          // ~1 s: do not fight a device that is mid-open
+        //  ...same here: one second of wall clock, whatever the tier redraws at.
+        if ((deviceRevivalTicks += DeviceTier::profile().uiIntervalMs) >= 1000)
         {
             deviceRevivalTicks = 0;
             setAudioChannels (0, 2);

@@ -85,7 +85,31 @@ void SessionKeeper::writeState (const juce::ValueTree& state, const juce::String
     copy.setProperty ("sesion", true, nullptr);
     copy.setProperty ("proyecto", projectName, nullptr);
 
-    stateFile().replaceWithText (copy.toXmlString());
+    //  Written beside the real name, read back, and only then moved into
+    //  place. replaceWithText hides two failures at once - it discards the
+    //  result of the append, and so does the caller - so a write that ran out
+    //  of space halfway renamed a TRUNCATED file over a good one and returned
+    //  true. Next launch parseXML gives nullptr, restoreSession bails, and the
+    //  whole session is gone even though all sixteen WAVs are intact beside
+    //  it. Nothing anywhere saw an error.
+    const auto text = copy.toXmlString();
+    const auto tmp  = stateFile().getSiblingFile ("state.xml.tmp");
+
+    tmp.deleteFile();
+    if (! tmp.replaceWithText (text))
+    {
+        tmp.deleteFile();
+        return;
+    }
+
+    if (juce::parseXML (tmp) == nullptr)     // the only check that means anything
+    {
+        tmp.deleteFile();
+        return;
+    }
+
+    stateFile().deleteFile();
+    tmp.moveFileTo (stateFile());
 }
 
 bool SessionKeeper::isIdle() const
@@ -104,11 +128,14 @@ bool SessionKeeper::isIdle() const
 
 bool SessionKeeper::flush (int timeoutMs)
 {
-    //  A flush is somebody waiting. onPause gives an app a few seconds before
-    //  Android calls it a hang, and every millisecond of that spent NOT
-    //  writing is a pad that may not survive the next kill.
-    setPriority (juce::Thread::Priority::high);
-    const juce::ScopeGuard restore { [this] { setPriority (juce::Thread::Priority::normal); } };
+    //  A flush is somebody waiting, and the writer should push harder while
+    //  somebody is. It has to raise its OWN priority, though: JUCE's
+    //  setPriority asserts that the caller is the thread being changed, and
+    //  the Android implementation re-nices gettid() - so calling it from here
+    //  boosted the MESSAGE thread and left the writer exactly where it was.
+    //  The flag is read by the writer at the top of each item.
+    hurry.store (true, std::memory_order_release);
+    const juce::ScopeGuard slowDown { [this] { hurry.store (false, std::memory_order_release); } };
 
     const auto deadline = juce::Time::getMillisecondCounter() + (juce::uint32) juce::jmax (0, timeoutMs);
 
@@ -170,6 +197,11 @@ void SessionKeeper::run()
             wait (-1);          // nothing to do: sleep until sync() pokes us
             continue;
         }
+
+        //  Somebody is waiting on a flush: this is its own thread, so it may
+        //  say so.
+        setPriority (hurry.load (std::memory_order_acquire) ? juce::Thread::Priority::high
+                                                            : juce::Thread::Priority::normal);
 
         const auto dest = padFile (pad);
 

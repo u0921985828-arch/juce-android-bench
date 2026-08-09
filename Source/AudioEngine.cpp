@@ -318,13 +318,30 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         probing.store (true, std::memory_order_release);
     }
 
-    // 1. Adopt freshly published per-pad samples.
+    // 1. Adopt freshly published per-pad samples, and let go of cleared ones.
+    //    A clear is consumed FIRST so that "empty this pad, then load a new
+    //    sound into it" in the same block ends with the new sound rather than
+    //    with nothing.
     for (int slot = 0; slot < kNumPads; ++slot)
+    {
+        if (pendingClear[(size_t) slot].exchange (false, std::memory_order_acquire))
+        {
+            for (auto& v : voices)
+                if (v.active && v.slot == slot)
+                    v.kill();
+
+            retired.push (padSample[(size_t) slot]);
+            padSample[(size_t) slot] = nullptr;
+            padStart[(size_t) slot].store (0, std::memory_order_relaxed);
+            padEnd[(size_t) slot].store (0, std::memory_order_relaxed);
+        }
+
         if (auto* incoming = pendingPad[(size_t) slot].exchange (nullptr, std::memory_order_acquire))
         {
             retired.push (padSample[(size_t) slot]);
             padSample[(size_t) slot] = incoming;
         }
+    }
 
     // 2. Clear output.
     out.clear (startSample, numSamples);
@@ -1342,11 +1359,25 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     copyArr (chainSlots,    s.chainSlots);
     chainLength.store (s.chainLength.load (std::memory_order_relaxed), std::memory_order_relaxed);
 
+    //  The three things a step SAYS, not just which steps exist.
+    //
+    //  Velocity, rolls and swing were never copied, so a bounce came out
+    //  straight, at full level on every step and with every roll dropped -
+    //  a different performance from the one you had been listening to. Same
+    //  for AUTOCUT, which the clone's constructor defaults to true, so a pad
+    //  deliberately left to stack was cut in the export and nowhere else.
+    copyArr (padSelfCut, s.padSelfCut);
+    swing.store (s.swing.load (std::memory_order_relaxed), std::memory_order_relaxed);
+
     for (size_t b = 0; b < patternBank.size(); ++b)
     {
         copyArr (patternBank[b], s.patternBank[b]);
         for (size_t st = 0; st < stepNote[b].size(); ++st)
+        {
             copyArr (stepNote[b][st], s.stepNote[b][st]);
+            copyArr (stepVel [b][st], s.stepVel [b][st]);
+            copyArr (stepRoll[b][st], s.stepRoll[b][st]);
+        }
     }
 
     songMode.store (s.songMode.load (std::memory_order_relaxed), std::memory_order_relaxed);

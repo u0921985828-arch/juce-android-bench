@@ -43,6 +43,7 @@ public:
     //  survive leaving the app" is the one piece of state a layout dump has
     //  to carry, because it is the one the user keeps losing.
     bool hasSample() const noexcept { return loaded; }
+    int  getIndex()  const noexcept { return index; }
     const juce::String& sampleName() const noexcept { return padName; }
 
     void setZati (int z) { if (zati != z) { zati = z; repaint(); } }
@@ -64,19 +65,24 @@ public:
     //  with one thumb, which pressure never was.
     float getLastVelocity() const noexcept { return lastVelocity; }
 
-    //  ...and where the panel DOES report a real force, use it.
+    //  ...and where the platform DOES report a real force, use it.
     //
-    //  The argument against pressure was that most panels return a constant,
-    //  and a control that works on one phone and not the next is worse than
-    //  none. That is an argument against pressure ALONE, not against asking:
-    //  JUCE says whether the figure it has is real (isPressureValid is false
-    //  for the sentinel every panel without a sensor reports), so the pad can
-    //  take the better signal where it exists and the reliable one everywhere
-    //  else. No phone plays worse than it did; some play harder.
+    //  ON ANDROID TODAY IT NEVER DOES, and that is worth writing down rather
+    //  than leaving as a surprise: juce_Windowing_android.cpp hands every
+    //  touch event MouseInputSource::defaultPressure, which is 0.0f, and
+    //  isPressureValid() is `pressure > 0 && pressure < 1`. So on a phone this
+    //  branch is dead and the position rule below is what plays - which was
+    //  the original design and is the one that works everywhere.
     //
-    //  Both land on the same 0.35..1 range, so a pattern recorded on a phone
-    //  with a force sensor and played back on one without it sounds like the
-    //  same performance rather than like a different one.
+    //  It stays because it costs one comparison, because it is correct on the
+    //  platforms that do supply the figure (a stylus, a desktop tablet), and
+    //  because the day JUCE passes MotionEvent.getPressure() through, this
+    //  starts working with no other change. What it must not do is pretend:
+    //  the announcement it triggers cannot appear on an Android build.
+    //
+    //  Both paths land on the same 0.35..1 range, so a pattern recorded where
+    //  force is measured and played back where it is not is the same
+    //  performance rather than a different one.
     void mouseDown (const juce::MouseEvent& e) override
     {
         const float h = (float) juce::jmax (1, getHeight());
