@@ -10,10 +10,25 @@
 //  a mini min/max waveform. States: empty / loaded / selected / playing, with
 //  a trigger flash. Original ARTiFACTS "arctic" look. UI thread only.
 // ============================================================================
-class PadButton : public juce::Button
+class PadButton : public juce::Button,
+                  private juce::Timer
 {
 public:
     explicit PadButton (int idx) : juce::Button (juce::String (idx + 1)), index (idx) {}
+
+    //  HOLD A PAD TO EDIT IT.
+    //
+    //  Reaching a pad's own settings took a tap - which PLAYS it, in the
+    //  middle of whatever you are recording - and then a second tap on PADS.
+    //  Two actions, one of them audible, to answer "what is this pad doing".
+    //  Holding the pad goes straight there and never triggers it: the press
+    //  that opens the sheet is swallowed.
+    //
+    //  Fires AT the threshold with the finger still down, like the effect
+    //  keys, because a gesture you only find out about on release is one
+    //  nobody believes in.
+    std::function<void()> onHold;
+    static constexpr int kHoldMs = 420;
 
     //  start01/end01 are the pad's own trim window. After an auto-chop all
     //  sixteen pads point at ONE buffer with sixteen windows, so a sparkline
@@ -85,6 +100,9 @@ public:
     //  performance rather than a different one.
     void mouseDown (const juce::MouseEvent& e) override
     {
+        held = false;
+        startTimer (kHoldMs);
+
         const float h = (float) juce::jmax (1, getHeight());
         const float y = juce::jlimit (0.0f, 1.0f, (float) e.position.y / h);
 
@@ -110,6 +128,20 @@ public:
         }
 
         juce::Button::mouseDown (e);
+    }
+
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        if (! getLocalBounds().contains (e.getPosition()))
+            stopTimer();
+        juce::Button::mouseDrag (e);
+    }
+
+    void mouseUp (const juce::MouseEvent& e) override
+    {
+        stopTimer();
+        if (held) { setState (buttonNormal); return; }   // the hold was the gesture
+        juce::Button::mouseUp (e);
     }
 
     //  Which signal the last strike came from, so the app can say so once
@@ -268,6 +300,15 @@ public:
     }
 
 private:
+    void timerCallback() override
+    {
+        stopTimer();
+        held = true;
+        if (onHold) onHold();
+    }
+
+    bool held = false;
+
     void buildSpark (const SampleBuffer* sb, float start01, float end01)
     {
         spark.clearQuick();

@@ -77,9 +77,20 @@ private:
     //  without the card going anywhere.
     Sheet padSheet, seqSheet, browseSheet, setSheet, mixSheet, songSheet,
           exportSheet, rackSheet, chopSheet;
-    enum SetPage { pageAudio = 0, pageProjects };
+    //  ...and a THIRD page, which is the one that makes the gestures real.
+    //
+    //  A shortcut nobody knows about is not a shortcut, it is dead code with a
+    //  timer on it. Every gesture on this machine is invisible by definition -
+    //  a hold and a swipe leave no mark on the face - so there has to be one
+    //  place that lists them, and it has to be inside the app rather than in a
+    //  manual nobody opens. This is that place.
+    enum SetPage { pageAudio = 0, pageProjects, pageGestures };
     int setPage = pageAudio;
-    juce::TextButton pageAudioBtn { "AUDIO" }, pageProjBtn { "PROYECTOS" };
+    juce::TextButton pageAudioBtn { "AUDIO" }, pageProjBtn { "PROYECTOS" },
+                     pageGestBtn  { "GESTOS" };
+    void paintGesturesPage (juce::Graphics& g, juce::Rectangle<int> area);
+    juce::Rectangle<int> gesturesArea;
+    static constexpr int kNumGestures = 6;
     void showSetPage (int page);
     void openSheet (Sheet& s, juce::TextButton& toggle);
     void closeAllSheets();
@@ -598,10 +609,12 @@ private:
     // Skin cycler: four chassis TONES (TINTA/GRAFITO/ACERO/PLOMO), no hues.
     void applySkin();
 
-    juce::TextButton loadButton { "LOAD" };
+    //  Two of the transport keys carry a second gesture (see the GESTOS page):
+    //  hold CARGAR to open the library, hold PLAY to cut everything.
+    HoldButton loadButton { "LOAD" };
     juce::TextButton testButton { "TEST" };
     juce::TextButton recButton  { "REC" };
-    juce::TextButton playButton { "PLAY" };
+    HoldButton playButton { "PLAY" };
     juce::TextButton clearButton { "VACIAR" };
     juce::TextButton reverseButton { "REV" };
     juce::TextButton loopButton { "LOOP" };

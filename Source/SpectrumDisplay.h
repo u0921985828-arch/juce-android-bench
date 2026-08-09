@@ -51,6 +51,31 @@ public:
         repaint();
     }
 
+    //  SWIPE THE SCREEN TO CHANGE PATTERN BANK.
+    //
+    //  Switching bank while playing meant opening SEC, finding the PATRON
+    //  stepper, and pressing it - a sheet over the pads, mid-take. The screen
+    //  is the biggest thing on the face, it has no other gesture on it, and it
+    //  is already where you are looking. A horizontal drag past a third of its
+    //  width moves one bank; anything shorter is a tap that missed.
+    std::function<void (int)> onSwipe;   // -1 previous, +1 next
+
+    void mouseDown (const juce::MouseEvent& e) override { dragFromX = e.position.x; }
+
+    void mouseUp (const juce::MouseEvent& e) override
+    {
+        if (onSwipe == nullptr || dragFromX < 0.0f) return;
+        const float dx = e.position.x - dragFromX;
+        dragFromX = -1.0f;
+
+        //  A third of the panel, and never less than 60 px: on a narrow phone
+        //  a proportional threshold alone is short enough to fire on a stray
+        //  thumb roll.
+        const float need = juce::jmax (60.0f, (float) getWidth() * 0.33f);
+        if (std::abs (dx) >= need)
+            onSwipe (dx > 0.0f ? 1 : -1);
+    }
+
     void setReadout (const juce::String& s) { readout = s; repaint(); }
     void setBpm     (double b)              { bpm = b; }
 
@@ -250,4 +275,5 @@ private:
     float        vuL   { 0.0f }, vuR { 0.0f };
     bool         wasSilent { false };
     juce::String readout { "ZATI" };
+    float        dragFromX { -1.0f };
 };

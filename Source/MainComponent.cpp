@@ -77,6 +77,15 @@ MainComponent::MainComponent()
         padZati[(size_t) i] = Zati::forPad (i);      // cut order: zati 1 is always red
         p->setZati (padZati[(size_t) i]);
         p->onClick = [this, i] { padClicked (i); };
+        //  ...and holding it edits it, without a sound. See PadButton::onHold.
+        p->onHold  = [this, i]
+        {
+            loadArmed = false;
+            loadButton.setToggleState (false, juce::dontSendNotification);
+            selectPad (i);
+            openSheet (padSheet, padsButton);
+            status.setText (T ("PAD %1", juce::String (i + 1)), juce::dontSendNotification);
+        };
         addAndMakeVisible (p);
         pads.add (p);
         refreshPad (i);
@@ -149,8 +158,9 @@ MainComponent::MainComponent()
         setSheet.onDismiss = [this] { closeAllSheets(); };
         setSheet.paintContent = [this] (juce::Graphics& g)
         {
-            if (setPage == pageAudio) paintAudioSheetContent (g);
-            else                      paintProjSheetContent  (g);
+            if      (setPage == pageAudio)    paintAudioSheetContent (g);
+            else if (setPage == pageProjects) paintProjSheetContent  (g);
+            else                              paintGesturesPage (g, gesturesArea);
         };
 
         styleButton (setButton, kKey);
@@ -388,8 +398,8 @@ MainComponent::MainComponent()
         //  where it is and its contents change, which is the difference
         //  between "settings has two pages" and "settings sends you somewhere
         //  else".
-        juce::TextButton* pb[2] = { &pageAudioBtn, &pageProjBtn };
-        for (int i = 0; i < 2; ++i)
+        juce::TextButton* pb[3] = { &pageAudioBtn, &pageProjBtn, &pageGestBtn };
+        for (int i = 0; i < 3; ++i)
         {
             styleButton (*pb[i], kKey);
             pb[i]->setClickingTogglesState (true);
@@ -488,6 +498,17 @@ MainComponent::MainComponent()
     loadButton.setClickingTogglesState (true);
     styleButton (loadButton, kKey);
     loadButton.setColour (juce::TextButton::buttonOnColourId, kAccent);
+    //  Hold CARGAR to open the library on the pad you have selected, instead of
+    //  arming it and then hunting for a pad to tap. Same destination, one
+    //  gesture instead of two, and it does not leave the face armed if you
+    //  change your mind.
+    loadButton.onHold = [this]
+    {
+        loadArmed = false;
+        loadButton.setToggleState (false, juce::dontSendNotification);
+        openBrowseForPad (juce::jmax (0, selectedPad));
+    };
+
     loadButton.onClick = [this]
     {
         loadArmed = loadButton.getToggleState();
@@ -534,6 +555,19 @@ MainComponent::MainComponent()
         const bool on = playButton.getToggleState();
         engine.setPlaying (on);
         playButton.setButtonText (on ? T ("STOP") : T ("PLAY"));
+    };
+
+    //  Hold PLAY for silence NOW: the transport stops and every voice still
+    //  ringing is cut with it. STOP on its own leaves long tails and held
+    //  loops sounding, which is right for a musical stop and wrong for the
+    //  moment you need the room quiet.
+    playButton.onHold = [this]
+    {
+        engine.setPlaying (false);
+        engine.postPanic();
+        playButton.setToggleState (false, juce::dontSendNotification);
+        playButton.setButtonText (T ("PLAY"));
+        status.setText (T ("Todo parado"), juce::dontSendNotification);
     };
     addAndMakeVisible (playButton);
 
@@ -1200,6 +1234,19 @@ MainComponent::MainComponent()
     //  trim handles on the face was one job done twice — and it meant the
     //  biggest element on the instrument showed a sample sitting still
     //  instead of the sound actually coming out.
+    //  Swipe the screen to walk the pattern banks. The one gesture on the face
+    //  that changes what is PLAYING without covering the pads with a sheet.
+    spectrum.onSwipe = [this] (int dir)
+    {
+        const int next = (selectedPattern + dir + kNumPatterns) % kNumPatterns;
+        //  Go through the stepper the sheet already owns, rather than doing
+        //  the same six things again beside it: one place decides what
+        //  changing bank means, and this gesture is only another way to ask.
+        patternSlider.setValue (next, juce::sendNotificationSync);
+        status.setText (T ("PATRON") + " " + Lang::ltr ("P" + juce::String (next + 1)),
+                        juce::dontSendNotification);
+    };
+
     addAndMakeVisible (spectrum);
     padSheet.addAndMakeVisible (waveform);
 
@@ -1601,11 +1648,13 @@ void MainComponent::openSheet (Sheet& s, juce::TextButton& toggle)
 //  page you are actually looking at.
 void MainComponent::showSetPage (int page)
 {
-    setPage = (page == pageProjects) ? pageProjects : pageAudio;
+    setPage = juce::jlimit ((int) pageAudio, (int) pageGestures, page);
     const bool onAudio = (setPage == pageAudio);
+    const bool onProj  = (setPage == pageProjects);
 
-    pageAudioBtn.setToggleState (onAudio,  juce::dontSendNotification);
-    pageProjBtn .setToggleState (! onAudio, juce::dontSendNotification);
+    pageAudioBtn.setToggleState (onAudio, juce::dontSendNotification);
+    pageProjBtn .setToggleState (onProj,  juce::dontSendNotification);
+    pageGestBtn .setToggleState (setPage == pageGestures, juce::dontSendNotification);
 
     measureButton.setVisible (onAudio);
     testButton.setVisible    (onAudio);
@@ -1613,16 +1662,16 @@ void MainComponent::showSetPage (int page)
     for (auto* b : rateButtons) b->setVisible (onAudio);
     for (auto* b : langButtons) b->setVisible (onAudio);
 
-    projList.setVisible          (! onAudio);
-    projNameBox.setVisible       (! onAudio);
-    projSaveButton.setVisible    (! onAudio);
-    projLoadButton.setVisible    (! onAudio);
-    projNewButton.setVisible     (! onAudio);
-    projDeleteButton.setVisible  (! onAudio);
-    projExportButton.setVisible  (! onAudio);
+    projList.setVisible          (onProj);
+    projNameBox.setVisible       (onProj);
+    projSaveButton.setVisible    (onProj);
+    projLoadButton.setVisible    (onProj);
+    projNewButton.setVisible     (onProj);
+    projDeleteButton.setVisible  (onProj);
+    projExportButton.setVisible  (onProj);
 
-    if (! onAudio) refreshProjectList();
-    else           refreshAudioOptions();
+    if (onProj)       refreshProjectList();
+    else if (onAudio) refreshAudioOptions();
 
     resized();
     setSheet.repaint();
@@ -2657,17 +2706,25 @@ void MainComponent::resized()
         //  that page: a settings card that stayed as tall as its tallest page
         //  would open with a hole in it half the time.
         const bool onAudio = (setPage == pageAudio);
+        const bool onProj  = (setPage == pageProjects);
+        const bool onGest  = (setPage == pageGestures);
 
         const int listRowH = juce::jmax (22, projList.getRowHeight());
         const int listH    = juce::jlimit (1, 8, projModel.names.size()) * listRowH;
 
         const int tabsH = Metrics::tab + Metrics::sm;
+        //  The gestures page is a printed list: one row per gesture, and the
+        //  card is exactly as tall as the list is. See paintGesturesPage.
+        const int gestRowH = 30;
         const int wanted = onAudio
             ? Metrics::md * 2 + Metrics::hit + Metrics::sm + tabsH + 158 + Metrics::xs
                 + (Metrics::hit + Metrics::xs) * 3 + Metrics::sm
-            : Metrics::md * 2 + Metrics::hit + 14 + Metrics::sm + tabsH
-                + Metrics::hit + 14 + Metrics::sm
-                + Metrics::btn * 2 + Metrics::xs * 2 + 8 + listH + Metrics::sm;
+            : onGest
+              ? Metrics::md * 2 + Metrics::hit + Metrics::sm + tabsH
+                  + kNumGestures * gestRowH + Metrics::sm
+              : Metrics::md * 2 + Metrics::hit + 14 + Metrics::sm + tabsH
+                  + Metrics::hit + 14 + Metrics::sm
+                  + Metrics::btn * 2 + Metrics::xs * 2 + 8 + listH + Metrics::sm;
 
         auto inner = sheetFromBottom (setSheet, wanted);
 
@@ -2678,17 +2735,22 @@ void MainComponent::resized()
             testButton.setBounds    (Lang::takeEnd (titleRow, 56).reduced (2));
             measureButton.setBounds (Lang::takeEnd (titleRow, 64).reduced (2));
         }
-        if (! onAudio) inner.removeFromTop (14);      // painted: which project is open
+        if (onProj) inner.removeFromTop (14);         // painted: which project is open
         inner.removeFromTop (Metrics::sm);
 
         //  The tab row, directly under the title on both pages so it does not
         //  move when you switch.
         {
             auto tabs = inner.removeFromTop (Metrics::tab);
-            const int half = tabs.getWidth() / 2;
-            pageAudioBtn.setBounds (Lang::takeStart (tabs, half).reduced (Metrics::halfGap, 0));
-            pageProjBtn.setBounds  (tabs.reduced (Metrics::halfGap, 0));
+            const int third = tabs.getWidth() / 3;
+            pageAudioBtn.setBounds (Lang::takeStart (tabs, third).reduced (Metrics::halfGap, 0));
+            pageProjBtn.setBounds  (Lang::takeStart (tabs, third).reduced (Metrics::halfGap, 0));
+            pageGestBtn.setBounds  (tabs.reduced (Metrics::halfGap, 0));
             inner.removeFromTop (Metrics::sm);
+
+            //  Whatever is left of the card belongs to the gestures list.
+            if (onGest) gesturesArea = inner;
+            else        gesturesArea = {};
         }
 
         if (onAudio)
@@ -4666,6 +4728,70 @@ void MainComponent::paintAudioSheetContent (juce::Graphics& g)
         { auto r = langRowArea; g.drawText (T ("IDIOMA"), Lang::takeStart (r, 44), Lang::start()); }
 }
 
+//  THE GESTURES PAGE.
+//
+//  Printed like the legend on a machine's lid: the gesture on the left in the
+//  ink that names things, what it does on the right in the ink that says them.
+//  No controls at all - there is nothing here to set, only something to know -
+//  so it is one paint call and no components.
+//
+//  Six rows, and the list is short on purpose. A machine with thirty hidden
+//  gestures has none, because nobody can hold thirty; these are the six that
+//  save a sheet or a trip across the face while something is playing.
+void MainComponent::paintGesturesPage (juce::Graphics& g, juce::Rectangle<int> area)
+{
+    if (area.isEmpty() || setSheet.sheetBounds.isEmpty()) return;
+
+    //  The same title the other two pages carry, in the same place. A page of
+    //  a card that skips it reads as a different card.
+    g.setColour (ZatiColours::ink.withAlpha (0.9f));
+    g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
+    g.drawText (T ("GESTOS"), setSheet.sheetBounds.reduced (14, 12).removeFromTop (16), Lang::start());
+
+    struct Row { const char* how; const char* what; };
+    const Row rows[kNumGestures] =
+    {
+        { "MANTEN UN PAD",      "abre sus ajustes sin sonar" },
+        { "MANTEN UN EFECTO",   "coge los mandos sin apagarlo" },
+        { "MANTEN CARGAR",      "abre la biblioteca en el pad elegido" },
+        { "MANTEN PLAY",        "para y corta todo lo que suene" },
+        { "ARRASTRA LA PANTALLA", "cambia de patron" },
+        { "GOLPEA ARRIBA O ABAJO", "toca mas fuerte o mas flojo" },
+    };
+
+    const int rowH = juce::jmax (24, area.getHeight() / kNumGestures);
+
+    for (int i = 0; i < kNumGestures; ++i)
+    {
+        auto r = area.removeFromTop (rowH);
+
+        //  A hairline between rows, not a box around each: the page is a list
+        //  on a card, and boxes would make six cards out of it.
+        if (i > 0)
+        {
+            g.setColour (ZatiColours::ink.withAlpha (0.10f));
+            g.fillRect (r.getX(), r.getY(), r.getWidth(), 1);
+        }
+
+        auto text = r.reduced (2, 0);
+
+        g.setColour (ZatiColours::ink.withAlpha (0.92f));
+        g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.06f));
+        //  The gesture takes the width its own words need, and what it does
+        //  takes the rest - a fixed split put "GOLPEA ARRIBA O ABAJO" over two
+        //  lines in Spanish and left half the row empty in English.
+        const int howW = juce::jlimit (90, text.getWidth() * 3 / 5,
+                                       (int) juce::GlyphArrangement::getStringWidth (g.getCurrentFont(),
+                                                                                     T (rows[i].how)) + 10);
+        auto howCell = Lang::takeStart (text, howW);
+        g.drawFittedText (T (rows[i].how), howCell, Lang::start(), 2, 0.9f);
+
+        g.setColour (ZatiColours::inkDim);
+        g.setFont (ZatiColours::monoFont (Metrics::fFine));
+        g.drawFittedText (T (rows[i].what), text, Lang::start(), 2, 0.85f);
+    }
+}
+
 //  The PROJECTS card. The name, where it lives, and the list.
 void MainComponent::paintProjSheetContent (juce::Graphics& g)
 {
@@ -5509,6 +5635,7 @@ void MainComponent::auditOpen (const juce::String& which)
     else if (which == "mix")  { refreshMixStrip(); openSheet (mixSheet, mixButton); }
     else if (which == "set")  { showSetPage (pageAudio);    refreshAudioOptions(); openSheet (setSheet, setButton); }
     else if (which == "proj") { showSetPage (pageProjects); refreshProjectList(); openSheet (setSheet, setButton); }
+    else if (which == "gest") { showSetPage (pageGestures); openSheet (setSheet, setButton); }
     else if (which == "rack") { rackPad = 0; openSheet (rackSheet, mixButton); refreshRack(); }
     else if (which == "chop") openChopSheet();
     else if (which == "browse") openBrowseForPad (0);
