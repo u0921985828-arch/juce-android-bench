@@ -20,11 +20,22 @@
 //    LOSS (-1)                 someone else owns the speaker now. Stop, and
 //                              do not resume by ourselves.
 //    LOSS_TRANSIENT (-2)       a notification, a call. Pause; resume on GAIN.
-//    LOSS_TRANSIENT_CAN_DUCK   we may keep playing quietly underneath. We
-//                    (-3)      pause instead: a sampler ducked to a third of
-//                              its level is not useful to play, and coming
-//                              back at full level is less jarring than
-//                              performing through a navigation prompt.
+//    LOSS_TRANSIENT_CAN_DUCK   we may keep playing quietly underneath, and
+//                    (-3)      that is exactly what we do.
+//
+//                              This used to PAUSE, on the argument that a
+//                              sampler ducked to a third is not useful to
+//                              play. The argument is about the wrong event.
+//                              CAN_DUCK is what a NOTIFICATION sends - a
+//                              battery warning, a message ping - and it lasts
+//                              a third of a second. Answering it by stopping
+//                              the sequencer and tearing the audio device
+//                              down turned a chime into "the app stopped and
+//                              did not come back", which is what happened at
+//                              5% battery, mid-take.
+//
+//                              Ducking costs one multiply. Nothing is torn
+//                              down, so nothing has to survive being rebuilt.
 //    GAIN (1)                  resume, but only if it was us who paused.
 //
 //  Everything is deprecated-but-working API: requestAudioFocus with a stream
@@ -45,6 +56,9 @@ public:
     {
         virtual ~Listener() = default;
         virtual void audioFocusLost (bool permanently) = 0;
+        //  Keep playing, quietly. Not a loss: nothing stops, nothing is
+        //  released, and the level comes back on GAIN.
+        virtual void audioFocusDucked() = 0;
         virtual void audioFocusGained() = 0;
     };
 

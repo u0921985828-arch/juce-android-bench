@@ -17,7 +17,7 @@ using Clock = std::chrono::steady_clock;
 //  sampler ever plays and which puts the master saturator into permanent
 //  action - a bench that measures its own test signal. Each pad gets its own
 //  phase and a noise floor, so the sum behaves like sixteen real one-shots.
-static SampleBuffer::Ptr makeSample (double sr, double seconds, float freq)
+static SampleBuffer::Ptr makeSample (double sr, double seconds, float freq, bool decay = true)
 {
     auto* sb = new SampleBuffer();
     const int n = (int) (sr * seconds);
@@ -27,7 +27,7 @@ static SampleBuffer::Ptr makeSample (double sr, double seconds, float freq)
     for (int c = 0; c < 2; ++c)
         for (int i = 0; i < n; ++i)
         {
-            const float env = std::exp (-3.0f * (float) i / (float) n);
+            const float env = decay ? std::exp (-3.0f * (float) i / (float) n) : 1.0f;
             const float tone = std::sin (phase + juce::MathConstants<float>::twoPi * freq * (float) i / (float) sr);
             sb->buffer.setSample (c, i, 0.6f * env * (0.8f * tone + 0.2f * (rng.nextFloat() * 2.0f - 1.0f)));
         }
@@ -145,6 +145,61 @@ int main()
         report ("route changes mid-phrase", s, budgetMs);
         std::printf ("%-34s %d re-prepares, still audible: %s\n", "", reprepares,
                      s.rms > 1.0e-4 ? "YES" : "NO  <-- DEAD");
+    }
+
+    // 5b. THE NOTIFICATION. A chime from another app ducks us and gives the
+    //     level back. Measured on ONE sustained pad, not on sixteen: with the
+    //     whole kit going the master saturator is already bending the peaks,
+    //     so peak level says nothing about gain and RMS on a predictable
+    //     signal says everything.
+    //
+    //     Three things have to be true: it gets quieter by the amount asked
+    //     for, it comes ALL the way back, and the move is a ramp - a step in
+    //     the master is a click, which is louder than the notification that
+    //     caused it.
+    {
+        AudioEngine d;
+        d.prepareToPlay (sr, bs);
+        d.setPolyphony (32, 4);
+        d.setPadGain (0, 0.85f);
+        //  Flat, not decaying: a sample that fades on its own would make the
+        //  "did the level come back" answer depend on when it was asked.
+        d.publishSample (0, makeSample (48000.0, 30.0, 220.0f, false));
+        juce::AudioBuffer<float> db (2, bs);
+        runBlocks (d, db, bs, 4);
+        d.postNoteOn (0, 1.0f);
+
+        std::vector<double> blockRms;
+        for (int b = 0; b < 400; ++b)
+        {
+            if (b == 80)  d.setMasterGain (0.28f);
+            if (b == 240) d.setMasterGain (1.00f);
+            d.renderNextBlock (db, 0, bs);
+            double acc = 0.0;
+            for (int i = 0; i < bs; ++i) { const double v = db.getSample (0, i); acc += v * v; }
+            blockRms.push_back (std::sqrt (acc / bs));
+        }
+
+        auto avg = [&] (int a, int b) { double t = 0; for (int i = a; i < b; ++i) t += blockRms[(size_t) i]; return t / (b - a); };
+        const double before  = avg (40, 78);
+        const double ducked  = avg (140, 238);
+        const double after   = avg (330, 398);
+        const double ratio   = before > 0 ? ducked / before : 0.0;
+        const double back    = before > 0 ? after  / before : 0.0;
+
+        //  How many blocks the ramp took to cross most of the way down. At
+        //  128 samples and 48 kHz a block is 2.67 ms, so a 25 ms ramp is
+        //  about nine of them; one or two would be a step.
+        int rampBlocks = 0;
+        for (int i = 80; i < 140; ++i)
+        {
+            if (blockRms[(size_t) i] <= ducked * 1.05) { rampBlocks = i - 80; break; }
+        }
+
+        const bool ok = ratio > 0.24 && ratio < 0.33 && back > 0.97 && back < 1.03 && rampBlocks >= 3 && rampBlocks <= 24;
+        std::printf ("%-34s ducked to %.3f of level  back to %.3f  ramp %d blocks (%.1f ms)  %s\n",
+                     "notification duck / restore", ratio, back, rampBlocks,
+                     rampBlocks * 1000.0 * bs / sr, ok ? "OK" : "<-- FAILED");
     }
 
     // 6. EVERY BUFFER SIZE — the load has to fit the budget at the SMALLEST

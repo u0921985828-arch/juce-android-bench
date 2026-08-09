@@ -853,6 +853,36 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         }
     }
 
+    // 5c-duck. The master level, ramped.
+    //
+    //  Sits BEFORE the safety saturator on purpose: ducking has to reduce what
+    //  reaches the limiter, not what leaves it, or the quiet version would be
+    //  the loud one squashed.
+    {
+        const float target = masterTarget.load (std::memory_order_relaxed);
+
+        if (target < 0.99999f || masterGain < 0.99999f)
+        {
+            //  A 12 ms time constant: settled in about forty milliseconds,
+            //  which is fast enough to be under the chime it is making room
+            //  for and a hundred times too slow to click. Measured: 0.271 of
+            //  level at the bottom, back to 1.000, over 13 blocks of 128.
+            const float k = 1.0f - std::exp (-1.0f / (0.012f * (float) juce::jmax (8000.0, systemSampleRate)));
+            const int outCh = juce::jmin (2, out.getNumChannels());
+
+            float* w[2] = { nullptr, nullptr };
+            for (int ch = 0; ch < outCh; ++ch) w[ch] = out.getWritePointer (ch, startSample);
+
+            float gain = masterGain;
+            for (int i = 0; i < numSamples; ++i)
+            {
+                gain += (target - gain) * k;
+                for (int ch = 0; ch < outCh; ++ch) w[ch][i] *= gain;
+            }
+            masterGain = gain;
+        }
+    }
+
     // 5d. Master safety. Sixteen pads at full level plus a delay with
     //     feedback and a reverb tail will pass 0 dBFS, and what comes out of
     //     an integer DAC then is hard clipping: the ugliest sound a sampler

@@ -152,6 +152,21 @@ public:
 
     // --- Sequencer (message thread) ---
     void setPlaying (bool p) noexcept { playing.store (p, std::memory_order_relaxed); }
+
+    //  MASTER GAIN, for ducking under a notification.
+    //
+    //  A chime from another app is not a reason to tear the audio device
+    //  down: it lasts a third of a second, and rebuilding the stream around
+    //  it costs more than it saves and puts the instrument through the one
+    //  path where it can come back silent. Turning the master down for a
+    //  moment is what the system is asking for, and it costs nothing.
+    //
+    //  Ramped in the render, never stepped: a jump straight to a quarter is a
+    //  click, and a click is what the notification was trying to avoid.
+    void setMasterGain (float g) noexcept
+    { masterTarget.store (juce::jlimit (0.0f, 1.0f, g), std::memory_order_relaxed); }
+
+    float getMasterGain() const noexcept { return masterTarget.load (std::memory_order_relaxed); }
     bool isPlaying() const noexcept   { return playing.load (std::memory_order_relaxed); }
     // float, not double: atomic<double> is NOT lock-free on 32-bit ARM, and
     // this is read inside the audio callback (the Android armeabi-v7a build
@@ -455,6 +470,11 @@ private:
 
     // Per-pad params (message writes, audio reads).
     std::array<std::atomic<float>, kNumPads> padPitch {};
+    //  Target and the ramped value the render actually multiplies by. The
+    //  second one is audio-thread only, so it is a plain float.
+    std::atomic<float> masterTarget { 1.0f };
+    float masterGain = 1.0f;
+
     std::array<std::atomic<float>, kNumPads> padGain {};
     std::array<std::atomic<int>,   kNumPads> padStart {};
     std::array<std::atomic<int>,   kNumPads> padEnd {};

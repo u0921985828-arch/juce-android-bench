@@ -5426,6 +5426,12 @@ void MainComponent::audioFocusLost (bool permanently)
     if (recordingActive)
         toggleMicSampling();
 
+    //  Remember whether the SEQUENCER was rolling, not just whether the audio
+    //  device existed. Coming back used to restore the stream and leave the
+    //  transport stopped, so after any interruption the app looked alive and
+    //  played nothing until you noticed and pressed PLAY again.
+    wasRollingBeforeFocus = engine.isPlaying();
+
     if (engine.isPlaying())
     {
         engine.setPlaying (false);
@@ -5439,6 +5445,7 @@ void MainComponent::audioFocusLost (bool permanently)
     //  Android will not send us a GAIN unless we ask again, which is what
     //  coming back to the foreground does.
     pausedByFocus = ! permanently;
+    if (permanently) wasRollingBeforeFocus = false;
 
     status.setText (permanently ? T ("Audio cedido a otra app")
                                 : T ("En pausa: otra app tiene el audio"),
@@ -5446,8 +5453,32 @@ void MainComponent::audioFocusLost (bool permanently)
     deviceLine.clear();
 }
 
+//  A notification, not an interruption. Turn down, keep playing, come back.
+//
+//  Nothing is stopped and nothing is released, so there is no rebuilt device
+//  to fail and no transport to forget. The only state is one float and the
+//  watchdog that guarantees it goes back to one.
+void MainComponent::audioFocusDucked()
+{
+    duckedByFocus = true;
+    duckTicksLeft = kDuckWatchdogTicks;
+    engine.setMasterGain (0.28f);
+    status.setText (T ("Bajando un momento por un aviso del sistema"),
+                    juce::dontSendNotification);
+}
+
 void MainComponent::audioFocusGained()
 {
+    //  Un-duck first and unconditionally: whatever else is true, the master
+    //  must not be left turned down.
+    if (duckedByFocus)
+    {
+        duckedByFocus = false;
+        duckTicksLeft = 0;
+        engine.setMasterGain (1.0f);
+        refreshDeviceStatusLine (true);
+    }
+
     if (! pausedByFocus)
         return;
 
@@ -5455,6 +5486,16 @@ void MainComponent::audioFocusGained()
     setAudioChannels (0, 2);
     keepChosenRate();
     useLowestLatency();
+
+    //  ...and put the sequence back where it was. This is the half that was
+    //  missing: the device came back, the music did not.
+    if (wasRollingBeforeFocus)
+    {
+        wasRollingBeforeFocus = false;
+        engine.setPlaying (true);
+        playButton.setToggleState (true, juce::dontSendNotification);
+    }
+
     refreshDeviceStatusLine (true);
 }
 
@@ -5701,6 +5742,42 @@ void MainComponent::timerCallback()
     {
         ++insetSettleTicks;
         refreshSystemInsets();
+    }
+
+    //  NOTHING MAY LEAVE THIS APP SILENT.
+    //
+    //  Two ways it could, and both are now bounded by this tick rather than by
+    //  a callback arriving from outside.
+    //
+    //  One: ducked and never told to come back. Android owes us a GAIN after
+    //  a CAN_DUCK and some builds never send it. Six seconds is far longer
+    //  than any notification and far shorter than a person's patience.
+    if (duckedByFocus && --duckTicksLeft <= 0)
+    {
+        duckedByFocus = false;
+        engine.setMasterGain (1.0f);
+        refreshDeviceStatusLine (true);
+    }
+
+    //  Two: no audio device at all, while the app is in the foreground and is
+    //  not deliberately paused. watchAudioDevice used to give up here - it
+    //  returns early on a null device - so a stream that failed to come back
+    //  after an interruption stayed missing for the rest of the session, with
+    //  the face fully alive and nothing coming out.
+    if (! pausedByFocus && deviceManager.getCurrentAudioDevice() == nullptr)
+    {
+        if (++deviceRevivalTicks >= 16)          // ~1 s: do not fight a device that is mid-open
+        {
+            deviceRevivalTicks = 0;
+            setAudioChannels (0, 2);
+            keepChosenRate();
+            useLowestLatency();
+            refreshDeviceStatusLine (true);
+        }
+    }
+    else
+    {
+        deviceRevivalTicks = 0;
     }
 
     //  The lamps under the effect keys.

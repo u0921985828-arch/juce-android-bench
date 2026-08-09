@@ -258,6 +258,20 @@ private:
     //  focus we play over calls and can be silenced without ever being told.
     AudioFocus audioFocus { *this };
     bool pausedByFocus = false;          // ...so GAIN only resumes what WE paused
+    //  Whether the SEQUENCER was rolling when we lost the focus. Restoring the
+    //  audio device without this brings the stream back and leaves the music
+    //  stopped, which is indistinguishable from the app having crashed quietly.
+    bool wasRollingBeforeFocus = false;
+
+    //  Turned down under a notification, and the countdown that guarantees it
+    //  comes back up even if the GAIN we are owed never arrives. Some OEM
+    //  builds never send it after a CAN_DUCK, and "quiet for ever" is the
+    //  exact failure this whole path exists to make unreachable.
+    bool duckedByFocus = false;
+    int  duckTicksLeft = 0;
+    int  deviceRevivalTicks = 0;
+    static constexpr int kDuckWatchdogTicks = 100;   // ~6 s at the UI cadence
+    void audioFocusDucked() override;
     void audioFocusLost (bool permanently) override;
     void audioFocusGained() override;
 

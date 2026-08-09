@@ -100,8 +100,8 @@ AudioFocus::AudioFocus (Listener& l) : listener (l)
         switch (change)
         {
             case -1: listener.audioFocusLost (true);  break;   // LOSS
-            case -2:                                          // LOSS_TRANSIENT
-            case -3: listener.audioFocusLost (false); break;   // ...CAN_DUCK
+            case -2: listener.audioFocusLost (false); break;   // LOSS_TRANSIENT
+            case -3: listener.audioFocusDucked();     break;   // ...CAN_DUCK
             case  1: listener.audioFocusGained();     break;   // GAIN
             default: break;
         }
