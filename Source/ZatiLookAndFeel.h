@@ -220,6 +220,20 @@ namespace Metrics
     //  Same job, same size, wherever it is.
     static constexpr int readout = 22;   // the box a number lives in
     static constexpr int stepKey = 40;   // the - and + of a stepper
+
+    //  AIR BETWEEN ELEMENTS.
+    //
+    //  Two things that touch read as one thing. A number sitting flush against
+    //  the minus key that changes it looks like a single wide button with a
+    //  digit printed on its left half, and two neighbouring readouts with four
+    //  pixels between them look like one box with a hairline in it. This is
+    //  the gap that keeps a control separate from the control next to it, and
+    //  from its own parts.
+    //
+    //  Neighbouring cells each take HALF of it, so two of them side by side
+    //  come out exactly `gap` apart.
+    static constexpr int gap     = 8;
+    static constexpr int halfGap = gap / 2;
     static constexpr int tab = 32;    // module bar: it opens windows, it does not act
     static constexpr int row = 44;    // list row
 
@@ -481,6 +495,39 @@ public:
     //  here came out as a dark slate cap with dark text on it - a control you
     //  can see and cannot read. They sit against a value chip, so they take
     //  the chip's palette and read as one unit with it.
+    //  THE GAP BETWEEN A NUMBER AND WHAT CHANGES IT.
+    //
+    //  JUCE lays the text box flush against the rest of the slider: on a
+    //  stepper the readout's edge IS the minus key's edge, and the pair reads
+    //  as one wide button with a digit printed on its left half rather than as
+    //  a value and the keys that move it. On a linear slider the number sits
+    //  hard against the end of its own track.
+    //
+    //  Same fix for both: take the box out of the slider's bounds, then take
+    //  `Metrics::gap` more off the side that faces it. The box keeps the width
+    //  the caller asked for - that width is what sizes a stepper's keys, so
+    //  shrinking it here would undo the "one size per job" work - and the gap
+    //  comes out of the track or the keys, which have it to spare.
+    juce::Slider::SliderLayout getSliderLayout (juce::Slider& s) override
+    {
+        auto layout = juce::LookAndFeel_V4::getSliderLayout (s);
+
+        if (s.getTextBoxPosition() == juce::Slider::NoTextBox || s.isBar())
+            return layout;
+
+        switch (s.getTextBoxPosition())
+        {
+            case juce::Slider::TextBoxLeft:   layout.sliderBounds.removeFromLeft   (Metrics::gap); break;
+            case juce::Slider::TextBoxRight:  layout.sliderBounds.removeFromRight  (Metrics::gap); break;
+            case juce::Slider::TextBoxAbove:  layout.sliderBounds.removeFromTop    (Metrics::halfGap); break;
+            case juce::Slider::TextBoxBelow:  layout.sliderBounds.removeFromBottom (Metrics::halfGap); break;
+            case juce::Slider::NoTextBox:
+            default: break;
+        }
+
+        return layout;
+    }
+
     //  A pan control is not a level: its rest position is the middle, not the
     //  left end, so a bar that fills from the left says the wrong thing about
     //  every value it shows. Sliders marked "pan" fill OUT FROM CENTRE and

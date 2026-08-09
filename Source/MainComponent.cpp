@@ -2332,16 +2332,16 @@ void MainComponent::resized()
         juce::TextButton* mb[5] = { &padsButton, &secButton, &songButton, &mixButton, &setButton };
         const int w = row.getWidth() / 5;
         for (int i = 0; i < 5; ++i)
-            mb[i]->setBounds ((i < 4 ? row.removeFromLeft (w) : row).reduced (1, 0));
+            mb[i]->setBounds ((i < 4 ? row.removeFromLeft (w) : row).reduced (Metrics::halfGap, 0));
     }
     area.removeFromTop (Metrics::xs);
 
     {
         auto row = area.removeFromTop (ZatiLookAndFeel::kTransport);
         const int u = row.getWidth() / 4;
-        loadButton.setBounds (row.removeFromLeft (u).reduced (2, 0));
-        recButton.setBounds  (row.removeFromLeft (u).reduced (2, 0));
-        playButton.setBounds (row.reduced (2, 0));
+        loadButton.setBounds (row.removeFromLeft (u).reduced (Metrics::halfGap, 0));
+        recButton.setBounds  (row.removeFromLeft (u).reduced (Metrics::halfGap, 0));
+        playButton.setBounds (row.reduced (Metrics::halfGap, 0));
     }
     ctrlSeamTop = area.getY();
     area.removeFromTop (ZatiLookAndFeel::kAir + layoutAir + kSeamLabelH);   // CONTROL rides here
@@ -2381,7 +2381,7 @@ void MainComponent::resized()
             auto row = fxRowArea;
             const int sw = row.getWidth() / kNumFx;
             for (int f = 0; f < kNumFx; ++f)
-                fxButtons[f]->setBounds ((f < kNumFx - 1 ? row.removeFromLeft (sw) : row).reduced (1, 0));
+                fxButtons[f]->setBounds ((f < kNumFx - 1 ? row.removeFromLeft (sw) : row).reduced (Metrics::halfGap, 0));
         }
         padSeamTop = area.getY();
         area.removeFromTop (ZatiLookAndFeel::kAir + layoutAir + kSeamLabelH);   // PADS rides here
@@ -2446,7 +2446,7 @@ void MainComponent::resized()
             //  70 was a hand-picked number that made CHOKE's keys a different
             //  size from every other stepper's. Same reservation as the rest.
             chokeSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false,
-                                         juce::jmax (30, chokeCell.getWidth() - 2 * Metrics::stepKey),
+                                         juce::jmax (30, chokeCell.getWidth() - Metrics::gap - 2 * Metrics::stepKey),
                                          Metrics::readout);
             chokeSlider.setBounds (chokeCell);
             modeButton.setBounds  (r3.removeFromLeft (w3).reduced (6, 3));
@@ -2463,13 +2463,13 @@ void MainComponent::resized()
         padSectionArea[2] = inner.removeFromTop (secH);   // painted: EL PAD
         auto rr = inner.removeFromTop (Metrics::hit);
         const int rw = rr.getWidth() / 3;
-        reverseButton.setBounds (rr.removeFromLeft (rw).reduced (3, 0));
-        loopButton.setBounds    (rr.removeFromLeft (rw).reduced (3, 0));
-        autocutButton.setBounds (rr.reduced (3, 0));
+        reverseButton.setBounds (rr.removeFromLeft (rw).reduced (Metrics::halfGap, 0));
+        loopButton.setBounds    (rr.removeFromLeft (rw).reduced (Metrics::halfGap, 0));
+        autocutButton.setBounds (rr.reduced (Metrics::halfGap, 0));
         inner.removeFromTop (5);
         auto rr2 = inner.removeFromTop (Metrics::hit);
-        chopButton.setBounds (rr2.removeFromLeft (rr2.getWidth() / 2).reduced (3, 0));
-        micButton.setBounds  (rr2.reduced (3, 0));
+        chopButton.setBounds (rr2.removeFromLeft (rr2.getWidth() / 2).reduced (Metrics::halfGap, 0));
+        micButton.setBounds  (rr2.reduced (Metrics::halfGap, 0));
         inner.removeFromTop (5);
 
         //  Colour is a TAG, not sound design, and it used to be the loudest
@@ -2495,8 +2495,8 @@ void MainComponent::resized()
         browseCloseButton.setBounds (Lang::takeEnd (titleRow, 32).reduced (2));
 
         auto actions = inner.removeFromBottom (Metrics::btn);
-        browseSystemButton.setBounds (actions.removeFromRight (actions.getWidth() / 3).reduced (2, 0));
-        browseLoadButton.setBounds   (actions.reduced (2, 0));
+        browseSystemButton.setBounds (actions.removeFromRight (actions.getWidth() / 3).reduced (Metrics::halfGap, 0));
+        browseLoadButton.setBounds   (actions.reduced (Metrics::halfGap, 0));
         inner.removeFromBottom (8);
         if (browser != nullptr) browser->setBounds (inner);
     }
@@ -2540,8 +2540,8 @@ void MainComponent::resized()
         {
             auto tabs = inner.removeFromTop (Metrics::tab);
             const int half = tabs.getWidth() / 2;
-            pageAudioBtn.setBounds (Lang::takeStart (tabs, half).reduced (2, 0));
-            pageProjBtn.setBounds  (tabs.reduced (2, 0));
+            pageAudioBtn.setBounds (Lang::takeStart (tabs, half).reduced (Metrics::halfGap, 0));
+            pageProjBtn.setBounds  (tabs.reduced (Metrics::halfGap, 0));
             inner.removeFromTop (Metrics::sm);
         }
 
@@ -2583,10 +2583,10 @@ void MainComponent::resized()
 
             auto actions = inner.removeFromBottom (Metrics::btn);
             const int aw = actions.getWidth() / 4;
-            projSaveButton.setBounds   (actions.removeFromLeft (aw).reduced (2, 0));
-            projLoadButton.setBounds   (actions.removeFromLeft (aw).reduced (2, 0));
-            projNewButton.setBounds    (actions.removeFromLeft (aw).reduced (2, 0));
-            projDeleteButton.setBounds (actions.reduced (2, 0));
+            projSaveButton.setBounds   (actions.removeFromLeft (aw).reduced (Metrics::halfGap, 0));
+            projLoadButton.setBounds   (actions.removeFromLeft (aw).reduced (Metrics::halfGap, 0));
+            projNewButton.setBounds    (actions.removeFromLeft (aw).reduced (Metrics::halfGap, 0));
+            projDeleteButton.setBounds (actions.reduced (Metrics::halfGap, 0));
             inner.removeFromBottom (8);
 
             projList.setBounds (inner);
@@ -2605,8 +2605,8 @@ void MainComponent::resized()
         auto row = inner.removeFromBottom (Metrics::btn);
         exportCancelButton.setBounds (row);
         const int hw = row.getWidth() / 2;
-        exportMasterButton.setBounds (row.removeFromLeft (hw).reduced (2, 0));
-        exportStemsButton.setBounds  (row.reduced (2, 0));
+        exportMasterButton.setBounds (row.removeFromLeft (hw).reduced (Metrics::halfGap, 0));
+        exportStemsButton.setBounds  (row.reduced (Metrics::halfGap, 0));
     }
 
     // RACK sheet: which pad, and how much of it reaches each effect.
@@ -2695,14 +2695,14 @@ void MainComponent::resized()
         {
             auto row = inner.removeFromTop (Metrics::hit);
             const int w = row.getWidth() / 3;
-            songPadModeBtn.setBounds (row.removeFromLeft (w).reduced (2, 2));
-            songClearBtn.setBounds   (row.removeFromLeft (w).reduced (2, 2));
-            songModeBtn.setBounds    (row.reduced (2, 2));
+            songPadModeBtn.setBounds (row.removeFromLeft (w).reduced (Metrics::halfGap, 2));
+            songClearBtn.setBounds   (row.removeFromLeft (w).reduced (Metrics::halfGap, 2));
+            songModeBtn.setBounds    (row.reduced (Metrics::halfGap, 2));
             inner.removeFromTop (Metrics::sm);
         }
 
         auto bottom = inner.removeFromBottom (Metrics::btn);
-        songLenSlider.setBounds (bottom.reduced (3, 6));
+        songLenSlider.setBounds (bottom.reduced (Metrics::halfGap, 6));
         inner.removeFromBottom (Metrics::xs);
 
         auto pageRow = inner.removeFromBottom (Metrics::hit);
@@ -2738,8 +2738,8 @@ void MainComponent::resized()
         mixCloseButton.setBounds (Lang::takeEnd (titleRow, 32).reduced (2));
 
         auto bottom = inner.removeFromBottom (Metrics::btn);
-        rackButton.setBounds (bottom.removeFromRight (bottom.getWidth() / 3).reduced (3, 4));
-        mixClearSolo.setBounds (bottom.reduced (3, 4));
+        rackButton.setBounds (bottom.removeFromRight (bottom.getWidth() / 3).reduced (Metrics::halfGap, 4));
+        mixClearSolo.setBounds (bottom.reduced (Metrics::halfGap, 4));
         inner.removeFromBottom (Metrics::xs);
 
         for (int i = 0; i < kNumPads; ++i)
@@ -2749,8 +2749,15 @@ void MainComponent::resized()
             //  Padding here is not decoration, it is the hit area coming off
             //  the control. The pan was losing twelve pixels of a forty-pixel
             //  row to margins and ending up shorter than the M and S beside it.
+            //  M and S are two different decisions about the channel, not one
+            //  two-letter control, so they get the same air as everything else
+            //  on the row. Taken out of the row rather than out of the caps -
+            //  padding the caps to make the gap would leave two 32px targets
+            //  on a 24px row, which is under the finger minimum.
             mixSolos[i]->setBounds (row.removeFromRight (Metrics::hit).reduced (2, 1));
+            row.removeFromRight (Metrics::halfGap);
             mixMutes[i]->setBounds (row.removeFromRight (Metrics::hit).reduced (2, 1));
+            row.removeFromRight (Metrics::halfGap);
             mixPans[i]->setBounds  (row.removeFromRight (juce::jmin (78, row.getWidth() / 3)).reduced (4, 1));
             mixFaders[i]->setBounds (row.reduced (4, 1));
         }
@@ -2789,10 +2796,10 @@ void MainComponent::resized()
             //  a pair of slabs twice the size of anything else on the sheet.
             //  Reserve the box first and the buttons come out finger-sized.
             patternSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false,
-                                           juce::jmax (40, w1 - 4 - 2 * Metrics::stepKey),
+                                           juce::jmax (40, w1 - Metrics::gap - Metrics::gap - 2 * Metrics::stepKey),
                                            Metrics::readout);
-            patternSlider.setBounds (row1.removeFromLeft (w1).reduced (2, 2));
-            lengthSlider.setBounds  (row1.reduced (2, 2));
+            patternSlider.setBounds (row1.removeFromLeft (w1).reduced (Metrics::halfGap, 2));
+            lengthSlider.setBounds  (row1.reduced (Metrics::halfGap, 2));
 
             inner.removeFromTop (Metrics::sm);
             inner.removeFromTop (nameH);                  // painted: CADENA
@@ -2807,11 +2814,11 @@ void MainComponent::resized()
             //  the note half is the one that gets the name.
             inner.removeFromTop (nameH);                  // painted: NOTA DEL PASO
             auto row3 = inner.removeFromTop (Metrics::hit);
-            chainClearButton.setBounds (row3.removeFromLeft (row3.getWidth() * 5 / 12).reduced (2, 2));
+            chainClearButton.setBounds (row3.removeFromLeft (row3.getWidth() * 5 / 12).reduced (Metrics::halfGap, 2));
             noteSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false,
-                                        juce::jmax (40, row3.getWidth() - 4 - 2 * Metrics::stepKey),
+                                        juce::jmax (40, row3.getWidth() - Metrics::gap - Metrics::gap - 2 * Metrics::stepKey),
                                         Metrics::readout);
-            noteSlider.setBounds       (row3.reduced (2, 2));
+            noteSlider.setBounds       (row3.reduced (Metrics::halfGap, 2));
             inner.removeFromTop (Metrics::sm);
 
             //  What the step DOES: how hard, and how many times. Same band as
@@ -2821,20 +2828,20 @@ void MainComponent::resized()
             {
                 auto row = inner.removeFromTop (Metrics::hit);
                 auto rollCell = row;
-                velSlider.setBounds (Lang::takeStart (row, row.getWidth() * 7 / 12).reduced (2, 2));
-                rollCell = row.reduced (2, 2);
+                velSlider.setBounds (Lang::takeStart (row, row.getWidth() * 7 / 12).reduced (Metrics::halfGap, 2));
+                rollCell = row.reduced (Metrics::halfGap, 2);
                 //  Reserve the box first and the two keys come out the same
                 //  size as every other stepper's, instead of swallowing what
                 //  the number did not need.
                 rollSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false,
-                                            juce::jmax (36, rollCell.getWidth() - 2 * Metrics::stepKey),
+                                            juce::jmax (36, rollCell.getWidth() - Metrics::gap - 2 * Metrics::stepKey),
                                             Metrics::readout);
                 rollSlider.setBounds (rollCell);
             }
             inner.removeFromTop (Metrics::sm);
 
             inner.removeFromTop (nameH);                  // painted: SWING
-            swingSlider.setBounds (inner.removeFromTop (Metrics::hit).reduced (2, 2));
+            swingSlider.setBounds (inner.removeFromTop (Metrics::hit).reduced (Metrics::halfGap, 2));
             inner.removeFromTop (Metrics::sm);
 
             // Bar row: only when the pattern is longer than one bar. A single
@@ -2852,7 +2859,7 @@ void MainComponent::resized()
                 {
                     barButtons[b]->setVisible (b < bars);
                     if (b < bars)
-                        barButtons[b]->setBounds ((b < bars - 1 ? row4.removeFromLeft (bw) : row4).reduced (2, 2));
+                        barButtons[b]->setBounds ((b < bars - 1 ? row4.removeFromLeft (bw) : row4).reduced (Metrics::halfGap, 2));
                 }
                 inner.removeFromTop (Metrics::sm);
             }
@@ -2863,8 +2870,8 @@ void MainComponent::resized()
         }
 
         auto bottom = inner.removeFromBottom (Metrics::hit);
-        bpmSlider.setBounds (bottom.removeFromLeft ((int) (bottom.getWidth() * 0.66f)).reduced (2, 2));
-        clearButton.setBounds (bottom.reduced (3, 2));
+        bpmSlider.setBounds (bottom.removeFromLeft ((int) (bottom.getWidth() * 0.66f)).reduced (Metrics::halfGap, 2));
+        clearButton.setBounds (bottom.reduced (Metrics::halfGap, 2));
         inner.removeFromBottom (14 + ZatiLookAndFeel::kTextPad);   // painted: TEMPO
         inner.removeFromBottom (Metrics::sm);
 
