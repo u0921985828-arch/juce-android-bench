@@ -69,12 +69,18 @@ private:
             }
         }
     };
-    //  Two cards, not one. AJUSTES was doing two unrelated jobs at once - what
-    //  the audio device is doing, and what your projects are called - and they
-    //  have nothing to say to each other. audioSheet is the machine; projSheet
-    //  is your work.
-    Sheet padSheet, seqSheet, browseSheet, audioSheet, projSheet, mixSheet, songSheet,
+    //  ONE card, TWO pages. AJUSTES was doing two unrelated jobs in one long
+    //  scroll - what the audio device is doing, and what your projects are
+    //  called - and splitting them into two separate popups only turned the
+    //  scroll into a journey. They are pages of the same card now: AUDIO is
+    //  the machine, PROYECTOS is your work, and the tab row swaps between them
+    //  without the card going anywhere.
+    Sheet padSheet, seqSheet, browseSheet, setSheet, mixSheet, songSheet,
           exportSheet, rackSheet, chopSheet;
+    enum SetPage { pageAudio = 0, pageProjects };
+    int setPage = pageAudio;
+    juce::TextButton pageAudioBtn { "AUDIO" }, pageProjBtn { "PROYECTOS" };
+    void showSetPage (int page);
     void openSheet (Sheet& s, juce::TextButton& toggle);
     void closeAllSheets();
     void paintAudioSheetContent (juce::Graphics& g);
@@ -117,14 +123,14 @@ private:
     };
     ProjectList  projModel;
     juce::ListBox projList { "proyectos", &projModel };
-    juce::TextButton projCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
+    juce::TextButton setCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
     juce::TextButton projSaveButton { "GUARDAR" };
     juce::TextButton projLoadButton { "ABRIR" };
     juce::TextButton projNewButton  { "NUEVO" };
     juce::TextButton projDeleteButton { "BORRAR" };
     juce::TextButton projExportButton { "EXPORTAR" };
-    juce::TextButton audioCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
-    juce::TextButton openProjectsButton { "PROYECTOS" };
+
+
     juce::String currentProject;
 
     // --- Export -----------------------------------------------------------
