@@ -207,6 +207,7 @@ private:
     //  Set by resized() when the window is wider than it is tall: the face
     //  splits into a column you watch and set, and a column you play. Empty
     //  in portrait, where the whole width is one column.
+    bool pressureAnnounced = false;
     bool wideFace = false;
     juce::Rectangle<int> faceColumn;
 

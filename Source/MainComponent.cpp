@@ -3035,6 +3035,15 @@ void MainComponent::padClicked (int index)
 
     if (padHasSample[(size_t) index])
         engine.postNoteOn (index, pads[index] != nullptr ? pads[index]->getLastVelocity() : 1.0f);
+
+        //  Said once, the first time this phone turns out to have a force
+        //  sensor under the glass. A feature nobody is told about is a
+        //  feature that reads as the app being inconsistent.
+        if (! pressureAnnounced && pads[index] != nullptr && pads[index]->lastStrikeUsedPressure())
+        {
+            pressureAnnounced = true;
+            status.setText (T ("Pads sensibles a la fuerza del golpe"), juce::dontSendNotification);
+        }
     else
         status.setText (T ("Pad vacio - pulsa LOAD y toca el pad para cargarlo"), juce::dontSendNotification);
 

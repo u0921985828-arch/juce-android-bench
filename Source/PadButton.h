@@ -58,6 +58,19 @@ public:
     //  with one thumb, which pressure never was.
     float getLastVelocity() const noexcept { return lastVelocity; }
 
+    //  ...and where the panel DOES report a real force, use it.
+    //
+    //  The argument against pressure was that most panels return a constant,
+    //  and a control that works on one phone and not the next is worse than
+    //  none. That is an argument against pressure ALONE, not against asking:
+    //  JUCE says whether the figure it has is real (isPressureValid is false
+    //  for the sentinel every panel without a sensor reports), so the pad can
+    //  take the better signal where it exists and the reliable one everywhere
+    //  else. No phone plays worse than it did; some play harder.
+    //
+    //  Both land on the same 0.35..1 range, so a pattern recorded on a phone
+    //  with a force sensor and played back on one without it sounds like the
+    //  same performance rather than like a different one.
     void mouseDown (const juce::MouseEvent& e) override
     {
         const float h = (float) juce::jmax (1, getHeight());
@@ -66,9 +79,30 @@ public:
         //  Struck at the top = 1, at the bottom = 0.35 rather than silence:
         //  the softest edge of the pad still has to make a sound, and a floor
         //  of 0.35 is about 9 dB of range, which is what a finger can aim for.
-        lastVelocity = juce::jmap (1.0f - y, 0.35f, 1.0f);
+        const float byPosition = juce::jmap (1.0f - y, 0.35f, 1.0f);
+
+        if (e.isPressureValid())
+        {
+            //  A finger at rest on a capacitive panel reads around 0.1-0.2 and
+            //  a firm strike around 0.5-0.7; full scale is almost never seen,
+            //  so mapping 0..1 straight through would make every hit soft.
+            //  0.08..0.65 is the range a hand actually covers.
+            const float f = juce::jlimit (0.0f, 1.0f, (e.pressure - 0.08f) / (0.65f - 0.08f));
+            lastVelocity = juce::jmap (f, 0.35f, 1.0f);
+            usedPressure = true;
+        }
+        else
+        {
+            lastVelocity = byPosition;
+            usedPressure = false;
+        }
+
         juce::Button::mouseDown (e);
     }
+
+    //  Which signal the last strike came from, so the app can say so once
+    //  rather than leaving the player to guess why the pads got expressive.
+    bool lastStrikeUsedPressure() const noexcept { return usedPressure; }
 
     void paintButton (juce::Graphics& g, bool over, bool down) override
     {
@@ -258,6 +292,7 @@ private:
     int zati = 0;                 // fragment colour, assigned by cut order
     bool  loaded = false, selected = false, playing = false;
     float lastVelocity = 1.0f;   // set by mouseDown, read by padClicked
+    bool  usedPressure = false;  // ...and whether the panel gave a real force
     float flash = 0.0f;
     juce::String padName;
     juce::Array<float> spark;   // interleaved min,max per column
