@@ -204,6 +204,12 @@ private:
     //  the lettering in the gap instead of hanging it off the section below.
     int ctrlSeamTop = 0, fxSeamTop = 0, padSeamTop = 0;
 
+    //  Set by resized() when the window is wider than it is tall: the face
+    //  splits into a column you watch and set, and a column you play. Empty
+    //  in portrait, where the whole width is one column.
+    bool wideFace = false;
+    juce::Rectangle<int> faceColumn;
+
     //  Ticks spent chasing the safe area at startup; see timerCallback.
     int insetSettleTicks = 0;
 
@@ -225,6 +231,12 @@ public:
     //  activity. Public because that is who calls them.
     void appSuspended();
     void appResumed();
+
+    //  Open a sheet by name, for the self-measuring run (see UiAudit.h). The
+    //  audit has to reach the sheets - most of the interface lives in them -
+    //  and clicking synthetic mouse events at guessed coordinates is exactly
+    //  the kind of test that passes because it missed.
+    void auditOpen (const juce::String& which);
 
 private:
     void autosave();
@@ -396,6 +408,25 @@ private:
     juce::OwnedArray<juce::TextButton> mixMutes, mixSolos;
     juce::TextButton mixClearSolo { "SIN SOLO" };
     void refreshMixStrip();
+
+    //  SIXTEEN STRIPS THAT SCROLL RATHER THAN SIXTEEN STRIPS THAT SHRINK.
+    //
+    //  The mixer used to divide whatever height the card was allowed by
+    //  sixteen and live with the answer: on a 640-tall phone that is a 24 px
+    //  row, and M and S came out 36x20 - a third of the finger minimum, on the
+    //  two controls you hit fastest and most often while something is playing.
+    //  Measured across the matrix, it was the worst target in the app.
+    //
+    //  A mixer that scrolls is what every mixer does. The rows keep their full
+    //  height everywhere and the card shows as many as it has room for.
+    struct MixRows : public juce::Component
+    {
+        std::function<void (juce::Graphics&)> paintRows;
+        void paint (juce::Graphics& g) override { if (paintRows) paintRows (g); }
+    };
+    MixRows        mixRows;
+    juce::Viewport mixScroll;
+    void paintMixRows (juce::Graphics& g);
     juce::OwnedArray<juce::TextButton> patternButtons;  // P1..P8 — chain include toggles
 
     // --- FX slots (spec Zone 5) -------------------------------------------
@@ -407,32 +438,66 @@ private:
     // A slot has two gestures on one target: tap = fire, long press =
     // reassign. TextButton only reports the click, so the press duration is
     // measured here and a long hold suppresses the click that would follow.
-    class HoldButton : public juce::TextButton
+    //  A cap with two gestures: tap, and hold.
+    //
+    //  It used to decide WHICH on release - mouseUp compared the length of the
+    //  press against the threshold. That is a hold you cannot feel: you press,
+    //  you wait, nothing on screen changes, and the only way to find out
+    //  whether the gesture took is to let go. Held over a running effect while
+    //  the sequencer plays, it reads as a button that does nothing, so you tap
+    //  instead and switch the effect off - which is the complaint.
+    //
+    //  Now a timer fires AT the threshold, with the finger still down. The
+    //  three knobs re-range under your thumb the instant the gesture lands,
+    //  which is the feedback; the release afterwards is swallowed so the hold
+    //  never also counts as a tap. A finger that slides off the cap cancels
+    //  it, the same as every other press on the face.
+    class HoldButton : public juce::TextButton,
+                       private juce::Timer
     {
     public:
         using juce::TextButton::TextButton;
         std::function<void()> onHold;
-        static constexpr int kHoldMs = 550;
+        //  Long enough not to fire on a firm tap, short enough that it lands
+        //  while you still think of yourself as pressing. Android's own
+        //  long-press is 500; a control you play with wants to be under it.
+        static constexpr int kHoldMs = 420;
 
         void mouseDown (const juce::MouseEvent& e) override
         {
             held = false;
+            startTimer (kHoldMs);
             juce::TextButton::mouseDown (e);
         }
+
+        void mouseDrag (const juce::MouseEvent& e) override
+        {
+            if (! getLocalBounds().contains (e.getPosition()))
+                stopTimer();
+            juce::TextButton::mouseDrag (e);
+        }
+
         void mouseUp (const juce::MouseEvent& e) override
         {
-            if (e.getLengthOfMousePress() >= kHoldMs)
+            stopTimer();
+            if (held)
             {
-                held = true;
-                if (onHold) onHold();
                 setState (buttonNormal);   // swallow the click this press would fire
                 return;
             }
             juce::TextButton::mouseUp (e);
         }
+
         bool wasHeld() const { return held; }
 
     private:
+        void timerCallback() override
+        {
+            stopTimer();
+            held = true;
+            if (onHold) onHold();
+        }
+
         bool held = false;
     };
 

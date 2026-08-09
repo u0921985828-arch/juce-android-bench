@@ -2,6 +2,7 @@
 #include "MainComponent.h"
 #include "Lang.h"
 #include "ProjectStore.h"
+#include "UiAudit.h"
 
 //  Storage for the two Oboe dials declared in AudioPath.h. They live here so
 //  that the patched JUCE module finds them at link time on Android, and so
@@ -30,7 +31,54 @@ public:
         ProjectStore::ensureTree();
         Lang::loadPreference();
 
+        //  The audit run picks its own language: a dump is comparable across
+        //  the four only if the language is an input, not whatever the last
+        //  session happened to leave in the preferences file.
+        if (UiAudit::enabled())
+        {
+            const auto want = UiAudit::env ("ZATI_LANG");
+            for (int i = 0; i < Lang::numLanguages; ++i)
+                if (want == Lang::code ((Lang::Id) i))
+                    Lang::set ((Lang::Id) i);
+        }
+
         mainWindow = std::make_unique<MainWindow> (getApplicationName());
+
+        if (UiAudit::enabled())
+            startAudit();
+    }
+
+    //  Lay out at the size asked for, open the sheet asked for, let the
+    //  message loop settle the two, then measure and leave. Two ticks rather
+    //  than one because opening a sheet triggers its own resized().
+    void startAudit()
+    {
+        auto* c = content();
+        if (c == nullptr) { quit(); return; }
+
+        const auto size = UiAudit::env ("ZATI_SIZE");
+        if (size.contains ("x"))
+        {
+            const int w = size.upToFirstOccurrenceOf ("x", false, false).getIntValue();
+            const int h = size.fromFirstOccurrenceOf ("x", false, false).getIntValue();
+            if (w > 0 && h > 0)
+            {
+                mainWindow->setSize (w, h);
+                c->setSize (w, h);
+            }
+        }
+
+        c->auditOpen (UiAudit::env ("ZATI_OPEN"));
+
+        juce::Timer::callAfterDelay (400, [this]
+        {
+            if (auto* cc = content())
+            {
+                cc->resized();
+                UiAudit::dump (*cc);
+            }
+            quit();
+        });
     }
 
     void shutdown() override

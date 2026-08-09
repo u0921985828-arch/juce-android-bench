@@ -982,7 +982,7 @@ MainComponent::MainComponent()
             engine.setPadGain (i, (float) f->getValue());
             if (i == selectedPad) volSlider.setValue (f->getValue(), juce::dontSendNotification);
         };
-        mixSheet.addAndMakeVisible (f);
+        mixRows.addAndMakeVisible (f);
         mixFaders.add (f);
 
         //  Pan on the strip, next to the level it belongs to. Placing a sound
@@ -1006,7 +1006,7 @@ MainComponent::MainComponent()
             engine.setPadPan (i, (float) p->getValue());
             if (i == selectedPad) panSlider.setValue (p->getValue(), juce::dontSendNotification);
         };
-        mixSheet.addAndMakeVisible (p);
+        mixRows.addAndMakeVisible (p);
         mixPans.add (p);
 
         auto* m = new juce::TextButton ("M");
@@ -1015,7 +1015,7 @@ MainComponent::MainComponent()
         m->setColour (juce::TextButton::textColourOnId, juce::Colours::white);
         m->setClickingTogglesState (true);
         m->onClick = [this, i, m] { engine.setPadMute (i, m->getToggleState()); refreshMixStrip(); };
-        mixSheet.addAndMakeVisible (m);
+        mixRows.addAndMakeVisible (m);
         mixMutes.add (m);
 
         auto* so = new juce::TextButton ("S");
@@ -1023,9 +1023,19 @@ MainComponent::MainComponent()
         so->setColour (juce::TextButton::buttonOnColourId, ZatiColours::yellow);
         so->setClickingTogglesState (true);
         so->onClick = [this, i, so] { engine.setPadSolo (i, so->getToggleState()); refreshMixStrip(); };
-        mixSheet.addAndMakeVisible (so);
+        mixRows.addAndMakeVisible (so);
         mixSolos.add (so);
     }
+    //  The strips live in a scrolled panel and paint their own chips and
+    //  names: those used to be drawn on the sheet behind the sliders, using
+    //  the sliders' bounds, which stops working the moment the sliders move
+    //  under a viewport.
+    mixRows.paintRows = [this] (juce::Graphics& g) { paintMixRows (g); };
+    mixScroll.setViewedComponent (&mixRows, false);
+    mixScroll.setScrollBarsShown (true, false);
+    mixScroll.setScrollBarThickness (8);
+    mixSheet.addAndMakeVisible (mixScroll);
+
     styleButton (mixClearSolo, kKey);
     mixClearSolo.onClick = [this] { engine.clearSolo(); refreshMixStrip(); };
     mixSheet.addAndMakeVisible (mixClearSolo);
@@ -1391,7 +1401,12 @@ const MainComponent::FxDef MainComponent::fxDefs[MainComponent::kNumFx] =
         {    0.0,    0.95, 0.01,    0.0,    0.35, 2 },
         {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 0.35 },
 
-    { "CRSH", { "BITS", "RATE", "MIX" },
+    //  BIT, not CRSH: five names of three letters and one of four, and the
+    //  four-letter one is the only cap on the face whose lettering has to be
+    //  squeezed to fit - measured on every screen in the matrix, not just the
+    //  small ones. A row of six switches reads as a row when the tokens share
+    //  a rhythm, and BIT is what the hardware this descends from calls it.
+    { "BIT",  { "BITS", "RATE", "MIX" },
       { {    1.0,    16.0, 1.00,    0.0,     8.0, 4 },
         {    1.0,    64.0, 1.00,    8.0,     4.0, 5 },
         {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 0.60 },
@@ -1497,8 +1512,18 @@ void MainComponent::fxTapped (int f)
 {
     if (! juce::isPositiveAndBelow (f, kNumFx)) return;
 
-    setFxEnabled (f, ! fxOn[(size_t) f]);
+    const bool wasOn = fxOn[(size_t) f];
+    setFxEnabled (f, ! wasOn);
     focusFx (f);
+
+    //  Teach the hold at the only moment it is worth knowing: the tap that
+    //  just switched off an effect you were probably trying to tune. A hint
+    //  in a manual is a hint nobody reads; a hint standing where the mistake
+    //  happened is the next thing you try.
+    if (wasOn)
+        status.setText (T ("%1 OFF - manten pulsado para ajustar sin apagar", fxDefs[f].name),
+                        juce::dontSendNotification);
+
     repaint();
 }
 
@@ -1728,18 +1753,25 @@ void MainComponent::paint (juce::Graphics& g)
     //  band. It takes the two edges of the gap and puts itself in the middle
     //  of them, so the air is the same above and below whatever the seam is
     //  worth on this screen.
-    auto engraveIn = [&g, &full, &rule] (const juce::String& text, int seamTop, int zoneTop)
+    //  The rule runs the width of the ZONE the name belongs to, which is the
+    //  whole face in portrait and one of the two columns when the window is
+    //  wider than it is tall - a rule for the pads that crossed the screen and
+    //  the knobs on its way there would be naming all three.
+    auto engraveIn = [&g, &full, &rule] (const juce::String& text, int seamTop, int zoneTop,
+                                         juce::Rectangle<int> span = {})
     {
-        auto engrave = [&g, &rule, &full] (const juce::String& t, float y)
+        const auto s = span.isEmpty() ? full : span.toFloat();
+
+        auto engrave = [&g, &rule, &s] (const juce::String& t, float y)
         {
         g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.30f));
         const float tw  = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), t);
-        const float cx  = full.getCentreX();
+        const float cx  = s.getCentreX();
         const float x0  = cx - tw * 0.5f;
         const float gap = 9.0f;                       // air the rule leaves around the word
 
-        rule (full.getX() + 10.0f, x0 - gap, y, 0.16f);
-        rule (x0 + tw + gap, full.getRight() - 10.0f, y, 0.16f);
+        rule (s.getX() + 10.0f, x0 - gap, y, 0.16f);
+        rule (x0 + tw + gap, s.getRight() - 10.0f, y, 0.16f);
 
         g.setColour (ZatiColours::ink.withAlpha (0.42f));
         g.drawText (t, (int) x0 - 1, (int) (y - 5.0f), (int) tw + 3, 11,
@@ -1796,13 +1828,14 @@ void MainComponent::paint (juce::Graphics& g)
     //  labelled LOAD, REC and PLAY. resized() reserves the seam height for
     //  these, so they can never land on the section above.
     if (! ctrlPlateArea.isEmpty())
-        engraveIn (T ("CONTROL"), ctrlSeamTop, ctrlPlateArea.getY());
+        engraveIn (T ("CONTROL"), ctrlSeamTop, ctrlPlateArea.getY(), faceColumn);
 
     if (! fxRowArea.isEmpty())
-        engraveIn (T ("EFECTOS"), fxSeamTop, fxRowArea.getY());
+        engraveIn (T ("EFECTOS"), fxSeamTop, fxRowArea.getY(), faceColumn);
 
     if (! padPlateArea.isEmpty())
-        engraveIn (T ("PADS"), padSeamTop, padPlateArea.getY());
+        engraveIn (T ("PADS"), padSeamTop, padPlateArea.getY(),
+                   wideFace ? padPlateArea.expanded (ZatiLookAndFeel::kAir, 0) : juce::Rectangle<int>());
 
         //  Which of the six owns the three knobs. A tap both switches an
         //  effect and hands it the knobs, and until now only the switching
@@ -2190,9 +2223,28 @@ void MainComponent::layoutPadGrid (juce::Rectangle<int> area, int cols, int rows
     //  which is where the "the pads change shape while the app is opening"
     //  came from: the first pass had the room to hit that ceiling and the
     //  second did not. A pad is a square, and resized() now books it as one.
-    const int cellW = (area.getWidth()  - (cols - 1) * gap) / cols;
-    const int cellH = juce::jlimit (cellW * 3 / 4, cellW,
-                                    (area.getHeight() - (rows - 1) * gap) / rows);
+    //  A SQUARE THAT FITS BOTH WAYS.
+    //
+    //  The cell used to be jlimit (cellW * 3/4, cellW, roomPerRow), and jlimit
+    //  clamps UP as readily as down: when the room per row fell below three
+    //  quarters of the width - a short phone, a rotated one, a small window -
+    //  the cell was clamped back UP to a size the area did not have, and
+    //  withSizeKeepingCentre then centred a grid taller than its own box. The
+    //  overflow went out both ends. Measured: at 360x640 the pads sat 7 px
+    //  over the effects row, and rotated to 915x412 four of them were laid out
+    //  past the bottom of the window entirely, on top of the transport keys.
+    //
+    //  A missing pixel has to come out of the pad, not out of the section
+    //  next to it. One number derived from BOTH constraints can never exceed
+    //  either, and it keeps the pad square - which is what it is for.
+    //  Width still decides the cell - a pad grid that does not reach the sides
+    //  of the face reads as a widget dropped on it, and shrinking to a small
+    //  centred square was the first fix and the wrong one. Height only ever
+    //  takes away: square while there is room for square, flatter than square
+    //  when there is not, and never one pixel taller than the box it was
+    //  handed.
+    const int cellW = (area.getWidth() - (cols - 1) * gap) / cols;
+    const int cellH = juce::jmax (24, juce::jmin (cellW, (area.getHeight() - (rows - 1) * gap) / rows));
 
     auto grid = area.withSizeKeepingCentre (cols * cellW + (cols - 1) * gap,
                                             rows * cellH + (rows - 1) * gap);
@@ -2247,6 +2299,36 @@ void MainComponent::resized()
     auto area = safeArea().reduced (ZatiLookAndFeel::kFaceMargin,
                                     ZatiLookAndFeel::kEdgeV);
 
+    //  TWO COLUMNS WHEN THE SCREEN IS WIDER THAN IT IS TALL.
+    //
+    //  Every band of this face is stacked, which is the right answer on a
+    //  phone held upright and a hopeless one on anything else: rotated to
+    //  915x412 there are 412 pixels of height to hold a header, a screen, a
+    //  module bar, transport keys, a knob plate, six effects AND four rows of
+    //  pads. The face did not fail gracefully, it overflowed - the pads were
+    //  laid out below the bottom of the window, on top of the transport.
+    //
+    //  Rotating is not an error state to survive, it is the second layout an
+    //  instrument gets for free: what you WATCH and what you SET on the left,
+    //  what you PLAY on the right, which is how a groovebox is arranged on a
+    //  desk anyway. Same components, same code below - only the rectangle the
+    //  pads are given changes.
+    //
+    //  The pad column is booked as tall as it is wide, because the grid inside
+    //  it is square; the left column keeps a floor so the screen and the knobs
+    //  never get squeezed into a strip.
+    faceColumn = {};
+    juce::Rectangle<int> padCol;
+    wideFace = area.getWidth() >= area.getHeight() * 5 / 4 && area.getWidth() >= 560;
+
+    if (wideFace)
+    {
+        const int want = juce::jlimit (220, juce::jmax (220, area.getWidth() - 320), area.getHeight());
+        padCol = area.removeFromRight (want);
+        area.removeFromRight (ZatiLookAndFeel::kAir * 2);
+        faceColumn = area;
+    }
+
     // The LCD grows to absorb whatever the face doesn't need (the pads are
     // width-bound squares) — the screen is the protagonist.
     int screenH;
@@ -2261,8 +2343,14 @@ void MainComponent::resized()
         //  no longer spends two strips and four gaps on them - all of it goes
         //  back to the panel that shows them.
         const int aboveScreen = ZatiLookAndFeel::kHeader + ZatiLookAndFeel::kAir;
-        const int belowScreen = ZatiLookAndFeel::kAir + ZatiLookAndFeel::kModule
-                              + Metrics::xs + ZatiLookAndFeel::kTransport
+        //  Rotated there is width to spare and no height at all, so the five
+        //  module tabs and the three transport keys share one row instead of
+        //  taking two. Thirty pixels back, and the row that gets them is the
+        //  effects row, which was coming out 22 tall - a key you PLAY with,
+        //  squeezed so a menu could keep its own line.
+        const int belowScreen = ZatiLookAndFeel::kAir
+                              + (wideFace ? ZatiLookAndFeel::kTransport
+                                          : ZatiLookAndFeel::kModule + Metrics::xs + ZatiLookAndFeel::kTransport)
                               + ZatiLookAndFeel::kAir;
         const int bottomStrip = ZatiLookAndFeel::kStatus
                               + ZatiLookAndFeel::kAir + Metrics::sm;
@@ -2280,11 +2368,13 @@ void MainComponent::resized()
         //  Booking them square recovers all of it at once, and it also means
         //  the pads no longer change SHAPE between the first pass and the
         //  second - they only move.
+        //  ...and in two columns the pads are not in this budget at all: they
+        //  are in the other one, together with the seam that names them.
         const int cellW    = (area.getWidth() - 3 * ZatiLookAndFeel::kPadGap) / 4;
-        const int padsNeed = 4 * cellW + 3 * ZatiLookAndFeel::kPadGap;
+        const int padsNeed = wideFace ? 0 : 4 * cellW + 3 * ZatiLookAndFeel::kPadGap;
         const int bodyNeed = ZatiLookAndFeel::kCtrlPlate + ZatiLookAndFeel::kAir + Metrics::sm
                            + ZatiLookAndFeel::kFxRow + ZatiLookAndFeel::kAir
-                           + padsNeed + 3 * kSeamLabelH;
+                           + padsNeed + (wideFace ? 2 : 3) * kSeamLabelH;
 
         //  ...and what it recovers goes into the SEAMS, not into one pool.
         //
@@ -2300,7 +2390,13 @@ void MainComponent::resized()
         //  they are laid out, not squeezed in.
         constexpr int kSeams   = 6;
         constexpr int kAirMax  = 11;   // past this the face reads as loose
-        constexpr int kMinScreen = 96;
+        //  The screen is the protagonist and it is also the ONLY band that may
+        //  give: everything else on this column is a target a finger has to
+        //  land on. Ninety-six is what it takes to read a waveform and two
+        //  meters; rotated, where the panel is wide and short, the same
+        //  information fits in less height and the pixels are worth more to
+        //  the effects row than to the wave.
+        const int kMinScreen = wideFace ? 56 : 96;
 
         const int freeH = area.getHeight() - aboveScreen - belowScreen - bottomStrip - bodyNeed;
 
@@ -2326,6 +2422,27 @@ void MainComponent::resized()
     //  row: LOAD came out as "LO...". They split again, but the module bar
     //  stays slim at 32 while the transport keeps its full 44 — the original
     //  complaint was that the menu was as heavy as PLAY, and that still holds.
+    //  Rotated, the two bands become one: the eight caps have the width for it
+    //  and the column has no height to spare. The module tabs still read as
+    //  lighter than the transport - they are narrower, not just shorter.
+    if (wideFace)
+    {
+        auto row = area.removeFromTop (ZatiLookAndFeel::kTransport);
+        tabBarArea = row;
+        auto tabs = row.removeFromLeft (row.getWidth() * 5 / 9);
+        juce::TextButton* mb[5] = { &padsButton, &secButton, &songButton, &mixButton, &setButton };
+        const int tw = tabs.getWidth() / 5;
+        for (int i = 0; i < 5; ++i)
+            mb[i]->setBounds ((i < 4 ? tabs.removeFromLeft (tw) : tabs)
+                                  .reduced (Metrics::halfGap, ZatiLookAndFeel::kAir / 2));
+
+        const int u = row.getWidth() / 3;
+        loadButton.setBounds (row.removeFromLeft (u).reduced (Metrics::halfGap, 0));
+        recButton.setBounds  (row.removeFromLeft (u).reduced (Metrics::halfGap, 0));
+        playButton.setBounds (row.reduced (Metrics::halfGap, 0));
+    }
+    else
+    {
     tabBarArea = area.removeFromTop (ZatiLookAndFeel::kModule);
     {
         auto row = tabBarArea;
@@ -2342,6 +2459,7 @@ void MainComponent::resized()
         loadButton.setBounds (row.removeFromLeft (u).reduced (Metrics::halfGap, 0));
         recButton.setBounds  (row.removeFromLeft (u).reduced (Metrics::halfGap, 0));
         playButton.setBounds (row.reduced (Metrics::halfGap, 0));
+    }
     }
     ctrlSeamTop = area.getY();
     area.removeFromTop (ZatiLookAndFeel::kAir + layoutAir + kSeamLabelH);   // CONTROL rides here
@@ -2383,9 +2501,21 @@ void MainComponent::resized()
             for (int f = 0; f < kNumFx; ++f)
                 fxButtons[f]->setBounds ((f < kNumFx - 1 ? row.removeFromLeft (sw) : row).reduced (Metrics::halfGap, 0));
         }
-        padSeamTop = area.getY();
-        area.removeFromTop (ZatiLookAndFeel::kAir + layoutAir + kSeamLabelH);   // PADS rides here
-        layoutPadGrid (area, 4, 4, ZatiLookAndFeel::kPadGap);
+        //  In two columns the pads have a column of their own and the seam
+        //  above them is simply the room the square grid does not use, so the
+        //  engraving lands there without anything being reserved for it.
+        if (wideFace)
+        {
+            padSeamTop = padCol.getY();
+            padCol.removeFromTop (ZatiLookAndFeel::kAir + kSeamLabelH);   // PADS rides here too
+            layoutPadGrid (padCol, 4, 4, ZatiLookAndFeel::kPadGap);
+        }
+        else
+        {
+            padSeamTop = area.getY();
+            area.removeFromTop (ZatiLookAndFeel::kAir + layoutAir + kSeamLabelH);   // PADS rides here
+            layoutPadGrid (area, 4, 4, ZatiLookAndFeel::kPadGap);
+        }
     }
 
     // --- Floating sheets (each sized by its own content, capped at 86%) ---
@@ -2418,8 +2548,8 @@ void MainComponent::resized()
     {
         constexpr int secH = 15 + 2 * ZatiLookAndFeel::kTextPad;
         auto inner = sheetFromBottom (padSheet, 670 + 3 * secH);
-        auto titleRow = inner.removeFromTop (32);
-        padCloseButton.setBounds (Lang::takeEnd (titleRow, 32).reduced (2));
+        auto titleRow = inner.removeFromTop (Metrics::hit);
+        padCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
         Lang::takeEnd (titleRow, Metrics::xs);
         previewButton.setBounds (Lang::takeEnd (titleRow, 68).reduced (0, 2));
 
@@ -2491,8 +2621,8 @@ void MainComponent::resized()
     // BROWSE sheet: the tallest of them all — the file list wants the room.
     {
         auto inner = sheetFromBottom (browseSheet, full.getHeight());   // clamps to the 86% cap
-        auto titleRow = inner.removeFromTop (32);
-        browseCloseButton.setBounds (Lang::takeEnd (titleRow, 32).reduced (2));
+        auto titleRow = inner.removeFromTop (Metrics::hit);
+        browseCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
 
         auto actions = inner.removeFromBottom (Metrics::btn);
         browseSystemButton.setBounds (actions.removeFromRight (actions.getWidth() / 3).reduced (Metrics::halfGap, 0));
@@ -2517,16 +2647,16 @@ void MainComponent::resized()
 
         const int tabsH = Metrics::tab + Metrics::sm;
         const int wanted = onAudio
-            ? Metrics::md * 2 + 32 + Metrics::sm + tabsH + 158 + Metrics::xs
+            ? Metrics::md * 2 + Metrics::hit + Metrics::sm + tabsH + 158 + Metrics::xs
                 + (Metrics::hit + Metrics::xs) * 3 + Metrics::sm
-            : Metrics::md * 2 + 32 + 14 + Metrics::sm + tabsH
+            : Metrics::md * 2 + Metrics::hit + 14 + Metrics::sm + tabsH
                 + Metrics::hit + 14 + Metrics::sm
                 + Metrics::btn * 2 + Metrics::xs * 2 + 8 + listH + Metrics::sm;
 
         auto inner = sheetFromBottom (setSheet, wanted);
 
-        auto titleRow = inner.removeFromTop (32);
-        setCloseButton.setBounds (Lang::takeEnd (titleRow, 32).reduced (2));
+        auto titleRow = inner.removeFromTop (Metrics::hit);
+        setCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
         if (onAudio)
         {
             testButton.setBounds    (Lang::takeEnd (titleRow, 56).reduced (2));
@@ -2597,8 +2727,8 @@ void MainComponent::resized()
     // EXPORT sheet: what will be rendered, then the two products.
     {
         auto inner = sheetFromBottom (exportSheet, 32 + 96 + Metrics::btn * 2 + Metrics::sm * 2);
-        auto titleRow = inner.removeFromTop (32);
-        exportCloseButton.setBounds (Lang::takeEnd (titleRow, 32).reduced (2));
+        auto titleRow = inner.removeFromTop (Metrics::hit);
+        exportCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
 
         inner.removeFromTop (96);   // painted: source, length, destination, status
 
@@ -2615,11 +2745,11 @@ void MainComponent::resized()
         //  sheetFromBottom takes the card's OUTER height and hands back the
         //  inside, so the vertical margin it removes has to be part of what we
         //  ask for - without it the last send row fell off the bottom edge.
-        auto inner = sheetFromBottom (rackSheet, Metrics::md * 2 + 32 + 14
+        auto inner = sheetFromBottom (rackSheet, Metrics::md * 2 + Metrics::hit + 14
                                                    + (chipRowH + Metrics::xs) * 2
                                                    + Metrics::sm + kNumFx * 48 + Metrics::sm);
-        auto titleRow = inner.removeFromTop (32);
-        rackCloseButton.setBounds (Lang::takeEnd (titleRow, 32).reduced (2));
+        auto titleRow = inner.removeFromTop (Metrics::hit);
+        rackCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
         inner.removeFromTop (14);                       // painted: which pad this is
 
         for (int r = 0; r < 2; ++r)
@@ -2647,13 +2777,13 @@ void MainComponent::resized()
     // AUTO CHOP sheet: how many pieces, where they land, and one red verb.
     {
         const int explainH = 40, plannedH = 40;
-        auto inner = sheetFromBottom (chopSheet, Metrics::md * 2 + 32 + explainH
+        auto inner = sheetFromBottom (chopSheet, Metrics::md * 2 + Metrics::hit + explainH
                                                    + Metrics::md + 14 + Metrics::hit
                                                    + Metrics::sm + Metrics::hit
                                                    + Metrics::md + plannedH
                                                    + Metrics::sm + Metrics::btn);
-        auto titleRow = inner.removeFromTop (32);
-        chopCloseButton.setBounds (Lang::takeEnd (titleRow, 32).reduced (2));
+        auto titleRow = inner.removeFromTop (Metrics::hit);
+        chopCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
 
         inner.removeFromTop (explainH);                 // painted: what this does
         inner.removeFromTop (Metrics::md);
@@ -2678,10 +2808,10 @@ void MainComponent::resized()
     // SONG sheet: palette, timeline, page row.
     {
         const int laneH = 40;
-        auto inner = sheetFromBottom (songSheet, Metrics::md * 2 + 32 + Metrics::hit * 2 + Metrics::sm * 3
+        auto inner = sheetFromBottom (songSheet, Metrics::md * 2 + Metrics::hit + Metrics::hit * 2 + Metrics::sm * 3
                                                   + Playlist::kLanes * laneH + Metrics::hit + Metrics::btn);
-        auto titleRow = inner.removeFromTop (32);
-        songCloseButton.setBounds (Lang::takeEnd (titleRow, 32).reduced (2));
+        auto titleRow = inner.removeFromTop (Metrics::hit);
+        songCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
 
         // Palette: P1..P8.
         {
@@ -2721,45 +2851,59 @@ void MainComponent::resized()
         songGrid.setBounds (inner);
     }
 
-    // MIX sheet: sixteen channel strips.
+    // MIX sheet: sixteen channel strips, in a panel that scrolls.
     {
-        //  Sixteen rows at finger height is what this sheet WANTS; on a short
-        //  screen it is more than the card is allowed to be. Rather than lay
-        //  out rows that fall off the bottom, work out what is left after the
-        //  furniture and share it - never below 30, never above the target.
-        const int mixFurniture = Metrics::md * 2 + 32 + Metrics::sm + Metrics::btn + Metrics::lg;
-        const int mixRoom = (int) (full.getHeight() * 0.78f) - mixFurniture;
-        //  Floor low enough that sixteen rows ALWAYS fit. A higher minimum
-        //  looks better right up to the screen where it does not fit, and
-        //  then the last rows are laid out with no height at all.
-        const int rowH = juce::jlimit (24, Metrics::hit, mixRoom / kNumPads);
+        //  The rows no longer negotiate with the card for their height: they
+        //  are Metrics::hit, always, and the card shows as many of them as it
+        //  has room for. What used to be a 24 px row on a small phone - with
+        //  a 20 px mute button on it - is now a scroll.
+        const int rowH = Metrics::hit;
+        const int mixFurniture = Metrics::md * 2 + Metrics::hit + Metrics::sm + Metrics::btn + Metrics::lg;
         auto inner = sheetFromBottom (mixSheet, mixFurniture + kNumPads * rowH);
-        auto titleRow = inner.removeFromTop (32);
-        mixCloseButton.setBounds (Lang::takeEnd (titleRow, 32).reduced (2));
+        auto titleRow = inner.removeFromTop (Metrics::hit);
+        mixCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
 
         auto bottom = inner.removeFromBottom (Metrics::btn);
         rackButton.setBounds (bottom.removeFromRight (bottom.getWidth() / 3).reduced (Metrics::halfGap, 4));
         mixClearSolo.setBounds (bottom.reduced (Metrics::halfGap, 4));
         inner.removeFromBottom (Metrics::xs);
 
+        mixScroll.setBounds (inner);
+        const int contentH = kNumPads * rowH;
+        //  Leave the bar its width only when there IS a bar, or every row is
+        //  eight pixels short on the screens that did not need one.
+        const int barW = contentH > inner.getHeight() ? mixScroll.getScrollBarThickness() : 0;
+        mixRows.setSize (juce::jmax (80, inner.getWidth() - barW), contentH);
+
+        auto rows = mixRows.getLocalBounds();
         for (int i = 0; i < kNumPads; ++i)
         {
-            auto row = inner.removeFromTop (rowH).reduced (0, 1);
-            row.removeFromLeft (76);                       // colour chip + number + name
+            auto row = rows.removeFromTop (rowH).reduced (0, 1);
+            row.removeFromLeft (juce::jlimit (48, 92, rows.getWidth() * 24 / 100));   // chip + number + name
             //  Padding here is not decoration, it is the hit area coming off
             //  the control. The pan was losing twelve pixels of a forty-pixel
             //  row to margins and ending up shorter than the M and S beside it.
             //  M and S are two different decisions about the channel, not one
             //  two-letter control, so they get the same air as everything else
-            //  on the row. Taken out of the row rather than out of the caps -
-            //  padding the caps to make the gap would leave two 32px targets
-            //  on a 24px row, which is under the finger minimum.
+            //  on the row.
             mixSolos[i]->setBounds (row.removeFromRight (Metrics::hit).reduced (2, 1));
             row.removeFromRight (Metrics::halfGap);
             mixMutes[i]->setBounds (row.removeFromRight (Metrics::hit).reduced (2, 1));
             row.removeFromRight (Metrics::halfGap);
-            mixPans[i]->setBounds  (row.removeFromRight (juce::jmin (78, row.getWidth() / 3)).reduced (4, 1));
-            mixFaders[i]->setBounds (row.reduced (4, 1));
+            mixPans[i]->setBounds  (row.removeFromRight (juce::jlimit (34, 78, row.getWidth() / 3)).reduced (4, 1));
+
+            //  On a narrow phone the level's number was eating the level.
+            //  Forty-six pixels of readout plus its air out of an eighty-five
+            //  pixel cell left thirty for the fader itself - a control you set
+            //  by where the thumb is, reduced to a control you cannot aim.
+            //  Where it does not fit, the number goes and the fader stays: the
+            //  exact figure is one tap away in the PADS sheet, and a mixer is
+            //  read by the shape of its faders, not by sixteen decimals.
+            auto faderCell = row.reduced (4, 1);
+            const bool tight = faderCell.getWidth() - Metrics::gap - 46 < 70;
+            mixFaders[i]->setTextBoxStyle (tight ? juce::Slider::NoTextBox : juce::Slider::TextBoxRight,
+                                           false, 46, Metrics::readout);
+            mixFaders[i]->setBounds (faderCell);
         }
     }
 
@@ -2778,8 +2922,8 @@ void MainComponent::resized()
         const int gridH  = lanes * laneH;
 
         auto inner = sheetFromBottom (seqSheet, fixedRowsH + gridH);
-        auto titleRow = inner.removeFromTop (32);
-        seqCloseButton.setBounds (Lang::takeEnd (titleRow, 32).reduced (2));
+        auto titleRow = inner.removeFromTop (Metrics::hit);
+        seqCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
 
         {
             //  Named groups, in the order the work happens: pick the bank and
@@ -4178,9 +4322,16 @@ void MainComponent::paintMixSheetContent (juce::Graphics& g)
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
-    g.drawText (engine.anySolo() ? "MIX  ·  SOLO ACTIVO" : "MIX",
+    g.drawText (engine.anySolo() ? juce::String (juce::CharPointer_UTF8 ("MIX  \xc2\xb7  SOLO ACTIVO")) : juce::String ("MIX"),
                 mixSheet.sheetBounds.reduced (14, 12).removeFromTop (16), Lang::start());
+}
 
+//  The chip and the name belong to the ROW, so they are painted by the panel
+//  the rows live in - in its coordinates, which scroll with them. Painted on
+//  the sheet behind the sliders, as they were, they stayed put while the
+//  strips moved and every channel ended up wearing another channel's name.
+void MainComponent::paintMixRows (juce::Graphics& g)
+{
     for (int i = 0; i < kNumPads; ++i)
     {
         if (mixFaders[i] == nullptr) continue;
@@ -4188,7 +4339,7 @@ void MainComponent::paintMixSheetContent (juce::Graphics& g)
         const auto frag = Zati::colour (padZati[(size_t) i]);
         const bool has = padHasSample[(size_t) i];
 
-        auto chip = juce::Rectangle<int> (mixSheet.sheetBounds.getX() + 18, fr.getY() + 4, 22, fr.getHeight() - 8);
+        auto chip = juce::Rectangle<int> (4, fr.getY() + 4, 22, fr.getHeight() - 8);
         g.setColour (has ? frag : ZatiColours::padBorder.withAlpha (0.4f));
         g.fillRect (chip);
         g.setColour (has ? ZatiColours::bestOn (frag, ZatiColours::ink, juce::Colours::white)
@@ -5205,6 +5356,21 @@ void MainComponent::toggleRecordArm()
 //  which is why stopping here also covers the case that reads worst in a demo:
 //  ZATI playing on top of a call.
 // ============================================================================
+void MainComponent::auditOpen (const juce::String& which)
+{
+    if (which.isEmpty()) return;
+
+    if      (which == "pads") openSheet (padSheet,  padsButton);
+    else if (which == "sec")  openSheet (seqSheet,  secButton);
+    else if (which == "song") openSheet (songSheet, songButton);
+    else if (which == "mix")  { refreshMixStrip(); openSheet (mixSheet, mixButton); }
+    else if (which == "set")  { showSetPage (pageAudio);    refreshAudioOptions(); openSheet (setSheet, setButton); }
+    else if (which == "proj") { showSetPage (pageProjects); refreshProjectList(); openSheet (setSheet, setButton); }
+    else if (which == "rack") { rackPad = 0; openSheet (rackSheet, mixButton); refreshRack(); }
+    else if (which == "chop") openChopSheet();
+    else if (which == "browse") openBrowseForPad (0);
+}
+
 void MainComponent::appSuspended()
 {
     //  Stop the recording first, while the input stream is still alive and its

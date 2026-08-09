@@ -351,6 +351,11 @@ public:
         setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
         setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
         setColour (juce::Slider::trackColourId, ZatiColours::amber);
+        //  A scroll bar is furniture, not an accent: JUCE's default is a
+        //  saturated blue that belongs to no palette this app has.
+        setColour (juce::ScrollBar::thumbColourId,      ZatiColours::ink.withAlpha (0.35f));
+        setColour (juce::ScrollBar::trackColourId,      juce::Colours::transparentBlack);
+        setColour (juce::ScrollBar::backgroundColourId, juce::Colours::transparentBlack);
         setColour (juce::Slider::backgroundColourId, ZatiColours::key.darker (0.08f));
         setColour (juce::Slider::thumbColourId, ZatiColours::amber);
         setColour (juce::Label::textColourId, ZatiColours::ink.withAlpha (0.9f));
@@ -673,7 +678,13 @@ public:
         //  kCapLift above the block it is printed on and travels down onto it
         //  when pressed, so text centred on the full bounds would float low at
         //  rest and stay put during the press - which reads as a wobble.
-        auto area = b.getLocalBounds().reduced (5, 2);
+        //  The side inset is a PROPORTION of the cap, not a constant. Five
+        //  pixels each side is nothing on a 200 px transport key and a fifth
+        //  of a 50 px module tab - which is why CANCION had to be squeezed on
+        //  a narrow phone while PLAY had room to spare. Measured across the
+        //  matrix, this is what puts the five module tabs back at one size.
+        const int inset = juce::jlimit (3, 5, b.getWidth() / 14);
+        auto area = b.getLocalBounds().reduced (inset, 2);
         area = b.isDown() ? area.withTrimmedTop ((int) kCapLift)
                           : area.withTrimmedBottom ((int) kCapLift);
 
