@@ -259,5 +259,47 @@ int main()
         report (name, s, 1000.0 * b / sr);
     }
 
+    //  LA REVERB, MEDIDA. Un cambio de algoritmo de cola no se juzga de oido
+    //  en una sesion: se le mete un impulso y se mira cuanto tarda en caer 60
+    //  dB, si crece en vez de caer, y si produce NaN. Una FDN mal escalada se
+    //  descubre aqui y no en un directo.
+    {
+        AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+        //  Solo el bus de reverb: mezcla al maximo y un pad que le manda todo.
+        e.setRevMix (1.0f); e.setRevSize (0.6f); e.setRevDamp (0.4f);
+        //  La ganancia del pad, que por defecto es cero: la primera version de
+        //  esta sonda no la ponia y midio una reverb muda durante tres
+        //  intentos. Primero se duda de la prueba.
+        e.setPadGain (0, 1.0f);
+        e.setPadSend (0, 5, 1.0f);
+        e.publishSample (0, makeSample (48000.0, 0.05, 400.0f));
+
+        juce::AudioBuffer<float> b (2, 512);
+        b.clear(); e.renderNextBlock (b, 0, 512);
+        e.postNoteOn (0, 1.0f);
+        b.clear(); e.renderNextBlock (b, 0, 512);
+
+        double first = 0.0, t60 = -1.0, peak = 0.0;
+        bool nan = false, grew = false;
+        for (int blk = 0; blk < 600; ++blk)
+        {
+            b.clear();
+            e.renderNextBlock (b, 0, 512);
+            double rms = 0.0;
+            for (int i = 0; i < 512; ++i) { const float v = b.getSample (0, i); rms += (double) v * v; }
+            rms = std::sqrt (rms / 512.0);
+            if (! std::isfinite (rms)) { nan = true; break; }
+            peak = juce::jmax (peak, rms);
+            if (blk == 1) first = rms;
+            if (blk > 40 && rms > peak * 1.05) grew = true;
+            if (t60 < 0.0 && blk > 4 && first > 0.0 && rms < first * 0.001)
+                t60 = (double) (blk * 512) / 48000.0;
+        }
+        std::printf ("%-34s T60 %.2f s   pico %.4f   NaN %s   crece %s   %s\n",
+                     "reverb FDN (impulso)", t60, peak,
+                     nan ? "SI" : "no", grew ? "SI" : "no",
+                     (! nan && ! grew && t60 > 0.15 && t60 < 12.0) ? "OK" : "FALLA");
+    }
+
     return 0;
 }

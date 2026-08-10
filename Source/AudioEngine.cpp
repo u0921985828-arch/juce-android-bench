@@ -111,7 +111,9 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize, int inputC
     hpFilter.reset();
     hpFilter.setType (juce::dsp::StateVariableTPTFilterType::highpass);
 
-    reverb.prepare (spec);
+    //  La FDN reserva sus cuatro lineas y sus dos difusores aqui, que es el
+    //  unico sitio donde puede reservar: en el render no se toca memoria.
+    reverb.prepare (sampleRate, 2);
     reverb.reset();
 
     fxDry.setSize (2, juce::jmax (1, maxBlock));
@@ -942,21 +944,21 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         //        the master by the direct path, and adding it twice would
         //        only comb-filter the sound.
         {
-            if (live (5))
+            //  live(5) OR la energia interna de la FDN, y no dentro del if:
+            //  poner al dia busRinging solo cuando ya se procesa es un candado
+            //  - en cuanto el bus se declara muerto una vez, no vuelve a
+            //  procesarse y no puede volver a declararse vivo. Con Freeverb no
+            //  se notaba porque siempre sacaba algo en la primera muestra.
+            if (live (5) || reverb.ringing())
             {
-                juce::Reverb::Parameters prm;
-                prm.roomSize   = juce::jlimit (0.0f, 1.0f, rvSize.load (std::memory_order_relaxed));
-                prm.damping    = juce::jlimit (0.0f, 1.0f, rvDamp.load (std::memory_order_relaxed));
-                prm.wetLevel   = 1.0f;
-                prm.dryLevel   = 0.0f;
-                prm.width      = 1.0f;
-                prm.freezeMode = 0.0f;
-                reverb.setParameters (prm);
-
-                auto b = blockFor (5);
-                juce::dsp::ProcessContextReplacing<float> ctx (b);
-                reverb.process (ctx);
+                reverb.setParameters (rvSize.load (std::memory_order_relaxed),
+                                      rvDamp.load (std::memory_order_relaxed));
+                reverb.process (fxBus[5], startSample, numSamples);
                 returnBus (5);
+                //  ...y la reverb manda sobre lo que returnBus acaba de
+                //  deducir: la cola esta dentro de las lineas antes de estar en
+                //  la salida. Ver Fdn::ringing.
+                busRinging[5] = busRinging[5] || reverb.ringing();
             }
         }
     }

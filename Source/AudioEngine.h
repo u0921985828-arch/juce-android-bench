@@ -7,6 +7,7 @@
 #include "Voice.h"
 #include "SampleBuffer.h"
 #include "CommandFifo.h"
+#include "Fdn.h"
 
 // ============================================================================
 //  AudioEngine — real-time core (P1).
@@ -772,7 +773,11 @@ private:
     float crPhase = 0.0f;
 
     // Reverb, last in the chain so everything ahead of it lands in the room.
-    juce::dsp::Reverb reverb;
+    //  Ver Fdn.h. Sustituye a juce::dsp::Reverb, que es Freeverb: ocho peines
+    //  y cuatro allpass publicados en 2000, con la cola metalica que eso
+    //  implica. En una caja que apunta a produccion, la reverb es lo primero
+    //  que delata que el motor es de juguete.
+    Fdn reverb;
     std::atomic<float> rvSize { 0.55f };
     std::atomic<float> rvDamp { 0.45f };
     std::atomic<float> rvMix  { 0.0f };
