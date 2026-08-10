@@ -999,8 +999,13 @@ MainComponent::MainComponent()
     swingSlider.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
     swingSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     swingSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 54, Metrics::readout);
+    //  T(), not the bare word. The row for it has been in Lang.cpp since the
+    //  four languages went in - straight / 平直 / مستقيم - and the slider was
+    //  printing the Spanish literal over it in all four. A readout is text like
+    //  any other; the only reason it slipped is that it is written inside a
+    //  lambda instead of next to a setButtonText.
     swingSlider.textFromValueFunction = [] (double v)
-    { return (v <= 50.5) ? juce::String ("recto") : (juce::String ((int) v) + " %"); };
+    { return (v <= 50.5) ? T ("recto") : (juce::String ((int) v) + " %"); };
     swingSlider.updateText();
     swingSlider.onValueChange = [this] { engine.setSwing ((float) (swingSlider.getValue() / 100.0)); };
     seqSheet.addAndMakeVisible (swingSlider);
@@ -1297,8 +1302,17 @@ MainComponent::MainComponent()
     songLenSlider.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
     songLenSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     songLenSlider.setColour (juce::Slider::trackColourId, kAccent);
-    songLenSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 64, Metrics::readout);
-    songLenSlider.textFromValueFunction = [] (double v) { return juce::String ((int) v) + " comp"; };
+    //  Eighty-eight, not sixty-four. The readout used to say "8 comp" - an
+    //  abbreviation nobody had to translate - and the moment it said what it
+    //  means in each language ("8 compases" is 72 px, and Arabic is wider) the
+    //  box it had was twelve pixels short on every screen in the bench. A word
+    //  costs width; the box is the thing that has to know it.
+    songLenSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 88, Metrics::readout);
+    //  Same gap, same cause: "8 comp" is an abbreviation of a Spanish word, and
+    //  the "%1 compases" row it belongs to was already sitting in Lang.cpp
+    //  translated into the other three.
+    songLenSlider.textFromValueFunction = [] (double v)
+    { return T ("%1 compases", juce::String ((int) v)); };
     songLenSlider.updateText();
     songLenSlider.onValueChange = [this]
     {
@@ -4138,6 +4152,15 @@ void MainComponent::retranslateUi()
     clearButton .setButtonText (T ("VACIAR"));
     seqGridBtn  .setButtonText (T ("PASOS"));
     seqStepBtn  .setButtonText (T ("PASO"));
+    //  The three tabs of the settings card. Their rows have been in Lang.cpp
+    //  all along - PROJECTS / 工程 / المشاريع, GESTURES / 手势 / إيماءات - and
+    //  nothing ever asked for them: the buttons were constructed with the
+    //  Spanish literal and never retranslated, so the card that CONTAINS the
+    //  language selector was the one card still in Spanish after you used it.
+    //  AUDIO hid the bug for both its neighbours by being the same word.
+    pageAudioBtn.setButtonText (T ("AUDIO"));
+    pageProjBtn .setButtonText (T ("PROYECTOS"));
+    pageGestBtn .setButtonText (T ("GESTOS"));
     undoButton  .setButtonText (T ("DESHACER"));
     redoButton  .setButtonText (T ("REHACER"));
 
@@ -4176,7 +4199,12 @@ void MainComponent::retranslateUi()
 
     //  A slider that formats its own readout has to be told to run the
     //  formatter again; the text it is showing was made in the old language.
-    for (auto* sl : { &lengthSlider, &chokeSlider })
+    //  ...ALL of them, not the two that were noticed. swingSlider prints
+    //  "recto" and songLenSlider prints the bar count, and both were left off
+    //  this list, so even once their formatters went through T() they would
+    //  have kept showing the language the app was started in until the value
+    //  next changed.
+    for (auto* sl : { &lengthSlider, &chokeSlider, &swingSlider, &songLenSlider })
         sl->updateText();
     refreshChopSheet();          // its verb carries the piece count
     refreshSong();               // the brush chip names itself
