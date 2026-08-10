@@ -179,6 +179,11 @@ private:
     //  only settings in the app that change how the instrument FEELS rather
     //  than how it sounds, so they sit next to the number they affect.
     juce::OwnedArray<juce::TextButton> bufButtons, rateButtons;
+    //  THE CHASSIS. Three bodies the same machine can be made of; see
+    //  ZatiColours::skinTable. It sits beside the language because both are
+    //  the same kind of question - what this app is, rather than what it does.
+    juce::OwnedArray<juce::TextButton> skinButtons;
+    juce::Rectangle<int> skinRowArea;
     juce::Rectangle<int> bufRowArea, rateRowArea;
     void useLowestLatency();     // one native burst, not JUCE's 40 ms default
 

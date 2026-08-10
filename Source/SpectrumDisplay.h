@@ -122,55 +122,27 @@ public:
 
         g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.08f));
 
-        // Corner + centre labels (top row) — cool LCD ink.
+        //  THE SCREEN, REORGANISED.
+        //
+        //  It carried four pieces of text and a meter, and two of the four
+        //  said nothing. "ZATI" is the name of the app, printed on an app you
+        //  already opened, on the one surface that should only ever show what
+        //  the instrument is DOING. "SIG" was a signal-present light nobody
+        //  could name - which is the definition of a light that is not worth
+        //  its pixels next to a level meter that says the same thing better.
+        //
+        //  What is left is arranged by what it is: the NUMBER at the top, the
+        //  SHAPE in the middle with everything the other two gave back, and
+        //  the METER along the bottom edge with the tempo beside it. Reading
+        //  down the screen is now reading from the abstract to the physical.
         auto top = b.reduced (10.0f, 6.0f).removeFromTop (13.0f);
         g.setColour (ZatiColours::lcdFg.withAlpha (0.9f));
-        g.drawText (readout, top, juce::Justification::topLeft);
-        g.drawText ("BPM:" + juce::String (bpm, 1), top, juce::Justification::topRight);
-        g.setColour (ZatiColours::lcdDim);
-        g.drawText (T ("OUT") + " " + Lang::ltr (peakDb()), top, juce::Justification::centredTop);
+        g.drawText (T ("OUT") + " " + Lang::ltr (peakDb()), top, Lang::start (juce::Justification::top));
 
-        //  Stereo VU, immediately under the labels: two rows of segments in a
-        //  gutter narrow enough for the L and the R to sit beside them.
-        {
-            auto vu = b.reduced (8.0f, 0.0f).withY (b.getY() + 22.0f).withHeight (16.0f);
-            auto gutter = vu.removeFromLeft (12.0f);
-
-            g.setColour (ZatiColours::lcdFg.withAlpha (0.55f));
-            g.setFont (ZatiColours::monoFont (Metrics::fTiny, true));
-            g.drawText ("L", gutter.withHeight (8.0f), juce::Justification::centredLeft);
-            g.drawText ("R", gutter.withHeight (8.0f).withY (gutter.getY() + 8.0f), juce::Justification::centredLeft);
-
-            const int nSeg = 32;
-            const float segW = vu.getWidth() / (float) nSeg;
-
-            auto row = [&] (float level, juce::Rectangle<float> r)
-            {
-                const int lit = (int) std::round (std::sqrt (juce::jlimit (0.0f, 1.0f, level)) * (float) nSeg);
-                for (int i = 0; i < nSeg; ++i)
-                {
-                    const bool hot = i >= (int) ((float) nSeg * 0.82f);
-                    //  A LIT segment has to be the LCD's ink, not the
-                    //  chassis accent. The accent is a near-black - it is what
-                    //  a pressed key wears on a paper face - and painting it
-                    //  on a near-black screen made a lit segment look exactly
-                    //  like an unlit one. The meter has never shown a level.
-                    g.setColour (i < lit ? (hot ? ZatiColours::red : ZatiColours::lcdFg)
-                                         : ZatiColours::lcdFg.withAlpha (0.10f));
-                    g.fillRect (vu.getX() + (float) i * segW + 0.5f, r.getY(), segW - 1.0f, r.getHeight());
-                }
-            };
-
-            row (vuL, vu.withHeight (5.0f).withY (vu.getY() + 1.0f));
-            row (vuR, vu.withHeight (5.0f).withY (vu.getY() + 8.0f));
-        }
-
-        // Waveform area (between the meters and the bottom furniture).
+        //  Waveform area: everything between the readout and the meter band.
         auto wave = b.reduced (8.0f, 0.0f);
-        wave.removeFromTop (22.0f + 16.0f);
-        //  Only the status line now. The ten pixels the step strip took go to
-        //  the waveform, which is the one thing this screen is for.
-        wave.removeFromBottom (20.0f);
+        wave.removeFromTop (22.0f);
+        wave.removeFromBottom (kMeterBand);
         const float cy = wave.getCentreY();
         const float halfH = wave.getHeight() * 0.5f - 2.0f;
 
@@ -243,12 +215,55 @@ public:
             }
         }
 
-        auto status = b.reduced (10.0f, 5.0f).removeFromBottom (12.0f);
-        g.setColour (ZatiColours::lcdDim);
-        g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
-        g.drawText (T ("ESPECTRO"), status, juce::Justification::bottomLeft);
-        g.setColour (peak > 0.0005f ? ZatiColours::lcdFg : ZatiColours::lcdDim);
-        g.drawText (peak > 0.0005f ? "SIG" : "--", status, juce::Justification::bottomRight);
+        //  THE BOTTOM EDGE: the meter, and the tempo beside it.
+        //
+        //  The meter used to sit under the labels at the top, where it was one
+        //  more line of furniture between you and the wave. On the bottom edge
+        //  it is where a meter is on every machine that has one, it frames the
+        //  screen instead of interrupting it, and the wave gets the sixteen
+        //  pixels back.
+        {
+            auto band = b.reduced (8.0f, 0.0f).removeFromBottom (kMeterBand).reduced (0.0f, 3.0f);
+
+            //  The tempo takes the right end - the corner "SIG" used to
+            //  occupy, and the one number you look for without looking away
+            //  from what you are playing.
+            auto bpmCell = band.removeFromRight (68.0f);
+            g.setColour (ZatiColours::lcdDim);
+            g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
+            g.drawText (Lang::ltr (juce::String (bpm, 1) + " BPM"), bpmCell,
+                        juce::Justification::centredRight);
+
+            band.removeFromRight (8.0f);
+            auto gutter = band.removeFromLeft (10.0f);
+
+            g.setColour (ZatiColours::lcdFg.withAlpha (0.55f));
+            g.setFont (ZatiColours::monoFont (Metrics::fTiny, true));
+            g.drawText ("L", gutter.withHeight (7.0f).withY (band.getY()), juce::Justification::centredLeft);
+            g.drawText ("R", gutter.withHeight (7.0f).withY (band.getY() + 7.0f), juce::Justification::centredLeft);
+
+            const int nSeg = 32;
+            const float segW = band.getWidth() / (float) nSeg;
+
+            auto row = [&] (float level, juce::Rectangle<float> r)
+            {
+                const int lit = (int) std::round (std::sqrt (juce::jlimit (0.0f, 1.0f, level)) * (float) nSeg);
+                for (int i = 0; i < nSeg; ++i)
+                {
+                    const bool hot = i >= (int) ((float) nSeg * 0.82f);
+                    //  A LIT segment has to be the LCD's ink, not the chassis
+                    //  accent: the accent is a near-black, and painting it on a
+                    //  near-black screen made a lit segment look exactly like
+                    //  an unlit one.
+                    g.setColour (i < lit ? (hot ? ZatiColours::red : ZatiColours::lcdFg)
+                                         : ZatiColours::lcdFg.withAlpha (0.10f));
+                    g.fillRect (band.getX() + (float) i * segW + 0.5f, r.getY(), segW - 1.0f, r.getHeight());
+                }
+            };
+
+            row (vuL, band.withHeight (5.0f).withY (band.getY() + 1.0f));
+            row (vuR, band.withHeight (5.0f).withY (band.getY() + 8.0f));
+        }
 
         // LCD inner bezel.
         g.setColour (ZatiColours::knobEdge.withAlpha (0.25f));
@@ -261,6 +276,10 @@ private:
         if (peak < 0.0005f) return juce::String ("-inf");
         return juce::String ((int) juce::Decibels::gainToDecibels (peak)) + "dB";
     }
+
+    //  How much of the panel the meter band takes along the bottom: two rows
+    //  of segments, their L/R gutter, and air above and below.
+    static constexpr float kMeterBand = 22.0f;
 
     static constexpr int kCap = 1024;
     float        buf[kCap] {};

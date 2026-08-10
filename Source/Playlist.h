@@ -101,7 +101,12 @@ public:
 
                 if (bar == playing)
                 {
-                    g.setColour (ZatiColours::red);
+                    //  The bar being played, in the playhead's colour rather
+                    //  than in the recording one. Ink outside, white inside,
+                    //  so it reads on a pale card and on a filled block alike.
+                    g.setColour (ZatiColours::playheadEdge);
+                    g.drawRect (cell.expanded (1.0f), 1.4f);
+                    g.setColour (ZatiColours::playhead);
                     g.drawRect (cell, 1.6f);
                 }
             }

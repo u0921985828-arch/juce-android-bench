@@ -6,20 +6,32 @@
 
 namespace
 {
-    // References, not copies: the accent tokens are mutable (skins).
+    //  REFERENCES, ALL OF THEM.
+    //
+    //  kKey and kStepOff were copies, taken once when this translation unit
+    //  was initialised - so they froze the palette of whatever skin the app
+    //  happened to start in. Switching the chassis then repainted the body and
+    //  left every key wearing the old one: on GRAFITO that is a pale cap with
+    //  pale text on it, which is a control you can see and cannot read.
+    //
+    //  A skin token is mutable by definition. Anything that names one has to
+    //  keep naming it, not remember what it said.
     const juce::Colour& kPadLoaded = ZatiColours::amber;
     const juce::Colour& kAccent    = ZatiColours::amber;
-    const juce::Colour  kRec       = ZatiColours::red;
-    const juce::Colour  kStepOff   = ZatiColours::key;
-    const juce::Colour  kKey       = ZatiColours::key;
+    const juce::Colour  kRec       = ZatiColours::red;      // semantic, never skinned
+    const juce::Colour& kStepOff   = ZatiColours::key;
+    const juce::Colour& kKey       = ZatiColours::key;
 
     void styleButton (juce::TextButton& b, juce::Colour c)
     {
-        // Text follows the cap luminance: dark ink on light caps, light on dark.
-        const bool darkCap = c.getPerceivedBrightness() < 0.5f;
+        //  Text is chosen by MEASURING it against the cap it lands on, in
+        //  both states. See ZatiColours::textOn - the old dark-cap ternary
+        //  assumed which of the two inks was the dark one, and that stops
+        //  being true the moment the chassis can be dark.
+        const auto onCap = b.findColour (juce::TextButton::buttonOnColourId);
         b.setColour (juce::TextButton::buttonColourId, c);
-        b.setColour (juce::TextButton::textColourOffId, darkCap ? ZatiColours::inkLight : ZatiColours::ink);
-        b.setColour (juce::TextButton::textColourOnId,  ZatiColours::ink);
+        b.setColour (juce::TextButton::textColourOffId, ZatiColours::textOn (c));
+        b.setColour (juce::TextButton::textColourOnId,  ZatiColours::textOn (onCap));
     }
 
     // Cycle the 3 primaries across the 8 pattern banks so each has its own
@@ -389,6 +401,35 @@ MainComponent::MainComponent()
             setSheet.addAndMakeVisible (b);
             langButtons.add (b);
         }
+
+        //  ...and the chassis. Same shape of control as the language row:
+        //  three chips, one lit, and picking one repaints the whole machine.
+        for (int i = 0; i < 3; ++i)
+        {
+            auto* b = new juce::TextButton (ZatiColours::skinName (i));
+            styleButton (*b, kKey);
+            b->setColour (juce::TextButton::buttonOnColourId, kAccent);
+            b->setClickingTogglesState (true);
+            b->setRadioGroupId (7412);
+            b->onClick = [this, i]
+            {
+                ZatiColours::setSkin (i);
+                applySkin();
+                //  Every cached colour in the tree is re-read on the next
+                //  paint, but the ones components captured at construction are
+                //  not - applySkin is what puts those back. The layout does
+                //  not move, so a repaint is enough after it.
+                lnf.applyBrowserColours();
+                repaint();
+                for (auto* sh : { &padSheet, &seqSheet, &browseSheet, &setSheet, &mixSheet,
+                                  &songSheet, &exportSheet, &rackSheet, &chopSheet })
+                    sh->repaint();
+            };
+            setSheet.addAndMakeVisible (b);
+            skinButtons.add (b);
+        }
+        skinButtons[juce::jlimit (0, 2, ZatiColours::currentSkin)]
+            ->setToggleState (true, juce::dontSendNotification);
 
         styleButton (measureButton, kKey);
         measureButton.onClick = [this] { startMeasure(); };
@@ -1347,7 +1388,7 @@ void MainComponent::applySkin()
 {
     const auto acc = ZatiColours::accent;
     // Lit-state text must stay legible on a dark accent (TINTA skin).
-    const auto onTxt = acc.getPerceivedBrightness() < 0.5f ? ZatiColours::inkLight : ZatiColours::ink;
+    const auto onTxt = ZatiColours::textOn (acc);
 
     juce::TextButton* accented[] = { &padsButton, &secButton, &loadButton };
     for (auto* b : accented)
@@ -1661,6 +1702,7 @@ void MainComponent::showSetPage (int page)
     for (auto* b : bufButtons)  b->setVisible (onAudio);
     for (auto* b : rateButtons) b->setVisible (onAudio);
     for (auto* b : langButtons) b->setVisible (onAudio);
+    for (auto* b : skinButtons) b->setVisible (onAudio);
 
     projList.setVisible          (onProj);
     projNameBox.setVisible       (onProj);
@@ -2718,7 +2760,7 @@ void MainComponent::resized()
         const int gestRowH = 30;
         const int wanted = onAudio
             ? Metrics::md * 2 + Metrics::hit + Metrics::sm + tabsH + 158 + Metrics::xs
-                + (Metrics::hit + Metrics::xs) * 3 + Metrics::sm
+                + (Metrics::hit + Metrics::xs) * 4 + Metrics::sm
             : onGest
               ? Metrics::md * 2 + Metrics::hit + Metrics::sm + tabsH
                   + kNumGestures * gestRowH + Metrics::sm
@@ -2773,10 +2815,12 @@ void MainComponent::resized()
             bufRowArea  = chipRow (bufButtons, 44);
             rateRowArea = chipRow (rateButtons, 44);
             langRowArea = chipRow (langButtons, 44);
+            skinRowArea = chipRow (skinButtons, 44);
             projNameRowArea = projPathRowArea = {};
         }
         else
         {
+            skinRowArea = {};
             projNameRowArea = inner.removeFromTop (Metrics::hit);
             {
                 auto r = projNameRowArea;
@@ -4726,6 +4770,8 @@ void MainComponent::paintAudioSheetContent (juce::Graphics& g)
         { auto r = rateRowArea; g.drawText (T ("RELOJ"),  Lang::takeStart (r, 44), Lang::start()); }
     if (! langRowArea.isEmpty())
         { auto r = langRowArea; g.drawText (T ("IDIOMA"), Lang::takeStart (r, 44), Lang::start()); }
+    if (! skinRowArea.isEmpty())
+        { auto r = skinRowArea; g.drawText (T ("CARCASA"), Lang::takeStart (r, 44), Lang::start()); }
 }
 
 //  THE GESTURES PAGE.

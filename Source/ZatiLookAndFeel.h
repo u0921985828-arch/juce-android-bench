@@ -33,16 +33,16 @@ namespace ZatiColours
     //  It costs the fragments nothing, which is the whole reason it is allowed:
     //  warm neutral is not a hue with a meaning, so it cannot compete with the
     //  zati colours for one.
-    const juce::Colour chassisTop { 0xfff4efe3 };
-    const juce::Colour chassis    { 0xffece6d8 };
-    const juce::Colour chassisBot { 0xffe0d9c8 };
-    const juce::Colour panel      { 0xffeee9dc };   // section card surface
-    const juce::Colour panelDark  { 0xffded7c6 };   // flat button cap (off state)
-    const juce::Colour panelHi    { 0xfffffdf7 };   // panel top bevel
-    const juce::Colour panelLo    { 0xffc7bfac };   // panel shadow / soft border
-    const juce::Colour key        { 0xffded7c6 };   // flat button cap (off state)
-    const juce::Colour keyLit     { 0xffcfc7b4 };
-    const juce::Colour screw      { 0xffb3ab98 };
+    inline juce::Colour chassisTop { 0xfff4efe3 };
+    inline juce::Colour chassis    { 0xffece6d8 };
+    inline juce::Colour chassisBot { 0xffe0d9c8 };
+    inline juce::Colour panel      { 0xffeee9dc };   // section card surface
+    inline juce::Colour panelDark  { 0xffded7c6 };   // flat button cap (off state)
+    inline juce::Colour panelHi    { 0xfffffdf7 };   // panel top bevel
+    inline juce::Colour panelLo    { 0xffc7bfac };   // panel shadow / soft border
+    inline juce::Colour key        { 0xffded7c6 };   // flat button cap (off state)
+    inline juce::Colour keyLit     { 0xffcfc7b4 };
+    inline juce::Colour screw      { 0xffb3ab98 };
 
     //  THE MISSING MIDDLE.
     //
@@ -55,8 +55,8 @@ namespace ZatiColours
     //  This is the step that was missing. Same kraft hue as the chassis, two
     //  thirds of its brightness: dark enough that a plate reads as a recess
     //  cut into the face, light enough that it is still paper and not a hole.
-    const juce::Colour plate      { 0xffb3aa93 };   // lum ~170
-    const juce::Colour plateEdge  { 0xff8f8774 };
+    inline juce::Colour plate      { 0xffb3aa93 };   // lum ~170
+    inline juce::Colour plateEdge  { 0xff8f8774 };
 
     // --- Accent / semantic ------------------------------------------------
     //  The chassis is MONOCHROME on purpose. Hue belongs to the zati fragment
@@ -88,50 +88,100 @@ namespace ZatiColours
     //  thing.
     const juce::Colour green      { 0xff3f9e56 };
 
+    //  THE PLAYHEAD IS NOT A RECORDING LIGHT.
+    //
+    //  It was red, on a face whose whole colour rule is "red means RECORDING".
+    //  So the one mark that is on screen constantly, in the sequencer and on
+    //  the waveform and over the song grid, was wearing the colour reserved
+    //  for the state you are least often in - and REC armed had to compete
+    //  with it for meaning.
+    //
+    //  White is what a time marker is on every machine that has one, and it
+    //  belongs to nothing else here, so it can only mean one thing. On the
+    //  dark LCD it is simply white; on the light cards it carries a hairline
+    //  of ink down each side, which is how a white marker stays readable on
+    //  paper and how it is printed on real gear.
+    inline juce::Colour playhead     { 0xfffffdf7 };
+    inline juce::Colour playheadEdge { 0x6626221b };
+
     inline int currentSkin = 0;
     inline const char* skinName (int i)
     {
-        static const char* names[4] = { "TINTA", "GRAFITO", "ACERO", "PLOMO" };
-        return names[((i % 4) + 4) % 4];
+        //  THREE CHASSIS, not four accents.
+        //
+        //  What used to be here were four shades of the same near-black
+        //  applied to the accent alone: the machine looked identical in all
+        //  four and only a pressed key changed. That is a preference, not a
+        //  skin. A skin is the BODY - the paper it is printed on, the plates
+        //  bolted to it, the caps, and the ink that has to stay legible on all
+        //  of them - and there are three because three is how many distinct
+        //  materials this instrument can be without stopping being itself.
+        static const char* names[3] = { "PAPEL", "GRAFITO", "ACERO" };
+        return names[((i % 3) + 3) % 3];
     }
-    const juce::Colour ink        { 0xff26221b };   // primary text on the paper
-    const juce::Colour inkDim     { 0xff6b6355 };   // secondary text
-    const juce::Colour inkLight   { 0xfff4efe3 };   // text on dark surfaces (knobs/LCD chips)
-    const juce::Colour white      { 0xfffffdf7 };   // the highlight in an engraved line
-    const juce::Colour cream      { 0xfffffdf7 };   // name kept for compat
-    const juce::Colour engrave    { 0xff6b6355 };   // text-dim
 
-    // --- LCD (dark, pops on the white face) ---
-    const juce::Colour screenBg   { 0xff14120f };
-    const juce::Colour lcdFg      { 0xffece7d9 };
-    //  Raised from 0xff5c5c56: that was 2.83:1 on the LCD, below the 4.5
-    //  minimum, and it carries real information (ruler, cut lines, fragment
-    //  numbers, empty-state text), not decoration. Now 5.48:1.
-    const juce::Colour lcdDim     { 0xff8b8375 };
-
-    // --- Pads (neutral when empty; a loaded pad wears its zati colour) ---
-    const juce::Colour padTop     { 0xffded7c6 };
-    const juce::Colour padBg2     { 0xffe9e3d4 };
-    const juce::Colour padBorder  { 0xffcdc5b2 };
-    inline juce::Colour padLit    { 0xff26221b };   // follows the skin tone
-
-    //  Skins move the chassis TONE, not its hue. Four steps of ink, from
-    //  near-black to a mid grey, so an active control reads at whatever
-    //  contrast the room needs without ever borrowing a fragment's colour.
-    inline void setSkin (int i)
+    //  A whole face, in one row. Every one of these is a surface or the ink
+    //  that lands on it, and they are chosen together: contrast is a property
+    //  of a PAIR, so picking a body colour without picking its ink is how a
+    //  theme ends up with a control you can see and cannot read.
+    struct Skin
     {
-        currentSkin = ((i % 4) + 4) % 4;
-        struct S { juce::uint32 a, ab, ad; };
-        static constexpr S skins[4] = {
-            { 0xff26221b, 0xff4a4438, 0xff14120e },   // TINTA   (default, warm near-black)
-            { 0xff3a352b, 0xff5f5849, 0xff23201a },   // GRAFITO
-            { 0xff504839, 0xff756c58, 0xff332f26 },   // ACERO
-            { 0xff6b6355, 0xff8b8375, 0xff474134 },   // PLOMO
+        juce::uint32 top, mid, bot;        // the chassis gradient
+        juce::uint32 panel, panelHi, panelLo;
+        juce::uint32 key, keyLit, screw;
+        juce::uint32 plate, plateEdge;     // the recessed zones
+        juce::uint32 ink, inkDim, inkLight, white;
+        juce::uint32 padTop, padBg2, padBorder;
+        juce::uint32 lcd, lcdFg, lcdDim;
+        juce::uint32 accent, accentBright, accentDim;
+    };
+
+    inline const Skin& skinTable (int i)
+    {
+        static const Skin table[3] =
+        {
+            //  PAPEL — the original. Kraft and bone: the substrate this studio
+            //  prints on, warm enough that nothing in the room is that colour
+            //  by accident, with near-black ink on it.
+            { 0xfff4efe3, 0xffece6d8, 0xffe0d9c8,
+              0xffeee9dc, 0xfffffdf7, 0xffc7bfac,
+              0xffded7c6, 0xffcfc7b4, 0xffb3ab98,
+              0xffb3aa93, 0xff8f8774,
+              0xff26221b, 0xff6b6355, 0xfff4efe3, 0xfffffdf7,
+              0xffded7c6, 0xffe9e3d4, 0xffcdc5b2,
+              0xff14120f, 0xffece7d9, 0xff8b8375,
+              0xff26221b, 0xff4a4438, 0xff14120e },
+
+            //  GRAFITO — the same machine cast in graphite instead of printed
+            //  on paper. The values INVERT rather than darken: the body is the
+            //  dark surface, the ink is bone, and the plates go one step
+            //  lighter than the body because a recess in a dark object catches
+            //  light where a recess in a pale one loses it. An active cap can
+            //  no longer be near-black here, so the accent is the bone tone -
+            //  the tone rule survives, it just points the other way.
+            { 0xff23211e, 0xff1b1a17, 0xff141311,
+              0xff262421, 0xff35322d, 0xff0f0e0d,
+              0xff302d29, 0xff3d3934, 0xff4a4640,
+              0xff383430, 0xff4d4842,
+              0xffe8e3d7, 0xff9a9384, 0xff1b1a17, 0xfff4efe3,
+              0xff302d29, 0xff2a2724, 0xff45403a,
+              0xff0c0b0a, 0xffe8e3d7, 0xff8b8375,
+              0xffe8e3d7, 0xfffffdf7, 0xffbdb7a8 },
+
+            //  ACERO — brushed steel, cool where the other two are warm. A
+            //  hue's worth of blue in every neutral, ink kept dark so the
+            //  contrast story matches PAPEL, and plates a full step down so
+            //  the panel reads as machined rather than printed.
+            { 0xffeef0f2, 0xffe2e5e9, 0xffd2d6db,
+              0xffe8ebee, 0xfffbfcfd, 0xffb4bac1,
+              0xffd6dae0, 0xffc6cbd2, 0xffa3a9b1,
+              0xffa8aeb6, 0xff868c94,
+              0xff1e2328, 0xff5c646d, 0xffeef0f2, 0xffffffff,
+              0xffd6dae0, 0xffe0e4e8, 0xffbcc2ca,
+              0xff10141a, 0xffe4e9ee, 0xff828b95,
+              0xff1e2328, 0xff3d454e, 0xff11151a },
         };
-        const auto s = skins[currentSkin];
-        amber = accent = padLit    = juce::Colour (s.a);
-        amberBright = accentBright = juce::Colour (s.ab);
-        amberDim = accentDim       = juce::Colour (s.ad);
+        return table[((i % 3) + 3) % 3];
     }
 
     // --- Knob body (dark — physical-instrument contrast on a white face) ---
@@ -140,6 +190,77 @@ namespace ZatiColours
     const juce::Colour knobBody1  { 0xff3c3c3c };
     const juce::Colour knobBody2  { 0xff1e1e1e };
     const juce::Colour knobBody3  { 0xff0e0e0e };
+
+    //  The tokens a SKIN owns. Their values here are only the state the app
+    //  starts in; setSkin() below writes every one of them, and it is called
+    //  before the first frame. They are mutable for exactly that reason - a
+    //  chassis you can change is a chassis whose colours are not constants.
+    inline juce::Colour ink        { 0xff26221b };   // primary text on the body
+    inline juce::Colour inkDim     { 0xff6b6355 };   // secondary text
+    inline juce::Colour inkLight   { 0xfff4efe3 };   // text on dark surfaces
+    inline juce::Colour white      { 0xfffffdf7 };   // the highlight in an engraved line
+    inline juce::Colour cream      { 0xfffffdf7 };   // name kept for compat
+    inline juce::Colour engrave    { 0xff6b6355 };
+
+    // --- LCD. A screen is a screen in every skin; only its tint moves.
+    inline juce::Colour screenBg   { 0xff14120f };
+    inline juce::Colour lcdFg      { 0xffece7d9 };
+    //  Raised from 0xff5c5c56: that was 2.83:1 on the LCD, below the 4.5
+    //  minimum, and it carries real information (ruler, cut lines, fragment
+    //  numbers, empty-state text), not decoration. Now 5.48:1.
+    inline juce::Colour lcdDim     { 0xff8b8375 };
+
+    // --- Pads (neutral when empty; a loaded pad wears its zati colour) ---
+    inline juce::Colour padTop     { 0xffded7c6 };
+    inline juce::Colour padBg2     { 0xffe9e3d4 };
+    inline juce::Colour padBorder  { 0xffcdc5b2 };
+    inline juce::Colour padLit     { 0xff26221b };   // follows the skin tone
+
+    //  Apply one. Every token a component reads is written here, so a skin
+    //  change is one call and no component knows it happened.
+    inline void setSkin (int i)
+    {
+        currentSkin = ((i % 3) + 3) % 3;
+        const auto& k = skinTable (currentSkin);
+
+        chassisTop = juce::Colour (k.top);
+        chassis    = juce::Colour (k.mid);
+        chassisBot = juce::Colour (k.bot);
+        panel      = juce::Colour (k.panel);
+        panelHi    = juce::Colour (k.panelHi);
+        panelLo    = juce::Colour (k.panelLo);
+        panelDark  = juce::Colour (k.key);
+        key        = juce::Colour (k.key);
+        keyLit     = juce::Colour (k.keyLit);
+        screw      = juce::Colour (k.screw);
+        plate      = juce::Colour (k.plate);
+        plateEdge  = juce::Colour (k.plateEdge);
+
+        ink        = juce::Colour (k.ink);
+        inkDim     = juce::Colour (k.inkDim);
+        inkLight   = juce::Colour (k.inkLight);
+        white      = juce::Colour (k.white);
+        cream      = juce::Colour (k.white);
+        engrave    = juce::Colour (k.inkDim);
+
+        padTop     = juce::Colour (k.padTop);
+        padBg2     = juce::Colour (k.padBg2);
+        padBorder  = juce::Colour (k.padBorder);
+
+        screenBg   = juce::Colour (k.lcd);
+        lcdFg      = juce::Colour (k.lcdFg);
+        lcdDim     = juce::Colour (k.lcdDim);
+
+        amber = accent = padLit    = juce::Colour (k.accent);
+        amberBright = accentBright = juce::Colour (k.accentBright);
+        amberDim = accentDim       = juce::Colour (k.accentDim);
+
+        //  The playhead's hairline has to be the OPPOSITE of the surface it
+        //  is drawn on, not a fixed ink: on GRAFITO the cards are dark and an
+        //  ink outline around a white marker is invisible twice over.
+        playhead     = juce::Colour (k.white);
+        playheadEdge = juce::Colour (k.ink).withAlpha (0.40f);
+    }
 
     // Bundled typefaces (Oswald display + JetBrains Mono). Cached once.
     inline juce::Typeface::Ptr face (const char* data, int size)
@@ -273,10 +394,28 @@ namespace ZatiColours
         return (juce::jmax (la, lb) + 0.05f) / (juce::jmin (la, lb) + 0.05f);
     }
 
+    //  THE INK THAT ACTUALLY READS ON A SURFACE.
+    //
+    //  Every caller used to write `dark ? inkLight : ink`, which quietly
+    //  assumes ink is the dark one - true on PAPEL and false on GRAFITO,
+    //  where the body is dark and `ink` IS the pale tone. On that chassis the
+    //  test picked near-black for a near-black cap: a control you can see and
+    //  cannot read, on every key at once.
+    //
+    //  The two tokens are ROLES, not values - text on the body, and text on
+    //  whatever is the opposite of the body - so the choice has to be made by
+    //  measuring, not by assuming. This is the only test that survives a skin.
+    inline juce::Colour textOn (juce::Colour surface);
+
     //  The legible one of two candidates against a background.
     inline juce::Colour bestOn (juce::Colour bg, juce::Colour a, juce::Colour b)
     {
         return contrastRatio (a, bg) >= contrastRatio (b, bg) ? a : b;
+    }
+
+    inline juce::Colour textOn (juce::Colour surface)
+    {
+        return bestOn (surface, ink, inkLight);
     }
 
     // A recessed screw head with a slot.
@@ -726,7 +865,7 @@ public:
                                            : juce::TextButton::buttonColourId);
 
         if (std::abs (cap.getPerceivedBrightness() - col.getPerceivedBrightness()) < 0.30f)
-            col = cap.getPerceivedBrightness() < 0.5f ? ZatiColours::inkLight : ZatiColours::ink;
+            col = ZatiColours::textOn (cap);
 
         g.setColour (col.withMultipliedAlpha (b.isEnabled() ? 1.0f : 0.45f));
 

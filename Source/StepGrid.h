@@ -137,11 +137,21 @@ public:
             const float y0  = (float) r.getY();
             const float hh  = (float) r.getHeight();
 
-            g.setColour (ZatiColours::red.withAlpha (0.13f));
+            //  The column the beat is in, and the line inside it. Both in the
+            //  playhead's own colour now: red belongs to RECORDING and to
+            //  nothing else on this machine.
+            g.setColour (ZatiColours::ink.withAlpha (0.10f));
             g.fillRect (col, y0, cellW, hh);
 
-            g.setColour (ZatiColours::red);
             const float x = col + cellW * phase;
+            //  White on a pale card needs an edge or it disappears. Two
+            //  hairlines of ink, one each side, is what a printed marker does.
+            g.setColour (ZatiColours::playheadEdge);
+            g.fillRect (x - 2.0f, y0, 4.0f, hh);
+            g.fillRect (x - 5.0f, y0, 10.0f, 4.0f);
+            g.fillRect (x - 5.0f, y0 + hh - 4.0f, 10.0f, 4.0f);
+
+            g.setColour (ZatiColours::playhead);
             g.fillRect (x - 1.0f, y0, 2.0f, hh);
             g.fillRect (x - 4.0f, y0, 8.0f, 3.0f);            // the head, top
             g.fillRect (x - 4.0f, y0 + hh - 3.0f, 8.0f, 3.0f); // ...and bottom

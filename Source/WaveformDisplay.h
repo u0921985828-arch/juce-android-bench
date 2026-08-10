@@ -247,7 +247,7 @@ public:
             g.setColour (lcdFg.withAlpha (0.16f));
             g.fillRect (from, wave.getY(), juce::jmax (0.0f, px - from), wave.getHeight());
 
-            g.setColour (ZatiColours::red);
+            g.setColour (ZatiColours::playhead);
             g.fillRect (px - 1.0f, wave.getY() - 3.0f, 2.0f, wave.getHeight() + 6.0f);
             g.fillRect (px - 3.5f, wave.getY() - 5.0f, 7.0f, 3.0f);
         }

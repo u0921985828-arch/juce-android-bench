@@ -42,6 +42,7 @@ namespace
           "استُعيدت الجلسة  [%1 باد، %2 بلا صوت]" },
         // --- GESTOS (la tercera pagina de AJUSTES) --------------------------
         { "GESTOS",             "",  "GESTURES",  "手势",   "إيماءات" },
+        { "CARCASA",            "",  "CHASSIS",   "外壳",   "الهيكل" },
         { "MANTEN UN PAD",      "",  "HOLD A PAD",
                                      "长按音垫", "اضغط بادًا مطولًا" },
         { "abre sus ajustes sin sonar", "",
