@@ -2581,7 +2581,7 @@ void MainComponent::layoutPadGrid (juce::Rectangle<int> area, int cols, int rows
     //  Five, not eight: the eight were the room four screw heads needed at
     //  the corners. Without them the plate can hug the pads, and the three
     //  pixels it gives back become distance to the section above it.
-    padPlateArea = grid.expanded (5, 5);
+    padPlateArea = grid.expanded (ZatiLookAndFeel::kPlateLip, ZatiLookAndFeel::kPlateLip);
 
     // SP-style numbering: pad 01 sits BOTTOM-left, 16 top-right — logical row
     // r of the pad index maps to visual row (rows-1-r).
@@ -2770,15 +2770,21 @@ void MainComponent::resized()
         //  Rotated, the pad column is its own rectangle and the grid inside it
         //  is width-bound, so the seam simply takes what it wants - there is
         //  nothing below it to give and nothing above it to lose.
-        const int bankSeamWant = Metrics::hit + Metrics::gap;                        // 48
+        //  A finger, its air over and under, AND the lip of the plate below -
+        //  which is painted five pixels above the grid and is therefore five
+        //  pixels of the seam that the chips cannot have.
+        const int bankSeamWant = Metrics::hit + Metrics::gap + ZatiLookAndFeel::kPlateLip;   // 53
         const int padSeamHave  = ZatiLookAndFeel::kAir + (wideFace ? 0 : layoutAir)
                                + kSeamLabelH;
         int want = juce::jmax (0, bankSeamWant - padSeamHave);
 
         if (! wideFace)
         {
+            //  Down to Metrics::xs, not Metrics::sm. Four pixels between the
+            //  last pad row and the status sentence is still four pixels; the
+            //  chips are the ones with nothing to spare.
             padBottomGive = juce::jmin (want, juce::jmax (0, ZatiLookAndFeel::kAir
-                                                            + layoutAir - Metrics::sm));
+                                                            + layoutAir - Metrics::xs));
             want -= padBottomGive;
 
             const int fromScreen = juce::jmin (want, juce::jmax (0, screenH - kMinScreen));
@@ -2855,7 +2861,7 @@ void MainComponent::resized()
         //  ...and the pads do not sit on the sentence. Metrics::sm is the floor
         //  that guarantees it; anything this band was holding above that floor
         //  has gone to the PADS seam, where four controls were living in 22 px.
-        area.removeFromBottom (juce::jmax (Metrics::sm,
+        area.removeFromBottom (juce::jmax (Metrics::xs,
                                            ZatiLookAndFeel::kAir + layoutAir - padBottomGive));
         if (undoButton.isVisible()) undoButton.setBounds (strip.removeFromRight (96).reduced (1, 0));
         if (redoButton.isVisible()) redoButton.setBounds (strip.removeFromRight (96).reduced (1, 0));
@@ -2908,12 +2914,31 @@ void MainComponent::resized()
         //  rule breaks symmetrically on both sides of it.
         auto placeBanks = [this] (juce::Rectangle<int> seam)
         {
+            //  THE BOTTOM OF A CAP IS ITS SHADOW, and the plate's lip is drawn
+            //  five pixels above the grid. Centring the chip in the whole seam
+            //  therefore centred it against a floor that is not where the face
+            //  visibly ends: eight pixels of air over the caps, two under the
+            //  shadows, and the shadow of every chip resting on the plate edge.
+            //  Take the lip off the seam FIRST and then centre in what is left,
+            //  so the air above the cap and the air below the shadow are the
+            //  same number and that number is Metrics::halfGap.
+            seam = seam.withTrimmedBottom (ZatiLookAndFeel::kPlateLip);
+
             //  Ceiling at Metrics::hit, not Metrics::tab. The seam is now given
             //  the height for a finger (see padSeamExtra), and a 32 px ceiling
             //  would have taken the extra and thrown eight of it away.
-            //  `Metrics::gap` off the seam, not `Metrics::sm`: half over the
-            //  chip and half under it, which is what the air is for.
-            const int h       = juce::jlimit (22, Metrics::hit, seam.getHeight() - Metrics::gap);
+            //
+            //  ...and a final clamp to the seam itself, because jlimit clamps UP
+            //  as readily as down and that is how this exact bug is written
+            //  three times over in this file's history. On a 360x640 the seam
+            //  is worth nineteen usable pixels and the floor of twenty-two put
+            //  a chip THREE PIXELS TALLER THAN ITS OWN SEAM, centred, so it
+            //  overhung the effects row above and the plate lip below by one
+            //  and a half each. A missing pixel comes out of the chip, never
+            //  out of the section next to it.
+            const int room    = seam.getHeight() - Metrics::gap;
+            const int h       = juce::jmin (seam.getHeight(),
+                                            juce::jmin (Metrics::hit, juce::jmax (20, room)));
             const int perSide = kNumBanks / 2;
             //  Half the seam belongs to the word; each pair gets one of the
             //  remaining quarters, so a pair plus its air can never grow into

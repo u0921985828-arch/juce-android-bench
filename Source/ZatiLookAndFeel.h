@@ -504,6 +504,15 @@ public:
     static constexpr int kAir        = 10;
     static constexpr int kPadGap     = 8;
 
+    //  How far a recessed plate is drawn OUTSIDE the grid bolted to it. It is a
+    //  painted edge, not a layout box, so nothing was booking it - and the four
+    //  bank chips that ride in the seam directly above the pad plate ended up
+    //  with eight pixels of air over them and two under, because the plate's
+    //  lip had quietly climbed five pixels into their seam. A cap's bottom is
+    //  its shadow block (see kCapLift): it ends where the bounds end, so those
+    //  two pixels were all there was between the shadow and the plate.
+    static constexpr int kPlateLip   = 5;
+
     //  The vertical margin is NOT the horizontal one.
     //
     //  It used to be kFaceMargin plus another ten on each side - twenty-four
