@@ -137,7 +137,7 @@ jobs:
           keytool -list -keystore "$HOME/.android/debug.keystore" \
                   -storepass android -alias androiddebugkey
 
-      - name: Build APKs (debug + release)
+      - name: Build APKs (debug + release) and the release AAB
         working-directory: Builds/Android
         # Release is the optimised (-O3) build — better DSP performance and the
         # representative latency for the P0 gate. Both are signed with the debug
@@ -145,19 +145,26 @@ jobs:
         # NOT Play-Store-ready (would need a real upload key) — that's later.
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon assembleDebug assembleRelease
+          ./gradlew --no-daemon assembleDebug assembleRelease bundleRelease
 
-      - name: Collect APKs
+      - name: Collect APKs and the AAB
+        # Play requires an App Bundle for new apps; the APKs stay because they
+        # are what actually gets sideloaded onto the test phone, and because a
+        # bundle cannot be installed by tapping it.
         run: |
           DBG="$(find Builds/Android -name '*-debug.apk' | head -1)"
           REL="$(find Builds/Android -name '*-release.apk' | head -1)"
+          AAB="$(find Builds/Android -name '*-release.aab' | head -1)"
           test -n "$DBG" || { echo "No debug APK produced";   exit 1; }
           test -n "$REL" || { echo "No release APK produced"; exit 1; }
+          test -n "$AAB" || { echo "No release AAB produced"; exit 1; }
           cp "$DBG" Zati-debug.apk
           cp "$REL" Zati-release.apk
+          cp "$AAB" Zati-release.aab
           echo "Debug:   $DBG"
           echo "Release: $REL"
-          ls -la Zati-*.apk
+          echo "Bundle:  $AAB"
+          ls -la Zati-*.apk Zati-*.aab
 
       - name: Re-sign the release APK with the upload key
         # Only when the four secrets exist. Gradle has already signed both APKs
@@ -188,8 +195,17 @@ jobs:
             --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
             Zati-release.apk
           "$APKSIGNER" verify --print-certs Zati-release.apk
+
+          # The bundle is signed with jarsigner, not apksigner: an AAB is a jar,
+          # and apksigner only knows how to sign APKs. Play re-signs it with the
+          # app signing key anyway - this signature is what proves the upload
+          # came from you.
+          "$JAVA_HOME/bin/jarsigner" -verbose:false \
+            -keystore upload.jks -storepass "$KS_PASS" -keypass "$KEY_PASS" \
+            -sigalg SHA256withRSA -digestalg SHA-256 \
+            Zati-release.aab "$KEY_ALIAS"
           rm -f upload.jks
-          echo "Release APK signed with the upload key."
+          echo "Release APK and AAB signed with the upload key."
 
       - uses: actions/upload-artifact@v4
         with:
@@ -197,16 +213,18 @@ jobs:
           path: |
             Zati-debug.apk
             Zati-release.apk
+            Zati-release.aab
           if-no-files-found: error
 
       # Also attach both APKs to a rolling release tag for easy phone download.
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: apk-latest
-          name: Latest Zati APKs (debug + release)
+          name: Latest Zati builds (APK debug + release, AAB for Play)
           files: |
             Zati-debug.apk
             Zati-release.apk
+            Zati-release.aab
           make_latest: false
 
   # NOTE: the emulator smoke-test job was removed because the APK is now built

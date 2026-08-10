@@ -322,6 +322,10 @@ private:
     int  deviceRevivalTicks = 0;
     //  The app starts in front; appSuspended/appResumed move it.
     bool appInForeground = true;
+    //  Whether we are currently holding FLAG_KEEP_SCREEN_ON. Kept as a flag
+    //  because setScreenSaverEnabled crosses into the JVM, and the timer runs
+    //  ten to thirty times a second: only the CHANGES are worth a JNI call.
+    bool holdingScreenAwake = false;
     //  Somebody else owns the speaker until we ask again. Set by a PERMANENT
     //  focus loss, cleared by coming back to the foreground.
     bool focusGivenAway = false;

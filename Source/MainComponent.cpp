@@ -6775,6 +6775,28 @@ void MainComponent::timerCallback()
         refreshSystemInsets();
     }
 
+    //  THE SCREEN DOES NOT GO OUT IN THE MIDDLE OF A TAKE.
+    //
+    //  On Android this is FLAG_KEEP_SCREEN_ON, and JUCE sets it from
+    //  setScreenSaverEnabled. A live instrument that lets the phone lock while
+    //  the pattern is rolling is one that stops responding to the pads halfway
+    //  through - you look down and the machine is asleep with the sound still
+    //  coming out of it.
+    //
+    //  WHILE IT IS ROLLING OR RECORDING, and not a moment longer. Holding the
+    //  flag the whole time the app is open is the same bug in the other
+    //  direction: a groovebox left open on the bench would flatten the battery
+    //  by itself, and the battery is exactly what went wrong the last time
+    //  something in this app assumed nobody was watching the meter.
+    {
+        const bool busy = engine.isPlaying() || engine.isRecording();
+        if (busy != holdingScreenAwake)
+        {
+            holdingScreenAwake = busy;
+            juce::Desktop::getInstance().setScreenSaverEnabled (! busy);
+        }
+    }
+
     //  NOTHING MAY LEAVE THIS APP SILENT.
     //
     //  Two ways it could, and both are now bounded by this tick rather than by
