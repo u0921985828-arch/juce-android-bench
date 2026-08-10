@@ -133,6 +133,13 @@ namespace
         { "PARAR",          "",         "STOP",       "停止",       "إيقاف" },
         { "OIR",            "",         "HEAR",       "试听",       "استمع" },
         { "CARGAR KIT",     "",         "LOAD KIT",   "载入套件",   "تحميل طقم" },
+        { "MASTER = un WAV con lo que oyes.  PISTAS = el master mas un WAV "
+          "por pad, para mezclar fuera.", "",
+          "MASTER = one WAV of what you hear.  TRACKS = the master plus one "
+          "WAV per pad, to mix elsewhere.",
+          "主控 = 你听到的一个 WAV。分轨 = 主控加上每个音垫一个 WAV，便于外部混音。",
+          "ماستر = ملف WAV واحد لما تسمعه. المسارات = الماستر بالإضافة إلى ملف "
+          "WAV لكل باد، للمزج خارجًا." },
         { "SOBRESCRIBIR %1?", "",       "OVERWRITE %1?", "覆盖 %1？", "استبدال %1؟" },
         { "No hay audio en esta carpeta", "", "no audio in this folder",
                                         "此文件夹没有音频", "لا صوت في هذا المجلد" },
@@ -160,7 +167,6 @@ namespace
 
         // --- Ficha XY (superficie de directo) ------------------------------
         { "XY",             "",         "XY",         "XY",         "XY" },
-        { "MODO",           "",         "MODE",       "模式",       "الوضع" },
         { "FIJO",           "",         "LATCH",      "锁定",       "تثبيت" },
         { "MOMENTANEO",     "",         "MOMENTARY",  "瞬时",       "لحظي" },
         { "SUENA",          "",         "LIVE",       "响着",       "يعمل" },

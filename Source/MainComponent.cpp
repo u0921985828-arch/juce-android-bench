@@ -6768,7 +6768,7 @@ void MainComponent::loadFolderAsKit()
     }
 
     //  Sobrescribe dieciseis pads: pasa por deshacer, como AUTO CHOP.
-    pushUndo (T ("KIT"));
+    pushUndo (T ("CARGAR KIT"));
 
     const int base = currentBank * kPadsPerBank;
     const int n    = juce::jmin (files.size(), kPadsPerBank);
