@@ -717,24 +717,61 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             busRinging[(size_t) f] = (bus.getMagnitude (startSample, numSamples) > 1.0e-5f);
         };
 
-        // --- 1. ISO: low-pass, the one you sweep on a break. --------------
+        // --- 1. FLT: el barrido, en las dos direcciones. -------------------
+        //
+        //  Ver setFltSweep. -1 cierra por arriba, +1 abre por abajo, y el
+        //  centro no procesa: en la zona muerta la etapa se salta entera, que
+        //  es lo unico que hace que "neutro" sea de verdad neutro y no un paso
+        //  bajo a 20 kHz con su fase y su resonancia puestas encima.
         {
-            const float cutT = juce::jlimit (20.0f, nyq, fxCutoff.load (std::memory_order_relaxed));
+            const float swT  = juce::jlimit (-1.0f, 1.0f, fltSweep.load (std::memory_order_relaxed));
             const float resT = juce::jlimit (0.1f, 4.0f, fxReso.load (std::memory_order_relaxed));
-            smCutoff += kBlock * (cutT - smCutoff);
-            smReso   += kBlock * (resT - smReso);
+            smSweep += kBlock * (swT - smSweep);
+            smReso  += kBlock * (resT - smReso);
 
-            const bool active = live (0);
+            //  Exponencial, no lineal: el oido oye octavas. Repartido lineal,
+            //  la mitad del recorrido se gasta entre 10 y 20 kHz, donde no pasa
+            //  nada, y todo lo que importa cae en el ultimo centimetro.
+            constexpr float kDead = 0.03f;
+            const float mag = std::abs (smSweep);
+            const bool  swept = mag > kDead;
+            float freq = 0.0f;
+            auto  type = juce::dsp::StateVariableTPTFilterType::lowpass;
+
+            if (swept)
+            {
+                const float t = (mag - kDead) / (1.0f - kDead);            // 0..1
+                if (smSweep < 0.0f)
+                {
+                    //  Cerrando por arriba: de 20 kHz a 90 Hz.
+                    type = juce::dsp::StateVariableTPTFilterType::lowpass;
+                    freq = 20000.0f * std::pow (90.0f / 20000.0f, t);
+                }
+                else
+                {
+                    //  Abriendo por abajo: de 20 Hz a 6 kHz.
+                    type = juce::dsp::StateVariableTPTFilterType::highpass;
+                    freq = 20.0f * std::pow (6000.0f / 20.0f, t);
+                }
+            }
+
+            const bool active = swept && live (0);
             if (active)
             {
-                if (! filterWasActive) masterFilter.reset();
-                masterFilter.setType (juce::dsp::StateVariableTPTFilterType::lowpass);
-                masterFilter.setCutoffFrequency (smCutoff);
+                //  Reset al entrar Y al cambiar de lado. Un paso bajo cargado
+                //  con energia grave que de pronto se declara paso alto suelta
+                //  su estado de golpe: un golpe seco justo al cruzar el centro,
+                //  que es por donde pasa el dedo cada vez que vuelve.
+                if (! filterWasActive || fltWasHigh != (smSweep > 0.0f))
+                    masterFilter.reset();
+                masterFilter.setType (type);
+                masterFilter.setCutoffFrequency (juce::jlimit (20.0f, nyq, freq));
                 masterFilter.setResonance (smReso);
                 auto b = blockFor (0);
                 juce::dsp::ProcessContextReplacing<float> ctx (b);
                 masterFilter.process (ctx);
                 returnBus (0);
+                fltWasHigh = (smSweep > 0.0f);
             }
             filterWasActive = active;
         }
@@ -1435,6 +1472,13 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     };
     for (auto pair : { std::pair<std::atomic<float>*, const std::atomic<float>*>
                          { &fxCutoff, &s.fxCutoff }, { &fxReso,  &s.fxReso  }, { &fxMix,   &s.fxMix   },
+                         //  fltSweep, o el rebote sale SIN filtro. Es la
+                         //  tercera vez que un parametro nuevo se olvida aqui:
+                         //  antes fueron los recortes y despues el swing, la
+                         //  velocidad y los redobles, y las tres veces el
+                         //  rebote fue una interpretacion distinta de la que
+                         //  se estaba escuchando.
+                         { &fltSweep, &s.fltSweep },
                          { &hpFreq,   &s.hpFreq   }, { &hpReso,  &s.hpReso  }, { &hpMix,   &s.hpMix   },
                          { &fxDrive,  &s.fxDrive  }, { &drvTone, &s.drvTone }, { &drvMix,  &s.drvMix  },
                          { &dlyTime,  &s.dlyTime  }, { &dlyFb,   &s.dlyFb   }, { &dlyMix,  &s.dlyMix  },
@@ -1448,6 +1492,7 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     // and gliding from the defaults would fade the filter in over the first
     // bar of every export.
     smCutoff  = fxCutoff.load (std::memory_order_relaxed);
+    smSweep   = fltSweep.load (std::memory_order_relaxed);
     smReso    = fxReso.load   (std::memory_order_relaxed);
     smFxMix   = fxMix.load    (std::memory_order_relaxed);
     smHpFreq  = hpFreq.load   (std::memory_order_relaxed);

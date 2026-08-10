@@ -1395,9 +1395,7 @@ MainComponent::MainComponent()
         litAccent (xyButton);
         xyButton.onClick = [this]
         {
-            if (xySheet.isVisible()) { closeAllSheets(); return; }
-            selectXyFx (focusedFx);          // el panel abre sobre el efecto que ya tenias delante
-            openSheet (xySheet, xyButton);
+            toggleXyPanel();
         };
         addAndMakeVisible (xyButton);
 
@@ -1413,7 +1411,7 @@ MainComponent::MainComponent()
             b->setClickingTogglesState (true);
             b->setRadioGroupId (7710);
             b->onClick = [this, f] { selectXyFx (f); };
-            xySheet.addAndMakeVisible (b);
+            xyPanel.addAndMakeVisible (b);
             xyFxButtons.add (b);
         }
         xyFxButtons[0]->setToggleState (true, juce::dontSendNotification);
@@ -1434,20 +1432,19 @@ MainComponent::MainComponent()
                             juce::dontSendNotification);
             refreshXyPad();
         };
-        xySheet.addAndMakeVisible (xyLatchButton);
+        xyPanel.addAndMakeVisible (xyLatchButton);
 
         xyPad.onMove  = [this] (float x, float y) { xyMoved (x, y); };
         xyPad.onTouch = [this] (bool down)        { xyTouched (down); };
-        xySheet.addAndMakeVisible (xyPad);
+        xyPanel.addAndMakeVisible (xyPad);
 
         styleButton (xyCloseButton, kKey);
         xyCloseButton.onClick = [this] { closeAllSheets(); };
-        xySheet.addAndMakeVisible (xyCloseButton);
+        xyPanel.addAndMakeVisible (xyCloseButton);
 
-        addAndMakeVisible (xySheet);
-        xySheet.setVisible (false);
-        xySheet.onDismiss = [this] { closeAllSheets(); };
-        xySheet.paintContent = [this] (juce::Graphics& g) { paintXySheetContent (g); };
+        addAndMakeVisible (xyPanel);
+        xyPanel.setVisible (false);
+        xyPanel.paintContent = [this] (juce::Graphics& g) { paintXySheetContent (g); };
     }
 
     //  The screen is the MASTER, not the selected pad. Trimming already has
@@ -1644,7 +1641,12 @@ juce::String MainComponent::macroBaseLabel (int idx) const
 
 juce::String MainComponent::macroParamLabel (int idx) const
 {
-    return fxDefs[juce::jlimit (0, kNumFx - 1, focusedFx)].param[juce::jlimit (0, 2, idx)];
+    //  T(). Estos dieciocho rotulos estaban en la cara de la maquina en
+    //  espanol en las cuatro compilaciones, y el banco de traduccion no los
+    //  veia porque compara el texto de los COMPONENTES y estos se pintan a
+    //  mano. Un punto ciego de la prueba, no del codigo - y por eso la prueba
+    //  lo dice ahora en su cabecera.
+    return T (fxDefs[juce::jlimit (0, kNumFx - 1, focusedFx)].param[juce::jlimit (0, 2, idx)]);
 }
 
 // The readout measures; it always carries a unit so the number means something
@@ -1684,8 +1686,12 @@ void MainComponent::setMacroTouched (int idx, bool touched)
 // so the wiring below can be read against it line for line.
 const MainComponent::FxDef MainComponent::fxDefs[MainComponent::kNumFx] =
 {
-    { "ISO",  { "CUTOFF", "RESO", "MIX" },
-      { {   20.0, 20000.0, 1.00, 1000.0,  1200.0, 0 },
+    //  FLT, no ISO: un barrido con el centro NEUTRO. Ver AudioEngine::
+    //  setFltSweep. El rango va de -1 a +1 y el valor por defecto es 0, que es
+    //  "filtro fuera" - y por eso el doble toque en el mando vuelve al centro
+    //  en vez de a una frecuencia.
+    { "FLT",  { "BARRIDO", "RESO", "MIX" },
+      { {   -1.0,     1.0, 0.01,    0.0,     0.0, 6 },
         {    0.3,     4.0, 0.01,    0.0,   0.707, 1 },
         {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
 
@@ -1731,6 +1737,12 @@ juce::String MainComponent::fxFormat (const FxDef::Spec& sp, double v)
         case 3:  return juce::String ((int) v) + " ms";
         case 4:  return juce::String ((int) v) + " bit";
         case 5:  return juce::String ((int) v) + "x";
+        //  El barrido dice de que LADO esta, no solo cuanto. Un "-62 %" no
+        //  significa nada en un filtro; "LP 62" y "HP 62" si, y el centro se
+        //  llama por su nombre porque es un estado, no un numero.
+        case 6:  return std::abs (v) <= 0.03 ? T ("fuera")
+                     : (v < 0.0 ? juce::String ("LP ") : juce::String ("HP "))
+                         + juce::String (juce::roundToInt (std::abs (v) * 100.0));
         default: return juce::String (juce::roundToInt (v * 100.0)) + " %";
     }
 }
@@ -1743,9 +1755,9 @@ void MainComponent::pushFxParam (int f, int pi)
 
     switch (f * 3 + pi)
     {
-        case  0: engine.setIsoCutoff (v); break;
-        case  1: engine.setIsoReso   (v); break;
-        case  2: engine.setIsoMix    (v); break;
+        case  0: engine.setFltSweep  (v); break;
+        case  1: engine.setFltReso   (v); break;
+        case  2: engine.setFltMix    (v); break;
         case  3: engine.setHpFreq    (v); break;
         case  4: engine.setHpReso    (v); break;
         case  5: engine.setHpMix     (v); break;
@@ -1837,6 +1849,33 @@ void MainComponent::fxTapped (int f)
 //  mandos y el panel no pueden discrepar, porque son dos ventanas al mismo
 //  numero. Es la misma regla que ya seguian CTRL 1-3.
 
+//  Abrir el panel NO cierra nada mas ni tapa los pads: es el unico sitio de
+//  esta app que convive con la cara en vez de ponerse delante. Cerrarlo con el
+//  efecto todavia sonando en momentaneo lo apaga, por lo mismo que lo hace
+//  closeAllSheets: el modo dice "sale al soltar" y aqui no va a llegar el
+//  mouseUp.
+void MainComponent::toggleXyPanel()
+{
+    if (xyPanel.isVisible())
+    {
+        if (! xyLatch && ! xyWasOn && fxOn[(size_t) xyFx]) setFxEnabled (xyFx, false);
+        xyPad.setTouched (false);
+        xyPanel.setVisible (false);
+        xyButton.setToggleState (false, juce::dontSendNotification);
+        resized();
+        repaint();
+        return;
+    }
+
+    closeAllSheets();                 // una ficha abierta si taparia el panel
+    selectXyFx (focusedFx);           // abre sobre el efecto que ya tenias delante
+    xyPanel.setVisible (true);
+    xyPanel.toFront (false);
+    xyButton.setToggleState (true, juce::dontSendNotification);
+    resized();
+    repaint();
+}
+
 void MainComponent::selectXyFx (int f)
 {
     if (! juce::isPositiveAndBelow (f, kNumFx)) return;
@@ -1921,7 +1960,7 @@ void MainComponent::refreshXyPad()
     xyPad.setPosition ((float) fxParam (xyFx, 0).valueToProportionOfLength (fxParam (xyFx, 0).getValue()),
                        (float) fxParam (xyFx, 1).valueToProportionOfLength (fxParam (xyFx, 1).getValue()));
     xyLatchButton.setButtonText (xyLatch ? T ("FIJO") : T ("MOMENTANEO"));
-    xySheet.repaint();
+    xyPanel.repaint();
 }
 
 void MainComponent::fxFocusOnly (int f)
@@ -2110,10 +2149,10 @@ void MainComponent::closeAllSheets()
     //  - tocando fuera, o con la tecla de cerrar - se lleva el panel por
     //  delante sin que llegue nunca el mouseUp. Sin esto te quedas con un
     //  delive abierto sobre el master y sin panel con el que quitarlo.
-    if (xySheet.isVisible() && ! xyLatch && ! xyWasOn && fxOn[(size_t) xyFx])
+    if (xyPanel.isVisible() && ! xyLatch && ! xyWasOn && fxOn[(size_t) xyFx])
         setFxEnabled (xyFx, false);
     xyPad.setTouched (false);
-    xySheet.setVisible (false);
+    xyPanel.setVisible (false);
     xyButton.setToggleState (false, juce::dontSendNotification);
 
     setButton.setToggleState (false, juce::dontSendNotification);
@@ -3024,6 +3063,7 @@ void MainComponent::resized()
     }
 
     // --- Top chrome ---
+    const int faceTop = area.getY();          // donde empieza la cara, para el panel XY
     headerArea = area.removeFromTop (ZatiLookAndFeel::kHeader);
     area.removeFromTop (ZatiLookAndFeel::kAir + layoutAir);
 
@@ -3190,6 +3230,14 @@ void MainComponent::resized()
         //  ...plus whatever the budget managed to borrow for the chips. The
         //  engraved word stays centred in the seam whatever it grows to, so the
         //  extra reads as air around the controls and not as a gap in the face.
+        //  Lo que el panel XY puede ocupar: desde donde empieza la cara hasta
+        //  donde empieza la costura de PADS, y en dos columnas solo la columna
+        //  izquierda - la de los pads es de los pads.
+        faceTopArea = wideFace ? faceColumn
+                               : juce::Rectangle<int> (area.getX(), faceTop,
+                                                       area.getWidth(),
+                                                       juce::jmax (0, area.getY() - faceTop));
+
         if (wideFace)
         {
             padSeamTop = padCol.getY();
@@ -3667,35 +3715,14 @@ void MainComponent::resized()
         }
     }
 
-    // Ficha XY: los seis efectos, la superficie, y el conmutador de modo.
+    // El panel XY, si esta abierto: la mitad de arriba de la cara, y ni un
+    // pixel dentro de la costura de PADS. Ver XyPanel en la cabecera.
+    if (xyPanel.isVisible() && ! faceTopArea.isEmpty())
     {
-        //  La superficie es lo unico que importa de esta ficha, asi que se
-        //  reserva primero y en CUADRADO hasta donde la tarjeta lo permita: un
-        //  panel apaisado hace que el eje corto se barra con un gesto y el
-        //  largo con dos, y entonces los dos parametros no se tocan igual.
+        xyPanel.setBounds (faceTopArea);
+
         constexpr int nameH = 14 + ZatiLookAndFeel::kTextPad;
-        const int head   = Metrics::md * 2          // margenes de la tarjeta
-                         + Metrics::hit             // fila del titulo
-                         + 14                       // la linea que dice que hace soltar
-                         + Metrics::sm;
-        //  Los seis efectos y el modo: en pie sobre el panel y bajo el, o en
-        //  columna al lado cuando la ventana es apaisada.
-        const int stack  = Metrics::hit + Metrics::sm + nameH + Metrics::hit;
-        const int sideCol = wideFace ? juce::jlimit (120, 200, full.getWidth() / 5) : 0;
-
-        const int capH = (int) (full.getHeight() * 0.78f);
-        const int capW = (int) (full.getWidth()  * 0.92f) - 2 * Metrics::lg
-                       - (wideFace ? sideCol + Metrics::gap : 0);
-
-        //  CUADRADO, Y ESO MANDA SOBRE TODO LO DEMAS. Un panel apaisado hace
-        //  que el eje corto se barra con un gesto y el largo con dos, y
-        //  entonces los dos parametros no se tocan igual - que es exactamente
-        //  lo unico que este componente tiene que garantizar. Medido en
-        //  horizontal antes de esto: 843 x 130, seis veces mas ancho que alto.
-        const int padSq = juce::jlimit (140, juce::jmax (140, capW),
-                                        capH - head - (wideFace ? 0 : stack));
-
-        auto inner = sheetFromBottom (xySheet, head + padSq + (wideFace ? 0 : stack));
+        auto inner = xyPanel.getLocalBounds().reduced (Metrics::lg, Metrics::md);
 
         auto titleRow = inner.removeFromTop (Metrics::hit);
         xyCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
@@ -3703,54 +3730,56 @@ void MainComponent::resized()
         inner.removeFromTop (14);              // pintado: que hace soltar el dedo
         inner.removeFromTop (Metrics::sm);
 
-        //  En apaisado la columna sale por el lado y el panel se queda con toda
-        //  la altura de la tarjeta; en vertical es la fila de siempre arriba y
-        //  el modo abajo.
-        auto col = wideFace ? Lang::takeEnd (inner, sideCol) : juce::Rectangle<int>();
-        if (wideFace) Lang::takeEnd (inner, Metrics::gap);
+        //  Los seis efectos y el modo van en columna al lado cuando hay ancho
+        //  de sobra, y apilados arriba y abajo cuando no. El criterio no es la
+        //  orientacion de la ventana sino la del HUECO: en vertical este panel
+        //  es alto y estrecho, y en horizontal es ancho y bajo.
+        const bool sideways = inner.getWidth() > inner.getHeight();
+        auto col = sideways ? Lang::takeEnd (inner, juce::jlimit (120, 200, inner.getWidth() / 3))
+                            : juce::Rectangle<int>();
+        if (sideways) Lang::takeEnd (inner, Metrics::gap);
 
         {
-            //  Apaisado: DOS columnas de tres, no una de seis. Seis apilados
-            //  piden 252 px y la tarjeta rotada da 250 para ellos Y el modo -
-            //  medido, REV salia cortado por el borde de abajo y MODO no se
-            //  dibujaba en absoluto.
-            if (wideFace)
+            auto& host = sideways ? col : inner;
+            if (sideways)
             {
-                auto fxArea = col.removeFromTop (3 * (Metrics::hit + 2));
-                auto left  = fxArea.removeFromLeft (fxArea.getWidth() / 2);
-                auto right = fxArea;
+                auto fxArea = host.removeFromTop (3 * (Metrics::hit + 2));
+                auto a = fxArea.removeFromLeft (fxArea.getWidth() / 2);
+                auto b = fxArea;
                 for (int f = 0; f < xyFxButtons.size(); ++f)
-                {
-                    auto& c = (f < 3 ? left : right);
-                    xyFxButtons[f]->setBounds (c.removeFromTop (Metrics::hit + 2)
+                    xyFxButtons[f]->setBounds ((f < 3 ? a : b).removeFromTop (Metrics::hit + 2)
                                                  .reduced (Metrics::halfGap / 2, 2));
-                }
-                col.removeFromTop (Metrics::sm);
             }
             else
             {
-                auto row = inner.removeFromTop (Metrics::hit);
+                auto row = host.removeFromTop (Metrics::hit);
                 for (int f = 0; f < xyFxButtons.size(); ++f)
                     xyFxButtons[f]->setBounds (Lang::takeStart (row, row.getWidth() / (kNumFx - f))
                                                  .reduced (Metrics::halfGap / 2, 2));
-                inner.removeFromTop (Metrics::sm);
             }
+            host.removeFromTop (Metrics::sm);
         }
 
-        //  El modo va DEBAJO del panel, no encima: encima queda entre tu dedo
-        //  y la superficie, y es el control que menos se toca de los tres.
         {
-            auto& host = wideFace ? col : inner;
+            auto& host = sideways ? col : inner;
             auto modeRow = host.removeFromBottom (Metrics::hit);
             xyLatchButton.setBounds (modeRow.reduced (Metrics::halfGap, 2));
-            xyLabelBand = host.removeFromBottom (nameH);        // pintado: MODO
+            //  En coordenadas del PANEL, que es donde se pinta. Guardarlo en
+            //  las de la cara obligaba a descontar el origen al dibujarlo, y
+            //  esa resta es la clase de cosa que sobrevive hasta que alguien
+            //  mueve el panel.
+            xyLabelBand = host.removeFromBottom (nameH);
         }
 
-        //  Y por fin cuadrado de verdad: el lado es el menor de los dos que le
-        //  quedan, centrado en lo que sobra. Reservar altura para un cuadrado y
-        //  luego darle todo el ancho es como salio 843 x 130.
+        //  Cuadrado: el lado es el menor de los dos que quedan. Es lo unico
+        //  que este componente tiene que garantizar - si un eje se barre con un
+        //  gesto y el otro con dos, los dos parametros no se tocan igual.
         const int side = juce::jmax (60, juce::jmin (inner.getWidth(), inner.getHeight()));
         xyPad.setBounds (inner.withSizeKeepingCentre (side, side));
+    }
+    else
+    {
+        xyLabelBand = {};
     }
 
     // SEC sheet, two pages: PASOS is the grid and what plays it; PASO is the
@@ -5558,10 +5587,22 @@ void MainComponent::refreshRack()
 //  de un tema.
 void MainComponent::paintXySheetContent (juce::Graphics& g)
 {
-    if (xySheet.sheetBounds.isEmpty()) return;
+    //  El panel pinta su propia tarjeta: no hay Sheet debajo que la dibuje, y
+    //  no la hay a proposito - una tarjeta con velo se traga los toques que
+    //  van a los pads, que es justo lo que este panel no puede hacer.
+    const auto card = xyPanel.getLocalBounds().toFloat();
+    if (card.isEmpty()) return;
+    constexpr float rad = 2.0f;
+
+    g.setColour (ZatiColours::groove (0.55f));
+    g.fillRoundedRectangle (card.translated (0.0f, 4.0f).withTrimmedBottom (4.0f), rad);
+    g.setColour (ZatiColours::chassisTop);
+    g.fillRoundedRectangle (card, rad);
+    g.setColour (ZatiColours::ink.withAlpha (0.85f));
+    g.drawRoundedRectangle (card.reduced (0.75f), rad, 1.5f);
 
     const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
-    auto inner = xySheet.sheetBounds.reduced (Metrics::lg, Metrics::md);
+    auto inner = xyPanel.getLocalBounds().reduced (Metrics::lg, Metrics::md);
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
@@ -6620,7 +6661,7 @@ void MainComponent::auditOpen (const juce::String& which)
 
     if      (which == "pads") openSheet (padSheet,  padsButton);
     else if (which == "sec")  { showSeqPage (seqPageGrid); openSheet (seqSheet, secButton); }
-    else if (which == "xy")   { selectXyFx (focusedFx); openSheet (xySheet, xyButton); }
+    else if (which == "xy")   { closeAllSheets(); toggleXyPanel(); }
     else if (which == "paso") { showSeqPage (seqPageStep); openSheet (seqSheet, secButton); }
     else if (which == "song") openSheet (songSheet, songButton);
     else if (which == "mix")  { refreshMixStrip(); openSheet (mixSheet, mixButton); }

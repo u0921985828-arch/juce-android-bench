@@ -1,6 +1,6 @@
 # ZATI — sampler nativo para Android (JUCE / C++) · por ARTiFACTS
 
-Un sampler de 16 pads escrito en C++ sobre JUCE 8, con motor propio y camino de
+Un sampler de 64 pads en cuatro bancos escrito en C++ sobre JUCE 8, con motor propio y camino de
 audio de baja latencia por Oboe/AAudio. Nació como prueba de latencia contra un
 prototipo en WebView y hoy es la aplicación entera: pads, secuenciador,
 mezclador, efectos, proyectos y exportación.
@@ -14,14 +14,23 @@ El repositorio se compila de dos formas y las dos importan:
 
 ## Qué hace
 
-- **16 pads** con color propio (zati), velocidad por posición del dedo y una
-  reserva común de 48 voces con robo por antigüedad.
+- **64 pads en cuatro bancos de 16** con color propio (zati), velocidad por
+  posición del dedo y una reserva común de voces —su tamaño lo decide el
+  teléfono, ver `DeviceTier`— con robo por antigüedad. La rejilla muestra un
+  banco y el resto sigue sonando.
 - **Motor**: acumulador de fase fraccionario + interpolación Hermite de 4
   puntos, dos modos de tono — CINTA (varispeed) y TONO (mantiene la duración
   con granos solapados) —, recorte, bucle, reverso, choke, paneo y envolvente.
 - **Secuenciador** de 8 bancos, longitud variable de 16 a 64 pasos, cadena de
   bancos, nota por paso y una línea de tiempo de canción.
-- **Seis efectos** de envío por pad: ISO, HPF, DRV, DLY, CRSH, REV.
+- **Seis efectos** de envío, con cuánto manda cada pad a cada uno: FLT (un
+  barrido bidireccional, paso bajo a un lado y paso alto al otro, con el centro
+  neutro), HPF, DRV, DLY, BIT y REV.
+- **Panel XY** para tocarlos: dos parámetros a la vez, momentáneo o fijo, en la
+  mitad de arriba de la cara — los pads siguen debajo y se pueden disparar
+  mientras barres.
+- **Cuatro carcasas** (PAPEL, GRAFITO, ACERO, LACA) y **cuatro idiomas**
+  (español, inglés, chino, árabe, con la interfaz espejada en árabe).
 - **Grabación por micro** a un pad y grabación de la interpretación al patrón,
   con compensación de la latencia de salida.
 - **Proyectos** autocontenidos (audio incluido) y **sesión recuperable**: lo que

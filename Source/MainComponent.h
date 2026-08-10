@@ -77,7 +77,25 @@ private:
     //  the machine, PROYECTOS is your work, and the tab row swaps between them
     //  without the card going anywhere.
     Sheet padSheet, seqSheet, browseSheet, setSheet, mixSheet, songSheet,
-          exportSheet, rackSheet, chopSheet, xySheet;
+          exportSheet, rackSheet, chopSheet;
+
+    //  EL XY NO ES UNA FICHA. Es lo unico de esta app que se usa CON las dos
+    //  manos: una barre y la otra dispara. Abierto como tarjeta flotante sobre
+    //  un velo, tapaba la rejilla y se tragaba los toques que iban a los pads -
+    //  y entonces el gesto que hace falta, barrer el filtro mientras metes un
+    //  golpe, no se puede hacer.
+    //
+    //  Asi que ocupa la MITAD DE ARRIBA de la cara - el sitio de la pantalla,
+    //  los mandos y los efectos, que es justo lo que el panel sustituye - y se
+    //  detiene donde empieza la costura de PADS. Sin velo y sin capturar nada:
+    //  los dieciseis pads siguen debajo, visibles y tocables.
+    struct XyPanel : public juce::Component
+    {
+        std::function<void (juce::Graphics&)> paintContent;
+        void paint (juce::Graphics& g) override { if (paintContent) paintContent (g); }
+    };
+    XyPanel xyPanel;
+    juce::Rectangle<int> faceTopArea;   // desde donde puede ocupar el panel
     //  ...and a THIRD page, which is the one that makes the gestures real.
     //
     //  A shortcut nobody knows about is not a shortcut, it is dead code with a
@@ -523,6 +541,7 @@ private:
     bool xyLatch = false;          // false = momentaneo (entra al tocar, sale al soltar)
     bool xyWasOn = false;          // como estaba el efecto antes de apoyar el dedo
     void selectXyFx (int f);
+    void toggleXyPanel();
     void xyMoved (float x, float y);
     void xyTouched (bool down);
     void refreshXyPad();

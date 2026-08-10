@@ -158,6 +158,24 @@ namespace
                                                       "XY 锁定 - 停在你放开的位置", "XY تثبيت - يبقى حيث تتركه" },
         { "XY momentaneo - suena mientras tocas", "", "XY momentary - sounds while you touch",
                                                       "XY 瞬时 - 触摸时发声", "XY لحظي - يعمل أثناء اللمس" },
+        // --- Los parametros de los seis efectos ----------------------------
+        //  No pasaban por T(): dieciocho rotulos en la cara de la maquina, en
+        //  espanol, en las cuatro compilaciones. No los vio el banco de
+        //  traduccion porque compara el TEXTO DE LOS COMPONENTES y estos se
+        //  pintan a mano en paint() - un punto ciego que ahora esta anotado en
+        //  Tests/expo.py.
+        { "BARRIDO",        "",         "SWEEP",      "扫频",       "مسح" },
+        { "fuera",          "",         "off",        "关闭",       "خارج" },
+        { "RESO",           "",         "RESO",       "共振",       "رنين" },
+        { "FREQ",           "",         "FREQ",       "频率",       "تردد" },
+        { "DRIVE",          "",         "DRIVE",      "驱动",       "إشباع" },
+        { "TIME",           "",         "TIME",       "时间",       "زمن" },
+        { "FBK",            "",         "FBK",        "反馈",       "ارتجاع" },
+        { "BITS",           "",         "BITS",       "位深",       "بِتّات" },
+        { "RATE",           "",         "RATE",       "采样率",     "معدل" },
+        { "SIZE",           "",         "SIZE",       "空间",       "حجم" },
+        { "DAMP",           "",         "DAMP",       "阻尼",       "تخميد" },
+
         // --- SEC sheet -----------------------------------------------------
         { "PASOS",          "",         "STEPS",      "步数",       "خطوات" },
         //  The second page of the card: one step, not all of them. Kept short

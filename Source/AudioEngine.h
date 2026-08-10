@@ -297,15 +297,32 @@ public:
     void setDlyMix   (float m)    noexcept { dlyMix.store   (m,   std::memory_order_relaxed); }
 
     // --- The six effects -------------------------------------------------
-    //  ISO, HPF, DRIVE, DELAY, CRUSH, REVERB. Six independent stages in that
+    //  FLT, HPF, DRIVE, DELAY, CRUSH, REVERB. Six independent stages in that
     //  order, three parameters each, and the third is always MIX. MIX is the
     //  switch as well as the amount: at zero the stage is skipped outright,
     //  so an effect you are not using costs nothing and cannot colour the
-    //  sound. Nothing is shared between stages, which is what lets ISO and
+    //  sound. Nothing is shared between stages, which is what lets FLT and
     //  HPF run at once as a band-pass instead of fighting over one filter.
-    void setIsoCutoff (float hz) noexcept { fxCutoff.store (hz, std::memory_order_relaxed); }
-    void setIsoReso   (float q)  noexcept { fxReso.store   (q,  std::memory_order_relaxed); }
-    void setIsoMix    (float m)  noexcept { fxMix.store    (m,  std::memory_order_relaxed); }
+
+    //  UN FILTRO SE BARRE EN LAS DOS DIRECCIONES, O NO ES UN FILTRO DE TOCAR.
+    //
+    //  Esto era ISO: un paso bajo con la frecuencia de corte de 20 a 20000 Hz.
+    //  Un solo sentido. Puesto en el eje de un panel XY no dice nada - todo el
+    //  recorrido hacia un lado abre y no pasa nada, y hacia el otro cierra
+    //  hasta el silencio - cuando lo que hace cualquiera con un filtro en
+    //  directo es salir del centro hacia arriba O hacia abajo y volver.
+    //
+    //  Asi que el parametro es un BARRIDO de -1 a +1 con el centro NEUTRO:
+    //  negativo cierra por arriba (paso bajo bajando desde 20 kHz), positivo
+    //  abre por abajo (paso alto subiendo desde 20 Hz), y en el centro la
+    //  etapa no procesa nada. Es el filtro de una mesa de DJ, que es el gesto
+    //  que esto imita, y en un eje X cada mitad significa algo.
+    //
+    //  La zona muerta central no es adorno: sin ella, "centro" es un valor
+    //  exacto que un dedo no acierta, y el filtro nunca queda del todo fuera.
+    void setFltSweep (float s)  noexcept { fltSweep.store (s, std::memory_order_relaxed); }
+    void setFltReso  (float q)  noexcept { fxReso.store   (q, std::memory_order_relaxed); }
+    void setFltMix   (float m)  noexcept { fxMix.store    (m, std::memory_order_relaxed); }
 
     void setHpFreq (float hz) noexcept { hpFreq.store (hz, std::memory_order_relaxed); }
     void setHpReso (float q)  noexcept { hpReso.store (q,  std::memory_order_relaxed); }
@@ -641,6 +658,9 @@ private:
     juce::dsp::StateVariableTPTFilter<float> masterFilter;
     std::atomic<int>   fxType   { 0 };          // 0 LPF, 1 HPF
     std::atomic<float> fxCutoff { 20000.0f };
+    //  El barrido bidireccional de FLT: -1 cerrado por arriba, 0 neutro,
+    //  +1 abierto por abajo. Ver setFltSweep.
+    std::atomic<float> fltSweep { 0.0f };
     std::atomic<float> fxReso   { 0.707f };
     std::atomic<float> fxDrive  { 0.0f };        // 0..1
 
@@ -648,12 +668,14 @@ private:
     // knob moves arrive as per-block jumps otherwise — zipper on the filter,
     // crackle on the delay time. ~20 ms time constant.
     float smCutoff  = 20000.0f;
+    float smSweep   = 0.0f;      // el barrido de FLT, suavizado como el resto
     float smReso    = 0.707f;
     float smDrive   = 0.0f;
     float smDlyMix  = 0.0f;
     float smDlyFb   = 0.35f;
     float smDlySamp = 0.0f;      // delay time in samples, smoothed per sample
     bool  filterWasActive = false;
+    bool  fltWasHigh      = false;   // de que lado del centro venia FLT
     bool  hpWasActive     = false;
 
     // Master delay.

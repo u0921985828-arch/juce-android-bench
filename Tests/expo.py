@@ -94,6 +94,15 @@ def judge(rows, size, lang, sheet):
 #  is legitimate and lives in OK below - or it never went through T() at all.
 #  A row that is genuinely identical is a one-line entry here; a row that is
 #  not is a bug, and it is one line of output instead of nobody noticing.
+#
+#  PUNTO CIEGO CONOCIDO: esto compara el TEXTO DE LOS COMPONENTES, porque es lo
+#  que UiAudit vuelca. El texto pintado a mano en un paint() no tiene componente
+#  y por lo tanto no se mide. Asi sobrevivieron los dieciocho nombres de
+#  parametro de los seis efectos - CUTOFF, RESO, FREQ, DRIVE, TIME, FBK, BITS,
+#  RATE, SIZE, DAMP - en espanol y en las cuatro compilaciones, en la cara de la
+#  maquina. Se encontraron leyendo fxDefs, no corriendo esto. Mientras el
+#  volcado no lleve tambien lo que se pinta, esta prueba cubre los rotulos de
+#  los controles y no los de la pintura.
 UNTRANSLATED_OK = {
     # A number, a unit, a symbol, a path, a file name.
     # (handled by the regex below)
