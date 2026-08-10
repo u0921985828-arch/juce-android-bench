@@ -396,7 +396,16 @@ public:
     float getRecordLimitSeconds() const noexcept { return (float) recordSeconds; }
     int   getRecordChannels() const noexcept { return juce::jmax (1, recordBuffer.getNumChannels()); }
 
-    void              startRecording (int slot) noexcept;
+    //  RESAMPLING: record the MASTER back onto a pad.
+    //
+    //  The move this whole lineage is built on - play something, catch it,
+    //  play the catch, catch that. It is the same recorder the microphone
+    //  uses; the only difference is WHERE in the block it reads. The mic is
+    //  taken at the top, before the output is cleared, because that is where
+    //  the input arrives; the master is taken at the very bottom, after the
+    //  voices, the effects and the master stage, because that is the sound
+    //  that actually leaves the phone.
+    void              startRecording (int slot, bool fromMaster = false) noexcept;
     SampleBuffer::Ptr finishRecording() noexcept;   // stop + build + publish; returns the buffer
     bool isRecording() const noexcept { return recording.load (std::memory_order_relaxed); }
     float getRecordSeconds() const noexcept;
@@ -602,6 +611,7 @@ private:
 
     // Recording.
     std::atomic<bool> recording { false };
+    std::atomic<bool> recordFromMaster { false };
     std::atomic<int>  recordPos { 0 };
     juce::AudioBuffer<float> recordBuffer;   // allocated in prepareToPlay, never in the callback
     int    recordChannels = 1;               // how many of the input channels we keep

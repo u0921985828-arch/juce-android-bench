@@ -573,6 +573,10 @@ MainComponent::MainComponent()
     micButton.onClick = [this] { toggleMicSampling(); };
     padSheet.addAndMakeVisible (micButton);
 
+    styleButton (resampleButton, kKey);
+    resampleButton.onClick = [this] { toggleResample(); };
+    padSheet.addAndMakeVisible (resampleButton);
+
     //  The zati row is painted, not built out of components: eight swatches
     //  in a strip of chip height. See paintPadSheetContent.
     padSheet.onContentClick = [this] (juce::Point<int> p)
@@ -2706,8 +2710,12 @@ void MainComponent::resized()
         autocutButton.setBounds (rr.reduced (Metrics::halfGap, 0));
         inner.removeFromTop (5);
         auto rr2 = inner.removeFromTop (Metrics::hit);
-        chopButton.setBounds (rr2.removeFromLeft (rr2.getWidth() / 2).reduced (Metrics::halfGap, 0));
-        micButton.setBounds  (rr2.reduced (Metrics::halfGap, 0));
+        //  Three ways to put a sound on a pad, on one row: cut one you have,
+        //  record the room, or print what the machine is playing.
+        const int cw = rr2.getWidth() / 3;
+        chopButton.setBounds     (rr2.removeFromLeft (cw).reduced (Metrics::halfGap, 0));
+        micButton.setBounds      (rr2.removeFromLeft (cw).reduced (Metrics::halfGap, 0));
+        resampleButton.setBounds (rr2.reduced (Metrics::halfGap, 0));
         inner.removeFromTop (5);
 
         //  Colour is a TAG, not sound design, and it used to be the loudest
@@ -3584,6 +3592,7 @@ void MainComponent::retranslateUi()
     autocutButton.setButtonText (T ("AUTOCUT"));
     chopButton   .setButtonText (T ("AUTO CHOP"));
     micButton    .setButtonText (recordingActive ? T ("PARAR") : T ("GRABAR MIC"));
+    resampleButton.setButtonText (resamplingActive ? T ("PARAR") : T ("REMUESTREAR"));
     previewButton.setButtonText (juce::String::fromUTF8 (previewSounding ? "\xe2\x96\xa0 " : "\xe2\x96\xb6 ")
                                    + T (previewSounding ? "STOP" : "OIR"));
     modeButton   .setButtonText (selectedPad >= 0 && padKeepLen[(size_t) selectedPad]
@@ -5944,6 +5953,53 @@ void MainComponent::restoreSession()
                             : (restored == 1 ? T ("Sesion recuperada  [1 pad]")
                                              : T ("Sesion recuperada  [%1 pads]", juce::String (restored))),
                         juce::dontSendNotification);
+}
+
+//  RESAMPLE: print the master onto a pad.
+//
+//  The same recorder the microphone uses, reading the other end of the block.
+//  No permission, no input stream, nothing to ask for - the sound is already
+//  in our own output buffer. What lands on the pad is what you just heard:
+//  the effects, the master saturation, the level, all of it committed, which
+//  is the point of doing it at all.
+void MainComponent::toggleResample()
+{
+    if (! resamplingActive)
+    {
+        if (recordingActive) toggleMicSampling();     // one recorder, one take
+
+        int slot = firstEmptyPad();
+        if (slot < 0) slot = (selectedPad >= 0) ? selectedPad : 0;
+
+        resamplingSlot   = slot;
+        resamplingActive = true;
+        engine.startRecording (slot, true);
+
+        styleButton (resampleButton, kRec);
+        resampleButton.setButtonText (T ("PARAR"));
+        status.setText (T ("Remuestreando al pad %1", juce::String (slot + 1)),
+                        juce::dontSendNotification);
+        return;
+    }
+
+    resamplingActive = false;
+    styleButton (resampleButton, kKey);
+    resampleButton.setButtonText (T ("REMUESTREAR"));
+
+    if (auto sb = engine.finishRecording())
+    {
+        pushUndo (T ("REMUESTREAR"));
+        assignSampleToPad (resamplingSlot, sb, "RE " + juce::String (resamplingSlot + 1));
+        refreshPad (resamplingSlot);
+        refreshPadArt (resamplingSlot);
+        session.sync (uiSample.data(), kNumPads);
+        status.setText (T ("Pad %1 remuestreado", juce::String (resamplingSlot + 1)),
+                        juce::dontSendNotification);
+    }
+    else
+    {
+        status.setText (T ("Nada que remuestrear"), juce::dontSendNotification);
+    }
 }
 
 void MainComponent::toggleMicSampling()

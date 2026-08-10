@@ -625,7 +625,13 @@ private:
     juce::TextButton loopButton { "LOOP" };
     juce::TextButton autocutButton { "AUTOCUT" };
     juce::TextButton chopButton { "AUTO CHOP" };
-    juce::TextButton micButton  { "GRABAR MIC" };   // lives in the PADS sheet
+    juce::TextButton micButton  { "GRABAR MIC" };
+    //  RESAMPLE. The move this whole lineage is built on: play something,
+    //  catch it, play the catch. Engine side in AudioEngine::startRecording.
+    juce::TextButton resampleButton { "REMUESTREAR" };
+    bool resamplingActive = false;
+    void toggleResample();
+    int  resamplingSlot = 0;   // lives in the PADS sheet
 
     //  Auditioning from the PADS sheet: the wave answers a tap, and this plays
     //  it from the top without having to reach past the sheet for the pad.

@@ -202,6 +202,48 @@ int main()
                      rampBlocks * 1000.0 * bs / sr, ok ? "OK" : "<-- FAILED");
     }
 
+    // 5c. RESAMPLE. The master printed back onto a pad: what lands there has
+    //     to be what came out, at the level it came out at, and it must not
+    //     also contain the microphone.
+    {
+        AudioEngine r;
+        r.prepareToPlay (sr, bs);
+        r.setPolyphony (32, 4);
+        r.setPadGain (0, 0.85f);
+        r.publishSample (0, makeSample (48000.0, 4.0, 220.0f, false));
+        juce::AudioBuffer<float> rb (2, bs);
+        runBlocks (r, rb, bs, 4);
+
+        //  Play pad 0 and resample onto pad 5 while it sounds.
+        r.postNoteOn (0, 1.0f);
+        runBlocks (r, rb, bs, 20);
+        double heard = 0.0;
+        r.startRecording (5, true);
+        for (int b = 0; b < 300; ++b)
+        {
+            r.renderNextBlock (rb, 0, bs);
+            for (int i = 0; i < bs; ++i) heard += (double) rb.getSample (0, i) * rb.getSample (0, i);
+        }
+        heard = std::sqrt (heard / (300.0 * bs));
+
+        auto sb = r.finishRecording();
+        double printed = 0.0;
+        int len = 0;
+        if (sb != nullptr)
+        {
+            len = sb->buffer.getNumSamples();
+            for (int i = 0; i < len; ++i)
+                printed += (double) sb->buffer.getSample (0, i) * sb->buffer.getSample (0, i);
+            printed = std::sqrt (printed / juce::jmax (1, len));
+        }
+
+        const double ratio = heard > 0 ? printed / heard : 0.0;
+        const bool ok = sb != nullptr && len > (int) (sr * 0.5) && ratio > 0.95 && ratio < 1.05;
+        std::printf ("%-34s heard %.4f  printed %.4f  ratio %.3f  %d samples  %s\n",
+                     "resample master -> pad", heard, printed, ratio, len,
+                     ok ? "OK" : "<-- FAILED");
+    }
+
     // 6. EVERY BUFFER SIZE — the load has to fit the budget at the SMALLEST
     //    one, because that is the one that makes the app feel like hardware.
     for (int b : { 64, 96, 128, 192, 256, 480, 512 })

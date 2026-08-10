@@ -284,7 +284,11 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     } renderGuard { inRender };
 
     // 0. Capture mic input BEFORE clearing (input is in channel 0 on entry).
-    if (recording.load (std::memory_order_acquire) && out.getNumChannels() > 0)
+    //    Only when the take is coming from the microphone: a resample reads
+    //    the master at the bottom of this function instead.
+    if (recording.load (std::memory_order_acquire)
+        && ! recordFromMaster.load (std::memory_order_acquire)
+        && out.getNumChannels() > 0)
     {
         const int cap = recordBuffer.getNumSamples();
         int rp = recordPos.load (std::memory_order_relaxed);
@@ -929,6 +933,43 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         }
     }
 
+    // 5e. RESAMPLE. The master, after everything, which is the whole point:
+    //     what lands on the pad is what you just heard - the effects, the
+    //     master saturation, the level, all of it printed. Written before the
+    //     probe click so a latency measurement never ends up inside a take.
+    if (recording.load (std::memory_order_acquire)
+        && recordFromMaster.load (std::memory_order_acquire)
+        && out.getNumChannels() > 0)
+    {
+        const int cap = recordBuffer.getNumSamples();
+        int rp = recordPos.load (std::memory_order_relaxed);
+        const int n = juce::jmin (numSamples, cap - rp);
+        if (n > 0)
+        {
+            //  A mono record buffer fed by a stereo master must print the
+            //  AVERAGE of the two, not the left plus half the right: measured,
+            //  that came back a ratio of 1.487 against what was heard, which
+            //  is a resample that arrives louder than the thing it copied and
+            //  clips a layer earlier every time round.
+            if (recordBuffer.getNumChannels() == 1 && out.getNumChannels() > 1)
+            {
+                recordBuffer.copyFrom (0, rp, out.getReadPointer (0, startSample), n, 0.5f);
+                recordBuffer.addFrom  (0, rp, out.getReadPointer (1, startSample), n, 0.5f);
+            }
+            else
+            {
+                const int chans = juce::jmin (recordBuffer.getNumChannels(), out.getNumChannels());
+                for (int ch = 0; ch < chans; ++ch)
+                    recordBuffer.copyFrom (ch, rp, out.getReadPointer (ch, startSample), n);
+            }
+
+            rp += n;
+            recordPos.store (rp, std::memory_order_relaxed);
+        }
+        if (rp >= cap)
+            recording.store (false, std::memory_order_release);
+    }
+
     // 5b-probe. The click, written AFTER the effects so nothing colours or
     //     delays it. A single sample would never leave a phone speaker, so it
     //     is a short decaying 3 kHz burst: a hard onset the microphone can
@@ -1271,11 +1312,14 @@ bool AudioEngine::addToChain (int patternIdx) noexcept
 //  Recording (message thread)
 // ---------------------------------------------------------------------------
 
-void AudioEngine::startRecording (int slot) noexcept
+void AudioEngine::startRecording (int slot, bool fromMaster) noexcept
 {
     if (slot < 0 || slot >= kNumPads) return;
     recordSlot = slot;
     recordPos.store (0, std::memory_order_relaxed);
+    //  Set the SOURCE before arming, or a block that lands between the two
+    //  records the wrong thing.
+    recordFromMaster.store (fromMaster, std::memory_order_release);
     recording.store (true, std::memory_order_release);
 }
 
