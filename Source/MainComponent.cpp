@@ -1389,6 +1389,67 @@ MainComponent::MainComponent()
     };
     addAndMakeVisible (songButton);
 
+    // --- XY: la superficie de directo ---------------------------------------
+    {
+        styleButton (xyButton, kKey);
+        litAccent (xyButton);
+        xyButton.onClick = [this]
+        {
+            if (xySheet.isVisible()) { closeAllSheets(); return; }
+            selectXyFx (focusedFx);          // el panel abre sobre el efecto que ya tenias delante
+            openSheet (xySheet, xyButton);
+        };
+        addAndMakeVisible (xyButton);
+
+        //  Los seis efectos otra vez, dentro de la ficha. Repetirlos aqui en
+        //  vez de mandar al usuario a cerrar el panel, tocar el efecto en la
+        //  cara y volver a abrirlo es la diferencia entre una superficie de
+        //  directo y un cuadro de dialogo.
+        for (int f = 0; f < kNumFx; ++f)
+        {
+            auto* b = new juce::TextButton (fxDefs[f].name);
+            styleButton (*b, kKey);
+            litAccent (*b);
+            b->setClickingTogglesState (true);
+            b->setRadioGroupId (7710);
+            b->onClick = [this, f] { selectXyFx (f); };
+            xySheet.addAndMakeVisible (b);
+            xyFxButtons.add (b);
+        }
+        xyFxButtons[0]->setToggleState (true, juce::dontSendNotification);
+
+        styleButton (xyLatchButton, kKey);
+        litAccent (xyLatchButton);
+        xyLatchButton.setClickingTogglesState (true);
+        xyLatchButton.onClick = [this]
+        {
+            xyLatch = xyLatchButton.getToggleState();
+            //  Al pasar a momentaneo con el dedo levantado, el efecto no puede
+            //  quedarse colgado sonando: el modo cambia lo que significa
+            //  SOLTAR, y ahora mismo esta soltado.
+            if (! xyLatch && ! xyPad.isTouched() && fxOn[(size_t) xyFx])
+                setFxEnabled (xyFx, false);
+            status.setText (xyLatch ? T ("XY fijo - se queda donde lo dejes")
+                                    : T ("XY momentaneo - suena mientras tocas"),
+                            juce::dontSendNotification);
+            refreshXyPad();
+        };
+        xySheet.addAndMakeVisible (xyLatchButton);
+
+        xyPad.onMove  = [this] (float x, float y) { xyMoved (x, y); };
+        xyPad.onTouch = [this] (bool down)        { xyTouched (down); };
+        xySheet.addAndMakeVisible (xyPad);
+
+        styleButton (xyCloseButton, kKey);
+        xyCloseButton.onClick = [this] { closeAllSheets(); };
+        xySheet.addAndMakeVisible (xyCloseButton);
+
+        addAndMakeVisible (xySheet);
+        xySheet.setVisible (false);
+        xySheet.onDismiss = [this] { closeAllSheets(); };
+        xySheet.paintContent = [this] (juce::Graphics& g) { paintXySheetContent (g); };
+    }
+
     //  The screen is the MASTER, not the selected pad. Trimming already has
     //  a whole popup of its own, so putting the same waveform and the same
     //  trim handles on the face was one job done twice — and it meant the
@@ -1769,6 +1830,100 @@ void MainComponent::fxTapped (int f)
     repaint();
 }
 
+// --- El panel XY ---------------------------------------------------------
+//
+//  Nada de esto guarda un valor. Los parametros siguen viviendo en fxParams,
+//  igual que para los tres mandos, y el panel solo escribe en ellos: asi los
+//  mandos y el panel no pueden discrepar, porque son dos ventanas al mismo
+//  numero. Es la misma regla que ya seguian CTRL 1-3.
+
+void MainComponent::selectXyFx (int f)
+{
+    if (! juce::isPositiveAndBelow (f, kNumFx)) return;
+
+    //  Cambiar de efecto con el modo momentaneo y el anterior sonando lo
+    //  dejaria abierto para siempre: el dedo que lo encendio ya no va a
+    //  levantarse sobre EL. Se apaga al salir de el, no al entrar en el
+    //  siguiente, que es cuando todavia se sabe cual era.
+    if (! xyLatch && f != xyFx && ! xyPad.isTouched() && fxOn[(size_t) xyFx])
+        setFxEnabled (xyFx, false);
+
+    xyFx = f;
+    if (auto* b = xyFxButtons[f]) b->setToggleState (true, juce::dontSendNotification);
+    //  El panel toma tambien los tres mandos de la cara. Son el mismo efecto:
+    //  volver de la ficha y encontrarse los mandos en otro es lo que hace que
+    //  una app se sienta como dos apps.
+    focusFx (f);
+    refreshXyPad();
+}
+
+//  Donde esta el dedo, en 0..1, se convierte al valor real del parametro
+//  usando el MISMO sesgo que el mando de la cara. Un filtro repartido lineal
+//  entre 20 Hz y 20 kHz deja el 90% del recorrido por encima de los 2 kHz,
+//  que es donde no pasa nada: sin el sesgo, el panel barre en un centimetro
+//  todo lo que importa y en el resto nada. proportionOfLengthToValue es
+//  exactamente la curva que ya tiene el mando.
+void MainComponent::xyMoved (float x, float y)
+{
+    const float xy[2] = { x, y };
+    for (int pi = 0; pi < 2; ++pi)
+    {
+        auto& p = fxParam (xyFx, pi);
+        p.setValue (p.proportionOfLengthToValue ((double) juce::jlimit (0.0f, 1.0f, xy[pi])),
+                    juce::dontSendNotification);
+        pushFxParam (xyFx, pi);
+    }
+    refreshMacroValues();      // los mandos de la cara siguen al dedo
+    refreshXyPad();
+}
+
+//  APOYAR Y LEVANTAR ES EL GESTO, y en momentaneo es lo que enciende y apaga.
+//
+//  Se recuerda como estaba ANTES de apoyar: si el efecto ya venia encendido,
+//  levantar el dedo no puede apagarlo - no lo encendiste tu, y apagar algo que
+//  no habias encendido es la clase de sorpresa que te deja sin efecto en mitad
+//  de un directo.
+void MainComponent::xyTouched (bool down)
+{
+    //  FIJO NO ES "NO ENTRA", ES "NO SALE". Tocar enciende igual - si no, el
+    //  panel se movia, los numeros cambiaban y no sonaba nada, y la unica
+    //  forma de averiguar por que era salir de la ficha a encender el efecto
+    //  en la cara. Lo que cambia entre los dos modos es lo que hace SOLTAR.
+    if (xyLatch)
+    {
+        if (down && ! fxOn[(size_t) xyFx]) setFxEnabled (xyFx, true);
+        refreshXyPad();
+        return;
+    }
+
+    if (down)
+    {
+        xyWasOn = fxOn[(size_t) xyFx];
+        if (! xyWasOn) setFxEnabled (xyFx, true);
+    }
+    else if (! xyWasOn)
+    {
+        setFxEnabled (xyFx, false);
+    }
+    refreshXyPad();
+}
+
+//  El panel refleja el estado real de los parametros, no el ultimo sitio donde
+//  estuvo el dedo: si mueves un mando de la cara con la ficha abierta, la cruz
+//  se mueve. Un panel que solo se cree a si mismo miente en cuanto algo mas
+//  toca el mismo numero.
+void MainComponent::refreshXyPad()
+{
+    const auto& d = fxDefs[juce::jlimit (0, kNumFx - 1, xyFx)];
+    xyPad.setAxisNames  (T (d.param[0]), T (d.param[1]));
+    xyPad.setAxisValues (fxFormat (d.spec[0], fxParam (xyFx, 0).getValue()),
+                         fxFormat (d.spec[1], fxParam (xyFx, 1).getValue()));
+    xyPad.setPosition ((float) fxParam (xyFx, 0).valueToProportionOfLength (fxParam (xyFx, 0).getValue()),
+                       (float) fxParam (xyFx, 1).valueToProportionOfLength (fxParam (xyFx, 1).getValue()));
+    xyLatchButton.setButtonText (xyLatch ? T ("FIJO") : T ("MOMENTANEO"));
+    xySheet.repaint();
+}
+
 void MainComponent::fxFocusOnly (int f)
 {
     if (! juce::isPositiveAndBelow (f, kNumFx)) return;
@@ -1945,10 +2100,22 @@ void MainComponent::closeAllSheets()
     }
     browseSheet.setVisible (false);
     setSheet.setVisible (false);
-    setSheet.setVisible (false);
     exportSheet.setVisible (false);
     rackSheet.setVisible (false);
     chopSheet.setVisible (false);
+
+    //  CERRAR LA FICHA XY EN MOMENTANEO TIENE QUE APAGAR EL EFECTO.
+    //
+    //  El modo dice "sale al soltar", y cerrar la tarjeta con el dedo apoyado
+    //  - tocando fuera, o con la tecla de cerrar - se lleva el panel por
+    //  delante sin que llegue nunca el mouseUp. Sin esto te quedas con un
+    //  delive abierto sobre el master y sin panel con el que quitarlo.
+    if (xySheet.isVisible() && ! xyLatch && ! xyWasOn && fxOn[(size_t) xyFx])
+        setFxEnabled (xyFx, false);
+    xyPad.setTouched (false);
+    xySheet.setVisible (false);
+    xyButton.setToggleState (false, juce::dontSendNotification);
+
     setButton.setToggleState (false, juce::dontSendNotification);
     repaint();
 }
@@ -2621,6 +2788,48 @@ void MainComponent::layoutPadGrid (juce::Rectangle<int> area, int cols, int rows
         }
 }
 
+//  LA BARRA DE MODULOS NO SE REPARTE A PARTES IGUALES.
+//
+//  Con cinco tapas daba 66 px cada una en un movil de 360 y todo cabia. Con
+//  seis - XY es un modulo, no un ajuste escondido - da 55, y CANCION, el
+//  rotulo mas largo de los seis en espanol, necesita 62. En horizontal, donde
+//  la barra comparte fila con el transporte, el margen era aun mas justo:
+//  medido, CANCION pedia 36 y tenia 32.
+//
+//  Asi que cada tapa pide lo que su palabra MIDE en el idioma en el que se
+//  esta dibujando, y el sobrante se reparte en proporcion a lo pedido. Un
+//  reparto ciego a partes iguales es lo que hace que anadir una pestana rompa
+//  la fila entera en cuatro idiomas a la vez - y en chino y arabe las palabras
+//  no miden lo que miden en espanol.
+//
+//  El ultimo se lleva el resto del rectangulo, no su cuota calculada: seis
+//  divisiones enteras dejan la fila terminando hasta seis pixeles antes del
+//  borde, y ese hueco se ve porque la fila de al lado si llega.
+void MainComponent::layoutModuleBar (juce::Rectangle<int> row, juce::TextButton** mb, int vInset)
+{
+    constexpr int kMods = 6;
+    //  La MISMA fuente con la que drawButtonText va a dibujar la tapa. Medir
+    //  con otra es como se responde "cabe" a una pregunta que no se ha hecho:
+    //  ya paso una vez en este proyecto, con getTextButtonFont.
+    const auto capFont = ZatiColours::monoFont (11.0f, true).withExtraKerningFactor (0.06f);
+
+    int need[kMods] {}; int total = 0;
+    for (int i = 0; i < kMods; ++i)
+    {
+        need[i] = (int) std::ceil (juce::GlyphArrangement::getStringWidth (capFont, mb[i]->getButtonText()))
+                + 2 * Metrics::sm;
+        total += need[i];
+    }
+
+    const int spare = juce::jmax (0, row.getWidth() - total);
+    for (int i = 0; i < kMods; ++i)
+    {
+        const int w = need[i] + spare * need[i] / juce::jmax (1, total);
+        mb[i]->setBounds ((i < kMods - 1 ? row.removeFromLeft (juce::jmax (24, w)) : row)
+                              .reduced (Metrics::halfGap / 2, vInset));
+    }
+}
+
 void MainComponent::resized()
 {
     //  Height reserved on a seam that carries an engraved name.
@@ -2833,12 +3042,12 @@ void MainComponent::resized()
     {
         auto row = area.removeFromTop (ZatiLookAndFeel::kTransport);
         tabBarArea = row;
-        auto tabs = row.removeFromLeft (row.getWidth() * 5 / 9);
-        juce::TextButton* mb[5] = { &padsButton, &secButton, &songButton, &mixButton, &setButton };
-        const int tw = tabs.getWidth() / 5;
-        for (int i = 0; i < 5; ++i)
-            mb[i]->setBounds ((i < 4 ? tabs.removeFromLeft (tw) : tabs)
-                                  .reduced (Metrics::halfGap, ZatiLookAndFeel::kAir / 2));
+        //  Mismo reparto proporcional que en vertical, y por la misma razon:
+        //  a partes iguales entre seis, CANCION pedia 36 px y tenia 32 en el
+        //  unico sitio donde la barra comparte fila con el transporte.
+        auto tabs = row.removeFromLeft (row.getWidth() * 6 / 10);
+        juce::TextButton* mb[6] = { &padsButton, &secButton, &songButton, &mixButton, &xyButton, &setButton };
+        layoutModuleBar (tabs, mb, ZatiLookAndFeel::kAir / 2);
 
         const int u = row.getWidth() / 3;
         loadButton.setBounds (row.removeFromLeft (u).reduced (Metrics::halfGap, 0));
@@ -2850,10 +3059,8 @@ void MainComponent::resized()
     tabBarArea = area.removeFromTop (ZatiLookAndFeel::kModule);
     {
         auto row = tabBarArea;
-        juce::TextButton* mb[5] = { &padsButton, &secButton, &songButton, &mixButton, &setButton };
-        const int w = row.getWidth() / 5;
-        for (int i = 0; i < 5; ++i)
-            mb[i]->setBounds ((i < 4 ? row.removeFromLeft (w) : row).reduced (Metrics::halfGap, 0));
+        juce::TextButton* mb[6] = { &padsButton, &secButton, &songButton, &mixButton, &xyButton, &setButton };
+        layoutModuleBar (row, mb, 0);
     }
     area.removeFromTop (Metrics::xs);
 
@@ -3455,6 +3662,50 @@ void MainComponent::resized()
                                            false, 46, Metrics::readout);
             mixFaders[i]->setBounds (faderCell);
         }
+    }
+
+    // Ficha XY: los seis efectos, la superficie, y el conmutador de modo.
+    {
+        //  La superficie es lo unico que importa de esta ficha, asi que se
+        //  reserva primero y en CUADRADO hasta donde la tarjeta lo permita: un
+        //  panel apaisado hace que el eje corto se barra con un gesto y el
+        //  largo con dos, y entonces los dos parametros no se tocan igual.
+        constexpr int nameH = 14 + ZatiLookAndFeel::kTextPad;
+        const int chrome = Metrics::md * 2          // margenes de la tarjeta
+                         + Metrics::hit             // fila del titulo
+                         + 14                       // la linea que dice que hace soltar
+                         + Metrics::sm
+                         + Metrics::hit + Metrics::sm    // los seis efectos
+                         + nameH + Metrics::hit;         // el modo
+
+        const int capH  = (int) (full.getHeight() * 0.78f);
+        const int capW  = (int) (full.getWidth()  * 0.92f) - 2 * Metrics::lg;
+        const int padSq = juce::jlimit (140, juce::jmax (140, capW), capH - chrome);
+
+        auto inner = sheetFromBottom (xySheet, chrome + padSq);
+
+        auto titleRow = inner.removeFromTop (Metrics::hit);
+        xyCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
+                                    .withSizeKeepingCentre (Metrics::hit, Metrics::hit));
+        inner.removeFromTop (14);              // pintado: que hace soltar el dedo
+        inner.removeFromTop (Metrics::sm);
+
+        {
+            auto row = inner.removeFromTop (Metrics::hit);
+            const int w = row.getWidth() / kNumFx;
+            for (int f = 0; f < xyFxButtons.size(); ++f)
+                xyFxButtons[f]->setBounds ((f < kNumFx - 1 ? Lang::takeStart (row, w) : row)
+                                             .reduced (Metrics::halfGap / 2, 2));
+            inner.removeFromTop (Metrics::sm);
+        }
+
+        //  El modo va DEBAJO del panel, no encima: encima queda entre tu dedo
+        //  y la superficie, y es el control que menos se toca de los tres.
+        auto modeRow = inner.removeFromBottom (Metrics::hit);
+        xyLatchButton.setBounds (modeRow.reduced (Metrics::halfGap, 2));
+        xyLabelBand = inner.removeFromBottom (nameH);       // pintado: MODO
+
+        xyPad.setBounds (inner);
     }
 
     // SEC sheet, two pages: PASOS is the grid and what plays it; PASO is the
@@ -4141,6 +4392,7 @@ void MainComponent::retranslateUi()
     padsButton  .setButtonText (T ("PADS"));
     secButton   .setButtonText (T ("SEC"));
     songButton  .setButtonText (T ("SONG"));
+    xyButton    .setButtonText (T ("XY"));
     mixButton   .setButtonText (T ("MIX"));
     setButton   .setButtonText (T ("SET"));
 
@@ -5252,6 +5504,37 @@ void MainComponent::refreshRack()
 //  The sheet says three things, in the order you need them: what the button is
 //  about to do, in words; how many pieces; and the exact list of pads it will
 //  write. Nothing here is a surprise by the time the red button is reachable.
+//  El titulo de la ficha XY dice las tres cosas que hay que saber sin tocar
+//  nada: que efecto estas tocando, si esta sonando ahora mismo, y que hace
+//  soltar el dedo. La ultima es la que decide si te atreves a usarlo en medio
+//  de un tema.
+void MainComponent::paintXySheetContent (juce::Graphics& g)
+{
+    if (xySheet.sheetBounds.isEmpty()) return;
+
+    const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
+    auto inner = xySheet.sheetBounds.reduced (Metrics::lg, Metrics::md);
+
+    g.setColour (ZatiColours::ink.withAlpha (0.9f));
+    g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
+    g.drawText (T ("XY") + "  " + dot + "  " + juce::String (fxDefs[xyFx].name)
+                  + "  " + dot + "  " + (fxOn[(size_t) xyFx] ? T ("SUENA") : T ("EN ESPERA")),
+                inner.removeFromTop (16), Lang::start());
+
+    g.setColour (ZatiColours::inkDim);
+    g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
+    g.drawText (xyLatch ? T ("se queda donde lo dejes")
+                        : T ("entra al tocar y sale al soltar"),
+                inner.removeFromTop (14), Lang::start());
+
+    if (! xyLabelBand.isEmpty())
+    {
+        g.setColour (ZatiColours::inkDim);
+        g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.20f));
+        g.drawText (T ("MODO"), xyLabelBand.translated (2, 0), Lang::start());
+    }
+}
+
 void MainComponent::paintChopSheetContent (juce::Graphics& g)
 {
     if (chopSheet.sheetBounds.isEmpty()) return;
@@ -6286,6 +6569,7 @@ void MainComponent::auditOpen (const juce::String& which)
 
     if      (which == "pads") openSheet (padSheet,  padsButton);
     else if (which == "sec")  { showSeqPage (seqPageGrid); openSheet (seqSheet, secButton); }
+    else if (which == "xy")   { selectXyFx (focusedFx); openSheet (xySheet, xyButton); }
     else if (which == "paso") { showSeqPage (seqPageStep); openSheet (seqSheet, secButton); }
     else if (which == "song") openSheet (songSheet, songButton);
     else if (which == "mix")  { refreshMixStrip(); openSheet (mixSheet, mixButton); }

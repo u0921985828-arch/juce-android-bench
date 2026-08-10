@@ -18,7 +18,7 @@ SIZES = [
     ("915x412",  "LANDSCAPE — the orientation nobody tests"),
 ]
 LANGS = ["es", "en", "zh", "ar"]
-SHEETS = ["", "pads", "sec", "paso", "song", "mix", "set", "proj", "gest", "rack", "chop", "browse"]
+SHEETS = ["", "pads", "sec", "paso", "song", "mix", "xy", "set", "proj", "gest", "rack", "chop", "browse"]
 
 MIN_TOUCH = 40   # Metrics::hit — Android's own guideline is 48dp, this is the floor
 
@@ -100,6 +100,7 @@ UNTRANSLATED_OK = {
     "ZATI",                                    # the wordmark
     "L", "R", "C", "M", "S", "A", "B", "D",    # channel, pan and bank letters
     "ISO", "HPF", "DRV", "DLY", "BIT", "REV",  # effect abbreviations
+    "XY",                                      # los dos ejes se llaman igual en todas partes
     "PADS", "SEC", "MIX", "SET", "SONG", "REC", "PLAY", "STOP", "LOAD",
     "RACK", "TEST", "AUDIO", "AUTOCUT", "AUTO CHOP", "SWING", "off",
     "PAPEL", "GRAFITO", "ACERO", "LACA",       # the four chassis, named not translated

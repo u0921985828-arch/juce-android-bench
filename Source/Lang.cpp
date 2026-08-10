@@ -143,6 +143,21 @@ namespace
         { "MAGENTA",        "",         "MAGENTA",    "洋红",       "أرجواني" },
         { "off",            "",         "off",        "关",         "مغلق" },
 
+        // --- Ficha XY (superficie de directo) ------------------------------
+        { "XY",             "",         "XY",         "XY",         "XY" },
+        { "MODO",           "",         "MODE",       "模式",       "الوضع" },
+        { "FIJO",           "",         "LATCH",      "锁定",       "تثبيت" },
+        { "MOMENTANEO",     "",         "MOMENTARY",  "瞬时",       "لحظي" },
+        { "SUENA",          "",         "LIVE",       "响着",       "يعمل" },
+        { "EN ESPERA",      "",         "STANDBY",    "待命",       "بالانتظار" },
+        { "se queda donde lo dejes", "", "stays where you leave it",
+                                                      "停在你放开的位置", "يبقى حيث تتركه" },
+        { "entra al tocar y sale al soltar", "", "in on touch, out on release",
+                                                      "触摸进入，松开退出", "يدخل باللمس ويخرج بالرفع" },
+        { "XY fijo - se queda donde lo dejes", "", "XY latch - stays where you leave it",
+                                                      "XY 锁定 - 停在你放开的位置", "XY تثبيت - يبقى حيث تتركه" },
+        { "XY momentaneo - suena mientras tocas", "", "XY momentary - sounds while you touch",
+                                                      "XY 瞬时 - 触摸时发声", "XY لحظي - يعمل أثناء اللمس" },
         // --- SEC sheet -----------------------------------------------------
         { "PASOS",          "",         "STEPS",      "步数",       "خطوات" },
         //  The second page of the card: one step, not all of them. Kept short

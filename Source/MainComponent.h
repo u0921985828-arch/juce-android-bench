@@ -14,6 +14,7 @@
 #include "SessionKeeper.h"
 #include "Exporter.h"
 #include "AudioPath.h"
+#include "XyPad.h"
 
 // ============================================================================
 //  MainComponent — ZATI: a 16-pad matrix whose fragments carry the colour, an
@@ -76,7 +77,7 @@ private:
     //  the machine, PROYECTOS is your work, and the tab row swaps between them
     //  without the card going anywhere.
     Sheet padSheet, seqSheet, browseSheet, setSheet, mixSheet, songSheet,
-          exportSheet, rackSheet, chopSheet;
+          exportSheet, rackSheet, chopSheet, xySheet;
     //  ...and a THIRD page, which is the one that makes the gestures real.
     //
     //  A shortcut nobody knows about is not a shortcut, it is dead code with a
@@ -496,6 +497,38 @@ private:
     juce::TextButton secButton   { "SEC" };
     juce::TextButton mixButton      { "MIX" };   // the 16-channel mixer sheet
     juce::TextButton songButton     { "SONG" };  // the arrangement timeline
+    juce::TextButton xyButton       { "XY" };    // the live performance surface
+
+    //  EL PANEL XY: LO QUE CONVIERTE SEIS EFECTOS EN UN INSTRUMENTO.
+    //
+    //  Los tres mandos de la cara sirven para AJUSTAR: los dejas donde quieres
+    //  y ahi se quedan. Lo que no hacen es TOCAR. Un barrido de filtro no se
+    //  hace girando un mando con el pulgar mientras la otra mano dispara pads,
+    //  y menos dos parametros a la vez - que es justo lo que piden un filtro
+    //  (frecuencia y resonancia), un delay (tiempo y realimentacion) o un
+    //  crusher (bits y diezmado).
+    //
+    //  MOMENTANEO ES EL MODO POR DEFECTO, y es la decision que hace que esto
+    //  sea un instrumento y no otro panel de ajustes: apoyas el dedo y el
+    //  efecto ENTRA con su mezcla propia, lo mueves y barre, lo levantas y
+    //  SALE. Eso es un gesto, tiene principio y final, y se puede fallar sin
+    //  dejar la pista con un delay abierto. FIJO existe para cuando quieres
+    //  dejarlo puesto, y es lo que hacen los tres mandos, asi que no es el que
+    //  hace falta por defecto.
+    XyPad xyPad;
+    juce::OwnedArray<juce::TextButton> xyFxButtons;   // que efecto toca el panel
+    juce::TextButton xyLatchButton { "FIJO" };
+    juce::TextButton xyCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
+    int  xyFx = 0;                 // el efecto que el panel esta tocando
+    bool xyLatch = false;          // false = momentaneo (entra al tocar, sale al soltar)
+    bool xyWasOn = false;          // como estaba el efecto antes de apoyar el dedo
+    void selectXyFx (int f);
+    void xyMoved (float x, float y);
+    void xyTouched (bool down);
+    void refreshXyPad();
+    void paintXySheetContent (juce::Graphics& g);
+    void layoutModuleBar (juce::Rectangle<int> row, juce::TextButton** mb, int vInset);
+    juce::Rectangle<int> xyLabelBand;   // donde resized() reservo el rotulo MODO
 
     //  SONG: pick what to place from the palette, then tap a cell. Choosing
     //  first and placing second beats drag-and-drop on a phone — a drag from a
