@@ -462,13 +462,39 @@ private:
     //  crash on the bench because the neighbours were other pad arrays of the
     //  same type; that is luck, not correctness.
     using PadSet = std::array<SampleBuffer::Ptr, AudioEngine::kNumPads>;
-    PadSet undoPads, redoPads;
     void capturePads (PadSet& into) const;
     void restorePads (const PadSet& from);
     void performUndo();
     void performRedo();
-    juce::ValueTree undoState, redoState;
-    juce::String    undoLabel;
+    //  DESHACER MULTINIVEL. Era un solo escalon: una accion atras y se acabo,
+    //  asi que dos AUTO CHOP seguidos dejaban el primero irrecuperable. Ahora
+    //  son dos PILAS - atras y adelante - de hasta kUndoDepth. El coste es
+    //  dieciseis ValueTree y dieciseis juegos de punteros con cuenta, que se
+    //  sueltan en el hilo de mensajes como todo lo demas.
+    static constexpr int kUndoDepth = 16;
+    struct Snapshot { juce::ValueTree state; PadSet pads; juce::String label; };
+    std::vector<Snapshot> undoStack, redoStack;
+
+    //  TAP TEMPO. Cuatro toques, la media de los tres intervalos. Menos de
+    //  cuatro no es un tempo, es un accidente; mas de cuatro y el primero ya no
+    //  se parece al ultimo. Un hueco de mas de dos segundos empieza cuenta
+    //  nueva, porque nadie marca un tempo cada dos segundos.
+    juce::TextButton tapButton { "TAP" };
+    static constexpr int kTapSlots = 4;
+    double tapTimes[kTapSlots] {};
+    int    tapCount = 0;
+    void tapTempo();
+
+    //  COPIAR Y PEGAR UN PATRON entre los ocho bancos. Rehacer a mano un
+    //  patron para probarlo con otro sonido es la friccion mas tonta que tiene
+    //  un secuenciador de ocho bancos.
+    juce::TextButton copyPatBtn { "COPIAR" }, pastePatBtn { "PEGAR" };
+    bool patClipFull = false;
+    std::array<std::array<bool, AudioEngine::kNumPads>, AudioEngine::kNumSteps> patClip {};
+    std::array<std::array<signed char, AudioEngine::kNumPads>, AudioEngine::kNumSteps> patClipNote {};
+    int patClipLen = 16;
+    void copyPattern();
+    void pastePattern();
     juce::TextButton undoButton { "DESHACER" };
     juce::TextButton redoButton { "REHACER" };
     void rebuildChain();

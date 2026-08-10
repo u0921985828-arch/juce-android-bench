@@ -109,6 +109,7 @@ UNTRANSLATED_OK = {
     "ZATI",                                    # the wordmark
     "L", "R", "C", "M", "S", "A", "B", "D",    # channel, pan and bank letters
     "FLT", "ISO", "HPF", "DRV", "DLY", "BIT", "REV",  # effect abbreviations
+    "TAP",                                     # universal en cualquier secuenciador
     "XY",                                      # los dos ejes se llaman igual en todas partes
     "PADS", "SEC", "MIX", "SET", "SONG", "REC", "PLAY", "STOP", "LOAD",
     "RACK", "TEST", "AUDIO", "AUTOCUT", "AUTO CHOP", "SWING", "off",

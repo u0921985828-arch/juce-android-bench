@@ -39,6 +39,14 @@ public:
             pk = juce::jmax (pk, std::abs (s));
         }
         peak = juce::jmax (peak * 0.72f, pk);   // meter with a soft decay
+        //  RETENCION DE PICO. El medidor cae en 0.72 por tick, asi que un
+        //  transitorio que llega a 0 dBFS ha desaparecido de la pantalla antes
+        //  de que levantes la vista - y clipar es exactamente lo que hay que
+        //  ver. Se retiene el maximo y se suelta despacio: veinte veces mas
+        //  lento que la aguja, que a treinta cuadros son unos dos segundos.
+        hold = juce::jmax (hold * 0.985f, peak);
+        if (hold >= 0.999f) clipHold = 90;      // ~3 s a 30 cuadros
+        else if (clipHold > 0) --clipHold;
 
         //  A flat line twice running is the same picture, and this is the
         //  biggest component on the face: repainting it thirty times a second
@@ -137,6 +145,12 @@ public:
         //  down the screen is now reading from the abstract to the physical.
         auto top = b.reduced (10.0f, 6.0f).removeFromTop (13.0f);
         g.setColour (ZatiColours::lcdFg.withAlpha (0.9f));
+        //  El pico retenido, en rojo si toco el techo. Es la unica marca de la
+        //  pantalla que dice algo que YA PASO, y por eso se queda: si has
+        //  clipado, quieres enterarte aunque estuvieras mirando los pads.
+        g.setColour (clipHold > 0 ? ZatiColours::red : ZatiColours::lcdDim);
+        g.drawText (Lang::ltr (holdDb()), top, Lang::start (juce::Justification::topRight));
+        g.setColour (ZatiColours::lcdDim);
         g.drawText (T ("OUT") + " " + Lang::ltr (peakDb()), top, Lang::start (juce::Justification::top));
 
         //  Waveform area: everything between the readout and the meter band.
@@ -271,6 +285,12 @@ public:
     }
 
 private:
+    juce::String holdDb() const
+    {
+        if (hold < 0.0005f) return {};
+        return juce::String ((int) juce::Decibels::gainToDecibels (hold)) + "dB";
+    }
+
     juce::String peakDb() const
     {
         if (peak < 0.0005f) return juce::String ("-inf");
@@ -285,6 +305,8 @@ private:
     float        buf[kCap] {};
     int          count { 0 };
     float        peak  { 0.0f };
+    float        hold  { 0.0f };
+    int          clipHold = 0;
     double       bpm   { 120.0 };
     //  Decimated min/max columns from the engine, oldest first.
     static constexpr int kMaxCols = AudioEngine::kMaxScopeColumns;

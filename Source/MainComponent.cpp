@@ -693,6 +693,19 @@ MainComponent::MainComponent()
     };
     addAndMakeVisible (playButton);
 
+    styleButton (tapButton, kKey);
+    tapButton.onClick = [this] { tapTempo(); };
+    seqSheet.addAndMakeVisible (tapButton);
+
+    styleButton (copyPatBtn, kKey);
+    copyPatBtn.onClick = [this] { copyPattern(); };
+    seqSheet.addAndMakeVisible (copyPatBtn);
+
+    styleButton (pastePatBtn, kKey);
+    pastePatBtn.setEnabled (false);
+    pastePatBtn.onClick = [this] { pastePattern(); };
+    seqSheet.addAndMakeVisible (pastePatBtn);
+
     styleButton (clearButton, kKey);
     clearButton.onClick = [this]
     {
@@ -2096,6 +2109,9 @@ void MainComponent::showSeqPage (int page)
     lengthSlider.setVisible  (onGrid);
     bpmSlider.setVisible     (onGrid);
     clearButton.setVisible   (onGrid);
+    tapButton.setVisible     (onGrid);
+    copyPatBtn.setVisible    (onGrid);
+    pastePatBtn.setVisible   (onGrid);
     //  The bar row has a second condition - a one-bar pattern has nothing to
     //  select - so resized() is the only place allowed to turn it ON. Here it
     //  can only ever turn it off.
@@ -3847,7 +3863,7 @@ void MainComponent::resized()
         if (onGrid)
         {
             const int stacked = wideFace ? 0
-                                         : bandH + (showBars ? bandH : 0) + bandH;
+                                         : bandH + bandH + (showBars ? bandH : 0) + bandH;
             //  Twelve is the floor at which a lane still reads as a lane. It is
             //  a floor, not a target: jlimit clamps UP too, and clamping up is
             //  exactly the bug this whole block exists to undo - so the value
@@ -3948,6 +3964,15 @@ void MainComponent::resized()
             }
             col.removeFromTop (Metrics::sm);
 
+            //  Copiar y pegar viven con el PATRON, que es lo que copian.
+            {
+                nameBand (col, "BANCO");
+                auto row = col.removeFromTop (Metrics::hit);
+                copyPatBtn.setBounds  (Lang::takeStart (row, row.getWidth() / 2).reduced (Metrics::halfGap, 2));
+                pastePatBtn.setBounds (row.reduced (Metrics::halfGap, 2));
+                col.removeFromTop (Metrics::sm);
+            }
+
             if (showBars)
             {
                 nameBand (col, "COMPAS");
@@ -3971,7 +3996,12 @@ void MainComponent::resized()
             //  than to the pattern.
             {
                 auto row = col.removeFromBottom (Metrics::hit);
-                bpmSlider.setBounds   (Lang::takeStart (row, (int) (row.getWidth() * 0.66f)).reduced (Metrics::halfGap, 2));
+                //  Cuatro en la fila del tempo: el deslizador, TAP a su lado
+                //  porque marcar y ver el numero es el mismo gesto, y luego
+                //  VACIAR. Copiar y pegar van encima, con el patron.
+                const int w4 = row.getWidth() / 4;
+                bpmSlider.setBounds   (Lang::takeStart (row, row.getWidth() - 2 * w4).reduced (Metrics::halfGap, 2));
+                tapButton.setBounds   (Lang::takeStart (row, w4).reduced (Metrics::halfGap, 2));
                 clearButton.setBounds (row.reduced (Metrics::halfGap, 2));
                 seqLabelBands.add ({ col.removeFromBottom (nameH), juce::String ("TEMPO") });
                 col.removeFromBottom (Metrics::sm);
@@ -4496,6 +4526,9 @@ void MainComponent::retranslateUi()
     playButton  .setButtonText (engine.isPlaying() ? T ("STOP") : T ("PLAY"));
     clearButton .setButtonText (T ("VACIAR"));
     seqGridBtn  .setButtonText (T ("PASOS"));
+    tapButton   .setButtonText (T ("TAP"));
+    copyPatBtn  .setButtonText (T ("COPIAR"));
+    pastePatBtn .setButtonText (T ("PEGAR"));
     seqStepBtn  .setButtonText (T ("PASO"));
     //  The three tabs of the settings card. Their rows have been in Lang.cpp
     //  all along - PROJECTS / 工程 / المشاريع, GESTURES / 手势 / إيماءات - and
@@ -4665,13 +4698,85 @@ void MainComponent::restorePads (const PadSet& from)
     }
 }
 
+//  Ver kTapSlots. Se usa Time::getMillisecondCounterHiRes porque es monotono:
+//  la hora del sistema puede saltar y un salto atras daria un tempo negativo.
+void MainComponent::tapTempo()
+{
+    const double now = juce::Time::getMillisecondCounterHiRes();
+    if (tapCount > 0 && now - tapTimes[(tapCount - 1) % kTapSlots] > 2000.0)
+        tapCount = 0;
+
+    tapTimes[tapCount % kTapSlots] = now;
+    ++tapCount;
+
+    if (tapCount < 2)
+    {
+        status.setText (T ("Sigue marcando el tempo"), juce::dontSendNotification);
+        return;
+    }
+
+    const int n = juce::jmin (tapCount, kTapSlots);
+    const double first = tapTimes[(tapCount - n) % kTapSlots];
+    const double span  = now - first;
+    if (span < 1.0) return;
+
+    const double bpm = juce::jlimit (60.0, 200.0, 60000.0 * (double) (n - 1) / span);
+    bpmSlider.setValue (std::round (bpm), juce::sendNotificationSync);
+    status.setText (T ("Tempo %1", juce::String (juce::roundToInt (bpm))),
+                    juce::dontSendNotification);
+}
+
+void MainComponent::copyPattern()
+{
+    patClipLen = engine.getPatternLength (selectedPattern);
+    for (int st = 0; st < AudioEngine::kNumSteps; ++st)
+        for (int p = 0; p < kNumPads; ++p)
+        {
+            patClip[(size_t) st][(size_t) p] = pattern[(size_t) selectedPattern][(size_t) st][(size_t) p];
+            patClipNote[(size_t) st][(size_t) p] =
+                (signed char) engine.getStepNote (selectedPattern, st, p);
+        }
+    patClipFull = true;
+    pastePatBtn.setEnabled (true);
+    status.setText (T ("P%1 copiado", juce::String (selectedPattern + 1)),
+                    juce::dontSendNotification);
+}
+
+void MainComponent::pastePattern()
+{
+    if (! patClipFull) return;
+    //  Pegar SOBRESCRIBE, asi que pasa por deshacer como cualquier otra cosa
+    //  que se lleva por delante lo que habia.
+    pushUndo (T ("PEGAR"));
+
+    engine.setPatternLength (selectedPattern, patClipLen);
+    lengthSlider.setValue (patClipLen, juce::dontSendNotification);
+    for (int st = 0; st < AudioEngine::kNumSteps; ++st)
+        for (int p = 0; p < kNumPads; ++p)
+        {
+            const bool on = patClip[(size_t) st][(size_t) p];
+            pattern[(size_t) selectedPattern][(size_t) st][(size_t) p] = on;
+            engine.setStep (selectedPattern, st, p, on);
+            engine.setStepNote (selectedPattern, st, p, patClipNote[(size_t) st][(size_t) p]);
+        }
+    refreshStepGrid();
+    seqSheet.repaint();
+    status.setText (T ("Pegado en P%1", juce::String (selectedPattern + 1)),
+                    juce::dontSendNotification);
+}
+
 void MainComponent::pushUndo (const juce::String& what)
 {
-    undoState = captureState();
-    capturePads (undoPads);
-    undoLabel = what;
-    redoState = {};                 // a new action ends the old redo branch
-    redoPads = {};
+    Snapshot snap;
+    snap.state = captureState();
+    capturePads (snap.pads);
+    snap.label = what;
+    undoStack.push_back (std::move (snap));
+    //  La pila tiene fondo: el mas viejo se cae por abajo. Sin tope, una sesion
+    //  larga acumula ValueTrees y punteros con cuenta hasta quedarse sin
+    //  memoria justo cuando mas trabajo hay que perder.
+    if ((int) undoStack.size() > kUndoDepth) undoStack.erase (undoStack.begin());
+    redoStack.clear();              // una accion nueva termina la rama de rehacer
     undoButton.setVisible (true);
     redoButton.setVisible (false);
     resized();
@@ -4682,35 +4787,43 @@ void MainComponent::pushUndo (const juce::String& what)
 //  of the one-way trip DESHACER was on its own.
 void MainComponent::performUndo()
 {
-    if (! undoState.isValid()) return;
-    auto restore = undoState;
-    auto restoreP = undoPads;
-    redoState = captureState();
-    capturePads (redoPads);
-    undoState = {};
-    undoPads = {};
-    undoButton.setVisible (false);
+    if (undoStack.empty()) return;
+
+    Snapshot now;
+    now.state = captureState();
+    capturePads (now.pads);
+    now.label = undoStack.back().label;
+    redoStack.push_back (std::move (now));
+
+    auto snap = std::move (undoStack.back());
+    undoStack.pop_back();
+
+    restorePads (snap.pads);
+    applyState (snap.state);
+    undoButton.setVisible (! undoStack.empty());
     redoButton.setVisible (true);
-    restorePads (restoreP);
-    applyState (restore);
-    status.setText (T ("Deshecho: %1", undoLabel), juce::dontSendNotification);
+    status.setText (T ("Deshecho: %1", snap.label), juce::dontSendNotification);
     resized();
 }
 
 void MainComponent::performRedo()
 {
-    if (! redoState.isValid()) return;
-    auto restore = redoState;
-    auto restoreP = redoPads;
-    undoState = captureState();
-    capturePads (undoPads);
-    redoState = {};
-    redoPads = {};
-    redoButton.setVisible (false);
+    if (redoStack.empty()) return;
+
+    Snapshot now;
+    now.state = captureState();
+    capturePads (now.pads);
+    now.label = redoStack.back().label;
+    undoStack.push_back (std::move (now));
+
+    auto snap = std::move (redoStack.back());
+    redoStack.pop_back();
+
+    restorePads (snap.pads);
+    applyState (snap.state);
+    redoButton.setVisible (! redoStack.empty());
     undoButton.setVisible (true);
-    restorePads (restoreP);
-    applyState (restore);
-    status.setText (T ("Rehecho: %1", undoLabel), juce::dontSendNotification);
+    status.setText (T ("Rehecho: %1", snap.label), juce::dontSendNotification);
     resized();
 }
 
