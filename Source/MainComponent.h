@@ -379,7 +379,7 @@ private:
     //  montarlo de uno en uno son dieciseis viajes a la biblioteca por cada
     //  banco. Coge los audios de la carpeta que estas viendo, en el orden en
     //  que se ven, y los reparte por el banco que tengas delante.
-    juce::TextButton browseKitButton { "KIT" };
+    juce::TextButton browseKitButton { "CARGAR KIT" };
     void loadFolderAsKit();
     juce::TextButton browseSystemButton { "SISTEMA" };   // SAF / OS picker fallback
     std::unique_ptr<juce::FileChooser> chooser;          // only for that fallback

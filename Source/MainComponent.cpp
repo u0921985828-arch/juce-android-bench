@@ -605,7 +605,16 @@ MainComponent::MainComponent()
         browseSheet.addAndMakeVisible (browseLoadButton);
 
         styleButton (browseKitButton, kKey);
-        browseKitButton.onClick = [this] { loadFolderAsKit(); };
+        //  KIT se lleva por delante los dieciseis pads del banco, al lado de
+        //  CARGAR que solo toca uno. Dos toques, como BORRA TODO y como
+        //  sobrescribir un proyecto: el segundo dice cuantos y en cual.
+        browseKitButton.onClick = [this]
+        {
+            if (! armConfirm (browseKitButton, T ("SOBRESCRIBIR %1?",
+                                                  juce::String::charToString ((juce::juce_wchar) ('A' + currentBank)))))
+                return;
+            loadFolderAsKit();
+        };
         browseSheet.addAndMakeVisible (browseKitButton);
 
         // Escape hatch: hand off to the OS picker. Some Android ROMs hide media
@@ -3430,9 +3439,12 @@ void MainComponent::resized()
         browseCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
 
         auto actions = inner.removeFromBottom (Metrics::btn);
-        browseSystemButton.setBounds (actions.removeFromRight (actions.getWidth() / 3).reduced (Metrics::halfGap, 0));
-        browseKitButton.setBounds    (actions.removeFromRight (actions.getWidth() / 2).reduced (Metrics::halfGap, 0));
-        browseLoadButton.setBounds   (actions.reduced (Metrics::halfGap, 0));
+        //  Por medida y no a tercios: "CARGAR KIT" es el rotulo mas largo de
+        //  esta fila y en arabe y chino no mide lo mismo.
+        {
+            juce::TextButton* pb[3] = { &browseLoadButton, &browseKitButton, &browseSystemButton };
+            layoutModuleBar (actions, pb, 0, 3);
+        }
         inner.removeFromBottom (8);
         if (browser != nullptr) browser->setBounds (inner);
     }
@@ -4590,6 +4602,7 @@ void MainComponent::retranslateUi()
     projExportButton.setButtonText (T ("EXPORTAR"));
 
     browseLoadButton  .setButtonText (T ("CARGAR"));
+    browseKitButton   .setButtonText (T ("CARGAR KIT"));
     browseSystemButton.setButtonText (T ("SISTEMA"));
 
     exportMasterButton.setButtonText (T ("MASTER"));
