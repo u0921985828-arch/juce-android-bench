@@ -466,8 +466,34 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     Command local[kMaxCmds];
     int n = 0;
     commands.drain ([&local, &n] (const Command& c) noexcept { if (n < kMaxCmds) local[n++] = c; });
+
+    //  CUANTIZAR EL DISPARO EN DIRECTO. Ver setLiveQuantise.
+    //
+    //  Al SIGUIENTE paso, no al mas cercano: el mas cercano puede estar en el
+    //  pasado y no hay forma de disparar hacia atras. Con una ventana en la
+    //  mitad del paso - si acabas de pasar uno, suena ya; si estas llegando al
+    //  siguiente, espera - que es lo que redondear al mas cercano significa
+    //  cuando solo se puede esperar.
+    const bool quantiseNow = liveQuant.load (std::memory_order_relaxed)
+                          && playing.load (std::memory_order_relaxed);
     for (int i = 0; i < n; ++i)
+    {
+        if (quantiseNow && local[i].type == Command::Type::NoteOn && numPending < (int) pending.size())
+        {
+            const double sps = samplesPerStepNow();
+            if (sps > 1.0)
+            {
+                const double toNext = sps - stepAccum;
+                if (toNext > sps * 0.5)
+                {
+                    pending[(size_t) numPending++] = { (int) toNext, local[i].slot,
+                                                       (int) local[i].semitones, local[i].velocity };
+                    continue;
+                }
+            }
+        }
         handleCommand (local[i]);
+    }
 
     //  3b. The lifeboat. Anything the queue refused arrives here instead, as
     //      one bit per pad. It fires at the pad's own settings because that is

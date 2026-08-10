@@ -18,6 +18,35 @@ struct Voice
     double pos       = 0.0;
     double delta     = 0.0;
 
+    //  ANTI-ALIAS AL SUBIR EL TONO.
+    //
+    //  Leer mas rapido que la fuente (delta > 1) sube el espectro entero, y lo
+    //  que pasa de Nyquist no se pierde: vuelve PLEGADO como parciales que no
+    //  son armonicos de nada. En un chop de break eso es el silbido metalico
+    //  que no estaba en el disco, y a +12 semitonos se lleva por delante todo
+    //  lo que la fuente tenia por encima de 11 kHz.
+    //
+    //  Un polo, no un banco: el filtro va DESPUES de la interpolacion, en el
+    //  camino de la voz, y tiene que costar dos multiplicaciones porque hay
+    //  hasta cuarenta y ocho voces. Corta en Nyquist/delta, que es exactamente
+    //  la frecuencia por encima de la cual el material se pliega. Con delta<=1
+    //  el coeficiente es 1 y el filtro es la identidad: una voz que no sube de
+    //  tono no paga nada y suena EXACTAMENTE igual que antes.
+    float aaCoef = 1.0f;      // 1 = sin filtrar
+    float aaL = 0.0f, aaR = 0.0f;
+
+    //  Se recalcula en cada start(), junto a delta, porque depende de el.
+    void updateAntiAlias() noexcept
+    {
+        if (delta <= 1.0)  { aaCoef = 1.0f; aaL = aaR = 0.0f; return; }
+        //  fc normalizada = 0.5/delta. Coeficiente de un polo:
+        //  a = 1 - exp(-2*pi*fc). Acotado para que a delta enormes siga
+        //  dejando pasar algo en vez de cerrar del todo.
+        const double fc = 0.5 / delta;
+        aaCoef = (float) juce::jlimit (0.05, 1.0, 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * fc));
+        aaL = aaR = 0.0f;
+    }
+
     //  TAPE vs TONE. Tape is what a sampler does by nature: read faster and
     //  the sound goes up AND gets shorter, because pitch and time are the
     //  same knob. Tone keeps the length: the read head still travels at real
@@ -70,6 +99,12 @@ struct Voice
         ratio    = std::pow (2.0, (double) semitones / 12.0);
         timeStep = rev ? -(fSrc / fSys) : (fSrc / fSys);
         delta    = timeStep * ratio;
+        //  delta puede ser negativa en reverso: lo que decide el plegado es su
+        //  MAGNITUD, y updateAntiAlias mira delta directamente, asi que se le
+        //  pasa ya en positivo por la unica via que hay - recalcular con el
+        //  valor absoluto. Un pad al reves a +12 st se pliega igual que uno
+        //  del derecho.
+        { const double keep = delta; delta = std::abs (delta); updateAntiAlias(); delta = keep; }
         pos      = rev ? (double) (winEnd - 1) : (double) winStart;
 
         //  45 ms grains: long enough that the crossfade does not buzz at the
@@ -382,10 +417,16 @@ struct Voice
                 //  A mono sample is the normal case for a drum hit, and the
                 //  old code ran the four-point interpolation twice over the
                 //  identical data to fill two identical channels.
-                const float l = hermite4 (frac, srcL, idx);
+                float l = hermite4 (frac, srcL, idx);
+                float r = (srcR != nullptr) ? hermite4 (frac, srcR, idx) : l;
+                if (aaCoef < 1.0f)
+                {
+                    aaL += aaCoef * (l - aaL);   l = aaL;
+                    aaR += aaCoef * (r - aaR);   r = aaR;
+                }
                 dstL[i] += gain * panL * l;
                 if (stereoOut)
-                    dstR[i] += gain * panR * (srcR != nullptr ? hermite4 (frac, srcR, idx) : l);
+                    dstR[i] += gain * panR * r;
 
                 pos += delta;
             }

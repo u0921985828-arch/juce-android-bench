@@ -496,6 +496,19 @@ MainComponent::MainComponent()
         skinButtons[juce::jlimit (0, 3, ZatiColours::currentSkin)]
             ->setToggleState (true, juce::dontSendNotification);
 
+        styleButton (quantButton, kKey);
+        litAccent (quantButton);
+        quantButton.setClickingTogglesState (true);
+        quantButton.onClick = [this]
+        {
+            const bool on = quantButton.getToggleState();
+            engine.setLiveQuantise (on);
+            status.setText (on ? T ("Los pads suenan cuadrados al paso")
+                               : T ("Los pads suenan cuando los tocas"),
+                            juce::dontSendNotification);
+        };
+        setSheet.addAndMakeVisible (quantButton);
+
         styleButton (measureButton, kKey);
         measureButton.onClick = [this] { startMeasure(); };
         setSheet.addAndMakeVisible (measureButton);
@@ -2042,6 +2055,7 @@ void MainComponent::showSetPage (int page)
     pageGestBtn .setToggleState (setPage == pageGestures, juce::dontSendNotification);
 
     measureButton.setVisible (onAudio);
+    quantButton.setVisible   (onAudio);
     testButton.setVisible    (onAudio);
     for (auto* b : bufButtons)  b->setVisible (onAudio);
     for (auto* b : rateButtons) b->setVisible (onAudio);
@@ -3421,6 +3435,10 @@ void MainComponent::resized()
         {
             testButton.setBounds    (Lang::takeEnd (titleRow, 56).reduced (2));
             measureButton.setBounds (Lang::takeEnd (titleRow, 64).reduced (2));
+            Lang::takeEnd (titleRow, Metrics::xs);
+            //  Setenta y dos no bastaban: "QUANTISE" pide 56 px de letra y la tapa
+            //  le dejaba 49 en la pantalla mas estrecha del banco.
+            quantButton.setBounds   (Lang::takeEnd (titleRow, juce::jmax (84, titleRow.getWidth() / 3)).reduced (2));
         }
         if (onProj) inner.removeFromTop (14);         // painted: which project is open
         inner.removeFromTop (Metrics::sm);
@@ -4473,6 +4491,7 @@ void MainComponent::retranslateUi()
     loadButton  .setButtonText (T ("LOAD"));
     testButton  .setButtonText (T ("TEST"));
     measureButton.setButtonText (T ("MEDIR"));
+    quantButton .setButtonText (T ("CUADRAR"));
     recButton   .setButtonText (recArmed ? T ("REC ON") : T ("REC"));
     playButton  .setButtonText (engine.isPlaying() ? T ("STOP") : T ("PLAY"));
     clearButton .setButtonText (T ("VACIAR"));
@@ -4987,6 +5006,11 @@ juce::ValueTree MainComponent::captureState() const
         for (int pi = 0; pi < 3; ++pi)
             fx.setProperty (juce::String (fxDefs[f].name) + juce::String (pi),
                             fxParams[f * 3 + pi]->getValue(), nullptr);
+    //  El XY es parte del proyecto: que efecto estabas tocando y si lo dejaste
+    //  fijo o momentaneo. Sin esto, abrir un proyecto te devolvia el panel en
+    //  FLT y en momentaneo aunque lo hubieras dejado en el delay y fijo.
+    fx.setProperty ("xyFx",    xyFx,    nullptr);
+    fx.setProperty ("xyLatch", xyLatch, nullptr);
     s.addChild (fx, -1, nullptr);
 
     juce::ValueTree pads ("PADS");
@@ -5110,6 +5134,13 @@ void MainComponent::applyState (const juce::ValueTree& s)
             pushFxParam (f, 0); pushFxParam (f, 1); pushFxParam (f, 2);
             fxOn[(size_t) f] = fxParam (f, 2).getValue() > 0.001;
             fxButtons[f]->setToggleState (fxOn[(size_t) f], juce::dontSendNotification);
+        //  ...y el estado del panel XY. jlimit porque un proyecto viejo no
+        //  tiene la propiedad y getProperty devuelve 0, que es un indice
+        //  valido - pero uno guardado por una version con mas efectos no lo
+        //  seria.
+        xyLatch = (bool) fx.getProperty ("xyLatch", false);
+        selectXyFx (juce::jlimit (0, kNumFx - 1, (int) fx.getProperty ("xyFx", 0)));
+        xyLatchButton.setToggleState (xyLatch, juce::dontSendNotification);
         }
     }
 

@@ -335,6 +335,20 @@ public:
     //
     //  La zona muerta central no es adorno: sin ella, "centro" es un valor
     //  exacto que un dedo no acierta, y el filtro nunca queda del todo fuera.
+    //  CUANTIZAR EL DISPARO EN DIRECTO.
+    //
+    //  Un pad tocado con el transporte rodando sonaba en el instante exacto en
+    //  que el dedo tocaba el cristal. La grabacion SI se cuantizaba - ver
+    //  padClicked - asi que lo que oias y lo que quedaba escrito eran dos
+    //  cosas distintas: tocabas fuera y al reproducir estaba dentro.
+    //
+    //  Con esto puesto, el disparo espera al 1/16 mas cercano, igual que hace
+    //  la grabacion, y lo que suena es lo que se graba. Se cuenta en la misma
+    //  cola de golpes pendientes que ya usan los redobles: nada nuevo en el
+    //  hilo de audio.
+    void setLiveQuantise (bool on) noexcept { liveQuant.store (on, std::memory_order_relaxed); }
+    bool getLiveQuantise() const noexcept { return liveQuant.load (std::memory_order_relaxed); }
+
     void setFltSweep (float s)  noexcept { fltSweep.store (s, std::memory_order_relaxed); }
     void setFltReso  (float q)  noexcept { fxReso.store   (q, std::memory_order_relaxed); }
     void setFltMix   (float m)  noexcept { fxMix.store    (m, std::memory_order_relaxed); }
@@ -564,6 +578,15 @@ private:
     //  second one is audio-thread only, so it is a plain float.
     std::atomic<float> masterTarget { 1.0f };
     std::atomic<bool>  safetyLimiter { true };
+    std::atomic<bool>  liveQuant     { false };
+    //  Muestras por paso de 1/16 al tempo actual. Se necesita en la seccion 3
+    //  - la cuantizacion del disparo en directo - y alli todavia no se ha
+    //  calculado el transporte, que va en la 4+5.
+    double samplesPerStepNow() const noexcept
+    {
+        const double bpmNow = juce::jmax (20.0, (double) bpm.load (std::memory_order_relaxed));
+        return juce::jmax (1.0, (60.0 / bpmNow) * 0.25 * systemSampleRate);
+    }
     float masterGain = 1.0f;
 
     std::array<std::atomic<float>, kNumPads> padGain {};

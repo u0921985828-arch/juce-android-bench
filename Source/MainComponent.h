@@ -248,6 +248,10 @@ private:
     //  The measurement. Everything else in this panel is the device's own
     //  claim about itself; this is a click emitted and heard back.
     juce::TextButton measureButton { "MEDIR" };
+    //  Cuantizar el disparo en directo. Vive en AJUSTES / AUDIO porque es una
+    //  preferencia de como responde la maquina, no un ajuste de la obra: si la
+    //  quieres puesta, la quieres puesta en todos tus proyectos.
+    juce::TextButton quantButton { "CUADRAR" };
     float measuredMs = -1.0f;          // last round trip, -1 = never measured
     double measuredRate = 0.0;         // the clock it was actually taken at
     float measuredOutMs = 0.0f;        // what the device claimed while measuring

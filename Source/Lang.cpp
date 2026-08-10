@@ -90,6 +90,11 @@ namespace
           "%1 متوقف - اضغط مطولًا للضبط دون الإيقاف" },
         { "TEST",           "",         "TEST",       "测试",       "اختبار" },
         { "MEDIR",          "",         "MEASURE",    "测量",       "قياس" },
+        { "CUADRAR",        "",         "QUANT",      "对齐",       "ضبط" },   // abreviado: QUANTISE no cabe en la tapa del Fold
+        { "Los pads suenan cuadrados al paso", "", "pads now land on the step",
+                                        "音垫将对齐到步", "الوسادات تنضبط على الخطوة" },
+        { "Los pads suenan cuando los tocas", "", "pads sound the moment you hit them",
+                                        "音垫在触碰瞬间发声", "الوسادات تصدر عند اللمس" },
         { "elige uno de la lista", "",   "pick one from the list", "从列表中选一个", "اختر واحدًا من القائمة" },
         { "OUT",            "",         "OUT",        "输出",       "خرج" },
 

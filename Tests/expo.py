@@ -108,7 +108,7 @@ UNTRANSLATED_OK = {
     # (handled by the regex below)
     "ZATI",                                    # the wordmark
     "L", "R", "C", "M", "S", "A", "B", "D",    # channel, pan and bank letters
-    "ISO", "HPF", "DRV", "DLY", "BIT", "REV",  # effect abbreviations
+    "FLT", "ISO", "HPF", "DRV", "DLY", "BIT", "REV",  # effect abbreviations
     "XY",                                      # los dos ejes se llaman igual en todas partes
     "PADS", "SEC", "MIX", "SET", "SONG", "REC", "PLAY", "STOP", "LOAD",
     "RACK", "TEST", "AUDIO", "AUTOCUT", "AUTO CHOP", "SWING", "off",
