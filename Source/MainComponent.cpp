@@ -60,6 +60,28 @@ namespace
         b.setColour (juce::TextButton::textColourOnId,  ZatiColours::textOn (onCap));
     }
 
+    //  "THIS CAP LIGHTS IN THE ACCENT" IS A ROLE, NOT A COLOUR.
+    //
+    //  Twenty-three places wrote `setColour (buttonOnColourId, kAccent)` at
+    //  construction, and applySkin refreshed three of them. Every other lit cap
+    //  in the app - the four bank chips, the bar selector, the settings tabs,
+    //  REV / LOOP / AUTOCUT, MODO, the song brushes, the pattern buttons -
+    //  kept the accent of whatever skin the app happened to start in. You could
+    //  not see it until you pressed one, which is exactly why it survived: the
+    //  face repainted correctly and then a single button lit up amber on a
+    //  petrol machine.
+    //
+    //  So the fact is recorded on the button and applySkin re-applies it to
+    //  every cap that carries the mark. The lit-state text is MEASURED against
+    //  the accent for the same reason the resting text is (see textOn): on a
+    //  dark accent, light ink; on a bright one, dark.
+    void litAccent (juce::TextButton& b)
+    {
+        b.getProperties().set ("lit", 1);
+        b.setColour (juce::TextButton::buttonOnColourId, ZatiColours::accent);
+        b.setColour (juce::TextButton::textColourOnId,   ZatiColours::textOn (ZatiColours::accent));
+    }
+
     // Cycle the 3 primaries across the 8 pattern banks so each has its own
     // colour identity in the chain-include row.
     // Pattern banks are told apart by TONE, not hue: the chassis carries no
@@ -137,7 +159,7 @@ MainComponent::MainComponent()
     {
         auto* t = new juce::TextButton (juce::String::charToString ((juce::juce_wchar) ('A' + b)));
         styleButton (*t, kStepOff);
-        t->setColour (juce::TextButton::buttonOnColourId, kAccent);
+        litAccent (*t);
         t->setClickingTogglesState (true);
         t->setRadioGroupId (5150);
         t->onClick = [this, b] { selectBank (b); };
@@ -155,7 +177,7 @@ MainComponent::MainComponent()
     {
         auto* t = new juce::TextButton (juce::String (b + 1));
         styleButton (*t, kStepOff);
-        t->setColour (juce::TextButton::buttonOnColourId, kAccent);
+        litAccent (*t);
         t->setClickingTogglesState (true);
         t->onClick = [this, b]
         {
@@ -179,7 +201,7 @@ MainComponent::MainComponent()
         for (int i = 0; i < 2; ++i)
         {
             styleButton (*mb[i], kKey);
-            mb[i]->setColour (juce::TextButton::buttonOnColourId, kAccent);
+            litAccent (*mb[i]);
             auto* s = sh[i]; auto* b = mb[i];
             b->onClick = [this, s, b] { if (s->isVisible()) closeAllSheets(); else openSheet (*s, *b); };
             addAndMakeVisible (b);
@@ -218,7 +240,7 @@ MainComponent::MainComponent()
         };
 
         styleButton (setButton, kKey);
-        setButton.setColour (juce::TextButton::buttonOnColourId, kAccent);
+        litAccent (setButton);
         setButton.onClick = [this]
         {
             if (setSheet.isVisible()) closeAllSheets();
@@ -347,7 +369,7 @@ MainComponent::MainComponent()
         {
             auto* b = new juce::TextButton (juce::String (i + 1).paddedLeft ('0', 2));
             styleButton (*b, kStepOff);
-            b->setColour (juce::TextButton::buttonOnColourId, ZatiColours::accent);
+            litAccent (*b);
             b->setClickingTogglesState (true);
             b->onClick = [this, i] { rackPad = i; selectPad (i); refreshRack(); };
             rackSheet.addAndMakeVisible (b);
@@ -387,7 +409,7 @@ MainComponent::MainComponent()
             const int n = kChopCounts[i];
             auto* b = new juce::TextButton (juce::String (n));
             styleButton (*b, kStepOff);
-            b->setColour (juce::TextButton::buttonOnColourId, kAccent);
+            litAccent (*b);
             b->setClickingTogglesState (true);
             b->setRadioGroupId (7301);
             b->onClick = [this, n] { chopSlices = n; refreshChopSheet(); };
@@ -398,7 +420,7 @@ MainComponent::MainComponent()
         styleButton (chopSafeButton, kKey);
         chopSafeButton.setClickingTogglesState (true);
         chopSafeButton.setToggleState (true, juce::dontSendNotification);
-        chopSafeButton.setColour (juce::TextButton::buttonOnColourId, kAccent);
+        litAccent (chopSafeButton);
         chopSafeButton.onClick = [this]
         {
             chopOnlyEmpty = chopSafeButton.getToggleState();
@@ -427,7 +449,7 @@ MainComponent::MainComponent()
             //  is documented as ASCII-only and turns 中文 into mojibake.
             auto* b = new juce::TextButton (juce::String::fromUTF8 (Lang::nativeName ((Lang::Id) i)));
             styleButton (*b, kStepOff);
-            b->setColour (juce::TextButton::buttonOnColourId, kAccent);
+            litAccent (*b);
             b->setClickingTogglesState (true);
             b->setRadioGroupId (7411);
             b->onClick = [this, i]
@@ -450,7 +472,7 @@ MainComponent::MainComponent()
         {
             auto* b = new juce::TextButton (ZatiColours::skinName (i));
             styleButton (*b, kKey);
-            b->setColour (juce::TextButton::buttonOnColourId, kAccent);
+            litAccent (*b);
             b->setClickingTogglesState (true);
             b->setRadioGroupId (7412);
             b->onClick = [this, i]
@@ -488,8 +510,7 @@ MainComponent::MainComponent()
             styleButton (*pb[i], kKey);
             pb[i]->setClickingTogglesState (true);
             pb[i]->setRadioGroupId (8802);
-            pb[i]->setColour (juce::TextButton::buttonOnColourId, kAccent);
-            pb[i]->setColour (juce::TextButton::textColourOnId, ZatiColours::inkLight);
+            litAccent (*pb[i]);
             pb[i]->onClick = [this, i] { showSetPage (i); };
             setSheet.addAndMakeVisible (pb[i]);
         }
@@ -581,7 +602,7 @@ MainComponent::MainComponent()
     // Transport / actions.
     loadButton.setClickingTogglesState (true);
     styleButton (loadButton, kKey);
-    loadButton.setColour (juce::TextButton::buttonOnColourId, kAccent);
+    litAccent (loadButton);
     //  Hold CARGAR to open the library on the pad you have selected, instead of
     //  arming it and then hunting for a pad to tap. Same destination, one
     //  gesture instead of two, and it does not leave the face armed if you
@@ -765,7 +786,7 @@ MainComponent::MainComponent()
     //  vocal you can transpose and a chipmunk.
     styleButton (modeButton, kKey);
     modeButton.setClickingTogglesState (true);
-    modeButton.setColour (juce::TextButton::buttonOnColourId, kAccent);
+    litAccent (modeButton);
     modeButton.onClick = [this]
     {
         if (selectedPad < 0) return;
@@ -803,13 +824,13 @@ MainComponent::MainComponent()
 
     reverseButton.setClickingTogglesState (true);
     styleButton (reverseButton, kStepOff);
-    reverseButton.setColour (juce::TextButton::buttonOnColourId, kAccent);
+    litAccent (reverseButton);
     reverseButton.onClick = [this] { if (selectedPad >= 0) { padReverse[(size_t) selectedPad] = reverseButton.getToggleState(); engine.setPadReverse (selectedPad, reverseButton.getToggleState()); } };
     addAndMakeVisible (reverseButton);
 
     loopButton.setClickingTogglesState (true);
     styleButton (loopButton, kStepOff);
-    loopButton.setColour (juce::TextButton::buttonOnColourId, kAccent);
+    litAccent (loopButton);
     loopButton.onClick = [this] { if (selectedPad >= 0) { padLoop[(size_t) selectedPad] = loopButton.getToggleState(); engine.setPadLoop (selectedPad, loopButton.getToggleState()); } };
     addAndMakeVisible (loopButton);
 
@@ -820,7 +841,7 @@ MainComponent::MainComponent()
     //  into a chorus of itself when you play it fast.
     autocutButton.setClickingTogglesState (true);
     styleButton (autocutButton, kStepOff);
-    autocutButton.setColour (juce::TextButton::buttonOnColourId, kAccent);
+    litAccent (autocutButton);
     autocutButton.onClick = [this]
     {
         if (selectedPad < 0) return;
@@ -995,8 +1016,7 @@ MainComponent::MainComponent()
             styleButton (*sb[i], kKey);
             sb[i]->setClickingTogglesState (true);
             sb[i]->setRadioGroupId (8803);
-            sb[i]->setColour (juce::TextButton::buttonOnColourId, kAccent);
-            sb[i]->setColour (juce::TextButton::textColourOnId, ZatiColours::inkLight);
+            litAccent (*sb[i]);
             sb[i]->onClick = [this, i] { showSeqPage (i); };
             seqSheet.addAndMakeVisible (sb[i]);
         }
@@ -1052,7 +1072,7 @@ MainComponent::MainComponent()
         {
             auto* b = new HoldButton (fxDefs[f].name);
             styleButton (*b, kKey);
-            b->setColour (juce::TextButton::buttonOnColourId, kAccent);
+            litAccent (*b);
             b->onClick = [this, f] { fxTapped (f); };
             //  Hold to take the knobs without touching the switch: the only
             //  way to tune an effect that is already running now that a tap
@@ -1191,8 +1211,7 @@ MainComponent::MainComponent()
     {
         auto* t = new juce::TextButton (juce::String::charToString ((juce::juce_wchar) ('A' + b)));
         styleButton (*t, kKey);
-        t->setColour (juce::TextButton::buttonOnColourId, kAccent);
-        t->setColour (juce::TextButton::textColourOnId, ZatiColours::inkLight);
+        litAccent (*t);
         t->setClickingTogglesState (true);
         t->setRadioGroupId (5151);
         t->onClick = [this, b] { showMixBank (b); };
@@ -1214,7 +1233,7 @@ MainComponent::MainComponent()
     mixSheet.paintContent = [this] (juce::Graphics& g) { paintMixSheetContent (g); };
 
     styleButton (mixButton, kKey);
-    mixButton.setColour (juce::TextButton::buttonOnColourId, kAccent);
+    litAccent (mixButton);
     mixButton.onClick = [this]
     {
         if (mixSheet.isVisible()) { closeAllSheets(); return; }
@@ -1243,7 +1262,7 @@ MainComponent::MainComponent()
     songPatBtns[0]->setToggleState (true, juce::dontSendNotification);
 
     styleButton (songPadModeBtn, kStepOff);
-    songPadModeBtn.setColour (juce::TextButton::buttonOnColourId, kAccent);
+    litAccent (songPadModeBtn);
     songPadModeBtn.setClickingTogglesState (true);
     songPadModeBtn.onClick = [this]
     {
@@ -1260,7 +1279,7 @@ MainComponent::MainComponent()
     songSheet.addAndMakeVisible (songClearBtn);
 
     styleButton (songModeBtn, kStepOff);
-    songModeBtn.setColour (juce::TextButton::buttonOnColourId, kAccent);
+    litAccent (songModeBtn);
     songModeBtn.setClickingTogglesState (true);
     songModeBtn.onClick = [this]
     {
@@ -1292,7 +1311,7 @@ MainComponent::MainComponent()
     {
         auto* b = new juce::TextButton (juce::String (i * Playlist::kBarsView + 1));
         styleButton (*b, kStepOff);
-        b->setColour (juce::TextButton::buttonOnColourId, kAccent);
+        litAccent (*b);
         b->setClickingTogglesState (true);
         b->onClick = [this, i]
         {
@@ -1347,7 +1366,7 @@ MainComponent::MainComponent()
     songSheet.paintContent = [this] (juce::Graphics& g) { paintSongSheetContent (g); };
 
     styleButton (songButton, kKey);
-    songButton.setColour (juce::TextButton::buttonOnColourId, kAccent);
+    litAccent (songButton);
     songButton.onClick = [this]
     {
         if (songSheet.isVisible()) { closeAllSheets(); return; }
@@ -1495,30 +1514,29 @@ static void restyleTree (juce::Component& c, const std::function<void (juce::Tex
 
 void MainComponent::applySkin()
 {
+    //  Both halves of every cap, in one pass over the whole tree: the resting
+    //  colour from its role, and the lit colour from its mark. Naming the
+    //  handful that had to be refreshed by hand is how sixty of them ended up
+    //  wearing the palette they were built in - first the resting caps, and
+    //  then, once that was fixed, the pressed ones.
     restyleTree (*this, [] (juce::TextButton& b)
     {
         const auto& props = b.getProperties();
-        if (! props.contains ("role")) return;
-        const int role = (int) props["role"];
-        if (role == roleFixed) return;
-        styleButton (b, roleColour (role));
+        if (props.contains ("role"))
+        {
+            const int role = (int) props["role"];
+            if (role != roleFixed) styleButton (b, roleColour (role));
+        }
+        //  After styleButton, never before: styleButton derives the lit-state
+        //  TEXT from whatever the lit-state CAP currently is, so re-lighting
+        //  the cap first would leave the text measured against the old accent.
+        if ((int) props.getWithDefault ("lit", 0) == 1) litAccent (b);
     });
 
     const auto acc = ZatiColours::accent;
     // Lit-state text must stay legible on a dark accent (TINTA skin).
     const auto onTxt = ZatiColours::textOn (acc);
 
-    juce::TextButton* accented[] = { &padsButton, &secButton, &loadButton };
-    for (auto* b : accented)
-    {
-        b->setColour (juce::TextButton::buttonOnColourId, acc);
-        b->setColour (juce::TextButton::textColourOnId, onTxt);
-    }
-    for (auto* b : fxButtons)
-    {
-        b->setColour (juce::TextButton::buttonOnColourId, acc);
-        b->setColour (juce::TextButton::textColourOnId, onTxt);
-    }
     for (int i = 0; i < patternButtons.size(); ++i)
         patternButtons[i]->setColour (juce::TextButton::buttonOnColourId, patternRowColour (i));
 
@@ -5864,8 +5882,7 @@ void MainComponent::refreshAudioOptions()
         {
             auto* b = new juce::TextButton (juce::String (v) + (v == natBuf ? "*" : ""));
             styleButton (*b, ZatiColours::key);
-            b->setColour (juce::TextButton::buttonOnColourId, ZatiColours::accent);
-            b->setColour (juce::TextButton::textColourOnId, ZatiColours::inkLight);
+            litAccent (*b);
             b->setToggleState (v == curBuf, juce::dontSendNotification);
             b->onClick = [this, v] { applyAudioSetup (v, 0.0); };
             setSheet.addAndMakeVisible (b);
@@ -5888,8 +5905,7 @@ void MainComponent::refreshAudioOptions()
         if (rateButtons.size() >= 4) break;
         auto* b = new juce::TextButton (juce::String (r / 1000.0, (r == (double) (int) (r / 1000.0) * 1000.0) ? 0 : 1) + "k");
         styleButton (*b, ZatiColours::key);
-        b->setColour (juce::TextButton::buttonOnColourId, ZatiColours::accent);
-        b->setColour (juce::TextButton::textColourOnId, ZatiColours::inkLight);
+        litAccent (*b);
         b->setToggleState (std::abs (r - curRate) < 1.0, juce::dontSendNotification);
         b->onClick = [this, r] { applyAudioSetup (0, r); };
         setSheet.addAndMakeVisible (b);
