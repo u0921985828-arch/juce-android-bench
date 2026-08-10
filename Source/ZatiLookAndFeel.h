@@ -107,17 +107,19 @@ namespace ZatiColours
     inline int currentSkin = 0;
     inline const char* skinName (int i)
     {
-        //  THREE CHASSIS, not four accents.
+        //  FOUR CHASSIS, not four accents.
         //
         //  What used to be here were four shades of the same near-black
         //  applied to the accent alone: the machine looked identical in all
         //  four and only a pressed key changed. That is a preference, not a
         //  skin. A skin is the BODY - the paper it is printed on, the plates
         //  bolted to it, the caps, and the ink that has to stay legible on all
-        //  of them - and there are three because three is how many distinct
-        //  materials this instrument can be without stopping being itself.
-        static const char* names[3] = { "PAPEL", "GRAFITO", "ACERO" };
-        return names[((i % 3) + 3) % 3];
+        //  of them. Three of them are materials - how many distinct things
+        //  this instrument can be made of without stopping being itself - and
+        //  the fourth is lacquer over one of them, which is the only honest
+        //  way to give this face a colour. See the table.
+        static const char* names[4] = { "PAPEL", "GRAFITO", "ACERO", "LACA" };
+        return names[((i % 4) + 4) % 4];
     }
 
     //  A whole face, in one row. Every one of these is a surface or the ink
@@ -138,7 +140,7 @@ namespace ZatiColours
 
     inline const Skin& skinTable (int i)
     {
-        static const Skin table[3] =
+        static const Skin table[4] =
         {
             //  PAPEL — the original. Kraft and bone: the substrate this studio
             //  prints on, warm enough that nothing in the room is that colour
@@ -180,8 +182,31 @@ namespace ZatiColours
               0xffd6dae0, 0xffe0e4e8, 0xffbcc2ca,
               0xff10141a, 0xffe4e9ee, 0xff828b95,
               0xff1e2328, 0xff3d454e, 0xff11151a },
+            //  LACA — the one that breaks the rule, on purpose and once.
+            //
+            //  This chassis is achromatic everywhere else because hue belongs
+            //  to the zati fragments and to nothing else; a body with a colour
+            //  in it would compete with the pads for the same meaning. So if
+            //  there is going to be a coloured one, the colour has to go where
+            //  the pads are NOT: a deep lacquered petrol for the body, and a
+            //  pad plate kept almost neutral so the sixteen fragments are
+            //  still the only real hue in the grid. The rule survives - it
+            //  just gets a room painted around it.
+            //
+            //  The accent is warm amber against the cool body, which is the
+            //  one pairing that makes a lit key unmistakable here: on the
+            //  other three a pressed cap is a step of TONE, and on a coloured
+            //  body tone alone is not enough to carry it.
+            { 0xff1b4a4f, 0xff14393d, 0xff0e2c30,
+              0xff1a4247, 0xff2a5b61, 0xff081f22,
+              0xff235055, 0xff2c6067, 0xff3d7a80,
+              0xff11201f, 0xff2a4a48,
+              0xfff2e8d5, 0xff9ab5b3, 0xff0e2c30, 0xfffffdf7,
+              0xff1c2b2b, 0xff172525, 0xff35514f,
+              0xff08191c, 0xffe9f2ee, 0xff7fa39f,
+              0xfff0a830, 0xffffc35c, 0xffc1811f },
         };
-        return table[((i % 3) + 3) % 3];
+        return table[((i % 4) + 4) % 4];
     }
 
     // --- Knob body (dark — physical-instrument contrast on a white face) ---
@@ -220,7 +245,7 @@ namespace ZatiColours
     //  change is one call and no component knows it happened.
     inline void setSkin (int i)
     {
-        currentSkin = ((i % 3) + 3) % 3;
+        currentSkin = ((i % 4) + 4) % 4;
         const auto& k = skinTable (currentSkin);
 
         chassisTop = juce::Colour (k.top);
@@ -260,6 +285,36 @@ namespace ZatiColours
         //  ink outline around a white marker is invisible twice over.
         playhead     = juce::Colour (k.white);
         playheadEdge = juce::Colour (k.ink).withAlpha (0.40f);
+    }
+
+    //  THE CHASSIS IS YOURS, NOT THE SONG'S.
+    //
+    //  It was stored in the project tree and applied on load, which is two
+    //  mistakes in one: pick a chassis and the next launch had forgotten it
+    //  (a hand-made session carries no skin, so it fell back to the first),
+    //  and opening a project made on somebody else's phone repainted your
+    //  machine to their taste. A body colour is a preference of the person
+    //  holding the instrument, so it lives where the language lives.
+    //
+    //  The file is written in the app's own internal directory rather than in
+    //  the library: it has to be findable before ProjectStore has decided
+    //  where the library IS.
+    inline juce::File skinPreferenceFile()
+    {
+        return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                   .getChildFile ("zati-carcasa.txt");
+    }
+
+    inline void saveSkinPreference()
+    {
+        skinPreferenceFile().getParentDirectory().createDirectory();
+        skinPreferenceFile().replaceWithText (juce::String (currentSkin));
+    }
+
+    inline void loadSkinPreference()
+    {
+        const auto f = skinPreferenceFile();
+        setSkin (f.existsAsFile() ? f.loadFileAsString().trim().getIntValue() : 0);
     }
 
     // Bundled typefaces (Oswald display + JetBrains Mono). Cached once.

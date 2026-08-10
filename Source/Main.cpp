@@ -30,6 +30,10 @@ public:
         //  retranslated flickers on the first frame.
         ProjectStore::ensureTree();
         Lang::loadPreference();
+        //  Before the window: every component captures colours as it is built,
+        //  so a chassis applied afterwards would leave half the face on the
+        //  previous one until something forced a restyle.
+        ZatiColours::loadSkinPreference();
 
         //  The audit run picks its own language: a dump is comparable across
         //  the four only if the language is an input, not whatever the last

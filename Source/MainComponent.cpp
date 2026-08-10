@@ -404,7 +404,7 @@ MainComponent::MainComponent()
 
         //  ...and the chassis. Same shape of control as the language row:
         //  three chips, one lit, and picking one repaints the whole machine.
-        for (int i = 0; i < 3; ++i)
+        for (int i = 0; i < 4; ++i)
         {
             auto* b = new juce::TextButton (ZatiColours::skinName (i));
             styleButton (*b, kKey);
@@ -414,6 +414,7 @@ MainComponent::MainComponent()
             b->onClick = [this, i]
             {
                 ZatiColours::setSkin (i);
+                ZatiColours::saveSkinPreference();
                 applySkin();
                 //  Every cached colour in the tree is re-read on the next
                 //  paint, but the ones components captured at construction are
@@ -428,7 +429,7 @@ MainComponent::MainComponent()
             setSheet.addAndMakeVisible (b);
             skinButtons.add (b);
         }
-        skinButtons[juce::jlimit (0, 2, ZatiColours::currentSkin)]
+        skinButtons[juce::jlimit (0, 3, ZatiColours::currentSkin)]
             ->setToggleState (true, juce::dontSendNotification);
 
         styleButton (measureButton, kKey);
@@ -4047,7 +4048,8 @@ juce::ValueTree MainComponent::captureState() const
     s.setProperty ("version", 1, nullptr);
     s.setProperty ("swing", engine.getSwing(), nullptr);
     s.setProperty ("bpm", bpmSlider.getValue(), nullptr);
-    s.setProperty ("skin", ZatiColours::currentSkin, nullptr);
+    //  The skin is deliberately NOT captured: it belongs to the person, not
+    //  to the song. Old projects that carry one are simply ignored.
     s.setProperty ("focusedFx", focusedFx, nullptr);
     s.setProperty ("selectedPattern", selectedPattern, nullptr);
 
@@ -4135,7 +4137,10 @@ void MainComponent::applyState (const juce::ValueTree& s)
 {
     if (! s.hasType ("ZATI") && ! s.hasType ("COLORS")) return;   // COLORS: proyectos anteriores al renombrado
 
-    ZatiColours::setSkin ((int) s.getProperty ("skin", 0));
+    //  NOT the skin. It used to be applied from here, so opening a project
+    //  made on another phone repainted your machine to somebody else's taste,
+    //  and a session with no skin property reset it on every launch. The
+    //  chassis is a preference now; see ZatiColours::loadSkinPreference.
     applySkin();
 
     bpmSlider.setValue ((double) s.getProperty ("bpm", 120.0), juce::sendNotification);
