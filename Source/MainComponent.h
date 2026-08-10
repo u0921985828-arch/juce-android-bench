@@ -92,6 +92,40 @@ private:
     juce::Rectangle<int> gesturesArea;
     static constexpr int kNumGestures = 6;
     void showSetPage (int page);
+
+    //  THE SEQUENCER CARD HAS TWO PAGES, and it has them because measuring it
+    //  said so. Everything used to be on one card: pattern, length, chain,
+    //  step note, velocity, roll, swing, the bar selector, the sixteen-lane
+    //  grid and the tempo - 800 px of content asking a card that is capped at
+    //  78% of the window. On a 360x640 phone that cap is 499, so 300 px had to
+    //  go somewhere, and it came out of whatever was laid out LAST: the grid.
+    //  Measured on the bench: sixteen lanes sharing 55 px, three and a half
+    //  pixels each, with the pad numbers painted on top of one another. The
+    //  one thing the sheet exists for was the smallest thing on it.
+    //
+    //  So: PASOS is the grid and the four controls you touch while it plays -
+    //  which pattern, how long, which bar, what tempo. PASO is the step you
+    //  tapped - its note, how hard it hits, how many times it repeats - plus
+    //  the chain and the swing. Two pages, each of which asks for exactly the
+    //  height it will be given, so nothing is ever squeezed out of the bottom.
+    enum SeqPage { seqPageGrid = 0, seqPageStep };
+    int seqPage = seqPageGrid;
+    juce::TextButton seqGridBtn { "PASOS" }, seqStepBtn { "PASO" };
+    void showSeqPage (int page);
+
+    //  The captions of the sequencer card, recorded by resized() instead of
+    //  reconstructed by paint() from each control's bounds. Reconstructing
+    //  them was fine while every control was on screen at once; with two pages
+    //  it drew the name of a control that was HIDDEN - four ghost captions
+    //  lying across the grid. What is laid out is what is labelled.
+    struct SeqLabel { juce::Rectangle<int> band; juce::String key; };
+    juce::Array<SeqLabel> seqLabelBands;
+    //  ...and the line at the foot of the PASO page that names the step being
+    //  edited. Reserved by resized() for the same reason: drawn from the card's
+    //  bottom edge without being booked, it landed on the swing slider.
+    static constexpr int kSeqFootH = 14;
+    juce::Rectangle<int> seqFootArea;
+
     void openSheet (Sheet& s, juce::TextButton& toggle);
     void closeAllSheets();
     void paintAudioSheetContent (juce::Graphics& g);
@@ -390,9 +424,17 @@ private:
     //  trims had been restored to 0..1. Sixteen bars of the same loop, and no
     //  way back.
     //
-    //  Sixteen reference-counted pointers is the whole cost, and they are
+    //  Sixty-four reference-counted pointers is the whole cost, and they are
     //  released on the message thread like every other copy.
-    using PadSet = std::array<SampleBuffer::Ptr, 16>;
+    //
+    //  SIZED FROM AudioEngine::kNumPads, never written by hand. It was a
+    //  literal 16 while the machine grew to 64, and capturePads/restorePads
+    //  loop kNumPads: every pushUndo wrote 48 pointers past the end of the
+    //  array - into whatever member the linker had put next - and then undo
+    //  read them back and handed the wreckage to assignSampleToPad. It did not
+    //  crash on the bench because the neighbours were other pad arrays of the
+    //  same type; that is luck, not correctness.
+    using PadSet = std::array<SampleBuffer::Ptr, AudioEngine::kNumPads>;
     PadSet undoPads, redoPads;
     void capturePads (PadSet& into) const;
     void restorePads (const PadSet& from);
@@ -421,7 +463,10 @@ private:
     int currentBank = 0;
     void selectBank (int bank);
     juce::OwnedArray<juce::TextButton> bankButtons;
-    juce::Rectangle<int> bankRowArea;
+    //  Two chips at each end of the seam, not four bunched at one end: the
+    //  engraved PADS sits between them and the seam reads as balanced.
+    //  paint() needs BOTH rectangles to know where the rule may run.
+    juce::Rectangle<int> bankRowLeftArea, bankRowRightArea;
     static constexpr int kNumSteps  = AudioEngine::kNumSteps;    // 64 (max pattern length)
     static constexpr int kMinPatLen = AudioEngine::kMinPatLen;   // 16
     static constexpr int kMaxPatLen = AudioEngine::kMaxPatLen;   // 64
@@ -482,6 +527,14 @@ private:
     juce::OwnedArray<juce::TextButton> mixMutes, mixSolos;
     juce::TextButton mixClearSolo { "SIN SOLO" };
     void refreshMixStrip();
+
+    //  Which sixteen of the sixty-four the mixer is showing. Its own value, not
+    //  the face's: you mix bank C while the grid in front of you plays bank A,
+    //  and a mixer that jumped whenever the face changed bank would be a mixer
+    //  you cannot leave open.
+    int mixBank = 0;
+    juce::OwnedArray<juce::TextButton> mixBankBtns;
+    void showMixBank (int bank);
 
     //  SIXTEEN STRIPS THAT SCROLL RATHER THAN SIXTEEN STRIPS THAT SHRINK.
     //

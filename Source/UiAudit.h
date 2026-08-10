@@ -27,7 +27,7 @@
 //      ZATI_AUDIT=1              dump and quit
 //      ZATI_SIZE=412x915         lay out at this size first
 //      ZATI_LANG=es|en|zh|ar     in this language
-//      ZATI_OPEN=pads|sec|...    with this sheet open
+//      ZATI_OPEN=pads|sec|paso|...  with this sheet open
 //      ZATI_CYCLE=3              suspend and resume this many times first
 // ============================================================================
 namespace UiAudit

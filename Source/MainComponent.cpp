@@ -984,6 +984,25 @@ MainComponent::MainComponent()
     swingSlider.onValueChange = [this] { engine.setSwing ((float) (swingSlider.getValue() / 100.0)); };
     seqSheet.addAndMakeVisible (swingSlider);
 
+    //  The two tabs of the sequencer card, same furniture as the settings card
+    //  so the gesture is already learnt: the card stays put and its contents
+    //  change. Directly under the title on both pages, so the tab you are
+    //  about to press does not move when you press the other one.
+    {
+        juce::TextButton* sb[2] = { &seqGridBtn, &seqStepBtn };
+        for (int i = 0; i < 2; ++i)
+        {
+            styleButton (*sb[i], kKey);
+            sb[i]->setClickingTogglesState (true);
+            sb[i]->setRadioGroupId (8803);
+            sb[i]->setColour (juce::TextButton::buttonOnColourId, kAccent);
+            sb[i]->setColour (juce::TextButton::textColourOnId, ZatiColours::inkLight);
+            sb[i]->onClick = [this, i] { showSeqPage (i); };
+            seqSheet.addAndMakeVisible (sb[i]);
+        }
+        seqGridBtn.setToggleState (true, juce::dontSendNotification);
+    }
+
     // The six effects. Each row of the fxDefs table is one effect: its face
     // label, the three names CTRL 1-3 take when it holds the knobs, the range
     // and format of each, and the MIX it wakes up with. MIX is always the
@@ -1161,6 +1180,26 @@ MainComponent::MainComponent()
     mixScroll.setScrollBarsShown (true, false);
     mixScroll.setScrollBarThickness (8);
     mixSheet.addAndMakeVisible (mixScroll);
+
+    //  THE MIXER PAGES BY BANK, and it has to now. It listed one strip per pad
+    //  and the machine went from sixteen pads to sixty-four: sixty-four strips
+    //  in a card capped at 78% of a 640 px phone is eight visible and fifty-six
+    //  behind a scrollbar, with nothing on screen saying which sixteen you are
+    //  looking at. Same four chips as the face, same letters, same order - so
+    //  "bank C" means one thing everywhere in the app.
+    for (int b = 0; b < kNumBanks; ++b)
+    {
+        auto* t = new juce::TextButton (juce::String::charToString ((juce::juce_wchar) ('A' + b)));
+        styleButton (*t, kKey);
+        t->setColour (juce::TextButton::buttonOnColourId, kAccent);
+        t->setColour (juce::TextButton::textColourOnId, ZatiColours::inkLight);
+        t->setClickingTogglesState (true);
+        t->setRadioGroupId (5151);
+        t->onClick = [this, b] { showMixBank (b); };
+        mixSheet.addAndMakeVisible (t);
+        mixBankBtns.add (t);
+    }
+    mixBankBtns[0]->setToggleState (true, juce::dontSendNotification);
 
     styleButton (mixClearSolo, kKey);
     mixClearSolo.onClick = [this] { engine.clearSolo(); refreshMixStrip(); };
@@ -1426,6 +1465,13 @@ MainComponent::MainComponent()
     }
     setSize (500, 1080);
     focusFx (0);
+    //  Establish which half of the sequencer card is showing BEFORE the first
+    //  layout: every control of it was addAndMakeVisible'd at construction, so
+    //  without this the two pages are both "visible" until something happens
+    //  to call showSeqPage - and the very first resized() would lay the step
+    //  controls out on top of the grid.
+    showSeqPage (seqPageGrid);
+    showMixBank (0);
     applySkin();
 }
 
@@ -1791,6 +1837,64 @@ void MainComponent::showSetPage (int page)
     setSheet.repaint();
 }
 
+//  Same rule as the settings card, and for the same reason: the controls of
+//  the page you are not on are HIDDEN, not merely left with stale bounds. A
+//  JUCE child that is still visible keeps painting and keeps eating taps
+//  behind the page you are actually looking at - and on this card that would
+//  mean the sixteen-lane grid swallowing every touch aimed at the note
+//  stepper sitting on top of it.
+void MainComponent::showSeqPage (int page)
+{
+    seqPage = juce::jlimit ((int) seqPageGrid, (int) seqPageStep, page);
+    const bool onGrid = (seqPage == seqPageGrid);
+
+    seqGridBtn.setToggleState (onGrid,   juce::dontSendNotification);
+    seqStepBtn.setToggleState (! onGrid, juce::dontSendNotification);
+
+    stepGrid.setVisible      (onGrid);
+    patternSlider.setVisible (onGrid);
+    lengthSlider.setVisible  (onGrid);
+    bpmSlider.setVisible     (onGrid);
+    clearButton.setVisible   (onGrid);
+    //  The bar row has a second condition - a one-bar pattern has nothing to
+    //  select - so resized() is the only place allowed to turn it ON. Here it
+    //  can only ever turn it off.
+    if (! onGrid)
+        for (auto* b : barButtons) b->setVisible (false);
+
+    for (auto* b : patternButtons) b->setVisible (! onGrid);
+    chainClearButton.setVisible (! onGrid);
+    noteSlider.setVisible       (! onGrid);
+    velSlider.setVisible        (! onGrid);
+    rollSlider.setVisible       (! onGrid);
+    swingSlider.setVisible      (! onGrid);
+
+    resized();
+    seqSheet.repaint();
+}
+
+//  Only the sixteen strips of the bank on show exist as far as the layout and
+//  the paint are concerned. Hidden, not merely unpositioned: forty-eight
+//  sliders left visible inside a viewport keep painting and keep taking drags
+//  through the sixteen in front of them.
+void MainComponent::showMixBank (int bank)
+{
+    mixBank = juce::jlimit (0, kNumBanks - 1, bank);
+    if (auto* t = mixBankBtns[mixBank]) t->setToggleState (true, juce::dontSendNotification);
+
+    for (int i = 0; i < kNumPads; ++i)
+    {
+        const bool on = (i / kPadsPerBank) == mixBank;
+        if (auto* f = mixFaders[i]) f->setVisible (on);
+        if (auto* p = mixPans[i])   p->setVisible (on);
+        if (auto* m = mixMutes[i])  m->setVisible (on);
+        if (auto* s = mixSolos[i])  s->setVisible (on);
+    }
+
+    resized();
+    mixRows.repaint();
+}
+
 void MainComponent::closeAllSheets()
 {
     disarmConfirm();   // an armed button must not survive its own sheet closing
@@ -2002,13 +2106,29 @@ void MainComponent::paint (juce::Graphics& g)
 
     if (! padPlateArea.isEmpty())
     {
-        //  ...and it stops where the bank chips start. A rule that runs under
-        //  four controls is not naming a zone, it is crossing them out.
+        //  ...and it stops where the bank chips start, on BOTH sides. A rule
+        //  that runs under four controls is not naming a zone, it is crossing
+        //  them out. With a pair at each end the word ends up centred in what
+        //  is left between them, which is the middle of the seam - that is the
+        //  symmetry, and it falls out of the geometry instead of being nudged.
+        //  Compared by x and not by name: in Arabic the leading pair is the
+        //  one on the right, and trimming "left by lead" would clip the wrong
+        //  end and let the rule run straight through the chips.
         auto span = wideFace ? padPlateArea.expanded (ZatiLookAndFeel::kAir, 0)
                              : full.toNearestInt();
-        if (! bankRowArea.isEmpty())
-            span = span.withTrimmedRight (juce::jmax (0, span.getRight() - bankRowArea.getX() + Metrics::gap));
-        engraveIn (T ("PADS"), padSeamTop, padPlateArea.getY(), span);
+        const bool leadIsLeft = bankRowLeftArea.getX() <= bankRowRightArea.getX();
+        const auto nearSide = leadIsLeft ? bankRowLeftArea  : bankRowRightArea;
+        const auto farSide  = leadIsLeft ? bankRowRightArea : bankRowLeftArea;
+        if (! nearSide.isEmpty())
+            span.setLeft  (juce::jmax (span.getX(),     nearSide.getRight() + Metrics::gap));
+        if (! farSide.isEmpty())
+            span.setRight (juce::jmin (span.getRight(), farSide.getX()      - Metrics::gap));
+        //  An empty span means "no span" to engraveIn, and it would answer by
+        //  drawing the rule across the WHOLE face - straight through the chips
+        //  it was just told to avoid. On a window too narrow for both pairs and
+        //  a word, the word wins and the rule simply does not appear.
+        if (span.getWidth() > 2)
+            engraveIn (T ("PADS"), padSeamTop, padPlateArea.getY(), span);
     }
 
         //  Which of the six owns the three knobs. A tap both switches an
@@ -2278,7 +2398,8 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
-    const juce::String t = T ("PASOS") + "  " + dot + "  " + T ("PAD %1", juce::String (sp + 1))
+    const juce::String t = T (seqPage == seqPageStep ? "PASO" : "PASOS")
+                         + "  " + dot + "  " + T ("PAD %1", juce::String (sp + 1))
                          + (padName[(size_t) sp].isNotEmpty() ? "   " + padName[(size_t) sp] : juce::String())
                          + "   " + dot + "   P" + juce::String (selectedPattern + 1);
     g.drawText (t, inner.removeFromTop (16), juce::Justification::centredLeft);
@@ -2305,35 +2426,43 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     //  Every control is named, over the control itself rather than over the
     //  row - two things sharing a line are two different jobs, and one label
     //  stretched across both was how NOTA came to look like part of the chain.
+    //
+    //  The bands come from resized(), which is the only thing that knows which
+    //  page is showing. Deriving them here from each control's bounds drew the
+    //  caption of every control on the card whether it was laid out or not:
+    //  the moment the sheet grew a second page, PATRON / LARGO / TEMPO were
+    //  still being painted - across the chain buttons of the OTHER page, at
+    //  whatever coordinates they happened to hold from the last time they were
+    //  visible.
     {
         g.setColour (ZatiColours::inkDim);
         g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.20f));
 
-        //  The SEC rows reserve 14 + kTextPad and then inset their controls
-        //  by 2. Drawn thirteen pixels tall at -17 + kTextPad it ended up with
-        //  five pixels over the word and a pixel of the word INSIDE the row.
-        auto over = [&g] (const juce::Component* c, const juce::String& t)
+        for (const auto& lb : seqLabelBands)
         {
-            if (c == nullptr) return;
-            auto band = bandAbove (*c, 14 + ZatiLookAndFeel::kTextPad, 2);
+            auto band = lb.band;
+            if (band.isEmpty()) continue;
             band.setWidth (juce::jmax (60, band.getWidth()));
-            g.drawText (t, band.translated (2, 0), juce::Justification::centredLeft);
-        };
+            g.drawText (T (lb.key), band.translated (2, 0), Lang::start());
+        }
+    }
 
-        over (&patternSlider,      T ("PATRON"));
-        over (&lengthSlider,       T ("LARGO"));
-        over (patternButtons[0],   T ("CADENA"));
-        over (&noteSlider,         T ("NOTA DEL PASO"));
-        over (&velSlider,          T ("GOLPE"));
-        over (&swingSlider,        T ("SWING"));
-        over (&bpmSlider,          T ("TEMPO"));
-        if (barButtons[0] != nullptr && barButtons[0]->isVisible())
-            over (barButtons[0],   T ("COMPAS"));
+    //  The step page acts on ONE step, and until you have tapped one there is
+    //  nothing for NOTA or GOLPE to act on. Saying so is the difference between
+    //  a control that looks broken and a control that is waiting.
+    if (seqPage == seqPageStep && ! seqFootArea.isEmpty())
+    {
+        g.setColour (ZatiColours::inkDim.withAlpha (selectedStep < 0 ? 0.95f : 0.75f));
+        g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
+        g.drawText (selectedStep < 0
+                      ? T ("toca un paso en PASOS para editarlo")
+                      : T ("editando el paso %1", Lang::ltr (juce::String (selectedStep + 1))),
+                    seqFootArea, Lang::start());
     }
 
     // The grid paints its own playhead and lane colours (see StepGrid).
     // Ring the bank being edited on the chain-include row.
-    if (auto* b = patternButtons[selectedPattern])
+    if (auto* b = patternButtons[selectedPattern]; b != nullptr && b->isVisible())
     {
         g.setColour (ZatiColours::ink.withAlpha (0.7f));
         g.drawRect (b->getBounds(), 2);
@@ -2688,33 +2817,45 @@ void MainComponent::resized()
         //  In two columns the pads have a column of their own and the seam
         //  above them is simply the room the square grid does not use, so the
         //  engraving lands there without anything being reserved for it.
-        //  The bank chips live in the seam the engraved PADS already occupies,
-        //  pinned to its end. Four controls for no height at all - and right
-        //  where the thing they switch is.
         //  THE BANK CHIPS, MEASURED LIKE EVERYTHING ELSE.
         //
         //  They ride in the seam the engraved PADS already occupies, so they
         //  cost the face no height - but riding somewhere is not the same as
         //  being squeezed into it. They take the seam's full height less its
-        //  air, they are `Metrics::halfGap` apart like every other row on this
+        //  air, they are `Metrics::gap` apart like every other row on this
         //  machine, and the engraved rule is told to stop before them instead
         //  of running underneath.
+        //
+        //  TWO AND TWO, one pair at each end of the seam. All four pinned to
+        //  the trailing end left the word floating in a wide empty half with a
+        //  clump of controls jammed against one edge - the seam read as
+        //  lopsided at every one of the seven test sizes. Split down the
+        //  middle, the engraved PADS sits exactly between the pairs and the
+        //  rule breaks symmetrically on both sides of it.
         auto placeBanks = [this] (juce::Rectangle<int> seam)
         {
-            const int h = juce::jlimit (22, Metrics::tab, seam.getHeight() - Metrics::sm);
-            //  As wide as four of them plus their air can be without eating
-            //  the half of the seam the word needs.
+            const int h       = juce::jlimit (22, Metrics::tab, seam.getHeight() - Metrics::sm);
+            const int perSide = kNumBanks / 2;
+            //  Half the seam belongs to the word; each pair gets one of the
+            //  remaining quarters, so a pair plus its air can never grow into
+            //  the room PADS needs however wide the screen is.
             const int w = juce::jlimit (30, 46,
-                                        (seam.getWidth() / 2 - (kNumBanks - 1) * Metrics::gap) / kNumBanks);
-            const int total = kNumBanks * w + (kNumBanks - 1) * Metrics::gap;
+                                        (seam.getWidth() / 4 - (perSide - 1) * Metrics::gap) / perSide);
+            const int total = perSide * w + (perSide - 1) * Metrics::gap;
 
-            auto row = Lang::takeEnd (seam, total).withSizeKeepingCentre (total, h);
-            bankRowArea = row;
+            //  takeStart/takeEnd, not removeFromLeft/Right: in Arabic the pair
+            //  that reads first has to be the one on the right, or A B C D runs
+            //  backwards across a face whose every other row was mirrored.
+            auto lead  = Lang::takeStart (seam, total).withSizeKeepingCentre (total, h);
+            auto trail = Lang::takeEnd   (seam, total).withSizeKeepingCentre (total, h);
+            bankRowLeftArea  = lead;
+            bankRowRightArea = trail;
 
             for (int b = 0; b < bankButtons.size(); ++b)
             {
+                auto& row = (b < perSide ? lead : trail);
                 bankButtons[b]->setBounds (Lang::takeStart (row, w));
-                if (b < kNumBanks - 1) Lang::takeStart (row, Metrics::gap);
+                if (b % perSide < perSide - 1) Lang::takeStart (row, Metrics::gap);
             }
         };
 
@@ -3104,17 +3245,34 @@ void MainComponent::resized()
         songGrid.setBounds (inner);
     }
 
-    // MIX sheet: sixteen channel strips, in a panel that scrolls.
+    // MIX sheet: the sixteen channel strips of one bank, in a panel that scrolls.
     {
         //  The rows no longer negotiate with the card for their height: they
-        //  are Metrics::hit, always, and the card shows as many of them as it
+        //  are Metrics::row, always, and the card shows as many of them as it
         //  has room for. What used to be a 24 px row on a small phone - with
         //  a 20 px mute button on it - is now a scroll.
-        const int rowH = Metrics::hit;
-        const int mixFurniture = Metrics::md * 2 + Metrics::hit + Metrics::sm + Metrics::btn + Metrics::lg;
-        auto inner = sheetFromBottom (mixSheet, mixFurniture + kNumPads * rowH);
+        //  FORTY-FOUR, NOT FORTY. At Metrics::hit the row lost one pixel top
+        //  and bottom to its own air and two more to each control's, and M and
+        //  S came out 36x36 on every screen in the matrix - under the forty the
+        //  rest of the app is held to, on the two keys you hit fastest while
+        //  something is playing. Four pixels of row is what buys them.
+        const int rowH = Metrics::row;
+        const int tabsH = Metrics::tab + Metrics::sm;
+        const int mixFurniture = Metrics::md * 2 + Metrics::hit + Metrics::sm + tabsH
+                               + Metrics::btn + Metrics::lg;
+        auto inner = sheetFromBottom (mixSheet, mixFurniture + kPadsPerBank * rowH);
         auto titleRow = inner.removeFromTop (Metrics::hit);
         mixCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
+        inner.removeFromTop (Metrics::sm);
+
+        {
+            auto tabs = inner.removeFromTop (Metrics::tab);
+            const int bw = tabs.getWidth() / kNumBanks;
+            for (int b = 0; b < mixBankBtns.size(); ++b)
+                mixBankBtns[b]->setBounds ((b < kNumBanks - 1 ? Lang::takeStart (tabs, bw) : tabs)
+                                             .reduced (Metrics::halfGap, 0));
+            inner.removeFromTop (Metrics::sm);
+        }
 
         auto bottom = inner.removeFromBottom (Metrics::btn);
         rackButton.setBounds (bottom.removeFromRight (bottom.getWidth() / 3).reduced (Metrics::halfGap, 4));
@@ -3122,14 +3280,14 @@ void MainComponent::resized()
         inner.removeFromBottom (Metrics::xs);
 
         mixScroll.setBounds (inner);
-        const int contentH = kNumPads * rowH;
+        const int contentH = kPadsPerBank * rowH;
         //  Leave the bar its width only when there IS a bar, or every row is
         //  eight pixels short on the screens that did not need one.
         const int barW = contentH > inner.getHeight() ? mixScroll.getScrollBarThickness() : 0;
         mixRows.setSize (juce::jmax (80, inner.getWidth() - barW), contentH);
 
         auto rows = mixRows.getLocalBounds();
-        for (int i = 0; i < kNumPads; ++i)
+        for (int i = mixBank * kPadsPerBank; i < (mixBank + 1) * kPadsPerBank; ++i)
         {
             auto row = rows.removeFromTop (rowH).reduced (0, 1);
             row.removeFromLeft (juce::jlimit (48, 92, rows.getWidth() * 24 / 100));   // chip + number + name
@@ -3139,11 +3297,29 @@ void MainComponent::resized()
             //  M and S are two different decisions about the channel, not one
             //  two-letter control, so they get the same air as everything else
             //  on the row.
-            mixSolos[i]->setBounds (row.removeFromRight (Metrics::hit).reduced (2, 1));
+            //  Reduced vertically only. Two pixels off each side of a cell that
+            //  is exactly Metrics::hit wide is a 36 px key, and the air was
+            //  already there: the halfGap between them is what separates M from
+            //  S, so taking it out of the key as well paid for the same gap
+            //  twice and left both under the floor on every screen measured.
+            mixSolos[i]->setBounds (row.removeFromRight (Metrics::hit).reduced (0, 1));
             row.removeFromRight (Metrics::halfGap);
-            mixMutes[i]->setBounds (row.removeFromRight (Metrics::hit).reduced (2, 1));
+            mixMutes[i]->setBounds (row.removeFromRight (Metrics::hit).reduced (0, 1));
             row.removeFromRight (Metrics::halfGap);
-            mixPans[i]->setBounds  (row.removeFromRight (juce::jlimit (34, 78, row.getWidth() / 3)).reduced (4, 1));
+            //  ...and the pan is a target too, so it gets a floor rather than a
+            //  share: a third of the row came to twenty-six pixels of travel on
+            //  a 280 px screen, for a control that has to go both ways from
+            //  centre. Where the floor and a fader worth aiming at do not both
+            //  fit, THE PAN GOES - it is the one control on this row that has a
+            //  full-size knob of its own one tap away in the PADS sheet, and a
+            //  fader you cannot aim has no such second home. Hidden, not
+            //  shrunk: jlimit would have clamped it back up to a width the row
+            //  does not have and drawn it over the fader.
+            const int panW  = juce::jlimit (Metrics::hit + 4, 78, row.getWidth() / 3);
+            const bool room = row.getWidth() - panW >= 96;
+            mixPans[i]->setVisible (room);
+            if (room)
+                mixPans[i]->setBounds (row.removeFromRight (panW).reduced (2, 1));
 
             //  On a narrow phone the level's number was eating the level.
             //  Forty-six pixels of readout plus its air out of an eighty-five
@@ -3160,119 +3336,236 @@ void MainComponent::resized()
         }
     }
 
-    // SEC sheet: pattern/len, chain, bar selector, the pads x steps grid, bpm.
+    // SEC sheet, two pages: PASOS is the grid and what plays it; PASO is the
+    // step you tapped, plus the chain and the swing. See SeqPage in the header
+    // for why it stopped being one card.
     {
-        const int lanes  = StepGrid::kLanes;
-        //  Every control row now carries its own name, and a name is 14px of
-        //  height that has to be budgeted rather than borrowed from the grid.
-        //  Two rows more than before: GOLPE (velocity + roll) and SWING. Each
-        //  is a name, a control and its air, and all of it has to be
-        //  budgeted or it comes out of the grid.
-        const int fixedRowsH = 350 + 2 * (14 + ZatiLookAndFeel::kTextPad + Metrics::hit + Metrics::sm);
-        //  Same bargain as the mixer: the grid gets the room that is left,
-        //  down to the density it had before rather than off the card.
-        const int laneH  = juce::jlimit (20, 24, ((int) (full.getHeight() * 0.78f) - fixedRowsH) / lanes);
-        const int gridH  = lanes * laneH;
+        const int lanes = StepGrid::kLanes;
+        constexpr int nameH = 14 + ZatiLookAndFeel::kTextPad;
+        //  A named control is three things: its name, itself, and the air under
+        //  it. Budget the band, never the control on its own.
+        constexpr int bandH = nameH + Metrics::hit + Metrics::sm;
 
-        auto inner = sheetFromBottom (seqSheet, fixedRowsH + gridH);
+        const bool onGrid = (seqPage == seqPageGrid);
+
+        const int patLen   = engine.getPatternLength (selectedPattern);
+        const int bars     = juce::jmax (1, patLen / kStepCols);
+        if (selectedBar >= bars) selectedBar = 0;
+        //  A lone "1" is a control that can never do anything, so a one-bar
+        //  pattern gets no bar row - and no band budgeted for it either.
+        const bool showBars = (bars > 1);
+
+        //  ASK FOR WHAT YOU WILL ACTUALLY GET. sheetFromBottom clamps the card
+        //  at 78% of the window and says nothing; whatever the layout asked
+        //  for beyond that is simply taken off the last thing laid out. The old
+        //  card asked for 800 px on a 640 px phone, and the 300 px of shortfall
+        //  came out of the grid - sixteen lanes in 55 px, three and a half
+        //  pixels a lane. So the lane height is now DERIVED from the cap rather
+        //  than clamped up to a number the card was never going to have, and
+        //  `wanted` can never exceed `capH`.
+        const int capH   = (int) (full.getHeight() * 0.78f);
+        const int chrome = Metrics::md * 2          // the card's own margins
+                         + Metrics::hit             // title row
+                         + Metrics::sm
+                         + Metrics::tab             // the two tabs
+                         + Metrics::sm;
+
+        //  Rotated, the card is short and wide: sixteen lanes cannot share 200
+        //  px of height AND leave room for four stacked controls under them.
+        //  So in landscape the grid takes the whole height of the card and the
+        //  controls stand in a column beside it - which is the shape the window
+        //  already is, instead of the shape a phone is.
+        const int sideCol = wideFace ? juce::jlimit (150, 260, full.getWidth() / 4) : 0;
+
+        int laneH  = 0;
+        int wanted = 0;
+
+        if (onGrid)
+        {
+            const int stacked = wideFace ? 0
+                                         : bandH + (showBars ? bandH : 0) + bandH;
+            //  Twelve is the floor at which a lane still reads as a lane. It is
+            //  a floor, not a target: jlimit clamps UP too, and clamping up is
+            //  exactly the bug this whole block exists to undo - so the value
+            //  is only ever allowed to reach it when the room is genuinely
+            //  there, which at 12 px a lane it always is.
+            laneH  = juce::jlimit (12, 26, (capH - chrome - stacked) / lanes);
+            wanted = chrome + stacked + lanes * laneH;
+        }
+        else
+        {
+            const int stepBands = nameH + Metrics::hit + Metrics::xs    // CADENA
+                                + bandH                                 // NOTA DEL PASO
+                                + bandH                                 // GOLPE
+                                + nameH + Metrics::hit;                 // SWING
+            //  The line at the foot that says which step is being edited is
+            //  laid out, not squeezed in under the last control: unbudgeted it
+            //  was drawn straight across the swing slider's track.
+            wanted = chrome + (wideFace ? (bandH + Metrics::hit + nameH) : stepBands)
+                            + Metrics::sm + kSeqFootH;
+        }
+
+        auto inner = sheetFromBottom (seqSheet, wanted);
+
         auto titleRow = inner.removeFromTop (Metrics::hit);
         seqCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
+        inner.removeFromTop (Metrics::sm);
 
         {
-            //  Named groups, in the order the work happens: pick the bank and
-            //  its length, build the chain, tune the step you tapped, choose
-            //  the bar. Every one of those rows used to be an unlabelled strip
-            //  of look-alike buttons.
-            constexpr int nameH = 14 + ZatiLookAndFeel::kTextPad;
-
-            inner.removeFromTop (nameH);                  // painted: PATRON / LARGO
-            auto row1 = inner.removeFromTop (Metrics::hit);
-            const int w1 = row1.getWidth() / 2;
-            //  An IncDecButtons slider gives its two buttons whatever the text
-            //  box does not take, so a narrow box on a wide row turns them into
-            //  a pair of slabs twice the size of anything else on the sheet.
-            //  Reserve the box first and the buttons come out finger-sized.
-            patternSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false,
-                                           juce::jmax (40, w1 - Metrics::gap - Metrics::gap - 2 * Metrics::stepKey),
-                                           Metrics::readout);
-            patternSlider.setBounds (row1.removeFromLeft (w1).reduced (Metrics::halfGap, 2));
-            lengthSlider.setBounds  (row1.reduced (Metrics::halfGap, 2));
-
+            auto tabs = inner.removeFromTop (Metrics::tab);
+            const int half = tabs.getWidth() / 2;
+            seqGridBtn.setBounds (Lang::takeStart (tabs, half).reduced (Metrics::halfGap, 0));
+            seqStepBtn.setBounds (tabs.reduced (Metrics::halfGap, 0));
             inner.removeFromTop (Metrics::sm);
-            inner.removeFromTop (nameH);                  // painted: CADENA
-            auto row2 = inner.removeFromTop (Metrics::hit);
-            const int pw = row2.getWidth() / kNumPatterns;
-            for (int i2 = 0; i2 < kNumPatterns; ++i2)
-                patternButtons[i2]->setBounds ((i2 < kNumPatterns - 1 ? row2.removeFromLeft (pw) : row2).reduced (2));
-            inner.removeFromTop (Metrics::xs);
+        }
 
-            //  QUITAR CADENA belongs to the row above it, NOTA to the step you
-            //  tapped: two different jobs that happen to fit on one line, so
-            //  the note half is the one that gets the name.
-            inner.removeFromTop (nameH);                  // painted: NOTA DEL PASO
-            auto row3 = inner.removeFromTop (Metrics::hit);
-            chainClearButton.setBounds (row3.removeFromLeft (row3.getWidth() * 5 / 12).reduced (Metrics::halfGap, 2));
-            noteSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false,
-                                        juce::jmax (40, row3.getWidth() - Metrics::gap - Metrics::gap - 2 * Metrics::stepKey),
-                                        Metrics::readout);
-            noteSlider.setBounds       (row3.reduced (Metrics::halfGap, 2));
-            inner.removeFromTop (Metrics::sm);
+        //  Where each control's own name gets painted. paintSeqSheetContent
+        //  used to reconstruct these bands from the control's bounds, which
+        //  meant the name of a HIDDEN control was still drawn - four ghost
+        //  captions floating over the grid the moment the card grew a second
+        //  page. Now the layout records the band it reserved and paint draws
+        //  only the ones that were reserved this pass.
+        seqLabelBands.clear();
+        seqFootArea = {};
+        auto nameBand = [this, nameH] (juce::Rectangle<int>& col, const char* key)
+        {
+            auto b = col.removeFromTop (nameH);
+            seqLabelBands.add ({ b, juce::String (key) });
+            return b;
+        };
 
-            //  What the step DOES: how hard, and how many times. Same band as
-            //  the note, because they are all answers about the one step you
-            //  have selected.
-            inner.removeFromTop (nameH);                  // painted: GOLPE
+        if (onGrid)
+        {
+            //  In landscape the four controls stand in their own column and the
+            //  grid keeps the full height; in portrait they stack under it in
+            //  the order the work happens.
+            auto side = wideFace ? Lang::takeEnd (inner, sideCol) : juce::Rectangle<int>();
+            if (wideFace) Lang::takeEnd (inner, Metrics::gap);
+
+            auto& col = wideFace ? side : inner;
+
+            //  PATRON and LARGO share one row upright, so they share one band -
+            //  split in two, a name over each control. One caption stretched
+            //  across both is how NOTA once came to look like part of CADENA.
             {
-                auto row = inner.removeFromTop (Metrics::hit);
-                auto rollCell = row;
-                velSlider.setBounds (Lang::takeStart (row, row.getWidth() * 7 / 12).reduced (Metrics::halfGap, 2));
-                rollCell = row.reduced (Metrics::halfGap, 2);
-                //  Reserve the box first and the two keys come out the same
-                //  size as every other stepper's, instead of swallowing what
-                //  the number did not need.
-                rollSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false,
-                                            juce::jmax (36, rollCell.getWidth() - Metrics::gap - 2 * Metrics::stepKey),
-                                            Metrics::readout);
-                rollSlider.setBounds (rollCell);
+                auto band = col.removeFromTop (nameH);
+                if (wideFace)
+                    seqLabelBands.add ({ band, juce::String ("PATRON") });
+                else
+                {
+                    auto half = Lang::takeStart (band, band.getWidth() / 2);
+                    seqLabelBands.add ({ half, juce::String ("PATRON") });
+                    seqLabelBands.add ({ band, juce::String ("LARGO")  });
+                }
             }
-            inner.removeFromTop (Metrics::sm);
-
-            inner.removeFromTop (nameH);                  // painted: SWING
-            swingSlider.setBounds (inner.removeFromTop (Metrics::hit).reduced (Metrics::halfGap, 2));
-            inner.removeFromTop (Metrics::sm);
-
-            // Bar row: only when the pattern is longer than one bar. A single
-            // lone "1" would be a control that never does anything.
-            const int patLen = engine.getPatternLength (selectedPattern);
-            const int bars   = juce::jmax (1, patLen / kStepCols);
-            if (selectedBar >= bars) selectedBar = 0;
-
-            if (bars > 1)
             {
-                inner.removeFromTop (nameH);              // painted: COMPAS
-                auto row4 = inner.removeFromTop (Metrics::hit);
-                const int bw = row4.getWidth() / bars;
+                auto row = col.removeFromTop (Metrics::hit);
+                //  An IncDecButtons slider gives its two keys whatever the text
+                //  box leaves, so a narrow box on a wide row turns them into a
+                //  pair of slabs twice the size of anything else on the card.
+                //  Reserve the box first and the keys come out finger-sized.
+                //  Stacked in the side column, each takes the whole width.
+                const int w1 = wideFace ? row.getWidth() : row.getWidth() / 2;
+                patternSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false,
+                                               juce::jmax (40, w1 - 2 * Metrics::gap - 2 * Metrics::stepKey),
+                                               Metrics::readout);
+                if (wideFace)
+                {
+                    patternSlider.setBounds (row.reduced (Metrics::halfGap, 2));
+                    col.removeFromTop (Metrics::sm);
+                    nameBand (col, "LARGO");
+                    lengthSlider.setBounds (col.removeFromTop (Metrics::hit).reduced (Metrics::halfGap, 2));
+                }
+                else
+                {
+                    patternSlider.setBounds (row.removeFromLeft (w1).reduced (Metrics::halfGap, 2));
+                    lengthSlider.setBounds  (row.reduced (Metrics::halfGap, 2));
+                }
+            }
+            col.removeFromTop (Metrics::sm);
+
+            if (showBars)
+            {
+                nameBand (col, "COMPAS");
+                auto row = col.removeFromTop (Metrics::hit);
+                const int bw = row.getWidth() / bars;
                 for (int b = 0; b < barButtons.size(); ++b)
                 {
                     barButtons[b]->setVisible (b < bars);
                     if (b < bars)
-                        barButtons[b]->setBounds ((b < bars - 1 ? row4.removeFromLeft (bw) : row4).reduced (Metrics::halfGap, 2));
+                        barButtons[b]->setBounds ((b < bars - 1 ? row.removeFromLeft (bw) : row).reduced (Metrics::halfGap, 2));
                 }
-                inner.removeFromTop (Metrics::sm);
+                col.removeFromTop (Metrics::sm);
             }
             else
             {
                 for (auto* b : barButtons) b->setVisible (false);
             }
+
+            //  TEMPO last, at the foot of whichever container it is in: it is
+            //  the one number on this page that belongs to the machine rather
+            //  than to the pattern.
+            {
+                auto row = col.removeFromBottom (Metrics::hit);
+                bpmSlider.setBounds   (Lang::takeStart (row, (int) (row.getWidth() * 0.66f)).reduced (Metrics::halfGap, 2));
+                clearButton.setBounds (row.reduced (Metrics::halfGap, 2));
+                seqLabelBands.add ({ col.removeFromBottom (nameH), juce::String ("TEMPO") });
+                col.removeFromBottom (Metrics::sm);
+            }
+
+            stepGrid.setBounds (inner);
         }
+        else
+        {
+            //  The foot line first, so no column can lay a control over it.
+            seqFootArea = inner.removeFromBottom (kSeqFootH);
+            inner.removeFromBottom (Metrics::sm);
 
-        auto bottom = inner.removeFromBottom (Metrics::hit);
-        bpmSlider.setBounds (bottom.removeFromLeft ((int) (bottom.getWidth() * 0.66f)).reduced (Metrics::halfGap, 2));
-        clearButton.setBounds (bottom.reduced (Metrics::halfGap, 2));
-        inner.removeFromBottom (14 + ZatiLookAndFeel::kTextPad);   // painted: TEMPO
-        inner.removeFromBottom (Metrics::sm);
+            //  Two columns rotated, one stacked upright - the same four groups
+            //  either way, so the card never has to be taller than it is wide.
+            auto colA = wideFace ? inner.removeFromLeft ((inner.getWidth() - Metrics::gap) / 2) : inner;
+            auto colB = wideFace ? inner.withTrimmedLeft (Metrics::gap) : juce::Rectangle<int>();
+            auto& second = wideFace ? colB : colA;
 
-        stepGrid.setBounds (inner);
+            nameBand (colA, "CADENA");
+            {
+                auto row = colA.removeFromTop (Metrics::hit);
+                const int pw = row.getWidth() / kNumPatterns;
+                for (int i2 = 0; i2 < kNumPatterns; ++i2)
+                    patternButtons[i2]->setBounds ((i2 < kNumPatterns - 1 ? row.removeFromLeft (pw) : row).reduced (2));
+                colA.removeFromTop (Metrics::xs);
+            }
+
+            //  QUITAR CADENA belongs to the row above it, NOTA to the step you
+            //  tapped: two different jobs that happen to fit on one line, so
+            //  the note half is the one that gets the name.
+            nameBand (colA, "NOTA DEL PASO");
+            {
+                auto row = colA.removeFromTop (Metrics::hit);
+                chainClearButton.setBounds (Lang::takeStart (row, row.getWidth() * 5 / 12).reduced (Metrics::halfGap, 2));
+                noteSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false,
+                                            juce::jmax (40, row.getWidth() - 2 * Metrics::gap - 2 * Metrics::stepKey),
+                                            Metrics::readout);
+                noteSlider.setBounds (row.reduced (Metrics::halfGap, 2));
+                colA.removeFromTop (Metrics::sm);
+            }
+
+            //  What the step DOES: how hard, and how many times.
+            nameBand (second, "GOLPE");
+            {
+                auto row = second.removeFromTop (Metrics::hit);
+                velSlider.setBounds (Lang::takeStart (row, row.getWidth() * 7 / 12).reduced (Metrics::halfGap, 2));
+                auto rollCell = row.reduced (Metrics::halfGap, 2);
+                rollSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false,
+                                            juce::jmax (36, rollCell.getWidth() - Metrics::gap - 2 * Metrics::stepKey),
+                                            Metrics::readout);
+                rollSlider.setBounds (rollCell);
+                second.removeFromTop (Metrics::sm);
+            }
+
+            nameBand (second, "SWING");
+            swingSlider.setBounds (second.removeFromTop (Metrics::hit).reduced (Metrics::halfGap, 2));
+        }
     }
 }
 
@@ -3736,6 +4029,8 @@ void MainComponent::retranslateUi()
     recButton   .setButtonText (recArmed ? T ("REC ON") : T ("REC"));
     playButton  .setButtonText (engine.isPlaying() ? T ("STOP") : T ("PLAY"));
     clearButton .setButtonText (T ("VACIAR"));
+    seqGridBtn  .setButtonText (T ("PASOS"));
+    seqStepBtn  .setButtonText (T ("PASO"));
     undoButton  .setButtonText (T ("DESHACER"));
     redoButton  .setButtonText (T ("REHACER"));
 
@@ -4754,7 +5049,10 @@ void MainComponent::paintMixSheetContent (juce::Graphics& g)
 //  strips moved and every channel ended up wearing another channel's name.
 void MainComponent::paintMixRows (juce::Graphics& g)
 {
-    for (int i = 0; i < kNumPads; ++i)
+    //  Only the bank on show. Painting all sixty-four drew the chip, number and
+    //  name of forty-eight strips whose sliders are hidden - at whatever
+    //  coordinates they were left holding - straight over the sixteen in front.
+    for (int i = mixBank * kPadsPerBank; i < (mixBank + 1) * kPadsPerBank; ++i)
     {
         if (mixFaders[i] == nullptr) continue;
         const auto fr = mixFaders[i]->getBounds();
@@ -5854,7 +6152,8 @@ void MainComponent::auditOpen (const juce::String& which)
     if (which.isEmpty()) return;
 
     if      (which == "pads") openSheet (padSheet,  padsButton);
-    else if (which == "sec")  openSheet (seqSheet,  secButton);
+    else if (which == "sec")  { showSeqPage (seqPageGrid); openSheet (seqSheet, secButton); }
+    else if (which == "paso") { showSeqPage (seqPageStep); openSheet (seqSheet, secButton); }
     else if (which == "song") openSheet (songSheet, songButton);
     else if (which == "mix")  { refreshMixStrip(); openSheet (mixSheet, mixButton); }
     else if (which == "set")  { showSetPage (pageAudio);    refreshAudioOptions(); openSheet (setSheet, setButton); }

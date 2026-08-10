@@ -145,6 +145,15 @@ namespace
 
         // --- SEC sheet -----------------------------------------------------
         { "PASOS",          "",         "STEPS",      "步数",       "خطوات" },
+        //  The second page of the card: one step, not all of them. Kept short
+        //  in every language - it is a tab caption sharing a row with another.
+        { "PASO",           "",         "STEP",       "单步",       "خطوة" },
+        { "toca un paso en PASOS para editarlo", "",
+                                        "tap a step in STEPS to edit it",
+                                                      "在步数页点一个步来编辑",
+                                                                  "المس خطوة في صفحة الخطوات لتحريرها" },
+        { "editando el paso %1", "",    "editing step %1",
+                                                      "正在编辑第 %1 步", "تحرير الخطوة %1" },
         { "PATRON",         "",         "PATTERN",    "乐句",       "نمط" },
         { "LARGO",          "",         "LENGTH",     "长度",       "الطول" },
         { "CADENA",         "",         "CHAIN",      "链接",       "سلسلة" },
