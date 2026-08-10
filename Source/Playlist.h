@@ -52,7 +52,11 @@ public:
             const float y = (float) r.getY() + laneH * (float) lane;
 
             auto gut = juce::Rectangle<float> ((float) r.getX(), y, (float) gutter, laneH).reduced (1.0f, 1.0f);
-            g.setColour (ZatiColours::padBorder.withAlpha (0.35f));
+            //  Mismo criterio que la rejilla de pasos: la canaleta del carril
+            //  es una marca medida contra la tarjeta, no un token de la placa
+            //  de pads - que en las dos carcasas oscuras sale mas claro que el
+            //  fondo y convierte una fila vacia en una fila que parece llena.
+            g.setColour (ZatiColours::markOn (ZatiColours::chassisTop, 0.18f));
             g.fillRect (gut);
             g.setColour (ZatiColours::inkDim);
             g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
@@ -66,7 +70,7 @@ public:
 
                 if (bar >= totalBars)                        // past the end of the song
                 {
-                    g.setColour (ZatiColours::padBorder.withAlpha (0.10f));
+                    g.setColour (ZatiColours::groove (0.30f));   // pasado el final
                     g.fillRect (cell);
                     continue;
                 }
@@ -75,7 +79,8 @@ public:
 
                 if (v == 0)
                 {
-                    g.setColour (ZatiColours::padBorder.withAlpha ((bar % 4 == 0) ? 0.45f : 0.22f));
+                    //  Un compas vacio es un hueco, y un hueco oscurece.
+                    g.setColour (ZatiColours::groove ((bar % 4 == 0) ? 0.48f : 0.28f));
                     g.fillRect (cell);
                 }
                 else if (v == kContinued)

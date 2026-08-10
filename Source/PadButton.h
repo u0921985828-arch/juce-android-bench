@@ -160,7 +160,10 @@ public:
         const float rad = 3.0f;   // square, not rounded — matches the flat button caps
 
         if (down) r = r.translated (0.0f, lift);
-        else      { g.setColour (ZatiColours::ink.withAlpha (0.32f));
+        //  El bloque de profundidad, como el de cualquier tapa: OSCURO. Con
+        //  ZatiColours::ink salia crema en LACA y hueso en GRAFITO, o sea un
+        //  halo claro bajo cada uno de los dieciseis pads.
+        else      { g.setColour (ZatiColours::groove (0.32f));
                     g.fillRoundedRectangle (r.translated (0.0f, lift), rad); }
 
         // A loaded pad wears its zati colour: 30% fill, full-strength border,
@@ -189,15 +192,20 @@ public:
         //  The number on an empty pad was ink at 30%, on a tint that was barely
         //  there, on a plate the same value as everything else - three weak
         //  contrasts stacked. It is the only thing an empty pad has to say.
-        juce::Colour idxCol = loaded ? ZatiColours::ink.withAlpha (0.92f)
-                                     : ZatiColours::ink.withAlpha (0.55f);
+        //  MEDIDO CONTRA EL RELLENO QUE LLEVA DEBAJO, no contra la carcasa.
+        //  Estos alfas se ajustaron con la tinta de PAPEL, que es casi negra
+        //  sobre un fragmento de tono medio. En LACA la tinta es crema, y el
+        //  mismo 0.92 sobre el mismo fragmento es un numero claro sobre un
+        //  color claro. textOn elige el lado que contrasta y el alfa se queda
+        //  diciendo lo que decia: cuanto pesa, no de que color es.
+        juce::Colour idxCol = ZatiColours::textOn (base).withAlpha (loaded ? 0.92f : 0.72f);
         //  inkDim on a 30% fragment fill measured 3.25-4.02:1 across the eight
         //  colours — under the 4.5 needed for 9px text on every one of them.
         //  Ink at 0.75 clears it on the worst (5.84:1) and still reads as
         //  secondary against the pad's own numeral.
-        juce::Colour nmCol  = loaded ? ZatiColours::ink.withAlpha (0.75f)
-                                     : ZatiColours::inkDim;
-        juce::Colour sparkCol = loaded ? frag.darker (0.35f) : ZatiColours::ink.withAlpha (0.30f);
+        juce::Colour nmCol  = ZatiColours::textOn (base).withAlpha (loaded ? 0.75f : 0.60f);
+        juce::Colour sparkCol = loaded ? frag.darker (0.35f)
+                                       : ZatiColours::textOn (base).withAlpha (0.30f);
         bool onAccent = false;
 
         if (playing || flash > 0.55f)
@@ -287,7 +295,11 @@ public:
 
         if (selected && ! onAccent)
         {
-            g.setColour (ZatiColours::ink.withAlpha (0.85f));
+            //  El anillo de seleccion va DENTRO del pad, asi que se mide
+            //  contra el pad y no contra la carcasa: en LACA la tinta es crema
+            //  y sobre un fragmento claro el anillo desaparecia justo en el
+            //  pad que estabas eligiendo.
+            g.setColour (ZatiColours::textOn (base).withAlpha (0.85f));
             g.drawRoundedRectangle (r.reduced (2.4f), juce::jmax (1.0f, rad - 1.5f), 1.4f);
         }
 

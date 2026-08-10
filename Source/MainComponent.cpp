@@ -2686,7 +2686,10 @@ void MainComponent::Sheet::paint (juce::Graphics& g)
     const auto card = sheetBounds.toFloat();
     constexpr float rad = 2.0f;
 
-    g.setColour (ZatiColours::ink.withAlpha (0.55f));
+    //  El bloque bajo la tarjeta, como el de cualquier tapa: oscuro. Escrito
+    //  con la tinta salia crema en LACA y hueso en GRAFITO - una tarjeta con
+    //  halo claro por debajo, que es lo contrario de estar apoyada sobre algo.
+    g.setColour (ZatiColours::groove (0.55f));
     g.fillRoundedRectangle (card.translated (0.0f, 5.0f), rad);
 
     g.setColour (ZatiColours::chassisTop);
@@ -5489,7 +5492,10 @@ void MainComponent::paintMixRows (juce::Graphics& g)
         const bool has = padHasSample[(size_t) i];
 
         auto chip = juce::Rectangle<int> (4, fr.getY() + 4, 22, fr.getHeight() - 8);
-        g.setColour (has ? frag : ZatiColours::padBorder.withAlpha (0.4f));
+        //  El chip de un canal sin sonido: marca medida contra la tarjeta, no
+        //  el borde de la placa de pads - que en carcasa oscura sale mas claro
+        //  que el fondo y hace que un canal vacio destaque mas que uno cargado.
+        g.setColour (has ? frag : ZatiColours::markOn (ZatiColours::chassisTop, 0.20f));
         g.fillRect (chip);
         g.setColour (has ? ZatiColours::bestOn (frag, ZatiColours::ink, juce::Colours::white)
                          : ZatiColours::inkDim);
@@ -5937,7 +5943,10 @@ void MainComponent::paintExportSheetContent (juce::Graphics& g)
     if (exportJob != nullptr)
     {
         auto bar = inner.removeFromTop (8).reduced (0, 2);
-        g.setColour (ZatiColours::padBorder.withAlpha (0.4f));
+        //  El canal de la barra de progreso es un hueco; lo que lo llena es el
+        //  acento. Con padBorder el canal salia mas claro que el relleno en las
+        //  dos carcasas oscuras, y la barra parecia ir al reves.
+        g.setColour (ZatiColours::groove (0.35f));
         g.fillRect (bar);
         g.setColour (ZatiColours::accent);
         g.fillRect (bar.withWidth ((int) ((float) bar.getWidth()

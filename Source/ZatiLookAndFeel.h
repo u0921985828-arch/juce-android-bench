@@ -199,7 +199,17 @@ namespace ZatiColours
             //  body tone alone is not enough to carry it.
             { 0xff1b4a4f, 0xff14393d, 0xff0e2c30,
               0xff1a4247, 0xff2a5b61, 0xff081f22,
-              0xff235055, 0xff2c6067, 0xff3d7a80,
+              //  La tapa, un paso mas clara que el cuerpo. A 0xff235055 el
+              //  contraste contra la tarjeta era 1.10 a 1 - por debajo de lo
+              //  que el ojo separa como dos superficies - asi que una ficha
+              //  entera se leia como un plano liso con manchas ambar encima.
+              //  Elegida por barrido manteniendo el matiz petroleo (azul por
+              //  encima de verde, sin pasarse): tarjeta 1.53, panel 1.71,
+              //  placa 2.62, LCD 2.80, y contra el acento 3.16 - que baja
+              //  desde 4.40 pero sigue siendo un salto claro, y ademas aqui el
+              //  encendido es ambar CALIDO contra petroleo FRIO, y esa parte
+              //  no la mide un ratio de luminancia.
+              0xff33666f, 0xff3d7580, 0xff4d8a95,
               0xff11201f, 0xff2a4a48,
               0xfff2e8d5, 0xff9ab5b3, 0xff0e2c30, 0xfffffdf7,
               0xff1c2b2b, 0xff172525, 0xff35514f,
@@ -471,6 +481,42 @@ namespace ZatiColours
     inline juce::Colour textOn (juce::Colour surface)
     {
         return bestOn (surface, ink, inkLight);
+    }
+
+    //  HUNDIR UNA SUPERFICIE. Estructura, no tinta.
+    //
+    //  La linea de un compas, la retícula de una rejilla, el hueco de una celda
+    //  vacia, el bloque de profundidad de una tapa: todo eso se escribia con
+    //  ZatiColours::ink y un alfa, y la tinta de una carcasa oscura es CLARA -
+    //  asi que en GRAFITO y en LACA cada hueco salia siendo un realce. Una
+    //  celda vacia mas clara que la tarjeta no se lee como un hueco, se lee
+    //  como una celda encendida a medias, y por eso en LACA no se apreciaba
+    //  que paso estaba puesto y cual no.
+    //
+    //  "Mas oscuro" tampoco vale a secas: el cuerpo de GRAFITO ya esta a 0.015
+    //  de luminancia y no le queda recorrido hacia abajo - medido, un hueco
+    //  negro sobre el separaba 4 de dE, que es "no se ve". Asi que el hueco se
+    //  separa HACIA DONDE HAY SITIO: hacia negro casi siempre, y hacia blanco
+    //  cuando la superficie ya es practicamente negra. Medido en dE con los
+    //  alfas que usa la rejilla: PAPEL 24, GRAFITO 28, ACERO 24, LACA 9.
+    inline juce::Colour recess (juce::Colour surface, float depth)
+    {
+        const auto target = surface.getPerceivedBrightness() < 0.18f
+                              ? juce::Colours::white : juce::Colours::black;
+        return target.withAlpha (depth);
+    }
+
+    //  ...y el caso corriente: hundir sobre el cuerpo de la maquina, que es la
+    //  superficie que hay detras de casi todo lo que dibuja este proyecto.
+    inline juce::Colour groove (float alpha) { return recess (chassisTop, alpha); }
+
+    //  ...y una MARCA neutra sobre una superficie si es tinta, asi que se mide
+    //  contra esa superficie en vez de suponerla. Es textOn con un alfa: clara
+    //  sobre un cuerpo oscuro, oscura sobre uno claro, sin que quien la llame
+    //  tenga que saber cual de las cuatro carcasas esta puesta.
+    inline juce::Colour markOn (juce::Colour surface, float alpha)
+    {
+        return textOn (surface).withAlpha (alpha);
     }
 
     // A recessed screw head with a slot.
@@ -808,7 +854,20 @@ public:
         }
         else if (b.isEnabled())
         {
-            g.setColour (ZatiColours::ink.withAlpha (0.42f));
+            //  UNA SOMBRA ES OSCURA. SIEMPRE.
+            //
+            //  Este bloque se dibujaba con ZatiColours::ink, que es la TINTA de
+            //  la carcasa - y en un chasis oscuro la tinta es clara. En PAPEL y
+            //  ACERO daba casi negro y funcionaba; en GRAFITO y en LACA daba
+            //  hueso y crema al 42%, o sea un HALO CLARO debajo de cada tapa.
+            //  No separaba la tapa de la tarjeta, la fundia con ella: medido en
+            //  LACA, tapa contra tarjeta 1.10 a 1 - por debajo de lo que el ojo
+            //  distingue como dos superficies distintas.
+            //
+            //  Y se hunde contra la superficie que hay DETRAS de la tapa, que
+            //  es el cuerpo de la maquina - recess sabe hacia donde queda sitio
+            //  en cada una de las cuatro.
+            g.setColour (ZatiColours::groove (0.42f));
             g.fillRoundedRectangle (r.translated (0.0f, lift), rad);
         }
 
@@ -886,7 +945,22 @@ public:
         }
         else
         {
-            g.setColour (ZatiColours::ink.withAlpha (0.55f));
+            //  UNA TAPA APAGADA LLEVA UNA RANURA, NO UN FILO.
+            //
+            //  Este borde tambien salia de ZatiColours::ink, asi que en GRAFITO
+            //  y en LACA era crema al 55% - el mismo filo claro que lleva una
+            //  tapa ENCENDIDA. Con eso, las dieciseis tapas de una ficha se leen
+            //  todas como activas y el cambio de estado deja de apreciarse, que
+            //  es exactamente lo que pasa en las dos capturas de LACA.
+            //
+            //  La jerarquia ahora es literal y vale para las cuatro carcasas:
+            //  apagado = una linea GRABADA, mas oscura que todo lo que tiene
+            //  alrededor; encendido = un filo claro sobre el acento. Y como el
+            //  borde tiene que separar la tapa de la SUPERFICIE que hay detras
+            //  - no de si misma - oscurecer es lo unico que funciona sobre las
+            //  cuatro: dos son claras y dos son oscuras, pero en las cuatro la
+            //  tapa es mas clara que su propia sombra.
+            g.setColour (ZatiColours::groove (0.42f));
             g.drawRoundedRectangle (r.reduced (0.5f), rad, 1.0f);
         }
     }

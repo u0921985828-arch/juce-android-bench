@@ -66,7 +66,7 @@ public:
             // same way the pad is.
             auto gut = juce::Rectangle<float> ((float) r.getX(), y, (float) gutter, laneH).reduced (1.0f, 0.5f);
             g.setColour (has ? frag.withMultipliedAlpha (pad == selPad ? 0.95f : 0.55f)
-                             : ZatiColours::padBorder.withAlpha (0.35f));
+                             : ZatiColours::markOn (ZatiColours::chassisTop, 0.18f));
             g.fillRect (gut);
             g.setColour (has ? ZatiColours::bestOn (frag, ZatiColours::ink, juce::Colours::white)
                              : ZatiColours::inkDim.withAlpha (0.6f));
@@ -81,7 +81,8 @@ public:
 
                 if (step >= patLen)                       // past this pattern's length
                 {
-                    g.setColour (ZatiColours::padBorder.withAlpha (0.12f));
+                    //  Fuera del patron: el hueco mas profundo de la rejilla.
+                    g.setColour (ZatiColours::groove (0.30f));
                     g.fillRect (cell);
                     continue;
                 }
@@ -90,7 +91,13 @@ public:
 
                 if (on)
                 {
-                    g.setColour (has ? frag : ZatiColours::ink.withAlpha (0.55f));
+                    //  Un paso puesto en un carril SIN sonido no lleva color de
+                    //  fragmento porque no hay fragmento, pero sigue siendo un
+                    //  paso puesto: una marca medida contra la tarjeta, clara
+                    //  sobre un cuerpo oscuro y oscura sobre uno claro. Escrito
+                    //  con ZatiColours::ink salia crema en LACA - mas llamativo
+                    //  que un paso que SI tiene sonido.
+                    g.setColour (has ? frag : ZatiColours::markOn (ZatiColours::chassisTop, 0.55f));
                     g.fillRect (cell);
 
                     //  The pitch of a step used to exist only as a number in a
@@ -112,8 +119,13 @@ public:
                 {
                     // Beats stay a shade darker than the off-beats, so the bar
                     // keeps a pulse you can count without reading numbers.
+                    //  Una celda vacia es un HUECO, y un hueco es mas oscuro que
+                    //  la superficie en la que esta. Con padBorder salia mas
+                    //  claro que la tarjeta en las dos carcasas oscuras, o sea
+                    //  del lado equivocado: la rejilla se leia como si todos los
+                    //  pasos estuvieran puestos a medias.
                     const bool beat = (c % 4) == 0;
-                    g.setColour (ZatiColours::padBorder.withAlpha (beat ? 0.55f : 0.28f));
+                    g.setColour (ZatiColours::groove (beat ? 0.48f : 0.28f));
                     g.fillRect (cell);
                 }
 
@@ -121,7 +133,7 @@ public:
         }
 
         // Bar rules every 4 steps — structure, drawn over the cells.
-        g.setColour (ZatiColours::ink.withAlpha (0.20f));
+        g.setColour (ZatiColours::groove (0.28f));
         for (int c = 4; c < kBarSteps; c += 4)
             g.fillRect ((float) r.getX() + gutter + cellW * (float) c - 0.5f,
                         (float) r.getY(), 1.0f, (float) r.getHeight());
@@ -140,7 +152,7 @@ public:
             //  The column the beat is in, and the line inside it. Both in the
             //  playhead's own colour now: red belongs to RECORDING and to
             //  nothing else on this machine.
-            g.setColour (ZatiColours::ink.withAlpha (0.10f));
+            g.setColour (ZatiColours::groove (0.14f));
             g.fillRect (col, y0, cellW, hh);
 
             const float x = col + cellW * phase;
