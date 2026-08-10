@@ -604,6 +604,10 @@ MainComponent::MainComponent()
         browseLoadButton.onClick = [this] { loadBrowserSelection(); };
         browseSheet.addAndMakeVisible (browseLoadButton);
 
+        styleButton (browseKitButton, kKey);
+        browseKitButton.onClick = [this] { loadFolderAsKit(); };
+        browseSheet.addAndMakeVisible (browseKitButton);
+
         // Escape hatch: hand off to the OS picker. Some Android ROMs hide media
         // files from a direct directory listing no matter what is granted; the
         // system picker always reaches them (and gets its own access grant).
@@ -868,6 +872,21 @@ MainComponent::MainComponent()
     autocutButton.setClickingTogglesState (true);
     styleButton (autocutButton, kStepOff);
     litAccent (autocutButton);
+
+    styleButton (duckButton, kKey);
+    litAccent (duckButton);
+    duckButton.setClickingTogglesState (true);
+    duckButton.onClick = [this]
+    {
+        //  Uno solo manda. Dos pads bombeando a la vez es una envolvente
+        //  peleandose consigo misma, y ademas nadie sabria cual esta puesto.
+        const bool on = duckButton.getToggleState();
+        engine.setDuckPad (on ? selectedPad : -1);
+        status.setText (on ? T ("El pad %1 hace bombear al resto", juce::String (selectedPad + 1))
+                           : T ("Bombeo apagado"),
+                        juce::dontSendNotification);
+    };
+    padSheet.addAndMakeVisible (duckButton);
     autocutButton.onClick = [this]
     {
         if (selectedPad < 0) return;
@@ -2877,15 +2896,19 @@ void MainComponent::layoutPadGrid (juce::Rectangle<int> area, int cols, int rows
 //  El ultimo se lleva el resto del rectangulo, no su cuota calculada: seis
 //  divisiones enteras dejan la fila terminando hasta seis pixeles antes del
 //  borde, y ese hueco se ve porque la fila de al lado si llega.
-void MainComponent::layoutModuleBar (juce::Rectangle<int> row, juce::TextButton** mb, int vInset)
+void MainComponent::layoutModuleBar (juce::Rectangle<int> row, juce::TextButton** mb, int vInset, int count)
 {
-    constexpr int kMods = 6;
+    //  Vale para cualquier fila de tapas, no solo para la barra de modulos: la
+    //  fila REV / LOOP / AUTOCUT / BOMBEO tiene el mismo problema y peor, que
+    //  "AUTOCUT" pide 52 px y a cuartos le tocaban 42, y el arabe de AUTO CHOP
+    //  pide 85.
+    const int kMods = juce::jlimit (1, 8, count);
     //  La MISMA fuente con la que drawButtonText va a dibujar la tapa. Medir
     //  con otra es como se responde "cabe" a una pregunta que no se ha hecho:
     //  ya paso una vez en este proyecto, con getTextButtonFont.
     const auto capFont = ZatiColours::monoFont (11.0f, true).withExtraKerningFactor (0.06f);
 
-    int need[kMods] {}; int total = 0;
+    int need[8] {}; int total = 0;
     for (int i = 0; i < kMods; ++i)
     {
         need[i] = (int) std::ceil (juce::GlyphArrangement::getStringWidth (capFont, mb[i]->getButtonText()))
@@ -3370,18 +3393,18 @@ void MainComponent::resized()
 
         padSectionArea[2] = inner.removeFromTop (secH);   // painted: EL PAD
         auto rr = inner.removeFromTop (Metrics::hit);
-        const int rw = rr.getWidth() / 3;
-        reverseButton.setBounds (rr.removeFromLeft (rw).reduced (Metrics::halfGap, 0));
-        loopButton.setBounds    (rr.removeFromLeft (rw).reduced (Metrics::halfGap, 0));
-        autocutButton.setBounds (rr.reduced (Metrics::halfGap, 0));
+        {
+            juce::TextButton* pb[4] = { &reverseButton, &loopButton, &autocutButton, &duckButton };
+            layoutModuleBar (rr, pb, 0, 4);
+        }
         inner.removeFromTop (5);
         auto rr2 = inner.removeFromTop (Metrics::hit);
         //  Three ways to put a sound on a pad, on one row: cut one you have,
         //  record the room, or print what the machine is playing.
-        const int cw = rr2.getWidth() / 3;
-        chopButton.setBounds     (rr2.removeFromLeft (cw).reduced (Metrics::halfGap, 0));
-        micButton.setBounds      (rr2.removeFromLeft (cw).reduced (Metrics::halfGap, 0));
-        resampleButton.setBounds (rr2.reduced (Metrics::halfGap, 0));
+        {
+            juce::TextButton* pb[3] = { &chopButton, &micButton, &resampleButton };
+            layoutModuleBar (rr2, pb, 0, 3);
+        }
         inner.removeFromTop (5);
 
         //  Colour is a TAG, not sound design, and it used to be the loudest
@@ -3408,6 +3431,7 @@ void MainComponent::resized()
 
         auto actions = inner.removeFromBottom (Metrics::btn);
         browseSystemButton.setBounds (actions.removeFromRight (actions.getWidth() / 3).reduced (Metrics::halfGap, 0));
+        browseKitButton.setBounds    (actions.removeFromRight (actions.getWidth() / 2).reduced (Metrics::halfGap, 0));
         browseLoadButton.setBounds   (actions.reduced (Metrics::halfGap, 0));
         inner.removeFromBottom (8);
         if (browser != nullptr) browser->setBounds (inner);
@@ -4340,6 +4364,9 @@ void MainComponent::updateControlsFromPad (int index)
     reverseButton.setToggleState (padReverse[(size_t) index], juce::dontSendNotification);
     loopButton.setToggleState    (padLoop[(size_t) index],    juce::dontSendNotification);
     autocutButton.setToggleState (padSelfCut[(size_t) index], juce::dontSendNotification);
+    //  El bombeo lo manda UN pad de los sesenta y cuatro, asi que el boton
+    //  esta encendido solo cuando el pad que tienes delante es ese.
+    duckButton.setToggleState (engine.getDuckPad() == index, juce::dontSendNotification);
     chokeSlider.setValue (padChokeUI[(size_t) index], juce::dontSendNotification);
     panSlider.setValue     (padPan[(size_t) index],     juce::dontSendNotification);
     attackSlider.setValue  (padAttack[(size_t) index],  juce::dontSendNotification);
@@ -4545,6 +4572,7 @@ void MainComponent::retranslateUi()
     reverseButton.setButtonText (T ("REV|reverso"));
     loopButton   .setButtonText (T ("LOOP"));
     autocutButton.setButtonText (T ("AUTOCUT"));
+    duckButton   .setButtonText (T ("BOMBEO"));
     chopButton   .setButtonText (T ("AUTO CHOP"));
     micButton    .setButtonText (recordingActive ? T ("PARAR") : T ("GRABAR MIC"));
     resampleButton.setButtonText (resamplingActive ? T ("PARAR") : T ("REMUESTREAR"));
@@ -5122,6 +5150,7 @@ juce::ValueTree MainComponent::captureState() const
     //  El XY es parte del proyecto: que efecto estabas tocando y si lo dejaste
     //  fijo o momentaneo. Sin esto, abrir un proyecto te devolvia el panel en
     //  FLT y en momentaneo aunque lo hubieras dejado en el delay y fijo.
+    fx.setProperty ("duckPad", engine.getDuckPad(), nullptr);
     fx.setProperty ("xyFx",    xyFx,    nullptr);
     fx.setProperty ("xyLatch", xyLatch, nullptr);
     s.addChild (fx, -1, nullptr);
@@ -5251,6 +5280,7 @@ void MainComponent::applyState (const juce::ValueTree& s)
         //  tiene la propiedad y getProperty devuelve 0, que es un indice
         //  valido - pero uno guardado por una version con mas efectos no lo
         //  seria.
+        engine.setDuckPad (juce::jlimit (-1, kNumPads - 1, (int) fx.getProperty ("duckPad", -1)));
         xyLatch = (bool) fx.getProperty ("xyLatch", false);
         selectXyFx (juce::jlimit (0, kNumFx - 1, (int) fx.getProperty ("xyFx", 0)));
         xyLatchButton.setToggleState (xyLatch, juce::dontSendNotification);
@@ -6701,6 +6731,58 @@ void MainComponent::launchSystemPicker()
                 }
             });
         });
+}
+
+//  Ver browseKitButton. Los audios de la carpeta que se esta viendo, en el
+//  mismo orden en que aparecen, repartidos por el banco de delante.
+void MainComponent::loadFolderAsKit()
+{
+    if (browser == nullptr) return;
+    auto dir = browser->getRoot();
+    if (const auto sel = browser->getSelectedFile (0); sel.existsAsFile())
+        dir = sel.getParentDirectory();
+    if (! dir.isDirectory()) return;
+
+    //  El mismo filtro que la lista, para que lo que se carga sea lo que se
+    //  ve. Ordenado por nombre porque es el orden en que se ve, y porque
+    //  "kick 01, kick 02..." es como esta nombrado cualquier kit.
+    auto files = dir.findChildFiles (juce::File::findFiles, false, "*.wav;*.aif;*.aiff;*.flac;*.mp3;*.ogg");
+    files.sort();
+    if (files.isEmpty())
+    {
+        status.setText (T ("No hay audio en esta carpeta"), juce::dontSendNotification);
+        return;
+    }
+
+    //  Sobrescribe dieciseis pads: pasa por deshacer, como AUTO CHOP.
+    pushUndo (T ("KIT"));
+
+    const int base = currentBank * kPadsPerBank;
+    const int n    = juce::jmin (files.size(), kPadsPerBank);
+    closeAllSheets();
+    for (int i = 0; i < n; ++i)
+    {
+        const int  slot = base + i;
+        const auto f    = files[i];
+        //  Uno por uno y en el orden en que se ven. El cargador tiene UN hilo,
+        //  asi que dieciseis peticiones se atienden en fila y ninguna se pisa
+        //  con otra; lo que no se puede es dar por hecho el orden de llegada,
+        //  y por eso cada respuesta lleva su propio slot.
+        loader.loadAsync (juce::URL (f), slot, [this, slot, f] (bool ok, juce::String detail, SampleBuffer::Ptr sb)
+        {
+            if (! ok || sb == nullptr)
+            {
+                status.setText (T ("No se pudo leer: %1", detail), juce::dontSendNotification);
+                return;
+            }
+            assignSampleToPad (slot, sb, f.getFileName());
+        });
+    }
+
+    status.setText (T ("Kit de %1 sonidos en el banco %2",
+                       juce::String (n),
+                       juce::String::charToString ((juce::juce_wchar) ('A' + currentBank))),
+                    juce::dontSendNotification);
 }
 
 void MainComponent::loadBrowserSelection()

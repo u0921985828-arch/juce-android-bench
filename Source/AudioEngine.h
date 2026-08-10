@@ -346,6 +346,22 @@ public:
     //  la grabacion, y lo que suena es lo que se graba. Se cuenta en la misma
     //  cola de golpes pendientes que ya usan los redobles: nada nuevo en el
     //  hilo de audio.
+    //  BOMBEO. Un pad hace agacharse a todo lo demas cada vez que suena, y se
+    //  recupera solo. Es el sidechain de manual: el bombo abre hueco y el resto
+    //  respira a su ritmo, que en el genero al que apunta esta caja no es un
+    //  efecto sino la textura.
+    //
+    //  Se aplica al master ENTERO, incluido el pad que lo dispara. Excluirlo
+    //  exigiria un bus aparte para el, y en la practica un bombo agachandose a
+    //  si mismo un instante suena como un bombo comprimido - que es lo que
+    //  todo el mundo pone despues de todas formas.
+    void setDuckPad    (int pad)   noexcept { duckPad.store (pad, std::memory_order_relaxed); }
+    int  getDuckPad()        const noexcept { return duckPad.load (std::memory_order_relaxed); }
+    void setDuckAmount (float a)   noexcept { duckAmt.store (a, std::memory_order_relaxed); }
+    float getDuckAmount()    const noexcept { return duckAmt.load (std::memory_order_relaxed); }
+    void setDuckRelease (float ms) noexcept { duckRel.store (ms, std::memory_order_relaxed); }
+    float getDuckRelease()   const noexcept { return duckRel.load (std::memory_order_relaxed); }
+
     void setLiveQuantise (bool on) noexcept { liveQuant.store (on, std::memory_order_relaxed); }
     bool getLiveQuantise() const noexcept { return liveQuant.load (std::memory_order_relaxed); }
 
@@ -579,6 +595,10 @@ private:
     std::atomic<float> masterTarget { 1.0f };
     std::atomic<bool>  safetyLimiter { true };
     std::atomic<bool>  liveQuant     { false };
+    std::atomic<int>   duckPad { -1 };        // -1 = sin bombeo
+    std::atomic<float> duckAmt { 0.55f };     // cuanto se agacha, 0..1
+    std::atomic<float> duckRel { 180.0f };    // ms de recuperacion
+    float duckEnv = 0.0f;                     // solo hilo de audio
     //  Muestras por paso de 1/16 al tempo actual. Se necesita en la seccion 3
     //  - la cuantizacion del disparo en directo - y alli todavia no se ha
     //  calculado el transporte, que va en la 4+5.

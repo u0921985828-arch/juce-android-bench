@@ -375,6 +375,12 @@ private:
     std::unique_ptr<juce::FileBrowserComponent> browser;
     juce::TextButton browseCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
     juce::TextButton browseLoadButton  { "CARGAR" };
+    //  CARGAR UNA CARPETA ENTERA COMO KIT. Dieciseis samples es un kit, y
+    //  montarlo de uno en uno son dieciseis viajes a la biblioteca por cada
+    //  banco. Coge los audios de la carpeta que estas viendo, en el orden en
+    //  que se ven, y los reparte por el banco que tengas delante.
+    juce::TextButton browseKitButton { "KIT" };
+    void loadFolderAsKit();
     juce::TextButton browseSystemButton { "SISTEMA" };   // SAF / OS picker fallback
     std::unique_ptr<juce::FileChooser> chooser;          // only for that fallback
     void launchSystemPicker();
@@ -576,7 +582,7 @@ private:
     void xyTouched (bool down);
     void refreshXyPad();
     void paintXySheetContent (juce::Graphics& g);
-    void layoutModuleBar (juce::Rectangle<int> row, juce::TextButton** mb, int vInset);
+    void layoutModuleBar (juce::Rectangle<int> row, juce::TextButton** mb, int vInset, int count = 6);
     juce::Rectangle<int> xyLabelBand;   // donde resized() reservo el rotulo MODO
 
     //  SONG: pick what to place from the palette, then tap a cell. Choosing
@@ -779,6 +785,10 @@ private:
     juce::TextButton reverseButton { "REV" };
     juce::TextButton loopButton { "LOOP" };
     juce::TextButton autocutButton { "AUTOCUT" };
+    //  BOMBEO: este pad hace agacharse a todo lo demas. Vive en la ficha del
+    //  PAD y no en el mezclador porque es una propiedad del pad - cual de los
+    //  sesenta y cuatro manda - y no una del canal.
+    juce::TextButton duckButton { "BOMBEO" };
     juce::TextButton chopButton { "AUTO CHOP" };
     juce::TextButton micButton  { "GRABAR MIC" };
     //  RESAMPLE. The move this whole lineage is built on: play something,

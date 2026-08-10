@@ -238,6 +238,12 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01)
     if (chosen == nullptr)
         return;
 
+    //  El pad del bombeo abre la envolvente de golpe. Aqui, en triggerPad, y
+    //  no en el secuenciador: asi vale igual tocado a dedo que disparado por
+    //  un paso, que es lo que un sidechain tiene que hacer.
+    if (slot == duckPad.load (std::memory_order_relaxed))
+        duckEnv = 1.0f;
+
     chosen->serial = ++voiceSerial;
     chosen->start (slot,
                    padPitch[(size_t) slot].load (std::memory_order_relaxed) + (float) extraSemis,
@@ -1022,6 +1028,34 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             recording.store (false, std::memory_order_release);
     }
 
+    // 5c-bombeo. El sidechain del pad elegido, antes del ducking del sistema.
+    //
+    //  Va aqui y no en 5b porque tiene que agachar el MASTER entero, colas de
+    //  delay y reverb incluidas - un bombeo que deja la reverb a tope no abre
+    //  ningun hueco. Y va antes del saturador por la misma razon que el duck
+    //  del sistema: bajar lo que ENTRA al limitador, no lo que sale.
+    if (duckEnv > 0.0001f || duckPad.load (std::memory_order_relaxed) >= 0)
+    {
+        const float amt = juce::jlimit (0.0f, 1.0f, duckAmt.load (std::memory_order_relaxed));
+        const float rel = juce::jmax (20.0f, duckRel.load (std::memory_order_relaxed));
+        //  Recuperacion exponencial: es la forma de una envolvente de
+        //  compresor y la que no deja escalon al volver.
+        const float k = 1.0f - std::exp (-1000.0f / (rel * (float) juce::jmax (8000.0, systemSampleRate)));
+        const int   outCh = juce::jmin (2, out.getNumChannels());
+
+        float* w[2] = { nullptr, nullptr };
+        for (int ch = 0; ch < outCh; ++ch) w[ch] = out.getWritePointer (ch, startSample);
+
+        float env = duckEnv;
+        for (int i = 0; i < numSamples; ++i)
+        {
+            const float g = 1.0f - amt * env;
+            for (int ch = 0; ch < outCh; ++ch) w[ch][i] *= g;
+            env -= k * env;
+        }
+        duckEnv = (env < 1.0e-5f) ? 0.0f : env;
+    }
+
     // 5c-duck. The master level, ramped.
     //
     //  DESPUES del saturador Y del remuestreo, no antes.
@@ -1528,6 +1562,7 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
                          //  rebote fue una interpretacion distinta de la que
                          //  se estaba escuchando.
                          { &fltSweep, &s.fltSweep },
+                         { &duckAmt,  &s.duckAmt  }, { &duckRel, &s.duckRel },
                          { &hpFreq,   &s.hpFreq   }, { &hpReso,  &s.hpReso  }, { &hpMix,   &s.hpMix   },
                          { &fxDrive,  &s.fxDrive  }, { &drvTone, &s.drvTone }, { &drvMix,  &s.drvMix  },
                          { &dlyTime,  &s.dlyTime  }, { &dlyFb,   &s.dlyFb   }, { &dlyMix,  &s.dlyMix  },
@@ -1542,6 +1577,7 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     // bar of every export.
     smCutoff  = fxCutoff.load (std::memory_order_relaxed);
     smSweep   = fltSweep.load (std::memory_order_relaxed);
+    duckPad.store (s.duckPad.load (std::memory_order_relaxed), std::memory_order_relaxed);
     smReso    = fxReso.load   (std::memory_order_relaxed);
     smFxMix   = fxMix.load    (std::memory_order_relaxed);
     smHpFreq  = hpFreq.load   (std::memory_order_relaxed);
