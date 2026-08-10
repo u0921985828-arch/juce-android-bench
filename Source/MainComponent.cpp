@@ -3671,18 +3671,28 @@ void MainComponent::resized()
         //  panel apaisado hace que el eje corto se barra con un gesto y el
         //  largo con dos, y entonces los dos parametros no se tocan igual.
         constexpr int nameH = 14 + ZatiLookAndFeel::kTextPad;
-        const int chrome = Metrics::md * 2          // margenes de la tarjeta
+        const int head   = Metrics::md * 2          // margenes de la tarjeta
                          + Metrics::hit             // fila del titulo
                          + 14                       // la linea que dice que hace soltar
-                         + Metrics::sm
-                         + Metrics::hit + Metrics::sm    // los seis efectos
-                         + nameH + Metrics::hit;         // el modo
+                         + Metrics::sm;
+        //  Los seis efectos y el modo: en pie sobre el panel y bajo el, o en
+        //  columna al lado cuando la ventana es apaisada.
+        const int stack  = Metrics::hit + Metrics::sm + nameH + Metrics::hit;
+        const int sideCol = wideFace ? juce::jlimit (120, 200, full.getWidth() / 5) : 0;
 
-        const int capH  = (int) (full.getHeight() * 0.78f);
-        const int capW  = (int) (full.getWidth()  * 0.92f) - 2 * Metrics::lg;
-        const int padSq = juce::jlimit (140, juce::jmax (140, capW), capH - chrome);
+        const int capH = (int) (full.getHeight() * 0.78f);
+        const int capW = (int) (full.getWidth()  * 0.92f) - 2 * Metrics::lg
+                       - (wideFace ? sideCol + Metrics::gap : 0);
 
-        auto inner = sheetFromBottom (xySheet, chrome + padSq);
+        //  CUADRADO, Y ESO MANDA SOBRE TODO LO DEMAS. Un panel apaisado hace
+        //  que el eje corto se barra con un gesto y el largo con dos, y
+        //  entonces los dos parametros no se tocan igual - que es exactamente
+        //  lo unico que este componente tiene que garantizar. Medido en
+        //  horizontal antes de esto: 843 x 130, seis veces mas ancho que alto.
+        const int padSq = juce::jlimit (140, juce::jmax (140, capW),
+                                        capH - head - (wideFace ? 0 : stack));
+
+        auto inner = sheetFromBottom (xySheet, head + padSq + (wideFace ? 0 : stack));
 
         auto titleRow = inner.removeFromTop (Metrics::hit);
         xyCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
@@ -3690,22 +3700,54 @@ void MainComponent::resized()
         inner.removeFromTop (14);              // pintado: que hace soltar el dedo
         inner.removeFromTop (Metrics::sm);
 
+        //  En apaisado la columna sale por el lado y el panel se queda con toda
+        //  la altura de la tarjeta; en vertical es la fila de siempre arriba y
+        //  el modo abajo.
+        auto col = wideFace ? Lang::takeEnd (inner, sideCol) : juce::Rectangle<int>();
+        if (wideFace) Lang::takeEnd (inner, Metrics::gap);
+
         {
-            auto row = inner.removeFromTop (Metrics::hit);
-            const int w = row.getWidth() / kNumFx;
-            for (int f = 0; f < xyFxButtons.size(); ++f)
-                xyFxButtons[f]->setBounds ((f < kNumFx - 1 ? Lang::takeStart (row, w) : row)
-                                             .reduced (Metrics::halfGap / 2, 2));
-            inner.removeFromTop (Metrics::sm);
+            //  Apaisado: DOS columnas de tres, no una de seis. Seis apilados
+            //  piden 252 px y la tarjeta rotada da 250 para ellos Y el modo -
+            //  medido, REV salia cortado por el borde de abajo y MODO no se
+            //  dibujaba en absoluto.
+            if (wideFace)
+            {
+                auto fxArea = col.removeFromTop (3 * (Metrics::hit + 2));
+                auto left  = fxArea.removeFromLeft (fxArea.getWidth() / 2);
+                auto right = fxArea;
+                for (int f = 0; f < xyFxButtons.size(); ++f)
+                {
+                    auto& c = (f < 3 ? left : right);
+                    xyFxButtons[f]->setBounds (c.removeFromTop (Metrics::hit + 2)
+                                                 .reduced (Metrics::halfGap / 2, 2));
+                }
+                col.removeFromTop (Metrics::sm);
+            }
+            else
+            {
+                auto row = inner.removeFromTop (Metrics::hit);
+                for (int f = 0; f < xyFxButtons.size(); ++f)
+                    xyFxButtons[f]->setBounds (Lang::takeStart (row, row.getWidth() / (kNumFx - f))
+                                                 .reduced (Metrics::halfGap / 2, 2));
+                inner.removeFromTop (Metrics::sm);
+            }
         }
 
         //  El modo va DEBAJO del panel, no encima: encima queda entre tu dedo
         //  y la superficie, y es el control que menos se toca de los tres.
-        auto modeRow = inner.removeFromBottom (Metrics::hit);
-        xyLatchButton.setBounds (modeRow.reduced (Metrics::halfGap, 2));
-        xyLabelBand = inner.removeFromBottom (nameH);       // pintado: MODO
+        {
+            auto& host = wideFace ? col : inner;
+            auto modeRow = host.removeFromBottom (Metrics::hit);
+            xyLatchButton.setBounds (modeRow.reduced (Metrics::halfGap, 2));
+            xyLabelBand = host.removeFromBottom (nameH);        // pintado: MODO
+        }
 
-        xyPad.setBounds (inner);
+        //  Y por fin cuadrado de verdad: el lado es el menor de los dos que le
+        //  quedan, centrado en lo que sobra. Reservar altura para un cuadrado y
+        //  luego darle todo el ancho es como salio 843 x 130.
+        const int side = juce::jmax (60, juce::jmin (inner.getWidth(), inner.getHeight()));
+        xyPad.setBounds (inner.withSizeKeepingCentre (side, side));
     }
 
     // SEC sheet, two pages: PASOS is the grid and what plays it; PASO is the
