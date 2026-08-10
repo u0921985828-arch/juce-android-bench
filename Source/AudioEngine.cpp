@@ -755,25 +755,43 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 }
             }
 
-            const bool active = swept && live (0);
-            if (active)
+            //  EL BUS SE DEVUELVE SIEMPRE QUE ESTE VIVO, SE FILTRE O NO.
+            //
+            //  FLT es de los que RESTAN SECO - fxIsTone[0] - porque un filtro
+            //  es un inserto y no un envio: lo que un pad manda a este bus deja
+            //  de ir por el camino seco. Saltarse returnBus en la zona muerta
+            //  dejaba entonces al pad SIN camino: el seco quitado y el bus sin
+            //  devolver. Silencio total con el efecto encendido y el barrido en
+            //  el centro, que es donde queda la mitad de las veces.
+            //
+            //  Asi que "swept" decide si se PROCESA y "fed" decide si se
+            //  DEVUELVE. De paso desaparece el salto de nivel al cruzar el
+            //  centro: el bus no se va, solo deja de filtrarse - y en el borde
+            //  de la zona muerta el filtro ya esta en su extremo, donde es casi
+            //  transparente.
+            const bool fed = live (0);
+            if (fed)
             {
-                //  Reset al entrar Y al cambiar de lado. Un paso bajo cargado
-                //  con energia grave que de pronto se declara paso alto suelta
-                //  su estado de golpe: un golpe seco justo al cruzar el centro,
-                //  que es por donde pasa el dedo cada vez que vuelve.
-                if (! filterWasActive || fltWasHigh != (smSweep > 0.0f))
-                    masterFilter.reset();
-                masterFilter.setType (type);
-                masterFilter.setCutoffFrequency (juce::jlimit (20.0f, nyq, freq));
-                masterFilter.setResonance (smReso);
-                auto b = blockFor (0);
-                juce::dsp::ProcessContextReplacing<float> ctx (b);
-                masterFilter.process (ctx);
+                if (swept)
+                {
+                    //  Reset al entrar Y al cambiar de lado. Un paso bajo
+                    //  cargado con energia grave que de pronto se declara paso
+                    //  alto suelta su estado de golpe: un golpe seco justo al
+                    //  cruzar el centro, que es por donde pasa el dedo cada vez
+                    //  que vuelve.
+                    if (! filterWasActive || fltWasHigh != (smSweep > 0.0f))
+                        masterFilter.reset();
+                    masterFilter.setType (type);
+                    masterFilter.setCutoffFrequency (juce::jlimit (20.0f, nyq, freq));
+                    masterFilter.setResonance (smReso);
+                    auto b = blockFor (0);
+                    juce::dsp::ProcessContextReplacing<float> ctx (b);
+                    masterFilter.process (ctx);
+                    fltWasHigh = (smSweep > 0.0f);
+                }
                 returnBus (0);
-                fltWasHigh = (smSweep > 0.0f);
             }
-            filterWasActive = active;
+            filterWasActive = fed && swept;
         }
 
         // --- 2. HPF: its own filter, so ISO + HPF = band-pass. ------------
@@ -911,36 +929,6 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         }
     }
 
-    // 5c-duck. The master level, ramped.
-    //
-    //  Sits BEFORE the safety saturator on purpose: ducking has to reduce what
-    //  reaches the limiter, not what leaves it, or the quiet version would be
-    //  the loud one squashed.
-    {
-        const float target = masterTarget.load (std::memory_order_relaxed);
-
-        if (target < 0.99999f || masterGain < 0.99999f)
-        {
-            //  A 12 ms time constant: settled in about forty milliseconds,
-            //  which is fast enough to be under the chime it is making room
-            //  for and a hundred times too slow to click. Measured: 0.271 of
-            //  level at the bottom, back to 1.000, over 13 blocks of 128.
-            const float k = 1.0f - std::exp (-1.0f / (0.012f * (float) juce::jmax (8000.0, systemSampleRate)));
-            const int outCh = juce::jmin (2, out.getNumChannels());
-
-            float* w[2] = { nullptr, nullptr };
-            for (int ch = 0; ch < outCh; ++ch) w[ch] = out.getWritePointer (ch, startSample);
-
-            float gain = masterGain;
-            for (int i = 0; i < numSamples; ++i)
-            {
-                gain += (target - gain) * k;
-                for (int ch = 0; ch < outCh; ++ch) w[ch][i] *= gain;
-            }
-            masterGain = gain;
-        }
-    }
-
     // 5d. Master safety. Sixteen pads at full level plus a delay with
     //     feedback and a reverb tail will pass 0 dBFS, and what comes out of
     //     an integer DAC then is hard clipping: the ugliest sound a sampler
@@ -953,7 +941,8 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     //     the thing you actually listen to had nothing.
     {
         constexpr float thresh = 0.944f;      // -0.5 dBFS
-        const int outCh = juce::jmin (2, out.getNumChannels());
+        const int outCh = safetyLimiter.load (std::memory_order_relaxed)
+                            ? juce::jmin (2, out.getNumChannels()) : 0;
         for (int ch = 0; ch < outCh; ++ch)
         {
             float* w = out.getWritePointer (ch, startSample);
@@ -1005,6 +994,40 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         }
         if (rp >= cap)
             recording.store (false, std::memory_order_release);
+    }
+
+    // 5c-duck. The master level, ramped.
+    //
+    //  DESPUES del saturador Y del remuestreo, no antes.
+    //
+    //  Estaba antes para que el limitador viera menos señal mientras se atenua.
+    //  El precio era que el remuestreo, que captura el master en 5e, imprimia
+    //  la atenuacion DENTRO de la toma: llega una notificacion mientras
+    //  remuestreas y te llevas su bache de medio segundo grabado para siempre.
+    //  Atenuar es monitorizacion y dura un segundo; la toma se queda.
+    {
+        const float target = masterTarget.load (std::memory_order_relaxed);
+
+        if (target < 0.99999f || masterGain < 0.99999f)
+        {
+            //  A 12 ms time constant: settled in about forty milliseconds,
+            //  which is fast enough to be under the chime it is making room
+            //  for and a hundred times too slow to click. Measured: 0.271 of
+            //  level at the bottom, back to 1.000, over 13 blocks of 128.
+            const float k = 1.0f - std::exp (-1.0f / (0.012f * (float) juce::jmax (8000.0, systemSampleRate)));
+            const int outCh = juce::jmin (2, out.getNumChannels());
+
+            float* w[2] = { nullptr, nullptr };
+            for (int ch = 0; ch < outCh; ++ch) w[ch] = out.getWritePointer (ch, startSample);
+
+            float gain = masterGain;
+            for (int i = 0; i < numSamples; ++i)
+            {
+                gain += (target - gain) * k;
+                for (int ch = 0; ch < outCh; ++ch) w[ch][i] *= gain;
+            }
+            masterGain = gain;
+        }
     }
 
     // 5b-probe. The click, written AFTER the effects so nothing colours or

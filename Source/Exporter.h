@@ -205,6 +205,12 @@ private:
                 off.publishSample (i, pads[(size_t) i]);
 
         off.copyStateFrom (live);
+        //  Sin el limitador de seguridad: es de la escucha. Impreso aqui, el
+        //  bufferPeak de abajo medía un pico que el limitador acababa de
+        //  aplastar, nunca lo encontraba por encima de 1.0 y anunciaba que no
+        //  habia hecho falta bajar nada - sobre una señal que ya venia
+        //  saturada. Medir y compensar solo sirve si hay algo que medir.
+        off.setSafetyLimiter (false);
 
         if (soloPad >= 0)
         {

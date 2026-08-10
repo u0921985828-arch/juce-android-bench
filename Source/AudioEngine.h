@@ -208,6 +208,21 @@ public:
     //
     //  Ramped in the render, never stepped: a jump straight to a quarter is a
     //  click, and a click is what the notification was trying to avoid.
+    //  EL LIMITADOR DE SEGURIDAD ES DE LA ESCUCHA, NO DE LA OBRA.
+    //
+    //  Existe para que dieciseis pads a tope mas un delay realimentado no
+    //  lleguen al DAC por encima de 0 dBFS y salgan recortados a hacha. Eso es
+    //  monitorizacion. Pero renderNextBlock es TAMBIEN lo que usa el Exporter,
+    //  asi que el master exportado salia con el limitador ya impreso - y el
+    //  Exporter, justo despues, medía el pico y bajaba la ganancia "para no
+    //  saturar" sobre una señal que ya venia saturada. Media un pico que el
+    //  limitador acababa de aplastar, no lo encontraba nunca por encima de 1.0
+    //  y anunciaba que no habia hecho falta bajar nada.
+    //
+    //  Puesto a false, el motor entrega la suma tal cual y el Exporter mide y
+    //  compensa de verdad, que es lo que su propio comentario dice que hace.
+    void setSafetyLimiter (bool on) noexcept { safetyLimiter.store (on, std::memory_order_relaxed); }
+
     void setMasterGain (float g) noexcept
     { masterTarget.store (juce::jlimit (0.0f, 1.0f, g), std::memory_order_relaxed); }
 
@@ -548,6 +563,7 @@ private:
     //  Target and the ramped value the render actually multiplies by. The
     //  second one is audio-thread only, so it is a plain float.
     std::atomic<float> masterTarget { 1.0f };
+    std::atomic<bool>  safetyLimiter { true };
     float masterGain = 1.0f;
 
     std::array<std::atomic<float>, kNumPads> padGain {};
