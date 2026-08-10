@@ -10,6 +10,12 @@ _deps/
 Builds/
 JuceLibraryCode/
 
+# La release descargada para comprobar firma y permisos. Son 14 MB de binario
+# que el workflow vuelve a producir en cada corrida: versionarlo solo engorda
+# el historial con un artefacto reproducible.
+*.apk
+*.aab
+
 # Local validation scaffolding (not part of the repo)
 JUCE
 pjbuild/
