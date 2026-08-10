@@ -406,7 +406,22 @@ private:
     int  firstEmptyPad() const;
     void layoutPadGrid (juce::Rectangle<int> area, int cols, int rows, int gap);
 
-    static constexpr int kNumPads   = AudioEngine::kNumPads;     // 16
+    static constexpr int kNumPads      = AudioEngine::kNumPads;      // 64
+    static constexpr int kPadsPerBank  = AudioEngine::kPadsPerBank;  // 16 on screen
+    static constexpr int kNumBanks     = AudioEngine::kNumBanks;     // A B C D
+
+    //  WHICH SIXTEEN THE GRID IS POINTING AT.
+    //
+    //  All sixty-four PadButtons exist, all the time; only the current bank's
+    //  are visible and laid out. That is deliberate: every `pads[i]`,
+    //  `refreshPad(i)` and `padClicked(i)` in this file takes a GLOBAL pad
+    //  index, and there are twenty-five of them. Keeping the array global
+    //  means not one of them has to learn about banks, and there is no
+    //  off-by-sixteen to get wrong.
+    int currentBank = 0;
+    void selectBank (int bank);
+    juce::OwnedArray<juce::TextButton> bankButtons;
+    juce::Rectangle<int> bankRowArea;
     static constexpr int kNumSteps  = AudioEngine::kNumSteps;    // 64 (max pattern length)
     static constexpr int kMinPatLen = AudioEngine::kMinPatLen;   // 16
     static constexpr int kMaxPatLen = AudioEngine::kMaxPatLen;   // 64
@@ -418,10 +433,11 @@ private:
     juce::OwnedArray<PadButton> pads;
     StepGrid stepGrid;
     juce::OwnedArray<juce::TextButton> barButtons;   // bar 1..4 when the pattern is longer than one
-    bool  gridCells[AudioEngine::kNumSteps * AudioEngine::kNumPads] {};
-    signed char gridNotes[AudioEngine::kNumSteps * AudioEngine::kNumPads] {};
-    int   gridZati[AudioEngine::kNumPads] {};
-    bool  gridLoaded[AudioEngine::kNumPads] {};
+    //  The grid shows ONE bank: sixteen lanes, whichever sixteen those are.
+    bool  gridCells[AudioEngine::kNumSteps * AudioEngine::kPadsPerBank] {};
+    signed char gridNotes[AudioEngine::kNumSteps * AudioEngine::kPadsPerBank] {};
+    int   gridZati[AudioEngine::kPadsPerBank] {};
+    bool  gridLoaded[AudioEngine::kPadsPerBank] {};
     int   selectedBar = 0;
     void  refreshStepGrid();
 

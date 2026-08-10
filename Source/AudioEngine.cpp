@@ -181,7 +181,7 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01)
         if (at < en - 2) st = juce::jmax (0, at);
     }
 
-    triggeredMask.fetch_or ((std::uint32_t) (1u << slot), std::memory_order_relaxed);
+    triggeredMask.fetch_or ((std::uint64_t) 1u << slot, std::memory_order_relaxed);
 
     //  Pick a voice out of the shared pool. A free one if there is one, and
     //  otherwise the oldest - by serial, so "oldest" means the one that has
@@ -474,7 +474,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     //      all a bit can carry, which is exactly enough to keep playing.
     if (const auto mask = fallbackTriggers.exchange (0, std::memory_order_acquire))
         for (int p = 0; p < kNumPads; ++p)
-            if ((mask & (std::uint32_t) (1u << p)) != 0)
+            if ((mask & ((std::uint64_t) 1u << p)) != 0)
                 triggerPad (p);
 
     // 4+5. Sequencer transport + voice rendering, sample-accurate: the block
@@ -517,7 +517,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         //  stops at each of them.
         auto firePatternStep = [this, samplesPerStep] (int bank, int stepInPattern) noexcept
         {
-            const std::uint16_t mask = patternBank[(size_t) bank][(size_t) stepInPattern].load (std::memory_order_relaxed);
+            const std::uint64_t mask = patternBank[(size_t) bank][(size_t) stepInPattern].load (std::memory_order_relaxed);
             if (mask == 0) return;
 
             //  Swing: the odd sixteenths arrive late by a fraction of a step.
@@ -530,7 +530,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
 
             for (int p = 0; p < kNumPads; ++p)
             {
-                if ((mask & (std::uint16_t) (1u << p)) == 0) continue;
+                if ((mask & ((std::uint64_t) 1u << p)) == 0) continue;
 
                 const int semis = (int) stepNote[(size_t) bank][(size_t) stepInPattern][(size_t) p].load (std::memory_order_relaxed);
 
@@ -1160,7 +1160,7 @@ void AudioEngine::noteOnByLifeboat (int slot) noexcept
         return;
 
     droppedCommands.fetch_add (1, std::memory_order_relaxed);
-    fallbackTriggers.fetch_or ((std::uint32_t) (1u << slot), std::memory_order_release);
+    fallbackTriggers.fetch_or ((std::uint64_t) 1u << slot, std::memory_order_release);
 }
 
 void AudioEngine::postNoteOff (int slot) noexcept
@@ -1232,9 +1232,9 @@ void AudioEngine::copyScope (float* dst, int n) noexcept
 void AudioEngine::setStep (int patternIdx, int step, int pad, bool on) noexcept
 {
     if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps || pad < 0 || pad >= kNumPads) return;
-    const std::uint16_t bit = (std::uint16_t) (1u << pad);
-    std::uint16_t cur = patternBank[(size_t) patternIdx][(size_t) step].load (std::memory_order_relaxed);
-    cur = on ? (std::uint16_t) (cur | bit) : (std::uint16_t) (cur & ~bit);
+    const std::uint64_t bit = (std::uint64_t) 1u << pad;
+    std::uint64_t cur = patternBank[(size_t) patternIdx][(size_t) step].load (std::memory_order_relaxed);
+    cur = on ? (cur | bit) : (cur & ~bit);
     patternBank[(size_t) patternIdx][(size_t) step].store (cur, std::memory_order_relaxed);
 }
 

@@ -78,7 +78,10 @@ private:
     //  hand back the same address — a changed pad that compares equal. Holding
     //  the reference makes that impossible, and costs nothing, because the UI
     //  is holding the same objects anyway.
-    static constexpr int kMaxPads = 32;
+    //  Must be at least AudioEngine::kNumPads. It was 32 while the machine had
+    //  16, and going to 64 banks would have silently stopped protecting half
+    //  of them - sync() and adopt() both clamp with jmin.
+    static constexpr int kMaxPads = 64;
     std::array<SampleBuffer::Ptr, kMaxPads> seen, queued;
     std::array<bool, kMaxPads> dirty {};
     bool writing = false;

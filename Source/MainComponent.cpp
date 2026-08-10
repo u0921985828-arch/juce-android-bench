@@ -22,8 +22,34 @@ namespace
     const juce::Colour& kStepOff   = ZatiColours::key;
     const juce::Colour& kKey       = ZatiColours::key;
 
+    //  WHICH TOKEN A CAP WAS PAINTED WITH, remembered on the cap itself.
+    //
+    //  applySkin used to restyle about eight buttons by name and leave the
+    //  other sixty wearing the palette they were built with. On a chassis
+    //  change the body, the plates and the LCD all moved and every key stayed
+    //  behind - a cream cap on a petrol machine, and on GRAFITO a pale cap
+    //  with pale text. A colour taken from a mutable token has to be RETAKEN,
+    //  and the only way to retake it is to know which token it was.
+    enum Role { roleKey = 0, roleAccent = 1, roleRec = 2, roleFixed = 3 };
+
+    juce::Colour roleColour (int role)
+    {
+        switch (role)
+        {
+            case roleAccent: return ZatiColours::amber;
+            case roleRec:    return ZatiColours::red;
+            case roleKey:
+            default:         return ZatiColours::key;
+        }
+    }
+
     void styleButton (juce::TextButton& b, juce::Colour c)
     {
+        b.getProperties().set ("role", c == ZatiColours::amber ? (int) roleAccent
+                                     : c == ZatiColours::red   ? (int) roleRec
+                                     : c == ZatiColours::key   ? (int) roleKey
+                                                               : (int) roleFixed);
+
         //  Text is chosen by MEASURING it against the cap it lands on, in
         //  both states. See ZatiColours::textOn - the old dark-cap ternary
         //  assumed which of the two inks was the dark one, and that stops
@@ -104,7 +130,23 @@ MainComponent::MainComponent()
         refreshPadArt (i);          // also gives the pad its accessible name
     }
 
-    stepGrid.onCell = [this] (int pad, int step) { stepCellToggled (pad, step); };
+    //  The grid speaks in LANES; this file speaks in pads.
+    //  A B C D. They ride in the seam that already says PADS, so four more
+    //  controls cost the face no height at all.
+    for (int b = 0; b < kNumBanks; ++b)
+    {
+        auto* t = new juce::TextButton (juce::String::charToString ((juce::juce_wchar) ('A' + b)));
+        styleButton (*t, kStepOff);
+        t->setColour (juce::TextButton::buttonOnColourId, kAccent);
+        t->setClickingTogglesState (true);
+        t->setRadioGroupId (5150);
+        t->onClick = [this, b] { selectBank (b); };
+        addAndMakeVisible (t);
+        bankButtons.add (t);
+    }
+    bankButtons[0]->setToggleState (true, juce::dontSendNotification);
+
+    stepGrid.onCell = [this] (int lane, int step) { stepCellToggled (currentBank * kPadsPerBank + lane, step); };
     seqSheet.addAndMakeVisible (stepGrid);
 
     // Bar selector: 64 steps will not fit across a phone at a size worth
@@ -1389,8 +1431,33 @@ MainComponent::MainComponent()
 
 // Restyle everything that captured accent-coloured values at construction —
 // the rest of the UI reads ZatiColours at paint time and only needs repaint.
+//  Every cap in the tree, not the eight that happened to be named here.
+//
+//  The buttons are children of nine different sheets and of the face itself,
+//  so the walk is recursive; a cap whose colour was NOT a skin token - a
+//  pattern chip wearing its own tone, a mute wearing red - is left alone,
+//  which is what roleFixed means.
+static void restyleTree (juce::Component& c, const std::function<void (juce::TextButton&)>& fn)
+{
+    for (auto* k : c.getChildren())
+    {
+        if (auto* tb = dynamic_cast<juce::TextButton*> (k))
+            fn (*tb);
+        restyleTree (*k, fn);
+    }
+}
+
 void MainComponent::applySkin()
 {
+    restyleTree (*this, [] (juce::TextButton& b)
+    {
+        const auto& props = b.getProperties();
+        if (! props.contains ("role")) return;
+        const int role = (int) props["role"];
+        if (role == roleFixed) return;
+        styleButton (b, roleColour (role));
+    });
+
     const auto acc = ZatiColours::accent;
     // Lit-state text must stay legible on a dark accent (TINTA skin).
     const auto onTxt = ZatiColours::textOn (acc);
@@ -1934,8 +2001,15 @@ void MainComponent::paint (juce::Graphics& g)
         engraveIn (T ("EFECTOS"), fxSeamTop, fxRowArea.getY(), faceColumn);
 
     if (! padPlateArea.isEmpty())
-        engraveIn (T ("PADS"), padSeamTop, padPlateArea.getY(),
-                   wideFace ? padPlateArea.expanded (ZatiLookAndFeel::kAir, 0) : juce::Rectangle<int>());
+    {
+        //  ...and it stops where the bank chips start. A rule that runs under
+        //  four controls is not naming a zone, it is crossing them out.
+        auto span = wideFace ? padPlateArea.expanded (ZatiLookAndFeel::kAir, 0)
+                             : full.toNearestInt();
+        if (! bankRowArea.isEmpty())
+            span = span.withTrimmedRight (juce::jmax (0, span.getRight() - bankRowArea.getX() + Metrics::gap));
+        engraveIn (T ("PADS"), padSeamTop, padPlateArea.getY(), span);
+    }
 
         //  Which of the six owns the three knobs. A tap both switches an
         //  effect and hands it the knobs, and until now only the switching
@@ -2359,10 +2433,20 @@ void MainComponent::layoutPadGrid (juce::Rectangle<int> area, int cols, int rows
 
     // SP-style numbering: pad 01 sits BOTTOM-left, 16 top-right — logical row
     // r of the pad index maps to visual row (rows-1-r).
+    //  Only the bank on screen is laid out; the other forty-eight are hidden.
+    //  They still exist, still hold their sample and their settings, and still
+    //  sound when the sequencer asks for them - a bank you cannot see is not a
+    //  bank that stopped playing.
+    const int base = currentBank * kPadsPerBank;
+
+    for (int i = 0; i < kNumPads; ++i)
+        if (auto* p = pads[i])
+            p->setVisible (i >= base && i < base + kPadsPerBank);
+
     for (int r = 0; r < rows; ++r)
         for (int c = 0; c < cols; ++c)
         {
-            const int idx = r * cols + c;
+            const int idx = base + r * cols + c;
             const int vr  = rows - 1 - r;
             if (auto* p = pads[idx])
                 p->setBounds (grid.getX() + c * (cellW + gap),
@@ -2604,16 +2688,48 @@ void MainComponent::resized()
         //  In two columns the pads have a column of their own and the seam
         //  above them is simply the room the square grid does not use, so the
         //  engraving lands there without anything being reserved for it.
+        //  The bank chips live in the seam the engraved PADS already occupies,
+        //  pinned to its end. Four controls for no height at all - and right
+        //  where the thing they switch is.
+        //  THE BANK CHIPS, MEASURED LIKE EVERYTHING ELSE.
+        //
+        //  They ride in the seam the engraved PADS already occupies, so they
+        //  cost the face no height - but riding somewhere is not the same as
+        //  being squeezed into it. They take the seam's full height less its
+        //  air, they are `Metrics::halfGap` apart like every other row on this
+        //  machine, and the engraved rule is told to stop before them instead
+        //  of running underneath.
+        auto placeBanks = [this] (juce::Rectangle<int> seam)
+        {
+            const int h = juce::jlimit (22, Metrics::tab, seam.getHeight() - Metrics::sm);
+            //  As wide as four of them plus their air can be without eating
+            //  the half of the seam the word needs.
+            const int w = juce::jlimit (30, 46,
+                                        (seam.getWidth() / 2 - (kNumBanks - 1) * Metrics::gap) / kNumBanks);
+            const int total = kNumBanks * w + (kNumBanks - 1) * Metrics::gap;
+
+            auto row = Lang::takeEnd (seam, total).withSizeKeepingCentre (total, h);
+            bankRowArea = row;
+
+            for (int b = 0; b < bankButtons.size(); ++b)
+            {
+                bankButtons[b]->setBounds (Lang::takeStart (row, w));
+                if (b < kNumBanks - 1) Lang::takeStart (row, Metrics::gap);
+            }
+        };
+
         if (wideFace)
         {
             padSeamTop = padCol.getY();
-            padCol.removeFromTop (ZatiLookAndFeel::kAir + kSeamLabelH);   // PADS rides here too
+            auto seam = padCol.removeFromTop (ZatiLookAndFeel::kAir + kSeamLabelH);   // PADS rides here too
+            placeBanks (seam);
             layoutPadGrid (padCol, 4, 4, ZatiLookAndFeel::kPadGap);
         }
         else
         {
             padSeamTop = area.getY();
-            area.removeFromTop (ZatiLookAndFeel::kAir + layoutAir + kSeamLabelH);   // PADS rides here
+            auto seam = area.removeFromTop (ZatiLookAndFeel::kAir + layoutAir + kSeamLabelH);   // PADS rides here
+            placeBanks (seam);
             layoutPadGrid (area, 4, 4, ZatiLookAndFeel::kPadGap);
         }
     }
@@ -2883,13 +2999,19 @@ void MainComponent::resized()
         rackCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
         inner.removeFromTop (14);                       // painted: which pad this is
 
+        //  The rack picks a pad out of the bank on screen, two rows of eight.
+        //  The other forty-eight chips are hidden rather than laid out: the
+        //  rack is "which of THESE sixteen am I sending", not a directory.
+        for (auto* b : rackPadBtns) if (b != nullptr) b->setVisible (false);
+
         for (int r = 0; r < 2; ++r)
         {
             auto row = inner.removeFromTop (chipRowH);
             const int w = row.getWidth() / 8;
             for (int c = 0; c < 8; ++c)
             {
-                const int i = r * 8 + c;
+                const int i = currentBank * kPadsPerBank + r * 8 + c;
+                rackPadBtns[i]->setVisible (true);
                 rackPadBtns[i]->setBounds ((c < 7 ? row.removeFromLeft (w) : row).reduced (1, 1));
             }
             inner.removeFromTop (Metrics::xs);
@@ -3250,17 +3372,23 @@ void MainComponent::stepCellToggled (int pad, int step)
 // and whether it holds a sample, then hand it the live playhead.
 void MainComponent::refreshStepGrid()
 {
+    //  Sixteen lanes, of whichever bank the face is on. The pattern itself
+    //  holds all sixty-four - a step written in bank B keeps playing while you
+    //  edit bank A, which is the whole point of banks - the grid just shows
+    //  the sixteen you can currently reach with a thumb.
+    const int base = currentBank * kPadsPerBank;
+
     for (int st = 0; st < kNumSteps; ++st)
-        for (int p = 0; p < kNumPads; ++p)
+        for (int p = 0; p < kPadsPerBank; ++p)
         {
-            gridCells[st * kNumPads + p] = pattern[(size_t) selectedPattern][(size_t) st][(size_t) p];
-            gridNotes[st * kNumPads + p] = (signed char) engine.getStepNote (selectedPattern, st, p);
+            gridCells[st * kPadsPerBank + p] = pattern[(size_t) selectedPattern][(size_t) st][(size_t) (base + p)];
+            gridNotes[st * kPadsPerBank + p] = (signed char) engine.getStepNote (selectedPattern, st, base + p);
         }
 
-    for (int p = 0; p < kNumPads; ++p)
+    for (int p = 0; p < kPadsPerBank; ++p)
     {
-        gridZati[p]   = padZati[(size_t) p];
-        gridLoaded[p] = padHasSample[(size_t) p];
+        gridZati[p]   = padZati[(size_t) (base + p)];
+        gridLoaded[p] = padHasSample[(size_t) (base + p)];
     }
 
     const int ps = (engine.isPlaying() && engine.getPlayingPattern() == selectedPattern)
@@ -3268,7 +3396,7 @@ void MainComponent::refreshStepGrid()
 
     stepGrid.setSource (gridCells, gridZati, gridLoaded, gridNotes,
                         engine.getPatternLength (selectedPattern),
-                        selectedBar, ps, selectedPad,
+                        selectedBar, ps, selectedPad - base,
                         ps >= 0 ? engine.getStepPhase() : 0.0f);
 
     //  The grid can only ring the live column when that column is on screen,
@@ -3319,6 +3447,30 @@ void MainComponent::refreshPad (int index)
         p->setSelected (index == selectedPad);
         p->setFlash (padFlash[(size_t) index]);
     }
+}
+
+//  Point the grid at another sixteen.
+//
+//  Nothing about the machine changes: every pad keeps its sound, the pattern
+//  keeps every step in all four banks, and anything sounding goes on sounding.
+//  The selected pad moves with the view, because the sheets - PADS, the trim,
+//  the step controls - all edit "the pad you are on", and leaving that behind
+//  in a bank you can no longer see is how you end up editing something you
+//  cannot hear.
+void MainComponent::selectBank (int bank)
+{
+    const int b = juce::jlimit (0, kNumBanks - 1, bank);
+    if (b == currentBank) return;
+
+    currentBank = b;
+    if (auto* t = bankButtons[b]) t->setToggleState (true, juce::dontSendNotification);
+
+    selectPad (currentBank * kPadsPerBank + (selectedPad % kPadsPerBank + kPadsPerBank) % kPadsPerBank);
+
+    resized();
+    refreshStepGrid();
+    refreshMixStrip();
+    repaint();
 }
 
 void MainComponent::selectPad (int index)
@@ -3814,9 +3966,14 @@ juce::Array<int> MainComponent::chopTargets (int slices, bool onlyEmpty) const
 
     t.add (selectedPad);
 
-    for (int k = 1; k < kNumPads && t.size() < slices; ++k)
+    //  A chop fills the bank you are LOOKING at, wrapping inside it. Spilling
+    //  sixteen slices across a bank boundary puts half of them on a page you
+    //  have to go and find, and the whole point of chopping is that the pieces
+    //  are under your hand.
+    const int base = (selectedPad / kPadsPerBank) * kPadsPerBank;
+    for (int k = 1; k < kPadsPerBank && t.size() < slices; ++k)
     {
-        const int i = (selectedPad + k) % kNumPads;
+        const int i = base + (selectedPad - base + k) % kPadsPerBank;
         if (onlyEmpty && padHasSample[(size_t) i]) continue;
         t.add (i);
     }
@@ -3911,6 +4068,13 @@ void MainComponent::applyAutoChop()
 
 int MainComponent::firstEmptyPad() const
 {
+    //  Inside the bank you are LOOKING at first: a resample or a mic take that
+    //  lands in bank D while the face shows bank A is a sound you have to go
+    //  hunting for.
+    const int base = currentBank * kPadsPerBank;
+    for (int i = 0; i < kPadsPerBank; ++i)
+        if (! padHasSample[(size_t) (base + i)]) return base + i;
+
     for (int i = 0; i < kNumPads; ++i)
         if (! padHasSample[(size_t) i]) return i;
     return -1;
@@ -6304,11 +6468,11 @@ void MainComponent::timerCallback()
     const int ps = engine.getPlayStep();
 
     // Pad trigger feedback (taps + sequencer): flash then decay.
-    const std::uint32_t trig = engine.fetchTriggered();
+    const std::uint64_t trig = engine.fetchTriggered();
     bool anyFlash = false;
     for (int i = 0; i < kNumPads; ++i)
     {
-        if ((trig & (std::uint32_t) (1u << i)) != 0) padFlash[(size_t) i] = 1.0f;
+        if ((trig & ((std::uint64_t) 1u << i)) != 0) padFlash[(size_t) i] = 1.0f;
         if (padFlash[(size_t) i] > 0.0f)
         {
             padFlash[(size_t) i] *= 0.8f;

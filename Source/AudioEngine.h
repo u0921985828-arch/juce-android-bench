@@ -22,7 +22,18 @@
 class AudioEngine
 {
 public:
-    static constexpr int kNumPads       = 16;
+    //  SIXTY-FOUR PADS, IN FOUR BANKS OF SIXTEEN.
+    //
+    //  Sixteen is one kit. A beat is three or four - a drum bank, a chop bank,
+    //  a bass bank, one for the stabs - and every sampler this descends from
+    //  knows it. The grid on the face stays sixteen because a thumb has not
+    //  changed size; what changes is which sixteen it is pointing at.
+    //
+    //  Everything below is already indexed by pad, so the arrays simply grow.
+    //  The one thing that could not was the step mask - see patternBank.
+    static constexpr int kPadsPerBank   = 16;
+    static constexpr int kNumBanks      = 4;
+    static constexpr int kNumPads       = kPadsPerBank * kNumBanks;   // 64
     static constexpr int kNumFx         = 6;    // ISO, HPF, DRV, DLY, CRSH, REV — the order the UI shows
     static constexpr int kNumSteps      = 64;   // max steps per pattern (length is variable, see below)
     static constexpr int kMinPatLen     = 16;
@@ -271,7 +282,10 @@ public:
     int  getStepNote  (int patternIdx, int step, int pad) const noexcept;
 
     // UI feedback: bitmask of pads triggered since the last call (taps + sequencer).
-    std::uint32_t fetchTriggered() noexcept { return triggeredMask.exchange (0, std::memory_order_relaxed); }
+    //  One bit per pad, and there are sixty-four of them: a uint32 silently
+    //  dropped every pad in banks C and D, and `1u << 40` is undefined
+    //  behaviour rather than a lost flash.
+    std::uint64_t fetchTriggered() noexcept { return triggeredMask.exchange (0, std::memory_order_relaxed); }
 
     // --- Master FX: filter + drive (message thread setters) ---
     void setFxType   (int t)     noexcept { fxType.store   (t, std::memory_order_relaxed); }   // 0 LPF, 1 HPF
@@ -491,7 +505,7 @@ private:
     //  so it cannot stop working. It is what the test tone has always used,
     //  and the test tone is the thing that kept sounding when the pads did
     //  not.
-    std::atomic<std::uint32_t> fallbackTriggers { 0 };
+    std::atomic<std::uint64_t> fallbackTriggers { 0 };
 
     //  How many triggers the queue has refused. Nothing in the audio path
     //  reads it; the UI does, because a queue that starts refusing is the
@@ -542,10 +556,14 @@ private:
     // Sequencer.
     std::atomic<bool>   playing { false };
     std::atomic<float>  bpm { 120.0f };   // float: lock-free on 32-bit ARM too
-    std::array<std::array<std::atomic<std::uint16_t>, kNumSteps>, kNumPatterns> patternBank {};
+    //  ONE BIT PER PAD, PER STEP - and there are sixty-four pads now, so the
+    //  word that holds them is sixty-four bits wide. It was a uint16, which is
+    //  exactly why banks could not simply be added: the mask WAS the sixteen.
+    //  std::atomic<uint64_t> is lock-free on every architecture this ships to.
+    std::array<std::array<std::atomic<std::uint64_t>, kNumSteps>, kNumPatterns> patternBank {};
     std::atomic<int>    playStep { -1 };
     std::atomic<float>  stepPhase { 0.0f };   // 0..1 within the current step
-    std::atomic<std::uint32_t> triggeredMask { 0 };   // pads triggered, read by UI
+    std::atomic<std::uint64_t> triggeredMask { 0 };   // pads triggered, read by UI
     std::array<std::atomic<float>, (size_t) kNumPads> padPos {};   // read head, 0..1, -1 = silent
     std::array<std::atomic<bool>,  (size_t) kNumPads> padSelfCut {};   // retrigger cuts its own tail
     double stepAccum = 0.0;      // audio-thread only
