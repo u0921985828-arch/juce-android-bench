@@ -2668,6 +2668,12 @@ void MainComponent::resized()
     // The LCD grows to absorb whatever the face doesn't need (the pads are
     // width-bound squares) — the screen is the protagonist.
     int screenH;
+    //  ...except for the one seam that carries controls. See the block after
+    //  the budget: `padSeamExtra` is what the PADS seam borrows so the four
+    //  bank chips are a finger tall with air over and under, and
+    //  `padBottomGive` is the part of it that comes out of the band under the
+    //  grid rather than out of the screen.
+    int padSeamExtra = 0, padBottomGive = 0;
     {
         //  Spelled out term by term and in layout order, because this used to
         //  be two hand-totalled constants that had drifted: the header was
@@ -2741,6 +2747,48 @@ void MainComponent::resized()
                       : 0;
 
         screenH = juce::jmax (kMinScreen, freeH - layoutAir * kSeams);
+
+        //  AIRE PARA LOS CHIPS DE BANCO.
+        //
+        //  They ride in the PADS seam so they cost the face no height, and the
+        //  seam is kAir + layoutAir + kSeamLabelH = 22..33. Take the eight the
+        //  cap needs off that and the chips came out 22 px tall - a hair over
+        //  half the forty every other target on this machine is held to, on
+        //  the control that decides WHICH SIXTEEN PADS you are playing.
+        //
+        //  The height is there, it was just parked where nothing uses it. Two
+        //  places, in this order, and neither of them is a control:
+        //
+        //    1. The band under the grid. It removes kAir + layoutAir - up to
+        //       twenty-one pixels - purely so the pads do not sit on the status
+        //       sentence, and Metrics::sm is plenty for that.
+        //    2. Whatever the LCD holds over its floor. The screen is the
+        //       protagonist and it is also the band that gives, which is the
+        //       rule already written above; this is the same rule with one more
+        //       claimant.
+        //
+        //  Rotated, the pad column is its own rectangle and the grid inside it
+        //  is width-bound, so the seam simply takes what it wants - there is
+        //  nothing below it to give and nothing above it to lose.
+        const int bankSeamWant = Metrics::hit + Metrics::gap;                        // 48
+        const int padSeamHave  = ZatiLookAndFeel::kAir + (wideFace ? 0 : layoutAir)
+                               + kSeamLabelH;
+        int want = juce::jmax (0, bankSeamWant - padSeamHave);
+
+        if (! wideFace)
+        {
+            padBottomGive = juce::jmin (want, juce::jmax (0, ZatiLookAndFeel::kAir
+                                                            + layoutAir - Metrics::sm));
+            want -= padBottomGive;
+
+            const int fromScreen = juce::jmin (want, juce::jmax (0, screenH - kMinScreen));
+            screenH -= fromScreen;
+            padSeamExtra = padBottomGive + fromScreen;
+        }
+        else
+        {
+            padSeamExtra = want;
+        }
     }
 
     // --- Top chrome ---
@@ -2804,8 +2852,11 @@ void MainComponent::resized()
     // an undoable action announces itself where the result was reported.
     {
         auto strip = area.removeFromBottom (ZatiLookAndFeel::kStatus);
-        //  ...and the pads do not sit on the sentence.
-        area.removeFromBottom (ZatiLookAndFeel::kAir + layoutAir);
+        //  ...and the pads do not sit on the sentence. Metrics::sm is the floor
+        //  that guarantees it; anything this band was holding above that floor
+        //  has gone to the PADS seam, where four controls were living in 22 px.
+        area.removeFromBottom (juce::jmax (Metrics::sm,
+                                           ZatiLookAndFeel::kAir + layoutAir - padBottomGive));
         if (undoButton.isVisible()) undoButton.setBounds (strip.removeFromRight (96).reduced (1, 0));
         if (redoButton.isVisible()) redoButton.setBounds (strip.removeFromRight (96).reduced (1, 0));
         status.setBounds (strip);
@@ -2857,7 +2908,12 @@ void MainComponent::resized()
         //  rule breaks symmetrically on both sides of it.
         auto placeBanks = [this] (juce::Rectangle<int> seam)
         {
-            const int h       = juce::jlimit (22, Metrics::tab, seam.getHeight() - Metrics::sm);
+            //  Ceiling at Metrics::hit, not Metrics::tab. The seam is now given
+            //  the height for a finger (see padSeamExtra), and a 32 px ceiling
+            //  would have taken the extra and thrown eight of it away.
+            //  `Metrics::gap` off the seam, not `Metrics::sm`: half over the
+            //  chip and half under it, which is what the air is for.
+            const int h       = juce::jlimit (22, Metrics::hit, seam.getHeight() - Metrics::gap);
             const int perSide = kNumBanks / 2;
             //  Half the seam belongs to the word; each pair gets one of the
             //  remaining quarters, so a pair plus its air can never grow into
@@ -2882,17 +2938,20 @@ void MainComponent::resized()
             }
         };
 
+        //  ...plus whatever the budget managed to borrow for the chips. The
+        //  engraved word stays centred in the seam whatever it grows to, so the
+        //  extra reads as air around the controls and not as a gap in the face.
         if (wideFace)
         {
             padSeamTop = padCol.getY();
-            auto seam = padCol.removeFromTop (ZatiLookAndFeel::kAir + kSeamLabelH);   // PADS rides here too
+            auto seam = padCol.removeFromTop (ZatiLookAndFeel::kAir + kSeamLabelH + padSeamExtra);
             placeBanks (seam);
             layoutPadGrid (padCol, 4, 4, ZatiLookAndFeel::kPadGap);
         }
         else
         {
             padSeamTop = area.getY();
-            auto seam = area.removeFromTop (ZatiLookAndFeel::kAir + layoutAir + kSeamLabelH);   // PADS rides here
+            auto seam = area.removeFromTop (ZatiLookAndFeel::kAir + layoutAir + kSeamLabelH + padSeamExtra);
             placeBanks (seam);
             layoutPadGrid (area, 4, 4, ZatiLookAndFeel::kPadGap);
         }
