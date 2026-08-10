@@ -1909,6 +1909,11 @@ void MainComponent::showMixBank (int bank)
         if (auto* s = mixSolos[i])  s->setVisible (on);
     }
 
+    //  Back to the top of the new bank. Left where it was, switching from a
+    //  bank you had scrolled to the foot of opened the next one halfway down,
+    //  with its first strips above the fold and nothing saying so.
+    mixScroll.setViewPosition (0, 0);
+
     resized();
     mixRows.repaint();
 }
