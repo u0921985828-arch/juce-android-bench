@@ -803,6 +803,17 @@ private:
     juce::TextButton previewButton { juce::CharPointer_UTF8 ("\xe2\x96\xb6 OIR") };
     bool previewSounding = false;
 
+    //  NORMALIZAR: la ganancia que pone el pico del RECORTE a -0.3 dBFS.
+    //
+    //  Sube la GANANCIA del pad; no toca la muestra. Es lo que hay que hacer
+    //  aqui: la muestra la comparten el pad, la forma de onda, los cortes que
+    //  salgan de ella y el proyecto guardado, y reescribirla obligaria a pasar
+    //  un buffer nuevo por el intercambio de punteros y a soltar el viejo por
+    //  el temporizador. La ganancia es un atomic float, se aplica en el mismo
+    //  bloque, se deshace y no gasta memoria.
+    juce::TextButton normButton { "NORMALIZAR" };
+    void normalisePad();
+
     //  The project name you type, and where the folder actually is. GUARDAR
     //  used to invent "PROYECTO N" with no way to say otherwise, so every save
     //  was a new near-duplicate and none of them was called what you wanted.

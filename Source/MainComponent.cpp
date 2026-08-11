@@ -32,6 +32,46 @@ namespace
     //  and the only way to retake it is to know which token it was.
     enum Role { roleKey = 0, roleAccent = 1, roleRec = 2, roleFixed = 3 };
 
+    //  LA GANANCIA DE UN PAD, EN DECIBELIOS.
+    //
+    //  Era un mando lineal de 0 a 1 con paso 0.01, y eso son dos fallos en el
+    //  mismo control. Arriba no habia margen: una muestra grabada baja se
+    //  quedaba baja, porque 1.0 era el tope y no existia forma de subirla sin
+    //  volver a grabarla. Y abajo la escala esta al reves de como se oye: de
+    //  0.01 a 0.02 hay 6 dB - un salto enorme - y de 0.99 a 1.00 hay 0.09 dB,
+    //  que no se oye. Cien pasos, y la mitad de ellos repartidos en los ultimos
+    //  0.8 dB del recorrido.
+    //
+    //  En decibelios el paso es constante para el oido en todo el recorrido, y
+    //  hay 12 dB por encima de la unidad para levantar lo que se grabo bajo.
+    //  El valor guardado sigue siendo la amplitud lineal, asi que los proyectos
+    //  de antes cargan exactamente igual: lo que cambia es la escala del mando,
+    //  no lo que hay debajo.
+    constexpr double kGainMinDb = -60.0;   // el ultimo paso de abajo es SILENCIO
+    constexpr double kGainMaxDb =  12.0;
+
+    float gainFromDb (double db) noexcept
+    {
+        return db <= kGainMinDb ? 0.0f : (float) juce::Decibels::decibelsToGain (db);
+    }
+
+    double dbFromGain (float g) noexcept
+    {
+        return juce::jlimit (kGainMinDb, kGainMaxDb,
+                             juce::Decibels::gainToDecibels ((double) g, kGainMinDb));
+    }
+
+    //  El rotulo del mando: "-inf dB" abajo del todo, y signo siempre, porque
+    //  un "3 dB" sin signo no dice si sube o baja.
+    juce::String gainText (double db, bool withUnit)
+    {
+        if (db <= kGainMinDb)
+            return juce::String::fromUTF8 ("-\xe2\x88\x9e") + (withUnit ? " dB" : "");
+
+        const juce::String n = withUnit ? juce::String (db, 1) : juce::String ((int) std::round (db));
+        return (db > 0.0 ? "+" : "") + n + (withUnit ? " dB" : "");
+    }
+
     juce::Colour roleColour (int role)
     {
         switch (role)
@@ -123,7 +163,10 @@ MainComponent::MainComponent()
     setAudioChannels (0, 2);
     useLowestLatency();
 
-    padGain.fill (0.85f);
+    //  Unidad, no 0.85. Un pad toca la muestra como esta: 0.85 eran -1.4 dB
+    //  de rebaja escondida que nadie pidio y que ya no hace falta, porque el
+    //  limitador de seguridad del master es quien cuida la suma de 64 pads.
+    padGain.fill (1.0f);
     padEnd01.fill (1.0f);
     padAttack.fill (2.0f);
     padRelease.fill (5.0f);
@@ -785,8 +828,25 @@ MainComponent::MainComponent()
     };
     initKnob (pitchSlider, -24.0, 24.0, 1.0, 0.0, 0.0, sendPitch);
     initKnob (fineSlider, -100.0, 100.0, 1.0, 0.0, 0.0, sendPitch);
-    initKnob (volSlider, 0.0, 1.0, 0.01, 0.85, 0.0,
-             [this] { if (selectedPad >= 0) { padGain[(size_t) selectedPad] = (float) volSlider.getValue(); engine.setPadGain (selectedPad, (float) volSlider.getValue()); } });
+    //  GANANCIA en dB (ver kGainMinDb). El paso de 0.1 dB sobre 72 dB son 720
+    //  posiciones en los 320 px de arrastre que pide initKnob: dos posiciones
+    //  por pixel, que es exactamente lo que se puede apuntar con un dedo.
+    initKnob (volSlider, kGainMinDb, kGainMaxDb, 0.1, 0.0, 0.0,
+             [this]
+             {
+                 if (selectedPad < 0) return;
+                 const float g = gainFromDb (volSlider.getValue());
+                 padGain[(size_t) selectedPad] = g;
+                 engine.setPadGain (selectedPad, g);
+                 //  El mismo nivel esta en dos sitios: aqui y en la tira del
+                 //  MEZCLADOR. Si no se copia, abrir el mezclador despues de
+                 //  tocar este mando ensena el valor viejo y el primer roce
+                 //  del fader lo devuelve a donde estaba.
+                 if (auto* f = mixFaders[selectedPad])
+                     f->setValue (volSlider.getValue(), juce::dontSendNotification);
+             });
+    volSlider.textFromValueFunction = [] (double v) { return gainText (v, true); };
+    volSlider.updateText();
     initKnob (panSlider, -1.0, 1.0, 0.01, 0.0, 0.0,
              [this] { if (selectedPad >= 0) { padPan[(size_t) selectedPad] = (float) panSlider.getValue(); engine.setPadPan (selectedPad, (float) panSlider.getValue());
                                               if (auto* mp = mixPans[selectedPad]) mp->setValue (panSlider.getValue(), juce::dontSendNotification); } });
@@ -1188,8 +1248,19 @@ MainComponent::MainComponent()
     for (int i = 0; i < kNumPads; ++i)
     {
         auto* f = new juce::Slider (juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight);
-        f->setRange (0.0, 1.0, 0.01);
-        f->setValue (padGain[(size_t) i], juce::dontSendNotification);
+        //  En decibelios, igual que el mando GANANCIA de la ficha del pad: es
+        //  el MISMO numero visto en dos sitios, y tenerlo en dos escalas
+        //  distintas era pedir que uno de los dos mintiera. El fader llega
+        //  tambien a +12 dB, que es lo que hace falta para levantar una toma
+        //  floja sin tocar la muestra.
+        f->setRange (kGainMinDb, kGainMaxDb, 0.1);
+        f->setValue (dbFromGain (padGain[(size_t) i]), juce::dontSendNotification);
+        //  La curva de un fader de mezcla: la unidad cae a tres cuartos del
+        //  recorrido y los primeros dos tercios reparten los 20 dB de arriba,
+        //  que es donde se mezcla. Lineal en dB deja la zona util apretada
+        //  contra el tope.
+        f->setSkewFactorFromMidPoint (-9.0);
+        f->setDoubleClickReturnValue (true, 0.0);
         f->setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
         f->setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
         f->setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
@@ -1199,11 +1270,14 @@ MainComponent::MainComponent()
         //  brushed finger into a channel slammed to zero; relative dragging
         //  means you take hold of the level and move it from where it was.
         f->setSliderSnapsToMousePosition (false);
-        f->textFromValueFunction = [] (double v) { return juce::String ((int) std::round (v * 100.0)); };
+        //  Sin unidad: la casilla mide 46 px y "-60.0 dB" no cabe. El signo si
+        //  va, que es lo que distingue subir de bajar.
+        f->textFromValueFunction = [] (double v) { return gainText (v, false); };
         f->onValueChange = [this, i, f]
         {
-            padGain[(size_t) i] = (float) f->getValue();
-            engine.setPadGain (i, (float) f->getValue());
+            const float g = gainFromDb (f->getValue());
+            padGain[(size_t) i] = g;
+            engine.setPadGain (i, g);
             if (i == selectedPad) volSlider.setValue (f->getValue(), juce::dontSendNotification);
         };
         mixRows.addAndMakeVisible (f);
@@ -1298,7 +1372,7 @@ MainComponent::MainComponent()
         if (mixSheet.isVisible()) { closeAllSheets(); return; }
         for (int i = 0; i < kNumPads; ++i)
         {
-            if (mixFaders[i] != nullptr) mixFaders[i]->setValue (padGain[(size_t) i], juce::dontSendNotification);
+            if (mixFaders[i] != nullptr) mixFaders[i]->setValue (dbFromGain (padGain[(size_t) i]), juce::dontSendNotification);
             if (mixPans[i]   != nullptr) mixPans[i]  ->setValue (padPan[(size_t) i],  juce::dontSendNotification);
         }
         openSheet (mixSheet, mixButton);
@@ -1554,6 +1628,12 @@ MainComponent::MainComponent()
             engine.postNoteOn (selectedPad);
     };
     padSheet.addAndMakeVisible (previewButton);
+
+    //  NORMALIZAR ocupa la tercera celda de la fila de CHOKE y MODO, que
+    //  estaba vacia: una fila de tres con dos controles dentro.
+    styleButton (normButton, kKey);
+    normButton.onClick = [this] { normalisePad(); };
+    padSheet.addAndMakeVisible (normButton);
 
     styleButton (undoButton, ZatiColours::red);
     undoButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
@@ -2638,7 +2718,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
         {
             g.drawText (T (t), bandAbove (s, 16, 2, 6), juce::Justification::centred);
         };
-        name (pitchSlider, "PITCH"); name (fineSlider, "FINO"); name (volSlider, "VOLUME");
+        name (pitchSlider, "PITCH"); name (fineSlider, "FINO"); name (volSlider, "GANANCIA");
         name (panSlider, "PAN");
         name (attackSlider, "ATTACK"); name (releaseSlider, "RELEASE");
         name (chokeSlider, "CHOKE");
@@ -3377,8 +3457,22 @@ void MainComponent::resized()
         {
             auto r3 = inner.removeFromTop (16 + Metrics::hit);
             r3.removeFromTop (16);                       // gap for the names
-            const int w3 = r3.getWidth() / 3;
-            auto chokeCell = r3.removeFromLeft (w3).reduced (6, 3);
+            //  Tres celdas, no tres tercios. NORMALIZAR es la palabra mas
+            //  larga de la ficha y en 280x653 pedia 66 px de un tercio que
+            //  daba 55: el banco lo saco como TRUNC en cuanto entro el boton.
+            //  Repartirlo a mano fue perseguirse la cola - 42 dejaba
+            //  NORMALIZAR dos pixeles corto y 44 truncaba el MODO arabe, que
+            //  es mas ancho que el castellano. CHOKE se queda con su tercio
+            //  escaso, que es lo que piden sus dos teclas, y los otros dos se
+            //  reparten POR EL TEXTO QUE LLEVAN, que es lo mismo que hacen
+            //  las barras de modulos y lo unico que se ajusta solo en cuatro
+            //  idiomas.
+            const int w3 = r3.getWidth() * 32 / 100;
+            //  Sin recorte vertical: la fila mide Metrics::hit justo, que es
+            //  el dedo minimo, y quitarle 3 arriba y 3 abajo dejaba tres
+            //  controles de 34 px que el banco saca como TOUCH. Encima hay 16
+            //  px de rotulo y debajo Metrics::sm, asi que a 40 no toca nada.
+            auto chokeCell = r3.removeFromLeft (w3).reduced (6, 0);
             //  JUCE stacks a slider's +/- buttons whenever the space left for
             //  them is taller than it is wide, and on a narrow screen the
             //  readout was eating enough of the cell to trigger exactly that -
@@ -3389,7 +3483,10 @@ void MainComponent::resized()
                                          juce::jmax (30, chokeCell.getWidth() - Metrics::gap - 2 * Metrics::stepKey),
                                          Metrics::readout);
             chokeSlider.setBounds (chokeCell);
-            modeButton.setBounds  (r3.removeFromLeft (w3).reduced (6, 3));
+            //  NORMALIZAR va aqui y no en la fila de REV/LOOP porque
+            //  pertenece al nivel, y el nivel es esta seccion.
+            juce::TextButton* r3b[2] = { &modeButton, &normButton };
+            layoutModuleBar (r3, r3b, 0, 2);
         }
 
         inner.removeFromTop (Metrics::sm);
@@ -4370,7 +4467,7 @@ void MainComponent::updateControlsFromPad (int index)
     fineSlider.setValue  (padCents[(size_t) index], juce::dontSendNotification);
     modeButton.setToggleState (padKeepLen[(size_t) index], juce::dontSendNotification);
     modeButton.setButtonText (padKeepLen[(size_t) index] ? T ("TONO") : T ("CINTA"));
-    volSlider.setValue   (padGain[(size_t) index],  juce::dontSendNotification);
+    volSlider.setValue   (dbFromGain (padGain[(size_t) index]), juce::dontSendNotification);
     startSlider.setValue (padStart01[(size_t) index], juce::dontSendNotification);
     endSlider.setValue   (padEnd01[(size_t) index],   juce::dontSendNotification);
     reverseButton.setToggleState (padReverse[(size_t) index], juce::dontSendNotification);
@@ -4394,6 +4491,66 @@ void MainComponent::updateControlsFromPad (int index)
 //  those moments wrote start=0 and end=0 and the pad lost its slice while the
 //  interface went on showing a normal window. It is also a plain data race:
 //  that pointer belongs to the audio thread.
+//  NORMALIZAR: buscar el pico y poner la ganancia que lo deja a -0.3 dBFS.
+//
+//  El pico se mide SOBRE EL RECORTE, no sobre el fichero entero. Un corte de
+//  un compas sacado de una cancion de tres minutos comparte buffer con el
+//  resto de la cancion, y medir el fichero entero le daba la ganancia del
+//  golpe mas fuerte del tema - que casi nunca esta dentro del trozo que suena.
+//  Medido en el primer intento: un corte de charles salia a -19 dBFS despues
+//  de "normalizarlo".
+//
+//  -0.3 y no 0: entre la muestra y el altavoz hay remuestreo, filtros y suma
+//  de pads, y todos ellos pueden pasar de largo el pico que habia en la
+//  muestra. Tres decimas de margen es lo que pide cualquier norma de entrega.
+void MainComponent::normalisePad()
+{
+    if (selectedPad < 0) return;
+    const size_t sp = (size_t) selectedPad;
+
+    auto sb = uiSample[sp];
+    const int len = padSourceLength (selectedPad);
+    if (sb == nullptr || len <= 0)
+    {
+        status.setText (T ("El pad %1 no tiene sonido", juce::String (selectedPad + 1)),
+                        juce::dontSendNotification);
+        return;
+    }
+
+    const int a = juce::jlimit (0, len - 1, (int) std::floor (padStart01[sp] * (float) len));
+    const int b = juce::jlimit (a + 1, len, (int) std::ceil  (padEnd01[sp]   * (float) len));
+    const float peak = sb->buffer.getMagnitude (a, b - a);
+
+    //  Silencio de verdad: dividir por el pico seria dividir por cero, y
+    //  subir 60 dB de nada sigue siendo nada, con el ruido de fondo dentro.
+    if (peak < 1.0e-5f)
+    {
+        status.setText (T ("El recorte esta en silencio"), juce::dontSendNotification);
+        return;
+    }
+
+    constexpr double kTargetDb = -0.3;
+    const double want = juce::Decibels::decibelsToGain (kTargetDb) / (double) peak;
+    const double db   = juce::jlimit (kGainMinDb, kGainMaxDb,
+                                      juce::Decibels::gainToDecibels (want, kGainMinDb));
+
+    pushUndo (T ("NORMALIZAR"));
+
+    const float g = gainFromDb (db);
+    padGain[sp] = g;
+    engine.setPadGain (selectedPad, g);
+    volSlider.setValue (db, juce::dontSendNotification);
+    if (auto* f = mixFaders[selectedPad]) f->setValue (db, juce::dontSendNotification);
+
+    //  Decir el numero, y decirlo tambien cuando se ha quedado corto: una
+    //  toma a -40 dBFS pide +40 dB y el mando llega a +12. Callarlo dejaria
+    //  "normalizado" un pad que sigue sonando 28 dB por debajo.
+    const bool capped = db >= kGainMaxDb - 0.05;
+    status.setText ((capped ? T ("GANANCIA al tope: %1", Lang::ltr (gainText (db, true)))
+                            : T ("Pico a -0.3 dBFS con %1", Lang::ltr (gainText (db, true)))),
+                    juce::dontSendNotification);
+}
+
 int MainComponent::padSourceLength (int pad) const
 {
     if (! juce::isPositiveAndBelow (pad, kNumPads)) return 0;
@@ -4510,7 +4667,7 @@ void MainComponent::refreshAccessibleNames()
     struct Named { juce::Slider& s; const char* title; const char* what; };
     for (auto& n : { Named { pitchSlider,   "Tono",      "semitonos" },
                      Named { fineSlider,    "Afinado",   "centesimas" },
-                     Named { volSlider,     "Volumen",   "del pad" },
+                     Named { volSlider,     "Ganancia",  "decibelios" },
                      Named { panSlider,     "Paneo",     "del pad" },
                      Named { attackSlider,  "Ataque",    "milisegundos" },
                      Named { releaseSlider, "Caida",     "milisegundos" },
@@ -4539,7 +4696,7 @@ void MainComponent::refreshAccessibleNames()
     for (int i = 0; i < kNumPads; ++i)
     {
         const auto ch = juce::String (i + 1);
-        if (auto* f = mixFaders[i]) { f->setTitle (T ("Volumen canal %1", ch)); f->setDescription (T ("del mezclador")); }
+        if (auto* f = mixFaders[i]) { f->setTitle (T ("Ganancia canal %1", ch)); f->setDescription (T ("del mezclador")); }
         if (auto* p = mixPans[i])   { p->setTitle (T ("Paneo canal %1",   ch)); p->setDescription (T ("del mezclador")); }
         if (auto* m = mixMutes[i])  { m->setTitle (T ("Silencio %1", ch)); }
         if (auto* s = mixSolos[i])  { s->setTitle (T ("Solo %1",     ch)); }
@@ -4585,6 +4742,7 @@ void MainComponent::retranslateUi()
     loopButton   .setButtonText (T ("LOOP"));
     autocutButton.setButtonText (T ("AUTOCUT"));
     duckButton   .setButtonText (T ("BOMBEO"));
+    normButton   .setButtonText (T ("NORMALIZAR"));
     chopButton   .setButtonText (T ("AUTO CHOP"));
     micButton    .setButtonText (recordingActive ? T ("PARAR") : T ("GRABAR MIC"));
     resampleButton.setButtonText (resamplingActive ? T ("PARAR") : T ("REMUESTREAR"));
@@ -5438,7 +5596,7 @@ void MainComponent::applyState (const juce::ValueTree& s)
     refreshRack();
     for (int i = 0; i < kNumPads; ++i)
     {
-        if (mixFaders[i] != nullptr) mixFaders[i]->setValue (padGain[(size_t) i], juce::dontSendNotification);
+        if (mixFaders[i] != nullptr) mixFaders[i]->setValue (dbFromGain (padGain[(size_t) i]), juce::dontSendNotification);
         if (mixPans[i]   != nullptr) mixPans[i]  ->setValue (padPan[(size_t) i],  juce::dontSendNotification);
     }
     refreshMixStrip();
