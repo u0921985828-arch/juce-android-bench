@@ -26,6 +26,11 @@ class StepGrid : public juce::Component
 public:
     static constexpr int kLanes    = 16;   // pads
     static constexpr int kBarSteps = 16;   // steps shown at once
+    //  La columna de los numeros de pad, a la izquierda de la rejilla. Estaba
+    //  escrita a mano TRES veces - dos en el pintado y una en el acierto del
+    //  toque - y esas tres tienen que decir lo mismo o los toques caen en una
+    //  celda distinta de la que se ve. Un numero, un sitio.
+    static constexpr int kGutter   = 30;
 
     // Called with the absolute step index (bar offset already applied).
     std::function<void (int pad, int step)> onCell;
@@ -48,7 +53,7 @@ public:
         if (data == nullptr) return;
 
         auto r = getLocalBounds();
-        const int gutter = 30;
+        const int gutter = kGutter;
         const float laneH = (float) r.getHeight() / (float) kLanes;
         const float cellW = (float) (r.getWidth() - gutter) / (float) kBarSteps;
         const int   base  = barIndex * kBarSteps;
@@ -178,7 +183,7 @@ private:
     {
         if (data == nullptr || ! onCell) return;
         auto r = getLocalBounds();
-        const int gutter = 30;
+        const int gutter = kGutter;
         if (e.x < r.getX() + gutter) return;
 
         const float laneH = (float) r.getHeight() / (float) kLanes;

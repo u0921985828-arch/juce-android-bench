@@ -51,6 +51,19 @@ MIN_TEXT    = 4.50   # AA: la tinta sobre la tapa que la lleva
 #  no. dE mira las tres dimensiones.
 MIN_CELL    = 25.0   # dE: un paso puesto contra el hueco de una celda vacia
 MIN_WELL    = 6.0    # dE: el hueco contra la tarjeta en la que esta
+#  Texto de verdad, no tapas: aqui si manda WCAG. 4.5 para lo que hay que leer
+#  seguido - la pantalla - y 3.0 para los rotulos de seccion, que van en
+#  mayusculas grandes y espaciadas y entran en la excepcion de texto grande.
+MIN_LCD     = 4.50   # la tinta de la pantalla sobre el cristal
+MIN_SECTION = 3.00   # el rotulo de una seccion sobre su tarjeta
+#  El anillo del mando contra el chasis. El mando es HUECO a proposito - la
+#  cara deja ver el chasis - asi que lo unico que lo dibuja es su borde: si ese
+#  borde no se separa del chasis, no hay mando, hay un numero flotando.
+MIN_KNOB    = 3.00
+
+#  Los alfas con los que la app dibuja cada una de esas tres cosas.
+SECTION_ALPHA = 0.55   # paintPadSheetContent
+KNOB_ALPHA    = 0.85   # drawRotarySlider
 
 #  Los ocho fragmentos, LEIDOS DE Zati.h. No dependen de la carcasa - el color
 #  es del sistema de zatis y de nada mas - asi que un paso puesto lleva siempre
@@ -126,7 +139,8 @@ def main():
     ZATI = zati_colours()
     bad = []
     print (f"{'carcasa':9} {'apag/enc':>9} {'escalon':>8} {'tinta/tapa':>11} "
-           f"{'tinta/acento':>13} {'paso/hueco':>10} {'hueco/tarj':>11}")
+           f"{'tinta/acento':>13} {'paso/hueco':>10} {'hueco/tarj':>11} "
+           f"{'pantalla':>9} {'seccion':>8} {'mando':>7}")
     for name, d in zip (SKINS, skins):
         #  La sombra cae sobre la superficie que hay detras de la tapa, que es
         #  la tarjeta o el chasis: los dos son chassisTop.
@@ -157,10 +171,24 @@ def main():
             #  todos los pasos estuvieran puestos a medias.
             "paso puesto contra vacio": (min (dE (z, empty) for z in ZATI), MIN_CELL),
             "hueco contra la tarjeta":  (dE (empty, d['top']),   MIN_WELL),
+            #  LA PANTALLA. Es lo unico de la app que se lee seguido - nombre
+            #  del fichero, frecuencia, recorte, tempo - y va sobre un cristal
+            #  que NO es el chasis, asi que ninguna de las medidas de arriba
+            #  la cubre.
+            "texto de la pantalla":     (ratio (d['lcdFg'], d['lcd']), MIN_LCD),
+            #  EL ROTULO DE UNA SECCION, que se pinta con la tinta al 55%
+            #  sobre la tarjeta. Un alfa es una decision de contraste
+            #  disfrazada de decision de estilo, y nadie la habia medido.
+            "rotulo de seccion":        (ratio (over (d['ink'], d['top'], SECTION_ALPHA), d['top']),
+                                         MIN_SECTION),
+            #  EL ANILLO DEL MANDO contra el chasis que se ve por dentro.
+            "anillo del mando":         (ratio (over (d['ink'], d['panel'], KNOB_ALPHA), d['top']),
+                                         MIN_KNOB),
         }
         vals = list (m.values())
         print (f"{name:9} {vals[0][0]:9.2f} {vals[1][0]:8.2f} {vals[2][0]:11.2f} "
-               f"{vals[3][0]:13.2f} {vals[4][0]:10.2f} {vals[5][0]:11.2f}")
+               f"{vals[3][0]:13.2f} {vals[4][0]:10.2f} {vals[5][0]:11.2f} "
+               f"{vals[6][0]:9.2f} {vals[7][0]:8.2f} {vals[8][0]:7.2f}")
         for what, (v, floor) in m.items():
             if v < floor:
                 bad.append (f"{name}: {what} {v:.2f} < {floor:.2f}")

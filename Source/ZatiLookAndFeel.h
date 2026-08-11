@@ -220,7 +220,6 @@ namespace ZatiColours
     }
 
     // --- Knob body (dark — physical-instrument contrast on a white face) ---
-    const juce::Colour knobWell   { 0xffded7c6 };
     const juce::Colour knobEdge   { 0xff3a3a3a };
     const juce::Colour knobBody1  { 0xff3c3c3c };
     const juce::Colour knobBody2  { 0xff1e1e1e };
@@ -592,6 +591,17 @@ public:
     static constexpr int kCtrlPlate = 86;   // CTRL 1-3 and their readouts
     static constexpr int kCtrlName  = 16;   // ...of which the name above
     static constexpr int kCtrlChip  = 18;   // ...and the readout below. The rest is knob.
+
+    //  Y LOS MISMOS TRES NUMEROS PARA LA FICHA DEL PAD, que los tenia escritos
+    //  a mano - 86 en tres sitios, 16 en cuatro, 34 en dos y 64 en uno. La
+    //  regla de la casa es que un numero de maquetado vive aqui o en Metrics,
+    //  y no por pulcritud: la fila de mandos de la cara y la de la ficha son
+    //  LA MISMA proporcion - nombre, dial, numero - y con el numero repetido
+    //  en cinco sitios se separaron sin que nadie lo decidiera.
+    static constexpr int kKnobRow   = kCtrlPlate;   // mando + nombre + numero
+    static constexpr int kKnobName  = kCtrlName;    // ...de los cuales el nombre
+    static constexpr int kTrimRow   = 34;   // una regla de recorte, START o END
+    static constexpr int kTrimLabel = 64;   // la columna donde va su nombre
 
     ZatiLookAndFeel()
     {

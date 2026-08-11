@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include "AudioEngine.h"
 #include "SampleBuffer.h"
+#include "Lang.h"
 
 // ============================================================================
 //  Exporter — the bounce. Where the music finally leaves ZATI.
@@ -81,14 +82,20 @@ public:
         if (steps <= 0 || ! live.hasContentToRender())
         {
             resultOk = false;
-            resultText = "nada que exportar: no hay pasos con sonido";
+            resultText = T ("Nada que exportar: no hay pasos con sonido");
             finished.store (true, std::memory_order_release);
             return;
         }
 
-        // 16th notes, plus a tail so the last hit, its release and the delay
-        // repeats all fit inside the file instead of being cut off.
-        const double secPerStep = (60.0 / juce::jmax (20.0, live.getBpm())) * 0.25;
+        //  LO QUE DURE UN PASO, preguntado al motor y no dado por hecho.
+        //
+        //  Estaba escrito 0.25 - semicorcheas - de cuando la rejilla no se
+        //  podia cambiar. Con la rejilla en 1/8 un paso dura el DOBLE, asi que
+        //  el fichero se reservaba con la mitad del largo y la exportacion
+        //  cortaba la cancion por la mitad sin decir nada. Con 1/32 sobraba el
+        //  doble de silencio al final.
+        const double secPerStep = (60.0 / juce::jmax (20.0, live.getBpm()))
+                                * (double) live.getStepBeats();
         const juce::int64 bodyLen = (juce::int64) (secPerStep * (double) steps * sampleRate);
         const juce::int64 tailLen = (juce::int64) (juce::jmax (2.0, live.getFxTailSeconds()) * sampleRate);
         const juce::int64 totalLen = bodyLen + tailLen;
@@ -96,7 +103,7 @@ public:
         if (! dir.createDirectory())
         {
             resultOk = false;
-            resultText = "no se pudo crear " + dir.getFullPathName();
+            resultText = T ("No se pudo crear %1", dir.getFullPathName());
             finished.store (true, std::memory_order_release);
             return;
         }
@@ -109,7 +116,7 @@ public:
         catch (...)
         {
             resultOk = false;
-            resultText = "sin memoria para " + juce::String (totalLen / (juce::int64) sampleRate) + " s";
+            resultText = T ("Sin memoria para %1 s", juce::String (totalLen / (juce::int64) sampleRate));
             finished.store (true, std::memory_order_release);
             return;
         }
@@ -124,7 +131,7 @@ public:
         if (! writeWav (masterFile, buffer, gain))
         {
             resultOk = false;
-            resultText = "no se pudo escribir " + masterFile.getFileName();
+            resultText = T ("No se pudo escribir %1", masterFile.getFileName());
             finished.store (true, std::memory_order_release);
             return;
         }
@@ -158,7 +165,7 @@ public:
         if (threadShouldExit())
         {
             resultOk = false;
-            resultText = "cancelado";
+            resultText = T ("Cancelado");
             finished.store (true, std::memory_order_release);
             return;
         }
@@ -166,10 +173,14 @@ public:
         const double secs = (double) totalLen / sampleRate;
         resultOk     = true;
         resultFolder = dir;
-        resultText   = juce::String (written) + (written == 1 ? " archivo, " : " archivos, ")
-                     + juce::String (secs, 1) + " s"
+        //  El parte final, tambien traducido. Era la unica frase que la
+        //  persona lee cuando la exportacion sale BIEN, y estaba en castellano
+        //  en las cuatro compilaciones.
+        resultText   = (written == 1 ? T ("%1 archivo, %2 s", juce::String (written), juce::String (secs, 1))
+                                     : T ("%1 archivos, %2 s", juce::String (written), juce::String (secs, 1)))
                      + (gain < 1.0f
-                          ? " (bajado " + juce::String (-juce::Decibels::gainToDecibels (gain), 1) + " dB para no saturar)"
+                          ? " " + T ("(bajado %1 dB para no saturar)",
+                                     juce::String (-juce::Decibels::gainToDecibels (gain), 1))
                           : juce::String());
         progress.store (1.0f, std::memory_order_relaxed);
         finished.store (true, std::memory_order_release);
@@ -229,7 +240,7 @@ private:
             if (threadShouldExit())
             {
                 resultOk = false;
-                resultText = "cancelado";
+                resultText = T ("Cancelado");
                 finished.store (true, std::memory_order_release);
                 return false;
             }

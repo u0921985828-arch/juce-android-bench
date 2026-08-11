@@ -15,6 +15,13 @@ class WaveformDisplay : public juce::Component
 public:
     void setSample (SampleBuffer::Ptr sb)
     {
+        //  OTRA MUESTRA, OTRA VISTA. El zoom y el trozo que se esta mirando
+        //  son de ESTA muestra: dejarlos puestos al cambiar de pad enseñaba un
+        //  sesentaicuatroavo cualquiera del sonido nuevo, sin sus asas de
+        //  recorte -que quedan fuera de pantalla- y sin nada que dijese por
+        //  que. Se reinicia cuando cambia el buffer, no en cada llamada: si es
+        //  la misma muestra, el zoom que habias puesto se queda donde estaba.
+        if (sample != sb) { zoom = 1.0f; view0 = 0.0f; if (onZoomChanged) onZoomChanged (zoom); }
         sample = sb;
         computeMinMax();
         repaint();

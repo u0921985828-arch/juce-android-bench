@@ -24,6 +24,10 @@
 class Playlist : public juce::Component
 {
 public:
+    //  La columna de los nombres de pista. Misma razon que en StepGrid: se
+    //  escribia dos veces, y el pintado y el toque tienen que coincidir.
+    static constexpr int kGutter = 26;
+
     static constexpr int kLanes    = 4;
     static constexpr int kBarsView = 8;    // bars visible at once; pages beyond
 
@@ -42,7 +46,7 @@ public:
     {
         if (data == nullptr) return;
         auto r = getLocalBounds();
-        const int gutter = 26;
+        const int gutter = kGutter;
         const float laneH = (float) r.getHeight() / (float) kLanes;
         const float barW  = (float) (r.getWidth() - gutter) / (float) kBarsView;
         const int   base  = pageIndex * kBarsView;
@@ -130,7 +134,7 @@ public:
     {
         if (data == nullptr || ! onCell) return;
         auto r = getLocalBounds();
-        const int gutter = 26;
+        const int gutter = kGutter;
         if (e.x < r.getX() + gutter) return;
         const float laneH = (float) r.getHeight() / (float) kLanes;
         const float barW  = (float) (r.getWidth() - gutter) / (float) kBarsView;

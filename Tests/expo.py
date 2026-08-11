@@ -21,6 +21,20 @@ LANGS = ["es", "en", "zh", "ar"]
 SHEETS = ["", "pads", "pad2", "pad3", "sec", "paso", "song", "mix", "xy", "set", "proj", "gest", "rack", "chop", "browse"]
 
 MIN_TOUCH = 40   # Metrics::hit — Android's own guideline is 48dp, this is the floor
+#  LO QUE SE DIBUJA Y SE TOCA IGUAL.
+#
+#  La rejilla de pasos y la lista de la cancion no son 256 botones: son UN
+#  componente que se pinta y se acierta con el raton, y por eso la regla del
+#  dedo minimo pasaba de largo por encima de ellas. Medido: en 280x653 una
+#  celda de paso son 12x12 px - la tercera parte del dedo -, y el banco daba
+#  esa pantalla por buena.
+#
+#  No es un fallo que se arregle agrandando la celda: son dieciseis pistas por
+#  dieciseis pasos, y esa es la ficha. Lo que sirve es que no EMPEORE sin que
+#  nadie se entere, y para eso hace falta que este medido. El suelo es lo que
+#  hay hoy, y el gesto que lo hace usable - pintar arrastrando el dedo - ya
+#  esta puesto.
+MIN_CELL = 12
 
 def run(size, lang, sheet):
     env = dict(os.environ, ZATI_AUDIT="1", ZATI_SIZE=size, ZATI_LANG=lang,
@@ -45,6 +59,14 @@ def judge(rows, size, lang, sheet):
 
     for r in comps:
         tag = f"{size}/{lang}/{sheet or 'face'}"
+        #  0. Las rejillas que se pintan enteras: su celda tambien se toca.
+        for grid, cols, lanes, gutter in (("StepGrid", 16, 16, 30), ("Playlist", 8, 4, 26)):
+            if grid in r["path"] and r["w"] > gutter and r["h"] > 0:
+                cw = (r["w"] - gutter) / cols
+                ch = r["h"] / lanes
+                if min(cw, ch) < MIN_CELL:
+                    findings.append(("CELDA", tag,
+                                     f'{grid} {cw:.0f}x{ch:.0f} px por celda', min(cw, ch)))
         # 1. A finger has to fit.
         if r.get("hit") and r.get("on"):
             if r["w"] < MIN_TOUCH or r["h"] < MIN_TOUCH:

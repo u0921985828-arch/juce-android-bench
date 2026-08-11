@@ -768,7 +768,7 @@ MainComponent::MainComponent()
     {
         //  Emptying a whole pattern used to be one tap with nothing behind it.
         //  It is the same size of loss as a chop, so it gets the same net.
-        pushUndo ("vaciar patron");
+        pushUndo (T ("VACIAR"));
         engine.clearPattern (selectedPattern);
         for (auto& row : pattern[(size_t) selectedPattern]) row.fill (false);
         if (selectedPad >= 0) selectPad (selectedPad);
@@ -2887,12 +2887,24 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
         }
 
         // Knobs: label above (same convention as FX).
+        //
+        //  CON SU COLOR, que es lo que faltaba. Este bloque ponia la fuente y
+        //  no el color, asi que heredaba el ultimo que se hubiera puesto - y
+        //  el ultimo era el del FILETE de la seccion, tinta al 18%. Resultado:
+        //  PITCH, FINO, GANANCIA, PAN, ATAQUE, CAIDA, INICIO, FIN y los seis
+        //  envios se pintaban a 1.4 de contraste, mas claros que las propias
+        //  marcas del dial que hay debajo. El nombre de un control mas flojo
+        //  que su decoracion es el fallo de siempre: se ve y no se lee.
+        //
+        //  0.55 es el mismo con el que la cara pinta los nombres de sus tres
+        //  mandos, medido en Tests/skins.py como "rotulo de seccion".
+        g.setColour (ZatiColours::ink.withAlpha (0.55f));
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
         //  placeKnobRow reserves 16 for the name and then insets the knob by
         //  2, so the band is the sixteen pixels that end two above the dial.
         auto name = [&g] (juce::Slider& s, const char* t)
         {
-            g.drawText (T (t), bandAbove (s, 16, 2, 6), juce::Justification::centred);
+            g.drawText (T (t), bandAbove (s, ZatiLookAndFeel::kKnobName, 2, 6), juce::Justification::centred);
         };
         if (padPage == padPageSound)
         {
@@ -2902,16 +2914,18 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
             name (chokeSlider, "CHOKE");
 
             //  Same band, one pixel lower: the third row insets its cells by 3.
-            g.drawText (T ("MODO"), bandAbove (modeButton, 16, 3, 6), juce::Justification::centred);
+            g.drawText (T ("MODO"), bandAbove (modeButton, ZatiLookAndFeel::kKnobName, 3, 6), juce::Justification::centred);
         }
         else if (padPage == padPageTrim)
         {
             // Start/End stay linear (a trim range, not a knob): label to the left.
+            g.setColour (ZatiColours::ink.withAlpha (0.55f));
             g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.06f));
             auto lab = [&g] (juce::Slider& s, const char* t)
             {
                 auto r = s.getBounds();
-                g.drawText (T (t), r.getX() - 66, r.getY(), 60, r.getHeight(), Lang::start());
+                g.drawText (T (t), r.getX() - (ZatiLookAndFeel::kTrimLabel + 2), r.getY(),
+                            ZatiLookAndFeel::kTrimLabel - 4, r.getHeight(), Lang::start());
             };
             lab (startSlider, "START"); lab (endSlider, "END");
         }
@@ -2923,7 +2937,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
             //  seis; con el nombre del efecto no hay nada que recordar.
             for (int f = 0; f < kNumFx && f < padSends.size(); ++f)
                 if (auto* sl = padSends[f])
-                    g.drawText (T (fxDefs[f].name), bandAbove (*sl, 16, 2, 6),
+                    g.drawText (T (fxDefs[f].name), bandAbove (*sl, ZatiLookAndFeel::kKnobName, 2, 6),
                                 juce::Justification::centred);
         }
 
@@ -3621,7 +3635,7 @@ void MainComponent::resized()
         for (int i = 0; i < n; ++i)
         {
             auto cell = (i < n - 1 ? row.removeFromLeft (w) : row);
-            cell.removeFromTop (16);                     // gap for knob name
+            cell.removeFromTop (ZatiLookAndFeel::kKnobName);   // gap for knob name
             ks[i]->setBounds (cell.reduced (6, 2));
         }
     };
@@ -3702,12 +3716,12 @@ void MainComponent::resized()
                 //  que no hacian falta, porque los 86 caben.
                 if (tight && inner.getWidth() / kNumFx >= Metrics::hit)
                 {
-                    placeKnobRow (inner.removeFromTop (86), e, 6);
+                    placeKnobRow (inner.removeFromTop (ZatiLookAndFeel::kKnobRow), e, 6);
                 }
                 else
                 {
-                    placeKnobRow (inner.removeFromTop (86), e,     3);
-                    placeKnobRow (inner.removeFromTop (86), e + 3, 3);
+                    placeKnobRow (inner.removeFromTop (ZatiLookAndFeel::kKnobRow), e,     3);
+                    placeKnobRow (inner.removeFromTop (ZatiLookAndFeel::kKnobRow), e + 3, 3);
                 }
             }
             inner.removeFromTop (Metrics::sm);
@@ -3784,8 +3798,8 @@ void MainComponent::resized()
         //  que la tercera - CHOKE, MODO, NORMALIZAR - se salia por abajo con
         //  altura cero. Sale de lo que hay, con 60 de suelo.
         {
-            const int forKnobs = inner.getHeight() - (16 + Metrics::hit);
-            const int knobH = juce::jlimit (60, 86, forKnobs / 2);
+            const int forKnobs = inner.getHeight() - (ZatiLookAndFeel::kKnobName + Metrics::hit);
+            const int knobH = juce::jlimit (60, ZatiLookAndFeel::kKnobRow, forKnobs / 2);
             juce::Slider* k1[3] = { &pitchSlider, &fineSlider, &volSlider };
             juce::Slider* k2[3] = { &panSlider, &attackSlider, &releaseSlider };
             placeKnobRow (inner.removeFromTop (knobH), k1);
@@ -3797,8 +3811,8 @@ void MainComponent::resized()
         //  them a knob-sized cell was what turned CHOKE into two tall slabs
         //  that swallowed their column.
         {
-            auto r3 = inner.removeFromTop (16 + Metrics::hit);
-            r3.removeFromTop (16);                       // gap for the names
+            auto r3 = inner.removeFromTop (ZatiLookAndFeel::kKnobName + Metrics::hit);
+            r3.removeFromTop (ZatiLookAndFeel::kKnobName);   // gap for the names
             //  Tres celdas, no tres tercios. NORMALIZAR es la palabra mas
             //  larga de la ficha y en 280x653 pedia 66 px de un tercio que
             //  daba 55: el banco lo saco como TRUNC en cuanto entro el boton.
@@ -3845,10 +3859,10 @@ void MainComponent::resized()
         padSectionArea[1] = {};
         padSectionArea[2] = {};
 
-        const int labelW = 64;
+        const int labelW = ZatiLookAndFeel::kTrimLabel;
         auto ctrlRow = [&inner, labelW] (int h) { auto r = inner.removeFromTop (h); r.removeFromLeft (labelW); return r; };
-        startSlider.setBounds (ctrlRow (34)); inner.removeFromTop (4);
-        endSlider.setBounds   (ctrlRow (34)); inner.removeFromTop (8);
+        startSlider.setBounds (ctrlRow (ZatiLookAndFeel::kTrimRow)); inner.removeFromTop (Metrics::xs);
+        endSlider.setBounds   (ctrlRow (ZatiLookAndFeel::kTrimRow)); inner.removeFromTop (Metrics::sm);
 
         //  REV y LOOP viven aqui, con el recorte, y no en la barra de EL PAD:
         //  las dos deciden COMO SE RECORRE el trozo que se acaba de marcar,
@@ -5583,7 +5597,7 @@ void MainComponent::applyAutoChop()
     //  one sample per piece has nothing to divide.
     if (n < 2 || len < n) return;
 
-    pushUndo ("auto chop");
+    pushUndo (T ("AUTO CHOP"));
 
     const juce::String baseName = padName[(size_t) selectedPad].isNotEmpty()
                                  ? padName[(size_t) selectedPad] : juce::String ("CHOP");
@@ -6472,9 +6486,18 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.06f));
-    g.drawFittedText (T ("Parte este sample en trozos iguales y los reparte por los pads. "
-                         "El pad de origen se queda con el primero."),
-                      inner.removeFromTop (40), Lang::start (juce::Justification::top), 3, 1.0f);
+    {
+        //  Y se para antes del boton de cerrar. El titulo si lo hacia y esto
+        //  no, y el boton mide 40 px sobre una fila pintada de 32: la primera
+        //  linea - "...y los reparte por los pads." - pasaba por debajo de la
+        //  x. El banco no puede verlo, porque mide componentes y esto es
+        //  texto pintado a mano.
+        auto para = inner.removeFromTop (40);
+        para.setRight (juce::jmin (para.getRight(), chopCloseButton.getX() - Metrics::xs));
+        g.drawFittedText (T ("Parte este sample en trozos iguales y los reparte por los pads. "
+                             "El pad de origen se queda con el primero."),
+                          para, Lang::start (juce::Justification::top), 3, 1.0f);
+    }
 
     inner.removeFromTop (Metrics::md);
     g.setColour (ZatiColours::ink.withAlpha (0.75f));
