@@ -541,7 +541,10 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                                       : editPattern.load (std::memory_order_relaxed);
         playingPattern.store (patternIdx, std::memory_order_relaxed);
 
-        const double beatsPerStep   = 0.25;   // 16th notes
+        //  Cuanto dura un paso, en negras. Era 0.25 fijo - semicorcheas - y por
+        //  eso no habia forma de escribir un tresillo ni de bajar a fusas: el
+        //  patron entero estaba clavado a la rejilla de 1/16.
+        const double beatsPerStep   = (double) stepBeats.load (std::memory_order_relaxed);
         const double secPerStep     = (60.0 / juce::jmax (20.0, (double) bpm.load (std::memory_order_relaxed))) * beatsPerStep;
         const double samplesPerStep = juce::jmax (1.0, secPerStep * systemSampleRate);
 
@@ -1520,6 +1523,7 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     refreshSolo();
 
     bpm.store (s.bpm.load (std::memory_order_relaxed), std::memory_order_relaxed);
+    stepBeats.store (s.stepBeats.load (std::memory_order_relaxed), std::memory_order_relaxed);
     editPattern.store (s.editPattern.load (std::memory_order_relaxed), std::memory_order_relaxed);
     copyArr (patternLength, s.patternLength);
     copyArr (chainSlots,    s.chainSlots);

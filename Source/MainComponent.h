@@ -132,6 +132,48 @@ private:
     juce::TextButton seqGridBtn { "PASOS" }, seqStepBtn { "PASO" };
     void showSeqPage (int page);
 
+    //  LA FICHA DEL PAD, TAMBIEN EN DOS PAGINAS.
+    //
+    //  Tenia dieciocho controles en una columna: tres filas de mandos, dos
+    //  reglas de recorte, dos barras de botones, ocho muestras de color y la
+    //  onda, todo bajo tres rotulos. En 280x653 eso son 670 px pedidos a una
+    //  ficha que no puede pasar del 78% de 653 - 509 -, asi que la onda se
+    //  quedaba en una franja y no habia sitio para nada mas.
+    //
+    //  SONIDO es lo que suena el pad: afinado, nivel, envolvente y recorte.
+    //  EL PAD es lo que el pad ES: a que efectos manda, como corta, de donde
+    //  saca su sonido y de que color es. La division no es por espacio sino
+    //  por pregunta - la primera se toca mezclando y la segunda montando.
+    //  Y TRES, no dos. Con dos, SONIDO seguia pidiendo 686 px - tres filas de
+    //  mandos, las dos reglas de recorte, la fila de botones y la onda - de una
+    //  ficha que en 360x640 no puede pasar de 499. Lo que se salia era LA ONDA,
+    //  que es justo lo que hay que mirar para cortar: el banco la saco a altura
+    //  cero en tres de las siete pantallas, con sus tres tapas de zoom encima,
+    //  tambien a cero.
+    //
+    //  SONIDO es como suena, RECORTE es que trozo suena, EL PAD es lo que el
+    //  pad es. Con el recorte en su propia pagina la onda se queda con 180 px
+    //  en el movil mas pequeno, que es la diferencia entre ver un ataque y
+    //  adivinarlo.
+    enum PadPage { padPageSound = 0, padPageTrim, padPageRig };
+    int padPage = padPageSound;
+    juce::TextButton padSoundBtn { "SONIDO" }, padTrimBtn { "RECORTE" }, padRigBtn { "EL PAD" };
+    void showPadPage (int page);
+    bool padSourceWraps (int rowWidth) const;
+    bool padRowFits (int rowWidth, std::initializer_list<const juce::TextButton*> bs) const;
+    //  El reparto apretado de EL PAD, decidido en resized() y necesario en
+    //  paint() para titular la seccion del medio con lo que de verdad hay
+    //  dentro. Sin el, en apaisado la fila de cinco tapas se titulaba CORTE.
+    bool padRigTight = false;
+
+    //  LOS SEIS ENVIOS DEL PAD.
+    //
+    //  Existian desde que cada pad puede salirse de un efecto, pero solo se
+    //  llegaba a ellos por el RACK, que es la vista al reves: un efecto y los
+    //  sesenta y cuatro pads. Buscar "que le llega a este pad" obligaba a
+    //  abrir seis veces la misma ficha. Aqui es una fila de seis.
+    juce::OwnedArray<juce::Slider> padSends;
+
     //  The captions of the sequencer card, recorded by resized() instead of
     //  reconstructed by paint() from each control's bounds. Reconstructing
     //  them was fine while every control was on screen at once; with two pages
@@ -583,7 +625,6 @@ private:
     void refreshXyPad();
     void paintXySheetContent (juce::Graphics& g);
     void layoutModuleBar (juce::Rectangle<int> row, juce::TextButton** mb, int vInset, int count = 6);
-    juce::Rectangle<int> xyLabelBand;   // donde resized() reservo el rotulo MODO
 
     //  SONG: pick what to place from the palette, then tap a cell. Choosing
     //  first and placing second beats drag-and-drop on a phone — a drag from a
@@ -814,6 +855,19 @@ private:
     juce::TextButton normButton { "NORMALIZAR" };
     void normalisePad();
 
+    //  QUITAR RUIDO. Resta espectral con el perfil sacado de la propia
+    //  muestra - ver Denoise.h para por que no es una puerta de ruido. Corre
+    //  en el hilo de mensajes sobre una COPIA, y la copia sustituye a la
+    //  muestra del pad por el mismo camino que un corte o un remuestreo: el
+    //  audio nunca ve un buffer a medio escribir.
+    juce::TextButton denoiseButton { "QUITAR RUIDO" };
+    void denoisePad();
+
+    //  Los tres del zoom, encima de la propia onda y no en una fila suya: la
+    //  ficha ya iba justa de alto y una fila mas se la habria quitado a lo
+    //  unico que este zoom existe para mirar.
+    juce::TextButton zoomOutButton { "-" }, zoomInButton { "+" }, zoomFitButton { "x1" };
+
     //  The project name you type, and where the folder actually is. GUARDAR
     //  used to invent "PROYECTO N" with no way to say otherwise, so every save
     //  was a new near-duplicate and none of them was called what you wanted.
@@ -834,6 +888,16 @@ private:
     //  What a step DOES, not just which pads it fires: how hard, how many
     //  times, and how far off the grid the odd ones sit.
     juce::Slider patternSlider, noteSlider, lengthSlider, velSlider, rollSlider, swingSlider;
+    //  LA REJILLA: cuanto dura un paso. Cinco posiciones y no un mando libre,
+    //  porque los valores utiles son cinco y estan a distancias que no son
+    //  regulares - entre 1/16 y su tresillo hay un factor de 1.5 y entre 1/16
+    //  y 1/32 hay uno de 2. Un dial con esos cinco puntos seria un dial que
+    //  hay que acertar; dos teclas los recorren y ademas dicen cual es.
+    juce::Slider gridSlider;
+    static constexpr int kNumGrids = 5;
+    //  En negras por paso, en el mismo orden que los nombres de abajo.
+    static constexpr float kGridBeats[kNumGrids] = { 0.5f, 1.0f / 3.0f, 0.25f, 1.0f / 6.0f, 0.125f };
+    static const char* gridName (int i);
     juce::TextButton chainClearButton { "QUITAR CADENA" };
     juce::Slider macroCtrl1, macroCtrl2, macroCtrl3;   // CTRL 1-3, bank-dependent
     juce::Label  status, fxLabel;

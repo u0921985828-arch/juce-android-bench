@@ -2,6 +2,7 @@
 #include "UiAudit.h"
 #include "Lang.h"
 #include "SystemInsets.h"
+#include "Denoise.h"
 #include "DeviceTier.h"
 
 namespace
@@ -1124,6 +1125,33 @@ MainComponent::MainComponent()
     swingSlider.onValueChange = [this] { engine.setSwing ((float) (swingSlider.getValue() / 100.0)); };
     seqSheet.addAndMakeVisible (swingSlider);
 
+    //  LA REJILLA. Un paso duraba una semicorchea y no habia otra: ni un
+    //  tresillo, ni una fusa, ni un patron de corcheas que ocupase dos
+    //  compases. Es del transporte entero, como el tempo y el swing - ver
+    //  AudioEngine::setStepBeats para por que no es de cada patron.
+    gridSlider.setSliderStyle (juce::Slider::IncDecButtons);
+    gridSlider.setIncDecButtonsMode (juce::Slider::incDecButtonsDraggable_Vertical);
+    gridSlider.setRange (0.0, kNumGrids - 1, 1.0);
+    gridSlider.setValue (2.0, juce::dontSendNotification);      // 1/16
+    gridSlider.setDoubleClickReturnValue (true, 2.0);
+    gridSlider.setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
+    gridSlider.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
+    gridSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+    gridSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 54, Metrics::readout);
+    //  Dentro de Lang::ltr: son cifras latinas y en arabe la linea va al
+    //  reves, asi que "1/16" sin envolver sale como "16/1".
+    gridSlider.textFromValueFunction = [] (double v)
+    { return Lang::ltr (gridName (juce::jlimit (0, kNumGrids - 1, (int) v))); };
+    gridSlider.updateText();
+    gridSlider.onValueChange = [this]
+    {
+        const int i = juce::jlimit (0, kNumGrids - 1, (int) gridSlider.getValue());
+        engine.setStepBeats (kGridBeats[i]);
+        status.setText (T ("Un paso dura %1", Lang::ltr (gridName (i))), juce::dontSendNotification);
+        stepGrid.repaint();
+    };
+    seqSheet.addAndMakeVisible (gridSlider);
+
     //  The two tabs of the sequencer card, same furniture as the settings card
     //  so the gesture is already learnt: the card stays put and its contents
     //  change. Directly under the title on both pages, so the tab you are
@@ -1635,6 +1663,74 @@ MainComponent::MainComponent()
     normButton.onClick = [this] { normalisePad(); };
     padSheet.addAndMakeVisible (normButton);
 
+    //  QUITAR RUIDO va con REV y LOOP, en la fila que hay justo encima de la
+    //  onda: las tres son cosas de la MUESTRA que se esta mirando.
+    styleButton (denoiseButton, kKey);
+    denoiseButton.onClick = [this] { denoisePad(); };
+    padSheet.addAndMakeVisible (denoiseButton);
+
+    //  El zoom. Tres tapas sobre la esquina de la pantalla: menos, cuanto, mas.
+    //  La del medio dice a que aumento se esta y vuelve al fichero entero.
+    {
+        juce::TextButton* zb[3] = { &zoomOutButton, &zoomFitButton, &zoomInButton };
+        for (auto* b : zb) { styleButton (*b, kKey); padSheet.addAndMakeVisible (b); }
+        zoomOutButton.onClick = [this] { waveform.setZoom (waveform.getZoom() * 0.5f, waveform.viewCentre()); };
+        zoomInButton .onClick = [this] { waveform.setZoom (waveform.getZoom() * 2.0f, waveform.viewCentre()); };
+        //  Vuelve al fichero entero, y si ya esta entero salta al recorte: es
+        //  el boton que se pulsa cuando te has perdido, y "perdido" tiene esas
+        //  dos formas.
+        zoomFitButton.onClick = [this]
+        {
+            if (waveform.getZoom() > 1.005f) { waveform.setZoom (1.0f, 0.5f); return; }
+            if (selectedPad < 0) return;
+            const float a = padStart01[(size_t) selectedPad], b = padEnd01[(size_t) selectedPad];
+            const float span = juce::jmax (1.0f / WaveformDisplay::kMaxZoom, b - a);
+            waveform.setZoom (juce::jlimit (1.0f, WaveformDisplay::kMaxZoom, 1.0f / span), (a + b) * 0.5f);
+        };
+        waveform.onZoomChanged = [this] (float z)
+        {
+            zoomFitButton.setButtonText (Lang::ltr ("x" + juce::String ((int) std::round (z))));
+        };
+    }
+
+    //  Las dos pestanas de la ficha del pad, con el mismo mueble que las del
+    //  secuenciador y las de AJUSTES: la ficha se queda quieta y cambia lo de
+    //  dentro. Debajo del titulo en las dos paginas, para que la pestana que
+    //  vas a pulsar no se mueva cuando pulsas la otra.
+    {
+        juce::TextButton* pb[3] = { &padSoundBtn, &padTrimBtn, &padRigBtn };
+        for (int i = 0; i < 3; ++i)
+        {
+            styleButton (*pb[i], kKey);
+            pb[i]->setClickingTogglesState (true);
+            pb[i]->setRadioGroupId (8804);
+            litAccent (*pb[i]);
+            pb[i]->onClick = [this, i] { showPadPage (i); };
+            padSheet.addAndMakeVisible (pb[i]);
+        }
+        padSoundBtn.setToggleState (true, juce::dontSendNotification);
+    }
+
+    //  Los seis envios del pad. El mismo valor que mueve el RACK, con la
+    //  diferencia de que aqui se ve la fila entera de un pad en vez de la
+    //  columna de un efecto. Los dos leen del motor al abrirse, asi que no hay
+    //  copia que se pueda quedar vieja.
+    for (int f = 0; f < kNumFx; ++f)
+    {
+        auto* sl = new juce::Slider();
+        initKnob (*sl, 0.0, 1.0, 0.01, 1.0, 0.0, {});
+        sl->textFromValueFunction = [] (double v) { return juce::String ((int) std::round (v * 100.0)); };
+        sl->updateText();
+        sl->onValueChange = [this, f, sl]
+        {
+            if (selectedPad >= 0) engine.setPadSend (selectedPad, f, (float) sl->getValue());
+            if (rackSends[f] != nullptr && rackPad == selectedPad)
+                rackSends[f]->setValue (sl->getValue(), juce::dontSendNotification);
+        };
+        padSheet.addAndMakeVisible (sl);
+        padSends.add (sl);
+    }
+
     styleButton (undoButton, ZatiColours::red);
     undoButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
     undoButton.onClick = [this] { performUndo(); };
@@ -1696,6 +1792,7 @@ MainComponent::MainComponent()
     //  to call showSeqPage - and the very first resized() would lay the step
     //  controls out on top of the grid.
     showSeqPage (seqPageGrid);
+    showPadPage (padPageSound);
     showMixBank (0);
     applySkin();
 }
@@ -1814,6 +1911,15 @@ void MainComponent::setMacroTouched (int idx, bool touched)
         macroLabelTimer.startTimer (800);
     }
     repaint();
+}
+
+//  Los cinco nombres de la rejilla. Con T de tresillo, que es como se dice y
+//  como se lee en cualquier caja de ritmos: 1/16T son tres pasos donde caben
+//  dos.
+const char* MainComponent::gridName (int i)
+{
+    static const char* names[kNumGrids] = { "1/8", "1/8T", "1/16", "1/16T", "1/32" };
+    return names[juce::jlimit (0, kNumGrids - 1, i)];
 }
 
 // Everything the UI knows about the six effects, in signal order. One table,
@@ -2232,9 +2338,73 @@ void MainComponent::showSeqPage (int page)
     velSlider.setVisible        (! onGrid);
     rollSlider.setVisible       (! onGrid);
     swingSlider.setVisible      (! onGrid);
+    gridSlider.setVisible       (! onGrid);
 
     resized();
     seqSheet.repaint();
+}
+
+//  Igual que showSeqPage: escondido, no solo sin colocar. Un control que sigue
+//  visible fuera de su pagina se pinta encima de la que si esta, y se come los
+//  arrastres de lo que tiene delante.
+//  ¿CABEN LAS TRES PALABRAS DE FUENTE EN UNA FILA?
+//
+//  Se pregunta dos veces - al presupuestar la altura de la pagina y al colocar
+//  la fila -, y las dos tienen que contestar lo mismo o la ficha reserva una
+//  fila que no usa o usa una que no reservo. De ahi que sea una funcion y no
+//  dos cuentas parecidas.
+bool MainComponent::padSourceWraps (int rowWidth) const
+{
+    return ! padRowFits (rowWidth, { &chopButton, &micButton, &resampleButton });
+}
+
+//  ¿Caben estas tapas en una fila de este ancho? Con margen, porque la fuente
+//  con la que se mide aqui no es exactamente la que dibuja la tapa.
+bool MainComponent::padRowFits (int rowWidth,
+                                std::initializer_list<const juce::TextButton*> bs) const
+{
+    const auto capFont = ZatiColours::monoFont (11.0f, true).withExtraKerningFactor (0.06f);
+    int need = 0;
+    for (const juce::TextButton* b : bs)
+        need += (int) std::ceil (juce::GlyphArrangement::getStringWidth (capFont, b->getButtonText()))
+              + 2 * Metrics::sm;
+    return need <= rowWidth - Metrics::lg;
+}
+
+void MainComponent::showPadPage (int page)
+{
+    padPage = juce::jlimit ((int) padPageSound, (int) padPageRig, page);
+    const bool onSound = (padPage == padPageSound);
+    const bool onTrim  = (padPage == padPageTrim);
+    const bool onRig   = (padPage == padPageRig);
+
+    padSoundBtn.setToggleState (onSound, juce::dontSendNotification);
+    padTrimBtn .setToggleState (onTrim,  juce::dontSendNotification);
+    padRigBtn  .setToggleState (onRig,   juce::dontSendNotification);
+
+    for (juce::Component* c : { (juce::Component*) &pitchSlider, (juce::Component*) &fineSlider,
+                                (juce::Component*) &volSlider,   (juce::Component*) &panSlider,
+                                (juce::Component*) &attackSlider,(juce::Component*) &releaseSlider,
+                                (juce::Component*) &chokeSlider, (juce::Component*) &modeButton,
+                                (juce::Component*) &normButton })
+        c->setVisible (onSound);
+
+    for (juce::Component* c : { (juce::Component*) &startSlider,   (juce::Component*) &endSlider,
+                                (juce::Component*) &reverseButton, (juce::Component*) &loopButton,
+                                (juce::Component*) &waveform,      (juce::Component*) &denoiseButton,
+                                (juce::Component*) &zoomOutButton, (juce::Component*) &zoomFitButton,
+                                (juce::Component*) &zoomInButton })
+        c->setVisible (onTrim);
+
+    for (auto* s : padSends) s->setVisible (onRig);
+    autocutButton .setVisible (onRig);
+    duckButton    .setVisible (onRig);
+    chopButton    .setVisible (onRig);
+    micButton     .setVisible (onRig);
+    resampleButton.setVisible (onRig);
+
+    resized();
+    padSheet.repaint();
 }
 
 //  Only the sixteen strips of the bank on show exist as far as the layout and
@@ -2683,7 +2853,13 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
         //  the same engraved rule the machine face uses, so a sheet reads as
         //  three blocks (what the sound is, where it is cut, what the pad is)
         //  instead of eleven controls in a column.
-        static const char* secNames[3] = { "SONIDO", "RECORTE", "EL PAD" };
+        static const char* secSound[3] = { "SONIDO", "", "" };
+        static const char* secTrim[3]  = { "RECORTE", "", "" };
+        static const char* secRig[3]   = { "ENVIOS", "CORTE",   "FUENTE" };
+        static const char* secRigT[3]  = { "ENVIOS", "EL PAD",  "" };
+        const char* const* secNames = (padPage == padPageSound) ? secSound
+                                    : (padPage == padPageTrim)   ? secTrim
+                                                                 : (padRigTight ? secRigT : secRig);
         for (int i = 0; i < 3; ++i)
         {
             const auto r = padSectionArea[(size_t) i];
@@ -2718,22 +2894,38 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
         {
             g.drawText (T (t), bandAbove (s, 16, 2, 6), juce::Justification::centred);
         };
-        name (pitchSlider, "PITCH"); name (fineSlider, "FINO"); name (volSlider, "GANANCIA");
-        name (panSlider, "PAN");
-        name (attackSlider, "ATTACK"); name (releaseSlider, "RELEASE");
-        name (chokeSlider, "CHOKE");
-
-        //  Same band, one pixel lower: the third row insets its cells by 3.
-        g.drawText (T ("MODO"), bandAbove (modeButton, 16, 3, 6), juce::Justification::centred);
-
-        // Start/End stay linear (a trim range, not a knob): label to the left.
-        g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.06f));
-        auto lab = [&g] (juce::Slider& s, const char* t)
+        if (padPage == padPageSound)
         {
-            auto r = s.getBounds();
-            g.drawText (T (t), r.getX() - 66, r.getY(), 60, r.getHeight(), Lang::start());
-        };
-        lab (startSlider, "START"); lab (endSlider, "END");
+            name (pitchSlider, "PITCH"); name (fineSlider, "FINO"); name (volSlider, "GANANCIA");
+            name (panSlider, "PAN");
+            name (attackSlider, "ATTACK"); name (releaseSlider, "RELEASE");
+            name (chokeSlider, "CHOKE");
+
+            //  Same band, one pixel lower: the third row insets its cells by 3.
+            g.drawText (T ("MODO"), bandAbove (modeButton, 16, 3, 6), juce::Justification::centred);
+        }
+        else if (padPage == padPageTrim)
+        {
+            // Start/End stay linear (a trim range, not a knob): label to the left.
+            g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.06f));
+            auto lab = [&g] (juce::Slider& s, const char* t)
+            {
+                auto r = s.getBounds();
+                g.drawText (T (t), r.getX() - 66, r.getY(), 60, r.getHeight(), Lang::start());
+            };
+            lab (startSlider, "START"); lab (endSlider, "END");
+        }
+        else
+        {
+            //  Cada envio se llama como el efecto al que manda, que es la
+            //  misma palabra que lleva la tapa de la cara. Un envio con un
+            //  nombre propio - "ENV 3" - obliga a recordar el orden de los
+            //  seis; con el nombre del efecto no hay nada que recordar.
+            for (int f = 0; f < kNumFx && f < padSends.size(); ++f)
+                if (auto* sl = padSends[f])
+                    g.drawText (T (fxDefs[f].name), bandAbove (*sl, 16, 2, 6),
+                                juce::Justification::centred);
+        }
 
         // ZATI row: the fragment colour this pad carries, named as well as
         // shown — the number and the name are the non-chromatic half.
@@ -3423,32 +3615,182 @@ void MainComponent::resized()
         s.sheetBounds = sheet;
         return sheet.reduced (Metrics::lg, Metrics::md);
     };
-    auto placeKnobRow = [] (juce::Rectangle<int> row, juce::Slider** ks)
+    auto placeKnobRow = [] (juce::Rectangle<int> row, juce::Slider** ks, int n = 3)
     {
-        const int w = row.getWidth() / 3;
-        for (int i = 0; i < 3; ++i)
+        const int w = row.getWidth() / juce::jmax (1, n);
+        for (int i = 0; i < n; ++i)
         {
-            auto cell = (i < 2 ? row.removeFromLeft (w) : row);
+            auto cell = (i < n - 1 ? row.removeFromLeft (w) : row);
             cell.removeFromTop (16);                     // gap for knob name
             ks[i]->setBounds (cell.reduced (6, 2));
         }
     };
 
-    // PADS sheet: per-pad knobs, trim, REV/LOOP + AUTO CHOP, sample-info card.
+    // PADS sheet, dos paginas. Ver PadPage en la cabecera: SONIDO es lo que
+    // suena el pad y EL PAD es lo que el pad es. Cada pagina pide la altura que
+    // va a usar, asi que la ficha encoge cuando lo de dentro ocupa menos - la
+    // de EL PAD no arrastra el hueco de la onda, que no lleva.
     {
         constexpr int secH = 15 + 2 * ZatiLookAndFeel::kTextPad;
-        auto inner = sheetFromBottom (padSheet, 670 + 3 * secH);
+        const bool onSound = (padPage == padPageSound);
+        //  644 y 418 salen de sumar lo que lleva cada pagina, no de probar:
+        //  ver el desglose de cada bloque mas abajo.
+        const int sheetInnerW = (int) (full.getWidth() * 0.92f) - 2 * Metrics::lg;
+        //  Lo que pide cada pagina, sumado y no probado:
+        //  SONIDO  = titulo+pestanas+margenes (116) + secH + 86 + 86 + 56 + 8
+        //  RECORTE = 116 + secH + 34+4+34+8 + hit + 8 + 180 de onda
+        //  EL PAD  = 116 + 3*secH + 2*86 + 2*hit + 3*sm + chip
+        //  sheetFromBottom recorta si no cabe, y de eso se ocupa el reparto.
+        const int rigH = 418 + 3 * secH
+                       + (padSourceWraps (sheetInnerW) ? Metrics::hit + Metrics::halfGap : 0);
+        const int wantH = (padPage == padPageSound) ? 352 + secH
+                        : (padPage == padPageTrim)  ? 424 + secH
+                                                    : rigH;
+        auto inner = sheetFromBottom (padSheet, wantH);
         auto titleRow = inner.removeFromTop (Metrics::hit);
         padCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
         Lang::takeEnd (titleRow, Metrics::xs);
         previewButton.setBounds (Lang::takeEnd (titleRow, 68).reduced (0, 2));
 
+        //  Las pestanas, debajo del titulo y en las dos paginas.
+        inner.removeFromTop (Metrics::xs);
+        {
+            auto tabRow = inner.removeFromTop (Metrics::hit);
+            juce::TextButton* tb[3] = { &padSoundBtn, &padTrimBtn, &padRigBtn };
+            layoutModuleBar (tabRow, tb, 0, 3);
+        }
+        inner.removeFromTop (Metrics::sm);
+
+        if (padPage == padPageRig)
+        {
+            //  EL PAD: 3*secH + 86*2 (envios) + 8 + 40 (corte) + 8 + 40
+            //  (fuente) + 8 + chip + margenes = 418 + 3*secH.
+            //  ¿HAY SITIO PARA LA PAGINA ENTERA?
+            //
+            //  En apaisado - 915x412 - la ficha no puede pasar del 78% de 412,
+            //  que son 321, y esta pagina pide 481. Lo que se sale por abajo no
+            //  desaparece: se queda con altura CERO, y un boton de altura cero
+            //  se ve en el volcado como un control de 265x0. Asi que la pagina
+            //  se mide contra el hueco que le han dado y, si no cabe, los seis
+            //  envios pasan a una sola fila y las muestras de color - que son
+            //  una etiqueta y no un ajuste - se quedan fuera.
+            const int srcH = Metrics::hit
+                           + (padSourceWraps (inner.getWidth()) ? Metrics::hit + Metrics::halfGap : 0);
+            const int needFull = secH + 2 * 86 + Metrics::sm
+                               + secH + Metrics::hit + Metrics::sm
+                               + secH + srcH + Metrics::sm + Metrics::chip;
+            //  APRETADO NO ES LO MISMO QUE ESTRECHO, y confundirlos costo una
+            //  medida: en 280x653 la pagina tampoco cabe de alto, se fue por
+            //  la rama de la fila unica, y cinco tapas en 225 px son 45 px
+            //  cada una - AUTO CHOP, GRABAR MIC y AUTOCUT truncados los tres.
+            //  Fundir las dos secciones solo sirve cuando lo que sobra es
+            //  ANCHO, que es lo que pasa en apaisado y no en un movil de pie.
+            const bool tight = inner.getHeight() < needFull;
+            const bool merge = tight && padRowFits (inner.getWidth(),
+                                                    { &autocutButton, &duckButton, &chopButton,
+                                                      &micButton, &resampleButton });
+
+            padRigTight = merge;
+            padSectionArea[0] = inner.removeFromTop (secH);   // pintado: ENVIOS
+            {
+                juce::Slider* e[6] = { padSends[0], padSends[1], padSends[2],
+                                       padSends[3], padSends[4], padSends[5] };
+                //  Seis en una fila solo si a cada uno le tocan 40 px, que es
+                //  el dedo minimo. En 280x653 seis mandos en 225 px son 25 px
+                //  cada uno y su numero se queda en 21: el banco lo saco como
+                //  "100" pidiendo 22. Ahi la fila unica ahorra 86 px de alto
+                //  que no hacian falta, porque los 86 caben.
+                if (tight && inner.getWidth() / kNumFx >= Metrics::hit)
+                {
+                    placeKnobRow (inner.removeFromTop (86), e, 6);
+                }
+                else
+                {
+                    placeKnobRow (inner.removeFromTop (86), e,     3);
+                    placeKnobRow (inner.removeFromTop (86), e + 3, 3);
+                }
+            }
+            inner.removeFromTop (Metrics::sm);
+
+            if (merge)
+            {
+                //  Apaisado: CORTE y FUENTE se funden en una sola seccion de
+                //  cinco tapas. La ficha mide 841 px de ancho ahi y solo 321
+                //  de alto, asi que lo que sobra es exactamente lo que a lo
+                //  otro le falta - y dos titulos de seccion con sus dos filas
+                //  cuestan 138 px de alto para decir lo mismo que una.
+                padSectionArea[1] = inner.removeFromTop (secH);   // pintado: EL PAD
+                padSectionArea[2] = {};
+                auto rr = inner.removeFromTop (Metrics::hit);
+                juce::TextButton* pb[5] = { &autocutButton, &duckButton,
+                                            &chopButton, &micButton, &resampleButton };
+                layoutModuleBar (rr, pb, 0, 5);
+            }
+            else
+            {
+                padSectionArea[1] = inner.removeFromTop (secH);   // pintado: CORTE
+                {
+                    auto rr = inner.removeFromTop (Metrics::hit);
+                    juce::TextButton* pb[2] = { &autocutButton, &duckButton };
+                    layoutModuleBar (rr, pb, 0, 2);
+                }
+                inner.removeFromTop (Metrics::sm);
+
+                padSectionArea[2] = inner.removeFromTop (secH);   // pintado: FUENTE
+                //  Tres formas de poner un sonido en un pad: cortar uno que ya
+                //  tienes, grabar la sala, o imprimir lo que la maquina esta
+                //  tocando. En una fila cuando caben las tres palabras y en dos
+                //  cuando no: en 280x653 son 225 px para AUTO CHOP, GRABAR MIC
+                //  y REMUESTREAR, que piden 272 entre las tres. Antes esta fila
+                //  se salia por abajo de la ficha y por eso el banco no la veia.
+                if (padSourceWraps (inner.getWidth()))
+                {
+                    auto ra = inner.removeFromTop (Metrics::hit);
+                    juce::TextButton* p2[2] = { &chopButton, &micButton };
+                    layoutModuleBar (ra, p2, 0, 2);
+                    inner.removeFromTop (Metrics::halfGap);
+                    auto rb = inner.removeFromTop (Metrics::hit);
+                    juce::TextButton* p1[1] = { &resampleButton };
+                    layoutModuleBar (rb, p1, 0, 1);
+                }
+                else
+                {
+                    auto rr = inner.removeFromTop (Metrics::hit);
+                    juce::TextButton* pb[3] = { &chopButton, &micButton, &resampleButton };
+                    layoutModuleBar (rr, pb, 0, 3);
+                }
+            }
+            inner.removeFromTop (Metrics::sm);
+
+            //  El color es una ETIQUETA, no diseno de sonido, y llego a ser lo
+            //  mas llamativo de la ficha: una fila entera de 44 px con dos
+            //  teclas y una barra de color saturado gritando por encima de
+            //  PITCH. Son ocho muestras en una tira de altura de chip - y son
+            //  lo primero que se cae cuando no hay hueco, por ser lo unico de
+            //  esta pagina que no cambia como suena nada.
+            zatiSwatchArea = (inner.getHeight() < Metrics::chip)
+                                 ? juce::Rectangle<int>()
+                                 : inner.removeFromTop (Metrics::chip).reduced (4, 0);
+            editInfoArea = {};
+        }
+        else if (padPage == padPageSound)
+        {
+
         padSectionArea[0] = inner.removeFromTop (secH);   // painted: SONIDO
 
-        juce::Slider* k1[3] = { &pitchSlider, &fineSlider, &volSlider };
-        juce::Slider* k2[3] = { &panSlider, &attackSlider, &releaseSlider };
-        placeKnobRow (inner.removeFromTop (86), k1);
-        placeKnobRow (inner.removeFromTop (86), k2);
+        //  Los 86 son el alto comodo de un mando con su nombre y su numero, y
+        //  no son un derecho: en apaisado la ficha se queda en 321 px y esta
+        //  pagina pide 373, asi que las dos filas de mandos se apretaban hasta
+        //  que la tercera - CHOKE, MODO, NORMALIZAR - se salia por abajo con
+        //  altura cero. Sale de lo que hay, con 60 de suelo.
+        {
+            const int forKnobs = inner.getHeight() - (16 + Metrics::hit);
+            const int knobH = juce::jlimit (60, 86, forKnobs / 2);
+            juce::Slider* k1[3] = { &pitchSlider, &fineSlider, &volSlider };
+            juce::Slider* k2[3] = { &panSlider, &attackSlider, &releaseSlider };
+            placeKnobRow (inner.removeFromTop (knobH), k1);
+            placeKnobRow (inner.removeFromTop (knobH), k2);
+        }
 
         //  A third row for the two controls that are not dials: CHOKE, which
         //  is a pair of increment buttons, and the tape/tone switch. Giving
@@ -3489,44 +3831,78 @@ void MainComponent::resized()
             layoutModuleBar (r3, r3b, 0, 2);
         }
 
-        inner.removeFromTop (Metrics::sm);
-        padSectionArea[1] = inner.removeFromTop (secH);   // painted: RECORTE
+        padSectionArea[1] = {};
+
+        padSectionArea[2] = {};
+        zatiSwatchArea = {};
+        editInfoArea = {};
+        }
+        else
+        {
+        //  RECORTE: la regla, la onda y las tres cosas que se le hacen a la
+        //  muestra que se esta mirando.
+        padSectionArea[0] = inner.removeFromTop (secH);   // pintado: RECORTE
+        padSectionArea[1] = {};
+        padSectionArea[2] = {};
 
         const int labelW = 64;
         auto ctrlRow = [&inner, labelW] (int h) { auto r = inner.removeFromTop (h); r.removeFromLeft (labelW); return r; };
         startSlider.setBounds (ctrlRow (34)); inner.removeFromTop (4);
         endSlider.setBounds   (ctrlRow (34)); inner.removeFromTop (8);
 
-        padSectionArea[2] = inner.removeFromTop (secH);   // painted: EL PAD
-        auto rr = inner.removeFromTop (Metrics::hit);
+        //  REV y LOOP viven aqui, con el recorte, y no en la barra de EL PAD:
+        //  las dos deciden COMO SE RECORRE el trozo que se acaba de marcar,
+        //  igual que START y END deciden cual es. Estaban al lado de AUTOCUT
+        //  y BOMBEO, que son cosas del pad y no de la muestra. QUITAR RUIDO va
+        //  con ellas por lo mismo: es de la muestra.
         {
-            juce::TextButton* pb[4] = { &reverseButton, &loopButton, &autocutButton, &duckButton };
-            layoutModuleBar (rr, pb, 0, 4);
+            auto rr = inner.removeFromTop (Metrics::hit);
+            juce::TextButton* pb[3] = { &reverseButton, &loopButton, &denoiseButton };
+            layoutModuleBar (rr, pb, 0, 3);
         }
-        inner.removeFromTop (5);
-        auto rr2 = inner.removeFromTop (Metrics::hit);
-        //  Three ways to put a sound on a pad, on one row: cut one you have,
-        //  record the room, or print what the machine is playing.
-        {
-            juce::TextButton* pb[3] = { &chopButton, &micButton, &resampleButton };
-            layoutModuleBar (rr2, pb, 0, 3);
-        }
-        inner.removeFromTop (5);
-
-        //  Colour is a TAG, not sound design, and it used to be the loudest
-        //  thing on this card: a full 44 px row with two stepper keys and a
-        //  bar of saturated colour across the middle, shouting over PITCH and
-        //  TRIM. It is eight swatches in a chip-high strip now - a third of
-        //  the height, none of the shouting, and one tap instead of stepping
-        //  round a ring of eight.
-        zatiSwatchArea = inner.removeFromTop (Metrics::chip).reduced (4, 0);
-        inner.removeFromTop (8);
+        inner.removeFromTop (Metrics::sm);
+        //  Las muestras de color son de la otra pagina. Sin borrarlo, la tira
+        //  se seguia pintando aqui - en las coordenadas donde estaba EN LA
+        //  OTRA PAGINA -, que es el fallo clasico de un area guardada en un
+        //  miembro y no vuelta a calcular.
+        zatiSwatchArea = {};
 
         //  The cut itself, with its fragments and its draggable trim handles.
         //  It used to be a painted, untouchable card here while the real one
         //  lived on the face; now the interactive one is where the editing is.
         editInfoArea = inner;
         waveform.setBounds (inner);
+
+        //  Las tres tapas del zoom, ENCIMA de la onda y pegadas a su esquina
+        //  de abajo a la derecha, que es la unica parte de la pantalla donde
+        //  no hay ni rotulo ni asa. Se colocan en coordenadas de la ficha
+        //  porque son hermanas de la onda, no hijas suyas: hijas, un arrastre
+        //  sobre ellas seria un arrastre sobre la onda.
+        {
+            //  Solo si queda pantalla debajo de ellas. En apaisado la ficha no
+            //  puede pasar de 321 px y a la onda le quedan 56: tres tapas de
+            //  40 encima de 56 no son un zoom, son una barra tapando lo unico
+            //  que se estaba mirando - y colocadas donde no caben, salen a
+            //  altura cero, que es un control que no se puede pulsar.
+            const bool room = inner.getHeight() >= 2 * Metrics::hit;
+            juce::TextButton* zb[3] = { &zoomOutButton, &zoomFitButton, &zoomInButton };
+            for (auto* b : zb) b->setVisible (room);
+
+            if (room)
+            {
+                auto strip = inner.removeFromBottom (Metrics::hit);
+                strip = Lang::takeEnd (strip, juce::jmin (3 * Metrics::hit + 2 * Metrics::halfGap,
+                                                          strip.getWidth()))
+                            .withTrimmedBottom (Metrics::halfGap);
+                const int w = juce::jmax (24, (strip.getWidth() - 2 * Metrics::halfGap) / 3);
+                for (int i = 0; i < 3; ++i)
+                {
+                    zb[i]->setBounds (Lang::takeStart (strip, w));
+                    if (i < 2) Lang::takeStart (strip, Metrics::halfGap);
+                }
+            }
+        }
+        }
     }
 
     // BROWSE sheet: the tallest of them all — the file list wants the room.
@@ -3886,67 +4262,69 @@ void MainComponent::resized()
     // pixel dentro de la costura de PADS. Ver XyPanel en la cabecera.
     if (xyPanel.isVisible() && ! faceTopArea.isEmpty())
     {
-        xyPanel.setBounds (faceTopArea);
+        //  EL PANEL SE QUEDA CON LO QUE USA, no con la mitad de la cara.
+        //
+        //  Antes ocupaba faceTopArea entera y centraba dentro un cuadrado del
+        //  lado menor: en un hueco de 380x700 eso son 380 de mando y 320 de
+        //  NADA, repartidos en dos franjas vacias, arriba y abajo. La foto que
+        //  lo enseno tenia el mando en la esquina de abajo a la izquierda y un
+        //  tercio del panel en blanco encima.
+        //
+        //  Ahora el lado del cuadrado sale del ancho -que es lo que sobra en
+        //  vertical- y la altura del panel sale del lado. Sin centrar, sin
+        //  hueco: si no cabe, el que se recorta es el mando.
+        const int fixed = 2 * Metrics::md          // margenes de arriba y abajo
+                        + Metrics::hit             // titulo
+                        + 14                       // que hace soltar el dedo
+                        + Metrics::sm
+                        + Metrics::hit             // los seis efectos, en UNA fila
+                        + Metrics::sm;
+        const int side = juce::jlimit (60,
+                                       juce::jmax (60, faceTopArea.getWidth() - 2 * Metrics::lg),
+                                       faceTopArea.getHeight() - fixed);
+        xyPanel.setBounds (faceTopArea.withHeight (juce::jmin (faceTopArea.getHeight(),
+                                                              fixed + side)));
 
-        constexpr int nameH = 14 + ZatiLookAndFeel::kTextPad;
         auto inner = xyPanel.getLocalBounds().reduced (Metrics::lg, Metrics::md);
 
         auto titleRow = inner.removeFromTop (Metrics::hit);
         xyCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
                                     .withSizeKeepingCentre (Metrics::hit, Metrics::hit));
+        Lang::takeEnd (titleRow, Metrics::xs);
+        //  MOMENTANEO / FIJO en la fila del titulo, no en una fila propia al
+        //  fondo: es un interruptor de dos estados y estaba gastando 40 px de
+        //  alto mas su rotulo para decir una palabra.
+        {
+            //  El hueco de la palabra son 2*md y no 2*sm: con 2*sm el banco
+            //  saco MOMENTANEO pidiendo 70 px de los 63 que le quedaban en las
+            //  siete pantallas. La fuente con la que se mide aqui no es
+            //  exactamente la que dibuja la tapa, asi que el margen se pone
+            //  por arriba y no se afina al pixel.
+            const auto capFont = ZatiColours::monoFont (11.0f, true).withExtraKerningFactor (0.06f);
+            const int w = juce::jlimit (88, juce::jmax (88, titleRow.getWidth() / 2),
+                                        (int) std::ceil (juce::GlyphArrangement::getStringWidth (
+                                            capFont, xyLatchButton.getButtonText())) + 2 * Metrics::md);
+            xyLatchButton.setBounds (Lang::takeEnd (titleRow, w).reduced (0, 2));
+        }
         inner.removeFromTop (14);              // pintado: que hace soltar el dedo
         inner.removeFromTop (Metrics::sm);
 
-        //  Los seis efectos y el modo van en columna al lado cuando hay ancho
-        //  de sobra, y apilados arriba y abajo cuando no. El criterio no es la
-        //  orientacion de la ventana sino la del HUECO: en vertical este panel
-        //  es alto y estrecho, y en horizontal es ancho y bajo.
-        const bool sideways = inner.getWidth() > inner.getHeight();
-        auto col = sideways ? Lang::takeEnd (inner, juce::jlimit (120, 200, inner.getWidth() / 3))
-                            : juce::Rectangle<int>();
-        if (sideways) Lang::takeEnd (inner, Metrics::gap);
-
+        //  Los seis, en una fila y del mismo ancho que los seis de la cara.
+        //  En dos columnas de tres al lado del mando eran una rejilla que hay
+        //  que leer; en fila son la misma barra que ya esta aprendida.
         {
-            auto& host = sideways ? col : inner;
-            if (sideways)
-            {
-                auto fxArea = host.removeFromTop (3 * (Metrics::hit + 2));
-                auto a = fxArea.removeFromLeft (fxArea.getWidth() / 2);
-                auto b = fxArea;
-                for (int f = 0; f < xyFxButtons.size(); ++f)
-                    xyFxButtons[f]->setBounds ((f < 3 ? a : b).removeFromTop (Metrics::hit + 2)
-                                                 .reduced (Metrics::halfGap / 2, 2));
-            }
-            else
-            {
-                auto row = host.removeFromTop (Metrics::hit);
-                for (int f = 0; f < xyFxButtons.size(); ++f)
-                    xyFxButtons[f]->setBounds (Lang::takeStart (row, row.getWidth() / (kNumFx - f))
-                                                 .reduced (Metrics::halfGap / 2, 2));
-            }
-            host.removeFromTop (Metrics::sm);
-        }
-
-        {
-            auto& host = sideways ? col : inner;
-            auto modeRow = host.removeFromBottom (Metrics::hit);
-            xyLatchButton.setBounds (modeRow.reduced (Metrics::halfGap, 2));
-            //  En coordenadas del PANEL, que es donde se pinta. Guardarlo en
-            //  las de la cara obligaba a descontar el origen al dibujarlo, y
-            //  esa resta es la clase de cosa que sobrevive hasta que alguien
-            //  mueve el panel.
-            xyLabelBand = host.removeFromBottom (nameH);
+            auto row = inner.removeFromTop (Metrics::hit);
+            for (int f = 0; f < xyFxButtons.size(); ++f)
+                xyFxButtons[f]->setBounds (Lang::takeStart (row, row.getWidth() / (kNumFx - f))
+                                             .reduced (Metrics::halfGap / 2, 2));
+            inner.removeFromTop (Metrics::sm);
         }
 
         //  Cuadrado: el lado es el menor de los dos que quedan. Es lo unico
         //  que este componente tiene que garantizar - si un eje se barre con un
         //  gesto y el otro con dos, los dos parametros no se tocan igual.
-        const int side = juce::jmax (60, juce::jmin (inner.getWidth(), inner.getHeight()));
-        xyPad.setBounds (inner.withSizeKeepingCentre (side, side));
-    }
-    else
-    {
-        xyLabelBand = {};
+        const int sq = juce::jmax (60, juce::jmin (inner.getWidth(), inner.getHeight()));
+        xyPad.setBounds (inner.withSizeKeepingCentre (sq, sq));
     }
 
     // SEC sheet, two pages: PASOS is the grid and what plays it; PASO is the
@@ -4010,7 +4388,8 @@ void MainComponent::resized()
             const int stepBands = nameH + Metrics::hit + Metrics::xs    // CADENA
                                 + bandH                                 // NOTA DEL PASO
                                 + bandH                                 // GOLPE
-                                + nameH + Metrics::hit;                 // SWING
+                                + nameH + Metrics::hit                  // SWING
+                                + Metrics::sm + nameH + Metrics::hit;   // REJILLA
             //  The line at the foot that says which step is being edited is
             //  laid out, not squeezed in under the last control: unbudgeted it
             //  was drawn straight across the swing slider's track.
@@ -4192,6 +4571,20 @@ void MainComponent::resized()
 
             nameBand (second, "SWING");
             swingSlider.setBounds (second.removeFromTop (Metrics::hit).reduced (Metrics::halfGap, 2));
+            second.removeFromTop (Metrics::sm);
+
+            nameBand (second, "REJILLA");
+            {
+                auto cell = second.removeFromTop (Metrics::hit).reduced (Metrics::halfGap, 2);
+                //  Las dos teclas primero, el numero con lo que quede: es la
+                //  misma reserva que CHOKE y que GOLPE, y por la misma razon -
+                //  sin ella JUCE apila el + sobre el - en cuanto la casilla se
+                //  come el ancho, y quedan dos rendijas de 17 px.
+                gridSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false,
+                                            juce::jmax (40, cell.getWidth() - Metrics::gap - 2 * Metrics::stepKey),
+                                            Metrics::readout);
+                gridSlider.setBounds (cell);
+            }
         }
     }
 }
@@ -4480,6 +4873,12 @@ void MainComponent::updateControlsFromPad (int index)
     panSlider.setValue     (padPan[(size_t) index],     juce::dontSendNotification);
     attackSlider.setValue  (padAttack[(size_t) index],  juce::dontSendNotification);
     releaseSlider.setValue (padRelease[(size_t) index], juce::dontSendNotification);
+    //  Los envios se leen del MOTOR, que es quien los guarda: el RACK mueve
+    //  los mismos seis numeros y una copia en la interfaz se quedaria vieja en
+    //  cuanto se tocaran desde alli.
+    for (int f = 0; f < padSends.size(); ++f)
+        if (auto* sl = padSends[f])
+            sl->setValue (engine.getPadSend (index, f), juce::dontSendNotification);
 }
 
 //  How long a pad's sound is, asked of the copy the INTERFACE holds.
@@ -4548,6 +4947,73 @@ void MainComponent::normalisePad()
     const bool capped = db >= kGainMaxDb - 0.05;
     status.setText ((capped ? T ("GANANCIA al tope: %1", Lang::ltr (gainText (db, true)))
                             : T ("Pico a -0.3 dBFS con %1", Lang::ltr (gainText (db, true)))),
+                    juce::dontSendNotification);
+}
+
+//  QUITAR RUIDO del pad que se esta mirando.
+//
+//  Sobre una COPIA. La muestra la puede estar leyendo el hilo de audio en este
+//  mismo instante, y ademas la pueden compartir varios pads si salio de un
+//  auto chop - escribir encima seria cambiarle el sonido a los otros quince
+//  sin avisar. Se copia, se limpia la copia y se publica por el mismo camino
+//  que usa un corte: intercambio de puntero, y el viejo lo suelta el
+//  temporizador en el hilo de mensajes.
+//
+//  El recorte se conserva. assignSampleToPad lo pone a 0..1 porque un buffer
+//  nuevo suele ser otro sonido; aqui es EL MISMO sonido con menos siseo y con
+//  exactamente la misma longitud, asi que perder el recorte seria perder el
+//  trabajo.
+void MainComponent::denoisePad()
+{
+    if (selectedPad < 0) return;
+    const size_t sp = (size_t) selectedPad;
+
+    auto src = uiSample[sp];
+    const int len = padSourceLength (selectedPad);
+    if (src == nullptr || len <= 0)
+    {
+        status.setText (T ("El pad %1 no tiene sonido", juce::String (selectedPad + 1)),
+                        juce::dontSendNotification);
+        return;
+    }
+    //  Menos de 2048 muestras son 46 ms: no hay ventanas suficientes para
+    //  estimar un perfil, y lo que saldria seria la propia muestra tomada por
+    //  ruido.
+    if (len < 2048)
+    {
+        status.setText (T ("La muestra es demasiado corta para medir el ruido"),
+                        juce::dontSendNotification);
+        return;
+    }
+
+    pushUndo (T ("QUITAR RUIDO"));
+
+    SampleBuffer::Ptr clean = new SampleBuffer();
+    clean->buffer.makeCopyOf (src->buffer);
+    clean->sourceSampleRate = src->sourceSampleRate;
+
+    const float before = clean->buffer.getMagnitude (0, len);
+    Denoise::process (clean->buffer, 0.6f);
+    const float after = clean->buffer.getMagnitude (0, len);
+
+    const float keepStart = padStart01[sp], keepEnd = padEnd01[sp];
+    const juce::String keepName = padName[sp];
+
+    assignSampleToPad (selectedPad, clean, {});
+    padName[sp]    = keepName;
+    padStart01[sp] = keepStart;
+    padEnd01[sp]   = keepEnd;
+    engine.setPadStart (selectedPad, (int) (keepStart * (float) len));
+    engine.setPadEnd   (selectedPad, (int) (keepEnd   * (float) len));
+    if (auto* p = pads[selectedPad])
+        p->setSampleInfo (uiSample[sp], padName[sp], padStart01[sp], padEnd01[sp]);
+    selectPad (selectedPad);
+
+    //  Se dice cuanto ha bajado el pico, que es la unica forma de saber si ha
+    //  hecho algo sin volver a escucharlo entero.
+    const double db = juce::Decibels::gainToDecibels ((double) juce::jmax (1.0e-6f, after)
+                                                    / (double) juce::jmax (1.0e-6f, before), -60.0);
+    status.setText (T ("Ruido fuera - pico %1 dB", Lang::ltr (juce::String (db, 1))),
                     juce::dontSendNotification);
 }
 
@@ -4677,11 +5143,19 @@ void MainComponent::refreshAccessibleNames()
                      Named { bpmSlider,     "Tempo|nombre", "pulsos por minuto" },
                      Named { patternSlider, "Patron",    "del secuenciador" },
                      Named { noteSlider,    "Nota",      "del paso" },
-                     Named { lengthSlider,  "Compases",  "del patron" } })
+                     Named { lengthSlider,  "Compases",  "del patron" },
+                     Named { gridSlider,    "Rejilla",   "cuanto dura un paso" } })
     {
         n.s.setTitle (T (n.title));
         n.s.setDescription (T (n.what));
     }
+
+    for (int f = 0; f < padSends.size(); ++f)
+        if (auto* sl = padSends[f])
+        {
+            sl->setTitle (T ("Envio a %1", T (fxDefs[f].name)));
+            sl->setDescription (T ("del pad"));
+        }
 
     juce::Slider* macros[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
     for (int i = 0; i < 3; ++i)
@@ -4743,6 +5217,10 @@ void MainComponent::retranslateUi()
     autocutButton.setButtonText (T ("AUTOCUT"));
     duckButton   .setButtonText (T ("BOMBEO"));
     normButton   .setButtonText (T ("NORMALIZAR"));
+    padSoundBtn  .setButtonText (T ("SONIDO"));
+    padTrimBtn   .setButtonText (T ("RECORTE"));
+    padRigBtn    .setButtonText (T ("EL PAD"));
+    denoiseButton.setButtonText (T ("QUITAR RUIDO"));
     chopButton   .setButtonText (T ("AUTO CHOP"));
     micButton    .setButtonText (recordingActive ? T ("PARAR") : T ("GRABAR MIC"));
     resampleButton.setButtonText (resamplingActive ? T ("PARAR") : T ("REMUESTREAR"));
@@ -5307,6 +5785,10 @@ juce::ValueTree MainComponent::captureState() const
     }
     s.setProperty ("version", 1, nullptr);
     s.setProperty ("swing", engine.getSwing(), nullptr);
+    //  Se guarda el INDICE y no las negras por paso: un float en un fichero de
+    //  proyecto que luego hay que volver a casar con uno de los cinco valores
+    //  es una comparacion de flotantes esperando a fallar por un bit.
+    s.setProperty ("gridres", (int) gridSlider.getValue(), nullptr);
     s.setProperty ("bpm", bpmSlider.getValue(), nullptr);
     //  The skin is deliberately NOT captured: it belongs to the person, not
     //  to the song. Old projects that carry one are simply ignored.
@@ -5413,6 +5895,7 @@ void MainComponent::applyState (const juce::ValueTree& s)
     //  Straight is the default, so a project written before swing existed
     //  comes back playing exactly as it did.
     swingSlider.setValue ((double) s.getProperty ("swing", 0.5) * 100.0, juce::sendNotification);
+    gridSlider.setValue ((double) (int) s.getProperty ("gridres", 2), juce::sendNotification);
 
     if (auto fx = s.getChildWithName ("FX"); fx.isValid())
     {
@@ -5951,9 +6434,16 @@ void MainComponent::paintXySheetContent (juce::Graphics& g)
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
-    g.drawText (T ("XY") + "  " + dot + "  " + juce::String (fxDefs[xyFx].name)
-                  + "  " + dot + "  " + (fxOn[(size_t) xyFx] ? T ("SUENA") : T ("EN ESPERA")),
-                inner.removeFromTop (16), Lang::start());
+    //  Se para antes del interruptor, que ahora comparte fila con el. Sin el
+    //  tope, "XY - DLY - EN ESPERA" en arabe pasa por debajo de MOMENTANEO.
+    {
+        auto row = inner.removeFromTop (16);
+        if (xyLatchButton.isVisible() && ! xyLatchButton.getBounds().isEmpty())
+            row.setRight (juce::jmin (row.getRight(), xyLatchButton.getX() - Metrics::xs));
+        g.drawText (T ("XY") + "  " + dot + "  " + juce::String (fxDefs[xyFx].name)
+                      + "  " + dot + "  " + (fxOn[(size_t) xyFx] ? T ("SUENA") : T ("EN ESPERA")),
+                    row, Lang::start(), true);
+    }
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
@@ -5961,12 +6451,6 @@ void MainComponent::paintXySheetContent (juce::Graphics& g)
                         : T ("entra al tocar y sale al soltar"),
                 inner.removeFromTop (14), Lang::start());
 
-    if (! xyLabelBand.isEmpty())
-    {
-        g.setColour (ZatiColours::inkDim);
-        g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.20f));
-        g.drawText (T ("MODO"), xyLabelBand.translated (2, 0), Lang::start());
-    }
 }
 
 void MainComponent::paintChopSheetContent (juce::Graphics& g)
@@ -7056,7 +7540,9 @@ void MainComponent::auditOpen (const juce::String& which)
 
     if (which.isEmpty()) return;
 
-    if      (which == "pads") openSheet (padSheet,  padsButton);
+    if      (which == "pads") { showPadPage (padPageSound); openSheet (padSheet, padsButton); }
+    else if (which == "pad2") { showPadPage (padPageTrim);  openSheet (padSheet, padsButton); }
+    else if (which == "pad3") { showPadPage (padPageRig);   openSheet (padSheet, padsButton); }
     else if (which == "sec")  { showSeqPage (seqPageGrid); openSheet (seqSheet, secButton); }
     else if (which == "xy")   { closeAllSheets(); toggleXyPanel(); }
     else if (which == "paso") { showSeqPage (seqPageStep); openSheet (seqSheet, secButton); }

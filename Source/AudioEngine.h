@@ -363,6 +363,15 @@ public:
     void setDuckRelease (float ms) noexcept { duckRel.store (ms, std::memory_order_relaxed); }
     float getDuckRelease()   const noexcept { return duckRel.load (std::memory_order_relaxed); }
 
+    //  LA REJILLA: cuanto dura un paso, medido en negras. 0.25 son
+    //  semicorcheas, que es lo que habia y sigue siendo lo normal; 1/6 y 1/12
+    //  son los tresillos, que antes no se podian escribir de ninguna manera.
+    //  Es del transporte entero y no de cada patron, igual que el tempo: dos
+    //  patrones encadenados con rejillas distintas no son un groove, son un
+    //  fallo de sincronia esperando a que alguien encadene.
+    void  setStepBeats (float b) noexcept { stepBeats.store (juce::jlimit (0.02f, 4.0f, b), std::memory_order_relaxed); }
+    float getStepBeats() const noexcept   { return stepBeats.load (std::memory_order_relaxed); }
+
     void setLiveQuantise (bool on) noexcept { liveQuant.store (on, std::memory_order_relaxed); }
     bool getLiveQuantise() const noexcept { return liveQuant.load (std::memory_order_relaxed); }
 
@@ -606,8 +615,12 @@ private:
     double samplesPerStepNow() const noexcept
     {
         const double bpmNow = juce::jmax (20.0, (double) bpm.load (std::memory_order_relaxed));
-        return juce::jmax (1.0, (60.0 / bpmNow) * 0.25 * systemSampleRate);
+        return juce::jmax (1.0, (60.0 / bpmNow)
+                                * (double) stepBeats.load (std::memory_order_relaxed)
+                                * systemSampleRate);
     }
+    //  Negras por paso. Ver setStepBeats.
+    std::atomic<float> stepBeats { 0.25f };
     float masterGain = 1.0f;
 
     std::array<std::atomic<float>, kNumPads> padGain {};

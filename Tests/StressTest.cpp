@@ -8,6 +8,7 @@
 // block that took longer than it had.
 #include <JuceHeader.h>
 #include "../Source/AudioEngine.h"
+#include "../Source/Denoise.h"
 #include <chrono>
 #include <cstdio>
 
@@ -299,6 +300,66 @@ int main()
                      "reverb FDN (impulso)", t60, peak,
                      nan ? "SI" : "no", grew ? "SI" : "no",
                      (! nan && ! grew && t60 > 0.15 && t60 < 12.0) ? "OK" : "FALLA");
+    }
+
+    //  QUITAR RUIDO, medido y no mirado.
+    //
+    //  Una limpieza se juzga por dos numeros a la vez, y por eso hay dos
+    //  sondas: cuanto baja el suelo donde solo hay ruido, y cuanto sobrevive
+    //  el sonido donde si hay algo. Solo el primero se puede sacar con un
+    //  silenciador, y solo el segundo con no hacer nada.
+    {
+        constexpr double fs = 48000.0;
+        constexpr int len = 48000;               // un segundo
+        juce::AudioBuffer<float> b (1, len);
+        juce::Random rnd (20260811);
+        float* d = b.getWritePointer (0);
+
+        //  Medio segundo de siseo solo, y medio de siseo con un tono encima.
+        //  El tono a 0.5 y el ruido a 0.03 son -24 dB de relacion, que es una
+        //  grabacion de telefono mala pero no perdida.
+        for (int i = 0; i < len; ++i)
+        {
+            const float noise = 0.03f * (rnd.nextFloat() * 2.0f - 1.0f);
+            const float tone  = (i >= len / 2)
+                                  ? 0.5f * std::sin (2.0 * juce::MathConstants<double>::pi * 440.0 * i / fs)
+                                  : 0.0f;
+            d[i] = noise + tone;
+        }
+
+        auto rms = [] (const juce::AudioBuffer<float>& buf, int from, int n)
+        {
+            double acc = 0.0;
+            for (int i = 0; i < n; ++i) { const double v = buf.getSample (0, from + i); acc += v * v; }
+            return std::sqrt (acc / juce::jmax (1, n));
+        };
+
+        //  Lejos de la costura: la ventana que cae a caballo entre el silencio
+        //  y el tono tiene las dos cosas dentro, y medirla ahi seria medir el
+        //  desenfoque de la ventana en vez de la limpieza.
+        const double floorBefore = rms (b, 2000, 20000);
+        const double toneBefore  = rms (b, len / 2 + 4000, 20000);
+
+        const auto t0 = std::chrono::steady_clock::now();
+        Denoise::process (b, 0.6f);
+        const double ms = std::chrono::duration<double, std::milli> (std::chrono::steady_clock::now() - t0).count();
+
+        const double floorAfter = rms (b, 2000, 20000);
+        const double toneAfter  = rms (b, len / 2 + 4000, 20000);
+
+        const double cut  = 20.0 * std::log10 (juce::jmax (1.0e-9, floorAfter) / juce::jmax (1.0e-9, floorBefore));
+        const double keep = 20.0 * std::log10 (juce::jmax (1.0e-9, toneAfter)  / juce::jmax (1.0e-9, toneBefore));
+
+        bool nan = false;
+        for (int i = 0; i < len; ++i) if (! std::isfinite (b.getSample (0, i))) { nan = true; break; }
+
+        //  Pide 12 dB de suelo fuera y menos de 1.5 dB perdidos en el tono. La
+        //  segunda condicion es la que importa: una limpieza que baja 40 dB y
+        //  se lleva el sonido por delante no es una limpieza.
+        std::printf ("%-34s suelo %+.1f dB   tono %+.2f dB   NaN %s   %.0f ms/s   %s\n",
+                     "quitar ruido (siseo + tono)", cut, keep,
+                     nan ? "SI" : "no", ms,
+                     (! nan && cut < -12.0 && keep > -1.5) ? "OK" : "FALLA");
     }
 
     return 0;
