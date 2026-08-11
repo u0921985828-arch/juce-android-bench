@@ -16,6 +16,10 @@ JuceLibraryCode/
 *.apk
 *.aab
 
+# Las imagenes de la ficha de Play: las hace Tests/store.py en un minuto,
+# asi que la fuente es el script y no 34 PNG en el historial.
+/store/
+
 # Local validation scaffolding (not part of the repo)
 JUCE
 pjbuild/

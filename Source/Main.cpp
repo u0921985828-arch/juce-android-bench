@@ -3,6 +3,7 @@
 #include "Lang.h"
 #include "ProjectStore.h"
 #include "UiAudit.h"
+#include "StoreArt.h"
 
 //  Storage for the two Oboe dials declared in AudioPath.h. They live here so
 //  that the patched JUCE module finds them at link time on Android, and so
@@ -47,6 +48,18 @@ public:
         }
 
         mainWindow = std::make_unique<MainWindow> (getApplicationName());
+
+        //  El banner de la ficha no necesita ni ventana ni maquetado: se
+        //  dibuja, se escribe y se sale.
+        if (const auto banner = UiAudit::env ("ZATI_BANNER"); banner.isNotEmpty())
+        {
+            const auto size = UiAudit::env ("ZATI_BANNER_SIZE");
+            const int bw = size.contains ("x") ? size.upToFirstOccurrenceOf ("x", false, false).getIntValue() : 1024;
+            const int bh = size.contains ("x") ? size.fromFirstOccurrenceOf ("x", false, false).getIntValue() : 500;
+            StoreArt::writeFeature (banner, juce::jmax (16, bw), juce::jmax (16, bh));
+            quit();
+            return;
+        }
 
         if (UiAudit::enabled())
             startAudit();
@@ -98,6 +111,12 @@ public:
                 cc->appResumed();
             }
 
+            //  El trabajo de mentira ANTES de abrir la ficha: cargar doce
+            //  pads mueve la seleccion y vuelve a maquetar, y hacerlo despues
+            //  dejaba la ficha abierta sobre un estado que ya no era el suyo.
+            if (UiAudit::env ("ZATI_DEMO").isNotEmpty())
+                cc->auditDemo();
+
             cc->auditOpen (UiAudit::env ("ZATI_OPEN"));
 
             juce::Timer::callAfterDelay (400, [this]
@@ -105,7 +124,21 @@ public:
                 if (auto* c2 = content())
                 {
                     c2->resized();
-                    UiAudit::dump (*c2);
+
+                    //  UNA FOTO, si la piden. Se saca del componente y no de
+                    //  la pantalla del sistema: en el banco no hay pantalla, y
+                    //  una captura del escritorio traeria el marco de la
+                    //  ventana y el fondo del gestor.
+                    const auto shot = UiAudit::env ("ZATI_SHOT");
+                    if (shot.isNotEmpty())
+                    {
+                        const double s = UiAudit::env ("ZATI_SHOT_SCALE").getDoubleValue();
+                        UiAudit::snapshot (*c2, shot, s > 0.05 ? (float) s : 1.0f);
+                    }
+                    else
+                    {
+                        UiAudit::dump (*c2);
+                    }
                 }
                 quit();
             });

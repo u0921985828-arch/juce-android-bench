@@ -29,12 +29,36 @@
 //      ZATI_LANG=es|en|zh|ar     in this language
 //      ZATI_OPEN=pads|sec|paso|...  with this sheet open
 //      ZATI_CYCLE=3              suspend and resume this many times first
+//      ZATI_DEMO=1               con doce pads cargados y un patron escrito
+//      ZATI_SHOT=x.png           saca una foto en vez de un volcado
+//      ZATI_SHOT_SCALE=2.62      a esta escala
 // ============================================================================
 namespace UiAudit
 {
     inline bool enabled()  { return juce::SystemStats::getEnvironmentVariable ("ZATI_AUDIT", {}).isNotEmpty(); }
 
     inline juce::String env (const char* k) { return juce::SystemStats::getEnvironmentVariable (k, {}); }
+
+    //  UNA FOTO DEL COMPONENTE, a la escala que se pida.
+    //
+    //  A escala 1 la foto sale con los pixeles logicos - 412 de ancho - y Play
+    //  pide como minimo 320 en el lado corto, asi que pasaria por los pelos y
+    //  se veria como un movil de 2012. Pintar a escala 2.6 no estira una
+    //  imagen: vuelve a dibujar los vectores, las fuentes y los degradados a
+    //  1080 de ancho, que es lo que hace que un rotulo se lea en la ficha.
+    inline void snapshot (juce::Component& c, const juce::String& path, float scale)
+    {
+        const auto img = c.createComponentSnapshot (c.getLocalBounds(), false, scale);
+        juce::File f (path);
+        f.getParentDirectory().createDirectory();
+        f.deleteFile();
+
+        juce::FileOutputStream out (f);
+        if (! out.openedOk()) return;
+        juce::PNGImageFormat png;
+        png.writeImageToStream (img, out);
+        out.flush();
+    }
 
     inline juce::String esc (const juce::String& s)
     {

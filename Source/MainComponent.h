@@ -356,6 +356,10 @@ public:
     //  and clicking synthetic mouse events at guessed coordinates is exactly
     //  the kind of test that passes because it missed.
     void auditOpen (const juce::String& which);
+    //  Una maquina con trabajo dentro, para las fotos de la ficha de Play.
+    //  Solo se llama desde el arranque de auditoria: una caja vacia enseña
+    //  dieciseis huecos grises y no dice nada de lo que hace la app.
+    void auditDemo();
 
 private:
     void autosave();

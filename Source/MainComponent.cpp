@@ -7531,6 +7531,126 @@ void MainComponent::toggleRecordArm()
 //  which is why stopping here also covers the case that reads worst in a demo:
 //  ZATI playing on top of a call.
 // ============================================================================
+//  UNA MAQUINA CON TRABAJO DENTRO.
+//
+//  Las fotos de la ficha de Play tienen que enseñar lo que hace la caja, y una
+//  caja recien abierta son dieciseis huecos grises, una onda vacia y una
+//  rejilla en blanco. Esto le pone doce sonidos sinteticos con sus nombres,
+//  sus colores y un patron escrito, que es el estado en el que la app se usa.
+//
+//  Sinteticos y no grabados: un WAV de verdad en el repositorio es peso, es
+//  una licencia que aclarar y es una foto que deja de poder rehacerse en
+//  cuanto el fichero se mueve. Estos salen de cuatro lineas de matematicas y
+//  suenan de verdad - se pueden disparar en la foto y en la app.
+//
+//  Solo desde el arranque de auditoria. No hay ningun camino desde la interfaz
+//  que llegue aqui.
+void MainComponent::auditDemo()
+{
+    struct Piece { const char* name; int zati; int kind; float hz; float decay; };
+    //  kind 0 = golpe con tono que cae, 1 = ruido con cuerpo, 2 = ruido corto,
+    //  3 = nota mantenida. Doce piezas: una caja de ritmos con su bajo y sus
+    //  acordes, que es lo que se monta de verdad.
+    //  Dieciseis y no doce: la rejilla que se ve en la foto tiene dieciseis
+    //  huecos y cuatro vacios al fondo se leen como una app a medio hacer.
+    static const Piece kit[16] =
+    {
+        { "KICK",  0, 0,  58.0f, 0.30f }, { "SNARE", 1, 1, 190.0f, 0.16f },
+        { "HAT",   2, 2,   0.0f, 0.04f }, { "CLAP",  3, 1, 320.0f, 0.12f },
+        { "RIM",   4, 2,   0.0f, 0.03f }, { "TOM",   5, 0, 120.0f, 0.22f },
+        { "BASS",  6, 3,  55.0f, 0.45f }, { "CHORD", 7, 3, 220.0f, 0.60f },
+        { "PERC",  1, 2,   0.0f, 0.06f }, { "RIDE",  2, 2,   0.0f, 0.25f },
+        { "VOX",   3, 3, 330.0f, 0.35f }, { "SUB",   6, 0,  42.0f, 0.40f },
+        { "STAB",  5, 3, 440.0f, 0.28f }, { "SHAKE", 4, 2,   0.0f, 0.05f },
+        { "CONGA", 0, 0, 180.0f, 0.18f }, { "PAD",   7, 3, 165.0f, 0.80f }
+    };
+
+    juce::Random rnd (404);
+    constexpr double fs = 44100.0;
+
+    for (int i = 0; i < 16; ++i)
+    {
+        const auto& p = kit[(size_t) i];
+        const int len = juce::jmax (1024, (int) (fs * (p.decay * 2.5f)));
+
+        SampleBuffer::Ptr sb = new SampleBuffer();
+        sb->sourceSampleRate = fs;
+        sb->buffer.setSize (1, len);
+        float* d = sb->buffer.getWritePointer (0);
+
+        double ph = 0.0;
+        for (int n = 0; n < len; ++n)
+        {
+            const float t   = (float) n / (float) fs;
+            const float env = std::exp (-t / juce::jmax (0.005f, p.decay));
+            float v = 0.0f;
+
+            switch (p.kind)
+            {
+                case 0:   // el tono baja mientras cae: eso es un bombo
+                {
+                    const double f = p.hz * (1.0 + 1.6 * std::exp (-t / 0.03f));
+                    ph += 2.0 * juce::MathConstants<double>::pi * f / fs;
+                    v = std::sin ((float) ph) * env;
+                    break;
+                }
+                case 1:   // ruido con un cuerpo afinado debajo
+                    ph += 2.0 * juce::MathConstants<double>::pi * p.hz / fs;
+                    v = (0.6f * (rnd.nextFloat() * 2.0f - 1.0f) + 0.4f * std::sin ((float) ph)) * env;
+                    break;
+                case 2:   // ruido a secas, y la diferencia lo aclara
+                    v = (rnd.nextFloat() * 2.0f - 1.0f) * env;
+                    break;
+                default:  // nota mantenida con dos armonicos
+                    ph += 2.0 * juce::MathConstants<double>::pi * p.hz / fs;
+                    v = (std::sin ((float) ph) + 0.4f * std::sin (2.0f * (float) ph)
+                                               + 0.2f * std::sin (3.0f * (float) ph)) * env * 0.5f;
+                    break;
+            }
+            d[n] = juce::jlimit (-0.98f, 0.98f, v * 0.9f);
+        }
+
+        //  El charles y el rim se aclaran con una diferencia de primer orden,
+        //  que es un paso alto de un polo y cuesta una resta.
+        if (p.kind == 2)
+            for (int n = len - 1; n > 0; --n) d[n] = 0.7f * (d[n] - d[n - 1]);
+
+        assignSampleToPad (i, sb, {});
+        padName[(size_t) i] = kit[(size_t) i].name;
+        padZati[(size_t) i] = kit[(size_t) i].zati;
+        if (auto* pad = pads[i])
+            pad->setSampleInfo (uiSample[(size_t) i], padName[(size_t) i],
+                                padStart01[(size_t) i], padEnd01[(size_t) i]);
+    }
+
+    //  Y un patron escrito: cuatro por cuatro con el charles a corcheas y la
+    //  caja en el dos y el cuatro. Una rejilla vacia no enseña un secuenciador.
+    static const int kicks[]  = { 0, 6, 8, 14 };
+    static const int snares[] = { 4, 12 };
+    static const int hats[]   = { 0, 2, 4, 6, 8, 10, 12, 14 };
+    static const int bass[]   = { 0, 3, 8, 11 };
+    //  En el MOTOR y en el espejo de la interfaz. La rejilla dibuja desde
+    //  pattern[][][], no desde el motor, asi que escribir solo en el motor
+    //  dejaba la foto del secuenciador con la rejilla VACIA - un patron que
+    //  suena y no se ve.
+    auto write = [this] (const int* steps, int n, int pad)
+    {
+        for (int i = 0; i < n; ++i)
+        {
+            engine.setStep (0, steps[i], pad, true);
+            pattern[0][(size_t) steps[i]][(size_t) pad] = true;
+        }
+    };
+    write (kicks,  (int) (sizeof (kicks)  / sizeof (int)), 0);
+    write (snares, (int) (sizeof (snares) / sizeof (int)), 1);
+    write (hats,   (int) (sizeof (hats)   / sizeof (int)), 2);
+    write (bass,   (int) (sizeof (bass)   / sizeof (int)), 6);
+    refreshStepGrid();
+
+    selectPad (0);
+    repaint();
+}
+
 void MainComponent::auditOpen (const juce::String& which)
 {
     //  Let the bench ask the ENGINE what it is holding, not just the tile.
