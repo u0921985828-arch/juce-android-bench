@@ -22,6 +22,7 @@ public:
         //  recorte -que quedan fuera de pantalla- y sin nada que dijese por
         //  que. Se reinicia cuando cambia el buffer, no en cada llamada: si es
         //  la misma muestra, el zoom que habias puesto se queda donde estaba.
+        forgetTouches();
         if (sample != sb) { zoom = 1.0f; view0 = 0.0f; if (onZoomChanged) onZoomChanged (zoom); }
         sample = sb;
         computeMinMax();
@@ -221,7 +222,13 @@ public:
         //  asi que el segundo levantamiento tampoco suena.
         if (wasPinch)
         {
-            if (numTouches() == 0) pinching = false;
+            //  El pellizco termina en cuanto quedan menos de dos dedos, no
+            //  cuando se levantan los dos. Si un mouseUp se pierde - y se
+            //  pierde: basta con que la ficha se cierre a media pinza, o que
+            //  Android cancele el gesto - la marca se quedaba puesta para
+            //  siempre y la onda dejaba de responder a los arrastres, sin nada
+            //  que lo explicara y sin forma de recuperarla salvo reiniciar.
+            if (numTouches() < 2) pinching = false;
             dragging = 0;
             panned = false;
             return;
@@ -466,6 +473,20 @@ public:
     }
 
     void resized() override { computeMinMax(); repaint(); }
+
+    //  Cambiar de pagina, cerrar la ficha o girar el telefono son tres formas
+    //  de que un dedo desaparezca sin soltar. Cualquiera de ellas borra el
+    //  gesto: lo que no puede pasar es que el componente vuelva convencido de
+    //  que sigue habiendo dos dedos encima.
+    void visibilityChanged() override { forgetTouches(); }
+
+    void forgetTouches() noexcept
+    {
+        for (auto& t : touches) { t.down = false; t.id = -1; }
+        pinching = false;
+        dragging = 0;
+        panned   = false;
+    }
 
 private:
     juce::Rectangle<float> waveArea() const

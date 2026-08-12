@@ -5017,35 +5017,68 @@ void MainComponent::denoisePad()
         return;
     }
 
+    //  UNA VEZ, Y EN OTRO HILO.
+    //
+    //  La resta espectral recorre el fichero entero dos veces y guarda el
+    //  espectro de cada ventana: 7 ms por segundo de audio medidos en el banco.
+    //  Con una muestra de cinco minutos son 2.1 s con la interfaz congelada y
+    //  con una de veinte, ocho - y Android saca el cartel de "la aplicacion no
+    //  responde" a los cinco. Se copia aqui, se limpia alli, y se vuelve.
+    if (denoiseBusy) return;
+    denoiseBusy = true;
+    denoiseButton.setEnabled (false);
+    status.setText (T ("Quitando ruido..."), juce::dontSendNotification);
+
     pushUndo (T ("QUITAR RUIDO"));
 
     SampleBuffer::Ptr clean = new SampleBuffer();
     clean->buffer.makeCopyOf (src->buffer);
     clean->sourceSampleRate = src->sourceSampleRate;
 
-    const float before = clean->buffer.getMagnitude (0, len);
-    Denoise::process (clean->buffer, 0.6f);
-    const float after = clean->buffer.getMagnitude (0, len);
-
+    const int  pad       = selectedPad;
+    const auto keepSrc   = src;                       // para saber si sigue ahi al volver
     const float keepStart = padStart01[sp], keepEnd = padEnd01[sp];
     const juce::String keepName = padName[sp];
 
-    assignSampleToPad (selectedPad, clean, {});
-    padName[sp]    = keepName;
-    padStart01[sp] = keepStart;
-    padEnd01[sp]   = keepEnd;
-    engine.setPadStart (selectedPad, (int) (keepStart * (float) len));
-    engine.setPadEnd   (selectedPad, (int) (keepEnd   * (float) len));
-    if (auto* p = pads[selectedPad])
-        p->setSampleInfo (uiSample[sp], padName[sp], padStart01[sp], padEnd01[sp]);
-    selectPad (selectedPad);
+    denoisePool.addJob ([this, clean, keepSrc, pad, len, keepStart, keepEnd, keepName]
+    {
+        const float before = clean->buffer.getMagnitude (0, len);
+        Denoise::process (clean->buffer, 0.6f);
+        const float after = clean->buffer.getMagnitude (0, len);
 
-    //  Se dice cuanto ha bajado el pico, que es la unica forma de saber si ha
-    //  hecho algo sin volver a escucharlo entero.
-    const double db = juce::Decibels::gainToDecibels ((double) juce::jmax (1.0e-6f, after)
-                                                    / (double) juce::jmax (1.0e-6f, before), -60.0);
-    status.setText (T ("Ruido fuera - pico %1 dB", Lang::ltr (juce::String (db, 1))),
-                    juce::dontSendNotification);
+        juce::MessageManager::callAsync ([this, clean, keepSrc, pad, len, keepStart, keepEnd, keepName, before, after]
+        {
+            denoiseBusy = false;
+            denoiseButton.setEnabled (true);
+
+            //  Si mientras tanto ese pad ha cambiado de sonido, lo limpiado ya
+            //  no es de nadie: se tira. Pisarlo seria devolverle a la persona
+            //  el sonido que acaba de quitar.
+            if (! juce::isPositiveAndBelow (pad, kNumPads) || uiSample[(size_t) pad] != keepSrc)
+            {
+                status.setText (T ("El pad cambio mientras se limpiaba"), juce::dontSendNotification);
+                return;
+            }
+
+            assignSampleToPad (pad, clean, {});
+            padName[(size_t) pad]    = keepName;
+            padStart01[(size_t) pad] = keepStart;
+            padEnd01[(size_t) pad]   = keepEnd;
+            engine.setPadStart (pad, (int) (keepStart * (float) len));
+            engine.setPadEnd   (pad, (int) (keepEnd   * (float) len));
+            if (auto* p = pads[pad])
+                p->setSampleInfo (uiSample[(size_t) pad], padName[(size_t) pad],
+                                  padStart01[(size_t) pad], padEnd01[(size_t) pad]);
+            selectPad (pad);
+
+            //  Se dice cuanto ha bajado el pico, que es la unica forma de saber
+            //  si ha hecho algo sin volver a escucharlo entero.
+            const double db = juce::Decibels::gainToDecibels ((double) juce::jmax (1.0e-6f, after)
+                                                            / (double) juce::jmax (1.0e-6f, before), -60.0);
+            status.setText (T ("Ruido fuera - pico %1 dB", Lang::ltr (juce::String (db, 1))),
+                            juce::dontSendNotification);
+        });
+    });
 }
 
 int MainComponent::padSourceLength (int pad) const

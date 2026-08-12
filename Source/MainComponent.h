@@ -866,6 +866,12 @@ private:
     //  audio nunca ve un buffer a medio escribir.
     juce::TextButton denoiseButton { "QUITAR RUIDO" };
     void denoisePad();
+    //  Un hilo para limpiar, porque la limpieza NO cabe en el hilo de la
+    //  interfaz: son 7 ms por segundo de audio medidos en el banco, o sea 2.1 s
+    //  con una muestra de cinco minutos y ocho con una de veinte. Android
+    //  ensena el cartel de "la aplicacion no responde" a los cinco.
+    juce::ThreadPool denoisePool { 1 };
+    bool denoiseBusy = false;
 
     //  Los tres del zoom, encima de la propia onda y no en una fila suya: la
     //  ficha ya iba justa de alto y una fila mas se la habria quitado a lo
