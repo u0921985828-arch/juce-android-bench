@@ -1674,8 +1674,25 @@ MainComponent::MainComponent()
     {
         juce::TextButton* zb[3] = { &zoomOutButton, &zoomFitButton, &zoomInButton };
         for (auto* b : zb) { styleButton (*b, kKey); padSheet.addAndMakeVisible (b); }
-        zoomOutButton.onClick = [this] { waveform.setZoom (waveform.getZoom() * 0.5f, waveform.viewCentre()); };
-        zoomInButton .onClick = [this] { waveform.setZoom (waveform.getZoom() * 2.0f, waveform.viewCentre()); };
+        //  SE AMPLIA SOBRE EL RECORTE, no sobre lo que se este mirando.
+        //
+        //  Ampliar alrededor del centro de la vista es lo que hace un visor de
+        //  fotos, y aqui no se esta mirando una foto: se esta buscando DONDE
+        //  CORTAR. Con veinte segundos de muestra y el trozo bueno en el
+        //  segundo trece, cada toque de + dejaba el trozo un poco mas fuera de
+        //  pantalla y habia que volver a arrastrar - el zoom daba mas detalle
+        //  de justo lo que no importaba.
+        //
+        //  El ancla es el punto medio entre las dos asas, que es la definicion
+        //  de "la parte que estoy recortando". El pellizco conserva la suya -
+        //  el punto entre los dos dedos -, porque ahi el dedo SI dice donde.
+        auto trimCentre = [this]
+        {
+            if (selectedPad < 0) return 0.5f;
+            return (padStart01[(size_t) selectedPad] + padEnd01[(size_t) selectedPad]) * 0.5f;
+        };
+        zoomOutButton.onClick = [this, trimCentre] { waveform.setZoom (waveform.getZoom() * 0.5f, trimCentre()); };
+        zoomInButton .onClick = [this, trimCentre] { waveform.setZoom (waveform.getZoom() * 2.0f, trimCentre()); };
         //  Vuelve al fichero entero, y si ya esta entero salta al recorte: es
         //  el boton que se pulsa cuando te has perdido, y "perdido" tiene esas
         //  dos formas.
@@ -7674,8 +7691,23 @@ void MainComponent::auditDemo()
 
     //  Y con el aumento puesto, si el banco lo pide: la unica forma de mirar
     //  una foto del zoom es que la sonda pueda ponerlo.
+    if (const auto tr = UiAudit::env ("ZATI_TRIM"); tr.contains (","))
+    {
+        const float a = (float) tr.upToFirstOccurrenceOf (",", false, false).getDoubleValue();
+        const float b = (float) tr.fromFirstOccurrenceOf (",", false, false).getDoubleValue();
+        padStart01[0] = juce::jlimit (0.0f, 0.99f, a);
+        padEnd01[0]   = juce::jlimit (padStart01[0] + 0.01f, 1.0f, b);
+        const int len = padSourceLength (0);
+        engine.setPadStart (0, (int) (padStart01[0] * (float) len));
+        engine.setPadEnd   (0, (int) (padEnd01[0]   * (float) len));
+        selectPad (0);
+    }
+
+    //  Con el aumento puesto y centrado donde lo centra el boton: en el medio
+    //  del recorte. Es la unica forma de mirar una foto de esto.
     if (const auto z = UiAudit::env ("ZATI_ZOOM"); z.isNotEmpty())
-        waveform.setZoom ((float) z.getDoubleValue(), 0.25f);
+        waveform.setZoom ((float) z.getDoubleValue(),
+                          (padStart01[0] + padEnd01[0]) * 0.5f);
 
     repaint();
 }
