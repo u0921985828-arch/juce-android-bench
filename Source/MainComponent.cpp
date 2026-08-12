@@ -7671,6 +7671,12 @@ void MainComponent::auditDemo()
     refreshStepGrid();
 
     selectPad (0);
+
+    //  Y con el aumento puesto, si el banco lo pide: la unica forma de mirar
+    //  una foto del zoom es que la sonda pueda ponerlo.
+    if (const auto z = UiAudit::env ("ZATI_ZOOM"); z.isNotEmpty())
+        waveform.setZoom ((float) z.getDoubleValue(), 0.25f);
+
     repaint();
 }
 

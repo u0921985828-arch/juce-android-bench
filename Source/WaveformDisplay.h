@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include "SampleBuffer.h"
+#include <array>
 #include "ZatiLookAndFeel.h"
 #include "Lang.h"
 
@@ -125,9 +126,26 @@ public:
         repaint();
     }
 
+    //  PELLIZCAR PARA AMPLIAR.
+    //
+    //  Tres tapas y un arrastre bastan para llegar a x64, pero no es el gesto
+    //  que la mano hace: en un telefono, ampliar es separar dos dedos, y
+    //  cualquiera lo intenta antes de buscar un boton. Sin esto, el primer
+    //  intento de ampliar movia el asa de recorte que hubiera debajo del
+    //  segundo dedo - el gesto que se espera hacia algo distinto de lo que se
+    //  espera, que es peor que no hacer nada.
+    //
+    //  JUCE reparte los toques por FUENTE, no por evento: cada dedo llega como
+    //  su propio mouseDown/mouseDrag/mouseUp con e.source.getIndex() distinto.
+    //  Asi que se guardan las dos posiciones y el gesto es la razon entre la
+    //  distancia de ahora y la de cuando empezo.
     void mouseDown (const juce::MouseEvent& e) override
     {
         if (sample == nullptr) return;
+
+        touchDown (e);
+        if (numTouches() >= 2) { beginPinch(); dragging = 0; return; }
+
         const float t  = xToNorm ((float) e.x);
         const float ds = std::abs (t - start01), de = std::abs (t - end01);
         // Grab whichever handle is nearer, but only within a finger's width;
@@ -145,6 +163,20 @@ public:
     void mouseDrag (const juce::MouseEvent& e) override
     {
         if (sample == nullptr) return;
+
+        touchMove (e);
+        if (numTouches() >= 2)
+        {
+            updatePinch();
+            return;
+        }
+
+        //  Un pellizco al que se le levanta un dedo NO se convierte en un
+        //  arrastre: el ancla del arrastre se tomo en el mouseDown del primer
+        //  dedo, hace un gesto entero, y usarla ahora daria un salto de la
+        //  vista del tamano de todo lo que el pellizco haya movido. El gesto
+        //  termina cuando se levantan los dos.
+        if (pinching) return;
 
         //  Aguas abiertas y ampliado: el dedo ARRASTRA LA VISTA. Es el gesto
         //  que ya hace la rejilla de pads para cambiar de banco, y es el unico
@@ -180,6 +212,21 @@ public:
     //  rather than being assumed to be the selected pad.
     void mouseUp (const juce::MouseEvent& e) override
     {
+        const bool wasPinch = (numTouches() >= 2) || pinching;
+        touchUp (e);
+
+        //  Levantar UN dedo de un pellizco no es un toque: si sonara aqui, cada
+        //  ampliacion terminaria disparando el pad. Y el dedo que se queda no
+        //  hereda el arrastre - la vista ya esta donde el pellizco la dejo -,
+        //  asi que el segundo levantamiento tampoco suena.
+        if (wasPinch)
+        {
+            if (numTouches() == 0) pinching = false;
+            dragging = 0;
+            panned = false;
+            return;
+        }
+
         if (dragging == 0 && ! panned && sample != nullptr && onAudition)
             onAudition (xToNorm ((float) e.x));
         dragging = 0;
@@ -355,10 +402,17 @@ public:
         // per-fragment bars, which occupy the same strip.
         if (segments.size() <= 1)
         {
+            //  La regla EMPIEZA DONDE ACABA EL ROTULO. Los dos se dibujaban en
+            //  la misma franja - la de abajo mide 12 px y el hueco entre la
+            //  onda y ella son 2 - y las marcas pasaban por encima de
+            //  "TRIM 0.00 -> 1.00" letra por letra. Medir la cadena y arrancar
+            //  despues cuesta una llamada y deja las dos cosas legibles.
+            const float lx = wave.getX() + trimTextWidth() + 10.0f;
             g.setColour (lcdDim.withAlpha (0.45f));
             for (int k = 0; k <= 32; ++k)
             {
                 const float tx = wave.getX() + wave.getWidth() * (float) k / 32.0f;
+                if (tx < lx) continue;
                 const float th = (k % 4 == 0) ? 4.0f : 2.0f;
                 g.fillRect (tx, wave.getBottom() + 6.0f, 1.0f, th);
             }
@@ -435,6 +489,79 @@ private:
         auto w = waveArea();
         return w.getX() + (t - view0) * zoom * w.getWidth();
     }
+    //  Hasta dos dedos: el tercero y los siguientes no cambian nada. Un
+    //  pellizco de tres dedos es un pellizco de dos con un dedo apoyado, y
+    //  tratarlo de otra forma solo daria saltos.
+    static constexpr int kMaxTouch = 2;
+    struct Touch { int id = -1; float x = 0.0f, y = 0.0f; bool down = false; };
+    std::array<Touch, kMaxTouch> touches {};
+    bool  pinching = false;
+    float pinchDist0 = 1.0f, pinchZoom0 = 1.0f, pinchCentre0 = 0.5f;
+
+    int numTouches() const noexcept
+    {
+        int n = 0;
+        for (const auto& t : touches) if (t.down) ++n;
+        return n;
+    }
+
+    void touchDown (const juce::MouseEvent& e)
+    {
+        const int id = e.source.getIndex();
+        for (auto& t : touches) if (t.down && t.id == id) { t.x = (float) e.x; t.y = (float) e.y; return; }
+        for (auto& t : touches) if (! t.down) { t = { id, (float) e.x, (float) e.y, true }; return; }
+    }
+
+    void touchMove (const juce::MouseEvent& e)
+    {
+        const int id = e.source.getIndex();
+        for (auto& t : touches) if (t.down && t.id == id) { t.x = (float) e.x; t.y = (float) e.y; return; }
+    }
+
+    void touchUp (const juce::MouseEvent& e)
+    {
+        const int id = e.source.getIndex();
+        for (auto& t : touches) if (t.down && t.id == id) { t.down = false; t.id = -1; return; }
+    }
+
+    //  La distancia entre los dos dedos, en las dos direcciones y no solo en
+    //  la horizontal: con dos dedos casi en vertical la separacion horizontal
+    //  es de pocos pixeles y la razon entre ella y la del principio pega
+    //  saltos de un factor diez con un temblor de la mano. El suelo de 8 px es
+    //  lo mismo, por si los dos dedos caen casi encima.
+    //  Lo que ocupa el rotulo de recorte, para que la regla no lo pise.
+    float trimTextWidth() const
+    {
+        const auto f = ZatiColours::monoFont (Metrics::fMeta, true);
+        return juce::GlyphArrangement::getStringWidth (
+                   f, T ("TRIM") + " " + Lang::ltr (juce::String (start01, 2)
+                        + juce::String (juce::CharPointer_UTF8 (" \xe2\x86\x92 "))
+                        + juce::String (end01, 2)));
+    }
+
+    float touchSpan() const noexcept
+    {
+        const float dx = touches[0].x - touches[1].x;
+        const float dy = touches[0].y - touches[1].y;
+        return juce::jmax (8.0f, std::sqrt (dx * dx + dy * dy));
+    }
+
+    void beginPinch()
+    {
+        pinching     = true;
+        pinchDist0   = touchSpan();
+        pinchZoom0   = zoom;
+        //  El punto entre los dos dedos, EN EL FICHERO: es lo que tiene que
+        //  quedarse quieto mientras los dedos se separan, igual que en un mapa.
+        pinchCentre0 = xToNorm ((touches[0].x + touches[1].x) * 0.5f);
+    }
+
+    void updatePinch()
+    {
+        if (! pinching) { beginPinch(); return; }
+        setZoom (pinchZoom0 * touchSpan() / pinchDist0, pinchCentre0);
+    }
+
     int dragging = 0;   // 0 none, 1 start, 2 end
     float panFrom = 0.0f, panView = 0.0f;
     bool  panned = false;
