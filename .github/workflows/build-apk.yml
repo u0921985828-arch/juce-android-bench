@@ -121,6 +121,27 @@ jobs:
           cat Builds/Android/app/src/main/res/values/zati_theme.xml
           grep -n 'android:theme' Builds/Android/app/src/main/AndroidManifest.xml
 
+      - name: Sin copia de seguridad automatica
+        run: |
+          set -euo pipefail
+          #  allowBackup no estaba declarado, y sin declarar VALE TRUE. Para
+          #  esta app eso es todo riesgo y ningun beneficio: la copia
+          #  automatica de Android se rinde a los 25 MB por aplicacion, y aqui
+          #  una sola sesion con cuatro breaks ya los pasa - o sea que nunca
+          #  iba a salvar el trabajo de nadie -, mientras que deja las
+          #  muestras y los proyectos de la persona en un sitio del que se
+          #  pueden sacar. Se declara que no, y se declara a proposito.
+          M=Builds/Android/app/src/main/AndroidManifest.xml
+          python3 - "$M" <<'PY'
+          import re, sys
+          p = sys.argv[1]
+          s = open(p, encoding="utf-8").read()
+          if 'android:allowBackup' not in s:
+              s = re.sub(r'(<application\b)', r'\1 android:allowBackup="false"', s, count=1)
+              open(p, "w", encoding="utf-8").write(s)
+          PY
+          grep -n 'allowBackup' "$M"
+
       - name: Point Gradle at the Android SDK
         run: echo "sdk.dir=${ANDROID_SDK_ROOT}" > Builds/Android/local.properties
 

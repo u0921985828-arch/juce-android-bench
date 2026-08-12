@@ -11,6 +11,7 @@
 #include "../Source/Denoise.h"
 #include <chrono>
 #include <cstdio>
+#include <limits>
 
 using Clock = std::chrono::steady_clock;
 
@@ -360,6 +361,84 @@ int main()
                      "quitar ruido (siseo + tono)", cut, keep,
                      nan ? "SI" : "no", ms,
                      (! nan && cut < -12.0 && keep > -1.5) ? "OK" : "FALLA");
+    }
+
+    //  MUESTRAS HOSTILES.
+    //
+    //  El unico dato que entra en esta app desde fuera es un fichero de audio
+    //  que ha elegido la persona, y no tiene por que estar bien: una cabecera
+    //  que miente sobre la frecuencia, un WAV cortado a la mitad, o valores que
+    //  no son numeros. El cargador ya rechaza por tamano, por duracion y por
+    //  memoria - eso esta medido en su sitio -, pero lo que llega al MOTOR
+    //  despues de pasar esos filtros no lo miraba nadie.
+    //
+    //  Lo que se comprueba es lo que un fichero hostil no puede conseguir:
+    //  colgar una voz para siempre, o envenenar la salida con NaN. Lo segundo
+    //  es lo grave: un NaN en un pad se propaga por el bus, por el saturador y
+    //  por el master, y la app se queda muda hasta que se reinicia. Un fichero
+    //  capaz de eso es un fichero que apaga el instrumento.
+    {
+        struct Case { const char* what; double rate; int chans; int len; int fill; };
+        //  fill: 0 seno normal, 1 NaN, 2 infinito, 3 valores enormes
+        static const Case cases[] =
+        {
+            { "frecuencia 0",        0.0,      2, 4410, 0 },
+            { "frecuencia negativa", -44100.0, 2, 4410, 0 },
+            { "frecuencia enorme",   1.0e9,    2, 4410, 0 },
+            { "una sola muestra",    44100.0,  1,    1, 0 },
+            { "cuatro muestras",     44100.0,  2,    4, 0 },
+            { "lleno de NaN",        44100.0,  2, 4410, 1 },
+            { "lleno de infinito",   44100.0,  2, 4410, 2 },
+            { "valores enormes",     44100.0,  2, 4410, 3 },
+        };
+
+        bool allOk = true;
+        for (const auto& c : cases)
+        {
+            AudioEngine e;
+            e.prepareToPlay (48000.0, 512);
+            e.setPolyphony (8, 2);
+            e.setPadGain (0, 1.0f);
+
+            SampleBuffer::Ptr sb = new SampleBuffer();
+            sb->buffer.setSize (juce::jmax (1, c.chans), juce::jmax (1, c.len));
+            for (int ch = 0; ch < sb->buffer.getNumChannels(); ++ch)
+                for (int i = 0; i < c.len; ++i)
+                {
+                    const float v = c.fill == 1 ? std::numeric_limits<float>::quiet_NaN()
+                                  : c.fill == 2 ? std::numeric_limits<float>::infinity()
+                                  : c.fill == 3 ? 1.0e30f
+                                  : 0.5f * std::sin (0.05f * (float) i);
+                    sb->buffer.setSample (ch, i, v);
+                }
+            sb->sourceSampleRate = c.rate;
+            e.publishSample (0, sb);
+
+            juce::AudioBuffer<float> b (2, 512);
+            b.clear(); e.renderNextBlock (b, 0, 512);
+            e.postNoteOn (0, 1.0f);
+
+            bool nan = false;
+            //  Doscientos bloques son 2.1 s a 48 kHz: mucho mas que la muestra
+            //  mas larga de la lista, asi que al final NO puede quedar nada
+            //  sonando. Si queda, es una voz colgada.
+            for (int blk = 0; blk < 200; ++blk)
+            {
+                b.clear();
+                e.renderNextBlock (b, 0, 512);
+                for (int ch = 0; ch < 2 && ! nan; ++ch)
+                    for (int i = 0; i < 512; ++i)
+                        if (! std::isfinite (b.getSample (ch, i))) { nan = true; break; }
+            }
+
+            const bool stuck = e.getPadPosition01 (0) >= 0.0f;
+            const bool ok = ! nan && ! stuck;
+            allOk = allOk && ok;
+            std::printf ("%-34s NaN %-3s  voz colgada %-3s  %s\n",
+                         c.what, nan ? "SI" : "no", stuck ? "SI" : "no", ok ? "OK" : "FALLA");
+        }
+        std::printf ("%-34s %s\n", "muestras hostiles",
+                     allOk ? "ninguna cuelga ni envenena la salida" : "HAY FALLOS");
     }
 
     return 0;

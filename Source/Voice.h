@@ -97,8 +97,31 @@ struct Voice
         reverse  = rev;
 
         ratio    = std::pow (2.0, (double) semitones / 12.0);
-        timeStep = rev ? -(fSrc / fSys) : (fSrc / fSys);
+        //  En MAGNITUD: quien decide el sentido es rev, no el signo de una
+        //  frecuencia que ha salido de una cabecera. Con fSrc negativa la
+        //  posicion caminaba HACIA ATRAS desde el principio de la ventana, y
+        //  leer por debajo de winStart es leer fuera del buffer.
+        timeStep = (rev ? -1.0 : 1.0) * (std::abs (fSrc) / juce::jmax (1.0, fSys));
         delta    = timeStep * ratio;
+
+        //  UNA VOZ QUE NO AVANZA NO TERMINA NUNCA.
+        //
+        //  delta sale de la frecuencia que declara el fichero, y un fichero
+        //  puede declarar cero - o algo que no es un numero -. Con delta = 0
+        //  la posicion no se mueve, nunca llega al final de la ventana y la
+        //  voz se queda sonando para siempre: ocupa su hueco, y a la octava
+        //  vez el pad deja de responder. Con una frecuencia negativa sale un
+        //  NaN que ademas envenena la salida.
+        //
+        //  Medido en Tests/StressTest: "frecuencia 0" dejaba una voz colgada
+        //  y "frecuencia negativa" sacaba NaN. Ninguna de las dos puede pasar
+        //  de aqui - y este es el sitio, porque es el unico por el que pasan
+        //  TODOS los caminos: cargar, cortar, grabar y remuestrear.
+        if (! std::isfinite (delta) || std::abs (delta) < 1.0e-9)
+        {
+            active = false;
+            return;
+        }
         //  delta puede ser negativa en reverso: lo que decide el plegado es su
         //  MAGNITUD, y updateAntiAlias mira delta directamente, asi que se le
         //  pasa ya en positivo por la unica via que hay - recalcular con el

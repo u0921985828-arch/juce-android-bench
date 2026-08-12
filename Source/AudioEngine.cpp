@@ -1,4 +1,5 @@
 #include "AudioEngine.h"
+#include <cmath>
 #include <limits>
 
 namespace
@@ -10,6 +11,24 @@ namespace
     //  arguments (drive pushes |x| up to ~25).
     inline float fastTanh (float x) noexcept
     {
+        //  FUERA DE RANGO, ANTES DE ELEVAR AL CUADRADO.
+        //
+        //  Esta aproximacion empieza por x*x, y el cuadrado de un valor grande
+        //  NO CABE en un float: 1e30 al cuadrado es infinito, arriba y abajo
+        //  de la fraccion, e inf/inf es NaN. Y jlimit no lo tapa - una
+        //  comparacion con NaN siempre es falsa, asi que lo deja pasar tal
+        //  cual. De ahi salia el NaN que apagaba la maquina con una muestra de
+        //  valores enormes: el saturador del master es lo ultimo que toca el
+        //  audio y lo convertia en silencio permanente.
+        //
+        //  Mas alla de +-5 la tangente hiperbolica vale +-1 con nueve cifras,
+        //  asi que cortar ahi no cambia el sonido de nada y quita el infinito
+        //  de en medio. Cuesta dos comparaciones, y este es el mismo tanh que
+        //  usa DRV, que tenia el mismo agujero.
+        if (! std::isfinite (x)) return 0.0f;
+        if (x >  5.0f) return  1.0f;
+        if (x < -5.0f) return -1.0f;
+
         const float x2 = x * x;
         const float a  = x  * (135135.0f + x2 * (17325.0f + x2 * (378.0f + x2)));
         const float b  = 135135.0f + x2 * (62370.0f + x2 * (3150.0f + x2 * 28.0f));
@@ -986,6 +1005,23 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             for (int i = 0; i < numSamples; ++i)
             {
                 const float v = w[i];
+
+                //  AQUI NO SALE UN NaN, VENGA DE DONDE VENGA.
+                //
+                //  Un NaN no se atenua ni se satura: se propaga. Entra por una
+                //  muestra y sale por el bus, por el delay - que se realimenta
+                //  y ya no vuelve nunca -, por la reverb y por el master, y la
+                //  app se queda MUDA hasta que se reinicia. Y entra facil: un
+                //  WAV de coma flotante corrupto trae NaN dentro, y un valor
+                //  de 1e30 se convierte en infinito en cuanto se multiplica
+                //  por algo, y el saturador de un infinito da NaN.
+                //
+                //  Medido en Tests/StressTest: de ocho muestras hostiles,
+                //  CUATRO apagaban la maquina entera. Este if cuesta una
+                //  comparacion por muestra - dos por bloque estereo de 512 - y
+                //  convierte "la app se queda muda" en "ese pad no suena".
+                if (! std::isfinite (v)) { w[i] = 0.0f; continue; }
+
                 if (v > thresh || v < -thresh)
                 {
                     const float sign = (v < 0.0f) ? -1.0f : 1.0f;

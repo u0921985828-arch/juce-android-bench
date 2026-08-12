@@ -181,7 +181,14 @@ void SampleLoader::loadAsync (const juce::URL& url, int slot,
                                 SampleBuffer::Ptr sb = new SampleBuffer();
                                 sb->buffer.setSize (numChannels, numSamples);
                                 reader->read (&sb->buffer, 0, numSamples, 0, true, true);
-                                sb->sourceSampleRate = reader->sampleRate;
+                                //  La frecuencia que declara la cabecera, con
+                                //  un rango. Un WAV puede decir 0 - y entonces
+                                //  el paso de lectura es cero y la voz no
+                                //  avanza - o decir 1e9. Se acota aqui, en la
+                                //  puerta, ademas de en Voice::start.
+                                sb->sourceSampleRate = juce::jlimit (4000.0, 768000.0,
+                                                                     reader->sampleRate > 0.0
+                                                                         ? reader->sampleRate : 44100.0);
 
                                 engine.publishSample (slot, sb);
                                 loaded  = sb;
