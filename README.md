@@ -1,4 +1,10 @@
-# ZATI — sampler nativo para Android (JUCE / C++) · por ARTiFACTS
+# Zati Sampler — sampler nativo para Android (JUCE / C++) · por ARTiFACTS
+
+En la tienda y bajo el icono se llama **Zati Sampler**. El proyecto, las rutas
+de compilación y la marca serigrafiada en la cara de la máquina siguen diciendo
+**ZATI**, y el identificador de Android es `com.artifacts.zati` — ése no se
+toca: cambiarlo sería otra aplicación distinta, sin actualización posible desde
+ésta.
 
 Un sampler de 64 pads en cuatro bancos escrito en C++ sobre JUCE 8, con motor propio y camino de
 audio de baja latencia por Oboe/AAudio. Nació como prueba de latencia contra un

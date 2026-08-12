@@ -71,10 +71,14 @@ namespace StoreArt
         //  El nombre, con el mismo tipo y el mismo tracking que el de la cara.
         g.setColour (ZatiColours::ink);
         auto title = juce::Rectangle<float> (textX, (float) h * 0.20f, textW, (float) h * 0.30f);
-        drawFitted ("ZATI", title, ZatiColours::labelFont ((float) h * 0.26f, 0.34f));
+        //  El nombre COMPLETO, que es como se llama la app en la tienda. En la
+        //  cara de la maquina sigue poniendo ZATI a secas: ahi es la marca
+        //  serigrafiada en el chasis, y "ZATI SAMPLER" cruzado por la cabecera
+        //  se comeria la fila entera para decir lo que la maquina ya es.
+        drawFitted ("ZATI SAMPLER", title, ZatiColours::labelFont ((float) h * 0.26f, 0.20f));
 
         g.setColour (ZatiColours::inkDim);
-        drawFitted (juce::String::fromUTF8 ("SAMPLER  \xc2\xb7  GROOVEBOX"),
+        drawFitted (juce::String::fromUTF8 ("GROOVEBOX  \xc2\xb7  ARTiFACTS"),
                     title.translated (0.0f, (float) h * 0.30f),
                     ZatiColours::monoFont ((float) h * 0.058f, true).withExtraKerningFactor (0.16f));
 
@@ -82,12 +86,6 @@ namespace StoreArt
         drawFitted (juce::String::fromUTF8 ("64 PADS  \xc2\xb7  SECUENCIADOR  \xc2\xb7  6 EFECTOS"),
                     title.translated (0.0f, (float) h * 0.44f),
                     ZatiColours::monoFont ((float) h * 0.050f, false).withExtraKerningFactor (0.10f));
-
-        //  El estudio, abajo y pequeno: firma, no titular.
-        g.setColour (ZatiColours::inkDim.withAlpha (0.8f));
-        drawFitted ("ARTiFACTS",
-                    juce::Rectangle<float> (textX, (float) h - (float) h * 0.15f, textW, (float) h * 0.09f),
-                    ZatiColours::monoFont ((float) h * 0.045f, true).withExtraKerningFactor (0.30f));
 
         //  Cuatro tapas de pad a la derecha, con su relieve: dicen lo que es
         //  la app sin tener que leer nada, y son el unico dibujo del banner.
