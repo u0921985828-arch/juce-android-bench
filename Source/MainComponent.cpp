@@ -1357,6 +1357,31 @@ MainComponent::MainComponent()
     //  the sliders' bounds, which stops working the moment the sliders move
     //  under a viewport.
     mixRows.paintRows = [this] (juce::Graphics& g) { paintMixRows (g); };
+    //  EL MANUAL. Ficha propia con su desplazamiento, porque son ocho
+    //  capitulos y en 360x640 no cabe ni la mitad. Se abre desde la pagina de
+    //  GESTOS de AJUSTES, que es donde ya se va a buscar "como se hacia esto".
+    manualBody.paintBody = [this] (juce::Graphics& g) { paintManualBody (g); };
+    manualScroll.setViewedComponent (&manualBody, false);
+    manualScroll.setScrollBarsShown (true, false);
+    manualScroll.setScrollBarThickness (8);
+    manualSheet.addAndMakeVisible (manualScroll);
+    manualSheet.setVisible (false);
+    manualSheet.onDismiss = [this] { closeAllSheets(); };
+    manualSheet.paintContent = [this] (juce::Graphics& g) { paintManualSheetContent (g); };
+    styleButton (manualCloseButton, kKey);
+    manualCloseButton.onClick = [this] { closeAllSheets(); };
+    manualSheet.addAndMakeVisible (manualCloseButton);
+    addAndMakeVisible (manualSheet);
+
+    styleButton (manualButton, kKey);
+    manualButton.onClick = [this]
+    {
+        closeAllSheets();
+        manualScroll.setViewPosition (0, 0);
+        openSheet (manualSheet, setButton);
+    };
+    setSheet.addAndMakeVisible (manualButton);
+
     mixScroll.setViewedComponent (&mixRows, false);
     mixScroll.setScrollBarsShown (true, false);
     mixScroll.setScrollBarThickness (8);
@@ -1939,6 +1964,79 @@ const char* MainComponent::gridName (int i)
     return names[juce::jlimit (0, kNumGrids - 1, i)];
 }
 
+
+// ============================================================================
+//  EL MANUAL, en ocho capitulos de cuatro o cinco lineas.
+//
+//  De consulta y no de lectura: esto se mira con el telefono en la mano y en
+//  mitad de algo, asi que cada linea tiene que valerse sola. El manual largo -
+//  el que explica POR QUE la ganancia va en decibelios o por que cuatro de los
+//  seis efectos restan el seco - es otra cosa y vive fuera.
+//
+//  Todo pasa por T(): un manual en castellano dentro de una compilacion en
+//  chino no es un manual.
+// ============================================================================
+namespace
+{
+    struct ManualChapter { const char* title; const char* lines[5]; };
+
+    constexpr int kManualChapterCount = 8;
+    const ManualChapter kManual[kManualChapterCount] =
+    {
+        { "EMPEZAR", {
+            "CARGAR y luego un pad abre la biblioteca en ese pad",
+            "Un toque toca; una pulsacion larga configura",
+            "Manten un pad para abrir su ficha sin que suene",
+            nullptr, nullptr } },
+        { "PADS Y BANCOS", {
+            "Cuatro bancos de dieciseis pads: los otros 48 siguen sonando",
+            "Arrastra la rejilla para cambiar de banco",
+            "El color de un pad lo acompana en la onda y en la rejilla",
+            "CARGAR KIT reparte una carpeta entera por los pads",
+            nullptr } },
+        { "RECORTE", {
+            "Arrastra las asas para mover el inicio y el fin",
+            "Toca la onda en medio y suena desde ahi",
+            "Pellizca para ampliar hasta x64; arrastra para mover la vista",
+            "El zoom se centra en el recorte, no en donde estas mirando",
+            nullptr } },
+        { "SONIDO DEL PAD", {
+            "CINTA afina cambiando la duracion; TONO la mantiene",
+            "La ganancia va en decibelios, de -60 a +12",
+            "NORMALIZAR deja el pico del recorte en -0.3 dBFS",
+            "QUITAR RUIDO saca el siseo sin comerse lo que suena",
+            "Doble toque en un mando: vuelve a su valor de siempre" } },
+        { "SECUENCIADOR", {
+            "Toca una celda para poner un paso; arrastra para pintar varios",
+            "La pestana PASO dice que hace: nota, golpe y repeticion",
+            "REJILLA es lo que dura un paso, tresillos incluidos",
+            "Ocho patrones, y la cadena decide en que orden suenan",
+            nullptr } },
+        { "MEZCLA Y EFECTOS", {
+            "Tocar un efecto lo enciende y le da los tres mandos",
+            "Mantenlo pulsado para cogerle los mandos sin encenderlo",
+            "RACK: un efecto y los 64 pads. EL PAD: los seis envios de uno",
+            "El XY deja los pads tocables debajo, para las dos manos",
+            nullptr } },
+        { "GUARDAR Y EXPORTAR", {
+            "Un proyecto lleva sus muestras dentro y se puede mover entero",
+            "La sesion se recupera sola al abrir la app",
+            "MASTER es lo que oyes; PISTAS son los stems que suman a el",
+            "Deshacer y rehacer, dieciseis pasos",
+            nullptr } },
+        { "SI ALGO NO SUENA", {
+            "Mira la ganancia del pad y si hay un SOLO puesto en otro",
+            "Mira su envio al efecto que estas oyendo",
+            "Si la onda no reacciona estas ampliado: toca la tapa del medio",
+            "AJUSTES > AUDIO ensena la latencia y el tamano de bloque",
+            nullptr } },
+    };
+
+    constexpr int kManualLineH  = 30;   // una linea de texto y su aire
+    constexpr int kManualTitleH = 26;
+    constexpr int kManualGap    = 14;
+}
+
 // Everything the UI knows about the six effects, in signal order. One table,
 // so the wiring below can be read against it line for line.
 const MainComponent::FxDef MainComponent::fxDefs[MainComponent::kNumFx] =
@@ -2467,6 +2565,7 @@ void MainComponent::closeAllSheets()
     exportSheet.setVisible (false);
     rackSheet.setVisible (false);
     chopSheet.setVisible (false);
+    manualSheet.setVisible (false);
 
     //  CERRAR LA FICHA XY EN MOMENTANEO TIENE QUE APAGAR EL EFECTO.
     //
@@ -3936,6 +4035,23 @@ void MainComponent::resized()
         }
     }
 
+    // La ficha del MANUAL: titulo, subtitulo y todo lo demas es la lista, que
+    // se desplaza. Pide de alto lo que le den - hasta el tope del 78% - porque
+    // aqui cuanta mas se lea de una vez, mejor.
+    {
+        auto inner = sheetFromBottom (manualSheet, 1200);
+        auto titleRow = inner.removeFromTop (Metrics::hit);
+        manualCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
+                                        .withSizeKeepingCentre (Metrics::hit, Metrics::hit));
+        inner.removeFromTop (14 + Metrics::sm);   // pintado: el subtitulo
+
+        manualScroll.setBounds (inner);
+        const int barW = manualScroll.getScrollBarThickness();
+        manualBody.setSize (juce::jmax (40, inner.getWidth() - barW),
+                            juce::jmax (inner.getHeight(),
+                                        manualContentHeight (inner.getWidth() - barW)));
+    }
+
     // BROWSE sheet: the tallest of them all — the file list wants the room.
     {
         auto inner = sheetFromBottom (browseSheet, full.getHeight());   // clamps to the 86% cap
@@ -4010,8 +4126,22 @@ void MainComponent::resized()
             inner.removeFromTop (Metrics::sm);
 
             //  Whatever is left of the card belongs to the gestures list.
-            if (onGest) gesturesArea = inner;
-            else        gesturesArea = {};
+            if (onGest)
+            {
+                //  El boton del manual, al pie de la pagina de gestos: los
+                //  gestos son la mitad de las preguntas y el manual es la otra
+                //  mitad, asi que estan en el mismo sitio.
+                manualButton.setVisible (true);
+                manualButton.setBounds (inner.removeFromBottom (Metrics::hit)
+                                             .reduced (Metrics::halfGap, 2));
+                inner.removeFromBottom (Metrics::sm);
+                gesturesArea = inner;
+            }
+            else
+            {
+                manualButton.setVisible (false);
+                gesturesArea = {};
+            }
         }
 
         if (onAudio)
@@ -5273,6 +5403,7 @@ void MainComponent::retranslateUi()
     pageAudioBtn.setButtonText (T ("AUDIO"));
     pageProjBtn .setButtonText (T ("PROYECTOS"));
     pageGestBtn .setButtonText (T ("GESTOS"));
+    manualButton.setButtonText (T ("MANUAL"));
     undoButton  .setButtonText (T ("DESHACER"));
     redoButton  .setButtonText (T ("REHACER"));
 
@@ -6515,6 +6646,95 @@ void MainComponent::paintXySheetContent (juce::Graphics& g)
                         : T ("entra al tocar y sale al soltar"),
                 inner.removeFromTop (14), Lang::start());
 
+}
+
+
+//  ALTO DEL CONTENIDO y PINTADO, con la MISMA cuenta.
+//
+//  Son dos funciones y tienen que estar de acuerdo o el desplazamiento se queda
+//  corto y el ultimo capitulo no se puede leer. Por eso las dos recorren la
+//  misma tabla con las mismas alturas, en vez de que una sume constantes y la
+//  otra dibuje lo que le parezca.
+int MainComponent::manualContentHeight (int width) const
+{
+    juce::ignoreUnused (width);
+    int h = Metrics::sm;
+    for (const auto& ch : kManual)
+    {
+        h += kManualTitleH;
+        for (const char* l : ch.lines)
+            if (l != nullptr) h += kManualLineH;
+        h += kManualGap;
+    }
+    return h + Metrics::md;
+}
+
+void MainComponent::paintManualBody (juce::Graphics& g)
+{
+    auto r = manualBody.getLocalBounds().reduced (Metrics::sm, 0);
+    r.removeFromTop (Metrics::sm);
+
+    for (int c = 0; c < kManualChapters; ++c)
+    {
+        const auto& ch = kManual[(size_t) c];
+
+        //  El titulo del capitulo con su filete, igual que las secciones de
+        //  las fichas: asi el manual se lee como parte de la misma maquina.
+        auto band = r.removeFromTop (kManualTitleH);
+        const auto secText = T (ch.title);
+        g.setColour (ZatiColours::ink.withAlpha (0.55f));
+        g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.22f));
+        g.drawText (secText, band, Lang::start());
+
+        const float tw = juce::GlyphArrangement::getStringWidth (
+                             ZatiColours::labelFont (Metrics::fMeta, 0.22f), secText);
+        const float ly = (float) band.getCentreY() + 1.0f;
+        g.setColour (ZatiColours::ink.withAlpha (0.18f));
+        //  El filete sale por el lado por el que se lee, no siempre por la
+        //  derecha: en arabe la linea va al reves y un filete a la derecha
+        //  cruzaria por encima del titulo.
+        auto ruleRow = band;
+        const auto rule = Lang::takeEnd (ruleRow, juce::jmax (0, band.getWidth() - (int) tw - 8));
+        g.fillRect ((float) rule.getX(), ly, (float) rule.getWidth(), 1.0f);
+
+        for (const char* line : ch.lines)
+        {
+            if (line == nullptr) continue;
+            auto row = r.removeFromTop (kManualLineH);
+
+            //  El punto de color del capitulo, delante de cada linea: es lo
+            //  unico que hace que un capitulo se vea como un bloque cuando lo
+            //  que hay debajo es una lista de frases sueltas.
+            auto dot = Lang::takeStart (row, 14);
+            g.setColour (Zati::colour (c).withAlpha (0.9f));
+            g.fillEllipse ((float) dot.getX() + 2.0f, (float) dot.getCentreY() - 2.5f, 5.0f, 5.0f);
+
+            g.setColour (ZatiColours::ink.withAlpha (0.92f));
+            g.setFont (ZatiColours::monoFont (Metrics::fMeta));
+            g.drawFittedText (T (line), row.reduced (2, 2), Lang::start(), 2, 0.9f);
+        }
+
+        r.removeFromTop (kManualGap);
+    }
+}
+
+void MainComponent::paintManualSheetContent (juce::Graphics& g)
+{
+    if (manualSheet.sheetBounds.isEmpty()) return;
+
+    auto inner = manualSheet.sheetBounds.reduced (Metrics::lg, Metrics::md);
+    auto titleRow = inner.removeFromTop (16);
+    //  Se para antes del boton de cerrar, como todas las demas fichas.
+    titleRow.setRight (juce::jmin (titleRow.getRight(), manualCloseButton.getX() - Metrics::xs));
+
+    g.setColour (ZatiColours::ink.withAlpha (0.9f));
+    g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
+    g.drawText (T ("MANUAL"), titleRow, Lang::start(), true);
+
+    g.setColour (ZatiColours::inkDim);
+    g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
+    g.drawText (T ("lo que hay que saber, en ocho capitulos"),
+                inner.removeFromTop (14), Lang::start());
 }
 
 void MainComponent::paintChopSheetContent (juce::Graphics& g)
@@ -7767,6 +7987,7 @@ void MainComponent::auditOpen (const juce::String& which)
     else if (which == "gest") { showSetPage (pageGestures); openSheet (setSheet, setButton); }
     else if (which == "rack") { rackPad = 0; openSheet (rackSheet, mixButton); refreshRack(); }
     else if (which == "chop") openChopSheet();
+    else if (which == "manual") { closeAllSheets(); openSheet (manualSheet, setButton); }
     else if (which == "browse") openBrowseForPad (0);
 }
 

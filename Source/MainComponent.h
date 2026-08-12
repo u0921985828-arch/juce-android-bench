@@ -691,6 +691,34 @@ private:
     MixRows        mixRows;
     juce::Viewport mixScroll;
     void paintMixRows (juce::Graphics& g);
+
+    //  EL MANUAL, DENTRO DE LA APP.
+    //
+    //  Un manual que vive en una pagina web es un manual que no esta ahi
+    //  cuando hace falta: se consulta con el telefono en la mano, en mitad de
+    //  algo, y casi siempre sin cobertura. Asi que va dentro, en los cuatro
+    //  idiomas, y en la ficha de AJUSTES - que es donde ya estan los gestos,
+    //  que son la mitad de las preguntas.
+    //
+    //  De consulta, no de lectura: ocho capitulos de cuatro o cinco lineas.
+    //  El manual largo, con el porque de cada decision, es otra cosa y va
+    //  fuera; esto es lo que se mira con una mano.
+    struct ManualBody : public juce::Component
+    {
+        std::function<void (juce::Graphics&)> paintBody;
+        void paint (juce::Graphics& g) override { if (paintBody) paintBody (g); }
+    };
+    ManualBody     manualBody;
+    juce::Viewport manualScroll;
+    Sheet          manualSheet;
+    juce::TextButton manualButton { "MANUAL" }, manualCloseButton { "x" };
+    void paintManualSheetContent (juce::Graphics& g);
+    void paintManualBody (juce::Graphics& g);
+    int  manualContentHeight (int width) const;
+    //  Ocho capitulos, y el numero de lineas de cada uno. Se declara aqui
+    //  porque lo necesitan el alto del contenido y el pintado, y esos dos
+    //  TIENEN que contar lo mismo o el desplazamiento se queda corto.
+    static constexpr int kManualChapters = 8;   // ver kManual en el .cpp
     juce::OwnedArray<juce::TextButton> patternButtons;  // P1..P8 — chain include toggles
 
     // --- FX slots (spec Zone 5) -------------------------------------------
