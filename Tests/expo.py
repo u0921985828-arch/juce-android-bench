@@ -132,6 +132,7 @@ UNTRANSLATED_OK = {
     "L", "R", "C", "M", "S", "A", "B", "D",    # channel, pan and bank letters
     "FLT", "ISO", "HPF", "DRV", "DLY", "BIT", "REV",  # effect abbreviations
     "TAP", "KIT",                              # universales en cualquier sampler
+    "MANUAL",                                  # se escribe igual en las dos lenguas
     "XY",                                      # los dos ejes se llaman igual en todas partes
     "PADS", "SEC", "MIX", "SET", "SONG", "REC", "PLAY", "STOP", "LOAD",
     "RACK", "TEST", "AUDIO", "AUTOCUT", "AUTO CHOP", "SWING", "off",
