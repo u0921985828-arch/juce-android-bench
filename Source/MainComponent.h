@@ -370,6 +370,7 @@ private:
     SessionKeeper session;
     void restoreSession();
     bool sessionRestorePending = true;   // done on the first timer tick
+    bool startupBusy = true;             // la barra ya esta puesta al primer fotograma
     int  sessionSyncTick  = 0;
     int  sessionStateTick = 0;
 
@@ -740,6 +741,50 @@ private:
         void paint (juce::Graphics& g) override { if (paintBar) paintBar (g); }
     };
     BusyBar busyBar;
+
+    //  LEER SESENTA Y CUATRO MUESTRAS SIN CONGELAR NADA.
+    //
+    //  Arrancar la app y abrir un proyecto hacen lo mismo: leer hasta 64 WAV
+    //  del disco. Estaba escrito como un bucle de 64 vueltas EN EL HILO DE LA
+    //  INTERFAZ, y ahi una barra de progreso no sirve absolutamente de nada -
+    //  mientras el bucle corre no se repinta nada, asi que la barra ni
+    //  aparece. Lo que hace falta es trocear el trabajo.
+    //
+    //  El temporizador se come lo que quepa en 25 ms por vuelta y suelta. El
+    //  total tarda lo mismo que antes - los bytes son los mismos - pero se
+    //  reparte en trozos que caben entre dos fotogramas, asi que la maquina
+    //  responde, la barra se mueve y los pads aparecen segun llegan en vez de
+    //  aparecer los sesenta y cuatro a la vez detras de una ventana congelada.
+    struct PadLoadJob
+    {
+        juce::File folder;            // vacia = la sesion
+        bool fromSession = false;
+        bool clearMissing = false;    // abrir proyecto vacia lo que no trae
+        int  next = 0;
+        int  restored = 0;
+        std::function<void (int restored)> onDone;
+    };
+    std::unique_ptr<PadLoadJob> padJob;
+    void stepPadJob();
+
+    //  Y el simetrico: guardar tambien son 64 ficheros, y escribir en el
+    //  almacenamiento compartido de Android no sale mas barato que leer.
+    //  Mismo troceado, misma barra.
+    struct PadSaveJob
+    {
+        juce::File   folder;
+        juce::String name;
+        int next = 0, written = 0, failed = 0;
+    };
+    std::unique_ptr<PadSaveJob> padSaveJob;
+    bool padsBusy();
+    void stepPadSaveJob();
+    void finishProjectSave (const juce::String& name, const juce::File& folder,
+                            int written, int failed);
+
+    void finishSessionRestore (const juce::ValueTree& tree, int restored);
+    void finishProjectOpen (const juce::String& name, const juce::ValueTree& tree, int restored);
+
     void beginBusy (const juce::String& what);
     void setBusyProgress (float p);
     void endBusy();
@@ -1016,6 +1061,7 @@ private:
                          editInfoArea, vuArea, stepStripArea, audioInfoArea,
                          padPlateArea, ctrlPlateArea;
     float vuL = 0.0f, vuR = 0.0f;   // smoothed output peaks for the VU strip
+    bool  vuHeld = false;           // solo el banco: ZATI_VU congela la tira
 
     int  selectedPad   = -1;
     bool loadArmed     = false;

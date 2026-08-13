@@ -103,7 +103,27 @@ public:
     //  screen smaller for no gain at all.
     void setVu (float l, float r)
     {
-        if (std::abs (l - vuL) < 0.002f && std::abs (r - vuR) < 0.002f) return;
+        //  EL TESTIGO DE PICO SE ENGANCHA.
+        //
+        //  Un pico que satura dura un bloque - 1.3 ms a 48 kHz con buffer de
+        //  64 - y la cara se repinta cada 60 ms: de cada 45 saturaciones se
+        //  ve UNA, y siempre la que menos importa. Un medidor que solo pinta
+        //  el nivel de ahora mismo no puede contar que has recortado; por eso
+        //  todas las mesas tienen un testigo que se queda puesto. Aqui se
+        //  queda 25 vueltas del temporizador, un segundo y medio, que es lo
+        //  que se tarda en levantar la vista.
+        const bool clipped = (l >= kClipLevel || r >= kClipLevel);
+        if (l >= kClipLevel) clipL = kClipHoldTicks;
+        if (r >= kClipLevel) clipR = kClipHoldTicks;
+
+        const bool decaying = (clipL > 0 || clipR > 0);
+        if (clipL > 0) --clipL;
+        if (clipR > 0) --clipR;
+
+        //  ...y mientras el testigo baja hay que repintar aunque el nivel no
+        //  se mueva, o se queda encendido para siempre en un silencio.
+        if (! clipped && ! decaying
+            && std::abs (l - vuL) < 0.002f && std::abs (r - vuR) < 0.002f) return;
         vuL = l; vuR = r;
         repaint();
     }
@@ -259,24 +279,61 @@ public:
             const int nSeg = 32;
             const float segW = band.getWidth() / (float) nSeg;
 
-            auto row = [&] (float level, juce::Rectangle<float> r)
+            //  VERDE, AMARILLO, ROJO - y en DECIBELIOS, que es lo que hace
+            //  que los tres colores signifiquen algo.
+            //
+            //  La tira era de dos colores y repartia los 32 segmentos con una
+            //  raiz cuadrada del nivel. Ni la raiz ni el 82% al que empezaba
+            //  el rojo estaban puestos contra un numero: echando la cuenta,
+            //  ese 82% cae en 0.672 de amplitud, que son -3.4 dBFS - bien por
+            //  casualidad - y el resto de la tira no cae en ningun sitio que
+            //  se pueda nombrar. Con una curva asi no se puede decir "el verde
+            //  acaba en -12" porque el verde no acaba en ningun decibelio.
+            //
+            //  En decibelios cada segmento vale lo mismo - 1.5 dB desde -48 -
+            //  y entonces se puede decir donde estan las fronteras y que
+            //  significan: verde hasta -12, que es donde se mezcla; amarillo
+            //  de -12 a -3, que es el margen que queda; y rojo los dos
+            //  ultimos, que ya es el techo. Un medidor de dos colores dice
+            //  "vas bien" y "ya es tarde", y le falta justo el aviso.
+            const float segDb = -kMeterFloorDb / (float) nSeg;   // 1.5 dB
+            const int   segYellow = (int) std::round ((kMeterFloorDb - kYellowDb) / -segDb);
+            const int   segRed    = (int) std::round ((kMeterFloorDb - kRedDb)    / -segDb);
+
+            auto row = [&] (float level, bool clipHeld, juce::Rectangle<float> r)
             {
-                const int lit = (int) std::round (std::sqrt (juce::jlimit (0.0f, 1.0f, level)) * (float) nSeg);
+                const float db  = juce::Decibels::gainToDecibels (juce::jlimit (0.0f, 1.0f, level),
+                                                                 kMeterFloorDb);
+                const int   lit = (int) std::round ((db - kMeterFloorDb) / segDb);
+
                 for (int i = 0; i < nSeg; ++i)
                 {
-                    const bool hot = i >= (int) ((float) nSeg * 0.82f);
-                    //  A LIT segment has to be the LCD's ink, not the chassis
-                    //  accent: the accent is a near-black, and painting it on a
-                    //  near-black screen made a lit segment look exactly like
-                    //  an unlit one.
-                    g.setColour (i < lit ? (hot ? ZatiColours::red : ZatiColours::lcdFg)
-                                         : ZatiColours::lcdFg.withAlpha (0.10f));
+                    //  El color es del SEGMENTO, no del nivel: la tira se lee
+                    //  como una regla de colores fijos y por donde va la luz
+                    //  se sabe cuanto margen queda. Pintarla toda del color
+                    //  del pico -que es lo que hace medio mundo- convierte el
+                    //  medidor en una lampara.
+                    const auto on = i >= segRed    ? ZatiColours::red
+                                  : i >= segYellow ? ZatiColours::yellow
+                                                   : ZatiColours::green;
+
+                    //  Y el testigo enganchado enciende los dos ultimos aunque
+                    //  el nivel ya haya bajado: ES la unica forma de enterarse
+                    //  de un pico de un bloque.
+                    const bool alight = i < lit || (clipHeld && i >= segRed);
+
+                    //  Y apagado sigue siendo la tinta de la pantalla al 10%,
+                    //  no el color del segmento a media luz: un rojo al 10%
+                    //  sobre este cristal es casi negro y un verde al 10% no,
+                    //  asi que la parte apagada saldria de tres tonos - una
+                    //  tira que parece rota por la mitad.
+                    g.setColour (alight ? on : ZatiColours::lcdFg.withAlpha (0.10f));
                     g.fillRect (band.getX() + (float) i * segW + 0.5f, r.getY(), segW - 1.0f, r.getHeight());
                 }
             };
 
-            row (vuL, band.withHeight (5.0f).withY (band.getY() + 1.0f));
-            row (vuR, band.withHeight (5.0f).withY (band.getY() + 8.0f));
+            row (vuL, clipL > 0, band.withHeight (5.0f).withY (band.getY() + 1.0f));
+            row (vuR, clipR > 0, band.withHeight (5.0f).withY (band.getY() + 8.0f));
         }
 
         // LCD inner bezel.
@@ -300,6 +357,21 @@ private:
     //  How much of the panel the meter band takes along the bottom: two rows
     //  of segments, their L/R gutter, and air above and below.
     static constexpr float kMeterBand = 22.0f;
+
+    //  El suelo de la tira y donde cambia de color. -48 dB porque por debajo
+    //  de eso ya no se decide nada, y 32 segmentos caen justos a 1.5 dB.
+    static constexpr float kMeterFloorDb = -48.0f;
+    static constexpr float kYellowDb     = -12.0f;
+    static constexpr float kRedDb        =  -3.0f;
+
+    //  0.997 son -0.026 dBFS. Lo que llega es la magnitud del bloque despues
+    //  del master - ultima etapa, detras del limitador de seguridad - y pedir
+    //  1.0 exacto seria comparar floats por igualdad para encender una luz:
+    //  la trigesimosegunda parte de un decibelio de margen cuesta nada y hace
+    //  que el testigo dependa del nivel y no del redondeo.
+    static constexpr float kClipLevel     = 0.997f;
+    static constexpr int   kClipHoldTicks = 25;     // 25 x 60 ms = 1.5 s
+    int clipL { 0 }, clipR { 0 };
 
     static constexpr int kCap = 1024;
     float        buf[kCap] {};

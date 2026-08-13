@@ -1364,6 +1364,23 @@ MainComponent::MainComponent()
     addAndMakeVisible (busyBar);
     busyBar.setVisible (false);
 
+    //  Y ya empieza puesta. Abrir la app no es instantaneo -abrir el
+    //  dispositivo de audio y montar mil componentes son 700 ms medidos en el
+    //  Redmi- y aunque esos 700 ms pasan ANTES del primer fotograma y no hay
+    //  forma de pintar nada durante ellos, lo que se ve despues si importa: el
+    //  primer fotograma sale con la barra puesta y no se apaga hasta que la
+    //  sesion esta dentro, asi que el hueco entre "ya veo la app" y "ya
+    //  responde la app" tiene algo que lo explique en vez de parecer colgada.
+    //
+    //  Menos cuando mide el banco: alli la app se maqueta y se va sin que el
+    //  temporizador llegue a latir, asi que la barra se quedaria puesta para
+    //  siempre - solapando la fila de abajo en las 448 corridas y colandose en
+    //  las 34 fotos de la ficha de Play.
+    if (! UiAudit::enabled())
+        beginBusy (T ("Iniciando"));
+    else
+        startupBusy = false;
+
     manualBody.paintBody = [this] (juce::Graphics& g) { paintManualBody (g); };
     manualScroll.setViewedComponent (&manualBody, false);
     manualScroll.setScrollBarsShown (true, false);
@@ -2028,7 +2045,7 @@ namespace
             "Mantenlo pulsado para cogerle los mandos sin encenderlo",
             "RACK: un efecto y los 64 pads. EL PAD: los seis envios de uno",
             "El XY deja los pads tocables debajo, para las dos manos",
-            nullptr } },
+            "Verde hasta -12 dB, amarillo hasta -3, y el rojo se queda puesto" } },
         { "GUARDAR Y EXPORTAR", {
             "Un proyecto lleva sus muestras dentro y se puede mover entero",
             "La sesion se recupera sola al abrir la app",
@@ -2599,6 +2616,12 @@ MainComponent::~MainComponent()
     // The bounce thread holds a reference to the engine and to the pad
     // buffers, so it must be gone before either can be.
     if (exportJob != nullptr) { exportJob->signalThreadShouldExit(); exportJob.reset(); endBusy(); }
+
+    //  Un guardado a medias deja una carpeta con muestras y SIN project.xml:
+    //  la lista de proyectos la ensena igual, y al abrirla dice "no encuentro
+    //  el proyecto". Al cerrar se termina de golpe - son los pads que falten,
+    //  no los 64 - porque aqui ya no hay temporizador que siga troceando.
+    while (padSaveJob != nullptr) stepPadSaveJob();
 
     //  A clean exit is still an exit: leave the session where the next launch
     //  will find it.
@@ -6308,18 +6331,46 @@ void MainComponent::applyState (const juce::ValueTree& s)
 
 void MainComponent::saveProject (const juce::String& rawName)
 {
+    //  Guardar es el mismo bucle de 64 ficheros que abrir, y por el mismo
+    //  hilo, solo que escribiendo - que en almacenamiento compartido de
+    //  Android no es mas barato que leer. Asi que se trocea igual, con dos
+    //  reglas que solo tiene este lado:
+    //
+    //    - la cabecera va AL FINAL. Un project.xml escrito antes que sus
+    //      muestras describe pads que todavia no estan en disco, y si la app
+    //      muere en mitad del guardado eso es un proyecto que la lista ensena
+    //      y que al abrirlo sale a medias.
+    //    - un solo trabajo de 64 ficheros a la vez (padsBusy), porque guardar
+    //      mientras se abre escribe en la carpeta una mezcla de los dos.
+    if (padsBusy()) return;
+
     const auto name   = ProjectStore::sanitise (rawName);
     const auto folder = ProjectStore::folderFor (name);
     folder.createDirectory();
 
-    int written = 0, failed = 0;
-    for (int i = 0; i < kNumPads; ++i)
+    beginBusy (T ("Guardando proyecto"));
+    padSaveJob = std::make_unique<PadSaveJob>();
+    padSaveJob->folder = folder;
+    padSaveJob->name   = name;
+    setBusyProgress (0.0f);
+    stepPadSaveJob();
+}
+
+void MainComponent::stepPadSaveJob()
+{
+    if (padSaveJob == nullptr) return;
+
+    const double t0 = juce::Time::getMillisecondCounterHiRes();
+
+    while (padSaveJob->next < kNumPads
+           && juce::Time::getMillisecondCounterHiRes() - t0 < 25.0)
     {
-        const auto dest = ProjectStore::sampleFile (folder, i);
+        const int i = padSaveJob->next++;
+        const auto dest = ProjectStore::sampleFile (padSaveJob->folder, i);
         if (auto sb = uiSample[(size_t) i]; sb != nullptr && sb->buffer.getNumSamples() > 0)
         {
-            if (ProjectStore::writeSample (dest, sb->buffer, sb->sourceSampleRate)) ++written;
-            else                                                                    ++failed;
+            if (ProjectStore::writeSample (dest, sb->buffer, sb->sourceSampleRate)) ++padSaveJob->written;
+            else                                                                    ++padSaveJob->failed;
         }
         else
         {
@@ -6327,6 +6378,19 @@ void MainComponent::saveProject (const juce::String& rawName)
         }
     }
 
+    setBusyProgress ((float) padSaveJob->next / (float) kNumPads);
+
+    if (padSaveJob->next >= kNumPads)
+    {
+        auto job = std::move (padSaveJob);
+        endBusy();
+        finishProjectSave (job->name, job->folder, job->written, job->failed);
+    }
+}
+
+void MainComponent::finishProjectSave (const juce::String& name, const juce::File& folder,
+                                       int written, int failed)
+{
     //  Write it, then READ IT BACK. replaceWithText returning true is the
     //  filesystem saying it accepted the call, not that the bytes are there:
     //  on Android shared storage it can accept and quietly drop. The only
@@ -6360,6 +6424,8 @@ void MainComponent::saveProject (const juce::String& rawName)
 
 void MainComponent::loadProject (const juce::String& name)
 {
+    if (padsBusy()) return;
+
     const auto folder = ProjectStore::folderFor (name);
     const auto xmlFile = folder.getChildFile ("project.xml");
     if (! xmlFile.existsAsFile())
@@ -6381,31 +6447,28 @@ void MainComponent::loadProject (const juce::String& name)
     playButton.setButtonText (T ("PLAY"));
     engine.setPlaying (false);
 
-    int restored = 0, missing = 0;
-    for (int i = 0; i < kNumPads; ++i)
-    {
-        auto sb = ProjectStore::readSample (ProjectStore::sampleFile (folder, i));
-        if (sb != nullptr) { assignSampleToPad (i, sb, padName[(size_t) i]); ++restored; }
-        else
-        {
-            uiSample[(size_t) i] = nullptr;
-            padHasSample[(size_t) i] = false;
-            padName[(size_t) i] = {};
-            //  ...and in the engine, or this pad keeps playing the project
-            //  that was open before this one.
-            engine.clearPad (i);
-            if (auto* p = pads[i]) p->setSampleInfo (nullptr, {});
-        }
-    }
+    //  Igual que la sesion: las muestras por trozos, y el estado al final.
+    const auto tree = juce::ValueTree::fromXml (*xml);
+    beginBusy (T ("Abriendo proyecto"));
+    padJob = std::make_unique<PadLoadJob>();
+    padJob->folder = folder;
+    padJob->clearMissing = true;
+    padJob->onDone = [this, name, tree] (int restored) { finishProjectOpen (name, tree, restored); };
+    setBusyProgress (0.0f);
+    stepPadJob();
+}
 
-    applyState (juce::ValueTree::fromXml (*xml));
+void MainComponent::finishProjectOpen (const juce::String& name, const juce::ValueTree& tree, int restored)
+{
+    int missing = 0;
+    applyState (tree);
 
     // Names live in the state, so re-stamp the tiles after applyState.
     for (int i = 0; i < kNumPads; ++i)
         if (auto* p = pads[i])
             p->setSampleInfo (uiSample[(size_t) i], padName[(size_t) i], padStart01[(size_t) i], padEnd01[(size_t) i]);
 
-    for (const auto& c : juce::ValueTree::fromXml (*xml).getChildWithName ("PADS"))
+    for (const auto& c : tree.getChildWithName ("PADS"))
         if ((bool) c.getProperty ("has", false)
             && uiSample[(size_t) (int) c.getProperty ("i", 0)] == nullptr)
             ++missing;
@@ -8099,6 +8162,21 @@ void MainComponent::auditDemo()
     //  una foto del zoom es que la sonda pueda ponerlo.
     //  La barra de trabajo, puesta a mano: es la unica forma de mirar una foto
     //  de algo que dura dos segundos.
+    //  La tira del medidor, puesta a mano. Igual que la barra de trabajo: en
+    //  una maqueta estatica el nivel es cero, y una tira apagada no ensena si
+    //  el verde se ve.  ZATI_VU=0.7,1.0 - izquierda,derecha.
+    if (const auto v = UiAudit::env ("ZATI_VU"); v.contains (","))
+    {
+        vuL = (float) v.upToFirstOccurrenceOf (",", false, false).getDoubleValue();
+        vuR = (float) v.fromFirstOccurrenceOf (",", false, false).getDoubleValue();
+        //  Y se queda: el primer intento solo llamaba a setVu y la foto salia
+        //  con el nivel REAL de la maqueta -los pads de ZATI_DEMO suenan- que
+        //  son -16 dB y todo verde. Una sonda que la app pisa a la vuelta
+        //  siguiente no es una sonda.
+        vuHeld = true;
+        spectrum.setVu (vuL, vuR);
+    }
+
     if (const auto b = UiAudit::env ("ZATI_BUSY"); b.isNotEmpty())
     {
         beginBusy (T ("Cargando"));
@@ -8336,6 +8414,69 @@ void MainComponent::autosave()
 //  It runs off the first timer tick rather than the constructor: reading
 //  sixteen WAVs takes long enough to be seen, and being seen as a face that
 //  fills in is much better than being seen as a launch that hangs.
+
+//  UN TROZO DE LECTURA POR VUELTA DEL TEMPORIZADOR.
+//
+//  Se lee lo que quepa en 25 ms y se suelta: la vuelta siguiente sigue por
+//  donde iba. Es tiempo y no numero de ficheros porque los ficheros no miden
+//  lo mismo - un charles de 30 KB y un break de 12 MB tardan dos ordenes de
+//  magnitud distintos, y "dos por vuelta" seria fluido con los primeros y un
+//  tiron con los segundos.
+
+//  Un solo trabajo de 64 ficheros a la vez. Dos a la vez no se estorban en
+//  disco, se estorban en los pads: abrir mientras se guarda escribe en la
+//  carpeta las muestras del proyecto que se esta cargando encima, mezcladas
+//  con las del que se guardaba. Se dice que espere, y se dice cual.
+bool MainComponent::padsBusy()
+{
+    if (padJob == nullptr && padSaveJob == nullptr) return false;
+    status.setText (T ("Espera a que termine %1", busyWhat.toLowerCase()),
+                    juce::dontSendNotification);
+    return true;
+}
+
+void MainComponent::stepPadJob()
+{
+    if (padJob == nullptr) return;
+
+    const double t0 = juce::Time::getMillisecondCounterHiRes();
+
+    while (padJob->next < kNumPads
+           && juce::Time::getMillisecondCounterHiRes() - t0 < 25.0)
+    {
+        const int i = padJob->next++;
+        const auto f = padJob->fromSession ? SessionKeeper::padFile (i)
+                                           : ProjectStore::sampleFile (padJob->folder, i);
+
+        if (auto sb = ProjectStore::readSample (f))
+        {
+            assignSampleToPad (i, sb, padName[(size_t) i]);
+            ++padJob->restored;
+        }
+        else if (padJob->clearMissing)
+        {
+            //  ...y en el motor tambien, o este pad sigue tocando el proyecto
+            //  que estaba abierto antes que este.
+            uiSample[(size_t) i] = nullptr;
+            padHasSample[(size_t) i] = false;
+            padName[(size_t) i] = {};
+            engine.clearPad (i);
+            if (auto* p = pads[i]) p->setSampleInfo (nullptr, {});
+        }
+    }
+
+    setBusyProgress ((float) padJob->next / (float) kNumPads);
+
+    if (padJob->next >= kNumPads)
+    {
+        auto done = std::move (padJob->onDone);
+        const int restored = padJob->restored;
+        padJob.reset();
+        endBusy();
+        if (done) done (restored);
+    }
+}
+
 void MainComponent::restoreSession()
 {
     if (! SessionKeeper::exists())
@@ -8353,14 +8494,20 @@ void MainComponent::restoreSession()
 
     const auto tree = juce::ValueTree::fromXml (*xml);
 
-    int restored = 0;
-    for (int i = 0; i < kNumPads; ++i)
-        if (auto sb = ProjectStore::readSample (SessionKeeper::padFile (i)))
-        {
-            assignSampleToPad (i, sb);
-            ++restored;
-        }
+    //  Las muestras, por trozos y con la barra puesta. El resto de la sesion -
+    //  el estado, los nombres, el mensaje - va en el remate, cuando estan las
+    //  sesenta y cuatro: applyState pisa nombres y recortes, y hacerlo antes
+    //  de tener el audio los dejaria a medias.
+    beginBusy (T ("Recuperando sesion"));
+    padJob = std::make_unique<PadLoadJob>();
+    padJob->fromSession = true;
+    padJob->onDone = [this, tree] (int restored) { finishSessionRestore (tree, restored); };
+    setBusyProgress (0.0f);
+    stepPadJob();
+}
 
+void MainComponent::finishSessionRestore (const juce::ValueTree& tree, int restored)
+{
     applyState (tree);
 
     //  A pad the state says had a sound, and whose audio did not come back.
@@ -8611,6 +8758,8 @@ void MainComponent::timerCallback()
     //  Mientras algo este cargando, la barra se repinta sola: es lo unico de
     //  la cara que tiene que moverse aunque no pase nada mas.
     if (busyJobs > 0) busyBar.repaint();
+    stepPadJob();
+    stepPadSaveJob();
 
     //  La exportacion SI sabe cuanto falta - cuenta pasadas y bloques - asi
     //  que la barra deja de ir y venir y dice el numero.
@@ -8623,6 +8772,12 @@ void MainComponent::timerCallback()
     {
         sessionRestorePending = false;
         restoreSession();
+
+        //  Y se suelta la cuenta del arranque DESPUES de que restoreSession
+        //  haya abierto la suya, o la barra parpadea: llegar a cero apaga el
+        //  componente, y volver a uno en la linea siguiente lo enciende otra
+        //  vez en el mismo fotograma.
+        if (startupBusy) { startupBusy = false; endBusy(); }
     }
 
     //  The safe area, on EVERY tick for the first second and then on the slow
@@ -8849,6 +9004,7 @@ void MainComponent::timerCallback()
 
     // Face strips: VU ballistics (fast attack, ~0.8 decay/frame) and the
     // step-LED playhead.
+    if (! vuHeld)
     {
         const float pl = engine.readOutPeakL();
         const float pr = engine.readOutPeakR();

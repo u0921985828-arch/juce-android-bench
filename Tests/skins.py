@@ -79,6 +79,33 @@ def zati_colours():
     if len (vals) != 8: sys.exit ("Zati.h no tiene ocho fragmentos")
     return vals
 
+#  LA TIRA DEL MEDIDOR. Verde, amarillo y rojo son las tres unicas notas de
+#  color del chasis y NO se mueven con la carcasa - son semanticas - pero el
+#  cristal sobre el que se pintan SI, asi que hay que medirlas contra cada uno.
+#
+#  Dos cosas distintas, y hacen falta las dos: que un segmento encendido se
+#  separe del cristal (ratio, es una barra de 5 px y se lee por su borde de
+#  luz) y que cada zona se separe de la siguiente (dE, porque verde, amarillo
+#  y rojo se distinguen por CROMA y un ratio WCAG no ve el croma - tres tonos
+#  con la misma luminancia darian tres ratios estupendos y una tira que parece
+#  de un solo color).
+MIN_METER = 3.00    # un segmento encendido contra el cristal
+MIN_ZONE  = 20.0    # dE de una zona contra la de al lado
+
+
+def signal_colours():
+    """red / yellow / green, LEIDOS de ZatiLookAndFeel.h. Van fuera de la
+    tabla de carcasas porque no dependen de la carcasa."""
+    src = open (LNF, encoding="utf8").read()
+    src = re.sub (r'//[^\n]*', '', src)          # mismo motivo que en parse()
+    out = {}
+    for n in ("red", "yellow", "green"):
+        m = re.search (r'juce::Colour\s+' + n + r'\s*\{\s*0x([0-9a-fA-F]{8})\s*\}', src)
+        if m is None: sys.exit ("no encuentro el color %s" % n)
+        out[n] = int (m.group (1), 16) & 0xffffff
+    return out
+
+
 #  Los alfas con los que StepGrid dibuja el hueco de una celda vacia. Mismo
 #  contrato que SHADOW_ALPHA: si cambian alli, cambian aqui.
 CELL_EMPTY   = 0.28
@@ -137,10 +164,11 @@ def ink_on (d, surface):
 def main():
     skins = parse()
     ZATI = zati_colours()
+    SIG  = signal_colours()
     bad = []
     print (f"{'carcasa':9} {'apag/enc':>9} {'escalon':>8} {'tinta/tapa':>11} "
            f"{'tinta/acento':>13} {'paso/hueco':>10} {'hueco/tarj':>11} "
-           f"{'pantalla':>9} {'seccion':>8} {'mando':>7}")
+           f"{'pantalla':>9} {'seccion':>8} {'mando':>7} {'tira':>6} {'zonas':>7}")
     for name, d in zip (SKINS, skins):
         #  La sombra cae sobre la superficie que hay detras de la tapa, que es
         #  la tarjeta o el chasis: los dos son chassisTop.
@@ -184,11 +212,22 @@ def main():
             #  EL ANILLO DEL MANDO contra el chasis que se ve por dentro.
             "anillo del mando":         (ratio (over (d['ink'], d['panel'], KNOB_ALPHA), d['top']),
                                          MIN_KNOB),
+            #  LA TIRA DEL MEDIDOR sobre el cristal. Se mide el PEOR de los
+            #  tres: una tira en la que el verde no se ve es una tira que solo
+            #  dice cosas cuando ya vas mal.
+            "segmento de la tira":      (min (ratio (c, d['lcd']) for c in SIG.values()),
+                                         MIN_METER),
+            #  ...y que las tres zonas se separen entre si. La peor de las dos
+            #  fronteras, que es la que decide si la tira tiene tres colores.
+            "zona contra zona":         (min (dE (SIG['green'],  SIG['yellow']),
+                                              dE (SIG['yellow'], SIG['red'])),
+                                         MIN_ZONE),
         }
         vals = list (m.values())
         print (f"{name:9} {vals[0][0]:9.2f} {vals[1][0]:8.2f} {vals[2][0]:11.2f} "
                f"{vals[3][0]:13.2f} {vals[4][0]:10.2f} {vals[5][0]:11.2f} "
-               f"{vals[6][0]:9.2f} {vals[7][0]:8.2f} {vals[8][0]:7.2f}")
+               f"{vals[6][0]:9.2f} {vals[7][0]:8.2f} {vals[8][0]:7.2f} "
+               f"{vals[9][0]:6.2f} {vals[10][0]:7.2f}")
         for what, (v, floor) in m.items():
             if v < floor:
                 bad.append (f"{name}: {what} {v:.2f} < {floor:.2f}")
