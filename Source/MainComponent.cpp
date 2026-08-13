@@ -1360,6 +1360,10 @@ MainComponent::MainComponent()
     //  EL MANUAL. Ficha propia con su desplazamiento, porque son ocho
     //  capitulos y en 360x640 no cabe ni la mitad. Se abre desde la pagina de
     //  GESTOS de AJUSTES, que es donde ya se va a buscar "como se hacia esto".
+    busyBar.paintBar = [this] (juce::Graphics& g) { paintBusy (g); };
+    addAndMakeVisible (busyBar);
+    busyBar.setVisible (false);
+
     manualBody.paintBody = [this] (juce::Graphics& g) { paintManualBody (g); };
     manualScroll.setViewedComponent (&manualBody, false);
     manualScroll.setScrollBarsShown (true, false);
@@ -1372,6 +1376,13 @@ MainComponent::MainComponent()
     manualCloseButton.onClick = [this] { closeAllSheets(); };
     manualSheet.addAndMakeVisible (manualCloseButton);
     addAndMakeVisible (manualSheet);
+    //  DESPUES de anadirla, no antes: addAndMakeVisible hace justo lo que dice
+    //  su nombre y vuelve a encenderla. Puesto al reves, la ficha del manual
+    //  se quedaba VISIBLE desde el arranque, detras de la cara - y como los
+    //  botones de la cara se anaden despues, se dibujaban encima de ella. Lo
+    //  que parecia "los botones se cuelan por encima del manual" era el manual
+    //  colandose por debajo de la maquina, desde el primer segundo.
+    manualSheet.setVisible (false);
 
     styleButton (manualButton, kKey);
     manualButton.onClick = [this]
@@ -2587,7 +2598,7 @@ MainComponent::~MainComponent()
 {
     // The bounce thread holds a reference to the engine and to the pad
     // buffers, so it must be gone before either can be.
-    if (exportJob != nullptr) { exportJob->signalThreadShouldExit(); exportJob.reset(); }
+    if (exportJob != nullptr) { exportJob->signalThreadShouldExit(); exportJob.reset(); endBusy(); }
 
     //  A clean exit is still an exit: leave the session where the next launch
     //  will find it.
@@ -3535,6 +3546,12 @@ void MainComponent::resized()
     //  frame the LCD instead of sitting among the controls. Both are watched,
     //  not touched, so they belong together up here.
     screenBezel = area.removeFromTop (screenH);
+    //  La barra de trabajo, al pie del cristal y por dentro: es donde la
+    //  maquina ya cuenta las cosas, y asi no le quita alto a nada.
+    busyArea = screenBezel.reduced (Metrics::sm, Metrics::xs)
+                          .removeFromBottom (Metrics::hit - 6);
+    busyBar.setBounds (busyArea);
+    if (busyJobs > 0) busyBar.toFront (false);
     spectrum.setBounds (screenBezel);
     area.removeFromTop (ZatiLookAndFeel::kAir + layoutAir);   // the bezel is drawn 5 px proud
 
@@ -5157,6 +5174,7 @@ void MainComponent::denoisePad()
     if (denoiseBusy) return;
     denoiseBusy = true;
     denoiseButton.setEnabled (false);
+    beginBusy (T ("Quitando ruido"));
     status.setText (T ("Quitando ruido..."), juce::dontSendNotification);
 
     pushUndo (T ("QUITAR RUIDO"));
@@ -5180,6 +5198,7 @@ void MainComponent::denoisePad()
         {
             denoiseBusy = false;
             denoiseButton.setEnabled (true);
+            endBusy();
 
             //  Si mientras tanto ese pad ha cambiado de sonido, lo limpiado ya
             //  no es de nadie: se tira. Pisarlo seria devolverle a la persona
@@ -5928,8 +5947,11 @@ void MainComponent::selectionChanged()
     auditionedFile = f;
 
     const int slot = browseTargetPad;
+    beginBusy (T ("Cargando"));
     loader.loadAsync (juce::URL (f), slot, [this, slot, f] (bool ok, juce::String detail, SampleBuffer::Ptr sb)
     {
+        endBusy();
+
         if (! ok || sb == nullptr) { status.setText (T ("No se pudo leer: %1", detail), juce::dontSendNotification); return; }
         assignSampleToPad (slot, sb, f.getFileName());
         engine.postNoteOn (slot);
@@ -6718,6 +6740,117 @@ void MainComponent::paintManualBody (juce::Graphics& g)
     }
 }
 
+
+// ============================================================================
+//  LA BARRA DE TRABAJO: que se esta haciendo, cuanto lleva y cuanto falta.
+//
+//  Una espera de dos segundos sin nada que se mueva y una app colgada se ven
+//  exactamente igual. Y aqui NINGUNA de las esperas congela la interfaz - la
+//  decodificacion, la limpieza y la exportacion corren en otro hilo -, asi que
+//  lo unico que faltaba era decirlo.
+//
+//  Se cuenta con un CONTADOR y no con una bandera: cargar un kit lanza una
+//  decodificacion por fichero y la barra tiene que seguir puesta hasta la
+//  ultima, no irse con la primera que termine.
+// ============================================================================
+void MainComponent::beginBusy (const juce::String& what)
+{
+    if (busyJobs == 0)
+    {
+        busyStartMs  = juce::Time::getMillisecondCounterHiRes();
+        busyProgress = -1.0f;
+        busyWhat     = what;
+    }
+    else if (what.isNotEmpty())
+    {
+        busyWhat = what;   // lo ultimo que se empezo es lo que se cuenta
+    }
+
+    ++busyJobs;
+    busyBar.setVisible (true);
+    busyBar.toFront (false);
+    busyBar.repaint();
+}
+
+void MainComponent::setBusyProgress (float p)
+{
+    busyProgress = (p >= 0.0f && p <= 1.0f) ? p : -1.0f;
+    busyBar.repaint();
+}
+
+void MainComponent::endBusy()
+{
+    busyJobs = juce::jmax (0, busyJobs - 1);
+    if (busyJobs == 0) { busyProgress = -1.0f; busyBar.setVisible (false); }
+    busyBar.repaint();
+}
+
+void MainComponent::paintBusy (juce::Graphics& g)
+{
+    if (busyJobs <= 0 || busyBar.getWidth() < 40) return;
+
+    const auto r = busyBar.getLocalBounds().toFloat();
+
+    //  Sobre el cristal de la pantalla y con sus colores: la maquina ya habla
+    //  ahi, y una tarjeta de otro color encima seria un cartel del sistema
+    //  operativo pegado sobre un instrumento.
+    //  Opaca del todo: al 94% se leia el tempo por debajo del rotulo, y dos
+    //  textos superpuestos es exactamente lo que esta barra viene a evitar.
+    g.setColour (ZatiColours::screenBg);
+    g.fillRoundedRectangle (r, 2.0f);
+    g.setColour (ZatiColours::lcdFg.withAlpha (0.30f));
+    g.drawRoundedRectangle (r.reduced (0.5f), 2.0f, 1.0f);
+
+    auto in = busyBar.getLocalBounds().reduced (Metrics::sm, 5);
+
+    //  Lo que lleva, en segundos. Es el numero que convierte "esto no responde"
+    //  en "esto esta tardando", y son dos cosas distintas.
+    const double secs = juce::jmax (0.0, (juce::Time::getMillisecondCounterHiRes() - busyStartMs) / 1000.0);
+    const auto   time = Lang::ltr (juce::String (secs, 1) + " s");
+
+    g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
+    const int timeW = (int) std::ceil (juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), time)) + 6;
+    auto timeCell = Lang::takeEnd (in, timeW);
+
+    auto label = in.removeFromTop (14);
+    g.setColour (ZatiColours::lcdFg);
+    g.drawText (busyWhat, label, Lang::start(), true);
+    g.setColour (ZatiColours::lcdDim);
+    g.drawText (time, timeCell.withHeight (14).withY (label.getY()), Lang::end());
+
+    //  La barra. Con progreso cuando se sabe - exportar y cargar un kit lo
+    //  saben - y un bloque que va y viene cuando no: decodificar no puede
+    //  decir cuanto falta sin mentir, y una barra que miente es peor que una
+    //  que solo dice "sigo aqui".
+    auto bar = in.removeFromTop (6);
+    if (bar.getWidth() < 8) return;
+
+    g.setColour (ZatiColours::lcdFg.withAlpha (0.16f));
+    g.fillRoundedRectangle (bar.toFloat(), 1.5f);
+
+    if (busyProgress >= 0.0f)
+    {
+        auto done = bar.withWidth ((int) ((float) bar.getWidth() * juce::jlimit (0.0f, 1.0f, busyProgress)));
+        //  Con la tinta DE LA PANTALLA, no con el acento del chasis: en PAPEL
+        //  el acento es casi negro, y una barra casi negra sobre el cristal
+        //  oscuro es una barra que no se ve. Cada superficie con su tinta.
+        g.setColour (ZatiColours::lcdFg);
+        g.fillRoundedRectangle (done.toFloat(), 1.5f);
+    }
+    else
+    {
+        //  Dos segundos por vuelta, y el bloque mide un quinto: lo bastante
+        //  lento como para no parecer nervioso y lo bastante rapido como para
+        //  que se vea que se mueve en la primera mirada.
+        const float t   = (float) std::fmod (secs, 2.0) / 2.0f;
+        const float w   = (float) bar.getWidth() * 0.2f;
+        const float ease = 0.5f - 0.5f * std::cos (t * juce::MathConstants<float>::twoPi);
+        const float x   = (float) bar.getX() + ease * ((float) bar.getWidth() - w);
+        g.setColour (ZatiColours::lcdFg);
+        g.fillRoundedRectangle (x, (float) bar.getY(), w, (float) bar.getHeight(), 1.5f);
+    }
+}
+
 void MainComponent::paintManualSheetContent (juce::Graphics& g)
 {
     if (manualSheet.sheetBounds.isEmpty()) return;
@@ -7024,6 +7157,7 @@ void MainComponent::startExport (bool stems)
 
     exportOk = false;
     exportStatus = "renderizando...";
+    beginBusy (T ("Exportando"));
     exportJob = std::make_unique<Exporter> (engine, uiSample, padName,
                                             ProjectStore::exports().getChildFile (base),
                                             base, stems, deviceSampleRate);
@@ -7052,6 +7186,7 @@ void MainComponent::pollExport()
 
     exportOk     = exportJob->resultOk;
     exportStatus = exportJob->resultText;
+    endBusy();
     exportJob.reset();
 
     exportMasterButton.setVisible (true);
@@ -7666,8 +7801,11 @@ void MainComponent::launchSystemPicker()
             //  the phone - and it is what fills the browser, which is
             //  otherwise a folder tree with nothing in it.
             importIntoLibrary (url);
-            loader.loadAsync (url, index, [this, index, fileName] (bool ok, juce::String detail, SampleBuffer::Ptr sb)
+            beginBusy (T ("Cargando"));
+    loader.loadAsync (url, index, [this, index, fileName] (bool ok, juce::String detail, SampleBuffer::Ptr sb)
             {
+        endBusy();
+
                 if (ok)
                 {
                     assignSampleToPad (index, sb, fileName);
@@ -7708,6 +7846,14 @@ void MainComponent::loadFolderAsKit()
     const int base = currentBank * kPadsPerBank;
     const int n    = juce::jmin (files.size(), kPadsPerBank);
     closeAllSheets();
+
+    //  Y ESTE SI SABE CUANTO FALTA: son n ficheros y se cuentan los que han
+    //  llegado. Una carpeta de dieciseis breaks tarda lo suyo, y es la espera
+    //  mas larga que se hace con la app delante.
+    beginBusy (T ("Repartiendo kit"));
+    setBusyProgress (0.0f);
+    auto done = std::make_shared<int> (0);
+
     for (int i = 0; i < n; ++i)
     {
         const int  slot = base + i;
@@ -7716,8 +7862,12 @@ void MainComponent::loadFolderAsKit()
         //  asi que dieciseis peticiones se atienden en fila y ninguna se pisa
         //  con otra; lo que no se puede es dar por hecho el orden de llegada,
         //  y por eso cada respuesta lleva su propio slot.
-        loader.loadAsync (juce::URL (f), slot, [this, slot, f] (bool ok, juce::String detail, SampleBuffer::Ptr sb)
+        loader.loadAsync (juce::URL (f), slot, [this, slot, f, n, done] (bool ok, juce::String detail, SampleBuffer::Ptr sb)
         {
+            ++(*done);
+            setBusyProgress ((float) *done / (float) juce::jmax (1, n));
+            if (*done >= n) endBusy();
+
             if (! ok || sb == nullptr)
             {
                 status.setText (T ("No se pudo leer: %1", detail), juce::dontSendNotification);
@@ -7748,8 +7898,11 @@ void MainComponent::loadBrowserSelection()
     closeAllSheets();
 
     status.setText (T ("Cargando pad %1...", juce::String (index + 1)), juce::dontSendNotification);
+    beginBusy (T ("Cargando"));
     loader.loadAsync (juce::URL (f), index, [this, index, fileName] (bool ok, juce::String detail, SampleBuffer::Ptr sb)
     {
+        endBusy();
+
         if (ok)
         {
             assignSampleToPad (index, sb, fileName);
@@ -7944,6 +8097,15 @@ void MainComponent::auditDemo()
 
     //  Y con el aumento puesto, si el banco lo pide: la unica forma de mirar
     //  una foto del zoom es que la sonda pueda ponerlo.
+    //  La barra de trabajo, puesta a mano: es la unica forma de mirar una foto
+    //  de algo que dura dos segundos.
+    if (const auto b = UiAudit::env ("ZATI_BUSY"); b.isNotEmpty())
+    {
+        beginBusy (T ("Cargando"));
+        if (const double p = b.getDoubleValue(); p > 0.0 && p <= 1.0)
+            setBusyProgress ((float) p);
+    }
+
     if (const auto tr = UiAudit::env ("ZATI_TRIM"); tr.contains (","))
     {
         const float a = (float) tr.upToFirstOccurrenceOf (",", false, false).getDoubleValue();
@@ -8446,6 +8608,15 @@ void MainComponent::watchAudioDevice()
 
 void MainComponent::timerCallback()
 {
+    //  Mientras algo este cargando, la barra se repinta sola: es lo unico de
+    //  la cara que tiene que moverse aunque no pase nada mas.
+    if (busyJobs > 0) busyBar.repaint();
+
+    //  La exportacion SI sabe cuanto falta - cuenta pasadas y bloques - asi
+    //  que la barra deja de ir y venir y dice el numero.
+    if (exportJob != nullptr)
+        setBusyProgress (exportJob->progress.load (std::memory_order_relaxed));
+
     //  Once, on the first tick: the face is up by now, so a restore that takes
     //  a second reads as filling in rather than as a hang.
     if (sessionRestorePending)

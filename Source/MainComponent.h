@@ -708,6 +708,43 @@ private:
         std::function<void (juce::Graphics&)> paintBody;
         void paint (juce::Graphics& g) override { if (paintBody) paintBody (g); }
     };
+    //  LA BARRA DE TRABAJO.
+    //
+    //  Hay cuatro cosas en esta app que tardan lo suficiente como para que
+    //  parezca que se ha colgado: decodificar un fichero grande, repartir una
+    //  carpeta entera por los pads, quitar el ruido de una muestra larga y
+    //  exportar. Ninguna congela la interfaz - todas corren en otro hilo -,
+    //  pero eso no lo sabe nadie mirando la pantalla: sin nada que se mueva,
+    //  una espera de dos segundos y una app colgada se ven exactamente igual.
+    //
+    //  Asi que se dice: que se esta haciendo, cuanto lleva, y cuanto falta
+    //  cuando se puede saber. Va sobre la PANTALLA, que es donde la maquina
+    //  habla, y NO bloquea: los pads siguen sonando mientras carga, que es la
+    //  misma regla que ya cumple un aviso del sistema.
+    juce::String busyWhat;
+    int    busyJobs = 0;          // cuenta, no bandera: dos cargas a la vez
+    float  busyProgress = -1.0f;  // negativo = no se sabe cuanto falta
+    double busyStartMs = 0.0;
+    juce::Rectangle<int> busyArea;
+    //  Y es un COMPONENTE, no una pincelada en paint().
+    //
+    //  La pantalla la ocupa entera SpectrumDisplay, que es un hijo, y un hijo
+    //  se pinta DESPUES que su padre: la barra dibujada en el paint de la cara
+    //  quedaba debajo del espectro y no se veia ni un pixel. Como hijo se
+    //  pinta encima, y ademas no se traga los toques - los pads de detras
+    //  siguen sonando mientras carga, que es la regla de esta app.
+    struct BusyBar : public juce::Component
+    {
+        std::function<void (juce::Graphics&)> paintBar;
+        BusyBar() { setInterceptsMouseClicks (false, false); }
+        void paint (juce::Graphics& g) override { if (paintBar) paintBar (g); }
+    };
+    BusyBar busyBar;
+    void beginBusy (const juce::String& what);
+    void setBusyProgress (float p);
+    void endBusy();
+    void paintBusy (juce::Graphics& g);
+
     ManualBody     manualBody;
     juce::Viewport manualScroll;
     Sheet          manualSheet;

@@ -293,6 +293,12 @@ namespace
         { "AJUSTES > AUDIO ensena la latencia y el tamano de bloque", "",
           "SETUP > AUDIO shows the latency and the block size",
           "设置 > 音频 显示延迟与缓冲大小", "إعداد < الصوت يعرض الكمون وحجم الكتلة" },
+        //  La barra de trabajo: tres palabras y ningun punto suspensivo, que
+        //  el que la cosa sigue lo dice la barra moviendose.
+        { "Cargando",       "",         "loading",    "载入中",     "جارٍ التحميل" },
+        { "Quitando ruido", "",         "removing noise", "降噪中", "إزالة الضجيج" },
+        { "Exportando",     "",         "exporting",  "导出中",     "جارٍ التصدير" },
+        { "Repartiendo kit","",         "spreading kit", "分配套件", "توزيع الطقم" },
         { "REJILLA",        "",         "GRID",       "网格",       "الشبكة" },
         { "Un paso dura %1", "",         "one step lasts %1",
                                         "每步时值 %1", "الخطوة تساوي %1" },
