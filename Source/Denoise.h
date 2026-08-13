@@ -37,6 +37,38 @@
 //  Fuera del hilo de audio, siempre: reserva memoria y recorre el fichero
 //  entero. Se llama desde el hilo de mensajes con la muestra parada.
 // ============================================================================
+//  Y LA MEMORIA ES CONSTANTE, QUE NO LO ERA.
+//
+//  La primera version materializaba el espectrograma ENTERO: magnitud, parte
+//  real y parte imaginaria, tres vectores de ventanas x bandas. El comentario
+//  decia "cabe: cinco segundos son 1.7 MB por canal" y era verdad para cinco
+//  segundos, solo que nada obligaba a que fueran cinco. Echando la cuenta con
+//  las de verdad - hop 256, 513 bandas - un minuto a 48 kHz son 23 MB POR
+//  VECTOR, o sea 92 MB con los cinco, y la app deja grabar hasta CINCO
+//  MINUTOS (setRecordLimit topa en 300 s): 460 MB pedidos de golpe, sin un
+//  solo catch, en un telefono. Eso no lanza bad_alloc, lo mata el sistema.
+//
+//  Tres cambios y el consumo deja de depender de la duracion:
+//
+//    - La fase no se guarda. Se vuelve a hacer la FFT directa en la segunda
+//      pasada. Cuesta una transformada mas por ventana y quita DOS de los
+//      tres vectores grandes.
+//    - El perfil no necesita todas las ventanas. El ruido es estacionario -
+//      es la hipotesis sobre la que se sostiene el metodo entero - asi que el
+//      percentil sale igual de 1024 ventanas repartidas por todo el fichero
+//      que de las cincuenta mil que tiene. Eso acota el unico vector que
+//      quedaba: 2.1 MB, dure lo que dure la muestra.
+//    - La sintesis va en flujo. El solape-suma se acumula en un buffer de UNA
+//      ventana y se van soltando muestras terminadas por detras, encima del
+//      propio buffer. Funciona porque lo que se escribe queda siempre por
+//      DETRAS de lo que se lee: la ventana f sintetiza hasta at+fft y las
+//      muestras que quedan cerradas son las de antes de at.
+//
+//  Medido en el banco con una muestra de cinco minutos: el pico de memoria del
+//  proceso sube +0.1 MB por encima de los 55 MB que ya ocupa la propia muestra,
+//  frente a los ~460 MB que pedia la cuenta anterior (346 de espectrograma mas
+//  115 de solape-suma). Y el mismo sonido exactamente: -18.8 dB de suelo con
+//  -0.28 dB perdidos en el tono, los mismos dos numeros de antes.
 namespace Denoise
 {
     //  fuerza 0..1. 0 es una limpieza suave que no se nota; 1 es agresiva y
@@ -60,6 +92,15 @@ namespace Denoise
         constexpr int hop   = fft / 4;             // 75% de solape
         constexpr int bins  = fft / 2 + 1;
 
+        //  Cuantas ventanas se miran para estimar el ruido. Repartidas por
+        //  todo el fichero, no las primeras: el ruido es estacionario pero el
+        //  SONIDO no, y coger solo el principio de un break da un percentil
+        //  sacado de dos compases.
+        constexpr int kProfileFrames = 1024;
+
+        const int frames = (len - fft) / hop + 1;
+        if (frames < 4) return;
+
         juce::dsp::FFT engine (order);
 
         //  Raiz de Hann en analisis y en sintesis: el producto de las dos es
@@ -71,75 +112,127 @@ namespace Denoise
             win[(size_t) i] = std::sqrt (0.5f * (1.0f - std::cos (2.0f * juce::MathConstants<float>::pi
                                                                   * (float) i / (float) fft)));
 
-        const int frames = (len - fft) / hop + 1;
-        if (frames < 4) return;
+        const int profFrames = juce::jmin (frames, kProfileFrames);
 
-        std::vector<float> fd ((size_t) fft * 2, 0.0f);
-        std::vector<float> mag ((size_t) frames * bins, 0.0f);
-        std::vector<float> phRe ((size_t) frames * bins, 0.0f);
-        std::vector<float> phIm ((size_t) frames * bins, 0.0f);
-        std::vector<float> noise ((size_t) bins, 0.0f);
-        std::vector<float> col ((size_t) frames, 0.0f);
-        std::vector<float> gain ((size_t) bins, 1.0f);
-        std::vector<float> prevGain ((size_t) bins, 1.0f);
-        std::vector<float> out ((size_t) len, 0.0f);
-        std::vector<float> norm ((size_t) len, 0.0f);
+        //  Todo lo que se reserva, reservado AQUI y contado: son 2.1 MB de
+        //  perfil, 8 KB de acumuladores y poco mas. Y con red, porque una
+        //  muestra sin limpiar es un fastidio y un proceso muerto es el
+        //  trabajo de la tarde.
+        std::vector<float> fd, prof, col, noise, gain, prevGain, acc, accN;
+        try
+        {
+            fd      .assign ((size_t) fft * 2, 0.0f);
+            prof    .assign ((size_t) profFrames * bins, 0.0f);
+            col     .assign ((size_t) profFrames, 0.0f);
+            noise   .assign ((size_t) bins, 0.0f);
+            gain    .assign ((size_t) bins, 1.0f);
+            prevGain.assign ((size_t) bins, 1.0f);
+            acc     .assign ((size_t) fft, 0.0f);
+            accN    .assign ((size_t) fft, 0.0f);
+        }
+        catch (const std::bad_alloc&)
+        {
+            return;                     // la muestra se queda como estaba
+        }
+
+        //  Cuanto se resta y hasta donde se deja bajar. alpha por encima de
+        //  1 resta MAS de lo estimado, que es lo que hace falta porque el
+        //  ruido fluctua y restar justo la media deja la mitad de las
+        //  ventanas por encima. El suelo evita el silencio absoluto, que
+        //  suena peor que el ruido: un hueco perfecto entre notas delata
+        //  el proceso.
+        const float alpha  = 1.5f + 2.5f * strength;
+        const float floorG = 0.06f * (1.0f - strength) + 0.008f;
+
+        //  Una ventana, transformada y con su magnitud puesta donde se pida.
+        auto analyse = [&] (const float* d, int at) noexcept
+        {
+            std::fill (fd.begin(), fd.end(), 0.0f);
+            for (int i = 0; i < fft; ++i)
+                fd[(size_t) i] = d[at + i] * win[(size_t) i];
+            engine.performRealOnlyForwardTransform (fd.data(), true);
+        };
 
         for (int ch = 0; ch < numCh; ++ch)
         {
             const float* d = buf.getReadPointer (ch);
-            std::fill (out.begin(), out.end(), 0.0f);
-            std::fill (norm.begin(), norm.end(), 0.0f);
+            float*       w = buf.getWritePointer (ch);
+
+            std::fill (acc.begin(),  acc.end(),  0.0f);
+            std::fill (accN.begin(), accN.end(), 0.0f);
             std::fill (prevGain.begin(), prevGain.end(), 1.0f);
 
-            //  Pasada 1: el espectro de cada ventana, guardado entero. Cabe:
-            //  cinco segundos a 44.1 kHz son 861 ventanas por 513 bandas, 1.7
-            //  MB por canal, y esto no corre en el hilo de audio.
-            for (int f = 0; f < frames; ++f)
+            // --- Pasada 1: el perfil, de profFrames ventanas repartidas. ----
+            for (int q = 0; q < profFrames; ++q)
             {
-                const int at = f * hop;
-                std::fill (fd.begin(), fd.end(), 0.0f);
-                for (int i = 0; i < fft; ++i)
-                    fd[(size_t) i] = d[at + i] * win[(size_t) i];
-
-                engine.performRealOnlyForwardTransform (fd.data(), true);
+                //  Repartidas de verdad: la ultima cae en la ultima ventana,
+                //  no a un tercio del fichero.
+                const int f  = (profFrames == frames) ? q
+                             : (int) ((juce::int64) q * (frames - 1) / (profFrames - 1));
+                analyse (d, f * hop);
 
                 for (int k = 0; k < bins; ++k)
                 {
                     const float re = fd[(size_t) (2 * k)];
                     const float im = fd[(size_t) (2 * k + 1)];
-                    mag [(size_t) (f * bins + k)] = std::sqrt (re * re + im * im);
-                    phRe[(size_t) (f * bins + k)] = re;
-                    phIm[(size_t) (f * bins + k)] = im;
+                    prof[(size_t) (q * bins + k)] = std::sqrt (re * re + im * im);
                 }
             }
 
             //  El perfil: percentil 20 por banda. nth_element y no sort - solo
-            //  hace falta saber quien cae en esa posicion, no ordenar 861
+            //  hace falta saber quien cae en esa posicion, no ordenar mil
             //  numeros por banda.
-            const size_t pick = (size_t) juce::jlimit (0, frames - 1, (int) (frames * 0.20f));
+            const size_t pick = (size_t) juce::jlimit (0, profFrames - 1, (int) (profFrames * 0.20f));
             for (int k = 0; k < bins; ++k)
             {
-                for (int f = 0; f < frames; ++f)
-                    col[(size_t) f] = mag[(size_t) (f * bins + k)];
+                for (int q = 0; q < profFrames; ++q)
+                    col[(size_t) q] = prof[(size_t) (q * bins + k)];
                 std::nth_element (col.begin(), col.begin() + (long) pick, col.end());
                 noise[(size_t) k] = col[pick];
             }
 
-            //  Cuanto se resta y hasta donde se deja bajar. alpha por encima de
-            //  1 resta MAS de lo estimado, que es lo que hace falta porque el
-            //  ruido fluctua y restar justo la media deja la mitad de las
-            //  ventanas por encima. El suelo evita el silencio absoluto, que
-            //  suena peor que el ruido: un hueco perfecto entre notas delata
-            //  el proceso.
-            const float alpha = 1.5f + 2.5f * strength;
-            const float floorG = 0.06f * (1.0f - strength) + 0.008f;
+            // --- Pasada 2: sintesis en flujo. -------------------------------
+            //
+            //  acc[0] corresponde siempre a la muestra `emitted`. Antes de
+            //  cada ventana se sueltan las muestras que ya no puede tocar
+            //  nadie, y esas caen SIEMPRE por detras de donde se va a leer.
+            int emitted = 0;
+
+            auto flush = [&] (int upTo) noexcept
+            {
+                while (emitted < upTo)
+                {
+                    const int n = juce::jmin (hop, len - emitted);
+                    for (int i = 0; i < n; ++i)
+                    {
+                        //  Dividir por la suma de ventanas y no dar por hecho
+                        //  que vale uno: en los dos primeros y los dos ultimos
+                        //  saltos no hay solape completo, y sin esta division
+                        //  los bordes salen atenuados.
+                        if (accN[(size_t) i] > 1.0e-6f)
+                            w[emitted + i] = acc[(size_t) i] / accN[(size_t) i];
+                    }
+
+                    std::rotate (acc.begin(),  acc.begin()  + hop, acc.end());
+                    std::rotate (accN.begin(), accN.begin() + hop, accN.end());
+                    std::fill (acc.end()  - hop, acc.end(),  0.0f);
+                    std::fill (accN.end() - hop, accN.end(), 0.0f);
+                    emitted += hop;
+                }
+            };
 
             for (int f = 0; f < frames; ++f)
             {
+                const int at = f * hop;
+                flush (at);                     // deja acc[0] apuntando a `at`
+
+                analyse (d, at);                // la fase, otra vez: no se guardo
+
                 for (int k = 0; k < bins; ++k)
                 {
-                    const float m = mag[(size_t) (f * bins + k)];
+                    const float re = fd[(size_t) (2 * k)];
+                    const float im = fd[(size_t) (2 * k + 1)];
+                    const float m  = std::sqrt (re * re + im * im);
                     const float clean = m - alpha * noise[(size_t) k];
                     gain[(size_t) k] = (m > 1.0e-9f) ? juce::jmax (floorG, clean / m) : 1.0f;
                 }
@@ -167,30 +260,25 @@ namespace Denoise
                     prevGain[(size_t) k] = gain[(size_t) k];
                 }
 
-                std::fill (fd.begin(), fd.end(), 0.0f);
                 for (int k = 0; k < bins; ++k)
                 {
-                    fd[(size_t) (2 * k)]     = phRe[(size_t) (f * bins + k)] * gain[(size_t) k];
-                    fd[(size_t) (2 * k + 1)] = phIm[(size_t) (f * bins + k)] * gain[(size_t) k];
+                    fd[(size_t) (2 * k)]     *= gain[(size_t) k];
+                    fd[(size_t) (2 * k + 1)] *= gain[(size_t) k];
                 }
                 engine.performRealOnlyInverseTransform (fd.data());
 
-                const int at = f * hop;
                 for (int i = 0; i < fft; ++i)
                 {
-                    const float w = win[(size_t) i];
-                    out [(size_t) (at + i)] += fd[(size_t) i] * w;
-                    norm[(size_t) (at + i)] += w * w;
+                    const float wi = win[(size_t) i];
+                    acc [(size_t) i] += fd[(size_t) i] * wi;
+                    accN[(size_t) i] += wi * wi;
                 }
             }
 
-            //  Dividir por la suma de ventanas y no dar por hecho que vale uno:
-            //  en los dos primeros y los dos ultimos saltos no hay solape
-            //  completo, y sin esta division los bordes salen atenuados.
-            float* w = buf.getWritePointer (ch);
-            for (int i = 0; i < len; ++i)
-                w[i] = (norm[(size_t) i] > 1.0e-6f) ? out[(size_t) i] / norm[(size_t) i]
-                                                    : w[i];
+            //  Y el rabo: lo que queda en el acumulador cuando ya no hay mas
+            //  ventanas. Sin esto la ultima ventana entera se quedaba sin
+            //  escribir.
+            flush (juce::jmin (len, (frames - 1) * hop + fft));
         }
     }
 }

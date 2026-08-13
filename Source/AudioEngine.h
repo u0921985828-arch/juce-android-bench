@@ -395,8 +395,33 @@ public:
     //  way it always did; pull a pad down and that pad stops being sent.
     void setPadSend (int slot, int fx, float v) noexcept
     {
-        if (slot >= 0 && slot < kNumPads && fx >= 0 && fx < kNumFx)
-            padSend[(size_t) slot][(size_t) fx].store (juce::jlimit (0.0f, 1.0f, v), std::memory_order_relaxed);
+        if (slot < 0 || slot >= kNumPads || fx < 0 || fx >= kNumFx) return;
+
+        const float g = juce::jlimit (0.0f, 1.0f, v);
+        padSend[(size_t) slot][(size_t) fx].store (g, std::memory_order_relaxed);
+
+        //  UN BIT POR PAD, para que el hilo de audio no tenga que preguntar
+        //  384 veces por bloque si alguien manda algo a algun sitio.
+        //
+        //  El reparto de envios recorria kNumPads x kNumFx entero en CADA
+        //  bloque - 384 cargas atomicas y 384 pasos de suavizado, 288.000
+        //  cargas por segundo con buffer de 64 - hiciera lo que hiciera la
+        //  maquina. Con los seis efectos apagados y ni un pad sonando el
+        //  trabajo era exactamente el mismo que con dieciseis pads sonando.
+        //
+        //  El bit se pone aqui, en el hilo de mensajes, que es el unico sitio
+        //  desde el que un envio cambia. Se pone ANTES de mirar los demas
+        //  para que no exista un instante con el valor puesto y el bit sin
+        //  poner: un bloque que leyera ese instante se saltaria el pad.
+        std::uint64_t bit = 0;
+        for (int f = 0; f < kNumFx; ++f)
+            if (padSend[(size_t) slot][(size_t) f].load (std::memory_order_relaxed) > 0.0f)
+                { bit = 1ull << (unsigned) slot; break; }
+
+        std::uint64_t was = padSendMask.load (std::memory_order_relaxed);
+        std::uint64_t now;
+        do { now = bit != 0 ? (was | bit) : (was & ~(1ull << (unsigned) slot)); }
+        while (! padSendMask.compare_exchange_weak (was, now, std::memory_order_relaxed));
     }
     float getPadSend (int slot, int fx) const noexcept
     {
@@ -752,7 +777,27 @@ private:
     bool  hpWasActive     = false;
 
     // Master delay.
-    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Linear> delayLine { 96000 };
+    //  LAGRANGE, NO LINEAL, PORQUE HAY REALIMENTACION.
+    //
+    //  Interpolar linealmente un retardo fraccionario no es aproximar: es un
+    //  paso bajo cuya frecuencia de corte depende de la PARTE FRACCIONARIA
+    //  del retardo - transparente en fraccion 0, y en fraccion 0.5 unos 3 dB
+    //  menos en Nyquist/2 y un cero en Nyquist. Con una sola pasada eso se
+    //  perdona; aqui la linea se realimenta hasta 0.95, asi que el error se
+    //  COMPONE en cada repeticion y la cola se apaga en agudos mucho antes de
+    //  lo que dice el mando. Y como el retardo se suaviza por muestra, la
+    //  fraccion barre todo su recorrido durante un movimiento de TIME: el
+    //  brillo de las repeticiones modula con ella.
+    //
+    //  Medido en el banco - un tono de 8 kHz, 33.34375 ms de retardo (1600.5
+    //  muestras, media muestra clavada de fraccion) y 0.9 de realimentacion:
+    //  la octava repeticion salia 5.9 dB por debajo de lo que la
+    //  realimentacion sola predice. Con Lagrange, 0.7 dB. Cinco decibelios de
+    //  agudos que el mando prometia y la linea se comia.
+    //
+    //  Cuesta tres multiplicaciones-acumulaciones mas por muestra y por canal
+    //  sobre una etapa que no llega al 1% de carga.
+    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> delayLine { 96000 };
     std::atomic<float> dlyTime { 250.0f };       // ms
     std::atomic<float> dlyFb   { 0.35f };        // 0..0.95
     std::atomic<float> dlyMix  { 0.0f };         // 0..1
@@ -776,6 +821,7 @@ private:
     std::atomic<float> drvMix  { 0.0f };
     float smDrvTone = 20000.0f, smDrvMix = 0.0f;
     float drvLp[2] { 0.0f, 0.0f };
+    bool  drvWasActive = false;   // flanco de reactivacion: ver seccion 5b/3
 
     // Crush: bit depth and sample-and-hold rate, the two halves of lo-fi.
     std::atomic<float> crBits { 8.0f };
@@ -784,6 +830,7 @@ private:
     float smCrMix = 0.0f;
     float crHold[2] { 0.0f, 0.0f };
     float crPhase = 0.0f;
+    bool  crWasActive = false;    // idem, ver seccion 5b/4
 
     // Reverb, last in the chain so everything ahead of it lands in the room.
     //  Ver Fdn.h. Sustituye a juce::dsp::Reverb, que es Freeverb: ocho peines
@@ -814,7 +861,13 @@ private:
     static constexpr bool fxIsTone[kNumFx] = { true, true, true, false, true, false };
 
     std::array<std::array<std::atomic<float>, kNumFx>, kNumPads> padSend {};
+    //  Bit i puesto = el pad i manda a algun efecto. Ver setPadSend.
+    std::atomic<std::uint64_t> padSendMask { 0 };
+    static_assert (kNumPads <= 64, "padSendMask es de 64 bits");
     std::array<std::array<float, kNumFx>, kNumPads> smSend {};    // audio thread only
+    //  Que pads siguen moviendose. Sin esto, saltarse un pad congelaba su
+    //  envio a medio cerrar. Solo del hilo de audio, como smSend.
+    std::array<bool, kNumPads> smSendHot {};
     std::array<juce::AudioBuffer<float>, kNumFx> fxBus;
     std::array<bool, kNumFx> busRinging {};
     juce::AudioBuffer<float> padScratch;

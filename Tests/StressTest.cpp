@@ -11,7 +11,10 @@
 #include "../Source/Denoise.h"
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
+#include <fstream>
 #include <limits>
+#include <string>
 
 using Clock = std::chrono::steady_clock;
 
@@ -261,6 +264,71 @@ int main()
         report (name, s, 1000.0 * b / sr);
     }
 
+    //  EL DELAY, Y EL BRILLO QUE LE QUEDA A LA OCTAVA REPETICION.
+    //
+    //  La linea interpolaba lineal, y una interpolacion lineal de un retardo
+    //  fraccionario no es una aproximacion: es un paso bajo cuya frecuencia de
+    //  corte depende de la parte fraccionaria. Con una pasada da igual; con
+    //  0.9 de realimentacion el error se COMPONE, y la cola se apaga en agudos
+    //  mucho antes de lo que dice el mando. De oido eso suena a "delay
+    //  analogico" y por eso nadie lo llama fallo - hasta que se mide contra el
+    //  numero que el mando promete.
+    //
+    //  Se mete un tono agudo, se dejan pasar ocho repeticiones y se compara su
+    //  nivel con el que la realimentacion sola predice. Lo que sobra es lo que
+    //  se come la interpolacion.
+    {
+        AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+        //  33.34375 ms x 48 kHz = 1600.5 muestras: media muestra EXACTA de parte
+        //  fraccionaria, que es el peor caso de la interpolacion. El primer
+        //  intento uso 100 ms, que son 4800 muestras clavadas - fraccion cero -
+        //  y ahi hasta la interpolacion lineal es exacta: la prueba daba -0.0 dB
+        //  con las dos y no estaba midiendo nada. Primero se duda de la prueba.
+        e.setDlyMix (1.0f); e.setDlyTime (33.34375f); e.setDlyFb (0.9f);
+        e.setPadGain (0, 1.0f);
+        e.setPadSend (0, 3, 1.0f);
+        //  8 kHz: bastante agudo para que la perdida se vea, bastante por
+        //  debajo de Nyquist para que no sea la propia banda del generador.
+        e.publishSample (0, makeSample (48000.0, 0.02, 8000.0f, false));
+
+        juce::AudioBuffer<float> b (2, 512);
+        b.clear(); e.renderNextBlock (b, 0, 512);
+        e.postNoteOn (0, 1.0f);
+
+        //  100 ms de retardo a 48 kHz son 4800 muestras: 9.4 bloques de 512.
+        //  Se mira el pico dentro de la ventana de cada repeticion.
+        double rep1 = 0.0, rep8 = 0.0;
+        bool nan = false;
+        for (int blk = 0; blk < 100; ++blk)
+        {
+            b.clear();
+            e.renderNextBlock (b, 0, 512);
+            double pk = 0.0;
+            for (int i = 0; i < 512; ++i)
+            {
+                const float v = b.getSample (0, i);
+                if (! std::isfinite (v)) nan = true;
+                pk = juce::jmax (pk, (double) std::abs (v));
+            }
+            //  Ventanas centradas en cada repeticion: 33.34 ms de separacion.
+            const double at = (double) (blk * 512) / 48000.0;
+            if (at > 0.030 && at < 0.066) rep1 = juce::jmax (rep1, pk);
+            if (at > 0.233 && at < 0.270) rep8 = juce::jmax (rep8, pk);
+        }
+
+        //  Lo que la realimentacion sola dice que tiene que quedar: 0.9^7.
+        const double ideal = std::pow (0.9, 7.0);
+        const double got   = (rep1 > 1.0e-9) ? rep8 / rep1 : 0.0;
+        const double lostDb = 20.0 * std::log10 (juce::jmax (1.0e-9, got / ideal));
+
+        //  Menos de 3 dB perdidos en siete pasadas por la linea. Con
+        //  interpolacion lineal esto se iba mucho mas abajo.
+        std::printf ("%-34s rep8/rep1 %.3f (ideal %.3f)   interp %+.1f dB   NaN %s   %s\n",
+                     "delay 8 repeticiones a 8 kHz", got, ideal, lostDb,
+                     nan ? "SI" : "no",
+                     (! nan && lostDb > -3.0) ? "OK" : "FALLA");
+    }
+
     //  LA REVERB, MEDIDA. Un cambio de algoritmo de cola no se juzga de oido
     //  en una sesion: se le mete un impulso y se mira cuanto tarda en caer 60
     //  dB, si crece en vez de caer, y si produce NaN. Una FDN mal escalada se
@@ -363,6 +431,55 @@ int main()
                      (! nan && cut < -12.0 && keep > -1.5) ? "OK" : "FALLA");
     }
 
+    //  Y LO QUE PIDE DE MEMORIA, que es la otra mitad y no estaba medida.
+    //
+    //  La version anterior guardaba el espectrograma entero - magnitud, real e
+    //  imaginaria - asi que el consumo crecia con la DURACION: 92 MB por
+    //  minuto de audio, y la app deja grabar cinco. Eso no lanza bad_alloc en
+    //  un telefono, lo mata el sistema, y por eso no lo veia ninguna prueba
+    //  que solo mirara el sonido. Aqui se limpia una muestra de cinco minutos
+    //  - el tope de setRecordLimit - y se mira cuanto crece el proceso.
+    {
+        auto rssKb = [] () -> long
+        {
+            //  VmHWM: el maximo que ha llegado a ocupar, no el de ahora. El de
+            //  ahora ya ha soltado los vectores cuando se pregunta.
+            std::ifstream f ("/proc/self/status");
+            std::string line;
+            while (std::getline (f, line))
+                if (line.rfind ("VmHWM:", 0) == 0)
+                    return std::atol (line.c_str() + 6);
+            return -1;
+        };
+
+        const double rate = 48000.0;
+        const int    len  = (int) (300.0 * rate);        // cinco minutos, mono
+        juce::AudioBuffer<float> b (1, len);
+        juce::Random rng (77);
+        for (int i = 0; i < len; ++i)
+            b.setSample (0, i, 0.02f * (rng.nextFloat() * 2.0f - 1.0f)
+                             + 0.30f * std::sin (2.0f * juce::MathConstants<float>::pi
+                                                 * 440.0f * (float) i / (float) rate));
+
+        const long before = rssKb();
+        const auto t0 = std::chrono::steady_clock::now();
+        Denoise::process (b, 0.6f);
+        const double s = std::chrono::duration<double> (std::chrono::steady_clock::now() - t0).count();
+        const long after = rssKb();
+
+        //  El propio buffer son 55 MB y ya estaban antes de llamar. Lo que se
+        //  mide es lo que anade el algoritmo: tiene que ser CONSTANTE, no
+        //  proporcional a los cinco minutos.
+        const double addedMb = (after - before) / 1024.0;
+        bool nan = false;
+        for (int i = 0; i < len; i += 97) if (! std::isfinite (b.getSample (0, i))) { nan = true; break; }
+
+        std::printf ("%-34s +%.1f MB sobre 55 MB de muestra   NaN %s   %.1f s   %s\n",
+                     "quitar ruido (5 min, memoria)", addedMb,
+                     nan ? "SI" : "no", s,
+                     (! nan && addedMb < 32.0) ? "OK" : "FALLA");
+    }
+
     //  MUESTRAS HOSTILES.
     //
     //  El unico dato que entra en esta app desde fuera es un fichero de audio
@@ -392,13 +509,23 @@ int main()
             { "valores enormes",     44100.0,  2, 4410, 3 },
         };
 
+        //  DOS VECES: CON EL LIMITADOR Y SIN EL.
+        //
+        //  Esta tanda solo ejercia el motor VIVO, que siempre lleva el
+        //  limitador puesto - y la barrera de no-finitos vivia DENTRO de ese
+        //  mismo `if`. O sea que el unico camino que apaga el limitador,
+        //  Exporter.h en el motor del rebote, era el unico que no estaba
+        //  medido, y es justo el que ESCRIBE A DISCO. Un NaN alli no se oye:
+        //  se guarda.
         bool allOk = true;
+        for (const bool limiter : { true, false })
         for (const auto& c : cases)
         {
             AudioEngine e;
             e.prepareToPlay (48000.0, 512);
             e.setPolyphony (8, 2);
             e.setPadGain (0, 1.0f);
+            e.setSafetyLimiter (limiter);
 
             SampleBuffer::Ptr sb = new SampleBuffer();
             sb->buffer.setSize (juce::jmax (1, c.chans), juce::jmax (1, c.len));
@@ -434,11 +561,13 @@ int main()
             const bool stuck = e.getPadPosition01 (0) >= 0.0f;
             const bool ok = ! nan && ! stuck;
             allOk = allOk && ok;
-            std::printf ("%-34s NaN %-3s  voz colgada %-3s  %s\n",
-                         c.what, nan ? "SI" : "no", stuck ? "SI" : "no", ok ? "OK" : "FALLA");
+            std::printf ("%-24s %-9s NaN %-3s  voz colgada %-3s  %s\n",
+                         c.what, limiter ? "[limit]" : "[rebote]",
+                         nan ? "SI" : "no", stuck ? "SI" : "no", ok ? "OK" : "FALLA");
         }
         std::printf ("%-34s %s\n", "muestras hostiles",
-                     allOk ? "ninguna cuelga ni envenena la salida" : "HAY FALLOS");
+                     allOk ? "ninguna cuelga ni envenena la salida, con y sin limitador"
+                           : "HAY FALLOS");
     }
 
     return 0;

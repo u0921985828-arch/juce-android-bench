@@ -76,7 +76,10 @@ void SessionKeeper::adopt (const SampleBuffer::Ptr* live, int numPads)
 
 void SessionKeeper::writeState (const juce::ValueTree& state, const juce::String& projectName)
 {
-    folder().createDirectory();
+    //  El otro lado de la misma carrera: este hilo crea .sesion mientras el de
+    //  sesion crea .sesion/samples, y el createDirectory de JUCE se da por
+    //  vencido si el mkdir devuelve EEXIST. Ver ProjectStore::ensureDirectory.
+    if (! ProjectStore::ensureDirectory (folder())) return;
 
     //  The name of the open project rides along in the session's own copy of
     //  the tree, so coming back restores the header too - and a project.xml
@@ -108,7 +111,11 @@ void SessionKeeper::writeState (const juce::ValueTree& state, const juce::String
         return;
     }
 
-    stateFile().deleteFile();
+    //  Mover encima, sin borrar antes: rename(2) sobreescribe y es atomico, y
+    //  el deleteFile() que habia aqui solo creaba un instante - corto, pero
+    //  real, y este proceso lo mata Android sin avisar - en el que existia el
+    //  temporal validado y NO existia la sesion. Justo lo que este fichero
+    //  entero se escribio para que no pasara.
     tmp.moveFileTo (stateFile());
 }
 
@@ -207,20 +214,12 @@ void SessionKeeper::run()
 
         if (sb != nullptr && sb->buffer.getNumSamples() > 0)
         {
-            //  Write beside the real name and move it into place, so a process
-            //  killed mid-write leaves the previous take intact rather than a
-            //  truncated file that reads back as a click.
-            const auto tmp = dest.getSiblingFile (dest.getFileName() + ".tmp");
-
-            if (ProjectStore::writeSample (tmp, sb->buffer, sb->sourceSampleRate))
-            {
-                dest.deleteFile();
-                tmp.moveFileTo (dest);
-            }
-            else
-            {
-                tmp.deleteFile();
-            }
+            //  Escribir al lado y mover ya lo hace writeSample por dentro -
+            //  se metio ahi porque saveProject llamaba directo al destino y no
+            //  tenia esta red. Envolverlo otra vez aqui no anadia nada y si
+            //  quitaba: el deleteFile() antes del moveFileTo abria una ventana
+            //  sin fichero ninguno que rename(2) no tiene.
+            ProjectStore::writeSample (dest, sb->buffer, sb->sourceSampleRate);
         }
         else
         {

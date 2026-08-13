@@ -103,15 +103,36 @@ jobs:
       #
       #  Projucer writes res/values/string.xml but never a styles.xml, so this
       #  goes in after the resave and before Gradle.
+      #  Y EL COLOR SE LEE DE LA TABLA, no se copia aqui.
+      #
+      #  Estaba escrito a mano - #FFF4EFE3 - o sea el chasis de PAPEL copiado
+      #  en un YAML, desacoplado de ZatiColours::skinTable. Retocar la paleta
+      #  en C++ dejaba la pantalla de arranque en el color viejo y nada avisaba:
+      #  es exactamente el fallo que Tests/skins.py existe para no tener, solo
+      #  que fuera del alcance de skins.py. Se lee del fichero, con el mismo
+      #  cuidado que alli - sin comentarios, porque la tabla cita colores
+      #  dentro de las frases - y si no se puede leer, el paso FALLA en vez de
+      #  colar un color inventado.
       - name: Launch theme (chassis-coloured window background)
         run: |
           set -euo pipefail
+          HEX="$(python3 - <<'PY'
+          import re, sys
+          s = open('Source/ZatiLookAndFeel.h', encoding='utf8').read()
+          s = re.sub(r'//[^\n]*', '', s)
+          blk = s[s.index('static const Skin table[4]'):]
+          m = re.findall(r'0x([0-9a-fA-F]{8})', blk)
+          if not m: sys.exit('no se pudo leer chassisTop de la tabla de carcasas')
+          print('#FF%06X' % (int(m[0], 16) & 0xffffff))
+          PY
+          )"
+          echo "chasis de arranque: $HEX"
           for d in main debug release; do
             mkdir -p "Builds/Android/app/src/$d/res/values"
             printf '%s\n' \
               '<?xml version="1.0" encoding="utf-8"?>' \
               '<resources>' \
-              '  <color name="zatiChassis">#FFF4EFE3</color>' \
+              "  <color name=\"zatiChassis\">$HEX</color>" \
               '  <style name="ZatiLaunch" parent="@android:style/Theme.Material.Light.NoActionBar">' \
               '    <item name="android:windowBackground">@color/zatiChassis</item>' \
               '  </style>' \
@@ -239,6 +260,21 @@ jobs:
             --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
             Zati-release.apk
           "$APKSIGNER" verify --print-certs Zati-release.apk
+
+          #  Y SE COMPRUEBA QUE LA DE DEPURACION NO SE QUEDO PUESTA.
+          #
+          #  ci/zati-debug.keystore esta en el repositorio a proposito - es lo
+          #  que hace que el telefono acepte actualizar entre corridas en vez
+          #  de pedir desinstalar - y su contrasena es la canonica de Android.
+          #  Eso vale para el bucle de pruebas y no puede valer para nada mas.
+          #  Si apksigner no fallo pero el certificado sigue siendo el de
+          #  depuracion, la corrida se para: un APK publicable firmado con una
+          #  clave que esta en el repositorio es cualquiera pudiendo publicar
+          #  una actualizacion de esta app.
+          if "$APKSIGNER" verify --print-certs Zati-release.apk | grep -q 'CN=Android Debug'; then
+            echo "La release quedo firmada con la clave de depuracion del repositorio."
+            exit 1
+          fi
 
           # The bundle is signed with jarsigner, not apksigner: an AAB is a jar,
           # and apksigner only knows how to sign APKs. Play re-signs it with the

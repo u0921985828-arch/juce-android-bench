@@ -36,6 +36,24 @@ MIN_TOUCH = 40   # Metrics::hit — Android's own guideline is 48dp, this is the
 #  esta puesto.
 MIN_CELL = 12
 
+#  LA PANTALLA VIRTUAL SE COMPRUEBA ANTES DE EMPEZAR.
+#
+#  Xvfb se muere solo cada cierto tiempo en este entorno, y cuando se muere la
+#  app no arranca: segmentation fault en Component::centreWithSize, las 448
+#  corridas devuelven cero filas y el banco anuncia que la interfaz esta rota.
+#  Ha pasado cuatro veces, y cada una costo un rato de mirar codigo que estaba
+#  bien. Un banco que no distingue "la app falla" de "no hay donde dibujarla"
+#  no es un banco, es una fuente de sustos.
+def display_alive():
+    d = os.environ.get("DISPLAY", ":99")
+    try:
+        return subprocess.run(["xdpyinfo", "-display", d],
+                              stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL, timeout=10).returncode == 0
+    except Exception:
+        return False
+
+
 def run(size, lang, sheet):
     env = dict(os.environ, ZATI_AUDIT="1", ZATI_SIZE=size, ZATI_LANG=lang,
                ZATI_OPEN=sheet, DISPLAY=":99")
@@ -161,6 +179,13 @@ def judge_lang(rows_es, rows_en, size, sheet):
     return out
 
 def main():
+    if not os.path.exists(BIN):
+        sys.exit("no hay binario: compila primero (cmake --build build)")
+    if not display_alive():
+        sys.exit("la pantalla virtual %s no responde: sin ella las 448 corridas "
+                 "salen vacias y parece que la app esta rota.\n"
+                 "    Xvfb :99 -screen 0 1920x1080x24 &" % os.environ.get("DISPLAY", ":99"))
+
     only = sys.argv[1:]
     allf = []
     pairs = collections.defaultdict(dict)

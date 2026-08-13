@@ -248,14 +248,72 @@ public:
         return names;
     }
 
+    //  CREAR UNA CARPETA NO ES SEGURO ENTRE HILOS, Y AQUI HAY DOS.
+    //
+    //  juce::File::createDirectory crea el arbol componente a componente con
+    //  mkdir(), y trata CUALQUIER error como fallo - incluido EEXIST, que es
+    //  lo que devuelve un mkdir cuando otro hilo acaba de crear ese mismo
+    //  componente. El que pierde la carrera recibe "fail" y se va SIN crear el
+    //  hijo que iba a crear.
+    //
+    //  Aqui pasa siempre en el mismo sitio: el hilo de mensajes crea .sesion
+    //  para escribir state.xml en el mismo instante en que el hilo de sesion
+    //  crea .sesion/samples para el primer pad. Medido con una sonda, 4 de
+    //  cada 5 arranques: mkdir=0, la carpeta no existe, el stream se abre con
+    //  ENOENT y el WAV del PAD 1 no se escribe nunca. Siempre el primero,
+    //  porque es el unico que compite con la creacion del arbol - y el fallo
+    //  era mudo, porque writeSample devolvia false y nadie mira ese false.
+    //
+    //  Lo que importa no es quien la cree, sino que este. Se comprueba la
+    //  POSTCONDICION en vez del valor de retorno, y se reintenta: eso es
+    //  correcto gane quien gane la carrera.
+    static bool ensureDirectory (const juce::File& dir)
+    {
+        for (int attempt = 0; attempt < 4; ++attempt)
+        {
+            if (dir.isDirectory()) return true;
+            dir.createDirectory();
+            if (dir.isDirectory()) return true;
+            juce::Thread::sleep (2);
+        }
+        return dir.isDirectory();
+    }
+
     // Write `buffer` as a 24-bit WAV next to the project. Returns false if the
     // writer could not be created (out of space, bad path).
+    //
+    //  NUNCA SE BORRA EL BUENO ANTES DE TENER EL NUEVO.
+    //
+    //  Empezaba por dest.deleteFile(), o sea que si luego fallaba cualquier
+    //  cosa - sin espacio, carpeta de solo lectura, formato rechazado - la
+    //  copia anterior ya no existia y la nueva tampoco. SessionKeeper::run ya
+    //  habia resuelto esto por fuera, escribiendo en .tmp y moviendo, pero
+    //  saveProject llamaba aqui DIRECTAMENTE sobre el destino: guardar encima
+    //  de un proyecto con el disco lleno le borraba los 64 WAV y no escribia
+    //  ninguno, y lo unico que se veia era "64 pads no se escribieron" sobre
+    //  un proyecto que acababa de quedarse mudo.
+    //
+    //  La red va DENTRO, para que ninguna ruta pueda saltarsela. rename(2) es
+    //  atomico y sobreescribe, asi que no hay ni un instante sin fichero.
     static bool writeSample (const juce::File& dest, const juce::AudioBuffer<float>& buffer,
                              double sampleRate)
     {
-        dest.getParentDirectory().createDirectory();
-        dest.deleteFile();
+        if (! ensureDirectory (dest.getParentDirectory())) return false;
 
+        const auto tmp = dest.getSiblingFile (dest.getFileName() + ".escribiendo");
+        tmp.deleteFile();
+
+        if (! writeSampleTo (tmp, buffer, sampleRate)) { tmp.deleteFile(); return false; }
+        if (tmp.moveFileTo (dest))                     return true;
+
+        tmp.deleteFile();
+        return false;
+    }
+
+private:
+    static bool writeSampleTo (const juce::File& dest, const juce::AudioBuffer<float>& buffer,
+                               double sampleRate)
+    {
         std::unique_ptr<juce::FileOutputStream> out (dest.createOutputStream());
         if (out == nullptr || ! out->openedOk())
             return false;
@@ -294,6 +352,7 @@ public:
         return true;
     }
 
+public:
     // Read a WAV back into a SampleBuffer. Returns nullptr when the file is
     // missing or undecodable, so a damaged project loads with that pad empty
     // rather than refusing to open at all.

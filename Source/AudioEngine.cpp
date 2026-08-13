@@ -65,6 +65,13 @@ AudioEngine::AudioEngine()
     //  the app's life, which with the tone effects meant the dry path was
     //  nearly muted for exactly as long.
     for (auto& pad : smSend)   pad.fill (0.0f);
+
+    //  Y el estado de las etapas que RETIENEN un valor. Un cambio de ruta
+    //  vuelve a pasar por aqui con el motor cargado, y dejar la muestra
+    //  retenida del dispositivo anterior es un escalon de continua en la
+    //  primera muestra del nuevo.
+    drvLp[0] = drvLp[1] = 0.0f;   drvWasActive = false;
+    crHold[0] = crHold[1] = 0.0f; crPhase = 0.0f; crWasActive = false;
 }
 
 AudioEngine::~AudioEngine()
@@ -402,10 +409,32 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     bool  busFed[kNumFx] = {};
     bool  padSplit[kNumPads];
 
+    //  Dos preguntas de una vez, en lugar de 384: hay ALGUN efecto abierto, y
+    //  manda ALGUN pad. Si las dos son que no, el reparto de todos los pads es
+    //  "todo al seco" y no hay nada que suavizar - y ese es el estado en el
+    //  que la maquina pasa la mayor parte del tiempo.
+    const bool anyFxOpen = (fxMixNow[0] + fxMixNow[1] + fxMixNow[2]
+                          + fxMixNow[3] + fxMixNow[4] + fxMixNow[5]) > 0.0f;
+    const std::uint64_t sendMask = padSendMask.load (std::memory_order_relaxed);
+
     for (int p = 0; p < kNumPads; ++p)
     {
+        //  ...y el suavizado tiene que TERMINAR de bajar antes de saltarse el
+        //  pad, o un envio que se cierra se queda congelado a medio camino en
+        //  vez de irse a cero: silencio a medias que no se va nunca. Por eso
+        //  el corte mira tambien smSendHot, que es el pad que aun se mueve.
+        const bool listed = (sendMask >> (unsigned) p) & 1ull;
+        if (! listed && ! anyFxOpen && ! smSendHot[(size_t) p])
+        {
+            dryGain[p]  = 1.0f;
+            padSplit[p] = false;
+            for (int f = 0; f < kNumFx; ++f) sendGain[p][f] = 0.0f;
+            continue;
+        }
+
         float dry = 1.0f;
         bool  any = false;
+        bool  hot = false;
         for (int f = 0; f < kNumFx; ++f)
         {
             const float target = fxMixNow[f] * padSend[(size_t) p][(size_t) f].load (std::memory_order_relaxed);
@@ -414,10 +443,12 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             const float g = (sm < 0.0005f && target < 0.0005f) ? 0.0f : sm;
             sendGain[p][f] = g;
             if (g > 0.0f) { any = true; busFed[f] = true; }
+            if (sm != 0.0f) hot = true;      // aun no ha terminado de bajar
             if (fxIsTone[f]) dry *= (1.0f - g);
         }
         dryGain[p]  = dry;
         padSplit[p] = any;
+        smSendHot[(size_t) p] = hot;
     }
 
     for (int f = 0; f < kNumFx; ++f)
@@ -878,7 +909,25 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             smDrive   += kBlock * (drvT  - smDrive);
             smDrvTone += kBlock * (toneT - smDrvTone);
 
-            if (live (2))
+            //  ESTADO QUE SOBREVIVE A UN BUS MUERTO ES UN GOLPE ESPERANDO.
+            //
+            //  `drvLp` es el estado del paso bajo de salida y no se reiniciaba
+            //  nunca: ni en prepareToPlay - que solo limpiaba smSend - ni al
+            //  volver a encenderse. Un bus se declara muerto (busRinging
+            //  falso), la etapa deja de correr, pasan diez segundos, se vuelve
+            //  a mandar un pad: la primera muestra sale del valor que se quedo
+            //  guardado, que es DC. Un escalon de continua entrando al master,
+            //  o sea un golpe seco cada vez que se reactiva el efecto. Y
+            //  sobrevivia a un cambio de ruta de audio, que es cuando mas se
+            //  nota porque coincide con enchufar los cascos.
+            //
+            //  Se limpia AL ENTRAR y no al preparar, porque cambiar un envio
+            //  no pasa por prepareToPlay.
+            const bool drvNow = live (2);
+            if (drvNow && ! drvWasActive) { drvLp[0] = drvLp[1] = 0.0f; }
+            drvWasActive = drvNow;
+
+            if (drvNow)
             {
                 const float k  = 1.0f + smDrive * 24.0f;      // gain into the tanh
                 //  Compensate by the gain going IN, not by tanh's own ceiling:
@@ -906,25 +955,49 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
 
         // --- 4. CRUSH: bit depth and sample-and-hold, the two halves of lo-fi.
         {
-            if (live (4))
+            //  Mismo agujero que DRV, y aqui peor: `crHold` es literalmente la
+            //  muestra retenida, asi que al reactivarse el bus salia el ultimo
+            //  valor cuantizado de hace diez segundos, mantenido hasta que la
+            //  fase volviera a disparar - con crRate alto, cientos de muestras
+            //  de continua seguidas.
+            const bool crNow = live (4);
+            if (crNow && ! crWasActive) { crHold[0] = crHold[1] = 0.0f; crPhase = 0.0f; }
+            crWasActive = crNow;
+
+            if (crNow)
             {
                 const float bits   = juce::jlimit (1.0f, 16.0f, crBits.load (std::memory_order_relaxed));
                 const float levels = juce::jmax (1.0f, std::pow (2.0f, bits) * 0.5f);
                 const float step   = juce::jmax (1.0f, crRate.load (std::memory_order_relaxed));
 
-                float* w0 = fxBus[4].getWritePointer (0, startSample);
-                float* w1 = (chans > 1) ? fxBus[4].getWritePointer (1, startSample) : w0;
-                for (int i = 0; i < numSamples; ++i)
+                //  El canal por FUERA y la muestra por dentro. Estaba al reves,
+                //  con un `w = (ch == 0) ? w0 : w1` que es una rama por muestra
+                //  y por canal dentro del bucle mas caliente de la etapa: nada
+                //  de eso se puede vectorizar, y el compilador no puede saber
+                //  que los dos punteros no se solapan.
+                //
+                //  La fase es del EFECTO y no del canal, asi que se avanza una
+                //  sola vez: se guarda al terminar el primer canal y los demas
+                //  la reproducen desde el mismo sitio, que es lo que hacia el
+                //  bucle anterior y lo que mantiene los dos canales retenidos
+                //  a la vez - que es de donde sale el sonido de un crusher y
+                //  no de dos.
+                const float phase0 = crPhase;
+                for (int ch = 0; ch < chans; ++ch)
                 {
-                    crPhase += 1.0f;
-                    const bool take = (crPhase >= step);
-                    if (take) crPhase -= step;
-                    for (int ch = 0; ch < chans; ++ch)
+                    float* w    = fxBus[4].getWritePointer (ch, startSample);
+                    float phase = phase0;
+                    float hold  = crHold[ch];
+
+                    for (int i = 0; i < numSamples; ++i)
                     {
-                        float* w = (ch == 0) ? w0 : w1;
-                        if (take) crHold[ch] = std::round (w[i] * levels) / levels;
-                        w[i] = crHold[ch];
+                        phase += 1.0f;
+                        if (phase >= step) { phase -= step; hold = std::round (w[i] * levels) / levels; }
+                        w[i] = hold;
                     }
+
+                    crHold[ch] = hold;
+                    if (ch == 0) crPhase = phase;
                 }
                 returnBus (4);
             }
@@ -996,10 +1069,26 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     //     instead of as tearing. The export already measured and compensated;
     //     the thing you actually listen to had nothing.
     {
+        //  LA BARRERA NO ES EL LIMITADOR, Y ATARLAS FUE UN AGUJERO.
+        //
+        //  Esto eran dos decisiones metidas en un solo `if`: el limitador es
+        //  de SONIDO y es una preferencia; el filtro de no-finitos es de
+        //  INTEGRIDAD y no lo es. Con las dos juntas, `outCh` valia cero
+        //  cuando el limitador estaba apagado - y Exporter.h lo apaga a
+        //  proposito en el motor del rebote, para poder medir el pico de
+        //  verdad antes de compensarlo. O sea que el unico camino en el que
+        //  un NaN se ESCRIBE A DISCO era exactamente el que se quedaba sin
+        //  guardia.
+        //
+        //  Y no se notaba mirando: `bufferPeak` devuelve NaN, `(peak > 1.0f)`
+        //  con NaN es falso, asi que el rebote decidia que no habia que bajar
+        //  nada y escribia el fichero entero envenenado sin decir una palabra.
+        //  El banco tampoco lo veia, porque solo ejercia el motor VIVO, que
+        //  siempre lleva el limitador puesto.
         constexpr float thresh = 0.944f;      // -0.5 dBFS
-        const int outCh = safetyLimiter.load (std::memory_order_relaxed)
-                            ? juce::jmin (2, out.getNumChannels()) : 0;
-        for (int ch = 0; ch < outCh; ++ch)
+        const int  guardCh = juce::jmin (2, out.getNumChannels());
+        const bool limit   = safetyLimiter.load (std::memory_order_relaxed);
+        for (int ch = 0; ch < guardCh; ++ch)
         {
             float* w = out.getWritePointer (ch, startSample);
             for (int i = 0; i < numSamples; ++i)
@@ -1022,7 +1111,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 //  convierte "la app se queda muda" en "ese pad no suena".
                 if (! std::isfinite (v)) { w[i] = 0.0f; continue; }
 
-                if (v > thresh || v < -thresh)
+                if (limit && (v > thresh || v < -thresh))
                 {
                     const float sign = (v < 0.0f) ? -1.0f : 1.0f;
                     const float over = (v * sign - thresh) / (1.0f - thresh);
@@ -1556,6 +1645,13 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     copyArr (padSolo,    s.padSolo);
     for (size_t i = 0; i < padSend.size(); ++i) copyArr (padSend[i], s.padSend[i]);
     for (size_t i = 0; i < smSend.size();  ++i) smSend[i] = s.smSend[i];
+    //  Y LA MASCARA CON ELLOS. El motor del rebote no pasa nunca por
+    //  setPadSend - se le copia el estado entero de golpe - asi que sin esta
+    //  linea arrancaba con la mascara a cero, se saltaba los 64 pads y
+    //  exportaba la cancion sin un solo efecto. Todo dato que decida si algo
+    //  se PROCESA tiene que viajar con el que dice cuanto.
+    smSendHot = s.smSendHot;
+    padSendMask.store (s.padSendMask.load (std::memory_order_relaxed), std::memory_order_relaxed);
     refreshSolo();
 
     bpm.store (s.bpm.load (std::memory_order_relaxed), std::memory_order_relaxed);
