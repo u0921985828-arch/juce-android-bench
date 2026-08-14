@@ -145,7 +145,7 @@ jobs:
           cat Builds/Android/app/src/main/res/values/zati_theme.xml
           grep -n 'android:theme' Builds/Android/app/src/main/AndroidManifest.xml
 
-      - name: La app se llama Zati Sampler
+      - name: La app se llama ARTiFACTS ZATI
         run: |
           set -euo pipefail
           #  EL NOMBRE QUE SE VE, que no es el mismo que el del proyecto.
@@ -155,14 +155,20 @@ jobs:
           #  workflow busca a mano, y el segundo ES la app para Android -
           #  cambiarlo seria otra aplicacion distinta, sin actualizacion posible
           #  desde esta. El rotulo que se lee debajo del icono es otra cosa, y
-          #  es el unico que tiene que decir "Zati Sampler".
+          #  es el unico que tiene que decir "ARTiFACTS ZATI".
+          #
+          #  Decia "Zati Sampler", que no es el nombre de nada: ni el estudio
+          #  ni la app. El estudio es ARTiFACTS y la app es ZATI, y el rotulo
+          #  es el unico sitio donde los dos se leen juntos. Catorce caracteres
+          #  con un espacio en medio: el lanzador parte por el espacio y salen
+          #  dos lineas de nueve y cuatro, ninguna cortada.
           set -x
           find Builds/Android/app/src -name 'string*.xml' | while read -r f; do
             python3 - "$f" <<'PY'
           import re, sys
           p = sys.argv[1]
           s = open(p, encoding="utf-8").read()
-          s = re.sub(r'(<string name="app_name">)[^<]*(</string>)', r'\1Zati Sampler\2', s)
+          s = re.sub(r'(<string name="app_name">)[^<]*(</string>)', r'\1ARTiFACTS ZATI\2', s)
           open(p, "w", encoding="utf-8").write(s)
           PY
           done
@@ -226,9 +232,9 @@ jobs:
           test -n "$DBG" || { echo "No debug APK produced";   exit 1; }
           test -n "$REL" || { echo "No release APK produced"; exit 1; }
           test -n "$AAB" || { echo "No release AAB produced"; exit 1; }
-          cp "$DBG" Zati-debug.apk
-          cp "$REL" Zati-release.apk
-          cp "$AAB" Zati-release.aab
+          cp "$DBG" ARTiFACTS-ZATI-debug.apk
+          cp "$REL" ARTiFACTS-ZATI-release.apk
+          cp "$AAB" ARTiFACTS-ZATI-release.aab
           echo "Debug:   $DBG"
           echo "Release: $REL"
           echo "Bundle:  $AAB"
@@ -253,7 +259,7 @@ jobs:
           READELF="$(find "$ANDROID_SDK_ROOT/ndk" -name 'llvm-readelf' | head -1)"
           test -n "$READELF" || READELF=readelf
           rm -rf .so-check && mkdir .so-check
-          unzip -q -o Zati-release.apk 'lib/*' -d .so-check
+          unzip -q -o ARTiFACTS-ZATI-release.apk 'lib/*' -d .so-check
           bad=0
           for f in $(find .so-check -name '*.so'); do
             for a in $("$READELF" -lW "$f" | awk '/LOAD/{print $NF}'); do
@@ -292,20 +298,38 @@ jobs:
             --ks-key-alias "$KEY_ALIAS" \
             --key-pass "pass:$KEY_PASS" \
             --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
-            Zati-release.apk
-          "$APKSIGNER" verify --print-certs Zati-release.apk
+            ARTiFACTS-ZATI-release.apk
+          "$APKSIGNER" verify --print-certs ARTiFACTS-ZATI-release.apk
 
           #  Y SE COMPRUEBA QUE LA DE DEPURACION NO SE QUEDO PUESTA.
           #
           #  ci/zati-debug.keystore esta en el repositorio a proposito - es lo
           #  que hace que el telefono acepte actualizar entre corridas en vez
           #  de pedir desinstalar - y su contrasena es la canonica de Android.
-          #  Eso vale para el bucle de pruebas y no puede valer para nada mas.
-          #  Si apksigner no fallo pero el certificado sigue siendo el de
-          #  depuracion, la corrida se para: un APK publicable firmado con una
-          #  clave que esta en el repositorio es cualquiera pudiendo publicar
-          #  una actualizacion de esta app.
-          if "$APKSIGNER" verify --print-certs Zati-release.apk | grep -q 'CN=Android Debug'; then
+          #  Eso vale para el bucle de pruebas y no puede valer para nada mas:
+          #  un APK publicable firmado con una clave que esta en el repositorio
+          #  es cualquiera pudiendo publicar una actualizacion de esta app.
+          #
+          #  Se compara la HUELLA del certificado del repositorio contra la del
+          #  APK, no un nombre. Esto buscaba 'CN=Android Debug' y el certificado
+          #  del repositorio dice 'CN=ARTiFACTS COLORS Debug' - el nombre que le
+          #  quedo de otro proyecto - asi que la comprobacion no podia saltar
+          #  nunca: una barrera que no cubre el unico caso para el que se
+          #  escribio. La huella no se queda vieja cuando alguien renombre algo.
+          REPO_FP="$(keytool -list -v -keystore ci/zati-debug.keystore \
+                             -storepass android -alias androiddebugkey \
+                     | grep -i 'SHA256:' | head -1 | tr -d ' ' | cut -d: -f2-)"
+          APK_FP="$("$APKSIGNER" verify --print-certs ARTiFACTS-ZATI-release.apk \
+                    | grep -i 'SHA-256 digest' | head -1 | awk '{print $NF}')"
+          #  keytool imprime AA:BB:.. y apksigner aabb.., asi que se comparan
+          #  en minusculas y sin los dos puntos o no coincidirian jamas - que
+          #  es otra forma de tener una barrera que siempre dice que si.
+          REPO_FP="$(echo "$REPO_FP" | tr -d ':' | tr 'A-Z' 'a-z')"
+          APK_FP="$(echo "$APK_FP" | tr -d ':' | tr 'A-Z' 'a-z')"
+          test -n "$REPO_FP" -a -n "$APK_FP" || { echo "No se pudo leer una de las dos huellas"; exit 1; }
+          echo "huella repositorio $REPO_FP"
+          echo "huella APK         $APK_FP"
+          if [ "$REPO_FP" = "$APK_FP" ]; then
             echo "La release quedo firmada con la clave de depuracion del repositorio."
             exit 1
           fi
@@ -317,28 +341,28 @@ jobs:
           "$JAVA_HOME/bin/jarsigner" -verbose:false \
             -keystore upload.jks -storepass "$KS_PASS" -keypass "$KEY_PASS" \
             -sigalg SHA256withRSA -digestalg SHA-256 \
-            Zati-release.aab "$KEY_ALIAS"
+            ARTiFACTS-ZATI-release.aab "$KEY_ALIAS"
           rm -f upload.jks
           echo "Release APK and AAB signed with the upload key."
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Zati-apk
+          name: ARTiFACTS-ZATI-apk
           path: |
-            Zati-debug.apk
-            Zati-release.apk
-            Zati-release.aab
+            ARTiFACTS-ZATI-debug.apk
+            ARTiFACTS-ZATI-release.apk
+            ARTiFACTS-ZATI-release.aab
           if-no-files-found: error
 
       # Also attach both APKs to a rolling release tag for easy phone download.
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: apk-latest
-          name: Latest Zati builds (APK debug + release, AAB for Play)
+          name: ARTiFACTS ZATI - ultimas compilaciones (APK debug + release, AAB para Play)
           files: |
-            Zati-debug.apk
-            Zati-release.apk
-            Zati-release.aab
+            ARTiFACTS-ZATI-debug.apk
+            ARTiFACTS-ZATI-release.apk
+            ARTiFACTS-ZATI-release.aab
           make_latest: false
 
   # NOTE: the emulator smoke-test job was removed because the APK is now built
