@@ -544,6 +544,13 @@ namespace
         { "Sesion recuperada  [1 pad]", "", "Session restored  [1 pad]", "会话已恢复 [1 个音垫]", "استُعيدت الجلسة [باد واحد]" },
 
         // --- Browser -------------------------------------------------------
+        // --- Los sonidos de fabrica (Kits.h) --------------------------------
+        { "FABRICA",        "",         "FACTORY",    "内置",       "المصنع" },
+        { "Banco %1: %2",   "",         "Bank %1: %2", "库 %1：%2",  "البنك %1: %2" },
+        { "ACUSTICA",       "",         "ACOUSTIC",   "原声",       "أكوستيك" },
+        { "MAQUINA",        "",         "MACHINE",    "机器",       "آلة" },
+        { "TEXTURA",        "",         "TEXTURE",    "质感",       "نسيج" },
+        { "TONOS",          "",         "TONES",      "音调",       "نغمات" },
         { "CARGAR EN PAD %1", "",       "LOAD INTO PAD %1", "载入音垫 %1", "تحميل في باد %1" },
         { "Muestra para el pad %1", "", "Sample for pad %1",
                                         "音垫 %1 的采样",

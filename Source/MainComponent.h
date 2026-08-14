@@ -382,6 +382,8 @@ private:
 
     SessionKeeper session;
     void restoreSession();
+    //  Los 64 sonidos de fabrica. onlyBank < 0 = los cuatro bancos. Ver Kits.h.
+    void loadFactoryKits (int onlyBank = -1);
     bool sessionRestorePending = true;   // done on the first timer tick
     bool startupBusy = true;             // la barra ya esta puesta al primer fotograma
     int  sessionSyncTick  = 0;
@@ -440,6 +442,8 @@ private:
     //  banco. Coge los audios de la carpeta que estas viendo, en el orden en
     //  que se ven, y los reparte por el banco que tengas delante.
     juce::TextButton browseKitButton { "CARGAR KIT" };
+    //  Los sonidos de fabrica del banco que se esta viendo. Ver Kits.h.
+    juce::TextButton browseFactoryButton { "FABRICA" };
     void loadFolderAsKit();
     juce::TextButton browseSystemButton { "SISTEMA" };   // SAF / OS picker fallback
     std::unique_ptr<juce::FileChooser> chooser;          // only for that fallback

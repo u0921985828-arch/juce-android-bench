@@ -1,4 +1,5 @@
 #include "MainComponent.h"
+#include "Kits.h"
 #include "UiAudit.h"
 #include "Lang.h"
 #include "SystemInsets.h"
@@ -693,6 +694,23 @@ MainComponent::MainComponent()
             loadFolderAsKit();
         };
         browseSheet.addAndMakeVisible (browseKitButton);
+
+        //  FABRICA: los dieciseis de este banco, otra vez. Mismo peso que
+        //  CARGAR KIT - se lleva el banco entero por delante - asi que la
+        //  misma confirmacion de dos toques.
+        styleButton (browseFactoryButton, kKey);
+        browseFactoryButton.onClick = [this]
+        {
+            if (! armConfirm (browseFactoryButton, T ("SOBRESCRIBIR %1?",
+                                                      juce::String::charToString ((juce::juce_wchar) ('A' + currentBank)))))
+                return;
+            disarmConfirm();
+            loadFactoryKits (currentBank);
+            status.setText (T ("Banco %1: %2", juce::String::charToString ((juce::juce_wchar) ('A' + currentBank)),
+                               T (Kits::bankName (currentBank))),
+                            juce::dontSendNotification);
+        };
+        browseSheet.addAndMakeVisible (browseFactoryButton);
 
         // Escape hatch: hand off to the OS picker. Some Android ROMs hide media
         // files from a direct directory listing no matter what is granted; the
@@ -4197,8 +4215,9 @@ void MainComponent::resized()
         //  Por medida y no a tercios: "CARGAR KIT" es el rotulo mas largo de
         //  esta fila y en arabe y chino no mide lo mismo.
         {
-            juce::TextButton* pb[3] = { &browseLoadButton, &browseKitButton, &browseSystemButton };
-            layoutModuleBar (actions, pb, 0, 3);
+            juce::TextButton* pb[4] = { &browseLoadButton, &browseKitButton,
+                                        &browseFactoryButton, &browseSystemButton };
+            layoutModuleBar (actions, pb, 0, 4);
         }
         inner.removeFromBottom (8);
         if (browser != nullptr) browser->setBounds (inner);
@@ -5418,6 +5437,32 @@ int MainComponent::padSourceLength (int pad) const
     return 0;
 }
 
+//  LOS SESENTA Y CUATRO DE FABRICA. Ver Kits.h.
+//
+//  Sintetizarlos son unos milisegundos y CERO bytes de instalacion, asi que se
+//  hacen aqui mismo en vez de viajar dentro del APK. Va por el mismo camino que
+//  cargar un fichero - assignSampleToPad - para que el motor, la sesion y la
+//  onda no tengan ni que enterarse de que estos vienen de otro sitio.
+void MainComponent::loadFactoryKits (int onlyBank)
+{
+    const int from = (onlyBank < 0) ? 0 : juce::jlimit (0, kNumBanks - 1, onlyBank) * kPadsPerBank;
+    const int to   = (onlyBank < 0) ? kNumPads : from + kPadsPerBank;
+
+    for (int i = from; i < to; ++i)
+    {
+        if (auto sb = Kits::render (i))
+        {
+            assignSampleToPad (i, sb, Kits::table()[i].name);
+            //  El color del pad lo pone Zati::forPad y no se toca: el orden de
+            //  corte manda sobre cualquier idea decorativa.
+            padHasSample[(size_t) i] = true;
+        }
+    }
+
+    for (int i = from; i < to; ++i) refreshPad (i);
+    selectPad (juce::jmax (0, selectedPad));
+}
+
 void MainComponent::assignSampleToPad (int index, SampleBuffer::Ptr sb, const juce::String& name)
 {
     if (sb == nullptr || ! juce::isPositiveAndBelow (index, kNumPads)) return;
@@ -5634,6 +5679,7 @@ void MainComponent::retranslateUi()
 
     browseLoadButton  .setButtonText (T ("CARGAR"));
     browseKitButton   .setButtonText (T ("CARGAR KIT"));
+    browseFactoryButton.setButtonText (T ("FABRICA"));
     browseSystemButton.setButtonText (T ("SISTEMA"));
 
     exportMasterButton.setButtonText (T ("MASTER"));
@@ -8732,7 +8778,24 @@ void MainComponent::restoreSession()
 {
     if (! SessionKeeper::exists())
     {
-        session.adopt (uiSample.data(), kNumPads);
+        //  PRIMERA VEZ: la maquina viene con sonidos dentro.
+        //
+        //  Sin esto la app abria con sesenta y cuatro huecos grises y nada
+        //  que tocar hasta ir a buscar un fichero, que es lo contrario de lo
+        //  que hace cualquiera al abrir un sampler: golpear. Y solo aqui -
+        //  cuando NO hay sesion -, porque el dia que la persona ya tiene su
+        //  trabajo dentro, meterle la fabrica encima seria borrarselo.
+        loadFactoryKits();
+
+        //  Y AQUI NO SE ADOPTA. adopt() significa "esto ya esta en disco, no
+        //  hace falta escribirlo", que es verdad para lo que se acaba de LEER
+        //  de la sesion y mentira para lo que se acaba de sintetizar. Con el
+        //  adopt puesto - que es como estaba - los sesenta y cuatro sonidos no
+        //  se escribian nunca: al segundo arranque habia un state.xml con
+        //  sesenta y cuatro pads declarados y ni un solo WAV al lado, o sea la
+        //  maquina entera vacia y un mensaje diciendo que no habia audio.
+        //  Sin adoptar, el temporizador los ve nuevos y el hilo de sesion los
+        //  escribe como escribe cualquier otra cosa.
         return;
     }
 
