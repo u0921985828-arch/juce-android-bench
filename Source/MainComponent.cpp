@@ -236,6 +236,20 @@ MainComponent::MainComponent()
     }
     barButtons[0]->setToggleState (true, juce::dontSendNotification);
 
+    //  Y las cuatro de banco, dentro de la ficha. Ver seqBankButtons.
+    for (int b = 0; b < kNumBanks; ++b)
+    {
+        auto* t = new juce::TextButton (juce::String::charToString ((juce::juce_wchar) ('A' + b)));
+        styleButton (*t, kStepOff);
+        litAccent (*t);
+        t->setClickingTogglesState (true);
+        t->setRadioGroupId (5151);
+        t->onClick = [this, b] { selectBank (b); };
+        seqSheet.addAndMakeVisible (t);
+        seqBankButtons.add (t);
+    }
+    seqBankButtons[0]->setToggleState (true, juce::dontSendNotification);
+
     // Module bar. FX is NOT a module any more: the six effects live in their
     // own row on the machine face, where you can reach them mid-take without
     // covering the pads. A sheet for them would only be a second way to switch
@@ -2527,6 +2541,8 @@ void MainComponent::showSeqPage (int page)
     seqStepBtn.setToggleState (! onGrid, juce::dontSendNotification);
 
     stepGrid.setVisible      (onGrid);
+    //  La visibilidad de las tapas de banco NO se decide aqui: la decide
+    //  resized(), que es el unico que sabe si caben sin encoger la rejilla.
     patternSlider.setVisible (onGrid);
     lengthSlider.setVisible  (onGrid);
     bpmSlider.setVisible     (onGrid);
@@ -4905,6 +4921,36 @@ void MainComponent::resized()
                 col.removeFromTop (Metrics::sm);
             }
 
+            //  El banco de pads, JUSTO ENCIMA de la rejilla que va a cambiar -
+            //  la relacion entre las dos tiene que ser obvia sin leer nada -
+            //  PERO SOLO SI CABE SIN ENCOGERLA.
+            //
+            //  Esta fila cuesta 66 px y salen enteros de la rejilla, que en las
+            //  dos pantallas mas estrechas ya esta en el suelo: medido, la
+            //  celda pasaba de 12 px de alto a OCHO en 280x653 y en 360x640, y
+            //  doce ya era la tercera parte de un dedo. Una comodidad que
+            //  encoge lo unico para lo que existe la ficha no es una comodidad.
+            //
+            //  Donde no cabe, las tapas A B C D de la cara siguen estando: se
+            //  pierde el atajo, no la funcion. Y donde cabe - que son cinco de
+            //  las siete pantallas del banco - se gana escribir un bombo del
+            //  banco A y un bajo del D sin cerrar nada.
+            const int lanesH   = juce::jmax (0, col.getHeight() - Metrics::hit * 2 - Metrics::sm * 2);
+            const int rowCost  = 14 + Metrics::hit + Metrics::sm;
+            const bool bankRowFits = (lanesH - rowCost) / kPadsPerBank >= kMinLaneH;
+
+            for (auto* b : seqBankButtons) b->setVisible (bankRowFits && onGrid);
+            if (bankRowFits)
+            {
+                nameBand (col, "PADS");
+                auto row = col.removeFromTop (Metrics::hit);
+                const int bw = row.getWidth() / kNumBanks;
+                for (int b = 0; b < seqBankButtons.size(); ++b)
+                    seqBankButtons[b]->setBounds ((b < kNumBanks - 1 ? row.removeFromLeft (bw) : row)
+                                                      .reduced (Metrics::halfGap, 2));
+                col.removeFromTop (Metrics::sm);
+            }
+
             if (showBars)
             {
                 nameBand (col, "COMPAS");
@@ -5197,6 +5243,8 @@ void MainComponent::selectBank (int bank)
 
     currentBank = b;
     if (auto* t = bankButtons[b]) t->setToggleState (true, juce::dontSendNotification);
+    //  Las dos filas dicen lo mismo siempre: la de la cara y la de la ficha.
+    if (auto* t = seqBankButtons[b]) t->setToggleState (true, juce::dontSendNotification);
 
     selectPad (currentBank * kPadsPerBank + (selectedPad % kPadsPerBank + kPadsPerBank) % kPadsPerBank);
 

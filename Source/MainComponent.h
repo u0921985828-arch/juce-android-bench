@@ -133,6 +133,18 @@ private:
     enum SeqPage { seqPageGrid = 0, seqPageStep };
     int seqPage = seqPageGrid;
     juce::TextButton seqGridBtn { "PASOS" }, seqStepBtn { "PASO" };
+    //  LAS CUATRO TAPAS DE BANCO, OTRA VEZ, DENTRO DEL SECUENCIADOR.
+    //
+    //  La rejilla de pasos ensena SIEMPRE los dieciseis del banco en curso
+    //  (stepGrid.onCell suma currentBank * kPadsPerBank), y las tapas A B C D
+    //  de la cara quedan DEBAJO de esta ficha. Asi que para escribir un bombo
+    //  del banco A y un bajo del D habia que cerrar, cambiar y volver a abrir -
+    //  tres gestos para lo que un secuenciador hace todo el rato. Estas son las
+    //  mismas: llaman a selectBank y se quedan al dia con las de la cara.
+    juce::OwnedArray<juce::TextButton> seqBankButtons;
+    //  El suelo de alto de una pista de la rejilla de pasos. Es el mismo numero
+    //  que vigila Tests/expo.py (MIN_CELL): si cambia alli, cambia aqui.
+    static constexpr int kMinLaneH = 12;
     void showSeqPage (int page);
 
     //  LA FICHA DEL PAD, TAMBIEN EN DOS PAGINAS.
