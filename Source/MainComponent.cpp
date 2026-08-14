@@ -5530,11 +5530,17 @@ void MainComponent::denoisePad()
                                   padStart01[(size_t) pad], padEnd01[(size_t) pad]);
             selectPad (pad);
 
-            //  Se dice cuanto ha bajado el pico, que es la unica forma de saber
+            //  Se dice cuanto ha BAJADO el pico, que es la unica forma de saber
             //  si ha hecho algo sin volver a escucharlo entero.
+            //
+            //  Y SE DICE QUE ES UNA BAJADA, NO UN PICO. "pico 5.2 dB" se lee
+            //  como que el pico VALE 5.2 dB, que para un pico digital es
+            //  imposible: siempre es cero o menos. Lo que sale de aqui es la
+            //  DIFERENCIA entre antes y despues, asi que el rotulo lo dice y el
+            //  signo se invierte para que el numero cuente lo que se ha quitado.
             const double db = juce::Decibels::gainToDecibels ((double) juce::jmax (1.0e-6f, after)
                                                             / (double) juce::jmax (1.0e-6f, before), -60.0);
-            status.setText (T ("Ruido fuera - pico %1 dB", Lang::ltr (juce::String (db, 1))),
+            status.setText (T ("Ruido fuera - el pico baja %1 dB", Lang::ltr (juce::String (-db, 1))),
                             juce::dontSendNotification);
         });
     });

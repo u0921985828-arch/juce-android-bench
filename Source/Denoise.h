@@ -198,6 +198,17 @@ namespace Denoise
             //  nadie, y esas caen SIEMPRE por detras de donde se va a leer.
             int emitted = 0;
 
+            //  La suma de ventanas en REGIMEN, calculada y no supuesta: es la
+            //  de w^2 en las posiciones que se solapan sobre un punto
+            //  cualquiera del interior. De ahi sale el suelo del divisor.
+            float wsteady = 0.0f;
+            for (int m = -fft / hop; m <= fft / hop; ++m)
+            {
+                const int idx = fft / 2 + m * hop;
+                if (idx >= 0 && idx < fft) wsteady += win[(size_t) idx] * win[(size_t) idx];
+            }
+            const float wsumFloor = 0.5f * juce::jmax (1.0e-6f, wsteady);
+
             auto flush = [&] (int upTo) noexcept
             {
                 while (emitted < upTo)
@@ -209,8 +220,23 @@ namespace Denoise
                         //  que vale uno: en los dos primeros y los dos ultimos
                         //  saltos no hay solape completo, y sin esta division
                         //  los bordes salen atenuados.
-                        if (accN[(size_t) i] > 1.0e-6f)
-                            w[emitted + i] = acc[(size_t) i] / accN[(size_t) i];
+                        //
+                        //  PERO CON SUELO, Y ESTE ES EL FALLO QUE SE VEIA. En
+                        //  el primer salto solo hay UNA ventana encima, asi que
+                        //  la suma vale una fraccion de lo que vale en regimen
+                        //  - y dividir por una fraccion MULTIPLICA. Con el
+                        //  guardia en 1e-6 la primera muestra se podia
+                        //  amplificar por miles: un pico enorme en la muestra
+                        //  cero que la app anunciaba como "pico +5.2 dB"
+                        //  despues de una operacion que solo puede ATENUAR.
+                        //
+                        //  El suelo es la mitad de la suma en regimen. Por
+                        //  debajo se deja el borde algo bajo, que es un borde
+                        //  de cuatro milisegundos, en vez de meter un chasquido
+                        //  al principio de cada muestra limpiada.
+                        const float den = juce::jmax (accN[(size_t) i], wsumFloor);
+                        if (den > 1.0e-6f)
+                            w[emitted + i] = acc[(size_t) i] / den;
                     }
 
                     std::rotate (acc.begin(),  acc.begin()  + hop, acc.end());

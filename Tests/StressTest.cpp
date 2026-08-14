@@ -501,6 +501,43 @@ int main()
                      (! nan && cut < -12.0 && keep > -1.5) ? "OK" : "FALLA");
     }
 
+    //  Y QUE NO SUBA EL PICO, NUNCA.
+    //
+    //  Una resta espectral solo puede ATENUAR: si el pico sale mas alto que el
+    //  que entro, algo esta amplificando. Y lo estaba: la division por la suma
+    //  de ventanas del solape-suma no tenia suelo, y en el PRIMER salto solo
+    //  hay una ventana encima - o sea que la suma vale una fraccion de lo que
+    //  vale en regimen, y dividir por una fraccion multiplica. La app lo
+    //  anunciaba tal cual, "pico +5.2 dB", despues de limpiar.
+    //
+    //  No lo veia nadie porque el banco medía el SUELO y el TONO en mitad de la
+    //  señal, lejos de los bordes, que es justo donde estaba el fallo.
+    {
+        const double rate = 48000.0;
+        const int len = (int) (rate * 1.5);
+        juce::AudioBuffer<float> b (1, len);
+        juce::Random rng (5150);
+        for (int i = 0; i < len; ++i)
+        {
+            const float t = (float) i / (float) rate;
+            b.setSample (0, i, 0.05f * (rng.nextFloat() * 2.0f - 1.0f)
+                             + 0.45f * std::sin (2.0f * juce::MathConstants<float>::pi * 330.0f * t));
+        }
+        const float before = b.getMagnitude (0, len);
+        Denoise::process (b, 0.6f);
+        const float after = b.getMagnitude (0, len);
+
+        //  Y donde esta el pico: si el borde amplifica, cae en las primeras
+        //  muestras y no en mitad de la señal.
+        int at = 0; float pk = 0.0f;
+        for (int i = 0; i < len; ++i) if (std::abs (b.getSample (0, i)) > pk) { pk = std::abs (b.getSample (0, i)); at = i; }
+
+        const double d = 20.0 * std::log10 (juce::jmax (1.0e-9f, after) / juce::jmax (1.0e-9f, before));
+        std::printf ("%-34s pico %+.2f dB   maximo en %.0f ms   %s\n",
+                     "quitar ruido (no amplifica)", d, 1000.0 * at / rate,
+                     (d <= 0.5) ? "OK" : "FALLA");
+    }
+
     //  Y LO QUE PIDE DE MEMORIA, que es la otra mitad y no estaba medida.
     //
     //  La version anterior guardaba el espectrograma entero - magnitud, real e

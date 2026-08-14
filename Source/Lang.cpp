@@ -144,8 +144,8 @@ namespace
           "the sample is too short to measure the noise",
           "样本太短，无法测量噪声",
           "العينة أقصر من أن يُقاس ضجيجها" },
-        { "Ruido fuera - pico %1 dB", "", "noise gone - peak %1 dB",
-                                        "噪声已去除 - 峰值 %1 dB", "أُزيل الضجيج - الذروة %1 ديسيبل" },
+        { "Ruido fuera - el pico baja %1 dB", "", "noise gone - peak down %1 dB",
+                                        "噪声已去除 - 峰值降低 %1 dB", "أُزيل الضجيج - انخفضت الذروة %1 ديسيبل" },
         //  Los partes de la exportacion. Se escriben en un hilo de fondo y se
         //  leen en la barra de estado: eran castellano en las cuatro
         //  compilaciones, y lang.py no podia verlos porque no pasaban por T().
