@@ -3454,6 +3454,31 @@ void MainComponent::layoutPadGrid (juce::Rectangle<int> area, int cols, int rows
 //  El ultimo se lleva el resto del rectangulo, no su cuota calculada: seis
 //  divisiones enteras dejan la fila terminando hasta seis pixeles antes del
 //  borde, y ese hueco se ve porque la fila de al lado si llega.
+//  ¿Caben estas tapas en una fila de este ancho SIN apretar ninguna?
+//
+//  layoutModuleBar reparte lo que hay y no se niega nunca: si no llega, encoge.
+//  Eso esta bien cuando falta un pixel y es un fallo cuando faltan catorce, y
+//  el que llama es el unico que sabe si tiene una segunda fila que ofrecer.
+//  Misma fuente y mismo margen que el reparto, o la respuesta seria a otra
+//  pregunta.
+bool MainComponent::moduleBarFits (int rowWidth, juce::TextButton** mb, int count) const
+{
+    //  EL AIRE QUE HAY QUE CONTAR NO ES EL DEL REPARTO, ES EL QUE SE COME LA
+    //  CADENA DE DIBUJO ENTERA. layoutModuleBar reserva 2*Metrics::sm por tapa
+    //  y luego encoge la tapa 2 px por lado (reduced), y encima
+    //  drawButtonText le quita jlimit (3, 5, ancho / 14) mas por lado. Contar
+    //  solo los 16 del reparto dejaba pasar por un pixel - "CARGAR KIT" pedia
+    //  75 y tenia 74 - que es exactamente el fallo que esta funcion existe
+    //  para no tener.
+    const auto capFont = ZatiColours::monoFont (11.0f, true).withExtraKerningFactor (0.06f);
+    constexpr int kChrome = 2 * Metrics::sm + 2 * (Metrics::halfGap / 2) + 2 * 5;
+    int total = 0;
+    for (int i = 0; i < juce::jlimit (1, 8, count); ++i)
+        total += (int) std::ceil (juce::GlyphArrangement::getStringWidth (capFont, mb[i]->getButtonText()))
+               + kChrome;
+    return total <= rowWidth;
+}
+
 void MainComponent::layoutModuleBar (juce::Rectangle<int> row, juce::TextButton** mb, int vInset, int count)
 {
     //  Vale para cualquier fila de tapas, no solo para la barra de modulos: la
@@ -4211,13 +4236,31 @@ void MainComponent::resized()
         auto titleRow = inner.removeFromTop (Metrics::hit);
         browseCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
 
-        auto actions = inner.removeFromBottom (Metrics::btn);
-        //  Por medida y no a tercios: "CARGAR KIT" es el rotulo mas largo de
-        //  esta fila y en arabe y chino no mide lo mismo.
+        //  CUATRO ACCIONES NO CABEN EN UNA FILA ESTRECHA, igual que las cuatro
+        //  pestanas de AJUSTES. Eran tres y entraban; FABRICA las puso en
+        //  cuatro y el banco lo canto: en 280x653 "CARGAR KIT" pide 75 px y la
+        //  tapa le dejaba 61, y con ella se apretaban LOAD KIT, FACTORY y
+        //  تحميل. layoutModuleBar reparte proporcionalmente pero no se NIEGA
+        //  cuando no hay sitio: aprieta y sigue.
+        //
+        //  Se pregunta con la misma cuenta que hace el reparto - misma fuente,
+        //  mismo margen - y si no caben, dos filas de dos.
+        juce::TextButton* pb[4] = { &browseLoadButton, &browseKitButton,
+                                    &browseFactoryButton, &browseSystemButton };
+        const bool actionsFit = moduleBarFits (inner.getWidth(), pb, 4);
+
+        if (actionsFit)
         {
-            juce::TextButton* pb[4] = { &browseLoadButton, &browseKitButton,
-                                        &browseFactoryButton, &browseSystemButton };
+            auto actions = inner.removeFromBottom (Metrics::btn);
             layoutModuleBar (actions, pb, 0, 4);
+        }
+        else
+        {
+            auto lower = inner.removeFromBottom (Metrics::btn);
+            layoutModuleBar (lower, pb + 2, 0, 2);
+            inner.removeFromBottom (Metrics::xs);
+            auto upper = inner.removeFromBottom (Metrics::btn);
+            layoutModuleBar (upper, pb, 0, 2);
         }
         inner.removeFromBottom (8);
         if (browser != nullptr) browser->setBounds (inner);

@@ -646,6 +646,7 @@ private:
     void xyTouched (bool down);
     void refreshXyPad();
     void paintXySheetContent (juce::Graphics& g);
+    bool moduleBarFits (int rowWidth, juce::TextButton** mb, int count) const;
     void layoutModuleBar (juce::Rectangle<int> row, juce::TextButton** mb, int vInset, int count = 6);
 
     //  SONG: pick what to place from the palette, then tap a cell. Choosing
