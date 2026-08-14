@@ -2692,6 +2692,22 @@ void MainComponent::closeAllSheets()
 
 MainComponent::~MainComponent()
 {
+    //  EL PUENTE MIDI SE CIERRA ANTES QUE NADA, y no es una precaucion: es un
+    //  uso despues de liberar, todas las veces, con la salida encendida.
+    //
+    //  `midi` se declara en la linea 376 y `engine` en la 594, y los miembros
+    //  se destruyen al REVES de como se declaran: el motor muere PRIMERO. El
+    //  hilo del puente esta leyendo `src`, que apunta a la cola que vive dentro
+    //  del motor - se la pasa setSource en el constructor -, asi que en cuanto
+    //  ~AudioEngine termina, ese hilo drena memoria liberada hasta que le toca
+    //  morir a el.
+    //
+    //  Reordenar los miembros lo arreglaria tambien y seria peor: dejaria la
+    //  correccion dependiendo de que nadie mueva una linea en un fichero de mil
+    //  quinientas. Cerrarlo aqui es explicito y sobrevive a cualquier orden.
+    midi.closeInput();
+    midi.closeOutput();
+
     // The bounce thread holds a reference to the engine and to the pad
     // buffers, so it must be gone before either can be.
     if (exportJob != nullptr) { exportJob->signalThreadShouldExit(); exportJob.reset(); endBusy(); }
