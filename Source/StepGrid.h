@@ -40,10 +40,18 @@ public:
                     const bool* loaded,         // per pad
                     const signed char* notes,   // [step][pad] semitone offset, same stride
                     int patternLength, int bar, int playStep, int selectedPad,
-                    float stepPhase = 0.0f)
+                    float stepPhase = 0.0f, int firstPad = 0)
     {
         data = cells; zatiOf = zati; loadedOf = loaded; noteOf = notes;
         patLen = patternLength; barIndex = bar; playing = playStep; selPad = selectedPad;
+        //  EL NUMERO QUE SE PINTA EN EL CANALON ES EL DEL PAD, NO EL DEL CARRIL.
+        //
+        //  Esta rejilla trabaja en carriles - dieciseis, del 0 al 15 - y quien
+        //  la usa le suma el banco. Pintar carril+1 daba 01..16 en los cuatro
+        //  bancos, asi que en el banco B la cabecera decia "PAD 17 BD 808" y el
+        //  canalon de esa misma pista decia 01: el mismo pad con dos nombres, y
+        //  el que la persona lee para saber cual es era el falso.
+        laneBase = firstPad;
         phase = juce::jlimit (0.0f, 1.0f, stepPhase);
         repaint();
     }
@@ -76,7 +84,7 @@ public:
             g.setColour (has ? ZatiColours::bestOn (frag, ZatiColours::ink, juce::Colours::white)
                              : ZatiColours::inkDim.withAlpha (0.6f));
             g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
-            g.drawText (juce::String (pad + 1).paddedLeft ('0', 2), gut, juce::Justification::centred);
+            g.drawText (juce::String (laneBase + pad + 1).paddedLeft ('0', 2), gut, juce::Justification::centred);
 
             for (int c = 0; c < kBarSteps; ++c)
             {
@@ -206,5 +214,6 @@ private:
     const bool* loadedOf = nullptr;
     const signed char* noteOf = nullptr;
     int patLen = 16, barIndex = 0, playing = -1, selPad = -1, lastKey = -1;
+    int laneBase = 0;      // el pad del carril 0: 0, 16, 32 o 48. Ver setSource.
     float phase = 0.0f;   // how far through the live step, 0..1
 };

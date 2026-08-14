@@ -5196,7 +5196,8 @@ void MainComponent::refreshStepGrid()
     stepGrid.setSource (gridCells, gridZati, gridLoaded, gridNotes,
                         engine.getPatternLength (selectedPattern),
                         selectedBar, ps, selectedPad - base,
-                        ps >= 0 ? engine.getStepPhase() : 0.0f);
+                        ps >= 0 ? engine.getStepPhase() : 0.0f,
+                        base);   // el pad del carril 0, para que el canalon diga 17..32 en el banco B
 
     //  The grid can only ring the live column when that column is on screen,
     //  so at four bars you would lose the beat entirely while editing bar 1
@@ -8490,9 +8491,21 @@ void MainComponent::auditDemo()
     juce::Random rnd (404);
     constexpr double fs = 44100.0;
 
-    for (int i = 0; i < 16; ++i)
+    //  EN EL BANCO QUE PIDAN, no siempre en el A.  ZATI_BANK=0|1|2|3.
+    //
+    //  La maqueta escribia sus dieciseis piezas en los pads 1..16 y se
+    //  quedaba en el banco A, asi que el banco jamas ha medido B, C ni D - y
+    //  ahi vivia el fallo que motiva esto: el canalon de la rejilla de pasos
+    //  pintaba el numero del CARRIL, o sea 01..16 en los cuatro bancos,
+    //  mientras la cabecera de la misma pista decia "PAD 17". Un fallo que
+    //  solo existe fuera del banco A no lo ve una prueba que solo mira el A.
+    const int demoBank = juce::jlimit (0, kNumBanks - 1,
+                                       UiAudit::env ("ZATI_BANK").getIntValue());
+    const int demoBase = demoBank * kPadsPerBank;
+
+    for (int i = demoBase; i < demoBase + 16; ++i)
     {
-        const auto& p = kit[(size_t) i];
+        const auto& p = kit[(size_t) (i - demoBase)];
         const int len = juce::jmax (1024, (int) (fs * (p.decay * 2.5f)));
 
         SampleBuffer::Ptr sb = new SampleBuffer();
@@ -8538,8 +8551,8 @@ void MainComponent::auditDemo()
             for (int n = len - 1; n > 0; --n) d[n] = 0.7f * (d[n] - d[n - 1]);
 
         assignSampleToPad (i, sb, {});
-        padName[(size_t) i] = kit[(size_t) i].name;
-        padZati[(size_t) i] = kit[(size_t) i].zati;
+        padName[(size_t) i] = kit[(size_t) (i - demoBase)].name;
+        padZati[(size_t) i] = kit[(size_t) (i - demoBase)].zati;
         if (auto* pad = pads[i])
             pad->setSampleInfo (uiSample[(size_t) i], padName[(size_t) i],
                                 padStart01[(size_t) i], padEnd01[(size_t) i]);
@@ -8555,21 +8568,26 @@ void MainComponent::auditDemo()
     //  pattern[][][], no desde el motor, asi que escribir solo en el motor
     //  dejaba la foto del secuenciador con la rejilla VACIA - un patron que
     //  suena y no se ve.
-    auto write = [this] (const int* steps, int n, int pad)
+    auto write = [this, demoBase] (const int* steps, int n, int pad)
     {
         for (int i = 0; i < n; ++i)
         {
-            engine.setStep (0, steps[i], pad, true);
-            pattern[0][(size_t) steps[i]][(size_t) pad] = true;
+            engine.setStep (0, steps[i], demoBase + pad, true);
+            pattern[0][(size_t) steps[i]][(size_t) (demoBase + pad)] = true;
         }
     };
     write (kicks,  (int) (sizeof (kicks)  / sizeof (int)), 0);
     write (snares, (int) (sizeof (snares) / sizeof (int)), 1);
     write (hats,   (int) (sizeof (hats)   / sizeof (int)), 2);
     write (bass,   (int) (sizeof (bass)   / sizeof (int)), 6);
+
+    //  El banco DESPUES de escribir: selectBank vuelve a maquetar y a pedirle
+    //  la rejilla al patron, y hacerlo antes dejaba la foto con la rejilla del
+    //  banco nuevo dibujada sobre un patron que aun no existia.
+    selectBank (demoBank);
     refreshStepGrid();
 
-    selectPad (0);
+    selectPad (demoBase);
 
     //  Y con el aumento puesto, si el banco lo pide: la unica forma de mirar
     //  una foto del zoom es que la sonda pueda ponerlo.
@@ -8601,19 +8619,19 @@ void MainComponent::auditDemo()
     {
         const float a = (float) tr.upToFirstOccurrenceOf (",", false, false).getDoubleValue();
         const float b = (float) tr.fromFirstOccurrenceOf (",", false, false).getDoubleValue();
-        padStart01[0] = juce::jlimit (0.0f, 0.99f, a);
-        padEnd01[0]   = juce::jlimit (padStart01[0] + 0.01f, 1.0f, b);
-        const int len = padSourceLength (0);
-        engine.setPadStart (0, (int) (padStart01[0] * (float) len));
-        engine.setPadEnd   (0, (int) (padEnd01[0]   * (float) len));
-        selectPad (0);
+        padStart01[(size_t) demoBase] = juce::jlimit (0.0f, 0.99f, a);
+        padEnd01[(size_t) demoBase]   = juce::jlimit (padStart01[(size_t) demoBase] + 0.01f, 1.0f, b);
+        const int len = padSourceLength (demoBase);
+        engine.setPadStart (demoBase, (int) (padStart01[(size_t) demoBase] * (float) len));
+        engine.setPadEnd   (demoBase, (int) (padEnd01[(size_t) demoBase]   * (float) len));
+        selectPad (demoBase);
     }
 
     //  Con el aumento puesto y centrado donde lo centra el boton: en el medio
     //  del recorte. Es la unica forma de mirar una foto de esto.
     if (const auto z = UiAudit::env ("ZATI_ZOOM"); z.isNotEmpty())
         waveform.setZoom ((float) z.getDoubleValue(),
-                          (padStart01[0] + padEnd01[0]) * 0.5f);
+                          (padStart01[(size_t) demoBase] + padEnd01[(size_t) demoBase]) * 0.5f);
 
     repaint();
 }
