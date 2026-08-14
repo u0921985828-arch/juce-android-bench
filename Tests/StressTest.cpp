@@ -9,6 +9,7 @@
 #include <JuceHeader.h>
 #include "../Source/AudioEngine.h"
 #include "../Source/Denoise.h"
+#include "../Source/MidiIo.h"
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -262,6 +263,75 @@ int main()
         auto s = runBlocks (e2, bb, b, (int) (sr * 3 / b), [&e2] (int i) { if (i % 4 == 0) e2.postNoteOn (i % 16, 1.0f); });
         char name[64]; std::snprintf (name, sizeof name, "buffer %d (%.2f ms round trip)", b, 2.0 * 1000.0 * b / sr);
         report (name, s, 1000.0 * b / sr);
+    }
+
+    //  MIDI QUE SALE. La nota, la velocidad, y sobre todo QUE NO FALTE NINGUNA.
+    //
+    //  El envio se puso en triggerPad y no en handleCommand a proposito: es el
+    //  embudo por el que pasan el dedo, el secuenciador, la cadena y una celda
+    //  de la cancion. Ponerlo un piso mas arriba habria dejado fuera al
+    //  secuenciador, que es justo lo que la gente quiere mandar al hardware, y
+    //  el sintoma seria "los pads mandan notas pero el patron no" - que nadie
+    //  llama fallo, se llama "no funciona".
+    //
+    //  Y se comprueba tambien que un pad VACIO no manda: mandar la nota de un
+    //  pad sin sonido hace que el modulo de al lado toque algo que en esta app
+    //  no se oye.
+    {
+        AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (16, 4);
+        e.setMidiOutEnabled (true);
+        for (int p = 0; p < 4; ++p) { e.setPadGain (p, 1.0f); e.publishSample (p, makeSample (48000.0, 0.1, 200.0f)); }
+        //  El pad 5 se queda sin muestra: no debe mandar nada.
+        e.setPadGain (4, 1.0f);
+
+        juce::AudioBuffer<float> b (2, 512);
+        b.clear(); e.renderNextBlock (b, 0, 512);
+        e.midiOutQueue().drain ([] (const MidiIo::NoteEvent&) {});   // limpia la adopcion
+
+        //  Cuatro dedos y un pad vacio.
+        for (int p = 0; p < 5; ++p) e.postNoteOn (p, (p + 1) * 0.2f);
+        b.clear(); e.renderNextBlock (b, 0, 512);
+
+        int notes[8] = {}, vels[8] = {}, n = 0;
+        e.midiOutQueue().drain ([&] (const MidiIo::NoteEvent& ev)
+        {
+            if (n < 8) { notes[n] = MidiIo::noteForPad (ev.pad); vels[n] = ev.vel; ++n; }
+        });
+
+        const bool countOk = (n == 4);                       // el vacio no manda
+        bool mapOk = countOk;
+        for (int i = 0; i < n; ++i) if (notes[i] != 36 + i) mapOk = false;
+        //  0.2 -> 25, 0.4 -> 51, 0.6 -> 76, 0.8 -> 102. Y nunca cero, que en
+        //  MIDI significa apagado desde 1983.
+        bool velOk = countOk;
+        for (int i = 0; i < n; ++i)
+        {
+            const int want = juce::jlimit (1, 127, (int) std::lround ((i + 1) * 0.2f * 127.0f));
+            if (vels[i] != want || vels[i] < 1) velOk = false;
+        }
+
+        //  Y el secuenciador, que es el camino que se habria quedado fuera.
+        e.setStep (0, 0, 0, true);
+        e.setPlaying (true);
+        int fromSeq = 0;
+        for (int blk = 0; blk < 60; ++blk)
+        {
+            b.clear(); e.renderNextBlock (b, 0, 512);
+            e.midiOutQueue().drain ([&] (const MidiIo::NoteEvent& ev) { if (ev.on) ++fromSeq; });
+        }
+        e.setPlaying (false);
+
+        //  Y apagada, ni un byte.
+        e.setMidiOutEnabled (false);
+        for (int p = 0; p < 4; ++p) e.postNoteOn (p, 1.0f);
+        b.clear(); e.renderNextBlock (b, 0, 512);
+        int whenOff = 0;
+        e.midiOutQueue().drain ([&] (const MidiIo::NoteEvent&) { ++whenOff; });
+
+        std::printf ("%-34s %d notas  mapa %s  velocidad %s  secuenciador %d  apagada %d  %s\n",
+                     "midi que sale", n, mapOk ? "ok" : "MAL", velOk ? "ok" : "MAL",
+                     fromSeq, whenOff,
+                     (countOk && mapOk && velOk && fromSeq > 0 && whenOff == 0) ? "OK" : "FALLA");
     }
 
     //  EL DELAY, Y EL BRILLO QUE LE QUEDA A LA OCTAVA REPETICION.

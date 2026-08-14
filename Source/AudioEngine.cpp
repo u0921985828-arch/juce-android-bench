@@ -176,6 +176,27 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01)
     if (sb == nullptr)
         return;
 
+    //  LA NOTA SALE DE AQUI Y NO DE OTRO SITIO.
+    //
+    //  triggerPad es el embudo por el que pasan TODOS los disparos - el dedo,
+    //  el secuenciador, la cadena, una celda de la cancion, el MIDI que entra -
+    //  asi que poner el envio aqui es lo unico que garantiza que no haya un
+    //  camino que suene por dentro y no salga por el cable. Ponerlo en
+    //  handleCommand, que es donde apetece, se habria dejado fuera al
+    //  secuenciador, que es justo lo que la gente quiere mandar al hardware.
+    //
+    //  Va DESPUES de comprobar que el pad tiene sonido, a proposito: un pad
+    //  vacio no suena, y mandar su nota haria que el aparato de al lado tocara
+    //  algo que en esta app no se oye.
+    //
+    //  Y aqui no se envia nada. Se deja escrito - cuatro bytes en una cola sin
+    //  cerrojos - y sigue. Enviar reserva memoria y habla con el sistema; esto
+    //  es el hilo de audio.
+    if (midiOutOn.load (std::memory_order_relaxed))
+        midiOut.push ({ (std::uint8_t) slot,
+                        (std::uint8_t) juce::jlimit (1, 127, (int) std::lround (vel * 127.0f)),
+                        true });
+
     // Choke group: fade out any other pad's voices sharing this pad's group.
     const int group = padChoke[(size_t) slot].load (std::memory_order_relaxed);
     if (group > 0)
@@ -524,6 +545,10 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     Command local[kMaxCmds];
     int n = 0;
     commands.drain ([&local, &n] (const Command& c) noexcept { if (n < kMaxCmds) local[n++] = c; });
+    //  ...y la de MIDI, en el mismo sitio y con el mismo trato: un teclado no
+    //  es un ciudadano de segunda, dispara igual que un dedo. Dos colas, un
+    //  consumidor.
+    midiCommands.drain ([&local, &n] (const Command& c) noexcept { if (n < kMaxCmds) local[n++] = c; });
 
     //  CUANTIZAR EL DISPARO EN DIRECTO. Ver setLiveQuantise.
     //
@@ -1411,6 +1436,23 @@ void AudioEngine::noteOnByLifeboat (int slot) noexcept
 
     droppedCommands.fetch_add (1, std::memory_order_relaxed);
     fallbackTriggers.fetch_or ((std::uint64_t) 1u << slot, std::memory_order_release);
+}
+
+//  ENTRADA MIDI. Su propia cola, por el contrato de un solo productor - ver
+//  el comentario de midiCommands. El bote salvavidas es el mismo: una nota que
+//  no cabe suena igual, solo que al nivel del pad y sin dinamica, que es lo
+//  correcto que perder.
+void AudioEngine::postNoteOnFromMidi (int slot, float vel) noexcept
+{
+    Command c; c.type = Command::Type::NoteOn; c.slot = slot; c.velocity = vel;
+    if (! midiCommands.push (c))
+        noteOnByLifeboat (slot);
+}
+
+void AudioEngine::postNoteOffFromMidi (int slot) noexcept
+{
+    Command c; c.type = Command::Type::NoteOff; c.slot = slot;
+    midiCommands.push (c);
 }
 
 void AudioEngine::postNoteOff (int slot) noexcept

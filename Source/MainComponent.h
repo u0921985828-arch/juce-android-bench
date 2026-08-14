@@ -15,6 +15,7 @@
 #include "Exporter.h"
 #include "AudioPath.h"
 #include "XyPad.h"
+#include "MidiIo.h"
 
 // ============================================================================
 //  MainComponent — ZATI: a 16-pad matrix whose fragments carry the colour, an
@@ -103,11 +104,13 @@ private:
     //  a hold and a swipe leave no mark on the face - so there has to be one
     //  place that lists them, and it has to be inside the app rather than in a
     //  manual nobody opens. This is that place.
-    enum SetPage { pageAudio = 0, pageProjects, pageGestures };
+    enum SetPage { pageAudio = 0, pageMidi, pageProjects, pageGestures };
     int setPage = pageAudio;
-    juce::TextButton pageAudioBtn { "AUDIO" }, pageProjBtn { "PROYECTOS" },
-                     pageGestBtn  { "GESTOS" };
+    juce::TextButton pageAudioBtn { "AUDIO" }, pageMidiBtn { "MIDI" },
+                     pageProjBtn { "PROYECTOS" }, pageGestBtn  { "GESTOS" };
     void paintGesturesPage (juce::Graphics& g, juce::Rectangle<int> area);
+    void paintMidiPage (juce::Graphics& g, juce::Rectangle<int> area);
+    juce::Rectangle<int> midiArea;
     juce::Rectangle<int> gesturesArea;
     static constexpr int kNumGestures = 6;
     void showSetPage (int page);
@@ -367,6 +370,15 @@ private:
     //  The work that was never given a name. Written continuously in the
     //  background and read back on the next launch, so a process the system
     //  reclaimed does not take the session with it.
+    //  MIDI. Ver MidiIo.h: la entrada llega por su propia cola y la salida
+    //  la escribe el hilo de audio y la envia el hilo del puente.
+    MidiIo::Bridge midi;
+    juce::TextButton midiOutBtn { "MIDI OUT" }, midiInBtn { "MIDI IN" };
+    juce::ComboBox   midiOutBox, midiInBox;
+    juce::Label      midiOutLbl, midiInLbl;
+    void refreshMidiDevices();
+    void applyMidiChoice();
+
     SessionKeeper session;
     void restoreSession();
     bool sessionRestorePending = true;   // done on the first timer tick
@@ -800,7 +812,7 @@ private:
     //  Ocho capitulos, y el numero de lineas de cada uno. Se declara aqui
     //  porque lo necesitan el alto del contenido y el pintado, y esos dos
     //  TIENEN que contar lo mismo o el desplazamiento se queda corto.
-    static constexpr int kManualChapters = 8;   // ver kManual en el .cpp
+    static constexpr int kManualChapters = 9;   // ver kManual en el .cpp
     juce::OwnedArray<juce::TextButton> patternButtons;  // P1..P8 — chain include toggles
 
     // --- FX slots (spec Zone 5) -------------------------------------------

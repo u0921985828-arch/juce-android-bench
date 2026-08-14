@@ -8,6 +8,7 @@
 #include "SampleBuffer.h"
 #include "CommandFifo.h"
 #include "Fdn.h"
+#include "MidiIo.h"
 
 // ============================================================================
 //  AudioEngine — real-time core (P1).
@@ -77,6 +78,19 @@ public:
     void postTestTone() noexcept;
 
     void noteOnByLifeboat (int slot) noexcept;   // see postNoteOn
+
+    //  --- MIDI -----------------------------------------------------------
+    //  Entrada: la llama el hilo con el que JUCE entrega el MIDI, que NO es el
+    //  de mensajes. Va por su propia cola. Ver MidiIo.h.
+    void postNoteOnFromMidi  (int slot, float vel) noexcept;
+    void postNoteOffFromMidi (int slot) noexcept;
+
+    //  Salida: el hilo de AUDIO deja aqui cada golpe y otro hilo lo envia.
+    //  Encenderla no cuesta nada cuando no hay nadie escuchando - el hilo de
+    //  audio comprueba un bool atomico y no escribe.
+    void setMidiOutEnabled (bool on) noexcept { midiOutOn.store (on, std::memory_order_relaxed); }
+    bool isMidiOutEnabled() const noexcept { return midiOutOn.load (std::memory_order_relaxed); }
+    MidiIo::NoteFifo& midiOutQueue() noexcept { return midiOut; }
 
     //  How many triggers the command queue has refused since the last check.
     //  Reading it clears it. A non-zero answer means taps are reaching the
@@ -592,6 +606,19 @@ private:
     std::array<int, kNumVoices>  voiceNextInPad {};
     std::uint32_t                       voiceSerial = 0;   // audio-thread only, for oldest-steal
     CommandFifo commands;
+    //  LA SEGUNDA COLA, y existe por una razon y no por comodidad.
+    //
+    //  CommandFifo es SPSC de un solo productor POR CONTRATO, y el hilo con el
+    //  que JUCE entrega el MIDI no es el de mensajes. Empujar los dos ahi no
+    //  degrada la cola: la atasca, para siempre, y el sintoma seria "los pads
+    //  dejaron de sonar en cuanto enchufe el teclado". Una cola por productor,
+    //  y el hilo de audio - que sigue siendo un solo consumidor - drena las dos.
+    CommandFifo midiCommands;
+
+    //  La salida. midiOutOn se lee una vez por disparo en el hilo de audio;
+    //  apagada, triggerPad no escribe ni un byte.
+    std::atomic<bool>  midiOutOn { false };
+    MidiIo::NoteFifo   midiOut;
 
     //  THE LIFEBOAT. See postNoteOn / renderNextBlock.
     //

@@ -278,7 +278,8 @@ MainComponent::MainComponent()
         setSheet.onDismiss = [this] { closeAllSheets(); };
         setSheet.paintContent = [this] (juce::Graphics& g)
         {
-            if      (setPage == pageAudio)    paintAudioSheetContent (g);
+            if      (setPage == pageMidi)     paintMidiPage (g, midiArea);
+            else if (setPage == pageAudio)    paintAudioSheetContent (g);
             else if (setPage == pageProjects) paintProjSheetContent  (g);
             else                              paintGesturesPage (g, gesturesArea);
         };
@@ -561,8 +562,8 @@ MainComponent::MainComponent()
         //  where it is and its contents change, which is the difference
         //  between "settings has two pages" and "settings sends you somewhere
         //  else".
-        juce::TextButton* pb[3] = { &pageAudioBtn, &pageProjBtn, &pageGestBtn };
-        for (int i = 0; i < 3; ++i)
+        juce::TextButton* pb[4] = { &pageAudioBtn, &pageMidiBtn, &pageProjBtn, &pageGestBtn };
+        for (int i = 0; i < 4; ++i)
         {
             styleButton (*pb[i], kKey);
             pb[i]->setClickingTogglesState (true);
@@ -572,6 +573,38 @@ MainComponent::MainComponent()
             setSheet.addAndMakeVisible (pb[i]);
         }
         pageAudioBtn.setToggleState (true, juce::dontSendNotification);
+
+        //  LA PAGINA DE MIDI, y va en su propia pagina y no en la de AUDIO por
+        //  la misma razon por la que la ficha del pad acabo en tres: la de
+        //  AUDIO ya pide 158 px de lectura mas cuatro filas de tapas, y en
+        //  280x653 la ficha no puede pasar de 509. Cuatro controles mas ahi
+        //  serian cuatro controles de altura cero, que es lo que mide el banco.
+        for (auto* b : { &midiOutBtn, &midiInBtn })
+        {
+            styleButton (*b, kKey);
+            b->setClickingTogglesState (true);
+            litAccent (*b);
+            setSheet.addAndMakeVisible (b);
+        }
+        for (auto* c : { &midiOutBox, &midiInBox })
+        {
+            c->setTextWhenNoChoicesAvailable (T ("nada enchufado"));
+            c->setTextWhenNothingSelected (T ("nada enchufado"));
+            setSheet.addAndMakeVisible (c);
+        }
+
+        midiOutBtn.onClick = [this] { applyMidiChoice(); };
+        midiInBtn.onClick  = [this] { applyMidiChoice(); };
+        midiOutBox.onChange = [this] { applyMidiChoice(); };
+        midiInBox.onChange  = [this] { applyMidiChoice(); };
+
+        //  Lo que llega de fuera. Se traduce a un pad y se empuja a la cola de
+        //  MIDI - NO a la de comandos, que es de un solo productor. Esto lo
+        //  llama un hilo de JUCE, asi que aqui dentro no puede haber nada que
+        //  toque la interfaz.
+        midi.onNoteOn  = [this] (int pad, float vel) { engine.postNoteOnFromMidi (pad, vel); };
+        midi.onNoteOff = [this] (int pad)            { engine.postNoteOffFromMidi (pad); };
+        midi.setSource (engine.midiOutQueue());
     }
 
     // EXPORT sheet — the only door out of the app. Two products: the master,
@@ -2008,7 +2041,7 @@ namespace
 {
     struct ManualChapter { const char* title; const char* lines[5]; };
 
-    constexpr int kManualChapterCount = 8;
+    constexpr int kManualChapterCount = 9;
     const ManualChapter kManual[kManualChapterCount] =
     {
         { "EMPEZAR", {
@@ -2051,6 +2084,12 @@ namespace
             "La sesion se recupera sola al abrir la app",
             "MASTER es lo que oyes; PISTAS son los stems que suman a el",
             "Deshacer y rehacer, dieciseis pasos",
+            nullptr } },
+        { "MIDI", {
+            "AJUSTES > MIDI: manda las notas de lo que suena a otro aparato",
+            "El pad 1 es la nota 36, y de ahi hacia arriba",
+            "RECIBIR deja que un teclado dispare los pads",
+            "El secuenciador manda tambien, no solo tus dedos",
             nullptr } },
         { "SI ALGO NO SUENA", {
             "Mira la ganancia del pad y si hay un SOLO puesto en otro",
@@ -2419,10 +2458,17 @@ void MainComponent::showSetPage (int page)
     setPage = juce::jlimit ((int) pageAudio, (int) pageGestures, page);
     const bool onAudio = (setPage == pageAudio);
     const bool onProj  = (setPage == pageProjects);
+    const bool onMidi  = (setPage == pageMidi);
 
     pageAudioBtn.setToggleState (onAudio, juce::dontSendNotification);
+    pageMidiBtn .setToggleState (onMidi,  juce::dontSendNotification);
     pageProjBtn .setToggleState (onProj,  juce::dontSendNotification);
     pageGestBtn .setToggleState (setPage == pageGestures, juce::dontSendNotification);
+
+    midiOutBtn.setVisible (onMidi);
+    midiInBtn.setVisible  (onMidi);
+    midiOutBox.setVisible (onMidi);
+    midiInBox.setVisible  (onMidi);
 
     measureButton.setVisible (onAudio);
     quantButton.setVisible   (onAudio);
@@ -2442,6 +2488,7 @@ void MainComponent::showSetPage (int page)
 
     if (onProj)       refreshProjectList();
     else if (onAudio) refreshAudioOptions();
+    else if (onMidi)  refreshMidiDevices();
 
     resized();
     setSheet.repaint();
@@ -4121,6 +4168,7 @@ void MainComponent::resized()
         const bool onAudio = (setPage == pageAudio);
         const bool onProj  = (setPage == pageProjects);
         const bool onGest  = (setPage == pageGestures);
+        const bool onMidi  = (setPage == pageMidi);
 
         const int listRowH = juce::jmax (22, projList.getRowHeight());
         const int listH    = juce::jlimit (1, 8, projModel.names.size()) * listRowH;
@@ -4129,7 +4177,13 @@ void MainComponent::resized()
         //  The gestures page is a printed list: one row per gesture, and the
         //  card is exactly as tall as the list is. See paintGesturesPage.
         const int gestRowH = 30;
-        const int wanted = onAudio
+        //  La pagina de MIDI: dos bloques de rotulo + tapa + selector, y el
+        //  texto que explica la nota de cada pad.
+        const int midiH = Metrics::md * 2 + Metrics::hit + Metrics::sm + tabsH
+                            + (14 + Metrics::hit + Metrics::xs + Metrics::hit + Metrics::sm) * 2
+                            + 40 + Metrics::sm;
+        const int wanted = onMidi ? midiH
+            : onAudio
             ? Metrics::md * 2 + Metrics::hit + Metrics::sm + tabsH + 158 + Metrics::xs
                 + (Metrics::hit + Metrics::xs) * 4 + Metrics::sm
             : onGest
@@ -4159,9 +4213,10 @@ void MainComponent::resized()
         //  move when you switch.
         {
             auto tabs = inner.removeFromTop (Metrics::tab);
-            const int third = tabs.getWidth() / 3;
-            pageAudioBtn.setBounds (Lang::takeStart (tabs, third).reduced (Metrics::halfGap, 0));
-            pageProjBtn.setBounds  (Lang::takeStart (tabs, third).reduced (Metrics::halfGap, 0));
+            const int quarter = tabs.getWidth() / 4;
+            pageAudioBtn.setBounds (Lang::takeStart (tabs, quarter).reduced (Metrics::halfGap, 0));
+            pageMidiBtn.setBounds  (Lang::takeStart (tabs, quarter).reduced (Metrics::halfGap, 0));
+            pageProjBtn.setBounds  (Lang::takeStart (tabs, quarter).reduced (Metrics::halfGap, 0));
             pageGestBtn.setBounds  (tabs.reduced (Metrics::halfGap, 0));
             inner.removeFromTop (Metrics::sm);
 
@@ -4184,8 +4239,26 @@ void MainComponent::resized()
             }
         }
 
-        if (onAudio)
+        if (onMidi)
         {
+            auto block = [&inner] (juce::TextButton& btn, juce::ComboBox& box)
+            {
+                inner.removeFromTop (14);                       // pintado: el rotulo
+                auto row = inner.removeFromTop (Metrics::hit);
+                btn.setBounds (Lang::takeStart (row, juce::jmax (96, row.getWidth() / 3)).reduced (1, 2));
+                inner.removeFromTop (Metrics::xs);
+                box.setBounds (inner.removeFromTop (Metrics::hit).reduced (1, 2));
+                inner.removeFromTop (Metrics::sm);
+            };
+            block (midiOutBtn, midiOutBox);
+            block (midiInBtn,  midiInBox);
+            midiArea = inner.removeFromTop (40);                // pintado: la nota
+            audioInfoArea = bufRowArea = rateRowArea = langRowArea = skinRowArea = {};
+            projNameRowArea = projPathRowArea = {};
+        }
+        else if (onAudio)
+        {
+            midiArea = {};
             audioInfoArea = inner.removeFromTop (158);
             inner.removeFromTop (Metrics::xs);
 
@@ -4209,6 +4282,7 @@ void MainComponent::resized()
         }
         else
         {
+            midiArea = {};
             skinRowArea = {};
             projNameRowArea = inner.removeFromTop (Metrics::hit);
             {
@@ -5445,6 +5519,7 @@ void MainComponent::retranslateUi()
     pageAudioBtn.setButtonText (T ("AUDIO"));
     pageProjBtn .setButtonText (T ("PROYECTOS"));
     pageGestBtn .setButtonText (T ("GESTOS"));
+    pageMidiBtn .setButtonText (T ("MIDI"));
     manualButton.setButtonText (T ("MANUAL"));
     undoButton  .setButtonText (T ("DESHACER"));
     redoButton  .setButtonText (T ("REHACER"));
@@ -7657,6 +7732,98 @@ void MainComponent::finishMeasure()
 // Build the chips from what THIS device actually offers. Nothing is
 // hardcoded: a phone that only does 48 kHz shows one clock, and the burst
 // sizes are the ones the driver will really accept.
+//  LA PAGINA DE MIDI. Dos rotulos, y la unica cifra que hace falta saber para
+//  enchufar algo: que nota manda cada pad.
+void MainComponent::paintMidiPage (juce::Graphics& g, juce::Rectangle<int> area)
+{
+    //  Los rotulos de los dos bloques, sobre sus tapas. Se pintan desde las
+    //  posiciones que dejo resized(), que es de donde salen todas las medidas
+    //  de esta cara.
+    g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
+    g.setColour (ZatiColours::textOn (ZatiColours::chassisTop).withAlpha (0.55f));
+
+    auto label = [&g] (juce::Rectangle<int> ctrl, const juce::String& text)
+    {
+        if (ctrl.isEmpty()) return;
+        g.drawText (text, ctrl.withY (ctrl.getY() - 14).withHeight (14),
+                    juce::Justification::centredLeft, false);
+    };
+    label (midiOutBtn.getBounds(), T ("MANDAR NOTAS A"));
+    label (midiInBtn.getBounds(),  T ("RECIBIR NOTAS DE"));
+
+    if (area.isEmpty()) return;
+
+    //  Y la unica cifra que hace falta: sin ella hay que adivinar por que el
+    //  modulo de al lado toca la nota equivocada.
+    g.setColour (ZatiColours::textOn (ZatiColours::chassisTop).withAlpha (0.55f));
+    g.setFont (ZatiColours::monoFont (Metrics::fMeta, false));
+    g.drawFittedText (T ("El pad 1 es la nota %1, y de ahi hacia arriba. Canal %2.",
+                         Lang::ltr (juce::String (MidiIo::kBaseNote)),
+                         Lang::ltr (juce::String (midi.getChannel()))),
+                      area, juce::Justification::centredLeft, 2, 1.0f);
+}
+
+//  Lo que hay enchufado AHORA. Se vuelve a preguntar cada vez que se abre la
+//  pagina: un cable se enchufa con la app abierta, que es justo cuando a nadie
+//  se le ocurre reiniciarla.
+void MainComponent::refreshMidiDevices()
+{
+    auto fill = [] (juce::ComboBox& box, const juce::StringArray& names)
+    {
+        const auto keep = box.getText();
+        box.clear (juce::dontSendNotification);
+        for (int i = 0; i < names.size(); ++i)
+            box.addItem (names[i], i + 1);
+        //  Se conserva lo elegido si sigue ahi. Sin esto, abrir la pagina
+        //  soltaba el aparato que estabas usando.
+        for (int i = 0; i < names.size(); ++i)
+            if (names[i] == keep) { box.setSelectedId (i + 1, juce::dontSendNotification); return; }
+        if (names.size() == 1) box.setSelectedId (1, juce::dontSendNotification);
+    };
+
+    fill (midiOutBox, MidiIo::Bridge::outputNames());
+    fill (midiInBox,  MidiIo::Bridge::inputNames());
+
+    midiOutBtn.setButtonText (T ("MANDAR"));
+    midiInBtn.setButtonText  (T ("RECIBIR"));
+    setSheet.repaint();
+}
+
+//  Abrir y cerrar los aparatos segun las dos tapas. Es el unico sitio que los
+//  toca, y siempre desde el hilo de mensajes.
+void MainComponent::applyMidiChoice()
+{
+    const bool wantOut = midiOutBtn.getToggleState();
+    const bool wantIn  = midiInBtn.getToggleState();
+
+    if (wantOut && midiOutBox.getText().isNotEmpty())
+    {
+        if (! midi.openOutput (midiOutBox.getText()))
+        {
+            midiOutBtn.setToggleState (false, juce::dontSendNotification);
+            status.setText (T ("No se pudo abrir %1", midiOutBox.getText()), juce::dontSendNotification);
+        }
+    }
+    else midi.closeOutput();
+
+    //  El motor solo escribe en la cola cuando hay alguien al otro lado: con
+    //  esto apagado, un disparo no cuesta ni un byte de mas en el hilo de
+    //  audio.
+    engine.setMidiOutEnabled (midi.hasOutput());
+
+    if (wantIn && midiInBox.getText().isNotEmpty())
+    {
+        if (! midi.openInput (midiInBox.getText()))
+        {
+            midiInBtn.setToggleState (false, juce::dontSendNotification);
+            status.setText (T ("No se pudo abrir %1", midiInBox.getText()), juce::dontSendNotification);
+        }
+    }
+    else midi.closeInput();
+
+    setSheet.repaint();
+}
+
 void MainComponent::refreshAudioOptions()
 {
     bufButtons.clear();
@@ -8225,6 +8392,7 @@ void MainComponent::auditOpen (const juce::String& which)
     else if (which == "set")  { showSetPage (pageAudio);    refreshAudioOptions(); openSheet (setSheet, setButton); }
     else if (which == "proj") { showSetPage (pageProjects); refreshProjectList(); openSheet (setSheet, setButton); }
     else if (which == "gest") { showSetPage (pageGestures); openSheet (setSheet, setButton); }
+    else if (which == "midi") { showSetPage (pageMidi); refreshMidiDevices(); openSheet (setSheet, setButton); }
     else if (which == "rack") { rackPad = 0; openSheet (rackSheet, mixButton); refreshRack(); }
     else if (which == "chop") openChopSheet();
     else if (which == "manual") { closeAllSheets(); openSheet (manualSheet, setButton); }
