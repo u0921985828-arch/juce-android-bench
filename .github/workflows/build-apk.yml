@@ -45,13 +45,16 @@ jobs:
           # NDK + CMake versions MUST match what Projucer writes into the
           # generated app/build.gradle for JUCE 8.0.4 (ndkVersion 26.2.11394342,
           # cmake 3.22.1). If a JUCE bump changes these, update them here too.
-          # The platform is 35 because Play requires a new app to target an API
-          # released within the last year, and compileSdk follows targetSdk -
-          # which is also why Zati.jucer pins AGP 8.6.1 / Gradle 8.7, the oldest
-          # pair that accepts compileSdk 35.
+          #
+          #  La plataforma es 36 porque Play EXIGE que una app nueva apunte a
+          #  Android 16, y compileSdk sigue a targetSdk. Estaba en 35, que era
+          #  correcto cuando se escribio y dejo de serlo sin que nadie tocara
+          #  nada: la subida se rechaza. Por eso Zati.jucer pasa a AGP 8.9.1 /
+          #  Gradle 8.11.1, que es el par mas antiguo que acepta compileSdk 36 -
+          #  AGP 8.6.1 ni lo reconoce.
           sdkmanager --install \
-            "platforms;android-35" \
-            "build-tools;35.0.0" \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
             "ndk;26.2.11394342" \
             "cmake;3.22.1"
 
@@ -230,6 +233,37 @@ jobs:
           echo "Release: $REL"
           echo "Bundle:  $AAB"
           ls -la Zati-*.apk Zati-*.aab
+
+      - name: Paginas de 16 KB, comprobadas y no supuestas
+        #  Play BLOQUEA desde el 31 de mayo de 2026 cualquier app con codigo
+        #  nativo cuyas librerias no esten alineadas a 16384 bytes: los moviles
+        #  nuevos ya arrancan con paginas de 16 KB y una .so alineada a 4 KB no
+        #  carga. Zati.jucer lleva los flags del enlazador desde hace tiempo
+        #  (-Wl,-z,max-page-size=16384) y de hecho FUNCIONAN - medido, los tres
+        #  segmentos LOAD salen con align 0x4000.
+        #
+        #  Pero eso es una bandera en un fichero de proyecto y un dia alguien
+        #  regenera el exportador y se la lleva por delante, y el sintoma no es
+        #  un error de compilacion: es una subida rechazada meses despues, o
+        #  peor, una app que no abre en un movil nuevo. Se comprueba en el
+        #  binario que se va a publicar, que es el unico sitio donde la
+        #  respuesta es verdad.
+        run: |
+          set -euo pipefail
+          READELF="$(find "$ANDROID_SDK_ROOT/ndk" -name 'llvm-readelf' | head -1)"
+          test -n "$READELF" || READELF=readelf
+          rm -rf .so-check && mkdir .so-check
+          unzip -q -o Zati-release.apk 'lib/*' -d .so-check
+          bad=0
+          for f in $(find .so-check -name '*.so'); do
+            for a in $("$READELF" -lW "$f" | awk '/LOAD/{print $NF}'); do
+              echo "$f  LOAD align $a"
+              [ "$a" = "0x4000" ] || { echo "   ^ NO son 16 KB"; bad=1; }
+            done
+          done
+          rm -rf .so-check
+          [ "$bad" = "0" ] || { echo "Hay librerias sin alinear a 16 KB: Play lo rechaza."; exit 1; }
+          echo "todas las librerias alineadas a 16 KB"
 
       - name: Re-sign the release APK with the upload key
         # Only when the four secrets exist. Gradle has already signed both APKs
