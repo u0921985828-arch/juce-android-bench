@@ -4862,6 +4862,17 @@ void MainComponent::resized()
             return b;
         };
 
+        //  APAGADAS Y SIN SITIO, ANTES DE DECIDIR NADA.
+        //
+        //  Esto tiene que correr SIEMPRE, y el primer intento lo metio dentro
+        //  del if (onGrid) - donde en la pagina PASO no corre nunca, asi que
+        //  las cuatro tapas se quedaban con las coordenadas de la ultima vez
+        //  que se maqueto PASOS: encima de los ocho botones de compas, 128
+        //  solapes en las 476 corridas. Y ocultar no basta, hay que quitarles
+        //  el sitio: un componente invisible que conserva sus limites sigue
+        //  estando ahi para todo lo que mida geometria.
+        for (auto* b : seqBankButtons) { b->setVisible (false); b->setBounds ({}); }
+
         if (onGrid)
         {
             //  In landscape the four controls stand in their own column and the
@@ -4939,9 +4950,18 @@ void MainComponent::resized()
             const int rowCost  = 14 + Metrics::hit + Metrics::sm;
             const bool bankRowFits = (lanesH - rowCost) / kPadsPerBank >= kMinLaneH;
 
-            for (auto* b : seqBankButtons) b->setVisible (bankRowFits && onGrid);
-            if (bankRowFits)
+            //  Y SIN COORDENADAS CUANDO NO SE DIBUJAN.
+            //
+            //  Ocultarlas no basta: el banco mide SOLAPES sobre los limites que
+            //  quedan puestos, y en la pagina PASO estas cuatro se quedaban
+            //  encima de los ocho botones de compas - 128 solapes en las 476
+            //  corridas, y el primer fallo duro de toda la sesion. Un
+            //  componente que no se ve pero conserva su sitio sigue estando ahi
+            //  para todo lo que mire geometria.
+            const bool showBank = bankRowFits && onGrid;
+            if (showBank)
             {
+                for (auto* b : seqBankButtons) b->setVisible (true);
                 nameBand (col, "PADS");
                 auto row = col.removeFromTop (Metrics::hit);
                 const int bw = row.getWidth() / kNumBanks;
