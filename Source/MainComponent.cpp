@@ -2548,6 +2548,38 @@ bool MainComponent::padSourceWraps (int rowWidth) const
     return ! padRowFits (rowWidth, { &chopButton, &micButton, &resampleButton });
 }
 
+//  ¿CABEN LAS CUATRO PESTANAS DE AJUSTES EN UNA FILA?
+//
+//  Y se mide con LA FUENTE QUE LAS DIBUJA, que es lo que el primer intento hizo
+//  mal: reutilizo padRowFits, que mide a 11 px porque es lo que usan las tapas
+//  de la ficha del pad, mientras drawButtonText escribe la pestana a
+//  altura*0.38 - 12.16 px con Metrics::tab. Un diez por ciento de diferencia,
+//  suficiente para que la cuenta dijera que caben y el banco midiera
+//  "PROYECTOS pide 56 y tiene 42". Una medida hecha con otra fuente no es una
+//  medida de esto.
+bool MainComponent::setTabsFit (int rowWidth) const
+{
+    const auto capFont = ZatiColours::monoFont (juce::jlimit (10.0f, 14.5f, (float) Metrics::tab * 0.38f), true)
+                             .withExtraKerningFactor (0.06f);
+    const juce::TextButton* tabs[] = { &pageAudioBtn, &pageMidiBtn, &pageProjBtn, &pageGestBtn };
+
+    //  La mas ancha decide, porque las cuatro reciben el MISMO cuarto. Sumar
+    //  los cuatro anchos seria la cuenta de un reparto proporcional, que no es
+    //  el que hace esta fila.
+    float widest = 0.0f;
+    for (const auto* b : tabs)
+        widest = juce::jmax (widest, juce::GlyphArrangement::getStringWidth (capFont, b->getButtonText()));
+
+    //  Lo que le queda a la letra dentro de un cuarto. El margen NO es
+    //  kTextPad: drawButtonText reduce por `jlimit (3, 5, ancho / 14)`, que en
+    //  una pestana de 56 px son 4 px por lado. Poner 3 dejaba pasar 344x882 -
+    //  una fila, PROYECTOS recortado - mientras 280 y 360 salian bien, que es
+    //  el sintoma clasico de un margen que se queda corto por dos pixeles.
+    const float tabW   = (float) rowWidth / 4.0f - 2.0f * (float) Metrics::halfGap;
+    const float inset  = juce::jlimit (3.0f, 5.0f, tabW / 14.0f);
+    return widest <= tabW - 2.0f * inset;
+}
+
 //  ¿Caben estas tapas en una fila de este ancho? Con margen, porque la fuente
 //  con la que se mide aqui no es exactamente la que dibuja la tapa.
 bool MainComponent::padRowFits (int rowWidth,
@@ -4173,7 +4205,12 @@ void MainComponent::resized()
         const int listRowH = juce::jmax (22, projList.getRowHeight());
         const int listH    = juce::jlimit (1, 8, projModel.names.size()) * listRowH;
 
-        const int tabsH = Metrics::tab + Metrics::sm;
+        //  Y la altura de la tarjeta cuenta las DOS filas cuando hacen falta,
+        //  o la ficha se queda corta y lo que se sale es lo que se maqueta al
+        //  final. Se pregunta con el ancho que va a tener el interior.
+        const int setInnerW = juce::jmax (1, setSheet.getWidth() - Metrics::md * 2);
+        const bool tabsFitH = setTabsFit (setInnerW);
+        const int tabsH = (tabsFitH ? Metrics::tab : Metrics::tab * 2 + Metrics::xs) + Metrics::sm;
         //  The gestures page is a printed list: one row per gesture, and the
         //  card is exactly as tall as the list is. See paintGesturesPage.
         const int gestRowH = 30;
@@ -4212,12 +4249,42 @@ void MainComponent::resized()
         //  The tab row, directly under the title on both pages so it does not
         //  move when you switch.
         {
-            auto tabs = inner.removeFromTop (Metrics::tab);
-            const int quarter = tabs.getWidth() / 4;
-            pageAudioBtn.setBounds (Lang::takeStart (tabs, quarter).reduced (Metrics::halfGap, 0));
-            pageMidiBtn.setBounds  (Lang::takeStart (tabs, quarter).reduced (Metrics::halfGap, 0));
-            pageProjBtn.setBounds  (Lang::takeStart (tabs, quarter).reduced (Metrics::halfGap, 0));
-            pageGestBtn.setBounds  (tabs.reduced (Metrics::halfGap, 0));
+            //  CUATRO PESTANAS NO CABEN EN UNA FILA ESTRECHA.
+            //
+            //  Eran tres y entraban; la de MIDI las puso en cuatro y el banco
+            //  lo canto en la corrida siguiente: en 280x653 "PROYECTOS" pide 56
+            //  px de letra y la tapa le dejaba 42, y con ella se recortaban
+            //  tambien GESTOS, PROJECTS y المشاريع. Dieciseis rotulos cortados
+            //  por una pestana nueva.
+            //
+            //  No se arregla acortando los rotulos - "PROYS" no es una palabra -
+            //  sino preguntando si caben, que es lo que padRowFits ya hacia para
+            //  la ficha del pad. Si no caben, dos filas de dos: la tarjeta crece
+            //  32 px en el movil mas estrecho que existe y en todos los demas se
+            //  queda como estaba.
+            const bool tabsFit = setTabsFit (inner.getWidth());
+            auto layTwo = [] (juce::Rectangle<int> row, juce::TextButton& a, juce::TextButton& b)
+            {
+                const int half = row.getWidth() / 2;
+                a.setBounds (Lang::takeStart (row, half).reduced (Metrics::halfGap, 0));
+                b.setBounds (row.reduced (Metrics::halfGap, 0));
+            };
+
+            if (tabsFit)
+            {
+                auto tabs = inner.removeFromTop (Metrics::tab);
+                const int quarter = tabs.getWidth() / 4;
+                pageAudioBtn.setBounds (Lang::takeStart (tabs, quarter).reduced (Metrics::halfGap, 0));
+                pageMidiBtn.setBounds  (Lang::takeStart (tabs, quarter).reduced (Metrics::halfGap, 0));
+                pageProjBtn.setBounds  (Lang::takeStart (tabs, quarter).reduced (Metrics::halfGap, 0));
+                pageGestBtn.setBounds  (tabs.reduced (Metrics::halfGap, 0));
+            }
+            else
+            {
+                layTwo (inner.removeFromTop (Metrics::tab), pageAudioBtn, pageMidiBtn);
+                inner.removeFromTop (Metrics::xs);
+                layTwo (inner.removeFromTop (Metrics::tab), pageProjBtn, pageGestBtn);
+            }
             inner.removeFromTop (Metrics::sm);
 
             //  Whatever is left of the card belongs to the gestures list.

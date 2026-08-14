@@ -151,6 +151,7 @@ UNTRANSLATED_OK = {
     "FLT", "ISO", "HPF", "DRV", "DLY", "BIT", "REV",  # effect abbreviations
     "TAP", "KIT",                              # universales en cualquier sampler
     "MANUAL",                                  # se escribe igual en las dos lenguas
+    "MIDI",                                    # es una sigla, y es la misma en todo el mundo
     "XY",                                      # los dos ejes se llaman igual en todas partes
     "PADS", "SEC", "MIX", "SET", "SONG", "REC", "PLAY", "STOP", "LOAD",
     "RACK", "TEST", "AUDIO", "AUTOCUT", "AUTO CHOP", "SWING", "off",

@@ -163,6 +163,7 @@ private:
     juce::TextButton padSoundBtn { "SONIDO" }, padTrimBtn { "RECORTE" }, padRigBtn { "EL PAD" };
     void showPadPage (int page);
     bool padSourceWraps (int rowWidth) const;
+    bool setTabsFit (int rowWidth) const;
     bool padRowFits (int rowWidth, std::initializer_list<const juce::TextButton*> bs) const;
     //  El reparto apretado de EL PAD, decidido en resized() y necesario en
     //  paint() para titular la seccion del medio con lo que de verdad hay
