@@ -4,50 +4,79 @@
 #include "SampleBuffer.h"
 #include <array>
 #include <cmath>
+#include <vector>
 
 // ============================================================================
 //  Kits — los sesenta y cuatro sonidos con los que la app abre.
 //
-//  ABRIR UNA CAJA DE RITMOS VACIA NO ES ABRIR UNA CAJA DE RITMOS.
+//  ABRIR UNA CAJA DE RITMOS VACIA NO ES ABRIR UNA CAJA DE RITMOS. Lo primero
+//  que hace cualquiera al abrir un sampler es GOLPEAR, y si el primer golpe no
+//  suena la app ya ha perdido. Cuatro bancos de dieciseis, y cada banco una
+//  maquina distinta: eso convierte "cambiar de banco" en una decision musical
+//  y no en pasar de pagina.
 //
-//  Hasta aqui Zati arrancaba con dieciseis huecos grises y nada que tocar
-//  hasta que la persona fuera a buscar un fichero. Eso es un editor de
-//  muestras, no un instrumento: lo primero que hace cualquiera al abrir un
-//  sampler es GOLPEAR, y si el primer golpe no suena la app ya ha perdido.
-//  Cuatro bancos de dieciseis dan sesenta y cuatro sonidos desde el primer
-//  segundo, y cada banco es una maquina distinta - eso es lo que convierte
-//  "cambiar de banco" en una decision musical y no en pasar de pagina.
+//    A  ACUSTICA  la bateria de toda la vida. Donde va la mano sola.
+//    B  MAQUINA   la caja de ritmos de los ochenta.
+//    C  TEXTURA   lo que no es un golpe: siseos, subidas, impactos, viento.
+//    D  TONOS     bajos, acordes, pinchazos y colchones.
 //
-//  Y SE SINTETIZAN, NO SE EMPAQUETAN. Sesenta y cuatro WAV decentes son entre
-//  ocho y quince megas dentro del APK, que hoy pesa catorce enteros; ademas
-//  cada muestra grabada arrastra de quien es, y una app que se publica no
-//  puede llevar dentro un pack de procedencia dudosa. Generarlos cuesta CERO
-//  bytes de instalacion, unos milisegundos de arranque, y son nuestros.
+//  SE SINTETIZAN, NO SE EMPAQUETAN: sesenta y cuatro WAV decentes son entre
+//  ocho y quince megas dentro de un APK que pesa catorce, y cada muestra
+//  grabada arrastra de quien es. Generarlos cuesta cero bytes de instalacion y
+//  son nuestros.
 //
-//  El precio esta declarado: un bombo sintetizado no es un bombo grabado. No
-//  pretenden serlo. Son un punto de partida que suena bien y que invita a
-//  reemplazarlo, que es exactamente lo que un sampler quiere que hagas.
+// ----------------------------------------------------------------------------
+//  LA PRIMERA VERSION SONABA MAL, Y SONABA MAL POR TRES COSAS CONCRETAS.
 //
-//  Los CUATRO BANCOS, y por que estos cuatro:
+//  1. ALIAS. El metal eran seis ONDAS CUADRADAS crudas (sin (x) >= 0 ? 1 : -1)
+//     y el diente de sierra era 2*frac(fase)-1, tambien crudo. Un flanco
+//     vertical tiene armonicos hasta el infinito y a 44.1 kHz todo lo que pasa
+//     de 22050 se DOBLA hacia abajo y cae donde le da la gana - inarmonico,
+//     metalico, sucio. Eso no es "sonido de caja de ritmos vintage", es un
+//     fallo de muestreo. Ahora los flancos van con PolyBLEP, que corrige el
+//     salto con los dos puntos de alrededor y quita la mayor parte del doblez
+//     por unas pocas multiplicaciones.
 //
-//    A  ACUSTICA  - la bateria de toda la vida. Es donde va la mano sola.
-//    B  MAQUINA   - la caja de ritmos de los ochenta: seno largo, ruido
-//                   filtrado y metal de seis cuadradas. Otro genero entero.
-//    C  TEXTURA   - lo que no es un golpe: chasquidos, siseos, subidas,
-//                   impactos, viento. La materia prima de un ambiente.
-//    D  TONOS     - bajos, acordes, pinchazos y colchones. Sin esto no se
-//                   puede escribir una cancion, solo un ritmo.
+//  2. FILTROS DE UN POLO. Seis decibelios por octava no son un charles: son
+//     ruido blanco un poco tapado. Un charles, una caja o un barrido necesitan
+//     una campana con resonancia, y eso son DOS polos como minimo. Ahora hay
+//     un filtro de variable de estado (TPT, estable a cualquier frecuencia) con
+//     paso bajo, alto y banda, y la Q es un parametro de cada sonido.
 //
-//  Los NOMBRES no pasan por T(). KICK, SNARE, HAT y CLAP se llaman igual en
-//  un estudio de Madrid, de Shanghai y de El Cairo: son la jerga del oficio,
-//  como FLT o DLY. Traducirlos seria dificultar la lectura, no facilitarla.
+//  3. NORMALIZAR AL PICO. Este es el que se oye como "mucha ganancia". Un
+//     charles dura 40 ms y un bombo 400: si los dos se dejan con el mismo PICO,
+//     el bombo mete diez veces mas energia al oido y la mezcla se descuadra
+//     sola. Y con los sesenta y cuatro a 0.89 de pico, DOS pads a la vez ya
+//     estan en 0 dBFS - de ahi que sonara saturado en cuanto se tocaba algo.
+//
+//     Ahora se iguala por SONORIDAD: se mide la energia con la ponderacion de
+//     una K sencilla (un paso alto de cabeza mas una repisa de agudos, que es
+//     lo que hace la norma de medida de sonoridad) y se lleva cada sonido al
+//     mismo nivel, con el pico limitado despues. El resultado es que suenan
+//     igual de fuertes AL OIDO, que es lo unico que importa, y que queda
+//     margen de sobra para tocar cuatro a la vez.
+//
+//  Y dos cosas mas que se oian sin saber que eran: el saturador estaba puesto
+//  a 2.2x en los bombos - eso es distorsion, no cuerpo - y las muestras
+//  empezaban con un flanco vertical, que es un click en cada golpe. Ahora la
+//  saturacion es suave y donde hace falta, y todo entra con una rampa de un
+//  milisegundo.
 // ============================================================================
 namespace Kits
 {
     static constexpr int kNumBanks    = 4;
     static constexpr int kPadsPerBank = 16;
     static constexpr int kNumSounds   = kNumBanks * kPadsPerBank;   // 64
-    static constexpr double kRate     = 44100.0;
+    static constexpr double kRate     = 48000.0;
+
+    //  A CUARENTA Y OCHO Y NO A CUARENTA Y CUATRO. El aparato abre a 48 kHz en
+    //  practicamente cualquier movil, asi que a 44.1 cada golpe pasaba por el
+    //  remuestreador de Voice - interpolacion de Hermite sobre un transitorio,
+    //  que es justo donde peor se porta. A la misma frecuencia que el
+    //  dispositivo, delta vale 1 y la muestra se lee TAL CUAL.
+    static constexpr float kTargetLufsish = 0.055f;   // energia ponderada objetivo
+    static constexpr float kCeiling       = 0.80f;    // techo de pico: margen para tocar varios
+    static constexpr float kKnee          = 0.55f;    // donde empieza a doblarse en vez de cortarse
 
     inline const char* bankName (int bank)
     {
@@ -55,197 +84,240 @@ namespace Kits
         return n[juce::jlimit (0, kNumBanks - 1, bank)];
     }
 
-    // ------------------------------------------------------------------
-    //  Las piezas con las que se hacen. Nada de esto es sofisticado: un
-    //  generador, dos filtros de un polo, una envolvente y un saturador
-    //  bastan para sesenta y cuatro sonidos que se distinguen entre si, y
-    //  lo que los distingue es como se combinan, no lo caro que sea cada uno.
-    // ------------------------------------------------------------------
     namespace detail
     {
+        //  Semilla fija por sonido: tienen que ser LOS MISMOS en cada arranque
+        //  y en cada telefono, o un proyecto guardado suena distinto al abrirlo.
         struct Rng
         {
-            //  Semilla fija: los sonidos tienen que ser LOS MISMOS en cada
-            //  arranque y en cada telefono. Un ruido distinto cada vez
-            //  significa que un proyecto guardado suena distinto al abrirlo.
             juce::Random r;
             explicit Rng (int seed) : r (seed) {}
             float operator()() noexcept { return r.nextFloat() * 2.0f - 1.0f; }
         };
 
-        //  Un polo. El paso bajo es el que da el cuerpo y el paso alto es el
-        //  que quita el barro; con los dos en serie sale una banda, que es de
-        //  donde salen todas las cajas y todos los charles.
-        struct OnePole
+        //  FILTRO DE VARIABLE DE ESTADO, topologia TPT.
+        //
+        //  Dos polos, resonancia de verdad y estable hasta muy cerca de
+        //  Nyquist - que es donde un biquad directo se va de las manos y donde
+        //  viven los barridos de esta tabla. Da los tres tipos a la vez, que es
+        //  justo lo que hace falta cuando un mismo sonido quiere banda para el
+        //  cuerpo y alto para el aire.
+        struct Svf
         {
-            float z = 0.0f, a = 0.0f;
-            void setLp (double hz) noexcept
-            { a = 1.0f - std::exp (-2.0f * juce::MathConstants<float>::pi * (float) (hz / kRate)); }
-            float lp (float x) noexcept { z += a * (x - z); return z; }
-            float hp (float x) noexcept { z += a * (x - z); return x - z; }
+            float ic1 = 0.0f, ic2 = 0.0f, g = 0.0f, k = 2.0f, a1 = 0.0f, a2 = 0.0f, a3 = 0.0f;
+
+            void set (double hz, float q) noexcept
+            {
+                const double f = juce::jlimit (20.0, kRate * 0.49, hz);
+                g  = (float) std::tan (juce::MathConstants<double>::pi * f / kRate);
+                k  = 1.0f / juce::jmax (0.05f, q);
+                a1 = 1.0f / (1.0f + g * (g + k));
+                a2 = g * a1;
+                a3 = g * a2;
+            }
+
+            //  Devuelve los tres a la vez: paso bajo, banda y alto.
+            void process (float x, float& lo, float& bp, float& hi) noexcept
+            {
+                const float v3 = x - ic2;
+                const float v1 = a1 * ic1 + a2 * v3;
+                const float v2 = ic2 + a2 * ic1 + a3 * v3;
+                ic1 = 2.0f * v1 - ic1;
+                ic2 = 2.0f * v2 - ic2;
+                lo = v2; bp = v1; hi = x - k * v1 - v2;
+                if (! std::isfinite (ic1) || ! std::isfinite (ic2)) { ic1 = ic2 = 0.0f; lo = bp = hi = 0.0f; }
+            }
+            float lp (float x) noexcept { float a,b,c; process (x,a,b,c); return a; }
+            float bpf (float x) noexcept { float a,b,c; process (x,a,b,c); return b; }
+            float hp (float x) noexcept { float a,b,c; process (x,a,b,c); return c; }
         };
 
-        //  Envolvente exponencial. tau en segundos; a los 5 tau ya es silencio.
+        //  POLYBLEP: la correccion de un flanco.
+        //
+        //  Un salto vertical entre dos muestras trae armonicos hasta el
+        //  infinito, y todo lo que pasa de Nyquist vuelve doblado y cae
+        //  inarmonico. Sumar este polinomio en las dos muestras que rodean el
+        //  salto redondea el flanco justo lo que hace falta: quita la mayor
+        //  parte del doblez por tres multiplicaciones y una rama.
+        inline float polyBlep (double t, double dt) noexcept
+        {
+            if (t < dt)            { const double x = t / dt;        return (float) (x + x - x * x - 1.0); }
+            if (t > 1.0 - dt)      { const double x = (t - 1.0) / dt; return (float) (x * x + x + x + 1.0); }
+            return 0.0f;
+        }
+
+        //  Diente de sierra y cuadrada, las dos limitadas en banda.
+        inline float sawBl (double phase01, double inc) noexcept
+        {
+            return (float) (2.0 * phase01 - 1.0) - polyBlep (phase01, inc);
+        }
+        inline float sqrBl (double phase01, double inc) noexcept
+        {
+            float s = (phase01 < 0.5) ? 1.0f : -1.0f;
+            s += polyBlep (phase01, inc);
+            const double h = phase01 + 0.5 >= 1.0 ? phase01 - 0.5 : phase01 + 0.5;
+            s -= polyBlep (h, inc);
+            return s;
+        }
+
         inline float env (float t, float tau) noexcept { return std::exp (-t / juce::jmax (0.0005f, tau)); }
 
-        //  Ataque + caida, para lo que no empieza de golpe.
         inline float ad (float t, float atk, float tau) noexcept
         {
             const float a = (atk <= 0.0f) ? 1.0f : juce::jmin (1.0f, t / atk);
             return a * env (juce::jmax (0.0f, t - atk), tau);
         }
 
-        //  El saturador de siempre, y aqui hace falta de verdad: un seno con
-        //  la envolvente muy corta pega un pico que sin doblar suena a click.
-        inline float sat (float x) noexcept
+        //  Saturacion SUAVE. tanh(x) con x pequeno es casi x; el problema era
+        //  llamarlo con 2.2x, que ya es un distorsionador. Aqui redondea picos
+        //  y no cambia el timbre.
+        inline float soft (float x) noexcept
         {
             if (! std::isfinite (x)) return 0.0f;
-            return std::tanh (x);
+            return x - (x * x * x) * 0.16666667f + (x * x * x * x * x) * 0.008f;
         }
 
-        //  METAL: seis cuadradas a frecuencias que no guardan relacion
-        //  armonica. Es como sonaba el platillo de una 808 y sigue siendo la
-        //  unica forma barata de hacer algo que suene a metal y no a ruido.
+        //  UN CUERPO CON MODOS, que es lo que separa un tom de un pitido.
+        //
+        //  Un parche no vibra a UNA frecuencia: vibra a varias que no guardan
+        //  relacion entera y que se apagan a ritmos distintos - las agudas
+        //  antes. Tres modos ya bastan para que el oido diga "membrana".
+        struct Modes
+        {
+            double ph[3] {};
+            static constexpr double ratio[3] = { 1.0, 1.593, 2.135 };   // modos de una membrana circular
+            static constexpr float  amp[3]   = { 1.0f, 0.42f, 0.22f };
+            float next (double hz, float t, float tau) noexcept
+            {
+                float s = 0.0f;
+                for (int i = 0; i < 3; ++i)
+                {
+                    ph[i] += 2.0 * juce::MathConstants<double>::pi * hz * ratio[i] / kRate;
+                    //  Cada modo con su propia caida: los agudos se van antes.
+                    s += amp[i] * (float) std::sin (ph[i]) * env (t, tau / (1.0f + (float) i * 1.6f));
+                }
+                return s;
+            }
+        };
+
+        //  METAL, ahora con cuadradas LIMITADAS EN BANDA. Seis frecuencias sin
+        //  relacion armonica es lo que sonaba a platillo en una 808 y sigue
+        //  siendolo; lo que estaba mal era como se generaban.
         struct Metal
         {
             double ph[6] {};
             static constexpr double f[6] = { 205.3, 304.4, 369.6, 522.7, 540.0, 800.0 };
-            float next (double baseMul, double rate) noexcept
+            float next (double mul) noexcept
             {
                 float s = 0.0f;
                 for (int i = 0; i < 6; ++i)
                 {
-                    ph[i] += 2.0 * juce::MathConstants<double>::pi * f[i] * baseMul / rate;
-                    s += (std::sin (ph[i]) >= 0.0 ? 1.0f : -1.0f);
+                    const double inc = f[i] * mul / kRate;
+                    ph[i] += inc;
+                    if (ph[i] >= 1.0) ph[i] -= 1.0;
+                    s += sqrBl (ph[i], inc);
                 }
                 return s / 6.0f;
             }
         };
     }
 
-    // ------------------------------------------------------------------
-    //  La receta de un sonido. Todo lo que hace falta para generarlo cabe
-    //  en una fila, y las sesenta y cuatro filas caben en una pantalla:
-    //  asi se ve el kit ENTERO de un vistazo y se nota si falta un charles.
-    // ------------------------------------------------------------------
-    enum Shape
-    {
-        drum,       // seno con la afinacion cayendo: bombo y tom
-        snare,      // ruido en banda + cuerpo afinado
-        hat,        // ruido muy filtrado, corto o largo
-        metal,      // las seis cuadradas: platillo, campana, cencerro
-        clap,       // cuatro golpes de ruido muy juntos y una cola
-        tone,       // nota con armonicos: bajo, pinchazo, cuerda
-        chord,      // tres notas a la vez
-        sweep,      // ruido con el filtro barriendo: subidas y bajadas
-        noiseHit,   // impacto: ruido ancho con cuerpo grave
-        vinyl,      // chasquidos aleatorios sobre siseo
-        fm          // dos operadores: campana, cristal, mordente
-    };
+    enum Shape { drum, snare, hat, metal, clap, tone, chord, sweep, noiseHit, vinyl, fm };
 
     struct Recipe
     {
         const char* name;
         Shape shape;
-        float hz;        // frecuencia base
-        float decay;     // segundos
-        float p1;        // brillo, indice de FM, o cuanto cae la afinacion
-        float p2;        // segundo parametro segun la forma
+        float hz;
+        float decay;
+        float p1;
+        float p2;
     };
 
-    //  LOS SESENTA Y CUATRO. Cuatro filas de cuatro por banco, en el orden en
-    //  el que la rejilla los ensena: el 01 abajo a la izquierda.
     inline const Recipe* table()
     {
         static const Recipe t[kNumSounds] =
         {
             // --- A: ACUSTICA -------------------------------------------
-            { "KICK",   drum,      52.0f, 0.42f, 2.4f, 0.030f },
-            { "SNARE",  snare,    190.0f, 0.20f, 0.55f, 1900.0f },
-            { "HAT",    hat,     8000.0f, 0.045f, 0.0f, 0.0f },
-            { "OPEN",   hat,     7200.0f, 0.34f, 0.0f, 0.0f },
-            { "RIM",    snare,    420.0f, 0.055f, 0.30f, 3200.0f },
-            { "TOM LO", drum,     92.0f, 0.34f, 0.9f, 0.055f },
-            { "TOM MI", drum,    132.0f, 0.28f, 0.9f, 0.050f },
-            { "TOM HI", drum,    186.0f, 0.24f, 0.9f, 0.045f },
-            { "CLAP",   clap,       0.0f, 0.26f, 0.0f, 1500.0f },
-            { "RIDE",   metal,      1.0f, 0.90f, 0.35f, 0.0f },
-            { "CRASH",  metal,      0.8f, 1.70f, 0.70f, 0.0f },
-            { "SHAKE",  hat,     6200.0f, 0.075f, 0.0f, 1.0f },
-            { "CONGA",  drum,    240.0f, 0.20f, 0.6f, 0.040f },
-            { "COWBEL", metal,     2.4f, 0.30f, 0.10f, 0.0f },
-            { "TAMB",   hat,     9000.0f, 0.16f, 0.0f, 1.0f },
-            { "SPLASH", metal,     1.3f, 1.10f, 0.60f, 0.0f },
+            { "KICK",   drum,      55.0f, 0.38f, 3.2f, 0.022f },
+            { "SNARE",  snare,    195.0f, 0.19f, 0.42f, 1750.0f },
+            { "HAT",    hat,     9500.0f, 0.042f, 1.6f, 0.0f },
+            { "OPEN",   hat,     8600.0f, 0.30f, 1.4f, 0.0f },
+            { "RIM",    snare,    440.0f, 0.048f, 0.55f, 2600.0f },
+            { "TOM LO", drum,      95.0f, 0.36f, 1.1f, 0.050f },
+            { "TOM MI", drum,     138.0f, 0.30f, 1.1f, 0.045f },
+            { "TOM HI", drum,     192.0f, 0.25f, 1.1f, 0.040f },
+            { "CLAP",   clap,       0.0f, 0.24f, 2.0f, 1450.0f },
+            { "RIDE",   metal,      1.0f, 0.95f, 7000.0f, 1.2f },
+            { "CRASH",  metal,      0.8f, 1.90f, 4200.0f, 0.9f },
+            { "SHAKE",  hat,     7400.0f, 0.070f, 0.9f, 1.0f },
+            { "CONGA",  drum,     245.0f, 0.19f, 0.7f, 0.035f },
+            { "COWBEL", metal,      2.4f, 0.28f, 2400.0f, 3.0f },
+            { "TAMB",   hat,    10500.0f, 0.14f, 1.1f, 1.0f },
+            { "SPLASH", metal,      1.3f, 1.15f, 5200.0f, 0.8f },
 
-            // --- B: MAQUINA (la caja de ritmos de los ochenta) ----------
-            { "BD 808", drum,      45.0f, 1.10f, 0.9f, 0.055f },
-            { "SD 808", snare,    180.0f, 0.24f, 0.40f, 1400.0f },
-            { "CH 808", hat,     9500.0f, 0.032f, 0.0f, 0.0f },
-            { "OH 808", hat,     9000.0f, 0.40f, 0.0f, 0.0f },
-            { "RIM 808",snare,    550.0f, 0.040f, 0.15f, 4000.0f },
-            { "LT 808", drum,      78.0f, 0.60f, 0.5f, 0.080f },
-            { "MT 808", drum,     110.0f, 0.52f, 0.5f, 0.070f },
-            { "HT 808", drum,     155.0f, 0.46f, 0.5f, 0.060f },
-            { "CLAP 9", clap,       0.0f, 0.34f, 0.0f, 1100.0f },
-            { "CYM808", metal,      1.0f, 1.40f, 0.85f, 0.0f },
-            { "COW808", metal,      2.6f, 0.42f, 0.05f, 0.0f },
-            { "CLAVE",  tone,     2400.0f, 0.055f, 0.0f, 0.0f },
-            { "MARACA", hat,    11000.0f, 0.038f, 0.0f, 1.0f },
-            { "SUB",    drum,      36.0f, 1.40f, 0.35f, 0.090f },
-            { "ZAP",    sweep,   3000.0f, 0.22f, -1.0f, 0.0f },
-            { "SNAP",   snare,    800.0f, 0.070f, 0.20f, 5000.0f },
+            // --- B: MAQUINA --------------------------------------------
+            { "BD 808", drum,      48.0f, 1.05f, 1.1f, 0.045f },
+            { "SD 808", snare,    182.0f, 0.22f, 0.32f, 1300.0f },
+            { "CH 808", hat,    10500.0f, 0.030f, 2.2f, 0.0f },
+            { "OH 808", hat,     9800.0f, 0.36f, 2.0f, 0.0f },
+            { "RIM 808",snare,    560.0f, 0.036f, 0.62f, 3400.0f },
+            { "LT 808", drum,      82.0f, 0.58f, 0.6f, 0.070f },
+            { "MT 808", drum,     116.0f, 0.50f, 0.6f, 0.062f },
+            { "HT 808", drum,     162.0f, 0.44f, 0.6f, 0.055f },
+            { "CLAP 9", clap,       0.0f, 0.32f, 2.4f, 1050.0f },
+            { "CYM808", metal,      1.0f, 1.50f, 6000.0f, 0.7f },
+            { "COW808", metal,      2.6f, 0.40f, 2600.0f, 3.4f },
+            { "CLAVE",  tone,     2450.0f, 0.050f, 0.0f, 0.0f },
+            { "MARACA", hat,    12000.0f, 0.034f, 1.0f, 1.0f },
+            { "SUB",    drum,      38.0f, 1.35f, 0.4f, 0.080f },
+            { "ZAP",    sweep,   4000.0f, 0.20f, -1.0f, 3.0f },
+            { "SNAP",   snare,    850.0f, 0.062f, 0.25f, 4600.0f },
 
             // --- C: TEXTURA --------------------------------------------
             { "VINYL",  vinyl,      0.0f, 1.60f, 0.0f, 0.0f },
-            { "HISS",   hat,     4000.0f, 0.90f, 0.0f, 1.0f },
-            { "RISER",  sweep,    300.0f, 1.20f, 1.0f, 0.0f },
-            { "FALL",   sweep,   6000.0f, 0.90f, -1.0f, 0.0f },
-            { "IMPACT", noiseHit,  70.0f, 1.10f, 0.5f, 0.0f },
-            { "CLICK",  tone,    1800.0f, 0.012f, 0.0f, 0.0f },
-            { "STATIC", hat,     2500.0f, 0.35f, 0.0f, 1.0f },
-            { "WIND",   sweep,    800.0f, 1.80f, 0.4f, 1.0f },
-            { "THUMP",  noiseHit,  48.0f, 0.55f, 0.2f, 0.0f },
-            { "GLITCH", fm,       900.0f, 0.090f, 7.0f, 3.7f },
-            { "SCRAPE", hat,     1400.0f, 0.30f, 0.0f, 1.0f },
-            { "BOOM",   noiseHit,  40.0f, 1.60f, 0.7f, 0.0f },
-            { "TICK",   tone,    5000.0f, 0.008f, 0.0f, 0.0f },
-            { "SWELL",  sweep,    500.0f, 1.50f, 0.8f, 1.0f },
+            { "HISS",   hat,     5000.0f, 0.90f, 0.7f, 1.0f },
+            { "RISER",  sweep,    260.0f, 1.30f, 1.0f, 2.5f },
+            { "FALL",   sweep,   7000.0f, 0.85f, -1.0f, 2.0f },
+            { "IMPACT", noiseHit,  62.0f, 1.05f, 0.6f, 0.0f },
+            { "CLICK",  tone,    1900.0f, 0.011f, 0.0f, 0.0f },
+            { "STATIC", hat,     2800.0f, 0.32f, 0.8f, 1.0f },
+            { "WIND",   sweep,    700.0f, 1.80f, 0.4f, 4.0f },
+            { "THUMP",  noiseHit,  46.0f, 0.52f, 0.25f, 0.0f },
+            { "GLITCH", fm,       900.0f, 0.085f, 6.0f, 3.7f },
+            { "SCRAPE", hat,     1600.0f, 0.28f, 2.5f, 1.0f },
+            { "BOOM",   noiseHit,  38.0f, 1.55f, 0.75f, 0.0f },
+            { "TICK",   tone,    5200.0f, 0.008f, 0.0f, 0.0f },
+            { "SWELL",  sweep,    450.0f, 1.50f, 0.8f, 1.6f },
             { "CRACKL", vinyl,      0.0f, 0.80f, 1.0f, 0.0f },
-            { "DRONE",  tone,      65.0f, 2.20f, 0.0f, 1.0f },
+            { "DRONE",  tone,      65.0f, 2.20f, 0.35f, 1.0f },
 
             // --- D: TONOS ----------------------------------------------
-            { "BASS",   tone,      55.0f, 0.70f, 0.0f, 0.0f },
-            { "SAW BS", tone,      55.0f, 0.60f, 1.0f, 0.0f },
+            { "BASS",   tone,      55.0f, 0.70f, 0.55f, 0.0f },
+            { "SAW BS", tone,      55.0f, 0.62f, 1.0f, 0.0f },
             { "SUB BS", tone,      41.0f, 0.90f, 0.0f, 1.0f },
-            { "STAB",   chord,    220.0f, 0.34f, 0.0f, 0.0f },
+            { "STAB",   chord,    220.0f, 0.32f, 0.0f, 0.0f },
             { "CHORD",  chord,    165.0f, 1.00f, 0.0f, 1.0f },
             { "MINOR",  chord,    147.0f, 1.00f, 1.0f, 1.0f },
             { "PAD",    chord,    110.0f, 2.20f, 0.0f, 1.0f },
-            { "BELL",   fm,       660.0f, 1.30f, 3.0f, 2.01f },
-            { "PLUCK",  fm,       440.0f, 0.34f, 4.0f, 1.0f },
-            { "KEY",    fm,       330.0f, 0.70f, 2.0f, 3.0f },
-            { "ORGAN",  tone,     220.0f, 0.90f, 0.5f, 1.0f },
-            { "BRASS",  tone,     165.0f, 0.65f, 1.0f, 0.0f },
-            { "STRING", tone,     262.0f, 1.60f, 0.3f, 1.0f },
+            { "BELL",   fm,       660.0f, 1.35f, 3.2f, 2.01f },
+            { "PLUCK",  fm,       440.0f, 0.32f, 4.0f, 1.0f },
+            { "KEY",    fm,       330.0f, 0.68f, 2.2f, 3.0f },
+            { "ORGAN",  tone,     220.0f, 0.90f, 0.25f, 1.0f },
+            { "BRASS",  tone,     165.0f, 0.62f, 0.9f, 0.0f },
+            { "STRING", tone,     262.0f, 1.60f, 0.7f, 1.0f },
             { "FIFTH",  chord,    110.0f, 1.20f, 2.0f, 1.0f },
-            { "LEAD",   fm,       523.0f, 0.50f, 1.5f, 1.0f },
-            { "ARP",    tone,     392.0f, 0.28f, 0.7f, 0.0f },
+            { "LEAD",   fm,       523.0f, 0.48f, 1.6f, 1.0f },
+            { "ARP",    tone,     392.0f, 0.26f, 0.6f, 0.0f },
         };
         return t;
     }
 
-    // ------------------------------------------------------------------
-    //  Y el generador. Un sonido, mono, a 44.1 kHz.
-    // ------------------------------------------------------------------
     inline SampleBuffer::Ptr render (int index)
     {
         using namespace detail;
 
         const auto& r = table()[juce::jlimit (0, kNumSounds - 1, index)];
-
-        //  Cinco constantes de tiempo y ya no queda nada audible; con un
-        //  minimo, porque una muestra de cuatro datos no la puede leer nadie
-        //  (la interpolacion de Voice necesita cuatro puntos).
         const int len = juce::jmax (1024, (int) (kRate * juce::jmin (3.0f, r.decay * 5.0f)));
 
         SampleBuffer::Ptr sb = new SampleBuffer();
@@ -253,15 +325,11 @@ namespace Kits
         sb->buffer.setSize (1, len);
         float* d = sb->buffer.getWritePointer (0);
 
-        //  La semilla sale del INDICE, no del reloj: el mismo pad suena igual
-        //  en cada arranque y en cada telefono.
         Rng rnd (1000 + index * 37);
         Metal met;
-        OnePole f1, f2, f3;
-        double ph = 0.0, ph2 = 0.0, ph3 = 0.0;
-
-        //  Chasquidos del vinilo: se decide DONDE estan antes de empezar, para
-        //  que no dependan del orden en que se pidan los numeros.
+        Modes body;
+        Svf f1, f2;
+        double ph = 0.0, ph2 = 0.0, ph3 = 0.0, phs = 0.0;
         int nextClick = 0;
         float clickAmp = 0.0f;
 
@@ -274,176 +342,234 @@ namespace Kits
             {
                 case drum:
                 {
-                    //  La afinacion cae, y eso ES el bombo: un seno a
-                    //  frecuencia fija es un pitido. p1 dice cuanto sube al
-                    //  principio y p2 lo rapido que vuelve.
+                    //  La afinacion cae - eso ES el bombo - y el cuerpo lleva
+                    //  modos, que es lo que lo separa de un pitido.
                     const double f = r.hz * (1.0 + r.p1 * std::exp (-t / r.p2));
                     ph += 2.0 * juce::MathConstants<double>::pi * f / kRate;
-                    v = sat (2.2f * (float) std::sin (ph) * env (t, r.decay));
+                    const float fund = (float) std::sin (ph) * env (t, r.decay);
+                    const float mds  = body.next (r.hz * 2.6, t, r.decay * 0.5f) * 0.16f;
+                    v = soft (1.15f * (fund + mds));
                     break;
                 }
 
                 case snare:
                 {
-                    //  Ruido en banda MAS un cuerpo afinado, y la proporcion
-                    //  entre los dos es lo que separa una caja de un aro.
-                    f1.setLp (r.p2);
-                    f2.setLp (180.0);
-                    const float nz = f2.hp (f1.lp (rnd()));
-                    ph += 2.0 * juce::MathConstants<double>::pi * r.hz / kRate;
-                    const float body = (float) std::sin (ph);
-                    v = ((1.0f - r.p1) * nz * 1.6f + r.p1 * body) * env (t, r.decay);
+                    //  Ruido por un PASO BANDA resonante mas el cuerpo con
+                    //  modos. Con un solo polo esto era ruido blanco tapado.
+                    f1.set (r.p2, 1.1f);
+                    const float nz = f1.bpf (rnd()) * 2.4f;
+                    const float bd = body.next (r.hz, t, r.decay * 0.7f);
+                    v = ((1.0f - r.p1) * nz + r.p1 * bd) * env (t, r.decay);
                     break;
                 }
 
                 case hat:
                 {
-                    //  Ruido y paso alto. p2 = 1 lo deja mas ancho, que es la
-                    //  diferencia entre un charles y una maraca.
-                    f1.setLp (r.hz);
-                    const float nz = (r.p2 > 0.5f) ? f1.lp (rnd()) * 2.0f : f1.hp (rnd());
-                    v = nz * env (t, r.decay);
+                    //  DOS filtros: el metal por un paso alto resonante. p1 es
+                    //  la Q, o sea cuanto "sisea" contra cuanto "tintinea".
+                    f1.set (r.hz, r.p1);
+                    const float src = (r.p2 > 0.5f) ? rnd() : (0.55f * rnd() + 0.45f * met.next (1.0));
+                    v = f1.hp (src) * 1.7f * env (t, r.decay);
                     break;
                 }
 
                 case metal:
                 {
-                    //  Las seis cuadradas por un paso alto, y la caida decide
-                    //  si es un cencerro, un ride o un crash.
-                    f1.setLp (r.p1 > 0.3f ? 6000.0 : 2500.0);
-                    v = f1.hp (met.next (r.hz, kRate)) * env (t, r.decay) * 0.8f;
+                    //  Cuadradas limitadas en banda por un paso banda ancho.
+                    //  p1 = donde canta, p2 = cuanta campana tiene.
+                    f1.set (r.p1, r.p2);
+                    f2.set (r.p1 * 0.42, r.p2 * 0.8f);
+                    const float m = met.next (r.hz);
+                    v = (f1.bpf (m) * 1.4f + f2.bpf (m) * 0.8f) * env (t, r.decay);
                     break;
                 }
 
                 case clap:
                 {
-                    //  UNA palmada son cuatro manos que no llegan a la vez.
-                    //  Tres golpes de 10 ms y una cola: sin los tres primeros
-                    //  esto es un ruido corto, no una palmada.
-                    f1.setLp (r.p2);
-                    f2.setLp (400.0);
-                    const float nz = f2.hp (f1.lp (rnd()));
-                    float e = env (juce::jmax (0.0f, t - 0.028f), r.decay) * 0.9f;
+                    //  Cuatro manos que no llegan a la vez: tres golpes de
+                    //  10 ms y una cola. Sin los tres primeros esto es un ruido
+                    //  corto, no una palmada.
+                    f1.set (r.p2, r.p1);
+                    const float nz = f1.bpf (rnd()) * 2.2f;
+                    float e = env (juce::jmax (0.0f, t - 0.026f), r.decay) * 0.85f;
                     for (int k = 0; k < 3; ++k)
                     {
-                        const float dt = t - (float) k * 0.009f;
-                        if (dt >= 0.0f) e += env (dt, 0.006f);
+                        const float dt = t - (float) k * 0.0085f;
+                        if (dt >= 0.0f) e += env (dt, 0.005f);
                     }
-                    v = nz * juce::jmin (2.2f, e) * 0.7f;
+                    v = nz * juce::jmin (2.4f, e) * 0.55f;
                     break;
                 }
 
                 case tone:
                 {
-                    //  p1 = cuanto diente de sierra lleva encima del seno, que
-                    //  es lo que separa un sub de un bajo con garra.
-                    //  p2 = 1 lo hace sostenido en vez de percusivo.
-                    ph += 2.0 * juce::MathConstants<double>::pi * r.hz / kRate;
-                    const float s = (float) std::sin (ph);
-                    const float saw = (float) (2.0 * (std::fmod (ph / (2.0 * juce::MathConstants<double>::pi), 1.0)) - 1.0);
-                    const float mix = (1.0f - r.p1) * s + r.p1 * saw * 0.6f;
-                    const float e = (r.p2 > 0.5f) ? ad (t, 0.06f, r.decay) : env (t, r.decay);
-                    v = sat (1.4f * mix * e);
+                    //  p1 = cuanta sierra LIMITADA EN BANDA lleva encima del
+                    //  seno; p2 = 1 lo hace sostenido en vez de percusivo. Y un
+                    //  paso bajo que se cierra con la nota, que es lo que hace
+                    //  que un bajo suene a bajo y no a zumbido.
+                    const double inc = r.hz / kRate;
+                    ph += inc; if (ph >= 1.0) ph -= 1.0;
+                    const float s   = (float) std::sin (2.0 * juce::MathConstants<double>::pi * ph);
+                    const float saw = sawBl (ph, inc);
+                    const float mix = (1.0f - r.p1) * s + r.p1 * saw * 0.7f;
+                    const float e   = (r.p2 > 0.5f) ? ad (t, 0.05f, r.decay) : env (t, r.decay);
+                    f1.set (juce::jlimit (200.0, 16000.0, r.hz * (3.0 + 9.0 * (double) e)), 0.9f);
+                    v = soft (1.25f * f1.lp (mix) * e);
                     break;
                 }
 
                 case chord:
                 {
-                    //  Tres notas. p1 elige el intervalo: 0 mayor, 1 menor,
-                    //  2 solo la quinta - que es la que no dice si esta
-                    //  alegre o triste y por eso vale para todo.
+                    //  Tres notas, y las tres con un poco de sierra: tres senos
+                    //  puros suenan a organillo de juguete.
                     const double third = (r.p1 < 0.5f) ? 1.2599 : (r.p1 < 1.5f ? 1.1892 : 1.4983);
-                    ph  += 2.0 * juce::MathConstants<double>::pi * r.hz / kRate;
-                    ph2 += 2.0 * juce::MathConstants<double>::pi * r.hz * third / kRate;
-                    ph3 += 2.0 * juce::MathConstants<double>::pi * r.hz * 1.4983 / kRate;
-                    const float e = (r.p2 > 0.5f) ? ad (t, 0.10f, r.decay) : env (t, r.decay);
-                    v = 0.42f * (float) (std::sin (ph) + std::sin (ph2) + std::sin (ph3)) * e;
+                    const double i1 = r.hz / kRate, i2 = r.hz * third / kRate, i3 = r.hz * 1.4983 / kRate;
+                    ph  += i1; if (ph  >= 1.0) ph  -= 1.0;
+                    ph2 += i2; if (ph2 >= 1.0) ph2 -= 1.0;
+                    ph3 += i3; if (ph3 >= 1.0) ph3 -= 1.0;
+                    const float e = (r.p2 > 0.5f) ? ad (t, 0.09f, r.decay) : env (t, r.decay);
+                    const float mix = 0.30f * (sawBl (ph, i1) + sawBl (ph2, i2) + sawBl (ph3, i3));
+                    f1.set (juce::jlimit (300.0, 14000.0, r.hz * (4.0 + 7.0 * (double) e)), 0.8f);
+                    v = soft (1.1f * f1.lp (mix) * e);
                     break;
                 }
 
                 case sweep:
                 {
-                    //  El filtro se mueve, y hacia donde se mueve lo es todo:
-                    //  hacia arriba es tension, hacia abajo es final.
+                    //  El filtro se mueve, y ahora es un paso banda con Q: con
+                    //  un polo esto era ruido que se apagaba, no un barrido.
                     const float k = juce::jlimit (0.0f, 1.0f, t / juce::jmax (0.01f, r.decay));
-                    const double hz = (r.p1 >= 0.0f) ? r.hz * std::pow (12.0, k)
-                                                     : r.hz * std::pow (0.06, k);
-                    f1.setLp (juce::jlimit (60.0, 16000.0, hz));
-                    const float nz = f1.lp (rnd()) * 2.0f;
-                    //  Sube y luego se va, en vez de empezar fuerte: una
-                    //  subida que empieza al maximo no sube.
+                    const double hz = (r.p1 >= 0.0f) ? r.hz * std::pow (14.0, k)
+                                                     : r.hz * std::pow (0.05, k);
+                    f1.set (hz, r.p2);
+                    const float nz = f1.bpf (rnd()) * 2.6f;
                     const float e = (r.p1 >= 0.0f) ? ad (t, r.decay * 0.75f, r.decay * 0.25f)
                                                    : env (t, r.decay);
-                    v = nz * e * (r.p2 > 0.5f ? 0.7f : 1.0f);
+                    v = nz * e;
                     break;
                 }
 
                 case noiseHit:
                 {
-                    //  Un impacto es ruido ANCHO con un grave debajo. Solo el
-                    //  ruido es un aplauso; solo el grave es un bombo.
-                    f1.setLp (900.0);
+                    //  Ruido ANCHO con un grave debajo: solo el ruido es un
+                    //  aplauso y solo el grave es un bombo.
+                    f1.set (1100.0, 0.7f);
                     const float nz = f1.lp (rnd());
-                    ph += 2.0 * juce::MathConstants<double>::pi * r.hz * (1.0 + r.p1 * std::exp (-t / 0.08f)) / kRate;
-                    v = sat (1.8f * (0.55f * nz + 0.75f * (float) std::sin (ph)) * env (t, r.decay));
+                    ph += 2.0 * juce::MathConstants<double>::pi * r.hz * (1.0 + r.p1 * std::exp (-t / 0.07f)) / kRate;
+                    v = soft (1.3f * (0.42f * nz + 0.85f * (float) std::sin (ph)) * env (t, r.decay));
                     break;
                 }
 
                 case vinyl:
                 {
-                    //  Siseo con chasquidos encima, que es lo que un disco
-                    //  hace de verdad: el suelo es constante y lo que se oye
-                    //  son los impulsos.
-                    f1.setLp (6000.0);
-                    float s = f1.lp (rnd()) * 0.16f;
+                    //  Siseo con chasquidos encima. El suelo es constante y lo
+                    //  que se oye son los impulsos, que es lo que hace un disco.
+                    f1.set (6500.0, 0.7f);
+                    float s = f1.lp (rnd()) * 0.14f;
                     if (n >= nextClick)
                     {
                         clickAmp = 0.5f + 0.5f * std::abs (rnd());
-                        nextClick = n + 200 + (int) (std::abs (rnd()) * (r.p1 > 0.5f ? 900.0f : 3000.0f));
+                        nextClick = n + 220 + (int) (std::abs (rnd()) * (r.p1 > 0.5f ? 950.0f : 3200.0f));
                     }
-                    if (clickAmp > 0.001f)
-                    {
-                        s += clickAmp * rnd();
-                        clickAmp *= 0.55f;
-                    }
-                    v = s * ad (t, 0.01f, r.decay);
+                    if (clickAmp > 0.001f) { s += clickAmp * rnd(); clickAmp *= 0.55f; }
+                    v = s * ad (t, 0.008f, r.decay);
                     break;
                 }
 
                 case fm:
                 {
-                    //  Dos operadores. La relacion entre las dos frecuencias
-                    //  decide si suena a campana (no entera) o a instrumento
-                    //  (entera), y el indice cae con el tiempo porque un
-                    //  ataque brillante que no se apaga suena a sintetizador
-                    //  barato.
+                    //  Dos operadores, y el indice CAE: un ataque brillante que
+                    //  no se apaga suena a sintetizador barato.
                     ph2 += 2.0 * juce::MathConstants<double>::pi * r.hz * r.p2 / kRate;
-                    const double mod = std::sin (ph2) * r.p1 * env (t, r.decay * 0.45f);
+                    const double mod = std::sin (ph2) * r.p1 * env (t, r.decay * 0.40f);
                     ph  += 2.0 * juce::MathConstants<double>::pi * r.hz / kRate;
                     v = (float) std::sin (ph + mod) * env (t, r.decay);
                     break;
                 }
             }
 
-            d[n] = juce::jlimit (-0.99f, 0.99f, v);
+            juce::ignoreUnused (phs);
+            d[n] = std::isfinite (v) ? v : 0.0f;
         }
 
-        //  NORMALIZAR Y QUITAR EL SALTO DEL FINAL.
+        // ------------------------------------------------------------------
+        //  IGUALAR POR SONORIDAD, NO POR PICO, Y CON LA CURVA DE LA NORMA.
         //
-        //  Sin normalizar, un charles queda diez decibelios por debajo de un
-        //  bombo y la persona cree que el pad esta roto. Y sin la rampa del
-        //  final, la muestra acaba en un valor distinto de cero: un CLICK en
-        //  cada golpe, que es el fallo que mas se oye y menos se ve.
-        float peak = 0.0f;
-        for (int n = 0; n < len; ++n) peak = juce::jmax (peak, std::abs (d[n]));
-        const float g = (peak > 1.0e-6f) ? 0.89f / peak : 1.0f;
-
-        const int fade = juce::jmin (len / 4, (int) (kRate * 0.004));
-        for (int n = 0; n < len; ++n)
+        //  Al mismo PICO un charles de 40 ms y un bombo de 400 suenan a
+        //  volumenes completamente distintos, porque el oido integra energia y
+        //  no mira el maximo. Y con los sesenta y cuatro a 0.89 de pico, dos
+        //  pads a la vez ya estaban en 0 dBFS: de ahi el "suena con mucha
+        //  ganancia".
+        //
+        //  Se pondera con la curva K de BS.1770 - repisa de agudos de segundo
+        //  orden mas paso alto de segundo orden - y los coeficientes son los
+        //  publicados PARA 48 kHz, que es exactamente a lo que se genera aqui:
+        //  a otra frecuencia habria que recalcularlos y dejarian de ser exactos.
+        //
+        //  Y se mide sobre la VENTANA DE 400 ms MAS SONORA, no sobre el fichero
+        //  entero. Un vinilo de tres segundos con cuatro chasquidos sueltos
+        //  tiene una energia media ridicula y cada chasquido revienta: medido
+        //  entero salia "flojo" y se le subia el volumen hasta que los
+        //  chasquidos pegaban. Lo que se compara es como suena EL GOLPE, que es
+        //  lo que se oye al tocar el pad.
         {
-            float x = d[n] * g;
-            if (n >= len - fade) x *= (float) (len - n) / (float) fade;
-            d[n] = x;
+            struct Biquad
+            {
+                double b0, b1, b2, a1, a2, x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+                double operator() (double x) noexcept
+                {
+                    const double y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+                    x2 = x1; x1 = x; y2 = y1; y1 = y;
+                    return std::isfinite (y) ? y : 0.0;
+                }
+            };
+            //  Los dos de la norma, a 48 kHz.
+            Biquad shelf { 1.53512485958697, -2.69169618940638, 1.19839281085285,
+                          -1.69065929318241,  0.73248077421585 };
+            Biquad hpf   { 1.0, -2.0, 1.0, -1.99004745483398, 0.99007225036621 };
+
+            const int win = juce::jmin (len, (int) (kRate * 0.400));
+            double run = 0.0, best = 0.0;
+            std::vector<double> sq ((size_t) len);
+            for (int n = 0; n < len; ++n)
+            {
+                const double k = hpf (shelf ((double) d[n]));
+                sq[(size_t) n] = k * k;
+                run += sq[(size_t) n];
+                if (n >= win) run -= sq[(size_t) (n - win)];
+                if (n >= win - 1) best = juce::jmax (best, run);
+            }
+            if (win >= len) best = juce::jmax (best, run);
+
+            const float loud = (float) std::sqrt (best / juce::jmax (1, win));
+            float g = (loud > 1.0e-7f) ? kTargetLufsish / loud : 1.0f;
+
+            //  El techo, DESPUES de la sonoridad: al reves, el limitador
+            //  decidiria cuanto suena cada cosa. 0.80 deja margen para tocar
+            //  cuatro pads a la vez sin llegar al limitador del master, y lo
+            //  que se pase se dobla en vez de cortarse.
+            float peak = 0.0f;
+            for (int n = 0; n < len; ++n) peak = juce::jmax (peak, std::abs (d[n]));
+
+            const int aIn  = juce::jmin (len / 8, (int) (kRate * 0.001));
+            const int aOut = juce::jmin (len / 4, (int) (kRate * 0.004));
+            for (int n = 0; n < len; ++n)
+            {
+                float x = d[n] * g;
+                //  Doblar, no cortar: un transitorio que se pasa del techo se
+                //  redondea y conserva su sonoridad, en vez de arrastrar al
+                //  sonido entero seis decibelios hacia abajo.
+                if (std::abs (x) > kKnee)
+                {
+                    const float sgn = (x < 0.0f) ? -1.0f : 1.0f;
+                    const float over = (std::abs (x) - kKnee) / (1.0f - kKnee);
+                    x = sgn * (kKnee + (kCeiling - kKnee) * std::tanh (over));
+                }
+                if (n < aIn)         x *= (float) n / (float) aIn;
+                if (n >= len - aOut) x *= (float) (len - n) / (float) aOut;
+                d[n] = juce::jlimit (-0.99f, 0.99f, x);
+            }
+            juce::ignoreUnused (peak);
         }
 
         return sb;

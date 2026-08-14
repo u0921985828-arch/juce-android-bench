@@ -35,11 +35,31 @@ APP  = os.path.join (ROOT, "build", "Zati_artefacts", "Release", "Zati")
 TMP  = os.path.join (ROOT, "build", ".kits-test")
 
 EXPECTED = 64
-MIN_PEAK = 0.50      # ninguno mudo ni escondido
-MAX_PEAK = 0.98      # margen antes de recortar
-LEVEL_SPREAD = 0.10  # entre el mas alto y el mas bajo
-MIN_BRIGHT = 3000.0  # tiene que haber agudos de verdad
-MAX_EDGE   = 0.02    # ultimo valor de la muestra: casi cero
+
+#  SE MIDE LA SONORIDAD, NO EL PICO. Y esta prueba nacio midiendo el pico, que
+#  es exactamente por que no vio el fallo: los sesenta y cuatro salian a 0.890
+#  clavado - "margen 0.000", un sobresaliente - y sonaban a volumenes
+#  completamente distintos. Un charles dura 40 ms y un bombo 400; al mismo pico
+#  el bombo mete diez veces mas energia al oido.
+#
+#  La ponderacion es la misma idea que la curva K de la norma de sonoridad: un
+#  paso alto de cabeza, porque el oido casi no cuenta 40 Hz, y una repisa por
+#  encima de 2 kHz, porque cuenta de mas. No es la norma entera - no hace falta
+#  para comparar sesenta y cuatro sonidos entre si - pero si es lo que separa
+#  "mismo pico" de "misma sonoridad".
+MAX_LOUD_SPREAD_DB = 6.0   # entre el mas y el menos sonoro
+#  EL PICO YA NO DICE SI ALGO SUENA. Con la sonoridad igualada, el pico es una
+#  CONSECUENCIA: la curva K atenua 55 Hz y realza 3 kHz, asi que un bombo
+#  necesita mucha mas amplitud que un timbre para llegar al mismo volumen al
+#  oido. Medido, ese es todo el rango entre 0.07 y 0.69, y los tres primeros no
+#  estan mudos - suenan igual de fuerte que los demas. Quien dice si algo suena
+#  es la sonoridad; el pico solo dice si queda margen.
+MIN_PEAK = 0.03            # solo caza el silencio de verdad
+MIN_LOUD = 0.030           # y esto es lo que dice si SUENA
+MAX_PEAK = 0.80            # techo: cuatro pads a la vez sin llegar al master
+MIN_BRIGHT = 3000.0        # tiene que haber agudos de verdad
+MAX_EDGE   = 0.02          # ultimo valor de la muestra: casi cero
+MAX_START  = 0.02          # y el PRIMERO: un flanco de entrada es un click
 
 
 def display_alive():
@@ -49,6 +69,51 @@ def display_alive():
                                stderr=subprocess.DEVNULL, timeout=10).returncode == 0
     except Exception:
         return False
+
+
+def biquad (x, b, a):
+    """Un biquado directo I. Los coeficientes se escriben desde la norma, no se
+    copian del C++: si los dos lados leyeran el mismo sitio, la prueba diria
+    que si a cualquier cosa."""
+    b0, b1, b2 = b; a1, a2 = a
+    y = []; x1 = x2 = y1 = y2 = 0.0
+    for v in x:
+        o = b0 * v + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2
+        x2, x1 = x1, v; y2, y1 = y1, o
+        y.append (o)
+    return y
+
+
+def loudness (x):
+    """PONDERADA CON LA CURVA K DE BS.1770, y sobre la VENTANA DE 400 ms MAS
+    SONORA - no sobre el fichero entero.
+
+    Las dos cosas nacieron de un fallo. La primera version media el PICO: los
+    sesenta y cuatro salian a 0.890 clavado, "margen 0.000", un sobresaliente,
+    y sonaban a volumenes completamente distintos. La segunda pondero a mano
+    con dos filtros de un polo que no eran los del C++, asi que los dos lados
+    discrepaban varios decibelios y la prueba acusaba al codigo de un desajuste
+    que era suyo.
+
+    Y medir el fichero ENTERO castiga a lo largo y disperso: un vinilo de tres
+    segundos con cuatro chasquidos tiene una energia media ridicula, asi que se
+    le subia el volumen hasta que los chasquidos pegaban. Lo que se compara es
+    como suena EL GOLPE.
+
+    Coeficientes de la norma para 48 kHz, que es a lo que se genera aqui."""
+    SHELF_B = (1.53512485958697, -2.69169618940638, 1.19839281085285)
+    SHELF_A = (-1.69065929318241, 0.73248077421585)
+    HP_B    = (1.0, -2.0, 1.0)
+    HP_A    = (-1.99004745483398, 0.99007225036621)
+
+    k = biquad (biquad (x, SHELF_B, SHELF_A), HP_B, HP_A)
+    win = min (len (k), int (48000 * 0.400))
+    if win <= 0: return 0.0
+    run = sum (v * v for v in k[:win]); best = run
+    for n in range (win, len (k)):
+        run += k[n] * k[n] - k[n - win] * k[n - win]
+        if run > best: best = run
+    return math.sqrt (best / win)
 
 
 def load (path):
@@ -91,29 +156,32 @@ def main():
             bad.append ("%s vacio" % name); continue
 
         peak = max (abs (v) for v in x)
-        rms  = math.sqrt (sum (v * v for v in x) / len (x))
-        seg  = x[:4410]
+        loud = loudness (x)
+        seg  = x[:4800]
         zc   = sum (1 for i in range (1, len (seg)) if (seg[i - 1] < 0) != (seg[i] < 0))
-        bright = zc * 44100.0 / max (1, len (seg)) / 2.0
-        edge = abs (x[-1])
-        rows.append ((name, peak, rms, bright, len (x) / 44100.0))
+        bright = zc * 48000.0 / max (1, len (seg)) / 2.0
+        rows.append ((name, peak, loud, bright, len (x) / 48000.0))
 
-        if peak < MIN_PEAK: bad.append ("%s mudo (pico %.3f)" % (name, peak))
-        if peak > MAX_PEAK: bad.append ("%s al borde de recortar (pico %.3f)" % (name, peak))
-        if edge > MAX_EDGE: bad.append ("%s acaba en %.3f: CLICK" % (name, edge))
+        if peak < MIN_PEAK: bad.append ("%s vacio (pico %.3f)" % (name, peak))
+        if loud < MIN_LOUD: bad.append ("%s no suena (sonoridad %.4f)" % (name, loud))
+        if peak > MAX_PEAK: bad.append ("%s sin margen (pico %.3f)" % (name, peak))
+        if abs (x[-1]) > MAX_EDGE:  bad.append ("%s acaba en %.3f: CLICK" % (name, abs (x[-1])))
+        if abs (x[0])  > MAX_START: bad.append ("%s empieza en %.3f: CLICK" % (name, abs (x[0])))
 
-    peaks = [r[1] for r in rows]
-    spread = max (peaks) - min (peaks)
+    peaks   = [r[1] for r in rows]
+    louds   = [r[2] for r in rows if r[2] > 1e-9]
     brights = [r[3] for r in rows]
-    durs = [r[4] for r in rows]
+    durs    = [r[4] for r in rows]
 
-    if spread > LEVEL_SPREAD:
-        bad.append ("los niveles bailan %.3f entre el mas alto y el mas bajo" % spread)
+    spread_db = 20.0 * math.log10 (max (louds) / min (louds)) if louds else 0.0
+    if spread_db > MAX_LOUD_SPREAD_DB:
+        bad.append ("la sonoridad baila %.1f dB entre el mas y el menos sonoro" % spread_db)
     if max (brights) < MIN_BRIGHT:
         bad.append ("no hay agudos: el mas brillante son %.0f Hz" % max (brights))
 
     print ("%-22s %d sonidos" % ("fabrica", len (rows)))
-    print ("%-22s %.3f a %.3f  (margen %.3f)" % ("pico", min (peaks), max (peaks), spread))
+    print ("%-22s %.1f dB entre el mas y el menos sonoro" % ("sonoridad", spread_db))
+    print ("%-22s %.3f a %.3f" % ("pico", min (peaks), max (peaks)))
     print ("%-22s %.0f Hz a %.0f Hz" % ("brillo", min (brights), max (brights)))
     print ("%-22s %.3f s a %.2f s" % ("duracion", min (durs), max (durs)))
     for label, lo, hi in (("graves", 0, 700), ("medios", 700, 3000), ("agudos", 3000, 1e9)):

@@ -26,9 +26,12 @@ ROOT = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
 APP  = os.path.join (ROOT, "build", "Zati_artefacts", "Release", "Zati")
 TMP  = os.path.join (ROOT, "build", ".session-test")
 
-#  ZATI_DEMO carga dieciseis pads: la rejilla llena, que es el caso que mas
-#  ficheros escribe a la vez y por tanto donde la carrera es mas probable.
-EXPECTED = 16
+#  SESENTA Y CUATRO, no dieciseis. Desde que la app trae sonidos de fabrica
+#  (Kits.h) el arranque llena los cuatro bancos, y ZATI_DEMO se limita a
+#  reescribir el primero. Mejor para esta prueba: cuatro veces mas ficheros
+#  escritos a la vez es cuatro veces mas probable pillar la carrera que la
+#  motivo.
+EXPECTED = 64
 RUNS = int (sys.argv[1]) if len (sys.argv) > 1 else 8
 
 
