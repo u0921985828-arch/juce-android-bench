@@ -238,7 +238,7 @@ jobs:
           echo "Debug:   $DBG"
           echo "Release: $REL"
           echo "Bundle:  $AAB"
-          ls -la Zati-*.apk Zati-*.aab
+          ls -la ARTiFACTS-ZATI-*.apk ARTiFACTS-ZATI-*.aab
 
       - name: Paginas de 16 KB, comprobadas y no supuestas
         #  Play BLOQUEA desde el 31 de mayo de 2026 cualquier app con codigo
