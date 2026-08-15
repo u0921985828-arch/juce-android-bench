@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include <vector>
 #include "AudioEngine.h"
 #include "SampleLoader.h"
 #include "WaveformDisplay.h"
@@ -508,6 +509,22 @@ private:
     static constexpr int kChopCounts[4] = { 2, 4, 8, 16 };
     int  chopSlices    = 8;
     bool chopOnlyEmpty = true;
+
+    //  DOS FORMAS DE CORTAR, y la segunda es la que hacia falta.
+    //
+    //  IGUALES divide por aritmetica: vale para un loop cuadrado y no vale para
+    //  nada mas. GOLPES busca donde empieza cada golpe (Onsets.h) y corta ahi,
+    //  que es lo que hace un troceador de verdad y lo que esta app no tenia.
+    juce::TextButton chopEvenBtn { "IGUALES" }, chopHitsBtn { "GOLPES" };
+    bool chopByHits = false;
+
+    //  Los golpes del pad seleccionado, calculados una vez al abrir la ficha o
+    //  al cambiar de modo, no en cada repintado: una FFT de 1024 sobre cuatro
+    //  segundos son 750 ventanas, y el repintado ocurre en cada toque.
+    std::vector<int> chopHits;
+    int chopHitsFor = -1;              // para que pad se calcularon
+    void refreshChopHits();
+
     void openChopSheet();
     void applyAutoChop();
     juce::Array<int> chopTargets (int slices, bool onlyEmpty) const;

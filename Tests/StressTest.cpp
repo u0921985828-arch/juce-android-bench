@@ -11,6 +11,7 @@
 #include "../Source/Denoise.h"
 #include "../Source/MidiIo.h"
 #include "../Source/Kits.h"
+#include "../Source/Onsets.h"
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -1003,6 +1004,129 @@ int main()
         std::printf ("%-34s +12 st: pliegue peor %+.1f dB en %.0f Hz   %s\n",
                      "aliasing al subir el tono", db, worstHz,
                      db < -40.0 ? "OK" : "FLOJO");
+    }
+
+    //  EL TROCEADO POR GOLPES, contra un break del que se sabe la verdad.
+    //
+    //  No se puede medir un detector de golpes con una muestra de verdad,
+    //  porque nadie sabe donde estan sus golpes con precision de milisegundo -
+    //  y "suena bien" no es una medida. Asi que se fabrica el break: dieciseis
+    //  golpes en posiciones CONOCIDAS y deliberadamente irregulares, que es lo
+    //  que hace inutil el corte en trozos iguales, con tres timbres distintos y
+    //  colas que se solapan. Se cuenta cuantos encuentra dentro de 15 ms, y
+    //  cuantos se inventa.
+    //
+    //  Y con la cola encima a proposito: el charles del contratiempo cae
+    //  mientras el bombo aun suena, que es el caso que un detector por ENERGIA
+    //  no ve - la energia ahi baja - y el que separa el flujo espectral de una
+    //  media movil.
+    {
+        constexpr double sr = 48000.0;
+        constexpr int    len = (int) (sr * 4.0);
+        juce::AudioBuffer<float> b (1, len);
+        b.clear();
+        float* d = b.getWritePointer (0);
+        juce::Random rng (8080);
+
+        //  Irregulares a proposito: 0, 0.31, 0.47, 0.72... nada cae en una
+        //  rejilla de dieciseisavos.
+        const double at[16] = { 0.00, 0.31, 0.47, 0.72, 0.95, 1.18, 1.33, 1.61,
+                                1.88, 2.06, 2.29, 2.55, 2.71, 2.98, 3.22, 3.49 };
+        int truth[16];
+        for (int k = 0; k < 16; ++k)
+        {
+            truth[k] = (int) (at[k] * sr);
+            const int kind = k % 3;                 // bombo, caja, charles
+            const double f0 = kind == 0 ? 55.0 : kind == 1 ? 210.0 : 0.0;
+            const double dec = kind == 0 ? 0.28 : kind == 1 ? 0.16 : 0.05;
+            double ph = 0.0;
+            const int n = juce::jmin (len - truth[k], (int) (sr * dec * 4.0));
+            for (int i = 0; i < n; ++i)
+            {
+                const double t = (double) i / sr;
+                const double e = std::exp (-t / dec);
+                double v;
+                if (kind == 2) v = 0.7 * (rng.nextDouble() * 2.0 - 1.0) * e;
+                else
+                {
+                    ph += 2.0 * juce::MathConstants<double>::pi * f0 * (1.0 + 1.2 * std::exp (-t / 0.02)) / sr;
+                    v = (0.8 * std::sin (ph) + (kind == 1 ? 0.5 * (rng.nextDouble() * 2.0 - 1.0) : 0.0)) * e;
+                }
+                d[truth[k] + i] += (float) (0.45 * v);
+            }
+        }
+
+        const auto hits = Onsets::detect (b, sr);
+
+        const int tol = (int) (sr * 0.015);
+        int found = 0;
+        for (int k = 0; k < 16; ++k)
+            for (int h : hits)
+                if (std::abs (h - truth[k]) <= tol) { ++found; break; }
+
+        int spurious = 0;
+        for (int h : hits)
+        {
+            bool real = false;
+            for (int k = 0; k < 16; ++k) if (std::abs (h - truth[k]) <= tol) real = true;
+            if (! real) ++spurious;
+        }
+
+        //  Y QUE NO CHASQUEEN, que es la otra mitad y la que el conteo no ve:
+        //  un corte en una muestra cualquiera deja un escalon de continua al
+        //  principio del trozo. Se mide el valor absoluto en el punto de corte.
+        double peorCorte = 0.0;
+        for (int h : hits) peorCorte = juce::jmax (peorCorte, (double) std::abs (d[juce::jlimit (0, len - 1, h)]));
+
+        //  Cuales se pierden, no solo cuantos: un detector que falla siempre
+        //  los charles y uno que falla dos al azar no son el mismo detector.
+        juce::String perdidos;
+        for (int k = 0; k < 16; ++k)
+        {
+            bool hit = false;
+            for (int h : hits) if (std::abs (h - truth[k]) <= tol) hit = true;
+            if (! hit) perdidos += juce::String (k) + "(" + (k % 3 == 0 ? "bombo" : k % 3 == 1 ? "caja" : "charles") + ") ";
+        }
+        //  El corte se juzga CONTRA EL PICO de la muestra, no contra un numero
+        //  absoluto, y con el liston en el 20%. El primer intento pedia 0.02 a
+        //  secas, que no salia de ningun sitio: lo que decide si un corte
+        //  chasquea no es su amplitud sino el ESCALON que deja, y el escalon lo
+        //  cubre la envolvente de ataque del pad - 2 ms por defecto, que a
+        //  48 kHz son 96 muestras de rampa desde cero. Un corte al 20% del pico
+        //  con 2 ms de rampa encima no es un clic; uno al 80% si.
+        double picoMuestra = 0.0;
+        for (int i = 0; i < len; ++i) picoMuestra = juce::jmax (picoMuestra, (double) std::abs (d[i]));
+        const double corteRel = peorCorte / juce::jmax (1.0e-9, picoMuestra);
+
+        //  Y UN SOLO GOLPE TIENE QUE DAR UN SOLO CORTE, que es la otra mitad
+        //  de la prueba y la que faltaba. Medido en la app: un bombo suelto de
+        //  la fabrica -un seno de 55 Hz con envolvente de tono, 950 ms- salia
+        //  con SIETE golpes. No es un fallo del umbral: un tono que baja de
+        //  frecuencia va METIENDO energia en bins nuevos mientras cae, y eso es
+        //  flujo espectral positivo de verdad. Lo que lo separa de un ataque es
+        //  que un ataque es ANCHO de banda y un barrido grave no, asi que el
+        //  flujo se pesa por frecuencia. Sin esta prueba, trocear por golpes un
+        //  bombo daba siete trozos de bombo.
+        int solo = 0;
+        {
+            const int n1 = (int) (sr * 0.95);
+            juce::AudioBuffer<float> b1 (1, n1);
+            float* d1 = b1.getWritePointer (0);
+            double ph = 0.0;
+            for (int i = 0; i < n1; ++i)
+            {
+                const double t = (double) i / sr;
+                const double f = 55.0 * (1.0 + 1.6 * std::exp (-t / 0.03));
+                ph += 2.0 * juce::MathConstants<double>::pi * f / sr;
+                d1[i] = (float) (0.9 * std::sin (ph) * std::exp (-t / 0.38));
+            }
+            solo = (int) Onsets::detect (b1, sr).size();
+        }
+
+        const bool ok = found >= 15 && spurious <= 3 && corteRel < 0.20 && solo == 1;
+        std::printf ("%-34s %d/16 golpes   %d inventados   corte peor %.0f%% del pico   bombo solo %d   %s  %s\n",
+                     "trocear por golpes", found, spurious, 100.0 * corteRel, solo,
+                     ok ? "OK" : "FALLA", perdidos.toRawUTF8());
     }
 
     return 0;

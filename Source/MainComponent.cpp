@@ -4,6 +4,7 @@
 #include "Lang.h"
 #include "SystemInsets.h"
 #include "Denoise.h"
+#include "Onsets.h"
 #include "DeviceTier.h"
 
 namespace
@@ -480,6 +481,20 @@ MainComponent::MainComponent()
             chopSheet.addAndMakeVisible (b);
             chopCountBtns.add (b);
         }
+
+        //  IGUALES / GOLPES, una pareja excluyente como las de idioma y
+        //  carcasa: lo que cambia no es un parametro del corte sino QUE decide
+        //  donde se corta.
+        for (auto* b : { &chopEvenBtn, &chopHitsBtn })
+        {
+            styleButton (*b, kStepOff);
+            litAccent (*b);
+            b->setClickingTogglesState (true);
+            b->setRadioGroupId (7302);
+            chopSheet.addAndMakeVisible (b);
+        }
+        chopEvenBtn.onClick = [this] { chopByHits = false; refreshChopSheet(); };
+        chopHitsBtn.onClick = [this] { chopByHits = true;  refreshChopHits(); refreshChopSheet(); };
 
         styleButton (chopSafeButton, kKey);
         chopSafeButton.setClickingTogglesState (true);
@@ -4587,7 +4602,10 @@ void MainComponent::resized()
     // AUTO CHOP sheet: how many pieces, where they land, and one red verb.
     {
         const int explainH = 40, plannedH = 40;
+        //  Una fila mas que antes: la de COMO se corta, encima de la de en
+        //  cuantos trozos, porque el modo cambia lo que significa el numero.
         auto inner = sheetFromBottom (chopSheet, Metrics::md * 2 + Metrics::hit + explainH
+                                                   + Metrics::md + 14 + Metrics::hit
                                                    + Metrics::md + 14 + Metrics::hit
                                                    + Metrics::sm + Metrics::hit
                                                    + Metrics::md + plannedH
@@ -4597,7 +4615,14 @@ void MainComponent::resized()
 
         inner.removeFromTop (explainH);                 // painted: what this does
         inner.removeFromTop (Metrics::md);
-        inner.removeFromTop (14);                       // painted: "TROZOS"
+        inner.removeFromTop (14);                       // pintado: "COMO"
+        {
+            auto row = inner.removeFromTop (Metrics::hit);
+            juce::TextButton* mb[2] = { &chopEvenBtn, &chopHitsBtn };
+            layoutModuleBar (row, mb, 0, 2);
+        }
+        inner.removeFromTop (Metrics::md);
+        inner.removeFromTop (14);                       // pintado: "TROZOS"
 
         {
             auto row = inner.removeFromTop (Metrics::hit);
@@ -5870,6 +5895,12 @@ void MainComponent::retranslateUi()
     songModeBtn  .setButtonText (T ("CANCION"));
 
     chopSafeButton.setButtonText (T ("RESPETAR PADS CON SONIDO"));
+    //  Y las dos del modo, que se construyen con el literal y no se
+    //  retraducirian jamas sin esta linea. Es el mismo fallo que tuvieron las
+    //  tres pestanas de AJUSTES - la ficha que CONTIENE el selector de idioma -
+    //  y lo caza la prueba comparativa, no la tabla.
+    chopEvenBtn.setButtonText (T ("IGUALES"));
+    chopHitsBtn.setButtonText (T ("GOLPES"));
 
     //  A slider that formats its own readout has to be told to run the
     //  formatter again; the text it is showing was made in the old language.
@@ -6165,6 +6196,22 @@ juce::Array<int> MainComponent::chopTargets (int slices, bool onlyEmpty) const
     return t;
 }
 
+//  Los golpes, UNA VEZ. Se guardan contra el pad para el que se calcularon,
+//  porque quien los pide es el repintado de la ficha y ese ocurre en cada
+//  toque: recalcular una FFT de 1024 sobre cuatro segundos -750 ventanas- en
+//  cada repintado seria congelar la ficha mientras alguien elige un numero.
+void MainComponent::refreshChopHits()
+{
+    chopHits.clear();
+    chopHitsFor = -1;
+    if (selectedPad < 0) return;
+    auto src = uiSample[(size_t) selectedPad];
+    if (src == nullptr || src->buffer.getNumSamples() < 2048) return;
+
+    chopHits    = Onsets::detect (src->buffer, src->sourceSampleRate);
+    chopHitsFor = selectedPad;
+}
+
 void MainComponent::openChopSheet()
 {
     if (selectedPad < 0) selectPad (0);
@@ -6173,6 +6220,12 @@ void MainComponent::openChopSheet()
         chopCountBtns[i]->setToggleState (kChopCounts[i] == chopSlices, juce::dontSendNotification);
 
     chopSafeButton.setToggleState (chopOnlyEmpty, juce::dontSendNotification);
+    chopEvenBtn.setToggleState (! chopByHits, juce::dontSendNotification);
+    chopHitsBtn.setToggleState (chopByHits,   juce::dontSendNotification);
+
+    //  Se calculan al abrir, no al pulsar GOLPES: asi el numero de golpes ya
+    //  esta en la ficha cuando se lee, y elegir el modo no tiene un tiron.
+    if (chopHitsFor != selectedPad) refreshChopHits();
 
     openSheet (chopSheet, padsButton);
     refreshChopSheet();
@@ -6181,10 +6234,16 @@ void MainComponent::openChopSheet()
 void MainComponent::refreshChopSheet()
 {
     const int fits = chopTargets (chopSlices, chopOnlyEmpty).size();
-    const bool can = selectedPad >= 0 && uiSample[(size_t) selectedPad] != nullptr && fits >= 2;
+    //  En GOLPES manda lo que hay en el sonido, no lo que pide el boton: el
+    //  numero es un TECHO. Un break con nueve golpes no se corta en dieciseis
+    //  por mucho que se pulse dieciseis - saldrian siete trozos partidos por la
+    //  mitad de un golpe, que es exactamente lo que este modo viene a evitar.
+    const int hits = (chopHitsFor == selectedPad) ? (int) chopHits.size() : 0;
+    const int n    = chopByHits ? juce::jmin (fits, hits) : fits;
+    const bool can = selectedPad >= 0 && uiSample[(size_t) selectedPad] != nullptr && n >= 2;
 
     chopGoButton.setEnabled (can);
-    chopGoButton.setButtonText (can ? T ("CORTAR EN %1", juce::String (fits)) : T ("CORTAR"));
+    chopGoButton.setButtonText (can ? T ("CORTAR EN %1", juce::String (n)) : T ("CORTAR"));
     chopSheet.repaint();
 }
 
@@ -6196,7 +6255,13 @@ void MainComponent::applyAutoChop()
 
     const int len = src->buffer.getNumSamples();
     const auto targets = chopTargets (chopSlices, chopOnlyEmpty);
-    const int  n = targets.size();
+
+    //  Los puntos de corte: por aritmetica o por golpes. En golpes manda lo que
+    //  el detector encontro, acotado por los pads que caben.
+    if (chopByHits && chopHitsFor != selectedPad) refreshChopHits();
+    const bool porGolpes = chopByHits && chopHitsFor == selectedPad && chopHits.size() >= 2;
+    const int  n = porGolpes ? juce::jmin (targets.size(), (int) chopHits.size())
+                             : targets.size();
 
     //  Two pieces is the least that is still a chop, and a source shorter than
     //  one sample per piece has nothing to divide.
@@ -6210,8 +6275,14 @@ void MainComponent::applyAutoChop()
     for (int k = 0; k < n; ++k)
     {
         const int i  = targets[k];
-        const int st = (int) ((juce::int64) k * len / n);
-        const int en = (int) ((juce::int64) (k + 1) * len / n);
+        //  El ultimo trozo llega hasta el final de la muestra en los dos modos:
+        //  con golpes, el trozo que sigue al ultimo ataque es la cola, y
+        //  cortarla en el siguiente golpe que no existe la dejaria fuera.
+        const int st = porGolpes ? chopHits[(size_t) k]
+                                 : (int) ((juce::int64) k * len / n);
+        const int en = porGolpes ? (k + 1 < n ? chopHits[(size_t) (k + 1)] : len)
+                                 : (int) ((juce::int64) (k + 1) * len / n);
+        if (en <= st) continue;
 
         padHasSample[(size_t) i] = true;
         uiSample[(size_t) i]     = src;
@@ -6243,10 +6314,12 @@ void MainComponent::applyAutoChop()
     closeAllSheets();
     selectPad (targets[0]);
 
-    status.setText (n < askedFor
-                        ? T ("Cortado en %1 (no cabian %2) - DESHACER para volver",
-                             juce::String (n), juce::String (askedFor))
-                        : T ("Cortado en %1 trozos - DESHACER para volver", juce::String (n)),
+    status.setText (porGolpes
+                        ? T ("Cortado en %1 golpes - DESHACER para volver", juce::String (n))
+                        : n < askedFor
+                            ? T ("Cortado en %1 (no cabian %2) - DESHACER para volver",
+                                 juce::String (n), juce::String (askedFor))
+                            : T ("Cortado en %1 trozos - DESHACER para volver", juce::String (n)),
                     juce::dontSendNotification);
 }
 
@@ -7352,15 +7425,29 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
         //  texto pintado a mano.
         auto para = inner.removeFromTop (40);
         para.setRight (juce::jmin (para.getRight(), chopCloseButton.getX() - Metrics::xs));
-        g.drawFittedText (T ("Parte este sample en trozos iguales y los reparte por los pads. "
-                             "El pad de origen se queda con el primero."),
+        //  La explicacion cambia con el modo, porque lo que hace el boton
+        //  cambia: dejar la de trozos iguales puesta en modo GOLPES seria la
+        //  ficha describiendo lo que hacia antes.
+        g.drawFittedText (chopByHits
+                              ? T ("Busca donde empieza cada golpe y corta ahi, no a intervalos "
+                                   "iguales. El pad de origen se queda con el primero.")
+                              : T ("Parte este sample en trozos iguales y los reparte por los pads. "
+                                   "El pad de origen se queda con el primero."),
                           para, Lang::start (juce::Justification::top), 3, 1.0f);
     }
 
     inner.removeFromTop (Metrics::md);
     g.setColour (ZatiColours::ink.withAlpha (0.75f));
     g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.16f));
-    g.drawText (T ("TROZOS"), inner.removeFromTop (14), Lang::start());
+    g.drawText (T ("COMO"), inner.removeFromTop (14), Lang::start());
+    inner.removeFromTop (Metrics::hit + Metrics::md);
+
+    g.setColour (ZatiColours::ink.withAlpha (0.75f));
+    g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.16f));
+    //  En GOLPES el numero es un TECHO y el rotulo lo dice, porque un boton que
+    //  pone 16 y produce 9 trozos parece roto si nadie lo explica.
+    g.drawText (chopByHits ? T ("TROZOS (como mucho)") : T ("TROZOS"),
+                inner.removeFromTop (14), Lang::start());
 
     inner.removeFromTop (Metrics::hit + Metrics::sm + Metrics::hit + Metrics::md);
 
@@ -7378,13 +7465,28 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
         return;
     }
 
+    const int hits = (chopHitsFor == sp) ? (int) chopHits.size() : 0;
+    const int n = chopByHits ? juce::jmin (targets.size(), hits) : targets.size();
+
     juce::StringArray nums;
-    for (int i = 0; i < targets.size(); ++i)
+    for (int i = 0; i < n; ++i)
         nums.add (juce::String (targets[i] + 1).paddedLeft ('0', 2));
 
     int overwritten = 0;
-    for (int i = 1; i < targets.size(); ++i)
+    for (int i = 1; i < n; ++i)
         if (padHasSample[(size_t) targets[i]]) ++overwritten;
+
+    //  Cuantos golpes hay ahi dentro, que es la unica cifra que dice si este
+    //  modo tiene algo que hacer con este sonido: un pad de un solo golpe no se
+    //  trocea por golpes por mucho que se pida.
+    if (chopByHits)
+    {
+        g.setColour (hits >= 2 ? ZatiColours::inkDim : ZatiColours::red);
+        g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.06f));
+        g.drawFittedText (hits >= 2 ? T ("%1 golpes encontrados", juce::String (hits))
+                                    : T ("no hay golpes que separar aqui"),
+                          planned.removeFromTop (18), Lang::start (juce::Justification::top), 1, 0.8f);
+    }
 
     g.setColour (ZatiColours::ink.withAlpha (0.85f));
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.06f));
@@ -7392,7 +7494,7 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
                       planned.removeFromTop (22), Lang::start (juce::Justification::top), 2, 0.8f);
 
     juce::String warn;
-    if (targets.size() < chopSlices)
+    if (! chopByHits && targets.size() < chopSlices)
         warn = "solo caben " + juce::String (targets.size()) + " sin pisar nada";
     else if (overwritten > 0)
         warn = "PISA " + juce::String (overwritten) + (overwritten == 1 ? " pad con sonido" : " pads con sonido");
@@ -8804,7 +8906,14 @@ void MainComponent::auditOpen (const juce::String& which)
     else if (which == "gest") { showSetPage (pageGestures); openSheet (setSheet, setButton); }
     else if (which == "midi") { showSetPage (pageMidi); refreshMidiDevices(); openSheet (setSheet, setButton); }
     else if (which == "rack") { rackPad = 0; openSheet (rackSheet, mixButton); refreshRack(); }
-    else if (which == "chop") openChopSheet();
+    else if (which == "chop")
+    {
+        //  ZATI_CHOP=golpes abre la ficha en el otro modo. Sin esto el banco
+        //  solo puede fotografiar la mitad de la ficha, que es como no medirla:
+        //  el modo cambia dos rotulos y una linea del plan.
+        chopByHits = UiAudit::env ("ZATI_CHOP") == "golpes";
+        openChopSheet();
+    }
     else if (which == "manual") { closeAllSheets(); openSheet (manualSheet, setButton); }
     else if (which == "browse") openBrowseForPad (0);
 }
