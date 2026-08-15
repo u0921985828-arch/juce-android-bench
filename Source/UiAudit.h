@@ -194,6 +194,64 @@ namespace UiAudit
                   depth + 1, childUnderSlider, childUnderViewport);
     }
 
+    // ========================================================================
+    //  LAS MISMAS REGLAS, PERO DENTRO Y SIN VOLCADO.
+    //
+    //  expo.py mide 476 estados FIJOS: los que a alguien se le ocurrieron. Lo
+    //  que rompe una interfaz de verdad es la combinacion - la ficha X abierta
+    //  con el banco D, en arabe, en apaisado, despues de haber tocado nueve
+    //  cosas - y esa no se enumera, se sortea. Sortearla desde fuera cuesta un
+    //  arranque de proceso por estado, o sea un segundo y medio; desde dentro
+    //  cuesta un repintado.
+    //
+    //  Solo dos de las cinco reglas, y son las dos que no dependen del idioma:
+    //  hermanos que se pisan y controles que se salen de la ventana. Las de
+    //  texto necesitan comparar dos idiomas en la misma ruta, que es cosa del
+    //  script.
+    struct Hallazgos { int solapes = 0, fuera = 0, mirados = 0; };
+
+    inline void recoge (juce::Component& c, juce::Component& root,
+                        juce::Array<juce::Rectangle<int>>& hermanos, Hallazgos& h,
+                        bool underSlider = false, bool underViewport = false)
+    {
+        if (! c.isVisible()) return;
+
+        const juce::String kind = kindOf (c);
+        const bool interactive = (kind == "button" || kind == "slider" || kind == "editor");
+        const auto abs = root.getLocalArea (&c, c.getLocalBounds());
+
+        if (interactive && ! underSlider && abs.getWidth() > 0 && abs.getHeight() > 0)
+        {
+            ++h.mirados;
+            if (! underViewport && ! root.getLocalBounds().contains (abs)) ++h.fuera;
+        }
+
+        //  Los hermanos se comparan entre ellos y no contra el arbol entero:
+        //  una ficha encima de la cara es el diseno, no un solape.
+        juce::Array<juce::Rectangle<int>> mios;
+        for (auto* k : c.getChildren())
+            recoge (*k, root, mios, h, underSlider || kind == "slider",
+                    underViewport || dynamic_cast<juce::Viewport*> (&c) != nullptr);
+
+        if (interactive && ! underSlider && abs.getWidth() > 0 && abs.getHeight() > 0)
+        {
+            for (const auto& otro : hermanos)
+            {
+                const auto in = otro.getIntersection (abs);
+                if (in.getWidth() > 1 && in.getHeight() > 1) ++h.solapes;
+            }
+            hermanos.add (abs);
+        }
+    }
+
+    inline Hallazgos check (juce::Component& root)
+    {
+        Hallazgos h;
+        juce::Array<juce::Rectangle<int>> raiz;
+        recoge (root, root, raiz, h);
+        return h;
+    }
+
     inline void dump (juce::Component& root)
     {
         std::cout << "{\"root\":1,\"w\":" << root.getWidth() << ",\"h\":" << root.getHeight()

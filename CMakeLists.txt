@@ -103,4 +103,18 @@ if(ZATI_BENCH)
         juce::juce_dsp
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags)
+
+    #  Y el de MUCHA GENTE, que es otra cosa que el de mucha carga: un millon
+    #  de sesiones distintas, cada una con su semilla, su aparato y su tirada
+    #  de acciones. Ver Tests/Soak.cpp.
+    juce_add_console_app(Soak PRODUCT_NAME "Soak")
+    juce_generate_juce_header(Soak)
+    target_sources(Soak PRIVATE Tests/Soak.cpp Source/AudioEngine.cpp)
+    target_compile_definitions(Soak PRIVATE
+        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_STRICT_REFCOUNTEDPOINTER=1)
+    target_link_libraries(Soak PRIVATE
+        juce::juce_audio_utils
+        juce::juce_dsp
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags)
 endif()
