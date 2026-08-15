@@ -10,12 +10,15 @@
 #include "../Source/AudioEngine.h"
 #include "../Source/Denoise.h"
 #include "../Source/MidiIo.h"
+#include "../Source/Kits.h"
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <limits>
 #include <string>
+#include <vector>
+#include <algorithm>
 
 using Clock = std::chrono::steady_clock;
 
@@ -675,6 +678,259 @@ int main()
         std::printf ("%-34s %s\n", "muestras hostiles",
                      allOk ? "ninguna cuelga ni envenena la salida, con y sin limitador"
                            : "HAY FALLOS");
+    }
+
+    //  EL FILTRO DEL PAD, con TRES numeros a la vez o no dice nada.
+    //
+    //  Cuanto quita arriba, cuanto respeta abajo, y cuanto cuesta cuando esta
+    //  abierto. Solo el primero lo saca un silenciador, solo el segundo lo saca
+    //  no hacer nada, y sin el tercero no hay forma de saber si el camino
+    //  "sin filtro" es de verdad el de antes: la unica prueba de que abierto
+    //  es gratis es que la salida salga IDENTICA bit a bit, y eso es lo que
+    //  una comparacion por nivel -"casi lo mismo, 0.1 dB"- deja pasar.
+    {
+        //  Un seno limpio, sin el ruido que lleva makeSample: aqui se mide una
+        //  banda, y un 20% de ruido blanco encima pone energia en todas.
+        auto pureTone = [] (double sr, double secs, float hz)
+        {
+            auto* sb = new SampleBuffer();
+            const int n = (int) (sr * secs);
+            sb->buffer.setSize (2, n);
+            for (int c = 0; c < 2; ++c)
+                for (int i = 0; i < n; ++i)
+                    sb->buffer.setSample (c, i, 0.5f * std::sin (juce::MathConstants<float>::twoPi
+                                                                 * hz * (float) i / (float) sr));
+            sb->sourceSampleRate = sr;
+            return SampleBuffer::Ptr (sb);
+        };
+
+        //  Nivel eficaz en regimen, saltandose el ataque: el filtro tarda unos
+        //  ciclos en llenar sus integradores y medir desde la primera muestra
+        //  mezcla el transitorio con lo que se quiere medir.
+        auto runTone = [&pureTone] (float hz, float cutoff, float reso,
+                                    juce::AudioBuffer<float>& keep, bool* nanOut)
+        {
+            AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+            e.setPadGain (0, 1.0f);
+            e.setPadCutoff (0, cutoff);
+            e.setPadReso   (0, reso);
+            e.publishSample (0, pureTone (48000.0, 1.0, hz));
+
+            juce::AudioBuffer<float> b (2, 512);
+            b.clear(); e.renderNextBlock (b, 0, 512);
+            e.postNoteOn (0, 1.0f);
+
+            keep.setSize (1, 512 * 40, false, true, true);
+            double acc = 0.0; int cnt = 0;
+            for (int blk = 0; blk < 40; ++blk)
+            {
+                b.clear();
+                e.renderNextBlock (b, 0, 512);
+                keep.copyFrom (0, blk * 512, b, 0, 0, 512);
+                for (int i = 0; i < 512; ++i)
+                {
+                    const float v = b.getSample (0, i);
+                    if (! std::isfinite (v)) { if (nanOut) *nanOut = true; continue; }
+                    if (blk >= 10) { acc += (double) v * v; ++cnt; }
+                }
+            }
+            return cnt > 0 ? std::sqrt (acc / (double) cnt) : 0.0;
+        };
+
+        bool nan = false;
+        juce::AudioBuffer<float> openA, openB, lowOn, lowOff, hiOn, hiOff, resOn, resOff;
+
+        //  200 Hz y 6 kHz contra un corte de 800: uno esta dos octavas por
+        //  debajo y el otro casi tres por encima.
+        const double lo0 = runTone (200.0f,  AudioEngine::kFiltOpenHz, 0.0f, lowOff, &nan);
+        const double lo1 = runTone (200.0f,  800.0f, 0.0f, lowOn,  &nan);
+        const double hi0 = runTone (6000.0f, AudioEngine::kFiltOpenHz, 0.0f, hiOff,  &nan);
+        const double hi1 = runTone (6000.0f, 800.0f, 0.0f, hiOn,   &nan);
+
+        const double cutDb  = 20.0 * std::log10 (juce::jmax (1.0e-9, hi1) / juce::jmax (1.0e-9, hi0));
+        const double keepDb = 20.0 * std::log10 (juce::jmax (1.0e-9, lo1) / juce::jmax (1.0e-9, lo0));
+
+        //  ABIERTO ES GRATIS, bit a bit. Dos corridas del mismo tono con el
+        //  corte arriba tienen que dar exactamente el mismo bloque; si el
+        //  filtro se colara, la diferencia seria pequenisima y REAL.
+        runTone (1000.0f, AudioEngine::kFiltOpenHz, 0.0f, openA, &nan);
+        runTone (1000.0f, AudioEngine::kFiltOpenHz, 0.0f, openB, &nan);
+        int differ = 0;
+        for (int i = 0; i < openA.getNumSamples(); ++i)
+            if (openA.getSample (0, i) != openB.getSample (0, i)) ++differ;
+
+        //  Y LA RESONANCIA RESUENA. Un tono justo en el corte con Q alta tiene
+        //  que salir MAS ALTO que con Q baja, o el mando no hace nada y nadie
+        //  se entera: es la mitad del filtro que un barrido no ensena.
+        const double r0 = runTone (800.0f, 800.0f, 0.0f, resOff, &nan);
+        const double r1 = runTone (800.0f, 800.0f, 1.0f, resOn,  &nan);
+        const double resDb = 20.0 * std::log10 (juce::jmax (1.0e-9, r1) / juce::jmax (1.0e-9, r0));
+
+        const bool ok = ! nan && cutDb < -20.0 && keepDb > -1.5 && differ == 0 && resDb > 6.0;
+        std::printf ("%-34s 6 kHz %+.1f dB   200 Hz %+.2f dB   reson %+.1f dB   abierto %s   NaN %s   %s\n",
+                     "filtro del pad (corte 800 Hz)", cutDb, keepDb, resDb,
+                     differ == 0 ? "identico" : "CAMBIA",
+                     nan ? "SI" : "no", ok ? "OK" : "FALLA");
+    }
+
+    //  DE DONDE SALE EL CRISP.
+    //
+    //  La sintetica normaliza por sonoridad y luego dobla lo que pase de
+    //  kKnee con una tanh. Doblar es un WAVESHAPER: cada muestra por encima
+    //  del codo sale con armonicos que no estaban, y el codo esta en 0.55
+    //  mientras los picos medidos llegan a 0.69 - o sea que los golpes mas
+    //  fuertes de la fabrica pasan SIEMPRE por el doblador, no en un pico
+    //  raro. Aqui se mide cuanto: que fraccion de cada sonido se dobla, y
+    //  cuanta distorsion armonica deja en un tono puro, que es donde se oye.
+    {
+        double worstFrac = 0.0; int worstIdx = 0;
+        double sumFrac = 0.0; int bent = 0;
+        double peakRawMax = 0.0;
+
+        for (int i = 0; i < Kits::kNumSounds; ++i)
+        {
+            auto sb = Kits::render (i);
+            const int n = sb->buffer.getNumSamples();
+            const float* d = sb->buffer.getReadPointer (0);
+
+            //  Lo que SALE ya esta doblado, asi que el doblador no se puede
+            //  medir mirando su propia salida: se cuentan las muestras que
+            //  quedaron por encima del codo, que son exactamente las que
+            //  pasaron por la tanh.
+            long over = 0; double pk = 0.0;
+            for (int k = 0; k < n; ++k)
+            {
+                const double a = std::abs ((double) d[k]);
+                if (a > 0.55) ++over;
+                pk = juce::jmax (pk, a);
+            }
+            const double frac = 100.0 * (double) over / juce::jmax (1, n);
+            sumFrac += frac;
+            peakRawMax = juce::jmax (peakRawMax, pk);
+            if (frac > 0.0) ++bent;
+            if (frac > worstFrac) { worstFrac = frac; worstIdx = i; }
+        }
+
+        std::printf ("%-34s %d de %d doblados   peor %.2f%% (#%d)   media %.2f%%   pico %.3f\n",
+                     "fabrica: cuanto se dobla", bent, Kits::kNumSounds,
+                     worstFrac, worstIdx + 1, sumFrac / Kits::kNumSounds, peakRawMax);
+    }
+
+    //  Y SI CHASQUEAN, que es otra cosa distinta de si distorsionan.
+    //
+    //  PRIMERO SE DUDA DE LA PRUEBA, y esta ya mintio una vez. El primer
+    //  intento comparaba cada salto con la MEDIANA de los saltos del sonido
+    //  entero, y saco quince culpables de sesenta y cuatro con un ZAP a 1567
+    //  veces su mediana. No habia tal chasquido: un ZAP dura 200 ms dentro de
+    //  un fichero de 1000, asi que cuatro quintos del buffer son silencio y la
+    //  mediana valia 0.0001. Un salto de 0.199 entre dos muestras es
+    //  exactamente lo que da una banda de 3.2 kHz con amplitud 0.5 - es la
+    //  senal, no un corte - pero contra una mediana de silencio parecia un
+    //  disparo.
+    //
+    //  Lo que separa un escalon de una senal aguda es el nivel de AL LADO: una
+    //  senal de banda limitada no puede saltar mas de lo que vale, porque su
+    //  pendiente maxima es 2*pi*f/fs veces su amplitud y f no pasa de Nyquist.
+    //  Asi que el salto se compara con el pico de los 5 ms que lo rodean, y el
+    //  listón se pone en el DOBLE de ese pico, que es el peor caso posible -
+    //  una alternancia a Nyquist. Lo que se pasa de ahi no cabe en ninguna
+    //  banda: es un corte.
+    {
+        int culpables = 0;
+        double peorRatio = 0.0; int peorIdx = 0; double peorMs = 0.0, peorSalto = 0.0;
+        constexpr int kWin = 240;        // 5 ms a 48 kHz
+
+        for (int i = 0; i < Kits::kNumSounds; ++i)
+        {
+            auto sb = Kits::render (i);
+            const int n = sb->buffer.getNumSamples();
+            const float* d = sb->buffer.getReadPointer (0);
+            if (n < 4 * kWin) continue;
+
+            double peor = 0.0; int donde = 0;
+            for (int k = 1; k < n; ++k)
+            {
+                const double dd = std::abs ((double) d[k] - (double) d[k - 1]);
+                if (dd < 0.01) continue;                 // por debajo de -40 dB no se oye un escalon
+
+                double loc = 0.0;
+                for (int j = juce::jmax (0, k - kWin); j < juce::jmin (n, k + kWin); ++j)
+                    loc = juce::jmax (loc, std::abs ((double) d[j]));
+
+                const double ratio = dd / juce::jmax (1.0e-6, 2.0 * loc);
+                if (ratio > peor) { peor = ratio; donde = k; }
+            }
+
+            if (peor > peorRatio) { peorRatio = peor; peorIdx = i; peorMs = 1000.0 * donde / Kits::kRate; peorSalto = peor; }
+            if (peor > 1.0)
+            {
+                ++culpables;
+                if (culpables <= 8)
+                    std::printf ("    %-8s salto %.2f veces lo que cabe, en %.1f ms\n",
+                                 Kits::table()[i].name, peor, 1000.0 * donde / Kits::kRate);
+            }
+        }
+
+        juce::ignoreUnused (peorSalto);
+        std::printf ("%-34s %d de %d con escalon   peor %.2f de lo que cabe (#%d %s) en %.1f ms   %s\n",
+                     "fabrica: chasquidos", culpables, Kits::kNumSounds,
+                     peorRatio, peorIdx + 1, Kits::table()[peorIdx].name, peorMs,
+                     culpables == 0 ? "OK" : "FALLA");
+    }
+
+    //  Y LO QUE DE VERDAD SUENA: la fabrica tocando un patron normal.
+    //
+    //  Las medidas de arriba usan dieciseis senos en fase, que es un caso
+    //  hostil a proposito y ya se sabe que mete el saturador del master en
+    //  accion permanente. Eso no dice nada de si la maquina distorsiona
+    //  TOCANDO, que es la pregunta. Aqui suenan los sonidos de fabrica, en el
+    //  patron que toca cualquiera - bombo a negras, caja al dos y al cuatro,
+    //  charles a corcheas y un bajo - y se mira cuanto tiene que doblar el
+    //  master. Un instrumento que satura en su patron mas simple suena a
+    //  crispado y no hay mando que lo arregle.
+    {
+        AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (48, 8);
+        for (int p = 0; p < 16; ++p)
+        {
+            e.setPadGain (p, 1.0f);
+            e.publishSample (p, Kits::render (p));
+        }
+
+        juce::AudioBuffer<float> b (2, 512);
+        b.clear(); e.renderNextBlock (b, 0, 512);
+
+        //  Cuatro pistas a la vez, que es un patron y no una prueba de carga.
+        const int kicks[]  = { 0, 4, 8, 12 };
+        const int snares[] = { 4, 12 };
+        const int hats[]   = { 0, 2, 4, 6, 8, 10, 12, 14 };
+        const int bass[]   = { 0, 3, 8, 11 };
+        for (int st : kicks)  e.setStep (0, st, 0, true);
+        for (int st : snares) e.setStep (0, st, 1, true);
+        for (int st : hats)   e.setStep (0, st, 2, true);
+        for (int st : bass)   e.setStep (0, st, 6, true);
+        e.setBpm (120.0f);
+        e.setPlaying (true);
+
+        double pk = 0.0; long hot = 0, tot = 0; bool nan = false;
+        for (int blk = 0; blk < 400; ++blk)          // ~4.3 s
+        {
+            b.clear();
+            e.renderNextBlock (b, 0, 512);
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < 512; ++i)
+                {
+                    const float v = b.getSample (ch, i);
+                    if (! std::isfinite (v)) { nan = true; continue; }
+                    const double a = std::abs ((double) v);
+                    pk = juce::jmax (pk, a);
+                    if (a > 0.944) ++hot;            // el codo del saturador
+                    ++tot;
+                }
+        }
+        const double pct = 100.0 * (double) hot / juce::jmax (1.0, (double) tot);
+        std::printf ("%-34s pico %.3f   satura %.2f%%   NaN %s   %s\n",
+                     "fabrica tocando un patron", pk, pct, nan ? "SI" : "no",
+                     (! nan && pct < 0.01 && pk < 0.99) ? "OK" : "FALLA");
     }
 
     return 0;

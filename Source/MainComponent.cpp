@@ -172,6 +172,10 @@ MainComponent::MainComponent()
     padEnd01.fill (1.0f);
     padAttack.fill (2.0f);
     padRelease.fill (5.0f);
+    //  El espejo del filtro, abierto, igual que el motor. Cero aqui serian
+    //  sesenta y cuatro mandos de corte en el tope de abajo: la ficha diria
+    //  "20 Hz" en un pad que suena entero.
+    padCut.fill (AudioEngine::kFiltOpenHz);
     //  AUTOCUT on everywhere, matching the engine. A pad that stacks over
     //  its own tail is the special case, not the normal one.
     padSelfCut.fill (true);
@@ -920,6 +924,32 @@ MainComponent::MainComponent()
              [this] { if (selectedPad >= 0) { padAttack[(size_t) selectedPad] = (float) attackSlider.getValue(); engine.setPadAttack (selectedPad, (float) attackSlider.getValue()); } });
     initKnob (releaseSlider, 1.0, 800.0, 1.0, 5.0, 40.0,
              [this] { if (selectedPad >= 0) { padRelease[(size_t) selectedPad] = (float) releaseSlider.getValue(); engine.setPadRelease (selectedPad, (float) releaseSlider.getValue()); } });
+
+    //  CORTE, con el punto medio del mando en 1 kHz.
+    //
+    //  Lineal, este mando es inutil: la mitad del recorrido iria de 10 a 20
+    //  kHz, donde no se oye nada moverse, y los dos primeros milimetros se
+    //  comerian de 20 Hz a 2 kHz, que es donde esta toda la musica. El oido
+    //  cuenta octavas, no hercios - de 100 a 200 se oye igual de lejos que de
+    //  1000 a 2000 - asi que el mando reparte por octavas, que es lo que hace
+    //  setSkewFactorFromMidPoint con 1000 en un recorrido de 20 a 20000.
+    initKnob (cutSlider, 20.0, (double) AudioEngine::kFiltOpenHz, 1.0,
+              (double) AudioEngine::kFiltOpenHz, 1000.0,
+             [this] { if (selectedPad >= 0) { padCut[(size_t) selectedPad] = (float) cutSlider.getValue(); engine.setPadCutoff (selectedPad, (float) cutSlider.getValue()); } });
+    //  Y arriba del todo no dice "20000 Hz" sino que esta ABIERTO, que es la
+    //  unica posicion del mando que significa algo distinto de un numero: es
+    //  el pad sin filtrar, y sin ella haria falta un interruptor.
+    cutSlider.textFromValueFunction = [] (double v)
+    {
+        if (v >= (double) AudioEngine::kFiltOpenHz - 1.0) return T ("ABIERTO");
+        return v >= 1000.0 ? Lang::ltr (juce::String (v / 1000.0, 1) + " k")
+                           : Lang::ltr (juce::String ((int) v) + " Hz");
+    };
+    cutSlider.updateText();
+    initKnob (resoSlider, 0.0, 1.0, 0.01, 0.0, 0.0,
+             [this] { if (selectedPad >= 0) { padReso[(size_t) selectedPad] = (float) resoSlider.getValue(); engine.setPadReso (selectedPad, (float) resoSlider.getValue()); } });
+    resoSlider.textFromValueFunction = [] (double v) { return Lang::ltr (juce::String ((int) (v * 100.0 + 0.5)) + " %"); };
+    resoSlider.updateText();
     //  A choke group is off or 1..8 — nine discrete positions. A rotary asks
     //  you to aim for 4 and land on 3; increment buttons hit it first try and
     //  show the state without reading a number off a dial.
@@ -1926,6 +1956,26 @@ MainComponent::MainComponent()
     //  without this the two pages are both "visible" until something happens
     //  to call showSeqPage - and the very first resized() would lay the step
     //  controls out on top of the grid.
+    //  LOS MANDOS DE LA FICHA SON HIJOS DE LA FICHA, no de la cara.
+    //
+    //  initKnob e initSlider los cuelgan de MainComponent, que es donde viven
+    //  los dieciseis pads, asi que un mando de la ficha PADS y un pad son
+    //  HERMANOS - y dos hermanos que se pisan son un solapamiento, tanto para
+    //  el banco como para el dedo que apunta. Mientras la ficha fue baja no se
+    //  noto; en cuanto la pagina SONIDO crecio una fila de mandos, la tarjeta
+    //  -que se centra, no se apoya abajo- bajo su borde inferior sobre la
+    //  rejilla y salieron 3300 solapes en las 476 corridas, ochenta por
+    //  pantalla. Colgarlos de la ficha no mueve un pixel: Sheet ocupa la
+    //  ventana entera, asi que las coordenadas son las mismas, y ademas los
+    //  pinta DESPUES de la tarjeta y de los rotulos.
+    for (juce::Component* c : { (juce::Component*) &pitchSlider,  (juce::Component*) &fineSlider,
+                                (juce::Component*) &volSlider,    (juce::Component*) &panSlider,
+                                (juce::Component*) &attackSlider, (juce::Component*) &releaseSlider,
+                                (juce::Component*) &cutSlider,    (juce::Component*) &resoSlider,
+                                (juce::Component*) &chokeSlider,  (juce::Component*) &startSlider,
+                                (juce::Component*) &endSlider })
+        padSheet.addAndMakeVisible (c);
+
     showSeqPage (seqPageGrid);
     showPadPage (padPageSound);
     showMixBank (0);
@@ -2641,6 +2691,7 @@ void MainComponent::showPadPage (int page)
     for (juce::Component* c : { (juce::Component*) &pitchSlider, (juce::Component*) &fineSlider,
                                 (juce::Component*) &volSlider,   (juce::Component*) &panSlider,
                                 (juce::Component*) &attackSlider,(juce::Component*) &releaseSlider,
+                                (juce::Component*) &cutSlider,   (juce::Component*) &resoSlider,
                                 (juce::Component*) &chokeSlider, (juce::Component*) &modeButton,
                                 (juce::Component*) &normButton })
         c->setVisible (onSound);
@@ -3190,6 +3241,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
             name (pitchSlider, "PITCH"); name (fineSlider, "FINO"); name (volSlider, "GANANCIA");
             name (panSlider, "PAN");
             name (attackSlider, "ATTACK"); name (releaseSlider, "RELEASE");
+            name (cutSlider, "CORTE|filtro"); name (resoSlider, "RESON");
             name (chokeSlider, "CHOKE");
 
             //  Same band, one pixel lower: the third row insets its cells by 3.
@@ -3961,13 +4013,14 @@ void MainComponent::resized()
         //  ver el desglose de cada bloque mas abajo.
         const int sheetInnerW = (int) (full.getWidth() * 0.92f) - 2 * Metrics::lg;
         //  Lo que pide cada pagina, sumado y no probado:
-        //  SONIDO  = titulo+pestanas+margenes (116) + secH + 86 + 86 + 56 + 8
+        //  SONIDO  = titulo+pestanas+margenes (116) + secH + 86 + 86 + 86 + 56 + 8
         //  RECORTE = 116 + secH + 34+4+34+8 + hit + 8 + 180 de onda
         //  EL PAD  = 116 + 3*secH + 2*86 + 2*hit + 3*sm + chip
         //  sheetFromBottom recorta si no cabe, y de eso se ocupa el reparto.
         const int rigH = 418 + 3 * secH
                        + (padSourceWraps (sheetInnerW) ? Metrics::hit + Metrics::halfGap : 0);
-        const int wantH = (padPage == padPageSound) ? 352 + secH
+        //  438 y no 352: la fila del filtro son 86 mas. Ver el desglose.
+        const int wantH = (padPage == padPageSound) ? 438 + secH
                         : (padPage == padPageTrim)  ? 424 + secH
                                                     : rigH;
         auto inner = sheetFromBottom (padSheet, wantH);
@@ -4109,11 +4162,16 @@ void MainComponent::resized()
         //  altura cero. Sale de lo que hay, con 60 de suelo.
         {
             const int forKnobs = inner.getHeight() - (ZatiLookAndFeel::kKnobName + Metrics::hit);
-            const int knobH = juce::jlimit (60, ZatiLookAndFeel::kKnobRow, forKnobs / 2);
+            const int knobH = juce::jlimit (60, ZatiLookAndFeel::kKnobRow, forKnobs / 3);
             juce::Slider* k1[3] = { &pitchSlider, &fineSlider, &volSlider };
             juce::Slider* k2[3] = { &panSlider, &attackSlider, &releaseSlider };
+            //  El filtro son DOS y no tres: media fila vacia se lee como un
+            //  mando que falta. Dos celdas anchas, que ademas es lo que pide
+            //  un corte - es el mando que mas se arrastra de la ficha.
+            juce::Slider* k3[2] = { &cutSlider, &resoSlider };
             placeKnobRow (inner.removeFromTop (knobH), k1);
             placeKnobRow (inner.removeFromTop (knobH), k2);
+            placeKnobRow (inner.removeFromTop (knobH), k3, 2);
         }
 
         //  A third row for the two controls that are not dials: CHOKE, which
@@ -5362,6 +5420,8 @@ void MainComponent::updateControlsFromPad (int index)
     panSlider.setValue     (padPan[(size_t) index],     juce::dontSendNotification);
     attackSlider.setValue  (padAttack[(size_t) index],  juce::dontSendNotification);
     releaseSlider.setValue (padRelease[(size_t) index], juce::dontSendNotification);
+    cutSlider.setValue  (padCut[(size_t) index],  juce::dontSendNotification);
+    resoSlider.setValue (padReso[(size_t) index], juce::dontSendNotification);
     //  Los envios se leen del MOTOR, que es quien los guarda: el RACK mueve
     //  los mismos seis numeros y una copia en la interfaz se quedaria vieja en
     //  cuanto se tocaran desde alli.
@@ -6393,6 +6453,8 @@ juce::ValueTree MainComponent::captureState() const
         p.setProperty ("pan",     padPan[(size_t) i],     nullptr);
         p.setProperty ("attack",  padAttack[(size_t) i],  nullptr);
         p.setProperty ("release", padRelease[(size_t) i], nullptr);
+        p.setProperty ("corte",   padCut[(size_t) i],     nullptr);
+        p.setProperty ("reson",   padReso[(size_t) i],    nullptr);
         p.setProperty ("zati",    padZati[(size_t) i],    nullptr);
 
         //  The six sends, as one string, so adding a seventh effect later
@@ -6529,6 +6591,14 @@ void MainComponent::applyState (const juce::ValueTree& s)
             padPan[(size_t) i]     = (float) p.getProperty ("pan", 0.0);
             padAttack[(size_t) i]  = (float) p.getProperty ("attack", 2.0);
             padRelease[(size_t) i] = (float) p.getProperty ("release", 5.0);
+            //  Un proyecto guardado antes de que el filtro existiera no lleva
+            //  estas dos, y tiene que volver SIN filtrar - abierto del todo -
+            //  o sonaria distinto de como se guardo. El cero del array seria
+            //  0 Hz, o sea mudo.
+            padCut[(size_t) i]  = (float) p.getProperty ("corte", (double) AudioEngine::kFiltOpenHz);
+            padReso[(size_t) i] = (float) p.getProperty ("reson", 0.0);
+            engine.setPadCutoff (i, padCut[(size_t) i]);
+            engine.setPadReso   (i, padReso[(size_t) i]);
             padZati[(size_t) i]    = (int)   p.getProperty ("zati", Zati::forPad (i));
 
             //  Older projects have no sends; those pads go to every effect in
@@ -7863,7 +7933,18 @@ void MainComponent::useLowestLatency()
     //  fast path and what any decent phone gets; on an entry-level one a block
     //  that cannot be rendered in time is an under-run, and an under-run is a
     //  click - worse than the extra milliseconds it costs to avoid it.
-    burst *= juce::jmax (1, DeviceTier::profile().bufferBursts);
+    //
+    //  Y EL NUMERO NO SE ADIVINA POR LA FICHA TECNICA, se corrige por lo que
+    //  pasa. La gama la decide DeviceTier mirando nucleos y memoria, que es una
+    //  suposicion razonable y nada mas: dos moviles con los mismos ocho nucleos
+    //  se portan distinto segun lo que este haciendo el sistema al lado. Asi
+    //  que ese numero es solo el PUNTO DE PARTIDA, y quien manda es el contador
+    //  de under-runs. Ver checkXRuns.
+    if (burstMult <= 0)
+        burstMult = juce::jlimit (1, kMaxBursts,
+                                  juce::jmax (loadBurstPreference(),
+                                              DeviceTier::profile().bufferBursts));
+    burst *= burstMult;
 
     //  Only among the sizes the driver actually offers.
     if (! sizes.contains (burst))
@@ -7878,6 +7959,71 @@ void MainComponent::useLowestLatency()
     auto setup = deviceManager.getAudioDeviceSetup();
     setup.bufferSize = burst;
     deviceManager.setAudioDeviceSetup (setup, true);
+
+    //  El contador del dispositivo viejo no vale para el nuevo: se vuelve a
+    //  empezar, y con unos ticks de gracia porque abrir un stream produce
+    //  under-runs propios que no son culpa de nadie.
+    lastXRuns = -1;
+    xrunsSeen = 0;
+    xrunGrace = 12;
+}
+
+juce::File MainComponent::burstPreferenceFile()
+{
+    return ProjectStore::home().getChildFile ("buffer.txt");
+}
+
+int MainComponent::loadBurstPreference()
+{
+    const auto f = burstPreferenceFile();
+    return f.existsAsFile() ? f.loadFileAsString().trim().getIntValue() : 0;
+}
+
+//  LOS CHASQUIDOS SE CUENTAN Y SE CORRIGEN.
+//
+//  Un under-run es el hilo de audio llegando tarde: el driver se queda sin
+//  bloque, mete silencio o repite el anterior, y eso se oye como un chasquido.
+//  Es EL fallo de una app que pide el buffer mas pequeno que hay, y esta lo
+//  pedia sin volver a mirar nunca. getXRunCount es un contador acumulado del
+//  dispositivo abierto; lo que importa no es su valor sino que CREZCA.
+//
+//  Cuatro y no uno: abrir el stream, cambiar de ruta o volver de segundo plano
+//  producen alguno suelto que no significa nada. Cuatro seguidos con el
+//  dispositivo ya asentado significan que este telefono no llega, y entonces
+//  se sube un burst - hasta cuatro - y se recuerda, para que el proximo
+//  arranque empiece donde este acabo en vez de volver a crepitar para
+//  aprender lo mismo.
+void MainComponent::checkXRuns()
+{
+    auto* dev = deviceManager.getCurrentAudioDevice();
+    if (dev == nullptr) { lastXRuns = -1; return; }
+
+    const int now = dev->getXRunCount();
+    if (now < 0) return;                     // el dispositivo no lleva la cuenta
+
+    if (xrunGrace > 0) { --xrunGrace; lastXRuns = now; return; }
+    if (lastXRuns < 0) { lastXRuns = now; return; }
+
+    const int nuevos = now - lastXRuns;
+    lastXRuns = now;
+    if (nuevos <= 0) return;
+
+    xrunsSeen += nuevos;
+    if (xrunsSeen < 4 || burstMult >= kMaxBursts) return;
+
+    ++burstMult;
+    burstPreferenceFile().replaceWithText (juce::String (burstMult));
+    xrunsSeen = 0;
+    useLowestLatency();
+
+    //  Y SE DICE. Subir la latencia a espaldas de alguien que eligio esta app
+    //  por la latencia es exactamente lo que no se puede hacer en silencio.
+    status.setText (T ("Audio entrecortado - buffer a %1 muestras",
+                       Lang::ltr (juce::String (deviceManager.getCurrentAudioDevice() != nullptr
+                                                    ? deviceManager.getCurrentAudioDevice()->getCurrentBufferSizeSamples()
+                                                    : 0))),
+                    juce::dontSendNotification);
+    refreshDeviceStatusLine (true);
 }
 
 //  Emit a click, hear it back, and report the gap. This needs the microphone
@@ -9209,6 +9355,7 @@ void MainComponent::timerCallback()
     if (busyJobs > 0) busyBar.repaint();
     stepPadJob();
     stepPadSaveJob();
+    checkXRuns();
 
     //  La exportacion SI sabe cuanto falta - cuenta pasadas y bloques - asi
     //  que la barra deja de ir y venir y dice el numero.

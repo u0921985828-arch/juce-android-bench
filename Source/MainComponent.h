@@ -271,6 +271,21 @@ private:
     //  and loses it, so it has to be remembered and put back. Zero means
     //  "never chosen, let the device decide". See keepChosenRate().
     double chosenRate = 0.0;
+
+    //  EL BUFFER QUE EL TELEFONO AGUANTA, no el que anuncia.
+    //
+    //  useLowestLatency pide el burst mas pequeno que ofrece el driver, que es
+    //  el argumento entero de esta app. Lo que no habia era forma de saber
+    //  cuando el telefono NO llega: un bloque que no se renderiza a tiempo es
+    //  un under-run, y un under-run es un chasquido. La app lo pedia y no
+    //  volvia a mirar, asi que un movil justo crepitaba para siempre sin que
+    //  nada lo dijera ni lo corrigiera. Ahora se cuentan (getXRunCount) y, si
+    //  aparecen, se sube un burst y se recuerda.
+    int burstMult   = 0;     // 0 = aun sin leer del disco; luego 1..kMaxBursts
+    int lastXRuns   = -1;    // -1 = todavia no se ha leido ninguno
+    int xrunsSeen   = 0;     // desde el ultimo cambio de buffer
+    int xrunGrace   = 0;     // ticks de gracia despues de abrir el dispositivo
+    static constexpr int kMaxBursts = 4;
     void   keepChosenRate();
     juce::String exportStatus;
     bool         exportOk = false;
@@ -296,7 +311,10 @@ private:
     juce::OwnedArray<juce::TextButton> skinButtons;
     juce::Rectangle<int> skinRowArea;
     juce::Rectangle<int> bufRowArea, rateRowArea;
-    void useLowestLatency();     // one native burst, not JUCE's 40 ms default
+    void useLowestLatency();
+    void checkXRuns();
+    static juce::File burstPreferenceFile();
+    static int loadBurstPreference();     // one native burst, not JUCE's 40 ms default
 
     //  What AAudio granted a bare exclusive request at startup, before any
     //  device of ours existed. This is the only honest answer to "are we on
@@ -1035,6 +1053,9 @@ private:
     //  CINTA moves pitch and length together, TONO keeps the length.
     juce::TextButton modeButton { "CINTA" };
     juce::Slider panSlider, attackSlider, releaseSlider;
+    //  El filtro del pad. Ver AudioEngine::setPadCutoff: no lleva interruptor
+    //  porque el corte arriba del todo ya es "sin filtro".
+    juce::Slider cutSlider, resoSlider;
     //  What a step DOES, not just which pads it fires: how hard, how many
     //  times, and how far off the grid the odd ones sit.
     juce::Slider patternSlider, noteSlider, lengthSlider, velSlider, rollSlider, swingSlider;
@@ -1074,6 +1095,8 @@ private:
     std::array<float, kNumPads> padPan {};        // -1..1, 0 = centre
     std::array<float, kNumPads> padAttack {};     // ms
     std::array<float, kNumPads> padRelease {};    // ms
+    std::array<float, kNumPads> padCut {};        // Hz, kFiltOpenHz = abierto
+    std::array<float, kNumPads> padReso {};       // 0..1
     std::array<SampleBuffer::Ptr, kNumPads> uiSample;
     std::array<juce::String, kNumPads> padName {};
     std::array<int, kNumPads> padZati {};       // fragment colour per pad (cut order)

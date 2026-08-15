@@ -121,6 +121,39 @@ public:
     void setPadPan     (int slot, float p)     noexcept { store (padPan,     slot, p); }        // -1..1
     void setPadAttack  (int slot, float ms)    noexcept { store (padAttack,  slot, ms); }
     void setPadRelease (int slot, float ms)    noexcept { store (padRelease, slot, ms); }
+
+    //  EL FILTRO DEL PAD. Un paso bajo por pad, con corte y resonancia.
+    //
+    //  Va aqui y no dentro de Voice porque un filtro es del PAD y no de cada
+    //  golpe: dieciseis disparos del mismo bombo comparten un filtro, igual
+    //  que en cualquier sampler, y meterlo en la voz habria hecho que cada
+    //  redisparo reiniciara el estado del filtro - un chasquido en cada nota
+    //  cuando el corte esta bajo. Ademas el bucle interior de Voice::render
+    //  se recorre hasta cuarenta y ocho veces por bloque y este no: una vez
+    //  por pad que suene.
+    //
+    //  ABIERTO ES GRATIS, y por eso no hay interruptor: con el corte arriba y
+    //  la resonancia a cero el pad no pasa por aqui - ni siquiera por el
+    //  camino separado que hace falta para filtrarlo. Un mando de mas que
+    //  apagar es un mando que la gente deja mal puesto.
+    void setPadCutoff (int slot, float hz) noexcept
+    {
+        if (slot < 0 || slot >= kNumPads) return;
+        padCutoff[(size_t) slot].store (juce::jlimit (20.0f, kFiltOpenHz, hz), std::memory_order_relaxed);
+        refreshFiltMask (slot);
+    }
+    void setPadReso (int slot, float r) noexcept
+    {
+        if (slot < 0 || slot >= kNumPads) return;
+        padReso[(size_t) slot].store (juce::jlimit (0.0f, 1.0f, r), std::memory_order_relaxed);
+        refreshFiltMask (slot);
+    }
+    float getPadCutoff (int slot) const noexcept
+    { return (slot >= 0 && slot < kNumPads) ? padCutoff[(size_t) slot].load (std::memory_order_relaxed) : kFiltOpenHz; }
+    float getPadReso (int slot) const noexcept
+    { return (slot >= 0 && slot < kNumPads) ? padReso[(size_t) slot].load (std::memory_order_relaxed) : 0.0f; }
+
+    static constexpr float kFiltOpenHz = 20000.0f;   // corte arriba del todo = sin filtro
     //  Mute and solo fold into the SAME gain the voices already follow at
     //  control rate, so they take hold on notes that are already sounding —
     //  a mute you have to wait out is not a mute.
@@ -685,6 +718,34 @@ private:
     std::array<std::atomic<float>, kNumPads> padPan {};      // -1 (L) .. 0 (centre) .. 1 (R)
     std::array<std::atomic<float>, kNumPads> padAttack {};   // ms
     std::array<std::atomic<float>, kNumPads> padRelease {};  // ms
+
+    //  El filtro del pad: corte, resonancia, y UN BIT por pad que dice si hay
+    //  algo que filtrar. El bit existe por la misma razon que padSendMask -
+    //  para que el reparto de cada bloque no pregunte 64 veces por dos floats
+    //  que casi siempre significan "no" - y se recalcula en el hilo de
+    //  mensajes, que es el unico que mueve los dos mandos.
+    std::array<std::atomic<float>, kNumPads> padCutoff {};   // Hz
+    std::array<std::atomic<float>, kNumPads> padReso {};     // 0..1
+    std::atomic<std::uint64_t> padFiltMask { 0 };
+
+    void refreshFiltMask (int slot) noexcept
+    {
+        const float hz = padCutoff[(size_t) slot].load (std::memory_order_relaxed);
+        const float rs = padReso[(size_t) slot].load (std::memory_order_relaxed);
+        const bool  on = (hz < kFiltOpenHz - 1.0f) || (rs > 0.01f);
+        const std::uint64_t bit = 1ull << (unsigned) slot;
+        if (on) padFiltMask.fetch_or  (bit,  std::memory_order_relaxed);
+        else    padFiltMask.fetch_and (~bit, std::memory_order_relaxed);
+    }
+
+    //  Filtro de variable de estado en forma TPT (Zavalishin). Dos estados por
+    //  canal, y no una biquad de coeficientes directos, porque a esta le puedes
+    //  mover el corte mientras suena sin que salte: los estados guardan
+    //  integradores y no muestras pasadas, asi que un cambio de coeficiente no
+    //  reinterpreta la historia. Barrer un corte con una biquad DF-I es el
+    //  chirrido clasico.
+    struct PadSvf { float ic1 = 0.0f, ic2 = 0.0f; };
+    std::array<std::array<PadSvf, 2>, kNumPads> padFiltState {};
     std::array<std::atomic<bool>,  kNumPads> padMute {};
     std::array<std::atomic<bool>,  kNumPads> padSolo {};
     std::atomic<bool> soloActive { false };   // cached: is anything soloed

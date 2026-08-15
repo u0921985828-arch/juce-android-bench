@@ -66,6 +66,12 @@ AudioEngine::AudioEngine()
     //  nearly muted for exactly as long.
     for (auto& pad : smSend)   pad.fill (0.0f);
 
+    //  El filtro de cada pad, abierto del todo. Cero seria 0 Hz - los 64 pads
+    //  mudos en el arranque - que es lo que pasa cuando un parametro cuyo
+    //  valor neutro NO es cero se deja con el cero del constructor.
+    for (auto& c : padCutoff) c.store (kFiltOpenHz, std::memory_order_relaxed);
+    for (auto& r : padReso)   r.store (0.0f, std::memory_order_relaxed);
+
     //  Y el estado de las etapas que RETIENEN un valor. Un cambio de ruta
     //  vuelve a pasar por aqui con el motor cargado, y dejar la muestra
     //  retenida del dispositivo anterior es un escalon de continua en la
@@ -437,9 +443,14 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     const bool anyFxOpen = (fxMixNow[0] + fxMixNow[1] + fxMixNow[2]
                           + fxMixNow[3] + fxMixNow[4] + fxMixNow[5]) > 0.0f;
     const std::uint64_t sendMask = padSendMask.load (std::memory_order_relaxed);
+    //  Y la de los filtros, que decide lo mismo: un pad filtrado tiene que
+    //  renderizarse APARTE aunque no mande a ningun efecto, porque no se puede
+    //  filtrar una senal que ya se sumo con otras quince.
+    const std::uint64_t filtMask = padFiltMask.load (std::memory_order_relaxed);
 
     for (int p = 0; p < kNumPads; ++p)
     {
+        const bool filtered = (filtMask >> (unsigned) p) & 1ull;
         //  ...y el suavizado tiene que TERMINAR de bajar antes de saltarse el
         //  pad, o un envio que se cierra se queda congelado a medio camino en
         //  vez de irse a cero: silencio a medias que no se va nunca. Por eso
@@ -448,7 +459,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         if (! listed && ! anyFxOpen && ! smSendHot[(size_t) p])
         {
             dryGain[p]  = 1.0f;
-            padSplit[p] = false;
+            padSplit[p] = filtered;      // sin envios pero con filtro: tambien aparte
             for (int f = 0; f < kNumFx; ++f) sendGain[p][f] = 0.0f;
             continue;
         }
@@ -468,7 +479,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             if (fxIsTone[f]) dry *= (1.0f - g);
         }
         dryGain[p]  = dry;
-        padSplit[p] = any;
+        padSplit[p] = any || filtered;
         smSendHot[(size_t) p] = hot;
     }
 
@@ -527,6 +538,56 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
 
             for (int v = padFirstVoice[(size_t) p]; v >= 0; v = voiceNextInPad[(size_t) v])
                 voices[(size_t) v].render (padScratch, s, nn, padSample[(size_t) p]);
+
+            //  EL FILTRO DEL PAD, sobre lo que el pad acaba de sonar y antes
+            //  de repartirlo: el seco y los seis envios salen todos del mismo
+            //  sitio, asi que filtrar aqui filtra las siete rutas de una vez.
+            //  Filtrar despues habria querido decir siete filtros por pad.
+            if ((filtMask >> (unsigned) p) & 1ull)
+            {
+                //  Coeficientes UNA VEZ POR BLOQUE, no por muestra: la tangente
+                //  cuesta lo que cuesta y el corte lo mueve un dedo, no el
+                //  audio. Y en float por muestra, en double por bloque.
+                const float hz = juce::jlimit (20.0f, (float) (0.45 * systemSampleRate),
+                                               padCutoff[(size_t) p].load (std::memory_order_relaxed));
+                const float rs = padReso[(size_t) p].load (std::memory_order_relaxed);
+                //  Q de 0.707 (Butterworth, sin pico) a 8. Mas arriba el filtro
+                //  se pone a oscilar solo, que es un sintetizador y no un
+                //  sampler: 8 son unos 18 dB de realce, suficiente para que un
+                //  barrido cante y poco para que se desmande.
+                const float q = 0.707f + rs * (8.0f - 0.707f);
+                const float g = (float) std::tan (juce::MathConstants<double>::pi * (double) hz / systemSampleRate);
+                const float k = 1.0f / q;
+                const float a1 = 1.0f / (1.0f + g * (g + k));
+                const float a2 = g * a1;
+                const float a3 = g * a2;
+
+                for (int ch = 0; ch < busChans; ++ch)
+                {
+                    auto& st = padFiltState[(size_t) p][(size_t) juce::jmin (ch, 1)];
+                    float ic1 = st.ic1, ic2 = st.ic2;
+                    float* d = padScratch.getWritePointer (ch, s);
+
+                    for (int i = 0; i < nn; ++i)
+                    {
+                        const float x  = d[i];
+                        const float v3 = x - ic2;
+                        const float v1 = a1 * ic1 + a2 * v3;
+                        const float v2 = ic2 + a2 * ic1 + a3 * v3;
+                        ic1 = 2.0f * v1 - ic1;
+                        ic2 = 2.0f * v2 - ic2;
+                        d[i] = v2;                    // paso bajo
+                    }
+
+                    //  Los integradores, no las muestras: si uno se va a NaN
+                    //  -una muestra envenenada entrando con Q alta- se queda
+                    //  ahi para siempre y el pad enmudece hasta reiniciar,
+                    //  porque el estado se realimenta. La barrera del master
+                    //  limpia la SALIDA y no puede limpiar esto.
+                    if (! std::isfinite (ic1) || ! std::isfinite (ic2)) ic1 = ic2 = 0.0f;
+                    st.ic1 = ic1; st.ic2 = ic2;
+                }
+            }
 
             if (dryGain[p] > 0.0005f)
                 for (int ch = 0; ch < busChans; ++ch)
@@ -1683,6 +1744,12 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     copyArr (padPan,     s.padPan);
     copyArr (padAttack,  s.padAttack);
     copyArr (padRelease, s.padRelease);
+    //  Y el filtro CON SU MASCARA, por lo mismo que los envios: el motor del
+    //  rebote no pasa por setPadCutoff, se le copia el estado entero, y sin la
+    //  mascara exportaria la cancion con los 64 pads sin filtrar.
+    copyArr (padCutoff,  s.padCutoff);
+    copyArr (padReso,    s.padReso);
+    padFiltMask.store (s.padFiltMask.load (std::memory_order_relaxed), std::memory_order_relaxed);
     copyArr (padMute,    s.padMute);
     copyArr (padSolo,    s.padSolo);
     for (size_t i = 0; i < padSend.size(); ++i) copyArr (padSend[i], s.padSend[i]);
