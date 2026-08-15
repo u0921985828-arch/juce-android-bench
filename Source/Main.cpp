@@ -20,13 +20,16 @@ class ArtifactsApplication : public juce::JUCEApplication
 public:
     ArtifactsApplication() = default;
 
-    //  El nombre que se lee: "ARTiFACTS ZATI" - el estudio y la app, que es
-    //  como se llama esto. Decia "Zati Sampler", que no nombraba a ninguno de
-    //  los dos. El del PROYECTO sigue siendo Zati -da nombre a las rutas de
-    //  compilacion- y el identificador de Android sigue siendo
-    //  com.artifacts.zati, que ES la app y no se puede tocar sin convertirla
-    //  en otra distinta.
-    const juce::String getApplicationName() override       { return "ARTiFACTS ZATI"; }
+    //  El nombre que se lee: "Zati Sampler". El del PROYECTO sigue siendo Zati
+    //  -da nombre a las rutas de compilacion- y el identificador de Android
+    //  sigue siendo com.artifacts.zati, que ES la app y no se puede tocar sin
+    //  convertirla en otra distinta.
+    //
+    //  Estuvo una corrida diciendo "ARTiFACTS ZATI" porque una pregunta sobre
+    //  como se llamaba el fichero de la release se leyo como una correccion
+    //  del nombre de la app. ARTiFACTS es el estudio y firma esto; el nombre
+    //  de la app es Zati Sampler.
+    const juce::String getApplicationName() override       { return "Zati Sampler"; }
     const juce::String getApplicationVersion() override    { return "1.0.0"; }
     bool moreThanOneInstanceAllowed() override             { return true; }
 
