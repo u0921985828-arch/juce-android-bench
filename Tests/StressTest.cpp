@@ -933,5 +933,77 @@ int main()
                      (! nan && pct < 0.01 && pk < 0.99) ? "OK" : "FALLA");
     }
 
+    //  ALIASING AL SUBIR EL TONO, que es la otra forma de sonar crispado.
+    //
+    //  Leer mas rapido que la fuente sube el espectro entero y lo que pasa de
+    //  Nyquist vuelve PLEGADO: parciales que no son armonicos de nada, o sea
+    //  un silbido metalico encima de la nota. Voice tiene un paso bajo de UN
+    //  polo para eso, que a 6 dB por octava es poca pared.
+    //
+    //  Se mide con un seno solo: a +12 semitonos, un seno de 5 kHz de una
+    //  fuente a 48 kHz deberia salir a 10 kHz y nada mas. Todo lo que aparezca
+    //  LEJOS de 10 kHz es material plegado, y se mide como la energia fuera de
+    //  una ventana estrecha alrededor del tono esperado, en dB por debajo del
+    //  tono. Un seno puro no tiene armonicos que confundir con el pliegue.
+    {
+        auto tone = [] (double sr, double secs, float hz)
+        {
+            auto* sb = new SampleBuffer();
+            const int n = (int) (sr * secs);
+            sb->buffer.setSize (1, n);
+            for (int i = 0; i < n; ++i)
+                sb->buffer.setSample (0, i, 0.5f * std::sin (juce::MathConstants<float>::twoPi
+                                                             * hz * (float) i / (float) sr));
+            sb->sourceSampleRate = sr;
+            return SampleBuffer::Ptr (sb);
+        };
+
+        //  Goertzel: la energia en UNA frecuencia, sin montar una FFT. Se usa
+        //  para el tono esperado y para un barrido de sondas, que es todo lo
+        //  que hace falta aqui.
+        auto power = [] (const float* d, int n, double sr, double hz)
+        {
+            const double w = 2.0 * juce::MathConstants<double>::pi * hz / sr;
+            const double c = 2.0 * std::cos (w);
+            double s1 = 0.0, s2 = 0.0;
+            for (int i = 0; i < n; ++i) { const double s0 = d[i] + c * s1 - s2; s2 = s1; s1 = s0; }
+            return s1 * s1 + s2 * s2 - c * s1 * s2;
+        };
+
+        AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+        e.setPadGain (0, 1.0f);
+        e.setPadPitch (0, 12.0f);                 // una octava arriba: delta = 2
+        e.publishSample (0, tone (48000.0, 1.0, 5000.0f));
+
+        juce::AudioBuffer<float> b (2, 512);
+        b.clear(); e.renderNextBlock (b, 0, 512);
+        e.postNoteOn (0, 1.0f);
+
+        juce::AudioBuffer<float> cap (1, 512 * 30);
+        for (int blk = 0; blk < 30; ++blk)
+        {
+            b.clear();
+            e.renderNextBlock (b, 0, 512);
+            cap.copyFrom (0, blk * 512, b, 0, 0, 512);
+        }
+        //  Sin el ataque ni el final: solo el regimen.
+        const float* d = cap.getReadPointer (0) + 512 * 5;
+        const int n = 512 * 20;
+
+        const double wanted = power (d, n, 48000.0, 10000.0);
+        double worst = 0.0; double worstHz = 0.0;
+        for (double hz = 200.0; hz < 22000.0; hz += 100.0)
+        {
+            if (std::abs (hz - 10000.0) < 400.0) continue;      // el tono y su falda
+            const double p = power (d, n, 48000.0, hz);
+            if (p > worst) { worst = p; worstHz = hz; }
+        }
+
+        const double db = 10.0 * std::log10 (juce::jmax (1.0e-12, worst) / juce::jmax (1.0e-12, wanted));
+        std::printf ("%-34s +12 st: pliegue peor %+.1f dB en %.0f Hz   %s\n",
+                     "aliasing al subir el tono", db, worstHz,
+                     db < -40.0 ? "OK" : "FLOJO");
+    }
+
     return 0;
 }
