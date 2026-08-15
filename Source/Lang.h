@@ -3,39 +3,40 @@
 #include <JuceHeader.h>
 
 // ============================================================================
-//  Lang — the app in four languages: Spanish, English, Chinese and Arabic.
+//  Lang - la app en cuatro idiomas: castellano, ingles, chino y arabe.
 //
-//  The KEY of every string is the text that was already written in the source,
-//  which is mostly Spanish with a few English words that came from the studio
-//  vocabulary. That choice is deliberate:
+//  La CLAVE de cada cadena es el texto que ya estaba escrito en el codigo, que
+//  es casi todo castellano con algunas palabras inglesas que vienen del
+//  vocabulario del estudio. Es a proposito, por dos cosas. Nada del codigo se
+//  convierte en un identificador opaco: una linea con la frase entera dentro de
+//  la llamada sigue diciendo lo que va a poner en pantalla, y una traduccion que
+//  falta degrada a algo que una persona puede leer en vez de a
+//  STR_PAD_EMPTY_042. (El ejemplo no se escribe aqui como una llamada de
+//  verdad: Tests/lang.py lee el codigo buscandolas, y una en un comentario le
+//  sale como una clave que no esta en la tabla.) Y el castellano es una busqueda como
+//  cualquier otra en lugar de la identidad, asi que los pocos sitios donde el
+//  texto castellano era el mismo una palabra inglesa se arreglan en la tabla sin
+//  tocar el codigo.
 //
-//    * Nothing in the code turns into an opaque identifier. A line that reads
-//      T ("Pad vacio - pulsa LOAD y toca el pad para cargarlo") still says what
-//      it will put on screen, and a missing translation degrades to something
-//      a person can read instead of to STR_PAD_EMPTY_042.
-//    * Spanish is a lookup like any other rather than the identity, so the
-//      handful of places where the Spanish text was itself an English word can
-//      be fixed in the table without touching the code.
+//  A veces dos cadenas necesitan la misma clave para decir cosas distintas -REV
+//  es el interruptor de reverso de un pad y tambien la reverberacion- asi que
+//  una clave puede llevar un contexto detras de una barra: T ("REV|reverso").
+//  La barra y lo que va detras se recortan cuando no hay traduccion, para que el
+//  respaldo siga siendo la palabra pelada.
 //
-//  Two strings sometimes need the same key to mean different things - REV is
-//  the reverse switch on a pad and also the reverb - so a key may carry a
-//  context after a vertical bar: T ("REV|reverso"). The bar and everything
-//  after it is stripped when there is no translation, so the fallback is still
-//  the bare word.
+//  Los argumentos entran como %1, %2, %3 y no concatenando trozos. "Cortado en "
+//  + n + " trozos" solo se lee bien en un idioma cuyo orden de palabras coincida
+//  con el castellano, y ni el chino ni el arabe lo hacen.
 //
-//  Arguments go in as %1, %2, %3 rather than by concatenating fragments.
-//  "Cortado en " + n + " trozos" only reads correctly in a language whose word
-//  order happens to match Spanish's, and neither Chinese nor Arabic does.
+//  Lo que NO se traduce en ningun idioma: las seis abreviaturas de los efectos
+//  (ISO, HPF, DRV, DLY, CRSH, REV) y los sufijos de unidad (ms, Hz, dB, bpm,
+//  st). Se leen igual en una mesa de Shanghai que en una de Madrid, y viven en
+//  botones de cuatro caracteres de ancho.
 //
-//  What is NOT translated, in any language: the six effect abbreviations (ISO,
-//  HPF, DRV, DLY, CRSH, REV) and the unit suffixes (ms, Hz, dB, bpm, st). Those
-//  are read the same way on a mixer in Shanghai as on one in Madrid, and they
-//  live in buttons four characters wide.
-//
-//  Arabic is translated but the layout is not mirrored: the machine face is a
-//  fixed panel of pads and knobs whose positions are muscle memory, not a
-//  column of text. The text reads right to left inside its box, which is what
-//  the renderer does on its own.
+//  El arabe se traduce pero el maquetado no se espeja: la cara de la maquina es
+//  un panel fijo de pads y mandos cuyas posiciones son memoria muscular, no una
+//  columna de texto. El texto se lee de derecha a izquierda dentro de su caja,
+//  que es lo que hace el dibujante por su cuenta.
 // ============================================================================
 class Lang
 {
@@ -45,34 +46,37 @@ public:
     static Id  current() noexcept;
     static void set (Id newLanguage);
 
-    //  The system's language if we speak it, Spanish otherwise.
+    //  El idioma del sistema si lo hablamos, y castellano si no.
     static Id  detect();
 
     static const char* code (Id id);          // "es" / "en" / "zh" / "ar"
     static const char* nativeName (Id id);    // as that language writes itself
     static bool isRightToLeft (Id id) noexcept { return id == ar; }
 
-    //  Fence a run of NUMBERS or Latin around so Arabic does not reorder it.
+    //  Cercar una tirada de NUMEROS o de latino para que el arabe no la
+    //  reordene.
     //
-    //  "OUT " + "-inf" came out on screen as "خرج inf-" : bidi saw a minus at
-    //  the boundary of a right-to-left run and moved it to the other end, so a
-    //  reading of minus infinity turned into something that is not a number at
-    //  all. Same for "-12 dB", for "4 cores - 15.7 GB", for a file name, for
-    //  anything latin sitting inside a translated sentence.
+    //  "OUT " + "-inf" salia en pantalla como "خرج inf-": el bidi vio un menos
+    //  en el borde de una tirada de derecha a izquierda y se lo llevo al otro
+    //  extremo, asi que una lectura de menos infinito se convirtio en algo que
+    //  no es un numero. Igual con "-12 dB", con "4 nucleos - 15.7 GB", con el
+    //  nombre de un fichero, con cualquier cosa latina metida dentro de una
+    //  frase traducida.
     //
-    //  U+2066 LEFT-TO-RIGHT ISOLATE ... U+2069 POP DIRECTIONAL ISOLATE says
-    //  "this piece has its own direction and it does not take part in the
-    //  bidi of what is around it". Outside Arabic it costs nothing: the
-    //  characters are invisible and the string is returned untouched.
+    //  U+2066 LEFT-TO-RIGHT ISOLATE ... U+2069 POP DIRECTIONAL ISOLATE dice
+    //  "este trozo tiene su propia direccion y no participa en el bidi de lo que
+    //  lo rodea". Fuera del arabe no cuesta nada: los caracteres son invisibles
+    //  y la cadena vuelve intacta.
     static juce::String ltr (const juce::String& latinRun);
 
-    //  Where a line of text STARTS and where it ENDS, which is not the same as
-    //  left and right once Arabic is one of the languages.
+    //  Donde EMPIEZA una linea de texto y donde ACABA, que no es lo mismo que
+    //  izquierda y derecha en cuanto el arabe es uno de los idiomas.
     //
-    //  The machine face stays as it is on purpose: pads, knobs and transport
-    //  are muscle memory and a position, not a column of prose. But the sheets
-    //  are rows of label-and-value, and a label pinned to the left of an Arabic
-    //  row reads as badly as an English one pinned to the right.
+    //  La cara de la maquina se queda como esta a proposito: pads, mandos y
+    //  transporte son memoria muscular y una posicion, no una columna de prosa.
+    //  Pero las fichas son filas de rotulo y valor, y un rotulo clavado a la
+    //  izquierda de una fila arabe se lee tan mal como uno ingles clavado a la
+    //  derecha.
     static juce::Justification start (int extraFlags = juce::Justification::verticallyCentred)
     {
         return juce::Justification ((isRightToLeft (current()) ? juce::Justification::right
@@ -84,30 +88,31 @@ public:
                                                                : juce::Justification::right) | extraFlags);
     }
 
-    //  Take the leading slice of a row - the left one normally, the right one
-    //  in Arabic - so a label/value pair swaps sides with the language.
+    //  Coge el trozo de cabeza de una fila -el de la izquierda normalmente, el
+    //  de la derecha en arabe- para que un par rotulo/valor cambie de lado con
+    //  el idioma.
     static juce::Rectangle<int> takeStart (juce::Rectangle<int>& row, int amount)
     {
         return isRightToLeft (current()) ? row.removeFromRight (amount)
                                          : row.removeFromLeft  (amount);
     }
-    //  ...and the trailing slice, which is where a card's close button and its
-    //  corner keys live. Mirroring the TEXT of a sheet without mirroring these
-    //  too is worse than not mirroring at all: the title moves to the right in
-    //  Arabic and lands straight on top of the buttons that were already there.
+    //  ...y el trozo de cola, que es donde viven la equis de una ficha y sus
+    //  teclas de esquina. Espejar el TEXTO de una ficha sin espejar tambien
+    //  estas es peor que no espejar nada: en arabe el titulo se va a la derecha
+    //  y aterriza justo encima de los botones que ya estaban ahi.
     static juce::Rectangle<int> takeEnd (juce::Rectangle<int>& row, int amount)
     {
         return isRightToLeft (current()) ? row.removeFromLeft  (amount)
                                          : row.removeFromRight (amount);
     }
 
-    //  Remembered between launches next to the rest of the ZATI folder. This
-    //  is a preference, not project state: it does not belong in a song.
+    //  Se recuerda entre arranques al lado del resto de la carpeta ZATI. Es una
+    //  preferencia y no estado del proyecto: no pinta nada dentro de una cancion.
     static void loadPreference();
     static void savePreference();
 };
 
-//  Translate. The overloads substitute %1, %2, %3.
+//  Traducir. Las sobrecargas sustituyen %1, %2, %3.
 juce::String T (const juce::String& key);
 juce::String T (const juce::String& key, const juce::String& a1);
 juce::String T (const juce::String& key, const juce::String& a1, const juce::String& a2);

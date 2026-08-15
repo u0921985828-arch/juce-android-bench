@@ -1,14 +1,15 @@
-//  juce_core hides <jni.h> and every JNI helper behind this switch, and it has
-//  to be set before the first include of JuceHeader.h in this file.
+//  juce_core esconde <jni.h> y todas sus ayudas de JNI detras de este
+//  interruptor, y tiene que estar puesto antes del primer include de
+//  JuceHeader.h de este fichero.
 #define JUCE_CORE_INCLUDE_JNI_HELPERS 1
 
 #include "SystemInsets.h"
 
 #if JUCE_ANDROID
 
-//  DECLARE_JNI_CLASS expands to a class deriving from JNIClassBase that names
-//  Array, JNINativeMethod and numBytes unqualified, so it only compiles inside
-//  namespace juce.
+//  DECLARE_JNI_CLASS se expande a una clase que hereda de JNIClassBase y que
+//  nombra Array, JNINativeMethod y numBytes sin cualificar, asi que solo compila
+//  dentro de namespace juce.
 namespace juce
 {
     #define JNI_CLASS_MEMBERS(METHOD, STATICMETHOD, FIELD, STATICFIELD, CALLBACK) \
@@ -47,8 +48,8 @@ namespace juce
 
 juce::BorderSize<int> SystemInsets::get()
 {
-    //  Before Android 15 the system lays the window out below the bars, so
-    //  they are not ours to subtract.
+    //  Antes de Android 15 el sistema coloca la ventana por debajo de las
+    //  barras, asi que no son nuestras para restarlas.
     if (juce::getAndroidSDKVersion() < 35)
         return {};
 
@@ -59,10 +60,11 @@ juce::BorderSize<int> SystemInsets::get()
 
     auto* env = juce::getEnv();
 
-    //  Every step is checked, and any pending Java exception is cleared before
-    //  returning: an exception left on the thread makes the NEXT JNI call from
-    //  anywhere in the app abort the process, which would turn a cosmetic
-    //  margin into a crash somewhere else entirely.
+    //  Cada paso se comprueba, y cualquier excepcion de Java pendiente se
+    //  limpia antes de volver: una excepcion que se queda en el hilo hace que la
+    //  SIGUIENTE llamada JNI desde cualquier punto de la app aborte el proceso,
+    //  lo que convertiria un margen cosmetico en un cierre en otro sitio
+    //  completamente distinto.
     const auto failed = [env]
     {
         if (! env->ExceptionCheck()) return false;
@@ -70,10 +72,11 @@ juce::BorderSize<int> SystemInsets::get()
         return true;
     };
 
-    //  The ACTIVITY, not the app context. getAppContext() hands back an
-    //  android.content.Context which on this app is the Application, and
-    //  calling Activity.getWindow() on it is a JNI type error that ART turns
-    //  into an immediate abort - the app closing the instant it opened.
+    //  La ACTIVIDAD, no el contexto de la app. getAppContext() devuelve un
+    //  android.content.Context que en esta app es la Application, y llamar a
+    //  Activity.getWindow() sobre el es un error de tipos de JNI que ART
+    //  convierte en un aborto inmediato: la app cerrandose en el instante en que
+    //  se abre.
     juce::LocalRef<jobject> activity (juce::getMainActivity());
     if (activity == nullptr) return {};
 
@@ -92,8 +95,8 @@ juce::BorderSize<int> SystemInsets::get()
     juce::LocalRef<jobject> insets (env->CallObjectMethod (windowInsets, juce::ZatiWindowInsets.getInsets, mask));
     if (failed() || insets == nullptr) return {};
 
-    //  Android answers in physical pixels; everything above this line is in
-    //  logical ones.
+    //  Android contesta en pixeles fisicos; todo lo que hay por encima de esta
+    //  linea esta en logicos.
     const auto scale = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay() != nullptr
                          ? juce::Desktop::getInstance().getDisplays().getPrimaryDisplay()->scale
                          : 1.0;

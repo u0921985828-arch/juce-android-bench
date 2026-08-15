@@ -4,34 +4,36 @@
 #include "SampleBuffer.h"
 
 // ============================================================================
-//  SessionKeeper — the copy of your work that survives the process dying.
+//  SessionKeeper - la copia de tu trabajo que sobrevive a que maten el proceso.
 //
-//  Android does not ask before reclaiming an app. It pauses it, and some time
-//  later the process is simply gone; the next launch is a cold start with an
-//  empty machine. Until now ZATI answered that with autosave(), which rewrote
-//  the open project's project.xml — and did nothing at all when no project was
-//  open, which is exactly the state a sampler spends its first hour in. Chop a
-//  break, record four pads off the mic, get a call, come back: nothing.
+//  Android no pregunta antes de reclamar una app. La pausa, y un rato despues
+//  el proceso simplemente no esta; el siguiente arranque es en frio y con la
+//  maquina vacia. ZATI contestaba a eso con autosave(), que reescribia el
+//  project.xml del proyecto abierto - y no hacia absolutamente nada cuando no
+//  habia ninguno abierto, que es justo el estado en el que un sampler pasa su
+//  primera hora. Trocear un break, grabar cuatro pads del microfono, coger una
+//  llamada, volver: nada.
 //
-//  So there is a second, invisible project that nobody has to remember to
-//  save. It lives outside Projects/ so it never appears in the browser, and it
-//  has the same shape as a real one:
+//  Asi que hay un segundo proyecto, invisible, que nadie tiene que acordarse de
+//  guardar. Vive fuera de Projects/ para no salir nunca en el navegador, y
+//  tiene la misma forma que uno de verdad:
 //
 //      ZATI/.sesion/
-//          state.xml          the whole machine, plus the name of the project
-//                             that was open (so the header comes back too)
-//          samples/pad01.wav  a copy of every loaded pad
+//          state.xml          la maquina entera, mas el nombre del proyecto que
+//                             estaba abierto (asi vuelve tambien la cabecera)
+//          samples/pad01.wav  una copia de cada pad cargado
 //
-//  Writing sixteen WAVs is not something onPause has time for — Android gives
-//  an app a few seconds there before it calls it a hang. So the audio is
-//  written *during* the session instead, by this thread, a couple of seconds
-//  after a pad changes. By the time the activity pauses there is normally
-//  nothing left to do and the only write is the small XML.
+//  Escribir dieciseis WAV no es algo para lo que onPause tenga tiempo: Android
+//  da unos segundos ahi antes de declarar la app colgada. Asi que el audio se
+//  escribe DURANTE la sesion, por este hilo, un par de segundos despues de que
+//  un pad cambie. Cuando la actividad se pausa normalmente no queda nada que
+//  hacer y lo unico que se escribe es el XML, que es pequeno.
 //
-//  Nothing here hooks into the places that change a pad. sync() is handed the
-//  live array and compares it against what it last wrote, pointer by pointer,
-//  which catches every path — load, chop, mic, undo, project open — including
-//  the ones written after this file.
+//  Nada de esto se engancha a los sitios que cambian un pad. A sync() se le
+//  pasa el array vivo y lo compara contra lo ultimo que escribio, puntero a
+//  puntero, y asi caza todos los caminos - cargar, trocear, microfono,
+//  deshacer, abrir proyecto - incluidos los que se escriban despues de este
+//  fichero.
 // ============================================================================
 class SessionKeeper : private juce::Thread
 {
@@ -43,26 +45,28 @@ public:
     static juce::File stateFile();
     static juce::File padFile (int pad);
 
-    //  Is there something to come back to?
+    //  Hay algo a lo que volver?
     static bool exists() { return stateFile().existsAsFile(); }
 
-    //  Message thread. Diffs the live pads against the last written set and
-    //  queues whatever moved. Cheap enough to call from the UI timer: with
-    //  nothing changed it is sixteen pointer comparisons.
+    //  Hilo de mensajes. Compara los pads vivos con el ultimo juego escrito y
+    //  encola lo que se haya movido. Sale bastante barato como para llamarlo
+    //  desde el latido de la interfaz: sin cambios son dieciseis comparaciones
+    //  de punteros.
     void sync (const SampleBuffer::Ptr* live, int numPads);
 
-    //  Take the live pads as already-written, without queueing anything. Used
-    //  right after a restore: those buffers came off this very folder.
+    //  Dar por escritos los pads vivos, sin encolar nada. Se usa justo despues
+    //  de una recuperacion: esos buffers salieron de esta misma carpeta.
     void adopt (const SampleBuffer::Ptr* live, int numPads);
 
-    //  Message thread, synchronous, small.
+    //  Hilo de mensajes, sincrono, pequeno.
     void writeState (const juce::ValueTree& state, const juce::String& projectName);
 
-    //  Wait for the queue to drain. Returns false on timeout, and the caller
-    //  carries on either way — a bounded wait is the point.
+    //  Espera a que la cola se vacie. Devuelve false si se agota el plazo, y
+    //  quien llama sigue de todas formas: que la espera tenga tope es el
+    //  objetivo.
     bool flush (int timeoutMs);
 
-    //  NUEVO: there is no session any more, and the next launch starts clean.
+    //  Ya no hay sesion, y el siguiente arranque empieza limpio.
     void clear();
 
 private:
@@ -71,24 +75,25 @@ private:
 
     juce::CriticalSection lock;
 
-    //  Every array below is guarded by `lock`.
+    //  Todos los arrays de abajo van bajo `lock`.
     //
-    //  `seen` holds a reference on purpose. Comparing bare addresses would be
-    //  wrong without it: free a buffer, load another, and the allocator can
-    //  hand back the same address — a changed pad that compares equal. Holding
-    //  the reference makes that impossible, and costs nothing, because the UI
-    //  is holding the same objects anyway.
-    //  Must be at least AudioEngine::kNumPads. It was 32 while the machine had
-    //  16, and going to 64 banks would have silently stopped protecting half
-    //  of them - sync() and adopt() both clamp with jmin.
+    //  `seen` mantiene una referencia a proposito. Comparar direcciones peladas
+    //  sin ella estaria mal: se libera un buffer, se carga otro, y el asignador
+    //  puede devolver la misma direccion - un pad que cambio y compara igual.
+    //  Sostener la referencia lo hace imposible y no cuesta nada, porque la
+    //  interfaz esta sujetando esos mismos objetos de todas formas.
+    //
+    //  Al menos AudioEngine::kNumPads. Era 32 cuando la maquina tenia 16, y
+    //  pasar a 64 habria dejado de proteger la mitad sin avisar - sync() y
+    //  adopt() acotan las dos con jmin.
     static constexpr int kMaxPads = 64;
     std::array<SampleBuffer::Ptr, kMaxPads> seen, queued;
     std::array<bool, kMaxPads> dirty {};
     bool writing = false;
 
-    //  Set by flush(), read by the writer. Not guarded by `lock`: it is a
-    //  hint, and taking the lock to read a hint from the thread that holds it
-    //  most of the time is how a flush ends up waiting on itself.
+    //  Lo pone flush() y lo lee el escritor. Sin `lock`: es una pista, y coger
+    //  el cerrojo para leer una pista desde el hilo que lo tiene casi siempre es
+    //  como un flush acaba esperandose a si mismo.
     std::atomic<bool> hurry { false };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SessionKeeper)

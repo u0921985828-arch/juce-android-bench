@@ -3,21 +3,24 @@
 #include <JuceHeader.h>
 
 // ============================================================================
-//  SystemInsets — how much of the window the system is drawing on top of.
+//  SystemInsets - cuanto de la ventana esta pintando el sistema encima.
 //
-//  From Android 15 an app that targets API 35 cannot opt out of edge to edge:
-//  the window is the whole screen and the status bar and the navigation bar
-//  are painted over it. Nothing warns you. The face simply moves up under the
-//  clock, and the status line ends up under the gesture pill.
+//  Desde Android 15 una app que apunta a API 35 no puede salirse del borde a
+//  borde: la ventana es la pantalla entera y la barra de estado y la de
+//  navegacion se pintan sobre ella. Nadie avisa. La cara sube debajo del reloj
+//  y la linea de estado acaba debajo de la pildora de gestos.
 //
-//  JUCE reports safe-area insets on Android, but only the display CUTOUT -
-//  the notch - and not the bars, so it cannot answer this on its own.
+//  JUCE da los margenes de zona segura en Android, pero solo el RECORTE de la
+//  pantalla -la muesca- y no las barras, asi que por si solo no contesta a
+//  esto.
 //
-//  This asks the window itself, and only on API 35 and up. On anything older
-//  the system still lays the window out below the bars, and subtracting them
-//  again would carve a second status bar's worth of nothing out of the top.
+//  Se le pregunta a la ventana, y solo de API 35 en adelante. En cualquier
+//  version anterior el sistema ya coloca la ventana por debajo de las barras, y
+//  restarlas otra vez se comeria por arriba el hueco de una segunda barra de
+//  estado.
 //
-//  Off Android it returns zero, so the caller has no platform branches.
+//  Fuera de Android devuelve cero, para que quien llama no tenga ramas por
+//  plataforma.
 // ============================================================================
 namespace SystemInsets
 {

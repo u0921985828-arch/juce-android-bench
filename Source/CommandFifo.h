@@ -5,18 +5,19 @@
 #include <cstdint>
 
 // ============================================================================
-//  CommandFifo — lock-free trigger transport, message thread -> audio thread.
+//  CommandFifo - los disparos del hilo de mensajes al de audio, sin cerrojos.
 //
-//  Strictly SINGLE-producer / SINGLE-consumer (juce::AbstractFifo):
-//    * Producer: the MESSAGE thread only (UI pad clicks). The background
-//      sample-loader must NOT push here — it publishes sample data via the
-//      engine's atomic pointer slot instead.
-//    * Consumer: the AUDIO thread (drain in renderNextBlock).
+//  Un solo productor y un solo consumidor, y las dos mitades son contrato y no
+//  recomendacion (juce::AbstractFifo): el que empuja es el hilo de MENSAJES y
+//  nadie mas -el cargador de muestras publica por el hueco atomico del motor,
+//  no por aqui- y el que vacia es el de AUDIO, dentro de renderNextBlock. Un
+//  segundo consumidor no la degrada, la ATASCA para siempre; por eso el MIDI,
+//  que llega por un hilo propio, tiene su propia cola.
 //
-//  startFrame is the sample offset within the block the command is consumed
-//  in. For P0 it is always 0 (fire at block start — human tap jitter dwarfs
-//  one block). The field/plumbing is carried so P1's sequencer gets
-//  sample-accurate scheduling without a rewrite.
+//  startFrame es el desplazamiento dentro del bloque en el que se consume el
+//  comando. Un toque va siempre a 0 - el temblor de un dedo se come un bloque
+//  entero - pero el campo viaja igual, y es lo que le da al secuenciador un
+//  disparo exacto a la muestra sin reescribir nada.
 // ============================================================================
 struct Command
 {

@@ -3,29 +3,26 @@
 #include <JuceHeader.h>
 
 // ============================================================================
-//  Zati — the fragment colour system (UI-SPEC-04 §3).
+//  Zati - el sistema de color de los fragmentos.
 //
-//  Every slice of a sample is a *zati* (Basque: fragment) and carries one
-//  colour from a fixed palette of eight. The colour is born at the cut and
-//  travels the whole chain:
+//  Cada trozo de una muestra es un *zati* (fragmento, en euskera) y lleva un
+//  color de una paleta fija de ocho. El color nace en el corte y viaja la
+//  cadena entera: CORTE -> PAD -> ONDA -> MANDOS.
 //
-//      CUT -> PAD -> WAVEFORM -> KNOBS
+//  Dos reglas, y las dos sostienen algo. El reparto sigue el ORDEN DEL CORTE y
+//  nunca el azar: el zati 1 es siempre rojo, y asi el kit se memoriza - sabes
+//  donde esta un trozo sin leer su numero. Un reparto aleatorio, o sacado del
+//  propio audio, destruye eso: dos muestras parecidas caerian en colores casi
+//  iguales, que es justo lo contrario de para lo que sirve.
 //
-//  Two rules the spec is emphatic about, both load-bearing:
+//  Y la paleta NO sigue a la carcasa. Las carcasas reestilan el chasis y nada
+//  mas. Si los colores de los fragmentos se movieran con ellas, cambiar de piel
+//  romperia la memoria que la persona tiene de su kit.
 //
-//   * Assignment follows CUT ORDER, never chance. Zati 1 is always red, so
-//     the kit becomes memorisable — you know where a slice is without reading
-//     its number. A random or audio-derived mapping destroys that: two similar
-//     samples would land on near-identical colours, the opposite of the point.
-//
-//   * The palette does NOT follow the skin. Skins restyle the chassis only.
-//     If fragment colours moved with the skin, the user's memory of the kit
-//     would break every time they changed it.
-//
-//  Colour is never the only signal: pads and waveform segments always carry a
-//  stripe and a number too, so the instrument stays usable with colour vision
-//  deficiency — in a product where colour IS the information, that is not
-//  optional.
+//  El color nunca es la unica senal: los pads y los trozos de la onda llevan
+//  ademas una franja y un numero, para que el instrumento siga siendo usable
+//  con daltonismo. En un producto donde el color ES la informacion, eso no es
+//  opcional.
 // ============================================================================
 namespace Zati
 {
@@ -54,7 +51,8 @@ namespace Zati
         return names[((index % kNumColours) + kNumColours) % kNumColours];
     }
 
-    // 16 pads over 8 colours: the palette repeats once, so a chop of a whole
-    // bank still reads left-to-right in the same fixed order.
+    //  Dieciseis pads sobre ocho colores: la paleta se repite una vez, asi que
+    //  el troceado de un banco entero se sigue leyendo de izquierda a derecha
+    //  en el mismo orden fijo.
     inline int forPad (int pad) { return ((pad % kNumColours) + kNumColours) % kNumColours; }
 }

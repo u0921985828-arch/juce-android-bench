@@ -1,22 +1,22 @@
-//  juce_core hides its JNI helpers - LocalRef, GlobalRef, DECLARE_JNI_CLASS,
-//  getAppContext, AndroidInterfaceImplementer - behind this switch, and even
-//  <jni.h> itself. Without it the Android build fails on jobject before it
-//  gets as far as anything of ours. It has to be set before the first include
-//  of JuceHeader.h in this translation unit, which is why it sits above the
-//  header that pulls it in.
+//  juce_core esconde sus ayudas de JNI - LocalRef, GlobalRef,
+//  DECLARE_JNI_CLASS, getAppContext, AndroidInterfaceImplementer - y hasta el
+//  propio <jni.h> detras de este interruptor. Sin el, la compilacion de Android
+//  se rompe en jobject antes de llegar a nada nuestro. Tiene que estar puesto
+//  antes del primer include de JuceHeader.h de esta unidad, y por eso va encima
+//  de la cabecera que lo arrastra.
 #define JUCE_CORE_INCLUDE_JNI_HELPERS 1
 
 #include "AudioFocus.h"
 
 #if JUCE_ANDROID
 
-//  The bits of android.media.AudioManager we need. juce_core declares
-//  AndroidContext and JavaInteger for us; AudioManager itself is only declared
-//  inside juce_video, which we do not link.
+//  Los trozos de android.media.AudioManager que hacen falta. juce_core declara
+//  AndroidContext y JavaInteger por nosotros; AudioManager solo esta declarado
+//  dentro de juce_video, que no enlazamos.
 //
-//  This has to sit inside namespace juce: DECLARE_JNI_CLASS expands to a class
-//  deriving from JNIClassBase and referring to Array, JNINativeMethod and
-//  numBytes, all unqualified, so at global scope none of them resolve.
+//  Esto tiene que vivir dentro de namespace juce: DECLARE_JNI_CLASS se expande
+//  a una clase que hereda de JNIClassBase y que nombra Array, JNINativeMethod y
+//  numBytes sin cualificar, asi que en el ambito global no resuelve ninguno.
 namespace juce
 {
     #define JNI_CLASS_MEMBERS(METHOD, STATICMETHOD, FIELD, STATICFIELD, CALLBACK) \
@@ -33,9 +33,10 @@ namespace
     constexpr jint kFocusGain    = 1;   // AudioManager.AUDIOFOCUS_GAIN
     constexpr jint kRequestGrant = 1;   // AudioManager.AUDIOFOCUS_REQUEST_GRANTED
 
-    //  The proxy Android calls back on. Built exactly the way JUCE builds its
-    //  own listeners: a dynamic interface implementer that dispatches by
-    //  method name, because there is no C++ side to an interface otherwise.
+    //  El intermediario al que Android devuelve la llamada. Montado igual que
+    //  monta JUCE los suyos: un implementador dinamico de interfaz que reparte
+    //  por nombre de metodo, porque de otra forma una interfaz de Java no tiene
+    //  lado de C++.
     class FocusListener : public juce::AndroidInterfaceImplementer
     {
     public:
@@ -54,9 +55,9 @@ namespace
                 juce::LocalRef<jobject> boxed (env->GetObjectArrayElement (args, 0));
                 const int change = (int) env->CallIntMethod (boxed, juce::JavaInteger.intValue);
 
-                //  Android calls this on its own main thread, which is the
-                //  message thread - but going through the message manager
-                //  costs nothing and removes the question entirely.
+                //  Android llama a esto en su hilo principal, que es el de
+                //  mensajes - pero pasar por el gestor de mensajes no cuesta
+                //  nada y quita la duda del medio.
                 if (onChange)
                 {
                     auto cb = onChange;
@@ -95,8 +96,8 @@ AudioFocus::AudioFocus (Listener& l) : listener (l)
 {
     impl = std::make_unique<Impl> ([this] (int change)
     {
-        //  AudioManager's constants. Negative is a loss, and how negative
-        //  says whether it is coming back.
+        //  Las constantes de AudioManager. Negativo es una perdida, y cuanto
+        //  de negativo dice si va a volver.
         switch (change)
         {
             case -1: listener.audioFocusLost (true);  break;   // LOSS
@@ -139,7 +140,7 @@ void AudioFocus::abandon()
 
 #else
 
-//  Desktop: there is nothing to arbitrate, so the focus is always ours.
+//  Escritorio: no hay nada que repartir, asi que el foco es siempre nuestro.
 AudioFocus::AudioFocus (Listener& l) : listener (l) {}
 AudioFocus::~AudioFocus() = default;
 bool AudioFocus::request() { held = true; return true; }

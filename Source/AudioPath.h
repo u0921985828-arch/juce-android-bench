@@ -9,24 +9,23 @@
 #endif
 
 // ============================================================================
-//  AudioPath — does this phone actually give us the fast lane?
+//  AudioPath - nos da este telefono el carril rapido, si o no?
 //
-//  JUCE already asks Oboe for SharingMode::Exclusive and
-//  PerformanceMode::LowLatency on the real output stream
-//  (juce_Oboe_android.cpp), so there is no setting left switched off in the
-//  app. The question is whether ANDROID GRANTS IT, and that is decided by the
-//  device, not by us.
+//  JUCE ya le pide a Oboe SharingMode::Exclusive y PerformanceMode::LowLatency
+//  en el flujo de salida de verdad (juce_Oboe_android.cpp), asi que no queda
+//  ningun ajuste apagado en la app. La pregunta es si ANDROID LO CONCEDE, y eso
+//  lo decide el aparato y no nosotros.
 //
-//  The dividing line is AAudio MMAP. With it, the app shares a ring buffer
-//  straight with the hardware and a 256-frame burst comes out around 10-20 ms.
-//  Without it the same API routes through AudioFlinger, the system mixer, and
-//  the same burst costs 40-60 ms. The 42 ms we could not explain lives exactly
-//  there.
+//  La linea que separa es el MMAP de AAudio. Con el, la app comparte un buffer
+//  circular directamente con el hardware y un burst de 256 sale por 10-20 ms.
+//  Sin el, la misma API pasa por AudioFlinger, el mezclador del sistema, y ese
+//  mismo burst cuesta 40-60. Los 42 ms que no sabiamos explicar viven
+//  exactamente ahi.
 //
-//  Whether MMAP is available at all is a system property. Reading it turns
-//  "the latency is high and we don't know why" into one of two answers:
-//  the phone cannot do it and no version of this app will change that, or it
-//  can and something is blocking it.
+//  Que el MMAP exista siquiera es una propiedad del sistema. Leerla convierte
+//  "la latencia es alta y no sabemos por que" en una de dos respuestas: el
+//  telefono no puede, y ninguna version de esta app lo va a cambiar; o si
+//  puede, y algo lo esta bloqueando.
 // ============================================================================
 namespace AudioPath
 {
@@ -44,9 +43,9 @@ namespace AudioPath
         return {};
     }
 
-    //  AAUDIO_POLICY_NEVER = 1, _AUTO = 2, _ALWAYS = 3 (see AAudio's
-    //  aaudio_policy_t). Vendors also ship the same answer under their own
-    //  key, so both are consulted before giving up.
+    //  AAUDIO_POLICY_NEVER = 1, _AUTO = 2, _ALWAYS = 3 (ver aaudio_policy_t).
+    //  Los fabricantes publican la misma respuesta bajo su propia clave, asi que
+    //  se consultan las dos antes de rendirse.
     inline Mmap policyFrom (std::initializer_list<const char*> keys)
     {
         for (auto* key : keys)
@@ -70,10 +69,10 @@ namespace AudioPath
                              "ro.vendor.audio.aaudio.mmap_policy" });
     }
 
-    //  A separate switch, and the one that actually decides. A device can
-    //  advertise MMAP under policy AUTO and still ship exclusive_policy NEVER,
-    //  which means MMAP only ever in shared mode - no app on the phone gets an
-    //  exclusive endpoint, and no request we make will change it.
+    //  Otro interruptor, y el que de verdad decide. Un aparato puede anunciar
+    //  MMAP con politica AUTO y traer exclusive_policy NEVER, que quiere decir
+    //  MMAP solo en modo compartido: ninguna app del telefono consigue un
+    //  extremo exclusivo, y ninguna peticion nuestra lo va a cambiar.
     inline Mmap exclusivePolicy()
     {
         return policyFrom ({ "aaudio.mmap_exclusive_policy",
@@ -93,28 +92,29 @@ namespace AudioPath
     }
 
     // ========================================================================
-    //  The property above says what the phone SUPPORTS. Under policy AUTO -
-    //  which is what this device reports - support is not a grant: Android
-    //  decides stream by stream, and it can refuse ours while happily saying
-    //  "disponible". Reading a property therefore cannot tell us whether we
-    //  are on the fast lane; only opening a stream can.
+    //  La propiedad de arriba dice lo que el telefono SOPORTA. Con politica
+    //  AUTO - que es lo que informa este aparato - soportar no es conceder:
+    //  Android decide flujo a flujo, y puede negarnos el nuestro mientras sigue
+    //  diciendo "disponible" tan tranquilo. Leer una propiedad, por tanto, no
+    //  puede decirnos si estamos en el carril rapido; solo abrir un flujo puede.
     //
-    //  So we open one. Before the app's real audio device exists, we ask
-    //  AAudio directly for EXCLUSIVE + LOW_LATENCY and look at what comes
-    //  back. AAudio never lies about this: if the returned stream says
-    //  EXCLUSIVE, it is an MMAP stream sharing a ring buffer with the
-    //  hardware. If it says SHARED, we got AudioFlinger and its mixer, which
-    //  is where the unexplained 40 ms lives.
+    //  Asi que se abre uno. Antes de que exista el dispositivo de audio de
+    //  verdad, se le pide a AAudio directamente EXCLUSIVE + LOW_LATENCY y se
+    //  mira lo que vuelve. AAudio no miente en esto: si el flujo devuelto dice
+    //  EXCLUSIVE es un flujo MMAP compartiendo un buffer circular con el
+    //  hardware, y si dice SHARED nos ha tocado AudioFlinger y su mezclador, que
+    //  es donde viven los 40 ms sin explicar.
     //
-    //  The probe repeats the open across usages, because usage is the one
-    //  thing an app controls that changes the answer. A MEDIA stream on a
-    //  Xiaomi walks into the vendor post-processing chain (Dolby, the system
-    //  equaliser) and post-processing forces the mixer path; GAME normally
-    //  bypasses it. If GAME gets EXCLUSIVE and MEDIA does not, the fix is one
-    //  builder call - and the fields below carry it to the real stream.
+    //  La sonda repite la apertura por usos, porque el uso es lo unico que
+    //  controla una app y que cambia la respuesta. Un flujo MEDIA en un Xiaomi
+    //  se mete en la cadena de posproceso del fabricante -Dolby, el ecualizador
+    //  del sistema- y el posproceso obliga al camino del mezclador; GAME
+    //  normalmente lo esquiva. Si GAME consigue EXCLUSIVE y MEDIA no, el arreglo
+    //  es una llamada del constructor, y los campos de abajo se la llevan al
+    //  flujo de verdad.
     //
-    //  Everything goes through dlopen: libaaudio only exists from API 26, and
-    //  the app supports 24.
+    //  Todo pasa por dlopen: libaaudio solo existe desde API 26 y la app
+    //  soporta la 24.
     // ========================================================================
     enum : int
     {
@@ -170,12 +170,12 @@ namespace AudioPath
         auto getFmt   = (int32_t (*) (Stream))         sym ("AAudioStream_getFormat");
         auto closeIt  = (int  (*) (Stream))            sym ("AAudioStream_close");
 
-        //  Not in the NDK headers, but exported by libaaudio and the only way
-        //  to tell the two shared paths apart: a SHARED stream can still be
-        //  MMAP (the kernel ring buffer, mixed in the DSP) or it can be plain
-        //  AudioFlinger. Both report SHARED, and they differ by tens of
-        //  milliseconds. Oboe reads it exactly like this. If the symbol is
-        //  missing we simply do not claim to know.
+        //  No esta en las cabeceras del NDK, pero libaaudio lo exporta y es la
+        //  unica forma de distinguir los dos caminos compartidos: un flujo
+        //  SHARED puede seguir siendo MMAP -el buffer circular del kernel,
+        //  mezclado en el DSP- o puede ser AudioFlinger a secas. Los dos
+        //  informan SHARED y se llevan decenas de milisegundos. Oboe lo lee
+        //  exactamente asi. Si el simbolo no esta, no decimos saberlo.
         auto isMmap   = (bool (*) (Stream))            sym ("AAudioStream_isMMapUsed");
 
         if (create == nullptr || openIt == nullptr || closeIt == nullptr
@@ -186,17 +186,17 @@ namespace AudioPath
             return r;
         }
 
-        //  The first attempt constrains NOTHING. An exclusive endpoint is a
-        //  piece of hardware with one native rate, one channel count and one
-        //  sample format, and AAudio refuses exclusivity whenever the request
-        //  does not match it exactly - so pinning 48 kHz / stereo / float, as
-        //  the obvious version of this probe does, can manufacture the very
-        //  refusal it set out to detect. Ask for nothing but the sharing mode
-        //  and let the device answer with its own terms.
+        //  El primer intento no fija NADA. Un extremo exclusivo es una pieza de
+        //  hardware con una frecuencia nativa, un numero de canales y un formato,
+        //  y AAudio niega la exclusividad en cuanto la peticion no encaja exacta
+        //  - asi que clavar 48 kHz / estereo / float, que es la version obvia de
+        //  esta sonda, puede FABRICAR la misma negativa que venia a detectar. Se
+        //  pide el modo de reparto y nada mas, y que conteste el aparato con sus
+        //  propios terminos.
         //
-        //  Only then do we start pinning things, GAME before MEDIA and float
-        //  before 16-bit, so the first EXCLUSIVE we see is also the smallest
-        //  change to the real stream.
+        //  Solo entonces se empieza a clavar cosas, GAME antes que MEDIA y float
+        //  antes que 16 bits, para que el primer EXCLUSIVE que se vea sea tambien
+        //  el cambio mas pequeno sobre el flujo de verdad.
         constexpr int kAny = 0;   // AAUDIO_UNSPECIFIED
         struct Attempt { int usage; int format; int chans; int rate; };
         const Attempt attempts[] =
@@ -234,8 +234,9 @@ namespace AudioPath
 
             const bool exclusive = (getShare (s) == 0);
 
-            //  Keep the first stream that opens at all, so a phone that never
-            //  grants MMAP still reports its real burst instead of nothing.
+            //  Se guarda el primer flujo que llegue a abrirse, para que un
+            //  telefono que no concede MMAP nunca informe igual de su burst real
+            //  en vez de no informar de nada.
             if (! r.ran || (exclusive && ! r.exclusive))
             {
                 r.ran        = true;
@@ -268,17 +269,18 @@ namespace AudioPath
     {
         if (! f.ran)       return T ("sin respuesta");
 
-        //  When it is refused, say what we were refused ON - a shared stream
-        //  still reports the device's real native terms, and those are the
-        //  terms an exclusive one would have had.
+        //  Cuando lo niegan, se dice SOBRE QUE nos lo negaron: un flujo
+        //  compartido sigue informando de los terminos nativos del aparato, y
+        //  esos son los terminos que habria tenido uno exclusivo.
         const juce::String terms = (f.rate > 0 ? juce::String (f.rate / 1000) + "k" : juce::String())
                                  + (f.channels > 0 ? " " + juce::String (f.channels) + "ch" : "")
                                  + (f.useI16 ? " 16b" : " float");
 
-        //  Shared is not one answer but two, and the difference is the whole
-        //  question: shared MMAP still talks to the hardware ring buffer and
-        //  costs a handful of milliseconds, while AudioFlinger's mixer costs
-        //  tens. Saying only "compartida" hides which of the two we are on.
+        //  Compartida no es una respuesta sino dos, y la diferencia es la
+        //  pregunta entera: el MMAP compartido sigue hablando con el buffer
+        //  circular del hardware y cuesta un punado de milisegundos, mientras que
+        //  el mezclador de AudioFlinger cuesta decenas. Decir solo "compartida"
+        //  esconde en cual de las dos estamos.
         if (! f.exclusive)
             return T ("compartida %1 - ni en %2",
                       ! f.mmapKnown ? juce::String ("(?)")
@@ -293,7 +295,7 @@ namespace AudioPath
 }
 
 // ============================================================================
-//  Two dials on JUCE's Oboe stream that JUCE does not expose.
+//  Dos mandos del flujo Oboe de JUCE que JUCE no expone.
 //
 //  juce_Oboe_android.cpp is patched at build time (ci/patch_juce_oboe.py) to
 //  read these before opening the output stream: the usage it requests, and
