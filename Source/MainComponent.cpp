@@ -3482,8 +3482,27 @@ void MainComponent::layoutPadGrid (juce::Rectangle<int> area, int cols, int rows
     //  takes away: square while there is room for square, flatter than square
     //  when there is not, and never one pixel taller than the box it was
     //  handed.
+    //  ...Y EL SUELO ERA LA MISMA TRAMPA OTRA VEZ.
+    //
+    //  Todo el parrafo de arriba explica que jlimit clampa HACIA ARRIBA y que
+    //  por eso la rejilla se salia por los dos extremos - y luego la linea de
+    //  abajo ponia jmax (24, ...), que es un clamp hacia arriba escrito con
+    //  otro nombre. Con menos de 24 px por fila la celda volvia a subir a 24 y
+    //  withSizeKeepingCentre centraba una rejilla mas alta que su caja.
+    //
+    //  Medido por el simulador de sesiones sorteadas, no por las siete
+    //  pantallas fijas del banco: en 412x480 -un movil en pantalla partida- los
+    //  pads 9 a 16 se dibujaban 15 px DENTRO de la fila de efectos y 8 dentro
+    //  de la de bancos. Dieciseis solapes que ninguna de las siete medidas
+    //  podia ver, porque ninguna es estrecha y baja a la vez.
+    //
+    //  El suelo se queda, pero acotado a lo que la caja tiene: una celda de
+    //  menos de 24 px es un pad incomodo y el banco lo dice como TOUCH, que es
+    //  una queja. Una celda de 24 en una caja de 18 es un pad ENCIMA de otra
+    //  cosa, que es un fallo.
     const int cellW = (area.getWidth() - (cols - 1) * gap) / cols;
-    const int cellH = juce::jmax (24, juce::jmin (cellW, (area.getHeight() - (rows - 1) * gap) / rows));
+    const int room  = (area.getHeight() - (rows - 1) * gap) / rows;
+    const int cellH = juce::jmin (juce::jmax (24, juce::jmin (cellW, room)), juce::jmax (1, room));
 
     auto grid = area.withSizeKeepingCentre (cols * cellW + (cols - 1) * gap,
                                             rows * cellH + (rows - 1) * gap);
