@@ -6526,6 +6526,25 @@ juce::ValueTree MainComponent::captureState() const
         p.setProperty ("pan",     padPan[(size_t) i],     nullptr);
         p.setProperty ("attack",  padAttack[(size_t) i],  nullptr);
         p.setProperty ("release", padRelease[(size_t) i], nullptr);
+        //  DE QUE PAD SALE EL AUDIO DE ESTE, que es lo que convierte
+        //  dieciseis pads en un troceado y no en dieciseis sonidos sueltos.
+        //
+        //  Un AUTO CHOP no copia la muestra dieciseis veces: los dieciseis pads
+        //  apuntan al MISMO SampleBuffer y se diferencian por su recorte. Todo
+        //  lo que sabe que son trozos de lo mismo -la onda dibujando los trozos
+        //  hermanos, el color, poder mover un corte- compara PUNTEROS. Y el
+        //  disco no guarda punteros: se escribia un WAV por pad, asi que al
+        //  volver eran dieciseis buffers distintos con el mismo contenido. El
+        //  troceado seguia SONANDO igual y habia dejado de ser un troceado:
+        //  dieciseis copias del break en memoria, dieciseis en disco, y la onda
+        //  sin un solo hermano que ensenar.
+        //
+        //  Se guarda el pad DUENO: el mas bajo que comparte ese buffer. Un pad
+        //  que es su propio dueno se guarda a si mismo.
+        int fuente = i;
+        for (int j = 0; j < i; ++j)
+            if (uiSample[(size_t) j] != nullptr && uiSample[(size_t) j] == uiSample[(size_t) i]) { fuente = j; break; }
+        p.setProperty ("fuente",  fuente,                 nullptr);
         p.setProperty ("corte",   padCut[(size_t) i],     nullptr);
         p.setProperty ("reson",   padReso[(size_t) i],    nullptr);
         p.setProperty ("zati",    padZati[(size_t) i],    nullptr);
@@ -6887,6 +6906,28 @@ void MainComponent::finishProjectSave (const juce::String& name, const juce::Fil
     setSheet.repaint();
 }
 
+//  El mapa de fuentes del arbol, leido de una vez antes de cargar nada.
+//  Ver PadLoadJob::source y captureState: sin esto un troceado vuelve como
+//  dieciseis sonidos sueltos que casualmente suenan igual.
+static void readSourceMap (const juce::ValueTree& tree, std::array<int, AudioEngine::kNumPads>& out)
+{
+    out.fill (-1);
+    auto padsTree = tree.getChildWithName ("PADS");
+    if (! padsTree.isValid()) return;
+
+    for (const auto& p : padsTree)
+    {
+        const int i = (int) p.getProperty ("i", -1);
+        if (! juce::isPositiveAndBelow (i, AudioEngine::kNumPads)) continue;
+        const int f = (int) p.getProperty ("fuente", i);
+        //  Solo hacia atras y solo a otro: un proyecto viejo no trae la
+        //  propiedad y cada pad se queda con su fichero, que es como se
+        //  guardo. Y una fuente que apunte hacia delante o a si misma seria un
+        //  bucle en el cargador.
+        out[(size_t) i] = (f >= 0 && f < i) ? f : -1;
+    }
+}
+
 void MainComponent::loadProject (const juce::String& name)
 {
     if (padsBusy()) return;
@@ -6918,6 +6959,7 @@ void MainComponent::loadProject (const juce::String& name)
     padJob = std::make_unique<PadLoadJob>();
     padJob->folder = folder;
     padJob->clearMissing = true;
+    readSourceMap (tree, padJob->source);
     padJob->onDone = [this, name, tree] (int restored) { finishProjectOpen (name, tree, restored); };
     setBusyProgress (0.0f);
     stepPadJob();
@@ -8856,6 +8898,18 @@ void MainComponent::auditDemo()
         spectrum.setVu (vuL, vuR);
     }
 
+    //  Y UN TROCEADO DE VERDAD, si lo piden: ZATI_CHOPGO=8 corta el primer pad
+    //  del banco en ocho. Es la unica forma de que el banco mida lo que un
+    //  troceado deja en disco y lo que recupera, que es donde estaba el fallo.
+    if (const auto n = UiAudit::env ("ZATI_CHOPGO"); n.getIntValue() >= 2)
+    {
+        chopSlices    = juce::jlimit (2, 16, n.getIntValue());
+        chopOnlyEmpty = false;          // la maqueta llena los dieciseis
+        chopByHits    = false;
+        selectPad (demoBase);
+        applyAutoChop();
+    }
+
     if (const auto b = UiAudit::env ("ZATI_BUSY"); b.isNotEmpty())
     {
         beginBusy (T ("Cargando"));
@@ -8890,6 +8944,16 @@ void MainComponent::auditOpen (const juce::String& which)
     //  A pad that looks loaded and is silent is the failure this whole round
     //  was about, and a dump that only reports the tile cannot see it.
     UiAudit::engineLength = [this] (int pad) { return engine.hasSampleFor (pad) ? 1 : 0; };
+
+    //  Y de que pad sale el audio de cada uno, que es lo unico que dice si un
+    //  troceado sigue siendo un troceado despues de guardar y volver.
+    UiAudit::padSource = [this] (int pad) -> int
+    {
+        if (! juce::isPositiveAndBelow (pad, kNumPads) || uiSample[(size_t) pad] == nullptr) return -1;
+        for (int j = 0; j < pad; ++j)
+            if (uiSample[(size_t) j] == uiSample[(size_t) pad]) return j;
+        return pad;
+    };
 
     if (which.isEmpty()) return;
 
@@ -9132,6 +9196,18 @@ void MainComponent::stepPadJob()
            && juce::Time::getMillisecondCounterHiRes() - t0 < 25.0)
     {
         const int i = padJob->next++;
+
+        //  Si este pad sale de otro, se comparte el buffer en vez de leer un
+        //  fichero: es lo que devuelve el troceado tal y como estaba, con sus
+        //  hermanos y sin dieciseis copias del mismo break. Ver captureState.
+        const int fuente = padJob->source[(size_t) i];
+        if (fuente >= 0 && fuente < i && uiSample[(size_t) fuente] != nullptr)
+        {
+            assignSampleToPad (i, uiSample[(size_t) fuente], padName[(size_t) i]);
+            ++padJob->restored;
+            continue;
+        }
+
         const auto f = padJob->fromSession ? SessionKeeper::padFile (i)
                                            : ProjectStore::sampleFile (padJob->folder, i);
 
@@ -9205,6 +9281,7 @@ void MainComponent::restoreSession()
     beginBusy (T ("Recuperando sesion"));
     padJob = std::make_unique<PadLoadJob>();
     padJob->fromSession = true;
+    readSourceMap (tree, padJob->source);
     padJob->onDone = [this, tree] (int restored) { finishSessionRestore (tree, restored); };
     setBusyProgress (0.0f);
     stepPadJob();

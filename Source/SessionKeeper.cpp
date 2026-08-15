@@ -14,6 +14,7 @@ SessionKeeper::SessionKeeper() : juce::Thread ("zati-session")
     //
     //  It still never touches the message thread or the audio thread, so
     //  normal priority costs the instrument nothing.
+    ownedBy.fill (-1);
     startThread (juce::Thread::Priority::normal);
 }
 
@@ -39,22 +40,63 @@ juce::File SessionKeeper::padFile (int pad)
                    .getChildFile ("pad" + juce::String (pad + 1).paddedLeft ('0', 2) + ".wav");
 }
 
+//  UN WAV POR SONIDO, NO POR PAD.
+//
+//  Dieciseis pads de un AUTO CHOP apuntan al MISMO SampleBuffer y solo se
+//  diferencian por su recorte. Esto escribia uno por pad: dieciseis copias del
+//  mismo break en disco -sesenta megas por un troceado de cuatro segundos- y,
+//  peor, dieciseis buffers distintos al volver, o sea el troceado convertido en
+//  dieciseis sonidos sueltos que casualmente suenan igual. Quien los vuelve a
+//  unir es captureState, que guarda de que pad sale cada uno; lo que hace falta
+//  aqui es no escribir los que salen de otro.
+//
+//  El DUENO es el pad de indice mas bajo que comparte el buffer, y se recalcula
+//  entero en cada sync porque puede cambiar sin que el buffer cambie: vaciar el
+//  pad 1 de un troceado deja al 2 de dueno, y su puntero no se ha movido, asi
+//  que sin recalcular nadie escribiria ese WAV y el troceado entero se perderia
+//  al siguiente arranque.
 void SessionKeeper::sync (const SampleBuffer::Ptr* live, int numPads)
 {
     bool anything = false;
+    const int n = juce::jmin (numPads, kMaxPads);
     {
         const juce::ScopedLock sl (lock);
 
-        for (int i = 0; i < juce::jmin (numPads, kMaxPads); ++i)
+        for (int i = 0; i < n; ++i)
         {
-            const auto& now = live[i];
-            if (now.get() == seen[(size_t) i].get())
+            int dueno = -1;
+            if (live[i] != nullptr)
+            {
+                dueno = i;
+                for (int j = 0; j < i; ++j)
+                    if (live[j].get() == live[i].get()) { dueno = j; break; }
+            }
+
+            const bool cambioBuffer = live[i].get() != seen[(size_t) i].get();
+            const bool cambioDueno  = dueno != ownedBy[(size_t) i];
+
+            if (! cambioBuffer && ! cambioDueno)
                 continue;
 
-            seen[(size_t) i]   = now;
-            queued[(size_t) i] = now;
-            dirty[(size_t) i]  = true;
-            anything = true;
+            seen[(size_t) i]    = live[i];
+            ownedBy[(size_t) i] = dueno;
+
+            if (dueno == i || dueno < 0)
+            {
+                //  Dueno, o vacio: se escribe (o se borra) su fichero.
+                queued[(size_t) i] = live[i];
+                dirty[(size_t) i]  = true;
+                anything = true;
+            }
+            else
+            {
+                //  Sale de otro: nada que escribir, y si tenia fichero propio
+                //  de antes sobra - lo borra el escritor, que es quien puede
+                //  tocar el disco.
+                queued[(size_t) i] = nullptr;
+                dirty[(size_t) i]  = true;
+                anything = true;
+            }
         }
     }
 
@@ -71,6 +113,18 @@ void SessionKeeper::adopt (const SampleBuffer::Ptr* live, int numPads)
         seen[(size_t) i]   = live[i];
         queued[(size_t) i] = nullptr;
         dirty[(size_t) i]  = false;
+
+        //  Y el dueno tambien, o el primer sync tras recuperar veria que
+        //  "cambio" y reescribiria los sesenta y cuatro ficheros que acaba de
+        //  leer.
+        int dueno = -1;
+        if (live[i] != nullptr)
+        {
+            dueno = i;
+            for (int j = 0; j < i; ++j)
+                if (live[j].get() == live[i].get()) { dueno = j; break; }
+        }
+        ownedBy[(size_t) i] = dueno;
     }
 }
 
@@ -163,9 +217,10 @@ void SessionKeeper::clear()
         const juce::ScopedLock sl (lock);
         for (int i = 0; i < kMaxPads; ++i)
         {
-            seen[(size_t) i]   = nullptr;
-            queued[(size_t) i] = nullptr;
-            dirty[(size_t) i]  = false;
+            seen[(size_t) i]    = nullptr;
+            queued[(size_t) i]  = nullptr;
+            dirty[(size_t) i]   = false;
+            ownedBy[(size_t) i] = -1;
         }
     }
 

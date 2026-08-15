@@ -126,6 +126,12 @@ namespace UiAudit
     //  Set by the app before a dump: how long the ENGINE thinks pad n is.
     inline std::function<int (int)> engineLength;
 
+    //  DE QUE PAD SALE EL AUDIO DE CADA UNO. El troceado no es un componente:
+    //  son dieciseis pads apuntando al mismo buffer, y eso no se ve en un
+    //  volcado del arbol - que es como se perdio al guardar y volver sin que
+    //  ninguna prueba lo notara. Se imprime aparte. -1 = pad vacio.
+    inline std::function<int (int)> padSource;
+
     inline void walk (juce::Component& c, juce::Component& root, const juce::String& path, int depth,
                       bool underSlider = false, bool underViewport = false)
     {
@@ -194,5 +200,13 @@ namespace UiAudit
                   << ",\"lang\":\"" << env ("ZATI_LANG") << "\""
                   << ",\"open\":\"" << env ("ZATI_OPEN") << "\"}" << std::endl;
         walk (root, root, "root", 0);
+
+        if (padSource != nullptr)
+        {
+            std::cout << "{\"fuentes\":[";
+            for (int i = 0; i < 64; ++i)
+                std::cout << (i ? "," : "") << padSource (i);
+            std::cout << "]}" << std::endl;
+        }
     }
 }

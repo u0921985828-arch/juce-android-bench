@@ -89,6 +89,11 @@ private:
     static constexpr int kMaxPads = 64;
     std::array<SampleBuffer::Ptr, kMaxPads> seen, queued;
     std::array<bool, kMaxPads> dirty {};
+    //  De que pad sale el audio de cada uno: el indice mas bajo que comparte su
+    //  buffer, o -1 si esta vacio. Ver sync().
+    //  Cero-inicializado seria "todos salen del pad 0", que es lo contrario
+    //  de vacio: el constructor lo pone a -1.
+    std::array<int, kMaxPads> ownedBy;
     bool writing = false;
 
     //  Lo pone flush() y lo lee el escritor. Sin `lock`: es una pista, y coger

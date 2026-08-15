@@ -827,6 +827,12 @@ private:
         bool clearMissing = false;    // abrir proyecto vacia lo que no trae
         int  next = 0;
         int  restored = 0;
+        //  De que pad sale el audio de cada uno, leido del estado ANTES de
+        //  empezar a cargar: el trabajo corre en trozos de 25 ms y applyState
+        //  no se llama hasta el final, asi que preguntarselo al arbol sobre la
+        //  marcha llegaria tarde. -1 = tiene fichero propio.
+        std::array<int, AudioEngine::kNumPads> source;
+        PadLoadJob() { source.fill (-1); }
         std::function<void (int restored)> onDone;
     };
     std::unique_ptr<PadLoadJob> padJob;

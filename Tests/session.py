@@ -20,7 +20,7 @@
 #
 #      python3 Tests/session.py [veces]
 # ============================================================================
-import os, shutil, subprocess, sys
+import json, os, shutil, subprocess, sys
 
 ROOT = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
 APP  = os.path.join (ROOT, "build", "Zati_artefacts", "Release", "Zati")
@@ -96,11 +96,55 @@ def main():
         else:
             print ("corrida %d: %d WAV, %d recuperados" % (r + 1, len (wavs), restored))
 
+    #  ------------------------------------------------------------------
+    #  Y QUE UN TROCEADO VUELVA SIENDO UN TROCEADO.
+    #
+    #  Lo de arriba cuenta ficheros y pads, y con eso un AUTO CHOP pasaba: los
+    #  dieciseis trozos volvian y sonaban bien. Lo que no volvia era la
+    #  RELACION. Un troceado son N pads apuntando al MISMO buffer, y el disco no
+    #  guarda punteros: se escribia un WAV por pad, asi que al volver eran N
+    #  buffers distintos con el mismo contenido. Seguia sonando igual y habia
+    #  dejado de ser un troceado - la onda sin hermanos que ensenar, N copias
+    #  del break en memoria y N en disco.
+    #
+    #  Se mide con las dos cifras que lo delatan: cuantos WAV deja en disco un
+    #  troceado de ocho (ocho menos, no ocho mas) y de que pad dice la app que
+    #  sale cada uno al volver.
+    home = os.path.join (TMP, "chop")
+    shutil.rmtree (home, ignore_errors=True)
+    os.makedirs (home, exist_ok=True)
+
+    SLICES = 8
+    one (home, {"ZATI_DEMO": "1", "ZATI_CHOPGO": str (SLICES)})
+
+    samples = os.path.join (home, "Music", "ZATI", ".sesion", "samples")
+    wavs = [f for f in os.listdir (samples) if f.endswith (".wav")] if os.path.isdir (samples) else []
+
+    back = one (home, {})
+    fuentes = []
+    for line in back.splitlines():
+        if line.startswith ('{"fuentes"'):
+            fuentes = json.loads (line)["fuentes"]
+
+    #  Los ocho primeros del banco salen del pad 0; el resto de si mismos.
+    esperado_wavs = EXPECTED - (SLICES - 1)
+    compartidos = [i for i in range (1, SLICES)] if len (fuentes) == 64 else []
+    bien_compartidos = all (fuentes[i] == 0 for i in compartidos) if compartidos else False
+    bien_propios     = all (fuentes[i] == i for i in range (SLICES, EXPECTED)) if len (fuentes) == 64 else False
+
+    chop_ok = (len (wavs) == esperado_wavs and bien_compartidos and bien_propios)
+    print()
+    print ("troceado en %d: %d WAV (esperados %d)   fuentes %s"
+           % (SLICES, len (wavs), esperado_wavs,
+              "correctas" if (bien_compartidos and bien_propios) else "PERDIDAS"))
+    if not chop_ok:
+        print ("   fuentes leidas:", fuentes[:SLICES + 2] if fuentes else "ninguna")
+
     shutil.rmtree (TMP, ignore_errors=True)
     print()
     print ("las %d corridas devuelven la sesion entera" % RUNS if bad == 0
            else "%d de %d corridas pierden algo" % (bad, RUNS))
-    return 1 if bad else 0
+    return 1 if (bad or not chop_ok) else 0
 
 
 if __name__ == "__main__":
