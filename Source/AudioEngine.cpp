@@ -785,6 +785,16 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                         {
                             lanePattern[ln]   = cell - 1;
                             laneStartStep[ln] = songStep;
+                            //  Cuantos compases ocupa el bloque: el suyo mas la
+                            //  cola de continuaciones. Se cuenta AQUI, una vez
+                            //  por bloque, y no en cada paso.
+                            int n = 1;
+                            for (int b2 = bar + 1; b2 < bars; ++b2)
+                            {
+                                if (songCell[(size_t) ln][(size_t) b2].load (std::memory_order_relaxed) != kContinued) break;
+                                ++n;
+                            }
+                            laneBars[ln] = n;
                         }
                         else if (cell < 0)
                         {
@@ -804,8 +814,21 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     if (bank < 0) continue;
                     const int len = juce::jlimit (kMinPatLen, kMaxPatLen, patternLength[(size_t) bank].load (std::memory_order_relaxed));
                     const int off = songStep - laneStartStep[ln];
-                    if (off < 0 || off >= len) { lanePattern[ln] = -1; continue; }
-                    firePatternStep (bank, off);
+                    if (off < 0) { lanePattern[ln] = -1; continue; }
+
+                    //  EL BLOQUE MANDA SOBRE EL PATRON.
+                    //
+                    //  Antes un bloque duraba exactamente lo que su patron, y
+                    //  acortarlo obligaba a acortar el patron entero - o sea a
+                    //  cambiarlo en los otros sitios donde estuviera puesto.
+                    //  Ahora lo que manda es cuantos compases ocupa en la
+                    //  linea de tiempo: si ocupa menos, el patron se corta ahi;
+                    //  si ocupa mas, da la vuelta dentro del bloque, que es lo
+                    //  unico que puede significar un bloque de ocho compases
+                    //  con un patron de cuatro.
+                    const int suyos = juce::jmax (1, laneBars[ln]) * kBarSteps;
+                    if (off >= suyos) { lanePattern[ln] = -1; continue; }
+                    firePatternStep (bank, off % len);
                     if (ln == 0) playingPattern.store (bank, std::memory_order_relaxed);
                 }
 

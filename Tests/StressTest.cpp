@@ -1321,6 +1321,58 @@ int main()
         }
         e.setPlaying (false);
 
+        //  EL BLOQUE MANDA SOBRE EL PATRON.
+        //
+        //  Un patron de 16 pasos -un compas- puesto en un bloque de DOS
+        //  compases tiene que sonar los dos, dando la vuelta; y puesto en un
+        //  bloque de uno, sonar uno. Antes la longitud la ponia el patron y un
+        //  bloque no podia durar otra cosa, asi que acortarlo obligaba a
+        //  acortar el patron - o sea a cambiarlo en los demas sitios donde
+        //  estuviera puesto. Se cuenta cuantas veces dispara su pad.
+        e.clearSongLoop();
+        for (int ln = 0; ln < 4; ++ln)
+            for (int bar = 0; bar < 4; ++bar)
+                e.setSongCell (ln, bar, 0);
+
+        auto disparos = [&] (int compases) noexcept
+        {
+            e.setSongCell (0, 0, 1);                  // patron 1 en el carril 0
+            for (int b2 = 1; b2 < compases; ++b2)
+                e.setSongCell (0, b2, AudioEngine::kContinued);
+            for (int b2 = compases; b2 < 4; ++b2)
+                e.setSongCell (0, b2, 0);
+
+            e.setSongLength (4);
+            int n = 0;
+            //  UNA SOLA VUELTA. blocksPerBar redondea hacia arriba, asi que
+            //  cuatro compases de bloques se pasan de largo, la cancion da la
+            //  vuelta y el bloque dispara otra vez: la primera version conto
+            //  esa de mas y saco 2 donde tenia que salir 1. Se para en cuanto
+            //  el compas vuelve a cero habiendo pasado del cero.
+            bool salido = false;
+            e.setPlaying (true);
+            for (int i = 0; i < blocksPerBar * 5; ++i)
+            {
+                e.renderNextBlock (b, 0, 256);
+                //  La vuelta se mira ANTES de contar: el bloque en el que la
+                //  cancion vuelve al compas cero ya trae el disparo de la
+                //  segunda pasada, y contarlo daba 2 donde tenia que dar 1.
+                if (e.getSongBar() > 0) salido = true;
+                else if (salido) break;
+                if (e.fetchTriggered() & 1u) ++n;
+            }
+            e.setPlaying (false);
+            e.renderNextBlock (b, 0, 256);
+            e.fetchTriggered();
+            return n;
+        };
+
+        const int uno = disparos (1);
+        const int dos = disparos (2);
+        const bool largoOk = uno == 1 && dos == 2;
+        std::printf ("%-34s bloque de 1 compas suena %d vez   de 2 suena %d   %s\n",
+                     "largo propio del bloque", uno, dos, largoOk ? "OK" : "FALLA");
+
         const bool bucleOk = peorCompas == 1 && sinBucle == 3;
         std::printf ("%-34s con bucle [0,2) llega al %d   sin bucle al %d   %s\n",
                      "bucle de un tramo", peorCompas, sinBucle, bucleOk ? "OK" : "FALLA");

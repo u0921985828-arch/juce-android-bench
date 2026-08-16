@@ -1659,12 +1659,14 @@ MainComponent::MainComponent()
 
     //  Las cinco herramientas de arreglo. Ver songCursor: las cuatro primeras
     //  actuan sobre el compas marcado y sobre los cuatro carriles a la vez.
-    for (auto* b : { &songLeftBtn, &songRightBtn, &songInsertBtn, &songRemoveBtn,
-                     &songCopyBtn, &songPasteBtn })
+    for (auto* b : { &songLeftBtn, &songRightBtn, &songShortBtn, &songLongBtn,
+                     &songInsertBtn, &songRemoveBtn, &songCopyBtn, &songPasteBtn })
     {
         styleButton (*b, kKey);
         songSheet.addAndMakeVisible (*b);
     }
+    songShortBtn.onClick = [this] { resizeSongBlock (-1); };
+    songLongBtn.onClick  = [this] { resizeSongBlock (+1); };
     songLeftBtn.onClick  = [this] { moveSongBar (-1); };
     songRightBtn.onClick = [this] { moveSongBar (+1); };
     songInsertBtn.onClick = [this] { insertSongBar(); };
@@ -3680,7 +3682,10 @@ bool MainComponent::moduleBarFits (int rowWidth, juce::TextButton** mb, int coun
     const auto capFont = ZatiColours::monoFont (11.0f, true).withExtraKerningFactor (0.06f);
     constexpr int kChrome = 2 * Metrics::sm + 2 * (Metrics::halfGap / 2) + 2 * 5;
     int total = 0;
-    for (int i = 0; i < juce::jlimit (1, 8, count); ++i)
+    //  Doce, el mismo tope que layoutModuleBar: si esta contase ocho y aquella
+    //  colocase nueve, la respuesta "cabe" seria sobre una fila que no es la
+    //  que se dibuja.
+    for (int i = 0; i < juce::jlimit (1, 12, count); ++i)
         total += (int) std::ceil (juce::GlyphArrangement::getStringWidth (capFont, mb[i]->getButtonText()))
                + kChrome;
     return total <= rowWidth;
@@ -3692,13 +3697,19 @@ void MainComponent::layoutModuleBar (juce::Rectangle<int> row, juce::TextButton*
     //  fila REV / LOOP / AUTOCUT / BOMBEO tiene el mismo problema y peor, que
     //  "AUTOCUT" pide 52 px y a cuartos le tocaban 42, y el arabe de AUTO CHOP
     //  pide 85.
-    const int kMods = juce::jlimit (1, 8, count);
+    //  DOCE, no ocho. Esto recortaba a ocho EN SILENCIO, asi que una fila de
+    //  nueve dejaba la novena tapa sin colocar - con las coordenadas de la
+    //  ultima vez que se maqueto, encima de sus hermanas. El banco lo saco en
+    //  tableta: LOOP a 368,476 solapando once veces. Un tope que se pasa sin
+    //  decir nada no protege, esconde; el que hay ahora es el tamano real del
+    //  array y ninguna fila de esta app se acerca.
+    const int kMods = juce::jlimit (1, 12, count);
     //  La MISMA fuente con la que drawButtonText va a dibujar la tapa. Medir
     //  con otra es como se responde "cabe" a una pregunta que no se ha hecho:
     //  ya paso una vez en este proyecto, con getTextButtonFont.
     const auto capFont = ZatiColours::monoFont (11.0f, true).withExtraKerningFactor (0.06f);
 
-    int need[8] {}; int total = 0;
+    int need[12] {}; int total = 0;
     for (int i = 0; i < kMods; ++i)
     {
         need[i] = (int) std::ceil (juce::GlyphArrangement::getStringWidth (capFont, mb[i]->getButtonText()))
@@ -4869,15 +4880,16 @@ void MainComponent::resized()
             juce::TextButton* sb[4] = { &songPadModeBtn, &songClearBtn, &songDoubleBtn, &songModeBtn };
             if (! moduleBarFits (anchoUtil, sb, 4)) filasModo = 2 * Metrics::hit + Metrics::halfGap;
 
-            juce::TextButton* su[7] = { &songLeftBtn, &songRightBtn, &songInsertBtn,
-                                        &songRemoveBtn, &songCopyBtn, &songPasteBtn,
-                                        &songLoopBtn };
-            //  Siete tapas no caben en una fila salvo en tableta, y en la
-            //  pantalla mas estrecha del banco -280 px- tampoco caben en dos:
-            //  medido, ADELANTE pedia 60 px y tenia 51. Tres escalones, y el
-            //  que se elige aqui es el mismo que se maqueta abajo.
-            filasUtil = moduleBarFits (anchoUtil, su, 7) ? Metrics::hit
-                      : moduleBarFits (anchoUtil, su, 4) ? 2 * Metrics::hit + Metrics::halfGap
+            juce::TextButton* su[9] = { &songLeftBtn, &songRightBtn, &songShortBtn,
+                                        &songLongBtn, &songInsertBtn, &songRemoveBtn,
+                                        &songCopyBtn, &songPasteBtn, &songLoopBtn };
+            //  Nueve tapas no caben en una fila salvo en tableta, y en 280 px
+            //  tampoco en dos - medido con siete, ADELANTE pedia 60 px y tenia
+            //  51. Tres escalones, y el que se elige aqui es el mismo que se
+            //  maqueta abajo, que pedir uno y usar otro deja la ultima fila
+            //  con altura cero.
+            filasUtil = moduleBarFits (anchoUtil, su, 9) ? Metrics::hit
+                      : moduleBarFits (anchoUtil, su, 5) ? 2 * Metrics::hit + Metrics::halfGap
                                                          : 3 * Metrics::hit + 2 * Metrics::halfGap;
         }
         //  Girado, la tarjeta no tiene que ser tan alta como la suma de las
@@ -4959,35 +4971,31 @@ void MainComponent::resized()
         //  esta puesto. Mezcladas en una sola fila, INSERTAR quedaba al lado de
         //  SONIDO y las dos parecian la misma clase de cosa.
         {
-            juce::TextButton* su[7] = { &songLeftBtn, &songRightBtn, &songInsertBtn,
-                                        &songRemoveBtn, &songCopyBtn, &songPasteBtn,
-                                        &songLoopBtn };
-            if (moduleBarFits (panel.getWidth(), su, 7))
+            juce::TextButton* su[9] = { &songLeftBtn, &songRightBtn, &songShortBtn,
+                                        &songLongBtn, &songInsertBtn, &songRemoveBtn,
+                                        &songCopyBtn, &songPasteBtn, &songLoopBtn };
+            if (moduleBarFits (panel.getWidth(), su, 9))
             {
-                layoutModuleBar (panel.removeFromTop (Metrics::hit), su, 0, 7);
+                layoutModuleBar (panel.removeFromTop (Metrics::hit), su, 0, 9);
             }
-            else if (moduleBarFits (panel.getWidth(), su, 4))
+            else if (moduleBarFits (panel.getWidth(), su, 5))
             {
-                //  Cuatro y tres: las cuatro primeras MUEVEN el compas -las dos
-                //  flechas, meter y quitar- y las tres de abajo lo copian, lo
-                //  pegan y ponen el bucle. Partir por la mitad exacta habria
-                //  dejado QUITAR con COPIAR, que son dos familias distintas.
-                layoutModuleBar (panel.removeFromTop (Metrics::hit), su, 0, 4);
+                //  Cinco y cuatro. Arriba lo que le pasa AL BLOQUE - moverlo,
+                //  cortarlo, alargarlo - y abajo lo que le pasa a la linea de
+                //  tiempo. Partir por la mitad exacta habria dejado ALARGAR
+                //  con INSERTAR, que son dos familias distintas.
+                layoutModuleBar (panel.removeFromTop (Metrics::hit), su, 0, 5);
                 panel.removeFromTop (Metrics::halfGap);
-                juce::TextButton* sv[3] = { &songCopyBtn, &songPasteBtn, &songLoopBtn };
-                layoutModuleBar (panel.removeFromTop (Metrics::hit), sv, 0, 3);
+                layoutModuleBar (panel.removeFromTop (Metrics::hit), su + 5, 0, 4);
             }
             else
             {
-                //  Y en 280 px, tres, dos y dos. Las dos flechas juntas con
-                //  INSERTAR arriba, QUITAR con COPIAR, y PEGAR con el bucle.
-                layoutModuleBar (panel.removeFromTop (Metrics::hit), su, 0, 3);
-                panel.removeFromTop (Metrics::halfGap);
-                juce::TextButton* sv[2] = { &songRemoveBtn, &songCopyBtn };
-                layoutModuleBar (panel.removeFromTop (Metrics::hit), sv, 0, 2);
-                panel.removeFromTop (Metrics::halfGap);
-                juce::TextButton* sw[2] = { &songPasteBtn, &songLoopBtn };
-                layoutModuleBar (panel.removeFromTop (Metrics::hit), sw, 0, 2);
+                //  Y en 280 px, tres, tres y tres.
+                for (int fila = 0; fila < 3; ++fila)
+                {
+                    layoutModuleBar (panel.removeFromTop (Metrics::hit), su + fila * 3, 0, 3);
+                    if (fila < 2) panel.removeFromTop (Metrics::halfGap);
+                }
             }
             panel.removeFromTop (Metrics::sm);
         }
@@ -6442,6 +6450,8 @@ void MainComponent::retranslateUi()
     //  tres pestanas de AJUSTES - la ficha que CONTIENE el selector de idioma -
     //  y lo caza la prueba comparativa, no la tabla.
     songDoubleBtn.setButtonText (T ("DOBLAR"));
+    songShortBtn.setButtonText (T ("ACORTAR"));
+    songLongBtn.setButtonText  (T ("ALARGAR"));
     songLeftBtn.setButtonText  (T ("ATRAS"));
     songRightBtn.setButtonText (T ("ADELANTE"));
     songInsertBtn.setButtonText (T ("INSERTAR"));
@@ -7967,6 +7977,61 @@ void MainComponent::moveSongBar (int dir)
 
     refreshSong();
     status.setText (T ("Compas movido al %1", juce::String (b + 1)), juce::dontSendNotification);
+}
+
+//  RECORTAR O ALARGAR UN BLOQUE.
+//
+//  La longitud de un bloque es cuantos compases ocupa: el suyo mas la cola de
+//  continuaciones. Acortarlo tira la cola sobrante; alargarlo solo se come
+//  compases VACIOS - comerse el bloque de al lado seria borrar algo que
+//  nadie ha pedido borrar, y para eso ya esta la goma.
+void MainComponent::resizeSongBlock (int dir)
+{
+    const int len = engine.getSongLength();
+    const int at  = juce::jlimit (0, len - 1, songCursor);
+
+    //  La cabeza del bloque: hacia atras hasta que deje de ser continuacion.
+    int carril = -1, cabeza = -1;
+    for (int ln = 0; ln < AudioEngine::kSongLanes; ++ln)
+    {
+        int b = at;
+        while (b > 0 && engine.getSongCell (ln, b) == AudioEngine::kContinued) --b;
+        const int v = engine.getSongCell (ln, b);
+        if (v > 0 && v != AudioEngine::kContinued) { carril = ln; cabeza = b; break; }
+    }
+
+    if (carril < 0)
+    {
+        status.setText (T ("No hay ningun bloque en este compas"), juce::dontSendNotification);
+        return;
+    }
+
+    int largo = 1;
+    while (cabeza + largo < len
+           && engine.getSongCell (carril, cabeza + largo) == AudioEngine::kContinued) ++largo;
+
+    const int nuevo = largo + dir;
+    if (nuevo < 1 || cabeza + nuevo > len)
+    {
+        status.setText (T ("El bloque no puede medir eso"), juce::dontSendNotification);
+        return;
+    }
+    if (dir > 0 && engine.getSongCell (carril, cabeza + largo) != 0)
+    {
+        status.setText (T ("El compas siguiente ya esta ocupado"), juce::dontSendNotification);
+        return;
+    }
+
+    pushUndo (T ("LARGO"));
+
+    for (int b = cabeza + 1; b < cabeza + nuevo; ++b)
+        engine.setSongCell (carril, b, AudioEngine::kContinued);
+    for (int b = cabeza + nuevo; b < cabeza + largo; ++b)
+        engine.setSongCell (carril, b, 0);
+
+    songCursor = cabeza;
+    refreshSong();
+    status.setText (T ("Bloque de %1 compases", juce::String (nuevo)), juce::dontSendNotification);
 }
 
 //  EL BUCLE DEL TRAMO QUE SE ESTA MIRANDO.
@@ -10042,6 +10107,24 @@ void MainComponent::auditArrange()
     rotatePattern (+1);   patron ("adelante");
     rotatePattern (-1);   patron ("atras");
     doublePattern();      patron ("doblado");
+
+    //  RECORTAR Y ALARGAR UN BLOQUE. Un patron de dos compases puesto en el
+    //  compas 1: acortarlo a uno tiene que tirar la cola, alargarlo a tres
+    //  tiene que ponerla, y alargarlo contra el bloque de al lado no tiene que
+    //  hacer nada - comerse lo del vecino seria borrar algo que nadie ha
+    //  pedido borrar.
+    engine.clearSong();
+    engine.setSongLength (8);
+    engine.setSongCell (0, 1, 1);
+    engine.setSongCell (0, 2, AudioEngine::kContinued);
+    engine.setSongCell (0, 4, 2);          // el vecino, para que ALARGAR choque
+    songCursor = 1;
+    fila ("bloque inicial");
+
+    resizeSongBlock (-1);  fila ("acortado");
+    resizeSongBlock (+1);  fila ("alargado");
+    resizeSongBlock (+1);  fila ("alargado otra vez");
+    resizeSongBlock (+1);  fila ("y contra el vecino");
 
     //  Y QUE LO NUEVO VUELVA. El silenciado de carriles y el tramo en bucle
     //  son estado del arreglo igual que las celdas, y lo que no se guarda se

@@ -164,6 +164,22 @@ namespace
           "النمط لا يتسع بعد المضاعفة" },
         //  Las herramientas de arreglo de la ficha CANCION. Ver songCursor.
         { "INSERTAR",       "",         "INSERT",     "插入",       "إدراج" },
+        //  ACORTAR y no CORTAR: la fila CORTAR ya existe y dice CHOP, que es
+        //  trocear una muestra. Un bloque no se trocea, se acorta.
+        { "ACORTAR",        "",         "SHORTEN",    "缩短",       "تقصير" },
+        { "ALARGAR",        "",         "EXTEND",     "延长",       "إطالة" },
+        { "Bloque de %1 compases", "",
+          "Block is %1 bars", "块为 %1 小节",
+          "الكتلة %1 مازورة" },
+        { "No hay ningun bloque en este compas", "",
+          "There is no block on this bar", "此小节没有块",
+          "لا توجد كتلة في هذه المازورة" },
+        { "El bloque no puede medir eso", "",
+          "The block cannot be that long", "块无法达到该长度",
+          "لا يمكن للكتلة أن تبلغ ذلك" },
+        { "El compas siguiente ya esta ocupado", "",
+          "The next bar is already taken", "下一小节已被占用",
+          "المازورة التالية مشغولة" },
         //  El rotulo del deshacer, que no es ninguna tapa: la barra de estado
         //  dice "Deshecho: MOVER" y esa palabra tambien se lee.
         { "MOVER",          "",         "MOVE",       "移动",       "نقل" },

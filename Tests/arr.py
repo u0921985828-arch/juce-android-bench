@@ -79,6 +79,17 @@ PEGADO = [[1,0,0,0,0,0,0,0],
           [0,0,0,0,3,0,0,0],
           [0,0,0,0,0,0,4,0]]
 
+#  Recortar y alargar un bloque. 1000 es la marca de "continuacion".
+BLOQUE = {
+    "bloque inicial":     [[0,1,1000,0,2,0,0,0]] + [[0]*8]*3,
+    "acortado":           [[0,1,   0,0,2,0,0,0]] + [[0]*8]*3,
+    "alargado":           [[0,1,1000,0,2,0,0,0]] + [[0]*8]*3,
+    "alargado otra vez":  [[0,1,1000,1000,2,0,0,0]] + [[0]*8]*3,
+    #  Contra el vecino no pasa nada: comerse el bloque de al lado seria
+    #  borrar algo que nadie ha pedido borrar.
+    "y contra el vecino": [[0,1,1000,1000,2,0,0,0]] + [[0]*8]*3,
+}
+
 #  El patron: [paso, pad, nota, fuerza, repeticiones].
 PAT_INICIAL  = [[0,0,5,90,1], [3,1,0,127,4]]
 PAT_ADELANTE = [[1,0,5,90,1], [4,1,0,127,4]]
@@ -118,6 +129,9 @@ def main():
     mira ("copiar y pegar", song["pegar el 2 en el 5"]["carriles"], PEGADO,
           song["pegar el 2 en el 5"]["largo"], 8)
 
+    for k, v in BLOQUE.items():
+        mira (k, song[k]["carriles"], v, song[k]["largo"], 8)
+
     mira ("patron de partida", pat["inicial"]["pasos"], PAT_INICIAL,
           pat["inicial"]["largo"], 16)
     mira ("desplazar adelante", pat["adelante"]["pasos"], PAT_ADELANTE,
@@ -142,7 +156,7 @@ def main():
     if malas:
         print ("FALLA:", ", ".join (malas))
         return 1
-    print ("las ocho operaciones de arreglo hacen lo que dicen")
+    print ("las operaciones de arreglo hacen lo que dicen")
     return 0
 
 

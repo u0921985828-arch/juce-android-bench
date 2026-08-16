@@ -874,6 +874,10 @@ private:
     // Audio-thread only: what each lane is currently running.
     int  lanePattern[kSongLanes] { -1, -1, -1, -1 };
     int  laneStartStep[kSongLanes] { 0, 0, 0, 0 };
+    //  Cuantos compases ocupa el bloque que suena en cada carril. Ver fireStep:
+    //  es lo que le da al bloque una longitud propia, distinta de la del
+    //  patron que lleva dentro.
+    int  laneBars[kSongLanes] { 1, 1, 1, 1 };
     int  songStep = 0;                    // absolute step within the song
 
     // Latency probe. The click is emitted a moment AFTER the stream starts,

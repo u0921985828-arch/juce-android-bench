@@ -812,6 +812,8 @@ private:
     juce::TextButton songLoopBtn    { "LOOP" };
     juce::TextButton songLeftBtn    { "ATRAS" };
     juce::TextButton songRightBtn   { "ADELANTE" };
+    juce::TextButton songShortBtn   { "ACORTAR" };
+    juce::TextButton songLongBtn    { "ALARGAR" };
     //  EL TRANSPORTE, DENTRO DE LA FICHA.
     //
     //  Montar un arreglo es poner un bloque y OIRLO, y la tapa de PLAY se
@@ -861,6 +863,11 @@ private:
     //  que es como se pierde un compas sin enterarse. Esto INTERCAMBIA, asi
     //  que no crea ni destruye nada y el cursor se va con el compas.
     void moveSongBar (int dir);
+    //  RECORTAR O ALARGAR EL BLOQUE que hay bajo el cursor. Su longitud es
+    //  cuantos compases ocupa en la linea de tiempo, no la del patron que
+    //  lleva dentro: acortar un bloque obligaba antes a acortar el patron
+    //  entero, o sea a cambiarlo en los otros sitios donde estuviera puesto.
+    void resizeSongBlock (int dir);
     void toggleSongLane (int lane);
     juce::TextButton setButton      { "SET" };   // skins + proyectos (spec: SET)
     juce::TextButton seqCloseButton   { juce::CharPointer_UTF8 ("\xc3\x97") },
