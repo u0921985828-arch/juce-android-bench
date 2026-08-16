@@ -4088,7 +4088,7 @@ void MainComponent::resized()
         {
             auto cell = (i < n - 1 ? row.removeFromLeft (w) : row);
             cell.removeFromTop (ZatiLookAndFeel::kKnobName);   // gap for knob name
-            ks[i]->setBounds (cell.reduced (6, 2));
+            ks[i]->setBounds (cell.reduced (6, 0));
         }
     };
 
@@ -4117,7 +4117,7 @@ void MainComponent::resized()
         auto titleRow = inner.removeFromTop (Metrics::hit);
         padCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
         Lang::takeEnd (titleRow, Metrics::xs);
-        previewButton.setBounds (Lang::takeEnd (titleRow, 68).reduced (0, 2));
+        previewButton.setBounds (Lang::takeEnd (titleRow, 68).reduced (0, 0));
 
         //  Las pestanas, debajo del titulo y en las dos paginas.
         inner.removeFromTop (Metrics::xs);
@@ -4543,7 +4543,7 @@ void MainComponent::resized()
                 //  mitad, asi que estan en el mismo sitio.
                 manualButton.setVisible (true);
                 manualButton.setBounds (inner.removeFromBottom (Metrics::hit)
-                                             .reduced (Metrics::halfGap, 2));
+                                             .reduced (Metrics::halfGap, 0));
                 inner.removeFromBottom (Metrics::sm);
                 gesturesArea = inner;
             }
@@ -4560,9 +4560,9 @@ void MainComponent::resized()
             {
                 inner.removeFromTop (14);                       // pintado: el rotulo
                 auto row = inner.removeFromTop (Metrics::hit);
-                btn.setBounds (Lang::takeStart (row, juce::jmax (96, row.getWidth() / 3)).reduced (1, 2));
+                btn.setBounds (Lang::takeStart (row, juce::jmax (96, row.getWidth() / 3)).reduced (1, 0));
                 inner.removeFromTop (Metrics::xs);
-                box.setBounds (inner.removeFromTop (Metrics::hit).reduced (1, 2));
+                box.setBounds (inner.removeFromTop (Metrics::hit).reduced (1, 0));
                 inner.removeFromTop (Metrics::sm);
             };
             block (midiOutBtn, midiOutBox);
@@ -4620,7 +4620,7 @@ void MainComponent::resized()
                 const int n = juce::jmax (1, btns.size());
                 const int w = r.getWidth() / n;
                 for (int i = 0; i < btns.size(); ++i)
-                    btns[i]->setBounds ((i < n - 1 ? Lang::takeStart (r, w) : r).reduced (1, 2));
+                    btns[i]->setBounds ((i < n - 1 ? Lang::takeStart (r, w) : r).reduced (1, 0));
                 columnaChips.removeFromTop (Metrics::xs);
                 return row;
             };
@@ -4797,16 +4797,16 @@ void MainComponent::resized()
             auto row = inner.removeFromTop (Metrics::hit);
             const int w = row.getWidth() / kNumPatterns;
             for (int i = 0; i < kNumPatterns; ++i)
-                songPatBtns[i]->setBounds ((i < kNumPatterns - 1 ? row.removeFromLeft (w) : row).reduced (1, 2));
+                songPatBtns[i]->setBounds ((i < kNumPatterns - 1 ? row.removeFromLeft (w) : row).reduced (1, 0));
             inner.removeFromTop (Metrics::xs);
         }
         // Brush modes + song mode.
         {
             auto row = inner.removeFromTop (Metrics::hit);
             const int w = row.getWidth() / 3;
-            songPadModeBtn.setBounds (row.removeFromLeft (w).reduced (Metrics::halfGap, 2));
-            songClearBtn.setBounds   (row.removeFromLeft (w).reduced (Metrics::halfGap, 2));
-            songModeBtn.setBounds    (row.reduced (Metrics::halfGap, 2));
+            songPadModeBtn.setBounds (row.removeFromLeft (w).reduced (Metrics::halfGap, 0));
+            songClearBtn.setBounds   (row.removeFromLeft (w).reduced (Metrics::halfGap, 0));
+            songModeBtn.setBounds    (row.reduced (Metrics::halfGap, 0));
             inner.removeFromTop (Metrics::sm);
         }
 
@@ -4822,7 +4822,7 @@ void MainComponent::resized()
             {
                 const bool used = i * Playlist::kBarsView < engine.getSongLength();
                 songPageBtns[i]->setVisible (used);
-                songPageBtns[i]->setBounds ((i < n - 1 ? pageRow.removeFromLeft (w) : pageRow).reduced (1, 2));
+                songPageBtns[i]->setBounds ((i < n - 1 ? pageRow.removeFromLeft (w) : pageRow).reduced (1, 0));
             }
         }
         inner.removeFromBottom (Metrics::xs);
@@ -4967,7 +4967,7 @@ void MainComponent::resized()
             const int w = juce::jlimit (88, juce::jmax (88, titleRow.getWidth() / 2),
                                         (int) std::ceil (juce::GlyphArrangement::getStringWidth (
                                             capFont, xyLatchButton.getButtonText())) + 2 * Metrics::md);
-            xyLatchButton.setBounds (Lang::takeEnd (titleRow, w).reduced (0, 2));
+            xyLatchButton.setBounds (Lang::takeEnd (titleRow, w).reduced (0, 0));
         }
         inner.removeFromTop (14);              // pintado: que hace soltar el dedo
         inner.removeFromTop (Metrics::sm);
@@ -4979,7 +4979,7 @@ void MainComponent::resized()
             auto row = inner.removeFromTop (Metrics::hit);
             for (int f = 0; f < xyFxButtons.size(); ++f)
                 xyFxButtons[f]->setBounds (Lang::takeStart (row, row.getWidth() / (kNumFx - f))
-                                             .reduced (Metrics::halfGap / 2, 2));
+                                             .reduced (Metrics::halfGap / 2, 0));
             inner.removeFromTop (Metrics::sm);
         }
 
@@ -5153,15 +5153,15 @@ void MainComponent::resized()
                                                Metrics::readout);
                 if (wideFace)
                 {
-                    patternSlider.setBounds (row.reduced (Metrics::halfGap, 2));
+                    patternSlider.setBounds (row.reduced (Metrics::halfGap, 0));
                     col.removeFromTop (Metrics::sm);
                     nameBand (col, "LARGO");
-                    lengthSlider.setBounds (col.removeFromTop (Metrics::hit).reduced (Metrics::halfGap, 2));
+                    lengthSlider.setBounds (col.removeFromTop (Metrics::hit).reduced (Metrics::halfGap, 0));
                 }
                 else
                 {
-                    patternSlider.setBounds (row.removeFromLeft (w1).reduced (Metrics::halfGap, 2));
-                    lengthSlider.setBounds  (row.reduced (Metrics::halfGap, 2));
+                    patternSlider.setBounds (row.removeFromLeft (w1).reduced (Metrics::halfGap, 0));
+                    lengthSlider.setBounds  (row.reduced (Metrics::halfGap, 0));
                 }
             }
             col.removeFromTop (Metrics::sm);
@@ -5170,8 +5170,8 @@ void MainComponent::resized()
             {
                 nameBand (col, "BANCO");
                 auto row = col.removeFromTop (Metrics::hit);
-                copyPatBtn.setBounds  (Lang::takeStart (row, row.getWidth() / 2).reduced (Metrics::halfGap, 2));
-                pastePatBtn.setBounds (row.reduced (Metrics::halfGap, 2));
+                copyPatBtn.setBounds  (Lang::takeStart (row, row.getWidth() / 2).reduced (Metrics::halfGap, 0));
+                pastePatBtn.setBounds (row.reduced (Metrics::halfGap, 0));
                 col.removeFromTop (Metrics::sm);
             }
 
@@ -5210,7 +5210,7 @@ void MainComponent::resized()
                 const int bw = row.getWidth() / kNumBanks;
                 for (int b = 0; b < seqBankButtons.size(); ++b)
                     seqBankButtons[b]->setBounds ((b < kNumBanks - 1 ? row.removeFromLeft (bw) : row)
-                                                      .reduced (Metrics::halfGap, 2));
+                                                      .reduced (Metrics::halfGap, 0));
                 col.removeFromTop (Metrics::sm);
             }
 
@@ -5223,7 +5223,7 @@ void MainComponent::resized()
                 {
                     barButtons[b]->setVisible (b < bars);
                     if (b < bars)
-                        barButtons[b]->setBounds ((b < bars - 1 ? row.removeFromLeft (bw) : row).reduced (Metrics::halfGap, 2));
+                        barButtons[b]->setBounds ((b < bars - 1 ? row.removeFromLeft (bw) : row).reduced (Metrics::halfGap, 0));
                 }
                 col.removeFromTop (Metrics::sm);
             }
@@ -5241,9 +5241,9 @@ void MainComponent::resized()
                 //  porque marcar y ver el numero es el mismo gesto, y luego
                 //  VACIAR. Copiar y pegar van encima, con el patron.
                 const int w4 = row.getWidth() / 4;
-                bpmSlider.setBounds   (Lang::takeStart (row, row.getWidth() - 2 * w4).reduced (Metrics::halfGap, 2));
-                tapButton.setBounds   (Lang::takeStart (row, w4).reduced (Metrics::halfGap, 2));
-                clearButton.setBounds (row.reduced (Metrics::halfGap, 2));
+                bpmSlider.setBounds   (Lang::takeStart (row, row.getWidth() - 2 * w4).reduced (Metrics::halfGap, 0));
+                tapButton.setBounds   (Lang::takeStart (row, w4).reduced (Metrics::halfGap, 0));
+                clearButton.setBounds (row.reduced (Metrics::halfGap, 0));
                 seqLabelBands.add ({ col.removeFromBottom (nameH), juce::String ("TEMPO") });
                 col.removeFromBottom (Metrics::sm);
             }
@@ -5277,11 +5277,11 @@ void MainComponent::resized()
             nameBand (colA, "NOTA DEL PASO");
             {
                 auto row = colA.removeFromTop (Metrics::hit);
-                chainClearButton.setBounds (Lang::takeStart (row, row.getWidth() * 5 / 12).reduced (Metrics::halfGap, 2));
+                chainClearButton.setBounds (Lang::takeStart (row, row.getWidth() * 5 / 12).reduced (Metrics::halfGap, 0));
                 noteSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false,
                                             juce::jmax (40, row.getWidth() - 2 * Metrics::gap - 2 * Metrics::stepKey),
                                             Metrics::readout);
-                noteSlider.setBounds (row.reduced (Metrics::halfGap, 2));
+                noteSlider.setBounds (row.reduced (Metrics::halfGap, 0));
                 colA.removeFromTop (Metrics::sm);
             }
 
@@ -5289,8 +5289,8 @@ void MainComponent::resized()
             nameBand (second, "GOLPE");
             {
                 auto row = second.removeFromTop (Metrics::hit);
-                velSlider.setBounds (Lang::takeStart (row, row.getWidth() * 7 / 12).reduced (Metrics::halfGap, 2));
-                auto rollCell = row.reduced (Metrics::halfGap, 2);
+                velSlider.setBounds (Lang::takeStart (row, row.getWidth() * 7 / 12).reduced (Metrics::halfGap, 0));
+                auto rollCell = row.reduced (Metrics::halfGap, 0);
                 rollSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false,
                                             juce::jmax (36, rollCell.getWidth() - Metrics::gap - 2 * Metrics::stepKey),
                                             Metrics::readout);
@@ -5299,12 +5299,12 @@ void MainComponent::resized()
             }
 
             nameBand (second, "SWING");
-            swingSlider.setBounds (second.removeFromTop (Metrics::hit).reduced (Metrics::halfGap, 2));
+            swingSlider.setBounds (second.removeFromTop (Metrics::hit).reduced (Metrics::halfGap, 0));
             second.removeFromTop (Metrics::sm);
 
             nameBand (second, "REJILLA");
             {
-                auto cell = second.removeFromTop (Metrics::hit).reduced (Metrics::halfGap, 2);
+                auto cell = second.removeFromTop (Metrics::hit).reduced (Metrics::halfGap, 0);
                 //  Las dos teclas primero, el numero con lo que quede: es la
                 //  misma reserva que CHOKE y que GOLPE, y por la misma razon -
                 //  sin ella JUCE apila el + sobre el - en cuanto la casilla se
@@ -7501,7 +7501,7 @@ void MainComponent::paintManualBody (juce::Graphics& g)
 
             g.setColour (ZatiColours::ink.withAlpha (0.92f));
             g.setFont (ZatiColours::monoFont (Metrics::fMeta));
-            g.drawFittedText (T (line), row.reduced (2, 2), Lang::start(), 2, 0.9f);
+            g.drawFittedText (T (line), row.reduced (2, 0), Lang::start(), 2, 0.9f);
         }
 
         r.removeFromTop (kManualGap);
@@ -8037,7 +8037,7 @@ void MainComponent::paintExportSheetContent (juce::Graphics& g)
     // Progress, then the verdict.
     if (exportJob != nullptr)
     {
-        auto bar = inner.removeFromTop (8).reduced (0, 2);
+        auto bar = inner.removeFromTop (8).reduced (0, 0);
         //  El canal de la barra de progreso es un hueco; lo que lo llena es el
         //  acento. Con padBorder el canal salia mas claro que el relleno en las
         //  dos carcasas oscuras, y la barra parecia ir al reves.

@@ -394,6 +394,20 @@ namespace Metrics
     //  phone; this is a phone. Where sixteen of something have to fit at
     //  once the card grows instead of the rows shrinking.
     static constexpr int hit = 40;
+    //  LA FILA QUE CONTIENE UN OBJETIVO DE DEDO, no el objetivo.
+    //
+    //  hit es el suelo de lo que se toca. Casi todas las filas de este archivo
+    //  se piden de `hit` y luego encogen su contenido dos pixeles por arriba y
+    //  por abajo para dejar aire - y eso deja el objetivo en 36, cuatro por
+    //  debajo del suelo. Medido: 256 controles a 36 px en las 476 corridas,
+    //  repartidos por CANCION, PASO, SEC y AJUSTES. Ninguno es un caso raro:
+    //  es la misma resta hecha en veintiun sitios.
+    //
+    //  El aire sale de la FILA y no del objetivo, que es la misma regla que ya
+    //  gobierna la rejilla de pads: un pixel que falta se lo come el hueco de
+    //  al lado, nunca el dedo.
+    static constexpr int keyAir = 2;              // el aire de cada lado
+    static constexpr int hitRow = hit + 2 * keyAir;   // 44: pide esto, toca hit
     static constexpr int chip = 24;   // value readout
 
     //  ONE height for every value box, and ONE width for a stepper's keys.
@@ -580,7 +594,12 @@ public:
     static constexpr int kHeader    = 24;   // the wordmark strip
     static constexpr int kStrip     = 14;   // VU and the step LEDs: read, never touched
     static constexpr int kModule    = 26;   // PADS / SEC / SONG / MIX / SET - they open windows
-    static constexpr int kTransport = 36;   // LOAD / REC / PLAY - they act
+    //  CUARENTA Y NO TREINTA Y SEIS. Son las tres teclas que se pulsan
+    //  TOCANDO -cargar, grabar, arrancar- y estaban cuatro pixeles por debajo
+    //  del suelo del dedo: 68 incumplimientos en las 476 corridas, mas que
+    //  ninguna otra tapa de la cara. Cuatro pixeles de alto salen del aire de
+    //  la cara, que es donde tienen que salir.
+    static constexpr int kTransport = Metrics::hit;   // LOAD / REC / PLAY - they act
     static constexpr int kFxRow     = 34;   // the six effects
     static constexpr int kStatus    = 16;   // the line at the foot
     //  Text needs room above and below it or it reads as pinched against
