@@ -208,11 +208,16 @@ private:
 
     //  LOS SEIS ENVIOS DEL PAD.
     //
-    //  Existian desde que cada pad puede salirse de un efecto, pero solo se
-    //  llegaba a ellos por el RACK, que es la vista al reves: un efecto y los
-    //  sesenta y cuatro pads. Buscar "que le llega a este pad" obligaba a
-    //  abrir seis veces la misma ficha. Aqui es una fila de seis.
-    juce::OwnedArray<juce::Slider> padSends;
+    //  LA PUERTA DEL RACK, no una segunda copia de los seis envios.
+    //
+    //  Aqui hubo una fila de seis mandos que movia exactamente los mismos seis
+    //  valores que el RACK. Dos sitios para una cosa no son dos comodidades:
+    //  son dos maquetados que mantener, dos formas de que uno se quede viejo y
+    //  una pregunta -"¿cual de las dos es la buena?"- que no deberia existir.
+    //  Se quedo el RACK, que apaga el envio cuyo efecto esta cerrado y trae su
+    //  propio selector de pad; aqui queda una tapa que lo abre en el pad que
+    //  se esta editando, y 86 px de alto que vuelven a la pagina mas apretada.
+    juce::TextButton padRackBtn { "ENVIOS" };
 
     //  The captions of the sequencer card, recorded by resized() instead of
     //  reconstructed by paint() from each control's bounds. Reconstructing

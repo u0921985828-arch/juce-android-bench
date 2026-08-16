@@ -1997,25 +1997,18 @@ MainComponent::MainComponent()
         padSoundBtn.setToggleState (true, juce::dontSendNotification);
     }
 
-    //  Los seis envios del pad. El mismo valor que mueve el RACK, con la
-    //  diferencia de que aqui se ve la fila entera de un pad en vez de la
-    //  columna de un efecto. Los dos leen del motor al abrirse, asi que no hay
-    //  copia que se pueda quedar vieja.
-    for (int f = 0; f < kNumFx; ++f)
+    //  LA PUERTA DEL RACK, donde estaban los seis envios duplicados. Ver la
+    //  maqueta de la pagina RIG: los mismos seis valores se movian desde dos
+    //  fichas distintas, y de las dos el RACK es la que dice mas.
+    styleButton (padRackBtn, kKey);
+    litAccent (padRackBtn);
+    padRackBtn.onClick = [this]
     {
-        auto* sl = new juce::Slider();
-        initKnob (*sl, 0.0, 1.0, 0.01, 1.0, 0.0, {});
-        sl->textFromValueFunction = [] (double v) { return juce::String ((int) std::round (v * 100.0)); };
-        sl->updateText();
-        sl->onValueChange = [this, f, sl]
-        {
-            if (selectedPad >= 0) engine.setPadSend (selectedPad, f, (float) sl->getValue());
-            if (rackSends[f] != nullptr && rackPad == selectedPad)
-                rackSends[f]->setValue (sl->getValue(), juce::dontSendNotification);
-        };
-        padSheet.addAndMakeVisible (sl);
-        padSends.add (sl);
-    }
+        rackPad = juce::jmax (0, selectedPad);
+        openSheet (rackSheet, mixButton);
+        refreshRack();
+    };
+    padSheet.addAndMakeVisible (padRackBtn);
 
     styleButton (undoButton, ZatiColours::red);
     undoButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
@@ -2826,7 +2819,7 @@ void MainComponent::showPadPage (int page)
                                 (juce::Component*) &fadeInSlider,  (juce::Component*) &fadeOutSlider })
         c->setVisible (onTrim);
 
-    for (auto* s : padSends) s->setVisible (onRig);
+    padRackBtn.setVisible (onRig);
     autocutButton .setVisible (onRig);
     duckButton    .setVisible (onRig);
     chopButton    .setVisible (onRig);
@@ -3391,14 +3384,8 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
         }
         else
         {
-            //  Cada envio se llama como el efecto al que manda, que es la
-            //  misma palabra que lleva la tapa de la cara. Un envio con un
-            //  nombre propio - "ENV 3" - obliga a recordar el orden de los
-            //  seis; con el nombre del efecto no hay nada que recordar.
-            for (int f = 0; f < kNumFx && f < padSends.size(); ++f)
-                if (auto* sl = padSends[f])
-                    g.drawText (T (fxDefs[f].name), bandAbove (*sl, ZatiLookAndFeel::kKnobName, 2, 6),
-                                juce::Justification::centred);
+            //  Los seis envios viven en el RACK y solo alli. Ver la maqueta:
+            //  aqui queda la puerta y su rotulo lo lleva la tapa.
         }
 
         // ZATI row: the fragment colour this pad carries, named as well as
@@ -4204,8 +4191,8 @@ void MainComponent::resized()
 
         if (padPage == padPageRig)
         {
-            //  EL PAD: 3*secH + 86*2 (envios) + 8 + 40 (corte) + 8 + 40
-            //  (fuente) + 8 + chip + margenes = 418 + 3*secH.
+            //  EL PAD: 3*secH + 40 (la puerta del RACK) + 8 + 40 (corte) + 8
+            //  + 40 (fuente) + 8 + chip + margenes.
             //  ¿HAY SITIO PARA LA PAGINA ENTERA?
             //
             //  En apaisado - 915x412 - la ficha no puede pasar del 78% de 412,
@@ -4217,7 +4204,7 @@ void MainComponent::resized()
             //  una etiqueta y no un ajuste - se quedan fuera.
             const int srcH = Metrics::hit
                            + (padSourceWraps (inner.getWidth()) ? Metrics::hit + Metrics::halfGap : 0);
-            const int needFull = secH + 2 * 86 + Metrics::sm
+            const int needFull = secH + Metrics::hit + Metrics::sm
                                + secH + Metrics::hit + Metrics::sm
                                + secH + srcH + Metrics::sm + Metrics::chip;
             //  APRETADO NO ES LO MISMO QUE ESTRECHO, y confundirlos costo una
@@ -4232,25 +4219,21 @@ void MainComponent::resized()
                                                       &micButton, &resampleButton });
 
             padRigTight = merge;
+
+            //  LOS SEIS ENVIOS ESTABAN AQUI Y EN EL RACK, los mismos seis
+            //  valores movidos desde dos fichas distintas. Dos sitios para una
+            //  cosa no son dos comodidades: son dos maquetados que mantener,
+            //  dos formas de que uno se quede viejo, y una pregunta -"¿cual de
+            //  las dos es la buena?"- que no deberia existir.
+            //
+            //  Se queda el RACK, que es el que dice algo mas: apaga el envio
+            //  cuyo efecto esta cerrado -"lo que pongas ahora es lo que usara
+            //  cuando lo enciendas"- y trae su propio selector de pad, asi que
+            //  se pueden repasar los dieciseis sin cerrar nada. Aqui queda la
+            //  puerta, que ademas devuelve 86 px de alto a la pagina mas
+            //  apretada de la ficha.
             padSectionArea[0] = inner.removeFromTop (secH);   // pintado: ENVIOS
-            {
-                juce::Slider* e[6] = { padSends[0], padSends[1], padSends[2],
-                                       padSends[3], padSends[4], padSends[5] };
-                //  Seis en una fila solo si a cada uno le tocan 40 px, que es
-                //  el dedo minimo. En 280x653 seis mandos en 225 px son 25 px
-                //  cada uno y su numero se queda en 21: el banco lo saco como
-                //  "100" pidiendo 22. Ahi la fila unica ahorra 86 px de alto
-                //  que no hacian falta, porque los 86 caben.
-                if (tight && inner.getWidth() / kNumFx >= Metrics::hit)
-                {
-                    placeKnobRow (inner.removeFromTop (ZatiLookAndFeel::kKnobRow), e, 6);
-                }
-                else
-                {
-                    placeKnobRow (inner.removeFromTop (ZatiLookAndFeel::kKnobRow), e,     3);
-                    placeKnobRow (inner.removeFromTop (ZatiLookAndFeel::kKnobRow), e + 3, 3);
-                }
-            }
+            padRackBtn.setBounds (inner.removeFromTop (Metrics::hit).reduced (Metrics::halfGap, 0));
             inner.removeFromTop (Metrics::sm);
 
             if (merge)
@@ -4774,7 +4757,12 @@ void MainComponent::resized()
             {
                 const int i = currentBank * kPadsPerBank + r * 8 + c;
                 rackPadBtns[i]->setVisible (true);
-                rackPadBtns[i]->setBounds ((c < 7 ? row.removeFromLeft (w) : row).reduced (1, 1));
+                //  Sin aire VERTICAL: la fila ya mide Metrics::hit y quitarle
+                //  un pixel por arriba y otro por abajo deja dieciseis tapas
+                //  de 38 px, dos por debajo del dedo minimo, para ganar un
+                //  hueco que la fila de al lado ya paga con Metrics::xs. Es el
+                //  mismo reduced (x, n) que costo 656 tapas en la cara.
+                rackPadBtns[i]->setBounds ((c < 7 ? row.removeFromLeft (w) : row).reduced (1, 0));
             }
             inner.removeFromTop (Metrics::xs);
         }
@@ -4804,7 +4792,11 @@ void MainComponent::resized()
             {
                 auto& col = (f < kNumFx / 2) ? izda : inner;
                 auto row = col.removeFromTop (filaFx);
-                rackSends[f]->setBounds (row.withTrimmedLeft (54).reduced (2, 6));
+                //  Seis pixeles arriba y abajo de una fila de 48 dejan el fader
+                //  en 36, cuatro por debajo del dedo. El aire entre filas ya
+                //  lo da la fila siguiente; el que se le quita al control sale
+                //  del control.
+                rackSends[f]->setBounds (row.withTrimmedLeft (54).reduced (2, 4));
             }
         }
         else
@@ -4812,7 +4804,11 @@ void MainComponent::resized()
             for (int f = 0; f < kNumFx; ++f)
             {
                 auto row = inner.removeFromTop (filaFx);
-                rackSends[f]->setBounds (row.withTrimmedLeft (54).reduced (2, 6));
+                //  Seis pixeles arriba y abajo de una fila de 48 dejan el fader
+                //  en 36, cuatro por debajo del dedo. El aire entre filas ya
+                //  lo da la fila siguiente; el que se le quita al control sale
+                //  del control.
+                rackSends[f]->setBounds (row.withTrimmedLeft (54).reduced (2, 4));
             }
         }
     }
@@ -5999,12 +5995,6 @@ void MainComponent::updateControlsFromPad (int index)
     resoSlider.setValue (padReso[(size_t) index], juce::dontSendNotification);
     fadeInSlider.setValue  (padFadeIn[(size_t) index],  juce::dontSendNotification);
     fadeOutSlider.setValue (padFadeOut[(size_t) index], juce::dontSendNotification);
-    //  Los envios se leen del MOTOR, que es quien los guarda: el RACK mueve
-    //  los mismos seis numeros y una copia en la interfaz se quedaria vieja en
-    //  cuanto se tocaran desde alli.
-    for (int f = 0; f < padSends.size(); ++f)
-        if (auto* sl = padSends[f])
-            sl->setValue (engine.getPadSend (index, f), juce::dontSendNotification);
 }
 
 //  How long a pad's sound is, asked of the copy the INTERFACE holds.
@@ -6343,12 +6333,8 @@ void MainComponent::refreshAccessibleNames()
         n.s.setDescription (T (n.what));
     }
 
-    for (int f = 0; f < padSends.size(); ++f)
-        if (auto* sl = padSends[f])
-        {
-            sl->setTitle (T ("Envio a %1", T (fxDefs[f].name)));
-            sl->setDescription (T ("del pad"));
-        }
+    padRackBtn.setTitle (T ("ENVIOS"));
+    padRackBtn.setDescription (T ("del pad"));
 
     juce::Slider* macros[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
     for (int i = 0; i < 3; ++i)
@@ -6418,6 +6404,7 @@ void MainComponent::retranslateUi()
     padSoundBtn  .setButtonText (T ("SONIDO"));
     padTrimBtn   .setButtonText (T ("RECORTE"));
     padRigBtn    .setButtonText (T ("EL PAD"));
+    padRackBtn   .setButtonText (T ("ENVIOS"));
     denoiseButton.setButtonText (T ("QUITAR RUIDO"));
     chopButton   .setButtonText (T ("AUTO CHOP"));
     micButton    .setButtonText (recordingActive ? T ("PARAR") : T ("GRABAR MIC"));
