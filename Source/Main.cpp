@@ -4,6 +4,7 @@
 #include "ProjectStore.h"
 #include "UiAudit.h"
 #include "StoreArt.h"
+#include "StepGrid.h"
 #include <ctime>
 
 //  Storage for the two Oboe dials declared in AudioPath.h. They live here so
@@ -294,6 +295,73 @@ public:
                     //  Vuelve por otro camino porque no puede cerrar aqui: el
                     //  bucle de mensajes tiene que seguir corriendo o no hay
                     //  nada que medir.
+                    //  QUE EL REPINTADO PARCIAL DEL CABEZAL NO SE DEJE NADA.
+                    //
+                    //  La rejilla de pasos ya no se repinta entera cuando el
+                    //  cabezal se mueve: se repinta la union de donde estaba y
+                    //  donde esta. Eso es correcto solo si TODO lo que cambia
+                    //  de un fotograma al siguiente cae dentro de esa union, y
+                    //  eso no se juzga leyendo el codigo - se pinta la rejilla
+                    //  dos veces entera y se comparan los pixeles. Un fallo
+                    //  aqui deja un rastro de marcas por la rejilla, que es el
+                    //  tipo de fallo que solo se ve en un video.
+                    else if (UiAudit::env ("ZATI_HEAD").isNotEmpty())
+                    {
+                        StepGrid rejilla;
+                        rejilla.setSize (380, 320);
+
+                        bool celdas[StepGrid::kLanes * 64] = {};
+                        signed char notas[StepGrid::kLanes * 64] = {};
+                        int  zatis[StepGrid::kLanes];
+                        bool cargados[StepGrid::kLanes];
+                        for (int i = 0; i < StepGrid::kLanes; ++i) { zatis[i] = i % 8; cargados[i] = (i % 3) != 0; }
+                        for (int st = 0; st < 64; ++st)
+                            for (int p = 0; p < StepGrid::kLanes; ++p)
+                                celdas[st * StepGrid::kLanes + p] = ((st + p) % 5) == 0;
+
+                        auto pinta = [&rejilla] (juce::Image& img)
+                        {
+                            img.clear (img.getBounds());
+                            juce::Graphics g (img);
+                            rejilla.paintEntireComponent (g, false);
+                        };
+
+                        juce::Image a (juce::Image::ARGB, 380, 320, true);
+                        juce::Image b (juce::Image::ARGB, 380, 320, true);
+
+                        int fuera = 0, comparados = 0;
+                        //  Barrido completo de un compas, en pasos de fase de
+                        //  0.05: dentro de una celda y saltando de una a la
+                        //  siguiente, que son los dos casos distintos.
+                        for (int k = 0; k <= 16 * 20; ++k)
+                        {
+                            const int   paso = juce::jmin (15, k / 20);
+                            const float fase = (float) (k % 20) / 20.0f;
+
+                            rejilla.setSource (celdas, zatis, cargados, notas, 16, 0, paso, 3, fase, 0);
+                            pinta (a);
+
+                            const int   paso2 = juce::jmin (15, (k + 1) / 20);
+                            const float fase2 = (float) ((k + 1) % 20) / 20.0f;
+                            const auto  zona  = rejilla.marcaDe (paso, fase);
+
+                            rejilla.setSource (celdas, zatis, cargados, notas, 16, 0, paso2, 3, fase2, 0);
+                            const auto zona2 = rejilla.marcaDe (paso2, fase2);
+                            pinta (b);
+
+                            const auto union_ = zona.getUnion (zona2);
+                            for (int y = 0; y < 320; ++y)
+                                for (int x = 0; x < 380; ++x)
+                                {
+                                    ++comparados;
+                                    if (a.getPixelAt (x, y) == b.getPixelAt (x, y)) continue;
+                                    if (! union_.contains (x, y)) ++fuera;
+                                }
+                        }
+
+                        std::cout << "{\"cabezal\":1,\"pixeles\":" << comparados
+                                  << ",\"fuera_de_la_zona\":" << fuera << "}" << std::endl;
+                    }
                     else if (const auto sp = UiAudit::env ("ZATI_SPIN"); sp.isNotEmpty())
                     {
                         c2->auditPlay (true);

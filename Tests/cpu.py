@@ -73,6 +73,33 @@ def corre (ficha):
     return None
 
 
+def cabezal():
+    """El repintado parcial del cabezal, comprobado pixel a pixel.
+
+    La rejilla de pasos ya no se repinta entera cuando el cabezal se mueve:
+    se repinta la union de donde estaba y donde esta. Eso es correcto solo si
+    TODO lo que cambia de un fotograma al siguiente cae dentro de esa union,
+    y eso no se juzga leyendo el codigo. Se pinta la rejilla dos veces entera
+    y se comparan los pixeles: un fallo aqui deja un rastro de marcas por la
+    rejilla, que es el tipo de fallo que solo se ve en un video."""
+    env = dict (os.environ)
+    env.update ({"ZATI_AUDIT": "1", "ZATI_SIZE": "412x915", "ZATI_LANG": "es",
+                 "ZATI_HEAD": "1"})
+    try:
+        out = subprocess.run ([APP], env=env, capture_output=True, text=True,
+                              timeout=900).stdout
+    except subprocess.TimeoutExpired:
+        return None
+    for linea in out.splitlines():
+        linea = linea.strip()
+        if linea.startswith ('{') and '"cabezal"' in linea:
+            try:
+                return json.loads (linea)
+            except Exception:
+                pass
+    return None
+
+
 def main():
     if not os.path.exists (APP):
         print ("no hay app compilada:", APP);  return 1
@@ -93,8 +120,19 @@ def main():
             malas.append (f or "(cara)")
 
     print()
+    c = cabezal()
+    if c is None:
+        print ("el cabezal no contesto");  malas.append ("cabezal")
+    else:
+        fuera = int (c.get ("fuera_de_la_zona", -1))
+        print ("cabezal: %d pixeles comparados, %d fuera de la zona repintada"
+               % (int (c.get ("pixeles", 0)), fuera))
+        if fuera != 0:
+            malas.append ("cabezal deja rastro")
+
+    print()
     if malas:
-        print ("REPINTADO PERIODICO en:", ", ".join (malas))
+        print ("FALLA:", ", ".join (malas))
         return 1
     print ("ninguna ficha se repinta sola (tope %d fotogramas en %d s)" % (TOPE, SEGUNDOS))
     return 0

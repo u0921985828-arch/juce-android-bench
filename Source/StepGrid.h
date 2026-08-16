@@ -130,6 +130,7 @@ public:
         repaint();
     }
 
+
     //  Donde cae la marca del paso que suena, con dos pixeles de margen para
     //  el suavizado de los bordes. Vacio cuando no hay nada sonando o el paso
     //  cae fuera del compas que se ve, que es justo lo que hace falta para que
