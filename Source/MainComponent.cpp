@@ -1659,11 +1659,14 @@ MainComponent::MainComponent()
 
     //  Las cinco herramientas de arreglo. Ver songCursor: las cuatro primeras
     //  actuan sobre el compas marcado y sobre los cuatro carriles a la vez.
-    for (auto* b : { &songInsertBtn, &songRemoveBtn, &songCopyBtn, &songPasteBtn })
+    for (auto* b : { &songLeftBtn, &songRightBtn, &songInsertBtn, &songRemoveBtn,
+                     &songCopyBtn, &songPasteBtn })
     {
         styleButton (*b, kKey);
         songSheet.addAndMakeVisible (*b);
     }
+    songLeftBtn.onClick  = [this] { moveSongBar (-1); };
+    songRightBtn.onClick = [this] { moveSongBar (+1); };
     songInsertBtn.onClick = [this] { insertSongBar(); };
     songRemoveBtn.onClick = [this] { removeSongBar(); };
     songCopyBtn.onClick   = [this] { copySongBar(); };
@@ -4870,9 +4873,16 @@ void MainComponent::resized()
             juce::TextButton* sb[4] = { &songPadModeBtn, &songClearBtn, &songDoubleBtn, &songModeBtn };
             if (! moduleBarFits (anchoUtil, sb, 4)) filasModo = 2 * Metrics::hit + Metrics::halfGap;
 
-            juce::TextButton* su[5] = { &songInsertBtn, &songRemoveBtn, &songCopyBtn,
-                                        &songPasteBtn, &songLoopBtn };
-            if (! moduleBarFits (anchoUtil, su, 5)) filasUtil = 2 * Metrics::hit + Metrics::halfGap;
+            juce::TextButton* su[7] = { &songLeftBtn, &songRightBtn, &songInsertBtn,
+                                        &songRemoveBtn, &songCopyBtn, &songPasteBtn,
+                                        &songLoopBtn };
+            //  Siete tapas no caben en una fila salvo en tableta, y en la
+            //  pantalla mas estrecha del banco -280 px- tampoco caben en dos:
+            //  medido, ADELANTE pedia 60 px y tenia 51. Tres escalones, y el
+            //  que se elige aqui es el mismo que se maqueta abajo.
+            filasUtil = moduleBarFits (anchoUtil, su, 7) ? Metrics::hit
+                      : moduleBarFits (anchoUtil, su, 4) ? 2 * Metrics::hit + Metrics::halfGap
+                                                         : 3 * Metrics::hit + 2 * Metrics::halfGap;
         }
         //  Girado, la tarjeta no tiene que ser tan alta como la suma de las
         //  filas: las filas estan en una columna al lado de la rejilla, asi
@@ -4953,20 +4963,35 @@ void MainComponent::resized()
         //  esta puesto. Mezcladas en una sola fila, INSERTAR quedaba al lado de
         //  SONIDO y las dos parecian la misma clase de cosa.
         {
-            juce::TextButton* su[5] = { &songInsertBtn, &songRemoveBtn, &songCopyBtn,
-                                        &songPasteBtn, &songLoopBtn };
-            if (moduleBarFits (panel.getWidth(), su, 5))
+            juce::TextButton* su[7] = { &songLeftBtn, &songRightBtn, &songInsertBtn,
+                                        &songRemoveBtn, &songCopyBtn, &songPasteBtn,
+                                        &songLoopBtn };
+            if (moduleBarFits (panel.getWidth(), su, 7))
             {
-                layoutModuleBar (panel.removeFromTop (Metrics::hit), su, 0, 5);
+                layoutModuleBar (panel.removeFromTop (Metrics::hit), su, 0, 7);
+            }
+            else if (moduleBarFits (panel.getWidth(), su, 4))
+            {
+                //  Cuatro y tres: las cuatro primeras MUEVEN el compas -las dos
+                //  flechas, meter y quitar- y las tres de abajo lo copian, lo
+                //  pegan y ponen el bucle. Partir por la mitad exacta habria
+                //  dejado QUITAR con COPIAR, que son dos familias distintas.
+                layoutModuleBar (panel.removeFromTop (Metrics::hit), su, 0, 4);
+                panel.removeFromTop (Metrics::halfGap);
+                juce::TextButton* sv[3] = { &songCopyBtn, &songPasteBtn, &songLoopBtn };
+                layoutModuleBar (panel.removeFromTop (Metrics::hit), sv, 0, 3);
             }
             else
             {
-                //  Tres y dos, no dos y tres: las tres primeras son las que
-                //  actuan sobre el compas marcado y quedan juntas.
+                //  Y en 280 px, tres, dos y dos. Las dos flechas juntas con
+                //  INSERTAR arriba, QUITAR con COPIAR, y PEGAR con el bucle.
                 layoutModuleBar (panel.removeFromTop (Metrics::hit), su, 0, 3);
                 panel.removeFromTop (Metrics::halfGap);
-                juce::TextButton* sv[2] = { &songPasteBtn, &songLoopBtn };
+                juce::TextButton* sv[2] = { &songRemoveBtn, &songCopyBtn };
                 layoutModuleBar (panel.removeFromTop (Metrics::hit), sv, 0, 2);
+                panel.removeFromTop (Metrics::halfGap);
+                juce::TextButton* sw[2] = { &songPasteBtn, &songLoopBtn };
+                layoutModuleBar (panel.removeFromTop (Metrics::hit), sw, 0, 2);
             }
             panel.removeFromTop (Metrics::sm);
         }
@@ -5012,7 +5037,8 @@ void MainComponent::resized()
         const int tabsH = Metrics::tab + Metrics::sm;
         const int mixFurniture = Metrics::md * 2 + Metrics::hit + Metrics::sm + tabsH
                                + Metrics::btn + Metrics::lg;
-        auto inner = sheetFromBottom (mixSheet, mixFurniture + kPadsPerBank * rowH);
+        auto inner = sheetFromBottom (mixSheet,
+                                      mixFurniture + (wideFace ? kPadsPerBank / 2 : kPadsPerBank) * rowH);
         auto titleRow = inner.removeFromTop (Metrics::hit);
         mixCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
         inner.removeFromTop (Metrics::sm);
@@ -5032,17 +5058,37 @@ void MainComponent::resized()
         inner.removeFromBottom (Metrics::xs);
 
         mixScroll.setBounds (inner);
-        const int contentH = kPadsPerBank * rowH;
+
+        //  APAISADO, DOS COLUMNAS DE OCHO.
+        //
+        //  Dieciseis canales apilados son 792 px de contenido, y girado la
+        //  ventana tiene 412: la mesa entera son TRES pantallas de arrastre
+        //  para mirar dieciseis faders, con 900 px de ancho vacios al lado.
+        //  Dos columnas de ocho parten el arrastre por la mitad y usan el
+        //  ancho que la pantalla ya tiene. Cada fila sigue siendo la misma
+        //  fila: no se quita ningun control, se reparte el sitio.
+        const int columnas = wideFace ? 2 : 1;
+        const int porCol   = kPadsPerBank / columnas;
+        const int contentH = porCol * rowH;
         //  Leave the bar its width only when there IS a bar, or every row is
         //  eight pixels short on the screens that did not need one.
         const int barW = contentH > inner.getHeight() ? mixScroll.getScrollBarThickness() : 0;
         mixRows.setSize (juce::jmax (80, inner.getWidth() - barW), contentH);
 
         auto rows = mixRows.getLocalBounds();
+        const int anchoCol = rows.getWidth() / columnas;
+        juce::Rectangle<int> columna;
+
         for (int i = mixBank * kPadsPerBank; i < (mixBank + 1) * kPadsPerBank; ++i)
         {
-            auto row = rows.removeFromTop (rowH).reduced (0, 1);
-            row.removeFromLeft (juce::jlimit (48, 92, rows.getWidth() * 24 / 100));   // chip + number + name
+            const int enBanco = i - mixBank * kPadsPerBank;
+            if (enBanco % porCol == 0)
+                columna = (enBanco / porCol < columnas - 1)
+                            ? Lang::takeStart (rows, anchoCol) : rows;
+
+            auto row = columna.removeFromTop (rowH).reduced (columnas > 1 ? Metrics::halfGap : 0, 1);
+            mixRowX[(size_t) i] = row.getX();
+            row.removeFromLeft (juce::jlimit (48, 92, columna.getWidth() * 24 / 100));   // chip + number + name
             //  Padding here is not decoration, it is the hit area coming off
             //  the control. The pan was losing twelve pixels of a forty-pixel
             //  row to margins and ending up shorter than the M and S beside it.
@@ -5221,7 +5267,12 @@ void MainComponent::resized()
             //  doce. Pedir lo que hay y quitar filas prescindibles hasta que
             //  quepa es lo que de verdad sube la celda.
             laneH  = juce::jmin (26, (capH - chrome - stacked) / lanes);
-            wanted = chrome + stacked + lanes * juce::jmax (1, laneH);
+            //  Girado la tarjeta se queda con TODO el alto: la rejilla esta al
+            //  lado de los controles, no debajo, asi que pedir "lo que suman
+            //  las filas" -que apaisado es cero- dejaba la tarjeta baja y la
+            //  columna sin sitio para su ultima fila.
+            wanted = wideFace ? capH
+                              : chrome + stacked + lanes * juce::jmax (1, laneH);
         }
         else
         {
@@ -5378,6 +5429,18 @@ void MainComponent::resized()
             }
             col.removeFromTop (Metrics::sm);
 
+            //  APAISADO: EL TEMPO SE APARTA ANTES QUE NADA OPCIONAL.
+            //
+            //  En la columna lateral las filas se van quitando de arriba y el
+            //  TEMPO se quitaba del fondo AL FINAL, o sea de lo que hubiera
+            //  sobrado. Medido en 915x412: el deslizador de BPM y la tapa TAP
+            //  quedaban en NUEVE pixeles de alto. Un control de nueve pixeles
+            //  no esta apretado, no existe. Se aparta primero, y las filas
+            //  opcionales se preguntan si caben en lo que queda.
+            juce::Rectangle<int> tempoRes;
+            if (wideFace)
+                tempoRes = col.removeFromBottom (Metrics::hit + nameH + Metrics::sm);
+
             //  QUE CABE Y QUE NO, con la cuenta de verdad y hecha UNA vez.
             //
             //  Se resta lo que las lineas de mas abajo van a llevarse, una por
@@ -5392,9 +5455,16 @@ void MainComponent::resized()
             //  una a la otra: primero la de COPIAR/PEGAR, que es la que menos
             //  falta hace aqui -las dos tapas estan tambien en PASO- y despues
             //  la de bancos de pads.
-            const bool copyRowFits = (lanesH - rowCost) / kPadsPerBank >= kMinLaneH;
-            const bool bankRowFits = (lanesH - (copyRowFits ? rowCost : 0) - rowCost)
-                                        / kPadsPerBank >= kMinLaneH;
+            //  De pie la pregunta es "¿la celda de paso sigue por encima del
+            //  suelo?", porque estas filas salen de la rejilla. Girado la
+            //  rejilla esta al lado y no pierde nada: la pregunta es si la
+            //  COLUMNA tiene sitio, contando lo que aun le queda por poner.
+            const bool copyRowFits = wideFace
+                ? (col.getHeight() - barsCost >= rowCost)
+                : ((lanesH - rowCost) / kPadsPerBank >= kMinLaneH);
+            const bool bankRowFits = wideFace
+                ? (col.getHeight() - barsCost - (copyRowFits ? rowCost : 0) >= rowCost)
+                : ((lanesH - (copyRowFits ? rowCost : 0) - rowCost) / kPadsPerBank >= kMinLaneH);
 
             //  COPIAR Y PEGAR EL BANCO, pero solo donde sobra sitio.
             //
@@ -5488,7 +5558,8 @@ void MainComponent::resized()
             //  the one number on this page that belongs to the machine rather
             //  than to the pattern.
             {
-                auto row = col.removeFromBottom (Metrics::hit);
+                auto& fuente = wideFace ? tempoRes : col;
+                auto row = fuente.removeFromBottom (Metrics::hit);
                 //  Cuatro en la fila del tempo: el deslizador, TAP a su lado
                 //  porque marcar y ver el numero es el mismo gesto, y luego
                 //  VACIAR. Copiar y pegar van encima, con el patron.
@@ -5496,8 +5567,8 @@ void MainComponent::resized()
                 bpmSlider.setBounds   (Lang::takeStart (row, row.getWidth() - 2 * w4).reduced (Metrics::halfGap, 0));
                 tapButton.setBounds   (Lang::takeStart (row, w4).reduced (Metrics::halfGap, 0));
                 clearButton.setBounds (row.reduced (Metrics::halfGap, 0));
-                seqLabelBands.add ({ col.removeFromBottom (nameH), juce::String ("TEMPO") });
-                col.removeFromBottom (Metrics::sm);
+                seqLabelBands.add ({ fuente.removeFromBottom (nameH), juce::String ("TEMPO") });
+                fuente.removeFromBottom (Metrics::sm);
             }
 
             stepGrid.setBounds (inner);
@@ -6384,6 +6455,8 @@ void MainComponent::retranslateUi()
     //  tres pestanas de AJUSTES - la ficha que CONTIENE el selector de idioma -
     //  y lo caza la prueba comparativa, no la tabla.
     songDoubleBtn.setButtonText (T ("DOBLAR"));
+    songLeftBtn.setButtonText  (T ("ATRAS"));
+    songRightBtn.setButtonText (T ("ADELANTE"));
     songInsertBtn.setButtonText (T ("INSERTAR"));
     songRemoveBtn.setButtonText (T ("QUITAR"));
     songCopyBtn.setButtonText   (T ("COPIAR"));
@@ -7866,6 +7939,49 @@ void MainComponent::pasteSongBar()
     status.setText (T ("Pegado en el compas %1", juce::String (at + 1)), juce::dontSendNotification);
 }
 
+//  REORDENAR: intercambiar el compas marcado con el de al lado.
+//
+//  Es la operacion que no se puede improvisar con las otras. Con copiar,
+//  pegar y quitar se llega al mismo sitio en cuatro pasos y dejando el
+//  original detras, que es como se pierde un compas sin enterarse. Y el
+//  cursor se va CON el compas: si se quedara quieto, mover dos veces movería
+//  dos compases distintos en vez de llevar el mismo dos sitios.
+void MainComponent::moveSongBar (int dir)
+{
+    const int len = engine.getSongLength();
+    const int a = juce::jlimit (0, len - 1, songCursor);
+    const int b = a + dir;
+
+    if (b < 0 || b >= len)
+    {
+        status.setText (T ("El compas ya esta en el borde"), juce::dontSendNotification);
+        return;
+    }
+
+    pushUndo (T ("MOVER"));
+
+    for (int lane = 0; lane < AudioEngine::kSongLanes; ++lane)
+    {
+        //  Una COLA que cambia de sitio deja de ser cola: la cabeza que la
+        //  explicaba se queda donde estaba. Se convierte en hueco por el mismo
+        //  motivo que al pegar - un bloque que aparece de la nada es peor que
+        //  un silencio.
+        auto limpia = [] (int v) { return v == AudioEngine::kContinued ? 0 : v; };
+        const int va = limpia (engine.getSongCell (lane, a));
+        const int vb = limpia (engine.getSongCell (lane, b));
+        engine.setSongCell (lane, a, vb);
+        engine.setSongCell (lane, b, va);
+    }
+
+    songCursor = b;
+    songPage = b / Playlist::kBarsView;
+    for (int k = 0; k < songPageBtns.size(); ++k)
+        songPageBtns[k]->setToggleState (k == songPage, juce::dontSendNotification);
+
+    refreshSong();
+    status.setText (T ("Compas movido al %1", juce::String (b + 1)), juce::dontSendNotification);
+}
+
 //  EL BUCLE DEL TRAMO QUE SE ESTA MIRANDO.
 //
 //  No pide un rango porque no hace falta pedirlo: la rejilla ya pagina de
@@ -7990,7 +8106,7 @@ void MainComponent::paintMixRows (juce::Graphics& g)
         const auto frag = Zati::colour (padZati[(size_t) i]);
         const bool has = padHasSample[(size_t) i];
 
-        auto chip = juce::Rectangle<int> (4, fr.getY() + 4, 22, fr.getHeight() - 8);
+        auto chip = juce::Rectangle<int> (mixRowX[(size_t) i] + 4, fr.getY() + 4, 22, fr.getHeight() - 8);
         //  El chip de un canal sin sonido: marca medida contra la tarjeta, no
         //  el borde de la placa de pads - que en carcasa oscura sale mas claro
         //  que el fondo y hace que un canal vacio destaque mas que uno cargado.

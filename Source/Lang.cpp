@@ -164,6 +164,15 @@ namespace
           "النمط لا يتسع بعد المضاعفة" },
         //  Las herramientas de arreglo de la ficha CANCION. Ver songCursor.
         { "INSERTAR",       "",         "INSERT",     "插入",       "إدراج" },
+        //  El rotulo del deshacer, que no es ninguna tapa: la barra de estado
+        //  dice "Deshecho: MOVER" y esa palabra tambien se lee.
+        { "MOVER",          "",         "MOVE",       "移动",       "نقل" },
+        { "Compas movido al %1", "",
+          "Bar moved to %1", "小节已移到 %1",
+          "نُقلت المازورة إلى %1" },
+        { "El compas ya esta en el borde", "",
+          "The bar is already at the edge", "小节已在边缘",
+          "المازورة عند الحافة بالفعل" },
         { "QUITAR",         "",         "REMOVE",     "删除",       "حذف" },
         { "Compas metido en %1", "",
           "Bar inserted at %1", "已在 %1 插入小节",

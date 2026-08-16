@@ -193,7 +193,7 @@ def paginas():
     porque el fallo es de RESIDUO: solo se ve al volver a una pagina que ya se
     habia dejado."""
     peor = []
-    for size in SIZES:
+    for size, _ in SIZES:
         for lang in LANGS:
             env = dict (os.environ)
             env.update ({"ZATI_AUDIT": "1", "ZATI_SIZE": size, "ZATI_LANG": lang,

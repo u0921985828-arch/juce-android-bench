@@ -805,6 +805,8 @@ private:
     juce::TextButton songCopyBtn    { "COPIAR" };
     juce::TextButton songPasteBtn   { "PEGAR" };
     juce::TextButton songLoopBtn    { "LOOP" };
+    juce::TextButton songLeftBtn    { "ATRAS" };
+    juce::TextButton songRightBtn   { "ADELANTE" };
     //  EL TRANSPORTE, DENTRO DE LA FICHA.
     //
     //  Montar un arreglo es poner un bloque y OIRLO, y la tapa de PLAY se
@@ -847,6 +849,13 @@ private:
     void copySongBar();
     void pasteSongBar();
     void toggleSongLoop();
+    //  MOVER EL COMPAS MARCADO uno a la izquierda o a la derecha, con sus
+    //  cuatro carriles. Reordenar era la unica operacion de arreglo que
+    //  faltaba y la unica que no se puede improvisar con las otras: copiar,
+    //  pegar y quitar deja el original detras y hay que acordarse de borrarlo,
+    //  que es como se pierde un compas sin enterarse. Esto INTERCAMBIA, asi
+    //  que no crea ni destruye nada y el cursor se va con el compas.
+    void moveSongBar (int dir);
     void toggleSongLane (int lane);
     juce::TextButton setButton      { "SET" };   // skins + proyectos (spec: SET)
     juce::TextButton seqCloseButton   { juce::CharPointer_UTF8 ("\xc3\x97") },
@@ -894,6 +903,12 @@ private:
     MixRows        mixRows;
     juce::Viewport mixScroll;
     void paintMixRows (juce::Graphics& g);
+    //  DONDE EMPIEZA LA FILA DE CADA CANAL. El chip de color y el nombre se
+    //  pintan a mano, y estaban clavados en x=4 - que es cierto con una sola
+    //  columna. Girado la mesa se reparte en dos, y los ocho canales de la
+    //  derecha habrian pintado su chip encima de los de la izquierda. Se
+    //  apunta al maquetar y se lee al pintar: un numero, un sitio.
+    std::array<int, kNumPads> mixRowX {};
 
     //  EL MANUAL, DENTRO DE LA APP.
     //
