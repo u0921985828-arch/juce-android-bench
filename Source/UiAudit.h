@@ -3,6 +3,10 @@
 #include <JuceHeader.h>
 #include "ZatiLookAndFeel.h"
 #include "PadButton.h"
+#include <algorithm>
+#include <chrono>
+#include <typeinfo>
+#include <vector>
 
 // ============================================================================
 //  UiAudit — the interface measuring itself.
@@ -32,12 +36,23 @@
 //      ZATI_DEMO=1               con doce pads cargados y un patron escrito
 //      ZATI_SHOT=x.png           saca una foto en vez de un volcado
 //      ZATI_SHOT_SCALE=2.62      a esta escala
+//      ZATI_PAINT=60             cuanto cuesta un fotograma, por piezas
+//      ZATI_SPIN=12              CPU del proceso con la cara abierta y quieta
 // ============================================================================
 namespace UiAudit
 {
     inline bool enabled()  { return juce::SystemStats::getEnvironmentVariable ("ZATI_AUDIT", {}).isNotEmpty(); }
 
     inline juce::String env (const char* k) { return juce::SystemStats::getEnvironmentVariable (k, {}); }
+
+    //  CUANTAS VECES SE HA PINTADO EL FONDO DE LA CARA.
+    //
+    //  El chasis solo se dibuja cuando hay que repintar la ventana entera, asi
+    //  que contarlo cuenta fotogramas completos - que es la pregunta que
+    //  importa en un telefono. Una ficha translucida que pide repaint() de si
+    //  misma suma uno aqui aunque el fondo no haya cambiado, y ese es
+    //  exactamente el desperdicio que se buscaba.
+    inline int fondosPintados = 0;
 
     //  UNA FOTO DEL COMPONENTE, a la escala que se pida.
     //
@@ -254,6 +269,102 @@ namespace UiAudit
         juce::Array<juce::Rectangle<int>> raiz;
         recoge (root, root, raiz, h);
         return h;
+    }
+
+    //  LO QUE CUESTA UN FOTOGRAMA, y de quien es la culpa.
+    //
+    //  El motor se puede medir corriendo bloques; la cara no, porque no la
+    //  ejecuta nadie: la pinta el sistema cuando le parece. Asi que aqui se
+    //  pinta a mano N veces sobre una imagen del mismo tamano que la ventana
+    //  y se cronometra - primero el arbol entero, que es lo que paga el
+    //  telefono en un repintado completo, y despues cada hijo directo por
+    //  separado, que es lo unico que dice A QUIEN cobrarselo.
+    //
+    //  Se pinta en escala 1 a proposito: lo que se busca es la PROPORCION
+    //  entre componentes, y esa no cambia con la densidad de la pantalla,
+    //  mientras que el numero absoluto de un portatil no vale para un movil.
+    //
+    //  La MEDIANA de los fotogramas y no la media, por lo mismo que en el
+    //  banco de CPU: un solo fotograma interrumpido por el sistema mueve una
+    //  media lo bastante como para invertir el orden de dos filas.
+    inline void paintCost (juce::Component& root, int frames)
+    {
+        if (frames < 1) frames = 1;
+
+        auto mide = [frames] (juce::Component& c, juce::Rectangle<int> clip = {}) -> double
+        {
+            const auto b = c.getLocalBounds();
+            if (b.getWidth() < 1 || b.getHeight() < 1) return 0.0;
+
+            juce::Image img (juce::Image::ARGB, b.getWidth(), b.getHeight(), true);
+            std::vector<double> t;
+            t.reserve ((size_t) frames);
+
+            for (int i = 0; i < frames; ++i)
+            {
+                const auto t0 = std::chrono::steady_clock::now();
+                {
+                    juce::Graphics g (img);
+                    //  Recortado, si se pide: es exactamente lo que hace el
+                    //  sistema cuando un componente pide repintarse solo un
+                    //  trozo, y por tanto lo que cuesta de verdad un repintado
+                    //  parcial - incluido lo que hay DETRAS de ese trozo, que
+                    //  con una ficha translucida encima tambien hay que
+                    //  volver a dibujar.
+                    if (! clip.isEmpty()) g.reduceClipRegion (clip);
+                    c.paintEntireComponent (g, false);
+                }
+                t.push_back (std::chrono::duration<double, std::milli> (
+                                 std::chrono::steady_clock::now() - t0).count());
+            }
+
+            std::sort (t.begin(), t.end());
+            return t[t.size() / 2];
+        };
+
+        //  Y el FONDO del propio componente raiz, sin sus hijos: el chasis, las
+        //  placas y la rotulacion grabada. Se mide llamando a paint() a secas
+        //  en vez de a paintEntireComponent, porque restarlo de la suma de los
+        //  hijos daba un numero que incluia todo lo que no supimos atribuir.
+        auto soloFondo = [frames] (juce::Component& c) -> double
+        {
+            juce::Image img (juce::Image::ARGB, juce::jmax (1, c.getWidth()),
+                             juce::jmax (1, c.getHeight()), true);
+            std::vector<double> t;
+            t.reserve ((size_t) frames);
+            for (int i = 0; i < frames; ++i)
+            {
+                const auto t0 = std::chrono::steady_clock::now();
+                { juce::Graphics g (img); c.paint (g); }
+                t.push_back (std::chrono::duration<double, std::milli> (
+                                 std::chrono::steady_clock::now() - t0).count());
+            }
+            std::sort (t.begin(), t.end());
+            return t[t.size() / 2];
+        };
+
+        const double total = mide (root);
+        std::cout << "{\"pintado\":1,\"w\":" << root.getWidth() << ",\"h\":" << root.getHeight()
+                  << ",\"fotogramas\":" << frames
+                  << ",\"fondo_ms\":" << soloFondo (root)
+                  //  Una banda de 30 px de alto en mitad de la ventana: el
+                  //  tamano de lo unico que se mueve en una ficha mientras el
+                  //  secuenciador rueda. Si esta fila es mucho mas barata que
+                  //  total_ms, cada repaint() de ficha entera esta pagando el
+                  //  fotograma completo para animar un renglon.
+                  << ",\"banda30_ms\":" << mide (root, { 0, root.getHeight() / 2 - 15, root.getWidth(), 30 })
+                  << ",\"total_ms\":" << total << "}" << std::endl;
+
+        for (int i = 0; i < root.getNumChildComponents(); ++i)
+        {
+            auto* c = root.getChildComponent (i);
+            if (c == nullptr || ! c->isVisible()) continue;
+            std::cout << "{\"pieza\":\"" << esc (c->getName().isNotEmpty() ? c->getName()
+                                                                          : juce::String (typeid (*c).name()))
+                      << "\",\"w\":" << c->getWidth() << ",\"h\":" << c->getHeight()
+                      << ",\"hijos\":" << c->getNumChildComponents()
+                      << ",\"ms\":" << mide (*c) << "}" << std::endl;
+        }
     }
 
     inline void dump (juce::Component& root)

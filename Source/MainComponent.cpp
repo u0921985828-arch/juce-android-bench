@@ -2932,6 +2932,11 @@ static juce::Rectangle<int> bandAbove (const juce::Component& c, int bandH,
 
 void MainComponent::paint (juce::Graphics& g)
 {
+    //  El contador del banco. Ver UiAudit::fondosPintados: esta funcion solo
+    //  corre cuando hay que repintar ventana entera, asi que contarla aqui
+    //  cuenta fotogramas completos sin instrumentar nada mas.
+    ++UiAudit::fondosPintados;
+
     auto full = getLocalBounds().toFloat();
 
     // 1. Full-bleed light chassis (edge to edge — the whole screen is the face).
@@ -3402,7 +3407,11 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     }
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
-    g.drawText (chainStr, inner.removeFromTop (14), juce::Justification::centredLeft);
+    //  Apuntado al pintarlo y no calculado aparte, para que la banda que se
+    //  repinta sea LA MISMA que se dibuja: dos cuentas del mismo rectangulo
+    //  en dos sitios distintos es como quedan renglones a medio borrar.
+    seqChainBand = inner.removeFromTop (14);
+    g.drawText (chainStr, seqChainBand, juce::Justification::centredLeft);
 
     //  Every control is named, over the control itself rather than over the
     //  row - two things sharing a line are two different jobs, and one label
@@ -7353,7 +7362,7 @@ void MainComponent::doubleSong()
                     juce::dontSendNotification);
 }
 
-void MainComponent::refreshSong()
+void MainComponent::refreshSong (bool repintarTarjeta)
 {
     const int bars = engine.getSongLength();
     for (int lane = 0; lane < Playlist::kLanes; ++lane)
@@ -7370,7 +7379,7 @@ void MainComponent::refreshSong()
 
     songGrid.setSource (songCells, gridZati, bars, songPage,
                         engine.isSongMode() && engine.isPlaying() ? engine.getSongBar() : -1);
-    songSheet.repaint();
+    if (repintarTarjeta) songSheet.repaint();
 }
 
 void MainComponent::paintSongSheetContent (juce::Graphics& g)
@@ -8055,9 +8064,42 @@ void MainComponent::startExport (bool stems)
 
 void MainComponent::pollExport()
 {
-    // The audio path can change under us (headphones in, a call, a route
-    // switch), so the readout is refreshed while you are looking at it.
-    if (setSheet.isVisible()) setSheet.repaint();
+    //  The audio path can change under us (headphones in, a call, a route
+    //  switch), so the readout is refreshed while you are looking at it.
+    //
+    //  Pero SOLO cuando algo de lo que dice ha cambiado. Esto corria en cada
+    //  tick y repintaba la ficha entera: AJUSTES ocupa la ventana y lleva un
+    //  velo al 45 %, asi que cada repintado arrastraba el chasis, los
+    //  dieciseis pads, el espectro y los cuarenta controles de debajo.
+    //  Medido con el contador de fotogramas: doscientos fotogramas completos
+    //  en doce segundos con la ficha abierta y NADA cambiando - 1601 ms de
+    //  CPU contra los 267 que cuesta la misma cara quieta.
+    //
+    //  Se comparan valores y no un texto montado: construir la linea para
+    //  compararla seria volver a asignar dos cadenas por tick, que es la
+    //  costumbre que refreshDeviceStatusLine ya se quito de encima.
+    if (setSheet.isVisible())
+    {
+        auto* dev = deviceManager.getCurrentAudioDevice();
+        //  El PUNTERO del dispositivo, no su nombre: un cambio de ruta
+        //  construye un objeto nuevo, y comparar punteros no asigna nada.
+        const Readout ahora {
+            dev,
+            dev != nullptr ? dev->getCurrentSampleRate() : 0.0,
+            dev != nullptr ? dev->getCurrentBufferSizeSamples() : 0,
+            dev != nullptr ? dev->getOutputLatencyInSamples() : 0,
+            measuring, measuredMs, measuredRate,
+            fastPath.ran, fastPath.mmapKnown, fastPath.mmapUsed, fastPath.exclusive,
+            (int) AudioPath::mmapPolicy(), (int) AudioPath::exclusivePolicy(),
+            measureNote.hashCode()
+        };
+
+        if (! (ahora == lastReadout))
+        {
+            lastReadout = ahora;
+            setSheet.repaint();
+        }
+    }
     if (measuring && ! engine.isProbing()) finishMeasure();
 
     if (exportJob == nullptr) return;
@@ -9250,6 +9292,15 @@ void MainComponent::auditDemo()
     repaint();
 }
 
+//  El mismo camino que el boton, no un atajo al motor: si arrancar la
+//  reproduccion desde fuera se saltase el rotulo y el estado de la tapa, la
+//  medida de CPU seria la de una cara que no existe.
+void MainComponent::auditPlay (bool on)
+{
+    playButton.setToggleState (on, juce::dontSendNotification);
+    if (playButton.onClick) playButton.onClick();
+}
+
 void MainComponent::auditOpen (const juce::String& which)
 {
     //  Let the bench ask the ENGINE what it is holding, not just the tile.
@@ -10064,7 +10115,7 @@ void MainComponent::timerCallback()
     //  was looking at.
     if (seqSheet.isVisible())
         refreshStepGrid();
-    if (songSheet.isVisible() && engine.isPlaying()) refreshSong();
+    if (songSheet.isVisible() && engine.isPlaying()) refreshSong (false);
 
     const int prevPlayStep = lastPlayStep;
     lastPlayStep = ps;
@@ -10097,9 +10148,27 @@ void MainComponent::timerCallback()
     if (confirmPending != nullptr && --confirmTicks <= 0)
         disarmConfirm();
 
-    // Keep the SEC sheet's readout/rings fresh while the sequencer runs.
+    //  El renglon de la cadena, y SOLO el renglon. Ver seqChainBand: la ficha
+    //  ocupa la ventana entera y es translucida, asi que pedirle un repintado
+    //  completo para mover un texto de catorce pixeles arrastraba consigo el
+    //  chasis, los pads y todo lo demas - 6.25 ms de fotograma treinta veces
+    //  por segundo contra los 0.27 que cuesta la banda.
     if (engine.isPlaying() && seqSheet.isVisible())
-        seqSheet.repaint();
+    {
+        const int suena = engine.getChainLength() > 0 ? engine.getPlayingPattern() : -1;
+        if (suena != shownChainPattern)
+        {
+            shownChainPattern = suena;
+            //  Un pixel de mas por cada lado: el rotulo se dibuja DENTRO de la
+            //  banda pero el suavizado de los bordes se sale de ella, y
+            //  repintar la banda exacta deja media linea del texto anterior.
+            if (! seqChainBand.isEmpty()) seqSheet.repaint (seqChainBand.expanded (1));
+        }
+    }
+    else
+    {
+        shownChainPattern = -2;   // al volver a rodar, que se pinte la primera vez
+    }
 
     // Face strips: VU ballistics (fast attack, ~0.8 decay/frame) and the
     // step-LED playhead.

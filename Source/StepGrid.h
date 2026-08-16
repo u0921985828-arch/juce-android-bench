@@ -3,6 +3,8 @@
 #include <JuceHeader.h>
 #include "ZatiLookAndFeel.h"
 #include "Zati.h"
+#include <array>
+#include <cstring>
 
 // ============================================================================
 //  StepGrid — the whole beat at once: sixteen pad lanes down, sixteen steps of
@@ -53,7 +55,101 @@ public:
         //  el que la persona lee para saber cual es era el falso.
         laneBase = firstPad;
         phase = juce::jlimit (0.0f, 1.0f, stepPhase);
+
+        //  REPINTAR SOLO SI HA CAMBIADO ALGO.
+        //
+        //  Esto se llama en CADA tick del temporizador mientras la ficha del
+        //  secuenciador esta abierta -treinta veces por segundo- y repintaba
+        //  siempre, mirase o no lo que le habian pasado. La rejilla son 256
+        //  celdas dibujadas a mano con su color, su nota y su cerco; el
+        //  patron, en cambio, cambia cuando lo tocas tu. Lo unico que se
+        //  mueve solo es el cabezal, y para saber si se ha movido basta con
+        //  compararlo.
+        //
+        //  Se compara SOLO EL COMPAS QUE SE VE, que es lo unico que se
+        //  dibuja: un paso escrito en el compas 3 mientras miras el 1 no
+        //  cambia ni un pixel de esta rejilla.
+        //
+        //  Comparar cuesta 512 bytes de memcmp mas treinta y dos escalares.
+        //  Repintar cuesta la rejilla entera Y, como la ficha que la contiene
+        //  es translucida y ocupa la ventana, todo lo que hay debajo.
+        const size_t nCel = (size_t) kLanes * (size_t) kBarSteps;
+        const size_t off  = (size_t) barIndex * (size_t) kBarSteps * (size_t) kLanes;
+
+        bool igual = data != nullptr && visto
+                  && patLen == prevPatLen && barIndex == prevBar && playing == prevPlaying
+                  && selPad == prevSelPad && laneBase == prevLaneBase
+                  && std::abs (phase - prevPhase) < 0.004f
+                  && std::memcmp (sombraCeldas.data(), data + off, nCel * sizeof (bool)) == 0
+                  && std::memcmp (sombraZati.data(),   zatiOf,   sizeof (sombraZati)) == 0
+                  && std::memcmp (sombraCarga.data(),  loadedOf, sizeof (sombraCarga)) == 0
+                  && (noteOf == nullptr
+                        || std::memcmp (sombraNotas.data(), noteOf + off,
+                                        nCel * sizeof (signed char)) == 0);
+
+        if (igual) return;
+
+        //  Y si lo UNICO que ha cambiado es el cabezal, se repinta el cabezal.
+        //
+        //  Mientras el transporte rueda, la fase avanza en cada tick y esta
+        //  comparacion no ahorra nada por si sola: lo que se mueve es una
+        //  marca de diez pixeles de ancho, y repintar por ella las 256 celdas
+        //  -y, como la ficha que las contiene es translucida, el chasis y los
+        //  pads que hay debajo- es el mismo derroche a menor escala.
+        //
+        //  La union de donde estaba y donde esta: dos columnas como mucho, y
+        //  una sola cuando la marca solo se desliza dentro de su paso.
+        const bool soloCabezal = visto && data != nullptr
+                              && patLen == prevPatLen && barIndex == prevBar
+                              && selPad == prevSelPad && laneBase == prevLaneBase
+                              && std::memcmp (sombraCeldas.data(), data + off, nCel * sizeof (bool)) == 0
+                              && std::memcmp (sombraZati.data(),  zatiOf,   sizeof (sombraZati)) == 0
+                              && std::memcmp (sombraCarga.data(), loadedOf, sizeof (sombraCarga)) == 0
+                              && (noteOf == nullptr
+                                    || std::memcmp (sombraNotas.data(), noteOf + off,
+                                                    nCel * sizeof (signed char)) == 0);
+
+        const auto antes = marcaDe (prevPlaying, prevPhase);
+
+        if (data != nullptr)   std::memcpy (sombraCeldas.data(), data + off, nCel * sizeof (bool));
+        if (noteOf != nullptr) std::memcpy (sombraNotas.data(), noteOf + off, nCel * sizeof (signed char));
+        if (zatiOf != nullptr) std::memcpy (sombraZati.data(),  zatiOf,   sizeof (sombraZati));
+        if (loadedOf != nullptr) std::memcpy (sombraCarga.data(), loadedOf, sizeof (sombraCarga));
+
+        prevPatLen = patLen; prevBar = barIndex; prevPlaying = playing;
+        prevSelPad = selPad; prevLaneBase = laneBase; prevPhase = phase;
+        const bool primera = ! visto;
+        visto = true;
+
+        if (soloCabezal && ! primera)
+        {
+            auto zona = antes.getUnion (marcaDe (playing, phase));
+            if (! zona.isEmpty()) { repaint (zona); return; }
+        }
+
         repaint();
+    }
+
+    //  Donde cae la marca del paso que suena, con dos pixeles de margen para
+    //  el suavizado de los bordes. Vacio cuando no hay nada sonando o el paso
+    //  cae fuera del compas que se ve, que es justo lo que hace falta para que
+    //  la union borre la marca anterior y no pinte ninguna nueva.
+    juce::Rectangle<int> marcaDe (int step, float ph) const
+    {
+        const auto r = getLocalBounds();
+        if (r.isEmpty() || step < 0) return {};
+
+        const int base = prevBar * kBarSteps;
+        if (step < base || step >= base + kBarSteps || step >= prevPatLen) return {};
+
+        const float cellW = (float) (r.getWidth() - kGutter) / (float) kBarSteps;
+        const float col   = (float) r.getX() + (float) kGutter + cellW * (float) (step - base);
+
+        //  La columna entera, no solo la linea: debajo de la marca hay un
+        //  sombreado de columna que tambien tiene que borrarse al pasar.
+        return juce::Rectangle<float> (col - 6.0f, (float) r.getY(),
+                                       cellW + 12.0f, (float) r.getHeight())
+                 .getSmallestIntegerContainer().getIntersection (r);
     }
 
     void paint (juce::Graphics& g) override
@@ -216,4 +312,13 @@ private:
     int patLen = 16, barIndex = 0, playing = -1, selPad = -1, lastKey = -1;
     int laneBase = 0;      // el pad del carril 0: 0, 16, 32 o 48. Ver setSource.
     float phase = 0.0f;   // how far through the live step, 0..1
+
+    //  La copia de lo ultimo PINTADO, para no volver a pintarlo. Ver setSource.
+    std::array<bool, (size_t) kLanes * (size_t) kBarSteps>        sombraCeldas {};
+    std::array<signed char, (size_t) kLanes * (size_t) kBarSteps> sombraNotas  {};
+    std::array<int,  (size_t) kLanes> sombraZati  {};
+    std::array<bool, (size_t) kLanes> sombraCarga {};
+    int   prevPatLen = -1, prevBar = -1, prevPlaying = -2, prevSelPad = -2, prevLaneBase = -1;
+    float prevPhase = -1.0f;
+    bool  visto = false;      // aun no se ha pintado nunca: la primera vez siempre pasa
 };

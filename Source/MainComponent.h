@@ -204,6 +204,22 @@ private:
     static constexpr int kSeqFootH = 14;
     juce::Rectangle<int> seqFootArea;
 
+    //  EL RENGLON DE LA CADENA, apuntado para poder repintar SOLO ese.
+    //
+    //  Mientras el secuenciador rueda, lo unico que cambia en toda la ficha
+    //  SEC es este renglon - "cadena: P1 P2  ·  suena P2" - y el temporizador
+    //  pedia seqSheet.repaint() entero treinta veces por segundo para
+    //  moverlo. La ficha ocupa la ventana completa y lleva un velo al 45 %,
+    //  asi que ese repaint no repinta la ficha: repinta el chasis, los
+    //  dieciseis pads, el espectro y los cuarenta controles que hay debajo.
+    //  Medido en el banco de pintado a 412x915: el fotograma entero son
+    //  6.25 ms y una banda de 30 px 0.27 - veintitres veces menos.
+    //
+    //  Y ni siquiera cada tick: el renglon solo cambia cuando cambia el
+    //  patron que suena, asi que se compara antes de pedir nada.
+    juce::Rectangle<int> seqChainBand;
+    int shownChainPattern = -2;
+
     void openSheet (Sheet& s, juce::TextButton& toggle);
     void closeAllSheets();
     void paintAudioSheetContent (juce::Graphics& g);
@@ -292,6 +308,31 @@ private:
     bool         exportOk = false;
     void startExport (bool stems);
     void pollExport();
+    //  Lo que dice el recuadro de AUDIO de la ficha AJUSTES, en numeros, para
+    //  no repintar la ficha -y con ella la ventana entera- treinta veces por
+    //  segundo diciendo lo mismo. Ver pollExport.
+    struct Readout
+    {
+        const juce::AudioIODevice* dev = nullptr;
+        double sr = 0.0;
+        int block = 0, latency = 0;
+        bool midiendo = false;
+        float medido = -1.0f;
+        double relojMedido = 0.0;
+        bool ran = false, mmapKnown = false, mmapUsed = false, exclusive = false;
+        int politicaMmap = -1, politicaExcl = -1;
+        int nota = 0;
+
+        bool operator== (const Readout& o) const noexcept
+        {
+            return dev == o.dev && sr == o.sr && block == o.block && latency == o.latency
+                && midiendo == o.midiendo && medido == o.medido && relojMedido == o.relojMedido
+                && ran == o.ran && mmapKnown == o.mmapKnown && mmapUsed == o.mmapUsed
+                && exclusive == o.exclusive && politicaMmap == o.politicaMmap
+                && politicaExcl == o.politicaExcl && nota == o.nota;
+        }
+    };
+    Readout lastReadout;
     juce::String exportSourceLabel() const;
 
     // --- What the audio device is actually giving us ----------------------
@@ -395,6 +436,11 @@ public:
     //  Solo se llama desde el arranque de auditoria: una caja vacia enseña
     //  dieciseis huecos grises y no dice nada de lo que hace la app.
     void auditDemo();
+    //  Y el transporte, para la medida de CPU en reposo (ZATI_SPIN). Sin
+    //  esto la unica forma de arrancarlo desde fuera era sintetizar un clic
+    //  en las coordenadas donde se cree que esta PLAY, que es la clase de
+    //  prueba que pasa porque ha fallado el tiro.
+    void auditPlay (bool on);
 
 private:
     void autosave();
@@ -722,7 +768,12 @@ private:
     int songBrush   = 1;      // >0 pattern bank+1, <0 -(pad+1), 0 = eraser
     int songPage    = 0;
     int songCells[Playlist::kLanes * AudioEngine::kSongBars] {};
-    void refreshSong();
+    //  El repintado de la TARJETA es opcional, y por eso es un parametro.
+    //  La rejilla de la cancion se repinta sola cuando cambia su fuente; lo
+    //  que hay pintado en la tarjeta -titulo y pista- no depende del
+    //  transporte, asi que la llamada del temporizador no tiene nada que
+    //  repintar y pedirlo costaba el fotograma entero, velo incluido.
+    void refreshSong (bool repintarTarjeta = true);
     void doubleSong();
     juce::TextButton setButton      { "SET" };   // skins + proyectos (spec: SET)
     juce::TextButton seqCloseButton   { juce::CharPointer_UTF8 ("\xc3\x97") },

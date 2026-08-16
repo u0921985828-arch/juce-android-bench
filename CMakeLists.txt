@@ -117,4 +117,18 @@ if(ZATI_BENCH)
         juce::juce_dsp
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags)
+
+    #  Y el de CUANTO CUESTA CADA COSA. Ver Tests/Cpu.cpp: una fila por etapa
+    #  aislada contra el mismo silencio, porque "optimizar la CPU" sin la
+    #  tabla es elegir a ojo cual de veinte bucles es el caro.
+    juce_add_console_app(Cpu PRODUCT_NAME "Cpu")
+    juce_generate_juce_header(Cpu)
+    target_sources(Cpu PRIVATE Tests/Cpu.cpp Source/AudioEngine.cpp)
+    target_compile_definitions(Cpu PRIVATE
+        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_STRICT_REFCOUNTEDPOINTER=1)
+    target_link_libraries(Cpu PRIVATE
+        juce::juce_audio_utils
+        juce::juce_dsp
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags)
 endif()

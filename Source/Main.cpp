@@ -4,6 +4,7 @@
 #include "ProjectStore.h"
 #include "UiAudit.h"
 #include "StoreArt.h"
+#include <ctime>
 
 //  Storage for the two Oboe dials declared in AudioPath.h. They live here so
 //  that the patched JUCE module finds them at link time on Android, and so
@@ -256,6 +257,15 @@ public:
                     //  dice expo.py del mismo estado. Una regla escrita dos
                     //  veces -aqui en C++ y alli en Python- que no se contrasta
                     //  es dos reglas.
+                    //  LO QUE CUESTA PINTAR ESTO, por piezas. ZATI_PAINT=n
+                    //  pinta el arbol n veces y despues cada hijo directo, y
+                    //  saca la mediana de cada uno. Es la otra mitad de la
+                    //  CPU: el motor se mide corriendo bloques y la cara no
+                    //  se mide sola porque no la ejecuta nadie.
+                    else if (const auto np = UiAudit::env ("ZATI_PAINT"); np.isNotEmpty())
+                    {
+                        UiAudit::paintCost (*c2, np.getIntValue());
+                    }
                     else if (UiAudit::env ("ZATI_CHECK").isNotEmpty())
                     {
                         const auto h = UiAudit::check (*c2);
@@ -271,6 +281,33 @@ public:
                         const int sesiones = part.size() > 1 ? juce::jmax (1, part[1].getIntValue()) : 200;
                         const int acciones = part.size() > 2 ? juce::jmax (1, part[2].getIntValue()) : 30;
                         fuzz (*c2, semilla, sesiones, acciones);
+                    }
+                    //  CUANTA CPU GASTA ESTA APP SIN QUE NADIE LA TOQUE.
+                    //
+                    //  ZATI_SPIN=segundos deja la cara abierta y el transporte
+                    //  rodando, y al terminar dice el tiempo de CPU de usuario
+                    //  que se ha gastado el proceso. Es la unica medida que
+                    //  incluye TODO a la vez - temporizador, repintados, el
+                    //  motor - y la unica con la que se puede comparar un
+                    //  antes y un despues sin discutir que etapa era cual.
+                    //
+                    //  Vuelve por otro camino porque no puede cerrar aqui: el
+                    //  bucle de mensajes tiene que seguir corriendo o no hay
+                    //  nada que medir.
+                    else if (const auto sp = UiAudit::env ("ZATI_SPIN"); sp.isNotEmpty())
+                    {
+                        c2->auditPlay (true);
+                        const auto t0 = std::clock();
+                        UiAudit::fondosPintados = 0;
+                        juce::Timer::callAfterDelay (juce::jmax (1, sp.getIntValue()) * 1000,
+                                                     [this, t0]
+                        {
+                            const double ms = 1000.0 * (double) (std::clock() - t0) / (double) CLOCKS_PER_SEC;
+                            std::cout << "{\"spin\":1,\"cpu_ms\":" << ms
+                                      << ",\"fondos\":" << UiAudit::fondosPintados << "}" << std::endl;
+                            quit();
+                        });
+                        return;
                     }
                     else
                     {

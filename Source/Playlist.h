@@ -3,6 +3,9 @@
 #include <JuceHeader.h>
 #include "ZatiLookAndFeel.h"
 #include "Zati.h"
+#include <array>
+#include <cstring>
+#include <vector>
 
 // ============================================================================
 //  Playlist — the arrangement, as a timeline you can see.
@@ -39,6 +42,30 @@ public:
                     int bars, int page, int playBar)
     {
         data = cells; zati = zatiOf; totalBars = bars; pageIndex = page; playing = playBar;
+
+        //  REPINTAR SOLO SI HA CAMBIADO ALGO. Por lo mismo que la rejilla de
+        //  pasos: el temporizador llama aqui treinta veces por segundo
+        //  mientras la ficha CANCION esta abierta, y lo unico que se mueve
+        //  solo es el compas que suena. La tabla la cambias tu, con el dedo.
+        //
+        //  Y la ficha es translucida y ocupa la ventana entera, asi que un
+        //  repintado de esta rejilla arrastra el chasis, los dieciseis pads y
+        //  los cuarenta controles que hay debajo del velo.
+        const size_t nCel = (size_t) kLanes * (size_t) juce::jmax (1, totalBars);
+        bool igual = data != nullptr && visto
+                  && totalBars == prevBars && pageIndex == prevPage && playing == prevPlaying
+                  && sombra.size() == nCel
+                  && std::memcmp (sombra.data(), data, nCel * sizeof (int)) == 0
+                  && (zati == nullptr
+                        || std::memcmp (sombraZati.data(), zati, sizeof (sombraZati)) == 0);
+
+        if (igual) return;
+
+        if (data != nullptr) { sombra.resize (nCel); std::memcpy (sombra.data(), data, nCel * sizeof (int)); }
+        if (zati != nullptr) std::memcpy (sombraZati.data(), zati, sizeof (sombraZati));
+        prevBars = totalBars; prevPage = pageIndex; prevPlaying = playing;
+        visto = true;
+
         repaint();
     }
 
@@ -166,4 +193,12 @@ private:
     const int* data = nullptr;
     const int* zati = nullptr;
     int totalBars = 8, pageIndex = 0, playing = -1;
+
+    //  La copia de lo ultimo PINTADO, para no volver a pintarlo. Ver setSource.
+    //  El numero de compases lo elige la persona, asi que la sombra de la tabla
+    //  crece con ella; los sesenta y cuatro zatis son fijos.
+    std::vector<int> sombra;
+    std::array<int, 64> sombraZati {};
+    int  prevBars = -1, prevPage = -1, prevPlaying = -2;
+    bool visto = false;
 };
