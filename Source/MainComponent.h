@@ -709,6 +709,13 @@ private:
     juce::TextButton songPadModeBtn { "SONIDO" };     // place a one-shot instead
     juce::TextButton songClearBtn   { "VACIAR" };
     juce::TextButton songModeBtn    { "CANCION" };    // song transport vs pattern/chain
+    //  DOBLAR: la operacion que convierte esta pagina en un arreglo.
+    //
+    //  Una cancion se construye repitiendo y variando, no escribiendo sesenta y
+    //  cuatro compases a mano. Sin esto, montar ocho compases a partir de
+    //  cuatro es tocar treinta y dos celdas una por una, que es la razon por la
+    //  que una pagina de arreglo se abandona.
+    juce::TextButton songDoubleBtn  { "DOBLAR" };
     juce::TextButton songCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
     juce::Slider     songLenSlider;
     juce::OwnedArray<juce::TextButton> songPageBtns;
@@ -716,6 +723,7 @@ private:
     int songPage    = 0;
     int songCells[Playlist::kLanes * AudioEngine::kSongBars] {};
     void refreshSong();
+    void doubleSong();
     juce::TextButton setButton      { "SET" };   // skins + proyectos (spec: SET)
     juce::TextButton seqCloseButton   { juce::CharPointer_UTF8 ("\xc3\x97") },
                      padCloseButton   { juce::CharPointer_UTF8 ("\xc3\x97") },

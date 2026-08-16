@@ -1641,6 +1641,10 @@ MainComponent::MainComponent()
     songClearBtn.setColour (juce::TextButton::buttonOnColourId, ZatiColours::red);
     songClearBtn.setClickingTogglesState (true);
     songClearBtn.onClick = [this] { songBrush = songClearBtn.getToggleState() ? 0 : 1; refreshSong(); };
+
+    styleButton (songDoubleBtn, kKey);
+    songDoubleBtn.onClick = [this] { doubleSong(); };
+    songSheet.addAndMakeVisible (songDoubleBtn);
     songSheet.addAndMakeVisible (songClearBtn);
 
     styleButton (songModeBtn, kStepOff);
@@ -4787,7 +4791,17 @@ void MainComponent::resized()
     // SONG sheet: palette, timeline, page row.
     {
         const int laneH = 40;
-        auto inner = sheetFromBottom (songSheet, Metrics::md * 2 + Metrics::hit + Metrics::hit * 2 + Metrics::sm * 3
+        //  Y la fila de modos puede ser DOS desde que son cuatro tapas, asi que
+        //  la altura que se pide lo cuenta: pedirla de una y usar dos es como
+        //  un control se queda con altura cero.
+        int filasModo = Metrics::hit;
+        {
+            const int anchoUtil = (int) ((float) safeArea().getWidth() * 0.92f) - 2 * Metrics::lg;
+            juce::TextButton* sb[4] = { &songPadModeBtn, &songClearBtn, &songDoubleBtn, &songModeBtn };
+            if (! moduleBarFits (anchoUtil, sb, 4)) filasModo = 2 * Metrics::hit + Metrics::halfGap;
+        }
+        auto inner = sheetFromBottom (songSheet, Metrics::md * 2 + Metrics::hit + Metrics::hit + filasModo
+                                                  + Metrics::sm * 3
                                                   + Playlist::kLanes * laneH + Metrics::hit + Metrics::btn);
         auto titleRow = inner.removeFromTop (Metrics::hit);
         songCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
@@ -4800,13 +4814,26 @@ void MainComponent::resized()
                 songPatBtns[i]->setBounds ((i < kNumPatterns - 1 ? row.removeFromLeft (w) : row).reduced (1, 0));
             inner.removeFromTop (Metrics::xs);
         }
-        // Brush modes + song mode.
+        // Brush modes + song mode + DOBLAR.
+        //
+        //  Repartidos POR EL TEXTO QUE LLEVAN y no a cuartos: "CANCION" pide el
+        //  doble que "DOBLAR", y a cuartos el arabe de SONIDO se cortaba. Es lo
+        //  mismo que hacen las barras de modulos, y con la misma pregunta
+        //  delante - si los cuatro no caben en una fila, dos filas de dos - que
+        //  es lo que ya hicieron las cuatro pestanas de AJUSTES.
         {
-            auto row = inner.removeFromTop (Metrics::hit);
-            const int w = row.getWidth() / 3;
-            songPadModeBtn.setBounds (row.removeFromLeft (w).reduced (Metrics::halfGap, 0));
-            songClearBtn.setBounds   (row.removeFromLeft (w).reduced (Metrics::halfGap, 0));
-            songModeBtn.setBounds    (row.reduced (Metrics::halfGap, 0));
+            juce::TextButton* sb[4] = { &songPadModeBtn, &songClearBtn, &songDoubleBtn, &songModeBtn };
+            if (moduleBarFits (inner.getWidth(), sb, 4))
+            {
+                layoutModuleBar (inner.removeFromTop (Metrics::hit), sb, 0, 4);
+            }
+            else
+            {
+                layoutModuleBar (inner.removeFromTop (Metrics::hit), sb, 0, 2);
+                inner.removeFromTop (Metrics::halfGap);
+                juce::TextButton* sc[2] = { &songDoubleBtn, &songModeBtn };
+                layoutModuleBar (inner.removeFromTop (Metrics::hit), sc, 0, 2);
+            }
             inner.removeFromTop (Metrics::sm);
         }
 
@@ -6081,6 +6108,7 @@ void MainComponent::retranslateUi()
     //  retraducirian jamas sin esta linea. Es el mismo fallo que tuvieron las
     //  tres pestanas de AJUSTES - la ficha que CONTIENE el selector de idioma -
     //  y lo caza la prueba comparativa, no la tabla.
+    songDoubleBtn.setButtonText (T ("DOBLAR"));
     chopEvenBtn.setButtonText (T ("IGUALES"));
     chopHitsBtn.setButtonText (T ("GOLPES"));
 
@@ -6759,15 +6787,29 @@ juce::ValueTree MainComponent::captureState() const
         bk.setProperty ("len", engine.getPatternLength (b), nullptr);
         bk.setProperty ("inChain", patternActiveUI[(size_t) b], nullptr);
 
-        // One hex word per step (16 pads = 16 bits), plus the step pitches —
-        // compact enough to stay readable in the XML.
+        //  UNA PALABRA HEX POR PASO, Y DE SESENTA Y CUATRO BITS.
+        //
+        //  Era `int mask` con `1 << p`, y el comentario decia "16 pads = 16
+        //  bits": el numero de cuando la maquina tenia dieciseis pads. Con
+        //  sesenta y cuatro, `1 << p` para p >= 32 es DESPLAZAR UN INT DE 32
+        //  BITS MAS DE 32 - comportamiento indefinido, y en ARM y en x86 el
+        //  contador se toma modulo 32, asi que 1 << 32 vale 1.
+        //
+        //  O sea: el pad 32 escribia el bit del pad 0. Los pads 32..47 son el
+        //  banco C y los 0..15 el banco A, asi que guardar una secuencia del
+        //  banco A y volver a abrir el proyecto la hacia aparecer TAMBIEN en el
+        //  banco C - y lo mismo entre B y D. No era una copia: es que los dos
+        //  bancos compartian los mismos dieciseis bits.
+        //
+        //  El motor ya guardaba la mascara en uint64 (ver patternBank); lo que
+        //  se quedo en 32 fue el fichero.
         juce::String steps, notes, vels, rolls;
         for (int st = 0; st < kNumSteps; ++st)
         {
-            int mask = 0;
+            std::uint64_t mask = 0;
             for (int p = 0; p < kNumPads; ++p)
-                if (pattern[(size_t) b][(size_t) st][(size_t) p]) mask |= (1 << p);
-            steps << juce::String::toHexString (mask) << " ";
+                if (pattern[(size_t) b][(size_t) st][(size_t) p]) mask |= (1ull << p);
+            steps << juce::String::toHexString ((juce::int64) mask) << " ";
 
             for (int p = 0; p < kNumPads; ++p)
             {
@@ -6953,10 +6995,17 @@ void MainComponent::applyState (const juce::ValueTree& s)
 
             for (int s2 = 0; s2 < kNumSteps; ++s2)
             {
-                const int mask = s2 < st.size() ? (int) st[s2].getHexValue32() : 0;
+                //  Y se lee en 64 bits, por lo mismo. Un proyecto guardado con
+                //  el fallo trae como mucho ocho digitos hex: sus bancos A y B
+                //  vuelven bien y lo que hubiera en C y D no vuelve, porque no
+                //  llego a escribirse - estaba encima de los bits de A y B y no
+                //  hay forma de distinguirlo. Lo que si deja de pasar es que se
+                //  duplique.
+                const std::uint64_t mask = s2 < st.size()
+                                             ? (std::uint64_t) st[s2].getHexValue64() : 0ull;
                 for (int p = 0; p < kNumPads; ++p)
                 {
-                    const bool on = (mask & (1 << p)) != 0;
+                    const bool on = (mask & (1ull << p)) != 0;
                     pattern[(size_t) b][(size_t) s2][(size_t) p] = on;
                     engine.setStep (b, s2, p, on);
 
@@ -7266,6 +7315,44 @@ void MainComponent::refreshProjectList()
 //  A mixer that says "01..16" and nothing else makes you count pads.
 //  Feed the timeline from the engine and keep the palette honest about which
 //  brush is loaded — placing the wrong block is the easiest mistake here.
+//  DOBLAR: la cancion entera otra vez detras de si misma.
+//
+//  Una cancion se construye repitiendo y variando. Sin esto, pasar de cuatro
+//  compases a ocho es tocar treinta y dos celdas a mano, y por eso una pagina
+//  de arreglo se abandona a los dos minutos.
+//
+//  Se copia el LARGO ACTUAL, no los compases escritos: si la cancion mide ocho
+//  y solo los tres primeros tienen algo, lo que se repite son los ocho - los
+//  cinco vacios incluidos - porque ese silencio es parte del arreglo y quitarlo
+//  cambiaria donde cae todo lo que venga detras.
+//
+//  Y kContinued viaja con su patron. Una celda que dice "este compas lo sigue
+//  cubriendo el patron que empezo antes" copiada sin el compas que lo empezo
+//  seria un patron que continua sin haber empezado: el motor la leeria como
+//  silencio y el arreglo saldria con agujeros. Como se copia el bloque entero y
+//  en orden, el que empieza va siempre delante.
+void MainComponent::doubleSong()
+{
+    const int len = engine.getSongLength();
+    if (len < 1 || len * 2 > AudioEngine::kSongBars)
+    {
+        status.setText (T ("La cancion ya no cabe doblada"), juce::dontSendNotification);
+        return;
+    }
+
+    pushUndo (T ("DOBLAR"));
+
+    for (int lane = 0; lane < AudioEngine::kSongLanes; ++lane)
+        for (int b = 0; b < len; ++b)
+            engine.setSongCell (lane, len + b, engine.getSongCell (lane, b));
+
+    engine.setSongLength (len * 2);
+    songLenSlider.setValue (len * 2, juce::dontSendNotification);
+    refreshSong();
+    status.setText (T ("Cancion doblada a %1 compases", juce::String (len * 2)),
+                    juce::dontSendNotification);
+}
+
 void MainComponent::refreshSong()
 {
     const int bars = engine.getSongLength();
@@ -9108,6 +9195,33 @@ void MainComponent::auditDemo()
         applyAutoChop();
     }
 
+    //  ZATI_STEPS=0,32 escribe un paso en esos pads del patron 1. Es la unica
+    //  forma de que el banco mida si un patron se copia solo de un banco a otro
+    //  al guardar y volver: un patron no es un componente y no sale en el
+    //  volcado del arbol, que es como ese fallo vivio sin que nada lo viera.
+    if (const auto ps = UiAudit::env ("ZATI_STEPS"); ps.isNotEmpty())
+    {
+        for (int b2 = 0; b2 < kNumPatterns; ++b2)
+            for (int st = 0; st < kNumSteps; ++st)
+                for (int p2 = 0; p2 < kNumPads; ++p2)
+                    if (pattern[(size_t) b2][(size_t) st][(size_t) p2])
+                    {
+                        pattern[(size_t) b2][(size_t) st][(size_t) p2] = false;
+                        engine.setStep (b2, st, p2, false);
+                    }
+
+        juce::StringArray cual;
+        cual.addTokens (ps, ",", "");
+        for (const auto& t : cual)
+        {
+            const int pad = t.trim().getIntValue();
+            if (! juce::isPositiveAndBelow (pad, kNumPads)) continue;
+            engine.setStep (0, 0, pad, true);
+            pattern[0][0][(size_t) pad] = true;
+        }
+        refreshStepGrid();
+    }
+
     if (const auto b = UiAudit::env ("ZATI_BUSY"); b.isNotEmpty())
     {
         beginBusy (T ("Cargando"));
@@ -9145,6 +9259,11 @@ void MainComponent::auditOpen (const juce::String& which)
 
     //  Y de que pad sale el audio de cada uno, que es lo unico que dice si un
     //  troceado sigue siendo un troceado despues de guardar y volver.
+    UiAudit::stepOn = [this] (int pad)
+    {
+        return juce::isPositiveAndBelow (pad, kNumPads) && pattern[0][0][(size_t) pad];
+    };
+
     UiAudit::padSource = [this] (int pad) -> int
     {
         if (! juce::isPositiveAndBelow (pad, kNumPads) || uiSample[(size_t) pad] == nullptr) return -1;

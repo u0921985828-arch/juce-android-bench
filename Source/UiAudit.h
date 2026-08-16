@@ -132,6 +132,10 @@ namespace UiAudit
     //  ninguna prueba lo notara. Se imprime aparte. -1 = pad vacio.
     inline std::function<int (int)> padSource;
 
+    //  Y que pads llevan un paso puesto. Ver padSource: un patron tampoco es
+    //  un componente.
+    inline std::function<bool (int)> stepOn;
+
     inline void walk (juce::Component& c, juce::Component& root, const juce::String& path, int depth,
                       bool underSlider = false, bool underViewport = false)
     {
@@ -264,6 +268,15 @@ namespace UiAudit
             std::cout << "{\"fuentes\":[";
             for (int i = 0; i < 64; ++i)
                 std::cout << (i ? "," : "") << padSource (i);
+            std::cout << "]}" << std::endl;
+        }
+
+        if (stepOn != nullptr)
+        {
+            std::cout << "{\"pasos\":[";
+            bool first = true;
+            for (int i = 0; i < 64; ++i)
+                if (stepOn (i)) { std::cout << (first ? "" : ",") << i; first = false; }
             std::cout << "]}" << std::endl;
         }
     }

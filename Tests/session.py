@@ -140,11 +140,41 @@ def main():
     if not chop_ok:
         print ("   fuentes leidas:", fuentes[:SLICES + 2] if fuentes else "ninguna")
 
+    #  ------------------------------------------------------------------
+    #  Y QUE EL PATRON NO SE COPIE SOLO DE UN BANCO A OTRO.
+    #
+    #  Una secuencia escrita en el banco A volvia TAMBIEN en el banco C al
+    #  reabrir el proyecto. No era una copia: el fichero guardaba la mascara de
+    #  pasos en un int de 32 bits con `1 << p`, y con sesenta y cuatro pads
+    #  desplazar mas de 32 se toma modulo 32 - o sea que el pad 32 escribia el
+    #  bit del pad 0. Los pads 0..15 son el banco A y los 32..47 el banco C:
+    #  compartian los mismos dieciseis bits.
+    #
+    #  Se mide con un paso en el pad 0 y otro en el 32 - uno de A y uno de C -
+    #  y se comprueba que al volver estan ESOS DOS y ningun otro. Con el fallo
+    #  puesto, los dos pads salen encendidos en los cuatro sitios.
+    home = os.path.join (TMP, "pat")
+    shutil.rmtree (home, ignore_errors=True)
+    os.makedirs (home, exist_ok=True)
+
+    one (home, {"ZATI_DEMO": "1", "ZATI_STEPS": "0,32"})
+    back = one (home, {})
+    puestos = []
+    for line in back.splitlines():
+        if line.startswith ('{"pasos"'):
+            puestos = json.loads (line)["pasos"]
+
+    pat_ok = sorted (puestos) == [0, 32]
+    print()
+    print ("patron entre bancos: pads con paso %s   %s"
+           % (sorted (puestos) if puestos else "ninguno",
+              "correcto" if pat_ok else "SE COPIA SOLO"))
+
     shutil.rmtree (TMP, ignore_errors=True)
     print()
     print ("las %d corridas devuelven la sesion entera" % RUNS if bad == 0
            else "%d de %d corridas pierden algo" % (bad, RUNS))
-    return 1 if (bad or not chop_ok) else 0
+    return 1 if (bad or not chop_ok or not pat_ok) else 0
 
 
 if __name__ == "__main__":
