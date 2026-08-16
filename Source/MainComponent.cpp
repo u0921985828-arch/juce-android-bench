@@ -4063,7 +4063,19 @@ void MainComponent::resized()
     auto sheetFromBottom = [&full, this] (Sheet& s, int desiredH)
     {
         s.setBounds (getLocalBounds());
-        const int h = juce::jmin (desiredH, (int) (full.getHeight() * 0.78f));
+        //  APAISADO, LA TARJETA PUEDE SER MAS ALTA.
+        //
+        //  El 78% viene de que la ficha no tape el instrumento que estas
+        //  ajustando: en vertical, por debajo de la tarjeta se siguen viendo
+        //  los pads, y eso es lo que hace que la ficha se lea como temporal.
+        //  Girado no queda nada que proteger - la cara ya esta en dos columnas
+        //  y la tarjeta cubre el ancho entero - y en cambio 412 px de alto por
+        //  0.78 son 321, que es de donde salian los controles de altura CERO.
+        //
+        //  Medido en 915x412: con 0.78, la ficha de PASO dejaba un mando de
+        //  393x0 - la REJILLA, la ultima de su columna - y con 0.90 cabe.
+        const float tope = full.getWidth() > full.getHeight() ? 0.90f : 0.78f;
+        const int h = juce::jmin (desiredH, (int) ((float) full.getHeight() * tope));
         const int w = (int) (full.getWidth() * 0.92f);
         auto sheet = juce::Rectangle<int> (0, 0, w, h).withCentre (full.getCentre());
         s.sheetBounds = sheet;
@@ -4562,19 +4574,54 @@ void MainComponent::resized()
         else if (onAudio)
         {
             midiArea = {};
-            audioInfoArea = inner.removeFromTop (158);
-            inner.removeFromTop (Metrics::xs);
 
-            auto chipRow = [&inner] (juce::OwnedArray<juce::TextButton>& btns, int labelW)
+            //  DOS COLUMNAS CUANDO LA TARJETA ES ANCHA Y BAJA.
+            //
+            //  Esta pagina pide 158 px de informacion mas cuatro filas de chips
+            //  - buffer, frecuencia, idioma y carcasa -, o sea unos 350. Con el
+            //  movil girado la tarjeta se queda en el 78% de 412, y despues del
+            //  titulo y las pestanas quedan unos 200: las dos ultimas filas se
+            //  iban al vacio. removeFromTop de un rectangulo agotado no falla,
+            //  devuelve altura CERO, asi que los ocho chips de IDIOMA y CARCASA
+            //  salian de 189x0 - existentes, invisibles e IMPOSIBLES DE PULSAR.
+            //
+            //  Medido en 915x412: 8 controles de altura cero en esta ficha, y el
+            //  selector de idioma entre ellos. Girar el telefono dejaba la app
+            //  sin forma de cambiar de idioma.
+            //
+            //  Apaisado, la tarjeta sobra de ancho -841 px- y falta de alto. Dos
+            //  columnas cambian exactamente eso: la informacion a un lado, los
+            //  cuatro chips al otro, y la altura que hace falta se parte por la
+            //  mitad.
+            const int filas = 4 * (Metrics::hit + Metrics::xs);
+            const bool dosColumnas = inner.getWidth() >= 560
+                                  && inner.getHeight() < 158 + filas;
+
+            juce::Rectangle<int> columnaChips = inner;
+            if (dosColumnas)
             {
-                auto row = inner.removeFromTop (Metrics::hit);
+                auto izda = inner.removeFromLeft (inner.getWidth() / 2 - Metrics::sm);
+                inner.removeFromLeft (Metrics::sm);
+                audioInfoArea = izda.removeFromTop (juce::jmin (158, izda.getHeight()));
+                columnaChips = inner;
+            }
+            else
+            {
+                audioInfoArea = inner.removeFromTop (158);
+                inner.removeFromTop (Metrics::xs);
+                columnaChips = inner;
+            }
+
+            auto chipRow = [&columnaChips] (juce::OwnedArray<juce::TextButton>& btns, int labelW)
+            {
+                auto row = columnaChips.removeFromTop (Metrics::hit);
                 auto r = row;
                 Lang::takeStart (r, labelW);
                 const int n = juce::jmax (1, btns.size());
                 const int w = r.getWidth() / n;
                 for (int i = 0; i < btns.size(); ++i)
                     btns[i]->setBounds ((i < n - 1 ? Lang::takeStart (r, w) : r).reduced (1, 2));
-                inner.removeFromTop (Metrics::xs);
+                columnaChips.removeFromTop (Metrics::xs);
                 return row;
             };
             bufRowArea  = chipRow (bufButtons, 44);
@@ -4661,10 +4708,38 @@ void MainComponent::resized()
 
         //  The name of the effect is painted in the gutter, so the fader gets
         //  the width instead of a label component competing for it.
-        for (int f = 0; f < kNumFx; ++f)
+        //
+        //  Y EN DOS COLUMNAS CUANDO NO CABEN LOS SEIS.
+        //
+        //  Seis filas de 48 son 288 px, y con el telefono girado la tarjeta se
+        //  queda en 321 menos titulo, nombre y las dos filas de pads: los tres
+        //  ultimos envios salian de 751x0. Un fader de altura cero es un fader
+        //  que no existe - medido, tres de seis - y ademas ancho: 751 px de
+        //  ancho para un mando que no se puede tocar, mientras la tarjeta sobra
+        //  de anchura por los dos lados.
+        //
+        //  Tres y tres. Lo que falta de alto lo hay de ancho, que es lo mismo
+        //  que hace la pagina de AUDIO y lo que hace la cara con wideFace.
+        const int filaFx = 48;
+        const bool dosCol = inner.getWidth() >= 560 && inner.getHeight() < kNumFx * filaFx;
+        if (dosCol)
         {
-            auto row = inner.removeFromTop (48);
-            rackSends[f]->setBounds (row.withTrimmedLeft (54).reduced (2, 6));
+            auto izda = inner.removeFromLeft (inner.getWidth() / 2 - Metrics::sm);
+            inner.removeFromLeft (Metrics::sm);
+            for (int f = 0; f < kNumFx; ++f)
+            {
+                auto& col = (f < kNumFx / 2) ? izda : inner;
+                auto row = col.removeFromTop (filaFx);
+                rackSends[f]->setBounds (row.withTrimmedLeft (54).reduced (2, 6));
+            }
+        }
+        else
+        {
+            for (int f = 0; f < kNumFx; ++f)
+            {
+                auto row = inner.removeFromTop (filaFx);
+                rackSends[f]->setBounds (row.withTrimmedLeft (54).reduced (2, 6));
+            }
         }
     }
 
@@ -4981,7 +5056,23 @@ void MainComponent::resized()
             //  The line at the foot that says which step is being edited is
             //  laid out, not squeezed in under the last control: unbudgeted it
             //  was drawn straight across the swing slider's track.
-            wanted = chrome + (wideFace ? (bandH + Metrics::hit + nameH) : stepBands)
+            //  EN DOS COLUMNAS MANDA LA MAS ALTA, no la primera.
+            //
+            //  Apaisado esta pagina se parte en dos: CADENA y NOTA a la
+            //  izquierda, GOLPE, SWING y REJILLA a la derecha. La altura que se
+            //  pedia modelaba la columna corta, asi que la tarjeta salia mas
+            //  baja de lo que la otra necesita y la ULTIMA fila de la derecha
+            //  -REJILLA- se quedaba sin sitio: medido en 915x412, un mando de
+            //  393x0, o sea existente, invisible e imposible de tocar.
+            //
+            //  Dos columnas caben en la altura de la MAYOR. Es la misma cuenta
+            //  que ya estaba, hecha entera.
+            const int colA = nameH + Metrics::hit + Metrics::xs      // CADENA
+                           + bandH;                                   // NOTA DEL PASO
+            const int colB = bandH                                    // GOLPE
+                           + nameH + Metrics::hit                     // SWING
+                           + Metrics::sm + nameH + Metrics::hit;      // REJILLA
+            wanted = chrome + (wideFace ? juce::jmax (colA, colB) : stepBands)
                             + Metrics::sm + kSeqFootH;
         }
 
