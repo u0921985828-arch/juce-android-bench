@@ -1670,6 +1670,28 @@ MainComponent::MainComponent()
     songPasteBtn.onClick  = [this] { pasteSongBar(); };
     songPasteBtn.setEnabled (false);      // hasta que haya algo copiado
 
+    styleButton (songPlayBtn, kKey);
+    litAccent (songPlayBtn);
+    songPlayBtn.setClickingTogglesState (true);
+    songPlayBtn.onClick = [this]
+    {
+        const bool on = songPlayBtn.getToggleState();
+        //  El modo CANCION se enciende con el transporte y no aparte: esta
+        //  tapa esta en la pagina de la cancion, y lo que se espera de ella es
+        //  oir la cancion.
+        if (on && ! engine.isSongMode())
+        {
+            engine.setSongMode (true);
+            songModeBtn.setToggleState (true, juce::dontSendNotification);
+        }
+        engine.setPlaying (on);
+        //  Y la tapa de la cara dice lo mismo, que es el mismo transporte.
+        playButton.setToggleState (on, juce::dontSendNotification);
+        playButton.setButtonText (on ? T ("STOP") : T ("PLAY"));
+        songPlayBtn.setButtonText (on ? T ("STOP") : T ("PLAY"));
+    };
+    songSheet.addAndMakeVisible (songPlayBtn);
+
     styleButton (songLoopBtn, kStepOff);
     songLoopBtn.setColour (juce::TextButton::buttonOnColourId, ZatiColours::green);
     songLoopBtn.setClickingTogglesState (true);
@@ -4852,20 +4874,56 @@ void MainComponent::resized()
                                         &songPasteBtn, &songLoopBtn };
             if (! moduleBarFits (anchoUtil, su, 5)) filasUtil = 2 * Metrics::hit + Metrics::halfGap;
         }
-        auto inner = sheetFromBottom (songSheet, Metrics::md * 2 + Metrics::hit + Metrics::hit + filasModo
-                                                  + filasUtil + Metrics::sm
-                                                  + Metrics::sm * 3
-                                                  + Playlist::kLanes * laneH + Metrics::hit + Metrics::btn);
+        //  Girado, la tarjeta no tiene que ser tan alta como la suma de las
+        //  filas: las filas estan en una columna al lado de la rejilla, asi
+        //  que la altura que se pide es la de la COLUMNA - que es la mayor de
+        //  las dos - y no la de las dos apiladas.
+        const int altoColumna = Metrics::md * 2 + Metrics::hit          // titulo
+                              + Metrics::hit * (wideFace ? 2 : 1) + Metrics::xs   // paleta
+                              + filasModo + filasUtil + Metrics::sm * 3
+                              + Metrics::hit + Metrics::xs + Metrics::btn;        // paginas + pie
+        const int altoRejilla = Metrics::md * 2 + Metrics::hit + Playlist::kLanes * laneH;
+        auto inner = sheetFromBottom (songSheet,
+                                      wideFace ? juce::jmax (altoColumna, altoRejilla)
+                                               : altoColumna + Playlist::kLanes * laneH);
         auto titleRow = inner.removeFromTop (Metrics::hit);
         songCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
 
+        //  APAISADO, LA TARJETA SE PARTE EN DOS.
+        //
+        //  Girado, esta ficha ponia sus tres filas de tapas cruzando los 900
+        //  px de ancho y le dejaba a la LINEA DE TIEMPO -que es para lo unico
+        //  que existe la pagina- unos 80 px de alto para cuatro carriles:
+        //  diecinueve pixeles por carril, la mitad de un dedo. Era la maqueta
+        //  vertical estirada, no una maqueta apaisada.
+        //
+        //  Las tapas se van a una columna de la izquierda, apiladas, y la
+        //  linea de tiempo se queda con el ancho que sobra Y CON TODO EL ALTO.
+        //  Es la misma decision que ya tomo la ficha del secuenciador, y por
+        //  la misma razon: la pantalla tiene la forma que tiene.
+        const int colUtil = wideFace ? juce::jlimit (200, 340, full.getWidth() / 3) : 0;
+        auto columna = wideFace ? Lang::takeStart (inner, colUtil) : juce::Rectangle<int>();
+        if (wideFace) Lang::takeStart (inner, Metrics::gap);
+        auto& panel = wideFace ? columna : inner;
+
         // Palette: P1..P8.
         {
-            auto row = inner.removeFromTop (Metrics::hit);
-            const int w = row.getWidth() / kNumPatterns;
-            for (int i = 0; i < kNumPatterns; ++i)
-                songPatBtns[i]->setBounds ((i < kNumPatterns - 1 ? row.removeFromLeft (w) : row).reduced (1, 0));
-            inner.removeFromTop (Metrics::xs);
+            auto row = panel.removeFromTop (Metrics::hit);
+            //  Girado son OCHO tapas en una columna de 300: a fila unica
+            //  salen de 37 px y el numero no se lee. Dos filas de cuatro.
+            const int porFila = wideFace ? 4 : kNumPatterns;
+            for (int f = 0; f < kNumPatterns / porFila; ++f)
+            {
+                auto fila = (f == 0) ? row : panel.removeFromTop (Metrics::hit);
+                const int w = fila.getWidth() / porFila;
+                for (int i = 0; i < porFila; ++i)
+                {
+                    const int k = f * porFila + i;
+                    songPatBtns[k]->setBounds ((i < porFila - 1 ? fila.removeFromLeft (w) : fila).reduced (1, 0));
+                }
+                if (f + 1 < kNumPatterns / porFila) panel.removeFromTop (Metrics::halfGap);
+            }
+            panel.removeFromTop (Metrics::xs);
         }
         // Brush modes + song mode + DOBLAR.
         //
@@ -4876,18 +4934,18 @@ void MainComponent::resized()
         //  es lo que ya hicieron las cuatro pestanas de AJUSTES.
         {
             juce::TextButton* sb[4] = { &songPadModeBtn, &songClearBtn, &songDoubleBtn, &songModeBtn };
-            if (moduleBarFits (inner.getWidth(), sb, 4))
+            if (moduleBarFits (panel.getWidth(), sb, 4))
             {
-                layoutModuleBar (inner.removeFromTop (Metrics::hit), sb, 0, 4);
+                layoutModuleBar (panel.removeFromTop (Metrics::hit), sb, 0, 4);
             }
             else
             {
-                layoutModuleBar (inner.removeFromTop (Metrics::hit), sb, 0, 2);
-                inner.removeFromTop (Metrics::halfGap);
+                layoutModuleBar (panel.removeFromTop (Metrics::hit), sb, 0, 2);
+                panel.removeFromTop (Metrics::halfGap);
                 juce::TextButton* sc[2] = { &songDoubleBtn, &songModeBtn };
-                layoutModuleBar (inner.removeFromTop (Metrics::hit), sc, 0, 2);
+                layoutModuleBar (panel.removeFromTop (Metrics::hit), sc, 0, 2);
             }
-            inner.removeFromTop (Metrics::sm);
+            panel.removeFromTop (Metrics::sm);
         }
 
         //  LAS HERRAMIENTAS DE ARREGLO, en su propia fila y separadas de las
@@ -4897,27 +4955,33 @@ void MainComponent::resized()
         {
             juce::TextButton* su[5] = { &songInsertBtn, &songRemoveBtn, &songCopyBtn,
                                         &songPasteBtn, &songLoopBtn };
-            if (moduleBarFits (inner.getWidth(), su, 5))
+            if (moduleBarFits (panel.getWidth(), su, 5))
             {
-                layoutModuleBar (inner.removeFromTop (Metrics::hit), su, 0, 5);
+                layoutModuleBar (panel.removeFromTop (Metrics::hit), su, 0, 5);
             }
             else
             {
                 //  Tres y dos, no dos y tres: las tres primeras son las que
                 //  actuan sobre el compas marcado y quedan juntas.
-                layoutModuleBar (inner.removeFromTop (Metrics::hit), su, 0, 3);
-                inner.removeFromTop (Metrics::halfGap);
+                layoutModuleBar (panel.removeFromTop (Metrics::hit), su, 0, 3);
+                panel.removeFromTop (Metrics::halfGap);
                 juce::TextButton* sv[2] = { &songPasteBtn, &songLoopBtn };
-                layoutModuleBar (inner.removeFromTop (Metrics::hit), sv, 0, 2);
+                layoutModuleBar (panel.removeFromTop (Metrics::hit), sv, 0, 2);
             }
-            inner.removeFromTop (Metrics::sm);
+            panel.removeFromTop (Metrics::sm);
         }
 
-        auto bottom = inner.removeFromBottom (Metrics::btn);
-        songLenSlider.setBounds (bottom.reduced (Metrics::halfGap, 6));
-        inner.removeFromBottom (Metrics::xs);
+        //  EL TRANSPORTE y el largo, en la misma fila: PLAY primero porque es
+        //  lo que se toca mas, y el largo con lo que sobre.
+        auto bottom = panel.removeFromBottom (Metrics::btn);
+        {
+            const int pw = juce::jmax (Metrics::hit * 2, bottom.getWidth() / 4);
+            songPlayBtn.setBounds (Lang::takeStart (bottom, pw).reduced (Metrics::halfGap, 6));
+            songLenSlider.setBounds (bottom.reduced (Metrics::halfGap, 6));
+        }
+        panel.removeFromBottom (Metrics::xs);
 
-        auto pageRow = inner.removeFromBottom (Metrics::hit);
+        auto pageRow = panel.removeFromBottom (Metrics::hit);
         {
             const int n = songPageBtns.size();
             const int w = pageRow.getWidth() / juce::jmax (1, n);
@@ -5244,6 +5308,26 @@ void MainComponent::resized()
         //  estando ahi para todo lo que mida geometria.
         for (auto* b : seqBankButtons) { b->setVisible (false); b->setBounds ({}); }
 
+        //  Y LAS TRES DEL PATRON, POR LO MISMO Y CON MAS MOTIVO.
+        //
+        //  Viven en la pagina PASO. Al volver a PASOS nadie las escondia y
+        //  nadie les quitaba el sitio, asi que se quedaban con las
+        //  coordenadas de la ultima vez que se maqueto PASO: dibujadas encima
+        //  de la fila de COMPAS, tapando sus botones y comiendose sus toques.
+        //  Es el mismo fallo que el parrafo de aqui arriba describe para las
+        //  tapas de banco, repetido tres lineas mas abajo.
+        //
+        //  El banco no lo cazo porque abre UNA ficha por arranque: con
+        //  ZATI_OPEN=sec la pagina PASO no se maqueta nunca y las tres siguen
+        //  en 0x0, que no solapa con nada. Hace falta cambiar de pagina dentro
+        //  del mismo proceso, que es lo que hace la persona y lo que ahora
+        //  hace ZATI_PAGES.
+        for (auto* b : { &patLeftBtn, &patRightBtn, &patDoubleBtn })
+        {
+            b->setVisible (false);
+            b->setBounds ({});
+        }
+
         if (onGrid)
         {
             //  In landscape the four controls stand in their own column and the
@@ -5420,6 +5504,13 @@ void MainComponent::resized()
         }
         else
         {
+            //  Las tres del patron vuelven, que PASOS las apaga al salir - y
+            //  las dos de COPIAR/PEGAR tambien, que alli su fila es
+            //  prescindible y puede haberlas dejado apagadas.
+            for (auto* b : { &patLeftBtn, &patRightBtn, &patDoubleBtn,
+                             &copyPatBtn, &pastePatBtn })
+                b->setVisible (true);
+
             //  The foot line first, so no column can lay a control over it.
             seqFootArea = inner.removeFromBottom (kSeqFootH);
             inner.removeFromBottom (Metrics::sm);
@@ -5466,8 +5557,30 @@ void MainComponent::resized()
                 //  Repartidas POR EL TEXTO QUE LLEVAN, con la misma barra que
                 //  usan los modulos: a tercios, ADELANTE se cortaba en ingles
                 //  y en arabe mientras ATRAS dejaba media tapa vacia.
-                juce::TextButton* pb[3] = { &patLeftBtn, &patRightBtn, &patDoubleBtn };
-                layoutModuleBar (colA.removeFromTop (Metrics::hit), pb, 0, 3);
+                //  CINCO, no tres: COPIAR y PEGAR el banco tambien actuan
+                //  sobre el patron entero, y en la pagina de la rejilla su
+                //  fila es prescindible - se cae cuando la celda de paso
+                //  bajaria del suelo -. Una funcion que solo vive en una fila
+                //  prescindible es una funcion que en las pantallas estrechas
+                //  no existe.
+                //
+                //  Y sobre todo: aqui se les da SITIO. Ponerlas visibles en
+                //  esta pagina sin colocarlas las dejaba con las coordenadas
+                //  de PASOS, encima de la fila CADENA - ocho solapes, uno por
+                //  cada tapa de patron, que es el fallo que trajo esta ronda.
+                juce::TextButton* pb[5] = { &patLeftBtn, &patRightBtn, &patDoubleBtn,
+                                            &copyPatBtn, &pastePatBtn };
+                if (moduleBarFits (colA.getWidth(), pb, 5))
+                {
+                    layoutModuleBar (colA.removeFromTop (Metrics::hit), pb, 0, 5);
+                }
+                else
+                {
+                    layoutModuleBar (colA.removeFromTop (Metrics::hit), pb, 0, 3);
+                    colA.removeFromTop (Metrics::halfGap);
+                    juce::TextButton* pc[2] = { &copyPatBtn, &pastePatBtn };
+                    layoutModuleBar (colA.removeFromTop (Metrics::hit), pc, 0, 2);
+                }
                 colA.removeFromTop (Metrics::sm);
             }
 
@@ -7814,6 +7927,13 @@ void MainComponent::refreshSong (bool repintarTarjeta)
 
     songCursor = juce::jlimit (0, juce::jmax (0, bars - 1), songCursor);
     songPasteBtn.setEnabled (songClipLleno);
+    //  El transporte se puede parar desde la cara, desde un gesto o solo, asi
+    //  que la tapa lo LEE en vez de recordarlo.
+    {
+        const bool rodando = engine.isPlaying();
+        songPlayBtn.setToggleState (rodando, juce::dontSendNotification);
+        songPlayBtn.setButtonText (rodando ? T ("STOP") : T ("PLAY"));
+    }
     songLoopBtn.setToggleState (engine.hasSongLoop(), juce::dontSendNotification);
 
     songGrid.setSource (songCells, gridZati, bars, songPage,
@@ -9841,6 +9961,49 @@ void MainComponent::auditArrange()
         std::cout << (ln ? "," : "") << (engine.isSongLaneMuted (ln) ? 1 : 0);
     std::cout << "],\"bucle\":[" << engine.getSongLoopFrom() << ","
               << engine.getSongLoopTo() << "]}" << std::endl;
+}
+
+void MainComponent::auditProject()
+{
+    //  Un paso en el pad 0 de cada banco: 0, 16, 32 y 48. Si la mascara de la
+    //  cancion vuelve a ser de 32 bits, los dos altos se pierden o salen
+    //  clonados de los dos bajos, y esta lista lo dice sin interpretacion.
+    const int marcados[4] = { 0, 16, 32, 48 };
+
+    for (int b = 0; b < kNumPatterns; ++b)
+        for (int st = 0; st < kNumSteps; ++st)
+            for (int p = 0; p < kNumPads; ++p)
+            {
+                pattern[(size_t) b][(size_t) st][(size_t) p] = false;
+                engine.setStep (b, st, p, false);
+            }
+
+    for (int p : marcados) { pattern[0][0][(size_t) p] = true; engine.setStep (0, 0, p, true); }
+    //  Y uno en el paso 5 del banco D, para que un desplazamiento de paso -y
+    //  no solo de pad- tambien se vea.
+    pattern[0][5][48] = true; engine.setStep (0, 5, 48, true);
+
+    saveProject ("BANCO_PRUEBA");
+
+    for (int b = 0; b < kNumPatterns; ++b)
+        for (int st = 0; st < kNumSteps; ++st)
+            for (int p = 0; p < kNumPads; ++p)
+            {
+                pattern[(size_t) b][(size_t) st][(size_t) p] = false;
+                engine.setStep (b, st, p, false);
+            }
+
+    loadProject ("BANCO_PRUEBA");
+
+    std::cout << "{\"proyecto\":1,\"paso0\":[";
+    bool first = true;
+    for (int p = 0; p < kNumPads; ++p)
+        if (pattern[0][0][(size_t) p]) { std::cout << (first ? "" : ",") << p; first = false; }
+    std::cout << "],\"paso5\":[";
+    first = true;
+    for (int p = 0; p < kNumPads; ++p)
+        if (pattern[0][5][(size_t) p]) { std::cout << (first ? "" : ",") << p; first = false; }
+    std::cout << "]}" << std::endl;
 }
 
 void MainComponent::auditOpen (const juce::String& which)

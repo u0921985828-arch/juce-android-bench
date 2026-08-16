@@ -52,6 +52,34 @@ def one (home, extra_env):
     return out.stdout.decode ("utf8", "replace")
 
 
+def proyecto():
+    """GUARDAR UN PROYECTO Y VOLVER A ABRIRLO, que es lo que hace la persona.
+
+    El fallo de los bancos altos clonados -la mascara de pasos era de 32 bits
+    con 64 pads, asi que el pad 32 escribia el bit del pad 0- se arreglo en
+    captureState/applyState, y la prueba que lo cubria pasaba por el
+    autoguardado de SESION, que es otro camino. Si el arreglo se hubiera caido
+    solo en el del proyecto, la prueba habria seguido en verde y la persona
+    habria seguido viendo su banco A clonado en el C. Se mide el camino que se
+    usa: un paso en el pad 0 de cada banco, guardar, vaciar, abrir."""
+    env = dict (os.environ)
+    env.update ({"ZATI_AUDIT": "1", "ZATI_SIZE": "412x915", "ZATI_LANG": "es",
+                 "ZATI_PROJ": "1"})
+    try:
+        out = subprocess.run ([APP], env=env, capture_output=True, text=True,
+                              timeout=300).stdout
+    except subprocess.TimeoutExpired:
+        return None
+    for linea in out.splitlines():
+        linea = linea.strip()
+        if linea.startswith ('{') and '"proyecto"' in linea:
+            try:
+                return json.loads (linea)
+            except Exception:
+                pass
+    return None
+
+
 def main():
     if not os.path.exists (APP):
         sys.exit ("no hay binario: compila primero (cmake --build build)")
@@ -170,11 +198,22 @@ def main():
            % (sorted (puestos) if puestos else "ninguno",
               "correcto" if pat_ok else "SE COPIA SOLO"))
 
+    #  Y EL CAMINO DEL PROYECTO, que es otro. Lo de arriba pasa por el
+    #  autoguardado de sesion; guardar un proyecto y volver a abrirlo es una
+    #  llamada distinta, y el fallo de los bancos clonados vivia justo ahi.
+    pr = proyecto()
+    proj_ok = pr is not None and pr.get ("paso0") == [0, 16, 32, 48] \
+                            and pr.get ("paso5") == [48]
+    print()
+    print ("guardar proyecto y abrirlo: paso 0 en %s, paso 5 en %s   %s"
+           % (pr.get ("paso0") if pr else "?", pr.get ("paso5") if pr else "?",
+              "correcto" if proj_ok else "SE PIERDEN O SE CLONAN LOS BANCOS ALTOS"))
+
     shutil.rmtree (TMP, ignore_errors=True)
     print()
     print ("las %d corridas devuelven la sesion entera" % RUNS if bad == 0
            else "%d de %d corridas pierden algo" % (bad, RUNS))
-    return 1 if (bad or not chop_ok or not pat_ok) else 0
+    return 1 if (bad or not chop_ok or not pat_ok or not proj_ok) else 0
 
 
 if __name__ == "__main__":

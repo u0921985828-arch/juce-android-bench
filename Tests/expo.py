@@ -179,6 +179,39 @@ def judge_lang(rows_es, rows_en, size, sheet):
             out.append(("UNTRANSLATED", f"{size}/{sheet or 'face'}", f'"{t}" identical in es and en', 0))
     return out
 
+def paginas():
+    """CAMBIAR DE PAGINA, que es lo que ningun arranque limpio hace.
+
+    Este banco abre UNA ficha por proceso, y por eso no vio que las tapas de
+    la pagina PASO se quedaban con sus coordenadas al volver a PASOS -
+    dibujadas encima de la fila de COMPAS, comiendose sus toques. Un control
+    que no se maqueta en la pagina que se ve conserva el sitio de la anterior,
+    y eso solo aparece si CAMBIAS de pagina.
+
+    La app recorre la lista entera tres veces, ida y vuelta, y mira las dos
+    reglas que no dependen del idioma despues de cada cambio. Ida y vuelta
+    porque el fallo es de RESIDUO: solo se ve al volver a una pagina que ya se
+    habia dejado."""
+    peor = []
+    for size in SIZES:
+        for lang in LANGS:
+            env = dict (os.environ)
+            env.update ({"ZATI_AUDIT": "1", "ZATI_SIZE": size, "ZATI_LANG": lang,
+                         "ZATI_DEMO": "1", "ZATI_PAGES": "1"})
+            try:
+                out = subprocess.run([BIN], env=env, capture_output=True,
+                                      text=True, timeout=300).stdout
+            except subprocess.TimeoutExpired:
+                peor.append ((size, lang, "no contesto"));  continue
+            for linea in out.splitlines():
+                linea = linea.strip()
+                if linea.startswith ('{') and '"paginas"' in linea:
+                    d = json.loads (linea)
+                    if d.get ("solapes", 0) or d.get ("fuera", 0):
+                        peor.append ((size, lang, d.get ("culpable", "?")))
+    return peor
+
+
 def main():
     if not os.path.exists(BIN):
         sys.exit("no hay binario: compila primero (cmake --build build)")
@@ -213,5 +246,16 @@ def main():
     for kind, tag, msg, sev in allf: grouped[(kind, msg)].append(tag)
     for (kind, msg), tags in sorted(grouped.items(), key=lambda kv: (kv[0][0], -len(kv[1]))):
         print(f"{kind:9} x{len(tags):<3} {msg}   [{tags[0]}{' +'+str(len(tags)-1) if len(tags)>1 else ''}]")
+
+    #  Y el residuo al cambiar de pagina, que ninguna de las 476 corridas de
+    #  arriba puede ver porque cada una abre una ficha y se va.
+    resto = paginas()
+    print()
+    if resto:
+        print("RESIDUO AL CAMBIAR DE PAGINA:")
+        for size, lang, quien in resto:
+            print(f"  {size}/{lang}  {quien}")
+    else:
+        print("cambiar de pagina no deja nada colocado donde no toca")
 
 main()

@@ -471,6 +471,13 @@ public:
     //  moverse - que es exactamente como se perdio la relacion de un troceado
     //  al guardar y volver.
     void auditArrange();
+    //  GUARDAR UN PROYECTO Y VOLVER A ABRIRLO, que es lo que hace la persona
+    //  y NO lo que medía la prueba de sesion. El fallo de los bancos altos
+    //  clonados se arreglo en captureState/applyState y la prueba que lo
+    //  cubria pasaba por el autoguardado de sesion, que es otro camino: si
+    //  el arreglo se hubiera caido solo en el del proyecto, la prueba habria
+    //  seguido en verde. Se mide el camino que se usa.
+    void auditProject();
 
 private:
     void autosave();
@@ -798,6 +805,14 @@ private:
     juce::TextButton songCopyBtn    { "COPIAR" };
     juce::TextButton songPasteBtn   { "PEGAR" };
     juce::TextButton songLoopBtn    { "LOOP" };
+    //  EL TRANSPORTE, DENTRO DE LA FICHA.
+    //
+    //  Montar un arreglo es poner un bloque y OIRLO, y la tapa de PLAY se
+    //  queda debajo del velo: habia que cerrar la ficha, tocar PLAY, volver a
+    //  abrirla y buscar por donde ibas. Esta enciende ademas el modo CANCION,
+    //  porque darle a play en la pagina de la cancion y que suene el patron
+    //  suelto es la respuesta a una pregunta que nadie hizo.
+    juce::TextButton songPlayBtn { "PLAY" };
     juce::TextButton songCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
     juce::Slider     songLenSlider;
     juce::OwnedArray<juce::TextButton> songPageBtns;

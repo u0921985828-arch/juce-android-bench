@@ -306,6 +306,66 @@ public:
                     //  aqui deja un rastro de marcas por la rejilla, que es el
                     //  tipo de fallo que solo se ve en un video.
                     //  LAS SEIS OPERACIONES DE ARREGLO. Ver auditArrange.
+                    //  TODAS LAS PAGINAS, EN EL MISMO PROCESO.
+                    //
+                    //  El banco abre UNA ficha por arranque, y por eso no vio
+                    //  que las tres tapas de la pagina PASO se quedaban con
+                    //  sus coordenadas al volver a PASOS - dibujadas encima de
+                    //  la fila de COMPAS. Un control que no se maqueta en la
+                    //  pagina que se ve conserva el sitio de la anterior, y eso
+                    //  solo aparece si CAMBIAS de pagina, que es lo que hace
+                    //  una persona y lo que ningun arranque limpio hace.
+                    //
+                    //  Se recorre la lista entera, ida y vuelta, y despues de
+                    //  CADA cambio se miran las dos reglas que no dependen del
+                    //  idioma. Ida y vuelta porque el fallo es de residuo: solo
+                    //  se ve al VOLVER a una pagina que ya se habia dejado.
+                    else if (UiAudit::env ("ZATI_PAGES").isNotEmpty())
+                    {
+                        static const char* kFichas[] =
+                        { "pads", "pad2", "pad3", "sec", "paso", "song", "mix",
+                          "set", "proj", "midi", "gest", "rack", "chop", "manual",
+                          "browse", "xy" };
+                        const int n2 = juce::numElementsInArray (kFichas);
+
+                        int peorSolapes = 0, peorFuera = 0, mirados = 0;
+                        juce::String culpable;
+
+                        //  Ida, vuelta, y otra vez ida: el residuo de la
+                        //  primera pasada solo se nota en la segunda.
+                        for (int vuelta = 0; vuelta < 3; ++vuelta)
+                            for (int k = 0; k < n2; ++k)
+                            {
+                                const int i = (vuelta % 2 == 0) ? k : (n2 - 1 - k);
+                                c2->auditOpen (kFichas[i]);
+                                c2->resized();
+
+                                const auto h = UiAudit::check (*c2);
+                                ++mirados;
+                                if (h.solapes > 0 || h.fuera > 0)
+                                    std::cout << "{\"ficha\":\"" << kFichas[i]
+                                              << "\",\"vuelta\":" << (vuelta + 1)
+                                              << ",\"solapes\":" << h.solapes
+                                              << ",\"fuera\":" << h.fuera
+                                              << ",\"quien\":\"" << UiAudit::esc (h.quien)
+                                              << "\"}" << std::endl;
+                                if (h.solapes > peorSolapes || h.fuera > peorFuera)
+                                    culpable = juce::String (kFichas[i]) + " (vuelta "
+                                             + juce::String (vuelta + 1) + "): " + h.quien;
+                                peorSolapes = juce::jmax (peorSolapes, h.solapes);
+                                peorFuera   = juce::jmax (peorFuera,   h.fuera);
+                            }
+
+                        std::cout << "{\"paginas\":" << mirados
+                                  << ",\"solapes\":" << peorSolapes
+                                  << ",\"fuera\":" << peorFuera
+                                  << ",\"culpable\":\"" << UiAudit::esc (culpable) << "\"}"
+                                  << std::endl;
+                    }
+                    else if (UiAudit::env ("ZATI_PROJ").isNotEmpty())
+                    {
+                        c2->auditProject();
+                    }
                     else if (UiAudit::env ("ZATI_ARR").isNotEmpty())
                     {
                         c2->auditArrange();

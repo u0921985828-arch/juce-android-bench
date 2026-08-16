@@ -227,7 +227,10 @@ namespace UiAudit
     //  hermanos que se pisan y controles que se salen de la ventana. Las de
     //  texto necesitan comparar dos idiomas en la misma ruta, que es cosa del
     //  script.
-    struct Hallazgos { int solapes = 0, fuera = 0, mirados = 0; };
+    //  El CULPABLE, no solo la cuenta. Un "8 solapes" manda a leer el
+    //  maquetado entero; "ADELANTE sobre 2" apunta a la linea. Se guarda el
+    //  primero, que en la practica es el que arrastra a los demas.
+    struct Hallazgos { int solapes = 0, fuera = 0, mirados = 0; juce::String quien; };
 
     inline void recoge (juce::Component& c, juce::Component& root,
                         juce::Array<juce::Rectangle<int>>& hermanos, Hallazgos& h,
@@ -257,7 +260,17 @@ namespace UiAudit
             for (const auto& otro : hermanos)
             {
                 const auto in = otro.getIntersection (abs);
-                if (in.getWidth() > 1 && in.getHeight() > 1) ++h.solapes;
+                if (in.getWidth() > 1 && in.getHeight() > 1)
+                {
+                    ++h.solapes;
+                    if (h.quien.isEmpty())
+                    {
+                        const auto cap = captionOf (c);
+                        h.quien = (cap.text.isNotEmpty() ? cap.text : juce::String (kind))
+                                + " @" + juce::String (abs.getX()) + "," + juce::String (abs.getY())
+                                + " " + juce::String (abs.getWidth()) + "x" + juce::String (abs.getHeight());
+                    }
+                }
             }
             hermanos.add (abs);
         }
