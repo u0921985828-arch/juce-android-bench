@@ -109,7 +109,7 @@ public:
                                     || std::memcmp (sombraNotas.data(), noteOf + off,
                                                     nCel * sizeof (signed char)) == 0);
 
-        const auto antes = marcaDe (prevPlaying, prevPhase);
+        const auto antes = marcaDe (prevPlaying);
 
         if (data != nullptr)   std::memcpy (sombraCeldas.data(), data + off, nCel * sizeof (bool));
         if (noteOf != nullptr) std::memcpy (sombraNotas.data(), noteOf + off, nCel * sizeof (signed char));
@@ -123,7 +123,7 @@ public:
 
         if (soloCabezal && ! primera)
         {
-            auto zona = antes.getUnion (marcaDe (playing, phase));
+            auto zona = antes.getUnion (marcaDe (playing));
             if (! zona.isEmpty()) { repaint (zona); return; }
         }
 
@@ -135,7 +135,12 @@ public:
     //  el suavizado de los bordes. Vacio cuando no hay nada sonando o el paso
     //  cae fuera del compas que se ve, que es justo lo que hace falta para que
     //  la union borre la marca anterior y no pinte ninguna nueva.
-    juce::Rectangle<int> marcaDe (int step, float ph) const
+    //  La FASE no entra: el rectangulo es la columna entera del paso mas seis
+    //  pixeles a cada lado, que es donde puede caer la marca para cualquier
+    //  fase de 0 a 1 -incluida la de 1, que asoma media marca en la columna
+    //  siguiente-. Una zona por fase seria mas ajustada y volveria a mover el
+    //  borde en cada tick, que es justo lo que se venia a quitar.
+    juce::Rectangle<int> marcaDe (int step) const
     {
         const auto r = getLocalBounds();
         if (r.isEmpty() || step < 0) return {};

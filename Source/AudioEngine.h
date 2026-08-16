@@ -340,6 +340,43 @@ public:
     }
     void setSongLength (int bars) noexcept { songBars.store (juce::jlimit (1, kSongBars, bars), std::memory_order_relaxed); }
     int  getSongLength() const noexcept    { return songBars.load (std::memory_order_relaxed); }
+
+    //  SILENCIAR UN CARRIL. Cuatro carriles suenan a la vez y hasta ahora la
+    //  unica forma de oir uno solo era borrar los otros tres y volver a
+    //  escribirlos - o sea, no habia forma. Se lee en el arranque de cada
+    //  compas, que es donde el carril decide que patron adopta: silenciar en
+    //  mitad de un compas cortaria un patron por la mitad, y lo que se
+    //  silencia es una PISTA, no un sonido.
+    void setSongLaneMute (int lane, bool m) noexcept
+    {
+        if (lane < 0 || lane >= kSongLanes) return;
+        songLaneMute[(size_t) lane].store (m, std::memory_order_relaxed);
+    }
+    bool isSongLaneMuted (int lane) const noexcept
+    {
+        return lane >= 0 && lane < kSongLanes
+            && songLaneMute[(size_t) lane].load (std::memory_order_relaxed);
+    }
+
+    //  EL BUCLE DE UN TRAMO. Trabajar en el estribillo de una cancion de
+    //  treinta y dos compases queria decir esperar a que diera la vuelta
+    //  entera; con el bucle puesto, el transporte da la vuelta al tramo que
+    //  estas mirando. Dos compases, no dos pasos: un bucle que empieza a
+    //  mitad de compas no es un tramo de una cancion.
+    //
+    //  De cero a cero significa APAGADO, para que el estado por defecto de un
+    //  proyecto viejo sea el de siempre.
+    void setSongLoop (int fromBar, int toBar) noexcept
+    {
+        songLoopA.store (juce::jlimit (0, kSongBars - 1, fromBar), std::memory_order_relaxed);
+        songLoopB.store (juce::jlimit (0, kSongBars,     toBar),   std::memory_order_relaxed);
+    }
+    void clearSongLoop() noexcept { songLoopA.store (0, std::memory_order_relaxed);
+                                    songLoopB.store (0, std::memory_order_relaxed); }
+    int  getSongLoopFrom() const noexcept { return songLoopA.load (std::memory_order_relaxed); }
+    int  getSongLoopTo()   const noexcept { return songLoopB.load (std::memory_order_relaxed); }
+    bool hasSongLoop() const noexcept
+    { return songLoopB.load (std::memory_order_relaxed) > songLoopA.load (std::memory_order_relaxed); }
     int  getSongBar() const noexcept       { return songBar.load (std::memory_order_relaxed); }
 
     // --- Piano roll: per-step semitone offset from the pad's own pitch ---
@@ -829,6 +866,10 @@ private:
     std::atomic<bool> songMode { false };
     std::array<std::array<std::atomic<int>, kSongBars>, kSongLanes> songCell {};
     std::atomic<int> songBars { 8 };      // how many bars the song is long
+    std::array<std::atomic<bool>, kSongLanes> songLaneMute {};   // ver setSongLaneMute
+    //  El tramo en bucle, en COMPASES y medio abierto: [A, B). A >= B es
+    //  apagado, que es lo que vale un proyecto que no lo conocia.
+    std::atomic<int> songLoopA { 0 }, songLoopB { 0 };
     std::atomic<int> songBar  { -1 };     // live playhead bar, for the UI
     // Audio-thread only: what each lane is currently running.
     int  lanePattern[kSongLanes] { -1, -1, -1, -1 };

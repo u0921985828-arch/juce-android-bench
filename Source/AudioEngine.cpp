@@ -734,7 +734,30 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             {
                 const int bars = juce::jlimit (1, kSongBars, songBars.load (std::memory_order_relaxed));
                 const int total = bars * kBarSteps;
+
+                //  EL BUCLE DE UN TRAMO. Ver setSongLoop. Se aplica sobre el
+                //  paso YA avanzado y no sobre el compas: saltar al principio
+                //  del tramo en cuanto el compas se sale dejaria sonar el
+                //  primer paso del compas siguiente antes de volver, que es un
+                //  golpe de mas en cada vuelta - justo el que se oye.
                 songStep = (songStep + 1) % total;
+
+                const int la = songLoopA.load (std::memory_order_relaxed);
+                const int lb = songLoopB.load (std::memory_order_relaxed);
+                if (lb > la)
+                {
+                    const int desde = juce::jmin (la, bars - 1) * kBarSteps;
+                    const int hasta = juce::jmin (lb, bars)     * kBarSteps;
+                    if (hasta > desde && (songStep < desde || songStep >= hasta))
+                    {
+                        songStep = desde;
+                        //  Y los carriles sueltan lo que arrastraban: un patron
+                        //  de cuatro compases que empezo antes del tramo se
+                        //  quedaria sonando desde su compas tres para siempre.
+                        for (int ln = 0; ln < kSongLanes; ++ln) lanePattern[ln] = -1;
+                    }
+                }
+
                 const int bar = songStep / kBarSteps;
                 songBar.store (bar, std::memory_order_relaxed);
 
@@ -743,6 +766,18 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 {
                     for (int ln = 0; ln < kSongLanes; ++ln)
                     {
+                        //  Un carril silenciado ni adopta patron ni dispara su
+                        //  disparo suelto. Se mira aqui, al empezar el compas,
+                        //  y no en el bucle de abajo, para que silenciar deje
+                        //  tambien de CONTAR el patron: si no, al quitar el
+                        //  silencio el carril seguiria a mitad de un patron que
+                        //  nadie ha oido empezar.
+                        if (songLaneMute[(size_t) ln].load (std::memory_order_relaxed))
+                        {
+                            lanePattern[ln] = -1;
+                            continue;
+                        }
+
                         const int cell = songCell[(size_t) ln][(size_t) bar].load (std::memory_order_relaxed);
                         if (cell == kContinued)
                             continue;                         // a pattern from an earlier bar still owns this lane
@@ -1799,6 +1834,13 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     songBars.store (s.songBars.load (std::memory_order_relaxed), std::memory_order_relaxed);
     for (size_t ln = 0; ln < songCell.size(); ++ln)
         copyArr (songCell[ln], s.songCell[ln]);
+    //  Y el silenciado de carriles y el tramo en bucle, que son estado de la
+    //  cancion igual que las celdas: sin esto, exportar una mezcla que se
+    //  monta con un motor aparte sonaria con los cuatro carriles y la cancion
+    //  entera, que no es lo que la persona esta oyendo.
+    copyArr (songLaneMute, s.songLaneMute);
+    songLoopA.store (s.songLoopA.load (std::memory_order_relaxed), std::memory_order_relaxed);
+    songLoopB.store (s.songLoopB.load (std::memory_order_relaxed), std::memory_order_relaxed);
 
     auto copyOne = [] (auto& dst, const auto& src)
     {

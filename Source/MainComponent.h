@@ -134,6 +134,29 @@ private:
     enum SeqPage { seqPageGrid = 0, seqPageStep };
     int seqPage = seqPageGrid;
     juce::TextButton seqGridBtn { "PASOS" }, seqStepBtn { "PASO" };
+    //  LAS TRES HERRAMIENTAS DEL PATRON.
+    //
+    //  Viven en la pagina PASO y no en PASOS por una razon medida: la pagina
+    //  de la rejilla ya llega al suelo de 12 px por carril en las dos
+    //  pantallas mas estrechas, y una fila mas de 66 px sale entera de la
+    //  rejilla - lo unico para lo que existe la ficha. En PASO ya viven la
+    //  CADENA y el SWING, que tampoco son del paso sino del patron, asi que
+    //  la fila cae donde ya estaban sus iguales.
+    //
+    //  DESPLAZAR mueve el patron entero un paso, con la vuelta puesta: es como
+    //  se arregla un groove que entra tarde sin volver a escribirlo. DOBLAR
+    //  copia el patron detras de si mismo y duplica el largo, que es lo que
+    //  falta para pasar de 16 a 32 pasos sin dejar la segunda mitad muda.
+    //  Con PALABRAS y no con flechas. Dos motivos medidos: la fuente mono de
+    //  las tapas no trae los triangulos y salian como una 'a' con sombrero
+    //  seguida de dos huecos, y una flecha a la izquierda en arabe -que se
+    //  lee de derecha a izquierda- apunta a lo que viene DESPUES. Un simbolo
+    //  que cambia de significado con el idioma no es un simbolo.
+    juce::TextButton patLeftBtn  { "ATRAS" };
+    juce::TextButton patRightBtn { "ADELANTE" };
+    juce::TextButton patDoubleBtn { "DOBLAR" };
+    void rotatePattern (int by);
+    void doublePattern();
     //  LAS CUATRO TAPAS DE BANCO, OTRA VEZ, DENTRO DEL SECUENCIADOR.
     //
     //  La rejilla de pasos ensena SIEMPRE los dieciseis del banco en curso
@@ -441,6 +464,13 @@ public:
     //  en las coordenadas donde se cree que esta PLAY, que es la clase de
     //  prueba que pasa porque ha fallado el tiro.
     void auditPlay (bool on);
+    //  LAS HERRAMIENTAS DE ARREGLO, medidas. Ver auditArrange: monta una
+    //  cancion y un patron conocidos, ejecuta las seis operaciones y dice lo
+    //  que quedo. Sin esto, "insertar un compas" es una tapa que se pulsa y
+    //  algo se mueve, y nadie sabe si lo que se movio es lo que tenia que
+    //  moverse - que es exactamente como se perdio la relacion de un troceado
+    //  al guardar y volver.
+    void auditArrange();
 
 private:
     void autosave();
@@ -762,6 +792,12 @@ private:
     //  cuatro es tocar treinta y dos celdas una por una, que es la razon por la
     //  que una pagina de arreglo se abandona.
     juce::TextButton songDoubleBtn  { "DOBLAR" };
+    //  Las cinco herramientas de arreglo. Ver songCursor.
+    juce::TextButton songInsertBtn  { "INSERTAR" };
+    juce::TextButton songRemoveBtn  { "QUITAR" };
+    juce::TextButton songCopyBtn    { "COPIAR" };
+    juce::TextButton songPasteBtn   { "PEGAR" };
+    juce::TextButton songLoopBtn    { "LOOP" };
     juce::TextButton songCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
     juce::Slider     songLenSlider;
     juce::OwnedArray<juce::TextButton> songPageBtns;
@@ -775,6 +811,28 @@ private:
     //  repintar y pedirlo costaba el fotograma entero, velo incluido.
     void refreshSong (bool repintarTarjeta = true);
     void doubleSong();
+
+    //  LAS HERRAMIENTAS DE ARREGLO.
+    //
+    //  Con la paleta y la rejilla sola, una pagina de cancion sirve para
+    //  escribir y para borrar, y eso no es arreglar: arreglar es meter un
+    //  compas donde falta, quitar el que sobra y repetir el trozo que
+    //  funciona. Sin ellas, meter un compas en medio de treinta y dos quiere
+    //  decir volver a colocar a mano los treinta que van detras, que es por
+    //  lo que una pagina de arreglo se abandona.
+    //
+    //  Las cuatro actuan sobre EL CURSOR - el ultimo compas que tocaste - y
+    //  sobre los cuatro carriles a la vez, porque un compas de una cancion es
+    //  una columna y no una casilla.
+    int songCursor = 0;
+    int songClip[Playlist::kLanes] {};   // el compas copiado, un carril por hueco
+    bool songClipLleno = false;
+    void insertSongBar();
+    void removeSongBar();
+    void copySongBar();
+    void pasteSongBar();
+    void toggleSongLoop();
+    void toggleSongLane (int lane);
     juce::TextButton setButton      { "SET" };   // skins + proyectos (spec: SET)
     juce::TextButton seqCloseButton   { juce::CharPointer_UTF8 ("\xc3\x97") },
                      padCloseButton   { juce::CharPointer_UTF8 ("\xc3\x97") },

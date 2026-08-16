@@ -33,3 +33,7 @@ pj_*.log
 .agents/
 .claude/
 skills-lock.json
+
+# El .pyc que deja importar un banco desde otro
+__pycache__/
+*.pyc

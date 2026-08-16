@@ -305,6 +305,11 @@ public:
                     //  dos veces entera y se comparan los pixeles. Un fallo
                     //  aqui deja un rastro de marcas por la rejilla, que es el
                     //  tipo de fallo que solo se ve en un video.
+                    //  LAS SEIS OPERACIONES DE ARREGLO. Ver auditArrange.
+                    else if (UiAudit::env ("ZATI_ARR").isNotEmpty())
+                    {
+                        c2->auditArrange();
+                    }
                     else if (UiAudit::env ("ZATI_HEAD").isNotEmpty())
                     {
                         StepGrid rejilla;
@@ -343,10 +348,10 @@ public:
 
                             const int   paso2 = juce::jmin (15, (k + 1) / 20);
                             const float fase2 = (float) ((k + 1) % 20) / 20.0f;
-                            const auto  zona  = rejilla.marcaDe (paso, fase);
+                            const auto  zona  = rejilla.marcaDe (paso);
 
                             rejilla.setSource (celdas, zatis, cargados, notas, 16, 0, paso2, 3, fase2, 0);
-                            const auto zona2 = rejilla.marcaDe (paso2, fase2);
+                            const auto zona2 = rejilla.marcaDe (paso2);
                             pinta (b);
 
                             const auto union_ = zona.getUnion (zona2);

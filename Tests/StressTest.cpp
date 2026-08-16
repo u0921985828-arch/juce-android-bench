@@ -1231,5 +1231,100 @@ int main()
                      differ == 0 ? "si" : "NO", ok ? "OK" : "FALLA");
     }
 
+    //  EL CARRIL SILENCIADO Y EL TRAMO EN BUCLE.
+    //
+    //  Las dos herramientas de la ficha CANCION que no se pueden juzgar
+    //  mirando la pantalla, porque lo que cambian es lo que SUENA. Y las dos
+    //  se miden igual: se anota que pads dispara el transporte, que es lo
+    //  unico que distingue "el carril esta apagado" de "el carril esta
+    //  apagado en el dibujo".
+    {
+        AudioEngine e; e.prepareToPlay (48000.0, 256); e.setPolyphony (32, 4);
+        for (int p = 0; p < 4; ++p)
+        {
+            e.setPadGain (p, 0.8f);
+            e.publishSample (p, makeSample (48000.0, 0.05, 220.0f * (float) (p + 1)));
+        }
+        juce::AudioBuffer<float> b (2, 256);
+        runBlocks (e, b, 256, 4);
+
+        //  Cuatro patrones, uno por carril: el patron n dispara el pad n en su
+        //  paso 0. Asi el pad que suena DICE que carril lo mando.
+        for (int bank = 0; bank < 4; ++bank)
+        {
+            e.clearPattern (bank);
+            e.setPatternLength (bank, 16);
+            e.setStep (bank, 0, bank, true);
+        }
+        for (int ln = 0; ln < 4; ++ln)
+            for (int bar = 0; bar < 4; ++bar)
+                e.setSongCell (ln, bar, ln + 1);
+
+        e.setSongLength (4);
+        e.setSongMode (true);
+        e.setBpm (240.0);          // deprisa, para que cuatro compases quepan
+
+        //  Cuantos bloques dura un compas: 16 pasos de semicorchea a 240 BPM.
+        const double stepSec = (60.0 / 240.0) * 0.25;
+        const int blocksPerBar = (int) (16.0 * stepSec * 48000.0 / 256.0) + 1;
+
+        auto corre = [&] (int bars) noexcept
+        {
+            std::uint64_t visto = 0;
+            e.setPlaying (true);
+            for (int i = 0; i < blocksPerBar * bars; ++i)
+            {
+                e.renderNextBlock (b, 0, 256);
+                visto |= e.fetchTriggered();
+            }
+            e.setPlaying (false);
+            e.renderNextBlock (b, 0, 256);
+            e.fetchTriggered();
+            return visto;
+        };
+
+        const auto todos = corre (5);
+        e.setSongLaneMute (2, true);
+        const auto conMudo = corre (5);
+        e.setSongLaneMute (2, false);
+
+        const bool mudoOk = (todos & 0xFu) == 0xFu && (conMudo & (1u << 2)) == 0
+                         && (conMudo & 0xBu) == 0xBu;
+        std::printf ("%-34s suenan %X   con el carril 3 mudo %X   %s\n",
+                     "carril de cancion silenciado", (unsigned) (todos & 0xFu),
+                     (unsigned) (conMudo & 0xFu), mudoOk ? "OK" : "FALLA");
+
+        //  EL BUCLE. Con [0,2) puesto, los carriles 3 y 4 -que solo tienen
+        //  bloque en sus compases- siguen sonando porque su bloque esta en
+        //  todos los compases; lo que hay que mirar es el COMPAS que reporta
+        //  el motor, que nunca puede pasar de 1.
+        e.setSongLoop (0, 2);
+        int peorCompas = -1;
+        e.setPlaying (true);
+        for (int i = 0; i < blocksPerBar * 8; ++i)
+        {
+            e.renderNextBlock (b, 0, 256);
+            peorCompas = juce::jmax (peorCompas, e.getSongBar());
+        }
+        e.setPlaying (false);
+        e.renderNextBlock (b, 0, 256);
+
+        //  Y sin bucle tiene que llegar al ultimo, o la prueba de arriba
+        //  pasaria igual con un transporte que no avanza.
+        e.clearSongLoop();
+        int sinBucle = -1;
+        e.setPlaying (true);
+        for (int i = 0; i < blocksPerBar * 8; ++i)
+        {
+            e.renderNextBlock (b, 0, 256);
+            sinBucle = juce::jmax (sinBucle, e.getSongBar());
+        }
+        e.setPlaying (false);
+
+        const bool bucleOk = peorCompas == 1 && sinBucle == 3;
+        std::printf ("%-34s con bucle [0,2) llega al %d   sin bucle al %d   %s\n",
+                     "bucle de un tramo", peorCompas, sinBucle, bucleOk ? "OK" : "FALLA");
+    }
+
     return 0;
 }
