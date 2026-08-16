@@ -312,7 +312,9 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01)
                    padAttack[(size_t) slot].load (std::memory_order_relaxed),
                    padRelease[(size_t) slot].load (std::memory_order_relaxed),
                    padKeepLength[(size_t) slot].load (std::memory_order_relaxed),
-                   vel);
+                   vel,
+                   padFadeIn[(size_t) slot].load (std::memory_order_relaxed),
+                   padFadeOut[(size_t) slot].load (std::memory_order_relaxed));
 }
 
 void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
@@ -1747,6 +1749,8 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     //  Y el filtro CON SU MASCARA, por lo mismo que los envios: el motor del
     //  rebote no pasa por setPadCutoff, se le copia el estado entero, y sin la
     //  mascara exportaria la cancion con los 64 pads sin filtrar.
+    copyArr (padFadeIn,  s.padFadeIn);
+    copyArr (padFadeOut, s.padFadeOut);
     copyArr (padCutoff,  s.padCutoff);
     copyArr (padReso,    s.padReso);
     padFiltMask.store (s.padFiltMask.load (std::memory_order_relaxed), std::memory_order_relaxed);

@@ -1079,6 +1079,10 @@ private:
     //  El filtro del pad. Ver AudioEngine::setPadCutoff: no lleva interruptor
     //  porque el corte arriba del todo ya es "sin filtro".
     juce::Slider cutSlider, resoSlider;
+    //  El fundido de los bordes del recorte. Va en RECORTE y no en SONIDO
+    //  porque es de la muestra y no del pad: lo que suaviza es el sitio por el
+    //  que se corto. Ver AudioEngine::setPadFadeIn.
+    juce::Slider fadeInSlider, fadeOutSlider;
     //  What a step DOES, not just which pads it fires: how hard, how many
     //  times, and how far off the grid the odd ones sit.
     juce::Slider patternSlider, noteSlider, lengthSlider, velSlider, rollSlider, swingSlider;
@@ -1120,6 +1124,8 @@ private:
     std::array<float, kNumPads> padRelease {};    // ms
     std::array<float, kNumPads> padCut {};        // Hz, kFiltOpenHz = abierto
     std::array<float, kNumPads> padReso {};       // 0..1
+    std::array<float, kNumPads> padFadeIn {};     // ms
+    std::array<float, kNumPads> padFadeOut {};    // ms
     std::array<SampleBuffer::Ptr, kNumPads> uiSample;
     std::array<juce::String, kNumPads> padName {};
     std::array<int, kNumPads> padZati {};       // fragment colour per pad (cut order)

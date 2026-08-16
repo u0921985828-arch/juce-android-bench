@@ -154,6 +154,18 @@ public:
     { return (slot >= 0 && slot < kNumPads) ? padReso[(size_t) slot].load (std::memory_order_relaxed) : 0.0f; }
 
     static constexpr float kFiltOpenHz = 20000.0f;   // corte arriba del todo = sin filtro
+
+    //  EL FUNDIDO DE LOS BORDES DEL RECORTE. Ver Voice::fadeInSamp.
+    //
+    //  No es el ataque del pad: ese cuenta desde que se golpea y suena una vez.
+    //  Este cuenta desde el borde de la ventana, asi que en un bucle suena en
+    //  cada vuelta y en un troceado suaviza el sitio por el que se corto.
+    void setPadFadeIn  (int slot, float ms) noexcept { store (padFadeIn,  slot, juce::jlimit (0.0f, 500.0f, ms)); }
+    void setPadFadeOut (int slot, float ms) noexcept { store (padFadeOut, slot, juce::jlimit (0.0f, 500.0f, ms)); }
+    float getPadFadeIn  (int slot) const noexcept
+    { return (slot >= 0 && slot < kNumPads) ? padFadeIn[(size_t) slot].load (std::memory_order_relaxed) : 0.0f; }
+    float getPadFadeOut (int slot) const noexcept
+    { return (slot >= 0 && slot < kNumPads) ? padFadeOut[(size_t) slot].load (std::memory_order_relaxed) : 0.0f; }
     //  Mute and solo fold into the SAME gain the voices already follow at
     //  control rate, so they take hold on notes that are already sounding —
     //  a mute you have to wait out is not a mute.
@@ -724,6 +736,8 @@ private:
     //  para que el reparto de cada bloque no pregunte 64 veces por dos floats
     //  que casi siempre significan "no" - y se recalcula en el hilo de
     //  mensajes, que es el unico que mueve los dos mandos.
+    std::array<std::atomic<float>, kNumPads> padFadeIn {};   // ms, borde de entrada del recorte
+    std::array<std::atomic<float>, kNumPads> padFadeOut {};  // ms, borde de salida
     std::array<std::atomic<float>, kNumPads> padCutoff {};   // Hz
     std::array<std::atomic<float>, kNumPads> padReso {};     // 0..1
     std::atomic<std::uint64_t> padFiltMask { 0 };

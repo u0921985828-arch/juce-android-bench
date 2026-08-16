@@ -70,6 +70,22 @@ struct Voice
     int    winStart  = 1;      // playback window [winStart, winEnd) in samples
     int    winEnd    = 2;
 
+    //  EL FUNDIDO DE LOS BORDES DEL RECORTE, que no es la envolvente del pad.
+    //
+    //  ATAQUE y CAIDA son de la NOTA: cuentan desde que se golpea y desde que
+    //  se suelta. Esto es del RECORTE: cuenta desde el borde de la ventana,
+    //  este donde este dentro de la muestra. La diferencia se ve en un bucle,
+    //  donde el ataque suena una vez y esto suena en cada vuelta, y en un
+    //  troceado, donde lo que hay que suavizar es el sitio por el que se
+    //  corto y no el momento en que se toco.
+    //
+    //  En MUESTRAS y no en fraccion del recorte: el chasquido de un corte dura
+    //  lo que dura, y no mas porque el trozo sea largo. Cinco milisegundos
+    //  quitan un corte en medio de un grave; en fraccion, esos mismos cinco
+    //  milisegundos serian el 1% de un trozo y el 50% de otro.
+    int    fadeInSamp  = 0;
+    int    fadeOutSamp = 0;
+
     float  gain      = 0.0f;
     float  target    = 0.0f;
     float  stepUp    = 0.0f;
@@ -88,7 +104,8 @@ struct Voice
                 double fSrc, double fSys,
                 int startSamp, int endSamp, bool loopOn, bool rev, int srcLen,
                 float pan = 0.0f, float attackMs = 2.0f, float releaseMs = 3.0f,
-                bool keepLength = false, float vel = 1.0f) noexcept
+                bool keepLength = false, float vel = 1.0f,
+                float fadeInMs = 0.0f, float fadeOutMs = 0.0f) noexcept
     {
         slot     = slotIndex;
         winStart = juce::jlimit (1, juce::jmax (1, srcLen - 3), startSamp);
@@ -129,6 +146,19 @@ struct Voice
         //  del derecho.
         { const double keep = delta; delta = std::abs (delta); updateAntiAlias(); delta = keep; }
         pos      = rev ? (double) (winEnd - 1) : (double) winStart;
+
+        //  Los fundidos, en muestras de la FUENTE y no de la salida: se miden
+        //  contra pos, que camina por el buffer de origen. A 44.1 kHz de fuente
+        //  sonando en un aparato de 48, cinco milisegundos son 220 muestras de
+        //  fuente y no 240 - y el borde que hay que suavizar esta en la fuente.
+        //
+        //  Y acotados a un tercio de la ventana cada uno: un fundido mas largo
+        //  que el propio trozo no es un fundido, es un mando de volumen puesto
+        //  al reves. Un tercio deja siempre un tercio de trozo a nivel pleno.
+        const double fSrcAbs = std::abs (fSrc) > 1.0 ? std::abs (fSrc) : juce::jmax (1.0, fSys);
+        const int    tercio  = juce::jmax (0, (winEnd - winStart) / 3);
+        fadeInSamp  = juce::jlimit (0, tercio, (int) (fadeInMs  * 0.001 * fSrcAbs));
+        fadeOutSamp = juce::jlimit (0, tercio, (int) (fadeOutMs * 0.001 * fSrcAbs));
 
         //  45 ms grains: long enough that the crossfade does not buzz at the
         //  grain rate, short enough that the smearing stays inside a drum hit.
@@ -218,6 +248,39 @@ struct Voice
         //  sound card.
         const float panIncL = (panTL - panL) / (float) num;
         const float panIncR = (panTR - panR) / (float) num;
+
+        //  CUANTO DEJA PASAR EL BORDE, para la posicion en la que se esta.
+        //
+        //  Coseno alzado y no una rampa recta: una rampa recta tiene un codo en
+        //  cada punta -la pendiente salta de cero a su valor de golpe- y ese
+        //  codo es una discontinuidad de la DERIVADA, que se oye como un
+        //  chasquido mas suave pero se oye. El coseno alzado entra y sale con
+        //  pendiente cero por los dos lados, que es lo que hace que un corte
+        //  suene a que la nota empieza y no a que alguien la enchufo.
+        const bool hayFundido = (fadeInSamp > 0 || fadeOutSamp > 0);
+        auto bordeGain = [this] (double p) noexcept -> float
+        {
+            float g = 1.0f;
+            if (fadeInSamp > 0)
+            {
+                const double d = p - (double) winStart;
+                if (d < (double) fadeInSamp)
+                {
+                    const float x = (float) juce::jlimit (0.0, 1.0, d / (double) fadeInSamp);
+                    g *= 0.5f - 0.5f * std::cos (juce::MathConstants<float>::pi * x);
+                }
+            }
+            if (fadeOutSamp > 0)
+            {
+                const double d = (double) (winEnd - 1) - p;
+                if (d < (double) fadeOutSamp)
+                {
+                    const float x = (float) juce::jlimit (0.0, 1.0, d / (double) fadeOutSamp);
+                    g *= 0.5f - 0.5f * std::cos (juce::MathConstants<float>::pi * x);
+                }
+            }
+            return g;
+        };
 
         //  Gain envelope and pan slew, identical in both modes.
         auto advanceEnvelope = [this] () noexcept -> bool
@@ -363,11 +426,12 @@ struct Voice
                 const int   ib = (int) pB; const float fb = (float) (pB - (double) ib);
 
                 const float l = wA * hermite4 (fa, srcL, ia) + wB * hermite4 (fb, srcL, ib);
-                dstL[i] += gain * panL * l;
+                const float ge = hayFundido ? gain * bordeGain (pos) : gain;
+                dstL[i] += ge * panL * l;
                 if (stereoOut)
-                    dstR[i] += gain * panR * (srcR != nullptr
-                                                ? wA * hermite4 (fa, srcR, ia) + wB * hermite4 (fb, srcR, ib)
-                                                : l);
+                    dstR[i] += ge * panR * (srcR != nullptr
+                                              ? wA * hermite4 (fa, srcR, ia) + wB * hermite4 (fb, srcR, ib)
+                                              : l);
 
                 pos   += timeStep;
                 gOffA += drift;
@@ -447,9 +511,10 @@ struct Voice
                     aaL += aaCoef * (l - aaL);   l = aaL;
                     aaR += aaCoef * (r - aaR);   r = aaR;
                 }
-                dstL[i] += gain * panL * l;
+                const float ge = hayFundido ? gain * bordeGain (pos) : gain;
+                dstL[i] += ge * panL * l;
                 if (stereoOut)
-                    dstR[i] += gain * panR * r;
+                    dstR[i] += ge * panR * r;
 
                 pos += delta;
             }

@@ -874,6 +874,38 @@ MainComponent::MainComponent()
     };
     initSlider (startSlider,   0.0,  1.0, 0.001, 0.0);
     initSlider (endSlider,     0.0,  1.0, 0.001, 1.0);
+    //  SUAVE y no ABRUPTO: el mando dice cuantos milisegundos tarda el borde
+    //  en abrirse. Cero es el corte seco de siempre, que es lo que quiere un
+    //  golpe de bateria; cinco quitan el clic de un corte en medio de un grave
+    //  sin que se note que hay un fundido; cien es un swell.
+    //
+    //  Punto medio en 10 ms: lineal, la mitad del recorrido iria de 250 a 500,
+    //  donde ya no hay decisiones que tomar, y los primeros cinco milisegundos
+    //  -que es donde esta todo- cabrian en un pelo del recorrido.
+    initSlider (fadeInSlider,  0.0, 500.0, 0.5, 0.0);
+    initSlider (fadeOutSlider, 0.0, 500.0, 0.5, 0.0);
+    for (auto* sl : { &fadeInSlider, &fadeOutSlider })
+    {
+        sl->setSkewFactorFromMidPoint (10.0);
+        sl->textFromValueFunction = [] (double v)
+        {
+            return v < 0.05 ? T ("SECO") : Lang::ltr (juce::String (v, v < 10.0 ? 1 : 0) + " ms");
+        };
+        sl->updateText();
+    }
+    fadeInSlider.onValueChange = [this]
+    {
+        if (selectedPad < 0) return;
+        padFadeIn[(size_t) selectedPad] = (float) fadeInSlider.getValue();
+        engine.setPadFadeIn (selectedPad, (float) fadeInSlider.getValue());
+    };
+    fadeOutSlider.onValueChange = [this]
+    {
+        if (selectedPad < 0) return;
+        padFadeOut[(size_t) selectedPad] = (float) fadeOutSlider.getValue();
+        engine.setPadFadeOut (selectedPad, (float) fadeOutSlider.getValue());
+    };
+
     initSlider (bpmSlider,    60.0, 200.0, 1.0, 120.0);
     bpmSlider.setTextValueSuffix (" bpm");
     bpmSlider.onValueChange = [this] { engine.setBpm (bpmSlider.getValue()); };
@@ -1988,7 +2020,8 @@ MainComponent::MainComponent()
                                 (juce::Component*) &attackSlider, (juce::Component*) &releaseSlider,
                                 (juce::Component*) &cutSlider,    (juce::Component*) &resoSlider,
                                 (juce::Component*) &chokeSlider,  (juce::Component*) &startSlider,
-                                (juce::Component*) &endSlider })
+                                (juce::Component*) &endSlider,
+                                (juce::Component*) &fadeInSlider, (juce::Component*) &fadeOutSlider })
         padSheet.addAndMakeVisible (c);
 
     showSeqPage (seqPageGrid);
@@ -2715,7 +2748,8 @@ void MainComponent::showPadPage (int page)
                                 (juce::Component*) &reverseButton, (juce::Component*) &loopButton,
                                 (juce::Component*) &waveform,      (juce::Component*) &denoiseButton,
                                 (juce::Component*) &zoomOutButton, (juce::Component*) &zoomFitButton,
-                                (juce::Component*) &zoomInButton })
+                                (juce::Component*) &zoomInButton,
+                                (juce::Component*) &fadeInSlider,  (juce::Component*) &fadeOutSlider })
         c->setVisible (onTrim);
 
     for (auto* s : padSends) s->setVisible (onRig);
@@ -3274,6 +3308,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
                             ZatiLookAndFeel::kTrimLabel - 4, r.getHeight(), Lang::start());
             };
             lab (startSlider, "START"); lab (endSlider, "END");
+            lab (fadeInSlider, "SUAVE IN"); lab (fadeOutSlider, "SUAVE OUT");
         }
         else
         {
@@ -4055,7 +4090,7 @@ void MainComponent::resized()
                        + (padSourceWraps (sheetInnerW) ? Metrics::hit + Metrics::halfGap : 0);
         //  438 y no 352: la fila del filtro son 86 mas. Ver el desglose.
         const int wantH = (padPage == padPageSound) ? 438 + secH
-                        : (padPage == padPageTrim)  ? 424 + secH
+                        : (padPage == padPageTrim)  ? 424 + secH + 2 * (ZatiLookAndFeel::kTrimRow + Metrics::xs)
                                                     : rigH;
         auto inner = sheetFromBottom (padSheet, wantH);
         auto titleRow = inner.removeFromTop (Metrics::hit);
@@ -4264,7 +4299,13 @@ void MainComponent::resized()
         const int labelW = ZatiLookAndFeel::kTrimLabel;
         auto ctrlRow = [&inner, labelW] (int h) { auto r = inner.removeFromTop (h); r.removeFromLeft (labelW); return r; };
         startSlider.setBounds (ctrlRow (ZatiLookAndFeel::kTrimRow)); inner.removeFromTop (Metrics::xs);
-        endSlider.setBounds   (ctrlRow (ZatiLookAndFeel::kTrimRow)); inner.removeFromTop (Metrics::sm);
+        endSlider.setBounds   (ctrlRow (ZatiLookAndFeel::kTrimRow)); inner.removeFromTop (Metrics::xs);
+        //  Los dos fundidos justo debajo de los dos bordes que suavizan, con la
+        //  misma forma de fila: rotulo a la izquierda y valor a la derecha. En
+        //  otra pagina, o con otra forma, no se leerian como lo que son - lo que
+        //  le pasa al borde de arriba.
+        fadeInSlider.setBounds  (ctrlRow (ZatiLookAndFeel::kTrimRow)); inner.removeFromTop (Metrics::xs);
+        fadeOutSlider.setBounds (ctrlRow (ZatiLookAndFeel::kTrimRow)); inner.removeFromTop (Metrics::sm);
 
         //  REV y LOOP viven aqui, con el recorte, y no en la barra de EL PAD:
         //  las dos deciden COMO SE RECORRE el trozo que se acaba de marcar,
@@ -5466,6 +5507,8 @@ void MainComponent::updateControlsFromPad (int index)
     releaseSlider.setValue (padRelease[(size_t) index], juce::dontSendNotification);
     cutSlider.setValue  (padCut[(size_t) index],  juce::dontSendNotification);
     resoSlider.setValue (padReso[(size_t) index], juce::dontSendNotification);
+    fadeInSlider.setValue  (padFadeIn[(size_t) index],  juce::dontSendNotification);
+    fadeOutSlider.setValue (padFadeOut[(size_t) index], juce::dontSendNotification);
     //  Los envios se leen del MOTOR, que es quien los guarda: el RACK mueve
     //  los mismos seis numeros y una copia en la interfaz se quedaria vieja en
     //  cuanto se tocaran desde alli.
@@ -5920,6 +5963,14 @@ void MainComponent::retranslateUi()
     //  y lo caza la prueba comparativa, no la tabla.
     chopEvenBtn.setButtonText (T ("IGUALES"));
     chopHitsBtn.setButtonText (T ("GOLPES"));
+
+    //  Y las lecturas que TRADUCEN una palabra en vez de dar un numero. Su
+    //  textFromValueFunction se llama una vez al construir el mando, asi que
+    //  "SECO" se quedaba escrito en los cuatro idiomas - el mismo fallo que el
+    //  de los botones de arriba, pero en un sitio donde no se ve venir porque
+    //  el texto no lo pone nadie: lo pone el propio Slider.
+    fadeInSlider.updateText();
+    fadeOutSlider.updateText();
 
     //  A slider that formats its own readout has to be told to run the
     //  formatter again; the text it is showing was made in the old language.
@@ -6566,6 +6617,8 @@ juce::ValueTree MainComponent::captureState() const
         p.setProperty ("fuente",  fuente,                 nullptr);
         p.setProperty ("corte",   padCut[(size_t) i],     nullptr);
         p.setProperty ("reson",   padReso[(size_t) i],    nullptr);
+        p.setProperty ("suavein", padFadeIn[(size_t) i],  nullptr);
+        p.setProperty ("suaveout",padFadeOut[(size_t) i], nullptr);
         p.setProperty ("zati",    padZati[(size_t) i],    nullptr);
 
         //  The six sends, as one string, so adding a seventh effect later
@@ -6708,6 +6761,12 @@ void MainComponent::applyState (const juce::ValueTree& s)
             //  0 Hz, o sea mudo.
             padCut[(size_t) i]  = (float) p.getProperty ("corte", (double) AudioEngine::kFiltOpenHz);
             padReso[(size_t) i] = (float) p.getProperty ("reson", 0.0);
+            //  Cero por defecto: un proyecto de antes de que esto existiera se
+            //  guardo con el corte seco y tiene que volver seco.
+            padFadeIn[(size_t) i]  = (float) p.getProperty ("suavein", 0.0);
+            padFadeOut[(size_t) i] = (float) p.getProperty ("suaveout", 0.0);
+            engine.setPadFadeIn  (i, padFadeIn[(size_t) i]);
+            engine.setPadFadeOut (i, padFadeOut[(size_t) i]);
             engine.setPadCutoff (i, padCut[(size_t) i]);
             engine.setPadReso   (i, padReso[(size_t) i]);
             padZati[(size_t) i]    = (int)   p.getProperty ("zati", Zati::forPad (i));

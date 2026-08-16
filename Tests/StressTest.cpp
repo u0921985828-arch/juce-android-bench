@@ -1129,5 +1129,107 @@ int main()
                      ok ? "OK" : "FALLA", perdidos.toRawUTF8());
     }
 
+    //  EL FUNDIDO DE LOS BORDES, con TRES numeros o no dice nada.
+    //
+    //  Cuanto baja el escalon del corte, cuanto respeta lo de dentro, y cuanto
+    //  cuesta cuando esta a cero. El tercero es el que no se puede medir por
+    //  nivel: un fundido que dice estar apagado y deja una multiplicacion por
+    //  0.999 en el bucle interior sale como "casi igual" en dB y es un cambio
+    //  real en cada muestra de la app. Se compara bit a bit.
+    {
+        //  Un trozo cortado por el peor sitio posible: la cresta de un seno.
+        //  Ahi el corte seco deja un escalon del tamano de la amplitud entera,
+        //  que es exactamente el clic del que se queja quien trocea a mano.
+        auto corte = [] (double sr, double secs, float hz)
+        {
+            auto* sb = new SampleBuffer();
+            const int n = (int) (sr * secs);
+            sb->buffer.setSize (1, n);
+            for (int i = 0; i < n; ++i)
+                sb->buffer.setSample (0, i, 0.8f * std::sin (juce::MathConstants<float>::twoPi
+                                                             * hz * (float) i / (float) sr));
+            sb->sourceSampleRate = sr;
+            return SampleBuffer::Ptr (sb);
+        };
+
+        auto corre = [&corte] (float ms, juce::AudioBuffer<float>& cap)
+        {
+            AudioEngine e; e.prepareToPlay (48000.0, 256); e.setPolyphony (8, 2);
+            e.setPadGain (0, 1.0f);
+            //  Ataque a cero: lo que se mide es el borde del RECORTE, y un
+            //  ataque de 2 ms taparia justo lo que se quiere ver.
+            e.setPadAttack (0, 0.0f);
+            e.setPadFadeIn (0, ms);
+            e.setPadFadeOut (0, ms);
+            auto sb = corte (48000.0, 0.5, 220.0f);
+            //  El recorte empieza en la cresta: un cuarto de periodo de 220 Hz
+            //  a 48 kHz son 54 muestras.
+            e.publishSample (0, sb);
+            e.setPadStart (0, 54);
+            e.setPadEnd   (0, 54 + 4800);
+
+            juce::AudioBuffer<float> b (2, 256);
+            b.clear(); e.renderNextBlock (b, 0, 256);
+            e.postNoteOn (0, 1.0f);
+
+            cap.setSize (1, 256 * 24, false, true, true);
+            for (int blk = 0; blk < 24; ++blk)
+            {
+                b.clear();
+                e.renderNextBlock (b, 0, 256);
+                cap.copyFrom (0, blk * 256, b, 0, 0, 256);
+            }
+        };
+
+        juce::AudioBuffer<float> seco, suave, seco2;
+        corre (0.0f, seco);
+        corre (0.0f, seco2);
+        corre (5.0f, suave);
+
+        //  EL ESCALON ES LA PRIMERA MUESTRA, no el salto mas grande de los
+        //  primeros diez milisegundos.
+        //
+        //  El primer intento medía eso segundo y daba -17.2 dB con el fundido
+        //  puesto, que parecia flojo. No lo era: en diez milisegundos de un seno
+        //  de 220 Hz a 0.8 el salto entre dos muestras seguidas vale 0.023 por
+        //  su propia pendiente, y eso es la SENAL. Lo que hace clic es la
+        //  discontinuidad contra el silencio de antes, o sea cuanto vale la
+        //  primera muestra que sale: cortar en la cresta la deja en 0.8 - un
+        //  escalon de fondo de escala - y con el borde suavizado vale lo que
+        //  valga la ventana en su primera muestra.
+        auto escalon = [] (const juce::AudioBuffer<float>& b)
+        {
+            const float* d = b.getReadPointer (0);
+            for (int i = 0; i < b.getNumSamples(); ++i)
+                if (std::abs (d[i]) > 1.0e-7f) return (double) std::abs (d[i]);
+            return 0.0;
+        };
+        //  Y lo de DENTRO, lejos de los dos bordes: tiene que quedar intacto.
+        auto dentro = [] (const juce::AudioBuffer<float>& b)
+        {
+            const float* d = b.getReadPointer (0);
+            double m = 0.0;
+            for (int i = 2000; i < 4000; ++i) m = juce::jmax (m, (double) std::abs (d[i]));
+            return m;
+        };
+
+        const double eSeco  = escalon (seco);
+        const double eSuave = escalon (suave);
+        const double dSeco  = dentro (seco);
+        const double dSuave = dentro (suave);
+
+        int differ = 0;
+        for (int i = 0; i < seco.getNumSamples(); ++i)
+            if (seco.getSample (0, i) != seco2.getSample (0, i)) ++differ;
+
+        const double bajaDb  = 20.0 * std::log10 (juce::jmax (1.0e-9, eSuave) / juce::jmax (1.0e-9, eSeco));
+        const double pierdeDb = 20.0 * std::log10 (juce::jmax (1.0e-9, dSuave) / juce::jmax (1.0e-9, dSeco));
+
+        const bool ok = bajaDb < -30.0 && pierdeDb > -0.5 && differ == 0;
+        std::printf ("%-34s escalon %+.1f dB   dentro %+.2f dB   seco identico %s   %s\n",
+                     "fundido del recorte (5 ms)", bajaDb, pierdeDb,
+                     differ == 0 ? "si" : "NO", ok ? "OK" : "FALLA");
+    }
+
     return 0;
 }
