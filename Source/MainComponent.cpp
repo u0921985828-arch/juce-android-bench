@@ -898,12 +898,14 @@ MainComponent::MainComponent()
         if (selectedPad < 0) return;
         padFadeIn[(size_t) selectedPad] = (float) fadeInSlider.getValue();
         engine.setPadFadeIn (selectedPad, (float) fadeInSlider.getValue());
+        pushFadesToWaveform();
     };
     fadeOutSlider.onValueChange = [this]
     {
         if (selectedPad < 0) return;
         padFadeOut[(size_t) selectedPad] = (float) fadeOutSlider.getValue();
         engine.setPadFadeOut (selectedPad, (float) fadeOutSlider.getValue());
+        pushFadesToWaveform();
     };
 
     initSlider (bpmSlider,    60.0, 200.0, 1.0, 120.0);
@@ -1047,6 +1049,7 @@ MainComponent::MainComponent()
         const int len = padSourceLength (selectedPad);
         if (len > 0) engine.setPadStart (selectedPad, (int) (v * len));
         waveform.setTrim ((float) v, padEnd01[(size_t) selectedPad]);
+        pushFadesToWaveform();
         refreshPadArt (selectedPad);
         refreshWaveformSegments();
         repaint (editInfoArea.expanded (4));
@@ -1059,6 +1062,7 @@ MainComponent::MainComponent()
         const int len = padSourceLength (selectedPad);
         if (len > 0) engine.setPadEnd (selectedPad, (int) (v * len));
         waveform.setTrim (padStart01[(size_t) selectedPad], (float) v);
+        pushFadesToWaveform();
         refreshPadArt (selectedPad);
         refreshWaveformSegments();
         repaint (editInfoArea.expanded (4));
@@ -1389,6 +1393,11 @@ MainComponent::MainComponent()
         endSlider.setValue   (e, juce::dontSendNotification);
         refreshPadArt (selectedPad);
         refreshWaveformSegments();
+        //  Arrastrar un asa estrecha o ensancha la ventana, y el fundido esta
+        //  acotado a un tercio de ella: sin esto, cerrar el recorte dejaba
+        //  dibujada la rampa ancha de antes mientras la voz ya tocaba la
+        //  estrecha.
+        pushFadesToWaveform();
         if (padSheet.isVisible()) padSheet.repaint();
     };
 
@@ -5424,6 +5433,7 @@ void MainComponent::selectPad (int index)
     updateControlsFromPad (index);
     waveform.setSample (uiSample[(size_t) index]);
     waveform.setTrim (padStart01[(size_t) index], padEnd01[(size_t) index]);
+    pushFadesToWaveform();
     if (auto sb = uiSample[(size_t) index])
     {
         const double sr = sb->sourceSampleRate;
@@ -5456,6 +5466,25 @@ void MainComponent::selectPad (int index)
 // The display shows the whole cut, not one pad: every pad pointing at the
 // selected pad's buffer contributes its trim window as a coloured fragment.
 // Auto-chop leaves exactly that — one shared buffer, sixteen windows.
+//  LA CURVA QUE SE DIBUJA TIENE QUE SALIR DE LOS MISMOS NUMEROS QUE SUENAN.
+//
+//  El fundido lo aplica la voz en muestras de la FUENTE, asi que la conversion
+//  a fraccion necesita la frecuencia del fichero y su longitud - y las dos
+//  salen del buffer que sostiene la INTERFAZ, nunca de engine.getSampleLength,
+//  que lee el puntero que ha adoptado el hilo de audio y es nulo hasta el
+//  primer bloque. Se llama despues de cada setTrim, porque el tope de un
+//  tercio de ventana depende del recorte y mover un asa lo cambia.
+void MainComponent::pushFadesToWaveform()
+{
+    if (selectedPad < 0) { waveform.setFades (0.0f, 0.0f, 0.0, 0); return; }
+
+    auto sb = uiSample[(size_t) selectedPad];
+    waveform.setFades (padFadeIn[(size_t) selectedPad],
+                       padFadeOut[(size_t) selectedPad],
+                       sb != nullptr ? sb->sourceSampleRate : 0.0,
+                       sb != nullptr ? sb->buffer.getNumSamples() : 0);
+}
+
 void MainComponent::refreshWaveformSegments()
 {
     juce::Array<WaveformDisplay::Segment> segs;

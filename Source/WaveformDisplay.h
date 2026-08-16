@@ -49,6 +49,31 @@ public:
         repaint();
     }
 
+    //  LOS FUNDIDOS DE LOS BORDES, EN FRACCION DEL FICHERO.
+    //
+    //  Entran en milisegundos porque es lo que dice el mando, y aqui se pasan a
+    //  fraccion porque es lo que dibuja este componente: la conversion necesita
+    //  la frecuencia y la longitud de la muestra, y las dos las tiene el que
+    //  llama - a este no le consta cual de las dos es la buena (la del fichero
+    //  o la del aparato) y adivinarlo seria dibujar una curva que no es la que
+    //  suena.
+    //
+    //  Acotados a un tercio de la ventana cada uno, IGUAL QUE EN LA VOZ. Si el
+    //  dibujo no aplicara el mismo tope, el mando podria pintar una rampa que
+    //  cubre el trozo entero mientras el motor toca una que cubre un tercio, y
+    //  entonces la curva de la pantalla seria una mentira - que es peor que no
+    //  tener curva.
+    void setFades (float inMs, float outMs, double srcRate, int srcLen)
+    {
+        const double n = (srcRate > 0.0 && srcLen > 0) ? (double) srcLen : 0.0;
+        if (n <= 0.0) { fadeIn01 = fadeOut01 = 0.0f; repaint(); return; }
+
+        const float tercio = juce::jmax (0.0f, (end01 - start01) / 3.0f);
+        fadeIn01  = juce::jlimit (0.0f, tercio, (float) (inMs  * 0.001 * srcRate / n));
+        fadeOut01 = juce::jlimit (0.0f, tercio, (float) (outMs * 0.001 * srcRate / n));
+        repaint();
+    }
+
     // One slice of the loaded source, owned by a pad. When several pads share
     // one buffer (what auto-chop produces) the display stops being "one pad's
     // sample" and becomes the map of the whole cut: every fragment drawn in
@@ -374,6 +399,79 @@ public:
             g.fillRect (wave.getX(), wave.getY(), sxV - wave.getX(), wave.getHeight());
             g.fillRect (exV, wave.getY(), wave.getRight() - exV, wave.getHeight());
 
+            //  LA CURVA DE LOS BORDES, encima de la onda y debajo de las asas.
+            //
+            //  Un mando que dice "5 ms" no dice nada: cinco milisegundos son
+            //  medio trozo en un charles y una milesima en un break, y lo que
+            //  la persona necesita ver es CUANTO DE ESTE TROZO se come el
+            //  fundido. Asi que se dibuja sobre la onda y a su escala.
+            //
+            //  Y se dibuja la curva de VERDAD -el mismo coseno alzado que
+            //  aplica la voz, muestreado- y no una recta entre las dos puntas.
+            //  Una recta diria que el fundido entra deprisa al principio, que
+            //  es justo lo que el coseno no hace y la razon de haberlo elegido:
+            //  entra y sale con pendiente cero. Un dibujo que no es la curva
+            //  que suena es un adorno.
+            if (fadeIn01 > 0.0f || fadeOut01 > 0.0f)
+            {
+                constexpr int kPasos = 24;      // por rampa: suficiente para que no se vean esquinas
+                const float top = (float) wave.getY();
+                const float bot = (float) wave.getBottom();
+                auto yFor = [top, bot] (float g01) { return bot - g01 * (bot - top); };
+
+                juce::Path curva;
+                bool empezada = false;
+                auto punto = [&] (float t, float g01)
+                {
+                    const float x = normToX (t);
+                    if (! empezada) { curva.startNewSubPath (x, yFor (g01)); empezada = true; }
+                    else            curva.lineTo (x, yFor (g01));
+                };
+
+                if (fadeIn01 > 0.0f)
+                    for (int k = 0; k <= kPasos; ++k)
+                    {
+                        const float u = (float) k / (float) kPasos;
+                        punto (start01 + u * fadeIn01,
+                               0.5f - 0.5f * std::cos (juce::MathConstants<float>::pi * u));
+                    }
+                else
+                    punto (start01, 1.0f);
+
+                //  El llano de en medio: sin el, dos rampas sueltas parecen dos
+                //  cosas y no una envolvente.
+                punto (end01 - fadeOut01, 1.0f);
+
+                if (fadeOut01 > 0.0f)
+                    for (int k = 0; k <= kPasos; ++k)
+                    {
+                        const float u = (float) k / (float) kPasos;
+                        punto (end01 - fadeOut01 + u * fadeOut01,
+                               0.5f - 0.5f * std::cos (juce::MathConstants<float>::pi * (1.0f - u)));
+                    }
+                else
+                    punto (end01, 1.0f);
+
+                //  Recortado al hueco de la onda: ampliado, un borde cae a
+                //  miles de pixeles fuera y la curva se dibujaria por encima de
+                //  los rotulos.
+                juce::Graphics::ScopedSaveState clip (g);
+                g.reduceClipRegion (wave.toNearestInt());
+
+                //  Relleno tenue bajo la curva ANTES del trazo, para que lo que
+                //  el fundido quita se lea como area y no haya que deducirlo de
+                //  una linea. Se cierra por abajo contra el suelo del hueco.
+                juce::Path bajo (curva);
+                bajo.lineTo (normToX (end01), bot);
+                bajo.lineTo (normToX (start01), bot);
+                bajo.closeSubPath();
+                g.setColour (one.withAlpha (0.10f));
+                g.fillPath (bajo);
+
+                g.setColour (one.withAlpha (0.85f));
+                g.strokePath (curva, juce::PathStrokeType (1.4f));
+            }
+
             // trim handles
             g.setColour (one);
             for (float hx : { sx, ex })
@@ -634,6 +732,7 @@ private:
     SampleBuffer::Ptr sample;
     juce::Array<float> mins, maxs;
     float start01 = 0.0f, end01 = 1.0f;
+    float fadeIn01 = 0.0f, fadeOut01 = 0.0f;
     float playhead = -1.0f;
     juce::String infoName, infoRight;
 };

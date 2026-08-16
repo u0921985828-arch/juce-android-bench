@@ -493,6 +493,11 @@ private:
     void selectPad (int index);
     void updateControlsFromPad (int index);
     void refreshWaveformSegments();   // fragments sharing the selected pad's buffer
+    //  La curva de los bordes, con los mismos numeros que suenan. Se llama
+    //  detras de cada setTrim: el tope de un tercio de ventana depende del
+    //  recorte, asi que mover un asa cambia la curva aunque el mando no se
+    //  haya tocado.
+    void pushFadesToWaveform();
     int  padSourceLength (int pad) const;
     void assignSampleToPad (int index, SampleBuffer::Ptr sb, const juce::String& name = {});
     void toggleRecordArm();     // REC: live pad performance -> the pattern
