@@ -404,6 +404,16 @@ public:
     }
     void setStepVel   (int patternIdx, int step, int pad, int vel)  noexcept;
     void setStepRoll  (int patternIdx, int step, int pad, int hits) noexcept;
+    //  EL EMPUJON DE CADA PASO, en centesimas de paso y con signo.
+    //
+    //  El swing mueve las corcheas pares y nada mas: es una regla, y una regla
+    //  aplicada a los dieciseis pasos suena a maquina por definicion. Un
+    //  humano no llega tarde SIEMPRE lo mismo. Esto guarda cuanto se aparta
+    //  CADA paso de su sitio, que es lo que HUMANIZAR escribe y lo que se
+    //  puede deshacer, guardar y volver a oir igual - un temblor sorteado en
+    //  el hilo de audio suena distinto cada vuelta y no es un groove, es ruido.
+    void setStepNudge (int patternIdx, int step, int pad, int centesimas) noexcept;
+    int  getStepNudge (int patternIdx, int step, int pad) const noexcept;
     int  getStepVel   (int patternIdx, int step, int pad) const noexcept;
     int  getStepRoll  (int patternIdx, int step, int pad) const noexcept;
 
@@ -874,6 +884,9 @@ private:
     //  Cuatro notas es un acorde de verdad y son 64 KB; ocho serian 128 y no
     //  hay dedos para escribirlas en una rejilla de telefono.
     std::array<std::array<std::array<std::atomic<std::uint32_t>, kNumPads>, kNumSteps>, kNumPatterns> stepChord {};
+    //  El empujon de cada paso. Ver setStepNudge. Cero es "en su sitio", que
+    //  es lo que dice un patron escrito antes de que esto existiera.
+    std::array<std::array<std::array<std::atomic<std::int8_t>, kNumPads>, kNumSteps>, kNumPatterns> stepNudge {};
 
     //  What a step DOES, beyond which pads it fires.
     //

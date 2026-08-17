@@ -169,6 +169,18 @@ namespace
         { "ACORTAR",        "",         "SHORTEN",    "缩短",       "تقصير" },
         //  El piano roll. Ver PianoRoll.h.
         { "PIANO",          "",         "PIANO",      "钢琴",       "بيانو" },
+        //  Las dos que faltaban del editor de patrones. Ver humanizePattern.
+        { "HUMANIZAR",      "",         "HUMANIZE",   "人性化",     "أنسنة" },
+        { "SEGUIR",         "",         "FOLLOW",     "跟随",       "تتبع" },
+        { "Humanizados %1 golpes", "",
+          "Humanised %1 hits", "已人性化 %1 个打点",
+          "أُنسنت %1 ضربة" },
+        { "La vista sigue al compas que suena", "",
+          "The view follows the playing bar", "视图跟随播放的小节",
+          "العرض يتبع المازورة التي تُعزف" },
+        { "La vista se queda donde la dejes", "",
+          "The view stays where you leave it", "视图保持不动",
+          "يبقى العرض حيث تتركه" },
         { "OCTAVA",         "",         "OCTAVE",     "八度",       "أوكتاف" },
         { "toca el teclado para oir, la rejilla para escribir", "",
           "tap the keys to hear, the grid to write",

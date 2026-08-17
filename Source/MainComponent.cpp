@@ -1327,6 +1327,22 @@ MainComponent::MainComponent()
             seqPlayBtn.setButtonText (on ? T ("STOP") : T ("PLAY"));
         };
         seqSheet.addAndMakeVisible (seqPlayBtn);
+
+        styleButton (seqHumanBtn, kKey);
+        seqHumanBtn.onClick = [this] { humanizePattern(); };
+        seqSheet.addAndMakeVisible (seqHumanBtn);
+
+        styleButton (seqFollowBtn, kStepOff);
+        litAccent (seqFollowBtn);
+        seqFollowBtn.setClickingTogglesState (true);
+        seqFollowBtn.onClick = [this]
+        {
+            seqFollow = seqFollowBtn.getToggleState();
+            status.setText (seqFollow ? T ("La vista sigue al compas que suena")
+                                      : T ("La vista se queda donde la dejes"),
+                            juce::dontSendNotification);
+        };
+        seqSheet.addAndMakeVisible (seqFollowBtn);
     }
 
     //  Las tres herramientas del PATRON, en la pagina PASO. Ver patLeftBtn.
@@ -2812,6 +2828,8 @@ void MainComponent::showSeqPage (int page)
 
     stepGrid.setVisible      (onGrid);
     seqPlayBtn.setVisible    (onGrid);
+    seqHumanBtn.setVisible   (! onGrid);
+    seqFollowBtn.setVisible  (onGrid);
     //  La visibilidad de las tapas de banco NO se decide aqui: la decide
     //  resized(), que es el unico que sabe si caben sin encoger la rejilla.
     patternSlider.setVisible (onGrid);
@@ -5450,14 +5468,14 @@ void MainComponent::resized()
             //  La fila de herramientas puede ser DOS, asi que la altura que se
             //  pide lo cuenta: pedirla de una y usar dos es como un control se
             //  queda con altura cero.
-            juce::TextButton* pb5[5] = { &patLeftBtn, &patRightBtn, &patDoubleBtn,
-                                         &copyPatBtn, &pastePatBtn };
+            juce::TextButton* pb5[6] = { &patLeftBtn, &patRightBtn, &patDoubleBtn,
+                                         &seqHumanBtn, &copyPatBtn, &pastePatBtn };
             //  El ancho util de la tarjeta, con la misma cuenta que usa la
             //  ficha de CANCION: aqui todavia no existe `inner`, y estimarlo
             //  a ojo es como se pide una altura que luego no vale.
             const int anchoTarjeta = (int) ((float) safeArea().getWidth() * 0.92f) - 2 * Metrics::lg;
             const int anchoCol = wideFace ? (anchoTarjeta - Metrics::gap) / 2 : anchoTarjeta;
-            const int filasUtil = moduleBarFits (anchoCol, pb5, 5)
+            const int filasUtil = moduleBarFits (anchoCol, pb5, 6)
                                     ? 0 : Metrics::hit + Metrics::halfGap;
 
             const int stepBands = nameH + Metrics::hit + Metrics::xs    // CADENA
@@ -5999,6 +6017,21 @@ void MainComponent::refreshStepGrid()
 
     const int ps = (engine.isPlaying() && engine.getPlayingPattern() == selectedPattern)
                      ? engine.getPlayStep() : -1;
+
+    //  SEGUIR. La vista salta al compas que suena, y solo cuando cambia: pedir
+    //  el salto en cada tick repintaria la ficha entera treinta veces por
+    //  segundo, que es justo lo que costo arreglar hace dos tandas.
+    if (seqFollow && ps >= 0)
+    {
+        const int compas = ps / kStepCols;
+        if (compas != selectedBar)
+        {
+            selectedBar = compas;
+            for (int b2 = 0; b2 < barButtons.size(); ++b2)
+                if (auto* t = barButtons[b2])
+                    t->setToggleState (b2 == selectedBar, juce::dontSendNotification);
+        }
+    }
 
     {
         const bool rodando = engine.isPlaying();
@@ -6579,6 +6612,8 @@ void MainComponent::retranslateUi()
     playButton  .setButtonText (engine.isPlaying() ? T ("STOP") : T ("PLAY"));
     clearButton .setButtonText (T ("VACIAR"));
     seqGridBtn  .setButtonText (T ("PASOS"));
+    seqHumanBtn .setButtonText (T ("HUMANIZAR"));
+    seqFollowBtn.setButtonText (T ("SEGUIR"));
     patLeftBtn  .setButtonText (T ("ATRAS"));
     patRightBtn .setButtonText (T ("ADELANTE"));
     patDoubleBtn.setButtonText (T ("DOBLAR"));
@@ -7916,6 +7951,54 @@ void MainComponent::refreshProjectList()
 //  La vuelta es por el LARGO DEL PATRON y no por 64: en un patron de 12
 //  pasos, lo que sale por el final tiene que volver a entrar por el paso 0 y
 //  no por el 52, donde no lo ve nadie.
+//  HUMANIZAR: escribir el temblor, no sortearlo al tocar.
+//
+//  Un temblor sorteado en el hilo de audio suena distinto cada vuelta - no es
+//  un groove, es ruido - y no se puede deshacer, ni guardar, ni volver a oir
+//  igual. Escrito en el patron se puede hacer las tres cosas, y ademas se ve:
+//  la fuerza de cada golpe cambia y el paso lleva su empujon.
+//
+//  Se aplica a los pasos QUE SUENAN y solo a ellos: empujar un silencio no
+//  hace nada y gastaria la mitad de la aleatoriedad en pasos que nadie oye.
+//  Y desde una semilla FIJA por patron, para que dos toques seguidos den lo
+//  mismo: "no me gusta como ha quedado" se arregla deshaciendo, y deshacer
+//  algo que no se puede reproducir es media funcion.
+void MainComponent::humanizePattern()
+{
+    const int len = engine.getPatternLength (selectedPattern);
+    pushUndo (T ("HUMANIZAR"));
+
+    juce::Random r (selectedPattern * 7919 + len * 31 + 1);
+    int tocados = 0;
+
+    for (int st = 0; st < len; ++st)
+        for (int p = 0; p < kNumPads; ++p)
+        {
+            if (! pattern[(size_t) selectedPattern][(size_t) st][(size_t) p]) continue;
+
+            //  Doce centesimas de paso a cada lado. A 120 BPM en semicorcheas
+            //  un paso son 125 ms, asi que son unos 15 ms: lo que separa a un
+            //  baterista de un metronomo. El doble ya no se lee como groove,
+            //  se lee como que el patron esta mal escrito.
+            engine.setStepNudge (selectedPattern, st, p, r.nextInt ({ -12, 13 }));
+
+            //  Y la fuerza, que es la otra mitad de lo humano: entre el 78 % y
+            //  el 100 % de lo que tuviera. Solo hacia ABAJO - subirla mete
+            //  golpes por encima de lo que la persona puso, y el margen del
+            //  master no es nuestro para gastarlo.
+            const int v0 = engine.getStepVel (selectedPattern, st, p);
+            const int base = v0 <= 0 ? 127 : v0;
+            engine.setStepVel (selectedPattern, st, p,
+                               juce::jlimit (1, 127, (int) std::lround (base * (0.78 + 0.22 * r.nextDouble()))));
+            ++tocados;
+        }
+
+    refreshStepGrid();
+    seqSheet.repaint();
+    status.setText (T ("Humanizados %1 golpes", juce::String (tocados)),
+                    juce::dontSendNotification);
+}
+
 void MainComponent::rotatePattern (int by)
 {
     const int len = engine.getPatternLength (selectedPattern);

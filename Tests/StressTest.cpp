@@ -1426,5 +1426,50 @@ int main()
                      "acorde en un paso", sola, acorde, ok ? "OK" : "FALLA");
     }
 
+    //  EL EMPUJON DE UN PASO. HUMANIZAR escribe cuanto se aparta cada golpe de
+    //  la rejilla, y lo que hay que comprobar es que el motor lo OBEDECE: un
+    //  empujon que no mueve nada es un numero guardado, no un groove. Se mide
+    //  en muestras contando cuantos bloques tarda en sonar el pad.
+    {
+        AudioEngine e; e.prepareToPlay (48000.0, 64); e.setPolyphony (16, 4);
+        e.setPadGain (0, 0.9f);
+        e.publishSample (0, makeSample (48000.0, 0.2, 440.0f));
+        juce::AudioBuffer<float> b (2, 64);
+        runBlocks (e, b, 64, 4);
+
+        auto cuando = [&] (int centesimas) noexcept
+        {
+            e.setSongMode (false);
+            e.clearPattern (0);
+            e.setPatternLength (0, 16);
+            e.setStep (0, 4, 0, true);          // un golpe en el paso 4
+            e.setStepNudge (0, 4, 0, centesimas);
+            e.setBpm (120.0);
+            e.setPlaying (true);
+            int bloque = -1;
+            for (int i = 0; i < 400 && bloque < 0; ++i)
+            {
+                e.renderNextBlock (b, 0, 64);
+                if (e.fetchTriggered() & 1u) bloque = i;
+            }
+            e.setPlaying (false);
+            e.postPanic();
+            for (int i = 0; i < 8; ++i) e.renderNextBlock (b, 0, 64);
+            e.fetchTriggered();
+            return bloque;
+        };
+
+        //  Un paso a 120 BPM en semicorcheas son 6000 muestras; 25 centesimas
+        //  son 1500, o sea unos 23 bloques de 64. Se compara la DIFERENCIA y
+        //  no el instante absoluto: cuando arranca el transporte respecto al
+        //  primer bloque depende de cosas que no son esta prueba.
+        const int recto = cuando (0);
+        const int tarde = cuando (25);
+        const int diff  = tarde - recto;
+        const bool ok = recto >= 0 && tarde >= 0 && diff >= 20 && diff <= 26;
+        std::printf ("%-34s recto en el bloque %d   +25%% en el %d   diferencia %d (esperada 23)   %s\n",
+                     "empujon de un paso", recto, tarde, diff, ok ? "OK" : "FALLA");
+    }
+
     return 0;
 }

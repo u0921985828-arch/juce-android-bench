@@ -158,6 +158,21 @@ private:
     //  cara se queda debajo del velo: habia que cerrar, tocar, y volver a
     //  abrir buscando por donde ibas.
     juce::TextButton seqPlayBtn { "PLAY" };
+    //  HUMANIZAR y SEGUIR, las dos que faltaban del editor de patrones.
+    //
+    //  HUMANIZAR escribe un empujon distinto en cada paso y una fuerza
+    //  distinta en cada golpe, y lo ESCRIBE - no lo sortea al tocar. Un
+    //  temblor sorteado en el hilo de audio suena distinto cada vuelta: no es
+    //  un groove, es ruido, y no se puede deshacer, ni guardar, ni volver a
+    //  oir igual. Escrito se puede hacer las tres cosas.
+    //
+    //  SEGUIR mueve la vista al compas que suena. Con patrones de cuatro
+    //  compases, mirar el 1 mientras suena el 3 es la mitad del tiempo
+    //  mirando una rejilla que no se mueve.
+    juce::TextButton seqHumanBtn  { "HUMANIZAR" };
+    juce::TextButton seqFollowBtn { "SEGUIR" };
+    bool seqFollow = false;
+    void humanizePattern();
     //  LAS TRES HERRAMIENTAS DEL PATRON.
     //
     //  Viven en la pagina PASO y no en PASOS por una razon medida: la pagina

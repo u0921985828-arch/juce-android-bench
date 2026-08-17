@@ -723,10 +723,20 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 const std::uint32_t acorde = stepChord[(size_t) bank][(size_t) stepInPattern][(size_t) p]
                                                  .load (std::memory_order_relaxed);
 
+                //  EL EMPUJON DE ESTE PASO, encima del swing. El swing es una
+                //  regla para las corcheas pares; esto es lo que separa a ESTE
+                //  golpe de la rejilla, y va sumado. Nunca hacia atras del
+                //  bloque: un desplazamiento negativo en el primer paso caeria
+                //  antes de que empiece el compas, donde no hay donde ponerlo.
+                const int empuje = (int) ((double) stepNudge[(size_t) bank][(size_t) stepInPattern][(size_t) p]
+                                              .load (std::memory_order_relaxed)
+                                          * samplesPerStep / 100.0);
+
                 for (int h = 0; h < hits; ++h)
                 {
                     if (numPending >= (int) pending.size()) break;
-                    const int at = lateBy + (int) (samplesPerStep * (double) h / (double) hits);
+                    const int at = juce::jmax (0, lateBy + empuje
+                                                 + (int) (samplesPerStep * (double) h / (double) hits));
                     pending[(size_t) numPending++] = { at, p, semis, vel, true };
 
                     //  El acorde suena en el MISMO instante que su raiz: si se
@@ -1680,6 +1690,8 @@ void AudioEngine::clearPattern (int patternIdx) noexcept
     //  un acorde de tres notas encima de nada es lo que pasaba sin esto.
     for (auto& fila : stepChord[(size_t) patternIdx])
         for (auto& celda : fila) celda.store (0, std::memory_order_relaxed);
+    for (auto& fila : stepNudge[(size_t) patternIdx])
+        for (auto& celda : fila) celda.store (0, std::memory_order_relaxed);
 }
 
 void AudioEngine::setPatternLength (int patternIdx, int len) noexcept
@@ -1698,6 +1710,24 @@ void AudioEngine::setStepNote (int patternIdx, int step, int pad, int semis) noe
 {
     if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps || pad < 0 || pad >= kNumPads) return;
     stepNote[(size_t) patternIdx][(size_t) step][(size_t) pad].store ((std::int8_t) juce::jlimit (-24, 24, semis), std::memory_order_relaxed);
+}
+
+//  EL EMPUJON DE CADA PASO. Ver setStepNudge.
+void AudioEngine::setStepNudge (int patternIdx, int step, int pad, int centesimas) noexcept
+{
+    if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps
+        || pad < 0 || pad >= kNumPads) return;
+    //  Acotado a media casilla: mas que eso no es un empujon, es escribir el
+    //  paso en otro sitio, y para eso esta la rejilla.
+    stepNudge[(size_t) patternIdx][(size_t) step][(size_t) pad]
+        .store ((std::int8_t) juce::jlimit (-50, 50, centesimas), std::memory_order_relaxed);
+}
+
+int AudioEngine::getStepNudge (int patternIdx, int step, int pad) const noexcept
+{
+    if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps
+        || pad < 0 || pad >= kNumPads) return 0;
+    return (int) stepNudge[(size_t) patternIdx][(size_t) step][(size_t) pad].load (std::memory_order_relaxed);
 }
 
 //  LAS TRES NOTAS DE MAS. Ver stepChord: un byte por nota en los bits bajos y
@@ -1913,7 +1943,10 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     songBars.store (s.songBars.load (std::memory_order_relaxed), std::memory_order_relaxed);
     for (size_t b2 = 0; b2 < stepChord.size(); ++b2)
         for (size_t s2 = 0; s2 < stepChord[b2].size(); ++s2)
+        {
             copyArr (stepChord[b2][s2], s.stepChord[b2][s2]);
+            copyArr (stepNudge[b2][s2], s.stepNudge[b2][s2]);
+        }
 
     for (size_t ln = 0; ln < songCell.size(); ++ln)
         copyArr (songCell[ln], s.songCell[ln]);
