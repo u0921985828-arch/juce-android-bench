@@ -167,6 +167,16 @@ namespace
         //  ACORTAR y no CORTAR: la fila CORTAR ya existe y dice CHOP, que es
         //  trocear una muestra. Un bloque no se trocea, se acorta.
         { "ACORTAR",        "",         "SHORTEN",    "缩短",       "تقصير" },
+        //  El piano roll. Ver PianoRoll.h.
+        { "PIANO",          "",         "PIANO",      "钢琴",       "بيانو" },
+        { "OCTAVA",         "",         "OCTAVE",     "八度",       "أوكتاف" },
+        { "toca el teclado para oir, la rejilla para escribir", "",
+          "tap the keys to hear, the grid to write",
+          "点击琴键试听，点击网格书写",
+          "المس المفاتيح للسماع والشبكة للكتابة" },
+        { "Un paso admite %1 notas", "",
+          "A step holds %1 notes", "每步最多 %1 个音",
+          "الخطوة تتسع لـ %1 نغمات" },
         { "ALARGAR",        "",         "EXTEND",     "延长",       "إطالة" },
         { "Bloque de %1 compases", "",
           "Block is %1 bars", "块为 %1 小节",

@@ -1378,5 +1378,53 @@ int main()
                      "bucle de un tramo", peorCompas, sinBucle, bucleOk ? "OK" : "FALLA");
     }
 
+    //  EL ACORDE. Un paso con cuatro notas tiene que disparar el pad CUATRO
+    //  veces en el mismo instante, y no una: es lo unico que separa un piano
+    //  roll de un mando de afinacion. Se cuenta por VOCES vivas y no por
+    //  disparos, porque triggeredMask es un bit por pad y cuatro disparos del
+    //  mismo pad ponen el mismo bit - la prueba obvia habria dicho que si sin
+    //  mirar nada.
+    {
+        AudioEngine e; e.prepareToPlay (48000.0, 256); e.setPolyphony (32, 8);
+        e.setPadGain (0, 0.8f);
+        e.publishSample (0, makeSample (48000.0, 1.0, 220.0f));
+        juce::AudioBuffer<float> b (2, 256);
+        runBlocks (e, b, 256, 4);
+
+        auto vivas = [&] (bool conAcorde) noexcept
+        {
+            e.setSongMode (false);
+            e.clearPattern (0);
+            e.setPatternLength (0, 16);
+            e.setStep (0, 0, 0, true);
+            e.setStepNote (0, 0, 0, 0);
+            e.clearStepExtras (0, 0, 0);
+            if (conAcorde)
+            {
+                e.setStepExtra (0, 0, 0, 0, 4, true);    // tercera mayor
+                e.setStepExtra (0, 0, 0, 1, 7, true);    // quinta
+                e.setStepExtra (0, 0, 0, 2, 12, true);   // octava
+            }
+            e.setBpm (120.0);
+            e.setPlaying (true);
+            int pico = 0;
+            for (int i = 0; i < 40; ++i)
+            {
+                e.renderNextBlock (b, 0, 256);
+                pico = juce::jmax (pico, e.getActiveVoiceCount());
+            }
+            e.setPlaying (false);
+            e.postPanic();
+            for (int i = 0; i < 8; ++i) e.renderNextBlock (b, 0, 256);
+            return pico;
+        };
+
+        const int sola = vivas (false);
+        const int acorde = vivas (true);
+        const bool ok = sola == 1 && acorde == 4;
+        std::printf ("%-34s una nota %d voz   acorde de cuatro %d voces   %s\n",
+                     "acorde en un paso", sola, acorde, ok ? "OK" : "FALLA");
+    }
+
     return 0;
 }

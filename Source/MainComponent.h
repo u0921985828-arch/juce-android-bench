@@ -11,6 +11,7 @@
 #include "ProjectStore.h"
 #include "StepGrid.h"
 #include "Playlist.h"
+#include "PianoRoll.h"
 #include "AudioFocus.h"
 #include "SessionKeeper.h"
 #include "Exporter.h"
@@ -78,6 +79,24 @@ private:
     //  scroll into a journey. They are pages of the same card now: AUDIO is
     //  the machine, PROYECTOS is your work, and the tab row swaps between them
     //  without the card going anywhere.
+    //  EL PIANO ROLL. Ver PianoRoll.h: las notas de un pad en una rejilla de
+    //  tono contra tiempo, que es como se escribe una melodia desde que existe
+    //  el pentagrama. Hasta ahora afinar un paso era abrir PASO y mover un
+    //  mando: un semitono, un paso, un viaje - y tres acordes son treinta y
+    //  seis viajes, que es por lo que nadie los escribia.
+    PianoRoll pianoGrid;
+    juce::TextButton pianoCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
+    juce::TextButton pianoOctDownBtn { "OCTAVA -" }, pianoOctUpBtn { "OCTAVA +" };
+    juce::TextButton pianoClearBtn   { "VACIAR" };
+    juce::TextButton pianoPlayBtn    { "PLAY" };
+    juce::TextButton pianoButton     { "PIANO" };
+    int pianoBase = -12;                       // el semitono de la fila de abajo
+    signed char pianoCells[AudioEngine::kNumSteps * PianoRoll::kMaxNotas] {};
+    void refreshPiano (bool repintarTarjeta = true);
+    void pianoCellToggled (int paso, int semi);
+    void paintPianoSheetContent (juce::Graphics& g);
+
+    Sheet pianoSheet;
     Sheet padSheet, seqSheet, browseSheet, setSheet, mixSheet, songSheet,
           exportSheet, rackSheet, chopSheet;
 
@@ -134,6 +153,11 @@ private:
     enum SeqPage { seqPageGrid = 0, seqPageStep };
     int seqPage = seqPageGrid;
     juce::TextButton seqGridBtn { "PASOS" }, seqStepBtn { "PASO" };
+    //  EL TRANSPORTE, DENTRO DE LA FICHA, igual que en CANCION y en PIANO.
+    //  Escribir un paso y OIRLO es el mismo gesto, y la tapa de PLAY de la
+    //  cara se queda debajo del velo: habia que cerrar, tocar, y volver a
+    //  abrir buscando por donde ibas.
+    juce::TextButton seqPlayBtn { "PLAY" };
     //  LAS TRES HERRAMIENTAS DEL PATRON.
     //
     //  Viven en la pagina PASO y no en PASOS por una razon medida: la pagina

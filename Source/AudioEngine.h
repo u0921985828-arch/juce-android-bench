@@ -383,6 +383,25 @@ public:
     //  (message thread). Lets one pad's sample play a melody across the
     //  16-step grid instead of one fixed pitch per pad.
     void setStepNote (int patternIdx, int step, int pad, int semis) noexcept;
+    //  LAS TRES NOTAS DE MAS. Ver stepChord. La raiz es setStepNote; estas son
+    //  las que la acompanan, e `indice` va de 0 a 2. Un semitono fuera de
+    //  rango o `puesta = false` apagan esa voz del acorde.
+    static constexpr int kExtraNotes = 3;
+    void setStepExtra (int patternIdx, int step, int pad, int indice, int semis, bool puesta) noexcept;
+    int  getStepExtra (int patternIdx, int step, int pad, int indice) const noexcept;   // -128 = ninguna
+    void clearStepExtras (int patternIdx, int step, int pad) noexcept;
+    std::uint32_t getStepChordRaw (int patternIdx, int step, int pad) const noexcept
+    {
+        if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps
+            || pad < 0 || pad >= kNumPads) return 0;
+        return stepChord[(size_t) patternIdx][(size_t) step][(size_t) pad].load (std::memory_order_relaxed);
+    }
+    void setStepChordRaw (int patternIdx, int step, int pad, std::uint32_t v) noexcept
+    {
+        if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps
+            || pad < 0 || pad >= kNumPads) return;
+        stepChord[(size_t) patternIdx][(size_t) step][(size_t) pad].store (v, std::memory_order_relaxed);
+    }
     void setStepVel   (int patternIdx, int step, int pad, int vel)  noexcept;
     void setStepRoll  (int patternIdx, int step, int pad, int hits) noexcept;
     int  getStepVel   (int patternIdx, int step, int pad) const noexcept;
@@ -619,8 +638,13 @@ public:
 
 private:
     void handleCommand (const Command& c) noexcept;               // audio thread
+    //  `cortaSuCola` es false para las notas de un ACORDE: el autocorte esta
+    //  puesto por defecto y es lo correcto para un pad de percusion -un golpe
+    //  nuevo se come el anterior- pero un acorde son cuatro golpes del MISMO
+    //  pad en el MISMO instante, y con el autocorte los tres primeros mueren
+    //  antes de sonar. Medido: cuatro notas daban UNA voz viva.
     void triggerPad (int slot, int extraSemis = 0, float vel = 1.0f,
-                     float from01 = -1.0f) noexcept;   // audio thread
+                     float from01 = -1.0f, bool cortaSuCola = true) noexcept;   // audio thread
 
     template <typename Arr, typename V>
     static void store (Arr& a, int slot, V v) noexcept
@@ -834,6 +858,22 @@ private:
 
     // Piano roll: per-(pattern, step, pad) semitone offset from the pad's own pitch.
     std::array<std::array<std::array<std::atomic<std::int8_t>, kNumPads>, kNumSteps>, kNumPatterns> stepNote {};
+    //  LAS TRES NOTAS DE MAS, para que un paso pueda ser un ACORDE.
+    //
+    //  stepNote guarda UNA nota por paso y por pad, que es todo lo que hace
+    //  falta para percusion afinada. Para tocar un instrumento -acordes,
+    //  melodias, arpegios- hace falta que un mismo pad suene varias veces a la
+    //  vez en el mismo paso, y eso no cabe en un solo semitono.
+    //
+    //  Se guardan APARTE y no se cambia stepNote: la nota raiz sigue donde
+    //  estaba, asi que todo lo que ya lee y escribe patrones -el fichero de
+    //  proyecto, el secuenciador, la ficha PASO- sigue funcionando sin tocarlo
+    //  y un patron viejo vuelve exactamente igual. Tres extras empaquetadas en
+    //  un entero: un byte por nota y tres bits que dicen cuales estan puestas,
+    //  porque el cero es un semitono valido y no puede significar "ninguna".
+    //  Cuatro notas es un acorde de verdad y son 64 KB; ocho serian 128 y no
+    //  hay dedos para escribirlas en una rejilla de telefono.
+    std::array<std::array<std::array<std::atomic<std::uint32_t>, kNumPads>, kNumSteps>, kNumPatterns> stepChord {};
 
     //  What a step DOES, beyond which pads it fires.
     //
@@ -858,7 +898,10 @@ private:
     //  boundary and a roll puts several between boundaries, so a step is no
     //  longer a single instant and the render loop has to be able to stop
     //  between them.
-    struct PendingHit { int countdown; int pad; int semis; float vel; };
+    //  `corta` distingue la nota RAIZ de las del acorde: la raiz corta la cola
+    //  del pad como siempre, y las que la acompanan no, o se matarian entre
+    //  ellas antes de sonar. Ver triggerPad.
+    struct PendingHit { int countdown; int pad; int semis; float vel; bool corta = true; };
     std::array<PendingHit, 96> pending {};
     int numPending = 0;
 

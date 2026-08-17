@@ -155,6 +155,7 @@ UNTRANSLATED_OK = {
     "XY",                                      # los dos ejes se llaman igual en todas partes
     "PADS", "SEC", "MIX", "SET", "SONG", "REC", "PLAY", "STOP", "LOAD",
     "RACK", "TEST", "AUDIO", "AUTOCUT", "AUTO CHOP", "SWING", "off",
+    "PIANO",                                   # el instrumento se llama igual en las dos
     "PAPEL", "GRAFITO", "ACERO", "LACA",       # the four chassis, named not translated
     "ESPANOL", "ENGLISH",                      # each language names itself
     "file:",

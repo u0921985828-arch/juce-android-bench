@@ -174,7 +174,7 @@ void AudioEngine::releaseResources() noexcept
     fallbackTriggers.store (0, std::memory_order_relaxed);
 }
 
-void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01) noexcept
+void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01, bool cortaSuCola) noexcept
 {
     if (slot < 0 || slot >= kNumPads)
         return;
@@ -216,7 +216,7 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01)
     //  speaks, so it gets the 1.5 ms declick fade and not the pad's musical
     //  release, which on a long tail would leave the two overlapping for as
     //  long as the release lasts and defeat the whole thing.
-    if (padSelfCut[(size_t) slot].load (std::memory_order_relaxed))
+    if (cortaSuCola && padSelfCut[(size_t) slot].load (std::memory_order_relaxed))
         for (auto& v : voices)
             if (v.active && v.slot == slot)
                 v.steal (systemSampleRate);
@@ -716,11 +716,32 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 const float vel  = rawV <= 0 ? 1.0f : juce::jlimit (0.02f, 1.0f, (float) rawV / 127.0f);
                 const int   hits = rawR <= 0 ? 1    : juce::jlimit (1, 8, rawR);
 
+                //  LAS NOTAS DE MAS DEL ACORDE, leidas una vez por paso y no
+                //  por repeticion: un redoble de cuatro golpes sobre un acorde
+                //  de cuatro notas son dieciseis disparos, y la cola tiene 96
+                //  huecos para los dieciseis pads.
+                const std::uint32_t acorde = stepChord[(size_t) bank][(size_t) stepInPattern][(size_t) p]
+                                                 .load (std::memory_order_relaxed);
+
                 for (int h = 0; h < hits; ++h)
                 {
                     if (numPending >= (int) pending.size()) break;
                     const int at = lateBy + (int) (samplesPerStep * (double) h / (double) hits);
-                    pending[(size_t) numPending++] = { at, p, semis, vel };
+                    pending[(size_t) numPending++] = { at, p, semis, vel, true };
+
+                    //  El acorde suena en el MISMO instante que su raiz: si se
+                    //  repartieran, seria un arpegio, y el arpegio se escribe
+                    //  en la rejilla poniendo las notas en pasos distintos.
+                    for (int e = 0; e < kExtraNotes; ++e)
+                    {
+                        if ((acorde & (1u << (24u + (unsigned) e))) == 0) continue;
+                        if (numPending >= (int) pending.size()) break;
+                        const int extra = (int) (std::int8_t) ((acorde >> ((unsigned) e * 8u)) & 0xFFu);
+                        //  Sin cortar: el autocorte del pad esta puesto por
+                        //  defecto y con el las tres notas de mas mueren antes
+                        //  de sonar. Medido: cuatro notas daban UNA voz viva.
+                        pending[(size_t) numPending++] = { at, p, extra, vel, false };
+                    }
                 }
             }
         };
@@ -866,7 +887,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 {
                     const auto h = pending[(size_t) i];
                     pending[(size_t) i] = pending[(size_t) --numPending];
-                    triggerPad (h.pad, h.semis, h.vel);
+                    triggerPad (h.pad, h.semis, h.vel, -1.0f, h.corta);
                 }
                 else ++i;
             }
@@ -1655,6 +1676,10 @@ void AudioEngine::clearPattern (int patternIdx) noexcept
 {
     if (patternIdx < 0 || patternIdx >= kNumPatterns) return;
     for (auto& m : patternBank[(size_t) patternIdx]) m.store (0, std::memory_order_relaxed);
+    //  Y las notas de mas del acorde: vaciar un patron y que siguiera sonando
+    //  un acorde de tres notas encima de nada es lo que pasaba sin esto.
+    for (auto& fila : stepChord[(size_t) patternIdx])
+        for (auto& celda : fila) celda.store (0, std::memory_order_relaxed);
 }
 
 void AudioEngine::setPatternLength (int patternIdx, int len) noexcept
@@ -1673,6 +1698,37 @@ void AudioEngine::setStepNote (int patternIdx, int step, int pad, int semis) noe
 {
     if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps || pad < 0 || pad >= kNumPads) return;
     stepNote[(size_t) patternIdx][(size_t) step][(size_t) pad].store ((std::int8_t) juce::jlimit (-24, 24, semis), std::memory_order_relaxed);
+}
+
+//  LAS TRES NOTAS DE MAS. Ver stepChord: un byte por nota en los bits bajos y
+//  un bit de presencia por nota en los bits 24..26, porque el cero es un
+//  semitono valido -la nota tal cual- y no puede significar "ninguna".
+void AudioEngine::setStepExtra (int patternIdx, int step, int pad, int indice, int semis, bool puesta) noexcept
+{
+    if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps
+        || pad < 0 || pad >= kNumPads || indice < 0 || indice >= kExtraNotes) return;
+
+    auto& celda = stepChord[(size_t) patternIdx][(size_t) step][(size_t) pad];
+    std::uint32_t v = celda.load (std::memory_order_relaxed);
+    const unsigned sh = (unsigned) indice * 8u;
+    v &= ~(0xFFu << sh);
+    v |= ((std::uint32_t) (std::uint8_t) (std::int8_t) juce::jlimit (-24, 24, semis)) << sh;
+    const std::uint32_t bit = 1u << (24u + (unsigned) indice);
+    if (puesta) v |= bit; else v &= ~bit;
+    celda.store (v, std::memory_order_relaxed);
+}
+
+int AudioEngine::getStepExtra (int patternIdx, int step, int pad, int indice) const noexcept
+{
+    if (indice < 0 || indice >= kExtraNotes) return -128;
+    const auto v = getStepChordRaw (patternIdx, step, pad);
+    if ((v & (1u << (24u + (unsigned) indice))) == 0) return -128;
+    return (int) (std::int8_t) ((v >> ((unsigned) indice * 8u)) & 0xFFu);
+}
+
+void AudioEngine::clearStepExtras (int patternIdx, int step, int pad) noexcept
+{
+    setStepChordRaw (patternIdx, step, pad, 0);
 }
 
 //  Velocity and roll, same shape as the note. Zero means "never set" in both,
@@ -1855,6 +1911,10 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
 
     songMode.store (s.songMode.load (std::memory_order_relaxed), std::memory_order_relaxed);
     songBars.store (s.songBars.load (std::memory_order_relaxed), std::memory_order_relaxed);
+    for (size_t b2 = 0; b2 < stepChord.size(); ++b2)
+        for (size_t s2 = 0; s2 < stepChord[b2].size(); ++s2)
+            copyArr (stepChord[b2][s2], s.stepChord[b2][s2]);
+
     for (size_t ln = 0; ln < songCell.size(); ++ln)
         copyArr (songCell[ln], s.songCell[ln]);
     //  Y el silenciado de carriles y el tramo en bucle, que son estado de la
