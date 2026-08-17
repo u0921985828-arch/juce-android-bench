@@ -18,7 +18,7 @@ SIZES = [
     ("915x412",  "LANDSCAPE — the orientation nobody tests"),
 ]
 LANGS = ["es", "en", "zh", "ar"]
-SHEETS = ["", "pads", "pad2", "pad3", "sec", "paso", "song", "mix", "xy", "set", "proj", "gest", "midi", "manual", "rack", "chop", "browse"]
+SHEETS = ["", "pads", "pad2", "pad3", "sec", "paso", "song", "piano", "mix", "xy", "set", "proj", "gest", "midi", "manual", "rack", "chop", "expo", "browse"]
 
 MIN_TOUCH = 40   # Metrics::hit — Android's own guideline is 48dp, this is the floor
 #  LO QUE SE DIBUJA Y SE TOCA IGUAL.
@@ -156,6 +156,8 @@ UNTRANSLATED_OK = {
     "PADS", "SEC", "MIX", "SET", "SONG", "REC", "PLAY", "STOP", "LOAD",
     "RACK", "TEST", "AUDIO", "AUTOCUT", "AUTO CHOP", "SWING", "off",
     "PIANO",                                   # el instrumento se llama igual en las dos
+    "PAD -", "PAD +",                          # PAD pasa por T() y coincide de verdad en es/en
+    "MASTER",                                  # la mezcla final se llama igual en las dos
     "OFF",                                     # el extremo apagado de un mando, universal en un aparato
     "PAPEL", "GRAFITO", "ACERO", "LACA",       # the four chassis, named not translated
     "ESPANOL", "ENGLISH",                      # each language names itself

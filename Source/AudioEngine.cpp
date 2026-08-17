@@ -1561,7 +1561,12 @@ void AudioEngine::handleCommand (const Command& c) noexcept
 {
     switch (c.type)
     {
-        case Command::Type::NoteOn:  triggerPad (c.slot, 0, c.velocity, c.from01); break;
+        //  El semitono del comando SE USA. Estaba clavado a cero, asi que el
+        //  campo que la cola ya llevaba - y que la rama de cuantizar SI leia -
+        //  se perdia en el camino corto: el piano roll no podia oir una nota
+        //  sin desafinar el pad. Cero sigue siendo el valor por defecto, asi
+        //  que un dedo en un pad suena exactamente igual que antes.
+        case Command::Type::NoteOn:  triggerPad (c.slot, (int) c.semitones, c.velocity, c.from01); break;
         case Command::Type::NoteOff:
             if (c.slot >= 0 && c.slot < kNumPads)
                 for (auto& v : voices)
@@ -1590,6 +1595,14 @@ void AudioEngine::postNoteOn (int slot, float vel) noexcept
     Command c; c.type = Command::Type::NoteOn; c.slot = slot; c.velocity = vel;
     if (! commands.push (c))
         noteOnByLifeboat (slot);
+}
+
+void AudioEngine::postNoteOnAt (int slot, int semis, float vel) noexcept
+{
+    Command c; c.type = Command::Type::NoteOn; c.slot = slot; c.velocity = vel;
+    c.semitones = (float) semis;
+    if (! commands.push (c))
+        noteOnByLifeboat (slot);      // el bote solo lleva el pad; mejor la nota del pad que nada
 }
 
 void AudioEngine::postNoteOnFrom (int slot, float from01, float vel) noexcept

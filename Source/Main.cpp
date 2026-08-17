@@ -5,6 +5,7 @@
 #include "UiAudit.h"
 #include "StoreArt.h"
 #include "StepGrid.h"
+#include "Bitacora.h"
 #include <ctime>
 
 //  Storage for the two Oboe dials declared in AudioPath.h. They live here so
@@ -45,8 +46,8 @@ static void recogeControles (juce::Component& c,
 static void fuzz (MainComponent& mc, int semilla, int sesiones, int acciones)
 {
     static const char* kFichas[] = { "pads", "pad2", "pad3", "sec", "paso", "song",
-                                     "mix", "xy", "set", "proj", "gest", "midi",
-                                     "rack", "chop", "manual", "" };
+                                     "piano", "mix", "xy", "set", "proj", "gest",
+                                     "midi", "rack", "chop", "manual", "expo", "" };
     static const int kAnchos[] = { 280, 320, 360, 393, 412, 480, 653, 915 };
 
     int peorSolapes = 0, peorFuera = 0, estados = 0;
@@ -138,6 +139,9 @@ public:
         //  through the table, and a component built in one language and then
         //  retranslated flickers on the first frame.
         ProjectStore::ensureTree();
+        //  La caja negra, antes que nada: si algo de lo de abajo se cae, la
+        //  linea que lo dice tiene que estar ya escribible. Ver Bitacora.h.
+        Bitacora::instalar (ProjectStore::home());
         Lang::loadPreference();
         //  Before the window: every component captures colours as it is built,
         //  so a chassis applied afterwards would leave half the face on the
@@ -331,9 +335,9 @@ public:
                     else if (UiAudit::env ("ZATI_PAGES").isNotEmpty())
                     {
                         static const char* kFichas[] =
-                        { "pads", "pad2", "pad3", "sec", "paso", "song", "mix",
-                          "set", "proj", "midi", "gest", "rack", "chop", "manual",
-                          "browse", "xy" };
+                        { "pads", "pad2", "pad3", "sec", "paso", "song", "piano",
+                          "mix", "set", "proj", "midi", "gest", "rack", "chop",
+                          "manual", "expo", "browse", "xy" };
                         const int n2 = juce::numElementsInArray (kFichas);
 
                         int peorSolapes = 0, peorFuera = 0, mirados = 0;
@@ -377,6 +381,21 @@ public:
                     else if (UiAudit::env ("ZATI_ARR").isNotEmpty())
                     {
                         c2->auditArrange();
+                    }
+                    else if (UiAudit::env ("ZATI_PIANO").isNotEmpty())
+                    {
+                        c2->auditPiano();
+                    }
+                    else if (const auto ex = UiAudit::env ("ZATI_EXPORT"); ex.isNotEmpty())
+                    {
+                        //  asinc / cancel se van por el camino de verdad - hilo
+                        //  aparte y temporizador - y cierran ellos la app.
+                        if (ex == "asinc" || ex == "cancel")
+                        {
+                            c2->auditExportAsync (ex == "cancel");
+                            return;
+                        }
+                        c2->auditExport();
                     }
                     else if (UiAudit::env ("ZATI_HEAD").isNotEmpty())
                     {
@@ -463,6 +482,9 @@ public:
     void shutdown() override
     {
         mainWindow = nullptr;
+        //  La ultima linea. Sin ella, "el ultimo paso" no significa nada: es la
+        //  que separa cerrarse a la mitad de cerrarse bien.
+        Bitacora::finLimpio();
     }
 
     void systemRequestedQuit() override

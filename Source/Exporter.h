@@ -4,6 +4,7 @@
 #include "AudioEngine.h"
 #include "SampleBuffer.h"
 #include "Lang.h"
+#include "Bitacora.h"
 
 // ============================================================================
 //  Exporter — the bounce. Where the music finally leaves ZATI.
@@ -34,6 +35,28 @@
 //  Clipping is handled by measuring, not guessing: if the master peaks over
 //  0 dBFS the whole bounce is scaled down by exactly that much and the amount
 //  is reported. Stems get the SAME scaling, or they would no longer sum.
+//
+//  · Y SE ESCRIBE POR BLOQUES, sin la cancion entera en memoria.
+//
+//    La version anterior reservaba un AudioBuffer del largo COMPLETO del
+//    rebote: 64 compases a 120 BPM son 128 s, o sea 49 MB de una sola pieza, y
+//    la misma cancion con la rejilla en 1/8 y el tempo abajo pide 1.2 GB. Eso
+//    no cerraba la app - medido: juce::AudioBuffer usa HeapBlock<char,true>,
+//    que SI lanza, y el try/catch daba "Sin memoria para 130 s" en vez de
+//    reventar - pero convertia en imposible lo que la maquina puede tocar. Un
+//    telefono con la memoria justa no puede exportar su propia cancion.
+//
+//    Ahora se renderiza en trozos de 512 y cada trozo se escribe al vuelo, asi
+//    que la memoria del rebote es constante -unos 4 KB- y no depende del largo.
+//    Medido con la cancion mas larga que la app admite, 130 s: el proceso llega
+//    a 32 MB de pico y el rebote sale entero con el monton limitado a 64 MB,
+//    donde el codigo anterior contestaba que no habia memoria.
+//
+//    El precio es una pasada mas: el pico manda la ganancia y hay que conocerlo
+//    ANTES de escribir la primera muestra, asi que se mide en una pasada aparte
+//    y se vuelve a renderizar para escribir. Es determinista - un motor propio,
+//    fuera de tiempo real - asi que las dos pasadas dan exactamente lo mismo:
+//    el master salio con los mismos 1152104 bytes que antes, al byte.
 // ============================================================================
 class Exporter : public juce::Thread
 {
@@ -55,7 +78,9 @@ public:
           dir (std::move (destDir)), base (std::move (baseName)),
           stems (wantStems), sampleRate (sr > 0.0 ? sr : 44100.0)
     {
-        totalPasses = 1;
+        //  Dos: la que mide el pico y la que escribe el master. Contarla es lo
+        //  honesto - la barra la recorre igual que las demas.
+        totalPasses = 2;
         if (stems)
             for (int i = 0; i < kNumPads; ++i)
                 if (pads[(size_t) i] != nullptr) ++totalPasses;
@@ -108,37 +133,30 @@ public:
             return;
         }
 
-        juce::AudioBuffer<float> buffer;
-        try
-        {
-            buffer.setSize (2, (int) totalLen);
-        }
-        catch (...)
-        {
-            resultOk = false;
-            resultText = T ("Sin memoria para %1 s", juce::String (totalLen / (juce::int64) sampleRate));
-            finished.store (true, std::memory_order_release);
-            return;
-        }
+        // --- Pass 1: measure. Nothing is written; the peak sets the gain. --
+        Bitacora::paso ("exportar/medir");
+        float peak = 0.0f;
+        if (! renderPass (-1, totalLen, 1.0f, nullptr, &peak, 0)) return;   // cancelled
 
-        // --- Pass 1: the master. Its peak sets the gain for everything. ---
-        if (! renderPass (-1, buffer)) return;   // cancelled
-
-        const float peak = bufferPeak (buffer);
         const float gain = (peak > 1.0f) ? (0.999f / peak) : 1.0f;
+        passDone.store (1, std::memory_order_relaxed);
 
+        // --- Pass 2: the master, written as it renders. --------------------
+        Bitacora::paso ("exportar/master");
         auto masterFile = uniqueFile (base + ".wav");
-        if (! writeWav (masterFile, buffer, gain))
+        if (! writeRender (masterFile, -1, totalLen, gain, 1))
         {
+            if (threadShouldExit()) return;      // writeRender ya dejo el parte
             resultOk = false;
             resultText = T ("No se pudo escribir %1", masterFile.getFileName());
             finished.store (true, std::memory_order_release);
             return;
         }
-        passDone.store (1, std::memory_order_relaxed);
-        progress.store (1.0f / (float) totalPasses, std::memory_order_relaxed);
+        passDone.store (2, std::memory_order_relaxed);
+        progress.store (2.0f / (float) totalPasses, std::memory_order_relaxed);
 
         int written = 1;
+        int pasadas = 2;
 
         // --- Remaining passes: one stem per loaded pad. -------------------
         if (stems)
@@ -147,18 +165,28 @@ public:
             {
                 if (pads[(size_t) p] == nullptr) continue;
 
-                if (! renderPass (p, buffer)) return;   // cancelled
-
                 auto label = padNames[(size_t) p].isNotEmpty()
                                ? sanitise (padNames[(size_t) p])
                                : juce::String ("pad");
+                {
+                    //  El numero de pad va en la miga: si la app se cierra en
+                    //  una pista concreta, es la muestra de ESE pad la que hay
+                    //  que mirar y no "la exportacion".
+                    char m[32] = "exportar/pista ";
+                    const int q = p + 1;
+                    m[15] = (char) ('0' + (q / 10) % 10); m[16] = (char) ('0' + q % 10); m[17] = 0;
+                    Bitacora::paso (m);
+                }
                 auto f = uniqueFile (base + "_" + juce::String (p + 1).paddedLeft ('0', 2)
                                           + "_" + label + ".wav");
-                if (writeWav (f, buffer, gain))
+                if (writeRender (f, p, totalLen, gain, pasadas))
                     ++written;
+                else if (threadShouldExit())
+                    return;
 
-                passDone.store (written, std::memory_order_relaxed);
-                progress.store ((float) written / (float) totalPasses, std::memory_order_relaxed);
+                ++pasadas;
+                passDone.store (pasadas, std::memory_order_relaxed);
+                progress.store ((float) pasadas / (float) totalPasses, std::memory_order_relaxed);
             }
         }
 
@@ -182,14 +210,46 @@ public:
                           ? " " + T ("(bajado %1 dB para no saturar)",
                                      juce::String (-juce::Decibels::gainToDecibels (gain), 1))
                           : juce::String());
+        Bitacora::paso ("exportar/hecho");
         progress.store (1.0f, std::memory_order_relaxed);
         finished.store (true, std::memory_order_release);
     }
 
 private:
+    //  Abre el fichero y renderiza DENTRO de el: una pasada, un WAV, memoria
+    //  constante. Devuelve false si no se pudo escribir o si se cancelo - las
+    //  dos se distinguen mirando threadShouldExit, que es lo que hace run().
+    bool writeRender (const juce::File& f, int soloPad, juce::int64 totalLen,
+                      float gain, int pasada)
+    {
+        f.deleteFile();
+        auto stream = f.createOutputStream();
+        if (stream == nullptr || ! stream->openedOk())
+            return false;
+
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::AudioFormatWriter> writer (
+            wav.createWriterFor (stream.get(), sampleRate, 2, 24, {}, 0));
+        if (writer == nullptr)
+            return false;
+        stream.release();   // the writer owns it now
+
+        if (! renderPass (soloPad, totalLen, gain, writer.get(), nullptr, pasada))
+        {
+            //  Un rebote a medias no se queda en la carpeta pareciendo un
+            //  fichero bueno: el escritor se cierra y el fichero se borra.
+            writer.reset();
+            f.deleteFile();
+            return false;
+        }
+        return true;
+    }
+
     // Renders the whole arrangement once. `soloPad` < 0 means the full mix;
-    // otherwise only that pad sounds. Returns false if the job was cancelled.
-    bool renderPass (int soloPad, juce::AudioBuffer<float>& dest)
+    // otherwise only that pad sounds. Escribe en `writer` si lo hay y anota el
+    // pico en `peakOut` si lo hay. Returns false if the job was cancelled.
+    bool renderPass (int soloPad, juce::int64 totalLen, float gain,
+                     juce::AudioFormatWriter* writer, float* peakOut, int pasada)
     {
         // On the heap: an engine carries the eight pattern banks and their
         // note grids, which is more than a worker thread's stack should hold.
@@ -234,8 +294,11 @@ private:
 
         off.setPlaying (true);
 
-        const int total = dest.getNumSamples();
-        for (int pos = 0; pos < total; pos += kBlock)
+        //  EL UNICO buffer del rebote, y mide un bloque. Ver la cabecera: el
+        //  que media la cancion entera es el que cerraba la app.
+        juce::AudioBuffer<float> trozo (2, kBlock);
+
+        for (juce::int64 pos = 0; pos < totalLen; pos += kBlock)
         {
             if (threadShouldExit())
             {
@@ -245,8 +308,25 @@ private:
                 return false;
             }
 
-            const int n = juce::jmin (kBlock, total - pos);
-            off.renderNextBlock (dest, pos, n);
+            const int n = (int) juce::jmin ((juce::int64) kBlock, totalLen - pos);
+            off.renderNextBlock (trozo, 0, n);
+
+            if (peakOut != nullptr)
+                for (int ch = 0; ch < 2; ++ch)
+                    *peakOut = juce::jmax (*peakOut, trozo.getMagnitude (ch, 0, n));
+
+            if (writer != nullptr)
+            {
+                if (gain < 1.0f)
+                    for (int ch = 0; ch < 2; ++ch)
+                        trozo.applyGain (ch, 0, n, gain);
+
+                if (! writer->writeFromAudioSampleBuffer (trozo, 0, n))
+                {
+                    off.setPlaying (false);
+                    return false;              // disco lleno, o el fichero se fue
+                }
+            }
 
             // Freeing retired buffers here keeps the clone's queue from
             // filling on a long render; it is the message thread's job in the
@@ -255,54 +335,13 @@ private:
 
             if ((pos & 0x3ffff) == 0)
             {
-                const float within = (float) pos / (float) total;
-                const float base01 = (float) passDone.load (std::memory_order_relaxed) / (float) totalPasses;
+                const float within = (float) pos / (float) juce::jmax ((juce::int64) 1, totalLen);
+                const float base01 = (float) pasada / (float) totalPasses;
                 progress.store (base01 + within / (float) totalPasses, std::memory_order_relaxed);
             }
         }
 
         off.setPlaying (false);
-        return true;
-    }
-
-    static float bufferPeak (const juce::AudioBuffer<float>& b)
-    {
-        float peak = 0.0f;
-        for (int ch = 0; ch < b.getNumChannels(); ++ch)
-            peak = juce::jmax (peak, b.getMagnitude (ch, 0, b.getNumSamples()));
-        return peak;
-    }
-
-    bool writeWav (const juce::File& f, const juce::AudioBuffer<float>& src, float gain)
-    {
-        f.deleteFile();
-        auto stream = f.createOutputStream();
-        if (stream == nullptr || ! stream->openedOk())
-            return false;
-
-        juce::WavAudioFormat wav;
-        std::unique_ptr<juce::AudioFormatWriter> writer (
-            wav.createWriterFor (stream.get(), sampleRate, 2, 24, {}, 0));
-        if (writer == nullptr)
-            return false;
-        stream.release();   // the writer owns it now
-
-        // Chunked so the gain is applied without a second full-length copy.
-        constexpr int chunk = 16384;
-        juce::AudioBuffer<float> tmp (2, chunk);
-        const int total = src.getNumSamples();
-        for (int pos = 0; pos < total; pos += chunk)
-        {
-            const int n = juce::jmin (chunk, total - pos);
-            for (int ch = 0; ch < 2; ++ch)
-            {
-                tmp.copyFrom (ch, 0, src, ch, pos, n);
-                if (gain < 1.0f)
-                    tmp.applyGain (ch, 0, n, gain);
-            }
-            if (! writer->writeFromAudioSampleBuffer (tmp, 0, n))
-                return false;
-        }
         return true;
     }
 

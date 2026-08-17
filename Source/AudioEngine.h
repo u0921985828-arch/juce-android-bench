@@ -73,6 +73,16 @@ public:
     //  Audition: same note, but read from a point in the source instead of
     //  from the pad's trim. Nothing about the pad changes.
     void postNoteOnFrom (int slot, float from01, float vel = 1.0f) noexcept;
+    //  Y AUDICION EN OTRA NOTA, que es lo que pide un teclado.
+    //
+    //  Existe porque la unica forma que habia de oir un semitono desde la
+    //  interfaz era setPadPitch seguido de postNoteOn, y eso hace DOS danos:
+    //  deja el pad afinado en la ultima tecla que se toco - el mando NOTA de la
+    //  pagina PASO se movia solo por pasear por el piano - y ademas suena
+    //  desafinado la primera vez, porque postNoteOn lee lo que hay ALMACENADO y
+    //  el orden de las dos llamadas no es el orden en que el hilo de audio las
+    //  ve. El semitono viaja en el comando; el pad no se toca.
+    void postNoteOnAt (int slot, int semis, float vel = 1.0f) noexcept;
     void postNoteOff (int slot) noexcept;
     void postPanic() noexcept;
     void postTestTone() noexcept;
@@ -100,6 +110,12 @@ public:
 
     // --- Per-pad params (message thread) ---
     void setPadPitch   (int slot, float semis) noexcept { store (padPitch,   slot, semis); }
+    //  Existe para el banco: "oir una nota no afina el pad" es una promesa que
+    //  no se puede comprobar sin leer lo que quedo guardado.
+    float getPadPitch (int slot) const noexcept
+    {
+        return (slot >= 0 && slot < kNumPads) ? padPitch[(size_t) slot].load (std::memory_order_relaxed) : 0.0f;
+    }
     void setPadGain    (int slot, float g)     noexcept { store (padGain,    slot, g); }
     void setPadStart   (int slot, int s)       noexcept { store (padStart,   slot, s); }
     void setPadEnd     (int slot, int e)       noexcept { store (padEnd,     slot, e); }

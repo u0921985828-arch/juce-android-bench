@@ -15,6 +15,7 @@
 #include "AudioFocus.h"
 #include "SessionKeeper.h"
 #include "Exporter.h"
+#include "Bitacora.h"
 #include "AudioPath.h"
 #include "XyPad.h"
 #include "MidiIo.h"
@@ -90,6 +91,12 @@ private:
     juce::TextButton pianoClearBtn   { "VACIAR" };
     juce::TextButton pianoPlayBtn    { "PLAY" };
     juce::TextButton pianoButton     { "PIANO" };
+    //  CAMBIAR DE PAD SIN CERRAR. La ficha tapa la rejilla de pads, asi que
+    //  escribir el bajo y luego la campana costaba cerrar, elegir y abrir por
+    //  cada instrumento. Y saltan los pads VACIOS: en un kit de cinco sonidos,
+    //  avanzar de uno en uno por sesenta y cuatro es no tener el boton.
+    juce::TextButton pianoPadDownBtn { "PAD -" }, pianoPadUpBtn { "PAD +" };
+    void pianoStepPad (int dir);
     int pianoBase = -12;                       // el semitono de la fila de abajo
     signed char pianoCells[AudioEngine::kNumSteps * PianoRoll::kMaxNotas] {};
     void refreshPiano (bool repintarTarjeta = true);
@@ -528,6 +535,19 @@ public:
     //  el arreglo se hubiera caido solo en el del proyecto, la prueba habria
     //  seguido en verde. Se mide el camino que se usa.
     void auditProject();
+    //  EL PIANO ROLL, medido. Ver auditPiano: escribe un acorde por la rejilla,
+    //  cambia de pad con la ficha abierta y toca el teclado, que son las tres
+    //  cosas que la ficha promete. Las tres tenian un fallo que una captura de
+    //  pantalla no ve: el acorde vive en (patron, paso, pad) y hay que leerlo
+    //  de ahi, el cambio de pad no repintaba la rejilla, y oir una tecla
+    //  afinaba el pad para siempre.
+    void auditPiano();
+    //  LA EXPORTACION, medida de verdad y no mirando la barra. Ver auditExport:
+    //  monta un patron con los sonidos de fabrica y hace el rebote entero -
+    //  master y pistas - en el hilo que llama, contando ficheros y bytes.
+    void auditExport();
+    void auditExportAsync (bool cancelar);
+    void esperaExport (bool cancelar, int vueltas);
 
 private:
     void autosave();

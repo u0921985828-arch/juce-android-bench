@@ -1426,6 +1426,56 @@ int main()
                      "acorde en un paso", sola, acorde, ok ? "OK" : "FALLA");
     }
 
+    //  OIR UNA TECLA DEL PIANO ROLL. Dos cosas a la vez o no vale:
+    //
+    //  que SUENE en la nota que se toca -el comando ya llevaba el semitono y
+    //  handleCommand lo tenia clavado a cero, asi que la unica forma de oir un
+    //  do sostenido desde la interfaz era setPadPitch- y que el pad siga
+    //  afinado donde estaba. Solo la primera la pasa el codigo viejo, y encima
+    //  desafinado el primer golpe: postNoteOn lee lo ALMACENADO, asi que el
+    //  orden de setPadPitch y postNoteOn no es el orden en que el audio los ve.
+    //
+    //  La nota se mide en la DURACION y no en cruces por cero: el seno del
+    //  banco lleva un 20% de ruido encima a proposito, y contar cruces sobre
+    //  ruido cuenta el ruido - la primera version de esta prueba dijo x0.86
+    //  con el motor ya arreglado. En CINTA, que es como nace un pad, subir una
+    //  octava recorre la fuente al doble de velocidad: la voz dura la mitad.
+    {
+        AudioEngine e; e.prepareToPlay (48000.0, 256); e.setPolyphony (16, 4);
+        e.setPadGain (0, 0.9f);
+        e.publishSample (0, makeSample (48000.0, 1.0, 220.0f));
+        juce::AudioBuffer<float> b (2, 256);
+        runBlocks (e, b, 256, 4);
+
+        e.setPadPitch (0, 3.0f);                 // el pad esta afinado en +3
+        const float antes = e.getPadPitch (0);
+
+        auto dura = [&] (int semis) noexcept
+        {
+            e.postPanic();
+            for (int i = 0; i < 8; ++i) e.renderNextBlock (b, 0, 256);
+            e.postNoteOnAt (0, semis, 0.9f);
+            int bloques = 0;
+            for (int i = 0; i < 400; ++i)
+            {
+                e.renderNextBlock (b, 0, 256);
+                if (e.getActiveVoiceCount() > 0) bloques = i + 1;
+                else if (i > 2) break;
+            }
+            return bloques;
+        };
+
+        const int grave = dura (0);
+        const int agudo = dura (12);
+        const float despues = e.getPadPitch (0);
+        //  Una octava exacta es la mitad de tiempo; se acepta 1.9-2.1 porque el
+        //  final de la voz cae dentro de un bloque de 256 y no en su borde.
+        const double razon = agudo > 0 ? (double) grave / (double) agudo : 0.0;
+        const bool ok = razon > 1.9 && razon < 2.1 && std::abs (despues - antes) < 0.001f;
+        std::printf ("%-34s +0 dura %d bloques   +12 dura %d (x%.2f)   pad sigue en %.0f   %s\n",
+                     "audicion del piano roll", grave, agudo, razon, despues, ok ? "OK" : "FALLA");
+    }
+
     //  EL EMPUJON DE UN PASO. HUMANIZAR escribe cuanto se aparta cada golpe de
     //  la rejilla, y lo que hay que comprobar es que el motor lo OBEDECE: un
     //  empujon que no mueve nada es un numero guardado, no un groove. Se mide

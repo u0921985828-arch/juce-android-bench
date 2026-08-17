@@ -1864,7 +1864,7 @@ MainComponent::MainComponent()
         pianoGrid.onTecla = [this] (int semi)
         {
             if (selectedPad >= 0)
-                engine.postNoteOn (selectedPad, 0.9f), engine.setPadPitch (selectedPad, (float) semi);
+                engine.postNoteOnAt (selectedPad, semi, 0.9f);
         };
         pianoSheet.addAndMakeVisible (pianoGrid);
 
@@ -1896,6 +1896,14 @@ MainComponent::MainComponent()
             refreshPiano();
             refreshStepGrid();
         };
+
+        for (auto* b : { &pianoPadDownBtn, &pianoPadUpBtn })
+        {
+            styleButton (*b, kKey);
+            pianoSheet.addAndMakeVisible (*b);
+        }
+        pianoPadDownBtn.onClick = [this] { pianoStepPad (-1); };
+        pianoPadUpBtn  .onClick = [this] { pianoStepPad ( 1); };
 
         styleButton (pianoPlayBtn, kKey);
         litAccent (pianoPlayBtn);
@@ -2779,6 +2787,11 @@ void MainComponent::macroMoved (int idx)
 // --- Sheets ------------------------------------------------------------------
 void MainComponent::openSheet (Sheet& s, juce::TextButton& toggle)
 {
+    //  Que ficha estaba abierta es la mitad de cualquier informe de un cierre:
+    //  "se cerro al exportar" y "se cerro al abrir la mezcla" no se arreglan en
+    //  el mismo sitio. Ver Bitacora.h.
+    Bitacora::paso (("ficha " + toggle.getButtonText()).toRawUTF8());
+
     closeAllSheets();
     if (selectedPad < 0) selectPad (0);
     toggle.setToggleState (true, juce::dontSendNotification);
@@ -5057,6 +5070,18 @@ void MainComponent::resized()
         auto titleRow = inner.removeFromTop (Metrics::hit);
         pianoCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
                                         .withSizeKeepingCentre (Metrics::hit, Metrics::hit));
+        //  PAD - / PAD + van en la fila del titulo y no en la de abajo, que ya
+        //  lleva cuatro: seis tapas en 380 px caen a 60 cada una y "OCTAVA -"
+        //  pide 72, asi que la fila de abajo empezaria a recortar rotulos. Y
+        //  aqui hay sitio de sobra - la cabecera solo tenia la cruz.
+        {
+            const int anchoPad = juce::jmax (Metrics::hit, titleRow.getWidth() / 6);
+            juce::TextButton* pn[2] = { &pianoPadDownBtn, &pianoPadUpBtn };
+            //  vInset CERO. Con 2 quedaban en 36 de alto y el suelo del dedo
+            //  son 40: la cabecera mide justo 40, asi que meterlas dos pixeles
+            //  por lado era regalar los cuatro que faltaban.
+            layoutModuleBar (Lang::takeEnd (titleRow, anchoPad * 2), pn, 0, 2);
+        }
         inner.removeFromTop (14);                    // pintado: que se esta mirando
         inner.removeFromTop (Metrics::sm);
 
@@ -5082,8 +5107,20 @@ void MainComponent::resized()
         //  Y la de herramientas puede ser dos por lo mismo: son cinco tapas y
         //  en arabe INSERTAR y QUITAR piden bastante mas ancho que en ingles.
         int filasUtil = Metrics::hit;
+        //  El ancho de la COLUMNA, decidido aqui arriba porque de el depende en
+        //  cuantas filas caen las tapas y de eso depende la altura que se pide.
+        const int colUtil = wideFace ? juce::jlimit (200, 340, full.getWidth() / 3) : 0;
         {
-            const int anchoUtil = (int) ((float) safeArea().getWidth() * 0.92f) - 2 * Metrics::lg;
+            //  Y ESTE es el ancho con el que se cuentan las filas: girado, las
+            //  tapas no cruzan la tarjeta, viven en una columna de 300 px. Se
+            //  contaban con el ancho de la PANTALLA - 815 px - asi que las
+            //  nueve "caben en una fila", se pedia altura para UNA y abajo se
+            //  maquetaban TRES. Las dos ultimas filas se salian de la tarjeta y
+            //  el pie entero -PLAY, el largo y las paginas- quedaba en 72x0:
+            //  la ficha de CANCION no tenia boton de play en apaisado, que es
+            //  justo la orientacion en la que se pidio.
+            const int anchoUtil = wideFace ? colUtil - 2 * Metrics::lg
+                                           : (int) ((float) safeArea().getWidth() * 0.92f) - 2 * Metrics::lg;
             juce::TextButton* sb[4] = { &songPadModeBtn, &songClearBtn, &songDoubleBtn, &songModeBtn };
             if (! moduleBarFits (anchoUtil, sb, 4)) filasModo = 2 * Metrics::hit + Metrics::halfGap;
 
@@ -5103,14 +5140,21 @@ void MainComponent::resized()
         //  filas: las filas estan en una columna al lado de la rejilla, asi
         //  que la altura que se pide es la de la COLUMNA - que es la mayor de
         //  las dos - y no la de las dos apiladas.
-        const int altoColumna = Metrics::md * 2 + Metrics::hit          // titulo
-                              + Metrics::hit * (wideFace ? 2 : 1) + Metrics::xs   // paleta
-                              + filasModo + filasUtil + Metrics::sm * 3
-                              + Metrics::hit + Metrics::xs + Metrics::btn;        // paginas + pie
-        const int altoRejilla = Metrics::md * 2 + Metrics::hit + Playlist::kLanes * laneH;
+        //
+        //  Y EL PIE -paginas y transporte- NO va en la columna cuando esta
+        //  girada. Girado la columna ya pide 268 px de sus tres bloques y la
+        //  tarjeta solo puede medir el 86% de 412; meter ahi otros 92 la
+        //  desbordaba y la ultima fila salia con altura cero. Debajo de la
+        //  linea de tiempo hay sitio de sobra: cuatro carriles pasan de 68 px
+        //  a 49, que sigue siendo compas y medio de dedo.
+        const int altoPie  = Metrics::hit + Metrics::xs + Metrics::btn + Metrics::xs;
+        const int altoCol  = Metrics::hit * (wideFace ? 2 : 1) + Metrics::xs   // paleta
+                           + filasModo + filasUtil + Metrics::sm * 2;
+        const int altoRej  = Playlist::kLanes * laneH;
         auto inner = sheetFromBottom (songSheet,
-                                      wideFace ? juce::jmax (altoColumna, altoRejilla)
-                                               : altoColumna + Playlist::kLanes * laneH);
+                                      Metrics::md * 2 + Metrics::hit
+                                        + (wideFace ? juce::jmax (altoCol, altoRej + altoPie)
+                                                    : altoCol + Metrics::sm + altoPie + altoRej));
         auto titleRow = inner.removeFromTop (Metrics::hit);
         songCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
 
@@ -5126,7 +5170,6 @@ void MainComponent::resized()
         //  linea de tiempo se queda con el ancho que sobra Y CON TODO EL ALTO.
         //  Es la misma decision que ya tomo la ficha del secuenciador, y por
         //  la misma razon: la pantalla tiene la forma que tiene.
-        const int colUtil = wideFace ? juce::jlimit (200, 340, full.getWidth() / 3) : 0;
         auto columna = wideFace ? Lang::takeStart (inner, colUtil) : juce::Rectangle<int>();
         if (wideFace) Lang::takeStart (inner, Metrics::gap);
         auto& panel = wideFace ? columna : inner;
@@ -5208,16 +5251,21 @@ void MainComponent::resized()
         }
 
         //  EL TRANSPORTE y el largo, en la misma fila: PLAY primero porque es
-        //  lo que se toca mas, y el largo con lo que sobre.
-        auto bottom = panel.removeFromBottom (Metrics::btn);
+        //  lo que se toca mas, y el largo con lo que sobre. Girado va DEBAJO DE
+        //  LA LINEA DE TIEMPO y no al final de la columna - ver la altura.
+        auto& pie = wideFace ? inner : panel;
+        auto bottom = pie.removeFromBottom (Metrics::btn);
         {
             const int pw = juce::jmax (Metrics::hit * 2, bottom.getWidth() / 4);
-            songPlayBtn.setBounds (Lang::takeStart (bottom, pw).reduced (Metrics::halfGap, 6));
+            //  DOS de aire y no seis: la fila mide 44 y seis por lado dejaban
+            //  PLAY en 32, por debajo del suelo de 40. Es la tapa que se toca
+            //  con la cancion rodando, asi que es la ultima que puede encoger.
+            songPlayBtn.setBounds (Lang::takeStart (bottom, pw).reduced (Metrics::halfGap, 2));
             songLenSlider.setBounds (bottom.reduced (Metrics::halfGap, 6));
         }
-        panel.removeFromBottom (Metrics::xs);
+        pie.removeFromBottom (Metrics::xs);
 
-        auto pageRow = panel.removeFromBottom (Metrics::hit);
+        auto pageRow = pie.removeFromBottom (Metrics::hit);
         {
             const int n = songPageBtns.size();
             const int w = pageRow.getWidth() / juce::jmax (1, n);
@@ -6199,6 +6247,10 @@ void MainComponent::selectPad (int index)
     for (int i = 0; i < kNumPads; ++i) refreshPad (i);
     repaint (headerArea);          // the fragment strip tracks which zatis are loaded
     if (padSheet.isVisible()) padSheet.repaint();  // title, zati swatch and card follow the selection
+    //  Y el piano roll, que dibuja las notas de ESTE pad: dejarlo sin avisar
+    //  ensena las notas del pad anterior con el nombre del nuevo en la cabecera,
+    //  que es la peor de las dos mentiras posibles.
+    if (pianoSheet.isVisible()) refreshPiano();
 }
 
 // The display shows the whole cut, not one pad: every pad pointing at the
@@ -6691,6 +6743,8 @@ void MainComponent::retranslateUi()
     pianoButton  .setButtonText (T ("PIANO"));
     pianoOctDownBtn.setButtonText (T ("OCTAVA") + " -");
     pianoOctUpBtn  .setButtonText (T ("OCTAVA") + " +");
+    pianoPadDownBtn.setButtonText (T ("PAD") + " -");
+    pianoPadUpBtn  .setButtonText (T ("PAD") + " +");
     pianoClearBtn  .setButtonText (T ("VACIAR"));
     denoiseButton.setButtonText (T ("QUITAR RUIDO"));
     chopButton   .setButtonText (T ("AUTO CHOP"));
@@ -8401,6 +8455,38 @@ void MainComponent::toggleSongLane (int lane)
                     juce::dontSendNotification);
 }
 
+//  EL PIANO ROLL ES DE UN PAD, ASI QUE HAY QUE PODER CAMBIAR DE PAD.
+//
+//  Las notas ya eran por pad - viven en (patron, paso, pad) dentro del motor -
+//  pero la unica puerta estaba en la pagina del pad, y la ficha tapa la rejilla
+//  de pads: escribir un bajo y luego una campana costaba cerrar, elegir y
+//  volver a abrir. Con esto la ficha se queda abierta y el pad cambia debajo.
+//
+//  Y salta los VACIOS. En un kit de cinco sonidos cargados, avanzar de uno en
+//  uno por sesenta y cuatro huecos es no tener el boton: se recorren los 63
+//  desplazamientos en orden y se para en el primero que tenga muestra. Si no
+//  hay ninguno cargado - proyecto recien abierto - se mueve uno y ya, que es
+//  mejor que no responder.
+void MainComponent::pianoStepPad (int dir)
+{
+    if (selectedPad < 0) return;
+
+    int destino = -1;
+    for (int k = 1; k < kNumPads && destino < 0; ++k)
+    {
+        const int c = (selectedPad + dir * k + kNumPads * 2) % kNumPads;
+        if (padHasSample[(size_t) c]) destino = c;
+    }
+    if (destino < 0) destino = (selectedPad + dir + kNumPads) % kNumPads;
+
+    //  El banco va DELANTE: selectBank vuelve a elegir pad - la misma casilla
+    //  del banco nuevo - asi que llamarlo despues borraria el destino.
+    const int banco = destino / kPadsPerBank;
+    if (banco != currentBank) selectBank (banco);
+    selectPad (destino);            // y selectPad ya refresca el piano abierto
+    refreshStepGrid();
+}
+
 //  PONER Y QUITAR UNA NOTA.
 //
 //  El conjunto de notas de un paso es la RAIZ mas hasta tres del acorde, y la
@@ -8495,8 +8581,21 @@ void MainComponent::paintPianoSheetContent (juce::Graphics& g)
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
+    //  El titulo se aparta de las TRES tapas de la cabecera, y por el lado que
+    //  toque. Antes se apartaba solo de la cruz y solo por la derecha: en arabe
+    //  el texto se va a la derecha, que es justo donde takeEnd habia puesto las
+    //  tapas, asi que el nombre del pad aterrizaba encima de ellas.
     auto titulo = inner.removeFromTop (16);
-    titulo.setRight (juce::jmin (titulo.getRight(), pianoCloseButton.getX() - Metrics::sm));
+    {
+        const juce::Rectangle<int> tapas[3] = { pianoCloseButton.getBounds(),
+                                                pianoPadDownBtn.getBounds(),
+                                                pianoPadUpBtn.getBounds() };
+        int izq = titulo.getRight(), der = titulo.getX();
+        for (auto& r : tapas) { if (! r.isEmpty()) { izq = juce::jmin (izq, r.getX()); der = juce::jmax (der, r.getRight()); } }
+
+        if (Lang::isRightToLeft (Lang::current())) titulo.setLeft  (juce::jmax (titulo.getX(),     der + Metrics::sm));
+        else                                       titulo.setRight (juce::jmin (titulo.getRight(), izq - Metrics::sm));
+    }
     const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
     g.drawFittedText (T ("PIANO") + "  " + dot + "  " + T ("PAD %1", juce::String (sp + 1))
                         + (padName[(size_t) sp].isNotEmpty() ? "   " + padName[(size_t) sp] : juce::String()),
@@ -9215,8 +9314,12 @@ void MainComponent::startExport (bool stems)
                   .trim().replaceCharacter (' ', '-');
     if (base.isEmpty()) base = "ZATI";
 
+    Bitacora::paso (stems ? "exportar/arranca pistas" : "exportar/arranca master");
+
     exportOk = false;
-    exportStatus = "renderizando...";
+    //  Y traducido, que era la unica linea de esta ficha que se quedo en
+    //  castellano en las cuatro compilaciones.
+    exportStatus = T ("renderizando...");
     beginBusy (T ("Exportando"));
     exportJob = std::make_unique<Exporter> (engine, uiSample, padName,
                                             ProjectStore::exports().getChildFile (base),
@@ -10630,6 +10733,189 @@ void MainComponent::auditProject()
     std::cout << "]}" << std::endl;
 }
 
+//  EL PIANO ROLL, MEDIDO.
+//
+//  Tres promesas y ninguna se ve en una captura: que el acorde que se escribe
+//  en la rejilla es el que queda en (patron, paso, pad) del motor, que la ficha
+//  cambia de pad sin cerrarse y saltando los vacios, y que tocar el teclado
+//  SUENA sin afinar el pad. La tercera es la que estaba rota - la unica forma
+//  de oir un semitono era setPadPitch, que deja el pad afinado en la ultima
+//  tecla que se paseo - y es exactamente la que no se ve mirando la pantalla.
+void MainComponent::auditPiano()
+{
+    selectedPattern = 0;
+    engine.clearPattern (0);
+    for (int st = 0; st < kNumSteps; ++st)
+        for (int p = 0; p < kNumPads; ++p)
+            pattern[0][(size_t) st][(size_t) p] = false;
+    engine.setPatternLength (0, 16);
+
+    //  Un kit escaso a proposito: 0, 5 y 33. El 33 esta en el banco C, asi que
+    //  avanzar hasta el tiene que arrastrar tambien la vista de bancos.
+    padHasSample.fill (false);
+    for (int p : { 0, 5, 33 }) padHasSample[(size_t) p] = true;
+    selectBank (0);
+    selectPad (0);
+
+    auto notasDe = [this] (int paso, int p)
+    {
+        juce::String s = "[";
+        bool first = true;
+        if (pattern[0][(size_t) paso][(size_t) p])
+        {
+            s << engine.getStepNote (0, paso, p); first = false;
+        }
+        for (int e = 0; e < AudioEngine::kExtraNotes; ++e)
+            if (const int v = engine.getStepExtra (0, paso, p, e); v != -128)
+            { s << (first ? "" : ",") << v; first = false; }
+        return s + "]";
+    };
+
+    //  UN ACORDE, por la rejilla y no por la API: 0, 4 y 7 es una triada mayor
+    //  y las tres notas tienen que caber en el mismo paso.
+    for (int semi : { 0, 4, 7 }) pianoCellToggled (4, semi);
+    std::cout << "{\"piano\":\"acorde\",\"pad\":" << selectedPad
+              << ",\"notas\":" << notasDe (4, selectedPad) << "}" << std::endl;
+
+    //  QUITAR LA RAIZ no puede dejar el acorde huerfano: asciende la siguiente.
+    pianoCellToggled (4, 0);
+    std::cout << "{\"piano\":\"sin raiz\",\"notas\":" << notasDe (4, selectedPad) << "}" << std::endl;
+
+    //  CAMBIAR DE PAD CON LA FICHA ABIERTA, saltando los sesenta huecos.
+    pianoSheet.setVisible (true);
+    pianoStepPad (1);
+    const int tras1 = selectedPad;
+    pianoStepPad (1);
+    const int tras2 = selectedPad, banco2 = currentBank;
+    pianoStepPad (-1);
+    const int atras = selectedPad;
+
+    //  Y que la rejilla ensene las notas del pad NUEVO: se escribe una sola
+    //  nota en el 5 y se vuelve al 0, que lleva el acorde.
+    std::cout << "{\"piano\":\"pads\",\"tras1\":" << tras1 << ",\"tras2\":" << tras2
+              << ",\"banco2\":" << banco2 << ",\"atras\":" << atras << "}" << std::endl;
+
+    //  OIR UNA TECLA NO AFINA EL PAD. Se apunta lo que tenia, se pasean doce
+    //  semitonos y se vuelve a leer: si cambio, el paseo ha reafinado el pad.
+    selectPad (0);
+    engine.setPadPitch (0, 3.0f);
+    const float antes = engine.getPadPitch (0);
+    for (int semi = -12; semi <= 12; ++semi)
+        if (pianoGrid.onTecla) pianoGrid.onTecla (semi);
+    std::cout << "{\"piano\":\"teclado\",\"pitch_antes\":" << antes
+              << ",\"pitch_despues\":" << engine.getPadPitch (0) << "}" << std::endl;
+}
+
+//  EL REBOTE, MEDIDO.
+//
+//  Es la unica funcion de la app cuyo resultado sale del telefono, y la unica
+//  que no se puede juzgar mirando la pantalla: la barra llega al final igual
+//  cuando el fichero esta bien que cuando tiene medio segundo. Se hace el
+//  rebote en el hilo que llama - Exporter::run es publico a proposito - y se
+//  cuentan ficheros y bytes.
+void MainComponent::auditExport()
+{
+    selectedPattern = 0;
+    engine.setEditPattern (0);
+    engine.setSongMode (false);
+    engine.clearPattern (0);
+    engine.setPatternLength (0, 16);
+    for (int st = 0; st < kNumSteps; ++st)
+        for (int p = 0; p < kNumPads; ++p)
+            pattern[0][(size_t) st][(size_t) p] = false;
+
+    //  Cuatro pads en un patron de dieciseis, que es lo que hay en cualquier
+    //  sesion a los dos minutos.
+    for (int p = 0; p < 4; ++p)
+        for (int st = p; st < 16; st += 4)
+        {
+            pattern[0][(size_t) st][(size_t) p] = true;
+            engine.setStep (0, st, p, true);
+        }
+
+    int cargados = 0;
+    for (int p = 0; p < kNumPads; ++p) if (uiSample[(size_t) p] != nullptr) ++cargados;
+
+    auto dir = ProjectStore::exports().getChildFile ("BANCO_EXPORT");
+    dir.deleteRecursively();
+
+    //  LA CANCION LARGA, que es la que cerraba la app: 64 compases -el tope-
+    //  son 128 s a 120 BPM, o sea 49 MB de un solo AudioBuffer con el codigo
+    //  viejo. Se mide con la memoria del proceso desde fuera; aqui lo unico
+    //  que hace falta es que la cancion sea la mas larga que la app admite.
+    const bool largo = UiAudit::env ("ZATI_EXPORT") == "largo";
+    if (largo)
+    {
+        engine.setSongMode (true);
+        engine.setSongLength (AudioEngine::kSongBars);
+        for (int b = 0; b < AudioEngine::kSongBars; ++b)
+            engine.setSongCell (0, b, 1);          // el patron 1 en los 64 compases
+    }
+
+    for (int ronda = 0; ronda < (largo ? 1 : 2); ++ronda)
+    {
+        const bool pistas = (ronda == 1);
+        Exporter job (engine, uiSample, padName, dir, "BANCO", pistas, 48000.0);
+        const double t0 = juce::Time::getMillisecondCounterHiRes();
+        job.run();                       // en ESTE hilo: el banco no espera a nadie
+        const double ms = juce::Time::getMillisecondCounterHiRes() - t0;
+
+        juce::Array<juce::File> hechos;
+        dir.findChildFiles (hechos, juce::File::findFiles, false, "*.wav");
+        juce::int64 bytes = 0;
+        for (auto& f : hechos) bytes += f.getSize();
+
+        std::cout << "{\"export\":\"" << (pistas ? "pistas" : "master")
+                  << "\",\"pads\":" << cargados
+                  << ",\"ok\":" << (job.resultOk ? 1 : 0)
+                  << ",\"ficheros\":" << hechos.size()
+                  << ",\"bytes\":" << bytes
+                  << ",\"ms\":" << (int) ms
+                  << ",\"motor_mb\":" << (double) sizeof (AudioEngine) / 1048576.0
+                  << ",\"parte\":\"" << job.resultText << "\"}" << std::endl;
+    }
+
+}
+
+//  Y EL CAMINO DE VERDAD, que no es el de arriba: el hilo aparte, el
+//  temporizador de la app preguntando, la ficha repintandose encima y el boton
+//  de cancelar. Lo que la persona toca es esto, y lo que se cierra tambien - un
+//  rebote hecho en el hilo que llama no pasa por ninguno de los tres.
+void MainComponent::auditExportAsync (bool cancelar)
+{
+    openSheet (exportSheet, setButton);
+    startExport (true);
+
+    if (cancelar && exportJob != nullptr)
+        juce::Timer::callAfterDelay (40, [this] { if (exportJob != nullptr) exportJob->signalThreadShouldExit(); });
+
+    esperaExport (cancelar, 0);
+}
+
+void MainComponent::esperaExport (bool cancelar, int vueltas)
+{
+    //  El temporizador de la app es quien llama a pollExport; aqui solo se
+    //  espera a que termine, que es lo que hace la persona mirando la barra.
+    if (exportJob != nullptr && vueltas < 600)
+    {
+        juce::Timer::callAfterDelay (50, [this, cancelar, vueltas] { esperaExport (cancelar, vueltas + 1); });
+        return;
+    }
+
+    juce::Array<juce::File> hechos;
+    ProjectStore::exports().getChildFile ("BANCO_EXPORT")
+        .findChildFiles (hechos, juce::File::findFiles, false, "*.wav");
+
+    std::cout << "{\"export\":\"" << (cancelar ? "cancelado" : "asincrono")
+              << "\",\"esperas\":" << vueltas
+              << ",\"ok\":" << (exportOk ? 1 : 0)
+              << ",\"job\":" << (exportJob == nullptr ? 0 : 1)
+              << ",\"ficheros\":" << hechos.size()
+              << ",\"parte\":\"" << exportStatus << "\"}" << std::endl;
+
+    if (auto* app = juce::JUCEApplication::getInstance()) app->systemRequestedQuit();
+}
+
 void MainComponent::auditOpen (const juce::String& which)
 {
     //  Let the bench ask the ENGINE what it is holding, not just the tile.
@@ -10676,6 +10962,9 @@ void MainComponent::auditOpen (const juce::String& which)
         chopByHits = UiAudit::env ("ZATI_CHOP") == "golpes";
         openChopSheet();
     }
+    //  LA FICHA DE EXPORTAR, que es la unica que el banco no abria nunca - y es
+    //  la unica funcion de la app cuyo resultado sale del telefono.
+    else if (which == "expo") { exportStatus.clear(); exportOk = false; openSheet (exportSheet, setButton); }
     else if (which == "manual") { closeAllSheets(); openSheet (manualSheet, setButton); }
     else if (which == "browse") openBrowseForPad (0);
 }
@@ -11030,6 +11319,13 @@ void MainComponent::finishSessionRestore (const juce::ValueTree& tree, int resto
                             ? T ("Sesion recuperada - %1", currentProject)
                             : (restored == 1 ? T ("Sesion recuperada  [1 pad]")
                                              : T ("Sesion recuperada  [%1 pads]", juce::String (restored))),
+                        juce::dontSendNotification);
+
+    //  Y SI LA VEZ ANTERIOR NO ACABO BIEN, se dice. Una app que se cierra sola
+    //  y vuelve a abrir como si nada deja a la persona sin nada que contar y a
+    //  quien lo arregla sin nada que mirar. Ver Bitacora.h.
+    if (Bitacora::previa.isNotEmpty())
+        status.setText (T ("La vez anterior se cerro en: %1", Bitacora::previa),
                         juce::dontSendNotification);
 }
 
