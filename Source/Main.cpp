@@ -149,6 +149,14 @@ public:
         //  session happened to leave in the preferences file.
         if (UiAudit::enabled())
         {
+            //  Y la CARCASA, por lo mismo que el idioma: una foto solo es
+            //  comparable si la piel es una ENTRADA y no lo que dejaran las
+            //  preferencias de la ultima sesion. Hacia falta ademas para poder
+            //  medir lo que solo falla en las oscuras - la lista de proyectos
+            //  se pintaba con el chasis claro en las cuatro.
+            if (const auto piel = UiAudit::env ("ZATI_SKIN"); piel.isNotEmpty())
+                ZatiColours::setSkin (juce::jlimit (0, 3, piel.getIntValue()));
+
             const auto want = UiAudit::env ("ZATI_LANG");
             for (int i = 0; i < Lang::numLanguages; ++i)
                 if (want == Lang::code ((Lang::Id) i))

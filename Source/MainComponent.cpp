@@ -2119,6 +2119,20 @@ static void restyleTree (juce::Component& c, const std::function<void (juce::Tex
 
 void MainComponent::applySkin()
 {
+    //  LA LISTA DE PROYECTOS, que no es una tapa y por eso se quedaba fuera.
+    //
+    //  juce::ListBox guarda el color que se le da, y el suyo se ponia UNA vez
+    //  al construirla - o sea con la paleta del arranque. En cuanto la persona
+    //  se pasaba a una carcasa oscura, la lista seguia pintando el fondo claro
+    //  del chasis de PAPEL: una caja blanca dentro de una tarjeta oscura, con
+    //  la fila sin seleccionar casi ilegible. Es exactamente lo que dice la
+    //  regla de la casa - todo token que una piel mueve hay que VOLVER A
+    //  LEERLO, y una copia congela la paleta del arranque - y se colo porque
+    //  restyleTree solo recorre TextButtons.
+    projList.setColour (juce::ListBox::backgroundColourId, ZatiColours::chassisTop);
+    projList.setColour (juce::ListBox::outlineColourId, ZatiColours::plateEdge);
+    projList.repaint();
+
     //  Both halves of every cap, in one pass over the whole tree: the resting
     //  colour from its role, and the lit colour from its mark. Naming the
     //  handful that had to be refreshed by hand is how sixty of them ended up
@@ -3438,7 +3452,16 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
                          + "  " + dot + "  " + T ("PAD %1", juce::String (sp + 1))
                          + (padName[(size_t) sp].isNotEmpty() ? "   " + padName[(size_t) sp] : juce::String())
                          + "   " + dot + "   P" + juce::String (selectedPattern + 1);
-    g.drawText (t, inner.removeFromTop (16), juce::Justification::centredLeft);
+    //  EL TITULO SE PARA DONDE EMPIEZA LA TAPA DE CERRAR.
+    //
+    //  El nombre de la muestra entra aqui y no tiene largo: uno importado de
+    //  Instagram es "instagram_1786902180894(44.1K)" y el renglon se metia por
+    //  debajo del boton de cerrar, con el "P8" del final tapado. Acotado a
+    //  donde empieza la tapa, y con drawFittedText, que encoge un poco antes
+    //  de rendirse en vez de cortar a mitad de palabra.
+    auto tituloRow = inner.removeFromTop (16);
+    tituloRow.setRight (juce::jmin (tituloRow.getRight(), seqCloseButton.getX() - Metrics::sm));
+    g.drawFittedText (t, tituloRow, Lang::start(), 1, 0.85f);
 
     //  The bank selector and the chain toggles used to sit adjacent, look
     //  identical and never say which does what. Now each row is named, and the
