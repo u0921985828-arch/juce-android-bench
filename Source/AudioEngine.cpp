@@ -732,6 +732,25 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                                               .load (std::memory_order_relaxed)
                                           * samplesPerStep / 100.0);
 
+                //  EL BLOQUEO DEL CORTE, aplicado AQUI y no al disparar: el
+                //  filtro se calcula una vez por bloque sobre lo que el pad
+                //  acaba de sonar, asi que ponerlo cuando el paso se anota es
+                //  lo que hace que el bloque que trae el golpe ya lo lleve.
+                //  Ponerlo al consumir la cola lo habria dejado un bloque
+                //  tarde - cinco milisegundos y medio a 128 muestras, que en
+                //  un barrido rapido se oye como un escalon.
+                const int cierre = (int) stepLock[(size_t) bank][(size_t) stepInPattern][(size_t) p]
+                                       .load (std::memory_order_relaxed);
+                if (cierre > 0)
+                {
+                    padCutoff[(size_t) p].store (lockToHz (cierre - 1), std::memory_order_relaxed);
+                    //  Y LA MASCARA CON EL. Un pad sin filtro no pasa por el
+                    //  camino separado, asi que escribir el corte y no encender
+                    //  la mascara habria guardado el numero y no filtrado nada.
+                    //  Son dos operaciones atomicas: vale para el hilo de audio.
+                    refreshFiltMask (p);
+                }
+
                 for (int h = 0; h < hits; ++h)
                 {
                     if (numPending >= (int) pending.size()) break;
@@ -1692,6 +1711,8 @@ void AudioEngine::clearPattern (int patternIdx) noexcept
         for (auto& celda : fila) celda.store (0, std::memory_order_relaxed);
     for (auto& fila : stepNudge[(size_t) patternIdx])
         for (auto& celda : fila) celda.store (0, std::memory_order_relaxed);
+    for (auto& fila : stepLock[(size_t) patternIdx])
+        for (auto& celda : fila) celda.store (0, std::memory_order_relaxed);
 }
 
 void AudioEngine::setPatternLength (int patternIdx, int len) noexcept
@@ -1728,6 +1749,27 @@ int AudioEngine::getStepNudge (int patternIdx, int step, int pad) const noexcept
     if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps
         || pad < 0 || pad >= kNumPads) return 0;
     return (int) stepNudge[(size_t) patternIdx][(size_t) step][(size_t) pad].load (std::memory_order_relaxed);
+}
+
+//  EL BLOQUEO DEL CORTE. Ver setStepLock. Guardado desplazado un uno, que el
+//  cero es lo que vale un patron escrito antes de que esto existiera y tiene
+//  que seguir queriendo decir "este paso no toca el filtro".
+void AudioEngine::setStepLock (int patternIdx, int step, int pad, int porCiento) noexcept
+{
+    if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps
+        || pad < 0 || pad >= kNumPads) return;
+    const int v = porCiento < 0 ? 0 : juce::jlimit (0, 100, porCiento) + 1;
+    stepLock[(size_t) patternIdx][(size_t) step][(size_t) pad]
+        .store ((std::int8_t) v, std::memory_order_relaxed);
+}
+
+int AudioEngine::getStepLock (int patternIdx, int step, int pad) const noexcept
+{
+    if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps
+        || pad < 0 || pad >= kNumPads) return kNoLock;
+    const int v = (int) stepLock[(size_t) patternIdx][(size_t) step][(size_t) pad]
+                      .load (std::memory_order_relaxed);
+    return v <= 0 ? kNoLock : v - 1;
 }
 
 //  LAS TRES NOTAS DE MAS. Ver stepChord: un byte por nota en los bits bajos y
@@ -1946,6 +1988,7 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
         {
             copyArr (stepChord[b2][s2], s.stepChord[b2][s2]);
             copyArr (stepNudge[b2][s2], s.stepNudge[b2][s2]);
+            copyArr (stepLock[b2][s2],  s.stepLock[b2][s2]);
         }
 
     for (size_t ln = 0; ln < songCell.size(); ++ln)

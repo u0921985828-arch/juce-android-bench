@@ -173,6 +173,12 @@ private:
     juce::TextButton seqFollowBtn { "SEGUIR" };
     bool seqFollow = false;
     void humanizePattern();
+    //  EL BLOQUEO DEL CORTE DE ESTE PASO. Ver AudioEngine::setStepLock: el
+    //  paso que lo lleva escribe el corte del pad al dispararse, asi que un
+    //  patron puede abrir y cerrar el filtro solo. En el mando, el extremo de
+    //  abajo no es 20 Hz sino APAGADO - que es lo que vale un paso que no
+    //  toca el filtro, y sin esa posicion haria falta un interruptor al lado.
+    juce::Slider lockSlider;
     //  LAS TRES HERRAMIENTAS DEL PATRON.
     //
     //  Viven en la pagina PASO y no en PASOS por una razon medida: la pagina

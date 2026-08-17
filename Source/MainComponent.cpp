@@ -1343,6 +1343,27 @@ MainComponent::MainComponent()
                             juce::dontSendNotification);
         };
         seqSheet.addAndMakeVisible (seqFollowBtn);
+
+        //  De 0 a 101: el 0 es APAGADO y el resto el porcentaje del recorrido
+        //  del corte. Un valor fuera de la escala para decir "ninguno" es lo
+        //  que ahorra un interruptor y una fila.
+        initSlider (lockSlider, 0.0, 101.0, 1.0, 0.0);
+        lockSlider.textFromValueFunction = [] (double v)
+        {
+            if (v < 0.5) return juce::String ("OFF");
+            const float hz = AudioEngine::lockToHz ((int) v - 1);
+            return hz >= 1000.0f ? Lang::ltr (juce::String (hz / 1000.0f, 1) + "k")
+                                 : Lang::ltr (juce::String ((int) hz) + " Hz");
+        };
+        lockSlider.updateText();
+        lockSlider.onValueChange = [this]
+        {
+            if (selectedStep < 0 || selectedPad < 0) return;
+            const int v = (int) lockSlider.getValue();
+            engine.setStepLock (selectedPattern, selectedStep, selectedPad,
+                                v < 1 ? AudioEngine::kNoLock : v - 1);
+        };
+        seqSheet.addAndMakeVisible (lockSlider);
     }
 
     //  Las tres herramientas del PATRON, en la pagina PASO. Ver patLeftBtn.
@@ -2852,6 +2873,7 @@ void MainComponent::showSeqPage (int page)
     rollSlider.setVisible       (! onGrid);
     swingSlider.setVisible      (! onGrid);
     gridSlider.setVisible       (! onGrid);
+    lockSlider.setVisible       (! onGrid);
 
     resized();
     seqSheet.repaint();
@@ -5851,18 +5873,22 @@ void MainComponent::resized()
                 //  esta pagina sin colocarlas las dejaba con las coordenadas
                 //  de PASOS, encima de la fila CADENA - ocho solapes, uno por
                 //  cada tapa de patron, que es el fallo que trajo esta ronda.
-                juce::TextButton* pb[5] = { &patLeftBtn, &patRightBtn, &patDoubleBtn,
-                                            &copyPatBtn, &pastePatBtn };
-                if (moduleBarFits (colA.getWidth(), pb, 5))
+                //  SEIS desde que HUMANIZAR vive aqui. Y la lista tiene que
+                //  ser LA MISMA que la que decidio la altura unas lineas mas
+                //  arriba: la primera version dejo esta en cinco y la de la
+                //  altura en seis, asi que HUMANIZAR no se colocaba nunca y se
+                //  quedaba en 0x0 - existente, invisible e imposible de tocar.
+                juce::TextButton* pb[6] = { &patLeftBtn, &patRightBtn, &patDoubleBtn,
+                                            &seqHumanBtn, &copyPatBtn, &pastePatBtn };
+                if (moduleBarFits (colA.getWidth(), pb, 6))
                 {
-                    layoutModuleBar (colA.removeFromTop (Metrics::hit), pb, 0, 5);
+                    layoutModuleBar (colA.removeFromTop (Metrics::hit), pb, 0, 6);
                 }
                 else
                 {
                     layoutModuleBar (colA.removeFromTop (Metrics::hit), pb, 0, 3);
                     colA.removeFromTop (Metrics::halfGap);
-                    juce::TextButton* pc[2] = { &copyPatBtn, &pastePatBtn };
-                    layoutModuleBar (colA.removeFromTop (Metrics::hit), pc, 0, 2);
+                    layoutModuleBar (colA.removeFromTop (Metrics::hit), pb + 3, 0, 3);
                 }
                 colA.removeFromTop (Metrics::sm);
             }
@@ -5870,13 +5896,26 @@ void MainComponent::resized()
             //  What the step DOES: how hard, and how many times.
             nameBand (second, "GOLPE");
             {
+                //  TRES celdas y no dos: el bloqueo del corte es del PASO, y
+                //  este es el sitio donde vive todo lo que es del paso. Va
+                //  aqui y no en una banda propia porque una banda cuesta 65 px
+                //  y esta pagina ya se pasa del tope en la pantalla mas
+                //  estrecha - una funcion que solo cabe en pantallas grandes
+                //  no existe en las pequenas.
                 auto row = second.removeFromTop (Metrics::hit);
-                velSlider.setBounds (Lang::takeStart (row, row.getWidth() * 7 / 12).reduced (Metrics::halfGap, 0));
-                auto rollCell = row.reduced (Metrics::halfGap, 0);
-                rollSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false,
-                                            juce::jmax (36, rollCell.getWidth() - Metrics::gap - 2 * Metrics::stepKey),
-                                            Metrics::readout);
+                velSlider.setBounds (Lang::takeStart (row, row.getWidth() * 5 / 12).reduced (Metrics::halfGap, 0));
+                auto rollCell = Lang::takeStart (row, row.getWidth() * 4 / 12).reduced (Metrics::halfGap, 0);
+                //  Las dos teclas primero y el numero con lo que quede; y si
+                //  no queda, el numero se va. Medido en 280x653 con la celda
+                //  repartida a tres: las teclas se llevaban 80 de 75 px y el
+                //  numero quedaba en DOS - "1" pedia 8. Un numero de dos
+                //  pixeles no es un numero apretado, es una raya.
+                const int paraNum = rollCell.getWidth() - Metrics::gap - 2 * Metrics::stepKey;
+                rollSlider.setTextBoxStyle (paraNum >= 30 ? juce::Slider::TextBoxLeft
+                                                          : juce::Slider::NoTextBox,
+                                            false, juce::jmax (30, paraNum), Metrics::readout);
                 rollSlider.setBounds (rollCell);
+                lockSlider.setBounds (row.reduced (Metrics::halfGap, 0));
                 second.removeFromTop (Metrics::sm);
             }
 
@@ -5984,6 +6023,11 @@ void MainComponent::stepCellToggled (int pad, int step)
     noteSlider.setValue (engine.getStepNote (selectedPattern, step, pad), juce::dontSendNotification);
     velSlider.setValue  (engine.getStepVel  (selectedPattern, step, pad), juce::dontSendNotification);
     rollSlider.setValue (engine.getStepRoll (selectedPattern, step, pad), juce::dontSendNotification);
+    {
+        const int lk = engine.getStepLock (selectedPattern, step, pad);
+        lockSlider.setValue (lk == AudioEngine::kNoLock ? 0.0 : (double) (lk + 1),
+                             juce::dontSendNotification);
+    }
 
     const bool nv = ! pattern[(size_t) selectedPattern][(size_t) step][(size_t) pad];
     pattern[(size_t) selectedPattern][(size_t) step][(size_t) pad] = nv;

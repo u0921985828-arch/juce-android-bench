@@ -1471,5 +1471,71 @@ int main()
                      "empujon de un paso", recto, tarde, diff, ok ? "OK" : "FALLA");
     }
 
+    //  EL BLOQUEO DEL CORTE, paso a paso. Un filtro por pad es un ajuste; un
+    //  filtro que cambia en cada paso es una linea de bajo que se abre y se
+    //  cierra sola. Se mide por ENERGIA ALTA: el mismo golpe con el paso
+    //  bloqueado a 200 Hz tiene que perder los agudos, y con el paso abierto
+    //  no. Comparar el nivel entero no valdria - un filtro paso bajo con el
+    //  corte alto baja el total muy poco y "casi lo mismo" es lo que deja
+    //  pasar un bloqueo que no hace nada.
+    {
+        AudioEngine e; e.prepareToPlay (48000.0, 128); e.setPolyphony (16, 4);
+        e.setPadGain (0, 0.9f);
+        //  Ruido, no un tono: para medir cuanto agudo queda hace falta que
+        //  haya agudo que quitar en todas las frecuencias.
+        {
+            auto* sb = new SampleBuffer();
+            const int n = 24000;
+            juce::Random rng (12345);
+            sb->buffer.setSize (2, n);
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < n; ++i)
+                    sb->buffer.setSample (ch, i, 0.5f * (rng.nextFloat() * 2.0f - 1.0f));
+            sb->sourceSampleRate = 48000.0;
+            e.publishSample (0, SampleBuffer::Ptr (sb));
+        }
+        juce::AudioBuffer<float> b (2, 128);
+        runBlocks (e, b, 128, 4);
+
+        auto agudos = [&] (int porCiento) noexcept
+        {
+            e.setSongMode (false);
+            e.clearPattern (0);
+            e.setPatternLength (0, 16);
+            e.setStep (0, 0, 0, true);
+            e.setStepLock (0, 0, 0, porCiento);
+            e.setPadCutoff (0, AudioEngine::kFiltOpenHz);
+            e.setPadReso (0, 0.0f);
+            e.setBpm (120.0);
+            e.setPlaying (true);
+
+            //  La energia de la DIFERENCIA entre muestras, que es un paso alto
+            //  de primer orden: lo que sobrevive a el son los agudos, y no
+            //  hace falta una transformada para saber si siguen ahi.
+            double alta = 0.0; float ant = 0.0f; int n = 0;
+            for (int i = 0; i < 24; ++i)
+            {
+                e.renderNextBlock (b, 0, 128);
+                if (i < 4) continue;                 // deja que el golpe empiece
+                const float* d = b.getReadPointer (0);
+                for (int k = 0; k < 128; ++k) { const float dif = d[k] - ant; alta += (double) dif * dif; ant = d[k]; ++n; }
+            }
+            e.setPlaying (false);
+            e.postPanic();
+            for (int i = 0; i < 8; ++i) e.renderNextBlock (b, 0, 128);
+            e.fetchTriggered();
+            return std::sqrt (alta / juce::jmax (1, n));
+        };
+
+        const double abierto = agudos (AudioEngine::kNoLock);
+        //  200 Hz es el 33 % del recorrido de 20 Hz a 20 kHz por octavas.
+        const double cerrado = agudos (AudioEngine::hzToLock (200.0f));
+        const double caidaDb = 20.0 * std::log10 (juce::jmax (1.0e-9, cerrado)
+                                                / juce::jmax (1.0e-9, abierto));
+        const bool ok = caidaDb < -20.0;
+        std::printf ("%-34s sin bloqueo %.4f   con 200 Hz %.4f   %+.1f dB de agudos   %s\n",
+                     "bloqueo del corte por paso", abierto, cerrado, caidaDb, ok ? "OK" : "FALLA");
+    }
+
     return 0;
 }

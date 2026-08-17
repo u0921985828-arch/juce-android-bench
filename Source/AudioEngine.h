@@ -414,6 +414,40 @@ public:
     //  el hilo de audio suena distinto cada vuelta y no es un groove, es ruido.
     void setStepNudge (int patternIdx, int step, int pad, int centesimas) noexcept;
     int  getStepNudge (int patternIdx, int step, int pad) const noexcept;
+
+    //  EL BLOQUEO DE PARAMETRO: el corte del filtro, guardado PASO A PASO.
+    //
+    //  Un filtro por pad es un ajuste; un filtro que cambia en cada paso es
+    //  una linea de bajo que se abre y se cierra sola, y esa es la diferencia
+    //  entre una caja de ritmos y un secuenciador. El paso que lleva bloqueo
+    //  escribe el corte del pad al dispararse, asi que se queda puesto hasta
+    //  que otro paso diga otra cosa - que es exactamente como suena en la
+    //  maquina donde esto se inventó.
+    //
+    //  Se guarda en HERCIOS/100 y no en un indice de una tabla: una tabla es
+    //  una segunda fuente de verdad que hay que mantener a los dos lados, y el
+    //  numero cabe igual - 20 Hz a 20 kHz son 0 a 200 en un byte con signo si
+    //  se guarda el porcentaje del recorrido, que es lo que hace el mando.
+    //  -1 = este paso no toca el filtro.
+    static constexpr int kNoLock = -1;
+    void setStepLock (int patternIdx, int step, int pad, int porCiento) noexcept;
+    int  getStepLock (int patternIdx, int step, int pad) const noexcept;
+
+    //  De porcentaje del recorrido a hercios, con la MISMA curva por octavas
+    //  que usa el mando: 20 Hz a kFiltOpenHz con el punto medio en 1000, que
+    //  es donde el oido pone la mitad. Escrita aqui y no en la interfaz porque
+    //  la usan los dos y dos copias se separan.
+    static float lockToHz (int porCiento) noexcept
+    {
+        const double t = juce::jlimit (0.0, 1.0, (double) porCiento / 100.0);
+        //  20 * (kFiltOpenHz/20)^t da las octavas repartidas por igual.
+        return (float) (20.0 * std::pow ((double) kFiltOpenHz / 20.0, t));
+    }
+    static int hzToLock (float hz) noexcept
+    {
+        const double r = juce::jlimit (20.0, (double) kFiltOpenHz, (double) hz);
+        return (int) std::lround (100.0 * std::log (r / 20.0) / std::log ((double) kFiltOpenHz / 20.0));
+    }
     int  getStepVel   (int patternIdx, int step, int pad) const noexcept;
     int  getStepRoll  (int patternIdx, int step, int pad) const noexcept;
 
@@ -887,6 +921,11 @@ private:
     //  El empujon de cada paso. Ver setStepNudge. Cero es "en su sitio", que
     //  es lo que dice un patron escrito antes de que esto existiera.
     std::array<std::array<std::array<std::atomic<std::int8_t>, kNumPads>, kNumSteps>, kNumPatterns> stepNudge {};
+    //  El bloqueo del corte, en porcentaje del recorrido. Ver setStepLock. Se
+    //  inicializa a CERO y no a -1, que es lo que vale un patron viejo, asi
+    //  que el cero tiene que significar "sin bloqueo" y no "20 Hz": se guarda
+    //  desplazado un uno - 0 es ninguno, 1..101 es 0..100 %.
+    std::array<std::array<std::array<std::atomic<std::int8_t>, kNumPads>, kNumSteps>, kNumPatterns> stepLock {};
 
     //  What a step DOES, beyond which pads it fires.
     //
