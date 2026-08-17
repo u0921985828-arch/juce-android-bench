@@ -4206,7 +4206,7 @@ void MainComponent::resized()
                        + (padSourceWraps (sheetInnerW) ? Metrics::hit + Metrics::halfGap : 0);
         //  438 y no 352: la fila del filtro son 86 mas. Ver el desglose.
         const int wantH = (padPage == padPageSound) ? 438 + secH
-                        : (padPage == padPageTrim)  ? 424 + secH + 2 * (ZatiLookAndFeel::kTrimRow + Metrics::xs)
+                        : (padPage == padPageTrim)  ? 436 + secH + 2 * (ZatiLookAndFeel::kTrimRow + Metrics::xs)
                                                     : rigH;
         auto inner = sheetFromBottom (padSheet, wantH);
         auto titleRow = inner.removeFromTop (Metrics::hit);
@@ -4341,8 +4341,17 @@ void MainComponent::resized()
         //  pagina pide 373, asi que las dos filas de mandos se apretaban hasta
         //  que la tercera - CHOKE, MODO, NORMALIZAR - se salia por abajo con
         //  altura cero. Sale de lo que hay, con 60 de suelo.
+        //  LA FILA DE ABAJO SE APARTA PRIMERO.
+        //
+        //  Los tres mandos se llevaban de arriba lo que pedian y esta fila se
+        //  quedaba con lo que sobrara: medido girado, CINTA, MODO y NORMALIZAR
+        //  salian de 37 px. Es el mismo fallo que el TEMPO del secuenciador y
+        //  se arregla igual - se reserva lo que no puede encoger y los mandos,
+        //  que SI pueden (tienen suelo de 60), se reparten el resto.
+        auto filaBaja = inner.removeFromBottom (ZatiLookAndFeel::kKnobName + Metrics::hit);
+
         {
-            const int forKnobs = inner.getHeight() - (ZatiLookAndFeel::kKnobName + Metrics::hit);
+            const int forKnobs = inner.getHeight();
             const int knobH = juce::jlimit (60, ZatiLookAndFeel::kKnobRow, forKnobs / 3);
             juce::Slider* k1[3] = { &pitchSlider, &fineSlider, &volSlider };
             juce::Slider* k2[3] = { &panSlider, &attackSlider, &releaseSlider };
@@ -4360,7 +4369,7 @@ void MainComponent::resized()
         //  them a knob-sized cell was what turned CHOKE into two tall slabs
         //  that swallowed their column.
         {
-            auto r3 = inner.removeFromTop (ZatiLookAndFeel::kKnobName + Metrics::hit);
+            auto r3 = filaBaja;
             r3.removeFromTop (ZatiLookAndFeel::kKnobName);   // gap for the names
             //  Tres celdas, no tres tercios. NORMALIZAR es la palabra mas
             //  larga de la ficha y en 280x653 pedia 66 px de un tercio que
@@ -4882,10 +4891,19 @@ void MainComponent::resized()
 
         inner.removeFromTop (Metrics::sm);
         chopSafeButton.setBounds (inner.removeFromTop (Metrics::hit).reduced (2, 0));
+        //  EL VERBO ROJO SE APARTA PRIMERO.
+        //
+        //  Se colocaba con lo que quedara despues de todo lo demas, y girado
+        //  no quedaba: 26 px de alto para la unica tapa de la ficha que hace
+        //  algo irreversible. Se reserva del fondo, y lo que encoge es el
+        //  hueco pintado que explica donde caen los trozos - un texto se lee
+        //  igual con dos lineas menos, una tapa de 26 px no se toca igual.
+        auto verbo = inner.removeFromBottom (Metrics::btn);
+        inner.removeFromBottom (Metrics::sm);
+
         inner.removeFromTop (Metrics::md);
-        inner.removeFromTop (plannedH);                 // painted: where they land
-        inner.removeFromTop (Metrics::sm);
-        chopGoButton.setBounds (inner.removeFromTop (Metrics::btn).reduced (2, 0));
+        inner.removeFromTop (juce::jmin (plannedH, inner.getHeight()));   // painted: where they land
+        chopGoButton.setBounds (verbo.reduced (2, 0));
     }
 
     // SONG sheet: palette, timeline, page row.

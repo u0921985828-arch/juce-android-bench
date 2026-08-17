@@ -619,7 +619,13 @@ public:
     //  en cinco sitios se separaron sin que nadie lo decidiera.
     static constexpr int kKnobRow   = kCtrlPlate;   // mando + nombre + numero
     static constexpr int kKnobName  = kCtrlName;    // ...de los cuales el nombre
-    static constexpr int kTrimRow   = 34;   // una regla de recorte, START o END
+    //  CUARENTA, no 34. Una regla de recorte es un deslizador horizontal de
+    //  ancho completo y 34 px de alto: cuatro por debajo del dedo minimo, y
+    //  el banco las cazo las cuatro -START, END, SUAVE IN y SUAVE OUT- con el
+    //  telefono girado. Un control que se ajusta ARRASTRANDO es el que menos
+    //  puede permitirse ser fino: fallar el agarre no es fallar un toque, es
+    //  mover otra cosa.
+    static constexpr int kTrimRow   = 40;   // una regla de recorte, START o END
     static constexpr int kTrimLabel = 64;   // la columna donde va su nombre
 
     ZatiLookAndFeel()
