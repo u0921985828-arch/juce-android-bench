@@ -4989,9 +4989,17 @@ void MainComponent::resized()
                 auto r = row;
                 Lang::takeStart (r, labelW);
 
+                //  CERO TAPAS ES UN CASO REAL: resized() corre desde el
+                //  constructor -por retranslateUi- y ahi estas listas todavia
+                //  estan vacias. layoutModuleBar pide el texto de la primera y
+                //  la primera es un puntero nulo: la app se cerraba al
+                //  arrancar, y la caja negra lo dijo en una linea, "CAIDA senal
+                //  11 en arranque".
+                if (n <= 0) { columnaChips.removeFromTop (Metrics::xs); return row; }
+
                 if (! partir || n <= 2)
                 {
-                    layoutModuleBar (r, arr, 0, juce::jmax (1, n));
+                    layoutModuleBar (r, arr, 0, n);
                 }
                 else
                 {
