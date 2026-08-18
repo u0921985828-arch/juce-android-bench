@@ -11203,7 +11203,7 @@ void MainComponent::auditProject()
 
     loadProject ("BANCO_PRUEBA");
 
-    std::cout << "{\"proyecto\":1,\"nota\":" << engine.getStepNote (0, 0, 0)
+    std::cout << "{\"disperso\":1,\"nota\":" << engine.getStepNote (0, 0, 0)
               << ",\"acorde\":[" << engine.getStepExtra (0, 0, 0, 0) << ","
                                   << engine.getStepExtra (0, 0, 0, 1) << ","
                                   << engine.getStepExtra (0, 0, 0, 2) << "]"

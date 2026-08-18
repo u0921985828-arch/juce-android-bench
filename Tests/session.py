@@ -70,14 +70,23 @@ def proyecto():
                               timeout=300).stdout
     except subprocess.TimeoutExpired:
         return None
+    #  DOS lineas y cada una con su clave. La segunda -lo disperso- se llamaba
+    #  tambien "proyecto" y esta funcion devolvia la primera que encontrara: la
+    #  del acorde, que no lleva paso0, asi que el banco anunciaba que se perdian
+    #  los bancos altos mientras la app los devolvia perfectos. La prueba mintio
+    #  antes de acertar, otra vez.
+    filas = {}
     for linea in out.splitlines():
         linea = linea.strip()
-        if linea.startswith ('{') and '"proyecto"' in linea:
-            try:
-                return json.loads (linea)
-            except Exception:
-                pass
-    return None
+        if not linea.startswith ('{'):
+            continue
+        try:
+            d = json.loads (linea)
+        except Exception:
+            continue
+        if "paso0" in d:  filas["pasos"] = d
+        if "disperso" in d: filas["disperso"] = d
+    return filas or None
 
 
 def main():
@@ -201,13 +210,25 @@ def main():
     #  Y EL CAMINO DEL PROYECTO, que es otro. Lo de arriba pasa por el
     #  autoguardado de sesion; guardar un proyecto y volver a abrirlo es una
     #  llamada distinta, y el fallo de los bancos clonados vivia justo ahi.
-    pr = proyecto()
-    proj_ok = pr is not None and pr.get ("paso0") == [0, 16, 32, 48] \
-                            and pr.get ("paso5") == [48]
+    pr = proyecto() or {}
+    pasos = pr.get ("pasos", {})
+    proj_ok = pasos.get ("paso0") == [0, 16, 32, 48] and pasos.get ("paso5") == [48]
     print()
     print ("guardar proyecto y abrirlo: paso 0 en %s, paso 5 en %s   %s"
-           % (pr.get ("paso0") if pr else "?", pr.get ("paso5") if pr else "?",
+           % (pasos.get ("paso0", "?"), pasos.get ("paso5", "?"),
               "correcto" if proj_ok else "SE PIERDEN O SE CLONAN LOS BANCOS ALTOS"))
+
+    #  Y LO QUE NO SE GUARDABA: acorde, empujon, bloqueo y largo. Cuatro cosas
+    #  que la app sabia escribir y no sabia recordar - un acorde de cuatro notas
+    #  volvia siendo una - y que hasta ahora solo se comprobaban a mano.
+    d = pr.get ("disperso", {})
+    disp_ok = (d.get ("nota") == 7 and d.get ("acorde") == [4, 12, -128]
+               and d.get ("empujon") == -25 and d.get ("bloqueo") == 33
+               and d.get ("largo") == 9)
+    print ("acorde, empujon, bloqueo y largo: nota %s acorde %s empujon %s bloqueo %s largo %s   %s"
+           % (d.get ("nota", "?"), d.get ("acorde", "?"), d.get ("empujon", "?"),
+              d.get ("bloqueo", "?"), d.get ("largo", "?"),
+              "correcto" if disp_ok else "NO VUELVEN"))
 
     shutil.rmtree (TMP, ignore_errors=True)
     print()
