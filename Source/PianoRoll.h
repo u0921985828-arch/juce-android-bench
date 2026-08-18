@@ -5,6 +5,8 @@
 #include "Zati.h"
 #include <array>
 #include <cstring>
+#include <algorithm>
+#include <vector>
 
 // ============================================================================
 //  PianoRoll — las NOTAS de un pad, en una rejilla de tono contra tiempo.
@@ -49,12 +51,20 @@ public:
     //  se busca una melodia antes de escribirla.
     std::function<void (int semi)> onTecla;
 
+    //  EL LARGO DE UNA NOTA, en cuartos de paso. Arrastrar por la MISMA fila
+    //  desde una nota la estira; arrastrar cambiando de fila sigue pintando
+    //  notas, que es como se escribe un acorde o una escalera. Dos gestos que
+    //  no se pisan porque uno es horizontal y el otro no.
+    std::function<void (int paso, int semi, int cuartos)> onLargo;
+
     //  `notas` trae kMaxNotas semitonos por paso; -128 es "ninguna". `pasos`
     //  es cuantas columnas se dibujan, `base` el semitono de la fila de abajo.
     void setSource (const signed char* notas, int pasos, int base,
-                    int pasoTocando, int zati, float fase = 0.0f)
+                    int pasoTocando, int zati, float fase = 0.0f,
+                    const unsigned char* largos = nullptr)
     {
         datos = notas; nPasos = juce::jmax (1, pasos); semiBase = base;
+        cuartos = largos;
         tocando = pasoTocando; color = zati;
         faseAct = juce::jlimit (0.0f, 1.0f, fase);
 
@@ -62,12 +72,19 @@ public:
         //  rejillas: esto se llama en cada tick del temporizador y la ficha
         //  que lo contiene ocupa la ventana entera con un velo encima.
         const size_t n = (size_t) nPasos * (size_t) kMaxNotas;
+        const bool largosIguales = sombraLargos.size() == (size_t) nPasos
+                                && (cuartos == nullptr
+                                      ? std::all_of (sombraLargos.begin(), sombraLargos.end(),
+                                                     [] (unsigned char v) { return v == 0; })
+                                      : std::memcmp (sombraLargos.data(), cuartos,
+                                                     (size_t) nPasos * sizeof (unsigned char)) == 0);
         bool igual = datos != nullptr && visto
                   && nPasos == prevPasos && semiBase == prevBase
                   && tocando == prevTocando && color == prevColor
                   && std::abs (faseAct - prevFase) < 0.004f
                   && sombra.size() == n
-                  && std::memcmp (sombra.data(), datos, n * sizeof (signed char)) == 0;
+                  && std::memcmp (sombra.data(), datos, n * sizeof (signed char)) == 0
+                  && largosIguales;
         if (igual) return;
 
         const auto antes = marcaDe (prevTocando);
@@ -75,10 +92,14 @@ public:
                               && nPasos == prevPasos && semiBase == prevBase
                               && color == prevColor
                               && sombra.size() == n
-                              && std::memcmp (sombra.data(), datos, n * sizeof (signed char)) == 0;
+                              && std::memcmp (sombra.data(), datos, n * sizeof (signed char)) == 0
+                              && largosIguales;
 
         sombra.resize (n);
         if (datos != nullptr) std::memcpy (sombra.data(), datos, n * sizeof (signed char));
+        sombraLargos.assign ((size_t) nPasos, 0);
+        if (cuartos != nullptr)
+            std::memcpy (sombraLargos.data(), cuartos, (size_t) nPasos * sizeof (unsigned char));
         prevPasos = nPasos; prevBase = semiBase; prevTocando = tocando;
         prevColor = color; prevFase = faseAct;
         const bool primera = ! visto;
@@ -178,10 +199,29 @@ public:
 
                 if (puesta)
                 {
+                    //  UNA NOTA ES UNA BARRA, no un cuadrado. El largo se
+                    //  guarda en cuartos de paso, asi que una nota puede ocupar
+                    //  cuatro casillas o un cuarto de una: sin esto, todo lo
+                    //  que se escribe aqui dura lo mismo y da igual lo que
+                    //  ponga en el motor - "no se ve" y "no esta" se parecen
+                    //  demasiado.
+                    const int cu = (cuartos != nullptr) ? (int) cuartos[c] : 0;
+                    const float anchoNota = cu > 0
+                                              ? juce::jmax (3.0f, anchoCol * (float) cu * 0.25f)
+                                              : celda.getWidth();
+                    auto barra = celda.withWidth (juce::jmin (anchoNota,
+                                                             (float) r.getRight() - celda.getX()));
                     g.setColour (tinta);
-                    g.fillRect (celda);
+                    g.fillRect (barra);
                     g.setColour (ZatiColours::ink.withAlpha (0.35f));
-                    g.drawRect (celda, 1.0f);
+                    g.drawRect (barra, 1.0f);
+                    //  Y el ARRANQUE marcado, que en una barra de cuatro
+                    //  casillas es lo unico que dice donde empieza la nota.
+                    if (cu > 4)
+                    {
+                        g.setColour (ZatiColours::ink.withAlpha (0.55f));
+                        g.fillRect (barra.withWidth (2.0f));
+                    }
                 }
             }
         }
@@ -202,7 +242,7 @@ public:
 
     void mouseDown (const juce::MouseEvent& e) override { toca (e, false); }
     void mouseDrag (const juce::MouseEvent& e) override { toca (e, true); }
-    void mouseUp   (const juce::MouseEvent&)   override { ultima = -1; }
+    void mouseUp   (const juce::MouseEvent&)   override { ultima = -1; filaIni = pasoIni = -1; ultimoLargo = -1; }
 
 private:
     void toca (const juce::MouseEvent& e, bool arrastrando)
@@ -227,16 +267,40 @@ private:
         const int paso = juce::jlimit (0, nPasos - 1,
                                        (int) ((float) (e.x - r.getX() - kGutter) / anchoCol));
 
+        //  ARRASTRAR POR LA MISMA FILA ES ESTIRAR LA NOTA.
+        //
+        //  Es el gesto de cualquier piano roll y no se pisa con el de pintar,
+        //  porque uno es horizontal y el otro no: si el dedo cambia de fila se
+        //  esta escribiendo un acorde o una escalera, y si se queda en la suya
+        //  se esta diciendo cuanto dura la nota que se acaba de poner.
+        if (arrastrando && fila == filaIni && pasoIni >= 0 && onLargo != nullptr)
+        {
+            const int cu = juce::jlimit (1, 63, (paso - pasoIni + 1) * 4);
+            if (cu != ultimoLargo)
+            {
+                ultimoLargo = cu;
+                onLargo (pasoIni, semi, cu);
+            }
+            return;
+        }
+
         //  Un arrastre pinta, pero solo al ENTRAR en una celda nueva: moverse
         //  dentro de una la encenderia y apagaria varias veces por segundo.
         const int clave = fila * 1000 + paso;
         if (arrastrando && clave == ultima) return;
         ultima = clave;
+        if (! arrastrando) { filaIni = fila; pasoIni = paso; ultimoLargo = -1; }
         onCelda (paso, semi);
     }
 
     const signed char* datos = nullptr;
+    //  Un largo por PASO, en cuartos: las notas de un acorde comparten casilla
+    //  y comparten largo, que es lo que un acorde es.
+    const unsigned char* cuartos = nullptr;
+    std::vector<unsigned char> sombraLargos;
     int nPasos = 16, semiBase = -12, tocando = -1, color = 0, ultima = -1;
+    //  Donde empezo el arrastre, para saber si estira o pinta.
+    int filaIni = -1, pasoIni = -1, ultimoLargo = -1;
     float faseAct = 0.0f;
 
     std::vector<signed char> sombra;

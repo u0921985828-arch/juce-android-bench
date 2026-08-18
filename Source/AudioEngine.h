@@ -431,6 +431,29 @@ public:
     void setStepNudge (int patternIdx, int step, int pad, int centesimas) noexcept;
     int  getStepNudge (int patternIdx, int step, int pad) const noexcept;
 
+    //  EL LARGO DE LA NOTA, EN CUARTOS DE PASO.
+    //
+    //  Un paso era un disparo y la nota duraba lo que durase la muestra: un
+    //  cuadrado, siempre del mismo tamano. Eso vale para percusion y no vale
+    //  para nada mas - un bajo, una cuerda, una voz - donde el largo es la
+    //  mitad de lo que se escribe, y por eso un piano roll dibuja BARRAS y no
+    //  casillas.
+    //
+    //  En CUARTOS de paso y no en pasos, que es la otra mitad del problema:
+    //  medido en pasos, lo mas corto que se puede escribir es la rejilla, asi
+    //  que para una nota mas corta habria que cambiar la rejilla del patron
+    //  ENTERO - y entonces el sitio donde va la nota deja de estar donde
+    //  estaba. Con cuartos, una nota puede durar un cuarto de casilla sin que
+    //  el resto del patron se entere.
+    //
+    //  Cero es SUELTA: la nota dura lo que dure la muestra, que es como nace un
+    //  pad y como sonaba todo hasta ahora. Un patron viejo vale cero en todas
+    //  sus casillas y suena exactamente igual.
+    static constexpr int kLenSuelto = 0;
+    static constexpr int kLenMax    = 63;    // 15.75 pasos, casi un compas
+    void setStepLen (int patternIdx, int step, int pad, int cuartos) noexcept;
+    int  getStepLen (int patternIdx, int step, int pad) const noexcept;
+
     //  EL BLOQUEO DE PARAMETRO: el corte del filtro, guardado PASO A PASO.
     //
     //  Un filtro por pad es un ajuste; un filtro que cambia en cada paso es
@@ -703,8 +726,11 @@ private:
     //  nuevo se come el anterior- pero un acorde son cuatro golpes del MISMO
     //  pad en el MISMO instante, y con el autocorte los tres primeros mueren
     //  antes de sonar. Medido: cuatro notas daban UNA voz viva.
+    //  `gate` son muestras hasta soltar la nota, -1 = suelta sola. Ver
+    //  setStepLen y Voice::gate.
     void triggerPad (int slot, int extraSemis = 0, float vel = 1.0f,
-                     float from01 = -1.0f, bool cortaSuCola = true) noexcept;   // audio thread
+                     float from01 = -1.0f, bool cortaSuCola = true,
+                     int gate = -1) noexcept;   // audio thread
 
     template <typename Arr, typename V>
     static void store (Arr& a, int slot, V v) noexcept
@@ -937,6 +963,8 @@ private:
     //  El empujon de cada paso. Ver setStepNudge. Cero es "en su sitio", que
     //  es lo que dice un patron escrito antes de que esto existiera.
     std::array<std::array<std::array<std::atomic<std::int8_t>, kNumPads>, kNumSteps>, kNumPatterns> stepNudge {};
+    //  El largo de cada paso, en cuartos de paso. Ver setStepLen.
+    std::array<std::array<std::array<std::atomic<std::uint8_t>, kNumPads>, kNumSteps>, kNumPatterns> stepLen {};
     //  El bloqueo del corte, en porcentaje del recorrido. Ver setStepLock. Se
     //  inicializa a CERO y no a -1, que es lo que vale un patron viejo, asi
     //  que el cero tiene que significar "sin bloqueo" y no "20 Hz": se guarda
@@ -969,7 +997,7 @@ private:
     //  `corta` distingue la nota RAIZ de las del acorde: la raiz corta la cola
     //  del pad como siempre, y las que la acompanan no, o se matarian entre
     //  ellas antes de sonar. Ver triggerPad.
-    struct PendingHit { int countdown; int pad; int semis; float vel; bool corta = true; };
+    struct PendingHit { int countdown; int pad; int semis; float vel; bool corta = true; int gate = -1; };
     std::array<PendingHit, 96> pending {};
     int numPending = 0;
 

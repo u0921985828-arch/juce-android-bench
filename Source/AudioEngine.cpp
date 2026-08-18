@@ -174,7 +174,7 @@ void AudioEngine::releaseResources() noexcept
     fallbackTriggers.store (0, std::memory_order_relaxed);
 }
 
-void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01, bool cortaSuCola) noexcept
+void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01, bool cortaSuCola, int gate) noexcept
 {
     if (slot < 0 || slot >= kNumPads)
         return;
@@ -315,6 +315,12 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01,
                    vel,
                    padFadeIn[(size_t) slot].load (std::memory_order_relaxed),
                    padFadeOut[(size_t) slot].load (std::memory_order_relaxed));
+
+    //  DESPUES de start, que la pone a -1: el largo lo trae el paso y no el
+    //  pad, asi que el mismo pad puede sonar corto en un sitio y largo en otro
+    //  dentro del mismo patron. Es lo que separa una caja de ritmos de un
+    //  instrumento.
+    chosen->gate = gate;
 }
 
 void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
@@ -751,12 +757,26 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     refreshFiltMask (p);
                 }
 
+                //  EL LARGO DE LA NOTA, en muestras. Ver setStepLen: se guarda
+                //  en cuartos de paso, asi que una nota puede durar menos que
+                //  la casilla sin tocar la rejilla del patron. Cero es suelta,
+                //  que es como suena un pad de percusion y como sonaba todo
+                //  hasta ahora. Y si el paso REPITE, el largo es el de cada
+                //  golpe y no el del paso: cuatro repeticiones de una nota
+                //  larga se pisarian unas a otras.
+                const int cuartos = (int) stepLen[(size_t) bank][(size_t) stepInPattern][(size_t) p]
+                                       .load (std::memory_order_relaxed);
+                const int gate = cuartos > 0
+                                   ? juce::jmax (32, (int) (samplesPerStep * (double) cuartos
+                                                            / (4.0 * (double) juce::jmax (1, hits))))
+                                   : -1;
+
                 for (int h = 0; h < hits; ++h)
                 {
                     if (numPending >= (int) pending.size()) break;
                     const int at = juce::jmax (0, lateBy + empuje
                                                  + (int) (samplesPerStep * (double) h / (double) hits));
-                    pending[(size_t) numPending++] = { at, p, semis, vel, true };
+                    pending[(size_t) numPending++] = { at, p, semis, vel, true, gate };
 
                     //  El acorde suena en el MISMO instante que su raiz: si se
                     //  repartieran, seria un arpegio, y el arpegio se escribe
@@ -769,7 +789,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                         //  Sin cortar: el autocorte del pad esta puesto por
                         //  defecto y con el las tres notas de mas mueren antes
                         //  de sonar. Medido: cuatro notas daban UNA voz viva.
-                        pending[(size_t) numPending++] = { at, p, extra, vel, false };
+                        pending[(size_t) numPending++] = { at, p, extra, vel, false, gate };
                     }
                 }
             }
@@ -916,7 +936,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 {
                     const auto h = pending[(size_t) i];
                     pending[(size_t) i] = pending[(size_t) --numPending];
-                    triggerPad (h.pad, h.semis, h.vel, -1.0f, h.corta);
+                    triggerPad (h.pad, h.semis, h.vel, -1.0f, h.corta, h.gate);
                 }
                 else ++i;
             }
@@ -1726,6 +1746,8 @@ void AudioEngine::clearPattern (int patternIdx) noexcept
         for (auto& celda : fila) celda.store (0, std::memory_order_relaxed);
     for (auto& fila : stepLock[(size_t) patternIdx])
         for (auto& celda : fila) celda.store (0, std::memory_order_relaxed);
+    for (auto& fila : stepLen[(size_t) patternIdx])
+        for (auto& celda : fila) celda.store (0, std::memory_order_relaxed);
 }
 
 void AudioEngine::setPatternLength (int patternIdx, int len) noexcept
@@ -1755,6 +1777,23 @@ void AudioEngine::setStepNudge (int patternIdx, int step, int pad, int centesima
     //  paso en otro sitio, y para eso esta la rejilla.
     stepNudge[(size_t) patternIdx][(size_t) step][(size_t) pad]
         .store ((std::int8_t) juce::jlimit (-50, 50, centesimas), std::memory_order_relaxed);
+}
+
+//  EL LARGO DE LA NOTA. Ver la cabecera: en CUARTOS de paso, y cero es
+//  "suelta", que es lo que vale un patron escrito antes de que esto existiera.
+void AudioEngine::setStepLen (int patternIdx, int step, int pad, int cuartos) noexcept
+{
+    if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps
+        || pad < 0 || pad >= kNumPads) return;
+    stepLen[(size_t) patternIdx][(size_t) step][(size_t) pad]
+        .store ((std::uint8_t) juce::jlimit (0, kLenMax, cuartos), std::memory_order_relaxed);
+}
+
+int AudioEngine::getStepLen (int patternIdx, int step, int pad) const noexcept
+{
+    if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps
+        || pad < 0 || pad >= kNumPads) return kLenSuelto;
+    return (int) stepLen[(size_t) patternIdx][(size_t) step][(size_t) pad].load (std::memory_order_relaxed);
 }
 
 int AudioEngine::getStepNudge (int patternIdx, int step, int pad) const noexcept
@@ -2001,6 +2040,7 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
         {
             copyArr (stepChord[b2][s2], s.stepChord[b2][s2]);
             copyArr (stepNudge[b2][s2], s.stepNudge[b2][s2]);
+            copyArr (stepLen[b2][s2],   s.stepLen[b2][s2]);
             copyArr (stepLock[b2][s2],  s.stepLock[b2][s2]);
         }
 

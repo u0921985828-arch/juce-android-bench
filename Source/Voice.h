@@ -185,11 +185,21 @@ struct Voice
         stepUp    = (float) (target / fadeIn);
         stepDown  = (float) (target / fadeOut);
         stepCtl   = (float) (1.0 / juce::jmax (1.0, 0.010 * fSys));
+        gate      = -1;          // el que dispara la pone si el paso lleva largo
         active    = true;
     }
 
+    //  EL LARGO DE LA NOTA. Ver AudioEngine::setStepLen.
+    //
+    //  Un pad es un disparo: suena hasta que se acaba la muestra. Eso vale para
+    //  percusion y no vale para lo demas - un bajo, un pad de cuerda, una voz -
+    //  donde el largo de la nota es la mitad de lo que se escribe. La cuenta
+    //  atras se pone al disparar y suelta la nota cuando llega a cero; -1 es
+    //  "sin largo", que es como nace un pad y como sonaba todo hasta ahora.
+    int gate = -1;              // muestras hasta soltar, -1 = suelta sola
+
     void release() noexcept { releasing = true; }
-    void kill()    noexcept { active = false; releasing = false; gain = 0.0f; }
+    void kill()    noexcept { active = false; releasing = false; gain = 0.0f; gate = -1; }
 
     // Voice steal: fast fixed declick fade (~1.5 ms) regardless of the pad's
     // musical release — used when the same pad retriggers and this instance
@@ -218,6 +228,16 @@ struct Voice
     {
         if (! active || sb == nullptr || num <= 0)
             return;
+
+        //  La cuenta atras del largo. Se mira por bloque y no por muestra: el
+        //  motor ya parte el bloque en los bordes de paso, asi que el error
+        //  maximo es un trozo de paso, y una nota no se afina al milisegundo
+        //  por su final. Cero reservas, cero ramas caras.
+        if (gate >= 0)
+        {
+            gate -= num;
+            if (gate <= 0) { gate = -1; release(); }
+        }
 
         const int srcLen = sb->buffer.getNumSamples();
         const int srcCh  = sb->buffer.getNumChannels();

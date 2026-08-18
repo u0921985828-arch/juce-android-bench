@@ -1476,6 +1476,59 @@ int main()
                      "audicion del piano roll", grave, agudo, razon, despues, ok ? "OK" : "FALLA");
     }
 
+    //  EL LARGO DE LA NOTA. Una nota no es un cuadrado: dura lo que dice el
+    //  paso, y eso se mide contando cuantos bloques sigue viva la voz.
+    //
+    //  En CUARTOS de paso, que es la otra mitad: medido en pasos, lo mas corto
+    //  que se puede escribir es la rejilla. Se comprueban los dos extremos -
+    //  que un largo de 2 pasos dure el doble que uno de 1, y que medio paso
+    //  dure menos que uno - porque solo el primero lo pasa un largo que no
+    //  hace nada mas que redondear.
+    {
+        AudioEngine e; e.prepareToPlay (48000.0, 64); e.setPolyphony (16, 4);
+        e.setPadGain (0, 0.9f);
+        //  Sin decaimiento: una muestra que se apaga sola mide su envolvente y
+        //  no el largo. Cuatro segundos, de sobra para cualquier paso.
+        e.publishSample (0, makeSample (48000.0, 4.0, 220.0f, false));
+        juce::AudioBuffer<float> b (2, 64);
+        runBlocks (e, b, 64, 4);
+
+        auto vive = [&] (int cuartos) noexcept
+        {
+            e.setSongMode (false);
+            e.clearPattern (0);
+            e.setPatternLength (0, 16);
+            e.setStep (0, 0, 0, true);
+            e.setStepLen (0, 0, 0, cuartos);
+            e.setBpm (120.0);
+            e.setPlaying (true);
+
+            int bloques = 0, vistos = 0;
+            for (int i = 0; i < 400; ++i)
+            {
+                e.renderNextBlock (b, 0, 64);
+                if (e.getActiveVoiceCount() > 0) { bloques = i + 1; ++vistos; }
+                else if (vistos > 0) break;      // ya sono y ya se solto
+            }
+            e.setPlaying (false);
+            e.postPanic();
+            for (int i = 0; i < 8; ++i) e.renderNextBlock (b, 0, 64);
+            return bloques;
+        };
+
+        //  Un paso a 120 BPM en semicorcheas son 6000 muestras, o sea 93
+        //  bloques de 64. Se compara la RAZON y no el instante: cuando arranca
+        //  el transporte respecto al primer bloque no es lo que esto mide.
+        const int medio = vive (2);      // medio paso
+        const int uno   = vive (4);      // un paso
+        const int dos   = vive (8);      // dos pasos
+        const double r1 = medio > 0 ? (double) uno / (double) medio : 0.0;
+        const double r2 = uno   > 0 ? (double) dos / (double) uno   : 0.0;
+        const bool ok = r1 > 1.5 && r1 < 2.5 && r2 > 1.5 && r2 < 2.5;
+        std::printf ("%-34s medio paso %d bloques   uno %d (x%.2f)   dos %d (x%.2f)   %s\n",
+                     "largo de la nota", medio, uno, r1, dos, r2, ok ? "OK" : "FALLA");
+    }
+
     //  EL EMPUJON DE UN PASO. HUMANIZAR escribe cuanto se aparta cada golpe de
     //  la rejilla, y lo que hay que comprobar es que el motor lo OBEDECE: un
     //  empujon que no mueve nada es un numero guardado, no un groove. Se mide

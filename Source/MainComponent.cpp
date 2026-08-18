@@ -1863,6 +1863,17 @@ MainComponent::MainComponent()
     // --- PIANO ROLL: las notas del pad, en tono contra tiempo ---------------
     {
         pianoGrid.onCelda = [this] (int paso, int semi) { pianoCellToggled (paso, semi); };
+        //  ESTIRAR UNA NOTA. El largo es del PASO y no de cada nota del acorde:
+        //  las cuatro notas de una columna son un acorde y un acorde dura lo
+        //  que dura, no cuatro cosas distintas.
+        pianoGrid.onLargo = [this] (int paso, int, int cuartos)
+        {
+            if (selectedPad < 0) return;
+            const int st = selectedBar * AudioEngine::kBarSteps + paso;
+            if (st < 0 || st >= engine.getPatternLength (selectedPattern)) return;
+            engine.setStepLen (selectedPattern, st, selectedPad, cuartos);
+            refreshPiano();
+        };
         //  El teclado SUENA y no escribe: buscar la nota antes de ponerla es
         //  la mitad de escribir una melodia.
         pianoGrid.onTecla = [this] (int semi)
@@ -7797,6 +7808,37 @@ juce::ValueTree MainComponent::captureState() const
         //  - which is exactly how those patterns already sounded.
         bk.setProperty ("vels",  vels.trim(),  nullptr);
         bk.setProperty ("rolls", rolls.trim(), nullptr);
+
+        //  Y LO QUE NO SE GUARDABA: el acorde, el empujon, el bloqueo del corte
+        //  y el largo de la nota. Cuatro cosas que la app sabe escribir y no
+        //  sabia recordar - un acorde de cuatro notas volvia siendo una, y un
+        //  patron humanizado volvia recto. Se encontro al ir a guardar el largo
+        //  y mirar quien mas faltaba.
+        //
+        //  DISPERSO y no una tabla entera: notes, vels y rolls escriben 4096
+        //  numeros por banco cada uno porque casi todos los pasos los llevan,
+        //  pero un acorde o un empujon los lleva un punado de casillas. En
+        //  tripletes "paso pad valor", y lo que no esta vale su defecto - que
+        //  es ademas lo que hace que un proyecto viejo, que no tiene ni la
+        //  propiedad, suene exactamente igual que antes.
+        juce::String chords, nudges, locks, lens;
+        for (int st = 0; st < kNumSteps; ++st)
+            for (int p = 0; p < kNumPads; ++p)
+            {
+                if (const auto c = engine.getStepChordRaw (b, st, p); c != 0)
+                    chords << st << " " << p << " " << juce::String::toHexString ((juce::int64) c) << " ";
+                if (const int n = engine.getStepNudge (b, st, p); n != 0)
+                    nudges << st << " " << p << " " << n << " ";
+                if (const int lk = engine.getStepLock (b, st, p); lk != AudioEngine::kNoLock)
+                    locks  << st << " " << p << " " << lk << " ";
+                if (const int lg = engine.getStepLen (b, st, p); lg != AudioEngine::kLenSuelto)
+                    lens   << st << " " << p << " " << lg << " ";
+            }
+        if (chords.isNotEmpty()) bk.setProperty ("chords", chords.trim(), nullptr);
+        if (nudges.isNotEmpty()) bk.setProperty ("nudges", nudges.trim(), nullptr);
+        if (locks.isNotEmpty())  bk.setProperty ("locks",  locks.trim(),  nullptr);
+        if (lens.isNotEmpty())   bk.setProperty ("lens",   lens.trim(),   nullptr);
+
         banks.addChild (bk, -1, nullptr);
     }
     s.addChild (banks, -1, nullptr);
@@ -7985,7 +8027,46 @@ void MainComponent::applyState (const juce::ValueTree& s)
                     engine.setStepNote (b, s2, p, ni < nt.size() ? nt[ni].getIntValue() : 0);
                     engine.setStepVel  (b, s2, p, ni < vl.size() ? vl[ni].getIntValue() : 127);
                     engine.setStepRoll (b, s2, p, ni < rl.size() ? rl[ni].getIntValue() : 1);
+                    //  Lo disperso se pone a su defecto antes de leerlo: si no,
+                    //  abrir un proyecto encima de otro deja el acorde y el
+                    //  empujon del anterior donde el nuevo no dice nada.
+                    engine.clearStepExtras (b, s2, p);
+                    engine.setStepNudge (b, s2, p, 0);
+                    engine.setStepLock  (b, s2, p, AudioEngine::kNoLock);
+                    engine.setStepLen   (b, s2, p, AudioEngine::kLenSuelto);
                 }
+            }
+
+            //  Y LO DISPERSO, en tripletes "paso pad valor". Ver captureState:
+            //  un proyecto anterior no trae la propiedad y entonces no hay nada
+            //  que poner, que es exactamente como sonaba.
+            auto tripletes = [&bk] (const char* clave)
+            {
+                juce::StringArray t;
+                t.addTokens (bk.getProperty (clave, "").toString(), " ", "");
+                t.removeEmptyStrings();
+                return t;
+            };
+            {
+                const auto ch = tripletes ("chords");
+                for (int i2 = 0; i2 + 2 < ch.size(); i2 += 3)
+                    engine.setStepChordRaw (b, ch[i2].getIntValue(), ch[i2 + 1].getIntValue(),
+                                            (std::uint32_t) ch[i2 + 2].getHexValue64());
+
+                const auto nu = tripletes ("nudges");
+                for (int i2 = 0; i2 + 2 < nu.size(); i2 += 3)
+                    engine.setStepNudge (b, nu[i2].getIntValue(), nu[i2 + 1].getIntValue(),
+                                         nu[i2 + 2].getIntValue());
+
+                const auto lk = tripletes ("locks");
+                for (int i2 = 0; i2 + 2 < lk.size(); i2 += 3)
+                    engine.setStepLock (b, lk[i2].getIntValue(), lk[i2 + 1].getIntValue(),
+                                        lk[i2 + 2].getIntValue());
+
+                const auto lg = tripletes ("lens");
+                for (int i2 = 0; i2 + 2 < lg.size(); i2 += 3)
+                    engine.setStepLen (b, lg[i2].getIntValue(), lg[i2 + 1].getIntValue(),
+                                       lg[i2 + 2].getIntValue());
             }
         }
         rebuildChain();
@@ -8824,6 +8905,8 @@ void MainComponent::refreshPiano (bool repintarTarjeta)
         const int st = base + c;
         for (int k = 0; k < PianoRoll::kMaxNotas; ++k) pianoCells[c * PianoRoll::kMaxNotas + k] = -128;
 
+        pianoLargos[c] = (unsigned char) engine.getStepLen (b, st, p);
+
         int n = 0;
         if (pattern[(size_t) b][(size_t) st][(size_t) p])
             pianoCells[c * PianoRoll::kMaxNotas + n++] = (signed char) engine.getStepNote (b, st, p);
@@ -8840,7 +8923,8 @@ void MainComponent::refreshPiano (bool repintarTarjeta)
     pianoGrid.setSource (pianoCells, cols, pianoBase,
                          (ps >= 0 && ps < cols) ? ps : -1,
                          padZati[(size_t) p],
-                         ps >= 0 ? engine.getStepPhase() : 0.0f);
+                         ps >= 0 ? engine.getStepPhase() : 0.0f,
+                         pianoLargos);
 
     //  El transporte de esta ficha es seqPlayBtn, que vive en la pagina de la
     //  rejilla: el piano tenia su propio PLAY y era una tapa que hacia lo mismo
@@ -10992,6 +11076,17 @@ void MainComponent::auditProject()
     //  no solo de pad- tambien se vea.
     pattern[0][5][48] = true; engine.setStep (0, 5, 48, true);
 
+    //  Y LO QUE NO SE GUARDABA: acorde, empujon, bloqueo y largo. Cuatro cosas
+    //  que la app sabia escribir y no sabia recordar - un acorde de cuatro
+    //  notas volvia siendo una y un patron humanizado volvia recto. Se ponen
+    //  valores distintos y reconocibles para que un cruce de campos se vea.
+    engine.setStepNote  (0, 0, 0, 7);
+    engine.setStepExtra (0, 0, 0, 0, 4, true);
+    engine.setStepExtra (0, 0, 0, 1, 12, true);
+    engine.setStepNudge (0, 0, 0, -25);
+    engine.setStepLock  (0, 0, 0, 33);
+    engine.setStepLen   (0, 0, 0, 9);
+
     saveProject ("BANCO_PRUEBA");
 
     for (int b = 0; b < kNumPatterns; ++b)
@@ -11002,7 +11097,23 @@ void MainComponent::auditProject()
                 engine.setStep (b, st, p, false);
             }
 
+    //  Y lo disperso, borrado a mano: si al volver sigue puesto no es que se
+    //  haya guardado, es que nadie lo quito.
+    engine.clearStepExtras (0, 0, 0);
+    engine.setStepNudge (0, 0, 0, 0);
+    engine.setStepLock  (0, 0, 0, AudioEngine::kNoLock);
+    engine.setStepLen   (0, 0, 0, AudioEngine::kLenSuelto);
+    engine.setStepNote  (0, 0, 0, 0);
+
     loadProject ("BANCO_PRUEBA");
+
+    std::cout << "{\"proyecto\":1,\"nota\":" << engine.getStepNote (0, 0, 0)
+              << ",\"acorde\":[" << engine.getStepExtra (0, 0, 0, 0) << ","
+                                  << engine.getStepExtra (0, 0, 0, 1) << ","
+                                  << engine.getStepExtra (0, 0, 0, 2) << "]"
+              << ",\"empujon\":" << engine.getStepNudge (0, 0, 0)
+              << ",\"bloqueo\":" << engine.getStepLock (0, 0, 0)
+              << ",\"largo\":" << engine.getStepLen (0, 0, 0) << "}" << std::endl;
 
     std::cout << "{\"proyecto\":1,\"paso0\":[";
     bool first = true;
@@ -11235,6 +11346,27 @@ void MainComponent::auditOpen (const juce::String& which)
     else if (which == "secp") { showSeqPage (seqPageGrid); openSheet (seqSheet, secButton); stepCellToggled (0, 4); }
     else if (which == "song") openSheet (songSheet, songButton);
     else if (which == "piano") { openSheet (seqSheet, secButton); showSeqPage (seqPagePiano); refreshPiano(); }
+    //  EL PIANO CON NOTAS DE LARGOS DISTINTOS, que es otro estado: la barra de
+    //  una nota de dos pasos y la de un cuarto de paso no se dibujan igual, y
+    //  sin escribirlas el banco mide una rejilla vacia.
+    else if (which == "pianod")
+    {
+        selectedPattern = 0;
+        engine.setPatternLength (0, 16);
+        selectPad (0);
+        const struct { int paso, semi, cuartos; } melodia[5] =
+            { { 0, 0, 8 }, { 4, 4, 2 }, { 6, 7, 4 }, { 8, 12, 16 }, { 13, -5, 1 } };
+        for (auto& n : melodia)
+        {
+            pattern[0][(size_t) n.paso][(size_t) selectedPad] = true;
+            engine.setStep     (0, n.paso, selectedPad, true);
+            engine.setStepNote (0, n.paso, selectedPad, n.semi);
+            engine.setStepLen  (0, n.paso, selectedPad, n.cuartos);
+        }
+        engine.setStepExtra (0, 0, selectedPad, 0, 4, true);   // y un acorde en la primera
+        engine.setStepExtra (0, 0, selectedPad, 1, 7, true);
+        openSheet (seqSheet, secButton); showSeqPage (seqPagePiano); refreshPiano();
+    }
     else if (which == "mix")  { refreshMixStrip(); openSheet (mixSheet, mixButton); }
     else if (which == "set")  { showSetPage (pageAudio);    refreshAudioOptions(); openSheet (setSheet, setButton); }
     else if (which == "proj") { showSetPage (pageProjects); refreshProjectList(); openSheet (setSheet, setButton); }
