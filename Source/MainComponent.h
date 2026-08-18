@@ -159,7 +159,10 @@ private:
     //  height it will be given, so nothing is ever squeezed out of the bottom.
     enum SeqPage { seqPageGrid = 0, seqPageStep };
     int seqPage = seqPageGrid;
-    juce::TextButton seqGridBtn { "PASOS" }, seqStepBtn { "PASO" };
+    //  La segunda pestana se llama PATRON y no PASO desde que los mandos del
+    //  paso viven debajo de la rejilla: lo que queda aqui -cadena, desplazar,
+    //  doblar, humanizar, swing, rejilla- es del patron entero.
+    juce::TextButton seqGridBtn { "PASOS" }, seqStepBtn { "PATRON" };
     //  EL TRANSPORTE, DENTRO DE LA FICHA, igual que en CANCION y en PIANO.
     //  Escribir un paso y OIRLO es el mismo gesto, y la tapa de PLAY de la
     //  cara se queda debajo del velo: habia que cerrar, tocar, y volver a
@@ -285,6 +288,10 @@ private:
     //  edited. Reserved by resized() for the same reason: drawn from the card's
     //  bottom edge without being booked, it landed on the swing slider.
     static constexpr int kSeqFootH = 14;
+    //  Cuantas filas de mandos del paso se llevo la tira de la rejilla en la
+    //  ultima maqueta. Lo apunta resized() y lo lee paint(): es lo que decide
+    //  si la pagina del patron todavia tiene algo del paso que explicar.
+    int seqTiraFilas = 0;
     juce::Rectangle<int> seqFootArea;
 
     //  EL RENGLON DE LA CADENA, apuntado para poder repintar SOLO ese.

@@ -2881,12 +2881,14 @@ void MainComponent::showSeqPage (int page)
 
     for (auto* b : patternButtons) b->setVisible (! onGrid);
     chainClearButton.setVisible (! onGrid);
-    noteSlider.setVisible       (! onGrid);
-    velSlider.setVisible        (! onGrid);
-    rollSlider.setVisible       (! onGrid);
     swingSlider.setVisible      (! onGrid);
     gridSlider.setVisible       (! onGrid);
-    lockSlider.setVisible       (! onGrid);
+    //  LOS CUATRO DEL PASO NO SE DECIDEN AQUI. Viven en la tira de debajo de
+    //  la rejilla cuando cabe y en la pagina del patron cuando no, y quien
+    //  sabe cual de las dos es resized(). Aqui solo se pueden APAGAR - la
+    //  misma regla que las tapas de banco y por la misma razon.
+    for (juce::Slider* sl : { &noteSlider, &velSlider, &rollSlider, &lockSlider })
+        sl->setVisible (false);
 
     resized();
     seqSheet.repaint();
@@ -3594,7 +3596,7 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
-    const juce::String t = T (seqPage == seqPageStep ? "PASO" : "PASOS")
+    const juce::String t = T (seqPage == seqPageStep ? "PATRON" : "PASOS")
                          + "  " + dot + "  " + T ("PAD %1", juce::String (sp + 1))
                          + (padName[(size_t) sp].isNotEmpty() ? "   " + padName[(size_t) sp] : juce::String())
                          + "   " + dot + "   P" + juce::String (selectedPattern + 1);
@@ -3713,12 +3715,15 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     //  The step page acts on ONE step, and until you have tapped one there is
     //  nothing for NOTA or GOLPE to act on. Saying so is the difference between
     //  a control that looks broken and a control that is waiting.
-    if (seqPage == seqPageStep && ! seqFootArea.isEmpty())
+    //  Y solo mientras esta pagina siga teniendo algo del paso: con la tira de
+    //  dos filas puesta, "toca un paso en PASOS para editarlo" mandaba a la
+    //  otra pagina a hacer algo que ya no se hace aqui.
+    if (seqPage == seqPageStep && seqTiraFilas < 2 && ! seqFootArea.isEmpty())
     {
         g.setColour (ZatiColours::inkDim.withAlpha (selectedStep < 0 ? 0.95f : 0.75f));
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
         g.drawText (selectedStep < 0
-                      ? T ("toca un paso en PASOS para editarlo")
+                      ? T ("toca un paso en la rejilla y sus mandos salen debajo")
                       : T ("editando el paso %1", Lang::ltr (juce::String (selectedStep + 1))),
                     seqFootArea, Lang::start());
     }
@@ -5560,6 +5565,36 @@ void MainComponent::resized()
         int laneH  = 0;
         int wanted = 0;
 
+        //  CUANTAS FILAS DE LA TIRA DEL PASO, decidido AQUI y no dentro de una
+        //  de las dos ramas, porque las dos paginas dependen de la respuesta:
+        //  la de la rejilla para colocarla, y la del patron para NO repetir lo
+        //  que la tira ya lleva. Dos sitios que mueven el mismo numero es
+        //  exactamente lo que esta ficha tenia y no puede volver a tener.
+        int tiraFilas = 0;
+        //  Y SOLO SI HAY PASO TOCADO. Sin paso elegido estos mandos no tienen
+        //  sobre que actuar - es lo que decia el renglon del pie, "toca un paso
+        //  para editarlo" - asi que ensenarlos es ensenar controles muertos.
+        const bool pasoAqui = (selectedStep >= 0);
+        if (pasoAqui)
+        {
+            const int base = wideFace ? 0 : bandH + (showBars ? bandH : 0) + bandH;
+            auto cabe = [&] (int filas)
+            {
+                const int coste = filas * (nameH + Metrics::hit)
+                                + (filas - 1) * Metrics::halfGap + Metrics::sm;
+                //  Girado la rejilla no comparte columna con los mandos -esos
+                //  van al lado- pero SI con la tira, que va debajo de ella. El
+                //  primer intento daba por buena la tira apaisada sin mirar, y
+                //  la tarjeta apaisada mide 321 px: la celda de paso se quedaba
+                //  en 5.2 px de alto, la sexta parte del suelo. La cuenta es la
+                //  misma en las dos orientaciones; lo unico que cambia es que
+                //  girado no hay filas apiladas encima.
+                return (capH - chrome - base - coste) / lanes >= kMinLaneH;
+            };
+            tiraFilas = cabe (2) ? 2 : (cabe (1) ? 1 : 0);
+        }
+        seqTiraFilas = tiraFilas;
+
         if (onGrid)
         {
             //  Lo que la pagina lleva SIEMPRE: PATRON/LARGO, el compas cuando
@@ -5567,8 +5602,29 @@ void MainComponent::resized()
             //  -los bancos de pads y el COPIAR/PEGAR del patron- no entran
             //  aqui a proposito: se toman despues y solo si, hechas las
             //  cuentas, los carriles siguen por encima del suelo.
-            const int stacked = wideFace ? 0
-                                         : bandH + (showBars ? bandH : 0) + bandH;
+            int stacked = wideFace ? 0
+                                   : bandH + (showBars ? bandH : 0) + bandH;
+
+            //  LA TIRA DEL PASO, que es por lo que esta ficha tenia dos
+            //  paginas y el FX-404 ninguna.
+            //
+            //  Editar un paso costaba un viaje: tocarlo en PASOS, cambiar de
+            //  pestana a PASO, mover la nota, volver. Cuatro toques para subir
+            //  un semitono, y con la rejilla fuera de la vista mientras se
+            //  edita - o sea sin ver lo que se esta cambiando. Ahora los
+            //  cuatro mandos del paso viven DEBAJO de la rejilla, y solo
+            //  cuando hay un paso tocado: sin paso elegido no tienen sobre que
+            //  actuar, y ocupar sitio para nada es lo que le sobra a esta
+            //  pagina.
+            //
+            //  Son los MISMOS componentes que la pagina PASO, no copias: solo
+            //  una de las dos paginas se maqueta a la vez, asi que no hay dos
+            //  sitios que mantener ni dos que puedan quedarse viejos.
+            //
+            //  Lo que la tira se lleva, ya decidido arriba.
+            stacked += tiraFilas * (nameH + Metrics::hit)
+                     + juce::jmax (0, tiraFilas - 1) * Metrics::halfGap
+                     + (tiraFilas > 0 ? Metrics::sm : 0);
             //  Y SIN SUELO, que es lo que fallaba.
             //
             //  Aqui ponia jlimit (12, 26, ...) con un parrafo explicando que
@@ -5602,9 +5658,27 @@ void MainComponent::resized()
             const int filasUtil = moduleBarFits (anchoCol, pb5, 6)
                                     ? 0 : Metrics::hit + Metrics::halfGap;
 
+            //  LO QUE LA TIRA YA LLEVA, AQUI NO SE REPITE.
+            //
+            //  Las dos pestanas movian los mismos cuatro mandos del paso, que
+            //  es justo lo que esta app no permite: dos sitios para lo mismo
+            //  son dos maquetados que mantener y una pregunta -"¿cual de las
+            //  dos es la buena?"- que no deberia existir. Ahora el dueno del
+            //  paso es la TIRA, y esta pagina se queda solo con lo que la tira
+            //  no pudo llevarse: en las dos pantallas mas estrechas la tira es
+            //  de una fila y REPETIR y CORTE se quedan aqui; si es de dos, aqui
+            //  no queda nada del paso y la pestana pasa a llamarse PATRON.
+            //  Y SOLO SI HAY PASO TOCADO. Sin paso elegido estos mandos no
+            //  tienen sobre que actuar - es lo que decia el renglon del pie,
+            //  "toca un paso para editarlo" - asi que ensenarlos aqui es
+            //  ensenar controles muertos. Con paso tocado viven en la tira, y
+            //  aqui solo aparecen los que la tira no pudo llevarse.
+            const int notaCost  = (pasoAqui && tiraFilas == 0) ? bandH : 0;
+            const int golpeCost = (pasoAqui && tiraFilas <  2) ? bandH : 0;
             const int stepBands = nameH + Metrics::hit + Metrics::xs    // CADENA
-                                + bandH                                 // NOTA DEL PASO
-                                + bandH                                 // GOLPE
+                                + Metrics::hit + Metrics::sm            // QUITAR CADENA
+                                + notaCost                              // NOTA, si la tira no la lleva
+                                + golpeCost                             // GOLPE / REPETIR y CORTE
                                 + bandH + filasUtil                     // PATRON: las herramientas
                                 + nameH + Metrics::hit                  // SWING
                                 + Metrics::sm + nameH + Metrics::hit;   // REJILLA
@@ -5623,9 +5697,10 @@ void MainComponent::resized()
             //  Dos columnas caben en la altura de la MAYOR. Es la misma cuenta
             //  que ya estaba, hecha entera.
             const int colA = nameH + Metrics::hit + Metrics::xs      // CADENA
-                           + bandH                                    // NOTA DEL PASO
+                           + Metrics::hit + Metrics::sm               // QUITAR CADENA
+                           + notaCost                                 // NOTA, si queda aqui
                            + bandH + filasUtil;                       // PATRON
-            const int colB = bandH                                    // GOLPE
+            const int colB = golpeCost                                // GOLPE, si queda aqui
                            + nameH + Metrics::hit                     // SWING
                            + Metrics::sm + nameH + Metrics::hit;      // REJILLA
             wanted = chrome + (wideFace ? juce::jmax (colA, colB) : stepBands)
@@ -5762,7 +5837,18 @@ void MainComponent::resized()
             //  que creia tener 34 px mas de los que iba a tener.
             const int tempoCost = Metrics::hit + nameH + Metrics::sm;
             const int barsCost  = showBars ? (nameH + Metrics::hit + Metrics::sm) : 0;
-            const int lanesH    = juce::jmax (0, col.getHeight() - tempoCost - barsCost);
+            //  Y LA TIRA DEL PASO TAMBIEN CUENTA AQUI.
+            //
+            //  Se aparta del fondo mas abajo, asi que a esta altura col aun la
+            //  incluye: sin restarla, las dos filas prescindibles creian tener
+            //  126 px que no eran suyos y se quedaban las dos. Medido en
+            //  412x915 con un paso tocado: la celda de paso bajaba a 13 px -
+            //  el suelo es 12- teniendo sitio de sobra para 21 si BANCO y PADS
+            //  se caian, que es justo para lo que existe esa pregunta.
+            const int tiraCost  = tiraFilas * (nameH + Metrics::hit)
+                                + juce::jmax (0, tiraFilas - 1) * Metrics::halfGap
+                                + (tiraFilas > 0 ? Metrics::sm : 0);
+            const int lanesH    = juce::jmax (0, col.getHeight() - tempoCost - barsCost - tiraCost);
             const int rowCost   = nameH + Metrics::hit + Metrics::sm;
             //  Las dos filas prescindibles se deciden en orden y contando la
             //  una a la otra: primero la de COPIAR/PEGAR, que es la que menos
@@ -5772,12 +5858,22 @@ void MainComponent::resized()
             //  suelo?", porque estas filas salen de la rejilla. Girado la
             //  rejilla esta al lado y no pierde nada: la pregunta es si la
             //  COLUMNA tiene sitio, contando lo que aun le queda por poner.
+            //  Y CON LA TIRA PUESTA, EL LISTON SUBE.
+            //
+            //  Doce es el suelo de la celda, no un objetivo. Con la tira del
+            //  paso debajo, la pagina hace ya dos trabajos - escribir el patron
+            //  y editar el paso - y los atajos son el tercero y el que menos
+            //  falta hace: A B C D estan en la cara y COPIAR/PEGAR en la pagina
+            //  PASO. Medido en 412x915 con un paso tocado: con las dos filas
+            //  puestas la celda queda en 12.9 px, y sin ellas en 21. Se pide
+            //  dieciseis para dejarlas, que es lo que separa "cabe" de "se ve".
+            const int sueloCelda = tiraFilas > 0 ? 16 : kMinLaneH;
             const bool copyRowFits = wideFace
-                ? (col.getHeight() - barsCost >= rowCost)
-                : ((lanesH - rowCost) / kPadsPerBank >= kMinLaneH);
+                ? (col.getHeight() - barsCost - tiraCost >= rowCost)
+                : ((lanesH - rowCost) / kPadsPerBank >= sueloCelda);
             const bool bankRowFits = wideFace
-                ? (col.getHeight() - barsCost - (copyRowFits ? rowCost : 0) >= rowCost)
-                : ((lanesH - (copyRowFits ? rowCost : 0) - rowCost) / kPadsPerBank >= kMinLaneH);
+                ? (col.getHeight() - barsCost - tiraCost - (copyRowFits ? rowCost : 0) >= rowCost)
+                : ((lanesH - (copyRowFits ? rowCost : 0) - rowCost) / kPadsPerBank >= sueloCelda);
 
             //  COPIAR Y PEGAR EL BANCO, pero solo donde sobra sitio.
             //
@@ -5907,6 +6003,70 @@ void MainComponent::resized()
                 fuente.removeFromBottom (Metrics::sm);
             }
 
+            //  LA TIRA DEL PASO, debajo de la rejilla y encima del tempo.
+            if (tiraFilas > 0)
+            {
+                //  Se aparta del FONDO de la rejilla: lo que no puede encoger
+                //  se reserva primero, y los carriles se reparten lo que queda.
+                auto tira = inner.removeFromBottom (
+                                tiraFilas * (nameH + Metrics::hit)
+                              + (tiraFilas - 1) * Metrics::halfGap);
+                inner.removeFromBottom (Metrics::sm);
+
+                //  showSeqPage las apaga al entrar en PASOS y solo resized
+                //  puede encenderlas, que es el unico que sabe si caben. Misma
+                //  regla que las tapas de banco.
+                auto fila = [&] (juce::Slider& izq, const char* nIzq,
+                                 juce::Slider& der, const char* nDer)
+                {
+                    auto banda = tira.removeFromTop (nameH);
+                    auto mitad = Lang::takeStart (banda, banda.getWidth() / 2);
+                    seqLabelBands.add ({ mitad, juce::String (nIzq) });
+                    seqLabelBands.add ({ banda, juce::String (nDer) });
+
+                    auto row = tira.removeFromTop (Metrics::hit);
+                    auto celdaIzq = Lang::takeStart (row, row.getWidth() / 2).reduced (Metrics::halfGap, 0);
+                    auto celdaDer = row.reduced (Metrics::halfGap, 0);
+                    //  Las dos teclas primero y el numero con lo que quede: sin
+                    //  esta reserva JUCE apila el + sobre el - en cuanto la
+                    //  casilla se come el ancho. Es la misma cuenta que GOLPE.
+                    auto caja = [] (juce::Slider& sl, juce::Rectangle<int> celda)
+                    {
+                        if (sl.getSliderStyle() == juce::Slider::IncDecButtons)
+                            sl.setTextBoxStyle (juce::Slider::TextBoxLeft, false,
+                                                juce::jmax (34, celda.getWidth()
+                                                                - Metrics::gap - 2 * Metrics::stepKey),
+                                                Metrics::readout);
+                    };
+                    caja (izq, celdaIzq);
+                    caja (der, celdaDer);
+                    izq.setBounds (celdaIzq);
+                    der.setBounds (celdaDer);
+                    izq.setVisible (true);
+                    der.setVisible (true);
+                };
+
+                fila (noteSlider, "NOTA", velSlider, "GOLPE");
+                if (tiraFilas > 1)
+                {
+                    tira.removeFromTop (Metrics::halfGap);
+                    fila (rollSlider, "REPETIR", lockSlider, "CORTE");
+                }
+            }
+
+            //  Y las que no se colocan, sin sitio: un componente invisible que
+            //  conserva sus limites sigue estando ahi para todo lo que mida
+            //  geometria. Es el fallo de las tapas de banco, otra vez.
+            {
+                juce::Slider* tiraMandos[4] = { &noteSlider, &velSlider, &rollSlider, &lockSlider };
+                const int puestos = tiraFilas * 2;
+                for (int i = puestos; i < 4; ++i)
+                {
+                    tiraMandos[i]->setVisible (false);
+                    tiraMandos[i]->setBounds ({});
+                }
+            }
+
             stepGrid.setBounds (inner);
         }
         else
@@ -5937,17 +6097,25 @@ void MainComponent::resized()
                 colA.removeFromTop (Metrics::xs);
             }
 
-            //  QUITAR CADENA belongs to the row above it, NOTA to the step you
-            //  tapped: two different jobs that happen to fit on one line, so
-            //  the note half is the one that gets the name.
-            nameBand (colA, "NOTA DEL PASO");
+            //  QUITAR CADENA es de la CADENA y no del paso: compartia renglon
+            //  con NOTA porque los dos cabian en una linea, y eso costo que la
+            //  pagina entera pareciera "el paso". Ahora va con su grupo, que es
+            //  lo que es, y NOTA solo aparece si la tira de la rejilla no se la
+            //  ha llevado.
             {
+                chainClearButton.setBounds (colA.removeFromTop (Metrics::hit).reduced (Metrics::halfGap, 0));
+                colA.removeFromTop (Metrics::sm);
+            }
+
+            if (pasoAqui && tiraFilas == 0)
+            {
+                nameBand (colA, "NOTA DEL PASO");
                 auto row = colA.removeFromTop (Metrics::hit);
-                chainClearButton.setBounds (Lang::takeStart (row, row.getWidth() * 5 / 12).reduced (Metrics::halfGap, 0));
                 noteSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false,
                                             juce::jmax (40, row.getWidth() - 2 * Metrics::gap - 2 * Metrics::stepKey),
                                             Metrics::readout);
                 noteSlider.setBounds (row.reduced (Metrics::halfGap, 0));
+                noteSlider.setVisible (true);
                 colA.removeFromTop (Metrics::sm);
             }
 
@@ -6002,8 +6170,14 @@ void MainComponent::resized()
             }
 
             //  What the step DOES: how hard, and how many times.
-            nameBand (second, "GOLPE");
+            //
+            //  Y SOLO LO QUE LA TIRA NO SE HAYA LLEVADO. Con la tira de dos
+            //  filas aqui no queda nada del paso; con la de una, GOLPE ya esta
+            //  arriba y aqui quedan REPETIR y CORTE. Repetir el mando en las
+            //  dos paginas era el fallo, no la solucion.
+            if (pasoAqui && tiraFilas < 2)
             {
+                nameBand (second, tiraFilas == 0 ? "GOLPE" : "REPETIR");
                 //  TRES celdas y no dos: el bloqueo del corte es del PASO, y
                 //  este es el sitio donde vive todo lo que es del paso. Va
                 //  aqui y no en una banda propia porque una banda cuesta 65 px
@@ -6011,8 +6185,13 @@ void MainComponent::resized()
                 //  estrecha - una funcion que solo cabe en pantallas grandes
                 //  no existe en las pequenas.
                 auto row = second.removeFromTop (Metrics::hit);
-                velSlider.setBounds (Lang::takeStart (row, row.getWidth() * 5 / 12).reduced (Metrics::halfGap, 0));
-                auto rollCell = Lang::takeStart (row, row.getWidth() * 4 / 12).reduced (Metrics::halfGap, 0);
+                if (tiraFilas == 0)
+                {
+                    velSlider.setBounds (Lang::takeStart (row, row.getWidth() * 5 / 12).reduced (Metrics::halfGap, 0));
+                    velSlider.setVisible (true);
+                }
+                auto rollCell = Lang::takeStart (row, tiraFilas == 0 ? row.getWidth() * 4 / 12
+                                                                     : row.getWidth() / 2).reduced (Metrics::halfGap, 0);
                 //  Las dos teclas primero y el numero con lo que quede; y si
                 //  no queda, el numero se va. Medido en 280x653 con la celda
                 //  repartida a tres: las teclas se llevaban 80 de 75 px y el
@@ -6024,7 +6203,26 @@ void MainComponent::resized()
                                             false, juce::jmax (30, paraNum), Metrics::readout);
                 rollSlider.setBounds (rollCell);
                 lockSlider.setBounds (row.reduced (Metrics::halfGap, 0));
+                rollSlider.setVisible (true);
+                lockSlider.setVisible (true);
                 second.removeFromTop (Metrics::sm);
+            }
+
+            //  Y las que la tira SI se llevo, sin sitio aqui: un componente
+            //  invisible que conserva sus limites sigue estando ahi para todo
+            //  lo que mida geometria. Ver las tapas de banco.
+            {
+                juce::Slider* delPaso[4] = { &noteSlider, &velSlider, &rollSlider, &lockSlider };
+                //  Se apagan las que se llevo la TIRA - las primeras - y las
+                //  cuatro cuando no hay paso tocado. Al reves, que fue el
+                //  primer intento, apagaba justo las que se acababan de
+                //  colocar aqui.
+                const int hasta = pasoAqui ? tiraFilas * 2 : 4;
+                for (int i = 0; i < hasta; ++i)
+                {
+                    delPaso[i]->setVisible (false);
+                    delPaso[i]->setBounds ({});
+                }
             }
 
             nameBand (second, "SWING");
@@ -6124,6 +6322,11 @@ void MainComponent::padClicked (int index)
 void MainComponent::stepCellToggled (int pad, int step)
 {
     if (step >= engine.getPatternLength (selectedPattern)) return;
+    //  El PRIMER paso que se toca hace aparecer la tira de debajo de la
+    //  rejilla, y eso es un cambio de maqueta y no de contenido: sin este
+    //  resized la tira no sale hasta que algo mas la provoque - girar el
+    //  telefono, cambiar de pagina - o sea nunca, mirandolo desde el dedo.
+    const bool teniaPaso = (selectedStep >= 0);
     selectedStep = step;
     selectPad (pad);                 // the lane you touched becomes the pad you edit
     //  The three step controls follow whatever you just touched, so what they
@@ -6141,6 +6344,7 @@ void MainComponent::stepCellToggled (int pad, int step)
     pattern[(size_t) selectedPattern][(size_t) step][(size_t) pad] = nv;
     engine.setStep (selectedPattern, step, pad, nv);
     refreshStepGrid();
+    if (! teniaPaso) resized();
     seqSheet.repaint();
 }
 
@@ -6776,7 +6980,7 @@ void MainComponent::retranslateUi()
     tapButton   .setButtonText (T ("TAP"));
     copyPatBtn  .setButtonText (T ("COPIAR"));
     pastePatBtn .setButtonText (T ("PEGAR"));
-    seqStepBtn  .setButtonText (T ("PASO"));
+    seqStepBtn  .setButtonText (T ("PATRON"));
     //  The three tabs of the settings card. Their rows have been in Lang.cpp
     //  all along - PROJECTS / 工程 / المشاريع, GESTURES / 手势 / إيماءات - and
     //  nothing ever asked for them: the buttons were constructed with the
@@ -11006,6 +11210,11 @@ void MainComponent::auditOpen (const juce::String& which)
     else if (which == "sec")  { showSeqPage (seqPageGrid); openSheet (seqSheet, secButton); }
     else if (which == "xy")   { closeAllSheets(); toggleXyPanel(); }
     else if (which == "paso") { showSeqPage (seqPageStep); openSheet (seqSheet, secButton); }
+    //  PASOS CON UN PASO TOCADO, que es otro estado y no el mismo: la tira de
+    //  mandos de debajo de la rejilla solo existe cuando hay paso elegido, asi
+    //  que sin esta entrada el banco medía la pagina a la que le falta justo lo
+    //  que se acaba de anadir.
+    else if (which == "secp") { showSeqPage (seqPageGrid); openSheet (seqSheet, secButton); stepCellToggled (0, 4); }
     else if (which == "song") openSheet (songSheet, songButton);
     else if (which == "piano") { openSheet (pianoSheet, pianoButton); refreshPiano(); }
     else if (which == "mix")  { refreshMixStrip(); openSheet (mixSheet, mixButton); }

@@ -45,7 +45,7 @@ static void recogeControles (juce::Component& c,
 
 static void fuzz (MainComponent& mc, int semilla, int sesiones, int acciones)
 {
-    static const char* kFichas[] = { "pads", "pad2", "pad3", "sec", "paso", "song",
+    static const char* kFichas[] = { "pads", "pad2", "pad3", "sec", "secp", "paso", "song",
                                      "piano", "mix", "xy", "set", "proj", "gest",
                                      "midi", "rack", "chop", "manual", "expo", "" };
     static const int kAnchos[] = { 280, 320, 360, 393, 412, 480, 653, 915 };
@@ -335,7 +335,7 @@ public:
                     else if (UiAudit::env ("ZATI_PAGES").isNotEmpty())
                     {
                         static const char* kFichas[] =
-                        { "pads", "pad2", "pad3", "sec", "paso", "song", "piano",
+                        { "pads", "pad2", "pad3", "sec", "secp", "paso", "song", "piano",
                           "mix", "set", "proj", "midi", "gest", "rack", "chop",
                           "manual", "expo", "browse", "xy" };
                         const int n2 = juce::numElementsInArray (kFichas);

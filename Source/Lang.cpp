@@ -546,6 +546,16 @@ namespace
         { "LARGO",          "",         "LENGTH",     "长度",       "الطول" },
         { "CADENA",         "",         "CHAIN",      "链接",       "سلسلة" },
         { "NOTA DEL PASO",  "",         "STEP NOTE",  "该步音符", "نغمة الخطوة" },
+        //  Los cuatro de la tira que va debajo de la rejilla. NOTA y REPETIR
+        //  son nuevos: la pagina PASO los llamaba "NOTA DEL PASO" y "GOLPE"
+        //  porque alli habia sitio para el nombre largo, y en la tira la
+        //  columna mide la mitad.
+        { "NOTA",           "",         "NOTE",       "音符",       "نغمة" },
+        { "toca un paso en la rejilla y sus mandos salen debajo", "",
+          "tap a step in the grid and its controls appear below",
+          "点击网格中的某一步，其控制项会出现在下方",
+          "المس خطوة في الشبكة وتظهر مفاتيحها بالأسفل" },
+        { "REPETIR",        "",         "REPEAT",     "重复",       "تكرار" },
         { "GOLPE",          "",         "HIT",        "力度",       "الضربة" },
         { "SWING",          "",         "SWING",      "摇摆",       "سوينغ" },
         { "recto",          "",         "straight",   "平直",       "مستقيم" },
