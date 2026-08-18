@@ -4803,10 +4803,38 @@ void MainComponent::resized()
         const int midiH = Metrics::md * 2 + Metrics::hit + Metrics::sm + tabsH
                             + (14 + Metrics::hit + Metrics::xs + Metrics::hit + Metrics::sm) * 2
                             + 40 + Metrics::sm;
+        //  LOS CHIPS DE IDIOMA Y CARCASA NO CABEN A CUARTOS.
+        //
+        //  La fila reparte el ancho a partes iguales, y en 280x653 a cada uno
+        //  le tocan 46 px: "ESPANOL" pide 52 y salia cortado, y con el ENGLISH,
+        //  el arabe y GRAFITO - dieciseis rotulos cortados por repartir a ojo.
+        //  Si no caben, dos filas de dos, que es lo que ya hacen las pestanas
+        //  de esta misma ficha y la barra de modulos del pad.
+        //
+        //  La pregunta se hace UNA vez y aqui, porque de la respuesta depende
+        //  la altura que se pide: preguntarla otra vez abajo con otro ancho es
+        //  como una fila se queda sin sitio. Ver dosColumnasSet.
+        const int filasChips = 4 * (Metrics::hit + Metrics::xs);
+        const int estAltoAudio = Metrics::hit + Metrics::sm + tabsH + 158 + Metrics::xs + filasChips;
+        const bool dosColumnasSet = setInnerW >= 560 && estAltoAudio - tabsH - Metrics::hit < 158 + filasChips
+                                 && setInnerW >= 560;
+        const int anchoChip = (dosColumnasSet ? setInnerW / 2 - Metrics::sm : setInnerW) - 44;
+        auto chipsCaben = [this, anchoChip] (juce::OwnedArray<juce::TextButton>& btns)
+        {
+            juce::TextButton* arr[8] {};
+            const int n = juce::jmin (8, btns.size());
+            for (int i = 0; i < n; ++i) arr[i] = btns[i];
+            return n <= 2 || moduleBarFits (anchoChip, arr, n);
+        };
+        const bool partirLang = ! chipsCaben (langButtons);
+        const bool partirSkin = ! chipsCaben (skinButtons);
+        const int filasExtra = (partirLang ? Metrics::hit + Metrics::xs : 0)
+                             + (partirSkin ? Metrics::hit + Metrics::xs : 0);
+
         const int wanted = onMidi ? midiH
             : onAudio
             ? Metrics::md * 2 + Metrics::hit + Metrics::sm + tabsH + 158 + Metrics::xs
-                + (Metrics::hit + Metrics::xs) * 4 + Metrics::sm
+                + (Metrics::hit + Metrics::xs) * 4 + filasExtra + Metrics::sm
             : onGest
               ? Metrics::md * 2 + Metrics::hit + Metrics::sm + tabsH
                   + kNumGestures * gestRowH + Metrics::sm
@@ -4929,9 +4957,7 @@ void MainComponent::resized()
             //  columnas cambian exactamente eso: la informacion a un lado, los
             //  cuatro chips al otro, y la altura que hace falta se parte por la
             //  mitad.
-            const int filas = 4 * (Metrics::hit + Metrics::xs);
-            const bool dosColumnas = inner.getWidth() >= 560
-                                  && inner.getHeight() < 158 + filas;
+            const bool dosColumnas = dosColumnasSet;
 
             juce::Rectangle<int> columnaChips = inner;
             if (dosColumnas)
@@ -4948,22 +4974,43 @@ void MainComponent::resized()
                 columnaChips = inner;
             }
 
-            auto chipRow = [&columnaChips] (juce::OwnedArray<juce::TextButton>& btns, int labelW)
+            //  Repartidos POR EL TEXTO QUE LLEVAN y no a partes iguales, y en
+            //  dos filas cuando ni asi caben. `partir` viene de arriba, de
+            //  donde se pidio la altura: decidirlo aqui otra vez con otro
+            //  ancho es como una fila se queda con altura cero.
+            auto chipRow = [this, &columnaChips] (juce::OwnedArray<juce::TextButton>& btns,
+                                                  int labelW, bool partir)
             {
+                juce::TextButton* arr[8] {};
+                const int n = juce::jmin (8, btns.size());
+                for (int i = 0; i < n; ++i) arr[i] = btns[i];
+
                 auto row = columnaChips.removeFromTop (Metrics::hit);
                 auto r = row;
                 Lang::takeStart (r, labelW);
-                const int n = juce::jmax (1, btns.size());
-                const int w = r.getWidth() / n;
-                for (int i = 0; i < btns.size(); ++i)
-                    btns[i]->setBounds ((i < n - 1 ? Lang::takeStart (r, w) : r).reduced (1, 0));
+
+                if (! partir || n <= 2)
+                {
+                    layoutModuleBar (r, arr, 0, juce::jmax (1, n));
+                }
+                else
+                {
+                    const int mitad = (n + 1) / 2;
+                    layoutModuleBar (r, arr, 0, mitad);
+                    columnaChips.removeFromTop (Metrics::xs);
+                    auto row2 = columnaChips.removeFromTop (Metrics::hit);
+                    auto r2 = row2;
+                    Lang::takeStart (r2, labelW);
+                    layoutModuleBar (r2, arr + mitad, 0, n - mitad);
+                    row = row.getUnion (row2);
+                }
                 columnaChips.removeFromTop (Metrics::xs);
                 return row;
             };
-            bufRowArea  = chipRow (bufButtons, 44);
-            rateRowArea = chipRow (rateButtons, 44);
-            langRowArea = chipRow (langButtons, 44);
-            skinRowArea = chipRow (skinButtons, 44);
+            bufRowArea  = chipRow (bufButtons,  44, false);
+            rateRowArea = chipRow (rateButtons, 44, false);
+            langRowArea = chipRow (langButtons, 44, partirLang);
+            skinRowArea = chipRow (skinButtons, 44, partirSkin);
             projNameRowArea = projPathRowArea = {};
         }
         else
@@ -4982,12 +5029,15 @@ void MainComponent::resized()
             projExportButton.setBounds (inner.removeFromBottom (Metrics::btn).reduced (2, 0));
             inner.removeFromBottom (Metrics::xs);
 
-            auto actions = inner.removeFromBottom (Metrics::btn);
-            const int aw = actions.getWidth() / 4;
-            projSaveButton.setBounds   (actions.removeFromLeft (aw).reduced (Metrics::halfGap, 0));
-            projLoadButton.setBounds   (actions.removeFromLeft (aw).reduced (Metrics::halfGap, 0));
-            projNewButton.setBounds    (actions.removeFromLeft (aw).reduced (Metrics::halfGap, 0));
-            projDeleteButton.setBounds (actions.reduced (Metrics::halfGap, 0));
+            //  Repartidas POR EL TEXTO y no a cuartos: en 280x653 a cada una le
+            //  tocaban 43 px y "GUARDAR" pide 52, asi que salia cortada y
+            //  BORRAR apretada. Es la misma barra que usan los modulos.
+            {
+                auto actions = inner.removeFromBottom (Metrics::btn);
+                juce::TextButton* pa[4] = { &projSaveButton, &projLoadButton,
+                                            &projNewButton,  &projDeleteButton };
+                layoutModuleBar (actions, pa, 0, 4);
+            }
             inner.removeFromBottom (8);
 
             projList.setBounds (inner);
