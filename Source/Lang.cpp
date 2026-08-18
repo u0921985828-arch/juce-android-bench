@@ -551,6 +551,13 @@ namespace
         //  porque alli habia sitio para el nombre largo, y en la tira la
         //  columna mide la mitad.
         { "NOTA",           "",         "NOTE",       "音符",       "نغمة" },
+        { "EUCLIDES",       "",         "EUCLID",     "欧几里得",   "إقليدس" },
+        { "GOMA",           "",         "ERASE",      "橡皮",       "ممحاة" },
+        { "TIJERAS",        "",         "CUT",        "剪刀",       "مقص" },
+        { "Fila vacia",     "",         "Row cleared", "该行已清空", "تم مسح الصف" },
+        { "%1 golpes repartidos en %2 pasos", "",
+          "%1 hits spread over %2 steps", "%1 个音符分布在 %2 步中",
+          "%1 ضربات موزعة على %2 خطوة" },
         { "toca un paso en la rejilla y sus mandos salen debajo", "",
           "tap a step in the grid and its controls appear below",
           "点击网格中的某一步，其控制项会出现在下方",

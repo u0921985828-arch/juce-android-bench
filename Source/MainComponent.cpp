@@ -1336,6 +1336,24 @@ MainComponent::MainComponent()
         seqHumanBtn.onClick = [this] { humanizePattern(); };
         seqSheet.addAndMakeVisible (seqHumanBtn);
 
+        //  EUCLIDES. Ver euclidesPattern: el mando dice CUANTOS golpes, y la
+        //  fila del pad se reescribe entera con ellos repartidos.
+        euclidSlider.setSliderStyle (juce::Slider::IncDecButtons);
+        euclidSlider.setIncDecButtonsMode (juce::Slider::incDecButtonsDraggable_Vertical);
+        euclidSlider.setRange (0.0, 16.0, 1.0);
+        euclidSlider.setValue (0.0, juce::dontSendNotification);
+        euclidSlider.setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
+        euclidSlider.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
+        euclidSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+        euclidSlider.textFromValueFunction = [] (double v)
+            { return v <= 0.0 ? T ("vacio") : Lang::ltr (juce::String ((int) v)); };
+        euclidSlider.onValueChange = [this] { euclidesPattern ((int) euclidSlider.getValue()); };
+        //  Y se refresca el texto: la funcion se asigna DESPUES del setValue, y
+        //  sin esto la casilla se queda con el numero crudo hasta que alguien
+        //  mueva el mando - "0" donde tiene que poner "vacio".
+        euclidSlider.updateText();
+        seqSheet.addAndMakeVisible (euclidSlider);
+
         styleButton (seqFollowBtn, kStepOff);
         litAccent (seqFollowBtn);
         seqFollowBtn.setClickingTogglesState (true);
@@ -1899,8 +1917,13 @@ MainComponent::MainComponent()
         //  La ventana se mueve de OCTAVA en octava y no de semitono en
         //  semitono: mover doce filas de una es lo que hace que la vista
         //  siga siendo la misma vista - las teclas negras caen igual.
+        //  EL RECORRIDO ES EL DEL MOTOR, no una octava por debajo y ninguna
+        //  por encima. setStepNote acota en +-24 semitonos, o sea cuatro
+        //  octavas de rango, y la ventana ensena veinticinco filas: con el tope
+        //  de arriba en 0 la mitad de agudo del pad era inalcanzable desde el
+        //  piano - se podia escribir un -24 y no un +24.
         pianoOctDownBtn.onClick = [this] { pianoBase = juce::jmax (-24, pianoBase - 12); refreshPiano(); };
-        pianoOctUpBtn.onClick   = [this] { pianoBase = juce::jmin (  0, pianoBase + 12); refreshPiano(); };
+        pianoOctUpBtn.onClick   = [this] { pianoBase = juce::jmin (  12, pianoBase + 12); refreshPiano(); };
         pianoClearBtn.onClick   = [this]
         {
             if (selectedPad < 0) return;
@@ -1923,6 +1946,53 @@ MainComponent::MainComponent()
         }
         pianoPadDownBtn.onClick = [this] { pianoStepPad (-1); };
         pianoPadUpBtn  .onClick = [this] { pianoStepPad ( 1); };
+
+        //  GOMA y TIJERAS. Excluyentes entre si y las dos apagadas por defecto:
+        //  una herramienta que se queda puesta sin verse es como se borra media
+        //  melodia sin querer, asi que la tapa se enciende con el acento.
+        for (auto* b : { &pianoGomaBtn, &pianoCorteBtn })
+        {
+            styleButton (*b, kKey);
+            litAccent (*b);
+            b->setClickingTogglesState (true);
+            seqSheet.addAndMakeVisible (*b);
+        }
+        auto ponUtil = [this] (int cual)
+        {
+            pianoGrid.setHerramienta (cual);
+            pianoGomaBtn .setToggleState (cual == PianoRoll::goma,    juce::dontSendNotification);
+            pianoCorteBtn.setToggleState (cual == PianoRoll::tijeras, juce::dontSendNotification);
+        };
+        pianoGomaBtn.onClick  = [this, ponUtil]
+            { ponUtil (pianoGomaBtn.getToggleState()  ? PianoRoll::goma    : PianoRoll::dibujar); };
+        pianoCorteBtn.onClick = [this, ponUtil]
+            { ponUtil (pianoCorteBtn.getToggleState() ? PianoRoll::tijeras : PianoRoll::dibujar); };
+
+        //  BORRAR: quita la nota que se toca, y con ella el paso si era la
+        //  ultima que quedaba - un paso encendido sin ninguna nota es un golpe
+        //  que suena y no se ve.
+        pianoGrid.onBorrar = [this] (int paso, int semi)
+        {
+            if (selectedPad < 0) return;
+            const int st = selectedBar * AudioEngine::kBarSteps + paso;
+            if (st < 0 || st >= engine.getPatternLength (selectedPattern)) return;
+
+            bool tenia = false;
+            for (int k = 0; k < PianoRoll::kMaxNotas; ++k)
+                if (pianoCells[paso * PianoRoll::kMaxNotas + k] == (signed char) semi) tenia = true;
+            if (tenia) pianoCellToggled (paso, semi);     // quitar es lo mismo que alternar una puesta
+        };
+
+        //  CORTAR: el largo pasa a ser lo que va del arranque de la nota al
+        //  dedo. Ver PianoRoll::tijeras.
+        pianoGrid.onCortar = [this] (int paso, int cuartos)
+        {
+            if (selectedPad < 0) return;
+            const int st = selectedBar * AudioEngine::kBarSteps + paso;
+            if (st < 0 || st >= engine.getPatternLength (selectedPattern)) return;
+            engine.setStepLen (selectedPattern, st, selectedPad, cuartos);
+            refreshPiano();
+        };
 
         //  LA PUERTA VIVE EN LA PAGINA DEL PAD y no en la barra de la cara.
         //
@@ -2372,7 +2442,7 @@ void MainComponent::setMacroTouched (int idx, bool touched)
 //  dos.
 const char* MainComponent::gridName (int i)
 {
-    static const char* names[kNumGrids] = { "1/8", "1/8T", "1/16", "1/16T", "1/32" };
+    static const char* names[kNumGrids] = { "1/8", "1/8T", "1/16", "1/16T", "1/32", "1/32T", "1/64" };
     return names[juce::jlimit (0, kNumGrids - 1, i)];
 }
 
@@ -2872,7 +2942,8 @@ void MainComponent::showSeqPage (int page)
     //  todo lo que mida geometria.
     pianoGrid.setVisible (onPiano);
     for (juce::TextButton* b : { &pianoOctDownBtn, &pianoOctUpBtn, &pianoClearBtn,
-                                 &pianoPadDownBtn, &pianoPadUpBtn })
+                                 &pianoPadDownBtn, &pianoPadUpBtn,
+                                 &pianoGomaBtn, &pianoCorteBtn })
     {
         b->setVisible (onPiano);
         if (! onPiano) b->setBounds ({});
@@ -2902,6 +2973,7 @@ void MainComponent::showSeqPage (int page)
     chainClearButton.setVisible (onPat);
     swingSlider.setVisible      (onPat);
     gridSlider.setVisible       (onPat);
+    euclidSlider.setVisible     (onPat);
     //  LOS CUATRO DEL PASO NO SE DECIDEN AQUI. Viven en la tira de debajo de
     //  la rejilla cuando cabe y en la pagina del patron cuando no, y quien
     //  sabe cual de las dos es resized(). Aqui solo se pueden APAGAR - la
@@ -5752,6 +5824,7 @@ void MainComponent::resized()
                                 + golpeCost                             // GOLPE / REPETIR y CORTE
                                 + bandH + filasUtil                     // PATRON: las herramientas
                                 + nameH + Metrics::hit                  // SWING
+                                + Metrics::sm + nameH + Metrics::hit    // EUCLIDES
                                 + Metrics::sm + nameH + Metrics::hit;   // REJILLA
             //  The line at the foot that says which step is being edited is
             //  laid out, not squeezed in under the last control: unbudgeted it
@@ -5773,6 +5846,7 @@ void MainComponent::resized()
                            + bandH + filasUtil;                       // PATRON
             const int colB = golpeCost                                // GOLPE, si queda aqui
                            + nameH + Metrics::hit                     // SWING
+                           + Metrics::sm + nameH + Metrics::hit       // EUCLIDES
                            + Metrics::sm + nameH + Metrics::hit;      // REJILLA
             wanted = chrome + (wideFace ? juce::jmax (colA, colB) : stepBands)
                             + Metrics::sm + kSeqFootH;
@@ -5783,7 +5857,17 @@ void MainComponent::resized()
         //  importa es cuantas notas se ven a la vez, y veinticinco filas en
         //  200 px son ocho pixeles por tecla.
         if (onPiano)
-            wanted = chrome + PianoRoll::kFilas * 18 + Metrics::sm + Metrics::hit + 14;
+        {
+            //  La fila de tapas puede ser DOS. Ver la maqueta: cinco no caben en
+            //  las pantallas estrechas, y pedir una fila y colocar dos es como
+            //  la rejilla del piano se queda sin sitio.
+            juce::TextButton* pb5[5] = { &pianoOctDownBtn, &pianoOctUpBtn, &pianoClearBtn,
+                                         &pianoGomaBtn, &pianoCorteBtn };
+            const int anchoTarjeta = (int) ((float) safeArea().getWidth() * 0.92f) - 2 * Metrics::lg;
+            const int filasTapas = moduleBarFits (anchoTarjeta, pb5, 5) ? 1 : 2;
+            wanted = chrome + PianoRoll::kFilas * 18 + Metrics::sm + 14
+                   + filasTapas * Metrics::hit + (filasTapas - 1) * Metrics::halfGap;
+        }
 
         auto inner = sheetFromBottom (seqSheet, wanted);
 
@@ -5880,8 +5964,22 @@ void MainComponent::resized()
                 //  pagina de la rejilla, con TAP y VACIAR. Una tapa que hace lo
                 //  mismo en dos paginas de la MISMA ficha es la version pequena
                 //  del fallo que se acaba de quitar.
-                juce::TextButton* pb[3] = { &pianoOctDownBtn, &pianoOctUpBtn, &pianoClearBtn };
-                layoutModuleBar (tapas, pb, 0, 3);
+                //  CINCO tapas, y si no caben en una fila, dos: OCTAVA -/+ y
+                //  VACIAR arriba, las dos herramientas debajo. En 280 px cinco
+                //  a lo ancho dejan "TIJERAS" en 31 de los 48 que pide.
+                juce::TextButton* pb[5] = { &pianoOctDownBtn, &pianoOctUpBtn, &pianoClearBtn,
+                                            &pianoGomaBtn, &pianoCorteBtn };
+                if (moduleBarFits (tapas.getWidth(), pb, 5))
+                {
+                    layoutModuleBar (tapas, pb, 0, 5);
+                }
+                else
+                {
+                    layoutModuleBar (tapas, pb, 0, 3);
+                    auto fila2 = inner.removeFromBottom (Metrics::hit);
+                    inner.removeFromBottom (Metrics::halfGap);
+                    layoutModuleBar (fila2, pb + 3, 0, 2);
+                }
             }
 
             pianoGrid.setBounds (inner);
@@ -6346,6 +6444,18 @@ void MainComponent::resized()
 
             nameBand (second, "SWING");
             swingSlider.setBounds (second.removeFromTop (Metrics::hit).reduced (Metrics::halfGap, 0));
+            second.removeFromTop (Metrics::sm);
+
+            //  EUCLIDES, con el swing y la rejilla: los tres dicen COMO suena
+            //  el patron entero, no que hay escrito en el.
+            nameBand (second, "EUCLIDES");
+            {
+                auto cell = second.removeFromTop (Metrics::hit).reduced (Metrics::halfGap, 0);
+                euclidSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false,
+                                              juce::jmax (40, cell.getWidth() - Metrics::gap - 2 * Metrics::stepKey),
+                                              Metrics::readout);
+                euclidSlider.setBounds (cell);
+            }
             second.removeFromTop (Metrics::sm);
 
             nameBand (second, "REJILLA");
@@ -7129,6 +7239,8 @@ void MainComponent::retranslateUi()
     pianoOctUpBtn  .setButtonText (T ("OCTAVA") + " +");
     pianoPadDownBtn.setButtonText (T ("PAD") + " -");
     pianoPadUpBtn  .setButtonText (T ("PAD") + " +");
+    pianoGomaBtn   .setButtonText (T ("GOMA"));
+    pianoCorteBtn  .setButtonText (T ("TIJERAS"));
     pianoClearBtn  .setButtonText (T ("VACIAR"));
     denoiseButton.setButtonText (T ("QUITAR RUIDO"));
     chopButton   .setButtonText (T ("AUTO CHOP"));
@@ -8515,6 +8627,58 @@ void MainComponent::refreshProjectList()
 //  Y desde una semilla FIJA por patron, para que dos toques seguidos den lo
 //  mismo: "no me gusta como ha quedado" se arregla deshaciendo, y deshacer
 //  algo que no se puede reproducir es media funcion.
+//  EUCLIDES: N golpes repartidos lo mas uniformemente posible en la fila.
+//
+//  Es lo que el FX-404 llama EUCLIDEAN y lo que en una caja de ritmos vale por
+//  media hora de tocar celdas: casi todo lo que suena a clave, a afro o a
+//  tresillo cabe en "cinco golpes en dieciseis" o "siete en doce", y a mano
+//  cuesta contar y equivocarse.
+//
+//  El reparto se hace con la cuenta de Bresenham -el mismo truco que dibuja una
+//  linea inclinada en pixeles-, que da exactamente el mismo resultado que el
+//  algoritmo de Bjorklund para el caso que importa aqui y cabe en cuatro
+//  lineas: un golpe donde el acumulador cambia de entero. Cinco en dieciseis
+//  salen en 0 3 6 10 13, que es la clave de tresillo de siempre.
+//
+//  Reescribe la fila ENTERA del pad elegido, incluida la nota y la fuerza de
+//  cada paso nuevo: dejar a medias los pasos viejos convertiria "cinco golpes"
+//  en "cinco golpes y lo que hubiera", que no es lo que dice el mando.
+void MainComponent::euclidesPattern (int golpes)
+{
+    if (selectedPad < 0) return;
+
+    const int b = selectedPattern, p = selectedPad;
+    const int len = engine.getPatternLength (b);
+    const int n = juce::jlimit (0, len, golpes);
+
+    pushUndo (T ("EUCLIDES"));
+
+    for (int st = 0; st < len; ++st)
+    {
+        //  El golpe cae en el paso donde el acumulador PASA de entero, que es
+        //  el borde de abajo: asi el primero cae siempre en el paso 0 y el
+        //  patron empieza a tiempo.
+        const bool on = n > 0 && (st * n) % len < n;
+        pattern[(size_t) b][(size_t) st][(size_t) p] = on;
+        engine.setStep (b, st, p, on);
+        if (on)
+        {
+            engine.setStepNote (b, st, p, 0);
+            engine.setStepVel  (b, st, p, 127);
+            engine.setStepRoll (b, st, p, 1);
+        }
+        engine.setStepNudge (b, st, p, 0);
+    }
+
+    refreshStepGrid();
+    refreshPiano (false);
+    seqSheet.repaint();
+    status.setText (n > 0 ? T ("%1 golpes repartidos en %2 pasos",
+                               juce::String (n), juce::String (len))
+                          : T ("Fila vacia"),
+                    juce::dontSendNotification);
+}
+
 void MainComponent::humanizePattern()
 {
     const int len = engine.getPatternLength (selectedPattern);
@@ -11283,6 +11447,22 @@ void MainComponent::auditPiano()
     //  nota en el 5 y se vuelve al 0, que lleva el acorde.
     std::cout << "{\"piano\":\"pads\",\"tras1\":" << tras1 << ",\"tras2\":" << tras2
               << ",\"banco2\":" << banco2 << ",\"atras\":" << atras << "}" << std::endl;
+
+    //  EUCLIDES: cinco golpes en dieciseis tienen que salir en 0 4 7 10 13, que
+    //  es la clave de tresillo de toda la vida. Se mide por el camino que usa
+    //  la persona -el mando- y no llamando a la funcion por dentro.
+    selectPad (0);
+    engine.setPatternLength (0, 16);
+    for (int n : { 5, 4, 3 })
+    {
+        euclidSlider.setValue ((double) n, juce::sendNotificationSync);
+        std::cout << "{\"piano\":\"euclides\",\"golpes\":" << n << ",\"pasos\":[";
+        bool primero = true;
+        for (int st = 0; st < 16; ++st)
+            if (pattern[0][(size_t) st][(size_t) selectedPad])
+            { std::cout << (primero ? "" : ",") << st; primero = false; }
+        std::cout << "]}" << std::endl;
+    }
 
     //  OIR UNA TECLA NO AFINA EL PAD. Se apunta lo que tenia, se pasean doce
     //  semitonos y se vuelve a leer: si cambio, el paseo ha reafinado el pad.

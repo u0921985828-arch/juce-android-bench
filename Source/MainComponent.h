@@ -94,6 +94,9 @@ private:
     //  cada instrumento. Y saltan los pads VACIOS: en un kit de cinco sonidos,
     //  avanzar de uno en uno por sesenta y cuatro es no tener el boton.
     juce::TextButton pianoPadDownBtn { "PAD -" }, pianoPadUpBtn { "PAD +" };
+    //  Las dos herramientas del piano. Excluyentes: con las dos apagadas se
+    //  dibuja, que es lo que hace falta el 90% del tiempo.
+    juce::TextButton pianoGomaBtn { "GOMA" }, pianoCorteBtn { "TIJERAS" };
     void pianoStepPad (int dir);
     int pianoBase = -12;                       // el semitono de la fila de abajo
     signed char pianoCells[AudioEngine::kNumSteps * PianoRoll::kMaxNotas] {};
@@ -184,6 +187,10 @@ private:
     //  compases, mirar el 1 mientras suena el 3 es la mitad del tiempo
     //  mirando una rejilla que no se mueve.
     juce::TextButton seqHumanBtn  { "HUMANIZAR" };
+    //  EUCLIDES: reparte N golpes lo mas uniformemente posible en la fila del
+    //  pad elegido. Ver euclidesPattern.
+    juce::Slider euclidSlider;
+    void euclidesPattern (int golpes);
     juce::TextButton seqFollowBtn { "SEGUIR" };
     bool seqFollow = false;
     void humanizePattern();
@@ -1335,9 +1342,14 @@ private:
     //  y 1/32 hay uno de 2. Un dial con esos cinco puntos seria un dial que
     //  hay que acertar; dos teclas los recorren y ademas dicen cual es.
     juce::Slider gridSlider;
-    static constexpr int kNumGrids = 5;
+    static constexpr int kNumGrids = 7;
     //  En negras por paso, en el mismo orden que los nombres de abajo.
-    static constexpr float kGridBeats[kNumGrids] = { 0.5f, 1.0f / 3.0f, 0.25f, 1.0f / 6.0f, 0.125f };
+    //  SIETE. Faltaban el tresillo de fusa y la semifusa: con 1/32 como paso
+    //  mas corto no se puede escribir un redoble de trap ni un tresillo rapido,
+    //  que es media musica hecha con esto. El motor acota stepBeats en 0.02, y
+    //  1/64 son 0.0625.
+    static constexpr float kGridBeats[kNumGrids] =
+        { 0.5f, 1.0f / 3.0f, 0.25f, 1.0f / 6.0f, 0.125f, 1.0f / 12.0f, 0.0625f };
     static const char* gridName (int i);
     juce::TextButton chainClearButton { "QUITAR CADENA" };
     juce::Slider macroCtrl1, macroCtrl2, macroCtrl3;   // CTRL 1-3, bank-dependent

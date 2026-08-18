@@ -57,6 +57,18 @@ public:
     //  no se pisan porque uno es horizontal y el otro no.
     std::function<void (int paso, int semi, int cuartos)> onLargo;
 
+    //  LA HERRAMIENTA. Dibujar es lo normal; la GOMA borra lo que toca -sin
+    //  alternar, que arrastrar sobre notas puestas y quitadas encendia unas y
+    //  apagaba otras- y las TIJERAS cortan la nota por donde se tocan, que es
+    //  lo unico que "cortar" puede significar cuando el largo es del paso.
+    enum Herramienta { dibujar = 0, goma, tijeras };
+    void setHerramienta (int h) { util = juce::jlimit (0, 2, h); }
+    int  getHerramienta() const { return util; }
+
+    //  Borrar y cortar los resuelve quien tiene los datos, igual que onCelda.
+    std::function<void (int paso, int semi)> onBorrar;
+    std::function<void (int paso, int cuartos)> onCortar;
+
     //  `notas` trae kMaxNotas semitonos por paso; -128 es "ninguna". `pasos`
     //  es cuantas columnas se dibujan, `base` el semitono de la fila de abajo.
     void setSource (const signed char* notas, int pasos, int base,
@@ -262,10 +274,50 @@ private:
             return;
         }
 
-        if (! onCelda) return;
         const float anchoCol = (float) (r.getWidth() - kGutter) / (float) nPasos;
-        const int paso = juce::jlimit (0, nPasos - 1,
-                                       (int) ((float) (e.x - r.getX() - kGutter) / anchoCol));
+        const float dentro = (float) (e.x - r.getX() - kGutter) / anchoCol;
+        const int paso = juce::jlimit (0, nPasos - 1, (int) dentro);
+
+        //  LA GOMA borra y no alterna: pasar el dedo por encima de una fila con
+        //  notas puestas y huecos encendia los huecos, que es lo contrario de
+        //  borrar. Se repite por celda como el pintado, para no borrar la misma
+        //  cincuenta veces por segundo.
+        if (util == goma)
+        {
+            const int clave2 = fila * 1000 + paso;
+            if (arrastrando && clave2 == ultima) return;
+            ultima = clave2;
+            if (onBorrar) onBorrar (paso, semi);
+            return;
+        }
+
+        //  LAS TIJERAS cortan por donde se toca: el largo de la nota pasa a ser
+        //  lo que va de su casilla hasta el dedo, en cuartos. Tocar dentro de la
+        //  primera casilla la deja en un cuarto, que es lo mas corto que hay.
+        if (util == tijeras)
+        {
+            if (arrastrando) return;
+            if (onCortar)
+            {
+                //  Se busca hacia atras la casilla donde empieza la barra que se
+                //  ha tocado: cortar por el dedo sin saber donde empieza la nota
+                //  daria un largo medido desde el sitio equivocado.
+                int ini = paso;
+                for (int c = paso; c >= 0; --c)
+                {
+                    bool aqui = false;
+                    for (int k = 0; k < kMaxNotas; ++k)
+                        if (datos[c * kMaxNotas + k] != -128 && (int) datos[c * kMaxNotas + k] == semi)
+                            { aqui = true; break; }
+                    if (aqui) { ini = c; break; }
+                }
+                const int cu = juce::jlimit (1, 63, (int) ((dentro - (float) ini) * 4.0f) + 1);
+                onCortar (ini, cu);
+            }
+            return;
+        }
+
+        if (! onCelda) return;
 
         //  ARRASTRAR POR LA MISMA FILA ES ESTIRAR LA NOTA.
         //
@@ -301,6 +353,7 @@ private:
     int nPasos = 16, semiBase = -12, tocando = -1, color = 0, ultima = -1;
     //  Donde empezo el arrastre, para saber si estira o pinta.
     int filaIni = -1, pasoIni = -1, ultimoLargo = -1;
+    int util = 0;                       // 0 dibujar, 1 goma, 2 tijeras
     float faseAct = 0.0f;
 
     std::vector<signed char> sombra;
