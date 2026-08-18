@@ -4435,8 +4435,21 @@ void MainComponent::resized()
         //  sheetFromBottom recorta si no cabe, y de eso se ocupa el reparto.
         const int rigH = 418 + 3 * secH
                        + (padSourceWraps (sheetInnerW) ? Metrics::hit + Metrics::halfGap : 0);
+        //  LA FILA DE CHOKE PUEDE SER DOS.
+        //
+        //  CHOKE se lleva un tercio escaso y en el se meten su casilla y sus
+        //  dos teclas: en 280x653 al numero le quedan 30 px, y ahi dice tambien
+        //  "off" - que en arabe es مغلق y pide 28 de letra, asi que se encogia.
+        //  No se arregla quitandole sitio a MODO y NORMALIZAR, que ya piden el
+        //  suyo: donde los tres no caben, CHOKE se queda una fila entera y las
+        //  otras dos bajan. Es lo que ya hacen las pestanas de AJUSTES y la
+        //  barra de modulos del pad.
+        const int anchoFila3 = sheetInnerW - 2 * Metrics::lg;
+        const bool chokeSolo = ! padRowFits (anchoFila3 * 68 / 100, { &modeButton, &normButton })
+                             || anchoFila3 * 32 / 100 < 12 + 34 + Metrics::gap + 2 * Metrics::stepKey;
         //  438 y no 352: la fila del filtro son 86 mas. Ver el desglose.
         const int wantH = (padPage == padPageSound) ? 438 + secH
+                                                    + (chokeSolo ? Metrics::hit + Metrics::halfGap : 0)
                         : (padPage == padPageTrim)  ? 436 + secH + 2 * (ZatiLookAndFeel::kTrimRow + Metrics::xs)
                                                     : rigH;
         auto inner = sheetFromBottom (padSheet, wantH);
@@ -4617,7 +4630,7 @@ void MainComponent::resized()
             //  reparten POR EL TEXTO QUE LLEVAN, que es lo mismo que hacen
             //  las barras de modulos y lo unico que se ajusta solo en cuatro
             //  idiomas.
-            const int w3 = r3.getWidth() * 32 / 100;
+            const int w3 = chokeSolo ? r3.getWidth() : r3.getWidth() * 32 / 100;
             //  Sin recorte vertical: la fila mide Metrics::hit justo, que es
             //  el dedo minimo, y quitarle 3 arriba y 3 abajo dejaba tres
             //  controles de 34 px que el banco saca como TOUCH. Encima hay 16
@@ -4629,14 +4642,27 @@ void MainComponent::resized()
             //  two 17-pixel slivers. Reserve the buttons their width first.
             //  70 was a hand-picked number that made CHOKE's keys a different
             //  size from every other stepper's. Same reservation as the rest.
+            //  TREINTA Y CUATRO, no treinta: el suelo estaba puesto para un
+            //  numero de dos cifras y la casilla dice tambien "off" - y en
+            //  arabe "off" es مغلق, que pide 28 px de letra. Con treinta le
+            //  quedaban 26 y se encogia. Un suelo que solo cuenta el caso
+            //  facil no es un suelo.
             chokeSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false,
-                                         juce::jmax (30, chokeCell.getWidth() - Metrics::gap - 2 * Metrics::stepKey),
+                                         juce::jmax (34, chokeCell.getWidth() - Metrics::gap - 2 * Metrics::stepKey),
                                          Metrics::readout);
             chokeSlider.setBounds (chokeCell);
             //  NORMALIZAR va aqui y no en la fila de REV/LOOP porque
             //  pertenece al nivel, y el nivel es esta seccion.
             juce::TextButton* r3b[2] = { &modeButton, &normButton };
-            layoutModuleBar (r3, r3b, 0, 2);
+            if (chokeSolo)
+            {
+                inner.removeFromTop (Metrics::halfGap);
+                layoutModuleBar (inner.removeFromTop (Metrics::hit), r3b, 0, 2);
+            }
+            else
+            {
+                layoutModuleBar (r3, r3b, 0, 2);
+            }
         }
 
         padSectionArea[1] = {};
