@@ -565,7 +565,7 @@ MainComponent::MainComponent()
                 //  not move, so a repaint is enough after it.
                 lnf.applyBrowserColours();
                 repaint();
-                for (auto* sh : { &pianoSheet, &padSheet, &seqSheet, &browseSheet, &setSheet, &mixSheet,
+                for (auto* sh : { &padSheet, &seqSheet, &browseSheet, &setSheet, &mixSheet,
                                   &songSheet, &exportSheet, &rackSheet, &chopSheet })
                     sh->repaint();
             };
@@ -1303,14 +1303,18 @@ MainComponent::MainComponent()
     //  change. Directly under the title on both pages, so the tab you are
     //  about to press does not move when you press the other one.
     {
-        juce::TextButton* sb[2] = { &seqGridBtn, &seqStepBtn };
-        for (int i = 0; i < 2; ++i)
+        //  TRES desde que el piano roll dejo de tener ficha propia: PASOS y
+        //  PIANO son dos vistas de lo mismo -las notas del patron- y PATRON es
+        //  lo que le pasa al patron entero. El indice de la tapa ES la pagina,
+        //  asi que el orden de este array manda; ver SeqPage.
+        juce::TextButton* sb[3] = { &seqGridBtn, &seqPianoBtn, &seqStepBtn };
+        for (int i = 0; i < 3; ++i)
         {
             styleButton (*sb[i], kKey);
             sb[i]->setClickingTogglesState (true);
             sb[i]->setRadioGroupId (8803);
             litAccent (*sb[i]);
-            sb[i]->onClick = [this, i] { showSeqPage (i); };
+            sb[i]->onClick = [this, i] { showSeqPage (i); if (i == seqPagePiano) refreshPiano(); };
             seqSheet.addAndMakeVisible (sb[i]);
         }
         seqGridBtn.setToggleState (true, juce::dontSendNotification);
@@ -1866,16 +1870,20 @@ MainComponent::MainComponent()
             if (selectedPad >= 0)
                 engine.postNoteOnAt (selectedPad, semi, 0.9f);
         };
-        pianoSheet.addAndMakeVisible (pianoGrid);
-
-        styleButton (pianoCloseButton, kKey);
-        pianoCloseButton.onClick = [this] { closeAllSheets(); };
-        pianoSheet.addAndMakeVisible (pianoCloseButton);
+        //  EL PIANO VIVE DENTRO DE LA FICHA DEL SECUENCIADOR.
+        //
+        //  Tenia ficha propia y escribia EXACTAMENTE lo mismo que la rejilla de
+        //  pasos - las notas del patron - desde otro sitio: dos popups para un
+        //  trabajo, que es lo que esta app no permite. Escribir notas es un
+        //  trabajo con dos vistas: pasos y piano. Ahora son dos paginas de la
+        //  misma ficha, y la pestana que ocupaban los ajustes del paso -que ya
+        //  no existen ahi- es la que las separa.
+        seqSheet.addAndMakeVisible (pianoGrid);
 
         for (auto* b : { &pianoOctDownBtn, &pianoOctUpBtn, &pianoClearBtn })
         {
             styleButton (*b, kKey);
-            pianoSheet.addAndMakeVisible (*b);
+            seqSheet.addAndMakeVisible (*b);
         }
         //  La ventana se mueve de OCTAVA en octava y no de semitono en
         //  semitono: mover doce filas de una es lo que hace que la vista
@@ -1900,27 +1908,10 @@ MainComponent::MainComponent()
         for (auto* b : { &pianoPadDownBtn, &pianoPadUpBtn })
         {
             styleButton (*b, kKey);
-            pianoSheet.addAndMakeVisible (*b);
+            seqSheet.addAndMakeVisible (*b);
         }
         pianoPadDownBtn.onClick = [this] { pianoStepPad (-1); };
         pianoPadUpBtn  .onClick = [this] { pianoStepPad ( 1); };
-
-        styleButton (pianoPlayBtn, kKey);
-        litAccent (pianoPlayBtn);
-        pianoPlayBtn.setClickingTogglesState (true);
-        pianoPlayBtn.onClick = [this]
-        {
-            const bool on = pianoPlayBtn.getToggleState();
-            engine.setPlaying (on);
-            playButton.setToggleState (on, juce::dontSendNotification);
-            playButton.setButtonText (on ? T ("STOP") : T ("PLAY"));
-        };
-        pianoSheet.addAndMakeVisible (pianoPlayBtn);
-
-        addAndMakeVisible (pianoSheet);
-        pianoSheet.setVisible (false);
-        pianoSheet.onDismiss = [this] { closeAllSheets(); };
-        pianoSheet.paintContent = [this] (juce::Graphics& g) { paintPianoSheetContent (g); };
 
         //  LA PUERTA VIVE EN LA PAGINA DEL PAD y no en la barra de la cara.
         //
@@ -1931,10 +1922,12 @@ MainComponent::MainComponent()
         //  que habla de ese pad.
         styleButton (pianoButton, kKey);
         litAccent (pianoButton);
+        //  Y la puerta lleva a la PAGINA del piano dentro de la ficha del
+        //  secuenciador, que es donde vive ahora.
         pianoButton.onClick = [this]
         {
-            if (pianoSheet.isVisible()) { closeAllSheets(); return; }
-            openSheet (pianoSheet, pianoButton);
+            openSheet (seqSheet, secButton);
+            showSeqPage (seqPagePiano);
             refreshPiano();
         };
         padSheet.addAndMakeVisible (pianoButton);
@@ -2855,14 +2848,29 @@ void MainComponent::showSetPage (int page)
 void MainComponent::showSeqPage (int page)
 {
     seqPage = juce::jlimit ((int) seqPageGrid, (int) seqPageStep, page);
-    const bool onGrid = (seqPage == seqPageGrid);
+    const bool onGrid  = (seqPage == seqPageGrid);
+    const bool onPiano = (seqPage == seqPagePiano);
+    const bool onPat   = (seqPage == seqPageStep);
 
-    seqGridBtn.setToggleState (onGrid,   juce::dontSendNotification);
-    seqStepBtn.setToggleState (! onGrid, juce::dontSendNotification);
+    seqGridBtn .setToggleState (onGrid,  juce::dontSendNotification);
+    seqPianoBtn.setToggleState (onPiano, juce::dontSendNotification);
+    seqStepBtn .setToggleState (onPat,   juce::dontSendNotification);
+
+    //  Lo del piano solo en su pagina, y sin sitio en las otras dos: un
+    //  componente invisible que conserva sus limites sigue estando ahi para
+    //  todo lo que mida geometria.
+    pianoGrid.setVisible (onPiano);
+    for (juce::TextButton* b : { &pianoOctDownBtn, &pianoOctUpBtn, &pianoClearBtn,
+                                 &pianoPadDownBtn, &pianoPadUpBtn })
+    {
+        b->setVisible (onPiano);
+        if (! onPiano) b->setBounds ({});
+    }
+    if (! onPiano) pianoGrid.setBounds ({});
 
     stepGrid.setVisible      (onGrid);
     seqPlayBtn.setVisible    (onGrid);
-    seqHumanBtn.setVisible   (! onGrid);
+    seqHumanBtn.setVisible   (onPat);
     seqFollowBtn.setVisible  (onGrid);
     //  La visibilidad de las tapas de banco NO se decide aqui: la decide
     //  resized(), que es el unico que sabe si caben sin encoger la rejilla.
@@ -2879,10 +2887,10 @@ void MainComponent::showSeqPage (int page)
     if (! onGrid)
         for (auto* b : barButtons) b->setVisible (false);
 
-    for (auto* b : patternButtons) b->setVisible (! onGrid);
-    chainClearButton.setVisible (! onGrid);
-    swingSlider.setVisible      (! onGrid);
-    gridSlider.setVisible       (! onGrid);
+    for (auto* b : patternButtons) b->setVisible (onPat);
+    chainClearButton.setVisible (onPat);
+    swingSlider.setVisible      (onPat);
+    gridSlider.setVisible       (onPat);
     //  LOS CUATRO DEL PASO NO SE DECIDEN AQUI. Viven en la tira de debajo de
     //  la rejilla cuando cabe y en la pagina del patron cuando no, y quien
     //  sabe cual de las dos es resized(). Aqui solo se pueden APAGAR - la
@@ -3034,7 +3042,6 @@ void MainComponent::closeAllSheets()
     setSheet.setVisible (false);
     exportSheet.setVisible (false);
     rackSheet.setVisible (false);
-    pianoSheet.setVisible (false);
     pianoButton.setToggleState (false, juce::dontSendNotification);
     chopSheet.setVisible (false);
     manualSheet.setVisible (false);
@@ -3593,6 +3600,14 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
     const int sp = juce::jmax (0, selectedPad);
     auto inner = seqSheet.sheetBounds.reduced (Metrics::lg, Metrics::md);
+
+    //  La pagina del piano tiene su propia cabecera - dice de que PAD son las
+    //  notas, que es lo unico que hace falta saber ahi - y su propia ayuda.
+    if (seqPage == seqPagePiano)
+    {
+        paintPianoSheetContent (g);
+        return;
+    }
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
@@ -5116,46 +5131,6 @@ void MainComponent::resized()
         chopGoButton.setBounds (verbo.reduced (2, 0));
     }
 
-    //  PIANO ROLL: cabecera, rejilla, y una fila de tapas debajo.
-    //
-    //  La rejilla se lleva TODO lo que sobra, que es lo contrario de lo que
-    //  hacen las otras fichas: aqui lo unico que importa es cuantas notas se
-    //  ven a la vez, y veinticinco filas en 200 px son ocho pixeles por tecla.
-    {
-        const int filaTapas = Metrics::hit;
-        auto inner = sheetFromBottom (pianoSheet, Metrics::md * 2 + Metrics::hit + 14
-                                                   + Metrics::sm + PianoRoll::kFilas * 18
-                                                   + Metrics::sm + filaTapas);
-        auto titleRow = inner.removeFromTop (Metrics::hit);
-        pianoCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
-                                        .withSizeKeepingCentre (Metrics::hit, Metrics::hit));
-        //  PAD - / PAD + van en la fila del titulo y no en la de abajo, que ya
-        //  lleva cuatro: seis tapas en 380 px caen a 60 cada una y "OCTAVA -"
-        //  pide 72, asi que la fila de abajo empezaria a recortar rotulos. Y
-        //  aqui hay sitio de sobra - la cabecera solo tenia la cruz.
-        {
-            const int anchoPad = juce::jmax (Metrics::hit, titleRow.getWidth() / 6);
-            juce::TextButton* pn[2] = { &pianoPadDownBtn, &pianoPadUpBtn };
-            //  vInset CERO. Con 2 quedaban en 36 de alto y el suelo del dedo
-            //  son 40: la cabecera mide justo 40, asi que meterlas dos pixeles
-            //  por lado era regalar los cuatro que faltaban.
-            layoutModuleBar (Lang::takeEnd (titleRow, anchoPad * 2), pn, 0, 2);
-        }
-        inner.removeFromTop (14);                    // pintado: que se esta mirando
-        inner.removeFromTop (Metrics::sm);
-
-        //  La fila de tapas se aparta ANTES: es lo que no puede encoger.
-        auto tapas = inner.removeFromBottom (filaTapas);
-        inner.removeFromBottom (Metrics::sm);
-        {
-            juce::TextButton* pb[4] = { &pianoOctDownBtn, &pianoOctUpBtn,
-                                        &pianoClearBtn, &pianoPlayBtn };
-            layoutModuleBar (tapas, pb, 0, 4);
-        }
-
-        pianoGrid.setBounds (inner);
-    }
-
     // SONG sheet: palette, timeline, page row.
     {
         const int laneH = 40;
@@ -5531,7 +5506,8 @@ void MainComponent::resized()
         //  it. Budget the band, never the control on its own.
         constexpr int bandH = nameH + Metrics::hit + Metrics::sm;
 
-        const bool onGrid = (seqPage == seqPageGrid);
+        const bool onGrid  = (seqPage == seqPageGrid);
+        const bool onPiano = (seqPage == seqPagePiano);
 
         const int patLen   = engine.getPatternLength (selectedPattern);
         const int bars     = juce::jmax (1, patLen / kStepCols);
@@ -5707,6 +5683,13 @@ void MainComponent::resized()
                             + Metrics::sm + kSeqFootH;
         }
 
+        //  LA PAGINA DEL PIANO pide lo suyo: la rejilla de tono se lleva todo lo
+        //  que sobre, que es lo contrario de las otras dos - aqui lo unico que
+        //  importa es cuantas notas se ven a la vez, y veinticinco filas en
+        //  200 px son ocho pixeles por tecla.
+        if (onPiano)
+            wanted = chrome + PianoRoll::kFilas * 18 + Metrics::sm + Metrics::hit + 14;
+
         auto inner = sheetFromBottom (seqSheet, wanted);
 
         auto titleRow = inner.removeFromTop (Metrics::hit);
@@ -5715,9 +5698,10 @@ void MainComponent::resized()
 
         {
             auto tabs = inner.removeFromTop (Metrics::tab);
-            const int half = tabs.getWidth() / 2;
-            seqGridBtn.setBounds (Lang::takeStart (tabs, half).reduced (Metrics::halfGap, 0));
-            seqStepBtn.setBounds (tabs.reduced (Metrics::halfGap, 0));
+            const int tercio = tabs.getWidth() / 3;
+            seqGridBtn .setBounds (Lang::takeStart (tabs, tercio).reduced (Metrics::halfGap, 0));
+            seqPianoBtn.setBounds (Lang::takeStart (tabs, tercio).reduced (Metrics::halfGap, 0));
+            seqStepBtn .setBounds (tabs.reduced (Metrics::halfGap, 0));
             inner.removeFromTop (Metrics::sm);
         }
 
@@ -5767,7 +5751,35 @@ void MainComponent::resized()
             b->setBounds ({});
         }
 
-        if (onGrid)
+        //  LA PAGINA DEL PIANO. Cabecera con PAD - / PAD +, la rejilla de tono
+        //  con todo lo que sobre, y una fila de tapas debajo.
+        if (onPiano)
+        {
+            {
+                const int anchoPad = juce::jmax (Metrics::hit, titleRow.getWidth() / 6);
+                juce::TextButton* pn[2] = { &pianoPadDownBtn, &pianoPadUpBtn };
+                //  vInset CERO: la cabecera mide justo 40, que es el suelo del
+                //  dedo, y dos pixeles por lado eran regalar los cuatro que
+                //  faltaban.
+                layoutModuleBar (Lang::takeEnd (titleRow, anchoPad * 2), pn, 0, 2);
+            }
+            inner.removeFromTop (14);                 // pintado: que se esta mirando
+
+            //  La fila de tapas se aparta ANTES: es lo que no puede encoger.
+            auto tapas = inner.removeFromBottom (Metrics::hit);
+            inner.removeFromBottom (Metrics::sm);
+            {
+                //  TRES y no cuatro: PLAY es del transporte y ya esta en la
+                //  pagina de la rejilla, con TAP y VACIAR. Una tapa que hace lo
+                //  mismo en dos paginas de la MISMA ficha es la version pequena
+                //  del fallo que se acaba de quitar.
+                juce::TextButton* pb[3] = { &pianoOctDownBtn, &pianoOctUpBtn, &pianoClearBtn };
+                layoutModuleBar (tapas, pb, 0, 3);
+            }
+
+            pianoGrid.setBounds (inner);
+        }
+        else if (onGrid)
         {
             //  In landscape the four controls stand in their own column and the
             //  grid keeps the full height; in portrait they stack under it in
@@ -6514,7 +6526,7 @@ void MainComponent::selectPad (int index)
     //  Y el piano roll, que dibuja las notas de ESTE pad: dejarlo sin avisar
     //  ensena las notas del pad anterior con el nombre del nuevo en la cabecera,
     //  que es la peor de las dos mentiras posibles.
-    if (pianoSheet.isVisible()) refreshPiano();
+    if (seqSheet.isVisible() && seqPage == seqPagePiano) refreshPiano();
 }
 
 // The display shows the whole cut, not one pad: every pad pointing at the
@@ -6972,6 +6984,7 @@ void MainComponent::retranslateUi()
     playButton  .setButtonText (engine.isPlaying() ? T ("STOP") : T ("PLAY"));
     clearButton .setButtonText (T ("VACIAR"));
     seqGridBtn  .setButtonText (T ("PASOS"));
+    seqPianoBtn .setButtonText (T ("PIANO"));
     seqHumanBtn .setButtonText (T ("HUMANIZAR"));
     seqFollowBtn.setButtonText (T ("SEGUIR"));
     patLeftBtn  .setButtonText (T ("ATRAS"));
@@ -8829,18 +8842,17 @@ void MainComponent::refreshPiano (bool repintarTarjeta)
                          padZati[(size_t) p],
                          ps >= 0 ? engine.getStepPhase() : 0.0f);
 
-    const bool rodando = engine.isPlaying();
-    pianoPlayBtn.setToggleState (rodando, juce::dontSendNotification);
-    pianoPlayBtn.setButtonText (rodando ? T ("STOP") : T ("PLAY"));
-
-    if (repintarTarjeta) pianoSheet.repaint();
+    //  El transporte de esta ficha es seqPlayBtn, que vive en la pagina de la
+    //  rejilla: el piano tenia su propio PLAY y era una tapa que hacia lo mismo
+    //  en dos paginas de la misma ficha.
+    if (repintarTarjeta) seqSheet.repaint();
 }
 
 void MainComponent::paintPianoSheetContent (juce::Graphics& g)
 {
-    if (pianoSheet.sheetBounds.isEmpty()) return;
+    if (seqSheet.sheetBounds.isEmpty()) return;
 
-    auto inner = pianoSheet.sheetBounds.reduced (Metrics::lg, Metrics::md);
+    auto inner = seqSheet.sheetBounds.reduced (Metrics::lg, Metrics::md);
     const int sp = juce::jmax (0, selectedPad);
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
@@ -8851,7 +8863,7 @@ void MainComponent::paintPianoSheetContent (juce::Graphics& g)
     //  tapas, asi que el nombre del pad aterrizaba encima de ellas.
     auto titulo = inner.removeFromTop (16);
     {
-        const juce::Rectangle<int> tapas[3] = { pianoCloseButton.getBounds(),
+        const juce::Rectangle<int> tapas[3] = { seqCloseButton.getBounds(),
                                                 pianoPadDownBtn.getBounds(),
                                                 pianoPadUpBtn.getBounds() };
         int izq = titulo.getRight(), der = titulo.getX();
@@ -8869,10 +8881,16 @@ void MainComponent::paintPianoSheetContent (juce::Graphics& g)
     //  nada y "C-1 a C+1" dice exactamente donde esta la mano.
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
+    //  Y la ayuda se para donde el titulo, que va justo encima: la cabecera
+    //  lleva PAD -, PAD + y la cruz, y este renglon se metia por debajo de las
+    //  tres - "la rejilla para escribir" acababa detras de PAD -.
+    auto ayuda = inner.removeFromTop (14);
+    ayuda.setLeft  (titulo.getX());
+    ayuda.setRight (titulo.getRight());
     g.drawFittedText (T ("toca el teclado para oir, la rejilla para escribir")
                         + "   " + dot + "   " + PianoRoll::nombreDe (pianoBase)
                         + " - " + PianoRoll::nombreDe (pianoBase + PianoRoll::kFilas - 1),
-                      inner.removeFromTop (14), Lang::start(), 1, 0.8f);
+                      ayuda, Lang::start(), 1, 0.8f);
 }
 
 void MainComponent::refreshSong (bool repintarTarjeta)
@@ -11046,7 +11064,7 @@ void MainComponent::auditPiano()
     std::cout << "{\"piano\":\"sin raiz\",\"notas\":" << notasDe (4, selectedPad) << "}" << std::endl;
 
     //  CAMBIAR DE PAD CON LA FICHA ABIERTA, saltando los sesenta huecos.
-    pianoSheet.setVisible (true);
+    showSeqPage (seqPagePiano);
     pianoStepPad (1);
     const int tras1 = selectedPad;
     pianoStepPad (1);
@@ -11216,7 +11234,7 @@ void MainComponent::auditOpen (const juce::String& which)
     //  que se acaba de anadir.
     else if (which == "secp") { showSeqPage (seqPageGrid); openSheet (seqSheet, secButton); stepCellToggled (0, 4); }
     else if (which == "song") openSheet (songSheet, songButton);
-    else if (which == "piano") { openSheet (pianoSheet, pianoButton); refreshPiano(); }
+    else if (which == "piano") { openSheet (seqSheet, secButton); showSeqPage (seqPagePiano); refreshPiano(); }
     else if (which == "mix")  { refreshMixStrip(); openSheet (mixSheet, mixButton); }
     else if (which == "set")  { showSetPage (pageAudio);    refreshAudioOptions(); openSheet (setSheet, setButton); }
     else if (which == "proj") { showSetPage (pageProjects); refreshProjectList(); openSheet (setSheet, setButton); }

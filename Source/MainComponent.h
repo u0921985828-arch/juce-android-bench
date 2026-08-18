@@ -86,10 +86,8 @@ private:
     //  mando: un semitono, un paso, un viaje - y tres acordes son treinta y
     //  seis viajes, que es por lo que nadie los escribia.
     PianoRoll pianoGrid;
-    juce::TextButton pianoCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
     juce::TextButton pianoOctDownBtn { "OCTAVA -" }, pianoOctUpBtn { "OCTAVA +" };
     juce::TextButton pianoClearBtn   { "VACIAR" };
-    juce::TextButton pianoPlayBtn    { "PLAY" };
     juce::TextButton pianoButton     { "PIANO" };
     //  CAMBIAR DE PAD SIN CERRAR. La ficha tapa la rejilla de pads, asi que
     //  escribir el bajo y luego la campana costaba cerrar, elegir y abrir por
@@ -103,7 +101,6 @@ private:
     void pianoCellToggled (int paso, int semi);
     void paintPianoSheetContent (juce::Graphics& g);
 
-    Sheet pianoSheet;
     Sheet padSheet, seqSheet, browseSheet, setSheet, mixSheet, songSheet,
           exportSheet, rackSheet, chopSheet;
 
@@ -157,12 +154,17 @@ private:
     //  tapped - its note, how hard it hits, how many times it repeats - plus
     //  the chain and the swing. Two pages, each of which asks for exactly the
     //  height it will be given, so nothing is ever squeezed out of the bottom.
-    enum SeqPage { seqPageGrid = 0, seqPageStep };
+    //  TRES paginas y una sola ficha: la rejilla de pasos, el piano roll y lo
+    //  que es del patron entero. El piano vivia en una ficha aparte y escribia
+    //  EXACTAMENTE lo mismo -las notas del patron- desde otro sitio: dos
+    //  popups para un trabajo es lo que esta app no permite. Escribir notas es
+    //  un trabajo con dos vistas, no dos trabajos.
+    enum SeqPage { seqPageGrid = 0, seqPagePiano, seqPageStep };
     int seqPage = seqPageGrid;
     //  La segunda pestana se llama PATRON y no PASO desde que los mandos del
     //  paso viven debajo de la rejilla: lo que queda aqui -cadena, desplazar,
     //  doblar, humanizar, swing, rejilla- es del patron entero.
-    juce::TextButton seqGridBtn { "PASOS" }, seqStepBtn { "PATRON" };
+    juce::TextButton seqGridBtn { "PASOS" }, seqPianoBtn { "PIANO" }, seqStepBtn { "PATRON" };
     //  EL TRANSPORTE, DENTRO DE LA FICHA, igual que en CANCION y en PIANO.
     //  Escribir un paso y OIRLO es el mismo gesto, y la tapa de PLAY de la
     //  cara se queda debajo del velo: habia que cerrar, tocar, y volver a
