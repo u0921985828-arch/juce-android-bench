@@ -3643,7 +3643,61 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     //  still being painted - across the chain buttons of the OTHER page, at
     //  whatever coordinates they happened to hold from the last time they were
     //  visible.
+    //  LOS GRUPOS, HUNDIDOS. Es lo que separa un panel de una lista.
+    //
+    //  Esta ficha tenia diez controles con su rotulo, uno detras de otro y
+    //  todos sobre el mismo fondo: TEMPO parecia de la misma familia que
+    //  PATRON y COMPAS de la misma que PADS. Lo que los agrupa es el sitio -
+    //  los que van juntos ya estan juntos - pero eso no se ve si no se dibuja.
+    //
+    //  Los paneles NO se maquetan: se deducen de las bandas que resized() ya
+    //  publica, que son exactamente las que se reservaron en esta pasada. Asi
+    //  no cuestan un pixel de alto, que en esta ficha es lo unico que no
+    //  sobra - la altura de un carril de la rejilla sale de lo que quede.
     {
+        struct Bloque { int y0, y1, x, w; };
+        juce::Array<Bloque> bloques;
+
+        for (const auto& lb : seqLabelBands)
+        {
+            if (lb.band.isEmpty()) continue;
+            //  El rotulo y el control que lleva debajo son UNA cosa.
+            const int filas = juce::jmax (1, lb.filas);
+            Bloque b { lb.band.getY(),
+                       lb.band.getBottom() + filas * Metrics::hit + (filas - 1) * Metrics::halfGap,
+                       lb.band.getX(), lb.band.getWidth() };
+
+            //  Se unen los de la MISMA FILA y solo esos: PATRON y LARGO
+            //  comparten renglon y su banda esta partida en dos, asi que son un
+            //  panel con dos nombres. Los de abajo NO se unen, que fue el
+            //  primer intento - entre grupo y grupo hay exactamente el aire de
+            //  Metrics::sm, asi que "unir lo que este a menos de sm" unia la
+            //  pagina entera en un solo panel y no agrupaba nada.
+            bool unido = false;
+            for (auto& e : bloques)
+                if (std::abs (e.y0 - b.y0) < 3)
+                {
+                    const int der = juce::jmax (e.x + e.w, b.x + b.w);
+                    e.x  = juce::jmin (e.x, b.x);
+                    e.w  = der - e.x;
+                    e.y1 = juce::jmax (e.y1, b.y1);
+                    unido = true;
+                    break;
+                }
+            if (! unido) bloques.add (b);
+        }
+
+        //  DOS pixeles de aire y no cuatro: entre grupo y grupo hay Metrics::sm,
+        //  asi que cuatro por lado los dejaba TOCANDOSE y los seis paneles de
+        //  la pagina PASO se leian como una sola losa - que es exactamente lo
+        //  que habia antes de dibujarlos. Con dos quedan cuatro de hueco.
+        g.setColour (ZatiColours::groove (0.16f));
+        for (const auto& e : bloques)
+            g.fillRoundedRectangle (juce::Rectangle<int> (e.x - Metrics::halfGap, e.y0 - 2,
+                                                          e.w + Metrics::gap,
+                                                          e.y1 - e.y0 + 4).toFloat(),
+                                    (float) Metrics::sm);
+
         g.setColour (ZatiColours::inkDim);
         g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.20f));
 
@@ -5906,6 +5960,7 @@ void MainComponent::resized()
             //  una flecha no tiene texto que ensanchar, y repartir a tercios
             //  daba dos tapas enormes con un simbolo diminuto dentro.
             nameBand (colA, "PATRON");
+            const int idxPatron = seqLabelBands.size() - 1;
             {
                 //  Repartidas POR EL TEXTO QUE LLEVAN, con la misma barra que
                 //  usan los modulos: a tercios, ADELANTE se cortaba en ingles
@@ -5934,6 +5989,11 @@ void MainComponent::resized()
                 }
                 else
                 {
+                    //  Dos filas, y el panel del grupo tiene que saberlo: sin
+                    //  esto se pintaba detras de la primera y las tres tapas de
+                    //  abajo quedaban fuera de su propio grupo.
+                    if (juce::isPositiveAndBelow (idxPatron, seqLabelBands.size()))
+                        seqLabelBands.getReference (idxPatron).filas = 2;
                     layoutModuleBar (colA.removeFromTop (Metrics::hit), pb, 0, 3);
                     colA.removeFromTop (Metrics::halfGap);
                     layoutModuleBar (colA.removeFromTop (Metrics::hit), pb + 3, 0, 3);

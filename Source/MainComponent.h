@@ -276,7 +276,10 @@ private:
     //  them was fine while every control was on screen at once; with two pages
     //  it drew the name of a control that was HIDDEN - four ghost captions
     //  lying across the grid. What is laid out is what is labelled.
-    struct SeqLabel { juce::Rectangle<int> band; juce::String key; };
+    //  `filas` son las filas de CONTROL que cuelgan del rotulo, para el panel
+    //  que se pinta detras del grupo: casi todos llevan una, y la fila de
+    //  herramientas del patron lleva dos cuando no caben las seis en una.
+    struct SeqLabel { juce::Rectangle<int> band; juce::String key; int filas = 1; };
     juce::Array<SeqLabel> seqLabelBands;
     //  ...and the line at the foot of the PASO page that names the step being
     //  edited. Reserved by resized() for the same reason: drawn from the card's
