@@ -5767,8 +5767,20 @@ void MainComponent::resized()
         if (onPiano)
         {
             {
-                const int anchoPad = juce::jmax (Metrics::hit, titleRow.getWidth() / 6);
                 juce::TextButton* pn[2] = { &pianoPadDownBtn, &pianoPadUpBtn };
+                //  EL SITIO SE PIDE MIDIENDO EL ROTULO, no a sextos de la fila.
+                //
+                //  A sextos, en 344x882 a las dos tapas les tocaban 43 px y
+                //  "PAD +" pide 37 con sus margenes: quedaban 25 y el rotulo se
+                //  cortaba. En chino y en arabe, peor. Se crece hasta que cabe,
+                //  con el tope en dos tercios de la fila para que al titulo le
+                //  quede algo - drawFittedText encoge, pero un titulo de cero
+                //  no se lee.
+                int anchoPad = titleRow.getWidth() / 6;
+                const int tope = titleRow.getWidth() * 2 / 3;
+                while (anchoPad * 2 < tope && ! moduleBarFits (anchoPad * 2, pn, 2))
+                    anchoPad += 4;
+                anchoPad = juce::jmax (Metrics::hit, anchoPad);
                 //  vInset CERO: la cabecera mide justo 40, que es el suelo del
                 //  dedo, y dos pixeles por lado eran regalar los cuatro que
                 //  faltaban.
