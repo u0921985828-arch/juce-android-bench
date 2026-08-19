@@ -36,6 +36,39 @@ juce_add_binary_data(ZatiData SOURCES
     Source/fonts/OswaldMedium.ttf
     Source/fonts/JetBrainsMonoRegular.ttf
     Source/fonts/JetBrainsMonoBold.ttf
+    # Los treinta y un sonidos de fabrica que vienen de una maquina de verdad.
+    # Ver Tools/fabrica.py: de donde sale cada uno y por que en FLAC.
+    Source/kits/a01_kick.flac
+    Source/kits/a02_snare.flac
+    Source/kits/a03_hat.flac
+    Source/kits/a04_open.flac
+    Source/kits/a05_rim.flac
+    Source/kits/a06_tomlo.flac
+    Source/kits/a07_tommi.flac
+    Source/kits/a08_tomhi.flac
+    Source/kits/a09_clap.flac
+    Source/kits/a10_ride.flac
+    Source/kits/a11_crash.flac
+    Source/kits/a12_shake.flac
+    Source/kits/a13_conga.flac
+    Source/kits/a15_tamb.flac
+    Source/kits/a16_splash.flac
+    Source/kits/b01_bd.flac
+    Source/kits/b02_sd.flac
+    Source/kits/b03_ch.flac
+    Source/kits/b04_oh.flac
+    Source/kits/b05_rs.flac
+    Source/kits/b06_cp.flac
+    Source/kits/b07_lt.flac
+    Source/kits/b08_mt.flac
+    Source/kits/b09_ht.flac
+    Source/kits/b10_lc.flac
+    Source/kits/b11_mc.flac
+    Source/kits/b12_hc.flac
+    Source/kits/b13_cy.flac
+    Source/kits/b14_cb.flac
+    Source/kits/b15_cl.flac
+    Source/kits/b16_ma.flac
 )
 
 target_sources(Zati PRIVATE

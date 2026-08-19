@@ -282,6 +282,16 @@ namespace Kits
         //  cero lo que no se nombra. Un valor por defecto que ademas es un
         //  valor valido es como se apagan sesenta sonidos de golpe.
         float brillo;
+        //  Y SI HAY GRABACION, MANDA LA GRABACION. El nombre del recurso
+        //  incrustado, o nulo para sintetizarlo. Ver Tools/fabrica.py: los dos
+        //  bancos de percusion salen de maquinas de verdad y los otros dos se
+        //  sintetizan, porque un riser o un colchon no los ha grabado nadie.
+        //
+        //  Los parametros de arriba SE QUEDAN aunque haya muestra: son lo que
+        //  suena si el recurso no esta -y en escritorio, donde el banco corre
+        //  sin BinaryData de Android, eso pasa de verdad-. Un hueco silencioso
+        //  es peor que un sonido parecido.
+        const char* muestra;
     };
 
     inline const Recipe* table()
@@ -292,45 +302,49 @@ namespace Kits
             //  Membranas por skin y parches con bordon por wire: ni una sola
             //  forma compartida con el banco B, que es de donde venia que los
             //  dos bancos midieran lo mismo.
-            { "KICK",   skin,      55.0f, 0.38f, 0.32f, 0.55f },
-            { "SNARE",  wire,     195.0f, 0.19f, 0.30f, 1750.0f },
-            { "HAT",    hat,     9500.0f, 0.042f, 1.6f, 0.0f,  1 },
-            { "OPEN",   hat,     8600.0f, 0.30f, 1.4f, 0.0f,   1 },
-            { "RIM",    wire,     440.0f, 0.048f, 0.58f, 2600.0f },
-            { "TOM LO", skin,      95.0f, 0.36f, 0.26f, 0.34f },
-            { "TOM MI", skin,     138.0f, 0.30f, 0.26f, 0.31f },
-            { "TOM HI", skin,     192.0f, 0.25f, 0.26f, 0.28f },
-            { "CLAP",   clap,       0.0f, 0.42f, 1.3f, 1150.0f },
-            { "RIDE",   metal,      1.0f, 0.95f, 7000.0f, 1.2f, 1 },
-            { "CRASH",  metal,      0.8f, 1.90f, 4200.0f, 0.9f, 1 },
+            { "KICK",   skin,      55.0f, 0.38f, 0.32f, 0.55f, 0, 0.0f, "a01_kick_flac" },
+            { "SNARE",  wire,     195.0f, 0.19f, 0.30f, 1750.0f, 0, 0.0f, "a02_snare_flac" },
+            { "HAT",    hat,     9500.0f, 0.042f, 1.6f, 0.0f,  1, 0.0f, "a03_hat_flac" },
+            { "OPEN",   hat,     8600.0f, 0.30f, 1.4f, 0.0f,   1, 0.0f, "a04_open_flac" },
+            { "RIM",    wire,     440.0f, 0.048f, 0.58f, 2600.0f, 0, 0.0f, "a05_rim_flac" },
+            { "TOM LO", skin,      95.0f, 0.36f, 0.26f, 0.34f, 0, 0.0f, "a06_tomlo_flac" },
+            { "TOM MI", skin,     138.0f, 0.30f, 0.26f, 0.31f, 0, 0.0f, "a07_tommi_flac" },
+            { "TOM HI", skin,     192.0f, 0.25f, 0.26f, 0.28f, 0, 0.0f, "a08_tomhi_flac" },
+            { "CLAP",   clap,       0.0f, 0.42f, 1.3f, 1150.0f, 0, 0.0f, "a09_clap_flac" },
+            { "RIDE",   metal,      1.0f, 0.95f, 7000.0f, 1.2f, 1, 0.0f, "a10_ride_flac" },
+            { "CRASH",  metal,      0.8f, 1.90f, 4200.0f, 0.9f, 1, 0.0f, "a11_crash_flac" },
             //  SHAKE y TAMB por granos: eran ruido filtrado, como HISS, y por
             //  eso una maraca y un siseo median 0.998.
-            { "SHAKE",  grain,   6200.0f, 0.070f, 1400.0f, 0.0f },
-            { "CONGA",  skin,     245.0f, 0.19f, 0.22f, 0.24f },
+            { "SHAKE",  grain,   6200.0f, 0.070f, 1400.0f, 0.0f, 0, 0.0f, "a12_shake_flac" },
+            { "CONGA",  skin,     245.0f, 0.19f, 0.22f, 0.24f, 0, 0.0f, "a13_conga_flac" },
             { "COWBEL", metal,      2.4f, 0.28f, 2400.0f, 3.0f },
-            { "TAMB",   grain,   5200.0f, 0.14f, 620.0f, 1.60f },
-            { "SPLASH", metal,      1.3f, 1.15f, 5200.0f, 0.8f, 1 },
+            { "TAMB",   grain,   5200.0f, 0.14f, 620.0f, 1.60f, 0, 0.0f, "a15_tamb_flac" },
+            { "SPLASH", metal,      1.3f, 1.15f, 5200.0f, 0.8f, 1, 0.0f, "a16_splash_flac" },
 
             // --- B: MAQUINA --------------------------------------------
             //  Y AQUI NO SE TOCA NADA: un seno con la afinacion cayendo y ruido
             //  por un filtro ES la 808. Lo que estaba mal no era este banco,
             //  era que el de al lado fuese otra vez este.
-            { "BD 808", drum,      48.0f, 1.05f, 1.1f, 0.045f },
-            { "SD 808", snare,    182.0f, 0.22f, 0.32f, 1300.0f },
-            { "CH 808", hat,    10500.0f, 0.030f, 2.2f, 0.0f },
-            { "OH 808", hat,     9800.0f, 0.36f, 2.0f, 0.0f },
-            { "RIM 808",snare,    560.0f, 0.036f, 0.62f, 3400.0f },
-            { "LT 808", drum,      82.0f, 0.58f, 0.6f, 0.070f },
-            { "MT 808", drum,     116.0f, 0.50f, 0.6f, 0.062f },
-            { "HT 808", drum,     162.0f, 0.44f, 0.6f, 0.055f },
-            { "CLAP 9", clap,       0.0f, 0.13f, 3.2f, 1900.0f },
-            { "CYM808", metal,      1.0f, 1.50f, 6000.0f, 0.7f },
-            { "COW808", metal,      2.6f, 0.40f, 2600.0f, 3.4f },
-            { "CLAVE",  tone,     2450.0f, 0.050f, 0.0f, 0.0f },
-            { "MARACA", grain,   6800.0f, 0.034f, 2600.0f, 0.0f },
-            { "SUB",    drum,      38.0f, 1.35f, 0.4f, 0.080f },
-            { "ZAP",    sweep,   4000.0f, 0.20f, -1.0f, 3.0f },
-            { "SNAP",   snare,    850.0f, 0.062f, 0.25f, 4600.0f },
+            { "BD 808", drum,      48.0f, 1.05f, 1.1f, 0.045f, 0, 0.0f, "b01_bd_flac" },
+            { "SD 808", snare,    182.0f, 0.22f, 0.32f, 1300.0f, 0, 0.0f, "b02_sd_flac" },
+            { "CH 808", hat,    10500.0f, 0.030f, 2.2f, 0.0f, 0, 0.0f, "b03_ch_flac" },
+            { "OH 808", hat,     9800.0f, 0.36f, 2.0f, 0.0f, 0, 0.0f, "b04_oh_flac" },
+            { "RIM 808",snare,    560.0f, 0.036f, 0.62f, 3400.0f, 0, 0.0f, "b05_rs_flac" },
+            { "LT 808", drum,      82.0f, 0.58f, 0.6f, 0.070f, 0, 0.0f, "b07_lt_flac" },
+            { "MT 808", drum,     116.0f, 0.50f, 0.6f, 0.062f, 0, 0.0f, "b08_mt_flac" },
+            { "HT 808", drum,     162.0f, 0.44f, 0.6f, 0.055f, 0, 0.0f, "b09_ht_flac" },
+            { "CLAP 9", clap,       0.0f, 0.13f, 3.2f, 1900.0f, 0, 0.0f, "b06_cp_flac" },
+            { "CYM808", metal,      1.0f, 1.50f, 6000.0f, 0.7f, 0, 0.0f, "b13_cy_flac" },
+            { "COW808", metal,      2.6f, 0.40f, 2600.0f, 3.4f, 0, 0.0f, "b14_cb_flac" },
+            { "CLAVE",  tone,     2450.0f, 0.050f, 0.0f, 0.0f, 0, 0.0f, "b15_cl_flac" },
+            { "MARACA", grain,   6800.0f, 0.034f, 2600.0f, 0.0f, 0, 0.0f, "b16_ma_flac" },
+            //  Los tres congas, que son las tres voces de la 808 que faltaban.
+            //  Aqui estaban SUB, ZAP y SNAP - tres inventos nuestros - y las
+            //  dieciseis voces de la maquina son exactamente dieciseis: si el
+            //  banco se llama MAQUINA, las que van son las suyas.
+            { "LC 808", skin,      82.0f, 0.42f, 0.18f, 0.20f, 0, 0.0f, "b10_lc_flac" },
+            { "MC 808", skin,     124.0f, 0.34f, 0.18f, 0.20f, 0, 0.0f, "b11_mc_flac" },
+            { "HC 808", skin,     186.0f, 0.28f, 0.18f, 0.20f, 0, 0.0f, "b12_hc_flac" },
 
             // --- C: TEXTURA --------------------------------------------
             { "VINYL",  vinyl,      0.0f, 1.60f, 0.0f, 0.0f },
@@ -339,7 +353,11 @@ namespace Kits
             { "FALL",   sweep,   7000.0f, 0.85f, -1.0f, 2.0f },
             { "IMPACT", noiseHit,  62.0f, 1.05f, 0.6f, 0.0f },
             { "CLICK",  tone,    1900.0f, 0.011f, 0.0f, 0.0f },
-            { "STATIC", hat,     2800.0f, 0.32f, 0.8f, 1.0f },
+            //  STATIC por granos y no por ruido filtrado: con ruido media 3.75 dB
+            //  contra el platillo de la 808, que ahora es una grabacion de
+            //  verdad y es un lavado de ruido brillante de dos segundos. Una
+            //  interferencia no es un lavado, es una sucesion de chasquidos.
+            { "STATIC", grain,   2400.0f, 0.32f, 700.0f, 0.0f },
             { "WIND",   sweep,    700.0f, 1.80f, 0.4f, 4.0f },
             { "THUMP",  noiseHit,  46.0f, 0.52f, 0.25f, 0.0f },
             { "GLITCH", fm,       900.0f, 0.085f, 6.0f, 3.7f },
@@ -378,11 +396,144 @@ namespace Kits
         return t;
     }
 
+    //  IGUALAR POR SONORIDAD, PARA LAS DOS MITADES.
+    //
+    //  Fuera de render y no dentro, porque ahora hay dos formas de llegar
+    //  aqui - sintetizar y decodificar - y las dos tienen que salir con el
+    //  mismo volumen. Dos caminos que se igualan por su cuenta se separan.
+    inline void normaliza (float* d, int len)
+    {
+    // ------------------------------------------------------------------
+    //  IGUALAR POR SONORIDAD, NO POR PICO, Y CON LA CURVA DE LA NORMA.
+    //
+    //  Al mismo PICO un charles de 40 ms y un bombo de 400 suenan a
+    //  volumenes completamente distintos, porque el oido integra energia y
+    //  no mira el maximo. Y con los sesenta y cuatro a 0.89 de pico, dos
+    //  pads a la vez ya estaban en 0 dBFS: de ahi el "suena con mucha
+    //  ganancia".
+    //
+    //  Se pondera con la curva K de BS.1770 - repisa de agudos de segundo
+    //  orden mas paso alto de segundo orden - y los coeficientes son los
+    //  publicados PARA 48 kHz, que es exactamente a lo que se genera aqui:
+    //  a otra frecuencia habria que recalcularlos y dejarian de ser exactos.
+    //
+    //  Y se mide sobre la VENTANA DE 400 ms MAS SONORA, no sobre el fichero
+    //  entero. Un vinilo de tres segundos con cuatro chasquidos sueltos
+    //  tiene una energia media ridicula y cada chasquido revienta: medido
+    //  entero salia "flojo" y se le subia el volumen hasta que los
+    //  chasquidos pegaban. Lo que se compara es como suena EL GOLPE, que es
+    //  lo que se oye al tocar el pad.
+    {
+        struct Biquad
+        {
+            double b0, b1, b2, a1, a2, x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+            double operator() (double x) noexcept
+            {
+                const double y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+                x2 = x1; x1 = x; y2 = y1; y1 = y;
+                return std::isfinite (y) ? y : 0.0;
+            }
+        };
+        //  Los dos de la norma, a 48 kHz.
+        Biquad shelf { 1.53512485958697, -2.69169618940638, 1.19839281085285,
+                      -1.69065929318241,  0.73248077421585 };
+        Biquad hpf   { 1.0, -2.0, 1.0, -1.99004745483398, 0.99007225036621 };
+
+        const int win = juce::jmin (len, (int) (kRate * 0.400));
+        double run = 0.0, best = 0.0;
+        std::vector<double> sq ((size_t) len);
+        for (int n = 0; n < len; ++n)
+        {
+            const double k = hpf (shelf ((double) d[n]));
+            sq[(size_t) n] = k * k;
+            run += sq[(size_t) n];
+            if (n >= win) run -= sq[(size_t) (n - win)];
+            if (n >= win - 1) best = juce::jmax (best, run);
+        }
+        if (win >= len) best = juce::jmax (best, run);
+
+        const float loud = (float) std::sqrt (best / juce::jmax (1, win));
+        float g = (loud > 1.0e-7f) ? kTargetLufsish / loud : 1.0f;
+
+        //  El techo, DESPUES de la sonoridad: al reves, el limitador
+        //  decidiria cuanto suena cada cosa. 0.80 deja margen para tocar
+        //  cuatro pads a la vez sin llegar al limitador del master, y lo
+        //  que se pase se dobla en vez de cortarse.
+        float peak = 0.0f;
+        for (int n = 0; n < len; ++n) peak = juce::jmax (peak, std::abs (d[n]));
+
+        const int aIn  = juce::jmin (len / 8, (int) (kRate * 0.001));
+        const int aOut = juce::jmin (len / 4, (int) (kRate * 0.004));
+        for (int n = 0; n < len; ++n)
+        {
+            float x = d[n] * g;
+            //  Doblar, no cortar: un transitorio que se pasa del techo se
+            //  redondea y conserva su sonoridad, en vez de arrastrar al
+            //  sonido entero seis decibelios hacia abajo.
+            if (std::abs (x) > kKnee)
+            {
+                const float sgn = (x < 0.0f) ? -1.0f : 1.0f;
+                const float over = (std::abs (x) - kKnee) / (1.0f - kKnee);
+                x = sgn * (kKnee + (kCeiling - kKnee) * std::tanh (over));
+            }
+            if (n < aIn)         x *= (float) n / (float) aIn;
+            if (n >= len - aOut) x *= (float) (len - n) / (float) aOut;
+            d[n] = juce::jlimit (-0.99f, 0.99f, x);
+        }
+        juce::ignoreUnused (peak);
+    }
+    }
+
+    //  LA GRABACION, SI LA HAY. Devuelve nulo cuando el recurso no esta, y
+    //  entonces el sonido se sintetiza como siempre: un hueco mudo seria peor
+    //  que un sonido parecido, y ademas dejaria un pad roto sin decir por que.
+    //
+    //  Va en mono porque asi vienen -Tools/fabrica.py las suma- y a 48 kHz, o
+    //  sea a la misma frecuencia que el aparato: delta vale 1 y Voice las lee
+    //  tal cual, sin pasar un transitorio por la interpolacion.
+    inline SampleBuffer::Ptr desdeRecurso (const char* nombre)
+    {
+        if (nombre == nullptr) return nullptr;
+
+        int bytes = 0;
+        const char* datos = BinaryData::getNamedResource (nombre, bytes);
+        if (datos == nullptr || bytes <= 0) return nullptr;
+
+        juce::AudioFormatManager fm;
+        fm.registerBasicFormats();
+        //  El stream NO copia: los bytes viven en el binario y estan ahi
+        //  mientras la app exista, asi que copiarlos seria un megabyte de mas
+        //  en el arranque para nada.
+        std::unique_ptr<juce::AudioFormatReader> rd (
+            fm.createReaderFor (std::make_unique<juce::MemoryInputStream> (datos, (size_t) bytes, false)));
+        if (rd == nullptr || rd->lengthInSamples <= 0) return nullptr;
+
+        const int len = (int) juce::jmin (rd->lengthInSamples, (juce::int64) (kRate * 3.0));
+        SampleBuffer::Ptr sb = new SampleBuffer();
+        sb->sourceSampleRate = kRate;
+        sb->buffer.setSize (1, len);
+        sb->buffer.clear();
+        rd->read (&sb->buffer, 0, len, 0, true, rd->numChannels > 1);
+        return sb;
+    }
+
     inline SampleBuffer::Ptr render (int index)
     {
         using namespace detail;
 
         const auto& r = table()[juce::jlimit (0, kNumSounds - 1, index)];
+
+        //  Y LA GRABACION SE NORMALIZA POR EL MISMO CAMINO que lo sintetizado,
+        //  no por uno suyo. Si cada mitad se igualara por su cuenta, los
+        //  muestreados y los sintetizados sonarian a volumenes distintos y el
+        //  banco lo cazaria como "la sonoridad baila" sin poder decir por que.
+        //  Por eso esto entra ARRIBA de la funcion y no al lado de ella.
+        if (auto grabado = desdeRecurso (r.muestra))
+        {
+            normaliza (grabado->buffer.getWritePointer (0), grabado->buffer.getNumSamples());
+            return grabado;
+        }
+
         const int len = juce::jmax (1024, (int) (kRate * juce::jmin (3.0f, r.decay * 5.0f)));
 
         SampleBuffer::Ptr sb = new SampleBuffer();
@@ -667,85 +818,7 @@ namespace Kits
             d[n] = std::isfinite (v) ? v : 0.0f;
         }
 
-        // ------------------------------------------------------------------
-        //  IGUALAR POR SONORIDAD, NO POR PICO, Y CON LA CURVA DE LA NORMA.
-        //
-        //  Al mismo PICO un charles de 40 ms y un bombo de 400 suenan a
-        //  volumenes completamente distintos, porque el oido integra energia y
-        //  no mira el maximo. Y con los sesenta y cuatro a 0.89 de pico, dos
-        //  pads a la vez ya estaban en 0 dBFS: de ahi el "suena con mucha
-        //  ganancia".
-        //
-        //  Se pondera con la curva K de BS.1770 - repisa de agudos de segundo
-        //  orden mas paso alto de segundo orden - y los coeficientes son los
-        //  publicados PARA 48 kHz, que es exactamente a lo que se genera aqui:
-        //  a otra frecuencia habria que recalcularlos y dejarian de ser exactos.
-        //
-        //  Y se mide sobre la VENTANA DE 400 ms MAS SONORA, no sobre el fichero
-        //  entero. Un vinilo de tres segundos con cuatro chasquidos sueltos
-        //  tiene una energia media ridicula y cada chasquido revienta: medido
-        //  entero salia "flojo" y se le subia el volumen hasta que los
-        //  chasquidos pegaban. Lo que se compara es como suena EL GOLPE, que es
-        //  lo que se oye al tocar el pad.
-        {
-            struct Biquad
-            {
-                double b0, b1, b2, a1, a2, x1 = 0, x2 = 0, y1 = 0, y2 = 0;
-                double operator() (double x) noexcept
-                {
-                    const double y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
-                    x2 = x1; x1 = x; y2 = y1; y1 = y;
-                    return std::isfinite (y) ? y : 0.0;
-                }
-            };
-            //  Los dos de la norma, a 48 kHz.
-            Biquad shelf { 1.53512485958697, -2.69169618940638, 1.19839281085285,
-                          -1.69065929318241,  0.73248077421585 };
-            Biquad hpf   { 1.0, -2.0, 1.0, -1.99004745483398, 0.99007225036621 };
-
-            const int win = juce::jmin (len, (int) (kRate * 0.400));
-            double run = 0.0, best = 0.0;
-            std::vector<double> sq ((size_t) len);
-            for (int n = 0; n < len; ++n)
-            {
-                const double k = hpf (shelf ((double) d[n]));
-                sq[(size_t) n] = k * k;
-                run += sq[(size_t) n];
-                if (n >= win) run -= sq[(size_t) (n - win)];
-                if (n >= win - 1) best = juce::jmax (best, run);
-            }
-            if (win >= len) best = juce::jmax (best, run);
-
-            const float loud = (float) std::sqrt (best / juce::jmax (1, win));
-            float g = (loud > 1.0e-7f) ? kTargetLufsish / loud : 1.0f;
-
-            //  El techo, DESPUES de la sonoridad: al reves, el limitador
-            //  decidiria cuanto suena cada cosa. 0.80 deja margen para tocar
-            //  cuatro pads a la vez sin llegar al limitador del master, y lo
-            //  que se pase se dobla en vez de cortarse.
-            float peak = 0.0f;
-            for (int n = 0; n < len; ++n) peak = juce::jmax (peak, std::abs (d[n]));
-
-            const int aIn  = juce::jmin (len / 8, (int) (kRate * 0.001));
-            const int aOut = juce::jmin (len / 4, (int) (kRate * 0.004));
-            for (int n = 0; n < len; ++n)
-            {
-                float x = d[n] * g;
-                //  Doblar, no cortar: un transitorio que se pasa del techo se
-                //  redondea y conserva su sonoridad, en vez de arrastrar al
-                //  sonido entero seis decibelios hacia abajo.
-                if (std::abs (x) > kKnee)
-                {
-                    const float sgn = (x < 0.0f) ? -1.0f : 1.0f;
-                    const float over = (std::abs (x) - kKnee) / (1.0f - kKnee);
-                    x = sgn * (kKnee + (kCeiling - kKnee) * std::tanh (over));
-                }
-                if (n < aIn)         x *= (float) n / (float) aIn;
-                if (n >= len - aOut) x *= (float) (len - n) / (float) aOut;
-                d[n] = juce::jlimit (-0.99f, 0.99f, x);
-            }
-            juce::ignoreUnused (peak);
-        }
+        normaliza (d, len);
 
         return sb;
     }
