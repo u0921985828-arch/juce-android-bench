@@ -54,11 +54,19 @@ AudioEngine::AudioEngine()
     //  turn it off per pad.
     for (auto& c : padSelfCut) c.store (true, std::memory_order_relaxed);
 
-    //  Every pad fully sent to every effect. An effect only becomes audible
-    //  when its own MIX is raised, so this default means switching one on
-    //  still affects the whole kit, exactly as it did before pads could be
-    //  taken off a send individually.
-    for (auto& pad : padSend)  for (auto& s : pad) s.store (1.0f, std::memory_order_relaxed);
+    //  NINGUN PAD MANDA A NINGUN EFECTO, y el cero es el sitio del que se sale.
+    //
+    //  Estaba al reves - los 64 pads a tope en los seis envios - con el
+    //  argumento de que asi encender un efecto se oye en todo el kit. Y se oye:
+    //  en TODO el kit, que es justo el problema. Abrir el delay metia en la cola
+    //  el bombo, la caja y los sesenta y dos sonidos restantes, asi que la
+    //  primera media hora con la maquina se iba en BAJAR cinco envios por cada
+    //  uno que querias. Una mezcla se hace subiendo lo que quieres, no apagando
+    //  lo que no.
+    //
+    //  Y de paso sale gratis en CPU: con la mascara a cero el camino de envios
+    //  por pad no se recorre hasta que alguien sube el primero.
+    for (auto& pad : padSend)  for (auto& s : pad) s.store (0.0f, std::memory_order_relaxed);
     //  The SMOOTHER, though, starts closed. What it follows is the pad send
     //  times the effect's own MIX, and every MIX starts at zero - starting it
     //  at the pad value instead opened all six sends for the first 20 ms of

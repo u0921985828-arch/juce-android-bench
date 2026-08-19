@@ -460,8 +460,13 @@ MainComponent::MainComponent()
             sl->setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
             sl->setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
             sl->setRange (0.0, 1.0, 0.01);
-            sl->setValue (1.0, juce::dontSendNotification);
-            sl->setDoubleClickReturnValue (true, 1.0);
+            //  Cero, que es donde nace el envio y donde vuelve al tocarlo dos
+            //  veces. El uno de antes era el valor del constructor mintiendo:
+            //  el mando decia 100 y refreshRack lo bajaba a lo que el motor
+            //  tuviera, asi que el rack se abria por primera vez ensenando algo
+            //  distinto de lo que sonaba.
+            sl->setValue (0.0, juce::dontSendNotification);
+            sl->setDoubleClickReturnValue (true, 0.0);
             sl->setSliderSnapsToMousePosition (false);
             sl->textFromValueFunction = [] (double v) { return juce::String ((int) std::round (v * 100.0)); };
             sl->updateText();
@@ -8996,8 +9001,11 @@ void MainComponent::applyState (const juce::ValueTree& s)
             engine.setPadReso   (i, padReso[(size_t) i]);
             padZati[(size_t) i]    = (int)   p.getProperty ("zati", Zati::forPad (i));
 
-            //  Older projects have no sends; those pads go to every effect in
-            //  full, which is what they sounded like when they were saved.
+            //  Un proyecto sin la propiedad "sends" es anterior a que los
+            //  envios existieran, y entonces cada pad iba entero a los seis:
+            //  vuelve con uno y no con el cero nuevo, porque lo que manda aqui
+            //  no es cual es el defecto de hoy sino como sonaba el dia que se
+            //  guardo. El cero es para lo que nace ahora, no para lo que vuelve.
             juce::StringArray sends;
             sends.addTokens (p.getProperty ("sends", juce::String()).toString(), ",", "");
             for (int f = 0; f < kNumFx; ++f)
@@ -9370,6 +9378,26 @@ void MainComponent::deleteProject (const juce::String& name)
     setSheet.repaint();
 }
 
+//  LA CANCION DE UN PROYECTO RECIEN NACIDO: el patron 1 en el primer hueco.
+//
+//  La pagina CANCION abria con los cuatro carriles vacios y la unica forma de
+//  saber que se pinta con el dedo era leer el renglon del pie. Con un bloque
+//  puesto la pagina se explica sola -esto es un bloque, ocupa un compas, se
+//  arrastra- y ademas PLAY en modo cancion suena desde el primer toque en vez
+//  de recorrer sesenta y cuatro compases mudos.
+//
+//  Y ocupa los compases que el patron mide, con las mismas dos lineas que usa
+//  el pincel: un bloque de un compas escrito a mano donde el patron mide dos se
+//  lee como un bloque y suena como medio.
+void MainComponent::songPorDefecto()
+{
+    engine.clearSong();
+    const int bars = juce::jmax (1, (engine.getPatternLength (0) + AudioEngine::kBarSteps - 1) / AudioEngine::kBarSteps);
+    engine.setSongCell (0, 0, 1);
+    for (int b = 1; b < bars && b < engine.getSongLength(); ++b)
+        engine.setSongCell (0, b, AudioEngine::kContinued);
+}
+
 void MainComponent::newProject()
 {
     playButton.setToggleState (false, juce::dontSendNotification);
@@ -9382,6 +9410,13 @@ void MainComponent::newProject()
         padHasSample[(size_t) i] = false;
         padName[(size_t) i] = {};
         engine.clearPad (i);            // NUEVO has to empty the engine too
+        //  Y LOS ENVIOS CON EL PAD. clearPad vacia la muestra y deja los seis
+        //  envios donde los dejo el proyecto anterior, asi que el pad 03 del
+        //  proyecto nuevo nacia mandando al delay porque el del proyecto de
+        //  ayer lo hacia. Un estado que sobrevive a NUEVO no es un defecto: es
+        //  una herencia, y ninguna de las dos puertas a un proyecto vacio puede
+        //  dejar la mitad puesta.
+        for (int f = 0; f < AudioEngine::kNumFx; ++f) engine.setPadSend (i, f, 0.0f);
         if (auto* p = pads[i]) p->setSampleInfo (nullptr, {});
     }
     for (int b = 0; b < kNumPatterns; ++b)
@@ -9393,6 +9428,13 @@ void MainComponent::newProject()
         if (auto* btn = patternButtons[b]) btn->setToggleState (false, juce::dontSendNotification);
     }
     rebuildChain();
+
+    //  Y LA CANCION TAMBIEN. NUEVO vaciaba los pads y los ocho patrones y se
+    //  dejaba la linea de tiempo puesta: el proyecto siguiente nacia con el
+    //  arreglo del anterior encima, bloques apuntando a patrones que ya no
+    //  existen. Vaciar la mitad de un proyecto es peor que no vaciar nada,
+    //  porque lo que queda parece tuyo.
+    songPorDefecto();
 
     selectedPattern = 0;
     selectedStep = -1;
@@ -12479,6 +12521,52 @@ void MainComponent::auditPlay (bool on)
 //  donde estan escritas las respuestas: aqui no se comprueba nada, se MIDE -
 //  una prueba que se juzga a si misma dentro del codigo que prueba tiende a
 //  cambiar de opinion a la vez que el fallo.
+//  CON QUE ABRE LA MAQUINA, medido en sus dos caminos.
+//
+//  Un proyecto vacio no es un proyecto sin nada: es el que sale al instalar y
+//  el que sale al pulsar NUEVO, y los dos tienen que decir lo mismo. Se vuelca
+//  lo que define ese estado -cuantos pads traen sonido, que hay en la linea de
+//  tiempo y cuanto mandan los 64 pads a los seis efectos- primero tal y como
+//  la app acaba de arrancar y despues de NUEVO.
+//
+//  Las dos veces, porque son dos codigos distintos: restoreSession sin sesion
+//  por un lado y newProject por otro, y ya se ha pagado una vez que uno de los
+//  dos se dejara la mitad del estado sin tocar.
+void MainComponent::auditNuevo()
+{
+    auto fila = [this] (const char* que)
+    {
+        int conSonido = 0;
+        for (int i = 0; i < kNumPads; ++i) if (padHasSample[(size_t) i]) ++conSonido;
+
+        float envMax = 0.0f;
+        double envSuma = 0.0;
+        for (int i = 0; i < kNumPads; ++i)
+            for (int f = 0; f < AudioEngine::kNumFx; ++f)
+            {
+                const float v = engine.getPadSend (i, f);
+                envMax = juce::jmax (envMax, v);
+                envSuma += v;
+            }
+
+        std::cout << "{\"nuevo\":\"" << que << "\",\"pads\":" << conSonido
+                  << ",\"envmax\":" << envMax << ",\"envsuma\":" << envSuma
+                  << ",\"largo\":" << engine.getSongLength() << ",\"carriles\":[";
+        for (int ln = 0; ln < AudioEngine::kSongLanes; ++ln)
+        {
+            std::cout << (ln ? "," : "") << "[";
+            for (int b = 0; b < engine.getSongLength(); ++b)
+                std::cout << (b ? "," : "") << engine.getSongCell (ln, b);
+            std::cout << "]";
+        }
+        std::cout << "]}" << std::endl;
+    };
+
+    fila ("arranque");
+    newProject();
+    fila ("nuevo");
+}
+
 void MainComponent::auditArrange()
 {
     auto fila = [this] (const char* que)
@@ -13285,6 +13373,10 @@ void MainComponent::restoreSession()
         //  cuando NO hay sesion -, porque el dia que la persona ya tiene su
         //  trabajo dentro, meterle la fabrica encima seria borrarselo.
         loadFactoryKits();
+        //  Y la cancion con el patron 1 puesto, por lo mismo: una maquina que
+        //  abre por primera vez tiene que traer algo que tocar en todas sus
+        //  paginas, no solo en la rejilla de pads.
+        songPorDefecto();
 
         //  Y AQUI NO SE ADOPTA. adopt() significa "esto ya esta en disco, no
         //  hace falta escribirlo", que es verdad para lo que se acaba de LEER

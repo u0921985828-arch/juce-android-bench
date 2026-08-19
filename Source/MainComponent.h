@@ -431,6 +431,8 @@ private:
     void loadProject (const juce::String& name);
     void deleteProject (const juce::String& name);
     void newProject();
+    //  LA CANCION DE UN PROYECTO RECIEN NACIDO. Ver la definicion.
+    void songPorDefecto();
     void refreshProjectList();
 
     class ProjectList : public juce::ListBoxModel
@@ -657,6 +659,11 @@ public:
     //  moverse - que es exactamente como se perdio la relacion de un troceado
     //  al guardar y volver.
     void auditArrange();
+
+    //  CON QUE ABRE LA MAQUINA. Ver auditNuevo: vuelca el proyecto tal y como
+    //  nace -sonidos, cancion y envios- y otra vez despues de NUEVO, que es el
+    //  otro camino por el que se llega a un proyecto vacio.
+    void auditNuevo();
     //  GUARDAR UN PROYECTO Y VOLVER A ABRIRLO, que es lo que hace la persona
     //  y NO lo que medía la prueba de sesion. El fallo de los bancos altos
     //  clonados se arreglo en captureState/applyState y la prueba que lo

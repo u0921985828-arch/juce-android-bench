@@ -385,6 +385,10 @@ public:
                     {
                         c2->auditArrange();
                     }
+                    else if (UiAudit::env ("ZATI_NUEVO").isNotEmpty())
+                    {
+                        c2->auditNuevo();
+                    }
                     else if (UiAudit::env ("ZATI_PIANO").isNotEmpty())
                     {
                         c2->auditPiano();

@@ -1874,5 +1874,54 @@ int main()
         }
     }
 
+    //  EL ENVIO POR DEFECTO, que es un numero con consecuencias y no una
+    //  preferencia. Estaba en uno -los 64 pads a tope en los seis efectos- y
+    //  ahora en cero, y lo que hay que demostrar no es que el getter devuelva
+    //  cero: es que un efecto ABIERTO no se oye hasta que alguien sube el
+    //  envio de ese pad.
+    //
+    //  Se mide con la cola del delay y no con el nivel total, que es donde la
+    //  prueba obvia se equivocaria: el pad suena igual en las dos corridas
+    //  -el camino seco no pasa por el envio- asi que comparar picos daria "casi
+    //  lo mismo" con el envio abierto y con el envio cerrado. Lo que separa las
+    //  dos es lo que suena DESPUES de que la muestra se acabe.
+    {
+        auto cola = [] (float envio)
+        {
+            AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+            e.setDlyMix (1.0f); e.setDlyTime (100.0f); e.setDlyFb (0.5f);
+            e.setPadGain (0, 1.0f);
+            //  Menos de cero significa "no se toca": asi la corrida de control
+            //  es exactamente la maquina recien encendida y no una que alguien
+            //  ha puesto a cero, que no es lo mismo aunque de el mismo numero.
+            if (envio >= 0.0f) e.setPadSend (0, 3, envio);
+            e.publishSample (0, makeSample (48000.0, 0.05, 400.0f));
+
+            juce::AudioBuffer<float> b (2, 512);
+            b.clear(); e.renderNextBlock (b, 0, 512);
+            e.postNoteOn (0, 1.0f);
+
+            //  50 ms de muestra a 48 kHz son 2400 muestras: la ventana empieza
+            //  en el bloque 8 -4096 muestras, la muestra ya acabada- y llega
+            //  hasta el 40, que cubre tres repeticiones de 100 ms.
+            double pico = 0.0;
+            for (int blk = 0; blk < 40; ++blk)
+            {
+                b.clear(); e.renderNextBlock (b, 0, 512);
+                if (blk < 8) continue;
+                for (int ch = 0; ch < 2; ++ch)
+                    for (int i = 0; i < 512; ++i)
+                        pico = juce::jmax (pico, (double) std::abs (b.getSample (ch, i)));
+            }
+            return pico;
+        };
+
+        const double defecto = cola (-1.0f);
+        const double abierto = cola (1.0f);
+        const bool ok = defecto < 1.0e-4 && abierto > 0.01;
+        std::printf ("%-34s cola por defecto %.5f   con el envio a 1 %.4f   %s\n",
+                     "envio por defecto cerrado", defecto, abierto, ok ? "OK" : "FALLA");
+    }
+
     return 0;
 }
