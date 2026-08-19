@@ -4169,6 +4169,25 @@ void MainComponent::layoutModuleBar (juce::Rectangle<int> row, juce::TextButton*
     //  ya paso una vez en este proyecto, con getTextButtonFont.
     const auto capFont = ZatiColours::monoFont (11.0f, true).withExtraKerningFactor (0.06f);
 
+    //  EL REPARTO PROPORCIONAL VA CON EL AIRE CORTO, y no es un descuido.
+    //
+    //  El aire que la cadena de dibujo se come de verdad son kChrome -treinta
+    //  px: el reduced de la tapa y lo que drawButtonText quita por lado- y
+    //  parecia obvio reservar eso aqui tambien, para que la pregunta de
+    //  moduleBarFits y este reparto contasen lo mismo. Se probo y sale PEOR, y
+    //  la razon es que este numero no decide cuanto mide una tapa: decide su
+    //  PESO frente a las demas. Con treinta, "XY" pesa 40 y "AJUSTES" 66;
+    //  con dieciseis, 26 y 52. El aire fijo comprime la proporcion y le quita
+    //  a los rotulos largos para darselo a los cortos, que no lo necesitan.
+    //  Medido en las 644 corridas: los apretones bajaron de 73 a 6 y
+    //  aparecieron 126 rotulos CORTADOS; repartiendo ademas la escasez,
+    //  "CANCION" pasaba de apretada por tres a cortada por seis. Un numero que
+    //  pondera no se elige por ser el que mide.
+    //
+    //  Donde SI hace falta el aire completo es donde se DECIDE - moduleBarFits
+    //  y el suelo del dedo de abajo - porque alli la pregunta es "¿cabe?" y no
+    //  "¿cuanto le toca?".
+    constexpr int kChrome = 2 * Metrics::sm + 2 * (Metrics::halfGap / 2) + 2 * 5;
     int need[12] {}; int total = 0;
     for (int i = 0; i < kMods; ++i)
     {
@@ -4186,13 +4205,22 @@ void MainComponent::layoutModuleBar (juce::Rectangle<int> row, juce::TextButton*
     //  todas a Metrics::hit y si al subirlo la fila sigue cabiendo: forzarlo
     //  cuando no cabe convierte un ancho corto en la ULTIMA tapa -que se lleva
     //  lo que queda- en un ancho negativo, que es peor que el problema.
+    //  Y CON EL AIRE COMPLETO en la cuenta, no con los 2*Metrics::sm del
+    //  reparto: la cadena de dibujo se come ademas el reduced de la tapa y lo
+    //  que drawButtonText quita por lado - los mismos kChrome que cuenta
+    //  moduleBarFits. Subir el suelo con la cuenta corta le robaba esos catorce
+    //  pixeles a las tapas largas, y "AJUSTES", "MEZCLA" y "CANCION" de la cara
+    //  salian apretadas por uno, dos y tres pixeles en las siete pantallas.
+    //  Un arreglo que cambia un hallazgo por otro no es un arreglo.
     if (row.getWidth() >= kMods * Metrics::hit)
     {
         int conSuelo = 0;
-        for (int i = 0; i < kMods; ++i) conSuelo += juce::jmax (Metrics::hit, need[i]);
+        for (int i = 0; i < kMods; ++i)
+            conSuelo += juce::jmax (Metrics::hit, need[i] - 2 * Metrics::sm + kChrome);
         if (conSuelo <= row.getWidth())
         {
-            for (int i = 0; i < kMods; ++i) need[i] = juce::jmax (Metrics::hit, need[i]);
+            for (int i = 0; i < kMods; ++i)
+                need[i] = juce::jmax (Metrics::hit, need[i] - 2 * Metrics::sm + kChrome);
             total = conSuelo;
         }
     }
@@ -5145,7 +5173,10 @@ void MainComponent::resized()
             Lang::takeEnd (titleRow, Metrics::xs);
             //  Setenta y dos no bastaban: "QUANTISE" pide 56 px de letra y la tapa
             //  le dejaba 49 en la pantalla mas estrecha del banco.
-            quantButton.setBounds   (Lang::takeEnd (titleRow, juce::jmax (84, titleRow.getWidth() / 3)).reduced (2, 0));
+            //  NOVENTA Y DOS, no ochenta y cuatro: "CUADRAR" pide 52 px de letra y
+            //  con 84 la tapa le dejaba 49 en 280x653. El comentario de arriba
+            //  contaba la misma historia con "QUANTISE" y el numero anterior.
+            quantButton.setBounds   (Lang::takeEnd (titleRow, juce::jmax (92, titleRow.getWidth() / 3)).reduced (2, 0));
         }
         if (onProj) inner.removeFromTop (14);         // painted: which project is open
         inner.removeFromTop (Metrics::sm);
@@ -6037,8 +6068,16 @@ void MainComponent::resized()
             //  Una fila si las ocho caben, dos si caben de cuatro en cuatro, y
             //  si no, tres: tres, tres y dos. `filasUtil` es lo que se paga DE
             //  MAS sobre la primera fila, que ya la cuenta bandH.
+            //  Y LAS DOS MITADES, no solo la primera. Preguntar por las cuatro
+            //  primeras -ATRAS, ADELANTE, DOBLAR, HUMANIZAR- y colocar tambien
+            //  las cuatro segundas -COPIAR, PEGAR, COPIAR FILA, PEGAR FILA- es
+            //  responder a otra pregunta: las de abajo son mas largas. Medido:
+            //  en 344x882 "COPIAR FILA" pedia 82 px de letra y tenia 76, y en
+            //  360x640 82 contra 81. La fila decia que cabia porque nadie habia
+            //  medido esa fila.
             const int filasTools = moduleBarFits (anchoCol, pb5, 8) ? 1
-                                 : moduleBarFits (anchoCol, pb5, 4) ? 2 : 3;
+                                 : (moduleBarFits (anchoCol, pb5, 4)
+                                    && moduleBarFits (anchoCol, pb5 + 4, 4)) ? 2 : 3;
             const int filasUtil = (filasTools - 1) * (Metrics::hit + Metrics::halfGap);
 
             //  LO QUE LA TIRA YA LLEVA, AQUI NO SE REPITE.
@@ -6757,7 +6796,8 @@ void MainComponent::resized()
                                             &copyRowBtn, &pasteRowBtn };
                 //  La MISMA pregunta que decidio la altura, con el mismo ancho.
                 const int nFilas = moduleBarFits (colA.getWidth(), pb, 8) ? 1
-                                 : moduleBarFits (colA.getWidth(), pb, 4) ? 2 : 3;
+                                 : (moduleBarFits (colA.getWidth(), pb, 4)
+                                    && moduleBarFits (colA.getWidth(), pb + 4, 4)) ? 2 : 3;
                 //  Y el panel del grupo tiene que saberlo: sin esto se pintaba
                 //  detras de la primera fila y las de abajo quedaban fuera de
                 //  su propio grupo.

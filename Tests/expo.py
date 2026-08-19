@@ -4,6 +4,7 @@ judges every dump against the rules a stand at a music-tech show gets judged on:
 a finger fits, nothing overlaps, no caption is clipped, in any language, on any
 phone anyone will bring to the stand."""
 import subprocess, os, json, sys, itertools, collections, re
+import concurrent.futures, shutil, tempfile
 
 BIN = "/home/user/FX-404/build/Zati_artefacts/Release/Zati"
 
@@ -54,11 +55,24 @@ def display_alive():
         return False
 
 
-def run(size, lang, sheet):
+#  EN PARALELO, Y CADA UNA CON SU CASA.
+#
+#  Las 644 corridas se lanzaban de una en una: cuarenta minutos de reloj con
+#  catorce nucleos parados, y un banco que tarda cuarenta minutos se deja de
+#  pasar. Lo que impedia lanzarlas juntas no era el servidor X -acepta tantos
+#  clientes como haga falta- sino que TODAS escriben la misma sesion: la app
+#  crea .sesion/samples y sus 64 WAV la primera vez que abre, y dos procesos
+#  haciendolo a la vez es exactamente la carrera que Tests/session.py existe
+#  para cazar. Cada corrida se lleva su HOME propio, asi que ProjectStore les
+#  da carpetas distintas y no se pisan.
+def run(size, lang, sheet, casa=None):
     env = dict(os.environ, ZATI_AUDIT="1", ZATI_SIZE=size, ZATI_LANG=lang,
                ZATI_OPEN=sheet, DISPLAY=":99")
+    if casa:
+        env["HOME"] = casa
+        env["XDG_DATA_HOME"] = casa
     try:
-        out = subprocess.run([BIN], env=env, capture_output=True, timeout=60).stdout.decode("utf8", "replace")
+        out = subprocess.run([BIN], env=env, capture_output=True, timeout=180).stdout.decode("utf8", "replace")
     except subprocess.TimeoutExpired:
         return None
     rows = []
@@ -98,7 +112,13 @@ def judge(rows, size, lang, sheet):
         #    second line before it gives up, so this is not "invisible text" —
         #    it is a cap whose lettering no longer matches the cap beside it,
         #    which is precisely what reads as amateur on a stand.
-        if "needW" in r and r["haveW"] > 0:
+        #  LA CAJA DE RUTA DEL NAVEGADOR NO ES NUESTRA. Es la de
+        #  juce::FileBrowserComponent, mide 22 px de alto y ensena la ruta
+        #  entera; con el banco en paralelo cada corrida tiene su HOME temporal
+        #  y la ruta pasa de 24 caracteres a 47, asi que el hallazgo crecia con
+        #  el nombre del directorio de pruebas y no con la app. Un banco que
+        #  informa de su propio andamio ensena a no leerlo.
+        if "needW" in r and r["haveW"] > 0 and not r.get("text", "").startswith("/"):
             over = r["needW"] - r["haveW"]
             if over > 0.5:
                 kind = "TRUNC" if r["needW"] > r["haveW"] / 0.9 else "SQUEEZE"
@@ -109,13 +129,19 @@ def judge(rows, size, lang, sheet):
     #    design as a bug a thousand times over.
     hits = [r for r in comps if r.get("hit") and r["w"] > 0 and r["h"] > 0]
     par = lambda r: r["path"].rsplit("/", 1)[0]
-    for a, b in itertools.combinations(hits, 2):
-        if par(a) != par(b): continue
-        ox = min(a["x"]+a["w"], b["x"]+b["w"]) - max(a["x"], b["x"])
-        oy = min(a["y"]+a["h"], b["y"]+b["h"]) - max(a["y"], b["y"])
-        if ox > 1 and oy > 1:
-            findings.append(("OVERLAP", f"{size}/{lang}/{sheet or 'face'}",
-                             f'{a.get("text",a["path"].split("/")[-1])} x {b.get("text",b["path"].split("/")[-1])} by {ox}x{oy}', 0))
+    #  AGRUPADOS POR PADRE ANTES DE COMBINAR, no despues. Comparar todos contra
+    #  todos y tirar el 99% por no ser hermanos es O(n^2) sobre el arbol entero
+    #  -en la ficha de la mezcla son medio millon de parejas para mirar unas
+    #  pocas miles- y era lo que hacia que juzgar costase mas que correr la app.
+    familias = collections.defaultdict(list)
+    for r in hits: familias[par(r)].append(r)
+    for hermanos in familias.values():
+        for a, b in itertools.combinations(hermanos, 2):
+            ox = min(a["x"]+a["w"], b["x"]+b["w"]) - max(a["x"], b["x"])
+            oy = min(a["y"]+a["h"], b["y"]+b["h"]) - max(a["y"], b["y"])
+            if ox > 1 and oy > 1:
+                findings.append(("OVERLAP", f"{size}/{lang}/{sheet or 'face'}",
+                                 f'{a.get("text",a["path"].split("/")[-1])} x {b.get("text",b["path"].split("/")[-1])} by {ox}x{oy}', 0))
     return findings
 
 
@@ -159,6 +185,7 @@ UNTRANSLATED_OK = {
     "PAD -", "PAD +",                          # PAD pasa por T() y coincide de verdad en es/en
     "MASTER",                                  # la mezcla final se llama igual en las dos
     "WAV", "OGG",                              # los dos formatos, que son extensiones de fichero
+    "TOUR",                                    # la palabra es la misma en las dos lenguas
     "OFF",                                     # el extremo apagado de un mando, universal en un aparato
     "PAPEL", "GRAFITO", "ACERO", "LACA",       # the four chassis, named not translated
     "ESPANOL", "ENGLISH",                      # each language names itself
@@ -184,6 +211,39 @@ def judge_lang(rows_es, rows_en, size, sheet):
             out.append(("UNTRANSLATED", f"{size}/{sheet or 'face'}", f'"{t}" identical in es and en', 0))
     return out
 
+def una_pagina(combo):
+    """Un recorrido de paginas. Devuelve el culpable, o None si esta limpio."""
+    size, lang = combo
+    env = dict (os.environ)
+    env.update ({"ZATI_AUDIT": "1", "ZATI_SIZE": size, "ZATI_LANG": lang,
+                 "ZATI_DEMO": "1", "ZATI_PAGES": "1"})
+    try:
+        out = subprocess.run([BIN], env=env, capture_output=True,
+                              text=True, timeout=300).stdout
+    except subprocess.TimeoutExpired:
+        return "no contesto"
+    for linea in out.splitlines():
+        linea = linea.strip()
+        if linea.startswith ('{') and '"paginas"' in linea:
+            d = json.loads (linea)
+            if d.get ("solapes", 0) or d.get ("fuera", 0):
+                return d.get ("culpable", "?")
+    return None
+
+
+#  Una corrida entera dentro de UN proceso: lanzar la app, leer su volcado y
+#  juzgarlo. Juzgar es lo que cuesta -es O(n^2) en hermanos por la regla de los
+#  solapes- y por eso viaja con la corrida en vez de volver al proceso padre.
+#  Solo se devuelven las filas cuando hacen falta para la prueba comparativa de
+#  idioma, que es la unica que necesita el volcado entero de vuelta.
+def corre_y_juzga(combo, casa):
+    size, lang, sheet = combo
+    rows = run(size, lang, sheet, casa)
+    if rows is None:
+        return [], None
+    return judge(rows, size, lang, sheet), (rows if lang in ("es", "en") else [])
+
+
 def paginas():
     """CAMBIAR DE PAGINA, que es lo que ningun arranque limpio hace.
 
@@ -198,22 +258,12 @@ def paginas():
     porque el fallo es de RESIDUO: solo se ve al volver a una pagina que ya se
     habia dejado."""
     peor = []
-    for size, _ in SIZES:
-        for lang in LANGS:
-            env = dict (os.environ)
-            env.update ({"ZATI_AUDIT": "1", "ZATI_SIZE": size, "ZATI_LANG": lang,
-                         "ZATI_DEMO": "1", "ZATI_PAGES": "1"})
-            try:
-                out = subprocess.run([BIN], env=env, capture_output=True,
-                                      text=True, timeout=300).stdout
-            except subprocess.TimeoutExpired:
-                peor.append ((size, lang, "no contesto"));  continue
-            for linea in out.splitlines():
-                linea = linea.strip()
-                if linea.startswith ('{') and '"paginas"' in linea:
-                    d = json.loads (linea)
-                    if d.get ("solapes", 0) or d.get ("fuera", 0):
-                        peor.append ((size, lang, d.get ("culpable", "?")))
+    trabajos = int(os.environ.get("ZATI_TRABAJOS", 0)) or max(1, min(16, os.cpu_count() or 4))
+    combos = [(size, lang) for size, _ in SIZES for lang in LANGS]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=trabajos) as pool:
+        for (size, lang), culpa in zip(combos, pool.map(una_pagina, combos)):
+            if culpa is not None:
+                peor.append ((size, lang, culpa))
     return peor
 
 
@@ -229,18 +279,42 @@ def main():
     allf = []
     pairs = collections.defaultdict(dict)
     runs = fails = 0
-    for size, _ in SIZES:
-        for lang in LANGS:
-            for sheet in SHEETS:
-                if only and not any(o in f"{size}{lang}{sheet}" for o in only): continue
-                rows = run(size, lang, sheet)
+
+    combos = [(size, lang, sheet)
+              for size, _ in SIZES for lang in LANGS for sheet in SHEETS
+              if not only or any(o in f"{size}{lang}{sheet}" for o in only)]
+
+    #  Tantas a la vez como nucleos. No menos: cada corrida se pasa la mayor
+    #  parte de su vida arrancando -sintetizar los 64 sonidos, montar el arbol,
+    #  hablar con el servidor X- y eso no satura un nucleo, asi que dejar uno
+    #  libre "por si acaso" es dejar el banco a la mitad de velocidad por nada.
+    #  ZATI_TRABAJOS lo fuerza, para poder medir el banco contra si mismo.
+    trabajos = int(os.environ.get("ZATI_TRABAJOS", 0)) or max(1, min(16, os.cpu_count() or 4))
+    casas = tempfile.mkdtemp(prefix="zati-banco-")
+    try:
+        #  PROCESOS y no hilos: medido, el tiempo no se iba en la app -una
+        #  corrida entera son 0.9 s- sino en JUZGARLA aqui, y el reparto por
+        #  hilos deja eso en un solo nucleo por el GIL. Con hilos, 92 corridas
+        #  tardaban 5 min 36 con 5 min 58 de CPU en un nucleo: el banco estaba
+        #  esperandose a si mismo. Cada proceso corre la app Y la juzga.
+        with concurrent.futures.ProcessPoolExecutor(max_workers=trabajos) as pool:
+            futuros = {}
+            for i, c in enumerate(combos):
+                casa = os.path.join(casas, "c%02d" % (i % trabajos))
+                os.makedirs(casa, exist_ok=True)
+                futuros[pool.submit(corre_y_juzga, c, casa)] = c
+            for fut in concurrent.futures.as_completed(futuros):
+                size, lang, sheet = futuros[fut]
+                findings, rows = fut.result()
                 runs += 1
                 if rows is None:
                     fails += 1
                     allf.append(("CRASH", f"{size}/{lang}/{sheet or 'face'}", "no dump — crash or hang", 0))
                     continue
-                allf += judge(rows, size, lang, sheet)
+                allf += findings
                 if lang in ("es", "en"): pairs[(size, sheet)][lang] = rows
+    finally:
+        shutil.rmtree(casas, ignore_errors=True)
     for (size, sheet), d in pairs.items():
         allf += judge_lang(d.get("es"), d.get("en"), size, sheet)
     by = collections.Counter(f[0] for f in allf)
