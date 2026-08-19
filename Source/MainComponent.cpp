@@ -1718,6 +1718,48 @@ MainComponent::MainComponent()
     };
     setSheet.addAndMakeVisible (manualButton);
 
+    //  EL TOUR DE BIENVENIDA. Ver la declaracion: cinco tarjetas y sale una
+    //  vez. Las tres tapas se maquetan con layoutModuleBar, que reparte por el
+    //  texto - "SIGUIENTE" mide casi el doble que "ATRAS" y a tercios se
+    //  cortaba en aleman de cualquiera de las cuatro lenguas.
+    tourSheet.setVisible (false);
+    //  Tocar FUERA de la tarjeta NO lo cierra, a diferencia de todas las
+    //  demas: es lo primero que ve alguien que acaba de instalar la app y
+    //  cerrarse por un roce deja la maquina sin explicar y sin forma evidente
+    //  de volver. Se sale por SALTAR o llegando al final.
+    tourSheet.onDismiss = nullptr;
+    tourSheet.paintContent = [this] (juce::Graphics& g) { paintTourSheetContent (g); };
+    for (auto* b : { &tourBackBtn, &tourNextBtn, &tourSkipBtn })
+    {
+        styleButton (*b, kKey);
+        tourSheet.addAndMakeVisible (*b);
+    }
+    litAccent (tourNextBtn);
+    tourBackBtn.onClick = [this] { showTour (tourPaso - 1); };
+    tourNextBtn.onClick = [this]
+    {
+        if (tourPaso + 1 < kTourPasos) { showTour (tourPaso + 1); return; }
+        //  Al final se marca visto y se cierra. Marcarlo al ABRIR habria sido
+        //  mas corto y esta mal: si la app se cierra a la mitad -y la primera
+        //  vez que alguien la abre es cuando mas probable es- el tour ya no
+        //  vuelve nunca y nadie sabe que existio.
+        tourFile().getParentDirectory().createDirectory();
+        tourFile().replaceWithText ("1");
+        closeAllSheets();
+    };
+    tourSkipBtn.onClick = [this]
+    {
+        tourFile().getParentDirectory().createDirectory();
+        tourFile().replaceWithText ("1");
+        closeAllSheets();
+    };
+    addAndMakeVisible (tourSheet);
+    tourSheet.setVisible (false);
+
+    styleButton (tourButton, kKey);
+    tourButton.onClick = [this] { closeAllSheets(); showTour (0); openSheet (tourSheet, setButton); };
+    setSheet.addAndMakeVisible (tourButton);
+
     mixScroll.setViewedComponent (&mixRows, false);
     mixScroll.setScrollBarsShown (true, false);
     mixScroll.setScrollBarThickness (8);
@@ -3204,6 +3246,7 @@ void MainComponent::closeAllSheets()
     pianoButton.setToggleState (false, juce::dontSendNotification);
     chopSheet.setVisible (false);
     manualSheet.setVisible (false);
+    tourSheet.setVisible (false);
 
     //  CERRAR LA FICHA XY EN MOMENTANEO TIENE QUE APAGAR EL EFECTO.
     //
@@ -4918,6 +4961,28 @@ void MainComponent::resized()
                                         manualContentHeight (inner.getWidth() - barW)));
     }
 
+    //  LA FICHA DEL TOUR. Titulo, parrafo y tres tapas. La altura es fija
+    //  porque el texto es PINTADO y encoge solo; lo que no encoge -la fila de
+    //  tapas- se aparta primero, que es la regla que ya costo un mando de
+    //  393x0 en apaisado y cuatro tapas de CARCASA a cero de alto.
+    {
+        //  El ancho de la tarjeta antes de tenerla: sheetFromBottom la centra
+        //  al 92 % de la ventana y le quita Metrics::lg por lado. Se calcula
+        //  aqui porque la altura depende de el, y preguntarselo despues es
+        //  pedir la altura de un parrafo que aun no sabe de que ancho es.
+        const int anchoTour = (int) (full.getWidth() * 0.92f) - 2 * Metrics::lg;
+        auto inner = sheetFromBottom (tourSheet, Metrics::md * 2 + Metrics::hit + Metrics::sm
+                                                 + tourBodyHeight (anchoTour)
+                                                 + Metrics::sm + Metrics::hit);
+        inner.removeFromTop (Metrics::hit + Metrics::sm);    // pintado: el titulo
+        {
+            auto row = inner.removeFromBottom (Metrics::hit);
+            juce::TextButton* tb[3] = { &tourSkipBtn, &tourBackBtn, &tourNextBtn };
+            layoutModuleBar (row, tb, 0, 3);
+        }
+        tourBodyArea = inner;
+    }
+
     // BROWSE sheet: the tallest of them all — the file list wants the room.
     {
         auto inner = sheetFromBottom (browseSheet, full.getHeight());   // clamps to the 86% cap
@@ -5105,15 +5170,28 @@ void MainComponent::resized()
                 //  El boton del manual, al pie de la pagina de gestos: los
                 //  gestos son la mitad de las preguntas y el manual es la otra
                 //  mitad, asi que estan en el mismo sitio.
+                //  MANUAL y TOUR comparten renglon y se reparten por el TEXTO
+                //  que llevan: a mitades, "MANUAL" y الدليل caben y 参数锁定 no,
+                //  y repartir a ojo es como se cortaron dieciseis rotulos en la
+                //  fila de IDIOMA.
                 manualButton.setVisible (true);
-                manualButton.setBounds (inner.removeFromBottom (Metrics::hit)
-                                             .reduced (Metrics::halfGap, 0));
+                tourButton.setVisible (true);
+                {
+                    auto row = inner.removeFromBottom (Metrics::hit);
+                    juce::TextButton* mb[2] = { &manualButton, &tourButton };
+                    layoutModuleBar (row, mb, 0, 2);
+                }
                 inner.removeFromBottom (Metrics::sm);
                 gesturesArea = inner;
             }
             else
             {
                 manualButton.setVisible (false);
+                //  Y con sus limites vaciados: un componente invisible que
+                //  conserva sus coordenadas sigue estando ahi para todo lo que
+                //  mida geometria. Es el fallo de las tapas de banco.
+                tourButton.setVisible (false);
+                tourButton.setBounds ({});
                 gesturesArea = {};
             }
         }
@@ -7446,6 +7524,13 @@ void MainComponent::retranslateUi()
     pageGestBtn .setButtonText (T ("GESTOS"));
     pageMidiBtn .setButtonText (T ("MIDI"));
     manualButton.setButtonText (T ("MANUAL"));
+    tourButton  .setButtonText (T ("TOUR"));
+    tourBackBtn .setButtonText (T ("TOUR ATRAS"));
+    tourSkipBtn .setButtonText (T ("SALTAR"));
+    //  Y la de avanzar la pone showTour, que es quien sabe si es la ultima:
+    //  ponerla aqui a "SIGUIENTE" dejaba la quinta tarjeta prometiendo una
+    //  sexta cada vez que se cambia de idioma.
+    showTour (tourPaso);
     undoButton  .setButtonText (T ("DESHACER"));
     redoButton  .setButtonText (T ("REHACER"));
 
@@ -9899,6 +9984,113 @@ void MainComponent::paintBusy (juce::Graphics& g)
     }
 }
 
+//  EL TOUR DE BIENVENIDA. Ver la declaracion en la cabecera.
+//
+//  El fichero vive donde viven el idioma y la carcasa - el directorio interno
+//  de la app - y no en la biblioteca: hay que poder leerlo antes de que
+//  ProjectStore haya decidido donde esta la biblioteca, que es exactamente el
+//  orden en que arranca esto.
+juce::File MainComponent::tourFile()
+{
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+               .getChildFile ("zati-tour.txt");
+}
+
+void MainComponent::showTour (int paso)
+{
+    tourPaso = juce::jlimit (0, kTourPasos - 1, paso);
+    tourBackBtn.setEnabled (tourPaso > 0);
+    //  La ultima tapa cambia de nombre y no solo de efecto: "SIGUIENTE" en la
+    //  quinta tarjeta es una promesa de una sexta que no existe.
+    tourNextBtn.setButtonText (tourPaso + 1 < kTourPasos ? T ("SIGUIENTE") : T ("TOUR EMPEZAR"));
+    tourSheet.repaint();
+}
+
+//  Cinco tarjetas: que es la maquina, como se le meten sonidos, como se
+//  escribe, que se le hace al sonido y como sale de aqui. En ese orden porque
+//  es el orden en que hace falta saberlo, no el de las pestanas.
+//
+//  Fuera de la funcion que las pinta porque los mide TAMBIEN la maqueta: la
+//  altura de la tarjeta sale del parrafo mas largo traducido al idioma que
+//  este puesto, y pedir un numero fijo es como se llega a una tarjeta con
+//  hueco de sobra en una lengua y con el texto cortado en otra.
+namespace ZatiTour
+{
+    static const char* titulos[MainComponent::kTourPasos] =
+        { "SESENTA Y CUATRO PADS", "METE UN SONIDO", "ESCRIBE UN PATRON",
+          "MOLDEA EL SONIDO", "SACALO DE AQUI" };
+    static const char* cuerpos[MainComponent::kTourPasos] =
+        { "Dieciseis a la vista y cuatro bancos: A, B, C y D. La rejilla ensena "
+          "uno y los otros tres siguen sonando. Toca uno y suena; mantenlo "
+          "pulsado y se abre lo que se le puede hacer.",
+          "CARGAR trae un fichero, GRABAR toma lo que oiga el microfono y "
+          "FABRICA rellena los 64 con sonidos que se sintetizan aqui dentro, "
+          "sin ocupar sitio. AUTO CHOP parte un break por sus golpes y lo "
+          "reparte por los pads.",
+          "En SEC la rejilla son dieciseis pasos por dieciseis pads: toca una "
+          "casilla y suena ahi. Con un paso tocado aparecen debajo sus mandos "
+          "- nota, fuerza, repeticion, filtro y los bloqueos. Y en PIANO se "
+          "escribe por tono, con notas que duran lo que quieras.",
+          "Cada pad tiene su filtro, su recorte y sus seis envios. Los efectos "
+          "son de la maquina y no del pad: se abren desde la cara y cada pad "
+          "decide cuanto le manda, en el RACK. La ficha XY mueve dos a la vez "
+          "con el dedo.",
+          "EXPORTAR saca la mezcla entera o una pista por pad, en WAV o en OGG. "
+          "El proyecto se guarda solo, y en AJUSTES estan el idioma, las cuatro "
+          "carcasas y el MANUAL, que cuenta todo esto con calma." };
+}
+
+//  Cuanto alto pide el parrafo mas largo con este ancho. Se mide el mas largo
+//  y no el que toca, para que la tarjeta no cambie de tamano al pasar de una
+//  a otra: una ficha que da un salto por cada toque se lee como un fallo.
+int MainComponent::tourBodyHeight (int ancho) const
+{
+    if (ancho <= 0) return 0;
+    const auto f = ZatiColours::monoFont (Metrics::fMeta + 1.0f, false).withExtraKerningFactor (0.02f);
+    const int lineaH = (int) std::ceil (f.getHeight() * 1.15f);
+    int peor = 1;
+    for (int i = 0; i < kTourPasos; ++i)
+    {
+        //  Ancho del texto seguido dividido por el ancho de la caja, mas uno:
+        //  drawFittedText parte por palabras, asi que una linea nunca se llena
+        //  del todo y redondear por abajo deja la ultima fuera.
+        const double w = juce::GlyphArrangement::getStringWidth (f, T (ZatiTour::cuerpos[i]));
+        peor = juce::jmax (peor, (int) std::ceil (w / (double) ancho) + 1);
+    }
+    return peor * lineaH;
+}
+
+void MainComponent::paintTourSheetContent (juce::Graphics& g)
+{
+    if (tourSheet.sheetBounds.isEmpty()) return;
+
+    auto inner = tourSheet.sheetBounds.reduced (Metrics::lg, Metrics::md);
+    auto titleRow = inner.removeFromTop (Metrics::hit);
+
+    g.setColour (ZatiColours::ink.withAlpha (0.9f));
+    g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
+    g.drawText (T (ZatiTour::titulos[tourPaso]), titleRow, Lang::start(), true);
+
+    //  Los puntos, en el mismo renglon del titulo y por el otro lado: dicen
+    //  cuantas quedan, que es la unica pregunta que alguien se hace en la
+    //  primera tarjeta de algo que no ha pedido.
+    {
+        auto marca = Lang::takeEnd (titleRow, kTourPasos * 14);
+        for (int i = 0; i < kTourPasos; ++i)
+        {
+            auto p = Lang::takeStart (marca, 14).withSizeKeepingCentre (7, 7);
+            g.setColour (i == tourPaso ? ZatiColours::accent : ZatiColours::inkDim.withAlpha (0.35f));
+            g.fillEllipse (p.toFloat());
+        }
+    }
+
+    if (tourBodyArea.isEmpty()) return;
+    g.setColour (ZatiColours::ink.withAlpha (0.8f));
+    g.setFont (ZatiColours::monoFont (Metrics::fMeta + 1.0f, false).withExtraKerningFactor (0.02f));
+    g.drawFittedText (T (ZatiTour::cuerpos[tourPaso]), tourBodyArea,
+                      Lang::start (juce::Justification::top), 12, 1.0f);
+}
+
 void MainComponent::paintManualSheetContent (juce::Graphics& g)
 {
     if (manualSheet.sheetBounds.isEmpty()) return;
@@ -11972,6 +12164,11 @@ void MainComponent::auditOpen (const juce::String& which)
     //  la unica funcion de la app cuyo resultado sale del telefono.
     else if (which == "expo") { exportStatus.clear(); exportOk = false; openSheet (exportSheet, setButton); }
     else if (which == "manual") { closeAllSheets(); openSheet (manualSheet, setButton); }
+    //  EL TOUR, en su primera tarjeta y en la ultima: la fila de tapas cambia
+    //  -ATRAS se enciende, SIGUIENTE pasa a EMPEZAR- y "EMPEZAR" no mide lo
+    //  mismo, asi que medir solo la primera es medir media ficha.
+    else if (which == "tour")  { closeAllSheets(); showTour (0); openSheet (tourSheet, setButton); }
+    else if (which == "tourf") { closeAllSheets(); showTour (kTourPasos - 1); openSheet (tourSheet, setButton); }
     else if (which == "browse") openBrowseForPad (0);
 }
 
@@ -12586,6 +12783,18 @@ void MainComponent::timerCallback()
         //  componente, y volver a uno en la linea siguiente lo enciende otra
         //  vez en el mismo fotograma.
         if (startupBusy) { startupBusy = false; endBusy(); }
+
+        //  Y LA PRIMERA VEZ, EL TOUR. Aqui y no en el constructor: alli la
+        //  sesion todavia no ha vuelto y la barra de "Iniciando" esta puesta,
+        //  asi que la primera tarjeta saldria encima de una app a medio
+        //  levantar. Y nunca cuando mide el banco - con ZATI_OPEN el banco
+        //  pide una ficha concreta y una tarjeta encima seria diecinueve
+        //  fichas medidas a traves del tour.
+        if (! UiAudit::enabled() && ! tourFile().existsAsFile())
+        {
+            showTour (0);
+            openSheet (tourSheet, setButton);
+        }
     }
 
     //  The safe area, on EVERY tick for the first second and then on the slow

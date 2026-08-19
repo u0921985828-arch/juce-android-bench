@@ -572,6 +572,94 @@ namespace
         { "GOLPE",          "",         "HIT",        "力度",       "الضربة" },
         { "SWING",          "",         "SWING",      "摇摆",       "سوينغ" },
         { "BLOQUEOS",       "",         "P-LOCKS",    "参数锁定",   "قفل المعامل" },
+
+        //  EL TOUR DE BIENVENIDA. ATRAS y EMPEZAR llevan clave propia porque
+        //  esas dos palabras ya existen en la tabla con OTRO sentido - ATRAS
+        //  es la herramienta que desplaza el patron, y en chino dice "mover"; y
+        //  EMPEZAR es el titulo del primer capitulo del manual. Una clave que
+        //  se reaprovecha por parecerse en espanol sale mal en las otras tres.
+        { "TOUR",           "",         "TOUR",       "导览",       "جولة" },
+        { "TOUR ATRAS",     "ATRAS",    "BACK",       "返回",       "رجوع" },
+        { "SALTAR",         "",         "SKIP",       "跳过",       "تخطٍ" },
+        { "SIGUIENTE",      "",         "NEXT",       "下一步",     "التالي" },
+        { "TOUR EMPEZAR",   "EMPEZAR",  "START",      "开始",       "ابدأ" },
+        { "SESENTA Y CUATRO PADS", "",
+          "SIXTY-FOUR PADS",
+          "六十四个音垫", "أربعة وستون بادًا" },
+        { "METE UN SONIDO", "",
+          "GET A SOUND IN",
+          "载入声音", "أدخل صوتًا" },
+        { "ESCRIBE UN PATRON", "",
+          "WRITE A PATTERN",
+          "编写图案", "اكتب نمطًا" },
+        { "MOLDEA EL SONIDO", "",
+          "SHAPE THE SOUND",
+          "塑造声音", "شكّل الصوت" },
+        { "SACALO DE AQUI", "",
+          "TAKE IT OUT",
+          "导出成品", "أخرجه من هنا" },
+        { "Dieciseis a la vista y cuatro bancos: A, B, C y D. La rejilla ensena "
+          "uno y los otros tres siguen sonando. Toca uno y suena; mantenlo "
+          "pulsado y se abre lo que se le puede hacer.", "",
+          "Sixteen on screen and four banks: A, B, C and D. The grid shows one "
+          "and the other three keep playing. Tap one and it sounds; hold it and "
+          "everything you can do to it opens up.",
+          "屏幕上十六个，共四组：A、B、C、D。网格只显示一组，其余三组照常发声。轻触即发声；"
+          "长按可打开该音垫的全部设置。",
+          "ستة عشر على الشاشة وأربعة بنوك: A و B و C و D. تعرض الشبكة واحدًا "
+          "وتستمر الثلاثة الأخرى في العزف. المس واحدًا فيصدر صوتًا؛ واستمر بالضغط "
+          "ليفتح كل ما يمكن فعله به." },
+        { "CARGAR trae un fichero, GRABAR toma lo que oiga el microfono y "
+          "FABRICA rellena los 64 con sonidos que se sintetizan aqui dentro, "
+          "sin ocupar sitio. AUTO CHOP parte un break por sus golpes y lo "
+          "reparte por los pads.", "",
+          "LOAD brings in a file, REC takes whatever the microphone hears, and "
+          "FACTORY fills all 64 with sounds synthesised in here, taking up no "
+          "space at all. AUTO CHOP splits a break at its hits and spreads it "
+          "across the pads.",
+          "载入可导入文件，录音可采集麦克风输入，工厂音色则用应用内合成的声音填满全部 64 个音垫，"
+          "不占任何安装空间。自动切片会按鼓点切开一段循环并分配到各音垫。",
+          "«تحميل» يجلب ملفًا، و«تسجيل» يأخذ ما يسمعه الميكروفون، و«المصنع» يملأ "
+          "الأربعة والستين بأصوات تُركَّب هنا بالكامل دون أن تشغل أي مساحة. "
+          "و«التقطيع التلقائي» يقسم اللفة عند ضرباتها ويوزعها على البادات." },
+        { "En SEC la rejilla son dieciseis pasos por dieciseis pads: toca una "
+          "casilla y suena ahi. Con un paso tocado aparecen debajo sus mandos "
+          "- nota, fuerza, repeticion, filtro y los bloqueos. Y en PIANO se "
+          "escribe por tono, con notas que duran lo que quieras.", "",
+          "In SEQ the grid is sixteen steps by sixteen pads: tap a cell and it "
+          "plays there. With a step selected its controls appear underneath - "
+          "note, velocity, roll, filter and the p-locks. And PIANO writes by "
+          "pitch, with notes that last as long as you want.",
+          "在音序页，网格为十六步乘十六个音垫：点触格子即在该处发声。选中某一步后，"
+          "其参数会出现在下方——音高、力度、连打、滤波与参数锁定。钢琴页则按音高书写，"
+          "音符时值可任意设定。",
+          "في «التتابع» الشبكة ستة عشر خطوة في ستة عشر بادًا: المس خانة فتُعزف هناك. "
+          "وعند اختيار خطوة تظهر مقابضها أسفلها - النغمة والقوة والتكرار والمرشح "
+          "والأقفال. وفي «البيانو» تكتب بالنغمة، بنوتات تدوم ما تشاء." },
+        { "Cada pad tiene su filtro, su recorte y sus seis envios. Los efectos "
+          "son de la maquina y no del pad: se abren desde la cara y cada pad "
+          "decide cuanto le manda, en el RACK. La ficha XY mueve dos a la vez "
+          "con el dedo.", "",
+          "Every pad has its own filter, its own trim and its own six sends. "
+          "The effects belong to the machine and not to the pad: you switch "
+          "them on from the front and each pad decides how much it sends, in "
+          "the RACK. The XY card moves two of them at once with one finger.",
+          "每个音垫都有自己的滤波、裁切与六路发送。效果属于整机而非单个音垫："
+          "在面板上开启，各音垫在机架页决定各自的发送量。XY 页可用一根手指同时控制两个参数。",
+          "لكل باد مرشحه وقصّه وإرسالاته الستة. المؤثرات ملك للآلة لا للباد: "
+          "تُشغَّل من الواجهة ويقرر كل باد مقدار ما يرسله إليها في «الرف». "
+          "وبطاقة XY تحرك اثنين منها معًا بإصبع واحد." },
+        { "EXPORTAR saca la mezcla entera o una pista por pad, en WAV o en OGG. "
+          "El proyecto se guarda solo, y en AJUSTES estan el idioma, las cuatro "
+          "carcasas y el MANUAL, que cuenta todo esto con calma.", "",
+          "EXPORT writes out the whole mix or one track per pad, as WAV or OGG. "
+          "The project saves itself, and SETTINGS holds the language, the four "
+          "chassis and the MANUAL, which tells all of this properly.",
+          "导出可输出整体混音，或每个音垫一条分轨，格式为 WAV 或 OGG。"
+          "工程会自动保存；语言、四种机身外观与手册都在设置页，手册会把这些从头讲清楚。",
+          "«التصدير» يُخرج المزيج كاملًا أو مسارًا لكل باد، بصيغة WAV أو OGG. "
+          "والمشروع يحفظ نفسه، وفي «الإعدادات» تجد اللغة والهياكل الأربعة "
+          "و«الدليل» الذي يشرح هذا كله على مهل." },
         { "recto",          "",         "straight",   "平直",       "مستقيم" },
         { "COMPAS",         "",         "BAR",        "小节",       "مازورة" },
         { "TEMPO",          "",         "TEMPO",      "速度",       "الإيقاع" },

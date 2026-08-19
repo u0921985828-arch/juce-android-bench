@@ -32,6 +32,9 @@ class MainComponent : public juce::AudioAppComponent,
                       private AudioFocus::Listener
 {
 public:
+    //  Cuantas tarjetas tiene el tour. Publico porque los textos viven fuera de
+    //  la clase - los mide la maqueta ademas de pintarlos.
+    static constexpr int kTourPasos = 5;
     MainComponent();
     ~MainComponent() override;
 
@@ -141,6 +144,8 @@ private:
     void paintMidiPage (juce::Graphics& g, juce::Rectangle<int> area);
     juce::Rectangle<int> midiArea;
     juce::Rectangle<int> gesturesArea;
+    //  Donde se pinta el parrafo del tour. Ver paintTourSheetContent.
+    juce::Rectangle<int> tourBodyArea;
     static constexpr int kNumGestures = 6;
     void showSetPage (int page);
 
@@ -1141,6 +1146,24 @@ private:
     juce::Viewport manualScroll;
     Sheet          manualSheet;
     juce::TextButton manualButton { "MANUAL" }, manualCloseButton { "x" };
+
+    //  EL TOUR DE BIENVENIDA, que no es el manual.
+    //
+    //  El manual tiene ocho capitulos y sirve para consultar; esto sirve para
+    //  la primera vez, que es un problema distinto: alguien que acaba de
+    //  instalar la app no lee ocho capitulos, toca cosas. Cinco tarjetas, la
+    //  ultima lleva al manual, y sale UNA vez - la marca vive en el mismo
+    //  sitio que el idioma y la carcasa, porque es de la persona y no del
+    //  proyecto, y tiene que poder leerse antes de que ProjectStore haya
+    //  decidido donde esta la biblioteca.
+    Sheet tourSheet;
+    juce::TextButton tourNextBtn { "SIGUIENTE" }, tourBackBtn { "TOUR ATRAS" },
+                     tourSkipBtn { "SALTAR" }, tourButton { "TOUR" };
+    int  tourPaso = 0;
+    void showTour (int paso);
+    int  tourBodyHeight (int ancho) const;
+    void paintTourSheetContent (juce::Graphics& g);
+    static juce::File tourFile();
     void paintManualSheetContent (juce::Graphics& g);
     void paintManualBody (juce::Graphics& g);
     int  manualContentHeight (int width) const;
