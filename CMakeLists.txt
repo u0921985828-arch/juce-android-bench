@@ -49,6 +49,7 @@ target_sources(Zati PRIVATE
     Source/DeviceTier.cpp
     Source/SessionKeeper.cpp
     Source/AppStorage.cpp
+    Source/MediaStore.cpp
 )
 
 # --- Compile definitions ----------------------------------------------------

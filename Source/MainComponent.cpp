@@ -6,6 +6,7 @@
 #include "Denoise.h"
 #include "Onsets.h"
 #include "DeviceTier.h"
+#include "MediaStore.h"
 
 namespace
 {
@@ -426,6 +427,11 @@ MainComponent::MainComponent()
             exportStatus.clear();
             exportOk = false;
             openSheet (exportSheet, setButton);
+            //  Y se pide el permiso AL ABRIR la ficha, no al pulsar EXPORTAR:
+            //  el dialogo del sistema encima de un rebote que ya arranco es la
+            //  forma de que la persona lo cierre sin leerlo. En Android 10 y
+            //  posteriores isRequired dice que no y esto no ensena nada.
+            ensureStoragePermission ({});
         };
         setSheet.cuerpo.addAndMakeVisible (projExportButton);
 
@@ -8476,18 +8482,37 @@ void MainComponent::ensureStoragePermission (std::function<void()> then)
 {
     using RP = juce::RuntimePermissions;
 
+    //  Y EL DE ESCRITURA DETRAS, donde todavia sirve para algo.
+    //
+    //  Hay que decirlo claro porque es facil enganarse: desde Android 10 el
+    //  sistema IGNORA este permiso para el almacenamiento compartido, y desde
+    //  el 11 no se puede recuperar. Sale CONCEDIDO y la escritura sigue
+    //  fallando, que es la peor forma de fallar. En el manifiesto va acotado a
+    //  SDK 28 y aqui isRequired ya devuelve false de Android 10 en adelante,
+    //  asi que esto solo pregunta en los telefonos donde la respuesta cambia
+    //  algo. Para los demas la puerta es MediaStore, que no pide nada.
+    auto luegoElDeEscribir = [this, then]
+    {
+        if (RP::isRequired (RP::writeExternalStorage) && ! RP::isGranted (RP::writeExternalStorage))
+        {
+            RP::request (RP::writeExternalStorage, [then] (bool) { if (then) then(); });
+            return;
+        }
+        if (then) then();
+    };
+
     if (! RP::isRequired (RP::readMediaAudio) || RP::isGranted (RP::readMediaAudio))
     {
-        if (then) then();
+        luegoElDeEscribir();
         return;
     }
 
-    RP::request (RP::readMediaAudio, [this, then] (bool granted)
+    RP::request (RP::readMediaAudio, [this, luegoElDeEscribir] (bool granted)
     {
         if (! granted)
             status.setText (T ("Sin permiso de audio: no puedo leer tus carpetas de muestras"),
                             juce::dontSendNotification);
-        if (then) then();
+        luegoElDeEscribir();
     });
 }
 
@@ -10939,6 +10964,51 @@ void MainComponent::startExport (bool stems)
     exportSheet.repaint();
 }
 
+//  DE LA CARPETA DE LA APP A LA MUSICA COMPARTIDA. Ver MediaStore::publicar.
+//
+//  Android 10 en adelante ignora el permiso de escritura para el almacenamiento
+//  compartido, asi que la unica puerta es el almacen de medios - y es mejor
+//  puerta: no pide permiso ninguno, deja el fichero en Music/, lo indexa el
+//  escaner asi que sale tambien en los reproductores, y sobrevive a desinstalar
+//  la app. Por debajo de Android 10 esto devuelve vacio y no hace falta: alli el
+//  permiso vale y ProjectStore ya escribe en la Musica compartida.
+void MainComponent::publicarExport (const juce::File& carpeta)
+{
+    if (! carpeta.isDirectory()) return;
+
+    juce::Array<juce::File> hechos;
+    carpeta.findChildFiles (hechos, juce::File::findFiles, false, "*.wav;*.ogg");
+    if (hechos.isEmpty()) return;
+
+    const juce::String sub = "ZATI/" + carpeta.getFileName();
+    int puestos = 0;
+    juce::String donde;
+    for (auto& f : hechos)
+    {
+        const auto ruta = MediaStore::publicar (f, sub,
+                                                f.hasFileExtension ("ogg") ? "audio/ogg" : "audio/wav");
+        if (ruta.isNotEmpty())
+        {
+            ++puestos;
+            if (donde.isEmpty()) donde = "Music/" + sub;
+            //  El original se borra SOLO cuando la copia esta puesta: el sitio
+            //  nuevo es estrictamente mas alcanzable que el viejo, y dejar los
+            //  dos duplica 48 MB en el caso de las pistas. Si la copia fallo, el
+            //  original se queda: perder el rebote no es una opcion.
+            f.deleteFile();
+        }
+    }
+
+    if (puestos > 0)
+    {
+        exportStatus = T ("%1 en %2", juce::String (puestos), donde);
+        //  Y la carpeta vacia se va con ellos, que si no queda un rastro de
+        //  carpetas sin nada dentro por cada rebote.
+        if (carpeta.getNumberOfChildFiles (juce::File::findFilesAndDirectories) == 0)
+            carpeta.deleteRecursively();
+    }
+}
+
 void MainComponent::pollExport()
 {
     //  The audio path can change under us (headphones in, a call, a route
@@ -10989,8 +11059,23 @@ void MainComponent::pollExport()
 
     exportOk     = exportJob->resultOk;
     exportStatus = exportJob->resultText;
+    const auto salio = exportJob->resultFolder;
     endBusy();
     exportJob.reset();
+
+    //  Y AHORA SE DEJA DONDE CUALQUIER GESTOR LO VEA.
+    //
+    //  El rebote ya esta escrito y comprobado cuando esto corre, asi que
+    //  publicar es copiar y no mover: si el almacen de medios dice que no, lo
+    //  peor que pasa es que los ficheros se quedan donde estaban. Un fallo aqui
+    //  no puede costar el trabajo.
+    //
+    //  Solo cuando la carpeta NO la eligio nadie: si la persona senalo un sitio,
+    //  el sitio es ese y publicar una copia en otro seria decidir por ella.
+    if (exportOk && ! ProjectStore::exportsElegida())
+        publicarExport (salio);
+
+    exportMasterButton.setVisible (true);
 
     exportMasterButton.setVisible (true);
     exportStemsButton.setVisible (true);

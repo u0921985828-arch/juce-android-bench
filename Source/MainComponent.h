@@ -476,6 +476,8 @@ private:
     juce::TextButton browseUseDirBtn { "USAR ESTA CARPETA" };
     juce::TextButton exportDirBtn { "CAMBIAR" };
     void openBrowseForExportDir();
+    //  Deja el rebote donde cualquier gestor lo vea. Ver MediaStore.
+    void publicarExport (const juce::File& carpeta);
     void usarCarpetaDeExport();
 
     juce::TextButton exportFmtBtn { "WAV" };

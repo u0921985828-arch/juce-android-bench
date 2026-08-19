@@ -574,6 +574,9 @@ namespace
         { "BLOQUEOS",       "",         "P-LOCKS",    "参数锁定",   "قفل المعامل" },
         //  Elegir donde cae el rebote. Ver ProjectStore::setExports.
         { "CAMBIAR",        "",         "CHANGE",     "更改",       "تغيير" },
+        { "%1 en %2", "",
+          "%1 in %2",
+          "%1 个，位于 %2", "%1 في %2" },
         { "CARPETA DE EXPORTAR", "",
           "EXPORT FOLDER",
           "导出文件夹", "مجلد التصدير" },
