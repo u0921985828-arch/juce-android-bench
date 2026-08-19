@@ -36,6 +36,7 @@ MIN_TOUCH = 40   # Metrics::hit — Android's own guideline is 48dp, this is the
 #  hay hoy, y el gesto que lo hace usable - pintar arrastrando el dedo - ya
 #  esta puesto.
 MIN_CELL = 12
+MIN_NOTE = 16   # la fila del piano roll: ver el bloque 0 de juzga()
 
 #  LA PANTALLA VIRTUAL SE COMPRUEBA ANTES DE EMPEZAR.
 #
@@ -92,11 +93,23 @@ def judge(rows, size, lang, sheet):
     for r in comps:
         tag = f"{size}/{lang}/{sheet or 'face'}"
         #  0. Las rejillas que se pintan enteras: su celda tambien se toca.
-        for grid, cols, lanes, gutter in (("StepGrid", 16, 16, 30), ("Playlist", 8, 4, 26)):
+        #  Y la TERCERA, que faltaba. El piano roll se pinta entero igual que
+        #  las otras dos y su fila no la media nadie: salia a 7.4 px apaisado
+        #  y a 10.8 en un 360x640. Con suelo propio y mas alto que el de las
+        #  otras porque la fila de una nota es un blanco de ARRASTRE y fallarla
+        #  no falla el toque - escribe la nota de al lado, y sin decirlo.
+        #  Y el piano lleva DOS suelos y no uno, que es lo que las otras dos no
+        #  necesitan. A lo ancho se elige el PASO -la misma pregunta que hace
+        #  la rejilla de pasos, con el mismo suelo-; a lo alto se elige la
+        #  NOTA, y fallar de fila no falla el toque: escribe otro tono, suena,
+        #  y no lo dice nadie. Por eso el suelo vertical es mas alto.
+        for grid, cols, lanes, gutter, sx, sy in (("StepGrid",  16, 16, 30, MIN_CELL, MIN_CELL),
+                                                  ("Playlist",   8,  4, 26, MIN_CELL, MIN_CELL),
+                                                  ("PianoRoll", 16, 13, 34, MIN_CELL, MIN_NOTE)):
             if grid in r["path"] and r["w"] > gutter and r["h"] > 0:
                 cw = (r["w"] - gutter) / cols
                 ch = r["h"] / lanes
-                if min(cw, ch) < MIN_CELL:
+                if cw < sx or ch < sy:
                     findings.append(("CELDA", tag,
                                      f'{grid} {cw:.0f}x{ch:.0f} px por celda', min(cw, ch)))
         # 1. A finger has to fit.

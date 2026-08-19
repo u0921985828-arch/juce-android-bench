@@ -167,6 +167,7 @@ private:
     //  Un largo por paso, en cuartos. Ver AudioEngine::setStepLen.
     unsigned char pianoLargos[AudioEngine::kNumSteps] {};
     void refreshPiano (bool repintarTarjeta = true);
+    void seguirCompas (int pasoAbsoluto);
     void pianoCellToggled (int paso, int semi);
     void paintPianoSheetContent (juce::Graphics& g);
 

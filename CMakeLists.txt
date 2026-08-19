@@ -133,6 +133,14 @@ if(ZATI_BENCH)
     target_compile_definitions(StressTest PRIVATE
         JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_STRICT_REFCOUNTEDPOINTER=1)
     target_link_libraries(StressTest PRIVATE
+        #  LOS SONIDOS DE FABRICA YA NO SALEN TODOS DE UNA FORMULA, asi que el
+        #  banco del motor necesita los mismos bytes que la app. Desde que la
+        #  mitad de la fabrica son grabaciones, Kits.h llama a
+        #  BinaryData::getNamedResource y este objetivo no enlazaba ZatiData:
+        #  no es que midiera de menos, es que no COMPILABA -"'BinaryData' has
+        #  not been declared"- y nadie se entero porque la tanda anterior se
+        #  midio antes de meter los FLAC.
+        ZatiData
         juce::juce_audio_utils
         juce::juce_dsp
         juce::juce_recommended_config_flags

@@ -37,11 +37,33 @@
 class PianoRoll : public juce::Component
 {
 public:
-    //  Dos octavas y la raiz, de -12 a +12. Es lo que el motor admite por paso
-    //  -stepNote esta acotado a +-24- y lo que cabe en la altura de una ficha
-    //  sin que una tecla baje del dedo minimo. El boton de OCTAVA mueve la
-    //  ventana dentro del rango entero.
-    static constexpr int kFilas    = 25;    // semitonos visibles a la vez
+    //  UNA OCTAVA Y SU RAIZ, trece filas. Eran veinticinco -dos octavas- y esa
+    //  cuenta se hizo por el rango del motor y no por el dedo: veinticinco
+    //  filas se reparten el alto que quede, y medido ficha por ficha la fila
+    //  salia a 18.0 px en un movil grande, 10.8 en un 360x640, 11.2 en el
+    //  Fold cerrado y 7.4 APAISADO — la sexta parte de un dedo. Poner una nota
+    //  a ojo en 10 px es escribir la de al lado, y por eso "no se pueden
+    //  colocar ergonomicamente": el gesto estaba bien, el blanco no.
+    //
+    //  No se arregla dando mas alto -no lo hay- ni desplazando la rejilla, que
+    //  esta es de LIENZO y se pinta con el dedo arrastrado: un arrastre
+    //  vertical que a veces escribe una nota y a veces mueve la pagina es un
+    //  gesto que no se puede aprender. Se arregla enseñando MENOS a la vez, y
+    //  la unidad en la que se enseña menos es la octava, no un numero redondo.
+    //
+    //  Y sale gratis dos veces mas. Con trece filas el boton de OCTAVA embaldosa
+    //  el rango entero sin huecos ni sobras: -24..-12, -12..0, 0..12, 12..24,
+    //  que es exactamente lo que setStepNote admite. Con veinticinco, la base
+    //  en +12 dibujaba hasta +36 y las doce filas de arriba escribian notas que
+    //  el motor recortaba a +24 — doce filas que mentian.
+    static constexpr int kFilas    = 13;    // semitonos visibles a la vez
+    //  Lo que la ficha PIDE por fila. No es un suelo -la rejilla se queda con
+    //  lo que sobre y quien manda es el alto de la tarjeta- sino el objetivo:
+    //  trece por 34 son 442 px, que es lo que un movil grande puede dar
+    //  (450 medidos en 412x915). Pedir los 40 del dedo serian 520 y ninguna
+    //  pantalla los tiene, asi que la tarjeta quedaria clavada en su tope en
+    //  las siete y el numero dejaria de decir nada.
+    static constexpr int kAltoObjetivo = 34;
     static constexpr int kGutter   = 34;    // la columna del teclado
     static constexpr int kMaxNotas = 4;     // raiz + tres del acorde
 

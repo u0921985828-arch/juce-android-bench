@@ -6497,9 +6497,13 @@ void MainComponent::resized()
             juce::TextButton* pb5[5] = { &pianoOctDownBtn, &pianoOctUpBtn, &pianoClearBtn,
                                          &pianoGomaBtn, &pianoCorteBtn };
             const int anchoTarjeta = (int) ((float) safeArea().getWidth() * 0.92f) - 2 * Metrics::lg;
-            const int filasTapas = moduleBarFits (anchoTarjeta, pb5, 5) ? 1 : 2;
-            wanted = chrome + PianoRoll::kFilas * 18 + Metrics::sm + 14
-                   + filasTapas * Metrics::hit + (filasTapas - 1) * Metrics::halfGap;
+            //  Apaisado no hay fila de tapas que pedir: se van a la columna
+            //  de al lado. Pedir una fila que luego no se coloca es pedir 48 px
+            //  de mas de lo unico que escasea girado.
+            const int filasTapas = wideFace ? 0 : (moduleBarFits (anchoTarjeta, pb5, 5) ? 1 : 2);
+            wanted = chrome + PianoRoll::kFilas * PianoRoll::kAltoObjetivo + Metrics::sm + 14
+                   + filasTapas * Metrics::hit
+                   + juce::jmax (0, filasTapas - 1) * Metrics::halfGap;
         }
 
         auto inner = sheetFromBottom (seqSheet, wanted);
@@ -6590,10 +6594,41 @@ void MainComponent::resized()
             }
             inner.removeFromTop (14);                 // pintado: que se esta mirando
 
-            //  La fila de tapas se aparta ANTES: es lo que no puede encoger.
-            auto tapas = inner.removeFromBottom (Metrics::hit);
-            inner.removeFromBottom (Metrics::sm);
+            //  APAISADO LAS CINCO TAPAS SE VAN A SU COLUMNA, que es la misma
+            //  regla que ya usa la pagina de la rejilla y por el mismo motivo:
+            //  girado sobra ancho y falta alto, y una fila de tapas cuesta 48
+            //  px de lo unico que aqui escasea. Medido en 915x412: con la fila
+            //  abajo la rejilla se queda en 184 px y la fila de una nota en
+            //  14.2, por debajo del suelo; con la columna al lado son 232 y
+            //  17.8. Las cinco caben apiladas -5 x 40 mas cuatro huecos son
+            //  216- y a la rejilla le sobra ancho de todas formas: 35 px por
+            //  columna donde solo hacen falta veinte.
+            //
+            //  Y se pregunta si caben ANTES de apilarlas. En 915x412 la columna
+            //  tiene 232 y sobran dieciseis, pero "apaisado" es cualquier
+            //  ventana ancha: en una mas baja removeFromTop reparte lo que hay
+            //  y las ultimas tapas salen de alto cero sin que nadie se queje.
+            //  Un tope que se supera en silencio no protege, esconde - ya paso
+            //  con layoutModuleBar y sus ocho tapas.
+            const int altoColumna = 5 * Metrics::hit + 4 * Metrics::halfGap;
+            if (wideFace && inner.getHeight() >= altoColumna)
             {
+                auto side = Lang::takeEnd (inner, sideCol);
+                Lang::takeEnd (inner, Metrics::gap);
+                juce::TextButton* pb[5] = { &pianoOctDownBtn, &pianoOctUpBtn, &pianoClearBtn,
+                                            &pianoGomaBtn, &pianoCorteBtn };
+                for (int i = 0; i < 5; ++i)
+                {
+                    pb[i]->setBounds (side.removeFromTop (Metrics::hit).reduced (Metrics::halfGap, 0));
+                    if (i < 4) side.removeFromTop (Metrics::halfGap);
+                }
+            }
+            else
+            {
+                //  La fila de tapas se aparta ANTES: es lo que no puede encoger.
+                auto tapas = inner.removeFromBottom (Metrics::hit);
+                inner.removeFromBottom (Metrics::sm);
+
                 //  TRES y no cuatro: PLAY es del transporte y ya esta en la
                 //  pagina de la rejilla, con TAP y VACIAR. Una tapa que hace lo
                 //  mismo en dos paginas de la MISMA ficha es la version pequena
@@ -7396,6 +7431,29 @@ void MainComponent::stepCellToggled (int pad, int step)
 
 // Copy the pattern into the flat buffer the grid reads, plus each pad's colour
 // and whether it holds a sample, then hand it the live playhead.
+//  SEGUIR. La vista salta al compas que suena, y solo cuando cambia: pedir el
+//  salto en cada tick repintaria la ficha entera treinta veces por segundo,
+//  que es justo lo que costo arreglar hace dos tandas.
+//
+//  Y vive FUERA de refreshStepGrid desde que el temporizador pregunta por
+//  PAGINA: cual es el compas que se mira no es cosa de la rejilla de pasos
+//  sino de la ficha, y el piano dibuja el compas `selectedBar` igual que ella.
+//  Dejarlo dentro habria dejado el piano clavado en su compas con SEGUIR
+//  puesto; copiarlo en los dos sitios seria la misma regla escrita dos veces,
+//  que es como se separan.
+void MainComponent::seguirCompas (int ps)
+{
+    if (! seqFollow || ps < 0) return;
+
+    const int compas = ps / kStepCols;
+    if (compas == selectedBar) return;
+
+    selectedBar = compas;
+    for (int b2 = 0; b2 < barButtons.size(); ++b2)
+        if (auto* t = barButtons[b2])
+            t->setToggleState (b2 == selectedBar, juce::dontSendNotification);
+}
+
 void MainComponent::refreshStepGrid()
 {
     //  Sixteen lanes, of whichever bank the face is on. The pattern itself
@@ -7420,20 +7478,7 @@ void MainComponent::refreshStepGrid()
     const int ps = (engine.isPlaying() && engine.getPlayingPattern() == selectedPattern)
                      ? engine.getPlayStep() : -1;
 
-    //  SEGUIR. La vista salta al compas que suena, y solo cuando cambia: pedir
-    //  el salto en cada tick repintaria la ficha entera treinta veces por
-    //  segundo, que es justo lo que costo arreglar hace dos tandas.
-    if (seqFollow && ps >= 0)
-    {
-        const int compas = ps / kStepCols;
-        if (compas != selectedBar)
-        {
-            selectedBar = compas;
-            for (int b2 = 0; b2 < barButtons.size(); ++b2)
-                if (auto* t = barButtons[b2])
-                    t->setToggleState (b2 == selectedBar, juce::dontSendNotification);
-        }
-    }
+    seguirCompas (ps);
 
     {
         const bool rodando = engine.isPlaying();
@@ -10166,6 +10211,12 @@ void MainComponent::refreshPiano (bool repintarTarjeta)
 {
     const int b = selectedPattern, p = juce::jmax (0, selectedPad);
     const int len = engine.getPatternLength (b);
+
+    //  El compas que se mira lo decide SEGUIR, y en esta pagina tambien: ver
+    //  seguirCompas. ANTES de calcular la base, que es de donde sale.
+    if (engine.isPlaying() && engine.getPlayingPattern() == b)
+        seguirCompas (engine.getPlayStep());
+
     const int base = selectedBar * AudioEngine::kBarSteps;
     const int cols = juce::jmin (AudioEngine::kBarSteps, juce::jmax (1, len - base));
 
@@ -10188,6 +10239,15 @@ void MainComponent::refreshPiano (bool repintarTarjeta)
 
     const int ps = (engine.isPlaying() && engine.getPlayingPattern() == b)
                      ? engine.getPlayStep() - base : -1;
+
+    //  Ver UiAudit::cabezalPiano: se cuenta cuando CAMBIA de columna, que es
+    //  lo que separa una barra viva de una dibujada.
+    {
+        static int ultimo = -2;
+        ++UiAudit::pianoTicks;
+        if (ps >= 0 && ps != ultimo) ++UiAudit::cabezalPiano;
+        ultimo = ps;
+    }
 
     pianoGrid.setSource (pianoCells, cols, pianoBase,
                          (ps >= 0 && ps < cols) ? ps : -1,
@@ -14010,8 +14070,24 @@ void MainComponent::timerCallback()
     //  pads copied out of the mirror plus the same number of atomic loads for
     //  the step pitches, thirty times a second, to feed a component nobody
     //  was looking at.
+    //  Y CADA PAGINA ALIMENTA LA SUYA, que es el mismo parrafo de arriba sin
+    //  terminar de aplicar. El arreglo de entonces pregunto por la FICHA y la
+    //  ficha tiene tres paginas: en PIANO y en PATRON la rejilla de pasos esta
+    //  invisible -showSeqPage la apaga- y se seguia rellenando treinta veces
+    //  por segundo, 64 pasos x 16 pads copiados del espejo mas otras tantas
+    //  cargas atomicas para un componente que nadie ve, en dos de las tres.
+    //
+    //  Y al reves, que es lo que se notaba: en la pagina del PIANO la unica
+    //  llamada a refreshPiano venia de tocar algo -cambiar de pagina, de
+    //  octava, de pad-, asi que el cabezal se pintaba donde estuviera al
+    //  entrar y ahi se quedaba. La barra estaba dibujada desde el primer dia
+    //  (ver PianoRoll::paint) y no estaba VIVA, que es la unica forma que
+    //  tiene un piano roll de decir por donde va lo que suena.
     if (seqSheet.isVisible())
-        refreshStepGrid();
+    {
+        if (seqPage == seqPagePiano) refreshPiano (false);
+        else if (seqPage == seqPageGrid) refreshStepGrid();
+    }
     if (songSheet.isVisible() && engine.isPlaying()) refreshSong (false);
 
     const int prevPlayStep = lastPlayStep;

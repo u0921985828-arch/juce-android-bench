@@ -471,7 +471,10 @@ public:
                         {
                             const double ms = 1000.0 * (double) (std::clock() - t0) / (double) CLOCKS_PER_SEC;
                             std::cout << "{\"spin\":1,\"cpu_ms\":" << ms
-                                      << ",\"fondos\":" << UiAudit::fondosPintados << "}" << std::endl;
+                                      << ",\"fondos\":" << UiAudit::fondosPintados
+                                      << ",\"piano_ticks\":" << UiAudit::pianoTicks
+                                      << ",\"cabezal_piano\":" << UiAudit::cabezalPiano
+                                      << "}" << std::endl;
                             quit();
                         });
                         return;

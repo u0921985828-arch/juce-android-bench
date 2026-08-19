@@ -53,6 +53,22 @@ namespace UiAudit
     //  misma suma uno aqui aunque el fondo no haya cambiado, y ese es
     //  exactamente el desperdicio que se buscaba.
     inline int fondosPintados = 0;
+    //  CUANTAS VECES SE HA MOVIDO EL CABEZAL DEL PIANO ROLL. La barra estaba
+    //  dibujada desde el primer dia y no estaba viva: el temporizador solo
+    //  alimentaba la rejilla de PASOS, asi que en la pagina del piano el
+    //  cabezal se quedaba donde estuviera al entrar. Eso no se ve en un
+    //  volcado de geometria -el componente esta ahi y mide lo mismo- y se
+    //  cuenta aqui, que es la unica forma de que un cero se distinga de un
+    //  "no lo he mirado".
+    inline int cabezalPiano = 0;
+    //  Y cuantas veces se ha ALIMENTADO la pagina del piano. Son dos cifras y
+    //  no una porque en un escritorio sin tarjeta de sonido el transporte no
+    //  avanza -el paso lo mueve la llamada de audio- y cabezalPiano saldria
+    //  cero tanto con el fallo puesto como con el quitado. Lo que si se puede
+    //  medir aqui es el eslabon que faltaba: que el temporizador llame a
+    //  refreshPiano mientras la pagina del piano esta abierta. Cero es el
+    //  fallo; el resto lo cuenta el motor, que es donde el paso avanza.
+    inline int pianoTicks = 0;
 
     //  UNA FOTO DEL COMPONENTE, a la escala que se pida.
     //
