@@ -1688,5 +1688,191 @@ int main()
                      "bloqueo del corte por paso", abierto, cerrado, caidaDb, ok ? "OK" : "FALLA");
     }
 
+    //  LOS OTROS CUATRO BLOQUEOS: ataque, caida, inicio y pan.
+    //
+    //  Los cuatro se miden CONTRA EL MISMO PASO SIN BLOQUEAR y no contra un
+    //  numero absoluto, que es lo unico que separa "el bloqueo hace algo" de
+    //  "el pad ya sonaba asi". Y el pan se mide en DOS instantes, que es donde
+    //  estaba el fallo: retarget vuelve a leer el pan del pad una vez por
+    //  bloque para que un fader de la mesa mueva lo que suena, asi que sin
+    //  Voice::panPropio el bloqueo duraba 128 muestras y luego se deshacia.
+    {
+        AudioEngine e; e.prepareToPlay (48000.0, 128); e.setPolyphony (16, 4);
+        e.setPadGain (0, 0.9f);
+        //  Media muestra en silencio y media con tono: asi el bloqueo de
+        //  INICIO se mide por lo unico que no admite discusion - si empieza en
+        //  la mitad, suena desde el primer bloque; si no, no suena nada.
+        const int n = 48000;
+        {
+            auto* sb = new SampleBuffer();
+            sb->buffer.setSize (2, n);
+            sb->buffer.clear();
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = n / 2; i < n; ++i)
+                    sb->buffer.setSample (ch, i, 0.5f * std::sin (2.0 * juce::MathConstants<double>::pi
+                                                                 * 440.0 * (double) i / 48000.0));
+            sb->sourceSampleRate = 48000.0;
+            e.publishSample (0, SampleBuffer::Ptr (sb));
+        }
+        juce::AudioBuffer<float> b (2, 128);
+        runBlocks (e, b, 128, 4);
+
+        //  El pad, sin bloqueos, esta en el centro, ataque corto y empieza por
+        //  el principio: cualquier diferencia que salga es del paso.
+        e.setPadPan (0, 0.0f);
+        e.setPadAttack (0, 1.0f);
+        e.setPadRelease (0, 40.0f);
+        e.setPadStart (0, 0);
+        e.setPadEnd (0, n);
+
+        //  Devuelve la energia por canal en una ventana de bloques [desde,hasta)
+        //  contada desde que arranca el transporte.
+        struct Med { double izq, der; };
+        auto correr = [&] (int cual, int pct, int desde, int hasta,
+                           int cual2 = -1, int pct2 = 0) -> Med
+        {
+            e.setSongMode (false);
+            e.clearPattern (0);
+            e.setPatternLength (0, 16);
+            e.setStep (0, 0, 0, true);
+            for (int c = 0; c < AudioEngine::kNumPLocks; ++c)
+                e.setStepPLock (0, 0, 0, c, AudioEngine::kNoPLock);
+            if (cual  >= 0) e.setStepPLock (0, 0, 0, cual,  pct);
+            if (cual2 >= 0) e.setStepPLock (0, 0, 0, cual2, pct2);
+            e.setBpm (120.0);
+            e.setPlaying (true);
+            double li = 0.0, de = 0.0; int cont = 0;
+            for (int i = 0; i < hasta; ++i)
+            {
+                e.renderNextBlock (b, 0, 128);
+                if (i < desde) continue;
+                const float* L = b.getReadPointer (0);
+                const float* R = b.getReadPointer (1);
+                for (int k = 0; k < 128; ++k) { li += (double) L[k] * L[k]; de += (double) R[k] * R[k]; }
+                ++cont;
+            }
+            e.setPlaying (false);
+            e.postPanic();
+            for (int i = 0; i < 8; ++i) e.renderNextBlock (b, 0, 128);
+            e.fetchTriggered();
+            const double d = (double) juce::jmax (1, cont) * 128.0;
+            return { std::sqrt (li / d), std::sqrt (de / d) };
+        };
+
+        //  INICIO. El paso arranca en la mitad de la muestra, que es donde
+        //  empieza el tono. Sin bloqueo, esos mismos bloques son silencio.
+        {
+            const auto sin = correr (-1, 0, 0, 12);
+            const auto con = correr (AudioEngine::plockInicio, 50, 0, 12);
+            const bool ok = sin.izq < 0.001 && con.izq > 0.05;
+            std::printf ("%-34s sin bloqueo %.4f   al 50%% %.4f   %s\n",
+                         "bloqueo de inicio", sin.izq, con.izq, ok ? "OK" : "FALLA");
+        }
+
+        //  PAN. Todo a la izquierda, y medido DOS veces: en el primer bloque y
+        //  veinte bloques despues. La segunda es la que fallaba.
+        {
+            //  Y CON EL INICIO BLOQUEADO A LA MITAD, que es donde empieza el
+            //  tono: la muestra tiene medio segundo de silencio delante -187
+            //  bloques- asi que sin esto los dos canales miden cero y el banco
+            //  declara que el pan no hace nada. Primero se duda de la prueba.
+            const int mitad = AudioEngine::plockInicio;
+            const auto pron = correr (AudioEngine::plockPan, 0, 0,  2,  mitad, 50);
+            const auto tard = correr (AudioEngine::plockPan, 0, 20, 40, mitad, 50);
+            const auto cen  = correr (mitad, 50, 20, 40);
+            //  La ventana tardia es la que importa: es la que el pan del pad
+            //  habria deshecho un bloque despues de nacer.
+            const double ratioT = tard.izq / juce::jmax (1.0e-9, tard.der);
+            const double ratioC = cen.izq  / juce::jmax (1.0e-9, cen.der);
+            const bool ok = pron.izq >= pron.der && ratioT > 20.0
+                              && ratioC > 0.9 && ratioC < 1.1;
+            //  En dB, que el canal derecho se queda en cero exacto y el
+            //  cociente sale en cientos de millones: un numero que no se puede
+            //  leer no es un resultado.
+            std::printf ("%-34s L/R al centro %.2f   bloqueado a la izquierda %+.0f dB   %s\n",
+                         "bloqueo de pan", ratioC,
+                         20.0 * std::log10 (juce::jlimit (1.0e-9, 1.0e9, ratioT)),
+                         ok ? "OK" : "FALLA");
+        }
+
+        //  ATAQUE. Doscientos milisegundos son 75 bloques de 128, asi que en
+        //  los primeros veinte -34 ms- la envolvente va por el 17 % y lo que
+        //  suena tiene que ser MUCHO menos que con el ataque del pad, que es
+        //  de un milisegundo. Se mide desde el bloque 47, que es donde el tono
+        //  de la muestra empieza a sonar con el inicio tambien bloqueado.
+        {
+            auto conAtaque = [&] (int pct) -> double
+            {
+                e.setSongMode (false);
+                e.clearPattern (0);
+                e.setPatternLength (0, 16);
+                e.setStep (0, 0, 0, true);
+                for (int c = 0; c < AudioEngine::kNumPLocks; ++c)
+                    e.setStepPLock (0, 0, 0, c, AudioEngine::kNoPLock);
+                //  Inicio a la mitad para que haya senal desde el primer
+                //  bloque: medir un ataque sobre silencio no mide nada.
+                e.setStepPLock (0, 0, 0, AudioEngine::plockInicio, 50);
+                if (pct >= 0) e.setStepPLock (0, 0, 0, AudioEngine::plockAtaque, pct);
+                e.setBpm (120.0);
+                e.setPlaying (true);
+                double en = 0.0; int cont = 0;
+                for (int i = 0; i < 10; ++i)
+                {
+                    e.renderNextBlock (b, 0, 128);
+                    const float* L = b.getReadPointer (0);
+                    for (int k = 0; k < 128; ++k) { en += (double) L[k] * L[k]; ++cont; }
+                }
+                e.setPlaying (false);
+                e.postPanic();
+                for (int i = 0; i < 8; ++i) e.renderNextBlock (b, 0, 128);
+                e.fetchTriggered();
+                return std::sqrt (en / juce::jmax (1, cont));
+            };
+            const double corto = conAtaque (-1);
+            const double largo = conAtaque (100);          // 200 ms
+            const double db = 20.0 * std::log10 (juce::jmax (1.0e-9, largo)
+                                               / juce::jmax (1.0e-9, corto));
+            const bool ok = db < -12.0;
+            std::printf ("%-34s pad 1 ms %.4f   paso 200 ms %.4f   %+.1f dB   %s\n",
+                         "bloqueo de ataque", corto, largo, db, ok ? "OK" : "FALLA");
+        }
+
+        //  CAIDA. Se mide por lo que dura la cola DESPUES de soltar, asi que el
+        //  paso lleva tambien largo -sin el, la nota no se suelta nunca y no
+        //  hay caida que medir-. Se cuentan bloques con voz viva.
+        {
+            auto vive = [&] (int pct) -> int
+            {
+                e.setSongMode (false);
+                e.clearPattern (0);
+                e.setPatternLength (0, 16);
+                e.setStep (0, 0, 0, true);
+                for (int c = 0; c < AudioEngine::kNumPLocks; ++c)
+                    e.setStepPLock (0, 0, 0, c, AudioEngine::kNoPLock);
+                e.setStepLen (0, 0, 0, 2);                 // medio paso
+                if (pct >= 0) e.setStepPLock (0, 0, 0, AudioEngine::plockCaida, pct);
+                e.setBpm (120.0);
+                e.setPlaying (true);
+                int vivos = 0;
+                for (int i = 0; i < 120; ++i)
+                {
+                    e.renderNextBlock (b, 0, 128);
+                    if (e.getActiveVoiceCount() > 0) ++vivos;
+                }
+                e.setPlaying (false);
+                e.postPanic();
+                for (int i = 0; i < 8; ++i) e.renderNextBlock (b, 0, 128);
+                e.fetchTriggered();
+                e.setStepLen (0, 0, 0, AudioEngine::kLenSuelto);
+                return vivos;
+            };
+            const int corta = vive (0);                    // 1 ms
+            const int larga = vive (100);                  // 800 ms
+            const bool ok = larga > corta + 10;
+            std::printf ("%-34s caida 1 ms %d bloques   800 ms %d   %s\n",
+                         "bloqueo de caida", corta, larga, ok ? "OK" : "FALLA");
+        }
+    }
+
     return 0;
 }

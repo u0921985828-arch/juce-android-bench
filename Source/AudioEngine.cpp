@@ -174,7 +174,8 @@ void AudioEngine::releaseResources() noexcept
     fallbackTriggers.store (0, std::memory_order_relaxed);
 }
 
-void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01, bool cortaSuCola, int gate) noexcept
+void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01, bool cortaSuCola,
+                              int gate, std::uint32_t plock) noexcept
 {
     if (slot < 0 || slot >= kNumPads)
         return;
@@ -221,11 +222,31 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01,
             if (v.active && v.slot == slot)
                 v.steal (systemSampleRate);
 
+    //  LOS CUATRO BLOQUEOS DEL PASO, desempaquetados. Cero en un byte es "este
+    //  paso no toca eso" y entonces manda el pad, que es lo que hace que un
+    //  patron escrito antes de que esto existiera suene exactamente igual.
+    const auto plockPct = [plock] (int cual) noexcept
+    {
+        const int b = (int) ((plock >> (cual * 8)) & 0xffu);
+        return b <= 0 ? kNoPLock : b - 1;
+    };
+    const int pctAtaque = plockPct (plockAtaque);
+    const int pctCaida  = plockPct (plockCaida);
+    const int pctInicio = plockPct (plockInicio);
+    const int pctPan    = plockPct (plockPan);
+
     const int len = sb->buffer.getNumSamples();
     int st = padStart[(size_t) slot].load (std::memory_order_relaxed);
     int en = padEnd[(size_t) slot].load (std::memory_order_relaxed);
     if (en <= 0 || en > len) en = len;
     if (st < 0 || st >= en)  st = 0;
+
+    //  EL BLOQUEO DEL INICIO entra por la misma puerta que la audicion desde
+    //  la onda -empezar en un punto y conservar el final del pad- porque es
+    //  literalmente lo mismo. Solo si nadie ha pedido ya un punto: un toque
+    //  sobre la onda es de la persona y manda sobre lo que diga el paso.
+    if (from01 < 0.0f && pctInicio != kNoPLock)
+        from01 = (float) pctInicio / 100.0f;
 
     //  Auditioning from a point in the waveform: start there and keep the
     //  pad's end, so a tap plays the rest of the sound and not a slice of it.
@@ -308,13 +329,21 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01,
                    padLoop[(size_t) slot].load (std::memory_order_relaxed),
                    padReverse[(size_t) slot].load (std::memory_order_relaxed),
                    len,
-                   padPan[(size_t) slot].load (std::memory_order_relaxed),
-                   padAttack[(size_t) slot].load (std::memory_order_relaxed),
-                   padRelease[(size_t) slot].load (std::memory_order_relaxed),
+                   pctPan    != kNoPLock ? plockPanPos  (pctPan)
+                                         : padPan[(size_t) slot].load (std::memory_order_relaxed),
+                   pctAtaque != kNoPLock ? plockAtaqueMs (pctAtaque)
+                                         : padAttack[(size_t) slot].load (std::memory_order_relaxed),
+                   pctCaida  != kNoPLock ? plockCaidaMs (pctCaida)
+                                         : padRelease[(size_t) slot].load (std::memory_order_relaxed),
                    padKeepLength[(size_t) slot].load (std::memory_order_relaxed),
                    vel,
                    padFadeIn[(size_t) slot].load (std::memory_order_relaxed),
                    padFadeOut[(size_t) slot].load (std::memory_order_relaxed));
+
+    //  DESPUES de start, por lo mismo que el gate: la pone a false y el
+    //  bloqueo de pan es del PASO. Sin esto el pan bloqueado dura un bloque -
+    //  retarget vuelve a leer el del pad en el siguiente.
+    chosen->panPropio = (pctPan != kNoPLock);
 
     //  DESPUES de start, que la pone a -1: el largo lo trae el paso y no el
     //  pad, asi que el mismo pad puede sonar corto en un sitio y largo en otro
@@ -771,12 +800,18 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                                                             / (4.0 * (double) juce::jmax (1, hits))))
                                    : -1;
 
+                //  Y LOS OTROS CUATRO BLOQUEOS, que a diferencia del corte NO
+                //  se escriben en el pad: viajan con el disparo hasta
+                //  Voice::start. Ver setStepPLock.
+                const std::uint32_t plock = stepPLock[(size_t) bank][(size_t) stepInPattern][(size_t) p]
+                                                .load (std::memory_order_relaxed);
+
                 for (int h = 0; h < hits; ++h)
                 {
                     if (numPending >= (int) pending.size()) break;
                     const int at = juce::jmax (0, lateBy + empuje
                                                  + (int) (samplesPerStep * (double) h / (double) hits));
-                    pending[(size_t) numPending++] = { at, p, semis, vel, true, gate };
+                    pending[(size_t) numPending++] = { at, p, semis, vel, true, gate, plock };
 
                     //  El acorde suena en el MISMO instante que su raiz: si se
                     //  repartieran, seria un arpegio, y el arpegio se escribe
@@ -789,7 +824,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                         //  Sin cortar: el autocorte del pad esta puesto por
                         //  defecto y con el las tres notas de mas mueren antes
                         //  de sonar. Medido: cuatro notas daban UNA voz viva.
-                        pending[(size_t) numPending++] = { at, p, extra, vel, false, gate };
+                        pending[(size_t) numPending++] = { at, p, extra, vel, false, gate, plock };
                     }
                 }
             }
@@ -936,7 +971,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 {
                     const auto h = pending[(size_t) i];
                     pending[(size_t) i] = pending[(size_t) --numPending];
-                    triggerPad (h.pad, h.semis, h.vel, -1.0f, h.corta, h.gate);
+                    triggerPad (h.pad, h.semis, h.vel, -1.0f, h.corta, h.gate, h.plock);
                 }
                 else ++i;
             }
@@ -1748,6 +1783,8 @@ void AudioEngine::clearPattern (int patternIdx) noexcept
         for (auto& celda : fila) celda.store (0, std::memory_order_relaxed);
     for (auto& fila : stepLen[(size_t) patternIdx])
         for (auto& celda : fila) celda.store (0, std::memory_order_relaxed);
+    for (auto& fila : stepPLock[(size_t) patternIdx])
+        for (auto& celda : fila) celda.store (0, std::memory_order_relaxed);
 }
 
 void AudioEngine::setPatternLength (int patternIdx, int len) noexcept
@@ -1822,6 +1859,45 @@ int AudioEngine::getStepLock (int patternIdx, int step, int pad) const noexcept
     const int v = (int) stepLock[(size_t) patternIdx][(size_t) step][(size_t) pad]
                       .load (std::memory_order_relaxed);
     return v <= 0 ? kNoLock : v - 1;
+}
+
+//  LOS OTROS CUATRO BLOQUEOS. Ver setStepPLock: un byte por bloqueo dentro de
+//  un uint32, desplazados un uno por la misma razon que el del corte.
+std::uint32_t AudioEngine::getStepPLockRaw (int patternIdx, int step, int pad) const noexcept
+{
+    if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps
+        || pad < 0 || pad >= kNumPads) return 0;
+    return stepPLock[(size_t) patternIdx][(size_t) step][(size_t) pad].load (std::memory_order_relaxed);
+}
+
+void AudioEngine::setStepPLockRaw (int patternIdx, int step, int pad, std::uint32_t v) noexcept
+{
+    if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps
+        || pad < 0 || pad >= kNumPads) return;
+    stepPLock[(size_t) patternIdx][(size_t) step][(size_t) pad].store (v, std::memory_order_relaxed);
+}
+
+void AudioEngine::setStepPLock (int patternIdx, int step, int pad, int cual, int porCiento) noexcept
+{
+    if (cual < 0 || cual >= kNumPLocks) return;
+    if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps
+        || pad < 0 || pad >= kNumPads) return;
+    const std::uint32_t byte = (std::uint32_t) (porCiento < 0 ? 0 : juce::jlimit (0, 100, porCiento) + 1);
+    const int desp = cual * 8;
+    auto& celda = stepPLock[(size_t) patternIdx][(size_t) step][(size_t) pad];
+    //  Lectura, modificacion y escritura de un atomico que solo escribe el
+    //  hilo de mensajes: el de audio SOLO lee este paquete, asi que no hay
+    //  carrera que resolver y no hace falta un CAS.
+    const std::uint32_t v = celda.load (std::memory_order_relaxed);
+    celda.store ((v & ~((std::uint32_t) 0xff << desp)) | (byte << desp), std::memory_order_relaxed);
+}
+
+int AudioEngine::getStepPLock (int patternIdx, int step, int pad, int cual) const noexcept
+{
+    if (cual < 0 || cual >= kNumPLocks) return kNoPLock;
+    const std::uint32_t v = getStepPLockRaw (patternIdx, step, pad);
+    const int byte = (int) ((v >> (cual * 8)) & 0xff);
+    return byte <= 0 ? kNoPLock : byte - 1;
 }
 
 //  LAS TRES NOTAS DE MAS. Ver stepChord: un byte por nota en los bits bajos y
@@ -2042,6 +2118,7 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
             copyArr (stepNudge[b2][s2], s.stepNudge[b2][s2]);
             copyArr (stepLen[b2][s2],   s.stepLen[b2][s2]);
             copyArr (stepLock[b2][s2],  s.stepLock[b2][s2]);
+            copyArr (stepPLock[b2][s2], s.stepPLock[b2][s2]);
         }
 
     for (size_t ln = 0; ln < songCell.size(); ++ln)

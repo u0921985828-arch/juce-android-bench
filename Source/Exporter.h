@@ -72,11 +72,12 @@ public:
               juce::File destDir,
               juce::String baseName,
               bool wantStems,
-              double sr)
+              double sr,
+              bool comprimido = false)
         : juce::Thread ("zati-export"),
           live (liveEngine), pads (std::move (samples)), padNames (std::move (names)),
           dir (std::move (destDir)), base (std::move (baseName)),
-          stems (wantStems), sampleRate (sr > 0.0 ? sr : 44100.0)
+          stems (wantStems), sampleRate (sr > 0.0 ? sr : 44100.0), ogg (comprimido)
     {
         //  Dos: la que mide el pico y la que escribe el master. Contarla es lo
         //  honesto - la barra la recorre igual que las demas.
@@ -143,7 +144,7 @@ public:
 
         // --- Pass 2: the master, written as it renders. --------------------
         Bitacora::paso ("exportar/master");
-        auto masterFile = uniqueFile (base + ".wav");
+        auto masterFile = uniqueFile (base + extension());
         if (! writeRender (masterFile, -1, totalLen, gain, 1))
         {
             if (threadShouldExit()) return;      // writeRender ya dejo el parte
@@ -178,7 +179,7 @@ public:
                     Bitacora::paso (m);
                 }
                 auto f = uniqueFile (base + "_" + juce::String (p + 1).paddedLeft ('0', 2)
-                                          + "_" + label + ".wav");
+                                          + "_" + label + extension());
                 if (writeRender (f, p, totalLen, gain, pasadas))
                     ++written;
                 else if (threadShouldExit())
@@ -227,9 +228,15 @@ private:
         if (stream == nullptr || ! stream->openedOk())
             return false;
 
-        juce::WavAudioFormat wav;
+        //  El escritor, segun el formato. Vorbis no tiene "bits por muestra":
+        //  el 24 se ignora y lo que manda es el indice de calidad, y 5 de 10 es
+        //  el que la propia libreria documenta como transparente.
+        std::unique_ptr<juce::AudioFormat> fmt;
+        if (ogg) fmt.reset (new juce::OggVorbisAudioFormat());
+        else     fmt.reset (new juce::WavAudioFormat());
+
         std::unique_ptr<juce::AudioFormatWriter> writer (
-            wav.createWriterFor (stream.get(), sampleRate, 2, 24, {}, 0));
+            fmt->createWriterFor (stream.get(), sampleRate, 2, ogg ? 16 : 24, {}, ogg ? 5 : 0));
         if (writer == nullptr)
             return false;
         stream.release();   // the writer owns it now
@@ -345,6 +352,8 @@ private:
         return true;
     }
 
+    juce::String extension() const { return ogg ? ".ogg" : ".wav"; }
+
     juce::File uniqueFile (const juce::String& name) const
     {
         return dir.getChildFile (name).getNonexistentSibling (false);
@@ -367,6 +376,12 @@ private:
     juce::String base;
     bool         stems;
     double       sampleRate;
+    //  OGG VORBIS Y NO MP3, y no por gusto: el codificador de MP3 es LAME, que
+    //  no viene con JUCE y arrastra su propia licencia. Vorbis SI viene, es
+    //  libre de patentes, comprime lo mismo y lo abre cualquier telefono - un
+    //  master de tres minutos pasa de 30 MB a 3, que es lo que separa "lo
+    //  tengo" de "te lo mando".
+    bool         ogg = false;
     int          totalPasses = 1;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Exporter)

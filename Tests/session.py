@@ -224,10 +224,15 @@ def main():
     d = pr.get ("disperso", {})
     disp_ok = (d.get ("nota") == 7 and d.get ("acorde") == [4, 12, -128]
                and d.get ("empujon") == -25 and d.get ("bloqueo") == 33
-               and d.get ("largo") == 9)
-    print ("acorde, empujon, bloqueo y largo: nota %s acorde %s empujon %s bloqueo %s largo %s   %s"
+               and d.get ("largo") == 9
+               #  Y los otros cuatro bloqueos, que viven EMPAQUETADOS en un
+               #  uint32: cuatro valores distintos entre si, porque con cuatro
+               #  iguales un cruce de bytes pasaria desapercibido.
+               and d.get ("plock") == [11, 22, 44, 88])
+    print ("acorde, empujon, bloqueo y largo: nota %s acorde %s empujon %s bloqueo %s largo %s"
+           " bloqueos %s   %s"
            % (d.get ("nota", "?"), d.get ("acorde", "?"), d.get ("empujon", "?"),
-              d.get ("bloqueo", "?"), d.get ("largo", "?"),
+              d.get ("bloqueo", "?"), d.get ("largo", "?"), d.get ("plock", "?"),
               "correcto" if disp_ok else "NO VUELVEN"))
 
     shutil.rmtree (TMP, ignore_errors=True)

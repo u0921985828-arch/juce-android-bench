@@ -158,6 +158,7 @@ UNTRANSLATED_OK = {
     "PIANO",                                   # el instrumento se llama igual en las dos
     "PAD -", "PAD +",                          # PAD pasa por T() y coincide de verdad en es/en
     "MASTER",                                  # la mezcla final se llama igual en las dos
+    "WAV", "OGG",                              # los dos formatos, que son extensiones de fichero
     "OFF",                                     # el extremo apagado de un mando, universal en un aparato
     "PAPEL", "GRAFITO", "ACERO", "LACA",       # the four chassis, named not translated
     "ESPANOL", "ENGLISH",                      # each language names itself

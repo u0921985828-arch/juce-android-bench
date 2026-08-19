@@ -207,6 +207,7 @@ struct Voice
         stepDown  = (float) (target / fadeOut);
         stepCtl   = (float) (1.0 / juce::jmax (1.0, 0.010 * fSys));
         gate      = -1;          // el que dispara la pone si el paso lleva largo
+        panPropio = false;       // idem: solo si el paso trae bloqueo de pan
         active    = true;
     }
 
@@ -219,8 +220,17 @@ struct Voice
     //  "sin largo", que es como nace un pad y como sonaba todo hasta ahora.
     int gate = -1;              // muestras hasta soltar, -1 = suelta sola
 
+    //  EL PAN DE ESTA VOZ ES SUYO, y no del pad.
+    //
+    //  `retarget` vuelve a leer el pan del pad UNA VEZ POR BLOQUE, para que un
+    //  fader de la mesa mueva lo que ya esta sonando. Con el bloqueo de pan
+    //  del paso eso lo deshace en el bloque siguiente: la voz nace a la
+    //  izquierda y a los 2.7 ms esta donde diga el pad. Medido asi la primera
+    //  vez - el bloqueo "no hacia nada" y hacia 128 muestras de algo.
+    bool panPropio = false;
+
     void release() noexcept { releasing = true; }
-    void kill()    noexcept { active = false; releasing = false; gain = 0.0f; gate = -1; }
+    void kill()    noexcept { active = false; releasing = false; gain = 0.0f; gate = -1; panPropio = false; }
 
     // Voice steal: fast fixed declick fade (~1.5 ms) regardless of the pad's
     // musical release — used when the same pad retriggers and this instance
@@ -239,6 +249,9 @@ struct Voice
     {
         if (! active || releasing) return;
         target = g * velocity;
+        //  El volumen SI lo sigue: un bloqueo de pan no puede dejar la voz
+        //  sorda a la mesa de mezclas, que es otra cosa.
+        if (panPropio) return;
         const float panAngle = (juce::jlimit (-1.0f, 1.0f, pan) * 0.5f + 0.5f) * juce::MathConstants<float>::halfPi;
         panTL = std::cos (panAngle);
         panTR = std::sin (panAngle);

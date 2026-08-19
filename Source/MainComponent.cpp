@@ -663,6 +663,19 @@ MainComponent::MainComponent()
         exportSheet.addAndMakeVisible (exportStemsButton);
 
         styleButton (exportCancelButton, kRec);
+        //  El formato, al lado de los dos verbos y no en AJUSTES: se elige
+        //  justo antes de exportar y no una vez en la vida.
+        styleButton (exportFmtBtn, kKey);
+        litAccent (exportFmtBtn);
+        exportFmtBtn.setClickingTogglesState (true);
+        exportFmtBtn.onClick = [this]
+        {
+            exportOgg = exportFmtBtn.getToggleState();
+            exportFmtBtn.setButtonText (exportOgg ? "OGG" : "WAV");
+            exportSheet.repaint();
+        };
+        exportSheet.addAndMakeVisible (exportFmtBtn);
+
         exportCancelButton.onClick = [this]
         {
             if (exportJob != nullptr) exportJob->signalThreadShouldExit();
@@ -1347,6 +1360,15 @@ MainComponent::MainComponent()
         euclidSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
         euclidSlider.textFromValueFunction = [] (double v)
             { return v <= 0.0 ? T ("vacio") : Lang::ltr (juce::String ((int) v)); };
+        for (auto* b : { &copyRowBtn, &pasteRowBtn })
+        {
+            styleButton (*b, kKey);
+            seqSheet.addAndMakeVisible (*b);
+        }
+        copyRowBtn.onClick  = [this] { copiarFila(); };
+        pasteRowBtn.onClick = [this] { pegarFila(); };
+        pasteRowBtn.setEnabled (false);   // no hay nada que pegar hasta que se copie
+
         euclidSlider.onValueChange = [this] { euclidesPattern ((int) euclidSlider.getValue()); };
         //  Y se refresca el texto: la funcion se asigna DESPUES del setValue, y
         //  sin esto la casilla se queda con el numero crudo hasta que alguien
@@ -1386,6 +1408,59 @@ MainComponent::MainComponent()
                                 v < 1 ? AudioEngine::kNoLock : v - 1);
         };
         seqSheet.addAndMakeVisible (lockSlider);
+
+        //  LOS OTROS CUATRO BLOQUEOS DEL PASO. Ver AudioEngine::setStepPLock.
+        //  Mismo idioma que el del corte: el extremo de abajo esta FUERA de la
+        //  escala y dice OFF, que es lo que vale un paso que no toca ese
+        //  parametro. Sin esa posicion harian falta cuatro interruptores al
+        //  lado, y una fila mas en la tira cuesta 3.6 px de celda por carril.
+        //
+        //  Giratorios y no de + y -: cuatro cajas de IncDecButtons piden 122 px
+        //  y en un telefono de 412 les tocan 103. Ver la declaracion.
+        {
+            auto plock = [this] (juce::Slider& sl, int cual,
+                                 std::function<juce::String (int)> texto)
+            {
+                sl.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+                sl.setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
+                sl.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
+                sl.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+                sl.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 62, Metrics::readout);
+                sl.setRange (-1.0, 100.0, 1.0);
+                sl.setValue (-1.0, juce::dontSendNotification);
+                sl.setDoubleClickReturnValue (true, -1.0);   // dos toques = quitar el bloqueo
+                sl.textFromValueFunction = [texto] (double v)
+                {
+                    return v < -0.5 ? juce::String ("OFF") : texto ((int) v);
+                };
+                sl.updateText();
+                sl.onValueChange = [this, &sl, cual]
+                {
+                    if (selectedStep < 0 || selectedPad < 0) return;
+                    const int v = (int) sl.getValue();
+                    engine.setStepPLock (selectedPattern, selectedStep, selectedPad, cual,
+                                         v < 0 ? AudioEngine::kNoPLock : v);
+                };
+                seqSheet.addAndMakeVisible (sl);
+            };
+
+            plock (atkPasoSlider, AudioEngine::plockAtaque, [] (int pct)
+                   { return Lang::ltr (juce::String ((int) AudioEngine::plockAtaqueMs (pct)) + " ms"); });
+            plock (relPasoSlider, AudioEngine::plockCaida, [] (int pct)
+                   { return Lang::ltr (juce::String ((int) AudioEngine::plockCaidaMs (pct)) + " ms"); });
+            plock (iniPasoSlider, AudioEngine::plockInicio, [] (int pct)
+                   { return Lang::ltr (juce::String (pct) + " %"); });
+            //  El pan NO se dice en porcentaje: un mando de pan al 30 % no
+            //  significa nada. Izquierda, centro y derecha, que es lo que la
+            //  mesa de mezclas escribe al lado.
+            plock (panPasoSlider, AudioEngine::plockPan, [] (int pct)
+                   {
+                       const int lado = pct * 2 - 100;
+                       if (lado == 0) return juce::String ("C");
+                       return Lang::ltr ((lado < 0 ? juce::String ("L") : juce::String ("R"))
+                                         + juce::String (std::abs (lado)));
+                   });
+        }
     }
 
     //  Las tres herramientas del PATRON, en la pagina PASO. Ver patLeftBtn.
@@ -2978,7 +3053,8 @@ void MainComponent::showSeqPage (int page)
     //  la rejilla cuando cabe y en la pagina del patron cuando no, y quien
     //  sabe cual de las dos es resized(). Aqui solo se pueden APAGAR - la
     //  misma regla que las tapas de banco y por la misma razon.
-    for (juce::Slider* sl : { &noteSlider, &velSlider, &rollSlider, &lockSlider })
+    for (juce::Slider* sl : { &noteSlider, &velSlider, &rollSlider, &lockSlider,
+                              &atkPasoSlider, &relPasoSlider, &iniPasoSlider, &panPasoSlider })
         sl->setVisible (false);
 
     resized();
@@ -4030,6 +4106,14 @@ void MainComponent::layoutModuleBar (juce::Rectangle<int> row, juce::TextButton*
     //  decir nada no protege, esconde; el que hay ahora es el tamano real del
     //  array y ninguna fila de esta app se acerca.
     const int kMods = juce::jlimit (1, 12, count);
+    //  Y EL AIRE DE ARRIBA Y ABAJO NO PUEDE COMERSE EL DEDO. Casi todos los
+    //  que llaman le pasan 4 a una fila de Metrics::btn -44 px- y la tapa sale
+    //  a 36: cuatro por debajo del minimo de 40, en toda la app a la vez. El
+    //  banco lo saco en veintiseis sitios de golpe -MASTER, PISTAS, WAV,
+    //  CUADRAR, RACK...- y son un solo fallo, contado veintiseis veces. Se
+    //  acota aqui y no en cada llamada porque aqui es donde se sabe cuanto
+    //  alto hay; el que llama solo sabe cuanto aire querria.
+    vInset = juce::jlimit (0, juce::jmax (0, (row.getHeight() - Metrics::hit) / 2), vInset);
     //  La MISMA fuente con la que drawButtonText va a dibujar la tapa. Medir
     //  con otra es como se responde "cabe" a una pregunta que no se ha hecho:
     //  ya paso una vez en este proyecto, con getTextButtonFont.
@@ -4914,8 +4998,22 @@ void MainComponent::resized()
         //  como una fila se queda sin sitio. Ver dosColumnasSet.
         const int filasChips = 4 * (Metrics::hit + Metrics::xs);
         const int estAltoAudio = Metrics::hit + Metrics::sm + tabsH + 158 + Metrics::xs + filasChips;
-        const bool dosColumnasSet = setInnerW >= 560 && estAltoAudio - tabsH - Metrics::hit < 158 + filasChips
-                                 && setInnerW >= 560;
+        //  DOS COLUMNAS CUANDO LA DE UNA NO CABE, y la pregunta es esa y no
+        //  otra. La condicion anterior comparaba la altura consigo misma menos
+        //  dos filas -"346 < 334"- y era falsa siempre por doce pixeles, asi
+        //  que en 915x412 la ficha se quedaba en una columna que pide 458 px
+        //  dentro de una tarjeta que puede medir 346: las cuatro tapas de
+        //  IDIOMA salian a 8 px de alto y las cuatro de CARCASA a CERO.
+        //  removeFromTop no se queja, devuelve lo que queda.
+        //
+        //  El tope es el mismo que aplica sheetFromBottom - 0.90 girado, 0.78
+        //  de pie - menos el margen vertical de la tarjeta. Escrito aqui
+        //  porque aqui es donde se decide, y decidirlo con otro numero es
+        //  como se llega a una fila de altura cero.
+        const int topeCarta = (int) ((float) full.getHeight()
+                                     * (full.getWidth() > full.getHeight() ? 0.90f : 0.78f))
+                            - 2 * Metrics::md;
+        const bool dosColumnasSet = setInnerW >= 560 && estAltoAudio > topeCarta;
         const int anchoChip = (dosColumnasSet ? setInnerW / 2 - Metrics::sm : setInnerW) - 44;
         auto chipsCaben = [this, anchoChip] (juce::OwnedArray<juce::TextButton>& btns)
         {
@@ -4946,12 +5044,16 @@ void MainComponent::resized()
         setCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
         if (onAudio)
         {
-            testButton.setBounds    (Lang::takeEnd (titleRow, 56).reduced (2));
-            measureButton.setBounds (Lang::takeEnd (titleRow, 64).reduced (2));
+            //  Aire SOLO a los lados. El renglon del titulo mide Metrics::hit
+            //  -40, que es el minimo- y quitarle dos por arriba y dos por
+            //  abajo dejaba las tres tapas en 36: por debajo del dedo en las
+            //  siete pantallas y los cuatro idiomas a la vez.
+            testButton.setBounds    (Lang::takeEnd (titleRow, 56).reduced (2, 0));
+            measureButton.setBounds (Lang::takeEnd (titleRow, 64).reduced (2, 0));
             Lang::takeEnd (titleRow, Metrics::xs);
             //  Setenta y dos no bastaban: "QUANTISE" pide 56 px de letra y la tapa
             //  le dejaba 49 en la pantalla mas estrecha del banco.
-            quantButton.setBounds   (Lang::takeEnd (titleRow, juce::jmax (84, titleRow.getWidth() / 3)).reduced (2));
+            quantButton.setBounds   (Lang::takeEnd (titleRow, juce::jmax (84, titleRow.getWidth() / 3)).reduced (2, 0));
         }
         if (onProj) inner.removeFromTop (14);         // painted: which project is open
         inner.removeFromTop (Metrics::sm);
@@ -5067,7 +5169,17 @@ void MainComponent::resized()
             }
             else
             {
-                audioInfoArea = inner.removeFromTop (158);
+                //  LO QUE NO PUEDE ENCOGER SE APARTA PRIMERO. El recuadro de
+                //  AUDIO son 158 px de texto PINTADO: encoge sin que nadie se
+                //  entere. Las cuatro filas de chips no, y en 280x653 la
+                //  tarjeta tiene 485 px para 558 de contenido, asi que
+                //  removeFromTop le daba a CARCASA lo que quedaba - ACERO y
+                //  LACA a CERO de alto, existentes e imposibles de tocar.
+                //  Es el mismo fallo que el TEMPO del secuenciador, contado en
+                //  otro sitio.
+                const int chipsNecesarios = 4 * (Metrics::hit + Metrics::xs) + filasExtra;
+                audioInfoArea = inner.removeFromTop (
+                                    juce::jlimit (0, 158, inner.getHeight() - Metrics::xs - chipsNecesarios));
                 inner.removeFromTop (Metrics::xs);
                 columnaChips = inner;
             }
@@ -5161,9 +5273,13 @@ void MainComponent::resized()
 
         auto row = inner.removeFromBottom (Metrics::btn);
         exportCancelButton.setBounds (row);
-        const int hw = row.getWidth() / 2;
-        exportMasterButton.setBounds (row.removeFromLeft (hw).reduced (Metrics::halfGap, 0));
-        exportStemsButton.setBounds  (row.reduced (Metrics::halfGap, 0));
+        //  Tres tapas: el formato primero porque se elige ANTES de decidir si
+        //  es master o pistas, y repartidas por el texto - "PISTAS" y "MASTER"
+        //  no miden lo mismo que "WAV".
+        {
+            juce::TextButton* eb[3] = { &exportFmtBtn, &exportMasterButton, &exportStemsButton };
+            layoutModuleBar (row, eb, 4, 3);
+        }
     }
 
     // RACK sheet: which pad, and how much of it reaches each effect.
@@ -5734,7 +5850,12 @@ void MainComponent::resized()
                 //  girado no hay filas apiladas encima.
                 return (capH - chrome - base - coste) / lanes >= kMinLaneH;
             };
-            tiraFilas = cabe (2) ? 2 : (cabe (1) ? 1 : 0);
+            //  Tres filas: NOTA/GOLPE, REPETIR/CORTE y los cuatro bloqueos.
+            //  La tercera cuesta 58 px y en 412x915 baja la celda de 16.9 a
+            //  13.3 - por encima del suelo de 12, asi que en un telefono
+            //  normal los cuatro salen. Donde no quepa, se cae entera: los
+            //  bloqueos son lo ultimo que llega y lo primero que sobra.
+            tiraFilas = cabe (3) ? 3 : (cabe (2) ? 2 : (cabe (1) ? 1 : 0));
         }
         seqTiraFilas = tiraFilas;
 
@@ -5791,15 +5912,24 @@ void MainComponent::resized()
             //  La fila de herramientas puede ser DOS, asi que la altura que se
             //  pide lo cuenta: pedirla de una y usar dos es como un control se
             //  queda con altura cero.
-            juce::TextButton* pb5[6] = { &patLeftBtn, &patRightBtn, &patDoubleBtn,
-                                         &seqHumanBtn, &copyPatBtn, &pastePatBtn };
+            //  OCHO desde que la FILA de un pad se puede copiar y pegar. La
+            //  lista tiene que ser LA MISMA que la de abajo: la primera version
+            //  dejo esta en cinco y la de abajo en seis, y HUMANIZAR no se
+            //  colocaba nunca - existente, invisible e imposible de tocar.
+            juce::TextButton* pb5[8] = { &patLeftBtn, &patRightBtn, &patDoubleBtn,
+                                         &seqHumanBtn, &copyPatBtn, &pastePatBtn,
+                                         &copyRowBtn, &pasteRowBtn };
             //  El ancho util de la tarjeta, con la misma cuenta que usa la
             //  ficha de CANCION: aqui todavia no existe `inner`, y estimarlo
             //  a ojo es como se pide una altura que luego no vale.
             const int anchoTarjeta = (int) ((float) safeArea().getWidth() * 0.92f) - 2 * Metrics::lg;
             const int anchoCol = wideFace ? (anchoTarjeta - Metrics::gap) / 2 : anchoTarjeta;
-            const int filasUtil = moduleBarFits (anchoCol, pb5, 6)
-                                    ? 0 : Metrics::hit + Metrics::halfGap;
+            //  Una fila si las ocho caben, dos si caben de cuatro en cuatro, y
+            //  si no, tres: tres, tres y dos. `filasUtil` es lo que se paga DE
+            //  MAS sobre la primera fila, que ya la cuenta bandH.
+            const int filasTools = moduleBarFits (anchoCol, pb5, 8) ? 1
+                                 : moduleBarFits (anchoCol, pb5, 4) ? 2 : 3;
+            const int filasUtil = (filasTools - 1) * (Metrics::hit + Metrics::halfGap);
 
             //  LO QUE LA TIRA YA LLEVA, AQUI NO SE REPITE.
             //
@@ -5818,10 +5948,17 @@ void MainComponent::resized()
             //  aqui solo aparecen los que la tira no pudo llevarse.
             const int notaCost  = (pasoAqui && tiraFilas == 0) ? bandH : 0;
             const int golpeCost = (pasoAqui && tiraFilas <  2) ? bandH : 0;
+            //  Y los cuatro bloqueos, que caen aqui cuando la tira no llego a
+            //  su tercera fila. Se cuenta DONDE SE DECIDE y no solo donde se
+            //  coloca: sin esta linea la columna cree tener 58 px que no son
+            //  suyos y la ultima fila se queda en cero de alto - el mismo
+            //  fallo que ya costo un mando de 393x0 en apaisado.
+            const int lockCost  = (pasoAqui && tiraFilas <  3) ? bandH : 0;
             const int stepBands = nameH + Metrics::hit + Metrics::xs    // CADENA
                                 + Metrics::hit + Metrics::sm            // QUITAR CADENA
                                 + notaCost                              // NOTA, si la tira no la lleva
                                 + golpeCost                             // GOLPE / REPETIR y CORTE
+                                + lockCost                              // BLOQUEOS, si la tira no los lleva
                                 + bandH + filasUtil                     // PATRON: las herramientas
                                 + nameH + Metrics::hit                  // SWING
                                 + Metrics::sm + nameH + Metrics::hit    // EUCLIDES
@@ -5845,6 +5982,7 @@ void MainComponent::resized()
                            + notaCost                                 // NOTA, si queda aqui
                            + bandH + filasUtil;                       // PATRON
             const int colB = golpeCost                                // GOLPE, si queda aqui
+                           + lockCost                                  // BLOQUEOS, si quedan aqui
                            + nameH + Metrics::hit                     // SWING
                            + Metrics::sm + nameH + Metrics::hit       // EUCLIDES
                            + Metrics::sm + nameH + Metrics::hit;      // REJILLA
@@ -5924,7 +6062,8 @@ void MainComponent::resized()
         //  en 0x0, que no solapa con nada. Hace falta cambiar de pagina dentro
         //  del mismo proceso, que es lo que hace la persona y lo que ahora
         //  hace ZATI_PAGES.
-        for (auto* b : { &patLeftBtn, &patRightBtn, &patDoubleBtn })
+        for (auto* b : { &patLeftBtn, &patRightBtn, &patDoubleBtn,
+                         &copyRowBtn, &pasteRowBtn })
         {
             b->setVisible (false);
             b->setBounds ({});
@@ -6269,6 +6408,30 @@ void MainComponent::resized()
                     tira.removeFromTop (Metrics::halfGap);
                     fila (rollSlider, "REPETIR", lockSlider, "CORTE");
                 }
+                if (tiraFilas > 2)
+                {
+                    tira.removeFromTop (Metrics::halfGap);
+                    //  CUATRO en la misma fila y no dos: ver la declaracion de
+                    //  atkPasoSlider. Una fila mas costaria otros 58 px y en un
+                    //  telefono la rejilla no los tiene.
+                    auto banda = tira.removeFromTop (nameH);
+                    auto row   = tira.removeFromTop (Metrics::hit);
+                    juce::Slider* cuatro[4] = { &atkPasoSlider, &relPasoSlider,
+                                                &iniPasoSlider, &panPasoSlider };
+                    const char*   nombres[4] = { "ATAQUE", "CAIDA", "INICIO", "PAN" };
+                    for (int i = 0; i < 4; ++i)
+                    {
+                        //  Lo que queda dividido por lo que queda, y no el ancho
+                        //  entre cuatro: en arabe takeStart muerde por el otro
+                        //  lado y repartir por el total deja la ultima celda
+                        //  fuera por el redondeo.
+                        const int ancho = banda.getWidth() / (4 - i);
+                        seqLabelBands.add ({ Lang::takeStart (banda, ancho), juce::String (nombres[i]) });
+                        cuatro[i]->setBounds (Lang::takeStart (row, row.getWidth() / (4 - i))
+                                                  .reduced (Metrics::halfGap, 0));
+                        cuatro[i]->setVisible (true);
+                    }
+                }
             }
 
             //  Y las que no se colocan, sin sitio: un componente invisible que
@@ -6276,12 +6439,22 @@ void MainComponent::resized()
             //  geometria. Es el fallo de las tapas de banco, otra vez.
             {
                 juce::Slider* tiraMandos[4] = { &noteSlider, &velSlider, &rollSlider, &lockSlider };
-                const int puestos = tiraFilas * 2;
+                const int puestos = juce::jmin (2, tiraFilas) * 2;
                 for (int i = puestos; i < 4; ++i)
                 {
                     tiraMandos[i]->setVisible (false);
                     tiraMandos[i]->setBounds ({});
                 }
+                //  Y los cuatro bloqueos, que van juntos o no van: un
+                //  componente invisible que conserva sus limites sigue estando
+                //  ahi para todo lo que mida geometria - es el fallo de las
+                //  tapas de banco, contado por tercera vez.
+                if (tiraFilas < 3)
+                    for (auto* sl : { &atkPasoSlider, &relPasoSlider, &iniPasoSlider, &panPasoSlider })
+                    {
+                        sl->setVisible (false);
+                        sl->setBounds ({});
+                    }
             }
 
             stepGrid.setBounds (inner);
@@ -6292,7 +6465,7 @@ void MainComponent::resized()
             //  las dos de COPIAR/PEGAR tambien, que alli su fila es
             //  prescindible y puede haberlas dejado apagadas.
             for (auto* b : { &patLeftBtn, &patRightBtn, &patDoubleBtn,
-                             &copyPatBtn, &pastePatBtn })
+                             &copyPatBtn, &pastePatBtn, &copyRowBtn, &pasteRowBtn })
                 b->setVisible (true);
 
             //  The foot line first, so no column can lay a control over it.
@@ -6366,22 +6539,35 @@ void MainComponent::resized()
                 //  arriba: la primera version dejo esta en cinco y la de la
                 //  altura en seis, asi que HUMANIZAR no se colocaba nunca y se
                 //  quedaba en 0x0 - existente, invisible e imposible de tocar.
-                juce::TextButton* pb[6] = { &patLeftBtn, &patRightBtn, &patDoubleBtn,
-                                            &seqHumanBtn, &copyPatBtn, &pastePatBtn };
-                if (moduleBarFits (colA.getWidth(), pb, 6))
+                juce::TextButton* pb[8] = { &patLeftBtn, &patRightBtn, &patDoubleBtn,
+                                            &seqHumanBtn, &copyPatBtn, &pastePatBtn,
+                                            &copyRowBtn, &pasteRowBtn };
+                //  La MISMA pregunta que decidio la altura, con el mismo ancho.
+                const int nFilas = moduleBarFits (colA.getWidth(), pb, 8) ? 1
+                                 : moduleBarFits (colA.getWidth(), pb, 4) ? 2 : 3;
+                //  Y el panel del grupo tiene que saberlo: sin esto se pintaba
+                //  detras de la primera fila y las de abajo quedaban fuera de
+                //  su propio grupo.
+                if (juce::isPositiveAndBelow (idxPatron, seqLabelBands.size()))
+                    seqLabelBands.getReference (idxPatron).filas = nFilas;
+
+                if (nFilas == 1)
                 {
-                    layoutModuleBar (colA.removeFromTop (Metrics::hit), pb, 0, 6);
+                    layoutModuleBar (colA.removeFromTop (Metrics::hit), pb, 0, 8);
+                }
+                else if (nFilas == 2)
+                {
+                    layoutModuleBar (colA.removeFromTop (Metrics::hit), pb, 0, 4);
+                    colA.removeFromTop (Metrics::halfGap);
+                    layoutModuleBar (colA.removeFromTop (Metrics::hit), pb + 4, 0, 4);
                 }
                 else
                 {
-                    //  Dos filas, y el panel del grupo tiene que saberlo: sin
-                    //  esto se pintaba detras de la primera y las tres tapas de
-                    //  abajo quedaban fuera de su propio grupo.
-                    if (juce::isPositiveAndBelow (idxPatron, seqLabelBands.size()))
-                        seqLabelBands.getReference (idxPatron).filas = 2;
                     layoutModuleBar (colA.removeFromTop (Metrics::hit), pb, 0, 3);
                     colA.removeFromTop (Metrics::halfGap);
                     layoutModuleBar (colA.removeFromTop (Metrics::hit), pb + 3, 0, 3);
+                    colA.removeFromTop (Metrics::halfGap);
+                    layoutModuleBar (colA.removeFromTop (Metrics::hit), pb + 6, 0, 2);
                 }
                 colA.removeFromTop (Metrics::sm);
             }
@@ -6434,11 +6620,40 @@ void MainComponent::resized()
                 //  cuatro cuando no hay paso tocado. Al reves, que fue el
                 //  primer intento, apagaba justo las que se acababan de
                 //  colocar aqui.
-                const int hasta = pasoAqui ? tiraFilas * 2 : 4;
+                const int hasta = pasoAqui ? juce::jmin (2, tiraFilas) * 2 : 4;
                 for (int i = 0; i < hasta; ++i)
                 {
                     delPaso[i]->setVisible (false);
                     delPaso[i]->setBounds ({});
+                }
+            }
+
+            //  Y LOS CUATRO BLOQUEOS, cuando la tira no llego a la tercera
+            //  fila. Misma regla que REPETIR y CORTE: lo que la tira no se
+            //  lleva vive aqui, y cada mando aparece en UN sitio en cada
+            //  pantalla. Sin esto los cuatro solo existirian donde caben tres
+            //  filas, o sea en ninguna pantalla estrecha - "una funcion que
+            //  solo cabe en pantallas grandes no existe en las pequenas".
+            if (pasoAqui && tiraFilas < 3)
+            {
+                nameBand (second, "BLOQUEOS");
+                auto row = second.removeFromTop (Metrics::hit);
+                juce::Slider* cuatro[4] = { &atkPasoSlider, &relPasoSlider,
+                                            &iniPasoSlider, &panPasoSlider };
+                for (int i = 0; i < 4; ++i)
+                {
+                    cuatro[i]->setBounds (Lang::takeStart (row, row.getWidth() / (4 - i))
+                                              .reduced (Metrics::halfGap, 0));
+                    cuatro[i]->setVisible (true);
+                }
+                second.removeFromTop (Metrics::sm);
+            }
+            else
+            {
+                for (auto* sl : { &atkPasoSlider, &relPasoSlider, &iniPasoSlider, &panPasoSlider })
+                {
+                    sl->setVisible (false);
+                    sl->setBounds ({});
                 }
             }
 
@@ -6567,6 +6782,13 @@ void MainComponent::stepCellToggled (int pad, int step)
         const int lk = engine.getStepLock (selectedPattern, step, pad);
         lockSlider.setValue (lk == AudioEngine::kNoLock ? 0.0 : (double) (lk + 1),
                              juce::dontSendNotification);
+        //  Y los otros cuatro. Sin esto los mandos ensenan el paso ANTERIOR y
+        //  el primer arrastre escribe ese valor en el que se acaba de tocar,
+        //  que es como se pierde un bloqueo sin tocarlo.
+        juce::Slider* cuatro[4] = { &atkPasoSlider, &relPasoSlider, &iniPasoSlider, &panPasoSlider };
+        for (int i = 0; i < 4; ++i)
+            cuatro[i]->setValue ((double) engine.getStepPLock (selectedPattern, step, pad, i),
+                                 juce::dontSendNotification);
     }
 
     const bool nv = ! pattern[(size_t) selectedPattern][(size_t) step][(size_t) pad];
@@ -7203,6 +7425,8 @@ void MainComponent::retranslateUi()
     seqGridBtn  .setButtonText (T ("PASOS"));
     seqPianoBtn .setButtonText (T ("PIANO"));
     seqHumanBtn .setButtonText (T ("HUMANIZAR"));
+    copyRowBtn  .setButtonText (T ("COPIAR FILA"));
+    pasteRowBtn .setButtonText (T ("PEGAR FILA"));
     seqFollowBtn.setButtonText (T ("SEGUIR"));
     patLeftBtn  .setButtonText (T ("ATRAS"));
     patRightBtn .setButtonText (T ("ADELANTE"));
@@ -8029,7 +8253,7 @@ juce::ValueTree MainComponent::captureState() const
         //  tripletes "paso pad valor", y lo que no esta vale su defecto - que
         //  es ademas lo que hace que un proyecto viejo, que no tiene ni la
         //  propiedad, suene exactamente igual que antes.
-        juce::String chords, nudges, locks, lens;
+        juce::String chords, nudges, locks, lens, plocks;
         for (int st = 0; st < kNumSteps; ++st)
             for (int p = 0; p < kNumPads; ++p)
             {
@@ -8041,11 +8265,18 @@ juce::ValueTree MainComponent::captureState() const
                     locks  << st << " " << p << " " << lk << " ";
                 if (const int lg = engine.getStepLen (b, st, p); lg != AudioEngine::kLenSuelto)
                     lens   << st << " " << p << " " << lg << " ";
+                //  Los cuatro bloqueos de ataque, caida, inicio y pan van en un
+                //  solo triplete porque viven empaquetados en un uint32: cuatro
+                //  listas dispersas serian cuatro sitios que mantener para un
+                //  dato que el motor ya guarda junto.
+                if (const auto pl = engine.getStepPLockRaw (b, st, p); pl != 0)
+                    plocks << st << " " << p << " " << juce::String::toHexString ((juce::int64) pl) << " ";
             }
         if (chords.isNotEmpty()) bk.setProperty ("chords", chords.trim(), nullptr);
         if (nudges.isNotEmpty()) bk.setProperty ("nudges", nudges.trim(), nullptr);
         if (locks.isNotEmpty())  bk.setProperty ("locks",  locks.trim(),  nullptr);
         if (lens.isNotEmpty())   bk.setProperty ("lens",   lens.trim(),   nullptr);
+        if (plocks.isNotEmpty()) bk.setProperty ("plocks", plocks.trim(), nullptr);
 
         banks.addChild (bk, -1, nullptr);
     }
@@ -8242,6 +8473,7 @@ void MainComponent::applyState (const juce::ValueTree& s)
                     engine.setStepNudge (b, s2, p, 0);
                     engine.setStepLock  (b, s2, p, AudioEngine::kNoLock);
                     engine.setStepLen   (b, s2, p, AudioEngine::kLenSuelto);
+                    engine.setStepPLockRaw (b, s2, p, 0);
                 }
             }
 
@@ -8275,6 +8507,11 @@ void MainComponent::applyState (const juce::ValueTree& s)
                 for (int i2 = 0; i2 + 2 < lg.size(); i2 += 3)
                     engine.setStepLen (b, lg[i2].getIntValue(), lg[i2 + 1].getIntValue(),
                                        lg[i2 + 2].getIntValue());
+
+                const auto pl = tripletes ("plocks");
+                for (int i2 = 0; i2 + 2 < pl.size(); i2 += 3)
+                    engine.setStepPLockRaw (b, pl[i2].getIntValue(), pl[i2 + 1].getIntValue(),
+                                            (std::uint32_t) pl[i2 + 2].getHexValue64());
             }
         }
         rebuildChain();
@@ -8627,6 +8864,61 @@ void MainComponent::refreshProjectList()
 //  Y desde una semilla FIJA por patron, para que dos toques seguidos den lo
 //  mismo: "no me gusta como ha quedado" se arregla deshaciendo, y deshacer
 //  algo que no se puede reproducir es media funcion.
+//  COPIAR Y PEGAR LA FILA DE UN PAD.
+//
+//  Se lleva TODO lo que un paso lleva y no solo el "suena": la nota, la fuerza,
+//  la repeticion, el largo, el empujon, el bloqueo del corte y el acorde. Una
+//  copia que se deja la mitad sigue funcionando -algo se copia- hasta que un
+//  dia el bombo pegado suena recto donde el original estaba humanizado, y eso
+//  no se ve mirando que casillas estan encendidas.
+void MainComponent::copiarFila()
+{
+    if (selectedPad < 0) return;
+    const int b = selectedPattern, p = selectedPad;
+
+    for (int st = 0; st < kNumSteps; ++st)
+        filaPortapapeles[(size_t) st] = { pattern[(size_t) b][(size_t) st][(size_t) p],
+                                          engine.getStepNote (b, st, p),
+                                          engine.getStepVel  (b, st, p),
+                                          engine.getStepRoll (b, st, p),
+                                          engine.getStepLen  (b, st, p),
+                                          engine.getStepNudge (b, st, p),
+                                          engine.getStepLock (b, st, p),
+                                          engine.getStepChordRaw (b, st, p),
+                                          engine.getStepPLockRaw (b, st, p) };
+    filaCopiada = true;
+    pasteRowBtn.setEnabled (true);
+    status.setText (T ("Fila del pad %1 copiada", juce::String (p + 1)), juce::dontSendNotification);
+}
+
+void MainComponent::pegarFila()
+{
+    if (selectedPad < 0 || ! filaCopiada) return;
+    const int b = selectedPattern, p = selectedPad;
+
+    pushUndo (T ("PEGAR FILA"));
+
+    for (int st = 0; st < kNumSteps; ++st)
+    {
+        const auto& f = filaPortapapeles[(size_t) st];
+        pattern[(size_t) b][(size_t) st][(size_t) p] = f.on;
+        engine.setStep      (b, st, p, f.on);
+        engine.setStepNote  (b, st, p, f.nota);
+        engine.setStepVel   (b, st, p, f.vel);
+        engine.setStepRoll  (b, st, p, f.roll);
+        engine.setStepLen   (b, st, p, f.largo);
+        engine.setStepNudge (b, st, p, f.empujon);
+        engine.setStepLock  (b, st, p, f.corte);
+        engine.setStepChordRaw (b, st, p, f.acorde);
+        engine.setStepPLockRaw (b, st, p, f.bloqueos);
+    }
+
+    refreshStepGrid();
+    refreshPiano (false);
+    seqSheet.repaint();
+    status.setText (T ("Fila pegada en el pad %1", juce::String (p + 1)), juce::dontSendNotification);
+}
+
 //  EUCLIDES: N golpes repartidos lo mas uniformemente posible en la fila.
 //
 //  Es lo que el FX-404 llama EUCLIDEAN y lo que en una caja de ritmos vale por
@@ -9949,10 +10241,11 @@ void MainComponent::startExport (bool stems)
     beginBusy (T ("Exportando"));
     exportJob = std::make_unique<Exporter> (engine, uiSample, padName,
                                             ProjectStore::exports().getChildFile (base),
-                                            base, stems, deviceSampleRate);
+                                            base, stems, deviceSampleRate, exportOgg);
 
     exportMasterButton.setVisible (false);
     exportStemsButton.setVisible (false);
+    exportFmtBtn.setVisible (false);
     exportCancelButton.setVisible (true);
     exportJob->startThread (juce::Thread::Priority::normal);
     exportSheet.repaint();
@@ -10013,6 +10306,7 @@ void MainComponent::pollExport()
 
     exportMasterButton.setVisible (true);
     exportStemsButton.setVisible (true);
+    exportFmtBtn.setVisible (true);
     exportCancelButton.setVisible (false);
     exportSheet.repaint();
 }
@@ -11346,6 +11640,13 @@ void MainComponent::auditProject()
     engine.setStepNudge (0, 0, 0, -25);
     engine.setStepLock  (0, 0, 0, 33);
     engine.setStepLen   (0, 0, 0, 9);
+    //  Y los otros cuatro bloqueos, con cuatro valores distintos entre si: un
+    //  cruce de bytes dentro del paquete sale a la vista y no se puede colar
+    //  como "el orden da igual".
+    engine.setStepPLock (0, 0, 0, AudioEngine::plockAtaque, 11);
+    engine.setStepPLock (0, 0, 0, AudioEngine::plockCaida,  22);
+    engine.setStepPLock (0, 0, 0, AudioEngine::plockInicio, 44);
+    engine.setStepPLock (0, 0, 0, AudioEngine::plockPan,    88);
 
     saveProject ("BANCO_PRUEBA");
 
@@ -11364,6 +11665,7 @@ void MainComponent::auditProject()
     engine.setStepLock  (0, 0, 0, AudioEngine::kNoLock);
     engine.setStepLen   (0, 0, 0, AudioEngine::kLenSuelto);
     engine.setStepNote  (0, 0, 0, 0);
+    engine.setStepPLockRaw (0, 0, 0, 0);
 
     loadProject ("BANCO_PRUEBA");
 
@@ -11373,7 +11675,12 @@ void MainComponent::auditProject()
                                   << engine.getStepExtra (0, 0, 0, 2) << "]"
               << ",\"empujon\":" << engine.getStepNudge (0, 0, 0)
               << ",\"bloqueo\":" << engine.getStepLock (0, 0, 0)
-              << ",\"largo\":" << engine.getStepLen (0, 0, 0) << "}" << std::endl;
+              << ",\"largo\":" << engine.getStepLen (0, 0, 0)
+              << ",\"plock\":[" << engine.getStepPLock (0, 0, 0, AudioEngine::plockAtaque) << ","
+                                  << engine.getStepPLock (0, 0, 0, AudioEngine::plockCaida)  << ","
+                                  << engine.getStepPLock (0, 0, 0, AudioEngine::plockInicio) << ","
+                                  << engine.getStepPLock (0, 0, 0, AudioEngine::plockPan)    << "]"
+              << "}" << std::endl;
 
     std::cout << "{\"proyecto\":1,\"paso0\":[";
     bool first = true;
@@ -11521,20 +11828,24 @@ void MainComponent::auditExport()
             engine.setSongCell (0, b, 1);          // el patron 1 en los 64 compases
     }
 
-    for (int ronda = 0; ronda < (largo ? 1 : 2); ++ronda)
+    for (int ronda = 0; ronda < (largo ? 1 : 3); ++ronda)
     {
         const bool pistas = (ronda == 1);
-        Exporter job (engine, uiSample, padName, dir, "BANCO", pistas, 48000.0);
+        //  Y la tercera ronda en OGG, que es otro escritor y otro fichero: sin
+        //  medirlo, "exportar comprimido" es una tapa que cambia un rotulo.
+        const bool comprimido = (ronda == 2);
+        Exporter job (engine, uiSample, padName, dir, comprimido ? "BANCOOGG" : "BANCO",
+                      pistas, 48000.0, comprimido);
         const double t0 = juce::Time::getMillisecondCounterHiRes();
         job.run();                       // en ESTE hilo: el banco no espera a nadie
         const double ms = juce::Time::getMillisecondCounterHiRes() - t0;
 
         juce::Array<juce::File> hechos;
-        dir.findChildFiles (hechos, juce::File::findFiles, false, "*.wav");
+        dir.findChildFiles (hechos, juce::File::findFiles, false, comprimido ? "*.ogg" : "*.wav");
         juce::int64 bytes = 0;
         for (auto& f : hechos) bytes += f.getSize();
 
-        std::cout << "{\"export\":\"" << (pistas ? "pistas" : "master")
+        std::cout << "{\"export\":\"" << (comprimido ? "ogg" : pistas ? "pistas" : "master")
                   << "\",\"pads\":" << cargados
                   << ",\"ok\":" << (job.resultOk ? 1 : 0)
                   << ",\"ficheros\":" << hechos.size()

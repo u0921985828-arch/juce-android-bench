@@ -191,6 +191,17 @@ private:
     //  pad elegido. Ver euclidesPattern.
     juce::Slider euclidSlider;
     void euclidesPattern (int golpes);
+
+    //  COPIAR Y PEGAR LA FILA DE UN PAD, que es lo que no se podia hacer:
+    //  copiar el bombo del patron 1 al 3 obligaba a copiar el BANCO entero -y
+    //  con el los otros quince pads- o a ir casilla por casilla.
+    juce::TextButton copyRowBtn { "COPIAR FILA" }, pasteRowBtn { "PEGAR FILA" };
+    struct PasoFila { bool on; int nota, vel, roll, largo, empujon, corte;
+                      std::uint32_t acorde, bloqueos; };
+    std::array<PasoFila, AudioEngine::kNumSteps> filaPortapapeles {};
+    bool filaCopiada = false;
+    void copiarFila();
+    void pegarFila();
     juce::TextButton seqFollowBtn { "SEGUIR" };
     bool seqFollow = false;
     void humanizePattern();
@@ -200,6 +211,17 @@ private:
     //  abajo no es 20 Hz sino APAGADO - que es lo que vale un paso que no
     //  toca el filtro, y sin esa posicion haria falta un interruptor al lado.
     juce::Slider lockSlider;
+    //  Y LOS OTROS CUATRO BLOQUEOS del paso: ataque, caida, punto de inicio y
+    //  pan. Ver AudioEngine::setStepPLock. Van en una SOLA fila de la tira -
+    //  cuatro mandos donde las otras dos filas llevan dos- porque cada fila
+    //  cuesta 58 px y en 412x915 la celda de la rejilla cae de 16.9 a 13.3 con
+    //  una fila mas y a 9.7 con dos. Dos filas de dos no caben en un telefono,
+    //  o sea que no existirian.
+    //
+    //  Y giratorios, no de + y -, por la misma cuenta pero de ancho: cuatro
+    //  cajas de IncDecButtons piden 122 px cada una -dos teclas de 40, el aire
+    //  y la casilla- y en 412 les tocan 103.
+    juce::Slider atkPasoSlider, relPasoSlider, iniPasoSlider, panPasoSlider;
     //  LAS TRES HERRAMIENTAS DEL PATRON.
     //
     //  Viven en la pagina PASO y no en PASOS por una razon medida: la pagina
@@ -382,6 +404,10 @@ private:
     juce::TextButton exportStemsButton  { "PISTAS" };
     juce::TextButton exportCancelButton { "CANCELAR" };
     std::unique_ptr<Exporter> exportJob;
+    //  WAV o comprimido. Ver Exporter: un master de tres minutos pasa de 30 MB
+    //  a 3, que es lo que separa "lo tengo" de "te lo mando".
+    juce::TextButton exportFmtBtn { "WAV" };
+    bool exportOgg = false;
     double deviceSampleRate = 44100.0;
 
     //  The clock the USER picked, as opposed to whatever the driver last

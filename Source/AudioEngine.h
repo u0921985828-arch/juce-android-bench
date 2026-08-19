@@ -472,6 +472,41 @@ public:
     void setStepLock (int patternIdx, int step, int pad, int porCiento) noexcept;
     int  getStepLock (int patternIdx, int step, int pad) const noexcept;
 
+    //  Y LOS OTROS CUATRO BLOQUEOS: ataque, caida, punto de inicio y pan.
+    //
+    //  El bloqueo del corte se aplica escribiendo el parametro DEL PAD, y no
+    //  habia otro sitio: el filtro se calcula una vez por bloque, fuera de la
+    //  voz. Estos cuatro los consume `Voice::start`, asi que viajan CON el
+    //  disparo y no tocan el pad. La diferencia no es de estilo - escribir el
+    //  pad mueve su mando solo, que es exactamente el fallo que ya costo una
+    //  medida en la audicion del piano ("oir una tecla no puede afinar el
+    //  pad") - y ademas un paso sin bloqueo suena como el pad y no como el
+    //  ultimo paso que lo movio.
+    //
+    //  Los cuatro van EMPAQUETADOS en un uint32, un byte cada uno, por lo
+    //  mismo que el acorde: cuatro tablas de 16 KB son cuatro sitios que
+    //  vaciar, cuatro que copiar y cuatro listas dispersas en el fichero de
+    //  proyecto. Cada byte vale 0 = este paso no toca eso, 1..101 = 0..100 %
+    //  del recorrido del mando, con el desplazamiento de uno por la misma
+    //  razon que setStepLock: cero es lo que vale un patron viejo.
+    enum PLock { plockAtaque = 0, plockCaida, plockInicio, plockPan, kNumPLocks };
+    static constexpr int kNoPLock = -1;
+    void setStepPLock (int patternIdx, int step, int pad, int cual, int porCiento) noexcept;
+    int  getStepPLock (int patternIdx, int step, int pad, int cual) const noexcept;
+    //  El paquete entero, para el fichero de proyecto y para copiar filas: sin
+    //  esto habria que preguntar cuatro veces por casilla y volver a empaquetar
+    //  fuera, que es la segunda fuente de verdad de siempre.
+    std::uint32_t getStepPLockRaw (int patternIdx, int step, int pad) const noexcept;
+    void setStepPLockRaw (int patternIdx, int step, int pad, std::uint32_t v) noexcept;
+
+    //  De porcentaje del recorrido al valor que espera la voz. Los recorridos
+    //  son los MISMOS que los mandos del pad (ATAQUE 0..200 ms, CAIDA 1..800,
+    //  PAN -1..1), escritos aqui porque los usan el motor y la interfaz y dos
+    //  copias se separan.
+    static float plockAtaqueMs (int pct) noexcept { return (float) (juce::jlimit (0, 100, pct) * 2.0); }
+    static float plockCaidaMs  (int pct) noexcept { return (float) (1.0 + juce::jlimit (0, 100, pct) * 7.99); }
+    static float plockPanPos   (int pct) noexcept { return (float) (juce::jlimit (0, 100, pct) / 50.0 - 1.0); }
+
     //  De porcentaje del recorrido a hercios, con la MISMA curva por octavas
     //  que usa el mando: 20 Hz a kFiltOpenHz con el punto medio en 1000, que
     //  es donde el oido pone la mitad. Escrita aqui y no en la interfaz porque
@@ -728,9 +763,12 @@ private:
     //  antes de sonar. Medido: cuatro notas daban UNA voz viva.
     //  `gate` son muestras hasta soltar la nota, -1 = suelta sola. Ver
     //  setStepLen y Voice::gate.
+    //  `plock` son los cuatro bloqueos empaquetados del paso que dispara, 0 si
+    //  no hay ninguno. Viajan con el disparo en vez de escribirse en el pad
+    //  para que el mando no se mueva solo. Ver setStepPLock.
     void triggerPad (int slot, int extraSemis = 0, float vel = 1.0f,
                      float from01 = -1.0f, bool cortaSuCola = true,
-                     int gate = -1) noexcept;   // audio thread
+                     int gate = -1, std::uint32_t plock = 0) noexcept;   // audio thread
 
     template <typename Arr, typename V>
     static void store (Arr& a, int slot, V v) noexcept
@@ -970,6 +1008,10 @@ private:
     //  que el cero tiene que significar "sin bloqueo" y no "20 Hz": se guarda
     //  desplazado un uno - 0 es ninguno, 1..101 es 0..100 %.
     std::array<std::array<std::array<std::atomic<std::int8_t>, kNumPads>, kNumSteps>, kNumPatterns> stepLock {};
+    //  Los otros cuatro bloqueos, empaquetados. Ver setStepPLock: un byte por
+    //  bloqueo, cero es "este paso no toca eso", que es lo que vale un patron
+    //  escrito antes de que esto existiera.
+    std::array<std::array<std::array<std::atomic<std::uint32_t>, kNumPads>, kNumSteps>, kNumPatterns> stepPLock {};
 
     //  What a step DOES, beyond which pads it fires.
     //
@@ -997,7 +1039,8 @@ private:
     //  `corta` distingue la nota RAIZ de las del acorde: la raiz corta la cola
     //  del pad como siempre, y las que la acompanan no, o se matarian entre
     //  ellas antes de sonar. Ver triggerPad.
-    struct PendingHit { int countdown; int pad; int semis; float vel; bool corta = true; int gate = -1; };
+    struct PendingHit { int countdown; int pad; int semis; float vel; bool corta = true; int gate = -1;
+                        std::uint32_t plock = 0; };
     std::array<PendingHit, 96> pending {};
     int numPending = 0;
 
