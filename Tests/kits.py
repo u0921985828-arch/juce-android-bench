@@ -61,6 +61,33 @@ MIN_BRIGHT = 3000.0        # tiene que haber agudos de verdad
 MAX_EDGE   = 0.02          # ultimo valor de la muestra: casi cero
 MAX_START  = 0.02          # y el PRIMERO: un flanco de entrada es un click
 
+#  Y QUE NO SEAN EL MISMO SONIDO DOS VECES.
+#
+#  Esta es la comprobacion que faltaba y la que encontro el fallo gordo. Todo
+#  lo de arriba mira cada sonido POR SEPARADO, asi que sesenta y cuatro copias
+#  del mismo bombo pasarian las cinco con sobresaliente. Y algo muy parecido
+#  era lo que habia: la cabecera de Kits.h promete "cada banco una maquina
+#  distinta" y el banco A y el B eran el mismo kit con los numeros movidos -
+#  SNARE y SD 808, HAT y CH 808, OPEN y OH 808, RIDE y CYM 808 -, mas seis
+#  sonidos (SHAKE, MARACA, TAMB, HISS, STATIC, SCRAPE) que eran literalmente el
+#  mismo generador: ruido por un filtro.
+#
+#  El primer intento comparo los espectros con un COSENO sobre bandas
+#  normalizadas y no sirvio: dos vectores no negativos y repartidos dan siempre
+#  un coseno altisimo, asi que una caja y un siseo salian a 0.995 y no habia
+#  forma de separar "parecido" de "identico". En decibelios y con distancia
+#  euclidea el mismo par se separa: la mediana de los 2016 pares es 27 dB, o
+#  sea que la escala tiene sitio de sobra para decir que dos cosas se parecen.
+#
+#  Y el descriptor lleva ESPECTRO Y ENVOLVENTE, que hacen falta los dos: solo
+#  con espectro un charles cerrado y uno abierto son identicos, y solo con
+#  envolvente lo es cualquier par de golpes secos.
+MIN_PAIR_DB = 4.0          # dos sonidos por debajo de esto son el mismo sonido
+BANDS   = 28               # bandas logaritmicas de 30 Hz a 20 kHz
+NFFT    = 16384            # 341 ms: el golpe entero y potencia de dos
+ENVBINS = 8                # tramos de tiempo, tambien logaritmicos
+FLOOR   = -60.0            # por debajo de esto ya es silencio y no forma
+
 
 def display_alive():
     d = os.environ.get ("DISPLAY", ":99")
@@ -116,6 +143,77 @@ def loudness (x):
     return math.sqrt (best / win)
 
 
+def fft (re, im):
+    """FFT de radio 2, en el sitio. Escrita aqui y no importada de ninguna
+    parte por lo mismo que los coeficientes del biquado: el banco no puede
+    depender de un paquete que puede no estar en la maquina que lo corre."""
+    n = len (re)
+    j = 0
+    for i in range (1, n):
+        bit = n >> 1
+        while j & bit:
+            j ^= bit; bit >>= 1
+        j |= bit
+        if i < j:
+            re[i], re[j] = re[j], re[i]
+            im[i], im[j] = im[j], im[i]
+    largo = 2
+    while largo <= n:
+        ang = -2.0 * math.pi / largo
+        wr, wi = math.cos (ang), math.sin (ang)
+        for i in range (0, n, largo):
+            cr, ci = 1.0, 0.0
+            for k in range (i, i + largo // 2):
+                m = k + largo // 2
+                tr = re[m] * cr - im[m] * ci
+                ti = re[m] * ci + im[m] * cr
+                re[m] = re[k] - tr; im[m] = im[k] - ti
+                re[k] += tr;        im[k] += ti
+                cr, ci = cr * wr - ci * wi, cr * wi + ci * wr
+        largo <<= 1
+
+
+def descriptor (x):
+    """Espectro en bandas y envolvente en tramos, los dos en decibelios
+    relativos a su propio maximo. Relativos y no absolutos porque el nivel ya
+    lo iguala la sonoridad: aqui lo que se compara es la FORMA."""
+    y = list (x[:NFFT])
+    y += [0.0] * (NFFT - len (y))
+    #  Ventana de Hann: sin ella el corte a los 341 ms mete un flanco y su
+    #  chorro de armonicos se reparte por todas las bandas, que es justo lo que
+    #  hace que dos sonidos distintos se parezcan.
+    re = [y[i] * (0.5 - 0.5 * math.cos (2.0 * math.pi * i / (NFFT - 1))) for i in range (NFFT)]
+    im = [0.0] * NFFT
+    fft (re, im)
+
+    edges = [30.0 * (20000.0 / 30.0) ** (i / float (BANDS)) for i in range (BANDS + 1)]
+    pot = [1e-20] * BANDS
+    for k in range (NFFT // 2):
+        f = k * 48000.0 / NFFT
+        if f < edges[0] or f >= edges[-1]: continue
+        b = int (BANDS * math.log (f / edges[0]) / math.log (edges[-1] / edges[0]))
+        b = min (BANDS - 1, max (0, b))
+        pot[b] += re[k] * re[k] + im[k] * im[k]
+    sp = [10.0 * math.log10 (v) for v in pot]
+    top = max (sp)
+    sp = [max (FLOOR, v - top) for v in sp]
+
+    cortes = [0] + [int (48000 * 3.0 * (2 ** i) / 128.0) for i in range (ENVBINS)]
+    ev = []
+    for i in range (ENVBINS):
+        a, b = cortes[i], min (cortes[i + 1], len (x))
+        ev.append (math.sqrt (sum (v * v for v in x[a:b]) / (b - a)) if b > a else 0.0)
+    ev = [20.0 * math.log10 (v + 1e-9) for v in ev]
+    top = max (ev)
+    ev = [max (FLOOR, v - top) for v in ev]
+    return sp + ev
+
+
+def distancia (a, b):
+    """Decibelios medios de diferencia entre dos descriptores."""
+    return math.sqrt (sum ((p - q) ** 2 for p, q in zip (a, b)) / len (a))
+
+
 def load (path):
     w = wave.open (path, "rb")
     n, sw, ch = w.getnframes(), w.getsampwidth(), w.getnchannels()
@@ -148,12 +246,13 @@ def main():
         shutil.rmtree (TMP, ignore_errors=True)
         return 1
 
-    bad, rows = [], []
+    bad, rows, descs = [], [], []
     for f in files:
         x = load (f)
         name = os.path.basename (f)
         if not x:
             bad.append ("%s vacio" % name); continue
+        descs.append ((name, descriptor (x)))
 
         peak = max (abs (v) for v in x)
         loud = loudness (x)
@@ -179,6 +278,18 @@ def main():
     if max (brights) < MIN_BRIGHT:
         bad.append ("no hay agudos: el mas brillante son %.0f Hz" % max (brights))
 
+    #  Y LOS PARES. 2016 comparaciones, y se ensenan siempre las cinco mas
+    #  cercanas aunque pasen: un banco que se acerca al limite ano tras ano se
+    #  ve venir aqui y no el dia que falla.
+    pares = []
+    for i in range (len (descs)):
+        for j in range (i + 1, len (descs)):
+            pares.append ((distancia (descs[i][1], descs[j][1]), descs[i][0], descs[j][0]))
+    pares.sort()
+    for d, a, b in pares:
+        if d < MIN_PAIR_DB:
+            bad.append ("%s y %s son el mismo sonido (%.2f dB de diferencia)" % (a, b, d))
+
     print ("%-22s %d sonidos" % ("fabrica", len (rows)))
     print ("%-22s %.1f dB entre el mas y el menos sonoro" % ("sonoridad", spread_db))
     print ("%-22s %.3f a %.3f" % ("pico", min (peaks), max (peaks)))
@@ -186,6 +297,11 @@ def main():
     print ("%-22s %.3f s a %.2f s" % ("duracion", min (durs), max (durs)))
     for label, lo, hi in (("graves", 0, 700), ("medios", 700, 3000), ("agudos", 3000, 1e9)):
         print ("%-22s %d" % ("  " + label, sum (1 for b in brights if lo <= b < hi)))
+    if pares:
+        medio = pares[len (pares) // 2][0]
+        print ("%-22s %.1f dB de mediana, %.2f el par mas parecido" % ("distancia", medio, pares[0][0]))
+        for d, a, b in pares[:5]:
+            print ("  %-20s %s  %.2f dB" % (a.replace (".wav", ""), b.replace (".wav", ""), d))
 
     shutil.rmtree (TMP, ignore_errors=True)
     print()

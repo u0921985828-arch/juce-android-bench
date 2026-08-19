@@ -203,26 +203,66 @@ namespace Kits
         //  METAL, ahora con cuadradas LIMITADAS EN BANDA. Seis frecuencias sin
         //  relacion armonica es lo que sonaba a platillo en una 808 y sigue
         //  siendolo; lo que estaba mal era como se generaban.
+        //  DOS JUEGOS DE PARCIALES Y NO UNO, que es lo que separaba RIDE de
+        //  CYM 808 en 0.99 de parecido: eran el mismo oscilador con otro
+        //  filtro. El juego 0 son las seis frecuencias de la 808 -asi suena esa
+        //  maquina y asi se queda-; el juego 1 es un platillo de verdad, que
+        //  tiene mas parciales, mas arriba y peor repartidos, porque un disco
+        //  de laton no vibra en seis modos sino en muchos.
         struct Metal
         {
-            double ph[6] {};
-            static constexpr double f[6] = { 205.3, 304.4, 369.6, 522.7, 540.0, 800.0 };
+            double ph[9] {};
+            static constexpr double f808[9] = { 205.3, 304.4, 369.6, 522.7, 540.0, 800.0, 0.0, 0.0, 0.0 };
+            static constexpr double fLaton[9] = { 311.0, 437.7, 591.3, 728.9, 941.0, 1183.0, 1601.0, 2087.0, 2749.0 };
+            int juego = 0;
+            int cuantos() const noexcept { return juego == 0 ? 6 : 9; }
             float next (double mul) noexcept
             {
+                const double* f = (juego == 0) ? f808 : fLaton;
+                const int nf = cuantos();
                 float s = 0.0f;
-                for (int i = 0; i < 6; ++i)
+                for (int i = 0; i < nf; ++i)
                 {
                     const double inc = f[i] * mul / kRate;
                     ph[i] += inc;
                     if (ph[i] >= 1.0) ph[i] -= 1.0;
                     s += sqrBl (ph[i], inc);
                 }
-                return s / 6.0f;
+                return s / (float) nf;
             }
         };
     }
 
-    enum Shape { drum, snare, hat, metal, clap, tone, chord, sweep, noiseHit, vinyl, fm };
+//  ----------------------------------------------------------------------------
+//  LA SEGUNDA VERSION: EL BANCO A Y EL BANCO B ERAN EL MISMO KIT DOS VECES.
+//
+//  La cabecera prometia "cada banco una maquina distinta" y la medida decia
+//  otra cosa. Con un descriptor de 24 bandas de espectro mas 8 tramos de
+//  envolvente -las dos mitades hacen falta: solo con espectro un charles
+//  cerrado y uno abierto salen identicos, y solo con envolvente sale identico
+//  cualquier par de golpes cortos- habia VEINTIOCHO pares por encima de 0.97:
+//
+//      SNARE / SD 808   0.991      HAT / CH 808     0.989
+//      OPEN / OH 808    0.996      RIM / RIM 808    0.993
+//      RIDE / CYM 808   0.991      BASS / SAW BS    0.996
+//
+//  No eran parecidos de familia: eran la misma receta con otro numero. Cambiar
+//  de banco no era una decision musical, era pasar de pagina.
+//
+//  Y una segunda familia, peor: SHAKE, MARACA, TAMB, HISS, STATIC y SCRAPE
+//  eran SEIS VECES el mismo generador -ruido por un filtro- con otro corte y
+//  otra caida. De ahi que una maraca y un siseo midieran 0.998.
+//
+//  Asi que el banco A deja de compartir formas con el B. Las membranas
+//  acusticas van por skin, los parches con bordon por wire, y lo que suena a
+//  bolitas -maraca, shaker, pandereta- por grain. La 808 se queda con drum,
+//  snare y hat tal cual, porque eso ES la 808: un seno con la afinacion
+//  cayendo y ruido por un filtro. Lo que estaba mal no era la 808, era que la
+//  bateria acustica fuese otra 808 con los numeros movidos.
+//  ----------------------------------------------------------------------------
+
+    enum Shape { drum, snare, hat, metal, clap, tone, chord, sweep, noiseHit, vinyl, fm,
+                 grain, skin, wire };
 
     struct Recipe
     {
@@ -232,6 +272,16 @@ namespace Kits
         float decay;
         float p1;
         float p2;
+        //  Cual de los dos juegos de parciales usa el metal: 0 la 808, 1 el
+        //  laton. Solo lo miran metal y hat.
+        int   juego;
+        //  Cuanto se abre el filtro que sigue a la nota, multiplicando el de
+        //  siempre. Solo lo miran tone y chord, y CERO significa "el de
+        //  siempre" y no "cerrado del todo": los sesenta y cuatro renglones se
+        //  escribieron sin este campo y una inicializacion de agregado deja a
+        //  cero lo que no se nombra. Un valor por defecto que ademas es un
+        //  valor valido es como se apagan sesenta sonidos de golpe.
+        float brillo;
     };
 
     inline const Recipe* table()
@@ -239,24 +289,32 @@ namespace Kits
         static const Recipe t[kNumSounds] =
         {
             // --- A: ACUSTICA -------------------------------------------
-            { "KICK",   drum,      55.0f, 0.38f, 3.2f, 0.022f },
-            { "SNARE",  snare,    195.0f, 0.19f, 0.42f, 1750.0f },
-            { "HAT",    hat,     9500.0f, 0.042f, 1.6f, 0.0f },
-            { "OPEN",   hat,     8600.0f, 0.30f, 1.4f, 0.0f },
-            { "RIM",    snare,    440.0f, 0.048f, 0.55f, 2600.0f },
-            { "TOM LO", drum,      95.0f, 0.36f, 1.1f, 0.050f },
-            { "TOM MI", drum,     138.0f, 0.30f, 1.1f, 0.045f },
-            { "TOM HI", drum,     192.0f, 0.25f, 1.1f, 0.040f },
-            { "CLAP",   clap,       0.0f, 0.24f, 2.0f, 1450.0f },
-            { "RIDE",   metal,      1.0f, 0.95f, 7000.0f, 1.2f },
-            { "CRASH",  metal,      0.8f, 1.90f, 4200.0f, 0.9f },
-            { "SHAKE",  hat,     7400.0f, 0.070f, 0.9f, 1.0f },
-            { "CONGA",  drum,     245.0f, 0.19f, 0.7f, 0.035f },
+            //  Membranas por skin y parches con bordon por wire: ni una sola
+            //  forma compartida con el banco B, que es de donde venia que los
+            //  dos bancos midieran lo mismo.
+            { "KICK",   skin,      55.0f, 0.38f, 0.32f, 0.55f },
+            { "SNARE",  wire,     195.0f, 0.19f, 0.30f, 1750.0f },
+            { "HAT",    hat,     9500.0f, 0.042f, 1.6f, 0.0f,  1 },
+            { "OPEN",   hat,     8600.0f, 0.30f, 1.4f, 0.0f,   1 },
+            { "RIM",    wire,     440.0f, 0.048f, 0.58f, 2600.0f },
+            { "TOM LO", skin,      95.0f, 0.36f, 0.26f, 0.34f },
+            { "TOM MI", skin,     138.0f, 0.30f, 0.26f, 0.31f },
+            { "TOM HI", skin,     192.0f, 0.25f, 0.26f, 0.28f },
+            { "CLAP",   clap,       0.0f, 0.42f, 1.3f, 1150.0f },
+            { "RIDE",   metal,      1.0f, 0.95f, 7000.0f, 1.2f, 1 },
+            { "CRASH",  metal,      0.8f, 1.90f, 4200.0f, 0.9f, 1 },
+            //  SHAKE y TAMB por granos: eran ruido filtrado, como HISS, y por
+            //  eso una maraca y un siseo median 0.998.
+            { "SHAKE",  grain,   6200.0f, 0.070f, 1400.0f, 0.0f },
+            { "CONGA",  skin,     245.0f, 0.19f, 0.22f, 0.24f },
             { "COWBEL", metal,      2.4f, 0.28f, 2400.0f, 3.0f },
-            { "TAMB",   hat,    10500.0f, 0.14f, 1.1f, 1.0f },
-            { "SPLASH", metal,      1.3f, 1.15f, 5200.0f, 0.8f },
+            { "TAMB",   grain,   5200.0f, 0.14f, 620.0f, 1.60f },
+            { "SPLASH", metal,      1.3f, 1.15f, 5200.0f, 0.8f, 1 },
 
             // --- B: MAQUINA --------------------------------------------
+            //  Y AQUI NO SE TOCA NADA: un seno con la afinacion cayendo y ruido
+            //  por un filtro ES la 808. Lo que estaba mal no era este banco,
+            //  era que el de al lado fuese otra vez este.
             { "BD 808", drum,      48.0f, 1.05f, 1.1f, 0.045f },
             { "SD 808", snare,    182.0f, 0.22f, 0.32f, 1300.0f },
             { "CH 808", hat,    10500.0f, 0.030f, 2.2f, 0.0f },
@@ -265,11 +323,11 @@ namespace Kits
             { "LT 808", drum,      82.0f, 0.58f, 0.6f, 0.070f },
             { "MT 808", drum,     116.0f, 0.50f, 0.6f, 0.062f },
             { "HT 808", drum,     162.0f, 0.44f, 0.6f, 0.055f },
-            { "CLAP 9", clap,       0.0f, 0.32f, 2.4f, 1050.0f },
+            { "CLAP 9", clap,       0.0f, 0.13f, 3.2f, 1900.0f },
             { "CYM808", metal,      1.0f, 1.50f, 6000.0f, 0.7f },
             { "COW808", metal,      2.6f, 0.40f, 2600.0f, 3.4f },
             { "CLAVE",  tone,     2450.0f, 0.050f, 0.0f, 0.0f },
-            { "MARACA", hat,    12000.0f, 0.034f, 1.0f, 1.0f },
+            { "MARACA", grain,   6800.0f, 0.034f, 2600.0f, 0.0f },
             { "SUB",    drum,      38.0f, 1.35f, 0.4f, 0.080f },
             { "ZAP",    sweep,   4000.0f, 0.20f, -1.0f, 3.0f },
             { "SNAP",   snare,    850.0f, 0.062f, 0.25f, 4600.0f },
@@ -285,17 +343,24 @@ namespace Kits
             { "WIND",   sweep,    700.0f, 1.80f, 0.4f, 4.0f },
             { "THUMP",  noiseHit,  46.0f, 0.52f, 0.25f, 0.0f },
             { "GLITCH", fm,       900.0f, 0.085f, 6.0f, 3.7f },
-            { "SCRAPE", hat,     1600.0f, 0.28f, 2.5f, 1.0f },
+            //  SCRAPE tambien por granos, pero lentos y graves: un roce es una
+            //  sucesion de enganchones, no un siseo con el filtro bajado - que
+            //  es lo que era, y por eso median 0.993 el y STATIC.
+            { "SCRAPE", grain,    780.0f, 0.90f, 28.0f, 0.75f },
             { "BOOM",   noiseHit,  38.0f, 1.55f, 0.75f, 0.0f },
             { "TICK",   tone,    5200.0f, 0.008f, 0.0f, 0.0f },
-            { "SWELL",  sweep,    450.0f, 1.50f, 0.8f, 1.6f },
+            { "SWELL",  sweep,    300.0f, 1.50f, 0.8f, 7.0f },
             { "CRACKL", vinyl,      0.0f, 0.80f, 1.0f, 0.0f },
             { "DRONE",  tone,      65.0f, 2.20f, 0.35f, 1.0f },
 
             // --- D: TONOS ----------------------------------------------
-            { "BASS",   tone,      55.0f, 0.70f, 0.55f, 0.0f },
-            { "SAW BS", tone,      55.0f, 0.62f, 1.0f, 0.0f },
-            { "SUB BS", tone,      41.0f, 0.90f, 0.0f, 1.0f },
+            //  BASS y SAW BS median 0.996: los dos a 55 Hz y los dos con el
+            //  mismo filtro siguiendo la nota, asi que la sierra no llegaba a
+            //  oirse. Ahora el bajo de sierra abre el filtro tres veces mas -
+            //  para eso esta brillo - y va a su propia nota.
+            { "BASS",   tone,      55.0f, 0.70f, 0.20f, 0.0f },
+            { "SAW BS", tone,      73.42f, 0.62f, 1.0f, 0.0f, 0, 3.0f },
+            { "SUB BS", tone,      36.71f, 0.90f, 0.0f, 1.0f },
             { "STAB",   chord,    220.0f, 0.32f, 0.0f, 0.0f },
             { "CHORD",  chord,    165.0f, 1.00f, 0.0f, 1.0f },
             { "MINOR",  chord,    147.0f, 1.00f, 1.0f, 1.0f },
@@ -304,7 +369,7 @@ namespace Kits
             { "PLUCK",  fm,       440.0f, 0.32f, 4.0f, 1.0f },
             { "KEY",    fm,       330.0f, 0.68f, 2.2f, 3.0f },
             { "ORGAN",  tone,     220.0f, 0.90f, 0.25f, 1.0f },
-            { "BRASS",  tone,     165.0f, 0.62f, 0.9f, 0.0f },
+            { "BRASS",  tone,     165.0f, 0.62f, 0.9f, 0.0f, 0, 1.8f },
             { "STRING", tone,     262.0f, 1.60f, 0.7f, 1.0f },
             { "FIFTH",  chord,    110.0f, 1.20f, 2.0f, 1.0f },
             { "LEAD",   fm,       523.0f, 0.48f, 1.6f, 1.0f },
@@ -327,8 +392,12 @@ namespace Kits
 
         Rng rnd (1000 + index * 37);
         Metal met;
-        Modes body;
-        Svf f1, f2;
+        met.juego = juce::jlimit (0, 1, r.juego);
+        //  Cero no es "cerrado del todo" sino "el de siempre": los sesenta y
+        //  cuatro renglones se escribieron sin este campo. Ver Recipe.
+        const float brillo = (r.brillo > 0.0f) ? r.brillo : 1.0f;
+        Modes body, body2;
+        Svf f1, f2, f3;
         double ph = 0.0, ph2 = 0.0, ph3 = 0.0, phs = 0.0;
         int nextClick = 0;
         float clickAmp = 0.0f;
@@ -368,7 +437,15 @@ namespace Kits
                     //  DOS filtros: el metal por un paso alto resonante. p1 es
                     //  la Q, o sea cuanto "sisea" contra cuanto "tintinea".
                     f1.set (r.hz, r.p1);
-                    const float src = (r.p2 > 0.5f) ? rnd() : (0.55f * rnd() + 0.45f * met.next (1.0));
+                    //  Y CUANTO METAL, segun el juego de parciales. Con la misma
+                    //  mezcla para los dos, HAT y CH 808 median 2.9 dB de
+                    //  diferencia -practicamente el mismo sonido- porque en los
+                    //  dos mandaba el ruido. Un charles acustico son dos chapas
+                    //  de laton: manda el metal y el ruido es solo el filo. La
+                    //  808 es al reves y por eso suena a 808.
+                    const float aire = (met.juego == 1) ? 0.22f : 0.55f;
+                    const float src = (r.p2 > 0.5f) ? rnd()
+                                                    : (aire * rnd() + (1.0f - aire) * met.next (1.0));
                     v = f1.hp (src) * 1.7f * env (t, r.decay);
                     break;
                 }
@@ -413,7 +490,7 @@ namespace Kits
                     const float saw = sawBl (ph, inc);
                     const float mix = (1.0f - r.p1) * s + r.p1 * saw * 0.7f;
                     const float e   = (r.p2 > 0.5f) ? ad (t, 0.05f, r.decay) : env (t, r.decay);
-                    f1.set (juce::jlimit (200.0, 16000.0, r.hz * (3.0 + 9.0 * (double) e)), 0.9f);
+                    f1.set (juce::jlimit (200.0, 16000.0, r.hz * brillo * (3.0 + 9.0 * (double) e)), 0.9f);
                     v = soft (1.25f * f1.lp (mix) * e);
                     break;
                 }
@@ -429,7 +506,7 @@ namespace Kits
                     ph3 += i3; if (ph3 >= 1.0) ph3 -= 1.0;
                     const float e = (r.p2 > 0.5f) ? ad (t, 0.09f, r.decay) : env (t, r.decay);
                     const float mix = 0.30f * (sawBl (ph, i1) + sawBl (ph2, i2) + sawBl (ph3, i3));
-                    f1.set (juce::jlimit (300.0, 14000.0, r.hz * (4.0 + 7.0 * (double) e)), 0.8f);
+                    f1.set (juce::jlimit (300.0, 14000.0, r.hz * brillo * (4.0 + 7.0 * (double) e)), 0.8f);
                     v = soft (1.1f * f1.lp (mix) * e);
                     break;
                 }
@@ -465,7 +542,12 @@ namespace Kits
                     //  Siseo con chasquidos encima. El suelo es constante y lo
                     //  que se oye son los impulsos, que es lo que hace un disco.
                     f1.set (6500.0, 0.7f);
-                    float s = f1.lp (rnd()) * 0.14f;
+                    //  Y EL SUELO DE SISEO SEGUN LA DENSIDAD. Con el mismo suelo
+                    //  para los dos, VINYL y CRACKL median 2.4 dB: mandaba el
+                    //  siseo en los dos y los chasquidos casi no contaban. Un
+                    //  disco viejo es siseo con algun chasquido; una crepitacion
+                    //  son los chasquidos SIN el disco debajo.
+                    float s = f1.lp (rnd()) * (r.p1 > 0.5f ? 0.006f : 0.14f);
                     if (n >= nextClick)
                     {
                         clickAmp = 0.5f + 0.5f * std::abs (rnd());
@@ -473,6 +555,99 @@ namespace Kits
                     }
                     if (clickAmp > 0.001f) { s += clickAmp * rnd(); clickAmp *= 0.55f; }
                     v = s * ad (t, 0.008f, r.decay);
+                    break;
+                }
+
+                case grain:
+                {
+                    //  GRANOS, que es lo que una maraca ES y un siseo no.
+                    //
+                    //  Una maraca no hace ruido: hace cuarenta bolitas chocando
+                    //  contra la pared en cuarenta instantes distintos. Y eso no
+                    //  se consigue filtrando ruido -por eso SHAKE y HISS median
+                    //  0.998 de parecido, eran el mismo generador-, se consigue
+                    //  disparando impulsos con el hueco entre ellos AL AZAR.
+                    //  Regular seria un zumbido; irregular es un instrumento.
+                    //
+                    //  p1 = granos por segundo. p2 = cuanta sonaja lleva encima,
+                    //  que es lo unico que separa una pandereta de un shaker: la
+                    //  pandereta tiene chapas y las chapas son metal.
+                    if (n >= nextClick)
+                    {
+                        clickAmp = 0.45f + 0.55f * std::abs (rnd());
+                        const float medio = kRate / juce::jmax (20.0f, r.p1);
+                        //  El hueco entre 0.35 y 1.65 veces el medio: dispersion
+                        //  de sobra para que no se oiga el patron y no tanta como
+                        //  para que se hagan huecos de silencio.
+                        nextClick = n + juce::jmax (12, (int) (medio * (0.35f + 1.3f * std::abs (rnd()))));
+                    }
+                    if (clickAmp > 0.0005f)
+                    {
+                        f1.set (r.hz, 2.2f);
+                        //  Cada grano es su propio golpecito de dos milisegundos,
+                        //  no una muestra suelta: una muestra suelta es un click y
+                        //  suena a error de fichero.
+                        float g = f1.bpf (rnd() * clickAmp) * 3.0f;
+                        clickAmp *= 0.9885f;
+                        if (r.p2 > 0.01f)
+                        {
+                            f2.set (r.hz * 1.9, 1.4f);
+                            g += f2.bpf (met.next (2.6)) * clickAmp * r.p2 * 2.2f;
+                        }
+                        v = g;
+                    }
+                    v *= env (t, r.decay);
+                    break;
+                }
+
+                case skin:
+                {
+                    //  UN PARCHE, que no es un seno con la afinacion cayendo.
+                    //
+                    //  Eso ultimo es una 808 y esta bien que lo sea; el fallo era
+                    //  que la bateria ACUSTICA fuese otra 808 con los numeros
+                    //  movidos. Un tom de verdad son tres cosas: el golpe de la
+                    //  baqueta -ruido corto y agudo, cinco milisegundos-, los
+                    //  modos de la membrana, que no guardan relacion entera, y el
+                    //  aire de la caja debajo.
+                    //
+                    //  p1 = cuanta baqueta. p2 = cuanto cae la afinacion, mucho
+                    //  menos que en una maquina: un parche baja un semitono largo,
+                    //  no una octava.
+                    f1.set (juce::jlimit (400.0, 9000.0, (double) r.hz * 14.0), 0.9f);
+                    const float palo = f1.bpf (rnd()) * r.p1 * env (t, 0.006f) * 2.6f;
+                    const double caida = 1.0 + r.p2 * std::exp (-t / 0.045f);
+                    const float parche = body.next (r.hz * caida, t, r.decay);
+                    //  Y el aire: un segundo juego de modos una quinta por debajo
+                    //  y mas corto, que es el cuerpo de la caja. Sin el, un tom
+                    //  suena a timbal de juguete.
+                    const float caja = body2.next (r.hz * 0.67 * caida, t, r.decay * 0.55f) * 0.30f;
+                    v = soft (1.05f * (parche + caja + palo));
+                    break;
+                }
+
+                case wire:
+                {
+                    //  UNA CAJA CON BORDON, y el bordon es la mitad que faltaba.
+                    //
+                    //  La caja acustica y la SD 808 median 0.991 porque las dos
+                    //  eran ruido por un paso banda mas un cuerpo. La diferencia
+                    //  de verdad esta en que una caja de verdad tiene MUELLES
+                    //  debajo, y los muelles ni entran a la vez que el golpe ni
+                    //  se apagan con el: siguen sonando despues, mas arriba y
+                    //  mucho mas sucios. Dos ruidos con dos caidas distintas, no
+                    //  uno.
+                    //
+                    //  p1 = cuanto parche contra cuanto muelle. p2 = donde canta
+                    //  el parche.
+                    f1.set (r.p2, 1.3f);
+                    const float golpe = f1.bpf (rnd()) * 2.2f * env (t, r.decay * 0.45f);
+                    f2.set (juce::jlimit (900.0, 12000.0, (double) r.p2 * 3.4), 0.8f);
+                    //  El bordon entra tres milisegundos TARDE. Es poco y se oye:
+                    //  es lo que hace que el golpe tenga dos partes en vez de una.
+                    const float muelle = f2.hp (rnd()) * 1.8f * env (juce::jmax (0.0f, t - 0.003f), r.decay * 1.35f);
+                    const float cuerpo = body.next (r.hz, t, r.decay * 0.6f) * 0.55f;
+                    v = soft (1.1f * (r.p1 * cuerpo + (1.0f - r.p1) * (0.55f * golpe + 0.45f * muelle)));
                     break;
                 }
 
