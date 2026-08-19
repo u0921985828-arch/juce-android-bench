@@ -31,7 +31,16 @@ pj_*.log
 .DS_Store
 *.user
 .agents/
-.claude/
+
+#  Las HABILIDADES si van al repositorio, y el resto de .claude no. Aqui dentro
+#  hay dos cosas distintas: el ESTADO de la sesion -credenciales, historial,
+#  ajustes de la maquina- que no es de nadie mas, y las habilidades, que son
+#  documentacion del proyecto igual que CLAUDE.md. Ignorar la carpeta entera
+#  dejo `banco` fuera del commit que decia haberlo anadido: existia en el disco
+#  del contenedor, se perdia al reciclarse, y nadie que clonara el repositorio
+#  lo tenia.
+.claude/*
+!.claude/skills/
 skills-lock.json
 
 # El .pyc que deja importar un banco desde otro
