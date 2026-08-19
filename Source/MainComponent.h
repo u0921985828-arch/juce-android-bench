@@ -464,6 +464,20 @@ private:
     std::unique_ptr<Exporter> exportJob;
     //  WAV o comprimido. Ver Exporter: un master de tres minutos pasa de 30 MB
     //  a 3, que es lo que separa "lo tengo" de "te lo mando".
+    //  ELEGIR DONDE CAE EL REBOTE.
+    //
+    //  Se reutiliza el navegador de CARGAR en vez de montar otro: es el mismo
+    //  gesto -entrar en carpetas y senalar una- con la misma lista, la misma
+    //  altura de fila y el mismo permiso de almacenamiento ya resuelto. Lo
+    //  unico que cambia es QUE se acepta al final, asi que el navegador tiene
+    //  un modo y no dos vidas.
+    enum ModoBrowse { browsePad = 0, browseCarpeta };
+    ModoBrowse browseModo = browsePad;
+    juce::TextButton browseUseDirBtn { "USAR ESTA CARPETA" };
+    juce::TextButton exportDirBtn { "CAMBIAR" };
+    void openBrowseForExportDir();
+    void usarCarpetaDeExport();
+
     juce::TextButton exportFmtBtn { "WAV" };
     bool exportOgg = false;
     double deviceSampleRate = 44100.0;

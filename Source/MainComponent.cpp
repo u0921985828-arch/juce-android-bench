@@ -666,6 +666,13 @@ MainComponent::MainComponent()
         exportMasterButton.onClick = [this] { startExport (false); };
         exportSheet.addAndMakeVisible (exportMasterButton);
 
+        //  CAMBIAR el destino, al lado de la linea que lo dice. Cargar un
+        //  sonido abre un navegador y se elige de donde; esto es lo mismo por
+        //  el otro lado y hasta ahora no existia.
+        styleButton (exportDirBtn, kKey);
+        exportDirBtn.onClick = [this] { openBrowseForExportDir(); };
+        exportSheet.addAndMakeVisible (exportDirBtn);
+
         styleButton (exportStemsButton, kKey);
         exportStemsButton.onClick = [this] { startExport (true); };
         exportSheet.addAndMakeVisible (exportStemsButton);
@@ -714,9 +721,14 @@ MainComponent::MainComponent()
         if (! start.isDirectory())
             start = juce::File::getSpecialLocation (juce::File::userHomeDirectory);
 
+        //  Y TAMBIEN CARPETAS, que es lo que le falta para servir de las dos
+        //  cosas: elegir un sonido y elegir donde cae el rebote. CARGAR sigue
+        //  pidiendo un FICHERO -selectionChanged ya exige existsAsFile- asi que
+        //  anadir esto no afloja nada de lo que ya habia.
         browser = std::make_unique<juce::FileBrowserComponent> (
             juce::FileBrowserComponent::openMode
           | juce::FileBrowserComponent::canSelectFiles
+          | juce::FileBrowserComponent::canSelectDirectories
           | juce::FileBrowserComponent::filenameBoxIsReadOnly,   // no keyboard on mobile
             start, browseFilter.get(), nullptr);
         browser->addListener (this);
@@ -735,6 +747,11 @@ MainComponent::MainComponent()
         browseLoadButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
         browseLoadButton.onClick = [this] { loadBrowserSelection(); };
         browseSheet.addAndMakeVisible (browseLoadButton);
+
+        styleButton (browseUseDirBtn, kAccent);
+        browseUseDirBtn.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+        browseUseDirBtn.onClick = [this] { usarCarpetaDeExport(); };
+        browseSheet.addAndMakeVisible (browseUseDirBtn);
 
         styleButton (browseKitButton, kKey);
         //  KIT se lleva por delante los dieciseis pads del banco, al lado de
@@ -5105,6 +5122,29 @@ void MainComponent::resized()
         //
         //  Se pregunta con la misma cuenta que hace el reparto - misma fuente,
         //  mismo margen - y si no caben, dos filas de dos.
+        //  EN MODO CARPETA LAS ACCIONES SON OTRA. Elegir donde cae el rebote no
+        //  tiene nada que ver con cargar un sonido, un kit o la fabrica: la
+        //  unica accion posible es "esta". Ensenar las otras cuatro apagadas
+        //  seria ensenar cuatro controles muertos, que es lo que esta app no
+        //  hace desde la tira del paso.
+        const bool eligiendoCarpeta = (browseModo == browseCarpeta);
+        for (auto* b : { &browseLoadButton, &browseKitButton,
+                         &browseFactoryButton, &browseSystemButton })
+        {
+            b->setVisible (! eligiendoCarpeta);
+            if (eligiendoCarpeta) b->setBounds ({});
+        }
+        browseUseDirBtn.setVisible (eligiendoCarpeta);
+        if (! eligiendoCarpeta) browseUseDirBtn.setBounds ({});
+
+        if (eligiendoCarpeta)
+        {
+            auto actions = inner.removeFromBottom (Metrics::btn);
+            juce::TextButton* ub[1] = { &browseUseDirBtn };
+            layoutModuleBar (actions, ub, 0, 1);
+        }
+        else
+        {
         juce::TextButton* pb[4] = { &browseLoadButton, &browseKitButton,
                                     &browseFactoryButton, &browseSystemButton };
         const bool actionsFit = moduleBarFits (inner.getWidth(), pb, 4);
@@ -5121,6 +5161,7 @@ void MainComponent::resized()
             inner.removeFromBottom (Metrics::xs);
             auto upper = inner.removeFromBottom (Metrics::btn);
             layoutModuleBar (upper, pb, 0, 2);
+        }
         }
         inner.removeFromBottom (8);
         if (browser != nullptr) browser->setBounds (inner);
@@ -5477,11 +5518,28 @@ void MainComponent::resized()
 
     // EXPORT sheet: what will be rendered, then the two products.
     {
-        auto inner = sheetFromBottom (exportSheet, 32 + 96 + Metrics::btn * 2 + Metrics::sm * 2);
+        //  Con la fila de CAMBIAR contada: pedir sin ella y colocarla igual es
+        //  como una fila se queda con altura cero, que en esta app ya tiene
+        //  nombre y medidas.
+        auto inner = sheetFromBottom (exportSheet, 32 + 96 + Metrics::hit + Metrics::sm
+                                                     + Metrics::btn * 2 + Metrics::sm * 2);
         auto titleRow = inner.removeFromTop (Metrics::hit);
         exportCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
 
         inner.removeFromTop (96);   // painted: source, length, destination, status
+
+        //  CAMBIAR va arriba del todo de lo tocable, pegado a la linea pintada
+        //  que dice el destino: una tapa que cambia un dato tiene que estar al
+        //  lado del dato, no en la fila de las acciones finales - donde se leeria
+        //  como una tercera forma de exportar.
+        {
+            auto fila = inner.removeFromTop (Metrics::hit);
+            juce::TextButton* db[1] = { &exportDirBtn };
+            layoutModuleBar (Lang::takeEnd (fila, juce::jmin (fila.getWidth(),
+                                                              juce::jmax (110, fila.getWidth() / 3))),
+                             db, 0, 1);
+            inner.removeFromTop (Metrics::sm);
+        }
 
         auto row = inner.removeFromBottom (Metrics::btn);
         exportCancelButton.setBounds (row);
@@ -7936,6 +7994,8 @@ void MainComponent::retranslateUi()
     projExportButton.setButtonText (T ("EXPORTAR"));
 
     browseLoadButton  .setButtonText (T ("CARGAR"));
+    browseUseDirBtn   .setButtonText (T ("USAR ESTA CARPETA"));
+    exportDirBtn      .setButtonText (T ("CAMBIAR"));
     browseKitButton   .setButtonText (T ("CARGAR KIT"));
     browseFactoryButton.setButtonText (T ("FABRICA"));
     browseSystemButton.setButtonText (T ("SISTEMA"));
@@ -8456,8 +8516,65 @@ void MainComponent::cancelAudition()
     preAuditionSample = nullptr;
 }
 
+//  EL MISMO NAVEGADOR, ELIGIENDO CARPETA. Ver ModoBrowse: cambia lo que se
+//  acepta al final, no la lista ni el gesto.
+void MainComponent::openBrowseForExportDir()
+{
+    browseModo = browseCarpeta;
+    browseTargetPad = -1;
+    auditionedFile = juce::File();
+    closeAllSheets();
+    browseSheet.setVisible (true);
+    browseSheet.toFront (false);
+    //  Empieza donde ya cae hoy, que es de donde se sale para cambiarlo.
+    if (browser != nullptr)
+        browser->setRoot (ProjectStore::exports());
+    resized();
+    repaint();
+
+    ensureStoragePermission ([this]
+    {
+        if (browser != nullptr) browser->refresh();
+    });
+}
+
+void MainComponent::usarCarpetaDeExport()
+{
+    if (browser == nullptr) return;
+
+    //  La carpeta es la SENALADA si hay una, y si no aquella en la que se esta
+    //  mirando: entrar en una carpeta y pulsar "usar esta" sin haberla tocado
+    //  en la lista es exactamente lo que uno espera que valga.
+    juce::File elegida = browser->getRoot();
+    if (browser->getNumSelectedFiles() > 0)
+    {
+        const auto sel = browser->getSelectedFile (0);
+        if (sel.isDirectory()) elegida = sel;
+    }
+
+    //  Y SE COMPRUEBA ESCRIBIENDO, no mirando. En Android la mitad de las
+    //  carpetas que se pueden LISTAR no aceptan que dejes nada dentro, y
+    //  enterarse al final de un rebote de cuarenta segundos es enterarse tarde:
+    //  la exportacion es la unica accion de esta app que no se deshace tocando
+    //  otra vez. ProjectStore::canReallyWriteInto deja un fichero de un byte y
+    //  lo vuelve a leer, que es la unica prueba que no miente.
+    if (! ProjectStore::setExports (elegida))
+    {
+        status.setText (T ("Esa carpeta no deja escribir - prueba otra"),
+                        juce::dontSendNotification);
+        return;
+    }
+
+    browseModo = browsePad;
+    closeAllSheets();
+    openSheet (exportSheet, setButton);
+    status.setText (T ("El rebote caera en %1", elegida.getFileName()),
+                    juce::dontSendNotification);
+}
+
 void MainComponent::openBrowseForPad (int index)
 {
+    browseModo = browsePad;
     browseTargetPad = index;
     auditionedFile = juce::File();
     // Remember what the pad held so cancelling an audition puts it back.
@@ -10814,6 +10931,9 @@ void MainComponent::startExport (bool stems)
     exportMasterButton.setVisible (false);
     exportStemsButton.setVisible (false);
     exportFmtBtn.setVisible (false);
+    //  Y CAMBIAR, que a mitad de un rebote dejaria las pistas repartidas en dos
+    //  carpetas: el hilo ya tiene su destino y no lo vuelve a mirar.
+    exportDirBtn.setVisible (false);
     exportCancelButton.setVisible (true);
     exportJob->startThread (juce::Thread::Priority::normal);
     exportSheet.repaint();
@@ -10875,6 +10995,7 @@ void MainComponent::pollExport()
     exportMasterButton.setVisible (true);
     exportStemsButton.setVisible (true);
     exportFmtBtn.setVisible (true);
+    exportDirBtn.setVisible (true);
     exportCancelButton.setVisible (false);
     exportSheet.repaint();
 }
@@ -10916,8 +11037,19 @@ void MainComponent::paintExportSheetContent (juce::Graphics& g)
                                     : T ("vacio"),
           steps > 0 ? ZatiColours::ink : ZatiColours::red);
     line (T ("pistas"), T ("%1 pads con muestra", juce::String (loaded)), ZatiColours::ink);
-    line (T ("destino"), Lang::ltr ("ZATI/Exports/" + (currentProject.isNotEmpty() ? currentProject : juce::String ("ZATI"))),
-          ZatiColours::inkDim);
+    //  El destino DE VERDAD, no el de siempre escrito a mano. Decia
+    //  "ZATI/Exports/..." pasara lo que pasara, asi que el dia que la carpeta
+    //  se pudo elegir habria mentido en la unica linea que dice donde acaba el
+    //  trabajo. Se ensena el nombre de la carpeta y no la ruta entera: en un
+    //  telefono la ruta son sesenta caracteres de los que importan los ultimos
+    //  quince.
+    {
+        const auto dir = ProjectStore::exports();
+        line (T ("destino"),
+              Lang::ltr (dir.getParentDirectory().getFileName() + "/" + dir.getFileName()
+                         + "/" + (currentProject.isNotEmpty() ? currentProject : juce::String ("ZATI"))),
+              ZatiColours::inkDim);
+    }
 
     inner.removeFromTop (6);
 
@@ -11775,10 +11907,19 @@ void MainComponent::paintBrowseSheetContent (juce::Graphics& g)
     auto inner = browseSheet.sheetBounds.reduced (Metrics::lg, Metrics::md);
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
-    g.drawText (T ("CARGAR EN PAD %1", juce::String (juce::jmax (0, browseTargetPad) + 1)),
+    //  Y EL ENCABEZADO DICE A QUE SE HA ENTRADO. El mismo navegador sirve para
+    //  dos cosas y el titulo se quedaba en "CARGAR EN PAD 1 - elige una muestra
+    //  wav/aiff/flac/ogg/mp3" mientras se elegia la carpeta del rebote: dos
+    //  lineas mintiendo en la unica ficha cuyo trabajo es no equivocarse de
+    //  sitio. Ver ModoBrowse.
+    const bool eligiendoCarpeta = (browseModo == browseCarpeta);
+    g.drawText (eligiendoCarpeta
+                  ? T ("CARPETA DE EXPORTAR")
+                  : T ("CARGAR EN PAD %1", juce::String (juce::jmax (0, browseTargetPad) + 1)),
                 inner.removeFromTop (16), Lang::start());
 
-    const bool picked = browser != nullptr && browser->getNumSelectedFiles() > 0
+    const bool picked = ! eligiendoCarpeta
+                     && browser != nullptr && browser->getNumSelectedFiles() > 0
                      && browser->getSelectedFile (0).existsAsFile();
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
@@ -11786,9 +11927,13 @@ void MainComponent::paintBrowseSheetContent (juce::Graphics& g)
     //  shares the band.
     auto browseSubRow = inner.removeFromTop (14);
     browseSubRow.setRight (juce::jmin (browseSubRow.getRight(), browseCloseButton.getX() - Metrics::xs));
-    g.drawText (picked ? browser->getSelectedFile (0).getFileName()
-                       : T ("elige una muestra  -  wav / aiff / flac / ogg / mp3"),
-                browseSubRow, Lang::start(), true);
+    juce::String sub;
+    if (picked)                  sub = browser->getSelectedFile (0).getFileName();
+    else if (eligiendoCarpeta)   sub = browser != nullptr
+                                         ? T ("entra donde quieras y pulsa USAR ESTA CARPETA")
+                                         : juce::String();
+    else                         sub = T ("elige una muestra  -  wav / aiff / flac / ogg / mp3");
+    g.drawText (sub, browseSubRow, Lang::start(), true);
 }
 
 // REC on the transport arms PATTERN recording: pads you hit while the
@@ -12423,6 +12568,36 @@ void MainComponent::auditExport()
                   << ",\"parte\":\"" << job.resultText << "\"}" << std::endl;
     }
 
+    //  Y LA CARPETA ELEGIDA, que es lo nuevo y lo que no se puede comprobar
+    //  mirando: se apunta una que SI acepta escritura y se comprueba que
+    //  ProjectStore la devuelve; se apunta una que NO -un hijo de un fichero,
+    //  que nunca puede ser carpeta- y se comprueba que la rechaza Y que sigue
+    //  valiendo la anterior. Un ajuste que se guarda mal deja el rebote en un
+    //  sitio que no es, y eso solo se ve cuando ya has cerrado la app.
+    {
+        const auto porDefecto = ProjectStore::exportsPorDefecto();
+        auto mia = ProjectStore::home().getChildFile ("BANCO_DESTINO");
+        const bool acepta = ProjectStore::setExports (mia);
+        const bool vuelve = (ProjectStore::exports() == mia);
+
+        //  Una ruta imposible: hijo de un FICHERO, que ningun sistema deja
+        //  crear como carpeta. Es la unica forma de probar el rechazo sin
+        //  depender de los permisos de la maquina donde corre el banco.
+        auto fichero = mia.getChildFile ("no-soy-carpeta.txt");
+        fichero.replaceWithText ("z");
+        const bool rechaza = ! ProjectStore::setExports (fichero.getChildFile ("dentro"));
+        const bool aguanta = (ProjectStore::exports() == mia);
+
+        ProjectStore::clearExports();
+        const bool limpia = (ProjectStore::exports() == porDefecto);
+
+        std::cout << "{\"export\":\"destino\",\"acepta\":" << (acepta ? 1 : 0)
+                  << ",\"vuelve\":" << (vuelve ? 1 : 0)
+                  << ",\"rechaza\":" << (rechaza ? 1 : 0)
+                  << ",\"aguanta\":" << (aguanta ? 1 : 0)
+                  << ",\"limpia\":" << (limpia ? 1 : 0) << "}" << std::endl;
+        mia.deleteRecursively();
+    }
 }
 
 //  Y EL CAMINO DE VERDAD, que no es el de arriba: el hilo aparte, el
@@ -12546,6 +12721,10 @@ void MainComponent::auditOpen (const juce::String& which)
     else if (which == "tour")  { closeAllSheets(); showTour (0); openSheet (tourSheet, setButton); }
     else if (which == "tourf") { closeAllSheets(); showTour (kTourPasos - 1); openSheet (tourSheet, setButton); }
     else if (which == "browse") openBrowseForPad (0);
+    //  EL MISMO NAVEGADOR ELIGIENDO CARPETA, que es OTRO estado y no el mismo:
+    //  la fila de acciones cambia de cuatro tapas a una, y una fila que solo
+    //  existe en un modo es una fila que el banco no mide si no se la pide.
+    else if (which == "browsedir") openBrowseForExportDir();
 }
 
 void MainComponent::appSuspended()

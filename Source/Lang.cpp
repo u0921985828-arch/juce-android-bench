@@ -572,6 +572,23 @@ namespace
         { "GOLPE",          "",         "HIT",        "力度",       "الضربة" },
         { "SWING",          "",         "SWING",      "摇摆",       "سوينغ" },
         { "BLOQUEOS",       "",         "P-LOCKS",    "参数锁定",   "قفل المعامل" },
+        //  Elegir donde cae el rebote. Ver ProjectStore::setExports.
+        { "CAMBIAR",        "",         "CHANGE",     "更改",       "تغيير" },
+        { "CARPETA DE EXPORTAR", "",
+          "EXPORT FOLDER",
+          "导出文件夹", "مجلد التصدير" },
+        { "entra donde quieras y pulsa USAR ESTA CARPETA", "",
+          "go wherever you like and press USE THIS FOLDER",
+          "进入任意文件夹后按“使用此文件夹”", "ادخل حيث تشاء ثم اضغط استخدم هذا المجلد" },
+        { "USAR ESTA CARPETA", "",
+          "USE THIS FOLDER",
+          "使用此文件夹", "استخدم هذا المجلد" },
+        { "Esa carpeta no deja escribir - prueba otra", "",
+          "That folder will not accept a write - try another",
+          "该文件夹不可写，请换一个", "هذا المجلد لا يقبل الكتابة - جرّب غيره" },
+        { "El rebote caera en %1", "",
+          "The bounce will land in %1",
+          "导出将写入 %1", "سيقع التصدير في %1" },
 
         //  EL TOUR DE BIENVENIDA. ATRAS y EMPEZAR llevan clave propia porque
         //  esas dos palabras ya existen en la tabla con OTRO sentido - ATRAS

@@ -163,7 +163,63 @@ public:
     static juce::File samples()    { return sub ("Samples"); }
     static juce::File presets()    { return sub ("Presets"); }
     static juce::File recordings() { return sub ("Recordings"); }
-    static juce::File exports()    { return sub ("Exports"); }
+
+    //  DONDE CAE EL REBOTE, Y SE PUEDE ELEGIR.
+    //
+    //  Cargar un sonido abre un navegador y se elige de donde; sacarlo no
+    //  preguntaba nada y lo dejaba siempre en ZATI/Exports. Es la unica funcion
+    //  de la app cuyo resultado sale del telefono, asi que es justo la que mas
+    //  falta hace poder dirigir - a la carpeta que el movil sincroniza, a la
+    //  tarjeta, a donde la persona ya tiene su musica.
+    //
+    //  La eleccion es de la PERSONA y no del proyecto, asi que vive donde el
+    //  idioma y la carcasa: en el directorio interno de la app, legible antes
+    //  de que nadie haya decidido donde esta la biblioteca.
+    static juce::File exportPrefFile()
+    {
+        return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                   .getChildFile ("zati-exportar.txt");
+    }
+
+    static juce::File exportsPorDefecto() { return sub ("Exports"); }
+
+    //  La elegida SI SIGUE VALIENDO, y si no la de siempre. Se comprueba cada
+    //  vez y no solo al elegirla: una carpeta de una tarjeta que ya no esta
+    //  montada existe en el fichero de preferencias y no en el aparato, y un
+    //  rebote de cuarenta segundos no puede terminar en un sitio que no acepta
+    //  escritura. Comprobar es barato - un fichero de un byte - y equivocarse
+    //  aqui cuesta la unica accion de esta app que no se deshace tocando otra
+    //  vez.
+    static juce::File exports()
+    {
+        const auto f = exportPrefFile();
+        if (f.existsAsFile())
+        {
+            const auto ruta = f.loadFileAsString().trim();
+            if (ruta.isNotEmpty())
+            {
+                juce::File elegida (ruta);
+                if (canReallyWriteInto (elegida))
+                    return elegida;
+            }
+        }
+        return exportsPorDefecto();
+    }
+
+    //  Devuelve false si la carpeta no acepta una escritura de verdad, que en
+    //  Android es la mitad de las que se pueden LISTAR: el navegador entra en
+    //  ellas y el sistema no deja dejar nada dentro. Se dice al elegirla y no
+    //  al terminar el rebote.
+    static bool setExports (const juce::File& dir)
+    {
+        if (! canReallyWriteInto (dir)) return false;
+        exportPrefFile().getParentDirectory().createDirectory();
+        exportPrefFile().replaceWithText (dir.getFullPathName());
+        return true;
+    }
+
+    static void clearExports() { exportPrefFile().deleteFile(); }
+    static bool exportsElegida() { return exportPrefFile().existsAsFile(); }
 
     // Creates the whole tree. Safe to call every launch.
     static void ensureTree()
