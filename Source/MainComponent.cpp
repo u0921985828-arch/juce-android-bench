@@ -1425,7 +1425,11 @@ MainComponent::MainComponent()
                 sl.setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
                 sl.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
                 sl.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-                sl.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 62, Metrics::readout);
+                //  La casilla a la DERECHA y no debajo: la fila mide
+                //  Metrics::hit -40- y una casilla debajo se lleva la mitad,
+                //  dejando el mando en un punto de 16 px que no se puede
+                //  agarrar. Al lado, el mando se queda con los 40 enteros.
+                sl.setTextBoxStyle (juce::Slider::TextBoxRight, false, 56, Metrics::readout);
                 sl.setRange (-1.0, 100.0, 1.0);
                 sl.setValue (-1.0, juce::dontSendNotification);
                 sl.setDoubleClickReturnValue (true, -1.0);   // dos toques = quitar el bloqueo
@@ -3070,7 +3074,10 @@ void MainComponent::showSeqPage (int page)
     stepGrid.setVisible      (onGrid);
     seqPlayBtn.setVisible    (onGrid);
     seqHumanBtn.setVisible   (onPat);
-    seqFollowBtn.setVisible  (onGrid);
+    //  SEGUIR NO SE ENCIENDE AQUI. Va en la fila del transporte y solo
+    //  entra donde las cuatro tapas caben, y quien lo sabe es resized().
+    //  Misma regla que las tapas de banco: aqui solo se puede APAGAR.
+    if (! onGrid) { seqFollowBtn.setVisible (false); seqFollowBtn.setBounds ({}); }
     //  La visibilidad de las tapas de banco NO se decide aqui: la decide
     //  resized(), que es el unico que sabe si caben sin encoger la rejilla.
     patternSlider.setVisible (onGrid);
@@ -4168,6 +4175,26 @@ void MainComponent::layoutModuleBar (juce::Rectangle<int> row, juce::TextButton*
         need[i] = (int) std::ceil (juce::GlyphArrangement::getStringWidth (capFont, mb[i]->getButtonText()))
                 + 2 * Metrics::sm;
         total += need[i];
+    }
+
+    //  Y UN SUELO DE DEDO POR TAPA, cuando la fila da para el.
+    //
+    //  Repartir por el texto es lo correcto -"VACIAR" pide mas que "TAP"- pero
+    //  el reparto no sabe nada del dedo: en 280x653 la fila del transporte le
+    //  daba a TAP 36 px de ancho, cuatro por debajo del minimo, mientras
+    //  VACIAR se llevaba 60 de sobra. Se sube el suelo solo si las tapas caben
+    //  todas a Metrics::hit y si al subirlo la fila sigue cabiendo: forzarlo
+    //  cuando no cabe convierte un ancho corto en la ULTIMA tapa -que se lleva
+    //  lo que queda- en un ancho negativo, que es peor que el problema.
+    if (row.getWidth() >= kMods * Metrics::hit)
+    {
+        int conSuelo = 0;
+        for (int i = 0; i < kMods; ++i) conSuelo += juce::jmax (Metrics::hit, need[i]);
+        if (conSuelo <= row.getWidth())
+        {
+            for (int i = 0; i < kMods; ++i) need[i] = juce::jmax (Metrics::hit, need[i]);
+            total = conSuelo;
+        }
     }
 
     const int spare = juce::jmax (0, row.getWidth() - total);
@@ -5706,9 +5733,14 @@ void MainComponent::resized()
             inner.removeFromTop (Metrics::sm);
         }
 
+        //  Aire SOLO a los lados: la fila mide Metrics::btn -44- y quitarle
+        //  cuatro por arriba y cuatro por abajo dejaba las dos tapas en 36,
+        //  por debajo del dedo minimo de 40. Es el mismo fallo que
+        //  layoutModuleBar tenia con el mismo numero, escrito a mano aqui.
         auto bottom = inner.removeFromBottom (Metrics::btn);
-        rackButton.setBounds (bottom.removeFromRight (bottom.getWidth() / 3).reduced (Metrics::halfGap, 4));
-        mixClearSolo.setBounds (bottom.reduced (Metrics::halfGap, 4));
+        rackButton.setBounds (bottom.removeFromRight (bottom.getWidth() / 3)
+                                  .reduced (Metrics::halfGap, (Metrics::btn - Metrics::hit) / 2));
+        mixClearSolo.setBounds (bottom.reduced (Metrics::halfGap, (Metrics::btn - Metrics::hit) / 2));
         inner.removeFromBottom (Metrics::xs);
 
         mixScroll.setBounds (inner);
@@ -6031,16 +6063,35 @@ void MainComponent::resized()
             //  coloca: sin esta linea la columna cree tener 58 px que no son
             //  suyos y la ultima fila se queda en cero de alto - el mismo
             //  fallo que ya costo un mando de 393x0 en apaisado.
-            const int lockCost  = (pasoAqui && tiraFilas <  3) ? bandH : 0;
-            const int stepBands = nameH + Metrics::hit + Metrics::xs    // CADENA
-                                + Metrics::hit + Metrics::sm            // QUITAR CADENA
-                                + notaCost                              // NOTA, si la tira no la lleva
-                                + golpeCost                             // GOLPE / REPETIR y CORTE
-                                + lockCost                              // BLOQUEOS, si la tira no los lleva
-                                + bandH + filasUtil                     // PATRON: las herramientas
-                                + nameH + Metrics::hit                  // SWING
-                                + Metrics::sm + nameH + Metrics::hit    // EUCLIDES
-                                + Metrics::sm + nameH + Metrics::hit;   // REJILLA
+            //
+            //  Y SOLO SI LA PAGINA LOS AGUANTA. Esta pagina ya iba al limite:
+            //  con la banda puesta a ciegas, en 280x653 y en 360x640 el mando
+            //  de REJILLA -el ultimo de la pagina- salia de 217x0 y el de
+            //  EUCLIDES de 217x31, porque sheetFromBottom recorta al 78 % y lo
+            //  que falta se lo come lo ultimo que se maqueta, en silencio. Se
+            //  pregunta con el mismo tope que aplica sheetFromBottom, que es
+            //  el unico numero con el que la respuesta es la de la tarjeta que
+            //  se va a dibujar.
+            const int topeSeq = (int) ((float) full.getHeight()
+                                       * (full.getWidth() > full.getHeight() ? 0.90f : 0.78f));
+            //  La altura que pide la pagina, con y sin la banda de bloqueos y
+            //  con la MISMA cuenta: preguntar con una y colocar con otra es
+            //  como se llega a un control de altura cero.
+            //  Lo que cuesta la fila de la CADENA con su QUITAR CADENA: la
+            //  primera cosa que se cae cuando la pagina no cabe. Ver abajo.
+            const int cadenaCost = nameH + Metrics::hit + Metrics::xs
+                                 + Metrics::hit + Metrics::sm;
+            auto stepBandsCon = [&] (int lc, int cadena)
+            {
+                return cadena                            // CADENA + QUITAR CADENA
+                     + notaCost                              // NOTA, si la tira no la lleva
+                     + golpeCost                             // GOLPE / REPETIR y CORTE
+                     + lc                                    // BLOQUEOS, si la tira no los lleva
+                     + bandH + filasUtil                     // PATRON: las herramientas
+                     + nameH + Metrics::hit                  // SWING
+                     + Metrics::sm + nameH + Metrics::hit    // EUCLIDES
+                     + Metrics::sm + nameH + Metrics::hit;   // REJILLA
+            };
             //  The line at the foot that says which step is being edited is
             //  laid out, not squeezed in under the last control: unbudgeted it
             //  was drawn straight across the swing slider's track.
@@ -6055,17 +6106,53 @@ void MainComponent::resized()
             //
             //  Dos columnas caben en la altura de la MAYOR. Es la misma cuenta
             //  que ya estaba, hecha entera.
-            const int colA = nameH + Metrics::hit + Metrics::xs      // CADENA
-                           + Metrics::hit + Metrics::sm               // QUITAR CADENA
-                           + notaCost                                 // NOTA, si queda aqui
-                           + bandH + filasUtil;                       // PATRON
-            const int colB = golpeCost                                // GOLPE, si queda aqui
-                           + lockCost                                  // BLOQUEOS, si quedan aqui
-                           + nameH + Metrics::hit                     // SWING
-                           + Metrics::sm + nameH + Metrics::hit       // EUCLIDES
-                           + Metrics::sm + nameH + Metrics::hit;      // REJILLA
-            wanted = chrome + (wideFace ? juce::jmax (colA, colB) : stepBands)
-                            + Metrics::sm + kSeqFootH;
+            auto colACon = [&] (int cadena)
+            {
+                return cadena                                         // CADENA + QUITAR CADENA
+                     + notaCost                                       // NOTA, si queda aqui
+                     + bandH + filasUtil;                             // PATRON
+            };
+            auto colBCon = [&] (int lc)
+            {
+                return golpeCost                                      // GOLPE, si queda aqui
+                     + lc                                             // BLOQUEOS, si quedan aqui
+                     + nameH + Metrics::hit                           // SWING
+                     + Metrics::sm + nameH + Metrics::hit             // EUCLIDES
+                     + Metrics::sm + nameH + Metrics::hit;            // REJILLA
+            };
+            auto pide = [&] (int lc, int cadena)
+            {
+                return chrome + (wideFace ? juce::jmax (colACon (cadena), colBCon (lc))
+                                          : stepBandsCon (lc, cadena))
+                              + Metrics::sm + kSeqFootH;
+            };
+
+            //  CABE O NO CABE, con la misma pregunta que ya deciden BANCO y
+            //  PADS en la pagina de la rejilla.
+            //
+            //  Esta pagina se pasaba del tope en las dos pantallas mas
+            //  estrechas y nadie se enteraba: sheetFromBottom recorta al 78 %
+            //  y lo que falta se lo come lo ULTIMO que se maqueta. Medido en
+            //  280x653 sin paso tocado -o sea sin nada de lo nuevo-: EUCLIDES
+            //  salia de 217x31 y REJILLA de 217x0, existente, invisible e
+            //  imposible de tocar.
+            //
+            //  Se cae por orden: primero la banda de los cuatro bloqueos, que
+            //  solo existe con un paso tocado; y despues la CADENA con su
+            //  QUITAR CADENA, que en 280 px reparte ocho tapas a 24 px de
+            //  ancho - ya por debajo del dedo minimo en esa pantalla, o sea
+            //  rota alli de todas formas. Y si al quitar la cadena vuelve a
+            //  haber sitio, los bloqueos vuelven: la prioridad es esa y no el
+            //  orden en que se pregunta.
+            const bool quiereLock = (pasoAqui && tiraFilas < 3);
+            int lockCost = quiereLock ? bandH : 0;
+            int cadenaAqui = cadenaCost;
+            if (pide (lockCost, cadenaAqui) > topeSeq && lockCost > 0) lockCost = 0;
+            if (pide (lockCost, cadenaAqui) > topeSeq)                 cadenaAqui = 0;
+            if (quiereLock && lockCost == 0 && pide (bandH, cadenaAqui) <= topeSeq) lockCost = bandH;
+            seqLocksAqui  = (lockCost > 0);
+            seqCadenaAqui = (cadenaAqui > 0);
+            wanted = pide (lockCost, cadenaAqui);
         }
 
         //  LA PAGINA DEL PIANO pide lo suyo: la rejilla de tono se lleva todo lo
@@ -6418,10 +6505,25 @@ void MainComponent::resized()
                 //  A la mitad justa -que fue el segundo intento- VACIAR pedia
                 //  45 px y tenia 31 en 280x653: el numero del tempo se lee
                 //  igual en un tercio de fila, y un rotulo cortado no.
+                //  Y SEGUIR con ellas, que era una tapa MUERTA: showSeqPage la
+                //  encendia con la pagina de la rejilla y nadie le daba nunca
+                //  unas coordenadas, asi que llevaba desde que existe visible y
+                //  de 0x0 - imposible de tocar y contando como control en todo
+                //  lo que mide geometria. Entra donde las cuatro caben; donde
+                //  no, se apaga Y se le vacian los limites, que es lo que hay
+                //  que hacer con las dos cosas a la vez.
+                juce::TextButton* tb4[4] = { &seqPlayBtn, &tapButton, &clearButton, &seqFollowBtn };
                 juce::TextButton* tb3[3] = { &seqPlayBtn, &tapButton, &clearButton };
                 int paraTapas = row.getWidth() / 2;
-                if (! moduleBarFits (paraTapas, tb3, 3))
+                //  Y con sitio para el dedo, no solo para la letra: moduleBarFits
+                //  mide el TEXTO, y cuatro rotulos cortos caben de sobra en una
+                //  fila donde a cada tapa le tocan 35 px.
+                const bool cabeSeguir = paraTapas >= 4 * Metrics::hit
+                                          && moduleBarFits (paraTapas, tb4, 4);
+                if (! cabeSeguir && ! moduleBarFits (paraTapas, tb3, 3))
                     paraTapas = row.getWidth() * 2 / 3;
+                seqFollowBtn.setVisible (cabeSeguir);
+                if (! cabeSeguir) seqFollowBtn.setBounds ({});
 
                 //  Y EL ROTULO DEL TEMPO SE QUEDA EN EL NUMERO cuando la fila
                 //  se estrecha: "120 bpm" pide 52 px y en 280 la casilla se
@@ -6432,7 +6534,8 @@ void MainComponent::resized()
                                     .reduced (Metrics::halfGap, 0);
                 bpmSlider.setTextValueSuffix (celdaBpm.getWidth() >= 150 ? " bpm" : juce::String());
                 bpmSlider.setBounds (celdaBpm);
-                layoutModuleBar (row, tb3, 0, 3);
+                if (cabeSeguir) layoutModuleBar (row, tb4, 0, 4);
+                else            layoutModuleBar (row, tb3, 0, 3);
                 seqLabelBands.add ({ fuente.removeFromBottom (nameH), juce::String ("TEMPO") });
                 fuente.removeFromBottom (Metrics::sm);
             }
@@ -6505,8 +6608,18 @@ void MainComponent::resized()
                         //  fuera por el redondeo.
                         const int ancho = banda.getWidth() / (4 - i);
                         seqLabelBands.add ({ Lang::takeStart (banda, ancho), juce::String (nombres[i]) });
-                        cuatro[i]->setBounds (Lang::takeStart (row, row.getWidth() / (4 - i))
-                                                  .reduced (Metrics::halfGap, 0));
+                        auto celda = Lang::takeStart (row, row.getWidth() / (4 - i))
+                                         .reduced (Metrics::halfGap, 0);
+                        //  El mando primero y el numero con lo que quede, que es
+                        //  la misma cuenta que ya hacen GOLPE y REPETIR: un
+                        //  giratorio por debajo de 24 px no se agarra, y donde
+                        //  no quepan los dos el numero se va - dice OFF o los
+                        //  milisegundos, y las dos cosas caben en el rotulo.
+                        const int paraNum = celda.getWidth() - Metrics::hit;
+                        cuatro[i]->setTextBoxStyle (paraNum >= 34 ? juce::Slider::TextBoxRight
+                                                                  : juce::Slider::NoTextBox,
+                                                    false, juce::jmax (34, paraNum), Metrics::readout);
+                        cuatro[i]->setBounds (celda);
                         cuatro[i]->setVisible (true);
                     }
                 }
@@ -6556,23 +6669,45 @@ void MainComponent::resized()
             auto colB = wideFace ? inner.withTrimmedLeft (Metrics::gap) : juce::Rectangle<int>();
             auto& second = wideFace ? colB : colA;
 
-            nameBand (colA, "CADENA");
+            if (seqCadenaAqui)
             {
-                auto row = colA.removeFromTop (Metrics::hit);
-                const int pw = row.getWidth() / kNumPatterns;
-                for (int i2 = 0; i2 < kNumPatterns; ++i2)
-                    patternButtons[i2]->setBounds ((i2 < kNumPatterns - 1 ? row.removeFromLeft (pw) : row).reduced (2));
-                colA.removeFromTop (Metrics::xs);
-            }
+                nameBand (colA, "CADENA");
+                {
+                    auto row = colA.removeFromTop (Metrics::hit);
+                    const int pw = row.getWidth() / kNumPatterns;
+                    for (int i2 = 0; i2 < kNumPatterns; ++i2)
+                    {
+                        //  Aire SOLO a los lados: la fila mide Metrics::hit -el
+                        //  minimo- y quitarle dos por arriba y dos por abajo
+                        //  dejaba las ocho tapas en 36.
+                        patternButtons[i2]->setBounds ((i2 < kNumPatterns - 1 ? row.removeFromLeft (pw) : row)
+                                                           .reduced (2, 0));
+                        patternButtons[i2]->setVisible (true);
+                    }
+                    colA.removeFromTop (Metrics::xs);
+                }
 
-            //  QUITAR CADENA es de la CADENA y no del paso: compartia renglon
-            //  con NOTA porque los dos cabian en una linea, y eso costo que la
-            //  pagina entera pareciera "el paso". Ahora va con su grupo, que es
-            //  lo que es, y NOTA solo aparece si la tira de la rejilla no se la
-            //  ha llevado.
-            {
+                //  QUITAR CADENA es de la CADENA y no del paso: compartia
+                //  renglon con NOTA porque los dos cabian en una linea, y eso
+                //  costo que la pagina entera pareciera "el paso". Ahora va con
+                //  su grupo, que es lo que es, y NOTA solo aparece si la tira de
+                //  la rejilla no se la ha llevado.
                 chainClearButton.setBounds (colA.removeFromTop (Metrics::hit).reduced (Metrics::halfGap, 0));
+                chainClearButton.setVisible (true);
                 colA.removeFromTop (Metrics::sm);
+            }
+            else
+            {
+                //  Y con los limites vaciados, no solo apagadas: un componente
+                //  invisible que conserva sus coordenadas sigue estando ahi para
+                //  todo lo que mida geometria. Es el fallo de las tapas de banco.
+                for (int i2 = 0; i2 < kNumPatterns; ++i2)
+                {
+                    patternButtons[i2]->setVisible (false);
+                    patternButtons[i2]->setBounds ({});
+                }
+                chainClearButton.setVisible (false);
+                chainClearButton.setBounds ({});
             }
 
             if (pasoAqui && tiraFilas == 0)
@@ -6712,7 +6847,7 @@ void MainComponent::resized()
             //  pantalla. Sin esto los cuatro solo existirian donde caben tres
             //  filas, o sea en ninguna pantalla estrecha - "una funcion que
             //  solo cabe en pantallas grandes no existe en las pequenas".
-            if (pasoAqui && tiraFilas < 3)
+            if (seqLocksAqui)
             {
                 nameBand (second, "BLOQUEOS");
                 auto row = second.removeFromTop (Metrics::hit);
@@ -6720,8 +6855,13 @@ void MainComponent::resized()
                                             &iniPasoSlider, &panPasoSlider };
                 for (int i = 0; i < 4; ++i)
                 {
-                    cuatro[i]->setBounds (Lang::takeStart (row, row.getWidth() / (4 - i))
-                                              .reduced (Metrics::halfGap, 0));
+                    auto celda = Lang::takeStart (row, row.getWidth() / (4 - i))
+                                     .reduced (Metrics::halfGap, 0);
+                    const int paraNum = celda.getWidth() - Metrics::hit;
+                    cuatro[i]->setTextBoxStyle (paraNum >= 34 ? juce::Slider::TextBoxRight
+                                                              : juce::Slider::NoTextBox,
+                                                false, juce::jmax (34, paraNum), Metrics::readout);
+                    cuatro[i]->setBounds (celda);
                     cuatro[i]->setVisible (true);
                 }
                 second.removeFromTop (Metrics::sm);

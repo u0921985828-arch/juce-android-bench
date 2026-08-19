@@ -1159,6 +1159,12 @@ private:
     Sheet tourSheet;
     juce::TextButton tourNextBtn { "SIGUIENTE" }, tourBackBtn { "TOUR ATRAS" },
                      tourSkipBtn { "SALTAR" }, tourButton { "TOUR" };
+    //  Si la pagina PATRON se quedo con la banda de los cuatro bloqueos. Lo
+    //  decide la cuenta de la altura y lo usa la maqueta: preguntarlo dos
+    //  veces con dos cuentas es como una fila se queda con altura cero.
+    bool seqLocksAqui = false;
+    //  Y si se quedo con la fila de la CADENA. Misma razon.
+    bool seqCadenaAqui = true;
     int  tourPaso = 0;
     void showTour (int paso);
     int  tourBodyHeight (int ancho) const;
