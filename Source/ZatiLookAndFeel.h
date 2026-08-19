@@ -433,7 +433,16 @@ namespace Metrics
     //  come out exactly `gap` apart.
     static constexpr int gap     = 8;
     static constexpr int halfGap = gap / 2;
-    static constexpr int tab = 32;    // module bar: it opens windows, it does not act
+    //  LA PESTANA DE UNA FICHA TAMBIEN SE TOCA.
+    //
+    //  Valia 32 con el argumento de que una pestana abre una pagina y no actua,
+    //  asi que podia ser mas discreta. Cierto de intencion y falso desde el
+    //  dedo: el minimo son 40 y esto medía 32 en DIEZ de las veintiuna fichas -
+    //  las tres del secuenciador, las cuatro de ajustes y las cuatro de la
+    //  mesa-, que es la causa mas repetida de todo el banco. Lo que impedia
+    //  subirlo era que el alto de una ficha era escaso; con las de controles
+    //  desplazandose, ya no lo es. Ver Sheet::hazDesplazable.
+    static constexpr int tab = 44;
     static constexpr int row = 44;    // list row
 
     // Type — four sizes, each with one job.

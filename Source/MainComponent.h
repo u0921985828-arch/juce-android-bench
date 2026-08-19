@@ -64,6 +64,56 @@ private:
         std::function<void (juce::Point<int>)> onContentClick;
         juce::Rectangle<int> sheetBounds;
 
+        //  UNA FICHA QUE SE DESPLAZA.
+        //
+        //  Hasta ahora la regla era "todo tiene que caber en la tarjeta, y lo
+        //  que no cabe se cae", y de ahi salia todo lo demas: las pestanas a 32
+        //  px en vez de 44, las filas apretadas, y una escalera de prioridad en
+        //  cada ficha decidiendo que funcion desaparece en un movil estrecho.
+        //  Medido: de las veintiuna fichas, diez tenian controles por debajo del
+        //  dedo minimo y en casi todas la causa era la misma - no habia alto.
+        //
+        //  Con desplazamiento el alto deja de ser escaso y cada control puede
+        //  medir lo que tiene que medir. El punto de palanca es que TODAS las
+        //  fichas empiezan su maquetado en el rectangulo que devuelve
+        //  sheetFromBottom: si ese rectangulo pasa a estar dentro de un
+        //  Viewport, el maquetado entero se muda solo y no hay que tocar una
+        //  sola cuenta de las que ya estaban medidas.
+        //
+        //  Solo las de CONTROLES. Las de LIENZO -la rejilla de pasos, el piano
+        //  y la cancion- no se desplazan nunca: se pintan con el dedo
+        //  arrastrado, y un arrastre vertical que a veces escribe una nota y a
+        //  veces mueve la pagina es un gesto que no se puede aprender. Y las
+        //  que YA traen su propia lista desplazable dentro -la mesa, el manual
+        //  y el navegador- tampoco, que anidar dos desplazamientos es la otra
+        //  forma de que un arrastre no se sepa de quien es.
+        struct Cuerpo : public juce::Component
+        {
+            std::function<void (juce::Graphics&)> paintBody;
+            std::function<void (juce::Point<int>)> onClick;
+            void paint (juce::Graphics& g) override { if (paintBody) paintBody (g); }
+            void mouseDown (const juce::MouseEvent& e) override { if (onClick) onClick (e.getPosition()); }
+        };
+        Cuerpo cuerpo;
+        juce::Viewport vista;
+        bool desplazable = false;
+
+        //  Se llama una vez, al construir, y decide donde viven los hijos de
+        //  esta ficha. Quien no la llame se queda exactamente como estaba.
+        void hazDesplazable()
+        {
+            desplazable = true;
+            vista.setViewedComponent (&cuerpo, false);
+            vista.setScrollBarsShown (true, false);
+            vista.setScrollBarThickness (8);
+            addAndMakeVisible (vista);
+            cuerpo.paintBody = [this] (juce::Graphics& g) { if (paintContent) paintContent (g); };
+            cuerpo.onClick   = [this] (juce::Point<int> p) { if (onContentClick) onContentClick (p); };
+        }
+
+        //  Donde se anaden los hijos: el cuerpo si se desplaza, la ficha si no.
+        juce::Component& donde() { return desplazable ? (juce::Component&) cuerpo : (juce::Component&) *this; }
+
         void paint (juce::Graphics& g) override;
         void mouseDown (const juce::MouseEvent& e) override
         {
@@ -71,7 +121,10 @@ private:
             {
                 if (onDismiss) onDismiss();
             }
-            else if (onContentClick)
+            //  Y si se desplaza, el toque dentro lo recoge el cuerpo, que es
+            //  quien tiene las coordenadas buenas: aqui llegaria el de la
+            //  ventana y pintaria el zati que no es.
+            else if (onContentClick && ! desplazable)
             {
                 onContentClick (e.getPosition());
             }
