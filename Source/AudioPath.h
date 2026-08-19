@@ -307,4 +307,9 @@ namespace AudioPath
 //  Zero means "leave JUCE alone", which is what every other platform sees.
 // ============================================================================
 extern "C" int zatiOboeUsage;
+//  LA ENTRADA SIN PROCESAR. Ver el parche: 9 = AAUDIO_INPUT_PRESET_UNPROCESSED,
+//  6 = VOICE_RECOGNITION (que tambien apaga el AGC en casi todos), 0 = lo que
+//  el sistema quiera. Un sampler graba fuentes, no voz: los tres arreglos que
+//  Android aplica por defecto estan pensados para lo segundo.
+extern "C" int zatiOboeInputPreset;
 extern "C" int zatiOboeForceI16;

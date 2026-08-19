@@ -12142,6 +12142,32 @@ void MainComponent::toggleMicSampling()
                 }
             }
 
+        //  Y LA CONTINUA FUERA, que es lo que trae cualquier entrada de movil.
+        //
+        //  Un convertidor no centra su cero exactamente: la toma sale montada
+        //  sobre un valor fijo pequeno. No se oye -es 0 Hz- y hace tres danos
+        //  que si se notan: se come margen de volumen por el lado al que este
+        //  desplazada, mete un clic al empezar y al acabar porque el primer
+        //  dato no vale cero, y al normalizar sube ese desplazamiento como si
+        //  fuera senal. Se quita restando la MEDIA de cada canal, que es la
+        //  definicion, y no con un paso alto: un filtro tambien se llevaria los
+        //  graves de verdad, y en un bombo eso es el bombo.
+        if (sb != nullptr && sb->buffer.getNumSamples() > 16)
+        {
+            for (int ch = 0; ch < sb->buffer.getNumChannels(); ++ch)
+            {
+                const int n = sb->buffer.getNumSamples();
+                const auto* d = sb->buffer.getReadPointer (ch);
+                double suma = 0.0;
+                for (int i = 0; i < n; ++i) suma += (double) d[i];
+                const float media = (float) (suma / (double) n);
+                //  Por debajo de -60 dBFS no hay continua que quitar, hay
+                //  ruido: restar la media de una toma limpia solo la mueve.
+                if (std::abs (media) > 0.001f)
+                    juce::FloatVectorOperations::add (sb->buffer.getWritePointer (ch), -media, n);
+            }
+        }
+
         setAudioChannels (0, 2);          // release the mic input, back to output-only
         useLowestLatency();               // ...and take the fast path back with it
         styleButton (micButton, kKey);

@@ -32,6 +32,7 @@ DECL = """
 // --- Zati: set from the app's AAudio probe before any device is opened. ---
 extern "C" int zatiOboeUsage;
 extern "C" int zatiOboeForceI16;
+extern "C" int zatiOboeInputPreset;
 """
 
 USAGE_ANCHOR = "            builder.setPerformanceMode (oboe::PerformanceMode::LowLatency);"
@@ -39,7 +40,18 @@ USAGE_PATCH = USAGE_ANCHOR + """
 
             // Zati: the usage the phone was willing to grant MMAP for.
             if (zatiOboeUsage != 0 && direction == oboe::Direction::Output)
-                builder.setUsage ((oboe::Usage) zatiOboeUsage);"""
+                builder.setUsage ((oboe::Usage) zatiOboeUsage);
+
+            // Zati: LA ENTRADA, SIN PROCESAR.
+            //
+            // Android le mete a cualquier grabacion control automatico de
+            // ganancia, supresion de ruido y cancelador de eco. Para una
+            // llamada esta bien; para samplear un disco es la diferencia entre
+            // grabar el disco y grabar una llamada: comprime, se come los
+            // graves y bombea. UNPROCESSED apaga los tres. Si el aparato no lo
+            // admite, Oboe cae solo al preset que tenga.
+            if (zatiOboeInputPreset != 0 && direction == oboe::Direction::Input)
+                builder.setInputPreset ((oboe::InputPreset) zatiOboeInputPreset);"""
 
 FLOAT_ANCHOR = """    // SDK versions 21 and higher should natively support floating point...
     std::unique_ptr<OboeSessionBase> session = std::make_unique<OboeSessionImpl<float>> (owner,"""

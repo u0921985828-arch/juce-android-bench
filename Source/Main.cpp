@@ -13,6 +13,9 @@
 //  that every other platform links a pair of harmless zeroes.
 extern "C" int zatiOboeUsage    = 0;
 extern "C" int zatiOboeForceI16 = 0;
+//  Y la de la ENTRADA: 9 es UNPROCESSED, que apaga el control automatico de
+//  ganancia, la supresion de ruido y el cancelador de eco. Ver AudioPath.h.
+extern "C" int zatiOboeInputPreset = 9;
 
 // ============================================================================
 //  Application entry — standard JUCEApplication + a resizable DocumentWindow

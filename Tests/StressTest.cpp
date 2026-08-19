@@ -1476,6 +1476,54 @@ int main()
                      "audicion del piano roll", grave, agudo, razon, despues, ok ? "OK" : "FALLA");
     }
 
+    //  EL BUCLE NO PUEDE CHASQUEAR EN CADA VUELTA.
+    //
+    //  Al dar la vuelta la senal salta del ultimo dato al primero, y eso es un
+    //  escalon: un chasquido por vuelta. Se mide como los chasquidos de la
+    //  fabrica - el salto entre dos muestras seguidas contra el pico de lo que
+    //  hay alrededor - porque "suena mal" no es una medida y un bucle siempre
+    //  tiene saltos legitimos dentro.
+    //
+    //  La fuente es media onda de 110 Hz: al volver, el ultimo dato esta en el
+    //  maximo y el primero en cero, que es el peor escalon posible.
+    {
+        AudioEngine e; e.prepareToPlay (48000.0, 256); e.setPolyphony (8, 4);
+        e.setPadGain (0, 0.9f);
+        auto* sb = new SampleBuffer();
+        const int n = 4800;                     // 100 ms
+        sb->buffer.setSize (2, n);
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < n; ++i)
+                sb->buffer.setSample (ch, i, 0.7f * std::sin (juce::MathConstants<float>::pi
+                                                              * (float) i / (float) n));
+        sb->sourceSampleRate = 48000.0;
+        e.publishSample (0, SampleBuffer::Ptr (sb));
+        e.setPadLoop (0, true);
+        juce::AudioBuffer<float> b (2, 256);
+        runBlocks (e, b, 256, 4);
+
+        e.postNoteOn (0, 1.0f);
+        float peor = 0.0f, pico = 0.0f, prev = 0.0f;
+        for (int i = 0; i < 120; ++i)
+        {
+            e.renderNextBlock (b, 0, 256);
+            const auto* d = b.getReadPointer (0);
+            for (int k = 0; k < 256; ++k)
+            {
+                if (i > 4) peor = juce::jmax (peor, std::abs (d[k] - prev));
+                pico = juce::jmax (pico, std::abs (d[k]));
+                prev = d[k];
+            }
+        }
+        //  El liston: el salto mas grande que una senal de banda limitada puede
+        //  dar entre dos muestras seguidas a este nivel. Un escalon de vuelta
+        //  vale el pico entero; un fundido de 3 ms lo deja en centesimas.
+        const float razon = pico > 0.0001f ? peor / pico : 0.0f;
+        const bool ok = razon < 0.10f;
+        std::printf ("%-34s salto peor %.4f de un pico de %.3f (%.1f%%)   %s\n",
+                     "bucle sin chasquido", peor, pico, 100.0f * razon, ok ? "OK" : "FALLA");
+    }
+
     //  EL LARGO DE LA NOTA. Una nota no es un cuadrado: dura lo que dice el
     //  paso, y eso se mide contando cuantos bloques sigue viva la voz.
     //

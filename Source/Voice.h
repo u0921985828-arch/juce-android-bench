@@ -160,6 +160,27 @@ struct Voice
         fadeInSamp  = juce::jlimit (0, tercio, (int) (fadeInMs  * 0.001 * fSrcAbs));
         fadeOutSamp = juce::jlimit (0, tercio, (int) (fadeOutMs * 0.001 * fSrcAbs));
 
+        //  UN BUCLE SIN FUNDIDO CHASQUEA EN CADA VUELTA.
+        //
+        //  Al dar la vuelta, la senal salta del ultimo dato de la ventana al
+        //  primero, y salvo que los dos valgan lo mismo -que no pasa nunca- eso
+        //  es un escalon: un chasquido por vuelta, y a 120 BPM con un bucle de
+        //  un compas son dos por segundo. Es el mismo problema que el corte de
+        //  un trozo, que ya se arreglo con fundido, y por eso la solucion es la
+        //  misma y no una nueva: si el pad esta en BUCLE y quien lo puso no
+        //  eligio fundido, se le pone el minimo que quita el escalon.
+        //
+        //  Tres milisegundos, que es lo que dura medio ciclo de 160 Hz: por
+        //  debajo de eso el fundido ya no tapa el salto de un grave, y por
+        //  encima se empieza a oir que la vuelta "respira". Y sigue acotado al
+        //  tercio, asi que un bucle de dos milisegundos no se convierte en un
+        //  mando de volumen.
+        if (loopOn && fadeInSamp == 0 && fadeOutSamp == 0)
+        {
+            const int minimo = juce::jlimit (0, tercio, (int) (0.003 * fSrcAbs));
+            fadeInSamp = fadeOutSamp = minimo;
+        }
+
         //  45 ms grains: long enough that the crossfade does not buzz at the
         //  grain rate, short enough that the smearing stays inside a drum hit.
         pitchMode = keepLength;
