@@ -1762,6 +1762,7 @@ MainComponent::MainComponent()
     //  demas: es lo primero que ve alguien que acaba de instalar la app y
     //  cerrarse por un roce deja la maquina sin explicar y sin forma evidente
     //  de volver. Se sale por SALTAR o llegando al final.
+    tourSheet.pintaTodo = true;
     tourSheet.onDismiss = nullptr;
     tourSheet.paintContent = [this] (juce::Graphics& g) { paintTourSheetContent (g); };
     for (auto* b : { &tourBackBtn, &tourNextBtn, &tourSkipBtn })
@@ -3994,6 +3995,9 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
 
 void MainComponent::Sheet::paint (juce::Graphics& g)
 {
+    //  Ver pintaTodo: el tour se dibuja entero el, foco incluido.
+    if (pintaTodo) { if (paintContent) paintContent (g); return; }
+
     g.fillAll (juce::Colours::black.withAlpha (0.45f));
     if (sheetBounds.isEmpty()) return;
 
@@ -5089,28 +5093,6 @@ void MainComponent::resized()
         manualBody.setSize (juce::jmax (40, inner.getWidth() - barW),
                             juce::jmax (inner.getHeight(),
                                         manualContentHeight (inner.getWidth() - barW)));
-    }
-
-    //  LA FICHA DEL TOUR. Titulo, parrafo y tres tapas. La altura es fija
-    //  porque el texto es PINTADO y encoge solo; lo que no encoge -la fila de
-    //  tapas- se aparta primero, que es la regla que ya costo un mando de
-    //  393x0 en apaisado y cuatro tapas de CARCASA a cero de alto.
-    {
-        //  El ancho de la tarjeta antes de tenerla: sheetFromBottom la centra
-        //  al 92 % de la ventana y le quita Metrics::lg por lado. Se calcula
-        //  aqui porque la altura depende de el, y preguntarselo despues es
-        //  pedir la altura de un parrafo que aun no sabe de que ancho es.
-        const int anchoTour = (int) (full.getWidth() * 0.92f) - 2 * Metrics::lg;
-        auto inner = sheetFromBottom (tourSheet, Metrics::md * 2 + Metrics::hit + Metrics::sm
-                                                 + tourBodyHeight (anchoTour)
-                                                 + Metrics::sm + Metrics::hit);
-        inner.removeFromTop (Metrics::hit + Metrics::sm);    // pintado: el titulo
-        {
-            auto row = inner.removeFromBottom (Metrics::hit);
-            juce::TextButton* tb[3] = { &tourSkipBtn, &tourBackBtn, &tourNextBtn };
-            layoutModuleBar (row, tb, 0, 3);
-        }
-        tourBodyArea = inner;
     }
 
     // BROWSE sheet: the tallest of them all — the file list wants the room.
@@ -7196,6 +7178,40 @@ void MainComponent::resized()
             }
         }
     }
+    //  EL MUELLE DEL TOUR, y va AL FINAL de resized() a proposito: su sitio
+    //  depende de donde haya quedado el control que el paso senala, y eso solo
+    //  se sabe cuando el resto ya se ha maquetado. Colocarlo antes seria
+    //  colocarlo con las coordenadas de la vuelta anterior.
+    {
+        tourSheet.setBounds (getLocalBounds());
+        tourFoco = tourObjetivo (tourPaso);
+
+        const int anchoDock = getWidth();
+        const int alto = Metrics::md * 2 + 16 + Metrics::xs
+                       + tourBodyHeight (anchoDock - 2 * Metrics::lg)
+                       + Metrics::sm + Metrics::hit;
+
+        //  EN LA MITAD CONTRARIA A LA DEL OBJETIVO. Es lo unico que garantiza
+        //  que el texto no tape lo que se esta senalando sin tener que negociar
+        //  posiciones - que es donde el FX-404 se dejo dos redisenos.
+        auto ventana = getLocalBounds();
+        const bool objetivoArriba = tourFoco.isEmpty()
+                                  || tourFoco.getCentreY() < ventana.getCentreY();
+        tourDock = objetivoArriba ? ventana.removeFromBottom (alto)
+                                  : ventana.removeFromTop (alto);
+        //  Y si aun asi se solapan -un objetivo que ocupa media pantalla-, manda
+        //  el texto: sin leerlo el foco no explica nada.
+        auto inner = tourDock.reduced (Metrics::lg, Metrics::md);
+        inner.removeFromTop (16 + Metrics::xs);              // pintado: titulo y puntos
+        {
+            auto row = inner.removeFromBottom (Metrics::hit);
+            juce::TextButton* tb[3] = { &tourSkipBtn, &tourBackBtn, &tourNextBtn };
+            layoutModuleBar (row, tb, 0, 3);
+            inner.removeFromBottom (Metrics::sm);
+        }
+        tourBodyArea = inner;
+    }
+
 }
 
 void MainComponent::padClicked (int index)
@@ -10508,50 +10524,161 @@ juce::File MainComponent::tourFile()
 void MainComponent::showTour (int paso)
 {
     tourPaso = juce::jlimit (0, kTourPasos - 1, paso);
+    //  Primero se abre lo que el paso explica y DESPUES se maqueta: el muelle
+    //  se coloca segun donde quede el objetivo, y el objetivo de casi todos los
+    //  pasos vive dentro de una ficha que este paso acaba de abrir.
+    tourPrepara (tourPaso);
     tourBackBtn.setEnabled (tourPaso > 0);
     //  La ultima tapa cambia de nombre y no solo de efecto: "SIGUIENTE" en la
     //  quinta tarjeta es una promesa de una sexta que no existe.
     tourNextBtn.setButtonText (tourPaso + 1 < kTourPasos ? T ("SIGUIENTE") : T ("TOUR EMPEZAR"));
+    resized();
     tourSheet.repaint();
 }
 
-//  Cinco tarjetas: que es la maquina, como se le meten sonidos, como se
-//  escribe, que se le hace al sonido y como sale de aqui. En ese orden porque
-//  es el orden en que hace falta saberlo, no el de las pestanas.
-//
-//  Fuera de la funcion que las pinta porque los mide TAMBIEN la maqueta: la
-//  altura de la tarjeta sale del parrafo mas largo traducido al idioma que
-//  este puesto, y pedir un numero fijo es como se llega a una tarjeta con
+//  Los textos, fuera de la funcion que los pinta porque los mide TAMBIEN la
+//  maqueta: la altura del muelle sale del parrafo mas largo traducido al idioma
+//  que este puesto, y pedir un numero fijo es como se llega a un muelle con
 //  hueco de sobra en una lengua y con el texto cortado en otra.
 namespace ZatiTour
 {
+    //  QUINCE PASOS, cada uno sobre un control DE VERDAD y en el orden en que se
+    //  aprende el instrumento: primero lo que suena, luego como se escribe, luego
+    //  que se le hace al sonido, y al final como sale de aqui.
+    //
+    //  Cortos a proposito. El FX-404 tiene veintisiete y aprendio lo mismo por el
+    //  camino - "pasos mas cortos" es una de sus versiones -: un parrafo largo
+    //  encima de una maquina oscurecida no se lee, se salta.
     static const char* titulos[MainComponent::kTourPasos] =
-        { "SESENTA Y CUATRO PADS", "METE UN SONIDO", "ESCRIBE UN PATRON",
-          "MOLDEA EL SONIDO", "SACALO DE AQUI" };
+        { "ZATI",
+          "LOS PADS",
+          "CUATRO BANCOS",
+          "CARGAR, GRABAR, TOCAR",
+          "LOS SEIS EFECTOS",
+          "LOS TRES MANDOS",
+          "LA REJILLA DE PASOS",
+          "LO QUE HACE UN PASO",
+          "EL PIANO",
+          "EL PATRON ENTERO",
+          "DENTRO DE UN PAD",
+          "LA MESA Y EL RACK",
+          "LA CANCION",
+          "SACARLO DE AQUI",
+          "Y LO DEMAS" };
+
     static const char* cuerpos[MainComponent::kTourPasos] =
-        { "Dieciseis a la vista y cuatro bancos: A, B, C y D. La rejilla ensena "
-          "uno y los otros tres siguen sonando. Toca uno y suena; mantenlo "
-          "pulsado y se abre lo que se le puede hacer.",
-          "CARGAR trae un fichero, GRABAR toma lo que oiga el microfono y "
-          "FABRICA rellena los 64 con sonidos que se sintetizan aqui dentro, "
-          "sin ocupar sitio. AUTO CHOP parte un break por sus golpes y lo "
-          "reparte por los pads.",
-          "En SEC la rejilla son dieciseis pasos por dieciseis pads: toca una "
-          "casilla y suena ahi. Con un paso tocado aparecen debajo sus mandos "
-          "- nota, fuerza, repeticion, filtro y los bloqueos. Y en PIANO se "
-          "escribe por tono, con notas que duran lo que quieras.",
-          "Cada pad tiene su filtro, su recorte y sus seis envios. Los efectos "
-          "son de la maquina y no del pad: se abren desde la cara y cada pad "
-          "decide cuanto le manda, en el RACK. La ficha XY mueve dos a la vez "
-          "con el dedo.",
-          "EXPORTAR saca la mezcla entera o una pista por pad, en WAV o en OGG. "
-          "El proyecto se guarda solo, y en AJUSTES estan el idioma, las cuatro "
-          "carcasas y el MANUAL, que cuenta todo esto con calma." };
+        { "Un sampler entero en el telefono. Este recorrido senala cada pieza en su "
+          "sitio; se salta cuando quieras y se vuelve a abrir desde AJUSTES.",
+
+          "Dieciseis a la vista. Toca uno y suena; mantenlo pulsado y se abre todo "
+          "lo que se le puede hacer.",
+
+          "A, B, C y D: sesenta y cuatro pads en total. La rejilla ensena uno y "
+          "los otros tres siguen sonando.",
+
+          "CARGAR trae un fichero a un pad. REC graba lo que oiga el microfono. "
+          "PLAY pone en marcha el patron.",
+
+          "Filtro, paso alto, saturacion, eco, reduccion y reverberacion. Son de "
+          "la maquina, no del pad: cada pad decide cuanto les manda.",
+
+          "Los tres de arriba mueven el efecto que tengas abierto. Debajo de cada "
+          "uno pone lo que hace en ese momento.",
+
+          "Dieciseis pasos por dieciseis pads. Toca una casilla y ese pad suena "
+          "ahi; arrastra el dedo para escribir varias seguidas.",
+
+          "Con un paso tocado aparecen debajo sus mandos: nota, fuerza, "
+          "repeticion, filtro y los cuatro bloqueos.",
+
+          "La misma musica por tono en vez de por pasos. Varias notas en una "
+          "columna son un acorde, y arrastrando se estira lo que dura cada una.",
+
+          "Aqui vive lo que le pasa al patron entero: cadena, desplazar, doblar, "
+          "humanizar, copiar y pegar, swing y rejilla.",
+
+          "Recorte, afinado, filtro, envolvente y bucle. AUTO CHOP parte un break "
+          "por sus golpes y lo reparte por los pads.",
+
+          "La mesa pone los dieciseis a su nivel. El RACK dice cuanto manda cada "
+          "pad a cada efecto, sin cerrar nada.",
+
+          "Los patrones colocados en el tiempo, en cuatro carriles. Un bloque "
+          "dura lo que ocupa, no lo que dure su patron.",
+
+          "La mezcla entera o una pista por pad, en WAV o en OGG, y a la carpeta "
+          "que tu elijas.",
+
+          "El idioma, las cuatro carcasas y el MANUAL, que cuenta todo esto con "
+          "calma. Ya puedes empezar." };
 }
 
-//  Cuanto alto pide el parrafo mas largo con este ancho. Se mide el mas largo
-//  y no el que toca, para que la tarjeta no cambie de tamano al pasar de una
-//  a otra: una ficha que da un salto por cada toque se lee como un fallo.
+//  QUE SENALA CADA PASO. Vacio = sin objetivo: el primero y el ultimo hablan de
+//  la app entera y no de una pieza, y ahi un anillo alrededor de algo seria
+//  senalar por senalar.
+juce::Rectangle<int> MainComponent::tourObjetivo (int paso) const
+{
+    auto deComponente = [this] (const juce::Component* c) -> juce::Rectangle<int>
+    {
+        //  Y solo si esta en pantalla: un componente escondido tiene limites y
+        //  no tiene sitio, asi que el anillo caeria sobre nada. Es la misma
+        //  regla que el banco aplica a los controles que no se maquetan.
+        if (c == nullptr || ! c->isShowing()) return {};
+        return getLocalArea (c, c->getLocalBounds());
+    };
+
+    switch (paso)
+    {
+        case 1:  return padPlateArea;
+        case 2:  return bankButtons.isEmpty() ? juce::Rectangle<int>()
+                        : deComponente (bankButtons[0]).getUnion (deComponente (bankButtons[bankButtons.size() - 1]));
+        case 3:  return deComponente (&loadButton).getUnion (deComponente (&playButton));
+        case 4:  return fxButtons.isEmpty() ? juce::Rectangle<int>()
+                        : deComponente (fxButtons[0]).getUnion (deComponente (fxButtons[fxButtons.size() - 1]));
+        case 5:  return ctrlPlateArea;
+        case 6:  return deComponente (&stepGrid);
+        case 7:  return seqTiraFilas > 0 ? stepStripArea : juce::Rectangle<int>();
+        case 8:  return deComponente (&pianoGrid);
+        case 9:  return deComponente (&patDoubleBtn).getUnion (deComponente (&seqHumanBtn));
+        case 10: return deComponente (&waveform);
+        case 11: return deComponente (&rackButton);
+        case 12: return deComponente (&songGrid);
+        case 13: return deComponente (&exportMasterButton).getUnion (deComponente (&exportStemsButton));
+        default: return {};
+    }
+}
+
+//  Y CADA PASO ABRE LO QUE EXPLICA. Un tour que dice "en SEC esta la rejilla" y
+//  deja a la persona en la cara no ha ensenado la rejilla: la ha nombrado. El
+//  del FX-404 abre cada pop-up y lo explica en vivo, y es lo que lo separa de un
+//  folleto.
+void MainComponent::tourPrepara (int paso)
+{
+    switch (paso)
+    {
+        case 6:  showSeqPage (seqPageGrid);  openSheet (seqSheet, secButton); break;
+        case 7:  showSeqPage (seqPageGrid);  openSheet (seqSheet, secButton);
+                 //  Con un paso tocado, que la tira solo existe entonces.
+                 if (selectedStep < 0) stepCellToggled (0, 4);
+                 break;
+        case 8:  openSheet (seqSheet, secButton); showSeqPage (seqPagePiano); refreshPiano(); break;
+        case 9:  showSeqPage (seqPageStep);  openSheet (seqSheet, secButton); break;
+        case 10: showPadPage (padPageTrim);  openSheet (padSheet, padsButton); break;
+        case 11: refreshMixStrip();          openSheet (mixSheet, mixButton);  break;
+        case 12: openSheet (songSheet, songButton); break;
+        case 13: exportStatus.clear(); exportOk = false; openSheet (exportSheet, setButton); break;
+        case 14: showSetPage (pageAudio); refreshAudioOptions(); openSheet (setSheet, setButton); break;
+        default: closeAllSheets(); break;
+    }
+
+    //  Y EL TOUR POR ENCIMA. openSheet cierra todo y sube la ficha que abre, asi
+    //  que sin esto el tour se queda debajo de lo que acaba de abrir para
+    //  explicarlo - que es exactamente el fallo que el FX-404 anoto como "el
+    //  tour se eleva por encima del pop-up".
+    tourSheet.setVisible (true);
+    tourSheet.toFront (false);
+}
+
 int MainComponent::tourBodyHeight (int ancho) const
 {
     if (ancho <= 0) return 0;
@@ -10571,33 +10698,89 @@ int MainComponent::tourBodyHeight (int ancho) const
 
 void MainComponent::paintTourSheetContent (juce::Graphics& g)
 {
-    if (tourSheet.sheetBounds.isEmpty()) return;
+    //  EL FOCO. Se oscurece la maquina entera MENOS lo que se esta explicando,
+    //  con cuatro rectangulos alrededor del hueco en vez de un Path con agujero:
+    //  cuatro fillRect son cuatro operaciones que cualquier GPU hace de un
+    //  tiron, y un path con regla par-impar sobre una ventana entera se pinta
+    //  treinta veces por segundo mientras el transporte rueda.
+    auto todo = tourSheet.getLocalBounds();
+    const auto foco = tourFoco;
+    g.setColour (juce::Colours::black.withAlpha (0.72f));
+    if (foco.isEmpty())
+    {
+        g.fillRect (todo);
+    }
+    else
+    {
+        g.fillRect (todo.withBottom (foco.getY()));
+        g.fillRect (todo.withTop (foco.getBottom()));
+        g.fillRect (juce::Rectangle<int> (todo.getX(), foco.getY(),
+                                          foco.getX() - todo.getX(), foco.getHeight()));
+        g.fillRect (juce::Rectangle<int> (foco.getRight(), foco.getY(),
+                                          todo.getRight() - foco.getRight(), foco.getHeight()));
 
-    auto inner = tourSheet.sheetBounds.reduced (Metrics::lg, Metrics::md);
-    auto titleRow = inner.removeFromTop (Metrics::hit);
+        //  El anillo, en el acento: es lo unico que dice "esto de aqui" y tiene
+        //  que leerse sobre cualquiera de las cuatro carcasas, asi que se elige
+        //  el color del sistema y no un gris.
+        g.setColour (ZatiColours::accent);
+        g.drawRoundedRectangle (foco.toFloat().expanded (2.0f), 3.0f, 2.0f);
+    }
 
+    //  EL NUMERO DEL PASO, junto al control y no dentro: dentro taparia
+    //  justamente lo que se senala. Se pone en el borde que tenga sitio, y si
+    //  no hay objetivo no se pinta - un numero suelto en mitad de la pantalla
+    //  no senala nada.
+    if (! foco.isEmpty())
+    {
+        const int d = 26;
+        juce::Rectangle<int> chapa (d, d);
+        if (foco.getY() - d - 6 >= todo.getY())        chapa.setPosition (foco.getX() - 2, foco.getY() - d - 6);
+        else if (foco.getBottom() + d + 6 <= todo.getBottom()) chapa.setPosition (foco.getX() - 2, foco.getBottom() + 6);
+        else                                            chapa.setPosition (foco.getX() + 6, foco.getY() + 6);
+
+        g.setColour (ZatiColours::accent);
+        g.fillEllipse (chapa.toFloat());
+        g.setColour (ZatiColours::textOn (ZatiColours::accent));
+        g.setFont (ZatiColours::monoFont (12.0f, true));
+        g.drawText (juce::String (tourPaso + 1), chapa, juce::Justification::centred);
+    }
+
+    //  EL MUELLE. Su sitio lo decidio resized(), en la mitad contraria a la del
+    //  objetivo. Aqui solo se pinta.
+    if (tourDock.isEmpty()) return;
+    auto inner = tourDock.reduced (Metrics::lg, Metrics::md);
+
+    g.setColour (ZatiColours::chassisTop);
+    g.fillRect (tourDock);
+    g.setColour (ZatiColours::ink.withAlpha (0.85f));
+    g.drawRect (tourDock, 1);
+
+    auto titleRow = inner.removeFromTop (16);
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
     g.drawText (T (ZatiTour::titulos[tourPaso]), titleRow, Lang::start(), true);
 
-    //  Los puntos, en el mismo renglon del titulo y por el otro lado: dicen
-    //  cuantas quedan, que es la unica pregunta que alguien se hace en la
-    //  primera tarjeta de algo que no ha pedido.
+    //  Los puntos, por el otro lado del titulo: dicen cuantos quedan, que es la
+    //  unica pregunta que alguien se hace en el primer paso de algo que no ha
+    //  pedido. Son un indicador y no un control - para moverse estan ATRAS y
+    //  SIGUIENTE, que miden lo que mide un dedo; un punto de siete pixeles no
+    //  se puede acertar y fingir que si es peor que no tenerlos.
     {
-        auto marca = Lang::takeEnd (titleRow, kTourPasos * 14);
+        auto marca = Lang::takeEnd (titleRow, kTourPasos * 9);
         for (int i = 0; i < kTourPasos; ++i)
         {
-            auto p = Lang::takeStart (marca, 14).withSizeKeepingCentre (7, 7);
+            auto pt = Lang::takeStart (marca, 9).withSizeKeepingCentre (5, 5);
             g.setColour (i == tourPaso ? ZatiColours::accent : ZatiColours::inkDim.withAlpha (0.35f));
-            g.fillEllipse (p.toFloat());
+            g.fillEllipse (pt.toFloat());
         }
     }
 
+    inner.removeFromTop (Metrics::xs);
     if (tourBodyArea.isEmpty()) return;
     g.setColour (ZatiColours::ink.withAlpha (0.8f));
     g.setFont (ZatiColours::monoFont (Metrics::fMeta + 1.0f, false).withExtraKerningFactor (0.02f));
     g.drawFittedText (T (ZatiTour::cuerpos[tourPaso]), tourBodyArea,
-                      Lang::start (juce::Justification::top), 12, 1.0f);
+                      Lang::start (juce::Justification::top), 6, 1.0f);
 }
 
 void MainComponent::paintManualSheetContent (juce::Graphics& g)
@@ -12803,7 +12986,27 @@ void MainComponent::auditOpen (const juce::String& which)
     //  EL TOUR, en su primera tarjeta y en la ultima: la fila de tapas cambia
     //  -ATRAS se enciende, SIGUIENTE pasa a EMPEZAR- y "EMPEZAR" no mide lo
     //  mismo, asi que medir solo la primera es medir media ficha.
-    else if (which == "tour")  { closeAllSheets(); showTour (0); openSheet (tourSheet, setButton); }
+    //  ZATI_TOUR=n abre el tour por el paso n. Son quince estados distintos -cada
+    //  uno abre una ficha y pone el muelle en un lado- y sin esta entrada el
+    //  banco mediria quince veces el primero.
+    else if (which == "tour")
+    {
+        closeAllSheets();
+        const auto n = UiAudit::env ("ZATI_TOUR");
+        showTour (n.isNotEmpty() ? n.getIntValue() : 0);
+        openSheet (tourSheet, setButton);
+        showTour (n.isNotEmpty() ? n.getIntValue() : 0);   // openSheet cierra: se repite tras el
+    }
+    //  Y "tourN" para el paso N, que es como el banco pide los quince sin
+    //  quince variables de entorno.
+    else if (which.startsWith ("tour") && which.substring (4).containsOnly ("0123456789"))
+    {
+        closeAllSheets();
+        const int n = which.substring (4).getIntValue();
+        showTour (n);
+        openSheet (tourSheet, setButton);
+        showTour (n);
+    }
     else if (which == "tourf") { closeAllSheets(); showTour (kTourPasos - 1); openSheet (tourSheet, setButton); }
     else if (which == "browse") openBrowseForPad (0);
     //  EL MISMO NAVEGADOR ELIGIENDO CARPETA, que es OTRO estado y no el mismo:

@@ -574,6 +574,134 @@ namespace
         { "BLOQUEOS",       "",         "P-LOCKS",    "参数锁定",   "قفل المعامل" },
         //  Elegir donde cae el rebote. Ver ProjectStore::setExports.
         { "CAMBIAR",        "",         "CHANGE",     "更改",       "تغيير" },
+        //  LOS QUINCE PASOS DEL TOUR. Ver ZatiTour: son quince titulos y quince
+        //  cuerpos, y van aqui como todo lo que se lee.
+        { "LOS PADS",       "",         "THE PADS",   "音垫",       "البادات" },
+        { "CUATRO BANCOS",  "",         "FOUR BANKS", "四个音垫组", "أربعة بنوك" },
+        { "CARGAR, GRABAR, TOCAR", "",
+          "LOAD, RECORD, PLAY", "载入、录音、播放", "تحميل وتسجيل وعزف" },
+        { "LOS SEIS EFECTOS", "",       "THE SIX EFFECTS", "六个效果", "المؤثرات الستة" },
+        { "LOS TRES MANDOS", "",        "THE THREE KNOBS", "三个旋钮", "المقابض الثلاثة" },
+        { "LA REJILLA DE PASOS", "",    "THE STEP GRID", "步进网格", "شبكة الخطوات" },
+        { "LO QUE HACE UN PASO", "",    "WHAT A STEP DOES", "每一步的作用", "ما تفعله الخطوة" },
+        { "EL PIANO",       "",         "THE PIANO",  "钢琴",       "البيانو" },
+        { "EL PATRON ENTERO", "",       "THE WHOLE PATTERN", "整个图案", "النمط كله" },
+        { "DENTRO DE UN PAD", "",       "INSIDE A PAD", "音垫内部", "داخل الباد" },
+        { "LA MESA Y EL RACK", "",      "MIXER AND RACK", "混音台与机架", "المازج والرف" },
+        { "LA CANCION",     "",         "THE SONG",   "歌曲",       "الأغنية" },
+        { "SACARLO DE AQUI", "",        "TAKE IT OUT", "导出成品", "أخرجه من هنا" },
+        { "Y LO DEMAS",     "",         "AND THE REST", "其余部分", "وما تبقى" },
+
+        { "Un sampler entero en el telefono. Este recorrido senala cada pieza en su "
+          "sitio; se salta cuando quieras y se vuelve a abrir desde AJUSTES.", "",
+          "A whole sampler on your phone. This tour points at each piece where it "
+          "actually is; skip it whenever you like and reopen it from SETTINGS.",
+          "手机上的完整采样器。本导览会逐一指出每个部件的实际位置；可随时跳过，也可在设置中重新打开。",
+          "آلة أخذ عينات كاملة في الهاتف. تشير هذه الجولة إلى كل قطعة في مكانها؛ "
+          "تخطَّها متى شئت وأعد فتحها من الإعدادات." },
+
+        { "Dieciseis a la vista. Toca uno y suena; mantenlo pulsado y se abre todo "
+          "lo que se le puede hacer.", "",
+          "Sixteen on screen. Tap one and it sounds; hold it and everything you can "
+          "do to it opens up.",
+          "屏幕上十六个。轻触即发声；长按可打开该音垫的全部设置。",
+          "ستة عشر على الشاشة. المس واحدًا فيصدر صوتًا؛ واستمر بالضغط ليفتح كل ما يمكن فعله به." },
+
+        { "A, B, C y D: sesenta y cuatro pads en total. La rejilla ensena uno y "
+          "los otros tres siguen sonando.", "",
+          "A, B, C and D: sixty-four pads in all. The grid shows one and the other "
+          "three keep playing.",
+          "A、B、C、D 共六十四个音垫。网格只显示一组，其余三组照常发声。",
+          "A و B و C و D: أربعة وستون بادًا. تعرض الشبكة واحدًا وتستمر الثلاثة الأخرى في العزف." },
+
+        { "CARGAR trae un fichero a un pad. REC graba lo que oiga el microfono. "
+          "PLAY pone en marcha el patron.", "",
+          "LOAD brings a file into a pad. REC records whatever the microphone "
+          "hears. PLAY starts the pattern.",
+          "载入可将文件放入音垫，录音可采集麦克风输入，播放则启动图案。",
+          "«تحميل» يجلب ملفًا إلى باد، و«تسجيل» يسجل ما يسمعه الميكروفون، و«تشغيل» يبدأ النمط." },
+
+        { "Filtro, paso alto, saturacion, eco, reduccion y reverberacion. Son de "
+          "la maquina, no del pad: cada pad decide cuanto les manda.", "",
+          "Filter, high-pass, drive, delay, bit crush and reverb. They belong to "
+          "the machine and not to the pad: each pad decides how much it sends.",
+          "滤波、高通、失真、延迟、位压缩与混响。它们属于整机而非单个音垫：各音垫自行决定发送量。",
+          "مرشح ومرشح عالٍ وتشبع وصدى وتقليل بتات وارتداد. هي ملك للآلة لا للباد: "
+          "كل باد يقرر مقدار ما يرسله." },
+
+        { "Los tres de arriba mueven el efecto que tengas abierto. Debajo de cada "
+          "uno pone lo que hace en ese momento.", "",
+          "The three at the top move whichever effect you have open. Under each "
+          "one it says what it is doing right now.",
+          "顶部三个旋钮控制当前开启的效果，每个下方会显示其当前作用。",
+          "الثلاثة في الأعلى تحرك المؤثر المفتوح، وتحت كل واحد مكتوب ما يفعله في تلك اللحظة." },
+
+        { "Dieciseis pasos por dieciseis pads. Toca una casilla y ese pad suena "
+          "ahi; arrastra el dedo para escribir varias seguidas.", "",
+          "Sixteen steps by sixteen pads. Tap a cell and that pad plays there; "
+          "drag your finger to write several in a row.",
+          "十六步乘十六个音垫。点触格子即让该音垫在此发声；拖动手指可连续写入多个。",
+          "ستة عشر خطوة في ستة عشر بادًا. المس خانة فيُعزف ذلك الباد هناك؛ "
+          "واسحب إصبعك لكتابة عدة خانات متتالية." },
+
+        { "Con un paso tocado aparecen debajo sus mandos: nota, fuerza, "
+          "repeticion, filtro y los cuatro bloqueos.", "",
+          "With a step selected its controls appear underneath: note, velocity, "
+          "roll, filter and the four p-locks.",
+          "选中某一步后，其参数会出现在下方：音高、力度、连打、滤波与四项参数锁定。",
+          "عند اختيار خطوة تظهر مقابضها أسفلها: النغمة والقوة والتكرار والمرشح والأقفال الأربعة." },
+
+        { "La misma musica por tono en vez de por pasos. Varias notas en una "
+          "columna son un acorde, y arrastrando se estira lo que dura cada una.", "",
+          "The same music by pitch instead of by step. Several notes in one column "
+          "make a chord, and dragging stretches how long each one lasts.",
+          "以音高而非步进来书写同一段音乐。同一列的多个音符构成和弦，拖动可延长每个音符的时值。",
+          "الموسيقى نفسها بالنغمة بدل الخطوة. عدة نوتات في عمود واحد تكوّن وترًا، "
+          "والسحب يمدّ مدة كل نوتة." },
+
+        { "Aqui vive lo que le pasa al patron entero: cadena, desplazar, doblar, "
+          "humanizar, copiar y pegar, swing y rejilla.", "",
+          "This is where whatever happens to the whole pattern lives: chain, nudge, "
+          "double, humanise, copy and paste, swing and grid.",
+          "这里是作用于整个图案的操作：链接、位移、加倍、人性化、复制粘贴、摇摆与网格。",
+          "هنا يعيش ما يحدث للنمط كله: السلسلة والإزاحة والمضاعفة والأنسنة "
+          "والنسخ واللصق والسوينغ والشبكة." },
+
+        { "Recorte, afinado, filtro, envolvente y bucle. AUTO CHOP parte un break "
+          "por sus golpes y lo reparte por los pads.", "",
+          "Trim, tuning, filter, envelope and loop. AUTO CHOP splits a break at its "
+          "hits and spreads it across the pads.",
+          "裁切、调音、滤波、包络与循环。自动切片会按鼓点切开一段循环并分配到各音垫。",
+          "القص والدوزنة والمرشح والمغلف والحلقة. و«التقطيع التلقائي» يقسم اللفة "
+          "عند ضرباتها ويوزعها على البادات." },
+
+        { "La mesa pone los dieciseis a su nivel. El RACK dice cuanto manda cada "
+          "pad a cada efecto, sin cerrar nada.", "",
+          "The mixer sets all sixteen to their level. The RACK says how much each "
+          "pad sends to each effect, without closing anything.",
+          "混音台设定十六个音垫的电平。机架页可在不关闭任何界面的情况下设定各音垫到各效果的发送量。",
+          "المازج يضبط مستوى الستة عشر. و«الرف» يحدد كم يرسل كل باد إلى كل مؤثر دون إغلاق شيء." },
+
+        { "Los patrones colocados en el tiempo, en cuatro carriles. Un bloque "
+          "dura lo que ocupa, no lo que dure su patron.", "",
+          "The patterns placed in time, across four lanes. A block lasts as long as "
+          "it occupies, not as long as its pattern.",
+          "将图案排布在时间轴的四条轨道上。区块的长度取决于它占据的小节数，而非其图案的长度。",
+          "الأنماط موضوعة في الزمن على أربعة مسارات. يدوم البلوك بقدر ما يشغل، لا بقدر نمطه." },
+
+        { "La mezcla entera o una pista por pad, en WAV o en OGG, y a la carpeta "
+          "que tu elijas.", "",
+          "The whole mix or one track per pad, as WAV or OGG, and into whichever "
+          "folder you choose.",
+          "可导出整体混音或每个音垫一条分轨，格式为 WAV 或 OGG，并写入你选择的文件夹。",
+          "المزيج كاملًا أو مسارًا لكل باد، بصيغة WAV أو OGG، وإلى المجلد الذي تختاره." },
+
+        { "El idioma, las cuatro carcasas y el MANUAL, que cuenta todo esto con "
+          "calma. Ya puedes empezar.", "",
+          "The language, the four chassis and the MANUAL, which tells all of this "
+          "properly. You are ready to start.",
+          "语言、四种机身外观，以及会把这些从头讲清楚的手册。现在可以开始了。",
+          "اللغة والهياكل الأربعة و«الدليل» الذي يشرح هذا كله على مهل. يمكنك البدء الآن." },
         { "%1 en %2", "",
           "%1 in %2",
           "%1 个，位于 %2", "%1 في %2" },

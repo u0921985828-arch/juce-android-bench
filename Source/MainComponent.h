@@ -34,7 +34,7 @@ class MainComponent : public juce::AudioAppComponent,
 public:
     //  Cuantas tarjetas tiene el tour. Publico porque los textos viven fuera de
     //  la clase - los mide la maqueta ademas de pintarlos.
-    static constexpr int kTourPasos = 5;
+    static constexpr int kTourPasos = 15;
     MainComponent();
     ~MainComponent() override;
 
@@ -63,6 +63,14 @@ private:
         //  component of their own, like the zati swatches - hang off this.
         std::function<void (juce::Point<int>)> onContentClick;
         juce::Rectangle<int> sheetBounds;
+
+        //  UNA FICHA QUE SE PINTA ENTERA ELLA. El tour no tiene tarjeta: no
+        //  dibuja un rectangulo centrado con un velo detras, dibuja un foco -
+        //  todo oscuro menos el control que explica- y un muelle pegado a un
+        //  borde. Sin esto, Sheet::paint le echaba su propio velo del 45 % por
+        //  encima y ademas se iba antes de llamarla, porque sheetBounds esta
+        //  vacio a proposito.
+        bool pintaTodo = false;
 
         //  UNA FICHA QUE SE DESPLAZA.
         //
@@ -1234,7 +1242,29 @@ private:
     bool seqLocksAqui = false;
     //  Y si se quedo con la fila de la CADENA. Misma razon.
     bool seqCadenaAqui = true;
+    //  Y NO ES UNA PILA DE TARJETAS, ES UN FOCO.
+    //
+    //  La primera version eran cinco tarjetas con texto, y explicaban la app
+    //  sin ensenarla: quien las lee sigue sin saber DONDE esta lo que le acaban
+    //  de contar. El tour del FX-404 -de donde sale esta app- hace lo contrario
+    //  y es lo que lo hace util: oscurece la maquina entera menos el control
+    //  del que habla, le pone un anillo, y va abriendo las fichas de verdad
+    //  para explicarlas en vivo.
+    //
+    //  Y el texto va en un MUELLE FIJO, no en una tarjeta al lado de lo
+    //  senalado. El FX-404 llego ahi despues de dos redisenos -"la barra ya no
+    //  tapa la seleccion", "el mensaje nunca tapa la zona senalada"- porque una
+    //  tarjeta colocada junto al objetivo acaba tapandolo en cuanto el objetivo
+    //  es grande o esta en un borde. Junto al control solo va un NUMERO, y el
+    //  muelle se pone en la mitad CONTRARIA a la del objetivo: es lo unico que
+    //  garantiza que no lo tape sin negociar posiciones.
     int  tourPaso = 0;
+    //  Lo que el paso senala, en coordenadas de MainComponent. Vacio = sin
+    //  objetivo: ni anillo ni numero, y el muelle se centra.
+    juce::Rectangle<int> tourFoco;
+    juce::Rectangle<int> tourDock;
+    void tourPrepara (int paso);              // abre la ficha que el paso explica
+    juce::Rectangle<int> tourObjetivo (int paso) const;
     void showTour (int paso);
     int  tourBodyHeight (int ancho) const;
     void paintTourSheetContent (juce::Graphics& g);
