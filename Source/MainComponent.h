@@ -1088,6 +1088,29 @@ private:
     void refreshRack();
     juce::OwnedArray<juce::TextButton> mixMutes, mixSolos;
     juce::TextButton mixClearSolo { "SIN SOLO" };
+
+    //  EL MASTER, y vive en la mesa por la misma razon que los faders: es el
+    //  fader que falta. Hasta aqui se podia bajar cada pad uno por uno y no
+    //  habia forma de bajar la maquina entera, que es lo primero que se hace al
+    //  enchufar unos cascos.
+    //
+    //  FUERA del Viewport: los dieciseis canales se desplazan y el master no.
+    //  Un master que hay que buscar arrastrando no es un master.
+    juce::Slider     masterFader;
+    //  El rotulo es un Label y no texto pintado como los nombres de canal: lo
+    //  pintado no existe para UiAudit, asi que un rotulo pintado no se mide ni
+    //  se comprueba que este traducido. Si hay forma de que el banco lo vea, se
+    //  usa esa.
+    juce::Label      masterLabel;
+    float            masterUserGain = 1.0f;
+    //  Y se recuerda como se recuerda la carcasa y el idioma: en un fichero de
+    //  la app, NO en el proyecto. Bajar el master para no despertar a nadie es
+    //  una decision de la persona y del momento, no de la cancion - guardarlo
+    //  en el proyecto significa que abrirlo en otro sitio te trae el volumen
+    //  con el que lo dejaste una noche.
+    static juce::File masterPrefFile();
+    void  loadMasterPref();
+    void  saveMasterPref() const;
     void refreshMixStrip();
 
     //  Which sixteen of the sixty-four the mixer is showing. Its own value, not

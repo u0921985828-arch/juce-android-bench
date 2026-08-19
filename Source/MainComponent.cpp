@@ -1829,6 +1829,46 @@ MainComponent::MainComponent()
     mixClearSolo.onClick = [this] { engine.clearSolo(); refreshMixStrip(); };
     mixSheet.addAndMakeVisible (mixClearSolo);
 
+    //  EL MASTER. En decibelios y con los mismos ayudantes que los otros
+    //  diecisiete faders de la app: un mando que se lee en una escala distinta
+    //  de los que tiene al lado obliga a traducir de cabeza cada vez.
+    //
+    //  Y el tope es 0 dB, que no es timidez: por encima de la unidad lo unico
+    //  que se gana es empujar el limitador del master, que es donde se pierde
+    //  el golpe. Para sonar mas alto esta el volumen del telefono, que no
+    //  distorsiona.
+    masterFader.setSliderStyle (juce::Slider::LinearHorizontal);
+    masterFader.setTextBoxStyle (juce::Slider::TextBoxRight, false, 52, Metrics::readout);
+    masterFader.setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
+    masterFader.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
+    masterFader.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+    masterFader.setRange (kGainMinDb, 0.0, 0.1);
+    masterFader.setValue (0.0, juce::dontSendNotification);
+    masterFader.setDoubleClickReturnValue (true, 0.0);
+    //  Un roce no puede ser un valor, y aqui menos que en ningun otro sitio:
+    //  saltar al punto tocado con el dedo en el borde izquierdo deja la maquina
+    //  MUDA de golpe y nadie sabe por que.
+    masterFader.setSliderSnapsToMousePosition (false);
+    masterFader.textFromValueFunction = [] (double v) { return gainText (v, true); };
+    masterFader.onValueChange = [this]
+    {
+        masterUserGain = gainFromDb (masterFader.getValue());
+        engine.setMasterUser (masterUserGain);
+        saveMasterPref();
+        mixSheet.repaint();
+    };
+    mixSheet.addAndMakeVisible (masterFader);
+
+    masterLabel.setText (T ("MASTER"), juce::dontSendNotification);
+    masterLabel.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
+    masterLabel.setColour (juce::Label::textColourId, ZatiColours::ink);
+    masterLabel.setJustificationType (Lang::start());
+    masterLabel.setInterceptsMouseClicks (false, false);
+    mixSheet.addAndMakeVisible (masterLabel);
+    //  Y se lee YA, no al abrir la mesa: el nivel tiene que estar puesto en el
+    //  primer bloque de audio y la mesa puede no abrirse nunca.
+    loadMasterPref();
+
     styleButton (mixCloseButton, kKey);
     mixCloseButton.onClick = [this] { closeAllSheets(); };
     mixSheet.addAndMakeVisible (mixCloseButton);
@@ -5967,8 +6007,12 @@ void MainComponent::resized()
         //  something is playing. Four pixels of row is what buys them.
         const int rowH = Metrics::row;
         const int tabsH = Metrics::tab + Metrics::sm;
+        //  Y el master cuenta como mueble: es una fila fija que no se desplaza,
+        //  asi que si no entra en la cuenta se la come al Viewport y la mesa
+        //  pierde media fila de canal en las pantallas justas.
+        const int masterH = Metrics::btn + Metrics::xs;
         const int mixFurniture = Metrics::md * 2 + Metrics::hit + Metrics::sm + tabsH
-                               + Metrics::btn + Metrics::lg;
+                               + Metrics::btn + masterH + Metrics::lg;
         auto inner = sheetFromBottom (mixSheet,
                                       mixFurniture + (wideFace ? kPadsPerBank / 2 : kPadsPerBank) * rowH);
         auto titleRow = inner.removeFromTop (Metrics::hit);
@@ -5993,6 +6037,27 @@ void MainComponent::resized()
                                   .reduced (Metrics::halfGap, (Metrics::btn - Metrics::hit) / 2));
         mixClearSolo.setBounds (bottom.reduced (Metrics::halfGap, (Metrics::btn - Metrics::hit) / 2));
         inner.removeFromBottom (Metrics::xs);
+
+        //  EL MASTER, encima de las dos tapas y debajo de los canales. Fuera
+        //  del Viewport a proposito: los dieciseis canales se desplazan y este
+        //  no, que un master que hay que buscar arrastrando no es un master.
+        {
+            auto fila = inner.removeFromBottom (Metrics::btn);
+            //  El rotulo se lleva lo mismo que el nombre de un canal, para que
+            //  el fader del master empiece donde empiezan los otros dieciseis:
+            //  una mesa se lee por donde estan los pomos, y uno desalineado se
+            //  lee como otra cosa.
+            masterLabel.setBounds (Lang::takeStart (fila, juce::jlimit (48, 92, fila.getWidth() * 24 / 100))
+                                       .reduced (Metrics::halfGap, 0));
+            //  Y el numero cae si no cabe, con el mismo criterio que los
+            //  canales: un fader que no se puede apuntar es peor que un fader
+            //  sin cifra.
+            const bool cabeCifra = fila.getWidth() - Metrics::gap - 52 >= 70;
+            masterFader.setTextBoxStyle (cabeCifra ? juce::Slider::TextBoxRight : juce::Slider::NoTextBox,
+                                         false, 52, Metrics::readout);
+            masterFader.setBounds (fila.reduced (4, (Metrics::btn - Metrics::hit) / 2));
+            inner.removeFromBottom (Metrics::xs);
+        }
 
         mixScroll.setBounds (inner);
 
@@ -10557,6 +10622,34 @@ void MainComponent::paintBusy (juce::Graphics& g)
 //  de la app - y no en la biblioteca: hay que poder leerlo antes de que
 //  ProjectStore haya decidido donde esta la biblioteca, que es exactamente el
 //  orden en que arranca esto.
+//  EL NIVEL DEL MASTER, en el directorio interno y por la misma razon que la
+//  carcasa: hay que poder leerlo antes de que ProjectStore haya decidido donde
+//  esta la biblioteca.
+juce::File MainComponent::masterPrefFile()
+{
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+               .getChildFile ("zati-master.txt");
+}
+
+void MainComponent::saveMasterPref() const
+{
+    masterPrefFile().getParentDirectory().createDirectory();
+    masterPrefFile().replaceWithText (juce::String (masterFader.getValue(), 2));
+}
+
+void MainComponent::loadMasterPref()
+{
+    const auto f = masterPrefFile();
+    //  Sin fichero, 0 dB. Y el que hay se lee ACOTADO al rango del mando: un
+    //  fichero a medio escribir o de una version con otro minimo devolveria un
+    //  numero que el Slider aceptaria y el motor no, y el sintoma seria una
+    //  maquina muda sin ninguna pista de por que.
+    const double db = f.existsAsFile()
+                        ? juce::jlimit (kGainMinDb, 0.0, f.loadFileAsString().trim().getDoubleValue())
+                        : 0.0;
+    masterFader.setValue (db, juce::sendNotificationSync);
+}
+
 juce::File MainComponent::tourFile()
 {
     return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
@@ -13156,7 +13249,7 @@ void MainComponent::appResumed()
     //  Whatever else happened out there, the master comes back up.
     duckedByFocus = false;
     duckTicksLeft = 0;
-    engine.setMasterGain (1.0f);
+    engine.setDucked (false);
 
     refreshDeviceStatusLine (true);
 }
@@ -13218,7 +13311,9 @@ void MainComponent::audioFocusDucked()
 {
     duckedByFocus = true;
     duckTicksLeft = kDuckWatchdogMs;
-    engine.setMasterGain (0.28f);
+    //  Y NO "pon el master a 0.28": eso se llevaria por delante el nivel que la
+    //  persona haya dejado puesto. Se enciende el aviso y el motor multiplica.
+    engine.setDucked (true);
     status.setText (T ("Bajando un momento por un aviso del sistema"),
                     juce::dontSendNotification);
 }
@@ -13231,7 +13326,7 @@ void MainComponent::audioFocusGained()
     {
         duckedByFocus = false;
         duckTicksLeft = 0;
-        engine.setMasterGain (1.0f);
+        engine.setDucked (false);
         refreshDeviceStatusLine (true);
     }
 
@@ -13784,7 +13879,7 @@ void MainComponent::timerCallback()
     if (duckedByFocus && (duckTicksLeft -= DeviceTier::profile().uiIntervalMs) <= 0)
     {
         duckedByFocus = false;
-        engine.setMasterGain (1.0f);
+        engine.setDucked (false);
         refreshDeviceStatusLine (true);
     }
 

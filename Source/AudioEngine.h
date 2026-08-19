@@ -299,9 +299,39 @@ public:
     //  compensa de verdad, que es lo que su propio comentario dice que hace.
     void setSafetyLimiter (bool on) noexcept { safetyLimiter.store (on, std::memory_order_relaxed); }
 
-    void setMasterGain (float g) noexcept
-    { masterTarget.store (juce::jlimit (0.0f, 1.0f, g), std::memory_order_relaxed); }
+    //  EL MASTER SON DOS COSAS Y NO UNA, y mezclarlas es un fallo con forma de
+    //  simplificacion.
+    //
+    //  masterTarget -lo unico que lee el hilo de audio- valia para atenuar por
+    //  un aviso del sistema: 0.28 al llegar la notificacion y 1.0 al volver. Si
+    //  el mando de la persona escribiera ahi tambien, la primera notificacion
+    //  se llevaria su nivel por delante: el aviso baja a 0.28, el aviso pasa,
+    //  y el "vuelve a 1.0" pone el master AL MAXIMO aunque estuviera a la
+    //  mitad. Y con el vigilante de seis segundos detras, tambien pasaria sin
+    //  que llegue el GAIN de vuelta.
+    //
+    //  Asi que se guardan por separado y el objetivo es el PRODUCTO. Lo que se
+    //  restaura al recuperar el foco es el permiso para sonar, no un numero.
+    void setMasterUser (float g) noexcept
+    {
+        masterUser.store (juce::jlimit (0.0f, 1.0f, g), std::memory_order_relaxed);
+        refreshMasterTarget();
+    }
+    float getMasterUser() const noexcept { return masterUser.load (std::memory_order_relaxed); }
 
+    void setDucked (bool on) noexcept
+    {
+        ducked.store (on, std::memory_order_relaxed);
+        refreshMasterTarget();
+    }
+    bool isDucked() const noexcept { return ducked.load (std::memory_order_relaxed); }
+
+    //  Cuanto se baja por un aviso. Aqui y no en quien lo llama: el numero es
+    //  del motor porque la rampa que lo sigue tambien lo es.
+    static constexpr float kDuckGain = 0.28f;
+
+    //  El efectivo, que es el producto de los dos. Solo lo miran las pruebas y
+    //  el hilo de audio: nadie DECIDE con este numero.
     float getMasterGain() const noexcept { return masterTarget.load (std::memory_order_relaxed); }
     bool isPlaying() const noexcept   { return playing.load (std::memory_order_relaxed); }
     // float, not double: atomic<double> is NOT lock-free on 32-bit ARM, and
@@ -885,6 +915,14 @@ private:
     //  Target and the ramped value the render actually multiplies by. The
     //  second one is audio-thread only, so it is a plain float.
     std::atomic<float> masterTarget { 1.0f };
+    std::atomic<float> masterUser   { 1.0f };
+    std::atomic<bool>  ducked       { false };
+    void refreshMasterTarget() noexcept
+    {
+        const float u = masterUser.load (std::memory_order_relaxed);
+        masterTarget.store (ducked.load (std::memory_order_relaxed) ? u * kDuckGain : u,
+                            std::memory_order_relaxed);
+    }
     std::atomic<bool>  safetyLimiter { true };
     std::atomic<bool>  liveQuant     { false };
     std::atomic<int>   duckPad { -1 };        // -1 = sin bombeo

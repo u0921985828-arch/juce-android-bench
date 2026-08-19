@@ -182,8 +182,8 @@ int main()
         std::vector<double> blockRms;
         for (int b = 0; b < 400; ++b)
         {
-            if (b == 80)  d.setMasterGain (0.28f);
-            if (b == 240) d.setMasterGain (1.00f);
+            if (b == 80)  d.setDucked (true);
+            if (b == 240) d.setDucked (false);
             d.renderNextBlock (db, 0, bs);
             double acc = 0.0;
             for (int i = 0; i < bs; ++i) { const double v = db.getSample (0, i); acc += v * v; }
@@ -1921,6 +1921,53 @@ int main()
         const bool ok = defecto < 1.0e-4 && abierto > 0.01;
         std::printf ("%-34s cola por defecto %.5f   con el envio a 1 %.4f   %s\n",
                      "envio por defecto cerrado", defecto, abierto, ok ? "OK" : "FALLA");
+    }
+
+    //  EL MASTER DE LA PERSONA CONTRA EL AVISO DEL SISTEMA.
+    //
+    //  Los dos escribian en el mismo numero, y con eso la primera notificacion
+    //  se lleva por delante el nivel que hayas dejado puesto: el aviso baja, el
+    //  aviso pasa, y el "vuelve a 1.0" te sube el master AL MAXIMO aunque
+    //  estuviera a la mitad. Se comprueban las tres cosas de golpe, que por
+    //  separado cualquiera de ellas pasa con la version rota.
+    {
+        AudioEngine e;
+        const float puesto = 0.50f;
+        e.setMasterUser (puesto);
+        const float solo    = e.getMasterGain();
+        e.setDucked (true);
+        const float bajado  = e.getMasterGain();
+        e.setDucked (false);
+        const float vuelto  = e.getMasterGain();
+
+        //  Y AL REVES TAMBIEN: mover el mando MIENTRAS el aviso suena no puede
+        //  cancelar el aviso. Es el mismo fallo por el otro lado.
+        e.setDucked (true);
+        e.setMasterUser (0.80f);
+        const float durante = e.getMasterGain();
+        e.setDucked (false);
+
+        const bool ok = std::abs (solo    - puesto) < 1.0e-6f
+                     && std::abs (bajado  - puesto * AudioEngine::kDuckGain) < 1.0e-6f
+                     && std::abs (vuelto  - puesto) < 1.0e-6f
+                     && std::abs (durante - 0.80f * AudioEngine::kDuckGain) < 1.0e-6f;
+        std::printf ("%-34s puesto %.2f   con aviso %.3f   al volver %.2f   %s\n",
+                     "el aviso no se come el master", solo, bajado, vuelto, ok ? "OK" : "FALLA");
+    }
+
+    //  Y NO VIAJA AL REBOTE. Bajar el master para no despertar a nadie no puede
+    //  salir impreso en el fichero que exportas, que es un fallo que solo se
+    //  descubre cuando ya has mandado el tema. El motor del rebote se construye
+    //  con copyStateFrom y ahi el master NO esta: se comprueba, porque "no
+    //  esta" es exactamente la clase de cosa que alguien anade sin querer.
+    {
+        AudioEngine vivo, rebote;
+        vivo.setMasterUser (0.25f);
+        rebote.copyStateFrom (vivo);
+        const bool ok = std::abs (rebote.getMasterGain() - 1.0f) < 1.0e-6f;
+        std::printf ("%-34s en vivo %.2f   en el rebote %.2f   %s\n",
+                     "el master no viaja al rebote", vivo.getMasterGain(),
+                     rebote.getMasterGain(), ok ? "OK" : "FALLA");
     }
 
     return 0;
