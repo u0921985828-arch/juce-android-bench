@@ -433,6 +433,13 @@ namespace Metrics
     //  come out exactly `gap` apart.
     static constexpr int gap     = 8;
     static constexpr int halfGap = gap / 2;
+    //  EL AIRE ENTRE DOS TAPAS DE LA MISMA FILA. Dos px por lado y no cuatro:
+    //  desde que la tapa se pinta tres cuartos de alta -ver capaDe- se deja su
+    //  propio margen por dentro, y el de la maqueta se sumaba encima. Es el
+    //  mismo numero que layoutModuleBar ya repartia por su cuenta, escrito una
+    //  vez para que las filas que lo tenian a mano no puedan volver a
+    //  separarse de el.
+    static constexpr int aireTapa = halfGap / 2;
     //  LA PESTANA DE UNA FICHA TAMBIEN SE TOCA.
     //
     //  Valia 32 con el argumento de que una pestana abre una pagina y no actua,

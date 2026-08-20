@@ -4739,9 +4739,9 @@ void MainComponent::resized()
         layoutModuleBar (tabs, mb, ZatiLookAndFeel::kAir / 2);
 
         const int u = row.getWidth() / 3;
-        loadButton.setBounds (row.removeFromLeft (u).reduced (Metrics::halfGap, 0));
-        recButton.setBounds  (row.removeFromLeft (u).reduced (Metrics::halfGap, 0));
-        playButton.setBounds (row.reduced (Metrics::halfGap, 0));
+        loadButton.setBounds (row.removeFromLeft (u).reduced (Metrics::aireTapa, 0));
+        recButton.setBounds  (row.removeFromLeft (u).reduced (Metrics::aireTapa, 0));
+        playButton.setBounds (row.reduced (Metrics::aireTapa, 0));
     }
     else
     {
@@ -4751,14 +4751,19 @@ void MainComponent::resized()
         juce::TextButton* mb[6] = { &padsButton, &secButton, &songButton, &mixButton, &xyButton, &setButton };
         layoutModuleBar (row, mb, 0);
     }
-    area.removeFromTop (Metrics::xs);
+    //  SIN AIRE DE MAQUETA ENTRE ESTAS DOS FILAS, porque ya lo traen puesto:
+    //  cada tapa se pinta tres cuartos de alta y centrada, o sea con cinco px
+    //  vacios por arriba y otros cinco por abajo. Los cuatro que habia aqui se
+    //  sumaban a esos diez y las dos filas quedaban a catorce - mas separadas
+    //  que antes de aligerarlas, que es lo contrario de lo que se buscaba.
+    //  Ver ZatiLookAndFeel::capaDe.
 
     {
         auto row = area.removeFromTop (ZatiLookAndFeel::kTransport);
         const int u = row.getWidth() / 4;
-        loadButton.setBounds (row.removeFromLeft (u).reduced (Metrics::halfGap, 0));
-        recButton.setBounds  (row.removeFromLeft (u).reduced (Metrics::halfGap, 0));
-        playButton.setBounds (row.reduced (Metrics::halfGap, 0));
+        loadButton.setBounds (row.removeFromLeft (u).reduced (Metrics::aireTapa, 0));
+        recButton.setBounds  (row.removeFromLeft (u).reduced (Metrics::aireTapa, 0));
+        playButton.setBounds (row.reduced (Metrics::aireTapa, 0));
     }
     }
     ctrlSeamTop = area.getY();
@@ -4802,7 +4807,7 @@ void MainComponent::resized()
             auto row = fxRowArea;
             const int sw = row.getWidth() / kNumFx;
             for (int f = 0; f < kNumFx; ++f)
-                fxButtons[f]->setBounds ((f < kNumFx - 1 ? row.removeFromLeft (sw) : row).reduced (Metrics::halfGap, 0));
+                fxButtons[f]->setBounds ((f < kNumFx - 1 ? row.removeFromLeft (sw) : row).reduced (Metrics::halfGap / 2, 0));
         }
         //  In two columns the pads have a column of their own and the seam
         //  above them is simply the room the square grid does not use, so the
@@ -5573,18 +5578,18 @@ void MainComponent::resized()
             auto layTwo = [] (juce::Rectangle<int> row, juce::TextButton& a, juce::TextButton& b)
             {
                 const int half = row.getWidth() / 2;
-                a.setBounds (Lang::takeStart (row, half).reduced (Metrics::halfGap, 0));
-                b.setBounds (row.reduced (Metrics::halfGap, 0));
+                a.setBounds (Lang::takeStart (row, half).reduced (Metrics::aireTapa, 0));
+                b.setBounds (row.reduced (Metrics::aireTapa, 0));
             };
 
             if (tabsFit)
             {
                 auto tabs = inner.removeFromTop (Metrics::tab);
                 const int quarter = tabs.getWidth() / 4;
-                pageAudioBtn.setBounds (Lang::takeStart (tabs, quarter).reduced (Metrics::halfGap, 0));
-                pageMidiBtn.setBounds  (Lang::takeStart (tabs, quarter).reduced (Metrics::halfGap, 0));
-                pageProjBtn.setBounds  (Lang::takeStart (tabs, quarter).reduced (Metrics::halfGap, 0));
-                pageGestBtn.setBounds  (tabs.reduced (Metrics::halfGap, 0));
+                pageAudioBtn.setBounds (Lang::takeStart (tabs, quarter).reduced (Metrics::aireTapa, 0));
+                pageMidiBtn.setBounds  (Lang::takeStart (tabs, quarter).reduced (Metrics::aireTapa, 0));
+                pageProjBtn.setBounds  (Lang::takeStart (tabs, quarter).reduced (Metrics::aireTapa, 0));
+                pageGestBtn.setBounds  (tabs.reduced (Metrics::aireTapa, 0));
             }
             else
             {
@@ -6255,7 +6260,7 @@ void MainComponent::resized()
             const int bw = tabs.getWidth() / kNumBanks;
             for (int b = 0; b < mixBankBtns.size(); ++b)
                 mixBankBtns[b]->setBounds ((b < kNumBanks - 1 ? Lang::takeStart (tabs, bw) : tabs)
-                                             .reduced (Metrics::halfGap, 0));
+                                             .reduced (Metrics::aireTapa, 0));
             inner.removeFromTop (Metrics::sm);
         }
 
@@ -6279,7 +6284,7 @@ void MainComponent::resized()
             //  una mesa se lee por donde estan los pomos, y uno desalineado se
             //  lee como otra cosa.
             masterLabel.setBounds (Lang::takeStart (fila, juce::jlimit (48, 92, fila.getWidth() * 24 / 100))
-                                       .reduced (Metrics::halfGap, 0));
+                                       .reduced (Metrics::aireTapa, 0));
             //  Y el numero cae si no cabe, con el mismo criterio que los
             //  canales: un fader que no se puede apuntar es peor que un fader
             //  sin cifra.
@@ -6778,9 +6783,9 @@ void MainComponent::resized()
         {
             auto tabs = inner.removeFromTop (Metrics::tab);
             const int tercio = tabs.getWidth() / 3;
-            seqGridBtn .setBounds (Lang::takeStart (tabs, tercio).reduced (Metrics::halfGap, 0));
-            seqPianoBtn.setBounds (Lang::takeStart (tabs, tercio).reduced (Metrics::halfGap, 0));
-            seqStepBtn .setBounds (tabs.reduced (Metrics::halfGap, 0));
+            seqGridBtn .setBounds (Lang::takeStart (tabs, tercio).reduced (Metrics::aireTapa, 0));
+            seqPianoBtn.setBounds (Lang::takeStart (tabs, tercio).reduced (Metrics::aireTapa, 0));
+            seqStepBtn .setBounds (tabs.reduced (Metrics::aireTapa, 0));
             inner.removeFromTop (Metrics::sm);
         }
 
@@ -6919,7 +6924,7 @@ void MainComponent::resized()
                 for (int i = 0; i < 6; ++i)
                 {
                     if (! pb[i]->isVisible()) continue;
-                    pb[i]->setBounds (side.removeFromTop (Metrics::hit).reduced (Metrics::halfGap, 0));
+                    pb[i]->setBounds (side.removeFromTop (Metrics::hit).reduced (Metrics::aireTapa, 0));
                     side.removeFromTop (Metrics::halfGap);
                 }
             }
@@ -6998,15 +7003,15 @@ void MainComponent::resized()
                                                Metrics::readout);
                 if (wideFace)
                 {
-                    patternSlider.setBounds (row.reduced (Metrics::halfGap, 0));
+                    patternSlider.setBounds (row.reduced (Metrics::aireTapa, 0));
                     col.removeFromTop (Metrics::sm);
                     nameBand (col, "LARGO");
-                    lengthSlider.setBounds (col.removeFromTop (Metrics::hit).reduced (Metrics::halfGap, 0));
+                    lengthSlider.setBounds (col.removeFromTop (Metrics::hit).reduced (Metrics::aireTapa, 0));
                 }
                 else
                 {
-                    patternSlider.setBounds (row.removeFromLeft (w1).reduced (Metrics::halfGap, 0));
-                    lengthSlider.setBounds  (row.reduced (Metrics::halfGap, 0));
+                    patternSlider.setBounds (row.removeFromLeft (w1).reduced (Metrics::aireTapa, 0));
+                    lengthSlider.setBounds  (row.reduced (Metrics::aireTapa, 0));
                 }
             }
             col.removeFromTop (Metrics::sm);
@@ -7090,8 +7095,8 @@ void MainComponent::resized()
             {
                 nameBand (col, "BANCO");
                 auto row = col.removeFromTop (Metrics::hit);
-                copyPatBtn.setBounds  (Lang::takeStart (row, row.getWidth() / 2).reduced (Metrics::halfGap, 0));
-                pastePatBtn.setBounds (row.reduced (Metrics::halfGap, 0));
+                copyPatBtn.setBounds  (Lang::takeStart (row, row.getWidth() / 2).reduced (Metrics::aireTapa, 0));
+                pastePatBtn.setBounds (row.reduced (Metrics::aireTapa, 0));
                 col.removeFromTop (Metrics::sm);
             }
             else
@@ -7136,7 +7141,7 @@ void MainComponent::resized()
                 const int bw = row.getWidth() / kNumBanks;
                 for (int b = 0; b < seqBankButtons.size(); ++b)
                     seqBankButtons[b]->setBounds ((b < kNumBanks - 1 ? row.removeFromLeft (bw) : row)
-                                                      .reduced (Metrics::halfGap, 0));
+                                                      .reduced (Metrics::aireTapa, 0));
                 col.removeFromTop (Metrics::sm);
             }
 
@@ -7149,7 +7154,7 @@ void MainComponent::resized()
                 {
                     barButtons[b]->setVisible (b < bars);
                     if (b < bars)
-                        barButtons[b]->setBounds ((b < bars - 1 ? row.removeFromLeft (bw) : row).reduced (Metrics::halfGap, 0));
+                        barButtons[b]->setBounds ((b < bars - 1 ? row.removeFromLeft (bw) : row).reduced (Metrics::aireTapa, 0));
                 }
                 col.removeFromTop (Metrics::sm);
             }
@@ -7205,7 +7210,7 @@ void MainComponent::resized()
                 //  nombre encima, TEMPO, asi que la unidad la dice el rotulo -
                 //  y un rotulo cortado no se lee de ninguna manera.
                 auto celdaBpm = Lang::takeStart (row, row.getWidth() - paraTapas)
-                                    .reduced (Metrics::halfGap, 0);
+                                    .reduced (Metrics::aireTapa, 0);
                 bpmSlider.setTextValueSuffix (celdaBpm.getWidth() >= 150 ? " bpm" : juce::String());
                 bpmSlider.setBounds (celdaBpm);
                 if (cabeSeguir) layoutModuleBar (row, tb4, 0, 4);
@@ -7236,8 +7241,8 @@ void MainComponent::resized()
                     seqLabelBands.add ({ banda, juce::String (nDer) });
 
                     auto row = tira.removeFromTop (Metrics::hit);
-                    auto celdaIzq = Lang::takeStart (row, row.getWidth() / 2).reduced (Metrics::halfGap, 0);
-                    auto celdaDer = row.reduced (Metrics::halfGap, 0);
+                    auto celdaIzq = Lang::takeStart (row, row.getWidth() / 2).reduced (Metrics::aireTapa, 0);
+                    auto celdaDer = row.reduced (Metrics::aireTapa, 0);
                     //  Las dos teclas primero y el numero con lo que quede: sin
                     //  esta reserva JUCE apila el + sobre el - en cuanto la
                     //  casilla se come el ancho. Es la misma cuenta que GOLPE.
@@ -7283,7 +7288,7 @@ void MainComponent::resized()
                         const int ancho = banda.getWidth() / (4 - i);
                         seqLabelBands.add ({ Lang::takeStart (banda, ancho), juce::String (nombres[i]) });
                         auto celda = Lang::takeStart (row, row.getWidth() / (4 - i))
-                                         .reduced (Metrics::halfGap, 0);
+                                         .reduced (Metrics::aireTapa, 0);
                         //  El mando primero y el numero con lo que quede, que es
                         //  la misma cuenta que ya hacen GOLPE y REPETIR: un
                         //  giratorio por debajo de 24 px no se agarra, y donde
@@ -7378,7 +7383,7 @@ void MainComponent::resized()
                 //  costo que la pagina entera pareciera "el paso". Ahora va con
                 //  su grupo, que es lo que es, y NOTA solo aparece si la tira de
                 //  la rejilla no se la ha llevado.
-                chainClearButton.setBounds (colA.removeFromTop (Metrics::hit).reduced (Metrics::halfGap, 0));
+                chainClearButton.setBounds (colA.removeFromTop (Metrics::hit).reduced (Metrics::aireTapa, 0));
                 chainClearButton.setVisible (true);
                 colA.removeFromTop (Metrics::sm);
             }
@@ -7403,7 +7408,7 @@ void MainComponent::resized()
                 noteSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false,
                                             juce::jmax (40, row.getWidth() - 2 * Metrics::gap - 2 * Metrics::stepKey),
                                             Metrics::readout);
-                noteSlider.setBounds (row.reduced (Metrics::halfGap, 0));
+                noteSlider.setBounds (row.reduced (Metrics::aireTapa, 0));
                 noteSlider.setVisible (true);
                 colA.removeFromTop (Metrics::sm);
             }
@@ -7490,11 +7495,11 @@ void MainComponent::resized()
                 auto row = second.removeFromTop (Metrics::hit);
                 if (tiraFilas == 0)
                 {
-                    velSlider.setBounds (Lang::takeStart (row, row.getWidth() * 5 / 12).reduced (Metrics::halfGap, 0));
+                    velSlider.setBounds (Lang::takeStart (row, row.getWidth() * 5 / 12).reduced (Metrics::aireTapa, 0));
                     velSlider.setVisible (true);
                 }
                 auto rollCell = Lang::takeStart (row, tiraFilas == 0 ? row.getWidth() * 4 / 12
-                                                                     : row.getWidth() / 2).reduced (Metrics::halfGap, 0);
+                                                                     : row.getWidth() / 2).reduced (Metrics::aireTapa, 0);
                 //  Las dos teclas primero y el numero con lo que quede; y si
                 //  no queda, el numero se va. Medido en 280x653 con la celda
                 //  repartida a tres: las teclas se llevaban 80 de 75 px y el
@@ -7505,7 +7510,7 @@ void MainComponent::resized()
                                                           : juce::Slider::NoTextBox,
                                             false, juce::jmax (30, paraNum), Metrics::readout);
                 rollSlider.setBounds (rollCell);
-                lockSlider.setBounds (row.reduced (Metrics::halfGap, 0));
+                lockSlider.setBounds (row.reduced (Metrics::aireTapa, 0));
                 rollSlider.setVisible (true);
                 lockSlider.setVisible (true);
                 second.removeFromTop (Metrics::sm);
@@ -7543,7 +7548,7 @@ void MainComponent::resized()
                 for (int i = 0; i < 4; ++i)
                 {
                     auto celda = Lang::takeStart (row, row.getWidth() / (4 - i))
-                                     .reduced (Metrics::halfGap, 0);
+                                     .reduced (Metrics::aireTapa, 0);
                     const int paraNum = celda.getWidth() - Metrics::hit;
                     cuatro[i]->setTextBoxStyle (paraNum >= 34 ? juce::Slider::TextBoxRight
                                                               : juce::Slider::NoTextBox,
@@ -7563,14 +7568,14 @@ void MainComponent::resized()
             }
 
             nameBand (second, "SWING");
-            swingSlider.setBounds (second.removeFromTop (Metrics::hit).reduced (Metrics::halfGap, 0));
+            swingSlider.setBounds (second.removeFromTop (Metrics::hit).reduced (Metrics::aireTapa, 0));
             second.removeFromTop (Metrics::sm);
 
             //  EUCLIDES, con el swing y la rejilla: los tres dicen COMO suena
             //  el patron entero, no que hay escrito en el.
             nameBand (second, "EUCLIDES");
             {
-                auto cell = second.removeFromTop (Metrics::hit).reduced (Metrics::halfGap, 0);
+                auto cell = second.removeFromTop (Metrics::hit).reduced (Metrics::aireTapa, 0);
                 euclidSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false,
                                               juce::jmax (40, cell.getWidth() - Metrics::gap - 2 * Metrics::stepKey),
                                               Metrics::readout);
@@ -7580,7 +7585,7 @@ void MainComponent::resized()
 
             nameBand (second, "REJILLA");
             {
-                auto cell = second.removeFromTop (Metrics::hit).reduced (Metrics::halfGap, 0);
+                auto cell = second.removeFromTop (Metrics::hit).reduced (Metrics::aireTapa, 0);
                 //  Las dos teclas primero, el numero con lo que quede: es la
                 //  misma reserva que CHOKE y que GOLPE, y por la misma razon -
                 //  sin ella JUCE apila el + sobre el - en cuanto la casilla se
