@@ -389,6 +389,12 @@ public:
                     {
                         c2->auditNuevo();
                     }
+                    //  GUARDAR EL BANCO COMO KIT, y volcar lo que quedo en el
+                    //  disco. Ver Tests/kit.py.
+                    else if (const auto k = UiAudit::env ("ZATI_KIT"); k.isNotEmpty())
+                    {
+                        c2->auditKit (k);
+                    }
                     else if (UiAudit::env ("ZATI_PIANO").isNotEmpty())
                     {
                         c2->auditPiano();

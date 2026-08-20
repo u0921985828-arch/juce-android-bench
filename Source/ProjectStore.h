@@ -162,6 +162,16 @@ public:
 
     static juce::File samples()    { return sub ("Samples"); }
     static juce::File presets()    { return sub ("Presets"); }
+    //  LOS KITS QUE HACE LA PERSONA, en la biblioteca y no dentro de un
+    //  proyecto: un kit existe para usarse en OTRO proyecto, que es lo que lo
+    //  distingue de los sonidos que un proyecto ya lleva copiados dentro.
+    //
+    //  Y en la misma forma que un banco descargado de internet -una carpeta con
+    //  audios numerados- a proposito: asi el que se guarda aqui y el que te
+    //  bajas entran por la MISMA puerta, que es CARGAR KIT ordenando por
+    //  nombre. Un formato propio habria sido una segunda forma de hacer lo
+    //  mismo, y ademas la unica que no sabria leer nadie mas.
+    static juce::File kits()       { return sub ("Kits"); }
     static juce::File recordings() { return sub ("Recordings"); }
 
     //  DONDE CAE EL REBOTE, Y SE PUEDE ELEGIR.

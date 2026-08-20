@@ -38,6 +38,7 @@
 //      ZATI_SHOT_SCALE=2.62      a esta escala
 //      ZATI_PAINT=60             cuanto cuesta un fotograma, por piezas
 //      ZATI_SPIN=12              CPU del proceso con la cara abierta y quieta
+//      ZATI_KIT=nombre           guarda el banco de delante como kit y lo vuelca
 // ============================================================================
 namespace UiAudit
 {

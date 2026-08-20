@@ -493,6 +493,11 @@ private:
     juce::TextButton projSaveButton { "GUARDAR" };
     juce::TextButton projLoadButton { "ABRIR" };
     juce::TextButton projNewButton  { "NUEVO" };
+    //  GUARDAR EL BANCO DE DELANTE COMO KIT. Ver guardarKit: sale a la
+    //  biblioteca con la forma de un banco descargado, para que vuelva a entrar
+    //  por CARGAR KIT igual que cualquier pack de internet.
+    juce::TextButton projKitButton  { "GUARDAR KIT" };
+    void guardarKit (const juce::String& nombre);
     juce::TextButton projDeleteButton { "BORRAR" };
     juce::TextButton projExportButton { "EXPORTAR" };
 
@@ -700,6 +705,11 @@ public:
     //  nace -sonidos, cancion y envios- y otra vez despues de NUEVO, que es el
     //  otro camino por el que se llega a un proyecto vacio.
     void auditNuevo();
+    //  Ver Tests/kit.py: guarda el banco de delante como kit y vuelca lo que
+    //  quedo EN DISCO. Se mide el resultado -los ficheros y su tamano- y no que
+    //  la funcion no se queje, que es la diferencia entre comprobar y mirar
+    //  para otro lado.
+    void auditKit (const juce::String& nombre);
     //  GUARDAR UN PROYECTO Y VOLVER A ABRIRLO, que es lo que hace la persona
     //  y NO lo que medía la prueba de sesion. El fallo de los bancos altos
     //  clonados se arreglo en captureState/applyState y la prueba que lo

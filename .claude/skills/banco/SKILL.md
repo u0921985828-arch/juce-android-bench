@@ -37,6 +37,7 @@ codigo.
 | exportacion, carpetas, permisos | `Tests/export.py` |
 | sonidos de fabrica | `Tests/kits.py` |
 | defectos del proyecto nuevo | `Tests/nuevo.py` |
+| guardar o cargar un kit | `Tests/kit.py` |
 | una APK | `Tests/apk.py <fichero>` |
 
 Ante la duda, todo. El banco entero son unos quince minutos y una APK mal son

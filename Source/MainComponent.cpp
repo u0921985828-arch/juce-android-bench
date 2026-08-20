@@ -435,6 +435,28 @@ MainComponent::MainComponent()
         };
         setSheet.cuerpo.addAndMakeVisible (projExportButton);
 
+        //  GUARDAR KIT, al lado de EXPORTAR y no entre GUARDAR y ABRIR: las dos
+        //  de esta fila producen algo que SALE de este proyecto - un rebote y un
+        //  banco de sonidos-, mientras que las cuatro de abajo son el proyecto
+        //  en si. Y comparte el nombre que ya hay escrito arriba, que es el que
+        //  la persona acaba de teclear.
+        styleButton (projKitButton, kKey);
+        projKitButton.onClick = [this]
+        {
+            auto n = projNameBox.getText().trim();
+            //  Sin nombre escrito, el del proyecto abierto: guardar el kit de
+            //  "BREAKS 90" con el nombre en blanco no es una peticion de nada.
+            if (n.isEmpty()) n = currentProject;
+            //  Sobrescribir un kit borra dieciseis sonidos de la biblioteca y no
+            //  pasa por deshacer, asi que se confirma - la misma red que
+            //  CARGAR KIT y que guardar encima de un proyecto.
+            const auto dir = ProjectStore::kits().getChildFile (juce::File::createLegalFileName (n.trim()));
+            if (dir.isDirectory() && ! armConfirm (projKitButton, T ("Sobrescribir \"%1\"?", n)))
+                return;
+            guardarKit (n);
+        };
+        setSheet.cuerpo.addAndMakeVisible (projKitButton);
+
         // --- RACK: one pad's sends, opened from the mixer. ---------------
         styleButton (rackButton, kKey);
         rackButton.onClick = [this] { rackPad = juce::jmax (0, selectedPad); openSheet (rackSheet, mixButton); refreshRack(); };
@@ -3171,6 +3193,8 @@ void MainComponent::showSetPage (int page)
     projList.setVisible          (onProj);
     projNameBox.setVisible       (onProj);
     projSaveButton.setVisible    (onProj);
+    projKitButton.setVisible     (onProj);
+    if (! onProj) projKitButton.setBounds ({});
     projLoadButton.setVisible    (onProj);
     projNewButton.setVisible     (onProj);
     projDeleteButton.setVisible  (onProj);
@@ -5685,7 +5709,11 @@ void MainComponent::resized()
             projPathRowArea = inner.removeFromTop (14);
             inner.removeFromTop (Metrics::sm);
 
-            projExportButton.setBounds (inner.removeFromBottom (Metrics::btn).reduced (2, 0));
+            {
+                auto fila = inner.removeFromBottom (Metrics::btn);
+                juce::TextButton* pe[2] = { &projExportButton, &projKitButton };
+                layoutModuleBar (fila, pe, 0, 2);
+            }
             inner.removeFromBottom (Metrics::xs);
 
             //  Repartidas POR EL TEXTO y no a cuartos: en 280x653 a cada una le
@@ -8359,6 +8387,7 @@ void MainComponent::retranslateUi()
     chainClearButton.setButtonText (T ("QUITAR CADENA"));
 
     projSaveButton  .setButtonText (T ("GUARDAR"));
+    projKitButton   .setButtonText (T ("GUARDAR KIT"));
     projLoadButton  .setButtonText (T ("ABRIR"));
     projNewButton   .setButtonText (T ("NUEVO"));
     projDeleteButton.setButtonText (T ("BORRAR"));
@@ -12538,6 +12567,149 @@ void MainComponent::launchSystemPicker()
                 }
             });
         });
+}
+
+//  GUARDAR EL BANCO DE DELANTE COMO KIT.
+//
+//  La otra mitad de CARGAR KIT, y la que faltaba: se podia repartir una carpeta
+//  de sonidos por un banco y no se podia guardar el banco que habias montado.
+//  Un kit hecho aqui se quedaba dentro del proyecto que lo tenia, o sea que
+//  para usarlo en otro habia que volver a buscar los mismos dieciseis ficheros.
+//
+//  SALE CON LA FORMA DE UN BANCO DESCARGADO y no con un formato propio: una
+//  carpeta con dieciseis WAV numerados. Asi el kit que guardas y el pack que te
+//  bajas entran por la MISMA puerta -CARGAR KIT, que ordena por nombre- y el
+//  numero de delante ES el orden. Un formato propio habria sido una segunda
+//  forma de hacer lo mismo, y ademas la unica que no sabria abrir nadie mas.
+//
+//  Y SE ESCRIBE LO QUE SUENA, o sea el trozo RECORTADO y no el fichero entero.
+//  Un pad de un break de cuatro minutos con el recorte puesto en un golpe es
+//  ese golpe: guardar los cuatro minutos dieciseis veces son 300 MB de kit para
+//  dieciseis sonidos que duran medio segundo. Los fundidos y el reves no van -
+//  son ajustes del pad y viven en el proyecto; un kit es el material.
+//  Ver Tests/kit.py.
+void MainComponent::auditKit (const juce::String& nombre)
+{
+    //  Con el recorte a la mitad en el primer pad, para que la prueba pueda ver
+    //  si lo que se escribio es el TROZO o el fichero entero: sin mover ningun
+    //  recorte, las dos respuestas darian el mismo numero.
+    const int base = currentBank * kPadsPerBank;
+    padStart01[(size_t) base] = 0.25f;
+    padEnd01[(size_t) base]   = 0.75f;
+
+    guardarKit (nombre);
+
+    const auto dir = ProjectStore::kits().getChildFile (juce::File::createLegalFileName (nombre));
+    auto files = dir.findChildFiles (juce::File::findFiles, false, "*.wav");
+    files.sort();
+
+    //  Y SE LEE DE VUELTA LO QUE SE ESCRIBIO, que es lo que el tamaño no puede
+    //  decir. Un fichero del largo correcto sacado del sitio equivocado pesa
+    //  exactamente lo mismo: la primera version de esta prueba comparaba bytes
+    //  y dio OK con el recorte ignorado a proposito, porque copiar desde cero
+    //  cambia QUE muestras se escriben y no CUANTAS.
+    //
+    //  Dos numeros que vienen por caminos distintos - uno del disco y otro de
+    //  la memoria - y que solo coinciden si el trozo salio de donde tenia que
+    //  salir. Compararlos no es circular: el break los separa.
+    double rmsDisco = 0.0, rmsEsperado = 0.0;
+    if (! files.isEmpty())
+    {
+        juce::AudioFormatManager fm; fm.registerBasicFormats();
+        if (std::unique_ptr<juce::AudioFormatReader> rd (fm.createReaderFor (files[0])); rd != nullptr)
+        {
+            juce::AudioBuffer<float> leido ((int) rd->numChannels, (int) rd->lengthInSamples);
+            rd->read (&leido, 0, (int) rd->lengthInSamples, 0, true, true);
+            rmsDisco = leido.getRMSLevel (0, 0, leido.getNumSamples());
+        }
+        if (const auto sb0 = uiSample[(size_t) base]; sb0 != nullptr)
+        {
+            const int tot = sb0->buffer.getNumSamples();
+            const int de  = juce::jlimit (0, tot - 1, (int) (0.25f * (float) tot));
+            const int ha  = juce::jlimit (de + 1, tot, (int) (0.75f * (float) tot));
+            rmsEsperado = sb0->buffer.getRMSLevel (0, de, ha - de);
+        }
+    }
+
+    std::cout << "{\"kit\":\"" << nombre << "\",\"carpeta\":\"" << dir.getFullPathName()
+              << "\",\"ficheros\":" << files.size() << ",\"lista\":[";
+    for (int i = 0; i < files.size(); ++i)
+    {
+        //  Nombre y TAMANO: un WAV de cabecera sola existe, se lista y no suena.
+        std::cout << (i ? "," : "") << "{\"n\":\"" << files[i].getFileName()
+                  << "\",\"bytes\":" << files[i].getSize() << "}";
+    }
+    //  Y cuanto dura la fuente del primer pad, para poder comparar: el trozo
+    //  escrito tiene que ser la mitad de eso y no todo.
+    const auto sb = uiSample[(size_t) base];
+    std::cout << "],\"fuente_muestras\":" << (sb != nullptr ? sb->buffer.getNumSamples() : 0)
+              << ",\"fuente_hz\":" << (sb != nullptr ? sb->sourceSampleRate : 0.0)
+              //  Y CUANTOS CANALES, que la prueba no puede adivinar. Los
+              //  probaba los dos hasta que alguno cuadrara, y asi el fichero
+              //  ENTERO en mono colaba como "la mitad en estereo": una regla
+              //  que acierta por accidente no es una regla.
+              << ",\"fuente_canales\":" << (sb != nullptr ? sb->buffer.getNumChannels() : 0)
+              << ",\"rms_disco\":" << rmsDisco
+              << ",\"rms_esperado\":" << rmsEsperado
+              << "}" << std::endl;
+}
+
+void MainComponent::guardarKit (const juce::String& nombre)
+{
+    const auto limpio = juce::File::createLegalFileName (nombre.trim()).substring (0, 60);
+    if (limpio.isEmpty())
+    {
+        status.setText (T ("Ponle nombre primero"), juce::dontSendNotification);
+        return;
+    }
+
+    const auto dir = ProjectStore::kits().getChildFile (limpio);
+    if (! ProjectStore::ensureDirectory (dir))
+    {
+        status.setText (T ("No se pudo escribir el kit"), juce::dontSendNotification);
+        return;
+    }
+
+    const int base = currentBank * kPadsPerBank;
+    int escritos = 0, vacios = 0;
+
+    beginBusy (T ("Guardando kit"));
+    for (int i = 0; i < kPadsPerBank; ++i)
+    {
+        setBusyProgress ((float) i / (float) kPadsPerBank);
+        const int pad = base + i;
+        auto sb = uiSample[(size_t) pad];
+        if (sb == nullptr || sb->buffer.getNumSamples() <= 0) { ++vacios; continue; }
+
+        //  El recorte, en muestras de la FUENTE y sacado del buffer que sostiene
+        //  la interfaz - nunca de engine.getSampleLength, que lee el puntero que
+        //  ha adoptado el hilo de audio y es nulo hasta el primer bloque.
+        const int total = sb->buffer.getNumSamples();
+        const int desde = juce::jlimit (0, total - 1, (int) (padStart01[(size_t) pad] * (float) total));
+        const int hasta = juce::jlimit (desde + 1, total, (int) (padEnd01[(size_t) pad] * (float) total));
+        const int n     = hasta - desde;
+
+        juce::AudioBuffer<float> trozo (sb->buffer.getNumChannels(), n);
+        for (int c = 0; c < trozo.getNumChannels(); ++c)
+            trozo.copyFrom (c, 0, sb->buffer, c, desde, n);
+
+        //  Dos cifras de delante y el nombre detras: el numero manda el orden al
+        //  volver y el nombre es para leerlo. Sin las dos cifras, "10" se ordena
+        //  antes que "2" y el kit vuelve barajado.
+        const auto etiqueta = padName[(size_t) pad].isNotEmpty()
+                                ? juce::File::createLegalFileName (padName[(size_t) pad])
+                                : juce::String ("pad");
+        const auto f = dir.getChildFile (juce::String (i + 1).paddedLeft ('0', 2)
+                                           + " " + etiqueta + ".wav");
+        if (ProjectStore::writeSample (f, trozo, sb->sourceSampleRate)) ++escritos;
+    }
+    endBusy();
+
+    status.setText (escritos > 0
+                      ? T ("Kit \"%1\": %2 sonidos", limpio, juce::String (escritos))
+                      : T ("No hay sonidos en este banco"),
+                    juce::dontSendNotification);
+    juce::ignoreUnused (vacios);
 }
 
 //  Ver browseKitButton. Los audios de la carpeta que se esta viendo, en el

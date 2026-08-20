@@ -822,6 +822,12 @@ namespace
         { "Tempo %1",       "",         "Tempo %1",   "速度 %1",    "إيقاع %1" },
         { "QUITAR CADENA",  "",         "CLEAR CHAIN","清除链接", "مسح السلسلة" },
         { "VACIAR",         "",         "CLEAR",      "清空",       "تفريغ" },
+        { "GUARDAR KIT",    "",         "SAVE KIT",   "保存音色组",   "حفظ الطقم" },
+        { "Guardando kit",  "",         "Saving kit", "正在保存音色组", "جارٍ حفظ الطقم" },
+        { "Ponle nombre primero", "",    "Name it first", "请先命名",  "سمّه أولاً" },
+        { "No se pudo escribir el kit", "", "Could not write the kit", "无法写入音色组", "تعذّر حفظ الطقم" },
+        { "No hay sonidos en este banco", "", "No sounds in this bank", "此音色库没有声音", "لا أصوات في هذا البنك" },
+        { "Kit \"%1\": %2 sonidos", "", "Kit \"%1\": %2 sounds", "音色组 \"%1\"：%2 个声音", "الطقم \"%1\": %2 صوت" },
         //  Cuantas octavas se ven a la vez en el piano roll. Clave propia y no
         //  reaprovechada: "OCTAVA" ya existe para el boton que MUEVE la ventana
         //  y significa otra cosa - una clave que se reaprovecha por parecerse
