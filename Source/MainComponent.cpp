@@ -921,8 +921,49 @@ MainComponent::MainComponent()
         s.setColour (juce::Slider::trackColourId, kPadLoaded);
         addAndMakeVisible (s);
     };
-    initSlider (startSlider,   0.0,  1.0, 0.001, 0.0);
-    initSlider (endSlider,     0.0,  1.0, 0.001, 1.0);
+    //  PASO CONTINUO, no de milesimas. Una milesima de un tema de 235 s son
+    //  235 ms: con el paso viejo el minimo nuevo -5.3 ms- no se podia ni pedir,
+    //  porque el mando redondeaba la peticion antes de que nadie la mirase.
+    initSlider (startSlider,   0.0,  1.0, 0.0, 0.0);
+    initSlider (endSlider,     0.0,  1.0, 0.0, 1.0);
+
+    //  Y LA CASILLA DICE SEGUNDOS, no la fraccion cruda.
+    //
+    //  Con el paso continuo la fraccion pierde el poco sentido que tenia: en un
+    //  tema de 235 s, mover el recorte cinco milisegundos cambia el numero en
+    //  0.00002 y la casilla sigue diciendo "0.010". Un limite que no se puede
+    //  LEER es medio limite - se puede poner y no se puede comprobar.
+    //
+    //  Se dan tres decimales por debajo de diez segundos -que es donde se
+    //  trabaja recortando un golpe-, dos por debajo de cien y uno por encima,
+    //  que es lo que cabe en la casilla sin encoger la letra.
+    {
+        auto texto = [this] (double v01)
+        {
+            const int len = padSourceLength (selectedPad);
+            const double sr = (selectedPad >= 0 && uiSample[(size_t) selectedPad] != nullptr)
+                                ? uiSample[(size_t) selectedPad]->sourceSampleRate : 0.0;
+            if (len <= 0 || sr <= 0.0) return juce::String (v01, 3);
+            const double sec = v01 * (double) len / sr;
+            const int dec = sec < 10.0 ? 3 : (sec < 100.0 ? 2 : 1);
+            return Lang::ltr (juce::String (sec, dec) + "s");
+        };
+        auto valor = [this] (const juce::String& t)
+        {
+            const int len = padSourceLength (selectedPad);
+            const double sr = (selectedPad >= 0 && uiSample[(size_t) selectedPad] != nullptr)
+                                ? uiSample[(size_t) selectedPad]->sourceSampleRate : 0.0;
+            const double n = t.retainCharacters ("0123456789.,-").replace (",", ".").getDoubleValue();
+            if (len <= 0 || sr <= 0.0) return juce::jlimit (0.0, 1.0, n);
+            return juce::jlimit (0.0, 1.0, n * sr / (double) len);
+        };
+        for (juce::Slider* sl : { &startSlider, &endSlider })
+        {
+            sl->textFromValueFunction = texto;
+            sl->valueFromTextFunction = valor;
+            sl->updateText();
+        }
+    }
     //  SUAVE y no ABRUPTO: el mando dice cuantos milisegundos tarda el borde
     //  en abrirse. Cero es el corte seco de siempre, que es lo que quiere un
     //  golpe de bateria; cinco quitan el clic de un corte en medio de un grave
@@ -1093,7 +1134,7 @@ MainComponent::MainComponent()
     startSlider.onValueChange = [this]
     {
         if (selectedPad < 0) return;
-        double v = juce::jmin (startSlider.getValue(), endSlider.getValue() - 0.01);
+        double v = juce::jmin (startSlider.getValue(), endSlider.getValue() - minTrim01 (selectedPad));
         padStart01[(size_t) selectedPad] = (float) v;
         const int len = padSourceLength (selectedPad);
         if (len > 0) engine.setPadStart (selectedPad, (int) (v * len));
@@ -1106,7 +1147,7 @@ MainComponent::MainComponent()
     endSlider.onValueChange = [this]
     {
         if (selectedPad < 0) return;
-        double v = juce::jmax (endSlider.getValue(), startSlider.getValue() + 0.01);
+        double v = juce::jmax (endSlider.getValue(), startSlider.getValue() + minTrim01 (selectedPad));
         padEnd01[(size_t) selectedPad] = (float) v;
         const int len = padSourceLength (selectedPad);
         if (len > 0) engine.setPadEnd (selectedPad, (int) (v * len));
@@ -7388,7 +7429,14 @@ void MainComponent::resized()
         //  EN LA MITAD CONTRARIA A LA DEL OBJETIVO. Es lo unico que garantiza
         //  que el texto no tape lo que se esta senalando sin tener que negociar
         //  posiciones - que es donde el FX-404 se dejo dos redisenos.
-        auto ventana = getLocalBounds();
+        //  Y DENTRO DEL AREA SEGURA, no de la ventana. El velo si cubre la
+        //  ventana entera -es lo que oscurece la maquina- pero la tarjeta lleva
+        //  texto, y arriba del todo estan la hora y la senal: en un movil con
+        //  barra de estado el titulo del paso salia DEBAJO del reloj, ilegible
+        //  y pareciendo un fallo de pintado. Abajo es lo mismo con la barra de
+        //  gestos. La cara ya se maqueta asi desde el principio; el muelle se
+        //  escribio con getLocalBounds y se quedo fuera de esa regla.
+        auto ventana = safeArea();
         const bool objetivoArriba = tourFoco.isEmpty()
                                   || tourFoco.getCentreY() < ventana.getCentreY();
         tourDock = objetivoArriba ? ventana.removeFromBottom (alto)
@@ -7530,6 +7578,16 @@ void MainComponent::stepCellToggled (int pad, int step)
 //  Dejarlo dentro habria dejado el piano clavado en su compas con SEGUIR
 //  puesto; copiarlo en los dos sitios seria la misma regla escrita dos veces,
 //  que es como se separan.
+//  Ver MainComponent::kMinTrimSamples. Sin muestra no hay longitud que
+//  convertir, asi que se cae al valor de siempre - y el tope de 0.5 es para que
+//  una muestra de dos milisegundos no pida una ventana mayor que ella misma.
+double MainComponent::minTrim01 (int pad) const
+{
+    const int len = padSourceLength (pad);
+    return len > 0 ? juce::jlimit (1.0e-6, 0.5, (double) kMinTrimSamples / (double) len)
+                   : 0.005;
+}
+
 void MainComponent::seguirCompas (int ps)
 {
     if (! seqFollow || ps < 0) return;
@@ -7662,6 +7720,15 @@ void MainComponent::selectPad (int index)
     selectedPad = index;
     updateControlsFromPad (index);
     waveform.setSample (uiSample[(size_t) index]);
+    //  Y con la muestra puesta, lo mas estrecho que puede quedar su recorte:
+    //  ver minTrim01. La onda lo necesita porque el asa se arrastra sobre ella
+    //  y es alli donde el limite se toca de verdad.
+    waveform.setMinTrim ((float) minTrim01 (index));
+    //  Y la casilla, que ahora dice segundos y por tanto depende de la muestra:
+    //  sin esto, cambiar de pad con el recorte en el mismo sitio dejaba escrito
+    //  el tiempo del pad anterior.
+    startSlider.updateText();
+    endSlider.updateText();
     waveform.setTrim (padStart01[(size_t) index], padEnd01[(size_t) index]);
     pushFadesToWaveform();
     if (auto sb = uiSample[(size_t) index])

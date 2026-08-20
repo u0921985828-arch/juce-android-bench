@@ -98,6 +98,14 @@ public:
     //  0.062 is the wrong instrument: you want to grab it and listen.
     std::function<void (float start01, float end01)> onTrimDragged;
 
+    //  LO MAS ESTRECHO QUE PUEDE QUEDAR LA VENTANA, y lo dice quien sabe cuanto
+    //  dura la muestra. Aqui estaba escrito 0.005 y en los mandos 0.01: la
+    //  misma regla con dos numeros, y los dos en PORCENTAJE del fichero entero,
+    //  que es lo que la hacia inservible en una muestra larga - el 1% de un
+    //  tema de 235 s son 2.35 SEGUNDOS, asi que aislar el primer golpe de un
+    //  disco era imposible por mucho que ampliaras.
+    void setMinTrim (float m) { minVentana = juce::jlimit (1.0e-6f, 0.5f, m); }
+
     //  Tap anywhere that is not a handle and hear the sound from there. A
     //  waveform you can only look at is a picture; this is the difference
     //  between finding the downbeat by eye and finding it by ear.
@@ -116,6 +124,7 @@ public:
     //  los guarda el pad; lo unico que hay que traducir es donde cae cada uno
     //  en pantalla.
     static constexpr float kMaxZoom = 64.0f;
+    float minVentana = 0.005f;      // ver setMinTrim
 
     void setZoom (float z, float centre01)
     {
@@ -222,8 +231,8 @@ public:
 
         const float t = xToNorm ((float) e.x);
         float s = start01, en = end01;
-        if (dragging == 1) s  = juce::jlimit (0.0f, en - 0.005f, t);
-        else               en = juce::jlimit (s + 0.005f, 1.0f, t);
+        if (dragging == 1) s  = juce::jlimit (0.0f, en - minVentana, t);
+        else               en = juce::jlimit (s + minVentana, 1.0f, t);
         setTrim (s, en);
         if (onTrimDragged) onTrimDragged (s, en);
     }

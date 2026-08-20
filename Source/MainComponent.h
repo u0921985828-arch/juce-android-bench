@@ -168,6 +168,20 @@ private:
     unsigned char pianoLargos[AudioEngine::kNumSteps] {};
     void refreshPiano (bool repintarTarjeta = true);
     void seguirCompas (int pasoAbsoluto);
+
+    //  LO MAS ESTRECHO QUE PUEDE QUEDAR UN RECORTE, en MUESTRAS y no en
+    //  porcentaje del fichero. Estaba escrito dos veces y en las dos como
+    //  fraccion -0.01 en los mandos, 0.005 en la onda-, y una fraccion del
+    //  fichero entero no significa lo mismo en un golpe de bombo que en un
+    //  tema de 235 segundos: alli el 1% son 2.35 SEGUNDOS, o sea que aislar el
+    //  primer golpe de un disco no se podia por mucho que ampliaras.
+    //
+    //  Doscientas cincuenta y seis muestras son 5.3 ms a 48 kHz. Sigue siendo
+    //  un minimo -por debajo no hay ni rampa de fundido ni cuatro muestras que
+    //  darle a la interpolacion de Hermite- pero es un minimo del tamano de un
+    //  chasquido y no del tamano de un compas.
+    static constexpr int kMinTrimSamples = 256;
+    double minTrim01 (int pad) const;
     //  Lo que la costura de los bancos necesita para que un chip llegue al
     //  dedo: la tapa, su aire y el labio de la placa que se pinta cinco
     //  pixeles por encima de la rejilla y que por tanto no es suyo. Vive aqui
