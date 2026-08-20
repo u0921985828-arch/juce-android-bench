@@ -1363,6 +1363,15 @@ private:
     juce::Rectangle<int> tourObjetivo (int paso) const;
     void showTour (int paso);
     int  tourBodyHeight (int ancho) const;
+    //  LA LETRA DEL PARRAFO DEL TOUR, en un solo sitio. La escribian dos -quien
+    //  mide el alto del muelle y quien lo pinta- y tienen que decir lo MISMO o
+    //  el muelle se queda corto y la ultima linea cae fuera de la tarjeta.
+    //
+    //  Catorce y no once. Once es el cuerpo de un rotulo de control -dos o tres
+    //  palabras que se leen de un vistazo- y esto es un parrafo que alguien lee
+    //  entero, en un telefono, la primera vez que abre la app. Es el unico
+    //  texto largo de la interfaz y estaba con la letra del mas corto.
+    static juce::Font tourBodyFont();
     void paintTourSheetContent (juce::Graphics& g);
     static juce::File tourFile();
     void paintManualSheetContent (juce::Graphics& g);

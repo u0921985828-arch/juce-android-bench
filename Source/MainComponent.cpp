@@ -7623,8 +7623,15 @@ void MainComponent::resized()
         auto ventana = safeArea();
         const bool objetivoArriba = tourFoco.isEmpty()
                                   || tourFoco.getCentreY() < ventana.getCentreY();
-        tourDock = objetivoArriba ? ventana.removeFromBottom (alto)
-                                  : ventana.removeFromTop (alto);
+        //  Y ACOTADO A LA MITAD LARGA DE LA VENTANA. El alto sale de medir el
+        //  parrafo mas largo, que es lo correcto, pero medir no es lo mismo que
+        //  caber: con la letra a catorce y un idioma que escriba mas, un muelle
+        //  sin tope taparia la maquina que esta senalando - y el paso entero
+        //  consiste en que se vea.
+        const int tope = ventana.getHeight() * 55 / 100;
+        const int altoDock = juce::jmin (alto, tope);
+        tourDock = objetivoArriba ? ventana.removeFromBottom (altoDock)
+                                  : ventana.removeFromTop (altoDock);
         //  Y si aun asi se solapan -un objetivo que ocupa media pantalla-, manda
         //  el texto: sin leerlo el foco no explica nada.
         auto inner = tourDock.reduced (Metrics::lg, Metrics::md);
@@ -11298,10 +11305,16 @@ void MainComponent::tourPrepara (int paso)
     tourSheet.toFront (false);
 }
 
+//  Ver MainComponent::tourBodyFont.
+juce::Font MainComponent::tourBodyFont()
+{
+    return ZatiColours::monoFont (Metrics::fLabel + 3.0f, false).withExtraKerningFactor (0.02f);
+}
+
 int MainComponent::tourBodyHeight (int ancho) const
 {
     if (ancho <= 0) return 0;
-    const auto f = ZatiColours::monoFont (Metrics::fMeta + 1.0f, false).withExtraKerningFactor (0.02f);
+    const auto f = tourBodyFont();
     const int lineaH = (int) std::ceil (f.getHeight() * 1.15f);
     int peor = 1;
     for (int i = 0; i < kTourPasos; ++i)
@@ -11397,9 +11410,14 @@ void MainComponent::paintTourSheetContent (juce::Graphics& g)
     inner.removeFromTop (Metrics::xs);
     if (tourBodyArea.isEmpty()) return;
     g.setColour (ZatiColours::ink.withAlpha (0.8f));
-    g.setFont (ZatiColours::monoFont (Metrics::fMeta + 1.0f, false).withExtraKerningFactor (0.02f));
+    g.setFont (tourBodyFont());
+    //  Y sin encoger: el ultimo parametro de drawFittedText es cuanto puede
+    //  apretar la letra antes que partir, y aqui vale uno a proposito. Un
+    //  parrafo que se estrecha para caber es justo lo contrario de lo que este
+    //  cambio busca - el muelle mide lo que el texto necesita, asi que caber es
+    //  su problema y no el de la letra.
     g.drawFittedText (T (ZatiTour::cuerpos[tourPaso]), tourBodyArea,
-                      Lang::start (juce::Justification::top), 6, 1.0f);
+                      Lang::start (juce::Justification::top), 8, 1.0f);
 }
 
 void MainComponent::paintManualSheetContent (juce::Graphics& g)
