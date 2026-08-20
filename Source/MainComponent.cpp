@@ -4684,8 +4684,33 @@ void MainComponent::resized()
             //  Half the seam belongs to the word; each pair gets one of the
             //  remaining quarters, so a pair plus its air can never grow into
             //  the room PADS needs however wide the screen is.
-            const int w = juce::jlimit (30, 46,
-                                        (seam.getWidth() / 4 - (perSide - 1) * Metrics::gap) / perSide);
+            int w = juce::jlimit (30, 46,
+                                  (seam.getWidth() / 4 - (perSide - 1) * Metrics::gap) / perSide);
+
+            //  Y EL SUELO DEL DEDO TAMBIEN A LO ANCHO, si la palabra sigue
+            //  cabiendo entre los dos pares. Repartir la costura en cuartos es
+            //  lo que parece justo y no lo es: la palabra grabada no necesita
+            //  la mitad del ancho, necesita lo que MIDE. Con los cuartos los
+            //  chips salian a 37 px en un 360x640, 35 en el Fold abierto y 30
+            //  en el cerrado, con el alto ya en 40 - o sea a un toque de ser
+            //  tocables y fallando por el otro lado.
+            //
+            //  Se pregunta con el texto puesto y en el idioma que toque, que es
+            //  como se reparten ya las filas de modulos: "PADS" no mide lo
+            //  mismo que la palabra china. Y si no cabe, se queda como estaba -
+            //  subir el suelo cuando no cabe es como se convierte un chip
+            //  estrecho en una palabra que no se dibuja.
+            if (w < Metrics::hit)
+            {
+                const int anchoPares = 2 * (perSide * Metrics::hit + (perSide - 1) * Metrics::gap);
+                const auto fuente = ZatiColours::labelFont (Metrics::fMeta, 0.30f);
+                //  Lo que engraveIn reserva alrededor: nueve px de aire a cada
+                //  lado de la palabra y diez de margen del rayado.
+                const int palabra = (int) std::ceil (juce::GlyphArrangement::getStringWidth (fuente, T ("PADS")))
+                                  + 2 * 9 + 2 * 10;
+                if (seam.getWidth() - anchoPares >= palabra) w = Metrics::hit;
+            }
+
             const int total = perSide * w + (perSide - 1) * Metrics::gap;
 
             //  takeStart/takeEnd, not removeFromLeft/Right: in Arabic the pair
