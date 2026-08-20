@@ -4401,6 +4401,19 @@ void MainComponent::resized()
     //  `padBottomGive` is the part of it that comes out of the band under the
     //  grid rather than out of the screen.
     int padSeamExtra = 0, padBottomGive = 0;
+    //  Y CUANTO MIDE LA FILA DE MODULOS, que hasta ahora era una constante de
+    //  26 px. Son las seis tapas que abren las fichas -PADS SEC CANCION MEZCLA
+    //  XY AJUSTES-, o sea lo que mas se toca de la cara despues de los pads, y
+    //  estaban catorce pixeles por debajo del dedo en las siete pantallas. Es
+    //  el mismo fallo que kFxRow contado una fila mas arriba.
+    //
+    //  Pero a diferencia de aquel, este NO se puede subir siempre: catorce
+    //  pixeles no los tiene una cara que ya va sobre-suscrita en las dos
+    //  pantallas cortas, y forzarlo se los quitaria a los pads, que ya estan en
+    //  su suelo. Se pide lo que hay - la misma pregunta que ya deciden BANCO,
+    //  PADS y la tira del paso: sube a cuarenta donde el cristal puede pagarlo
+    //  sin bajar de SU suelo, y se queda en veintiseis donde no.
+    int moduleH = ZatiLookAndFeel::kModule;
     {
         //  Spelled out term by term and in layout order, because this used to
         //  be two hand-totalled constants that had drifted: the header was
@@ -4417,10 +4430,14 @@ void MainComponent::resized()
         //  taking two. Thirty pixels back, and the row that gets them is the
         //  effects row, which was coming out 22 tall - a key you PLAY with,
         //  squeezed so a menu could keep its own line.
-        const int belowScreen = ZatiLookAndFeel::kAir
-                              + (wideFace ? ZatiLookAndFeel::kTransport
-                                          : ZatiLookAndFeel::kModule + Metrics::xs + ZatiLookAndFeel::kTransport)
-                              + ZatiLookAndFeel::kAir;
+        auto belowScreenCon = [this] (int mh)
+        {
+            return ZatiLookAndFeel::kAir
+                 + (wideFace ? ZatiLookAndFeel::kTransport
+                             : mh + Metrics::xs + ZatiLookAndFeel::kTransport)
+                 + ZatiLookAndFeel::kAir;
+        };
+        int belowScreen = belowScreenCon (moduleH);
         const int bottomStrip = ZatiLookAndFeel::kStatus
                               + ZatiLookAndFeel::kAir + Metrics::sm;
 
@@ -4475,6 +4492,20 @@ void MainComponent::resized()
         //  el mismo cristal se dibuja apaisado sin que nadie se queje. Un
         //  espectro se MIRA; un chip se toca.
         const int kMinScreen = wideFace ? 56 : 64;
+
+        //  Ver moduleH: la fila de las seis fichas sube al dedo solo donde el
+        //  cristal puede pagar los catorce pixeles quedandose en su suelo. En
+        //  un 360x640 y en el Fold cerrado no puede -la cara ya reserva mas de
+        //  lo que hay y quien absorbe la diferencia es la rejilla de pads-, asi
+        //  que alli se queda en 26 y eso queda medido y escrito, que es
+        //  distinto de no haberlo mirado.
+        if (! wideFace
+            && area.getHeight() - aboveScreen - belowScreenCon (Metrics::hit)
+                 - bottomStrip - bodyNeed >= kMinScreen)
+        {
+            moduleH = Metrics::hit;
+            belowScreen = belowScreenCon (moduleH);
+        }
 
         const int freeH = area.getHeight() - aboveScreen - belowScreen - bottomStrip - bodyNeed;
 
@@ -4576,7 +4607,7 @@ void MainComponent::resized()
     }
     else
     {
-    tabBarArea = area.removeFromTop (ZatiLookAndFeel::kModule);
+    tabBarArea = area.removeFromTop (moduleH);
     {
         auto row = tabBarArea;
         juce::TextButton* mb[6] = { &padsButton, &secButton, &songButton, &mixButton, &xyButton, &setButton };
