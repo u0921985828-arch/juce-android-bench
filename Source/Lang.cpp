@@ -822,6 +822,12 @@ namespace
         { "Tempo %1",       "",         "Tempo %1",   "速度 %1",    "إيقاع %1" },
         { "QUITAR CADENA",  "",         "CLEAR CHAIN","清除链接", "مسح السلسلة" },
         { "VACIAR",         "",         "CLEAR",      "清空",       "تفريغ" },
+        //  Cuantas octavas se ven a la vez en el piano roll. Clave propia y no
+        //  reaprovechada: "OCTAVA" ya existe para el boton que MUEVE la ventana
+        //  y significa otra cosa - una clave que se reaprovecha por parecerse
+        //  en espanol sale mal en las otras tres.
+        { "1 OCTAVA",       "",         "1 OCTAVE",   "1 个八度",     "أوكتاف واحد" },
+        { "2 OCTAVAS",      "",         "2 OCTAVES",  "2 个八度",     "أوكتافان" },
         { "%1 pasos",       "",         "%1 steps",   "%1 步",          "%1 خطوة" },
         { "sin cadena - repite P%1", "sin cadena · repite P%1", "no chain · P%1 repeats",
                                         "无链接 · 重复 P%1",

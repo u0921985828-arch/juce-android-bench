@@ -56,7 +56,25 @@ public:
     //  que es exactamente lo que setStepNote admite. Con veinticinco, la base
     //  en +12 dibujaba hasta +36 y las doce filas de arriba escribian notas que
     //  el motor recortaba a +24 — doce filas que mentian.
-    static constexpr int kFilas    = 13;    // semitonos visibles a la vez
+    //  Y CUANTAS SE VEN LO ELIGE QUIEN MIRA. Trece es una octava y su raiz y es
+    //  lo que hace que una nota se pueda colocar; veinticinco son dos octavas y
+    //  sirven para VER una melodia entera de un vistazo, que es la otra cosa
+    //  que se le pide a un piano roll. Las dos cuentas tienen sentido y ninguna
+    //  gana siempre: en un movil grande veinticinco filas siguen dando 17 px y
+    //  eso se lee, aunque no se acierte comodamente.
+    //
+    //  Trece y veinticinco y nada en medio, porque el boton de OCTAVA mueve de
+    //  doce en doce: con cualquier otra cuenta la ventana deja huecos o solapa,
+    //  y una fila que no se puede alcanzar desde ningun paso del boton es una
+    //  fila que miente. Con trece: -24..-12, -12..0, 0..12, 12..24. Con
+    //  veinticinco: -24..0 y 0..24.
+    static constexpr int kFilasMin = 13;   // una octava y su raiz
+    static constexpr int kFilasMax = 25;   // dos octavas y su raiz
+    void setFilas (int n) { filas = (n >= kFilasMax) ? kFilasMax : kFilasMin; repaint(); }
+    int  getFilas() const noexcept { return filas; }
+    //  El semitono mas alto que puede quedar abajo, para que el de arriba caiga
+    //  clavado en el +24 que setStepNote admite y ni uno mas.
+    int  baseMax()  const noexcept { return 24 - (filas - 1); }
     //  Lo que la ficha PIDE por fila. No es un suelo -la rejilla se queda con
     //  lo que sobre y quien manda es el alto de la tarjeta- sino el objetivo:
     //  trece por 34 son 442 px, que es lo que un movil grande puede dar
@@ -191,16 +209,16 @@ public:
         if (datos == nullptr) return;
 
         auto r = getLocalBounds();
-        const float altoFila = (float) r.getHeight() / (float) kFilas;
+        const float altoFila = (float) r.getHeight() / (float) filas;
         const float anchoCol = (float) (r.getWidth() - kGutter) / (float) nPasos;
         const auto tinta = Zati::colour (color);
 
-        for (int f = 0; f < kFilas; ++f)
+        for (int f = 0; f < filas; ++f)
         {
             //  La fila de arriba es la nota mas AGUDA: un piano roll se lee
             //  como un pentagrama, con lo alto arriba. Dibujarlo al reves es
             //  lo primero que hace que nadie entienda la pantalla.
-            const int semi = semiBase + (kFilas - 1 - f);
+            const int semi = semiBase + (filas - 1 - f);
             const float y  = (float) r.getY() + altoFila * (float) f;
             const bool negra = esNegra (semi);
 
@@ -290,9 +308,9 @@ private:
     {
         if (datos == nullptr) return;
         auto r = getLocalBounds();
-        const float altoFila = (float) r.getHeight() / (float) kFilas;
-        const int fila = juce::jlimit (0, kFilas - 1, (int) ((float) (e.y - r.getY()) / altoFila));
-        const int semi = semiBase + (kFilas - 1 - fila);
+        const float altoFila = (float) r.getHeight() / (float) filas;
+        const int fila = juce::jlimit (0, filas - 1, (int) ((float) (e.y - r.getY()) / altoFila));
+        const int semi = semiBase + (filas - 1 - fila);
 
         //  EL TECLADO SUENA, no escribe. Buscar la nota antes de ponerla es la
         //  mitad de escribir una melodia, y sin esto habria que escribirla,
@@ -379,6 +397,7 @@ private:
     //  y comparten largo, que es lo que un acorde es.
     const unsigned char* cuartos = nullptr;
     std::vector<unsigned char> sombraLargos;
+    int filas = kFilasMin;              // ver setFilas
     int nPasos = 16, semiBase = -12, tocando = -1, color = 0, ultima = -1;
     //  Donde empezo el arrastre, para saber si estira o pinta.
     int filaIni = -1, pasoIni = -1, ultimoLargo = -1;

@@ -2161,8 +2161,13 @@ MainComponent::MainComponent()
         //  octavas de rango, y la ventana ensena veinticinco filas: con el tope
         //  de arriba en 0 la mitad de agudo del pad era inalcanzable desde el
         //  piano - se podia escribir un -24 y no un +24.
+        //  El tope de arriba sale de CUANTAS filas se ven -ver PianoRoll::baseMax-
+        //  y no de un doce escrito a mano: con dos octavas a la vista, una base
+        //  de +12 dibujaria hasta +36 y las doce de arriba escribirian notas que
+        //  setStepNote recorta a +24. Doce filas que mienten, que es el fallo
+        //  que ya tuvo esta pagina cuando ensenaba veinticinco siempre.
         pianoOctDownBtn.onClick = [this] { pianoBase = juce::jmax (-24, pianoBase - 12); refreshPiano(); };
-        pianoOctUpBtn.onClick   = [this] { pianoBase = juce::jmin (  12, pianoBase + 12); refreshPiano(); };
+        pianoOctUpBtn.onClick   = [this] { pianoBase = juce::jmin (pianoGrid.baseMax(), pianoBase + 12); refreshPiano(); };
         pianoClearBtn.onClick   = [this]
         {
             if (selectedPad < 0) return;
@@ -2206,6 +2211,20 @@ MainComponent::MainComponent()
             { ponUtil (pianoGomaBtn.getToggleState()  ? PianoRoll::goma    : PianoRoll::dibujar); };
         pianoCorteBtn.onClick = [this, ponUtil]
             { ponUtil (pianoCorteBtn.getToggleState() ? PianoRoll::tijeras : PianoRoll::dibujar); };
+
+        //  CUANTAS OCTAVAS SE VEN. Las dos cuentas sirven para cosas distintas
+        //  y ninguna gana siempre: con una octava la fila mide 34 px en un
+        //  movil grande y una nota se coloca sin apuntar; con dos se VE una
+        //  melodia entera, que es la otra mitad de para que existe un piano
+        //  roll. Elegir es de quien mira y no nuestro.
+        styleButton (pianoVerBtn, kKey);
+        pianoVerBtn.onClick = [this]
+        {
+            aplicaFilasPiano (pianoGrid.getFilas() >= PianoRoll::kFilasMax
+                                ? PianoRoll::kFilasMin : PianoRoll::kFilasMax);
+            savePianoPref();
+        };
+        seqSheet.addAndMakeVisible (pianoVerBtn);
 
         //  BORRAR: quita la nota que se toca, y con ella el paso si era la
         //  ultima que quedaba - un paso encendido sin ninguna nota es un golpe
@@ -2512,6 +2531,12 @@ MainComponent::MainComponent()
         for (auto* p : pads) if (p != nullptr) p->setArtEnabled (dev.padWaveformArt);
         startTimer (dev.uiIntervalMs);
     }
+    //  Y AL FINAL, no donde el master. aplicaFilasPiano llama a resized(), y
+    //  resized() desde la mitad del constructor es exactamente como se cerro
+    //  esta app antes de ensenar la ventana: la lista de tapas que pide todavia
+    //  esta vacia. Aqui ya esta todo construido.
+    loadPianoPref();
+
     setSize (500, 1080);
     focusFx (0);
     //  Establish which half of the sequencer card is showing BEFORE the first
@@ -3182,7 +3207,7 @@ void MainComponent::showSeqPage (int page)
     pianoGrid.setVisible (onPiano);
     for (juce::TextButton* b : { &pianoOctDownBtn, &pianoOctUpBtn, &pianoClearBtn,
                                  &pianoPadDownBtn, &pianoPadUpBtn,
-                                 &pianoGomaBtn, &pianoCorteBtn })
+                                 &pianoGomaBtn, &pianoCorteBtn, &pianoVerBtn })
     {
         b->setVisible (onPiano);
         if (! onPiano) b->setBounds ({});
@@ -6624,14 +6649,15 @@ void MainComponent::resized()
             //  La fila de tapas puede ser DOS. Ver la maqueta: cinco no caben en
             //  las pantallas estrechas, y pedir una fila y colocar dos es como
             //  la rejilla del piano se queda sin sitio.
-            juce::TextButton* pb5[5] = { &pianoOctDownBtn, &pianoOctUpBtn, &pianoClearBtn,
-                                         &pianoGomaBtn, &pianoCorteBtn };
+            juce::TextButton* pb5[6] = { &pianoOctDownBtn, &pianoOctUpBtn, &pianoVerBtn,
+                                         &pianoClearBtn, &pianoGomaBtn, &pianoCorteBtn };
             const int anchoTarjeta = (int) ((float) safeArea().getWidth() * 0.92f) - 2 * Metrics::lg;
             //  Apaisado no hay fila de tapas que pedir: se van a la columna
             //  de al lado. Pedir una fila que luego no se coloca es pedir 48 px
             //  de mas de lo unico que escasea girado.
-            const int filasTapas = wideFace ? 0 : (moduleBarFits (anchoTarjeta, pb5, 5) ? 1 : 2);
-            wanted = chrome + PianoRoll::kFilas * PianoRoll::kAltoObjetivo + Metrics::sm + 14
+            const int filasTapas = wideFace ? 0 : (moduleBarFits (anchoTarjeta, pb5, 6) ? 1 : 2);
+            filasTapasPiano = filasTapas;
+            wanted = chrome + pianoGrid.getFilas() * PianoRoll::kAltoObjetivo + Metrics::sm + 14
                    + filasTapas * Metrics::hit
                    + juce::jmax (0, filasTapas - 1) * Metrics::halfGap;
         }
@@ -6740,17 +6766,54 @@ void MainComponent::resized()
             //  y las ultimas tapas salen de alto cero sin que nadie se queje.
             //  Un tope que se supera en silencio no protege, esconde - ya paso
             //  con layoutModuleBar y sus ocho tapas.
-            const int altoColumna = 5 * Metrics::hit + 4 * Metrics::halfGap;
+            //  DOS OCTAVAS SOLO DONDE SE PUEDEN TOCAR. Veinticinco filas son
+            //  19.3 px en un movil grande -se lee, se acierta- y 12 en un
+            //  360x640, por debajo del suelo. Una eleccion que la persona toma
+            //  a sabiendas es distinta de un defecto que se cuela, pero ofrecer
+            //  una opcion que deja la rejilla rota no es ofrecer nada: donde no
+            //  cabe, la tapa no esta - y si venia puesta del fichero de
+            //  preferencias, la rejilla vuelve a una octava.
+            //
+            //  Se pregunta con las seis tapas puestas, que es el caso peor: si
+            //  la respuesta es que no, la tapa se va y sobra sitio, no falta.
+            {
+                const int filasT = wideFace ? 0 : filasTapasPiano;
+                const int alto = inner.getHeight() - filasT * Metrics::hit
+                               - juce::jmax (0, filasT - 1) * Metrics::halfGap
+                               - (filasT > 0 ? Metrics::sm : 0);
+                const bool cabe = alto / PianoRoll::kFilasMax >= kSueloNota;
+                pianoVerBtn.setVisible (cabe);
+                if (! cabe)
+                {
+                    pianoVerBtn.setBounds ({});
+                    if (pianoGrid.getFilas() != PianoRoll::kFilasMin)
+                    {
+                        pianoGrid.setFilas (PianoRoll::kFilasMin);
+                        pianoBase = juce::jlimit (-24, pianoGrid.baseMax(), pianoBase);
+                    }
+                }
+            }
+
+            //  Y la columna se mide con las tapas que HAY, no con seis: cuando
+            //  VER no esta, seis por cuarenta piden 260 px y la tarjeta
+            //  apaisada tiene 232, asi que la pregunta salia que no, las tapas
+            //  volvian a la fila de abajo y la rejilla perdia los 48 px que
+            //  esta columna existe para devolverle - de 17.8 px por nota a
+            //  14.2, por debajo del suelo. Preguntar por un mueble que no se va
+            //  a colocar es la version de maquetado de reservar y tirar.
+            const int nCol = pianoVerBtn.isVisible() ? 6 : 5;
+            const int altoColumna = nCol * Metrics::hit + (nCol - 1) * Metrics::halfGap;
             if (wideFace && inner.getHeight() >= altoColumna)
             {
                 auto side = Lang::takeEnd (inner, sideCol);
                 Lang::takeEnd (inner, Metrics::gap);
-                juce::TextButton* pb[5] = { &pianoOctDownBtn, &pianoOctUpBtn, &pianoClearBtn,
-                                            &pianoGomaBtn, &pianoCorteBtn };
-                for (int i = 0; i < 5; ++i)
+                juce::TextButton* pb[6] = { &pianoOctDownBtn, &pianoOctUpBtn, &pianoVerBtn,
+                                            &pianoClearBtn, &pianoGomaBtn, &pianoCorteBtn };
+                for (int i = 0; i < 6; ++i)
                 {
+                    if (! pb[i]->isVisible()) continue;
                     pb[i]->setBounds (side.removeFromTop (Metrics::hit).reduced (Metrics::halfGap, 0));
-                    if (i < 4) side.removeFromTop (Metrics::halfGap);
+                    side.removeFromTop (Metrics::halfGap);
                 }
             }
             else
@@ -6766,18 +6829,26 @@ void MainComponent::resized()
                 //  CINCO tapas, y si no caben en una fila, dos: OCTAVA -/+ y
                 //  VACIAR arriba, las dos herramientas debajo. En 280 px cinco
                 //  a lo ancho dejan "TIJERAS" en 31 de los 48 que pide.
-                juce::TextButton* pb[5] = { &pianoOctDownBtn, &pianoOctUpBtn, &pianoClearBtn,
-                                            &pianoGomaBtn, &pianoCorteBtn };
-                if (moduleBarFits (tapas.getWidth(), pb, 5))
+                juce::TextButton* pbTodas[6] = { &pianoOctDownBtn, &pianoOctUpBtn, &pianoVerBtn,
+                                                 &pianoClearBtn, &pianoGomaBtn, &pianoCorteBtn };
+                juce::TextButton* pbSin5[5]  = { &pianoOctDownBtn, &pianoOctUpBtn,
+                                                 &pianoClearBtn, &pianoGomaBtn, &pianoCorteBtn };
+                const int nb = pianoVerBtn.isVisible() ? 6 : 5;
+                juce::TextButton** pb = pianoVerBtn.isVisible() ? pbTodas : pbSin5;
+                if (moduleBarFits (tapas.getWidth(), pb, nb))
                 {
-                    layoutModuleBar (tapas, pb, 0, 5);
+                    layoutModuleBar (tapas, pb, 0, nb);
                 }
                 else
                 {
+                    //  Tres y tres, y en ese orden: arriba lo que mueve la
+                    //  VISTA -las dos octavas y cuantas se ven- y abajo lo que
+                    //  toca las NOTAS. Antes eran tres y dos partidas por donde
+                    //  cayera, con VACIAR arriba entre dos flechas de vista.
                     layoutModuleBar (tapas, pb, 0, 3);
                     auto fila2 = inner.removeFromBottom (Metrics::hit);
                     inner.removeFromBottom (Metrics::halfGap);
-                    layoutModuleBar (fila2, pb + 3, 0, 2);
+                    layoutModuleBar (fila2, pb + 3, 0, nb - 3);
                 }
             }
 
@@ -8269,6 +8340,13 @@ void MainComponent::retranslateUi()
     pianoGomaBtn   .setButtonText (T ("GOMA"));
     pianoCorteBtn  .setButtonText (T ("TIJERAS"));
     pianoClearBtn  .setButtonText (T ("VACIAR"));
+    //  El rotulo de esta dice el ESTADO, asi que no es una clave fija: la elige
+    //  cuantas filas hay puestas. Sin esta linea, cambiar de idioma dejaba
+    //  "1 OCTAVA" en espanol dentro de una compilacion en ingles - que es
+    //  exactamente el fallo que la prueba comparativa de idiomas existe para
+    //  cazar, y lo cazaria.
+    pianoVerBtn    .setButtonText (pianoGrid.getFilas() >= PianoRoll::kFilasMax
+                                     ? T ("2 OCTAVAS") : T ("1 OCTAVA"));
     denoiseButton.setButtonText (T ("QUITAR RUIDO"));
     chopButton   .setButtonText (T ("AUTO CHOP"));
     micButton    .setButtonText (recordingActive ? T ("PARAR") : T ("GRABAR MIC"));
@@ -10458,7 +10536,7 @@ void MainComponent::paintPianoSheetContent (juce::Graphics& g)
     ayuda.setRight (titulo.getRight());
     g.drawFittedText (T ("toca el teclado para oir, la rejilla para escribir")
                         + "   " + dot + "   " + PianoRoll::nombreDe (pianoBase)
-                        + " - " + PianoRoll::nombreDe (pianoBase + PianoRoll::kFilas - 1),
+                        + " - " + PianoRoll::nombreDe (pianoBase + pianoGrid.getFilas() - 1),
                       ayuda, Lang::start(), 1, 0.8f);
 }
 
@@ -10864,6 +10942,46 @@ void MainComponent::loadMasterPref()
                         ? juce::jlimit (kGainMinDb, 0.0, f.loadFileAsString().trim().getDoubleValue())
                         : 0.0;
     masterFader.setValue (db, juce::sendNotificationSync);
+}
+
+//  CUANTAS OCTAVAS SE VEN EN EL PIANO, y va donde el master y la carcasa: es
+//  una decision de la PERSONA y del aparato que tiene en la mano, no de la
+//  cancion. Guardarla en el proyecto significaria que abrirlo en una tableta te
+//  trae el tamano que elegiste en un movil de 280 px.
+juce::File MainComponent::pianoPrefFile()
+{
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+               .getChildFile ("zati-piano.txt");
+}
+
+void MainComponent::savePianoPref() const
+{
+    pianoPrefFile().getParentDirectory().createDirectory();
+    pianoPrefFile().replaceWithText (juce::String (pianoGrid.getFilas()));
+}
+
+void MainComponent::loadPianoPref()
+{
+    const auto f = pianoPrefFile();
+    //  Cualquier cosa que no sea el numero grande cae en el pequeno, que es el
+    //  que hace que una nota se pueda colocar: un fichero a medias no puede
+    //  dejar la rejilla en una cuenta que el boton de OCTAVA no sabe recorrer.
+    aplicaFilasPiano (f.existsAsFile() ? f.loadFileAsString().trim().getIntValue()
+                                       : PianoRoll::kFilasMin);
+}
+
+//  Un solo sitio que mueve las tres cosas que dependen de la cuenta: la rejilla,
+//  el rotulo de la tapa y el tope de OCTAVA - si la ventana crecio, la base
+//  puede haberse quedado por encima de su nuevo maximo y entonces la mitad de
+//  arriba dibujaria notas que el motor recorta.
+void MainComponent::aplicaFilasPiano (int filas)
+{
+    pianoGrid.setFilas (filas);
+    pianoBase = juce::jlimit (-24, pianoGrid.baseMax(), pianoBase);
+    pianoVerBtn.setButtonText (pianoGrid.getFilas() >= PianoRoll::kFilasMax
+                                 ? T ("2 OCTAVAS") : T ("1 OCTAVA"));
+    resized();
+    refreshPiano();
 }
 
 juce::File MainComponent::tourFile()

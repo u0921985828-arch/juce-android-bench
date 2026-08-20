@@ -161,6 +161,21 @@ private:
     //  Las dos herramientas del piano. Excluyentes: con las dos apagadas se
     //  dibuja, que es lo que hace falta el 90% del tiempo.
     juce::TextButton pianoGomaBtn { "GOMA" }, pianoCorteBtn { "TIJERAS" };
+    //  CUANTAS OCTAVAS SE VEN. Su rotulo dice el estado y no la accion, que es
+    //  lo que hace falta cuando el estado no se puede deducir mirando: trece
+    //  filas y veinticinco se distinguen contando, y nadie cuenta.
+    juce::TextButton pianoVerBtn { "1 OCTAVA" };
+    static juce::File pianoPrefFile();
+    void  loadPianoPref();
+    void  savePianoPref() const;
+    void  aplicaFilasPiano (int filas);
+    //  Cuantas filas de tapas pidio la pagina del piano en esta pasada, para
+    //  que la pregunta de "¿caben dos octavas?" se haga con el alto de verdad y
+    //  no con uno inventado en el sitio - que es el fallo que ya costo la altura
+    //  de la fila de herramientas de CANCION.
+    int   filasTapasPiano = 1;
+    //  El suelo de la fila de una nota. Ver Tests/expo.py: MIN_NOTE.
+    static constexpr int kSueloNota = 16;
     void pianoStepPad (int dir);
     int pianoBase = -12;                       // el semitono de la fila de abajo
     signed char pianoCells[AudioEngine::kNumSteps * PianoRoll::kMaxNotas] {};
