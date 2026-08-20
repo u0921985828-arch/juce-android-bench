@@ -389,6 +389,16 @@ private:
     juce::TextButton padSoundBtn { "SONIDO" }, padTrimBtn { "RECORTE" }, padRigBtn { "EL PAD" };
     void showPadPage (int page);
     bool padSourceWraps (int rowWidth) const;
+    //  LO QUE MIDE EL CONTENIDO DE LA PAGINA "EL PAD", en un solo sitio.
+    //
+    //  Estaba escrito dos veces: la ficha PEDIA 418 + 3*secH y el maquetado
+    //  calculaba lo que de verdad necesita -needFull- para decidir si apretar.
+    //  Los dos numeros vivieron juntos hasta que los seis envios se mudaron al
+    //  RACK: el maquetado se entero y la peticion no, asi que la tarjeta seguia
+    //  reservando dos filas de mandos de 86 px que ya no existen. Medido en
+    //  412x915: 499 px pedidos para 365 de contenido, 134 de hueco al final de
+    //  la ficha. La misma regla escrita dos veces son dos reglas.
+    int  altoContenidoElPad (int ancho) const;
     bool setTabsFit (int rowWidth) const;
     bool padRowFits (int rowWidth, std::initializer_list<const juce::TextButton*> bs) const;
     //  El reparto apretado de EL PAD, decidido en resized() y necesario en

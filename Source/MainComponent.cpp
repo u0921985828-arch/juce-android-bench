@@ -3293,6 +3293,18 @@ void MainComponent::showSeqPage (int page)
 //  Igual que showSeqPage: escondido, no solo sin colocar. Un control que sigue
 //  visible fuera de su pagina se pinta encima de la que si esta, y se come los
 //  arrastres de lo que tiene delante.
+//  Ver MainComponent::altoContenidoElPad. Tres secciones con su titulo, tres
+//  filas de tapas -la de FUENTE puede ser dos- y la tira de muestras de color.
+int MainComponent::altoContenidoElPad (int ancho) const
+{
+    constexpr int secH = 15 + 2 * ZatiLookAndFeel::kTextPad;
+    const int srcH = Metrics::hit
+                   + (padSourceWraps (ancho) ? Metrics::hit + Metrics::halfGap : 0);
+    return secH + Metrics::hit + Metrics::sm
+         + secH + Metrics::hit + Metrics::sm
+         + secH + srcH         + Metrics::sm + Metrics::chip;
+}
+
 //  ¿CABEN LAS TRES PALABRAS DE FUENTE EN UNA FILA?
 //
 //  Se pregunta dos veces - al presupuestar la altura de la pagina y al colocar
@@ -4999,8 +5011,12 @@ void MainComponent::resized()
         //  RECORTE = 116 + secH + 34+4+34+8 + hit + 8 + 180 de onda
         //  EL PAD  = 116 + 3*secH + 2*86 + 2*hit + 3*sm + chip
         //  sheetFromBottom recorta si no cabe, y de eso se ocupa el reparto.
-        const int rigH = 418 + 3 * secH
-                       + (padSourceWraps (sheetInnerW) ? Metrics::hit + Metrics::halfGap : 0);
+        //  116 son el titulo, las pestanas y los margenes de la tarjeta; el
+        //  resto lo dice altoContenidoElPad, que es la MISMA funcion con la que
+        //  el maquetado decide si tiene que apretar. Ver su comentario: mientras
+        //  fueron dos numeros, mudar los envios al RACK dejo la peticion vieja y
+        //  la ficha reservaba 134 px que nadie usaba.
+        const int rigH = 116 + altoContenidoElPad (sheetInnerW);
         //  LA FILA DE CHOKE PUEDE SER DOS.
         //
         //  CHOKE se lleva un tercio escaso y en el se meten su casilla y sus
@@ -5046,11 +5062,7 @@ void MainComponent::resized()
             //  se mide contra el hueco que le han dado y, si no cabe, los seis
             //  envios pasan a una sola fila y las muestras de color - que son
             //  una etiqueta y no un ajuste - se quedan fuera.
-            const int srcH = Metrics::hit
-                           + (padSourceWraps (inner.getWidth()) ? Metrics::hit + Metrics::halfGap : 0);
-            const int needFull = secH + Metrics::hit + Metrics::sm
-                               + secH + Metrics::hit + Metrics::sm
-                               + secH + srcH + Metrics::sm + Metrics::chip;
+            const int needFull = altoContenidoElPad (inner.getWidth());
             //  APRETADO NO ES LO MISMO QUE ESTRECHO, y confundirlos costo una
             //  medida: en 280x653 la pagina tampoco cabe de alto, se fue por
             //  la rama de la fila unica, y cinco tapas en 225 px son 45 px
