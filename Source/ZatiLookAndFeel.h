@@ -609,7 +609,14 @@ public:
     //  ninguna otra tapa de la cara. Cuatro pixeles de alto salen del aire de
     //  la cara, que es donde tienen que salir.
     static constexpr int kTransport = Metrics::hit;   // LOAD / REC / PLAY - they act
-    static constexpr int kFxRow     = 34;   // the six effects
+    //  Y LA FILA DE DEBAJO, por lo mismo y seis anos tarde. Cuando se subio
+    //  el transporte a cuarenta se dejo esta en 34, que es la misma tapa con
+    //  el mismo dedo una fila mas abajo: los seis efectos de la cara salian a
+    //  34 px de alto en las SIETE pantallas -de un Fold de 280 a una tableta
+    //  de 800x1280- porque no es un reparto que se quede corto, es una
+    //  constante que nadie comparo nunca con Metrics::hit. 1512 casos en las
+    //  756 corridas, la fila mas incumplida de la app.
+    static constexpr int kFxRow     = Metrics::hit;   // the six effects
     static constexpr int kStatus    = 16;   // the line at the foot
     //  Text needs room above and below it or it reads as pinched against
     //  whatever is next to it. This is the padding inside every band that

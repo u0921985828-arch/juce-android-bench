@@ -4465,7 +4465,16 @@ void MainComponent::resized()
         //  meters; rotated, where the panel is wide and short, the same
         //  information fits in less height and the pixels are worth more to
         //  the effects row than to the wave.
-        const int kMinScreen = wideFace ? 56 : 96;
+        //  EL CRISTAL ES LA BANDA QUE DA, y su suelo de pie eran 96 px que
+        //  nadie habia contrastado con lo que hay debajo. En 360x640 el
+        //  cristal se quedaba clavado en ese suelo, asi que no le quedaba nada
+        //  que prestarle a la costura de los bancos: los chips A B C D salian
+        //  a 37x20 -la MITAD del dedo- y en 393x851 a 36. Sesenta y cuatro es
+        //  lo que hace falta para que la costura llegue a sus 53 y de paso
+        //  para la fila de efectos, y sigue por encima de los 56 con los que
+        //  el mismo cristal se dibuja apaisado sin que nadie se queje. Un
+        //  espectro se MIRA; un chip se toca.
+        const int kMinScreen = wideFace ? 56 : 64;
 
         const int freeH = area.getHeight() - aboveScreen - belowScreen - bottomStrip - bodyNeed;
 
@@ -4500,7 +4509,7 @@ void MainComponent::resized()
         //  A finger, its air over and under, AND the lip of the plate below -
         //  which is painted five pixels above the grid and is therefore five
         //  pixels of the seam that the chips cannot have.
-        const int bankSeamWant = Metrics::hit + Metrics::gap + ZatiLookAndFeel::kPlateLip;   // 53
+        const int bankSeamWant = kBankSeamWant;
         const int padSeamHave  = ZatiLookAndFeel::kAir + (wideFace ? 0 : layoutAir)
                                + kSeamLabelH;
         int want = juce::jmax (0, bankSeamWant - padSeamHave);
@@ -4716,8 +4725,32 @@ void MainComponent::resized()
         else
         {
             padSeamTop = area.getY();
-            auto seam = area.removeFromTop (ZatiLookAndFeel::kAir + layoutAir + kSeamLabelH + padSeamExtra);
-            placeBanks (seam);
+
+            //  Y LO QUE LE SIGA FALTANDO A LA COSTURA SE LO PRESTAN LOS PADS.
+            //
+            //  El cristal es la banda que da mientras le quede algo por encima
+            //  de su suelo, y en un 360x640 no le queda: la cara esta
+            //  sobre-suscrita -lo que se reserva pasa de lo que hay- y quien
+            //  absorbe la diferencia es la rejilla, que se lleva el resto. Asi
+            //  que los chips se quedaban en 20 px mientras el pad de al lado
+            //  tenia 48, ocho por encima de su propio suelo. Ocho pixeles de
+            //  pad valen menos que veinte de chip: un pad de 43 sigue siendo un
+            //  dedo y un chip de 20 es medio.
+            //
+            //  Se presta lo que sobra sobre Metrics::hit y ni un pixel mas, que
+            //  es la diferencia entre repartir la escasez y mover el problema
+            //  de sitio - el error que ya costo 173 rotulos cortados una vez.
+            {
+                int seamH = ZatiLookAndFeel::kAir + layoutAir + kSeamLabelH + padSeamExtra;
+                const int falta = juce::jmax (0, kBankSeamWant - seamH);
+                if (falta > 0)
+                {
+                    const int celda = (area.getHeight() - seamH - 3 * ZatiLookAndFeel::kPadGap) / 4;
+                    seamH += juce::jlimit (0, falta, (celda - Metrics::hit) * 4);
+                }
+                auto seam = area.removeFromTop (seamH);
+                placeBanks (seam);
+            }
             layoutPadGrid (area, 4, 4, ZatiLookAndFeel::kPadGap);
         }
     }

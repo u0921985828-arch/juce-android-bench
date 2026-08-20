@@ -168,6 +168,12 @@ private:
     unsigned char pianoLargos[AudioEngine::kNumSteps] {};
     void refreshPiano (bool repintarTarjeta = true);
     void seguirCompas (int pasoAbsoluto);
+    //  Lo que la costura de los bancos necesita para que un chip llegue al
+    //  dedo: la tapa, su aire y el labio de la placa que se pinta cinco
+    //  pixeles por encima de la rejilla y que por tanto no es suyo. Vive aqui
+    //  porque lo preguntan dos sitios -quien reparte el alto y quien coloca la
+    //  costura- y la misma regla escrita dos veces son dos reglas.
+    static constexpr int kBankSeamWant = Metrics::hit + Metrics::gap + ZatiLookAndFeel::kPlateLip;
     void pianoCellToggled (int paso, int semi);
     void paintPianoSheetContent (juce::Graphics& g);
 

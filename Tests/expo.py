@@ -105,7 +105,7 @@ def judge(rows, size, lang, sheet):
         #  y no lo dice nadie. Por eso el suelo vertical es mas alto.
         for grid, cols, lanes, gutter, sx, sy in (("StepGrid",  16, 16, 30, MIN_CELL, MIN_CELL),
                                                   ("Playlist",   8,  4, 26, MIN_CELL, MIN_CELL),
-                                                  ("PianoRoll", 16, 13, 34, MIN_CELL, MIN_NOTE)):
+                                                  ("PianoRoll", 16, 13, 26, MIN_CELL, MIN_NOTE)):
             if grid in r["path"] and r["w"] > gutter and r["h"] > 0:
                 cw = (r["w"] - gutter) / cols
                 ch = r["h"] / lanes
