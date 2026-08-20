@@ -497,6 +497,16 @@ private:
     //  biblioteca con la forma de un banco descargado, para que vuelva a entrar
     //  por CARGAR KIT igual que cualquier pack de internet.
     juce::TextButton projKitButton  { "GUARDAR KIT" };
+    //  LA VENTANA DE PISTAS de la rejilla de pasos. Su rotulo es el RANGO y no
+    //  una palabra -"1-16", "1-8", "9-16"- por dos razones: dice el estado, que
+    //  contando carriles no se deduce, y es el mismo en los cuatro idiomas, o
+    //  sea que no puede quedarse sin traducir ni cortarse en chino.
+    juce::TextButton seqPistasBtn { "1-16" };
+    int  pistasVista = 0;               // 0 = las dieciseis, 1 = 1-8, 2 = 9-16
+    static juce::File pistasPrefFile();
+    void loadPistasPref();
+    void savePistasPref() const;
+    void aplicaPistas (int modo);
     void guardarKit (const juce::String& nombre);
     juce::TextButton projDeleteButton { "BORRAR" };
     juce::TextButton projExportButton { "EXPORTAR" };

@@ -1431,6 +1431,18 @@ MainComponent::MainComponent()
         }
         seqGridBtn.setToggleState (true, juce::dontSendNotification);
 
+        //  LA VENTANA DE PISTAS. Tres estados en una tapa y no un interruptor
+        //  de dos, porque con ocho a la vista hace falta poder ir a las otras
+        //  ocho: 1-16 ensena el banco entero, 1-8 y 9-16 lo parten y doblan el
+        //  alto de la celda. Ver StepGrid::setVentana.
+        styleButton (seqPistasBtn, kKey);
+        seqPistasBtn.onClick = [this]
+        {
+            aplicaPistas ((pistasVista + 1) % 3);
+            savePistasPref();
+        };
+        seqSheet.addAndMakeVisible (seqPistasBtn);
+
         styleButton (seqPlayBtn, kKey);
         litAccent (seqPlayBtn);
         seqPlayBtn.setClickingTogglesState (true);
@@ -2558,6 +2570,7 @@ MainComponent::MainComponent()
     //  esta app antes de ensenar la ventana: la lista de tapas que pide todavia
     //  esta vacia. Aqui ya esta todo construido.
     loadPianoPref();
+    loadPistasPref();
 
     setSize (500, 1080);
     focusFx (0);
@@ -6694,6 +6707,37 @@ void MainComponent::resized()
 
         auto titleRow = inner.removeFromTop (Metrics::hit);
         seqCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
+
+        //  LA VENTANA DE PISTAS VA EN LA FILA DEL TITULO, y no con los bancos
+        //  ni con el transporte, que fueron los dos primeros intentos y los dos
+        //  fallaron por lo mismo: no existen donde hacen falta.
+        //
+        //  La fila de bancos se cae en 360x640, en el Fold y apaisado -es de
+        //  las prescindibles, y se va para que la celda vuelva a su suelo-, que
+        //  son justo las tres pantallas donde ver ocho pistas en vez de
+        //  dieciseis cambia mas: de 15.0 px de celda a 30.0. Y la fila del
+        //  transporte reparte la mitad de su ancho entre PLAY, TAP y VACIAR:
+        //  una cuarta tapa pide 160 px donde hay 173 en un movil grande y 150
+        //  en el Fold. Ofrecer el arreglo solo donde no hace falta es no
+        //  ofrecerlo.
+        //
+        //  La del titulo existe en las TRES paginas y en las siete pantallas
+        //  -lleva la cruz de cerrar- y ya sostiene tapas: PAD -/+ viven ahi en
+        //  la pagina del piano. El titulo se pinta con drawFittedText y encoge;
+        //  una tapa no.
+        if (seqPage == seqPageGrid)
+        {
+            seqPistasBtn.setVisible (true);
+            seqPistasBtn.setBounds (Lang::takeEnd (titleRow, 64)
+                                      .withSizeKeepingCentre (64, Metrics::hit));
+            Lang::takeEnd (titleRow, Metrics::halfGap);
+        }
+        else
+        {
+            seqPistasBtn.setVisible (false);
+            seqPistasBtn.setBounds ({});
+        }
+
         inner.removeFromTop (Metrics::sm);
 
         {
@@ -7053,6 +7097,7 @@ void MainComponent::resized()
                 for (auto* b : seqBankButtons) b->setVisible (true);
                 nameBand (col, "PADS");
                 auto row = col.removeFromTop (Metrics::hit);
+
                 const int bw = row.getWidth() / kNumBanks;
                 for (int b = 0; b < seqBankButtons.size(); ++b)
                     seqBankButtons[b]->setBounds ((b < kNumBanks - 1 ? row.removeFromLeft (bw) : row)
@@ -10977,6 +11022,42 @@ void MainComponent::loadMasterPref()
 //  una decision de la PERSONA y del aparato que tiene en la mano, no de la
 //  cancion. Guardarla en el proyecto significaria que abrirlo en una tableta te
 //  trae el tamano que elegiste en un movil de 280 px.
+//  LA VENTANA DE PISTAS, donde el master, la carcasa y las octavas del piano:
+//  cuantas pistas te caben en la mano depende de la mano y del aparato, no de
+//  la cancion.
+juce::File MainComponent::pistasPrefFile()
+{
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+               .getChildFile ("zati-pistas.txt");
+}
+
+void MainComponent::savePistasPref() const
+{
+    pistasPrefFile().getParentDirectory().createDirectory();
+    pistasPrefFile().replaceWithText (juce::String (pistasVista));
+}
+
+void MainComponent::loadPistasPref()
+{
+    const auto f = pistasPrefFile();
+    aplicaPistas (f.existsAsFile() ? f.loadFileAsString().trim().getIntValue() : 0);
+}
+
+//  Un solo sitio que mueve las tres cosas que dependen del modo: la ventana de
+//  la rejilla, el rotulo de la tapa y la maqueta - con ocho pistas la celda mide
+//  el doble de alto, y quien decide si las filas prescindibles caben es resized.
+void MainComponent::aplicaPistas (int modo)
+{
+    pistasVista = juce::jlimit (0, 2, modo);
+    const int n     = (pistasVista == 0) ? StepGrid::kLanes : StepGrid::kLanes / 2;
+    const int desde = (pistasVista == 2) ? StepGrid::kLanes / 2 : 0;
+    stepGrid.setVentana (n, desde);
+    seqPistasBtn.setButtonText (Lang::ltr (pistasVista == 0 ? "1-16"
+                                         : pistasVista == 1 ? "1-8" : "9-16"));
+    resized();
+    refreshStepGrid();
+}
+
 juce::File MainComponent::pianoPrefFile()
 {
     return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)

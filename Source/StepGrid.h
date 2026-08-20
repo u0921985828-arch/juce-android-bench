@@ -34,6 +34,35 @@ public:
     //  celda distinta de la que se ve. Un numero, un sitio.
     static constexpr int kGutter   = 30;
 
+    //  CUANTAS PISTAS SE VEN A LA VEZ, y desde cual.
+    //
+    //  Dieciseis por dieciseis es la ficha, y por eso la celda se reparte lo
+    //  que hay: medido, 19.8 x 17.9 px en un movil grande y 12.2 x 15.0 en el
+    //  Fold cerrado. Por encima del suelo de 12 y muy por debajo de un dedo, y
+    //  no hay alto que darle - son dieciseis carriles.
+    //
+    //  Asi que se ven OCHO y el alto se dobla, que es lo mismo que se hizo con
+    //  el piano: no se agranda la celda, se enseña menos a la vez. Ocho y no
+    //  seis ni diez porque un banco son dieciseis pads y la mitad de dieciseis
+    //  se recorre con UN toque - la de arriba y la de abajo - sin que quede
+    //  ningun pad al que no se llegue.
+    //
+    //  Los datos no se tocan: el espejo sigue siendo de dieciseis carriles y
+    //  esto es una VENTANA encima. Un paso escrito en el pad 12 sigue sonando
+    //  con la mitad de arriba a la vista, igual que un pad del banco C suena
+    //  con el banco A en pantalla.
+    void setVentana (int cuantos, int desde)
+    {
+        const int n = (cuantos >= kLanes) ? kLanes : kLanes / 2;
+        const int d = (n >= kLanes) ? 0 : juce::jlimit (0, kLanes - n, desde);
+        if (n == carriles && d == medio) return;
+        carriles = n; medio = d;
+        visto = false;                      // la sombra ya no describe lo que se ve
+        repaint();
+    }
+    int getCarriles() const noexcept { return carriles; }
+    int getMedio()    const noexcept { return medio; }
+
     // Called with the absolute step index (bar offset already applied).
     std::function<void (int pad, int step)> onCell;
 
@@ -164,18 +193,23 @@ public:
 
         auto r = getLocalBounds();
         const int gutter = kGutter;
-        const float laneH = (float) r.getHeight() / (float) kLanes;
+        const float laneH = (float) r.getHeight() / (float) carriles;
         const float cellW = (float) (r.getWidth() - gutter) / (float) kBarSteps;
         const int   base  = barIndex * kBarSteps;
 
-        for (int lane = 0; lane < kLanes; ++lane)
+        for (int fila = 0; fila < carriles; ++fila)
         {
+            //  La FILA es donde se dibuja y el CARRIL es de donde salen los
+            //  datos: con media rejilla a la vista no son el mismo numero, y
+            //  confundirlos pinta la mitad de arriba con los pasos de la de
+            //  abajo. Ver setVentana.
+            const int lane = medio + fila;
             // Lane 0 is pad 01 at the top: this is a list of pads, read
             // downwards, not the bottom-up pad grid.
             const int pad = lane;
             const auto frag = Zati::colour (zatiOf[pad]);
             const bool has  = loadedOf[pad];
-            const float y   = (float) r.getY() + laneH * (float) lane;
+            const float y   = (float) r.getY() + laneH * (float) fila;
 
             // Gutter: the pad's colour and number, so a lane is identified the
             // same way the pad is.
@@ -296,9 +330,13 @@ private:
         const int gutter = kGutter;
         if (e.x < r.getX() + gutter) return;
 
-        const float laneH = (float) r.getHeight() / (float) kLanes;
+        const float laneH = (float) r.getHeight() / (float) carriles;
         const float cellW = (float) (r.getWidth() - gutter) / (float) kBarSteps;
-        const int lane = juce::jlimit (0, kLanes - 1, (int) ((float) (e.y - r.getY()) / laneH));
+        //  Y el toque hace el camino de vuelta: fila a carril. Sin sumar el
+        //  medio, con la mitad de abajo a la vista se escribiria en los pads de
+        //  arriba - la rejilla ensenaria una cosa y la maquina tocaria otra.
+        const int fila = juce::jlimit (0, carriles - 1, (int) ((float) (e.y - r.getY()) / laneH));
+        const int lane = medio + fila;
         const int col  = juce::jlimit (0, kBarSteps - 1, (int) ((float) (e.x - r.getX() - gutter) / cellW));
         const int step = barIndex * kBarSteps + col;
         if (step >= patLen) return;
@@ -317,6 +355,7 @@ private:
     const signed char* noteOf = nullptr;
     int patLen = 16, barIndex = 0, playing = -1, selPad = -1, lastKey = -1;
     int laneBase = 0;      // el pad del carril 0: 0, 16, 32 o 48. Ver setSource.
+    int carriles = kLanes, medio = 0;   // la ventana de pistas. Ver setVentana.
     float phase = 0.0f;   // how far through the live step, 0..1
 
     //  La copia de lo ultimo PINTADO, para no volver a pintarlo. Ver setSource.
