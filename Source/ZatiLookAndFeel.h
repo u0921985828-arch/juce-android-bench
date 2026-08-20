@@ -876,6 +876,35 @@ public:
     }
 
     // ---- Flat button cap: solid fill, thin hairline border, no gradient/bevel.
+    //  LA TAPA SE PINTA MAS BAJA QUE SU BLANCO.
+    //
+    //  Una tapa mide Metrics::hit -cuarenta- porque eso es lo que mide un dedo,
+    //  y esa cuenta no se toca: es la que costo toda una tanda de medidas subir
+    //  en la fila de efectos, en los chips de banco y en las pestanas de
+    //  modulo. Pero cuarenta pixeles de dedo no obligan a pintar cuarenta
+    //  pixeles de PLASTICO: el componente conserva sus limites -y con ellos el
+    //  toque, que es lo que el banco mide- y lo que se dibuja dentro es una
+    //  tapa tres cuartos de alta, centrada, con su aire arriba y abajo.
+    //
+    //  Es la unica forma de tener las dos cosas: una cara mas ligera y un
+    //  aparato que se sigue tocando con el pulgar. Un boton pintado a treinta y
+    //  tocable a cuarenta acierta igual que uno de cuarenta; uno MAQUETADO a
+    //  treinta no.
+    //
+    //  Con suelo, porque no todo mide cuarenta: un chip de 24 y una pestana de
+    //  26 en las pantallas cortas ya nacen bajos, y quitarles otro cuarto los
+    //  deja en 18 - donde el rotulo ya no cabe y la tapa deja de leerse como
+    //  tapa. Por debajo de kCapMinH se pinta entera.
+    static constexpr float kCapFill = 0.75f;
+    static constexpr int   kCapMinH = 26;
+
+    static juce::Rectangle<float> capaDe (juce::Rectangle<float> full)
+    {
+        const float alto = juce::jmax ((float) kCapMinH, full.getHeight() * kCapFill);
+        return alto >= full.getHeight() ? full
+                                        : full.withSizeKeepingCentre (full.getWidth(), alto);
+    }
+
     void drawButtonBackground (juce::Graphics& g, juce::Button& b,
                                const juce::Colour& backgroundColour,
                                bool over, bool down) override
@@ -889,7 +918,9 @@ public:
         const float rad  = 3.0f;                                  // drawn, not rounded off
         const bool  on   = b.getToggleState();
 
-        auto full = b.getLocalBounds().toFloat().reduced (0.5f);
+        //  Ver capaDe: el blanco del dedo es el componente entero y la tapa se
+        //  pinta dentro, centrada.
+        auto full = capaDe (b.getLocalBounds().toFloat().reduced (0.5f));
         auto r    = full.withTrimmedBottom (lift);
 
         auto base = backgroundColour;
@@ -1041,7 +1072,11 @@ public:
             return;
         }
 
-        g.setFont (ZatiColours::monoFont (juce::jlimit (10.0f, 14.5f, (float) b.getHeight() * 0.38f), true)
+        //  Y el cuerpo de letra sale del alto de la TAPA, que es donde tiene que
+        //  caber: sacarlo del componente daria una letra pensada para cuarenta
+        //  pixeles metida en treinta.
+        const float altoTapa = capaDe (b.getLocalBounds().toFloat()).getHeight();
+        g.setFont (ZatiColours::monoFont (juce::jlimit (10.0f, 14.5f, altoTapa * 0.38f), true)
                      .withExtraKerningFactor (0.06f));
         //  Text colour is chosen when a button is built, but the cap it lands
         //  on can change afterwards - a button styled for a light cap and then
@@ -1068,7 +1103,10 @@ public:
         //  a narrow phone while PLAY had room to spare. Measured across the
         //  matrix, this is what puts the five module tabs back at one size.
         const int inset = juce::jlimit (3, 5, b.getWidth() / 14);
-        auto area = b.getLocalBounds().reduced (inset, 2);
+        //  Y el rotulo va centrado en la TAPA, no en el componente: son la
+        //  misma caja solo mientras la tapa llene su blanco. Ver capaDe.
+        auto area = capaDe (b.getLocalBounds().toFloat()).getSmallestIntegerContainer()
+                        .reduced (inset, 2);
         area = b.isDown() ? area.withTrimmedTop ((int) kCapLift)
                           : area.withTrimmedBottom ((int) kCapLift);
 
