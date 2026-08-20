@@ -4601,12 +4601,21 @@ void MainComponent::resized()
         //  nadie habia contrastado con lo que hay debajo. En 360x640 el
         //  cristal se quedaba clavado en ese suelo, asi que no le quedaba nada
         //  que prestarle a la costura de los bancos: los chips A B C D salian
-        //  a 37x20 -la MITAD del dedo- y en 393x851 a 36. Sesenta y cuatro es
-        //  lo que hace falta para que la costura llegue a sus 53 y de paso
-        //  para la fila de efectos, y sigue por encima de los 56 con los que
-        //  el mismo cristal se dibuja apaisado sin que nadie se queje. Un
-        //  espectro se MIRA; un chip se toca.
-        const int kMinScreen = wideFace ? 56 : 64;
+        //  a 37x20 -la MITAD del dedo- y en 393x851 a 36. Un espectro se MIRA;
+        //  un chip se toca.
+        //
+        //  PERO SE BAJA LO QUE HAGA FALTA Y NO MAS. El primer arreglo puso el
+        //  suelo plano en 64 y eso le quitaba treinta y dos pixeles al espectro
+        //  TAMBIEN en las pantallas donde los chips llegaban al dedo sin
+        //  tocarlo - se nota, y con razon: es la unica banda de esta cara que
+        //  esta para mirarla. El suelo sigue siendo 96 y solo cede lo que la
+        //  costura no consigue por otro lado, con 64 como tope duro: por
+        //  debajo de ahi no caben la onda y los dos medidores, y 56 es lo que
+        //  el mismo cristal mide apaisado, donde la informacion es la misma en
+        //  menos alto.
+        constexpr int kSueloCristal = 96;   // de pie, lo que pide una onda con sus dos medidores
+        constexpr int kTopeCristal  = 64;   // hasta donde puede ceder antes de dejar de decir nada
+        const int kMinScreen = wideFace ? 56 : kSueloCristal;
 
         //  Ver moduleH: la fila de las seis fichas sube al dedo solo donde el
         //  cristal puede pagar los catorce pixeles quedandose en su suelo. En
@@ -4669,7 +4678,21 @@ void MainComponent::resized()
                                                             + layoutAir - Metrics::xs));
             want -= padBottomGive;
 
-            const int fromScreen = juce::jmin (want, juce::jmax (0, screenH - kMinScreen));
+            //  Primero lo que el cristal puede dar por encima de su suelo...
+            int fromScreen = juce::jmin (want, juce::jmax (0, screenH - kMinScreen));
+            want -= fromScreen;
+
+            //  ...y solo si la costura SIGUE sin llegar, lo que le falte de los
+            //  pixeles que van del suelo al tope. Ver kSueloCristal: se cede lo
+            //  que haga falta y ni uno mas, que es la diferencia entre repartir
+            //  la escasez y quitarle altura al espectro por si acaso.
+            if (want > 0)
+            {
+                const int extra = juce::jmin (want, juce::jmax (0, screenH - fromScreen - kTopeCristal));
+                fromScreen += extra;
+                want -= extra;
+            }
+
             screenH -= fromScreen;
             padSeamExtra = padBottomGive + fromScreen;
         }
