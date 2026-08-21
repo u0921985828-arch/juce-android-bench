@@ -235,7 +235,22 @@ MainComponent::MainComponent()
             selectedBar = b;
             for (int i = 0; i < barButtons.size(); ++i)
                 barButtons[i]->setToggleState (i == b, juce::dontSendNotification);
-            refreshStepGrid();
+
+            //  LA QUE SE ESTA VIENDO, y no siempre la rejilla.
+            //
+            //  Esto llamaba solo a refreshStepGrid, asi que desde que la fila
+            //  de compases tambien vive en la pagina del PIANO, cambiar de
+            //  compas movia selectedBar y dejaba el piano dibujando el compas
+            //  ANTERIOR. Con la escritura ya arreglada eso es PEOR que antes:
+            //  la nota se escribe en el compas nuevo y la vista enseña el
+            //  viejo, o sea que la rejilla parece no responder - que es
+            //  exactamente como llego la queja las dos veces.
+            //
+            //  Es el mismo fallo que el cabezal del piano: la FICHA no es la
+            //  PAGINA. Aquel preguntaba por seqSheet.isVisible() y este por
+            //  nada; los dos se arreglan preguntando por seqPage.
+            if (seqPage == seqPagePiano) refreshPiano();
+            else                         refreshStepGrid();
         };
         seqSheet.addAndMakeVisible (t);
         barButtons.add (t);
@@ -2369,7 +2384,12 @@ MainComponent::MainComponent()
             bool tenia = false;
             for (int k = 0; k < PianoRoll::kMaxNotas; ++k)
                 if (pianoCells[paso * PianoRoll::kMaxNotas + k] == (signed char) semi) tenia = true;
-            if (tenia) pianoCellToggled (paso, semi);     // quitar es lo mismo que alternar una puesta
+            //  CON EL PASO ABSOLUTO, que es la quinta vez que este offset
+            //  falta en esta pagina. El guardia de arriba ya calculaba `st` y
+            //  la llamada seguia pasando la COLUMNA: la goma en el compas 2
+            //  borraba la nota que estuviera en el mismo sitio del compas 1 -
+            //  una nota que no se toca desaparece y la que se frota se queda.
+            if (tenia) pianoCellToggled (st, semi);     // quitar es lo mismo que alternar una puesta
         };
 
         //  CORTAR: el largo pasa a ser lo que va del arranque de la nota al
@@ -10914,13 +10934,39 @@ void MainComponent::refreshPiano (bool repintarTarjeta)
     if (engine.isPlaying() && engine.getPlayingPattern() == b)
         seguirCompas (engine.getPlayStep());
 
+    //  EL COMPAS SE ACOTA AQUI Y NO SOLO EN resized().
+    //
+    //  selectedBar lo clampaba la maqueta, que corre cuando le toca; esta
+    //  funcion la llama el temporizador treinta veces por segundo. Con un
+    //  patron que acaba de encoger -de 32 pasos a 16- el compas 2 sigue puesto
+    //  y `base` apunta fuera de la tabla.
+    const int compases = juce::jmax (1, len / AudioEngine::kBarSteps);
+    if (selectedBar >= compases) selectedBar = 0;
+
     const int base = selectedBar * AudioEngine::kBarSteps;
-    const int cols = juce::jmin (AudioEngine::kBarSteps, juce::jmax (1, len - base));
+    const int cols = juce::jlimit (0, AudioEngine::kBarSteps, len - base);
+
+    //  Y SE VACIAN LAS DIECISEIS, no solo las que se rellenan.
+    //
+    //  Las celdas se limpiaban DENTRO del bucle de columnas validas, asi que un
+    //  compas corto -o un `base` que se salia- dejaba las de la derecha con lo
+    //  que hubiera antes: notas dibujadas que no estan en el patron, que no se
+    //  pueden borrar porque no existen, y que desaparecen solas al cambiar de
+    //  pagina. Se lee como "la rejilla no responde".
+    //
+    //  Y el jmax(1, ...) de antes era peor que inutil: con `base` fuera del
+    //  patron daba UNA columna en vez de ninguna, o sea que garantizaba que
+    //  quince se quedaran viejas.
+    for (int c = 0; c < AudioEngine::kBarSteps; ++c)
+    {
+        for (int k = 0; k < PianoRoll::kMaxNotas; ++k)
+            pianoCells[c * PianoRoll::kMaxNotas + k] = -128;
+        pianoLargos[c] = 0;
+    }
 
     for (int c = 0; c < cols; ++c)
     {
-        const int st = base + c;
-        for (int k = 0; k < PianoRoll::kMaxNotas; ++k) pianoCells[c * PianoRoll::kMaxNotas + k] = -128;
+        const int st = base + c;   // ya vaciadas arriba, las dieciseis
 
         pianoLargos[c] = (unsigned char) engine.getStepLen (b, st, p);
 
@@ -14016,6 +14062,76 @@ void MainComponent::auditPiano()
         if (pianoGrid.onTecla) pianoGrid.onTecla (semi);
     std::cout << "{\"piano\":\"teclado\",\"pitch_antes\":" << antes
               << ",\"pitch_despues\":" << engine.getPadPitch (0) << "}" << std::endl;
+
+    //  EL COMPAS, que es donde esta pagina fallo CINCO veces seguidas y ninguna
+    //  de las seis reglas del banco podia verlo: son fallos de INDICE y no de
+    //  geometria. Un piano que escribe en el compas de al lado se maqueta
+    //  perfecto, no solapa nada, no corta ningun rotulo y esta traducido.
+    //
+    //  Los cinco, por orden de aparicion: onCelda pasaba la COLUMNA donde va el
+    //  paso; la tapa de compas solo refrescaba la rejilla de pasos; refreshPiano
+    //  vaciaba las celdas DENTRO del bucle de columnas validas; el jmax(1,...)
+    //  daba una columna donde tocaban cero; y la goma seguia pasando la columna
+    //  despues de que onCelda ya estuviera arreglada. Los cinco dan el mismo
+    //  sintoma - "la rejilla no responde" - y por eso se midan aqui juntos.
+    selectPad (0);
+    engine.clearPattern (0);
+    for (int st = 0; st < kNumSteps; ++st)
+        for (int p = 0; p < kNumPads; ++p)
+            pattern[0][(size_t) st][(size_t) p] = false;
+    engine.setPatternLength (0, 32);          // dos compases
+    showSeqPage (seqPagePiano);
+    resized();
+
+    //  Una nota testigo en el compas 0, misma columna: es la que delata que se
+    //  escribe o se borra en el compas equivocado.
+    if (pianoGrid.onCelda) pianoGrid.onCelda (3, 9);
+
+    //  Y ahora al compas 1, por la tapa y no moviendo selectedBar a mano.
+    if (barButtons.size() > 1 && barButtons[1]->onClick) barButtons[1]->onClick();
+    if (pianoGrid.onCelda) pianoGrid.onCelda (3, 5);
+
+    std::cout << "{\"piano\":\"compas\",\"sel\":" << selectedBar
+              << ",\"paso19\":" << (pattern[0][19][0] ? 1 : 0)
+              << ",\"nota19\":" << engine.getStepNote (0, 19, 0)
+              << ",\"paso3\":" << (pattern[0][3][0] ? 1 : 0)
+              << ",\"nota3\":" << engine.getStepNote (0, 3, 0) << "}" << std::endl;
+
+    //  LA VISTA. La tapa de compas tiene que haber repintado el piano, asi que
+    //  la columna 3 lleva el 5 del compas 1 y no el 9 del 0.
+    std::cout << "{\"piano\":\"vista\",\"col3\":" << (int) pianoCells[3 * PianoRoll::kMaxNotas]
+              << "}" << std::endl;
+
+    //  LA GOMA, montada APARTE y con el paso absoluto en vez de con el gesto.
+    //
+    //  Si se apoyara en lo que acaba de escribir onCelda, romper el fallo 1
+    //  dejaria la nota sin poner y la goma saldria "bien" por no tener nada que
+    //  borrar. Una comprobacion que pasa porque la de al lado fallo no mide
+    //  nada, y eso se descubrio validando esta: con los cinco fallos puestos a
+    //  la vez, la goma era el unico que salia verde.
+    engine.clearPattern (0);
+    for (int st = 0; st < kNumSteps; ++st)
+        for (int p = 0; p < kNumPads; ++p)
+            pattern[0][(size_t) st][(size_t) p] = false;
+    pianoCellToggled (3, 9);      // testigo, compas 0
+    pianoCellToggled (19, 5);     // el que se frota, compas 1
+    refreshPiano();
+    if (pianoGrid.onBorrar) pianoGrid.onBorrar (3, 5);
+    std::cout << "{\"piano\":\"goma\",\"paso19\":" << (pattern[0][19][0] ? 1 : 0)
+              << ",\"paso3\":" << (pattern[0][3][0] ? 1 : 0) << "}" << std::endl;
+
+    //  Y UN PATRON QUE ENCOGE con el compas 1 puesto: el compas se acota en
+    //  refreshPiano -que corre treinta veces por segundo- y no solo en resized.
+    //  Sin eso `base` apunta fuera de la tabla y quedan quince columnas viejas.
+    engine.setPatternLength (0, 16);
+    refreshPiano();
+    int viejas = 0;
+    for (int c = 0; c < AudioEngine::kBarSteps; ++c)
+        for (int k = 0; k < PianoRoll::kMaxNotas; ++k)
+            if (pianoCells[c * PianoRoll::kMaxNotas + k] != -128) ++viejas;
+    std::cout << "{\"piano\":\"encoge\",\"sel\":" << selectedBar
+              << ",\"puestas\":" << viejas
+              << ",\"col3\":" << (int) pianoCells[3 * PianoRoll::kMaxNotas] << "}" << std::endl;
 }
 
 //  EL REBOTE, MEDIDO.
