@@ -4806,8 +4806,23 @@ void MainComponent::resized()
         {
             auto row = fxRowArea;
             const int sw = row.getWidth() / kNumFx;
+            //  EL AIRE SE CEDE ANTES QUE EL DEDO, Y SOLO LO QUE SOBRA.
+            //
+            //  Estas seis tapas se repartian el ancho y luego cada una se comia
+            //  dos pixeles por lado: veinticuatro tirados en la fila. En el Fold
+            //  cerrado tocaban a 42 y salian a 38, dos por debajo del dedo, y
+            //  eran 648 de los 2507 incumplimientos que quedaban en las 756
+            //  corridas - el grupo mas grande de la app, y no por falta de sitio
+            //  sino por el hueco entre tapas.
+            //
+            //  Se cede lo que sobra sobre Metrics::hit y ni un pixel mas, que es
+            //  la misma regla con la que el cristal le presta a la costura de
+            //  los bancos. Donde el ancho da de sobra el aire sigue siendo el de
+            //  siempre; donde no da, la separacion se cierra antes que la tapa
+            //  deje de poder tocarse. Un hueco es estetica, el dedo no.
+            const int aire = juce::jlimit (0, Metrics::aireTapa, (sw - Metrics::hit) / 2);
             for (int f = 0; f < kNumFx; ++f)
-                fxButtons[f]->setBounds ((f < kNumFx - 1 ? row.removeFromLeft (sw) : row).reduced (Metrics::halfGap / 2, 0));
+                fxButtons[f]->setBounds ((f < kNumFx - 1 ? row.removeFromLeft (sw) : row).reduced (aire, 0));
         }
         //  In two columns the pads have a column of their own and the seam
         //  above them is simply the room the square grid does not use, so the
