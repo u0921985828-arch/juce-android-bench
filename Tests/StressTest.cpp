@@ -13,6 +13,7 @@
 #include "../Source/Kits.h"
 #include "../Source/Onsets.h"
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -1968,6 +1969,48 @@ int main()
         std::printf ("%-34s en vivo %.2f   en el rebote %.2f   %s\n",
                      "el master no viaja al rebote", vivo.getMasterGain(),
                      rebote.getMasterGain(), ok ? "OK" : "FALLA");
+    }
+
+    //  EL MARGEN QUE LA MAQUINA NO PODIA USAR.
+    //
+    //  El master estaba acotado en la unidad y los dieciseis canales llegan a
+    //  +12: para subir el conjunto entero habia que subir dieciseis faders uno
+    //  a uno, y eso mueve la mezcla porque cada uno entra en el bus por su
+    //  lado. El tope de arriba se comprueba con TRES cifras y no con una,
+    //  porque "sube" lo cumple tambien un mando que se pasa de rosca:
+    //
+    //    - que la unidad siga siendo la unidad, o sea que nada se movio abajo,
+    //    - que +12 dB llegue de verdad al motor - un jlimit olvidado en 1.0
+    //      dejaria el mando subiendo en la pantalla y el sonido quieto,
+    //    - y que POR ENCIMA se acote, que un mando sin techo es como se manda
+    //      un infinito al bus.
+    //
+    //  Y el aviso del sistema tiene que seguir atenuando DESDE ahi: el objetivo
+    //  es el producto, asi que con el master arriba el aviso baja lo mismo en
+    //  proporcion. Sin esa cuarta cifra, subir el tope habria dejado la
+    //  notificacion sonando a todo volumen.
+    {
+        AudioEngine e;
+        const float tope = AudioEngine::kMasterMaxGain;
+
+        e.setMasterUser (1.0f);
+        const float unidad = e.getMasterGain();
+        e.setMasterUser (tope);
+        const float arriba = e.getMasterGain();
+        e.setMasterUser (tope * 4.0f);          // muy por encima: tiene que acotar
+        const float pasado = e.getMasterGain();
+        e.setMasterUser (tope);
+        e.setDucked (true);
+        const float avisado = e.getMasterGain();
+        e.setDucked (false);
+
+        const bool ok = std::abs (unidad - 1.0f) < 1.0e-6f
+                     && std::abs (arriba - tope) < 1.0e-5f
+                     && std::abs (pasado - tope) < 1.0e-5f
+                     && std::abs (avisado - tope * AudioEngine::kDuckGain) < 1.0e-5f;
+        std::printf ("%-34s unidad %.2f   tope %.2f (+%.1f dB)   pasado %.2f   con aviso %.2f   %s\n",
+                     "el master llega a donde un canal", unidad, arriba,
+                     20.0f * std::log10 (arriba), pasado, avisado, ok ? "OK" : "FALLA");
     }
 
     return 0;

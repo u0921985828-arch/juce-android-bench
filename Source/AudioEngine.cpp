@@ -1381,9 +1381,18 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     }
 
     // 5e. RESAMPLE. The master, after everything, which is the whole point:
-    //     what lands on the pad is what you just heard - the effects, the
-    //     master saturation, the level, all of it printed. Written before the
-    //     probe click so a latency measurement never ends up inside a take.
+    //     what lands on the pad is what you just heard - the effects and the
+    //     master saturation, printed. Written before the probe click so a
+    //     latency measurement never ends up inside a take.
+    //
+    //     Y NO EL NIVEL DEL MASTER, que este comentario decia y hace tiempo
+    //     que no es verdad: el fader se movio a 5c-duck, DESPUES de aqui, para
+    //     que un aviso del sistema no imprimiera su bache dentro de la toma.
+    //     Al moverlo se dejo esta linea diciendo "el nivel, todo impreso", y
+    //     un comentario que va por detras del codigo es peor que no tenerlo -
+    //     el codigo se lee una vez y el comentario se cree siempre. Que no se
+    //     imprima es ademas lo correcto: bajar el master para no despertar a
+    //     nadie es monitorizacion y dura un segundo; el remuestreo se queda.
     if (recording.load (std::memory_order_acquire)
         && recordFromMaster.load (std::memory_order_acquire)
         && out.getNumChannels() > 0)

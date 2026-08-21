@@ -312,9 +312,25 @@ public:
     //
     //  Asi que se guardan por separado y el objetivo es el PRODUCTO. Lo que se
     //  restaura al recuperar el foco es el permiso para sonar, no un numero.
+    //  Y EL TOPE NO ES LA UNIDAD.
+    //
+    //  Estaba acotado en 1.0 con el argumento de que por encima solo se gana
+    //  empujar el limitador, y ese argumento da por hecho que la senal YA esta
+    //  en el techo. No lo esta: la fabrica esta igualada por SONORIDAD, no por
+    //  pico, asi que un patron de verdad llega a 0.566 -medido en el banco del
+    //  motor, con 0.00% de saturacion-. Son casi cinco decibelios de margen que
+    //  la maquina no podia usar, porque el unico mando que sube el conjunto
+    //  entero solo sabia bajar.
+    //
+    //  Y los dieciseis canales SI llegan a +12. O sea que para subir la maquina
+    //  habia que subir dieciseis faders uno a uno - y eso no es lo mismo: cada
+    //  uno entra en el bus por su lado y la mezcla se mueve. El master llega
+    //  ahora al mismo sitio que ellos, que ademas es el numero que ya existe.
+    static constexpr float kMasterMaxGain = 3.9810717f;   // +12 dB, el mismo tope que un canal
+
     void setMasterUser (float g) noexcept
     {
-        masterUser.store (juce::jlimit (0.0f, 1.0f, g), std::memory_order_relaxed);
+        masterUser.store (juce::jlimit (0.0f, kMasterMaxGain, g), std::memory_order_relaxed);
         refreshMasterTarget();
     }
     float getMasterUser() const noexcept { return masterUser.load (std::memory_order_relaxed); }

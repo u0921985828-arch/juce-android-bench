@@ -1939,7 +1939,11 @@ MainComponent::MainComponent()
     masterFader.setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
     masterFader.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
     masterFader.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    masterFader.setRange (kGainMinDb, 0.0, 0.1);
+    //  Hasta +12 como cualquier canal, y no hasta 0: ver AudioEngine::
+    //  kMasterMaxGain. Un patron de la fabrica llega a 0.566 de pico, o sea
+    //  que la maquina tenia cinco decibelios de margen y ningun mando que los
+    //  usara. El doble clic sigue devolviendo a 0 dB, que es donde nace.
+    masterFader.setRange (kGainMinDb, kGainMaxDb, 0.1);
     masterFader.setValue (0.0, juce::dontSendNotification);
     masterFader.setDoubleClickReturnValue (true, 0.0);
     //  Un roce no puede ser un valor, y aqui menos que en ningun otro sitio:
@@ -11129,7 +11133,7 @@ void MainComponent::loadMasterPref()
     //  numero que el Slider aceptaria y el motor no, y el sintoma seria una
     //  maquina muda sin ninguna pista de por que.
     const double db = f.existsAsFile()
-                        ? juce::jlimit (kGainMinDb, 0.0, f.loadFileAsString().trim().getDoubleValue())
+                        ? juce::jlimit (kGainMinDb, kGainMaxDb, f.loadFileAsString().trim().getDoubleValue())
                         : 0.0;
     masterFader.setValue (db, juce::sendNotificationSync);
 }
