@@ -267,19 +267,6 @@ def corre_y_juzga(combo, casa):
     size, lang, sheet = combo
     rows = run(size, lang, sheet, casa)
     if rows is None:
-        #  Y SI NO VOLCO NADA, SE PREGUNTA POR LA PANTALLA ANTES DE APUNTARLO.
-        #
-        #  Sin servidor X, JUCE se cae en Component::centreWithSize antes de
-        #  maquetar: la corrida no vuelca, y contada como "una corrida vacia"
-        #  parece un fallo de la app. Ha pasado tres veces en una sola sesion
-        #  -el Xvfb de este contenedor se muere solo- y las tres costaron un
-        #  rato de buscar un fallo que no existia. Se dice quien fue.
-        if subprocess.run(["xdpyinfo", "-display", ":99"],
-                          stdout=subprocess.DEVNULL,
-                          stderr=subprocess.DEVNULL).returncode != 0:
-            return [("PANTALLA", f"{size}/{lang}/{sheet or 'face'}",
-                     "la pantalla virtual :99 no responde - JUCE se cae en "
-                     "centreWithSize y esto NO es un fallo de la app", 0)], None
         return [], None
     return judge(rows, size, lang, sheet), (rows if lang in ("es", "en") else [])
 
@@ -349,7 +336,25 @@ def main():
                 runs += 1
                 if rows is None:
                     fails += 1
-                    allf.append(("CRASH", f"{size}/{lang}/{sheet or 'face'}", "no dump — crash or hang", 0))
+                    #  Y SE DICE QUIEN FUE, DONDE SE CUENTA Y NO DONDE SE JUZGA.
+                    #
+                    #  Sin servidor X, JUCE se cae en Component::centreWithSize
+                    #  antes de que exista una ventana: la corrida no vuelca, y
+                    #  "una corrida vacia" se lee como un fallo de la app. El
+                    #  Xvfb de este contenedor se muere solo -seis veces en una
+                    #  sesion- y han costado tres tandas de mirar codigo que
+                    #  estaba bien.
+                    #
+                    #  El primer intento lo puso en corre_y_juzga y no servia
+                    #  de nada: esta rama devuelve rows None y el que llama
+                    #  hace `continue` antes de mirar los hallazgos. Un aviso
+                    #  que nadie lee es lo mismo que no ponerlo. Roto a
+                    #  proposito con la pantalla abajo: "no dump - SIN PANTALLA
+                    #  VIRTUAL en :99".
+                    quien = ("no dump — crash or hang" if display_alive()
+                             else "no dump — SIN PANTALLA VIRTUAL en :99: JUCE se cae "
+                                  "en centreWithSize y esto NO es un fallo de la app")
+                    allf.append(("CRASH", f"{size}/{lang}/{sheet or 'face'}", quien, 0))
                     continue
                 allf += findings
                 if lang in ("es", "en"): pairs[(size, sheet)][lang] = rows
