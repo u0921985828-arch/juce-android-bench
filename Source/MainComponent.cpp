@@ -518,7 +518,7 @@ MainComponent::MainComponent()
             litAccent (*b);
             b->setClickingTogglesState (true);
             b->setRadioGroupId (7301);
-            b->onClick = [this, n] { chopSlices = n; refreshChopSheet(); };
+            b->onClick = [this, n] { chopSlices = n; recalculaCortes(); refreshChopSheet(); };
             chopSheet.addAndMakeVisible (b);
             chopCountBtns.add (b);
         }
@@ -534,8 +534,56 @@ MainComponent::MainComponent()
             b->setRadioGroupId (7302);
             chopSheet.addAndMakeVisible (b);
         }
-        chopEvenBtn.onClick = [this] { chopByHits = false; refreshChopSheet(); };
-        chopHitsBtn.onClick = [this] { chopByHits = true;  refreshChopHits(); refreshChopSheet(); };
+        //  Cambiar de modo REHACE la lista: son dos formas de proponer los
+        //  cortes, no dos listas que convivan. Lo que la persona haya movido a
+        //  mano se pierde, y eso es lo correcto - pedir GOLPES despues de
+        //  editar es pedir la propuesta del detector otra vez.
+        chopEvenBtn.onClick = [this] { chopByHits = false; recalculaCortes(); refreshChopSheet(); };
+        chopHitsBtn.onClick = [this] { chopByHits = true;  refreshChopHits(); recalculaCortes(); refreshChopSheet(); };
+
+        //  LOS TRES GESTOS DE LA VISTA. Mover y quitar comparten el toque
+        //  inicial y se separan al soltar, por la distancia recorrida: en una
+        //  marca de dos pixeles no hay sitio para dos zonas distintas.
+        chopVista.onMueve = [this] (int idx, int muestra)
+        {
+            if (idx <= 0 || idx >= (int) chopCortes.size()) return;   // la cero es el principio
+            //  Acotado entre sus vecinas y con el trozo minimo por lado, o una
+            //  marca arrastrada encima de otra deja un trozo de cero muestras
+            //  -que es un click, no un sonido- y ademas se cruzan de orden.
+            const int lo = chopCortes[(size_t) (idx - 1)] + ChopPreview::kMinMuestras;
+            const int hi = (idx + 1 < (int) chopCortes.size()
+                              ? chopCortes[(size_t) (idx + 1)]
+                              : padSourceLength (selectedPad)) - ChopPreview::kMinMuestras;
+            if (hi <= lo) return;
+            chopCortes[(size_t) idx] = juce::jlimit (lo, hi, muestra);
+            chopVista.setCortes (chopCortes);
+        };
+
+        chopVista.onAnade = [this] (int muestra)
+        {
+            const int len = padSourceLength (selectedPad);
+            if (len < 2 || chopCortes.empty()) return;
+            //  No mas marcas que pads donde meterlas: una marca de mas seria
+            //  un trozo que se dibuja y no llega a ningun sitio.
+            if ((int) chopCortes.size() >= chopTargets (chopSlices, chopOnlyEmpty).size())
+            {
+                status.setText (T ("No caben mas trozos"), juce::dontSendNotification);
+                return;
+            }
+            for (int c : chopCortes)
+                if (std::abs (c - muestra) < ChopPreview::kMinMuestras) return;
+            chopCortes.push_back (juce::jlimit (0, len - 1, muestra));
+            std::sort (chopCortes.begin(), chopCortes.end());
+            refreshChopSheet();
+        };
+
+        chopVista.onQuita = [this] (int idx)
+        {
+            if (idx <= 0 || idx >= (int) chopCortes.size()) return;
+            chopCortes.erase (chopCortes.begin() + idx);
+            refreshChopSheet();
+        };
+        chopSheet.addAndMakeVisible (chopVista);
 
         styleButton (chopSafeButton, kKey);
         chopSafeButton.setClickingTogglesState (true);
@@ -2186,7 +2234,23 @@ MainComponent::MainComponent()
 
     // --- PIANO ROLL: las notas del pad, en tono contra tiempo ---------------
     {
-        pianoGrid.onCelda = [this] (int paso, int semi) { pianoCellToggled (paso, semi); };
+        //  LA COLUMNA NO ES EL PASO, y este era el unico de los cuatro gestos
+        //  que se lo creia.
+        //
+        //  El piano dibuja UN compas -el `selectedBar`- en dieciseis columnas,
+        //  asi que la columna 0 del compas 2 es el paso 16. Estirar, borrar y
+        //  cortar ya sumaban la base; poner una nota no, y llamaba a
+        //  pianoCellToggled con la columna como si fuera el paso absoluto.
+        //
+        //  El sintoma no era escribir en el compas equivocado: era que la
+        //  rejilla NO RESPONDIA. Se escribia en el compas 1, la vista estaba en
+        //  el 2, y refreshPiano volvia a pintar el 2 sin la nota. Y la
+        //  proteccion de pianoCellToggled -paso >= largo del patron- tampoco
+        //  saltaba, porque una columna siempre vale menos de dieciseis.
+        pianoGrid.onCelda = [this] (int paso, int semi)
+        {
+            pianoCellToggled (selectedBar * AudioEngine::kBarSteps + paso, semi);
+        };
         //  ESTIRAR UNA NOTA. El largo es del PASO y no de cada nota del acorde:
         //  las cuatro notas de una columna son un acorde y un acorde dura lo
         //  que dura, no cuatro cosas distintas.
@@ -6073,6 +6137,17 @@ void MainComponent::resized()
                                                    + Metrics::md + 14 + Metrics::hit
                                                    + Metrics::sm + Metrics::hit
                                                    + Metrics::md + plannedH
+                                                   //  Y LA VISTA PREVIA, que si no se pide no existe.
+                                                   //
+                                                   //  sheetFromBottom da lo que se le pide y recorta al
+                                                   //  78%; lo que falte se lo come lo ULTIMO que se
+                                                   //  maqueta, en silencio. Se anadio el componente sin
+                                                   //  sumar su alto aqui y salia de cero en las tres
+                                                   //  pantallas: existente, invisible y sin que ninguna
+                                                   //  de las seis reglas lo viera, porque un componente
+                                                   //  de 0x0 no solapa ni se sale. Es el mismo fallo que
+                                                   //  ya dejo EUCLIDES en 217x0.
+                                                   + kChopVistaH + Metrics::sm
                                                    + Metrics::sm + Metrics::btn);
         auto titleRow = inner.removeFromTop (Metrics::hit);
         chopCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
@@ -6109,6 +6184,32 @@ void MainComponent::resized()
         inner.removeFromBottom (Metrics::sm);
 
         inner.removeFromTop (Metrics::md);
+
+        //  LA VISTA PREVIA SE QUEDA CON LO QUE HAY, y lo que encoge es el texto.
+        //
+        //  Se aparta despues del verbo rojo -que ya se reservo del fondo- y
+        //  antes del parrafo, que es la misma escalera que esta ficha ya tenia:
+        //  lo que no puede encoger va primero. Un texto se lee igual con dos
+        //  lineas menos; una onda de treinta pixeles no dice donde cae un
+        //  corte, que es justo para lo que existe.
+        //
+        //  Donde ni con esas cabe, no se dibuja: media vista previa es peor que
+        //  ninguna, porque parece que la muestra es esa.
+        {
+            const int quiere = kChopVistaH;
+            if (inner.getHeight() >= quiere + Metrics::sm)
+            {
+                chopVista.setVisible (true);
+                chopVista.setBounds (inner.removeFromTop (quiere));
+                inner.removeFromTop (Metrics::sm);
+            }
+            else
+            {
+                chopVista.setVisible (false);
+                chopVista.setBounds ({});
+            }
+        }
+
         inner.removeFromTop (juce::jmin (plannedH, inner.getHeight()));   // painted: where they land
         chopGoButton.setBounds (verbo.reduced (2, 0));
     }
@@ -7110,6 +7211,39 @@ void MainComponent::resized()
                     auto fila2 = inner.removeFromBottom (Metrics::hit);
                     inner.removeFromBottom (Metrics::halfGap);
                     layoutModuleBar (fila2, pb + 3, 0, nb - 3);
+                }
+            }
+
+            //  Y EL COMPAS, QUE AQUI NO ESTABA.
+            //
+            //  El piano dibuja UN compas de dieciseis columnas, y la fila que
+            //  deja elegir cual vivia solo en la pagina de la rejilla: con un
+            //  patron de treinta y dos pasos se veia el compas que hubiera
+            //  quedado puesto y no habia forma de cambiarlo sin salir a PASOS.
+            //  Con la escritura arreglada eso pasaba de "no responde" a "solo
+            //  puedo escribir en un compas", que sigue siendo media pagina.
+            //
+            //  Son LAS MISMAS tapas que la rejilla -barButtons-, no unas
+            //  nuevas: las dos paginas miran el mismo selectedBar, y dos filas
+            //  para el mismo numero son dos sitios donde uno se queda viejo.
+            //  Solo se maqueta una pagina a la vez, asi que no se pisan.
+            //
+            //  Y solo cuando hay mas de uno: una fila con un solo "1" es un
+            //  control que no puede hacer nada, que es la misma razon por la
+            //  que la rejilla tampoco la enseña.
+            if (bars > 1 && inner.getHeight() > Metrics::hit * 3)
+            {
+                auto fila = inner.removeFromBottom (Metrics::hit);
+                inner.removeFromBottom (Metrics::halfGap);
+                const int bw = fila.getWidth() / bars;
+                for (int b2 = 0; b2 < barButtons.size(); ++b2)
+                {
+                    barButtons[b2]->setVisible (b2 < bars);
+                    if (b2 < bars)
+                        barButtons[b2]->setBounds ((b2 < bars - 1 ? fila.removeFromLeft (bw) : fila)
+                                                       .reduced (Metrics::aireTapa, 0));
+                    else
+                        barButtons[b2]->setBounds ({});
                 }
             }
 
@@ -9006,19 +9140,68 @@ void MainComponent::openChopSheet()
     //  esta en la ficha cuando se lee, y elegir el modo no tiene un tiron.
     if (chopHitsFor != selectedPad) refreshChopHits();
 
+    //  La lista se propone al ABRIR: la ficha tiene que enseñar los cortes
+    //  desde el primer momento, no despues de tocar un boton.
+    recalculaCortes();
+
     openSheet (chopSheet, padsButton);
     refreshChopSheet();
 }
 
+//  LOS PUNTOS DE CORTE, EN UN SOLO SITIO.
+//
+//  Esto vivia dentro de applyAutoChop y se calculaba al pulsar CORTAR, que es
+//  lo que hacia imposible enseñarlos antes: cualquier marca que la persona
+//  moviera se habria perdido. Ahora se calculan aqui, la ficha los dibuja y se
+//  pueden tocar; applyAutoChop no calcula nada, aplica esta lista.
+void MainComponent::recalculaCortes()
+{
+    chopCortes.clear();
+    if (selectedPad < 0) return;
+    auto src = uiSample[(size_t) selectedPad];
+    if (src == nullptr) return;
+    const int len = src->buffer.getNumSamples();
+    if (len < 2) return;
+
+    const int cabenPads = chopTargets (chopSlices, chopOnlyEmpty).size();
+    if (cabenPads < 2) return;
+
+    if (chopByHits)
+    {
+        if (chopHitsFor != selectedPad) refreshChopHits();
+        //  En GOLPES manda lo que hay en el sonido y el numero es un TECHO: un
+        //  break de nueve golpes no se parte en dieciseis por pulsar dieciseis.
+        const int n = juce::jmin (cabenPads, (int) chopHits.size());
+        for (int k = 0; k < n; ++k) chopCortes.push_back (chopHits[(size_t) k]);
+    }
+    else
+    {
+        for (int k = 0; k < cabenPads; ++k)
+            chopCortes.push_back ((int) ((juce::int64) k * len / cabenPads));
+    }
+
+    //  El primero SIEMPRE es el principio de la muestra. El detector puede
+    //  colocar su primer ataque unos milisegundos dentro -un golpe empieza
+    //  antes de su pico- y sin esto la cabeza del sonido se quedaria fuera de
+    //  todos los pads sin que nada lo dijera.
+    if (! chopCortes.empty()) chopCortes[0] = 0;
+}
+
 void MainComponent::refreshChopSheet()
 {
+    chopVista.setFuente (selectedPad >= 0 ? uiSample[(size_t) selectedPad] : nullptr);
+    chopVista.setCortes (chopCortes);
+
     const int fits = chopTargets (chopSlices, chopOnlyEmpty).size();
     //  En GOLPES manda lo que hay en el sonido, no lo que pide el boton: el
     //  numero es un TECHO. Un break con nueve golpes no se corta en dieciseis
     //  por mucho que se pulse dieciseis - saldrian siete trozos partidos por la
     //  mitad de un golpe, que es exactamente lo que este modo viene a evitar.
-    const int hits = (chopHitsFor == selectedPad) ? (int) chopHits.size() : 0;
-    const int n    = chopByHits ? juce::jmin (fits, hits) : fits;
+    //  El numero sale de la LISTA y no de una cuenta paralela: la persona
+    //  puede haber anadido o quitado marcas, y un boton que dice "CORTAR EN 8"
+    //  mientras hay nueve marcas dibujadas es la ficha contradiciendose.
+    const int n = (int) chopCortes.size();
+    juce::ignoreUnused (fits);
     const bool can = selectedPad >= 0 && uiSample[(size_t) selectedPad] != nullptr && n >= 2;
 
     chopGoButton.setEnabled (can);
@@ -9035,15 +9218,18 @@ void MainComponent::applyAutoChop()
     const int len = src->buffer.getNumSamples();
     const auto targets = chopTargets (chopSlices, chopOnlyEmpty);
 
-    //  Los puntos de corte: por aritmetica o por golpes. En golpes manda lo que
-    //  el detector encontro, acotado por los pads que caben.
-    if (chopByHits && chopHitsFor != selectedPad) refreshChopHits();
-    const bool porGolpes = chopByHits && chopHitsFor == selectedPad && chopHits.size() >= 2;
-    const int  n = porGolpes ? juce::jmin (targets.size(), (int) chopHits.size())
-                             : targets.size();
+    //  APLICA LA LISTA Y NO LA VUELVE A CALCULAR.
+    //
+    //  Antes esta funcion decidia aqui los puntos -aritmetica o detector- en el
+    //  momento de pulsar CORTAR, y por eso la ficha no podia enseñarlos antes:
+    //  cualquier marca movida se habria perdido. Ahora la lista la llena
+    //  recalculaCortes, la vista la dibuja y la persona la edita; aqui solo se
+    //  aplica. Lo que ves es lo que sale.
+    if (chopCortes.empty()) recalculaCortes();
+    const int n = juce::jmin (targets.size(), (int) chopCortes.size());
 
-    //  Two pieces is the least that is still a chop, and a source shorter than
-    //  one sample per piece has nothing to divide.
+    //  Dos trozos es lo menos que sigue siendo un troceado, y una fuente con
+    //  menos de una muestra por trozo no tiene nada que dividir.
     if (n < 2 || len < n) return;
 
     pushUndo (T ("AUTO CHOP"));
@@ -9057,10 +9243,11 @@ void MainComponent::applyAutoChop()
         //  El ultimo trozo llega hasta el final de la muestra en los dos modos:
         //  con golpes, el trozo que sigue al ultimo ataque es la cola, y
         //  cortarla en el siguiente golpe que no existe la dejaria fuera.
-        const int st = porGolpes ? chopHits[(size_t) k]
-                                 : (int) ((juce::int64) k * len / n);
-        const int en = porGolpes ? (k + 1 < n ? chopHits[(size_t) (k + 1)] : len)
-                                 : (int) ((juce::int64) (k + 1) * len / n);
+        //  El ultimo trozo llega SIEMPRE hasta el final: lo que sigue al
+        //  ultimo corte es la cola, y terminarla en un corte que no existe la
+        //  dejaria fuera de todos los pads.
+        const int st = juce::jlimit (0, len - 1, chopCortes[(size_t) k]);
+        const int en = (k + 1 < n) ? juce::jlimit (0, len, chopCortes[(size_t) (k + 1)]) : len;
         if (en <= st) continue;
 
         padHasSample[(size_t) i] = true;
@@ -9093,9 +9280,10 @@ void MainComponent::applyAutoChop()
     closeAllSheets();
     selectPad (targets[0]);
 
-    status.setText (porGolpes
-                        ? T ("Cortado en %1 golpes - DESHACER para volver", juce::String (n))
-                        : n < askedFor
+    //  Ya no dice "golpes" ni "trozos" segun el modo: desde que las marcas se
+    //  pueden mover, una y otra cosa se mezclan en la misma lista y decir de
+    //  cual venia seria mentir la mitad de las veces.
+    status.setText (n < askedFor
                             ? T ("Cortado en %1 (no cabian %2) - DESHACER para volver",
                                  juce::String (n), juce::String (askedFor))
                             : T ("Cortado en %1 trozos - DESHACER para volver", juce::String (n)),
@@ -11822,7 +12010,22 @@ void MainComponent::paintAudioSheetContent (juce::Graphics& g)
     auto inner = setSheet.cuerpo.getLocalBounds();
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
-    pintaTitulo (g, inner.removeFromTop (16), T ("AUDIO"));
+    //  "AJUSTES  ·  AUDIO" Y NO "AUDIO" A SECAS.
+    //
+    //  Esta ficha tiene cuatro paginas -AUDIO, MIDI, PROYECTOS, GESTOS- y cada
+    //  una se titulaba con SU nombre, asi que tocabas AJUSTES y aterrizabas en
+    //  una tarjeta titulada "AUDIO": nada decia donde estabas, solo en que
+    //  pestana. Y era la unica ficha con paginas que no lo decia - RACK, XY y
+    //  AUTO CHOP ya usan la forma con contexto, "RACK · PAD 1 · KICK".
+    //
+    //  Se lo debia el plano: con las diecisiete pantallas escritas una al lado
+    //  de otra se ve que hay DOS gramaticas de titulo mezcladas, y la buena es
+    //  la que dice donde estas y sobre que actuas. Ver Tests/plano.py.
+    {
+        const juce::String punto = juce::String::charToString ((juce::juce_wchar) 0x00B7);
+        pintaTitulo (g, inner.removeFromTop (16),
+                     T ("SET") + "  " + punto + "  " + T ("AUDIO"), "titulo", true);
+    }
 
     paintAudioInfo (g, audioInfoArea);
 
@@ -11946,14 +12149,14 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
         auto r = projNameRowArea;
         g.setColour (ZatiColours::inkDim);
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
-        pintaTitulo (g, Lang::takeStart (r, 60), T ("NOMBRE"));
+        pintaTitulo (g, Lang::takeStart (r, 60), T ("NOMBRE"), "seccion");
     }
     if (! projPathRowArea.isEmpty())
     {
         auto r = projPathRowArea;
         g.setColour (ZatiColours::inkDim.withAlpha (0.75f));
         g.setFont (ZatiColours::monoFont (Metrics::fFine, false));
-        pintaTitulo (g, Lang::takeStart (r, 60), T ("CARPETA"));
+        pintaTitulo (g, Lang::takeStart (r, 60), T ("CARPETA"), "seccion");
         g.drawFittedText (Lang::ltr (ProjectStore::root().getFullPathName()),
                           r, Lang::start(), 1, 0.7f);
     }

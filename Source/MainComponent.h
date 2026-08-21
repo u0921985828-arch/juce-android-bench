@@ -5,6 +5,7 @@
 #include "AudioEngine.h"
 #include "SampleLoader.h"
 #include "WaveformDisplay.h"
+#include "ChopPreview.h"
 #include "SpectrumDisplay.h"
 #include "ZatiLookAndFeel.h"
 #include "PadButton.h"
@@ -892,6 +893,23 @@ private:
     //  al cambiar de modo, no en cada repintado: una FFT de 1024 sobre cuatro
     //  segundos son 750 ventanas, y el repintado ocurre en cada toque.
     std::vector<int> chopHits;
+
+    //  LOS CORTES QUE SE VEN SON LOS QUE SE APLICAN.
+    //
+    //  Antes applyAutoChop volvia a calcular los puntos -aritmetica o
+    //  detector- en el momento de cortar, asi que la ficha no podia enseñar
+    //  nada editable: cualquier marca que se moviera se habria perdido al
+    //  pulsar CORTAR. Ahora esta lista es la unica fuente, la llena
+    //  recalculaCortes cuando cambia el modo o el numero, y la persona la
+    //  edita encima. Lo que ves es lo que sale.
+    //  Lo que mide la vista previa del troceado. Aqui y no a mano en los dos
+    //  sitios que la usan -quien PIDE el alto de la ficha y quien la COLOCA-,
+    //  que es como una ficha acaba pidiendo una cosa y colocando otra.
+    static constexpr int kChopVistaH = 96;
+
+    std::vector<int> chopCortes;
+    ChopPreview      chopVista;
+    void recalculaCortes();
     int chopHitsFor = -1;              // para que pad se calcularon
     void refreshChopHits();
 

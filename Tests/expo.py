@@ -6,7 +6,17 @@ phone anyone will bring to the stand."""
 import subprocess, os, json, sys, itertools, collections, re
 import concurrent.futures, shutil, tempfile
 
-BIN = "/home/user/FX-404/build/Zati_artefacts/Release/Zati"
+#  RELATIVO AL SCRIPT, no una ruta absoluta al repositorio.
+#
+#  Estaba clavado a /home/user/FX-404/build/..., asi que copiar Tests/ a otro
+#  sitio para que un reseteo del repositorio no matara la tanda aislaba los
+#  SCRIPTS y no el binario: se seguia midiendo el del repositorio. Los numeros
+#  eran validos -siempre se compila antes de medir- pero el aislamiento no
+#  existia, y una compilacion lanzada a la vez tira la tanda entera con
+#  PermissionError a mitad.
+BIN = os.environ.get ("ZATI_BIN") or os.path.join (
+    os.path.dirname (os.path.dirname (os.path.abspath (__file__))),
+    "build", "Zati_artefacts", "Release", "Zati")
 
 # Real devices, not round numbers. dp at the density the app actually lays out in.
 SIZES = [

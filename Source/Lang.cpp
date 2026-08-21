@@ -498,6 +498,14 @@ namespace
         { "VIOLETA",        "",         "VIOLET",     "紫",         "بنفسجي" },
         { "MAGENTA",        "",         "MAGENTA",    "洋红",       "أرجواني" },
         { "off",            "",         "off",        "关",         "مغلق" },
+        //  La vista previa del troceado cuando el pad no tiene sonido: sin
+        //  esto, la unica ficha que se abre vacia lo decia en ingles.
+        { "sin muestra",    "",         "no sample",  "无采样",     "لا توجد عينة" },
+        //  La vista previa del troceado, cuando se intenta anadir una marca mas
+        //  que pads libres hay: una marca de mas seria un trozo que se dibuja y
+        //  no llega a ningun sitio.
+        { "No caben mas trozos", "",     "No room for more slices",
+                                        "放不下更多切片", "لا مساحة لمزيد من المقاطع" },
 
         // --- Ficha XY (superficie de directo) ------------------------------
         { "XY",             "",         "XY",         "XY",         "XY" },
