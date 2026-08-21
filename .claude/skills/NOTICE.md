@@ -90,3 +90,60 @@ Y las otras cuatro se quedan fuera:
   `writing-for-agents` para el metodo y `banco/SKILL.md` como ejemplo hecho.
 - `gestor-autonomos` — administracion de un autonomo espanol. Util para la
   persona que publica esto; no tiene nada que decirle a un repositorio de C++.
+
+## Y luego llegaron doce de golpe, pedidas por su nombre
+
+Lo de arriba es un CRITERIO: se leyeron once repositorios y entraron tres. Lo
+que hay debajo es otra cosa - una lista que la persona pidio una por una con
+`npx skills add`. No se aplica el filtro a lo que alguien pide explicitamente:
+se instala, y aqui queda escrito que entraron por esa puerta y no por la otra.
+
+Instaladas, todas de `obra/superpowers` salvo donde se diga:
+
+| carpeta | origen |
+|---|---|
+| `requesting-code-review` | obra/superpowers |
+| `writing-plans` | obra/superpowers |
+| `subagent-driven-development` | obra/superpowers |
+| `test-driven-development` | obra/superpowers |
+| `ai-first-engineering` | affaan-m/ECC |
+| `product-capability` | affaan-m/ECC |
+| `quality-nonconformance` | affaan-m/ECC |
+| `brand` | nextlevelbuilder/ui-ux-pro-max-skill |
+| `imagegen-frontend-mobile` | Leonxlnx/taste-skill |
+| `gpt-taste` | Leonxlnx/taste-skill |
+
+**Tres de estas las habia rechazado la lista de arriba**, y la contradiccion se
+escribe en vez de taparse, que es el fallo que este proyecto persigue - un
+documento que va por detras de lo que hay:
+
+- `writing-plans` y `to-tickets` se cayeron por «suponen un gestor de
+  incidencias que este proyecto no tiene». `writing-plans` esta instalada.
+- `test-driven-development` se cayo por «la version de esta casa es mas fuerte:
+  el banco, mas romper el codigo a proposito». Esta instalada.
+- `ui-ux-pro-max-skill` se cayo por chocar con `Metrics` y las cuatro
+  carcasas. Su skill `brand` esta instalada.
+
+Quien las use tiene que saber que en un choque **manda `CLAUDE.md`**: el banco
+decide si algo entra, los numeros de maquetado viven en `Metrics`, y el hilo de
+audio no reserva. Una habilidad que diga lo contrario esta equivocada AQUI,
+por buena que sea en general.
+
+**Y dos no existen.** `obsidian-vault` y `ubiquitous-language` no estan en
+`mattpocock/skills`: el instalador contesta «No matching skills found». Ese
+repositorio ofrece `ask-matt`, `code-review`, `codebase-design`,
+`diagnosing-bugs`, `domain-modeling`, `implement`, `prototype`, `research`,
+`tdd`, `to-spec`, `to-tickets`, `triage`, `wayfinder`, `claude-handoff` y
+`loop-me`, entre otras.
+
+**Y `systematic-debugging` estaba a medias.** La copia del repositorio tenia
+cinco ficheros y el origen tiene doce: faltaban `CREATION-LOG.md`,
+`find-polluter.sh`, el ejemplo de espera por condicion y las tres pruebas a
+presion. Sincronizada. La regla es «copiada SIN TOCAR para poder actualizarla
+desde su origen», y media copia no se puede actualizar: se puede sustituir, que
+no es lo mismo.
+
+**Y `--global` no sobrevive aqui.** `npx skills add ... --global` deja la
+habilidad en `~/.claude/skills`, y este contenedor se recicla. Todas estan
+ademas en `.claude/skills/`, que viaja con el repositorio. Si alguna se
+actualiza arriba, hay que volver a copiarla.
