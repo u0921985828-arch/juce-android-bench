@@ -7728,6 +7728,10 @@ void MainComponent::resized()
     {
         tourSheet.setBounds (getLocalBounds());
         tourFoco = tourObjetivo (tourPaso);
+        //  Ver UiAudit::tourPaso: que "este paso no señala nada" sea un numero.
+        UiAudit::tourPaso  = tourPaso;
+        UiAudit::tourFocoW = tourFoco.getWidth();
+        UiAudit::tourFocoH = tourFoco.getHeight();
 
         const int anchoDock = getWidth();
         const int alto = Metrics::md * 2 + 16 + Metrics::xs
@@ -11406,13 +11410,51 @@ juce::Rectangle<int> MainComponent::tourObjetivo (int paso) const
                         : deComponente (fxButtons[0]).getUnion (deComponente (fxButtons[fxButtons.size() - 1]));
         case 5:  return ctrlPlateArea;
         case 6:  return deComponente (&stepGrid);
-        case 7:  return seqTiraFilas > 0 ? stepStripArea : juce::Rectangle<int>();
+        //  LA TIRA DEL PASO, POR SUS MANDOS Y NO POR UN RECTANGULO MUERTO.
+        //
+        //  Esto apuntaba a `stepStripArea`, y esa variable solo se ASIGNA en un
+        //  sitio: `vuArea = stepStripArea = {}` con el comentario "gone from the
+        //  face; the screen draws them". O sea que quedo de cuando la tira vivia
+        //  en la cara y desde entonces vale vacio SIEMPRE. El paso abria la
+        //  ficha, tocaba un paso para que la tira existiera, y luego señalaba un
+        //  rectangulo de cero: velo uniforme, ni agujero ni anillo.
+        //
+        //  Se pregunta a los mandos, que es lo que la persona tiene que mirar, y
+        //  se toma la union de los que HAY: la tercera fila -los cuatro
+        //  bloqueos- se cae en las pantallas estrechas, y deComponente ya
+        //  devuelve vacio para lo que no esta en pantalla, asi que la union sale
+        //  bien sea cual sea el numero de filas.
+        case 7:
+        {
+            auto r = deComponente (&noteSlider).getUnion (deComponente (&velSlider));
+            r = r.getUnion (deComponente (&rollSlider)).getUnion (deComponente (&lockSlider));
+            r = r.getUnion (deComponente (&atkPasoSlider)).getUnion (deComponente (&panPasoSlider));
+            return r;
+        }
         case 8:  return deComponente (&pianoGrid);
         case 9:  return deComponente (&patDoubleBtn).getUnion (deComponente (&seqHumanBtn));
         case 10: return deComponente (&waveform);
         case 11: return deComponente (&rackButton);
         case 12: return deComponente (&songGrid);
         case 13: return deComponente (&exportMasterButton).getUnion (deComponente (&exportStemsButton));
+        //  Y EL ULTIMO PASO NO SEÑALABA NADA, que es la otra mitad del mismo
+        //  descuido: la tabla llegaba al 13 y el tour tiene quince pasos. El 14
+        //  abre AJUSTES para hablar del idioma, las carcasas y el manual, y
+        //  caia en `default` - o sea que la unica pantalla donde se explica como
+        //  cambiar de idioma se enseñaba sin señalar el selector de idioma.
+        //
+        //  El cero SI es un vacio a proposito: es la portada y no tiene a que
+        //  apuntar. Un `default` que atiende dos casos -uno correcto y uno
+        //  olvidado- es como se esconde el segundo.
+        case 14:
+        {
+            auto r = langButtons.isEmpty() ? juce::Rectangle<int>()
+                   : deComponente (langButtons[0]).getUnion (deComponente (langButtons[langButtons.size() - 1]));
+            if (! skinButtons.isEmpty())
+                r = r.getUnion (deComponente (skinButtons[0]))
+                     .getUnion (deComponente (skinButtons[skinButtons.size() - 1]));
+            return r;
+        }
         default: return {};
     }
 }

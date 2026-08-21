@@ -61,6 +61,21 @@ namespace UiAudit
     //  volcado de geometria -el componente esta ahi y mide lo mismo- y se
     //  cuenta aqui, que es la unica forma de que un cero se distinga de un
     //  "no lo he mirado".
+    //  EL OBJETIVO DEL PASO DEL TOUR, para que "no señala nada" sea un HALLAZGO
+    //  y no una captura de pantalla que alguien mande dos meses despues.
+    //
+    //  Dos pasos senalaban el vacio y nadie lo vio: el de la tira del paso
+    //  apuntaba a `stepStripArea`, que quedo valiendo {} cuando la tira se fue
+    //  de la cara, y el ultimo -el que explica el idioma y las carcasas- caia
+    //  en el `default` de la tabla porque los casos llegaban al 13 y los pasos
+    //  son quince. Los dos abrian su ficha, la oscurecian entera y no ponian ni
+    //  agujero ni anillo.
+    //
+    //  Se vuelca el rectangulo y no un si/no: un objetivo de 3x3 px tampoco
+    //  señala nada, y con el numero delante se ve venir.
+    inline int tourPaso = -1;
+    inline int tourFocoW = 0, tourFocoH = 0;
+
     inline int cabezalPiano = 0;
     //  Y cuantas veces se ha ALIMENTADO la pagina del piano. Son dos cifras y
     //  no una porque en un escritorio sin tarjeta de sonido el transporte no
@@ -402,6 +417,11 @@ namespace UiAudit
         std::cout << "{\"root\":1,\"w\":" << root.getWidth() << ",\"h\":" << root.getHeight()
                   << ",\"lang\":\"" << env ("ZATI_LANG") << "\""
                   << ",\"open\":\"" << env ("ZATI_OPEN") << "\"}" << std::endl;
+
+        if (tourPaso >= 0)
+            std::cout << "{\"tour\":" << tourPaso
+                      << ",\"focoW\":" << tourFocoW
+                      << ",\"focoH\":" << tourFocoH << "}" << std::endl;
         walk (root, root, "root", 0);
 
         if (padSource != nullptr)
