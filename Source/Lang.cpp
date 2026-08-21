@@ -968,6 +968,12 @@ namespace
           "اختر عينة  -  wav / aiff / flac / ogg / mp3" },
         { "CARGAR",         "",         "LOAD",       "载入",       "تحميل" },
         { "SISTEMA",        "",         "SYSTEM",     "系统",       "النظام" },
+        //  MIS KITS y no "KITS" a secas: la carpeta guarda los que ha hecho
+        //  esta persona, y al lado de FABRICA -que son los de la casa- la
+        //  palabra sola no distingue nada.
+        { "MIS KITS",       "",         "MY KITS",    "我的套件",   "أطقمي" },
+        { "Aun no has guardado ningun kit", "",
+          "No kits saved yet", "还没有保存任何套件", "لم تحفظ أي طقم بعد" },
         { "Cargando pad %1...", "",     "Loading pad %1...", "正在载入音垫 %1…", "جارٍ تحميل باد %1…" },
         { "Pad %1 cargado  [%2]", "",   "Pad %1 loaded  [%2]", "音垫 %1 已载入 [%2]", "تم تحميل باد %1 [%2]" },
         { "Fallo al cargar: %1", "",    "Could not load: %1", "载入失败：%1", "تعذّر التحميل: %1" },

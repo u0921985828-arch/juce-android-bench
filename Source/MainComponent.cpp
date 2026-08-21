@@ -822,6 +822,28 @@ MainComponent::MainComponent()
         styleButton (browseSystemButton, kKey);
         browseSystemButton.onClick = [this] { launchSystemPicker(); };
         browseSheet.addAndMakeVisible (browseSystemButton);
+
+        //  MIS KITS: la puerta que le faltaba a ZATI/Kits.
+        //
+        //  GUARDAR KIT escribe alli y el navegador no iba nunca, asi que para
+        //  volver a usar un kit propio habia que buscarlo a mano por el
+        //  telefono. La carpeta se crea al llegar y no al guardar: asi la tapa
+        //  lleva a algun sitio tambien la primera vez, que es cuando alguien
+        //  la toca para ver que hay.
+        //
+        //  Y NO CARGA NADA, solo lleva. Desde alli el kit entra por CARGAR KIT
+        //  como cualquier pack descargado, que es la misma puerta a proposito:
+        //  un kit guardado aqui y uno bajado de fuera tienen la misma forma.
+        styleButton (browseKitsDirButton, kKey);
+        browseKitsDirButton.onClick = [this]
+        {
+            const auto dir = ProjectStore::kits();
+            ProjectStore::ensureDirectory (dir);
+            if (browser != nullptr && dir.isDirectory()) browser->setRoot (dir);
+            if (dir.getNumberOfChildFiles (juce::File::findDirectories) == 0)
+                status.setText (T ("Aun no has guardado ningun kit"), juce::dontSendNotification);
+        };
+        browseSheet.addAndMakeVisible (browseKitsDirButton);
     }
 
     // Transport / actions.
@@ -4618,11 +4640,30 @@ void MainComponent::resized()
         const int kMinScreen = wideFace ? 56 : kSueloCristal;
 
         //  Ver moduleH: la fila de las seis fichas sube al dedo solo donde el
-        //  cristal puede pagar los catorce pixeles quedandose en su suelo. En
-        //  un 360x640 y en el Fold cerrado no puede -la cara ya reserva mas de
-        //  lo que hay y quien absorbe la diferencia es la rejilla de pads-, asi
-        //  que alli se queda en 26 y eso queda medido y escrito, que es
-        //  distinto de no haberlo mirado.
+        //  cristal puede pagar los catorce pixeles quedandose en su suelo, y en
+        //  360x640 y en el Fold cerrado no puede.
+        //
+        //  Y ESTO SE INTENTO DESHACER, MEDIDO, Y NO SE PUDO - que es la parte
+        //  que faltaba escrita. Son 1296 incumplimientos del dedo, el grupo mas
+        //  grande que le queda a la app, asi que la sospecha razonable era que
+        //  esta condicion preguntase contra el suelo del cristal (96) teniendo
+        //  el tope duro (64) disponible, como ya hace la costura de los bancos.
+        //  Se cambio y la condicion SIGUE fallando, porque el problema no era
+        //  el cristal:
+        //
+        //      360x640  libre con las pestanas a 40: -66 px   pad 77x41
+        //      280x653  libre con las pestanas a 40:  27 px   pad 57x44
+        //
+        //  En la primera la cara ya va sobre-suscrita en 66 px con las pestanas
+        //  a 26, y en la segunda lo que quedaria para el cristal son 27 de los
+        //  64 que necesita para decir algo. Quien absorbe la diferencia es la
+        //  rejilla de pads, y los pads NO tienen de donde: estan en 41 y en 44
+        //  px de alto, uno y cuatro por encima del dedo. Darle los catorce a
+        //  las pestanas los deja en 27 y en 30.
+        //
+        //  Un pad de 27 es peor negocio que una pestana de 26: el pad es con lo
+        //  que se toca. Se queda como esta, y ahora con la cifra al lado para
+        //  que el siguiente que lo vea no repita la medida.
         if (! wideFace
             && area.getHeight() - aboveScreen - belowScreenCon (Metrics::hit)
                  - bottomStrip - bodyNeed >= kMinScreen)
@@ -5409,7 +5450,8 @@ void MainComponent::resized()
         //  hace desde la tira del paso.
         const bool eligiendoCarpeta = (browseModo == browseCarpeta);
         for (auto* b : { &browseLoadButton, &browseKitButton,
-                         &browseFactoryButton, &browseSystemButton })
+                         &browseFactoryButton, &browseSystemButton,
+                         &browseKitsDirButton })
         {
             b->setVisible (! eligiendoCarpeta);
             if (eligiendoCarpeta) b->setBounds ({});
@@ -5425,19 +5467,30 @@ void MainComponent::resized()
         }
         else
         {
-        juce::TextButton* pb[4] = { &browseLoadButton, &browseKitButton,
-                                    &browseFactoryButton, &browseSystemButton };
-        const bool actionsFit = moduleBarFits (inner.getWidth(), pb, 4);
+        //  Cinco desde que MIS KITS tiene puerta, y la fila se parte en 2+3
+        //  cuando no caben. Arriba las dos que leen LA CARPETA QUE SE ESTA
+        //  VIENDO -un sonido en un pad, o los dieciseis del banco- y abajo las
+        //  tres que no dependen de donde estes: la fabrica, tus kits y el
+        //  selector del sistema.
+        //
+        //  Y se parte 2+3 y no 3+2 porque "CARGAR KIT" es el rotulo mas largo
+        //  de los cinco: con tres arriba pedia 75 px y tenia 74, y en arabe
+        //  pedia 83 con 80. Dos apretones en 280x653 que no estaban antes. Los
+        //  rotulos largos van donde se reparte entre menos.
+        juce::TextButton* pb[5] = { &browseLoadButton, &browseKitButton,
+                                    &browseFactoryButton, &browseKitsDirButton,
+                                    &browseSystemButton };
+        const bool actionsFit = moduleBarFits (inner.getWidth(), pb, 5);
 
         if (actionsFit)
         {
             auto actions = inner.removeFromBottom (Metrics::btn);
-            layoutModuleBar (actions, pb, 0, 4);
+            layoutModuleBar (actions, pb, 0, 5);
         }
         else
         {
             auto lower = inner.removeFromBottom (Metrics::btn);
-            layoutModuleBar (lower, pb + 2, 0, 2);
+            layoutModuleBar (lower, pb + 2, 0, 3);
             inner.removeFromBottom (Metrics::xs);
             auto upper = inner.removeFromBottom (Metrics::btn);
             layoutModuleBar (upper, pb, 0, 2);
@@ -8506,6 +8559,7 @@ void MainComponent::retranslateUi()
     browseKitButton   .setButtonText (T ("CARGAR KIT"));
     browseFactoryButton.setButtonText (T ("FABRICA"));
     browseSystemButton.setButtonText (T ("SISTEMA"));
+    browseKitsDirButton.setButtonText (T ("MIS KITS"));
 
     exportMasterButton.setButtonText (T ("MASTER"));
     exportStemsButton .setButtonText (T ("PISTAS"));

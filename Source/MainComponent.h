@@ -832,6 +832,14 @@ private:
     juce::TextButton browseFactoryButton { "FABRICA" };
     void loadFolderAsKit();
     juce::TextButton browseSystemButton { "SISTEMA" };   // SAF / OS picker fallback
+    //  LA BIBLIOTECA DE KITS TENIA SITIO Y NO TENIA PUERTA.
+    //
+    //  GUARDAR KIT escribe en ZATI/Kits y la app no volvia alli JAMAS: para
+    //  usar en otro proyecto un kit que acababas de guardar habia que navegar
+    //  hasta la carpeta a mano. Un sitio donde la maquina deja cosas y del que
+    //  no sabe volver es medio funcion, como el troceado que volvia sin ser un
+    //  troceado.
+    juce::TextButton browseKitsDirButton { "MIS KITS" };
     std::unique_ptr<juce::FileChooser> chooser;          // only for that fallback
     void launchSystemPicker();
     void importIntoLibrary (const juce::URL& url);
