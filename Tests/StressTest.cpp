@@ -2013,5 +2013,96 @@ int main()
                      20.0f * std::log10 (arriba), pasado, avisado, ok ? "OK" : "FALLA");
     }
 
+    //  UN GOLPE FLOJO NO ES UN GOLPE FUERTE BAJADO DE VOLUMEN.
+    //
+    //  `velocity` solo multiplicaba la ganancia, asi que la unica diferencia
+    //  entre un golpe fantasma y uno a tope era el fader. En un parche de
+    //  verdad los armonicos altos caen mucho mas rapido que el fundamental al
+    //  pegar mas flojo - por eso un ghost note suena APAGADO y no solo bajo.
+    //
+    //  Medido POR EL CAMINO REAL -publishSample y postNoteOn con su fuerza- y
+    //  no llamando a Voice por dentro: lo que hay que comprobar es que la
+    //  fuerza que viaja en el comando llegue hasta el filtro, y una llamada
+    //  directa se saltaria justo el trozo que puede estar roto.
+    //
+    //  Se mide por ENERGIA ALTA -la diferencia entre muestras, que es un paso
+    //  alto de primer orden- y NORMALIZADA por el nivel, que es lo unico que
+    //  separa "suena mas oscuro" de "suena mas bajo". Sin dividir por el nivel,
+    //  bajar el volumen tambien baja la energia alta y la prueba diria que si a
+    //  un cambio que no existe: es el mismo error que ya costo una medida en el
+    //  bloqueo del corte.
+    //
+    //  Y CON RUIDO BLANCO Y NO CON UN TONO, que es donde esta prueba mintio
+    //  antes de acertar - la sexta vez en este banco. El primer intento uso
+    //  makeSample, que es 80% seno y 20% ruido, y saco 0.477 / 0.414 / 0.394:
+    //  el enlace funcionaba y la medida casi no lo veia.
+    //
+    //  La razon es que para UN TONO un paso bajo atenua la energia alta y la
+    //  total EN LA MISMA proporcion, asi que el cociente normalizado no se
+    //  mueve: 0.477 es exactamente 2*sin(pi*3000/48000), o sea el tono y nada
+    //  mas. Lo que hace visible un filtro es un espectro REPARTIDO, donde
+    //  quitar de arriba cambia el reparto y no solo el volumen.
+    {
+        auto ruidoBlanco = [] ()
+        {
+            auto* sb = new SampleBuffer();
+            const int n = 48000;
+            sb->buffer.setSize (2, n);
+            juce::Random rng (20260821);
+            for (int i = 0; i < n; ++i)
+            {
+                const float v = 0.5f * (rng.nextFloat() * 2.0f - 1.0f);
+                sb->buffer.setSample (0, i, v);
+                sb->buffer.setSample (1, i, v);
+            }
+            sb->sourceSampleRate = 48000.0;
+            return SampleBuffer::Ptr (sb);
+        };
+
+        auto brillo = [&] (float vel)
+        {
+            AudioEngine e;
+            e.prepareToPlay (48000.0, 512);
+            e.setSafetyLimiter (false);      // el saturador tambien cambia el brillo
+            e.publishSample (0, ruidoBlanco());
+            e.setPadGain (0, 1.0f);
+            juce::AudioBuffer<float> out (2, 512);
+            //  Un bloque en vacio para que el pad adopte su muestra: el hilo de
+            //  audio la recoge al principio del bloque, no al publicarla.
+            out.clear(); e.renderNextBlock (out, 0, 512);
+            e.postNoteOn (0, vel);
+            double alta = 0.0, total = 0.0;
+            float prev = 0.0f;
+            for (int b = 0; b < 8; ++b)
+            {
+                out.clear();
+                e.renderNextBlock (out, 0, 512);
+                const auto* w = out.getReadPointer (0);
+                for (int i = 0; i < 512; ++i)
+                {
+                    const double d = (double) w[i] - (double) prev;
+                    alta  += d * d;
+                    total += (double) w[i] * (double) w[i];
+                    prev = w[i];
+                }
+            }
+            return total > 1.0e-12 ? std::sqrt (alta / total) : 0.0;
+        };
+
+        const double plena = brillo (1.0f);
+        const double media = brillo (0.5f);
+        const double floja = brillo (0.15f);
+
+        //  Tres y no dos: "baja" lo cumple tambien un enlace que se apaga a
+        //  medio camino, y el extremo de arriba es la promesa de que un patron
+        //  viejo -stepVel a cero, que se lee como 1.0- suena exactamente igual.
+        const bool ok = plena > 0.0
+                     && media < plena * 0.95
+                     && floja < media * 0.95;
+        std::printf ("%-34s plena %.3f   al 50%% %.3f   al 15%% %.3f   %s\n",
+                     "un golpe flojo suena mas oscuro", plena, media, floja,
+                     ok ? "OK" : "FALLA");
+    }
+
     return 0;
 }

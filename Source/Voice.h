@@ -36,13 +36,55 @@ struct Voice
     float aaL = 0.0f, aaR = 0.0f;
 
     //  Se recalcula en cada start(), junto a delta, porque depende de el.
-    void updateAntiAlias() noexcept
+    //
+    //  Y DE LA FUERZA DEL GOLPE, que es la otra mitad y la que faltaba.
+    //
+    //  `velocity` solo multiplicaba la ganancia -`target = padGain * velocity`,
+    //  nada mas-, o sea que un golpe flojo era un golpe fuerte bajado de
+    //  volumen. En un parche de verdad no pasa eso: al pegar mas flojo los
+    //  armonicos altos caen mucho mas rapido que el fundamental, y por eso un
+    //  golpe fantasma suena APAGADO y no solo bajo. Un sampler sin capas por
+    //  fuerza lo resuelve asi desde siempre.
+    //
+    //  Sale gratis porque la celula ya estaba: es el mismo polo del antialias.
+    //  Los dos quieren lo mismo -quitar de arriba- asi que manda el coeficiente
+    //  MAS PEQUENO y no hay un filtro nuevo ni una multiplicacion mas por
+    //  muestra. Poner uno aparte habria sido dieciseis polos de mas por lo
+    //  mismo.
+    //
+    //  A fuerza PLENA no se filtra nada. `stepVel` a cero significa "nunca se
+    //  toco" y se lee como 1.0, asi que todo patron escrito antes de esto suena
+    //  bit a bit igual: lo unico que cambia es donde alguien bajo la fuerza a
+    //  proposito o donde la escribio HUMANIZAR, que es justo donde se quiere.
+    //  Se le pasan la tasa y la fuerza en vez de leerlas de los miembros: en
+    //  start(), `velocity` se asigna DESPUES de esta llamada, asi que leer el
+    //  miembro habria usado la fuerza de la nota ANTERIOR - un golpe flojo
+    //  detras de uno fuerte habria salido brillante y al reves. Un orden que
+    //  hay que respetar es un fallo esperando; un argumento no se puede
+    //  equivocar de orden.
+    void updateAntiAlias (double fSys, float vel) noexcept
     {
-        if (delta <= 1.0)  { aaCoef = 1.0f; aaL = aaR = 0.0f; return; }
-        //  fc normalizada = 0.5/delta. Coeficiente de un polo:
-        //  a = 1 - exp(-2*pi*fc). Acotado para que a delta enormes siga
-        //  dejando pasar algo en vez de cerrar del todo.
-        const double fc = 0.5 / delta;
+        //  fc normalizada del antialias: 0.5/delta, y 1 (sin filtrar) mientras
+        //  no se lea mas rapido que la fuente.
+        const double fcAlias = (delta > 1.0) ? 0.5 / delta : 1.0;
+
+        //  Y la del golpe. El exponente 1.5 y no 1: lineal deja el medio camino
+        //  demasiado oscuro -un golpe al 50% no suena a la mitad de brillante,
+        //  suena a otro instrumento- y cuadratico casi no se oye hasta el final
+        //  del recorrido. El suelo son 1200 Hz porque por debajo deja de ser un
+        //  golpe flojo y pasa a ser un golpe tapado.
+        double fcVel = 1.0;
+        if (vel < 0.999f)
+        {
+            const double hz = juce::jmax (1200.0, 18000.0 * std::pow ((double) vel, 1.5));
+            fcVel = juce::jmin (0.5, hz / juce::jmax (8000.0, fSys));
+        }
+
+        const double fc = juce::jmin (fcAlias, fcVel);
+        if (fc >= 1.0) { aaCoef = 1.0f; aaL = aaR = 0.0f; return; }
+
+        //  Coeficiente de un polo: a = 1 - exp(-2*pi*fc). Acotado para que a
+        //  delta enormes siga dejando pasar algo en vez de cerrar del todo.
         aaCoef = (float) juce::jlimit (0.05, 1.0, 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * fc));
         aaL = aaR = 0.0f;
     }
@@ -144,7 +186,8 @@ struct Voice
         //  pasa ya en positivo por la unica via que hay - recalcular con el
         //  valor absoluto. Un pad al reves a +12 st se pliega igual que uno
         //  del derecho.
-        { const double keep = delta; delta = std::abs (delta); updateAntiAlias(); delta = keep; }
+        { const double keep = delta; delta = std::abs (delta);
+          updateAntiAlias (fSys, juce::jlimit (0.10f, 1.0f, vel)); delta = keep; }
         pos      = rev ? (double) (winEnd - 1) : (double) winStart;
 
         //  Los fundidos, en muestras de la FUENTE y no de la salida: se miden
