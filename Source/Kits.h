@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdlib>
 #include <JuceHeader.h>
 #include "SampleBuffer.h"
 #include <array>
@@ -528,11 +529,26 @@ namespace Kits
         //  muestreados y los sintetizados sonarian a volumenes distintos y el
         //  banco lo cazaria como "la sonoridad baila" sin poder decir por que.
         //  Por eso esto entra ARRIBA de la funcion y no al lado de ella.
-        if (auto grabado = desdeRecurso (r.muestra))
-        {
-            normaliza (grabado->buffer.getWritePointer (0), grabado->buffer.getNumSamples());
-            return grabado;
-        }
+        //  ZATI_SIN_MUESTRA obliga a sintetizar aunque haya grabacion.
+        //
+        //  No es un modo de la app: es la unica forma de MEDIR cuanto se parece
+        //  cada receta a la maquina de la que salio. Los parametros de sintesis
+        //  estan escritos en las 31 filas que tienen muestra -son lo que suena
+        //  si el recurso no esta- y nadie los ha comparado nunca con su
+        //  grabacion. Sin este interruptor habria que creerse de oido que "se
+        //  parecen", que es exactamente lo que esta casa no hace.
+        //
+        //  Se lee una vez y se recuerda: render() se llama 64 veces al arrancar
+        //  y getenv en cada una es E/S por sonido para una respuesta que no
+        //  cambia.
+        static const bool sinMuestra = (std::getenv ("ZATI_SIN_MUESTRA") != nullptr);
+
+        if (! sinMuestra)
+            if (auto grabado = desdeRecurso (r.muestra))
+            {
+                normaliza (grabado->buffer.getWritePointer (0), grabado->buffer.getNumSamples());
+                return grabado;
+            }
 
         const int len = juce::jmax (1024, (int) (kRate * juce::jmin (3.0f, r.decay * 5.0f)));
 
