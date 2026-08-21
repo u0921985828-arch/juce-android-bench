@@ -72,6 +72,20 @@ def run(size, lang, sheet, casa=None):
     if casa:
         env["HOME"] = casa
         env["XDG_DATA_HOME"] = casa
+        #  LA CAJA NEGRA SE VACIA ANTES DE CADA CORRIDA.
+        #
+        #  Cada trabajador reutiliza su HOME para sus corridas, y la app dice en
+        #  su renglon de estado si la vez anterior no acabo bien - que es
+        #  exactamente para lo que existe. Pero aqui "la vez anterior" es OTRA
+        #  corrida del banco, asi que un tropiezo del andamio -la pantalla
+        #  virtual cayendose un segundo- aparecia como un hallazgo de rotulo en
+        #  la corrida siguiente: "SQUEEZE ... CAIDA senal 06 en ficha ... needs
+        #  273 has 248". Un banco que informa de su propio andamio ensena a no
+        #  leerlo, que es lo que ya paso con la caja de ruta del navegador.
+        try:
+            os.remove(os.path.join(casa, "Music", "ZATI", "zati-bitacora.txt"))
+        except OSError:
+            pass
     try:
         out = subprocess.run([BIN], env=env, capture_output=True, timeout=180).stdout.decode("utf8", "replace")
     except subprocess.TimeoutExpired:
@@ -253,6 +267,19 @@ def corre_y_juzga(combo, casa):
     size, lang, sheet = combo
     rows = run(size, lang, sheet, casa)
     if rows is None:
+        #  Y SI NO VOLCO NADA, SE PREGUNTA POR LA PANTALLA ANTES DE APUNTARLO.
+        #
+        #  Sin servidor X, JUCE se cae en Component::centreWithSize antes de
+        #  maquetar: la corrida no vuelca, y contada como "una corrida vacia"
+        #  parece un fallo de la app. Ha pasado tres veces en una sola sesion
+        #  -el Xvfb de este contenedor se muere solo- y las tres costaron un
+        #  rato de buscar un fallo que no existia. Se dice quien fue.
+        if subprocess.run(["xdpyinfo", "-display", ":99"],
+                          stdout=subprocess.DEVNULL,
+                          stderr=subprocess.DEVNULL).returncode != 0:
+            return [("PANTALLA", f"{size}/{lang}/{sheet or 'face'}",
+                     "la pantalla virtual :99 no responde - JUCE se cae en "
+                     "centreWithSize y esto NO es un fallo de la app", 0)], None
         return [], None
     return judge(rows, size, lang, sheet), (rows if lang in ("es", "en") else [])
 
