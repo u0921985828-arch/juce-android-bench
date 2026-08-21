@@ -1527,7 +1527,14 @@ MainComponent::MainComponent()
         initSlider (lockSlider, 0.0, 101.0, 1.0, 0.0);
         lockSlider.textFromValueFunction = [] (double v)
         {
-            if (v < 0.5) return juce::String ("OFF");
+            //  T("off") y no el literal "OFF": la tabla tiene la fila -关 en
+            //  chino, مغلق en arabe- y CHOKE ya la usa. Habia DOS grafias de la
+            //  misma palabra, una traducida y otra no, y esta se quedaba en
+            //  ingles en las cuatro compilaciones. No la veia el banco porque
+            //  los deslizadores estan excluidos del volcado a proposito -su
+            //  rotulo es un numero en una caja medida-, y eso es cierto hasta
+            //  que el rotulo es una PALABRA.
+            if (v < 0.5) return T ("off");
             const float hz = AudioEngine::lockToHz ((int) v - 1);
             return hz >= 1000.0f ? Lang::ltr (juce::String (hz / 1000.0f, 1) + "k")
                                  : Lang::ltr (juce::String ((int) hz) + " Hz");
@@ -1568,7 +1575,7 @@ MainComponent::MainComponent()
                 sl.setDoubleClickReturnValue (true, -1.0);   // dos toques = quitar el bloqueo
                 sl.textFromValueFunction = [texto] (double v)
                 {
-                    return v < -0.5 ? juce::String ("OFF") : texto ((int) v);
+                    return v < -0.5 ? T ("off") : texto ((int) v);   // ver lockSlider
                 };
                 sl.updateText();
                 sl.onValueChange = [this, &sl, cual]
@@ -3877,6 +3884,24 @@ void MainComponent::paint (juce::Graphics& g)
 }
 
 // FX sheet: knob labels + the live filter response display.
+//  UN TITULO DE FICHA SE PINTA POR AQUI, y no con un drawText suelto.
+//
+//  Catorce fichas y catorce llamadas parecidas pero no iguales, y en una de
+//  ellas -la mesa- el texto iba sin T(): decia "MIX" en los cuatro idiomas
+//  mientras la tabla tenia la fila MIX->MEZCLA y la pestana que abre la ficha
+//  ya la usaba. Un sitio, un dueno.
+//
+//  Y de paso el titulo queda APUNTADO para el banco. Las seis reglas recorren
+//  el arbol de componentes y un rotulo pintado no es un componente: por eso
+//  aquello llevaba ahi desde el primer dia sin que nada lo viera. Ver
+//  UiAudit::rotulo y Tests/plano.py.
+void MainComponent::pintaTitulo (juce::Graphics& g, juce::Rectangle<int> caja,
+                                 const juce::String& texto, const char* tipo, bool elipsis)
+{
+    UiAudit::rotulo (caja, texto, tipo);
+    g.drawText (texto, caja, Lang::start(), elipsis);
+}
+
 void MainComponent::paintPadSheetContent (juce::Graphics& g)
 {
     if (padSheet.sheetBounds.isEmpty()) return;
@@ -3893,9 +3918,9 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
     //  Ellipsised rather than squeezed: a name long enough to need shrinking
     //  is long enough that shrinking will not save it, and a sentence cut off
     //  mid-letter reads as a bug where "..." reads as a long name.
-    g.drawText (T ("PAD %1", juce::String (sp + 1))
-                + (padName[(size_t) sp].isNotEmpty() ? "  " + dot + "  " + padName[(size_t) sp].toUpperCase() : juce::String()),
-                padTitleRow, Lang::start(), true);
+    pintaTitulo (g, padTitleRow,
+                 T ("PAD %1", juce::String (sp + 1))
+                + (padName[(size_t) sp].isNotEmpty() ? "  " + dot + "  " + padName[(size_t) sp].toUpperCase() : juce::String()), "titulo", true);
 
     {
         //  Group headers, each with a hairline running out to the right edge -
@@ -10832,7 +10857,7 @@ void MainComponent::paintSongSheetContent (juce::Graphics& g)
     if (songSheet.sheetBounds.isEmpty()) return;
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
-    g.drawText (T ("SONG"), songSheet.sheetBounds.reduced (14, 10).removeFromTop (16), Lang::start());
+    pintaTitulo (g, songSheet.sheetBounds.reduced (14, 10).removeFromTop (16), T ("SONG"));
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
@@ -10854,8 +10879,23 @@ void MainComponent::paintMixSheetContent (juce::Graphics& g)
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
-    g.drawText (engine.anySolo() ? juce::String (juce::CharPointer_UTF8 ("MIX  \xc2\xb7  SOLO ACTIVO")) : juce::String ("MIX"),
-                mixSheet.sheetBounds.reduced (14, 12).removeFromTop (16), Lang::start());
+    //  POR T() Y NO A MANO, que era la unica ficha cuyo titulo no se traducia.
+    //
+    //  La tabla tiene las dos filas -MIX vale MEZCLA en espanol, SOLO ACTIVO
+    //  vale SOLO ACTIVE- y la PESTANA que abre esta ficha ya usa T("MIX"): o
+    //  sea que tocabas MEZCLA y aterrizabas en una tarjeta titulada MIX, y en
+    //  chino y en arabe se quedaba en MIX pasara lo que pasara.
+    //
+    //  No lo veia ningun banco: el titulo se PINTA, y las seis reglas de
+    //  expo.py recorren el arbol de COMPONENTES. Un rotulo dibujado no es un
+    //  componente y por eso llevaba aqui desde el principio.
+    const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
+    {
+        const auto caja = mixSheet.sheetBounds.reduced (14, 12).removeFromTop (16);
+        const auto txt = engine.anySolo() ? T ("MIX") + "  " + dot + "  " + T ("SOLO ACTIVO") : T ("MIX");
+        UiAudit::rotulo (caja, txt, "titulo");
+        g.drawText (txt, caja, Lang::start());
+    }
 }
 
 //  The chip and the name belong to the ROW, so they are painted by the panel
@@ -10966,9 +11006,9 @@ void MainComponent::paintXySheetContent (juce::Graphics& g)
         auto row = inner.removeFromTop (16);
         if (xyLatchButton.isVisible() && ! xyLatchButton.getBounds().isEmpty())
             row.setRight (juce::jmin (row.getRight(), xyLatchButton.getX() - Metrics::xs));
-        g.drawText (T ("XY") + "  " + dot + "  " + juce::String (fxDefs[xyFx].name)
-                      + "  " + dot + "  " + (fxOn[(size_t) xyFx] ? T ("SUENA") : T ("EN ESPERA")),
-                    row, Lang::start(), true);
+        pintaTitulo (g, row,
+                 T ("XY") + "  " + dot + "  " + juce::String (fxDefs[xyFx].name)
+                      + "  " + dot + "  " + (fxOn[(size_t) xyFx] ? T ("SUENA") : T ("EN ESPERA")), "titulo", true);
     }
 
     g.setColour (ZatiColours::inkDim);
@@ -11616,7 +11656,7 @@ void MainComponent::paintManualSheetContent (juce::Graphics& g)
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
-    g.drawText (T ("MANUAL"), titleRow, Lang::start(), true);
+    pintaTitulo (g, titleRow, T ("MANUAL"), "titulo", true);
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
@@ -11636,10 +11676,10 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
     titleRow.setRight (juce::jmin (titleRow.getRight(), chopCloseButton.getX() - Metrics::xs));
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
-    g.drawText (T ("AUTO CHOP") + "  " + dot + "  " + T ("PAD %1", juce::String (sp + 1))
+    pintaTitulo (g, titleRow,
+                 T ("AUTO CHOP") + "  " + dot + "  " + T ("PAD %1", juce::String (sp + 1))
                 + (padName[(size_t) sp].isNotEmpty() ? "  " + dot + "  " + padName[(size_t) sp].toUpperCase()
-                                                     : juce::String()),
-                titleRow, Lang::start(), true);
+                                                     : juce::String()), "titulo", true);
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.06f));
@@ -11665,7 +11705,7 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
     inner.removeFromTop (Metrics::md);
     g.setColour (ZatiColours::ink.withAlpha (0.75f));
     g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.16f));
-    g.drawText (T ("COMO"), inner.removeFromTop (14), Lang::start());
+    pintaTitulo (g, inner.removeFromTop (14), T ("COMO"));
     inner.removeFromTop (Metrics::hit + Metrics::md);
 
     g.setColour (ZatiColours::ink.withAlpha (0.75f));
@@ -11745,9 +11785,9 @@ void MainComponent::paintRackSheetContent (juce::Graphics& g)
     const juce::String nm  = padName[(size_t) rackPad];
     auto titleRow = inner.removeFromTop (16);
     titleRow.setRight (juce::jmin (titleRow.getRight(), rackCloseButton.getX() - Metrics::xs));
-    g.drawText (T ("RACK") + "  " + dot + "  " + T ("PAD %1", juce::String (rackPad + 1))
-                + (nm.isNotEmpty() ? "  " + dot + "  " + nm.toUpperCase() : juce::String()),
-                titleRow, Lang::start(), true);
+    pintaTitulo (g, titleRow,
+                 T ("RACK") + "  " + dot + "  " + T ("PAD %1", juce::String (rackPad + 1))
+                + (nm.isNotEmpty() ? "  " + dot + "  " + nm.toUpperCase() : juce::String()), "titulo", true);
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
@@ -11782,7 +11822,7 @@ void MainComponent::paintAudioSheetContent (juce::Graphics& g)
     auto inner = setSheet.cuerpo.getLocalBounds();
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
-    g.drawText (T ("AUDIO"), inner.removeFromTop (16), Lang::start());
+    pintaTitulo (g, inner.removeFromTop (16), T ("AUDIO"));
 
     paintAudioInfo (g, audioInfoArea);
 
@@ -11792,13 +11832,13 @@ void MainComponent::paintAudioSheetContent (juce::Graphics& g)
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.12f));
     if (! bufRowArea.isEmpty())
-        { auto r = bufRowArea;  g.drawText (T ("BUFER"),  Lang::takeStart (r, 44), Lang::start()); }
+        { auto r = bufRowArea;  pintaTitulo (g,  Lang::takeStart (r, 44), T ("BUFER"), "seccion"); }
     if (! rateRowArea.isEmpty())
-        { auto r = rateRowArea; g.drawText (T ("RELOJ"),  Lang::takeStart (r, 44), Lang::start()); }
+        { auto r = rateRowArea; pintaTitulo (g,  Lang::takeStart (r, 44), T ("RELOJ"), "seccion"); }
     if (! langRowArea.isEmpty())
-        { auto r = langRowArea; g.drawText (T ("IDIOMA"), Lang::takeStart (r, 44), Lang::start()); }
+        { auto r = langRowArea; pintaTitulo (g, Lang::takeStart (r, 44), T ("IDIOMA"), "seccion"); }
     if (! skinRowArea.isEmpty())
-        { auto r = skinRowArea; g.drawText (T ("CARCASA"), Lang::takeStart (r, 44), Lang::start()); }
+        { auto r = skinRowArea; pintaTitulo (g, Lang::takeStart (r, 44), T ("CARCASA"), "seccion"); }
 }
 
 //  THE GESTURES PAGE.
@@ -11819,7 +11859,7 @@ void MainComponent::paintGesturesPage (juce::Graphics& g, juce::Rectangle<int> a
     //  a card that skips it reads as a different card.
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
-    g.drawText (T ("GESTOS"), setSheet.sheetBounds.reduced (14, 12).removeFromTop (16), Lang::start());
+    pintaTitulo (g, setSheet.sheetBounds.reduced (14, 12).removeFromTop (16), T ("GESTOS"));
 
     struct Row { const char* how; const char* what; };
     const Row rows[kNumGestures] =
@@ -11876,7 +11916,7 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
     auto inner = setSheet.cuerpo.getLocalBounds();
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
-    g.drawText (T ("PROYECTOS"), inner.removeFromTop (16), Lang::start());
+    pintaTitulo (g, inner.removeFromTop (16), T ("PROYECTOS"));
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
@@ -11906,14 +11946,14 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
         auto r = projNameRowArea;
         g.setColour (ZatiColours::inkDim);
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
-        g.drawText (T ("NOMBRE"), Lang::takeStart (r, 60), Lang::start());
+        pintaTitulo (g, Lang::takeStart (r, 60), T ("NOMBRE"));
     }
     if (! projPathRowArea.isEmpty())
     {
         auto r = projPathRowArea;
         g.setColour (ZatiColours::inkDim.withAlpha (0.75f));
         g.setFont (ZatiColours::monoFont (Metrics::fFine, false));
-        g.drawText (T ("CARPETA"), Lang::takeStart (r, 60), Lang::start());
+        pintaTitulo (g, Lang::takeStart (r, 60), T ("CARPETA"));
         g.drawFittedText (Lang::ltr (ProjectStore::root().getFullPathName()),
                           r, Lang::start(), 1, 0.7f);
     }
@@ -12100,7 +12140,7 @@ void MainComponent::paintExportSheetContent (juce::Graphics& g)
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
-    g.drawText (T ("EXPORTAR"), inner.removeFromTop (18), Lang::start());
+    pintaTitulo (g, inner.removeFromTop (18), T ("EXPORTAR"));
     inner.removeFromTop (10);
 
     // What is going to be rendered, and how long it will be. Stated before

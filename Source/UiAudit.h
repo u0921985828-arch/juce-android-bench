@@ -73,6 +73,30 @@ namespace UiAudit
     //
     //  Se vuelca el rectangulo y no un si/no: un objetivo de 3x3 px tampoco
     //  señala nada, y con el numero delante se ve venir.
+    //  LOS ROTULOS QUE SE PINTAN, que hasta ahora eran invisibles para el banco.
+    //
+    //  Las seis reglas recorren el arbol de COMPONENTES, y el titulo de una
+    //  ficha, el nombre de una seccion y las palabras grabadas de la cara no
+    //  son componentes: se dibujan. Por eso la mesa llevaba desde el primer dia
+    //  titulada "MIX" a mano -sin pasar por T(), con la fila MIX->MEZCLA en la
+    //  tabla y la pestana que la abre usandola- y no lo caz nadie.
+    //
+    //  Se apuntan aqui con su rectangulo y su TIPO, que es lo que permite
+    //  levantar el plano de una pantalla: titulo, seccion, subseccion. Sin el
+    //  tipo serian una lista de palabras sueltas y el orden no se podria juzgar.
+    struct Rotulo { int x, y, w, h; juce::String texto, tipo; };
+    inline std::vector<Rotulo> rotulos;
+
+    //  No hace nada fuera del banco: una app que no se esta midiendo no tiene
+    //  por que llevar la cuenta de lo que dibuja.
+    inline bool midiendo = false;
+
+    inline void rotulo (juce::Rectangle<int> r, const juce::String& t, const char* tipo)
+    {
+        if (! midiendo || t.isEmpty()) return;
+        rotulos.push_back ({ r.getX(), r.getY(), r.getWidth(), r.getHeight(), t, tipo });
+    }
+
     inline int tourPaso = -1;
     inline int tourFocoW = 0, tourFocoH = 0;
 
@@ -412,11 +436,36 @@ namespace UiAudit
         }
     }
 
+    //  UNA PASADA DE PINTADO ANTES DE VOLCAR, o los rotulos no existen.
+    //
+    //  En modo banco la app maqueta y se va: nadie pinta, asi que la lista de
+    //  UiAudit::rotulo se queda vacia y el plano saldria sin un solo titulo -
+    //  que es exactamente lo que hay que auditar. Se pinta una vez sobre una
+    //  imagen que se tira, igual que hace paintCost, y con `midiendo` puesto
+    //  solo durante esa pasada: fuera del banco esto no corre nunca.
+    inline void recogeRotulos (juce::Component& root)
+    {
+        const auto b = root.getLocalBounds();
+        if (b.getWidth() < 1 || b.getHeight() < 1) return;
+        rotulos.clear();
+        midiendo = true;
+        juce::Image img (juce::Image::ARGB, b.getWidth(), b.getHeight(), true);
+        { juce::Graphics g (img); root.paintEntireComponent (g, true); }
+        midiendo = false;
+    }
+
     inline void dump (juce::Component& root)
     {
+        recogeRotulos (root);
         std::cout << "{\"root\":1,\"w\":" << root.getWidth() << ",\"h\":" << root.getHeight()
                   << ",\"lang\":\"" << env ("ZATI_LANG") << "\""
                   << ",\"open\":\"" << env ("ZATI_OPEN") << "\"}" << std::endl;
+
+        for (const auto& r : rotulos)
+            std::cout << "{\"rotulo\":\"" << r.texto.replace ("\"", "'").toRawUTF8() << "\""
+                      << ",\"tipo\":\"" << r.tipo << "\""
+                      << ",\"x\":" << r.x << ",\"y\":" << r.y
+                      << ",\"w\":" << r.w << ",\"h\":" << r.h << "}" << std::endl;
 
         if (tourPaso >= 0)
             std::cout << "{\"tour\":" << tourPaso

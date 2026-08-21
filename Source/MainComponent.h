@@ -459,6 +459,8 @@ private:
     void closeAllSheets();
     void paintAudioSheetContent (juce::Graphics& g);
     void paintSeqSheetContent (juce::Graphics& g);
+    void pintaTitulo (juce::Graphics& g, juce::Rectangle<int> caja, const juce::String& texto,
+                      const char* tipo = "titulo", bool elipsis = false);
     void paintPadSheetContent (juce::Graphics& g);
     void paintBrowseSheetContent (juce::Graphics& g);
     void paintProjSheetContent (juce::Graphics& g);
