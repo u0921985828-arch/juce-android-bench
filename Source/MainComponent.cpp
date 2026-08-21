@@ -4571,12 +4571,27 @@ void MainComponent::resized()
         //  taking two. Thirty pixels back, and the row that gets them is the
         //  effects row, which was coming out 22 tall - a key you PLAY with,
         //  squeezed so a menu could keep its own line.
+        //  Y ESTE PRESUPUESTO SE HABIA QUEDADO VIEJO POR LOS DOS LADOS.
+        //
+        //  Contaba un Metrics::xs entre las pestanas y el transporte que la
+        //  maqueta ya NO coloca -se quito cuando la tapa paso a pintarse tres
+        //  cuartos, porque cada fila trae cinco px vacios por lado-, asi que
+        //  reservaba cuatro pixeles que nadie usa. La misma regla escrita dos
+        //  veces con una copia sin actualizar.
+        //
+        //  Y los dos kAir de los extremos dan a cosas que NO son tapa -el
+        //  cristal arriba, la costura de CONTROL abajo-, asi que ahi el hueco
+        //  que se VE es el reservado MAS los cinco de la tapa. Se descuentan,
+        //  que es lo que iguala el ritmo: quince, diez y quince pasan a diez,
+        //  diez y diez.
         auto belowScreenCon = [this] (int mh)
         {
-            return ZatiLookAndFeel::kAir
+            const int tapa = ZatiLookAndFeel::aireTapaVertical (ZatiLookAndFeel::kTransport);
+            const int arriba = wideFace ? tapa : ZatiLookAndFeel::aireTapaVertical (mh);
+            return juce::jmax (0, ZatiLookAndFeel::kAir - arriba)
                  + (wideFace ? ZatiLookAndFeel::kTransport
-                             : mh + Metrics::xs + ZatiLookAndFeel::kTransport)
-                 + ZatiLookAndFeel::kAir;
+                             : mh + ZatiLookAndFeel::kTransport)
+                 + juce::jmax (0, ZatiLookAndFeel::kAir - tapa);
         };
         int belowScreen = belowScreenCon (moduleH);
         const int bottomStrip = ZatiLookAndFeel::kStatus
@@ -4763,7 +4778,15 @@ void MainComponent::resized()
     busyBar.setBounds (busyArea);
     if (busyJobs > 0) busyBar.toFront (false);
     cristal.setBounds (screenBezel);
-    area.removeFromTop (ZatiLookAndFeel::kAir + layoutAir);   // the bezel is drawn 5 px proud
+    //  El bisel se dibuja 5 px sobresalido, y la fila que viene debajo deja su
+    //  propio hueco: la tapa se pinta tres cuartos de alta y centrada. Se
+    //  descuenta ese hueco o la separacion que se VE es la reservada mas cinco,
+    //  que es lo que hacia que del cristal a las pestanas hubiera quince y de
+    //  las pestanas al transporte diez. Ver ZatiLookAndFeel::aireTapaVertical.
+    area.removeFromTop (juce::jmax (0, ZatiLookAndFeel::kAir
+                                         - ZatiLookAndFeel::aireTapaVertical (
+                                               wideFace ? ZatiLookAndFeel::kTransport : moduleH))
+                        + layoutAir);
 
     //  Six modules and three transport keys will not fit across a phone in one
     //  row: LOAD came out as "LO...". They split again, but the module bar
@@ -4811,8 +4834,17 @@ void MainComponent::resized()
         playButton.setBounds (row.reduced (Metrics::aireTapa, 0));
     }
     }
-    ctrlSeamTop = area.getY();
-    area.removeFromTop (ZatiLookAndFeel::kAir + layoutAir + kSeamLabelH);   // CONTROL rides here
+    //  Y ESTA COSTURA EMPIEZA DONDE ACABA LA TAPA, no donde acaba su fila.
+    //
+    //  El transporte deja cinco px vacios por debajo -la tapa se pinta tres
+    //  cuartos-, asi que reservar kAir entero aqui daba quince de separacion
+    //  vista contra los diez de arriba. engraveIn centra la palabra en la
+    //  costura, o sea que ese desajuste se llevaba tambien la mitad del aire
+    //  que queda sobre los mandos.
+    ctrlSeamTop = area.getY() - ZatiLookAndFeel::aireTapaVertical (ZatiLookAndFeel::kTransport);
+    area.removeFromTop (juce::jmax (0, ZatiLookAndFeel::kAir
+                                         - ZatiLookAndFeel::aireTapaVertical (ZatiLookAndFeel::kTransport))
+                        + layoutAir + kSeamLabelH);   // CONTROL rides here
 
     // Status pinned to the bottom; DESHACER sits on its right when armed, so
     // an undoable action announces itself where the result was reported.
@@ -4846,7 +4878,27 @@ void MainComponent::resized()
             mk[i]->setBounds (cell.reduced (10, 0));
         }
         fxSeamTop = area.getY();
-        area.removeFromTop (ZatiLookAndFeel::kAir + Metrics::sm + layoutAir + kSeamLabelH);
+        //  LA MISMA COSTURA QUE CONTROL, sin el Metrics::sm de mas.
+        //
+        //  Las tres bandas grabadas de la cara se reservaban con tres formulas
+        //  distintas y esta llevaba ocho pixeles que las otras no. engraveIn
+        //  centra la palabra en su costura, asi que ese ocho salia repartido en
+        //  cuatro por lado: medido en 412x915, CONTROL quedaba con 13 px de
+        //  aire alrededor y EFECTOS con 18, y en 360x640 con 10 y 15. Es poco
+        //  de mirar y mucho de leer - una cara con tres ritmos distintos se lee
+        //  como tres maquetas pegadas.
+        //
+        //  Igualadas: 13/14 contra 14/15 en 412x915 y 10/10 contra 11/11 en
+        //  360x640, que es el redondeo de layoutAir y no una diferencia.
+        //
+        //  PADS se queda mas alta a proposito y no es una excepcion olvidada:
+        //  su costura ALOJA los chips A B C D de 40 px, y la palabra va
+        //  centrada con ellos porque son una sola fila. Ahi el aire grande es
+        //  la consecuencia de un control, no un descuido de maquetado.
+        //
+        //  Los ocho pixeles no se pierden: el sobrante de la cara lo reparte
+        //  layoutAir entre las costuras, y ese si es el mismo para las tres.
+        area.removeFromTop (ZatiLookAndFeel::kAir + layoutAir + kSeamLabelH);
         fxRowArea = area.removeFromTop (ZatiLookAndFeel::kFxRow);
         {
             auto row = fxRowArea;

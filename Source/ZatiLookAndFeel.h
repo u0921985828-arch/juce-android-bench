@@ -905,6 +905,29 @@ public:
     static constexpr float kCapFill = 0.75f;
     static constexpr int   kCapMinH = 26;
 
+    //  LO QUE LA TAPA DEJA VACIO POR LADO, que la maqueta tiene que descontar.
+    //
+    //  Desde que la tapa se pinta tres cuartos de alta y centrada, una fila de
+    //  40 px se VE de 30: hay cinco vacios arriba y cinco abajo. La maqueta
+    //  sigue reservando los cuarenta, asi que cada hueco entre una fila y lo
+    //  que tenga al lado salia cinco pixeles mas grande de lo escrito - y solo
+    //  en un sitio se compenso, entre las dos filas de tapas de la cara.
+    //
+    //  El resultado era un ritmo distinto en cada borde: medido en 412x915, del
+    //  cristal a las pestanas 15 px vistos, de las pestanas al transporte 10, y
+    //  del transporte a CONTROL otros 15. Las dos filas de tapas parecian
+    //  pegadas y todo lo demas suelto, que fue la queja.
+    //
+    //  Se descuenta DONDE SE COLOCA y no en quien pide el alto: el que reserva
+    //  sabe cuanta fila quiere, y solo aqui se sabe cuanto de esa fila se
+    //  pinta. Por debajo de kCapMinH la tapa se pinta entera y esto vale cero,
+    //  que es lo correcto y no un caso especial.
+    static int aireTapaVertical (int altoFila) noexcept
+    {
+        const float pintada = juce::jmax ((float) kCapMinH, (float) altoFila * kCapFill);
+        return juce::jmax (0, (int) ((altoFila - pintada) * 0.5f));
+    }
+
     static juce::Rectangle<float> capaDe (juce::Rectangle<float> full)
     {
         const float alto = juce::jmax ((float) kCapMinH, full.getHeight() * kCapFill);
