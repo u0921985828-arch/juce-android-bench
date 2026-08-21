@@ -73,11 +73,13 @@ public:
               juce::String baseName,
               bool wantStems,
               double sr,
-              bool comprimido = false)
+              bool comprimido = false,
+              juce::String quien = {})
         : juce::Thread ("zati-export"),
           live (liveEngine), pads (std::move (samples)), padNames (std::move (names)),
           dir (std::move (destDir)), base (std::move (baseName)),
-          stems (wantStems), sampleRate (sr > 0.0 ? sr : 44100.0), ogg (comprimido)
+          stems (wantStems), sampleRate (sr > 0.0 ? sr : 44100.0), ogg (comprimido),
+          artista (std::move (quien))
     {
         //  Dos: la que mide el pico y la que escribe el master. Contarla es lo
         //  honesto - la barra la recorre igual que las demas.
@@ -236,7 +238,8 @@ private:
         else     fmt.reset (new juce::WavAudioFormat());
 
         std::unique_ptr<juce::AudioFormatWriter> writer (
-            fmt->createWriterFor (stream.get(), sampleRate, 2, ogg ? 16 : 24, {}, ogg ? 5 : 0));
+            fmt->createWriterFor (stream.get(), sampleRate, 2, ogg ? 16 : 24,
+                                  metadatos (soloPad), ogg ? 5 : 0));
         if (writer == nullptr)
             return false;
         stream.release();   // the writer owns it now
@@ -352,6 +355,59 @@ private:
         return true;
     }
 
+    //  LO QUE SALE DEL TELEFONO LLEVABA SU NOMBRE Y NADA MAS.
+    //
+    //  El diccionario de metadatos iba VACIO -`{}`- asi que el rebote salia con
+    //  la cabecera de formato y punto: un reproductor lo enseñaba por el nombre
+    //  del fichero, y un rebote por pistas eran dieciseis lineas sin titulo ni
+    //  orden. Es la unica funcion de la app cuyo resultado sale de aqui, o sea
+    //  justo la que mas falta le hacia decir de donde viene.
+    //
+    //  Y LAS CLAVES NO SON LAS MISMAS EN LOS DOS FORMATOS, que es donde esto se
+    //  hace mal: el WAV las guarda en un trozo INFO -`riffInfo*`- y el OGG en
+    //  comentarios Vorbis -`id3*`, que JUCE traduce a TITLE/ARTIST/ALBUM-.
+    //  Escribir un juego solo deja al otro formato mudo SIN QUEJARSE, porque
+    //  `addMetadata` ignora en silencio la clave que no reconoce. Por eso el
+    //  banco lee los dos ficheros DE VUELTA en vez de fiarse de que se llamo al
+    //  setter.
+    //
+    //  El titulo de una pista es el nombre del PAD y no el del fichero: el
+    //  fichero lleva el nombre saneado -sin espacios ni acentos, porque es una
+    //  ruta- y el metadato no tiene esa limitacion. Y el numero de pista va
+    //  puesto, o dieciseis pistas vuelven barajadas por orden alfabetico, que
+    //  es el mismo fallo que las dos cifras de GUARDAR KIT.
+    juce::StringPairArray metadatos (int soloPad) const
+    {
+        const bool maestro = (soloPad < 0);
+        const juce::String titulo = maestro
+            ? base
+            : (padNames[(size_t) soloPad].isNotEmpty() ? padNames[(size_t) soloPad]
+                                                       : ("pad " + juce::String (soloPad + 1)));
+
+        juce::StringPairArray m;
+        if (ogg)
+        {
+            m.set (juce::OggVorbisAudioFormat::id3title,  titulo);
+            m.set (juce::OggVorbisAudioFormat::id3album,  base);
+            m.set (juce::OggVorbisAudioFormat::encoderName, "ZATI Sampler");
+            if (artista.isNotEmpty())
+                m.set (juce::OggVorbisAudioFormat::id3artist, artista);
+            if (! maestro)
+                m.set (juce::OggVorbisAudioFormat::id3trackNumber, juce::String (soloPad + 1));
+        }
+        else
+        {
+            m.set (juce::WavAudioFormat::riffInfoTitle,       titulo);
+            m.set (juce::WavAudioFormat::riffInfoProductName, base);
+            m.set (juce::WavAudioFormat::riffInfoSoftware,    "ZATI Sampler");
+            if (artista.isNotEmpty())
+                m.set (juce::WavAudioFormat::riffInfoArtist, artista);
+            if (! maestro)
+                m.set (juce::WavAudioFormat::riffInfoTrackNo, juce::String (soloPad + 1));
+        }
+        return m;
+    }
+
     juce::String extension() const { return ogg ? ".ogg" : ".wav"; }
 
     juce::File uniqueFile (const juce::String& name) const
@@ -374,6 +430,11 @@ private:
     PadNames     padNames;
     juce::File   dir;
     juce::String base;
+    //  De la PERSONA y no del proyecto, como el idioma, la carcasa y el master:
+    //  quien firma es el mismo en todos sus temas. Vacio no se escribe - un
+    //  ARTIST en blanco es peor que ninguno, porque un reproductor lo enseña
+    //  como un artista que se llama "".
+    juce::String artista;
     bool         stems;
     double       sampleRate;
     //  OGG VORBIS Y NO MP3, y no por gusto: el codificador de MP3 es LAME, que

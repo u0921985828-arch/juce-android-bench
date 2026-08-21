@@ -1182,6 +1182,7 @@ private:
     //  una decision de la persona y del momento, no de la cancion - guardarlo
     //  en el proyecto significa que abrirlo en otro sitio te trae el volumen
     //  con el que lo dejaste una noche.
+    static juce::String artistaPref();
     static juce::File masterPrefFile();
     void  loadMasterPref();
     void  saveMasterPref() const;

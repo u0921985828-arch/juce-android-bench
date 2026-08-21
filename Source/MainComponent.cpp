@@ -11113,6 +11113,24 @@ void MainComponent::paintBusy (juce::Graphics& g)
 //  EL NIVEL DEL MASTER, en el directorio interno y por la misma razon que la
 //  carcasa: hay que poder leerlo antes de que ProjectStore haya decidido donde
 //  esta la biblioteca.
+//  QUIEN FIRMA, y va donde el master, el idioma y la carcasa: es de la PERSONA
+//  y no del proyecto. Guardarlo en el proyecto significaria que abrir un tema
+//  de otro te pone su nombre en lo que exportes tu.
+//
+//  Se lee del fichero cada vez que se exporta en vez de guardarse en un miembro
+//  a la vuelta: son dos lecturas de disco al ano, fuera del hilo de audio, y a
+//  cambio no hay una copia que pueda quedarse vieja. Es la misma razon por la
+//  que un token de carcasa se vuelve a leer y no se copia.
+juce::String MainComponent::artistaPref()
+{
+    const auto f = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                       .getChildFile ("zati-artista.txt");
+    //  Acotado: un fichero corrupto no puede meter una linea entera en una
+    //  cabecera INFO, y los saltos de linea rompen un comentario Vorbis.
+    return f.existsAsFile() ? f.loadFileAsString().removeCharacters ("\r\n").trim().substring (0, 64)
+                            : juce::String();
+}
+
 juce::File MainComponent::masterPrefFile()
 {
     return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
@@ -11844,7 +11862,8 @@ void MainComponent::startExport (bool stems)
     beginBusy (T ("Exportando"));
     exportJob = std::make_unique<Exporter> (engine, uiSample, padName,
                                             ProjectStore::exports().getChildFile (base),
-                                            base, stems, deviceSampleRate, exportOgg);
+                                            base, stems, deviceSampleRate, exportOgg,
+                                            artistaPref());
 
     exportMasterButton.setVisible (false);
     exportStemsButton.setVisible (false);

@@ -147,3 +147,24 @@ no es lo mismo.
 habilidad en `~/.claude/skills`, y este contenedor se recicla. Todas estan
 ademas en `.claude/skills/`, que viaja con el repositorio. Si alguna se
 actualiza arriba, hay que volver a copiarla.
+
+## Y dos de `curiositech/some_claude_skills` (MIT, 185 habilidades)
+
+Pedidas por su nombre, como las de arriba, y con lo que cubren y lo que NO
+escrito al lado - porque las dos suenan a esta app mas de lo que son:
+
+- `voice-audio-engineer`. Sabe de **LUFS**, de-essing y mezcla de dialogo, y lo
+  de LUFS toca de cerca: la fabrica de aqui se iguala con la curva K de
+  BS.1770, que es la misma norma. El resto -TTS, clonado de voz, podcast- pasa
+  por herramientas MCP de ElevenLabs que esta sesion no tiene, asi que ahi no
+  hace nada por si sola.
+- `2000s-visualization-expert`. Milkdrop, Butterchurn, GLSL y la
+  `AnalyserNode` de la Web Audio API. Esta app tiene un espectro en su cristal
+  y lo pinta en C++ con JUCE: lo que esa habilidad sabe de un analizador FFT
+  vale, y todo lo que dice de WebGL y del navegador no aplica.
+
+Y ese repositorio tiene ademas `sound-engineer` -HRTF, ambisonica, Wwise/FMOD,
+sonido de interfaz- que no se pidio y no se instala: audio de juego y espacial
+no es lo que hace un sampler de pads, y las otras dos ya cubren lo que si
+tocaba. Queda anotada por si algun dia hacen falta los sonidos de la propia
+interfaz.

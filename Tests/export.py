@@ -29,6 +29,47 @@ import json, os, subprocess, sys, tempfile, shutil
 ROOT = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
 BIN  = os.path.join (ROOT, "build", "Zati_artefacts", "Release", "Zati")
 
+#  LOS METADATOS SE LEEN DEL FICHERO, no del que dice haberlos escrito.
+#
+#  El diccionario iba vacio y el rebote salia sin titulo ni artista. Al ponerlo
+#  hay dos formas de equivocarse que un `assert` sobre el codigo no ve: las
+#  claves NO son las mismas en los dos formatos -el WAV usa un trozo INFO y el
+#  OGG comentarios Vorbis- y JUCE ignora EN SILENCIO la clave que no reconoce.
+#  O sea que escribir el juego del WAV en el OGG compila, corre, no se queja y
+#  deja el fichero mudo. Por eso esto abre los bytes.
+def infoWav (ruta):
+    """El trozo LIST INFO de un RIFF: {'INAM': 'titulo', 'IART': ...}."""
+    d = {}
+    b = open (ruta, "rb").read (1 << 20)
+    if b[:4] != b"RIFF": return d
+    i = 12
+    while i + 8 <= len (b):
+        cid, n = b[i:i+4], int.from_bytes (b[i+4:i+8], "little")
+        cuerpo = b[i+8 : i+8+n]
+        if cid == b"LIST" and cuerpo[:4] == b"INFO":
+            j = 4
+            while j + 8 <= len (cuerpo):
+                k, m = cuerpo[j:j+4], int.from_bytes (cuerpo[j+4:j+8], "little")
+                d[k.decode ("ascii", "replace")] = cuerpo[j+8 : j+8+m].split (b"\0")[0].decode ("utf8", "replace")
+                j += 8 + m + (m & 1)
+        i += 8 + n + (n & 1)
+    return d
+
+
+def infoOgg (ruta):
+    """Los comentarios Vorbis, que van en texto plano dentro de la cabecera."""
+    b = open (ruta, "rb").read (1 << 16)
+    d = {}
+    for clave in (b"TITLE=", b"ARTIST=", b"ALBUM=", b"ENCODER=", b"TRACKNUMBER="):
+        k = b.find (clave)
+        if k < 0: continue
+        v, i = b"", k + len (clave)
+        while i < len (b) and 32 <= b[i] < 127 or (i < len (b) and b[i] > 127):
+            v += b[i:i+1]; i += 1
+        d[clave[:-1].decode()] = v.decode ("utf8", "replace")
+    return d
+
+
 def corre():
     casa = tempfile.mkdtemp (prefix="zati-export-")
     env = dict (os.environ, ZATI_AUDIT="1", ZATI_EXPORT="1",
@@ -38,9 +79,19 @@ def corre():
         out = subprocess.run ([BIN], env=env, capture_output=True,
                               timeout=900).stdout.decode ("utf8", "replace")
     except subprocess.TimeoutExpired:
-        return None
-    finally:
         shutil.rmtree (casa, ignore_errors=True)
+        return None, {}
+    #  Y SE LEEN ANTES DE BORRAR LA CASA. La version anterior tenia el rmtree en
+    #  un `finally`, asi que los ficheros ya no existian cuando alguien quisiera
+    #  mirarlos - por eso esta prueba solo sabia contar bytes.
+    marcas = {}
+    for raiz, _, ficheros in os.walk (casa):
+        for f in sorted (ficheros):
+            r = os.path.join (raiz, f)
+            if   f.endswith (".wav"): marcas.setdefault ("wav", []).append ((f, infoWav (r)))
+            elif f.endswith (".ogg"): marcas.setdefault ("ogg", []).append ((f, infoOgg (r)))
+    shutil.rmtree (casa, ignore_errors=True)
+
     filas = {}
     for l in out.splitlines():
         l = l.strip()
@@ -48,13 +99,13 @@ def corre():
         try: d = json.loads (l)
         except Exception: continue
         if "export" in d: filas[d["export"]] = d
-    return filas
+    return filas, marcas
 
 def main():
     if not os.path.exists (BIN):
         sys.exit ("no hay binario: compila primero (cmake --build build)")
 
-    filas = corre()
+    filas, marcas = corre()
     if filas is None:
         sys.exit ("la app no contesto")
 
@@ -80,6 +131,56 @@ def main():
     razon = (m.get ("bytes", 1) / max (1, o.get ("bytes", 1))) if o else 0
     juzga ("ogg", o.get ("ok") == 1 and o.get ("ficheros") == 1 and razon >= 4.0,
            "%s bytes, %.0f veces mas pequeno que el WAV" % (o.get ("bytes", "?"), razon))
+
+    #  LOS METADATOS, LEIDOS DEL FICHERO.
+    #
+    #  El master pesa 130 bytes mas que antes de esto, y ese numero es una
+    #  PISTA y no una prueba: 130 bytes de relleno tambien pesan 130. Lo que
+    #  vale es que las etiquetas esten dentro y digan lo que tienen que decir.
+    #
+    #  Se juzgan los DOS formatos por separado a proposito. Las claves no son
+    #  las mismas -el WAV usa un trozo INFO con INAM/IPRD/ISFT y el OGG
+    #  comentarios Vorbis con TITLE/ALBUM/ENCODER- y JUCE ignora en silencio la
+    #  clave que no reconoce, asi que escribir el juego del WAV en el OGG
+    #  compila, corre, no se queja y deja el fichero mudo. Un solo formato
+    #  comprobado habria dejado pasar exactamente ese fallo.
+    wavs = marcas.get ("wav", [])
+    oggs = marcas.get ("ogg", [])
+
+    #  El master es el WAV sin numero de pista; una pista lo lleva. Se busca uno
+    #  de cada, que es lo que separa "escribe metadatos" de "escribe los mismos
+    #  metadatos dieciseis veces".
+    #  IPRT y no ITRK, que fue el primer intento y sacaba "meta pista MAL" con
+    #  el codigo bien: JUCE llama a la clave riffInfoTrackNo y el codigo de
+    #  cuatro letras que escribe es IPRT. Primero se duda de la prueba.
+    maestro = next ((d for f, d in wavs if d and "IPRT" not in d), None)
+    pista   = next ((d for f, d in wavs if d and "IPRT" in d), None)
+
+    juzga ("meta wav",
+           bool (maestro) and maestro.get ("INAM", "") != ""
+             and maestro.get ("ISFT", "") == "ZATI Sampler",
+           "titulo \"%s\"  album \"%s\"  software \"%s\""
+             % (maestro.get ("INAM", "-") if maestro else "-",
+                maestro.get ("IPRD", "-") if maestro else "-",
+                maestro.get ("ISFT", "-") if maestro else "-"))
+
+    #  Y el titulo de una pista es el nombre del PAD, no el del fichero: el
+    #  fichero va saneado -sin espacios ni acentos, porque es una ruta- y el
+    #  metadato no tiene esa limitacion. Si los dos coincidieran siempre, seria
+    #  que el titulo se saco del nombre del fichero.
+    juzga ("meta pista",
+           bool (pista) and pista.get ("INAM", "") != "" and pista.get ("IPRT", "") != "",
+           "titulo \"%s\"  pista %s de %d WAV"
+             % (pista.get ("INAM", "-") if pista else "-",
+                pista.get ("IPRT", "-") if pista else "-", len (wavs)))
+
+    ogg1 = next ((d for f, d in oggs if d), None)
+    juzga ("meta ogg",
+           bool (ogg1) and ogg1.get ("TITLE", "") != "" and ogg1.get ("ENCODER", "") == "ZATI Sampler",
+           "titulo \"%s\"  album \"%s\"  encoder \"%s\""
+             % (ogg1.get ("TITLE", "-") if ogg1 else "-",
+                ogg1.get ("ALBUM", "-") if ogg1 else "-",
+                ogg1.get ("ENCODER", "-") if ogg1 else "-"))
 
     d = filas.get ("destino", {})
     juzga ("destino",
