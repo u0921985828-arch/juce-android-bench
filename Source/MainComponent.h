@@ -1569,6 +1569,17 @@ private:
     void macroMoved (int idx);
 
     // Skin cycler: four chassis TONES (TINTA/GRAFITO/ACERO/PLOMO), no hues.
+    //  El juego de iconos de las tapas, en una tabla. Ver ponIconos().
+    void ponIconos();
+
+    //  EL CUERPO DE LA MAQUINA, HORNEADO. Degradado y grano en una imagen
+    //  opaca que se rehace al cambiar de tamano o de carcasa; pintar el fondo
+    //  pasa a ser una copia. Ver MainComponent::paint.
+    void reconstruyeFondo();
+    juce::Image fondoCache;
+    int fondoSkin = -1;
+    //  La corrida de control del banco: el fondo de antes, sin textura.
+    const bool sinGrano = juce::SystemStats::getEnvironmentVariable ("ZATI_SIN_GRANO", {}).isNotEmpty();
     void applySkin();
 
     //  Two of the transport keys carry a second gesture (see the GESTOS page):

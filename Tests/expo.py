@@ -314,8 +314,16 @@ def corre_y_juzga(combo, casa):
     size, lang, sheet = combo
     rows = run(size, lang, sheet, casa)
     if rows is None:
-        return [], None
-    return judge(rows, size, lang, sheet), (rows if lang in ("es", "en") else [])
+        return [], None, (0, 0)
+    #  CUANTAS TAPAS LLEVAN DIBUJO Y CUANTAS LO ENSENAN.
+    #
+    #  El icono es el adorno y la palabra la funcion, asi que donde no caben
+    #  los dos sale la palabra (ver ZatiLookAndFeel::reparteTapa). Eso esta
+    #  bien y es invisible: sin contarlo, "los iconos no salen en el movil
+    #  estrecho" y "los iconos no salen" son la misma corrida en verde.
+    puestos = sum (1 for r in rows if "icono" in r)
+    pintados = sum (1 for r in rows if r.get ("icono"))
+    return judge(rows, size, lang, sheet), (rows if lang in ("es", "en") else []), (puestos, pintados)
 
 
 def paginas():
@@ -352,6 +360,7 @@ def main():
     only = sys.argv[1:]
     allf = []
     pairs = collections.defaultdict(dict)
+    iconos = collections.defaultdict(lambda: [0, 0])
     runs = fails = 0
 
     combos = [(size, lang, sheet)
@@ -379,7 +388,9 @@ def main():
                 futuros[pool.submit(corre_y_juzga, c, casa)] = c
             for fut in concurrent.futures.as_completed(futuros):
                 size, lang, sheet = futuros[fut]
-                findings, rows = fut.result()
+                findings, rows, ico = fut.result()
+                iconos[size][0] += ico[0]
+                iconos[size][1] += ico[1]
                 runs += 1
                 if rows is None:
                     fails += 1
@@ -417,6 +428,16 @@ def main():
     for kind, tag, msg, sev in allf: grouped[(kind, msg)].append(tag)
     for (kind, msg), tags in sorted(grouped.items(), key=lambda kv: (kv[0][0], -len(kv[1]))):
         print(f"{kind:9} x{len(tags):<3} {msg}   [{tags[0]}{' +'+str(len(tags)-1) if len(tags)>1 else ''}]")
+
+    #  Los iconos de las tapas, por pantalla. No es una regla -que un icono no
+    #  quepa no es un fallo, es la escalera de siempre- pero sin el numero no
+    #  hay forma de distinguir "aqui no caben" de "no hay iconos".
+    print()
+    print("iconos dibujados por pantalla (de las tapas que llevan uno asignado):")
+    for size, _ in SIZES:
+        p, d = iconos[size]
+        if p:
+            print("  %-9s %4d de %4d   %3.0f%%" % (size, d, p, 100.0 * d / p))
 
     #  Y el residuo al cambiar de pagina, que ninguna de las 476 corridas de
     #  arriba puede ver porque cada una abre una ficha y se va.

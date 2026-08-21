@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include "ZatiLookAndFeel.h"
 #include "Zati.h"
+#include "Iconos.h"
 
 // ============================================================================
 //  EL GRAFICO DESTACADO DE LA FICHA, dibujado por la propia app.
@@ -71,6 +72,16 @@ namespace StoreArt
         //  El nombre, con el mismo tipo y el mismo tracking que el de la cara.
         g.setColour (ZatiColours::ink);
         auto title = juce::Rectangle<float> (textX, (float) h * 0.20f, textW, (float) h * 0.30f);
+
+        //  LA MARCA, la misma que lleva la cara de la maquina. Un banner con
+        //  un dibujo que la app no tiene es un banner de otra app.
+        {
+            const float lado = (float) h * 0.13f;
+            auto m = Iconos::marca();
+            m.applyTransform (juce::AffineTransform::scale (lado / 24.0f)
+                                  .translated (textX, title.getY() - lado - (float) h * 0.045f));
+            g.fillPath (m);
+        }
         //  El nombre COMPLETO, que es como se llama la app en la tienda. En la
         //  cara de la maquina sigue poniendo ZATI a secas: ahi es la marca
         //  serigrafiada en el chasis, y "ZATI SAMPLER" cruzado por la cabecera

@@ -404,6 +404,13 @@ public:
                     {
                         c2->auditDlc();
                     }
+                    //  EL JUEGO DE ICONOS. Ver Tests/iconos.py: los tres
+                    //  numeros de un dibujo -que quepa, que tenga tinta y que
+                    //  no sea otro- y no una captura de pantalla.
+                    else if (const auto ic = UiAudit::env ("ZATI_ICONOS"); ic.isNotEmpty())
+                    {
+                        UiAudit::volcadoIconos (juce::jlimit (8, 64, ic.getIntValue() > 1 ? ic.getIntValue() : 24));
+                    }
                     else if (const auto ex = UiAudit::env ("ZATI_EXPORT"); ex.isNotEmpty())
                     {
                         //  asinc / cancel se van por el camino de verdad - hilo

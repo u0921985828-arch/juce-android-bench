@@ -28,7 +28,7 @@ codigo.
 
 | Se toco | Se corre |
 |---|---|
-| cualquier cosa de interfaz | `Tests/expo.py` (756 corridas, ~14 min) |
+| cualquier cosa de interfaz | `Tests/expo.py` (812 corridas, ~4 min) |
 | textos, rotulos, `T()` | `Tests/lang.py` **y** `expo.py` |
 | colores, tokens, pieles | `Tests/skins.py` |
 | motor, voces, efectos, envios | `build/StressTest_artefacts/Release/StressTest` |
@@ -41,6 +41,7 @@ codigo.
 | piano roll, notas, compas, EUCLIDES | `Tests/piano.py` |
 | instrumentos, packs, licencias | `Tests/dlc.py` |
 | el tour de bienvenida | `Tests/tour.py` |
+| iconos, la marca, la textura del chasis | `Tests/iconos.py` |
 | una APK | `Tests/apk.py <fichero>` |
 
 Ante la duda, todo. El banco entero son unos quince minutos y una APK mal son
@@ -49,9 +50,10 @@ doce de CI mas el tiempo de la persona que se la instala.
 ## Como se juzga
 
 - **Cero es cero.** `expo.py` tiene que salir con 0 solapes, 0 fuera de ventana,
-  0 celdas por debajo del dedo minimo, 0 rotulos cortados, 0 sin traducir y 0
-  residuo al cambiar de pagina. Los apretones conocidos -las tres pestanas de la
-  cara en 915x412 y tres rotulos arabes- son la unica excepcion y estan contados.
+  0 celdas por debajo del dedo minimo, 0 rotulos cortados, 0 sin traducir, 0
+  encendidos de cero pixeles y 0 residuo al cambiar de pagina. Los apretones se
+  quedaron ademas en CERO desde que el hueco del rotulo lo calcula una sola
+  funcion -`ZatiLookAndFeel::reparteTapa`- y no dos con dos numeros distintos.
 - **Un numero que empeora es un fallo aunque el resto pase.** Dos arreglos de
   maquetado se revirtieron por eso: cambiaban 73 apretones por 126 cortes.
   Cambiar un apreton por un corte no es un arreglo.

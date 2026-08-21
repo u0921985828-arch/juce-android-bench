@@ -97,6 +97,90 @@ namespace UiAudit
         rotulos.push_back ({ r.getX(), r.getY(), r.getWidth(), r.getHeight(), t, tipo });
     }
 
+    //  EL JUEGO DE ICONOS, RASTERIZADO.
+    //
+    //  Un icono se juzga por tres cosas y solo la primera se ve mirandolo:
+    //  que quepa en su caja, que tenga tinta suficiente para leerse, y que no
+    //  se parezca a ningun otro. La tercera es la unica que no se puede juzgar
+    //  de uno en uno - es la misma leccion que el banco de la fabrica, donde
+    //  sesenta y cuatro copias del mismo bombo sacaban sobresaliente en las
+    //  cinco pruebas que miran un sonido por separado.
+    //
+    //  Se vuelca la rejilla de alfas y el juicio vive en Tests/iconos.py: las
+    //  respuestas no pueden estar dentro del codigo que se prueba.
+    inline void volcadoIconos (int n)
+    {
+        for (int i = 1; i < (int) Iconos::Id::kNum; ++i)
+        {
+            const auto id = (Iconos::Id) i;
+            const auto px = Iconos::rasteriza (id, n);
+            const auto lim = Iconos::limites (id);
+
+            juce::String hex;
+            hex.preallocateBytes ((size_t) (n * n * 2 + 8));
+            for (auto v : px) hex << juce::String::toHexString ((int) v).paddedLeft ('0', 2);
+
+            std::cout << "{\"icono\":\"" << Iconos::nombre (id) << "\""
+                      << ",\"n\":" << n
+                      << ",\"x\":" << juce::String (lim.getX(), 2)
+                      << ",\"y\":" << juce::String (lim.getY(), 2)
+                      << ",\"w\":" << juce::String (lim.getWidth(), 2)
+                      << ",\"h\":" << juce::String (lim.getHeight(), 2)
+                      << ",\"px\":\"" << hex << "\"}" << std::endl;
+        }
+
+        //  Y EL GRANO DEL CHASIS, EN LAS CUATRO CARCASAS.
+        //
+        //  Tests/skins.py mide la TABLA, y desde que el cuerpo lleva textura
+        //  la tabla ya no es lo que se pinta: cada pixel del chasis vale su
+        //  color mas o menos una mota. La pregunta no es si hay grano sino
+        //  CUANTO se mueve lo que la otra prueba certifico, asi que se pinta
+        //  de verdad -degradado y baldosa, como en MainComponent::paint- y se
+        //  mide la tinta contra el pixel mas claro y el mas oscuro que hayan
+        //  salido. Sin esta linea, subir kGrano hasta romper el contraste no
+        //  fallaria en ninguna prueba: se publicaria.
+        const int guardada = ZatiColours::currentSkin;
+        for (int piel = 0; piel < 4; ++piel)
+        {
+            ZatiColours::setSkin (piel);
+
+            juce::Image parche (juce::Image::ARGB, 96, 96, true);
+            {
+                juce::Graphics g (parche);
+                g.setColour (ZatiColours::chassisTop);
+                g.fillAll();
+                g.setTiledImageFill (ZatiColours::grano(), 0, 0, 1.0f);
+                g.fillRect (parche.getBounds());
+            }
+
+            juce::Colour masClaro = ZatiColours::chassisTop, masOscuro = ZatiColours::chassisTop;
+            float lMax = -1.0f, lMin = 2.0f;
+            juce::Image::BitmapData bd (parche, juce::Image::BitmapData::readOnly);
+            for (int y = 0; y < 96; ++y)
+                for (int x = 0; x < 96; ++x)
+                {
+                    const auto c = bd.getPixelColour (x, y);
+                    const float l = ZatiColours::relativeLuminance (c);
+                    if (l > lMax) { lMax = l; masClaro  = c; }
+                    if (l < lMin) { lMin = l; masOscuro = c; }
+                }
+
+            const float base = ZatiColours::contrastRatio (ZatiColours::ink, ZatiColours::chassisTop);
+            const float cc   = ZatiColours::contrastRatio (ZatiColours::ink, masClaro);
+            const float co   = ZatiColours::contrastRatio (ZatiColours::ink, masOscuro);
+
+            std::cout << "{\"grano\":\"" << ZatiColours::skinName (piel) << "\""
+                      << ",\"amp\":" << juce::String (ZatiColours::kGrano, 4)
+                      << ",\"base\":" << juce::String (base, 3)
+                      << ",\"claro\":" << juce::String (cc, 3)
+                      << ",\"oscuro\":" << juce::String (co, 3)
+                      << ",\"desvio\":" << juce::String (juce::jmax (std::abs (cc - base),
+                                                                     std::abs (co - base)), 3)
+                      << "}" << std::endl;
+        }
+        ZatiColours::setSkin (guardada);
+    }
+
     inline int tourPaso = -1;
     inline int tourFocoW = 0, tourFocoH = 0;
 
@@ -163,16 +247,18 @@ namespace UiAudit
             r.has  = true;
             r.text = tb->getButtonText();
 
-            //  EXACTLY what ZatiLookAndFeel::drawButtonText will use. Asking
-            //  the look-and-feel for getTextButtonFont would be measuring a
-            //  font this app never draws with - it does not override that
-            //  method - and every number would be wrong in the direction that
-            //  says "it fits".
-            const auto f = ZatiColours::monoFont (juce::jlimit (10.0f, 14.5f, (float) tb->getHeight() * 0.38f), true)
-                             .withExtraKerningFactor (0.06f);
-            r.needW = juce::GlyphArrangement::getStringWidth (f, r.text);
-            //  ...and exactly the box it will fit that into.
-            r.haveW = (float) tb->getWidth() - 2.0f * (float) juce::jlimit (3, 5, tb->getWidth() / 14);
+            //  LA MISMA CUENTA QUE DIBUJA, no una copia de ella.
+            //
+            //  Aqui ponia "EXACTLY what ZatiLookAndFeel::drawButtonText will
+            //  use" y no lo era: la letra salia del alto del COMPONENTE y el
+            //  dibujo la saca del alto de la TAPA -capaDe, o sea max(26,
+            //  alto*0.75)-. En una tapa de 44 px, 14.5 px medidos contra 12.5
+            //  dibujados. Y el hueco tampoco: desde que una tapa puede llevar
+            //  icono, el rotulo no dispone del ancho entero. Las dos cosas
+            //  salen ahora de ZatiLookAndFeel::reparteTapa.
+            const auto rep = ZatiLookAndFeel::reparteTapa (*tb);
+            r.needW = juce::GlyphArrangement::getStringWidth (rep.fuente, r.text);
+            r.haveW = (float) rep.texto.getWidth();
         }
         else if (auto* l = dynamic_cast<juce::Label*> (&c))
         {
@@ -273,6 +359,25 @@ namespace UiAudit
         //  un directorio, no.
         if (c.getProperties().contains ("dato"))
             line << ",\"dato\":1";
+
+        //  EL ICONO QUE LE HA TOCADO A ESTA TAPA Y A QUE TAMANO.
+        //
+        //  No es un componente, asi que ninguna de las reglas de geometria lo
+        //  ve: un dibujo de nueve pixeles dentro de una tapa de cuarenta es
+        //  una mancha y el volcado saldria identico al de una tapa sin icono.
+        //  Y se dumpea tambien CUAL, porque la otra mitad de la pregunta es si
+        //  el icono sobrevive a la pantalla estrecha - donde no cabe, no sale,
+        //  y eso tiene que poder contarse.
+        if (auto* tb = dynamic_cast<juce::TextButton*> (&c))
+        {
+            const auto rep = ZatiLookAndFeel::reparteTapa (*tb);
+            if (rep.id != Iconos::Id::ninguno)
+                line << ",\"icono\":\"" << Iconos::nombre (rep.id) << "\""
+                     << ",\"icoW\":" << rep.icono.getWidth()
+                     << ",\"icoH\":" << rep.icono.getHeight();
+            else if ((int) tb->getProperties().getWithDefault ("icono", 0) != 0)
+                line << ",\"icono\":\"\",\"icoW\":0,\"icoH\":0";
+        }
 
         line << "}";
         std::cout << line << std::endl;

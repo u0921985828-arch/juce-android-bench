@@ -140,6 +140,20 @@ namespace
     }
 }
 
+// ============================================================================
+//  EL ROTULO Y EL DIBUJO DE UNA TAPA DE TRANSPORTE VAN JUNTOS.
+//
+//  `X.setButtonText (on ? T("STOP") : T("PLAY"))` estaba escrito en SIETE
+//  sitios. Anadir el icono al lado habria sido anadir un octavo sitio del que
+//  olvidarse, y el sintoma seria una tapa que dice STOP con el triangulo de
+//  PLAY dibujado: peor que no tener icono, porque los dos se contradicen.
+// ============================================================================
+static void transporte (juce::TextButton& b, bool rodando)
+{
+    b.setButtonText (rodando ? T ("STOP") : T ("PLAY"));
+    b.getProperties().set ("icono", (int) (rodando ? Iconos::Id::stop : Iconos::Id::play));
+}
+
 MainComponent::MainComponent()
 {
     setLookAndFeel (&lnf);
@@ -1010,7 +1024,7 @@ MainComponent::MainComponent()
     {
         const bool on = playButton.getToggleState();
         engine.setPlaying (on);
-        playButton.setButtonText (on ? T ("STOP") : T ("PLAY"));
+        transporte (playButton, on);
     };
 
     //  Hold PLAY for silence NOW: the transport stops and every voice still
@@ -1573,8 +1587,8 @@ MainComponent::MainComponent()
             const bool on = seqPlayBtn.getToggleState();
             engine.setPlaying (on);
             playButton.setToggleState (on, juce::dontSendNotification);
-            playButton.setButtonText (on ? T ("STOP") : T ("PLAY"));
-            seqPlayBtn.setButtonText (on ? T ("STOP") : T ("PLAY"));
+            transporte (playButton, on);
+            transporte (seqPlayBtn, on);
         };
         seqSheet.addAndMakeVisible (seqPlayBtn);
 
@@ -2170,8 +2184,8 @@ MainComponent::MainComponent()
         engine.setPlaying (on);
         //  Y la tapa de la cara dice lo mismo, que es el mismo transporte.
         playButton.setToggleState (on, juce::dontSendNotification);
-        playButton.setButtonText (on ? T ("STOP") : T ("PLAY"));
-        songPlayBtn.setButtonText (on ? T ("STOP") : T ("PLAY"));
+        transporte (playButton, on);
+        transporte (songPlayBtn, on);
     };
     songSheet.addAndMakeVisible (songPlayBtn);
 
@@ -2757,7 +2771,114 @@ MainComponent::MainComponent()
     showSeqPage (seqPageGrid);
     showPadPage (padPageSound);
     showMixBank (0);
+    ponIconos();
     applySkin();
+}
+
+// ============================================================================
+//  QUE DIBUJO LLEVA CADA TAPA.
+//
+//  Una tabla y no una llamada repartida por el constructor: quien mira esto
+//  quiere ver el JUEGO ENTERO de una vez -para saber si hay dos tapas de la
+//  misma fila con el mismo dibujo, que es el fallo que un icono tiene y un
+//  rotulo no- y no cuarenta lineas sueltas a mil lineas de distancia.
+//
+//  El icono es el ADORNO y la palabra es la funcion: donde no caben los dos,
+//  sale la palabra. Esa decision no esta aqui sino en reparteTapa, que es
+//  quien sabe cuanto sitio hay; aqui solo se dice cual seria.
+//
+//  Y NO LLEVAN ICONO los mandos de valor ni las pestanas de pagina dentro de
+//  una ficha: un icono al lado de un numero no dice nada que el numero no
+//  diga, y una pestana ya esta dicha por la pagina que abre.
+// ============================================================================
+//  EL FONDO HORNEADO. Ver MainComponent::paint.
+void MainComponent::reconstruyeFondo()
+{
+    const int w = juce::jmax (1, getWidth()), h = juce::jmax (1, getHeight());
+
+    //  OPACA -Image::RGB- y no ARGB: el fondo no tiene nada detras, y una
+    //  imagen con alfa obliga al copiado a mezclar cada pixel, que es
+    //  exactamente el coste que este cache existe para quitar.
+    fondoCache = juce::Image (juce::Image::RGB, w, h, false);
+    juce::Graphics g (fondoCache);
+
+    const auto full = juce::Rectangle<float> (0.0f, 0.0f, (float) w, (float) h);
+    g.setGradientFill (juce::ColourGradient (ZatiColours::chassisTop, full.getCentreX(), 0.0f,
+                                             ZatiColours::chassisBot, full.getCentreX(), (float) h, false));
+    g.fillRect (full);
+
+    g.setTiledImageFill (ZatiColours::grano(), 0, 0, 1.0f);
+    g.fillRect (full);
+
+    fondoSkin = ZatiColours::currentSkin;
+}
+
+void MainComponent::ponIconos()
+{
+    struct Par { juce::TextButton* tapa; Iconos::Id id; };
+
+    const Par tabla[] =
+    {
+        //  La cara: las seis pestanas de modulo y el transporte.
+        { &padsButton, Iconos::Id::pads },        { &secButton,  Iconos::Id::sec },
+        { &mixButton,  Iconos::Id::mezcla },      { &songButton, Iconos::Id::cancion },
+        { &xyButton,   Iconos::Id::xy },          { &setButton,  Iconos::Id::ajustes },
+        { &rackButton, Iconos::Id::rack },        { &manualButton, Iconos::Id::manual },
+        { &chopButton, Iconos::Id::chop },        { &pianoButton, Iconos::Id::piano },
+        { &recButton,  Iconos::Id::rec },         { &tapButton,  Iconos::Id::tap },
+        { &clearButton, Iconos::Id::vaciar },     { &loopButton, Iconos::Id::loop },
+        { &undoButton, Iconos::Id::deshacer },    { &redoButton, Iconos::Id::rehacer },
+        { &quantButton, Iconos::Id::cuadrar },
+
+        //  El secuenciador: las herramientas del patron.
+        { &seqGridBtn, Iconos::Id::sec },         { &seqPianoBtn, Iconos::Id::piano },
+        { &patLeftBtn, Iconos::Id::atras },       { &patRightBtn, Iconos::Id::adelante },
+        { &patDoubleBtn, Iconos::Id::doblar },    { &seqHumanBtn, Iconos::Id::humanizar },
+        { &copyPatBtn, Iconos::Id::copiar },      { &pastePatBtn, Iconos::Id::pegar },
+        { &copyRowBtn, Iconos::Id::copiar },      { &pasteRowBtn, Iconos::Id::pegar },
+        { &pianoGomaBtn, Iconos::Id::goma },      { &pianoCorteBtn, Iconos::Id::tijeras },
+        { &pianoClearBtn, Iconos::Id::vaciar },
+
+        //  La cancion: ocho herramientas de arreglo, ocho dibujos distintos.
+        //  Es la fila donde mas rinde -INSERTAR y QUITAR se leen igual de
+        //  rapido en cualquiera de los cuatro idiomas- y la que obligo a que
+        //  esos dos no sean el mismo dibujo con un signo cambiado. Ver Iconos.h.
+        { &songClearBtn, Iconos::Id::vaciar },    { &songDoubleBtn, Iconos::Id::doblar },
+        { &songInsertBtn, Iconos::Id::insertar }, { &songRemoveBtn, Iconos::Id::quitar },
+        { &songCopyBtn, Iconos::Id::copiar },     { &songPasteBtn, Iconos::Id::pegar },
+        { &songLoopBtn, Iconos::Id::loop },       { &songLeftBtn, Iconos::Id::atras },
+        { &songRightBtn, Iconos::Id::adelante },  { &songShortBtn, Iconos::Id::acortar },
+        { &songLongBtn, Iconos::Id::alargar },
+
+        //  Proyectos y ficheros.
+        { &projSaveButton, Iconos::Id::guardar }, { &projLoadButton, Iconos::Id::abrir },
+        { &projNewButton, Iconos::Id::nuevo },    { &projDeleteButton, Iconos::Id::borrar },
+        { &projExportButton, Iconos::Id::exportar }, { &projKitButton, Iconos::Id::guardar },
+        { &exportMasterButton, Iconos::Id::exportar },
+        { &exportStemsButton, Iconos::Id::exportar },
+        { &exportDirBtn, Iconos::Id::carpeta },
+
+        //  El navegador. Cinco tapas en una fila, cinco dibujos distintos: si
+        //  tres de ellas llevaran la misma carpeta, el dibujo no diria nada
+        //  que el sitio no dijera ya.
+        { &browseLoadButton, Iconos::Id::cargar }, { &browseKitButton, Iconos::Id::carpeta },
+        { &browseKitsDirButton, Iconos::Id::abrir },
+        { &browseFactoryButton, Iconos::Id::instrumentos },
+        { &browseUseDirBtn, Iconos::Id::carpeta },
+
+        //  El pad.
+        { &padSoundBtn, Iconos::Id::sonido },     { &padTrimBtn, Iconos::Id::recorte },
+        { &padRackBtn, Iconos::Id::rack },
+    };
+
+    for (const auto& p : tabla)
+        p.tapa->getProperties().set ("icono", (int) p.id);
+
+    //  Las dos de transporte nacen paradas; a partir de ahi las mueve
+    //  `transporte`, que cambia el rotulo y el dibujo a la vez.
+    transporte (playButton,  false);
+    transporte (seqPlayBtn,  false);
+    transporte (songPlayBtn, false);
 }
 
 // Restyle everything that captured accent-coloured values at construction —
@@ -3721,9 +3842,35 @@ void MainComponent::paint (juce::Graphics& g)
     auto full = getLocalBounds().toFloat();
 
     // 1. Full-bleed light chassis (edge to edge — the whole screen is the face).
-    g.setGradientFill (juce::ColourGradient (ZatiColours::chassisTop, full.getCentreX(), full.getY(),
-                                             ZatiColours::chassisBot, full.getCentreX(), full.getBottom(), false));
-    g.fillRect (full);
+    //  EL CUERPO SE PINTA UNA VEZ Y SE COPIA.
+    //
+    //  Era un degradado liso, y un degradado liso es una app: un aparato tiene
+    //  MATERIAL. Con el grano encima el fondo pasaba de 1.27 ms a 3.59 -una
+    //  pasada de mezcla alfa sobre los 377 mil pixeles de la ventana en cada
+    //  fotograma completo-, asi que se hornea: degradado y grano se dibujan en
+    //  una imagen OPACA al cambiar de tamano o de carcasa, y pintar el fondo
+    //  pasa a ser una copia de filas. Sale mas barato que el degradado que
+    //  habia antes, y el grano sale gratis.
+    //
+    //  Y respeta el recorte, que es lo que hace que siga valiendo: una banda
+    //  de 30 px copia 30 px, no la ventana entera. Ver ZATI_PAINT.
+    if (! sinGrano)
+    {
+        if (fondoCache.getWidth() != getWidth() || fondoCache.getHeight() != getHeight()
+            || fondoSkin != ZatiColours::currentSkin)
+            reconstruyeFondo();
+        g.drawImageAt (fondoCache, 0, 0);
+    }
+    else
+    {
+        //  La corrida de control del banco: el fondo de antes, sin grano y sin
+        //  hornear. Sin ella no hay forma de decir cuanto cuesta la textura -
+        //  los milisegundos dependen de la maquina, asi que hay que medir las
+        //  dos en la misma.
+        g.setGradientFill (juce::ColourGradient (ZatiColours::chassisTop, full.getCentreX(), full.getY(),
+                                                 ZatiColours::chassisBot, full.getCentreX(), full.getBottom(), false));
+        g.fillRect (full);
+    }
 
     //  1b. Structure. A white field with rows of caps on it is a list of
     //  buttons; an instrument has plates, seams and engraved lettering, and
@@ -3917,8 +4064,32 @@ void MainComponent::paint (juce::Graphics& g)
     {
         auto h = headerArea;
         g.setColour (ZatiColours::ink);
-        g.setFont (ZatiColours::displayFont (Metrics::fTitle).withExtraKerningFactor (0.16f));
-        g.drawText ("ZATI", h.getX(), h.getY(), 140, h.getHeight(), juce::Justification::centredLeft);
+
+        //  LA MARCA, que es un PAD con la Z cortada dentro - ver Iconos::marca.
+        //  El nombre estaba solo, con la primera palabra de la cara siendo la
+        //  unica cosa de la maquina sin dibujo. Y la Z es un HUECO y no un
+        //  trazo encima: asi la marca funciona en las cuatro carcasas con un
+        //  solo color, que es la misma regla que gobierna los iconos.
+        const int ladoMarca = juce::jlimit (18, 26, h.getHeight() - 4);
+        {
+            auto m = Iconos::marca();
+            const auto caja = juce::Rectangle<float> ((float) h.getX(),
+                                                      (float) h.getCentreY() - (float) ladoMarca * 0.5f,
+                                                      (float) ladoMarca, (float) ladoMarca);
+            m.applyTransform (juce::AffineTransform::scale ((float) ladoMarca / 24.0f)
+                                  .translated (caja.getX(), caja.getY()));
+            g.fillPath (m);
+        }
+
+        //  Y EL ANCHO DEL NOMBRE SE MIDE, no se supone. Aqui habia un 140 y
+        //  ocho lineas mas abajo un 138 para lo que iba detras: dos numeros a
+        //  mano para el mismo borde, escritos a ojo con la fuente de aquel dia
+        //  - y ahora ademas con una marca delante que los mueve.
+        const auto fuenteTitulo = ZatiColours::displayFont (Metrics::fTitle).withExtraKerningFactor (0.16f);
+        const int xTitulo = h.getX() + ladoMarca + Metrics::sm;
+        const int wTitulo = (int) std::ceil (juce::GlyphArrangement::getStringWidth (fuenteTitulo, "ZATI"));
+        g.setFont (fuenteTitulo);
+        g.drawText ("ZATI", xTitulo, h.getY(), wTitulo + 2, h.getHeight(), juce::Justification::centredLeft);
 
         rule ((float) h.getX(), (float) h.getRight(), (float) h.getBottom() + 2.0f, 0.22f);
 
@@ -3935,7 +4106,7 @@ void MainComponent::paint (juce::Graphics& g)
             //  header: the machine on one side, what is loaded in it on the
             //  other, both anchored. That is how a piece of gear labels
             //  itself, and it stops moving when the name changes.
-            const int nameX = h.getX() + 138;
+            const int nameX = xTitulo + wTitulo + Metrics::md;
             const int nameW = h.getRight() - nameX;
             if (nameW > 40)
             {
@@ -8224,7 +8395,7 @@ void MainComponent::refreshStepGrid()
     {
         const bool rodando = engine.isPlaying();
         seqPlayBtn.setToggleState (rodando, juce::dontSendNotification);
-        seqPlayBtn.setButtonText (rodando ? T ("STOP") : T ("PLAY"));
+        transporte (seqPlayBtn, rodando);
     }
 
     stepGrid.setSource (gridCells, gridZati, gridLoaded, gridNotes,
@@ -8832,7 +9003,7 @@ void MainComponent::retranslateUi()
     measureButton.setButtonText (T ("MEDIR"));
     quantButton .setButtonText (T ("CUADRAR"));
     recButton   .setButtonText (recArmed ? T ("REC ON") : T ("REC"));
-    playButton  .setButtonText (engine.isPlaying() ? T ("STOP") : T ("PLAY"));
+    transporte (playButton, engine.isPlaying());
     clearButton .setButtonText (T ("VACIAR"));
     seqGridBtn  .setButtonText (T ("PASOS"));
     seqPianoBtn .setButtonText (T ("PIANO"));
@@ -11199,7 +11370,7 @@ void MainComponent::refreshSong (bool repintarTarjeta)
     {
         const bool rodando = engine.isPlaying();
         songPlayBtn.setToggleState (rodando, juce::dontSendNotification);
-        songPlayBtn.setButtonText (rodando ? T ("STOP") : T ("PLAY"));
+        transporte (songPlayBtn, rodando);
     }
     songLoopBtn.setToggleState (engine.hasSongLoop(), juce::dontSendNotification);
 
@@ -13948,7 +14119,7 @@ void MainComponent::toggleRecordArm()
     {
         // Arming with the transport stopped is a dead end — roll it.
         playButton.setToggleState (true, juce::dontSendNotification);
-        playButton.setButtonText (T ("STOP"));
+        transporte (playButton, true);
         engine.setPlaying (true);
     }
 

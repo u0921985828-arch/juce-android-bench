@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include "Lang.h"
 #include "BinaryData.h"
+#include <vector>
 
 // ============================================================================
 //  ZatiLookAndFeel — ARTiFACTS design system (ZATI chassis).
@@ -20,6 +21,8 @@
 //  All components read tokens from ZatiColours — no hardcoded colour in a
 //  component. Fonts: Oswald/JetBrains Mono, bundled.
 // ============================================================================
+#include "Iconos.h"
+
 namespace ZatiColours
 {
 
@@ -250,6 +253,11 @@ namespace ZatiColours
     inline juce::Colour padBorder  { 0xffcdc5b2 };
     inline juce::Colour padLit     { 0xff26221b };   // follows the skin tone
 
+    //  La baldosa del grano y de que carcasa es. Declaradas aqui arriba porque
+    //  setSkin las invalida y esta antes que grano().
+    inline juce::Image granoTile;
+    inline int granoDe = -1;
+
     //  Apply one. Every token a component reads is written here, so a skin
     //  change is one call and no component knows it happened.
     inline void setSkin (int i)
@@ -294,6 +302,77 @@ namespace ZatiColours
         //  ink outline around a white marker is invisible twice over.
         playhead     = juce::Colour (k.white);
         playheadEdge = juce::Colour (k.ink).withAlpha (0.40f);
+
+        //  El grano se rehace con la carcasa: la baldosa lleva la semilla de
+        //  la piel, asi que dejarla puesta seria pintar el grano de PAPEL
+        //  sobre GRAFITO. Es la regla de la casa - todo token que una piel
+        //  mueve hay que volver a leerlo - aplicada a algo que no es un color.
+        granoDe = -1;
+    }
+
+    //  EL GRANO DEL CHASIS.
+    //
+    //  El cuerpo era un degradado liso de dos colores y se lee como una app;
+    //  un aparato tiene MATERIAL - papel prensado, acero cepillado, plastico
+    //  granulado - y el material es lo que hace que una superficie parezca
+    //  tener tamano. Sin el, los mismos cuatro grises salen igual de plastico
+    //  en las cuatro carcasas.
+    //
+    //  Se genera y no se trae en un PNG por lo mismo que los iconos: son
+    //  CUATRO carcasas y dos de ellas son oscuras, asi que una textura
+    //  horneada sobre el chasis claro es una mancha sucia sobre GRAFITO. Y
+    //  ademas cuesta cero bytes de instalacion.
+    //
+    //  DOS OCTAVAS Y NO UNA. Ruido por pixel a secas es nieve de television:
+    //  el ojo lo lee como interferencia, no como material. La segunda octava
+    //  -manchas de 4x4- es la que le da tamano de grano.
+    //
+    //  Y SE PINTA DE UNA VEZ, no por pixel: la baldosa se dibuja al cambiar de
+    //  carcasa y el fondo la repite. El chasis se pinta en cada fotograma
+    //  completo -1.27 ms medidos de los 6.25 que cuesta el fotograma- y una
+    //  pasada de ruido calculada ahi dentro se llevaria mas que todo lo demas
+    //  junto.
+    //  LA AMPLITUD SALE DE UNA MEDIDA. A 0.055 la mota mas oscura de las 9216
+    //  de una baldosa movia el contraste de la tinta sobre el chasis un 15% en
+    //  GRAFITO -12.54 a 10.72-, o sea que la textura estaba cambiando lo que
+    //  Tests/skins.py habia certificado sobre la tabla. Aqui se queda en un
+    //  10% largo, y el peor pixel de las cuatro carcasas sigue muy por encima
+    //  del 4.50 que esa prueba exige para lo que hay que leer.
+    static constexpr float kGrano = 0.042f;   // alfa maxima de una mota
+    static constexpr int   kGranoLado = 96;
+
+    inline const juce::Image& grano()
+    {
+        if (granoDe == currentSkin && granoTile.isValid()) return granoTile;
+
+        granoTile = juce::Image (juce::Image::ARGB, kGranoLado, kGranoLado, true);
+        //  Semilla FIJA. Un grano sorteado en cada arranque es una textura
+        //  distinta cada vez que abres la app, y ademas no se puede fotografiar
+        //  para compararla: es la misma razon por la que HUMANIZAR se escribe
+        //  y no se sortea en el hilo de audio.
+        juce::Random r ((juce::int64) (0x5A7100 + currentSkin));
+
+        //  La octava gruesa, primero: manchas de 4x4 que dan el tamano de grano.
+        std::vector<float> gruesa ((size_t) ((kGranoLado / 4) * (kGranoLado / 4)));
+        for (auto& v : gruesa) v = r.nextFloat() * 2.0f - 1.0f;
+
+        {
+            juce::Image::BitmapData bd (granoTile, juce::Image::BitmapData::writeOnly);
+            for (int y = 0; y < kGranoLado; ++y)
+                for (int x = 0; x < kGranoLado; ++x)
+                {
+                    const float fina = r.nextFloat() * 2.0f - 1.0f;
+                    const float g4   = gruesa[(size_t) ((y / 4) * (kGranoLado / 4) + x / 4)];
+                    const float v    = juce::jlimit (-1.0f, 1.0f, fina * 0.62f + g4 * 0.55f);
+
+                    const auto c = (v >= 0.0f ? juce::Colours::white : juce::Colours::black)
+                                       .withAlpha (std::abs (v) * kGrano);
+                    bd.setPixelColour (x, y, c);
+                }
+        }
+
+        granoDe = currentSkin;
+        return granoTile;
     }
 
     //  THE CHASSIS IS YOURS, NOT THE SONG'S.
@@ -935,6 +1014,65 @@ public:
                                         : full.withSizeKeepingCentre (full.getWidth(), alto);
     }
 
+    //  EL REPARTO DE UNA TAPA: con que letra se escribe, donde cae el rotulo y
+    //  si hay sitio para un icono.
+    //
+    //  Escrito UNA vez porque estaba escrito DOS y con dos numeros distintos.
+    //  drawButtonText saca el cuerpo de letra del alto de la TAPA -capaDe, o
+    //  sea max(26, alto*0.75)- y UiAudit::captionOf lo sacaba del alto del
+    //  COMPONENTE, con un comentario encima diciendo que era "EXACTLY what
+    //  ZatiLookAndFeel::drawButtonText will use". En una tapa de 44 px eso son
+    //  14.5 px de letra medidos contra 12.5 px dibujados: el banco pedia un
+    //  22% mas de sitio del que el rotulo ocupa, y cada apreton que contaba
+    //  podia no existir. Una regla duplicada que no se contrasta son dos
+    //  reglas - y esta llevaba el comentario que juraba que no.
+    struct Reparto
+    {
+        juce::Rectangle<int> icono, texto;
+        Iconos::Id id = Iconos::Id::ninguno;
+        juce::Font fuente { juce::FontOptions {} };
+    };
+
+    static Reparto reparteTapa (const juce::TextButton& b)
+    {
+        Reparto r;
+        const auto texto = b.getButtonText();
+
+        //  Ver drawButtonText: el rotulo pertenece a la TAPA, no al componente.
+        const auto tapa = capaDe (b.getLocalBounds().toFloat());
+        r.fuente = ZatiColours::monoFont (juce::jlimit (10.0f, 14.5f, tapa.getHeight() * 0.38f), true)
+                     .withExtraKerningFactor (0.06f);
+
+        //  El inset lateral es una PROPORCION de la tapa, no una constante.
+        const int inset = juce::jlimit (3, 5, b.getWidth() / 14);
+        r.texto = tapa.getSmallestIntegerContainer().reduced (inset, 2);
+
+        const auto id = (Iconos::Id) (int) b.getProperties().getWithDefault ("icono", 0);
+        if (id == Iconos::Id::ninguno || id == Iconos::Id::kNum) return r;
+
+        //  Cuadrado y sacado del ALTO de la tapa: un tercio del ancho daria un
+        //  icono de sesenta pixeles en la tapa de PLAY.
+        const int lado = juce::jmin (r.texto.getHeight(), 18);
+        if (lado < Iconos::kLadoMin) return r;
+
+        if (texto.isEmpty()) { r.id = id; r.icono = r.texto; r.texto = {}; return r; }
+
+        //  Y SOLO SI EL ROTULO SIGUE CABIENDO ENTERO.
+        //
+        //  Un icono que aprieta la palabra cambia una tapa que se lee por una
+        //  que no, y ese cambio ya se deshizo dos veces en este proyecto: la
+        //  regla es que un apreton no se cambia por un corte. Aqui es mas
+        //  barato todavia - lo que se pierde es el dibujo, que es el adorno,
+        //  no la palabra, que es la funcion. Donde no cabe, no sale.
+        const float necesita = juce::GlyphArrangement::getStringWidth (r.fuente, texto);
+        if (necesita > (float) (r.texto.getWidth() - lado - Metrics::halfGap)) return r;
+
+        r.id = id;
+        r.icono = r.texto.removeFromLeft (lado);
+        r.texto.removeFromLeft (Metrics::halfGap);
+        return r;
+    }
+
     void drawButtonBackground (juce::Graphics& g, juce::Button& b,
                                const juce::Colour& backgroundColour,
                                bool over, bool down) override
@@ -1102,12 +1240,10 @@ public:
             return;
         }
 
-        //  Y el cuerpo de letra sale del alto de la TAPA, que es donde tiene que
-        //  caber: sacarlo del componente daria una letra pensada para cuarenta
-        //  pixeles metida en treinta.
-        const float altoTapa = capaDe (b.getLocalBounds().toFloat()).getHeight();
-        g.setFont (ZatiColours::monoFont (juce::jlimit (10.0f, 14.5f, altoTapa * 0.38f), true)
-                     .withExtraKerningFactor (0.06f));
+        //  Ver reparteTapa: la letra, el rotulo y el icono salen de una sola
+        //  cuenta, que es la misma que mide el banco.
+        const auto rep = reparteTapa (b);
+        g.setFont (rep.fuente);
         //  Text colour is chosen when a button is built, but the cap it lands
         //  on can change afterwards - a button styled for a light cap and then
         //  given a dark one for its ON state ends up with dark text on dark,
@@ -1127,18 +1263,20 @@ public:
         //  kCapLift above the block it is printed on and travels down onto it
         //  when pressed, so text centred on the full bounds would float low at
         //  rest and stay put during the press - which reads as a wobble.
-        //  The side inset is a PROPORTION of the cap, not a constant. Five
-        //  pixels each side is nothing on a 200 px transport key and a fifth
-        //  of a 50 px module tab - which is why CANCION had to be squeezed on
-        //  a narrow phone while PLAY had room to spare. Measured across the
-        //  matrix, this is what puts the five module tabs back at one size.
-        const int inset = juce::jlimit (3, 5, b.getWidth() / 14);
-        //  Y el rotulo va centrado en la TAPA, no en el componente: son la
-        //  misma caja solo mientras la tapa llene su blanco. Ver capaDe.
-        auto area = capaDe (b.getLocalBounds().toFloat()).getSmallestIntegerContainer()
-                        .reduced (inset, 2);
-        area = b.isDown() ? area.withTrimmedTop ((int) kCapLift)
-                          : area.withTrimmedBottom ((int) kCapLift);
+        const float sube = b.isDown() ? kCapLift * 0.5f : -kCapLift * 0.5f;
+
+        //  EL ICONO SE PINTA CON LA TINTA DEL ROTULO y no con un color propio.
+        //  Un juego de sprites horneado sobre la carcasa clara sale invisible
+        //  sobre GRAFITO; esto se dibuja, asi que hereda el color que ya se
+        //  eligio midiendo contra la tapa que se esta pintando. Ver Iconos.h.
+        if (rep.id != Iconos::Id::ninguno)
+            Iconos::dibuja (g, rep.id, rep.icono.toFloat().translated (0.0f, sube),
+                            col.withMultipliedAlpha (b.isEnabled() ? 1.0f : 0.45f));
+
+        if (t.isEmpty()) return;
+
+        auto area = b.isDown() ? rep.texto.withTrimmedTop ((int) kCapLift)
+                               : rep.texto.withTrimmedBottom ((int) kCapLift);
 
         g.drawFittedText (t, area, juce::Justification::centred, 2, 0.9f);
     }
