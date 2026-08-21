@@ -136,6 +136,35 @@ def judge(rows, size, lang, sheet):
                 if cw < sx or ch < sy:
                     findings.append(("CELDA", tag,
                                      f'{grid} {cw:.0f}x{ch:.0f} px por celda', min(cw, ch)))
+        #  0. VISIBLE Y DE CERO PIXELES, que es el punto ciego de todas las
+        #     demas: las seis reglas de abajo se saltan lo que mide 0x0 -y con
+        #     razon, porque la casa APAGA lo que no cabe *y* le vacia los
+        #     limites-, asi que un control que se pone visible y se queda sin
+        #     colocar pasa las seis. Lo pago la vista previa del troceado, que
+        #     salio a 0x0 en las tres pantallas porque se anadio el componente
+        #     sin sumar su alto a lo que se pide, y las 756 corridas dieron
+        #     cero hallazgos. Y lo pago antes SEGUIR, que llevaba desde el
+        #     primer dia visible y de 0x0.
+        #
+        #     El volcado solo trae lo VISIBLE -UiAudit::walk se rinde con
+        #     isVisible() falso-, asi que una linea aqui con w o h en cero es
+        #     exactamente eso: encendido y sin sitio. Media regla -apagar sin
+        #     vaciar- la ven las otras; esta ve la otra media.
+        #
+        #     Y LA LISTA VACIA DE JUCE NO ES NUESTRA, igual que la caja de ruta
+        #     del navegador: un juce::ListBox sin filas deja su ListViewport y
+        #     el componente de contenido con alto cero, y eso pasa en PROYECTOS
+        #     -sin proyectos guardados- y en el navegador. Son 99 hallazgos de
+        #     tres clases de JUCE, y de paso son la prueba de fuego de esta
+        #     regla: dispara, lee bien el volcado y llega a componentes que
+        #     miden 0 - que era justo lo que hacia falta saber, porque lo que
+        #     esta regla existe para cazar -la vista previa del troceado a 0x0-
+        #     ya no esta ahi para verlo fallar.
+        juceLista = r["path"].split("/")[-1].endswith(("ListBoxE", "ListViewportE",
+                                                       "oredComponent", "oredComponentE"))
+        if (r["w"] <= 0 or r["h"] <= 0) and not juceLista:
+            findings.append(("CERO", tag,
+                             f'{r.get("text") or r["path"].split("/")[-1]} {r["w"]}x{r["h"]}', 0))
         # 1. A finger has to fit.
         if r.get("hit") and r.get("on"):
             if r["w"] < MIN_TOUCH or r["h"] < MIN_TOUCH:
