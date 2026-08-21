@@ -27,6 +27,27 @@ indistinguible por esta medida.
 
     python3 Tests/clon.py            todas
     python3 Tests/clon.py kick snare  solo las que casen con esos nombres
+
+ESTE BANCO CERTIFICA, NO GUIA. Escrito aqui porque es la clase de cosa que se
+vuelve a intentar.
+
+La medida SATURA. Medido con dos senos que decaen: 124 Hz contra 201 dan 16.57
+dB y 124 contra 1000 dan 16.25 - o sea MENOS estando diez veces mas lejos. En
+cuanto dos sonidos dejan de compartir bandas, la distancia se planta cerca de
+16 y deja de decir cuanto peor.
+
+La consecuencia practica costo un experimento: se corrigio la afinacion de
+MC 808 de 124 a 201 Hz -la medida de su grabacion- y su distancia se quedo en
+16.95, la MISMA hasta la centesima. No fue que el cambio no llegara a correr
+-el binario era nuevo y `skin` usa r.hz en cuatro sitios-: fue que los dos
+valores estan al otro lado de la saturacion.
+
+Asi que afinar 31 recetas contra este numero es imposible por construccion: no
+baja cuando te acercas. El gradiente tiene que salir de Tests/analiza.py, que
+mide MAGNITUDES de la grabacion -afinacion, caida, centroide, planitud- y esas
+si se pueden perseguir una a una. Este banco es la PUERTA del final: por debajo
+de 4 dB kits.py llamaria a los dos el mismo sonido, y ahi es cuando los FLAC
+pueden salir del APK.
 """
 import glob, os, re, shutil, subprocess, sys, tempfile
 
