@@ -1050,6 +1050,12 @@ public:
         const auto id = (Iconos::Id) (int) b.getProperties().getWithDefault ("icono", 0);
         if (id == Iconos::Id::ninguno || id == Iconos::Id::kNum) return r;
 
+        //  Y si una hermana de la fila se quedo sin el suyo, esta tampoco lo
+        //  lleva: una barra con cinco iconos y un hueco se lee como una tapa
+        //  rota, no como una que no tenia sitio. Lo decide layoutModuleBar,
+        //  que es quien sabe cuales son hermanas.
+        if ((int) b.getProperties().getWithDefault ("sinIcono", 0) != 0) return r;
+
         //  Cuadrado y sacado del ALTO de la tapa: un tercio del ancho daria un
         //  icono de sesenta pixeles en la tapa de PLAY.
         const int lado = juce::jmin (r.texto.getHeight(), 18);
@@ -1065,11 +1071,36 @@ public:
         //  barato todavia - lo que se pierde es el dibujo, que es el adorno,
         //  no la palabra, que es la funcion. Donde no cabe, no sale.
         const float necesita = juce::GlyphArrangement::getStringWidth (r.fuente, texto);
-        if (necesita > (float) (r.texto.getWidth() - lado - Metrics::halfGap)) return r;
+        if (necesita <= (float) (r.texto.getWidth() - lado - Metrics::halfGap))
+        {
+            r.id = id;
+            r.icono = r.texto.removeFromLeft (lado);
+            r.texto.removeFromLeft (Metrics::halfGap);
+            return r;
+        }
 
-        r.id = id;
-        r.icono = r.texto.removeFromLeft (lado);
-        r.texto.removeFromLeft (Metrics::halfGap);
+        //  Y SI AL LADO NO CABE, NO CABE.
+        //
+        //  Se probo ponerlo ENCIMA del rotulo, que es como se dibuja una barra
+        //  de pestanas en cualquier aparato y que ademas no cuesta ancho, que
+        //  es lo que aqui falta. Se quito despues de medirlo y de mirarlo:
+        //
+        //   - la tapa se pinta al 75% de su fila -ver capaDe-, asi que en una
+        //     pestana de 40 px hay 30 de tapa, y once son de letra: al dibujo
+        //     le quedan doce contra un suelo de trece. Por UN pixel.
+        //   - con el aire de dentro repartido para dos renglones en vez de uno
+        //     si entra, y entonces el rotulo cae por debajo del filo de la
+        //     tapa - kCapLift se lo come - o sea que se arregla una fila
+        //     rompiendo la tapa.
+        //   - y sobre todo, obligaria a que la fila eligiera MODO y no solo si
+        //     hay iconos: cinco pestanas con el dibujo al lado y una con el
+        //     dibujo encima se lee peor que seis sin ninguno. Ver
+        //     layoutModuleBar.
+        //
+        //  El resultado medido es que las seis pestanas de la cara llevan
+        //  icono en tableta y son palabras en un telefono. Eso no es un fallo:
+        //  es que "CANCION" se come los 56 px que le tocan de los 412 que se
+        //  reparten seis.
         return r;
     }
 

@@ -271,8 +271,14 @@ namespace Iconos
                 linea (L, 9.5f, 17.0f, 14.5f, 17.0f);
                 break;
 
+            //  ACORTAR y ALARGAR: la barra del medio es CORTA. Con la barra de
+            //  arriba abajo y las dos flechas hacia fuera, ALARGAR se dibujaba
+            //  como una CRUZ - las puntas a 3.8 en una caja de 18 px reales no
+            //  pesan lo que la barra - y una cruz no dice "alargar", dice
+            //  "mas". Se vio en la captura, no en el volcado: la distancia
+            //  entre los dos siguio siendo la misma.
             case Id::acortar:
-                linea (L, 12.0f, 3.0f, 12.0f, 21.0f);
+                linea (L, 12.0f, 5.5f, 12.0f, 18.5f);
                 linea (L, 2.5f, 12.0f, 8.0f, 12.0f);
                 linea (L, 16.0f, 12.0f, 21.5f, 12.0f);
                 punta (R, 9.6f, 12.0f, 1.0f, 0.0f, 3.8f);
@@ -280,11 +286,10 @@ namespace Iconos
                 break;
 
             case Id::alargar:
-                linea (L, 12.0f, 3.0f, 12.0f, 21.0f);
-                linea (L, 6.0f, 12.0f, 10.5f, 12.0f);
-                linea (L, 13.5f, 12.0f, 18.0f, 12.0f);
-                punta (R, 2.5f, 12.0f, -1.0f, 0.0f, 3.8f);
-                punta (R, 21.5f, 12.0f, 1.0f, 0.0f, 3.8f);
+                linea (L, 12.0f, 8.5f, 12.0f, 15.5f);
+                linea (L, 5.5f, 12.0f, 18.5f, 12.0f);
+                punta (R, 2.0f, 12.0f, -1.0f, 0.0f, 4.4f);
+                punta (R, 22.0f, 12.0f, 1.0f, 0.0f, 4.4f);
                 break;
 
             case Id::atras:

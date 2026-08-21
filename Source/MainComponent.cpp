@@ -2843,6 +2843,7 @@ void MainComponent::ponIconos()
         //  Es la fila donde mas rinde -INSERTAR y QUITAR se leen igual de
         //  rapido en cualquiera de los cuatro idiomas- y la que obligo a que
         //  esos dos no sean el mismo dibujo con un signo cambiado. Ver Iconos.h.
+        { &songPadModeBtn, Iconos::Id::sonido },  { &songModeBtn, Iconos::Id::cancion },
         { &songClearBtn, Iconos::Id::vaciar },    { &songDoubleBtn, Iconos::Id::doblar },
         { &songInsertBtn, Iconos::Id::insertar }, { &songRemoveBtn, Iconos::Id::quitar },
         { &songCopyBtn, Iconos::Id::copiar },     { &songPasteBtn, Iconos::Id::pegar },
@@ -4791,6 +4792,34 @@ void MainComponent::layoutModuleBar (juce::Rectangle<int> row, juce::TextButton*
         mb[i]->setBounds ((i < kMods - 1 ? row.removeFromLeft (juce::jmax (24, w)) : row)
                               .reduced (Metrics::halfGap / 2, vInset));
     }
+
+    //  UNA FILA, UN TRATO: los iconos de una fila salen todos o no sale
+    //  ninguno.
+    //
+    //  reparteTapa decide tapa por tapa -donde el rotulo no cabe entero, el
+    //  dibujo no sale- y esa regla es correcta y sale MAL en una fila. Medido
+    //  en la cara: PADS, SEC, MEZCLA, XY y AJUSTES tenian sitio y CANCION no,
+    //  asi que la barra salia con cinco iconos y un hueco. Eso no se lee como
+    //  "aqui no cabia", se lee como una tapa a la que le falta algo.
+    //
+    //  Se pregunta AQUI porque aqui es donde existe la fila: reparteTapa solo
+    //  ve una tapa, y quien sabe cuales son hermanas es quien las coloca.
+    //  Y SE BORRA ANTES DE PREGUNTAR. La marca de la pasada anterior entra en
+    //  la respuesta -reparteTapa la mira- asi que sin este barrido la fila
+    //  contestaria "aqui no cabe ninguno" porque la ultima vez no cabia, se
+    //  desmarcaria, y a la siguiente maquetacion volveria a marcarse: una
+    //  barra que parpadea entre con y sin iconos al girar el telefono.
+    for (int i = 0; i < kMods; ++i)
+        mb[i]->getProperties().remove ("sinIcono");
+
+    bool todas = true;
+    for (int i = 0; i < kMods && todas; ++i)
+        if ((int) mb[i]->getProperties().getWithDefault ("icono", 0) != 0)
+            todas = ZatiLookAndFeel::reparteTapa (*mb[i]).id != Iconos::Id::ninguno;
+
+    if (! todas)
+        for (int i = 0; i < kMods; ++i)
+            mb[i]->getProperties().set ("sinIcono", 1);
 }
 
 void MainComponent::resized()
