@@ -20,6 +20,7 @@
 #include "AudioPath.h"
 #include "XyPad.h"
 #include "MidiIo.h"
+#include "Instrumentos.h"
 
 // ============================================================================
 //  MainComponent — ZATI: a 16-pad matrix whose fragments carry the colour, an
@@ -747,6 +748,8 @@ public:
     //  de ahi, el cambio de pad no repintaba la rejilla, y oir una tecla
     //  afinaba el pad para siempre.
     void auditPiano();
+    //  EL CATALOGO DE CONTENIDO Y EL CANDADO. Ver Tests/dlc.py.
+    void auditDlc();
     //  LA EXPORTACION, medida de verdad y no mirando la barra. Ver auditExport:
     //  monta un patron con los sonidos de fabrica y hace el rebote entero -
     //  master y pistas - en el hilo que llama, contando ficheros y bytes.
@@ -773,6 +776,7 @@ private:
     void restoreSession();
     //  Los 64 sonidos de fabrica. onlyBank < 0 = los cuatro bancos. Ver Kits.h.
     void loadFactoryKits (int onlyBank = -1);
+    void cargaFabricaEnBanco (int origen, int destino);
     bool sessionRestorePending = true;   // done on the first timer tick
     bool startupBusy = true;             // la barra ya esta puesta al primer fotograma
     int  sessionSyncTick  = 0;
@@ -1182,6 +1186,34 @@ private:
     void refreshRack();
     juce::OwnedArray<juce::TextButton> mixMutes, mixSolos;
     juce::TextButton mixClearSolo { "SIN SOLO" };
+
+    //  INSTRUMENTOS - el contenido descargable. Ver Instrumentos.h para el
+    //  formato y para por que la fabrica es el primer pack.
+    //
+    //  UN INSTRUMENTO SON DIECISEIS PRESETS, o sea un banco entero, y esa es la
+    //  unidad porque es como esta hecha la maquina: la rejilla ensena dieciseis
+    //  pads y cambiar de banco los cambia los dieciseis a la vez. Los sesenta y
+    //  cuatro de fabrica ya venian en cuatro grupos con nombre propio; lo que
+    //  faltaba era donde ensenarlos y por donde meter mas.
+    //
+    //  EL PACK SE ELIGE CON MENOS Y MAS y no con una fila de pestanas: cuantos
+    //  packs hay no lo sabe nadie hasta que se mira el disco, y una fila de
+    //  tapas creadas al vuelo es exactamente lo que cerro la app la vez que la
+    //  caja negra sirvio para algo. Es ademas el idioma que la app ya usa para
+    //  lo mismo - PAD -/+ en el piano - y aguanta cualquier numero de packs.
+    Sheet instSheet;
+    juce::TextButton instCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
+    juce::TextButton instPackDownBtn { "PACK -" }, instPackUpBtn { "PACK +" };
+    juce::OwnedArray<juce::TextButton> instBtns;      // la rejilla de 4x4
+    std::vector<Instrumentos::Pack> instCatalogo;
+    int instPack = 0;
+    void repartePorBanco (const juce::Array<juce::File>& files, const juce::String& motivo);
+    void plantaPacksDePrueba();
+    void openInstSheet();
+    void refreshInst();
+    void pasoPack (int d);
+    void cargaInstrumento (int idx);
+    void paintInstSheetContent (juce::Graphics& g);
 
     //  EL MASTER, y vive en la mesa por la misma razon que los faders: es el
     //  fader que falta. Hasta aqui se podia bajar cada pad uno por uno y no

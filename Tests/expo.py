@@ -29,7 +29,7 @@ SIZES = [
     ("915x412",  "LANDSCAPE — the orientation nobody tests"),
 ]
 LANGS = ["es", "en", "zh", "ar"]
-SHEETS = ["", "pads", "pad2", "pad3", "sec", "secp", "paso", "song", "piano", "pianod", "mix", "xy", "set", "proj", "gest", "midi", "manual", "rack", "chop", "expo", "tour", "tour1", "tour6", "tour10", "tourf", "browse", "browsedir"]
+SHEETS = ["", "pads", "pad2", "pad3", "sec", "secp", "paso", "song", "piano", "pianod", "mix", "xy", "set", "proj", "gest", "midi", "manual", "rack", "chop", "inst", "instd", "expo", "tour", "tour1", "tour6", "tour10", "tourf", "browse", "browsedir"]
 
 MIN_TOUCH = 40   # Metrics::hit — Android's own guideline is 48dp, this is the floor
 #  LO QUE SE DIBUJA Y SE TOCA IGUAL.
@@ -249,6 +249,7 @@ UNTRANSLATED_OK = {
     "RACK", "TEST", "AUDIO", "AUTOCUT", "AUTO CHOP", "SWING", "off",
     "PIANO",                                   # el instrumento se llama igual en las dos
     "PAD -", "PAD +",                          # PAD pasa por T() y coincide de verdad en es/en
+    "PACK -", "PACK +",                        # la palabra es la misma en las dos lenguas
     "MASTER",                                  # la mezcla final se llama igual en las dos
     "WAV", "OGG",                              # los dos formatos, que son extensiones de fichero
     "TOUR",                                    # la palabra es la misma en las dos lenguas
@@ -268,8 +269,15 @@ def judge_lang(rows_es, rows_en, size, sheet):
     def m(rows):
         return {r["path"]: r["text"] for r in rows if r.get("path") and r.get("text")}
     es, en = m(rows_es), m(rows_en)
+    datos = {r["path"] for r in rows_es if r.get("dato")}
     out = []
     for path, t in es.items():
+        #  LO QUE VIENE DE FUERA NO SE TRADUCE. El nombre de un instrumento
+        #  sale de una carpeta del disco: es identico en los cuatro idiomas por
+        #  definicion, y contarlo daba 168 hallazgos falsos que tapaban los de
+        #  verdad - entre ellos uno REAL, los cuatro bancos de fabrica, que se
+        #  listaban sin pasar por T(). La app marca el que es dato.
+        if path in datos: continue
         if t in UNTRANSLATED_OK or UNTRANSLATED_SAFE.match(t): continue
         if UNTRANSLATED_UNIT.match(t): continue
         if "/" in t or t.startswith("P") and t[1:].isdigit(): continue

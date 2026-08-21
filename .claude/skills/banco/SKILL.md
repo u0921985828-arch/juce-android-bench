@@ -39,6 +39,7 @@ codigo.
 | defectos del proyecto nuevo | `Tests/nuevo.py` |
 | guardar o cargar un kit | `Tests/kit.py` |
 | piano roll, notas, compas, EUCLIDES | `Tests/piano.py` |
+| instrumentos, packs, licencias | `Tests/dlc.py` |
 | el tour de bienvenida | `Tests/tour.py` |
 | una APK | `Tests/apk.py <fichero>` |
 

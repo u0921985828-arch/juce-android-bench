@@ -258,6 +258,22 @@ namespace UiAudit
                  << ",\"needW\":" << juce::String (cap.needW, 1)
                  << ",\"haveW\":" << juce::String (cap.haveW, 1);
 
+        //  LO QUE VIENE DE FUERA NO SE TRADUCE.
+        //
+        //  La regla de traduccion es comparativa: se maqueta lo mismo en es y
+        //  en en y se compara la cadena en la MISMA ruta del arbol. Eso vale
+        //  para todo lo que la app escribe... y no vale para lo que la app LEE.
+        //  El nombre de un instrumento sale de una carpeta del disco, asi que
+        //  es identico en los cuatro idiomas por definicion, y la regla lo
+        //  contaba como sin traducir: 168 hallazgos de una tacada, todos falsos
+        //  y todos tapando los de verdad.
+        //
+        //  Quien pone el texto dice si es dato. Un rotulo que la app decide
+        //  -PACK, INSTRUMENTOS- se traduce y se mide; uno que la app copia de
+        //  un directorio, no.
+        if (c.getProperties().contains ("dato"))
+            line << ",\"dato\":1";
+
         line << "}";
         std::cout << line << std::endl;
 

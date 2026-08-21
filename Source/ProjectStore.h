@@ -172,6 +172,12 @@ public:
     //  nombre. Un formato propio habria sido una segunda forma de hacer lo
     //  mismo, y ademas la unica que no sabria leer nadie mas.
     static juce::File kits()       { return sub ("Kits"); }
+    //  EL CONTENIDO DESCARGABLE, en la biblioteca y con la misma forma que un
+    //  kit: una carpeta de carpetas de audios numerados. Ver Instrumentos.h -
+    //  se eligio asi para que un pack se pueda montar a mano, mirar desde el
+    //  gestor de ficheros y arreglar cuando algo salga mal, que es lo que un
+    //  formato propio no deja hacer.
+    static juce::File instrumentos() { return sub ("Instrumentos"); }
     static juce::File recordings() { return sub ("Recordings"); }
 
     //  DONDE CAE EL REBOTE, Y SE PUEDE ELEGIR.

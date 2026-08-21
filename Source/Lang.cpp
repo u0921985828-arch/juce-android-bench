@@ -961,6 +961,30 @@ namespace
         // --- Browser -------------------------------------------------------
         // --- Los sonidos de fabrica (Kits.h) --------------------------------
         { "FABRICA",        "",         "FACTORY",    "内置",       "المصنع" },
+
+        // --- INSTRUMENTOS: el contenido descargable (Instrumentos.h) --------
+        //  La tapa que decia FABRICA lleva ahora al catalogo, donde la fabrica
+        //  es el primer pack. La fila FABRICA se queda porque el manual la
+        //  nombra al contar de donde salen los sesenta y cuatro.
+        { "INSTRUMENTOS",   "",         "INSTRUMENTS", "乐器",     "آلات" },
+        { "PACK",           "",         "PACK",       "音色包",     "حزمة" },
+        { "Los packs van en %1", "",
+          "Packs go in %1", "音色包放在 %1", "توضع الحزم في %1" },
+        { "BANCO %1",       "",         "BANK %1",    "库 %1",     "البنك %1" },
+        { "%1 de %2",       "",         "%1 of %2",   "%1 / %2",    "%1 من %2" },
+        { "No hay instrumentos instalados", "",
+          "No instruments installed", "尚未安装任何乐器",
+          "لا توجد آلات مثبتة" },
+        { "Toca uno y sus 16 presets van al banco %1. Lo que hubiera se pierde.", "",
+          "Tap one and its 16 presets go to bank %1. Whatever was there is lost.",
+          "轻触其中一个，它的 16 个预设会进入库 %1。原有内容将丢失。",
+          "المس واحدًا فتنتقل إعداداته الـ 16 إلى البنك %1. ويضيع ما كان فيه." },
+        { "Este pack no esta comprado.", "",
+          "This pack has not been purchased.", "此音色包尚未购买。",
+          "لم يتم شراء هذه الحزمة." },
+        { "%1 no esta comprado", "",
+          "%1 has not been purchased", "%1 尚未购买",
+          "%1 غير مشترى" },
         { "Banco %1: %2",   "",         "Bank %1: %2", "库 %1：%2",  "البنك %1: %2" },
         { "ACUSTICA",       "",         "ACOUSTIC",   "原声",       "أكوستيك" },
         { "MAQUINA",        "",         "MACHINE",    "机器",       "آلة" },

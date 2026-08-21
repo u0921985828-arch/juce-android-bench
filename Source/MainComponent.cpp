@@ -524,6 +524,43 @@ MainComponent::MainComponent()
         rackSheet.onDismiss = [this] { closeAllSheets(); };
         rackSheet.paintContent = [this] (juce::Graphics& g) { paintRackSheetContent (g); };
 
+        // --- INSTRUMENTOS: el contenido, y la fabrica dentro de el -------
+        //
+        //  DIECISEIS TAPAS FIJAS Y NO UNA POR INSTRUMENTO. Cuantos hay depende
+        //  de lo que haya en el disco, y crear tapas al vuelo desde resized()
+        //  es lo que cerro la app entera la primera vez que la caja negra
+        //  sirvio para algo: `CAIDA senal 11 en arranque`. El pack no puede
+        //  traer mas de dieciseis -Instrumentos::kMaxInstr- asi que el pozo es
+        //  fijo y las que sobran se apagan Y se quedan sin limites, las dos
+        //  cosas, que es lo que la regla dice y lo que media app hacia a medias.
+        for (int i = 0; i < Instrumentos::kMaxInstr; ++i)
+        {
+            auto* b = new juce::TextButton();
+            styleButton (*b, kStepOff);
+            litAccent (*b);
+            b->onClick = [this, i] { cargaInstrumento (i); };
+            instSheet.cuerpo.addAndMakeVisible (b);
+            instBtns.add (b);
+        }
+        for (auto* b : { &instPackDownBtn, &instPackUpBtn })
+        {
+            styleButton (*b, kKey);
+            instSheet.cuerpo.addAndMakeVisible (*b);
+        }
+        instPackDownBtn.onClick = [this] { pasoPack (-1); };
+        instPackUpBtn  .onClick = [this] { pasoPack ( 1); };
+        styleButton (instCloseButton, kKey);
+        instCloseButton.onClick = [this] { closeAllSheets(); };
+        instSheet.cuerpo.addAndMakeVisible (instCloseButton);
+        //  DE CONTROLES, asi que se desplaza: son cuatro filas de tapas mas la
+        //  del pack, y en apaisado la tarjeta se queda en 321 px. Sin esto la
+        //  ultima fila se cae por el mismo sitio por el que se caia la del RACK.
+        instSheet.hazDesplazable();
+        addAndMakeVisible (instSheet);
+        instSheet.setVisible (false);
+        instSheet.onDismiss = [this] { closeAllSheets(); };
+        instSheet.paintContent = [this] (juce::Graphics& g) { paintInstSheetContent (g); };
+
         // --- AUTO CHOP: the confirmation the destruction always deserved ---
         for (int i = 0; i < 4; ++i)
         {
@@ -670,7 +707,7 @@ MainComponent::MainComponent()
                 lnf.applyBrowserColours();
                 repaint();
                 for (auto* sh : { &padSheet, &seqSheet, &browseSheet, &setSheet, &mixSheet,
-                                  &songSheet, &exportSheet, &rackSheet, &chopSheet })
+                                  &songSheet, &exportSheet, &rackSheet, &chopSheet, &instSheet })
                     sh->repaint();
             };
             setSheet.cuerpo.addAndMakeVisible (b);
@@ -862,21 +899,21 @@ MainComponent::MainComponent()
         };
         browseSheet.addAndMakeVisible (browseKitButton);
 
-        //  FABRICA: los dieciseis de este banco, otra vez. Mismo peso que
-        //  CARGAR KIT - se lleva el banco entero por delante - asi que la
-        //  misma confirmacion de dos toques.
         styleButton (browseFactoryButton, kKey);
-        browseFactoryButton.onClick = [this]
-        {
-            if (! armConfirm (browseFactoryButton, T ("SOBRESCRIBIR %1?",
-                                                      juce::String::charToString ((juce::juce_wchar) ('A' + currentBank)))))
-                return;
-            disarmConfirm();
-            loadFactoryKits (currentBank);
-            status.setText (T ("Banco %1: %2", juce::String::charToString ((juce::juce_wchar) ('A' + currentBank)),
-                               T (Kits::bankName (currentBank))),
-                            juce::dontSendNotification);
-        };
+        //  FABRICA SE CONVIRTIO EN LA PUERTA DE INSTRUMENTOS, y no es una tapa
+        //  que cambia de nombre: es la misma accion con el resto alrededor.
+        //
+        //  Esta tapa recargaba el banco de delante con sus dieciseis sonidos de
+        //  fabrica, o sea cargaba UN instrumento de UN pack - el de dentro -
+        //  sin que hubiera forma de llegar a ningun otro. Ahora la fabrica es
+        //  el primer pack del catalogo y sus cuatro bancos son sus cuatro
+        //  instrumentos, asi que lo que hacia esta tapa sigue estando a un
+        //  toque de aqui, con todo lo demas al lado.
+        //
+        //  Una funcion, un dueno: la que se queda es la que sabe algo mas, y la
+        //  que se va deja una puerta y nunca una copia. Y la fila sigue siendo
+        //  de cinco, asi que el reparto medido no se mueve.
+        browseFactoryButton.onClick = [this] { openInstSheet(); };
         browseSheet.addAndMakeVisible (browseFactoryButton);
 
         // Escape hatch: hand off to the OS picker. Some Android ROMs hide media
@@ -3559,6 +3596,7 @@ void MainComponent::closeAllSheets()
     setSheet.setVisible (false);
     exportSheet.setVisible (false);
     rackSheet.setVisible (false);
+    instSheet.setVisible (false);
     pianoButton.setToggleState (false, juce::dontSendNotification);
     chopSheet.setVisible (false);
     manualSheet.setVisible (false);
@@ -5632,18 +5670,19 @@ void MainComponent::resized()
         }
         else
         {
-        //  Cinco desde que MIS KITS tiene puerta, y la fila se parte en 2+3
-        //  cuando no caben. Arriba las dos que leen LA CARPETA QUE SE ESTA
-        //  VIENDO -un sonido en un pad, o los dieciseis del banco- y abajo las
-        //  tres que no dependen de donde estes: la fabrica, tus kits y el
-        //  selector del sistema.
+        //  Cinco, y la fila se parte en 2+3 cuando no caben. Arriba las dos
+        //  puertas por las que entra el sonido -un fichero a un pad, o el
+        //  catalogo entero- y abajo las tres que van a una CARPETA: repartir la
+        //  que estas viendo, las tuyas, y el selector del sistema.
         //
-        //  Y se parte 2+3 y no 3+2 porque "CARGAR KIT" es el rotulo mas largo
-        //  de los cinco: con tres arriba pedia 75 px y tenia 74, y en arabe
-        //  pedia 83 con 80. Dos apretones en 280x653 que no estaban antes. Los
-        //  rotulos largos van donde se reparte entre menos.
-        juce::TextButton* pb[5] = { &browseLoadButton, &browseKitButton,
-                                    &browseFactoryButton, &browseKitsDirButton,
+        //  Y se parte 2+3 y no 3+2 porque los rotulos largos van donde se
+        //  reparte entre menos. Antes el mas largo era "CARGAR KIT" -75 px con
+        //  74, y 83 con 80 en arabe-; desde que FABRICA es la puerta de
+        //  INSTRUMENTOS el mas largo es ese, que en 280x653 pide 90 y tenia 79:
+        //  el unico rotulo CORTADO de las 812 corridas. Sube al par y CARGAR
+        //  KIT baja al trio, donde sus 75 caben en 79.
+        juce::TextButton* pb[5] = { &browseLoadButton, &browseFactoryButton,
+                                    &browseKitButton, &browseKitsDirButton,
                                     &browseSystemButton };
         const bool actionsFit = moduleBarFits (inner.getWidth(), pb, 5);
 
@@ -6144,6 +6183,63 @@ void MainComponent::resized()
                 //  del control.
                 rackSends[f]->setBounds (row.withTrimmedLeft (54).reduced (2, 4));
             }
+        }
+    }
+
+    //  INSTRUMENTOS: el pack, la rejilla de dieciseis y una linea que dice
+    //  donde va a caer lo que se toque.
+    {
+        const int filaPack = Metrics::hit;
+        const int filaInst = Metrics::hit;
+        //  UNA LISTA Y NO UNA REJILLA, que es lo que el banco corrigio.
+        //
+        //  Empezo en cuatro por cuatro copiando el selector del RACK y la cara,
+        //  y esa forma es para NUMEROS: el 07 esta donde la mano ya sabe porque
+        //  ocupa una posicion, no porque se lea. Un instrumento es una PALABRA,
+        //  y en 360x640 una celda de esa rejilla mide 62 px: "ELECTRIC PIANO"
+        //  pide 120. Medido: 121 rotulos CORTADOS y 61 apretones nuevos, o sea
+        //  el arreglo de maquetado que esta casa ya ha rechazado dos veces -
+        //  cambiar un apreton por un corte no es un arreglo.
+        //
+        //  De ancho entero, hasta la pantalla mas estrecha da 217 px, y una
+        //  lista de nombres se lee de arriba abajo. Sale mas alta que la
+        //  tarjeta y por eso esta ficha se desplaza.
+        const int cuantos = (instPack >= 0 && instPack < (int) instCatalogo.size())
+                                ? (int) instCatalogo[(size_t) instPack].instr.size() : 0;
+        const int filas = juce::jmax (1, cuantos);
+        auto inner = sheetFromBottom (instSheet, Metrics::md * 2 + Metrics::hit
+                                                   + Metrics::md + filaPack
+                                                   + Metrics::sm + (filaInst + Metrics::xs) * filas
+                                                   + Metrics::sm + 40);
+        auto titleRow = inner.removeFromTop (Metrics::hit);
+        instCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
+                                       .withSizeKeepingCentre (Metrics::hit, Metrics::hit));
+        inner.removeFromTop (Metrics::md);
+
+        //  MENOS Y MAS EN LOS EXTREMOS y el nombre del pack pintado en medio.
+        //  Es lo mismo que hace el RACK con el nombre del efecto: un rotulo que
+        //  solo se lee no necesita ser un componente, y siendolo le quitaria el
+        //  ancho a las dos tapas que si se tocan.
+        {
+            auto fila = inner.removeFromTop (filaPack);
+            const int w = juce::jmin (Metrics::hit * 2, fila.getWidth() / 3);
+            instPackDownBtn.setBounds (fila.removeFromLeft (w));
+            instPackUpBtn  .setBounds (fila.removeFromRight (w));
+        }
+        inner.removeFromTop (Metrics::sm);
+
+        //  De arriba abajo, al reves que el RACK y que la cara: ahi el 01 va
+        //  abajo porque son PADS y la rejilla de pads empieza abajo; una lista
+        //  de palabras se lee al derecho.
+        for (auto* b : instBtns) if (b != nullptr) { b->setVisible (false); b->setBounds ({}); }
+
+        for (int i = 0; i < instBtns.size(); ++i)
+        {
+            if (i >= cuantos) break;
+            auto fila = inner.removeFromTop (filaInst);
+            inner.removeFromTop (Metrics::xs);
+            instBtns[i]->setVisible (true);
+            instBtns[i]->setBounds (fila);
         }
     }
 
@@ -8530,24 +8626,46 @@ int MainComponent::padSourceLength (int pad) const
 //  hacen aqui mismo en vez de viajar dentro del APK. Va por el mismo camino que
 //  cargar un fichero - assignSampleToPad - para que el motor, la sesion y la
 //  onda no tengan ni que enterarse de que estos vienen de otro sitio.
-void MainComponent::loadFactoryKits (int onlyBank)
+//  UN BANCO DE FABRICA EN EL BANCO QUE SE DIGA, que no siempre es el suyo.
+//
+//  Esto era `loadFactoryKits (b)` y escribia el banco b EN el banco b: "vuelve
+//  a poner la fabrica aqui". Sirve para arrancar la maquina y para la tapa que
+//  recargaba el banco de delante, y no sirve para lo que hace falta desde que
+//  la fabrica es el primer pack del catalogo: elegir TEXTURA estando en el
+//  banco A tiene que dejar TEXTURA EN A. Con el origen mandando sobre el
+//  destino, la ficha decia "van al banco A" y los ponia en el C - o sea
+//  cambiaba en silencio un banco que no estabas mirando, que es la peor forma
+//  de equivocarse que tiene esta app.
+//
+//  Medido: la fabrica llenaba 0 pads del banco de delante.
+void MainComponent::cargaFabricaEnBanco (int origen, int destino)
 {
-    const int from = (onlyBank < 0) ? 0 : juce::jlimit (0, kNumBanks - 1, onlyBank) * kPadsPerBank;
-    const int to   = (onlyBank < 0) ? kNumPads : from + kPadsPerBank;
+    origen  = juce::jlimit (0, kNumBanks - 1, origen);
+    destino = juce::jlimit (0, kNumBanks - 1, destino);
 
-    for (int i = from; i < to; ++i)
+    for (int i = 0; i < kPadsPerBank; ++i)
     {
-        if (auto sb = Kits::render (i))
+        const int src = origen  * kPadsPerBank + i;
+        const int dst = destino * kPadsPerBank + i;
+        if (auto sb = Kits::render (src))
         {
-            assignSampleToPad (i, sb, Kits::table()[i].name);
+            assignSampleToPad (dst, sb, Kits::table()[src].name);
             //  El color del pad lo pone Zati::forPad y no se toca: el orden de
             //  corte manda sobre cualquier idea decorativa.
-            padHasSample[(size_t) i] = true;
+            padHasSample[(size_t) dst] = true;
         }
     }
 
-    for (int i = from; i < to; ++i) refreshPad (i);
+    for (int i = 0; i < kPadsPerBank; ++i) refreshPad (destino * kPadsPerBank + i);
     selectPad (juce::jmax (0, selectedPad));
+}
+
+void MainComponent::loadFactoryKits (int onlyBank)
+{
+    //  Cada banco en el suyo, que es lo que significa "la fabrica" al arrancar
+    //  y lo que significaba esta funcion antes de que hubiera catalogo.
+    if (onlyBank >= 0) { cargaFabricaEnBanco (onlyBank, onlyBank); return; }
+    for (int b = 0; b < kNumBanks; ++b) cargaFabricaEnBanco (b, b);
 }
 
 void MainComponent::assignSampleToPad (int index, SampleBuffer::Ptr sb, const juce::String& name)
@@ -8796,7 +8914,13 @@ void MainComponent::retranslateUi()
     browseUseDirBtn   .setButtonText (T ("USAR ESTA CARPETA"));
     exportDirBtn      .setButtonText (T ("CAMBIAR"));
     browseKitButton   .setButtonText (T ("CARGAR KIT"));
-    browseFactoryButton.setButtonText (T ("FABRICA"));
+    browseFactoryButton.setButtonText (T ("INSTRUMENTOS"));
+    instPackDownBtn.setButtonText (T ("PACK") + " -");
+    instPackUpBtn  .setButtonText (T ("PACK") + " +");
+    //  Y los nombres de la rejilla, que salen del disco y no de la tabla: si el
+    //  catalogo ya estaba leido hay que volver a escribirlos, porque
+    //  retranslateUi corre tambien al cambiar de idioma con la ficha abierta.
+    if (! instCatalogo.empty()) refreshInst();
     browseSystemButton.setButtonText (T ("SISTEMA"));
     browseKitsDirButton.setButtonText (T ("MIS KITS"));
 
@@ -13347,8 +13471,21 @@ void MainComponent::loadFolderAsKit()
         return;
     }
 
+    repartePorBanco (files, T ("CARGAR KIT"));
+}
+
+//  EL REPARTO, QUE AHORA TIENE DOS CLIENTES Y POR ESO VIVE APARTE.
+//
+//  Lo llamaban CARGAR KIT y ahora tambien un instrumento del catalogo, y son
+//  el mismo trabajo: n ficheros ordenados por nombre a los n primeros pads del
+//  banco de delante. Se saco de dentro en cuanto hubo dos formas de llegar
+//  aqui, por lo mismo que `normaliza` salio de dentro de `render`: dos caminos
+//  que hacen lo mismo por su cuenta se separan, y el sintoma habria sido "el
+//  kit y el instrumento no cargan igual" sin poder decir por que.
+void MainComponent::repartePorBanco (const juce::Array<juce::File>& files, const juce::String& motivo)
+{
     //  Sobrescribe dieciseis pads: pasa por deshacer, como AUTO CHOP.
-    pushUndo (T ("CARGAR KIT"));
+    pushUndo (motivo);
 
     const int base = currentBank * kPadsPerBank;
     const int n    = juce::jmin (files.size(), kPadsPerBank);
@@ -13388,6 +13525,345 @@ void MainComponent::loadFolderAsKit()
                        juce::String (n),
                        juce::String::charToString ((juce::juce_wchar) ('A' + currentBank))),
                     juce::dontSendNotification);
+}
+
+// ============================================================================
+//  LA FICHA DE INSTRUMENTOS. Ver Instrumentos.h.
+// ============================================================================
+
+//  DOS PACKS DE MENTIRA PARA EL BANCO, uno abierto y otro de pago.
+//
+//  El catalogo de verdad depende de lo que haya en el disco de cada telefono,
+//  asi que sin esto el banco solo puede medir el pack de dentro - cuatro
+//  instrumentos de cuatro tapas - y jamas la rejilla llena ni el candado, que
+//  son justo los dos estados donde los rotulos miden otra cosa. Es el mismo
+//  andamio que ZATI_SKIN: convierte en ENTRADA lo que si no seria lo que
+//  hubiera.
+//
+//  Un fichero de audio de verdad y no uno vacio: el catalogo cuenta ficheros
+//  por su extension, pero cargar el instrumento los abre, y un banco que
+//  planta ceros mediria la mitad del camino.
+void MainComponent::plantaPacksDePrueba()
+{
+    const auto raiz = ProjectStore::instrumentos();
+    if (! raiz.isDirectory()) return;
+
+    juce::AudioBuffer<float> pip (1, 480);          // 10 ms a 48 k
+    for (int i = 0; i < pip.getNumSamples(); ++i)
+        pip.setSample (0, i, 0.2f * std::sin (juce::MathConstants<float>::twoPi * 440.0f
+                                              * (float) i / 48000.0f));
+
+    //  Nombres LARGOS a proposito en uno de los dos: el rotulo de una tapa de
+    //  una rejilla de cuatro por cuatro es lo primero que se corta en 280 px,
+    //  y un pack real se llamara "ELECTRIC PIANO" y no "EP".
+    static const char* kNombres[Instrumentos::kMaxInstr] =
+    { "SUBBASS", "ELECTRIC PIANO", "STRINGS", "BRASS", "CHOIR", "MARIMBA",
+      "SYNTH LEAD", "PLUCK", "ORGAN", "CLAV", "FLUTE", "BELL",
+      "PAD WARM", "SAW STACK", "UPRIGHT BASS", "GLASS" };
+
+    for (int p = 0; p < 2; ++p)
+    {
+        auto pack = raiz.getChildFile (p == 0 ? "01 DEMO" : "02 ESTUDIO");
+        pack.createDirectory();
+        //  El segundo declara que es de pago y NO lleva licencia, que es la
+        //  unica forma de medir el candado cerrado.
+        pack.getChildFile ("pack.txt")
+            .replaceWithText (p == 0 ? "nombre=DEMO\n" : "nombre=ESTUDIO\npago=1\n");
+
+        for (int i = 0; i < Instrumentos::kMaxInstr; ++i)
+        {
+            auto dir = pack.getChildFile (juce::String (i + 1).paddedLeft ('0', 2)
+                                          + " " + kNombres[i]);
+            dir.createDirectory();
+            auto f = dir.getChildFile ("01 " + juce::String (kNombres[i]) + ".wav");
+            if (f.existsAsFile()) continue;
+            std::unique_ptr<juce::FileOutputStream> out (f.createOutputStream());
+            if (out == nullptr || ! out->openedOk()) continue;
+            juce::WavAudioFormat wav;
+            std::unique_ptr<juce::AudioFormatWriter> w (
+                wav.createWriterFor (out.get(), 48000.0, 1, 16, {}, 0));
+            if (w == nullptr) continue;
+            out.release();
+            w->writeFromAudioSampleBuffer (pip, 0, pip.getNumSamples());
+        }
+    }
+}
+
+//  LO QUE EL CATALOGO DICE Y LO QUE EL CANDADO HACE. Ver Tests/dlc.py.
+void MainComponent::auditDlc()
+{
+    plantaPacksDePrueba();
+    instCatalogo = Instrumentos::lee();
+
+    for (int i = 0; i < (int) instCatalogo.size(); ++i)
+    {
+        const auto& p = instCatalogo[(size_t) i];
+        std::cout << "{\"dlc\":\"pack\",\"i\":" << i
+                  << ",\"id\":\"" << p.id << "\",\"nombre\":\"" << p.nombre
+                  << "\",\"dentro\":" << (p.dentro ? 1 : 0)
+                  << ",\"pago\":" << (p.dePago ? 1 : 0)
+                  << ",\"abierto\":" << (p.abierto ? 1 : 0)
+                  << ",\"instr\":" << (int) p.instr.size() << "}" << std::endl;
+    }
+
+    auto buscaPack = [this] (const juce::String& id) -> int
+    {
+        for (int i = 0; i < (int) instCatalogo.size(); ++i)
+            if (instCatalogo[(size_t) i].id == id) return i;
+        return -1;
+    };
+
+    //  EL PACK CERRADO NO ENTRA AL REPARTO.
+    //
+    //  La primera version contaba PADS, y era una linea que imprimia OK: se
+    //  rompio el candado a proposito y siguio saliendo verde. El reparto de un
+    //  instrumento de disco es ASINCRONO -loader.loadAsync, hilo propio- y aqui
+    //  no hay bucle de mensajes que lo recoja, asi que los pads salen a cero
+    //  con el candado puesto y sin el. Una comprobacion que no puede decir que
+    //  no vale menos que ninguna, porque ademas ocupa el sitio de la que si.
+    //
+    //  Lo que SI es sincrono es la primera linea del reparto: pushUndo. Se
+    //  vacia la pila y se mira si crecio. Y de paso mide lo correcto, que no es
+    //  "llegaron los ficheros" -eso ya lo mide CARGAR KIT- sino "el candado
+    //  dejo pasar".
+    currentBank = 0;
+    undoStack.clear();
+    instPack = buscaPack ("02 ESTUDIO");
+    if (instPack >= 0)
+    {
+        //  Dos toques, que es lo que pide la confirmacion. Si el candado deja
+        //  pasar, el segundo reparte. Y el candado se mira ANTES de armar, asi
+        //  que con el puesto ni siquiera se arma.
+        cargaInstrumento (0);
+        cargaInstrumento (0);
+    }
+    std::cout << "{\"dlc\":\"cerrado\",\"reparto\":" << (int) undoStack.size() << "}" << std::endl;
+
+    //  Y CON LA LICENCIA PUESTA, EL MISMO PACK CARGA. Es la otra mitad: un
+    //  candado que nunca abre pasa la prueba de arriba y no sirve de nada.
+    Instrumentos::concede ("02 ESTUDIO");
+    instCatalogo = Instrumentos::lee();
+    instPack = buscaPack ("02 ESTUDIO");
+    const bool abiertoAhora = (instPack >= 0) && instCatalogo[(size_t) instPack].abierto;
+    std::cout << "{\"dlc\":\"licencia\",\"abierto\":" << (abiertoAhora ? 1 : 0) << "}" << std::endl;
+
+    //  EL PACK ABIERTO CARGA DIECISEIS. Sincrono: el reparto usa el cargador,
+    //  que tiene su propio hilo, asi que se leen los ficheros aqui y se cuenta
+    //  lo que el catalogo entrega - que es lo que esta prueba mide, no el
+    //  cargador, que ya lo mide CARGAR KIT.
+    instPack = buscaPack ("01 DEMO");
+    int presets = 0, conNombre = 0;
+    if (instPack >= 0)
+    {
+        const auto& p = instCatalogo[(size_t) instPack];
+        for (const auto& in : p.instr)
+        {
+            if (! Instrumentos::presetsDe (in).isEmpty()) ++presets;
+            //  Y QUE EL NUMERO DE ORDEN NO SE VEA: "01 SUBBASS" es el orden en
+            //  el disco y "SUBBASS" es el nombre. Ensenar las dos cifras seria
+            //  ensenar el andamio.
+            if (in.nombre.isNotEmpty() && ! juce::CharacterFunctions::isDigit (in.nombre[0])) ++conNombre;
+        }
+    }
+    std::cout << "{\"dlc\":\"abierto\",\"conAudio\":" << presets
+              << ",\"conNombre\":" << conNombre << "}" << std::endl;
+
+    //  Y LA FABRICA SIGUE SIENDO UN INSTRUMENTO. Cargarla llena el banco sin
+    //  pasar por ningun fichero, que es su camino propio.
+    for (int i = 0; i < kNumPads; ++i) { uiSample[(size_t) i] = nullptr; padHasSample[(size_t) i] = false; }
+    instPack = 0;
+    currentBank = 0;
+    cargaInstrumento (2);      // TEXTURA, que vive en el banco C
+    cargaInstrumento (2);
+    int deFabrica = 0;
+    for (int i = 0; i < kPadsPerBank; ++i) if (padHasSample[(size_t) i]) ++deFabrica;
+    std::cout << "{\"dlc\":\"fabrica\",\"pads\":" << deFabrica << "}" << std::endl;
+}
+
+void MainComponent::openInstSheet()
+{
+    //  EL CATALOGO SE LEE AL ABRIR Y NO AL PINTAR. Es un barrido de directorio,
+    //  y hacerlo treinta veces por segundo para una lista que no cambia es el
+    //  mismo derroche que costo la CPU de la cara. Y al ABRIR y no una sola vez
+    //  al arrancar, porque un pack puede aparecer con la app puesta: se copia
+    //  por cable, o lo deja la tienda mientras esto esta en segundo plano.
+    instCatalogo = Instrumentos::lee();
+    instPack = juce::jlimit (0, juce::jmax (0, (int) instCatalogo.size() - 1), instPack);
+    refreshInst();
+    closeAllSheets();
+    instSheet.setVisible (true);
+    instSheet.toFront (false);
+    resized();
+}
+
+void MainComponent::pasoPack (int d)
+{
+    if (instCatalogo.empty()) return;
+    const int n = (int) instCatalogo.size();
+    //  DA LA VUELTA. Con dos packs, un menos que se queda quieto en el primero
+    //  es una tapa que a veces no hace nada, y eso no se distingue de una rota.
+    instPack = (instPack + d % n + n) % n;
+    refreshInst();
+    resized();
+    instSheet.repaint();
+}
+
+void MainComponent::refreshInst()
+{
+    if (instCatalogo.empty()) return;
+    const auto& p = instCatalogo[(size_t) juce::jlimit (0, (int) instCatalogo.size() - 1, instPack)];
+
+    //  EL CANDADO SE VE, no se esconde. Un pack cerrado que no aparece no se
+    //  compra nunca: lo que hace falta es que se vea QUE hay y que al tocarlo
+    //  diga por que no suena.
+    const juce::String candado (juce::CharPointer_UTF8 ("\xf0\x9f\x94\x92 "));
+    for (int i = 0; i < instBtns.size(); ++i)
+    {
+        const bool hay = i < (int) p.instr.size();
+        //  LA FABRICA SE TRADUCE Y LO DEL DISCO NO, que son dos cosas y el
+        //  banco las separo: ACUSTICA / MAQUINA / TEXTURA / TONOS estan en la
+        //  tabla y se listaban en crudo -identicas en los cuatro idiomas, y la
+        //  regla comparativa lo canto-, mientras que el nombre de una carpeta
+        //  es dato y traducirlo no significa nada.
+        const auto nombre = ! hay ? juce::String()
+                          : (p.dentro ? T (p.instr[(size_t) i].nombre) : p.instr[(size_t) i].nombre);
+        instBtns[i]->setButtonText (hay && ! p.abierto ? candado + nombre : nombre);
+        //  Y lo que sale de una carpeta se marca como dato, o la regla de
+        //  traduccion lo cuenta como sin traducir - 168 hallazgos falsos en la
+        //  primera corrida, todos tapando los de verdad. Ver UiAudit::walk.
+        if (hay && ! p.dentro) instBtns[i]->getProperties().set ("dato", 1);
+        else                   instBtns[i]->getProperties().remove ("dato");
+    }
+    //  Y las dos tapas del pack se apagan cuando solo hay uno: con un unico
+    //  pack instalado, menos y mas vuelven al mismo sitio.
+    const bool varios = instCatalogo.size() > 1;
+    instPackDownBtn.setEnabled (varios);
+    instPackUpBtn  .setEnabled (varios);
+}
+
+void MainComponent::cargaInstrumento (int idx)
+{
+    if (instCatalogo.empty()) return;
+    const auto& p = instCatalogo[(size_t) juce::jlimit (0, (int) instCatalogo.size() - 1, instPack)];
+    if (! juce::isPositiveAndBelow (idx, (int) p.instr.size())) return;
+    const auto& in = p.instr[(size_t) idx];
+
+    if (! p.abierto)
+    {
+        status.setText (T ("%1 no esta comprado", p.nombre), juce::dontSendNotification);
+        return;
+    }
+
+    //  SE LLEVA DIECISEIS PADS POR DELANTE, asi que se confirma - la misma
+    //  regla que ya tenian FABRICA y AUTO CHOP, y en la misma tapa que se
+    //  acaba de tocar para que la pregunta este donde estaba el dedo.
+    if (auto* b = instBtns[idx])
+    {
+        if (! armConfirm (*b, T ("SOBRESCRIBIR %1?",
+                                 juce::String::charToString ((juce::juce_wchar) ('A' + currentBank)))))
+            return;
+        disarmConfirm();
+    }
+
+    if (in.bancoFabrica >= 0)
+    {
+        //  LA FABRICA NO SON FICHEROS. Se sintetiza o sale de los recursos
+        //  incrustados, asi que entra por su propia puerta y no por el reparto.
+        closeAllSheets();
+        cargaFabricaEnBanco (in.bancoFabrica, currentBank);
+        status.setText (T ("Banco %1: %2",
+                           juce::String::charToString ((juce::juce_wchar) ('A' + currentBank)),
+                           T (Kits::bankName (in.bancoFabrica))),
+                        juce::dontSendNotification);
+        return;
+    }
+
+    const auto files = Instrumentos::presetsDe (in);
+    if (files.isEmpty())
+    {
+        //  Una carpeta que tenia audio cuando se leyo el catalogo y no lo tiene
+        //  ahora: la tarjeta se ha desmontado, o alguien la ha vaciado desde el
+        //  gestor de ficheros con la app abierta. Se dice, no se carga medio.
+        status.setText (T ("No hay audio en esta carpeta"), juce::dontSendNotification);
+        return;
+    }
+    repartePorBanco (files, T ("INSTRUMENTOS"));
+}
+
+void MainComponent::paintInstSheetContent (juce::Graphics& g)
+{
+    if (instSheet.sheetBounds.isEmpty()) return;
+
+    const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
+    auto inner = instSheet.sheetBounds.reduced (Metrics::lg, Metrics::md);
+
+    auto titleRow = inner.removeFromTop (Metrics::hit).withTrimmedTop (8).withHeight (24);
+    titleRow.setRight (juce::jmin (titleRow.getRight(), instCloseButton.getX() - Metrics::xs));
+    g.setColour (ZatiColours::ink.withAlpha (0.9f));
+    g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
+    pintaTitulo (g, titleRow,
+                 T ("INSTRUMENTOS") + "  " + dot + "  "
+                     + T ("BANCO %1", juce::String::charToString ((juce::juce_wchar) ('A' + currentBank))),
+                 "titulo", true);
+
+    inner.removeFromTop (Metrics::md);
+
+    //  EL NOMBRE DEL PACK, entre las dos tapas. Ver la maqueta: pintado y no
+    //  un componente, para que el ancho se lo queden las que se tocan.
+    {
+        auto fila = inner.removeFromTop (Metrics::hit);
+        fila = fila.withTrimmedLeft (instPackDownBtn.getWidth() + Metrics::xs)
+                   .withTrimmedRight (instPackUpBtn.getWidth() + Metrics::xs);
+        g.setColour (ZatiColours::ink.withAlpha (0.9f));
+        g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.10f));
+        const auto nombre = instCatalogo.empty() ? juce::String ("-")
+                          : instCatalogo[(size_t) instPack].nombre;
+        //  Pintado, no un componente, asi que lo unico que lo mide es
+        //  UiAudit::rotulo. El de dentro se llama ZATI -que ya esta en la
+        //  lista de los que no se traducen- y los de disco son dato.
+        pintaTitulo (g, fila, nombre, "seccion", true);
+    }
+    inner.removeFromTop (Metrics::sm);
+    const int filasPintadas = instCatalogo.empty() ? 1
+        : juce::jmax (1, (int) instCatalogo[(size_t) juce::jlimit (0, (int) instCatalogo.size() - 1,
+                                                                   instPack)].instr.size());
+    inner.removeFromTop ((Metrics::hit + Metrics::xs) * filasPintadas);
+
+    //  Y UNA LINEA QUE DICE QUE VA A PASAR. Tocar una tapa aqui se lleva los
+    //  dieciseis pads del banco de delante, y eso no se puede deducir mirando
+    //  una rejilla de nombres.
+    g.setColour (ZatiColours::inkDim);
+    g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.06f));
+    juce::String pie;
+    //  Y CUANDO NO HAY NADA INSTALADO, DONDE SE PONEN. Es la misma falta que
+    //  tenia ZATI/Kits antes de MIS KITS: quien se baja un pack no tiene forma
+    //  de saber a que carpeta va, y un menu que dice "no hay nada" sin decir
+    //  donde mirar deja el trabajo a medias. La ruta es fija, asi que decirla
+    //  aqui no puede mentir - que es lo que le paso a la linea "destino" de
+    //  EXPORTAR el dia que la carpeta se pudo elegir.
+    if (instCatalogo.size() <= 1)
+    {
+        pie = T ("Los packs van en %1", "ZATI/Instrumentos");
+        if (! instCatalogo.empty())
+            pie = T ("Toca uno y sus 16 presets van al banco %1. Lo que hubiera se pierde.",
+                     juce::String::charToString ((juce::juce_wchar) ('A' + currentBank)))
+                + "   " + pie;
+    }
+    else if (instCatalogo.empty())
+    {
+        pie = T ("No hay instrumentos instalados");
+    }
+    else
+    {
+        const auto& p = instCatalogo[(size_t) instPack];
+        pie = p.abierto
+                ? T ("Toca uno y sus 16 presets van al banco %1. Lo que hubiera se pierde.",
+                     juce::String::charToString ((juce::juce_wchar) ('A' + currentBank)))
+                : T ("Este pack no esta comprado.");
+        pie += "  " + dot + "  "
+             + T ("%1 de %2", juce::String (instPack + 1), juce::String ((int) instCatalogo.size()));
+    }
+    g.drawFittedText (pie, inner.removeFromTop (40), Lang::start (juce::Justification::top), 2, 1.0f);
 }
 
 void MainComponent::loadBrowserSelection()
@@ -14342,6 +14818,22 @@ void MainComponent::auditOpen (const juce::String& which)
     else if (which == "gest") { showSetPage (pageGestures); openSheet (setSheet, setButton); }
     else if (which == "midi") { showSetPage (pageMidi); refreshMidiDevices(); openSheet (setSheet, setButton); }
     else if (which == "rack") { rackPad = 0; openSheet (rackSheet, mixButton); refreshRack(); }
+    //  LA FICHA DE INSTRUMENTOS, en sus dos estados: con el pack de dentro
+    //  -cuatro tapas de cuatro- y con uno de disco lleno y CERRADO, que es
+    //  donde los rotulos llevan el candado delante y por tanto miden otra cosa.
+    else if (which == "inst")  { instPack = 0; openInstSheet(); }
+    else if (which == "instd")
+    {
+        //  Y ESTE PLANTA LOS PACKS ANTES DE ABRIR. Sin eso el catalogo de una
+        //  corrida limpia es solo el de dentro y las dos entradas medirian la
+        //  misma ficha - cuatro tapas de cuatro, sin candado y sin rotulos
+        //  largos, que es exactamente lo que hay que medir aqui.
+        plantaPacksDePrueba();
+        openInstSheet();
+        instPack = juce::jmax (0, (int) instCatalogo.size() - 1);
+        refreshInst();
+        resized();
+    }
     else if (which == "chop")
     {
         //  ZATI_CHOP=golpes abre la ficha en el otro modo. Sin esto el banco

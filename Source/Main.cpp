@@ -340,7 +340,7 @@ public:
                         static const char* kFichas[] =
                         { "pads", "pad2", "pad3", "sec", "secp", "paso", "song", "piano",
                           "pianod", "mix", "set", "proj", "midi", "gest", "rack", "chop",
-                          "manual", "expo", "browse", "xy" };
+                          "inst", "manual", "expo", "browse", "xy" };
                         const int n2 = juce::numElementsInArray (kFichas);
 
                         int peorSolapes = 0, peorFuera = 0, mirados = 0;
@@ -398,6 +398,11 @@ public:
                     else if (UiAudit::env ("ZATI_PIANO").isNotEmpty())
                     {
                         c2->auditPiano();
+                    }
+                    //  EL CATALOGO DE CONTENIDO Y EL CANDADO. Ver Tests/dlc.py.
+                    else if (UiAudit::env ("ZATI_DLC").isNotEmpty())
+                    {
+                        c2->auditDlc();
                     }
                     else if (const auto ex = UiAudit::env ("ZATI_EXPORT"); ex.isNotEmpty())
                     {
