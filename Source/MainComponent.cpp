@@ -2407,7 +2407,7 @@ MainComponent::MainComponent()
     //  instead of the sound actually coming out.
     //  Swipe the screen to walk the pattern banks. The one gesture on the face
     //  that changes what is PLAYING without covering the pads with a sheet.
-    spectrum.onSwipe = [this] (int dir)
+    cristal.onSwipe = [this] (int dir)
     {
         const int next = (selectedPattern + dir + kNumPatterns) % kNumPatterns;
         //  Go through the stepper the sheet already owns, rather than doing
@@ -2418,7 +2418,7 @@ MainComponent::MainComponent()
                         juce::dontSendNotification);
     };
 
-    addAndMakeVisible (spectrum);
+    addAndMakeVisible (cristal);
     padSheet.addAndMakeVisible (waveform);
 
     //  There is no skin picker. ZATI has one look; a strip of alternative
@@ -4762,7 +4762,7 @@ void MainComponent::resized()
                           .removeFromBottom (Metrics::hit - 6);
     busyBar.setBounds (busyArea);
     if (busyJobs > 0) busyBar.toFront (false);
-    spectrum.setBounds (screenBezel);
+    cristal.setBounds (screenBezel);
     area.removeFromTop (ZatiLookAndFeel::kAir + layoutAir);   // the bezel is drawn 5 px proud
 
     //  Six modules and three transport keys will not fit across a phone in one
@@ -13265,7 +13265,7 @@ void MainComponent::auditDemo()
         //  son -16 dB y todo verde. Una sonda que la app pisa a la vuelta
         //  siguiente no es una sonda.
         vuHeld = true;
-        spectrum.setVu (vuL, vuR);
+        cristal.setVu (vuL, vuR);
     }
 
     //  Y UN TROCEADO DE VERDAD, si lo piden: ZATI_CHOPGO=8 corta el primer pad
@@ -14714,14 +14714,14 @@ void MainComponent::timerCallback()
     {
         float cmn[AudioEngine::kMaxScopeColumns], cmx[AudioEngine::kMaxScopeColumns];
         const int nc = engine.copyScopeColumns (cmn, cmx, AudioEngine::kMaxScopeColumns);
-        spectrum.setColumns (cmn, cmx, nc);
+        cristal.setColumns (cmn, cmx, nc);
     }
 
     const int scopeN = juce::jmin ((int) (sizeof (scopeTmp) / sizeof (scopeTmp[0])),
                                    DeviceTier::profile().scopePoints);
     engine.copyScope (scopeTmp, scopeN);
-    spectrum.setSamples (scopeTmp, scopeN);
-    spectrum.setBpm (bpmSlider.getValue());
+    cristal.setSamples (scopeTmp, scopeN);
+    cristal.setBpm (bpmSlider.getValue());
 
     const int ps = engine.getPlayStep();
 
@@ -14830,7 +14830,7 @@ void MainComponent::timerCallback()
         vuL = juce::jmax (pl, vuL * 0.80f); if (vuL < 0.004f) vuL = 0.0f;
         vuR = juce::jmax (pr, vuR * 0.80f); if (vuR < 0.004f) vuR = 0.0f;
         juce::ignoreUnused (prevL, prevR, prevPlayStep);
-        spectrum.setVu (vuL, vuR);
+        cristal.setVu (vuL, vuR);
         // (the LCD no longer carries a step strip)
     }
 

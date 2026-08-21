@@ -1623,7 +1623,13 @@ private:
     juce::Slider macroCtrl1, macroCtrl2, macroCtrl3;   // CTRL 1-3, bank-dependent
     juce::Label  status, fxLabel;
     WaveformDisplay waveform;
-    SpectrumDisplay spectrum;
+    //  SE LLAMA CRISTAL Y NO ESPECTRO, porque no es un espectro: no lleva una
+    //  sola FFT dentro. Dibuja la silueta de la onda del master sobre 0.74 s
+    //  -ver SpectrumDisplay.h, que ya lo decia en su cabecera-. El NOMBRE
+    //  mentia en los ocho sitios donde se usa, y quien lo leyera buscaria un
+    //  analizador que no existe. Es el mismo fallo que la sombra pintada con
+    //  ZatiColours::ink: un nombre que miente es un fallo, no un detalle.
+    SpectrumDisplay cristal;
     ZatiLookAndFeel lnf;
     float scopeTmp[1024] {};
 
