@@ -391,6 +391,7 @@ MainComponent::MainComponent()
             paintSetTitle (g);
             if      (setPage == pageMidi)     paintMidiPage (g, midiArea);
             else if (setPage == pageAudio)    paintAudioSheetContent (g);
+            else if (setPage == pageAspecto)  paintAspectoPage (g);
             else if (setPage == pageProjects) paintProjSheetContent  (g);
             else                              paintGesturesPage (g, gesturesArea);
         };
@@ -808,8 +809,9 @@ MainComponent::MainComponent()
         //  where it is and its contents change, which is the difference
         //  between "settings has two pages" and "settings sends you somewhere
         //  else".
-        juce::TextButton* pb[4] = { &pageAudioBtn, &pageMidiBtn, &pageProjBtn, &pageGestBtn };
-        for (int i = 0; i < 4; ++i)
+        juce::TextButton* pb[5] = { &pageAudioBtn, &pageMidiBtn, &pageAspBtn,
+                                    &pageProjBtn, &pageGestBtn };
+        for (int i = 0; i < 5; ++i)
         {
             styleButton (*pb[i], kKey);
             pb[i]->setClickingTogglesState (true);
@@ -2727,6 +2729,20 @@ MainComponent::MainComponent()
     //  LA PUERTA DEL RACK, donde estaban los seis envios duplicados. Ver la
     //  maqueta de la pagina RIG: los mismos seis valores se movian desde dos
     //  fichas distintas, y de las dos el RACK es la que dice mas.
+    //  16 NIVELES. Ver nivel16: se captura el pad al encender.
+    styleButton (nivelesButton, kKey);
+    litAccent (nivelesButton);
+    nivelesButton.setClickingTogglesState (true);
+    nivelesButton.onClick = [this]
+    {
+        nivel16 = nivelesButton.getToggleState();
+        nivelPad = juce::jlimit (0, kNumPads - 1, selectedPad);
+        status.setText (nivel16 ? T ("16 NIVELES: PAD %1", juce::String (nivelPad + 1))
+                                : T ("16 NIVELES OFF"), juce::dontSendNotification);
+        repaint();
+    };
+    padSheet.addAndMakeVisible (nivelesButton);
+
     styleButton (padRackBtn, kKey);
     litAccent (padRackBtn);
     padRackBtn.onClick = [this]
@@ -2864,9 +2880,6 @@ void MainComponent::reconstruyeFondo()
                                              ZatiColours::chassisBot, full.getCentreX(), (float) h, false));
     g.fillRect (full);
 
-    g.setTiledImageFill (ZatiColours::grano(), 0, 0, 1.0f);
-    g.fillRect (full);
-
     fondoSkin = ZatiColours::currentSkin;
 }
 
@@ -2927,6 +2940,7 @@ void MainComponent::ponIconos()
         //  El pad, y lo que se le hace.
         { &padSoundBtn, Iconos::Id::sonido },     { &padTrimBtn, Iconos::Id::recorte },
         { &padRigBtn, Iconos::Id::pad },          { &padRackBtn, Iconos::Id::rack },
+        { &nivelesButton, Iconos::Id::niveles },
         { &autocutButton, Iconos::Id::autocut },  { &duckButton, Iconos::Id::bombeo },
         { &micButton, Iconos::Id::mic },          { &resampleButton, Iconos::Id::remuestrear },
         { &loadButton, Iconos::Id::cargar },
@@ -2942,8 +2956,6 @@ void MainComponent::ponIconos()
         { &measureButton, Iconos::Id::medir },    { &testButton, Iconos::Id::altavoz },
         { &tourButton, Iconos::Id::mano },
 
-        //  Y el enganche del XY, que es un candado: lo que pongas se queda.
-        { &xyLatchButton, Iconos::Id::fijo },
     };
 
     for (const auto& p : tabla)
@@ -2966,6 +2978,8 @@ void MainComponent::ponIconos()
     transporte (seqPlayBtn,  false);
     transporte (songPlayBtn, false);
     oirTapa (previewButton, false);
+    //  El candado del XY lo mueve refreshXy, que es quien sabe si esta fijo.
+    xyLatchButton.getProperties().set ("icono", (int) Iconos::Id::momentaneo);
 }
 
 // Restyle everything that captured accent-coloured values at construction —
@@ -3463,7 +3477,12 @@ void MainComponent::refreshXyPad()
                          fxFormat (d.spec[1], fxParam (xyFx, 1).getValue()));
     xyPad.setPosition ((float) fxParam (xyFx, 0).valueToProportionOfLength (fxParam (xyFx, 0).getValue()),
                        (float) fxParam (xyFx, 1).valueToProportionOfLength (fxParam (xyFx, 1).getValue()));
+    //  El candado va con la palabra: cerrado en FIJO, abierto en MOMENTANEO.
+    //  Con el mismo dibujo en los dos estados, el icono contradice al rotulo
+    //  la mitad del tiempo - que es peor que no tener icono.
     xyLatchButton.setButtonText (xyLatch ? T ("FIJO") : T ("MOMENTANEO"));
+    xyLatchButton.getProperties().set ("icono", (int) (xyLatch ? Iconos::Id::fijo
+                                                               : Iconos::Id::momentaneo));
     xyPanel.repaint();
 }
 
@@ -3546,9 +3565,11 @@ void MainComponent::showSetPage (int page)
     const bool onAudio = (setPage == pageAudio);
     const bool onProj  = (setPage == pageProjects);
     const bool onMidi  = (setPage == pageMidi);
+    const bool onAsp   = (setPage == pageAspecto);
 
     pageAudioBtn.setToggleState (onAudio, juce::dontSendNotification);
     pageMidiBtn .setToggleState (onMidi,  juce::dontSendNotification);
+    pageAspBtn  .setToggleState (onAsp,   juce::dontSendNotification);
     pageProjBtn .setToggleState (onProj,  juce::dontSendNotification);
     pageGestBtn .setToggleState (setPage == pageGestures, juce::dontSendNotification);
 
@@ -3562,8 +3583,10 @@ void MainComponent::showSetPage (int page)
     testButton.setVisible    (onAudio);
     for (auto* b : bufButtons)  b->setVisible (onAudio);
     for (auto* b : rateButtons) b->setVisible (onAudio);
-    for (auto* b : langButtons) b->setVisible (onAudio);
-    for (auto* b : skinButtons) b->setVisible (onAudio);
+    //  EL IDIOMA Y LA CARCASA SE VAN A SU PAGINA. Estaban en AUDIO porque ahi
+    //  habia sitio, no porque tengan nada que ver con el reloj y el bufer.
+    for (auto* b : langButtons) { b->setVisible (onAsp); if (! onAsp) b->setBounds ({}); }
+    for (auto* b : skinButtons) { b->setVisible (onAsp); if (! onAsp) b->setBounds ({}); }
 
     projList.setVisible          (onProj);
     projNameBox.setVisible       (onProj);
@@ -3691,10 +3714,11 @@ bool MainComponent::setTabsFit (int rowWidth) const
 {
     const auto capFont = ZatiColours::monoFont (juce::jlimit (10.0f, 14.5f, (float) Metrics::tab * 0.38f), true)
                              .withExtraKerningFactor (0.06f);
-    const juce::TextButton* tabs[] = { &pageAudioBtn, &pageMidiBtn, &pageProjBtn, &pageGestBtn };
+    const juce::TextButton* tabs[] = { &pageAudioBtn, &pageMidiBtn, &pageAspBtn,
+                                       &pageProjBtn, &pageGestBtn };
 
-    //  La mas ancha decide, porque las cuatro reciben el MISMO cuarto. Sumar
-    //  los cuatro anchos seria la cuenta de un reparto proporcional, que no es
+    //  La mas ancha decide, porque las cinco reciben el MISMO quinto. Sumar
+    //  los cinco anchos seria la cuenta de un reparto proporcional, que no es
     //  el que hace esta fila.
     float widest = 0.0f;
     for (const auto* b : tabs)
@@ -3705,7 +3729,11 @@ bool MainComponent::setTabsFit (int rowWidth) const
     //  una pestana de 56 px son 4 px por lado. Poner 3 dejaba pasar 344x882 -
     //  una fila, PROYECTOS recortado - mientras 280 y 360 salian bien, que es
     //  el sintoma clasico de un margen que se queda corto por dos pixeles.
-    const float tabW   = (float) rowWidth / 4.0f - 2.0f * (float) Metrics::halfGap;
+    //  Y la fila lleva ademas la x de cerrar, que no es una pestana pero se
+    //  lleva su ancho: preguntar por el ancho entero es como una fila cabe en
+    //  la cuenta y no en la pantalla.
+    const float tabW   = (float) (rowWidth - Metrics::hit - Metrics::xs) / 5.0f
+                           - 2.0f * (float) Metrics::halfGap;
     const float inset  = juce::jlimit (3.0f, 5.0f, tabW / 14.0f);
     return widest <= tabW - 2.0f * inset;
 }
@@ -3751,6 +3779,8 @@ void MainComponent::showPadPage (int page)
         c->setVisible (onTrim);
 
     padRackBtn.setVisible (onRig);
+    nivelesButton.setVisible (onRig);
+    if (! onRig) nivelesButton.setBounds ({});
     pianoButton.setVisible (onRig);
     autocutButton .setVisible (onRig);
     duckButton    .setVisible (onRig);
@@ -3936,6 +3966,10 @@ void MainComponent::paint (juce::Graphics& g)
     // 1. Full-bleed light chassis (edge to edge — the whole screen is the face).
     //  EL CUERPO SE PINTA UNA VEZ Y SE COPIA.
     //
+    //  (El grano se probo y se quito - ver ZatiColours: sobre un chasis
+    //  acromatico no se leia como material sino como suciedad. Lo que se queda
+    //  es el horneado, que es lo que se midio y vale igual con el fondo liso.)
+    //
     //  Era un degradado liso, y un degradado liso es una app: un aparato tiene
     //  MATERIAL. Con el grano encima el fondo pasaba de 1.27 ms a 3.59 -una
     //  pasada de mezcla alfa sobre los 377 mil pixeles de la ventana en cada
@@ -3946,7 +3980,7 @@ void MainComponent::paint (juce::Graphics& g)
     //
     //  Y respeta el recorte, que es lo que hace que siga valiendo: una banda
     //  de 30 px copia 30 px, no la ventana entera. Ver ZATI_PAINT.
-    if (! sinGrano)
+    if (! fondoVivo)
     {
         if (fondoCache.getWidth() != getWidth() || fondoCache.getHeight() != getHeight()
             || fondoSkin != ZatiColours::currentSkin)
@@ -5711,8 +5745,8 @@ void MainComponent::resized()
             {
                 //  Las dos puertas de este pad: a donde va -ENVIOS- y que toca
                 //  -PIANO-. Repartidas por el texto que llevan, como el resto.
-                juce::TextButton* pb[2] = { &padRackBtn, &pianoButton };
-                layoutModuleBar (inner.removeFromTop (Metrics::hit), pb, 0, 2);
+                juce::TextButton* pb[3] = { &padRackBtn, &pianoButton, &nivelesButton };
+                layoutModuleBar (inner.removeFromTop (Metrics::hit), pb, 0, 3);
             }
             inner.removeFromTop (Metrics::sm);
 
@@ -5933,8 +5967,12 @@ void MainComponent::resized()
                 //  fila mas alta y el hueco sale de ella.
                 auto strip = inner.removeFromBottom (Metrics::hit + Metrics::halfGap)
                                   .withTrimmedBottom (Metrics::halfGap);
-                strip = Lang::takeEnd (strip, juce::jmin (3 * Metrics::hit + 2 * Metrics::halfGap,
-                                                          strip.getWidth()));
+                //  CENTRADAS y no pegadas al filo. Tres tapas de zoom colgando
+                //  de una esquina se leen como si sobraran; en medio de la
+                //  onda se leen como los mandos de la onda, que es lo que son.
+                strip = strip.withSizeKeepingCentre (juce::jmin (3 * Metrics::hit + 2 * Metrics::halfGap,
+                                                                strip.getWidth()),
+                                                     strip.getHeight());
                 const int w = juce::jmax (24, (strip.getWidth() - 2 * Metrics::halfGap) / 3);
                 for (int i = 0; i < 3; ++i)
                 {
@@ -6049,6 +6087,7 @@ void MainComponent::resized()
         const bool onProj  = (setPage == pageProjects);
         const bool onGest  = (setPage == pageGestures);
         const bool onMidi  = (setPage == pageMidi);
+        const bool onAsp   = (setPage == pageAspecto);
 
         const int listRowH = juce::jmax (22, projList.getRowHeight());
         const int listH    = juce::jlimit (1, 8, projModel.names.size()) * listRowH;
@@ -6078,8 +6117,11 @@ void MainComponent::resized()
         //  La pregunta se hace UNA vez y aqui, porque de la respuesta depende
         //  la altura que se pide: preguntarla otra vez abajo con otro ancho es
         //  como una fila se queda sin sitio. Ver dosColumnasSet.
-        const int filasChips = 4 * (Metrics::hit + Metrics::xs);
-        const int estAltoAudio = Metrics::hit + Metrics::sm + tabsH + 158 + Metrics::xs + filasChips;
+        //  DOS filas de chips y no cuatro: IDIOMA y CARCASA se fueron a su
+        //  propia pagina, aqui quedan BUFER y RELOJ.
+        const int filasChips = 2 * (Metrics::hit + Metrics::xs);
+        const int estAltoAudio = 16 + Metrics::sm + tabsH + 158 + Metrics::xs + filasChips
+                               + Metrics::xs + 14 + Metrics::hit + Metrics::sm;
         //  DOS COLUMNAS CUANDO LA DE UNA NO CABE, y la pregunta es esa y no
         //  otra. La condicion anterior comparaba la altura consigo misma menos
         //  dos filas -"346 < 334"- y era falsa siempre por doce pixeles, asi
@@ -6111,20 +6153,30 @@ void MainComponent::resized()
 
         const int wanted = onMidi ? midiH
             : onAudio
-            ? Metrics::md * 2 + Metrics::hit + Metrics::sm + tabsH + 158 + Metrics::xs
+            ? Metrics::md * 2 + 16 + Metrics::sm + tabsH + 158 + Metrics::xs
                 + 14 + Metrics::hit + Metrics::sm
-                + (Metrics::hit + Metrics::xs) * 4 + filasExtra + Metrics::sm
+                + (Metrics::hit + Metrics::xs) * 2 + Metrics::sm
+            : onAsp
+              ? Metrics::md * 2 + 16 + Metrics::sm + tabsH
+                  + (Metrics::hit + Metrics::xs) * 2 + filasExtra + Metrics::sm
             : onGest
-              ? Metrics::md * 2 + Metrics::hit + Metrics::sm + tabsH
+              ? Metrics::md * 2 + 16 + Metrics::sm + tabsH
                   + kNumGestures * gestRowH + Metrics::sm
-              : Metrics::md * 2 + Metrics::hit + 14 + Metrics::sm + tabsH
+              : Metrics::md * 2 + 16 + 14 + Metrics::sm + tabsH
                   + Metrics::hit + 14 + Metrics::sm
                   + Metrics::btn * 2 + Metrics::xs * 2 + 8 + listH + Metrics::sm;
 
         auto inner = sheetFromBottom (setSheet, wanted);
 
-        auto titleRow = inner.removeFromTop (Metrics::hit);
-        setCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
+        //  EL TITULO SOLO, Y LA X CON LAS PESTANAS.
+        //
+        //  La x colgaba de un renglon de 40 px que no llevaba nada mas, asi que
+        //  entre el nombre de la ficha y la fila de pestanas quedaba una banda
+        //  vacia que no era ni aire ni contenido. Ahora el titulo ocupa lo que
+        //  mide -16 px- y la x se va a la fila de las pestanas, que es donde
+        //  hay un renglon de verdad: mismo alto, misma linea, y veinticuatro
+        //  pixeles menos de tarjeta.
+        inner.removeFromTop (16);
 
         if (onProj) inner.removeFromTop (14);         // painted: which project is open
         inner.removeFromTop (Metrics::sm);
@@ -6146,37 +6198,46 @@ void MainComponent::resized()
             //  32 px en el movil mas estrecho que existe y en todos los demas se
             //  queda como estaba.
             const bool tabsFit = setTabsFit (inner.getWidth());
-            auto layTwo = [] (juce::Rectangle<int> row, juce::TextButton& a, juce::TextButton& b)
+            juce::TextButton* tb[5] = { &pageAudioBtn, &pageMidiBtn, &pageAspBtn,
+                                        &pageProjBtn, &pageGestBtn };
+            auto reparte = [] (juce::Rectangle<int> row, juce::TextButton** b, int n)
             {
-                const int half = row.getWidth() / 2;
-                a.setBounds (Lang::takeStart (row, half).reduced (Metrics::aireTapa, 0));
-                b.setBounds (row.reduced (Metrics::aireTapa, 0));
+                for (int i = 0; i < n; ++i)
+                {
+                    const int w = row.getWidth() / (n - i);
+                    b[i]->setBounds ((i == n - 1 ? row : Lang::takeStart (row, w))
+                                         .reduced (Metrics::aireTapa, 0));
+                }
             };
 
-            if (tabsFit)
             {
-                auto tabs = inner.removeFromTop (Metrics::tab);
-                const int quarter = tabs.getWidth() / 4;
-                pageAudioBtn.setBounds (Lang::takeStart (tabs, quarter).reduced (Metrics::aireTapa, 0));
-                pageMidiBtn.setBounds  (Lang::takeStart (tabs, quarter).reduced (Metrics::aireTapa, 0));
-                pageProjBtn.setBounds  (Lang::takeStart (tabs, quarter).reduced (Metrics::aireTapa, 0));
-                pageGestBtn.setBounds  (tabs.reduced (Metrics::aireTapa, 0));
-            }
-            else
-            {
-                layTwo (inner.removeFromTop (Metrics::tab), pageAudioBtn, pageMidiBtn);
-                inner.removeFromTop (Metrics::xs);
-                layTwo (inner.removeFromTop (Metrics::tab), pageProjBtn, pageGestBtn);
+                //  LA X VIVE EN ESTA FILA. Ver arriba: sola en su renglon
+                //  dejaba una banda vacia entre el titulo y las pestanas.
+                auto primera = inner.removeFromTop (Metrics::tab);
+                setCloseButton.setBounds (Lang::takeEnd (primera, Metrics::hit)
+                                              .withSizeKeepingCentre (Metrics::hit, Metrics::hit));
+                Lang::takeEnd (primera, Metrics::xs);
+
+                if (tabsFit)
+                {
+                    reparte (primera, tb, 5);
+                }
+                else
+                {
+                    //  Tres arriba y dos abajo: los rotulos largos van donde se
+                    //  reparte entre MENOS, y los tres cortos -AUDIO, MIDI,
+                    //  ASPECTO- aguantan el reparto entre tres.
+                    reparte (primera, tb, 3);
+                    inner.removeFromTop (Metrics::xs);
+                    reparte (inner.removeFromTop (Metrics::tab), tb + 3, 2);
+                }
             }
 
-            //  Estas cuatro se reparten a cuartos a mano y no por
-            //  layoutModuleBar, asi que hay que preguntarles aparte: sin esto
-            //  la fila salia con AUDIO, MIDI y GESTOS dibujados y PROYECTOS
-            //  -que es la palabra larga- con un hueco.
-            {
-                juce::TextButton* tb[4] = { &pageAudioBtn, &pageMidiBtn, &pageProjBtn, &pageGestBtn };
-                filaDeIconos (tb, 4);
-            }
+            //  Estas cinco se reparten a mano y no por layoutModuleBar, asi que
+            //  hay que preguntarles aparte: sin esto la fila salia con AUDIO,
+            //  MIDI y GESTOS dibujados y PROYECTOS -que es la palabra larga- con
+            //  un hueco.
+            filaDeIconos (tb, 5);
             inner.removeFromTop (Metrics::sm);
 
             //  Whatever is left of the card belongs to the gestures list.
@@ -6295,7 +6356,7 @@ void MainComponent::resized()
                 //  Y las tres pruebas cuentan como mueble que no encoge, igual
                 //  que los chips: si no se restan aqui, el recuadro se queda
                 //  con su altura entera y la fila de PRUEBAS se cae por abajo.
-                const int chipsNecesarios = 4 * (Metrics::hit + Metrics::xs) + filasExtra
+                const int chipsNecesarios = 2 * (Metrics::hit + Metrics::xs)
                                           + Metrics::xs + 14 + Metrics::hit + Metrics::sm;
                 audioInfoArea = inner.removeFromTop (
                                     juce::jlimit (0, 158, inner.getHeight() - Metrics::xs - chipsNecesarios));
@@ -6347,9 +6408,55 @@ void MainComponent::resized()
             };
             bufRowArea  = chipRow (bufButtons,  44, false);
             rateRowArea = chipRow (rateButtons, 44, false);
+            //  IDIOMA y CARCASA viven ahora en su pagina.
+            langRowArea = skinRowArea = {};
+            projNameRowArea = projPathRowArea = {};
+        }
+        else if (onAsp)
+        {
+            //  LA PAGINA DE ASPECTO: el idioma y la carcasa, que es lo unico
+            //  de esta ficha que cambia como SE VE la maquina. Estaban en AUDIO
+            //  al lado del reloj y del bufer porque ahi habia sitio.
+            midiArea = audioInfoArea = bufRowArea = rateRowArea = {};
+            pruebasLabelArea = {};
+            projNameRowArea = projPathRowArea = {};
+
+            juce::Rectangle<int> columnaChips = inner;
+            auto chipRow = [this, &columnaChips] (juce::OwnedArray<juce::TextButton>& btns,
+                                                  int labelW, bool partir)
+            {
+                juce::TextButton* arr[8] {};
+                const int n = juce::jmin (8, btns.size());
+                for (int i = 0; i < n; ++i) arr[i] = btns[i];
+
+                auto row = columnaChips.removeFromTop (Metrics::hit);
+                auto r = row;
+                Lang::takeStart (r, labelW);
+                //  Cero tapas es un caso real: resized() corre desde el
+                //  constructor y estas listas estan vacias. Ver el mismo
+                //  guardia en la pagina de AUDIO.
+                if (n <= 0) { columnaChips.removeFromTop (Metrics::xs); return row; }
+
+                if (! partir || n <= 2)
+                {
+                    layoutModuleBar (r, arr, 0, n);
+                }
+                else
+                {
+                    const int mitad = (n + 1) / 2;
+                    layoutModuleBar (r, arr, 0, mitad);
+                    columnaChips.removeFromTop (Metrics::xs);
+                    auto row2 = columnaChips.removeFromTop (Metrics::hit);
+                    auto r2 = row2;
+                    Lang::takeStart (r2, labelW);
+                    layoutModuleBar (r2, arr + mitad, 0, n - mitad);
+                    row = row.getUnion (row2);
+                }
+                columnaChips.removeFromTop (Metrics::xs);
+                return row;
+            };
             langRowArea = chipRow (langButtons, 44, partirLang);
             skinRowArea = chipRow (skinButtons, 44, partirSkin);
-            projNameRowArea = projPathRowArea = {};
         }
         else
         {
@@ -8394,6 +8501,23 @@ void MainComponent::resized()
 
 }
 
+//  QUE SUENA AL TOCAR EL PAD `index`, y con que fuerza.
+//
+//  El nivel sale de la posicion DENTRO del banco y no del numero absoluto: la
+//  rejilla ensena dieciseis y el 01 esta abajo a la izquierda, asi que el mas
+//  flojo cae donde la mano ya lo busca. Y el pad es el CAPTURADO al encender el
+//  modo: leerlo del selector en cada golpe haria que tocar un pad cambiase el
+//  destino y el modo se perseguiria a si mismo.
+MainComponent::Disparo MainComponent::disparoDe (int index) const
+{
+    const int i = juce::jlimit (0, kNumPads - 1, index);
+    if (! nivel16) return { i, 1.0f };
+
+    const int n = i % kPadsPerBank;
+    return { juce::jlimit (0, kNumPads - 1, nivelPad),
+             (float) (n + 1) / (float) kPadsPerBank };
+}
+
 void MainComponent::padClicked (int index)
 {
     if (loadArmed)
@@ -8401,6 +8525,18 @@ void MainComponent::padClicked (int index)
         loadArmed = false;
         loadButton.setToggleState (false, juce::dontSendNotification);
         openBrowseForPad (index);
+        return;
+    }
+
+    //  DIECISEIS NIVELES: la rejilla deja de ser dieciseis pads y pasa a ser UN
+    //  pad a dieciseis fuerzas. Ver disparoDe.
+    if (nivel16 && padHasSample[(size_t) juce::jlimit (0, kNumPads - 1, nivelPad)])
+    {
+        const auto d = disparoDe (index);
+        engine.postNoteOn (d.pad, d.vel);
+        status.setText (T ("PAD %1 - nivel %2", juce::String (d.pad + 1),
+                           juce::String (index % kPadsPerBank + 1)),
+                        juce::dontSendNotification);
         return;
     }
 
@@ -9221,6 +9357,7 @@ void MainComponent::retranslateUi()
     padTrimBtn   .setButtonText (T ("RECORTE"));
     padRigBtn    .setButtonText (T ("EL PAD"));
     padRackBtn   .setButtonText (T ("ENVIOS"));
+    nivelesButton.setButtonText (T ("16 NIVELES"));
     pianoButton  .setButtonText (T ("PIANO"));
     pianoOctDownBtn.setButtonText (T ("OCTAVA") + " -");
     pianoOctUpBtn  .setButtonText (T ("OCTAVA") + " +");
@@ -12222,7 +12359,11 @@ void MainComponent::tourPrepara (int paso)
         case 11: refreshMixStrip();          openSheet (mixSheet, mixButton);  break;
         case 12: openSheet (songSheet, songButton); break;
         case 13: exportStatus.clear(); exportOk = false; openSheet (exportSheet, setButton); break;
-        case 14: showSetPage (pageAudio); refreshAudioOptions(); openSheet (setSheet, setButton); break;
+        //  El ultimo paso explica el IDIOMA y la CARCASA, que desde que tienen
+        //  pagina propia ya no estan en AUDIO: abrir AUDIO dejaba el anillo
+        //  alrededor de nada, que es exactamente lo que tourObjetivo evita
+        //  devolviendo vacio - y un paso que no senala nada no explica nada.
+        case 14: showSetPage (pageAspecto); openSheet (setSheet, setButton); break;
         default: closeAllSheets(); break;
     }
 
@@ -12504,10 +12645,30 @@ void MainComponent::paintRackSheetContent (juce::Graphics& g)
         const auto r = rackSends[f]->getBounds();
         const bool on = fxOn[(size_t) f];
 
-        g.setColour (on ? ZatiColours::ink : ZatiColours::inkDim.withAlpha (0.55f));
+        //  CADA EFECTO CON SU DIBUJO, que es lo que la fila de la cara ya
+        //  lleva: aqui eran seis abreviaturas de tres letras una debajo de
+        //  otra -FLT, HPF, DRV...- y esa columna no se lee, se descifra.
+        //
+        //  Y el hueco sale de la posicion del fader y no de sheetBounds: esta
+        //  ficha se desplaza, asi que la tarjeta y el maquetado no estan en el
+        //  mismo sitio. Es el mismo fallo que costo una medida en INSTRUMENTOS.
+        static const Iconos::Id kIcono[kNumFx] = { Iconos::Id::flt, Iconos::Id::hpf,
+                                                   Iconos::Id::drv, Iconos::Id::dly,
+                                                   Iconos::Id::bit, Iconos::Id::rev };
+        auto hueco = juce::Rectangle<int> (r.getX() - 54, r.getY(), 52, r.getHeight());
+        const auto tinta = on ? ZatiColours::ink : ZatiColours::inkDim.withAlpha (0.55f);
+
+        const int lado = juce::jmin (18, hueco.getHeight() - 4);
+        if (lado >= Iconos::kLadoMin)
+        {
+            auto ic = Lang::takeStart (hueco, lado);
+            Iconos::dibuja (g, kIcono[f], ic.toFloat(), tinta);
+            Lang::takeStart (hueco, Metrics::halfGap);
+        }
+
+        g.setColour (tinta);
         g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.10f));
-        g.drawText (fxDefs[f].name, rackSheet.sheetBounds.getX() + Metrics::lg, r.getY(),
-                    50, r.getHeight(), Lang::start());
+        g.drawText (fxDefs[f].name, hueco, Lang::start());
 
         //  An effect that is switched off is not hidden, it is greyed: the
         //  send you set now is the send it will use when you switch it on.
@@ -12538,6 +12699,7 @@ void MainComponent::paintSetTitle (juce::Graphics& g)
     const juce::String punto = juce::String::charToString ((juce::juce_wchar) 0x00B7);
     const char* pag = setPage == pageAudio ? "AUDIO"
                     : setPage == pageMidi  ? "MIDI"
+                    : setPage == pageAspecto ? "ASPECTO"
                     : setPage == pageProjects ? "PROYECTOS" : "GESTOS";
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
@@ -12580,6 +12742,17 @@ void MainComponent::paintAudioSheetContent (juce::Graphics& g)
         { auto r = bufRowArea;  pintaTitulo (g,  Lang::takeStart (r, 44), T ("BUFER"), "seccion"); }
     if (! rateRowArea.isEmpty())
         { auto r = rateRowArea; pintaTitulo (g,  Lang::takeStart (r, 44), T ("RELOJ"), "seccion"); }
+}
+
+//  LA PAGINA DE ASPECTO: el idioma y la carcasa. Nada mas, y por eso existe -
+//  estaban colgando de AUDIO, entre el reloj y el bufer, que es lo unico de
+//  esta ficha con lo que no tienen nada que ver.
+void MainComponent::paintAspectoPage (juce::Graphics& g)
+{
+    if (setSheet.sheetBounds.isEmpty()) return;
+
+    g.setColour (ZatiColours::inkDim);
+    g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.12f));
     if (! langRowArea.isEmpty())
         { auto r = langRowArea; pintaTitulo (g, Lang::takeStart (r, 44), T ("IDIOMA"), "seccion"); }
     if (! skinRowArea.isEmpty())
@@ -14600,6 +14773,39 @@ void MainComponent::auditPlay (bool on)
 //  Las dos veces, porque son dos codigos distintos: restoreSession sin sesion
 //  por un lado y newProject por otro, y ya se ha pagado una vez que uno de los
 //  dos se dejara la mitad del estado sin tocar.
+//  DIECISEIS NIVELES, MEDIDO POR LA MISMA CUENTA QUE DISPARA. Ver disparoDe:
+//  el banco pregunta lo que el dedo hace, no una copia de la cuenta.
+void MainComponent::auditNiveles()
+{
+    auto linea = [this] (const char* modo)
+    {
+        std::cout << "{\"niveles\":\"" << modo << "\",\"pads\":[";
+        for (int i = 0; i < 32; ++i)
+            std::cout << (i ? "," : "") << disparoDe (i).pad;
+        std::cout << "],\"vels\":[";
+        for (int i = 0; i < 32; ++i)
+            std::cout << (i ? "," : "") << juce::String (disparoDe (i).vel, 4);
+        std::cout << "]}" << std::endl;
+    };
+
+    nivel16 = false;
+    linea ("off");
+
+    //  Se enciende POR LA TAPA, que es como se enciende de verdad: llamar a
+    //  nivel16 = true a mano se saltaria justo la linea que captura el pad, que
+    //  es la mitad de la funcion.
+    selectedPad = 21;
+    nivelesButton.setToggleState (true, juce::sendNotificationSync);
+    linea ("on");
+
+    //  Y cambiar de pad elegido NO mueve el destino: se capturo al encender.
+    selectedPad = 3;
+    linea ("tras cambiar de pad");
+
+    nivelesButton.setToggleState (false, juce::sendNotificationSync);
+    linea ("apagado");
+}
+
 void MainComponent::auditNuevo()
 {
     auto fila = [this] (const char* que)
@@ -15195,6 +15401,7 @@ void MainComponent::auditOpen (const juce::String& which)
     else if (which == "set")  { showSetPage (pageAudio);    refreshAudioOptions(); openSheet (setSheet, setButton); }
     else if (which == "proj") { showSetPage (pageProjects); refreshProjectList(); openSheet (setSheet, setButton); }
     else if (which == "gest") { showSetPage (pageGestures); openSheet (setSheet, setButton); }
+    else if (which == "asp")  { showSetPage (pageAspecto);  openSheet (setSheet, setButton); }
     else if (which == "midi") { showSetPage (pageMidi); refreshMidiDevices(); openSheet (setSheet, setButton); }
     else if (which == "rack") { rackPad = 0; openSheet (rackSheet, mixButton); refreshRack(); }
     //  LA FICHA DE INSTRUMENTOS, en sus dos estados: con el pack de dentro

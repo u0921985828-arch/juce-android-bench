@@ -50,7 +50,7 @@ namespace Iconos
         sonido, recorte,
         flt, hpf, drv, dly, bit, rev,
         mic, remuestrear, bombeo, autocut, sistema, cadena, patron, pad, fijo,
-        midi, medir, altavoz, mano,
+        midi, medir, altavoz, mano, momentaneo, niveles,
         kNum
     };
 
@@ -88,7 +88,8 @@ namespace Iconos
             case Id::patron: return "patron";          case Id::pad: return "pad";
             case Id::fijo: return "fijo";              case Id::midi: return "midi";
             case Id::medir: return "medir";            case Id::altavoz: return "altavoz";
-            case Id::mano: return "mano";
+            case Id::mano: return "mano";              case Id::momentaneo: return "momentaneo";
+            case Id::niveles: return "niveles";
             case Id::ninguno:
             case Id::kNum:
             default: return "ninguno";
@@ -98,7 +99,14 @@ namespace Iconos
     //  UN ICONO SON DOS CAMINOS Y NO UNO. Lo que se rellena y lo que se traza
     //  no se pueden mezclar en un solo Path: rellenar el contorno de unas
     //  tijeras da una mancha con forma de tijeras.
-    struct Trazo { juce::Path linea, relleno; };
+    //  Y CUANTO DE SU CAJA LLENA. Ver `dibuja`: todos se escalan para ocupar
+    //  el mismo blanco, y eso esta bien para los de trazo y mal para los
+    //  MACIZOS - un cuadrado relleno que llena su caja pesa el triple que unas
+    //  tijeras del mismo tamano, y en una fila se lee como si estuviera en
+    //  negrita. Los pocos que son una mancha por definicion -el cuadrado de
+    //  STOP, el circulo de REC- se dibujan mas pequenos para pesar igual. Es
+    //  el mismo ajuste optico que hace una tipografia con el punto y la O.
+    struct Trazo { juce::Path linea, relleno; float lleno = 1.0f; };
 
     namespace detalle
     {
@@ -158,6 +166,7 @@ namespace Iconos
 
             case Id::stop:
                 R.addRoundedRectangle (3.5f, 3.5f, 17.0f, 17.0f, 1.5f);
+                t.lleno = 0.72f;
                 break;
 
             case Id::rec:
@@ -386,17 +395,27 @@ namespace Iconos
                                                3.4f, 3.4f, 0.8f);
                 break;
 
-            //  Ocho celdas, y CABEN. La primera version las repartia cada 5.4
-            //  desde x=2 y la ultima acababa en 24.5 - mas el grosor del
-            //  trazo, 25.5 en una rejilla de 24: se salia por la derecha y
-            //  pintaba encima del rotulo. Lo canto el banco a la primera.
+            //  SEC: DOS CARRILES DE CUATRO PASOS, con los que suenan puestos.
+            //
+            //  Era una fila de ocho barras alternadas y no se sabia que era:
+            //  a 18 px de lado son barras de dos pixeles: ni rejilla ni pasos,
+            //  una trama. Un secuenciador se reconoce por la REJILLA con
+            //  huecos - dos pistas y cuatro tiempos es lo minimo que dice
+            //  "esto es un patron" - y se separa de `pads`, que es una rejilla
+            //  LLENA de cuatro por cuatro.
             case Id::sec:
-                for (int i = 0; i < 4; ++i)
-                {
-                    R.addRectangle (1.9f + (float) i * 5.3f, 8.0f, 2.3f, 8.0f);
-                    L.addRectangle (4.6f + (float) i * 5.3f, 8.0f, 2.3f, 8.0f);
-                }
+            {
+                const bool puesto[2][4] = { { true, false, true, false },
+                                            { false, true, false, true } };
+                for (int y = 0; y < 2; ++y)
+                    for (int x = 0; x < 4; ++x)
+                    {
+                        const float cx = 1.5f + (float) x * 5.5f, cy = 6.0f + (float) y * 7.0f;
+                        if (puesto[y][x]) R.addRoundedRectangle (cx, cy, 4.5f, 5.0f, 0.8f);
+                        else              L.addRoundedRectangle (cx, cy, 4.5f, 5.0f, 0.8f);
+                    }
                 break;
+            }
 
             case Id::piano:
                 L.addRectangle (2.5f, 5.5f, 19.0f, 13.0f);
@@ -440,14 +459,18 @@ namespace Iconos
                 //  Ocho dientes y un agujero. Es la rueda de siempre porque es
                 //  la que se reconoce sin leer nada; inventar una aqui seria
                 //  cambiar un icono universal por uno bonito.
+                //  SEIS dientes y GORDOS, no ocho finos. A 18 px de lado, ocho
+                //  dientes de 2.8 px salen a menos de dos pixeles cada uno con
+                //  hueco de uno: se funden con el anillo y la rueda deja de
+                //  parecer una rueda - que fue exactamente la queja.
                 juce::Path rueda;
-                rueda.addEllipse (4.0f, 4.0f, 16.0f, 16.0f);
-                for (int i = 0; i < 8; ++i)
+                rueda.addEllipse (4.5f, 4.5f, 15.0f, 15.0f);
+                for (int i = 0; i < 6; ++i)
                 {
                     juce::Path diente;
-                    diente.addRectangle (10.6f, 1.2f, 2.8f, 5.0f);
+                    diente.addRoundedRectangle (9.6f, 1.0f, 4.8f, 6.0f, 1.0f);
                     diente.applyTransform (juce::AffineTransform::rotation (
-                        juce::MathConstants<float>::twoPi * (float) i / 8.0f, 12.0f, 12.0f));
+                        juce::MathConstants<float>::twoPi * (float) i / 6.0f, 12.0f, 12.0f));
                     rueda.addPath (diente);
                 }
                 //  HUECA DE VERDAD y no con el agujero dibujado encima: el
@@ -456,7 +479,7 @@ namespace Iconos
                 //  tamano. Con el centro CORTADO -regla par/impar- deja de ser
                 //  una mancha y pasa a ser un anillo dentado.
                 juce::Path hueco;
-                hueco.addEllipse (8.0f, 8.0f, 8.0f, 8.0f);
+                hueco.addEllipse (8.4f, 8.4f, 7.2f, 7.2f);
                 rueda.addPath (hueco);
                 rueda.setUsingNonZeroWinding (false);
                 R = rueda;
@@ -683,13 +706,32 @@ namespace Iconos
                 R.addEllipse (8.0f, 8.0f, 8.0f, 8.0f);
                 break;
 
-            //  FIJO: el candado. El mando se queda puesto al soltar.
+            //  FIJO Y MOMENTANEO SON EL MISMO CANDADO, CERRADO Y ABIERTO.
+            //
+            //  La tapa dice una cosa u otra y llevaba el mismo dibujo en las
+            //  dos: un candado cerrado junto a la palabra MOMENTANEO se
+            //  contradice con ella, que es peor que no tener icono. El arco
+            //  del abierto sale por el mismo sitio y se va hacia arriba y a la
+            //  derecha, o sea el gesto de soltar.
             case Id::fijo:
                 R.addRoundedRectangle (3.5f, 10.5f, 17.0f, 11.5f, 1.8f);
+                t.lleno = 0.88f;
                 L.startNewSubPath (7.5f, 10.5f);
                 L.lineTo (7.5f, 7.0f);
                 L.cubicTo (7.5f, 1.5f, 16.5f, 1.5f, 16.5f, 7.0f);
                 L.lineTo (16.5f, 10.5f);
+                break;
+
+            //  Y el abierto se abre DE VERDAD: el arco se levanta y se va a
+            //  la derecha, que es el gesto de soltar. Con el arco en el mismo
+            //  sitio y solo un lado suelto, los dos candados median 0.086 de
+            //  distancia - o sea el mismo dibujo - y ademas no se veia cual
+            //  estaba abierto a 18 px.
+            case Id::momentaneo:
+                R.addRoundedRectangle (2.0f, 11.5f, 15.0f, 10.5f, 1.8f);
+                L.startNewSubPath (5.5f, 11.5f);
+                L.lineTo (5.5f, 8.5f);
+                L.cubicTo (5.5f, 1.5f, 21.5f, 2.5f, 21.0f, 9.0f);
                 break;
 
             //  MIDI: la clavija de cinco patillas, que es como se reconoce sin
@@ -723,13 +765,26 @@ namespace Iconos
                 L.addCentredArc (12.5f, 12.0f, 8.2f, 8.2f, 0.0f, 0.6f, 2.55f, true);
                 break;
 
-            //  MANO: los gestos de la maquina. Palma y cuatro dedos.
+            //  MANO: los gestos de la maquina. DE TRAZO y no maciza: rellena
+            //  pesaba 0.55 de tinta contra 0.15 de sus vecinas y se leia como
+            //  una mancha negra en la fila de pestanas.
             case Id::mano:
-                R.addRoundedRectangle (5.0f, 11.0f, 14.0f, 11.0f, 3.0f);
-                R.addRoundedRectangle (6.4f, 5.5f, 2.8f, 8.0f, 1.4f);
-                R.addRoundedRectangle (10.0f, 3.0f, 2.8f, 10.5f, 1.4f);
-                R.addRoundedRectangle (13.6f, 4.0f, 2.8f, 9.5f, 1.4f);
-                L.addRoundedRectangle (2.2f, 12.0f, 4.0f, 7.0f, 2.0f);
+                L.addRoundedRectangle (5.5f, 11.0f, 13.0f, 10.5f, 3.0f);
+                L.addRoundedRectangle (6.8f, 6.0f, 2.6f, 7.0f, 1.3f);
+                L.addRoundedRectangle (10.4f, 3.5f, 2.6f, 9.5f, 1.3f);
+                L.addRoundedRectangle (14.0f, 4.5f, 2.6f, 8.5f, 1.3f);
+                L.addRoundedRectangle (2.4f, 12.5f, 3.6f, 6.5f, 1.8f);
+                break;
+
+            //  DIECISEIS NIVELES: la rampa. Cuatro escalones que suben de
+            //  izquierda a derecha, que es como los dieciseis pads reparten la
+            //  fuerza. No es `bit`, que baja y es una escalera de trazo, ni
+            //  `dly`, que baja y tiene el primero relleno.
+            case Id::niveles:
+                for (int i = 0; i < 4; ++i)
+                    R.addRoundedRectangle (2.0f + (float) i * 5.4f,
+                                           19.5f - (float) (i + 1) * 4.2f,
+                                           4.2f, (float) (i + 1) * 4.2f, 0.8f);
                 break;
 
             case Id::ninguno:
@@ -772,9 +827,13 @@ namespace Iconos
     //  EL GROSOR SALE DEL LADO. Un trazo de 2 px es una linea en una caja de 24
     //  y un pelo en una de 44, y esta app dibuja las dos: la fila de modulos
     //  mide 26 px en dos de las siete pantallas y 44 en las otras cinco.
+    //  EL MISMO GROSOR PARA TODOS, y mas fino que el primero: a 0.086 los
+    //  iconos de trazo se leian mas pesados que los de relleno y el juego no
+    //  parecia de la misma mano. Es una proporcion del lado y no una constante
+    //  porque una tapa mide 26 px en dos pantallas y 44 en las otras cinco.
     inline float grosorPara (float lado) noexcept
     {
-        return juce::jmax (1.15f, lado * 0.086f);
+        return juce::jmax (1.05f, lado * 0.072f);
     }
 
     //  EL SUELO DE UN ICONO. Por debajo de esto un trazo de un pixel con
@@ -793,8 +852,36 @@ namespace Iconos
         caja = caja.withSizeKeepingCentre (lado, lado);
 
         auto t = trazo (id);
-        const auto af = juce::AffineTransform::scale (lado / 24.0f)
-                            .translated (caja.getX(), caja.getY());
+
+        //  TODOS OCUPAN LA MISMA CAJA.
+        //
+        //  Cada dibujo se escribia dentro de la rejilla de 24 con el sitio que
+        //  le pedia su forma, asi que unos llenaban el 100% y otros el 79%: en
+        //  una fila se leen como si el pequeno estuviera mas lejos. Se mide lo
+        //  que el trazo ocupa DE VERDAD -con su grosor- y se escala para que
+        //  llene el mismo blanco, centrado. Uniforme, o sea sin deformar: un
+        //  icono ancho y bajo sigue siendo ancho y bajo, solo que llenando.
+        const float m = grosorPara (24.0f) * 0.5f;
+        auto lim = t.relleno.isEmpty() ? juce::Rectangle<float>() : t.relleno.getBounds();
+        if (! t.linea.isEmpty())
+        {
+            const auto lb = t.linea.getBounds().expanded (m);
+            lim = lim.isEmpty() ? lb : lim.getUnion (lb);
+        }
+
+        float esc = lado / 24.0f;
+        float dx = caja.getX(), dy = caja.getY();
+        if (! lim.isEmpty())
+        {
+            //  El 96% y no el 100%: el trazo se ensancha DESPUES de escalar, y
+            //  un dibujo que llena la caja al ras se come su propio pelo por
+            //  los bordes.
+            const float objetivo = lado * 0.96f * juce::jlimit (0.5f, 1.0f, t.lleno);
+            esc = juce::jmin (objetivo / lim.getWidth(), objetivo / lim.getHeight());
+            dx = caja.getCentreX() - lim.getCentreX() * esc;
+            dy = caja.getCentreY() - lim.getCentreY() * esc;
+        }
+        const auto af = juce::AffineTransform::scale (esc).translated (dx, dy);
 
         g.setColour (c);
         if (! t.relleno.isEmpty())
@@ -805,7 +892,7 @@ namespace Iconos
         if (! t.linea.isEmpty())
         {
             auto l = t.linea; l.applyTransform (af);
-            g.strokePath (l, juce::PathStrokeType (grosorPara (lado),
+            g.strokePath (l, juce::PathStrokeType (grosorPara (lado * 0.96f),
                                                    juce::PathStrokeType::curved,
                                                    juce::PathStrokeType::rounded));
         }
@@ -835,6 +922,10 @@ namespace Iconos
     //  Y LOS LIMITES DEL DIBUJO EN SU REJILLA DE 24, para que "se sale de la
     //  caja" sea un numero. Con el trazo puesto, que es lo que se pinta: un
     //  camino que acaba en x=22 con un grosor de 2 pinta hasta 23.
+    //  LOS LIMITES DEL DIBUJO EN SU REJILLA DE 24. Desde que `dibuja` escala
+    //  cada icono para que llene la misma caja, salirse aqui ya no pinta fuera
+    //  -se encoge- pero sigue siendo la forma de ver que un dibujo se escribio
+    //  torcido, y de que el banco pueda decir cuanto se esta reescalando.
     inline juce::Rectangle<float> limites (Id id)
     {
         auto t = trazo (id);

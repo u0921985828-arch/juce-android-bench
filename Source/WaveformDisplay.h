@@ -123,7 +123,10 @@ public:
     //  dibuja. start01 y end01 siguen siendo del fichero entero, que es como
     //  los guarda el pad; lo unico que hay que traducir es donde cae cada uno
     //  en pantalla.
-    static constexpr float kMaxZoom = 64.0f;
+    //  CIENTO VEINTIOCHO Y NO SESENTA Y CUATRO. Con x64 sobre un break de
+    //  cuatro minutos se sigue viendo medio segundo por pantalla: para poner el
+    //  inicio justo en el ataque hace falta bajar hasta el nivel de la muestra.
+    static constexpr float kMaxZoom = 128.0f;
     float minVentana = 0.005f;      // ver setMinTrim
 
     void setZoom (float z, float centre01)

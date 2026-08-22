@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ============================================================================
-#  EL JUEGO DE ICONOS Y EL GRANO DEL CHASIS: lo que la app DIBUJA.
+#  EL JUEGO DE ICONOS: lo que la app DIBUJA.
 #
 #  Las seis reglas del banco recorren el arbol de COMPONENTES, asi que de un
 #  icono no ven absolutamente nada: es un dibujo dentro de una tapa que ya
@@ -28,10 +28,6 @@
 #     DESENFOCADOS a proposito: dos dibujos que se diferencian en que un trazo
 #     esta un pixel mas alla son el mismo icono para el ojo, y la distancia a
 #     pelo diria que no.
-#   - GRANO: cuanto mueve la textura del chasis lo que Tests/skins.py
-#     certifico. Esa prueba mide la TABLA, y desde que el cuerpo lleva textura
-#     la tabla ya no es lo que se pinta. Sin esta linea se podria subir el
-#     grano hasta romper el contraste sin que nada fallase.
 #
 #  El rasterizado lo hace la APP (UiAudit::volcadoIconos) y el juicio vive
 #  aqui: las respuestas no pueden estar dentro del codigo que se prueba.
@@ -56,16 +52,6 @@ TINTA_MIN  = 0.045
 TINTA_MAX  = 0.55
 LLENA_MIN  = 0.70          # el lado mayor del dibujo, en fraccion de la caja
 DISTINTO   = 0.25
-#  EL GRANO NO SE JUZGA POR CUANTO MUEVE EL RATIO SINO POR DONDE LO DEJA.
-#  La primera version pedia que el desvio fuera menor que 0.20 y era un numero
-#  inventado: los cuatro salieron entre 1.07 y 1.82 y los cuatro estaban bien -
-#  un contraste de 13.79 que baja a 12.14 no ha dejado de leerse. Lo que si
-#  puede pasar es que el peor pixel del chasis se lleve la tinta por debajo del
-#  4.50 que Tests/skins.py exige para lo que hay que leer, y que la textura
-#  crezca sin que nadie se entere. Las dos cosas, y con el numero de la otra
-#  prueba, no con uno nuevo.
-GRANO_MIN  = 4.50          # = MIN_TEXT de Tests/skins.py
-GRANO_MOV  = 0.15          # fraccion del ratio de la tabla
 
 
 def corre():
@@ -74,7 +60,7 @@ def corre():
                  "ZATI_OPEN": "pads", "ZATI_ICONOS": str (N)})
     r = subprocess.run ([APP], env=env, capture_output=True, text=True, timeout=300)
 
-    iconos, granos = [], []
+    iconos = []
     for linea in r.stdout.splitlines():
         linea = linea.strip()
         if not linea.startswith ('{'):
@@ -85,9 +71,7 @@ def corre():
             continue
         if "px" in d and "icono" in d:
             iconos.append (d)
-        elif "grano" in d:
-            granos.append (d)
-    return iconos, granos, r
+    return iconos, r
 
 
 def mapa (d):
@@ -146,7 +130,7 @@ def main():
     if not os.path.exists (APP):
         sys.exit ("no hay binario: compila primero (cmake --build build --target Zati)")
 
-    iconos, granos, r = corre()
+    iconos, r = corre()
     if not iconos:
         print (r.stdout[-2000:])
         print (r.stderr[-2000:])
@@ -196,34 +180,23 @@ def main():
     mediana = pares[len (pares) // 2][0]
     print ("   mediana de los %d pares: %.4f   liston: %.4f" % (len (pares), mediana, DISTINTO))
 
+    #  DOS ESTADOS DE UN MISMO MANDO SI PUEDEN PARECERSE: el candado abierto y
+    #  el cerrado son la misma tapa en sus dos posiciones -nunca se ven a la
+    #  vez- y lo que tienen que compartir es justamente la forma, o dejarian de
+    #  leerse como el mismo control. Es lo mismo que el banco de la fabrica hace
+    #  con el shaker y la maraca: se acepta, se escribe por que, y se sigue
+    #  imprimiendo la distancia para que no baje sin que nadie se entere.
+    ESTADOS = { ("fijo", "momentaneo") }
     for d, a, b in pares:
-        if d < DISTINTO:
+        if d < DISTINTO and (a, b) not in ESTADOS and (b, a) not in ESTADOS:
             fallos.append ("%s y %s son el mismo dibujo (%.4f)" % (a, b, d))
-
-    #  --- el grano ----------------------------------------------------------
-    print ("\n== el grano del chasis, contra lo que Tests/skins.py certifico ==")
-    print ("%-10s %6s %8s %8s %8s %7s" % ("carcasa", "amp", "tabla", "mas claro", "mas oscuro", "mueve"))
-    for g in granos:
-        peor = min (g["claro"], g["oscuro"])
-        mov  = g["desvio"] / g["base"] if g["base"] > 0 else 0.0
-        malo = (peor < GRANO_MIN) or (mov > GRANO_MOV)
-        print ("%-10s %6.3f %8.2f %8.2f %8.2f %6.1f%%%s"
-               % (g["grano"], g["amp"], g["base"], g["claro"], g["oscuro"], mov * 100.0,
-                  "   ILEGIBLE" if peor < GRANO_MIN else ("   SE PASA" if malo else "")))
-        if peor < GRANO_MIN:
-            fallos.append ("el grano deja la tinta en %.2f sobre %s, por debajo de %.2f"
-                           % (peor, g["grano"], GRANO_MIN))
-        elif mov > GRANO_MOV:
-            fallos.append ("el grano mueve el contraste un %.0f%% en %s" % (mov * 100.0, g["grano"]))
-    if len (granos) != 4:
-        fallos.append ("faltan carcasas en el volcado del grano: %d de 4" % len (granos))
 
     print()
     if fallos:
         for f in fallos:
             print ("FALLA  " + f)
         sys.exit (1)
-    print ("OK  %d iconos, %d pares, 4 carcasas" % (len (iconos), len (pares)))
+    print ("OK  %d iconos, %d pares" % (len (iconos), len (pares)))
 
 
 if __name__ == "__main__":

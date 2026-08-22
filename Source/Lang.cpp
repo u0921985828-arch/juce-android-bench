@@ -45,6 +45,13 @@ namespace
         //  La seccion de AUDIO donde viven CUADRAR, MEDIR y TEST. Estaban
         //  colgando del renglon del titulo, al lado de la x.
         { "PRUEBAS",            "",  "TESTS",     "测试",   "اختبارات" },
+        //  La quinta pagina de AJUSTES: el idioma y la carcasa.
+        { "ASPECTO",            "",  "LOOK",      "外观",   "المظهر" },
+        //  DIECISEIS NIVELES: el pad elegido tocado a dieciseis fuerzas.
+        { "16 NIVELES",         "",  "16 LEVELS", "16级",   "16 مستوى" },
+        { "16 NIVELES: PAD %1", "",  "16 LEVELS: PAD %1", "16级: 音垫 %1", "16 مستوى: باد %1" },
+        { "16 NIVELES OFF",     "",  "16 LEVELS OFF", "16级 关闭", "16 مستوى مغلق" },
+        { "PAD %1 - nivel %2",  "",  "PAD %1 - level %2", "音垫 %1 - 级 %2", "باد %1 - مستوى %2" },
         { "CARCASA",            "",  "CHASSIS",   "外壳",   "الهيكل" },
         { "MANTEN UN PAD",      "",  "HOLD A PAD",
                                      "长按音垫", "اضغط بادًا مطولًا" },

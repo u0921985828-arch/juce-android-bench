@@ -49,7 +49,7 @@ static void recogeControles (juce::Component& c,
 static void fuzz (MainComponent& mc, int semilla, int sesiones, int acciones)
 {
     static const char* kFichas[] = { "pads", "pad2", "pad3", "sec", "secp", "paso", "song",
-                                     "piano", "pianod", "mix", "xy", "set", "proj", "gest",
+                                     "piano", "pianod", "mix", "xy", "set", "asp", "proj", "gest",
                                      "midi", "rack", "chop", "manual", "expo", "" };
     static const int kAnchos[] = { 280, 320, 360, 393, 412, 480, 653, 915 };
 
@@ -403,6 +403,11 @@ public:
                     else if (UiAudit::env ("ZATI_DLC").isNotEmpty())
                     {
                         c2->auditDlc();
+                    }
+                    //  16 NIVELES. Ver Tests/niveles.py.
+                    else if (UiAudit::env ("ZATI_NIVELES").isNotEmpty())
+                    {
+                        c2->auditNiveles();
                     }
                     //  EL JUEGO DE ICONOS. Ver Tests/iconos.py: los tres
                     //  numeros de un dibujo -que quepa, que tenga tinta y que

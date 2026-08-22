@@ -253,11 +253,6 @@ namespace ZatiColours
     inline juce::Colour padBorder  { 0xffcdc5b2 };
     inline juce::Colour padLit     { 0xff26221b };   // follows the skin tone
 
-    //  La baldosa del grano y de que carcasa es. Declaradas aqui arriba porque
-    //  setSkin las invalida y esta antes que grano().
-    inline juce::Image granoTile;
-    inline int granoDe = -1;
-
     //  Apply one. Every token a component reads is written here, so a skin
     //  change is one call and no component knows it happened.
     inline void setSkin (int i)
@@ -302,78 +297,20 @@ namespace ZatiColours
         //  ink outline around a white marker is invisible twice over.
         playhead     = juce::Colour (k.white);
         playheadEdge = juce::Colour (k.ink).withAlpha (0.40f);
-
-        //  El grano se rehace con la carcasa: la baldosa lleva la semilla de
-        //  la piel, asi que dejarla puesta seria pintar el grano de PAPEL
-        //  sobre GRAFITO. Es la regla de la casa - todo token que una piel
-        //  mueve hay que volver a leerlo - aplicada a algo que no es un color.
-        granoDe = -1;
     }
 
-    //  EL GRANO DEL CHASIS.
+    //  EL GRANO DEL CHASIS SE PROBO Y SE QUITO.
     //
-    //  El cuerpo era un degradado liso de dos colores y se lee como una app;
-    //  un aparato tiene MATERIAL - papel prensado, acero cepillado, plastico
-    //  granulado - y el material es lo que hace que una superficie parezca
-    //  tener tamano. Sin el, los mismos cuatro grises salen igual de plastico
-    //  en las cuatro carcasas.
+    //  El cuerpo llevo una temporada con textura -dos octavas de ruido en una
+    //  baldosa de 96 px, semilla fija por carcasa- con el argumento de que un
+    //  degradado liso se lee como una app y un aparato tiene MATERIAL. Y es
+    //  cierto de un aparato y no lo era de este: sobre un chasis acromatico el
+    //  grano no se lee como papel prensado, se lee como suciedad.
     //
-    //  Se genera y no se trae en un PNG por lo mismo que los iconos: son
-    //  CUATRO carcasas y dos de ellas son oscuras, asi que una textura
-    //  horneada sobre el chasis claro es una mancha sucia sobre GRAFITO. Y
-    //  ademas cuesta cero bytes de instalacion.
-    //
-    //  DOS OCTAVAS Y NO UNA. Ruido por pixel a secas es nieve de television:
-    //  el ojo lo lee como interferencia, no como material. La segunda octava
-    //  -manchas de 4x4- es la que le da tamano de grano.
-    //
-    //  Y SE PINTA DE UNA VEZ, no por pixel: la baldosa se dibuja al cambiar de
-    //  carcasa y el fondo la repite. El chasis se pinta en cada fotograma
-    //  completo -1.27 ms medidos de los 6.25 que cuesta el fotograma- y una
-    //  pasada de ruido calculada ahi dentro se llevaria mas que todo lo demas
-    //  junto.
-    //  LA AMPLITUD SALE DE UNA MEDIDA. A 0.055 la mota mas oscura de las 9216
-    //  de una baldosa movia el contraste de la tinta sobre el chasis un 15% en
-    //  GRAFITO -12.54 a 10.72-, o sea que la textura estaba cambiando lo que
-    //  Tests/skins.py habia certificado sobre la tabla. Aqui se queda en un
-    //  10% largo, y el peor pixel de las cuatro carcasas sigue muy por encima
-    //  del 4.50 que esa prueba exige para lo que hay que leer.
-    static constexpr float kGrano = 0.042f;   // alfa maxima de una mota
-    static constexpr int   kGranoLado = 96;
-
-    inline const juce::Image& grano()
-    {
-        if (granoDe == currentSkin && granoTile.isValid()) return granoTile;
-
-        granoTile = juce::Image (juce::Image::ARGB, kGranoLado, kGranoLado, true);
-        //  Semilla FIJA. Un grano sorteado en cada arranque es una textura
-        //  distinta cada vez que abres la app, y ademas no se puede fotografiar
-        //  para compararla: es la misma razon por la que HUMANIZAR se escribe
-        //  y no se sortea en el hilo de audio.
-        juce::Random r ((juce::int64) (0x5A7100 + currentSkin));
-
-        //  La octava gruesa, primero: manchas de 4x4 que dan el tamano de grano.
-        std::vector<float> gruesa ((size_t) ((kGranoLado / 4) * (kGranoLado / 4)));
-        for (auto& v : gruesa) v = r.nextFloat() * 2.0f - 1.0f;
-
-        {
-            juce::Image::BitmapData bd (granoTile, juce::Image::BitmapData::writeOnly);
-            for (int y = 0; y < kGranoLado; ++y)
-                for (int x = 0; x < kGranoLado; ++x)
-                {
-                    const float fina = r.nextFloat() * 2.0f - 1.0f;
-                    const float g4   = gruesa[(size_t) ((y / 4) * (kGranoLado / 4) + x / 4)];
-                    const float v    = juce::jlimit (-1.0f, 1.0f, fina * 0.62f + g4 * 0.55f);
-
-                    const auto c = (v >= 0.0f ? juce::Colours::white : juce::Colours::black)
-                                       .withAlpha (std::abs (v) * kGrano);
-                    bd.setPixelColour (x, y, c);
-                }
-        }
-
-        granoDe = currentSkin;
-        return granoTile;
-    }
+    //  Se queda lo que costo medirlo y vale igual sin textura: el fondo se
+    //  HORNEA en una imagen opaca y pintarlo es una copia de filas -0.86 ms
+    //  contra los 1.44 del degradado calculado en cada fotograma completo-.
+    //  Ver MainComponent::reconstruyeFondo y ZATI_FONDO_VIVO.
 
     //  THE CHASSIS IS YOURS, NOT THE SONG'S.
     //
@@ -1076,10 +1013,25 @@ public:
         //  regla de la casa que ya gobierna la celda de la rejilla y la fila de
         //  bancos: se pide lo que hay, no lo que gustaria.
         const float necesita = juce::GlyphArrangement::getStringWidth (r.fuente, texto);
-        const int libre = r.texto.getWidth() - (int) std::ceil (necesita) - Metrics::halfGap;
+        const int ancho = (int) std::ceil (necesita);
+        const int libre = r.texto.getWidth() - ancho - Metrics::halfGap;
         const int lado  = juce::jmin (tope, libre);
         if (lado >= Iconos::kLadoMin)
         {
+            //  EL DIBUJO Y LA PALABRA SE CENTRAN JUNTOS.
+            //
+            //  El icono se llevaba el borde de la tapa y el rotulo se centraba
+            //  en LO QUE QUEDABA, asi que la pareja salia descentrada hacia la
+            //  derecha y cuanto mas corta la palabra, peor: en una fila de
+            //  tapas anchas -PLAY, CARGAR- el dibujo quedaba pegado al filo y
+            //  la palabra en mitad del hueco. Se centra el GRUPO y el rotulo
+            //  se pega al icono; ver drawButtonText, que por eso deja de
+            //  centrar el texto cuando hay dibujo.
+            const int grupo = lado + Metrics::halfGap + ancho;
+            const int sobra = juce::jmax (0, r.texto.getWidth() - grupo);
+            r.texto.removeFromLeft (sobra / 2);
+            r.texto.removeFromRight (sobra - sobra / 2);
+
             r.id = id;
             r.icono = r.texto.removeFromLeft (lado);
             r.texto.removeFromLeft (Metrics::halfGap);
@@ -1316,7 +1268,12 @@ public:
         auto area = b.isDown() ? rep.texto.withTrimmedTop ((int) kCapLift)
                                : rep.texto.withTrimmedBottom ((int) kCapLift);
 
-        g.drawFittedText (t, area, juce::Justification::centred, 2, 0.9f);
+        //  Con dibujo, el rotulo se pega a EL y no se centra en el hueco: el
+        //  grupo ya viene centrado de reparteTapa, y volver a centrar el texto
+        //  dentro de su mitad separaria los dos otra vez.
+        g.drawFittedText (t, area, rep.id != Iconos::Id::ninguno
+                                       ? juce::Justification::centredLeft
+                                       : juce::Justification::centred, 2, 0.9f);
     }
 
     juce::Font getLabelFont (juce::Label&) override

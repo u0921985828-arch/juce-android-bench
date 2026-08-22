@@ -254,12 +254,18 @@ private:
     //  a hold and a swipe leave no mark on the face - so there has to be one
     //  place that lists them, and it has to be inside the app rather than in a
     //  manual nobody opens. This is that place.
-    enum SetPage { pageAudio = 0, pageMidi, pageProjects, pageGestures };
+    //  Y UNA QUINTA, que es donde el IDIOMA y la CARCASA tenian que haber
+    //  estado siempre: colgaban de AUDIO porque ahi habia sitio, no porque
+    //  tengan nada que ver con el reloj y el bufer. Una pagina se llama por lo
+    //  que contiene.
+    enum SetPage { pageAudio = 0, pageMidi, pageAspecto, pageProjects, pageGestures };
     int setPage = pageAudio;
     juce::TextButton pageAudioBtn { "AUDIO" }, pageMidiBtn { "MIDI" },
+                     pageAspBtn { "ASPECTO" },
                      pageProjBtn { "PROYECTOS" }, pageGestBtn  { "GESTOS" };
     void paintGesturesPage (juce::Graphics& g, juce::Rectangle<int> area);
     void paintMidiPage (juce::Graphics& g, juce::Rectangle<int> area);
+    void paintAspectoPage (juce::Graphics& g);
     juce::Rectangle<int> midiArea;
     juce::Rectangle<int> gesturesArea;
     //  Donde se pinta el parrafo del tour. Ver paintTourSheetContent.
@@ -439,6 +445,28 @@ private:
     //  propio selector de pad; aqui queda una tapa que lo abre en el pad que
     //  se esta editando, y 86 px de alto que vuelven a la pagina mas apretada.
     juce::TextButton padRackBtn { "ENVIOS" };
+
+    //  DIECISEIS NIVELES.
+    //
+    //  El gesto de la MPC: se elige un pad y los dieciseis de la rejilla pasan
+    //  a ser ESE pad tocado a dieciseis fuerzas, de la mas floja abajo a la
+    //  mas fuerte arriba. Es la unica forma de tocar dinamica con los dedos en
+    //  una pantalla que no tiene tacto: un cristal no sabe cuanto aprietas, y
+    //  sin esto todos los golpes salen iguales.
+    //
+    //  El pad se CAPTURA al encender y no se lee del selector en cada golpe:
+    //  si se leyera, tocar un pad cambiaria el pad de destino y el modo se
+    //  perseguiria a si mismo.
+    juce::TextButton nivelesButton { "16 NIVELES" };
+    bool nivel16 = false;
+    int  nivelPad = 0;
+
+    //  QUE SUENA AL TOCAR EL PAD `index`, y con que fuerza. Una funcion y no la
+    //  cuenta escrita dentro de padClicked, porque el banco tiene que poder
+    //  preguntar exactamente lo que el dedo hace: una regla medida en un sitio
+    //  y aplicada en otro son dos reglas. Ver auditNiveles.
+    struct Disparo { int pad; float vel; };
+    Disparo disparoDe (int index) const;
 
     //  The captions of the sequencer card, recorded by resized() instead of
     //  reconstructed by paint() from each control's bounds. Reconstructing
@@ -769,6 +797,7 @@ public:
     void auditPiano();
     //  EL CATALOGO DE CONTENIDO Y EL CANDADO. Ver Tests/dlc.py.
     void auditDlc();
+    void auditNiveles();
     //  LA EXPORTACION, medida de verdad y no mirando la barra. Ver auditExport:
     //  monta un patron con los sonidos de fabrica y hace el rebote entero -
     //  master y pistas - en el hilo que llama, contando ficheros y bytes.
@@ -1605,8 +1634,10 @@ private:
     void reconstruyeFondo();
     juce::Image fondoCache;
     int fondoSkin = -1;
-    //  La corrida de control del banco: el fondo de antes, sin textura.
-    const bool sinGrano = juce::SystemStats::getEnvironmentVariable ("ZATI_SIN_GRANO", {}).isNotEmpty();
+    //  La corrida de control del banco: el degradado calculado en cada
+    //  fotograma, que es el fondo de antes de hornearlo. Es lo unico que
+    //  permite comparar las dos en la MISMA maquina.
+    const bool fondoVivo = juce::SystemStats::getEnvironmentVariable ("ZATI_FONDO_VIVO", {}).isNotEmpty();
     void applySkin();
 
     //  Two of the transport keys carry a second gesture (see the GESTOS page):

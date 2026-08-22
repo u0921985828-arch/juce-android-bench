@@ -150,56 +150,6 @@ namespace UiAudit
                       << ",\"px\":\"" << hex << "\"}" << std::endl;
         }
 
-        //  Y EL GRANO DEL CHASIS, EN LAS CUATRO CARCASAS.
-        //
-        //  Tests/skins.py mide la TABLA, y desde que el cuerpo lleva textura
-        //  la tabla ya no es lo que se pinta: cada pixel del chasis vale su
-        //  color mas o menos una mota. La pregunta no es si hay grano sino
-        //  CUANTO se mueve lo que la otra prueba certifico, asi que se pinta
-        //  de verdad -degradado y baldosa, como en MainComponent::paint- y se
-        //  mide la tinta contra el pixel mas claro y el mas oscuro que hayan
-        //  salido. Sin esta linea, subir kGrano hasta romper el contraste no
-        //  fallaria en ninguna prueba: se publicaria.
-        const int guardada = ZatiColours::currentSkin;
-        for (int piel = 0; piel < 4; ++piel)
-        {
-            ZatiColours::setSkin (piel);
-
-            juce::Image parche (juce::Image::ARGB, 96, 96, true);
-            {
-                juce::Graphics g (parche);
-                g.setColour (ZatiColours::chassisTop);
-                g.fillAll();
-                g.setTiledImageFill (ZatiColours::grano(), 0, 0, 1.0f);
-                g.fillRect (parche.getBounds());
-            }
-
-            juce::Colour masClaro = ZatiColours::chassisTop, masOscuro = ZatiColours::chassisTop;
-            float lMax = -1.0f, lMin = 2.0f;
-            juce::Image::BitmapData bd (parche, juce::Image::BitmapData::readOnly);
-            for (int y = 0; y < 96; ++y)
-                for (int x = 0; x < 96; ++x)
-                {
-                    const auto c = bd.getPixelColour (x, y);
-                    const float l = ZatiColours::relativeLuminance (c);
-                    if (l > lMax) { lMax = l; masClaro  = c; }
-                    if (l < lMin) { lMin = l; masOscuro = c; }
-                }
-
-            const float base = ZatiColours::contrastRatio (ZatiColours::ink, ZatiColours::chassisTop);
-            const float cc   = ZatiColours::contrastRatio (ZatiColours::ink, masClaro);
-            const float co   = ZatiColours::contrastRatio (ZatiColours::ink, masOscuro);
-
-            std::cout << "{\"grano\":\"" << ZatiColours::skinName (piel) << "\""
-                      << ",\"amp\":" << juce::String (ZatiColours::kGrano, 4)
-                      << ",\"base\":" << juce::String (base, 3)
-                      << ",\"claro\":" << juce::String (cc, 3)
-                      << ",\"oscuro\":" << juce::String (co, 3)
-                      << ",\"desvio\":" << juce::String (juce::jmax (std::abs (cc - base),
-                                                                     std::abs (co - base)), 3)
-                      << "}" << std::endl;
-        }
-        ZatiColours::setSkin (guardada);
     }
 
     inline int tourPaso = -1;
