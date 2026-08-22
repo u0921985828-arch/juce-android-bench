@@ -39,6 +39,9 @@
       <FILE id="srcLh"   name="SampleLoader.h"    compile="0" resource="0" file="Source/SampleLoader.h"/>
       <FILE id="srcPsh"  name="ProjectStore.h"    compile="0" resource="0" file="Source/ProjectStore.h"/>
       <FILE id="srcZth"  name="Zati.h"            compile="0" resource="0" file="Source/Zati.h"/>
+      <FILE id="srcSnc"  name="Sintes.cpp"        compile="1" resource="0" file="Source/Sintes.cpp"/>
+      <FILE id="srcSnh"  name="Sintes.h"          compile="0" resource="0" file="Source/Sintes.h"/>
+      <FILE id="srcSni"  name="SintesTabla.inc"   compile="0" resource="0" file="Source/SintesTabla.inc"/>
     </GROUP>
     <GROUP id="ZatiKits" name="kits">
         <FILE id="kit00" name="a01_kick.flac" compile="0" resource="1" file="Source/kits/a01_kick.flac"/>
