@@ -249,6 +249,9 @@ MainComponent::MainComponent()
         padZati[(size_t) i] = Zati::forPad (i);      // cut order: zati 1 is always red
         p->setZati (padZati[(size_t) i]);
         p->onClick = [this, i] { padClicked (i); };
+        //  Y en modo tecla, apretar y levantar. Ver PadButton::setModoNota.
+        p->onNotaOn  = [this, i] (float vel) { padNotaOn (i, vel); };
+        p->onNotaOff = [this, i] { padNotaOff (i); };
         //  ...and holding it edits it, without a sound. See PadButton::onHold.
         p->onHold  = [this, i]
         {
@@ -610,22 +613,21 @@ MainComponent::MainComponent()
             auto* b = new juce::TextButton();
             styleButton (*b, kStepOff);
             litAccent (*b);
-            b->onClick = [this, i]
-            {
-                if (instAbierto >= 0) eligePreset (i);
-                else                  cargaInstrumento (i);
-            };
+            b->onClick = [this, i] { cargaInstrumento (i); };
             instSheet.cuerpo.addAndMakeVisible (b);
             instBtns.add (b);
         }
-        for (auto* b : { &instPackDownBtn, &instPackUpBtn, &instBackBtn })
+        for (auto* b : { &instPackDownBtn, &instPackUpBtn })
         {
             styleButton (*b, kKey);
             instSheet.cuerpo.addAndMakeVisible (*b);
         }
+        styleButton (vstButton, kKey);
+        vstButton.onClick = [this] { abreVst(); };
+        padSheet.addAndMakeVisible (vstButton);
+
         instPackDownBtn.onClick = [this] { pasoPack (-1); };
         instPackUpBtn  .onClick = [this] { pasoPack ( 1); };
-        instBackBtn    .onClick = [this] { instAbierto = -1; refreshInst(); resized(); instSheet.repaint(); };
         styleButton (instCloseButton, kKey);
         instCloseButton.onClick = [this] { closeAllSheets(); };
         instSheet.cuerpo.addAndMakeVisible (instCloseButton);
@@ -637,6 +639,51 @@ MainComponent::MainComponent()
         instSheet.setVisible (false);
         instSheet.onDismiss = [this] { closeAllSheets(); };
         instSheet.paintContent = [this] (juce::Graphics& g) { paintInstSheetContent (g); };
+    }
+
+    // ------------------------------------------------------------------
+    //  LA FICHA DEL INSTRUMENTO. Ver MainComponent.h.
+    // ------------------------------------------------------------------
+    {
+        for (int i = 0; i < Sintes::kPresets; ++i)
+        {
+            auto* b = new juce::TextButton();
+            styleButton (*b, kStepOff);
+            litAccent (*b);
+            b->onClick = [this, i] { eligePreset (i); };
+            vstSheet.cuerpo.addAndMakeVisible (b);
+            vstBtns.add (b);
+        }
+        for (auto* b : { &vstOctDown, &vstOctUp })
+        {
+            styleButton (*b, kKey);
+            vstSheet.cuerpo.addAndMakeVisible (*b);
+        }
+        //  LA OCTAVA MUEVE EL TECLADO Y NO EL PAD. Escribir el tono del pad
+        //  para pasear por el teclado es exactamente el fallo que ya costo una
+        //  medida en la audicion del piano roll: dejaba el pad afinado en la
+        //  ultima tecla que se toco.
+        vstOctDown.onClick = [this] { vstTeclado.setBase (vstTeclado.getBase() - 12); refreshVst(); };
+        vstOctUp  .onClick = [this] { vstTeclado.setBase (vstTeclado.getBase() + 12); refreshVst(); };
+
+        vstTeclado.onNota = [this] (int semis)
+        {
+            //  postNoteOnAt y no setPadPitch + postNoteOn: el semitono viaja EN
+            //  el comando, asi que oir una tecla no afina el pad.
+            if (padHasSample[(size_t) juce::jlimit (0, kNumPads - 1, vstPad)])
+                engine.postNoteOnAt (vstPad, semis, 0.9f);
+        };
+        vstSheet.cuerpo.addAndMakeVisible (vstTeclado);
+
+        styleButton (vstCloseButton, kKey);
+        vstCloseButton.onClick = [this] { closeAllSheets(); };
+        vstSheet.cuerpo.addAndMakeVisible (vstCloseButton);
+
+        vstSheet.hazDesplazable();
+        addAndMakeVisible (vstSheet);
+        vstSheet.setVisible (false);
+        vstSheet.onDismiss = [this] { closeAllSheets(); };
+        vstSheet.paintContent = [this] (juce::Graphics& g) { paintVstSheetContent (g); };
 
         // --- AUTO CHOP: the confirmation the destruction always deserved ---
         for (int i = 0; i < 4; ++i)
@@ -784,7 +831,8 @@ MainComponent::MainComponent()
                 lnf.applyBrowserColours();
                 repaint();
                 for (auto* sh : { &padSheet, &seqSheet, &browseSheet, &setSheet, &mixSheet,
-                                  &songSheet, &exportSheet, &rackSheet, &chopSheet, &instSheet })
+                                  &songSheet, &exportSheet, &rackSheet, &chopSheet, &instSheet,
+                                  &vstSheet })
                     sh->repaint();
             };
             setSheet.cuerpo.addAndMakeVisible (b);
@@ -2742,6 +2790,7 @@ MainComponent::MainComponent()
     {
         nivel16 = nivelesButton.getToggleState();
         nivelPad = juce::jlimit (0, kNumPads - 1, selectedPad);
+        refreshModoNota();
         status.setText (nivel16 ? T ("16 NIVELES: PAD %1", juce::String (nivelPad + 1))
                                 : T ("16 NIVELES OFF"), juce::dontSendNotification);
         repaint();
@@ -3149,7 +3198,10 @@ namespace
             "CARGAR y luego un pad abre la biblioteca en ese pad",
             "Un toque toca; una pulsacion larga configura",
             "Manten un pad para abrir su ficha sin que suene",
-            nullptr, nullptr } },
+            //  Y la excepcion, aqui y no en otro capitulo: el gesto se aprende
+            //  en el primero, asi que su excepcion va al lado o no se lee.
+            "En un pad con instrumento, mantener es tocar: su ficha se abre desde PAD",
+            nullptr } },
         { "PADS Y BANCOS", {
             "Cuatro bancos de dieciseis pads: los otros 48 siguen sonando",
             "Arrastra la rejilla para cambiar de banco",
@@ -3786,6 +3838,15 @@ void MainComponent::showPadPage (int page)
     padRackBtn.setVisible (onRig);
     nivelesButton.setVisible (onRig);
     if (! onRig) nivelesButton.setBounds ({});
+    //  Y LA PUERTA DEL INSTRUMENTO, apagada Y sin limites cuando no toca. Las
+    //  dos cosas: la maqueta que le da coordenadas vive dentro de la pagina
+    //  RIG, asi que en las otras se quedaba encendida y de 0x0 - que es lo que
+    //  la regla del volcado existe para cazar, y lo canto: 84 hallazgos.
+    {
+        const bool puerta = onRig && padEsInstrumento (selectedPad);
+        vstButton.setVisible (puerta);
+        if (! puerta) vstButton.setBounds ({});
+    }
     pianoButton.setVisible (onRig);
     autocutButton .setVisible (onRig);
     duckButton    .setVisible (onRig);
@@ -3840,6 +3901,7 @@ void MainComponent::closeAllSheets()
     exportSheet.setVisible (false);
     rackSheet.setVisible (false);
     instSheet.setVisible (false);
+    vstSheet.setVisible (false);
     pianoButton.setToggleState (false, juce::dontSendNotification);
     chopSheet.setVisible (false);
     manualSheet.setVisible (false);
@@ -5750,8 +5812,15 @@ void MainComponent::resized()
             {
                 //  Las dos puertas de este pad: a donde va -ENVIOS- y que toca
                 //  -PIANO-. Repartidas por el texto que llevan, como el resto.
-                juce::TextButton* pb[3] = { &padRackBtn, &pianoButton, &nivelesButton };
-                layoutModuleBar (inner.removeFromTop (Metrics::hit), pb, 0, 3);
+                //  Y LA CUARTA SOLO CUANDO LA HAY. Un pad de instrumento la
+                //  lleva y los otros no: una tapa que abre una ficha vacia es
+                //  peor que no tenerla, y ademas le quitaria ancho a las tres
+                //  que si sirven siempre. Quien la apaga es el bloque de
+                //  visibilidad de arriba, que corre en TODAS las paginas.
+                const bool esInstr = vstButton.isVisible();
+
+                juce::TextButton* pb[4] = { &padRackBtn, &pianoButton, &nivelesButton, &vstButton };
+                layoutModuleBar (inner.removeFromTop (Metrics::hit), pb, 0, esInstr ? 4 : 3);
             }
             inner.removeFromTop (Metrics::sm);
 
@@ -6651,12 +6720,8 @@ void MainComponent::resized()
         //  De ancho entero, hasta la pantalla mas estrecha da 217 px, y una
         //  lista de nombres se lee de arriba abajo. Sale mas alta que la
         //  tarjeta y por eso esta ficha se desplaza.
-        //  Dentro de un instrumento son sus dieciseis presets; fuera, los
-        //  instrumentos que traiga el pack.
-        const int cuantos = (instAbierto >= 0)
-            ? Sintes::kPresets
-            : ((instPack >= 0 && instPack < (int) instCatalogo.size())
-                   ? (int) instCatalogo[(size_t) instPack].instr.size() : 0);
+        const int cuantos = (instPack >= 0 && instPack < (int) instCatalogo.size())
+                                ? (int) instCatalogo[(size_t) instPack].instr.size() : 0;
         const int filas = juce::jmax (1, cuantos);
         auto inner = sheetFromBottom (instSheet, Metrics::md * 2 + Metrics::hit
                                                    + Metrics::md + filaPack
@@ -6682,26 +6747,8 @@ void MainComponent::resized()
         {
             auto fila = inner.removeFromTop (filaPack);
             const int w = juce::jmin (Metrics::hit * 2, fila.getWidth() / 3);
-            const bool dentro = (instAbierto >= 0);
-
-            //  Y LAS QUE NO TOCAN SE APAGAN *Y* SE QUEDAN SIN LIMITES, las dos
-            //  cosas: una tapa encendida y de 0x0 es lo que fue SEGUIR desde el
-            //  primer dia, y lo que la regla del volcado existe para cazar.
-            instPackDownBtn.setVisible (! dentro);
-            instPackUpBtn  .setVisible (! dentro);
-            instBackBtn    .setVisible (dentro);
-            if (dentro)
-            {
-                instPackDownBtn.setBounds ({});
-                instPackUpBtn  .setBounds ({});
-                instBackBtn.setBounds (fila.removeFromLeft (w));
-            }
-            else
-            {
-                instBackBtn.setBounds ({});
-                instPackDownBtn.setBounds (fila.removeFromLeft (w));
-                instPackUpBtn  .setBounds (fila.removeFromRight (w));
-            }
+            instPackDownBtn.setBounds (fila.removeFromLeft (w));
+            instPackUpBtn  .setBounds (fila.removeFromRight (w));
             instPackArea = fila;
         }
         inner.removeFromTop (Metrics::sm);
@@ -6718,6 +6765,62 @@ void MainComponent::resized()
             inner.removeFromTop (Metrics::xs);
             instBtns[i]->setVisible (true);
             instBtns[i]->setBounds (fila);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    //  LA FICHA DEL INSTRUMENTO. Cabecera con el dibujo de la familia, un
+    //  teclado que se toca y la lista de los dieciseis presets.
+    //
+    //  De ancho entero la lista, por lo mismo que la de instrumentos: en la
+    //  pantalla mas estrecha una rejilla de cuatro columnas deja 62 px por
+    //  celda y "TREMOLO ST" pide 85. Una lista de nombres se lee de arriba
+    //  abajo, sale mas alta que la tarjeta, y por eso esta ficha se desplaza.
+    // ------------------------------------------------------------------
+    {
+        const int cabecera = 56;      // el dibujo grande y los dos nombres
+        const int teclas   = 64;      // una octava que se pueda tocar con el dedo
+        const int filaP    = Metrics::hit;
+
+        auto inner = sheetFromBottom (vstSheet, Metrics::md * 2 + Metrics::hit
+                                                  + Metrics::md + cabecera
+                                                  + Metrics::sm + Metrics::hit + teclas
+                                                  + Metrics::sm + (filaP + Metrics::xs) * Sintes::kPresets
+                                                  + Metrics::sm + 40);
+
+        auto titleRow = inner.removeFromTop (Metrics::hit);
+        vstCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
+                                      .withSizeKeepingCentre (Metrics::hit, Metrics::hit));
+        vstTitleArea = titleRow.reduced (Metrics::lg, 0).withTrimmedTop (8).withHeight (24);
+        inner.removeFromTop (Metrics::md);
+
+        //  LA CABECERA: el dibujo a la izquierda y los dos nombres al lado.
+        {
+            auto fila = inner.removeFromTop (cabecera).reduced (Metrics::lg, 0);
+            vstIconArea = Lang::takeStart (fila, cabecera).reduced (4);
+            fila.removeFromLeft (Metrics::sm);
+            vstNombreArea = fila;
+        }
+        inner.removeFromTop (Metrics::sm);
+
+        //  La fila de octava, con el numero pintado en medio: es lo mismo que
+        //  hacen PACK -/+ y el selector de pad del piano.
+        {
+            auto fila = inner.removeFromTop (Metrics::hit).reduced (Metrics::lg, 0);
+            const int w = juce::jmin (Metrics::hit * 2, fila.getWidth() / 3);
+            vstOctDown.setBounds (fila.removeFromLeft (w));
+            vstOctUp  .setBounds (fila.removeFromRight (w));
+            vstOctArea = fila;
+        }
+        vstTeclado.setBounds (inner.removeFromTop (teclas).reduced (Metrics::lg, 2));
+        inner.removeFromTop (Metrics::sm);
+
+        for (auto* b : vstBtns) if (b != nullptr) { b->setVisible (true); b->setBounds ({}); }
+        for (int i = 0; i < vstBtns.size(); ++i)
+        {
+            auto fila = inner.removeFromTop (filaP);
+            inner.removeFromTop (Metrics::xs);
+            vstBtns[i]->setBounds (fila.reduced (Metrics::lg, 0));
         }
     }
 
@@ -8545,6 +8648,45 @@ MainComponent::Disparo MainComponent::disparoDe (int index) const
              (float) (n + 1) / (float) kPadsPerBank };
 }
 
+//  EL DEDO COMO TECLA. Ver PadButton::setModoNota.
+//
+//  Pasa por disparoDe, que es la misma cuenta que usa el toque normal, asi que
+//  16 NIVELES sigue mandando: una rejilla de niveles sobre un instrumento son
+//  dieciseis fuerzas del mismo sonido, y cada una con su propio largo.
+void MainComponent::padNotaOn (int index, float vel)
+{
+    //  Con LOAD armado el toque es para cargar, no para sonar: lo recoge el
+    //  click, que llega al levantar.
+    if (loadArmed) return;
+
+    const auto d = disparoDe (index);
+    if (! padHasSample[(size_t) d.pad]) return;
+
+    engine.postNoteOn (d.pad, d.vel * vel);
+    //  Se apunta QUE pad esta sonando por este dedo y no se recalcula al
+    //  levantar: entre medias se puede haber apagado 16 NIVELES, y entonces
+    //  se soltaria una nota que no es la que empezo - o ninguna.
+    notaViva[(size_t) juce::jlimit (0, kNumPads - 1, index)] = d.pad;
+}
+
+void MainComponent::padNotaOff (int index)
+{
+    const int i = juce::jlimit (0, kNumPads - 1, index);
+    if (notaViva[(size_t) i] < 0) return;
+    engine.postNoteOff (notaViva[(size_t) i]);
+    notaViva[(size_t) i] = -1;
+}
+
+//  Un pad se toca como tecla cuando lo que va a sonar es un instrumento, y eso
+//  con 16 NIVELES no es el pad que se toca sino el capturado.
+void MainComponent::refreshModoNota()
+{
+    const int destino = nivel16 ? juce::jlimit (0, kNumPads - 1, nivelPad) : -1;
+    for (int i = 0; i < kNumPads; ++i)
+        if (auto* p = pads[i])
+            p->setModoNota (padEsInstrumento (destino >= 0 ? destino : i));
+}
+
 void MainComponent::padClicked (int index)
 {
     if (loadArmed)
@@ -8554,6 +8696,11 @@ void MainComponent::padClicked (int index)
         openBrowseForPad (index);
         return;
     }
+
+    //  EN MODO TECLA LA NOTA YA EMPEZO al apretar y ya se solto al levantar.
+    //  Dispararla otra vez aqui seria un golpe de mas por toque - el mismo
+    //  fallo que la prueba de la cancion tuvo con el compas que vuelve a cero.
+    if (pads[index] != nullptr && pads[index]->enModoNota()) return;
 
     //  DIECISEIS NIVELES: la rejilla deja de ser dieciseis pads y pasa a ser UN
     //  pad a dieciseis fuerzas. Ver disparoDe.
@@ -8783,6 +8930,12 @@ void MainComponent::refreshPadArt (int index)
 
 void MainComponent::refreshPad (int index)
 {
+    //  El modo tecla se decide aqui porque aqui pasa TODO lo que cambia lo que
+    //  un pad tiene: cargar, vaciar, deshacer, abrir un proyecto y el reparto
+    //  de un kit. Ponerlo en assignSampleToPad habria dejado fuera al que
+    //  vacia, y un pad vaciado se habria quedado esperando un "suelta".
+    refreshModoNota();
+
     if (auto* p = pads[index])
     {
         p->setSelected (index == selectedPad);
@@ -9346,7 +9499,15 @@ void MainComponent::retranslateUi()
 {
     refreshAccessibleNames();
 
-    padsButton  .setButtonText (T ("PADS"));
+    //  SINGULAR, que es lo que abre. Esta pestana no lleva a los pads -esos
+    //  estan siempre en la cara, debajo- sino a los AJUSTES DEL PAD ELEGIDO, y
+    //  la ficha que abre ya se titula "PAD 07". "PADS" prometia una rejilla.
+    //
+    //  Y no "AJUSTES DEL PAD", que seria lo explicito: son seis pestanas en una
+    //  fila y ahi no caben con su aire ni las cortas -medido: 69 apretones-, asi
+    //  que un rotulo de tres palabras se lo quita a las otras cinco. Singular
+    //  cuesta una letra MENOS que el plural.
+    padsButton  .setButtonText (T ("PAD"));
     secButton   .setButtonText (T ("SEC"));
     songButton  .setButtonText (T ("SONG"));
     xyButton    .setButtonText (T ("XY"));
@@ -9448,7 +9609,9 @@ void MainComponent::retranslateUi()
     exportDirBtn      .setButtonText (T ("CAMBIAR"));
     browseKitButton   .setButtonText (T ("CARGAR KIT"));
     browseFactoryButton.setButtonText (T ("INSTRUMENTOS"));
-    instBackBtn.setButtonText (T ("INST VOLVER"));
+    vstButton.setButtonText (T ("PRESETS"));
+    vstOctDown.setButtonText (T ("OCT") + " -");
+    vstOctUp  .setButtonText (T ("OCT") + " +");
     instPackDownBtn.setButtonText (T ("PACK") + " -");
     instPackUpBtn  .setButtonText (T ("PACK") + " +");
     //  Y los nombres de la rejilla, que salen del disco y no de la tabla: si el
@@ -14318,7 +14481,6 @@ void MainComponent::auditDlc()
     //  creyendo que se mide esta.
     instPack = buscaPack ("ZATI");
     currentBank = 0;
-    instAbierto = -1;
     cargaInstrumento (2);      // TEXTURA, que vive en el banco C
     cargaInstrumento (2);
     int deFabrica = 0;
@@ -14335,10 +14497,6 @@ void MainComponent::openInstSheet()
     //  por cable, o lo deja la tienda mientras esto esta en segundo plano.
     instCatalogo = Instrumentos::lee();
     instPack = juce::jlimit (0, juce::jmax (0, (int) instCatalogo.size() - 1), instPack);
-    //  Y SIEMPRE POR EL PRIMER NIVEL. Dejarla donde se cerro abriria dentro de
-    //  un instrumento que ya nadie recuerda haber elegido, y con una lista de
-    //  nombres de preset que no dice de que instrumento son.
-    instAbierto = -1;
     refreshInst();
     closeAllSheets();
     instSheet.setVisible (true);
@@ -14362,28 +14520,6 @@ void MainComponent::refreshInst()
 {
     if (instCatalogo.empty()) return;
     const auto& p = instCatalogo[(size_t) juce::jlimit (0, (int) instCatalogo.size() - 1, instPack)];
-
-    //  DENTRO DE UN INSTRUMENTO: sus dieciseis presets. Son nombres nuestros y
-    //  no de disco, pero NO pasan por T(): "RHODES" o "SUPER SAW" son nombres
-    //  propios de un sonido, igual que lo son los de la fabrica que ya van
-    //  marcados como dato. Traducirlos no significa nada y ademas obligaria a
-    //  meter 256 filas en la tabla de idiomas.
-    if (instAbierto >= 0 && instAbierto < (int) p.instr.size()
-        && p.instr[(size_t) instAbierto].familiaSintes >= 0)
-    {
-        const int fam = p.instr[(size_t) instAbierto].familiaSintes;
-        for (int i = 0; i < instBtns.size(); ++i)
-        {
-            const bool hay = i < Sintes::kPresets;
-            instBtns[i]->setButtonText (hay ? juce::String (Sintes::tabla()[fam].p[i].nombre)
-                                            : juce::String());
-            if (hay) instBtns[i]->getProperties().set ("dato", 1);
-            else     instBtns[i]->getProperties().remove ("dato");
-        }
-        instPackDownBtn.setEnabled (true);
-        instPackUpBtn  .setEnabled (true);
-        return;
-    }
 
     //  EL CANDADO SE VE, no se esconde. Un pack cerrado que no aparece no se
     //  compra nunca: lo que hace falta es que se vea QUE hay y que al tocarlo
@@ -14426,17 +14562,32 @@ void MainComponent::cargaInstrumento (int idx)
         return;
     }
 
-    //  UN INSTRUMENTO DE SINTES NO CARGA NADA TODAVIA: abre sus presets.
+    //  UN INSTRUMENTO DE SINTES VA A SU PAD, Y CON EL PRIMER PRESET.
     //
-    //  Y no lleva confirmacion, a diferencia de los de abajo: abrir una lista
-    //  no se lleva nada por delante. La pregunta va donde esta el daño, que es
-    //  al elegir el preset - y ni eso, porque son dieciseis pads menos uno.
+    //  Aqui NO se elige el sonido concreto: elegir el instrumento y elegir su
+    //  preset son dos decisiones distintas y en dos momentos distintos. La
+    //  segunda vive en la ficha del pad, que es donde se edita todo lo demas
+    //  de un pad, y ademas con el teclado delante - o sea pudiendo OIRLOS,
+    //  que es la unica forma de elegir un sonido.
+    //
+    //  Y no lleva confirmacion, a diferencia del reparto de abajo: se lleva UN
+    //  pad por delante y no dieciseis, igual que CARGAR.
     if (in.familiaSintes >= 0)
     {
-        instAbierto = idx;
-        refreshInst();
-        resized();
-        instSheet.repaint();
+        const int fam = juce::jlimit (0, Sintes::kFamilias - 1, in.familiaSintes);
+        const int pad = kBancoInstr * kPadsPerBank + juce::jlimit (0, kPadsPerBank - 1, fam);
+
+        pushUndo (T ("INSTRUMENTOS"));
+        closeAllSheets();
+        ponInstrumentoEnPad (pad, fam, 0);
+        selectBank (kBancoInstr);
+        for (int i = 0; i < kPadsPerBank; ++i) refreshPad (kBancoInstr * kPadsPerBank + i);
+        selectPad (pad);
+
+        status.setText (Sintes::nombreDe (fam, 0) + "  "
+                            + juce::String::charToString ((juce::juce_wchar) 0x00B7) + "  "
+                            + T ("PAD %1", Lang::ltr (juce::String (pad + 1))),
+                        juce::dontSendNotification);
         return;
     }
 
@@ -14492,32 +14643,26 @@ void MainComponent::cargaInstrumento (int idx)
 // ----------------------------------------------------------------------------
 void MainComponent::eligePreset (int pre)
 {
-    if (instAbierto < 0 || instCatalogo.empty()) return;
-    const auto& p = instCatalogo[(size_t) juce::jlimit (0, (int) instCatalogo.size() - 1, instPack)];
-    if (! juce::isPositiveAndBelow (instAbierto, (int) p.instr.size())) return;
+    if (! padEsInstrumento (vstPad) || ! juce::isPositiveAndBelow (pre, Sintes::kPresets)) return;
+    const int fam = uiSample[(size_t) vstPad]->familia;
 
-    const int fam = p.instr[(size_t) instAbierto].familiaSintes;
-    if (fam < 0 || ! juce::isPositiveAndBelow (pre, Sintes::kPresets)) return;
+    //  EL MISMO PRESET SOLO SUENA. Volver a sintetizarlo costaria 77 ms para
+    //  dejar el pad exactamente como estaba, y ademas se llevaria un paso de
+    //  deshacer por no hacer nada.
+    if (uiSample[(size_t) vstPad]->preset != pre)
+    {
+        pushUndo (T ("PRESETS"));
+        ponInstrumentoEnPad (vstPad, fam, pre);
+        refreshVst();
+    }
 
-    const int pad = kBancoInstr * kPadsPerBank + juce::jlimit (0, kPadsPerBank - 1, fam);
+    //  Y SE OYE. Un preset que hay que ir a tocar al pad para saber como suena
+    //  es una lista de nombres, no un selector de sonido. En la octava que el
+    //  teclado tenga puesta, y por postNoteOnAt: oir no puede afinar el pad.
+    engine.postNoteOnAt (vstPad, vstTeclado.getBase(), 0.9f);
+    vstTeclado.setNotaViva (vstTeclado.getBase());
 
-    pushUndo (T ("INSTRUMENTOS"));
-    closeAllSheets();
-    instAbierto = -1;
-
-    ponInstrumentoEnPad (pad, fam, pre);
-
-    //  Por selectBank y no a mano: es quien mueve LAS DOS filas de bancos -la
-    //  de la cara y la de la ficha- y quien arrastra el pad elegido. Ponerlo a
-    //  mano dejaria la fila de la ficha diciendo otro banco.
-    selectBank (kBancoInstr);
-    for (int i = 0; i < kPadsPerBank; ++i) refreshPad (kBancoInstr * kPadsPerBank + i);
-    selectPad (pad);
-
-    status.setText (Sintes::nombreDe (fam, pre) + "  "
-                        + juce::String::charToString ((juce::juce_wchar) 0x00B7) + "  "
-                        + T ("PAD %1", Lang::ltr (juce::String (pad + 1))),
-                    juce::dontSendNotification);
+    status.setText (Sintes::nombreDe (fam, pre), juce::dontSendNotification);
 }
 
 //  SINTETIZAR TARDA, asi que esto no puede vivir en el hilo de audio ni en una
@@ -14548,6 +14693,112 @@ void MainComponent::ponInstrumentoEnPad (int pad, int familia, int preset)
     refreshPad (pad);
 }
 
+// ----------------------------------------------------------------------------
+//  LA FICHA DEL INSTRUMENTO.
+// ----------------------------------------------------------------------------
+void MainComponent::abreVst()
+{
+    if (! padEsInstrumento (selectedPad)) return;
+    vstPad = selectedPad;
+    //  El teclado empieza en el tono que el pad tiene puesto, redondeado a la
+    //  octava: abrir siempre en el cero dejaria un bajo afinado dos octavas
+    //  abajo sonando en un sitio que no es el suyo.
+    const int t = (int) std::lround (padPitch[(size_t) vstPad]);
+    vstTeclado.setBase (juce::jlimit (-24, 12, (t >= 0 ? t / 12 : (t - 11) / 12) * 12));
+    refreshVst();
+    closeAllSheets();
+    vstSheet.setVisible (true);
+    vstSheet.toFront (false);
+    resized();
+}
+
+void MainComponent::refreshVst()
+{
+    auto* sb = uiSample[(size_t) juce::jlimit (0, kNumPads - 1, vstPad)].get();
+    const int fam = (sb != nullptr) ? sb->familia : -1;
+    const int pre = (sb != nullptr) ? sb->preset  : -1;
+
+    for (int i = 0; i < vstBtns.size(); ++i)
+    {
+        const bool hay = (fam >= 0 && i < Sintes::kPresets);
+        vstBtns[i]->setButtonText (hay ? juce::String (Sintes::tabla()[fam].p[i].nombre)
+                                       : juce::String());
+        //  El puesto se ENCIENDE. Sin eso, dieciseis nombres iguales y ninguna
+        //  forma de saber cual esta sonando.
+        vstBtns[i]->setToggleState (i == pre, juce::dontSendNotification);
+        //  Y son nombres propios de un sonido, no palabras: van como dato, o
+        //  la regla comparativa los cuenta como sin traducir.
+        if (hay) vstBtns[i]->getProperties().set ("dato", 1);
+        else     vstBtns[i]->getProperties().remove ("dato");
+    }
+    //  Los topes del teclado son los mismos que admite un paso: setStepNote
+    //  acota en +-24, asi que pasear mas alla seria escribir notas que el motor
+    //  recorta - las mismas doce filas que mentian en el piano roll.
+    vstOctDown.setEnabled (vstTeclado.getBase() > -24);
+    vstOctUp  .setEnabled (vstTeclado.getBase() < 12);
+    vstSheet.repaint();
+}
+
+void MainComponent::paintVstSheetContent (juce::Graphics& g)
+{
+    if (vstSheet.sheetBounds.isEmpty()) return;
+
+    auto* sb = uiSample[(size_t) juce::jlimit (0, kNumPads - 1, vstPad)].get();
+    const int fam = (sb != nullptr) ? sb->familia : -1;
+    const int pre = (sb != nullptr) ? sb->preset  : -1;
+    const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
+
+    auto titleRow = antesDe (vstTitleArea, vstCloseButton);
+    g.setColour (ZatiColours::ink.withAlpha (0.9f));
+    g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
+    pintaTitulo (g, titleRow,
+                 T ("INSTRUMENTO") + "  " + dot + "  "
+                     + T ("PAD %1", Lang::ltr (juce::String (vstPad + 1))),
+                 "titulo", true);
+
+    //  EL DIBUJO DE LA FAMILIA, grande. Es lo que hace que esta ficha se
+    //  reconozca antes de leer nada, y es el MISMO dibujo que lleva el pad.
+    if (fam >= 0 && ! vstIconArea.isEmpty())
+        Iconos::dibuja (g, Iconos::deFamilia (fam), vstIconArea.toFloat(),
+                        ZatiColours::ink.withAlpha (0.92f));
+
+    //  Y los dos nombres: la familia arriba, en grande, y el preset debajo.
+    if (! vstNombreArea.isEmpty())
+    {
+        auto caja = vstNombreArea;
+        auto arriba = caja.removeFromTop (caja.getHeight() / 2);
+        g.setColour (ZatiColours::ink);
+        g.setFont (ZatiColours::displayFont (juce::jmin (26.0f, (float) arriba.getHeight() * 0.86f)));
+        pintaTitulo (g, arriba, fam >= 0 ? T (Sintes::tabla()[fam].nombre) : juce::String ("-"),
+                     "titulo", true);
+        g.setColour (ZatiColours::inkDim);
+        g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.06f));
+        pintaTitulo (g, caja,
+                     (fam >= 0 && pre >= 0) ? juce::String (Sintes::tabla()[fam].p[pre].nombre)
+                                            : juce::String(),
+                     "dato", true);
+    }
+
+    //  La octava, entre las dos tapas, en numeros latinos dentro de ltr.
+    {
+        auto fila = antesDe (antesDe (vstOctArea, vstOctDown), vstOctUp);
+        g.setColour (ZatiColours::ink.withAlpha (0.9f));
+        g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.10f));
+        pintaTitulo (g, fila,
+                     T ("OCTAVA %1", Lang::ltr (juce::String (vstTeclado.getBase() / 12))),
+                     "seccion", true);
+    }
+
+    auto inner = vstSheet.cuerpo.getLocalBounds().reduced (Metrics::lg, 0)
+                     .withTop (vstBtns.isEmpty() || vstBtns[vstBtns.size() - 1]->getBounds().isEmpty()
+                                   ? vstSheet.cuerpo.getHeight() - 40
+                                   : vstBtns[vstBtns.size() - 1]->getBottom() + Metrics::sm);
+    g.setColour (ZatiColours::inkDim);
+    g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.06f));
+    g.drawFittedText (T ("Toca el teclado para oirlo. Un preset cambia el sonido del pad."),
+                      inner.removeFromTop (40), Lang::start (juce::Justification::top), 2, 1.0f);
+}
+
 void MainComponent::paintInstSheetContent (juce::Graphics& g)
 {
     if (instSheet.sheetBounds.isEmpty()) return;
@@ -14566,16 +14817,9 @@ void MainComponent::paintInstSheetContent (juce::Graphics& g)
     //  EL TITULO DICE A DONDE VA ESTO, que es lo unico que no se puede deducir
     //  mirando una lista de nombres, y son dos destinos distintos: un kit se
     //  lleva el banco de delante y un instrumento un pad clavado del D.
-    const int padDestino = (instAbierto >= 0 && ! instCatalogo.empty()
-                            && instAbierto < (int) instCatalogo[(size_t) instPack].instr.size())
-        ? kBancoInstr * kPadsPerBank
-              + juce::jmax (0, instCatalogo[(size_t) instPack].instr[(size_t) instAbierto].familiaSintes)
-        : -1;
     pintaTitulo (g, titleRow,
                  T ("INSTRUMENTOS") + "  " + dot + "  "
-                     + (padDestino >= 0
-                            ? T ("PAD %1", Lang::ltr (juce::String (padDestino + 1)))
-                            : T ("BANCO %1", juce::String::charToString ((juce::juce_wchar) ('A' + currentBank)))),
+                     + T ("BANCO %1", juce::String::charToString ((juce::juce_wchar) ('A' + currentBank))),
                  "titulo", true);
 
 
@@ -14585,18 +14829,11 @@ void MainComponent::paintInstSheetContent (juce::Graphics& g)
         //  Se para antes de CADA tapa y en el lado en el que esta: recortar
         //  por ANCHO da igual en las dos, y en arabe PACK + esta a la
         //  izquierda, asi que el nombre del pack se le metia debajo.
-        auto fila = antesDe (antesDe (antesDe (instPackArea, instPackDownBtn), instPackUpBtn),
-                             instBackBtn);
+        auto fila = antesDe (antesDe (instPackArea, instPackDownBtn), instPackUpBtn);
         g.setColour (ZatiColours::ink.withAlpha (0.9f));
         g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.10f));
-        //  Dentro de un instrumento, el renglon lo lleva EL INSTRUMENTO: si
-        //  siguiera diciendo el nombre del pack, dieciseis presets sin decir
-        //  de que son es una lista de palabras sueltas.
         const auto nombre = instCatalogo.empty() ? juce::String ("-")
-                          : (instAbierto >= 0
-                                 && instAbierto < (int) instCatalogo[(size_t) instPack].instr.size()
-                                 ? instCatalogo[(size_t) instPack].instr[(size_t) instAbierto].nombre
-                                 : instCatalogo[(size_t) instPack].nombre);
+                          : instCatalogo[(size_t) instPack].nombre;
         //  Pintado, no un componente, asi que lo unico que lo mide es
         //  UiAudit::rotulo. El de dentro se llama ZATI -que ya esta en la
         //  lista de los que no se traducen- y los de disco son dato.
@@ -14618,18 +14855,6 @@ void MainComponent::paintInstSheetContent (juce::Graphics& g)
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.06f));
     juce::String pie;
-    //  DENTRO DE UN INSTRUMENTO el pie dice lo unico que hace falta: que esto
-    //  se toca con el piano y en que pad va a estar. Sin la primera mitad, un
-    //  instrumento en un pad se toca una vez a dedo y parece un sonido mas.
-    if (instAbierto >= 0)
-    {
-        pie = (padDestino >= 0)
-            ? T ("Toca un preset y va al pad %1. Se toca con el PIANO.",
-                 Lang::ltr (juce::String (padDestino + 1)))
-            : T ("Toca un preset. Se toca con el PIANO.");
-        g.drawFittedText (pie, inner.removeFromTop (40), Lang::start (juce::Justification::top), 2, 1.0f);
-        return;
-    }
     //  Y CUANDO NO HAY NADA INSTALADO, DONDE SE PONEN. Es la misma falta que
     //  tenia ZATI/Kits antes de MIS KITS: quien se baja un pack no tiene forma
     //  de saber a que carpeta va, y un menu que dice "no hay nada" sin decir
@@ -15769,13 +15994,16 @@ void MainComponent::auditOpen (const juce::String& which)
     //  renglon dice el instrumento y las dieciseis tapas llevan otros rotulos.
     //  Sin esta entrada se medira siempre la lista de fuera, que es justo la
     //  que no cambio. Es lo mismo que hizo falta con secp.
-    else if (which == "instp")
+    //  Y LA FICHA DEL INSTRUMENTO, que solo existe si el pad lleva uno: sin
+    //  plantarlo antes, el banco mediria una ficha vacia.
+    else if (which == "vst")
     {
-        instPack = 0;
-        openInstSheet();
-        instAbierto = 11;      // CUERDA PULS: el nombre de familia mas largo
-        refreshInst();
-        resized();
+        //  CUERDA PULS, que es el nombre de familia mas largo de los dieciseis.
+        const int pad = kBancoInstr * kPadsPerBank + 11;
+        ponInstrumentoEnPad (pad, 11, 0);
+        selectBank (kBancoInstr);
+        selectPad (pad);
+        abreVst();
     }
     else if (which == "instd")
     {

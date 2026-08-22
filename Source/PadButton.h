@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include "SampleBuffer.h"
+#include "Iconos.h"
 #include "ZatiLookAndFeel.h"
 #include "Zati.h"
 
@@ -30,6 +31,28 @@ public:
     std::function<void()> onHold;
     static constexpr int kHoldMs = 420;
 
+    // ------------------------------------------------------------------------
+    //  MODO TECLA: el pad deja de ser un golpe y pasa a ser una nota.
+    //
+    //  Un pad de percusion suena entero y se acaba solo, asi que da igual
+    //  cuando levantes el dedo. Un INSTRUMENTO sostiene: su zona da vueltas
+    //  mientras la nota dure, y sin un "suelta" no se acaba NUNCA. Es decir que
+    //  esto no es un adorno - sin ello un pad con un colchon se queda sonando
+    //  hasta que lo pises con otro golpe.
+    //
+    //  Asi que la nota empieza al APRETAR y se suelta al LEVANTAR, y lo que
+    //  dura es lo que tengas el dedo encima. Varios pads a la vez son varias
+    //  notas a la vez: la reserva de voces ya es comun, no hace falta nada.
+    //
+    //  Y EN ESTE MODO NO HAY MANTENER-PARA-EDITAR. Es la unica forma: una nota
+    //  de mas de 420 ms abriria la ficha a media frase. La puerta de un pad de
+    //  instrumento es la pestana PADS, que esta siempre a un toque.
+    std::function<void (float vel)> onNotaOn;
+    std::function<void()>           onNotaOff;
+
+    void setModoNota (bool b) noexcept { modoNota = b; }
+    bool enModoNota() const noexcept   { return modoNota; }
+
     //  start01/end01 are the pad's own trim window. After an auto-chop all
     //  sixteen pads point at ONE buffer with sixteen windows, so a sparkline
     //  drawn from the whole buffer made every tile identical — half the tile
@@ -39,6 +62,15 @@ public:
     {
         loaded = (sb != nullptr);
         padName = name;
+        //  Y SI ES UN INSTRUMENTO, SU DIBUJO EN VEZ DE LA ONDA.
+        //
+        //  La onda de un instrumento no dice nada: son diez zonas pegadas, asi
+        //  que el garabato que sale es el mismo para los 256 y ademas no se
+        //  parece a lo que suena. El dibujo si dice cual de las dieciseis
+        //  familias es, que es lo unico que hace falta saber de un vistazo -y
+        //  cabe donde el nombre no: "CUERDA PULS ENSEMBLE" en una tapa de 60 px
+        //  sale cortado a la mitad.
+        instr = (sb != nullptr) ? Iconos::deFamilia (sb->familia) : Iconos::Id::ninguno;
         buildSpark (sb.get(), start01, end01);
         repaint();
     }
@@ -101,7 +133,8 @@ public:
     void mouseDown (const juce::MouseEvent& e) override
     {
         held = false;
-        startTimer (kHoldMs);
+        //  En modo tecla no hay gesto de mantener: mantener ES tocar.
+        if (! modoNota) startTimer (kHoldMs);
 
         const float h = (float) juce::jmax (1, getHeight());
         const float y = juce::jlimit (0.0f, 1.0f, (float) e.position.y / h);
@@ -127,6 +160,12 @@ public:
             usedPressure = false;
         }
 
+        //  Y AQUI, no en el click: el click de JUCE llega al LEVANTAR, asi que
+        //  un pad disparado por onClick le suma al golpe todo el tiempo que el
+        //  dedo pase encima. En percusion se tolera porque el sonido es el
+        //  mismo; en una nota es la diferencia entre tocar y no.
+        if (modoNota && onNotaOn) onNotaOn (lastVelocity);
+
         juce::Button::mouseDown (e);
     }
 
@@ -140,6 +179,10 @@ public:
     void mouseUp (const juce::MouseEvent& e) override
     {
         stopTimer();
+        //  La nota se suelta SIEMPRE, aunque el dedo haya salido del pad: un
+        //  arrastre fuera y un levantar dentro tienen que acabar los dos en
+        //  silencio, o queda una voz colgada que solo se apaga con el panico.
+        if (modoNota && onNotaOff) onNotaOff();
         if (held) { setState (buttonNormal); return; }   // the hold was the gesture
         juce::Button::mouseUp (e);
     }
@@ -246,8 +289,19 @@ public:
             g.fillRect (r.withHeight (2.0f).reduced (1.0f, 0.0f).withY (r.getY() + 1.0f));
         }
 
+        //  EL DIBUJO DEL INSTRUMENTO, donde iria la onda. Del alto de la
+        //  tapa y no de un numero a mano: en un movil el pad mide 60 px y en
+        //  una tableta 120, y un dibujo pensado para el primero sale perdido
+        //  en el segundo. Es la misma regla que ya tiene reparteTapa.
+        if (loaded && instr != Iconos::Id::ninguno)
+        {
+            const float lado = juce::jlimit (16.0f, 40.0f, r.getHeight() * 0.40f);
+            const auto caja = juce::Rectangle<float> (lado, lado)
+                                  .withCentre ({ r.getCentreX(), r.getCentreY() + 2.0f });
+            Iconos::dibuja (g, instr, caja, sparkCol.withAlpha (onAccent ? 0.95f : 0.72f));
+        }
         // Sparkline (behind the labels).
-        if (loaded && spark.size() > 2)
+        else if (loaded && spark.size() > 2)
         {
             auto wr = r.reduced (9.0f, 0.0f);
             const float cy = r.getCentreY() + 2.0f;
@@ -320,6 +374,8 @@ private:
     }
 
     bool held = false;
+    bool modoNota = false;
+    Iconos::Id instr = Iconos::Id::ninguno;
 
     void buildSpark (const SampleBuffer* sb, float start01, float end01)
     {

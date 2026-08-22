@@ -50,6 +50,20 @@ namespace Iconos
         sonido, recorte,
         flt, hpf, drv, dly, bit, rev,
         mic, remuestrear, bombeo, autocut, sistema, cadena, patron, pad, fijo,
+        //  --- LAS DIECISEIS FAMILIAS DE Sintes.h -------------------------
+        //
+        //  Un pad con instrumento se distingue de un pad con un golpe por lo
+        //  que DICE, y un pad es una tapa de 60 px con un numero y un nombre
+        //  recortado: "CUERDA PULS" no cabe. El dibujo si.
+        //
+        //  Se dibujan por lo que el instrumento ES -un teclado, unos tubos, una
+        //  campana- y no por su forma de onda, con dos excepciones que se ganan
+        //  el sitio: LEADS es una cuadrada y CLAVES un peine de pulsos, porque
+        //  eso es exactamente lo que suena. Cuatro dibujos de onda seguidos se
+        //  parecerian entre si, que es lo que la prueba de pares no perdona.
+        insBajo, insSub, insEp, insOrgano, insCuerdas, insColchon, insPluck,
+        insCampana, insMetales, insLead, insCoro, insGuitarra, insMazo,
+        insClav, insFlauta, insArpa,
         midi, medir, altavoz, mano, momentaneo, niveles,
         kNum
     };
@@ -90,6 +104,14 @@ namespace Iconos
             case Id::medir: return "medir";            case Id::altavoz: return "altavoz";
             case Id::mano: return "mano";              case Id::momentaneo: return "momentaneo";
             case Id::niveles: return "niveles";
+            case Id::insBajo: return "insBajo";        case Id::insSub: return "insSub";
+            case Id::insEp: return "insEp";            case Id::insOrgano: return "insOrgano";
+            case Id::insCuerdas: return "insCuerdas";  case Id::insColchon: return "insColchon";
+            case Id::insPluck: return "insPluck";      case Id::insCampana: return "insCampana";
+            case Id::insMetales: return "insMetales";  case Id::insLead: return "insLead";
+            case Id::insCoro: return "insCoro";        case Id::insGuitarra: return "insGuitarra";
+            case Id::insMazo: return "insMazo";        case Id::insClav: return "insClav";
+            case Id::insFlauta: return "insFlauta";    case Id::insArpa: return "insArpa";
             case Id::ninguno:
             case Id::kNum:
             default: return "ninguno";
@@ -787,6 +809,172 @@ namespace Iconos
                                            4.2f, (float) (i + 1) * 4.2f, 0.8f);
                 break;
 
+            // --- LOS DIECISEIS INSTRUMENTOS ------------------------------
+
+            //  BAJOS: la pala de un bajo con sus cuatro clavijas. Se dibuja el
+            //  mastil y no la onda porque la onda de un bajo y la de un lead se
+            //  parecen demasiado - ver el comentario del enum.
+            case Id::insBajo:
+                L.addRoundedRectangle (8.5f, 2.0f, 7.0f, 13.0f, 2.0f);
+                linea (L, 12.0f, 15.0f, 12.0f, 22.0f);
+                R.addEllipse (4.6f, 4.0f, 2.6f, 2.6f);
+                R.addEllipse (4.6f, 9.0f, 2.6f, 2.6f);
+                R.addEllipse (16.8f, 4.0f, 2.6f, 2.6f);
+                R.addEllipse (16.8f, 9.0f, 2.6f, 2.6f);
+                break;
+
+            //  SUBS: tres barras que ENGORDAN hacia abajo. No es una onda: es
+            //  "esto vive abajo", que es lo unico que un sub es.
+            case Id::insSub:
+                R.addRoundedRectangle (7.0f,  4.5f, 10.0f, 1.8f, 0.9f);
+                R.addRoundedRectangle (5.0f, 10.0f, 14.0f, 3.0f, 1.2f);
+                R.addRoundedRectangle (3.0f, 16.5f, 18.0f, 4.6f, 1.6f);
+                t.lleno = 0.90f;
+                break;
+
+            //  PIANO ELEC: cuatro teclas blancas y tres negras. Es el dibujo
+            //  mas literal de los dieciseis y a proposito: un teclado no se
+            //  confunde con nada.
+            case Id::insEp:
+                L.addRectangle (2.0f, 5.0f, 20.0f, 14.0f);
+                linea (L, 7.0f, 5.0f, 7.0f, 19.0f);
+                linea (L, 12.0f, 5.0f, 12.0f, 19.0f);
+                linea (L, 17.0f, 5.0f, 17.0f, 19.0f);
+                R.addRectangle (5.3f, 5.0f, 3.2f, 8.0f);
+                R.addRectangle (10.3f, 5.0f, 3.2f, 8.0f);
+                R.addRectangle (15.3f, 5.0f, 3.2f, 8.0f);
+                break;
+
+            //  ORGANOS: las tres barras de registro, cada una a su altura. Un
+            //  organo se toca moviendo eso, no apretando teclas.
+            case Id::insOrgano:
+                linea (L, 5.5f, 2.5f, 5.5f, 21.5f);
+                linea (L, 12.0f, 2.5f, 12.0f, 21.5f);
+                linea (L, 18.5f, 2.5f, 18.5f, 21.5f);
+                R.addRoundedRectangle (3.3f,  8.0f, 4.4f, 2.6f, 1.0f);
+                R.addRoundedRectangle (9.8f, 14.5f, 4.4f, 2.6f, 1.0f);
+                R.addRoundedRectangle (16.3f, 5.0f, 4.4f, 2.6f, 1.0f);
+                break;
+
+            //  CUERDAS: el ARCO cruzando las cuerdas. Sin el arco esto son
+            //  cuatro lineas verticales, o sea cualquier otra cosa.
+            case Id::insCuerdas:
+                linea (L, 5.0f,  4.5f, 5.0f, 19.5f);
+                linea (L, 9.7f,  4.5f, 9.7f, 19.5f);
+                linea (L, 14.4f, 4.5f, 14.4f, 19.5f);
+                linea (L, 19.1f, 4.5f, 19.1f, 19.5f);
+                linea (L, 2.0f, 18.5f, 22.0f, 6.5f);
+                break;
+
+            //  COLCHONES: el regulador que abre y cierra. Un colchon es una
+            //  envolvente lenta por los dos lados y nada mas.
+            case Id::insColchon:
+                L.startNewSubPath (2.0f, 12.0f);
+                L.cubicTo (9.0f, 11.6f, 13.0f, 3.5f, 22.0f, 3.0f);
+                L.startNewSubPath (2.0f, 12.0f);
+                L.cubicTo (9.0f, 12.4f, 13.0f, 20.5f, 22.0f, 21.0f);
+                break;
+
+            //  PLUCKS: el golpe y su caida. Sube de golpe y se apaga, que es
+            //  la definicion de pulsado.
+            case Id::insPluck:
+                linea (L, 2.0f, 21.0f, 22.0f, 21.0f);
+                L.startNewSubPath (4.0f, 21.0f);
+                L.lineTo (4.0f, 3.5f);
+                L.cubicTo (10.0f, 4.5f, 12.5f, 19.5f, 22.0f, 20.0f);
+                break;
+
+            //  CAMPANAS: una campana, con su badajo debajo.
+            case Id::insCampana:
+                L.startNewSubPath (5.0f, 17.5f);
+                L.cubicTo (5.5f, 8.0f, 8.5f, 3.5f, 12.0f, 3.5f);
+                L.cubicTo (15.5f, 3.5f, 18.5f, 8.0f, 19.0f, 17.5f);
+                L.closeSubPath();
+                R.addEllipse (10.6f, 19.0f, 2.8f, 2.8f);
+                break;
+
+            //  METALES: la campana de un metal, o sea el cono que se abre.
+            case Id::insMetales:
+                L.startNewSubPath (3.0f, 10.0f);
+                L.lineTo (14.0f, 4.0f);
+                L.lineTo (14.0f, 20.0f);
+                L.lineTo (3.0f, 14.0f);
+                L.closeSubPath();
+                L.startNewSubPath (17.5f, 6.0f);
+                L.cubicTo (20.5f, 9.0f, 20.5f, 15.0f, 17.5f, 18.0f);
+                break;
+
+            //  LEADS: una CUADRADA. Se gana la excepcion porque un lead ES eso:
+            //  un pulso que corta por encima de la mezcla.
+            case Id::insLead:
+                L.startNewSubPath (2.0f, 18.5f);
+                L.lineTo (2.0f, 5.5f);  L.lineTo (9.0f, 5.5f);
+                L.lineTo (9.0f, 18.5f); L.lineTo (16.0f, 18.5f);
+                L.lineTo (16.0f, 5.5f); L.lineTo (22.0f, 5.5f);
+                break;
+
+            //  COROS: una persona. Es lo unico que separa una voz de un
+            //  sintetizador que suena a voz.
+            case Id::insCoro:
+                R.addEllipse (8.6f, 3.0f, 6.8f, 6.8f);
+                L.startNewSubPath (3.5f, 21.5f);
+                L.cubicTo (4.0f, 13.0f, 20.0f, 13.0f, 20.5f, 21.5f);
+                break;
+
+            //  CUERDA PULSADA: el cuerpo de una guitarra, con su boca.
+            case Id::insGuitarra:
+                L.startNewSubPath (12.0f, 2.5f);
+                L.cubicTo (18.5f, 4.0f, 20.0f, 9.0f, 17.0f, 12.0f);
+                L.cubicTo (20.5f, 15.5f, 18.0f, 21.5f, 12.0f, 21.5f);
+                L.cubicTo (6.0f, 21.5f, 3.5f, 15.5f, 7.0f, 12.0f);
+                L.cubicTo (4.0f, 9.0f, 5.5f, 4.0f, 12.0f, 2.5f);
+                L.closeSubPath();
+                R.addEllipse (9.8f, 13.8f, 4.4f, 4.4f);
+                break;
+
+            //  MAZOS: la baqueta encima de las laminas.
+            case Id::insMazo:
+                R.addRoundedRectangle (3.0f, 16.0f, 18.0f, 1.9f, 0.9f);
+                R.addRoundedRectangle (4.5f, 19.0f, 15.0f, 1.9f, 0.9f);
+                linea (L, 8.0f, 12.5f, 17.0f, 4.0f);
+                R.addEllipse (4.4f, 9.6f, 5.4f, 5.4f);
+                break;
+
+            //  CLAVES: un peine de pulsos muy estrechos. La otra excepcion: un
+            //  clavinet es casi un impulso con una resonancia encima.
+            case Id::insClav:
+                linea (L, 2.0f, 21.0f, 22.0f, 21.0f);
+                linea (L, 3.5f,  21.0f, 3.5f,  3.5f);
+                linea (L, 7.2f,  21.0f, 7.2f,  7.0f);
+                linea (L, 10.9f, 21.0f, 10.9f, 10.0f);
+                linea (L, 14.6f, 21.0f, 14.6f, 12.5f);
+                linea (L, 18.3f, 21.0f, 18.3f, 15.0f);
+                linea (L, 22.0f, 21.0f, 22.0f, 17.5f);
+                break;
+
+            //  VIENTOS: el tubo con sus agujeros.
+            case Id::insFlauta:
+                L.addRoundedRectangle (2.0f, 9.0f, 20.0f, 6.0f, 3.0f);
+                R.addEllipse (5.6f, 10.9f, 2.2f, 2.2f);
+                R.addEllipse (9.6f, 10.9f, 2.2f, 2.2f);
+                R.addEllipse (13.6f, 10.9f, 2.2f, 2.2f);
+                R.addEllipse (17.6f, 10.9f, 2.2f, 2.2f);
+                break;
+
+            //  ARPAS: la columna curva, la base y las cuerdas, que van de mas
+            //  larga a mas corta - que es lo que hace que un arpa sea un arpa y
+            //  no un triangulo con rayas.
+            case Id::insArpa:
+                L.startNewSubPath (3.5f, 21.0f);
+                L.cubicTo (4.5f, 9.0f, 11.0f, 3.0f, 19.5f, 2.5f);
+                linea (L, 19.5f, 2.5f, 19.5f, 21.0f);
+                linea (L, 3.5f, 21.0f, 19.5f, 21.0f);
+                linea (L, 7.0f, 16.0f, 7.0f, 21.0f);
+                linea (L, 10.5f, 11.0f, 10.5f, 21.0f);
+                linea (L, 14.0f, 7.0f, 14.0f, 21.0f);
+                linea (L, 17.0f, 4.5f, 17.0f, 21.0f);
+                break;
+
             case Id::ninguno:
             case Id::kNum:
             default:
@@ -794,6 +982,20 @@ namespace Iconos
         }
 
         return t;
+    }
+
+    //  DE QUE FAMILIA ES CADA DIBUJO. Una tabla y no un switch repartido: quien
+    //  pinta un pad no tiene por que saber como se llama el icono.
+    inline Id deFamilia (int familia) noexcept
+    {
+        static const Id t[16] =
+        {
+            Id::insBajo, Id::insSub, Id::insEp, Id::insOrgano,
+            Id::insCuerdas, Id::insColchon, Id::insPluck, Id::insCampana,
+            Id::insMetales, Id::insLead, Id::insCoro, Id::insGuitarra,
+            Id::insMazo, Id::insClav, Id::insFlauta, Id::insArpa
+        };
+        return (familia >= 0 && familia < 16) ? t[familia] : Id::ninguno;
     }
 
     //  LA MARCA. Una tapa de pad con la Z cortada dentro, que es lo que esta

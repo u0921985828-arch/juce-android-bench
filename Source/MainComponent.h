@@ -13,6 +13,7 @@
 #include "StepGrid.h"
 #include "Playlist.h"
 #include "PianoRoll.h"
+#include "Teclado.h"
 #include "AudioFocus.h"
 #include "SessionKeeper.h"
 #include "Exporter.h"
@@ -1255,18 +1256,50 @@ private:
     Sheet instSheet;
     juce::TextButton instCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
     juce::TextButton instPackDownBtn { "PACK -" }, instPackUpBtn { "PACK +" };
-    juce::TextButton instBackBtn { "VOLVER" };
     juce::OwnedArray<juce::TextButton> instBtns;      // la lista de instrumentos
     std::vector<Instrumentos::Pack> instCatalogo;
     int instPack = 0;
 
-    //  LA FICHA TIENE DOS NIVELES desde que un instrumento va a un pad.
+
+    // ------------------------------------------------------------------------
+    //  LA FICHA DEL INSTRUMENTO: una por pad, con forma de VST.
     //
-    //  -1 es la lista de instrumentos; 0..15 es "estoy dentro de este" y la
-    //  misma lista ensena sus dieciseis presets. Reutiliza las mismas tapas
-    //  porque el gesto es el mismo -elegir de una lista- y montar una segunda
-    //  ficha para eso seria dos maquetados que mantener para un solo trabajo.
-    int instAbierto = -1;
+    //  Los presets NO se eligen al cargar. Cargar un instrumento es elegir el
+    //  INSTRUMENTO; elegir el sonido concreto es editar el pad, que es donde se
+    //  edita todo lo demas de un pad. Mezclar las dos cosas obligaba a decidir
+    //  el preset antes de haber oido ninguno.
+    //
+    //  Y ESTA FICHA NO SE PARECE A LAS OTRAS, a proposito: las demas son filas
+    //  de mandos y esta es una cabecera con el dibujo de la familia, un teclado
+    //  que se toca y la lista de los dieciseis. Es la forma que tiene un
+    //  instrumento en cualquier aparato que los tenga, y es la que dice de un
+    //  vistazo que este pad ya no es un golpe.
+    Sheet vstSheet;
+    juce::OwnedArray<juce::TextButton> vstBtns;      // los dieciseis presets
+    juce::TextButton vstCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
+    juce::TextButton vstOctDown { "OCT -" }, vstOctUp { "OCT +" };
+    //  Y LA PUERTA, en EL PAD y solo cuando el pad lleva instrumento.
+    juce::TextButton vstButton { "PRESETS" };
+    Teclado vstTeclado;
+    int vstPad = 0;
+    juce::Rectangle<int> vstTitleArea, vstIconArea, vstNombreArea, vstOctArea;
+
+    void abreVst();
+    //  QUE PADS SE TOCAN COMO TECLAS y cual esta sonando por cual. Ver
+    //  PadButton::setModoNota: un instrumento sostiene, asi que su nota tiene
+    //  que soltarse, y quien la suelta es el dedo.
+    void padNotaOn (int index, float vel);
+    void padNotaOff (int index);
+    void refreshModoNota();
+    std::array<int, AudioEngine::kNumPads> notaViva {};
+    void refreshVst();
+    void paintVstSheetContent (juce::Graphics& g);
+    //  Y SI ESTE PAD ES UN INSTRUMENTO, que lo preguntan cuatro sitios.
+    bool padEsInstrumento (int i) const noexcept
+    {
+        return juce::isPositiveAndBelow (i, kNumPads)
+            && uiSample[(size_t) i] != nullptr && uiSample[(size_t) i]->familia >= 0;
+    }
     void repartePorBanco (const juce::Array<juce::File>& files, const juce::String& motivo);
     void plantaPacksDePrueba();
     void openInstSheet();

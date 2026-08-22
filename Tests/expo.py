@@ -29,7 +29,7 @@ SIZES = [
     ("915x412",  "LANDSCAPE — the orientation nobody tests"),
 ]
 LANGS = ["es", "en", "zh", "ar"]
-SHEETS = ["", "pads", "pad2", "pad3", "sec", "secp", "paso", "song", "piano", "pianod", "mix", "xy", "set", "asp", "proj", "gest", "midi", "manual", "rack", "chop", "inst", "instd", "instp", "expo", "tour", "tour1", "tour6", "tour10", "tourf", "browse", "browsedir"]
+SHEETS = ["", "pads", "pad2", "pad3", "sec", "secp", "paso", "song", "piano", "pianod", "mix", "xy", "set", "asp", "proj", "gest", "midi", "manual", "rack", "chop", "inst", "instd", "vst", "expo", "tour", "tour1", "tour6", "tour10", "tourf", "browse", "browsedir"]
 
 MIN_TOUCH = 40   # Metrics::hit — Android's own guideline is 48dp, this is the floor
 #  LO QUE SE DIBUJA Y SE TOCA IGUAL.
@@ -245,10 +245,12 @@ UNTRANSLATED_OK = {
     "MANUAL",                                  # se escribe igual en las dos lenguas
     "MIDI",                                    # es una sigla, y es la misma en todo el mundo
     "XY",                                      # los dos ejes se llaman igual en todas partes
-    "PADS", "SEC", "MIX", "SET", "SONG", "REC", "PLAY", "STOP", "LOAD",
+    "PADS", "PAD", "SEC", "MIX", "SET", "SONG", "REC", "PLAY", "STOP", "LOAD",
     "RACK", "TEST", "AUDIO", "AUTOCUT", "AUTO CHOP", "SWING", "off",
     "PIANO",                                   # el instrumento se llama igual en las dos
     "PAD -", "PAD +",                          # PAD pasa por T() y coincide de verdad en es/en
+    "OCT -", "OCT +",                          # la abreviatura de octava es la misma
+    "PRESETS",                                 # se dice igual en las dos lenguas
     "PACK -", "PACK +",                        # la palabra es la misma en las dos lenguas
     "MASTER",                                  # la mezcla final se llama igual en las dos
     "WAV", "OGG",                              # los dos formatos, que son extensiones de fichero

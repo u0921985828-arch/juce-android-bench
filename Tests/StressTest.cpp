@@ -2241,5 +2241,67 @@ int main()
                      ok ? "OK" : "FALLA");
     }
 
+    // ------------------------------------------------------------------
+    //  EL DEDO COMO TECLA: soltar, y tres a la vez.
+    //
+    //  DOS numeros y no uno. El primero es el que hace falta que exista: un
+    //  instrumento SOSTIENE -su zona da vueltas mientras la nota dure- asi que
+    //  sin un "suelta" la nota no se acaba nunca, y un pad con un colchon se
+    //  queda sonando hasta que lo pises con otro golpe. El segundo es lo que la
+    //  funcion promete: varios pads a la vez son varias notas a la vez.
+    //
+    //  Y el primero se mide DESPUES de la caida del pad, no justo al soltar:
+    //  soltar abre la caida, no corta. Preguntar en el bloque siguiente daria
+    //  verde con el codigo roto, porque una voz que se esta apagando sigue
+    //  activa.
+    {
+        AudioEngine e;
+        e.prepareToPlay (48000.0, 512);
+        e.setSafetyLimiter (false);
+        //  COLCHONES PWM PAD en tres pads: sostiene, que es el caso que importa.
+        for (int p = 0; p < 3; ++p)
+        {
+            e.publishSample (p, Sintes::sintetiza (5, 0));
+            e.setPadGain (p, 1.0f);
+            e.setPadRelease (p, 40.0f);
+        }
+
+        juce::AudioBuffer<float> out (2, 512);
+        out.clear(); e.renderNextBlock (out, 0, 512);
+
+        //  AL FINAL Y NO EL PICO, que es como la primera version de esta prueba
+        //  se equivoco: soltar abre la CAIDA, no corta, asi que en los primeros
+        //  bloques despues del "suelta" las tres voces siguen vivas y el pico
+        //  sale 3 con el codigo perfecto. Lo que se pregunta es si quedan, no
+        //  si hubo. Y para las notas sostenidas el ultimo bloque vale igual,
+        //  porque un bucle no se apaga solo - ese es justo el punto.
+        auto corre = [&] (int bloques)
+        {
+            for (int b = 0; b < bloques; ++b)
+            {
+                out.clear();
+                e.renderNextBlock (out, 0, 512);
+            }
+            return e.getActiveVoiceCount();
+        };
+
+        e.postNoteOn (0, 1.0f);
+        const int una = corre (30);
+
+        e.postNoteOn (1, 1.0f);
+        e.postNoteOn (2, 1.0f);
+        const int tres = corre (30);
+
+        //  Y ahora se sueltan las tres. 120 bloques son 1.28 s: de sobra para
+        //  una caida de 40 ms, y no tanto como para que un bucle que sigue
+        //  dando vueltas se apague por su cuenta - no lo hace, ese es el punto.
+        for (int p = 0; p < 3; ++p) e.postNoteOff (p);
+        const int tras = corre (120);
+
+        const bool ok = una == 1 && tres == 3 && tras == 0;
+        std::printf ("%-34s una %d   tres a la vez %d   tras soltar %d   %s\n",
+                     "el dedo como tecla", una, tres, tras, ok ? "OK" : "FALLA");
+    }
+
     return 0;
 }

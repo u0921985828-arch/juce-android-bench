@@ -56,7 +56,14 @@ namespace
         //  por la que TOUR ATRAS la lleva: ATRAS es la herramienta que desplaza
         //  el patron, y en chino dice "mover". Una clave que se reaprovecha por
         //  parecerse en espanol sale mal en las otras tres.
-        { "INST VOLVER",        "VOLVER",  "BACK",   "返回",   "رجوع" },
+        { "PRESETS",     "",  "PRESETS",    "预设",   "إعدادات" },
+        { "OCT",         "",  "OCT",        "八度",   "أوكتاف" },
+        { "OCTAVA %1",   "",  "OCTAVE %1",  "八度 %1", "أوكتاف %1" },
+        { "INSTRUMENTO", "",  "INSTRUMENT", "乐器",   "آلة" },
+        { "Toca el teclado para oirlo. Un preset cambia el sonido del pad.", "",
+          "Play the keys to hear it. A preset changes the pad's sound.",
+          "弹奏琴键试听。选择预设即可更换音垫的音色。",
+          "اعزف على المفاتيح لسماعه. الإعداد المسبق يغير صوت الباد." },
         //  LAS DIECISEIS FAMILIAS DE Sintes.h. Son nombres COMUNES -una familia
         //  de instrumentos, no un modelo- asi que se traducen, igual que se
         //  traducen ACUSTICA, MAQUINA, TEXTURA y TONOS. Lo que no se traduce es
@@ -365,6 +372,14 @@ namespace
         { "Manten un pad para abrir su ficha sin que suene", "",
           "hold a pad to open its settings without a sound",
           "长按音垫可打开其设置而不发声", "اضغط بادًا مطولًا لفتح إعداداته دون صوت" },
+        //  Y LA EXCEPCION, que hay que decir porque el gesto CAMBIA: en un pad
+        //  con instrumento mantener es tocar una nota larga, asi que ahi la
+        //  ficha se abre por la pestana PAD. Un manual que promete un gesto que
+        //  en un cuarto de la maquina hace otra cosa es peor que no decir nada.
+        { "En un pad con instrumento, mantener es tocar: su ficha se abre desde PAD", "",
+          "On an instrument pad, holding plays: open its settings from PAD",
+          "在乐器音垫上，长按即演奏：从 PAD 打开其设置",
+          "في باد الآلة، الضغط المطول يعزف: افتح إعداداته من PAD" },
         { "PADS Y BANCOS", "",
           "PADS AND BANKS",
           "音垫与音库", "الوسادات والبنوك" },
