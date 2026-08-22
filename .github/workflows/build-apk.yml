@@ -344,16 +344,18 @@ jobs:
           rm -f upload.jks
           echo "Release APK and AAB signed with the upload key."
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Zati-apk
-          path: |
-            Zati-debug.apk
-            Zati-release.apk
-            Zati-release.aab
-          if-no-files-found: error
-
-      # Also attach both APKs to a rolling release tag for easy phone download.
+      # LA RELEASE Y NADA MAS.
+      #
+      # Habia ademas un actions/upload-artifact con los mismos tres ficheros:
+      # una copia de 66 MB por cada compilacion, que es la unica cosa de este
+      # workflow que se acumula. La cuota de artefactos se lleno y el paso
+      # fallo - con `if-no-files-found: error` y sin continue-on-error, asi
+      # que se llevo por delante el trabajo ENTERO: la APK estaba compilada y
+      # firmada y el job murio antes de publicarla, y ademas la release se
+      # queda sin sus ficheros porque este paso iba delante.
+      #
+      # La release es la que se descarga desde el telefono y la que este
+      # proyecto usa; el artefacto era la copia. Se queda la que sirve.
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: apk-latest
