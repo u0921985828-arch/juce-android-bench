@@ -610,17 +610,22 @@ MainComponent::MainComponent()
             auto* b = new juce::TextButton();
             styleButton (*b, kStepOff);
             litAccent (*b);
-            b->onClick = [this, i] { cargaInstrumento (i); };
+            b->onClick = [this, i]
+            {
+                if (instAbierto >= 0) eligePreset (i);
+                else                  cargaInstrumento (i);
+            };
             instSheet.cuerpo.addAndMakeVisible (b);
             instBtns.add (b);
         }
-        for (auto* b : { &instPackDownBtn, &instPackUpBtn })
+        for (auto* b : { &instPackDownBtn, &instPackUpBtn, &instBackBtn })
         {
             styleButton (*b, kKey);
             instSheet.cuerpo.addAndMakeVisible (*b);
         }
         instPackDownBtn.onClick = [this] { pasoPack (-1); };
         instPackUpBtn  .onClick = [this] { pasoPack ( 1); };
+        instBackBtn    .onClick = [this] { instAbierto = -1; refreshInst(); resized(); instSheet.repaint(); };
         styleButton (instCloseButton, kKey);
         instCloseButton.onClick = [this] { closeAllSheets(); };
         instSheet.cuerpo.addAndMakeVisible (instCloseButton);
@@ -6646,8 +6651,12 @@ void MainComponent::resized()
         //  De ancho entero, hasta la pantalla mas estrecha da 217 px, y una
         //  lista de nombres se lee de arriba abajo. Sale mas alta que la
         //  tarjeta y por eso esta ficha se desplaza.
-        const int cuantos = (instPack >= 0 && instPack < (int) instCatalogo.size())
-                                ? (int) instCatalogo[(size_t) instPack].instr.size() : 0;
+        //  Dentro de un instrumento son sus dieciseis presets; fuera, los
+        //  instrumentos que traiga el pack.
+        const int cuantos = (instAbierto >= 0)
+            ? Sintes::kPresets
+            : ((instPack >= 0 && instPack < (int) instCatalogo.size())
+                   ? (int) instCatalogo[(size_t) instPack].instr.size() : 0);
         const int filas = juce::jmax (1, cuantos);
         auto inner = sheetFromBottom (instSheet, Metrics::md * 2 + Metrics::hit
                                                    + Metrics::md + filaPack
@@ -6673,8 +6682,26 @@ void MainComponent::resized()
         {
             auto fila = inner.removeFromTop (filaPack);
             const int w = juce::jmin (Metrics::hit * 2, fila.getWidth() / 3);
-            instPackDownBtn.setBounds (fila.removeFromLeft (w));
-            instPackUpBtn  .setBounds (fila.removeFromRight (w));
+            const bool dentro = (instAbierto >= 0);
+
+            //  Y LAS QUE NO TOCAN SE APAGAN *Y* SE QUEDAN SIN LIMITES, las dos
+            //  cosas: una tapa encendida y de 0x0 es lo que fue SEGUIR desde el
+            //  primer dia, y lo que la regla del volcado existe para cazar.
+            instPackDownBtn.setVisible (! dentro);
+            instPackUpBtn  .setVisible (! dentro);
+            instBackBtn    .setVisible (dentro);
+            if (dentro)
+            {
+                instPackDownBtn.setBounds ({});
+                instPackUpBtn  .setBounds ({});
+                instBackBtn.setBounds (fila.removeFromLeft (w));
+            }
+            else
+            {
+                instBackBtn.setBounds ({});
+                instPackDownBtn.setBounds (fila.removeFromLeft (w));
+                instPackUpBtn  .setBounds (fila.removeFromRight (w));
+            }
             instPackArea = fila;
         }
         inner.removeFromTop (Metrics::sm);
@@ -8892,6 +8919,25 @@ void MainComponent::refreshWaveformSegments()
 
 void MainComponent::updateControlsFromPad (int index)
 {
+    //  UN PAD DE INSTRUMENTO NO SE RECORTA.
+    //
+    //  El recorte, el bucle, el reves y CINTA/TONO son de una MUESTRA: dicen
+    //  que trozo del fichero suena y en que sentido. Un instrumento no tiene un
+    //  trozo, tiene diez zonas, y triggerPad ignora los cuatro a proposito. Un
+    //  mando que se mueve y no hace nada es peor que no tenerlo.
+    //
+    //  Se APAGAN y no se esconden: esconderlos cambiaria la maqueta segun lo
+    //  que tenga el pad, o sea una ficha con dos formas y dos veces lo que hay
+    //  que medir. Apagado es lo que ya hacen las tapas de PACK con un solo pack.
+    const bool instr = (uiSample[(size_t) index] != nullptr
+                        && uiSample[(size_t) index]->familia >= 0);
+    for (juce::Component* c : { (juce::Component*) &startSlider,
+                                (juce::Component*) &endSlider,
+                                (juce::Component*) &loopButton,
+                                (juce::Component*) &reverseButton,
+                                (juce::Component*) &modeButton })
+        c->setEnabled (! instr);
+
     pitchSlider.setValue (padPitch[(size_t) index], juce::dontSendNotification);
     fineSlider.setValue  (padCents[(size_t) index], juce::dontSendNotification);
     modeButton.setToggleState (padKeepLen[(size_t) index], juce::dontSendNotification);
@@ -9334,6 +9380,13 @@ void MainComponent::retranslateUi()
     //  language selector was the one card still in Spanish after you used it.
     //  AUDIO hid the bug for both its neighbours by being the same word.
     pageAudioBtn.setButtonText (T ("AUDIO"));
+    //  Y LA QUINTA, que se quedo fuera al anadirla y por tanto se quedaba con
+    //  el literal del constructor para siempre. Es EXACTAMENTE el fallo que
+    //  cuenta el parrafo de aqui arriba, una pestana mas tarde: la ficha que
+    //  CONTIENE el selector de idioma con una pestana en espanol en las cuatro
+    //  compilaciones. La regla comparativa lo canto -35 hallazgos-, que es para
+    //  lo que existe.
+    pageAspBtn  .setButtonText (T ("ASPECTO"));
     pageProjBtn .setButtonText (T ("PROYECTOS"));
     pageGestBtn .setButtonText (T ("GESTOS"));
     pageMidiBtn .setButtonText (T ("MIDI"));
@@ -9395,6 +9448,7 @@ void MainComponent::retranslateUi()
     exportDirBtn      .setButtonText (T ("CAMBIAR"));
     browseKitButton   .setButtonText (T ("CARGAR KIT"));
     browseFactoryButton.setButtonText (T ("INSTRUMENTOS"));
+    instBackBtn.setButtonText (T ("INST VOLVER"));
     instPackDownBtn.setButtonText (T ("PACK") + " -");
     instPackUpBtn  .setButtonText (T ("PACK") + " +");
     //  Y los nombres de la rejilla, que salen del disco y no de la tabla: si el
@@ -10224,6 +10278,23 @@ juce::ValueTree MainComponent::captureState() const
         for (int j = 0; j < i; ++j)
             if (uiSample[(size_t) j] != nullptr && uiSample[(size_t) j] == uiSample[(size_t) i]) { fuente = j; break; }
         p.setProperty ("fuente",  fuente,                 nullptr);
+        //  Y SI ES UN INSTRUMENTO, LA RECETA Y NO EL AUDIO.
+        //
+        //  Un instrumento son diez zonas -cinco octavas por dos capas- en un
+        //  buffer de 2 MB. Escribirlo como WAV lo devolveria SONANDO parecido y
+        //  sin ser ya un instrumento: un solo trozo, sin zonas, sin capas, sin
+        //  las otras cuatro octavas y con 2 MB en disco por pad. Es exactamente
+        //  lo que le paso al troceado -volvian los trozos y no volvia la
+        //  relacion- contado con otra pieza.
+        //
+        //  Se guarda familia*16+preset, o -1. Un proyecto anterior no trae la
+        //  propiedad, sale -1, y su WAV se lee como siempre.
+        p.setProperty ("inst",
+                       (uiSample[(size_t) i] != nullptr && uiSample[(size_t) i]->familia >= 0)
+                           ? uiSample[(size_t) i]->familia * Sintes::kPresets
+                                 + uiSample[(size_t) i]->preset
+                           : -1,
+                       nullptr);
         p.setProperty ("corte",   padCut[(size_t) i],     nullptr);
         p.setProperty ("reson",   padReso[(size_t) i],    nullptr);
         p.setProperty ("suavein", padFadeIn[(size_t) i],  nullptr);
@@ -10657,7 +10728,15 @@ void MainComponent::stepPadSaveJob()
     {
         const int i = padSaveJob->next++;
         const auto dest = ProjectStore::sampleFile (padSaveJob->folder, i);
-        if (auto sb = uiSample[(size_t) i]; sb != nullptr && sb->buffer.getNumSamples() > 0)
+        //  Un instrumento se guarda como receta en el XML, asi que aqui no hay
+        //  nada que escribir - y si quedara un WAV de antes, sobra: al abrir se
+        //  sintetiza y el fichero seria 2 MB muertos que nadie lee.
+        if (auto sb = uiSample[(size_t) i];
+            sb != nullptr && sb->familia >= 0)
+        {
+            dest.deleteFile();
+        }
+        else if (sb != nullptr && sb->buffer.getNumSamples() > 0)
         {
             if (ProjectStore::writeSample (dest, sb->buffer, sb->sourceSampleRate)) ++padSaveJob->written;
             else                                                                    ++padSaveJob->failed;
@@ -10715,6 +10794,24 @@ void MainComponent::finishProjectSave (const juce::String& name, const juce::Fil
 //  El mapa de fuentes del arbol, leido de una vez antes de cargar nada.
 //  Ver PadLoadJob::source y captureState: sin esto un troceado vuelve como
 //  dieciseis sonidos sueltos que casualmente suenan igual.
+//  Los mismos dos bucles y el mismo arbol: quien es trozo de quien, y quien es
+//  un instrumento. Leidos ANTES de empezar a cargar por lo mismo que el primero
+//  - el trabajo va en tandas de 25 ms y applyState no corre hasta el final.
+static void readInstMap (const juce::ValueTree& tree, std::array<int, AudioEngine::kNumPads>& out)
+{
+    out.fill (-1);
+    auto padsTree = tree.getChildWithName ("PADS");
+    if (! padsTree.isValid()) return;
+
+    for (const auto& p : padsTree)
+    {
+        const int i = (int) p.getProperty ("i", -1);
+        if (! juce::isPositiveAndBelow (i, AudioEngine::kNumPads)) continue;
+        const int k = (int) p.getProperty ("inst", -1);
+        out[(size_t) i] = (k >= 0 && k < Sintes::kFamilias * Sintes::kPresets) ? k : -1;
+    }
+}
+
 static void readSourceMap (const juce::ValueTree& tree, std::array<int, AudioEngine::kNumPads>& out)
 {
     out.fill (-1);
@@ -10766,6 +10863,7 @@ void MainComponent::loadProject (const juce::String& name)
     padJob->folder = folder;
     padJob->clearMissing = true;
     readSourceMap (tree, padJob->source);
+    readInstMap   (tree, padJob->inst);
     padJob->onDone = [this, name, tree] (int restored) { finishProjectOpen (name, tree, restored); };
     setBusyProgress (0.0f);
     stepPadJob();
@@ -14215,8 +14313,12 @@ void MainComponent::auditDlc()
     //  Y LA FABRICA SIGUE SIENDO UN INSTRUMENTO. Cargarla llena el banco sin
     //  pasar por ningun fichero, que es su camino propio.
     for (int i = 0; i < kNumPads; ++i) { uiSample[(size_t) i] = nullptr; padHasSample[(size_t) i] = false; }
-    instPack = 0;
+    //  Por NOMBRE y no por indice: desde que SINTES existe la fabrica ya no es
+    //  el pack cero, y un indice a mano en un banco es como se mide otra cosa
+    //  creyendo que se mide esta.
+    instPack = buscaPack ("ZATI");
     currentBank = 0;
+    instAbierto = -1;
     cargaInstrumento (2);      // TEXTURA, que vive en el banco C
     cargaInstrumento (2);
     int deFabrica = 0;
@@ -14233,6 +14335,10 @@ void MainComponent::openInstSheet()
     //  por cable, o lo deja la tienda mientras esto esta en segundo plano.
     instCatalogo = Instrumentos::lee();
     instPack = juce::jlimit (0, juce::jmax (0, (int) instCatalogo.size() - 1), instPack);
+    //  Y SIEMPRE POR EL PRIMER NIVEL. Dejarla donde se cerro abriria dentro de
+    //  un instrumento que ya nadie recuerda haber elegido, y con una lista de
+    //  nombres de preset que no dice de que instrumento son.
+    instAbierto = -1;
     refreshInst();
     closeAllSheets();
     instSheet.setVisible (true);
@@ -14256,6 +14362,28 @@ void MainComponent::refreshInst()
 {
     if (instCatalogo.empty()) return;
     const auto& p = instCatalogo[(size_t) juce::jlimit (0, (int) instCatalogo.size() - 1, instPack)];
+
+    //  DENTRO DE UN INSTRUMENTO: sus dieciseis presets. Son nombres nuestros y
+    //  no de disco, pero NO pasan por T(): "RHODES" o "SUPER SAW" son nombres
+    //  propios de un sonido, igual que lo son los de la fabrica que ya van
+    //  marcados como dato. Traducirlos no significa nada y ademas obligaria a
+    //  meter 256 filas en la tabla de idiomas.
+    if (instAbierto >= 0 && instAbierto < (int) p.instr.size()
+        && p.instr[(size_t) instAbierto].familiaSintes >= 0)
+    {
+        const int fam = p.instr[(size_t) instAbierto].familiaSintes;
+        for (int i = 0; i < instBtns.size(); ++i)
+        {
+            const bool hay = i < Sintes::kPresets;
+            instBtns[i]->setButtonText (hay ? juce::String (Sintes::tabla()[fam].p[i].nombre)
+                                            : juce::String());
+            if (hay) instBtns[i]->getProperties().set ("dato", 1);
+            else     instBtns[i]->getProperties().remove ("dato");
+        }
+        instPackDownBtn.setEnabled (true);
+        instPackUpBtn  .setEnabled (true);
+        return;
+    }
 
     //  EL CANDADO SE VE, no se esconde. Un pack cerrado que no aparece no se
     //  compra nunca: lo que hace falta es que se vea QUE hay y que al tocarlo
@@ -14298,6 +14426,20 @@ void MainComponent::cargaInstrumento (int idx)
         return;
     }
 
+    //  UN INSTRUMENTO DE SINTES NO CARGA NADA TODAVIA: abre sus presets.
+    //
+    //  Y no lleva confirmacion, a diferencia de los de abajo: abrir una lista
+    //  no se lleva nada por delante. La pregunta va donde esta el daño, que es
+    //  al elegir el preset - y ni eso, porque son dieciseis pads menos uno.
+    if (in.familiaSintes >= 0)
+    {
+        instAbierto = idx;
+        refreshInst();
+        resized();
+        instSheet.repaint();
+        return;
+    }
+
     //  SE LLEVA DIECISEIS PADS POR DELANTE, asi que se confirma - la misma
     //  regla que ya tenian FABRICA y AUTO CHOP, y en la misma tapa que se
     //  acaba de tocar para que la pregunta este donde estaba el dedo.
@@ -14334,6 +14476,78 @@ void MainComponent::cargaInstrumento (int idx)
     repartePorBanco (files, T ("INSTRUMENTOS"));
 }
 
+// ----------------------------------------------------------------------------
+//  UN PRESET VA A UN PAD, y siempre al MISMO pad.
+//
+//  El instrumento numero n va al pad n del banco D. Que este clavado no es una
+//  limitacion, es la funcion: los otros tres bancos son percusion y este es el
+//  melodico -ya lo era, se llamaba TONOS-, asi que las dieciseis casillas de la
+//  rejilla son los dieciseis instrumentos y el 07 esta donde la mano lo busca
+//  sin acordarse de donde lo dejo. Es la misma decision que hizo que el
+//  selector del RACK dejara de ser una fila de dieciseis y pasara a tener la
+//  forma de la cara.
+//
+//  Y se cambia de banco Y se elige el pad: cargar algo donde no se ve es la
+//  forma mas rapida de que parezca que no ha pasado nada.
+// ----------------------------------------------------------------------------
+void MainComponent::eligePreset (int pre)
+{
+    if (instAbierto < 0 || instCatalogo.empty()) return;
+    const auto& p = instCatalogo[(size_t) juce::jlimit (0, (int) instCatalogo.size() - 1, instPack)];
+    if (! juce::isPositiveAndBelow (instAbierto, (int) p.instr.size())) return;
+
+    const int fam = p.instr[(size_t) instAbierto].familiaSintes;
+    if (fam < 0 || ! juce::isPositiveAndBelow (pre, Sintes::kPresets)) return;
+
+    const int pad = kBancoInstr * kPadsPerBank + juce::jlimit (0, kPadsPerBank - 1, fam);
+
+    pushUndo (T ("INSTRUMENTOS"));
+    closeAllSheets();
+    instAbierto = -1;
+
+    ponInstrumentoEnPad (pad, fam, pre);
+
+    //  Por selectBank y no a mano: es quien mueve LAS DOS filas de bancos -la
+    //  de la cara y la de la ficha- y quien arrastra el pad elegido. Ponerlo a
+    //  mano dejaria la fila de la ficha diciendo otro banco.
+    selectBank (kBancoInstr);
+    for (int i = 0; i < kPadsPerBank; ++i) refreshPad (kBancoInstr * kPadsPerBank + i);
+    selectPad (pad);
+
+    status.setText (Sintes::nombreDe (fam, pre) + "  "
+                        + juce::String::charToString ((juce::juce_wchar) 0x00B7) + "  "
+                        + T ("PAD %1", Lang::ltr (juce::String (pad + 1))),
+                    juce::dontSendNotification);
+}
+
+//  SINTETIZAR TARDA, asi que esto no puede vivir en el hilo de audio ni en una
+//  respuesta a un toque que tenga que pintar antes. Corre en el de mensajes -
+//  como leer un WAV - y por eso la ficha se cierra primero: lo que se ve es la
+//  rejilla de pads mientras se hace, y no una tarjeta congelada.
+void MainComponent::ponInstrumentoEnPad (int pad, int familia, int preset)
+{
+    if (! juce::isPositiveAndBelow (pad, kNumPads)) return;
+    auto sb = Sintes::sintetiza (familia, preset);
+    if (sb == nullptr) return;
+
+    assignSampleToPad (pad, sb, Sintes::nombreDe (familia, preset));
+
+    //  Y NACE CON EL RECORTE ENTERO Y SIN BUCLE DE PAD: las zonas mandan sobre
+    //  las dos cosas dentro del motor -triggerPad las ignora- pero la interfaz
+    //  las sigue ensenando, y un pad que dice "BUCLE" sin que el mando haga
+    //  nada es peor que uno que no lo dice.
+    padStart01[(size_t) pad] = 0.0f;
+    padEnd01[(size_t) pad]   = 1.0f;
+    padLoop[(size_t) pad]    = false;
+    padReverse[(size_t) pad] = false;
+    padKeepLen[(size_t) pad] = false;
+    engine.setPadLoop    (pad, false);
+    engine.setPadReverse (pad, false);
+    engine.setPadKeepLength (pad, false);
+
+    refreshPad (pad);
+}
+
 void MainComponent::paintInstSheetContent (juce::Graphics& g)
 {
     if (instSheet.sheetBounds.isEmpty()) return;
@@ -14349,9 +14563,19 @@ void MainComponent::paintInstSheetContent (juce::Graphics& g)
     auto titleRow = antesDe (instTitleArea, instCloseButton);
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
+    //  EL TITULO DICE A DONDE VA ESTO, que es lo unico que no se puede deducir
+    //  mirando una lista de nombres, y son dos destinos distintos: un kit se
+    //  lleva el banco de delante y un instrumento un pad clavado del D.
+    const int padDestino = (instAbierto >= 0 && ! instCatalogo.empty()
+                            && instAbierto < (int) instCatalogo[(size_t) instPack].instr.size())
+        ? kBancoInstr * kPadsPerBank
+              + juce::jmax (0, instCatalogo[(size_t) instPack].instr[(size_t) instAbierto].familiaSintes)
+        : -1;
     pintaTitulo (g, titleRow,
                  T ("INSTRUMENTOS") + "  " + dot + "  "
-                     + T ("BANCO %1", juce::String::charToString ((juce::juce_wchar) ('A' + currentBank))),
+                     + (padDestino >= 0
+                            ? T ("PAD %1", Lang::ltr (juce::String (padDestino + 1)))
+                            : T ("BANCO %1", juce::String::charToString ((juce::juce_wchar) ('A' + currentBank)))),
                  "titulo", true);
 
 
@@ -14361,11 +14585,18 @@ void MainComponent::paintInstSheetContent (juce::Graphics& g)
         //  Se para antes de CADA tapa y en el lado en el que esta: recortar
         //  por ANCHO da igual en las dos, y en arabe PACK + esta a la
         //  izquierda, asi que el nombre del pack se le metia debajo.
-        auto fila = antesDe (antesDe (instPackArea, instPackDownBtn), instPackUpBtn);
+        auto fila = antesDe (antesDe (antesDe (instPackArea, instPackDownBtn), instPackUpBtn),
+                             instBackBtn);
         g.setColour (ZatiColours::ink.withAlpha (0.9f));
         g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.10f));
+        //  Dentro de un instrumento, el renglon lo lleva EL INSTRUMENTO: si
+        //  siguiera diciendo el nombre del pack, dieciseis presets sin decir
+        //  de que son es una lista de palabras sueltas.
         const auto nombre = instCatalogo.empty() ? juce::String ("-")
-                          : instCatalogo[(size_t) instPack].nombre;
+                          : (instAbierto >= 0
+                                 && instAbierto < (int) instCatalogo[(size_t) instPack].instr.size()
+                                 ? instCatalogo[(size_t) instPack].instr[(size_t) instAbierto].nombre
+                                 : instCatalogo[(size_t) instPack].nombre);
         //  Pintado, no un componente, asi que lo unico que lo mide es
         //  UiAudit::rotulo. El de dentro se llama ZATI -que ya esta en la
         //  lista de los que no se traducen- y los de disco son dato.
@@ -14387,6 +14618,18 @@ void MainComponent::paintInstSheetContent (juce::Graphics& g)
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.06f));
     juce::String pie;
+    //  DENTRO DE UN INSTRUMENTO el pie dice lo unico que hace falta: que esto
+    //  se toca con el piano y en que pad va a estar. Sin la primera mitad, un
+    //  instrumento en un pad se toca una vez a dedo y parece un sonido mas.
+    if (instAbierto >= 0)
+    {
+        pie = (padDestino >= 0)
+            ? T ("Toca un preset y va al pad %1. Se toca con el PIANO.",
+                 Lang::ltr (juce::String (padDestino + 1)))
+            : T ("Toca un preset. Se toca con el PIANO.");
+        g.drawFittedText (pie, inner.removeFromTop (40), Lang::start (juce::Justification::top), 2, 1.0f);
+        return;
+    }
     //  Y CUANDO NO HAY NADA INSTALADO, DONDE SE PONEN. Es la misma falta que
     //  tenia ZATI/Kits antes de MIS KITS: quien se baja un pack no tiene forma
     //  de saber a que carpeta va, y un menu que dice "no hay nada" sin decir
@@ -14804,6 +15047,119 @@ void MainComponent::auditNiveles()
 
     nivelesButton.setToggleState (false, juce::sendNotificationSync);
     linea ("apagado");
+}
+
+// ============================================================================
+//  LOS DOSCIENTOS CINCUENTA Y SEIS INSTRUMENTOS. Ver Tests/instr.py.
+//
+//  QUE SE ESCRIBE Y POR QUE NO SE MIDE AQUI. Esta funcion no juzga nada: rinde
+//  y deja ficheros. La ponderacion K, la deteccion de chasquidos y el
+//  descriptor de parecido ya estan escritos en Python -Tests/kits.py- y
+//  volverlos a escribir en C++ seria la misma regla en dos sitios, que es el
+//  fallo que este banco lleva encontrando desde el principio.
+//
+//  Y no se escriben los 256 enteros: son 2.3 MB cada uno, o sea 590 MB de
+//  temporales. Se escribe
+//
+//    - LA ZONA DE REFERENCIA de los 256 (raiz 0, capa fuerte): con eso se mide
+//      que ninguno este mudo, que los 256 esten igualados y que no haya dos que
+//      sean el mismo sonido, que son las cuatro que necesitan a TODOS.
+//    - EL PRESET ENTERO del primero de cada familia: con eso se miden las
+//      cosas que son ESTRUCTURA -la costura entre octavas, la del bucle y las
+//      dos capas- y para eso no hacen falta los 256, hace falta uno por
+//      algoritmo.
+// ============================================================================
+void MainComponent::auditInstr()
+{
+    const auto dir = juce::File (UiAudit::env ("ZATI_INSTR"));
+    if (! dir.isDirectory() && ! dir.createDirectory().wasOk())
+    {
+        std::cout << "{\"instr\":\"error\",\"que\":\"no hay carpeta\"}" << std::endl;
+        return;
+    }
+
+    for (int f = 0; f < Sintes::kFamilias; ++f)
+    {
+        const auto& F = Sintes::tabla()[f];
+        for (int pr = 0; pr < Sintes::kPresets; ++pr)
+        {
+            const double t0 = juce::Time::getMillisecondCounterHiRes();
+            auto sb = Sintes::sintetiza (f, pr);
+            const double ms = juce::Time::getMillisecondCounterHiRes() - t0;
+            if (sb == nullptr) continue;
+
+            const auto& Z = sb->zonas[(size_t) Sintes::kZonaRef];
+            juce::AudioBuffer<float> ref (1, Z.fin - Z.ini);
+            ref.copyFrom (0, 0, sb->buffer, 0, Z.ini, Z.fin - Z.ini);
+            ProjectStore::writeSample (dir.getChildFile (juce::String::formatted ("ref-%02d-%02d.wav", f, pr)),
+                                       ref, sb->sourceSampleRate);
+
+            if (pr == 0)
+                ProjectStore::writeSample (dir.getChildFile (juce::String::formatted ("todo-%02d.wav", f)),
+                                           sb->buffer, sb->sourceSampleRate);
+
+            std::cout << "{\"instr\":\"preset\",\"fam\":" << f << ",\"pre\":" << pr
+                      << ",\"familia\":\"" << F.nombre << "\""
+                      << ",\"nombre\":\"" << F.p[pr].nombre << "\""
+                      << ",\"sostiene\":" << (F.sostiene ? 1 : 0)
+                      << ",\"zonas\":" << sb->nZonas
+                      << ",\"muestras\":" << sb->buffer.getNumSamples()
+                      << ",\"ms\":" << juce::String (ms, 1)
+                      << ",\"mapa\":[";
+            for (int z = 0; z < sb->nZonas; ++z)
+            {
+                const auto& q = sb->zonas[(size_t) z];
+                std::cout << (z ? "," : "") << "[" << q.raiz << "," << q.capa << ","
+                          << q.ini << "," << q.fin << "," << q.bucleIni << "," << q.bucleFin << "]";
+            }
+            std::cout << "]}" << std::endl;
+        }
+    }
+
+    // ------------------------------------------------------------------
+    //  Y QUE VUELVA SIENDO UN INSTRUMENTO.
+    //
+    //  Es la comprobacion que el troceado enseno a hacer: alli volvian los
+    //  dieciseis trozos y sonaban bien, y lo que no volvia era la RELACION.
+    //  Aqui pasaria lo mismo con el audio escrito a WAV: el pad sonaria
+    //  parecido y habria dejado de ser un instrumento -una zona en vez de diez,
+    //  sin capas y sin las otras cuatro octavas-.
+    //
+    //  Con el MISMO arbol que escribe el fichero de proyecto, y BORRANDO EL PAD
+    //  A MANO entre medias: si al volver sigue puesto no es que se haya
+    //  guardado, es que nadie lo quito.
+    {
+        const int pad = kBancoInstr * kPadsPerBank + 3;
+        ponInstrumentoEnPad (pad, 3, 5);
+        const auto arbol = captureState();
+
+        uiSample[(size_t) pad] = nullptr;
+        padHasSample[(size_t) pad] = false;
+        engine.clearPad (pad);
+
+        std::array<int, kNumPads> mapa {};
+        readInstMap (arbol, mapa);
+        const int receta = mapa[(size_t) pad];
+        if (receta >= 0)
+            ponInstrumentoEnPad (pad, receta / Sintes::kPresets, receta % Sintes::kPresets);
+
+        auto* sb = uiSample[(size_t) pad].get();
+        std::cout << "{\"instr\":\"vuelta\",\"receta\":" << receta
+                  << ",\"fam\":" << (sb ? sb->familia : -1)
+                  << ",\"pre\":" << (sb ? sb->preset : -1)
+                  << ",\"zonas\":" << (sb ? sb->nZonas : 0)
+                  //  Y QUE NO SE ESCRIBA EL AUDIO: el que decide eso es este
+                  //  mismo campo, en SessionKeeper y en stepPadSaveJob.
+                  << ",\"escribeWav\":" << ((sb && sb->familia >= 0) ? 0 : 1)
+                  << "}" << std::endl;
+    }
+
+    //  Y LO QUE CUESTA LLENAR EL BANCO D, que es la cifra que decide si los
+    //  dieciseis pueden venir puestos de fabrica o hay que ir a buscarlos.
+    const double t0 = juce::Time::getMillisecondCounterHiRes();
+    for (int f = 0; f < Sintes::kFamilias; ++f) Sintes::sintetiza (f, 0);
+    std::cout << "{\"instr\":\"bancoD\",\"ms\":"
+              << juce::String (juce::Time::getMillisecondCounterHiRes() - t0, 1) << "}" << std::endl;
 }
 
 void MainComponent::auditNuevo()
@@ -15408,6 +15764,19 @@ void MainComponent::auditOpen (const juce::String& which)
     //  -cuatro tapas de cuatro- y con uno de disco lleno y CERRADO, que es
     //  donde los rotulos llevan el candado delante y por tanto miden otra cosa.
     else if (which == "inst")  { instPack = 0; openInstSheet(); }
+    //  Y EL SEGUNDO NIVEL, que es una ficha distinta aunque comparta tapas: la
+    //  fila del pack cambia de contenido -VOLVER en vez de menos y mas-, el
+    //  renglon dice el instrumento y las dieciseis tapas llevan otros rotulos.
+    //  Sin esta entrada se medira siempre la lista de fuera, que es justo la
+    //  que no cambio. Es lo mismo que hizo falta con secp.
+    else if (which == "instp")
+    {
+        instPack = 0;
+        openInstSheet();
+        instAbierto = 11;      // CUERDA PULS: el nombre de familia mas largo
+        refreshInst();
+        resized();
+    }
     else if (which == "instd")
     {
         //  Y ESTE PLANTA LOS PACKS ANTES DE ABRIR. Sin eso el catalogo de una
@@ -15692,6 +16061,21 @@ void MainComponent::stepPadJob()
             continue;
         }
 
+        //  Y SI ERA UN INSTRUMENTO, se vuelve a sintetizar. Es mas rapido que
+        //  leer 2 MB de disco y ademas es lo unico que lo devuelve SIENDO un
+        //  instrumento: con sus cinco octavas y sus dos capas.
+        const int receta = padJob->inst[(size_t) i];
+        if (receta >= 0)
+        {
+            if (auto sb = Sintes::sintetiza (receta / Sintes::kPresets, receta % Sintes::kPresets))
+            {
+                assignSampleToPad (i, sb, Sintes::nombreDe (receta / Sintes::kPresets,
+                                                            receta % Sintes::kPresets));
+                ++padJob->restored;
+                continue;
+            }
+        }
+
         const auto f = padJob->fromSession ? SessionKeeper::padFile (i)
                                            : ProjectStore::sampleFile (padJob->folder, i);
 
@@ -15770,6 +16154,7 @@ void MainComponent::restoreSession()
     padJob = std::make_unique<PadLoadJob>();
     padJob->fromSession = true;
     readSourceMap (tree, padJob->source);
+    readInstMap   (tree, padJob->inst);
     padJob->onDone = [this, tree] (int restored) { finishSessionRestore (tree, restored); };
     setBusyProgress (0.0f);
     stepPadJob();

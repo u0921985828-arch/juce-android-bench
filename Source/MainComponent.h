@@ -798,6 +798,7 @@ public:
     //  EL CATALOGO DE CONTENIDO Y EL CANDADO. Ver Tests/dlc.py.
     void auditDlc();
     void auditNiveles();
+    void auditInstr();
     //  LA EXPORTACION, medida de verdad y no mirando la barra. Ver auditExport:
     //  monta un patron con los sonidos de fabrica y hace el rebote entero -
     //  master y pistas - en el hilo que llama, contando ficheros y bytes.
@@ -1254,15 +1255,32 @@ private:
     Sheet instSheet;
     juce::TextButton instCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
     juce::TextButton instPackDownBtn { "PACK -" }, instPackUpBtn { "PACK +" };
-    juce::OwnedArray<juce::TextButton> instBtns;      // la rejilla de 4x4
+    juce::TextButton instBackBtn { "VOLVER" };
+    juce::OwnedArray<juce::TextButton> instBtns;      // la lista de instrumentos
     std::vector<Instrumentos::Pack> instCatalogo;
     int instPack = 0;
+
+    //  LA FICHA TIENE DOS NIVELES desde que un instrumento va a un pad.
+    //
+    //  -1 es la lista de instrumentos; 0..15 es "estoy dentro de este" y la
+    //  misma lista ensena sus dieciseis presets. Reutiliza las mismas tapas
+    //  porque el gesto es el mismo -elegir de una lista- y montar una segunda
+    //  ficha para eso seria dos maquetados que mantener para un solo trabajo.
+    int instAbierto = -1;
     void repartePorBanco (const juce::Array<juce::File>& files, const juce::String& motivo);
     void plantaPacksDePrueba();
     void openInstSheet();
     void refreshInst();
     void pasoPack (int d);
     void cargaInstrumento (int idx);
+    void eligePreset (int pre);
+
+    //  EL BANCO DE LOS INSTRUMENTOS. Los otros tres son de percusion y este es
+    //  el melodico -ya lo era: TONOS-, asi que el instrumento numero n vive
+    //  siempre en el pad n de este banco. Que este clavado es la funcion: el
+    //  07 esta donde la mano lo busca sin tener que acordarse de donde lo dejo.
+    static constexpr int kBancoInstr = AudioEngine::kNumBanks - 1;   // D
+    void ponInstrumentoEnPad (int pad, int familia, int preset);
     void paintInstSheetContent (juce::Graphics& g);
 
     //  EL MASTER, y vive en la mesa por la misma razon que los faders: es el
@@ -1397,7 +1415,15 @@ private:
         //  no se llama hasta el final, asi que preguntarselo al arbol sobre la
         //  marcha llegaria tarde. -1 = tiene fichero propio.
         std::array<int, AudioEngine::kNumPads> source;
-        PadLoadJob() { source.fill (-1); }
+        //  Y CUAL DE ELLOS ES UN INSTRUMENTO, por la MISMA razon y en el mismo
+        //  sitio: un instrumento no es un WAV, es una receta - familia y preset
+        //  -, y guardarlo como audio lo devolveria sonando parecido y sin
+        //  zonas, o sea sin las otras cuatro octavas y sin las dos capas. Es la
+        //  leccion del troceado contada con otra pieza: lo que no volvia no era
+        //  el sonido, era lo que ese sonido ERA.
+        //  -1 = no es un instrumento; si no, familia * 16 + preset.
+        std::array<int, AudioEngine::kNumPads> inst;
+        PadLoadJob() { source.fill (-1); inst.fill (-1); }
         std::function<void (int restored)> onDone;
     };
     std::unique_ptr<PadLoadJob> padJob;

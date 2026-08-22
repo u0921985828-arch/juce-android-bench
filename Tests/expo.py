@@ -29,7 +29,7 @@ SIZES = [
     ("915x412",  "LANDSCAPE — the orientation nobody tests"),
 ]
 LANGS = ["es", "en", "zh", "ar"]
-SHEETS = ["", "pads", "pad2", "pad3", "sec", "secp", "paso", "song", "piano", "pianod", "mix", "xy", "set", "asp", "proj", "gest", "midi", "manual", "rack", "chop", "inst", "instd", "expo", "tour", "tour1", "tour6", "tour10", "tourf", "browse", "browsedir"]
+SHEETS = ["", "pads", "pad2", "pad3", "sec", "secp", "paso", "song", "piano", "pianod", "mix", "xy", "set", "asp", "proj", "gest", "midi", "manual", "rack", "chop", "inst", "instd", "instp", "expo", "tour", "tour1", "tour6", "tour10", "tourf", "browse", "browsedir"]
 
 MIN_TOUCH = 40   # Metrics::hit — Android's own guideline is 48dp, this is the floor
 #  LO QUE SE DIBUJA Y SE TOCA IGUAL.
@@ -253,6 +253,7 @@ UNTRANSLATED_OK = {
     "MASTER",                                  # la mezcla final se llama igual en las dos
     "WAV", "OGG",                              # los dos formatos, que son extensiones de fichero
     "TOUR",                                    # la palabra es la misma en las dos lenguas
+    "SINTES",                                  # el pack se llama asi, como ZATI
     "OFF",                                     # el extremo apagado de un mando, universal en un aparato
     "PAPEL", "GRAFITO", "ACERO", "LACA",       # the four chassis, named not translated
     "ESPANOL", "ENGLISH",                      # each language names itself

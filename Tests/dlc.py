@@ -83,16 +83,25 @@ por_id = { p["id"]: p for p in packs }
 #  Tres: el de dentro y los dos plantados. Y el de dentro EL PRIMERO, que es
 #  lo que hace que el menu se explique solo la primera vez que se abre: un
 #  catalogo de contenido que abre vacio se lee como una funcion rota.
-mide ("tres packs", len (packs) == 3, "%d packs: %s" % (len (packs), ", ".join (p["id"] for p in packs)))
-mide ("la fabrica es el primero",
-       packs and packs[0]["id"] == "ZATI" and packs[0]["dentro"] == 1,
-       "" if not packs else "%s dentro=%d" % (packs[0]["id"], packs[0]["dentro"]))
+mide ("cuatro packs", len (packs) == 4, "%d packs: %s" % (len (packs), ", ".join (p["id"] for p in packs)))
+#  Y SINTES EL PRIMERO desde que un pad puede llevar un instrumento: es lo que
+#  esta ficha ES ahora. La fabrica va detras, que sigue siendo lo que recarga un
+#  banco entero.
+mide ("los instrumentos primero",
+       packs and packs[0]["id"] == "SINTES" and packs[0]["dentro"] == 1
+             and packs[0]["instr"] == 16,
+       "" if not packs else "%s dentro=%d instr=%d"
+                            % (packs[0]["id"], packs[0]["dentro"], packs[0]["instr"]))
 #  Cuatro instrumentos y no sesenta y cuatro sonidos: los cuatro bancos de
 #  fabrica YA eran cuatro instrumentos de dieciseis presets, solo que no habia
 #  donde ensenarlos.
+f = por_id.get ("ZATI")
 mide ("la fabrica son cuatro bancos",
-       packs and packs[0]["instr"] == 4, "" if not packs else "%d instrumentos" % packs[0]["instr"])
-mide ("la fabrica esta abierta", packs and packs[0]["abierto"] == 1)
+       f is not None and f["instr"] == 4, "" if f is None else "%d instrumentos" % f["instr"])
+mide ("la fabrica esta abierta", f is not None and f["abierto"] == 1)
+mide ("la fabrica va detras de los instrumentos",
+       f is not None and packs.index (f) == 1,
+       "" if f is None else "la fabrica es el pack %d" % packs.index (f))
 
 d = por_id.get ("01 DEMO")
 mide ("pack abierto", d is not None and d["pago"] == 0 and d["abierto"] == 1 and d["instr"] == 16,

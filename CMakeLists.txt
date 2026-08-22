@@ -83,6 +83,7 @@ target_sources(Zati PRIVATE
     Source/SessionKeeper.cpp
     Source/AppStorage.cpp
     Source/MediaStore.cpp
+    Source/Sintes.cpp
 )
 
 # --- Compile definitions ----------------------------------------------------
@@ -129,7 +130,7 @@ option(ZATI_BENCH "Build the engine stress bench" OFF)
 if(ZATI_BENCH)
     juce_add_console_app(StressTest PRODUCT_NAME "StressTest")
     juce_generate_juce_header(StressTest)
-    target_sources(StressTest PRIVATE Tests/StressTest.cpp Source/AudioEngine.cpp)
+    target_sources(StressTest PRIVATE Tests/StressTest.cpp Source/AudioEngine.cpp Source/Sintes.cpp)
     target_compile_definitions(StressTest PRIVATE
         JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_STRICT_REFCOUNTEDPOINTER=1)
     target_link_libraries(StressTest PRIVATE
@@ -151,7 +152,7 @@ if(ZATI_BENCH)
     #  de acciones. Ver Tests/Soak.cpp.
     juce_add_console_app(Soak PRODUCT_NAME "Soak")
     juce_generate_juce_header(Soak)
-    target_sources(Soak PRIVATE Tests/Soak.cpp Source/AudioEngine.cpp)
+    target_sources(Soak PRIVATE Tests/Soak.cpp Source/AudioEngine.cpp Source/Sintes.cpp)
     target_compile_definitions(Soak PRIVATE
         JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_STRICT_REFCOUNTEDPOINTER=1)
     target_link_libraries(Soak PRIVATE
@@ -165,7 +166,7 @@ if(ZATI_BENCH)
     #  tabla es elegir a ojo cual de veinte bucles es el caro.
     juce_add_console_app(Cpu PRODUCT_NAME "Cpu")
     juce_generate_juce_header(Cpu)
-    target_sources(Cpu PRIVATE Tests/Cpu.cpp Source/AudioEngine.cpp)
+    target_sources(Cpu PRIVATE Tests/Cpu.cpp Source/AudioEngine.cpp Source/Sintes.cpp)
     target_compile_definitions(Cpu PRIVATE
         JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_STRICT_REFCOUNTEDPOINTER=1)
     target_link_libraries(Cpu PRIVATE

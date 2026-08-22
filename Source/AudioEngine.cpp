@@ -249,6 +249,59 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01,
     if (en <= 0 || en > len) en = len;
     if (st < 0 || st >= en)  st = 0;
 
+    // ------------------------------------------------------------------------
+    //  UN PAD QUE LLEVA INSTRUMENTO. Ver SampleBuffer::Zona y Sintes.h.
+    //
+    //  El mapa viaja DENTRO de la muestra, asi que esto no es una tabla nueva
+    //  por pad ni un modo que haya que encender: si la muestra trae zonas, es
+    //  un instrumento, y si no, todo sigue exactamente como estaba.
+    //
+    //  Se elige por CAPA primero y por raiz despues, y no al reves. La capa la
+    //  decide la fuerza del golpe -es lo que hace que el instrumento responda
+    //  al toque- y dentro de ella se coge la raiz que menos hay que estirar:
+    //  con raices cada doce semitonos, seis es lo peor que puede tocar, contra
+    //  los veinticuatro de una muestra sola.
+    //
+    //  Y aqui no se reserva, ni se bloquea, ni se toca un contador de
+    //  referencias: es aritmetica sobre un array fijo que ya estaba en memoria.
+    const int    zonas   = sb->nZonas;
+    const bool   instrum = (zonas > 0);
+    float        semis   = padPitch[(size_t) slot].load (std::memory_order_relaxed) + (float) extraSemis;
+    bool         bucle   = padLoop[(size_t) slot].load (std::memory_order_relaxed);
+    int          vuelta  = -1;
+
+    if (instrum)
+    {
+        //  La capa: dos, y el corte a la mitad. Un cruce entre capas seria mas
+        //  suave y necesita dos voces por nota, o sea el doble de pool por un
+        //  matiz - y este motor tiene dieciseis voces en un telefono flojo.
+        const int capaQuiere = (vel >= 0.5f) ? 1 : 0;
+
+        int mejor = 0; int coste = 1 << 30;
+        for (int z = 0; z < zonas && z < SampleBuffer::kMaxZonas; ++z)
+        {
+            const auto& Z = sb->zonas[(size_t) z];
+            //  La capa pesa mas que la raiz: mil por capa equivocada contra
+            //  como mucho veinticuatro de estiramiento, asi que nunca se coge
+            //  la capa contraria por estar mas cerca de nota.
+            const int c = std::abs ((int) std::lround (semis) - Z.raiz)
+                        + (Z.capa != capaQuiere ? 1000 : 0);
+            if (c < coste) { coste = c; mejor = z; }
+        }
+
+        const auto& Z = sb->zonas[(size_t) mejor];
+        st     = Z.ini;
+        en     = Z.fin;
+        semis -= (float) Z.raiz;
+        bucle  = (Z.bucleFin > Z.bucleIni);
+        vuelta = bucle ? Z.bucleIni : -1;
+
+        //  El recorte del pad NO se aplica: una zona no se recorta, y de hecho
+        //  los mandos de recorte estan escondidos para este pad. Y `from01`
+        //  tampoco - audicionar desde un punto de la onda es de una muestra.
+        from01 = -1.0f;
+    }
+
     //  EL BLOQUEO DEL INICIO entra por la misma puerta que la audicion desde
     //  la onda -empezar en un punto y conservar el final del pad- porque es
     //  literalmente lo mismo. Solo si nadie ha pedido ya un punto: un toque
@@ -330,12 +383,12 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01,
 
     chosen->serial = ++voiceSerial;
     chosen->start (slot,
-                   padPitch[(size_t) slot].load (std::memory_order_relaxed) + (float) extraSemis,
+                   semis,
                    effectiveGain (slot),
                    sb->sourceSampleRate, systemSampleRate,
                    st, en,
-                   padLoop[(size_t) slot].load (std::memory_order_relaxed),
-                   padReverse[(size_t) slot].load (std::memory_order_relaxed),
+                   bucle,
+                   ! instrum && padReverse[(size_t) slot].load (std::memory_order_relaxed),
                    len,
                    pctPan    != kNoPLock ? plockPanPos  (pctPan)
                                          : padPan[(size_t) slot].load (std::memory_order_relaxed),
@@ -343,10 +396,11 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01,
                                          : padAttack[(size_t) slot].load (std::memory_order_relaxed),
                    pctCaida  != kNoPLock ? plockCaidaMs (pctCaida)
                                          : padRelease[(size_t) slot].load (std::memory_order_relaxed),
-                   padKeepLength[(size_t) slot].load (std::memory_order_relaxed),
+                   ! instrum && padKeepLength[(size_t) slot].load (std::memory_order_relaxed),
                    vel,
-                   padFadeIn[(size_t) slot].load (std::memory_order_relaxed),
-                   padFadeOut[(size_t) slot].load (std::memory_order_relaxed));
+                   instrum ? 0.0f : padFadeIn[(size_t) slot].load (std::memory_order_relaxed),
+                   instrum ? 0.0f : padFadeOut[(size_t) slot].load (std::memory_order_relaxed),
+                   vuelta);
 
     //  DESPUES de start, por lo mismo que el gate: la pone a false y el
     //  bloqueo de pan es del PASO. Sin esto el pan bloqueado dura un bloque -

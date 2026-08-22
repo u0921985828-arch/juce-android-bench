@@ -397,13 +397,15 @@ namespace Kits
         return t;
     }
 
-    //  IGUALAR POR SONORIDAD, PARA LAS DOS MITADES.
+    //  CUANTO HAY QUE SUBIR ESTO PARA QUE SUENE COMO LOS DEMAS.
     //
-    //  Fuera de render y no dentro, porque ahora hay dos formas de llegar
-    //  aqui - sintetizar y decodificar - y las dos tienen que salir con el
-    //  mismo volumen. Dos caminos que se igualan por su cuenta se separan.
-    inline void normaliza (float* d, int len)
-    {
+    //  Separada de aplicarla porque hay dos clientes que la necesitan por
+    //  distinto: un sonido de fabrica se mide y se corrige a si mismo, y un
+    //  instrumento de Sintes son DIEZ zonas que tienen que compartir una sola
+    //  ganancia -sacada de la zona de referencia- o la capa suave saldria tan
+    //  alta como la fuerte y el instrumento dejaria de responder al toque.
+    //  Dos caminos que se igualan por su cuenta se separan; este es el unico.
+    //
     // ------------------------------------------------------------------
     //  IGUALAR POR SONORIDAD, NO POR PICO, Y CON LA CURVA DE LA NORMA.
     //
@@ -424,7 +426,10 @@ namespace Kits
     //  entero salia "flojo" y se le subia el volumen hasta que los
     //  chasquidos pegaban. Lo que se compara es como suena EL GOLPE, que es
     //  lo que se oye al tocar el pad.
+    inline float gananciaSonoridad (const float* d, int len)
     {
+        if (d == nullptr || len <= 0) return 1.0f;
+
         struct Biquad
         {
             double b0, b1, b2, a1, a2, x1 = 0, x2 = 0, y1 = 0, y2 = 0;
@@ -454,17 +459,23 @@ namespace Kits
         if (win >= len) best = juce::jmax (best, run);
 
         const float loud = (float) std::sqrt (best / juce::jmax (1, win));
-        float g = (loud > 1.0e-7f) ? kTargetLufsish / loud : 1.0f;
+        return (loud > 1.0e-7f) ? kTargetLufsish / loud : 1.0f;
+    }
 
-        //  El techo, DESPUES de la sonoridad: al reves, el limitador
-        //  decidiria cuanto suena cada cosa. 0.80 deja margen para tocar
-        //  cuatro pads a la vez sin llegar al limitador del master, y lo
-        //  que se pase se dobla en vez de cortarse.
-        float peak = 0.0f;
-        for (int n = 0; n < len; ++n) peak = juce::jmax (peak, std::abs (d[n]));
+    //  El techo, DESPUES de la sonoridad: al reves, el limitador decidiria
+    //  cuanto suena cada cosa. 0.80 deja margen para tocar cuatro pads a la vez
+    //  sin llegar al limitador del master, y lo que se pase se dobla en vez de
+    //  cortarse.
+    //
+    //  `rampas` es false cuando esto son varias zonas pegadas: la rampa de
+    //  entrada y la de salida son de los BORDES del sonido, y en un buffer de
+    //  diez zonas los bordes de las ocho de en medio no son bordes de nada.
+    inline void aplicaGanancia (float* d, int len, float g, bool rampas = true)
+    {
+        if (d == nullptr || len <= 0) return;
 
-        const int aIn  = juce::jmin (len / 8, (int) (kRate * 0.001));
-        const int aOut = juce::jmin (len / 4, (int) (kRate * 0.004));
+        const int aIn  = rampas ? juce::jmin (len / 8, (int) (kRate * 0.001)) : 0;
+        const int aOut = rampas ? juce::jmin (len / 4, (int) (kRate * 0.004)) : 0;
         for (int n = 0; n < len; ++n)
         {
             float x = d[n] * g;
@@ -477,12 +488,17 @@ namespace Kits
                 const float over = (std::abs (x) - kKnee) / (1.0f - kKnee);
                 x = sgn * (kKnee + (kCeiling - kKnee) * std::tanh (over));
             }
-            if (n < aIn)         x *= (float) n / (float) aIn;
-            if (n >= len - aOut) x *= (float) (len - n) / (float) aOut;
+            if (aIn  > 0 && n < aIn)         x *= (float) n / (float) aIn;
+            if (aOut > 0 && n >= len - aOut) x *= (float) (len - n) / (float) aOut;
             d[n] = juce::jlimit (-0.99f, 0.99f, x);
         }
-        juce::ignoreUnused (peak);
     }
+
+    //  IGUALAR POR SONORIDAD, PARA LAS DOS MITADES: medir y aplicar, que es lo
+    //  que quiere un sonido suelto.
+    inline void normaliza (float* d, int len)
+    {
+        aplicaGanancia (d, len, gananciaSonoridad (d, len));
     }
 
     //  LA GRABACION, SI LA HAY. Devuelve nulo cuando el recurso no esta, y

@@ -12,6 +12,7 @@
 #include "../Source/MidiIo.h"
 #include "../Source/Kits.h"
 #include "../Source/Onsets.h"
+#include "../Source/Sintes.h"
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -2101,6 +2102,142 @@ int main()
                      && floja < media * 0.95;
         std::printf ("%-34s plena %.3f   al 50%% %.3f   al 15%% %.3f   %s\n",
                      "un golpe flojo suena mas oscuro", plena, media, floja,
+                     ok ? "OK" : "FALLA");
+    }
+
+    // ------------------------------------------------------------------
+    //  UN PAD QUE LLEVA INSTRUMENTO: las zonas, medidas por lo que SALE.
+    //
+    //  Lo que compra la multizona no es la afinacion -esa sale bien con una
+    //  sola muestra, porque el resto de semitonos se le resta a la raiz- sino
+    //  el TIMBRE. Estirar una muestra dos octavas arriba se lleva los formantes
+    //  dos octavas arriba: eso es lo que suena a ardilla, y es lo unico que
+    //  distingue "elige la zona" de "usa siempre la primera".
+    //
+    //  Y se mide con COROS a proposito, que es la unica familia cuyas tres
+    //  bandas estan en Hz FIJOS y no siguen a la nota: con zonas el centroide
+    //  de la nota +24 se parece al de la nota 0, y sin ellas se va por cuatro.
+    //  Con un organo -armonicos multiplos de la nota- el centroide sube igual
+    //  de las dos formas y la prueba diria que si a cualquier cosa.
+    {
+        auto centro = [] (AudioEngine& e, int semis, int bloques)
+        {
+            juce::AudioBuffer<float> out (2, 512);
+            out.clear(); e.renderNextBlock (out, 0, 512);      // que adopte la muestra
+            e.postNoteOnAt (0, semis, 1.0f);
+            //  Energia alta contra energia total, que es un paso alto de primer
+            //  orden: mide "cuanto agudo hay" sin necesitar una transformada.
+            double alta = 0.0, total = 0.0;
+            float prev = 0.0f;
+            for (int b = 0; b < bloques; ++b)
+            {
+                out.clear();
+                e.renderNextBlock (out, 0, 512);
+                const auto* w = out.getReadPointer (0);
+                for (int i = 0; i < 512; ++i)
+                {
+                    const double d = (double) w[i] - (double) prev;
+                    alta += d * d; total += (double) w[i] * (double) w[i];
+                    prev = w[i];
+                }
+            }
+            return total > 1.0e-12 ? std::sqrt (alta / total) : 0.0;
+        };
+
+        auto conInstrumento = [&] (int semis, int bloques)
+        {
+            AudioEngine e;
+            e.prepareToPlay (48000.0, 512);
+            e.setSafetyLimiter (false);
+            e.publishSample (0, Sintes::sintetiza (10, 0));   // COROS AAH
+            e.setPadGain (0, 1.0f);
+            return centro (e, semis, bloques);
+        };
+
+        auto conFamilia = [&] (int fam, int semis, int bloques)
+        {
+            AudioEngine e;
+            e.prepareToPlay (48000.0, 512);
+            e.setSafetyLimiter (false);
+            e.publishSample (0, Sintes::sintetiza (fam, 0));
+            e.setPadGain (0, 1.0f);
+            return centro (e, semis, bloques);
+        };
+
+        const double n0  = conInstrumento (0, 40);
+        const double n24 = conInstrumento (24, 40);
+
+        //  Y LA COSTURA SE MIDE CON OTRA FAMILIA, que fue lo que la primera
+        //  version hizo mal. Con COROS salia x0.60 y el codigo estaba bien: las
+        //  bandas de una voz estan en Hz FIJOS, asi que +5 -que sale de la raiz
+        //  0 estirada arriba- y +7 -que sale de la raiz 12 estirada abajo- tienen
+        //  los formantes a diez semitonos de distancia. Eso no es un fallo, es
+        //  lo que CUESTA una zona cada doce semitonos, y en una voz se nota mas
+        //  que en nada. Primero se duda de la prueba.
+        //
+        //  BAJOS sigue a la nota -el filtro esta en hz*brillo- asi que ahi la
+        //  costura SI tiene que ser suave: dos semitonos de diferencia, x1.12,
+        //  y lo que esta prueba caza es una zona rendida a la frecuencia
+        //  equivocada o una ventana mal puesta.
+        const double b5 = conFamilia (0, 5, 40);
+        const double b7 = conFamilia (0, 7, 40);
+
+        //  DOS NUMEROS Y NO UNO. El primero dice que la zona se ELIGE: sin
+        //  eleccion, +24 se lee al cuadruple y el brillo se va por cuatro. El
+        //  segundo dice que las zonas CASAN, y eso el primero no lo ve.
+        const double rango   = (n0 > 1.0e-9) ? n24 / n0 : 0.0;
+        const double costura = (b5 > 1.0e-9) ? b7 / b5 : 0.0;
+        const bool ok = n0 > 1.0e-9 && rango < 2.0
+                     && costura > 0.85 && costura < 1.45;
+        std::printf ("%-34s nota 0 %.3f   +24 %.3f (x%.2f)   costura +5/+7 x%.2f   %s\n",
+                     "el instrumento elige zona", n0, n24, rango, costura,
+                     ok ? "OK" : "FALLA");
+    }
+
+    // ------------------------------------------------------------------
+    //  Y QUE EL BUCLE VUELVA AL SITIO, que es la otra mitad y la que no se ve
+    //  en un espectro: una nota sostenida tiene que seguir sonando pasada la
+    //  zona -0.6 s, o sea 56 bloques de 512- y hacerlo SIN volver a atacar.
+    //
+    //  Volver al principio de la ventana en vez de al punto de bucle es el
+    //  fallo que Voice::loopFrom existe para evitar, y suena a que la nota se
+    //  vuelve a tocar sola cada medio segundo: se ve como un bache en la
+    //  envolvente. Con el ataque lento de un colchon el bache es enorme.
+    {
+        AudioEngine e;
+        e.prepareToPlay (48000.0, 512);
+        e.setSafetyLimiter (false);
+        e.publishSample (0, Sintes::sintetiza (5, 0));    // COLCHONES PWM PAD
+        e.setPadGain (0, 1.0f);
+
+        juce::AudioBuffer<float> out (2, 512);
+        out.clear(); e.renderNextBlock (out, 0, 512);
+        e.postNoteOnAt (0, 0, 1.0f);
+
+        //  Se mira DESPUES del ataque -bloque 40 en adelante- y hasta bien
+        //  pasadas dos vueltas del bucle.
+        std::vector<double> rms;
+        for (int b = 0; b < 200; ++b)
+        {
+            out.clear();
+            e.renderNextBlock (out, 0, 512);
+            if (b < 40) continue;
+            double s = 0.0;
+            const auto* w = out.getReadPointer (0);
+            for (int i = 0; i < 512; ++i) s += (double) w[i] * (double) w[i];
+            rms.push_back (std::sqrt (s / 512.0));
+        }
+        const double mx = *std::max_element (rms.begin(), rms.end());
+        const double mn = *std::min_element (rms.begin(), rms.end());
+        const double baja = (mx > 1.0e-9) ? 20.0 * std::log10 (juce::jmax (1.0e-9, mn) / mx) : -99.0;
+        //  Sigue sonando (mn alto) y sin baches (la diferencia, en dB, corta).
+        //  Doce decibelios y no nueve: un colchon de cuatro osciladores
+        //  desafinados SE MUEVE -eso es lo que lo hace un colchon- y lo que esta
+        //  prueba caza es otra cosa, que la nota vuelva a ATACAR en cada vuelta.
+        //  Eso son 35 dB, porque el ataque son 0.35 s de un bucle de 0.42.
+        const bool ok = mn > 0.01 && baja > -12.0;
+        std::printf ("%-34s minimo %.4f   maximo %.4f   bache %.1f dB   %s\n",
+                     "la nota sostenida no re-ataca", mn, mx, baja,
                      ok ? "OK" : "FALLA");
     }
 

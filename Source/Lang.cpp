@@ -52,6 +52,43 @@ namespace
         { "16 NIVELES: PAD %1", "",  "16 LEVELS: PAD %1", "16级: 音垫 %1", "16 مستوى: باد %1" },
         { "16 NIVELES OFF",     "",  "16 LEVELS OFF", "16级 关闭", "16 مستوى مغلق" },
         { "PAD %1 - nivel %2",  "",  "PAD %1 - level %2", "音垫 %1 - 级 %2", "باد %1 - مستوى %2" },
+        //  VOLVER lleva clave propia y no reaprovecha ATRAS por la misma razon
+        //  por la que TOUR ATRAS la lleva: ATRAS es la herramienta que desplaza
+        //  el patron, y en chino dice "mover". Una clave que se reaprovecha por
+        //  parecerse en espanol sale mal en las otras tres.
+        { "INST VOLVER",        "VOLVER",  "BACK",   "返回",   "رجوع" },
+        //  LAS DIECISEIS FAMILIAS DE Sintes.h. Son nombres COMUNES -una familia
+        //  de instrumentos, no un modelo- asi que se traducen, igual que se
+        //  traducen ACUSTICA, MAQUINA, TEXTURA y TONOS. Lo que no se traduce es
+        //  el nombre de cada preset: "RHODES" o "SAW BS" son nombres propios de
+        //  un sonido, y ademas serian 256 filas.
+        { "BAJOS",       "",  "BASSES",     "贝斯",   "باس" },
+        { "SUBS",        "",  "SUB BASS",   "超低音", "سب باس" },
+        { "PIANO ELEC",  "",  "E.PIANO",    "电钢琴", "بيانو كهربائي" },
+        { "ORGANOS",     "",  "ORGANS",     "风琴",   "أرغن" },
+        { "CUERDAS",     "",  "STRINGS",    "弦乐",   "وتريات" },
+        { "COLCHONES",   "",  "SYNTH PAD",  "铺底",   "خلفيات" },
+        { "PLUCKS",      "",  "PLUCK SYN",  "拨弦",   "نقر" },
+        { "CAMPANAS",    "",  "BELLS",      "钟琴",   "أجراس" },
+        { "METALES",     "",  "BRASS",      "铜管",   "نحاسيات" },
+        { "LEADS",       "",  "LEAD SYN",   "主音",   "ليد" },
+        { "COROS",       "",  "CHOIRS",     "人声",   "كورال" },
+        { "CUERDA PULS", "",  "PLUCKED",    "弹拨",   "أوتار منقورة" },
+        { "MAZOS",       "",  "MALLETS",    "打击音", "مطارق" },
+        { "CLAVES",      "",  "CLAVS",      "击弦",   "كلاف" },
+        { "VIENTOS",     "",  "WINDS",      "管乐",   "نفخ" },
+        { "ARPAS",       "",  "HARPS",      "竖琴",   "قيثارة" },
+        //  Y el nombre del pack, que tampoco se traduce por lo mismo que ZATI:
+        //  es como se llama, no lo que es.
+        { "SINTES",      "",  "SINTES",     "SINTES", "SINTES" },
+        { "Toca un preset y va al pad %1. Se toca con el PIANO.", "",
+          "Tap a preset and it goes to pad %1. Play it with the PIANO.",
+          "点击预设即可放入音垫 %1，用钢琴卷帘演奏。",
+          "المس إعدادا مسبقا فينتقل إلى باد %1. يعزف بالبيانو." },
+        { "Toca un preset. Se toca con el PIANO.", "",
+          "Tap a preset. Play it with the PIANO.",
+          "点击预设。用钢琴卷帘演奏。",
+          "المس إعدادا مسبقا. يعزف بالبيانو." },
         { "CARCASA",            "",  "CHASSIS",   "外壳",   "الهيكل" },
         { "MANTEN UN PAD",      "",  "HOLD A PAD",
                                      "长按音垫", "اضغط بادًا مطولًا" },

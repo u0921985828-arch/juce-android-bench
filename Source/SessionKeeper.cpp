@@ -267,7 +267,15 @@ void SessionKeeper::run()
 
         const auto dest = padFile (pad);
 
-        if (sb != nullptr && sb->buffer.getNumSamples() > 0)
+        //  UN INSTRUMENTO NO SE ESCRIBE. Va como receta en state.xml -familia
+        //  y preset- y al volver se sintetiza: escribir el audio serian 2 MB
+        //  por pad para devolver algo que ya no seria un instrumento. Ver
+        //  captureState y MainComponent::stepPadJob.
+        if (sb != nullptr && sb->familia >= 0)
+        {
+            dest.deleteFile();
+        }
+        else if (sb != nullptr && sb->buffer.getNumSamples() > 0)
         {
             //  Escribir al lado y mover ya lo hace writeSample por dentro -
             //  se metio ahi porque saveProject llamaba directo al destino y no

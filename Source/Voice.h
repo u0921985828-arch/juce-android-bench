@@ -112,6 +112,18 @@ struct Voice
     int    winStart  = 1;      // playback window [winStart, winEnd) in samples
     int    winEnd    = 2;
 
+    //  A DONDE VUELVE EL BUCLE, que no tiene por que ser el principio.
+    //
+    //  Hasta aqui un bucle daba la vuelta al inicio de la ventana, que es lo
+    //  correcto para un trozo de break: lo que se repite es el trozo entero.
+    //  Un INSTRUMENTO no: tiene un ataque que suena UNA vez -la pua, el
+    //  martillo, el soplo- y un regimen que se repite mientras la nota dure.
+    //  Volver al principio repetiria el ataque en cada vuelta, que es
+    //  exactamente el sonido de un sampler mal hecho.
+    //
+    //  -1 = al principio de la ventana, o sea lo de siempre.
+    int    loopFrom  = -1;
+
     //  EL FUNDIDO DE LOS BORDES DEL RECORTE, que no es la envolvente del pad.
     //
     //  ATAQUE y CAIDA son de la NOTA: cuentan desde que se golpea y desde que
@@ -147,12 +159,14 @@ struct Voice
                 int startSamp, int endSamp, bool loopOn, bool rev, int srcLen,
                 float pan = 0.0f, float attackMs = 2.0f, float releaseMs = 3.0f,
                 bool keepLength = false, float vel = 1.0f,
-                float fadeInMs = 0.0f, float fadeOutMs = 0.0f) noexcept
+                float fadeInMs = 0.0f, float fadeOutMs = 0.0f,
+                int loopFromSamp = -1) noexcept
     {
         slot     = slotIndex;
         winStart = juce::jlimit (1, juce::jmax (1, srcLen - 3), startSamp);
         winEnd   = juce::jlimit (winStart + 1, juce::jmax (winStart + 1, srcLen - 2), endSamp);
         loop     = loopOn;
+        loopFrom = (loopFromSamp >= 0) ? juce::jlimit (winStart, winEnd - 1, loopFromSamp) : -1;
         reverse  = rev;
 
         ratio    = std::pow (2.0, (double) semitones / 12.0);
@@ -218,7 +232,12 @@ struct Voice
         //  encima se empieza a oir que la vuelta "respira". Y sigue acotado al
         //  tercio, asi que un bucle de dos milisegundos no se convierte en un
         //  mando de volumen.
-        if (loopOn && fadeInSamp == 0 && fadeOutSamp == 0)
+        //  Y NO cuando la vuelta es a un punto interior: eso solo lo pide un
+        //  instrumento de Sintes, y esos traen el fundido cruzado YA HORNEADO
+        //  en la muestra - en la costura las dos mitades son la misma senal-.
+        //  Ponerle encima el fundido de bordes bajaria el volumen en cada
+        //  vuelta, que se oye como un temblor a la velocidad del bucle.
+        if (loopOn && loopFrom < 0 && fadeInSamp == 0 && fadeOutSamp == 0)
         {
             const int minimo = juce::jlimit (0, tercio, (int) (0.003 * fSrcAbs));
             fadeInSamp = fadeOutSamp = minimo;
@@ -273,7 +292,8 @@ struct Voice
     bool panPropio = false;
 
     void release() noexcept { releasing = true; }
-    void kill()    noexcept { active = false; releasing = false; gain = 0.0f; gate = -1; panPropio = false; }
+    void kill()    noexcept { active = false; releasing = false; gain = 0.0f; gate = -1;
+                              panPropio = false; loopFrom = -1; }
 
     // Voice steal: fast fixed declick fade (~1.5 ms) regardless of the pad's
     // musical release — used when the same pad retriggers and this instance
@@ -542,7 +562,7 @@ struct Voice
                 if (reverse ? (pos < lo) : (pos > hi))
                 {
                     if (! loop) { active = false; break; }
-                    pos   = reverse ? hi : lo;
+                    pos   = reverse ? hi : (loopFrom >= 0 ? (double) loopFrom : lo);
                     gOffA = gOffB = gStart;
                 }
             }
@@ -580,7 +600,8 @@ struct Voice
                 //  one sample forever".
                 if (winEnd - winStart < 2) { active = false; break; }
 
-                pos = reverse ? (double) (winEnd - 1) : (double) winStart;
+                pos = reverse ? (double) (winEnd - 1)
+                              : (loopFrom >= 0 ? (double) loopFrom : (double) winStart);
                 continue;
             }
 

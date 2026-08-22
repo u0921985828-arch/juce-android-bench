@@ -409,6 +409,14 @@ public:
                     {
                         c2->auditNiveles();
                     }
+                    //  LOS 256 INSTRUMENTOS. Ver Tests/instr.py. La variable
+                    //  lleva LA CARPETA donde dejar los ficheros, no un uno:
+                    //  son 66 MB de temporales y el banco quiere ponerlos donde
+                    //  los va a borrar.
+                    else if (UiAudit::env ("ZATI_INSTR").isNotEmpty())
+                    {
+                        c2->auditInstr();
+                    }
                     //  EL JUEGO DE ICONOS. Ver Tests/iconos.py: los tres
                     //  numeros de un dibujo -que quepa, que tenga tinta y que
                     //  no sea otro- y no una captura de pantalla.

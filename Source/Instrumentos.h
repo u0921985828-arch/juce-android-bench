@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include "Kits.h"
+#include "Sintes.h"
 #include "ProjectStore.h"
 
 // ============================================================================
@@ -93,6 +94,15 @@ namespace Instrumentos
         juce::File   carpeta;             // vacia si es de fabrica
         int          bancoFabrica = -1;   // 0..3 si es de fabrica, -1 si no
         int          presets      = 0;
+
+        //  Y LA TERCERA CLASE, que es la que cambia a donde va esto.
+        //
+        //  Un instrumento de kit son dieciseis SONIDOS y va a los dieciseis
+        //  pads de un banco: es una bateria. Un instrumento de Sintes es UN
+        //  sonido tocable con dieciseis variantes y va a UN pad: es un
+        //  instrumento. La misma rejilla sirve para los dos porque el gesto es
+        //  el mismo -elegir-, pero el destino no puede serlo.
+        int          familiaSintes = -1;  // 0..15 si lo sintetiza Sintes
     };
 
     struct Pack
@@ -183,6 +193,26 @@ namespace Instrumentos
         return p;
     }
 
+    //  Y EL PACK DE INSTRUMENTOS, que es el que va A UN PAD.
+    //
+    //  Dieciseis familias, y cada una con dieciseis presets: el mismo numero
+    //  que tiene el banco, para que la rejilla del menu y la rejilla de pads
+    //  sean la MISMA forma. El instrumento numero n vive siempre en el pad n
+    //  del banco D, asi que el 07 esta donde la mano ya lo busca - la misma
+    //  razon por la que el selector del RACK dejo de ser una fila de dieciseis.
+    inline Pack sintes()
+    {
+        Pack p;
+        p.id = "SINTES";
+        p.nombre = "SINTES";
+        p.dentro = true;
+        p.abierto = true;
+        for (int f = 0; f < Sintes::kFamilias; ++f)
+            p.instr.push_back ({ juce::String (Sintes::tabla()[f].nombre), {}, -1,
+                                 Sintes::kPresets, f });
+        return p;
+    }
+
     inline bool esAudio (const juce::File& f)
     {
         const auto e = f.getFileExtension().toLowerCase();
@@ -197,6 +227,10 @@ namespace Instrumentos
     inline std::vector<Pack> lee()
     {
         std::vector<Pack> packs;
+        //  SINTES primero: es lo que esta ficha ES desde que un pad puede
+        //  llevar un instrumento. La fabrica detras, que sigue siendo lo que
+        //  recarga un banco entero.
+        packs.push_back (sintes());
         packs.push_back (fabrica());
 
         const auto raiz = carpeta();
