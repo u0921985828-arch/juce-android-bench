@@ -2110,10 +2110,10 @@ MainComponent::MainComponent()
     tourNextBtn.onClick = [this]
     {
         if (tourPaso + 1 < kTourPasos) { showTour (tourPaso + 1); return; }
-        //  Al final se marca visto y se cierra. Marcarlo al ABRIR habria sido
-        //  mas corto y esta mal: si la app se cierra a la mitad -y la primera
-        //  vez que alguien la abre es cuando mas probable es- el tour ya no
-        //  vuelve nunca y nadie sabe que existio.
+        //  Al final se marca visto y se cierra. Ya lo esta desde que se enseño
+        //  -ver el arranque- asi que esto es idempotente; se deja porque el
+        //  tour tambien se abre a mano desde AJUSTES y acabarlo por ahi tiene
+        //  que dejar la misma marca.
         tourFile().getParentDirectory().createDirectory();
         tourFile().replaceWithText ("1");
         closeAllSheets();
@@ -16701,7 +16701,37 @@ void MainComponent::timerCallback()
         //  levantar. Y nunca cuando mide el banco - con ZATI_OPEN el banco
         //  pide una ficha concreta y una tarjeta encima seria diecinueve
         //  fichas medidas a traves del tour.
-        if (! UiAudit::enabled() && ! tourFile().existsAsFile())
+        //  Y SE MARCA AL ENSENARLO, no al acabarlo.
+        //
+        //  Estaba al reves, con este argumento escrito: "si la app se cierra a
+        //  la mitad, el tour no vuelve nunca y nadie sabe que existio". El
+        //  argumento es FALSO, y lo era desde el dia que se escribio: AJUSTES
+        //  tiene una tapa TOUR que lo abre cuando quieras, asi que nadie lo
+        //  pierde. Lo que si pasaba es lo otro - salir del tour por el boton
+        //  ATRAS de Android, o cerrar la app, no marca nada - y entonces sale
+        //  EN CADA ARRANQUE, que es como se lee una app rota.
+        //
+        //  Una bienvenida se enseña una vez. Volver a ofrecerla sin que nadie
+        //  la pida es lo contrario de lo que la palabra significa.
+        //
+        //  Se escribe ANTES de enseñarlo, no despues: entre las dos lineas hay
+        //  un maquetado entero, y si algo se cae ahi el tour volveria manana.
+        const bool primeraVez = ! tourFile().existsAsFile();
+        if (primeraVez)
+        {
+            tourFile().getParentDirectory().createDirectory();
+            tourFile().replaceWithText ("1");
+        }
+
+        //  Y el banco lo mide por AQUI, que es donde se decide, y no por una
+        //  copia de la regla: con ZATI_AUDIT el tour no se enseña -una tarjeta
+        //  encima serian diecinueve fichas medidas a traves de ella- pero la
+        //  marca se escribe igual, que es justo lo que hay que comprobar.
+        if (UiAudit::enabled())
+            std::cout << "{\"arranque\":\"tour\",\"primera\":" << (primeraVez ? 1 : 0)
+                      << "}" << std::endl;
+
+        if (! UiAudit::enabled() && primeraVez)
         {
             showTour (0);
             openSheet (tourSheet, setButton);

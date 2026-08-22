@@ -110,7 +110,14 @@ def run(size, lang, sheet, casa=None):
 
 def judge(rows, size, lang, sheet):
     findings = []
-    head = rows[0] if rows and rows[0].get("root") else {}
+    #  LA RAIZ SE BUSCA, no se da por hecho que es la primera linea.
+    #
+    #  Era `rows[0]`, y eso hacia que CUALQUIER linea JSON impresa antes del
+    #  volcado dejara W y H en cero - y con la ventana a cero, los cuarenta
+    #  componentes de cada corrida caen "fuera de ventana": 45 521 hallazgos de
+    #  golpe, todos falsos, tapando los de verdad. Lo pago una linea de
+    #  arranque de tres campos.
+    head = next((r for r in rows if r.get("root")), {})
     W, H = head.get("w", 0), head.get("h", 0)
     comps = [r for r in rows if "path" in r]
 

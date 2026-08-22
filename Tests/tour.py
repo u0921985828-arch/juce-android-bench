@@ -87,6 +87,45 @@ def main():
             estado = "correcto"
         print ("%-6d %10s   %s" % (n, "%dx%d" % (w, h), estado))
 
+    #  --- Y QUE SOLO SALGA LA PRIMERA VEZ ---------------------------------
+    #
+    #  Es la otra mitad del tour y la que no miraba nadie: los quince pasos
+    #  pueden señalar perfectamente lo que explican y aun asi la bienvenida
+    #  aparecer EN CADA ARRANQUE, que es como se lee una app rota. Pasaba: la
+    #  marca de visto se escribia al acabarlo, asi que salir por el boton ATRAS
+    #  de Android -o cerrar la app- no marcaba nada.
+    #
+    #  Se mide con DOS arranques y el MISMO HOME, que es la unica forma: con un
+    #  HOME por corrida las dos serian la primera vez y la prueba diria que si
+    #  a cualquier cosa. Y por el sitio donde se DECIDE, no por una copia de la
+    #  regla: la app imprime lo que acaba de resolver.
+    casa = tempfile.mkdtemp (prefix="zati-tour2-")
+    try:
+        vistas = []
+        for _ in range (2):
+            env = dict (os.environ, HOME=casa, ZATI_AUDIT="1", ZATI_SIZE="412x915",
+                        ZATI_LANG="es", ZATI_OPEN="",
+                        XDG_DATA_HOME=os.path.join (casa, ".local", "share"),
+                        DISPLAY=os.environ.get ("DISPLAY", ":99"))
+            out = subprocess.run ([APP], env=env, capture_output=True, text=True,
+                                  timeout=300).stdout
+            v = None
+            for linea in out.splitlines():
+                linea = linea.strip()
+                if not linea.startswith ('{'): continue
+                try:    d = json.loads (linea)
+                except Exception: continue
+                if d.get ("arranque") == "tour": v = d["primera"]
+            vistas.append (v)
+    finally:
+        shutil.rmtree (casa, ignore_errors=True)
+
+    print()
+    print ("arranques con el mismo HOME: %s" % vistas)
+    if vistas != [1, 0]:
+        malas.append ("la bienvenida sale %s en dos arranques y tenia que salir [1, 0]"
+                      % (vistas,))
+
     print()
     for m in malas: print ("FALLA ", m)
     print ("los %d pasos del tour señalan lo que explican" % PASOS if not malas
