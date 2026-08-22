@@ -51,7 +51,8 @@ doce de CI mas el tiempo de la persona que se la instala.
 
 - **Cero es cero.** `expo.py` tiene que salir con 0 solapes, 0 fuera de ventana,
   0 celdas por debajo del dedo minimo, 0 rotulos cortados, 0 sin traducir, 0
-  encendidos de cero pixeles y 0 residuo al cambiar de pagina. Los apretones se
+  encendidos de cero pixeles, 0 rotulos pintados debajo de un control y 0
+  residuo al cambiar de pagina. Los apretones se
   quedaron ademas en CERO desde que el hueco del rotulo lo calcula una sola
   funcion -`ZatiLookAndFeel::reparteTapa`- y no dos con dos numeros distintos.
 - **Un numero que empeora es un fallo aunque el resto pase.** Dos arreglos de

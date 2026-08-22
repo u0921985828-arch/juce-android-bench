@@ -84,8 +84,28 @@ namespace UiAudit
     //  Se apuntan aqui con su rectangulo y su TIPO, que es lo que permite
     //  levantar el plano de una pantalla: titulo, seccion, subseccion. Sin el
     //  tipo serian una lista de palabras sueltas y el orden no se podria juzgar.
-    struct Rotulo { int x, y, w, h; juce::String texto, tipo; };
+    struct Rotulo { int x, y, w, h; juce::String texto, tipo; int capa; };
     inline std::vector<Rotulo> rotulos;
+
+    //  EN QUE CAPA SE ESTA PINTANDO.
+    //
+    //  Un rotulo pintado y un control que se solapan solo son un fallo si
+    //  estan en la MISMA ficha: la cara sigue debajo de una ficha abierta -sus
+    //  tapas se maquetan y salen en el volcado- asi que comparar todo contra
+    //  todo daba 417 hallazgos y casi todos eran una tarjeta opaca encima de
+    //  la maquina. La ficha se identifica con un numero propio y cada control
+    //  hereda el de la ficha en la que vive; la cara es la capa 0.
+    inline int capaActual = 0;
+    inline int siguienteCapa = 1;
+
+    //  Y DONDE ESTA EL ORIGEN DE LO QUE SE PINTA.
+    //
+    //  El volcado de componentes va en coordenadas de la VENTANA -walk las
+    //  convierte- y un rotulo se apunta con el rectangulo que su pintor le
+    //  paso, que en una ficha desplazable esta en coordenadas del CUERPO. Los
+    //  rotulos de AJUSTES salian todos con x=0 y comparados contra tapas en
+    //  x=35: dos sistemas de coordenadas mezclados en la misma prueba.
+    inline juce::Point<int> origenPintado { 0, 0 };
 
     //  No hace nada fuera del banco: una app que no se esta midiendo no tiene
     //  por que llevar la cuenta de lo que dibuja.
@@ -94,7 +114,8 @@ namespace UiAudit
     inline void rotulo (juce::Rectangle<int> r, const juce::String& t, const char* tipo)
     {
         if (! midiendo || t.isEmpty()) return;
-        rotulos.push_back ({ r.getX(), r.getY(), r.getWidth(), r.getHeight(), t, tipo });
+        r += origenPintado;
+        rotulos.push_back ({ r.getX(), r.getY(), r.getWidth(), r.getHeight(), t, tipo, capaActual });
     }
 
     //  EL JUEGO DE ICONOS, RASTERIZADO.
@@ -294,9 +315,14 @@ namespace UiAudit
     inline std::function<bool (int)> stepOn;
 
     inline void walk (juce::Component& c, juce::Component& root, const juce::String& path, int depth,
-                      bool underSlider = false, bool underViewport = false)
+                      bool underSlider = false, bool underViewport = false, int capa = 0)
     {
         if (! c.isVisible()) return;
+
+        //  Ver capaActual: una ficha lleva su numero en una propiedad y todo
+        //  lo que cuelga de ella lo hereda.
+        if (c.getProperties().contains ("capa"))
+            capa = (int) c.getProperties()["capa"];
 
         const auto abs = root.getLocalArea (&c, c.getLocalBounds());
         const auto cap = captionOf (c);
@@ -321,6 +347,7 @@ namespace UiAudit
              << ",\"on\":" << (c.isEnabled() ? 1 : 0)
              << ",\"hit\":" << (interactive && ! insideSlider ? 1 : 0)
              << ",\"inSlider\":" << (insideSlider ? 1 : 0)
+             << ",\"capa\":" << capa
              << ",\"scrolled\":" << (scrolled ? 1 : 0);
 
         //  WHAT IS ON THE PAD. The one piece of state worth carrying in a
@@ -387,7 +414,7 @@ namespace UiAudit
         int i = 0;
         for (auto* k : c.getChildren())
             walk (*k, root, path + "/" + juce::String (i++) + ":" + juce::String (typeid (*k).name()).getLastCharacters (14),
-                  depth + 1, childUnderSlider, childUnderViewport);
+                  depth + 1, childUnderSlider, childUnderViewport, capa);
     }
 
     // ========================================================================
@@ -586,7 +613,8 @@ namespace UiAudit
             std::cout << "{\"rotulo\":\"" << r.texto.replace ("\"", "'").toRawUTF8() << "\""
                       << ",\"tipo\":\"" << r.tipo << "\""
                       << ",\"x\":" << r.x << ",\"y\":" << r.y
-                      << ",\"w\":" << r.w << ",\"h\":" << r.h << "}" << std::endl;
+                      << ",\"w\":" << r.w << ",\"h\":" << r.h
+                      << ",\"capa\":" << r.capa << "}" << std::endl;
 
         if (tourPaso >= 0)
             std::cout << "{\"tour\":" << tourPaso

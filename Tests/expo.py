@@ -264,6 +264,43 @@ UNTRANSLATED_OK = {
 UNTRANSLATED_UNIT = re.compile(r'^[+\-]?[0-9][0-9.,]*\s*(st|c|ms|s|bpm|dB|Hz|kHz|%|x)?$', re.I)
 UNTRANSLATED_SAFE = re.compile(r'^[\s0-9%.,:;+\-/|×xX\u00b7\u00b0"\'()\[\]_@#]*$')
 
+#  UN ROTULO PINTADO NO PUEDE CAER DEBAJO DE UN CONTROL.
+#
+#  Las reglas de geometria recorren el arbol de COMPONENTES y un titulo no es
+#  un componente: se dibuja. Por eso "AJUSTES - AUDIO" podia pasar por debajo de
+#  la tapa de CUADRAR y por debajo de la x de cerrar sin que 812 corridas
+#  dijeran nada. La app apunta el rectangulo que el texto OCUPA -no la banda que
+#  se le dio, que suele ser el ancho entero- asi que un solape aqui es un solape
+#  de verdad.
+def judge_tapado(rows, size, lang, sheet):
+    out = []
+    ctrl = [r for r in rows
+            if r.get("kind") in ("button", "slider", "editor")
+            and r.get("w", 0) > 0 and r.get("h", 0) > 0]
+    for r in rows:
+        if not r.get("rotulo"):
+            continue
+        rx, ry, rw, rh = r["x"], r["y"], r["w"], r["h"]
+        if rw <= 0 or rh <= 0:
+            continue
+        for c in ctrl:
+            #  Solo dentro de la MISMA ficha. La cara sigue debajo de una
+            #  ficha abierta con todas sus tapas maquetadas, asi que comparar
+            #  todo contra todo daba 417 hallazgos y casi todos eran una
+            #  tarjeta opaca encima de la maquina.
+            if c.get("capa", 0) != r.get("capa", 0):
+                continue
+            ix = min(rx + rw, c["x"] + c["w"]) - max(rx, c["x"])
+            iy = min(ry + rh, c["y"] + c["h"]) - max(ry, c["y"])
+            #  Dos pixeles de tolerancia: una banda que acaba justo donde
+            #  empieza una tapa no es un rotulo tapado, es un rotulo pegado.
+            if ix > 2 and iy > 2:
+                out.append(("TAPADO", f"{size}/{lang}/{sheet or 'face'}",
+                            f'"{r["rotulo"]}" debajo de "{c.get("text","?")}"', 0))
+                break
+    return out
+
+
 def judge_lang(rows_es, rows_en, size, sheet):
     if not rows_es or not rows_en: return []
     def m(rows):
@@ -323,7 +360,8 @@ def corre_y_juzga(combo, casa):
     #  estrecho" y "los iconos no salen" son la misma corrida en verde.
     puestos = sum (1 for r in rows if "icono" in r)
     pintados = sum (1 for r in rows if r.get ("icono"))
-    return judge(rows, size, lang, sheet), (rows if lang in ("es", "en") else []), (puestos, pintados)
+    return (judge(rows, size, lang, sheet) + judge_tapado(rows, size, lang, sheet),
+            (rows if lang in ("es", "en") else []), (puestos, pintados))
 
 
 def paginas():

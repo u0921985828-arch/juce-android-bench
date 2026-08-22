@@ -1058,8 +1058,8 @@ public:
 
         //  Cuadrado y sacado del ALTO de la tapa: un tercio del ancho daria un
         //  icono de sesenta pixeles en la tapa de PLAY.
-        const int lado = juce::jmin (r.texto.getHeight(), 18);
-        if (lado < Iconos::kLadoMin) return r;
+        const int tope = juce::jmin (r.texto.getHeight(), 18);
+        if (tope < Iconos::kLadoMin) return r;
 
         if (texto.isEmpty()) { r.id = id; r.icono = r.texto; r.texto = {}; return r; }
 
@@ -1070,8 +1070,15 @@ public:
         //  regla es que un apreton no se cambia por un corte. Aqui es mas
         //  barato todavia - lo que se pierde es el dibujo, que es el adorno,
         //  no la palabra, que es la funcion. Donde no cabe, no sale.
+        //  Y EL ICONO SE PIDE DEL TAMANO QUE HAYA, entre su suelo y su tope.
+        //  Con el lado clavado en dieciocho, una tapa a la que le sobraban
+        //  dieciseis se quedaba sin dibujo por dos pixeles - que es la misma
+        //  regla de la casa que ya gobierna la celda de la rejilla y la fila de
+        //  bancos: se pide lo que hay, no lo que gustaria.
         const float necesita = juce::GlyphArrangement::getStringWidth (r.fuente, texto);
-        if (necesita <= (float) (r.texto.getWidth() - lado - Metrics::halfGap))
+        const int libre = r.texto.getWidth() - (int) std::ceil (necesita) - Metrics::halfGap;
+        const int lado  = juce::jmin (tope, libre);
+        if (lado >= Iconos::kLadoMin)
         {
             r.id = id;
             r.icono = r.texto.removeFromLeft (lado);

@@ -148,10 +148,57 @@ namespace
 //  olvidarse, y el sintoma seria una tapa que dice STOP con el triangulo de
 //  PLAY dibujado: peor que no tener icono, porque los dos se contradicen.
 // ============================================================================
+//  UNA BANDA DE TITULO SE PARA ANTES DE LA TAPA QUE COMPARTE SU RENGLON, EN EL
+//  LADO EN QUE ESTE.
+//
+//  Estaba escrito seis veces como `banda.setRight (jmin (derecha, tapa.getX()
+//  - aire))`, y esa cuenta solo vale en tres idiomas de los cuatro: en arabe la
+//  x de cerrar esta a la IZQUIERDA, asi que recortar por la derecha no recorta
+//  nada y el titulo pasa por debajo de ella. Medido: 28 casos del titulo del
+//  pad y 7 del de la mesa, todos en arabe, mas los de XY e INSTRUMENTOS.
+//
+//  El lado se decide comparando los CENTROS y no preguntando por el idioma:
+//  quien sabe donde esta la tapa es la tapa.
+static juce::Rectangle<int> antesDe (juce::Rectangle<int> banda, juce::Rectangle<int> b,
+                                     int aire = Metrics::xs)
+{
+    if (b.isEmpty()) return banda;
+
+    if (b.getCentreX() >= banda.getCentreX())
+        banda.setRight (juce::jmax (banda.getX(), juce::jmin (banda.getRight(), b.getX() - aire)));
+    else
+        banda.setLeft  (juce::jmin (banda.getRight(), juce::jmax (banda.getX(), b.getRight() + aire)));
+    return banda;
+}
+
+//  Y LA MISMA, DANDOLE LA TAPA. Cuidado con el espacio de coordenadas: una
+//  tapa devuelve sus limites relativos a SU PADRE, y la banda del titulo suele
+//  venir de sheetBounds, que va en coordenadas de la cara. Los dos coinciden
+//  mientras la tapa cuelgue de la ficha - y las de XY cuelgan de XyPanel, asi
+//  que ahi la comparacion se hacia con 88 px de diferencia y el titulo se metia
+//  diez pixeles debajo de MOMENTANEO. Para ese caso esta la version de arriba,
+//  a la que se le pasa el rectangulo ya convertido.
+static juce::Rectangle<int> antesDe (juce::Rectangle<int> banda, const juce::Component& tapa,
+                                     int aire = Metrics::xs)
+{
+    if (! tapa.isVisible()) return banda;
+    return antesDe (banda, tapa.getBounds(), aire);
+}
+
 static void transporte (juce::TextButton& b, bool rodando)
 {
     b.setButtonText (rodando ? T ("STOP") : T ("PLAY"));
     b.getProperties().set ("icono", (int) (rodando ? Iconos::Id::stop : Iconos::Id::play));
+}
+
+//  Y la de OIR, que llevaba el triangulo METIDO EN EL ROTULO -"\u25b6 OIR"- desde
+//  antes de que hubiera iconos. Un glifo dentro del texto no es un icono: no lo
+//  ve reparteTapa, no se mide, y ademas cuenta como caracteres del rotulo, asi
+//  que en arabe y en chino robaba ancho a la palabra.
+static void oirTapa (juce::TextButton& b, bool sonando)
+{
+    b.setButtonText (T (sonando ? "STOP" : "OIR"));
+    b.getProperties().set ("icono", (int) (sonando ? Iconos::Id::stop : Iconos::Id::play));
 }
 
 MainComponent::MainComponent()
@@ -332,6 +379,16 @@ MainComponent::MainComponent()
         setSheet.onDismiss = [this] { closeAllSheets(); };
         setSheet.paintContent = [this] (juce::Graphics& g)
         {
+            //  EL TITULO, DE LAS CUATRO PAGINAS Y EN UN SOLO SITIO.
+            //
+            //  Lo pintaba cada pagina por su cuenta, asi que AUDIO decia
+            //  "AJUSTES - AUDIO", PROYECTOS decia "PROYECTOS" a secas, y MIDI y
+            //  GESTOS no decian NADA: la tarjeta abria con una fila vacia y una
+            //  x, y nada en la pantalla contaba donde estabas. Tests/plano.py
+            //  lo llevaba avisando -"midi no tiene titulo: se abre y no dice
+            //  donde estas"- y un aviso que nadie lee es lo mismo que no
+            //  ponerlo.
+            paintSetTitle (g);
             if      (setPage == pageMidi)     paintMidiPage (g, midiArea);
             else if (setPage == pageAudio)    paintAudioSheetContent (g);
             else if (setPage == pageProjects) paintProjSheetContent  (g);
@@ -2867,19 +2924,48 @@ void MainComponent::ponIconos()
         { &browseFactoryButton, Iconos::Id::instrumentos },
         { &browseUseDirBtn, Iconos::Id::carpeta },
 
-        //  El pad.
+        //  El pad, y lo que se le hace.
         { &padSoundBtn, Iconos::Id::sonido },     { &padTrimBtn, Iconos::Id::recorte },
-        { &padRackBtn, Iconos::Id::rack },
+        { &padRigBtn, Iconos::Id::pad },          { &padRackBtn, Iconos::Id::rack },
+        { &autocutButton, Iconos::Id::autocut },  { &duckButton, Iconos::Id::bombeo },
+        { &micButton, Iconos::Id::mic },          { &resampleButton, Iconos::Id::remuestrear },
+        { &loadButton, Iconos::Id::cargar },
+        { &browseSystemButton, Iconos::Id::sistema },
+
+        //  El patron entero, y la cadena.
+        { &seqStepBtn, Iconos::Id::patron },
+        { &chainClearButton, Iconos::Id::cadena },
+
+        //  AJUSTES: sus cuatro paginas y sus tres pruebas.
+        { &pageAudioBtn, Iconos::Id::sonido },    { &pageMidiBtn, Iconos::Id::midi },
+        { &pageProjBtn, Iconos::Id::carpeta },    { &pageGestBtn, Iconos::Id::mano },
+        { &measureButton, Iconos::Id::medir },    { &testButton, Iconos::Id::altavoz },
+        { &tourButton, Iconos::Id::mano },
+
+        //  Y el enganche del XY, que es un candado: lo que pongas se queda.
+        { &xyLatchButton, Iconos::Id::fijo },
     };
 
     for (const auto& p : tabla)
         p.tapa->getProperties().set ("icono", (int) p.id);
+
+    //  LOS SEIS EFECTOS, por su orden en la fila. Es la unica fila de la app
+    //  cuyos rotulos son ABREVIATURAS -FLT, HPF, DRV...- y tres letras no se
+    //  traducen: quien abre la app por primera vez no sabe cual es cual en
+    //  ninguno de los cuatro idiomas. Aqui es donde mas rinde un dibujo.
+    {
+        static const Iconos::Id kFx[] = { Iconos::Id::flt, Iconos::Id::hpf, Iconos::Id::drv,
+                                          Iconos::Id::dly, Iconos::Id::bit, Iconos::Id::rev };
+        for (int f = 0; f < fxButtons.size() && f < (int) (sizeof (kFx) / sizeof (kFx[0])); ++f)
+            fxButtons[f]->getProperties().set ("icono", (int) kFx[f]);
+    }
 
     //  Las dos de transporte nacen paradas; a partir de ahi las mueve
     //  `transporte`, que cambia el rotulo y el dibujo a la vez.
     transporte (playButton,  false);
     transporte (seqPlayBtn,  false);
     transporte (songPlayBtn, false);
+    oirTapa (previewButton, false);
 }
 
 // Restyle everything that captured accent-coloured values at construction —
@@ -3840,6 +3926,11 @@ void MainComponent::paint (juce::Graphics& g)
     //  cuenta fotogramas completos sin instrumentar nada mas.
     ++UiAudit::fondosPintados;
 
+    //  La cara es la capa 0, y se pinta antes que las fichas. Ver
+    //  UiAudit::capaActual.
+    UiAudit::capaActual = 0;
+    UiAudit::origenPintado = { 0, 0 };
+
     auto full = getLocalBounds().toFloat();
 
     // 1. Full-bleed light chassis (edge to edge — the whole screen is the face).
@@ -4192,7 +4283,22 @@ void MainComponent::paint (juce::Graphics& g)
 void MainComponent::pintaTitulo (juce::Graphics& g, juce::Rectangle<int> caja,
                                  const juce::String& texto, const char* tipo, bool elipsis)
 {
-    UiAudit::rotulo (caja, texto, tipo);
+    //  LO QUE SE APUNTA ES LO QUE OCUPA EL TEXTO, no la banda que se le dio.
+    //
+    //  Casi todas las bandas de rotulo de esta app son del ancho entero de la
+    //  tarjeta y el texto ocupa un tercio, asi que apuntar la banda hace
+    //  imposible la pregunta que importa: si el rotulo llega hasta debajo de un
+    //  control. "AJUSTES - AUDIO" pasaba por debajo de la tapa de CUADRAR y por
+    //  debajo de la x, y ninguna de las reglas del banco podia verlo porque un
+    //  rotulo pintado no es un componente y la banda solapaba de todas formas.
+    auto real = caja;
+    const int usado = juce::jmin (caja.getWidth(),
+                                  (int) std::ceil (juce::GlyphArrangement::getStringWidth (
+                                                       g.getCurrentFont(), texto)));
+    if (Lang::isRightToLeft (Lang::current())) real = real.removeFromRight (usado);
+    else                                       real = real.removeFromLeft (usado);
+
+    UiAudit::rotulo (real, texto, tipo);
     g.drawText (texto, caja, Lang::start(), elipsis);
 }
 
@@ -4208,7 +4314,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
     //  them, so this line has no length it can count on. Stop it before the
     //  close button and let it shrink rather than run underneath.
     auto padTitleRow = padSheet.sheetBounds.reduced (14, 12).removeFromTop (16);
-    padTitleRow.setRight (juce::jmin (padTitleRow.getRight(), previewButton.getX() - Metrics::xs));
+    padTitleRow = antesDe (antesDe (padTitleRow, previewButton), padCloseButton);
     //  Ellipsised rather than squeezed: a name long enough to need shrinking
     //  is long enough that shrinking will not save it, and a sentence cut off
     //  mid-letter reads as a bug where "..." reads as a long name.
@@ -4500,6 +4606,14 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
 
 void MainComponent::Sheet::paint (juce::Graphics& g)
 {
+    //  Ver UiAudit::capaActual: lo que esta ficha pinte queda apuntado como
+    //  suyo, para que el banco no compare un rotulo de aqui con una tapa de la
+    //  cara que sigue maquetada debajo.
+    UiAudit::capaActual = (int) getProperties()["capa"];
+    //  La ficha ocupa la ventana entera, asi que sus coordenadas ya son las
+    //  de la ventana. Ver UiAudit::origenPintado.
+    UiAudit::origenPintado = { 0, 0 };
+
     //  Ver pintaTodo: el tour se dibuja entero el, foco incluido.
     if (pintaTodo) { if (paintContent) paintContent (g); return; }
 
@@ -4687,6 +4801,39 @@ bool MainComponent::moduleBarFits (int rowWidth, juce::TextButton** mb, int coun
     return total <= rowWidth;
 }
 
+//  UNA FILA, UN TRATO: los iconos de una fila salen todos o no sale ninguno.
+//
+//  reparteTapa decide tapa por tapa -donde el rotulo no cabe entero, el dibujo
+//  no sale- y esa regla es correcta y sale MAL en una fila: medido en la cara,
+//  cinco pestanas tenian sitio y CANCION no, asi que la barra salia con cinco
+//  iconos y un hueco. Eso no se lee como "aqui no cabia", se lee como una tapa
+//  a la que le falta algo.
+//
+//  Vive aqui y no en reparteTapa porque reparteTapa solo ve UNA tapa: quien
+//  sabe cuales son hermanas es quien las coloca. Y se llama desde todas las
+//  filas, no solo desde layoutModuleBar - las cuatro pestanas de AJUSTES se
+//  reparten a cuartos a mano y salian con tres dibujos y un hueco.
+//
+//  Y SE BORRA LA MARCA ANTES DE PREGUNTAR. La respuesta de la pasada anterior
+//  entra en la pregunta de la siguiente -reparteTapa la mira-, asi que sin este
+//  barrido la fila contestaria "aqui no cabe ninguno" porque la ultima vez no
+//  cabia, se desmarcaria, y al maquetar otra vez volveria a marcarse: una barra
+//  que parpadea entre con y sin iconos cada vez que se gira el telefono.
+void MainComponent::filaDeIconos (juce::TextButton** fila, int n)
+{
+    for (int i = 0; i < n; ++i)
+        fila[i]->getProperties().remove ("sinIcono");
+
+    bool todas = true;
+    for (int i = 0; i < n && todas; ++i)
+        if ((int) fila[i]->getProperties().getWithDefault ("icono", 0) != 0)
+            todas = ZatiLookAndFeel::reparteTapa (*fila[i]).id != Iconos::Id::ninguno;
+
+    if (! todas)
+        for (int i = 0; i < n; ++i)
+            fila[i]->getProperties().set ("sinIcono", 1);
+}
+
 void MainComponent::layoutModuleBar (juce::Rectangle<int> row, juce::TextButton** mb, int vInset, int count)
 {
     //  Vale para cualquier fila de tapas, no solo para la barra de modulos: la
@@ -4804,22 +4951,7 @@ void MainComponent::layoutModuleBar (juce::Rectangle<int> row, juce::TextButton*
     //
     //  Se pregunta AQUI porque aqui es donde existe la fila: reparteTapa solo
     //  ve una tapa, y quien sabe cuales son hermanas es quien las coloca.
-    //  Y SE BORRA ANTES DE PREGUNTAR. La marca de la pasada anterior entra en
-    //  la respuesta -reparteTapa la mira- asi que sin este barrido la fila
-    //  contestaria "aqui no cabe ninguno" porque la ultima vez no cabia, se
-    //  desmarcaria, y a la siguiente maquetacion volveria a marcarse: una
-    //  barra que parpadea entre con y sin iconos al girar el telefono.
-    for (int i = 0; i < kMods; ++i)
-        mb[i]->getProperties().remove ("sinIcono");
-
-    bool todas = true;
-    for (int i = 0; i < kMods && todas; ++i)
-        if ((int) mb[i]->getProperties().getWithDefault ("icono", 0) != 0)
-            todas = ZatiLookAndFeel::reparteTapa (*mb[i]).id != Iconos::Id::ninguno;
-
-    if (! todas)
-        for (int i = 0; i < kMods; ++i)
-            mb[i]->getProperties().set ("sinIcono", 1);
+    filaDeIconos (mb, kMods);
 }
 
 void MainComponent::resized()
@@ -5980,6 +6112,7 @@ void MainComponent::resized()
         const int wanted = onMidi ? midiH
             : onAudio
             ? Metrics::md * 2 + Metrics::hit + Metrics::sm + tabsH + 158 + Metrics::xs
+                + 14 + Metrics::hit + Metrics::sm
                 + (Metrics::hit + Metrics::xs) * 4 + filasExtra + Metrics::sm
             : onGest
               ? Metrics::md * 2 + Metrics::hit + Metrics::sm + tabsH
@@ -5992,41 +6125,7 @@ void MainComponent::resized()
 
         auto titleRow = inner.removeFromTop (Metrics::hit);
         setCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
-        if (onAudio)
-        {
-            //  LAS TRES ACCIONES DE AUDIO, EN SU FILA CUANDO NO CABEN EN EL
-            //  TITULO.
-            //
-            //  Colgaban del renglon del titulo, que es lo que sobra a la
-            //  derecha del nombre de la ficha, y ahi el ancho es el que quede.
-            //  Con la ficha desplazandose la barra se lleva ocho pixeles mas y
-            //  "CUADRAR" paso de apretado a CORTADO: pedia 52 px de letra y
-            //  tenia 43. Se pregunta si caben las tres y, si no, bajan a una
-            //  fila propia - que es gratis desde que esta ficha se desplaza, y
-            //  ademas las pone donde se leen: son acciones de la pagina, no
-            //  parte del titulo.
-            juce::TextButton* ab[3] = { &quantButton, &measureButton, &testButton };
-            const int paraAcciones = titleRow.getWidth() - 2 * Metrics::hit;   // el nombre y la x
-            const bool enElTitulo = moduleBarFits (paraAcciones, ab, 3);
-            if (! enElTitulo)
-            {
-                auto fila = inner.removeFromTop (Metrics::hit);
-                layoutModuleBar (fila, ab, 0, 3);
-                inner.removeFromTop (Metrics::sm);
-            }
-            else
-            {
-            testButton.setBounds    (Lang::takeEnd (titleRow, 56).reduced (2, 0));
-            measureButton.setBounds (Lang::takeEnd (titleRow, 64).reduced (2, 0));
-            Lang::takeEnd (titleRow, Metrics::xs);
-            //  Setenta y dos no bastaban: "QUANTISE" pide 56 px de letra y la tapa
-            //  le dejaba 49 en la pantalla mas estrecha del banco.
-            //  NOVENTA Y DOS, no ochenta y cuatro: "CUADRAR" pide 52 px de letra y
-            //  con 84 la tapa le dejaba 49 en 280x653. El comentario de arriba
-            //  contaba la misma historia con "QUANTISE" y el numero anterior.
-            quantButton.setBounds   (Lang::takeEnd (titleRow, juce::jmax (92, titleRow.getWidth() / 3)).reduced (2, 0));
-            }
-        }
+
         if (onProj) inner.removeFromTop (14);         // painted: which project is open
         inner.removeFromTop (Metrics::sm);
 
@@ -6068,6 +6167,15 @@ void MainComponent::resized()
                 layTwo (inner.removeFromTop (Metrics::tab), pageAudioBtn, pageMidiBtn);
                 inner.removeFromTop (Metrics::xs);
                 layTwo (inner.removeFromTop (Metrics::tab), pageProjBtn, pageGestBtn);
+            }
+
+            //  Estas cuatro se reparten a cuartos a mano y no por
+            //  layoutModuleBar, asi que hay que preguntarles aparte: sin esto
+            //  la fila salia con AUDIO, MIDI y GESTOS dibujados y PROYECTOS
+            //  -que es la palabra larga- con un hueco.
+            {
+                juce::TextButton* tb[4] = { &pageAudioBtn, &pageMidiBtn, &pageProjBtn, &pageGestBtn };
+                filaDeIconos (tb, 4);
             }
             inner.removeFromTop (Metrics::sm);
 
@@ -6118,6 +6226,7 @@ void MainComponent::resized()
             block (midiInBtn,  midiInBox);
             midiArea = inner.removeFromTop (40);                // pintado: la nota
             audioInfoArea = bufRowArea = rateRowArea = langRowArea = skinRowArea = {};
+            pruebasLabelArea = {};
             projNameRowArea = projPathRowArea = {};
         }
         else if (onAudio)
@@ -6144,12 +6253,33 @@ void MainComponent::resized()
             //  mitad.
             const bool dosColumnas = dosColumnasSet;
 
+            //  LAS TRES ACCIONES DE AUDIO, EN SU SECCION.
+            //
+            //  Colgaban del renglon del TITULO -lo que sobra a la derecha del
+            //  nombre de la ficha- y de ahi salian dos cosas mal: en la pantalla
+            //  ancha se leian como parte de la cabecera, pegadas a la x, y en la
+            //  estrecha no cabian y bajaban a una fila propia, asi que la misma
+            //  ficha tenia dos sitios distintos para lo mismo segun el telefono.
+            //  Ahora es siempre una seccion de la pagina de AUDIO, que es lo que
+            //  son: MEDIR mide la salida, CUADRAR la compensa y TEST manda un
+            //  tono por ella.
+            auto ponPruebas = [this] (juce::Rectangle<int>& donde)
+            {
+                donde.removeFromTop (Metrics::xs);
+                pruebasLabelArea = donde.removeFromTop (14);
+                auto fila = donde.removeFromTop (Metrics::hit);
+                juce::TextButton* ab[3] = { &quantButton, &measureButton, &testButton };
+                layoutModuleBar (fila, ab, 0, 3);
+                donde.removeFromTop (Metrics::sm);
+            };
+
             juce::Rectangle<int> columnaChips = inner;
             if (dosColumnas)
             {
                 auto izda = inner.removeFromLeft (inner.getWidth() / 2 - Metrics::sm);
                 inner.removeFromLeft (Metrics::sm);
                 audioInfoArea = izda.removeFromTop (juce::jmin (158, izda.getHeight()));
+                ponPruebas (izda);
                 columnaChips = inner;
             }
             else
@@ -6162,10 +6292,15 @@ void MainComponent::resized()
                 //  LACA a CERO de alto, existentes e imposibles de tocar.
                 //  Es el mismo fallo que el TEMPO del secuenciador, contado en
                 //  otro sitio.
-                const int chipsNecesarios = 4 * (Metrics::hit + Metrics::xs) + filasExtra;
+                //  Y las tres pruebas cuentan como mueble que no encoge, igual
+                //  que los chips: si no se restan aqui, el recuadro se queda
+                //  con su altura entera y la fila de PRUEBAS se cae por abajo.
+                const int chipsNecesarios = 4 * (Metrics::hit + Metrics::xs) + filasExtra
+                                          + Metrics::xs + 14 + Metrics::hit + Metrics::sm;
                 audioInfoArea = inner.removeFromTop (
                                     juce::jlimit (0, 158, inner.getHeight() - Metrics::xs - chipsNecesarios));
                 inner.removeFromTop (Metrics::xs);
+                ponPruebas (inner);
                 columnaChips = inner;
             }
 
@@ -6414,6 +6549,14 @@ void MainComponent::resized()
         auto titleRow = inner.removeFromTop (Metrics::hit);
         instCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
                                        .withSizeKeepingCentre (Metrics::hit, Metrics::hit));
+        //  LA BANDA DEL TITULO LA PUBLICA EL MAQUETADO, no la rehace el pintor.
+        //
+        //  paintInstSheetContent repetia esta cuenta por su cuenta y con otro
+        //  origen -de la tarjeta y no del cuerpo, y con un reduced de mas- asi
+        //  que el titulo caia encima de la primera tapa y el nombre del pack
+        //  encima de la segunda. Es la misma regla que ya siguen las bandas de
+        //  AJUSTES y los paneles del secuenciador: una cuenta, un dueno.
+        instTitleArea = titleRow.reduced (Metrics::lg, 0).withTrimmedTop (8).withHeight (24);
         inner.removeFromTop (Metrics::md);
 
         //  MENOS Y MAS EN LOS EXTREMOS y el nombre del pack pintado en medio.
@@ -6425,6 +6568,7 @@ void MainComponent::resized()
             const int w = juce::jmin (Metrics::hit * 2, fila.getWidth() / 3);
             instPackDownBtn.setBounds (fila.removeFromLeft (w));
             instPackUpBtn  .setBounds (fila.removeFromRight (w));
+            instPackArea = fila;
         }
         inner.removeFromTop (Metrics::sm);
 
@@ -9096,8 +9240,7 @@ void MainComponent::retranslateUi()
     chopButton   .setButtonText (T ("AUTO CHOP"));
     micButton    .setButtonText (recordingActive ? T ("PARAR") : T ("GRABAR MIC"));
     resampleButton.setButtonText (resamplingActive ? T ("PARAR") : T ("REMUESTREAR"));
-    previewButton.setButtonText (juce::String::fromUTF8 (previewSounding ? "\xe2\x96\xa0 " : "\xe2\x96\xb6 ")
-                                   + T (previewSounding ? "STOP" : "OIR"));
+    oirTapa (previewButton, previewSounding);
     modeButton   .setButtonText (selectedPad >= 0 && padKeepLen[(size_t) selectedPad]
                                    ? T ("TONO") : T ("CINTA"));
 
@@ -11415,7 +11558,8 @@ void MainComponent::paintSongSheetContent (juce::Graphics& g)
     if (songSheet.sheetBounds.isEmpty()) return;
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
-    pintaTitulo (g, songSheet.sheetBounds.reduced (14, 10).removeFromTop (16), T ("SONG"));
+    pintaTitulo (g, antesDe (songSheet.sheetBounds.reduced (14, 10).removeFromTop (16),
+                             songCloseButton), T ("SONG"));
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
@@ -11449,7 +11593,8 @@ void MainComponent::paintMixSheetContent (juce::Graphics& g)
     //  componente y por eso llevaba aqui desde el principio.
     const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
     {
-        const auto caja = mixSheet.sheetBounds.reduced (14, 12).removeFromTop (16);
+        const auto caja = antesDe (mixSheet.sheetBounds.reduced (14, 12).removeFromTop (16),
+                                   mixCloseButton);
         const auto txt = engine.anySolo() ? T ("MIX") + "  " + dot + "  " + T ("SOLO ACTIVO") : T ("MIX");
         UiAudit::rotulo (caja, txt, "titulo");
         g.drawText (txt, caja, Lang::start());
@@ -11562,8 +11707,9 @@ void MainComponent::paintXySheetContent (juce::Graphics& g)
     //  tope, "XY - DLY - EN ESPERA" en arabe pasa por debajo de MOMENTANEO.
     {
         auto row = inner.removeFromTop (16);
-        if (xyLatchButton.isVisible() && ! xyLatchButton.getBounds().isEmpty())
-            row.setRight (juce::jmin (row.getRight(), xyLatchButton.getX() - Metrics::xs));
+        //  Convertidas a coordenadas de la cara: estas dos cuelgan de XyPanel.
+        row = antesDe (antesDe (row, getLocalArea (&xyLatchButton, xyLatchButton.getLocalBounds())),
+                       getLocalArea (&xyCloseButton, xyCloseButton.getLocalBounds()));
         pintaTitulo (g, row,
                  T ("XY") + "  " + dot + "  " + juce::String (fxDefs[xyFx].name)
                       + "  " + dot + "  " + (fxOn[(size_t) xyFx] ? T ("SUENA") : T ("EN ESPERA")), "titulo", true);
@@ -12214,7 +12360,7 @@ void MainComponent::paintManualSheetContent (juce::Graphics& g)
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
-    pintaTitulo (g, titleRow, T ("MANUAL"), "titulo", true);
+    pintaTitulo (g, antesDe (titleRow, manualCloseButton), T ("MANUAL"), "titulo", true);
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
@@ -12231,7 +12377,7 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
     auto inner = chopSheet.sheetBounds.reduced (Metrics::lg, Metrics::md);
 
     auto titleRow = inner.removeFromTop (32).withTrimmedTop (8);
-    titleRow.setRight (juce::jmin (titleRow.getRight(), chopCloseButton.getX() - Metrics::xs));
+    titleRow = antesDe (titleRow, chopCloseButton);
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
     pintaTitulo (g, titleRow,
@@ -12342,7 +12488,7 @@ void MainComponent::paintRackSheetContent (juce::Graphics& g)
     const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
     const juce::String nm  = padName[(size_t) rackPad];
     auto titleRow = inner.removeFromTop (16);
-    titleRow.setRight (juce::jmin (titleRow.getRight(), rackCloseButton.getX() - Metrics::xs));
+    titleRow = antesDe (titleRow, rackCloseButton);
     pintaTitulo (g, titleRow,
                  T ("RACK") + "  " + dot + "  " + T ("PAD %1", juce::String (rackPad + 1))
                 + (nm.isNotEmpty() ? "  " + dot + "  " + nm.toUpperCase() : juce::String()), "titulo", true);
@@ -12369,6 +12515,36 @@ void MainComponent::paintRackSheetContent (juce::Graphics& g)
     }
 }
 
+//  EL TITULO DE AJUSTES, con la pagina detras.
+//
+//  "AJUSTES  ·  MIDI" y no "MIDI" a secas: esta ficha tiene cuatro paginas y
+//  cada una se titulaba con SU nombre -cuando se titulaba-, asi que tocabas
+//  AJUSTES y aterrizabas en una tarjeta que decia "AUDIO". Es la gramatica que
+//  RACK, XY y AUTO CHOP ya usan: donde estas y sobre que actuas.
+void MainComponent::paintSetTitle (juce::Graphics& g)
+{
+    if (setSheet.sheetBounds.isEmpty()) return;
+
+    //  Del CUERPO y no de la tarjeta: esta ficha se desplaza.
+    auto banda = setSheet.cuerpo.getLocalBounds().removeFromTop (16);
+
+    //  Y SE PARA ANTES DE LA TAPA DE CERRAR, en el lado en que este.
+    //  El titulo se pintaba en la banda ENTERA y la x vive en el mismo
+    //  renglon: "AJUSTES - AUDIO" pasaba por debajo de ella. En arabe la x
+    //  esta a la IZQUIERDA, asi que recortar siempre por la derecha habria
+    //  arreglado tres idiomas y roto el cuarto - es el mismo fallo que ya tuvo
+    //  el subtitulo de PROYECTOS.
+    banda = antesDe (banda, setCloseButton);
+    const juce::String punto = juce::String::charToString ((juce::juce_wchar) 0x00B7);
+    const char* pag = setPage == pageAudio ? "AUDIO"
+                    : setPage == pageMidi  ? "MIDI"
+                    : setPage == pageProjects ? "PROYECTOS" : "GESTOS";
+
+    g.setColour (ZatiColours::ink.withAlpha (0.9f));
+    g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
+    pintaTitulo (g, banda, T ("SET") + "  " + punto + "  " + T (pag), "titulo", true);
+}
+
 //  The AUDIO card. What the device is doing, and the language it says it in.
 void MainComponent::paintAudioSheetContent (juce::Graphics& g)
 {
@@ -12378,26 +12554,22 @@ void MainComponent::paintAudioSheetContent (juce::Graphics& g)
     //  sus bandas viven en coordenadas del cuerpo - las mismas de las
     //  que sale el maquetado. Ver Sheet::hazDesplazable.
     auto inner = setSheet.cuerpo.getLocalBounds();
-    g.setColour (ZatiColours::ink.withAlpha (0.9f));
-    g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
-    //  "AJUSTES  ·  AUDIO" Y NO "AUDIO" A SECAS.
-    //
-    //  Esta ficha tiene cuatro paginas -AUDIO, MIDI, PROYECTOS, GESTOS- y cada
-    //  una se titulaba con SU nombre, asi que tocabas AJUSTES y aterrizabas en
-    //  una tarjeta titulada "AUDIO": nada decia donde estabas, solo en que
-    //  pestana. Y era la unica ficha con paginas que no lo decia - RACK, XY y
-    //  AUTO CHOP ya usan la forma con contexto, "RACK · PAD 1 · KICK".
-    //
-    //  Se lo debia el plano: con las diecisiete pantallas escritas una al lado
-    //  de otra se ve que hay DOS gramaticas de titulo mezcladas, y la buena es
-    //  la que dice donde estas y sobre que actuas. Ver Tests/plano.py.
-    {
-        const juce::String punto = juce::String::charToString ((juce::juce_wchar) 0x00B7);
-        pintaTitulo (g, inner.removeFromTop (16),
-                     T ("SET") + "  " + punto + "  " + T ("AUDIO"), "titulo", true);
-    }
+    //  El titulo lo pinta paintSetTitle para las cuatro paginas; aqui solo se
+    //  salta su banda para que lo de debajo caiga donde el maquetado lo puso.
+    inner.removeFromTop (16);
 
     paintAudioInfo (g, audioInfoArea);
+
+    //  El nombre de la seccion de las tres acciones. Ver resized(): colgaban
+    //  del renglon del TITULO, al lado de la x, y ahi se leian como parte de
+    //  la cabecera de la ficha y no como lo que son - tres cosas que se le
+    //  hacen al audio.
+    if (! pruebasLabelArea.isEmpty())
+    {
+        g.setColour (ZatiColours::inkDim);
+        g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.12f));
+        pintaTitulo (g, pruebasLabelArea, T ("PRUEBAS"), "seccion");
+    }
 
     //  Row names for the three chip rows. The asterisk marks the driver's own
     //  burst size: on Android that is the fast path, and anything below it
@@ -12432,7 +12604,8 @@ void MainComponent::paintGesturesPage (juce::Graphics& g, juce::Rectangle<int> a
     //  a card that skips it reads as a different card.
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
-    pintaTitulo (g, setSheet.sheetBounds.reduced (14, 12).removeFromTop (16), T ("GESTOS"));
+    //  El titulo lo pinta paintSetTitle para las cuatro paginas. Aqui habia
+    //  un segundo "GESTOS" en otra caja: dos titulos para una pagina.
 
     struct Row { const char* how; const char* what; };
     const Row rows[kNumGestures] =
@@ -12487,9 +12660,7 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
     //  sus bandas viven en coordenadas del cuerpo - las mismas de las
     //  que sale el maquetado. Ver Sheet::hazDesplazable.
     auto inner = setSheet.cuerpo.getLocalBounds();
-    g.setColour (ZatiColours::ink.withAlpha (0.9f));
-    g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
-    pintaTitulo (g, inner.removeFromTop (16), T ("PROYECTOS"));
+    inner.removeFromTop (16);          // el titulo, ver paintSetTitle
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
@@ -12713,7 +12884,7 @@ void MainComponent::paintExportSheetContent (juce::Graphics& g)
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
-    pintaTitulo (g, inner.removeFromTop (18), T ("EXPORTAR"));
+    pintaTitulo (g, antesDe (inner.removeFromTop (18), exportCloseButton), T ("EXPORTAR"));
     inner.removeFromTop (10);
 
     // What is going to be rendered, and how long it will be. Stated before
@@ -13995,10 +14166,14 @@ void MainComponent::paintInstSheetContent (juce::Graphics& g)
     if (instSheet.sheetBounds.isEmpty()) return;
 
     const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
-    auto inner = instSheet.sheetBounds.reduced (Metrics::lg, Metrics::md);
 
-    auto titleRow = inner.removeFromTop (Metrics::hit).withTrimmedTop (8).withHeight (24);
-    titleRow.setRight (juce::jmin (titleRow.getRight(), instCloseButton.getX() - Metrics::xs));
+    //  LAS DOS BANDAS SALEN DEL MAQUETADO, no se vuelven a calcular aqui.
+    //
+    //  Esta funcion las rehacia con otro origen -de la TARJETA y no del cuerpo,
+    //  que es de donde sale el maquetado desde que la ficha se desplaza- y con
+    //  un reduced de mas: el titulo se pintaba encima de la tapa SUBBASS y el
+    //  nombre del pack encima de ELECTRIC PIANO. Ver Sheet::hazDesplazable.
+    auto titleRow = antesDe (instTitleArea, instCloseButton);
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
     pintaTitulo (g, titleRow,
@@ -14006,14 +14181,14 @@ void MainComponent::paintInstSheetContent (juce::Graphics& g)
                      + T ("BANCO %1", juce::String::charToString ((juce::juce_wchar) ('A' + currentBank))),
                  "titulo", true);
 
-    inner.removeFromTop (Metrics::md);
 
     //  EL NOMBRE DEL PACK, entre las dos tapas. Ver la maqueta: pintado y no
     //  un componente, para que el ancho se lo queden las que se tocan.
     {
-        auto fila = inner.removeFromTop (Metrics::hit);
-        fila = fila.withTrimmedLeft (instPackDownBtn.getWidth() + Metrics::xs)
-                   .withTrimmedRight (instPackUpBtn.getWidth() + Metrics::xs);
+        //  Se para antes de CADA tapa y en el lado en el que esta: recortar
+        //  por ANCHO da igual en las dos, y en arabe PACK + esta a la
+        //  izquierda, asi que el nombre del pack se le metia debajo.
+        auto fila = antesDe (antesDe (instPackArea, instPackDownBtn), instPackUpBtn);
         g.setColour (ZatiColours::ink.withAlpha (0.9f));
         g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.10f));
         const auto nombre = instCatalogo.empty() ? juce::String ("-")
@@ -14023,11 +14198,15 @@ void MainComponent::paintInstSheetContent (juce::Graphics& g)
         //  lista de los que no se traducen- y los de disco son dato.
         pintaTitulo (g, fila, nombre, "seccion", true);
     }
-    inner.removeFromTop (Metrics::sm);
+    //  Y el pie se cuelga de la banda que el maquetado publico, no de una
+    //  cuenta paralela: la lista de instrumentos empieza justo debajo del
+    //  nombre del pack.
     const int filasPintadas = instCatalogo.empty() ? 1
         : juce::jmax (1, (int) instCatalogo[(size_t) juce::jlimit (0, (int) instCatalogo.size() - 1,
                                                                    instPack)].instr.size());
-    inner.removeFromTop ((Metrics::hit + Metrics::xs) * filasPintadas);
+    auto inner = instSheet.cuerpo.getLocalBounds().reduced (Metrics::lg, 0)
+                     .withTop (instPackArea.getBottom() + Metrics::sm
+                                 + (Metrics::hit + Metrics::xs) * filasPintadas);
 
     //  Y UNA LINEA QUE DICE QUE VA A PASAR. Tocar una tapa aqui se lleva los
     //  dieciseis pads del banco de delante, y eso no se puede deducir mirando
@@ -15932,9 +16111,7 @@ void MainComponent::timerCallback()
         if (sounding != previewSounding)
         {
             previewSounding = sounding;
-            previewButton.setButtonText (sounding
-                                             ? juce::String::fromUTF8 ("\xe2\x96\xa0 ") + T ("STOP")
-                                             : juce::String::fromUTF8 ("\xe2\x96\xb6 ") + T ("OIR"));
+            oirTapa (previewButton, sounding);
         }
     }
 

@@ -48,6 +48,9 @@ namespace Iconos
         atras, adelante, doblar, humanizar, goma, tijeras, loop, cuadrar,
         pads, sec, piano, mezcla, cancion, xy, ajustes, rack, chop, instrumentos, manual,
         sonido, recorte,
+        flt, hpf, drv, dly, bit, rev,
+        mic, remuestrear, bombeo, autocut, sistema, cadena, patron, pad, fijo,
+        midi, medir, altavoz, mano,
         kNum
     };
 
@@ -76,6 +79,16 @@ namespace Iconos
             case Id::rack: return "rack";              case Id::chop: return "chop";
             case Id::instrumentos: return "instrumentos"; case Id::manual: return "manual";
             case Id::sonido: return "sonido";          case Id::recorte: return "recorte";
+            case Id::flt: return "flt";                case Id::hpf: return "hpf";
+            case Id::drv: return "drv";                case Id::dly: return "dly";
+            case Id::bit: return "bit";                case Id::rev: return "rev";
+            case Id::mic: return "mic";                case Id::remuestrear: return "remuestrear";
+            case Id::bombeo: return "bombeo";          case Id::autocut: return "autocut";
+            case Id::sistema: return "sistema";        case Id::cadena: return "cadena";
+            case Id::patron: return "patron";          case Id::pad: return "pad";
+            case Id::fijo: return "fijo";              case Id::midi: return "midi";
+            case Id::medir: return "medir";            case Id::altavoz: return "altavoz";
+            case Id::mano: return "mano";
             case Id::ninguno:
             case Id::kNum:
             default: return "ninguno";
@@ -527,6 +540,196 @@ namespace Iconos
                 L.startNewSubPath (16.0f, 2.5f); L.lineTo (20.0f, 2.5f);
                 L.lineTo (20.0f, 21.5f); L.lineTo (16.0f, 21.5f);
                 R.addRectangle (10.6f, 7.0f, 2.8f, 10.0f);
+                break;
+
+            //  --- LOS SEIS EFECTOS -------------------------------------------
+            //
+            //  Un efecto se dibuja por lo que le HACE al sonido, no por una
+            //  inicial: la fila de la cara son seis tapas de tres letras -FLT,
+            //  HPF, DRV...- y tres letras en cuatro idiomas no dicen nada a
+            //  quien abre la app por primera vez.
+            //
+            //  FLT y HPF son espejo el uno del otro a proposito: son la misma
+            //  curva por los dos lados y asi se leen como pareja, igual que
+            //  acortar y alargar.
+            case Id::flt:
+                linea (L, 2.0f, 20.0f, 22.0f, 20.0f);
+                L.startNewSubPath (2.0f, 6.0f);
+                L.lineTo (11.0f, 6.0f);
+                L.cubicTo (15.5f, 6.0f, 16.0f, 17.5f, 21.5f, 17.5f);
+                break;
+
+            case Id::hpf:
+                linea (L, 2.0f, 20.0f, 22.0f, 20.0f);
+                L.startNewSubPath (22.0f, 6.0f);
+                L.lineTo (13.0f, 6.0f);
+                L.cubicTo (8.5f, 6.0f, 8.0f, 17.5f, 2.5f, 17.5f);
+                break;
+
+            //  DRV: la onda RECORTADA contra sus dos topes, que es literalmente
+            //  lo que hace un saturador.
+            case Id::drv:
+                linea (L, 2.0f, 6.5f, 22.0f, 6.5f);
+                linea (L, 2.0f, 17.5f, 22.0f, 17.5f);
+                L.startNewSubPath (2.0f, 12.0f);
+                L.lineTo (4.5f, 6.5f);  L.lineTo (8.5f, 6.5f);
+                L.lineTo (11.5f, 17.5f); L.lineTo (15.5f, 17.5f);
+                L.lineTo (18.5f, 6.5f); L.lineTo (22.0f, 6.5f);
+                break;
+
+            //  DLY: el golpe y sus ecos. El primero LLENO y los otros huecos,
+            //  que es lo que separa el original de lo que devuelve la linea.
+            case Id::dly:
+                linea (L, 1.5f, 21.0f, 22.5f, 21.0f);
+                R.addRectangle (2.5f, 4.0f, 3.0f, 17.0f);
+                L.addRectangle (8.0f, 8.5f, 3.0f, 12.5f);
+                L.addRectangle (13.0f, 12.5f, 3.0f, 8.5f);
+                L.addRectangle (18.0f, 16.0f, 3.0f, 5.0f);
+                break;
+
+            //  BIT: la escalera. Un reductor de bits convierte una rampa en
+            //  peldanos, y eso es exactamente el dibujo.
+            case Id::bit:
+                L.startNewSubPath (2.0f, 20.0f);
+                L.lineTo (7.0f, 20.0f); L.lineTo (7.0f, 15.5f);
+                L.lineTo (12.0f, 15.5f); L.lineTo (12.0f, 11.0f);
+                L.lineTo (17.0f, 11.0f); L.lineTo (17.0f, 6.5f);
+                L.lineTo (22.0f, 6.5f);
+                break;
+
+            //  REV: la fuente y lo que rebota. Tres arcos que se abren.
+            //  Y los arcos se acotan por su ANGULO y no solo por su radio: la
+            //  primera version abria de 0.35 a pi-0.35 con radio 15.7 y el arco
+            //  de fuera salia por arriba y por abajo -de -3.8 a 27.8 en una
+            //  rejilla de 24-. El banco lo canto a la primera.
+            case Id::rev:
+                R.addEllipse (1.5f, 9.5f, 5.0f, 5.0f);
+                for (int i = 0; i < 3; ++i)
+                    L.addCentredArc (4.0f, 12.0f, 6.0f + (float) i * 3.6f, 6.0f + (float) i * 3.6f,
+                                     0.0f, 0.62f, juce::MathConstants<float>::pi - 0.62f, true);
+                break;
+
+            //  --- LO QUE ENTRA Y LO QUE SE MIDE --------------------------------
+            case Id::mic:
+                L.addRoundedRectangle (8.5f, 2.5f, 7.0f, 12.0f, 3.5f);
+                L.startNewSubPath (4.5f, 11.5f);
+                L.cubicTo (4.5f, 19.0f, 19.5f, 19.0f, 19.5f, 11.5f);
+                linea (L, 12.0f, 18.5f, 12.0f, 21.5f);
+                break;
+
+            //  REMUESTREAR: lo que sale vuelve a entrar. Una caja y la vuelta.
+            case Id::remuestrear:
+                L.addRoundedRectangle (7.0f, 7.0f, 10.0f, 10.0f, 1.5f);
+                L.addCentredArc (12.0f, 12.0f, 9.0f, 9.0f, 0.0f, 0.5f, 5.4f, true);
+                punta (R, 12.2f, 3.2f, -1.0f, 0.0f, 3.4f);
+                break;
+
+            //  BOMBEO: el nivel que se HUNDE cuando entra el bombo y vuelve.
+            //  El triangulo de arriba es quien lo hunde.
+            case Id::bombeo:
+                punta (R, 6.0f, 8.0f, 0.0f, 1.0f, 4.4f);
+                L.startNewSubPath (1.5f, 12.5f);
+                L.lineTo (5.0f, 12.5f);
+                L.lineTo (6.5f, 20.5f);
+                L.cubicTo (10.0f, 20.5f, 11.5f, 12.5f, 15.0f, 12.5f);
+                L.lineTo (22.5f, 12.5f);
+                break;
+
+            //  AUTOCUT: el golpe nuevo se come al anterior. El de delante esta
+            //  ENTERO y el de detras cortado por la mitad, con la cuchilla en
+            //  medio.
+            case Id::autocut:
+                R.addRectangle (2.0f, 10.0f, 7.5f, 10.0f);
+                L.addRectangle (14.0f, 4.0f, 7.5f, 16.0f);
+                linea (L, 11.6f, 2.0f, 11.6f, 22.0f);
+                punta (R, 11.6f, 6.5f, 0.0f, -1.0f, 3.4f);
+                break;
+
+            case Id::sistema:
+                L.addRoundedRectangle (6.0f, 1.5f, 12.0f, 21.0f, 2.2f);
+                linea (L, 9.5f, 19.5f, 14.5f, 19.5f);
+                linea (L, 6.0f, 5.5f, 18.0f, 5.5f);
+                break;
+
+            //  CADENA: dos eslabones enganchados. Es lo que un patron encadenado
+            //  ES, y no se parece a nada mas del juego.
+            case Id::cadena:
+            {
+                juce::Path a, b;
+                a.addRoundedRectangle (0.0f, 6.5f, 13.0f, 8.0f, 4.0f);
+                a.addRoundedRectangle (2.4f, 8.9f, 8.2f, 3.2f, 1.6f);
+                a.setUsingNonZeroWinding (false);
+                b = a;
+                a.applyTransform (juce::AffineTransform::translation (2.0f, -1.0f));
+                b.applyTransform (juce::AffineTransform::translation (9.0f, 4.0f));
+                R.addPath (a);
+                R.addPath (b);
+                break;
+            }
+
+            //  PATRON: el patron ENTERO, o sea el marco alrededor de los pasos.
+            //  Las herramientas de esta pagina actuan sobre todo el bloque, no
+            //  sobre un paso: el marco es justamente eso.
+            case Id::patron:
+                L.addRoundedRectangle (1.5f, 4.5f, 21.0f, 15.0f, 1.8f);
+                R.addRectangle (4.5f, 8.0f, 2.6f, 8.0f);
+                R.addRectangle (10.7f, 8.0f, 2.6f, 8.0f);
+                R.addRectangle (16.9f, 8.0f, 2.6f, 8.0f);
+                break;
+
+            //  PAD: uno solo, con el dedo encima.
+            case Id::pad:
+                L.addRoundedRectangle (2.5f, 2.5f, 19.0f, 19.0f, 2.5f);
+                R.addEllipse (8.0f, 8.0f, 8.0f, 8.0f);
+                break;
+
+            //  FIJO: el candado. El mando se queda puesto al soltar.
+            case Id::fijo:
+                R.addRoundedRectangle (3.5f, 10.5f, 17.0f, 11.5f, 1.8f);
+                L.startNewSubPath (7.5f, 10.5f);
+                L.lineTo (7.5f, 7.0f);
+                L.cubicTo (7.5f, 1.5f, 16.5f, 1.5f, 16.5f, 7.0f);
+                L.lineTo (16.5f, 10.5f);
+                break;
+
+            //  MIDI: la clavija de cinco patillas, que es como se reconoce sin
+            //  leer nada.
+            case Id::midi:
+                L.addEllipse (2.0f, 2.0f, 20.0f, 20.0f);
+                R.addRectangle (8.5f, 3.4f, 7.0f, 2.6f);
+                for (int i = 0; i < 5; ++i)
+                {
+                    const float a = juce::MathConstants<float>::pi * (0.15f + 0.175f * (float) i);
+                    R.addEllipse (12.0f - std::cos (a) * 6.6f - 1.5f,
+                                  12.0f + std::sin (a) * 6.6f - 1.5f, 3.0f, 3.0f);
+                }
+                break;
+
+            //  MEDIR: la regla, con sus marcas desiguales.
+            case Id::medir:
+                L.addRectangle (1.5f, 7.5f, 21.0f, 9.0f);
+                linea (L, 6.0f, 7.5f, 6.0f, 13.5f);
+                linea (L, 10.0f, 7.5f, 10.0f, 11.0f);
+                linea (L, 14.0f, 7.5f, 14.0f, 13.5f);
+                linea (L, 18.0f, 7.5f, 18.0f, 11.0f);
+                break;
+
+            case Id::altavoz:
+                R.startNewSubPath (2.0f, 9.0f);
+                R.lineTo (6.5f, 9.0f); R.lineTo (11.5f, 4.0f);
+                R.lineTo (11.5f, 20.0f); R.lineTo (6.5f, 15.0f);
+                R.lineTo (2.0f, 15.0f); R.closeSubPath();
+                L.addCentredArc (12.5f, 12.0f, 4.2f, 4.2f, 0.0f, 0.6f, 2.55f, true);
+                L.addCentredArc (12.5f, 12.0f, 8.2f, 8.2f, 0.0f, 0.6f, 2.55f, true);
+                break;
+
+            //  MANO: los gestos de la maquina. Palma y cuatro dedos.
+            case Id::mano:
+                R.addRoundedRectangle (5.0f, 11.0f, 14.0f, 11.0f, 3.0f);
+                R.addRoundedRectangle (6.4f, 5.5f, 2.8f, 8.0f, 1.4f);
+                R.addRoundedRectangle (10.0f, 3.0f, 2.8f, 10.5f, 1.4f);
+                R.addRoundedRectangle (13.6f, 4.0f, 2.8f, 9.5f, 1.4f);
+                L.addRoundedRectangle (2.2f, 12.0f, 4.0f, 7.0f, 2.0f);
                 break;
 
             case Id::ninguno:

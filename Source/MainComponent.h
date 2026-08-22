@@ -18,6 +18,7 @@
 #include "Exporter.h"
 #include "Bitacora.h"
 #include "AudioPath.h"
+#include "UiAudit.h"
 #include "XyPad.h"
 #include "MidiIo.h"
 #include "Instrumentos.h"
@@ -59,6 +60,12 @@ private:
     class Sheet : public juce::Component
     {
     public:
+        //  EL NUMERO DE CAPA. Ver UiAudit::capaActual: un rotulo pintado y un
+        //  control solo se pisan de verdad si viven en la misma ficha, y la
+        //  cara sigue debajo de una ficha abierta con todas sus tapas
+        //  maquetadas. Se pone al construir y lo hereda todo lo que cuelga.
+        Sheet() { getProperties().set ("capa", UiAudit::siguienteCapa++); }
+
         std::function<void()> onDismiss;
         std::function<void (juce::Graphics&)> paintContent;   // titles, readouts, rings
         //  A click INSIDE the card. Painted controls - things with no
@@ -101,7 +108,18 @@ private:
         {
             std::function<void (juce::Graphics&)> paintBody;
             std::function<void (juce::Point<int>)> onClick;
-            void paint (juce::Graphics& g) override { if (paintBody) paintBody (g); }
+            int capa = 0;
+            void paint (juce::Graphics& g) override
+            {
+                //  El cuerpo desplazable pinta el contenido de SU ficha, asi
+                //  que lleva su mismo numero de capa. Ver UiAudit::capaActual.
+                UiAudit::capaActual = capa;
+                //  Y el cuerpo esta DESPLAZADO dentro de la ventana: sus
+                //  coordenadas no son las del volcado. Ver origenPintado.
+                if (auto* top = getTopLevelComponent())
+                    UiAudit::origenPintado = top->getLocalPoint (this, juce::Point<int> (0, 0));
+                if (paintBody) paintBody (g);
+            }
             void mouseDown (const juce::MouseEvent& e) override { if (onClick) onClick (e.getPosition()); }
         };
         Cuerpo cuerpo;
@@ -113,6 +131,7 @@ private:
         void hazDesplazable()
         {
             desplazable = true;
+            cuerpo.capa = (int) getProperties()["capa"];
             vista.setViewedComponent (&cuerpo, false);
             vista.setScrollBarsShown (true, false);
             vista.setScrollBarThickness (8);
@@ -1086,6 +1105,8 @@ private:
     void refreshXyPad();
     void paintXySheetContent (juce::Graphics& g);
     bool moduleBarFits (int rowWidth, juce::TextButton** mb, int count) const;
+    //  Una fila, un trato: los iconos de una fila salen todos o ninguno.
+    void filaDeIconos (juce::TextButton** fila, int n);
     void layoutModuleBar (juce::Rectangle<int> row, juce::TextButton** mb, int vInset, int count = 6);
 
     //  SONG: pick what to place from the palette, then tap a cell. Choosing
@@ -1571,6 +1592,12 @@ private:
     // Skin cycler: four chassis TONES (TINTA/GRAFITO/ACERO/PLOMO), no hues.
     //  El juego de iconos de las tapas, en una tabla. Ver ponIconos().
     void ponIconos();
+    //  El titulo de AJUSTES, con la pagina detras. Ver paintSetTitle.
+    void paintSetTitle (juce::Graphics& g);
+    //  La banda del rotulo PRUEBAS de la pagina de AUDIO.
+    juce::Rectangle<int> pruebasLabelArea;
+    //  Las dos bandas pintadas de INSTRUMENTOS, publicadas por resized().
+    juce::Rectangle<int> instTitleArea, instPackArea;
 
     //  EL CUERPO DE LA MAQUINA, HORNEADO. Degradado y grano en una imagen
     //  opaca que se rehace al cambiar de tamano o de carcasa; pintar el fondo
@@ -1607,7 +1634,7 @@ private:
 
     //  Auditioning from the PADS sheet: the wave answers a tap, and this plays
     //  it from the top without having to reach past the sheet for the pad.
-    juce::TextButton previewButton { juce::CharPointer_UTF8 ("\xe2\x96\xb6 OIR") };
+    juce::TextButton previewButton { "OIR" };   // el triangulo es ahora un icono, ver oirTapa
     bool previewSounding = false;
 
     //  NORMALIZAR: la ganancia que pone el pico del RECORTE a -0.3 dBFS.
