@@ -75,6 +75,32 @@ public:
     void postNoteOnFrom (int slot, float from01, float vel = 1.0f) noexcept;
     //  Y AUDICION EN OTRA NOTA, que es lo que pide un teclado.
     //
+    //  UNA NOTA DE INSTRUMENTO NO SE ACABA SOLA, y por eso el largo tiene tres
+    //  respuestas y no dos.
+    //
+    //  Una muestra de percusion termina cuando se acaba el fichero: se dispara
+    //  y ya esta. Una zona de instrumento DA VUELTAS -es lo que hace que una
+    //  nota se sostenga- asi que una voz sin largo no termina nunca. Medido con
+    //  un acorde en el secuenciador: la primera vuelta sonaba y la segunda ya
+    //  no, porque las notas de la primera seguian vivas ocupando el pool.
+    //
+    //  kGateSuelta la sostiene QUIEN LA DISPARA -un dedo en un pad, una tecla,
+    //  el MIDI- y mandara su NoteOff. kGateAuto es "dispara y se va": el
+    //  secuenciador sin largo escrito, la cancion, el bote salvavidas. Ahi el
+    //  motor pone UN PASO, que es lo que una casilla dura.
+    //  Y kGateAudicion, que es "dispara y se va" desde la INTERFAZ - tocar un
+    //  preset, una tecla del piano roll, un toque en la onda -. Dura mas que un
+    //  paso porque no es musica sino escuchar: 1.2 s es lo que se tiene un dedo
+    //  encima de una tecla para saber como suena.
+    //
+    //  Las tres se resuelven en triggerPad y SOLO donde hacen falta: una zona
+    //  que no da vueltas se acaba sola, asi que a una campana de dos segundos
+    //  no se le pone ningun largo. Ver el bloque que las convierte.
+    static constexpr int kGateSuelta   = -1;
+    static constexpr int kGateAuto     = -2;
+    static constexpr int kGateAudicion = -3;
+    static constexpr float kAudicionSeg = 1.2f;
+
     //  Existe porque la unica forma que habia de oir un semitono desde la
     //  interfaz era setPadPitch seguido de postNoteOn, y eso hace DOS danos:
     //  deja el pad afinado en la ultima tecla que se toco - el mando NOTA de la
@@ -82,7 +108,13 @@ public:
     //  desafinado la primera vez, porque postNoteOn lee lo que hay ALMACENADO y
     //  el orden de las dos llamadas no es el orden en que el hilo de audio las
     //  ve. El semitono viaja en el comando; el pad no se toca.
-    void postNoteOnAt (int slot, int semis, float vel = 1.0f) noexcept;
+    //  Ver kGateSuelta: kSostenida la sostiene quien la dispara y mandara su
+    //  NoteOff -un dedo en un pad en modo tecla, una tecla del teclado de la
+    //  ficha, el MIDI-, y es lo unico que puede decir "hasta que yo diga".
+    static constexpr int kSostenida = kGateSuelta;
+
+    void postNoteOnAt (int slot, int semis, float vel = 1.0f,
+                       int gate = kGateAudicion) noexcept;
     void postNoteOff (int slot) noexcept;
     void postPanic() noexcept;
     void postTestTone() noexcept;
@@ -821,7 +853,7 @@ private:
     //  para que el mando no se mueva solo. Ver setStepPLock.
     void triggerPad (int slot, int extraSemis = 0, float vel = 1.0f,
                      float from01 = -1.0f, bool cortaSuCola = true,
-                     int gate = -1, std::uint32_t plock = 0) noexcept;   // audio thread
+                     int gate = kGateAuto, std::uint32_t plock = 0) noexcept;   // audio thread
 
     template <typename Arr, typename V>
     static void store (Arr& a, int slot, V v) noexcept

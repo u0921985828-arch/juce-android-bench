@@ -37,6 +37,15 @@ struct Command
     //  trim says". Only the preview uses it: tapping the waveform has to play
     //  from the point that was tapped without moving the pad's own start.
     float from01     = -1.0f;
+
+    //  CUANTO DURA LA NOTA. Ver AudioEngine::kGateSuelta.
+    //
+    //  Solo una de las tres sentinelas -sostenida, un paso, una audicion- y
+    //  nunca un numero: los largos de verdad los escribe el secuenciador, que
+    //  no pasa por esta cola. Asi el hilo de mensajes no tiene que saber a que
+    //  frecuencia va el aparato, que ademas es un dato que el de audio cambia
+    //  en cada cambio de ruta.
+    int   gate       = -3;      // = AudioEngine::kGateAudicion
 };
 
 class CommandFifo

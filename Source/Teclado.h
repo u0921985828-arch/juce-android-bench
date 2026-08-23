@@ -33,6 +33,13 @@ public:
 
     std::function<void (int semis)> onNota;
 
+    //  Y EL "SUELTA", que es la mitad que faltaba. Un instrumento sostiene
+    //  mientras la nota dure, asi que un teclado que solo sabe empezar deja una
+    //  nota sonando para siempre por cada tecla que se toca - y al cabo de una
+    //  frase, el pool lleno y la maquina saturada. Es exactamente lo que ya
+    //  aprendio el pad en modo tecla: la nota dura lo que el dedo este encima.
+    std::function<void()> onSuelta;
+
     void setBase (int semitonos) noexcept
     {
         base = juce::jlimit (-24, 12, semitonos);
@@ -112,7 +119,7 @@ public:
         const int n = notaEn (e.position.x, e.position.y);
         if (n != juce::jmax (-100, viva)) toca (e.position.x, e.position.y);
     }
-    void mouseUp (const juce::MouseEvent&) override { setNotaViva (-100); }
+    void mouseUp (const juce::MouseEvent&) override { suelta(); }
 
 private:
     int base = 0;
@@ -146,7 +153,18 @@ private:
     {
         const int n = notaEn (x, y);
         if (n == -100) return;
+        //  Arrastrar de una tecla a otra suelta la anterior ANTES de empezar la
+        //  siguiente: sin esto un barrido con el dedo deja tantas notas vivas
+        //  como teclas se hayan rozado.
+        if (viva != -100 && viva != n) suelta();
         setNotaViva (n);
         if (onNota) onNota (n);
+    }
+
+    void suelta()
+    {
+        if (viva == -100) return;
+        setNotaViva (-100);
+        if (onSuelta) onSuelta();
     }
 };

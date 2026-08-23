@@ -725,9 +725,14 @@ MainComponent::MainComponent()
         {
             //  postNoteOnAt y no setPadPitch + postNoteOn: el semitono viaja EN
             //  el comando, asi que oir una tecla no afina el pad.
+            //
+            //  Y SOSTENIDA: la nota dura lo que el dedo este encima, igual que
+            //  en un pad en modo tecla. Con el largo de audicion, una tecla que
+            //  se mantiene se cortaria sola a los 1200 ms.
             if (padHasSample[(size_t) juce::jlimit (0, kNumPads - 1, vstPad)])
-                engine.postNoteOnAt (vstPad, semis, 0.9f);
+                engine.postNoteOnAt (vstPad, semis, 0.9f, AudioEngine::kSostenida);
         };
+        vstTeclado.onSuelta = [this] { engine.postNoteOff (vstPad); };
         vstSheet.cuerpo.addAndMakeVisible (vstTeclado);
 
         styleButton (vstCloseButton, kKey);
@@ -1265,7 +1270,7 @@ MainComponent::MainComponent()
     {
         auto texto = [this] (double v01)
         {
-            const int len = padSourceLength (selectedPad);
+            const int len = padVisibleLength (selectedPad);
             const double sr = (selectedPad >= 0 && uiSample[(size_t) selectedPad] != nullptr)
                                 ? uiSample[(size_t) selectedPad]->sourceSampleRate : 0.0;
             if (len <= 0 || sr <= 0.0) return juce::String (v01, 3);
@@ -1275,7 +1280,7 @@ MainComponent::MainComponent()
         };
         auto valor = [this] (const juce::String& t)
         {
-            const int len = padSourceLength (selectedPad);
+            const int len = padVisibleLength (selectedPad);
             const double sr = (selectedPad >= 0 && uiSample[(size_t) selectedPad] != nullptr)
                                 ? uiSample[(size_t) selectedPad]->sourceSampleRate : 0.0;
             const double n = t.retainCharacters ("0123456789.,-").replace (",", ".").getDoubleValue();
@@ -2572,7 +2577,7 @@ MainComponent::MainComponent()
         //  GOMA y TIJERAS. Excluyentes entre si y las dos apagadas por defecto:
         //  una herramienta que se queda puesta sin verse es como se borra media
         //  melodia sin querer, asi que la tapa se enciende con el acento.
-        for (auto* b : { &pianoGomaBtn, &pianoCorteBtn })
+        for (auto* b : { &pianoLapizBtn, &pianoGomaBtn, &pianoCorteBtn })
         {
             styleButton (*b, kKey);
             litAccent (*b);
@@ -2582,9 +2587,17 @@ MainComponent::MainComponent()
         auto ponUtil = [this] (int cual)
         {
             pianoGrid.setHerramienta (cual);
+            pianoLapizBtn.setToggleState (cual == PianoRoll::lapiz,   juce::dontSendNotification);
             pianoGomaBtn .setToggleState (cual == PianoRoll::goma,    juce::dontSendNotification);
             pianoCorteBtn.setToggleState (cual == PianoRoll::tijeras, juce::dontSendNotification);
         };
+        //  LAS TRES SON EXCLUYENTES y las tres se apagan: sin ninguna, un toque
+        //  ALTERNA -escribe donde no hay y quita donde hay-, que es como
+        //  funcionaba y es lo mas corto para corregir una nota. El LAPIZ solo
+        //  escribe, y con el se puede pintar por encima de lo que ya hay sin
+        //  borrarlo, que es lo que un arrastre hacia antes sin querer.
+        pianoLapizBtn.onClick = [this, ponUtil]
+            { ponUtil (pianoLapizBtn.getToggleState() ? PianoRoll::lapiz   : PianoRoll::dibujar); };
         pianoGomaBtn.onClick  = [this, ponUtil]
             { ponUtil (pianoGomaBtn.getToggleState()  ? PianoRoll::goma    : PianoRoll::dibujar); };
         pianoCorteBtn.onClick = [this, ponUtil]
@@ -3032,6 +3045,7 @@ void MainComponent::ponIconos()
         { &copyPatBtn, Iconos::Id::copiar },      { &pastePatBtn, Iconos::Id::pegar },
         { &copyRowBtn, Iconos::Id::copiar },      { &pasteRowBtn, Iconos::Id::pegar },
         { &pianoGomaBtn, Iconos::Id::goma },      { &pianoCorteBtn, Iconos::Id::tijeras },
+        { &pianoLapizBtn, Iconos::Id::lapiz },
         { &pianoClearBtn, Iconos::Id::vaciar },
 
         //  La cancion: ocho herramientas de arreglo, ocho dibujos distintos.
@@ -3262,7 +3276,7 @@ namespace
 {
     struct ManualChapter { const char* title; const char* lines[5]; };
 
-    constexpr int kManualChapterCount = 9;
+    constexpr int kManualChapterCount = 10;
     const ManualChapter kManual[kManualChapterCount] =
     {
         { "EMPEZAR", {
@@ -3291,11 +3305,21 @@ namespace
             "NORMALIZAR deja el pico del recorte en -0.3 dBFS",
             "QUITAR RUIDO saca el siseo sin comerse lo que suena",
             "Doble toque en un mando: vuelve a su valor de siempre" } },
+        //  Este capitulo prometia una pestana que ya no existe -"la pestana
+        //  PASO"- desde que sus mandos bajaron a la tira que hay debajo de la
+        //  rejilla y la pagina paso a llamarse PATRON. Un manual que nombra un
+        //  sitio que no esta es peor que no tener manual: manda a buscar.
         { "SECUENCIADOR", {
             "Toca una celda para poner un paso; arrastra para pintar varios",
-            "La pestana PASO dice que hace: nota, golpe y repeticion",
+            "Toca un paso y sus mandos salen debajo de la rejilla",
+            "PIANO escribe por tono; arrastra por la fila para alargar la nota",
             "REJILLA es lo que dura un paso, tresillos incluidos",
-            "Ocho patrones, y la cadena decide en que orden suenan",
+            "Ocho patrones, y la cadena decide en que orden suenan" } },
+        { "INSTRUMENTOS", {
+            "INSTRUMENTOS pone un sintetizador en el pad que elijas",
+            "Su ficha trae los dieciseis presets y un teclado para probarlos",
+            "En esos pads el dedo es una tecla: la nota dura lo que la aguantes",
+            "INICIO y FIN recortan lo que da vueltas dentro de la nota",
             nullptr } },
         { "MEZCLA Y EFECTOS", {
             "Tocar un efecto lo enciende y le da los tres mandos",
@@ -3757,7 +3781,7 @@ void MainComponent::showSeqPage (int page)
     pianoGrid.setVisible (onPiano);
     for (juce::TextButton* b : { &pianoOctDownBtn, &pianoOctUpBtn, &pianoClearBtn,
                                  &pianoPadDownBtn, &pianoPadUpBtn,
-                                 &pianoGomaBtn, &pianoCorteBtn, &pianoVerBtn })
+                                 &pianoLapizBtn, &pianoGomaBtn, &pianoCorteBtn, &pianoVerBtn })
     {
         b->setVisible (onPiano);
         if (! onPiano) b->setBounds ({});
@@ -4453,6 +4477,27 @@ void MainComponent::paint (juce::Graphics& g)
 //  el arbol de componentes y un rotulo pintado no es un componente: por eso
 //  aquello llevaba ahi desde el primer dia sin que nada lo viera. Ver
 //  UiAudit::rotulo y Tests/plano.py.
+//  LO QUE OCUPA UN TEXTO DENTRO DE SU BANDA, apuntado para el banco.
+//
+//  Sale de pintaTitulo en cuanto tuvo un segundo cliente, por lo mismo que
+//  `normaliza` salio de dentro de `render`: los titulos que se dibujan con
+//  drawFittedText -el del secuenciador, el del manual, el del navegador- no
+//  pueden usar pintaTitulo, que dibuja con drawText, y por eso no los apuntaba
+//  nadie. Un rotulo que el banco no ve es un rotulo que puede acabar debajo de
+//  la x sin que 896 corridas digan nada: es exactamente como la mesa estuvo
+//  titulada "MIX" a mano durante meses.
+void MainComponent::apunta (juce::Graphics& g, juce::Rectangle<int> caja,
+                            const juce::String& texto, const char* tipo)
+{
+    auto real = caja;
+    const int usado = juce::jmin (caja.getWidth(),
+                                  (int) std::ceil (juce::GlyphArrangement::getStringWidth (
+                                                       g.getCurrentFont(), texto)));
+    if (Lang::isRightToLeft (Lang::current())) real = real.removeFromRight (usado);
+    else                                       real = real.removeFromLeft (usado);
+    UiAudit::rotulo (real, texto, tipo);
+}
+
 void MainComponent::pintaTitulo (juce::Graphics& g, juce::Rectangle<int> caja,
                                  const juce::String& texto, const char* tipo, bool elipsis)
 {
@@ -4464,14 +4509,7 @@ void MainComponent::pintaTitulo (juce::Graphics& g, juce::Rectangle<int> caja,
     //  control. "AJUSTES - AUDIO" pasaba por debajo de la tapa de CUADRAR y por
     //  debajo de la x, y ninguna de las reglas del banco podia verlo porque un
     //  rotulo pintado no es un componente y la banda solapaba de todas formas.
-    auto real = caja;
-    const int usado = juce::jmin (caja.getWidth(),
-                                  (int) std::ceil (juce::GlyphArrangement::getStringWidth (
-                                                       g.getCurrentFont(), texto)));
-    if (Lang::isRightToLeft (Lang::current())) real = real.removeFromRight (usado);
-    else                                       real = real.removeFromLeft (usado);
-
-    UiAudit::rotulo (real, texto, tipo);
+    apunta (g, caja, texto, tipo);
     g.drawText (texto, caja, Lang::start(), elipsis);
 }
 
@@ -4648,8 +4686,19 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     //  debajo del boton de cerrar, con el "P8" del final tapado. Acotado a
     //  donde empieza la tapa, y con drawFittedText, que encoge un poco antes
     //  de rendirse en vez de cortar a mitad de palabra.
-    auto tituloRow = inner.removeFromTop (16);
-    tituloRow.setRight (juce::jmin (tituloRow.getRight(), seqCloseButton.getX() - Metrics::sm));
+    //  antesDe y no setRight: la x esta a la IZQUIERDA en arabe, asi que
+    //  recortar siempre por la derecha no recorta nada en uno de los cuatro
+    //  idiomas. Es el mismo fallo que ya costo 35 hallazgos en los titulos del
+    //  pad y de la mesa, escrito cinco veces mas en sitios que el banco no
+    //  podia ver porque nadie apuntaba el rotulo.
+    //  Y DE LAS DOS TAPAS DE SU FILA, no solo de la cruz. "1-16" vive en el
+    //  renglon del titulo en la pagina de la rejilla, y en 280x653 el titulo
+    //  -"PASOS · PAD 64  ARP · P1"- se le metia debajo. No lo veia nadie porque
+    //  este rotulo se dibujaba a mano y no lo apuntaba ninguna regla; en cuanto
+    //  paso por `apunta`, once hallazgos.
+    auto tituloRow = antesDe (antesDe (inner.removeFromTop (16), seqCloseButton, Metrics::sm),
+                              seqPistasBtn, Metrics::sm);
+    apunta (g, tituloRow, t, "titulo");
     g.drawFittedText (t, tituloRow, Lang::start(), 1, 0.85f);
 
     //  The bank selector and the chain toggles used to sit adjacent, look
@@ -6925,14 +6974,14 @@ void MainComponent::resized()
     //  abajo, sale mas alta que la tarjeta, y por eso esta ficha se desplaza.
     // ------------------------------------------------------------------
     {
-        const int cabecera = 56;      // el dibujo grande y los dos nombres
-        const int teclas   = 64;      // una octava que se pueda tocar con el dedo
+        const int cabecera = 56;      // el dibujo grande y el nombre de la familia
+        const int teclas   = 72;      // una octava que se pueda tocar con el dedo
         const int filaP    = Metrics::hit;
 
         auto inner = sheetFromBottom (vstSheet, Metrics::md * 2 + Metrics::hit
                                                   + Metrics::md + cabecera
-                                                  + Metrics::sm + Metrics::hit + teclas
                                                   + Metrics::sm + filaP
+                                                  + Metrics::sm + Metrics::hit + teclas
                                                   + Metrics::sm + 40);
 
         auto titleRow = inner.removeFromTop (Metrics::hit);
@@ -6941,38 +6990,50 @@ void MainComponent::resized()
         vstTitleArea = titleRow.reduced (Metrics::lg, 0).withTrimmedTop (8).withHeight (24);
         inner.removeFromTop (Metrics::md);
 
-        //  LA CABECERA: el dibujo a la izquierda y los dos nombres al lado.
+        //  LA CABECERA: el dibujo a la izquierda y el nombre de la familia al
+        //  lado. El del PRESET se fue de aqui a su propia pantalla, que es
+        //  donde se cambia: escrito en los dos sitios eran dos rotulos que
+        //  dicen lo mismo y uno de ellos lejos de la tapa que lo mueve.
         {
             auto fila = inner.removeFromTop (cabecera).reduced (Metrics::lg, 0);
+            vstPanelCab = fila;
             vstIconArea = Lang::takeStart (fila, cabecera).reduced (4);
             fila.removeFromLeft (Metrics::sm);
             vstNombreArea = fila;
         }
         inner.removeFromTop (Metrics::sm);
 
-        //  La fila de octava, con el numero pintado en medio: es lo mismo que
-        //  hacen PACK -/+ y el selector de pad del piano.
-        {
-            auto fila = inner.removeFromTop (Metrics::hit).reduced (Metrics::lg, 0);
-            const int w = juce::jmin (Metrics::hit * 2, fila.getWidth() / 3);
-            vstOctDown.setBounds (fila.removeFromLeft (w));
-            vstOctUp  .setBounds (fila.removeFromRight (w));
-            vstOctArea = fila;
-        }
-        vstTeclado.setBounds (inner.removeFromTop (teclas).reduced (Metrics::lg, 2));
-        inner.removeFromTop (Metrics::sm);
-
-        //  EL PRESET, EN UN RENGLON: menos, el nombre pintado y mas. Es el
-        //  mismo reparto que PACK -/+ y que la octava de aqui arriba, y el
-        //  mismo que el selector de pad del piano: un rotulo que solo se lee no
-        //  necesita ser un componente, y siendolo le quitaria el ancho a las
-        //  dos tapas que si se tocan.
+        //  EL PRESET: menos, UNA PANTALLA con el nombre, y mas. La pantalla es
+        //  lo que la persona pidio con estas palabras -"una flecha, un
+        //  cuadradito y otra flecha"- y ademas es lo que separa un dato que
+        //  CAMBIA de un rotulo grabado en el chasis: en un aparato de verdad,
+        //  lo que cambia se lee sobre cristal.
         {
             auto fila = inner.removeFromTop (filaP).reduced (Metrics::lg, 0);
+            vstPanelPre = fila;
             const int w = juce::jmin (Metrics::hit * 2, fila.getWidth() / 4);
             vstPreDown.setBounds (fila.removeFromLeft (w));
             vstPreUp  .setBounds (fila.removeFromRight (w));
-            vstPreArea = fila;
+            vstPreArea = fila.reduced (Metrics::halfGap, 2);
+        }
+        inner.removeFromTop (Metrics::sm);
+
+        //  Y EL TECLADO CON SU OCTAVA, en un panel: los dos son la parte que se
+        //  TOCA, y el mapa de las cinco raices vive entre las dos flechas
+        //  porque dice exactamente lo que la octava cambia.
+        {
+            auto caja = inner.removeFromTop (Metrics::hit + teclas);
+            vstPanelTec = caja.reduced (Metrics::lg - Metrics::halfGap, 0);
+            auto fila = caja.removeFromTop (Metrics::hit).reduced (Metrics::lg, 0);
+            //  UN TERCIO Y NO UN CUARTO: estas dos tapas llevan la palabra
+            //  -"OCT -"- y las del preset solo el signo. Con un cuarto, en
+            //  280x653 y en arabe "أوكتاف +" pedia 50 px de letra y tenia 42.
+            //  El reparto sale del texto que lleva la tapa, no de la fila.
+            const int w = juce::jmin (Metrics::hit * 2, fila.getWidth() / 3);
+            vstOctDown.setBounds (fila.removeFromLeft (w));
+            vstOctUp  .setBounds (fila.removeFromRight (w));
+            vstOctArea = fila.reduced (Metrics::halfGap, 4);
+            vstTeclado.setBounds (caja.reduced (Metrics::lg, 2));
         }
     }
 
@@ -7829,13 +7890,14 @@ void MainComponent::resized()
             //  La fila de tapas puede ser DOS. Ver la maqueta: cinco no caben en
             //  las pantallas estrechas, y pedir una fila y colocar dos es como
             //  la rejilla del piano se queda sin sitio.
-            juce::TextButton* pb5[6] = { &pianoOctDownBtn, &pianoOctUpBtn, &pianoVerBtn,
-                                         &pianoClearBtn, &pianoGomaBtn, &pianoCorteBtn };
+            juce::TextButton* pb5[7] = { &pianoOctDownBtn, &pianoOctUpBtn, &pianoVerBtn,
+                                         &pianoClearBtn, &pianoLapizBtn, &pianoGomaBtn,
+                                         &pianoCorteBtn };
             const int anchoTarjeta = (int) ((float) safeArea().getWidth() * 0.92f) - 2 * Metrics::lg;
             //  Apaisado no hay fila de tapas que pedir: se van a la columna
             //  de al lado. Pedir una fila que luego no se coloca es pedir 48 px
             //  de mas de lo unico que escasea girado.
-            const int filasTapas = wideFace ? 0 : (moduleBarFits (anchoTarjeta, pb5, 6) ? 1 : 2);
+            const int filasTapas = wideFace ? 0 : (moduleBarFits (anchoTarjeta, pb5, 7) ? 1 : 2);
             filasTapasPiano = filasTapas;
             wanted = chrome + pianoGrid.getFilas() * PianoRoll::kAltoObjetivo + Metrics::sm + 14
                    + filasTapas * Metrics::hit
@@ -8012,19 +8074,60 @@ void MainComponent::resized()
             //  esta columna existe para devolverle - de 17.8 px por nota a
             //  14.2, por debajo del suelo. Preguntar por un mueble que no se va
             //  a colocar es la version de maquetado de reservar y tirar.
-            const int nCol = pianoVerBtn.isVisible() ? 6 : 5;
-            const int altoColumna = nCol * Metrics::hit + (nCol - 1) * Metrics::halfGap;
-            if (wideFace && inner.getHeight() >= altoColumna)
+            //  Y SI LAS SIETE NO CABEN EN LA COLUMNA, SE CAE VER.
+            //
+            //  Apaisado las tapas van en una columna al lado y no en una fila
+            //  debajo, y ese sitio no se pide en `wanted`: si la columna no las
+            //  admite, se van al fondo y se comen 92 px de lo unico que
+            //  escasea. Medido al meter LAPIZ: la fila de nota paso de 17.8 px
+            //  a 14.2, por debajo del suelo de 16. VER es la prescindible -ya
+            //  es la primera que se cae cuando dos octavas no se pueden tocar-
+            //  asi que se cae tambien aqui.
+            //  Y DONDE UNA COLUMNA NO LAS ADMITE, DOS.
+            //
+            //  Meter LAPIZ hizo siete tapas donde habia seis, y una columna de
+            //  seis pide 284 px de alto que apaisado no hay: se caian a la fila
+            //  del fondo y se comian 49 px de lo unico que escasea girado - la
+            //  fila de nota paso de 17.8 px a 14.2, por debajo del suelo de 16.
+            //
+            //  Dos columnas y no que se caiga una tapa, porque apaisado lo que
+            //  sobra es ANCHO: es la misma regla que puso la columna aqui en
+            //  primer lugar. Con la mitad, seis piden 140 px de alto.
+            juce::TextButton* pbCol[7] = { &pianoOctDownBtn, &pianoOctUpBtn, &pianoVerBtn,
+                                           &pianoClearBtn, &pianoLapizBtn, &pianoGomaBtn,
+                                           &pianoCorteBtn };
+            const auto altoDe = [] (int n) { return n * Metrics::hit + (n - 1) * Metrics::halfGap; };
+            int nVisibles = 0;
+            for (auto* b2 : pbCol) if (b2->isVisible()) ++nVisibles;
+
+            const int porColumna = (wideFace && inner.getHeight() < altoDe (nVisibles))
+                                     ? (nVisibles + 1) / 2 : nVisibles;
+            const int columnas   = (porColumna > 0 && porColumna < nVisibles) ? 2 : 1;
+            //  Las dos columnas caben en el ancho de UNA: partir la altura no
+            //  puede costar el doble de ancho, que es de lo que vive la rejilla
+            //  girada. Una tapa queda en 110 px y "OCTAVA -" pide 90 con su aire.
+            const int anchoCol   = columnas > 1 ? (sideCol - Metrics::gap) / 2 : sideCol;
+            const int anchoLado  = anchoCol * columnas + (columnas - 1) * Metrics::gap;
+
+            if (wideFace && inner.getHeight() >= altoDe (porColumna)
+                         && inner.getWidth() > anchoLado + Metrics::hit * 4)
             {
-                auto side = Lang::takeEnd (inner, sideCol);
+                auto side = Lang::takeEnd (inner, anchoLado);
                 Lang::takeEnd (inner, Metrics::gap);
-                juce::TextButton* pb[6] = { &pianoOctDownBtn, &pianoOctUpBtn, &pianoVerBtn,
-                                            &pianoClearBtn, &pianoGomaBtn, &pianoCorteBtn };
-                for (int i = 0; i < 6; ++i)
+                juce::Rectangle<int> col = Lang::takeStart (side, anchoCol);
+                int puestas = 0;
+                for (int i = 0; i < 7; ++i)
                 {
-                    if (! pb[i]->isVisible()) continue;
-                    pb[i]->setBounds (side.removeFromTop (Metrics::hit).reduced (Metrics::aireTapa, 0));
-                    side.removeFromTop (Metrics::halfGap);
+                    if (! pbCol[i]->isVisible()) continue;
+                    if (puestas == porColumna)
+                    {
+                        Lang::takeStart (side, Metrics::gap);
+                        col = Lang::takeStart (side, anchoCol);
+                        puestas = 0;
+                    }
+                    pbCol[i]->setBounds (col.removeFromTop (Metrics::hit).reduced (Metrics::aireTapa, 0));
+                    col.removeFromTop (Metrics::halfGap);
+                    ++puestas;
                 }
             }
             else
@@ -8040,11 +8143,13 @@ void MainComponent::resized()
                 //  CINCO tapas, y si no caben en una fila, dos: OCTAVA -/+ y
                 //  VACIAR arriba, las dos herramientas debajo. En 280 px cinco
                 //  a lo ancho dejan "TIJERAS" en 31 de los 48 que pide.
-                juce::TextButton* pbTodas[6] = { &pianoOctDownBtn, &pianoOctUpBtn, &pianoVerBtn,
-                                                 &pianoClearBtn, &pianoGomaBtn, &pianoCorteBtn };
-                juce::TextButton* pbSin5[5]  = { &pianoOctDownBtn, &pianoOctUpBtn,
-                                                 &pianoClearBtn, &pianoGomaBtn, &pianoCorteBtn };
-                const int nb = pianoVerBtn.isVisible() ? 6 : 5;
+                juce::TextButton* pbTodas[7] = { &pianoOctDownBtn, &pianoOctUpBtn, &pianoVerBtn,
+                                                 &pianoClearBtn, &pianoLapizBtn, &pianoGomaBtn,
+                                                 &pianoCorteBtn };
+                juce::TextButton* pbSin5[6]  = { &pianoOctDownBtn, &pianoOctUpBtn,
+                                                 &pianoClearBtn, &pianoLapizBtn, &pianoGomaBtn,
+                                                 &pianoCorteBtn };
+                const int nb = pianoVerBtn.isVisible() ? 7 : 6;
                 juce::TextButton** pb = pianoVerBtn.isVisible() ? pbTodas : pbSin5;
                 if (moduleBarFits (tapas.getWidth(), pb, nb))
                 {
@@ -8056,10 +8161,14 @@ void MainComponent::resized()
                     //  VISTA -las dos octavas y cuantas se ven- y abajo lo que
                     //  toca las NOTAS. Antes eran tres y dos partidas por donde
                     //  cayera, con VACIAR arriba entre dos flechas de vista.
-                    layoutModuleBar (tapas, pb, 0, 3);
+                    //  Las TRES herramientas van juntas y siempre abajo: son
+                    //  las ultimas de la lista, asi que el corte es nb-3 y no
+                    //  un tres escrito a mano - con LAPIZ dentro, tres arriba
+                    //  habria dejado la goma en un renglon y el lapiz en otro.
+                    layoutModuleBar (tapas, pb, 0, nb - 3);
                     auto fila2 = inner.removeFromBottom (Metrics::hit);
                     inner.removeFromBottom (Metrics::halfGap);
-                    layoutModuleBar (fila2, pb + 3, 0, nb - 3);
+                    layoutModuleBar (fila2, pb + (nb - 3), 0, 3);
                 }
             }
 
@@ -8814,7 +8923,11 @@ void MainComponent::padNotaOn (int index, float vel)
     const auto d = disparoDe (index);
     if (! padHasSample[(size_t) d.pad]) return;
 
-    engine.postNoteOn (d.pad, d.vel * vel);
+    //  ESTA la sostiene el dedo, asi que va sin largo: el "suelta" llega en
+    //  padNotaOff. Por postNoteOnAt y no por postNoteOn, que es el camino de un
+    //  golpe y le pone el largo de una audicion - 1200 ms - que en modo tecla
+    //  cortaria la nota con el dedo todavia encima.
+    engine.postNoteOnAt (d.pad, 0, d.vel * vel, AudioEngine::kSostenida);
     //  Se apunta QUE pad esta sonando por este dedo y no se recalcula al
     //  levantar: entre medias se puede haber apagado 16 NIVELES, y entonces
     //  se soltaria una nota que no es la que empezo - o ninguna.
@@ -8983,7 +9096,7 @@ void MainComponent::stepCellToggled (int pad, int step)
 //  una muestra de dos milisegundos no pida una ventana mayor que ella misma.
 double MainComponent::minTrim01 (int pad) const
 {
-    const int len = padSourceLength (pad);
+    const int len = padVisibleLength (pad);
     return len > 0 ? juce::jlimit (1.0e-6, 0.5, (double) kMinTrimSamples / (double) len)
                    : 0.005;
 }
@@ -9126,6 +9239,11 @@ void MainComponent::selectPad (int index)
     selectedPad = index;
     updateControlsFromPad (index);
     waveform.setSample (uiSample[(size_t) index]);
+    {
+        int zi = 0, zf = 0;
+        if (! zonaVisible (index, zi, zf)) { zi = 0; zf = 0; }
+        waveform.setVentana (zi, zf);
+    }
     //  Y con la muestra puesta, lo mas estrecho que puede quedar su recorte:
     //  ver minTrim01. La onda lo necesita porque el asa se arrastra sobre ella
     //  y es alli donde el limite se toca de verdad.
@@ -9140,7 +9258,7 @@ void MainComponent::selectPad (int index)
     if (auto sb = uiSample[(size_t) index])
     {
         const double sr = sb->sourceSampleRate;
-        const double secs = sr > 0.0 ? (double) sb->buffer.getNumSamples() / sr : 0.0;
+        const double secs = sr > 0.0 ? (double) padVisibleLength (index) / sr : 0.0;
         const juce::String tag = juce::String (index + 1).paddedLeft ('0', 2)
                                + (padName[(size_t) index].isNotEmpty() ? "  " + padName[(size_t) index].toUpperCase() : juce::String());
         waveform.setInfo (tag, sr, secs, sb->buffer.getNumChannels());
@@ -9189,7 +9307,7 @@ void MainComponent::pushFadesToWaveform()
     waveform.setFades (padFadeIn[(size_t) selectedPad],
                        padFadeOut[(size_t) selectedPad],
                        sb != nullptr ? sb->sourceSampleRate : 0.0,
-                       sb != nullptr ? sb->buffer.getNumSamples() : 0);
+                       sb != nullptr ? padVisibleLength (selectedPad) : 0);
 }
 
 void MainComponent::refreshWaveformSegments()
@@ -9224,30 +9342,26 @@ void MainComponent::refreshWaveformSegments()
 
 void MainComponent::updateControlsFromPad (int index)
 {
-    //  UN PAD DE INSTRUMENTO NO SE RECORTA.
+    //  UN PAD DE INSTRUMENTO SE RECORTA, Y TRES MANDOS SIGUEN SIN SIGNIFICAR
+    //  NADA EN EL.
     //
-    //  El recorte, el bucle, el reves y CINTA/TONO son de una MUESTRA: dicen
-    //  que trozo del fichero suena y en que sentido. Un instrumento no tiene un
-    //  trozo, tiene diez zonas, y triggerPad ignora los cuatro a proposito. Un
-    //  mando que se mueve y no hace nada es peor que no tenerlo.
+    //  Aqui se apagaban CINCO con este argumento: "un instrumento no tiene un
+    //  trozo, tiene diez zonas". Vale para el BUCLE -lo decide la zona, que es
+    //  quien sabe donde acaba su ataque-, para el REVES -leer una zona hacia
+    //  atras es leer su cola y el ataque al final- y para CINTA/TONO, que
+    //  cambian el largo de una muestra que aqui no es una sino diez.
     //
-    //  Se APAGAN y no se esconden: esconderlos cambiaria la maqueta segun lo
-    //  que tenga el pad, o sea una ficha con dos formas y dos veces lo que hay
-    //  que medir. Apagado es lo que ya hacen las tapas de PACK con un solo pack.
+    //  Y NO vale para INICIO y FIN, que es lo que la persona pidio con estas
+    //  palabras: "si yo acorto ese sonido, el bucle tiene que ser de ese
+    //  sonido". Se aplican como FRACCION de la zona que toca (ver triggerPad),
+    //  asi que significan lo mismo en las cinco octavas. Con ellos vuelven los
+    //  dos SUAVE, que son los que quitan el chasquido de la costura que la
+    //  persona acaba de crear al recortar.
     const bool instr = (uiSample[(size_t) index] != nullptr
                         && uiSample[(size_t) index]->familia >= 0);
-    for (juce::Component* c : { (juce::Component*) &startSlider,
-                                (juce::Component*) &endSlider,
-                                (juce::Component*) &loopButton,
+    for (juce::Component* c : { (juce::Component*) &loopButton,
                                 (juce::Component*) &reverseButton,
-                                (juce::Component*) &modeButton,
-                                //  Y los dos fundidos del recorte, que se
-                                //  quedaron fuera de esta lista: triggerPad les
-                                //  pasa cero a un instrumento -las zonas traen
-                                //  su propio cruce horneado- asi que el mando
-                                //  decia 500 ms y no hacia absolutamente nada.
-                                (juce::Component*) &fadeInSlider,
-                                (juce::Component*) &fadeOutSlider })
+                                (juce::Component*) &modeButton })
         c->setEnabled (! instr);
 
     pitchSlider.setValue (padPitch[(size_t) index], juce::dontSendNotification);
@@ -9454,6 +9568,40 @@ void MainComponent::denoisePad()
                             juce::dontSendNotification);
         });
     });
+}
+
+//  LA ZONA QUE SE ENSEÑA de un pad de instrumento: raiz 0 y capa fuerte, que
+//  es la de referencia. Devuelve false para todo lo demas, y entonces lo que se
+//  enseña es el buffer entero.
+//
+//  Los otros nueve trozos no son "mas muestra": son el MISMO sonido rendido en
+//  otra octava y con otra fuerza. Dibujarlos seguidos es dibujar diez veces lo
+//  mismo, y encima deja las asas de recorte sobre una tira que no se toca.
+bool MainComponent::zonaVisible (int pad, int& ini, int& fin) const
+{
+    if (! juce::isPositiveAndBelow (pad, kNumPads)) return false;
+    auto& sb = uiSample[(size_t) pad];
+    if (sb == nullptr || sb->nZonas <= 0) return false;
+
+    int mejor = 0;
+    for (int z = 0; z < sb->nZonas && z < SampleBuffer::kMaxZonas; ++z)
+        if (sb->zonas[(size_t) z].raiz == 0 && sb->zonas[(size_t) z].capa == 1) { mejor = z; break; }
+
+    ini = sb->zonas[(size_t) mejor].ini;
+    fin = sb->zonas[(size_t) mejor].fin;
+    return fin > ini;
+}
+
+//  Y CUANTO DURA LO QUE SE ENSEÑA, que no es lo mismo que cuanto pesa el
+//  buffer. El recorte se escribe en el motor como fraccion del BUFFER -es lo
+//  que padStart guarda- pero los segundos que la casilla dice, el ancho minimo
+//  del recorte y el fundido en milisegundos son de lo que suena. Con la
+//  longitud del buffer, un instrumento decia "4.2 s" de una nota de 0.42.
+int MainComponent::padVisibleLength (int pad) const
+{
+    int a = 0, b = 0;
+    if (zonaVisible (pad, a, b)) return b - a;
+    return padSourceLength (pad);
 }
 
 int MainComponent::padSourceLength (int pad) const
@@ -9743,6 +9891,7 @@ void MainComponent::retranslateUi()
     pianoOctUpBtn  .setButtonText (T ("OCTAVA") + " +");
     pianoPadDownBtn.setButtonText (T ("PAD") + " -");
     pianoPadUpBtn  .setButtonText (T ("PAD") + " +");
+    pianoLapizBtn  .setButtonText (T ("LAPIZ"));
     pianoGomaBtn   .setButtonText (T ("GOMA"));
     pianoCorteBtn  .setButtonText (T ("TIJERAS"));
     pianoClearBtn  .setButtonText (T ("VACIAR"));
@@ -11942,7 +12091,16 @@ void MainComponent::pianoCellToggled (int paso, int semi)
         if (v != -128) notas.addIfNotAlreadyThere (v);
     }
 
-    if (notas.contains (semi)) notas.removeAllInstancesOf (semi);
+    //  EL LAPIZ ESCRIBE Y NO ALTERNA, que es la goma por el otro lado y por el
+    //  mismo motivo escrito ahi: arrastrar sobre una fila con notas y huecos
+    //  apagaba las notas y encendia los huecos, o sea que pintar encima de lo
+    //  que ya hay lo BORRA. Con el lapiz armado, una casilla que ya suena se
+    //  queda como esta.
+    if (notas.contains (semi))
+    {
+        if (pianoGrid.getHerramienta() == PianoRoll::lapiz) return;
+        notas.removeAllInstancesOf (semi);
+    }
     else if (notas.size() < PianoRoll::kMaxNotas) notas.add (semi);
     else
     {
@@ -12073,9 +12231,11 @@ void MainComponent::paintPianoSheetContent (juce::Graphics& g)
         else                                       titulo.setRight (juce::jmin (titulo.getRight(), izq - Metrics::sm));
     }
     const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
-    g.drawFittedText (T ("PIANO") + "  " + dot + "  " + T ("PAD %1", juce::String (sp + 1))
-                        + (padName[(size_t) sp].isNotEmpty() ? "   " + padName[(size_t) sp] : juce::String()),
-                      titulo, Lang::start(), 1, 0.85f);
+    const juce::String tPiano = T ("PIANO") + "  " + dot + "  " + T ("PAD %1", juce::String (sp + 1))
+                              + (padName[(size_t) sp].isNotEmpty() ? "   " + padName[(size_t) sp]
+                                                                   : juce::String());
+    apunta (g, titulo, tPiano, "titulo");
+    g.drawFittedText (tPiano, titulo, Lang::start(), 1, 0.85f);
 
     //  Que se esta mirando, en notas y no en semitonos: "-12 a +12" no dice
     //  nada y "C-1 a C+1" dice exactamente donde esta la mano.
@@ -12147,8 +12307,9 @@ void MainComponent::paintSongSheetContent (juce::Graphics& g)
     //  of it - right-aligning into the full width ran the sentence underneath
     //  the X and off the card. Fitted, so a longer wording shrinks instead of
     //  losing its last word.
-    auto hintRow = songSheet.sheetBounds.reduced (14, 10).removeFromTop (16);
-    hintRow.setRight (juce::jmin (hintRow.getRight(), songCloseButton.getX() - Metrics::xs));
+    auto hintRow = antesDe (songSheet.sheetBounds.reduced (14, 10).removeFromTop (16),
+                            songCloseButton);
+    apunta (g, hintRow, hint, "dato");
     g.drawFittedText (hint, hintRow, juce::Justification::centredRight, 1, 0.85f);
 }
 
@@ -12935,9 +13096,9 @@ void MainComponent::paintManualSheetContent (juce::Graphics& g)
     if (manualSheet.sheetBounds.isEmpty()) return;
 
     auto inner = manualSheet.sheetBounds.reduced (Metrics::lg, Metrics::md);
-    auto titleRow = inner.removeFromTop (16);
-    //  Se para antes del boton de cerrar, como todas las demas fichas.
-    titleRow.setRight (juce::jmin (titleRow.getRight(), manualCloseButton.getX() - Metrics::xs));
+    //  Se para antes del boton de cerrar, como todas las demas fichas - y por
+    //  el lado en el que ESTE, que en arabe es el izquierdo.
+    auto titleRow = antesDe (inner.removeFromTop (16), manualCloseButton);
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
@@ -12974,8 +13135,7 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
         //  linea - "...y los reparte por los pads." - pasaba por debajo de la
         //  x. El banco no puede verlo, porque mide componentes y esto es
         //  texto pintado a mano.
-        auto para = inner.removeFromTop (40);
-        para.setRight (juce::jmin (para.getRight(), chopCloseButton.getX() - Metrics::xs));
+        auto para = antesDe (inner.removeFromTop (40), chopCloseButton);
         //  La explicacion cambia con el modo, porque lo que hace el boton
         //  cambia: dejar la de trozos iguales puesta en modo GOLPES seria la
         //  ficha describiendo lo que hacia antes.
@@ -14893,15 +15053,24 @@ void MainComponent::eligePreset (int pre)
     if (uiSample[(size_t) vstPad]->preset != pre)
     {
         pushUndo (T ("PRESETS"));
+        //  SE SUELTA LO QUE ESTE SONANDO ANTES DE CAMBIAR LA MUESTRA. Debajo
+        //  del pad se cambia el buffer entero y sus diez zonas, asi que una voz
+        //  viva se quedaria leyendo la ventana de la zona ANTERIOR sobre el
+        //  sonido nuevo: recortada contra el buffer, o sea sin reventar, pero
+        //  sonando lo que no es.
+        engine.postNoteOff (vstPad);
         ponInstrumentoEnPad (vstPad, fam, pre);
         refreshVst();
     }
 
-    //  Y SE OYE. Un preset que hay que ir a tocar al pad para saber como suena
-    //  es una lista de nombres, no un selector de sonido. En la octava que el
-    //  teclado tenga puesta, y por postNoteOnAt: oir no puede afinar el pad.
-    engine.postNoteOnAt (vstPad, vstTeclado.getBase(), 0.9f);
-    vstTeclado.setNotaViva (vstTeclado.getBase());
+    //  Y NO SUENA AL ELEGIRLO.
+    //
+    //  Sonaba: "un preset que hay que ir a tocar al pad para saber como suena
+    //  es una lista de nombres". El argumento vale para una LISTA, donde se
+    //  toca uno y se decide; con las flechas se pasa por los dieciseis para
+    //  buscar, y entonces cada toque encima una nota mas - y como un
+    //  instrumento sostiene, ninguna se acababa. Quien suena es el teclado, que
+    //  esta justo encima y ademas deja elegir la nota.
 
     status.setText (Sintes::nombreDe (fam, pre), juce::dontSendNotification);
 }
@@ -14922,6 +15091,17 @@ void MainComponent::ponInstrumentoEnPad (int pad, int familia, int preset)
     //  las dos cosas dentro del motor -triggerPad las ignora- pero la interfaz
     //  las sigue ensenando, y un pad que dice "BUCLE" sin que el mando haga
     //  nada es peor que uno que no lo dice.
+    //  Y CON UNA CAIDA DE INSTRUMENTO, no la de fabrica.
+    //
+    //  Un pad nace con 5 ms de caida, que es lo correcto para percusion -una
+    //  muestra ya se acaba sola, y esos 5 ms solo quitan el chasquido del
+    //  final-. En un instrumento la caida ES el final de la nota: soltar la
+    //  tecla con 5 ms es un corte, y se oye como un chasquido al levantar el
+    //  dedo. 180 ms es lo que tarda en apagarse una cuerda pulsada al
+    //  silenciarla con la mano. Sigue siendo un defecto: el mando CAIDA manda.
+    padRelease[(size_t) pad] = 180.0f;
+    engine.setPadRelease (pad, 180.0f);
+
     padStart01[(size_t) pad] = 0.0f;
     padEnd01[(size_t) pad]   = 1.0f;
     padLoop[(size_t) pad]    = false;
@@ -14979,6 +15159,19 @@ void MainComponent::paintVstSheetContent (juce::Graphics& g)
     const int pre = (sb != nullptr) ? sb->preset  : -1;
     const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
 
+    //  LOS PANELES PRIMERO, que van DEBAJO de todo lo demas. Se deducen del
+    //  maquetado -las tres bandas que resized() acaba de publicar- igual que
+    //  los de la ficha del secuenciador, asi que no cuestan un pixel de alto:
+    //  en esta ficha el alto es lo unico que no sobra, porque el teclado tiene
+    //  que poder tocarse con el dedo.
+    {
+        g.setColour (ZatiColours::groove (0.16f));
+        for (const auto& r : { vstPanelCab, vstPanelPre, vstPanelTec })
+            if (! r.isEmpty())
+                g.fillRoundedRectangle (r.expanded (Metrics::halfGap, 4).toFloat(),
+                                        (float) Metrics::sm);
+    }
+
     auto titleRow = antesDe (vstTitleArea, vstCloseButton);
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
@@ -14993,54 +15186,105 @@ void MainComponent::paintVstSheetContent (juce::Graphics& g)
         Iconos::dibuja (g, Iconos::deFamilia (fam), vstIconArea.toFloat(),
                         ZatiColours::ink.withAlpha (0.92f));
 
-    //  Y los dos nombres: la familia arriba, en grande, y el preset debajo.
+    //  Y EL NOMBRE DE LA FAMILIA, solo. El del preset estaba tambien aqui y se
+    //  fue a la pantalla: el mismo dato en dos sitios de la MISMA tarjeta, y
+    //  uno de ellos lejos de las flechas que lo cambian.
     if (! vstNombreArea.isEmpty())
     {
-        auto caja = vstNombreArea;
-        auto arriba = caja.removeFromTop (caja.getHeight() / 2);
         g.setColour (ZatiColours::ink);
-        g.setFont (ZatiColours::displayFont (juce::jmin (26.0f, (float) arriba.getHeight() * 0.86f)));
-        pintaTitulo (g, arriba, fam >= 0 ? T (Sintes::tabla()[fam].nombre) : juce::String ("-"),
+        g.setFont (ZatiColours::displayFont (juce::jmin (26.0f,
+                                                         (float) vstNombreArea.getHeight() * 0.46f)));
+        pintaTitulo (g, vstNombreArea.withSizeKeepingCentre (vstNombreArea.getWidth(), 30),
+                     fam >= 0 ? T (Sintes::tabla()[fam].nombre) : juce::String ("-"),
                      "titulo", true);
-        g.setColour (ZatiColours::inkDim);
-        g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.06f));
-        pintaTitulo (g, caja,
-                     (fam >= 0 && pre >= 0) ? juce::String (Sintes::tabla()[fam].p[pre].nombre)
-                                            : juce::String(),
-                     "dato", true);
     }
 
-    //  La octava, entre las dos tapas, en numeros latinos dentro de ltr.
+    //  LA PANTALLA DEL PRESET, entre las dos flechas.
+    //
+    //  Con el numero delante: dieciseis nombres sin cuenta no dicen cuantos
+    //  quedan, y una flecha que da la vuelta sin decirlo se lee como una que se
+    //  ha quedado atascada. Y CENTRADO dentro del cristal, que es lo que hace
+    //  que se lea como una pantalla y no como un rotulo suelto.
+    if (! vstPreArea.isEmpty())
     {
-        auto fila = antesDe (antesDe (vstOctArea, vstOctDown), vstOctUp);
-        g.setColour (ZatiColours::ink.withAlpha (0.9f));
-        g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.10f));
-        pintaTitulo (g, fila,
-                     T ("OCTAVA %1", Lang::ltr (juce::String (vstTeclado.getBase() / 12))),
-                     "seccion", true);
+        const juce::String txt = (fam >= 0 && pre >= 0)
+            ? Lang::ltr (juce::String (pre + 1) + "/" + juce::String (Sintes::kPresets))
+                  + "   " + juce::String (Sintes::tabla()[fam].p[pre].nombre)
+            : juce::String ("-");
+
+        g.setColour (ZatiColours::screenBg);
+        g.fillRoundedRectangle (vstPreArea.toFloat(), 3.0f);
+        g.setColour (ZatiColours::lcdDim);
+        g.drawRoundedRectangle (vstPreArea.toFloat().reduced (0.5f), 3.0f, 1.0f);
+
+        g.setColour (ZatiColours::lcdFg);
+        g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.06f));
+        //  Se APUNTA lo que el texto ocupa, como hace pintaTitulo: un rotulo
+        //  pintado no es un componente y sin esto la regla que comprueba que
+        //  ningun rotulo cae debajo de una tapa no lo ve. Centrado, asi que el
+        //  rectangulo real es el centrado y no el de la izquierda.
+        const int usado = juce::jmin (vstPreArea.getWidth(),
+                                      (int) std::ceil (juce::GlyphArrangement::getStringWidth (
+                                                           g.getCurrentFont(), txt)));
+        UiAudit::rotulo (vstPreArea.withSizeKeepingCentre (usado, vstPreArea.getHeight()),
+                         txt, "dato");
+        g.drawText (txt, vstPreArea, juce::Justification::centred, true);
     }
 
-    //  Y EL NOMBRE DEL PRESET, entre las dos flechas. Con el numero delante:
-    //  dieciseis nombres sin cuenta no dicen cuantos quedan, y una flecha que
-    //  da la vuelta sin decirlo se lee como una que se ha quedado atascada.
+    //  EL MAPA DE LAS CINCO RAICES, entre OCT - y OCT +.
+    //
+    //  Un instrumento de esta app son diez zonas: cinco raices -una por octava-
+    //  por dos capas de fuerza, y al tocar se elige la mas cercana. Eso es lo
+    //  que lo separa de una muestra afinada, y no se veia por ningun sitio: la
+    //  ficha decia "OCTAVA 0" y ese cero no dice contra que. Aqui se ve cual de
+    //  las cinco va a sonar, que es exactamente lo que las dos flechas mueven.
+    if (! vstOctArea.isEmpty())
     {
-        auto fila = antesDe (antesDe (vstPreArea, vstPreDown), vstPreUp);
-        g.setColour (ZatiColours::ink);
-        g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.10f));
-        pintaTitulo (g, fila,
-                     (fam >= 0 && pre >= 0)
-                         ? Lang::ltr (juce::String (pre + 1) + "/" + juce::String (Sintes::kPresets))
-                               + "  " + juce::String (Sintes::tabla()[fam].p[pre].nombre)
-                         : juce::String ("-"),
-                     "dato", true);
+        const int base = vstTeclado.getBase();
+        auto caja = vstOctArea;
+        const int n = 5;
+        const int w = juce::jmax (8, caja.getWidth() / n);
+
+        //  Y DONDE NO CABE EL MAPA, EL NUMERO. Cinco celdas de menos de veinte
+        //  pixeles no son un mapa: son cinco manchas con un digito recortado
+        //  dentro. Es la misma escalera que ya deciden BANCO y PADS - lo que no
+        //  cabe se cae, y lo que queda dice lo mismo con menos.
+        if (w < 20)
+        {
+            g.setColour (ZatiColours::ink.withAlpha (0.9f));
+            g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.10f));
+            pintaTitulo (g, caja, Lang::ltr (juce::String (base / 12)), "seccion", true);
+        }
+        else
+        {
+            //  La raiz que sonaria: la mas cercana a la nota de abajo del teclado.
+            int viva = 0, coste = 1 << 20;
+            for (int i = 0; i < n; ++i)
+            {
+                const int c = std::abs (base - (i - 2) * 12);
+                if (c < coste) { coste = c; viva = i; }
+            }
+
+            for (int i = 0; i < n; ++i)
+            {
+                auto celda = caja.removeFromLeft (w).reduced (1, 0);
+                const bool on = (i == viva);
+                g.setColour (on ? ZatiColours::accent : ZatiColours::groove (0.34f));
+                g.fillRoundedRectangle (celda.toFloat(), 2.0f);
+                g.setColour (on ? ZatiColours::textOn (ZatiColours::accent)
+                                : ZatiColours::inkDim);
+                g.setFont (ZatiColours::monoFont (Metrics::fMeta, on));
+                g.drawText (Lang::ltr (juce::String (i - 2)), celda, juce::Justification::centred);
+            }
+        }
     }
 
     auto inner = vstSheet.cuerpo.getLocalBounds().reduced (Metrics::lg, 0)
-                     .withTop (vstPreArea.isEmpty() ? vstSheet.cuerpo.getHeight() - 40
-                                                    : vstPreArea.getBottom() + Metrics::sm);
+                     .withTop (vstPanelTec.isEmpty() ? vstSheet.cuerpo.getHeight() - 40
+                                                     : vstPanelTec.getBottom() + Metrics::sm);
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.06f));
-    g.drawFittedText (T ("Toca el teclado para oirlo. Un preset cambia el sonido del pad."),
+    g.drawFittedText (T ("El teclado suena mientras lo tengas tocado. Las flechas cambian el preset."),
                       inner.removeFromTop (40), Lang::start (juce::Justification::top), 2, 1.0f);
 }
 
@@ -15195,10 +15439,17 @@ void MainComponent::paintBrowseSheetContent (juce::Graphics& g)
     //  lineas mintiendo en la unica ficha cuyo trabajo es no equivocarse de
     //  sitio. Ver ModoBrowse.
     const bool eligiendoCarpeta = (browseModo == browseCarpeta);
-    g.drawText (eligiendoCarpeta
-                  ? T ("CARPETA DE EXPORTAR")
-                  : T ("CARGAR EN PAD %1", juce::String (juce::jmax (0, browseTargetPad) + 1)),
-                inner.removeFromTop (16), Lang::start());
+    //  Por pintaTitulo y no por drawText: asi el banco lo VE. Este titulo
+    //  existia desde el primer dia y `Tests/plano.py` decia "browse no tiene
+    //  titulo: se abre y no dice donde estas" - que es lo que se lee cuando un
+    //  rotulo se dibuja a mano. La ficha que mas necesita decir a que has
+    //  entrado es justo esta: el mismo navegador carga una muestra y elige la
+    //  carpeta del rebote.
+    pintaTitulo (g, antesDe (inner.removeFromTop (16), browseCloseButton),
+                 eligiendoCarpeta
+                   ? T ("CARPETA DE EXPORTAR")
+                   : T ("CARGAR EN PAD %1", juce::String (juce::jmax (0, browseTargetPad) + 1)),
+                 "titulo", true);
 
     const bool picked = ! eligiendoCarpeta
                      && browser != nullptr && browser->getNumSelectedFiles() > 0
@@ -15207,8 +15458,7 @@ void MainComponent::paintBrowseSheetContent (juce::Graphics& g)
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
     //  Same reason as the pad sheet: this is a file name, and the close button
     //  shares the band.
-    auto browseSubRow = inner.removeFromTop (14);
-    browseSubRow.setRight (juce::jmin (browseSubRow.getRight(), browseCloseButton.getX() - Metrics::xs));
+    auto browseSubRow = antesDe (inner.removeFromTop (14), browseCloseButton);
     juce::String sub;
     if (picked)                  sub = browser->getSelectedFile (0).getFileName();
     else if (eligiendoCarpeta)   sub = browser != nullptr
@@ -16066,6 +16316,83 @@ void MainComponent::auditPiano()
     std::cout << "{\"piano\":\"encoge\",\"sel\":" << selectedBar
               << ",\"puestas\":" << viejas
               << ",\"col3\":" << (int) pianoCells[3 * PianoRoll::kMaxNotas] << "}" << std::endl;
+
+    // ------------------------------------------------------------------
+    //  EL ARRASTRE NO CAMBIA DE FILA, Y EL LAPIZ NO BORRA.
+    //
+    //  Las dos se miden por el GESTO en pixeles -pianoGrid.gesto- y no por
+    //  onCelda, que es el callback: llamar al callback salta justo el codigo
+    //  que decide que celda es, o sea el sitio donde vive el fallo. Es la misma
+    //  leccion que los cinco del compas, contada desde el otro lado.
+    //
+    //  El fallo: bajar el dedo por la rejilla dejaba una nota en CADA fila por
+    //  la que pasaba, porque estaba escrito que cambiar de fila arrastrando es
+    //  "escribir un acorde". Un acorde son dos toques; esto era una escalera
+    //  que nadie pidio.
+    selectPad (0);
+    engine.setPatternLength (0, 16);
+    engine.clearPattern (0);
+    for (int st = 0; st < kNumSteps; ++st)
+        for (int p = 0; p < kNumPads; ++p)
+            pattern[0][(size_t) st][(size_t) p] = false;
+    selectedBar = 0;
+    showSeqPage (seqPagePiano);
+    resized();
+    refreshPiano();
+
+    //  El punto de una celda, en coordenadas de la rejilla. La canaleta del
+    //  teclado se salta a proposito: ahi el gesto suena y no escribe.
+    const int filas = pianoGrid.getFilas();
+    const float altoFila = (float) pianoGrid.getHeight() / (float) juce::jmax (1, filas);
+    const float anchoCol = (float) (pianoGrid.getWidth() - PianoRoll::kGutter)
+                             / (float) AudioEngine::kBarSteps;
+    auto punto = [&] (int col, int fila, float& x, float& y)
+    {
+        x = (float) PianoRoll::kGutter + ((float) col + 0.5f) * anchoCol;
+        y = ((float) fila + 0.5f) * altoFila;
+    };
+
+    auto notasEnPaso = [this] (int st)
+    {
+        int n = pattern[0][(size_t) st][(size_t) selectedPad] ? 1 : 0;
+        for (int e = 0; e < AudioEngine::kExtraNotes; ++e)
+            if (engine.getStepExtra (0, st, selectedPad, e) != -128) ++n;
+        return n;
+    };
+
+    float x0 = 0.0f, y0 = 0.0f, x1 = 0.0f, y1 = 0.0f;
+    punto (2, filas / 2,     x0, y0);
+    punto (2, filas / 2 + 3, x1, y1);
+    pianoGrid.gesto (x0, y0, false);
+    pianoGrid.gesto (x0, (y0 + y1) * 0.5f, true);
+    pianoGrid.gesto (x1, y1, true);
+    pianoGrid.suelta();
+
+    //  Cuantas filas quedaron escritas en esa columna: una. Y cuantas casillas
+    //  se encendieron en TODA la rejilla, que es la otra mitad - un arrastre
+    //  horizontal que se pierde escribiria en otra columna.
+    int filasEscritas = notasEnPaso (2), pasosPuestos = 0;
+    for (int st = 0; st < 16; ++st) if (pattern[0][(size_t) st][(size_t) selectedPad]) ++pasosPuestos;
+    std::cout << "{\"piano\":\"arrastre\",\"filas\":" << filasEscritas
+              << ",\"pasos\":" << pasosPuestos << "}" << std::endl;
+
+    //  EL LAPIZ: tocar encima de una nota que ya esta NO la quita. Con la
+    //  herramienta apagada -que es como sigue naciendo la pagina- el mismo
+    //  toque la alterna, que es lo corto para corregir una nota suelta.
+    pianoGrid.setHerramienta (PianoRoll::lapiz);
+    refreshPiano();
+    pianoGrid.gesto (x0, y0, false);
+    pianoGrid.suelta();
+    const int conLapiz = notasEnPaso (2);
+
+    pianoGrid.setHerramienta (PianoRoll::dibujar);
+    refreshPiano();
+    pianoGrid.gesto (x0, y0, false);
+    pianoGrid.suelta();
+    const int alternando = notasEnPaso (2);
+
+    std::cout << "{\"piano\":\"lapiz\",\"con\":" << conLapiz
+              << ",\"sin\":" << alternando << "}" << std::endl;
 }
 
 //  EL REBOTE, MEDIDO.

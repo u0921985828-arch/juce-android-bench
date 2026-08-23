@@ -150,6 +150,25 @@ else:
     mide ("encoge limpia", d["puestas"] == 1 and d["col3"] == 9,
            "%d celdas puestas, columna 3 = %d" % (d["puestas"], d["col3"]))
 
+#  --- el gesto, que hasta ahora no se podia medir -------------------------
+#
+#  Las dos se miden por pianoGrid.gesto -pixeles- y no por onCelda: llamar al
+#  callback salta el codigo que decide QUE celda es, que es donde vive el
+#  arrastre. Es la misma leccion de los cinco del compas por el otro lado.
+d = una ("arrastre")
+#  Un dedo que baja tres filas en la misma columna escribe UNA nota, no tres:
+#  bajar el dedo dejaba una en cada fila por la que pasaba.
+mide ("arrastre en su fila", d is not None and d["filas"] == 1 and d["pasos"] == 1,
+       "" if d is None else "%d notas en la columna, %d columnas escritas"
+                            % (d["filas"], d["pasos"]))
+
+d = una ("lapiz")
+#  Los DOS numeros: con el lapiz armado, tocar encima de una nota que ya esta
+#  la deja; sin el, la alterna. Solo el primero lo cumple una herramienta que
+#  no hace nada, y solo el segundo lo cumple no haberla anadido.
+mide ("lapiz escribe y no borra", d is not None and d["con"] == 1 and d["sin"] == 0,
+       "" if d is None else "con lapiz quedan %d, alternando %d" % (d["con"], d["sin"]))
+
 print()
 print ("piano: %d comprobaciones, %d FALLA" % (len (hechas), len (fallos)))
 sys.exit (1 if fallos else 0)

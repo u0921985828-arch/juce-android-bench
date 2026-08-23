@@ -108,8 +108,11 @@ public:
     //  alternar, que arrastrar sobre notas puestas y quitadas encendia unas y
     //  apagaba otras- y las TIJERAS cortan la nota por donde se tocan, que es
     //  lo unico que "cortar" puede significar cuando el largo es del paso.
-    enum Herramienta { dibujar = 0, goma, tijeras };
-    void setHerramienta (int h) { util = juce::jlimit (0, 2, h); }
+    //  Y EL LAPIZ, que es la goma por el otro lado: escribe y no alterna. La
+    //  pregunta la contesta quien tiene los datos - pianoCellToggled - porque
+    //  aqui no se sabe que hay escrito en una casilla.
+    enum Herramienta { dibujar = 0, lapiz, goma, tijeras };
+    void setHerramienta (int h) { util = juce::jlimit (0, 3, h); }
     int  getHerramienta() const { return util; }
 
     //  Borrar y cortar los resuelve quien tiene los datos, igual que onCelda.
@@ -299,31 +302,51 @@ public:
         }
     }
 
-    void mouseDown (const juce::MouseEvent& e) override { toca (e, false); }
-    void mouseDrag (const juce::MouseEvent& e) override { toca (e, true); }
-    void mouseUp   (const juce::MouseEvent&)   override { ultima = -1; filaIni = pasoIni = -1; ultimoLargo = -1; }
+    void mouseDown (const juce::MouseEvent& e) override { gesto ((float) e.x, (float) e.y, false); }
+    void mouseDrag (const juce::MouseEvent& e) override { gesto ((float) e.x, (float) e.y, true); }
+    void mouseUp   (const juce::MouseEvent&)   override { suelta(); }
 
-private:
-    void toca (const juce::MouseEvent& e, bool arrastrando)
+    //  EL GESTO, en pixeles y sin MouseEvent, para que el banco pueda medirlo.
+    //
+    //  Los cinco fallos del compas se midieron por `onCelda`, que es el
+    //  callback: eso salta justo el codigo que decide QUE celda es, que es
+    //  donde vive el arrastre. Un gesto que no se puede llamar es un gesto que
+    //  no se mide - y el arrastre que cambiaba de fila escribia una nota por
+    //  cada fila por la que pasaba el dedo sin que ninguna regla lo viera.
+    void gesto (float x, float y, bool arrastrando)
     {
         if (datos == nullptr) return;
         auto r = getLocalBounds();
         const float altoFila = (float) r.getHeight() / (float) filas;
-        const int fila = juce::jlimit (0, filas - 1, (int) ((float) (e.y - r.getY()) / altoFila));
+        const int fila = juce::jlimit (0, filas - 1, (int) ((y - (float) r.getY()) / altoFila));
         const int semi = semiBase + (filas - 1 - fila);
 
         //  EL TECLADO SUENA, no escribe. Buscar la nota antes de ponerla es la
         //  mitad de escribir una melodia, y sin esto habria que escribirla,
         //  oirla y borrarla.
-        if (e.x < r.getX() + kGutter)
+        if (x < (float) (r.getX() + kGutter))
         {
             if (! arrastrando && onTecla) onTecla (semi);
             return;
         }
 
         const float anchoCol = (float) (r.getWidth() - kGutter) / (float) nPasos;
-        const float dentro = (float) (e.x - r.getX() - kGutter) / anchoCol;
+        const float dentro = (x - (float) r.getX() - (float) kGutter) / anchoCol;
         const int paso = juce::jlimit (0, nPasos - 1, (int) dentro);
+
+        //  ARRASTRAR NO CAMBIA DE FILA.
+        //
+        //  Estaba escrito al reves -"si el dedo cambia de fila se esta
+        //  escribiendo un acorde o una escalera"- y desde el dedo eso es que
+        //  bajar el dedo por la rejilla deja una nota en CADA fila por la que
+        //  pasa. Un acorde se escribe levantando y volviendo a tocar, que son
+        //  dos notas y dos toques; lo que no se puede es escribir cinco sin
+        //  querer con un gesto.
+        //
+        //  Se pregunta antes que la herramienta, asi que la goma se queda
+        //  tambien en su fila: borrar de mas es el mismo accidente.
+        if (arrastrando && filaIni >= 0 && fila != filaIni) return;
+        if (! arrastrando) { filaIni = fila; pasoIni = paso; ultimoLargo = -1; }
 
         //  LA GOMA borra y no alterna: pasar el dedo por encima de una fila con
         //  notas puestas y huecos encendia los huecos, que es lo contrario de
@@ -388,10 +411,12 @@ private:
         const int clave = fila * 1000 + paso;
         if (arrastrando && clave == ultima) return;
         ultima = clave;
-        if (! arrastrando) { filaIni = fila; pasoIni = paso; ultimoLargo = -1; }
         onCelda (paso, semi);
     }
 
+    void suelta() { ultima = -1; filaIni = pasoIni = -1; ultimoLargo = -1; }
+
+private:
     const signed char* datos = nullptr;
     //  Un largo por PASO, en cuartos: las notas de un acorde comparten casilla
     //  y comparten largo, que es lo que un acorde es.

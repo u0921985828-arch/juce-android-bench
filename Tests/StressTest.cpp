@@ -2212,7 +2212,9 @@ int main()
 
         juce::AudioBuffer<float> out (2, 512);
         out.clear(); e.renderNextBlock (out, 0, 512);
-        e.postNoteOnAt (0, 0, 1.0f);
+        //  SOSTENIDA: sin decirlo, una audicion dura 1.2 s y esta prueba mide
+        //  una nota larga - el bache saldria -154 dB por haberse acabado.
+        e.postNoteOnAt (0, 0, 1.0f, AudioEngine::kSostenida);
 
         //  Se mira DESPUES del ataque -bloque 40 en adelante- y hasta bien
         //  pasadas dos vueltas del bucle.
@@ -2285,11 +2287,16 @@ int main()
             return e.getActiveVoiceCount();
         };
 
-        e.postNoteOn (0, 1.0f);
+        //  SOSTENIDAS a proposito. postNoteOn le pone ahora a la nota el largo
+        //  de una audicion -1200 ms- porque un dedo en un pad que no esta en
+        //  modo tecla no manda "suelta"; con ese largo, "tras soltar 0" saldria
+        //  verde por el largo y no por el NoteOff, que es lo que esta prueba
+        //  mide. Un numero que puede salir bien por dos motivos no mide ninguno.
+        e.postNoteOnAt (0, 0, 1.0f, AudioEngine::kSostenida);
         const int una = corre (30);
 
-        e.postNoteOn (1, 1.0f);
-        e.postNoteOn (2, 1.0f);
+        e.postNoteOnAt (1, 0, 1.0f, AudioEngine::kSostenida);
+        e.postNoteOnAt (2, 0, 1.0f, AudioEngine::kSostenida);
         const int tres = corre (30);
 
         //  Y ahora se sueltan las tres. 120 bloques son 1.28 s: de sobra para
@@ -2301,6 +2308,171 @@ int main()
         const bool ok = una == 1 && tres == 3 && tras == 0;
         std::printf ("%-34s una %d   tres a la vez %d   tras soltar %d   %s\n",
                      "el dedo como tecla", una, tres, tras, ok ? "OK" : "FALLA");
+    }
+
+    // ------------------------------------------------------------------
+    //  UN ACORDE TIENE QUE SONAR TAMBIEN EN LA SEGUNDA VUELTA.
+    //
+    //  La queja, con sus palabras: "cuando pongo un acorde el primer golpe si
+    //  lo hace, pero luego para repetir la secuencia ya no". La causa es que un
+    //  paso SIN largo escrito ponia la voz en -1 -"suelta sola"- y una zona de
+    //  instrumento DA VUELTAS: la nota no se acaba nunca. Las tres notas de mas
+    //  del acorde ademas se disparan sin autocorte a proposito, asi que cada
+    //  vuelta dejaba tres voces mas vivas para siempre.
+    //
+    //  TRES numeros y no uno. El del medio es el que delata: lo que queda vivo
+    //  al final del compas, o sea DESPUES de que la nota tenia que haber
+    //  terminado. Sin el, "en la segunda vuelta suenan cuatro" tambien lo
+    //  cumple una maquina en la que las cuatro de la primera siguen sonando.
+    {
+        AudioEngine e; e.prepareToPlay (48000.0, 256); e.setPolyphony (32, 8);
+        e.setPadGain (0, 0.8f);
+        //  BAJOS DUB, que sostiene: es el caso que la queja describe.
+        e.publishSample (0, Sintes::sintetiza (0, 0));
+        juce::AudioBuffer<float> b (2, 256);
+        runBlocks (e, b, 256, 4);
+
+        e.setSongMode (false);
+        e.clearPattern (0);
+        e.setPatternLength (0, 16);
+        e.setStep (0, 0, 0, true);
+        e.setStepNote (0, 0, 0, 0);
+        e.clearStepExtras (0, 0, 0);
+        e.setStepExtra (0, 0, 0, 0, 4,  true);
+        e.setStepExtra (0, 0, 0, 1, 7,  true);
+        e.setStepExtra (0, 0, 0, 2, 12, true);
+        e.setBpm (120.0);
+        e.setPlaying (true);
+
+        //  Un compas a 120 BPM en semicorcheas son 2 s, o sea 375 bloques de
+        //  256. Se mira el pico de los primeros bloques de cada compas -la
+        //  nota tarda en arrancar lo que tarde el bloque- y el sobrante justo
+        //  antes de que el compas de la vuelta.
+        int pico1 = 0, sobra = 0, pico2 = 0;
+        for (int i = 0; i < 760; ++i)
+        {
+            e.renderNextBlock (b, 0, 256);
+            const int v = e.getActiveVoiceCount();
+            if (i < 20) pico1 = juce::jmax (pico1, v);
+            if (i == 370) sobra = v;
+            if (i >= 375 && i < 395) pico2 = juce::jmax (pico2, v);
+        }
+        e.setPlaying (false); e.postPanic();
+        for (int i = 0; i < 8; ++i) e.renderNextBlock (b, 0, 256);
+
+        const bool ok = pico1 == 4 && sobra == 0 && pico2 == 4;
+        std::printf ("%-34s compas 1: %d voces   sobra al final: %d   compas 2: %d   %s\n",
+                     "el acorde vuelve a sonar", pico1, sobra, pico2, ok ? "OK" : "FALLA");
+    }
+
+    // ------------------------------------------------------------------
+    //  Y UN PASO SIN LARGO DURA UN PASO, no toda la cancion.
+    //
+    //  Es la otra mitad de lo de arriba y la que se oye en una secuencia de
+    //  tripletes: "no se autocorta el sonido". El autocorte SI funcionaba - la
+    //  raiz corta su cola - pero entre golpe y golpe la nota seguia sonando,
+    //  que desde el dedo es exactamente lo mismo que no cortarse.
+    //
+    //  Se mide en BLOQUES con la voz viva contra el largo del paso, y no en
+    //  "se acabo antes del siguiente": un largo de una muestra tambien acaba
+    //  antes del siguiente y no es una nota.
+    {
+        AudioEngine e; e.prepareToPlay (48000.0, 64); e.setPolyphony (32, 8);
+        e.setPadGain (0, 0.8f);
+        e.setPadRelease (0, 5.0f);          // que la caida no cuente como nota
+        e.publishSample (0, Sintes::sintetiza (0, 0));
+        juce::AudioBuffer<float> b (2, 64);
+        runBlocks (e, b, 64, 4);
+
+        e.setSongMode (false);
+        e.clearPattern (0);
+        e.setPatternLength (0, 16);
+        e.setStep (0, 0, 0, true);
+        e.setStepNote (0, 0, 0, 0);
+        e.setBpm (120.0);
+        e.setPlaying (true);
+
+        //  Un paso son 6000 muestras, o sea 93 bloques de 64.
+        int vivos = 0;
+        for (int i = 0; i < 200; ++i)
+        {
+            e.renderNextBlock (b, 0, 64);
+            if (e.getActiveVoiceCount() > 0) ++vivos;
+        }
+        e.setPlaying (false); e.postPanic();
+        for (int i = 0; i < 8; ++i) e.renderNextBlock (b, 0, 64);
+
+        //  Con margen por los dos lados: la caida de 5 ms son 4 bloques y el
+        //  disparo cae dentro de un bloque, no en su borde.
+        const bool ok = vivos > 80 && vivos < 110;
+        std::printf ("%-34s %d bloques vivos de un paso de 93   %s\n",
+                     "un paso sin largo dura un paso", vivos, ok ? "OK" : "FALLA");
+    }
+
+    // ------------------------------------------------------------------
+    //  EL RECORTE DE UN INSTRUMENTO RECORTA, Y LO QUE DA VUELTAS ES EL TROZO.
+    //
+    //  Se ignoraba con este argumento: "una zona no se recorta". La persona lo
+    //  dijo al reves y tiene razon: "si yo acorto ese sonido, el bucle tiene
+    //  que ser de ese sonido". Ahora INICIO y FIN son FRACCION de la zona que
+    //  toca, asi que significan lo mismo en las cinco octavas.
+    //
+    //  DOS numeros, que es lo que separa "recorta" de "se rompe": que lo que
+    //  suena CAMBIE -bit a bit, porque "casi lo mismo" es justo lo que dejaria
+    //  pasar un recorte que no se aplica- y que la nota SIGA VIVA y sonando
+    //  despues del final del recorte, que es lo que dice que el bucle se ha
+    //  mudado ahi dentro en vez de haberse acabado.
+    {
+        auto corre = [] (float fin, std::vector<float>& dst) noexcept
+        {
+            AudioEngine e; e.prepareToPlay (48000.0, 256); e.setPolyphony (32, 8);
+            e.setSafetyLimiter (false);
+            auto sb = Sintes::sintetiza (0, 0);                 // BAJOS DUB, sostiene
+            const int len = sb->buffer.getNumSamples();
+            e.publishSample (0, sb);
+            e.setPadGain (0, 1.0f);
+            //  En MUESTRAS, que es lo que el motor guarda; la fraccion contra
+            //  la zona la hace triggerPad, que es quien sabe que zona toca.
+            e.setPadStart (0, 0);
+            e.setPadEnd (0, (int) ((float) len * fin));
+            juce::AudioBuffer<float> b (2, 256);
+            for (int i = 0; i < 4; ++i) e.renderNextBlock (b, 0, 256);
+            e.postNoteOnAt (0, 0, 1.0f, AudioEngine::kSostenida);
+
+            dst.clear();
+            double pico = 0.0;
+            for (int i = 0; i < 400; ++i)
+            {
+                b.clear();
+                e.renderNextBlock (b, 0, 256);
+                //  Solo la segunda mitad para el pico: el principio suena igual
+                //  en las dos corridas -es el mismo ataque- y lo que se
+                //  pregunta es si DESPUES sigue habiendo sonido.
+                for (int i2 = 0; i2 < 256; ++i2)
+                {
+                    const float v = b.getSample (0, i2);
+                    dst.push_back (v);
+                    if (i > 200) pico = juce::jmax (pico, (double) std::abs (v));
+                }
+            }
+            const int vivas = e.getActiveVoiceCount();
+            e.postPanic();
+            for (int i = 0; i < 4; ++i) e.renderNextBlock (b, 0, 256);
+            return std::make_pair (pico, vivas);
+        };
+
+        std::vector<float> entera, corta;
+        const auto a = corre (1.00f, entera);
+        const auto c = corre (0.25f, corta);
+
+        int distintas = 0;
+        for (size_t i = 0; i < entera.size() && i < corta.size(); ++i)
+            if (entera[i] != corta[i]) ++distintas;
+
+        const bool ok = distintas > 0 && c.second > 0 && c.first > 0.01;
+        std::printf ("%-34s %d muestras cambian   sigue sonando %.4f con %d voz   %s\n",
+                     "recortar un instrumento", distintas, c.first, c.second,
+                     ok ? "OK" : "FALLA");
     }
 
     // ------------------------------------------------------------------

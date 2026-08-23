@@ -182,7 +182,7 @@ private:
     juce::TextButton pianoPadDownBtn { "PAD -" }, pianoPadUpBtn { "PAD +" };
     //  Las dos herramientas del piano. Excluyentes: con las dos apagadas se
     //  dibuja, que es lo que hace falta el 90% del tiempo.
-    juce::TextButton pianoGomaBtn { "GOMA" }, pianoCorteBtn { "TIJERAS" };
+    juce::TextButton pianoLapizBtn { "LAPIZ" }, pianoGomaBtn { "GOMA" }, pianoCorteBtn { "TIJERAS" };
     //  CUANTAS OCTAVAS SE VEN. Su rotulo dice el estado y no la accion, que es
     //  lo que hace falta cuando el estado no se puede deducir mirando: trece
     //  filas y veinticinco se distinguen contando, y nadie cuenta.
@@ -509,6 +509,10 @@ private:
     void closeAllSheets();
     void paintAudioSheetContent (juce::Graphics& g);
     void paintSeqSheetContent (juce::Graphics& g);
+    //  Ver el .cpp: apunta lo que un texto OCUPA para que el banco lo vea,
+    //  sin dibujarlo. pintaTitulo es apunta + drawText.
+    void apunta (juce::Graphics& g, juce::Rectangle<int> caja,
+                 const juce::String& texto, const char* tipo);
     void pintaTitulo (juce::Graphics& g, juce::Rectangle<int> caja, const juce::String& texto,
                       const char* tipo = "titulo", bool elipsis = false);
     void paintPadSheetContent (juce::Graphics& g);
@@ -818,7 +822,6 @@ private:
     MidiIo::Bridge midi;
     juce::TextButton midiOutBtn { "MIDI OUT" }, midiInBtn { "MIDI IN" };
     juce::ComboBox   midiOutBox, midiInBox;
-    juce::Label      midiOutLbl, midiInLbl;
     void refreshMidiDevices();
     void applyMidiChoice();
 
@@ -919,6 +922,9 @@ private:
     //  haya tocado.
     void pushFadesToWaveform();
     int  padSourceLength (int pad) const;
+    //  Ver el .cpp: la zona que se enseña de un instrumento, y cuanto dura.
+    bool zonaVisible (int pad, int& ini, int& fin) const;
+    int  padVisibleLength (int pad) const;
     void assignSampleToPad (int index, SampleBuffer::Ptr sb, const juce::String& name = {});
     void toggleRecordArm();     // REC: live pad performance -> the pattern
     void toggleMicSampling();   // PADS sheet: mic -> the selected pad
@@ -1298,6 +1304,10 @@ private:
     Teclado vstTeclado;
     int vstPad = 0;
     juce::Rectangle<int> vstTitleArea, vstIconArea, vstNombreArea, vstOctArea;
+    //  LOS TRES PANELES DE LA FICHA, deducidos del maquetado y no maquetados:
+    //  es la misma tecnica que agrupa la ficha del secuenciador, y por lo mismo
+    //  no cuestan un pixel de alto. Ver paintVstSheetContent.
+    juce::Rectangle<int> vstPanelCab, vstPanelPre, vstPanelTec;
 
     void abreVst();
     //  QUE PADS SE TOCAN COMO TECLAS y cual esta sonando por cual. Ver
@@ -1821,7 +1831,7 @@ private:
     static const char* gridName (int i);
     juce::TextButton chainClearButton { "QUITAR CADENA" };
     juce::Slider macroCtrl1, macroCtrl2, macroCtrl3;   // CTRL 1-3, bank-dependent
-    juce::Label  status, fxLabel;
+    juce::Label  status;
     WaveformDisplay waveform;
     //  SE LLAMA CRISTAL Y NO ESPECTRO, porque no es un espectro: no lleva una
     //  sola FFT dentro. Dibuja la silueta de la onda del master sobre 0.74 s

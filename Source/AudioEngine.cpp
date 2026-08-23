@@ -297,17 +297,58 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01,
         }
 
         const auto& Z = sb->zonas[(size_t) mejor];
-        st     = Z.ini;
-        en     = Z.fin;
         semis -= (float) Z.raiz;
-        bucle  = (Z.bucleFin > Z.bucleIni);
-        vuelta = bucle ? Z.bucleIni : -1;
 
-        //  El recorte del pad NO se aplica: una zona no se recorta, y de hecho
-        //  los mandos de recorte estan escondidos para este pad. Y `from01`
-        //  tampoco - audicionar desde un punto de la onda es de una muestra.
+        //  EL RECORTE DE UN INSTRUMENTO ES RELATIVO A SU ZONA.
+        //
+        //  Antes se ignoraba, con este argumento: "una zona no se recorta". Es
+        //  falso desde el dedo - INICIO y FIN son de la MUESTRA que el pad
+        //  toca, y lo que la persona pide al acortar es exactamente lo que
+        //  cualquier sampler hace: si acorto el sonido, lo que da vueltas es
+        //  el sonido acortado. Ignorarlo dejaba dos mandos que se movian y no
+        //  hacian nada, que es peor que no tenerlos.
+        //
+        //  En FRACCION y no en muestras porque un pad de instrumento son diez
+        //  zonas pegadas: el mismo numero absoluto cae dentro de la primera
+        //  octava y fuera de la quinta. Asi el mismo recorte significa lo
+        //  mismo toque la nota que toque.
+        const int zLen = juce::jmax (4, Z.fin - Z.ini);
+        const double f0 = (double) st / (double) juce::jmax (1, len);
+        const double f1 = (double) en / (double) juce::jmax (1, len);
+        st = Z.ini + (int) (f0 * (double) zLen);
+        en = Z.ini + (int) (f1 * (double) zLen);
+        if (en <= st + 4) en = juce::jmin (Z.fin, st + 4);
+
+        bucle = (Z.bucleFin > Z.bucleIni);
+
+        //  Y EL BUCLE VIVE DENTRO DEL RECORTE. La zona vuelve a su punto de
+        //  bucle -que es donde acaba el ataque, para no repetir la pua en cada
+        //  vuelta- pero si el recorte se ha comido ese punto, lo que se repite
+        //  es el trozo entero: es lo unico que "hazme un bucle de ESTO" puede
+        //  significar. La costura de ahi la suaviza SUAVE IN/OUT, que por esto
+        //  vuelve a estar viva en un pad de instrumento.
+        vuelta = bucle ? ((Z.bucleIni >= st && Z.bucleIni < en) ? Z.bucleIni : st)
+                       : -1;
+
+        //  `from01` si se ignora: audicionar desde un punto de la onda es de
+        //  una muestra, y la onda de un instrumento son diez zonas pegadas.
         from01 = -1.0f;
     }
+
+    //  EL LARGO QUE NADIE DIJO. Ver kGateAuto.
+    //
+    //  Solo donde hace falta, que son las zonas que DAN VUELTAS: esas no
+    //  terminan nunca, y un paso -lo que dura una casilla- es lo que un
+    //  secuenciador escribe cuando no dice otra cosa. Las siete familias que no
+    //  sostienen -piano, plucks, campanas, guitarra, mazos, claves, arpas- se
+    //  acaban solas como una muestra cualquiera, y ponerles un paso habria
+    //  cortado una campana de dos segundos a los 125 ms. En percusion, igual:
+    //  aqui no cambia nada de lo que habia.
+    if (gate == kGateAuto || gate == kGateAudicion)
+        gate = (instrum && bucle)
+                 ? (gate == kGateAuto ? juce::jmax (32, (int) samplesPerStepNow())
+                                      : juce::jmax (32, (int) (kAudicionSeg * systemSampleRate)))
+                 : kGateSuelta;
 
     //  EL BLOQUEO DEL INICIO entra por la misma puerta que la audicion desde
     //  la onda -empezar en un punto y conservar el final del pad- porque es
@@ -405,8 +446,12 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01,
                                          : padRelease[(size_t) slot].load (std::memory_order_relaxed),
                    ! instrum && padKeepLength[(size_t) slot].load (std::memory_order_relaxed),
                    vel,
-                   instrum ? 0.0f : padFadeIn[(size_t) slot].load (std::memory_order_relaxed),
-                   instrum ? 0.0f : padFadeOut[(size_t) slot].load (std::memory_order_relaxed),
+                   //  LOS DOS SUAVE VALEN TAMBIEN EN UN INSTRUMENTO desde que
+                   //  el recorte lo recorta: la zona trae su cruce horneado
+                   //  para SU bucle, y en cuanto la persona mueve INICIO o FIN
+                   //  la costura pasa a ser suya y ese cruce ya no la tapa.
+                   padFadeIn[(size_t) slot].load (std::memory_order_relaxed),
+                   padFadeOut[(size_t) slot].load (std::memory_order_relaxed),
                    vuelta,
                    padAncho[(size_t) slot].load (std::memory_order_relaxed));
 
@@ -869,7 +914,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 const int gate = cuartos > 0
                                    ? juce::jmax (32, (int) (samplesPerStep * (double) cuartos
                                                             / (4.0 * (double) juce::jmax (1, hits))))
-                                   : -1;
+                                   : kGateAuto;
 
                 //  Y LOS OTROS CUATRO BLOQUEOS, que a diferencia del corte NO
                 //  se escriben en el pad: viajan con el disparo hasta
@@ -1701,7 +1746,17 @@ void AudioEngine::handleCommand (const Command& c) noexcept
         //  se perdia en el camino corto: el piano roll no podia oir una nota
         //  sin desafinar el pad. Cero sigue siendo el valor por defecto, asi
         //  que un dedo en un pad suena exactamente igual que antes.
-        case Command::Type::NoteOn:  triggerPad (c.slot, (int) c.semitones, c.velocity, c.from01); break;
+        case Command::Type::NoteOn:
+        {
+            //  EL LARGO VIAJA EN EL COMANDO. -1 la sostiene quien la disparo y
+            //  mandara su NoteOff -un dedo en un pad, una tecla del teclado de
+            //  la ficha-; -2 que la decida el motor. Sin esto, cualquier puerta
+            //  de la interfaz que se olvide del NoteOff deja una nota de
+            //  instrumento sonando para siempre, que es lo que le pasaba a la
+            //  audicion de presets: se cambiaba de preset y se acumulaban.
+            triggerPad (c.slot, (int) c.semitones, c.velocity, c.from01, true, c.gate);
+            break;
+        }
         case Command::Type::NoteOff:
             if (c.slot >= 0 && c.slot < kNumPads)
                 for (auto& v : voices)
@@ -1728,14 +1783,18 @@ void AudioEngine::handleCommand (const Command& c) noexcept
 void AudioEngine::postNoteOn (int slot, float vel) noexcept
 {
     Command c; c.type = Command::Type::NoteOn; c.slot = slot; c.velocity = vel;
+    //  Un dedo en un pad que NO esta en modo tecla no manda "suelta": es un
+    //  golpe. Con una zona que da vueltas debajo, eso seria una nota eterna.
+    c.gate = kGateAudicion;
     if (! commands.push (c))
         noteOnByLifeboat (slot);
 }
 
-void AudioEngine::postNoteOnAt (int slot, int semis, float vel) noexcept
+void AudioEngine::postNoteOnAt (int slot, int semis, float vel, int gate) noexcept
 {
     Command c; c.type = Command::Type::NoteOn; c.slot = slot; c.velocity = vel;
     c.semitones = (float) semis;
+    c.gate      = gate;
     if (! commands.push (c))
         noteOnByLifeboat (slot);      // el bote solo lleva el pad; mejor la nota del pad que nada
 }
@@ -1744,6 +1803,7 @@ void AudioEngine::postNoteOnFrom (int slot, float from01, float vel) noexcept
 {
     Command c; c.type = Command::Type::NoteOn; c.slot = slot; c.velocity = vel;
     c.from01 = from01;
+    c.gate   = kGateAudicion;
     if (! commands.push (c))
         noteOnByLifeboat (slot);
 }
@@ -1764,6 +1824,8 @@ void AudioEngine::noteOnByLifeboat (int slot) noexcept
 void AudioEngine::postNoteOnFromMidi (int slot, float vel) noexcept
 {
     Command c; c.type = Command::Type::NoteOn; c.slot = slot; c.velocity = vel;
+    //  El MIDI manda su propio NoteOff, asi que esta la sostiene el teclado.
+    c.gate = kGateSuelta;
     if (! midiCommands.push (c))
         noteOnByLifeboat (slot);
 }

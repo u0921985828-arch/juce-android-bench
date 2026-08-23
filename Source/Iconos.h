@@ -45,7 +45,7 @@ namespace Iconos
         cargar, guardar, abrir, nuevo, borrar, exportar, carpeta,
         copiar, pegar, vaciar,
         insertar, quitar, acortar, alargar,
-        atras, adelante, doblar, humanizar, goma, tijeras, loop, cuadrar,
+        atras, adelante, doblar, humanizar, lapiz, goma, tijeras, loop, cuadrar,
         pads, sec, piano, mezcla, cancion, xy, ajustes, rack, chop, instrumentos, manual,
         sonido, recorte,
         flt, hpf, drv, dly, bit, rev,
@@ -85,6 +85,7 @@ namespace Iconos
             case Id::atras: return "atras";            case Id::adelante: return "adelante";
             case Id::doblar: return "doblar";
             case Id::humanizar: return "humanizar";    case Id::goma: return "goma";
+            case Id::lapiz: return "lapiz";
             case Id::tijeras: return "tijeras";        case Id::loop: return "loop";
             case Id::cuadrar: return "cuadrar";        case Id::pads: return "pads";
             case Id::sec: return "sec";                case Id::piano: return "piano";
@@ -374,6 +375,18 @@ namespace Iconos
                     R.addRectangle (x[i], 20.5f - h[i], 2.6f, h[i]);
                 break;
             }
+
+            //  EL LAPIZ es el cuerpo LARGO Y ESTRECHO con punta, y la goma de
+            //  al lado es un cuadrilatero ancho con una linea cruzada: si los
+            //  dos fueran un romboide en diagonal serian el mismo dibujo, que
+            //  es lo que `Tests/iconos.py` existe para no dejar pasar.
+            case Id::lapiz:
+                L.startNewSubPath (7.5f, 20.0f); L.lineTo (5.0f, 21.5f);
+                L.lineTo (4.0f, 18.8f); L.closeSubPath();          // la punta
+                L.startNewSubPath (7.5f, 20.0f); L.lineTo (17.5f, 5.0f);
+                L.lineTo (20.6f, 7.1f); L.lineTo (10.6f, 22.1f); L.closeSubPath();
+                linea (L, 15.6f, 7.9f, 18.7f, 10.0f);             // la virola
+                break;
 
             case Id::goma:
                 L.startNewSubPath (2.5f, 15.5f); L.lineTo (10.5f, 4.5f);

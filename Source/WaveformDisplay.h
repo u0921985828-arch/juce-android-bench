@@ -29,6 +29,30 @@ public:
         repaint();
     }
 
+    //  LO QUE SE ENSEÑA NO ES SIEMPRE EL BUFFER ENTERO.
+    //
+    //  Un pad de instrumento no lleva UNA muestra: lleva diez zonas pegadas
+    //  -cinco octavas por dos capas de fuerza- y la que suena es una. Dibujar
+    //  el buffer entero enseñaba diez ataques seguidos y ponia las asas de
+    //  recorte sobre la tira completa, asi que arrastrar el inicio "a la mitad"
+    //  no era la mitad de lo que suena: era el principio de la sexta zona.
+    //
+    //  Y sobre todo, el motor aplica ese recorte como FRACCION DE LA ZONA (ver
+    //  triggerPad), asi que la onda y el sonido decian cosas distintas con el
+    //  mismo numero. Ahora se dibuja la zona de referencia y las asas caen
+    //  sobre lo que recortan.
+    //
+    //  Vacia -ini >= fin- es el buffer entero, que es como nace y como se queda
+    //  cualquier muestra normal.
+    void setVentana (int ini, int fin)
+    {
+        const int i = juce::jmax (0, ini), f = juce::jmax (0, fin);
+        if (i == visIni && f == visFin) return;
+        visIni = i; visFin = f;
+        computeMinMax();
+        repaint();
+    }
+
     void setInfo (const juce::String& name, double sampleRate, double seconds, int channels)
     {
         infoName = name;
@@ -698,17 +722,23 @@ private:
     bool  panned = false;
     float zoom = 1.0f;      // 1 = el fichero entero
     float view0 = 0.0f;     // borde izquierdo de lo que se ve, 0..1
+    int   visIni = 0, visFin = 0;   // ver setVentana
 
     void computeMinMax()
     {
         mins.clearQuick(); maxs.clearQuick();
         if (sample == nullptr) return;
         auto& buf = sample->buffer;
-        const int len = buf.getNumSamples();
-        if (len < 1 || buf.getNumChannels() < 1) return;
+        const int total = buf.getNumSamples();
+        if (total < 1 || buf.getNumChannels() < 1) return;
+
+        //  La ventana visible. Ver setVentana: para un pad de instrumento es
+        //  UNA zona de las diez, y para todo lo demas el buffer entero.
+        const int desde = (visFin > visIni && visFin <= total) ? visIni : 0;
+        const int len   = (visFin > visIni && visFin <= total) ? (visFin - visIni) : total;
 
         const int W = juce::jmax (1, getWidth() > 0 ? getWidth() - 20 : 320);
-        const float* d = buf.getReadPointer (0);
+        const float* d = buf.getReadPointer (0) + desde;
 
         //  Solo el trozo que se ve, y RESUMIENDOLO OTRA VEZ. Dibujar la
         //  envolvente del fichero entero y estirarla seria un zoom de imagen:
