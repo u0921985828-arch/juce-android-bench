@@ -54,6 +54,13 @@ AudioEngine::AudioEngine()
     //  turn it off per pad.
     for (auto& c : padSelfCut) c.store (true, std::memory_order_relaxed);
 
+    //  ANCHO a uno, o sea "como viene la muestra". Aqui y no en prepareToPlay:
+    //  esa se llama otra vez cada vez que el telefono cambia de ruta, y con
+    //  esto dentro, enchufar unos cascos devolveria los sesenta y cuatro pads a
+    //  su ancho de fabrica en mitad de una sesion. Cero -que es lo que deja un
+    //  array de atomicos- seria peor todavia: la maquina entera en mono.
+    for (auto& w : padAncho) w.store (1.0f, std::memory_order_relaxed);
+
     //  NINGUN PAD MANDA A NINGUN EFECTO, y el cero es el sitio del que se sale.
     //
     //  Estaba al reves - los 64 pads a tope en los seis envios - con el
@@ -400,7 +407,8 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01,
                    vel,
                    instrum ? 0.0f : padFadeIn[(size_t) slot].load (std::memory_order_relaxed),
                    instrum ? 0.0f : padFadeOut[(size_t) slot].load (std::memory_order_relaxed),
-                   vuelta);
+                   vuelta,
+                   padAncho[(size_t) slot].load (std::memory_order_relaxed));
 
     //  DESPUES de start, por lo mismo que el gate: la pone a false y el
     //  bloqueo de pan es del PASO. Sin esto el pan bloqueado dura un bloque -
@@ -593,7 +601,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         //  happens to be on it.
         padFirstVoice.fill (-1);
 
-        float padGainNow[kNumPads], padPanNow[kNumPads];
+        float padGainNow[kNumPads], padPanNow[kNumPads], padAnchoNow[kNumPads];
         bool  padTouched[kNumPads] = {};
 
         for (int v = voiceLimit - 1; v >= 0; --v)
@@ -606,11 +614,12 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 padTouched[vc.slot] = true;
                 padGainNow[vc.slot] = effectiveGain (vc.slot);
                 padPanNow [vc.slot] = padPan[(size_t) vc.slot].load (std::memory_order_relaxed);
+                padAnchoNow[vc.slot] = padAncho[(size_t) vc.slot].load (std::memory_order_relaxed);
             }
 
             // Control-rate retarget: a looping or long voice keeps following
             // its pad's VOLUME and PAN instead of freezing start()'s values.
-            vc.retarget (padGainNow[vc.slot], padPanNow[vc.slot]);
+            vc.retarget (padGainNow[vc.slot], padPanNow[vc.slot], padAnchoNow[vc.slot]);
 
             voiceNextInPad[(size_t) v] = padFirstVoice[(size_t) vc.slot];
             padFirstVoice[(size_t) vc.slot] = v;

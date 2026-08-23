@@ -135,6 +135,13 @@ public:
     bool getPadSelfCut (int slot) const noexcept
     { return slot >= 0 && slot < kNumPads && padSelfCut[(size_t) slot].load (std::memory_order_relaxed); }
     void setPadPan     (int slot, float p)     noexcept { store (padPan,     slot, p); }        // -1..1
+    //  ANCHO ESTEREO: 0 mono, 1 como viene, 2 el doble de lado. Ver Voice::ancho:
+    //  el pan dice DONDE esta el sonido y esto CUANTO ocupa, y son dos cosas.
+    void setPadAncho   (int slot, float w)     noexcept { store (padAncho,   slot, juce::jlimit (0.0f, 2.0f, w)); }
+    float getPadAncho (int slot) const noexcept
+    {
+        return (slot >= 0 && slot < kNumPads) ? padAncho[(size_t) slot].load (std::memory_order_relaxed) : 1.0f;
+    }
     void setPadAttack  (int slot, float ms)    noexcept { store (padAttack,  slot, ms); }
     void setPadRelease (int slot, float ms)    noexcept { store (padRelease, slot, ms); }
 
@@ -967,6 +974,10 @@ private:
     std::array<std::atomic<bool>,  kNumPads> padKeepLength {};   // true = pitch only, false = tape
     std::array<std::atomic<int>,   kNumPads> padChoke {};   // 0 = none, 1..8 = choke group
     std::array<std::atomic<float>, kNumPads> padPan {};      // -1 (L) .. 0 (centre) .. 1 (R)
+    //  UNO por defecto y no cero, que es lo que deja un array de atomicos: cero
+    //  seria "todos los pads en mono" y un proyecto anterior sonaria plano. Lo
+    //  llena prepareToPlay, que es quien puede.
+    std::array<std::atomic<float>, kNumPads> padAncho {};    // 0 mono .. 1 como viene .. 2 doble
     std::array<std::atomic<float>, kNumPads> padAttack {};   // ms
     std::array<std::atomic<float>, kNumPads> padRelease {};  // ms
 

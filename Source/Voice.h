@@ -151,6 +151,22 @@ struct Voice
     float  panTL     = 0.7071f;   // pan targets — retarget() moves these, render() slews
     float  panTR     = 0.7071f;
 
+    //  EL ANCHO NO ES EL PAN, y por eso son dos numeros y no uno.
+    //
+    //  El pan dice DONDE esta el sonido y el ancho CUANTO ocupa. Se hacen en
+    //  medio/lado -M=(L+R)/2, S=(L-R)/2, se escala S y se rehace- que es la
+    //  unica forma de estrechar sin mover el centro: bajar un canal y subir el
+    //  otro estrecharia y ademas desplazaria.
+    //
+    //  Y va ANTES del pan, no despues. Al reves, el pan ya ha metido señal en
+    //  el lado -es lo que hace un pan- y el ancho la amplificaria: abrir el
+    //  ancho de un pad panorámico se oiria como moverlo mas a la izquierda.
+    //
+    //  Uno es "como viene". Una muestra MONO tiene S = 0, asi que el ancho no
+    //  puede hacer nada con ella y no hace falta ninguna rama para saberlo.
+    float  ancho     = 1.0f;
+    float  anchoT    = 1.0f;
+
     //  padGain is the pad's level (volume knob, mute, solo); vel is how hard
     //  this particular note was struck. They were one number, which is why
     //  every hit came out the same: there was nowhere to put the difference.
@@ -160,7 +176,7 @@ struct Voice
                 float pan = 0.0f, float attackMs = 2.0f, float releaseMs = 3.0f,
                 bool keepLength = false, float vel = 1.0f,
                 float fadeInMs = 0.0f, float fadeOutMs = 0.0f,
-                int loopFromSamp = -1) noexcept
+                int loopFromSamp = -1, float anchoPad = 1.0f) noexcept
     {
         slot     = slotIndex;
         winStart = juce::jlimit (1, juce::jmax (1, srcLen - 3), startSamp);
@@ -268,6 +284,10 @@ struct Voice
         stepUp    = (float) (target / fadeIn);
         stepDown  = (float) (target / fadeOut);
         stepCtl   = (float) (1.0 / juce::jmax (1.0, 0.010 * fSys));
+        //  El ancho lo trae el disparo Y ademas se pone el destino, las dos
+        //  cosas: una voz reciclada guarda el anchoT de la nota anterior, y sin
+        //  esto el primer bloque de la nueva sonaria con el ancho de la vieja.
+        ancho = anchoT = juce::jlimit (0.0f, 2.0f, anchoPad);
         gate      = -1;          // el que dispara la pone si el paso lleva largo
         panPropio = false;       // idem: solo si el paso trae bloqueo de pan
         active    = true;
@@ -308,10 +328,15 @@ struct Voice
     // Control-rate update (once per block, audio thread): a looping/long voice
     // keeps following its pad's VOLUME and PAN instead of freezing the values
     // captured at start(). Gain ramps in render(); pan slews there too.
-    void retarget (float g, float pan) noexcept
+    void retarget (float g, float pan, float anchoPad = 1.0f) noexcept
     {
         if (! active || releasing) return;
         target = g * velocity;
+        //  El ancho lo sigue SIEMPRE, como el volumen y a diferencia del pan
+        //  bloqueado: un mando de la mesa tiene que mover lo que ya suena, y
+        //  sin esto duraria 128 muestras - que es exactamente lo que le paso al
+        //  bloqueo de pan antes de que Voice::panPropio existiera.
+        anchoT = juce::jlimit (0.0f, 2.0f, anchoPad);
         //  El volumen SI lo sigue: un bloqueo de pan no puede dejar la voz
         //  sorda a la mesa de mezclas, que es otra cosa.
         if (panPropio) return;
@@ -365,6 +390,7 @@ struct Voice
         //  sound card.
         const float panIncL = (panTL - panL) / (float) num;
         const float panIncR = (panTR - panR) / (float) num;
+        const float anchoInc = (anchoT - ancho) / (float) num;
 
         //  CUANTO DEJA PASAR EL BORDE, para la posicion en la que se esta.
         //
@@ -542,13 +568,17 @@ struct Voice
                 const int   ia = (int) pA; const float fa = (float) (pA - (double) ia);
                 const int   ib = (int) pB; const float fb = (float) (pB - (double) ib);
 
-                const float l = wA * hermite4 (fa, srcL, ia) + wB * hermite4 (fb, srcL, ib);
+                float l = wA * hermite4 (fa, srcL, ia) + wB * hermite4 (fb, srcL, ib);
+                float r = (srcR != nullptr)
+                              ? wA * hermite4 (fa, srcR, ia) + wB * hermite4 (fb, srcR, ib)
+                              : l;
+                ancho += anchoInc;
+                { const float m = 0.5f * (l + r), sd = 0.5f * (l - r) * ancho;
+                  l = m + sd; r = m - sd; }
                 const float ge = hayFundido ? gain * bordeGain (pos) : gain;
                 dstL[i] += ge * panL * l;
                 if (stereoOut)
-                    dstR[i] += ge * panR * (srcR != nullptr
-                                              ? wA * hermite4 (fa, srcR, ia) + wB * hermite4 (fb, srcR, ib)
-                                              : l);
+                    dstR[i] += ge * panR * r;
 
                 pos   += timeStep;
                 gOffA += drift;
@@ -629,6 +659,10 @@ struct Voice
                     aaL += aaCoef * (l - aaL);   l = aaL;
                     aaR += aaCoef * (r - aaR);   r = aaR;
                 }
+                //  DESPUES del antialias y ANTES del pan. Ver `ancho`.
+                ancho += anchoInc;
+                { const float m = 0.5f * (l + r), sd = 0.5f * (l - r) * ancho;
+                  l = m + sd; r = m - sd; }
                 const float ge = hayFundido ? gain * bordeGain (pos) : gain;
                 dstL[i] += ge * panL * l;
                 if (stereoOut)
@@ -640,6 +674,7 @@ struct Voice
 
         panL = juce::jlimit (0.0f, 1.0f, panL);
         panR = juce::jlimit (0.0f, 1.0f, panR);
+        ancho = juce::jlimit (0.0f, 2.0f, ancho);
     }
 
 private:

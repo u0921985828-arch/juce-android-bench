@@ -1773,7 +1773,7 @@ private:
     juce::Slider pitchSlider, fineSlider, volSlider, startSlider, endSlider, bpmSlider, chokeSlider;
     //  CINTA moves pitch and length together, TONO keeps the length.
     juce::TextButton modeButton { "CINTA" };
-    juce::Slider panSlider, attackSlider, releaseSlider;
+    juce::Slider panSlider, anchoSlider, attackSlider, releaseSlider;
     //  El filtro del pad. Ver AudioEngine::setPadCutoff: no lleva interruptor
     //  porque el corte arriba del todo ya es "sin filtro".
     juce::Slider cutSlider, resoSlider;
@@ -1829,6 +1829,10 @@ private:
     std::array<bool,  kNumPads> padReverse {};
     std::array<int,   kNumPads> padChokeUI {};   // 0 = none
     std::array<float, kNumPads> padPan {};        // -1..1, 0 = centre
+    //  ANCHO ESTEREO por pad: 0 mono, 1 como viene, 2 el doble de lado. Ver
+    //  Voice::ancho. Se inicializa a uno en el constructor, que un array de
+    //  floats deja ceros y eso seria la maquina entera en mono.
+    std::array<float, kNumPads> padAnchoUI {};
     std::array<float, kNumPads> padAttack {};     // ms
     std::array<float, kNumPads> padRelease {};    // ms
     std::array<float, kNumPads> padCut {};        // Hz, kFiltOpenHz = abierto

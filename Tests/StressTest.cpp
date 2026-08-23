@@ -2303,5 +2303,148 @@ int main()
                      "el dedo como tecla", una, tres, tras, ok ? "OK" : "FALLA");
     }
 
+    // ------------------------------------------------------------------
+    //  EL ANCHO ESTEREO, EN DOS NUMEROS.
+    //
+    //  Solo el primero -cuanto lado queda- lo cumple tambien un mando de
+    //  volumen: bajar los dos canales baja el lado. Y solo el segundo -cuanto
+    //  centro sobrevive- lo cumple no hacer nada. Los dos a la vez son lo unico
+    //  que dice que esto es un ancho. Es la misma regla que QUITAR RUIDO.
+    //
+    //  Y LA FUENTE TIENE QUE SER ESTEREO DE VERDAD: dos ruidos DISTINTOS, uno
+    //  por canal. Con la misma señal en los dos, S vale cero, el ancho no
+    //  puede hacer nada y la prueba diria que si a cualquier cosa - incluso a
+    //  un ancho que no esta conectado.
+    {
+        auto dosRuidos = []
+        {
+            auto* sb = new SampleBuffer();
+            sb->sourceSampleRate = 48000.0;
+            sb->buffer.setSize (2, 48000);
+            juce::Random ra (7), rb (99);
+            for (int i = 0; i < 48000; ++i)
+            {
+                sb->buffer.setSample (0, i, ra.nextFloat() * 0.6f - 0.3f);
+                sb->buffer.setSample (1, i, rb.nextFloat() * 0.6f - 0.3f);
+            }
+            return SampleBuffer::Ptr (sb);
+        };
+
+        auto mide = [&] (float ancho)
+        {
+            AudioEngine e;
+            e.prepareToPlay (48000.0, 512);
+            e.setSafetyLimiter (false);
+            e.publishSample (0, dosRuidos());
+            e.setPadGain (0, 1.0f);
+            e.setPadPan (0, 0.0f);
+            e.setPadAncho (0, ancho);
+
+            juce::AudioBuffer<float> out (2, 512);
+            out.clear(); e.renderNextBlock (out, 0, 512);
+            e.postNoteOn (0, 1.0f);
+
+            double lado = 0.0, centro = 0.0;
+            for (int b = 0; b < 20; ++b)
+            {
+                out.clear();
+                e.renderNextBlock (out, 0, 512);
+                const auto* L = out.getReadPointer (0);
+                const auto* R = out.getReadPointer (1);
+                //  Los dos bloques primeros llevan el ataque del pad; se cuenta
+                //  desde el tercero, que es donde el nivel ya es plano.
+                if (b < 3) continue;
+                for (int i = 0; i < 512; ++i)
+                {
+                    const double s = 0.5 * ((double) L[i] - (double) R[i]);
+                    const double m = 0.5 * ((double) L[i] + (double) R[i]);
+                    lado   += s * s;
+                    centro += m * m;
+                }
+            }
+            return std::pair<double, double> { std::sqrt (lado / 8704.0),
+                                               std::sqrt (centro / 8704.0) };
+        };
+
+        const auto mono  = mide (0.0f);
+        const auto tal   = mide (1.0f);
+        const auto doble = mide (2.0f);
+
+        //  A cero el lado es SILENCIO, no "casi": si queda algo, el mando no
+        //  llega al final de su recorrido y "mono" no es mono.
+        const bool ok = mono.first < 1.0e-6
+                     && tal.first  > 0.01
+                     && doble.first > tal.first * 1.9
+                     && std::abs (mono.second  - tal.second) < tal.second * 0.02
+                     && std::abs (doble.second - tal.second) < tal.second * 0.02;
+        std::printf ("%-34s lado %.5f / %.5f / %.5f   centro %.5f / %.5f / %.5f   %s\n",
+                     "el ancho estereo", mono.first, tal.first, doble.first,
+                     mono.second, tal.second, doble.second, ok ? "OK" : "FALLA");
+
+        // --------------------------------------------------------------
+        //  Y EL ORDEN, que con el pan al centro no se ve.
+        //
+        //  El ancho va ANTES del pan. Al reves el pan ya ha metido señal en el
+        //  lado -es lo que hace un pan- y el ancho la amplificaria, asi que
+        //  abrir el ancho de un pad panoramico se oiria como moverlo mas a la
+        //  izquierda. Con el pan al centro las dos versiones dan lo MISMO, que
+        //  es por lo que la medida de arriba no puede verlo.
+        //
+        //  Se mide con una muestra MONO y el pan fuera del centro: una fuente
+        //  mono tiene lado cero, asi que en el orden correcto el ancho no puede
+        //  hacer absolutamente nada y las tres corridas salen IGUALES. Bit a
+        //  bit y no por nivel: "casi lo mismo, 0.1 dB" es justo lo que dejaria
+        //  pasar un orden invertido con un pan suave. Es la misma comparacion
+        //  que ya se hace con el filtro del pad apagado.
+        auto unRuidoMono = []
+        {
+            auto* sb = new SampleBuffer();
+            sb->sourceSampleRate = 48000.0;
+            sb->buffer.setSize (1, 48000);
+            juce::Random r (11);
+            for (int i = 0; i < 48000; ++i)
+                sb->buffer.setSample (0, i, r.nextFloat() * 0.6f - 0.3f);
+            return SampleBuffer::Ptr (sb);
+        };
+
+        auto panoramico = [&] (float ancho)
+        {
+            AudioEngine e;
+            e.prepareToPlay (48000.0, 512);
+            e.setSafetyLimiter (false);
+            e.publishSample (0, unRuidoMono());
+            e.setPadGain (0, 1.0f);
+            e.setPadPan (0, -0.5f);          // fuera del centro: ahi se ve el orden
+            e.setPadAncho (0, ancho);
+
+            juce::AudioBuffer<float> out (2, 512);
+            out.clear(); e.renderNextBlock (out, 0, 512);
+            e.postNoteOn (0, 1.0f);
+
+            std::vector<float> salida;
+            for (int b = 0; b < 10; ++b)
+            {
+                out.clear();
+                e.renderNextBlock (out, 0, 512);
+                for (int c = 0; c < 2; ++c)
+                    salida.insert (salida.end(), out.getReadPointer (c),
+                                   out.getReadPointer (c) + 512);
+            }
+            return salida;
+        };
+
+        const auto pm = panoramico (0.0f);
+        const auto pt = panoramico (1.0f);
+        const auto pd = panoramico (2.0f);
+
+        int difiere = 0;
+        for (size_t i = 0; i < pt.size(); ++i)
+            if (pm[i] != pt[i] || pd[i] != pt[i]) ++difiere;
+
+        std::printf ("%-34s mono con el pan a -0.5: %d muestras de %d cambian   %s\n",
+                     "el ancho va antes del pan", difiere, (int) pt.size(),
+                     difiere == 0 ? "OK" : "FALLA");
+    }
+
     return 0;
 }

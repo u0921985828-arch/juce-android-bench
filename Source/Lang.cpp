@@ -56,6 +56,7 @@ namespace
         //  por la que TOUR ATRAS la lleva: ATRAS es la herramienta que desplaza
         //  el patron, y en chino dice "mover". Una clave que se reaprovecha por
         //  parecerse en espanol sale mal en las otras tres.
+        { "ANCHO",       "",  "WIDTH",      "宽度",   "العرض" },
         { "PRESETS",     "",  "PRESETS",    "预设",   "إعدادات" },
         { "OCT",         "",  "OCT",        "八度",   "أوكتاف" },
         { "OCTAVA %1",   "",  "OCTAVE %1",  "八度 %1", "أوكتاف %1" },

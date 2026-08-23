@@ -257,6 +257,7 @@ UNTRANSLATED_OK = {
     "PIANO",                                   # el instrumento se llama igual en las dos
     "PAD -", "PAD +",                          # PAD pasa por T() y coincide de verdad en es/en
     "OCT -", "OCT +",                          # la abreviatura de octava es la misma
+    "MONO",                                    # se dice igual en las dos lenguas
     "PRESETS",                                 # se dice igual en las dos lenguas
     "PACK -", "PACK +",                        # la palabra es la misma en las dos lenguas
     "MASTER",                                  # la mezcla final se llama igual en las dos

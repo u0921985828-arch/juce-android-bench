@@ -243,6 +243,15 @@ MainComponent::MainComponent()
     //  its own tail is the special case, not the normal one.
     padSelfCut.fill (true);
 
+    //  MENOS UNO es "este dedo no esta tocando nada". El array se
+    //  inicializaba a ceros -que es lo que deja `{}`- o sea al PAD 0: levantar
+    //  el dedo de un pad que no llego a sonar -con LOAD armado, o vacio-
+    //  mandaba un "suelta" al pad 0 y le cortaba la nota a otro.
+    notaViva.fill (-1);
+    //  ANCHO a uno, o sea "como viene la muestra": el cero del array seria la
+    //  maquina entera en mono.
+    padAnchoUI.fill (1.0f);
+
     for (int i = 0; i < kNumPads; ++i)
     {
         auto* p = new PadButton (i);
@@ -1329,6 +1338,12 @@ MainComponent::MainComponent()
     initKnob (panSlider, -1.0, 1.0, 0.01, 0.0, 0.0,
              [this] { if (selectedPad >= 0) { padPan[(size_t) selectedPad] = (float) panSlider.getValue(); engine.setPadPan (selectedPad, (float) panSlider.getValue());
                                               if (auto* mp = mixPans[selectedPad]) mp->setValue (panSlider.getValue(), juce::dontSendNotification); } });
+    //  ANCHO: 0 mono, 1 como viene, 2 el doble. Doble click al UNO y no al
+    //  cero, que es lo que este mando significa "sin tocar" - y es el valor con
+    //  el que vuelve cualquier proyecto anterior.
+    initKnob (anchoSlider, 0.0, 2.0, 0.01, 1.0, 1.0,
+             [this] { if (selectedPad >= 0) { padAnchoUI[(size_t) selectedPad] = (float) anchoSlider.getValue();
+                                              engine.setPadAncho (selectedPad, (float) anchoSlider.getValue()); } });
     initKnob (attackSlider, 0.0, 200.0, 1.0, 2.0, 20.0,
              [this] { if (selectedPad >= 0) { padAttack[(size_t) selectedPad] = (float) attackSlider.getValue(); engine.setPadAttack (selectedPad, (float) attackSlider.getValue()); } });
     initKnob (releaseSlider, 1.0, 800.0, 1.0, 5.0, 40.0,
@@ -1382,6 +1397,14 @@ MainComponent::MainComponent()
         return (v < 0 ? "L" : "R") + juce::String ((int) std::round (std::abs (v) * 100.0));
     };
     panSlider.updateText();
+    //  MONO en el extremo de abajo y no un "0%": cero por ciento de ancho es
+    //  una frase y mono es la palabra. Es lo mismo que hace CHOKE con su off.
+    anchoSlider.textFromValueFunction = [] (double v)
+    {
+        if (v < 0.005) return T ("MONO");
+        return juce::String ((int) std::round (v * 100.0)) + "%";
+    };
+    anchoSlider.updateText();
     chokeSlider.textFromValueFunction = [] (double v) { return v <= 0.0 ? T ("off") : juce::String ((int) v); };
     chokeSlider.updateText();
 
@@ -2684,6 +2707,7 @@ MainComponent::MainComponent()
     // Controls live inside their sheets, not on the machine face.
     for (juce::Component* c : { (juce::Component*) &pitchSlider, (juce::Component*) &fineSlider,
                                 (juce::Component*) &volSlider, (juce::Component*) &panSlider,
+                                (juce::Component*) &anchoSlider,
                                 (juce::Component*) &attackSlider, (juce::Component*) &releaseSlider, (juce::Component*) &chokeSlider,
                                 (juce::Component*) &startSlider, (juce::Component*) &endSlider,
                                 (juce::Component*) &reverseButton, (juce::Component*) &loopButton,
@@ -2888,6 +2912,7 @@ MainComponent::MainComponent()
     //  pinta DESPUES de la tarjeta y de los rotulos.
     for (juce::Component* c : { (juce::Component*) &pitchSlider,  (juce::Component*) &fineSlider,
                                 (juce::Component*) &volSlider,    (juce::Component*) &panSlider,
+                                (juce::Component*) &anchoSlider,
                                 (juce::Component*) &attackSlider, (juce::Component*) &releaseSlider,
                                 (juce::Component*) &cutSlider,    (juce::Component*) &resoSlider,
                                 (juce::Component*) &chokeSlider,  (juce::Component*) &startSlider,
@@ -3821,6 +3846,7 @@ void MainComponent::showPadPage (int page)
 
     for (juce::Component* c : { (juce::Component*) &pitchSlider, (juce::Component*) &fineSlider,
                                 (juce::Component*) &volSlider,   (juce::Component*) &panSlider,
+                                (juce::Component*) &anchoSlider,
                                 (juce::Component*) &attackSlider,(juce::Component*) &releaseSlider,
                                 (juce::Component*) &cutSlider,   (juce::Component*) &resoSlider,
                                 (juce::Component*) &chokeSlider, (juce::Component*) &modeButton,
@@ -4487,6 +4513,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
             name (panSlider, "PAN");
             name (attackSlider, "ATTACK"); name (releaseSlider, "RELEASE");
             name (cutSlider, "CORTE|filtro"); name (resoSlider, "RESON");
+            name (anchoSlider, "ANCHO");
             name (chokeSlider, "CHOKE");
 
             //  Same band, one pixel lower: the third row insets its cells by 3.
@@ -5909,13 +5936,20 @@ void MainComponent::resized()
             const int knobH = juce::jlimit (60, ZatiLookAndFeel::kKnobRow, forKnobs / 3);
             juce::Slider* k1[3] = { &pitchSlider, &fineSlider, &volSlider };
             juce::Slider* k2[3] = { &panSlider, &attackSlider, &releaseSlider };
-            //  El filtro son DOS y no tres: media fila vacia se lee como un
-            //  mando que falta. Dos celdas anchas, que ademas es lo que pide
-            //  un corte - es el mando que mas se arrastra de la ficha.
-            juce::Slider* k3[2] = { &cutSlider, &resoSlider };
+            //  Y la tercera fila son TRES desde que existe el ANCHO. Era de
+            //  dos celdas anchas con este argumento: "media fila vacia se lee
+            //  como un mando que falta". Con tres la fila esta llena, que es lo
+            //  que ese argumento pedia, y no cuesta un pixel de alto - que es
+            //  lo unico que a esta ficha le falta.
+            //
+            //  ANCHO aqui y no al lado de PAN, que seria su pareja: la fila de
+            //  PAN ya lleva ATTACK y RELEASE, y separarlos para juntar esta
+            //  pareja romperia la otra. Una fila mas cuesta 60 px en la pagina
+            //  mas apretada de la ficha.
+            juce::Slider* k3[3] = { &cutSlider, &resoSlider, &anchoSlider };
             placeKnobRow (inner.removeFromTop (knobH), k1);
             placeKnobRow (inner.removeFromTop (knobH), k2);
-            placeKnobRow (inner.removeFromTop (knobH), k3, 2);
+            placeKnobRow (inner.removeFromTop (knobH), k3);
         }
 
         //  A third row for the two controls that are not dials: CHOKE, which
@@ -9106,6 +9140,12 @@ void MainComponent::updateControlsFromPad (int index)
     duckButton.setToggleState (engine.getDuckPad() == index, juce::dontSendNotification);
     chokeSlider.setValue (padChokeUI[(size_t) index], juce::dontSendNotification);
     panSlider.setValue     (padPan[(size_t) index],     juce::dontSendNotification);
+    anchoSlider.setValue   (padAnchoUI[(size_t) index], juce::dontSendNotification);
+    //  Y APAGADO EN UNA MUESTRA MONO, que no tiene lado que abrir ni cerrar.
+    //  El mando se moveria y no pasaria nada, que es lo que esta casa no deja:
+    //  un control que no puede hacer nada no es informacion, es ruido.
+    anchoSlider.setEnabled (uiSample[(size_t) index] != nullptr
+                            && uiSample[(size_t) index]->buffer.getNumChannels() > 1);
     attackSlider.setValue  (padAttack[(size_t) index],  juce::dontSendNotification);
     releaseSlider.setValue (padRelease[(size_t) index], juce::dontSendNotification);
     cutSlider.setValue  (padCut[(size_t) index],  juce::dontSendNotification);
@@ -9392,6 +9432,7 @@ void MainComponent::assignSampleToPad (int index, SampleBuffer::Ptr sb, const ju
     engine.setPadChoke   (index, padChokeUI[(size_t) index]);
     engine.setPadSelfCut (index, padSelfCut[(size_t) index]);
     engine.setPadPan     (index, padPan[(size_t) index]);
+    engine.setPadAncho   (index, padAnchoUI[(size_t) index]);
     engine.setPadAttack  (index, padAttack[(size_t) index]);
     engine.setPadRelease (index, padRelease[(size_t) index]);
 
@@ -10420,6 +10461,7 @@ juce::ValueTree MainComponent::captureState() const
         p.setProperty ("reverse", padReverse[(size_t) i], nullptr);
         p.setProperty ("choke",   padChokeUI[(size_t) i], nullptr);
         p.setProperty ("pan",     padPan[(size_t) i],     nullptr);
+        p.setProperty ("ancho",   padAnchoUI[(size_t) i], nullptr);
         p.setProperty ("attack",  padAttack[(size_t) i],  nullptr);
         p.setProperty ("release", padRelease[(size_t) i], nullptr);
         //  DE QUE PAD SALE EL AUDIO DE ESTE, que es lo que convierte
@@ -10648,6 +10690,11 @@ void MainComponent::applyState (const juce::ValueTree& s)
             padReverse[(size_t) i] = (bool)  p.getProperty ("reverse", false);
             padChokeUI[(size_t) i] = (int)   p.getProperty ("choke", 0);
             padPan[(size_t) i]     = (float) p.getProperty ("pan", 0.0);
+            //  UNO por defecto: un proyecto guardado antes de que el ancho
+            //  existiera no trae la propiedad y tiene que volver sonando
+            //  exactamente como se guardo. El cero del array seria mono.
+            padAnchoUI[(size_t) i] = (float) p.getProperty ("ancho", 1.0);
+            engine.setPadAncho (i, padAnchoUI[(size_t) i]);
             padAttack[(size_t) i]  = (float) p.getProperty ("attack", 2.0);
             padRelease[(size_t) i] = (float) p.getProperty ("release", 5.0);
             //  Un proyecto guardado antes de que el filtro existiera no lleva
