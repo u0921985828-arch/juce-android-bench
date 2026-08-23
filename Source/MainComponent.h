@@ -305,6 +305,11 @@ private:
     //  cara se queda debajo del velo: habia que cerrar, tocar, y volver a
     //  abrir buscando por donde ibas.
     juce::TextButton seqPlayBtn { "PLAY" };
+    //  EL INTERRUPTOR DE LO QUE TOCA PLAY, en la fila del transporte y no en
+    //  otra ficha: es la pregunta que se hace justo antes de pulsar PLAY. Ver
+    //  ponModoCancion - el estado es UNO y las tapas son tres, igual que ya
+    //  pasa con PLAY (la cara, la cancion y el secuenciador).
+    juce::TextButton modoBtn { "PATRON" }, seqModoBtn { "PATRON" };
     //  HUMANIZAR y SEGUIR, las dos que faltaban del editor de patrones.
     //
     //  HUMANIZAR escribe un empujon distinto en cada paso y una fuerza
@@ -513,6 +518,7 @@ private:
     //  sin dibujarlo. pintaTitulo es apunta + drawText.
     void apunta (juce::Graphics& g, juce::Rectangle<int> caja,
                  const juce::String& texto, const char* tipo);
+    void ponModoCancion (bool on);
     void pintaTitulo (juce::Graphics& g, juce::Rectangle<int> caja, const juce::String& texto,
                       const char* tipo = "titulo", bool elipsis = false);
     void paintPadSheetContent (juce::Graphics& g);

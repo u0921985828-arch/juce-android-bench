@@ -185,6 +185,19 @@ static juce::Rectangle<int> antesDe (juce::Rectangle<int> banda, const juce::Com
     return antesDe (banda, tapa.getBounds(), aire);
 }
 
+//  LA TAPA DEL MODO, que dice lo que SUENA y no lo que va a pasar si la tocas.
+//
+//  Es la misma gramatica que `transporte`: la tapa lleva el nombre del estado
+//  en el que esta -PATRON o CANCION- con su dibujo, asi que se lee de un
+//  vistazo sin acordarse de nada. Una tapa que dijera "IR A CANCION" obligaria
+//  a mirar si esta encendida para saber donde estas.
+static void modoTapa (juce::TextButton& b, bool cancion)
+{
+    b.setButtonText (cancion ? T ("CANCION") : T ("PATRON"));
+    b.getProperties().set ("icono", (int) (cancion ? Iconos::Id::cancion : Iconos::Id::patron));
+    b.repaint();
+}
+
 static void transporte (juce::TextButton& b, bool rodando)
 {
     b.setButtonText (rodando ? T ("STOP") : T ("PLAY"));
@@ -2363,10 +2376,7 @@ MainComponent::MainComponent()
         //  tapa esta en la pagina de la cancion, y lo que se espera de ella es
         //  oir la cancion.
         if (on && ! engine.isSongMode())
-        {
-            engine.setSongMode (true);
-            songModeBtn.setToggleState (true, juce::dontSendNotification);
-        }
+            ponModoCancion (true);
         engine.setPlaying (on);
         //  Y la tapa de la cara dice lo mismo, que es el mismo transporte.
         playButton.setToggleState (on, juce::dontSendNotification);
@@ -2384,14 +2394,19 @@ MainComponent::MainComponent()
     styleButton (songModeBtn, kStepOff);
     litAccent (songModeBtn);
     songModeBtn.setClickingTogglesState (true);
-    songModeBtn.onClick = [this]
-    {
-        engine.setSongMode (songModeBtn.getToggleState());
-        status.setText (songModeBtn.getToggleState() ? T ("PLAY toca la cancion")
-                                                     : T ("PLAY toca el patron / la cadena"),
-                        juce::dontSendNotification);
-    };
+    songModeBtn.onClick = [this] { ponModoCancion (songModeBtn.getToggleState()); };
     songSheet.addAndMakeVisible (songModeBtn);
+
+    //  LAS OTRAS DOS, una por fila de transporte. Ver ponModoCancion.
+    for (auto* b : { &modoBtn, &seqModoBtn })
+    {
+        styleButton (*b, kStepOff);
+        litAccent (*b);
+        b->setClickingTogglesState (true);
+        b->onClick = [this, b] { ponModoCancion (b->getToggleState()); };
+    }
+    addAndMakeVisible (modoBtn);
+    seqSheet.addAndMakeVisible (seqModoBtn);
 
     songLenSlider.setSliderStyle (juce::Slider::LinearHorizontal);
     songLenSlider.setRange (1.0, (double) AudioEngine::kSongBars, 1.0);
@@ -3052,7 +3067,10 @@ void MainComponent::ponIconos()
         //  Es la fila donde mas rinde -INSERTAR y QUITAR se leen igual de
         //  rapido en cualquiera de los cuatro idiomas- y la que obligo a que
         //  esos dos no sean el mismo dibujo con un signo cambiado. Ver Iconos.h.
-        { &songPadModeBtn, Iconos::Id::sonido },  { &songModeBtn, Iconos::Id::cancion },
+        { &songPadModeBtn, Iconos::Id::sonido },
+        //  songModeBtn, modoBtn y seqModoBtn NO estan en esta tabla: su dibujo
+        //  cambia con el estado -CANCION o PATRON- y lo pone modoTapa. Dos
+        //  sitios escribiendo el mismo icono es uno de los dos quedandose viejo.
         { &songClearBtn, Iconos::Id::vaciar },    { &songDoubleBtn, Iconos::Id::doblar },
         { &songInsertBtn, Iconos::Id::insertar }, { &songRemoveBtn, Iconos::Id::quitar },
         { &songCopyBtn, Iconos::Id::copiar },     { &songPasteBtn, Iconos::Id::pegar },
@@ -3789,7 +3807,14 @@ void MainComponent::showSeqPage (int page)
     if (! onPiano) pianoGrid.setBounds ({});
 
     stepGrid.setVisible      (onGrid);
-    seqPlayBtn.setVisible    (onGrid);
+    //  EL TRANSPORTE ESTA EN LAS DOS PAGINAS QUE ESCRIBEN NOTAS, que es lo que
+    //  la pagina del piano no tenia: "faltan botones para controlar el
+    //  proyecto". Oir lo que llevas escrito es la mitad de escribirlo.
+    //  En PATRON no: esa pagina actua sobre el patron entero y no se toca
+    //  mientras suena. El modo, con el, por lo mismo.
+    seqPlayBtn.setVisible    (onGrid || onPiano);
+    seqModoBtn.setVisible    (onGrid || onPiano);
+    if (onPat) { seqPlayBtn.setBounds ({}); seqModoBtn.setBounds ({}); }
     seqHumanBtn.setVisible   (onPat);
     //  SEGUIR NO SE ENCIENDE AQUI. Va en la fila del transporte y solo
     //  entra donde las cuatro tapas caben, y quien lo sabe es resized().
@@ -4496,6 +4521,30 @@ void MainComponent::apunta (juce::Graphics& g, juce::Rectangle<int> caja,
     if (Lang::isRightToLeft (Lang::current())) real = real.removeFromRight (usado);
     else                                       real = real.removeFromLeft (usado);
     UiAudit::rotulo (real, texto, tipo);
+}
+
+//  EL MODO ES UNO Y LAS TAPAS SON TRES.
+//
+//  La cara, la ficha de la cancion y la del secuenciador tienen cada una su
+//  fila de transporte, y las tres preguntan lo mismo: que toca PLAY. Es
+//  exactamente lo que ya pasa con PLAY -playButton, songPlayBtn y seqPlayBtn
+//  son tres tapas de un estado- asi que se sigue el mismo patron y no se
+//  inventa otro: quien escribe el estado es esta funcion, y las tres tapas
+//  sacan su cara de aqui.
+//
+//  Estaba SOLO en la ficha de la cancion, que es la unica de las tres que no
+//  tiene PLAY al lado: armar el modo alli y salir a pulsar PLAY es un viaje, y
+//  la pregunta se hace justo antes de pulsar.
+void MainComponent::ponModoCancion (bool on)
+{
+    engine.setSongMode (on);
+    for (juce::TextButton* b : { &songModeBtn, &modoBtn, &seqModoBtn })
+    {
+        b->setToggleState (on, juce::dontSendNotification);
+        modoTapa (*b, on);
+    }
+    status.setText (on ? T ("PLAY toca la cancion") : T ("PLAY toca el patron / la cadena"),
+                    juce::dontSendNotification);
 }
 
 void MainComponent::pintaTitulo (juce::Graphics& g, juce::Rectangle<int> caja,
@@ -5508,9 +5557,25 @@ void MainComponent::resized()
         juce::TextButton* mb[6] = { &padsButton, &secButton, &songButton, &mixButton, &xyButton, &setButton };
         layoutModuleBar (tabs, mb, ZatiLookAndFeel::kAir / 2);
 
-        const int u = row.getWidth() / 3;
+        //  CUATRO DONDE CABEN: el interruptor de modo entra a la IZQUIERDA de
+        //  PLAY y se lleva la mitad de su ancho, que es de donde sale. Ver
+        //  ponModoCancion: la pregunta que contesta -que toca PLAY- se hace
+        //  justo antes de pulsarlo, asi que su sitio es este y no otra ficha.
+        //
+        //  Y girado no caben: aqui el transporte comparte renglon con las seis
+        //  pestañas y se queda con 190 px, o sea 42 por tapa - "PATTERN" pide
+        //  41 px de letra y tenia 36. Se cae, como se cae SEGUIR, y el
+        //  interruptor sigue estando en las otras dos filas de transporte.
+        juce::TextButton* tr[4] = { &loadButton, &recButton, &modoBtn, &playButton };
+        const bool cabeModo = moduleBarFits (row.getWidth(), tr, 4);
+        modoBtn.setVisible (cabeModo);
+        if (! cabeModo) modoBtn.setBounds ({});
+
+        const int u = row.getWidth() / (cabeModo ? 4 : 3);
         loadButton.setBounds (row.removeFromLeft (u).reduced (Metrics::aireTapa, 0));
         recButton.setBounds  (row.removeFromLeft (u).reduced (Metrics::aireTapa, 0));
+        if (cabeModo)
+            modoBtn.setBounds (row.removeFromLeft (u).reduced (Metrics::aireTapa, 0));
         playButton.setBounds (row.reduced (Metrics::aireTapa, 0));
     }
     else
@@ -5530,9 +5595,20 @@ void MainComponent::resized()
 
     {
         auto row = area.removeFromTop (ZatiLookAndFeel::kTransport);
-        const int u = row.getWidth() / 4;
+        //  PLAY se lleva dos cuartos y el modo se queda con uno de ellos: es
+        //  literalmente la mitad de PLAY, que era el ancho que sobraba en esta
+        //  fila. Las cuatro tapas quedan iguales, y donde no quepan se cae el
+        //  modo - la misma pregunta que se hace girado.
+        juce::TextButton* tr[4] = { &loadButton, &recButton, &modoBtn, &playButton };
+        const bool cabeModo = moduleBarFits (row.getWidth(), tr, 4);
+        modoBtn.setVisible (cabeModo);
+        if (! cabeModo) modoBtn.setBounds ({});
+
+        const int u = row.getWidth() / (cabeModo ? 4 : 3);
         loadButton.setBounds (row.removeFromLeft (u).reduced (Metrics::aireTapa, 0));
         recButton.setBounds  (row.removeFromLeft (u).reduced (Metrics::aireTapa, 0));
+        if (cabeModo)
+            modoBtn.setBounds (row.removeFromLeft (u).reduced (Metrics::aireTapa, 0));
         playButton.setBounds (row.reduced (Metrics::aireTapa, 0));
     }
     }
@@ -7890,14 +7966,19 @@ void MainComponent::resized()
             //  La fila de tapas puede ser DOS. Ver la maqueta: cinco no caben en
             //  las pantallas estrechas, y pedir una fila y colocar dos es como
             //  la rejilla del piano se queda sin sitio.
-            juce::TextButton* pb5[7] = { &pianoOctDownBtn, &pianoOctUpBtn, &pianoVerBtn,
+            //  NUEVE desde que la pagina tiene transporte: el modo y PLAY
+            //  van delante, que es lo que se toca mientras se escribe -oir lo
+            //  que llevas es la mitad de escribirlo- y las tres herramientas
+            //  al final, juntas.
+            juce::TextButton* pb5[9] = { &seqModoBtn, &seqPlayBtn,
+                                         &pianoOctDownBtn, &pianoOctUpBtn, &pianoVerBtn,
                                          &pianoClearBtn, &pianoLapizBtn, &pianoGomaBtn,
                                          &pianoCorteBtn };
             const int anchoTarjeta = (int) ((float) safeArea().getWidth() * 0.92f) - 2 * Metrics::lg;
             //  Apaisado no hay fila de tapas que pedir: se van a la columna
             //  de al lado. Pedir una fila que luego no se coloca es pedir 48 px
             //  de mas de lo unico que escasea girado.
-            const int filasTapas = wideFace ? 0 : (moduleBarFits (anchoTarjeta, pb5, 7) ? 1 : 2);
+            const int filasTapas = wideFace ? 0 : (moduleBarFits (anchoTarjeta, pb5, 9) ? 1 : 2);
             filasTapasPiano = filasTapas;
             wanted = chrome + pianoGrid.getFilas() * PianoRoll::kAltoObjetivo + Metrics::sm + 14
                    + filasTapas * Metrics::hit
@@ -8093,7 +8174,8 @@ void MainComponent::resized()
             //  Dos columnas y no que se caiga una tapa, porque apaisado lo que
             //  sobra es ANCHO: es la misma regla que puso la columna aqui en
             //  primer lugar. Con la mitad, seis piden 140 px de alto.
-            juce::TextButton* pbCol[7] = { &pianoOctDownBtn, &pianoOctUpBtn, &pianoVerBtn,
+            juce::TextButton* pbCol[9] = { &seqModoBtn, &seqPlayBtn,
+                                           &pianoOctDownBtn, &pianoOctUpBtn, &pianoVerBtn,
                                            &pianoClearBtn, &pianoLapizBtn, &pianoGomaBtn,
                                            &pianoCorteBtn };
             const auto altoDe = [] (int n) { return n * Metrics::hit + (n - 1) * Metrics::halfGap; };
@@ -8116,7 +8198,7 @@ void MainComponent::resized()
                 Lang::takeEnd (inner, Metrics::gap);
                 juce::Rectangle<int> col = Lang::takeStart (side, anchoCol);
                 int puestas = 0;
-                for (int i = 0; i < 7; ++i)
+                for (int i = 0; i < 9; ++i)
                 {
                     if (! pbCol[i]->isVisible()) continue;
                     if (puestas == porColumna)
@@ -8143,13 +8225,15 @@ void MainComponent::resized()
                 //  CINCO tapas, y si no caben en una fila, dos: OCTAVA -/+ y
                 //  VACIAR arriba, las dos herramientas debajo. En 280 px cinco
                 //  a lo ancho dejan "TIJERAS" en 31 de los 48 que pide.
-                juce::TextButton* pbTodas[7] = { &pianoOctDownBtn, &pianoOctUpBtn, &pianoVerBtn,
+                juce::TextButton* pbTodas[9] = { &seqModoBtn, &seqPlayBtn,
+                                                 &pianoOctDownBtn, &pianoOctUpBtn, &pianoVerBtn,
                                                  &pianoClearBtn, &pianoLapizBtn, &pianoGomaBtn,
                                                  &pianoCorteBtn };
-                juce::TextButton* pbSin5[6]  = { &pianoOctDownBtn, &pianoOctUpBtn,
+                juce::TextButton* pbSin5[8]  = { &seqModoBtn, &seqPlayBtn,
+                                                 &pianoOctDownBtn, &pianoOctUpBtn,
                                                  &pianoClearBtn, &pianoLapizBtn, &pianoGomaBtn,
                                                  &pianoCorteBtn };
-                const int nb = pianoVerBtn.isVisible() ? 7 : 6;
+                const int nb = pianoVerBtn.isVisible() ? 9 : 8;
                 juce::TextButton** pb = pianoVerBtn.isVisible() ? pbTodas : pbSin5;
                 if (moduleBarFits (tapas.getWidth(), pb, nb))
                 {
@@ -8161,14 +8245,22 @@ void MainComponent::resized()
                     //  VISTA -las dos octavas y cuantas se ven- y abajo lo que
                     //  toca las NOTAS. Antes eran tres y dos partidas por donde
                     //  cayera, con VACIAR arriba entre dos flechas de vista.
-                    //  Las TRES herramientas van juntas y siempre abajo: son
-                    //  las ultimas de la lista, asi que el corte es nb-3 y no
-                    //  un tres escrito a mano - con LAPIZ dentro, tres arriba
-                    //  habria dejado la goma en un renglon y el lapiz en otro.
-                    layoutModuleBar (tapas, pb, 0, nb - 3);
+                    //  EL CORTE SE BUSCA, no se escribe. Con el corte fijo en
+                    //  nb-3 -que valia con siete- nueve dejaban seis tapas
+                    //  arriba; a mitades, cinco, y en 344x882 en arabe
+                    //  "أوكتاف -" pide 69 px de letra y tenia 53. Se prueba
+                    //  desde el reparto equilibrado hacia abajo y se coge el
+                    //  primero en el que caben LAS DOS filas: preguntar por una
+                    //  sola es como una fila corta empuja a la otra.
+                    int arriba = (nb + 1) / 2;
+                    for (int k = arriba; k >= 2; --k)
+                        if (moduleBarFits (tapas.getWidth(), pb, k)
+                            && moduleBarFits (tapas.getWidth(), pb + k, nb - k))
+                        { arriba = k; break; }
+                    layoutModuleBar (tapas, pb, 0, arriba);
                     auto fila2 = inner.removeFromBottom (Metrics::hit);
                     inner.removeFromBottom (Metrics::halfGap);
-                    layoutModuleBar (fila2, pb + (nb - 3), 0, 3);
+                    layoutModuleBar (fila2, pb + arriba, 0, nb - arriba);
                 }
             }
 
@@ -8432,18 +8524,29 @@ void MainComponent::resized()
                 //  lo que mide geometria. Entra donde las cuatro caben; donde
                 //  no, se apaga Y se le vacian los limites, que es lo que hay
                 //  que hacer con las dos cosas a la vez.
-                juce::TextButton* tb4[4] = { &seqPlayBtn, &tapButton, &clearButton, &seqFollowBtn };
+                //  Y EL MODO CON ELLAS, a la izquierda de PLAY: la fila del
+                //  transporte de esta ficha contesta lo mismo que la de la
+                //  cara. Entra por la misma escalera que SEGUIR - donde no
+                //  quepa, se apaga Y se le vacian los limites.
+                juce::TextButton* tb5[5] = { &seqModoBtn, &seqPlayBtn, &tapButton,
+                                             &clearButton, &seqFollowBtn };
+                juce::TextButton* tb4[4] = { &seqModoBtn, &seqPlayBtn, &tapButton, &clearButton };
                 juce::TextButton* tb3[3] = { &seqPlayBtn, &tapButton, &clearButton };
                 int paraTapas = row.getWidth() / 2;
                 //  Y con sitio para el dedo, no solo para la letra: moduleBarFits
                 //  mide el TEXTO, y cuatro rotulos cortos caben de sobra en una
                 //  fila donde a cada tapa le tocan 35 px.
-                const bool cabeSeguir = paraTapas >= 4 * Metrics::hit
-                                          && moduleBarFits (paraTapas, tb4, 4);
-                if (! cabeSeguir && ! moduleBarFits (paraTapas, tb3, 3))
+                const bool cabeSeguir = paraTapas >= 5 * Metrics::hit
+                                          && moduleBarFits (paraTapas, tb5, 5);
+                const bool cabeModo = cabeSeguir
+                                    || (paraTapas >= 4 * Metrics::hit
+                                        && moduleBarFits (paraTapas, tb4, 4));
+                if (! cabeModo && ! moduleBarFits (paraTapas, tb3, 3))
                     paraTapas = row.getWidth() * 2 / 3;
                 seqFollowBtn.setVisible (cabeSeguir);
                 if (! cabeSeguir) seqFollowBtn.setBounds ({});
+                seqModoBtn.setVisible (cabeModo);
+                if (! cabeModo) seqModoBtn.setBounds ({});
 
                 //  Y EL ROTULO DEL TEMPO SE QUEDA EN EL NUMERO cuando la fila
                 //  se estrecha: "120 bpm" pide 52 px y en 280 la casilla se
@@ -8454,8 +8557,9 @@ void MainComponent::resized()
                                     .reduced (Metrics::aireTapa, 0);
                 bpmSlider.setTextValueSuffix (celdaBpm.getWidth() >= 150 ? " bpm" : juce::String());
                 bpmSlider.setBounds (celdaBpm);
-                if (cabeSeguir) layoutModuleBar (row, tb4, 0, 4);
-                else            layoutModuleBar (row, tb3, 0, 3);
+                if      (cabeSeguir) layoutModuleBar (row, tb5, 0, 5);
+                else if (cabeModo)   layoutModuleBar (row, tb4, 0, 4);
+                else                 layoutModuleBar (row, tb3, 0, 3);
                 seqLabelBands.add ({ fuente.removeFromBottom (nameH), juce::String ("TEMPO") });
                 fuente.removeFromBottom (Metrics::sm);
             }
@@ -9887,8 +9991,12 @@ void MainComponent::retranslateUi()
     padRackBtn   .setButtonText (T ("ENVIOS"));
     nivelesButton.setButtonText (T ("16 NIVELES"));
     pianoButton  .setButtonText (T ("PIANO"));
-    pianoOctDownBtn.setButtonText (T ("OCTAVA") + " -");
-    pianoOctUpBtn  .setButtonText (T ("OCTAVA") + " +");
+    //  SOLO EL SIGNO, como las flechas del preset en la ficha del instrumento
+    //  y por lo mismo: "OCTAVA -" en arabe pide 69 px de letra y en 344x882 la
+    //  fila le da 53. Quien las nombra es el renglon de ayuda que va justo
+    //  encima de la rejilla, que ya dice OCTAVA y en que notas estas.
+    pianoOctDownBtn.setButtonText ("-");
+    pianoOctUpBtn  .setButtonText ("+");
     pianoPadDownBtn.setButtonText (T ("PAD") + " -");
     pianoPadUpBtn  .setButtonText (T ("PAD") + " +");
     pianoLapizBtn  .setButtonText (T ("LAPIZ"));
@@ -9950,7 +10058,9 @@ void MainComponent::retranslateUi()
     rackButton   .setButtonText (T ("RACK"));
     mixClearSolo .setButtonText (T ("SIN SOLO"));
     songClearBtn .setButtonText (T ("VACIAR"));
-    songModeBtn  .setButtonText (T ("CANCION"));
+    //  Las tres del modo dicen el ESTADO, no un verbo: ver modoTapa.
+    for (juce::TextButton* b2 : { &songModeBtn, &modoBtn, &seqModoBtn })
+        modoTapa (*b2, engine.isSongMode());
 
     chopSafeButton.setButtonText (T ("RESPETAR PADS CON SONIDO"));
     //  Y las dos del modo, que se construyen con el literal y no se
@@ -11142,9 +11252,9 @@ void MainComponent::applyState (const juce::ValueTree& s)
         engine.clearSong();
         engine.setSongLength ((int) song.getProperty ("bars", 8));
         songLenSlider.setValue ((double) engine.getSongLength(), juce::dontSendNotification);
-        const bool sm = (bool) song.getProperty ("mode", false);
-        engine.setSongMode (sm);
-        songModeBtn.setToggleState (sm, juce::dontSendNotification);
+        //  Por ponModoCancion, que es quien pone las TRES tapas: abrir un
+        //  proyecto en modo cancion dejaba la de la cara diciendo PATRON.
+        ponModoCancion ((bool) song.getProperty ("mode", false));
         for (int lane = 0; lane < Playlist::kLanes; ++lane)
         {
             auto toks = juce::StringArray::fromTokens (song.getProperty ("lane" + juce::String (lane)).toString(), ",", "");
@@ -12248,7 +12358,8 @@ void MainComponent::paintPianoSheetContent (juce::Graphics& g)
     ayuda.setLeft  (titulo.getX());
     ayuda.setRight (titulo.getRight());
     g.drawFittedText (T ("toca el teclado para oir, la rejilla para escribir")
-                        + "   " + dot + "   " + PianoRoll::nombreDe (pianoBase)
+                        + "   " + dot + "   " + T ("OCTAVA") + " "
+                        + PianoRoll::nombreDe (pianoBase)
                         + " - " + PianoRoll::nombreDe (pianoBase + pianoGrid.getFilas() - 1),
                       ayuda, Lang::start(), 1, 0.8f);
 }
@@ -16393,6 +16504,30 @@ void MainComponent::auditPiano()
 
     std::cout << "{\"piano\":\"lapiz\",\"con\":" << conLapiz
               << ",\"sin\":" << alternando << "}" << std::endl;
+
+    // ------------------------------------------------------------------
+    //  EL MODO: UN ESTADO Y TRES TAPAS.
+    //
+    //  La cara, la ficha de la cancion y la del secuenciador tienen cada una su
+    //  fila de transporte, y las tres llevan el mismo interruptor - como ya
+    //  pasa con PLAY. Lo que puede pudrirse en silencio no es el motor sino la
+    //  SINCRONIA: tocar una y que las otras dos sigan diciendo lo contrario se
+    //  lee como que el aparato no se ha enterado.
+    //
+    //  Se mide por el camino de verdad -el onClick de la tapa, con su
+    //  toggle puesto como lo pondria el dedo- y no llamando a ponModoCancion.
+    auto pulsa = [this] (juce::TextButton& b, bool on)
+    {
+        b.setToggleState (on, juce::dontSendNotification);
+        if (b.onClick) b.onClick();
+        std::cout << "{\"piano\":\"modo\",\"motor\":" << (engine.isSongMode() ? 1 : 0)
+                  << ",\"cara\":"   << (modoBtn.getToggleState()     ? 1 : 0)
+                  << ",\"sec\":"    << (seqModoBtn.getToggleState()  ? 1 : 0)
+                  << ",\"cancion\":"<< (songModeBtn.getToggleState() ? 1 : 0) << "}"
+                  << std::endl;
+    };
+    pulsa (seqModoBtn, true);      // desde la ficha del secuenciador
+    pulsa (modoBtn,    false);     // y de vuelta desde la cara
 }
 
 //  EL REBOTE, MEDIDO.

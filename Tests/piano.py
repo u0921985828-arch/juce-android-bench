@@ -169,6 +169,23 @@ d = una ("lapiz")
 mide ("lapiz escribe y no borra", d is not None and d["con"] == 1 and d["sin"] == 0,
        "" if d is None else "con lapiz quedan %d, alternando %d" % (d["con"], d["sin"]))
 
+#  --- el modo: un estado y tres tapas -------------------------------------
+#
+#  Las dos filas: encender desde la ficha del secuenciador y APAGAR desde la
+#  cara. Solo la primera la pasa un codigo en el que cada tapa escribe su
+#  propio estado; la segunda es la que dice que el estado es uno.
+modo = filas.get ("modo", [])
+if len (modo) != 2:
+    mide ("modo cancion/patron", False, "salieron %d lineas de 2" % len (modo))
+else:
+    a, b = modo
+    mide ("modo: enciende y las tres lo dicen",
+           (a["motor"], a["cara"], a["sec"], a["cancion"]) == (1, 1, 1, 1),
+           "motor %d cara %d sec %d cancion %d" % (a["motor"], a["cara"], a["sec"], a["cancion"]))
+    mide ("modo: apaga desde la cara",
+           (b["motor"], b["cara"], b["sec"], b["cancion"]) == (0, 0, 0, 0),
+           "motor %d cara %d sec %d cancion %d" % (b["motor"], b["cara"], b["sec"], b["cancion"]))
+
 print()
 print ("piano: %d comprobaciones, %d FALLA" % (len (hechas), len (fallos)))
 sys.exit (1 if fallos else 0)
