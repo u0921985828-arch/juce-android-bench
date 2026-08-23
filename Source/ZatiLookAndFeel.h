@@ -992,24 +992,25 @@ public:
         //  rota, no como una que no tenia sitio. Lo decide layoutModuleBar,
         //  que es quien sabe cuales son hermanas.
         if ((int) b.getProperties().getWithDefault ("sinIcono", 0) != 0) return r;
-        //  Y AL REVES: quedarse con el dibujo y soltar la palabra.
+        //  Y NO HAY VUELTA A ESTO POR EL OTRO LADO.
         //
-        //  Lo pide una REJILLA y no una fila. En una rejilla de cuatro por
-        //  cuatro la celda mide 56 px en la tarjeta mas estrecha, y ahi
-        //  "CUERDA PULS" no cabe de ninguna manera - ni apretada, que apretar
-        //  hasta el 0.9 no salva 66 px en 56 -. Un dibujo si cabe, y para eso
-        //  se dibujaron. Quien decide es quien coloca la rejilla, por lo mismo
-        //  que en una fila decide layoutModuleBar: una celda sola no sabe si
-        //  sus hermanas caben, y media rejilla con nombre y media sin el se lee
-        //  peor que ninguna.
-        const bool soloIcono = ((int) b.getProperties().getWithDefault ("soloIcono", 0) != 0);
+        //  Hubo un "soloIcono" que hacia justo lo contrario -quedarse con el
+        //  dibujo y soltar la palabra- y lo usaba una sola rejilla, la de
+        //  instrumentos: dieciseis dibujos y ni una palabra, con la queja
+        //  escrita al lado - "no se cual es el nombre de cada uno". La cuenta
+        //  decia ademas que ni siquiera hacia falta: en 412x915 esa celda
+        //  media 82 px y su caja 72, "CUERDA PULS" pide 64.5 y cabia. Lo que
+        //  no cabia eran los dos, y en esta casa lo que se cae es el adorno.
+        //  Se arreglo donde tocaba - dos columnas en vez de cuatro - y la
+        //  regla se borro, que una salida que contradice a la de al lado se
+        //  acaba usando. Ver MainComponent::rejillaDeIconos.
 
         //  Cuadrado y sacado del ALTO de la tapa: un tercio del ancho daria un
         //  icono de sesenta pixeles en la tapa de PLAY.
         const int tope = juce::jmin (r.texto.getHeight(), 18);
         if (tope < Iconos::kLadoMin) return r;
 
-        if (texto.isEmpty() || soloIcono) { r.id = id; r.icono = r.texto; r.texto = {}; return r; }
+        if (texto.isEmpty()) { r.id = id; r.icono = r.texto; r.texto = {}; return r; }
 
         //  Y SOLO SI EL ROTULO SIGUE CABIENDO ENTERO.
         //

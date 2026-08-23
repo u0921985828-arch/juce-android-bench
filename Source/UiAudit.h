@@ -232,10 +232,9 @@ namespace UiAudit
             //  Y UNA TAPA QUE NO DIBUJA SU ROTULO NO TIENE ROTULO QUE MEDIR.
             //
             //  Lo que se mide es lo que se DIBUJA, que es la regla de esta
-            //  funcion entera. Una celda de rejilla que se queda solo con el
-            //  dibujo -ver `soloIcono`- no pinta la palabra en ningun sitio, y
-            //  contarla aqui la daria por CORTADA: dieciseis hallazgos por
-            //  rejilla, todos de un texto que nadie ve.
+            //  funcion entera. Una tapa que solo lleva dibujo no pinta su
+            //  rotulo en ningun sitio, y contarlo aqui lo daria por CORTADO:
+            //  dieciseis hallazgos por rejilla de un texto que nadie ve.
             if (rep.texto.isEmpty())
             {
                 r.has = false;

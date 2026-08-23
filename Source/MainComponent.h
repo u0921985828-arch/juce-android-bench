@@ -1721,7 +1721,7 @@ private:
     //  La banda del rotulo PRUEBAS de la pagina de AUDIO.
     juce::Rectangle<int> pruebasLabelArea;
     //  Las dos bandas pintadas de INSTRUMENTOS, publicadas por resized().
-    juce::Rectangle<int> instTitleArea, instPackArea;
+    juce::Rectangle<int> instTitleArea, instPackArea, instPieArea;
 
     //  EL CUERPO DE LA MAQUINA, HORNEADO. Degradado y grano en una imagen
     //  opaca que se rehace al cambiar de tamano o de carcasa; pintar el fondo

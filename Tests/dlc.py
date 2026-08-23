@@ -36,13 +36,13 @@ APP  = os.environ.get ("ZATI_BIN") or os.path.join (
         ROOT, "build", "Zati_artefacts", "Release", "Zati")
 
 
-def corre():
+def corre(abrir="pads"):
     casa = tempfile.mkdtemp (prefix="zati-dlc-")
     try:
         env = dict (os.environ)
         env.update ({"HOME": casa, "XDG_DATA_HOME": os.path.join (casa, ".local", "share"),
                      "ZATI_AUDIT": "1", "ZATI_SIZE": "412x915", "ZATI_LANG": "es",
-                     "ZATI_OPEN": "pads", "ZATI_DLC": "1"})
+                     "ZATI_OPEN": abrir, "ZATI_DLC": "1"})
         r = subprocess.run ([APP], env=env, capture_output=True, text=True, timeout=300)
     finally:
         shutil.rmtree (casa, ignore_errors=True)
@@ -60,6 +60,8 @@ def corre():
             packs.append (d)
         elif "dlc" in d:
             filas[d["dlc"]] = d
+        elif "inst" in d:
+            filas[d["inst"]] = d
     return packs, filas, r.stdout
 
 
@@ -72,6 +74,11 @@ def mide (nombre, ok, texto=""):
 
 
 packs, filas, bruto = corre()
+#  Y UNA SEGUNDA CORRIDA CON EL MENU ABIERTO. El volcado del menu sale del
+#  maquetado, y con ZATI_OPEN=pads esa ficha no se maqueta nunca - que es
+#  exactamente el punto ciego que ya costo tres tapas de la pagina PASO.
+_, filasMenu, _ = corre ("instg")
+filas.update (filasMenu)
 if not packs:
     print ("sin volcado: la app no imprimio nada con ZATI_DLC=1")
     print (bruto[-2000:])
@@ -141,6 +148,37 @@ mide ("los 16 traen audio", d is not None and d["conAudio"] == 16,
 #  el andamio.
 mide ("y ninguno ensena su numero", d is not None and d["conNombre"] == 16,
        "" if d is None else "%d de 16 sin cifra delante" % d["conNombre"])
+
+#  --- Y QUE EL MENU DIGA COMO SE LLAMA CADA UNO --------------------------
+#  El menu era una rejilla de cuatro por cuatro con dieciseis dibujos y ni una
+#  palabra, y la queja fue exactamente esa: "muy bonitos los sprites pero no se
+#  cual es el nombre de cada uno". No es que el rotulo se cayera por poco - en
+#  412x915 la celda de cuatro mide 84 px, su caja de rotulo 74, y "CUERDA PULS"
+#  pide 83: el nombre no cabia AUNQUE se cayera el dibujo.
+#
+#  Se cuenta lo que se PINTA -reparteTapa, la misma funcion que dibuja- y no lo
+#  que la tapa tiene guardado: el rotulo puede estar puesto y no salir, que es
+#  como el fallo pudo durar una tanda entera sin que ninguna regla lo dijera.
+menu = filas.get ("menu")
+mide ("los dieciseis dicen su nombre",
+       menu is not None and menu["conNombre"] == 16,
+       "" if menu is None else "%d de 16 con nombre, celda %dx%d"
+                               % (menu["conNombre"], menu["celdaW"], menu["celdaH"]))
+#  Y LAS DOS COSAS. Quedarse con la palabra y soltar el dibujo es lo que hacia
+#  la lista de antes, y entonces sobra haberlos dibujado; el arreglo es que
+#  quepan los dos, y eso solo lo dice contarlos a la vez.
+mide ("y ademas su dibujo",
+       menu is not None and menu["conDibujo"] == 16,
+       "" if menu is None else "%d de 16 con dibujo" % menu["conDibujo"])
+#  Y EL PIE, DENTRO DEL CUERPO. Las dos frases que explican la ficha -elige el
+#  pad arriba y el instrumento abajo- las colocaba el PINTOR con una cuenta que
+#  solo valia para la lista: con la rejilla puesta caian 704 px mas abajo, o sea
+#  fuera del cuerpo, o sea que no las ha visto nadie desde que la rejilla
+#  existe. Un rotulo que se pinta fuera no lo ve ninguna de las otras reglas.
+mide ("y el pie se ve",
+       menu is not None and menu["pieAbajo"] <= menu["cuerpo"],
+       "" if menu is None else "el pie acaba en %d y el cuerpo mide %d"
+                               % (menu["pieAbajo"], menu["cuerpo"]))
 
 d = filas.get ("fabrica")
 #  La fabrica no son ficheros: se sintetiza o sale de los recursos incrustados,

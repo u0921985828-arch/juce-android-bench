@@ -6942,11 +6942,21 @@ void MainComponent::resized()
 
         const int filas = juce::jmax (1, cuantos);
         const int alto4x4 = (Metrics::hit + Metrics::xs) * 4;
+        //  Y LA DE LOS INSTRUMENTOS, EN DOS COLUMNAS DE OCHO.
+        //
+        //  Con la palabra al lado del dibujo no cabe en cuatro columnas y no es
+        //  cuestion de apretarla: en 412x915 la celda de cuatro mide 84 px, su
+        //  caja de rotulo 74, y "CUERDA PULS" pide 83 - o sea que el nombre no
+        //  entra AUNQUE se caiga el dibujo. Por eso las dieciseis salian mudas.
+        //  En dos columnas la celda pasa a 173 px y la caja a 163: el nombre
+        //  entero, el dibujo de 18 al lado y 76 px de sobra. Cuesta cuatro
+        //  filas mas, que es alto y no ancho, y esta ficha ya se desplaza.
+        const int alto2col = (Metrics::hit + Metrics::xs) * 8;
         auto inner = sheetFromBottom (instSheet, Metrics::md * 2 + Metrics::hit
                                                    + Metrics::md + filaPack
                                                    + Metrics::sm
                                                    + (rejilla ? (Metrics::hit + Metrics::sm
-                                                                 + alto4x4 + Metrics::md + alto4x4)
+                                                                 + alto4x4 + Metrics::md + alto2col)
                                                               : (filaInst + Metrics::xs) * filas)
                                                    + Metrics::sm + 40);
         auto titleRow = inner.removeFromTop (Metrics::hit);
@@ -7005,6 +7015,32 @@ void MainComponent::resized()
             }
         };
 
+        //  Y LA DE LOS NOMBRES, en dos columnas y al DERECHO.
+        //
+        //  De arriba abajo y no de abajo arriba como la de pads: la de pads es
+        //  un MAPA -el 01 abajo a la izquierda, donde esta en la cara- y esta
+        //  es una lista de palabras, que se lee por donde se empieza a leer.
+        //  Son dos preguntas distintas y ahora tambien se ven distintas, que
+        //  era la otra mitad del problema: dos rejillas de cuatro por cuatro,
+        //  una encima de la otra, se leen como dos mitades de lo mismo.
+        auto pon2col = [] (juce::Rectangle<int> caja, juce::OwnedArray<juce::TextButton>& bs)
+        {
+            const int n = juce::jmin (16, bs.size());
+            for (int r = 0; r < 8; ++r)
+            {
+                auto row = caja.removeFromTop (Metrics::hit);
+                const int w = row.getWidth() / 2;
+                for (int c = 0; c < 2; ++c)
+                {
+                    const int i = r * 2 + c;
+                    if (i >= n) continue;
+                    bs[i]->setVisible (true);
+                    bs[i]->setBounds ((c == 0 ? row.removeFromLeft (w) : row).reduced (1, 0));
+                }
+                caja.removeFromTop (Metrics::xs);
+            }
+        };
+
         if (rejilla)
         {
             {
@@ -7020,7 +7056,7 @@ void MainComponent::resized()
             inner.removeFromTop (Metrics::sm);
             pon4x4 (inner.removeFromTop (alto4x4), instDestBtns);
             inner.removeFromTop (Metrics::md);
-            pon4x4 (inner.removeFromTop (alto4x4), instBtns);
+            pon2col (inner.removeFromTop (alto2col), instBtns);
             //  Y AQUI, con las celdas ya colocadas: reparteTapa mide el ancho
             //  del componente, asi que preguntarlo antes seria preguntarle a
             //  una tapa de cero pixeles. Es lo mismo que hace layoutModuleBar
@@ -7038,6 +7074,18 @@ void MainComponent::resized()
                 instBtns[i]->setBounds (fila);
             }
         }
+
+        //  Y EL PIE LO PUBLICA EL MAQUETADO.
+        //
+        //  El pintor lo colocaba con una cuenta suya -"debajo del nombre del
+        //  pack, mas una fila por instrumento"- que solo vale para la LISTA:
+        //  con la rejilla puesta, esas dieciseis filas son 704 px y las dos
+        //  frases que explican la ficha se pintaban FUERA del cuerpo, o sea
+        //  que no las ha visto nadie desde que la rejilla existe. Es la misma
+        //  regla que ya costo el titulo y el nombre del pack: una cuenta, un
+        //  dueno, y el dueno es quien coloca.
+        inner.removeFromTop (Metrics::sm);
+        instPieArea = inner.removeFromTop (40);
     }
 
     // ------------------------------------------------------------------
@@ -14966,20 +15014,30 @@ void MainComponent::pasoPack (int d)
     instSheet.repaint();
 }
 
-//  SI EL NOMBRE NO CABE EN NINGUNA CELDA, NINGUNA LO LLEVA.
+//  SI EL DIBUJO NO CABE EN UNA CELDA, NO LO LLEVA NINGUNA.
 //
-//  Es filaDeIconos por el otro lado: alli se cae el DIBUJO cuando el rotulo no
-//  cabe entero, y aqui se cae la PALABRA cuando la celda no da para las dos.
-//  Una rejilla de cuatro por cuatro deja 56 px en la tarjeta mas estrecha y
-//  "CUERDA PULS" pide 66, asi que ahi manda el dibujo - para eso se dibujo.
+//  Es filaDeIconos con otra forma, y ahora dice lo MISMO: se cae el dibujo,
+//  que es el adorno, y se queda la palabra, que es la funcion.
+//
+//  Antes se caia al reves y por eso el menu de instrumentos eran dieciseis
+//  dibujos mudos - "no se cual es el nombre de cada uno". La cuenta lo dice:
+//  en 412x915 la celda de cuatro columnas mide 82 px y su caja de rotulo 72,
+//  "CUERDA PULS" pide 64.5 y CABE; lo que no cabe son 64.5 + 4 de aire + 13
+//  del dibujo mas pequeno posible. La pregunta "caben los dos?" se contestaba
+//  que no y se quitaba la palabra, en una casa cuya regla escrita es que un
+//  apreton no se cambia por un corte y que el rotulo manda. Ver reparteTapa.
 //
 //  Y se decide para las dieciseis a la vez, por lo mismo que una fila decide
-//  junta: media rejilla con nombre y media sin el se lee peor que ninguna.
+//  junta: media rejilla con dibujo y media sin el se lee como una celda rota.
 void MainComponent::rejillaDeIconos (juce::OwnedArray<juce::TextButton>& celdas, int n)
 {
     const int cuantas = juce::jmin (n, celdas.size());
+    //  La marca se borra ANTES de preguntar, o la respuesta de la pasada
+    //  anterior entra en la pregunta de la siguiente y la rejilla parpadea
+    //  entre con y sin dibujos cada vez que se gira el telefono. Es el mismo
+    //  fallo que tuvo filaDeIconos en su primera version.
     for (int i = 0; i < cuantas; ++i)
-        celdas[i]->getProperties().remove ("soloIcono");
+        celdas[i]->getProperties().remove ("sinIcono");
 
     bool todas = true;
     for (int i = 0; i < cuantas && todas; ++i)
@@ -14988,7 +15046,7 @@ void MainComponent::rejillaDeIconos (juce::OwnedArray<juce::TextButton>& celdas,
 
     if (! todas)
         for (int i = 0; i < cuantas; ++i)
-            celdas[i]->getProperties().set ("soloIcono", 1);
+            celdas[i]->getProperties().set ("sinIcono", 1);
 }
 
 void MainComponent::refreshInst()
@@ -15447,14 +15505,9 @@ void MainComponent::paintInstSheetContent (juce::Graphics& g)
         pintaTitulo (g, fila, nombre, "seccion", true);
     }
     //  Y el pie se cuelga de la banda que el maquetado publico, no de una
-    //  cuenta paralela: la lista de instrumentos empieza justo debajo del
-    //  nombre del pack.
-    const int filasPintadas = instCatalogo.empty() ? 1
-        : juce::jmax (1, (int) instCatalogo[(size_t) juce::jlimit (0, (int) instCatalogo.size() - 1,
-                                                                   instPack)].instr.size());
-    auto inner = instSheet.cuerpo.getLocalBounds().reduced (Metrics::lg, 0)
-                     .withTop (instPackArea.getBottom() + Metrics::sm
-                                 + (Metrics::hit + Metrics::xs) * filasPintadas);
+    //  cuenta paralela. Ver resized: la que habia aqui solo valia para la
+    //  lista, asi que con la rejilla puesta el pie caia fuera del cuerpo.
+    auto inner = instPieArea;
 
     //  Y UNA LINEA QUE DICE QUE VA A PASAR. Tocar una tapa aqui se lleva los
     //  dieciseis pads del banco de delante, y eso no se puede deducir mirando
@@ -16761,6 +16814,31 @@ void MainComponent::auditOpen (const juce::String& which)
         instDestPad = kBancoInstr * kPadsPerBank + 9;
         refreshInst();
         resized();
+
+        //  Y LO QUE EL MENU DEJA ESCRITO, medido donde se decide.
+        //
+        //  Se cuenta lo que se PINTA -reparteTapa, la misma funcion con la que
+        //  se dibuja- y no lo que la tapa tiene guardado: el rotulo puede
+        //  estar puesto y no salir, que es como dieciseis celdas estuvieron
+        //  mudas una tanda entera sin que ninguna regla lo dijera. Es lo mismo
+        //  que ya hizo falta con captionOf: lo que se mide es lo que se pinta.
+        //  Y las DOS cifras, que es lo unico que separa los dos arreglos que
+        //  parecen uno: solo el nombre lo cumple una lista sin dibujos, y solo
+        //  el dibujo lo cumplia la rejilla muda que motivo todo esto.
+        int conNombre = 0, conDibujo = 0;
+        for (auto* b : instBtns)
+        {
+            if (b == nullptr || ! b->isVisible() || b->getButtonText().isEmpty()) continue;
+            const auto r = ZatiLookAndFeel::reparteTapa (*b);
+            if (! r.texto.isEmpty())               ++conNombre;
+            if (r.id != Iconos::Id::ninguno)       ++conDibujo;
+        }
+        std::cout << "{\"inst\":\"menu\",\"conNombre\":" << conNombre
+                  << ",\"conDibujo\":" << conDibujo
+                  << ",\"celdaW\":" << (instBtns.isEmpty() ? 0 : instBtns[0]->getWidth())
+                  << ",\"celdaH\":" << (instBtns.isEmpty() ? 0 : instBtns[0]->getHeight())
+                  << ",\"pieAbajo\":" << instPieArea.getBottom()
+                  << ",\"cuerpo\":" << instSheet.cuerpo.getHeight() << "}" << std::endl;
     }
     else if (which == "vst")
     {
