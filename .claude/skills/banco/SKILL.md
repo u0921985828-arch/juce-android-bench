@@ -43,9 +43,25 @@ codigo.
 | el tour de bienvenida | `Tests/tour.py` |
 | iconos, la marca, la textura del chasis | `Tests/iconos.py` |
 | una APK | `Tests/apk.py <fichero>` |
+| repintados, coste de la cara | `Tests/cpu.py` **sola** (ver abajo) |
+| titulos y rotulos pintados | `Tests/plano.py` |
+| la ficha de Play | `Tests/store.py` |
+| las recetas contra su grabacion | `Tests/clon.py` y `Tests/analiza.py` |
+| combinaciones que nadie escribiria | `build/Soak_artefacts/Release/Soak` |
+| coste por etapa del motor | `build/Cpu_artefacts/Release/Cpu` |
 
 Ante la duda, todo. El banco entero son unos quince minutos y una APK mal son
 doce de CI mas el tiempo de la persona que se la instala.
+
+**Y `cpu.py` se corre SOLA.** Es la unica prueba de esta casa que mide por
+RELOJ, y con las 896 corridas de `expo.py` compartiendo nucleos saco nueve
+fichas «repintandose solas» —la cara a 19 fotogramas contra un tope de 3— con el
+codigo intacto. Una medida de tiempo con la maquina ocupada no es una medida.
+
+**Y todas devuelven codigo de salida.** `expo.py`, `session.py` y `apk.py` no lo
+hacian: imprimian sus numeros y terminaban con cero pasara lo que pasara, o sea
+que los juzgaba un ojo humano leyendo texto. `expo.py` no cuenta TOUCH -esa
+escalera esta medida y escrita en CLAUDE.md- y si todo lo demas.
 
 ## Como se juzga
 

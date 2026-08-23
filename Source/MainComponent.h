@@ -538,6 +538,26 @@ private:
     void saveProject (const juce::String& name);
     void loadProject (const juce::String& name);
     void deleteProject (const juce::String& name);
+    //  EL ANCHO DE UNA TARJETA Y EL DE SU INTERIOR, en un sitio.
+    //
+    //  El 0.92 estaba escrito SEIS veces -y cuatro de ellas partiendo de
+    //  safeArea() en vez de del rectangulo con el que sheetFromBottom decide-,
+    //  asi que la pregunta "cabe esto en la tarjeta" se contestaba con un ancho
+    //  y se colocaba con otro. La ficha de AJUSTES lo pagaba: presupuestaba las
+    //  pestanas con el ancho de la VENTANA y las colocaba con el de la tarjeta,
+    //  o sea que reservaba una fila y usaba dos, y la fila de CARCASA se quedaba
+    //  con 4 px de alto.
+    static int anchoTarjeta (int anchoVentana) noexcept
+    { return (int) ((float) anchoVentana * 0.92f); }
+    static int anchoTarjetaInterior (int anchoVentana) noexcept
+    { return anchoTarjeta (anchoVentana) - 2 * Metrics::lg; }
+
+    //  Lo que mide el recuadro de AUDIO, que es texto pintado y por tanto no
+    //  lo dice ningun componente. Ver estAltoAudio: estaba escrito a mano en
+    //  cuatro sitios.
+    static constexpr int kAltoAudioInfo = 158;
+
+    void padPorDefecto (int i);
     void newProject();
     //  LA CANCION DE UN PROYECTO RECIEN NACIDO. Ver la definicion.
     void songPorDefecto();
@@ -799,6 +819,8 @@ public:
     //  el arreglo se hubiera caido solo en el del proyecto, la prueba habria
     //  seguido en verde. Se mide el camino que se usa.
     void auditProject();
+    //  Proyectos de otra epoca, congelados en Tests/proyectos.
+    void auditViejos (const juce::String& carpeta);
     //  EL PIANO ROLL, medido. Ver auditPiano: escribe un acorde por la rejilla,
     //  cambia de pad con la ficha abierta y toca el teclado, que son las tres
     //  cosas que la ficha promete. Las tres tenian un fallo que una captura de
@@ -1722,6 +1744,9 @@ private:
     juce::Rectangle<int> pruebasLabelArea;
     //  Las dos bandas pintadas de INSTRUMENTOS, publicadas por resized().
     juce::Rectangle<int> instTitleArea, instPackArea, instPieArea;
+    //  La carpeta de destino, resuelta al ABRIR la ficha y no en cada
+    //  repintado: preguntarla escribe en disco. Ver paintExportSheetContent.
+    juce::File destinoCache;
 
     //  EL CUERPO DE LA MAQUINA, HORNEADO. Degradado y grano en una imagen
     //  opaca que se rehace al cambiar de tamano o de carcasa; pintar el fondo
@@ -1889,7 +1914,7 @@ private:
     std::array<float, kNumPads> padFlash {};   // 1.0 on trigger, decays -> lit feedback
     // Chassis layout regions (set in resized(), drawn in paint()).
     juce::Rectangle<int> headerArea, screenBezel, tabBarArea,
-                         editInfoArea, vuArea, stepStripArea, audioInfoArea,
+                         editInfoArea, audioInfoArea,
                          padPlateArea, ctrlPlateArea;
     float vuL = 0.0f, vuR = 0.0f;   // smoothed output peaks for the VU strip
     bool  vuHeld = false;           // solo el banco: ZATI_VU congela la tira

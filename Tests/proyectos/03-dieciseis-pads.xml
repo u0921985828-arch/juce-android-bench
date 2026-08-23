@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<ZATI version="1" bpm="90.0" selectedPattern="0">
+  <PADS>
+    <PAD i="0" name="A" gain="0.5" pan="-0.8" corte="300.0" reverse="1"/>
+    <PAD i="1" name="B"/>
+  </PADS>
+  <FX/>
+</ZATI>

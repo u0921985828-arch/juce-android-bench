@@ -46,6 +46,18 @@ for o in offs:
 
 paquete = [c for c in cadenas if c.startswith('com.') and ' ' not in c]
 permisos = sorted({c for c in cadenas if c.startswith('android.permission.')})
+
+#  LOS PERMISOS SE CONTRASTAN, no se imprimen.
+#
+#  Se listaban y ya: uno que DESAPARECIERA -y con el la grabacion por micro, o
+#  la escritura en los telefonos viejos- salia como texto y no como fallo, y
+#  uno nuevo que apareciera sin querer es lo que hace que Play pida una
+#  declaracion mas y la ficha se quede en revision. Son cuatro y estan
+#  decididos: ver el bloque del permiso de escritura en CLAUDE.md.
+ESPERADOS = ['android.permission.READ_EXTERNAL_STORAGE',
+             'android.permission.READ_MEDIA_AUDIO',
+             'android.permission.RECORD_AUDIO',
+             'android.permission.WRITE_EXTERNAL_STORAGE']
 print(f"paquete: {paquete[:2]}")
 print(f"permisos ({len(permisos)}):")
 for p in permisos:
@@ -67,4 +79,22 @@ for i in z.infolist():
           f"  {'sin comprimir' if i.compress_type == 0 else 'COMPRIMIDO'}")
 
 print(f"\ntamano: {len(raw)} bytes")
-print("VEREDICTO:", "OK" if (v2 and not malas) else "REVISAR")
+
+#  Y EL VEREDICTO SALE POR EL CODIGO DE SALIDA.
+#
+#  Imprimia OK o REVISAR y terminaba con cero pasara lo que pasara, asi que
+#  ponerlo en el CI no habria servido de nada: una APK sin firma v2, con la .so
+#  desalineada o con un permiso de mas se publicaba igual y lo unico que
+#  quedaba era una linea de texto que hay que acordarse de leer.
+faltan = [p for p in ESPERADOS if p not in permisos]
+sobran = [p for p in permisos if p not in ESPERADOS]
+mal = []
+if not v2:     mal.append("sin firma v2")
+if malas:      mal.append("%d .so desalineadas" % len(malas))
+if faltan:     mal.append("faltan permisos: " + ", ".join(faltan))
+if sobran:     mal.append("permisos de mas: " + ", ".join(sobran))
+if not any(p == 'com.artifacts.zati' for p in paquete):
+    mal.append("el paquete no es com.artifacts.zati")
+
+print("VEREDICTO:", "OK" if not mal else "REVISAR — " + "; ".join(mal))
+sys.exit (0 if not mal else 1)

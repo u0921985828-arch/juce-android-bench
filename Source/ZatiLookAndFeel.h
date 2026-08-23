@@ -403,7 +403,11 @@ namespace Metrics
     static constexpr int xs = 4, sm = 8, md = 12, lg = 16, xl = 24;
 
     // Controls.
-    static constexpr int knobSm = 44, knobMd = 56, knobLg = 72;
+    //  (knobSm/knobMd/knobLg vivieron aqui y no los leia nadie: los mandos
+    //  sacan su alto de lo que la fila tiene. Una constante muerta en este
+    //  fichero es peor que en otro sitio, porque este declara que "si un valor
+    //  no esta abajo, esta mal" e invita a usarla creyendo que es el token
+    //  vigente.)
     static constexpr int btn = 44;    // minimum comfortable touch target
     //  The floor for anything a finger has to hit inside a sheet. Rows of
     //  24 and 30 read fine on a desktop screenshot and are a coin toss on a
@@ -423,7 +427,9 @@ namespace Metrics
     //  gobierna la rejilla de pads: un pixel que falta se lo come el hueco de
     //  al lado, nunca el dedo.
     static constexpr int keyAir = 2;              // el aire de cada lado
-    static constexpr int hitRow = hit + 2 * keyAir;   // 44: pide esto, toca hit
+    //  (hitRow -hit + 2*keyAir- tambien se quedo sin leer: la regla acabo
+    //  implementada dentro de layoutModuleBar, que es quien sabe cuanto alto
+    //  hay, y la constante quedo documentando algo que no aplica nadie.)
     static constexpr int chip = 24;   // value readout
 
     //  ONE height for every value box, and ONE width for a stepper's keys.
@@ -476,7 +482,6 @@ namespace Metrics
     static constexpr float fMeta = 10.0f;   // units, secondary facts
     static constexpr float fLabel = 11.0f;  // control names
     static constexpr float fValue = 13.0f;  // readouts
-    static constexpr float fDisplay = 20.0f;
     static constexpr float fTitle = 26.0f;
 }
 
@@ -624,7 +629,6 @@ public:
     //  the pads, the three knobs and the screen. A module bar as tall as a
     //  transport key is a menu claiming to be an instrument.
     static constexpr int kHeader    = 24;   // the wordmark strip
-    static constexpr int kStrip     = 14;   // VU and the step LEDs: read, never touched
     static constexpr int kModule    = 26;   // PADS / SEC / SONG / MIX / SET - they open windows
     //  CUARENTA Y NO TREINTA Y SEIS. Son las tres teclas que se pulsan
     //  TOCANDO -cargar, grabar, arrancar- y estaban cuatro pixeles por debajo

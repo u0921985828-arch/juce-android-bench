@@ -144,8 +144,28 @@ namespace Instrumentos
         auto ids = licencias();
         if (ids.contains (id)) return;
         ids.add (id);
-        ficheroLicencias().getParentDirectory().createDirectory();
-        ficheroLicencias().replaceWithText (ids.joinIntoString ("\n"));
+
+        //  Y SE ESCRIBE POR LA PUERTA QUE NO PIERDE EL FICHERO ANTERIOR.
+        //
+        //  El comentario de arriba dice que perder una licencia seria el peor
+        //  fallo posible de esta funcion, y la implementacion no lo cubria: se
+        //  reescribe la lista ENTERA, asi que un proceso muerto a mitad no
+        //  pierde una licencia, las pierde TODAS. Y es el unico fichero de esta
+        //  app cuya perdida no se puede rehacer desde la app - hay que volver a
+        //  pasar por la facturacion de la tienda.
+        //
+        //  El validador es el que corresponde aqui: no basta con que la
+        //  escritura no fallara, tienen que volver a leerse las mismas lineas.
+        const auto texto = ids.joinIntoString ("\n");
+        ProjectStore::escribeTexto (ficheroLicencias(), texto,
+                                    [&ids] (const juce::File& f)
+                                    {
+                                        juce::StringArray vuelta;
+                                        vuelta.addLines (f.loadFileAsString());
+                                        vuelta.removeEmptyStrings();
+                                        vuelta.trim();
+                                        return vuelta == ids;
+                                    });
     }
 
     namespace detalle

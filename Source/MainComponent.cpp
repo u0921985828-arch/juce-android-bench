@@ -67,13 +67,19 @@ namespace
 
     //  El rotulo del mando: "-inf dB" abajo del todo, y signo siempre, porque
     //  un "3 dB" sin signo no dice si sube o baja.
+    //  Y EL ENVOLTORIO DE DIRECCION AQUI DENTRO, que es donde esta escrito el
+    //  numero. Lang::ltr estaba puesto en cuatro lecturas y faltaba en las de
+    //  ganancia -el mando del pad, el master y los dieciseis de la mesa, que
+    //  pasan todos por aqui-: en arabe, "-inf dB" se reordena y sale "dB inf-",
+    //  y "+3.0 dB" pone el signo al otro lado. Es exactamente el fallo que
+    //  Lang.h cuenta con "OUT " + "-inf".
     juce::String gainText (double db, bool withUnit)
     {
         if (db <= kGainMinDb)
-            return juce::String::fromUTF8 ("-\xe2\x88\x9e") + (withUnit ? " dB" : "");
+            return Lang::ltr (juce::String::fromUTF8 ("-\xe2\x88\x9e") + (withUnit ? " dB" : ""));
 
         const juce::String n = withUnit ? juce::String (db, 1) : juce::String ((int) std::round (db));
-        return (db > 0.0 ? "+" : "") + n + (withUnit ? " dB" : "");
+        return Lang::ltr ((db > 0.0 ? "+" : "") + n + (withUnit ? " dB" : ""));
     }
 
     juce::Colour roleColour (int role)
@@ -510,7 +516,7 @@ MainComponent::MainComponent()
         //  NUEVO empties every pad and every pattern. Two taps.
         projNewButton.onClick = [this]
         {
-            if (! armConfirm (projNewButton, "BORRA TODO?")) return;
+            if (! armConfirm (projNewButton, T ("BORRA TODO?"))) return;
             newProject();
         };
         setSheet.cuerpo.addAndMakeVisible (projNewButton);
@@ -538,6 +544,7 @@ MainComponent::MainComponent()
         {
             exportStatus.clear();
             exportOk = false;
+            destinoCache = juce::File();
             openSheet (exportSheet, setButton);
             //  Y se pide el permiso AL ABRIR la ficha, no al pulsar EXPORTAR:
             //  el dialogo del sistema encima de un rebote que ya arranco es la
@@ -1448,9 +1455,11 @@ MainComponent::MainComponent()
     chokeSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 56, Metrics::readout);
 
     pitchSlider.setTextValueSuffix (" st");
+    //  Con Lang::ltr, como las otras cuatro lecturas que ya lo llevaban: un
+    //  "+50 c" en arabe se reordena y el signo acaba al otro lado del numero.
     fineSlider.textFromValueFunction = [] (double v)
     {
-        return (v > 0.0 ? "+" : "") + juce::String ((int) v) + " c";
+        return Lang::ltr ((v > 0.0 ? "+" : "") + juce::String ((int) v) + " c");
     };
     fineSlider.updateText();
     attackSlider.setTextValueSuffix (" ms");
@@ -1458,7 +1467,7 @@ MainComponent::MainComponent()
     panSlider.textFromValueFunction = [] (double v)
     {
         if (std::abs (v) < 0.005) return juce::String ("C");
-        return (v < 0 ? "L" : "R") + juce::String ((int) std::round (std::abs (v) * 100.0));
+        return Lang::ltr ((v < 0 ? "L" : "R") + juce::String ((int) std::round (std::abs (v) * 100.0)));
     };
     panSlider.updateText();
     //  MONO en el extremo de abajo y no un "0%": cero por ciento de ancho es
@@ -1466,7 +1475,7 @@ MainComponent::MainComponent()
     anchoSlider.textFromValueFunction = [] (double v)
     {
         if (v < 0.005) return T ("MONO");
-        return juce::String ((int) std::round (v * 100.0)) + "%";
+        return Lang::ltr (juce::String ((int) std::round (v * 100.0)) + "%");
     };
     anchoSlider.updateText();
     chokeSlider.textFromValueFunction = [] (double v) { return v <= 0.0 ? T ("off") : juce::String ((int) v); };
@@ -1647,7 +1656,7 @@ MainComponent::MainComponent()
     noteSlider.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
     noteSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     noteSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 90, Metrics::readout);
-    noteSlider.textFromValueFunction = [] (double v) { return (v > 0 ? juce::String ("+") : juce::String()) + juce::String ((int) v) + " st"; };
+    noteSlider.textFromValueFunction = [] (double v) { return Lang::ltr ((v > 0 ? juce::String ("+") : juce::String()) + juce::String ((int) v) + " st"); };
     noteSlider.updateText();   // refresh textbox with the new formatter
     noteSlider.onValueChange = [this]
     {
@@ -1667,7 +1676,7 @@ MainComponent::MainComponent()
     velSlider.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
     velSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     velSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 54, Metrics::readout);
-    velSlider.textFromValueFunction = [] (double v) { return juce::String ((int) std::round (v * 100.0 / 127.0)) + " %"; };
+    velSlider.textFromValueFunction = [] (double v) { return Lang::ltr (juce::String ((int) std::round (v * 100.0 / 127.0)) + " %"); };
     velSlider.updateText();
     velSlider.onValueChange = [this]
     {
@@ -1688,7 +1697,7 @@ MainComponent::MainComponent()
     rollSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     rollSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 60, Metrics::readout);
     rollSlider.textFromValueFunction = [] (double v)
-    { return (v <= 1.0) ? juce::String ("1") : ("x" + juce::String ((int) v)); };
+    { return (v <= 1.0) ? juce::String ("1") : Lang::ltr ("x" + juce::String ((int) v)); };
     rollSlider.updateText();
     rollSlider.onValueChange = [this]
     {
@@ -2574,8 +2583,11 @@ MainComponent::MainComponent()
             {
                 pattern[(size_t) selectedPattern][(size_t) st][(size_t) selectedPad] = false;
                 engine.setStep (selectedPattern, st, selectedPad, false);
-                engine.setStepNote (selectedPattern, st, selectedPad, 0);
-                engine.clearStepExtras (selectedPattern, st, selectedPad);
+                //  Los nueve campos, no la nota y el acorde: ver
+                //  AudioEngine::vaciaPaso. Se dejaba la fuerza, el redoble, el
+                //  largo, el empujon, el bloqueo y los cuatro empaquetados, asi
+                //  que la fila "vaciada" seguia llevando la mitad de la vieja.
+                engine.vaciaPaso (selectedPattern, st, selectedPad);
             }
             refreshPiano();
             refreshStepGrid();
@@ -3173,6 +3185,22 @@ void MainComponent::applySkin()
     projList.setColour (juce::ListBox::outlineColourId, ZatiColours::plateEdge);
     projList.repaint();
 
+    //  Y LAS OTRAS TRES QUE TAMPOCO SON TAPAS. La misma regla incumplida por
+    //  las mismas razones: `projNameBox` es un TextEditor con cinco colores
+    //  puestos en el constructor, y `masterLabel` y `status` son Labels con la
+    //  tinta cogida una sola vez. En GRAFITO y en LACA se quedaban con la
+    //  paleta de PAPEL - la caja del nombre de proyecto en blanco dentro de una
+    //  tarjeta oscura, que es literalmente el fallo que ya costo la lista.
+    projNameBox.setColour (juce::TextEditor::backgroundColourId, ZatiColours::screenBg);
+    projNameBox.setColour (juce::TextEditor::textColourId,       ZatiColours::lcdFg);
+    projNameBox.setColour (juce::TextEditor::outlineColourId,    ZatiColours::ink.withAlpha (0.35f));
+    projNameBox.setColour (juce::TextEditor::highlightColourId,  ZatiColours::accent.withAlpha (0.35f));
+    projNameBox.setColour (juce::TextEditor::focusedOutlineColourId, ZatiColours::ink);
+    projNameBox.applyColourToAllText (ZatiColours::lcdFg, true);
+    projNameBox.repaint();
+    masterLabel.setColour (juce::Label::textColourId, ZatiColours::ink);
+    status.setColour (juce::Label::textColourId, ZatiColours::inkDim);
+
     //  Both halves of every cap, in one pass over the whole tree: the resting
     //  colour from its role, and the lit colour from its mark. Naming the
     //  handful that had to be refreshed by hand is how sixty of them ended up
@@ -3743,30 +3771,44 @@ void MainComponent::showSetPage (int page)
     pageProjBtn .setToggleState (onProj,  juce::dontSendNotification);
     pageGestBtn .setToggleState (setPage == pageGestures, juce::dontSendNotification);
 
-    midiOutBtn.setVisible (onMidi);
-    midiInBtn.setVisible  (onMidi);
-    midiOutBox.setVisible (onMidi);
-    midiInBox.setVisible  (onMidi);
+    //  APAGAR Y VACIAR, LAS DOS COSAS.
+    //
+    //  La regla esta escrita al lado de seqFollowBtn -"se apaga *y* se le
+    //  vacian los limites, que es lo que la regla dice y lo que media app hacia
+    //  a medias"- y aqui se hacia a medias: de las quince tapas de esta ficha
+    //  solo projKitButton se quedaba sin coordenadas. Un control apagado con
+    //  las coordenadas de la pagina anterior es exactamente lo que el ciclado
+    //  ZATI_PAGES existe para cazar, y lo que dejo tres tapas de PASO encima de
+    //  la fila COMPAS.
+    auto muestra = [] (juce::Component& c, bool on)
+    {
+        c.setVisible (on);
+        if (! on) c.setBounds ({});
+    };
 
-    measureButton.setVisible (onAudio);
-    quantButton.setVisible   (onAudio);
-    testButton.setVisible    (onAudio);
-    for (auto* b : bufButtons)  b->setVisible (onAudio);
-    for (auto* b : rateButtons) b->setVisible (onAudio);
+    muestra (midiOutBtn, onMidi);
+    muestra (midiInBtn,  onMidi);
+    muestra (midiOutBox, onMidi);
+    muestra (midiInBox,  onMidi);
+
+    muestra (measureButton, onAudio);
+    muestra (quantButton,   onAudio);
+    muestra (testButton,    onAudio);
+    for (auto* b : bufButtons)  muestra (*b, onAudio);
+    for (auto* b : rateButtons) muestra (*b, onAudio);
     //  EL IDIOMA Y LA CARCASA SE VAN A SU PAGINA. Estaban en AUDIO porque ahi
     //  habia sitio, no porque tengan nada que ver con el reloj y el bufer.
-    for (auto* b : langButtons) { b->setVisible (onAsp); if (! onAsp) b->setBounds ({}); }
-    for (auto* b : skinButtons) { b->setVisible (onAsp); if (! onAsp) b->setBounds ({}); }
+    for (auto* b : langButtons) muestra (*b, onAsp);
+    for (auto* b : skinButtons) muestra (*b, onAsp);
 
-    projList.setVisible          (onProj);
-    projNameBox.setVisible       (onProj);
-    projSaveButton.setVisible    (onProj);
-    projKitButton.setVisible     (onProj);
-    if (! onProj) projKitButton.setBounds ({});
-    projLoadButton.setVisible    (onProj);
-    projNewButton.setVisible     (onProj);
-    projDeleteButton.setVisible  (onProj);
-    projExportButton.setVisible  (onProj);
+    muestra (projList,         onProj);
+    muestra (projNameBox,      onProj);
+    muestra (projSaveButton,   onProj);
+    muestra (projKitButton,    onProj);
+    muestra (projLoadButton,   onProj);
+    muestra (projNewButton,    onProj);
+    muestra (projDeleteButton, onProj);
+    muestra (projExportButton, onProj);
 
     if (onProj)       refreshProjectList();
     else if (onAudio) refreshAudioOptions();
@@ -3889,7 +3931,17 @@ bool MainComponent::padSourceWraps (int rowWidth) const
 //  medida de esto.
 bool MainComponent::setTabsFit (int rowWidth) const
 {
-    const auto capFont = ZatiColours::monoFont (juce::jlimit (10.0f, 14.5f, (float) Metrics::tab * 0.38f), true)
+    //  Y LA ALTURA ES LA DE LA TAPA, no la de la FILA. Esa es la segunda mitad
+    //  del mismo fallo y la que quedaba: el cuerpo salia de Metrics::tab -44,
+    //  o sea 14.5 px tras el tope- y drawButtonText lo saca de `capaDe`, que es
+    //  max(26, alto*0.75) = 33, o sea 12.54. Un 16% mas de sitio del que el
+    //  rotulo ocupa, asi que las pestanas se partian en dos filas en pantallas
+    //  donde caben en una - y eso no lo caza ninguna regla del banco, porque no
+    //  produce ni TRUNC ni SQUEEZE: solo sobra tarjeta. Es exactamente lo que
+    //  ya costo 93 apretones inexistentes en UiAudit::captionOf.
+    const auto capH = ZatiLookAndFeel::capaDe (juce::Rectangle<float> (0.0f, 0.0f, 10.0f,
+                                                                       (float) Metrics::tab)).getHeight();
+    const auto capFont = ZatiColours::monoFont (juce::jlimit (10.0f, 14.5f, capH * 0.38f), true)
                              .withExtraKerningFactor (0.06f);
     const juce::TextButton* tabs[] = { &pageAudioBtn, &pageMidiBtn, &pageAspBtn,
                                        &pageProjBtn, &pageGestBtn };
@@ -5061,6 +5113,16 @@ bool MainComponent::moduleBarFits (int rowWidth, juce::TextButton** mb, int coun
     //  solo los 16 del reparto dejaba pasar por un pixel - "CARGAR KIT" pedia
     //  75 y tenia 74 - que es exactamente el fallo que esta funcion existe
     //  para no tener.
+    //  Y LA FUENTE SE QUEDA EN ONCE, MEDIDO.
+    //
+    //  Se probo sacarla de `capaDe` como en setTabsFit -11.4 px en una fila de
+    //  Metrics::hit- porque el comentario de arriba promete "misma fuente que
+    //  el reparto" y no lo era. Salio PEOR: 2214 incumplimientos del dedo pasan
+    //  a 2222 en las 896 corridas. Subir el ancho medido hace que mas filas
+    //  contesten "no cabemos" y se partan en dos, y una fila partida deja las
+    //  tapas mas estrechas y mas bajas justo en las pantallas que ya iban
+    //  justas. Es el tercer arreglo de maquetado que esta casa deshace por
+    //  medirlo, y va escrito para no volver a intentarlo.
     const auto capFont = ZatiColours::monoFont (11.0f, true).withExtraKerningFactor (0.06f);
     constexpr int kChrome = 2 * Metrics::sm + 2 * (Metrics::halfGap / 2) + 2 * 5;
     int total = 0;
@@ -5232,7 +5294,6 @@ void MainComponent::resized()
     constexpr int kSeamLabelH = 12;
 
     editInfoArea = {};
-    vuArea = stepStripArea = {};   // gone from the face; the screen draws them
     //  Both plates are only laid out on the main face; clearing them here
     //  stops a stale rectangle from being painted under another view.
     padPlateArea = ctrlPlateArea = {};
@@ -5878,7 +5939,7 @@ void MainComponent::resized()
         //  393x0 - la REJILLA, la ultima de su columna - y con 0.90 cabe.
         const float tope = full.getWidth() > full.getHeight() ? 0.90f : 0.78f;
         const int h = juce::jmin (desiredH, (int) ((float) full.getHeight() * tope));
-        const int w = (int) (full.getWidth() * 0.92f);
+        const int w = anchoTarjeta (full.getWidth());
         auto sheet = juce::Rectangle<int> (0, 0, w, h).withCentre (full.getCentre());
         s.sheetBounds = sheet;
         auto dentro = sheet.reduced (Metrics::lg, Metrics::md);
@@ -5923,7 +5984,7 @@ void MainComponent::resized()
         const bool onSound = (padPage == padPageSound);
         //  644 y 418 salen de sumar lo que lleva cada pagina, no de probar:
         //  ver el desglose de cada bloque mas abajo.
-        const int sheetInnerW = (int) (full.getWidth() * 0.92f) - 2 * Metrics::lg;
+        const int sheetInnerW = anchoTarjetaInterior (full.getWidth());
         //  Lo que pide cada pagina, sumado y no probado:
         //  SONIDO  = titulo+pestanas+margenes (116) + secH + 86 + 86 + 86 + 56 + 8
         //  RECORTE = 116 + secH + 34+4+34+8 + hit + 8 + 180 de onda
@@ -6104,7 +6165,16 @@ void MainComponent::resized()
 
         {
             const int forKnobs = inner.getHeight();
-            const int knobH = juce::jlimit (60, ZatiLookAndFeel::kKnobRow, forKnobs / 3);
+            //  SE PIDE LO QUE HAY. `jlimit (60, kKnobRow, forKnobs/3)` es un
+            //  clamp HACIA ARRIBA disfrazado de suelo -el fallo mas repetido de
+            //  esta casa, ya pagado en layoutPadGrid con `jmax (24, ...)` y en
+            //  la celda de paso con `jlimit (12, 26, ...)`-: cuando el tercio
+            //  no llega a 60 lo SUBE a 60, se piden 180 px donde hay menos,
+            //  removeFromTop no se queja y la tercera fila -CORTE, RESO y
+            //  ANCHO- se queda con lo que sobre. Vivo en apaisado, donde esta
+            //  pagina pide 438 px en una tarjeta que puede medir 371.
+            const int knobH = juce::jmin (ZatiLookAndFeel::kKnobRow,
+                                          juce::jmax (juce::jmin (60, forKnobs / 3), forKnobs / 3));
             juce::Slider* k1[3] = { &pitchSlider, &fineSlider, &volSlider };
             juce::Slider* k2[3] = { &panSlider, &attackSlider, &releaseSlider };
             //  Y la tercera fila son TRES desde que existe el ANCHO. Era de
@@ -6374,7 +6444,15 @@ void MainComponent::resized()
         //  Y la altura de la tarjeta cuenta las DOS filas cuando hacen falta,
         //  o la ficha se queda corta y lo que se sale es lo que se maqueta al
         //  final. Se pregunta con el ancho que va a tener el interior.
-        const int setInnerW = juce::jmax (1, setSheet.getWidth() - Metrics::md * 2);
+        //  Y CON EL ANCHO DE LA TARJETA, no con el de la VENTANA.
+        //
+        //  `setSheet.getWidth()` es el componente que ocupa la pantalla entera,
+        //  asi que esta cuenta preguntaba "caben las pestanas" con 412 px
+        //  mientras el maquetado las coloca con los 347 del interior de la
+        //  tarjeta: una decia que si y el otro que no, se reservaba UNA fila y
+        //  se usaban DOS, y lo que se comia la diferencia era la ultima fila que
+        //  se maqueta - la de CARCASA, a 4 px de alto. Una cuenta, un dueno.
+        const int setInnerW = juce::jmax (1, anchoTarjetaInterior (full.getWidth()));
         const bool tabsFitH = setTabsFit (setInnerW);
         const int tabsH = (tabsFitH ? Metrics::tab : Metrics::tab * 2 + Metrics::xs) + Metrics::sm;
         //  The gestures page is a printed list: one row per gesture, and the
@@ -6399,7 +6477,13 @@ void MainComponent::resized()
         //  DOS filas de chips y no cuatro: IDIOMA y CARCASA se fueron a su
         //  propia pagina, aqui quedan BUFER y RELOJ.
         const int filasChips = 2 * (Metrics::hit + Metrics::xs);
-        const int estAltoAudio = 16 + Metrics::sm + tabsH + 158 + Metrics::xs + filasChips
+        //  EL RECUADRO DE AUDIO MIDE LO MISMO EN LOS CUATRO SITIOS.
+        //
+        //  Ese 158 estaba escrito a mano cuatro veces -dos veces para pedir el
+        //  alto y dos para colocarlo, con dos aritmeticas distintas- y es
+        //  exactamente el tipo de numero que se queda viejo en tres sitios de
+        //  cuatro. Es cuanto texto pinta paintAudioInfo, o sea suyo.
+        const int estAltoAudio = 16 + Metrics::sm + tabsH + kAltoAudioInfo + Metrics::xs + filasChips
                                + Metrics::xs + 14 + Metrics::hit + Metrics::sm;
         //  DOS COLUMNAS CUANDO LA DE UNA NO CABE, y la pregunta es esa y no
         //  otra. La condicion anterior comparaba la altura consigo misma menos
@@ -6432,7 +6516,7 @@ void MainComponent::resized()
 
         const int wanted = onMidi ? midiH
             : onAudio
-            ? Metrics::md * 2 + 16 + Metrics::sm + tabsH + 158 + Metrics::xs
+            ? Metrics::md * 2 + 16 + Metrics::sm + tabsH + kAltoAudioInfo + Metrics::xs
                 + 14 + Metrics::hit + Metrics::sm
                 + (Metrics::hit + Metrics::xs) * 2 + Metrics::sm
             : onAsp
@@ -6618,7 +6702,7 @@ void MainComponent::resized()
             {
                 auto izda = inner.removeFromLeft (inner.getWidth() / 2 - Metrics::sm);
                 inner.removeFromLeft (Metrics::sm);
-                audioInfoArea = izda.removeFromTop (juce::jmin (158, izda.getHeight()));
+                audioInfoArea = izda.removeFromTop (juce::jmin (kAltoAudioInfo, izda.getHeight()));
                 ponPruebas (izda);
                 columnaChips = inner;
             }
@@ -6638,7 +6722,7 @@ void MainComponent::resized()
                 const int chipsNecesarios = 2 * (Metrics::hit + Metrics::xs)
                                           + Metrics::xs + 14 + Metrics::hit + Metrics::sm;
                 audioInfoArea = inner.removeFromTop (
-                                    juce::jlimit (0, 158, inner.getHeight() - Metrics::xs - chipsNecesarios));
+                                    juce::jlimit (0, kAltoAudioInfo, inner.getHeight() - Metrics::xs - chipsNecesarios));
                 inner.removeFromTop (Metrics::xs);
                 ponPruebas (inner);
                 columnaChips = inner;
@@ -7271,7 +7355,7 @@ void MainComponent::resized()
             //  la ficha de CANCION no tenia boton de play en apaisado, que es
             //  justo la orientacion en la que se pidio.
             const int anchoUtil = wideFace ? colUtil - 2 * Metrics::lg
-                                           : (int) ((float) safeArea().getWidth() * 0.92f) - 2 * Metrics::lg;
+                                           : anchoTarjetaInterior (safeArea().getWidth());
             juce::TextButton* sb[4] = { &songPadModeBtn, &songClearBtn, &songDoubleBtn, &songModeBtn };
             if (! moduleBarFits (anchoUtil, sb, 4)) filasModo = 2 * Metrics::hit + Metrics::halfGap;
 
@@ -7306,7 +7390,7 @@ void MainComponent::resized()
         //  fallo que ya costo el TEMPO del secuenciador y la fila de
         //  herramientas de esta misma ficha, contado por tercera vez.
         const int anchoPaleta = wideFace ? colUtil - 2 * Metrics::lg
-                                         : (int) ((float) safeArea().getWidth() * 0.92f) - 2 * Metrics::lg;
+                                         : anchoTarjetaInterior (safeArea().getWidth());
         int pagsUsadas = 0;
         for (int i = 0; i < songPageBtns.size(); ++i)
             if (i * Playlist::kBarsView < engine.getSongLength()) ++pagsUsadas;
@@ -7336,7 +7420,15 @@ void MainComponent::resized()
         //  asi que el carril caia de 21 px a NUEVE sin que nadie se enterase.
         //  Una tapa estrecha se acierta con cuidado; un carril de nueve pixeles
         //  no se acierta.
-        const int topeCancion = (int) ((float) full.getHeight() * (wideFace ? 0.90f : 0.78f));
+        //  Y con la FORMA de la ventana, no con `wideFace`. Son dos preguntas
+        //  distintas: wideFace pide ademas 560 px de ancho -es "la cara cabe en
+        //  dos columnas"- y sheetFromBottom decide el tope con w > h a secas.
+        //  En 480x412 -la pantalla partida que ya saco dieciseis solapes-
+        //  wideFace es falso y la tarjeta mide 0.90: la pregunta de si la
+        //  paleta cabe en dos filas se hacia con 50 px menos de los que hay, y
+        //  la paleta se quedaba de ocho sin necesidad.
+        const int topeCancion = (int) ((float) full.getHeight()
+                                        * (full.getWidth() > full.getHeight() ? 0.90f : 0.78f));
         const bool paletaAnchaCabe = (anchoPaleta / kNumPatterns - 2 >= Metrics::hit);
         const int filasPaleta = (paletaAnchaCabe || pideCancion (2) > topeCancion) ? 1 : 2;
         const int porFilaPal  = kNumPatterns / juce::jmax (1, filasPaleta);
@@ -7753,7 +7845,13 @@ void MainComponent::resized()
         //  pixels a lane. So the lane height is now DERIVED from the cap rather
         //  than clamped up to a number the card was never going to have, and
         //  `wanted` can never exceed `capH`.
-        const int capH   = (int) (full.getHeight() * 0.78f);
+        //  Y APAISADO EL TOPE ES 0.90, como en sheetFromBottom y como en la
+        //  otra pagina de esta MISMA funcion (topeSeq). Estaba clavado al 78%,
+        //  asi que en 915x412 esta cuenta trabajaba con 321 px de tarjeta
+        //  cuando la tarjeta iba a medir 371: cincuenta px de menos, y de ahi
+        //  sale la altura del carril de la rejilla.
+        const int capH   = (int) (full.getHeight()
+                                   * (full.getWidth() > full.getHeight() ? 0.90f : 0.78f));
         const int chrome = Metrics::md * 2          // the card's own margins
                          + Metrics::hit             // title row
                          + Metrics::sm
@@ -7868,8 +7966,8 @@ void MainComponent::resized()
             //  El ancho util de la tarjeta, con la misma cuenta que usa la
             //  ficha de CANCION: aqui todavia no existe `inner`, y estimarlo
             //  a ojo es como se pide una altura que luego no vale.
-            const int anchoTarjeta = (int) ((float) safeArea().getWidth() * 0.92f) - 2 * Metrics::lg;
-            const int anchoCol = wideFace ? (anchoTarjeta - Metrics::gap) / 2 : anchoTarjeta;
+            const int anchoDeLaTarjeta = anchoTarjetaInterior (safeArea().getWidth());
+            const int anchoCol = wideFace ? (anchoDeLaTarjeta - Metrics::gap) / 2 : anchoDeLaTarjeta;
             //  Una fila si las ocho caben, dos si caben de cuatro en cuatro, y
             //  si no, tres: tres, tres y dos. `filasUtil` es lo que se paga DE
             //  MAS sobre la primera fila, que ya la cuenta bandH.
@@ -8022,11 +8120,11 @@ void MainComponent::resized()
                                          &pianoOctDownBtn, &pianoOctUpBtn, &pianoVerBtn,
                                          &pianoClearBtn, &pianoLapizBtn, &pianoGomaBtn,
                                          &pianoCorteBtn };
-            const int anchoTarjeta = (int) ((float) safeArea().getWidth() * 0.92f) - 2 * Metrics::lg;
+            const int anchoDeLaTarjeta = anchoTarjetaInterior (safeArea().getWidth());
             //  Apaisado no hay fila de tapas que pedir: se van a la columna
             //  de al lado. Pedir una fila que luego no se coloca es pedir 48 px
             //  de mas de lo unico que escasea girado.
-            const int filasTapas = wideFace ? 0 : (moduleBarFits (anchoTarjeta, pb5, 9) ? 1 : 2);
+            const int filasTapas = wideFace ? 0 : (moduleBarFits (anchoDeLaTarjeta, pb5, 9) ? 1 : 2);
             filasTapasPiano = filasTapas;
             wanted = chrome + pianoGrid.getFilas() * PianoRoll::kAltoObjetivo + Metrics::sm + 14
                    + filasTapas * Metrics::hit
@@ -9609,8 +9707,8 @@ void MainComponent::normalisePad()
     //  toma a -40 dBFS pide +40 dB y el mando llega a +12. Callarlo dejaria
     //  "normalizado" un pad que sigue sonando 28 dB por debajo.
     const bool capped = db >= kGainMaxDb - 0.05;
-    status.setText ((capped ? T ("GANANCIA al tope: %1", Lang::ltr (gainText (db, true)))
-                            : T ("Pico a -0.3 dBFS con %1", Lang::ltr (gainText (db, true)))),
+    status.setText ((capped ? T ("GANANCIA al tope: %1", gainText (db, true))
+                            : T ("Pico a -0.3 dBFS con %1", gainText (db, true))),
                     juce::dontSendNotification);
 }
 
@@ -10143,7 +10241,15 @@ void MainComponent::retranslateUi()
     //  this list, so even once their formatters went through T() they would
     //  have kept showing the language the app was started in until the value
     //  next changed.
-    for (auto* sl : { &lengthSlider, &chokeSlider, &swingSlider, &songLenSlider })
+    //  Y SIGUEN FALTANDO SIETE, contadas una por una: los cinco que dicen
+    //  "off" -el bloqueo de corte y los cuatro de ataque, caida, inicio y pan-,
+    //  el de EUCLIDES que dice "vacio", y la rejilla, que pasa su numero por
+    //  Lang::ltr y por tanto cambia con el idioma. Es la misma lista que ya se
+    //  amplio una vez con el comentario de arriba: se cuentan TODOS los que
+    //  formatean su lectura, no los que alguien recuerda.
+    for (auto* sl : { &lengthSlider, &chokeSlider, &swingSlider, &songLenSlider,
+                      &lockSlider, &atkPasoSlider, &relPasoSlider, &iniPasoSlider,
+                      &panPasoSlider, &euclidSlider, &gridSlider })
         sl->updateText();
     refreshChopSheet();          // its verb carries the piece count
     refreshSong();               // the brush chip names itself
@@ -10741,6 +10847,7 @@ void MainComponent::usarCarpetaDeExport()
 
     browseModo = browsePad;
     closeAllSheets();
+    destinoCache = juce::File();
     openSheet (exportSheet, setButton);
     status.setText (T ("El rebote caera en %1", elegida.getFileName()),
                     juce::dontSendNotification);
@@ -11061,7 +11168,12 @@ void MainComponent::applyState (const juce::ValueTree& s)
     swingSlider.setValue ((double) s.getProperty ("swing", 0.5) * 100.0, juce::sendNotification);
     gridSlider.setValue ((double) (int) s.getProperty ("gridres", 2), juce::sendNotification);
 
-    if (auto fx = s.getChildWithName ("FX"); fx.isValid())
+    //  Y LO MISMO CON LOS EFECTOS: sin <FX>, los seis se quedaban donde los
+    //  dejo el proyecto anterior. El arbol invalido responde que no a
+    //  hasProperty, asi que el bucle de abajo -que ya sabe poner el defecto de
+    //  cada mando- vale igual para las dos ramas y no hay una segunda lista de
+    //  defectos que mantener.
+    auto fx = s.getChildWithName ("FX");
     {
         // Projects saved before the six-effect rework carry the old three
         // parameters; map what is there and leave the rest at its default.
@@ -11094,16 +11206,27 @@ void MainComponent::applyState (const juce::ValueTree& s)
             pushFxParam (f, 0); pushFxParam (f, 1); pushFxParam (f, 2);
             fxOn[(size_t) f] = fxParam (f, 2).getValue() > 0.001;
             fxButtons[f]->setToggleState (fxOn[(size_t) f], juce::dontSendNotification);
-        //  ...y el estado del panel XY. jlimit porque un proyecto viejo no
-        //  tiene la propiedad y getProperty devuelve 0, que es un indice
-        //  valido - pero uno guardado por una version con mas efectos no lo
-        //  seria.
+        }
+
+        //  ...y el estado del panel XY, UNA vez. La llave del for cerraba ocho
+        //  lineas mas abajo de donde decia la sangria, asi que estas cuatro
+        //  corrian seis veces -una por efecto- en cada apertura de proyecto.
+        //  jlimit porque un proyecto viejo no tiene la propiedad y getProperty
+        //  devuelve 0, que es un indice valido - pero uno guardado por una
+        //  version con mas efectos no lo seria.
         engine.setDuckPad (juce::jlimit (-1, kNumPads - 1, (int) fx.getProperty ("duckPad", -1)));
         xyLatch = (bool) fx.getProperty ("xyLatch", false);
         selectXyFx (juce::jlimit (0, kNumFx - 1, (int) fx.getProperty ("xyFx", 0)));
         xyLatchButton.setToggleState (xyLatch, juce::dontSendNotification);
-        }
     }
+
+    //  LOS SESENTA Y CUATRO A SU DEFECTO ANTES DE APLICAR LO QUE TRAIGA.
+    //
+    //  Un proyecto de dieciseis pads dejaba los otros cuarenta y ocho con la
+    //  ganancia, el pan y el filtro del proyecto anterior mientras clearMissing
+    //  les quitaba el audio. Lo que el fichero no dice no se hereda: se pone a
+    //  lo que vale en una maquina recien encendida.
+    for (int i = 0; i < kNumPads; ++i) padPorDefecto (i);
 
     if (auto pads = s.getChildWithName ("PADS"); pads.isValid())
     {
@@ -11119,8 +11242,12 @@ void MainComponent::applyState (const juce::ValueTree& s)
             padGain[(size_t) i]    = (float) p.getProperty ("gain", 0.85);
             engine.setPadMute (i, (bool) p.getProperty ("mute", false));
             engine.setPadSolo (i, (bool) p.getProperty ("solo", false));
-            padStart01[(size_t) i] = (float) p.getProperty ("start", 0.0);
-            padEnd01[(size_t) i]   = (float) p.getProperty ("end", 1.0);
+            //  El recorte se guarda en 0..1 y se convierte a muestras mas
+            //  abajo: un 9 o un -3 en el fichero daria un indice fuera del
+            //  buffer, y `(int)` sobre eso es conversion indefinida antes de
+            //  llegar siquiera al motor. Los demas los acotan los setters.
+            padStart01[(size_t) i] = juce::jlimit (0.0f, 1.0f, (float) p.getProperty ("start", 0.0));
+            padEnd01[(size_t) i]   = juce::jlimit (0.0f, 1.0f, (float) p.getProperty ("end", 1.0));
             padLoop[(size_t) i]    = (bool)  p.getProperty ("loop", false);
             //  Default true: a project saved before AUTOCUT existed has no
             //  such property, and it should come back behaving like every
@@ -11295,7 +11422,26 @@ void MainComponent::applyState (const juce::ValueTree& s)
     engine.setEditPattern (selectedPattern);
     lengthSlider.setValue (engine.getPatternLength (selectedPattern), juce::dontSendNotification);
 
-    if (auto song = s.getChildWithName ("song"); song.isValid())
+    //  LO QUE EL FICHERO NO TRAE VUELVE A SU DEFECTO, NO SE HEREDA.
+    //
+    //  `clearSong` vivia DENTRO del if, asi que abrir un proyecto sin <song>
+    //  -uno anterior a la linea de tiempo, o uno guardado sin ella- dejaba
+    //  sonando el arreglo del proyecto que estuviera abierto. Es la misma
+    //  herencia que ya se pago dos veces en newProject, contada en el otro
+    //  camino: vaciar la mitad de un proyecto es peor que no vaciar nada,
+    //  porque lo que queda parece tuyo.
+    auto song = s.getChildWithName ("song");
+    if (! song.isValid())
+    {
+        engine.clearSong();
+        engine.setSongLength (8);
+        songLenSlider.setValue (8.0, juce::dontSendNotification);
+        ponModoCancion (false);
+        for (int lane = 0; lane < Playlist::kLanes; ++lane)
+            engine.setSongLaneMute (lane, false);
+        engine.setSongLoop (0, 0);
+    }
+    else
     {
         engine.clearSong();
         engine.setSongLength ((int) song.getProperty ("bars", 8));
@@ -11413,11 +11559,17 @@ void MainComponent::finishProjectSave (const juce::String& name, const juce::Fil
     //  filesystem saying it accepted the call, not that the bytes are there:
     //  on Android shared storage it can accept and quietly drop. The only
     //  honest confirmation is a file that exists, is not empty, and parses.
+    //
+    //  Y SE COMPRUEBA ANTES DE PISAR EL BUENO, que es lo que faltaba: la
+    //  comprobacion estaba bien y llegaba TARDE - cuando parseXML decia que no,
+    //  el project.xml anterior ya no existia, asi que "NO se pudo guardar"
+    //  salia encima de un proyecto que acababa de quedarse sin cabecera y fuera
+    //  de ProjectStore::list, que exige ese fichero. Es la misma regla que
+    //  writeSample ya tenia escrita al lado: nunca se borra el bueno antes de
+    //  tener el nuevo.
     const auto xml     = captureState().toXmlString();
     const auto xmlFile = folder.getChildFile ("project.xml");
-    bool ok = xmlFile.replaceWithText (xml);
-    if (ok)
-        ok = xmlFile.existsAsFile() && xmlFile.getSize() > 0 && juce::parseXML (xmlFile) != nullptr;
+    bool ok = ProjectStore::escribeTexto (xmlFile, xml, ProjectStore::esXmlLegible);
 
     if (! ok)
     {
@@ -11576,6 +11728,71 @@ void MainComponent::songPorDefecto()
         engine.setSongCell (0, b, AudioEngine::kContinued);
 }
 
+//  UN PAD RECIEN NACIDO, EN UN SOLO SITIO.
+//
+//  Los parametros de pad se ponian a su defecto en applyState -y solo para los
+//  pads que el fichero trae- y en ningun sitio mas. Las dos consecuencias:
+//
+//   - NUEVO vaciaba muestra, nombre y envios y se dejaba pitch, ganancia, pan,
+//     corte, reves, fundidos, mute/solo y los dos de envolvente donde los dejo
+//     el proyecto de ayer. Cargar un sonido en el pad 03 despues de NUEVO podia
+//     sonar al reves y filtrado a 200 Hz sin que nadie hubiera tocado nada.
+//   - Y abrir un proyecto de dieciseis pads dejaba los pads 16..63 con la
+//     ganancia, el pan y el filtro del proyecto anterior mientras clearMissing
+//     les quitaba el audio: la mitad de un pad de otro proyecto.
+//
+//  Es la tercera vez que la misma clase de herencia aparece en esta funcion, y
+//  la respuesta de la casa es siempre la misma: un defecto, un dueno.
+void MainComponent::padPorDefecto (int i)
+{
+    if (! juce::isPositiveAndBelow (i, kNumPads)) return;
+    const auto k = (size_t) i;
+
+    padName[k]    = {};
+    padPitch[k]   = 0.0f;
+    padCents[k]   = 0.0f;
+    padKeepLen[k] = false;
+    padGain[k]    = 0.85f;
+    padStart01[k] = 0.0f;
+    padEnd01[k]   = 1.0f;
+    padLoop[k]    = false;
+    //  Cierto por defecto, que es como se comporta cualquier otro pad: el que
+    //  apila es la excepcion y hay que pedirla.
+    padSelfCut[k] = true;
+    padReverse[k] = false;
+    padChokeUI[k] = 0;
+    padPan[k]     = 0.0f;
+    padAnchoUI[k] = 1.0f;
+    padAttack[k]  = 2.0f;
+    padRelease[k] = 5.0f;
+    padCut[k]     = (float) AudioEngine::kFiltOpenHz;
+    padReso[k]    = 0.0f;
+    padFadeIn[k]  = 0.0f;
+    padFadeOut[k] = 0.0f;
+    padZati[k]    = Zati::forPad (i);
+
+    engine.setPadPitch      (i, 0.0f);
+    engine.setPadKeepLength (i, false);
+    engine.setPadGain       (i, 0.85f);
+    engine.setPadLoop       (i, false);
+    engine.setPadSelfCut    (i, true);
+    engine.setPadReverse    (i, false);
+    engine.setPadChoke      (i, 0);
+    engine.setPadPan        (i, 0.0f);
+    engine.setPadAncho      (i, 1.0f);
+    engine.setPadAttack     (i, 2.0f);
+    engine.setPadRelease    (i, 5.0f);
+    engine.setPadCutoff     (i, (float) AudioEngine::kFiltOpenHz);
+    engine.setPadReso       (i, 0.0f);
+    engine.setPadFadeIn     (i, 0.0f);
+    engine.setPadFadeOut    (i, 0.0f);
+    engine.setPadMute       (i, false);
+    engine.setPadSolo       (i, false);
+    //  A cero, que es como nace una mezcla: se sube lo que quieres y no se
+    //  apaga lo que no. Ver Tests/nuevo.py.
+    for (int f = 0; f < AudioEngine::kNumFx; ++f) engine.setPadSend (i, f, 0.0f);
+}
+
 void MainComponent::newProject()
 {
     playButton.setToggleState (false, juce::dontSendNotification);
@@ -11586,15 +11803,13 @@ void MainComponent::newProject()
     {
         uiSample[(size_t) i] = nullptr;
         padHasSample[(size_t) i] = false;
-        padName[(size_t) i] = {};
         engine.clearPad (i);            // NUEVO has to empty the engine too
-        //  Y LOS ENVIOS CON EL PAD. clearPad vacia la muestra y deja los seis
-        //  envios donde los dejo el proyecto anterior, asi que el pad 03 del
-        //  proyecto nuevo nacia mandando al delay porque el del proyecto de
-        //  ayer lo hacia. Un estado que sobrevive a NUEVO no es un defecto: es
-        //  una herencia, y ninguna de las dos puertas a un proyecto vacio puede
-        //  dejar la mitad puesta.
-        for (int f = 0; f < AudioEngine::kNumFx; ++f) engine.setPadSend (i, f, 0.0f);
+        //  Y TODO LO DEMAS DEL PAD. clearPad vacia la muestra y deja los
+        //  parametros -y los seis envios- donde los dejo el proyecto anterior.
+        //  Un estado que sobrevive a NUEVO no es un defecto: es una herencia, y
+        //  ninguna de las dos puertas a un proyecto vacio puede dejar la mitad
+        //  puesta. Ver padPorDefecto.
+        padPorDefecto (i);
         if (auto* p = pads[i]) p->setSampleInfo (nullptr, {});
     }
     for (int b = 0; b < kNumPatterns; ++b)
@@ -11783,13 +11998,11 @@ void MainComponent::euclidesPattern (int golpes)
         const bool on = n > 0 && (st * n) % len < n;
         pattern[(size_t) b][(size_t) st][(size_t) p] = on;
         engine.setStep (b, st, p, on);
-        if (on)
-        {
-            engine.setStepNote (b, st, p, 0);
-            engine.setStepVel  (b, st, p, 127);
-            engine.setStepRoll (b, st, p, 1);
-        }
-        engine.setStepNudge (b, st, p, 0);
+        //  Y la fila ENTERA a su defecto, encendida o no. Se reescribian nota,
+        //  fuerza, redoble y empujon y se quedaban el largo, el bloqueo, el
+        //  acorde y los cuatro empaquetados del patron anterior: justo lo que
+        //  el comentario de arriba dice que no puede pasar.
+        engine.vaciaPaso (b, st, p);
     }
 
     refreshStepGrid();
@@ -13118,7 +13331,8 @@ void MainComponent::tourPrepara (int paso)
         case 10: showPadPage (padPageTrim);  openSheet (padSheet, padsButton); break;
         case 11: refreshMixStrip();          openSheet (mixSheet, mixButton);  break;
         case 12: openSheet (songSheet, songButton); break;
-        case 13: exportStatus.clear(); exportOk = false; openSheet (exportSheet, setButton); break;
+        case 13: exportStatus.clear(); exportOk = false; destinoCache = juce::File();
+                 openSheet (exportSheet, setButton); break;
         //  El ultimo paso explica el IDIOMA y la CARCASA, que desde que tienen
         //  pagina propia ya no estan en AUDIO: abrir AUDIO dejaba el anillo
         //  alrededor de nada, que es exactamente lo que tourObjetivo evita
@@ -13851,7 +14065,17 @@ void MainComponent::paintExportSheetContent (juce::Graphics& g)
     //  telefono la ruta son sesenta caracteres de los que importan los ultimos
     //  quince.
     {
-        const auto dir = ProjectStore::exports();
+        //  Y LA RUTA SE CACHEA, que `paint` no es sitio para escribir en disco.
+        //
+        //  ProjectStore::exports() crea la carpeta, deja dentro un fichero de
+        //  un byte, lo vuelve a leer y lo borra - `canReallyWriteInto`, que es
+        //  correcto donde se DECIDE (startExport) y absurdo aqui: con el rebote
+        //  en marcha, pollExport repinta esta ficha en cada tic, o sea E/S de
+        //  verdad treinta veces por segundo en la misma carpeta en la que el
+        //  hilo de exportacion esta escribiendo.
+        if (destinoCache == juce::File())
+            destinoCache = ProjectStore::exports();
+        const auto dir = destinoCache;
         line (T ("destino"),
               Lang::ltr (dir.getParentDirectory().getFileName() + "/" + dir.getFileName()
                          + "/" + (currentProject.isNotEmpty() ? currentProject : juce::String ("ZATI"))),
@@ -16240,6 +16464,71 @@ void MainComponent::auditArrange()
               << engine.getSongLoopTo() << "]}" << std::endl;
 }
 
+//  UN PROYECTO DE OTRA EPOCA, ABIERTO CON EL BINARIO DE HOY.
+//
+//  La regla de la casa esta escrita ocho veces en applyState -"lo que no esta
+//  en el fichero vale su defecto ANTIGUO y no el de hoy"- y no la comprobaba
+//  nadie: no hay un solo project.xml congelado en Tests/, asi que todos los
+//  caminos del banco guardan con el binario de hoy y leen con el binario de
+//  hoy. Una regla que solo existe en un comentario dura hasta el primer
+//  descuido.
+//
+//  Y de paso mide la herencia por el otro lado, que es lo que se acaba de
+//  arreglar: abrir un proyecto SIN <song> dejaba sonando el arreglo del
+//  anterior, y uno con dieciseis pads dejaba los otros cuarenta y ocho con la
+//  ganancia y el filtro del anterior.
+void MainComponent::auditViejos (const juce::String& carpeta)
+{
+    const juce::File dir (carpeta);
+    auto ficheros = dir.findChildFiles (juce::File::findFiles, false, "*.xml");
+    ficheros.sort();
+
+    for (const auto& f : ficheros)
+    {
+        //  ANTES de abrir el viejo se abre uno "de ayer" con todo puesto: sin
+        //  eso, los defectos de la maquina recien encendida y los del proyecto
+        //  anterior son el mismo numero y la prueba diria que si a cualquier
+        //  cosa. Es la corrida de control de Tests/nuevo.py contada aqui.
+        for (int p = 0; p < kNumPads; ++p)
+        {
+            padGain[(size_t) p] = 0.2f;   engine.setPadGain (p, 0.2f);
+            padPan[(size_t) p]  = 0.9f;   engine.setPadPan  (p, 0.9f);
+            padCut[(size_t) p]  = 300.0f; engine.setPadCutoff (p, 300.0f);
+            padReverse[(size_t) p] = true; engine.setPadReverse (p, true);
+            for (int fx = 0; fx < kNumFx; ++fx) engine.setPadSend (p, fx, 0.75f);
+        }
+        engine.setSongLength (32);
+        engine.setSongCell (0, 0, 3);
+        engine.setSongCell (1, 4, 2);
+
+        const auto destino = ProjectStore::folderFor (f.getFileNameWithoutExtension());
+        ProjectStore::ensureDirectory (destino);
+        f.copyFileTo (destino.getChildFile ("project.xml"));
+        loadProject (f.getFileNameWithoutExtension());
+
+        //  Cuantos compases de la cancion llevan algo: con <song> ausente tiene
+        //  que ser CERO, y antes salia el arreglo del proyecto anterior.
+        int celdasCancion = 0;
+        for (int ln = 0; ln < AudioEngine::kSongLanes; ++ln)
+            for (int bar = 0; bar < AudioEngine::kSongBars; ++bar)
+                if (engine.getSongCell (ln, bar) != 0) ++celdasCancion;
+
+        std::cout << "{\"viejo\":\"" << UiAudit::esc (f.getFileNameWithoutExtension()) << "\""
+                  << ",\"envio0\":" << engine.getPadSend (0, 0)
+                  << ",\"autocorte0\":" << (padSelfCut[0] ? 1 : 0)
+                  << ",\"corte0\":" << padCut[0]
+                  << ",\"gain20\":" << padGain[20]
+                  << ",\"pan20\":" << padPan[20]
+                  << ",\"corte20\":" << padCut[20]
+                  << ",\"reves20\":" << (padReverse[20] ? 1 : 0)
+                  << ",\"envio20\":" << engine.getPadSend (20, 0)
+                  << ",\"cancion\":" << celdasCancion
+                  << ",\"vel0\":" << engine.getStepVel (0, 0, 0)
+                  << ",\"roll0\":" << engine.getStepRoll (0, 0, 0)
+                  << "}" << std::endl;
+    }
+}
+
 void MainComponent::auditProject()
 {
     //  Un paso en el pad 0 de cada banco: 0, 16, 32 y 48. Si la mascara de la
@@ -16694,6 +16983,7 @@ void MainComponent::auditExport()
 //  rebote hecho en el hilo que llama no pasa por ninguno de los tres.
 void MainComponent::auditExportAsync (bool cancelar)
 {
+    destinoCache = juce::File();
     openSheet (exportSheet, setButton);
     startExport (true);
 
@@ -16871,7 +17161,8 @@ void MainComponent::auditOpen (const juce::String& which)
     }
     //  LA FICHA DE EXPORTAR, que es la unica que el banco no abria nunca - y es
     //  la unica funcion de la app cuyo resultado sale del telefono.
-    else if (which == "expo") { exportStatus.clear(); exportOk = false; openSheet (exportSheet, setButton); }
+    else if (which == "expo") { exportStatus.clear(); exportOk = false; destinoCache = juce::File();
+                                openSheet (exportSheet, setButton); }
     else if (which == "manual") { closeAllSheets(); openSheet (manualSheet, setButton); }
     //  EL TOUR, en su primera tarjeta y en la ultima: la fila de tapas cambia
     //  -ATRAS se enciende, SIGUIENTE pasa a EMPEZAR- y "EMPEZAR" no mide lo
@@ -17081,7 +17372,12 @@ void MainComponent::autosave()
     const auto folder = ProjectStore::folderFor (currentProject);
     if (! folder.isDirectory()) return;
 
-    folder.getChildFile ("project.xml").replaceWithText (state.toXmlString());
+    //  Y POR LA MISMA PUERTA QUE LA SESION. Esto era un replaceWithText a pelo
+    //  ocho lineas debajo de la llamada a writeState, que lleva doce lineas de
+    //  comentario explicando por que eso pierde ficheros. Y corre en cada
+    //  onPause, o sea en el instante en el que Android mata el proceso.
+    ProjectStore::escribeTexto (folder.getChildFile ("project.xml"),
+                                state.toXmlString(), ProjectStore::esXmlLegible);
 }
 
 //  Coming back from a cold start. Same shape as loadProject, from the folder

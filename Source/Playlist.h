@@ -3,9 +3,11 @@
 #include <JuceHeader.h>
 #include "ZatiLookAndFeel.h"
 #include "Zati.h"
+#include "AudioEngine.h"
 #include <array>
 #include <cstring>
 #include <vector>
+#include <utility>
 
 // ============================================================================
 //  Playlist — the arrangement, as a timeline you can see.
@@ -222,7 +224,24 @@ public:
                         (int) barW, 9, juce::Justification::topLeft);
     }
 
-    void mouseDown (const juce::MouseEvent& e) override
+    //  SE PINTA CON EL DEDO ARRASTRADO, como la rejilla de pasos y como el
+    //  piano.
+    //
+    //  Solo habia mouseDown: escribir ocho compases eran ocho toques, y la
+    //  regla escrita en CLAUDE.md dice que esta ficha no se desplaza
+    //  precisamente porque "se pinta con el dedo arrastrado". O faltaba el
+    //  gesto o sobraba el argumento; faltaba el gesto.
+    //
+    //  Con dos candados que la rejilla de pasos ya tiene por el mismo motivo:
+    //  la canaleta del MUTE solo responde al TOQUE -arrastrar por ella
+    //  silenciaria los cuatro carriles de una pasada- y una celda no se
+    //  escribe dos veces seguidas, o pasar el dedo por encima de la misma
+    //  casilla la enciende y la apaga a la velocidad de los eventos del raton.
+    void mouseDown (const juce::MouseEvent& e) override { ultima = { -1, -1 }; toca (e, false); }
+    void mouseDrag (const juce::MouseEvent& e) override { toca (e, true); }
+    void mouseUp   (const juce::MouseEvent&)   override { ultima = { -1, -1 }; }
+
+    void toca (const juce::MouseEvent& e, bool arrastrando)
     {
         if (data == nullptr) return;
         auto r = getLocalBounds();
@@ -234,7 +253,7 @@ public:
         //  tarjeta que ya llega al tope de altura.
         if (e.x < r.getX() + gutter)
         {
-            if (onLane)
+            if (onLane && ! arrastrando)
                 onLane (juce::jlimit (0, kLanes - 1, (int) ((float) (e.y - r.getY()) / laneH0)));
             return;
         }
@@ -246,12 +265,22 @@ public:
         const int bar  = pageIndex * kBarsView
                        + juce::jlimit (0, kBarsView - 1, (int) ((float) (e.x - r.getX() - gutter) / barW));
         if (bar >= totalBars) return;
+        if (arrastrando && lane == ultima.first && bar == ultima.second) return;
+        ultima = { lane, bar };
         onCell (lane, bar);
     }
 
-    static constexpr int kContinued = 1000;
+    //  El mismo centinela que AudioEngine::kContinued, y por eso se toma de
+    //  alli: estaba escrito dos veces con el mismo numero, o sea dos duenos
+    //  para una regla - mover uno dejaria la rejilla pintando bloques que el
+    //  motor no reconoce, sin un solo error de compilacion.
+    static constexpr int kContinued = AudioEngine::kContinued;
 
 private:
+    //  La ultima celda escrita por el arrastre en curso: sin esto, pasar el
+    //  dedo por la misma casilla la enciende y la apaga a la velocidad de los
+    //  eventos del raton.
+    std::pair<int, int> ultima { -1, -1 };
     // Pattern banks borrow the fragment palette so a block is recognisable at a
     // glance; a one-shot wears its own pad's zati.
     juce::Colour blockColour (int v) const

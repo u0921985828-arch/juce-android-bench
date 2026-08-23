@@ -79,6 +79,21 @@ La primera configuración clona JUCE 8.0.4 (versión fijada).
 > letras — `via: compartida MEZCLADOR` significa que el camino rápido no existe
 > en ese aparato.
 
+### La latencia se mide desde la propia app
+
+No hace falta cable ni OboeTester: **AJUSTES → AUDIO → MEDIR** emite un clic,
+lo graba por el micrófono a través de la misma llamada de audio y dice los
+milisegundos de ida y vuelta, con el color diciendo si son buenos (≤30),
+regulares (≤60) o malos. Es una medida y no una estimación — lo que el
+dispositivo *declara* es otra cosa, y la ficha enseña las dos.
+
+Aquí va el número cuando esté tomado, y va con las cuatro cosas sin las que no
+significa nada:
+
+| teléfono | Android | vía | bloque | ida y vuelta |
+|---|---|---|---|---|
+| *(pendiente: una toma con MEDIR en el teléfono de referencia)* | | | | |
+
 ## Compilar el APK
 
 El workflow es manual (`workflow_dispatch`). Construye el Projucer, genera el

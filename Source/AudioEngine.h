@@ -148,7 +148,17 @@ public:
     {
         return (slot >= 0 && slot < kNumPads) ? padPitch[(size_t) slot].load (std::memory_order_relaxed) : 0.0f;
     }
-    void setPadGain    (int slot, float g)     noexcept { store (padGain,    slot, g); }
+    //  ACOTADOS EN LA PUERTA, no en quien llama.
+    //
+    //  Estos seis salian de `getProperty` sobre el fichero de proyecto y
+    //  entraban con un `store` a pelo: un project.xml a medio escribir -o
+    //  editado a mano- metia gain=1e30 o pan=900 en el hilo de audio, y el
+    //  fader de la mesa SI acota al pintarse, asi que el mando ensenaba 0 dB y
+    //  el motor tenia el numero crudo. Es lo mismo que loadMasterPref lleva
+    //  escrito desde el dia que se escribio: se lee acotado al rango del mando.
+    //  Y aqui y no en applyState, que es la unica puerta por la que pasan
+    //  todos los caminos - el fichero, el mando, el bloqueo de paso y el kit.
+    void setPadGain    (int slot, float g)     noexcept { store (padGain,    slot, juce::jlimit (0.0f, 4.0f, g)); }
     void setPadStart   (int slot, int s)       noexcept { store (padStart,   slot, s); }
     void setPadEnd     (int slot, int e)       noexcept { store (padEnd,     slot, e); }
     void setPadLoop    (int slot, bool b)      noexcept { store (padLoop,    slot, b); }
@@ -166,7 +176,7 @@ public:
     void setPadSelfCut (int slot, bool on)     noexcept { store (padSelfCut, slot, on); }
     bool getPadSelfCut (int slot) const noexcept
     { return slot >= 0 && slot < kNumPads && padSelfCut[(size_t) slot].load (std::memory_order_relaxed); }
-    void setPadPan     (int slot, float p)     noexcept { store (padPan,     slot, p); }        // -1..1
+    void setPadPan     (int slot, float p)     noexcept { store (padPan,     slot, juce::jlimit (-1.0f, 1.0f, p)); }
     //  ANCHO ESTEREO: 0 mono, 1 como viene, 2 el doble de lado. Ver Voice::ancho:
     //  el pan dice DONDE esta el sonido y esto CUANTO ocupa, y son dos cosas.
     void setPadAncho   (int slot, float w)     noexcept { store (padAncho,   slot, juce::jlimit (0.0f, 2.0f, w)); }
@@ -174,8 +184,8 @@ public:
     {
         return (slot >= 0 && slot < kNumPads) ? padAncho[(size_t) slot].load (std::memory_order_relaxed) : 1.0f;
     }
-    void setPadAttack  (int slot, float ms)    noexcept { store (padAttack,  slot, ms); }
-    void setPadRelease (int slot, float ms)    noexcept { store (padRelease, slot, ms); }
+    void setPadAttack  (int slot, float ms)    noexcept { store (padAttack,  slot, juce::jlimit (0.0f, 10000.0f, ms)); }
+    void setPadRelease (int slot, float ms)    noexcept { store (padRelease, slot, juce::jlimit (0.0f, 20000.0f, ms)); }
 
     //  EL FILTRO DEL PAD. Un paso bajo por pad, con corte y resonancia.
     //
@@ -195,6 +205,12 @@ public:
     {
         if (slot < 0 || slot >= kNumPads) return;
         padCutoff[(size_t) slot].store (juce::jlimit (20.0f, kFiltOpenHz, hz), std::memory_order_relaxed);
+        //  Y EL BLOQUEO DE PASO SE RINDE: quien toca el mando manda. Sin esto,
+        //  un patron con un paso bloqueado dejaria el pad sordo a su propio
+        //  CORTE para siempre - el bloqueo se queda puesto hasta que otro paso
+        //  diga otra cosa, que es lo que tiene que hacer mientras suena y no
+        //  cuando la persona lo mueve a mano.
+        pasoCutoff[(size_t) slot].store (-1.0f, std::memory_order_relaxed);
         refreshFiltMask (slot);
     }
     void setPadReso (int slot, float r) noexcept
@@ -309,6 +325,9 @@ public:
             pendingClear[(size_t) slot].store (true, std::memory_order_release);
     }
     void collectRetiredSamples() noexcept;
+    //  Punteros que la cola de retirados tuvo que tirar por estar llena, o sea
+    //  buffers cuya cuenta no bajara nunca. Cero es lo unico correcto.
+    int takeRetiredLost() noexcept { return retired.takePerdidos(); }
 
     // --- Sequencer (message thread) ---
     void setPlaying (bool p) noexcept { playing.store (p, std::memory_order_relaxed); }
@@ -491,6 +510,9 @@ public:
     void setStepExtra (int patternIdx, int step, int pad, int indice, int semis, bool puesta) noexcept;
     int  getStepExtra (int patternIdx, int step, int pad, int indice) const noexcept;   // -128 = ninguna
     void clearStepExtras (int patternIdx, int step, int pad) noexcept;
+    //  Los NUEVE campos de un paso a su defecto, sin tocar si suena o no. Ver
+    //  su comentario: habia tres sitios vaciando tres subconjuntos distintos.
+    void vaciaPaso (int patternIdx, int step, int pad) noexcept;
     std::uint32_t getStepChordRaw (int patternIdx, int step, int pad) const noexcept
     {
         if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps
@@ -869,10 +891,20 @@ private:
             if (p == nullptr) return;
             int s1, z1, s2, z2;
             fifo.prepareToWrite (1, s1, z1, s2, z2);
-            if (z1 + z2 < 1) return;
+            //  SI NO CABE, SE PIERDE UN BUFFER ENTERO. Para cuando esto corre,
+            //  el hilo de audio ya ha soltado su puntero -pone padSample a
+            //  nullptr justo despues-, asi que descartar aqui es un
+            //  SampleBuffer cuyo contador no baja nunca: megabytes que no
+            //  vuelven. Son 127 huecos utiles contra un temporizador de 33-60
+            //  ms, y recargar la fabrica escribe 64 de golpe. Se cuenta, que es
+            //  lo unico que separa "no pasa" de "no lo mira nadie".
+            if (z1 + z2 < 1) { perdidos.fetch_add (1, std::memory_order_relaxed); return; }
             (z1 > 0 ? store[(size_t) s1] : store[(size_t) s2]) = p;
             fifo.finishedWrite (z1 + z2);
         }
+        //  Cuantos punteros se han tirado por cola llena desde la ultima vez.
+        int takePerdidos() noexcept { return perdidos.exchange (0, std::memory_order_relaxed); }
+
         template <typename Fn>
         void drain (Fn&& fn) noexcept
         {
@@ -886,6 +918,7 @@ private:
         static constexpr int cap = 128;
         juce::AbstractFifo fifo { cap };
         std::array<SampleBuffer*, cap> store {};
+        std::atomic<int> perdidos { 0 };
     };
 
     // Two voices per pad, round-robin: a retrigger steals the previous
@@ -1024,9 +1057,31 @@ private:
     std::array<std::atomic<float>, kNumPads> padReso {};     // 0..1
     std::atomic<std::uint64_t> padFiltMask { 0 };
 
+    //  EL CORTE QUE ESCRIBE UN PASO, APARTE DEL DEL PAD.
+    //
+    //  El bloqueo escribia en padCutoff, que es lo que lee el mando CORTE y lo
+    //  que guarda el fichero de proyecto: dos compases con un paso bloqueado a
+    //  200 Hz y el proyecto se guardaba con 200 en un pad que la persona habia
+    //  dejado en 8 kHz - o sea que tocar una secuencia CAMBIABA el proyecto. Es
+    //  exactamente el dano por el que los otros cuatro bloqueos se sacaron del
+    //  pad y viajan con el disparo.
+    //
+    //  Aqui no pueden viajar con el disparo -el filtro se calcula una vez por
+    //  bloque, fuera de la voz- asi que van a su propio sitio: negativo es "no
+    //  hay bloqueo puesto" y entonces manda el pad. Lo escribe el hilo de audio
+    //  y lo lee el hilo de audio; nadie mas lo mira.
+    std::array<std::atomic<float>, kNumPads> pasoCutoff {};
+
+    //  El corte que suena: el del paso si lo hay, y si no el del pad.
+    float corteVivo (int slot) const noexcept
+    {
+        const float paso = pasoCutoff[(size_t) slot].load (std::memory_order_relaxed);
+        return paso > 0.0f ? paso : padCutoff[(size_t) slot].load (std::memory_order_relaxed);
+    }
+
     void refreshFiltMask (int slot) noexcept
     {
-        const float hz = padCutoff[(size_t) slot].load (std::memory_order_relaxed);
+        const float hz = corteVivo (slot);
         const float rs = padReso[(size_t) slot].load (std::memory_order_relaxed);
         const bool  on = (hz < kFiltOpenHz - 1.0f) || (rs > 0.01f);
         const std::uint64_t bit = 1ull << (unsigned) slot;
@@ -1138,7 +1193,21 @@ private:
     //  ellas antes de sonar. Ver triggerPad.
     struct PendingHit { int countdown; int pad; int semis; float vel; bool corta = true; int gate = -1;
                         std::uint32_t plock = 0; };
-    std::array<PendingHit, 96> pending {};
+    //  DIMENSIONADA A LOS SESENTA Y CUATRO PADS, no a los dieciseis de antes.
+    //
+    //  Eran 96 huecos "para los dieciseis pads", y hay 64: un paso con los 64
+    //  puestos y redoble de 2 pide 128, y 24 pads con acorde de cuatro ya son
+    //  96. Lo que sobraba desaparecia SESGADO hacia los pads altos -el bucle va
+    //  0->63- y sin que nadie lo contara. Un tope que se supera en silencio no
+    //  protege, esconde.
+    //
+    //  El peor caso de verdad son 64 pads x (1 raiz + 3 del acorde) x 2 golpes
+    //  de redoble = 512. Son 512 x 28 bytes = 14 KB de miembro, que en un
+    //  motor que ya reserva megabytes de buffers no se nota. Y lo que aun asi
+    //  no quepa se cuenta en droppedCommands, que es donde la interfaz ya mira
+    //  lo que se pierde.
+    static constexpr int kMaxPending = 512;
+    std::array<PendingHit, kMaxPending> pending {};
     int numPending = 0;
 
     // Song / playlist.
@@ -1326,3 +1395,12 @@ private:
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AudioEngine)
 };
+
+//  EL 64 ESTA ESCRITO DOS VECES Y LAS DOS COPIAS SE INDEXAN ENTRE SI.
+//
+//  `MidiIo::Bridge::gate[kMaxPads]` se indexa con el slot del motor, asi que un
+//  quinto banco seria una escritura fuera de rango en el hilo de envio MIDI y
+//  no habria nada que avisara. Esto deja de compilar el dia que dejen de
+//  coincidir, que es lo mas barato que puede costar una regla duplicada.
+static_assert (MidiIo::kMaxPads >= AudioEngine::kNumPads,
+               "MidiIo::kMaxPads se ha quedado por debajo de los pads del motor");

@@ -381,6 +381,16 @@ public:
                     {
                         c2->auditProject();
                     }
+                    //  PROYECTOS DE OTRA EPOCA, congelados en Tests/proyectos.
+                    //  Ver auditViejos: es la unica forma de comprobar que "lo
+                    //  que no esta en el fichero vale su defecto ANTIGUO", que
+                    //  esta escrito ocho veces en comentarios y no lo media
+                    //  nadie porque todos los caminos del banco guardan y leen
+                    //  con el binario de hoy.
+                    else if (const auto v = UiAudit::env ("ZATI_VIEJO"); v.isNotEmpty())
+                    {
+                        c2->auditViejos (v);
+                    }
                     else if (UiAudit::env ("ZATI_ARR").isNotEmpty())
                     {
                         c2->auditArrange();

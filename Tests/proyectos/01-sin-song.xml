@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<ZATI version="1" bpm="100.0" swing="0.5" selectedPattern="0">
+  <PADS>
+    <PAD i="0" name="VIEJO" pitch="0" gain="0.85" pan="0.0" corte="20000.0"/>
+  </PADS>
+  <BANKS>
+    <BANK i="0" len="16" steps="1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0"/>
+  </BANKS>
+</ZATI>

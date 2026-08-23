@@ -20,7 +20,7 @@
 #
 #      python3 Tests/session.py [veces]
 # ============================================================================
-import json, os, shutil, subprocess, sys
+import json, os, shutil, subprocess, sys, tempfile
 
 ROOT = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
 APP  = os.path.join (ROOT, "build", "Zati_artefacts", "Release", "Zati")
@@ -86,6 +86,50 @@ def proyecto():
             continue
         if "paso0" in d:  filas["pasos"] = d
         if "disperso" in d: filas["disperso"] = d
+    return filas or None
+
+
+def viejos():
+    """PROYECTOS DE OTRA EPOCA, abiertos con el binario de hoy.
+
+    La regla esta escrita ocho veces en applyState -"lo que no esta en el
+    fichero vale su defecto ANTIGUO y no el de hoy"- y no la comprobaba nadie:
+    todos los caminos del banco guardan y leen con el mismo binario, asi que un
+    defecto que cambie hoy se lleva por delante los proyectos de ayer sin que
+    nada falle.
+
+    Los tres ficheros viven en Tests/proyectos y son texto plano a proposito:
+    congelados, no generados, porque generarlos con la app de hoy seria volver
+    a medir la app de hoy contra si misma.
+
+    Y la app pone ANTES un proyecto "de ayer" con todo movido -ganancia 0.2,
+    pan 0.9, corte 300, reves, envios 0.75 y una cancion escrita- que es lo
+    unico que separa "puso el defecto" de "no habia nada que heredar".
+    """
+    casa = tempfile.mkdtemp (prefix="zati-viejo-")
+    try:
+        env = dict (os.environ)
+        env.update ({"HOME": casa, "XDG_DATA_HOME": os.path.join (casa, ".local", "share"),
+                     "ZATI_AUDIT": "1", "ZATI_SIZE": "412x915", "ZATI_LANG": "es",
+                     "ZATI_VIEJO": os.path.join (ROOT, "Tests", "proyectos")})
+        out = subprocess.run ([APP], env=env, capture_output=True, text=True,
+                              timeout=300).stdout
+    except subprocess.TimeoutExpired:
+        return None
+    finally:
+        shutil.rmtree (casa, ignore_errors=True)
+
+    filas = {}
+    for linea in out.splitlines():
+        linea = linea.strip()
+        if not linea.startswith ('{'):
+            continue
+        try:
+            d = json.loads (linea)
+        except Exception:
+            continue
+        if "viejo" in d:
+            filas[d["viejo"]] = d
     return filas or None
 
 
@@ -236,10 +280,50 @@ def main():
               "correcto" if disp_ok else "NO VUELVEN"))
 
     shutil.rmtree (TMP, ignore_errors=True)
+
+    #  --- Y LOS PROYECTOS DE OTRA EPOCA ------------------------------------
+    vj = viejos()
+    viejo_ok = vj is not None and len (vj) == 3
+    print()
+    if vj:
+        for nombre, d in sorted (vj.items()):
+            #  Lo que el fichero NO trae vale su defecto ANTIGUO: un proyecto
+            #  sin `sends` es anterior a que los envios existieran -cada pad iba
+            #  entero a los seis- asi que vuelve con UNO y no con el cero de
+            #  hoy. Igual el autocorte: sin la propiedad, puesto.
+            bien = (abs (d["envio0"] - 1.0) < 0.01 and d["autocorte0"] == 1
+                    and d["vel0"] == 127 and d["roll0"] == 1
+                    #  Y lo que el fichero no menciona no se HEREDA del proyecto
+                    #  anterior: el pad 20 no esta en ninguno de los tres, asi
+                    #  que vuelve como nace -0.85, centrado, sin filtrar, del
+                    #  derecho y sin envios- y no con el 0.2, el 0.9 y el 300
+                    #  que la corrida anterior le dejo puestos.
+                    and abs (d["gain20"] - 0.85) < 0.01 and abs (d["pan20"]) < 0.01
+                    and d["corte20"] >= 19999 and d["reves20"] == 0
+                    and abs (d["envio20"]) < 0.01
+                    #  Y la cancion: sin <song> tiene que quedar VACIA. Con el
+                    #  fallo, abrir un proyecto sin linea de tiempo dejaba
+                    #  sonando el arreglo del que estuviera abierto.
+                    and d["cancion"] == (1 if nombre.startswith ("02") else 0))
+            viejo_ok = viejo_ok and bien
+            print ("  %-20s envio0 %.2f  pad20 g%.2f p%.2f c%.0f r%d e%.2f  cancion %d  %s"
+                   % (nombre, d["envio0"], d["gain20"], d["pan20"], d["corte20"],
+                      d["reves20"], d["envio20"], d["cancion"],
+                      "correcto" if bien else "HEREDA DEL ANTERIOR"))
+    else:
+        print ("  los proyectos congelados no volvieron")
+
     print()
     print ("las %d corridas devuelven la sesion entera" % RUNS if bad == 0
            else "%d de %d corridas pierden algo" % (bad, RUNS))
-    return 1 if (bad or not chop_ok or not pat_ok or not proj_ok) else 0
+    #  Y LO DISPERSO CUENTA. Estaba calculado, impreso -"NO VUELVEN"- y FUERA
+    #  del veredicto, asi que las nueve propiedades de paso que mas tarde se
+    #  anadieron al fichero de proyecto -acorde, empujon, bloqueo de corte,
+    #  largo y los cuatro empaquetados- podian dejar de volver sin que el banco
+    #  dijera nada. Una comprobacion que no puede suspender es una linea que
+    #  imprime OK.
+    return 1 if (bad or not chop_ok or not pat_ok or not proj_ok or not disp_ok
+                 or not viejo_ok) else 0
 
 
 if __name__ == "__main__":

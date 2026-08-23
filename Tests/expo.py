@@ -499,4 +499,27 @@ def main():
     else:
         print("cambiar de pagina no deja nada colocado donde no toca")
 
-main()
+    #  Y EL VEREDICTO, QUE ES LO QUE ESTE FICHERO NO TENIA.
+    #
+    #  Ochocientas noventa y seis corridas, siete contadores que SKILL.md
+    #  declara "cero es cero"... y `main()` terminaba sin `sys.exit`, o sea que
+    #  el banco principal de esta app devolvia CERO pasara lo que pasara. Lo
+    #  juzgaba un ojo humano leyendo texto, que es exactamente lo que esta casa
+    #  llama "una linea que imprime OK" - y lo llevaba escrito el fichero que
+    #  mas cita esa regla.
+    #
+    #  TOUCH no cuenta: el dedo por debajo del minimo es una escalera conocida
+    #  -seis efectos por cuarenta no caben en un Fold cerrado- y esta medido en
+    #  CLAUDE.md con su cifra. Lo que no puede pasar de cero es lo demas.
+    duros = [k for k in ("TRUNC", "SQUEEZE", "OVERLAP", "OFFSCREEN", "CELDA",
+                         "UNTRANSLATED", "CERO", "TAPADO", "CRASH") if by.get(k)]
+    if resto:
+        duros.append("RESIDUO")
+    print()
+    if duros:
+        print("FALLA: " + ", ".join("%s %d" % (k, by.get(k, len(resto))) for k in duros))
+        return 1
+    print("expo: %d corridas, %d TOUCH conocidos, cero en las demas reglas" % (runs, by.get("TOUCH", 0)))
+    return 0
+
+sys.exit (main())

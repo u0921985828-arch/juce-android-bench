@@ -95,7 +95,7 @@
                    microphonePermissionNeeded="1"
                    androidReadMediaAudioPermission="1" androidReadMediaImagesPermission="0" androidReadMediaVideoPermission="0" androidExternalWriteNeeded="1"
                    androidTheme="@style/ZatiLaunch"
-                   androidScreenOrientation="portrait"
+                   androidScreenOrientation="unspecified"
                    gradleVersion="8.11.1" androidPluginVersion="8.9.1"
                    extraLinkerFlags="-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384">
       <CONFIGURATIONS>

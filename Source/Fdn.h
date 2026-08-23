@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include <array>
+#include <cmath>
 
 //  UNA REVERB DE RED DE RETARDOS REALIMENTADA (FDN).
 //
@@ -138,6 +139,16 @@ public:
                     //  que es lo que hace el aire de una sala de verdad.
                     damp[i][c] += dampC * (v - damp[i][c]);
                     v = damp[i][c];
+                    //  Y LA BARRERA, aqui dentro y no a la salida.
+                    //
+                    //  Las tres que tiene la app -Voice::start, fastTanh y el
+                    //  master- protegen lo que SALE, y este estado se
+                    //  realimenta: un NaN que entre una vez se queda dentro
+                    //  para siempre, y solo se limpia en prepareToPlay, o sea
+                    //  al cambiar de ruta. La reverb quedaba muda hasta
+                    //  reiniciar la app. Comparar con NaN siempre es falso, asi
+                    //  que se pregunta por lo finito y no por lo malo.
+                    if (! std::isfinite (v)) { v = 0.0f; damp[i][c] = 0.0f; }
                     line[i].getWritePointer (c)[lineIdx[i]] = v;
                 }
 
@@ -170,7 +181,15 @@ public:
     {
         for (const auto& d : damp)
             for (float v : d)
-                if (std::abs (v) > 1.0e-6f) return true;
+            {
+                //  Y UN NaN CUENTA COMO ENERGIA. `std::abs(NaN) > 1e-6` es
+                //  FALSO -comparar con NaN siempre lo es- asi que un bus
+                //  envenenado se declaraba MUERTO: dejaba de renderizarse y por
+                //  tanto no habia forma de que se limpiara solo. La barrera de
+                //  arriba lo impide, y esto es el cinturon: lo que no es finito
+                //  no es silencio.
+                if (! std::isfinite (v) || std::abs (v) > 1.0e-6f) return true;
+            }
         return false;
     }
 

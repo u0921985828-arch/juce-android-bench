@@ -84,7 +84,11 @@ AudioEngine::AudioEngine()
     //  El filtro de cada pad, abierto del todo. Cero seria 0 Hz - los 64 pads
     //  mudos en el arranque - que es lo que pasa cuando un parametro cuyo
     //  valor neutro NO es cero se deja con el cero del constructor.
-    for (auto& c : padCutoff) c.store (kFiltOpenHz, std::memory_order_relaxed);
+    for (auto& c : padCutoff)  c.store (kFiltOpenHz, std::memory_order_relaxed);
+    //  Negativo es "ningun paso ha bloqueado esto": el cero seria 0 Hz, o sea
+    //  un pad mudo, que es como un valor por defecto que ademas es valido apaga
+    //  sesenta sonidos de golpe -ya paso con `brillo` en la fabrica-.
+    for (auto& c : pasoCutoff) c.store (-1.0f, std::memory_order_relaxed);
     for (auto& r : padReso)   r.store (0.0f, std::memory_order_relaxed);
 
     //  Y el estado de las etapas que RETIENEN un valor. Un cambio de ruta
@@ -702,7 +706,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 //  cuesta lo que cuesta y el corte lo mueve un dedo, no el
                 //  audio. Y en float por muestra, en double por bloque.
                 const float hz = juce::jlimit (20.0f, (float) (0.45 * systemSampleRate),
-                                               padCutoff[(size_t) p].load (std::memory_order_relaxed));
+                                               corteVivo (p));
                 const float rs = padReso[(size_t) p].load (std::memory_order_relaxed);
                 //  Q de 0.707 (Butterworth, sin pico) a 8. Mas arriba el filtro
                 //  se pone a oscilar solo, que es un sintetizador y no un
@@ -755,14 +759,33 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
 
     // 3. Drain UI trigger commands (taps fire at block start — human jitter
     //    dwarfs one block; the sequencer below is the sample-accurate path).
-    constexpr int kMaxCmds = 256;
+    //  Y CADA COLA CON SU PRESUPUESTO.
+    //
+    //  Las dos vaciaban en el MISMO array y con la MISMA n, asi que la de la
+    //  interfaz se comia el cubo entero: con 255 comandos de dedo en un bloque,
+    //  a MIDI le quedaba UNO y el resto se CONSUMIA -finishedRead avanza- y se
+    //  perdia en silencio, sin pasar siquiera por droppedCommands. Dos colas
+    //  por contrato y un solo cubo entre las dos es media cola.
+    //
+    //  Sesenta y cuatro huecos para MIDI: son mas que las voces que caben, o
+    //  sea mas de los que pueden sonar a la vez.
+    constexpr int kMaxCmds  = 256;
+    constexpr int kCupoMidi = 64;
+    constexpr int kTopeUi   = kMaxCmds - kCupoMidi;
     Command local[kMaxCmds];
     int n = 0;
-    commands.drain ([&local, &n] (const Command& c) noexcept { if (n < kMaxCmds) local[n++] = c; });
+    int tirados = 0;
+    commands.drain ([&local, &n, &tirados] (const Command& c) noexcept
+                    { if (n < kTopeUi) local[n++] = c; else ++tirados; });
     //  ...y la de MIDI, en el mismo sitio y con el mismo trato: un teclado no
     //  es un ciudadano de segunda, dispara igual que un dedo. Dos colas, un
     //  consumidor.
-    midiCommands.drain ([&local, &n] (const Command& c) noexcept { if (n < kMaxCmds) local[n++] = c; });
+    midiCommands.drain ([&local, &n, &tirados] (const Command& c) noexcept
+                        { if (n < kMaxCmds) local[n++] = c; else ++tirados; });
+    //  Y LO TIRADO SE CUENTA. Un tope que se supera en silencio no protege,
+    //  esconde - es la misma frase que ya costo la novena tapa de
+    //  layoutModuleBar.
+    if (tirados > 0) droppedCommands.fetch_add (tirados, std::memory_order_relaxed);
 
     //  CUANTIZAR EL DISPARO EN DIRECTO. Ver setLiveQuantise.
     //
@@ -815,6 +838,16 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     else if (! isPlaying && wasPlaying)
     {
         playStep.store (-1, std::memory_order_relaxed);
+        //  Y AL PARAR, EL PAD VUELVE A SER EL PAD. El bloqueo de corte dura
+        //  hasta que otro paso diga otra cosa, y con el transporte parado no va
+        //  a decirlo nadie: sin esto, parar en mitad de un barrido dejaba el
+        //  pad filtrado a 200 Hz y el mando CORTE diciendo 8 kHz.
+        for (int p = 0; p < kNumPads; ++p)
+            if (pasoCutoff[(size_t) p].load (std::memory_order_relaxed) > 0.0f)
+            {
+                pasoCutoff[(size_t) p].store (-1.0f, std::memory_order_relaxed);
+                refreshFiltMask (p);
+            }
     }
     wasPlaying = isPlaying;
 
@@ -894,7 +927,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                                        .load (std::memory_order_relaxed);
                 if (cierre > 0)
                 {
-                    padCutoff[(size_t) p].store (lockToHz (cierre - 1), std::memory_order_relaxed);
+                    pasoCutoff[(size_t) p].store (lockToHz (cierre - 1), std::memory_order_relaxed);
                     //  Y LA MASCARA CON EL. Un pad sin filtro no pasa por el
                     //  camino separado, asi que escribir el corte y no encender
                     //  la mascara habria guardado el numero y no filtrado nada.
@@ -924,7 +957,8 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
 
                 for (int h = 0; h < hits; ++h)
                 {
-                    if (numPending >= (int) pending.size()) break;
+                    if (numPending >= (int) pending.size())
+                        { droppedCommands.fetch_add (1, std::memory_order_relaxed); break; }
                     const int at = juce::jmax (0, lateBy + empuje
                                                  + (int) (samplesPerStep * (double) h / (double) hits));
                     pending[(size_t) numPending++] = { at, p, semis, vel, true, gate, plock };
@@ -935,7 +969,8 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     for (int e = 0; e < kExtraNotes; ++e)
                     {
                         if ((acorde & (1u << (24u + (unsigned) e))) == 0) continue;
-                        if (numPending >= (int) pending.size()) break;
+                        if (numPending >= (int) pending.size())
+                            { droppedCommands.fetch_add (1, std::memory_order_relaxed); break; }
                         const int extra = (int) (std::int8_t) ((acorde >> ((unsigned) e * 8u)) & 0xFFu);
                         //  Sin cortar: el autocorte del pad esta puesto por
                         //  defecto y con el las tres notas de mas mueren antes
@@ -1394,8 +1429,17 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                         float* w = (ch == 0) ? w0 : w1;
                         const float in = w[i];
                         const float d  = delayLine.popSample (ch);
-                        delayLine.pushSample (ch, in + d * smDlyFb);
-                        w[i] = d;
+                        //  LA CUARTA BARRERA, que faltaba: esta linea se
+                        //  realimenta, asi que un NaN que entre una vez da
+                        //  vueltas para siempre y el delay se queda mudo hasta
+                        //  que alguien cambie de ruta -prepareToPlay es lo
+                        //  unico que lo limpia-. Las otras tres protegen lo que
+                        //  sale; un estado con memoria hay que protegerlo por
+                        //  dentro. Se pregunta por lo finito porque comparar
+                        //  con NaN siempre es falso.
+                        const float realim = in + d * smDlyFb;
+                        delayLine.pushSample (ch, std::isfinite (realim) ? realim : 0.0f);
+                        w[i] = std::isfinite (d) ? d : 0.0f;
                     }
                 }
                 returnBus (3);
@@ -1927,6 +1971,19 @@ void AudioEngine::clearPattern (int patternIdx) noexcept
         for (auto& celda : fila) celda.store (0, std::memory_order_relaxed);
     for (auto& fila : stepPLock[(size_t) patternIdx])
         for (auto& celda : fila) celda.store (0, std::memory_order_relaxed);
+    //  Y LA NOTA, LA FUERZA Y LA REPETICION, que faltaban.
+    //
+    //  Un paso son NUEVE campos -la lista canonica esta en copiarFila- y esta
+    //  funcion vaciaba seis: la nota, la fuerza y el redoble se quedaban
+    //  puestos. No se oye mientras la casilla esta apagada, y por eso duro:
+    //  el dia que vuelves a encender ese paso suena con la nota del patron que
+    //  borraste. VACIAR tiene que dejar el patron como uno recien nacido.
+    for (auto& fila : stepNote[(size_t) patternIdx])
+        for (auto& celda : fila) celda.store (0, std::memory_order_relaxed);
+    for (auto& fila : stepVel[(size_t) patternIdx])
+        for (auto& celda : fila) celda.store (127, std::memory_order_relaxed);
+    for (auto& fila : stepRoll[(size_t) patternIdx])
+        for (auto& celda : fila) celda.store (1, std::memory_order_relaxed);
 }
 
 void AudioEngine::setPatternLength (int patternIdx, int len) noexcept
@@ -2071,6 +2128,34 @@ int AudioEngine::getStepExtra (int patternIdx, int step, int pad, int indice) co
 void AudioEngine::clearStepExtras (int patternIdx, int step, int pad) noexcept
 {
     setStepChordRaw (patternIdx, step, pad, 0);
+}
+
+//  UN PASO VACIO, EN UN SOLO SITIO.
+//
+//  Un paso son NUEVE campos y habia TRES sitios vaciando tres subconjuntos
+//  distintos: clearPattern se dejaba nota, fuerza y redoble; el VACIAR del
+//  piano se dejaba fuerza, redoble, largo, empujon, bloqueo y los cuatro
+//  empaquetados; y EUCLIDES reescribia la fila sin tocar largo, bloqueo,
+//  acorde ni empaquetados - bajo un comentario que dice que dejar pasos a
+//  medias convierte "cinco golpes" en "cinco golpes y lo que hubiera".
+//
+//  La lista canonica ya existia en copiarFila, que es quien tiene que llevarse
+//  el paso entero para que una copia siga siendo la misma figura. Aqui esta
+//  escrita una vez y la usan los tres.
+//
+//  No apaga la casilla: quien llama decide si el paso suena. EUCLIDES enciende
+//  justo despues y el VACIAR del piano apaga; mezclarlo aqui obligaria a los
+//  dos a deshacer la mitad de lo que esto hace.
+void AudioEngine::vaciaPaso (int patternIdx, int step, int pad) noexcept
+{
+    setStepNote    (patternIdx, step, pad, 0);
+    setStepVel     (patternIdx, step, pad, 127);
+    setStepRoll    (patternIdx, step, pad, 1);
+    setStepLen     (patternIdx, step, pad, kLenSuelto);
+    setStepNudge   (patternIdx, step, pad, 0);
+    setStepLock    (patternIdx, step, pad, kNoLock);
+    setStepChordRaw (patternIdx, step, pad, 0);
+    setStepPLockRaw (patternIdx, step, pad, 0);
 }
 
 //  Velocity and roll, same shape as the note. Zero means "never set" in both,

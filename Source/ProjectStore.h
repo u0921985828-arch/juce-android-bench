@@ -351,6 +351,49 @@ public:
         return dir.isDirectory();
     }
 
+    //  ESCRIBIR UN FICHERO DE TEXTO SIN PERDER EL QUE HABIA.
+    //
+    //  `replaceWithText` esconde dos fallos a la vez -se come el resultado del
+    //  append, y el que llama se come el suyo- asi que una escritura que se
+    //  queda sin espacio a mitad renombra un fichero TRUNCADO encima de uno
+    //  bueno y devuelve true. Eso ya estaba aprendido y escrito en
+    //  SessionKeeper::writeState... y a ocho lineas de ahi, `autosave` escribia
+    //  el project.xml con un replaceWithText a pelo. Y es peor: la sesion se
+    //  rehace sola, un proyecto guardado no, y autosave corre en cada onPause,
+    //  o sea justo antes de que Android mate el proceso.
+    //
+    //  Se escribe al lado, se vuelve a leer, y solo entonces se mueve encima:
+    //  rename(2) sobreescribe y es atomico, asi que no existe el instante en el
+    //  que el bueno ya no esta y el nuevo todavia no.
+    //
+    //  `valida` es la unica comprobacion que significa algo, y por eso la pone
+    //  quien llama: para un XML es parseXML, y para la lista de licencias es
+    //  que vuelvan las mismas lineas. Sin validador solo se comprueba que la
+    //  escritura no fallara, que es lo minimo y sigue siendo mas de lo que
+    //  habia.
+    static bool escribeTexto (const juce::File& dest, const juce::String& texto,
+                              std::function<bool (const juce::File&)> valida = {})
+    {
+        if (! ensureDirectory (dest.getParentDirectory())) return false;
+
+        const auto tmp = dest.getSiblingFile (dest.getFileName() + ".escribiendo");
+        tmp.deleteFile();
+
+        if (! tmp.replaceWithText (texto))          { tmp.deleteFile(); return false; }
+        if (valida != nullptr && ! valida (tmp))    { tmp.deleteFile(); return false; }
+        if (tmp.moveFileTo (dest))                  return true;
+
+        tmp.deleteFile();
+        return false;
+    }
+
+    //  El validador de los dos que escriben un arbol: un XML que no se puede
+    //  volver a leer no es un proyecto, es un fichero.
+    static bool esXmlLegible (const juce::File& f)
+    {
+        return juce::parseXML (f) != nullptr;
+    }
+
     // Write `buffer` as a 24-bit WAV next to the project. Returns false if the
     // writer could not be created (out of space, bad path).
     //

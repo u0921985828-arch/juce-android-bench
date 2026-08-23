@@ -640,6 +640,19 @@ int main()
             e.setPadGain (0, 1.0f);
             e.setSafetyLimiter (limiter);
 
+            //  Y CON LOS DOS BUSES REALIMENTADOS ABIERTOS, que es media prueba
+            //  que se habia caido sola. El comentario de arriba dice que un NaN
+            //  "se propaga por el bus, por el saturador y por el master", y
+            //  desde que los envios NACEN A CERO -un cambio de producto
+            //  correcto, ver Tests/nuevo.py- este caso no enrutaba a ninguna
+            //  parte: media el camino seco y el master. El delay y la reverb
+            //  son los dos sitios donde un NaN se queda a vivir, porque tienen
+            //  memoria y solo se limpian al cambiar de ruta.
+            e.setPadSend (0, 3, 1.0f);   // DLY
+            e.setPadSend (0, 5, 1.0f);   // REV
+            e.setDlyMix (1.0f); e.setDlyTime (50.0f); e.setDlyFb (0.9f);
+            e.setRevMix (1.0f); e.setRevSize (0.7f);
+
             SampleBuffer::Ptr sb = new SampleBuffer();
             sb->buffer.setSize (juce::jmax (1, c.chans), juce::jmax (1, c.len));
             for (int ch = 0; ch < sb->buffer.getNumChannels(); ++ch)
@@ -681,6 +694,335 @@ int main()
         std::printf ("%-34s %s\n", "muestras hostiles",
                      allOk ? "ninguna cuelga ni envenena la salida, con y sin limitador"
                            : "HAY FALLOS");
+    }
+
+    //  Y QUE EL BUS SE RECUPERE, que es la otra mitad y la que no medía nadie.
+    //
+    //  Que la salida no lleve NaN ya lo dice la prueba de arriba: lo tapa el
+    //  guardia del master. Lo que no tapa es que el estado REALIMENTADO se
+    //  quede envenenado: la linea del delay y los cuatro amortiguadores de la
+    //  FDN tienen memoria y solo se limpian en prepareToPlay, o sea al cambiar
+    //  de ruta. Peor: Fdn::ringing preguntaba `abs(v) > 1e-6`, y con NaN eso es
+    //  FALSO, asi que el bus se declaraba muerto, dejaba de renderizarse y ya
+    //  no habia forma de que se limpiara solo. Sintoma en el telefono: cargas
+    //  un fichero raro y el delay y la reverb se quedan mudos hasta reiniciar.
+    //
+    //  Se mide cargando DESPUES un seno limpio y escuchando la COLA: el camino
+    //  seco sonaria igual con el bus muerto, asi que lo que separa las dos
+    //  cosas es lo que suena cuando la muestra ya se ha acabado.
+    {
+        AudioEngine e;
+        e.prepareToPlay (48000.0, 512);
+        e.setPolyphony (8, 2);
+        e.setPadGain (0, 1.0f);
+        e.setPadSend (0, 3, 1.0f);
+        e.setPadSend (0, 5, 1.0f);
+        e.setDlyMix (1.0f); e.setDlyTime (50.0f); e.setDlyFb (0.9f);
+        e.setRevMix (1.0f); e.setRevSize (0.7f);
+
+        auto carga = [&e] (bool veneno)
+        {
+            SampleBuffer::Ptr sb = new SampleBuffer();
+            sb->buffer.setSize (2, 4410);
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < 4410; ++i)
+                    sb->buffer.setSample (ch, i, veneno ? std::numeric_limits<float>::quiet_NaN()
+                                                        : 0.5f * std::sin (0.05f * (float) i));
+            sb->sourceSampleRate = 48000.0;
+            e.publishSample (0, sb);
+        };
+
+        juce::AudioBuffer<float> b (2, 512);
+        carga (true);
+        b.clear(); e.renderNextBlock (b, 0, 512);
+        e.postNoteOn (0, 1.0f);
+        for (int blk = 0; blk < 40; ++blk) { b.clear(); e.renderNextBlock (b, 0, 512); }
+
+        //  Ahora el limpio, y se escucha la cola pasada la muestra: 4410
+        //  muestras son nueve bloques, asi que del 15 en adelante lo unico que
+        //  puede sonar es el delay y la reverb.
+        carga (false);
+        b.clear(); e.renderNextBlock (b, 0, 512);
+        e.postNoteOn (0, 1.0f);
+        float cola = 0.0f;
+        for (int blk = 0; blk < 60; ++blk)
+        {
+            b.clear(); e.renderNextBlock (b, 0, 512);
+            if (blk >= 15)
+                for (int ch = 0; ch < 2; ++ch)
+                    for (int i = 0; i < 512; ++i)
+                        cola = juce::jmax (cola, std::abs (b.getSample (ch, i)));
+        }
+        const bool ok = std::isfinite (cola) && cola > 0.001f;
+        std::printf ("%-34s cola despues del NaN %.5f   %s\n",
+                     "el bus se recupera", cola, ok ? "OK" : "FALLA");
+    }
+
+    //  LA COLA DE MIDI TIENE SU PROPIO PRESUPUESTO.
+    //
+    //  Las dos colas vaciaban en el mismo array de 256 y con la misma cuenta,
+    //  asi que una rafaga de la interfaz se lo comia entero y los comandos de
+    //  MIDI se CONSUMIAN y se tiraban en silencio: la cola avanza su lectura
+    //  aunque el destino este lleno. Dos colas por contrato y un solo cubo
+    //  entre las dos es media cola.
+    //
+    //  Se mide por lo que SUENA -el pad de MIDI tiene que arrancar su voz en
+    //  ese mismo bloque- y no por el contador: contar diria que si aunque el
+    //  comando se hubiera perdido, porque lo que se cuenta es lo tirado.
+    {
+        AudioEngine e;
+        e.prepareToPlay (48000.0, 512);
+        e.setPolyphony (16, 2);
+
+        for (int p = 0; p < 5; ++p)
+        {
+            SampleBuffer::Ptr sb = new SampleBuffer();
+            sb->buffer.setSize (2, 48000);
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < 48000; ++i)
+                    sb->buffer.setSample (ch, i, 0.3f * std::sin (0.01f * (float) i));
+            sb->sourceSampleRate = 48000.0;
+            e.publishSample (p, sb);
+            e.setPadGain (p, 1.0f);
+        }
+        juce::AudioBuffer<float> b (2, 512);
+        b.clear(); e.renderNextBlock (b, 0, 512);
+
+        //  Doscientos cincuenta y cinco de dedo -el maximo que una AbstractFifo
+        //  de 256 entrega de una vez, que deja un hueco libre por diseno- y
+        //  CUATRO de MIDI detras. Con el cubo compartido cabia exactamente uno:
+        //  el primero entraba y los otros tres se consumian y se tiraban sin
+        //  pasar por droppedCommands. Por eso son cuatro y no uno - con uno
+        //  solo, el fallo pasa la prueba.
+        for (int i = 0; i < 255; ++i) e.postNoteOn (0, 0.5f);
+        for (int p = 1; p <= 4; ++p) e.postNoteOnFromMidi (p, 1.0f);
+        b.clear(); e.renderNextBlock (b, 0, 512);
+
+        const std::uint64_t visto = e.fetchTriggered();
+        int cuantos = 0;
+        for (int p = 1; p <= 4; ++p) if (visto & (1ull << (unsigned) p)) ++cuantos;
+        std::printf ("%-34s %d de 4 notas de MIDI suenan   %s\n", "la cola de MIDI no se ahoga",
+                     cuantos, cuantos == 4 ? "OK" : "FALLA");
+    }
+
+    //  Y NINGUN PUNTERO SE TIRA POR EL CAMINO.
+    //
+    //  RetiredQueue::push se rendia en silencio con la cola llena, y para
+    //  entonces el hilo de audio ya ha soltado su puntero: un SampleBuffer cuyo
+    //  contador no baja NUNCA, o sea megabytes que no vuelven. Son 127 huecos
+    //  utiles contra un temporizador de 33-60 ms, y recargar la fabrica escribe
+    //  64 de golpe. Aqui se cargan los 64 pads dos veces sin recoger entre
+    //  medias, que es exactamente ese caso.
+    {
+        AudioEngine e;
+        e.prepareToPlay (48000.0, 512);
+        juce::AudioBuffer<float> b (2, 512);
+        for (int vuelta = 0; vuelta < 2; ++vuelta)
+        {
+            for (int p = 0; p < AudioEngine::kNumPads; ++p)
+            {
+                SampleBuffer::Ptr sb = new SampleBuffer();
+                sb->buffer.setSize (1, 128);
+                sb->sourceSampleRate = 48000.0;
+                e.publishSample (p, sb);
+            }
+            b.clear(); e.renderNextBlock (b, 0, 512);
+        }
+        const int perdidos = e.takeRetiredLost();
+        std::printf ("%-34s %d punteros tirados   %s\n", "la cola de retirados no pierde",
+                     perdidos, perdidos == 0 ? "OK" : "FALLA");
+        e.collectRetiredSamples();
+    }
+
+    //  EL BLOQUEO DE CORTE NO PUEDE MOVER EL MANDO DEL PAD.
+    //
+    //  Escribia en padCutoff, que es lo que lee el mando CORTE y lo que guarda
+    //  el fichero de proyecto: pon un pad en 8 kHz, toca dos compases con un
+    //  paso bloqueado a 200 Hz, para y guarda, y el proyecto guarda 200. O sea
+    //  que TOCAR una secuencia cambiaba el proyecto. Es el mismo dano por el
+    //  que los otros cuatro bloqueos se sacaron del pad y viajan con el
+    //  disparo, y por el que oir una tecla dejo de afinar el pad.
+    //
+    //  DOS numeros, que uno solo se puede enganar de las dos formas: el mando
+    //  tiene que seguir donde estaba Y el bloqueo tiene que sonar. Solo lo
+    //  primero lo cumple un bloqueo desconectado.
+    {
+        AudioEngine e;
+        e.prepareToPlay (48000.0, 64);
+        e.setPolyphony (8, 2);
+
+        SampleBuffer::Ptr sb = new SampleBuffer();
+        sb->buffer.setSize (2, 48000);
+        juce::Random r (7);
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < 48000; ++i)
+                sb->buffer.setSample (ch, i, 0.5f * (r.nextFloat() * 2.0f - 1.0f));
+        sb->sourceSampleRate = 48000.0;
+        e.publishSample (0, sb);
+        e.setPadGain (0, 1.0f);
+        e.setPadCutoff (0, 8000.0f);
+        e.setBpm (120.0);
+        e.setPatternLength (0, 16);
+        e.setEditPattern (0);
+        e.setStep (0, 0, 0, true);
+        e.setStepLock (0, 0, 0, 34);      // ~200 Hz, ver lockToHz
+
+        juce::AudioBuffer<float> b (2, 64);
+        b.clear(); e.renderNextBlock (b, 0, 64);
+        e.setPlaying (true);
+
+        //  Dos compases a 120 BPM en semicorcheas son 4 s: 3000 bloques de 64.
+        double altaBloq = 0.0;
+        for (int blk = 0; blk < 3000; ++blk)
+        {
+            b.clear(); e.renderNextBlock (b, 0, 64);
+            if (blk > 10 && blk < 200)
+                for (int i = 1; i < 64; ++i)
+                {
+                    const double d = (double) b.getSample (0, i) - (double) b.getSample (0, i - 1);
+                    altaBloq += d * d;
+                }
+        }
+        e.setPlaying (false);
+        b.clear(); e.renderNextBlock (b, 0, 64);
+
+        const float mandoDespues = e.getPadCutoff (0);
+        const bool  intacto = std::abs (mandoDespues - 8000.0f) < 1.0f;
+        std::printf ("%-34s el mando quedo en %.0f Hz   %s\n", "el bloqueo no mueve el pad",
+                     mandoDespues, intacto ? "OK" : "FALLA");
+        std::printf ("%-34s energia alta con bloqueo %.4f   %s\n", "y aun asi filtra",
+                     altaBloq, altaBloq > 0.0 ? "OK" : "FALLA");
+    }
+
+    //  EL BOMBEO, que multiplica el MASTER entero -colas de delay y reverb
+    //  incluidas- y no lo medía nada: si se rompiera, la app se publicaria
+    //  permanentemente atenuada y ninguna prueba diria nada.
+    //
+    //  Se compara contra la MISMA corrida sin pad de bombeo armado, que es lo
+    //  unico que separa "el bombeo hace algo" de "el pad ya sonaba asi". Y la
+    //  corrida de control no pone el pad a -1: no lo toca, que una maquina
+    //  recien encendida y una que alguien ha puesto a cero no son lo mismo.
+    {
+        auto pico = [] (bool bombeando)
+        {
+            AudioEngine e;
+            e.prepareToPlay (48000.0, 64);
+            e.setPolyphony (8, 2);
+            for (int p = 0; p < 2; ++p)
+            {
+                SampleBuffer::Ptr sb = new SampleBuffer();
+                sb->buffer.setSize (2, 48000);
+                for (int ch = 0; ch < 2; ++ch)
+                    for (int i = 0; i < 48000; ++i)
+                        sb->buffer.setSample (ch, i, 0.4f * std::sin (0.02f * (float) i));
+                sb->sourceSampleRate = 48000.0;
+                e.publishSample (p, sb);
+                e.setPadGain (p, 1.0f);
+            }
+            if (bombeando) { e.setDuckPad (1); e.setDuckAmount (0.9f); e.setDuckRelease (300.0f); }
+
+            juce::AudioBuffer<float> b (2, 64);
+            b.clear(); e.renderNextBlock (b, 0, 64);
+            e.postNoteOn (0, 1.0f);          // lo que se oye
+            for (int i = 0; i < 20; ++i) { b.clear(); e.renderNextBlock (b, 0, 64); }
+            e.postNoteOn (1, 1.0f);          // el bombo que aprieta
+            float p = 0.0f;
+            for (int i = 0; i < 20; ++i)
+            {
+                b.clear(); e.renderNextBlock (b, 0, 64);
+                for (int ch = 0; ch < 2; ++ch)
+                    for (int k = 0; k < 64; ++k)
+                        p = juce::jmax (p, std::abs (b.getSample (ch, k)));
+            }
+            return p;
+        };
+        const float sin_ = pico (false), con = pico (true);
+        const bool ok = con < sin_ * 0.7f;
+        std::printf ("%-34s pico %.4f -> %.4f   %s\n", "el bombeo aprieta",
+                     sin_, con, ok ? "OK" : "FALLA");
+    }
+
+    //  LOS GRUPOS DE CHOKE, que tampoco medía nadie fuera del fuzz -y alli con
+    //  valores al azar y sin afirmar nada del resultado-. Un charles abierto
+    //  que no se calla al cerrarlo es la mitad de una bateria.
+    {
+        AudioEngine e;
+        e.prepareToPlay (48000.0, 64);
+        e.setPolyphony (8, 2);
+        for (int p = 0; p < 2; ++p)
+        {
+            SampleBuffer::Ptr sb = new SampleBuffer();
+            sb->buffer.setSize (2, 48000);
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < 48000; ++i)
+                    sb->buffer.setSample (ch, i, 0.4f * std::sin (0.02f * (float) i));
+            sb->sourceSampleRate = 48000.0;
+            e.publishSample (p, sb);
+            e.setPadGain (p, 1.0f);
+            e.setPadChoke (p, 1);            // los dos en el mismo grupo
+        }
+        juce::AudioBuffer<float> b (2, 64);
+        b.clear(); e.renderNextBlock (b, 0, 64);
+        e.postNoteOn (0, 1.0f);
+        for (int i = 0; i < 10; ++i) { b.clear(); e.renderNextBlock (b, 0, 64); }
+        const int antes = e.getActiveVoiceCount();
+        e.postNoteOn (1, 1.0f);
+        for (int i = 0; i < 60; ++i) { b.clear(); e.renderNextBlock (b, 0, 64); }
+        const int despues = e.getActiveVoiceCount();
+        //  Una voz, no dos: la del grupo se calla al llegar la otra. Y se
+        //  cuenta al FINAL y no en el bloque siguiente, que el choke abre la
+        //  caida en vez de cortar en seco - la misma leccion que costo una
+        //  medida en "tras soltar 3".
+        const bool ok = antes == 1 && despues == 1;
+        std::printf ("%-34s %d voz -> %d voz   %s\n", "el choke calla al hermano",
+                     antes, despues, ok ? "OK" : "FALLA");
+    }
+
+    //  CUANTIZAR EN DIRECTO: un toque entre pasos suena EN el paso siguiente y
+    //  no cuando lo tocaste. Sin medirlo, "esta puesto" y "no hace nada" son la
+    //  misma corrida en verde.
+    {
+        auto bloqueDelGolpe = [] (bool cuant)
+        {
+            AudioEngine e;
+            e.prepareToPlay (48000.0, 64);
+            e.setPolyphony (8, 2);
+            SampleBuffer::Ptr sb = new SampleBuffer();
+            sb->buffer.setSize (2, 4800);
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < 4800; ++i)
+                    sb->buffer.setSample (ch, i, 0.5f * std::sin (0.05f * (float) i));
+            sb->sourceSampleRate = 48000.0;
+            e.publishSample (0, sb);
+            e.setPadGain (0, 1.0f);
+            e.setBpm (120.0);
+            e.setPatternLength (0, 16);
+            e.setEditPattern (0);
+            e.setLiveQuantise (cuant);
+
+            juce::AudioBuffer<float> b (2, 64);
+            b.clear(); e.renderNextBlock (b, 0, 64);
+            e.setPlaying (true);
+            e.fetchTriggered();
+            //  Un paso a 120 BPM en semicorcheas son 6000 muestras, o sea 93
+            //  bloques de 64. Se toca a mitad de camino del primero.
+            for (int i = 0; i < 46; ++i) { b.clear(); e.renderNextBlock (b, 0, 64); }
+            e.postNoteOn (0, 1.0f);
+            int bloque = -1;
+            for (int i = 0; i < 200 && bloque < 0; ++i)
+            {
+                b.clear(); e.renderNextBlock (b, 0, 64);
+                if (e.fetchTriggered() & 1ull) bloque = i;
+            }
+            e.setPlaying (false);
+            return bloque;
+        };
+        const int libre = bloqueDelGolpe (false), atado = bloqueDelGolpe (true);
+        //  Sin cuantizar suena en el bloque siguiente; cuantizado espera al
+        //  borde del paso, que esta a unos 47 bloques de donde se toco.
+        const bool ok = libre >= 0 && atado > libre + 20;
+        std::printf ("%-34s suelto en el bloque %d, cuantizado en el %d   %s\n",
+                     "cuantizar en directo espera", libre, atado, ok ? "OK" : "FALLA");
     }
 
     //  EL FILTRO DEL PAD, con TRES numeros a la vez o no dice nada.
