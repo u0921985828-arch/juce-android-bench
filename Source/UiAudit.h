@@ -228,6 +228,20 @@ namespace UiAudit
             //  icono, el rotulo no dispone del ancho entero. Las dos cosas
             //  salen ahora de ZatiLookAndFeel::reparteTapa.
             const auto rep = ZatiLookAndFeel::reparteTapa (*tb);
+
+            //  Y UNA TAPA QUE NO DIBUJA SU ROTULO NO TIENE ROTULO QUE MEDIR.
+            //
+            //  Lo que se mide es lo que se DIBUJA, que es la regla de esta
+            //  funcion entera. Una celda de rejilla que se queda solo con el
+            //  dibujo -ver `soloIcono`- no pinta la palabra en ningun sitio, y
+            //  contarla aqui la daria por CORTADA: dieciseis hallazgos por
+            //  rejilla, todos de un texto que nadie ve.
+            if (rep.texto.isEmpty())
+            {
+                r.has = false;
+                return r;
+            }
+
             r.needW = juce::GlyphArrangement::getStringWidth (rep.fuente, r.text);
             r.haveW = (float) rep.texto.getWidth();
         }

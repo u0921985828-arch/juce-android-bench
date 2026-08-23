@@ -1256,7 +1256,14 @@ private:
     Sheet instSheet;
     juce::TextButton instCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
     juce::TextButton instPackDownBtn { "PACK -" }, instPackUpBtn { "PACK +" };
-    juce::OwnedArray<juce::TextButton> instBtns;      // la lista de instrumentos
+    juce::OwnedArray<juce::TextButton> instBtns;      // los instrumentos: lista o rejilla
+    //  LA REJILLA DEL DESTINO: los dieciseis pads de un banco, cada uno con el
+    //  dibujo de lo que lleva. Es un MAPA, no una lista: se elige DONDE va el
+    //  instrumento tocando el sitio donde va a estar.
+    juce::OwnedArray<juce::TextButton> instDestBtns;
+    juce::OwnedArray<juce::TextButton> instBancoBtns;   // A B C D, para el destino
+    int instDestPad  = AudioEngine::kNumBanks * AudioEngine::kPadsPerBank - 16;   // D01
+    int instBancoDest = AudioEngine::kNumBanks - 1;
     std::vector<Instrumentos::Pack> instCatalogo;
     int instPack = 0;
 
@@ -1275,7 +1282,15 @@ private:
     //  instrumento en cualquier aparato que los tenga, y es la que dice de un
     //  vistazo que este pad ya no es un golpe.
     Sheet vstSheet;
-    juce::OwnedArray<juce::TextButton> vstBtns;      // los dieciseis presets
+    //  LOS PRESETS SON UN INTERRUPTOR, no una lista.
+    //
+    //  Dieciseis filas de nombre son un menu, y esto no es un menu: es el mando
+    //  de un instrumento. Con dos flechas se pasa de uno al siguiente OYENDOLO,
+    //  que es como se elige un sonido de verdad, y la ficha pasa de 700 px de
+    //  lista a un renglon - o sea que el teclado y la cabecera dejan de estar
+    //  al final de un desplazamiento.
+    juce::TextButton vstPreDown { "-" }, vstPreUp { "+" };
+    juce::Rectangle<int> vstPreArea;
     juce::TextButton vstCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
     juce::TextButton vstOctDown { "OCT -" }, vstOctUp { "OCT +" };
     //  Y LA PUERTA, en EL PAD y solo cuando el pad lleva instrumento.
@@ -1306,6 +1321,11 @@ private:
     void refreshInst();
     void pasoPack (int d);
     void cargaInstrumento (int idx);
+    //  Y la decision de rejilla: si el nombre no cabe en NINGUNA celda, ninguna
+    //  lo lleva. Es filaDeIconos por el otro lado - alli se cae el dibujo y
+    //  aqui la palabra - y por la misma razon: media rejilla con nombre y media
+    //  sin el se lee peor que ninguna.
+    void rejillaDeIconos (juce::OwnedArray<juce::TextButton>& celdas, int n);
     void eligePreset (int pre);
 
     //  EL BANCO DE LOS INSTRUMENTOS. Los otros tres son de percusion y este es

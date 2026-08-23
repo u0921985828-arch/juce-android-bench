@@ -176,6 +176,7 @@ def corre (dirtemp):
         if d.get ("instr") == "preset": filas.append (d)
         elif d.get ("instr") == "bancoD": extra["bancoD"] = d["ms"]
         elif d.get ("instr") == "vuelta": extra["vuelta"] = d
+        elif d.get ("instr") == "destino": extra["destino"] = d
         elif d.get ("instr") == "error":  extra["error"] = d.get ("que", "")
     return filas, extra
 
@@ -221,6 +222,26 @@ def main():
                     break
                 if not d["sostiene"] and z[5] > z[4]:
                     fallos.append ("%s: no sostiene y trae bucle" % etiq); break
+
+                #  Y EL BUCLE MIDE UN NUMERO ENTERO DE CICLOS DE SU RAIZ.
+                #
+                #  Es la comprobacion que faltaba y la que caza lo que se OIA.
+                #  La costura ya se medi­a -y salia continua, porque el fundido
+                #  cruzado la tapa- pero el fundido mezcla el final con el
+                #  principio, y si el bucle no cae en un numero entero de ciclos
+                #  esos dos trozos estan DESFASADOS: a 0.42 s clavados, un bajo
+                #  de 32.7 Hz daba 13.735 ciclos, o sea 265 grados, y el
+                #  fundamental se cancelaba. Medido: 13.8 dB de bache 21 ms
+                #  despues de cada vuelta.
+                if d["sostiene"]:
+                    hz = 130.8127827 * (2.0 ** (z[0] / 12.0))
+                    ciclos = (z[5] - z[4]) * hz / SR
+                    sobra = abs (ciclos - round (ciclos))
+                    if sobra > 0.02:
+                        fallos.append ("%s: el bucle de la raiz %+d mide %.3f ciclos "
+                                       "(%.0f grados de desfase al dar la vuelta)"
+                                       % (etiq, z[0], ciclos, 360.0 * sobra))
+                        break
                 prev = z[3]
 
         # ---- LOS 256, UNO A UNO ------------------------------------------
@@ -360,6 +381,27 @@ def main():
             if v["escribeWav"]:
                 fallos.append ("el pad escribiria su audio a disco: son 2 MB por pad "
                                "para devolver algo que ya no seria un instrumento")
+
+        # ---- EL DESTINO SE ELIGE ---------------------------------------
+        #
+        #  Era el pad del mismo numero que la familia dentro del banco D, asi
+        #  que todo lo demas sale verde con el destino clavado: el instrumento
+        #  carga, suena, vuelve del proyecto y ocupa un pad. Lo unico que lo
+        #  separa es pedir un pad que NO sea el suyo.
+        de = extra.get ("destino")
+        if de is None:
+            fallos.append ("no hay linea de destino: no se probo elegir el pad")
+        else:
+            print ("destino: pedido %d, fue al %d (clavado daria %d)"
+                   % (de["pedido"], de["fue"], de["clavado"]))
+            if de["fue"] != de["pedido"]:
+                fallos.append ("se pidio el pad %d y el instrumento fue al %d"
+                               % (de["pedido"], de["fue"]))
+            #  Y la otra mitad: que el pedido no coincida con el clavado, o la
+            #  comprobacion de arriba pasaria tambien con el destino fijo.
+            if de["pedido"] == de["clavado"]:
+                fallos.append ("la prueba pide justo el pad clavado (%d): no mide nada"
+                               % de["pedido"])
 
         if "bancoD" in extra:
             print ("\nllenar el banco D con los 16: %.0f ms" % extra["bancoD"])

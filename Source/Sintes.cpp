@@ -82,7 +82,7 @@ namespace Sintes
     //  mas bajo. La prueba lo mide con dos numeros por esto mismo.
     // ------------------------------------------------------------------------
     static void rinde (float* d, int len, const Familia& F, const Preset& P,
-                       double hz, int capa, int semilla)
+                       double hz, int capa, int semilla, float congelaEn = -1.0f)
     {
         Rng rnd (semilla);
         Svf f1, f2, f3;
@@ -124,6 +124,24 @@ namespace Sintes
         for (int n = 0; n < len; ++n)
         {
             const float t = (float) n / (float) kRate;
+
+            //  LO QUE SOSTIENE, SOSTIENE DE VERDAD.
+            //
+            //  Cuadrar el bucle en ciclos enteros arreglo la FASE y dejo un
+            //  bache de 9.5 dB en el bajo. El resto no era la fase: era que la
+            //  envolvente del FILTRO seguia cayendo dentro del bucle, asi que
+            //  cada vuelta reiniciaba el barrido - un "wah" a la velocidad del
+            //  bucle, que es exactamente lo que se oye como "hace cosas raras".
+            //
+            //  Desde el punto de bucle las envolventes se CONGELAN: de ahi en
+            //  adelante el sonido es estacionario y la vuelta no cambia nada.
+            //  El ataque suena una vez, que es lo que un ataque es.
+            //
+            //  Los LFO siguen con el tiempo de verdad: un colchon que deja de
+            //  moverse deja de ser un colchon, y para su desfase esta el
+            //  fundido cruzado - que ahora si puede hacer su trabajo, porque ya
+            //  no tiene que tapar una contrafase.
+            const float te = (congelaEn > 0.0f) ? juce::jmin (t, congelaEn) : t;
             float v = 0.0f;
 
             //  La envolvente de amplitud. Lo que SOSTIENE sube y se queda: el
@@ -131,7 +149,7 @@ namespace Sintes
             //  justo lo que separa un instrumento de un golpe.
             const float amp = F.sostiene
                 ? ((P.atk <= 0.0f) ? 1.0f : juce::jmin (1.0f, t / P.atk))
-                : ad (t, P.atk, P.dec);
+                : ad (te, P.atk, P.dec);
 
             switch (F.forma)
             {
@@ -145,7 +163,7 @@ namespace Sintes
                     ph3 += inc * 0.5; if (ph3 >= 1.0) ph3 -= 1.0;
                     const float mezcla = 0.5f * (sawBl (ph, inc) + sawBl (ph2, i2))
                                        + P.p4 * (float) std::sin (juce::MathConstants<double>::twoPi * ph3);
-                    const float ef = env (t, juce::jmax (0.02f, P.dec));
+                    const float ef = env (te, juce::jmax (0.02f, P.dec));
                     f1.set (juce::jlimit (40.0, nyq, hz * brillo * (1.0 + (double) (P.p2 * ef))), P.p3);
                     v = limita (1.3f * f1.lp (mezcla));
                     break;
@@ -155,7 +173,7 @@ namespace Sintes
                 {
                     //  p1 2o armonico, p2 saturacion, p3 caida de afinacion
                     //  (semitonos al arrancar), p4 aire.
-                    const double caida = std::pow (2.0, (double) P.p3 * (double) env (t, 0.045f) / 12.0);
+                    const double caida = std::pow (2.0, (double) P.p3 * (double) env (te, 0.045f) / 12.0);
                     const double i1 = inc * caida;
                     ph  += i1;       if (ph  >= 1.0) ph  -= 1.0;
                     ph2 += i1 * 2.0; if (ph2 >= 1.0) ph2 -= 1.0;
@@ -181,13 +199,13 @@ namespace Sintes
                     //  indice, p4 martillo. El indice cayendo es lo que hace
                     //  que un Rhodes empiece con campana y acabe con seno.
                     phm += inc * (double) P.p1; if (phm >= 1.0) phm -= 1.0;
-                    const float ei = env (t, juce::jmax (0.02f, P.p3));
+                    const float ei = env (te, juce::jmax (0.02f, P.p3));
                     const double mod = (double) (P.p2 * indice * ei)
                                      * std::sin (juce::MathConstants<double>::twoPi * phm);
                     ph += inc; if (ph >= 1.0) ph -= 1.0;
                     v = (float) std::sin (juce::MathConstants<double>::twoPi * ph + mod);
                     f1.set (juce::jlimit (200.0, nyq, 3000.0 * (double) brillo), 1.2f);
-                    v += P.p4 * f1.bpf (rnd()) * env (t, 0.006f) * 2.4f * fuerza;
+                    v += P.p4 * f1.bpf (rnd()) * env (te, 0.006f) * 2.4f * fuerza;
                     break;
                 }
 
@@ -214,7 +232,7 @@ namespace Sintes
                         const float incl = -1.0f + (P.p1 * 0.9f) * (0.45f + 0.55f * capaMix);
                         const float a = std::pow ((float) (k + 1), incl) * (0.55f + par);
                         float g = a;
-                        if (k == 2) g *= 1.0f + P.p3 * 6.0f * env (t, 0.09f) * fuerza;
+                        if (k == 2) g *= 1.0f + P.p3 * 6.0f * env (te, 0.09f) * fuerza;
                         suma += g * (float) std::sin (juce::MathConstants<double>::twoPi * arm[k]);
                     }
                     f1.set (juce::jlimit (200.0, nyq, 2200.0 * (double) brillo), 0.7f);
@@ -283,7 +301,7 @@ namespace Sintes
                     ph2 += inc * 0.5; if (ph2 >= 1.0) ph2 -= 1.0;
                     const float osc = (1.0f - P.p1) * sawBl (ph, inc) + P.p1 * sqrBl (ph, inc)
                                     + P.p4 * sawBl (ph2, inc * 0.5) * 0.6f;
-                    const float ef = env (t, juce::jmax (0.01f, P.p2));
+                    const float ef = env (te, juce::jmax (0.01f, P.p2));
                     f1.set (juce::jlimit (60.0, nyq, hz * brillo * (1.0 + 14.0 * (double) ef)), P.p3);
                     v = limita (1.2f * f1.lp (osc));
                     break;
@@ -295,7 +313,7 @@ namespace Sintes
                     //  modulador, p2 indice, p3 y p4 los dos parciales. Lo que
                     //  hace campana a una campana es que NADA es multiplo.
                     phm += inc * (double) P.p1; if (phm >= 1.0) phm -= 1.0;
-                    const double mod = (double) (P.p2 * indice * env (t, P.dec * 0.35f))
+                    const double mod = (double) (P.p2 * indice * env (te, P.dec * 0.35f))
                                      * std::sin (juce::MathConstants<double>::twoPi * phm);
                     ph  += inc;                    if (ph  >= 1.0) ph  -= 1.0;
                     ph2 += inc * (double) P.p3;    if (ph2 >= 1.0) ph2 -= 1.0;
@@ -307,14 +325,14 @@ namespace Sintes
                     //  Con estos al 0.42 y al 0.26 esto era un piano electrico
                     //  con la caida larga - medido, 2.05 dB contra VINTAGE.
                     if (hz * (double) P.p3 < nyq)
-                        v += 0.95f * env (t, P.dec * 0.80f)
+                        v += 0.95f * env (te, P.dec * 0.80f)
                              * (float) std::sin (juce::MathConstants<double>::twoPi * ph2);
                     if (hz * (double) P.p4 < nyq)
-                        v += 0.70f * env (t, P.dec * 0.55f)
+                        v += 0.70f * env (te, P.dec * 0.55f)
                              * (float) std::sin (juce::MathConstants<double>::twoPi * ph3);
                     //  Y el fundamental se apaga antes que ellos, que es lo que
                     //  hace que una campana "cante" mas agudo segun decae.
-                    v *= 0.55f + 0.45f * env (t, P.dec * 0.30f);
+                    v *= 0.55f + 0.45f * env (te, P.dec * 0.30f);
                     break;
                 }
 
@@ -323,7 +341,7 @@ namespace Sintes
                     //  El filtro SE PASA y vuelve: un metal no abre y se queda,
                     //  pega un empujon y se asienta. p1 sobrepaso, p2 tiempo,
                     //  p3 desafinacion, p4 soplo.
-                    const float sub = juce::jmin (1.0f, t / juce::jmax (0.005f, P.p2));
+                    const float sub = juce::jmin (1.0f, te / juce::jmax (0.005f, P.p2));
                     const float over = sub * (1.0f + P.p1 * (1.0f - sub) * 2.4f);
                     //  PULSO ESTRECHO Y NO UNA PILA DE SIERRAS.
                     //
@@ -411,7 +429,7 @@ namespace Sintes
                     ksPos = (ksPos + 1) % ksLen;
                     f1.set (juce::jlimit (90.0, nyq, 220.0 + 900.0 * (double) P.p3), 2.4f);
                     v = x + P.p3 * f1.bpf (x) * 0.8f;
-                    v += P.p4 * rnd() * env (t, 0.004f) * 0.7f * fuerza;
+                    v += P.p4 * rnd() * env (te, 0.004f) * 0.7f * fuerza;
                     f2.set (juce::jlimit (400.0, nyq, hz * 12.0 * (double) brillo), 0.6f);
                     v = limita (f2.lp (v) * 1.4f);
                     break;
@@ -431,13 +449,13 @@ namespace Sintes
                     //  sea que el toque solo cambiaba el volumen.
                     const float par = P.p4 * (0.25f + 1.30f * capaMix);
                     if (hz * (double) P.p1 < nyq)
-                        v += par * env (t, P.dec * 0.30f)
+                        v += par * env (te, P.dec * 0.30f)
                              * (float) std::sin (juce::MathConstants<double>::twoPi * ph2);
                     if (hz * (double) P.p2 < nyq)
-                        v += par * 0.45f * env (t, P.dec * 0.14f)
+                        v += par * 0.45f * env (te, P.dec * 0.14f)
                              * (float) std::sin (juce::MathConstants<double>::twoPi * ph3);
                     f1.set (juce::jlimit (400.0, nyq, 2800.0 * (double) brillo), 1.4f);
-                    v += P.p3 * f1.bpf (rnd()) * env (t, 0.005f) * 3.0f * (0.2f + 1.1f * capaMix);
+                    v += P.p3 * f1.bpf (rnd()) * env (te, 0.005f) * 3.0f * (0.2f + 1.1f * capaMix);
                     break;
                 }
 
@@ -449,9 +467,9 @@ namespace Sintes
                     ph += inc; if (ph >= 1.0) ph -= 1.0;
                     const float osc = pulsoBl (ph, inc, juce::jlimit (0.02, 0.45, (double) P.p1));
                     f1.set (juce::jlimit (150.0, nyq, hz * (double) P.p2 * (double) brillo), P.p3);
-                    const float ef = env (t, juce::jmax (0.02f, P.dec * 0.5f));
+                    const float ef = env (te, juce::jmax (0.02f, P.dec * 0.5f));
                     v = limita (1.5f * f1.bpf (osc) * (0.35f + 0.65f * ef));
-                    v += P.p4 * rnd() * env (t, 0.003f) * fuerza;
+                    v += P.p4 * rnd() * env (te, 0.003f) * fuerza;
                     break;
                 }
 
@@ -461,7 +479,7 @@ namespace Sintes
                     //  un seno. p1 cuanto aire, p2 vibrato, p3 cuando entra,
                     //  p4 segundo armonico.
                     lfo += 5.4 / kRate; if (lfo >= 1.0) lfo -= 1.0;
-                    const float entra = juce::jmin (1.0f, juce::jmax (0.0f, t - P.p3) / 0.35f);
+                    const float entra = juce::jmin (1.0f, juce::jmax (0.0f, te - P.p3) / 0.35f);
                     const double vib = std::pow (2.0, (double) (P.p2 * entra) * 0.006
                                         * std::sin (juce::MathConstants<double>::twoPi * lfo));
                     const double i1 = inc * vib;
@@ -478,7 +496,7 @@ namespace Sintes
                     //  Banda ANCHA y alrededor del tercer armonico: el aire de
                     //  una flauta no esta en su fundamental, esta arriba.
                     f1.set (juce::jlimit (300.0, nyq, hz * 3.2 * (double) brillo), 1.1f);
-                    const float soplo = 0.55f + 0.45f * env (t, 0.05f);
+                    const float soplo = 0.55f + 0.45f * env (te, 0.05f);
                     v = limita (0.8f * v
                                 + (P.p1 + 0.30f) * f1.bpf (rnd()) * 3.2f * soplo
                                       * (0.35f + 0.9f * capaMix));
@@ -510,11 +528,11 @@ namespace Sintes
                         //  Con 1/k fijo, doce armonicos contra siete median x1.10
                         //  - los de arriba pesan demasiado poco para notarse.
                         const float amp = std::pow ((float) (k + 1), -1.0f + 0.45f * capaMix);
-                        suma += amp * env (t, tau)
+                        suma += amp * env (te, tau)
                                 * (float) std::sin (juce::MathConstants<double>::twoPi * arm[k]);
                     }
                     f1.set (juce::jlimit (400.0, nyq, 3000.0 * (double) brillo), 1.0f);
-                    v = limita (1.1f * suma + P.p4 * f1.bpf (rnd()) * env (t, 0.004f) * 1.8f * fuerza);
+                    v = limita (1.1f * suma + P.p4 * f1.bpf (rnd()) * env (te, 0.004f) * 1.8f * fuerza);
                     break;
                 }
             }
@@ -525,6 +543,48 @@ namespace Sintes
         }
 
         juce::ignoreUnused (ph4);
+    }
+
+    // ------------------------------------------------------------------------
+    //  EL BUCLE MIDE UN NUMERO ENTERO DE CICLOS DE LA RAIZ.
+    //
+    //  Sin esto el bucle duraba 0.42 s clavados, y 0.42 s de un bajo de 32.7 Hz
+    //  son **13.735 ciclos**: al dar la vuelta la onda salta 265 grados de fase,
+    //  y el fundido cruzado -que mezcla el final con el principio- suma dos
+    //  trozos casi en CONTRAFASE. Medido en el bajo: un bache de **13.8 dB**
+    //  veintiun milisegundos despues de cada vuelta. Eso es lo que se oye como
+    //  "el bucle hace cosas raras", y no la costura, que estaba continua.
+    //
+    //  Se busca el numero de ciclos cuyo largo en MUESTRAS cae mas cerca de un
+    //  entero, dentro de un margen alrededor del objetivo. No se puede
+    //  desafinar el oscilador para que cuadre -a 32.7 Hz y catorce ciclos, el
+    //  ajuste serian sesenta centesimas de tono- asi que lo que se mueve es el
+    //  LARGO, que no se oye: cuatro centesimas de segundo arriba o abajo en un
+    //  bucle es exactamente nada.
+    //
+    //  Y con la fase cuadrada el fundido cruzado deja de cancelar y pasa a ser
+    //  lo que era: un seguro para las familias desafinadas, que no tienen
+    //  periodo comun y por eso no se pueden arreglar solo con esto.
+    static int largoBucle (double hz, double segundos)
+    {
+        const double P = kRate / juce::jmax (1.0, hz);        // muestras por ciclo
+        const double objetivo = kRate * segundos;
+
+        int mejor = (int) std::lround (objetivo);
+        double coste = 1.0e30;
+        const int nMin = juce::jmax (1, (int) std::floor (objetivo * 0.55 / P));
+        const int nMax = juce::jmax (nMin + 1, (int) std::ceil (objetivo * 1.45 / P));
+
+        for (int n = nMin; n <= nMax; ++n)
+        {
+            const double L = (double) n * P;
+            //  La fase que sobra pesa mil veces mas que la duracion: lo que no
+            //  se puede negociar es la fase, y el largo si.
+            const double c = std::abs (L - (double) std::lround (L)) * 1000.0
+                           + std::abs (L - objetivo) / kRate;
+            if (c < coste) { coste = c; mejor = (int) std::lround (L); }
+        }
+        return juce::jmax (256, mejor);
     }
 
     // ------------------------------------------------------------------------
@@ -545,12 +605,22 @@ namespace Sintes
         //  tres segundos son 5.7 MB por pad, y este buffer se queda en memoria
         //  mientras el pad exista.
         const int pre  = F.sostiene ? (int) (kRate * juce::jlimit (0.06f, 0.70f, P.atk + 0.10f)) : 0;
-        const int cuerpo = F.sostiene ? (int) (kRate * 0.42)
-                                      : (int) (kRate * juce::jlimit (0.25f, 1.80f,
-                                                                     P.atk + P.dec * 2.2f + P.rel));
         const int cruce = F.sostiene ? (int) (kRate * 0.045) : 0;
-        const int zonaLen = pre + cuerpo;
-        const int rindeLen = zonaLen + cruce;
+
+        //  EL LARGO ES DE CADA RAIZ, no de todas. El bucle mide un numero
+        //  entero de ciclos y un ciclo dura lo que dura, asi que la zona de
+        //  DO1 y la de DO5 no pueden medir lo mismo. Ver largoBucle.
+        int cuerpoDe[kRaices] {}, zonaDe[kRaices] {};
+        int total = 0;
+        for (int r = 0; r < kRaices; ++r)
+        {
+            const double hz = kHzRaiz * std::pow (2.0, (double) kRaiz[r] / 12.0);
+            cuerpoDe[r] = F.sostiene
+                ? largoBucle (hz, 0.42)
+                : (int) (kRate * juce::jlimit (0.25f, 1.80f, P.atk + P.dec * 2.2f + P.rel));
+            zonaDe[r] = pre + cuerpoDe[r];
+            total += zonaDe[r] * kCapas;
+        }
 
         auto sb = new SampleBuffer();
         sb->sourceSampleRate = kRate;
@@ -558,16 +628,20 @@ namespace Sintes
         //  receta en vez del audio. Ver MainComponent::captureState.
         sb->familia = fi;
         sb->preset  = pi;
-        sb->buffer.setSize (1, zonaLen * kZonas);
+        sb->buffer.setSize (1, total);
         sb->buffer.clear();
         float* dst = sb->buffer.getWritePointer (0);
 
-        std::vector<float> tmp ((size_t) rindeLen);
+        int maxRinde = 0;
+        for (int r = 0; r < kRaices; ++r) maxRinde = juce::jmax (maxRinde, zonaDe[r] + cruce);
+        std::vector<float> tmp ((size_t) maxRinde);
 
-        int z = 0;
+        int z = 0, off = 0;
         for (int r = 0; r < kRaices; ++r)
         {
             const double hz = kHzRaiz * std::pow (2.0, (double) kRaiz[r] / 12.0);
+            const int zonaLen  = zonaDe[r];
+            const int rindeLen = zonaLen + cruce;
             for (int c = 0; c < kCapas; ++c, ++z)
             {
                 //  SEMILLA FIJA por familia, preset, raiz y capa: dos arranques
@@ -576,7 +650,11 @@ namespace Sintes
                 //  HUMANIZAR se escribe en vez de sortearse.
                 const int semilla = ((fi * 97 + pi) * 13 + r) * 7 + c + 1;
                 std::fill (tmp.begin(), tmp.end(), 0.0f);
-                rinde (tmp.data(), rindeLen, F, P, hz, c, semilla);
+                //  Se congela EN EL PUNTO DE BUCLE: de ahi en adelante el
+                //  sonido tiene que ser estacionario o cada vuelta reinicia lo
+                //  que se estuviera moviendo. Lo que no sostiene no se congela.
+                rinde (tmp.data(), rindeLen, F, P, hz, c, semilla,
+                       F.sostiene ? (float) pre / (float) kRate : -1.0f);
 
                 //  EL FUNDIDO CRUZADO DEL BUCLE. Ver Sintes.h: en la costura
                 //  las dos mitades son la misma muestra, asi que la union es
@@ -589,15 +667,16 @@ namespace Sintes
                                                 + tmp[(size_t) (zonaLen + i)] * (1.0f - x);
                     }
 
-                std::memcpy (dst + z * zonaLen, tmp.data(), sizeof (float) * (size_t) zonaLen);
+                std::memcpy (dst + off, tmp.data(), sizeof (float) * (size_t) zonaLen);
 
                 auto& Z = sb->zonas[(size_t) z];
                 Z.raiz     = kRaiz[r];
                 Z.capa     = c;
-                Z.ini      = z * zonaLen;
-                Z.fin      = (z + 1) * zonaLen;
-                Z.bucleIni = F.sostiene ? (z * zonaLen + pre) : 0;
-                Z.bucleFin = F.sostiene ? ((z + 1) * zonaLen) : 0;
+                Z.ini      = off;
+                Z.fin      = off + zonaLen;
+                Z.bucleIni = F.sostiene ? (off + pre) : 0;
+                Z.bucleFin = F.sostiene ? (off + zonaLen) : 0;
+                off += zonaLen;
             }
         }
         sb->nZonas = kZonas;

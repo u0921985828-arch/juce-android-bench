@@ -992,13 +992,24 @@ public:
         //  rota, no como una que no tenia sitio. Lo decide layoutModuleBar,
         //  que es quien sabe cuales son hermanas.
         if ((int) b.getProperties().getWithDefault ("sinIcono", 0) != 0) return r;
+        //  Y AL REVES: quedarse con el dibujo y soltar la palabra.
+        //
+        //  Lo pide una REJILLA y no una fila. En una rejilla de cuatro por
+        //  cuatro la celda mide 56 px en la tarjeta mas estrecha, y ahi
+        //  "CUERDA PULS" no cabe de ninguna manera - ni apretada, que apretar
+        //  hasta el 0.9 no salva 66 px en 56 -. Un dibujo si cabe, y para eso
+        //  se dibujaron. Quien decide es quien coloca la rejilla, por lo mismo
+        //  que en una fila decide layoutModuleBar: una celda sola no sabe si
+        //  sus hermanas caben, y media rejilla con nombre y media sin el se lee
+        //  peor que ninguna.
+        const bool soloIcono = ((int) b.getProperties().getWithDefault ("soloIcono", 0) != 0);
 
         //  Cuadrado y sacado del ALTO de la tapa: un tercio del ancho daria un
         //  icono de sesenta pixeles en la tapa de PLAY.
         const int tope = juce::jmin (r.texto.getHeight(), 18);
         if (tope < Iconos::kLadoMin) return r;
 
-        if (texto.isEmpty()) { r.id = id; r.icono = r.texto; r.texto = {}; return r; }
+        if (texto.isEmpty() || soloIcono) { r.id = id; r.icono = r.texto; r.texto = {}; return r; }
 
         //  Y SOLO SI EL ROTULO SIGUE CABIENDO ENTERO.
         //

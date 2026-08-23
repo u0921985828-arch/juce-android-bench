@@ -57,6 +57,10 @@ namespace
         //  el patron, y en chino dice "mover". Una clave que se reaprovecha por
         //  parecerse en espanol sale mal en las otras tres.
         { "ANCHO",       "",  "WIDTH",      "宽度",   "العرض" },
+        { "Elige el pad arriba y el instrumento abajo. Va al pad %1.", "",
+          "Pick the pad above and the instrument below. It goes to pad %1.",
+          "上方选择音垫，下方选择乐器。放入音垫 %1。",
+          "اختر الباد في الأعلى والآلة في الأسفل. ينتقل إلى باد %1." },
         { "PRESETS",     "",  "PRESETS",    "预设",   "إعدادات" },
         { "OCT",         "",  "OCT",        "八度",   "أوكتاف" },
         { "OCTAVA %1",   "",  "OCTAVE %1",  "八度 %1", "أوكتاف %1" },
