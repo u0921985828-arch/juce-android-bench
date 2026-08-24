@@ -64,86 +64,70 @@ def tarjeta (W, H, pedido):
 TAPA, MANDO, REJILLA, HUECO, TEXTO = "tapa", "mando", "rejilla", "hueco", "texto"
 
 PROPUESTAS = [
- # ---- EL PAD -------------------------------------------------------------
- ("pad-hoy", "EL PAD · RECORTE — hoy", 412, 915, 620, [
-   ("titulo",   44, [(TEXTO, "PAD 07"), (HUECO,), (TAPA, "×", None)]),
-   ("pestanas", TAB, [(TAPA, "SONIDO", "sonido"), (TAPA, "RECORTE", "recorte"),
-                      (TAPA, "EL PAD", "pad")]),
-   ("onda",    180, [(REJILLA, "Onda", 1, 1)]),
-   ("asas",     34, [(MANDO, "INICIO"), (MANDO, "FIN")]),
-   ("fundidos", 34, [(MANDO, "SUAVE ENT"), (MANDO, "SUAVE SAL")]),
-   ("modo",   FILA, [(TAPA, "CINTA", None), (TAPA, "BUCLE", "loop"),
-                     (TAPA, "REV", "reves"), (TAPA, "QUITAR RUIDO", "ruido")]),
+ # ---- SEC · PATRON, en 280x653, que es donde esta el defecto -------------
+ #
+ #  Medido: a 412 la ficha tiene diez filas y las tres de la CADENA -1..8 mas
+ #  QUITAR CADENA- son 120 px de ellas. A 280 la tarjeta da 485 px y esas tres
+ #  filas se caen ENTERAS: nueve controles que desaparecen, no que encogen.
+ ("paso-a", "SEC · PATRON — (a) la cadena, su propia pagina", 280, 653, 485, [
+   ("titulo",   40, [(TEXTO, "SEC · PATRON"), (HUECO,), (TAPA, "×", None)]),
+   ("pestanas", TAB, [(TAPA, "PASOS", "sec"), (TAPA, "PIANO", "piano"),
+                      (TAPA, "PATRON", "patron"), (TAPA, "CADENA", "cadena")]),
+   ("mover",    40, [(TAPA, "ATRAS", "atras"), (TAPA, "ADELANTE", "adelante")]),
+   ("mover2",   40, [(TAPA, "DOBLAR", "doblar"), (TAPA, "HUMANIZAR", "humanizar")]),
+   ("copiar",   40, [(TAPA, "COPIAR", "copiar"), (TAPA, "PEGAR", "pegar")]),
+   ("copiar2",  40, [(TAPA, "COPIAR FILA", "copiar"), (TAPA, "PEGAR FILA", "pegar")]),
+   ("euclid",   40, [(MANDO, "EUCLIDES")]),
+   ("rejilla",  40, [(MANDO, "REJILLA")]),
+   ("swing",    40, [(MANDO, "SWING")]),
    ("resto", "resto", [(HUECO,)]),
- ], "Sin PLAY. Para oir el recorte hay que cerrar la ficha, y tocar donde esta "
-    "el PLAY de la cara la cierra sin arrancar nada."),
+ ], "La cadena deja de competir por el alto: se va a una cuarta pestana y "
+    "PATRON se queda con lo que actua sobre el patron. Lo que hay que mirar "
+    "aqui es la fila de pestanas -cuatro donde habia tres, a 55 px cada una en "
+    "280- y si el dibujante no avisa, cabe."),
 
- ("pad-a", "EL PAD · RECORTE — (a) PLAY en la cabecera", 412, 915, 620, [
-   ("titulo",   44, [(TEXTO, "PAD 07"), (HUECO,),
-                     (TAPA, "PLAY", "play"), (TAPA, "×", None)]),
-   ("pestanas", TAB, [(TAPA, "SONIDO", "sonido"), (TAPA, "RECORTE", "recorte"),
-                      (TAPA, "EL PAD", "pad")]),
-   ("onda",    180, [(REJILLA, "Onda", 1, 1)]),
-   ("asas",     34, [(MANDO, "INICIO"), (MANDO, "FIN")]),
-   ("fundidos", 34, [(MANDO, "SUAVE ENT"), (MANDO, "SUAVE SAL")]),
-   ("modo",   FILA, [(TAPA, "CINTA", None), (TAPA, "BUCLE", "loop"),
-                     (TAPA, "REV", "reves"), (TAPA, "QUITAR RUIDO", "ruido")]),
-   ("resto", "resto", [(HUECO,)]),
- ], "Cuesta CERO px de alto: el renglon del titulo ya existe y va medio vacio. "
-    "Sirve para las tres paginas del pad a la vez, y es donde SEC ya lo tiene."),
-
- ("pad-b", "EL PAD · RECORTE — (b) fila de transporte propia", 412, 915, 668, [
-   ("titulo",   44, [(TEXTO, "PAD 07"), (HUECO,), (TAPA, "×", None)]),
-   ("pestanas", TAB, [(TAPA, "SONIDO", "sonido"), (TAPA, "RECORTE", "recorte"),
-                      (TAPA, "EL PAD", "pad")]),
-   ("transporte", FILA, [(TAPA, "PLAY", "play"), (TAPA, "PATRON", "patron"),
-                         (TAPA, "OIR", "play")]),
-   ("onda",    180, [(REJILLA, "Onda", 1, 1)]),
-   ("asas",     34, [(MANDO, "INICIO"), (MANDO, "FIN")]),
-   ("fundidos", 34, [(MANDO, "SUAVE ENT"), (MANDO, "SUAVE SAL")]),
-   ("modo",   FILA, [(TAPA, "CINTA", None), (TAPA, "BUCLE", "loop"),
-                     (TAPA, "REV", "reves"), (TAPA, "QUITAR RUIDO", "ruido")]),
-   ("resto", "resto", [(HUECO,)]),
- ], "+48 px, y trae ademas el interruptor de modo y OIR juntos. Es lo mismo "
-    "que hace la ficha del secuenciador, o sea el patron que ya existe."),
-
- # ---- SEC · PATRON -------------------------------------------------------
- ("paso-hoy", "SEC · PATRON — hoy", 412, 915, 700, [
-   ("titulo",   44, [(TEXTO, "SEC · PATRON"), (HUECO,), (TAPA, "×", None)]),
+ ("paso-b", "SEC · PATRON — (b) la cadena, un mando y no ocho tapas", 280, 653, 485, [
+   ("titulo",   40, [(TEXTO, "SEC · PATRON"), (HUECO,), (TAPA, "×", None)]),
    ("pestanas", TAB, [(TAPA, "PASOS", "sec"), (TAPA, "PIANO", "piano"),
                       (TAPA, "PATRON", "patron")]),
-   ("mover",  FILA, [(TAPA, "ATRAS", "atras"), (TAPA, "ADELANTE", "adelante"),
+   ("cadena",   40, [(TAPA, "-", None), (TEXTO, "P1 · P3 · P4"), (TAPA, "+", None)]),
+   ("mover",    40, [(TAPA, "ATRAS", "atras"), (TAPA, "ADELANTE", "adelante"),
                      (TAPA, "DOBLAR", "doblar"), (TAPA, "HUMANIZAR", "humanizar")]),
-   ("copiar", FILA, [(TAPA, "COPIAR", "copiar"), (TAPA, "PEGAR", "pegar")]),
-   ("euclid",   34, [(MANDO, "EUCLIDES"), (MANDO, "REJILLA"), (MANDO, "SWING")]),
-   ("cadena1", FILA, [(TAPA, "1", None), (TAPA, "2", None), (TAPA, "3", None),
-                      (TAPA, "4", None)]),
-   ("cadena2", FILA, [(TAPA, "5", None), (TAPA, "6", None), (TAPA, "7", None),
-                      (TAPA, "8", None)]),
-   ("quitar", FILA, [(TAPA, "QUITAR CADENA", "cadena")]),
+   ("copiar",   40, [(TAPA, "COPIAR", "copiar"), (TAPA, "PEGAR", "pegar"),
+                     (TAPA, "COPIAR FILA", "copiar"), (TAPA, "PEGAR FILA", "pegar")]),
+   ("euclid",   40, [(MANDO, "EUCLIDES")]),
+   ("rejilla",  40, [(MANDO, "REJILLA")]),
+   ("swing",    40, [(MANDO, "SWING")]),
    ("resto", "resto", [(HUECO,)]),
- ], "Sin PLAY, igual que EL PAD. Y en 280 px EUCLIDES y la CADENA se caen."),
+ ], "Tres filas pasan a una: la cadena se lee como una lista y se edita con "
+    "menos y mas, que es el idioma que esta app ya usa para PAD y PACK. Cuesta "
+    "que deja de verse cuales de los ocho estan puestos, o sea que hay que "
+    "recorrerla para saberlo."),
 
- ("paso-a", "SEC · PATRON — (a) el transporte en la fila de pestanas", 412, 915, 700, [
-   ("titulo",   44, [(TEXTO, "SEC · PATRON"), (HUECO,), (TAPA, "×", None)]),
+ ("paso-c", "SEC · PATRON — (c) la cadena se va a CANCION", 280, 653, 485, [
+   ("titulo",   40, [(TEXTO, "SEC · PATRON"), (HUECO,), (TAPA, "×", None)]),
    ("pestanas", TAB, [(TAPA, "PASOS", "sec"), (TAPA, "PIANO", "piano"),
-                      (TAPA, "PATRON", "patron"), (TAPA, "PLAY", "play")]),
-   ("mover",  FILA, [(TAPA, "ATRAS", "atras"), (TAPA, "ADELANTE", "adelante"),
+                      (TAPA, "PATRON", "patron")]),
+   ("mover",    40, [(TAPA, "ATRAS", "atras"), (TAPA, "ADELANTE", "adelante"),
                      (TAPA, "DOBLAR", "doblar"), (TAPA, "HUMANIZAR", "humanizar")]),
-   ("copiar", FILA, [(TAPA, "COPIAR", "copiar"), (TAPA, "PEGAR", "pegar")]),
-   ("euclid",   34, [(MANDO, "EUCLIDES"), (MANDO, "REJILLA"), (MANDO, "SWING")]),
-   ("cadena1", FILA, [(TAPA, "1", None), (TAPA, "2", None), (TAPA, "3", None),
-                      (TAPA, "4", None)]),
-   ("cadena2", FILA, [(TAPA, "5", None), (TAPA, "6", None), (TAPA, "7", None),
-                      (TAPA, "8", None)]),
-   ("quitar", FILA, [(TAPA, "QUITAR CADENA", "cadena")]),
+   ("copiar",   40, [(TAPA, "COPIAR", "copiar"), (TAPA, "PEGAR", "pegar"),
+                     (TAPA, "COPIAR FILA", "copiar"), (TAPA, "PEGAR FILA", "pegar")]),
+   ("euclid",   40, [(MANDO, "EUCLIDES")]),
+   ("rejilla",  40, [(MANDO, "REJILLA")]),
+   ("swing",    40, [(MANDO, "SWING")]),
+   ("puerta",   40, [(TAPA, "CADENA EN CANCION", "cancion")]),
    ("resto", "resto", [(HUECO,)]),
- ], "Cuesta CERO px: PLAY entra como cuarta pestana y queda a mano en las tres "
-    "paginas. El riesgo esta medido aqui: cuatro tapas donde habia tres."),
+ ], "La de mas fondo, y la unica que no es un truco de sitio: una cadena de "
+    "patrones y una linea de tiempo de bloques son LA MISMA funcion -tocar "
+    "patrones en orden- en dos sitios, y esta casa tiene una regla para eso. "
+    "Se queda la que sabe mas -la linea de tiempo, que ademas tiene largo por "
+    "bloque y carriles- y PATRON deja una PUERTA, nunca una copia. Lo que hay "
+    "que decidir antes: si `PLAY toca el patron / la cadena` y `PLAY toca la "
+    "cancion` deben seguir siendo dos modos o uno."),
 
- # ---- CANCION ------------------------------------------------------------
- ("song-hoy", "CANCION — hoy", 412, 915, 640, [
-   ("titulo",   44, [(TEXTO, "CANCION"), (HUECO,), (TAPA, "×", None)]),
+ # ---- CANCION -----------------------------------------------------------
+ ("song-a", "CANCION — (a) la de la cara cambia de nombre", 412, 915, 640, [
+   ("titulo",   44, [(TEXTO, "ARREGLO"), (HUECO,), (TAPA, "×", None)]),
    ("brochas", FILA, [(TAPA, "SONIDO", "sonido"), (TAPA, "CANCION", "cancion"),
                       (TAPA, "BUCLE", "loop"), (TAPA, "VACIAR", "vaciar")]),
    ("paleta1", FILA, [(TAPA, "P1", None), (TAPA, "P2", None), (TAPA, "P3", None),
@@ -154,10 +138,13 @@ PROPUESTAS = [
                       (TAPA, "ACORTAR", "acortar"), (TAPA, "ALARGAR", "alargar")]),
    ("linea", "resto", [(REJILLA, "Playlist", 8, 4)]),
    ("pie",    FILA, [(TAPA, "PLAY", "play"), (MANDO, "8 compases")]),
- ], "La tapa CANCION de la fila de brochas dice lo mismo y lleva el mismo "
-    "dibujo que la pestana CANCION de la cara, que esta justo detras."),
+ ], "Cero px y cero maquetado: la pestana de la cara pasa a decir ARREGLO -o "
+    "LINEA- y el choque se acaba. Lo que cuesta es renombrar una pestana de "
+    "primer nivel que la gente ya conoce, y que en ingles no habia problema "
+    "-SONG contra SONG MODE- asi que se estaria cambiando el idioma bueno para "
+    "arreglar el otro."),
 
- ("song-b", "CANCION — (b) el modo sale de la ficha", 412, 915, 640, [
+ ("song-b", "CANCION — (b) la de dentro sobra", 412, 915, 640, [
    ("titulo",   44, [(TEXTO, "CANCION"), (HUECO,), (TAPA, "×", None)]),
    ("brochas", FILA, [(TAPA, "SONIDO", "sonido"), (TAPA, "BUCLE", "loop"),
                       (TAPA, "VACIAR", "vaciar")]),
@@ -170,16 +157,17 @@ PROPUESTAS = [
    ("linea", "resto", [(REJILLA, "Playlist", 8, 4)]),
    ("pie",    FILA, [(TAPA, "PLAY", "play"), (TAPA, "PATRON", "patron"),
                      (MANDO, "8 compases")]),
- ], "El modo baja al pie, junto a PLAY, que es donde se decide: la pregunta "
-    "-que toca PLAY- se hace justo antes de pulsarlo, y ahi ya esta en las "
-    "otras tres filas de transporte. Cuesta CERO px y no gana ninguno: la "
-    "primera version de esta nota decia que el carril ganaba sitio y era "
-    "FALSO -quitar una tapa de una fila no quita la fila-, y el dibujante lo "
-    "canto solo: `celda 40.1 x 71.0` en las dos maquetas. Lo que se gana es "
-    "que deje de haber dos CANCION."),
+ ], "El interruptor de modo ya esta en las tres filas de transporte -cara, SEC "
+    "y esta-, asi que la de la fila de brochas es la cuarta y ademas la unica "
+    "que esta lejos de un PLAY. Baja al pie, junto al PLAY que ya hay ahi. "
+    "Cuesta CERO px y no gana ninguno: la primera version de esta nota decia "
+    "que el carril ganaba sitio y era FALSO -quitar una tapa de una fila no "
+    "quita la fila-, y el dibujante lo canto con el numero."),
 
- ("song-c", "CANCION — (c) las brochas al pie, y la fila entera se va", 412, 915, 640, [
-   ("titulo",   44, [(TEXTO, "CANCION"), (HUECO,), (TAPA, "×", None)]),
+ ("song-c", "CANCION — (c) el estado lo dice el titulo", 412, 915, 640, [
+   ("titulo",   44, [(TEXTO, "CANCION ▸ tocando el patron"), (HUECO,), (TAPA, "×", None)]),
+   ("brochas", FILA, [(TAPA, "SONIDO", "sonido"), (TAPA, "BUCLE", "loop"),
+                      (TAPA, "VACIAR", "vaciar")]),
    ("paleta1", FILA, [(TAPA, "P1", None), (TAPA, "P2", None), (TAPA, "P3", None),
                       (TAPA, "P4", None)]),
    ("paleta2", FILA, [(TAPA, "P5", None), (TAPA, "P6", None), (TAPA, "P7", None),
@@ -187,63 +175,32 @@ PROPUESTAS = [
    ("arreglo", FILA, [(TAPA, "INSERTAR", "insertar"), (TAPA, "QUITAR", "quitar"),
                       (TAPA, "ACORTAR", "acortar"), (TAPA, "ALARGAR", "alargar")]),
    ("linea", "resto", [(REJILLA, "Playlist", 8, 4)]),
-   ("pie",    FILA, [(TAPA, "PLAY", "play"), (TAPA, "PATRON", "patron"),
-                     (TAPA, "SONIDO", "sonido"), (TAPA, "VACIAR", "vaciar")]),
- ], "Esta SI gana alto: la fila de brochas desaparece y sus tapas se reparten "
-    "el pie con PLAY. Y hubo que aprender una cosa por el camino, que el "
-    "dibujante canto solo: con el ALTO PEDIDO bajado de 640 a 592 -lo que "
-    "parece logico al quitar una fila- el carril solo pasaba de 71 a 73 px, "
-    "porque `sheetFromBottom` hace `min(pedido, alto x 0.78)` y ahi manda el "
-    "pedido: la tarjeta ENCOGE y los 48 px no van a ningun sitio. Pidiendo lo "
-    "mismo que hoy, el carril se lleva los 48 enteros. El coste es que el pie "
-    "pasa a cuatro tapas y en 280 px eso hay que volver a medirlo, que es "
-    "exactamente para lo que existe el aviso del dedo."),
+   ("pie",    FILA, [(TAPA, "PLAY", "play"), (MANDO, "8 compases")]),
+ ], "El titulo de la ficha dice el estado y se toca para cambiarlo. Quita una "
+    "tapa y pone la respuesta donde ya estas mirando al abrir. El riesgo esta "
+    "medido en esta casa: un titulo que ademas es un boton no se lee como un "
+    "boton, y este banco tiene una regla entera sobre rotulos PINTADOS que no "
+    "son componentes y que por eso no los ve nadie."),
+]
 
- # ---- EL INSTRUMENTO -----------------------------------------------------
- ("vst-hoy", "EL INSTRUMENTO — hoy", 412, 915, 560, [
-   ("titulo",   44, [(TEXTO, "CUERDA PULS"), (HUECO,), (TAPA, "×", None)]),
-   ("familia", 120, [(REJILLA, "Dibujo", 1, 1)]),
-   ("preset", FILA, [(TAPA, "-", None), (TEXTO, "ENSEMBLE"), (TAPA, "+", None)]),
-   ("octava", FILA, [(TAPA, "OCT -", None), (REJILLA, "Raices", 5, 1),
-                     (TAPA, "OCT +", None)]),
-   ("teclado", "resto", [(REJILLA, "Teclado", 13, 1)]),
- ], "Sin PLAY. El teclado suena al tocarlo, pero oir la nota EN CONTEXTO -con "
-    "el patron rodando- obliga a cerrar."),
-
- ("vst-a", "EL INSTRUMENTO — (a) PLAY en la cabecera", 412, 915, 560, [
-   ("titulo",   44, [(TEXTO, "CUERDA PULS"), (HUECO,),
-                     (TAPA, "PLAY", "play"), (TAPA, "×", None)]),
-   ("familia", 120, [(REJILLA, "Dibujo", 1, 1)]),
-   ("preset", FILA, [(TAPA, "-", None), (TEXTO, "ENSEMBLE"), (TAPA, "+", None)]),
-   ("octava", FILA, [(TAPA, "OCT -", None), (REJILLA, "Raices", 5, 1),
-                     (TAPA, "OCT +", None)]),
-   ("teclado", "resto", [(REJILLA, "Teclado", 13, 1)]),
- ], "Cero px, la misma solucion que EL PAD (a): un solo sitio para el "
-    "transporte en todas las fichas que escriben algo que suena."),
-
- # ---- MEZCLA -------------------------------------------------------------
- ("mix-hoy", "MEZCLA — hoy (8 de los 16 canales)", 412, 915, 700, [
-   ("titulo",   44, [(TEXTO, "MEZCLA"), (HUECO,), (TAPA, "×", None)]),
-   ("bancos", FILA, [(TAPA, "A", None), (TAPA, "B", None), (TAPA, "C", None),
-                     (TAPA, "D", None)]),
- ] + [("canal %d" % i, 44, [(MANDO, "fader"), (MANDO, "pan"),
-                            (TAPA, "M", None), (TAPA, "S", None)])
-      for i in range (1, 9)] + [
-   ("master", FILA, [(MANDO, "MASTER"), (TAPA, "SIN SOLO", "sinsolo")]),
- ], "72 controles en 20 filas, el doble que ninguna otra pantalla. M y S son "
-    "32 de esas 72 tapas."),
-
- ("mix-a", "MEZCLA — (a) el mute por toque largo", 412, 915, 700, [
-   ("titulo",   44, [(TEXTO, "MEZCLA"), (HUECO,), (TAPA, "×", None)]),
-   ("bancos", FILA, [(TAPA, "A", None), (TAPA, "B", None), (TAPA, "C", None),
-                     (TAPA, "D", None)]),
- ] + [("canal %d" % i, 44, [(MANDO, "fader"), (MANDO, "pan")])
-      for i in range (1, 9)] + [
-   ("master", FILA, [(MANDO, "MASTER"), (TAPA, "SIN SOLO", "sinsolo")]),
- ], "Sin M y S el canal pasa de cuatro cosas a dos, y el fader se lleva el "
-    "ancho que tenian. El gesto ya existe en esta app: mantener un pad abre su "
-    "ficha. Lo que se pierde es VER de un vistazo que esta silenciado, asi que "
-    "el canal tendria que decirlo por color."),
+#  LAS TRES QUE SE CAYERON DE LA PRIMERA RONDA, con su motivo. Vale mas esto
+#  que las maquetas que se quedaron: una propuesta para una pantalla que no
+#  tiene ningun defecto medido es ruido con dibujo.
+CAIDAS = [
+  ("MEZCLA", "72 controles en 20 filas, que es el numero mas grande de la app "
+   "y NO es un defecto: en el desglose su columna de minimos dice «-». Cero "
+   "controles bajo el dedo, titulo, cruz, y dentro de un Viewport. Una mesa de "
+   "dieciseis canales es eso. Y la propuesta era esconder MUTE y SOLO -lo que "
+   "mas se toca mezclando- detras de un toque largo, o sea un gesto invisible "
+   "para un estado que hay que ver de un vistazo."),
+  ("EL PAD · SONIDO y RECORTE", "«escribe sonido y no tiene PLAY a mano» era "
+   "una regla MIA -yo elegi que fichas entraban en esa lista- y no una medida. "
+   "Comprobado en el codigo: OIR dispara por `postNoteOn`, y `Voice::start` lee "
+   "`padStart`, asi que OIR YA suena el recorte. La herramienta para oir lo que "
+   "estas recortando ya esta en esa ficha."),
+  ("EL INSTRUMENTO", "Lo mismo: el teclado de la ficha suena al tocarlo y elige "
+   "la nota, que es mas de lo que da un PLAY. Lo que quedaba era «oirlo con el "
+   "patron rodando», que es un deseo y no un defecto medido."),
 ]
 
 
@@ -256,6 +213,13 @@ def dibuja (clave, titulo, W, H, pedido, filas, nota, piel=0):
     aire  = SM * (len (filas) - 1)
     nresto = sum (1 for f in filas if f[1] == "resto")
     resto = (dh - fijo - aire) // max (1, nresto)
+
+    #  UN RESTO NEGATIVO ES QUE NO CABE, y la comprobacion de abajo NO lo ve:
+    #  una fila de alto negativo no hace avanzar la `y`, asi que `y` acaba
+    #  DENTRO de la tarjeta y el dibujante daba «0 avisos» para dos propuestas
+    #  que se pasaban en 23 px. Lo cazaron los numeros de la tabla y no la
+    #  regla, que es exactamente lo que esta regla existe para que no pase.
+    desborde = fijo + aire - dh
 
     p = ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" width="%d" '
          'height="%d" font-family="Oswald, Arial Narrow, sans-serif">' % (W, H, W, H)]
@@ -274,7 +238,9 @@ def dibuja (clave, titulo, W, H, pedido, filas, nota, piel=0):
     p.append ('<rect x="%d" y="%d" width="%d" height="%d" rx="10" fill="%s" stroke="%s" '
               'stroke-width="1.5"/>' % (cx, cy, cw, ch, C["panel"], C["plateEdge"]))
 
-    avisos, y = [], dy
+    avisos, y = ([] if desborde <= 0 else
+                 ["las filas fijas se pasan en %d px de la tarjeta (%d pedidos, %d hay)"
+                  % (desborde, fijo + aire, dh)]), dy
     for nombre, alto, cosas in filas:
         h = resto if alto == "resto" else alto
         anchos = [1.0] * len (cosas)
@@ -394,20 +360,19 @@ def contraste():
 #  Que maquetas son de la misma pantalla, para poder ponerlas al lado. El
 #  orden es hoy primero: una propuesta sin el "antes" al lado no se puede
 #  juzgar, que es de lo que iba todo esto.
+#  El "hoy" NO es una maqueta mia: es el plano de verdad, dibujado del volcado
+#  por Tests/planos.py. Mockear tambien el antes es como se cuela un antes peor
+#  de lo que es, y ese es el error mas facil de cometer en un documento cuyo
+#  trabajo entero es comparar.
 GRUPOS = [
-  ("EL PAD · RECORTE", ["pad-hoy", "pad-a", "pad-b"],
-   "Escribe sonido -recorta una muestra- y no tiene PLAY a mano. El de la cara "
-   "queda debajo de la tarjeta y tocar ahi la CIERRA."),
-  ("SEC · PATRON", ["paso-hoy", "paso-a"],
-   "Lo mismo, y ademas en 280 px EUCLIDES y la CADENA se caen por el tope."),
-  ("CANCION", ["song-hoy", "song-b", "song-c"],
-   "Dos tapas dicen CANCION con el mismo dibujo: la que abre la ficha y la que "
-   "cambia lo que toca PLAY."),
-  ("EL INSTRUMENTO", ["vst-hoy", "vst-a"],
-   "El teclado suena al tocarlo, pero oir la nota con el patron rodando obliga "
-   "a cerrar."),
-  ("MEZCLA", ["mix-hoy", "mix-a"],
-   "72 controles en 20 filas, el doble que ninguna otra. M y S son 32 de ellos."),
+  ("SEC · PATRON — en 280x653", "/tmp/hoy-paso-280.svg", ["paso-a", "paso-b", "paso-c"],
+   "A 412 esta ficha tiene diez filas y la CADENA son tres de ellas -1..8 mas "
+   "QUITAR CADENA-. A 280 la tarjeta da 485 px y esas tres se caen ENTERAS: "
+   "medido, nueve controles que desaparecen. No encogen: no estan."),
+  ("CANCION — en 412x915", "/tmp/hoy-song-412.svg", ["song-a", "song-b", "song-c"],
+   "Dos tapas dicen CANCION con el mismo dibujo: `songButton`, que abre esta "
+   "ficha, y la tapa de modo, que cambia lo que toca PLAY. En ingles se separan "
+   "-SONG y SONG MODE- asi que el choque es solo de la compilacion espanola."),
 ]
 
 CSS = """<meta charset="utf-8">
@@ -450,23 +415,38 @@ figure.hoy figcaption{color:var(--apagado)}
  padding:14px 16px;font-size:13.5px;color:var(--apagado)}
 .regla b{color:var(--tinta)}
 code{font-family:"JetBrains Mono",monospace;font-size:12.5px}
+/*  Las cotas viven dentro del plano de HOY -las mete Tests/planos.py- y aqui
+    estorban: lo que se compara es la disposicion, no las medidas de cada
+    control. Se apagan igual que en el informe.                             */
+.cotas{display:none}
 </style>"""
 
 
 def documento (hechas):
     doc = [CSS, '<div class="hoja"><header class="portada">',
-      '<h1>Maquetas: cinco pantallas, dibujadas antes de tocarlas</h1>',
-      '<p class="sub">Cada propuesta al lado de la pantalla de hoy, dibujada con el mismo '
-      'pincel, la misma paleta y los mismos iconos que el plano de la app &mdash; una maqueta '
-      'dibujada con otro lapiz siempre parece mejor que la pantalla de verdad. El dibujante '
-      'hace la cuenta de alturas y se niega a dibujar lo que no cabe: no hay ninguna propuesta '
-      'aqui cuyo coste no este medido.</p></header>']
+      '<h1>Maquetas, segunda vuelta</h1>',
+      '<p class="sub">La primera ronda tenia cinco pantallas y tres no tenian ningun defecto '
+      'medido: estan abajo, con el motivo. Y las siete propuestas eran la misma idea siete '
+      'veces &mdash; donde pongo PLAY. Quedan las DOS que si tienen un defecto contado, con tres '
+      'ideas de clases distintas cada una: cambiar de sitio, cambiar de control, o quitar la '
+      'funcion de aqui porque ya vive en otro lado. El &laquo;hoy&raquo; es el plano de verdad, '
+      'dibujado del volcado.</p></header>']
 
-    for titulo, claves, porque in GRUPOS:
+    for titulo, hoyf, claves, porque in GRUPOS:
         doc.append ('<section><h2>%s</h2><p class="porque">%s</p><div class="par">' % (esc (titulo), esc (porque)))
+        try:
+            with open (hoyf, encoding="utf8") as fh:
+                doc.append ('<figure class="hoy"><div class="lienzo">%s</div>'
+                            '<figcaption>hoy</figcaption>'
+                            '<span class="coste">medido, no maquetado</span>'
+                            '<p class="nota">Dibujado del volcado por Tests/planos.py: '
+                            'esto es lo que la app hace hoy, no una version mia de lo que '
+                            'hace.</p></figure>' % fh.read())
+        except OSError:
+            pass
         for k in claves:
             svg, nombre, nota, avisos, cuenta = hechas[k]
-            hoy = k.endswith ("-hoy")
+            hoy = False
             doc.append (
               '<figure class="%s"><div class="lienzo">%s</div>'
               '<figcaption>%s</figcaption>'
@@ -478,6 +458,14 @@ def documento (hechas):
                  esc (nota),
                  ('<p class="avisos">%s</p>' % esc ("; ".join (avisos))) if avisos else ""))
         doc.append ('</div></section>')
+
+    doc.append ('<section><h2>Las tres que se cayeron</h2>'
+      '<p class="porque">De la primera ronda, y esto vale mas que las maquetas que '
+      'se quedaron: una propuesta para una pantalla que no tiene ningun defecto '
+      'medido es ruido con dibujo.</p>')
+    for nombre, motivo in CAIDAS:
+        doc.append ('<div class="regla"><b>%s</b><br>%s</div>' % (esc (nombre), esc (motivo)))
+    doc.append ('</section>')
 
     doc.append (
       '<div class="regla"><b>Lo que el dibujante NO deja pasar</b>, y por que se puede creer: '
