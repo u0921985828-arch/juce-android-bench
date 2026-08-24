@@ -522,4 +522,9 @@ def main():
     print("expo: %d corridas, %d TOUCH conocidos, cero en las demas reglas" % (runs, by.get("TOUCH", 0)))
     return 0
 
-sys.exit (main())
+#  Con guarda, que sin ella IMPORTAR este fichero corre el banco entero. La
+#  lista de pantallas vive aqui y Tests/planos.py la lee de aqui -escrita dos
+#  veces se queda corta, que es como plano.py se dejo doce claves atras-, asi
+#  que un `from expo import SHEETS` lanzaba las 812 corridas y se colgaba.
+if __name__ == "__main__":
+    sys.exit (main())

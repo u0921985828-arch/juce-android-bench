@@ -367,6 +367,18 @@ namespace UiAudit
                      << ",\"icoH\":" << rep.icono.getHeight();
             else if ((int) tb->getProperties().getWithDefault ("icono", 0) != 0)
                 line << ",\"icono\":\"\",\"icoW\":0,\"icoH\":0";
+
+            //  Y SI ESA TAPA NO LLEVA DIBUJO A PROPOSITO.
+            //
+            //  `Tests/planos.py` mide las filas donde unas tapas llevan dibujo
+            //  y otras no, y la primera version llevaba las excepciones en una
+            //  lista de ROTULOS en espanol: "1 OCTAVA", "PAD -". Eso es una
+            //  prueba que solo sabe medir una de las cuatro compilaciones -en
+            //  ingles el mismo boton dice "1 OCTAVE" y la excepcion deja de
+            //  encajar-, o sea la clase de banco que da verde por no reconocer
+            //  lo que mira. Lo dice la app, que es quien lo sabe.
+            if ((int) tb->getProperties().getWithDefault ("valor", 0) != 0)
+                line << ",\"valor\":1";
         }
 
         line << "}";

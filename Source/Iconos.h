@@ -65,6 +65,29 @@ namespace Iconos
         insCampana, insMetales, insLead, insCoro, insGuitarra, insMazo,
         insClav, insFlauta, insArpa,
         midi, medir, altavoz, mano, momentaneo, niveles,
+        //  --- LOS SEIS QUE FALTABAN, y por que faltaban ------------------
+        //
+        //  No se eligieron mirando: salieron de `Tests/planos.py`, que dibuja
+        //  las 32 pantallas con las coordenadas de verdad y agrupa las tapas
+        //  por PADRE y por banda de y -o sea por FILA-. Una fila con unas
+        //  cuantas dibujadas y otras no no se lee como "aqui no cabia", se lee
+        //  como una tapa a la que le falta algo, que es exactamente la regla
+        //  que ya obligo a `filaDeIconos` a decidir la fila entera de golpe.
+        //  Cinco filas tenian ese hueco y ninguna de las seis reglas del banco
+        //  podia verlo: un hueco de dibujo se maqueta perfecto.
+        //
+        //    ASPECTO   junto a AUDIO y MIDI, en las pestanas de AJUSTES
+        //    REV       junto a BUCLE, en el recorte del pad
+        //    QUITAR RUIDO  la misma fila
+        //    SIN SOLO  junto a RACK, en la mesa
+        //    WAV       junto a MASTER y PISTAS, en EXPORTAR
+        //
+        //  Y `mandar`/`recibir` no son un hueco sino una fila ENTERA sin un
+        //  solo dibujo -la que la persona senalo-. Son un par de opuestos,
+        //  como acortar/alargar, asi que no pueden ser el mismo dibujo con la
+        //  flecha girada: la bandeja de MANDAR esta hueca y la de RECIBIR
+        //  llena, que es lo que separa un espejo de una copia.
+        aspecto, reves, ruido, sinsolo, comprimir, mandar, recibir,
         kNum
     };
 
@@ -113,6 +136,10 @@ namespace Iconos
             case Id::insCoro: return "insCoro";        case Id::insGuitarra: return "insGuitarra";
             case Id::insMazo: return "insMazo";        case Id::insClav: return "insClav";
             case Id::insFlauta: return "insFlauta";    case Id::insArpa: return "insArpa";
+            case Id::aspecto: return "aspecto";        case Id::reves: return "reves";
+            case Id::ruido: return "ruido";            case Id::sinsolo: return "sinsolo";
+            case Id::comprimir: return "comprimir";    case Id::mandar: return "mandar";
+            case Id::recibir: return "recibir";
             case Id::ninguno:
             case Id::kNum:
             default: return "ninguno";
@@ -820,6 +847,110 @@ namespace Iconos
                     R.addRoundedRectangle (2.0f + (float) i * 5.4f,
                                            19.5f - (float) (i + 1) * 4.2f,
                                            4.2f, (float) (i + 1) * 4.2f, 0.8f);
+                break;
+
+            // --- LOS SEIS QUE TAPABAN UN HUECO EN SU FILA ----------------
+
+            //  ASPECTO: el circulo mitad lleno, que es como se dibuja "claro o
+            //  oscuro" en cualquier aparato. La pagina son las cuatro carcasas
+            //  y los cuatro idiomas, o sea COMO SE VE la maquina, y esa es la
+            //  mitad que se puede dibujar. Un pincel diria "pintar", que es
+            //  otra cosa, y una paleta de cuatro colores diria "color" en un
+            //  chasis que es acromatico a proposito.
+            //
+            //  Y no es un anillo con algo dentro: `rec` ya es un anillo. Lo
+            //  que separa a los dos es que aqui la mitad esta MACIZA, que es
+            //  justo lo que la prueba de pares mide -que parte de la tinta es
+            //  distinta- y no el contorno, que en los dos es el mismo circulo.
+            case Id::aspecto:
+                L.addEllipse (2.5f, 2.5f, 19.0f, 19.0f);
+                R.addPieSegment (2.5f, 2.5f, 19.0f, 19.0f,
+                                 juce::MathConstants<float>::pi,
+                                 juce::MathConstants<float>::twoPi, 0.0f);
+                break;
+
+            //  REV: la muestra al reves. Una cuna que CRECE hacia la derecha
+            //  -o sea el golpe al final en vez de al principio, que es
+            //  exactamente lo que suena- con la flecha del tiempo apuntando
+            //  hacia atras debajo.
+            //
+            //  Se probo antes la flecha curva de dar la vuelta y sale a 0.19
+            //  de `deshacer`, que es su mismo arco: dos iconos que solo se
+            //  diferencian en el lado de la punta son el mismo dibujo. La cuna
+            //  no se parece a nada de la fila porque no es una flecha.
+            case Id::reves:
+                R.startNewSubPath (3.0f, 13.5f);
+                R.lineTo (20.0f, 2.5f); R.lineTo (20.0f, 13.5f);
+                R.closeSubPath();
+                linea (L, 20.0f, 18.5f, 6.5f, 18.5f);
+                punta (R, 3.0f, 18.5f, -1.0f, 0.0f, 3.6f);
+                break;
+
+            //  QUITAR RUIDO: el siseo a la izquierda y la senal limpia a la
+            //  derecha, con el corte en medio. Es la prueba dibujada -medio
+            //  segundo de siseo y medio de siseo con un tono encima- y ademas
+            //  dice las DOS mitades que esa medida exige: baja el suelo Y deja
+            //  el tono. Un tachon sobre una onda diria "quitar la onda".
+            case Id::ruido:
+            {
+                const float z[9] = { 4.0f, 9.5f, 5.5f, 10.5f, 4.5f, 9.0f, 6.0f, 10.0f, 5.0f };
+                for (int i = 0; i < 8; ++i)
+                    linea (L, 2.0f + (float) i * 1.15f, z[i],
+                           2.0f + (float) (i + 1) * 1.15f, z[i + 1]);
+                linea (L, 11.8f, 2.5f, 11.8f, 21.5f);
+                linea (L, 13.5f, 12.0f, 21.5f, 12.0f);
+                R.addRectangle (15.5f, 6.5f, 1.6f, 11.0f);
+                break;
+            }
+
+            //  SIN SOLO: los cascos tachados. SOLO es escuchar UNO, asi que
+            //  quitarlo es dejar de escuchar uno solo -no es "silencio", que
+            //  es lo que diria un altavoz tachado y ademas es el mute de al
+            //  lado-. La diadema es un arco y las dos orejas dos manchas: no
+            //  se parece a `altavoz`, que es un cono con dos ondas.
+            case Id::sinsolo:
+                L.addCentredArc (12.0f, 12.5f, 8.0f, 8.0f, 0.0f,
+                                 -juce::MathConstants<float>::halfPi * 1.55f,
+                                 juce::MathConstants<float>::halfPi * 1.55f, true);
+                R.addRoundedRectangle (2.6f, 12.0f, 4.2f, 7.5f, 1.6f);
+                R.addRoundedRectangle (17.2f, 12.0f, 4.2f, 7.5f, 1.6f);
+                linea (L, 3.0f, 21.0f, 21.0f, 3.0f);
+                break;
+
+            //  WAV / OGG: lo que pesa el fichero. Dos flechas apretando una
+            //  caja, que es lo que hace un codec y lo que esa tapa cambia -de
+            //  1 152 104 bytes a 58 588, veinte veces-. Una nota o una onda
+            //  diria "audio", que es lo que ya dicen las dos tapas de al lado.
+            case Id::comprimir:
+                L.addRectangle (8.5f, 5.0f, 7.0f, 14.0f);
+                linea (L, 2.0f, 12.0f, 5.0f, 12.0f);
+                punta (R, 7.0f, 12.0f, 1.0f, 0.0f, 3.2f);
+                linea (L, 22.0f, 12.0f, 19.0f, 12.0f);
+                punta (R, 17.0f, 12.0f, -1.0f, 0.0f, 3.2f);
+                break;
+
+            //  MANDAR y RECIBIR, que son un par de opuestos y por tanto el
+            //  sitio donde es mas facil dibujar dos veces lo mismo: la misma
+            //  flecha girada da 0.0 en la prueba de pares -es literalmente el
+            //  mismo dibujo- y ni siquiera se lee, porque a 13 px de alto el
+            //  ojo ve "flecha" y no "hacia donde".
+            //
+            //  Lo que los separa no es el sentido de la flecha sino la
+            //  BANDEJA: la de MANDAR esta hueca -lo que habia ya se fue- y la
+            //  de RECIBIR esta llena. La flecha ayuda; la bandeja decide.
+            case Id::mandar:
+                L.startNewSubPath (3.0f, 13.0f);
+                L.lineTo (3.0f, 20.5f); L.lineTo (21.0f, 20.5f); L.lineTo (21.0f, 13.0f);
+                linea (L, 12.0f, 16.5f, 12.0f, 6.5f);
+                punta (R, 12.0f, 2.5f, 0.0f, -1.0f, 4.2f);
+                break;
+
+            case Id::recibir:
+                R.startNewSubPath (3.0f, 13.0f);
+                R.lineTo (3.0f, 20.5f); R.lineTo (21.0f, 20.5f); R.lineTo (21.0f, 13.0f);
+                R.closeSubPath();
+                linea (L, 12.0f, 2.5f, 12.0f, 8.5f);
+                punta (R, 12.0f, 12.5f, 0.0f, 1.0f, 4.2f);
                 break;
 
             // --- LOS DIECISEIS INSTRUMENTOS ------------------------------

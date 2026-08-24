@@ -3125,10 +3125,46 @@ void MainComponent::ponIconos()
         { &measureButton, Iconos::Id::medir },    { &testButton, Iconos::Id::altavoz },
         { &tourButton, Iconos::Id::mano },
 
+        //  LOS CINCO HUECOS DE FILA, que salieron de Tests/planos.py y no de
+        //  mirar la app: una fila con unas tapas dibujadas y otras no se lee
+        //  como una tapa a la que le falta algo. Ver el bloque de Iconos.h.
+        //
+        //  ASPECTO iba en la fila de arriba y se quedo fuera de la tabla el
+        //  dia que se escribio: AUDIO y MIDI llevaban dibujo y la tercera
+        //  pestana de la MISMA fila no. Es la ficha que contiene el selector
+        //  de carcasa, o sea la pagina de la que va el dibujo.
+        { &pageAspBtn, Iconos::Id::aspecto },
+        { &reverseButton, Iconos::Id::reves },    { &denoiseButton, Iconos::Id::ruido },
+        { &mixClearSolo, Iconos::Id::sinsolo },   { &exportFmtBtn, Iconos::Id::comprimir },
+
+        //  Y la fila que no tenia NINGUNO, que es la que la persona senalo.
+        { &midiOutBtn, Iconos::Id::mandar },      { &midiInBtn, Iconos::Id::recibir },
     };
 
     for (const auto& p : tabla)
         p.tapa->getProperties().set ("icono", (int) p.id);
+
+    //  LAS QUE NO LLEVAN DIBUJO A PROPOSITO, dicho aqui y no deducido fuera.
+    //
+    //  Es la otra mitad de la tabla de arriba: sin ella, "esta tapa no tiene
+    //  dibujo" y "a esta tapa se le olvido el dibujo" son la misma linea en el
+    //  volcado, y la regla de la fila (Tests/planos.py) no puede distinguirlas.
+    //  Se marcan por lo que SON y no por lo que dicen -el rotulo cambia en las
+    //  otras tres compilaciones y una excepcion escrita en espanol deja de
+    //  encajar en ingles sin que nadie se entere-.
+    //
+    //  Dos clases, y las dos por la misma razon de fondo -el rotulo ya hace el
+    //  trabajo que haria el dibujo-:
+    //
+    //    el SIGNO de un par que sube y baja, que es un dibujo escrito;
+    //    y el rotulo que dice el ESTADO en vez de la accion (pianoVerBtn),
+    //    donde ademas no hay verbo que dibujar.
+    for (juce::TextButton* b : { &pianoPadDownBtn, &pianoPadUpBtn,
+                                 &pianoOctDownBtn, &pianoOctUpBtn, &pianoVerBtn,
+                                 &instPackDownBtn, &instPackUpBtn,
+                                 &vstPreDown, &vstPreUp, &vstOctDown, &vstOctUp,
+                                 &zoomOutButton, &zoomInButton, &zoomFitButton })
+        b->getProperties().set ("valor", 1);
 
     //  LOS SEIS EFECTOS, por su orden en la fila. Es la unica fila de la app
     //  cuyos rotulos son ABREVIATURAS -FLT, HPF, DRV...- y tres letras no se
@@ -3137,8 +3173,17 @@ void MainComponent::ponIconos()
     {
         static const Iconos::Id kFx[] = { Iconos::Id::flt, Iconos::Id::hpf, Iconos::Id::drv,
                                           Iconos::Id::dly, Iconos::Id::bit, Iconos::Id::rev };
-        for (int f = 0; f < fxButtons.size() && f < (int) (sizeof (kFx) / sizeof (kFx[0])); ++f)
+        const int n = (int) (sizeof (kFx) / sizeof (kFx[0]));
+        for (int f = 0; f < fxButtons.size() && f < n; ++f)
             fxButtons[f]->getProperties().set ("icono", (int) kFx[f]);
+
+        //  Y LOS MISMOS SEIS EN EL XY, que se quedaron sin dibujo por escribir
+        //  la fila una sola vez. Son las MISMAS abreviaturas -FLT, HPF, DRV- y
+        //  la razon entera por la que la fila de la cara lleva dibujo vale
+        //  igual aqui: tres letras no se traducen. Que la de la cara estuviera
+        //  dibujada y la del XY no es la misma tapa contando dos historias.
+        for (int f = 0; f < xyFxButtons.size() && f < n; ++f)
+            xyFxButtons[f]->getProperties().set ("icono", (int) kFx[f]);
     }
 
     //  Las dos de transporte nacen paradas; a partir de ahi las mueve

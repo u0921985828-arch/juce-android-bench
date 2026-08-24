@@ -46,3 +46,14 @@ skills-lock.json
 # El .pyc que deja importar un banco desde otro
 __pycache__/
 *.pyc
+
+#  Los planos de las 32 pantallas, por lo mismo que /store/: la fuente es el
+#  script (Tests/planos.py) y la salida son 2.7 MB de PNG que se rehacen en
+#  dos minutos. Un dibujo commiteado se queda viejo sin que nadie se entere.
+/planos/
+
+#  El andamio que deja un banco al correr con ZATI_KIT/ZATI_EXPORT: escribe
+#  relativo al cwd y sale una carpeta con el nombre del argumento -"1"- llena
+#  de WAV de referencia. 272 ficheros se colaron en un commit por un `git add
+#  -A`; un banco que deja basura en el arbol acaba en el repositorio.
+/1/
