@@ -57,3 +57,7 @@ __pycache__/
 #  de WAV de referencia. 272 ficheros se colaron en un commit por un `git add
 #  -A`; un banco que deja basura en el arbol acaba en el repositorio.
 /1/
+
+#  El desglose: la salida se rehace en cinco minutos, la fuente son los
+#  scripts (Tests/desglose.py, Tests/informe.py). Igual que /planos/.
+/desglose/
