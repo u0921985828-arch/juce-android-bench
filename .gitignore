@@ -61,3 +61,6 @@ __pycache__/
 #  El desglose: la salida se rehace en cinco minutos, la fuente son los
 #  scripts (Tests/desglose.py, Tests/informe.py). Igual que /planos/.
 /desglose/
+
+#  Las maquetas: la salida se rehace en un minuto, la fuente es el script.
+/maquetas/
