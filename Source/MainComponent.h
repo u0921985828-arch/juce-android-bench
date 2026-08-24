@@ -243,8 +243,32 @@ private:
     //  los dieciseis pads siguen debajo, visibles y tocables.
     struct XyPanel : public juce::Component
     {
+        //  SU NUMERO DE CAPA, igual que una ficha. Ver UiAudit::capaActual:
+        //  un rotulo pintado y un control solo se pisan de verdad si viven en
+        //  la misma superficie, y este panel pinta su PROPIA tarjeta opaca
+        //  encima de la cara (ver paintXySheetContent) - lo que queda debajo
+        //  no se ve. No lo tenia porque no es un Sheet, asi que sus seis
+        //  efectos y su MOMENTANEO se comparaban contra la maquina entera.
+        //
+        //  Estaba ahi desde el primer dia y no se noto hasta que la cabecera
+        //  paso a decir el nombre entero: "ZATI" mide 47 px y no llegaba a
+        //  MOMENTANEO, "ZATI SAMPLER" mide 152 y si - 13 hallazgos de TAPADO
+        //  en las 896 corridas, todos la misma pareja. Un solape debajo de una
+        //  tarjeta opaca es exactamente lo que la regla dice que no cuenta.
+        XyPanel() { getProperties().set ("capa", UiAudit::siguienteCapa++); }
+
         std::function<void (juce::Graphics&)> paintContent;
-        void paint (juce::Graphics& g) override { if (paintContent) paintContent (g); }
+        void paint (juce::Graphics& g) override
+        {
+            //  Y lo que ESTE panel pinte queda apuntado como suyo, no como de
+            //  la cara: sin esto su titulo se quedaria en la capa 0 y dejaria
+            //  de compararse con su propio MOMENTANEO, que es justo el solape
+            //  que `antesDe` protege ahi -"XY - DLY - EN ESPERA" en arabe
+            //  pasaba por debajo-. Quitar un falso positivo no puede costar
+            //  una comprobacion de verdad.
+            UiAudit::capaActual = (int) getProperties()["capa"];
+            if (paintContent) paintContent (g);
+        }
     };
     XyPanel xyPanel;
     juce::Rectangle<int> faceTopArea;   // desde donde puede ocupar el panel

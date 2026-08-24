@@ -4498,15 +4498,64 @@ void MainComponent::paint (juce::Graphics& g)
             g.fillPath (m);
         }
 
+        const auto fuenteTitulo = ZatiColours::displayFont (Metrics::fTitle).withExtraKerningFactor (0.16f);
+        const int xTitulo = h.getX() + ladoMarca + Metrics::sm;
+        auto anchoDe = [&fuenteTitulo] (const char* t)
+        {
+            return (int) std::ceil (juce::GlyphArrangement::getStringWidth (fuenteTitulo, t));
+        };
+
+        //  EL NOMBRE ENTERO, Y LA ESCALERA DE SIEMPRE SI NO CABE.
+        //
+        //  La cabecera decia "ZATI" a secas con el argumento de que ahi es la
+        //  marca serigrafiada en el chasis y el nombre completo se comeria la
+        //  fila. Lo segundo era la parte medible, y medido no era verdad: la
+        //  palabra corta mide 47 px y la larga 152, y las siete pantallas
+        //  tienen sitio para las dos - la mas estrecha que nadie fabrica,
+        //  280x653, deja 172 y sobran veinte.
+        //
+        //  Donde no quepa se cae a la corta, que es la misma pregunta que ya
+        //  deciden BANCO, PADS, la tira del paso y las seis pestanas, hecha
+        //  con el TEXTO puesto y no con el ancho de la ventana. Y se ha visto
+        //  caer, que es lo que separa una escalera de una linea que imprime
+        //  OK: el punto exacto es una ventana de 260 px -W - 108 >= 152- y
+        //  medido, a 240 sale "ZATI".
+        //
+        //  El minimo que hay que dejarle a la linea del proyecto es el suyo,
+        //  el mismo 40 con el que se apaga ocho lineas mas abajo: sin contarlo
+        //  aqui, el nombre largo cabria empujando fuera lo unico de esta banda
+        //  que DICE algo que cambia, y esa no es una eleccion que pueda tomar
+        //  el rotulo que siempre pone lo mismo. Lo que si cuesta el nombre
+        //  largo es que en 280x653 a esa linea le quedan 60 px en vez de 160
+        //  y se elide - "SIN GUARD..." -, que es para lo que esa linea lleva
+        //  la elipsis puesta desde que existe: un nombre de proyecto no tiene
+        //  largo con el que contar y cortado a media letra se lee como un
+        //  fallo, con puntos suspensivos como un nombre largo.
+        const int paraNombre = h.getRight() - xTitulo - Metrics::md - 40;
+        const char* nombre = anchoDe ("ZATI SAMPLER") <= paraNombre ? "ZATI SAMPLER" : "ZATI";
+
         //  Y EL ANCHO DEL NOMBRE SE MIDE, no se supone. Aqui habia un 140 y
         //  ocho lineas mas abajo un 138 para lo que iba detras: dos numeros a
         //  mano para el mismo borde, escritos a ojo con la fuente de aquel dia
         //  - y ahora ademas con una marca delante que los mueve.
-        const auto fuenteTitulo = ZatiColours::displayFont (Metrics::fTitle).withExtraKerningFactor (0.16f);
-        const int xTitulo = h.getX() + ladoMarca + Metrics::sm;
-        const int wTitulo = (int) std::ceil (juce::GlyphArrangement::getStringWidth (fuenteTitulo, "ZATI"));
+        const int wTitulo = anchoDe (nombre);
         g.setFont (fuenteTitulo);
-        g.drawText ("ZATI", xTitulo, h.getY(), wTitulo + 2, h.getHeight(), juce::Justification::centredLeft);
+        //  APUNTADO, que es lo que no estaba. Esta banda se dibuja con
+        //  drawText a pelo: no es un componente, asi que las seis reglas de
+        //  expo.py no la ven -solo miran filas con `path`- y no pasaba por
+        //  pintaTitulo, asi que tampoco salia en el volcado de rotulos. El
+        //  nombre de la app era lo primero que se lee de la maquina y lo unico
+        //  que ninguna prueba miraba: si se cortase, no fallaria, se
+        //  publicaria.
+        //
+        //  Se llama a UiAudit::rotulo directo y no via pintaTitulo porque esa
+        //  puerta dibuja con Lang::start() y con elipsis, y esta banda no hace
+        //  ni lo uno ni lo otro: una marca no se refleja en arabe -el dibujo
+        //  del pad y la palabra son una sola cosa y van juntos a la izquierda-
+        //  y no se elide, se cae a la palabra corta.
+        const auto cajaTitulo = juce::Rectangle<int> (xTitulo, h.getY(), wTitulo + 2, h.getHeight());
+        UiAudit::rotulo (cajaTitulo, nombre, "titulo");
+        g.drawText (nombre, cajaTitulo, juce::Justification::centredLeft);
 
         rule ((float) h.getX(), (float) h.getRight(), (float) h.getBottom() + 2.0f, 0.22f);
 
