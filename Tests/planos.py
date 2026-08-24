@@ -100,6 +100,127 @@ COLOR = {
 }
 
 
+#  LA CABECERA DE LA PAGINA, entera y aparte.
+#
+#  Se escribe con comillas triples y sin formateo: el CSS lleva `100%` y un
+#  `%` de formateo en esta cadena lo parte por la mitad. Y los colores se
+#  declaran como fichas en `:root` -nunca dentro del bloque de tema-, o el
+#  visor que no marca nada se queda con la tinta de un tema sobre el fondo del
+#  otro. El plano SI se queda oscuro en los dos: es la app, y la app es oscura.
+ENCABEZADO = """<meta charset="utf-8">
+<title>Planos de ZATI</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=Barlow:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --papel:#eceae4; --tarjeta:#f6f5f1; --filo:#d3d0c7;
+  --tinta:#1b2224; --apagado:#5f6b6d;
+  --plano:#0e1517; --planofilo:#243237;
+  --azul:#1c6a85; --ambar:#9a6b06; --rojo:#a8352f;
+  --rejilla:rgba(28,106,133,.10);
+}
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
+  --papel:#0b1113; --tarjeta:#121a1d; --filo:#222f34;
+  --tinta:#dde7e8; --apagado:#8b9fa2;
+  --plano:#0e1517; --planofilo:#22333a;
+  --azul:#5fb4d1; --ambar:#f0b429; --rojo:#e07070;
+  --rejilla:rgba(95,180,209,.07);
+}}
+:root[data-theme="dark"]{
+  --papel:#0b1113; --tarjeta:#121a1d; --filo:#222f34;
+  --tinta:#dde7e8; --apagado:#8b9fa2;
+  --plano:#0e1517; --planofilo:#22333a;
+  --azul:#5fb4d1; --ambar:#f0b429; --rojo:#e07070;
+  --rejilla:rgba(95,180,209,.07);
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--papel); color:var(--tinta);
+  font-family:"Barlow",system-ui,-apple-system,sans-serif; font-size:15px; line-height:1.55;
+  background-image:linear-gradient(var(--rejilla) 1px,transparent 1px),
+                   linear-gradient(90deg,var(--rejilla) 1px,transparent 1px);
+  background-size:32px 32px;
+}
+.hoja{display:grid; grid-template-columns:236px minmax(0,1fr); gap:36px;
+      max-width:1320px; margin:0 auto; padding:40px 28px 96px}
+@media (max-width:900px){ .hoja{grid-template-columns:minmax(0,1fr); gap:20px; padding:24px 16px 64px} }
+
+/*  LA PORTADA, que es una ficha tecnica y no un heroe: lo que hay que saber
+    antes de mirar treinta y dos dibujos es de donde salen los numeros.       */
+.portada{grid-column:1/-1; border-top:2px solid var(--tinta); padding-top:14px;
+         display:flex; flex-wrap:wrap; gap:20px 40px; align-items:flex-end; justify-content:space-between}
+h1{font-family:"Barlow Condensed",sans-serif; font-weight:600; font-size:clamp(30px,5vw,46px);
+   letter-spacing:.02em; margin:0; text-wrap:balance; text-transform:uppercase}
+.sub{margin:6px 0 0; color:var(--apagado); max-width:62ch}
+.sello{font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:12px; color:var(--apagado);
+       text-align:right; line-height:1.7; font-variant-numeric:tabular-nums}
+.sello b{color:var(--tinta); font-weight:500}
+
+/*  La leyenda dice que significa cada marca del dibujo. Sin ella el plano es
+    un monton de rectangulos de colores.                                     */
+.leyenda{grid-column:1/-1; display:flex; flex-wrap:wrap; gap:8px 22px;
+         font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:12px; color:var(--apagado);
+         border:1px solid var(--filo); background:var(--tarjeta); border-radius:3px; padding:12px 16px}
+.leyenda span{display:inline-flex; align-items:center; gap:7px}
+.marca{width:11px; height:11px; border-radius:2px; flex:none}
+.m-si{background:var(--ambar)}
+.m-no{border:1.5px solid var(--rojo)}
+.m-rot{border:1.5px dashed var(--ambar)}
+.m-b{background:var(--azul)}
+
+.indice{align-self:start; position:sticky; top:24px}
+@media (max-width:900px){ .indice{position:static} }
+.indice .rot{font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:11px; letter-spacing:.14em;
+             text-transform:uppercase; color:var(--apagado); margin:0 0 8px}
+.indice ol{list-style:none; margin:0; padding:0; display:flex; flex-direction:column;
+           border-left:1px solid var(--filo)}
+.indice a{display:flex; justify-content:space-between; gap:10px; align-items:baseline;
+          padding:5px 10px; color:var(--apagado); text-decoration:none; font-size:13.5px;
+          border-left:2px solid transparent; margin-left:-1px}
+.indice a:hover,.indice a:focus-visible{color:var(--tinta); border-left-color:var(--azul);
+                                        background:var(--tarjeta); outline:none}
+.indice em{font-family:"IBM Plex Mono",ui-monospace,monospace; font-style:normal; font-size:11.5px;
+           font-variant-numeric:tabular-nums; opacity:.75; flex:none}
+
+main{display:flex; flex-direction:column; gap:44px; min-width:0}
+section{min-width:0; scroll-margin-top:20px}
+.cab{display:flex; flex-wrap:wrap; gap:8px 20px; align-items:flex-end; justify-content:space-between;
+     border-bottom:1px solid var(--filo); padding-bottom:8px; margin-bottom:16px}
+h2{font-family:"Barlow Condensed",sans-serif; font-weight:600; text-transform:uppercase;
+   letter-spacing:.05em; font-size:21px; margin:0; color:var(--tinta)}
+.ruta{margin:2px 0 0; font-size:13px; color:var(--apagado)}
+.cifras{display:flex; gap:8px; flex:none}
+.chip{font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:11px; letter-spacing:.04em;
+      padding:3px 9px; border-radius:2px; border:1px solid var(--filo); color:var(--apagado);
+      font-variant-numeric:tabular-nums; white-space:nowrap}
+.chip b{font-weight:500}
+.chip.si b{color:var(--ambar)} .chip.no b{color:var(--rojo)}
+
+.par{display:flex; gap:22px; align-items:flex-start; flex-wrap:wrap}
+figure{margin:0; display:flex; flex-direction:column; gap:7px; min-width:0; max-width:100%}
+.lienzo{background:var(--plano); border:1px solid var(--planofilo); border-radius:3px;
+        padding:6px; overflow-x:auto; max-width:100%}
+svg,img{display:block; max-width:100%; height:auto}
+figcaption{font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:11px; color:var(--apagado);
+           letter-spacing:.03em}
+a:focus-visible{outline:2px solid var(--azul); outline-offset:2px}
+@media (prefers-reduced-motion:no-preference){ .indice a{transition:color .12s,border-color .12s} }
+</style>
+<div class="hoja"><header class="portada">
+<div><h1>El plano de cada pantalla</h1>
+<p class="sub">Las treinta y dos pantallas de ZATI dibujadas a escala 1:1 con las
+coordenadas que la app imprime de si misma, no a mano y no de una captura. Al lado
+de cada plano, la foto de esa misma pantalla en otra corrida.</p></div>
+<p class="sello">ARTiFACTS · ZATI<br><b>32</b> pantallas · <b>412&times;915</b><br>SVG del volcado + PNG</p>
+</header>
+<div class="leyenda">
+<span><i class="marca m-b"></i>control que se toca</span>
+<span><i class="marca m-si"></i>tapa CON dibujo</span>
+<span><i class="marca m-no"></i>tapa con rotulo y SIN dibujo</span>
+<span><i class="marca m-rot"></i>rotulo pintado, que no es un componente</span>
+</div>"""
+
+
 def corre (clave, tam, lang, extra=None):
     """Una corrida, con HOME propio. Devuelve las lineas JSON del volcado."""
     casa = tempfile.mkdtemp (prefix="zati-plano-")
@@ -304,19 +425,13 @@ def main():
             hechos[clave] = (dibujo, png, cuenta, rotos)
 
     #  El indice, con todo dentro: se abre en el telefono sin nada al lado.
-    doc = ['<meta charset="utf-8"><title>ZATI · planos</title>',
-           '<style>body{background:#0b1010;color:#dfe8e8;font-family:system-ui,sans-serif;margin:0;padding:24px}'
-           'h1{font-size:20px;letter-spacing:.1em}h2{font-size:15px;margin:32px 0 4px;letter-spacing:.08em}'
-           'p.d{color:#8fa3a3;font-size:13px;margin:0 0 10px}'
-           '.par{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}'
-           'svg,img{max-width:100%;height:auto;border:1px solid #24343a;border-radius:4px}'
-           '.leg{color:#8fa3a3;font-size:12px;margin:12px 0 24px}'
-           'b.si{color:#f0b429}b.no{color:#e05252}</style>',
-           '<h1>ZATI · el plano de cada pantalla</h1>',
-           '<p class="d">Dibujado con las coordenadas que la app imprime, no a mano. '
-           'Cuadrado <b class="si">lleno</b> = la tapa lleva dibujo; cuadrado '
-           '<b class="no">hueco</b> = tapa con rotulo y sin dibujo. '
-           'La linea de puntos amarilla es un rotulo PINTADO, que no es un componente.</p>']
+    #
+    #  La pagina es un documento de taller y se viste como tal -mesa de dibujo,
+    #  no folleto-: el plano ya trae su propio fondo oscuro porque la app es
+    #  oscura, asi que lo que se disena aqui es el MARCO, y se disena para los
+    #  dos temas del visor, que son tres estados y no dos (claro, oscuro, y el
+    #  de por defecto que no marca nada).
+    doc = [ENCABEZADO]
 
     print ("%-11s %-34s %s" % ("clave", "pantalla", "tapas con dibujo / sin el"))
     faltan = 0
@@ -333,13 +448,35 @@ def main():
                                             "   HUECO" if rotos else ""))
         for y, con, sin in rotos:
             rotas.append ((clave or "cara", y, con, sin))
-        doc.append ('<h2>%s</h2><p class="d">%s &nbsp;·&nbsp; <b class="si">%d</b> con dibujo, '
-                    '<b class="no">%d</b> sin el</p><div class="par">%s%s</div>'
-                    % (esc (nombre), esc (comose), si, no, dibujo,
-                       ('<img src="data:image/png;base64,%s">' % png) if png else ""))
+        doc.append (
+            '<section id="s-%s"><header class="cab"><div><h2>%s</h2>'
+            '<p class="ruta">%s</p></div><div class="cifras">'
+            '<span class="chip si"><b>%d</b> con dibujo</span>'
+            '<span class="chip no"><b>%d</b> sin el</span></div></header>'
+            '<div class="par"><figure><div class="lienzo">%s</div>'
+            '<figcaption>plano · %s px, del volcado</figcaption></figure>%s</div></section>'
+            % (clave or "cara", esc (nombre), esc (comose), si, no, dibujo,
+               os.environ.get ("ZATI_PLANOS_SIZE", "412x915"),
+               ('<figure><div class="lienzo"><img alt="%s" src="data:image/png;base64,%s"></div>'
+                '<figcaption>foto · la misma pantalla</figcaption></figure>'
+                % (esc (nombre), png)) if png else ""))
+
+    #  El indice lateral se escribe al final porque necesita las cifras, y va
+    #  DELANTE en el documento: una lista de treinta y dos pantallas detras de
+    #  treinta y dos pantallas no es un indice.
+    indice = ['<nav class="indice" aria-label="las pantallas"><p class="rot">32 pantallas</p><ol>']
+    for clave in claves:
+        dibujo, _png, (si, no), _r = hechos.get (clave, (None, None, (0, 0), []))
+        if dibujo is None:
+            continue
+        nombre, _ = NOMBRES.get (clave, (clave.upper(), ""))
+        indice.append ('<li><a href="#s-%s"><span>%s</span><em>%d/%d</em></a></li>'
+                       % (clave or "cara", esc (nombre), si, si + no))
+    indice.append ('</ol></nav>')
 
     with open (os.path.join (SALIDA, "index.html"), "w", encoding="utf8") as f:
-        f.write ("\n".join (doc))
+        f.write (doc[0] + "\n" + "\n".join (indice)
+                 + '\n<main>\n' + "\n".join (doc[1:]) + "\n</main>\n</div>\n")
 
     print()
     print ("%d pantallas en %s/index.html — %d tapas con rotulo y sin dibujo"
