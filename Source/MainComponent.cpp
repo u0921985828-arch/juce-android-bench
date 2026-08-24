@@ -420,6 +420,12 @@ MainComponent::MainComponent()
             //  donde estas"- y un aviso que nadie lee es lo mismo que no
             //  ponerlo.
             paintSetTitle (g);
+            //  Y los grupos, debajo del titulo pero encima de nada: se pintan
+            //  antes que los rotulos de seccion, que van dentro. Ver
+            //  pintaPaneles - esta ficha tenia cuatro paginas de filas sueltas
+            //  con su nombre a la izquierda, y BUFER se leia como de la misma
+            //  familia que RELOJ solo porque una fila esta debajo de la otra.
+            pintaPaneles (g, setGrupos);
             if      (setPage == pageMidi)     paintMidiPage (g, midiArea);
             else if (setPage == pageAudio)    paintAudioSheetContent (g);
             else if (setPage == pageAspecto)  paintAspectoPage (g);
@@ -4679,6 +4685,13 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
                  T ("PAD %1", juce::String (sp + 1))
                 + (padName[(size_t) sp].isNotEmpty() ? "  " + dot + "  " + padName[(size_t) sp].toUpperCase() : juce::String()), "titulo", true);
 
+    //  ...y los grupos, HUNDIDOS y debajo de todo lo demas. Los titulos de
+    //  seccion con su raya ya decian donde empieza cada bloque y no donde
+    //  ACABA: en la pagina del RECORTE, "RECORTE" nombraba las cuatro asas y
+    //  tambien la fila de REV/BUCLE/RUIDO que hay debajo, que es de otra cosa.
+    //  Ver pintaPaneles.
+    pintaPaneles (g, padGrupos);
+
     {
         //  Group headers, each with a hairline running out to the right edge -
         //  the same engraved rule the machine face uses, so a sheet reads as
@@ -4893,17 +4906,16 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     //  no cuestan un pixel de alto, que en esta ficha es lo unico que no
     //  sobra - la altura de un carril de la rejilla sale de lo que quede.
     {
-        struct Bloque { int y0, y1, x, w; };
-        juce::Array<Bloque> bloques;
+        juce::Array<juce::Rectangle<int>> bloques;
 
         for (const auto& lb : seqLabelBands)
         {
             if (lb.band.isEmpty()) continue;
             //  El rotulo y el control que lleva debajo son UNA cosa.
             const int filas = juce::jmax (1, lb.filas);
-            Bloque b { lb.band.getY(),
-                       lb.band.getBottom() + filas * Metrics::hit + (filas - 1) * Metrics::halfGap,
-                       lb.band.getX(), lb.band.getWidth() };
+            const juce::Rectangle<int> b (lb.band.getX(), lb.band.getY(), lb.band.getWidth(),
+                                          lb.band.getHeight()
+                                            + filas * Metrics::hit + (filas - 1) * Metrics::halfGap);
 
             //  Se unen los de la MISMA FILA y solo esos: PATRON y LARGO
             //  comparten renglon y su banda esta partida en dos, asi que son un
@@ -4913,28 +4925,16 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
             //  pagina entera en un solo panel y no agrupaba nada.
             bool unido = false;
             for (auto& e : bloques)
-                if (std::abs (e.y0 - b.y0) < 3)
+                if (std::abs (e.getY() - b.getY()) < 3)
                 {
-                    const int der = juce::jmax (e.x + e.w, b.x + b.w);
-                    e.x  = juce::jmin (e.x, b.x);
-                    e.w  = der - e.x;
-                    e.y1 = juce::jmax (e.y1, b.y1);
+                    e = e.getUnion (b);
                     unido = true;
                     break;
                 }
             if (! unido) bloques.add (b);
         }
 
-        //  DOS pixeles de aire y no cuatro: entre grupo y grupo hay Metrics::sm,
-        //  asi que cuatro por lado los dejaba TOCANDOSE y los seis paneles de
-        //  la pagina PASO se leian como una sola losa - que es exactamente lo
-        //  que habia antes de dibujarlos. Con dos quedan cuatro de hueco.
-        g.setColour (ZatiColours::groove (0.16f));
-        for (const auto& e : bloques)
-            g.fillRoundedRectangle (juce::Rectangle<int> (e.x - Metrics::halfGap, e.y0 - 2,
-                                                          e.w + Metrics::gap,
-                                                          e.y1 - e.y0 + 4).toFloat(),
-                                    (float) Metrics::sm);
+        pintaPaneles (g, bloques);
 
         g.setColour (ZatiColours::inkDim);
         g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.20f));
@@ -4971,6 +4971,35 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
         g.setColour (ZatiColours::ink.withAlpha (0.7f));
         g.drawRect (b->getBounds(), 2);
     }
+}
+
+//  EL PANEL DE UN GRUPO. Ver la declaracion para POR QUE esta aqui fuera y no
+//  dentro del pintor del secuenciador, que es donde nacio.
+//
+//  Se separa con `groupOn` y no con `groove`, que es lo que hacia hasta ahora:
+//  `groove` es una SOMBRA y escoge su direccion con el corte de recess, y en
+//  LACA -la carcasa de fabrica- eso dejaba el panel a 5.3 de dE contra la
+//  tarjeta, por debajo del 6.0 que este proyecto le exige al hueco de una
+//  celda. Ver ZatiColours::groupOn para la cuenta entera.
+//
+//  Y la superficie es `chassisTop`, que aqui NO es una suposicion: Sheet::paint
+//  rellena la tarjeta con `chassisTop` exacto, asi que la superficie de una
+//  ficha y la de la cara son la misma. El dia que una ficha se pinte de otro
+//  color, se le pasa esa - que es la misma regla que ya costo una medida con la
+//  sombra de las tapas, escrita con la TINTA sobre un chasis oscuro.
+//
+//  DOS pixeles de aire arriba y abajo y halfGap a los lados, no cuatro por
+//  lado: entre grupo y grupo hay exactamente Metrics::sm, asi que cuatro los
+//  dejaba TOCANDOSE y los seis paneles de la pagina PASO se leian como una sola
+//  losa, que es lo mismo que se lee sin dibujar nada.
+void MainComponent::pintaPaneles (juce::Graphics& g,
+                                  const juce::Array<juce::Rectangle<int>>& grupos) const
+{
+    g.setColour (ZatiColours::groupOn (ZatiColours::chassisTop, 0.16f));
+    for (const auto& e : grupos)
+        if (! e.isEmpty())
+            g.fillRoundedRectangle (e.expanded (Metrics::halfGap, 2).toFloat(),
+                                    (float) Metrics::sm);
 }
 
 void MainComponent::Sheet::paint (juce::Graphics& g)
@@ -6073,6 +6102,19 @@ void MainComponent::resized()
         }
         inner.removeFromTop (Metrics::sm);
 
+        //  LOS GRUPOS DE ESTA FICHA. Se apuntan aqui, mientras se reparte el
+        //  alto, con las coordenadas que la maqueta acaba de dar - no se
+        //  maquetan, asi que no cuestan un pixel. `cierra` toma el borde de
+        //  arriba y cierra por donde `inner` haya llegado, que es el fondo de
+        //  lo ultimo colocado: llamarlo DESPUES del aire de separacion metia
+        //  ese aire dentro del panel y los dejaba tocandose otra vez.
+        padGrupos.clear();
+        auto cierra = [this, &inner] (int y0)
+        {
+            if (inner.getY() > y0)
+                padGrupos.add ({ inner.getX(), y0, inner.getWidth(), inner.getY() - y0 });
+        };
+
         if (padPage == padPageRig)
         {
             //  EL PAD: 3*secH + 40 (la puerta del RACK) + 8 + 40 (corte) + 8
@@ -6112,6 +6154,7 @@ void MainComponent::resized()
             //  se pueden repasar los dieciseis sin cerrar nada. Aqui queda la
             //  puerta, que ademas devuelve 86 px de alto a la pagina mas
             //  apretada de la ficha.
+            const int gEnvios = inner.getY();
             padSectionArea[0] = inner.removeFromTop (secH);   // pintado: ENVIOS
             {
                 //  Las dos puertas de este pad: a donde va -ENVIOS- y que toca
@@ -6126,6 +6169,7 @@ void MainComponent::resized()
                 juce::TextButton* pb[4] = { &padRackBtn, &pianoButton, &nivelesButton, &vstButton };
                 layoutModuleBar (inner.removeFromTop (Metrics::hit), pb, 0, esInstr ? 4 : 3);
             }
+            cierra (gEnvios);
             inner.removeFromTop (Metrics::sm);
 
             if (merge)
@@ -6135,23 +6179,28 @@ void MainComponent::resized()
                 //  de alto, asi que lo que sobra es exactamente lo que a lo
                 //  otro le falta - y dos titulos de seccion con sus dos filas
                 //  cuestan 138 px de alto para decir lo mismo que una.
+                const int gPad = inner.getY();
                 padSectionArea[1] = inner.removeFromTop (secH);   // pintado: EL PAD
                 padSectionArea[2] = {};
                 auto rr = inner.removeFromTop (Metrics::hit);
                 juce::TextButton* pb[5] = { &autocutButton, &duckButton,
                                             &chopButton, &micButton, &resampleButton };
                 layoutModuleBar (rr, pb, 0, 5);
+                cierra (gPad);
             }
             else
             {
+                const int gCorte = inner.getY();
                 padSectionArea[1] = inner.removeFromTop (secH);   // pintado: CORTE
                 {
                     auto rr = inner.removeFromTop (Metrics::hit);
                     juce::TextButton* pb[2] = { &autocutButton, &duckButton };
                     layoutModuleBar (rr, pb, 0, 2);
                 }
+                cierra (gCorte);
                 inner.removeFromTop (Metrics::sm);
 
+                const int gFuente = inner.getY();
                 padSectionArea[2] = inner.removeFromTop (secH);   // pintado: FUENTE
                 //  Tres formas de poner un sonido en un pad: cortar uno que ya
                 //  tienes, grabar la sala, o imprimir lo que la maquina esta
@@ -6175,6 +6224,7 @@ void MainComponent::resized()
                     juce::TextButton* pb[3] = { &chopButton, &micButton, &resampleButton };
                     layoutModuleBar (rr, pb, 0, 3);
                 }
+                cierra (gFuente);
             }
             inner.removeFromTop (Metrics::sm);
 
@@ -6237,6 +6287,20 @@ void MainComponent::resized()
             placeKnobRow (inner.removeFromTop (knobH), k2);
             placeKnobRow (inner.removeFromTop (knobH), k3);
         }
+        //  UN SOLO PANEL EN ESTA PAGINA, y es el de ABAJO. Los nueve mandos
+        //  dicen COMO SUENA el pad y las tres tapas de abajo QUE HACE -a quien
+        //  corta, si es cinta o tono, si se normaliza- asi que son dos grupos;
+        //  lo que no hay es AIRE entre ellos. `filaBaja` se aparta del fondo y
+        //  los mandos se comen lo que queda, asi que en la rama apretada estan
+        //  pegados y en la otra los separa Metrics::halfGap - cuatro, y el
+        //  panel se sale dos por arriba y dos por abajo. Medido en 412x915: los
+        //  dos paneles se tocaban y la pagina entera salia sobre una sola losa,
+        //  que es exactamente lo que se lee sin dibujar ninguno.
+        //
+        //  Con uno solo hay UNA frontera y se ve: el panel de abajo contra la
+        //  tarjeta desnuda de los mandos. Un panel no dice "esto es un grupo",
+        //  dice "esto y aquello no son lo mismo", y para eso hace falta uno y
+        //  no dos.
 
         //  A third row for the two controls that are not dials: CHOKE, which
         //  is a pair of increment buttons, and the tape/tone switch. Giving
@@ -6279,6 +6343,11 @@ void MainComponent::resized()
             //  NORMALIZAR va aqui y no en la fila de REV/LOOP porque
             //  pertenece al nivel, y el nivel es esta seccion.
             juce::TextButton* r3b[2] = { &modeButton, &normButton };
+            //  Y con CHOKE solo en su fila, MODO y NORMALIZAR bajan a un
+            //  renglon propio que sale de lo que quedaba de `inner` - o sea
+            //  ENCIMA de filaBaja. El grupo es la union de los dos, que es lo
+            //  que se lee: las tres cosas que no son mandos.
+            const int gBajo = inner.getY();
             if (chokeSolo)
             {
                 inner.removeFromTop (Metrics::halfGap);
@@ -6288,6 +6357,11 @@ void MainComponent::resized()
             {
                 layoutModuleBar (r3, r3b, 0, 2);
             }
+            padGrupos.add (chokeSolo
+                             ? filaBaja.getUnion (juce::Rectangle<int> (inner.getX(), gBajo,
+                                                                        inner.getWidth(),
+                                                                        inner.getY() - gBajo))
+                             : filaBaja);
         }
 
         padSectionArea[1] = {};
@@ -6300,6 +6374,7 @@ void MainComponent::resized()
         {
         //  RECORTE: la regla, la onda y las tres cosas que se le hacen a la
         //  muestra que se esta mirando.
+        const int gRecorte = inner.getY();
         padSectionArea[0] = inner.removeFromTop (secH);   // pintado: RECORTE
         padSectionArea[1] = {};
         padSectionArea[2] = {};
@@ -6313,7 +6388,14 @@ void MainComponent::resized()
         //  otra pagina, o con otra forma, no se leerian como lo que son - lo que
         //  le pasa al borde de arriba.
         fadeInSlider.setBounds  (ctrlRow (ZatiLookAndFeel::kTrimRow)); inner.removeFromTop (Metrics::xs);
-        fadeOutSlider.setBounds (ctrlRow (ZatiLookAndFeel::kTrimRow)); inner.removeFromTop (Metrics::sm);
+        fadeOutSlider.setBounds (ctrlRow (ZatiLookAndFeel::kTrimRow));
+        //  LAS CUATRO ASAS SON UN GRUPO: INICIO y FIN dicen DONDE empieza y
+        //  acaba el trozo, y los dos SUAVE que le pasa a esos dos bordes. La
+        //  fila de debajo -REV, BUCLE, QUITAR RUIDO- es otra cosa: dice COMO se
+        //  recorre lo que se acaba de marcar. Cuatro renglones seguidos y una
+        //  fila de tapas debajo se leian como cinco cosas en una lista.
+        cierra (gRecorte);
+        inner.removeFromTop (Metrics::sm);
 
         //  REV y LOOP viven aqui, con el recorte, y no en la barra de EL PAD:
         //  las dos deciden COMO SE RECORRE el trozo que se acaba de marcar,
@@ -6321,9 +6403,11 @@ void MainComponent::resized()
         //  y BOMBEO, que son cosas del pad y no de la muestra. QUITAR RUIDO va
         //  con ellas por lo mismo: es de la muestra.
         {
+            const int gLectura = inner.getY();
             auto rr = inner.removeFromTop (Metrics::hit);
             juce::TextButton* pb[3] = { &reverseButton, &loopButton, &denoiseButton };
             layoutModuleBar (rr, pb, 0, 3);
+            cierra (gLectura);
         }
         inner.removeFromTop (Metrics::sm);
         //  Las muestras de color son de la otra pagina. Sin borrarlo, la tira
@@ -6648,6 +6732,11 @@ void MainComponent::resized()
             filaDeIconos (tb, 5);
             inner.removeFromTop (Metrics::sm);
 
+            //  LOS GRUPOS DE ESTA FICHA. Ver el mismo bloque en EL PAD: se
+            //  apuntan mientras se reparte el alto, con las coordenadas que la
+            //  maqueta acaba de dar, asi que no cuestan un pixel.
+            setGrupos.clear();
+
             //  Whatever is left of the card belongs to the gestures list.
             if (onGest)
             {
@@ -6682,13 +6771,18 @@ void MainComponent::resized()
 
         if (onMidi)
         {
-            auto block = [&inner] (juce::TextButton& btn, juce::ComboBox& box)
+            auto block = [this, &inner] (juce::TextButton& btn, juce::ComboBox& box)
             {
+                //  El rotulo, el interruptor y la lista de puertos son UN
+                //  grupo: SALIDA y ENTRADA son dos cosas y aqui se leian como
+                //  cuatro filas seguidas.
+                const int g0 = inner.getY();
                 inner.removeFromTop (14);                       // pintado: el rotulo
                 auto row = inner.removeFromTop (Metrics::hit);
                 btn.setBounds (Lang::takeStart (row, juce::jmax (96, row.getWidth() / 3)).reduced (1, 0));
                 inner.removeFromTop (Metrics::xs);
                 box.setBounds (inner.removeFromTop (Metrics::hit).reduced (1, 0));
+                setGrupos.add ({ inner.getX(), g0, inner.getWidth(), inner.getY() - g0 });
                 inner.removeFromTop (Metrics::sm);
             };
             block (midiOutBtn, midiOutBox);
@@ -6739,6 +6833,9 @@ void MainComponent::resized()
                 auto fila = donde.removeFromTop (Metrics::hit);
                 juce::TextButton* ab[3] = { &quantButton, &measureButton, &testButton };
                 layoutModuleBar (fila, ab, 0, 3);
+                //  El rotulo PRUEBAS y sus tres tapas son UNA cosa, igual que en
+                //  el secuenciador el nombre y el mando que lleva debajo.
+                setGrupos.add (pruebasLabelArea.getUnion (fila));
                 donde.removeFromTop (Metrics::sm);
             };
 
@@ -6816,6 +6913,17 @@ void MainComponent::resized()
             };
             bufRowArea  = chipRow (bufButtons,  44, false);
             rateRowArea = chipRow (rateButtons, 44, false);
+            //  UN panel para las dos filas y no uno por fila, que fue el primer
+            //  intento y salio igual que no dibujar nada: entre BUFER y RELOJ
+            //  hay Metrics::xs -cuatro- y el panel se sale dos por arriba y dos
+            //  por abajo, asi que los dos se TOCABAN y se leian como una losa.
+            //  Es el mismo fallo que ya costo un intento en el secuenciador,
+            //  alli con cuatro pixeles por lado en vez de dos.
+            //
+            //  Y ademas es la lectura correcta: los dos son el reloj del
+            //  aparato -cuanto tarda en contestar y a que velocidad va- contra
+            //  las tres PRUEBAS de arriba, que son cosas que se HACEN.
+            setGrupos.add (bufRowArea.getUnion (rateRowArea));
             //  IDIOMA y CARCASA viven ahora en su pagina.
             langRowArea = skinRowArea = {};
             projNameRowArea = projPathRowArea = {};
@@ -6865,6 +6973,11 @@ void MainComponent::resized()
             };
             langRowArea = chipRow (langButtons, 44, partirLang);
             skinRowArea = chipRow (skinButtons, 44, partirSkin);
+            //  Y ESTA PAGINA NO LLEVA PANELES. Es la unica de las cuatro con
+            //  dos filas y nada mas: dos paneles a Metrics::xs se tocan y se
+            //  leen como uno, y uno solo cubre la pagina entera - que agrupa
+            //  exactamente lo mismo que no dibujar nada. Un panel dice "estos
+            //  van juntos y esos no", y aqui no hay esos.
         }
         else
         {
@@ -6882,8 +6995,13 @@ void MainComponent::resized()
                 projNameBox.setBounds (r.reduced (2, 0));
             }
             projPathRowArea = inner.removeFromTop (14);
+            //  El nombre del proyecto y la ruta donde vive son UNA cosa; las
+            //  seis tapas de abajo, otra. Sin panel, la caja de escribir se
+            //  leia como una fila mas de la lista que hay debajo.
+            setGrupos.add (projNameRowArea.getUnion (projPathRowArea));
             inner.removeFromTop (Metrics::sm);
 
+            const int gAcciones = inner.getBottom();
             {
                 auto fila = inner.removeFromBottom (Metrics::btn);
                 juce::TextButton* pe[2] = { &projExportButton, &projKitButton };
@@ -6900,6 +7018,8 @@ void MainComponent::resized()
                                             &projNewButton,  &projDeleteButton };
                 layoutModuleBar (actions, pa, 0, 4);
             }
+            setGrupos.add ({ inner.getX(), inner.getBottom(),
+                             inner.getWidth(), gAcciones - inner.getBottom() });
             inner.removeFromBottom (8);
 
             projList.setBounds (inner);
@@ -7506,6 +7626,24 @@ void MainComponent::resized()
         if (wideFace) Lang::takeStart (inner, Metrics::gap);
         auto& panel = wideFace ? columna : inner;
 
+        //  LOS GRUPOS DE ESTA FICHA, y SIN ROTULO. Las otras dos los heredan de
+        //  bandas de nombre que ya estaban reservadas; aqui no hay ninguna, y
+        //  ponerlas costaria tres renglones de 14 px que salen de lo unico para
+        //  lo que existe la pagina - los cuatro carriles de la linea de tiempo,
+        //  que en 280x653 ya andan por 21 px. El panel agrupa igual sin decir
+        //  como se llama el grupo: lo que separa una paleta de una fila de
+        //  herramientas no es su nombre, es que sean dos bloques.
+        songGrupos.clear();
+        auto cierraSong = [this, &panel] (int y0)
+        {
+            if (panel.getY() > y0)
+                songGrupos.add ({ panel.getX(), y0, panel.getWidth(), panel.getY() - y0 });
+        };
+
+        //  El borde de arriba del panel de LA BROCHA, que empieza en la paleta
+        //  y acaba en la fila de modos. Ver el cierre, dos bloques mas abajo.
+        const int gBrocha = panel.getY();
+
         // Palette: P1..P8.
         {
             auto row = panel.removeFromTop (Metrics::hit);
@@ -7553,6 +7691,18 @@ void MainComponent::resized()
                 juce::TextButton* sc[2] = { &songDoubleBtn, &songModeBtn };
                 layoutModuleBar (panel.removeFromTop (Metrics::hit), sc, 0, 2);
             }
+            //  LA PALETA Y LAS BROCHAS SON UN SOLO PANEL, no dos. Entre las dos
+            //  filas hay Metrics::xs y dos paneles a cuatro pixeles se tocan -
+            //  o sea que dibujar dos ahi es dibujar cero, que es el intento que
+            //  ya esta contado en el secuenciador.
+            //
+            //  Y separarlas costaria cuatro pixeles de alto que salen de lo
+            //  unico para lo que existe esta pagina: en 280x653 el carril anda
+            //  por 21 px y son cuatro carriles. Ademas la lectura buena es esa:
+            //  P1..P8 dice QUE pinta la brocha y SONIDO/VACIAR con QUE pinta -
+            //  las dos son la brocha. Lo otro son las nueve herramientas, que
+            //  actuan sobre lo que YA esta puesto.
+            cierraSong (gBrocha);
             panel.removeFromTop (Metrics::sm);
         }
 
@@ -7561,6 +7711,7 @@ void MainComponent::resized()
         //  esta puesto. Mezcladas en una sola fila, INSERTAR quedaba al lado de
         //  SONIDO y las dos parecian la misma clase de cosa.
         {
+            const int gUtil = panel.getY();
             juce::TextButton* su[9] = { &songLeftBtn, &songRightBtn, &songShortBtn,
                                         &songLongBtn, &songInsertBtn, &songRemoveBtn,
                                         &songCopyBtn, &songPasteBtn, &songLoopBtn };
@@ -7587,6 +7738,7 @@ void MainComponent::resized()
                     if (fila < 2) panel.removeFromTop (Metrics::halfGap);
                 }
             }
+            cierraSong (gUtil);
             panel.removeFromTop (Metrics::sm);
         }
 
@@ -12710,6 +12862,13 @@ void MainComponent::refreshSong (bool repintarTarjeta)
 void MainComponent::paintSongSheetContent (juce::Graphics& g)
 {
     if (songSheet.sheetBounds.isEmpty()) return;
+
+    //  LOS TRES GRUPOS, sin rotulo. Ver resized(): la paleta dice QUE se pinta,
+    //  las brochas COMO se pinta y las nueve herramientas que le pasa a lo que
+    //  ya esta puesto, y las tres filas se leian como una escalera de tapas
+    //  porque estan una debajo de otra. Ver pintaPaneles.
+    pintaPaneles (g, songGrupos);
+
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
     pintaTitulo (g, antesDe (songSheet.sheetBounds.reduced (14, 10).removeFromTop (16),

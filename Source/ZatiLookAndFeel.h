@@ -587,6 +587,34 @@ namespace ZatiColours
     //  superficie que hay detras de casi todo lo que dibuja este proyecto.
     inline juce::Colour groove (float alpha) { return recess (chassisTop, alpha); }
 
+    //  LA SUPERFICIE DE UN GRUPO, que NO es una sombra y por eso no puede usar
+    //  recess. Una sombra va DEBAJO de un objeto y tiene que ser mas oscura -
+    //  el bloque bajo una tarjeta dibujado hacia el blanco es un halo, que es
+    //  lo contrario de estar apoyada sobre algo -, asi que recess corta en 0.18
+    //  y solo se va hacia arriba cuando el cuerpo ya esta practicamente en
+    //  negro y no le queda recorrido hacia abajo. Un panel de grupo va DETRAS
+    //  de varios controles y no debajo de ninguno: lo unico que se le pide es
+    //  separarse de la tarjeta, asi que se va hacia el lado que tenga mas sitio
+    //  y el corte es la MITAD, que no es un numero elegido a ojo.
+    //
+    //  La diferencia la paga entera LACA, que es la de fabrica: su cuerpo es
+    //  oscuro Y CROMATICO -un verde azulado con 0.057 de luminancia- pero
+    //  getPerceivedBrightness pesa el verde con 0.691 y le saca 0.26, o sea por
+    //  encima del 0.18 de recess, asi que caia del lado del negro y ahi no
+    //  queda sitio. Medido en dE contra la tarjeta con el 0.16 que dibuja
+    //  pintaPaneles: PAPEL 13.5, GRAFITO 16.5, ACERO 13.5 y LACA **5.3** con la
+    //  regla de la sombra, 12.4 con esta. Cinco de dE esta por debajo del 6.0
+    //  que este mismo proyecto le exige al hueco de una celda contra su tarjeta
+    //  (Tests/skins.py, MIN_WELL): la ficha del secuenciador llevaba sus
+    //  paneles dibujados desde hace tandas y en la carcasa de fabrica no
+    //  agrupaban nada.
+    inline juce::Colour groupOn (juce::Colour surface, float depth)
+    {
+        const auto target = surface.getPerceivedBrightness() < 0.5f
+                              ? juce::Colours::white : juce::Colours::black;
+        return target.withAlpha (depth);
+    }
+
     //  ...y una MARCA neutra sobre una superficie si es tinta, asi que se mide
     //  contra esa superficie en vez de suponerla. Es textOn con un alfa: clara
     //  sobre un cuerpo oscuro, oscura sobre uno claro, sin que quien la llame

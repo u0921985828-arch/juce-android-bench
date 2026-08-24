@@ -64,6 +64,8 @@ MIN_KNOB    = 3.00
 #  Los alfas con los que la app dibuja cada una de esas tres cosas.
 SECTION_ALPHA = 0.55   # paintPadSheetContent
 KNOB_ALPHA    = 0.85   # drawRotarySlider
+#  ...y el del PANEL que agrupa varios controles. Ver MainComponent::pintaPaneles.
+PANEL_ALPHA   = 0.16
 
 #  Los ocho fragmentos, LEIDOS DE Zati.h. No dependen de la carcasa - el color
 #  es del sistema de zatis y de nada mas - asi que un paso puesto lleva siempre
@@ -156,6 +158,15 @@ def over (fg, bg, alpha):
     """fg sobre bg con ese alfa — lo que el pincel deja realmente en pantalla."""
     f, b = rgb (fg), rgb (bg)
     return sum (int (round (f[i] * alpha + b[i] * (1 - alpha))) << (16 - 8 * i) for i in range (3))
+def brillo (v):
+    """juce::Colour::getPerceivedBrightness, escrito aqui desde la definicion.
+    Es la funcion con la que la app decide hacia que lado se hunde una cosa
+    (ZatiColours::recess y groupOn), y usar `lum` en su lugar seria medir una
+    regla distinta de la que se dibuja: en LACA las dos coinciden por poco
+    -0.26 contra 0.057, las dos por debajo de 0.5- y esa clase de coincidencia
+    es la que hace que un cambio de tabla pase la prueba y falle en pantalla."""
+    r, g, b = [c / 255.0 for c in rgb (v)]
+    return math.sqrt (0.241 * r * r + 0.691 * g * g + 0.068 * b * b)
 def ink_on (d, surface):
     """La misma eleccion que ZatiColours::textOn: se MIDE, no se supone."""
     return d['ink'] if ratio (d['ink'], surface) >= ratio (d['inkLight'], surface) else d['inkLight']
@@ -168,6 +179,7 @@ def main():
     bad = []
     print (f"{'carcasa':9} {'apag/enc':>9} {'escalon':>8} {'tinta/tapa':>11} "
            f"{'tinta/acento':>13} {'paso/hueco':>10} {'hueco/tarj':>11} "
+           f"{'panel/tarj':>11} "
            f"{'pantalla':>9} {'seccion':>8} {'mando':>7} {'tira':>6} {'zonas':>7}")
     for name, d in zip (SKINS, skins):
         #  La sombra cae sobre la superficie que hay detras de la tapa, que es
@@ -177,6 +189,13 @@ def main():
         #  queda recorrido hacia abajo - un hueco negro sobre el separaba 4 de
         #  dE, que es "no se ve".
         into   = 0xffffff if lum (d['top']) < 0.03 else 0x000000
+        #  EL PANEL DE UN GRUPO NO ES UNA SOMBRA y no escoge su lado igual.
+        #  Ver ZatiColours::groupOn: una sombra va debajo de un objeto y tiene
+        #  que ser mas oscura, y un panel va detras de varios y solo tiene que
+        #  separarse - asi que se va hacia el lado que tenga MAS SITIO, con el
+        #  corte en la mitad.
+        panel  = over (0xffffff if brillo (d['top']) < 0.5 else 0x000000,
+                       d['top'], PANEL_ALPHA)
         shadow = over (into, d['top'], SHADOW_ALPHA)
         empty  = over (into, d['top'], CELL_EMPTY)
         beat   = over (into, d['top'], CELL_BEAT)
@@ -199,6 +218,17 @@ def main():
             #  todos los pasos estuvieran puestos a medias.
             "paso puesto contra vacio": (min (dE (z, empty) for z in ZATI), MIN_CELL),
             "hueco contra la tarjeta":  (dE (empty, d['top']),   MIN_WELL),
+            #  EL PANEL DE UN GRUPO contra la tarjeta en la que esta. Es la
+            #  MISMA pregunta que la de arriba -una superficie hundida contra
+            #  la que hay detras- asi que lleva el MISMO liston: el de una
+            #  prueba no se reinventa en la de al lado.
+            #
+            #  Con paneles en una ficha sola esto se toleraba sin medirlo; con
+            #  cuatro, no. Es el caso de EXPORTAR otra vez - los numeros
+            #  existian y no los miraba nadie, asi que una regresion ahi no
+            #  fallaba, se publicaba. Roto a proposito (groupOn escogiendo el
+            #  lado como recess) sale FALLA en LACA con 5.34.
+            "panel contra la tarjeta":  (dE (panel, d['top']),   MIN_WELL),
             #  LA PANTALLA. Es lo unico de la app que se lee seguido - nombre
             #  del fichero, frecuencia, recorte, tempo - y va sobre un cristal
             #  que NO es el chasis, asi que ninguna de las medidas de arriba
@@ -226,8 +256,9 @@ def main():
         vals = list (m.values())
         print (f"{name:9} {vals[0][0]:9.2f} {vals[1][0]:8.2f} {vals[2][0]:11.2f} "
                f"{vals[3][0]:13.2f} {vals[4][0]:10.2f} {vals[5][0]:11.2f} "
-               f"{vals[6][0]:9.2f} {vals[7][0]:8.2f} {vals[8][0]:7.2f} "
-               f"{vals[9][0]:6.2f} {vals[10][0]:7.2f}")
+               f"{vals[6][0]:11.2f} "
+               f"{vals[7][0]:9.2f} {vals[8][0]:8.2f} {vals[9][0]:7.2f} "
+               f"{vals[10][0]:6.2f} {vals[11][0]:7.2f}")
         for what, (v, floor) in m.items():
             if v < floor:
                 bad.append (f"{name}: {what} {v:.2f} < {floor:.2f}")

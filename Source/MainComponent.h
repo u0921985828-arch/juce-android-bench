@@ -484,6 +484,29 @@ private:
     //  herramientas del patron lleva dos cuando no caben las seis en una.
     struct SeqLabel { juce::Rectangle<int> band; juce::String key; int filas = 1; };
     juce::Array<SeqLabel> seqLabelBands;
+
+    //  EL PANEL DE UN GRUPO, en UN sitio y con cuatro clientes.
+    //
+    //  Estaba escrito dentro del pintor del secuenciador, que era la unica
+    //  ficha de veintiuna que agrupaba sus controles. En cuanto le salieron
+    //  tres clientes mas se saco, que es lo que ya se hizo con `normaliza`
+    //  cuando `render` dejo de ser el unico camino al final, y con el reparto
+    //  de un kit cuando le salio el segundo: dos sitios que dibujan el mismo
+    //  panel por su cuenta se separan, y el sintoma habria sido "en AJUSTES
+    //  los grupos se ven distinto" sin poder decir por que.
+    void pintaPaneles (juce::Graphics& g, const juce::Array<juce::Rectangle<int>>& grupos) const;
+
+    //  ...y los grupos de las tres fichas que no son el secuenciador. Uno por
+    //  ficha y no uno compartido: resized() maqueta TODAS las fichas en la
+    //  misma pasada -este es un fichero donde eso ya se paga en varios sitios-
+    //  asi que un array unico lo llenaria la ultima y lo pintarian las cuatro.
+    //
+    //  Como los del secuenciador, NO se maquetan: se apuntan mientras se
+    //  reparte el alto, con las coordenadas que la maqueta acaba de dar. Por
+    //  eso no cuestan un pixel - que es lo que el banco comprueba en las 896
+    //  corridas de expo.py, donde la celda de una rejilla canta cualquier
+    //  altura que alguien se haya llevado.
+    juce::Array<juce::Rectangle<int>> padGrupos, setGrupos, songGrupos;
     //  ...and the line at the foot of the PASO page that names the step being
     //  edited. Reserved by resized() for the same reason: drawn from the card's
     //  bottom edge without being booked, it landed on the swing slider.
