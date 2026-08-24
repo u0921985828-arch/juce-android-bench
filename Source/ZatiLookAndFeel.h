@@ -107,7 +107,13 @@ namespace ZatiColours
     inline juce::Colour playhead     { 0xfffffdf7 };
     inline juce::Colour playheadEdge { 0x6626221b };
 
-    inline int currentSkin = 0;
+    //  LA CARCASA DE FABRICA, en UN sitio. Estaba escrita dos veces -aqui el
+    //  valor de arranque y en loadSkinPreference el defecto cuando no hay
+    //  fichero- y esas son dos reglas: el dia que una cambie, lo que se pinte
+    //  antes de leer las preferencias sale con la otra. Ver loadSkinPreference
+    //  para POR QUE es esta y no otra.
+    inline constexpr int kSkinDeFabrica = 3;   // LACA
+    inline int currentSkin = kSkinDeFabrica;
     inline const char* skinName (int i)
     {
         //  FOUR CHASSIS, not four accents.
@@ -339,7 +345,28 @@ namespace ZatiColours
     inline void loadSkinPreference()
     {
         const auto f = skinPreferenceFile();
-        setSkin (f.existsAsFile() ? f.loadFileAsString().trim().getIntValue() : 0);
+        //  LACA ES LA DE FABRICA, y no por gusto: se eligio poniendo las cuatro
+        //  al lado con la MISMA ficha y el mismo contenido, que es lo unico que
+        //  las separa -una carcasa mirada sola siempre parece bien-.
+        //
+        //  Lo que las cuatro juntas ensenan y una sola no:
+        //
+        //  - La rejilla de pasos son 256 celdas y es lo que mas se mira de la
+        //    ficha del secuenciador. En las dos CLARAS -PAPEL y ACERO- son
+        //    celdas casi blancas sobre una tarjeta casi blanca y practicamente
+        //    desaparecen; en las dos oscuras se leen.
+        //  - El color de un pad es como se encuentra un sonido en esta maquina,
+        //    y solo destaca sobre un cuerpo oscuro.
+        //  - Y LACA es la unica con acento CALIDO -ambar- sobre cuerpo FRIO,
+        //    que es el unico emparejamiento que hace inconfundible una tapa
+        //    encendida: en las otras tres una tapa encendida es un escalon de
+        //    TONO, y sobre un cuerpo con color el tono solo no llega.
+        //
+        //  No cambia un pixel de maquetado ni una medida de `Tests/skins.py`,
+        //  que juzga las cuatro filas de la tabla pase lo que pase aqui. Y
+        //  sigue siendo una preferencia: quien quiera PAPEL lo elige en AJUSTES
+        //  y el fichero manda desde entonces.
+        setSkin (f.existsAsFile() ? f.loadFileAsString().trim().getIntValue() : kSkinDeFabrica);
     }
 
     // Bundled typefaces (Oswald display + JetBrains Mono). Cached once.
