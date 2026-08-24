@@ -307,9 +307,25 @@ figure{margin:0; display:flex; flex-direction:column; gap:7px; min-width:0; max-
 svg,img{display:block; max-width:100%; height:auto}
 figcaption{font-family:"JetBrains Mono",ui-monospace,monospace; font-size:11px; color:var(--apagado);
            letter-spacing:.03em}
+/*  LAS COTAS, apagadas por defecto. Cada SVG las lleva dentro en su propio
+    grupo; el interruptor vive en la pagina y no en el dibujo, asi que se ven
+    las treinta y dos a la vez o ninguna -comparar dos pantallas con una
+    acotada y la otra no es como no acotar-.                                 */
+/*  El interruptor es hermano de .hoja, asi que la cascada baja por ahi: con
+    `~ main` no encuentra nada porque main vive DENTRO de .hoja.             */
+.cotas{display:none}
+#vercotas:checked ~ .hoja .cotas{display:inline}
+#vercotas{position:absolute; opacity:0; width:0; height:0}
+.interruptor{grid-column:1/-1; display:flex; gap:14px; align-items:center; flex-wrap:wrap;
+  font-family:"JetBrains Mono",ui-monospace,monospace; font-size:11.5px; color:var(--apagado)}
+.interruptor label{cursor:pointer; border:1px solid var(--filo); background:var(--tarjeta);
+  border-radius:3px; padding:7px 13px; letter-spacing:.06em; color:var(--tinta); user-select:none}
+#vercotas:checked ~ .hoja .interruptor label{border-color:var(--azul); color:var(--azul)}
+#vercotas:focus-visible ~ .hoja .interruptor label{outline:2px solid var(--azul); outline-offset:2px}
 a:focus-visible{outline:2px solid var(--azul); outline-offset:2px}
 @media (prefers-reduced-motion:no-preference){ .indice a{transition:color .12s,border-color .12s} }
 </style>
+<input type="checkbox" id="vercotas">
 <div class="hoja"><header class="portada">
 <div><h1>El plano de cada pantalla</h1>
 <p class="sub">Las treinta y dos pantallas de ZATI dibujadas a escala 1:1 con las
@@ -322,12 +338,31 @@ de cada plano, la foto de esa misma pantalla en otra corrida.</p></div>
 <span><i class="marca m-si"></i>tapa CON dibujo</span>
 <span><i class="marca m-no"></i>tapa con rotulo y SIN dibujo</span>
 <span><i class="marca m-rot"></i>rotulo pintado, que no es un componente</span>
-</div>"""
+</div>
+<div class="interruptor"><label for="vercotas">COTAS · medidas, regla de 8 px y lo que no llega al dedo</label>
+<span>40 px es Metrics::hit; la regla marca gordo cada 40 y fino cada 8, que es Metrics::gap</span></div>"""
 
 
 def corre (clave, tam, lang, extra=None):
     """Una corrida, con HOME propio. Devuelve las lineas JSON del volcado."""
     casa = tempfile.mkdtemp (prefix="zati-plano-")
+
+    #  EL TOUR DE BIENVENIDA, VISTO YA.
+    #
+    #  Cada corrida estrena HOME, asi que para la app siempre es la primera vez
+    #  y sale el tour. Con ZATI_AUDIT no se enseña pero con ZATI_SHOT si, o sea
+    #  que el plano salia la pagina y la foto de al lado la MISMA pagina bajo el
+    #  velo del tour: dos dibujos del mismo sitio contando cosas distintas, que
+    #  es justo lo que este fichero existe para no hacer. La marca es la que
+    #  escribe MainComponent::tourFile.
+    marca = os.path.join (casa, ".config", "zati-tour.txt")
+    try:
+        os.makedirs (os.path.dirname (marca), exist_ok=True)
+        with open (marca, "w") as f:
+            f.write ("1")
+    except OSError:
+        pass
+
     try:
         env = dict (os.environ)
         env.update ({"HOME": casa, "XDG_DATA_HOME": os.path.join (casa, ".local", "share"),
@@ -503,8 +538,25 @@ def svg (clave, filas, tam, piel=0, marcados=frozenset()):
 
         # ---- EL PAD ---------------------------------------------------------
         if "PadButton" in cl:
-            p.append ('<rect x="%d" y="%d" width="%d" height="%d" rx="5" fill="%s" stroke="%s"/>'
-                      % (x, y, w, h, C["padTop"], C["padBorder"]))
+            #  EL COLOR DEL PAD, que es como se encuentra un sonido en esta
+            #  maquina: un pad CARGADO lleva su zati -relleno flojo, borde a
+            #  tope- y uno vacio no lleva ninguno. Dibujar los dieciseis del
+            #  mismo color es borrar la unica cosa que los distingue de lejos.
+            #  `toDisplayString(false)` devuelve el hex PELADO -"E8544A"- y sin
+            #  la almohadilla no es un color: los dieciseis pads salian grises,
+            #  o sea exactamente el fallo que este dato venia a arreglar.
+            frag = r.get ("color")
+            if frag and not frag.startswith ("#"):
+                frag = "#" + frag
+            if r.get ("loaded") and frag:
+                p.append ('<rect x="%d" y="%d" width="%d" height="%d" rx="5" fill="%s"/>'
+                          % (x, y, w, h, C["padBg2"]))
+                p.append ('<rect x="%d" y="%d" width="%d" height="%d" rx="5" fill="%s" '
+                          'fill-opacity=".30" stroke="%s" stroke-width="1.5"/>'
+                          % (x, y, w, h, frag, frag))
+            else:
+                p.append ('<rect x="%d" y="%d" width="%d" height="%d" rx="5" fill="%s" stroke="%s"/>'
+                          % (x, y, w, h, C["padTop"], C["padBorder"]))
             tinta = C["ink"]
             p.append (texto ("%02d" % numPad.get (r["path"], 0), x + 5, y + 15, 13,
                              tinta if r.get ("loaded") else C["inkDim"], "start", peso=600))
@@ -529,7 +581,12 @@ def svg (clave, filas, tam, piel=0, marcados=frozenset()):
                              and c.get ("path", "").startswith (r["path"] + "/")
                              and str (c.get ("text", "")).strip()), None)
             val = str (lectura.get ("text", "")) if lectura else ""
-            if 0.65 < (w / float (h)) < 1.6 and h >= 24:
+            #  GIRATORIO O CARRIL lo dice el volcado (`estilo`), no la
+            #  proporcion de la caja: la caja de un mando incluye su rotulo, asi
+            #  que los tres mandos de la cara -que son redondos- salian
+            #  dibujados como carriles por medir mas de ancho que de alto.
+            est = r.get ("estilo")
+            if est == "rot" if est else (0.65 < (w / float (h)) < 1.6 and h >= 24):
                 #  GIRATORIO: cuerpo oscuro, anillo y aguja, como lo dibuja
                 #  ZatiLookAndFeel. El hueco de abajo es el del mando de verdad.
                 rad = min (w, h) * 0.36
@@ -545,7 +602,7 @@ def svg (clave, filas, tam, piel=0, marcados=frozenset()):
                     p.append (texto (val, cx, y + h - 1, cuerpo (val, w, 9, True), C["inkDim"], mono=True))
             else:
                 #  DESLIZADOR: carril hundido y su puno.
-                if w >= h:
+                if (est == "linh") if est else (w >= h):
                     p.append ('<rect x="%d" y="%.1f" width="%d" height="4" rx="2" fill="%s"/>'
                               % (x, cy - 2, w, C["plate"]))
                     p.append ('<rect x="%.1f" y="%.1f" width="9" height="%.1f" rx="2" fill="%s" stroke="%s"/>'
@@ -646,6 +703,45 @@ def svg (clave, filas, tam, piel=0, marcados=frozenset()):
         p.append (texto (t, r["x"], r["y"] + min (14, max (10, r["h"] * 0.8)),
                          cuerpo (t, max (20, r["w"]), 15 if grande else 11),
                          C["ink"] if grande else C["inkDim"], "start", peso=600 if grande else 500))
+
+    #  LA CAPA DE COTAS, apagada por defecto y encendida desde la pagina.
+    #
+    #  Un plano para MIRAR y un plano para REHACER no son el mismo dibujo: para
+    #  mover algo hace falta saber cuanto mide, cuanto aire tiene al lado y
+    #  contra que topa. Va en su propio grupo para que no ensucie el primero.
+    cot = ['<g class="cotas">']
+
+    #  La regla, cada Metrics::gap -8 px- con marca gorda cada 40, que es el
+    #  dedo minimo: los margenes se leen contando, sin medir a ojo.
+    for gx in range (0, W + 1, 8):
+        gordo = (gx % 40 == 0)
+        cot.append ('<line x1="%d" y1="0" x2="%d" y2="%d" stroke="%s" stroke-width="0.5" opacity="%s"/>'
+                    % (gx, gx, 7 if gordo else 4, C["accent"], ".55" if gordo else ".28"))
+    for gy in range (0, H + 1, 8):
+        gordo = (gy % 40 == 0)
+        cot.append ('<line x1="0" y1="%d" x2="%d" y2="%d" stroke="%s" stroke-width="0.5" opacity="%s"/>'
+                    % (gy, 7 if gordo else 4, gy, C["accent"], ".55" if gordo else ".28"))
+
+    for r in comps:
+        cl = clase (r)
+        if "Sheet" in cl or "XyPanel" in cl or r.get ("inSlider"):
+            continue
+        x, y, w, h = r["x"], r["y"], r["w"], r["h"]
+        if w < 26 or h < 12:
+            continue    # en una celda de rejilla la cota tapa la celda
+
+        #  POR DEBAJO DEL DEDO, marcado. Es la restriccion que un rediseno no
+        #  puede saltarse: 40 px es Metrics::hit, y una tapa mas estrecha se
+        #  falla al tocarla por mucho que se lea bien.
+        if r.get ("kind") in ("button", "slider") and min (w, h) < 40:
+            cot.append ('<rect x="%.1f" y="%.1f" width="%d" height="%d" rx="4" fill="none" '
+                        'stroke="#e8756a" stroke-width="1" stroke-dasharray="3 2"/>'
+                        % (x + 0.5, y + 0.5, w - 1, h - 1))
+        cot.append ('<text x="%d" y="%d" font-size="7.5" fill="%s" '
+                    'font-family="JetBrains Mono, ui-monospace, monospace" opacity=".85">%dx%d</text>'
+                    % (x + 2, y + 8, C["accent"], w, h))
+    cot.append ('</g>')
+    p.append ("".join (cot))
 
     p.append ('</svg>')
 

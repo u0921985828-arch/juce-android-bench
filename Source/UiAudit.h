@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include "ZatiLookAndFeel.h"
 #include "PadButton.h"
+#include "Zati.h"
 #include <algorithm>
 #include <chrono>
 #include <typeinfo>
@@ -379,6 +380,29 @@ namespace UiAudit
             //  lo que mira. Lo dice la app, que es quien lo sabe.
             if ((int) tb->getProperties().getWithDefault ("valor", 0) != 0)
                 line << ",\"valor\":1";
+        }
+
+        //  EL COLOR DE UN PAD Y EL ESTILO DE UN MANDO, que es lo que hace
+        //  falta para volver a DIBUJAR la pagina y no solo para medirla.
+        //
+        //  Tests/planos.py redibuja las 32 pantallas, y sin estas dos lineas
+        //  tiene que adivinarlas: los dieciseis pads salian del mismo color
+        //  -cuando el color del pad ES como se encuentra un sonido en esta
+        //  maquina- y los mandos se repartian en giratorio o carril por la
+        //  PROPORCION de su caja, que falla en cuanto la caja incluye el
+        //  rotulo. Lo dice quien lo sabe, que es la misma regla por la que la
+        //  marca `valor` la pone ponIconos y no una lista en Python.
+        if (auto* pb = dynamic_cast<PadButton*> (&c))
+            line << ",\"zati\":" << pb->getZati()
+                 << ",\"color\":\"" << Zati::colour (pb->getZati()).toDisplayString (false) << "\"";
+
+        if (auto* sl = dynamic_cast<juce::Slider*> (&c))
+        {
+            const auto st = sl->getSliderStyle();
+            const char* e = (st == juce::Slider::LinearHorizontal || st == juce::Slider::LinearBar) ? "linh"
+                          : (st == juce::Slider::LinearVertical || st == juce::Slider::LinearBarVertical) ? "linv"
+                          : (st == juce::Slider::IncDecButtons) ? "incdec" : "rot";
+            line << ",\"estilo\":\"" << e << "\"";
         }
 
         line << "}";
