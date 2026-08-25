@@ -66,6 +66,11 @@ SECTION_ALPHA = 0.55   # paintPadSheetContent
 KNOB_ALPHA    = 0.85   # drawRotarySlider
 #  ...y el del PANEL que agrupa varios controles. Ver MainComponent::pintaPaneles.
 PANEL_ALPHA   = 0.16
+#  ...y el de su BORDE, que se pinta ENCIMA del relleno y en la misma direccion.
+#  Un panel relleno y nada mas se lee como una mancha; con un filo se lee como
+#  una placa. Si esto se queda corto, el borde existe en la tabla y no en la
+#  pantalla - que es la clase de fallo que no falla, se publica.
+BORDE_ALPHA   = 0.12
 
 #  Los ocho fragmentos, LEIDOS DE Zati.h. No dependen de la carcasa - el color
 #  es del sistema de zatis y de nada mas - asi que un paso puesto lleva siempre
@@ -179,7 +184,7 @@ def main():
     bad = []
     print (f"{'carcasa':9} {'apag/enc':>9} {'escalon':>8} {'tinta/tapa':>11} "
            f"{'tinta/acento':>13} {'paso/hueco':>10} {'hueco/tarj':>11} "
-           f"{'panel/tarj':>11} "
+           f"{'panel/tarj':>11} {'borde/pan':>10} "
            f"{'pantalla':>9} {'seccion':>8} {'mando':>7} {'tira':>6} {'zonas':>7}")
     for name, d in zip (SKINS, skins):
         #  La sombra cae sobre la superficie que hay detras de la tapa, que es
@@ -194,8 +199,12 @@ def main():
         #  que ser mas oscura, y un panel va detras de varios y solo tiene que
         #  separarse - asi que se va hacia el lado que tenga MAS SITIO, con el
         #  corte en la mitad.
-        panel  = over (0xffffff if brillo (d['top']) < 0.5 else 0x000000,
-                       d['top'], PANEL_ALPHA)
+        haciaDonde = 0xffffff if brillo (d['top']) < 0.5 else 0x000000
+        panel  = over (haciaDonde, d['top'], PANEL_ALPHA)
+        #  El borde compone sobre el RELLENO, no sobre la tarjeta: se dibuja
+        #  despues y encima. Medirlo contra la tarjeta diria que se ve
+        #  estupendamente cuando lo que hay que separar es del relleno.
+        bordeP = over (haciaDonde, panel, BORDE_ALPHA)
         shadow = over (into, d['top'], SHADOW_ALPHA)
         empty  = over (into, d['top'], CELL_EMPTY)
         beat   = over (into, d['top'], CELL_BEAT)
@@ -229,6 +238,12 @@ def main():
             #  fallaba, se publicaba. Roto a proposito (groupOn escogiendo el
             #  lado como recess) sale FALLA en LACA con 5.34.
             "panel contra la tarjeta":  (dE (panel, d['top']),   MIN_WELL),
+            #  EL BORDE DEL PANEL contra su propio relleno. Misma pregunta que
+            #  las dos de arriba -dos superficies contiguas- asi que el MISMO
+            #  liston. A 0.10 de alfa LACA se quedaba en 6.39, pasando raspando;
+            #  a 0.12 son 7.69. Roto a proposito con el alfa a 0.04, fallan las
+            #  cuatro carcasas.
+            "borde contra el panel":    (dE (bordeP, panel),    MIN_WELL),
             #  LA PANTALLA. Es lo unico de la app que se lee seguido - nombre
             #  del fichero, frecuencia, recorte, tempo - y va sobre un cristal
             #  que NO es el chasis, asi que ninguna de las medidas de arriba
@@ -256,9 +271,9 @@ def main():
         vals = list (m.values())
         print (f"{name:9} {vals[0][0]:9.2f} {vals[1][0]:8.2f} {vals[2][0]:11.2f} "
                f"{vals[3][0]:13.2f} {vals[4][0]:10.2f} {vals[5][0]:11.2f} "
-               f"{vals[6][0]:11.2f} "
-               f"{vals[7][0]:9.2f} {vals[8][0]:8.2f} {vals[9][0]:7.2f} "
-               f"{vals[10][0]:6.2f} {vals[11][0]:7.2f}")
+               f"{vals[6][0]:11.2f} {vals[7][0]:10.2f} "
+               f"{vals[8][0]:9.2f} {vals[9][0]:8.2f} {vals[10][0]:7.2f} "
+               f"{vals[11][0]:6.2f} {vals[12][0]:7.2f}")
         for what, (v, floor) in m.items():
             if v < floor:
                 bad.append (f"{name}: {what} {v:.2f} < {floor:.2f}")

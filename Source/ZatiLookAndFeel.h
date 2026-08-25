@@ -489,6 +489,45 @@ namespace Metrics
     //  vez para que las filas que lo tenian a mano no puedan volver a
     //  separarse de el.
     static constexpr int aireTapa = halfGap / 2;
+
+    //  EL AIRE QUE UN PANEL DE GRUPO DEJA ALREDEDOR DE LO QUE ENVUELVE, y por
+    //  que NO es el mismo por los cuatro lados.
+    //
+    //  A lo ancho no hay nada al lado del panel, asi que se le da `halfGap`
+    //  como a cualquier celda vecina. A lo alto SI hay algo: entre grupo y
+    //  grupo la maqueta deja exactamente `Metrics::sm`, asi que dos paneles
+    //  con `halfGap` arriba y abajo se comen los ocho pixeles enteros y quedan
+    //  TOCANDOSE - que se lee igual que no dibujar ninguno, y es el intento
+    //  fallido que ya esta contado en la ficha del secuenciador. El aire
+    //  vertical es la MITAD del horizontal por esa razon y no por gusto, y sale
+    //  de `sm` en vez de estar escrito a mano: el dia que la separacion entre
+    //  grupos cambie, esto la sigue.
+    static constexpr int panelAireX = halfGap;
+    static constexpr int panelAireY = sm / 4;
+
+    //  Y CUANTO SE SEPARA DEL FONDO. Es el numero que Tests/skins.py vigila
+    //  como PANEL_ALPHA contra el mismo liston que el hueco de una celda, asi
+    //  que vive aqui y no dentro del pintor. Ver ZatiColours::groupOn.
+    static constexpr float panelHondura = 0.16f;
+
+    //  ...y EL BORDE. Un panel relleno y nada mas se lee como una mancha; con
+    //  un filo de un pixel se lee como una placa, que es lo que es. Va en la
+    //  MISMA direccion que el relleno y no en la contraria: `groupOn` escoge el
+    //  lado que tiene sitio, y el otro es justo por donde LACA se quedaba sin
+    //  recorrido -su cuerpo es oscuro y cromatico- asi que un borde "hacia el
+    //  chasis" seria invisible en la carcasa de fabrica.
+    //
+    //  El 0.12 sale de medir y no de elegir: en dE contra el relleno del panel
+    //  da PAPEL 8.83, GRAFITO 9.42, ACERO 8.75 y LACA 7.69, y el peor sigue por
+    //  encima del 6.0 que Tests/skins.py le exige al hueco de una celda contra
+    //  su tarjeta - el liston de una prueba no se reinventa en la de al lado. A
+    //  0.10 LACA se queda en 6.39, que es pasar raspando.
+    //
+    //  Y NO CUESTA AIRE: el trazo va centrado en un camino metido medio pixel,
+    //  asi que pinta exactamente el anillo de pixeles de fuera del panel. Ni lo
+    //  agranda ni le come el margen de dentro.
+    static constexpr float panelBorde = 0.12f;
+
     //  LA PESTANA DE UNA FICHA TAMBIEN SE TOCA.
     //
     //  Valia 32 con el argumento de que una pestana abre una pagina y no actua,

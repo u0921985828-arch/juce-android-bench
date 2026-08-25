@@ -119,6 +119,22 @@ namespace UiAudit
         rotulos.push_back ({ r.getX(), r.getY(), r.getWidth(), r.getHeight(), t, tipo, capaActual });
     }
 
+    //  LOS PANELES DE GRUPO, apuntados igual que los rotulos y por lo mismo:
+    //  son pintados, no son componentes, y lo que no se apunta no se mide. Un
+    //  panel es la unica cosa de esta app que se dibuja ALREDEDOR de otras, asi
+    //  que su fallo no es solaparse ni salirse - es que el aire que deja no sea
+    //  el mismo por los cuatro lados, y eso solo se ve con las dos cifras al
+    //  lado. Ver Tests/paneles.py.
+    struct Panel { int x, y, w, h; int capa; };
+    inline std::vector<Panel> paneles;
+
+    inline void panel (juce::Rectangle<int> r)
+    {
+        if (! midiendo) return;
+        r += origenPintado;
+        paneles.push_back ({ r.getX(), r.getY(), r.getWidth(), r.getHeight(), capaActual });
+    }
+
     //  EL JUEGO DE ICONOS, RASTERIZADO.
     //
     //  Un icono se juzga por tres cosas y solo la primera se ve mirandolo:
@@ -262,6 +278,13 @@ namespace UiAudit
         if (dynamic_cast<juce::TextEditor*> (&c) != nullptr) return "editor";
         if (dynamic_cast<juce::Button*>     (&c) != nullptr) return "button";
         if (dynamic_cast<juce::Label*>      (&c) != nullptr) return "label";
+        //  Una lista desplegable ES un control y salia como "other", asi que
+        //  para todo lo que filtra por tipo no existia: los dos puertos MIDI
+        //  quedaban fuera y el panel que los envuelve parecia dejar 5 px por un
+        //  lado y 237 por el otro. No entra en `interactive` -esos tres estan
+        //  escritos uno a uno mas abajo- asi que las seis reglas de expo.py no
+        //  se mueven; lo que gana es precision en el volcado.
+        if (dynamic_cast<juce::ComboBox*>   (&c) != nullptr) return "combo";
         return "other";
     }
 
@@ -595,6 +618,7 @@ namespace UiAudit
         const auto b = root.getLocalBounds();
         if (b.getWidth() < 1 || b.getHeight() < 1) return;
         rotulos.clear();
+        paneles.clear();
         midiendo = true;
         juce::Image img (juce::Image::ARGB, b.getWidth(), b.getHeight(), true);
         { juce::Graphics g (img); root.paintEntireComponent (g, true); }
@@ -614,6 +638,12 @@ namespace UiAudit
                       << ",\"x\":" << r.x << ",\"y\":" << r.y
                       << ",\"w\":" << r.w << ",\"h\":" << r.h
                       << ",\"capa\":" << r.capa << "}" << std::endl;
+
+        for (const auto& p : paneles)
+            std::cout << "{\"panel\":1"
+                      << ",\"x\":" << p.x << ",\"y\":" << p.y
+                      << ",\"w\":" << p.w << ",\"h\":" << p.h
+                      << ",\"capa\":" << p.capa << "}" << std::endl;
 
         if (tourPaso >= 0)
             std::cout << "{\"tour\":" << tourPaso

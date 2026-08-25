@@ -506,7 +506,15 @@ private:
     //  `filas` son las filas de CONTROL que cuelgan del rotulo, para el panel
     //  que se pinta detras del grupo: casi todos llevan una, y la fila de
     //  herramientas del patron lleva dos cuando no caben las seis en una.
-    struct SeqLabel { juce::Rectangle<int> band; juce::String key; int filas = 1; };
+    //  `grupo` une bandas que NO comparten renglon. El panel se deduce
+    //  uniendo las que empiezan a la misma altura, que es lo correcto para
+    //  PATRON y LARGO -parten un renglon en dos- y no llega para la tira del
+    //  paso: NOTA/GOLPE, REPETIR/CORTE y los cuatro bloqueos son tres filas
+    //  separadas por Metrics::halfGap, o sea cuatro pixeles, y tres paneles a
+    //  cuatro se comen dos por lado cada uno y salen TOCANDOSE - cero de hueco,
+    //  medido por Tests/paneles.py. Y ademas son una sola cosa: todo lo que hay
+    //  ahi actua sobre el paso que se acaba de tocar.
+    struct SeqLabel { juce::Rectangle<int> band; juce::String key; int filas = 1; int grupo = 0; };
     juce::Array<SeqLabel> seqLabelBands;
 
     //  EL PANEL DE UN GRUPO, en UN sitio y con cuatro clientes.

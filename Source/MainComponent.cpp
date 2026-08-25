@@ -4956,6 +4956,7 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     //  sobra - la altura de un carril de la rejilla sale de lo que quede.
     {
         juce::Array<juce::Rectangle<int>> bloques;
+        juce::Array<int> grupoDe;          // el `grupo` con el que nacio cada bloque
 
         for (const auto& lb : seqLabelBands)
         {
@@ -4973,14 +4974,20 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
             //  Metrics::sm, asi que "unir lo que este a menos de sm" unia la
             //  pagina entera en un solo panel y no agrupaba nada.
             bool unido = false;
-            for (auto& e : bloques)
-                if (std::abs (e.getY() - b.getY()) < 3)
+            for (int i = 0; i < bloques.size(); ++i)
+                //  Mismo renglon, o mismo `grupo` explicito. Ver SeqLabel: la
+                //  tira del paso son tres filas a cuatro pixeles y tres paneles
+                //  ahi salen tocandose, que se lee igual que no dibujar
+                //  ninguno.
+                if ((lb.grupo != 0 && lb.grupo == grupoDe[i])
+                    || (lb.grupo == 0 && grupoDe[i] == 0
+                        && std::abs (bloques.getReference (i).getY() - b.getY()) < 3))
                 {
-                    e = e.getUnion (b);
+                    bloques.getReference (i) = bloques.getReference (i).getUnion (b);
                     unido = true;
                     break;
                 }
-            if (! unido) bloques.add (b);
+            if (! unido) { bloques.add (b); grupoDe.add (lb.grupo); }
         }
 
         pintaPaneles (g, bloques);
@@ -5044,11 +5051,28 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
 void MainComponent::pintaPaneles (juce::Graphics& g,
                                   const juce::Array<juce::Rectangle<int>>& grupos) const
 {
-    g.setColour (ZatiColours::groupOn (ZatiColours::chassisTop, 0.16f));
+    const auto relleno = ZatiColours::groupOn (ZatiColours::chassisTop, Metrics::panelHondura);
+    //  El filo se decide contra el CHASIS y no contra el relleno: groupOn
+    //  escoge el lado midiendo el brillo de lo que se le pasa, y el relleno es
+    //  un color TRANSLUCIDO -blanco o negro con alfa- asi que preguntarle su
+    //  brillo daria el del blanco o el del negro y no el de la superficie.
+    //  Pintado encima del relleno, el resultado compuesto es el mismo.
+    const auto filo = ZatiColours::groupOn (ZatiColours::chassisTop, Metrics::panelBorde);
+
     for (const auto& e : grupos)
-        if (! e.isEmpty())
-            g.fillRoundedRectangle (e.expanded (Metrics::halfGap, 2).toFloat(),
-                                    (float) Metrics::sm);
+    {
+        if (e.isEmpty()) continue;
+        const auto caja = e.expanded (Metrics::panelAireX, Metrics::panelAireY);
+        //  Apuntado para que el banco pueda medir el aire de los cuatro lados.
+        //  Ver Tests/paneles.py: un panel no se puede salir ni solapar -las seis
+        //  reglas no le aplican- asi que su unico fallo posible es el reparto
+        //  del aire, y eso no lo ve ninguna de las que ya hay.
+        UiAudit::panel (caja);
+        g.setColour (relleno);
+        g.fillRoundedRectangle (caja.toFloat(), (float) Metrics::sm);
+        g.setColour (filo);
+        g.drawRoundedRectangle (caja.toFloat().reduced (0.5f), (float) Metrics::sm, 1.0f);
+    }
 }
 
 void MainComponent::Sheet::paint (juce::Graphics& g)
@@ -6373,7 +6397,11 @@ void MainComponent::resized()
             //  el dedo minimo, y quitarle 3 arriba y 3 abajo dejaba tres
             //  controles de 34 px que el banco saca como TOUCH. Encima hay 16
             //  px de rotulo y debajo Metrics::sm, asi que a 40 no toca nada.
-            auto chokeCell = r3.removeFromLeft (w3).reduced (6, 0);
+            //  Metrics::aireTapa y no un 6: es el margen de todas las demas
+            //  filas, y con seis CHOKE entraba cuatro pixeles mas que las dos
+            //  tapas que tiene debajo en el mismo panel - filas que empiezan
+            //  en 10 y en 6, que es lo que Tests/paneles.py llama FILAS.
+            auto chokeCell = r3.removeFromLeft (w3).reduced (Metrics::aireTapa, 0);
             //  JUCE stacks a slider's +/- buttons whenever the space left for
             //  them is taller than it is wide, and on a narrow screen the
             //  readout was eating enough of the cell to trigger exactly that -
@@ -6972,7 +7000,14 @@ void MainComponent::resized()
             //  Y ademas es la lectura correcta: los dos son el reloj del
             //  aparato -cuanto tarda en contestar y a que velocidad va- contra
             //  las tres PRUEBAS de arriba, que son cosas que se HACEN.
-            setGrupos.add (bufRowArea.getUnion (rateRowArea));
+            //  Y SOLO SI HAY CHIPS QUE ENVOLVER. Sin dispositivo de audio las
+            //  dos listas estan vacias -chipRow devuelve la fila igual, que es
+            //  correcto: el renglon existe- y quedaba una losa de 88 px detras
+            //  de dos rotulos y de nada mas. Un panel dice "estos van juntos";
+            //  sin estos, no dice nada. Lo saco Tests/paneles.py como VACIO en
+            //  28 corridas.
+            if (bufButtons.size() + rateButtons.size() > 0)
+                setGrupos.add (bufRowArea.getUnion (rateRowArea));
             //  IDIOMA y CARCASA viven ahora en su pagina.
             langRowArea = skinRowArea = {};
             projNameRowArea = projPathRowArea = {};
@@ -7710,11 +7745,34 @@ void MainComponent::resized()
             for (int f = 0; f < kNumPatterns / porFila; ++f)
             {
                 auto fila = (f == 0) ? row : panel.removeFromTop (Metrics::hit);
+                //  EL FILO SE ALINEA POR LA FILA, NO POR LA TAPA.
+                //
+                //  Esta paleta sobresalia UN pixel por los dos lados respecto a
+                //  la fila de brochas que comparte panel con ella -filas que
+                //  empiezan en 5 y en 6, dicho por Tests/paneles.py- porque
+                //  llevaba su margen escrito a mano en `reduced (1, 0)` y
+                //  layoutModuleBar usa Metrics::aireTapa.
+                //
+                //  Y ponerle aireTapa a cada tapa SALIO PEOR, que es lo que
+                //  hacia falta medir antes de creerselo: son ocho en una fila y
+                //  cada pixel de margen se lo quitan a las ocho, asi que en
+                //  412x915 pasaban de 41x40 a **39x40** - por debajo del dedo
+                //  minimo, y expo.py saco 28 TOUCH nuevos. Cambiar un desliz de
+                //  un pixel por un objetivo que no se puede tocar no es un
+                //  arreglo, que es la misma regla que ya deshizo dos veces el
+                //  reparto de las barras de modulos.
+                //
+                //  Asi que el pixel que falta se lo come la FILA una sola vez:
+                //  el filo de fuera queda en aireTapa como el de cualquier otra
+                //  fila, el hueco entre tapas sigue siendo el de siempre, y las
+                //  ocho pierden 1/8 de pixel en vez de dos cada una.
+                fila = fila.reduced (Metrics::aireTapa - 1, 0);
                 const int w = fila.getWidth() / porFila;
                 for (int i = 0; i < porFila; ++i)
                 {
                     const int k = f * porFila + i;
-                    songPatBtns[k]->setBounds ((i < porFila - 1 ? fila.removeFromLeft (w) : fila).reduced (1, 0));
+                    songPatBtns[k]->setBounds ((i < porFila - 1 ? fila.removeFromLeft (w) : fila)
+                                                   .reduced (1, 0));
                 }
                 if (f + 1 < kNumPatterns / porFila) panel.removeFromTop (Metrics::halfGap);
             }
@@ -8974,8 +9032,9 @@ void MainComponent::resized()
                 {
                     auto banda = tira.removeFromTop (nameH);
                     auto mitad = Lang::takeStart (banda, banda.getWidth() / 2);
-                    seqLabelBands.add ({ mitad, juce::String (nIzq) });
-                    seqLabelBands.add ({ banda, juce::String (nDer) });
+                    //  Grupo 1: la tira entera es un panel. Ver SeqLabel.
+                    seqLabelBands.add ({ mitad, juce::String (nIzq), 1, 1 });
+                    seqLabelBands.add ({ banda, juce::String (nDer), 1, 1 });
 
                     auto row = tira.removeFromTop (Metrics::hit);
                     auto celdaIzq = Lang::takeStart (row, row.getWidth() / 2).reduced (Metrics::aireTapa, 0);
@@ -9023,7 +9082,7 @@ void MainComponent::resized()
                         //  lado y repartir por el total deja la ultima celda
                         //  fuera por el redondeo.
                         const int ancho = banda.getWidth() / (4 - i);
-                        seqLabelBands.add ({ Lang::takeStart (banda, ancho), juce::String (nombres[i]) });
+                        seqLabelBands.add ({ Lang::takeStart (banda, ancho), juce::String (nombres[i]), 1, 1 });
                         auto celda = Lang::takeStart (row, row.getWidth() / (4 - i))
                                          .reduced (Metrics::aireTapa, 0);
                         //  El mando primero y el numero con lo que quede, que es
