@@ -247,20 +247,15 @@ MainComponent::MainComponent()
     setAudioChannels (0, 2);
     useLowestLatency();
 
-    //  Unidad, no 0.85. Un pad toca la muestra como esta: 0.85 eran -1.4 dB
-    //  de rebaja escondida que nadie pidio y que ya no hace falta, porque el
-    //  limitador de seguridad del master es quien cuida la suma de 64 pads.
-    padGain.fill (1.0f);
-    padEnd01.fill (1.0f);
-    padAttack.fill (2.0f);
-    padRelease.fill (5.0f);
-    //  El espejo del filtro, abierto, igual que el motor. Cero aqui serian
-    //  sesenta y cuatro mandos de corte en el tope de abajo: la ficha diria
-    //  "20 Hz" en un pad que suena entero.
-    padCut.fill (AudioEngine::kFiltOpenHz);
-    //  AUTOCUT on everywhere, matching the engine. A pad that stacks over
-    //  its own tail is the special case, not the normal one.
-    padSelfCut.fill (true);
+    //  LOS DEFECTOS DE UN PAD, EN UN SOLO SITIO. Ver ponPadPorDefecto.
+    //
+    //  Estaban aqui sueltos, en seis .fill() - unidad de ganancia, recorte
+    //  entero, 2 y 5 ms de envolvente, el filtro abierto y el autocorte
+    //  puesto - y no habia forma de volver a ellos: cargar un instrumento
+    //  nuevo dejaba el pad con la afinacion, el filtro y el choke del sonido
+    //  anterior. Escritos dos veces se habrian separado, que es lo mismo que
+    //  ya obligo a sacar `normaliza` de dentro de `render`.
+    for (int i = 0; i < kNumPads; ++i) ponPadPorDefecto (i);
 
     //  MENOS UNO es "este dedo no esta tocando nada". El array se
     //  inicializaba a ceros -que es lo que deja `{}`- o sea al PAD 0: levantar
@@ -396,6 +391,53 @@ MainComponent::MainComponent()
             cb[i]->onClick = [this] { closeAllSheets(); };
             s->addAndMakeVisible (cb[i]);
         }
+    }
+
+    //  LA REJILLA DE DIECISEIS PARA ELEGIR PAD. Ver padPickSheet en la cabecera.
+    {
+        addAndMakeVisible (padPickSheet);
+        padPickSheet.setVisible (false);
+        padPickSheet.onDismiss    = [this] { abrePadPicker (false); };
+        padPickSheet.paintContent = [this] (juce::Graphics& g) { paintPadPickContent (g); };
+        styleButton (padPickCloseBtn, kKey);
+        padPickCloseBtn.onClick = [this] { abrePadPicker (false); };
+        padPickSheet.addAndMakeVisible (padPickCloseBtn);
+
+        for (int i = 0; i < kNumPads; ++i)
+        {
+            auto* b = new juce::TextButton (juce::String (i + 1).paddedLeft ('0', 2));
+            styleButton (*b, kStepOff);
+            litAccent (*b);
+            b->setClickingTogglesState (true);
+            //  Elegir y cerrar: la rejilla existe para llegar al pad de un
+            //  gesto, y dejarla abierta despues de acertar seria un segundo
+            //  toque para volver a lo que se estaba haciendo.
+            b->onClick = [this, i] { selectPad (i); abrePadPicker (false); };
+            padPickSheet.addAndMakeVisible (b);
+            padPickBtns.add (b);
+        }
+
+        for (int b = 0; b < kNumBanks; ++b)
+        {
+            auto* t = new juce::TextButton (juce::String::charToString ((juce::juce_wchar) ('A' + b)));
+            styleButton (*t, kStepOff);
+            litAccent (*t);
+            t->setClickingTogglesState (true);
+            t->setRadioGroupId (5151);
+            t->onClick = [this, b] { selectBank (b); refrescaPadPicker(); };
+            padPickSheet.addAndMakeVisible (t);
+            padPickBankBtns.add (t);
+        }
+
+        //  Las dos puertas. La misma tapa en el mismo sitio -a la derecha de la
+        //  cabecera- en las dos fichas que editan "el pad que tengas elegido".
+        for (auto* b : { &pianoPadPickBtn, &padPadPickBtn })
+        {
+            styleButton (*b, kKey);
+            b->onClick = [this] { abrePadPicker (! padPickAbierto); };
+        }
+        seqSheet.addAndMakeVisible (pianoPadPickBtn);
+        padSheet.addAndMakeVisible (padPadPickBtn);
     }
 
     // Projects sheet — reached from the header chip, not the module bar (the
@@ -3800,6 +3842,14 @@ void MainComponent::openSheet (Sheet& s, juce::TextButton& toggle)
     toggle.setToggleState (true, juce::dontSendNotification);
     s.setVisible (true);
     s.toFront (false);
+
+    //  Y CON ELLA, EL PERMISO PARA TOCAR LOS PADS QUE ASOMAN. Ver
+    //  Sheet::onFuera y tocaPadDetras. Se pone AQUI, que es el embudo por el
+    //  que pasa toda ficha que se abre, y no en once sitios: el tour no entra
+    //  por aqui, que es justo la unica que no debe cerrarse ni desviarse por
+    //  un roce.
+    s.onFuera = [this] (juce::Point<int> p) { return tocaPadDetras (p); };
+
     resized();
     repaint();
 }
@@ -4130,6 +4180,10 @@ void MainComponent::closeAllSheets()
     chopSheet.setVisible (false);
     manualSheet.setVisible (false);
     tourSheet.setVisible (false);
+    //  Y LA REJILLA DE PADS, que vive ENCIMA de la ficha que la abrio: sin
+    //  esto, cerrar el secuenciador dejaba flotando su selector de pad sobre
+    //  la cara. Ver abrePadPicker.
+    if (padPickAbierto) abrePadPicker (false);
 
     //  CERRAR LA FICHA XY EN MOMENTANEO TIENE QUE APAGAR EL EFECTO.
     //
@@ -4726,7 +4780,11 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
     //  them, so this line has no length it can count on. Stop it before the
     //  close button and let it shrink rather than run underneath.
     auto padTitleRow = padSheet.sheetBounds.reduced (14, 12).removeFromTop (16);
-    padTitleRow = antesDe (antesDe (padTitleRow, previewButton), padCloseButton);
+    //  Y DE LA TERCERA TAPA DE LA FILA: la puerta de la rejilla de dieciseis
+    //  pads. Sin ella el titulo -"PAD 64 · ARP"- se le metia debajo en 280x653,
+    //  doce hallazgos. Es la misma cuenta que ya hacian las otras dos.
+    padTitleRow = antesDe (antesDe (antesDe (padTitleRow, previewButton), padPadPickBtn),
+                           padCloseButton);
     //  Ellipsised rather than squeezed: a name long enough to need shrinking
     //  is long enough that shrinking will not save it, and a sentence cut off
     //  mid-letter reads as a bug where "..." reads as a long name.
@@ -4899,12 +4957,14 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     //  idiomas. Es el mismo fallo que ya costo 35 hallazgos en los titulos del
     //  pad y de la mesa, escrito cinco veces mas en sitios que el banco no
     //  podia ver porque nadie apuntaba el rotulo.
-    //  Y DE LAS DOS TAPAS DE SU FILA, no solo de la cruz. "1-16" vive en el
+    //  Y DE LAS TRES TAPAS DE SU FILA, no solo de la cruz. "1-16" vive en el
     //  renglon del titulo en la pagina de la rejilla, y en 280x653 el titulo
     //  -"PASOS · PAD 64  ARP · P1"- se le metia debajo. No lo veia nadie porque
     //  este rotulo se dibujaba a mano y no lo apuntaba ninguna regla; en cuanto
-    //  paso por `apunta`, once hallazgos.
-    auto tituloRow = antesDe (antesDe (inner.removeFromTop (16), seqCloseButton, Metrics::sm),
+    //  paso por `apunta`, once hallazgos. La tercera es la puerta de la rejilla
+    //  de dieciseis pads, que vive en esta misma cabecera.
+    auto tituloRow = antesDe (antesDe (antesDe (inner.removeFromTop (16), seqCloseButton, Metrics::sm),
+                                       pianoPadPickBtn, Metrics::sm),
                               seqPistasBtn, Metrics::sm);
     apunta (g, tituloRow, t, "titulo");
     g.drawFittedText (t, tituloRow, Lang::start(), 1, 0.85f);
@@ -6111,6 +6171,59 @@ void MainComponent::resized()
                           juce::jmax (dentro.getHeight(), pedido));
         return s.cuerpo.getLocalBounds();
     };
+    //  LA REJILLA DE DIECISEIS PARA ELEGIR PAD. Ver abrePadPicker.
+    //
+    //  Se maqueta la PRIMERA de las fichas a proposito: es la unica que se
+    //  dibuja ENCIMA de otra, asi que sus limites no dependen de los de nadie -
+    //  y asi queda claro que no le quita un pixel a la ficha que hay debajo.
+    if (padPickAbierto)
+    {
+        //  Lo que pide, sumado y no probado: dos margenes, la cabecera, el aire,
+        //  cuatro filas de tapa con sus tres huecos, el aire y la fila de
+        //  bancos. 2*12 + 40 + 12 + 4*44 + 3*4 + 8 + 40 = 312.
+        const int quiere = 2 * Metrics::md + Metrics::hit + Metrics::md
+                           + 4 * Metrics::btn + 3 * Metrics::xs
+                           + Metrics::sm + Metrics::hit;
+        auto inner = sheetFromBottom (padPickSheet, quiere);
+
+        auto titleRow = inner.removeFromTop (Metrics::hit);
+        padPickCloseBtn.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
+                                     .withSizeKeepingCentre (Metrics::hit, Metrics::hit));
+        inner.removeFromTop (Metrics::md);
+
+        //  LA FILA DE BANCOS SE APARTA PRIMERO, que es la regla de la casa:
+        //  cuatro tapas no encogen y las filas de la rejilla si.
+        auto bancos = inner.removeFromBottom (Metrics::hit);
+        inner.removeFromBottom (Metrics::sm);
+
+        for (auto* b : padPickBtns) if (b != nullptr) { b->setVisible (false); b->setBounds ({}); }
+
+        const int filaH = juce::jmax (Metrics::hit,
+                                      (inner.getHeight() - 3 * Metrics::xs) / 4);
+        for (int r = 0; r < 4; ++r)
+        {
+            auto row = inner.removeFromTop (filaH);
+            const int w = row.getWidth() / 4;
+            for (int c = 0; c < 4; ++c)
+            {
+                //  De abajo arriba, como la cara y como el RACK: el 01 abajo a
+                //  la izquierda. Numerar al reves seria un mapa distinto del
+                //  mismo instrumento.
+                const int i = currentBank * kPadsPerBank + (3 - r) * 4 + c;
+                padPickBtns[i]->setVisible (true);
+                padPickBtns[i]->setBounds ((c < 3 ? row.removeFromLeft (w) : row).reduced (1, 0));
+            }
+            inner.removeFromTop (Metrics::xs);
+        }
+
+        {
+            const int w = bancos.getWidth() / kNumBanks;
+            for (int b = 0; b < kNumBanks; ++b)
+                padPickBankBtns[b]->setBounds ((b < kNumBanks - 1 ? bancos.removeFromLeft (w) : bancos)
+                                                 .reduced (1, 0));
+        }
+    }
+
     auto placeKnobRow = [] (juce::Rectangle<int> row, juce::Slider** ks, int n = 3)
     {
         const int w = row.getWidth() / juce::jmax (1, n);
@@ -6165,6 +6278,19 @@ void MainComponent::resized()
         padCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
         Lang::takeEnd (titleRow, Metrics::xs);
         previewButton.setBounds (Lang::takeEnd (titleRow, 68).reduced (0, 0));
+        //  LA PUERTA A LA REJILLA DE DIECISEIS, en la cabecera y a la derecha,
+        //  igual que en la pagina del piano: las dos fichas que editan "el pad
+        //  que tengas elegido" lo cambian desde el mismo sitio. Ver
+        //  padPickSheet. Y solo si queda ancho para ella y para el titulo: el
+        //  rotulo son dos cifras, asi que le basta el dedo.
+        {
+            Lang::takeEnd (titleRow, Metrics::xs);
+            const bool cabe = titleRow.getWidth() >= Metrics::hit * 2;
+            padPadPickBtn.setVisible (cabe);
+            padPadPickBtn.setBounds (cabe ? Lang::takeEnd (titleRow, Metrics::hit)
+                                              .withSizeKeepingCentre (Metrics::hit, Metrics::hit)
+                                          : juce::Rectangle<int>());
+        }
 
         //  Las pestanas, debajo del titulo y en las dos paginas.
         inner.removeFromTop (Metrics::xs);
@@ -8439,6 +8565,31 @@ void MainComponent::resized()
 
         auto titleRow = inner.removeFromTop (Metrics::hit);
         seqCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
+        //  LA PUERTA A LA REJILLA DE DIECISEIS, en la cabecera de la FICHA y no
+        //  en la fila de PAD -/+ de la pagina del piano.
+        //
+        //  Estuvo alli y salio medido: esa fila se reparte POR EL TEXTO, y el
+        //  rotulo de la puerta son dos cifras -lo mas corto de los tres- asi
+        //  que en arabe y en chino, donde "PAD +" mide mas, le tocaban 38 px.
+        //  Veinticuatro casos por debajo del dedo en 360x640. Y no se arregla
+        //  subiendo el suelo: layoutModuleBar solo lo sube si TODAS las tapas
+        //  caben a 40 con su texto, y ahi no caben - forzarlo cambia un apreton
+        //  por un corte, que no es un arreglo.
+        //
+        //  Aqui es una caja fija de Metrics::hit, o sea el dedo exacto, y
+        //  ademas queda en el MISMO sitio que en la ficha del pad: las dos
+        //  fichas que editan "el pad que tengas elegido" lo cambian desde el
+        //  mismo rincon. Y vale para las tres paginas, que las tres actuan
+        //  sobre el pad elegido - el piano dibuja sus notas, la tira edita su
+        //  paso y EUCLIDES reescribe su fila.
+        {
+            Lang::takeEnd (titleRow, Metrics::xs);
+            const bool cabe = titleRow.getWidth() >= Metrics::hit * 2;
+            pianoPadPickBtn.setVisible (cabe);
+            pianoPadPickBtn.setBounds (cabe ? Lang::takeEnd (titleRow, Metrics::hit)
+                                                .withSizeKeepingCentre (Metrics::hit, Metrics::hit)
+                                            : juce::Rectangle<int>());
+        }
 
         //  LA VENTANA DE PISTAS VA EN LA FILA DEL TITULO, y no con los bancos
         //  ni con el transporte, que fueron los dos primeros intentos y los dos
@@ -8533,6 +8684,9 @@ void MainComponent::resized()
         if (onPiano)
         {
             {
+                //  DOS TAPAS Y NO TRES: la que abre la rejilla de dieciseis
+                //  vive en la cabecera de la FICHA, que es donde puede tener su
+                //  dedo entero. Ver el parrafo de pianoPadPickBtn mas arriba.
                 juce::TextButton* pn[2] = { &pianoPadDownBtn, &pianoPadUpBtn };
                 //  EL SITIO SE PIDE MIDIENDO EL ROTULO, no a sextos de la fila.
                 //
@@ -9598,6 +9752,39 @@ void MainComponent::padClicked (int index)
     selectPad (index);   // selection drives EDIT and SEC
 }
 
+//  LOS SIETE MANDOS DE LA TIRA, APUNTANDO AL PASO QUE HAY TOCADO.
+//
+//  Estaba escrito dentro de stepCellToggled, o sea que solo se refrescaba al
+//  tocar una celda. Cambiar de PAD con el mismo paso tocado -PAD -/+ en el
+//  piano, un toque en un pad, la rejilla de dieciseis- dejaba los siete
+//  ensenando los valores del pad ANTERIOR, y el primer arrastre los escribia
+//  en el pad nuevo: exactamente el fallo que el comentario de abajo ya
+//  describia para el paso, entrando por otra puerta.
+//
+//  Sin paso tocado no hay nada que ensenar y la tira no se maqueta siquiera.
+void MainComponent::refrescaTiraPaso()
+{
+    const int step = selectedStep, pad = selectedPad;
+    if (step < 0 || pad < 0) return;
+
+    //  Los mandos siguen a lo que se acaba de tocar, asi que lo que ensenan es
+    //  siempre el paso que hay debajo del dedo y nunca el ultimo.
+    noteSlider.setValue (engine.getStepNote (selectedPattern, step, pad), juce::dontSendNotification);
+    velSlider.setValue  (engine.getStepVel  (selectedPattern, step, pad), juce::dontSendNotification);
+    rollSlider.setValue (engine.getStepRoll (selectedPattern, step, pad), juce::dontSendNotification);
+
+    const int lk = engine.getStepLock (selectedPattern, step, pad);
+    lockSlider.setValue (lk == AudioEngine::kNoLock ? 0.0 : (double) (lk + 1),
+                         juce::dontSendNotification);
+    //  Y los otros cuatro. Sin esto los mandos ensenan el paso ANTERIOR y
+    //  el primer arrastre escribe ese valor en el que se acaba de tocar,
+    //  que es como se pierde un bloqueo sin tocarlo.
+    juce::Slider* cuatro[4] = { &atkPasoSlider, &relPasoSlider, &iniPasoSlider, &panPasoSlider };
+    for (int i = 0; i < 4; ++i)
+        cuatro[i]->setValue ((double) engine.getStepPLock (selectedPattern, step, pad, i),
+                             juce::dontSendNotification);
+}
+
 void MainComponent::stepCellToggled (int pad, int step)
 {
     if (step >= engine.getPatternLength (selectedPattern)) return;
@@ -9608,23 +9795,7 @@ void MainComponent::stepCellToggled (int pad, int step)
     const bool teniaPaso = (selectedStep >= 0);
     selectedStep = step;
     selectPad (pad);                 // the lane you touched becomes the pad you edit
-    //  The three step controls follow whatever you just touched, so what they
-    //  show is always the step under your finger and never the last one.
-    noteSlider.setValue (engine.getStepNote (selectedPattern, step, pad), juce::dontSendNotification);
-    velSlider.setValue  (engine.getStepVel  (selectedPattern, step, pad), juce::dontSendNotification);
-    rollSlider.setValue (engine.getStepRoll (selectedPattern, step, pad), juce::dontSendNotification);
-    {
-        const int lk = engine.getStepLock (selectedPattern, step, pad);
-        lockSlider.setValue (lk == AudioEngine::kNoLock ? 0.0 : (double) (lk + 1),
-                             juce::dontSendNotification);
-        //  Y los otros cuatro. Sin esto los mandos ensenan el paso ANTERIOR y
-        //  el primer arrastre escribe ese valor en el que se acaba de tocar,
-        //  que es como se pierde un bloqueo sin tocarlo.
-        juce::Slider* cuatro[4] = { &atkPasoSlider, &relPasoSlider, &iniPasoSlider, &panPasoSlider };
-        for (int i = 0; i < 4; ++i)
-            cuatro[i]->setValue ((double) engine.getStepPLock (selectedPattern, step, pad, i),
-                                 juce::dontSendNotification);
-    }
+    refrescaTiraPaso();
 
     const bool nv = ! pattern[(size_t) selectedPattern][(size_t) step][(size_t) pad];
     pattern[(size_t) selectedPattern][(size_t) step][(size_t) pad] = nv;
@@ -9792,6 +9963,16 @@ void MainComponent::selectBank (int bank)
 void MainComponent::selectPad (int index)
 {
     selectedPad = index;
+    //  LAS DOS PUERTAS DICEN A QUE PAD LLEVAN, y con DOS cifras siempre: un
+    //  rotulo que pasa de "9" a "10" cambia de ancho, y la fila se reparte por
+    //  el texto que lleva - o sea que la cabecera daria un salto al cambiar de
+    //  pad. Es el mismo argumento por el que el muelle del tour mide con el
+    //  parrafo mas largo y no con el que toca.
+    {
+        const auto dosCifras = juce::String (index + 1).paddedLeft ('0', 2);
+        pianoPadPickBtn.setButtonText (dosCifras);
+        padPadPickBtn  .setButtonText (dosCifras);
+    }
     updateControlsFromPad (index);
     waveform.setSample (uiSample[(size_t) index]);
     {
@@ -9841,6 +10022,122 @@ void MainComponent::selectPad (int index)
     //  ensena las notas del pad anterior con el nombre del nuevo en la cabecera,
     //  que es la peor de las dos mentiras posibles.
     if (seqSheet.isVisible() && seqPage == seqPagePiano) refreshPiano();
+    //  Y LA TIRA DEL PASO, que actua sobre (paso, pad) y hasta ahora solo se
+    //  refrescaba al tocar una celda. Ver refrescaTiraPaso.
+    refrescaTiraPaso();
+    if (seqSheet.isVisible())
+    {
+        refreshStepGrid();      // el carril marcado es el del pad elegido
+        seqSheet.repaint();     // y la cabecera dice de que pad son las notas
+    }
+    if (padPickAbierto) refrescaPadPicker();
+}
+
+//  UN TOQUE EN UN PAD QUE ASOMA POR DEBAJO DE UNA FICHA ABIERTA.
+//
+//  La tarjeta se centra al 78 % PARA QUE la maquina se siga viendo -lo dice
+//  sheetFromBottom- y se veia y no se podia tocar: cualquier toque fuera de la
+//  tarjeta cerraba la ficha. O sea que cambiar el pad que edita el
+//  secuenciador costaba cerrar, elegir y volver a abrir, con la rejilla de
+//  pads delante todo el rato.
+//
+//  Solo lo que se VE: el punto ya viene de fuera de la tarjeta, asi que un pad
+//  medio tapado responde por su mitad visible y ni un pixel mas. Se toca lo que
+//  se ve, que es la unica regla que no hay que explicar - y para llegar a los
+//  dieciseis esta la rejilla de padPickSheet.
+bool MainComponent::tocaPadDetras (juce::Point<int> p)
+{
+    //  Las coordenadas cuadran porque la ficha se pone en getLocalBounds() y no
+    //  en el area segura: su origen es (0,0), o sea el mismo sistema en el que
+    //  estan los limites de los pads. Ver sheetFromBottom.
+    for (int i = 0; i < pads.size(); ++i)
+        if (auto* b = pads[i])
+            if (b->isVisible() && b->getBounds().contains (p))
+            {
+                //  padClicked es el embudo de la cara: suena, anuncia la
+                //  presion, graba si REC esta armado y termina en selectPad.
+                //  Mismo gesto, mismo resultado - que es lo unico que hace que
+                //  no haya que aprender nada nuevo.
+                padClicked (i);
+                return true;
+            }
+
+    return false;
+}
+
+//  LA REJILLA DE DIECISEIS, ABIERTA O CERRADA. Ver padPickSheet en la cabecera.
+void MainComponent::abrePadPicker (bool abrir)
+{
+    padPickAbierto = abrir;
+    padPickSheet.setVisible (abrir);
+
+    if (abrir)
+    {
+        //  ENCIMA de la ficha que la abrio, que es todo el argumento: no cuesta
+        //  alto porque no vive dentro de la maqueta de nadie.
+        padPickSheet.toFront (false);
+        refrescaPadPicker();
+    }
+    else
+    {
+        //  APAGAR *Y* VACIAR LOS LIMITES, las dos cosas. Un control encendido y
+        //  de 0x0 -o apagado con las coordenadas de la ultima vez- es
+        //  exactamente lo que costo SEGUIR y lo que la septima regla del banco
+        //  existe para cazar.
+        for (auto* b : padPickBtns)     if (b != nullptr) b->setBounds ({});
+        for (auto* b : padPickBankBtns) if (b != nullptr) b->setBounds ({});
+        padPickCloseBtn.setBounds ({});
+        padPickSheet.sheetBounds = {};
+    }
+
+    resized();
+    repaint();
+}
+
+void MainComponent::refrescaPadPicker()
+{
+    for (int i = 0; i < padPickBtns.size(); ++i)
+        if (auto* b = padPickBtns[i])
+        {
+            b->setToggleState (i == selectedPad, juce::dontSendNotification);
+            //  LOS VACIOS SE VEN Y SE LEEN COMO VACIOS. En un kit de cinco
+            //  sonidos, dieciseis numeros iguales no dicen donde estan los
+            //  cinco - y esa es justo la informacion por la que PAD -/+ salta
+            //  huecos. Aqui no hace falta saltarlos: se enseñan.
+            b->setAlpha (padHasSample[(size_t) i] ? 1.0f : 0.45f);
+        }
+
+    for (int b = 0; b < padPickBankBtns.size(); ++b)
+        if (auto* t = padPickBankBtns[b])
+            t->setToggleState (b == currentBank, juce::dontSendNotification);
+
+    padPickSheet.repaint();
+}
+
+void MainComponent::paintPadPickContent (juce::Graphics& g)
+{
+    if (padPickSheet.sheetBounds.isEmpty()) return;
+
+    auto inner = padPickSheet.sheetBounds.reduced (Metrics::lg, Metrics::md);
+    auto titulo = inner.removeFromTop (Metrics::hit).withTrimmedTop (8).withHeight (24);
+
+    //  El titulo se aparta de la cruz por el lado que toque: en arabe el texto
+    //  se va a la derecha, que es donde takeEnd la ha puesto.
+    if (! padPickCloseBtn.getBounds().isEmpty())
+    {
+        if (Lang::isRightToLeft (Lang::current()))
+            titulo.setLeft  (juce::jmax (titulo.getX(),     padPickCloseBtn.getRight() + Metrics::sm));
+        else
+            titulo.setRight (juce::jmin (titulo.getRight(), padPickCloseBtn.getX()     - Metrics::sm));
+    }
+
+    const int sp = juce::jmax (0, selectedPad);
+    g.setColour (ZatiColours::ink.withAlpha (0.9f));
+    g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
+    pintaTitulo (g, titulo,
+                 T ("PAD %1", juce::String (sp + 1))
+                   + (padName[(size_t) sp].isNotEmpty() ? "   " + padName[(size_t) sp] : juce::String()),
+                 "titulo", true);
 }
 
 // The display shows the whole cut, not one pad: every pad pointing at the
@@ -10196,6 +10493,10 @@ void MainComponent::cargaFabricaEnBanco (int origen, int destino)
         const int dst = destino * kPadsPerBank + i;
         if (auto sb = Kits::render (src))
         {
+            //  EL PAD SE VACIA ANTES DE RECIBIR. Ver ponPadPorDefecto: sin esto
+            //  la fabrica entraba con la afinacion, el filtro y el choke del
+            //  sonido que hubiera, y el instrumento nuevo sonaba como el viejo.
+            ponPadPorDefecto (dst);
             assignSampleToPad (dst, sb, Kits::table()[src].name);
             //  El color del pad lo pone Zati::forPad y no se toca: el orden de
             //  corte manda sobre cualquier idea decorativa.
@@ -10213,6 +10514,77 @@ void MainComponent::loadFactoryKits (int onlyBank)
     //  y lo que significaba esta funcion antes de que hubiera catalogo.
     if (onlyBank >= 0) { cargaFabricaEnBanco (onlyBank, onlyBank); return; }
     for (int b = 0; b < kNumBanks; ++b) cargaFabricaEnBanco (b, b);
+}
+
+//  UN PAD, COMO NACE.
+//
+//  Existe porque cargar un instrumento nuevo daba el instrumento nuevo sonando
+//  con los ajustes del anterior. assignSampleToPad -por donde entran TODOS los
+//  caminos que ponen sonido en un pad- reiniciaba el recorte y nada mas: la
+//  afinacion, el corte del filtro, la resonancia, la ganancia, el pan, la
+//  envolvente, los fundidos, el reves, el bucle, el choke, el autocorte y los
+//  seis envios se quedaban donde los dejo el sonido de antes. Cargar un banco
+//  encima de uno donde habias cerrado un filtro o puesto un choke te daba
+//  dieciseis sonidos nuevos que no se oian, y la causa no se veia en ninguna
+//  parte.
+//
+//  Es la misma herencia que ya se cazo en NUEVO: vaciar la mitad de un
+//  proyecto es peor que no vaciar nada, porque lo que queda parece tuyo.
+//
+//  Escribe el espejo Y empuja al motor, que es lo unico que garantiza que los
+//  dos digan lo mismo. El constructor la llama tambien: los defectos vivian
+//  ahi sueltos en seis .fill(), y una regla escrita dos veces son dos reglas.
+//
+//  NO toca la muestra, ni el nombre, ni el color: el color del pad lo pone
+//  Zati::forPad por orden de corte y no es un ajuste de sonido.
+void MainComponent::ponPadPorDefecto (int i)
+{
+    if (! juce::isPositiveAndBelow (i, kNumPads)) return;
+    const auto k = (size_t) i;
+
+    padPitch[k]    = 0.0f;
+    padCents[k]    = 0.0f;
+    padKeepLen[k]  = false;
+    //  Unidad, no 0.85. Un pad toca la muestra como esta: 0.85 eran -1.4 dB
+    //  de rebaja escondida que nadie pidio y que ya no hace falta, porque el
+    //  limitador de seguridad del master es quien cuida la suma de 64 pads.
+    padGain[k]     = 1.0f;
+    padStart01[k]  = 0.0f;
+    padEnd01[k]    = 1.0f;
+    padLoop[k]     = false;
+    //  AUTOCUT on everywhere, matching the engine. A pad that stacks over
+    //  its own tail is the special case, not the normal one.
+    padSelfCut[k]  = true;
+    padReverse[k]  = false;
+    padChokeUI[k]  = 0;
+    padPan[k]      = 0.0f;
+    padAttack[k]   = 2.0f;
+    padRelease[k]  = 5.0f;
+    //  El espejo del filtro, abierto, igual que el motor. Cero aqui serian
+    //  sesenta y cuatro mandos de corte en el tope de abajo: la ficha diria
+    //  "20 Hz" en un pad que suena entero.
+    padCut[k]      = AudioEngine::kFiltOpenHz;
+    padReso[k]     = 0.0f;
+    padFadeIn[k]   = 0.0f;
+    padFadeOut[k]  = 0.0f;
+
+    engine.setPadPitch      (i, 0.0f);
+    engine.setPadKeepLength (i, false);
+    engine.setPadGain       (i, 1.0f);
+    engine.setPadLoop       (i, false);
+    engine.setPadSelfCut    (i, true);
+    engine.setPadReverse    (i, false);
+    engine.setPadChoke      (i, 0);
+    engine.setPadPan        (i, 0.0f);
+    engine.setPadAttack     (i, 2.0f);
+    engine.setPadRelease    (i, 5.0f);
+    engine.setPadCutoff     (i, AudioEngine::kFiltOpenHz);
+    engine.setPadReso       (i, 0.0f);
+    engine.setPadFadeIn     (i, 0.0f);
+    engine.setPadFadeOut    (i, 0.0f);
+    //  Y LOS ENVIOS, que no tienen espejo -viven solo en el motor, el RACK los
+    //  lee de ahi- y que son justo los que ya sobrevivieron una vez a NUEVO.
+    for (int f = 0; f < AudioEngine::kNumFx; ++f) engine.setPadSend (i, f, 0.0f);
 }
 
 void MainComponent::assignSampleToPad (int index, SampleBuffer::Ptr sb, const juce::String& name)
@@ -10263,6 +10635,19 @@ void MainComponent::assignSampleToPad (int index, SampleBuffer::Ptr sb, const ju
     engine.setPadAncho   (index, padAnchoUI[(size_t) index]);
     engine.setPadAttack  (index, padAttack[(size_t) index]);
     engine.setPadRelease (index, padRelease[(size_t) index]);
+    //  Y EL FILTRO Y LOS FUNDIDOS, que faltaban y no se veia.
+    //
+    //  Estos cuatro no se empujaban nunca, asi que el motor conservaba lo que
+    //  tuviera - y el corte del pad NO lo escribe solo esta funcion: lo escribe
+    //  tambien el bloqueo de corte de un paso, desde el hilo de audio, y se
+    //  queda puesto hasta que otro paso diga otra cosa. Un pad que habia sonado
+    //  en un patron con bloqueos se cargaba filtrado mientras el mando de la
+    //  ficha decia "abierto": el espejo y el motor contando cosas distintas, que
+    //  es la unica clase de fallo que no se puede ver mirando la pantalla.
+    engine.setPadCutoff  (index, padCut[(size_t) index]);
+    engine.setPadReso    (index, padReso[(size_t) index]);
+    engine.setPadFadeIn  (index, padFadeIn[(size_t) index]);
+    engine.setPadFadeOut (index, padFadeOut[(size_t) index]);
 
     if (auto* p = pads[index]) p->setSampleInfo (uiSample[(size_t) index], padName[(size_t) index],
                                                  padStart01[(size_t) index], padEnd01[(size_t) index]);
@@ -12897,7 +13282,8 @@ void MainComponent::paintPianoSheetContent (juce::Graphics& g)
     //  tapas, asi que el nombre del pad aterrizaba encima de ellas.
     auto titulo = inner.removeFromTop (16);
     {
-        const juce::Rectangle<int> tapas[3] = { seqCloseButton.getBounds(),
+        const juce::Rectangle<int> tapas[4] = { seqCloseButton.getBounds(),
+                                                pianoPadPickBtn.getBounds(),
                                                 pianoPadDownBtn.getBounds(),
                                                 pianoPadUpBtn.getBounds() };
         int izq = titulo.getRight(), der = titulo.getX();
@@ -15330,6 +15716,20 @@ void MainComponent::repartePorBanco (const juce::Array<juce::File>& files, const
     const int n    = juce::jmin (files.size(), kPadsPerBank);
     closeAllSheets();
 
+    //  LOS PADS QUE VAN A RECIBIR SE VACIAN AQUI, ANTES DE PEDIR NADA.
+    //
+    //  Ver ponPadPorDefecto. Y aqui y no dentro de cada respuesta por dos
+    //  razones: el reparto es ASINCRONO, asi que limpiar por respuesta dejaria
+    //  medio banco viejo si una lectura falla -y "vaciar la mitad es peor que
+    //  no vaciar nada"-, y ademas esto es sincrono, que es lo que permite
+    //  medirlo desde el banco, donde no hay bucle de mensajes que recoja las
+    //  respuestas.
+    //
+    //  Solo los `n` que reciben sonido: una carpeta de cinco ficheros deja
+    //  once pads con su muestra de antes, y reiniciarles los ajustes seria
+    //  cambiar en silencio pads que nadie ha sustituido.
+    for (int i = 0; i < n; ++i) ponPadPorDefecto (base + i);
+
     //  Y ESTE SI SABE CUANTO FALTA: son n ficheros y se cuentan los que han
     //  llegado. Una carpeta de dieciseis breaks tarda lo suyo, y es la espera
     //  mas larga que se hace con la app delante.
@@ -15515,11 +15915,59 @@ void MainComponent::auditDlc()
     //  creyendo que se mide esta.
     instPack = buscaPack ("ZATI");
     currentBank = 0;
+
+    //  Y EL BANCO SE ENSUCIA ANTES, que es la mitad que faltaba.
+    //
+    //  Un instrumento nuevo heredaba el pad que hubiera debajo:
+    //  assignSampleToPad reiniciaba el recorte y NADA mas, asi que la
+    //  afinacion, el corte del filtro, el reves, el choke y los seis envios se
+    //  quedaban donde los dejo el sonido anterior. Cargar un banco encima de
+    //  uno que habias ajustado te daba dieciseis sonidos nuevos que no se oian,
+    //  y sin nada en la interfaz que dijera por que.
+    //
+    //  Y el corte se ensucia SOLO EN EL MOTOR a proposito -sin tocar padCut-
+    //  porque asi es como llega de verdad: lo escribe el bloqueo de corte de un
+    //  paso, desde el hilo de audio, y se queda puesto. assignSampleToPad no
+    //  empujaba setPadCutoff nunca, asi que el mando decia "abierto" y el pad
+    //  sonaba filtrado.
+    for (int i = 0; i < kPadsPerBank; ++i)
+    {
+        padPitch[(size_t) i]   = 12.0f;  engine.setPadPitch   (i, 12.0f);
+        padReverse[(size_t) i] = true;   engine.setPadReverse (i, true);
+        padChokeUI[(size_t) i] = 3;      engine.setPadChoke   (i, 3);
+        engine.setPadCutoff (i, 200.0f);                       // como un bloqueo de paso
+        for (int f = 0; f < AudioEngine::kNumFx; ++f) engine.setPadSend (i, f, 1.0f);
+    }
+
     cargaInstrumento (2);      // TEXTURA, que vive en el banco C
     cargaInstrumento (2);
     int deFabrica = 0;
     for (int i = 0; i < kPadsPerBank; ++i) if (padHasSample[(size_t) i]) ++deFabrica;
     std::cout << "{\"dlc\":\"fabrica\",\"pads\":" << deFabrica << "}" << std::endl;
+
+    //  Lo peor de cada uno de los dieciseis, que es lo que hay que mirar: con
+    //  el maximo, un solo pad que herede lo canta.
+    float pitchMax = 0.0f, envioMax = 0.0f, corteMin = AudioEngine::kFiltOpenHz;
+    int   revesN = 0, chokeN = 0, espejoMal = 0;
+    for (int i = 0; i < kPadsPerBank; ++i)
+    {
+        pitchMax = juce::jmax (pitchMax, std::abs (padPitch[(size_t) i]));
+        corteMin = juce::jmin (corteMin, engine.getPadCutoff (i));
+        if (padReverse[(size_t) i]) ++revesN;
+        if (padChokeUI[(size_t) i] != 0) ++chokeN;
+        for (int f = 0; f < AudioEngine::kNumFx; ++f)
+            envioMax = juce::jmax (envioMax, engine.getPadSend (i, f));
+        //  Y QUE EL ESPEJO Y EL MOTOR DIGAN LO MISMO, que es la clase de fallo
+        //  que no se ve mirando la pantalla: un pad filtrado con el mando
+        //  abierto.
+        if (std::abs (engine.getPadCutoff (i) - padCut[(size_t) i]) > 0.5f) ++espejoMal;
+    }
+    std::cout << "{\"dlc\":\"herencia\",\"pitch\":" << pitchMax
+              << ",\"corte\":" << corteMin
+              << ",\"reves\":" << revesN
+              << ",\"choke\":" << chokeN
+              << ",\"envio\":" << envioMax
+              << ",\"espejo_mal\":" << espejoMal << "}" << std::endl;
 }
 
 void MainComponent::openInstSheet()
@@ -17182,6 +17630,78 @@ void MainComponent::auditPiano()
     };
     pulsa (seqModoBtn, true);      // desde la ficha del secuenciador
     pulsa (modoBtn,    false);     // y de vuelta desde la cara
+
+    //  TOCAR UN PAD QUE ASOMA POR DEBAJO DE LA FICHA.
+    //
+    //  La tarjeta se centra al 78 % PARA QUE la maquina se siga viendo, y se
+    //  veia y no se podia tocar: cualquier toque fuera de la tarjeta cerraba la
+    //  ficha, asi que cambiar el pad que edita el secuenciador costaba cerrar,
+    //  elegir y volver a abrir con la rejilla de pads delante todo el rato.
+    //
+    //  Se mide por el CAMINO DE VERDAD - Sheet::mouseDown, que es donde vive el
+    //  fallo - y no llamando a tocaPadDetras por dentro, que es justo el sitio
+    //  donde el fallo no existe. Y con las DOS cifras: que el pad cambie Y que
+    //  la ficha siga abierta. Solo con la primera pasaria un codigo que
+    //  selecciona y ademas cierra.
+    {
+        openSheet (seqSheet, secButton);
+        showSeqPage (seqPagePiano);
+        selectPad (0);
+        resized();
+
+        //  El pad de la esquina de abajo a la izquierda es el que mas asoma.
+        int cual = -1;
+        juce::Point<int> punto;
+        for (int i = 0; i < pads.size(); ++i)
+            if (auto* b = pads[i]; b != nullptr && b->isVisible() && ! b->getBounds().isEmpty())
+                if (const auto c = b->getBounds().getCentre(); ! seqSheet.sheetBounds.contains (c))
+                { cual = i; punto = c; break; }
+
+        int quedo = -1, sigueAbierta = -1, antes = -1;
+        if (cual >= 0)
+        {
+            //  Y SE PARTE DE OTRO PAD, o la medida no dice nada: si el elegido
+            //  ya era ese, "elegido == tocado" sale verde con el toque cayendo
+            //  al vacio. Es la misma trampa que el testigo del compas.
+            selectPad (cual == 0 ? 5 : 0);
+            antes = selectedPad;
+
+            const auto ahora = juce::Time::getCurrentTime();
+            juce::MouseEvent ev (juce::Desktop::getInstance().getMainMouseSource(),
+                                 punto.toFloat(), juce::ModifierKeys(), 1.0f,
+                                 0.0f, 0.0f, 0.0f, 0.0f,
+                                 &seqSheet, &seqSheet, ahora,
+                                 punto.toFloat(), ahora, 1, false);
+            seqSheet.mouseDown (ev);
+            quedo = selectedPad;
+            sigueAbierta = seqSheet.isVisible() ? 1 : 0;
+        }
+        std::cout << "{\"piano\":\"detras\",\"pad\":" << cual
+                  << ",\"antes\":" << antes
+                  << ",\"elegido\":" << quedo
+                  << ",\"abierta\":" << sigueAbierta << "}" << std::endl;
+    }
+
+    //  Y LA REJILLA DE DIECISEIS, que es lo que las flechas no pueden ser:
+    //  llegar al pad 11 de un gesto en vez de pasear. Se abre, se toca su tapa
+    //  y se comprueba que ademas se cierra sola - dejarla abierta despues de
+    //  acertar es un segundo toque para volver a lo que se estaba haciendo.
+    {
+        openSheet (seqSheet, secButton);
+        showSeqPage (seqPagePiano);
+        selectPad (0);
+        abrePadPicker (true);
+        const int abierta = padPickAbierto ? 1 : 0;
+        //  Su alto, para saber que se maqueto: una rejilla encendida y de 0x0
+        //  es exactamente lo que la septima regla del banco existe para cazar.
+        const auto celda = padPickBtns[10] != nullptr ? padPickBtns[10]->getBounds()
+                                                      : juce::Rectangle<int>();
+        if (padPickBtns[10] != nullptr && padPickBtns[10]->onClick) padPickBtns[10]->onClick();
+        std::cout << "{\"piano\":\"rejilla\",\"abrio\":" << abierta
+                  << ",\"celda_w\":" << celda.getWidth() << ",\"celda_h\":" << celda.getHeight()
+                  << ",\"elegido\":" << selectedPad
+                  << ",\"cerro\":" << (padPickAbierto ? 0 : 1) << "}" << std::endl;
+    }
 }
 
 //  EL REBOTE, MEDIDO.
@@ -17387,6 +17907,12 @@ void MainComponent::auditOpen (const juce::String& which)
         engine.setStepExtra (0, 0, selectedPad, 1, 7, true);
         openSheet (seqSheet, secButton); showSeqPage (seqPagePiano); refreshPiano();
     }
+    //  LA REJILLA DE DIECISEIS PARA ELEGIR PAD, que se dibuja ENCIMA de la
+    //  ficha del secuenciador y por tanto es un estado propio: sin esta entrada
+    //  el banco no la mide nunca, y una capa que se pone sobre otra es
+    //  exactamente donde vive el residuo que ZATI_PAGES existe para cazar.
+    else if (which == "pick")
+    { openSheet (seqSheet, secButton); showSeqPage (seqPagePiano); abrePadPicker (true); }
     else if (which == "mix")  { refreshMixStrip(); openSheet (mixSheet, mixButton); }
     else if (which == "set")  { showSetPage (pageAudio);    refreshAudioOptions(); openSheet (setSheet, setButton); }
     else if (which == "proj") { showSetPage (pageProjects); refreshProjectList(); openSheet (setSheet, setButton); }

@@ -1770,6 +1770,69 @@ int main()
                      "acorde en un paso", sola, acorde, ok ? "OK" : "FALLA");
     }
 
+    //  EL MISMO ACORDE, PERO CON OTRO PAD EN EL PASO.
+    //
+    //  La de arriba mide un pad SOLO, y por eso salia verde con el fallo
+    //  puesto: firePatternStep encola la raiz y detras sus tres notas de mas
+    //  -las extras con `corta = false`, porque el autocorte del pad las mataria
+    //  antes de sonar- y fireDueHits sacaba el hueco cambiandolo por el ULTIMO
+    //  elemento, o sea REORDENANDO. Con un pad solo la raiz seguia saliendo
+    //  primera; con otro pad de indice menor en el mismo paso -un acorde encima
+    //  de un bombo, o sea lo normal- salian primero las extras y la raiz
+    //  llegaba la ultima y se las llevaba por delante con su autocorte.
+    //
+    //  Medido: 2 voces donde tienen que salir 5. Un acorde que suena a una nota
+    //  en cuanto hay compania, que es siempre.
+    //
+    //  El vecino va en el pad 0 y el acorde en el 1 a proposito: el encolado
+    //  recorre los pads en orden, asi que el vecino tiene que ir DELANTE para
+    //  que la reordenacion muerda. Y se cuentan las voces totales -1 + 4- porque
+    //  el motor no cuenta voces por pad; con el setup fijo la suma vale.
+    {
+        AudioEngine e; e.prepareToPlay (48000.0, 256); e.setPolyphony (32, 8);
+        e.setPadGain (0, 0.8f);
+        e.setPadGain (1, 0.8f);
+        e.publishSample (0, makeSample (48000.0, 1.0, 110.0f));
+        e.publishSample (1, makeSample (48000.0, 1.0, 220.0f));
+        juce::AudioBuffer<float> b (2, 256);
+        runBlocks (e, b, 256, 4);
+
+        auto vivas = [&] (bool conAcorde) noexcept
+        {
+            e.setSongMode (false);
+            e.clearPattern (0);
+            e.setPatternLength (0, 16);
+            e.setStep (0, 0, 0, true);          // el vecino
+            e.setStep (0, 0, 1, true);          // el del acorde
+            e.setStepNote (0, 0, 1, 0);
+            e.clearStepExtras (0, 0, 1);
+            if (conAcorde)
+            {
+                e.setStepExtra (0, 0, 1, 0, 4, true);
+                e.setStepExtra (0, 0, 1, 1, 7, true);
+                e.setStepExtra (0, 0, 1, 2, 12, true);
+            }
+            e.setBpm (120.0);
+            e.setPlaying (true);
+            int pico = 0;
+            for (int i = 0; i < 40; ++i)
+            {
+                e.renderNextBlock (b, 0, 256);
+                pico = juce::jmax (pico, e.getActiveVoiceCount());
+            }
+            e.setPlaying (false);
+            e.postPanic();
+            for (int i = 0; i < 8; ++i) e.renderNextBlock (b, 0, 256);
+            return pico;
+        };
+
+        const int sola = vivas (false);
+        const int acorde = vivas (true);
+        const bool ok = sola == 2 && acorde == 5;
+        std::printf ("%-34s sin acorde %d voces   con acorde %d voces (1+4)   %s\n",
+                     "acorde con un vecino", sola, acorde, ok ? "OK" : "FALLA");
+    }
+
     //  OIR UNA TECLA DEL PIANO ROLL. Dos cosas a la vez o no vale:
     //
     //  que SUENE en la nota que se toca -el comando ya llevaba el semitono y

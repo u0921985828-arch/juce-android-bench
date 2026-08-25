@@ -186,6 +186,47 @@ else:
            (b["motor"], b["cara"], b["sec"], b["cancion"]) == (0, 0, 0, 0),
            "motor %d cara %d sec %d cancion %d" % (b["motor"], b["cara"], b["sec"], b["cancion"]))
 
+#  --- TOCAR EL PAD QUE ASOMA POR DEBAJO DE LA FICHA ----------------------
+#
+#  La tarjeta se centra al 78 % PARA QUE la maquina se siga viendo, y se veia y
+#  no se podia tocar: Sheet::mouseDown cerraba la ficha con cualquier toque
+#  fuera de la tarjeta. Cambiar el pad que edita el secuenciador costaba
+#  cerrar, elegir y volver a abrir, con la rejilla de pads delante todo el rato.
+#
+#  DOS cifras y no una: que el pad cambie Y que la ficha siga abierta. Solo con
+#  la primera pasaria un codigo que selecciona y ademas cierra, que es
+#  exactamente lo que no se quiere. Y se parte de OTRO pad -"antes"- o
+#  "elegido == tocado" saldria verde con el toque cayendo al vacio.
+d = una ("detras")
+if d is None:
+    mide ("tocar el pad de detras", False, "no salio")
+else:
+    mide ("tocar el pad de detras",
+          d["pad"] >= 0 and d["antes"] != d["pad"] and d["elegido"] == d["pad"],
+          "se toco el %d estando en el %d y quedo el %d" % (d["pad"], d["antes"], d["elegido"]))
+    mide ("y la ficha no se cierra", d["abierta"] == 1,
+          "abierta=%d" % d["abierta"])
+
+#  --- Y LA REJILLA DE DIECISEIS ------------------------------------------
+#
+#  PAD -/+ pasean de uno en uno; para llegar al 11 hace falta una rejilla. En
+#  cuatro por cuatro porque dieciseis en fila ya esta medido y no cabe -26 px
+#  en 280-, y ENCIMA de la tarjeta porque la pagina del piano es de lienzo y
+#  cuatro filas de tapas se comerian la mitad de la rejilla de tono.
+#
+#  Se mide tambien la CELDA: una rejilla encendida y de 0x0 pasa las seis
+#  reglas de geometria, que es justo lo que la septima existe para cazar.
+d = una ("rejilla")
+if d is None:
+    mide ("la rejilla de pads", False, "no salio")
+else:
+    mide ("la rejilla de pads abre", d["abrio"] == 1 and d["celda_w"] >= 40 and d["celda_h"] >= 40,
+          "celda %dx%d" % (d["celda_w"], d["celda_h"]))
+    #  Y llega al 11 de un gesto, que es para lo que existe.
+    mide ("y elige el pad 11", d["elegido"] == 10, "elegido %d" % (d["elegido"] + 1))
+    #  Y se cierra sola: dejarla abierta es un segundo toque para volver.
+    mide ("y se cierra al elegir", d["cerro"] == 1, "cerro=%d" % d["cerro"])
+
 print()
 print ("piano: %d comprobaciones, %d FALLA" % (len (hechas), len (fallos)))
 sys.exit (1 if fallos else 0)

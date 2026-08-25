@@ -1114,18 +1114,51 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             fireStep();   // first step exactly at transport start
 
         //  Anything already due speaks before a sample is rendered.
+        //
+        //  Y SALE EN EL ORDEN EN QUE ENTRO, que no es un detalle de estilo:
+        //  ESTA COLA ESTA ORDENADA EN EL TIEMPO Y REORDENARLA ROMPE LOS
+        //  ACORDES.
+        //
+        //  firePatternStep encola la raiz y detras sus tres notas de mas, y las
+        //  extras van con `corta = false` a proposito - el autocorte del pad
+        //  esta puesto por defecto y con el mueren antes de sonar. Eso solo se
+        //  sostiene si la raiz sale PRIMERA.
+        //
+        //  Esto sacaba el hueco cambiandolo por el ULTIMO elemento
+        //  -pending[i] = pending[--numPending]-, que es lo barato y reordena.
+        //  Con un pad solo en el paso la raiz seguia saliendo primera y no se
+        //  notaba, que es exactamente el caso que medía el banco. Con otro pad
+        //  de indice menor en el mismo paso -un acorde encima de un bombo, o
+        //  sea lo normal- la traza era:
+        //
+        //      cola  [bombo, raiz, e0, e1, e2]   (los cinco con countdown 0)
+        //       i=0  sale bombo  -> pending[0] = e2   [e2, raiz, e0, e1]
+        //       i=0  sale e2     -> suena una extra ANTES que la raiz
+        //       i=0  sale e1, luego e0
+        //       i=0  sale la RAIZ -> corta = true -> se lleva las tres
+        //
+        //  Las notas de mas arrancaban y morian 1.5 ms despues, que es el
+        //  fundido de steal(): el acorde sonaba a UNA nota, y solo cuando tenia
+        //  compania. Medido: pad 0 mas un acorde de cuatro en el pad 1 daban
+        //  2 voces donde tienen que salir 5.
+        //
+        //  Se compacta en su sitio: el indice de escritura nunca adelanta al de
+        //  lectura, asi que no hay copia ni reserva - noventa y seis huecos como
+        //  mucho, y vale para el hilo de audio.
         auto fireDueHits = [this]() noexcept
         {
-            for (int i = 0; i < numPending; )
+            int w = 0;
+            for (int i = 0; i < numPending; ++i)
             {
                 if (pending[(size_t) i].countdown <= 0)
                 {
                     const auto h = pending[(size_t) i];
-                    pending[(size_t) i] = pending[(size_t) --numPending];
                     triggerPad (h.pad, h.semis, h.vel, -1.0f, h.corta, h.gate, h.plock);
                 }
-                else ++i;
+                else
+                    pending[(size_t) w++] = pending[(size_t) i];
             }
+            numPending = w;
         };
 
         auto nextHitIn = [this]() noexcept

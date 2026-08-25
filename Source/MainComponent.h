@@ -144,11 +144,25 @@ private:
         //  Donde se anaden los hijos: el cuerpo si se desplaza, la ficha si no.
         juce::Component& donde() { return desplazable ? (juce::Component&) cuerpo : (juce::Component&) *this; }
 
+        //  UN TOQUE FUERA DE LA TARJETA, ANTES DE CERRAR.
+        //
+        //  La tarjeta se centra al 78 % para que la maquina se siga viendo por
+        //  debajo -lo dice sheetFromBottom- y se veia, pero no se podia tocar:
+        //  cualquier toque ahi cerraba la ficha. O sea que los pads que asoman
+        //  estaban de adorno, y cambiar el pad que edita el secuenciador
+        //  costaba cerrar, elegir y volver a abrir.
+        //
+        //  Devuelve true si el toque se consumio, y entonces la ficha se queda.
+        //  Quien no la ponga se comporta exactamente como antes - el tour, que
+        //  no se cierra por un roce a proposito.
+        std::function<bool (juce::Point<int>)> onFuera;
+
         void paint (juce::Graphics& g) override;
         void mouseDown (const juce::MouseEvent& e) override
         {
             if (! sheetBounds.contains (e.getPosition()))
             {
+                if (onFuera && onFuera (e.getPosition())) return;
                 if (onDismiss) onDismiss();
             }
             //  Y si se desplaza, el toque dentro lo recoge el cuerpo, que es
@@ -180,6 +194,44 @@ private:
     //  cada instrumento. Y saltan los pads VACIOS: en un kit de cinco sonidos,
     //  avanzar de uno en uno por sesenta y cuatro es no tener el boton.
     juce::TextButton pianoPadDownBtn { "PAD -" }, pianoPadUpBtn { "PAD +" };
+
+    //  Y LA REJILLA DE DIECISEIS, que es lo que las flechas no pueden ser.
+    //
+    //  PAD -/+ pasean, y pasear de uno en uno por un banco entero para llegar
+    //  a la campana que esta en el 14 no es tener el boton. Un selector de
+    //  dieciseis EN FILA ya esta medido y no cabe -26 px en 280- asi que va en
+    //  cuatro por cuatro, que es ademas la forma de la cara: el 07 esta donde
+    //  la mano ya sabe. Es la misma solucion que ya usan el RACK, la paleta de
+    //  patrones y la cadena.
+    //
+    //  Y va COMO CAPA encima de la tarjeta y no como fila dentro de la ficha:
+    //  la pagina del piano es de LIENZO -no se desplaza- y cuatro filas de
+    //  tapas cuestan ~172 px de los ~260 que tiene la rejilla de tono, o sea
+    //  que dejaria la celda por debajo del suelo que costo arreglar. Encima
+    //  cuesta CERO de alto permanente.
+    //
+    //  Es un Sheet y no una clase nueva: asi trae ya su capa para el banco -lo
+    //  mismo que le faltaba a XyPanel-, su velo, y el cierre al tocar fuera.
+    Sheet padPickSheet;
+    juce::TextButton padPickCloseBtn { juce::CharPointer_UTF8 ("\xc3\x97") };
+    juce::OwnedArray<juce::TextButton> padPickBtns;
+    //  Y LOS CUATRO BANCOS DEBAJO, porque si no la rejilla llega a dieciseis
+    //  pads y no a sesenta y cuatro - y PAD -/+, que es lo que viene a
+    //  sustituir, si arrastran la vista de bancos.
+    juce::OwnedArray<juce::TextButton> padPickBankBtns;
+    void paintPadPickContent (juce::Graphics& g);
+    void refrescaPadPicker();
+    //  Las dos puertas: la cabecera del piano y la de la ficha del pad. Dos
+    //  puertas a una funcion no son dos copias - la que se va deja una tapa
+    //  que lleva a ella, y aqui no se va ninguna.
+    juce::TextButton pianoPadPickBtn { "PAD" }, padPadPickBtn { "PAD" };
+    bool padPickAbierto = false;
+    void abrePadPicker (bool abrir);
+    //  Un toque en un pad que asoma por debajo de una ficha abierta. Ver
+    //  Sheet::onFuera.
+    bool tocaPadDetras (juce::Point<int> p);
+    //  Los siete mandos de la tira, apuntando al paso tocado del pad elegido.
+    void refrescaTiraPaso();
     //  Las dos herramientas del piano. Excluyentes: con las dos apagadas se
     //  dibuja, que es lo que hace falta el 90% del tiempo.
     juce::TextButton pianoLapizBtn { "LAPIZ" }, pianoGomaBtn { "GOMA" }, pianoCorteBtn { "TIJERAS" };
@@ -1009,6 +1061,8 @@ private:
     bool zonaVisible (int pad, int& ini, int& fin) const;
     int  padVisibleLength (int pad) const;
     void assignSampleToPad (int index, SampleBuffer::Ptr sb, const juce::String& name = {});
+    //  Los defectos de un pad, escritos UNA vez. Ver ponPadPorDefecto.
+    void ponPadPorDefecto (int i);
     void toggleRecordArm();     // REC: live pad performance -> the pattern
     void toggleMicSampling();   // PADS sheet: mic -> the selected pad
     // --- AUTO CHOP --------------------------------------------------------

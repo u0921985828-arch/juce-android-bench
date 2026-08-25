@@ -156,6 +156,12 @@ if(ZATI_BENCH)
     target_compile_definitions(Soak PRIVATE
         JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_STRICT_REFCOUNTEDPOINTER=1)
     target_link_libraries(Soak PRIVATE
+        #  Y AQUI TAMBIEN, por lo mismo y con el mismo sintoma: el arreglo de
+        #  ZatiData se hizo en StressTest -que era el que se corria esa tanda- y
+        #  Soak y Cpu se quedaron sin el. "'BinaryData' has not been declared":
+        #  no median de menos, es que no compilaban. Un banco que no compila no
+        #  falla, no esta - y este es el que mide un millon de sesiones.
+        ZatiData
         juce::juce_audio_utils
         juce::juce_dsp
         juce::juce_recommended_config_flags
@@ -170,6 +176,7 @@ if(ZATI_BENCH)
     target_compile_definitions(Cpu PRIVATE
         JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_STRICT_REFCOUNTEDPOINTER=1)
     target_link_libraries(Cpu PRIVATE
+        ZatiData
         juce::juce_audio_utils
         juce::juce_dsp
         juce::juce_recommended_config_flags
