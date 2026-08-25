@@ -1288,4 +1288,30 @@ namespace Iconos
         }
         return hay ? r : juce::Rectangle<float>();
     }
+
+    //  LA MISMA Z, PERO EN CELDAS.
+    //
+    //  El icono del lanzador es la rejilla 4x4 con la Z dibujada por los pads
+    //  ENCENDIDOS (ver StoreArt::appIcon): la rejilla dice la maquina y lo que
+    //  se enciende dice el nombre, que es ademas lo que la app hace. Y la
+    //  cabecera se queda con la marca de arriba, porque a 24 px una rejilla de
+    //  cuatro por cuatro son celdas de cinco pixeles, o sea una mancha: la
+    //  MISMA Z recortada en un pad de cerca y dibujada por pads de lejos.
+    //
+    //  Los diez viven AQUI y no dentro del icono porque si no serian dos
+    //  dibujos con la misma idea que se separan en cuanto alguien toque uno, y
+    //  eso es la regla de esta casa: una regla escrita dos veces son dos
+    //  reglas. El banco compara estas celdas con lo que sale en el PNG.
+    //
+    //  Fila de arriba entera, la diagonal bajando hacia la izquierda -igual que
+    //  el trazo de marca(), que va de (18,9.2) a (11.4,14.8)- y la fila de
+    //  abajo entera. Diez de dieciseis.
+    static constexpr int kLadoMarca = 4;
+    inline bool marcaCelda (int fila, int col) noexcept
+    {
+        if (fila == 0 || fila == 3) return true;      // las dos barras
+        if (fila == 1) return col == 2;               // la diagonal, arriba
+        if (fila == 2) return col == 1;               // y abajo
+        return false;
+    }
 }

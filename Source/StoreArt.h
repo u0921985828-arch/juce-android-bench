@@ -4,6 +4,7 @@
 #include "ZatiLookAndFeel.h"
 #include "Zati.h"
 #include "Iconos.h"
+#include "PadArt.h"
 
 // ============================================================================
 //  EL GRAFICO DESTACADO DE LA FICHA, dibujado por la propia app.
@@ -128,6 +129,244 @@ namespace StoreArt
         }
 
         return img;
+    }
+
+    // ========================================================================
+    //  EL ICONO DEL LANZADOR: LA REJILLA CON LA Z ENCENDIDA.
+    //
+    //  Habia DOS logos y ninguno miraba al otro. `Iconos::marca()` es un pad
+    //  con la Z recortada dentro y vive en la cabecera y en el banner; el
+    //  icono de la app era un PNG de 1024 hecho a mano - una placa blanca con
+    //  dieciseis pads grises y cuatro de colores sueltos - que no genera nadie,
+    //  no mide nadie y no comparte un solo token con la app.
+    //
+    //  Ahora es la rejilla 4x4 con la Z dibujada por los pads ENCENDIDOS: los
+    //  dos logos a la vez -la rejilla dice la maquina, lo que se enciende dice
+    //  el nombre- y ademas es lo que la app hace. Las diez celdas salen de
+    //  `Iconos::marcaCelda`, o sea del mismo sitio que la Z de la cabecera.
+    //
+    //  Y se GENERA, por lo mismo que el banner de aqui arriba: un dibujo hecho
+    //  fuera se queda con la paleta del dia que se hizo y nadie se entera hasta
+    //  que alguien compara la ficha con la app. Este PNG es ademas el que
+    //  `Tests/store.py` reduce a 512 para la ficha de Play.
+    // ========================================================================
+    inline juce::Image appIcon (int lado, bool conNumero = false)
+    {
+        lado = juce::jmax (16, lado);
+        juce::Image img (juce::Image::ARGB, lado, lado, true);
+        juce::Graphics g (img);
+
+        const auto L = (float) lado;
+
+        //  El cuerpo, con el mismo degradado que la cara de la maquina. Opaco:
+        //  un icono con alfa se lo pinta el lanzador por debajo y deja de ser
+        //  nuestro.
+        g.setGradientFill (juce::ColourGradient (ZatiColours::chassisTop, 0.0f, 0.0f,
+                                                 ZatiColours::chassisBot, 0.0f, L, false));
+        g.fillRect (0.0f, 0.0f, L, L);
+
+        //  EL MARCO ES UNA FILA DE PADS QUE NO SE DIBUJA.
+        //
+        //  El margen no es un porcentaje elegido a ojo: se imagina la rejilla
+        //  con UNA FILA MAS POR CADA LADO -o sea 6x6 y no 5x5, que una fila por
+        //  cada lado son dos filas- ocupando el marco entero, y esa fila de
+        //  fuera no se pinta. Asi el aire de alrededor mide exactamente un pad
+        //  y el icono se lee como un trozo de la maquina y no como un dibujo
+        //  centrado en un cuadrado.
+        //
+        //  Y hace falta que sobre sitio, no es decoracion: JUCE escribe el
+        //  icono como LEGACY -drawable-{ldpi,mdpi,hdpi,xhdpi}, sin adaptive
+        //  icon ni ic_launcher_round, ver
+        //  jucer_ProjectExport_Android.h::writeIcons- asi que de Android 8 en
+        //  adelante el lanzador lo mete en su mascara. Con la fila invisible,
+        //  la esquina de la tapa mas exterior queda a 0.471 x lado del centro
+        //  contra un radio de 0.5: dentro. El icono de hoy la tenia a 0.527 y
+        //  se cortaba bajo mascara redonda.
+        const int total = Iconos::kLadoMarca + 2;              // la fila de fuera, por los dos lados
+        const float paso = L / (float) total;
+        const float hueco = paso * 0.14f;                      // en PROPORCION, como la cara:
+        const float celda = paso - hueco;                      // un hueco fijo desaparece a 48 px
+        const float x0 = paso, y0 = paso;                      // se empieza en la primera visible
+
+        //  LA TAPA ES LA MISMA QUE LA DE LA CARA, no una parecida. Ver
+        //  PadArt::tapa: bloque de profundidad, cuerpo al 62 % del zati, banda
+        //  solida arriba y borde del propio color. La escala sale del alto de
+        //  la celda contra el alto para el que estan escritos esos numeros, o
+        //  la banda de 5 px seria un pelo en una celda de 146.
+        const float escala = celda / PadArt::kAltoRef;
+
+        //  Y LA PLACA DEBAJO, que es donde los pads estan atornillados.
+        //
+        //  Faltaba, y no era decoracion: el cuerpo de un pad es su zati al
+        //  62 % de ALFA, o sea que lo que hay debajo decide como sale. Sin
+        //  placa, los diez encendidos caian directamente sobre el chasis
+        //  oscuro y salian apagados - el peor par contra un vacio media 2.12
+        //  con el liston en 3.00. En la cara nunca caen ahi: van sobre una
+        //  placa hundida, un escalon de tono por encima. Con ella el color es
+        //  el que se ve en la app.
+        //
+        //  Las mismas tres pasadas que pinta la cara: relleno, filo y el labio
+        //  que coge la luz. Y la fila invisible de alrededor deja de ser aire
+        //  vacio para ser el chasis asomando por fuera de la placa, que es
+        //  exactamente lo que se ve al mirar la maquina.
+        {
+            const auto placa = juce::Rectangle<float> (x0, y0, paso * (float) Iconos::kLadoMarca,
+                                                       paso * (float) Iconos::kLadoMarca)
+                                   .reduced (hueco * 0.5f)
+                                   .expanded (hueco);
+            const float rp = 4.0f * escala;
+            g.setColour (ZatiColours::plate);
+            g.fillRoundedRectangle (placa, rp);
+            g.setColour (ZatiColours::plateEdge);
+            g.drawRoundedRectangle (placa.reduced (0.5f * escala), rp, 1.0f * escala);
+            g.setColour (ZatiColours::white.withAlpha (0.55f));
+            g.drawRoundedRectangle (placa.reduced (1.6f * escala), rp, 1.0f * escala);
+        }
+
+        for (int f = 0; f < Iconos::kLadoMarca; ++f)
+            for (int c = 0; c < Iconos::kLadoMarca; ++c)
+            {
+                //  La tapa se encoge por arriba lo que el bloque de
+                //  profundidad ocupa por abajo, o la fila de abajo se saldria
+                //  de su celda: es el mismo withTrimmedBottom que hace la cara.
+                juce::Rectangle<float> r (x0 + (float) c * paso + hueco * 0.5f,
+                                          y0 + (float) f * paso + hueco * 0.5f,
+                                          celda, celda);
+                r = r.withTrimmedBottom (ZatiLookAndFeel::kCapLift * escala);
+
+                //  Y EL COLOR DE UN ENCENDIDO NO SE ELIGE: es el que ese pad
+                //  tiene en la maquina. La cara numera de abajo arriba -el 01
+                //  abajo a la izquierda- y Zati::forPad reparte los ocho
+                //  colores en ese orden, asi que el icono es literalmente el
+                //  banco A con la Z encendida. Sale la barra de arriba en
+                //  frios y la de abajo en calidos, y eso no lo decidio nadie
+                //  aqui: es el orden de corte de la app.
+                //
+                //  El mismo (3 - fila) * 4 + col que usa el selector del RACK,
+                //  por lo mismo: numerar al reves seria un mapa distinto del
+                //  mismo instrumento.
+                const int pad = (Iconos::kLadoMarca - 1 - f) * Iconos::kLadoMarca + c;
+                const bool cargado = Iconos::marcaCelda (f, c);
+
+                //  Y EL VACIO VA SIN SU ZATI, que es lo unico que separa este
+                //  dibujo de la cara.
+                //
+                //  En la app un pad vacio lleva su color a un sexto de fuerza:
+                //  «este pad SERIA turquesa», que a un palmo y con la onda, el
+                //  numero y el nombre delante es un susurro util. En un icono
+                //  de 48 px no hay onda, ni numero, ni nombre - solo queda el
+                //  color, y dieciseis susurros distintos suman lo bastante para
+                //  taparse con los diez que si suenan. Medido: el peor par
+                //  encendido/apagado caia a 1.63 con el liston de esta casa en
+                //  3.00, y la Z dejaba de leerse como forma.
+                //
+                //  Asi que el vacio se dibuja con la MISMA receta -bloque,
+                //  cuerpo, banda de contorno y borde- cambiando solo de que
+                //  color es el susurro: el gris del borde de un pad en vez de
+                //  su zati. La tapa sigue siendo la de la app; lo que se quita
+                //  es la unica capa que aqui no puede hacer su trabajo.
+                const auto frag = cargado ? Zati::colour (Zati::forPad (pad))
+                                          : ZatiColours::padBorder;
+
+                const auto cuerpo = PadArt::cuerpoDe (frag, cargado);
+                PadArt::fondo (g, r, cuerpo, frag,
+                               cargado ? PadArt::Banda::solida : PadArt::Banda::fantasma,
+                               escala);
+                if (conNumero)
+                    PadArt::numero (g, r, pad + 1,
+                                    ZatiColours::textOn (cuerpo).withAlpha (cargado ? 0.92f : 0.72f),
+                                    escala);
+                PadArt::borde (g, r, PadArt::bordeDe (frag, cargado), cargado, escala);
+            }
+
+        return img;
+    }
+
+    //  LAS DOS Z TIENEN QUE SER LA MISMA Z.
+    //
+    //  `Iconos::marcaCelda` dice que celdas se encienden en el icono y
+    //  `Iconos::marca()` dibuja la Z recortada de la cabecera. Son dos escrituras
+    //  de la misma idea, y dos escrituras de la misma idea se separan en cuanto
+    //  alguien toque una - el juego entero se deshace sin que falle nada.
+    //
+    //  Asi que se rasteriza la Z DE VERDAD -el hueco de marca(), o sea donde el
+    //  path NO contiene el punto- sobre la misma rejilla de 4x4 y se cuentan los
+    //  desacuerdos. Con la caja de 24 y celdas de 6, se muestrea 5x5 dentro de
+    //  cada una y manda la mayoria: la diagonal es fina y un solo punto en el
+    //  centro no la ve.
+    inline int desacuerdoMarca()
+    {
+        const auto p = Iconos::marca();
+        //  LA Z NO OCUPA LA CAJA, OCUPA EL CUADRADO DE DENTRO. marca() es una
+        //  tapa de 24 con la Z recortada entre 6 y 18, asi que rasterizar sobre
+        //  los 24 mete las cuatro esquinas del margen en la cuenta y da DIEZ
+        //  desacuerdos de dieciseis con las dos Z siendo la misma. La primera
+        //  version lo hacia y por poco se "arregla" el dibujo que estaba bien.
+        const float bordeZ = 6.0f, ladoZ = 12.0f;
+        const float paso = ladoZ / (float) Iconos::kLadoMarca;
+        int mal = 0;
+
+        for (int f = 0; f < Iconos::kLadoMarca; ++f)
+            for (int c = 0; c < Iconos::kLadoMarca; ++c)
+            {
+                int dentro = 0, total = 0;
+                for (int a = 1; a <= 5; ++a)
+                    for (int b = 1; b <= 5; ++b)
+                    {
+                        const float x = bordeZ + (float) c * paso + paso * (float) b / 6.0f;
+                        const float y = bordeZ + (float) f * paso + paso * (float) a / 6.0f;
+                        //  El hueco: la tapa esta rellena y la Z es lo que se
+                        //  quita, asi que "es Z" es NO estar dentro del path.
+                        if (! p.contains (x, y)) ++dentro;
+                        ++total;
+                    }
+
+                const bool esZ = dentro * 2 > total;
+                if (esZ != Iconos::marcaCelda (f, c)) ++mal;
+            }
+
+        return mal;
+    }
+
+    //  LOS DIECISEIS PADS DE LA CARA, TAL Y COMO SALEN.
+    //
+    //  El icono se juzga contra la maquina que abre y no contra un numero
+    //  prestado. La primera version pedia el liston de «apagado contra
+    //  encendido» de una TAPA -3.00- y esto no es una tapa: es un pad cargado
+    //  al lado de uno vacio, un par que skins.py no tabula. Y en LACA la app
+    //  misma sale baja ahi, porque el cuerpo de un pad es su zati al 62 % de
+    //  ALFA sobre una placa oscura.
+    //
+    //  Aqui solo se DAN los colores -los del banco A, compuestos sobre la
+    //  placa, que es donde estan de verdad-. Las cuentas las hace el banco con
+    //  la formula que ya tiene: dos formulas de luminancia son dos formulas.
+    inline void pintaPadsDeLaCara (std::ostream& out)
+    {
+        auto hex = [] (juce::Colour c) { return c.toDisplayString (false); };
+
+        out << ",\"cara_cargados\":[";
+        for (int i = 0; i < 16; ++i)
+            out << (i ? "," : "") << "\""
+                << hex (ZatiColours::plate.overlaidWith (
+                            PadArt::cuerpoDe (Zati::colour (Zati::forPad (i)), true))) << "\"";
+        out << "],\"cara_vacios\":[";
+        for (int i = 0; i < 16; ++i)
+            out << (i ? "," : "") << "\""
+                << hex (ZatiColours::plate.overlaidWith (
+                            PadArt::cuerpoDe (Zati::colour (Zati::forPad (i)), false))) << "\"";
+        out << "]";
+    }
+
+    inline void writeIcon (const juce::String& path, int lado, bool conNumero = false)
+    {
+        juce::File f (path);
+        f.getParentDirectory().createDirectory();
+        f.deleteFile();
+        juce::FileOutputStream out (f);
+        if (! out.openedOk()) return;
+        juce::PNGImageFormat png;
+        png.writeImageToStream (appIcon (lado, conNumero), out);
+        out.flush();
     }
 
     inline void writeFeature (const juce::String& path, int w, int h)

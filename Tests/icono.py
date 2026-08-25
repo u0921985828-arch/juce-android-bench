@@ -1,0 +1,235 @@
+#!/usr/bin/env python3
+# ============================================================================
+#  EL ICONO DEL LANZADOR: LA REJILLA CON LA Z ENCENDIDA.
+#
+#  Esta maquina tenia DOS logos y ninguno miraba al otro. `Iconos::marca()` es
+#  un pad con la Z recortada dentro y vive en la cabecera y en el banner; el
+#  icono de la app era `ci/icon.png`, un PNG de 1024 HECHO A MANO - placa
+#  blanca, dieciseis pads grises y cuatro de colores sueltos - que no generaba
+#  nadie, no media nadie y no compartia un solo token con la app.
+#
+#  Ahora es la rejilla 4x4 con la Z dibujada por los pads ENCENDIDOS: los dos
+#  logos a la vez. Y se genera, por lo mismo que el banner de la tienda - un
+#  dibujo hecho fuera se queda con la paleta del dia que se hizo.
+#
+#      ZATI_ICONO=ci/icon.png ./build/Zati_artefacts/Release/Zati
+#
+#  El PNG se COMMITEA, igual que los .flac de Tools/fabrica.py: Projucer lo
+#  necesita en tiempo de compilacion, y el codigo esta para que se sepa de
+#  donde sale. Este fichero lo regenera y lo juzga.
+#
+#  Cuatro cosas, y ninguna se puede juzgar mirando el dibujo a 1024:
+#
+#  1. QUE LA Z SE LEA A 48 PX, que es lo unico que importa de un icono - 48 dp
+#     es lo que mide en el cajon de aplicaciones. Se reduce a las cuatro
+#     densidades que JUCE escribe, se muestrea el centro de las dieciseis
+#     celdas y se separan por el punto medio. Tienen que salir EXACTAMENTE los
+#     diez de la Z.
+#  2. CONTRASTE entre encendido y apagado, con el liston de skins.py y no con
+#     uno nuevo: el liston de una prueba no se reinventa en la de al lado.
+#  3. QUE LA REJILLA SE LEA COMO REJILLA: los apagados contra el cuerpo en dE.
+#     Sin eso el icono no son dieciseis pads con diez encendidos, son diez
+#     cuadrados flotando, y el juego con la rejilla se pierde.
+#  4. Y QUE SOBREVIVA A LA MASCARA. JUCE escribe el icono como LEGACY, asi que
+#     de Android 8 en adelante el lanzador lo recorta con la suya. La esquina
+#     de la tapa mas exterior tiene que caer dentro de la circunferencia
+#     inscrita. El icono de hoy la tenia FUERA.
+#
+#  Mas la que la app contesta ella, porque el PNG no puede: que la Z del icono
+#  y la Z de la marca de la cabecera sigan siendo la misma (desacuerdo 0).
+#
+#      python3 Tests/icono.py
+# ============================================================================
+import os, subprocess, sys, tempfile, shutil, json, math
+
+ROOT = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
+APP  = os.environ.get ("ZATI_BIN") or os.path.join (
+        ROOT, "build", "Zati_artefacts", "Release", "Zati")
+DEST = os.path.join (ROOT, "ci", "icon.png")
+
+sys.path.insert (0, os.path.dirname (os.path.abspath (__file__)))
+#  Las cuentas de color salen de skins.py y no se reescriben aqui: dos copias
+#  de la misma formula son dos formulas.
+from skins import lum, ratio, dE, MIN_WELL
+
+#  Las cuatro densidades que JUCE escribe (3/8, 4/8, 6/8 y 8/8 del original) se
+#  ven a 36, 48, 72 y 96 dp. La que manda es 48.
+TAMANOS = [36, 48, 72, 96]
+LADO    = 4
+#  Una fila invisible POR CADA LADO, o sea 6x6: ver StoreArt::appIcon.
+TOTAL   = LADO + 2
+
+hechas, fallos = [], []
+
+def mide (nombre, ok, detalle=""):
+    hechas.append (nombre)
+    if not ok: fallos.append (nombre)
+    print ("  %-6s %s  %s" % ("OK" if ok else "FALLA", nombre, detalle))
+
+
+def genera():
+    casa = tempfile.mkdtemp (prefix="zati-icono-")
+    try:
+        env = dict (os.environ)
+        env.update ({"HOME": casa, "ZATI_ICONO": DEST})
+        r = subprocess.run ([APP], env=env, capture_output=True, text=True, timeout=300)
+    finally:
+        shutil.rmtree (casa, ignore_errors=True)
+
+    for linea in r.stdout.splitlines():
+        linea = linea.strip()
+        if linea.startswith ('{') and '"icono"' in linea:
+            try: return json.loads (linea)
+            except Exception: pass
+    return None
+
+
+def pixeles (path, lado):
+    """El PNG reducido a `lado`, como lista de filas de (r,g,b)."""
+    tmp = tempfile.mktemp (suffix=".rgb")
+    try:
+        subprocess.run (["convert", path, "-resize", "%dx%d!" % (lado, lado),
+                         "-depth", "8", "RGB:" + tmp], check=True)
+        d = open (tmp, "rb").read()
+    finally:
+        if os.path.exists (tmp): os.remove (tmp)
+    return [[tuple (d[(y * lado + x) * 3 : (y * lado + x) * 3 + 3])
+             for x in range (lado)] for y in range (lado)]
+
+
+def v (c):  return (c[0] << 16) | (c[1] << 8) | c[2]
+
+def esZ (f, c):
+    if f == 0 or f == LADO - 1: return True
+    if f == 1: return c == 2
+    if f == 2: return c == 1
+    return False
+
+
+# --- se genera --------------------------------------------------------------
+d = genera()
+if d is None:
+    print ("la app no escribio el icono"); sys.exit (1)
+if not os.path.exists (DEST):
+    print ("no hay %s" % DEST); sys.exit (1)
+
+print ("icono: %s, %d bytes" % (os.path.relpath (DEST, ROOT), os.path.getsize (DEST)))
+print()
+
+#  --- LAS DOS Z SON LA MISMA -------------------------------------------------
+#  Lo unico que el PNG no puede decir. Sin esto son dos escrituras de la misma
+#  idea que se separan en cuanto alguien toque una, y el juego entero se
+#  deshace sin que falle nada.
+mide ("la Z del icono es la de la marca", d.get ("desacuerdo") == 0,
+      "%s desacuerdos de 16  celdas %s" % (d.get ("desacuerdo"), d.get ("celdas")))
+
+#  --- LA Z SE LEE A CADA TAMANO ---------------------------------------------
+for lado in TAMANOS:
+    px = pixeles (DEST, lado)
+    paso = lado / float (TOTAL)
+
+    #  El centro de cada celda visible: la primera empieza en `paso`, que es la
+    #  fila invisible.
+    celdas = {}
+    for f in range (LADO):
+        for c in range (LADO):
+            x = int (paso * (1 + c) + paso * 0.5)
+            y = int (paso * (1 + f) + paso * 0.5)
+            celdas[(f, c)] = px[min (y, lado - 1)][min (x, lado - 1)]
+
+    #  EL CORTE VA DONDE ESTA EL HUECO MAS GRANDE, no en el punto medio del
+    #  rango. La primera version partia por la mitad entre la celda mas clara y
+    #  la mas oscura, y eso castiga al ambar por ser brillante: con el ambar
+    #  arriba del todo el punto medio sube y el violeta -que es un encendido
+    #  perfectamente separable de un apagado- cae del lado equivocado. La
+    #  pregunta es si las dieciseis caen en DOS grupos y si son los dos que
+    #  tocan, asi que el corte es el salto mas grande. Primero se duda de la
+    #  prueba.
+    ls = sorted (lum (v (p)) for p in celdas.values())
+    salto, corte = -1.0, 0.0
+    for i in range (len (ls) - 1):
+        if ls[i + 1] - ls[i] > salto:
+            salto, corte = ls[i + 1] - ls[i], (ls[i] + ls[i + 1]) / 2.0
+    leidas = set (k for k, p in celdas.items() if lum (v (p)) > corte)
+    debe   = set ((f, c) for f in range (LADO) for c in range (LADO) if esZ (f, c))
+
+    sobran = sorted (leidas - debe)
+    faltan = sorted (debe - leidas)
+    mide ("la Z se lee a %d px" % lado, leidas == debe,
+          "%d encendidas de %d%s" % (len (leidas), len (debe),
+              "" if leidas == debe else "  sobran %s  faltan %s" % (sobran, faltan)))
+
+#  --- CONTRASTE, CON LOS LISTONES DE skins.py --------------------------------
+px = pixeles (DEST, 1024)
+paso = 1024 / float (TOTAL)
+enc, apa = [], []
+for f in range (LADO):
+    for c in range (LADO):
+        x = int (paso * (1 + c) + paso * 0.5); y = int (paso * (1 + f) + paso * 0.5)
+        (enc if esZ (f, c) else apa).append (v (px[y][x]))
+
+cuerpo = v (px[int (paso * 0.5)][int (paso * 0.5)])
+
+#  EL LISTON ES LA CARA, no un numero prestado.
+#
+#  Esta comprobacion se equivoco DOS veces antes de acertar, y las dos por lo
+#  mismo: pedirle al icono un liston de otra pregunta.
+#
+#  1. Primero MIN_TEXT (4.50), que es lo que skins.py exige para LEER una
+#     palabra sobre su tapa. Saco 3.44. Pero esto no es texto.
+#  2. Luego MIN_STATE (3.00), que es «apagado contra encendido» de una TAPA.
+#     Con las tapas ya identicas a las de la app saco 2.00 - y resulta que la
+#     CARA tampoco llega a 3.00 en LACA, porque el cuerpo de un pad es su zati
+#     al 62 % de ALFA sobre una placa oscura. O sea que el liston suspendia a
+#     la maquina entera, no al icono.
+#
+#  La pregunta buena es comparativa, que es como esta casa mide casi todo: el
+#  icono no puede leerse PEOR que la cara que abre. Los colores los da la app
+#  con sus propios tokens y la cuenta se hace aqui una sola vez.
+cargados = [int (h.lstrip ("#"), 16) for h in d.get ("cara_cargados", [])]
+vacios   = [int (h.lstrip ("#"), 16) for h in d.get ("cara_vacios", [])]
+cara = min (ratio (a, b) for a in cargados for b in vacios) if cargados and vacios else 0.0
+
+peor = min (ratio (e, a) for e in enc for a in apa)
+mide ("un encendido contra un apagado", peor >= cara,
+      "el icono %.2f  la cara %.2f" % (peor, cara))
+
+#  La rejilla tiene que LEERSE como rejilla: si los apagados se funden con el
+#  cuerpo, esto no son dieciseis pads con diez encendidos, son diez cuadrados
+#  flotando - y entonces no hay juego con el icono que habia.
+peorApa = min (dE (a, cuerpo) for a in apa)
+mide ("un apagado contra el cuerpo", peorApa >= MIN_WELL,
+      "dE %.1f  (liston %.1f)" % (peorApa, MIN_WELL))
+
+#  --- LA MASCARA DEL LANZADOR ------------------------------------------------
+#
+#  JUCE escribe el icono como legacy, asi que de Android 8 en adelante el
+#  lanzador lo mete en SU mascara. Lo que importa es lo mas lejos del centro
+#  que hay algo dibujado, contra la circunferencia inscrita.
+#
+#  Y SE MIDE EN EL PNG, no se deduce del reparto. La primera version calculaba
+#  la esquina desde la misma constante con la que la app la dibuja, asi que al
+#  quitar la fila invisible a proposito -que es justo el fallo que esta regla
+#  existe para cazar- siguio saliendo verde: no estaba midiendo, estaba
+#  repitiendo el numero. Un banco que repite la constante del codigo no prueba
+#  el codigo.
+#  El cuerpo lleva DEGRADADO, asi que el fondo no es un color: es un color por
+#  fila. Comparar contra la esquina de arriba daba 723 px - o sea que el propio
+#  degradado contaba como «algo dibujado» y la regla suspendia siempre. La
+#  referencia de cada fila es su propio borde izquierdo, que ahi solo hay
+#  chasis: la placa empieza mucho mas adentro.
+media = 1024 / 2.0
+lejos = 0.0
+for y in range (0, 1024, 2):
+    fila = v (px[y][2])
+    for x in range (0, 1024, 2):
+        if dE (v (px[y][x]), fila) > 6.0:
+            dd = math.hypot (x + 0.5 - media, y + 0.5 - media)
+            if dd > lejos: lejos = dd
+
+mide ("las esquinas sobreviven a la mascara", lejos <= media,
+      "lo mas lejos dibujado a %.0f px del centro, radio %.0f" % (lejos, media))
+
+print()
+print ("icono: %d comprobaciones, %d FALLA" % (len (hechas), len (fallos)))
+sys.exit (1 if fallos else 0)

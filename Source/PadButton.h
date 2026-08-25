@@ -5,6 +5,7 @@
 #include "Iconos.h"
 #include "ZatiLookAndFeel.h"
 #include "Zati.h"
+#include "PadArt.h"
 
 // ============================================================================
 //  PadButton — a sample pad tile: big index (Oswald), sample name (mono), and
@@ -203,11 +204,6 @@ public:
         const float rad = 3.0f;   // square, not rounded — matches the flat button caps
 
         if (down) r = r.translated (0.0f, lift);
-        //  El bloque de profundidad, como el de cualquier tapa: OSCURO. Con
-        //  ZatiColours::ink salia crema en LACA y hueso en GRAFITO, o sea un
-        //  halo claro bajo cada uno de los dieciseis pads.
-        else      { g.setColour (ZatiColours::groove (0.32f));
-                    g.fillRoundedRectangle (r.translated (0.0f, lift), rad); }
 
         // A loaded pad wears its zati colour: 30% fill, full-strength border,
         // and a solid top stripe. The stripe plus the always-drawn number are
@@ -229,9 +225,11 @@ public:
         //  so it can carry its real weight. Empty stays a whisper: the
         //  difference between "this pad IS turquoise" and "this pad would be
         //  turquoise" has to survive a glance.
-        juce::Colour base   = loaded ? frag.withMultipliedAlpha (0.62f)
-                                     : ZatiColours::padBg2.overlaidWith (frag.withAlpha (0.16f));
-        juce::Colour edge   = loaded ? frag : ZatiColours::padBorder;
+        //  Los dos colores de reposo salen de PadArt, que es de donde los coge
+        //  tambien el icono del lanzador: dos escrituras del mismo pad se
+        //  separan, y el sintoma seria «el icono ya no se parece a la app».
+        juce::Colour base   = PadArt::cuerpoDe (frag, loaded);
+        juce::Colour edge   = PadArt::bordeDe  (frag, loaded);
         //  The number on an empty pad was ink at 30%, on a tint that was barely
         //  there, on a plate the same value as everything else - three weak
         //  contrasts stacked. It is the only thing an empty pad has to say.
@@ -270,24 +268,16 @@ public:
         }
         if (down) base = base.darker (0.06f);
 
-        // Body — flat fill, no gradient/sheen.
-        g.setColour (base);
-        g.fillRoundedRectangle (r, rad);
-
-        // Top stripe (5px): the zati's identity, independent of the fill.
-        if (loaded && ! onAccent)
-        {
-            g.setColour (frag);
-            g.fillRect (r.withHeight (5.0f).reduced (1.0f, 0.0f).withY (r.getY() + 1.0f));
-        }
-        else if (! loaded)
-        {
-            //  The same stripe, drawn as an outline instead of a fill: the
-            //  slot is there and it is that colour, it just has nothing in it
-            //  yet. Empty and full read as the same instrument.
-            g.setColour (frag.withAlpha (0.30f));
-            g.fillRect (r.withHeight (2.0f).reduced (1.0f, 0.0f).withY (r.getY() + 1.0f));
-        }
+        //  Cuerpo, bloque de profundidad y banda: los tres por PadArt. La banda
+        //  la decide el estado - solida si el pad tiene sonido, de contorno si
+        //  esta vacio -«el hueco esta y es de ese color, solo que no tiene nada
+        //  dentro»- y ninguna si esta sonando, porque ahi el cuerpo entero YA
+        //  es el color.
+        PadArt::fondo (g, r, base, frag,
+                       (loaded && ! onAccent) ? PadArt::Banda::solida
+                                              : (! loaded ? PadArt::Banda::fantasma
+                                                          : PadArt::Banda::ninguna),
+                       1.0f, ! down);
 
         //  EL DIBUJO DEL INSTRUMENTO, donde iria la onda. Del alto de la
         //  tapa y no de un numero a mano: en un movil el pad mide 60 px y en
@@ -326,11 +316,7 @@ public:
         }
 
         // Index (Oswald) top-left.
-        g.setColour (idxCol);
-        g.setFont (ZatiColours::displayFont (juce::jmin (26.0f, r.getHeight() * 0.30f)));
-        g.drawText (juce::String (index + 1).paddedLeft ('0', 2),
-                    r.reduced (9.0f, 6.0f).removeFromTop (r.getHeight() * 0.42f),
-                    juce::Justification::topLeft);
+        PadArt::numero (g, r, index + 1, idxCol, 1.0f);
 
         // Name (mono) bottom.
         g.setColour (nmCol);
@@ -344,8 +330,7 @@ public:
         // Border, then focus. A loaded pad's border is its zati; focus is a
         // second, achromatic ring outside it, so selection never overwrites
         // the fragment's colour with the chassis tone.
-        g.setColour (edge);
-        g.drawRoundedRectangle (r.reduced (0.5f), rad, loaded ? 2.0f : 1.2f);
+        PadArt::borde (g, r, edge, loaded, 1.0f);
 
         if (selected && ! onAccent)
         {

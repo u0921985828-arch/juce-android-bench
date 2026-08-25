@@ -184,6 +184,53 @@ public:
             return;
         }
 
+        //  Y EL ICONO DEL LANZADOR, por la misma puerta y por la misma razon.
+        //
+        //  Projucer lo necesita como fichero en tiempo de compilacion, asi que
+        //  `ci/icon.png` se genera con esto y se COMMITEA - igual que los .flac
+        //  de Tools/fabrica.py: el fichero esta en el repositorio porque hace
+        //  falta ahi, y el codigo esta para que se sepa de donde sale.
+        //
+        //      ZATI_ICONO=ci/icon.png ZATI_SKIN=0 ./Zati
+        if (const auto icono = UiAudit::env ("ZATI_ICONO"); icono.isNotEmpty())
+        {
+            //  Y LA CARCASA SE ELIGE AQUI, no se hereda.
+            //
+            //  loadSkinPreference ya ha corrido mas arriba, asi que sin esta
+            //  linea el icono que se commitea saldria en la carcasa en la que
+            //  dejo la app la ultima persona que la abrio en esa maquina: el
+            //  mismo comando daria cuatro dibujos distintos y ninguno diria por
+            //  que. Por defecto la DE FABRICA, que es con la que la maquina se
+            //  instala - un dibujo horneado tiene que elegir una, y la que
+            //  toca es la que vera quien acabe de instalarla.
+            //  Y por defecto la DE FABRICA -LACA-, que es con la que la
+            //  maquina se instala: el icono es lo que hay dentro, y quien lo
+            //  toque abre exactamente eso. Un dibujo horneado tiene que elegir
+            //  una carcasa y la que toca es la que se va a ver al abrir.
+            const auto piel = UiAudit::env ("ZATI_SKIN");
+            ZatiColours::setSkin (piel.isNotEmpty() ? juce::jlimit (0, 3, piel.getIntValue())
+                                                    : ZatiColours::kSkinDeFabrica);
+
+            const auto lado = UiAudit::env ("ZATI_ICONO_LADO");
+            StoreArt::writeIcon (icono, lado.isNotEmpty() ? lado.getIntValue() : 1024,
+                                 UiAudit::env ("ZATI_ICONO_NUM") == "1");
+
+            //  Y lo unico que el PNG no puede decir: si la Z del icono y la de
+            //  la marca de la cabecera siguen siendo la misma. Ver
+            //  StoreArt::desacuerdoMarca.
+            std::cout << "{\"icono\":\"z\",\"desacuerdo\":" << StoreArt::desacuerdoMarca()
+                      << ",\"celdas\":\"";
+            for (int f = 0; f < Iconos::kLadoMarca; ++f)
+                for (int c = 0; c < Iconos::kLadoMarca; ++c)
+                    std::cout << (Iconos::marcaCelda (f, c) ? 1 : 0);
+            std::cout << "\"";
+            StoreArt::pintaPadsDeLaCara (std::cout);
+            std::cout << "}" << std::endl;
+
+            quit();
+            return;
+        }
+
         if (UiAudit::enabled())
             startAudit();
     }
