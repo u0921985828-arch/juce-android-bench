@@ -579,48 +579,87 @@ namespace StoreArt
             return img;
         }
 
-        //  EL PAD A MARCO COMPLETO, con la letra en BLANCO.
+        //  EL PAD A MARCO COMPLETO, Y NADA MAS.
         //
         //  Las otras marcas dibujan la tapa en 4 de 6 -el margen es una fila de
-        //  pad que no se pinta- y recortan la Z para que se vea el chasis. Esta
-        //  hace las dos cosas al reves: la tapa ES el icono, sin margen, y la
-        //  letra se PINTA en blanco encima en vez de quitarse.
+        //  pad que no se pinta- sobre el chasis, y recortan la Z para que se vea
+        //  ese chasis por la letra. Esta no tiene chasis: la tapa ES el icono,
+        //  de borde a borde, y la Z va DIBUJADA encima.
         //
-        //  Y entonces el bloque de profundidad no cabe: iria por debajo del
-        //  filo de abajo, que aqui es el borde del PNG. Se le deja su altura
-        //  como unico margen, abajo, para que la tapa siga siendo una tapa y no
-        //  un cuadrado de color.
+        //  CUADRADA Y NO REDONDEADA, que es la unica forma de que no haya
+        //  fondo. El primer intento pinto la tapa con `fillRoundedRectangle` y
+        //  por las cuatro esquinas seguia viendose el chasis: los cuatro PNG de
+        //  las cuatro carcasas salian con md5 distinto, o sea que de «sin
+        //  fondo» tenia poco. A marco completo el que redondea es el lanzador,
+        //  con su mascara, y esa es su decision y no la nuestra.
+        //
+        //  Y ASI EL ICONO DEJA DE DEPENDER DE LA CARCASA: `Zati.h` dice que la
+        //  paleta de los ocho NO sigue a la piel -las carcasas reestilan el
+        //  chasis y nada mas- asi que una tapa hecha solo de su zati sale igual
+        //  en las cuatro. Lo que ataba el icono a LACA era el fondo y el
+        //  acento, y aqui no hay ni uno ni otro.
         if (estilo == Estilo::marcaPad)
         {
             const float escala = L / PadArt::kAltoRef;
-            const float lift = ZatiLookAndFeel::kCapLift * escala;
-            const auto caja = juce::Rectangle<float> (0.0f, 0.0f, L, L - lift);
             const auto frag = Zati::colour (Zati::forPad (0));
-            const auto cuerpo = PadArt::cuerpoDe (frag, true);
 
-            PadArt::fondo (g, caja, cuerpo, frag, PadArt::Banda::solida, escala);
+            //  El cuerpo, SOBRE SI MISMO y no sobre el chasis. `cuerpoDe` es el
+            //  zati al 62 % de ALFA, y un alfa necesita algo detras: en la cara
+            //  lo tiene -la placa- y aqui no hay nada, asi que se compone sobre
+            //  el propio zati oscurecido. Sale el mismo cuerpo que en un pad de
+            //  la maquina sin traerse la placa de ninguna carcasa.
+            const auto cuerpo = frag.darker (0.45f).overlaidWith (PadArt::cuerpoDe (frag, true));
 
-            //  La letra en BLANCO -el token de la casa, no un blanco a mano- y
-            //  a lo grande: sin margen alrededor, la Z puede ocupar lo que en
-            //  la marca de siempre ocupa la tapa entera.
-            //  La caja de la Z se centra en la TAPA y no en el PNG -la tapa
-            //  acaba antes, que abajo esta el bloque- y sin ningun retoque a
-            //  mano: el primer intento llevaba un empujon de 0.06 del alto de
-            //  referencia «para centrarla mejor» y la bajaba 61 px.
-            //
-            //  Y la caja es 0.80 del lado porque el dibujo ocupa la MITAD de
-            //  ella: la Z vive entre 6 y 18 de 24, asi que la letra sale a 0.40
-            //  del icono. Con 0.62 se quedaba en 0.31 y parecia un sello
-            //  pequeno en medio de una tapa grande.
-            auto z = Iconos::marcaHueco();
-            const float zona = L * 0.80f;
-            z.applyTransform (juce::AffineTransform::scale (zona / 24.0f)
-                                  .translated ((L - zona) * 0.5f,
-                                               (caja.getHeight() - zona) * 0.5f));
-            g.setColour (ZatiColours::white);
-            g.fillPath (z);
+            g.setColour (cuerpo);
+            g.fillRect (0.0f, 0.0f, L, L);
 
-            PadArt::borde (g, caja, PadArt::bordeDe (frag, true), true, escala);
+            //  LA BANDA, con la geometria de un pad cargado (ver PadArt::fondo:
+            //  5 de alto, metida 1 por arriba y 1 por cada lado). Es lo unico
+            //  que queda de la tapa cuando no hay ni bloque ni borde, y es la
+            //  firma: un pad con sonido lleva su zati en una banda solida.
+            const float bandaY = 1.0f * escala, bandaAlto = 5.0f * escala;
+            g.setColour (frag);
+            g.fillRect (juce::Rectangle<float> (0.0f, 0.0f, L, L)
+                            .withHeight (bandaAlto).reduced (1.0f * escala, 0.0f)
+                            .withY (bandaY));
+
+            //  LA Z CENTRADA EN EL RECUADRO DEL CUERPO, que es lo que queda
+            //  DEBAJO de la banda - y no en el icono entero. Centrada en el
+            //  marco, la letra sale empujada hacia arriba respecto al hueco de
+            //  color en el que de verdad esta: la banda le come 6 de las 48
+            //  unidades por arriba y nada por abajo.
+            const auto recuadro = juce::Rectangle<float> (0.0f, bandaY + bandaAlto,
+                                                          L, L - (bandaY + bandaAlto));
+
+            //  Y SE ESCALA Y SE CENTRA POR SUS LIMITES DE VERDAD, no por la
+            //  caja nominal de 24. Las dos veces que se calculo a ojo salio
+            //  mal: la Z vive entre 6 y 18, o sea la mitad de la caja, pero el
+            //  TRAZO se pinta centrado en esa linea y sobresale su medio grosor
+            //  por cada lado - la tinta ocupa unas dos terceras partes, no la
+            //  mitad, y la letra salia desbordando el icono. `getBounds` lo
+            //  sabe y no hay que acertarlo.
+            auto t = Iconos::marcaTrazo();
+            const auto lim = t.getBounds();
+            //  CON AIRE. Ajustada a 0.74 del ancho la letra llega casi al filo
+            //  y el icono se lee apretado; a 0.60 queda un margen que se ve por
+            //  los cuatro lados. Es la misma proporcion con la que un pad de la
+            //  cara deja sitio alrededor de su onda.
+            const float k = juce::jmin (L * 0.60f / lim.getWidth(),
+                                        recuadro.getHeight() * 0.58f / lim.getHeight());
+            t.applyTransform (juce::AffineTransform::scale (k)
+                                  .translated (recuadro.getCentreX() - lim.getCentreX() * k,
+                                               recuadro.getCentreY() - lim.getCentreY() * k));
+
+            //  LA TINTA SE MIDE, PERO NO CONTRA LA PALETA DE LA CARCASA.
+            //  `textOn` elige entre `ink` e `inkLight`, y esos dos son tokens de
+            //  piel: medido, la misma tapa roja sacaba la Z crema en PAPEL,
+            //  NEGRA en GRAFITO, blanca en ACERO y crema en LACA - o sea que el
+            //  icono seguia dependiendo de la carcasa por el unico sitio que
+            //  quedaba. Los dos candidatos salen ahora del propio zati y
+            //  `bestOn` elige midiendo.
+            g.setColour (ZatiColours::bestOn (cuerpo, frag.brighter (1.0f),
+                                              frag.darker (0.85f)));
+            g.fillPath (t);
             return img;
         }
 
