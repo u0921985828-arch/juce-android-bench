@@ -184,6 +184,21 @@ public:
             return;
         }
 
+        //  EL ICONO DEL SPLASH, por la misma puerta: se dibuja, se escribe y
+        //  se sale. Ver StoreArt::splashIcon.
+        //
+        //      ZATI_SPLASH=ci/splash.png ./Zati
+        if (const auto sp = UiAudit::env ("ZATI_SPLASH"); sp.isNotEmpty())
+        {
+            const auto piel = UiAudit::env ("ZATI_SKIN");
+            ZatiColours::setSkin (piel.isNotEmpty() ? juce::jlimit (0, 3, piel.getIntValue())
+                                                    : ZatiColours::kSkinDeFabrica);
+            const auto lado = UiAudit::env ("ZATI_SPLASH_LADO");
+            StoreArt::writeSplash (sp, lado.isNotEmpty() ? lado.getIntValue() : 1024);
+            quit();
+            return;
+        }
+
         //  Y EL ICONO DEL LANZADOR, por la misma puerta y por la misma razon.
         //
         //  Projucer lo necesita como fichero en tiempo de compilacion, asi que
@@ -248,6 +263,17 @@ public:
             //  banco pueda separar «esto es onda» de «esto es cristal» sin
             //  inventarse los colores: los da la app con sus propios tokens,
             //  que es lo mismo que ya hace con los pads de la cara.
+            //  La tinta de la letra de `marcaPad`, para que el banco pueda
+            //  buscar sus pixeles en el PNG sin repetir la cuenta del dibujo:
+            //  es `bestOn` de dos tonos del zati, y quien la sabe es la app.
+            {
+                const auto fr = Zati::colour (Zati::forPad (0));
+                const auto cu = fr.darker (0.45f).overlaidWith (PadArt::cuerpoDe (fr, true));
+                std::cout << ",\"marca_letra\":\""
+                          << ZatiColours::bestOn (cu, fr.brighter (1.0f),
+                                                  fr.darker (0.85f)).toDisplayString (false)
+                          << "\"";
+            }
             std::cout << ",\"estilo\":" << (int) est
                       << ",\"marca_tapa\":\"" << ZatiColours::accent.toDisplayString (false)
                       << "\",\"marca_cuerpo\":[\"" << ZatiColours::chassisTop.toDisplayString (false)

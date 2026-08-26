@@ -276,7 +276,50 @@ def mascaraLanzador (path, etiqueta):
     mide (etiqueta, lejos <= media,
           "lo mas lejos dibujado a %.0f px del centro, radio %.0f" % (lejos, media))
 
-mascaraLanzador (DEST, "las esquinas sobreviven a la mascara")
+#  DOS PREGUNTAS Y NO UNA, segun lo que el icono SEA.
+#
+#  «Que nada de lo dibujado caiga fuera de la circunferencia inscrita» es la
+#  pregunta correcta para un icono CON MARGEN -la rejilla, que saca 494 de 512-
+#  y es la equivocada para uno a MARCO COMPLETO, donde que la mascara recorte no
+#  es un accidente sino la intencion: el lanzador redondea y esa es su decision.
+#  Pedirle a una tapa a sangre que quepa entera en el circulo es pedirle que deje
+#  de estar a sangre.
+#
+#  Lo que hay que exigirle a esa es otra cosa, y mas dificil de que se cumpla por
+#  accidente: que no se pierda lo ESENCIAL. O sea la letra.
+def sangra (path, chasis):
+    """Si el dibujo llega al borde del PNG.
+
+    Y la referencia NO puede salir del propio borde, que es como se escribio la
+    primera version: en un icono a sangre la esquina ES el dibujo, asi que
+    compararla consigo misma da «no sangra» siempre y la regla nunca cambiaba de
+    rama. La referencia es el CHASIS, que es lo que se ve por el margen de un
+    icono que no sangra, y lo dice la app."""
+    q = pixeles (path, 64)
+    esquina = v (q[0][0])
+    return min (dE (esquina, c) for c in chasis) > 6.0
+
+if sangra (DEST, [int (h, 16) for h in d.get ("marca_cuerpo", ["0"])]):
+    #  La tinta de la letra la imprime la app -es `bestOn` de dos tonos del
+    #  zati- asi que se buscan esos pixeles y se mira si su rectangulo cabe en el
+    #  circulo. Medido en el PNG y no desde las constantes del dibujo.
+    letra = int (d.get ("marca_letra", "0").lstrip ("#"), 16)
+    q = pixeles (DEST, 1024)
+    xs, ys = [], []
+    for y in range (0, 1024, 2):
+        for x in range (0, 1024, 2):
+            if dE (v (q[y][x]), letra) < 8.0: xs.append (x); ys.append (y)
+    if xs:
+        esquinas = [(min (xs), min (ys)), (max (xs), min (ys)),
+                    (min (xs), max (ys)), (max (xs), max (ys))]
+        lejosL = max (math.hypot (x - 512.0, y - 512.0) for x, y in esquinas)
+    else:
+        lejosL = 1e9
+    mide ("la letra sobrevive a la mascara", lejosL <= 512.0,
+          "la esquina de la Z a %.0f px del centro, radio 512" % lejosL)
+else:
+    mascaraLanzador (DEST, "las esquinas sobreviven a la mascara")
+
 mascaraLanzador (REJ,  "la rejilla tambien sobrevive a la mascara")
 
 
@@ -471,6 +514,47 @@ for y in range (0, 1024, 2):
 print ("  ---    marcaPad: lo mas lejos dibujado a %.0f px del centro, radio %.0f"
        % (lejosPad, mediaC))
 if os.path.exists (padico): os.remove (padico)
+
+# ============================================================================
+#  EL ICONO DEL SPLASH, contra la zona segura de Android 12.
+#
+#  De Android 12 en adelante el sistema pinta el arranque el solo y RECORTA EL
+#  ICONO A UN CIRCULO: el dibujo tiene que vivir en los dos tercios interiores
+#  del lienzo. Lo que se salga de ahi no se pierde a veces, se pierde SIEMPRE.
+#
+#  Y se mide en el PNG: se busca lo mas lejos del centro que hay algo pintado
+#  -este es el unico PNG de la casa con alfa, asi que «pintado» es alfa > 0- y
+#  se compara con el radio de esa zona. Deducirlo de la constante del dibujo
+#  seria repetir el numero, que es el fallo que esta prueba ya cometio dos
+#  veces.
+print()
+spl = tempfile.mktemp (suffix="-splash.png")
+casa = tempfile.mkdtemp (prefix="zati-splash-")
+try:
+    env = dict (os.environ); env.update ({"HOME": casa, "ZATI_SPLASH": spl})
+    subprocess.run ([APP], env=env, capture_output=True, text=True, timeout=300)
+finally:
+    shutil.rmtree (casa, ignore_errors=True)
+
+if not os.path.exists (spl):
+    mide ("el splash se dibuja", False, "la app no escribio el PNG")
+else:
+    #  El alfa, en crudo: `convert` a RGBA y se mira el cuarto canal.
+    tmp = tempfile.mktemp (suffix=".rgba")
+    subprocess.run (["convert", spl, "-resize", "256x256!", "-depth", "8", "RGBA:" + tmp],
+                    check=True)
+    raw = open (tmp, "rb").read(); os.remove (tmp)
+    lejosS = 0.0
+    for y in range (256):
+        for x in range (256):
+            if raw[(y * 256 + x) * 4 + 3] > 8:
+                dd = math.hypot (x + 0.5 - 128.0, y + 0.5 - 128.0)
+                if dd > lejosS: lejosS = dd
+    #  Los dos tercios de 256 son 170, o sea un radio de 85.
+    radio = 256.0 * (2.0 / 3.0) * 0.5
+    mide ("el splash cabe en la zona segura", lejosS <= radio,
+          "lo mas lejos pintado a %.0f px del centro, zona %.0f" % (lejosS, radio))
+    os.remove (spl)
 
 if os.path.exists (REJ): os.remove (REJ)
 

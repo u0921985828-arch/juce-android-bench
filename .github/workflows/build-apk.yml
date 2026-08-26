@@ -123,10 +123,30 @@ jobs:
           import re, sys
           s = open('Source/ZatiLookAndFeel.h', encoding='utf8').read()
           s = re.sub(r'//[^\n]*', '', s)
+          #  LA FILA DE LA CARCASA DE FABRICA, no la primera.
+          #
+          #  Esto cogia m[0] -PAPEL, #F4EFE3- desde antes de que la de fabrica
+          #  fuese LACA, #1B4A4F. O sea que cada arranque empezaba con un
+          #  fogonazo crema y seguia con una app de petroleo oscuro: justo lo
+          #  contrario de lo que este paso existe para evitar. Y no fallaba
+          #  nada, porque el paso solo se miraba a si mismo.
+          fab = re.search(r'kSkinDeFabrica\s*=\s*(\d+)', s)
+          if not fab: sys.exit('no se pudo leer ZatiColours::kSkinDeFabrica')
+          fila = int(fab.group(1))
+          #  CUANTOS COLORES LLEVA UNA CARCASA, contados del struct y no a ojo:
+          #  `top` es el primero de su fila, asi que para saltar a la fila que
+          #  toca hay que saber cuantos hay por fila. Si alguien le anade un
+          #  token a `Skin` y esto siguiera con el numero viejo, cogeria el
+          #  color de al lado y el arranque saldria de un color cualquiera sin
+          #  que nada fallase.
+          cab = s[s.index('struct Skin'):s.index('static const Skin table[4]')]
+          por_fila = sum(len(d.split(',')) for d in re.findall(r'juce::uint32\s+([^;]+);', cab))
+          if por_fila == 0: sys.exit('no se pudo contar los campos de struct Skin')
           blk = s[s.index('static const Skin table[4]'):]
           m = re.findall(r'0x([0-9a-fA-F]{8})', blk)
-          if not m: sys.exit('no se pudo leer chassisTop de la tabla de carcasas')
-          print('#FF%06X' % (int(m[0], 16) & 0xffffff))
+          if len(m) < por_fila * 4:
+              sys.exit('la tabla de carcasas no tiene 4 x %d colores' % por_fila)
+          print('#FF%06X' % (int(m[fila * por_fila], 16) & 0xffffff))
           PY
           )"
           echo "chasis de arranque: $HEX"
@@ -141,9 +161,56 @@ jobs:
               '  </style>' \
               '</resources>' \
               > "Builds/Android/app/src/$d/res/values/zati_theme.xml"
+            #  Y EL SPLASH DE ANDROID 12+, que es un tema aparte porque los
+            #  atributos son de API 31: `values-v31` gana sobre `values` a
+            #  partir de ahi, asi que el estilo se redefine ENTERO -si solo se
+            #  pusieran los atributos nuevos, se perderia el windowBackground-.
+            #
+            #  Lo pinta el SISTEMA antes de que la app exista, asi que no cuesta
+            #  un milisegundo de arranque y dura exactamente lo que tarde en
+            #  cargar. A cambio solo caben fondo e icono: el titulo y el nombre
+            #  del estudio no entran, y por eso no estan.
+            mkdir -p "Builds/Android/app/src/$d/res/values-v31" \
+                     "Builds/Android/app/src/$d/res/drawable-nodpi"
+            cp ci/splash.png "Builds/Android/app/src/$d/res/drawable-nodpi/zati_splash.png"
+            printf '%s\n' \
+              '<?xml version="1.0" encoding="utf-8"?>' \
+              '<resources>' \
+              "  <color name=\"zatiChassis\">$HEX</color>" \
+              '  <style name="ZatiLaunch" parent="@android:style/Theme.Material.Light.NoActionBar">' \
+              '    <item name="android:windowBackground">@color/zatiChassis</item>' \
+              '    <item name="android:windowSplashScreenBackground">@color/zatiChassis</item>' \
+              '    <item name="android:windowSplashScreenAnimatedIcon">@drawable/zati_splash</item>' \
+              '  </style>' \
+              '</resources>' \
+              > "Builds/Android/app/src/$d/res/values-v31/zati_theme.xml"
           done
           cat Builds/Android/app/src/main/res/values/zati_theme.xml
+          cat Builds/Android/app/src/main/res/values-v31/zati_theme.xml
           grep -n 'android:theme' Builds/Android/app/src/main/AndroidManifest.xml
+
+          #  Y SE COMPRUEBA AQUI, que es donde se produce.
+          #
+          #  Un `echo` con el color no es una comprobacion: el paso llevaba
+          #  cogiendo la carcasa equivocada desde que LACA es la de fabrica y
+          #  nadie se entero porque lo unico que hacia era imprimirlo. Si el
+          #  color del tema no es el chasis de la carcasa con la que la app
+          #  abre, esto FALLA y no se publica una APK que arranca con un
+          #  fogonazo.
+          python3 - "$HEX" <<'PY'
+          import re, sys
+          hex_tema = sys.argv[1].upper()
+          s = re.sub(r'//[^\n]*', '', open('Source/ZatiLookAndFeel.h', encoding='utf8').read())
+          fila = int(re.search(r'kSkinDeFabrica\s*=\s*(\d+)', s).group(1))
+          cab = s[s.index('struct Skin'):s.index('static const Skin table[4]')]
+          por_fila = sum(len(d.split(',')) for d in re.findall(r'juce::uint32\s+([^;]+);', cab))
+          m = re.findall(r'0x([0-9a-fA-F]{8})', s[s.index('static const Skin table[4]'):])
+          esperado = '#FF%06X' % (int(m[fila * por_fila], 16) & 0xffffff)
+          if hex_tema != esperado:
+              sys.exit('el tema de arranque dice %s y la carcasa de fabrica es %s'
+                       % (hex_tema, esperado))
+          print('el arranque y la carcasa de fabrica coinciden:', esperado)
+          PY
 
       - name: La app se llama Zati Sampler
         run: |

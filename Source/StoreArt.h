@@ -214,7 +214,11 @@ namespace StoreArt
     //  columnas - es que por una rendija de dos pixeles no se lee un dibujo.
     //  Los estilos que meten color detras se quedan tras `ZATI_ICONO_ESTILO`,
     //  que es como se pueden volver a mirar sin reescribirlos.
-    inline constexpr Estilo kEstiloDeFabrica = Estilo::rejilla;
+    //  LA TAPA A MARCO COMPLETO. Es la unica que no depende de la carcasa -y
+    //  eso se comprueba, no se promete: los cuatro PNG de las cuatro pieles
+    //  salen byte a byte iguales- y la unica en la que el logo es un PAD de
+    //  verdad y no un rectangulo con la forma de uno.
+    inline constexpr Estilo kEstiloDeFabrica = Estilo::marcaPad;
 
     //  DONDE CAE LA MARCA DENTRO DEL ICONO, escrito UNA vez.
     //
@@ -916,6 +920,83 @@ namespace StoreArt
                 << hex (ZatiColours::plate.overlaidWith (
                             PadArt::cuerpoDe (Zati::colour (Zati::forPad (i)), false))) << "\"";
         out << "]";
+    }
+
+    //  EL ICONO DEL SPLASH DE ANDROID 12+.
+    //
+    //  De Android 12 en adelante el sistema pinta el arranque el solo:
+    //  `windowSplashScreenBackground` de fondo y `windowSplashScreenAnimatedIcon`
+    //  centrado encima. Y lo RECORTA A UN CIRCULO, con el dibujo viviendo en
+    //  los DOS TERCIOS interiores del lienzo - las esquinas y el anillo de
+    //  fuera se pierden por contrato, no por accidente.
+    //
+    //  Asi que no vale el PNG del lanzador, que va a sangre: aqui hace falta
+    //  la marca CON su aire, y el fondo no se pinta -lo pone el tema-, o sea
+    //  que este PNG lleva alfa y es el unico de la casa que lo lleva.
+    //  Y EL LADO NO ES 2/3, es el CUADRADO INSCRITO en ese circulo.
+    //
+    //  La zona segura son los dos tercios interiores y nuestra marca es
+    //  cuadrada, asi que con el lado a 2/3 las esquinas se salen: medido, lo
+    //  mas lejos pintado quedaba a 117 px de un centro con la zona en 85. Un
+    //  cuadrado que quepa entero en un circulo de radio r tiene lado r*raiz(2),
+    //  o sea (2/3)/raiz(2) del lienzo.
+    //
+    //  Se elige asi -y no apurando- porque desde aqui NO se puede probar si el
+    //  sistema recorta: depende de si el tema lleva fondo de icono, y eso solo
+    //  se ve en un telefono con Android 12. Cabiendo en el circulo sale bien
+    //  con recorte y sin el; apurando, sale bien solo si acertamos.
+    static constexpr float kSplashZona = 0.4714045f;   // (2/3) / sqrt(2)
+
+    inline juce::Image splashIcon (int lado)
+    {
+        lado = juce::jmax (48, lado);
+        juce::Image img (juce::Image::ARGB, lado, lado, true);
+        juce::Graphics g (img);
+
+        const float L = (float) lado;
+        const float zona = L * kSplashZona;
+        const auto caja = juce::Rectangle<float> ((L - zona) * 0.5f, (L - zona) * 0.5f,
+                                                  zona, zona);
+
+        //  La MISMA tapa que el icono del lanzador, con los mismos tonos
+        //  sacados del zati: el splash y el icono tienen que ser el mismo
+        //  objeto o el arranque se lee como el de otra app.
+        const float escala = zona / PadArt::kAltoRef;
+        const auto frag = Zati::colour (Zati::forPad (0));
+        const auto cuerpo = frag.darker (0.45f).overlaidWith (PadArt::cuerpoDe (frag, true));
+
+        g.setColour (cuerpo);
+        g.fillRoundedRectangle (caja, 3.0f * escala);
+
+        const float bandaY = caja.getY() + 1.0f * escala, bandaAlto = 5.0f * escala;
+        g.setColour (frag);
+        g.fillRect (caja.withHeight (bandaAlto).reduced (1.0f * escala, 0.0f).withY (bandaY));
+
+        const auto recuadro = caja.withTop (bandaY + bandaAlto);
+        auto t = Iconos::marcaHueco();
+        const auto lim = t.getBounds();
+        const float k = juce::jmin (caja.getWidth() * 0.60f / lim.getWidth(),
+                                    recuadro.getHeight() * 0.58f / lim.getHeight());
+        t.applyTransform (juce::AffineTransform::scale (k)
+                              .translated (recuadro.getCentreX() - lim.getCentreX() * k,
+                                           recuadro.getCentreY() - lim.getCentreY() * k));
+        g.setColour (ZatiColours::bestOn (cuerpo, frag.brighter (1.0f), frag.darker (0.85f)));
+        g.fillPath (t);
+
+        PadArt::borde (g, caja, PadArt::bordeDe (frag, true), true, escala);
+        return img;
+    }
+
+    inline void writeSplash (const juce::String& path, int lado)
+    {
+        juce::File f (path);
+        f.getParentDirectory().createDirectory();
+        f.deleteFile();
+        juce::FileOutputStream out (f);
+        if (! out.openedOk()) return;
+        juce::PNGImageFormat png;
+        png.writeImageToStream (splashIcon (lado), out);
+        out.flush();
     }
 
     inline void writeIcon (const juce::String& path, int lado, bool conNumero = false,
