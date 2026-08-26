@@ -392,50 +392,62 @@ namespace StoreArt
                 //  es lo minimo que sobrevive a la reduccion. Con mas barras
                 //  el hueco se cierra y vuelve el borron.
                 {
-                    //  Las alturas, a mano y a proposito: una onda de verdad
-                    //  no hace falta y ademas no cabe. Lo que tiene que decir
-                    //  el dibujo es «audio», y eso lo dice una silueta
-                    //  irregular con un pico claro - una montana simetrica se
-                    //  lee como un grafico y no como un sonido.
-                    static constexpr float kAlturas[] =
-                        { 0.42f, 0.86f, 0.58f, 1.00f, 0.70f, 0.94f, 0.52f, 0.78f, 0.38f };
-                    const int nb = (int) (sizeof (kAlturas) / sizeof (float));
+                    //  UN TRAZO QUE ONDULA, y no barras ni un relleno. Las
+                    //  tres se probaron y las dos primeras dicen otra cosa:
+                    //
+                    //  - RELLENO (la envolvente de un sonido de verdad): llena
+                    //    la rendija entera, asi que por el hueco de la Z sale
+                    //    una mancha de color. Medido, a 256 px sigue siendo una
+                    //    mancha; la silueta solo aparece a 1024.
+                    //  - BARRAS con hueco: se lee, y se lee MAL - barras
+                    //    separadas son un ESPECTRO, que dice frecuencias. Una
+                    //    onda es continua y cruza el cero.
+                    //
+                    //  Un trazo lo tiene todo: es continuo -o sea una onda- y
+                    //  tiene alto acotado, asi que entra y sale de la tira de
+                    //  la Z el solo. Los cortes salen de la propia onda y no de
+                    //  huecos puestos a mano.
+                    const float cy = 12.0f;
+                    const float amp = 3.4f;     // dentro de la cintura: la Z vive de 6 a 18
+                    const float grosor = 1.7f;  // a 48 px de icono son 2.3 px de trazo
+                    const int   ciclos = 2;     // dos ciclos en 24 unidades
 
-                    //  Y LA ALTURA, medida y no elegida: a 5.5 las barras
-                    //  cruzan las DOS barras de la Z y la letra se lee como un
-                    //  codigo de barras; a 4.0 empiezan a comerselas. A 3.5
-                    //  quedan dentro de la cintura -la Z vive entre 6 y 18 de
-                    //  24- y la letra sale entera con la onda dentro.
-                    const float cy = 12.0f, halfH = 3.5f;
-                    const float paso = 24.0f / (float) nb;
-                    const float ancho = paso * 0.62f;      // el resto es hueco
-
+                    //  Y NO ES UN SENO: un seno es un tono, no un sonido. Dos
+                    //  ciclos de distinta amplitud -el segundo mas corto- es lo
+                    //  que separa «una onda» de «una senal de prueba», y es lo
+                    //  mismo que hace que las alturas de un dibujo de audio no
+                    //  sean todas iguales.
                     juce::Path onda;
-                    for (int b = 0; b < nb; ++b)
+                    const int pasos = 96;
+                    for (int k = 0; k <= pasos; ++k)
                     {
-                        const float h = juce::jmax (0.6f, kAlturas[b] * halfH);
-                        const float x = paso * ((float) b + 0.5f) - ancho * 0.5f;
-                        //  Redondeada por los extremos, como la barra de un
-                        //  medidor: a 48 px un canto vivo se come un pixel y
-                        //  la barra se lee como un cuadrado.
-                        onda.addRoundedRectangle (x, cy - h, ancho, h * 2.0f, ancho * 0.5f);
+                        const float t = (float) k / (float) pasos;              // 0..1
+                        const float fase = t * juce::MathConstants<float>::twoPi * (float) ciclos;
+                        const float decae = 1.0f - 0.45f * t;                    // el segundo ciclo, menor
+                        const float y = cy - std::sin (fase) * amp * decae;
+                        const float x = 24.0f * t;
+                        (k == 0) ? onda.startNewSubPath (x, y) : onda.lineTo (x, y);
                     }
+                    onda = [&]
+                    {
+                        juce::Path trazo;
+                        juce::PathStrokeType (grosor, juce::PathStrokeType::curved,
+                                              juce::PathStrokeType::rounded).createStrokedPath (trazo, onda);
+                        return trazo;
+                    }();
                     onda.applyTransform (af);
 
-                    //  UN TONO Y NO OCHO, Y AL 62 %.
-                    //
-                    //  La primera version pintaba la onda con los ocho zatis a
-                    //  pleno, y eso son NUEVE tonos a maxima saturacion dentro
-                    //  de una marca de 48 px - contando la tapa. Medido en
-                    //  croma (C* de Lab): los ocho a pleno dan 59.4 contra los
-                    //  39.3 que mide un pad cargado de la cara, o sea el icono
-                    //  x1.51 mas saturado que la maquina que abre.
-                    //
-                    //  El tono es DERIVADO y no elegido a mano: el que ese pad
-                    //  tiene en la maquina. Y pintado como se pinta un pad
-                    //  -`PadArt::cuerpoDe`, que ya existe- en vez de con un
-                    //  alfa escrito aqui.
+                    //  UN TONO Y NO OCHO, Y AL 62 %. Ver el parrafo de la
+                    //  ventana de aqui arriba: los ocho zatis a pleno dan
+                    //  C* 59.4 de croma contra los 39.3 de un pad de la cara.
                     juce::Graphics::ScopedSaveState guarda (g);
+                    //  RECORTADA A LA SILUETA, que es la tapa SIN el hueco. Es
+                    //  el mismo fallo que ya se pago con los ocho colores:
+                    //  la onda se dibuja ANTES que la tapa, asi que lo que cae
+                    //  fuera de las esquinas redondeadas no lo tapa nadie - y
+                    //  salian dos puntos magenta por fuera del icono, uno a
+                    //  cada lado, porque el trazo llega hasta el borde.
+                    g.reduceClipRegion (silueta);
                     g.setColour (PadArt::cuerpoDe (Zati::colour (Zati::forPad (sonidoDeLaMarca)), true));
                     g.fillPath (onda);
                 }
