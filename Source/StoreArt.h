@@ -185,7 +185,17 @@ namespace StoreArt
                         //  SAMPLER: un pad con una Z podria ser cualquier app.
                         //  Mismo mecanismo que las tres de arriba - la Z sigue
                         //  siendo un HUECO - cambiando lo que se pone detras.
-                        marcaOnda };
+                        marcaOnda,
+                        //  Y LA Z DIBUJADA, no recortada: una tapa de pad de
+                        //  verdad con la Z como icono encima, que es como la
+                        //  app enseña un pad con instrumento. Ver
+                        //  Iconos::marcaTrazo.
+                        marcaSprite,
+                        //  Y EL PAD A MARCO COMPLETO con la letra en BLANCO
+                        //  encima: sin ventana al chasis y sin margen. La tapa
+                        //  deja de ser un dibujo centrado en un cuadrado y pasa
+                        //  a ser el icono entero.
+                        marcaPad };
 
     //  EL QUE SE INSTALA, escrito UNA vez.
     //
@@ -204,7 +214,7 @@ namespace StoreArt
     //  columnas - es que por una rendija de dos pixeles no se lee un dibujo.
     //  Los estilos que meten color detras se quedan tras `ZATI_ICONO_ESTILO`,
     //  que es como se pueden volver a mirar sin reescribirlos.
-    inline constexpr Estilo kEstiloDeFabrica = Estilo::marcaSola;
+    inline constexpr Estilo kEstiloDeFabrica = Estilo::rejilla;
 
     //  DONDE CAE LA MARCA DENTRO DEL ICONO, escrito UNA vez.
     //
@@ -290,7 +300,7 @@ namespace StoreArt
         //  una pegatina.
         if (estilo == Estilo::marcaSola || estilo == Estilo::marcaVentana
             || estilo == Estilo::marcaTapa || estilo == Estilo::marcaBanda
-            || estilo == Estilo::marcaOnda)
+            || estilo == Estilo::marcaOnda || estilo == Estilo::marcaSprite)
         {
             const auto caja = cajaDeLaMarca (L);
             const auto af = transformaDeLaMarca (L);
@@ -466,6 +476,69 @@ namespace StoreArt
                     g.fillRect (caja.getX() + bw * (float) i, caja.getY(), bw, caja.getHeight());
                 }
             }
+            else if (estilo == Estilo::marcaSola || estilo == Estilo::marcaSprite)
+            {
+                //  LA TAPA ES UN PAD DE VERDAD, no un rectangulo con el color
+                //  del acento. Esto es lo que la marca decia ser desde el
+                //  principio -«un PAD con la Z cortada dentro»- y no era: se
+                //  rellenaba de un solo color, asi que de pad tenia la forma y
+                //  nada mas. Ahora pasa por `PadArt`, o sea por el MISMO
+                //  dibujo que los dieciseis de la cara: bloque de
+                //  profundidad, cuerpo al 62 % de su zati, banda solida arriba
+                //  y borde de su propio color.
+                //
+                //  Y EL HUECO SE RESUELVE CON EL RECORTE, que es lo que hacia
+                //  falta y por lo que esto se dibujaba plano. El parrafo de
+                //  arriba decia que con el bloque puesto salia una segunda Z
+                //  gris dentro de la primera, y era cierto: el bloque se
+                //  pintaba DETRAS de la marca entera y se veia por el hueco.
+                //  Recortando a `m` -la tapa MENOS la Z- el pad se dibuja solo
+                //  donde hay tapa, y por la letra sigue viendose el chasis.
+                //
+                //  El bloque va antes y sin recortar, porque lo unico suyo que
+                //  asoma es la franja de DEBAJO de la tapa y el recorte se la
+                //  comeria. No toca la Z: la letra acaba en 18 de 24 y el
+                //  bloque empieza en el filo de abajo.
+                const float escala = caja.getHeight() / PadArt::kAltoRef;
+                const auto frag = Zati::colour (Zati::forPad (0));
+                const auto cuerpo = PadArt::cuerpoDe (frag, true);
+
+                g.setColour (ZatiColours::groove (0.42f));
+                g.fillRoundedRectangle (caja.translated (0.0f, ZatiLookAndFeel::kCapLift * escala),
+                                        3.0f * escala);
+
+                //  Con la Z RECORTADA se recorta a la tapa menos la letra;
+                //  con la Z DIBUJADA la tapa va entera y el trazo encima.
+                juce::Graphics::ScopedSaveState guarda (g);
+                if (estilo == Estilo::marcaSola)
+                    g.reduceClipRegion (m, {});
+                else
+                {
+                    juce::Path tapa;
+                    tapa.addRoundedRectangle (0.0f, 0.0f, 24.0f, 24.0f, 3.5f);
+                    tapa.applyTransform (af);
+                    g.reduceClipRegion (tapa, {});
+                }
+                PadArt::fondo (g, caja, cuerpo, frag, PadArt::Banda::solida, escala, false);
+
+                if (estilo == Estilo::marcaSprite)
+                {
+                    //  Del color con el que un pad pinta su onda y su icono de
+                    //  instrumento -`frag.darker (0.35f)`, ver PadButton- y no
+                    //  de la tinta: es el dibujo de la tapa, no un rotulo.
+                    auto t = Iconos::marcaTrazo();
+                    t.applyTransform (af);
+                    //  La tinta se MIDE contra el cuerpo de la tapa, nunca
+                    //  se elige: con `frag.darker (0.35f)` -que es lo que un
+                    //  pad usa para su onda- el trazo salia casi del color del
+                    //  cuerpo y la Z se leia como un relieve, no como un
+                    //  dibujo.
+                    g.setColour (ZatiColours::textOn (cuerpo));
+                    g.fillPath (t);
+                }
+
+                PadArt::borde (g, caja, PadArt::bordeDe (frag, true), true, escala);
+            }
             else
             {
                 g.setColour (ZatiColours::accent);
@@ -503,6 +576,51 @@ namespace StoreArt
                 }
             }
 
+            return img;
+        }
+
+        //  EL PAD A MARCO COMPLETO, con la letra en BLANCO.
+        //
+        //  Las otras marcas dibujan la tapa en 4 de 6 -el margen es una fila de
+        //  pad que no se pinta- y recortan la Z para que se vea el chasis. Esta
+        //  hace las dos cosas al reves: la tapa ES el icono, sin margen, y la
+        //  letra se PINTA en blanco encima en vez de quitarse.
+        //
+        //  Y entonces el bloque de profundidad no cabe: iria por debajo del
+        //  filo de abajo, que aqui es el borde del PNG. Se le deja su altura
+        //  como unico margen, abajo, para que la tapa siga siendo una tapa y no
+        //  un cuadrado de color.
+        if (estilo == Estilo::marcaPad)
+        {
+            const float escala = L / PadArt::kAltoRef;
+            const float lift = ZatiLookAndFeel::kCapLift * escala;
+            const auto caja = juce::Rectangle<float> (0.0f, 0.0f, L, L - lift);
+            const auto frag = Zati::colour (Zati::forPad (0));
+            const auto cuerpo = PadArt::cuerpoDe (frag, true);
+
+            PadArt::fondo (g, caja, cuerpo, frag, PadArt::Banda::solida, escala);
+
+            //  La letra en BLANCO -el token de la casa, no un blanco a mano- y
+            //  a lo grande: sin margen alrededor, la Z puede ocupar lo que en
+            //  la marca de siempre ocupa la tapa entera.
+            //  La caja de la Z se centra en la TAPA y no en el PNG -la tapa
+            //  acaba antes, que abajo esta el bloque- y sin ningun retoque a
+            //  mano: el primer intento llevaba un empujon de 0.06 del alto de
+            //  referencia «para centrarla mejor» y la bajaba 61 px.
+            //
+            //  Y la caja es 0.80 del lado porque el dibujo ocupa la MITAD de
+            //  ella: la Z vive entre 6 y 18 de 24, asi que la letra sale a 0.40
+            //  del icono. Con 0.62 se quedaba en 0.31 y parecia un sello
+            //  pequeno en medio de una tapa grande.
+            auto z = Iconos::marcaHueco();
+            const float zona = L * 0.80f;
+            z.applyTransform (juce::AffineTransform::scale (zona / 24.0f)
+                                  .translated ((L - zona) * 0.5f,
+                                               (caja.getHeight() - zona) * 0.5f));
+            g.setColour (ZatiColours::white);
+            g.fillPath (z);
+
+            PadArt::borde (g, caja, PadArt::bordeDe (frag, true), true, escala);
             return img;
         }
 

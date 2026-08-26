@@ -1147,11 +1147,42 @@ namespace Iconos
     //  dibujo ES un pad. Se corta con `setUsingNonZeroWinding(false)`, o sea
     //  que la Z es un HUECO y no un trazo encima - asi la marca funciona sobre
     //  cualquiera de las cuatro carcasas sin elegir un segundo color.
-    inline juce::Path marca()
+    //  LA Z DIBUJADA COMO UN ICONO, y no recortada como un hueco.
+    //
+    //  Es la otra forma de poner el nombre en una tapa: en la app, un pad
+    //  cargado con un instrumento lleva el DIBUJO de su familia donde iria la
+    //  onda (ver Iconos::deFamilia y PadButton), asi que una tapa con una Z
+    //  dibujada ahi se lee como «el pad que trae la maquina». La diferencia con
+    //  `marca()` no es de estilo: aquella QUITA la letra de la tapa y esta la
+    //  PINTA encima, asi que esta si elige un color - el mismo con el que un
+    //  pad pinta su onda.
+    //
+    //  Con la caja y el trazo de los otros ochenta y seis (`grosorPara`), o
+    //  seria un dibujo de otra familia metido entre ellos.
+    inline juce::Path marcaTrazo()
     {
-        juce::Path p;
-        p.addRoundedRectangle (0.0f, 0.0f, 24.0f, 24.0f, 3.5f);
+        juce::Path z;
+        z.startNewSubPath (5.5f, 5.5f);
+        z.lineTo (18.5f, 5.5f);
+        z.lineTo (5.5f, 18.5f);
+        z.lineTo (18.5f, 18.5f);
 
+        juce::Path t;
+        //  El mismo grosor que los otros ochenta y seis a esta caja: ver
+        //  `grosorPara`, que esta declarada mas abajo y por eso se escribe la
+        //  cuenta aqui - 24 * 0.086, o sea 2.06, y por dos porque la Z de la
+        //  marca es de trazo GORDO, como el nombre en la cabecera.
+        juce::PathStrokeType (24.0f * 0.086f * 2.0f,
+                              juce::PathStrokeType::curved,
+                              juce::PathStrokeType::rounded).createStrokedPath (t, z);
+        return t;
+    }
+
+    //  LA Z SOLA, sin la tapa alrededor. La usan `marca()` -que la RESTA de la
+    //  tapa- y las marcas que la PINTAN encima, asi que la letra se escribe una
+    //  vez: dos copias de una letra se separan en cuanto alguien toca una.
+    inline juce::Path marcaHueco()
+    {
         juce::Path z;
         z.startNewSubPath (6.0f, 6.0f);
         z.lineTo (18.0f, 6.0f);
@@ -1165,7 +1196,14 @@ namespace Iconos
         z.lineTo (6.0f, 9.2f);
         z.closeSubPath();
 
-        p.addPath (z);
+        return z;
+    }
+
+    inline juce::Path marca()
+    {
+        juce::Path p;
+        p.addRoundedRectangle (0.0f, 0.0f, 24.0f, 24.0f, 3.5f);
+        p.addPath (marcaHueco());
         p.setUsingNonZeroWinding (false);
         return p;
     }

@@ -217,7 +217,7 @@ public:
             //  vacia da 0, que es otro estilo. Ver StoreArt::kEstiloDeFabrica.
             const auto estv = UiAudit::env ("ZATI_ICONO_ESTILO");
             const auto est = estv.isNotEmpty()
-                               ? (StoreArt::Estilo) juce::jlimit (0, 8, estv.getIntValue())
+                               ? (StoreArt::Estilo) juce::jlimit (0, 10, estv.getIntValue())
                                : StoreArt::kEstiloDeFabrica;
 
             //  Que sonido se ve por el hueco de la Z (solo el estilo 8). Ver

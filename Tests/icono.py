@@ -130,7 +130,8 @@ if not os.path.exists (DEST):
     print ("no hay %s" % DEST); sys.exit (1)
 
 ESTILOS = ["rejilla", "invertida", "unColor", "conTira", "marcaSola",
-           "marcaVentana", "marcaTapa", "marcaBanda", "marcaOnda"]
+           "marcaVentana", "marcaTapa", "marcaBanda", "marcaOnda",
+           "marcaSprite", "marcaPad"]
 fab = d.get ("estilo", 0)
 print ("icono: %s, %d bytes, estilo de fabrica: %d (%s)"
        % (os.path.relpath (DEST, ROOT), os.path.getsize (DEST), fab,
@@ -295,7 +296,10 @@ mascaraLanzador (REJ,  "la rejilla tambien sobrevive a la mascara")
 #  del lanzador- sino que lo dice quien lo dibuja: la app escribe la mascara de
 #  `Iconos::marca()` a la misma resolucion, en tres valores (tapa, hueco,
 #  fuera).
-MARCAS = [(i, ESTILOS[i]) for i in range (4, 9)]
+#  `marcaPad` no entra: no tiene HUECO -la letra se pinta, no se quita- asi que
+#  ninguna de las reglas de esta seccion, que preguntan por el hueco contra la
+#  tapa, le aplica. Lo suyo se mide aparte.
+MARCAS = [(i, ESTILOS[i]) for i in range (4, 10)]
 
 #  CUANTO DEL HUECO ES ONDA. Ni ~0 -no esta- ni ~100 -es un bloque de color y
 #  la Z deja de leerse-. La banda sale de la poblacion medida y no de un numero
@@ -413,6 +417,29 @@ for est, nombre in MARCAS:
 
     for f in ([msk] if propio else [ico, msk]):
         if os.path.exists (f): os.remove (f)
+
+# ============================================================================
+#  Y EL PAD A MARCO COMPLETO, contra la mascara del lanzador.
+#
+#  Es la unica marca que llena el PNG de borde a borde, asi que es la unica a la
+#  que la mascara redonda de Android le quita algo. La regla no cambia -lo mas
+#  lejos dibujado contra la circunferencia inscrita- y aqui se espera que la
+#  incumpla: se mide para saber CUANTO se pierde, que es lo que decide si esa
+#  esquina es un sacrificio aceptable o una tapa cortada.
+padico = tempfile.mktemp (suffix="-pad.png")
+genera (padico, 10)
+q = pixeles (padico, 1024)
+mediaC = 512.0
+lejosPad = 0.0
+for y in range (0, 1024, 2):
+    fila = v (q[y][2])
+    for x in range (0, 1024, 2):
+        if dE (v (q[y][x]), fila) > 6.0:
+            d = math.hypot (x + 0.5 - mediaC, y + 0.5 - mediaC)
+            if d > lejosPad: lejosPad = d
+print ("  ---    marcaPad: lo mas lejos dibujado a %.0f px del centro, radio %.0f"
+       % (lejosPad, mediaC))
+if os.path.exists (padico): os.remove (padico)
 
 if os.path.exists (REJ): os.remove (REJ)
 
