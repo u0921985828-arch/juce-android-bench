@@ -150,7 +150,13 @@ namespace StoreArt
     //  que alguien compara la ficha con la app. Este PNG es ademas el que
     //  `Tests/store.py` reduce a 512 para la ficha de Play.
     // ========================================================================
-    inline juce::Image appIcon (int lado, bool conNumero = false)
+    //  LOS CINCO ESTILOS. Todos usan el MISMO material -la rejilla, marcaCelda,
+    //  PadArt y los zatis- y ninguno inventa un dibujo nuevo: son cinco formas
+    //  de jugar el mismo contenido, que es lo que se pidio.
+    enum class Estilo { rejilla, invertida, unColor, conTira, marcaSola };
+
+    inline juce::Image appIcon (int lado, bool conNumero = false,
+                                Estilo estilo = Estilo::rejilla)
     {
         lado = juce::jmax (16, lado);
         juce::Image img (juce::Image::ARGB, lado, lado, true);
@@ -164,6 +170,31 @@ namespace StoreArt
         g.setGradientFill (juce::ColourGradient (ZatiColours::chassisTop, 0.0f, 0.0f,
                                                  ZatiColours::chassisBot, 0.0f, L, false));
         g.fillRect (0.0f, 0.0f, L, L);
+
+        //  LA MARCA SOLA: un pad gigante con la Z recortada, o sea exactamente
+        //  lo que lleva la cabecera. No hay rejilla que dibujar, asi que sale
+        //  por aqui y se acaba. Se le da el mismo margen que a la rejilla -una
+        //  fila de pad por lado- para que la mascara del lanzador no se la
+        //  coma, y el bloque de profundidad detras, que es lo que la separa de
+        //  una pegatina.
+        if (estilo == Estilo::marcaSola)
+        {
+            const float zona = L * (float) Iconos::kLadoMarca / (float) (Iconos::kLadoMarca + 2);
+            const float esc = zona / 24.0f;
+            const auto af = juce::AffineTransform::scale (esc)
+                                .translated ((L - zona) * 0.5f, (L - zona) * 0.5f);
+
+            //  SIN BLOQUE DE PROFUNDIDAD, y no por ahorrar: la Z es un HUECO,
+            //  asi que cualquier cosa que se dibuje detras se ve POR DENTRO de
+            //  la letra. Con el bloque puesto salia una segunda Z gris dentro
+            //  de la primera. La cabecera la dibuja plana por lo mismo, y la
+            //  marca es un logo y no una tapa que se hunda al pulsarla.
+            auto m = Iconos::marca();
+            m.applyTransform (af);
+            g.setColour (ZatiColours::accent);
+            g.fillPath (m);
+            return img;
+        }
 
         //  EL MARCO ES UNA FILA DE PADS QUE NO SE DIBUJA.
         //
@@ -209,11 +240,11 @@ namespace StoreArt
         //  que coge la luz. Y la fila invisible de alrededor deja de ser aire
         //  vacio para ser el chasis asomando por fuera de la placa, que es
         //  exactamente lo que se ve al mirar la maquina.
+        const auto placa = juce::Rectangle<float> (x0, y0, paso * (float) Iconos::kLadoMarca,
+                                                   paso * (float) Iconos::kLadoMarca)
+                               .reduced (hueco * 0.5f)
+                               .expanded (hueco);
         {
-            const auto placa = juce::Rectangle<float> (x0, y0, paso * (float) Iconos::kLadoMarca,
-                                                       paso * (float) Iconos::kLadoMarca)
-                                   .reduced (hueco * 0.5f)
-                                   .expanded (hueco);
             const float rp = 4.0f * escala;
             g.setColour (ZatiColours::plate);
             g.fillRoundedRectangle (placa, rp);
@@ -223,6 +254,25 @@ namespace StoreArt
             g.drawRoundedRectangle (placa.reduced (1.6f * escala), rp, 1.0f * escala);
         }
 
+        //  LA TIRA DE OCHO COLORES, que es la firma de la caja: en la app va
+        //  bajo el nombre y en el banner hace de borde de arriba. Aqui va DENTRO
+        //  de la placa y por tanto CUESTA alto de rejilla - la celda encoge, y
+        //  eso es justo lo que hay que medir antes de creerselo.
+        float bajaRejilla = 0.0f;
+        if (estilo == Estilo::conTira)
+        {
+            const float alto = placa.getHeight() * 0.055f;
+            const auto tira = placa.reduced (3.0f * escala).withHeight (alto);
+            const float sw = tira.getWidth() / (float) Zati::kNumColours;
+            for (int i = 0; i < Zati::kNumColours; ++i)
+            {
+                g.setColour (Zati::colour (i));
+                g.fillRect (tira.getX() + sw * (float) i, tira.getY(),
+                            sw - 1.0f * escala, alto);
+            }
+            bajaRejilla = alto + 3.0f * escala;
+        }
+
         for (int f = 0; f < Iconos::kLadoMarca; ++f)
             for (int c = 0; c < Iconos::kLadoMarca; ++c)
             {
@@ -230,8 +280,8 @@ namespace StoreArt
                 //  profundidad ocupa por abajo, o la fila de abajo se saldria
                 //  de su celda: es el mismo withTrimmedBottom que hace la cara.
                 juce::Rectangle<float> r (x0 + (float) c * paso + hueco * 0.5f,
-                                          y0 + (float) f * paso + hueco * 0.5f,
-                                          celda, celda);
+                                          y0 + (float) f * paso + hueco * 0.5f + bajaRejilla,
+                                          celda, celda - bajaRejilla * 0.25f);
                 r = r.withTrimmedBottom (ZatiLookAndFeel::kCapLift * escala);
 
                 //  Y EL COLOR DE UN ENCENDIDO NO SE ELIGE: es el que ese pad
@@ -246,7 +296,11 @@ namespace StoreArt
                 //  por lo mismo: numerar al reves seria un mapa distinto del
                 //  mismo instrumento.
                 const int pad = (Iconos::kLadoMarca - 1 - f) * Iconos::kLadoMarca + c;
-                const bool cargado = Iconos::marcaCelda (f, c);
+                //  LA Z AL REVES es la logica de marca(): alli la Z es un HUECO
+                //  recortado en un pad, no un trazo encima. Aqui son los
+                //  dieciseis cargados y los SEIS de la Z apagados.
+                const bool cargado = (estilo == Estilo::invertida) ? ! Iconos::marcaCelda (f, c)
+                                                                   : Iconos::marcaCelda (f, c);
 
                 //  Y EL VACIO VA SIN SU ZATI, que es lo unico que separa este
                 //  dibujo de la cara.
@@ -265,8 +319,13 @@ namespace StoreArt
                 //  color es el susurro: el gris del borde de un pad en vez de
                 //  su zati. La tapa sigue siendo la de la app; lo que se quita
                 //  es la unica capa que aqui no puede hacer su trabajo.
-                const auto frag = cargado ? Zati::colour (Zati::forPad (pad))
-                                          : ZatiColours::padBorder;
+                //  UN SOLO COLOR: los encendidos en el acento, que es como esta
+                //  maquina declara «esto esta activo». Se lee de mucho mas lejos
+                //  -la Z es una sola mancha- y se pierde la tira de colores, que
+                //  es la firma de la caja.
+                const auto frag = ! cargado ? ZatiColours::padBorder
+                                : (estilo == Estilo::unColor ? ZatiColours::accent
+                                                             : Zati::colour (Zati::forPad (pad)));
 
                 const auto cuerpo = PadArt::cuerpoDe (frag, cargado);
                 PadArt::fondo (g, r, cuerpo, frag,
@@ -357,7 +416,8 @@ namespace StoreArt
         out << "]";
     }
 
-    inline void writeIcon (const juce::String& path, int lado, bool conNumero = false)
+    inline void writeIcon (const juce::String& path, int lado, bool conNumero = false,
+                           Estilo estilo = Estilo::rejilla)
     {
         juce::File f (path);
         f.getParentDirectory().createDirectory();
@@ -365,7 +425,7 @@ namespace StoreArt
         juce::FileOutputStream out (f);
         if (! out.openedOk()) return;
         juce::PNGImageFormat png;
-        png.writeImageToStream (appIcon (lado, conNumero), out);
+        png.writeImageToStream (appIcon (lado, conNumero, estilo), out);
         out.flush();
     }
 

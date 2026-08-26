@@ -212,8 +212,10 @@ public:
                                                     : ZatiColours::kSkinDeFabrica);
 
             const auto lado = UiAudit::env ("ZATI_ICONO_LADO");
+            const int est = juce::jlimit (0, 4, UiAudit::env ("ZATI_ICONO_ESTILO").getIntValue());
             StoreArt::writeIcon (icono, lado.isNotEmpty() ? lado.getIntValue() : 1024,
-                                 UiAudit::env ("ZATI_ICONO_NUM") == "1");
+                                 UiAudit::env ("ZATI_ICONO_NUM") == "1",
+                                 (StoreArt::Estilo) est);
 
             //  Y lo unico que el PNG no puede decir: si la Z del icono y la de
             //  la marca de la cabecera siguen siendo la misma. Ver
