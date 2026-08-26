@@ -109,13 +109,32 @@ def esZ (f, c):
 
 
 # --- se genera --------------------------------------------------------------
+#
+#  DOS ICONOS Y NO UNO, y esa es la unica forma de que este fichero mida lo que
+#  se publica. `ci/icon.png` sale con el estilo DE FABRICA -el que la app elige
+#  cuando nadie dice nada, ver StoreArt::kEstiloDeFabrica- y las cinco primeras
+#  reglas de aqui abajo dan por hecho una REJILLA de 4x4: muestrean el centro
+#  de dieciseis celdas. El dia que el de fabrica dejo de ser la rejilla, esas
+#  cinco habrian medido celdas que no existen.
+#
+#  Asi que la rejilla se genera aparte y sigue midiendose con sus reglas -que
+#  es lo correcto: un estilo que no se publica hoy se publica manana- y el que
+#  se commitea se juzga con las que le tocan segun lo que la app diga que
+#  dibujo. Quien decide es la app, no una copia del numero aqui.
 d = genera()
+REJ = tempfile.mktemp (suffix="-rejilla.png")
+dr = genera (REJ, 0)
 if d is None:
     print ("la app no escribio el icono"); sys.exit (1)
 if not os.path.exists (DEST):
     print ("no hay %s" % DEST); sys.exit (1)
 
-print ("icono: %s, %d bytes" % (os.path.relpath (DEST, ROOT), os.path.getsize (DEST)))
+ESTILOS = ["rejilla", "invertida", "unColor", "conTira", "marcaSola",
+           "marcaVentana", "marcaTapa", "marcaBanda", "marcaOnda"]
+fab = d.get ("estilo", 0)
+print ("icono: %s, %d bytes, estilo de fabrica: %d (%s)"
+       % (os.path.relpath (DEST, ROOT), os.path.getsize (DEST), fab,
+          ESTILOS[fab] if 0 <= fab < len (ESTILOS) else "?"))
 print()
 
 #  --- LAS DOS Z SON LA MISMA -------------------------------------------------
@@ -127,7 +146,7 @@ mide ("la Z del icono es la de la marca", d.get ("desacuerdo") == 0,
 
 #  --- LA Z SE LEE A CADA TAMANO ---------------------------------------------
 for lado in TAMANOS:
-    px = pixeles (DEST, lado)
+    px = pixeles (REJ, lado)
     paso = lado / float (TOTAL)
 
     #  El centro de cada celda visible: la primera empieza en `paso`, que es la
@@ -162,7 +181,7 @@ for lado in TAMANOS:
               "" if leidas == debe else "  sobran %s  faltan %s" % (sobran, faltan)))
 
 #  --- CONTRASTE, CON LOS LISTONES DE skins.py --------------------------------
-px = pixeles (DEST, 1024)
+px = pixeles (REJ, 1024)
 paso = 1024 / float (TOTAL)
 enc, apa = [], []
 for f in range (LADO):
@@ -241,17 +260,23 @@ mide ("no va mas saturado que la cara", cromaIcono <= cromaCara + 0.5,
 #  degradado contaba como «algo dibujado» y la regla suspendia siempre. La
 #  referencia de cada fila es su propio borde izquierdo, que ahi solo hay
 #  chasis: la placa empieza mucho mas adentro.
-media = 1024 / 2.0
-lejos = 0.0
-for y in range (0, 1024, 2):
-    fila = v (px[y][2])
-    for x in range (0, 1024, 2):
-        if dE (v (px[y][x]), fila) > 6.0:
-            dd = math.hypot (x + 0.5 - media, y + 0.5 - media)
-            if dd > lejos: lejos = dd
+#  Y SOBRE EL QUE SE COMMITEA, no sobre la rejilla: es el PNG que Projucer
+#  mete en la APK y el unico que un lanzador va a recortar.
+def mascaraLanzador (path, etiqueta):
+    q = pixeles (path, 1024)
+    media = 1024 / 2.0
+    lejos = 0.0
+    for y in range (0, 1024, 2):
+        fila = v (q[y][2])
+        for x in range (0, 1024, 2):
+            if dE (v (q[y][x]), fila) > 6.0:
+                dd = math.hypot (x + 0.5 - media, y + 0.5 - media)
+                if dd > lejos: lejos = dd
+    mide (etiqueta, lejos <= media,
+          "lo mas lejos dibujado a %.0f px del centro, radio %.0f" % (lejos, media))
 
-mide ("las esquinas sobreviven a la mascara", lejos <= media,
-      "lo mas lejos dibujado a %.0f px del centro, radio %.0f" % (lejos, media))
+mascaraLanzador (DEST, "las esquinas sobreviven a la mascara")
+mascaraLanzador (REJ,  "la rejilla tambien sobrevive a la mascara")
 
 
 # ============================================================================
@@ -270,8 +295,7 @@ mide ("las esquinas sobreviven a la mascara", lejos <= media,
 #  del lanzador- sino que lo dice quien lo dibuja: la app escribe la mascara de
 #  `Iconos::marca()` a la misma resolucion, en tres valores (tapa, hueco,
 #  fuera).
-MARCAS = [(4, "marcaSola"), (5, "marcaVentana"), (6, "marcaTapa"),
-          (7, "marcaBanda"), (8, "marcaOnda")]
+MARCAS = [(i, ESTILOS[i]) for i in range (4, 9)]
 
 #  CUANTO DEL HUECO ES ONDA. Ni ~0 -no esta- ni ~100 -es un bloque de color y
 #  la Z deja de leerse-. La banda sale de la poblacion medida y no de un numero
@@ -307,7 +331,12 @@ def media (ps):
 
 print()
 for est, nombre in MARCAS:
-    ico = tempfile.mktemp (suffix=".png"); msk = tempfile.mktemp (suffix="-m.png")
+    #  Si es el estilo de fabrica se mide el PNG QUE SE COMMITEA y no una copia
+    #  recien hecha: son el mismo dibujo hoy, y el dia que no lo sean -alguien
+    #  toca el codigo y no regenera- lo que se publica es el fichero.
+    propio = (est == fab)
+    ico = DEST if propio else tempfile.mktemp (suffix=".png")
+    msk = tempfile.mktemp (suffix="-m.png")
     dm = genera (ico, est, msk)
     if dm is None or not os.path.exists (ico) or not os.path.exists (msk):
         mide ("%s se dibuja" % nombre, False, "la app no escribio el icono")
@@ -382,8 +411,10 @@ for est, nombre in MARCAS:
               cOnda <= cromaCara + 0.5,
               "C* %.1f  la cara C* %.1f" % (cOnda, cromaCara))
 
-    for f in (ico, msk):
+    for f in ([msk] if propio else [ico, msk]):
         if os.path.exists (f): os.remove (f)
+
+if os.path.exists (REJ): os.remove (REJ)
 
 print()
 print ("icono: %d comprobaciones, %d FALLA" % (len (hechas), len (fallos)))

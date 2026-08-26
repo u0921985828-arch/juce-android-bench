@@ -212,7 +212,13 @@ public:
                                                     : ZatiColours::kSkinDeFabrica);
 
             const auto lado = UiAudit::env ("ZATI_ICONO_LADO");
-            const int est = juce::jlimit (0, 8, UiAudit::env ("ZATI_ICONO_ESTILO").getIntValue());
+            //  Sin variable, EL DE FABRICA y no el cero: el banco tiene que
+            //  medir el icono que se publica, y `getIntValue()` de una cadena
+            //  vacia da 0, que es otro estilo. Ver StoreArt::kEstiloDeFabrica.
+            const auto estv = UiAudit::env ("ZATI_ICONO_ESTILO");
+            const auto est = estv.isNotEmpty()
+                               ? (StoreArt::Estilo) juce::jlimit (0, 8, estv.getIntValue())
+                               : StoreArt::kEstiloDeFabrica;
 
             //  Que sonido se ve por el hueco de la Z (solo el estilo 8). Ver
             //  StoreArt::sonidoDeLaMarca.
@@ -221,7 +227,7 @@ public:
             const int ladoPx = lado.isNotEmpty() ? lado.getIntValue() : 1024;
             StoreArt::writeIcon (icono, ladoPx,
                                  UiAudit::env ("ZATI_ICONO_NUM") == "1",
-                                 (StoreArt::Estilo) est);
+                                 est);
 
             //  Y la mascara de la marca al lado, si la piden: es lo unico que
             //  le dice al banco que pixel del PNG es HUECO de la Z. Ver
@@ -242,7 +248,8 @@ public:
             //  banco pueda separar «esto es onda» de «esto es cristal» sin
             //  inventarse los colores: los da la app con sus propios tokens,
             //  que es lo mismo que ya hace con los pads de la cara.
-            std::cout << ",\"marca_tapa\":\"" << ZatiColours::accent.toDisplayString (false)
+            std::cout << ",\"estilo\":" << (int) est
+                      << ",\"marca_tapa\":\"" << ZatiColours::accent.toDisplayString (false)
                       << "\",\"marca_cuerpo\":[\"" << ZatiColours::chassisTop.toDisplayString (false)
                       << "\",\"" << ZatiColours::chassisBot.toDisplayString (false) << "\"]"
                       << ",\"marca_zatis\":[";

@@ -187,6 +187,25 @@ namespace StoreArt
                         //  siendo un HUECO - cambiando lo que se pone detras.
                         marcaOnda };
 
+    //  EL QUE SE INSTALA, escrito UNA vez.
+    //
+    //  Nueve estilos y solo uno acaba en el lanzador. Sin esta linea el estilo
+    //  de fabrica vive en el valor por defecto de `appIcon`, en el de
+    //  `writeIcon`, en el `getIntValue()` de `ZATI_ICONO_ESTILO` -que da 0
+    //  cuando la variable no esta- y en la cabeza de quien corra el banco: son
+    //  cuatro sitios que nadie obliga a decir lo mismo, y el banco mediria un
+    //  icono distinto del que se publica.
+    //
+    //  LA MARCA SOLA, que es la que aguanta el tamano al que se mira. A 48 px
+    //  -lo que mide en el cajon de aplicaciones- el hueco de la Z son tres
+    //  tiras de dos pixeles, asi que todo lo que se pone DETRAS de ella sale
+    //  como una mancha: la onda de un sonido de fabrica medida con 7, 9, 11,
+    //  13 y 56 columnas da el mismo borron a esa escala, y no es el numero de
+    //  columnas - es que por una rendija de dos pixeles no se lee un dibujo.
+    //  Los estilos que meten color detras se quedan tras `ZATI_ICONO_ESTILO`,
+    //  que es como se pueden volver a mirar sin reescribirlos.
+    inline constexpr Estilo kEstiloDeFabrica = Estilo::marcaSola;
+
     //  DONDE CAE LA MARCA DENTRO DEL ICONO, escrito UNA vez.
     //
     //  Lo usan el dibujo y la mascara con la que el banco sabe que pixeles son
@@ -248,7 +267,7 @@ namespace StoreArt
     }
 
     inline juce::Image appIcon (int lado, bool conNumero = false,
-                                Estilo estilo = Estilo::rejilla)
+                                Estilo estilo = kEstiloDeFabrica)
     {
         lado = juce::jmax (16, lado);
         juce::Image img (juce::Image::ARGB, lado, lado, true);
@@ -708,7 +727,7 @@ namespace StoreArt
     }
 
     inline void writeIcon (const juce::String& path, int lado, bool conNumero = false,
-                           Estilo estilo = Estilo::rejilla)
+                           Estilo estilo = kEstiloDeFabrica)
     {
         juce::File f (path);
         f.getParentDirectory().createDirectory();
