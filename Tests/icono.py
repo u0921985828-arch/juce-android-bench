@@ -67,11 +67,13 @@ def mide (nombre, ok, detalle=""):
     print ("  %-6s %s  %s" % ("OK" if ok else "FALLA", nombre, detalle))
 
 
-def genera():
+def genera (destino=None, estilo=None, mascara=None):
     casa = tempfile.mkdtemp (prefix="zati-icono-")
     try:
         env = dict (os.environ)
-        env.update ({"HOME": casa, "ZATI_ICONO": DEST})
+        env.update ({"HOME": casa, "ZATI_ICONO": destino or DEST})
+        if estilo  is not None: env["ZATI_ICONO_ESTILO"]  = str (estilo)
+        if mascara is not None: env["ZATI_ICONO_MASCARA"] = mascara
         r = subprocess.run ([APP], env=env, capture_output=True, text=True, timeout=300)
     finally:
         shutil.rmtree (casa, ignore_errors=True)
@@ -229,6 +231,124 @@ for y in range (0, 1024, 2):
 
 mide ("las esquinas sobreviven a la mascara", lejos <= media,
       "lo mas lejos dibujado a %.0f px del centro, radio %.0f" % (lejos, media))
+
+
+# ============================================================================
+#  LAS MARCAS, que llevaban una tanda sin que nadie las midiera.
+#
+#  Las cinco reglas de arriba dan por hecho una REJILLA de 4x4 -muestrean el
+#  centro de dieciseis celdas- asi que los estilos que dibujan la marca a lo
+#  grande (`marcaSola`, `marcaVentana`, `marcaTapa`, `marcaBanda`, `marcaOnda`)
+#  pasaban sin que ninguna les aplicara. Que es exactamente lo que este
+#  proyecto llama una linea que imprime OK.
+#
+#  Lo que se les pide es la misma pregunta con otro cuerpo: en la rejilla la Z
+#  la dibujan diez celdas encendidas y aqui la dibuja un HUECO, asi que lo que
+#  se mide es el hueco contra la tapa. Y el hueco no se deduce de las
+#  constantes del dibujo -ese es el fallo que ya cometio la regla de la mascara
+#  del lanzador- sino que lo dice quien lo dibuja: la app escribe la mascara de
+#  `Iconos::marca()` a la misma resolucion, en tres valores (tapa, hueco,
+#  fuera).
+MARCAS = [(4, "marcaSola"), (5, "marcaVentana"), (6, "marcaTapa"),
+          (7, "marcaBanda"), (8, "marcaOnda")]
+
+#  CUANTO DEL HUECO ES ONDA. Ni ~0 -no esta- ni ~100 -es un bloque de color y
+#  la Z deja de leerse-. La banda sale de la poblacion medida y no de un numero
+#  redondo: un golpe corto (SNARE) deja el hueco al 4.2 %, la onda a pleno alto
+#  lo llena al 63.9 % y ahi la letra ya no se lee, y los dos candidatos buenos
+#  caen entre 24.8 y 32.1.
+ONDA_MIN, ONDA_MAX = 12.0, 55.0
+
+def clases (m, lado):
+    """La mascara en tres valores: 2 tapa, 1 hueco, 0 fuera del pad."""
+    return [[2 if m[y][x][0] > 200 else (1 if m[y][x][0] > 60 else 0)
+             for x in range (lado)] for y in range (lado)]
+
+def puros (cl, lado, k):
+    """Los pixeles de clase k con sus cuatro vecinos tambien de clase k.
+
+    El filo entre tapa y hueco esta suavizado, asi que un pixel de borde es una
+    MEZCLA de los dos: contarlo daria un contraste de 1.0 en cualquier icono y
+    la regla no sabria decir que no."""
+    out = []
+    for y in range (1, lado - 1):
+        for x in range (1, lado - 1):
+            if (cl[y][x] == k and cl[y-1][x] == k and cl[y+1][x] == k
+                and cl[y][x-1] == k and cl[y][x+1] == k):
+                out.append ((y, x))
+    return out
+
+def media (ps):
+    if not ps: return None
+    n = len (ps)
+    return ((sum (p >> 16 for p in ps) // n) << 16) | \
+           ((sum ((p >> 8) & 255 for p in ps) // n) << 8) | (sum (p & 255 for p in ps) // n)
+
+print()
+for est, nombre in MARCAS:
+    ico = tempfile.mktemp (suffix=".png"); msk = tempfile.mktemp (suffix="-m.png")
+    dm = genera (ico, est, msk)
+    if dm is None or not os.path.exists (ico) or not os.path.exists (msk):
+        mide ("%s se dibuja" % nombre, False, "la app no escribio el icono")
+        continue
+
+    zatis  = [int (h, 16) for h in dm.get ("marca_zatis", [])]
+    cuerpo = [int (h, 16) for h in dm.get ("marca_cuerpo", [])]
+    esOnda = lambda p: (min (dE (p, z) for z in zatis) < min (dE (p, c) for c in cuerpo)
+                        if zatis and cuerpo else False)
+
+    #  LA Z SE LEE A CADA TAMANO, por el hueco contra la tapa.
+    #
+    #  Con DOS numeros y no uno, que es la leccion que este banco ya tiene
+    #  escrita para la tira del medidor: dos superficies de color se separan
+    #  por CROMA tanto como por luminancia, y un ratio WCAG no ve el croma. La
+    #  primera version pedia solo el ratio y suspendia a `marcaVentana` con
+    #  1.07 - la Z ahi la dibujan los ocho zatis contra el ambar, o sea una
+    #  letra que se separa por color y no por luz, que es exactamente el caso
+    #  que un ratio no sabe leer. Los dos listones son los que este proyecto ya
+    #  usa: el comparativo de la cara para la luz y MIN_WELL para el color.
+    peorR, peorE, detalle = 1e9, 1e9, ""
+    for lado in TAMANOS:
+        a = pixeles (ico, lado); m = pixeles (msk, lado)
+        cl = clases (m, lado)
+        hueco = [v (a[y][x]) for y, x in puros (cl, lado, 1)]
+        tapa  = [v (a[y][x]) for y, x in puros (cl, lado, 2)]
+        if not hueco or not tapa:
+            peorR = peorE = 0.0; detalle = "sin hueco medible a %d px" % lado; break
+        #  El FONDO del hueco, que es lo que dibuja la letra: la onda es
+        #  contenido dentro de la ventana, no la ventana.
+        ct = media (tapa)
+        fondo = media ([p for p in hueco if not esOnda (p)]) or media (hueco)
+        r, e = ratio (ct, fondo), dE (ct, fondo)
+        if max (r / cara, e / MIN_WELL) < max (peorR / cara, peorE / MIN_WELL):
+            peorR, peorE, detalle = r, e, "el peor a %d px" % lado
+    mide ("%s: la Z se lee" % nombre, peorR >= cara or peorE >= MIN_WELL,
+          "ratio %.2f (cara %.2f)  dE %.1f (liston %.1f)  (%s)"
+          % (peorR, cara, peorE, MIN_WELL, detalle))
+
+    #  Y LA ONDA, con dos cifras: cuanta hay y si se ve.
+    if est == 8:
+        a = pixeles (ico, 1024); m = pixeles (msk, 1024)
+        cl = clases (m, 1024)
+        hueco = [v (a[y][x]) for y, x in puros (cl, 1024, 1)]
+        onda  = [p for p in hueco if esOnda (p)]
+        frac  = 100.0 * len (onda) / max (1, len (hueco))
+        mide ("%s: cuanto del hueco es onda" % nombre,
+              ONDA_MIN <= frac <= ONDA_MAX,
+              "%.1f %%  (banda %.0f-%.0f)" % (frac, ONDA_MIN, ONDA_MAX))
+
+        #  Solo la anterior la cumple tambien una onda del color del fondo:
+        #  estaria ahi y no se veria. Con el liston del hueco de una celda
+        #  contra su tarjeta, que es la misma pregunta -dos superficies de
+        #  color que tienen que separarse- y el liston de una prueba no se
+        #  reinventa en la de al lado.
+        co = media (onda); cf = media ([p for p in hueco if not esOnda (p)])
+        sep = dE (co, cf) if (co is not None and cf is not None) else 0.0
+        mide ("%s: la onda contra el fondo del hueco" % nombre, sep >= MIN_WELL,
+              "dE %.1f  (liston %.1f)" % (sep, MIN_WELL))
+
+    for f in (ico, msk):
+        if os.path.exists (f): os.remove (f)
 
 print()
 print ("icono: %d comprobaciones, %d FALLA" % (len (hechas), len (fallos)))

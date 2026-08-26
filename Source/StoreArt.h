@@ -5,6 +5,7 @@
 #include "Zati.h"
 #include "Iconos.h"
 #include "PadArt.h"
+#include "Kits.h"
 
 // ============================================================================
 //  EL GRAFICO DESTACADO DE LA FICHA, dibujado por la propia app.
@@ -153,6 +154,20 @@ namespace StoreArt
     //  LOS CINCO ESTILOS. Todos usan el MISMO material -la rejilla, marcaCelda,
     //  PadArt y los zatis- y ninguno inventa un dibujo nuevo: son cinco formas
     //  de jugar el mismo contenido, que es lo que se pidio.
+    //  QUE SONIDO SE VE POR EL HUECO. Es una ENTRADA del banco y no una
+    //  constante escondida, por lo mismo que `ZATI_SKIN`: los tres candidatos
+    //  -un golpe corto de ACUSTICA, un colchon de TONOS y una textura- se
+    //  eligen midiendo cuanto del hueco es onda, y sin poder cambiarlo desde
+    //  fuera habria que recompilar para mirar cada uno.
+    //  WIND, banco C (TEXTURA). Elegido por las dos cifras y no por gusto:
+    //  un golpe corto -SNARE del banco A- deja el hueco al 4.2 % de onda, o
+    //  sea no se ve, porque un sonido que decae son cuatro quintos de silencio
+    //  y por tres tiras finas eso es nada; un colchon de TONOS da 24.8 % y una
+    //  textura 28.7 %, las dos en la banda buena. Entre esas dos, la textura
+    //  tiene la silueta dentada que se lee como una ONDA - un colchon dibuja
+    //  una loma, que se lee como una envolvente.
+    inline int sonidoDeLaMarca = 39;        // WIND, banco C
+
     enum class Estilo { rejilla, invertida, unColor, conTira, marcaSola,
                         //  LA MARCA CON EL COLOR DE LOS PADS, por tres caminos
                         //  distintos. Los tres respetan la regla que hace que la
@@ -161,7 +176,73 @@ namespace StoreArt
                         //  segundo color para la letra.
                         marcaVentana,   // la Z deja ver los ocho zatis
                         marcaTapa,      // la tapa ES los ocho, la Z el chasis
-                        marcaBanda };   // una tapa, con la banda de un pad arriba
+                        marcaBanda,     // una tapa, con la banda de un pad arriba
+                        //  Y LA Z ES UNA VENTANA A LA ONDA, que es lo que le
+                        //  faltaba a la marca para decir que esto es un
+                        //  SAMPLER: un pad con una Z podria ser cualquier app.
+                        //  Mismo mecanismo que las tres de arriba - la Z sigue
+                        //  siendo un HUECO - cambiando lo que se pone detras.
+                        marcaOnda };
+
+    //  DONDE CAE LA MARCA DENTRO DEL ICONO, escrito UNA vez.
+    //
+    //  Lo usan el dibujo y la mascara con la que el banco sabe que pixeles son
+    //  hueco de la Z. Si cada uno lo calculara por su cuenta, el dia que la
+    //  marca se moviera un pixel el banco seguiria midiendo donde estaba - que
+    //  es la clase de regla escrita dos veces que este proyecto lleva
+    //  encontrando desde el principio.
+    //
+    //  El mismo margen que la rejilla: una fila de pad por lado, o sea la
+    //  marca ocupa 4 de 6. Ver el parrafo de la fila invisible mas abajo.
+    inline juce::Rectangle<float> cajaDeLaMarca (float L) noexcept
+    {
+        const float zona = L * (float) Iconos::kLadoMarca / (float) (Iconos::kLadoMarca + 2);
+        return { (L - zona) * 0.5f, (L - zona) * 0.5f, zona, zona };
+    }
+
+    inline juce::AffineTransform transformaDeLaMarca (float L) noexcept
+    {
+        const auto caja = cajaDeLaMarca (L);
+        return juce::AffineTransform::scale (caja.getWidth() / 24.0f)
+                   .translated (caja.getX(), caja.getY());
+    }
+
+    //  LA MASCARA DE LA MARCA, para el banco y solo para el banco.
+    //
+    //  Las reglas de las marcas preguntan por el HUECO de la Z -cuanto de el
+    //  es onda, y si la letra se lee contra la tapa- y desde el PNG no hay
+    //  forma de saber que pixel es hueco: por el hueco se ve el cristal, y el
+    //  cristal es un color mas. Deducirlo en Python de las constantes del
+    //  dibujo es exactamente el fallo que ya cometio la regla de la mascara
+    //  del lanzador -repetia el numero en vez de medir- asi que lo dice quien
+    //  lo dibuja: blanco donde hay tapa, negro donde hay hueco.
+    inline juce::Image mascaraMarca (int lado)
+    {
+        lado = juce::jmax (16, lado);
+        juce::Image img (juce::Image::ARGB, lado, lado, true);
+        juce::Graphics g (img);
+        g.fillAll (juce::Colours::black);
+
+        //  TRES valores y no dos, que es donde la primera version se equivoco:
+        //  `Iconos::marca()` es la tapa MENOS la Z, asi que pintarla en blanco
+        //  sobre negro deja del mismo color el hueco de la letra y todo lo que
+        //  hay FUERA del pad - y el banco contaba el chasis como hueco, 1096
+        //  pixeles donde la tapa entera son 1024. La silueta primero dice
+        //  donde esta el pad; la marca encima, donde esta la tapa. Lo que
+        //  queda gris es el hueco y nada mas.
+        const auto af = transformaDeLaMarca ((float) lado);
+        juce::Path silueta;
+        silueta.addRoundedRectangle (0.0f, 0.0f, 24.0f, 24.0f, 3.5f);
+        silueta.applyTransform (af);
+        g.setColour (juce::Colours::grey);
+        g.fillPath (silueta);
+
+        auto m = Iconos::marca();
+        m.applyTransform (af);
+        g.setColour (juce::Colours::white);
+        g.fillPath (m);
+        return img;
+    }
 
     inline juce::Image appIcon (int lado, bool conNumero = false,
                                 Estilo estilo = Estilo::rejilla)
@@ -186,14 +267,11 @@ namespace StoreArt
         //  coma, y el bloque de profundidad detras, que es lo que la separa de
         //  una pegatina.
         if (estilo == Estilo::marcaSola || estilo == Estilo::marcaVentana
-            || estilo == Estilo::marcaTapa || estilo == Estilo::marcaBanda)
+            || estilo == Estilo::marcaTapa || estilo == Estilo::marcaBanda
+            || estilo == Estilo::marcaOnda)
         {
-            const float zona = L * (float) Iconos::kLadoMarca / (float) (Iconos::kLadoMarca + 2);
-            const float esc = zona / 24.0f;
-            const auto caja = juce::Rectangle<float> ((L - zona) * 0.5f, (L - zona) * 0.5f,
-                                                      zona, zona);
-            const auto af = juce::AffineTransform::scale (esc)
-                                .translated (caja.getX(), caja.getY());
+            const auto caja = cajaDeLaMarca (L);
+            const auto af = transformaDeLaMarca (L);
 
             //  SIN BLOQUE DE PROFUNDIDAD, y no por ahorrar: la Z es un HUECO,
             //  asi que cualquier cosa que se dibuje detras se ve POR DENTRO de
@@ -225,6 +303,100 @@ namespace StoreArt
                 {
                     g.setColour (Zati::colour (i));
                     g.fillRect (caja.getX() + bw * (float) i, caja.getY(), bw, caja.getHeight());
+                }
+            }
+
+            //  O LA ONDA DE UN SONIDO DE FABRICA DE VERDAD, vista por el
+            //  hueco. Es lo que le faltaba a la marca para decir SAMPLER: un
+            //  pad con una Z podria ser cualquier app; un pad con una Z que
+            //  deja ver una onda no.
+            //
+            //  De `Kits::render` y no de un garabato: la onda que sale del
+            //  icono es una de las sesenta y cuatro que trae la app. Cacheada
+            //  en un `static` porque sintetizar cuesta y el icono se dibuja
+            //  hasta cinco veces por corrida del banco - con el indice al
+            //  lado, que `ZATI_ICONO_SONIDO` lo mueve y una cache sin llave
+            //  devolveria el candidato anterior.
+            //
+            //  Y DETRAS DE LA ONDA NO VA UN CRISTAL, que fue el primer intento
+            //  y salio medido: el hueco quedaba oscuro sobre una tapa que en
+            //  tres carcasas de cuatro es la TINTA, o sea oscura tambien - la
+            //  Z contra la tapa daba 1.01 en PAPEL con el suelo comparativo en
+            //  1.60. La tapa es el acento y el acento se elige para leerse
+            //  sobre el CHASIS, asi que el chasis es la unica superficie que
+            //  contrasta con ella por construccion. El hueco deja ver el
+            //  cuerpo de la maquina, igual que en `marcaSola`, y lo que se
+            //  anade es la onda.
+            //
+            //  La onda va con LOS OCHO ZATIS y no con un color elegido a mano:
+            //  es el material que ya usan las otras tres marcas, y en tres
+            //  carcasas el acento es acromatico - un color del sistema se
+            //  separa de la tapa por croma y no solo por luminancia.
+            if (estilo == Estilo::marcaOnda)
+            {
+                static int cacheIdx = -1;
+                static SampleBuffer::Ptr cache;
+                if (cacheIdx != sonidoDeLaMarca)
+                {
+                    cacheIdx = sonidoDeLaMarca;
+                    cache = Kits::render (sonidoDeLaMarca);
+                }
+
+                if (cache != nullptr && cache->buffer.getNumSamples() > 4)
+                {
+                    //  RELLENA Y ESPEJADA, no una linea: por un hueco de tres
+                    //  tiras finas una linea de un pixel no se ve, y a 48 px
+                    //  de icono la barra de la Z mide dos pixeles de alto.
+                    //  Espejada sobre el centro porque es como dibuja la onda
+                    //  un pad cargado (ver PadButton::buildSpark).
+                    const int len = cache->buffer.getNumSamples();
+                    const float* d = cache->buffer.getReadPointer (0);
+
+                    float pico = 0.0f;
+                    for (int i = 0; i < len; ++i) pico = juce::jmax (pico, std::abs (d[i]));
+                    const float norm = (pico > 1.0e-6f) ? 1.0f / pico : 0.0f;
+
+                    const int cols = 56;
+                    //  Y LA ALTURA DE LA ONDA SE ELIGIO MIDIENDO Y MIRANDO,
+                    //  que es la unica de las tres cifras de este estilo que
+                    //  no sale de un token. A pleno alto -la onda ocupando el
+                    //  hueco entero, que es lo primero que uno escribe- el
+                    //  hueco salia 64 % onda y la Z dejaba de leerse: las dos
+                    //  barras y la diagonal quedaban tapadas de color y lo que
+                    //  se ve es una mancha con forma de nada. Barrido 3.0,
+                    //  4.5, 6.0 y 9.0 sobre los tres candidatos: a 6.0 la onda
+                    //  empieza a comerse las barras y a 4.5 cruza la diagonal
+                    //  sin tocarlas - 29 % del hueco, la Z entera y una onda
+                    //  dentro.
+                    //
+                    //  En unidades de la marca: la Z vive entre 6 y 18 de 24,
+                    //  asi que 4.5 alrededor del centro es de 7.5 a 16.5 - la
+                    //  cintura de la letra.
+                    const float cy = 12.0f, halfH = 4.5f;
+                    juce::Path onda;
+                    for (int c = 0; c < cols; ++c)
+                    {
+                        const int a = (int) ((float) c / (float) cols * (float) len);
+                        const int b = juce::jmax (a + 1, (int) ((float) (c + 1) / (float) cols * (float) len));
+                        float mx = 0.0f;
+                        for (int i = a; i < juce::jmin (b, len); ++i) mx = juce::jmax (mx, std::abs (d[i]));
+                        //  Un suelo de medio punto de los 24: una columna muda
+                        //  parte el visor en dos y se lee como que la onda se
+                        //  acaba, no como silencio.
+                        const float h = juce::jmax (0.5f, juce::jmin (1.0f, mx * norm) * halfH);
+                        const float x = 24.0f * (float) c / (float) cols;
+                        onda.addRectangle (x, cy - h, 24.0f / (float) cols, h * 2.0f);
+                    }
+                    onda.applyTransform (af);
+
+                    juce::Graphics::ScopedSaveState guarda (g);
+                    g.reduceClipRegion (onda);
+                    const float bw = caja.getWidth() / (float) Zati::kNumColours;
+                    for (int i = 0; i < Zati::kNumColours; ++i)
+                    {
+                        g.setColour (Zati::colour (i));
+                        g.fillRect (caja.getX() + bw * (float) i, caja.getY(), bw, caja.getHeight());
+                    }
                 }
             }
 
@@ -499,6 +671,20 @@ namespace StoreArt
         if (! out.openedOk()) return;
         juce::PNGImageFormat png;
         png.writeImageToStream (appIcon (lado, conNumero, estilo), out);
+        out.flush();
+    }
+
+    //  La mascara al lado del icono, cuando el banco la pide. Ver
+    //  StoreArt::mascaraMarca.
+    inline void writeMask (const juce::String& path, int lado)
+    {
+        juce::File f (path);
+        f.getParentDirectory().createDirectory();
+        f.deleteFile();
+        juce::FileOutputStream out (f);
+        if (! out.openedOk()) return;
+        juce::PNGImageFormat png;
+        png.writeImageToStream (mascaraMarca (lado), out);
         out.flush();
     }
 

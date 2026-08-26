@@ -212,10 +212,22 @@ public:
                                                     : ZatiColours::kSkinDeFabrica);
 
             const auto lado = UiAudit::env ("ZATI_ICONO_LADO");
-            const int est = juce::jlimit (0, 7, UiAudit::env ("ZATI_ICONO_ESTILO").getIntValue());
-            StoreArt::writeIcon (icono, lado.isNotEmpty() ? lado.getIntValue() : 1024,
+            const int est = juce::jlimit (0, 8, UiAudit::env ("ZATI_ICONO_ESTILO").getIntValue());
+
+            //  Que sonido se ve por el hueco de la Z (solo el estilo 8). Ver
+            //  StoreArt::sonidoDeLaMarca.
+            if (const auto snd = UiAudit::env ("ZATI_ICONO_SONIDO"); snd.isNotEmpty())
+                StoreArt::sonidoDeLaMarca = juce::jlimit (0, Kits::kNumSounds - 1, snd.getIntValue());
+            const int ladoPx = lado.isNotEmpty() ? lado.getIntValue() : 1024;
+            StoreArt::writeIcon (icono, ladoPx,
                                  UiAudit::env ("ZATI_ICONO_NUM") == "1",
                                  (StoreArt::Estilo) est);
+
+            //  Y la mascara de la marca al lado, si la piden: es lo unico que
+            //  le dice al banco que pixel del PNG es HUECO de la Z. Ver
+            //  StoreArt::mascaraMarca.
+            if (const auto msk = UiAudit::env ("ZATI_ICONO_MASCARA"); msk.isNotEmpty())
+                StoreArt::writeMask (msk, ladoPx);
 
             //  Y lo unico que el PNG no puede decir: si la Z del icono y la de
             //  la marca de la cabecera siguen siendo la misma. Ver
@@ -226,6 +238,17 @@ public:
                 for (int c = 0; c < Iconos::kLadoMarca; ++c)
                     std::cout << (Iconos::marcaCelda (f, c) ? 1 : 0);
             std::cout << "\"";
+            //  Los dos materiales que se ven por el hueco de la Z, para que el
+            //  banco pueda separar «esto es onda» de «esto es cristal» sin
+            //  inventarse los colores: los da la app con sus propios tokens,
+            //  que es lo mismo que ya hace con los pads de la cara.
+            std::cout << ",\"marca_tapa\":\"" << ZatiColours::accent.toDisplayString (false)
+                      << "\",\"marca_cuerpo\":[\"" << ZatiColours::chassisTop.toDisplayString (false)
+                      << "\",\"" << ZatiColours::chassisBot.toDisplayString (false) << "\"]"
+                      << ",\"marca_zatis\":[";
+            for (int z = 0; z < Zati::kNumColours; ++z)
+                std::cout << (z ? ",\"" : "\"") << Zati::colour (z).toDisplayString (false) << "\"";
+            std::cout << "],\"sonido\":" << StoreArt::sonidoDeLaMarca;
             StoreArt::pintaPadsDeLaCara (std::cout);
             std::cout << "}" << std::endl;
 
