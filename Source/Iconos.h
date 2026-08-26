@@ -1147,166 +1147,22 @@ namespace Iconos
     //  dibujo ES un pad. Se corta con `setUsingNonZeroWinding(false)`, o sea
     //  que la Z es un HUECO y no un trazo encima - asi la marca funciona sobre
     //  cualquiera de las cuatro carcasas sin elegir un segundo color.
-    //  Y LA DIAGONAL ES UNA ONDA, que es lo que dice que esto es un SAMPLER.
-    //
-    //  Se llego aqui por descarte y con tres intentos medidos por delante, y
-    //  los tres eran la misma idea -algo DETRAS del hueco de la Z, visto por
-    //  el- : la envolvente de un sonido de fabrica rellena la rendija entera y
-    //  sale una mancha (a 256 px sigue siendo una mancha, la silueta solo
-    //  aparece a 1024); nueve barras con hueco se leen, y se leen MAL, porque
-    //  barras separadas son un ESPECTRO y dicen frecuencias; y un trazo
-    //  continuo por detras tampoco.
-    //
-    //  El techo no lo movia el dibujo: a 48 px -lo que mide un icono en el
-    //  cajon de aplicaciones- el hueco de la Z son tres tiras de DOS pixeles,
-    //  asi que lo que se pone detras se ve en fragmentos y nunca como una
-    //  forma. Asi que la onda deja de estar detras de la letra y pasa a SER la
-    //  letra: no hay nada que mirar por una rendija.
-    //
-    //  Las dos aristas de la diagonal eran rectas y paralelas -(18,9.2) a
-    //  (11.4,14.8) y (12.6,9.2) a (6,14.8), separadas 5.4 en horizontal- y
-    //  pasan a ser dos polilineas onduladas. El contorno sigue siendo UNO
-    //  cerrado: no hay subtrazados que se solapen ni reglas de relleno que
-    //  negociar.
-    //  AMPLITUD 1.8 de 24, medida y no elegida a ojo. Barrida a 1.0, 1.35,
-    //  1.8 y 2.2 sobre los tres tamanos a los que la marca se dibuja de verdad
-    //  -26 px la fila de modulos, 40 la cabecera, 48 el lanzador-: a 1.0 la
-    //  onda esta en el codigo y no en la pantalla, y a 2.2 el trazo se lee
-    //  desigual a 26 px. A 1.8 se ve a 48 y sigue siendo una Z a 26.
-    //
-    //  Lo que CUESTA, medido y no corregido: las dos aristas van separadas en
-    //  horizontal, asi que el grosor perpendicular es 5.4 por el seno del
-    //  angulo con la horizontal, y donde la onda tumba la diagonal ese angulo
-    //  baja. De 3.49 unidades en la recta a 1.61 en el punto mas fino. Se
-    //  probo corregirlo -ensanchar en horizontal lo justo para que el
-    //  perpendicular no se mueva- y sale PEOR: el factor se dispara donde la
-    //  curva se tumba y la diagonal engorda hasta ser una mancha. Deshecho,
-    //  con su numero, como los otros tres arreglos de esta casa que salieron
-    //  peor.
-    static constexpr float kOndaAmp    = 2.2f;
-    static constexpr int   kOndaCiclos = 2;       // sube y baja una vez
-    static constexpr int   kOndaPasos  = 24;      // resolucion de la polilinea
-    static constexpr float kOndaTope   = 1.45f;   // el tope del ensanchado
-    //  El rizo de los filos de dentro de las dos barras. Mucho menor que el de
-    //  la diagonal: una barra de 3.2 de alto con un rizo de 1 se parte.
-    static constexpr float kRizoAmp    = 0.5f;
-    static constexpr int   kRizoCiclos = 3;
-
-    //  Solo del banco: ver `ondaDeLaZ`. No hay ningun camino desde la interfaz
-    //  que llegue aqui.
-    inline bool rectaParaElBanco = false;
-
-    //  El desplazamiento de la diagonal en la fraccion `t` de su recorrido.
-    //
-    //  HORIZONTAL y no perpendicular, que es lo que mantiene limpias las dos
-    //  juntas: la diagonal se encuentra con las barras a lo largo de rectas
-    //  verticales, y desplazar perpendicularmente las torceria.
-    //
-    //  Y `sin (PI * k * t)` con k ENTERO vale cero en los dos extremos, asi que
-    //  t=0 sigue dando 18 y 12.6 y t=1 sigue dando 11.4 y 6: las juntas con la
-    //  barra de arriba y la de abajo quedan exactamente donde estaban.
-    inline float ondaDeLaZ (float t) noexcept
-    {
-        //  RECTA cuando el banco lo pide, que es la unica forma de que la
-        //  regla «la diagonal no es recta» mida y no repita la constante del
-        //  dibujo. Es el mismo fallo que esta prueba ya cometio dos veces.
-        if (rectaParaElBanco) return 0.0f;
-
-        return kOndaAmp * std::sin (juce::MathConstants<float>::pi
-                                    * (float) kOndaCiclos * t);
-    }
-
-    //  La pendiente de la onda, que es lo que dice cuanto se ha tumbado la
-    //  diagonal en ese punto. Ver `medioEn`.
-    inline float pendienteDeLaZ (float t) noexcept
-    {
-        if (rectaParaElBanco) return 0.0f;
-        const float pi = juce::MathConstants<float>::pi;
-        return kOndaAmp * pi * (float) kOndaCiclos
-                        * std::cos (pi * (float) kOndaCiclos * t);
-    }
-
     inline juce::Path marca()
     {
         juce::Path p;
         p.addRoundedRectangle (0.0f, 0.0f, 24.0f, 24.0f, 3.5f);
 
-        //  Los dos extremos de la LINEA CENTRAL de la diagonal, que son los
-        //  puntos medios de las dos aristas de siempre.
-        const float xa = 15.3f, ya = 9.2f;      // arriba, entre 18 y 12.6
-        const float xb = 8.7f,  yb = 14.8f;     // abajo,  entre 11.4 y 6
-        //  EL ANCHO SE CORRIGE CON LA PENDIENTE, Y ACOTADO.
-        //
-        //  Las dos aristas van separadas en HORIZONTAL, asi que el grosor que
-        //  se ve -el perpendicular- es 5.4 por el seno del angulo con la
-        //  horizontal: donde la onda tumba la diagonal, el trazo adelgaza. Sin
-        //  corregir, medido: de 3.49 unidades en la recta a 1.61 en el punto
-        //  mas fino, o sea menos de la mitad, y a 48 px de icono eso son 2.1 px
-        //  contra los 4.7 de las barras.
-        //
-        //  Corregirlo del todo -ensanchar en horizontal lo justo para que el
-        //  perpendicular no se mueva- tambien sale mal: el factor se dispara
-        //  donde la curva se tumba y la diagonal engorda hasta ser una mancha.
-        //  Se probo y se vio.
-        //
-        //  Acotado a 1.45 da las dos cosas: el trazo no adelgaza -el punto mas
-        //  fino sube de 1.61 a 2.34- y en la cresta queda el saliente que hace
-        //  que la diagonal parezca una onda y no una raya torcida, que es el
-        //  detalle que se pidio.
-        const float dxRecta = xb - xa, dyRecta = yb - ya;
-        const float baseHip = std::sqrt (dxRecta * dxRecta + dyRecta * dyRecta);
-        auto medioEn = [&] (float t)
-        {
-            const float dx = dxRecta + pendienteDeLaZ (t);
-            const float f = std::sqrt (dx * dx + dyRecta * dyRecta) / baseHip;
-            return 2.7f * juce::jmin (kOndaTope, f);
-        };
-
-        //  Y LA ONDA RECORRE LA LETRA ENTERA, no solo la diagonal.
-        //
-        //  Cargarle mas onda a la diagonal sola tiene un techo medido: a
-        //  partir de tres ciclos, o de amplitud 3, deja de ser una Z y pasa a
-        //  ser un zigzag. Asi que la onda se reparte - los dos filos de dentro
-        //  de las barras ondulan tambien, con la misma cuenta y a menos
-        //  amplitud. Los filos de FUERA (y=6 y y=18) se quedan rectos: son la
-        //  silueta de la letra, y una silueta ondulada no se lee como una Z a
-        //  26 px.
-        auto rizo = [] (float u)
-        {
-            return kRizoAmp * std::sin (juce::MathConstants<float>::pi
-                                        * (float) kRizoCiclos * u);
-        };
-
         juce::Path z;
         z.startNewSubPath (6.0f, 6.0f);
         z.lineTo (18.0f, 6.0f);
-        z.lineTo (18.0f, ya);
-        //  Bajando por la arista de la derecha.
-        for (int i = 1; i <= kOndaPasos; ++i)
-        {
-            const float t = (float) i / (float) kOndaPasos;
-            z.lineTo (xa + (xb - xa) * t + ondaDeLaZ (t) + medioEn (t),
-                      ya + (yb - ya) * t);
-        }
-        z.lineTo (18.0f, yb);
+        z.lineTo (18.0f, 9.2f);
+        z.lineTo (11.4f, 14.8f);
+        z.lineTo (18.0f, 14.8f);
         z.lineTo (18.0f, 18.0f);
         z.lineTo (6.0f, 18.0f);
-        //  Y el filo de arriba de la barra de ABAJO, de izquierda a derecha
-        //  hasta donde arranca la diagonal.
-        z.lineTo (6.0f, yb + rizo (0.0f));
-        //  Y subiendo por la de la izquierda, que es la misma onda desplazada.
-        for (int i = kOndaPasos - 1; i >= 0; --i)
-        {
-            const float t = (float) i / (float) kOndaPasos;
-            z.lineTo (xa + (xb - xa) * t + ondaDeLaZ (t) - medioEn (t),
-                      ya + (yb - ya) * t);
-        }
-        //  El filo de abajo de la barra de ARRIBA, de derecha a izquierda.
-        for (int i = kOndaPasos - 1; i >= 0; --i)
-        {
-            const float u = (float) i / (float) kOndaPasos;
-            z.lineTo (6.0f + 12.0f * u, ya + rizo (u));
-        }
+        z.lineTo (6.0f, 14.8f);
+        z.lineTo (12.6f, 9.2f);
+        z.lineTo (6.0f, 9.2f);
         z.closeSubPath();
 
         p.addPath (z);
@@ -1454,16 +1310,8 @@ namespace Iconos
     inline bool marcaCelda (int fila, int col) noexcept
     {
         if (fila == 0 || fila == 3) return true;      // las dos barras
-        //  LA DIAGONAL OCUPA DOS CELDAS POR FILA desde que ondula, y esto no
-        //  se escribio a ojo: `StoreArt::desacuerdoMarca` rasteriza el hueco
-        //  de `marca()` sobre esta misma rejilla de 4x4 y con la diagonal
-        //  recta salian `1111 0010 0100 1111` -una celda por fila- y con la
-        //  onda salen `1111 0011 1100 1111`. La tabla dice lo que la Z ES; el
-        //  rasterizado lo mide, y la regla del banco los compara. Sin
-        //  actualizarla, la rejilla dibujaria una Z distinta de la de la
-        //  marca, que es exactamente lo que esa regla existe para cazar.
-        if (fila == 1) return col == 2 || col == 3;   // la diagonal, arriba
-        if (fila == 2) return col == 0 || col == 1;   // y abajo
+        if (fila == 1) return col == 2;               // la diagonal, arriba
+        if (fila == 2) return col == 1;               // y abajo
         return false;
     }
 }

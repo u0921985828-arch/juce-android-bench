@@ -67,14 +67,13 @@ def mide (nombre, ok, detalle=""):
     print ("  %-6s %s  %s" % ("OK" if ok else "FALLA", nombre, detalle))
 
 
-def genera (destino=None, estilo=None, mascara=None, recta=False):
+def genera (destino=None, estilo=None, mascara=None):
     casa = tempfile.mkdtemp (prefix="zati-icono-")
     try:
         env = dict (os.environ)
         env.update ({"HOME": casa, "ZATI_ICONO": destino or DEST})
         if estilo  is not None: env["ZATI_ICONO_ESTILO"]  = str (estilo)
         if mascara is not None: env["ZATI_ICONO_MASCARA"] = mascara
-        if recta: env["ZATI_Z_RECTA"] = "1"
         r = subprocess.run ([APP], env=env, capture_output=True, text=True, timeout=300)
     finally:
         shutil.rmtree (casa, ignore_errors=True)
@@ -102,18 +101,11 @@ def pixeles (path, lado):
 
 def v (c):  return (c[0] << 16) | (c[1] << 8) | c[2]
 
-#  QUE CELDAS DIBUJAN LA Z, LEIDAS DE LA APP y no escritas aqui otra vez.
-#
-#  Estaban duplicadas -el mismo patron a mano en Python- y eso son dos reglas:
-#  el dia que la diagonal de `Iconos::marca()` paso a ondular, `marcaCelda`
-#  cambio a dos celdas por fila y esta copia se quedo en una, asi que el banco
-#  saco cinco FALLA contra un icono que estaba bien. La app imprime `celdas`
-#  desde la MISMA funcion con la que dibuja la rejilla.
-def celdasDeLaZ (d):
-    s = d.get ("celdas", "")
-    if len (s) != LADO * LADO: sys.exit ("la app no dijo que celdas dibujan la Z")
-    return set ((f, c) for f in range (LADO) for c in range (LADO)
-                if s[f * LADO + c] == "1")
+def esZ (f, c):
+    if f == 0 or f == LADO - 1: return True
+    if f == 1: return c == 2
+    if f == 2: return c == 1
+    return False
 
 
 # --- se genera --------------------------------------------------------------
@@ -180,7 +172,7 @@ for lado in TAMANOS:
         if ls[i + 1] - ls[i] > salto:
             salto, corte = ls[i + 1] - ls[i], (ls[i] + ls[i + 1]) / 2.0
     leidas = set (k for k, p in celdas.items() if lum (v (p)) > corte)
-    debe   = celdasDeLaZ (dr)
+    debe   = set ((f, c) for f in range (LADO) for c in range (LADO) if esZ (f, c))
 
     sobran = sorted (leidas - debe)
     faltan = sorted (debe - leidas)
@@ -195,7 +187,7 @@ enc, apa = [], []
 for f in range (LADO):
     for c in range (LADO):
         x = int (paso * (1 + c) + paso * 0.5); y = int (paso * (1 + f) + paso * 0.5)
-        (enc if (f, c) in celdasDeLaZ (dr) else apa).append (v (px[y][x]))
+        (enc if esZ (f, c) else apa).append (v (px[y][x]))
 
 cuerpo = v (px[int (paso * 0.5)][int (paso * 0.5)])
 
@@ -421,54 +413,6 @@ for est, nombre in MARCAS:
 
     for f in ([msk] if propio else [ico, msk]):
         if os.path.exists (f): os.remove (f)
-
-# ============================================================================
-#  Y LA DIAGONAL NO ES RECTA, que es lo unico que dice si la onda de la Z esta
-#  en la pantalla o solo en el codigo.
-#
-#  Se mide contra una REFERENCIA que genera la app con la diagonal recta
-#  (`ZATI_Z_RECTA=1`, ver Iconos::rectaParaElBanco) y no deduciendo la forma de
-#  las constantes del dibujo: ese es el fallo que esta misma prueba ya cometio
-#  dos veces -la mascara del lanzador y el hueco de la Z- y que se resume en que
-#  un banco que repite la constante del codigo no prueba el codigo.
-#
-#  Y a los tamanos a los que la marca se dibuja de VERDAD, que no son solo los
-#  del lanzador: la cabecera de la app la pinta a unos 40 px y la fila de
-#  modulos a 26. Una onda que solo existe a 1024 no la ve nadie.
-print()
-recto = tempfile.mktemp (suffix="-recto.png")
-mrec  = tempfile.mktemp (suffix="-recto-m.png")
-mond  = tempfile.mktemp (suffix="-onda-m.png")
-genera (recto, 4, mrec, recta=True)
-onda  = tempfile.mktemp (suffix="-onda.png")
-genera (onda, 4, mond)
-
-#  A LOS CUATRO TAMANOS DEL LANZADOR y no a los de la app.
-#
-#  Medida antes en los tres tamanos a los que la marca se dibuja: 3.4 % a 26 px
-#  -la fila de modulos- y 6.6 % a 40 -la cabecera-. O sea que a esos dos la onda
-#  practicamente no esta, y eso NO es un fallo que arreglar subiendo la
-#  amplitud: a 2.2 el trazo ya se lee desigual a 26 px, que es peor. Es la
-#  escalera de siempre - la onda es una funcion del ICONO, que es donde la marca
-#  se dibuja grande, y en la cabecera queda como un matiz.
-#
-#  Asi que la regla pregunta donde tiene que cumplirse: los cuatro tamanos que
-#  JUCE escribe. El liston sale de la poblacion -10.9 % es el peor de los
-#  cuatro- y se pone por debajo, no por encima.
-MIN_ONDA_Z = 8.0
-for lado in TAMANOS:
-    a = clases (pixeles (mond, lado), lado)
-    b = clases (pixeles (mrec, lado), lado)
-    hueco = sum (1 for y in range (lado) for x in range (lado)
-                 if a[y][x] == 1 or b[y][x] == 1)
-    dif = sum (1 for y in range (lado) for x in range (lado)
-               if (a[y][x] == 1) != (b[y][x] == 1))
-    pc = 100.0 * dif / max (1, hueco)
-    mide ("la diagonal no es recta a %d px" % lado, pc >= MIN_ONDA_Z,
-          "%.1f %% del hueco cambia  (liston %.1f)" % (pc, MIN_ONDA_Z))
-
-for f in (recto, mrec, mond, onda):
-    if os.path.exists (f): os.remove (f)
 
 if os.path.exists (REJ): os.remove (REJ)
 

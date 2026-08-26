@@ -368,86 +368,84 @@ namespace StoreArt
             //  separa de la tapa por croma y no solo por luminancia.
             if (estilo == Estilo::marcaOnda)
             {
-                //  UNA ONDA GENERICA, y no la envolvente de un sonido de
-                //  fabrica de verdad, que es lo que habia y lo que este
-                //  fichero defendia. Se deshizo midiendo, y la razon es de
-                //  ESCALA y no de gusto: la envolvente real tiene su detalle
-                //  en los milisegundos y el icono se mira a 48 px. Barrida con
-                //  7, 9, 11, 13 y 56 columnas, a esa escala da el mismo borron
-                //  -con 56, en el icono mas pequeno que JUCE escribe cada
-                //  columna mide 0.43 px- y a 256 px sigue siendo una mancha
-                //  cruzando la Z: la silueta solo aparece a 1024.
-                //
-                //  Lo que si sobrevive es un patron de POCAS formas GRANDES.
-                //  Barras con hueco entre ellas, que es como se dibuja el
-                //  audio en cualquier aparato, y el hueco es lo que hace el
-                //  trabajo: por el se ve el chasis, asi que la tira de la Z
-                //  sale partida en trozos en vez de rellena de color. Una
-                //  envolvente continua llena la rendija entera y por eso no se
-                //  leia.
-                //
-                //  Nueve barras: el hueco de la Z son tres tiras y el ancho de
-                //  la tapa 24 unidades, asi que nueve pasos son 2.67 unidades
-                //  cada uno - a 48 px de icono, 3.6 px de barra mas hueco, que
-                //  es lo minimo que sobrevive a la reduccion. Con mas barras
-                //  el hueco se cierra y vuelve el borron.
+                static int cacheIdx = -1;
+                static SampleBuffer::Ptr cache;
+                if (cacheIdx != sonidoDeLaMarca)
                 {
-                    //  UN TRAZO QUE ONDULA, y no barras ni un relleno. Las
-                    //  tres se probaron y las dos primeras dicen otra cosa:
-                    //
-                    //  - RELLENO (la envolvente de un sonido de verdad): llena
-                    //    la rendija entera, asi que por el hueco de la Z sale
-                    //    una mancha de color. Medido, a 256 px sigue siendo una
-                    //    mancha; la silueta solo aparece a 1024.
-                    //  - BARRAS con hueco: se lee, y se lee MAL - barras
-                    //    separadas son un ESPECTRO, que dice frecuencias. Una
-                    //    onda es continua y cruza el cero.
-                    //
-                    //  Un trazo lo tiene todo: es continuo -o sea una onda- y
-                    //  tiene alto acotado, asi que entra y sale de la tira de
-                    //  la Z el solo. Los cortes salen de la propia onda y no de
-                    //  huecos puestos a mano.
-                    const float cy = 12.0f;
-                    const float amp = 3.4f;     // dentro de la cintura: la Z vive de 6 a 18
-                    const float grosor = 1.7f;  // a 48 px de icono son 2.3 px de trazo
-                    const int   ciclos = 2;     // dos ciclos en 24 unidades
+                    cacheIdx = sonidoDeLaMarca;
+                    cache = Kits::render (sonidoDeLaMarca);
+                }
 
-                    //  Y NO ES UN SENO: un seno es un tono, no un sonido. Dos
-                    //  ciclos de distinta amplitud -el segundo mas corto- es lo
-                    //  que separa «una onda» de «una senal de prueba», y es lo
-                    //  mismo que hace que las alturas de un dibujo de audio no
-                    //  sean todas iguales.
+                if (cache != nullptr && cache->buffer.getNumSamples() > 4)
+                {
+                    //  RELLENA Y ESPEJADA, no una linea: por un hueco de tres
+                    //  tiras finas una linea de un pixel no se ve, y a 48 px
+                    //  de icono la barra de la Z mide dos pixeles de alto.
+                    //  Espejada sobre el centro porque es como dibuja la onda
+                    //  un pad cargado (ver PadButton::buildSpark).
+                    const int len = cache->buffer.getNumSamples();
+                    const float* d = cache->buffer.getReadPointer (0);
+
+                    float pico = 0.0f;
+                    for (int i = 0; i < len; ++i) pico = juce::jmax (pico, std::abs (d[i]));
+                    const float norm = (pico > 1.0e-6f) ? 1.0f / pico : 0.0f;
+
+                    const int cols = 56;
+                    //  Y LA ALTURA DE LA ONDA SE ELIGIO MIDIENDO Y MIRANDO,
+                    //  que es la unica de las tres cifras de este estilo que
+                    //  no sale de un token. A pleno alto -la onda ocupando el
+                    //  hueco entero, que es lo primero que uno escribe- el
+                    //  hueco salia 64 % onda y la Z dejaba de leerse: las dos
+                    //  barras y la diagonal quedaban tapadas de color y lo que
+                    //  se ve es una mancha con forma de nada. Barrido 3.0,
+                    //  4.5, 6.0 y 9.0 sobre los tres candidatos: a 6.0 la onda
+                    //  empieza a comerse las barras y a 4.5 cruza la diagonal
+                    //  sin tocarlas - 29 % del hueco, la Z entera y una onda
+                    //  dentro.
+                    //
+                    //  En unidades de la marca: la Z vive entre 6 y 18 de 24,
+                    //  asi que 4.5 alrededor del centro es de 7.5 a 16.5 - la
+                    //  cintura de la letra.
+                    const float cy = 12.0f, halfH = 4.5f;
                     juce::Path onda;
-                    const int pasos = 96;
-                    for (int k = 0; k <= pasos; ++k)
+                    for (int c = 0; c < cols; ++c)
                     {
-                        const float t = (float) k / (float) pasos;              // 0..1
-                        const float fase = t * juce::MathConstants<float>::twoPi * (float) ciclos;
-                        const float decae = 1.0f - 0.45f * t;                    // el segundo ciclo, menor
-                        const float y = cy - std::sin (fase) * amp * decae;
-                        const float x = 24.0f * t;
-                        (k == 0) ? onda.startNewSubPath (x, y) : onda.lineTo (x, y);
+                        const int a = (int) ((float) c / (float) cols * (float) len);
+                        const int b = juce::jmax (a + 1, (int) ((float) (c + 1) / (float) cols * (float) len));
+                        float mx = 0.0f;
+                        for (int i = a; i < juce::jmin (b, len); ++i) mx = juce::jmax (mx, std::abs (d[i]));
+                        //  Un suelo de medio punto de los 24: una columna muda
+                        //  parte el visor en dos y se lee como que la onda se
+                        //  acaba, no como silencio.
+                        const float h = juce::jmax (0.5f, juce::jmin (1.0f, mx * norm) * halfH);
+                        const float x = 24.0f * (float) c / (float) cols;
+                        onda.addRectangle (x, cy - h, 24.0f / (float) cols, h * 2.0f);
                     }
-                    onda = [&]
-                    {
-                        juce::Path trazo;
-                        juce::PathStrokeType (grosor, juce::PathStrokeType::curved,
-                                              juce::PathStrokeType::rounded).createStrokedPath (trazo, onda);
-                        return trazo;
-                    }();
                     onda.applyTransform (af);
 
-                    //  UN TONO Y NO OCHO, Y AL 62 %. Ver el parrafo de la
-                    //  ventana de aqui arriba: los ocho zatis a pleno dan
-                    //  C* 59.4 de croma contra los 39.3 de un pad de la cara.
+                    //  UN TONO Y NO OCHO, Y AL 62 %.
+                    //
+                    //  La primera version pintaba la onda con los ocho zatis a
+                    //  pleno, y eso son NUEVE tonos a maxima saturacion dentro
+                    //  de una marca de 48 px - contando la tapa. Medido en
+                    //  croma (C* de Lab): los ocho a pleno dan 59.4 contra los
+                    //  39.3 que mide un pad cargado de la cara, o sea el icono
+                    //  x1.51 mas saturado que la maquina que abre. Y una onda
+                    //  de ocho colores deja de leerse como UNA cosa.
+                    //
+                    //  El tono es DERIVADO y no elegido a mano: el que ese
+                    //  sonido tiene en la maquina. WIND es el indice 39, asi
+                    //  que `forPad` da 7 - magenta. El dia que se cambie el
+                    //  sonido, el color va detras.
+                    //
+                    //  Y pintado como se pinta un pad -`PadArt::cuerpoDe`, que
+                    //  ya existe- en vez de con un alfa escrito aqui. Medido
+                    //  sobre el chasis de LACA: de C* 59.7 a 36.5-38.3, o sea
+                    //  al nivel de la cara; sigue separandose del fondo del
+                    //  hueco con dE 49.6-51.9 contra el liston de 6.0; y de
+                    //  propina se separa MEJOR de la tapa ambar, ratio 1.66 a
+                    //  3.01.
                     juce::Graphics::ScopedSaveState guarda (g);
-                    //  RECORTADA A LA SILUETA, que es la tapa SIN el hueco. Es
-                    //  el mismo fallo que ya se pago con los ocho colores:
-                    //  la onda se dibuja ANTES que la tapa, asi que lo que cae
-                    //  fuera de las esquinas redondeadas no lo tapa nadie - y
-                    //  salian dos puntos magenta por fuera del icono, uno a
-                    //  cada lado, porque el trazo llega hasta el borde.
-                    g.reduceClipRegion (silueta);
                     g.setColour (PadArt::cuerpoDe (Zati::colour (Zati::forPad (sonidoDeLaMarca)), true));
                     g.fillPath (onda);
                 }

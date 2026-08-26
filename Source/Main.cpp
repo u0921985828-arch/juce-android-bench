@@ -220,12 +220,6 @@ public:
                                ? (StoreArt::Estilo) juce::jlimit (0, 8, estv.getIntValue())
                                : StoreArt::kEstiloDeFabrica;
 
-            //  LA DIAGONAL RECTA, para la referencia del banco: la regla
-            //  «la diagonal no es recta» compara el PNG contra este, en vez de
-            //  deducir la forma de las constantes del dibujo. Ver
-            //  Iconos::rectaParaElBanco.
-            Iconos::rectaParaElBanco = (UiAudit::env ("ZATI_Z_RECTA") == "1");
-
             //  Que sonido se ve por el hueco de la Z (solo el estilo 8). Ver
             //  StoreArt::sonidoDeLaMarca.
             if (const auto snd = UiAudit::env ("ZATI_ICONO_SONIDO"); snd.isNotEmpty())
