@@ -40,7 +40,7 @@
 #
 #      python3 Tests/icono.py
 # ============================================================================
-import os, subprocess, sys, tempfile, shutil, json, math
+import os, subprocess, sys, tempfile, shutil, json, math, hashlib
 
 ROOT = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
 APP  = os.environ.get ("ZATI_BIN") or os.path.join (
@@ -426,6 +426,37 @@ for est, nombre in MARCAS:
 #  lejos dibujado contra la circunferencia inscrita- y aqui se espera que la
 #  incumpla: se mide para saber CUANTO se pierde, que es lo que decide si esa
 #  esquina es un sacrificio aceptable o una tapa cortada.
+#  EL ICONO A MARCO COMPLETO ES EL MISMO FICHERO EN LAS CUATRO CARCASAS.
+#
+#  Es la unica marca que se pidio SIN carcasa -«olvidate de LACA»- y eso no es
+#  una intencion, es una propiedad que se comprueba: se genera con `ZATI_SKIN`
+#  0 a 3 y los cuatro PNG tienen que salir byte a byte iguales.
+#
+#  Y hace falta porque se rompio DOS veces sola, las dos por sitios que no se
+#  ven leyendo el codigo: primero por las cuatro esquinas -la tapa se pintaba
+#  redondeada y por ellas asomaba el chasis- y despues por el margen que hubo
+#  que dejarle a la sombra. Sin esta regla el dia que alguien pinte el bloque de
+#  profundidad con `ZatiColours::groove` -que es `recess (chassisTop, a)`, o sea
+#  negro o blanco segun lo oscuro que sea el chasis- no fallaria nada: se
+#  publicaria.
+huellas = []
+for piel in range (4):
+    f = tempfile.mktemp (suffix="-piel%d.png" % piel)
+    casa = tempfile.mkdtemp (prefix="zati-piel-")
+    try:
+        env = dict (os.environ)
+        env.update ({"HOME": casa, "ZATI_ICONO": f, "ZATI_ICONO_ESTILO": "10",
+                     "ZATI_SKIN": str (piel)})
+        subprocess.run ([APP], env=env, capture_output=True, text=True, timeout=300)
+    finally:
+        shutil.rmtree (casa, ignore_errors=True)
+    huellas.append (hashlib.md5 (open (f, "rb").read()).hexdigest() if os.path.exists (f) else "")
+    if os.path.exists (f): os.remove (f)
+
+mide ("marcaPad no depende de la carcasa", len (set (huellas)) == 1 and huellas[0],
+      "%d fichero(s) distinto(s) en las cuatro pieles  %s"
+      % (len (set (huellas)), huellas[0][:12]))
+
 padico = tempfile.mktemp (suffix="-pad.png")
 genera (padico, 10)
 q = pixeles (padico, 1024)

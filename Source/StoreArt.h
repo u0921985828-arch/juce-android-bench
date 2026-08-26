@@ -601,6 +601,20 @@ namespace StoreArt
         if (estilo == Estilo::marcaPad)
         {
             const float escala = L / PadArt::kAltoRef;
+
+            //  UN PELO DE MARGEN, Y NO ES UN NUMERO ELEGIDO: es lo que mide el
+            //  hundido de una tapa (`kCapLift`), que a 48 px de icono son 3.
+            //  La primera version llegaba al borde y por eso hubo que quitarle
+            //  la sombra -«una tapa a marco completo no se hunde sobre nada»-,
+            //  y el argumento era correcto y la conclusion no: lo que hacia
+            //  falta no era quitar la sombra sino dejarle SITIO. De 1/6 de
+            //  margen a 1/16: sigue leyendose como marco completo y vuelve a
+            //  ser una tapa, o sea algo apoyado sobre otra cosa.
+            const float lift = ZatiLookAndFeel::kCapLift * escala;
+            const auto caja = juce::Rectangle<float> (0.0f, 0.0f, L, L)
+                                  .reduced (lift * 0.5f)
+                                  .withTrimmedBottom (lift * 0.5f);
+            const float rad = 3.0f * escala;
             const auto frag = Zati::colour (Zati::forPad (0));
 
             //  El cuerpo, SOBRE SI MISMO y no sobre el chasis. `cuerpoDe` es el
@@ -610,41 +624,57 @@ namespace StoreArt
             //  la maquina sin traerse la placa de ninguna carcasa.
             const auto cuerpo = frag.darker (0.45f).overlaidWith (PadArt::cuerpoDe (frag, true));
 
-            g.setColour (cuerpo);
+            //  LA SOMBRA SE PINTA AQUI Y NO CON `PadArt::fondo`, y esa es la
+            //  unica linea de este bloque que hay que entender: el bloque de
+            //  profundidad de un pad usa `ZatiColours::groove`, que es
+            //  `recess (chassisTop, a)`, o sea NEGRO O BLANCO segun lo oscuro
+            //  que sea el CHASIS. Es correcto en la cara -la sombra cae sobre
+            //  el cuerpo de la maquina- y aqui devolveria el icono a depender
+            //  de la carcasa por la puerta de atras, que es justo lo que este
+            //  estilo existe para no hacer. El tono sale del zati.
+            //  Y EL MARGEN NECESITA UN FONDO, que es lo que la primera version
+            //  de esto no vio: al apartar la tapa del borde para que su sombra
+            //  quepa, por ese pelo se veia el CHASIS - y los cuatro PNG de las
+            //  cuatro carcasas volvieron a salir con md5 distinto. El fondo
+            //  tambien sale del zati, en su version mas oscura, y la sombra un
+            //  paso por encima para que se lea contra el.
+            g.setColour (frag.darker (0.90f));
             g.fillRect (0.0f, 0.0f, L, L);
 
+            g.setColour (frag.darker (0.72f));
+            g.fillRoundedRectangle (caja.translated (0.0f, lift), rad);
+
+            g.setColour (cuerpo);
+            g.fillRoundedRectangle (caja, rad);
+
             //  LA BANDA, con la geometria de un pad cargado (ver PadArt::fondo:
-            //  5 de alto, metida 1 por arriba y 1 por cada lado). Es lo unico
-            //  que queda de la tapa cuando no hay ni bloque ni borde, y es la
-            //  firma: un pad con sonido lleva su zati en una banda solida.
-            const float bandaY = 1.0f * escala, bandaAlto = 5.0f * escala;
+            //  5 de alto, metida 1 por arriba y 1 por cada lado). Es la firma:
+            //  un pad con sonido lleva su zati en una banda solida.
+            const float bandaY = caja.getY() + 1.0f * escala, bandaAlto = 5.0f * escala;
             g.setColour (frag);
-            g.fillRect (juce::Rectangle<float> (0.0f, 0.0f, L, L)
-                            .withHeight (bandaAlto).reduced (1.0f * escala, 0.0f)
+            g.fillRect (caja.withHeight (bandaAlto).reduced (1.0f * escala, 0.0f)
                             .withY (bandaY));
 
-            //  LA Z CENTRADA EN EL RECUADRO DEL CUERPO, que es lo que queda
-            //  DEBAJO de la banda - y no en el icono entero. Centrada en el
-            //  marco, la letra sale empujada hacia arriba respecto al hueco de
-            //  color en el que de verdad esta: la banda le come 6 de las 48
-            //  unidades por arriba y nada por abajo.
-            const auto recuadro = juce::Rectangle<float> (0.0f, bandaY + bandaAlto,
-                                                          L, L - (bandaY + bandaAlto));
-
-            //  Y SE ESCALA Y SE CENTRA POR SUS LIMITES DE VERDAD, no por la
-            //  caja nominal de 24. Las dos veces que se calculo a ojo salio
-            //  mal: la Z vive entre 6 y 18, o sea la mitad de la caja, pero el
-            //  TRAZO se pinta centrado en esa linea y sobresale su medio grosor
-            //  por cada lado - la tinta ocupa unas dos terceras partes, no la
-            //  mitad, y la letra salia desbordando el icono. `getBounds` lo
-            //  sabe y no hay que acertarlo.
-            auto t = Iconos::marcaTrazo();
+            //  LA Z GEOMETRICA DE LA MARCA, RELLENA. `marcaHueco` es la MISMA
+            //  letra que la marca recorta de su tapa, o sea la que llevan la
+            //  cabecera y el banner: cortes rectos y diagonal de verdad. Antes
+            //  era `marcaTrazo`, una polilinea de cuatro puntos con las puntas
+            //  redondeadas, que se lee como una Z generica y no como el rotulo
+            //  de un aparato. Dos letras parecidas para el mismo nombre son dos
+            //  letras que se separan; ahora el icono y la app dicen la misma.
+            //
+            //  Y SE ESCALA Y SE CENTRA POR SUS LIMITES DE VERDAD
+            //  (`Path::getBounds`), no por la caja nominal de 24 -eso se
+            //  calculo a ojo dos veces y las dos salio desbordando el icono- y
+            //  dentro del RECUADRO DEL CUERPO, que es lo que queda debajo de la
+            //  banda: centrada en el marco, la letra sale empujada hacia arriba
+            //  respecto al hueco de color en el que de verdad esta.
+            const auto recuadro = caja.withTop (bandaY + bandaAlto);
+            auto t = Iconos::marcaHueco();
             const auto lim = t.getBounds();
-            //  CON AIRE. Ajustada a 0.74 del ancho la letra llega casi al filo
-            //  y el icono se lee apretado; a 0.60 queda un margen que se ve por
-            //  los cuatro lados. Es la misma proporcion con la que un pad de la
-            //  cara deja sitio alrededor de su onda.
-            const float k = juce::jmin (L * 0.60f / lim.getWidth(),
+            //  El aire: a 0.74 del ancho la letra llega casi al filo y el icono
+            //  se lee apretado; a 0.60 queda margen por los cuatro lados.
+            const float k = juce::jmin (caja.getWidth()  * 0.60f / lim.getWidth(),
                                         recuadro.getHeight() * 0.58f / lim.getHeight());
             t.applyTransform (juce::AffineTransform::scale (k)
                                   .translated (recuadro.getCentreX() - lim.getCentreX() * k,
@@ -653,13 +683,18 @@ namespace StoreArt
             //  LA TINTA SE MIDE, PERO NO CONTRA LA PALETA DE LA CARCASA.
             //  `textOn` elige entre `ink` e `inkLight`, y esos dos son tokens de
             //  piel: medido, la misma tapa roja sacaba la Z crema en PAPEL,
-            //  NEGRA en GRAFITO, blanca en ACERO y crema en LACA - o sea que el
-            //  icono seguia dependiendo de la carcasa por el unico sitio que
-            //  quedaba. Los dos candidatos salen ahora del propio zati y
-            //  `bestOn` elige midiendo.
+            //  NEGRA en GRAFITO, blanca en ACERO y crema en LACA. Los dos
+            //  candidatos salen ahora del propio zati y `bestOn` elige midiendo.
             g.setColour (ZatiColours::bestOn (cuerpo, frag.brighter (1.0f),
                                               frag.darker (0.85f)));
             g.fillPath (t);
+
+            //  Y EL FILO, que si es el de la casa tal cual: `bordeDe (frag,
+            //  true)` es el propio zati y el grosor `2 * escala`. Ni un token de
+            //  chasis. Se quito por «a marco completo se lee como un marco
+            //  pintado dentro del icono» y con el margen puesto ya no lo es:
+            //  es el canto de la tapa.
+            PadArt::borde (g, caja, PadArt::bordeDe (frag, true), true, escala);
             return img;
         }
 
