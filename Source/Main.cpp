@@ -212,7 +212,7 @@ public:
                                                     : ZatiColours::kSkinDeFabrica);
 
             const auto lado = UiAudit::env ("ZATI_ICONO_LADO");
-            const int est = juce::jlimit (0, 4, UiAudit::env ("ZATI_ICONO_ESTILO").getIntValue());
+            const int est = juce::jlimit (0, 7, UiAudit::env ("ZATI_ICONO_ESTILO").getIntValue());
             StoreArt::writeIcon (icono, lado.isNotEmpty() ? lado.getIntValue() : 1024,
                                  UiAudit::env ("ZATI_ICONO_NUM") == "1",
                                  (StoreArt::Estilo) est);

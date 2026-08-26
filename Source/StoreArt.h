@@ -153,7 +153,15 @@ namespace StoreArt
     //  LOS CINCO ESTILOS. Todos usan el MISMO material -la rejilla, marcaCelda,
     //  PadArt y los zatis- y ninguno inventa un dibujo nuevo: son cinco formas
     //  de jugar el mismo contenido, que es lo que se pidio.
-    enum class Estilo { rejilla, invertida, unColor, conTira, marcaSola };
+    enum class Estilo { rejilla, invertida, unColor, conTira, marcaSola,
+                        //  LA MARCA CON EL COLOR DE LOS PADS, por tres caminos
+                        //  distintos. Los tres respetan la regla que hace que la
+                        //  marca funcione en las cuatro carcasas: la Z es un
+                        //  HUECO y no un trazo, asi que nunca hay que elegir un
+                        //  segundo color para la letra.
+                        marcaVentana,   // la Z deja ver los ocho zatis
+                        marcaTapa,      // la tapa ES los ocho, la Z el chasis
+                        marcaBanda };   // una tapa, con la banda de un pad arriba
 
     inline juce::Image appIcon (int lado, bool conNumero = false,
                                 Estilo estilo = Estilo::rejilla)
@@ -177,22 +185,87 @@ namespace StoreArt
         //  fila de pad por lado- para que la mascara del lanzador no se la
         //  coma, y el bloque de profundidad detras, que es lo que la separa de
         //  una pegatina.
-        if (estilo == Estilo::marcaSola)
+        if (estilo == Estilo::marcaSola || estilo == Estilo::marcaVentana
+            || estilo == Estilo::marcaTapa || estilo == Estilo::marcaBanda)
         {
             const float zona = L * (float) Iconos::kLadoMarca / (float) (Iconos::kLadoMarca + 2);
             const float esc = zona / 24.0f;
+            const auto caja = juce::Rectangle<float> ((L - zona) * 0.5f, (L - zona) * 0.5f,
+                                                      zona, zona);
             const auto af = juce::AffineTransform::scale (esc)
-                                .translated ((L - zona) * 0.5f, (L - zona) * 0.5f);
+                                .translated (caja.getX(), caja.getY());
 
             //  SIN BLOQUE DE PROFUNDIDAD, y no por ahorrar: la Z es un HUECO,
             //  asi que cualquier cosa que se dibuje detras se ve POR DENTRO de
             //  la letra. Con el bloque puesto salia una segunda Z gris dentro
             //  de la primera. La cabecera la dibuja plana por lo mismo, y la
             //  marca es un logo y no una tapa que se hunda al pulsarla.
+
             auto m = Iconos::marca();
             m.applyTransform (af);
-            g.setColour (ZatiColours::accent);
-            g.fillPath (m);
+
+            //  LOS OCHO ZATIS DETRAS, para que se vean POR EL HUECO. Es la
+            //  unica forma de meter el color de los pads sin darle un color a
+            //  la letra: la Z sigue siendo lo que se quita, y lo que asoma por
+            //  ella es la firma de la caja.
+            //  Y RECORTADOS A LA SILUETA DE LA TAPA, que es la tapa SIN el
+            //  hueco: pintar las bandas en el rectangulo entero las deja
+            //  asomando por las cuatro esquinas redondeadas -se veia un filo
+            //  rojo y uno magenta por fuera del icono-.
+            juce::Path silueta;
+            silueta.addRoundedRectangle (0.0f, 0.0f, 24.0f, 24.0f, 3.5f);
+            silueta.applyTransform (af);
+
+            if (estilo == Estilo::marcaVentana)
+            {
+                juce::Graphics::ScopedSaveState guarda (g);
+                g.reduceClipRegion (silueta);
+                const float bw = caja.getWidth() / (float) Zati::kNumColours;
+                for (int i = 0; i < Zati::kNumColours; ++i)
+                {
+                    g.setColour (Zati::colour (i));
+                    g.fillRect (caja.getX() + bw * (float) i, caja.getY(), bw, caja.getHeight());
+                }
+            }
+
+            //  O LA TAPA ES LOS OCHO y el hueco deja ver el chasis, que es lo
+            //  contrario: aqui el color esta donde estan los pads y la letra es
+            //  el cuerpo de la maquina.
+            if (estilo == Estilo::marcaTapa)
+            {
+                juce::Graphics::ScopedSaveState guarda (g);
+                g.reduceClipRegion (m);
+                const float bw = caja.getWidth() / (float) Zati::kNumColours;
+                for (int i = 0; i < Zati::kNumColours; ++i)
+                {
+                    g.setColour (Zati::colour (i));
+                    g.fillRect (caja.getX() + bw * (float) i, caja.getY(), bw, caja.getHeight());
+                }
+            }
+            else
+            {
+                g.setColour (ZatiColours::accent);
+                g.fillPath (m);
+            }
+
+            //  O LA BANDA DE UN PAD, que es la mas fiel de las tres: un pad
+            //  cargado lleva su zati en una banda solida arriba (ver
+            //  PadArt::fondo), y esta marca ES un pad. La banda va por encima
+            //  de la barra de la Z -que empieza en 6 de 24- asi que no la toca.
+            if (estilo == Estilo::marcaBanda)
+            {
+                juce::Graphics::ScopedSaveState guarda (g);
+                g.reduceClipRegion (m);
+                const auto banda = caja.withHeight (caja.getHeight() * 5.0f / 24.0f)
+                                       .translated (0.0f, caja.getHeight() * 1.0f / 24.0f);
+                const float bw = banda.getWidth() / (float) Zati::kNumColours;
+                for (int i = 0; i < Zati::kNumColours; ++i)
+                {
+                    g.setColour (Zati::colour (i));
+                    g.fillRect (banda.getX() + bw * (float) i, banda.getY(), bw, banda.getHeight());
+                }
+            }
+
             return img;
         }
 
