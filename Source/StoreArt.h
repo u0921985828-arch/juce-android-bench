@@ -102,30 +102,33 @@ namespace StoreArt
 
         //  Cuatro tapas de pad a la derecha, con su relieve: dicen lo que es
         //  la app sin tener que leer nada, y son el unico dibujo del banner.
+        //
+        //  Y SON LAS TAPAS DE LA APP, no unas parecidas. Este bloque llevaba
+        //  su propio dibujo -sombra, relleno y numero escritos aqui- porque se
+        //  escribio antes de que `PadArt` existiera, y nunca se migro: un
+        //  TERCER dibujo de la misma cosa, que es justo lo que PadArt se
+        //  extrajo para evitar. El sintoma ya estaba: pintaba el zati A PLENO,
+        //  o sea C* 59.4 de croma contra los 39.3 que mide un pad de la cara -
+        //  el grafico de la ficha de Play saliendo x1.51 mas saturado que la
+        //  maquina que vende.
         {
             const float side = (float) h * 0.30f;
             const float gap  = side * 0.14f;
             const float x0   = (float) w - (2.0f * side + gap) - (float) w * 0.055f;
             const float y0   = (float) h * 0.5f - (side + gap * 0.5f);
+            const float escala = side / PadArt::kAltoRef;
 
             for (int i = 0; i < 4; ++i)
             {
-                const float x = x0 + (float) (i % 2) * (side + gap);
-                const float y = y0 + (float) (i / 2) * (side + gap);
-                const auto  c = Zati::colour (i * 2);
+                const auto r = juce::Rectangle<float> (
+                                   x0 + (float) (i % 2) * (side + gap),
+                                   y0 + (float) (i / 2) * (side + gap), side, side);
+                const auto frag = Zati::colour (i * 2);
+                const auto cuerpo = PadArt::cuerpoDe (frag, true);
 
-                //  La sombra se HUNDE, nunca se pinta con la tinta: en un
-                //  chasis oscuro la tinta es clara y la sombra seria lo que
-                //  mas destaca de la tapa. Misma regla que en la app.
-                g.setColour (ZatiColours::groove (0.42f));
-                g.fillRoundedRectangle (x, y + 4.0f, side, side, 6.0f);
-                g.setColour (c);
-                g.fillRoundedRectangle (x, y, side, side, 6.0f);
-                g.setColour (ZatiColours::textOn (c).withAlpha (0.85f));
-                g.setFont (ZatiColours::labelFont (side * 0.34f, 0.02f));
-                g.drawText (juce::String (i + 1).paddedLeft ('0', 2),
-                            juce::Rectangle<float> (x, y, side, side).reduced (side * 0.14f),
-                            juce::Justification::topLeft);
+                PadArt::fondo  (g, r, cuerpo, frag, PadArt::Banda::solida, escala);
+                PadArt::numero (g, r, i + 1, ZatiColours::textOn (cuerpo).withAlpha (0.92f), escala);
+                PadArt::borde  (g, r, PadArt::bordeDe (frag, true), true, escala);
             }
         }
 
@@ -294,6 +297,18 @@ namespace StoreArt
             silueta.addRoundedRectangle (0.0f, 0.0f, 24.0f, 24.0f, 3.5f);
             silueta.applyTransform (af);
 
+            //  Y AL 62 %, QUE ES COMO LA APP PINTA ESTOS MISMOS OCHO.
+            //
+            //  No es un numero nuevo: `PadArt::cuerpoDe` es lo que lleva el
+            //  cuerpo de un pad cargado, y esto es un campo de color del
+            //  tamano de una tapa. A pleno los ocho miden C* 59.4 de croma
+            //  contra los 39.3 que mide un pad de la cara - o sea el icono
+            //  saliendo x1.51 mas saturado que la maquina que abre, que es la
+            //  misma pregunta comparativa con la que ya se juzga su contraste.
+            //  El zati a pleno existe en la app en la BANDA de 5 px de un pad
+            //  y en el pad que suena; donde los ocho salen juntos, solo lo
+            //  activo va a pleno (la tira de la cabecera pinta el resto a 0.45
+            //  y el muestrario del pad a 0.38).
             if (estilo == Estilo::marcaVentana)
             {
                 juce::Graphics::ScopedSaveState guarda (g);
@@ -301,7 +316,7 @@ namespace StoreArt
                 const float bw = caja.getWidth() / (float) Zati::kNumColours;
                 for (int i = 0; i < Zati::kNumColours; ++i)
                 {
-                    g.setColour (Zati::colour (i));
+                    g.setColour (PadArt::cuerpoDe (Zati::colour (i), true));
                     g.fillRect (caja.getX() + bw * (float) i, caja.getY(), bw, caja.getHeight());
                 }
             }
@@ -389,14 +404,31 @@ namespace StoreArt
                     }
                     onda.applyTransform (af);
 
+                    //  UN TONO Y NO OCHO, Y AL 62 %.
+                    //
+                    //  La primera version pintaba la onda con los ocho zatis a
+                    //  pleno, y eso son NUEVE tonos a maxima saturacion dentro
+                    //  de una marca de 48 px - contando la tapa. Medido en
+                    //  croma (C* de Lab): los ocho a pleno dan 59.4 contra los
+                    //  39.3 que mide un pad cargado de la cara, o sea el icono
+                    //  x1.51 mas saturado que la maquina que abre. Y una onda
+                    //  de ocho colores deja de leerse como UNA cosa.
+                    //
+                    //  El tono es DERIVADO y no elegido a mano: el que ese
+                    //  sonido tiene en la maquina. WIND es el indice 39, asi
+                    //  que `forPad` da 7 - magenta. El dia que se cambie el
+                    //  sonido, el color va detras.
+                    //
+                    //  Y pintado como se pinta un pad -`PadArt::cuerpoDe`, que
+                    //  ya existe- en vez de con un alfa escrito aqui. Medido
+                    //  sobre el chasis de LACA: de C* 59.7 a 36.5-38.3, o sea
+                    //  al nivel de la cara; sigue separandose del fondo del
+                    //  hueco con dE 49.6-51.9 contra el liston de 6.0; y de
+                    //  propina se separa MEJOR de la tapa ambar, ratio 1.66 a
+                    //  3.01.
                     juce::Graphics::ScopedSaveState guarda (g);
-                    g.reduceClipRegion (onda);
-                    const float bw = caja.getWidth() / (float) Zati::kNumColours;
-                    for (int i = 0; i < Zati::kNumColours; ++i)
-                    {
-                        g.setColour (Zati::colour (i));
-                        g.fillRect (caja.getX() + bw * (float) i, caja.getY(), bw, caja.getHeight());
-                    }
+                    g.setColour (PadArt::cuerpoDe (Zati::colour (Zati::forPad (sonidoDeLaMarca)), true));
+                    g.fillPath (onda);
                 }
             }
 
@@ -410,7 +442,8 @@ namespace StoreArt
                 const float bw = caja.getWidth() / (float) Zati::kNumColours;
                 for (int i = 0; i < Zati::kNumColours; ++i)
                 {
-                    g.setColour (Zati::colour (i));
+                    //  Al 62 %, por lo mismo que la ventana de aqui arriba.
+                    g.setColour (PadArt::cuerpoDe (Zati::colour (i), true));
                     g.fillRect (caja.getX() + bw * (float) i, caja.getY(), bw, caja.getHeight());
                 }
             }
@@ -424,12 +457,25 @@ namespace StoreArt
             //  cargado lleva su zati en una banda solida arriba (ver
             //  PadArt::fondo), y esta marca ES un pad. La banda va por encima
             //  de la barra de la Z -que empieza en 6 de 24- asi que no la toca.
+            //
+            //  Y ESTA SE QUEDA A PLENO, que es la excepcion de las cuatro y no
+            //  un descuido: la banda de un pad cargado va a pleno en la app
+            //  (PadArt::fondo, `solida ? frag : ...`). Lo que se atenua es el
+            //  CAMPO de color, no la banda - bajar esta seria dejar de
+            //  parecerse justo a lo que copia.
             if (estilo == Estilo::marcaBanda)
             {
                 juce::Graphics::ScopedSaveState guarda (g);
                 g.reduceClipRegion (m);
-                const auto banda = caja.withHeight (caja.getHeight() * 5.0f / 24.0f)
-                                       .translated (0.0f, caja.getHeight() * 1.0f / 24.0f);
+                //  CINCO DE CUARENTA Y OCHO, no de veinticuatro. La banda
+                //  de un pad mide 5 px sobre el alto de referencia de 48
+                //  (PadArt::kAltoRef) y la marca se dibuja en una caja de 24,
+                //  asi que 5/24 la sacaba del DOBLE de gruesa que la del pad
+                //  al que dice parecerse. Salio al medir el croma: es la unica
+                //  de las cuatro marcas que se queda a pleno, y entonces cuanta
+                //  superficie ocupa deja de ser un detalle.
+                const auto banda = caja.withHeight (caja.getHeight() * 5.0f / 48.0f)
+                                       .translated (0.0f, caja.getHeight() * 1.0f / 48.0f);
                 const float bw = banda.getWidth() / (float) Zati::kNumColours;
                 for (int i = 0; i < Zati::kNumColours; ++i)
                 {

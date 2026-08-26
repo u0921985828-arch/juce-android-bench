@@ -50,7 +50,7 @@ DEST = os.path.join (ROOT, "ci", "icon.png")
 sys.path.insert (0, os.path.dirname (os.path.abspath (__file__)))
 #  Las cuentas de color salen de skins.py y no se reescriben aqui: dos copias
 #  de la misma formula son dos formulas.
-from skins import lum, ratio, dE, MIN_WELL
+from skins import lum, ratio, dE, croma, MIN_WELL
 
 #  Las cuatro densidades que JUCE escribe (3/8, 4/8, 6/8 y 8/8 del original) se
 #  ven a 36, 48, 72 y 96 dp. La que manda es 48.
@@ -203,6 +203,27 @@ peorApa = min (dE (a, cuerpo) for a in apa)
 mide ("un apagado contra el cuerpo", peorApa >= MIN_WELL,
       "dE %.1f  (liston %.1f)" % (peorApa, MIN_WELL))
 
+#  --- Y NO PUEDE IR MAS SATURADO QUE LA CARA -----------------------------
+#
+#  La misma pregunta comparativa que la de aqui arriba, en la otra dimension.
+#  Un icono no compite en contraste solamente: los ocho zatis A PLENO miden
+#  C* 59.4 de croma y esos mismos ocho, en un pad cargado de la cara, 39.3 -
+#  porque el cuerpo de un pad es su zati al 62 % (PadArt::cuerpoDe). Pintar el
+#  icono con el color crudo lo saca x1.51 mas saturado que la maquina que abre,
+#  que es exactamente lo que hacia la onda antes de medirlo.
+#
+#  Y NO ES UNA REGLA NUEVA, es una que ya existia y que el icono se salto: en
+#  la app el zati a pleno vive en la BANDA de 5 px de un pad y en el pad que
+#  suena, y donde los ocho salen juntos solo lo activo va a pleno -la tira de
+#  la cabecera pinta el resto a 0.45 y el muestrario del pad a 0.38-.
+#
+#  Los colores de la cara los da la app con sus propios tokens, igual que en la
+#  regla de contraste: aqui no se inventa ninguno.
+cromaIcono = sum (croma (e) for e in enc) / len (enc)
+cromaCara  = sum (croma (c) for c in cargados) / len (cargados) if cargados else 0.0
+mide ("no va mas saturado que la cara", cromaIcono <= cromaCara + 0.5,
+      "el icono C* %.1f  la cara C* %.1f" % (cromaIcono, cromaCara))
+
 #  --- LA MASCARA DEL LANZADOR ------------------------------------------------
 #
 #  JUCE escribe el icono como legacy, asi que de Android 8 en adelante el
@@ -326,7 +347,7 @@ for est, nombre in MARCAS:
           "ratio %.2f (cara %.2f)  dE %.1f (liston %.1f)  (%s)"
           % (peorR, cara, peorE, MIN_WELL, detalle))
 
-    #  Y LA ONDA, con dos cifras: cuanta hay y si se ve.
+    #  Y LA ONDA, con TRES cifras: cuanta hay, si se ve y como de saturada.
     if est == 8:
         a = pixeles (ico, 1024); m = pixeles (msk, 1024)
         cl = clases (m, 1024)
@@ -346,6 +367,20 @@ for est, nombre in MARCAS:
         sep = dE (co, cf) if (co is not None and cf is not None) else 0.0
         mide ("%s: la onda contra el fondo del hueco" % nombre, sep >= MIN_WELL,
               "dE %.1f  (liston %.1f)" % (sep, MIN_WELL))
+
+        #  Y NO MAS SATURADA QUE LA CARA, el mismo liston comparativo que la
+        #  rejilla y en la misma dimension: la onda es un CAMPO de color, o sea
+        #  lo que en un pad es el cuerpo, y el cuerpo de un pad es su zati al
+        #  62 %. Pintada con el color crudo salia a C* 59.4 contra los 39.3 de
+        #  la cara - x1.51 mas saturada que la maquina que abre.
+        #
+        #  Se mide sobre los pixeles de onda y no sobre el icono entero: el
+        #  acento de la tapa y el chasis son de la CARCASA y los juzga
+        #  skins.py, que tiene su propia regla de croma para el acento.
+        cOnda = sum (croma (p) for p in onda) / max (1, len (onda))
+        mide ("%s: la onda no va mas saturada que la cara" % nombre,
+              cOnda <= cromaCara + 0.5,
+              "C* %.1f  la cara C* %.1f" % (cOnda, cromaCara))
 
     for f in (ico, msk):
         if os.path.exists (f): os.remove (f)

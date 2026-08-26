@@ -223,7 +223,28 @@ namespace ZatiColours
               0xfff2e8d5, 0xff9ab5b3, 0xff0e2c30, 0xfffffdf7,
               0xff1c2b2b, 0xff172525, 0xff35514f,
               0xff08191c, 0xffe9f2ee, 0xff7fa39f,
-              0xfff0a830, 0xffffc35c, 0xffc1811f },
+              //  EL AMBAR, CON EL CROMA MEDIDO CONTRA LOS ZATIS.
+              //
+              //  Estaba en 0xfff0a830, o sea C* 69.7 - por encima del rojo,
+              //  que es el zati mas cromatico de los ocho con 67.5. La regla
+              //  escrita de esta casa es que el color pertenece al sistema de
+              //  zatis, y el acento de una carcasa era la nota de color mas
+              //  fuerte del producto.
+              //
+              //  Se baja MANTENIENDO tono y claridad (L* 74.0, h 76.0), que es
+              //  lo que deja intacto el argumento por el que LACA es la de
+              //  fabrica -ambar CALIDO contra petroleo FRIO- y no mueve un
+              //  contraste: las trece columnas de Tests/skins.py salen iguales
+              //  a dos decimales, porque todas miden luminancia o dE contra
+              //  superficies acromaticas.
+              //
+              //  A C* 55, no a 59.4 -la media de los ocho- ni raspando el 67.5
+              //  del liston: el acento se pasa de largo la mitad de los zatis
+              //  si se le deja en la media, y un tope que se cumple por dos
+              //  decimas no protege. `zati/acento` pasa de 0.97 a 1.23. El
+              //  trio se mueve entero con el mismo factor (x0.790) o deja de
+              //  ser un trio.
+              0xffe7ab52, 0xfff7c576, 0xffb9843c },
         };
         return table[((i % 4) + 4) % 4];
     }

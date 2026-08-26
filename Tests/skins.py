@@ -61,6 +61,21 @@ MIN_SECTION = 3.00   # el rotulo de una seccion sobre su tarjeta
 #  borde no se separa del chasis, no hay mando, hay un numero flotando.
 MIN_KNOB    = 3.00
 
+#  EL CROMA DEL ACENTO, contra el zati mas cromatico de los ocho.
+#
+#  La regla escrita de esta casa es que *el color pertenece al sistema de
+#  zatis* y que el chasis es acromatico salvo LACA, que es la excepcion
+#  declarada. Nadie habia medido si esa excepcion se pasaba: el ambar de LACA
+#  daba C* 69.7 contra el rojo, que es el zati mas cromatico de los ocho, con
+#  67.5 - o sea que el acento de una carcasa era la nota de color mas fuerte
+#  del producto, por encima de la paleta a la que el color pertenece.
+#
+#  Es un TOPE y no un suelo, asi que se escribe como razon para que entre en
+#  la misma tabla que todo lo demas: el zati mas cromatico dividido por el
+#  acento, que tiene que ser 1.00 o mas. Las otras tres carcasas tienen el
+#  acento acromatico y pasan de sobra.
+MIN_CHROMA  = 1.00
+
 #  Los alfas con los que la app dibuja cada una de esas tres cosas.
 SECTION_ALPHA = 0.55   # paintPadSheetContent
 KNOB_ALPHA    = 0.85   # drawRotarySlider
@@ -159,6 +174,12 @@ def lab (v):
 def dE (a, b):
     la, lb = lab (a), lab (b)
     return math.sqrt (sum ((x - y) ** 2 for x, y in zip (la, lb)))
+def croma (v):
+    """C* de Lab: cuanto color tiene, aparte de cuanta luz. Es la dimension que
+    ni `lum` ni `ratio` ven, y la unica en la que se puede preguntar si algo
+    esta demasiado saturado."""
+    _, a, b = lab (v)
+    return math.hypot (a, b)
 def over (fg, bg, alpha):
     """fg sobre bg con ese alfa — lo que el pincel deja realmente en pantalla."""
     f, b = rgb (fg), rgb (bg)
@@ -185,7 +206,8 @@ def main():
     print (f"{'carcasa':9} {'apag/enc':>9} {'escalon':>8} {'tinta/tapa':>11} "
            f"{'tinta/acento':>13} {'paso/hueco':>10} {'hueco/tarj':>11} "
            f"{'panel/tarj':>11} {'borde/pan':>10} "
-           f"{'pantalla':>9} {'seccion':>8} {'mando':>7} {'tira':>6} {'zonas':>7}")
+           f"{'pantalla':>9} {'seccion':>8} {'mando':>7} {'tira':>6} {'zonas':>7} "
+           f"{'zati/acento':>12}")
     for name, d in zip (SKINS, skins):
         #  La sombra cae sobre la superficie que hay detras de la tapa, que es
         #  la tarjeta o el chasis: los dos son chassisTop.
@@ -267,13 +289,19 @@ def main():
             "zona contra zona":         (min (dE (SIG['green'],  SIG['yellow']),
                                               dE (SIG['yellow'], SIG['red'])),
                                          MIN_ZONE),
+            #  EL ACENTO NO PUEDE SER LA NOTA DE COLOR MAS FUERTE DEL
+            #  PRODUCTO. Ver MIN_CHROMA. El liston sale de la POBLACION -los
+            #  ocho zatis, leidos de Zati.h- y no de un numero redondo.
+            "croma del acento":         (max (croma (z) for z in ZATI)
+                                         / max (1e-6, croma (d['accent'])),
+                                         MIN_CHROMA),
         }
         vals = list (m.values())
         print (f"{name:9} {vals[0][0]:9.2f} {vals[1][0]:8.2f} {vals[2][0]:11.2f} "
                f"{vals[3][0]:13.2f} {vals[4][0]:10.2f} {vals[5][0]:11.2f} "
                f"{vals[6][0]:11.2f} {vals[7][0]:10.2f} "
                f"{vals[8][0]:9.2f} {vals[9][0]:8.2f} {vals[10][0]:7.2f} "
-               f"{vals[11][0]:6.2f} {vals[12][0]:7.2f}")
+               f"{vals[11][0]:6.2f} {vals[12][0]:7.2f} {vals[13][0]:12.2f}")
         for what, (v, floor) in m.items():
             if v < floor:
                 bad.append (f"{name}: {what} {v:.2f} < {floor:.2f}")
