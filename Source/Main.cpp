@@ -266,14 +266,8 @@ public:
             //  La tinta de la letra de `marcaPad`, para que el banco pueda
             //  buscar sus pixeles en el PNG sin repetir la cuenta del dibujo:
             //  es `bestOn` de dos tonos del zati, y quien la sabe es la app.
-            {
-                const auto fr = Zati::colour (Zati::forPad (0));
-                const auto cu = fr.darker (0.45f).overlaidWith (PadArt::cuerpoDe (fr, true));
-                std::cout << ",\"marca_letra\":\""
-                          << ZatiColours::bestOn (cu, fr.brighter (1.0f),
-                                                  fr.darker (0.85f)).toDisplayString (false)
-                          << "\"";
-            }
+            std::cout << ",\"marca_letra\":\""
+                      << StoreArt::tintaDeLaMarca().toDisplayString (false) << "\"";
             std::cout << ",\"estilo\":" << (int) est
                       << ",\"marca_tapa\":\"" << ZatiColours::accent.toDisplayString (false)
                       << "\",\"marca_cuerpo\":[\"" << ZatiColours::chassisTop.toDisplayString (false)

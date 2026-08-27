@@ -220,6 +220,31 @@ namespace StoreArt
     //  verdad y no un rectangulo con la forma de uno.
     inline constexpr Estilo kEstiloDeFabrica = Estilo::marcaPad;
 
+    //  LA TINTA DE LA LETRA DEL ICONO: BLANCO, y escrita una sola vez.
+    //
+    //  Se pidio dos veces «la letra en blanco» y las dos salio de otro color,
+    //  porque al quitarle la dependencia de la carcasa la tinta paso a elegirse
+    //  MIDIENDO entre dos tonos del propio zati -`bestOn` de `frag.brighter` y
+    //  `frag.darker`- y sobre el rojo eso da un ROSA PALIDO.
+    //
+    //  La regla que lo motivo -«la tinta se mide, nunca se elige»- es correcta
+    //  en la app, donde la tinta cae sobre superficies que la carcasa mueve.
+    //  Aqui no hay carcasa que mover: el icono es UN dibujo sobre UN cuerpo, y
+    //  de que color va su letra es una decision de marca y no una medida.
+    //  Aplicar la regla donde no toca fue lo que convirtio una instruccion
+    //  clara en tres rondas.
+    //
+    //  Y blanco PURO, no `ZatiColours::white`: ese es un token de piel y vale
+    //  distinto en cada carcasa (fffdf7, f4efe3, ffffff, fffdf7), asi que
+    //  rompería lo unico que este icono promete y que el banco comprueba - ser
+    //  el mismo fichero byte a byte en las cuatro.
+    //
+    //  Una vez y no tres: la dibujan el icono del lanzador y el del splash, y
+    //  ademas `Main.cpp` la imprime para que el banco sepa que pixeles son la
+    //  letra. Si se repitiera, el dia que cambie el banco buscaria el color
+    //  viejo y mediria el rectangulo equivocado.
+    inline juce::Colour tintaDeLaMarca() noexcept { return juce::Colours::white; }
+
     //  DONDE CAE LA MARCA DENTRO DEL ICONO, escrito UNA vez.
     //
     //  Lo usan el dibujo y la mascara con la que el banco sabe que pixeles son
@@ -684,13 +709,8 @@ namespace StoreArt
                                   .translated (recuadro.getCentreX() - lim.getCentreX() * k,
                                                recuadro.getCentreY() - lim.getCentreY() * k));
 
-            //  LA TINTA SE MIDE, PERO NO CONTRA LA PALETA DE LA CARCASA.
-            //  `textOn` elige entre `ink` e `inkLight`, y esos dos son tokens de
-            //  piel: medido, la misma tapa roja sacaba la Z crema en PAPEL,
-            //  NEGRA en GRAFITO, blanca en ACERO y crema en LACA. Los dos
-            //  candidatos salen ahora del propio zati y `bestOn` elige midiendo.
-            g.setColour (ZatiColours::bestOn (cuerpo, frag.brighter (1.0f),
-                                              frag.darker (0.85f)));
+            //  Blanca. Ver `tintaDeLaMarca`.
+            g.setColour (tintaDeLaMarca());
             g.fillPath (t);
 
             //  Y EL FILO, que si es el de la casa tal cual: `bordeDe (frag,
@@ -980,7 +1000,7 @@ namespace StoreArt
         t.applyTransform (juce::AffineTransform::scale (k)
                               .translated (recuadro.getCentreX() - lim.getCentreX() * k,
                                            recuadro.getCentreY() - lim.getCentreY() * k));
-        g.setColour (ZatiColours::bestOn (cuerpo, frag.brighter (1.0f), frag.darker (0.85f)));
+        g.setColour (tintaDeLaMarca());
         g.fillPath (t);
 
         PadArt::borde (g, caja, PadArt::bordeDe (frag, true), true, escala);
