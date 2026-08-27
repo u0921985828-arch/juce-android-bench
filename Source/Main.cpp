@@ -266,8 +266,26 @@ public:
             //  La tinta de la letra de `marcaPad`, para que el banco pueda
             //  buscar sus pixeles en el PNG sin repetir la cuenta del dibujo:
             //  es `bestOn` de dos tonos del zati, y quien la sabe es la app.
-            std::cout << ",\"marca_letra\":\""
-                      << StoreArt::tintaDeLaMarca().toDisplayString (false) << "\"";
+            //  La letra y el CUERPO de la tapa de `marcaPad`. El cuerpo hace
+            //  falta para que el banco sepa donde acaba la TAPA: por debajo
+            //  hay sombra, y sombra y fondo son los dos el zati oscurecido, asi
+            //  que «lo que no es el fondo» se comia la sombra y daba la tapa 64
+            //  px mas alta de lo que es.
+            {
+                const auto fr = Zati::colour (Zati::forPad (0));
+                std::cout << ",\"marca_letra\":\""
+                          << StoreArt::tintaDeLaMarca().toDisplayString (false)
+                          << "\",\"marca_pad_cuerpo\":\""
+                          << fr.darker (0.45f).overlaidWith (PadArt::cuerpoDe (fr, true))
+                               .toDisplayString (false)
+                          << "\",\"marca_pad_zati\":\"" << fr.toDisplayString (false) << "\"";
+            }
+            std::cout << ",\"marca_caja\":[" << StoreArt::ultimaCaja.getX() << ","
+                      << StoreArt::ultimaCaja.getY() << "," << StoreArt::ultimaCaja.getRight()
+                      << "," << StoreArt::ultimaCaja.getBottom() << "]"
+                      << ",\"marca_recuadro\":[" << StoreArt::ultimoRecuadro.getX() << ","
+                      << StoreArt::ultimoRecuadro.getY() << "," << StoreArt::ultimoRecuadro.getRight()
+                      << "," << StoreArt::ultimoRecuadro.getBottom() << "]";
             std::cout << ",\"estilo\":" << (int) est
                       << ",\"marca_tapa\":\"" << ZatiColours::accent.toDisplayString (false)
                       << "\",\"marca_cuerpo\":[\"" << ZatiColours::chassisTop.toDisplayString (false)

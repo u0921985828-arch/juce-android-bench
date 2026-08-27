@@ -38,6 +38,25 @@ namespace PadArt
     //  El alto para el que estan escritos los numeros de esta tapa.
     static constexpr float kAltoRef = 48.0f;
 
+    //  LAS TRES MEDIDAS DE LA TAPA, con nombre y publicas.
+    //
+    //  Estaban dentro del cuerpo de `fondo` y `borde` como literales, y el
+    //  icono las copiaba a mano: la misma regla escrita dos veces, que en esta
+    //  casa siempre acaba igual. Lo pago la Z del icono, que se centraba
+    //  contra una caja calculada con esos numeros copiados y contando ademas
+    //  como sitio libre lo que el filo pinta - 7.875 de aire arriba contra
+    //  6.375 abajo.
+    //
+    //  Quien dibuja la banda y el filo es este fichero, asi que quien dice
+    //  cuanto miden es este fichero.
+    static constexpr float kBandaAlto = 5.0f;    // la banda de un pad cargado
+    static constexpr float kBandaY    = 1.0f;    // lo que baja desde el filo
+    static constexpr float kBandaX    = 1.0f;    // y lo que se mete por los lados
+    //  El filo se traza de 2 CENTRADO en la tapa metida 0.5, asi que lo que
+    //  come hacia dentro es 0.5 + 2/2.
+    static constexpr float kBordeGrosor = 2.0f;
+    static constexpr float kBordeDentro = 0.5f + kBordeGrosor * 0.5f;   // 1.5
+
     //  EN DOS PASADAS, y no en una, porque en medio va lo que solo sabe el
     //  boton: la onda o el icono del instrumento, el numero y el nombre. El
     //  orden de la cara es fondo -> dibujo -> rotulos -> borde, y el borde
@@ -69,9 +88,9 @@ namespace PadArt
         {
             const bool solida = (banda == Banda::solida);
             g.setColour (solida ? frag : frag.withAlpha (0.30f));
-            g.fillRect (r.withHeight ((solida ? 5.0f : 2.0f) * escala)
-                         .reduced (1.0f * escala, 0.0f)
-                         .withY (r.getY() + 1.0f * escala));
+            g.fillRect (r.withHeight ((solida ? kBandaAlto : 2.0f) * escala)
+                         .reduced (kBandaX * escala, 0.0f)
+                         .withY (r.getY() + kBandaY * escala));
         }
     }
 
@@ -98,7 +117,7 @@ namespace PadArt
     {
         g.setColour (edge);
         g.drawRoundedRectangle (r.reduced (0.5f * escala), 3.0f * escala,
-                                (cargado ? 2.0f : 1.2f) * escala);
+                                (cargado ? kBordeGrosor : 1.2f) * escala);
     }
 
     //  Los dos colores que un pad tiene EN REPOSO, que es el estado en el que

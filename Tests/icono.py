@@ -40,7 +40,7 @@
 #
 #      python3 Tests/icono.py
 # ============================================================================
-import os, subprocess, sys, tempfile, shutil, json, math, hashlib
+import os, re, subprocess, sys, tempfile, shutil, json, math, hashlib
 
 ROOT = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
 APP  = os.environ.get ("ZATI_BIN") or os.path.join (
@@ -51,6 +51,23 @@ sys.path.insert (0, os.path.dirname (os.path.abspath (__file__)))
 #  Las cuentas de color salen de skins.py y no se reescriben aqui: dos copias
 #  de la misma formula son dos formulas.
 from skins import lum, ratio, dE, croma, MIN_WELL
+
+#  LAS MEDIDAS DE LA TAPA, LEIDAS DE PadArt.h y no copiadas aqui. Es la misma
+#  razon por la que los ocho zatis se leen de Zati.h: una prueba que copia los
+#  numeros de la app mide lo que le gustaria que la app hiciera. Y es
+#  precisamente lo que fallo aqui - el icono llevaba el alto de la banda
+#  copiado a mano de PadArt y la Z se centraba contra una caja equivocada.
+def _padart (nombre):
+    src = open (os.path.join (os.path.dirname (os.path.abspath (__file__)),
+                              "..", "Source", "PadArt.h"), encoding="utf8").read()
+    m = re.search (r'k' + nombre + r'\s*=\s*([0-9.]+)f', src)
+    if m is None: sys.exit ("no se pudo leer PadArt::k%s" % nombre)
+    return float (m.group (1))
+
+PadArt_kBandaY    = _padart ("BandaY")
+PadArt_kBandaAlto = _padart ("BandaAlto")
+PadArt_kAltoRef   = _padart ("AltoRef")
+PadArt_kBordeDen  = _padart ("BordeGrosor") * 0.5 + 0.5
 
 #  Las cuatro densidades que JUCE escribe (3/8, 4/8, 6/8 y 8/8 del original) se
 #  ven a 36, 48, 72 y 96 dp. La que manda es 48.
@@ -122,6 +139,9 @@ def esZ (f, c):
 #  se commitea se juzga con las que le tocan segun lo que la app diga que
 #  dibujo. Quien decide es la app, no una copia del numero aqui.
 d = genera()
+#  Con nombre propio, porque `d` es corto y este fichero lo usa de indice en mas
+#  de un bucle: el volcado de la app tiene que sobrevivir a todos.
+dIco = d
 REJ = tempfile.mktemp (suffix="-rejilla.png")
 dr = genera (REJ, 0)
 if d is None:
@@ -509,11 +529,84 @@ for y in range (0, 1024, 2):
     fila = v (q[y][2])
     for x in range (0, 1024, 2):
         if dE (v (q[y][x]), fila) > 6.0:
-            d = math.hypot (x + 0.5 - mediaC, y + 0.5 - mediaC)
-            if d > lejosPad: lejosPad = d
+            dd = math.hypot (x + 0.5 - mediaC, y + 0.5 - mediaC)
+            if dd > lejosPad: lejosPad = dd
 print ("  ---    marcaPad: lo mas lejos dibujado a %.0f px del centro, radio %.0f"
        % (lejosPad, mediaC))
 if os.path.exists (padico): os.remove (padico)
+
+# ============================================================================
+#  Y LA LETRA, CENTRADA — que deje de ser una opinion.
+#
+#  «No esta centrada» era verdad y no lo decia nadie: la Z se centraba en «la
+#  tapa menos la banda», y ese rectangulo contaba como sitio libre las 1.5
+#  unidades que el FILO pinta por cada lado. Resultado medido: 7.875 de aire
+#  arriba contra 6.375 abajo, y el centro de la letra 64 px por debajo del de la
+#  tapa en el PNG de 1024.
+#
+#  Se mide en el PNG y por los CUATRO lados: se buscan los pixeles de la letra
+#  -su color lo dice la app- y se compara la distancia de su rectangulo a cada
+#  borde de la tapa. Arriba tiene que igualar a abajo descontando la banda, e
+#  izquierda a derecha. Lo que se compara son los pares opuestos y no un centro
+#  calculado: un centro se puede acertar con la caja equivocada, dos margenes
+#  iguales no.
+if sangra (DEST, [int (h, 16) for h in dIco.get ("marca_cuerpo", ["0"])]):
+    letra = int (dIco.get ("marca_letra", "0").lstrip ("#"), 16)
+    q = pixeles (DEST, 1024)
+    xs, ys = [], []
+    for y in range (1024):
+        for x in range (1024):
+            if dE (v (q[y][x]), letra) < 8.0: xs.append (x); ys.append (y)
+
+    if not xs:
+        mide ("la letra esta centrada", False, "no se encuentra la letra en el PNG")
+    else:
+        #  Los bordes de la TAPA, medidos tambien en el PNG — y por lo que la
+        #  tapa ES, no por lo que no es.
+        #
+        #  La primera version cogia «lo que no es el color de la esquina», y
+        #  debajo de la tapa hay SOMBRA: sombra y fondo son los dos el zati
+        #  oscurecido, con distinto factor, asi que la sombra contaba como tapa
+        #  y la daba 64 px mas alta. La regla decia 152 contra 184 con la letra
+        #  perfectamente centrada.
+        #
+        #  La tapa son sus tres colores, y los tres los dice la app: el cuerpo,
+        #  el zati de la banda y el filo, y la tinta de la letra.
+        suyos = [int (dIco.get ("marca_pad_cuerpo", "0").lstrip ("#"), 16),
+                 int (dIco.get ("marca_pad_zati",   "0").lstrip ("#"), 16),
+                 letra]
+        esTapa = lambda p: min (dE (p, c) for c in suyos) < 12.0
+        filas = [y for y in range (1024) if esTapa (v (q[y][512]))]
+        cols  = [x for x in range (1024) if esTapa (v (q[512][x]))]
+        tapaT, tapaB = min (filas), max (filas)
+        tapaL, tapaR = min (cols),  max (cols)
+
+        #  EL AIRE, que no es el margen crudo: lo que hay entre la letra y su
+        #  caja, y esa caja es la tapa MENOS lo que hay pintado encima - la
+        #  banda arriba y el filo por los otros tres lados.
+        #
+        #  Los dos numeros salen de `PadArt.h`, que es quien los dibuja, asi que
+        #  no son una copia: si el icono usara otra caja, esto falla. La primera
+        #  version descontaba la banda arriba y NADA abajo, y daba 32 px de
+        #  diferencia con la letra perfectamente centrada - que son, clavados,
+        #  el grosor del filo.
+        u = 1024.0 / PadArt_kAltoRef
+        banda = (PadArt_kBandaY + PadArt_kBandaAlto) * u
+        filo  = PadArt_kBordeDen * u
+
+        izq = min (xs) - (tapaL + filo)
+        der = (tapaR - filo) - max (xs)
+        arr = min (ys) - (tapaT + banda)
+        aba = (tapaB - filo) - max (ys)
+
+        #  Seis pixeles de tolerancia sobre 1024, o sea medio punto de las 48
+        #  unidades: si el centrado sale de una cuenta y no de un ajuste a ojo,
+        #  la diferencia es el redondeo del antialias y nada mas.
+        TOL = 6.0
+        mide ("la letra esta centrada a lo ancho", abs (izq - der) <= TOL,
+              "izquierda %.0f  derecha %.0f  (difieren %.0f px)" % (izq, der, abs (izq - der)))
+        mide ("la letra esta centrada a lo alto", abs (arr - aba) <= TOL,
+              "arriba %.0f  abajo %.0f  (difieren %.0f px)" % (arr, aba, abs (arr - aba)))
 
 # ============================================================================
 #  EL ICONO DEL SPLASH, contra la zona segura de Android 12.

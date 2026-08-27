@@ -245,6 +245,18 @@ namespace StoreArt
     //  viejo y mediria el rectangulo equivocado.
     inline juce::Colour tintaDeLaMarca() noexcept { return juce::Colours::white; }
 
+    //  Las dos cajas de la ultima marca dibujada, para el banco.
+    //
+    //  Sin esto el banco tiene que ADIVINAR donde acaba la tapa mirando
+    //  colores, y se equivoco: la sombra es el mismo zati oscurecido que el
+    //  fondo, asi que se la comia y daba la tapa 21 px mas alta. Con la letra
+    //  ademas 10 px baja, los dos errores se cancelaban y la regla decia
+    //  «centrada» con la Z descentrada. Dos medidas mal que suman cero es la
+    //  peor forma de pasar.
+    //
+    //  Solo del banco: no hay ningun camino desde la interfaz que llegue aqui.
+    inline juce::Rectangle<float> ultimaCaja, ultimoRecuadro;
+
     //  DONDE CAE LA MARCA DENTRO DEL ICONO, escrito UNA vez.
     //
     //  Lo usan el dibujo y la mascara con la que el banco sabe que pixeles son
@@ -679,9 +691,10 @@ namespace StoreArt
             //  LA BANDA, con la geometria de un pad cargado (ver PadArt::fondo:
             //  5 de alto, metida 1 por arriba y 1 por cada lado). Es la firma:
             //  un pad con sonido lleva su zati en una banda solida.
-            const float bandaY = caja.getY() + 1.0f * escala, bandaAlto = 5.0f * escala;
+            const float bandaY = caja.getY() + PadArt::kBandaY * escala;
+            const float bandaAlto = PadArt::kBandaAlto * escala;
             g.setColour (frag);
-            g.fillRect (caja.withHeight (bandaAlto).reduced (1.0f * escala, 0.0f)
+            g.fillRect (caja.withHeight (bandaAlto).reduced (PadArt::kBandaX * escala, 0.0f)
                             .withY (bandaY));
 
             //  LA Z GEOMETRICA DE LA MARCA, RELLENA. `marcaHueco` es la MISMA
@@ -698,13 +711,29 @@ namespace StoreArt
             //  dentro del RECUADRO DEL CUERPO, que es lo que queda debajo de la
             //  banda: centrada en el marco, la letra sale empujada hacia arriba
             //  respecto al hueco de color en el que de verdad esta.
-            const auto recuadro = caja.withTop (bandaY + bandaAlto);
+            //  LA CAJA DE LA LETRA NO SE ELIGE: es lo que queda de la tapa
+            //  cuando se descuenta lo que hay PINTADO encima. Arriba la banda,
+            //  y por los otros tres lados el filo.
+            //
+            //  Antes era «la tapa menos la banda», y eso estaba mal por dos
+            //  sitios a la vez: contaba como sitio libre las 1.5 unidades que
+            //  el filo pinta por cada lado -de ahi 7.875 de aire arriba contra
+            //  6.375 abajo- y ademas dejaba el centro de la Z en 26.25 cuando
+            //  el de la tapa esta en 23.25, o sea 64 px bajo en el PNG de 1024.
+            //  Ahora el aire sale igual por los cuatro lados por construccion,
+            //  y hay una regla del banco que lo mide en el PNG.
+            const auto recuadro = juce::Rectangle<float>::leftTopRightBottom (
+                                      caja.getX()      + PadArt::kBordeDentro * escala,
+                                      bandaY + bandaAlto,
+                                      caja.getRight()  - PadArt::kBordeDentro * escala,
+                                      caja.getBottom() - PadArt::kBordeDentro * escala);
             auto t = Iconos::marcaHueco();
             const auto lim = t.getBounds();
             //  El aire: a 0.74 del ancho la letra llega casi al filo y el icono
-            //  se lee apretado; a 0.60 queda margen por los cuatro lados.
-            const float k = juce::jmin (caja.getWidth()  * 0.60f / lim.getWidth(),
-                                        recuadro.getHeight() * 0.58f / lim.getHeight());
+            //  se lee apretado; a 0.60 queda margen por los cuatro lados. Se
+            //  mide contra la caja de la letra, que es donde el aire existe.
+            const float k = juce::jmin (recuadro.getWidth()  * 0.635f / lim.getWidth(),
+                                        recuadro.getHeight() * 0.635f / lim.getHeight());
             t.applyTransform (juce::AffineTransform::scale (k)
                                   .translated (recuadro.getCentreX() - lim.getCentreX() * k,
                                                recuadro.getCentreY() - lim.getCentreY() * k));
@@ -719,6 +748,11 @@ namespace StoreArt
             //  pintado dentro del icono» y con el margen puesto ya no lo es:
             //  es el canto de la tapa.
             PadArt::borde (g, caja, PadArt::bordeDe (frag, true), true, escala);
+
+            //  Las cajas que se han dibujado, apuntadas para el banco. Ver
+            //  `ultimaCaja`.
+            ultimaCaja = caja;
+            ultimoRecuadro = recuadro;
             return img;
         }
 
@@ -988,15 +1022,22 @@ namespace StoreArt
         g.setColour (cuerpo);
         g.fillRoundedRectangle (caja, 3.0f * escala);
 
-        const float bandaY = caja.getY() + 1.0f * escala, bandaAlto = 5.0f * escala;
+        const float bandaY = caja.getY() + PadArt::kBandaY * escala;
+        const float bandaAlto = PadArt::kBandaAlto * escala;
         g.setColour (frag);
-        g.fillRect (caja.withHeight (bandaAlto).reduced (1.0f * escala, 0.0f).withY (bandaY));
+        g.fillRect (caja.withHeight (bandaAlto).reduced (PadArt::kBandaX * escala, 0.0f)
+                        .withY (bandaY));
 
-        const auto recuadro = caja.withTop (bandaY + bandaAlto);
+        //  La misma caja que el icono del lanzador. Ver `marcaPad`.
+        const auto recuadro = juce::Rectangle<float>::leftTopRightBottom (
+                                  caja.getX()      + PadArt::kBordeDentro * escala,
+                                  bandaY + bandaAlto,
+                                  caja.getRight()  - PadArt::kBordeDentro * escala,
+                                  caja.getBottom() - PadArt::kBordeDentro * escala);
         auto t = Iconos::marcaHueco();
         const auto lim = t.getBounds();
-        const float k = juce::jmin (caja.getWidth() * 0.60f / lim.getWidth(),
-                                    recuadro.getHeight() * 0.58f / lim.getHeight());
+        const float k = juce::jmin (recuadro.getWidth()  * 0.635f / lim.getWidth(),
+                                    recuadro.getHeight() * 0.635f / lim.getHeight());
         t.applyTransform (juce::AffineTransform::scale (k)
                               .translated (recuadro.getCentreX() - lim.getCentreX() * k,
                                            recuadro.getCentreY() - lim.getCentreY() * k));
