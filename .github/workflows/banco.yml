@@ -38,7 +38,7 @@ jobs:
             libx11-dev libxcomposite-dev libxcursor-dev libxext-dev \
             libxinerama-dev libxrandr-dev libxrender-dev \
             libcurl4-openssl-dev libgl1-mesa-dev mesa-common-dev libglu1-mesa-dev \
-            libwebkit2gtk-4.1-dev ninja-build xvfb imagemagick
+            libwebkit2gtk-4.1-dev ninja-build xvfb x11-utils imagemagick
 
       #  El arbol de JUCE se cachea por su tag: sin esto cada corrida se baja y
       #  compila el mismo 8.0.4, que es la mayor parte del reloj de este job.
@@ -63,13 +63,22 @@ jobs:
 
       #  Las que NO dependen de la pantalla: la tabla de idiomas, las cuatro
       #  carcasas y las dos listas de fuentes.
+      #
+      #  Y con `!cancelled()` como todas las de abajo, que es lo que el parrafo
+      #  siguiente ya dice y aqui no se habia aplicado: en la primera corrida
+      #  de este fichero el paso de la pantalla virtual fallo y estas DOS
+      #  -las unicas que no necesitan pantalla- salieron `skipped`. Un paso
+      #  saltado no es un paso verde, y el informe decia una cosa donde habia
+      #  cinco.
       - name: Tabla, carcasas y fuentes
+        if: '!cancelled()'
         run: |
           python3 Tests/lang.py
           python3 Tests/skins.py
           python3 Tests/fuentes.py
 
       - name: El motor
+        if: '!cancelled()'
         run: ./build/StressTest_artefacts/Release/StressTest
 
       #  Cada una por separado y no encadenadas con &&: encadenadas, la primera
@@ -93,6 +102,59 @@ jobs:
       - name: El icono
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/icono.py
+
+      #  Y LAS TRECE QUE ESTE FICHERO DECIA CORRER Y NO CORRIA. La cabecera
+      #  promete «las que devuelven codigo de salida y no dependen del reloj»
+      #  y la primera version ejecutaba diez de las veintitres que nombra la
+      #  tabla de `.claude/skills/banco/SKILL.md`. O sea que la fabrica, la
+      #  sesion, los instrumentos, la exportacion, los kits y el proyecto
+      #  nuevo seguian dependiendo de que alguien se acordara, que es
+      #  exactamente lo que este workflow existe para arreglar.
+      #
+      #  Medidas antes de meterlas, que un paso que tarda es un paso que
+      #  alguien acaba quitando: kits 5s, nuevo 1, kit 1, export 1, dlc 2,
+      #  instr 32, iconos 2, session 20, plano 16, store 36, niveles 1,
+      #  clon 9, analiza 11 — **137 s las trece**, contra los 8 min 21 que
+      #  cuesta compilar. `cpu.py` sigue fuera, que mide por RELOJ, y `Soak`
+      #  tambien: un millon de sesiones son 2144 s.
+      - name: Los sonidos de fabrica
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/kits.py
+      - name: Las recetas contra su grabacion
+        if: '!cancelled()'
+        run: |
+          DISPLAY=:99 python3 Tests/clon.py
+          DISPLAY=:99 python3 Tests/analiza.py
+      - name: Con que abre la maquina
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/nuevo.py
+      - name: Que la sesion vuelva entera
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/session.py
+      - name: Guardar y cargar un kit
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/kit.py
+      - name: La exportacion
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/export.py
+      - name: Los instrumentos, los packs y el candado
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/dlc.py
+      - name: Los doscientos cincuenta y seis instrumentos
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/instr.py
+      - name: Los dieciseis niveles
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/niveles.py
+      - name: El juego de iconos
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/iconos.py
+      - name: El plano de cada pantalla
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/plano.py
+      - name: Las fotos de la ficha de Play
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/store.py
 
       #  El grande, y el ultimo: 924 corridas. En paralelo son ~2 min.
       - name: La maqueta, en las siete pantallas y los cuatro idiomas
