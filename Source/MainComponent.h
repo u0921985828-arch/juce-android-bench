@@ -47,6 +47,13 @@ public:
     void releaseResources() override;
 
     void paint (juce::Graphics& g) override;
+    //  LA PORTADA DEL ARRANQUE. Ver MainComponent::paintOverChildren: la cara
+    //  no se enseña hasta que ha dejado de moverse.
+    void paintOverChildren (juce::Graphics& g) override;
+    //  El primer instante en el que se le puede preguntar a Android por sus
+    //  margenes: hasta que la ventana no esta enganchada, getRootWindowInsets
+    //  devuelve nulo. Ver refreshSystemInsets.
+    void parentHierarchyChanged() override;
     void resized() override;
 
 private:
@@ -868,6 +875,62 @@ private:
 
     //  Ticks spent chasing the safe area at startup; see timerCallback.
     int insetSettleTicks = 0;
+
+    //  LA CARA NO SE ENSEÑA HASTA QUE HA DEJADO DE MOVERSE.
+    //
+    //  Con targetSdk 36 la app va edge to edge y tiene que restarse las barras
+    //  del sistema (SystemInsets), y en el CONSTRUCTOR no se pueden pedir: la
+    //  vista no esta enganchada a una ventana todavia, asi que
+    //  getRootWindowInsets devuelve nulo y salen ceros. El primer fotograma se
+    //  maquetaba con la cara metida debajo del reloj y de la pastilla de
+    //  gestos, y el ajuste llegaba en el primer o segundo latido -60 ms por
+    //  tick- justo despues de que Android retirara su splash. Ese era el salto.
+    //
+    //  Mientras tanto se pinta la PORTADA -el chasis con la marca-, que es el
+    //  mismo dibujo sobre el mismo fondo que el splash del sistema, asi que la
+    //  entrega se lee como una sola pantalla.
+    bool caraLista = false;
+    //  Que los margenes ya se han preguntado con la ventana enganchada. No
+    //  vale «los insets son distintos de cero»: en un aparato anterior a
+    //  Android 15, o fuera de Android, valen cero para siempre y son
+    //  correctos.
+    bool insetsPreguntados = false;
+    //  Y que la portada ha llegado a la pantalla ANTES de restaurar la sesion,
+    //  que bloquea el hilo de mensajes casi un segundo -llenar un banco de
+    //  instrumentos son 1238 ms medidos-. Sin esto se congelaria con la cara a
+    //  medio hacer y sin nada dibujado encima.
+    bool portadaPintada = false;
+    //  Ticks desde que la app abrio, para el tope de abajo y para ZATI_ARRANQUE.
+    int arranqueTicks = 0;
+    //  CUANTAS VECES SE HA PINTADO LA PORTADA DE VERDAD, y no es un adorno del
+    //  volcado: la primera version del banco publicaba `caraLista`, o sea la
+    //  BANDERA, y al quitar la portada a proposito siguio saliendo verde -la
+    //  bandera seguia diciendo «tapada» con la cara entera a la vista-. Se
+    //  cuenta dentro de pintaPortada, que es quien tapa.
+    int portadaPintadas = 0;
+    //  UN TOPE, y no es prudencia: si el aparato no contesta nunca a los
+    //  margenes, la portada no puede quedarse puesta. Es la hermana de
+    //  «ningun camino puede dejar la app en silencio». Treinta ticks a 60 ms
+    //  son 1.8 s, el mismo plazo que insetSettleTicks.
+    static constexpr int kPortadaTope = 30;
+    void pintaPortada (juce::Graphics& g);
+    void miraSiLaCaraEstaLista();
+
+    //  EL BANCO, porque en el escritorio esto no pasa: SystemInsets::get()
+    //  devuelve {} siempre, o sea que el salto no existe aqui.
+    //
+    //  ZATI_INSETS=t,l,b,r  y  ZATI_INSETS_TICK=n  simulan la respuesta tardia
+    //  de Android: hasta el tick n los margenes valen cero y a partir de ahi
+    //  valen eso. Convierte en ENTRADA lo que si no seria nada, igual que
+    //  ZATI_SKIN con la carcasa y ZATI_DLC con los packs.
+    juce::BorderSize<int> margenesDeAhora() const;
+    bool margenesContestan() const;
+    const juce::String bancoInsets  = juce::SystemStats::getEnvironmentVariable ("ZATI_INSETS", {});
+    const int bancoInsetsTick = juce::SystemStats::getEnvironmentVariable ("ZATI_INSETS_TICK", "0").getIntValue();
+    //  ZATI_ARRANQUE=n deja correr n ticks e imprime una linea por tick. Aparte
+    //  de ZATI_AUDIT a proposito: ese no puede llevar portada -las 924 corridas
+    //  miden la cara y las fotos de ZATI_SHOT saldrian con el chasis vacio-.
+    const int bancoArranque = juce::SystemStats::getEnvironmentVariable ("ZATI_ARRANQUE", "0").getIntValue();
 
     int lastDeviceBlock = 0, lastDeviceRate = 0;   // compared before a string is built
 
@@ -1867,6 +1930,10 @@ private:
     //  opaca que se rehace al cambiar de tamano o de carcasa; pintar el fondo
     //  pasa a ser una copia. Ver MainComponent::paint.
     void reconstruyeFondo();
+    //  El fondo, en una funcion propia en cuanto tuvo dos clientes -paint y la
+    //  portada-: dos caminos que pintan lo mismo por su cuenta se separan, que
+    //  es la razon por la que normaliza salio de dentro de render.
+    void pintaFondo (juce::Graphics& g);
     juce::Image fondoCache;
     int fondoSkin = -1;
     //  La corrida de control del banco: el degradado calculado en cada

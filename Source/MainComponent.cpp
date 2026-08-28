@@ -3077,6 +3077,52 @@ MainComponent::MainComponent()
 //  una ficha: un icono al lado de un numero no dice nada que el numero no
 //  diga, y una pestana ya esta dicha por la pagina que abre.
 // ============================================================================
+//  EL FONDO, con dos clientes: paint y la portada del arranque. Salio de
+//  dentro de paint en cuanto hubo el segundo, por lo mismo que normaliza salio
+//  de dentro de render - dos caminos que pintan lo mismo por su cuenta se
+//  separan, y el sintoma habria sido «la portada y la cara no son del mismo
+//  color» sin poder decir por que.
+void MainComponent::pintaFondo (juce::Graphics& g)
+{
+    auto full = getLocalBounds().toFloat();
+
+    // 1. Full-bleed light chassis (edge to edge — the whole screen is the face).
+    //  EL CUERPO SE PINTA UNA VEZ Y SE COPIA.
+    //
+    //  (El grano se probo y se quito - ver ZatiColours: sobre un chasis
+    //  acromatico no se leia como material sino como suciedad. Lo que se queda
+    //  es el horneado, que es lo que se midio y vale igual con el fondo liso.)
+    //
+    //  Era un degradado liso, y un degradado liso es una app: un aparato tiene
+    //  MATERIAL. Con el grano encima el fondo pasaba de 1.27 ms a 3.59 -una
+    //  pasada de mezcla alfa sobre los 377 mil pixeles de la ventana en cada
+    //  fotograma completo-, asi que se hornea: degradado y grano se dibujan en
+    //  una imagen OPACA al cambiar de tamano o de carcasa, y pintar el fondo
+    //  pasa a ser una copia de filas. Sale mas barato que el degradado que
+    //  habia antes, y el grano sale gratis.
+    //
+    //  Y respeta el recorte, que es lo que hace que siga valiendo: una banda
+    //  de 30 px copia 30 px, no la ventana entera. Ver ZATI_PAINT.
+    if (! fondoVivo)
+    {
+        if (fondoCache.getWidth() != getWidth() || fondoCache.getHeight() != getHeight()
+            || fondoSkin != ZatiColours::currentSkin)
+            reconstruyeFondo();
+        g.drawImageAt (fondoCache, 0, 0);
+    }
+    else
+    {
+        //  La corrida de control del banco: el fondo de antes, sin grano y sin
+        //  hornear. Sin ella no hay forma de decir cuanto cuesta la textura -
+        //  los milisegundos dependen de la maquina, asi que hay que medir las
+        //  dos en la misma.
+        g.setGradientFill (juce::ColourGradient (ZatiColours::chassisTop, full.getCentreX(), full.getY(),
+                                                 ZatiColours::chassisBot, full.getCentreX(), full.getBottom(), false));
+        g.fillRect (full);
+    }
+
+}
+
 //  EL FONDO HORNEADO. Ver MainComponent::paint.
 void MainComponent::reconstruyeFondo()
 {
@@ -4308,40 +4354,7 @@ void MainComponent::paint (juce::Graphics& g)
 
     auto full = getLocalBounds().toFloat();
 
-    // 1. Full-bleed light chassis (edge to edge — the whole screen is the face).
-    //  EL CUERPO SE PINTA UNA VEZ Y SE COPIA.
-    //
-    //  (El grano se probo y se quito - ver ZatiColours: sobre un chasis
-    //  acromatico no se leia como material sino como suciedad. Lo que se queda
-    //  es el horneado, que es lo que se midio y vale igual con el fondo liso.)
-    //
-    //  Era un degradado liso, y un degradado liso es una app: un aparato tiene
-    //  MATERIAL. Con el grano encima el fondo pasaba de 1.27 ms a 3.59 -una
-    //  pasada de mezcla alfa sobre los 377 mil pixeles de la ventana en cada
-    //  fotograma completo-, asi que se hornea: degradado y grano se dibujan en
-    //  una imagen OPACA al cambiar de tamano o de carcasa, y pintar el fondo
-    //  pasa a ser una copia de filas. Sale mas barato que el degradado que
-    //  habia antes, y el grano sale gratis.
-    //
-    //  Y respeta el recorte, que es lo que hace que siga valiendo: una banda
-    //  de 30 px copia 30 px, no la ventana entera. Ver ZATI_PAINT.
-    if (! fondoVivo)
-    {
-        if (fondoCache.getWidth() != getWidth() || fondoCache.getHeight() != getHeight()
-            || fondoSkin != ZatiColours::currentSkin)
-            reconstruyeFondo();
-        g.drawImageAt (fondoCache, 0, 0);
-    }
-    else
-    {
-        //  La corrida de control del banco: el fondo de antes, sin grano y sin
-        //  hornear. Sin ella no hay forma de decir cuanto cuesta la textura -
-        //  los milisegundos dependen de la maquina, asi que hay que medir las
-        //  dos en la misma.
-        g.setGradientFill (juce::ColourGradient (ZatiColours::chassisTop, full.getCentreX(), full.getY(),
-                                                 ZatiColours::chassisBot, full.getCentreX(), full.getBottom(), false));
-        g.fillRect (full);
-    }
+    pintaFondo (g);
 
     //  1b. Structure. A white field with rows of caps on it is a list of
     //  buttons; an instrument has plates, seams and engraved lettering, and
@@ -10983,6 +10996,133 @@ void MainComponent::retranslateUi()
     repaint();
 }
 
+// ============================================================================
+//  LA PORTADA DEL ARRANQUE: la cara no se enseña hasta que ha dejado de moverse.
+//
+//  «Cuando abres la app hace un ajuste a la pantalla», y es verdad. Con
+//  targetSdk 36 la app va EDGE TO EDGE -la ventana es la pantalla entera y la
+//  barra de estado y la pastilla de gestos se pintan encima- asi que la cara
+//  tiene que restarse esos margenes. Y en el constructor no se pueden pedir:
+//  View.getRootWindowInsets() no contesta hasta que la vista esta enganchada a
+//  una ventana, asi que SystemInsets::get() devuelve CERO y el primer fotograma
+//  sale con la cara debajo del reloj.
+//
+//  El ajuste llegaba en el primer o segundo latido -60 ms por tick- cuando
+//  refreshSystemInsets veia que el numero habia cambiado y llamaba a resized().
+//  Y el splash del sistema NO lo tapa, por diseno: Android lo retira en cuanto
+//  la app dibuja su primer fotograma, que es precisamente el que va sin
+//  ajustar. La barra «Iniciando» tampoco: es una BANDA, no un velo.
+//
+//  Asi que la cara no se enseña hasta que sus numeros son los definitivos, y
+//  mientras tanto se pinta el chasis con la marca — el MISMO dibujo sobre el
+//  MISMO fondo que el splash del sistema (el workflow ya comprueba que el color
+//  del tema es el chasis de la carcasa de fabrica), asi que la entrega se lee
+//  como una sola pantalla en vez de como tres.
+//
+//  Lo que NO se promete es que la marca salga al mismo tamano que el icono del
+//  splash: ese lo decide Android en dp y desde aqui no se sabe. Lo que se
+//  promete es el mismo dibujo sobre el mismo fondo.
+void MainComponent::paintOverChildren (juce::Graphics& g)
+{
+    if (caraLista) return;
+
+    pintaPortada (g);
+
+    //  Y ESTO ES LO QUE DESBLOQUEA LA SESION. restoreSession() bloquea el hilo
+    //  de mensajes -restaurar sintetiza, y llenar un banco de instrumentos son
+    //  1238 ms medidos- asi que lanzarla antes de que la portada llegue a la
+    //  pantalla la dejaria congelada sin nada dibujado. Ver timerCallback.
+    portadaPintada = true;
+}
+
+void MainComponent::pintaPortada (juce::Graphics& g)
+{
+    ++portadaPintadas;
+    pintaFondo (g);
+
+    //  La marca centrada, con el mismo lado que el icono del splash usa dentro
+    //  de su zona segura: no es continuidad al pixel -Android decide el suyo en
+    //  dp- pero si la misma proporcion y el mismo dibujo.
+    const auto caja = getLocalBounds().toFloat();
+    const float lado = juce::jmin (caja.getWidth(), caja.getHeight()) * 0.28f;
+
+    auto marca = Iconos::marca();
+    const auto lim = marca.getBounds();
+    if (lim.getWidth() > 0.0f && lim.getHeight() > 0.0f)
+    {
+        const float k = juce::jmin (lado / lim.getWidth(), lado / lim.getHeight());
+        marca.applyTransform (juce::AffineTransform::scale (k)
+                                  .translated (caja.getCentreX() - lim.getCentreX() * k,
+                                               caja.getCentreY() - lim.getCentreY() * k));
+        //  Medida contra el chasis y no elegida: aqui SI hay carcasa que mover
+        //  -son las cuatro del aparato-, al reves que en el icono del lanzador,
+        //  que es un PNG y por eso lleva blanco escrito.
+        g.setColour (ZatiColours::textOn (ZatiColours::chassisTop));
+        g.fillPath (marca);
+    }
+}
+
+//  EL PRIMER INSTANTE EN EL QUE ANDROID PUEDE CONTESTAR. Preguntar solo por
+//  temporizador deja la portada puesta un latido de mas; en cuanto la ventana
+//  engancha, getRootWindowInsets ya devuelve algo.
+void MainComponent::parentHierarchyChanged()
+{
+    refreshSystemInsets();
+}
+
+//  LOS MARGENES DE AHORA, con la entrada del banco delante.
+//
+//  En el escritorio SystemInsets::get() devuelve {} siempre, o sea que el salto
+//  que esto arregla NO EXISTE aqui y no habria forma de medirlo. ZATI_INSETS
+//  con su tick simula la respuesta tardia de Android, que es lo mismo que hace
+//  ZATI_SKIN con la carcasa: convertir en ENTRADA lo que si no seria nada.
+juce::BorderSize<int> MainComponent::margenesDeAhora() const
+{
+    if (bancoInsets.isNotEmpty())
+    {
+        auto n = juce::StringArray::fromTokens (bancoInsets, ",", {});
+        if (n.size() == 4)
+            return { n[0].getIntValue(), n[1].getIntValue(),
+                     n[2].getIntValue(), n[3].getIntValue() };
+    }
+    return SystemInsets::get();
+}
+
+//  SI YA CONTESTAN, que es una pregunta distinta de cuanto valen — y es la que
+//  se equivoco primero. En Android «contesta» es «la ventana esta enganchada»:
+//  getRootWindowInsets devuelve nulo antes y el valor de verdad despues, y ese
+//  valor puede ser CERO y ser correcto (cualquier aparato anterior a Android 15
+//  coloca la ventana debajo de las barras). Asi que la condicion no puede ser
+//  «los margenes no son cero».
+//
+//  Y por eso el banco tiene que simular el SILENCIO y no un cero: con
+//  ZATI_INSETS_TICK marcando solo el valor, la primera pregunta ya daba la cara
+//  por lista y la portada se levantaba en el tick 1.
+bool MainComponent::margenesContestan() const
+{
+    if (bancoInsets.isNotEmpty()) return arranqueTicks >= bancoInsetsTick;
+    return isShowing() || getPeer() != nullptr;
+}
+
+//  LAS DOS CONDICIONES, y hacen falta las dos. La geometria es definitiva
+//  cuando se ha preguntado por los margenes con la ventana ya enganchada -y no
+//  cuando valen algo distinto de cero, que en un aparato anterior a Android 15
+//  valen cero para siempre y es correcto- y la sesion ha vuelto.
+//
+//  Con el TOPE por encima de las dos: un aparato que no conteste nunca no puede
+//  dejar la portada puesta. Es la hermana de «ningun camino puede dejar la app
+//  en silencio».
+void MainComponent::miraSiLaCaraEstaLista()
+{
+    if (caraLista) return;
+
+    if ((insetsPreguntados && ! sessionRestorePending) || arranqueTicks >= kPortadaTope)
+    {
+        caraLista = true;
+        repaint();
+    }
+}
+
 //  The part of the window the system is not covering. Cached rather than
 //  asked for on every layout pass: resized() runs on every sheet that opens
 //  and every project that is saved, and this is a JNI round trip.
@@ -10996,7 +11136,13 @@ juce::Rectangle<int> MainComponent::safeArea() const
 //  laid out again only when the answer actually changed.
 void MainComponent::refreshSystemInsets()
 {
-    const auto now = SystemInsets::get();
+    if (! margenesContestan()) return;
+
+    const auto now = margenesDeAhora();
+    //  Que han CONTESTADO, que es la condicion de verdad: «los margenes no son
+    //  cero» seria falso para siempre en un aparato anterior a Android 15,
+    //  donde el sistema ya coloca la ventana por debajo de las barras.
+    insetsPreguntados = true;
 
     if (now.getTop()    == systemInsets.getTop()
         && now.getLeft()   == systemInsets.getLeft()
@@ -18705,9 +18851,22 @@ void MainComponent::timerCallback()
     if (exportJob != nullptr)
         setBusyProgress (exportJob->progress.load (std::memory_order_relaxed));
 
+    //  EL RELOJ DEL ARRANQUE, para el tope de la portada y para el banco.
+    //  SIEMPRE, y no solo mientras la portada este puesta: pararlo al destapar
+    //  deja el contador clavado y la linea de ZATI_ARRANQUE imprimiendose para
+    //  siempre, que es como se descubrio.
+    ++arranqueTicks;
+
     //  Once, on the first tick: the face is up by now, so a restore that takes
     //  a second reads as filling in rather than as a hang.
-    if (sessionRestorePending)
+    //
+    //  Y DESPUES DE QUE LA PORTADA SE HAYA PINTADO, no en el primer tick a
+    //  secas: restoreSession bloquea este hilo casi un segundo -restaurar
+    //  sintetiza, y llenar un banco de instrumentos son 1238 ms medidos- asi
+    //  que lanzarla antes de que la portada llegue a la pantalla la dejaria
+    //  congelada con la cara a medio hacer y sin nada dibujado encima. Con
+    //  ZATI_AUDIT no hay portada, asi que el banco no espera a nadie.
+    if (sessionRestorePending && (portadaPintada || UiAudit::enabled()))
     {
         sessionRestorePending = false;
         restoreSession();
@@ -18782,6 +18941,26 @@ void MainComponent::timerCallback()
     {
         ++insetSettleTicks;
         refreshSystemInsets();
+    }
+
+    //  Y CON TODO PREGUNTADO, si la cara ya puede enseñarse. Va DESPUES de
+    //  refreshSystemInsets en el mismo tick: al reves, la portada duraria un
+    //  latido de mas por preguntarlo antes de tener la respuesta.
+    miraSiLaCaraEstaLista();
+
+    //  ZATI_ARRANQUE=n: una linea por tick con lo que hace falta para juzgar
+    //  esto - si la cara esta tapada y donde ha quedado la placa de los pads,
+    //  que es lo que se mueve cuando llegan los margenes. Aparte de ZATI_AUDIT
+    //  a proposito: alli no hay portada.
+    if (bancoArranque > 0 && arranqueTicks <= bancoArranque)
+    {
+        std::cout << "{\"arranque\":\"cara\",\"tick\":" << arranqueTicks
+                  << ",\"cubierta\":" << (caraLista ? 0 : 1)
+                  << ",\"pintadas\":" << portadaPintadas
+                  << ",\"placa\":[" << padPlateArea.getX() << "," << padPlateArea.getY()
+                  << "," << padPlateArea.getWidth() << "," << padPlateArea.getHeight()
+                  << "]}" << std::endl;
+        if (arranqueTicks == bancoArranque) juce::JUCEApplication::getInstance()->systemRequestedQuit();
     }
 
     //  THE SCREEN DOES NOT GO OUT IN THE MIDDLE OF A TAKE.

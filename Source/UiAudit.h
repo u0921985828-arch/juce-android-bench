@@ -40,6 +40,18 @@
 //      ZATI_PAINT=60             cuanto cuesta un fotograma, por piezas
 //      ZATI_SPIN=12              CPU del proceso con la cara abierta y quieta
 //      ZATI_KIT=nombre           guarda el banco de delante como kit y lo vuelca
+//      ZATI_INSETS=t,l,b,r       margenes del sistema simulados (ver abajo)
+//      ZATI_INSETS_TICK=n        y a partir de que tick contestan
+//      ZATI_ARRANQUE=n           n ticks con la cara abierta, una linea por tick
+//
+//  Las tres ultimas son de MainComponent y viven APARTE de ZATI_AUDIT a
+//  proposito. En el escritorio SystemInsets::get() devuelve {} siempre, o sea
+//  que el salto de maquetado del arranque -la cara colocandose sola cuando
+//  Android contesta por fin a los margenes- NO EXISTE aqui y no habria forma de
+//  medirlo: ZATI_INSETS lo convierte en una ENTRADA, que es lo mismo que hace
+//  ZATI_SKIN con la carcasa y ZATI_DLC con los packs. Y ZATI_ARRANQUE no puede
+//  ir con ZATI_AUDIT porque alli no hay portada -las 924 corridas miden la cara
+//  y las fotos de ZATI_SHOT saldrian con el chasis vacio-.
 // ============================================================================
 namespace UiAudit
 {

@@ -41,6 +41,7 @@ codigo.
 | piano roll, notas, compas, EUCLIDES | `Tests/piano.py` |
 | instrumentos, packs, licencias | `Tests/dlc.py` |
 | el tour de bienvenida | `Tests/tour.py` |
+| el arranque, la portada, los margenes del sistema | `Tests/arranque.py` |
 | iconos, la marca, la textura del chasis | `Tests/iconos.py` |
 | una APK | `Tests/apk.py <fichero>` |
 | repintados, coste de la cara | `Tests/cpu.py` **sola** (ver abajo) |
