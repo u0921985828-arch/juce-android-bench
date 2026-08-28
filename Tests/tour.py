@@ -101,7 +101,7 @@ def main():
     #  regla: la app imprime lo que acaba de resolver.
     casa = tempfile.mkdtemp (prefix="zati-tour2-")
     try:
-        vistas = []
+        vistas, puestas = [], []
         for _ in range (2):
             env = dict (os.environ, HOME=casa, ZATI_AUDIT="1", ZATI_SIZE="412x915",
                         ZATI_LANG="es", ZATI_OPEN="",
@@ -109,14 +109,15 @@ def main():
                         DISPLAY=os.environ.get ("DISPLAY", ":99"))
             out = subprocess.run ([APP], env=env, capture_output=True, text=True,
                                   timeout=300).stdout
-            v = None
+            v = p = None
             for linea in out.splitlines():
                 linea = linea.strip()
                 if not linea.startswith ('{'): continue
                 try:    d = json.loads (linea)
                 except Exception: continue
-                if d.get ("arranque") == "tour": v = d["primera"]
-            vistas.append (v)
+                if d.get ("arranque") == "tour":
+                    v = d["primera"]; p = d.get ("puesto")
+            vistas.append (v); puestas.append (p)
     finally:
         shutil.rmtree (casa, ignore_errors=True)
 
@@ -125,6 +126,61 @@ def main():
     if vistas != [1, 0]:
         malas.append ("la bienvenida sale %s en dos arranques y tenia que salir [1, 0]"
                       % (vistas,))
+
+    #  Y LA MITAD QUE FALTABA: que la marca decida algo.
+    #
+    #  Lo de arriba mide que se ESCRIBE bien y salia [1, 0] con la bienvenida
+    #  apareciendo igual en cada arranque, porque hay un segundo camino que la
+    #  levanta y no la mira: retranslateUi -que corre en el constructor y al
+    #  tocar un idioma- llamaba a showTour, y showTour termina en
+    #  `tourSheet.setVisible (true)` sin condicion. El bloque que si mira la
+    #  marca corre despues y solo puede AÑADIR.
+    #
+    #  Con ZATI_AUDIT la tarjeta no se enseña nunca a proposito, asi que
+    #  cualquier uno aqui es exactamente eso: puesta sin que nadie la pida.
+    #  Salia [1, 1].
+    print ("la bienvenida quedo puesta:    %s" % puestas)
+    if puestas != [0, 0]:
+        malas.append ("la bienvenida queda puesta %s sin que nadie la pida" % (puestas,))
+
+    #  --- Y QUE CAMBIAR DE IDIOMA NO CIERRE LA FICHA ----------------------
+    #
+    #  El mismo fallo por la otra puerta, y la mas absurda de las dos: el idioma
+    #  se cambia desde AJUSTES, y tocarlo llamaba a retranslateUi -> showTour ->
+    #  tourPrepara, cuyo caso por defecto empieza por closeAllSheets. Cerraba la
+    #  ficha que tenias delante y levantaba la bienvenida encima.
+    #
+    #  La app pulsa la tapa DE VERDAD (langButtons[1]->onClick), que es donde el
+    #  fallo existe: llamar a retranslateUi por dentro se salta el callback que
+    #  lo encadena todo.
+    casa = tempfile.mkdtemp (prefix="zati-tour3-")
+    try:
+        env = dict (os.environ, HOME=casa, ZATI_AUDIT="1", ZATI_SIZE="412x915",
+                    ZATI_LANG="es", ZATI_OPEN="lang",
+                    XDG_DATA_HOME=os.path.join (casa, ".local", "share"),
+                    DISPLAY=os.environ.get ("DISPLAY", ":99"))
+        out = subprocess.run ([APP], env=env, capture_output=True, text=True,
+                              timeout=300).stdout
+        idi = None
+        for linea in out.splitlines():
+            linea = linea.strip()
+            if not linea.startswith ('{'): continue
+            try:    d = json.loads (linea)
+            except Exception: continue
+            if "idioma" in d: idi = d
+    finally:
+        shutil.rmtree (casa, ignore_errors=True)
+
+    print()
+    if idi is None:
+        malas.append ("el cambio de idioma no contesto")
+    else:
+        print ("tras tocar un idioma:  ajustes %d  tour %d"
+               % (idi.get ("ajustes", -1), idi.get ("tour", -1)))
+        if idi.get ("ajustes") != 1:
+            malas.append ("cambiar de idioma cierra AJUSTES, que es de donde se cambia")
+        if idi.get ("tour") != 0:
+            malas.append ("cambiar de idioma levanta la bienvenida")
 
     print()
     for m in malas: print ("FALLA ", m)

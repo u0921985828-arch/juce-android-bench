@@ -1699,6 +1699,12 @@ private:
     void tourPrepara (int paso);              // abre la ficha que el paso explica
     juce::Rectangle<int> tourObjetivo (int paso) const;
     void showTour (int paso);
+    //  EL ROTULO DE LA ULTIMA TAPA, en un solo sitio. Lo piden dos: showTour,
+    //  que es quien cambia de paso, y retranslateUi, que solo quiere el texto
+    //  en el idioma nuevo y NO puede llamar a showTour - ver el guardia de
+    //  alli. Escrito dos veces, el dia que el tour tenga un paso mas la ultima
+    //  tarjeta promete una siguiente que no existe desde uno de los dos lados.
+    juce::String tourNextCaption() const;
     int  tourBodyHeight (int ancho) const;
     //  LA LETRA DEL PARRAFO DEL TOUR, en un solo sitio. La escribian dos -quien
     //  mide el alto del muelle y quien lo pinta- y tienen que decir lo MISMO o

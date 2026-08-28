@@ -10809,10 +10809,32 @@ void MainComponent::retranslateUi()
     tourButton  .setButtonText (T ("TOUR"));
     tourBackBtn .setButtonText (T ("TOUR ATRAS"));
     tourSkipBtn .setButtonText (T ("SALTAR"));
-    //  Y la de avanzar la pone showTour, que es quien sabe si es la ultima:
-    //  ponerla aqui a "SIGUIENTE" dejaba la quinta tarjeta prometiendo una
-    //  sexta cada vez que se cambia de idioma.
-    showTour (tourPaso);
+    //  Y LA DE AVANZAR SOLO EL ROTULO, que es lo unico que hace falta aqui.
+    //
+    //  Esto llamaba a showTour, y showTour no pone un rotulo: ENSEÑA un paso.
+    //  Pasa por tourPrepara, que abre la ficha que el paso explica -o cierra
+    //  todas, en el caso por defecto- y termina con dos lineas sin condicion:
+    //  `tourSheet.setVisible (true)` y `toFront`. Correctas cuando el tour esta
+    //  puesto -cada paso llama a openSheet, que lo apagaria- y aqui son otra
+    //  cosa, porque retranslateUi corre en dos sitios que no son el tour:
+    //
+    //    - EL CONSTRUCTOR. Asi que la bienvenida quedaba visible al terminar de
+    //      construir, en CADA arranque, mirase o no la marca de visto. El
+    //      bloque que si la mira corre despues, en el primer tick, y solo puede
+    //      AÑADIR: cuando no es la primera vez no hace nada y la tarjeta ya
+    //      estaba puesta. De ahi que borrar zati-tour.txt no cambiara nada y
+    //      que la marca estuviera bien escrita todo el tiempo.
+    //    - Y TOCAR UN IDIOMA (ver langButtons), o sea que cambiar de lengua te
+    //      cerraba AJUSTES -la unica ficha desde la que se cambia- y te
+    //      levantaba la bienvenida encima.
+    //
+    //  Ninguna de las seis reglas de expo.py puede verlo: una tarjeta a
+    //  pantalla completa no solapa a nadie -sus tres tapas van en fila-, no se
+    //  sale, no corta rotulos, esta traducida y no mide cero. Y de las 33
+    //  fichas que mide el banco, 32 la tapan sin querer, porque cualquier
+    //  ZATI_OPEN que abra una ficha empieza por closeAllSheets.
+    if (tourSheet.isVisible()) showTour (tourPaso);
+    else                       tourNextBtn.setButtonText (tourNextCaption());
     undoButton  .setButtonText (T ("DESHACER"));
     redoButton  .setButtonText (T ("REHACER"));
 
@@ -13846,6 +13868,13 @@ juce::File MainComponent::tourFile()
                .getChildFile ("zati-tour.txt");
 }
 
+//  La ultima tapa cambia de nombre y no solo de efecto: "SIGUIENTE" en la
+//  ultima tarjeta es una promesa de una siguiente que no existe.
+juce::String MainComponent::tourNextCaption() const
+{
+    return tourPaso + 1 < kTourPasos ? T ("SIGUIENTE") : T ("TOUR EMPEZAR");
+}
+
 void MainComponent::showTour (int paso)
 {
     tourPaso = juce::jlimit (0, kTourPasos - 1, paso);
@@ -13854,9 +13883,7 @@ void MainComponent::showTour (int paso)
     //  pasos vive dentro de una ficha que este paso acaba de abrir.
     tourPrepara (tourPaso);
     tourBackBtn.setEnabled (tourPaso > 0);
-    //  La ultima tapa cambia de nombre y no solo de efecto: "SIGUIENTE" en la
-    //  quinta tarjeta es una promesa de una sexta que no existe.
-    tourNextBtn.setButtonText (tourPaso + 1 < kTourPasos ? T ("SIGUIENTE") : T ("TOUR EMPEZAR"));
+    tourNextBtn.setButtonText (tourNextCaption());
     resized();
     tourSheet.repaint();
 }
@@ -17918,6 +17945,24 @@ void MainComponent::auditOpen (const juce::String& which)
     else if (which == "proj") { showSetPage (pageProjects); refreshProjectList(); openSheet (setSheet, setButton); }
     else if (which == "gest") { showSetPage (pageGestures); openSheet (setSheet, setButton); }
     else if (which == "asp")  { showSetPage (pageAspecto);  openSheet (setSheet, setButton); }
+    //  CAMBIAR DE IDIOMA CON AJUSTES DELANTE, que es la otra mitad del mismo
+    //  fallo que la bienvenida en cada arranque: retranslateUi llamaba a
+    //  showTour, showTour pasa por tourPrepara y su caso por defecto empieza
+    //  por closeAllSheets. O sea que tocar un idioma cerraba la unica ficha
+    //  desde la que se cambia el idioma y dejaba la bienvenida encima.
+    //
+    //  Se pulsa la tapa DE VERDAD -su onClick- y no se llama a retranslateUi
+    //  por dentro, que es justo donde el fallo no existe: quien encadena
+    //  Lang::set, retranslateUi y resized es el callback.
+    else if (which == "lang")
+    {
+        showSetPage (pageAspecto);
+        openSheet (setSheet, setButton);
+        if (langButtons.size() > 1 && langButtons[1] != nullptr && langButtons[1]->onClick)
+            langButtons[1]->onClick();
+        std::cout << "{\"idioma\":\"cambiado\",\"ajustes\":" << (setSheet.isVisible() ? 1 : 0)
+                  << ",\"tour\":" << (tourSheet.isVisible() ? 1 : 0) << "}" << std::endl;
+    }
     else if (which == "midi") { showSetPage (pageMidi); refreshMidiDevices(); openSheet (setSheet, setButton); }
     else if (which == "rack") { rackPad = 0; openSheet (rackSheet, mixButton); refreshRack(); }
     //  LA FICHA DE INSTRUMENTOS, en sus dos estados: con el pack de dentro
@@ -18705,8 +18750,16 @@ void MainComponent::timerCallback()
         //  copia de la regla: con ZATI_AUDIT el tour no se enseña -una tarjeta
         //  encima serian diecinueve fichas medidas a traves de ella- pero la
         //  marca se escribe igual, que es justo lo que hay que comprobar.
+        //
+        //  Y "puesto", que es la otra mitad y la que faltaba: la marca se
+        //  escribia bien y la bienvenida salia igual en cada arranque, porque
+        //  la levantaba retranslateUi desde el constructor sin mirar nada. Con
+        //  ZATI_AUDIT la tarjeta no se enseña NUNCA a proposito, asi que un uno
+        //  aqui es exactamente eso - puesta sin que nadie la pida - y una
+        //  regla que solo mira la marca no lo ve. Salia 1 y 1.
         if (UiAudit::enabled())
             std::cout << "{\"arranque\":\"tour\",\"primera\":" << (primeraVez ? 1 : 0)
+                      << ",\"puesto\":" << (tourSheet.isVisible() ? 1 : 0)
                       << "}" << std::endl;
 
         if (! UiAudit::enabled() && primeraVez)
