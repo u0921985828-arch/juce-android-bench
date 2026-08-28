@@ -1384,7 +1384,10 @@ void Lang::loadPreference()
 
 void Lang::savePreference()
 {
-    preferenceFile().replaceWithText (code (currentId));
+    //  Por la puerta con red -temporal, validador, renombrado- como el resto de
+    //  las preferencias: un proceso muerto a mitad dejaba aqui un codigo de
+    //  idioma truncado y la app abria en el de por defecto sin decir nada.
+    ProjectStore::escribeTexto (preferenceFile(), code (currentId));
 }
 
 // ============================================================================

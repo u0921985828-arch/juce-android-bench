@@ -1,0 +1,100 @@
+name: El banco
+
+#  NADA SE ENTREGA SIN MEDIRLO — Y HASTA HOY LO MEDIA UNA PERSONA ACORDANDOSE.
+#
+#  Este proyecto tiene veintitantas pruebas propias y su regla de cabecera es
+#  que ninguna entrega sale sin ellas. Corrian todas a mano: el unico workflow
+#  que habia era el de la APK, manual, y de todo el banco solo ejecutaba
+#  `Tests/apk.py`. O sea que una regresion en expo.py, instr.py, kits.py o el
+#  motor llegaba a una APK con solo olvidarse de correr el banco una vez.
+#
+#  Aqui corren las que devuelven codigo de salida y no dependen del reloj:
+#  `Tests/cpu.py` se queda fuera a proposito -mide por RELOJ y este fichero ya
+#  tiene escrito que con la maquina ocupada no es una medida- y `Tests/expo.py`
+#  entra en su modo paralelo, que son ~2 min y no cuarenta.
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  JUCE_TAG: "8.0.4"
+
+jobs:
+  banco:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependencias de JUCE en Linux
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libasound2-dev libfreetype6-dev libfontconfig1-dev \
+            libx11-dev libxcomposite-dev libxcursor-dev libxext-dev \
+            libxinerama-dev libxrandr-dev libxrender-dev \
+            libcurl4-openssl-dev libgl1-mesa-dev mesa-common-dev libglu1-mesa-dev \
+            libwebkit2gtk-4.1-dev ninja-build xvfb imagemagick
+
+      #  El arbol de JUCE se cachea por su tag: sin esto cada corrida se baja y
+      #  compila el mismo 8.0.4, que es la mayor parte del reloj de este job.
+      - name: Cache de JUCE
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: juce-${{ env.JUCE_TAG }}-${{ runner.os }}
+
+      - name: Compilar la app y los bancos del motor
+        run: |
+          cmake -B build -G Ninja -DZATI_BENCH=ON -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target Zati StressTest -j"$(nproc)"
+
+      #  Sin pantalla virtual JUCE se cae en Component::centreWithSize y parece
+      #  un fallo del codigo. Ver .claude/skills/banco/SKILL.md.
+      - name: La pantalla virtual
+        run: |
+          Xvfb :99 -screen 0 1920x1080x24 >/dev/null 2>&1 &
+          for i in $(seq 1 30); do DISPLAY=:99 xdpyinfo >/dev/null 2>&1 && break; sleep 1; done
+          DISPLAY=:99 xdpyinfo >/dev/null
+
+      #  Las que NO dependen de la pantalla: la tabla de idiomas, las cuatro
+      #  carcasas y las dos listas de fuentes.
+      - name: Tabla, carcasas y fuentes
+        run: |
+          python3 Tests/lang.py
+          python3 Tests/skins.py
+          python3 Tests/fuentes.py
+
+      - name: El motor
+        run: ./build/StressTest_artefacts/Release/StressTest
+
+      #  Cada una por separado y no encadenadas con &&: encadenadas, la primera
+      #  que falla esconde a las cuatro siguientes y el informe dice una cosa
+      #  donde hay cinco.
+      - name: El arranque
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/arranque.py
+      - name: El tour
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/tour.py
+      - name: Las herramientas de arreglo
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/arr.py
+      - name: El piano
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/piano.py
+      - name: Los paneles
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/paneles.py
+      - name: El icono
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/icono.py
+
+      #  El grande, y el ultimo: 924 corridas. En paralelo son ~2 min.
+      - name: La maqueta, en las siete pantallas y los cuatro idiomas
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/expo.py

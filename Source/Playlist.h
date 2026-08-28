@@ -41,14 +41,27 @@ public:
     //  Un toque en la canaleta del carril: lo silencia. Ver mouseDown.
     std::function<void (int lane)> onLane;
 
+    //  Las veces que blockColour pidio un pad fuera de la tabla. Ver el
+    //  desbordamiento que esto arreglo: es un fallo de INDICE, no de geometria,
+    //  asi que ninguna de las ocho reglas del banco puede verlo y hace falta
+    //  que la app lo cuente.
+    static inline int zatisFueraDeRango = 0;
+
+    //  Lo que de verdad le pasaron, para que el banco no tenga que repetir la
+    //  constante: una prueba que lee el numero que juzga cambia de opinion a la
+    //  vez que el fallo.
+    int numZatis() const noexcept { return zatis; }
+
     void setSource (const int* cells,       // [lane][bar] flattened, stride = bars
-                    const int* zatiOf,      // per pad, for one-shot colours
+                    const int* zatiOf,      // un zati por pad...
+                    int numZatis,           // ...y CUANTOS, que es la mitad que faltaba
                     int bars, int page, int playBar,
                     int cursorBar = -1,     // el compas sobre el que actuan las herramientas
                     unsigned mudos = 0,     // un bit por carril silenciado
                     int loopA = 0, int loopB = 0)   // el tramo en bucle, [A,B) en compases
     {
-        data = cells; zati = zatiOf; totalBars = bars; pageIndex = page; playing = playBar;
+        data = cells; zati = zatiOf; zatis = numZatis;
+        totalBars = bars; pageIndex = page; playing = playBar;
         cursor = cursorBar; mute = mudos; lA = loopA; lB = loopB;
 
         //  REPINTAR SOLO SI HA CAMBIADO ALGO. Por lo mismo que la rejilla de
@@ -283,10 +296,41 @@ private:
     std::pair<int, int> ultima { -1, -1 };
     // Pattern banks borrow the fragment palette so a block is recognisable at a
     // glance; a one-shot wears its own pad's zati.
+    //  EL COLOR DE UN GOLPE SUELTO SE PEDIA CON UN INDICE DE 0..63 A UNA TABLA
+    //  DE DIECISEIS.
+    //
+    //  El pincel de un solo golpe guarda -(pad+1) y `selectedPad` va de 0 a 63
+    //  (cuatro bancos de dieciseis), pero aqui llegaba `gridZati`, que es la
+    //  tabla del banco QUE SE VE: dieciseis huecos. Con cualquier pad de los
+    //  bancos B, C o D pintado en la linea de tiempo, esto leia fuera del array
+    //  en CADA repintado de la ficha CANCION.
+    //
+    //  Hoy no se cae -lo leido acaba en Zati::colour, que envuelve con un modulo
+    //  y devuelve un color cualquiera- pero es lectura fuera de rango: una
+    //  compilacion con ASan, un asignador endurecido o MTE en un movil reciente
+    //  lo convierten en un cierre. Y el sintoma visible tampoco era ninguno: el
+    //  bloque salia del color de OTRO pad.
+    //
+    //  Se arregla por los dos lados. La tabla que se pasa es la de los sesenta y
+    //  cuatro (ver refreshSong), que ademas es lo correcto — un golpe del pad 33
+    //  se pinta del color del pad 33 y no del 01 del banco de delante — y el
+    //  subindice se acota igual, porque una tabla correcta hoy no impide que
+    //  alguien vuelva a pasar una corta manana.
     juce::Colour blockColour (int v) const
     {
         if (v > 0 && v != kContinued) return Zati::colour (v - 1);
-        if (v < 0) return Zati::colour (zati != nullptr ? zati[-v - 1] : 0);
+        if (v < 0)
+        {
+            const int pad = -v - 1;
+            if (zati == nullptr || ! juce::isPositiveAndBelow (pad, zatis))
+            {
+                ++zatisFueraDeRango;
+                //  Su propio color, que es lo unico honesto cuando la tabla no
+                //  lo tiene: Zati::colour ya envuelve con el modulo de los ocho.
+                return Zati::colour (pad);
+            }
+            return Zati::colour (zati[pad]);
+        }
         return ZatiColours::padBorder;
     }
     int findStart (int lane, int bar) const
@@ -298,6 +342,12 @@ private:
 
     const int* data = nullptr;
     const int* zati = nullptr;
+    //  CUANTOS trae esa tabla. Sin este numero, `zati` es un puntero sin
+    //  largo — que es literalmente el fallo que costo la lectura fuera de
+    //  rango: se le pasaba la tabla de dieciseis del banco de delante y aqui
+    //  se indexaba con un pad de 0 a 63. Un puntero sin su largo no se puede
+    //  acotar, asi que tampoco se puede medir.
+    int         zatis = 0;
     int totalBars = 8, pageIndex = 0, playing = -1;
     int cursor = -1;          // el compas que las herramientas van a tocar
     unsigned mute = 0;        // un bit por carril silenciado

@@ -617,7 +617,11 @@ MainComponent::MainComponent()
             //  Sobrescribir un kit borra dieciseis sonidos de la biblioteca y no
             //  pasa por deshacer, asi que se confirma - la misma red que
             //  CARGAR KIT y que guardar encima de un proyecto.
-            const auto dir = ProjectStore::kits().getChildFile (juce::File::createLegalFileName (n.trim()));
+            //  El MISMO nombre que va a usar guardarKit, o la pregunta de
+            //  sobrescribir mira una carpeta y se escribe en otra.
+            const auto dir = ProjectStore::kits().getChildFile (
+                                 ProjectStore::componente (
+                                     juce::File::createLegalFileName (n.trim()).substring (0, 60)));
             if (dir.isDirectory() && ! armConfirm (projKitButton, T ("Sobrescribir \"%1\"?", n)))
                 return;
             guardarKit (n);
@@ -2258,14 +2262,12 @@ MainComponent::MainComponent()
         //  -ver el arranque- asi que esto es idempotente; se deja porque el
         //  tour tambien se abre a mano desde AJUSTES y acabarlo por ahi tiene
         //  que dejar la misma marca.
-        tourFile().getParentDirectory().createDirectory();
-        tourFile().replaceWithText ("1");
+        ProjectStore::escribeTexto (tourFile(), "1");
         closeAllSheets();
     };
     tourSkipBtn.onClick = [this]
     {
-        tourFile().getParentDirectory().createDirectory();
-        tourFile().replaceWithText ("1");
+        ProjectStore::escribeTexto (tourFile(), "1");
         closeAllSheets();
     };
     addAndMakeVisible (tourSheet);
@@ -13514,7 +13516,11 @@ void MainComponent::refreshSong (bool repintarTarjeta)
     }
     songLoopBtn.setToggleState (engine.hasSongLoop(), juce::dontSendNotification);
 
-    songGrid.setSource (songCells, gridZati, bars, songPage,
+    //  LOS SESENTA Y CUATRO Y NO LOS DIECISEIS DEL BANCO DE DELANTE. Una celda
+    //  de un solo golpe guarda -(pad+1) con el pad de los 64, asi que pasarle
+    //  `gridZati` -que tiene dieciseis- era leer fuera del array en cada
+    //  repintado. Ver Playlist::blockColour.
+    songGrid.setSource (songCells, padZati.data(), (int) padZati.size(), bars, songPage,
                         engine.isSongMode() && engine.isPlaying() ? engine.getSongBar() : -1,
                         songCursor, mudos,
                         engine.getSongLoopFrom(), engine.getSongLoopTo());
@@ -13915,8 +13921,12 @@ juce::File MainComponent::masterPrefFile()
 
 void MainComponent::saveMasterPref() const
 {
-    masterPrefFile().getParentDirectory().createDirectory();
-    masterPrefFile().replaceWithText (juce::String (masterFader.getValue(), 2));
+    //  Por la MISMA puerta que la sesion y el proyecto. Esto eran tres lineas
+    //  copiadas en siete sitios -crear la carpeta, escribir, no mirar el
+    //  resultado- mientras ProjectStore::escribeTexto existe justo para eso:
+    //  temporal, validador y renombrado. Una regla escrita siete veces es
+    //  siete reglas, y la septima es la que un dia se escribe mal.
+    ProjectStore::escribeTexto (masterPrefFile(), juce::String (masterFader.getValue(), 2));
 }
 
 void MainComponent::loadMasterPref()
@@ -13947,8 +13957,7 @@ juce::File MainComponent::pistasPrefFile()
 
 void MainComponent::savePistasPref() const
 {
-    pistasPrefFile().getParentDirectory().createDirectory();
-    pistasPrefFile().replaceWithText (juce::String (pistasVista));
+    ProjectStore::escribeTexto (pistasPrefFile(), juce::String (pistasVista));
 }
 
 void MainComponent::loadPistasPref()
@@ -13980,8 +13989,7 @@ juce::File MainComponent::pianoPrefFile()
 
 void MainComponent::savePianoPref() const
 {
-    pianoPrefFile().getParentDirectory().createDirectory();
-    pianoPrefFile().replaceWithText (juce::String (pianoGrid.getFilas()));
+    ProjectStore::escribeTexto (pianoPrefFile(), juce::String (pianoGrid.getFilas()));
 }
 
 void MainComponent::loadPianoPref()
@@ -15275,7 +15283,7 @@ void MainComponent::checkXRuns()
     if (xrunsSeen < 4 || burstMult >= kMaxBursts) return;
 
     ++burstMult;
-    burstPreferenceFile().replaceWithText (juce::String (burstMult));
+    ProjectStore::escribeTexto (burstPreferenceFile(), juce::String (burstMult));
     xrunsSeen = 0;
     useLowestLatency();
 
@@ -15792,7 +15800,11 @@ void MainComponent::auditKit (const juce::String& nombre)
 
 void MainComponent::guardarKit (const juce::String& nombre)
 {
-    const auto limpio = juce::File::createLegalFileName (nombre.trim()).substring (0, 60);
+    //  Por la puerta de los componentes de ruta: createLegalFileName quita `\`
+    //  y `/` y DEJA los puntos, asi que un kit llamado `..` acababa escribiendo
+    //  sus dieciseis WAV en la raiz de la biblioteca. Ver ProjectStore::componente.
+    const auto limpio = ProjectStore::componente (
+                            juce::File::createLegalFileName (nombre.trim()).substring (0, 60));
     if (limpio.isEmpty())
     {
         status.setText (T ("Ponle nombre primero"), juce::dontSendNotification);
@@ -15800,7 +15812,9 @@ void MainComponent::guardarKit (const juce::String& nombre)
     }
 
     const auto dir = ProjectStore::kits().getChildFile (limpio);
-    if (! ProjectStore::ensureDirectory (dir))
+    //  Y la POSTCONDICION, que es lo unico que no se puede sortear con otro
+    //  nombre raro: si el resultado no cuelga de Kits, no se escribe.
+    if (! dir.isAChildOf (ProjectStore::kits()) || ! ProjectStore::ensureDirectory (dir))
     {
         status.setText (T ("No se pudo escribir el kit"), juce::dontSendNotification);
         return;
@@ -17395,6 +17409,52 @@ void MainComponent::auditArrange()
         std::cout << (ln ? "," : "") << (engine.isSongLaneMuted (ln) ? 1 : 0);
     std::cout << "],\"bucle\":[" << engine.getSongLoopFrom() << ","
               << engine.getSongLoopTo() << "]}" << std::endl;
+
+    //  --- UN GOLPE SUELTO DE UN PAD QUE NO ESTA EN LA REJILLA -------------
+    //
+    //  El pincel de un solo golpe guarda -(pad+1) y `selectedPad` va de 0 a 63,
+    //  pero a Playlist se le pasaba la tabla de colores del banco QUE SE VE:
+    //  dieciseis huecos. Cualquier golpe de los bancos B, C o D leia fuera del
+    //  array en CADA repintado de la ficha CANCION.
+    //
+    //  NINGUNA de las ocho reglas del banco puede verlo: es un fallo de INDICE
+    //  y no de geometria — el bloque se maqueta perfecto, no solapa, no se sale
+    //  y no lleva texto. Y no se cae hoy, porque lo leido acaba en
+    //  Zati::colour, que envuelve con un modulo: el sintoma era un bloque del
+    //  color de otro pad, y una lectura fuera de rango que un ASan, un
+    //  asignador endurecido o MTE convierten en un cierre.
+    //
+    //  Se mide PINTANDO, que es donde vive: se escribe el golpe, se pide un
+    //  fotograma sobre una imagen y se cuenta cuantas veces blockColour tuvo
+    //  que pedir un pad que su tabla no tenia. Preguntarselo a la tabla por
+    //  dentro seria repetir la constante en vez de medir.
+    engine.clearSong();
+    engine.setSongLength (8);
+    engine.setSongCell (0, 0, -(33 + 1));      // el pad 33: banco C, fuera de la rejilla
+    engine.setSongCell (1, 1, -(63 + 1));      // y el ultimo de los sesenta y cuatro
+    Playlist::zatisFueraDeRango = 0;
+    refreshSong();
+    {
+        juce::Image img (juce::Image::ARGB, juce::jmax (1, songGrid.getWidth()),
+                         juce::jmax (1, songGrid.getHeight()), true);
+        juce::Graphics g (img);
+        songGrid.paintEntireComponent (g, false);
+    }
+    std::cout << "{\"golpe\":\"suelto\",\"celdas\":["
+              << engine.getSongCell (0, 0) << "," << engine.getSongCell (1, 1)
+              << "],\"zatis\":" << songGrid.numZatis()
+              << ",\"fuera\":" << Playlist::zatisFueraDeRango << "}" << std::endl;
+
+    //  Y LO QUE EL FICHERO DE PROYECTO PUEDE METER EN UNA CELDA. `setSongCell`
+    //  comprobaba lane y bar y guardaba el valor tal cual, y ese valor sale de
+    //  `toks[b].getIntValue()`: un project.xml corrupto metia cualquier entero
+    //  y cada consumidor tenia que volver a validarlo. Se acota en la puerta.
+    engine.setSongCell (2, 0, -9999);
+    engine.setSongCell (2, 1, 999999);
+    engine.setSongCell (2, 2, -(AudioEngine::kNumPads));   // valido: el pad 63
+    std::cout << "{\"celda\":\"acotada\",\"puestas\":["
+              << engine.getSongCell (2, 0) << "," << engine.getSongCell (2, 1)
+              << "," << engine.getSongCell (2, 2) << "]}" << std::endl;
 }
 
 //  UN PROYECTO DE OTRA EPOCA, ABIERTO CON EL BINARIO DE HOY.
@@ -18901,8 +18961,7 @@ void MainComponent::timerCallback()
         const bool primeraVez = ! tourFile().existsAsFile();
         if (primeraVez)
         {
-            tourFile().getParentDirectory().createDirectory();
-            tourFile().replaceWithText ("1");
+            ProjectStore::escribeTexto (tourFile(), "1");
         }
 
         //  Y el banco lo mide por AQUI, que es donde se decide, y no por una

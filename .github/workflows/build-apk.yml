@@ -327,11 +327,19 @@ jobs:
 
           echo "$KS_B64" | base64 -d > upload.jks
           APKSIGNER="$(find "$ANDROID_SDK_ROOT/build-tools" -name apksigner | sort | tail -1)"
+          #  LAS CONTRASENAS POR EL ENTORNO Y NO POR LA LINEA DE ORDENES.
+          #
+          #  `pass:$KS_PASS` deja la contrasena de la clave de subida en el
+          #  argv del proceso, o sea legible en /proc/<pid>/cmdline para
+          #  cualquier otro proceso del runner y para cualquier cosa que
+          #  fotografie la tabla de procesos. apksigner acepta `env:VAR` y
+          #  `file:`, que es la forma que no la publica. Es la unica credencial
+          #  de este proyecto cuya perdida no se puede deshacer desde la app.
           "$APKSIGNER" sign \
             --ks upload.jks \
-            --ks-pass "pass:$KS_PASS" \
+            --ks-pass env:KS_PASS \
             --ks-key-alias "$KEY_ALIAS" \
-            --key-pass "pass:$KEY_PASS" \
+            --key-pass env:KEY_PASS \
             --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
             Zati-release.apk
           "$APKSIGNER" verify --print-certs Zati-release.apk
@@ -365,6 +373,7 @@ jobs:
           echo "huella repositorio $REPO_FP"
           echo "huella APK         $APK_FP"
           if [ "$REPO_FP" = "$APK_FP" ]; then
+            rm -f upload.jks
             echo "La release quedo firmada con la clave de depuracion del repositorio."
             exit 1
           fi
@@ -373,8 +382,14 @@ jobs:
           # and apksigner only knows how to sign APKs. Play re-signs it with the
           # app signing key anyway - this signature is what proves the upload
           # came from you.
-          "$JAVA_HOME/bin/jarsigner" -verbose:false \
-            -keystore upload.jks -storepass "$KS_PASS" -keypass "$KEY_PASS" \
+          #  Y por la entrada estandar, que es lo que jarsigner ofrece en vez de
+          #  `env:`: `-storepass "$KS_PASS"` la deja en el argv igual que la de
+          #  apksigner. `-storepass:env` no existe en jarsigner; `:file` si, y
+          #  un fichero en el runner es lo mismo que la variable pero ademas se
+          #  queda escrito, asi que se pasa por un descriptor y se borra solo.
+          printf '%s\n%s\n' "$KS_PASS" "$KEY_PASS" | "$JAVA_HOME/bin/jarsigner" \
+            -verbose:false \
+            -keystore upload.jks -storepass:file /dev/stdin -keypass:file /dev/stdin \
             -sigalg SHA256withRSA -digestalg SHA-256 \
             Zati-release.aab "$KEY_ALIAS"
           rm -f upload.jks

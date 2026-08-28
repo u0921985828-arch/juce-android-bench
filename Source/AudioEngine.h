@@ -444,10 +444,30 @@ public:
     // --- Song / playlist (message thread) --------------------------------
     void setSongMode (bool on) noexcept { songMode.store (on, std::memory_order_relaxed); }
     bool isSongMode() const noexcept    { return songMode.load (std::memory_order_relaxed); }
+    //  Y EL VALOR TAMBIEN SE ACOTA, no solo los indices.
+    //
+    //  Esto comprobaba `lane` y `bar` y guardaba `value` tal cual, y ese valor
+    //  viene del project.xml (`toks[b].getIntValue()`): un fichero corrupto, o
+    //  de otra epoca, metia cualquier entero en una celda. Cada consumidor
+    //  tenia entonces que volver a validarlo — el hilo de audio lo hacia
+    //  (`cell > 0 && cell <= kNumPatterns`, y `triggerPad` acota el pad) y el
+    //  dibujo de la ficha NO, que es como se llego a leer fuera de una tabla.
+    //
+    //  Un valor es una de cuatro cosas y nada mas: vacio, kContinued, un banco
+    //  de patron 1..kNumPatterns, o un golpe suelto -(pad+1). Lo que no encaje
+    //  vale VACIO, que es lo unico que no puede sonar ni pintar de nada.
+    static bool songCellValido (int v) noexcept
+    {
+        return v == 0 || v == kContinued
+            || (v > 0 && v <= kNumPatterns)
+            || (v < 0 && -v <= kNumPads);
+    }
+
     void setSongCell (int lane, int bar, int value) noexcept
     {
         if (lane < 0 || lane >= kSongLanes || bar < 0 || bar >= kSongBars) return;
-        songCell[(size_t) lane][(size_t) bar].store (value, std::memory_order_relaxed);
+        songCell[(size_t) lane][(size_t) bar].store (songCellValido (value) ? value : 0,
+                                                     std::memory_order_relaxed);
     }
     int getSongCell (int lane, int bar) const noexcept
     {

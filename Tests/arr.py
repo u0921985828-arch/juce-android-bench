@@ -45,7 +45,7 @@ def corre():
                  "ZATI_OPEN": "song", "ZATI_ARR": "1"})
     out = subprocess.run ([APP], env=env, capture_output=True, text=True,
                           timeout=300).stdout
-    song, pat, vuelta = {}, {}, None
+    song, pat, vuelta, golpe, celda = {}, {}, None, None, None
     for linea in out.splitlines():
         linea = linea.strip()
         if not linea.startswith ('{'):
@@ -57,7 +57,9 @@ def corre():
         if "arr" in d: song[d["arr"]] = d
         if "pat" in d: pat[d["pat"]] = d
         if "vuelta" in d: vuelta = d
-    return song, pat, vuelta
+        if "golpe" in d: golpe = d
+        if "celda" in d: celda = d
+    return song, pat, vuelta, golpe, celda
 
 
 #  La cancion de partida: carril n, compas 2n, valor n+1.
@@ -102,7 +104,7 @@ def main():
     if not display_alive():
         print ("no hay DISPLAY vivo");  return 1
 
-    song, pat, vuelta = corre()
+    song, pat, vuelta, golpe, celda = corre()
     malas = []
 
     def mira (nombre, tengo, quiero, largo=None, quieroLargo=None):
@@ -151,6 +153,57 @@ def main():
     else:
         mira ("guardar y volver", [vuelta["mudos"], vuelta["bucle"]],
               [[1,0,0,1], [2,5]])
+
+    #  --- UN GOLPE SUELTO DE UN PAD QUE NO ESTA EN LA REJILLA -------------
+    #
+    #  El pincel de un solo golpe guarda -(pad+1) con el pad de los SESENTA Y
+    #  CUATRO, y a Playlist se le pasaba la tabla de colores del banco que se
+    #  VE: dieciseis huecos. Cualquier golpe de los bancos B, C o D leia fuera
+    #  del array en cada repintado de la ficha CANCION.
+    #
+    #  Ninguna de las ocho reglas del banco puede verlo — es un fallo de INDICE
+    #  y no de geometria: el bloque se maqueta perfecto, no solapa, no se sale
+    #  y no lleva texto — y ademas no se CAE, porque lo leido acaba en
+    #  Zati::colour, que envuelve con un modulo. El sintoma era un bloque del
+    #  color de otro pad, y una lectura fuera de rango que un ASan o MTE
+    #  convierten en un cierre.
+    #
+    #  Se mide PINTANDO y por el contador que lleva quien indexa, no
+    #  preguntandole a la tabla su tamano: eso seria repetir la constante.
+    print()
+    if golpe is None:
+        print ("%-22s %s" % ("golpe suelto", "MAL - sin respuesta")); malas.append ("golpe")
+    else:
+        print ("%-22s celdas %s, tabla de %d zatis, %d fuera de rango"
+               % ("golpe suelto", golpe["celdas"], golpe["zatis"], golpe["fuera"]))
+        if golpe["fuera"] != 0:
+            malas.append ("pintar la cancion pidio %d veces un pad fuera de la tabla de colores"
+                          % golpe["fuera"])
+        #  Y la corrida de control: si la tabla no llegara a los 64, las celdas
+        #  de arriba no serian el caso que esto existe para cazar.
+        if golpe["zatis"] < 64:
+            malas.append ("la tabla de colores tiene %d huecos y un golpe suelto usa hasta 64"
+                          % golpe["zatis"])
+        if golpe["celdas"] != [-34, -64]:
+            malas.append ("las celdas del golpe suelto salieron %s" % (golpe["celdas"],))
+
+    #  Y LO QUE EL FICHERO DE PROYECTO PUEDE METER EN UNA CELDA. setSongCell
+    #  comprobaba los indices y guardaba el valor tal cual, y ese valor sale de
+    #  toks[b].getIntValue(): un project.xml corrupto metia cualquier entero y
+    #  cada consumidor tenia que volver a validarlo. Con las dos mitades — que
+    #  lo malo se rechace Y que lo bueno pase — porque una puerta que dice que
+    #  no a todo pasa la primera sola.
+    if celda is None:
+        print ("%-22s %s" % ("celda acotada", "MAL - sin respuesta")); malas.append ("celda")
+    else:
+        print ("%-22s -9999 y 999999 -> %s, y el pad 63 -> %d"
+               % ("celda acotada", celda["puestas"][:2], celda["puestas"][2]))
+        if celda["puestas"][:2] != [0, 0]:
+            malas.append ("una celda acepta valores que ningun consumidor sabe leer: %s"
+                          % (celda["puestas"][:2],))
+        if celda["puestas"][2] != -64:
+            malas.append ("la puerta rechaza un golpe suelto valido (el pad 63): %d"
+                          % celda["puestas"][2])
 
     print()
     if malas:

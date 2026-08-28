@@ -53,7 +53,12 @@ juce::BorderSize<int> SystemInsets::get()
     if (juce::getAndroidSDKVersion() < 35)
         return {};
 
-    if (juce::ZatiView.getRootWindowInsets == nullptr
+    //  Las CUATRO que se van a llamar, y no tres: ZatiActivity.getWindow se
+    //  quedaba fuera de la lista y su resultado se comprobaba mas abajo. Una
+    //  precondicion escrita a medias se lee como si estuviera entera.
+    if (juce::ZatiActivity.getWindow == nullptr
+        || juce::ZatiWindow.getDecorView == nullptr
+        || juce::ZatiView.getRootWindowInsets == nullptr
         || juce::ZatiWindowInsets.getInsets == nullptr
         || juce::ZatiInsetsType.systemBars == nullptr)
         return {};

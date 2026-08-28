@@ -297,6 +297,37 @@ public:
                                      : "SIN NOMBRE " + digest.getLastCharacters (6);
     }
 
+    //  UN NOMBRE NO PUEDE SALIRSE DE SU CARPETA.
+    //
+    //  Habia TRES reglas para lo mismo y solo una quitaba los puntos:
+    //  `sanitise` (carpetas de proyecto) si, `sanitiseFileName` no —guarda el
+    //  punto a proposito, que una extension es como el cargador sabe que mira—
+    //  y `juce::File::createLegalFileName` tampoco, que quita `\` y `/` y deja
+    //  los puntos intactos.
+    //
+    //  Y `juce::File::getChildFile` resuelve `..` subiendo un nivel: esta
+    //  escrito en juce_File.cpp y es su comportamiento documentado. Asi que un
+    //  kit llamado `..` escribia sus dieciseis WAV en la RAIZ de la biblioteca,
+    //  al lado de Samples, Presets e Instrumentos, y `../../..` se salia de
+    //  ZATI entera. El nombre lo escribe la persona en su propio aparato, asi
+    //  que el dano es acotado — pero el de `importIntoLibrary` sale del nombre
+    //  que trae un documento del selector de Android, que es la unica cadena de
+    //  esta app que viene de fuera.
+    //
+    //  Un componente de ruta es un nombre y nunca una direccion: ni separadores
+    //  ni un nombre hecho solo de puntos. Y se comprueba ademas la
+    //  POSTCONDICION donde se usa —`isAChildOf`—, que es la misma leccion que
+    //  `ensureDirectory`: lo que importa no es lo que devuelve la funcion sino
+    //  donde acabo el fichero.
+    static juce::String componente (const juce::String& name)
+    {
+        auto s = name.removeCharacters ("/\\").trim();
+        //  `.`, `..`, `...`: nada que no sean puntos no es un nombre, es una
+        //  direccion relativa.
+        if (s.isNotEmpty() && s.containsOnly (".")) return {};
+        return s;
+    }
+
     //  A file name we can put on disk. Unlike sanitise() for project folders
     //  this keeps the dot, because an extension is how the loader knows what
     //  it is looking at.
@@ -305,7 +336,11 @@ public:
         auto s = name.trim().retainCharacters (
             "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -_.");
         s = s.trim();
-        return s.length() > 80 ? s.substring (s.length() - 80) : s;
+        s = s.length() > 80 ? s.substring (s.length() - 80) : s;
+        //  Ver componente: la lista blanca deja pasar el punto —hace falta para
+        //  la extension— y con el pasaba `..`, que getChildFile resuelve
+        //  subiendo un nivel.
+        return componente (s);
     }
 
     static juce::StringArray list()
