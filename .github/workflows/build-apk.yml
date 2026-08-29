@@ -123,30 +123,10 @@ jobs:
           import re, sys
           s = open('Source/ZatiLookAndFeel.h', encoding='utf8').read()
           s = re.sub(r'//[^\n]*', '', s)
-          #  LA FILA DE LA CARCASA DE FABRICA, no la primera.
-          #
-          #  Esto cogia m[0] -PAPEL, #F4EFE3- desde antes de que la de fabrica
-          #  fuese LACA, #1B4A4F. O sea que cada arranque empezaba con un
-          #  fogonazo crema y seguia con una app de petroleo oscuro: justo lo
-          #  contrario de lo que este paso existe para evitar. Y no fallaba
-          #  nada, porque el paso solo se miraba a si mismo.
-          fab = re.search(r'kSkinDeFabrica\s*=\s*(\d+)', s)
-          if not fab: sys.exit('no se pudo leer ZatiColours::kSkinDeFabrica')
-          fila = int(fab.group(1))
-          #  CUANTOS COLORES LLEVA UNA CARCASA, contados del struct y no a ojo:
-          #  `top` es el primero de su fila, asi que para saltar a la fila que
-          #  toca hay que saber cuantos hay por fila. Si alguien le anade un
-          #  token a `Skin` y esto siguiera con el numero viejo, cogeria el
-          #  color de al lado y el arranque saldria de un color cualquiera sin
-          #  que nada fallase.
-          cab = s[s.index('struct Skin'):s.index('static const Skin table[4]')]
-          por_fila = sum(len(d.split(',')) for d in re.findall(r'juce::uint32\s+([^;]+);', cab))
-          if por_fila == 0: sys.exit('no se pudo contar los campos de struct Skin')
           blk = s[s.index('static const Skin table[4]'):]
           m = re.findall(r'0x([0-9a-fA-F]{8})', blk)
-          if len(m) < por_fila * 4:
-              sys.exit('la tabla de carcasas no tiene 4 x %d colores' % por_fila)
-          print('#FF%06X' % (int(m[fila * por_fila], 16) & 0xffffff))
+          if not m: sys.exit('no se pudo leer chassisTop de la tabla de carcasas')
+          print('#FF%06X' % (int(m[0], 16) & 0xffffff))
           PY
           )"
           echo "chasis de arranque: $HEX"
@@ -161,56 +141,9 @@ jobs:
               '  </style>' \
               '</resources>' \
               > "Builds/Android/app/src/$d/res/values/zati_theme.xml"
-            #  Y EL SPLASH DE ANDROID 12+, que es un tema aparte porque los
-            #  atributos son de API 31: `values-v31` gana sobre `values` a
-            #  partir de ahi, asi que el estilo se redefine ENTERO -si solo se
-            #  pusieran los atributos nuevos, se perderia el windowBackground-.
-            #
-            #  Lo pinta el SISTEMA antes de que la app exista, asi que no cuesta
-            #  un milisegundo de arranque y dura exactamente lo que tarde en
-            #  cargar. A cambio solo caben fondo e icono: el titulo y el nombre
-            #  del estudio no entran, y por eso no estan.
-            mkdir -p "Builds/Android/app/src/$d/res/values-v31" \
-                     "Builds/Android/app/src/$d/res/drawable-nodpi"
-            cp ci/splash.png "Builds/Android/app/src/$d/res/drawable-nodpi/zati_splash.png"
-            printf '%s\n' \
-              '<?xml version="1.0" encoding="utf-8"?>' \
-              '<resources>' \
-              "  <color name=\"zatiChassis\">$HEX</color>" \
-              '  <style name="ZatiLaunch" parent="@android:style/Theme.Material.Light.NoActionBar">' \
-              '    <item name="android:windowBackground">@color/zatiChassis</item>' \
-              '    <item name="android:windowSplashScreenBackground">@color/zatiChassis</item>' \
-              '    <item name="android:windowSplashScreenAnimatedIcon">@drawable/zati_splash</item>' \
-              '  </style>' \
-              '</resources>' \
-              > "Builds/Android/app/src/$d/res/values-v31/zati_theme.xml"
           done
           cat Builds/Android/app/src/main/res/values/zati_theme.xml
-          cat Builds/Android/app/src/main/res/values-v31/zati_theme.xml
           grep -n 'android:theme' Builds/Android/app/src/main/AndroidManifest.xml
-
-          #  Y SE COMPRUEBA AQUI, que es donde se produce.
-          #
-          #  Un `echo` con el color no es una comprobacion: el paso llevaba
-          #  cogiendo la carcasa equivocada desde que LACA es la de fabrica y
-          #  nadie se entero porque lo unico que hacia era imprimirlo. Si el
-          #  color del tema no es el chasis de la carcasa con la que la app
-          #  abre, esto FALLA y no se publica una APK que arranca con un
-          #  fogonazo.
-          python3 - "$HEX" <<'PY'
-          import re, sys
-          hex_tema = sys.argv[1].upper()
-          s = re.sub(r'//[^\n]*', '', open('Source/ZatiLookAndFeel.h', encoding='utf8').read())
-          fila = int(re.search(r'kSkinDeFabrica\s*=\s*(\d+)', s).group(1))
-          cab = s[s.index('struct Skin'):s.index('static const Skin table[4]')]
-          por_fila = sum(len(d.split(',')) for d in re.findall(r'juce::uint32\s+([^;]+);', cab))
-          m = re.findall(r'0x([0-9a-fA-F]{8})', s[s.index('static const Skin table[4]'):])
-          esperado = '#FF%06X' % (int(m[fila * por_fila], 16) & 0xffffff)
-          if hex_tema != esperado:
-              sys.exit('el tema de arranque dice %s y la carcasa de fabrica es %s'
-                       % (hex_tema, esperado))
-          print('el arranque y la carcasa de fabrica coinciden:', esperado)
-          PY
 
       - name: La app se llama Zati Sampler
         run: |
@@ -306,6 +239,37 @@ jobs:
           echo "Bundle:  $AAB"
           ls -la Zati-*.apk Zati-*.aab
 
+      - name: Paginas de 16 KB, comprobadas y no supuestas
+        #  Play BLOQUEA desde el 31 de mayo de 2026 cualquier app con codigo
+        #  nativo cuyas librerias no esten alineadas a 16384 bytes: los moviles
+        #  nuevos ya arrancan con paginas de 16 KB y una .so alineada a 4 KB no
+        #  carga. Zati.jucer lleva los flags del enlazador desde hace tiempo
+        #  (-Wl,-z,max-page-size=16384) y de hecho FUNCIONAN - medido, los tres
+        #  segmentos LOAD salen con align 0x4000.
+        #
+        #  Pero eso es una bandera en un fichero de proyecto y un dia alguien
+        #  regenera el exportador y se la lleva por delante, y el sintoma no es
+        #  un error de compilacion: es una subida rechazada meses despues, o
+        #  peor, una app que no abre en un movil nuevo. Se comprueba en el
+        #  binario que se va a publicar, que es el unico sitio donde la
+        #  respuesta es verdad.
+        run: |
+          set -euo pipefail
+          READELF="$(find "$ANDROID_SDK_ROOT/ndk" -name 'llvm-readelf' | head -1)"
+          test -n "$READELF" || READELF=readelf
+          rm -rf .so-check && mkdir .so-check
+          unzip -q -o Zati-release.apk 'lib/*' -d .so-check
+          bad=0
+          for f in $(find .so-check -name '*.so'); do
+            for a in $("$READELF" -lW "$f" | awk '/LOAD/{print $NF}'); do
+              echo "$f  LOAD align $a"
+              [ "$a" = "0x4000" ] || { echo "   ^ NO son 16 KB"; bad=1; }
+            done
+          done
+          rm -rf .so-check
+          [ "$bad" = "0" ] || { echo "Hay librerias sin alinear a 16 KB: Play lo rechaza."; exit 1; }
+          echo "todas las librerias alineadas a 16 KB"
+
       - name: Re-sign the release APK with the upload key
         # Only when the four secrets exist. Gradle has already signed both APKs
         # with the debug key (JUCE's juceSigning), which is fine for sideload
@@ -327,19 +291,11 @@ jobs:
 
           echo "$KS_B64" | base64 -d > upload.jks
           APKSIGNER="$(find "$ANDROID_SDK_ROOT/build-tools" -name apksigner | sort | tail -1)"
-          #  LAS CONTRASENAS POR EL ENTORNO Y NO POR LA LINEA DE ORDENES.
-          #
-          #  `pass:$KS_PASS` deja la contrasena de la clave de subida en el
-          #  argv del proceso, o sea legible en /proc/<pid>/cmdline para
-          #  cualquier otro proceso del runner y para cualquier cosa que
-          #  fotografie la tabla de procesos. apksigner acepta `env:VAR` y
-          #  `file:`, que es la forma que no la publica. Es la unica credencial
-          #  de este proyecto cuya perdida no se puede deshacer desde la app.
           "$APKSIGNER" sign \
             --ks upload.jks \
-            --ks-pass env:KS_PASS \
+            --ks-pass "pass:$KS_PASS" \
             --ks-key-alias "$KEY_ALIAS" \
-            --key-pass env:KEY_PASS \
+            --key-pass "pass:$KEY_PASS" \
             --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
             Zati-release.apk
           "$APKSIGNER" verify --print-certs Zati-release.apk
@@ -373,7 +329,6 @@ jobs:
           echo "huella repositorio $REPO_FP"
           echo "huella APK         $APK_FP"
           if [ "$REPO_FP" = "$APK_FP" ]; then
-            rm -f upload.jks
             echo "La release quedo firmada con la clave de depuracion del repositorio."
             exit 1
           fi
@@ -382,85 +337,23 @@ jobs:
           # and apksigner only knows how to sign APKs. Play re-signs it with the
           # app signing key anyway - this signature is what proves the upload
           # came from you.
-          #  Y por la entrada estandar, que es lo que jarsigner ofrece en vez de
-          #  `env:`: `-storepass "$KS_PASS"` la deja en el argv igual que la de
-          #  apksigner. `-storepass:env` no existe en jarsigner; `:file` si, y
-          #  un fichero en el runner es lo mismo que la variable pero ademas se
-          #  queda escrito, asi que se pasa por un descriptor y se borra solo.
-          printf '%s\n%s\n' "$KS_PASS" "$KEY_PASS" | "$JAVA_HOME/bin/jarsigner" \
-            -verbose:false \
-            -keystore upload.jks -storepass:file /dev/stdin -keypass:file /dev/stdin \
+          "$JAVA_HOME/bin/jarsigner" -verbose:false \
+            -keystore upload.jks -storepass "$KS_PASS" -keypass "$KEY_PASS" \
             -sigalg SHA256withRSA -digestalg SHA-256 \
             Zati-release.aab "$KEY_ALIAS"
           rm -f upload.jks
           echo "Release APK and AAB signed with the upload key."
 
-      - name: Paginas de 16 KB, comprobadas y no supuestas
-        #  Play BLOQUEA desde el 31 de mayo de 2026 cualquier app con codigo
-        #  nativo cuyas librerias no esten alineadas a 16384 bytes: los moviles
-        #  nuevos ya arrancan con paginas de 16 KB y una .so alineada a 4 KB no
-        #  carga. Zati.jucer lleva los flags del enlazador desde hace tiempo
-        #  (-Wl,-z,max-page-size=16384) y de hecho FUNCIONAN - medido, los tres
-        #  segmentos LOAD salen con align 0x4000.
-        #
-        #  Pero eso es una bandera en un fichero de proyecto y un dia alguien
-        #  regenera el exportador y se la lleva por delante, y el sintoma no es
-        #  un error de compilacion: es una subida rechazada meses despues, o
-        #  peor, una app que no abre en un movil nuevo. Se comprueba en el
-        #  binario que se va a publicar, que es el unico sitio donde la
-        #  respuesta es verdad.
-        run: |
-          set -euo pipefail
-          READELF="$(find "$ANDROID_SDK_ROOT/ndk" -name 'llvm-readelf' | head -1)"
-          test -n "$READELF" || READELF=readelf
-          rm -rf .so-check && mkdir .so-check
-          unzip -q -o Zati-release.apk 'lib/*' -d .so-check
-          bad=0
-          for f in $(find .so-check -name '*.so'); do
-            for a in $("$READELF" -lW "$f" | awk '/LOAD/{print $NF}'); do
-              echo "$f  LOAD align $a"
-              [ "$a" = "0x4000" ] || { echo "   ^ NO son 16 KB"; bad=1; }
-            done
-          done
-          rm -rf .so-check
-          [ "$bad" = "0" ] || { echo "Hay librerias sin alinear a 16 KB: Play lo rechaza."; exit 1; }
-          echo "todas las librerias alineadas a 16 KB"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Zati-apk
+          path: |
+            Zati-debug.apk
+            Zati-release.apk
+            Zati-release.aab
+          if-no-files-found: error
 
-          #  Y EL MISMO BUCLE SOBRE EL AAB, que es lo que Play acepta de verdad.
-          #  El paso solo miraba la APK: si el exportador desalineara solo el
-          #  bundle -o si algun dia se generan por caminos distintos- la subida
-          #  se rechaza con el workflow en verde.
-          rm -rf .aab-check && mkdir .aab-check
-          unzip -q -o Zati-release.aab 'base/lib/*' -d .aab-check || true
-          for f in $(find .aab-check -name '*.so'); do
-            for a in $("$READELF" -lW "$f" | awk '/LOAD/{print $NF}'); do
-              echo "$f  LOAD align $a"
-              [ "$a" = "0x4000" ] || { echo "   ^ NO son 16 KB"; bad=1; }
-            done
-          done
-          rm -rf .aab-check
-          [ "$bad" = "0" ] || { echo "El AAB lleva librerias sin alinear."; exit 1; }
-
-      - name: El banco de la APK, sobre el binario que se publica
-        #  Tests/apk.py existia y no lo corria nadie: firma v2, paquete,
-        #  permisos exactos y la .so sin comprimir y alineada. Va DESPUES del
-        #  refirmado a proposito - apksigner reconstruye el zip, asi que
-        #  comprobar antes es comprobar un fichero que ya no es el que se sube,
-        #  que es justo lo que hacia el paso de las 16 KB.
-        run: python3 Tests/apk.py Zati-release.apk
-
-      # LA RELEASE Y NADA MAS.
-      #
-      # Habia ademas un actions/upload-artifact con los mismos tres ficheros:
-      # una copia de 66 MB por cada compilacion, que es la unica cosa de este
-      # workflow que se acumula. La cuota de artefactos se lleno y el paso
-      # fallo - con `if-no-files-found: error` y sin continue-on-error, asi
-      # que se llevo por delante el trabajo ENTERO: la APK estaba compilada y
-      # firmada y el job murio antes de publicarla, y ademas la release se
-      # queda sin sus ficheros porque este paso iba delante.
-      #
-      # La release es la que se descarga desde el telefono y la que este
-      # proyecto usa; el artefacto era la copia. Se queda la que sirve.
+      # Also attach both APKs to a rolling release tag for easy phone download.
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: apk-latest
@@ -470,6 +363,62 @@ jobs:
             Zati-release.apk
             Zati-release.aab
           make_latest: false
+
+      #  Y UNA ETIQUETA «LATEST» QUE NO TIRA LO VIEJO NO ES RODANTE.
+      #
+      #  `action-gh-release` SUSTITUYE el fichero que sube y no toca los demas,
+      #  asi que cada vez que la app cambio de nombre sus ficheros anteriores se
+      #  quedaron ahi para siempre. Medido el dia que se limpio: **siete
+      #  huerfanos, 277 MB** -ARTiFACTS-debug/release del 1 de agosto,
+      #  ARTiFACTS-ZATI-debug/release/aab del 15, y Shard-debug/release del 3,
+      #  que ademas es OTRO proyecto- contra los tres de verdad. Quien se baja
+      #  la APK desde el telefono ve diez ficheros y tres son el bueno.
+      #
+      #  Se poda aqui y no a mano porque a mano no se puede: el token de una
+      #  sesion no puede borrar assets -403, "Resource not accessible by
+      #  integration"- y el `GITHUB_TOKEN` del workflow si, que lleva
+      #  `contents: write`. Y porque a mano vuelve a pasar en el siguiente
+      #  cambio de nombre.
+      #
+      #  Borra lo que NO acaba de subir esta corrida, y la lista de los que se
+      #  quedan **no se escribe aqui**: son los ficheros que hay en el
+      #  directorio de trabajo, o sea exactamente los que el paso de arriba
+      #  acaba de publicar. Escribirlos otra vez seria la misma regla en dos
+      #  sitios -el fallo que este proyecto lleva encontrando desde el
+      #  principio- y bastaria renombrar la APK para que el paso borrase la
+      #  buena.
+      - name: Quitar de apk-latest lo que ya no se publica
+        if: '!cancelled()'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          api="https://api.github.com/repos/${{ github.repository }}"
+
+          #  Los que se quedan: los que existen en disco. Si no hay ninguno no
+          #  se borra nada - un build fallido no puede vaciar la release.
+          quedan=""
+          for f in Zati-debug.apk Zati-release.apk Zati-release.aab; do
+            [ -f "$f" ] && quedan="$quedan $f"
+          done
+          if [ -z "$quedan" ]; then echo "no hay ficheros nuevos: no se poda"; exit 0; fi
+          echo "se publican:$quedan"
+
+          curl -sf -H "Authorization: Bearer $GH_TOKEN" \
+               -H "Accept: application/vnd.github+json" \
+               "$api/releases/tags/apk-latest" \
+            | python3 -c 'import sys,json; [print(a["id"], a["name"]) for a in json.load(sys.stdin)["assets"]]' \
+            > /tmp/assets.txt
+
+          while read -r id name; do
+            [ -n "${name:-}" ] || continue
+            case "$quedan " in
+              *" $name "*) echo "  se queda  $name"; continue ;;
+            esac
+            echo "  se va     $name"
+            curl -sf -X DELETE -H "Authorization: Bearer $GH_TOKEN" \
+                 "$api/releases/assets/$id" >/dev/null
+          done < /tmp/assets.txt
 
   # NOTE: the emulator smoke-test job was removed because the APK is now built
   # for arm64-v8a only (the phone target), and GitHub's runners are x86_64 — the

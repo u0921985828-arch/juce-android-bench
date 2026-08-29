@@ -168,3 +168,51 @@ sonido de interfaz- que no se pidio y no se instala: audio de juego y espacial
 no es lo que hace un sampler de pads, y las otras dos ya cubren lo que si
 tocaba. Queda anotada por si algun dia hacen falta los sonidos de la propia
 interfaz.
+
+## Y SIETE QUE NO NOMBRABA NADIE
+
+Este fichero existe para que cada carpeta tenga procedencia, y al contarlas
+salieron **veintitres carpetas y dieciseis citadas**. Las siete que faltaban no
+son un olvido de redaccion: una carpeta sin procedencia no se puede actualizar
+desde su origen —que es la regla de la casa para todo lo de fuera—, ni retirar
+si ese origen cambia de licencia, ni defender si alguien pregunta de donde
+salio.
+
+Se anota lo que se puede **comprobar en el arbol**, con la evidencia al lado, y
+lo que no aparece se escribe «sin declarar» en vez de rellenarse a ojo: una
+procedencia inventada es peor que un hueco, porque el hueco se ve.
+
+| carpeta | origen | licencia | como se sabe |
+|---|---|---|---|
+| `caveman` | Julius Brussee | MIT (con excepciones) | `LICENSE` dentro, (c) 2026 |
+| `game-audio` | comunidad | **sin declarar** | `aas-source: community` en su frontmatter |
+| `sleek-design-mobile-apps` | sleek.design | **sin declarar** | pide `SLEEK_API_KEY` y solo habla con `https://sleek.design` |
+| `investigate-first` | **sin declarar** | **sin declarar** | familia de cuatro (abajo) |
+| `safe-refactor` | **sin declarar** | **sin declarar** | familia de cuatro |
+| `surgical-patch` | **sin declarar** | **sin declarar** | familia de cuatro |
+| `verify-and-stop` | **sin declarar** | **sin declarar** | familia de cuatro |
+
+**La familia de cuatro** —`investigate-first`, `safe-refactor`,
+`surgical-patch`, `verify-and-stop`— se agrupa por una **firma** y no por
+parecerse: las cuatro, y solo esas cuatro de las veintitres, traen un
+`agents/openai.yaml` con la misma forma exacta (`interface:` con
+`display_name`, `short_description` y un `default_prompt` que dice
+`Use $nombre ...`). Son un juego del mismo sitio, y ese sitio no esta escrito
+en ninguna de las cuatro.
+
+Y las cuatro dicen, con otras palabras, lo que esta casa ya tiene escrito y
+medido: investigar antes de tocar es `systematic-debugging`; refactorizar sin
+cambiar el comportamiento observable es la seccion «Al revisar» de `CLAUDE.md`;
+y «probar lo justo y parar» es el banco. Manda `CLAUDE.md`, como con las otras.
+
+**Y lo que falta, que es de licencia y no de orden.** De las cinco carpetas
+MIT, cuatro traen su `LICENSE` dentro (`2000s-visualization-expert`, `caveman`,
+`voice-audio-engineer`, y `landing-page-mastery` la suya de Apache) y las
+**cinco de `obra/superpowers` no traen ninguno**. Este fichero decia ademas que
+llevar el `LICENSE` dentro «es lo que esa licencia pide y las MIT no», y eso es
+falso: la MIT lo pide igual — *«The above copyright notice and this permission
+notice shall be included in all copies or substantial portions of the
+Software»*. Se anota en vez de escribir el fichero de memoria, que un `LICENSE`
+reconstruido no es el `LICENSE` de nadie. Lo mismo con las tres de ECC, `brand`,
+`game-audio` y las cuatro de la familia: sin licencia declarada, redistribuirlas
+es una decision que nadie ha tomado por escrito.
