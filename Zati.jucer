@@ -8,6 +8,10 @@
     <GROUP id="ZatiSrc" name="Source">
       <FILE id="srcMain" name="Main.cpp"          compile="1" resource="0" file="Source/Main.cpp"/>
       <FILE id="srcMcpp" name="MainComponent.cpp" compile="1" resource="0" file="Source/MainComponent.cpp"/>
+      <FILE id="srcMlay" name="MainComponent_Layout.cpp" compile="1" resource="0" file="Source/MainComponent_Layout.cpp"/>
+      <FILE id="srcMpai" name="MainComponent_Paint.cpp"  compile="1" resource="0" file="Source/MainComponent_Paint.cpp"/>
+      <FILE id="srcMaud" name="MainComponent_Audit.cpp"  compile="1" resource="0" file="Source/MainComponent_Audit.cpp"/>
+      <FILE id="srcMint" name="MainComponentInterno.h"   compile="0" resource="0" file="Source/MainComponentInterno.h"/>
       <FILE id="srcMh"   name="MainComponent.h"   compile="0" resource="0" file="Source/MainComponent.h"/>
       <FILE id="srcEcpp" name="AudioEngine.cpp"   compile="1" resource="0" file="Source/AudioEngine.cpp"/>
       <FILE id="srcEh"   name="AudioEngine.h"     compile="0" resource="0" file="Source/AudioEngine.h"/>

@@ -74,6 +74,9 @@ juce_add_binary_data(ZatiData SOURCES
 target_sources(Zati PRIVATE
     Source/Main.cpp
     Source/MainComponent.cpp
+    Source/MainComponent_Layout.cpp
+    Source/MainComponent_Paint.cpp
+    Source/MainComponent_Audit.cpp
     Source/AudioEngine.cpp
     Source/SampleLoader.cpp
     Source/AudioFocus.cpp
