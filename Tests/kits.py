@@ -68,7 +68,7 @@ MAX_START  = 0.02          # y el PRIMERO: un flanco de entrada es un click
 #  del mismo bombo pasarian las cinco con sobresaliente. Y algo muy parecido
 #  era lo que habia: la cabecera de Kits.h promete "cada banco una maquina
 #  distinta" y el banco A y el B eran el mismo kit con los numeros movidos -
-#  SNARE y SD 808, HAT y CH 808, OPEN y OH 808, RIDE y CYM 808 -, mas seis
+#  SNARE y SD, HAT y CH, OPEN y OH, RIDE y CY -, mas seis
 #  sonidos (SHAKE, MARACA, TAMB, HISS, STATIC, SCRAPE) que eran literalmente el
 #  mismo generador: ruido por un filtro.
 #

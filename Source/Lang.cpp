@@ -361,9 +361,13 @@ namespace
         { "MANUAL", "",
           "MANUAL",
           "手册", "الدليل" },
-        { "lo que hay que saber, en ocho capitulos", "",
-          "what you need to know, in eight chapters",
-          "八章要点", "ما يلزم معرفته، في ثمانية فصول" },
+        //  EL NUMERO SE INTERPOLA. La fila decia «ocho» en los cuatro idiomas
+        //  con una tabla de diez capitulos: una cifra escrita dentro de una
+        //  frase traducida es la unica constante que no se puede contrastar
+        //  leyendo el codigo. Ver paintManualSheetContent.
+        { "lo que hay que saber, en %1 capitulos", "",
+          "what you need to know, in %1 chapters",
+          "%1 章要点", "ما يلزم معرفته، في %1 فصول" },
         { "EMPEZAR", "",
           "GETTING STARTED",
           "开始", "البداية" },

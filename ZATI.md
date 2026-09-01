@@ -32,7 +32,7 @@ y donde hace falta el razonamiento, se cita dónde está.
 11. [El aparato](#11-el-aparato)
 12. [Cómo se compila](#12-cómo-se-compila)
 13. [El banco](#13-el-banco)
-14. [Lo que no cuadra](#14-lo-que-no-cuadra)
+14. [Lo que no cuadraba](#14-lo-que-no-cuadraba)
 15. [Dónde está cada cosa](#15-dónde-está-cada-cosa)
 
 ---
@@ -552,7 +552,7 @@ Cuatro bancos de dieciséis, uno por máquina:
 | banco | nombre | qué es | los dieciséis |
 |---|---|---|---|
 | **A** | ACUSTICA | la batería de toda la vida | KICK, SNARE, HAT, OPEN, RIM, TOM LO, TOM MI, TOM HI, CLAP, RIDE, CRASH, SHAKE, CONGA, COWBEL, TAMB, SPLASH |
-| **B** | MAQUINA | la caja de ritmos de los ochenta | BD 808, SD 808, CH 808, OH 808, RIM 808, LT 808, MT 808, HT 808, CLAP 9, CYM808, COW808, CLAVE, MARACA, LC 808, MC 808, HC 808 |
+| **B** | MAQUINA | la caja de ritmos de los ochenta | BD, SD, CH, OH, RS, LT, MT, HT, CP, CY, CB, CLAVE, MARACA, LC, MC, HC |
 | **C** | TEXTURA | lo que no es un golpe | VINYL, HISS, RISER, FALL, IMPACT, CLICK, STATIC, WIND, THUMP, GLITCH, SCRAPE, BOOM, TICK, SWELL, CRACKL, DRONE |
 | **D** | TONOS | lo melódico | BASS, SAW BS, SUB BS, STAB, CHORD, MINOR, PAD, BELL, PLUCK, KEY, ORGAN, BRASS, STRING, FIFTH, LEAD, ARP |
 
@@ -876,13 +876,14 @@ prueba** — ha pasado ocho veces.
 
 ### Las ocho reglas duras
 
-`Tests/expo.py` monta la app **924 veces** —siete pantallas por cuatro idiomas
-por treinta y tres fichas— y cada una tiene que dar cero en: solapes entre
+`Tests/expo.py` monta la app **952 veces** —siete pantallas por cuatro idiomas
+por treinta y cuatro fichas— y cada una tiene que dar cero en: solapes entre
 hermanos, controles fuera de la ventana, celdas de rejilla por debajo de su
 suelo, rótulos cortados o apretados, textos sin traducir, controles encendidos
 que miden cero, rótulos pintados debajo de un control, y residuo al cambiar de
 página. Los incumplimientos del dedo mínimo se cuentan y **no fallan**: son una
-escalera medida y escrita, y hoy son 2282.
+escalera medida y escrita, y hoy son 2344 — de los cuales 2282 son las
+924 corridas de antes de que `lang` entrara en la lista, al caso.
 
 ### Los tres del motor
 
@@ -905,6 +906,7 @@ mismo · `icono` el icono del lanzador · `iconos` que no haya dos dibujos igual
 `informe` y `maquetas`, que dibujan · `instr` los 256 instrumentos y sus 32 640
 pares · `kit` guardar un kit, juzgado leyendo de vuelta del **disco** · `kits` los
 64 de fábrica por **sonoridad y no por pico** · `lang` la tabla de idiomas ·
+`marcas` que no haya una marca ajena en lo que se publica ·
 `niveles` los dieciséis niveles · `nuevo` con qué abre la máquina, por sus **dos**
 caminos · `paneles` los paneles al píxel · `piano` el compás del piano por el
 camino de verdad · `plano` y `planos`, la estructura y el dibujo de cada
@@ -926,47 +928,76 @@ cabecera de `Source/UiAudit.h`.
 
 ---
 
-## 14. Lo que no cuadra
+## 14. Lo que no cuadraba
 
-Cuatro contradicciones aparecieron al inventariar la máquina para escribir esto.
-Se anotan con su ruta, porque un documento que las tapa es *una línea que imprime
-OK*, y ninguna se arregla aquí: lo pedido era el documento.
+Cuatro contradicciones aparecieron al inventariar la máquina para escribir este
+documento. Se anotaron con su ruta —un documento que las tapa es *una línea que
+imprime OK*— y **las cuatro están arregladas**; queda aquí lo que eran y qué
+medida las cierra, que es lo que no se puede deducir leyendo el código de hoy.
 
-**1 · `THIRD-PARTY.md` dice que la app sale vacía, y no es verdad.** Su texto
-afirma que «no se distribuye ni un solo sample, loop, preset ni sonido de
-fábrica». `Source/kits/` lleva **31 ficheros FLAC, 916 250 bytes**, empotrados en
-el binario. Y su propia frase de cierre —«si algún día se meten packs de fábrica,
-cada uno necesita su propia licencia por escrito antes de entrar aquí»— es la
-condición que falta cumplir: **no hay fila de licencia para esas grabaciones en
-ningún sitio del repositorio**.
+**1 · `THIRD-PARTY.md` decía que la app sale vacía, y no era verdad.** Afirmaba
+que «no se distribuye ni un solo sample, loop, preset ni sonido de fábrica»
+mientras `Source/kits/` lleva **31 ficheros FLAC, 916 250 bytes**, empotrados en
+el binario. Ese apartado dice ahora lo que hay, de dónde sale y con qué permiso:
+**ninguno**. Es lo único de esta lista que no se arregla escribiendo código —
+una licencia es un documento firmado o no es nada— así que queda escrito como
+**bloqueante** antes de publicar, con las dos únicas salidas: licenciarlas por
+escrito, o sacarlas del APK sintetizándolas, que es lo que `Tests/clon.py` mide
+(hoy la mejor está a 6.90 dB del listón de 4 y ninguna llega).
 
-**2 · `README.md` y `GOOGLE-PLAY.md` afirman que no hay marcas ajenas en
-`Source/`.** `Source/Kits.h` lleva **trece nombres de pad visibles con `808`** —
-`BD 808`, `SD 808`, `CH 808`, `OH 808`, `RIM 808`, `LT 808`, `MT 808`, `HT 808`,
-`CYM808`, `COW808`, `LC 808`, `MC 808`, `HC 808` — y comentarios que nombran tres
-máquinas reales. La regla 1 de `GOOGLE-PLAY.md` §1.5 prohíbe exactamente eso «ni
-en código, ni en comentarios, ni en la ficha, ni en capturas». **Es el punto de
-riesgo de marca más alto que queda**, y es anterior a este documento.
+**2 · Había marcas ajenas en `Source/`, y el documento que lo prohíbe afirmaba
+que no.** Trece nombres de pad visibles acabados en `808`, un preset `808 SUB`
+en la tabla de instrumentos, dos comentarios que nombraban una marca de sampler
+y diez que nombraban el proyecto anterior por su número. El banco B pasa a las
+abreviaturas genéricas del sector —**BD, SD, CH, OH, RS, LT, MT, HT, CP, CY,
+CB, LC, MC, HC**, que además son las de sus propios recursos— y los comentarios
+dicen «una caja de ritmos» y «el proyecto anterior».
 
-**3 · El manual promete ocho capítulos, define diez y dibuja nueve.**
-`kManualChapterCount = 10` (`Source/MainComponentInterno.h:285`) contra
-`kManualChapters = 9` (`Source/MainComponent.h:1809`), y el pintor recorre el
-segundo (`Source/MainComponent_Paint.cpp:1066`). O sea que **«SI ALGO NO SUENA»
-está traducido a cuatro idiomas, reserva su alto en el desplazamiento y no se
-pinta nunca**: un hueco en blanco al final. El alto sí cuenta los diez. Y la
-palabra «ocho» está escrita en siete sitios. Ninguna de las ocho reglas del banco
-puede verlo, porque un capítulo que no se dibuja no es un componente.
+Y sobre todo: `GOOGLE-PLAY.md` §1.4 lo **afirmaba** desde el principio sin que
+lo comprobara nadie. Ahora es una medida — `Tests/marcas.py` lee las reglas 1 y
+2 de §1.5 **del propio documento**, para que no sean dos listas, y las contrasta
+contra `Source/` y `Zati.jucer` en cada corrida del banco. Los nombres de los
+aparatos siguen en `Tools/fabrica.py` y `Tests/clon.py`, que no entran en el APK
+y donde tienen que estar, o no quedaría constancia de la procedencia.
 
-**4 · Tres documentos dan tres listas de efectos.** `README.md` dice `FLT` y
-`BIT`; `ESTUDIO-2026.md` dice `ISO` y `CRUSH`; `GOOGLE-PLAY.md` dice `CRSH` y
-añade un `BEAT REPEAT` que no existe. La buena es la del código —la tabla
-`fxDefs` de `Source/MainComponent.cpp:3216`—: **FLT, HPF, DRV, DLY, BIT, REV**,
-que es la que da este documento.
+**3 · El manual prometía ocho capítulos, definía diez y dibujaba nueve.**
+`kManualChapterCount = 10` contra un `kManualChapters = 9` declarado en el `.h`,
+con `manualContentHeight` recorriendo los diez: **«SI ALGO NO SUENA» estaba
+traducido a los cuatro idiomas, reservaba su alto en el desplazamiento y no se
+pintaba nunca**. La cuenta duplicada se borra —las dos funciones recorren ahora
+la misma tabla, que es lo que el comentario de `manualContentHeight` ya
+prometía— y el subtítulo **interpola** el número en vez de decir «ocho» en
+cuatro idiomas.
 
-Y dos huecos de medida menores: `ZATI_OPEN=lang` está implementado
-(`Source/MainComponent_Audit.cpp:1118`) y no está en la lista `SHEETS` de
-`Tests/expo.py`, así que no entra en el barrido de 924; y la tabla de
-`.claude/skills/banco/SKILL.md` sigue diciendo «812 corridas» donde hoy son 924.
+Ninguna de las ocho reglas de `expo.py` puede verlo, porque un capítulo que no
+se dibuja no es un componente. La regla nueva vive en `Tests/plano.py`, que es
+quien mide lo que se PINTA, y es comparativa y sin ninguna cifra escrita en el
+script: **el número que dice el subtítulo contra los títulos de capítulo que se
+dibujaron**. Roto a propósito: `el subtitulo dice 10 capitulos y se dibujan 9`.
+
+**4 · Tres documentos daban tres listas de efectos.** `README.md` decía `FLT` y
+`BIT` —la buena—; `ESTUDIO-2026.md` decía `ISO` y `CRUSH`; y `GOOGLE-PLAY.md`
+decía `CRSH` y añadía un `BEAT REPEAT` que no existe, en el párrafo que
+justifica que los nombres de efecto son seguros. La del código es la tabla
+`fxDefs`: **FLT, HPF, DRV, DLY, BIT, REV**, y es la que dan ahora los tres.
+
+Y los dos huecos de medida menores, cerrados también: `ZATI_OPEN=lang` entra en
+`SHEETS` —de 924 corridas a 952— y `SKILL.md` decía «812 corridas».
+
+**Y esa entrada mintió antes de acertar, que es la octava vez en este banco.**
+Pulsaba siempre el botón 1 —ENGLISH— así que la corrida `es` y la `en` acababan
+las dos en inglés, la regla de traducción es COMPARATIVA entre esas dos, y salió
+con **44 hallazgos falsos**. Ahora va a otro idioma y **vuelve** al de la
+corrida. Lo que esa ficha añade es la geometría después de un cambio en
+caliente: `retranslateUi` repone los rótulos y llama a `resized()`, y en árabe
+eso mueve los muebles y no sólo las palabras — un estado al que no llega ningún
+otro arranque y en el que se queda cualquiera que toque un idioma.
+
+**Y lo que hay que saber para leer el número:** las 952 corridas dan **2344
+TOUCH** y cero en las ocho reglas duras. Los 62 de más son la escalera de la
+ficha nueva y nada más: con `lang` fuera de la lista, el mismo binario da **924
+corridas y 2282 TOUCH**, que es el número exacto de antes de esta tanda. Ni una
+de las correcciones de arriba movió un píxel.
 
 ---
 

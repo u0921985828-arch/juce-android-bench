@@ -3072,7 +3072,7 @@ void MainComponent::resized()
                                    : bandH + (showBars ? bandH : 0) + bandH;
 
             //  LA TIRA DEL PASO, que es por lo que esta ficha tenia dos
-            //  paginas y el FX-404 ninguna.
+            //  paginas y el proyecto anterior ninguna.
             //
             //  Editar un paso costaba un viaje: tocarlo en PASOS, cambiar de
             //  pestana a PASO, mover la nota, volver. Cuatro toques para subir
@@ -4294,7 +4294,7 @@ void MainComponent::resized()
 
         //  EN LA MITAD CONTRARIA A LA DEL OBJETIVO. Es lo unico que garantiza
         //  que el texto no tape lo que se esta senalando sin tener que negociar
-        //  posiciones - que es donde el FX-404 se dejo dos redisenos.
+        //  posiciones - que es donde el proyecto anterior se dejo dos redisenos.
         //  Y DENTRO DEL AREA SEGURA, no de la ventana. El velo si cubre la
         //  ventana entera -es lo que oscurece la maquina- pero la tarjeta lleva
         //  texto, y arriba del todo estan la hora y la senal: en un movil con

@@ -1115,13 +1115,46 @@ void MainComponent::auditOpen (const juce::String& which)
     //  Se pulsa la tapa DE VERDAD -su onClick- y no se llama a retranslateUi
     //  por dentro, que es justo donde el fallo no existe: quien encadena
     //  Lang::set, retranslateUi y resized es el callback.
+    //  EL IDIOMA CAMBIADO EN CALIENTE, ida Y VUELTA.
+    //
+    //  La primera version pulsaba SIEMPRE el boton 1 -ENGLISH- y con eso la
+    //  regla de traduccion, que es COMPARATIVA entre la corrida `es` y la `en`,
+    //  saco 44 hallazgos falsos: las dos corridas acababan en ingles, asi que
+    //  la misma cadena en la misma ruta del arbol no probaba nada. Primero se
+    //  duda de la prueba.
+    //
+    //  Se va a OTRO idioma y se VUELVE al de la corrida, que es lo unico que
+    //  deja el estado final en el idioma que `ZATI_LANG` pidio y por tanto la
+    //  comparacion en pie.
+    //
+    //  Lo que esta entrada anade es la GEOMETRIA despues de un cambio en
+    //  caliente: `retranslateUi` vuelve a poner los rotulos y llama a
+    //  `resized()`, y en arabe eso mueve los muebles de la ficha y no solo las
+    //  palabras. Ningun otro arranque llega a ese estado -los demas maquetan
+    //  una vez, en el idioma con el que nacieron- y es el estado en el que se
+    //  queda cualquiera que toque un idioma. Lo que NO anade es traduccion: un
+    //  control que no se retraduce se queda en el idioma con el que se
+    //  construyo, que es el de la corrida, asi que la regla comparativa no
+    //  puede verlo por aqui.
     else if (which == "lang")
     {
         showSetPage (pageAspecto);
         openSheet (setSheet, setButton);
-        if (langButtons.size() > 1 && langButtons[1] != nullptr && langButtons[1]->onClick)
-            langButtons[1]->onClick();
-        std::cout << "{\"idioma\":\"cambiado\",\"ajustes\":" << (setSheet.isVisible() ? 1 : 0)
+
+        const int mio   = (int) Lang::current();
+        const int otro  = (mio == 0 ? 1 : 0);
+        auto pulsa = [this] (int i)
+        {
+            if (juce::isPositiveAndBelow (i, langButtons.size())
+                && langButtons[i] != nullptr && langButtons[i]->onClick)
+                langButtons[i]->onClick();
+        };
+        pulsa (otro);
+        pulsa (mio);
+
+        std::cout << "{\"idioma\":\"cambiado\",\"paso_por\":" << otro
+                  << ",\"quedo\":" << (int) Lang::current()
+                  << ",\"ajustes\":" << (setSheet.isVisible() ? 1 : 0)
                   << ",\"tour\":" << (tourSheet.isVisible() ? 1 : 0) << "}" << std::endl;
     }
     else if (which == "midi") { showSetPage (pageMidi); refreshMidiDevices(); openSheet (setSheet, setButton); }

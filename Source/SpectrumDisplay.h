@@ -6,7 +6,8 @@
 #include "AudioEngine.h"
 
 // ============================================================================
-//  SpectrumDisplay — the "screen", ported from FX-404 v232's drawSpectrum().
+//  SpectrumDisplay — the "screen", ported from the earlier project's
+//  drawSpectrum().
 //
 //  v232 threw out the bar strip ("Removed the now-dead .lcd-wave bar styling")
 //  and put a canvas there instead, showing the MASTER WAVEFORM SILHOUETTE:

@@ -12,10 +12,52 @@ licencia allí donde se redistribuya el tipo.
 | Oswald (Bold, Medium) | Google Fonts | SIL OFL 1.1 | `LICENSES/Oswald-OFL.txt` |
 | JetBrains Mono (Regular, Bold) | JetBrains | SIL OFL 1.1 | `LICENSES/JetBrainsMono-OFL.txt` |
 
-No se distribuye ni un solo sample, loop, preset ni sonido de fábrica. La app
-sale vacía y sólo suena lo que el usuario mete, así que no hay nada de audio
-con derechos de terceros dentro del paquete. Si algún día se meten packs de
-fábrica, cada uno necesita su propia licencia por escrito antes de entrar aquí.
+## Audio de fábrica — 31 grabaciones, y **sin licencia**
+
+Este apartado decía *«no se distribuye ni un solo sample… la app sale vacía»*.
+**Era falso**, y lo era desde el día en que media fábrica dejó de sintetizarse:
+`Source/kits/` lleva **31 ficheros `.flac`, 916 250 bytes**, incrustados en el
+binario como recursos (`ZatiData`). La frase de cierre de aquel párrafo —*«si
+algún día se meten packs de fábrica, cada uno necesita su propia licencia por
+escrito antes de entrar aquí»*— es exactamente la condición que **no se ha
+cumplido**.
+
+| Qué | Cuántos | De dónde |
+|---|---|---|
+| banco A, ACUSTICA | 15 de 16 | material de batería muestreada de terceros |
+| banco B, MAQUINA | 16 de 16 | material de caja de ritmos de terceros |
+| bancos C y D | 0 de 32 | sintetizados por ARTiFACTS, sin origen externo |
+
+De dónde sale cada uno, fichero por fichero, consta en `Tools/fabrica.py`, que
+no corre en la compilación y existe justo para eso. Los `.flac` están a 48 kHz,
+mono, recortados por delante y por detrás, y normalizados por el mismo camino
+que la síntesis.
+
+**Esto bloquea la publicación.** No existe fila de licencia para ninguna de las
+31 en ningún sitio de este repositorio, y no se puede inventar: una licencia es
+un documento firmado o no es nada. Hay dos salidas y sólo dos:
+
+1. **Licenciar por escrito** cada grabación, y anotarla en la tabla de arriba
+   con su documento. Es lo que este mismo fichero exigía por adelantado.
+2. **Sacarlas del APK sintetizándolas.** Las 31 filas con muestra ya llevan sus
+   parámetros de síntesis —son lo que suena si el recurso no está, que en
+   escritorio pasa de verdad— y lo que falta es que se parezcan lo bastante.
+   `Tests/clon.py` es la puerta, medida con el mismo descriptor que usa
+   `Tests/kits.py` para decir si dos sonidos de la fábrica son el mismo:
+   **hoy la mejor está a 6.90 dB y la mediana en 17.81**, y el listón es 4 —
+   por debajo de ahí `kits.py` las llamaría el mismo sonido y los FLAC pueden
+   salir. Ninguna de las 31 llega todavía.
+
+Lo protegido es el fichero, no el timbre: que un bombo tenga la afinación
+cayendo no es de nadie. Por eso la salida 2 es una salida y no un rodeo.
+
+**Y no hay ninguna marca ajena en lo que se publica**, que es una cosa distinta
+de la licencia y sí está medida: `Tests/marcas.py` lee las reglas 1 y 2 de
+`GOOGLE-PLAY.md` §1.5 y las contrasta contra `Source/` y `Zati.jucer` en cada
+corrida del banco. Los nombres de los aparatos viven en `Tools/fabrica.py` y en
+`Tests/clon.py`, que no entran en el APK y donde tienen que estar: sin ellos no
+quedaría constancia de la procedencia, que es justo lo que este apartado
+necesita para poder cerrarse algún día.
 
 ## Lo de JUCE es una decisión, no un trámite
 

@@ -25,7 +25,7 @@ El plano se lee de arriba abajo, que es como se lee la pantalla:
     python3 Tests/plano.py              todas las fichas
     python3 Tests/plano.py set mix      solo esas
 """
-import json, os, shutil, subprocess, sys, tempfile
+import json, os, re, shutil, subprocess, sys, tempfile
 
 sys.path.insert (0, os.path.dirname (os.path.abspath (__file__)))
 from kits import display_alive
@@ -102,10 +102,49 @@ def main():
                % (nombre.upper(), raiz.get ("w", 0), raiz.get ("h", 0), tapa))
 
         #  Titulos y secciones, en orden de lectura.
-        titulos = [r for r in rot if r["tipo"] == "titulo"]
+        #
+        #  EL TITULO DE LA FICHA ES EL DE SU CAPA, no el primero de la lista.
+        #  Desde que la cabecera de la cara se apunta -«ZATI SAMPLER»- es un
+        #  «titulo» mas, y ademas el primero, asi que CANCION y XY salian con
+        #  «la tapa dice CANCION y el titulo ZATI SAMPLER»: dos hallazgos
+        #  falsos, y de la clase peor, porque aparecieron el dia que esta
+        #  prueba empezo a devolver codigo. Cada ficha lleva su numero de capa
+        #  y todo lo que cuelga de ella lo hereda; la cara es la 0.
+        capa = max ((r.get ("capa", 0) for r in rot), default=0) if sheet else 0
+        titulos = [r for r in rot if r["tipo"] == "titulo" and r.get ("capa", 0) == capa]
         for r in sorted (rot, key=lambda r: (r["y"], r["x"])):
             print ("  %-8s %-28s %4d,%-4d %dx%d"
                    % (r["tipo"], r["rotulo"][:28], r["x"], r["y"], r["w"], r["h"]))
+
+        #  EL MANUAL DICE CUANTOS CAPITULOS TIENE Y DIBUJA OTROS TANTOS.
+        #
+        #  Habia un `kManualChapters = 9` en el .h y una tabla de DIEZ filas, y
+        #  manualContentHeight las recorria todas: SI ALGO NO SUENA estaba
+        #  traducido a los cuatro idiomas, reservaba su alto en el
+        #  desplazamiento y no se pintaba nunca. Ninguna de las ocho reglas de
+        #  expo.py puede verlo -un capitulo que no se dibuja no es un
+        #  componente-, y el subtitulo prometia OCHO, que no era ninguno de los
+        #  dos numeros.
+        #
+        #  Se pregunta COMPARANDO y sin ninguna cifra escrita aqui: el numero
+        #  que el subtitulo dice contra los titulos de capitulo que se pintaron
+        #  de verdad. Asi la prueba no hay que tocarla el dia que entre un
+        #  capitulo, que es justo lo que no paso con los siete sitios donde
+        #  estaba escrito «ocho».
+        if sheet == "manual":
+            caps = [r for r in rot if r["tipo"] == "capitulo"]
+            sub  = [r for r in rot if r["tipo"] == "subtitulo"]
+            dice = None
+            if sub:
+                m = re.search (r"\d+", sub[0]["rotulo"])
+                if m: dice = int (m.group (0))
+            print ("  el subtitulo dice %s capitulos y se dibujan %d"
+                   % (dice if dice is not None else "?", len (caps)))
+            if dice is None:
+                avisos.append ("manual: el subtitulo no dice cuantos capitulos hay")
+            elif dice != len (caps):
+                avisos.append ("manual: el subtitulo dice %d capitulos y se dibujan %d"
+                               % (dice, len (caps)))
 
         #  LA PREGUNTA QUE ESTO EXISTE PARA CONTESTAR.
         if sheet and not titulos:
@@ -118,8 +157,19 @@ def main():
         print ("  %d controles" % len (comp))
 
     print()
-    for a in avisos: print ("AVISO ", a)
-    print ("%d fichas sin aviso" % 0 if avisos else "el plano no encuentra desajustes")
+    #  Y DEVUELVE CODIGO. Esto imprimia AVISO y salia con cero pasara lo que
+    #  pasara, que es lo mismo que le pasaba a expo.py, session.py y apk.py: el
+    #  veredicto lo daba un ojo humano leyendo texto. Por eso «sec no tiene
+    #  titulo» y «browse no tiene titulo» duraron tandas enteras.
+    #
+    #  Y la ultima linea estaba mal escrita ademas: `"%d..." % 0 if avisos else
+    #  "..."` se agrupa como `("%d..." % 0) if avisos else "..."`, asi que con
+    #  avisos imprimia «0 fichas sin aviso» — el mensaje de que todo esta bien
+    #  justo cuando algo no lo esta.
+    for a in avisos: print ("FALLA ", a)
+    if avisos:
+        return 1
+    print ("el plano no encuentra desajustes")
     return 0
 
 

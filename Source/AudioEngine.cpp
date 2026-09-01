@@ -148,7 +148,7 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize, int inputC
         recordBuffer.clear();
     }
 
-    //  How many frames one silhouette column covers. FX-404 v232 puts the
+    //  How many frames one silhouette column covers. The earlier project put the
     //  analyser's whole window on screen at 1x, and its window is fftSize -
     //  32768 frames, about 0.74 s at 44.1 kHz. Same span here, expressed as a
     //  duration so it holds at any device rate.

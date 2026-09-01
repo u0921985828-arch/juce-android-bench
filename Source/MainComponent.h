@@ -537,11 +537,11 @@ private:
 
     //  DIECISEIS NIVELES.
     //
-    //  El gesto de la MPC: se elige un pad y los dieciseis de la rejilla pasan
-    //  a ser ESE pad tocado a dieciseis fuerzas, de la mas floja abajo a la
-    //  mas fuerte arriba. Es la unica forma de tocar dinamica con los dedos en
-    //  una pantalla que no tiene tacto: un cristal no sabe cuanto aprietas, y
-    //  sin esto todos los golpes salen iguales.
+    //  El gesto de siempre en un sampler de pads: se elige uno y los dieciseis
+    //  de la rejilla pasan a ser ESE pad tocado a dieciseis fuerzas, de la mas
+    //  floja abajo a la mas fuerte arriba. Es la unica forma de tocar dinamica
+    //  con los dedos en una pantalla que no tiene tacto: un cristal no sabe
+    //  cuanto aprietas, y sin esto todos los golpes salen iguales.
     //
     //  El pad se CAPTURA al encender y no se lee del selector en cada golpe:
     //  si se leyera, tocar un pad cambiaria el pad de destino y el modo se
@@ -1632,7 +1632,7 @@ private:
     //  idiomas, y en la ficha de AJUSTES - que es donde ya estan los gestos,
     //  que son la mitad de las preguntas.
     //
-    //  De consulta, no de lectura: ocho capitulos de cuatro o cinco lineas.
+    //  De consulta, no de lectura: capitulos de cuatro o cinco lineas.
     //  El manual largo, con el porque de cada decision, es otra cosa y va
     //  fuera; esto es lo que se mira con una mano.
     struct ManualBody : public juce::Component
@@ -1742,9 +1742,9 @@ private:
 
     //  EL TOUR DE BIENVENIDA, que no es el manual.
     //
-    //  El manual tiene ocho capitulos y sirve para consultar; esto sirve para
+    //  El manual sirve para consultar; esto sirve para
     //  la primera vez, que es un problema distinto: alguien que acaba de
-    //  instalar la app no lee ocho capitulos, toca cosas. Cinco tarjetas, la
+    //  instalar la app no lee un manual entero, toca cosas. Cinco tarjetas, la
     //  ultima lleva al manual, y sale UNA vez - la marca vive en el mismo
     //  sitio que el idioma y la carcasa, porque es de la persona y no del
     //  proyecto, y tiene que poder leerse antes de que ProjectStore haya
@@ -1762,13 +1762,14 @@ private:
     //
     //  La primera version eran cinco tarjetas con texto, y explicaban la app
     //  sin ensenarla: quien las lee sigue sin saber DONDE esta lo que le acaban
-    //  de contar. El tour del FX-404 -de donde sale esta app- hace lo contrario
+    //  de contar. El tour del proyecto anterior -de donde sale esta app- hace lo
+    //  contrario
     //  y es lo que lo hace util: oscurece la maquina entera menos el control
     //  del que habla, le pone un anillo, y va abriendo las fichas de verdad
     //  para explicarlas en vivo.
     //
     //  Y el texto va en un MUELLE FIJO, no en una tarjeta al lado de lo
-    //  senalado. El FX-404 llego ahi despues de dos redisenos -"la barra ya no
+    //  senalado. Aquel llego ahi despues de dos redisenos -"la barra ya no
     //  tapa la seleccion", "el mensaje nunca tapa la zona senalada"- porque una
     //  tarjeta colocada junto al objetivo acaba tapandolo en cuanto el objetivo
     //  es grande o esta en un borde. Junto al control solo va un NUMERO, y el
@@ -1803,10 +1804,12 @@ private:
     void paintManualSheetContent (juce::Graphics& g);
     void paintManualBody (juce::Graphics& g);
     int  manualContentHeight (int width) const;
-    //  Ocho capitulos, y el numero de lineas de cada uno. Se declara aqui
-    //  porque lo necesitan el alto del contenido y el pintado, y esos dos
-    //  TIENEN que contar lo mismo o el desplazamiento se queda corto.
-    static constexpr int kManualChapters = 9;   // ver kManual en el .cpp
+    //  Aqui vivia un `kManualChapters = 9` con este comentario encima: «se
+    //  declara aqui porque lo necesitan el alto del contenido y el pintado, y
+    //  esos dos TIENEN que contar lo mismo». Exactamente eso es lo que no
+    //  pasaba: la tabla tenia diez filas, manualContentHeight las recorria
+    //  todas y el pintado se paraba en nueve. Una cuenta escrita al lado de la
+    //  tabla no es la tabla; las dos funciones la recorren ahora.
     juce::OwnedArray<juce::TextButton> patternButtons;  // P1..P8 — chain include toggles
 
     // --- FX slots (spec Zone 5) -------------------------------------------

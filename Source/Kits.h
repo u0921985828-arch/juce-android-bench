@@ -202,24 +202,24 @@ namespace Kits
         };
 
         //  METAL, ahora con cuadradas LIMITADAS EN BANDA. Seis frecuencias sin
-        //  relacion armonica es lo que sonaba a platillo en una 808 y sigue
+        //  relacion armonica es lo que sonaba a platillo en una caja de ritmos
         //  siendolo; lo que estaba mal era como se generaban.
         //  DOS JUEGOS DE PARCIALES Y NO UNO, que es lo que separaba RIDE de
-        //  CYM 808 en 0.99 de parecido: eran el mismo oscilador con otro
-        //  filtro. El juego 0 son las seis frecuencias de la 808 -asi suena esa
+        //  el CY del banco B en 0.99 de parecido: eran el mismo oscilador con otro
+        //  filtro. El juego 0 son seis frecuencias inarmonicas -asi suena esa
         //  maquina y asi se queda-; el juego 1 es un platillo de verdad, que
         //  tiene mas parciales, mas arriba y peor repartidos, porque un disco
         //  de laton no vibra en seis modos sino en muchos.
         struct Metal
         {
             double ph[9] {};
-            static constexpr double f808[9] = { 205.3, 304.4, 369.6, 522.7, 540.0, 800.0, 0.0, 0.0, 0.0 };
+            static constexpr double fMaquina[9] = { 205.3, 304.4, 369.6, 522.7, 540.0, 800.0, 0.0, 0.0, 0.0 };
             static constexpr double fLaton[9] = { 311.0, 437.7, 591.3, 728.9, 941.0, 1183.0, 1601.0, 2087.0, 2749.0 };
             int juego = 0;
             int cuantos() const noexcept { return juego == 0 ? 6 : 9; }
             float next (double mul) noexcept
             {
-                const double* f = (juego == 0) ? f808 : fLaton;
+                const double* f = (juego == 0) ? fMaquina : fLaton;
                 const int nf = cuantos();
                 float s = 0.0f;
                 for (int i = 0; i < nf; ++i)
@@ -243,9 +243,9 @@ namespace Kits
 //  cerrado y uno abierto salen identicos, y solo con envolvente sale identico
 //  cualquier par de golpes cortos- habia VEINTIOCHO pares por encima de 0.97:
 //
-//      SNARE / SD 808   0.991      HAT / CH 808     0.989
-//      OPEN / OH 808    0.996      RIM / RIM 808    0.993
-//      RIDE / CYM 808   0.991      BASS / SAW BS    0.996
+//      SNARE / SD       0.991      HAT / CH         0.989
+//      OPEN / OH        0.996      RIM / RS         0.993
+//      RIDE / CY        0.991      BASS / SAW BS    0.996
 //
 //  No eran parecidos de familia: eran la misma receta con otro numero. Cambiar
 //  de banco no era una decision musical, era pasar de pagina.
@@ -256,10 +256,10 @@ namespace Kits
 //
 //  Asi que el banco A deja de compartir formas con el B. Las membranas
 //  acusticas van por skin, los parches con bordon por wire, y lo que suena a
-//  bolitas -maraca, shaker, pandereta- por grain. La 808 se queda con drum,
-//  snare y hat tal cual, porque eso ES la 808: un seno con la afinacion
-//  cayendo y ruido por un filtro. Lo que estaba mal no era la 808, era que la
-//  bateria acustica fuese otra 808 con los numeros movidos.
+//  bolitas -maraca, shaker, pandereta- por grain. El banco B se queda con
+//  drum, snare y hat tal cual, porque eso ES una caja de ritmos: un seno con
+//  la afinacion cayendo y ruido por un filtro. Lo que estaba mal no era ese
+//  banco, era que la bateria acustica fuese otro igual con los numeros movidos.
 //  ----------------------------------------------------------------------------
 
     enum Shape { drum, snare, hat, metal, clap, tone, chord, sweep, noiseHit, vinyl, fm,
@@ -273,7 +273,7 @@ namespace Kits
         float decay;
         float p1;
         float p2;
-        //  Cual de los dos juegos de parciales usa el metal: 0 la 808, 1 el
+        //  Cual de los dos juegos de parciales usa el metal: 0 la maquina, 1 el
         //  laton. Solo lo miran metal y hat.
         int   juego;
         //  Cuanto se abre el filtro que sigue a la nota, multiplicando el de
@@ -324,28 +324,28 @@ namespace Kits
 
             // --- B: MAQUINA --------------------------------------------
             //  Y AQUI NO SE TOCA NADA: un seno con la afinacion cayendo y ruido
-            //  por un filtro ES la 808. Lo que estaba mal no era este banco,
-            //  era que el de al lado fuese otra vez este.
-            { "BD 808", drum,      48.0f, 1.05f, 1.1f, 0.045f, 0, 0.0f, "b01_bd_flac" },
-            { "SD 808", snare,    182.0f, 0.22f, 0.32f, 1300.0f, 0, 0.0f, "b02_sd_flac" },
-            { "CH 808", hat,    10500.0f, 0.030f, 2.2f, 0.0f, 0, 0.0f, "b03_ch_flac" },
-            { "OH 808", hat,     9800.0f, 0.36f, 2.0f, 0.0f, 0, 0.0f, "b04_oh_flac" },
-            { "RIM 808",snare,    560.0f, 0.036f, 0.62f, 3400.0f, 0, 0.0f, "b05_rs_flac" },
-            { "LT 808", drum,      82.0f, 0.58f, 0.6f, 0.070f, 0, 0.0f, "b07_lt_flac" },
-            { "MT 808", drum,     116.0f, 0.50f, 0.6f, 0.062f, 0, 0.0f, "b08_mt_flac" },
-            { "HT 808", drum,     162.0f, 0.44f, 0.6f, 0.055f, 0, 0.0f, "b09_ht_flac" },
-            { "CLAP 9", clap,       0.0f, 0.13f, 3.2f, 1900.0f, 0, 0.0f, "b06_cp_flac" },
-            { "CYM808", metal,      1.0f, 1.50f, 6000.0f, 0.7f, 0, 0.0f, "b13_cy_flac" },
-            { "COW808", metal,      2.6f, 0.40f, 2600.0f, 3.4f, 0, 0.0f, "b14_cb_flac" },
+            //  por un filtro ES una caja de ritmos. Lo que estaba mal no era este
+            //  banco, era que el de al lado fuese otra vez este.
+            { "BD"    , drum,      48.0f, 1.05f, 1.1f, 0.045f, 0, 0.0f, "b01_bd_flac" },
+            { "SD"    , snare,    182.0f, 0.22f, 0.32f, 1300.0f, 0, 0.0f, "b02_sd_flac" },
+            { "CH"    , hat,    10500.0f, 0.030f, 2.2f, 0.0f, 0, 0.0f, "b03_ch_flac" },
+            { "OH"    , hat,     9800.0f, 0.36f, 2.0f, 0.0f, 0, 0.0f, "b04_oh_flac" },
+            { "RS"    ,snare,    560.0f, 0.036f, 0.62f, 3400.0f, 0, 0.0f, "b05_rs_flac" },
+            { "LT"    , drum,      82.0f, 0.58f, 0.6f, 0.070f, 0, 0.0f, "b07_lt_flac" },
+            { "MT"    , drum,     116.0f, 0.50f, 0.6f, 0.062f, 0, 0.0f, "b08_mt_flac" },
+            { "HT"    , drum,     162.0f, 0.44f, 0.6f, 0.055f, 0, 0.0f, "b09_ht_flac" },
+            { "CP"    , clap,       0.0f, 0.13f, 3.2f, 1900.0f, 0, 0.0f, "b06_cp_flac" },
+            { "CY"    , metal,      1.0f, 1.50f, 6000.0f, 0.7f, 0, 0.0f, "b13_cy_flac" },
+            { "CB"    , metal,      2.6f, 0.40f, 2600.0f, 3.4f, 0, 0.0f, "b14_cb_flac" },
             { "CLAVE",  tone,     2450.0f, 0.050f, 0.0f, 0.0f, 0, 0.0f, "b15_cl_flac" },
             { "MARACA", grain,   6800.0f, 0.034f, 2600.0f, 0.0f, 0, 0.0f, "b16_ma_flac" },
-            //  Los tres congas, que son las tres voces de la 808 que faltaban.
+            //  Los tres congas, que son las tres voces de la maquina que faltaban.
             //  Aqui estaban SUB, ZAP y SNAP - tres inventos nuestros - y las
             //  dieciseis voces de la maquina son exactamente dieciseis: si el
             //  banco se llama MAQUINA, las que van son las suyas.
-            { "LC 808", skin,      82.0f, 0.42f, 0.18f, 0.20f, 0, 0.0f, "b10_lc_flac" },
-            { "MC 808", skin,     124.0f, 0.34f, 0.18f, 0.20f, 0, 0.0f, "b11_mc_flac" },
-            { "HC 808", skin,     186.0f, 0.28f, 0.18f, 0.20f, 0, 0.0f, "b12_hc_flac" },
+            { "LC"    , skin,      82.0f, 0.42f, 0.18f, 0.20f, 0, 0.0f, "b10_lc_flac" },
+            { "MC"    , skin,     124.0f, 0.34f, 0.18f, 0.20f, 0, 0.0f, "b11_mc_flac" },
+            { "HC"    , skin,     186.0f, 0.28f, 0.18f, 0.20f, 0, 0.0f, "b12_hc_flac" },
 
             // --- C: TEXTURA --------------------------------------------
             { "VINYL",  vinyl,      0.0f, 1.60f, 0.0f, 0.0f },
@@ -355,7 +355,7 @@ namespace Kits
             { "IMPACT", noiseHit,  62.0f, 1.05f, 0.6f, 0.0f },
             { "CLICK",  tone,    1900.0f, 0.011f, 0.0f, 0.0f },
             //  STATIC por granos y no por ruido filtrado: con ruido media 3.75 dB
-            //  contra el platillo de la 808, que ahora es una grabacion de
+            //  contra el platillo del banco B, que ahora es una grabacion de
             //  verdad y es un lavado de ruido brillante de dos segundos. Una
             //  interferencia no es un lavado, es una sucesion de chasquidos.
             { "STATIC", grain,   2400.0f, 0.32f, 700.0f, 0.0f },
@@ -633,11 +633,11 @@ namespace Kits
                     //  la Q, o sea cuanto "sisea" contra cuanto "tintinea".
                     f1.set (r.hz, r.p1);
                     //  Y CUANTO METAL, segun el juego de parciales. Con la misma
-                    //  mezcla para los dos, HAT y CH 808 median 2.9 dB de
+                    //  mezcla para los dos, HAT y CH median 2.9 dB de
                     //  diferencia -practicamente el mismo sonido- porque en los
                     //  dos mandaba el ruido. Un charles acustico son dos chapas
                     //  de laton: manda el metal y el ruido es solo el filo. La
-                    //  808 es al reves y por eso suena a 808.
+                    //  maquina es al reves y por eso suena a maquina.
                     const float aire = (met.juego == 1) ? 0.22f : 0.55f;
                     const float src = (r.p2 > 0.5f) ? rnd()
                                                     : (aire * rnd() + (1.0f - aire) * met.next (1.0));
@@ -799,8 +799,8 @@ namespace Kits
                 {
                     //  UN PARCHE, que no es un seno con la afinacion cayendo.
                     //
-                    //  Eso ultimo es una 808 y esta bien que lo sea; el fallo era
-                    //  que la bateria ACUSTICA fuese otra 808 con los numeros
+                    //  Eso ultimo es una caja de ritmos y esta bien que lo sea; el
+                    //  fallo era que la bateria ACUSTICA fuese otra con los numeros
                     //  movidos. Un tom de verdad son tres cosas: el golpe de la
                     //  baqueta -ruido corto y agudo, cinco milisegundos-, los
                     //  modos de la membrana, que no guardan relacion entera, y el
@@ -825,7 +825,7 @@ namespace Kits
                 {
                     //  UNA CAJA CON BORDON, y el bordon es la mitad que faltaba.
                     //
-                    //  La caja acustica y la SD 808 median 0.991 porque las dos
+                    //  La caja acustica y la SD del banco B median 0.991 porque las dos
                     //  eran ruido por un paso banda mas un cuerpo. La diferencia
                     //  de verdad esta en que una caja de verdad tiene MUELLES
                     //  debajo, y los muelles ni entran a la vez que el golpe ni

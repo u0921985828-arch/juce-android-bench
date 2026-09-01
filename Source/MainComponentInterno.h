@@ -268,7 +268,7 @@ inline void restyleTree (juce::Component& c, const std::function<void (juce::Tex
 }
 
 // ============================================================================
-//  EL MANUAL, en ocho capitulos de cuatro o cinco lineas.
+//  EL MANUAL, en capitulos de cuatro o cinco lineas.
 //
 //  De consulta y no de lectura: esto se mira con el telefono en la mano y en
 //  mitad de algo, asi que cada linea tiene que valerse sola. El manual largo -
@@ -429,7 +429,8 @@ namespace ZatiTour
     //  aprende el instrumento: primero lo que suena, luego como se escribe, luego
     //  que se le hace al sonido, y al final como sale de aqui.
     //
-    //  Cortos a proposito. El FX-404 tiene veintisiete y aprendio lo mismo por el
+    //  Cortos a proposito. El proyecto anterior tiene veintisiete y aprendio lo
+//  mismo por el
     //  camino - "pasos mas cortos" es una de sus versiones -: un parrafo largo
     //  encima de una maquina oscurecida no se lee, se salta.
     static const char* titulos[MainComponent::kTourPasos] =

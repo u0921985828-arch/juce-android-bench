@@ -27,8 +27,8 @@ public:
     //  `mouseDown` desde el primer dia, asi que el dato ya estaba.
     //
     //  Y con esto MANTENER TAMBIEN SUENA, que es lo que el parrafo de `onHold`
-    //  decia que no pasaba. Se acepta a proposito: en una MPC tocar un pad
-    //  suena siempre, el modo tecla de esta misma clase ya sonaba al apoyar, y
+    //  decia que no pasaba. Se acepta a proposito: en un sampler de pads tocar
+    //  un pad suena siempre, el modo tecla de esta misma clase ya sonaba al apoyar, y
     //  la alternativa era retrasar CADA golpe 420 ms para que el gesto de
     //  mantener fuera mudo.
     explicit PadButton (int idx) : juce::Button (juce::String (idx + 1)), index (idx)

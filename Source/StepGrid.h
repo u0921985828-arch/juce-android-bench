@@ -79,7 +79,7 @@ public:
         //
         //  Esta rejilla trabaja en carriles - dieciseis, del 0 al 15 - y quien
         //  la usa le suma el banco. Pintar carril+1 daba 01..16 en los cuatro
-        //  bancos, asi que en el banco B la cabecera decia "PAD 17 BD 808" y el
+        //  bancos, asi que en el banco B la cabecera decia "PAD 17 BD" y el
         //  canalon de esa misma pista decia 01: el mismo pad con dos nombres, y
         //  el que la persona lee para saber cual es era el falso.
         laneBase = firstPad;

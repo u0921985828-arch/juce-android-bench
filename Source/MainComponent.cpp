@@ -7469,7 +7469,7 @@ void MainComponent::pegarFila()
 
 //  EUCLIDES: N golpes repartidos lo mas uniformemente posible en la fila.
 //
-//  Es lo que el FX-404 llama EUCLIDEAN y lo que en una caja de ritmos vale por
+//  Es lo que el proyecto anterior llama EUCLIDEAN y lo que en una caja de ritmos vale por
 //  media hora de tocar celdas: casi todo lo que suena a clave, a afro o a
 //  tresillo cabe en "cinco golpes en dieciseis" o "siete en doce", y a mano
 //  cuesta contar y equivocarse.
@@ -8462,7 +8462,7 @@ juce::Rectangle<int> MainComponent::tourObjetivo (int paso) const
 
 //  Y CADA PASO ABRE LO QUE EXPLICA. Un tour que dice "en SEC esta la rejilla" y
 //  deja a la persona en la cara no ha ensenado la rejilla: la ha nombrado. El
-//  del FX-404 abre cada pop-up y lo explica en vivo, y es lo que lo separa de un
+//  del proyecto anterior abre cada pop-up y lo explica en vivo, y es lo que lo separa de un
 //  folleto.
 void MainComponent::tourPrepara (int paso)
 {
@@ -8490,7 +8490,8 @@ void MainComponent::tourPrepara (int paso)
 
     //  Y EL TOUR POR ENCIMA. openSheet cierra todo y sube la ficha que abre, asi
     //  que sin esto el tour se queda debajo de lo que acaba de abrir para
-    //  explicarlo - que es exactamente el fallo que el FX-404 anoto como "el
+    //  explicarlo - que es exactamente el fallo que el proyecto anterior anoto
+    //  como "el
     //  tour se eleva por encima del pop-up".
     tourSheet.setVisible (true);
     tourSheet.toFront (false);

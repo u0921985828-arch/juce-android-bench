@@ -70,12 +70,13 @@ jobs:
       #  -las unicas que no necesitan pantalla- salieron `skipped`. Un paso
       #  saltado no es un paso verde, y el informe decia una cosa donde habia
       #  cinco.
-      - name: Tabla, carcasas y fuentes
+      - name: Tabla, carcasas, fuentes y marcas
         if: '!cancelled()'
         run: |
           python3 Tests/lang.py
           python3 Tests/skins.py
           python3 Tests/fuentes.py
+          python3 Tests/marcas.py
 
       - name: El motor
         if: '!cancelled()'

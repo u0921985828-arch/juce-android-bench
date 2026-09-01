@@ -1063,9 +1063,21 @@ void MainComponent::paintManualBody (juce::Graphics& g)
     auto r = manualBody.getLocalBounds().reduced (Metrics::sm, 0);
     r.removeFromTop (Metrics::sm);
 
-    for (int c = 0; c < kManualChapters; ++c)
+    //  SE RECORRE LA TABLA, no una cuenta escrita al lado.
+    //
+    //  Aqui habia un `kManualChapters = 9` declarado en el .h mientras la
+    //  tabla tenia diez filas y manualContentHeight las recorria todas: o sea
+    //  que SI ALGO NO SUENA estaba traducido a los cuatro idiomas, reservaba
+    //  su alto en el desplazamiento y no se pintaba NUNCA. La misma regla
+    //  escrita dos veces, que es el fallo mas repetido de esta casa - y aqui
+    //  no lo veia ninguna de las ocho reglas del banco, porque un capitulo que
+    //  no se dibuja no es un componente. El comentario de manualContentHeight
+    //  ya decia que las dos funciones tienen que recorrer «la misma tabla con
+    //  las mismas alturas»; una de las dos no lo hacia.
+    int c = -1;
+    for (const auto& ch : kManual)
     {
-        const auto& ch = kManual[(size_t) c];
+        ++c;
 
         //  El titulo del capitulo con su filete, igual que las secciones de
         //  las fichas: asi el manual se lee como parte de la misma maquina.
@@ -1073,6 +1085,9 @@ void MainComponent::paintManualBody (juce::Graphics& g)
         const auto secText = T (ch.title);
         g.setColour (ZatiColours::ink.withAlpha (0.55f));
         g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.22f));
+        //  Apuntado para el banco: es lo unico que hace que «cuantos capitulos
+        //  se dibujan» sea una cifra y no una lectura. Ver Tests/plano.py.
+        apunta (g, band, secText, "capitulo");
         g.drawText (secText, band, Lang::start());
 
         const float tw = juce::GlyphArrangement::getStringWidth (
@@ -1122,8 +1137,21 @@ void MainComponent::paintManualSheetContent (juce::Graphics& g)
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
-    g.drawText (T ("lo que hay que saber, en ocho capitulos"),
-                inner.removeFromTop (14), Lang::start());
+    //  EL NUMERO SALE DE LA TABLA, no de la frase.
+    //
+    //  Decia «en ocho capitulos» escrito a mano - en el rotulo, en la fila de
+    //  Lang y en cuatro comentarios - con una tabla de diez. Un numero dentro
+    //  de una frase traducida es la unica clase de constante que no se puede
+    //  contrastar leyendo el codigo de al lado, asi que se interpola: el dia
+    //  que entre un capitulo, la frase se entera sola en los cuatro idiomas.
+    //  Y en LTR, que es la regla de la casa para las cifras latinas en arabe.
+    //
+    //  Apuntado y recortado antes de la x, como el titulo: se dibuja con
+    //  drawText y no era un componente, asi que no lo veia nadie.
+    pintaTitulo (g, antesDe (inner.removeFromTop (14), manualCloseButton),
+                 T ("lo que hay que saber, en %1 capitulos",
+                    Lang::ltr (juce::String (kManualChapterCount))),
+                 "subtitulo");
 }
 
 // Build the chips from what THIS device actually offers. Nothing is
