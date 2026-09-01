@@ -98,6 +98,23 @@ jobs:
           echo "Using Projucer: $PROJUCER"
           "$PROJUCER" --resave Zati.jucer
 
+      #  QUE LA RUTA DE COMPILACION NO VIAJE DENTRO DE LA .so.
+      #
+      #  La libreria que se instala llevaba 320 veces
+      #  `/home/runner/work/FX-404/FX-404/...` en su `.rodata`: son los
+      #  `__FILE__` de las macros de asercion de JUCE, que en release siguen ahi
+      #  -la .so ya sale stripped, no es informacion de depuracion-. Lo que
+      #  filtra es el nombre viejo del proyecto, que GOOGLE-PLAY.md 1.5 regla 2
+      #  llama el mayor riesgo que ha tenido, dentro del fichero que se publica.
+      #
+      #  Va aqui y no en Zati.jucer porque la bandera necesita la ruta ABSOLUTA
+      #  de la raiz, que solo existe cuando el runner ya ha hecho el checkout:
+      #  escribirla en el .jucer seria clavar /home/runner/work/... en un
+      #  fichero del repositorio, o sea meter el nombre justo donde se esta
+      #  quitando. Y falla si el CMakeLists generado cambia de forma.
+      - name: La ruta de compilacion no viaja dentro de la .so
+        run: python3 ci/patch_ruta_build.py
+
       #  The launch window. Until JUCE puts up its first frame the window is
       #  whatever the theme's windowBackground says, and Theme.Material.Light
       #  says WHITE - so the app opened onto a second and a half of blank white
@@ -392,6 +409,25 @@ jobs:
             Zati-release.aab "$KEY_ALIAS"
           rm -f upload.jks
           echo "Release APK and AAB signed with the upload key."
+
+      #  Y EL BANCO DEL APK, QUE NO LO CORRIA NADIE.
+      #
+      #  `Tests/apk.py` existe, contrasta la firma v2, el paquete, los cuatro
+      #  permisos, la alineacion de 16 KB y lo que va ESCRITO dentro, y devuelve
+      #  codigo de salida desde que se arreglo aquello de imprimir VEREDICTO y
+      #  salir con cero. Y `grep -rn "apk.py" .github/ ci/` solo lo encontraba
+      #  dentro de un comentario: la cabecera de banco.yml dice que el flujo de
+      #  la APK «de las veintitantas pruebas ejecutaba una: Tests/apk.py» y
+      #  ejecutaba CERO. Una prueba que no corre en ningun sitio no falla: se
+      #  publica.
+      #
+      #  Sobre el binario YA FIRMADO y por la misma razon que la comprobacion de
+      #  las 16 KB: `apksigner` reconstruye el fichero, asi que mirarlo antes es
+      #  mirar otro.
+      - name: El banco del APK, sobre el binario ya firmado
+        if: '!cancelled()'
+        run: |
+          python3 Tests/apk.py Zati-release.apk
 
       #  LA RELEASE VA PRIMERO, y la copia por corrida detras y sin poder
       #  tumbar nada.
