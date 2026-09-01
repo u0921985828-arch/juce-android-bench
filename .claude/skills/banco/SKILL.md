@@ -54,6 +54,13 @@ codigo.
 Ante la duda, todo. El banco entero son unos quince minutos y una APK mal son
 doce de CI mas el tiempo de la persona que se la instala.
 
+**Y `cpu.py` mide dos veces: quieta y SONANDO.** En un escritorio no hay
+tarjeta de sonido, asi que el motor no renderiza, el osciloscopio ve silencio y
+la pieza mas grande de la cara no se repinta nunca: `ZATI_SONANDO` bombea los
+bloques que le tocan a cada tick y el camino entero corre de verdad. Y la
+segunda pasada cuenta **pixeles y no llamadas**, que es lo unico que separa el
+cabezal pidiendo su banda -correcto- de una ficha pidiendo la ventana.
+
 **Y `cpu.py` se corre SOLA.** Es la unica prueba de esta casa que mide por
 RELOJ, y con las 896 corridas de `expo.py` compartiendo nucleos saco nueve
 fichas «repintandose solas» —la cara a 19 fotogramas contra un tope de 3— con el
