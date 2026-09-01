@@ -11,6 +11,11 @@ audio de baja latencia por Oboe/AAudio. Nació como prueba de latencia contra un
 prototipo en WebView y hoy es la aplicación entera: pads, secuenciador,
 mezclador, efectos, proyectos y exportación.
 
+**La referencia completa de la máquina está en [`ZATI.md`](ZATI.md)**: qué es,
+la cara y las catorce fichas control por control, los gestos, el motor, los 256
+instrumentos, la fábrica, los formatos de fichero, el aparato, la compilación y
+el banco. Este fichero es la portada; ése es el manual de la máquina.
+
 El repositorio se compila de dos formas y las dos importan:
 
 - **Escritorio (CMake):** para desarrollar y verificar DSP y lógica sin teléfono.
