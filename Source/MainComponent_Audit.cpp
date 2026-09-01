@@ -946,6 +946,60 @@ void MainComponent::auditNiveles()
 
     nivelesButton.setToggleState (false, juce::sendNotificationSync);
     linea ("apagado");
+
+    // ------------------------------------------------------------------
+    //  EL GOLPE SALE AL APOYAR EL DEDO, y esto no lo medi­a nadie.
+    //
+    //  Un pad de percusion disparaba por `onClick`, que en JUCE llega al
+    //  SOLTAR, asi que cada golpe llevaba encima el tiempo que el dedo pasara
+    //  sobre el pad. No hay medida de latencia que lo vea -la sonda del
+    //  microfono empieza a contar cuando la app EMITE- porque el retraso esta
+    //  antes, entre el dedo y la app.
+    //
+    //  Se mide por el camino de verdad: se construye un `MouseEvent` y se
+    //  llama a `PadButton::mouseDown`, que es donde vive el gesto. Llamar a
+    //  `padClicked` por dentro se salta justo la linea que decide CUANDO.
+    //  Y con las DOS mitades: que suene al apoyar Y que no vuelva a sonar al
+    //  levantar, porque «suena antes» lo cumple tambien un pad que dispara dos
+    //  veces.
+    {
+        //  Un pad con sonido y el motor listo, que en un escritorio sin
+        //  tarjeta no hay aparato y nadie ha llamado a prepareToPlay.
+        engine.prepareToPlay (48000.0, 128);
+        juce::AudioBuffer<float> b (2, 128);
+
+        auto vivas = [&]
+        {
+            b.clear();
+            engine.renderNextBlock (b, 0, 128);
+            return engine.getActiveVoiceCount();
+        };
+
+        //  SIN AUTOCORTE, que es lo que separa las dos formas de fallar: con
+        //  el puesto -que es como nace un pad- un segundo disparo se come al
+        //  primero y la cuenta de voces sale 1 igual, o sea que «1 y 1»
+        //  pasaria tanto con el arreglo como con un pad que dispara dos veces.
+        const int idx = 0;
+        engine.setPadSelfCut (idx, false);
+        auto* pad = pads[idx];
+        const auto punto = juce::Point<float> ((float) (pad->getWidth() / 2),
+                                               (float) (pad->getHeight() / 2));
+        const auto ahora = juce::Time::getCurrentTime();
+        juce::MouseEvent ev (juce::Desktop::getInstance().getMainMouseSource(),
+                             punto, juce::ModifierKeys(), 1.0f,
+                             0.0f, 0.0f, 0.0f, 0.0f,
+                             pad, pad, ahora, punto, ahora, 1, false);
+
+        engine.postPanic();
+        vivas();
+        pad->mouseDown (ev);
+        const int alApoyar = vivas();
+        pad->mouseUp (ev);
+        const int alLevantar = vivas();
+
+        std::cout << "{\"niveles\":\"golpe\",\"al_apoyar\":" << alApoyar
+                  << ",\"al_levantar\":" << alLevantar << "}" << std::endl;
+    }
 }
 
 void MainComponent::auditNuevo()
@@ -1616,6 +1670,19 @@ void MainComponent::auditProject()
     engine.setStepPLock (0, 0, 0, AudioEngine::plockPan,    88);
 
     saveProject ("BANCO_PRUEBA");
+    //  Y SE ESPERA A QUE TERMINE, que es lo que faltaba y por lo que esta
+    //  comprobacion salia verde o roja segun lo rapido que fuera el disco.
+    //
+    //  Guardar esta TROCEADO: `saveProject` corre una tajada de 25 ms y deja
+    //  el resto al temporizador, y la cabecera -que es la que llama a
+    //  `captureState()`- se escribe AL FINAL a proposito. Aqui no hay bucle de
+    //  mensajes, asi que si los 64 ficheros no cabian en esa primera tajada la
+    //  captura no llegaba a hacerse nunca... y las lineas de abajo, que vacian
+    //  el patron para probar que vuelve, la dejaban vacia si llegaba tarde. En
+    //  el runner de CI los 64 WAV caben en 25 ms y salia verde; en una maquina
+    //  mas lenta, roja. Una prueba cuyo veredicto depende de la velocidad del
+    //  disco no es una prueba. Se bombea lo mismo que bombearia el tic.
+    while (padSaveJob != nullptr) stepPadSaveJob();
 
     for (int b = 0; b < kNumPatterns; ++b)
         for (int st = 0; st < kNumSteps; ++st)
@@ -1635,6 +1702,7 @@ void MainComponent::auditProject()
     engine.setStepPLockRaw (0, 0, 0, 0);
 
     loadProject ("BANCO_PRUEBA");
+    while (padJob != nullptr) stepPadJob();
 
     std::cout << "{\"disperso\":1,\"nota\":" << engine.getStepNote (0, 0, 0)
               << ",\"acorde\":[" << engine.getStepExtra (0, 0, 0, 0) << ","

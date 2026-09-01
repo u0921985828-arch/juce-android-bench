@@ -618,18 +618,73 @@ public:
 
                         std::cout << "{\"cabezal\":1,\"pixeles\":" << comparados
                                   << ",\"fuera_de_la_zona\":" << fuera << "}" << std::endl;
+
+                        //  Y LA ONDA, que es la tercera rejilla con cabezal y
+                        //  la ultima en dejar de repintarse entera. Aqui el
+                        //  cabezal arrastra ademas un RASTRO que crece detras
+                        //  de el, asi que la union de las dos marcas tiene que
+                        //  cubrir tambien el trozo de rastro que aparece entre
+                        //  ellas: eso no se juzga leyendo el codigo.
+                        {
+                            WaveformDisplay onda;
+                            onda.setSize (380, 120);
+                            onda.setSample (Kits::render (0));
+                            onda.setTrim (0.1f, 0.9f);
+
+                            auto pintaOnda = [&onda] (juce::Image& img)
+                            {
+                                img.clear (img.getBounds());
+                                juce::Graphics g (img);
+                                onda.paintEntireComponent (g, false);
+                            };
+
+                            juce::Image oa (juce::Image::ARGB, 380, 120, true);
+                            juce::Image ob (juce::Image::ARGB, 380, 120, true);
+                            int fueraO = 0, compO = 0;
+
+                            //  Doscientos pasos de 0 a 1: el cabezal cruza la
+                            //  onda entera con saltos de menos de dos pixeles,
+                            //  que es el tamano de salto que da un tick.
+                            for (int k = 0; k < 200; ++k)
+                            {
+                                const float p0 = (float) k / 200.0f;
+                                const float p1 = (float) (k + 1) / 200.0f;
+
+                                onda.setPlayhead (p0);
+                                pintaOnda (oa);
+                                const auto z0 = onda.marcaDe (p0);
+                                onda.setPlayhead (p1);
+                                pintaOnda (ob);
+                                const auto zona = z0.getUnion (onda.marcaDe (p1));
+
+                                for (int y = 0; y < 120; ++y)
+                                    for (int x = 0; x < 380; ++x)
+                                    {
+                                        ++compO;
+                                        if (oa.getPixelAt (x, y) == ob.getPixelAt (x, y)) continue;
+                                        if (! zona.contains (x, y)) ++fueraO;
+                                    }
+                            }
+
+                            std::cout << "{\"cabezal\":\"onda\",\"pixeles\":" << compO
+                                      << ",\"fuera_de_la_zona\":" << fueraO << "}" << std::endl;
+                        }
                     }
                     else if (const auto sp = UiAudit::env ("ZATI_SPIN"); sp.isNotEmpty())
                     {
                         c2->auditPlay (true);
+                        const int ventana = c2->getWidth() * c2->getHeight();
                         const auto t0 = std::clock();
                         UiAudit::fondosPintados = 0;
+                        UiAudit::pixelesPintados = 0;
                         juce::Timer::callAfterDelay (juce::jmax (1, sp.getIntValue()) * 1000,
-                                                     [this, t0]
+                                                     [this, t0, ventana]
                         {
                             const double ms = 1000.0 * (double) (std::clock() - t0) / (double) CLOCKS_PER_SEC;
                             std::cout << "{\"spin\":1,\"cpu_ms\":" << ms
                                       << ",\"fondos\":" << UiAudit::fondosPintados
+                                      << ",\"pixeles\":" << UiAudit::pixelesPintados
+                                      << ",\"ventana\":" << ventana
                                       << ",\"piano_ticks\":" << UiAudit::pianoTicks
                                       << ",\"cabezal_piano\":" << UiAudit::cabezalPiano
                                       << "}" << std::endl;

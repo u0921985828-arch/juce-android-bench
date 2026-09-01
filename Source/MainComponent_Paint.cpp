@@ -19,6 +19,10 @@ void MainComponent::paint (juce::Graphics& g)
     //  corre cuando hay que repintar ventana entera, asi que contarla aqui
     //  cuenta fotogramas completos sin instrumentar nada mas.
     ++UiAudit::fondosPintados;
+    {
+        const auto c = g.getClipBounds();
+        UiAudit::pixelesPintados += (long long) c.getWidth() * (long long) c.getHeight();
+    }
 
     //  La cara es la capa 0, y se pinta antes que las fichas. Ver
     //  UiAudit::capaActual.

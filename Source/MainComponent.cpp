@@ -1,5 +1,8 @@
 #include "MainComponentInterno.h"
 
+#include <thread>
+#include <vector>
+
 MainComponent::MainComponent()
 {
     setLookAndFeel (&lnf);
@@ -5175,16 +5178,55 @@ int MainComponent::padSourceLength (int pad) const
 //  de equivocarse que tiene esta app.
 //
 //  Medido: la fabrica llenaba 0 pads del banco de delante.
+//  LOS SONIDOS DE FABRICA SE SINTETIZAN EN PARALELO.
+//
+//  `Kits::render` es una funcion PURA de su indice -su semilla es
+//  `1000 + index * 37`, escrita ahi- asi que los dieciseis de un banco no se
+//  hablan entre ellos. Y era el unico trozo del arranque sin trocear: la
+//  primera vez que alguien abre la app se rinden los sesenta y cuatro de
+//  golpe en el hilo de mensajes, con la portada puesta y sin nada mas que
+//  hacer. Medido en esta maquina: la primera apertura son 620 ms contra 253
+//  de la segunda, o sea que la fabrica es la diferencia.
+//
+//  Lo unico compartido es el registro de formatos de `desdeRecurso`, que es un
+//  `static` que se monta una vez bajo su guardia y del que solo se LEE.
+//  Repartir y esperar, que el reparto lo hace el sistema mejor que un troceo
+//  por ticks: aqui no hay nada que dibujar mientras tanto.
+static void rindeFabrica (int primero, int cuantos, SampleBuffer::Ptr* salida)
+{
+    const int hilos = juce::jlimit (1, 4, juce::SystemStats::getNumCpus());
+    if (hilos <= 1 || cuantos <= 1)
+    {
+        for (int i = 0; i < cuantos; ++i) salida[i] = Kits::render (primero + i);
+        return;
+    }
+
+    std::atomic<int> siguiente { 0 };
+    std::vector<std::thread> hebras;
+    hebras.reserve ((size_t) hilos);
+    for (int h = 0; h < hilos; ++h)
+        hebras.emplace_back ([&]
+        {
+            for (int i = siguiente.fetch_add (1); i < cuantos; i = siguiente.fetch_add (1))
+                salida[i] = Kits::render (primero + i);
+        });
+    for (auto& x : hebras) x.join();
+}
+
 void MainComponent::cargaFabricaEnBanco (int origen, int destino)
 {
     origen  = juce::jlimit (0, kNumBanks - 1, origen);
     destino = juce::jlimit (0, kNumBanks - 1, destino);
 
+    SampleBuffer::Ptr rendidos[kPadsPerBank];
+    rindeFabrica (origen * kPadsPerBank, kPadsPerBank, rendidos);
+
     for (int i = 0; i < kPadsPerBank; ++i)
     {
         const int src = origen  * kPadsPerBank + i;
         const int dst = destino * kPadsPerBank + i;
-        if (auto sb = Kits::render (src))
+        //  El reparto SI es del hilo de mensajes: toca el motor y la cara.
+        if (auto sb = rendidos[i])
         {
             //  EL PAD SE VACIA ANTES DE RECIBIR. Ver ponPadPorDefecto: sin esto
             //  la fabrica entraba con la afinacion, el filtro y el choke del

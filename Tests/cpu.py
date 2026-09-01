@@ -42,6 +42,30 @@ FICHAS = ["", "pads", "sec", "song", "mix", "set", "proj", "midi", "gest",
 #  a treinta por segundo, ocho segundos son doscientos cuarenta.
 TOPE = 3
 
+#  Y LA MISMA PREGUNTA CON LA MAQUINA SONANDO, que es el estado que este banco
+#  no medi­a.
+#
+#  En un escritorio no hay tarjeta de sonido, asi que el motor no renderiza, el
+#  osciloscopio ve silencio y `SpectrumDisplay::setSamples` se rinde en su
+#  guardia: la pieza mas grande de la cara -su propio comentario la llama «el
+#  coste en reposo mas grande de la app»- no se repintaba NUNCA aqui. En un
+#  telefono con algo sonando se repinta treinta veces por segundo, se vea o no.
+#  `ZATI_SONANDO` bombea los bloques que le tocan a cada tick y el camino
+#  entero -motor, colas, osciloscopio, VU, destellos- corre de verdad.
+#
+#  Y AQUI SE CUENTAN PIXELES Y NO LLAMADAS, que es lo que separa las dos cosas
+#  que estaban pasando a la vez: el cabezal de la rejilla de pasos entra en
+#  `MainComponent::paint` treinta veces por segundo y esta BIEN, porque pide su
+#  banda; la ficha que tapa la cara entraba las mismas veces y pedia la
+#  ventana. Contando llamadas los dos salen igual. Medido en MEZCLA, en 8 s:
+#  42 346 644 pixeles antes -112 fotogramas equivalentes, o sea pintando la
+#  maquina entera con una tarjeta delante- y 380 660 despues, uno.
+#
+#  El tope sale de la POBLACION y no de un numero redondo: la ficha que mas
+#  pinta con razon es la rejilla de pasos, con 5.8 fotogramas equivalentes de
+#  cabezal. Ocho deja sitio y esta catorce veces por debajo del estado roto.
+TOPE_SONANDO = 8.0
+
 
 def display_alive():
     d = os.environ.get ("DISPLAY", ":99")
@@ -53,10 +77,11 @@ def display_alive():
         return False
 
 
-def corre (ficha):
+def corre (ficha, sonando=False):
     env = dict (os.environ)
     env.update ({"ZATI_AUDIT": "1", "ZATI_SIZE": "412x915", "ZATI_LANG": "es",
                  "ZATI_DEMO": "1", "ZATI_OPEN": ficha, "ZATI_SPIN": str (SEGUNDOS)})
+    if sonando: env["ZATI_SONANDO"] = "1"
     try:
         out = subprocess.run ([APP], env=env, capture_output=True, text=True,
                               timeout=SEGUNDOS + 90).stdout
@@ -90,14 +115,16 @@ def cabezal():
                               timeout=900).stdout
     except subprocess.TimeoutExpired:
         return None
+    fuera = {}
     for linea in out.splitlines():
         linea = linea.strip()
         if linea.startswith ('{') and '"cabezal"' in linea:
             try:
-                return json.loads (linea)
+                d = json.loads (linea)
+                fuera[str (d["cabezal"])] = d
             except Exception:
                 pass
-    return None
+    return fuera or None
 
 
 def main():
@@ -120,15 +147,45 @@ def main():
             malas.append (f or "(cara)")
 
     print()
-    c = cabezal()
-    if c is None:
+    print ("y con la maquina SONANDO, en fotogramas EQUIVALENTES (pixeles / ventana)")
+    for f in FICHAS:
+        r = corre (f, sonando=True)
+        if r is None:
+            print ("%-8s  --   no contesto" % (f or "(cara)"));  malas.append (f or "(cara) sonando")
+            continue
+        vent = max (1, int (r.get ("ventana", 1)))
+        equi = int (r.get ("pixeles", 0)) / float (vent)
+        #  La cara no se juzga: ahi el cristal y los destellos de los pads SE
+        #  VEN, asi que repintarlos es el trabajo. Se imprime porque es el
+        #  techo contra el que se leen las demas, y porque el dia que suba hay
+        #  que enterarse.
+        cara = (f == "")
+        mal  = (not cara) and equi > TOPE_SONANDO
+        print ("%-8s %8.1f %11.0f%s" % (f or "(cara)", equi, r.get ("cpu_ms", 0.0),
+                                        "   (se ve: no se juzga)" if cara else
+                                        ("   <-- pinta lo que no se ve" if mal else "")))
+        if mal:
+            malas.append ((f or "(cara)") + " sonando")
+    print()
+    cs = cabezal()
+    if not cs:
         print ("el cabezal no contesto");  malas.append ("cabezal")
     else:
-        fuera = int (c.get ("fuera_de_la_zona", -1))
-        print ("cabezal: %d pixeles comparados, %d fuera de la zona repintada"
-               % (int (c.get ("pixeles", 0)), fuera))
-        if fuera != 0:
-            malas.append ("cabezal deja rastro")
+        #  Los dos cabezales que se repintan acotados: la rejilla de pasos y la
+        #  ONDA. En la onda ademas va un rastro que crece detras, asi que la
+        #  union de las dos marcas tiene que cubrirlo: no se juzga leyendo el
+        #  codigo. Roto a proposito estrechando la marca: 3105 pixeles fuera.
+        for quien, nombre in (("1", "rejilla de pasos"), ("onda", "onda del pad")):
+            c = cs.get (quien)
+            if c is None:
+                print ("el cabezal de %s no contesto" % nombre)
+                malas.append ("cabezal " + nombre)
+                continue
+            fuera = int (c.get ("fuera_de_la_zona", -1))
+            print ("cabezal (%s): %d pixeles comparados, %d fuera de la zona repintada"
+                   % (nombre, int (c.get ("pixeles", 0)), fuera))
+            if fuera != 0:
+                malas.append ("el cabezal de %s deja rastro" % nombre)
 
     print()
     if malas:

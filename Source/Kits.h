@@ -516,8 +516,20 @@ namespace Kits
         const char* datos = BinaryData::getNamedResource (nombre, bytes);
         if (datos == nullptr || bytes <= 0) return nullptr;
 
-        juce::AudioFormatManager fm;
-        fm.registerBasicFormats();
+        //  Y EL REGISTRO DE FORMATOS SE MONTA UNA VEZ, no sesenta y cuatro.
+        //  Esto construia un `AudioFormatManager` y llamaba a
+        //  `registerBasicFormats()` en CADA una de las llamadas, o sea que la
+        //  primera vez que alguien abre la app se montaba el registro de
+        //  formatos de JUCE entero una vez por sonido de fabrica. Lo unico que
+        //  muta es el registro y lo hace una sola vez bajo la guardia del
+        //  `static`; `createReaderFor` solo recorre la lista y construye un
+        //  lector nuevo, asi que dos hilos pueden pedirlo a la vez.
+        static juce::AudioFormatManager& fm = []() -> juce::AudioFormatManager&
+        {
+            static juce::AudioFormatManager m;
+            m.registerBasicFormats();
+            return m;
+        }();
         //  El stream NO copia: los bytes viven en el binario y estan ahi
         //  mientras la app exista, asi que copiarlos seria un megabyte de mas
         //  en el arranque para nada.

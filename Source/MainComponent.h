@@ -1841,7 +1841,7 @@ private:
         //  Long enough not to fire on a firm tap, short enough that it lands
         //  while you still think of yourself as pressing. Android's own
         //  long-press is 500; a control you play with wants to be under it.
-        static constexpr int kHoldMs = 420;
+        static constexpr int kHoldMs = Metrics::holdMs;
 
         void mouseDown (const juce::MouseEvent& e) override
         {

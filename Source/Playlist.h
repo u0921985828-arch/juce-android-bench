@@ -31,7 +31,7 @@ class Playlist : public juce::Component
 public:
     //  La columna de los nombres de pista. Misma razon que en StepGrid: se
     //  escribia dos veces, y el pintado y el toque tienen que coincidir.
-    static constexpr int kGutter = 26;
+    static constexpr int kGutter = Metrics::canalCancion;
 
     static constexpr int kLanes    = 4;
     static constexpr int kBarsView = 8;    // bars visible at once; pages beyond

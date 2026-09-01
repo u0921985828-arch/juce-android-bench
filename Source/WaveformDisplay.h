@@ -179,12 +179,49 @@ public:
 
     std::function<void (float zoom)> onZoomChanged;
 
+    //  DONDE CAE LA MARCA DEL CABEZAL, con margen para el suavizado de los
+    //  bordes. Vacio cuando no hay nada sonando o cae fuera de lo que se ve,
+    //  que es justo lo que hace falta para que el que llama pida el fotograma
+    //  entero en ese caso. Es la hermana de `StepGrid::marcaDe`, y publica por
+    //  lo mismo: el banco compara pixel a pixel contra ella.
+    juce::Rectangle<int> marcaDe (float pos01) const
+    {
+        if (pos01 < 0.0f) return {};
+        const auto  w  = waveArea();
+        const float px = normToX (pos01);
+        if (px < w.getX() - 8.0f || px > w.getRight() + 8.0f) return {};
+        return juce::Rectangle<float> (px - 5.0f, w.getY() - 6.0f,
+                                       10.0f, w.getHeight() + 10.0f)
+                   .getSmallestIntegerContainer();
+    }
+
     //  Where the read head is, 0..1, or negative for nothing sounding.
     void setPlayhead (float pos01)
     {
         const float p = (pos01 >= 0.0f && pos01 <= 1.0f) ? pos01 : -1.0f;
         if (std::abs (p - playhead) < 0.0005f && (p < 0.0f) == (playhead < 0.0f)) return;
+
+        //  Y SOLO LO QUE SE MUEVE. Esto pedia la ONDA ENTERA en cada tick
+        //  mientras un pad sonara con la ficha del PAD abierta, y la ficha
+        //  ocupa la ventana y lleva velo: o sea el chasis, los dieciseis pads
+        //  y los cuarenta controles de debajo, treinta veces por segundo, por
+        //  una marca de diez pixeles. Es el mismo derroche que ya se arreglo
+        //  en la rejilla de pasos, en la ultima de las tres rejillas que
+        //  llevan cabezal. Medido con la maquina sonando: 41 fotogramas en 8 s.
+        //
+        //  El RASTRO que va detras del cabezal crece entre la marca vieja y la
+        //  nueva, asi que cabe en la union de las dos. Lo que no cabe es
+        //  aparecer o desaparecer: ahi el rastro entero -desde el inicio del
+        //  recorte- se pinta o se borra de golpe, y eso pide el fotograma.
+        const float viejo = playhead;
+        const auto  antes = marcaDe (viejo);
         playhead = p;
+
+        if (viejo >= 0.0f && p >= 0.0f)
+        {
+            const auto zona = antes.getUnion (marcaDe (p));
+            if (! zona.isEmpty()) { repaint (zona); return; }
+        }
         repaint();
     }
 
@@ -622,7 +659,6 @@ public:
         panned   = false;
     }
 
-private:
     juce::Rectangle<float> waveArea() const
     {
         auto w = getLocalBounds().toFloat().reduced (10.0f, 0.0f);
@@ -644,6 +680,8 @@ private:
         auto w = waveArea();
         return w.getX() + (t - view0) * zoom * w.getWidth();
     }
+
+private:
     //  Hasta dos dedos: el tercero y los siguientes no cambian nada. Un
     //  pellizco de tres dedos es un pellizco de dos con un dedo apoyado, y
     //  tratarlo de otra forma solo daria saltos.

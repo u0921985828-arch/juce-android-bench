@@ -89,7 +89,7 @@ public:
     //  cumple la rejilla de pasos en esa misma pantalla. Con 26 son 12.4, y en
     //  26 px sigue cabiendo el nombre de la octava, que es lo unico que se
     //  escribe ahi y solo en las filas de DO.
-    static constexpr int kGutter   = 26;    // la columna del teclado
+    static constexpr int kGutter   = Metrics::canalPiano;   // la columna del teclado
     static constexpr int kMaxNotas = 4;     // raiz + tres del acorde
 
     //  (paso, semitono) — quien la usa decide si pone o quita.

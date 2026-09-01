@@ -462,6 +462,28 @@ namespace Metrics
     //  phone; this is a phone. Where sixteen of something have to fit at
     //  once the card grows instead of the rows shrinking.
     static constexpr int hit = 40;
+
+    // ------------------------------------------------------------------
+    //  LOS GESTOS. Todo numero de maquetado vive aqui y estos no vivian:
+    //  estaban escritos en el fichero que los usa, que es exactamente lo que
+    //  la regla de la casa prohibe - y el primero estaba escrito DOS VECES,
+    //  palabra por palabra, en `PadButton` y en `HoldButton`.
+    //
+    //  MANTENER PARA LA SEGUNDA ACCION. Cuatrocientos veinte milisegundos: un
+    //  toque normal dura menos de doscientos y una espera deliberada pasa de
+    //  medio segundo, asi que el hueco es lo bastante ancho para que ninguno
+    //  de los dos caiga en el otro.
+    static constexpr int holdMs = 420;
+
+    //  EL CANAL DE UNA REJILLA: la tira del borde que NO es una celda, y en la
+    //  que un toque significa otra cosa. Son tres numeros y no uno a proposito,
+    //  porque llevan contenido distinto -el silenciador de una pista, la
+    //  columna del teclado, el silenciador de un carril- y cada uno esta medido
+    //  contra su fila. Lo que hacian falta era verlos juntos: escritos cada uno
+    //  en su fichero, nadie podia saber si eran tres reglas o una mal copiada.
+    static constexpr int canalPasos   = 30;
+    static constexpr int canalPiano   = 26;
+    static constexpr int canalCancion = 26;
     //  LA FILA QUE CONTIENE UN OBJETIVO DE DEDO, no el objetivo.
     //
     //  hit es el suelo de lo que se toca. Casi todas las filas de este archivo

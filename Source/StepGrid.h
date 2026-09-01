@@ -32,7 +32,7 @@ public:
     //  escrita a mano TRES veces - dos en el pintado y una en el acierto del
     //  toque - y esas tres tienen que decir lo mismo o los toques caen en una
     //  celda distinta de la que se ve. Un numero, un sitio.
-    static constexpr int kGutter   = 30;
+    static constexpr int kGutter   = Metrics::canalPasos;
 
     //  CUANTAS PISTAS SE VEN A LA VEZ, y desde cual.
     //

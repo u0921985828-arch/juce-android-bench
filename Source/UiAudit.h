@@ -72,6 +72,14 @@ namespace UiAudit
     //  misma suma uno aqui aunque el fondo no haya cambiado, y ese es
     //  exactamente el desperdicio que se buscaba.
     inline int fondosPintados = 0;
+    //  Y LOS PIXELES, que es lo que de verdad cuesta.
+    //
+    //  Contar LLAMADAS no separa un fotograma completo de una banda de treinta
+    //  pixeles, y esa diferencia es de 5.2 ms a 0.29 medidos: el cabezal de la
+    //  rejilla de pasos entra aqui treinta veces por segundo y esta BIEN,
+    //  porque pide su banda. Con la maquina sonando las dos cosas pasan a la
+    //  vez y la cuenta de llamadas deja de decir nada.
+    inline long long pixelesPintados = 0;
     //  CUANTAS VECES SE HA MOVIDO EL CABEZAL DEL PIANO ROLL. La barra estaba
     //  dibujada desde el primer dia y no estaba viva: el temporizador solo
     //  alimentaba la rejilla de PASOS, asi que en la pagina del piano el

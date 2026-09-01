@@ -16,7 +16,25 @@ class PadButton : public juce::Button,
                   private juce::Timer
 {
 public:
-    explicit PadButton (int idx) : juce::Button (juce::String (idx + 1)), index (idx) {}
+    //  EL GOLPE SALE AL APOYAR EL DEDO, NO AL LEVANTARLO.
+    //
+    //  Un pad de percusion disparaba por `onClick`, y el click de JUCE llega
+    //  al SOLTAR: cada golpe de bateria llevaba encima todo el tiempo que el
+    //  dedo pasara sobre el pad -de cuarenta a ciento veinte milisegundos, sin
+    //  tope- en la app cuyo argumento entero es la latencia. Este mismo fichero
+    //  ya lo tenia escrito dos parrafos mas abajo para el modo tecla y lo
+    //  llamaba «tolerable en percusion»: no lo es. La fuerza se captura en
+    //  `mouseDown` desde el primer dia, asi que el dato ya estaba.
+    //
+    //  Y con esto MANTENER TAMBIEN SUENA, que es lo que el parrafo de `onHold`
+    //  decia que no pasaba. Se acepta a proposito: en una MPC tocar un pad
+    //  suena siempre, el modo tecla de esta misma clase ya sonaba al apoyar, y
+    //  la alternativa era retrasar CADA golpe 420 ms para que el gesto de
+    //  mantener fuera mudo.
+    explicit PadButton (int idx) : juce::Button (juce::String (idx + 1)), index (idx)
+    {
+        setTriggeredOnMouseDown (true);
+    }
 
     //  HOLD A PAD TO EDIT IT.
     //
@@ -30,7 +48,7 @@ public:
     //  keys, because a gesture you only find out about on release is one
     //  nobody believes in.
     std::function<void()> onHold;
-    static constexpr int kHoldMs = 420;
+    static constexpr int kHoldMs = Metrics::holdMs;
 
     // ------------------------------------------------------------------------
     //  MODO TECLA: el pad deja de ser un golpe y pasa a ser una nota.
@@ -163,8 +181,9 @@ public:
 
         //  Y AQUI, no en el click: el click de JUCE llega al LEVANTAR, asi que
         //  un pad disparado por onClick le suma al golpe todo el tiempo que el
-        //  dedo pase encima. En percusion se tolera porque el sonido es el
-        //  mismo; en una nota es la diferencia entre tocar y no.
+        //  dedo pase encima. En una nota es la diferencia entre tocar y no - y
+        //  en percusion tambien, que es lo que `setTriggeredOnMouseDown`
+        //  arregla arriba: la fuerza ya esta puesta cuando el click sale.
         if (modoNota && onNotaOn) onNotaOn (lastVelocity);
 
         juce::Button::mouseDown (e);

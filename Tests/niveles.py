@@ -74,7 +74,8 @@ def main():
         return 1
 
     filas = corre()
-    faltan = [q for q in ("off", "on", "tras cambiar de pad", "apagado") if q not in filas]
+    faltan = [q for q in ("off", "on", "tras cambiar de pad", "apagado", "golpe")
+              if q not in filas]
     if faltan:
         print ("FALLA  el volcado no trae %s" % ", ".join (faltan))
         return 1
@@ -118,11 +119,33 @@ def main():
                 fallos.append ("%s: el banco %d va de %.4f a %.4f y tenia que ir de %.4f a 1"
                                % (que, banco, tramo[0], tramo[-1], 1.0 / PORBANCO))
 
+    #  --- EL GOLPE SALE AL APOYAR EL DEDO ------------------------------
+    #
+    #  Un pad de percusion disparaba por `onClick`, que en JUCE llega al
+    #  SOLTAR: cada golpe llevaba encima todo el tiempo que el dedo pasara
+    #  sobre el pad -de 40 a 120 ms, sin tope- en la app cuyo argumento entero
+    #  es la latencia. Ninguna medida de latencia lo ve, porque la sonda del
+    #  microfono empieza a contar cuando la app EMITE y el retraso esta antes.
+    #
+    #  Con las DOS mitades y con el AUTOCORTE QUITADO, que es lo que separa
+    #  las dos formas de fallar: que suene al apoyar, y que no vuelva a sonar
+    #  al levantar. Con el autocorte puesto -como nace un pad- un segundo
+    #  disparo se come al primero y la cuenta de voces sale 1 igual.
+    g = filas["golpe"]
+    if g["al_apoyar"] != 1:
+        fallos.append ("el golpe no sale al apoyar el dedo: %d voces vivas"
+                       % g["al_apoyar"])
+    elif g["al_levantar"] != 1:
+        fallos.append ("el pad dispara dos veces: %d voces al apoyar y %d al levantar"
+                       % (g["al_apoyar"], g["al_levantar"]))
+
     if filas["on"]["pads"] != filas["tras cambiar de pad"]["pads"]:
         fallos.append ("mover el pad elegido (%d -> %d) cambio el destino: %d -> %d"
                        % (CAPTURADO, DESPUES,
                           filas["on"]["pads"][0], filas["tras cambiar de pad"]["pads"][0]))
 
+    print ("%-20s al apoyar %d voz/voces   al levantar %d"
+           % ("golpe", filas["golpe"]["al_apoyar"], filas["golpe"]["al_levantar"]))
     for que in ("off", "on", "tras cambiar de pad", "apagado"):
         d = filas[que]
         print ("%-20s pads %-6s vels %.4f .. %.4f"
