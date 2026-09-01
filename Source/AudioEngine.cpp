@@ -167,7 +167,6 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize, int inputC
     reverb.prepare (sampleRate, 2);
     reverb.reset();
 
-    fxDry.setSize (2, juce::jmax (1, maxBlock));
 
     //  One buffer per effect bus plus the scratch a single pad is rendered
     //  into before it is split between the dry path and its sends. Allocated
@@ -611,8 +610,16 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         //  pad, o un envio que se cierra se queda congelado a medio camino en
         //  vez de irse a cero: silencio a medias que no se va nunca. Por eso
         //  el corte mira tambien smSendHot, que es el pad que aun se mueve.
+        //  Y SIN `anyFxOpen`, que sobraba y ademas deshacia justo lo que la
+        //  mascara existe para hacer. Si el pad no esta en la mascara,
+        //  `setPadSend` garantiza que sus seis envios valen cero, asi que el
+        //  producto de mas abajo vale cero pase lo que pase con las mezclas -
+        //  y con el termino puesto bastaba abrir UN efecto para que los
+        //  sesenta y cuatro pads volvieran al bucle largo: 384 cargas
+        //  atomicas y 384 pasos de suavizado por bloque. Medido con la fila
+        //  nueva de Tests/Cpu.cpp, que es la que faltaba para verlo.
         const bool listed = (sendMask >> (unsigned) p) & 1ull;
-        if (! listed && ! anyFxOpen && ! smSendHot[(size_t) p])
+        if (! listed && ! smSendHot[(size_t) p])
         {
             dryGain[p]  = 1.0f;
             padSplit[p] = filtered;      // sin envios pero con filtro: tambien aparte
@@ -1617,7 +1624,13 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     //  delay y reverb incluidas - un bombeo que deja la reverb a tope no abre
     //  ningun hueco. Y va antes del saturador por la misma razon que el duck
     //  del sistema: bajar lo que ENTRA al limitador, no lo que sale.
-    if (duckEnv > 0.0001f || duckPad.load (std::memory_order_relaxed) >= 0)
+    //  Y SOLO CON ENVOLVENTE. Estaba tambien con «o hay un pad armado», y con
+    //  el pad armado y quieto la envolvente vale CERO: la ganancia sale 1.0 y
+    //  se recorria la salida entera, los dos canales, multiplicando por uno.
+    //  Quien arma el bombeo lo deja armado toda la sesion, asi que era en cada
+    //  bloque y para siempre. Lo que el pad armado decide es si la envolvente
+    //  se DISPARA, y eso pasa en triggerPad, no aqui.
+    if (duckEnv > 0.0001f)
     {
         const float amt = juce::jlimit (0.0f, 1.0f, duckAmt.load (std::memory_order_relaxed));
         const float rel = juce::jmax (20.0f, duckRel.load (std::memory_order_relaxed));
@@ -2396,7 +2409,7 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
         dst.store (src.load (std::memory_order_relaxed), std::memory_order_relaxed);
     };
     for (auto pair : { std::pair<std::atomic<float>*, const std::atomic<float>*>
-                         { &fxCutoff, &s.fxCutoff }, { &fxReso,  &s.fxReso  }, { &fxMix,   &s.fxMix   },
+                         { &fxReso,  &s.fxReso  }, { &fxMix,   &s.fxMix   },
                          //  fltSweep, o el rebote sale SIN filtro. Es la
                          //  tercera vez que un parametro nuevo se olvida aqui:
                          //  antes fueron los recortes y despues el swing, la
@@ -2411,25 +2424,20 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
                          { &crBits,   &s.crBits   }, { &crRate,  &s.crRate  }, { &crMix,   &s.crMix   },
                          { &rvSize,   &s.rvSize   }, { &rvDamp,  &s.rvDamp  }, { &rvMix,   &s.rvMix   } })
         copyOne (*pair.first, *pair.second);
-    fxType.store (s.fxType.load (std::memory_order_relaxed), std::memory_order_relaxed);
 
     // Start the FX smoothers already AT their targets. A live engine glides
     // over ~20 ms because a knob just moved; a bounce has no such history,
     // and gliding from the defaults would fade the filter in over the first
     // bar of every export.
-    smCutoff  = fxCutoff.load (std::memory_order_relaxed);
     smSweep   = fltSweep.load (std::memory_order_relaxed);
     duckPad.store (s.duckPad.load (std::memory_order_relaxed), std::memory_order_relaxed);
     smReso    = fxReso.load   (std::memory_order_relaxed);
-    smFxMix   = fxMix.load    (std::memory_order_relaxed);
     smHpFreq  = hpFreq.load   (std::memory_order_relaxed);
     smHpReso  = hpReso.load   (std::memory_order_relaxed);
     smHpMix   = hpMix.load    (std::memory_order_relaxed);
     smDrive   = fxDrive.load  (std::memory_order_relaxed);
     smDrvTone = drvTone.load  (std::memory_order_relaxed);
     smDrvMix  = drvMix.load   (std::memory_order_relaxed);
-    smCrMix   = crMix.load    (std::memory_order_relaxed);
-    smRvMix   = rvMix.load    (std::memory_order_relaxed);
     smDlyMix  = dlyMix.load   (std::memory_order_relaxed);
     smDlyFb   = dlyFb.load    (std::memory_order_relaxed);
     smDlySamp = (float) (dlyTime.load (std::memory_order_relaxed) * 0.001 * systemSampleRate);

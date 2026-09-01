@@ -1445,6 +1445,56 @@ void MainComponent::auditPiano()
     pulsa (seqModoBtn, true);      // desde la ficha del secuenciador
     pulsa (modoBtn,    false);     // y de vuelta desde la cara
 
+    // ------------------------------------------------------------------
+    //  Y EL TRANSPORTE, QUE ES LA MISMA PREGUNTA Y NO LA MEDIA NADIE.
+    //
+    //  El comentario de `ponModoCancion` daba por hecho que PLAY ya tenia
+    //  embudo -«playButton, songPlayBtn y seqPlayBtn son tres tapas de un
+    //  estado»- y no lo tenia: eran DIEZ escritores sincronizando cada uno las
+    //  tapas que se acordaba. Se mide por los tres caminos que un dedo puede
+    //  tomar, mas los dos que no son un dedo y son los que peor estaban: armar
+    //  REC con el transporte parado -que lo arranca- y volver de una llamada,
+    //  que ponia el toggle y no el ROTULO, asi que la cara decia PLAY con la
+    //  maquina rodando. Por eso se publica tambien el rotulo y no solo el
+    //  estado: un boton que dice PLAY corriendo pasa cualquier prueba que solo
+    //  mire toggles.
+    auto transporteAhora = [this] (const char* quien)
+    {
+        std::cout << "{\"piano\":\"transporte\",\"como\":\"" << quien
+                  << "\",\"motor\":" << (engine.isPlaying()           ? 1 : 0)
+                  << ",\"cara\":"    << (playButton.getToggleState()  ? 1 : 0)
+                  << ",\"sec\":"     << (seqPlayBtn.getToggleState()  ? 1 : 0)
+                  << ",\"cancion\":" << (songPlayBtn.getToggleState() ? 1 : 0)
+                  << ",\"rotulos\":[\"" << playButton.getButtonText()
+                  << "\",\"" << seqPlayBtn.getButtonText()
+                  << "\",\"" << songPlayBtn.getButtonText() << "\"]}"
+                  << std::endl;
+    };
+    auto pulsaPlay = [this, &transporteAhora] (juce::TextButton& b, bool on, const char* quien)
+    {
+        b.setToggleState (on, juce::dontSendNotification);
+        if (b.onClick) b.onClick();
+        transporteAhora (quien);
+    };
+    pulsaPlay (seqPlayBtn,  true,  "sec");
+    pulsaPlay (playButton,  false, "cara");
+    pulsaPlay (songPlayBtn, true,  "cancion");
+    pulsaPlay (playButton,  false, "cara");
+
+    //  Y los dos que no son un dedo.
+    if (! recArmed) toggleRecordArm();          // arma REC: arranca el transporte
+    transporteAhora ("rec");
+    if (recArmed) toggleRecordArm();
+    ponTransporte (false);
+
+    //  Y una llamada entrando, que es el camino que peor estaba: paraba el
+    //  motor con `setToggleState` y sin `transporte`, asi que las tres tapas
+    //  se quedaban diciendo STOP con la maquina parada.
+    ponTransporte (true);
+    audioFocusLost (false);
+    transporteAhora ("llamada");
+    ponTransporte (false);
+
     //  TOCAR UN PAD QUE ASOMA POR DEBAJO DE LA FICHA.
     //
     //  La tarjeta se centra al 78 % PARA QUE la maquina se siga viendo, y se

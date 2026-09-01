@@ -39,6 +39,11 @@
 //      ZATI_SHOT_SCALE=2.62      a esta escala
 //      ZATI_PAINT=60             cuanto cuesta un fotograma, por piezas
 //      ZATI_SPIN=12              CPU del proceso con la cara abierta y quieta
+//      ZATI_SONANDO=1            y con la maquina SONANDO: sin aparato de
+//                                sonido el motor no renderiza y el cristal se
+//                                queda en su guardia de silencio, o sea que la
+//                                pieza mas grande de la cara no se repinta
+//                                nunca en el banco
 //      ZATI_KIT=nombre           guarda el banco de delante como kit y lo vuelca
 //      ZATI_INSETS=t,l,b,r       margenes del sistema simulados (ver abajo)
 //      ZATI_INSETS_TICK=n        y a partir de que tick contestan

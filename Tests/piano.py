@@ -186,6 +186,35 @@ else:
            (b["motor"], b["cara"], b["sec"], b["cancion"]) == (0, 0, 0, 0),
            "motor %d cara %d sec %d cancion %d" % (b["motor"], b["cara"], b["sec"], b["cancion"]))
 
+#  --- el transporte: un estado, tres tapas y un ROTULO ---------------------
+#
+#  La misma pregunta que el modo, en el sitio donde nadie la hacia: el
+#  comentario de `ponModoCancion` daba por hecho que PLAY ya tenia embudo y no
+#  lo tenia -diez escritores, cada uno sincronizando las tapas que se
+#  acordaba-. Seis caminos: los tres que puede tomar un dedo y los dos que no
+#  lo son, que son los que peor estaban.
+#
+#  Con el ROTULO y no solo con el toggle, que es lo que separa las dos formas
+#  de escribirlo mal: los dos caminos del foco de audio hacian
+#  `setToggleState` y nada mas, asi que la tapa decia PLAY con la maquina
+#  rodando - un estado correcto por dentro y una cara que miente.
+tr = filas.get ("transporte", [])
+ESPERADO = [("sec", 1), ("cara", 0), ("cancion", 1), ("cara", 0),
+            ("rec", 1), ("llamada", 0)]
+if len (tr) != len (ESPERADO):
+    mide ("transporte: un estado y tres tapas", False,
+          "salieron %d lineas de %d" % (len (tr), len (ESPERADO)))
+else:
+    for fila, (quien, on) in zip (tr, ESPERADO):
+        rot = "STOP" if on else "PLAY"
+        ok  = ((fila["motor"], fila["cara"], fila["sec"], fila["cancion"])
+                  == (on, on, on, on)
+               and fila["rotulos"] == [rot, rot, rot])
+        mide ("transporte desde %s" % quien, ok,
+              "motor %d cara %d sec %d cancion %d  rotulos %s"
+              % (fila["motor"], fila["cara"], fila["sec"], fila["cancion"],
+                 ",".join (fila["rotulos"])))
+
 #  --- TOCAR EL PAD QUE ASOMA POR DEBAJO DE LA FICHA ----------------------
 #
 #  La tarjeta se centra al 78 % PARA QUE la maquina se siga viendo, y se veia y

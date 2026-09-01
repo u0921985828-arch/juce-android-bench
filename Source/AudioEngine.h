@@ -664,8 +664,6 @@ public:
     std::uint64_t fetchTriggered() noexcept { return triggeredMask.exchange (0, std::memory_order_relaxed); }
 
     // --- Master FX: filter + drive (message thread setters) ---
-    void setFxType   (int t)     noexcept { fxType.store   (t, std::memory_order_relaxed); }   // 0 LPF, 1 HPF
-    void setFxCutoff (float hz)  noexcept { fxCutoff.store (hz, std::memory_order_relaxed); }
     void setFxReso   (float q)   noexcept { fxReso.store   (q, std::memory_order_relaxed); }
     void setFxDrive  (float amt) noexcept { fxDrive.store  (amt, std::memory_order_relaxed); }  // 0..1
     void setDlyTime  (float ms)  noexcept { dlyTime.store  (ms,  std::memory_order_relaxed); }
@@ -1269,8 +1267,14 @@ private:
 
     // Master FX: filter + drive.
     juce::dsp::StateVariableTPTFilter<float> masterFilter;
-    std::atomic<int>   fxType   { 0 };          // 0 LPF, 1 HPF
-    std::atomic<float> fxCutoff { 20000.0f };
+    //  ESTADO MUERTO, QUITADO. `fxType`, `fxCutoff` y sus dos setters no
+    //  tenian un solo llamante en toda la app: se copiaban de un motor a otro
+    //  en `copyStateFrom` y ya. Son de cuando el FLT era un corte y un tipo, y
+    //  el barrido bidireccional -`fltSweep`, que si se usa- los sustituyo. Con
+    //  ellos se van `smCutoff`, `smFxMix`, `smCrMix` y `smRvMix`, que solo se
+    //  asignaban ahi, y `fxDry`, que reservaba 2 x maxBlock de memoria y no lo
+    //  leia nadie. Un parametro que se copia y no se usa se lee como si
+    //  hiciera algo, y el dia que alguien lo mueva no pasara nada.
     //  El barrido bidireccional de FLT: -1 cerrado por arriba, 0 neutro,
     //  +1 abierto por abajo. Ver setFltSweep.
     std::atomic<float> fltSweep { 0.0f };
@@ -1280,7 +1284,6 @@ private:
     // Audio-thread-only smoothed FX params (one-pole toward the atomics):
     // knob moves arrive as per-block jumps otherwise — zipper on the filter,
     // crackle on the delay time. ~20 ms time constant.
-    float smCutoff  = 20000.0f;
     float smSweep   = 0.0f;      // el barrido de FLT, suavizado como el resto
     float smReso    = 0.707f;
     float smDrive   = 0.0f;
@@ -1319,7 +1322,6 @@ private:
 
     // ISO wet/dry, so the low-pass can be blended rather than only replacing.
     std::atomic<float> fxMix { 0.0f };
-    float smFxMix = 0.0f;
 
     // HPF: its OWN filter, not the ISO one switched to high-pass. Two objects
     // cost a few hundred bytes and buy a band-pass you can sweep from both
@@ -1342,7 +1344,6 @@ private:
     std::atomic<float> crBits { 8.0f };
     std::atomic<float> crRate { 4.0f };
     std::atomic<float> crMix  { 0.0f };
-    float smCrMix = 0.0f;
     float crHold[2] { 0.0f, 0.0f };
     float crPhase = 0.0f;
     bool  crWasActive = false;    // idem, ver seccion 5b/4
@@ -1356,10 +1357,6 @@ private:
     std::atomic<float> rvSize { 0.55f };
     std::atomic<float> rvDamp { 0.45f };
     std::atomic<float> rvMix  { 0.0f };
-    float smRvMix = 0.0f;
-
-    // Dry copy for the wet/dry stages. Sized in prepareToPlay, never here.
-    juce::AudioBuffer<float> fxDry;
 
     // ------------------------------------------------------------------
     //  Sends. Each effect is a bus with its own input, and every pad decides

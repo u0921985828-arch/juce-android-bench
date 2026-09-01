@@ -117,6 +117,19 @@ jobs:
       #  cuidado que alli - sin comentarios, porque la tabla cita colores
       #  dentro de las frases - y si no se puede leer, el paso FALLA en vez de
       #  colar un color inventado.
+      #
+      #  Y SE COGIA LA FILA EQUIVOCADA, que es peor que copiar el color: se
+      #  quedaba con `m[0]`, la PRIMERA fila, o sea PAPEL #F4EFE3 - crema -
+      #  mientras la app abre en LACA #1B4A4F, petroleo oscuro, desde que
+      #  `kSkinDeFabrica` vale 3. Android pinta este color desde que arranca el
+      #  proceso hasta el primer fotograma de JUCE, y son 700 ms medidos en el
+      #  Redmi: cada arranque era un fogonazo crema seguido de una app oscura,
+      #  exactamente lo contrario de lo que este paso existe para evitar.
+      #
+      #  La fila se cuenta con los CAMPOS del `struct Skin` y no a ojo: si
+      #  alguien le anade un token, esto falla en vez de coger el color de al
+      #  lado. Y el paso se comprueba a si mismo - un `echo` con el color no es
+      #  una comprobacion, y es literalmente lo que llevaba haciendo.
       - name: Launch theme (chassis-coloured window background)
         run: |
           set -euo pipefail
@@ -124,13 +137,48 @@ jobs:
           import re, sys
           s = open('Source/ZatiLookAndFeel.h', encoding='utf8').read()
           s = re.sub(r'//[^\n]*', '', s)
+
+          #  Cuantos colores lleva una carcasa, contados del struct.
+          st = re.search(r'struct Skin\s*\{(.*?)\}\s*;', s, re.S)
+          if not st: sys.exit('no se pudo leer struct Skin')
+          campos = sum(len(l.split(';')[0].split(','))
+                       for l in st.group(1).split('\n')
+                       if 'juce::uint32' in l)
+          if campos <= 0: sys.exit('struct Skin sin campos')
+
+          #  Y con cual abre la maquina.
+          kf = re.search(r'kSkinDeFabrica\s*=\s*(\d+)', s)
+          if not kf: sys.exit('no se pudo leer kSkinDeFabrica')
+          fila = int(kf.group(1))
+
           blk = s[s.index('static const Skin table[4]'):]
           m = re.findall(r'0x([0-9a-fA-F]{8})', blk)
-          if not m: sys.exit('no se pudo leer chassisTop de la tabla de carcasas')
-          print('#FF%06X' % (int(m[0], 16) & 0xffffff))
+          i = fila * campos
+          if len(m) <= i:
+              sys.exit('la tabla de carcasas tiene %d colores y hacen falta %d'
+                       % (len(m), i + 1))
+          print('#FF%06X' % (int(m[i], 16) & 0xffffff))
           PY
           )"
           echo "chasis de arranque: $HEX"
+
+          #  LA COMPROBACION. El color del tema tiene que ser el chasis de la
+          #  carcasa con la que la app abre, y si no, el paso FALLA.
+          python3 - "$HEX" <<'PY'
+          import re, sys
+          s = re.sub(r'//[^\n]*', '', open('Source/ZatiLookAndFeel.h', encoding='utf8').read())
+          st = re.search(r'struct Skin\s*\{(.*?)\}\s*;', s, re.S)
+          campos = sum(len(l.split(';')[0].split(','))
+                       for l in st.group(1).split('\n') if 'juce::uint32' in l)
+          fila = int(re.search(r'kSkinDeFabrica\s*=\s*(\d+)', s).group(1))
+          blk = s[s.index('static const Skin table[4]'):]
+          chas = re.findall(r'0x([0-9a-fA-F]{8})', blk)[fila * campos]
+          esperado = '#FF%06X' % (int(chas, 16) & 0xffffff)
+          if sys.argv[1].upper() != esperado:
+              sys.exit('FALLA: el tema abre en %s y la app en %s (carcasa %d)'
+                       % (sys.argv[1], esperado, fila))
+          print('el tema y la carcasa de fabrica dicen lo mismo: %s' % esperado)
+          PY
           for d in main debug release; do
             mkdir -p "Builds/Android/app/src/$d/res/values"
             printf '%s\n' \

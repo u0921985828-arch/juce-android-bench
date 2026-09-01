@@ -599,16 +599,18 @@ void MainComponent::paintBrowseSheetContent (juce::Graphics& g)
                    : T ("CARGAR EN PAD %1", juce::String (juce::jmax (0, browseTargetPad) + 1)),
                  "titulo", true);
 
-    const bool picked = ! eligiendoCarpeta
-                     && browser != nullptr && browser->getNumSelectedFiles() > 0
-                     && browser->getSelectedFile (0).existsAsFile();
+    //  LO ELEGIDO LO DICE `selectionChanged`, no un `stat` dentro de `paint`.
+    //  Esto llamaba a `existsAsFile()` y a `getFileName()` sobre el fichero
+    //  senalado en cada repintado del navegador, y esa pregunta ya la contesta
+    //  -con el mismo `existsAsFile`- la funcion que enciende CARGAR. Un dueno.
+    const bool picked = ! eligiendoCarpeta && browsePickName.isNotEmpty();
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
     //  Same reason as the pad sheet: this is a file name, and the close button
     //  shares the band.
     auto browseSubRow = antesDe (inner.removeFromTop (14), browseCloseButton);
     juce::String sub;
-    if (picked)                  sub = browser->getSelectedFile (0).getFileName();
+    if (picked)                  sub = browsePickName;
     else if (eligiendoCarpeta)   sub = browser != nullptr
                                          ? T ("entra donde quieras y pulsa USAR ESTA CARPETA")
                                          : juce::String();
@@ -1533,7 +1535,14 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
         g.setColour (ZatiColours::inkDim.withAlpha (0.75f));
         g.setFont (ZatiColours::monoFont (Metrics::fFine, false));
         pintaTitulo (g, Lang::takeStart (r, 60), T ("CARPETA"), "seccion");
-        g.drawFittedText (Lang::ltr (ProjectStore::root().getFullPathName()),
+        //  Y ESTA TAMBIEN SE CACHEA, por lo mismo que `destinoCache` ocho
+        //  cientas lineas mas arriba y con el mismo fallo: `ProjectStore::root
+        //  ()` es `sub("Projects")`, y `sub` hace `createDirectory()`. O sea un
+        //  syscall por repintado de PROYECTOS. El arreglo ya estaba escrito
+        //  ahi al lado y no se aplico al vecino.
+        if (raizCache == juce::File())
+            raizCache = ProjectStore::root();
+        g.drawFittedText (Lang::ltr (raizCache.getFullPathName()),
                           r, Lang::start(), 1, 0.7f);
     }
 }

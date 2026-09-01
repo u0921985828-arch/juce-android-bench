@@ -1044,12 +1044,7 @@ MainComponent::MainComponent()
     styleButton (playButton, kKey);
     playButton.setColour (juce::TextButton::buttonOnColourId, ZatiColours::green);
     playButton.setColour (juce::TextButton::textColourOnId,  ZatiColours::white);
-    playButton.onClick = [this]
-    {
-        const bool on = playButton.getToggleState();
-        engine.setPlaying (on);
-        transporte (playButton, on);
-    };
+    playButton.onClick = [this] { ponTransporte (playButton.getToggleState()); };
 
     //  Hold PLAY for silence NOW: the transport stops and every voice still
     //  ringing is cut with it. STOP on its own leaves long tails and held
@@ -1057,10 +1052,8 @@ MainComponent::MainComponent()
     //  moment you need the room quiet.
     playButton.onHold = [this]
     {
-        engine.setPlaying (false);
+        ponTransporte (false);
         engine.postPanic();
-        playButton.setToggleState (false, juce::dontSendNotification);
-        playButton.setButtonText (T ("PLAY"));
         status.setText (T ("Todo parado"), juce::dontSendNotification);
     };
     addAndMakeVisible (playButton);
@@ -1624,11 +1617,7 @@ MainComponent::MainComponent()
         seqPlayBtn.setClickingTogglesState (true);
         seqPlayBtn.onClick = [this]
         {
-            const bool on = seqPlayBtn.getToggleState();
-            engine.setPlaying (on);
-            playButton.setToggleState (on, juce::dontSendNotification);
-            transporte (playButton, on);
-            transporte (seqPlayBtn, on);
+            ponTransporte (seqPlayBtn.getToggleState());
         };
         seqSheet.addAndMakeVisible (seqPlayBtn);
 
@@ -2114,9 +2103,15 @@ MainComponent::MainComponent()
     {
         masterUserGain = gainFromDb (masterFader.getValue());
         engine.setMasterUser (masterUserGain);
-        saveMasterPref();
-        mixSheet.repaint();
+        //  EL FICHERO SE ESCRIBE AL SOLTAR, no en cada valor. Esto llamaba a
+        //  `saveMasterPref` -temporal, validador y renombrado, o sea tres o
+        //  cuatro syscalls- UNA VEZ POR FOTOGRAMA DE ARRASTRE, en el
+        //  almacenamiento compartido de un telefono. Y el `mixSheet.repaint()`
+        //  que habia detras pedia la ficha entera para un mando que se repinta
+        //  solo: nada de lo que pinta esa ficha depende del nivel del master.
+        masterPrefSucio = true;
     };
+    masterFader.onDragEnd = [this] { guardaMasterSiHaceFalta(); };
     mixSheet.addAndMakeVisible (masterFader);
 
     masterLabel.setText (T ("MASTER"), juce::dontSendNotification);
@@ -2216,11 +2211,7 @@ MainComponent::MainComponent()
         //  oir la cancion.
         if (on && ! engine.isSongMode())
             ponModoCancion (true);
-        engine.setPlaying (on);
-        //  Y la tapa de la cara dice lo mismo, que es el mismo transporte.
-        playButton.setToggleState (on, juce::dontSendNotification);
-        transporte (playButton, on);
-        transporte (songPlayBtn, on);
+        ponTransporte (on);
     };
     songSheet.addAndMakeVisible (songPlayBtn);
 
@@ -3521,7 +3512,21 @@ void MainComponent::refreshMacroValues()
         ks[pi]->setValue (fxParam (focusedFx, pi).getValue(), juce::dontSendNotification);
         ks[pi]->updateText();
     }
-    repaint();
+    //  SOLO EL RENGLON DE LOS MANDOS, que es lo unico que esta funcion cambia.
+    //  El `repaint()` pelado que habia aqui es exactamente el que `macroMoved`
+    //  ya tenia acotado veinticuatro lineas mas abajo -«un repintado completo
+    //  durante un arrastre redibujaba dieciseis pads y su onda en cada
+    //  movimiento del raton»- y esta funcion la llama `xyMoved`, o sea UNA VEZ
+    //  POR FOTOGRAMA DE ARRASTRE del pad XY. La misma regla escrita en un
+    //  sitio y no en el de al lado: ahora el rectangulo lo dice una funcion y
+    //  lo usan las dos.
+    repaint (bandaMandos());
+}
+
+//  El renglon de CTRL 1-3, con el aire que su rotulo pintado necesita.
+juce::Rectangle<int> MainComponent::bandaMandos() const
+{
+    return macroCtrl1.getBounds().getUnion (macroCtrl3.getBounds()).expanded (12, 26);
 }
 
 void MainComponent::macroMoved (int idx)
@@ -3545,8 +3550,7 @@ void MainComponent::macroMoved (int idx)
     }
     //  Only the knob strip, not the whole face: a full repaint during a drag
     //  redrew sixteen pad tiles and their waveform art on every mouse move.
-    repaint (macroCtrl1.getBounds().getUnion (macroCtrl3.getBounds())
-                                   .expanded (12, 26));
+    repaint (bandaMandos());
 }
 
 // --- Sheets ------------------------------------------------------------------
@@ -3879,6 +3883,26 @@ void MainComponent::showMixBank (int bank)
     mixRows.repaint();
 }
 
+//  SI HAY ALGO DELANTE DE LA MAQUINA.
+//
+//  Una ficha ocupa la ventana entera y lleva un velo del 45 %, asi que lo que
+//  hay debajo no se ve y repintarlo es trabajo tirado. La lista NO se escribe a
+//  mano: son doce fichas y la trece que alguien anada manana se quedaria fuera
+//  sin que nada avisara -es el mismo fallo que `applySkin` restilando ocho
+//  tapas por su nombre-. Se recorre el arbol y se pregunta por el TIPO.
+//
+//  Y el panel XY, que no es una `Sheet` -pinta su propia tarjeta opaca porque
+//  una con velo se traga los toques que van a los pads- pero tapa el cristal
+//  igual. Es lo mismo que le faltaba para tener capa en el banco.
+bool MainComponent::caraTapada()
+{
+    for (auto* c : getChildren())
+        if (c->isVisible()
+            && (dynamic_cast<Sheet*> (c) != nullptr || c == static_cast<juce::Component*> (&xyPanel)))
+            return true;
+    return false;
+}
+
 void MainComponent::closeAllSheets()
 {
     disarmConfirm();   // an armed button must not survive its own sheet closing
@@ -4039,6 +4063,38 @@ void MainComponent::apunta (juce::Graphics& g, juce::Rectangle<int> caja,
 //  Estaba SOLO en la ficha de la cancion, que es la unica de las tres que no
 //  tiene PLAY al lado: armar el modo alli y salir a pulsar PLAY es un viaje, y
 //  la pregunta se hace justo antes de pulsar.
+//  EL TRANSPORTE ES UNO Y LAS TAPAS SON TRES, que es lo que el comentario de
+//  `ponModoCancion` daba por hecho y no era verdad.
+//
+//  Ahi abajo dice «es exactamente lo que ya pasa con PLAY -playButton,
+//  songPlayBtn y seqPlayBtn son tres tapas de un estado- asi que se sigue el
+//  mismo patron». El modo SI tenia embudo; el transporte tenia DIEZ
+//  escritores y ninguno, cada uno sincronizando las tapas que se acordaba:
+//
+//   - la tapa de la cara no tocaba las otras dos;
+//   - `seqPlayBtn` y `songPlayBtn` se acordaban de la cara y no la una de la
+//     otra;
+//   - abrir un proyecto y vaciar un pad ponian el ROTULO a mano
+//     -`setButtonText (T ("PLAY"))`- sin el dibujo, o sea una tapa que dice
+//     PLAY con el icono de STOP;
+//   - y los dos caminos del foco de audio -perder una llamada y volver-
+//     hacian `setToggleState` y NADA MAS, asi que al volver de una llamada la
+//     cara se quedaba diciendo PLAY con el transporte rodando.
+//
+//  Un estado, un dueno. Y aqui se ve por que hacia falta: la lista de tapas
+//  esta escrita UNA vez, asi que la cuarta fila de transporte que alguien
+//  anada manana entra sola.
+void MainComponent::ponTransporte (bool on)
+{
+    engine.setPlaying (on);
+    juce::TextButton* tapas[3] = { &playButton, &seqPlayBtn, &songPlayBtn };
+    for (juce::TextButton* b : tapas)
+    {
+        b->setToggleState (on, juce::dontSendNotification);
+        transporte (*b, on);
+    }
+}
+
 void MainComponent::ponModoCancion (bool on)
 {
     engine.setSongMode (on);
@@ -5702,7 +5758,7 @@ void MainComponent::miraSiLaCaraEstaLista()
 {
     if (caraLista) return;
 
-    if ((insetsPreguntados && ! sessionRestorePending) || arranqueTicks >= kPortadaTope)
+    if ((insetsPreguntados && ! sessionRestorePending) || portadaMs >= kPortadaTopeMs)
     {
         caraLista = true;
         repaint();
@@ -6328,6 +6384,10 @@ void MainComponent::selectionChanged()
                     && browser->getNumSelectedFiles() > 0
                     && browser->getSelectedFile (0).existsAsFile();
     browseLoadButton.setEnabled (ready);
+    //  Y el nombre se guarda aqui, que es donde ya se pregunta por el disco: el
+    //  pintor lo leia el solo -`existsAsFile()` mas `getFileName()`- o sea dos
+    //  syscalls dentro de `paint`, la misma pregunta escrita dos veces.
+    browsePickName = ready ? browser->getSelectedFile (0).getFileName() : juce::String();
     browseSheet.repaint();                   // the header shows the pick
 
     //  Audition: one tap loads the file into the pad you are filling AND fires
@@ -7058,9 +7118,7 @@ void MainComponent::loadProject (const juce::String& name)
 
     // Stop first: loading rewrites every pattern bank and pad under the
     // sequencer's feet otherwise.
-    playButton.setToggleState (false, juce::dontSendNotification);
-    playButton.setButtonText (T ("PLAY"));
-    engine.setPlaying (false);
+    ponTransporte (false);
 
     //  Igual que la sesion: las muestras por trozos, y el estado al final.
     const auto tree = juce::ValueTree::fromXml (*xml);
@@ -7200,9 +7258,7 @@ void MainComponent::padPorDefecto (int i)
 
 void MainComponent::newProject()
 {
-    playButton.setToggleState (false, juce::dontSendNotification);
-    playButton.setButtonText (T ("PLAY"));
-    engine.setPlaying (false);
+    ponTransporte (false);
 
     for (int i = 0; i < kNumPads; ++i)
     {
@@ -8155,6 +8211,16 @@ juce::File MainComponent::masterPrefFile()
                .getChildFile ("zati-master.txt");
 }
 
+//  Y EL RESPALDO, para los caminos que no son un arrastre: el doble clic que
+//  devuelve a 0 dB no pasa por `onDragEnd`, y un valor que no llega al disco
+//  vuelve mañana con el de ayer. Un tic con el dedo levantado y ya esta.
+void MainComponent::guardaMasterSiHaceFalta()
+{
+    if (! masterPrefSucio || masterFader.isMouseButtonDown()) return;
+    masterPrefSucio = false;
+    saveMasterPref();
+}
+
 void MainComponent::saveMasterPref() const
 {
     //  Por la MISMA puerta que la sesion y el proyecto. Esto eran tres lineas
@@ -8552,7 +8618,14 @@ void MainComponent::pollExport()
 
     if (! exportJob->finished.load (std::memory_order_acquire))
     {
-        exportSheet.repaint();
+        //  Y SOLO SI LA FICHA SE VE. Una ficha ocupa la ventana entera y lleva
+        //  velo, asi que esto pedia el chasis, los dieciseis pads y los
+        //  cuarenta controles de debajo treinta veces por segundo durante TODO
+        //  el rebote -cuarenta segundos seguidos- aunque la persona la hubiera
+        //  cerrado. Es el mismo fallo que la rejilla de pasos y el cabezal del
+        //  piano, en el unico sitio de la app que dura tanto. La barra de
+        //  progreso se sigue moviendo: la pinta `busyBar`, que es suya.
+        if (exportSheet.isVisible()) exportSheet.repaint();
         return;
     }
 
@@ -8683,7 +8756,11 @@ void MainComponent::useLowestLatency()
     //  under-runs propios que no son culpa de nadie.
     lastXRuns = -1;
     xrunsSeen = 0;
-    xrunGrace = 12;
+    //  En MILISEGUNDOS y no en ticks, por lo mismo que el tope de la portada:
+    //  doce ticks eran 0.4 s en un movil bueno y 1.2 s en uno de gama baja, o
+    //  sea que el aparato al que MAS le cuesta abrir un stream era el que mas
+    //  gracia se llevaba - justo al reves de lo que hace falta.
+    xrunGraceMs = kXRunGraciaMs;
 }
 
 juce::File MainComponent::burstPreferenceFile()
@@ -8719,13 +8796,29 @@ void MainComponent::checkXRuns()
     const int now = dev->getXRunCount();
     if (now < 0) return;                     // el dispositivo no lleva la cuenta
 
-    if (xrunGrace > 0) { --xrunGrace; lastXRuns = now; return; }
+    if (xrunGraceMs > 0) { xrunGraceMs -= DeviceTier::profile().uiIntervalMs; lastXRuns = now; return; }
     if (lastXRuns < 0) { lastXRuns = now; return; }
 
     const int nuevos = now - lastXRuns;
     lastXRuns = now;
-    if (nuevos <= 0) return;
+    if (nuevos <= 0)
+    {
+        //  Y LA CUENTA SE OLVIDA. El comentario de arriba dice «cuatro
+        //  SEGUIDOS» y `xrunsSeen` no bajaba nunca: cuatro chasquidos
+        //  repartidos en una hora de tocar subian el buffer igual que cuatro
+        //  en el mismo segundo, o sea que cualquier sesion larga acababa en el
+        //  buffer mas grande hubiera hecho falta o no - y ese buffer es
+        //  latencia, que es el argumento entero de esta app. Un tramo limpio
+        //  lo suficientemente largo y se empieza de cero.
+        if (xrunsSeen > 0 && (xrunLimpioMs += DeviceTier::profile().uiIntervalMs) >= kXRunOlvidoMs)
+        {
+            xrunsSeen    = 0;
+            xrunLimpioMs = 0;
+        }
+        return;
+    }
 
+    xrunLimpioMs = 0;
     xrunsSeen += nuevos;
     if (xrunsSeen < 4 || burstMult >= kMaxBursts) return;
 
@@ -9725,9 +9818,7 @@ void MainComponent::toggleRecordArm()
     if (recArmed && ! engine.isPlaying())
     {
         // Arming with the transport stopped is a dead end — roll it.
-        playButton.setToggleState (true, juce::dontSendNotification);
-        transporte (playButton, true);
-        engine.setPlaying (true);
+        ponTransporte (true);
     }
 
     status.setText (recArmed ? T ("REC: toca pads para grabarlos en el patron")
@@ -9808,8 +9899,7 @@ void MainComponent::appResumed()
     if (wasRollingBeforeFocus)
     {
         wasRollingBeforeFocus = false;
-        engine.setPlaying (true);
-        playButton.setToggleState (true, juce::dontSendNotification);
+        ponTransporte (true);
     }
 
     //  Whatever else happened out there, the master comes back up.
@@ -9842,10 +9932,7 @@ void MainComponent::audioFocusLost (bool permanently)
     wasRollingBeforeFocus = engine.isPlaying();
 
     if (engine.isPlaying())
-    {
-        engine.setPlaying (false);
-        playButton.setToggleState (false, juce::dontSendNotification);
-    }
+        ponTransporte (false);
 
     engine.postPanic();
     shutdownAudio();
@@ -9909,8 +9996,7 @@ void MainComponent::audioFocusGained()
     if (wasRollingBeforeFocus)
     {
         wasRollingBeforeFocus = false;
-        engine.setPlaying (true);
-        playButton.setToggleState (true, juce::dontSendNotification);
+        ponTransporte (true);
     }
 
     refreshDeviceStatusLine (true);
@@ -10344,7 +10430,7 @@ void MainComponent::watchAudioDevice()
     //  engine underneath it.
     //
     //  This used to call engine.prepareToPlay() straight from the timer. That
-    //  function resizes padScratch, fxDry, fxBus, recordBuffer and the delay
+    //  function resizes padScratch, fxBus, recordBuffer and the delay
     //  line, and the function above returns early only when the device is
     //  NULL - so it ran with the stream live and the callback holding raw
     //  pointers into every one of those buffers. A route change is exactly
@@ -10374,8 +10460,44 @@ void MainComponent::watchAudioDevice()
     }
 }
 
+//  EL APARATO DE SONIDO DEL BANCO. Ver la nota de `bancoSonando`.
+void MainComponent::bombeaAudioDePrueba()
+{
+    //  Con aparato de verdad el hilo de audio ya renderiza, y la cola de
+    //  comandos es de un solo CONSUMIDOR por contrato: dos no la degradan, la
+    //  atascan para siempre.
+    if (deviceManager.getCurrentAudioDevice() != nullptr) return;
+
+    constexpr int    kRafaga = 128;
+    constexpr double kRate   = 48000.0;
+
+    if (bancoBloque.getNumSamples() != kRafaga)
+    {
+        bancoBloque.setSize (2, kRafaga);
+        engine.prepareToPlay (kRate, kRafaga);
+        enginePreparedRate  = kRate;
+        enginePreparedBlock = kRafaga;
+    }
+
+    //  Los bloques que caben en un tick, que es lo que el aparato habria
+    //  entregado en ese tiempo. Con menos, el osciloscopio avanzaria a camara
+    //  lenta y la medida diria que la cara se repinta menos de lo que se
+    //  repinta.
+    const int bloques = juce::jmax (1, (int) (kRate * (double) DeviceTier::profile().uiIntervalMs
+                                              / 1000.0 / (double) kRafaga));
+    for (int i = 0; i < bloques; ++i)
+    {
+        bancoBloque.clear();
+        engine.renderNextBlock (bancoBloque, 0, kRafaga);
+    }
+}
+
 void MainComponent::timerCallback()
 {
+    if (bancoSonando) bombeaAudioDePrueba();
+
+    guardaMasterSiHaceFalta();
+
     //  Mientras algo este cargando, la barra se repinta sola: es lo unico de
     //  la cara que tiene que moverse aunque no pase nada mas.
     if (busyJobs > 0) busyBar.repaint();
@@ -10393,6 +10515,7 @@ void MainComponent::timerCallback()
     //  deja el contador clavado y la linea de ZATI_ARRANQUE imprimiendose para
     //  siempre, que es como se descubrio.
     ++arranqueTicks;
+    portadaMs += DeviceTier::profile().uiIntervalMs;
 
     //  Once, on the first tick: the face is up by now, so a restore that takes
     //  a second reads as filling in rather than as a hang.
@@ -10473,9 +10596,9 @@ void MainComponent::timerCallback()
     //  the real numbers arrived. Android does not have the insets ready at the
     //  moment the first frame goes up; the answer is to keep asking until it
     //  does, not to ask slowly.
-    if (insetSettleTicks < 30)
+    if (insetSettleMs < kMargenesPlazoMs)
     {
-        ++insetSettleTicks;
+        insetSettleMs += DeviceTier::profile().uiIntervalMs;
         refreshSystemInsets();
     }
 
@@ -10490,7 +10613,13 @@ void MainComponent::timerCallback()
     //  a proposito: alli no hay portada.
     if (bancoArranque > 0 && arranqueTicks <= bancoArranque)
     {
-        std::cout << "{\"arranque\":\"cara\",\"tick\":" << arranqueTicks
+        //  Y EL TOPE RESUELTO EN TICKS, que es lo que el banco necesita saber
+        //  y no puede deducir: el plazo esta en milisegundos y el tick lo pone
+        //  el aparato. Escrito en el banco seria la misma regla en dos sitios.
+        std::cout << "{\"arranque\":\"cara\",\"tope\":"
+                  << ((kPortadaTopeMs + DeviceTier::profile().uiIntervalMs - 1)
+                      / DeviceTier::profile().uiIntervalMs)
+                  << ",\"tick\":" << arranqueTicks
                   << ",\"cubierta\":" << (caraLista ? 0 : 1)
                   << ",\"pintadas\":" << portadaPintadas
                   << ",\"placa\":[" << padPlateArea.getX() << "," << padPlateArea.getY()
@@ -10628,26 +10757,49 @@ void MainComponent::timerCallback()
     refreshDeviceStatusLine();      // Oboe settles a beat after we ask it to
     watchAudioDevice();
 
-    //  The master silhouette. The engine has already decimated its ~0.74 s
-    //  window into min/max columns, so this copies 256 pairs instead of the
-    //  35000 samples the window actually holds.
-    {
-        float cmn[AudioEngine::kMaxScopeColumns], cmx[AudioEngine::kMaxScopeColumns];
-        const int nc = engine.copyScopeColumns (cmn, cmx, AudioEngine::kMaxScopeColumns);
-        cristal.setColumns (cmn, cmx, nc);
-    }
+    //  Y LO DE LA CARA, SOLO CUANDO LA CARA SE VE.
+    //
+    //  El cristal es la pieza mas grande de la maquina y su propio comentario
+    //  la llama «el coste en reposo mas grande de la app». Se rinde sola en
+    //  silencio -esa guardia ya estaba- y por eso el banco no vio nunca lo
+    //  otro: en un escritorio sin tarjeta de sonido el motor no renderiza, el
+    //  osciloscopio ve silencio y no se repinta jamas. Con la maquina SONANDO
+    //  se repinta treinta veces por segundo, y una ficha ocupa la ventana
+    //  entera y lleva velo, asi que ese repintado no repinta el cristal:
+    //  repinta el chasis, los dieciseis pads y los cuarenta controles que hay
+    //  debajo. Medido con ZATI_SONANDO en 8 s: **134 fotogramas completos en
+    //  MEZCLA y en AJUSTES**, donde el cristal no se ve, contra 1 con la app
+    //  quieta. Es el mismo parrafo que ya gobierna la rejilla de pasos y el
+    //  cabezal del piano, sin terminar de aplicar.
+    //
+    //  El destello de los pads, igual: hasta dieciseis `refreshPad` por tick
+    //  debajo de una ficha. La CUENTA sigue corriendo -si no, un pad se queda
+    //  encendido hasta que alguien lo mire- y lo unico que se salta es el
+    //  repintado.
+    const bool seVeLaCara = ! caraTapada();
 
-    const int scopeN = juce::jmin ((int) (sizeof (scopeTmp) / sizeof (scopeTmp[0])),
-                                   DeviceTier::profile().scopePoints);
-    engine.copyScope (scopeTmp, scopeN);
-    cristal.setSamples (scopeTmp, scopeN);
-    cristal.setBpm (bpmSlider.getValue());
+    if (seVeLaCara)
+    {
+        //  The master silhouette. The engine has already decimated its ~0.74 s
+        //  window into min/max columns, so this copies 256 pairs instead of the
+        //  35000 samples the window actually holds.
+        {
+            float cmn[AudioEngine::kMaxScopeColumns], cmx[AudioEngine::kMaxScopeColumns];
+            const int nc = engine.copyScopeColumns (cmn, cmx, AudioEngine::kMaxScopeColumns);
+            cristal.setColumns (cmn, cmx, nc);
+        }
+
+        const int scopeN = juce::jmin ((int) (sizeof (scopeTmp) / sizeof (scopeTmp[0])),
+                                       DeviceTier::profile().scopePoints);
+        engine.copyScope (scopeTmp, scopeN);
+        cristal.setSamples (scopeTmp, scopeN);
+        cristal.setBpm (bpmSlider.getValue());
+    }
 
     const int ps = engine.getPlayStep();
 
     // Pad trigger feedback (taps + sequencer): flash then decay.
     const std::uint64_t trig = engine.fetchTriggered();
-    bool anyFlash = false;
     for (int i = 0; i < kNumPads; ++i)
     {
         if ((trig & ((std::uint64_t) 1u << i)) != 0) padFlash[(size_t) i] = 1.0f;
@@ -10655,11 +10807,9 @@ void MainComponent::timerCallback()
         {
             padFlash[(size_t) i] *= 0.8f;
             if (padFlash[(size_t) i] < 0.02f) padFlash[(size_t) i] = 0.0f;
-            refreshPad (i);
-            anyFlash = true;
+            if (seVeLaCara) refreshPad (i);
         }
     }
-    juce::ignoreUnused (anyFlash);
 
     //  The grid reads the pattern straight from our mirror - but only when
     //  the sheet that shows it is open. It used to run on every tick whether
@@ -10748,7 +10898,10 @@ void MainComponent::timerCallback()
         vuL = juce::jmax (pl, vuL * 0.80f); if (vuL < 0.004f) vuL = 0.0f;
         vuR = juce::jmax (pr, vuR * 0.80f); if (vuR < 0.004f) vuR = 0.0f;
         juce::ignoreUnused (prevL, prevR, prevPlayStep);
-        cristal.setVu (vuL, vuR);
+        //  La balistica corre siempre -el pico se lee y se vacia, y pararla
+        //  dejaria la aguja clavada donde estuviera al abrir una ficha- y lo
+        //  unico que se salta es el repintado. Ver `seVeLaCara`.
+        if (seVeLaCara) cristal.setVu (vuL, vuR);
         // (the LCD no longer carries a step strip)
     }
 

@@ -128,6 +128,36 @@ int main()
         fila ("silencio (16 pads cargados)", m, false);
     }
 
+    //  0b. EL SILENCIO CON UN EFECTO ABIERTO, que es el estado en el que esta
+    //      la maquina la mayor parte del tiempo en cuanto alguien toca el
+    //      delay - y el que esta fila existe para separar del de arriba.
+    //
+    //      El reparto de envios se salta un pad cuando no manda a ningun
+    //      efecto, y esa es la razon de ser de `padSendMask`. La condicion
+    //      llevaba ademas un `! anyFxOpen`, o sea que bastaba abrir UN efecto
+    //      para que los SESENTA Y CUATRO pads volvieran al bucle largo -seis
+    //      cargas atomicas y seis pasos de suavizado cada uno- aunque ninguno
+    //      tuviera un solo envio abierto. Sin la fila, ese coste se escondia
+    //      entre dos medidas que no lo miraban.
+    {
+        AudioEngine e; prepara (e);
+        e.setDlyTime (280.0f); e.setDlyFb (0.45f); e.setDlyMix (1.0f);
+        corre (e, buf, 64);
+        fila ("silencio con UN efecto abierto", corre (e, buf, 2000));
+    }
+
+    //  0c. EL SILENCIO CON UN PAD ARMADO PARA EL BOMBEO. La etapa del bombeo
+    //      entraba a su bucle por muestra si habia envolvente O si habia un
+    //      pad armado, y con el pad armado y quieto la envolvente vale cero:
+    //      se multiplicaba la salida entera por uno, en los dos canales, en
+    //      cada bloque y para siempre.
+    {
+        AudioEngine e; prepara (e);
+        e.setDuckPad (0);
+        corre (e, buf, 64);
+        fila ("silencio con el bombeo armado", corre (e, buf, 2000));
+    }
+
     std::printf ("\n-- las voces --------------------------------------------------------\n");
 
     //  1. CINTA A TONO NATURAL. delta = 1.0 exacto, que es el camino corto:

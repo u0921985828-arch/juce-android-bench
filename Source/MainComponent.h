@@ -632,6 +632,7 @@ private:
     //  sin dibujarlo. pintaTitulo es apunta + drawText.
     void apunta (juce::Graphics& g, juce::Rectangle<int> caja,
                  const juce::String& texto, const char* tipo);
+    void ponTransporte (bool on);
     void ponModoCancion (bool on);
     void pintaTitulo (juce::Graphics& g, juce::Rectangle<int> caja, const juce::String& texto,
                       const char* tipo = "titulo", bool elipsis = false);
@@ -769,7 +770,12 @@ private:
     int burstMult   = 0;     // 0 = aun sin leer del disco; luego 1..kMaxBursts
     int lastXRuns   = -1;    // -1 = todavia no se ha leido ninguno
     int xrunsSeen   = 0;     // desde el ultimo cambio de buffer
-    int xrunGrace   = 0;     // ticks de gracia despues de abrir el dispositivo
+    int xrunGraceMs = 0;     // gracia despues de abrir el dispositivo, en ms
+    static constexpr int kXRunGraciaMs = 720;
+    //  Cuanto tiene que aguantar limpio para que la cuenta vuelva a cero. Ver
+    //  checkXRuns: sin esto «cuatro seguidos» eran cuatro EN TODA LA SESION.
+    int xrunLimpioMs = 0;
+    static constexpr int kXRunOlvidoMs = 5000;
     static constexpr int kMaxBursts = 4;
     void   keepChosenRate();
     juce::String exportStatus;
@@ -874,7 +880,6 @@ private:
     juce::Rectangle<int> faceColumn;
 
     //  Ticks spent chasing the safe area at startup; see timerCallback.
-    int insetSettleTicks = 0;
 
     //  LA CARA NO SE ENSEÑA HASTA QUE HA DEJADO DE MOVERSE.
     //
@@ -910,9 +915,22 @@ private:
     int portadaPintadas = 0;
     //  UN TOPE, y no es prudencia: si el aparato no contesta nunca a los
     //  margenes, la portada no puede quedarse puesta. Es la hermana de
-    //  «ningun camino puede dejar la app en silencio». Treinta ticks a 60 ms
-    //  son 1.8 s, el mismo plazo que insetSettleTicks.
-    static constexpr int kPortadaTope = 30;
+    //  «ningun camino puede dejar la app en silencio».
+    //
+    //  Y EN MILISEGUNDOS, que estaba en TICKS. El comentario decia «treinta
+    //  ticks a 60 ms son 1.8 s» y el tick es `DeviceTier::profile().
+    //  uiIntervalMs`, que vale 33, 40, 60 o 100 segun el aparato: el plazo
+    //  real iba de 1.0 s en un movil bueno a 3.0 s en uno de gama baja, o sea
+    //  que el telefono que MAS tarda en arrancar era el que mas se quedaba
+    //  mirando una portada. Es el mismo fallo que el temporizador del ducking
+    //  ya tiene documentado y arreglado ocho mil lineas mas abajo -«contado en
+    //  MILISEGUNDOS, no en ticks»- sin aplicar aqui.
+    static constexpr int kPortadaTopeMs = 1800;
+    //  Y el mismo plazo para dejar de preguntar por los margenes, por la misma
+    //  razon y con el mismo numero: es una sola respuesta que llega tarde.
+    static constexpr int kMargenesPlazoMs = 1800;
+    int portadaMs      = 0;
+    int insetSettleMs  = 0;
     void pintaPortada (juce::Graphics& g);
     void miraSiLaCaraEstaLista();
 
@@ -1569,6 +1587,8 @@ private:
     static juce::File masterPrefFile();
     void  loadMasterPref();
     void  saveMasterPref() const;
+    void  guardaMasterSiHaceFalta();
+    bool  masterPrefSucio = false;
     void refreshMixStrip();
 
     //  Which sixteen of the sixty-four the mixer is showing. Its own value, not
@@ -1911,6 +1931,7 @@ private:
     void setMacroTouched (int idx, bool touched);
 
     void refreshMacroValues();
+    juce::Rectangle<int> bandaMandos() const;
     void macroMoved (int idx);
 
     // Skin cycler: four chassis TONES (TINTA/GRAFITO/ACERO/PLOMO), no hues.
@@ -1925,6 +1946,11 @@ private:
     //  La carpeta de destino, resuelta al ABRIR la ficha y no en cada
     //  repintado: preguntarla escribe en disco. Ver paintExportSheetContent.
     juce::File destinoCache;
+    //  Y la raiz de proyectos, por lo mismo: `ProjectStore::root()` hace
+    //  `createDirectory()`, o sea un syscall por repintado de PROYECTOS.
+    juce::File raizCache;
+    //  Lo que el navegador tiene senalado, escrito por `selectionChanged`.
+    juce::String browsePickName;
 
     //  EL CUERPO DE LA MAQUINA, HORNEADO. Degradado y grano en una imagen
     //  opaca que se rehace al cambiar de tamano o de carcasa; pintar el fondo
@@ -1940,7 +1966,31 @@ private:
     //  fotograma, que es el fondo de antes de hornearlo. Es lo unico que
     //  permite comparar las dos en la MISMA maquina.
     const bool fondoVivo = juce::SystemStats::getEnvironmentVariable ("ZATI_FONDO_VIVO", {}).isNotEmpty();
+
+    //  LA MAQUINA SONANDO, que es el estado que este banco no ha medido nunca.
+    //
+    //  `Tests/cpu.py` cuenta fotogramas completos con la app abierta y QUIETA,
+    //  y en un escritorio sin tarjeta de sonido no hay aparato: el motor no
+    //  renderiza, el osciloscopio ve silencio y `SpectrumDisplay::setSamples`
+    //  se rinde en su guardia de silencio. O sea que la pieza mas grande de la
+    //  cara -su propio comentario la llama «el coste en reposo mas grande de la
+    //  app»- no se repinta NUNCA en el banco, y todo lo que cuelga de que la
+    //  maquina suene queda fuera de medida. En un telefono con algo sonando se
+    //  repinta treinta veces por segundo, se vea o no.
+    //
+    //  Con esto el temporizador bombea los bloques que le tocan a su tick y el
+    //  camino entero -motor, cola, osciloscopio, VU, destellos- corre de
+    //  verdad. Es lo mismo que hacen `ZATI_SKIN` con la carcasa y `ZATI_DLC`
+    //  con los packs: convertir en ENTRADA lo que si no seria «lo que hubiera».
+    //  Solo cuando NO hay aparato: con uno de verdad el hilo de audio ya es el
+    //  consumidor de la cola, y esa cola es de un solo consumidor por contrato.
+    const bool bancoSonando = juce::SystemStats::getEnvironmentVariable ("ZATI_SONANDO", {}).isNotEmpty();
+    juce::AudioBuffer<float> bancoBloque;
+    void bombeaAudioDePrueba();
     void applySkin();
+
+    //  Si hay una ficha (o el panel XY) delante de la maquina. Ver el cuerpo.
+    bool caraTapada();
 
     //  Two of the transport keys carry a second gesture (see the GESTOS page):
     //  hold CARGAR to open the library, hold PLAY to cut everything.

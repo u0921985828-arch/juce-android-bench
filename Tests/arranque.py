@@ -36,7 +36,12 @@ APP  = os.path.join (ROOT, "build", "Zati_artefacts", "Release", "Zati")
 
 TICKS   = 10        # cuantos ticks deja correr la app
 LLEGAN  = 4         # y en cual contestan los margenes
-TOPE    = 30        # MainComponent::kPortadaTope, el plazo maximo de la portada
+#  EL TOPE LO DICE LA APP y no se escribe aqui: el plazo esta en milisegundos
+#  -kPortadaTopeMs- y cuantos ticks son depende de `DeviceTier::uiIntervalMs`,
+#  que vale 33, 40, 60 o 100 segun el aparato. Escrito en el banco seria la
+#  misma regla en dos sitios, y la de aqui se quedaria vieja el dia que cambie
+#  la otra. Este es solo el respaldo por si la linea no trae el campo.
+TOPE    = 30
 
 
 def arranca (ticks, tick_insets, size="412x915"):
@@ -130,6 +135,10 @@ def main():
     if not lentas:
         malas.append ("el arranque sin margenes no contesto")
     else:
+        tope = lentas[0].get ("tope", TOPE)
+        if tope != TOPE:
+            print ("el tope que dice la app son %d ticks" % tope)
+            lentas = arranca (tope + 4, tope + 99)
         print ("sin margenes nunca, la portada se levanta en el tick %s"
                % next ((d["tick"] for d in lentas if not d["cubierta"]), "NUNCA"))
         if lentas[-1]["cubierta"]:
