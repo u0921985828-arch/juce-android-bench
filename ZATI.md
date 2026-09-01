@@ -545,7 +545,7 @@ una zona en vez de diez, sin capas y sin las otras cuatro octavas.
 
 ## 9. La fábrica
 
-`Source/Kits.h`, `Source/kits/*.flac`, `Tools/fabrica.py`.
+`Source/Kits.h`.
 
 Cuatro bancos de dieciséis, uno por máquina:
 
@@ -556,34 +556,42 @@ Cuatro bancos de dieciséis, uno por máquina:
 | **C** | TEXTURA | lo que no es un golpe | VINYL, HISS, RISER, FALL, IMPACT, CLICK, STATIC, WIND, THUMP, GLITCH, SCRAPE, BOOM, TICK, SWELL, CRACKL, DRONE |
 | **D** | TONOS | lo melódico | BASS, SAW BS, SUB BS, STAB, CHORD, MINOR, PAD, BELL, PLUCK, KEY, ORGAN, BRASS, STRING, FIFTH, LEAD, ARP |
 
-**Treinta y uno son grabaciones** y treinta y tres se sintetizan. Los dos bancos
-de percusión vienen de máquinas de verdad; los otros dos siguen sintetizados
-porque no hay de dónde sacarlos — un riser, un impacto o un colchón no los ha
-grabado nadie en un banco de percusión, y ahí la síntesis no es un sucedáneo
-sino la única forma. Las grabaciones van en **FLAC** —sin pérdidas y poco más de
-la mitad de tamaño— y no en OGG, porque lo que se pierde en un códec con
-pérdidas es exactamente el ataque, que es lo único que tiene un golpe de
-batería. Treinta y un ficheros, **0.92 MB** dentro del binario.
+**Los sesenta y cuatro se sintetizan**, y eso es una decisión legal antes que
+sonora. Treinta y uno venían de grabaciones de máquinas reales empotradas en el
+binario —916 250 bytes— **sin una línea de licencia por escrito**, mientras
+`THIRD-PARTY.md` afirmaba que la app sale vacía. Se resolvió quitándolas.
 
-Cada fila que tiene grabación **conserva sus parámetros de síntesis**: son lo que
-suena si el recurso no está, y un hueco mudo es peor que un sonido parecido.
-`COWBEL` sigue sintetizado a propósito, porque lo más parecido que hay en esos
-bancos es una castañuela y un cencerro que en realidad es otra cosa es peor que
-un cencerro sintético.
+Lo que costó y lo que se ganó, con los 2016 pares de `Tests/kits.py`:
 
-**Las dos mitades se igualan por el MISMO camino.** La normalización salió de
-dentro del renderizado en cuanto hubo dos formas de llegar al final: dos caminos
-que se igualan por su cuenta se separan, y el síntoma habría sido «la sonoridad
-baila» sin poder decir por qué. Se iguala por **sonoridad y no por pico**, con la
-curva K de la norma BS.1770 sobre la ventana de 400 ms más sonora — medir el
-fichero entero castiga a lo largo y disperso. Resultado con las dos mitades
-juntas: **1.7 dB** entre el más y el menos sonoro.
+| | con grabaciones | como está |
+|---|---|---|
+| par más parecido (listón 4.0 dB) | 5.50 dB | **5.27 dB** |
+| distancia mediana | 27.1 dB | **28.8 dB** |
+| sonoridad, del más al menos sonoro (tope 6.0) | 1.7 dB | **2.9 dB** |
+| audio de terceros en el APK | 916 250 bytes | **0** |
 
-`Tools/fabrica.py` **no corre en la compilación**: los `.flac` están en el
-repositorio y el script está para que se sepa de dónde sale cada uno. Pasa a
-mono sumando los dos canales, a 48 kHz —la frecuencia del aparato, para que un
-transitorio no pase por la interpolación—, recorta el silencio de delante y la
-cola muda de detrás, y **no nivela nada**: eso es trabajo de la fábrica.
+**Y una cosa mejoró de verdad.** Comparando el T60 de cada receta contra el de
+su grabación —mientras todavía se podían comparar— la síntesis sonaba **x3.36
+más larga que su máquina en la mediana y x15.5 la peor**: un CLAP de 2.1 s donde
+el aparato da 0.135. Ésa es la razón de que la percusión sintetizada sonara
+blanda. Corregido receta a receta: **x1.00 de mediana, x1.33 la peor**. No se
+tocó `metal`: un cúmulo inarmónico bate y su T60 se corta en el primer nulo del
+batido, así que subir su `decay` bajaba el número — la medida fallando.
+
+`COWBEL` sigue sintetizado como siempre lo estuvo, y ahora como todos.
+
+**Todos se igualan por el MISMO camino.** La normalización salió de dentro del
+renderizado en cuanto hubo dos formas de llegar al final: dos caminos que se
+igualan por su cuenta se separan, y el síntoma habría sido «la sonoridad baila»
+sin poder decir por qué. Se iguala por **sonoridad y no por pico**, con la curva
+K de la norma BS.1770 sobre la ventana de 400 ms más sonora — medir el fichero
+entero castiga a lo largo y disperso.
+
+Con las grabaciones se fueron sus dos pruebas: `Tools/fabrica.py`, que era el
+único sitio donde constaba la procedencia, y `Tests/clon.py`, que medía cuánto
+se parecía cada receta a la suya. Sin grabaciones no hay ni una cosa ni la otra,
+y una prueba cuyo sujeto ya no existe es peor que ninguna. `Tests/analiza.py` se
+queda y describe las 64.
 
 ---
 
@@ -895,10 +903,10 @@ escalera medida y escrita, y hoy son 2344 — de los cuales 2282 son las
 
 ### Los veintinueve de Python
 
-`analiza` lo que cada grabación es de verdad · `apk` una APK sin herramientas de
+`analiza` lo que cada sonido de fábrica es de verdad · `apk` una APK **o un AAB** sin herramientas de
 Android · `arr` las ocho herramientas de arreglo, dos de ellas por **identidad**
-· `arranque` la portada y los márgenes · `clon` cuánto se parece cada receta a su
-grabación · `cpu` lo que la app cuesta quieta **y sonando**, contando píxeles y
+· `arranque` la portada y los márgenes ·
+`cpu` lo que la app cuesta quieta **y sonando**, contando píxeles y
 no llamadas · `desglose` qué controles tiene cada pantalla y qué está repetido ·
 `dlc` el catálogo y el candado por sus dos mitades · `export` máster, pistas, OGG
 y destino · `expo` la maqueta · `fuentes` que las dos listas de ficheros digan lo
@@ -920,8 +928,7 @@ Cincuenta y una variables `ZATI_*` convierten en **entrada** lo que si no sería
 «lo que hubiera»: la carcasa (`ZATI_SKIN`), los packs instalados (`ZATI_DLC`),
 los márgenes del sistema y cuándo contestan (`ZATI_INSETS`, `ZATI_INSETS_TICK`),
 la máquina **sonando** cuando no hay tarjeta de sonido (`ZATI_SONANDO`), el fondo
-sin hornear (`ZATI_FONDO_VIVO`), o la fábrica sintetizando aunque haya grabación
-(`ZATI_SIN_MUESTRA`). Más las de medida —`ZATI_AUDIT`, `ZATI_SIZE`, `ZATI_LANG`,
+sin hornear (`ZATI_FONDO_VIVO`). Más las de medida —`ZATI_AUDIT`, `ZATI_SIZE`, `ZATI_LANG`,
 `ZATI_OPEN`, `ZATI_PAINT`, `ZATI_SPIN`, `ZATI_PAGES`, `ZATI_FUZZ`— y las que
 generan los gráficos de la tienda y el icono. La lista completa está en la
 cabecera de `Source/UiAudit.h`.
@@ -937,13 +944,10 @@ medida las cierra, que es lo que no se puede deducir leyendo el código de hoy.
 
 **1 · `THIRD-PARTY.md` decía que la app sale vacía, y no era verdad.** Afirmaba
 que «no se distribuye ni un solo sample, loop, preset ni sonido de fábrica»
-mientras `Source/kits/` lleva **31 ficheros FLAC, 916 250 bytes**, empotrados en
-el binario. Ese apartado dice ahora lo que hay, de dónde sale y con qué permiso:
-**ninguno**. Es lo único de esta lista que no se arregla escribiendo código —
-una licencia es un documento firmado o no es nada— así que queda escrito como
-**bloqueante** antes de publicar, con las dos únicas salidas: licenciarlas por
-escrito, o sacarlas del APK sintetizándolas, que es lo que `Tests/clon.py` mide
-(hoy la mejor está a 6.90 dB del listón de 4 y ninguna llega).
+mientras `Source/kits/` llevaba **31 ficheros FLAC, 916 250 bytes**, empotrados
+en el binario y sin una línea de licencia. **Resuelto quitándolas**: los 64 se
+sintetizan y el audio de terceros dentro del APK pasa a cero. Ver §9, con lo que
+costó y lo que se ganó.
 
 **2 · Había marcas ajenas en `Source/`, y el documento que lo prohíbe afirmaba
 que no.** Trece nombres de pad visibles acabados en `808`, un preset `808 SUB`
@@ -957,8 +961,9 @@ Y sobre todo: `GOOGLE-PLAY.md` §1.4 lo **afirmaba** desde el principio sin que
 lo comprobara nadie. Ahora es una medida — `Tests/marcas.py` lee las reglas 1 y
 2 de §1.5 **del propio documento**, para que no sean dos listas, y las contrasta
 contra `Source/` y `Zati.jucer` en cada corrida del banco. Los nombres de los
-aparatos siguen en `Tools/fabrica.py` y `Tests/clon.py`, que no entran en el APK
-y donde tienen que estar, o no quedaría constancia de la procedencia.
+aparatos vivían en `Tools/fabrica.py` y `Tests/clon.py`, que no entraban en el
+APK; los dos se retiraron con las grabaciones, así que `marcas.py` corre hoy
+**sin una sola excepción**.
 
 **3 · El manual prometía ocho capítulos, definía diez y dibujaba nueve.**
 `kManualChapterCount = 10` contra un `kManualChapters = 9` declarado en el `.h`,
@@ -1019,7 +1024,7 @@ de las correcciones de arriba movió un píxel.
 | `Fdn.h` | la reverb |
 | `CommandFifo.h` | las colas hacia el hilo de audio |
 | `Sintes.h` / `.cpp` / `SintesTabla.inc` | los 256 instrumentos |
-| `Kits.h`, `kits/*.flac` | la fábrica |
+| `Kits.h` | la fábrica |
 | `Instrumentos.h` | el catálogo de packs y el candado |
 | `ProjectStore.h` | el árbol, los nombres y la escritura segura |
 | `SessionKeeper.h` / `.cpp` | la sesión |

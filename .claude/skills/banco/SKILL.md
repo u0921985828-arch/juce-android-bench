@@ -48,7 +48,7 @@ codigo.
 | titulos y rotulos pintados | `Tests/plano.py` |
 | nombres visibles, comentarios, cualquier texto de `Source/` | `Tests/marcas.py` |
 | la ficha de Play | `Tests/store.py` |
-| las recetas contra su grabacion | `Tests/clon.py` y `Tests/analiza.py` |
+| afinar una receta de la fabrica | `Tests/analiza.py` |
 | combinaciones que nadie escribiria | `build/Soak_artefacts/Release/Soak` |
 | coste por etapa del motor | `build/Cpu_artefacts/Release/Cpu` |
 

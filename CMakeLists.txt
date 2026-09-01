@@ -6,7 +6,10 @@
 # ============================================================================
 cmake_minimum_required(VERSION 3.22)
 
-project(Zati VERSION 0.0.1 LANGUAGES C CXX)
+#  La version la manda Zati.jucer, que es lo que compila la APK: aqui se
+#  repite y el dia que una cambie sin la otra el escritorio y el telefono dicen
+#  cosas distintas. Ver GOOGLE-PLAY.md.
+project(Zati VERSION 1.0.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -31,44 +34,13 @@ juce_add_gui_app(Zati
 juce_generate_juce_header(Zati)
 
 # Bundled fonts (Oswald display + JetBrains Mono) as binary data.
+# Y NADA MAS: la fabrica se sintetiza entera, asi que la app no
+# distribuye audio de nadie. Ver THIRD-PARTY.md.
 juce_add_binary_data(ZatiData SOURCES
     Source/fonts/OswaldBold.ttf
     Source/fonts/OswaldMedium.ttf
     Source/fonts/JetBrainsMonoRegular.ttf
     Source/fonts/JetBrainsMonoBold.ttf
-    # Los treinta y un sonidos de fabrica que vienen de una maquina de verdad.
-    # Ver Tools/fabrica.py: de donde sale cada uno y por que en FLAC.
-    Source/kits/a01_kick.flac
-    Source/kits/a02_snare.flac
-    Source/kits/a03_hat.flac
-    Source/kits/a04_open.flac
-    Source/kits/a05_rim.flac
-    Source/kits/a06_tomlo.flac
-    Source/kits/a07_tommi.flac
-    Source/kits/a08_tomhi.flac
-    Source/kits/a09_clap.flac
-    Source/kits/a10_ride.flac
-    Source/kits/a11_crash.flac
-    Source/kits/a12_shake.flac
-    Source/kits/a13_conga.flac
-    Source/kits/a15_tamb.flac
-    Source/kits/a16_splash.flac
-    Source/kits/b01_bd.flac
-    Source/kits/b02_sd.flac
-    Source/kits/b03_ch.flac
-    Source/kits/b04_oh.flac
-    Source/kits/b05_rs.flac
-    Source/kits/b06_cp.flac
-    Source/kits/b07_lt.flac
-    Source/kits/b08_mt.flac
-    Source/kits/b09_ht.flac
-    Source/kits/b10_lc.flac
-    Source/kits/b11_mc.flac
-    Source/kits/b12_hc.flac
-    Source/kits/b13_cy.flac
-    Source/kits/b14_cb.flac
-    Source/kits/b15_cl.flac
-    Source/kits/b16_ma.flac
 )
 
 target_sources(Zati PRIVATE

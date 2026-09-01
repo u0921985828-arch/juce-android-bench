@@ -14,7 +14,7 @@
 #
 #      ZATI_ICONO=ci/icon.png ./build/Zati_artefacts/Release/Zati
 #
-#  El PNG se COMMITEA, igual que los .flac de Tools/fabrica.py: Projucer lo
+#  El PNG se COMMITEA y no se genera en la compilacion: Projucer lo
 #  necesita en tiempo de compilacion, y el codigo esta para que se sepa de
 #  donde sale. Este fichero lo regenera y lo juzga.
 #

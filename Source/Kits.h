@@ -270,6 +270,18 @@ namespace Kits
         const char* name;
         Shape shape;
         float hz;
+        //  CUANTO DURA, y sale de MEDIR y no de oido. Estos treinta y un
+        //  numeros se ajustaron contra el T60 de la grabacion de la que salia
+        //  cada receta, el dia que se decidio sacar las grabaciones del
+        //  binario: la sintesis sonaba x3.36 mas larga que su maquina en la
+        //  mediana y x15.5 la peor -un CLAP de 2.1 s donde la maquina da
+        //  0.135-, que es exactamente por que la percusion sintetizada sonaba
+        //  blanda. Con el ajuste: x1.00 de mediana y x1.33 la peor.
+        //
+        //  Y el ajuste NO se aplico a `metal`: un cumulo inarmonico bate, asi
+        //  que "tiempo hasta caer 60 dB" se corta en el primer nulo del batido
+        //  y no en la caida. Subir su decay BAJABA el T60 medido - la medida
+        //  fallando, no el codigo.
         float decay;
         float p1;
         float p2;
@@ -283,16 +295,6 @@ namespace Kits
         //  cero lo que no se nombra. Un valor por defecto que ademas es un
         //  valor valido es como se apagan sesenta sonidos de golpe.
         float brillo;
-        //  Y SI HAY GRABACION, MANDA LA GRABACION. El nombre del recurso
-        //  incrustado, o nulo para sintetizarlo. Ver Tools/fabrica.py: los dos
-        //  bancos de percusion salen de maquinas de verdad y los otros dos se
-        //  sintetizan, porque un riser o un colchon no los ha grabado nadie.
-        //
-        //  Los parametros de arriba SE QUEDAN aunque haya muestra: son lo que
-        //  suena si el recurso no esta -y en escritorio, donde el banco corre
-        //  sin BinaryData de Android, eso pasa de verdad-. Un hueco silencioso
-        //  es peor que un sonido parecido.
-        const char* muestra;
     };
 
     inline const Recipe* table()
@@ -303,49 +305,49 @@ namespace Kits
             //  Membranas por skin y parches con bordon por wire: ni una sola
             //  forma compartida con el banco B, que es de donde venia que los
             //  dos bancos midieran lo mismo.
-            { "KICK",   skin,      55.0f, 0.38f, 0.32f, 0.55f, 0, 0.0f, "a01_kick_flac" },
-            { "SNARE",  wire,     195.0f, 0.19f, 0.30f, 1750.0f, 0, 0.0f, "a02_snare_flac" },
-            { "HAT",    hat,     9500.0f, 0.042f, 1.6f, 0.0f,  1, 0.0f, "a03_hat_flac" },
-            { "OPEN",   hat,     8600.0f, 0.30f, 1.4f, 0.0f,   1, 0.0f, "a04_open_flac" },
-            { "RIM",    wire,     440.0f, 0.048f, 0.58f, 2600.0f, 0, 0.0f, "a05_rim_flac" },
-            { "TOM LO", skin,      95.0f, 0.36f, 0.26f, 0.34f, 0, 0.0f, "a06_tomlo_flac" },
-            { "TOM MI", skin,     138.0f, 0.30f, 0.26f, 0.31f, 0, 0.0f, "a07_tommi_flac" },
-            { "TOM HI", skin,     192.0f, 0.25f, 0.26f, 0.28f, 0, 0.0f, "a08_tomhi_flac" },
-            { "CLAP",   clap,       0.0f, 0.42f, 1.3f, 1150.0f, 0, 0.0f, "a09_clap_flac" },
-            { "RIDE",   metal,      1.0f, 0.95f, 7000.0f, 1.2f, 1, 0.0f, "a10_ride_flac" },
-            { "CRASH",  metal,      0.8f, 1.90f, 4200.0f, 0.9f, 1, 0.0f, "a11_crash_flac" },
+            { "KICK",   skin,      55.0f, 0.05715f, 0.32f, 0.55f, 0, 0.0f },
+            { "SNARE",  wire,     195.0f, 0.06836f, 0.30f, 1750.0f, 0, 0.0f },
+            { "HAT",    hat,     9500.0f, 0.01946f, 1.6f, 0.0f,  1, 0.0f },
+            { "OPEN",   hat,     8600.0f, 0.132f, 1.4f, 0.0f,   1, 0.0f },
+            { "RIM",    wire,     440.0f, 0.027f, 0.58f, 2600.0f, 0, 0.0f },
+            { "TOM LO", skin,      95.0f, 0.131f, 0.26f, 0.34f, 0, 0.0f },
+            { "TOM MI", skin,     138.0f, 0.121f, 0.26f, 0.31f, 0, 0.0f },
+            { "TOM HI", skin,     192.0f, 0.121f, 0.26f, 0.28f, 0, 0.0f },
+            { "CLAP",   clap,       0.0f, 0.02706f, 1.3f, 1150.0f, 0, 0.0f },
+            { "RIDE",   metal,      1.0f, 0.95f, 7000.0f, 1.2f, 1, 0.0f },
+            { "CRASH",  metal,      0.8f, 1.90f, 4200.0f, 0.9f, 1, 0.0f },
             //  SHAKE y TAMB por granos: eran ruido filtrado, como HISS, y por
             //  eso una maraca y un siseo median 0.998.
-            { "SHAKE",  grain,   6200.0f, 0.070f, 1400.0f, 0.0f, 0, 0.0f, "a12_shake_flac" },
-            { "CONGA",  skin,     245.0f, 0.19f, 0.22f, 0.24f, 0, 0.0f, "a13_conga_flac" },
+            { "SHAKE",  grain,   6200.0f, 0.04768f, 1400.0f, 0.0f, 0, 0.0f },
+            { "CONGA",  skin,     245.0f, 0.02212f, 0.22f, 0.24f, 0, 0.0f },
             { "COWBEL", metal,      2.4f, 0.28f, 2400.0f, 3.0f },
-            { "TAMB",   grain,   5200.0f, 0.14f, 620.0f, 1.60f, 0, 0.0f, "a15_tamb_flac" },
-            { "SPLASH", metal,      1.3f, 1.15f, 5200.0f, 0.8f, 1, 0.0f, "a16_splash_flac" },
+            { "TAMB",   grain,   5200.0f, 0.05137f, 620.0f, 1.60f, 0, 0.0f },
+            { "SPLASH", metal,      1.3f, 1.15f, 5200.0f, 0.8f, 1, 0.0f },
 
             // --- B: MAQUINA --------------------------------------------
             //  Y AQUI NO SE TOCA NADA: un seno con la afinacion cayendo y ruido
             //  por un filtro ES una caja de ritmos. Lo que estaba mal no era este
             //  banco, era que el de al lado fuese otra vez este.
-            { "BD"    , drum,      48.0f, 1.05f, 1.1f, 0.045f, 0, 0.0f, "b01_bd_flac" },
-            { "SD"    , snare,    182.0f, 0.22f, 0.32f, 1300.0f, 0, 0.0f, "b02_sd_flac" },
-            { "CH"    , hat,    10500.0f, 0.030f, 2.2f, 0.0f, 0, 0.0f, "b03_ch_flac" },
-            { "OH"    , hat,     9800.0f, 0.36f, 2.0f, 0.0f, 0, 0.0f, "b04_oh_flac" },
-            { "RS"    ,snare,    560.0f, 0.036f, 0.62f, 3400.0f, 0, 0.0f, "b05_rs_flac" },
-            { "LT"    , drum,      82.0f, 0.58f, 0.6f, 0.070f, 0, 0.0f, "b07_lt_flac" },
-            { "MT"    , drum,     116.0f, 0.50f, 0.6f, 0.062f, 0, 0.0f, "b08_mt_flac" },
-            { "HT"    , drum,     162.0f, 0.44f, 0.6f, 0.055f, 0, 0.0f, "b09_ht_flac" },
-            { "CP"    , clap,       0.0f, 0.13f, 3.2f, 1900.0f, 0, 0.0f, "b06_cp_flac" },
-            { "CY"    , metal,      1.0f, 1.50f, 6000.0f, 0.7f, 0, 0.0f, "b13_cy_flac" },
-            { "CB"    , metal,      2.6f, 0.40f, 2600.0f, 3.4f, 0, 0.0f, "b14_cb_flac" },
-            { "CLAVE",  tone,     2450.0f, 0.050f, 0.0f, 0.0f, 0, 0.0f, "b15_cl_flac" },
-            { "MARACA", grain,   6800.0f, 0.034f, 2600.0f, 0.0f, 0, 0.0f, "b16_ma_flac" },
+            { "BD"    , drum,      48.0f, 0.2943f, 1.1f, 0.045f, 0, 0.0f },
+            { "SD"    , snare,    182.0f, 0.051f, 0.32f, 1300.0f, 0, 0.0f },
+            { "CH"    , hat,    10500.0f, 0.030f, 2.2f, 0.0f, 0, 0.0f },
+            { "OH"    , hat,     9800.0f, 0.074f, 2.0f, 0.0f, 0, 0.0f },
+            { "RS"    ,snare,    560.0f, 0.004f, 0.62f, 3400.0f, 0, 0.0f },
+            { "LT"    , drum,      82.0f, 0.1222f, 0.6f, 0.070f, 0, 0.0f },
+            { "MT"    , drum,     116.0f, 0.073f, 0.6f, 0.062f, 0, 0.0f },
+            { "HT"    , drum,     162.0f, 0.065f, 0.6f, 0.055f, 0, 0.0f },
+            { "CP"    , clap,       0.0f, 0.1905f, 3.2f, 1900.0f, 0, 0.0f },
+            { "CY"    , metal,      1.0f, 1.50f, 6000.0f, 0.7f, 0, 0.0f },
+            { "CB"    , metal,      2.6f, 0.40f, 2600.0f, 3.4f, 0, 0.0f },
+            { "CLAVE",  tone,     2450.0f, 0.007f, 0.0f, 0.0f, 0, 0.0f },
+            { "MARACA", grain,   6800.0f, 0.006f, 2600.0f, 0.0f, 0, 0.0f },
             //  Los tres congas, que son las tres voces de la maquina que faltaban.
             //  Aqui estaban SUB, ZAP y SNAP - tres inventos nuestros - y las
             //  dieciseis voces de la maquina son exactamente dieciseis: si el
             //  banco se llama MAQUINA, las que van son las suyas.
-            { "LC"    , skin,      82.0f, 0.42f, 0.18f, 0.20f, 0, 0.0f, "b10_lc_flac" },
-            { "MC"    , skin,     124.0f, 0.34f, 0.18f, 0.20f, 0, 0.0f, "b11_mc_flac" },
-            { "HC"    , skin,     186.0f, 0.28f, 0.18f, 0.20f, 0, 0.0f, "b12_hc_flac" },
+            { "LC"    , skin,      82.0f, 0.1002f, 0.18f, 0.20f, 0, 0.0f },
+            { "MC"    , skin,     124.0f, 0.056f, 0.18f, 0.20f, 0, 0.0f },
+            { "HC"    , skin,     186.0f, 0.04817f, 0.18f, 0.20f, 0, 0.0f },
 
             // --- C: TEXTURA --------------------------------------------
             { "VINYL",  vinyl,      0.0f, 1.60f, 0.0f, 0.0f },
@@ -501,82 +503,23 @@ namespace Kits
         aplicaGanancia (d, len, gananciaSonoridad (d, len));
     }
 
-    //  LA GRABACION, SI LA HAY. Devuelve nulo cuando el recurso no esta, y
-    //  entonces el sonido se sintetiza como siempre: un hueco mudo seria peor
-    //  que un sonido parecido, y ademas dejaria un pad roto sin decir por que.
-    //
-    //  Va en mono porque asi vienen -Tools/fabrica.py las suma- y a 48 kHz, o
-    //  sea a la misma frecuencia que el aparato: delta vale 1 y Voice las lee
-    //  tal cual, sin pasar un transitorio por la interpolacion.
-    inline SampleBuffer::Ptr desdeRecurso (const char* nombre)
-    {
-        if (nombre == nullptr) return nullptr;
-
-        int bytes = 0;
-        const char* datos = BinaryData::getNamedResource (nombre, bytes);
-        if (datos == nullptr || bytes <= 0) return nullptr;
-
-        //  Y EL REGISTRO DE FORMATOS SE MONTA UNA VEZ, no sesenta y cuatro.
-        //  Esto construia un `AudioFormatManager` y llamaba a
-        //  `registerBasicFormats()` en CADA una de las llamadas, o sea que la
-        //  primera vez que alguien abre la app se montaba el registro de
-        //  formatos de JUCE entero una vez por sonido de fabrica. Lo unico que
-        //  muta es el registro y lo hace una sola vez bajo la guardia del
-        //  `static`; `createReaderFor` solo recorre la lista y construye un
-        //  lector nuevo, asi que dos hilos pueden pedirlo a la vez.
-        static juce::AudioFormatManager& fm = []() -> juce::AudioFormatManager&
-        {
-            static juce::AudioFormatManager m;
-            m.registerBasicFormats();
-            return m;
-        }();
-        //  El stream NO copia: los bytes viven en el binario y estan ahi
-        //  mientras la app exista, asi que copiarlos seria un megabyte de mas
-        //  en el arranque para nada.
-        std::unique_ptr<juce::AudioFormatReader> rd (
-            fm.createReaderFor (std::make_unique<juce::MemoryInputStream> (datos, (size_t) bytes, false)));
-        if (rd == nullptr || rd->lengthInSamples <= 0) return nullptr;
-
-        const int len = (int) juce::jmin (rd->lengthInSamples, (juce::int64) (kRate * 3.0));
-        SampleBuffer::Ptr sb = new SampleBuffer();
-        sb->sourceSampleRate = kRate;
-        sb->buffer.setSize (1, len);
-        sb->buffer.clear();
-        rd->read (&sb->buffer, 0, len, 0, true, rd->numChannels > 1);
-        return sb;
-    }
-
     inline SampleBuffer::Ptr render (int index)
     {
         using namespace detail;
 
         const auto& r = table()[juce::jlimit (0, kNumSounds - 1, index)];
 
-        //  Y LA GRABACION SE NORMALIZA POR EL MISMO CAMINO que lo sintetizado,
-        //  no por uno suyo. Si cada mitad se igualara por su cuenta, los
-        //  muestreados y los sintetizados sonarian a volumenes distintos y el
-        //  banco lo cazaria como "la sonoridad baila" sin poder decir por que.
-        //  Por eso esto entra ARRIBA de la funcion y no al lado de ella.
-        //  ZATI_SIN_MUESTRA obliga a sintetizar aunque haya grabacion.
+        //  LA FABRICA ES ENTERA NUESTRA, y eso es una decision legal antes
+        //  que sonora. Treinta y una de estas filas venian de grabaciones de
+        //  aparatos de verdad empotradas en el binario -916 250 bytes- y sin
+        //  una sola linea de licencia por escrito en ningun sitio: publicar asi
+        //  es lo que retira una ficha de la tienda, y THIRD-PARTY.md llevaba
+        //  anos afirmando lo contrario. Se sintetizan las sesenta y cuatro.
         //
-        //  No es un modo de la app: es la unica forma de MEDIR cuanto se parece
-        //  cada receta a la maquina de la que salio. Los parametros de sintesis
-        //  estan escritos en las 31 filas que tienen muestra -son lo que suena
-        //  si el recurso no esta- y nadie los ha comparado nunca con su
-        //  grabacion. Sin este interruptor habria que creerse de oido que "se
-        //  parecen", que es exactamente lo que esta casa no hace.
-        //
-        //  Se lee una vez y se recuerda: render() se llama 64 veces al arrancar
-        //  y getenv en cada una es E/S por sonido para una respuesta que no
-        //  cambia.
-        static const bool sinMuestra = (std::getenv ("ZATI_SIN_MUESTRA") != nullptr);
-
-        if (! sinMuestra)
-            if (auto grabado = desdeRecurso (r.muestra))
-            {
-                normaliza (grabado->buffer.getWritePointer (0), grabado->buffer.getNumSamples());
-                return grabado;
-            }
+        //  Lo que costo, medido: el par mas parecido de los 2016 baja de 5.50 a
+        //  5.27 dB -el liston es 4- y la sonoridad se abre de 1.7 a 2.9 dB
+        //  sobre un tope de 6.0. Lo que se gano: cada sonido dura lo que duraba
+        //  el suyo. Ver el comentario de `decay` mas abajo.
 
         const int len = juce::jmax (1024, (int) (kRate * juce::jmin (3.0f, r.decay * 5.0f)));
 

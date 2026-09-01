@@ -35,11 +35,13 @@ ROOT = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
 #  Android, que es donde viven el nombre de la app y el del paquete.
 ARBOL = ["Source", "Zati.jucer"]
 
-#  Los comentarios de estos dos SI nombran los aparatos, y tienen que hacerlo:
-#  fabrica.py es el unico sitio donde consta de donde sale cada grabacion, y
-#  clon.py existe para medir cuanto se parece cada receta a la suya. Ninguno de
-#  los dos entra en el APK. Ver THIRD-PARTY.md.
-FUERA = ("Tools/fabrica.py", "Tests/clon.py")
+#  NINGUNA EXCEPCION, y eso es nuevo. Aqui vivian Tools/fabrica.py -de donde
+#  salia cada grabacion- y Tests/clon.py -cuanto se parecia cada receta a la
+#  suya-: los dos nombraban los aparatos y los dos hacian falta mientras las
+#  grabaciones estuvieran dentro del binario. Desde que la fabrica se sintetiza
+#  entera no hay procedencia que documentar, los dos se retiraron, y el
+#  repositorio no nombra una marca ajena en ningun sitio.
+FUERA = ()
 
 
 def prohibido():

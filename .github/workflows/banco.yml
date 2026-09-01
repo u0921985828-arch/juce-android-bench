@@ -121,11 +121,9 @@ jobs:
       - name: Los sonidos de fabrica
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/kits.py
-      - name: Las recetas contra su grabacion
+      - name: Que es cada sonido de fabrica
         if: '!cancelled()'
-        run: |
-          DISPLAY=:99 python3 Tests/clon.py
-          DISPLAY=:99 python3 Tests/analiza.py
+        run: DISPLAY=:99 python3 Tests/analiza.py
       - name: Con que abre la maquina
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/nuevo.py

@@ -48,37 +48,6 @@
       <FILE id="srcSni"  name="SintesTabla.inc"   compile="0" resource="0" file="Source/SintesTabla.inc"/>
     </GROUP>
     <GROUP id="ZatiKits" name="kits">
-        <FILE id="kit00" name="a01_kick.flac" compile="0" resource="1" file="Source/kits/a01_kick.flac"/>
-        <FILE id="kit01" name="a02_snare.flac" compile="0" resource="1" file="Source/kits/a02_snare.flac"/>
-        <FILE id="kit02" name="a03_hat.flac" compile="0" resource="1" file="Source/kits/a03_hat.flac"/>
-        <FILE id="kit03" name="a04_open.flac" compile="0" resource="1" file="Source/kits/a04_open.flac"/>
-        <FILE id="kit04" name="a05_rim.flac" compile="0" resource="1" file="Source/kits/a05_rim.flac"/>
-        <FILE id="kit05" name="a06_tomlo.flac" compile="0" resource="1" file="Source/kits/a06_tomlo.flac"/>
-        <FILE id="kit06" name="a07_tommi.flac" compile="0" resource="1" file="Source/kits/a07_tommi.flac"/>
-        <FILE id="kit07" name="a08_tomhi.flac" compile="0" resource="1" file="Source/kits/a08_tomhi.flac"/>
-        <FILE id="kit08" name="a09_clap.flac" compile="0" resource="1" file="Source/kits/a09_clap.flac"/>
-        <FILE id="kit09" name="a10_ride.flac" compile="0" resource="1" file="Source/kits/a10_ride.flac"/>
-        <FILE id="kit10" name="a11_crash.flac" compile="0" resource="1" file="Source/kits/a11_crash.flac"/>
-        <FILE id="kit11" name="a12_shake.flac" compile="0" resource="1" file="Source/kits/a12_shake.flac"/>
-        <FILE id="kit12" name="a13_conga.flac" compile="0" resource="1" file="Source/kits/a13_conga.flac"/>
-        <FILE id="kit13" name="a15_tamb.flac" compile="0" resource="1" file="Source/kits/a15_tamb.flac"/>
-        <FILE id="kit14" name="a16_splash.flac" compile="0" resource="1" file="Source/kits/a16_splash.flac"/>
-        <FILE id="kit15" name="b01_bd.flac" compile="0" resource="1" file="Source/kits/b01_bd.flac"/>
-        <FILE id="kit16" name="b02_sd.flac" compile="0" resource="1" file="Source/kits/b02_sd.flac"/>
-        <FILE id="kit17" name="b03_ch.flac" compile="0" resource="1" file="Source/kits/b03_ch.flac"/>
-        <FILE id="kit18" name="b04_oh.flac" compile="0" resource="1" file="Source/kits/b04_oh.flac"/>
-        <FILE id="kit19" name="b05_rs.flac" compile="0" resource="1" file="Source/kits/b05_rs.flac"/>
-        <FILE id="kit20" name="b06_cp.flac" compile="0" resource="1" file="Source/kits/b06_cp.flac"/>
-        <FILE id="kit21" name="b07_lt.flac" compile="0" resource="1" file="Source/kits/b07_lt.flac"/>
-        <FILE id="kit22" name="b08_mt.flac" compile="0" resource="1" file="Source/kits/b08_mt.flac"/>
-        <FILE id="kit23" name="b09_ht.flac" compile="0" resource="1" file="Source/kits/b09_ht.flac"/>
-        <FILE id="kit24" name="b10_lc.flac" compile="0" resource="1" file="Source/kits/b10_lc.flac"/>
-        <FILE id="kit25" name="b11_mc.flac" compile="0" resource="1" file="Source/kits/b11_mc.flac"/>
-        <FILE id="kit26" name="b12_hc.flac" compile="0" resource="1" file="Source/kits/b12_hc.flac"/>
-        <FILE id="kit27" name="b13_cy.flac" compile="0" resource="1" file="Source/kits/b13_cy.flac"/>
-        <FILE id="kit28" name="b14_cb.flac" compile="0" resource="1" file="Source/kits/b14_cb.flac"/>
-        <FILE id="kit29" name="b15_cl.flac" compile="0" resource="1" file="Source/kits/b15_cl.flac"/>
-        <FILE id="kit30" name="b16_ma.flac" compile="0" resource="1" file="Source/kits/b16_ma.flac"/>
     </GROUP>
     <GROUP id="ZatiFonts" name="fonts">
       <FILE id="fntOsB" name="OswaldBold.ttf"          compile="0" resource="1" file="Source/fonts/OswaldBold.ttf"/>

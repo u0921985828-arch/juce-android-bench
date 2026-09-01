@@ -12,52 +12,52 @@ licencia allí donde se redistribuya el tipo.
 | Oswald (Bold, Medium) | Google Fonts | SIL OFL 1.1 | `LICENSES/Oswald-OFL.txt` |
 | JetBrains Mono (Regular, Bold) | JetBrains | SIL OFL 1.1 | `LICENSES/JetBrainsMono-OFL.txt` |
 
-## Audio de fábrica — 31 grabaciones, y **sin licencia**
+## Audio de fábrica — ninguno es de nadie
 
-Este apartado decía *«no se distribuye ni un solo sample… la app sale vacía»*.
-**Era falso**, y lo era desde el día en que media fábrica dejó de sintetizarse:
-`Source/kits/` lleva **31 ficheros `.flac`, 916 250 bytes**, incrustados en el
-binario como recursos (`ZatiData`). La frase de cierre de aquel párrafo —*«si
-algún día se meten packs de fábrica, cada uno necesita su propia licencia por
-escrito antes de entrar aquí»*— es exactamente la condición que **no se ha
-cumplido**.
+**La app no distribuye una sola grabación.** Los 64 sonidos de fábrica se
+sintetizan al arrancar desde las recetas de `Source/Kits.h`, así que dentro del
+APK no hay audio con derechos de terceros: sólo las dos tipografías y el código.
 
-| Qué | Cuántos | De dónde |
+No siempre fue así, y conviene que conste. Este apartado afirmaba que «la app
+sale vacía» mientras `Source/kits/` llevaba **31 ficheros `.flac`, 916 250
+bytes**, incrustados como recurso — quince del banco A y los dieciséis del B,
+sacados de máquinas de verdad y **sin una sola línea de licencia por escrito**.
+La frase de cierre de aquel párrafo —*«si algún día se meten packs de fábrica,
+cada uno necesita su propia licencia por escrito antes de entrar aquí»*— era la
+condición que no se había cumplido.
+
+Se resolvió por donde no cuesta un permiso: **quitándolas**. Con ellas se fueron
+`Tools/fabrica.py`, que era el único sitio donde constaba la procedencia, y
+`Tests/clon.py`, que medía cuánto se parecía cada receta a la suya. Ya no hay
+procedencia que documentar.
+
+**Lo que costó y lo que se ganó, medido** (`Tests/kits.py`, los 2016 pares):
+
+| | con grabaciones | sintetizada |
 |---|---|---|
-| banco A, ACUSTICA | 15 de 16 | material de batería muestreada de terceros |
-| banco B, MAQUINA | 16 de 16 | material de caja de ritmos de terceros |
-| bancos C y D | 0 de 32 | sintetizados por ARTiFACTS, sin origen externo |
+| par más parecido (listón 4.0 dB) | 5.50 dB | **5.27 dB** |
+| distancia mediana | 27.1 dB | **28.8 dB** |
+| sonoridad, del más al menos sonoro (tope 6.0 dB) | 1.7 dB | **2.9 dB** |
+| bytes de audio en el APK | 916 250 | **0** |
 
-De dónde sale cada uno, fichero por fichero, consta en `Tools/fabrica.py`, que
-no corre en la compilación y existe justo para eso. Los `.flac` están a 48 kHz,
-mono, recortados por delante y por detrás, y normalizados por el mismo camino
-que la síntesis.
+Y una cosa que mejoró de verdad al hacerlo. Comparando el T60 de cada receta
+contra el de su grabación —`Tests/analiza.py`, mientras todavía se podían
+comparar— la síntesis sonaba **x3.36 más larga que su máquina en la mediana y
+x15.5 la peor**: un CLAP de 2.1 s donde el aparato da 0.135. Ésa es la razón de
+que la percusión sintetizada sonara blanda, y se corrigió receta a receta hasta
+**x1.00 de mediana y x1.33 la peor**.
 
-**Esto bloquea la publicación.** No existe fila de licencia para ninguna de las
-31 en ningún sitio de este repositorio, y no se puede inventar: una licencia es
-un documento firmado o no es nada. Hay dos salidas y sólo dos:
+El ajuste **no se aplicó a `metal`**: un cúmulo inarmónico bate, así que «tiempo
+hasta caer 60 dB» se corta en el primer nulo del batido y no en la caída — subir
+su `decay` bajaba el T60 medido. Era la medida fallando, no el código.
 
-1. **Licenciar por escrito** cada grabación, y anotarla en la tabla de arriba
-   con su documento. Es lo que este mismo fichero exigía por adelantado.
-2. **Sacarlas del APK sintetizándolas.** Las 31 filas con muestra ya llevan sus
-   parámetros de síntesis —son lo que suena si el recurso no está, que en
-   escritorio pasa de verdad— y lo que falta es que se parezcan lo bastante.
-   `Tests/clon.py` es la puerta, medida con el mismo descriptor que usa
-   `Tests/kits.py` para decir si dos sonidos de la fábrica son el mismo:
-   **hoy la mejor está a 6.90 dB y la mediana en 17.81**, y el listón es 4 —
-   por debajo de ahí `kits.py` las llamaría el mismo sonido y los FLAC pueden
-   salir. Ninguna de las 31 llega todavía.
-
-Lo protegido es el fichero, no el timbre: que un bombo tenga la afinación
-cayendo no es de nadie. Por eso la salida 2 es una salida y no un rodeo.
-
-**Y no hay ninguna marca ajena en lo que se publica**, que es una cosa distinta
-de la licencia y sí está medida: `Tests/marcas.py` lee las reglas 1 y 2 de
-`GOOGLE-PLAY.md` §1.5 y las contrasta contra `Source/` y `Zati.jucer` en cada
-corrida del banco. Los nombres de los aparatos viven en `Tools/fabrica.py` y en
-`Tests/clon.py`, que no entran en el APK y donde tienen que estar: sin ellos no
-quedaría constancia de la procedencia, que es justo lo que este apartado
-necesita para poder cerrarse algún día.
+**Y el banco que lo hizo posible estaba roto.** `Tests/analiza.py` enumeraba las
+filas de `Kits.h` con una expresión que exigía los nueve campos, y treinta y tres
+están escritas en forma corta: no casaban, el contador no avanzaba, y **cada slot
+a partir de la catorceava quedaba corrido**. Cada grabación se comparaba con la
+receta de su vecina. No fallaba: daba números. Se descubrió porque un `RS` con
+`decay` 0.01 —un fichero de 0.05 s— seguía midiendo 1.8 s de T60, que es
+imposible.
 
 ## Lo de JUCE es una decisión, no un trámite
 
@@ -76,3 +76,9 @@ condiciones porque cambian.
 
 Sea cual sea el camino, es una decisión que se toma **antes** del primer
 release público, no después: cambiarla luego significa retirar la app.
+
+**Y con ella va un fichero `LICENSE` que hoy no existe.** En la raíz no hay
+ninguno: si se publica en modo GPLv3, la obligación de licenciar ZATI bajo
+GPLv3 no está materializada en ninguna parte, y si se compra la licencia
+comercial hace falta el aviso de copyright propio. `LICENSES/` sólo lleva los
+textos de los terceros que viajan dentro.

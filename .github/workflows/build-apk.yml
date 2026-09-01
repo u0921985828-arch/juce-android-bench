@@ -424,10 +424,16 @@ jobs:
       #  Sobre el binario YA FIRMADO y por la misma razon que la comprobacion de
       #  las 16 KB: `apksigner` reconstruye el fichero, asi que mirarlo antes es
       #  mirar otro.
-      - name: El banco del APK, sobre el binario ya firmado
+      - name: El banco del APK y del AAB, sobre los binarios ya firmados
         if: '!cancelled()'
+        #  Y EL AAB TAMBIEN, que es el unico que Play acepta y era el unico que
+        #  no miraba nadie: esto corria solo sobre el APK, asi que lo que se
+        #  publica de verdad se subia sin comprobar. Su manifiesto va en
+        #  protobuf y su firma es de jar, no el bloque v2; la alineacion no
+        #  aplica porque de un bundle los APK los genera Play.
         run: |
           python3 Tests/apk.py Zati-release.apk
+          python3 Tests/apk.py Zati-release.aab
 
       #  LA RELEASE VA PRIMERO, y la copia por corrida detras y sin poder
       #  tumbar nada.

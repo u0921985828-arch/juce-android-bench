@@ -1,7 +1,15 @@
 #!/usr/bin/env python3
-"""Comprueba un APK sin herramientas de Android: firma v2, paquete, permisos y
-alineacion de las bibliotecas. Escrito a mano porque este entorno no trae el
-SDK, y porque lo que hace falta comprobar son cuatro cosas concretas."""
+"""Comprueba un APK -o un AAB- sin herramientas de Android: firma, paquete,
+permisos, alineacion de las bibliotecas y lo que va ESCRITO dentro. A mano
+porque este entorno no trae el SDK.
+
+Y EL AAB TAMBIEN, que es el unico artefacto que Play acepta y era el unico que
+no miraba nadie: esto corria solo sobre el APK, asi que lo que se publica de
+verdad se subia sin comprobar. Cambia donde estan las cosas -el manifiesto vive
+en `base/manifest/`, la .so en `base/lib/`- y cambia la firma, que en un bundle
+es de `jarsigner` y no el bloque v2 de un APK. La alineacion no aplica: de un
+bundle Play GENERA los APK, asi que quien decide el alineado es Play con las
+banderas del enlazador, y esas se comprueban sobre el APK de al lado."""
 import os, re, sys, zipfile, struct
 
 sys.path.insert (0, os.path.dirname (os.path.abspath (__file__)))
@@ -10,7 +18,19 @@ from marcas import prohibido
 apk = sys.argv[1]
 raw = open(apk, 'rb').read()
 
-# --- 1. El bloque de firma v2, justo antes del directorio central -----------
+z = zipfile.ZipFile(apk)
+nombres = set(z.namelist())
+#  Que clase de paquete es se MIRA, no se deduce de la extension: un fichero
+#  renombrado no cambia de forma.
+BUNDLE = 'base/manifest/AndroidManifest.xml' in nombres
+QUE = 'AAB' if BUNDLE else 'APK'
+print(f"paquete: {QUE}")
+
+# --- 1. La firma -----------------------------------------------------------
+#  En un APK, el bloque v2 justo antes del directorio central. En un bundle no
+#  existe: va firmado como un jar, con su MANIFEST.MF y su .RSA/.DSA/.EC.
+jar_firmado = any(n.startswith('META-INF/') and n.endswith(('.RSA', '.DSA', '.EC'))
+                  for n in nombres)
 eocd = raw.rfind(b'PK\x05\x06')
 cd_off = struct.unpack_from('<I', raw, eocd + 16)[0]
 magic = raw[cd_off - 16:cd_off]
@@ -28,24 +48,42 @@ if v2:
         esquemas.append(ident)
         p += 8 + n
 
-print(f"firma v2 (APK Sig Block 42): {'SI' if v2 else 'NO'}")
+if BUNDLE:
+    print(f"firma de jar (META-INF): {'SI' if jar_firmado else 'NO'}")
+else:
+    print(f"firma v2 (APK Sig Block 42): {'SI' if v2 else 'NO'}")
 for i in esquemas:
     nom = {0x7109871a: 'v2', 0xf05368c0: 'v3', 0x1b93ad61: 'sello v3.1/otros'}.get(i, hex(i))
     print(f"  bloque {nom}")
 
-# --- 2. El manifiesto binario: paquete y permisos ---------------------------
-z = zipfile.ZipFile(apk)
-ax = z.read('AndroidManifest.xml')
-# Cadenas del pool: cabecera 8 + tipo 0x0001, cuenta en +8
-n_str = struct.unpack_from('<I', ax, 16)[0]
-off_str = struct.unpack_from('<I', ax, 28)[0]
-offs = struct.unpack_from(f'<{n_str}I', ax, 36)
-base = 8 + off_str
-cadenas = []
-for o in offs:
-    p = base + o
-    ln = struct.unpack_from('<H', ax, p)[0]
-    cadenas.append(ax[p + 2:p + 2 + ln * 2].decode('utf-16-le', 'replace'))
+# --- 2. El manifiesto: paquete y permisos ----------------------------------
+#
+#  Y SON DOS FORMATOS. Un APK lleva el manifiesto en XML binario, con su pool
+#  de cadenas en UTF-16. Un bundle lo lleva en PROTOBUF, que es otro fichero
+#  con el mismo nombre: leerlo con el lector del APK da un pool de siete mil
+#  millones de cadenas y revienta. Ahi los nombres viajan como texto plano, asi
+#  que se sacan las tiras imprimibles - que es todo lo que hace falta para
+#  contrastar el paquete y los cuatro permisos.
+if BUNDLE:
+    ax = z.read('base/manifest/AndroidManifest.xml')
+    #  Y se buscan por su FORMA y no como tiras imprimibles sueltas: en
+    #  protobuf cada nombre va pegado al byte de longitud del campo siguiente,
+    #  asi que una tira cruda sale como `android.permission.RECORD_AUDIO(` y
+    #  como `com.artifacts.zati"N` - ni contrasta ni se lee.
+    cadenas = [t.decode('ascii') for t in
+               re.findall(rb'android\.permission\.[A-Z_]+|com\.[a-z0-9_.]+', ax)]
+else:
+    ax = z.read('AndroidManifest.xml')
+    # Cadenas del pool: cabecera 8 + tipo 0x0001, cuenta en +8
+    n_str = struct.unpack_from('<I', ax, 16)[0]
+    off_str = struct.unpack_from('<I', ax, 28)[0]
+    offs = struct.unpack_from(f'<{n_str}I', ax, 36)
+    base = 8 + off_str
+    cadenas = []
+    for o in offs:
+        p = base + o
+        ln = struct.unpack_from('<H', ax, p)[0]
+        cadenas.append(ax[p + 2:p + 2 + ln * 2].decode('utf-16-le', 'replace'))
 
 paquete = [c for c in cadenas if c.startswith('com.') and ' ' not in c]
 permisos = sorted({c for c in cadenas if c.startswith('android.permission.')})
@@ -70,7 +108,7 @@ for p in permisos:
 #  No por el de la cabecera: lo que mapea el cargador es donde empiezan los
 #  datos, y comprobar el otro da un si a un fichero que Android rechaza.
 malas = []
-for i in z.infolist():
+for i in ([] if BUNDLE else z.infolist()):
     if not i.filename.endswith('.so'):
         continue
     h = i.header_offset
@@ -80,6 +118,9 @@ for i in z.infolist():
         malas.append((i.filename, datos % 16384))
     print(f"  {i.filename}  datos en {datos}  {'alineado' if datos % 16384 == 0 else 'DESALINEADO'}"
           f"  {'sin comprimir' if i.compress_type == 0 else 'COMPRIMIDO'}")
+
+if BUNDLE:
+    print("  alineacion: no aplica a un bundle - los APK los genera Play")
 
 print(f"\ntamano: {len(raw)} bytes")
 
@@ -169,7 +210,9 @@ if not escrito and visto:
 faltan = [p for p in ESPERADOS if p not in permisos]
 sobran = [p for p in permisos if p not in ESPERADOS]
 mal = []
-if not v2:     mal.append("sin firma v2")
+if BUNDLE:
+    if not jar_firmado: mal.append("el bundle no esta firmado")
+elif not v2:            mal.append("sin firma v2")
 if malas:      mal.append("%d .so desalineadas" % len(malas))
 if faltan:     mal.append("faltan permisos: " + ", ".join(faltan))
 if sobran:     mal.append("permisos de mas: " + ", ".join(sobran))

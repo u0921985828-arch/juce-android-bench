@@ -1,23 +1,24 @@
 #!/usr/bin/env python3
-"""QUE ES CADA GRABACION, contra lo que su receta DICE que es.
+"""QUE ES CADA SONIDO DE FABRICA, contra lo que su receta DICE que es.
 
-clon.py da UN numero por sonido -a que distancia esta la sintesis de su
-maquina- y con eso se sabe cuales estan mal, pero no POR QUE. Esto da las
-cifras con las que se arregla: la afinacion de verdad, cuanto tarda en caer,
-donde tiene el centro de masa espectral y cuanto de lo que suena es ruido y
-cuanto tono.
+Da las cifras con las que se afina una receta: la afinacion de verdad, cuanto
+tarda en caer, donde tiene el centro de masa espectral y cuanto de lo que suena
+es ruido y cuanto tono.
 
 Y las pone AL LADO de lo que la fila de Kits.h declara, porque el fallo que se
-busca no es "este numero es raro" sino "este numero no es el de la grabacion".
-Un bombo cuya receta dice 55 Hz cuando el aparato da 62 no suena parecido por
-mucho que se afine todo lo demas.
+busca no es "este numero es raro" sino "este numero no es el que la receta
+dice". Un bombo cuya receta dice 55 Hz y da 90 no suena a lo que se escribio.
+
+Sirvio para lo mas caro que ha hecho: cuando se decidio sacar del binario las
+treinta y una grabaciones sin licencia, esta tabla dio el T60 de cada maquina y
+con el se ajustaron los `decay` de sus recetas -x3.36 de desvio mediano a
+x1.00-. Las grabaciones ya no estan; la tabla sigue siendo con lo que se afina.
 
 La tabla se lee del propio Kits.h con una expresion regular en vez de pedirle
 a la app que la vuelque: es texto plano y una fila de C++ no cambia de forma.
 
 Los WAV salen de la sesion que la app escribe al abrir por primera vez, que es
-la MISMA fuente que usan kits.py y clon.py - asi los tres hablan de los mismos
-bytes y no de tres decodificaciones distintas del FLAC.
+la MISMA fuente que usa kits.py - asi los dos hablan de los mismos bytes.
 """
 import glob, math, os, re, shutil, subprocess, sys, tempfile
 
@@ -30,18 +31,35 @@ SR   = 48000.0
 
 
 def tabla():
-    """Las filas de Kits.h que tienen muestra: slot -> (nombre, forma, hz, decay)."""
+    """Las 64 filas de Kits.h: slot -> (nombre, forma, hz, decay).
+
+    EL SLOT SE CUENTA SOBRE TODAS LAS FILAS, no sobre las que casan.
+
+    La primera version enumeraba con una expresion que exigia los NUEVE campos,
+    y treinta y tres filas de la tabla estan escritas en forma corta -{ "COWBEL",
+    metal, 2.4f, 0.28f, 2400.0f, 3.0f }, sin juego, brillo ni muestra, que una
+    inicializacion de agregado deja a su defecto-. Esas no casaban, el contador
+    no avanzaba, y CADA SLOT a partir de la primera quedaba corrido: 31 filas
+    vistas de 64 reales. COWBEL es la catorceava del banco A, asi que los slots
+    0..12 salian bien y de ahi en adelante cada grabacion se comparaba con la
+    receta de su vecina - el banco B entero desplazado uno.
+
+    No fallaba: daba numeros. Se descubrio porque un RS con `decay` 0.01 -o sea
+    un fichero de 0.05 s- seguia midiendo 1.8 s de T60, que es imposible. Una
+    tabla que empareja mal no dice que no, dice otra cosa.
+    """
     txt = open (os.path.join (ROOT, "Source", "Kits.h"), encoding="utf8").read()
-    fila = re.compile (r'\{\s*"([^"]+)"\s*,\s*(\w+)\s*,\s*([\d.]+)f\s*,\s*([\d.]+)f\s*,'
-                       r'\s*([-\d.]+)f\s*,\s*([-\d.]+)f\s*,\s*(\d+)\s*,\s*([\d.]+)f\s*,\s*'
-                       r'(nullptr|"[^"]*")\s*\}')
-    out, i = {}, 0
-    for m in fila.finditer (txt):
-        if m.group (9) != "nullptr":
-            out[i] = dict (nombre=m.group (1), forma=m.group (2),
-                           hz=float (m.group (3)), decay=float (m.group (4)),
-                           p1=float (m.group (5)), p2=float (m.group (6)))
-        i += 1
+    #  Toda fila es { "NOMBRE", forma, ...campos... }. Se enumeran TODAS y los
+    #  campos se parten despues, que es lo que separa contar de leer.
+    fila   = re.compile (r'\{\s*"([^"]+)"\s*,\s*(\w+)\s*,([^{}]*?)\}')
+    numero = re.compile (r'(-?[\d.]+)f')
+    out = {}
+    for i, m in enumerate (fila.finditer (txt)):
+        cuerpo = m.group (3)
+        n = [float (x) for x in numero.findall (cuerpo)]
+        if len (n) < 4: continue
+        out[i] = dict (nombre=m.group (1).strip(), forma=m.group (2),
+                       hz=n[0], decay=n[1], p1=n[2], p2=n[3])
     return out
 
 
