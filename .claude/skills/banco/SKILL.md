@@ -63,6 +63,15 @@ bloques que le tocan a cada tick y el camino entero corre de verdad. Y la
 segunda pasada cuenta **pixeles y no llamadas**, que es lo unico que separa el
 cabezal pidiendo su banda -correcto- de una ficha pidiendo la ventana.
 
+**Y `cpu.py` HAY QUE CORRERLA, que es la otra mitad.** No esta en
+`banco.yml` -mide por RELOJ, y en un runner compartido eso no es una medida- asi
+que depende de que alguien se acuerde, que es exactamente lo que este banco
+existe para no depender. Se pago: la ficha SEC llevaba varias tandas pintando
+**18.5 fotogramas equivalentes** con la maquina sonando -contra un tope de 8.0, y
+ninguna otra ficha pasaba de 0.5- porque `StepGrid::setSource` se caia al
+`repaint()` entero cuando NADA habia cambiado y no habia cabezal que mover. De
+18.5 a 3.8. **Se corre al cerrar cada tanda, antes de compilar la APK.**
+
 **Y `cpu.py` se corre SOLA.** Es la unica prueba de esta casa que mide por
 RELOJ, y con las 896 corridas de `expo.py` compartiendo nucleos saco nueve
 fichas «repintandose solas» —la cara a 19 fotogramas contra un tope de 3— con el
