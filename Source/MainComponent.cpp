@@ -1908,6 +1908,8 @@ MainComponent::MainComponent()
     eqCurva.onTouch = [this] (bool cogido)
     {
         if (cogido) status.setText (T ("EQ - arrastra el nodo"), juce::dontSendNotification);
+        //  Y al soltar publica, igual que los tres mandos y por lo mismo.
+        else if (autoArmado) publicaAutomacion();
     };
     addChildComponent (eqCurva);
 
@@ -2463,6 +2465,29 @@ MainComponent::MainComponent()
             saveCuentaPref();
         };
         songSheet.addChildComponent (songClickBtn);
+
+        //  AUTO, la tercera de la fila de grabar. Va aqui y no en la cara por
+        //  lo mismo que GRABAR y el clic: la automatizacion es de la CANCION
+        //  -sus eventos van en pasos de la linea de tiempo- y la fila ya
+        //  existe, asi que no cuesta un pixel de alto.
+        //
+        //  TOCAR ARMA, MANTENER BORRA. Es un `HoldButton` -el mismo que las
+        //  seis tapas de efecto- y por la misma razon: vaciar la
+        //  automatizacion es lo unico de esta funcion que no se deshace
+        //  tocando otra vez, asi que no puede compartir gesto con armarla. Y
+        //  cuesta CERO de ancho, que es lo que no hay en esta fila: una
+        //  septima tapa la parte en dos y le quita 44 px a los carriles.
+        styleButton (autoBtn, kKey);
+        litAccent (autoBtn);
+        autoBtn.onClick = [this] { ponAutoArmado (! autoArmado); };
+        autoBtn.onHold  = [this]
+        {
+            //  Desarmar antes de vaciar: si no, el primer mando que se toque
+            //  despues vuelve a escribir sobre lo que se acaba de borrar.
+            if (autoArmado) ponAutoArmado (false);
+            vaciaAutomacion();
+        };
+        songSheet.addChildComponent (autoBtn);
     }
 
     songGrid.onClipNuevo = [this] (int pista, int compas) { ponClip (pista, compas); };
@@ -3427,6 +3452,12 @@ void MainComponent::setMacroTouched (int idx, bool touched)
     }
     else
     {
+        //  Y AL SOLTAR SE PUBLICA lo que se acabe de escribir. Publicar por
+        //  VALOR reservaria una tabla de cuatro mil eventos en cada fotograma
+        //  de arrastre; soltar es el momento en que la frase esta entera y
+        //  ademas es el unico que ocurre una vez.
+        if (autoArmado) publicaAutomacion();
+
         // Hold the parameter name briefly after release: letting it snap back
         // the instant the finger lifts makes the name unreadable on a quick
         // tweak, which is when you most want to know what you just moved.
@@ -3545,31 +3576,79 @@ void MainComponent::pushFxParam (int f, int pi)
     if (! juce::isPositiveAndBelow (f, kNumFx) || ! juce::isPositiveAndBelow (pi, 3)) return;
     const float v = (float) fxParam (f, pi).getValue();
 
-    switch (f * 3 + pi)
+    //  UNA SOLA TRADUCCION, y vive en el MOTOR. Aqui habia un switch de
+    //  veintiun casos y era correcto mientras el unico que movia un parametro
+    //  fuese un mando; con la automatizacion hay un segundo cliente y esta en
+    //  el hilo de audio, asi que copiarlo habria sido la misma regla escrita
+    //  dos veces. Ver AudioEngine::setFxParam.
+    engine.setFxParam (f, pi, v);
+
+    //  Y SI ESTA ARMADO, SE ESCRIBE. Aqui y no en `onValueChange` del mando:
+    //  por esta funcion pasan TODOS los caminos que mueven un parametro -el
+    //  mando, el pad XY, la curva del EQ y el interruptor- y escribir en cada
+    //  uno serian cuatro reglas.
+    anotaAutomacion (f, pi, v);
+}
+
+//  UN EVENTO POR PASO Y POR PARAMETRO, y el ultimo gana.
+//
+//  Pasar dos veces por el mismo compas SOBREESCRIBE lo que hiciste la vez
+//  anterior en los pasos que toques, y deja los demas: eso es sobregrabar, que
+//  es lo que hace un groovebox y lo que se puede aprender sin leer nada. La
+//  alternativa -borrar el tramo entero al entrar en el- es "latch", y con ella
+//  una pasada en la que no tocas nada BORRA lo que habia.
+void MainComponent::anotaAutomacion (int fx, int par, float v)
+{
+    if (! autoArmado) return;
+    const int paso = engine.pasoDeCancion();
+    if (paso < 0) return;                    // sin cancion rodando no hay donde
+
+    for (auto& e : autoEventos)
+        if (e.paso == paso && e.fx == (juce::uint8) fx && e.par == (juce::uint8) par)
+        {
+            e.valor = v;
+            return;
+        }
+
+    //  Y EL TOPE SE CUENTA. Un tope que se supera en silencio no protege,
+    //  esconde: sin la linea de estado, la automatizacion dejaria de grabarse
+    //  a mitad de la cancion y no lo diria nadie.
+    if ((int) autoEventos.size() >= AudioEngine::kMaxAuto)
     {
-        case  0: engine.setFltSweep  (v); break;
-        case  1: engine.setFltReso   (v); break;
-        case  2: engine.setFltMix    (v); break;
-        case  3: engine.setHpFreq    (v); break;
-        case  4: engine.setHpReso    (v); break;
-        case  5: engine.setHpMix     (v); break;
-        case  6: engine.setFxDrive   (v); break;
-        case  7: engine.setDrvTone   (v); break;
-        case  8: engine.setDrvMix    (v); break;
-        case  9: engine.setDlyTime   (v); break;
-        case 10: engine.setDlyFb     (v); break;
-        case 11: engine.setDlyMix    (v); break;
-        case 12: engine.setCrushBits (v); break;
-        case 13: engine.setCrushRate (v); break;
-        case 14: engine.setCrushMix  (v); break;
-        case 15: engine.setRevSize   (v); break;
-        case 16: engine.setRevDamp   (v); break;
-        case 17: engine.setRevMix    (v); break;
-        case 18: engine.setEqAncho   (v); break;
-        case 19: engine.setEqSalida  (v); break;
-        case 20: engine.setEqMix     (v); break;
-        default: break;
+        status.setText (T ("AUTO lleno: %1 eventos", juce::String (AudioEngine::kMaxAuto)),
+                        juce::dontSendNotification);
+        return;
     }
+
+    autoEventos.push_back ({ paso, (juce::uint8) fx, (juce::uint8) par, v });
+}
+
+//  El espejo al motor. Se publica al SOLTAR el mando y al parar el transporte,
+//  no por valor: publicar en cada movimiento reservaria una tabla de cuatro mil
+//  eventos por fotograma de arrastre.
+void MainComponent::publicaAutomacion()
+{
+    engine.publicaAutomacion (autoEventos.data(), (int) autoEventos.size());
+}
+
+void MainComponent::ponAutoArmado (bool on)
+{
+    autoArmado = on;
+    engine.setAutoEscribe (on);
+    autoBtn.setToggleState (on, juce::dontSendNotification);
+    //  Al DESARMAR se publica: lo que se acaba de tocar tiene que estar en la
+    //  tabla que suena antes de la vuelta siguiente, y no en el tic que venga.
+    if (! on) publicaAutomacion();
+    status.setText (on ? T ("AUTO grabando - manten pulsado para borrar")
+                       : T ("AUTO: %1 eventos", juce::String ((int) autoEventos.size())),
+                    juce::dontSendNotification);
+}
+
+void MainComponent::vaciaAutomacion()
+{
+    autoEventos.clear();
+    publicaAutomacion();
+    status.setText (T ("AUTO vacio"), juce::dontSendNotification);
 }
 
 // On/off is a MIX move, not a separate flag: one truth, and it is the same
@@ -4639,6 +4718,13 @@ void MainComponent::apunta (juce::Graphics& g, juce::Rectangle<int> caja,
 //  anada manana entra sola.
 void MainComponent::ponTransporte (bool on)
 {
+    //  PARAR DESARMA AUTO, y eso no es una comodidad: un modo de escritura que
+    //  se queda puesto es como se borra una automatizacion buena en la pasada
+    //  siguiente sin haber tocado nada a proposito. Ademas `ponAutoArmado`
+    //  publica al desarmar, asi que lo que se acabe de tocar entra en la tabla
+    //  que suena antes de la vuelta siguiente.
+    if (! on && autoArmado) ponAutoArmado (false);
+
     engine.setPlaying (on);
     juce::TextButton* tapas[3] = { &playButton, &seqPlayBtn, &songPlayBtn };
     for (juce::TextButton* b : tapas)
@@ -6226,6 +6312,7 @@ void MainComponent::retranslateUi()
     songDoubleBtn.setButtonText (T ("DOBLAR"));
     songVistaBtn.setButtonText (T (songVista == Playlist::vistaAudio ? "AUDIO" : "PATRONES"));
     songRecBtn.setButtonText (T (grabandoAlArreglo ? "PARAR" : "GRABAR"));
+    autoBtn.setButtonText (T ("AUTO"));
     songClickBtn.setButtonText (T ("CLIC"));
     songShortBtn.setButtonText (T ("ACORTAR"));
     songLongBtn.setButtonText  (T ("ALARGAR"));
@@ -7086,6 +7173,19 @@ juce::ValueTree MainComponent::captureState() const
                       << c.desde << " " << c.largo << " " << juce::String (c.gain, 4) << ";";
             song.setProperty ("clips", filas, nullptr);
         }
+
+        //  Y LA AUTOMATIZACION, DISPERSA Y POR LA MISMA RAZON. «paso fx par
+        //  valor;» y nada cuando no hay eventos. Va dentro de <song> y no de
+        //  <FX> porque sus pasos son de la LINEA DE TIEMPO: guardarla al lado
+        //  de los parametros diria que es del efecto, y es de la cancion.
+        if (! autoEventos.empty())
+        {
+            juce::String filas;
+            for (const auto& e : autoEventos)
+                filas << e.paso << " " << (int) e.fx << " " << (int) e.par << " "
+                      << juce::String (e.valor, 4) << ";";
+            song.setProperty ("auto", filas, nullptr);
+        }
         s.addChild (song, -1, nullptr);
     }
     s.setProperty ("version", 1, nullptr);
@@ -7730,6 +7830,39 @@ void MainComponent::applyState (const juce::ValueTree& s)
     }
     publicaClips();
 
+    //  Y LA AUTOMATIZACION, con la misma puerta y las mismas cotas. Un proyecto
+    //  de antes no tiene la propiedad y vuelve SIN eventos, que es exactamente
+    //  como sonaba el dia que se guardo: con los parametros donde los dejo su
+    //  ultima linea de <FX> y sin nada moviendolos.
+    autoEventos.clear();
+    if (song.isValid())
+    {
+        const auto filas = juce::StringArray::fromTokens (
+            song.getProperty ("auto").toString(), ";", "");
+        for (const auto& fila : filas)
+        {
+            const auto n = juce::StringArray::fromTokens (fila.trim(), " ", "");
+            if (n.size() < 4) continue;
+            const int paso = n[0].getIntValue();
+            const int fx   = n[1].getIntValue();
+            const int par  = n[2].getIntValue();
+            if (paso < 0 || paso >= AudioEngine::kSongBars * AudioEngine::kBarSteps) continue;
+            if (! juce::isPositiveAndBelow (fx, kNumFx) || ! juce::isPositiveAndBelow (par, 3)) continue;
+            if ((int) autoEventos.size() >= AudioEngine::kMaxAuto) break;
+            autoEventos.push_back ({ paso, (juce::uint8) fx, (juce::uint8) par,
+                                     n[3].getFloatValue() });
+        }
+    }
+    //  Y SE PUBLICA, en su propia linea. Estaba saliendo de rebote por el
+    //  `ponAutoArmado (false)` de abajo -que publica al desarmar- y eso es una
+    //  regla apoyada en un efecto secundario: el dia que desarmar deje de
+    //  publicar, la automatizacion vuelve del fichero escrita y MUDA sin que
+    //  nada falle. Roto a proposito quitando esta linea: `motor 0`.
+    publicaAutomacion();
+    //  Y se DESARMA al abrir: dejar el modo de escritura puesto de un proyecto
+    //  a otro es como se borra una automatizacion sin tocarla.
+    ponAutoArmado (false);
+
     focusFx ((int) s.getProperty ("focusedFx", 0));
     refreshRack();
     for (int i = 0; i < kNumPads; ++i)
@@ -8064,6 +8197,13 @@ void MainComponent::newProject()
     for (int b = 0; b < Eq5::kBands; ++b)
         engine.setEqBand (b, Eq5::kFreqDef[b], 0.0f);
     refrescaEq();
+
+    //  Y LA AUTOMATIZACION, que es de la cancion y se va con ella: sin esto el
+    //  proyecto siguiente nacia con los barridos del anterior escritos en unos
+    //  compases donde ya no hay nada. Es la misma herencia que ya se pago con
+    //  los envios y con la linea de tiempo.
+    ponAutoArmado (false);
+    vaciaAutomacion();
 
     selectedPattern = 0;
     selectedStep = -1;
@@ -9022,14 +9162,17 @@ void MainComponent::showSongPage (int v)
     //  tapas que no hacen nada, que es justo lo que esta casa llama ruido.
     for (auto* b : songPatBtns) { b->setVisible (! audio); if (audio) b->setBounds ({}); }
 
-    //  Y LAS DOS DE LA BANDA, al reves: solo en AUDIO. Grabar al arreglo y el
-    //  metronomo no tienen nada que decirle a una rejilla de patrones.
-    for (juce::TextButton* b : { &songRecBtn, &songClickBtn })
+    //  Y LAS TRES DE LA BANDA, al reves: solo en AUDIO. Grabar al arreglo, el
+    //  metronomo y la automatizacion no tienen nada que decirle a una rejilla
+    //  de patrones - y los eventos de AUTO van en pasos de la CANCION, asi que
+    //  en modo patron no habria donde ponerlos.
+    for (juce::TextButton* b : { &songRecBtn, &songClickBtn, (juce::TextButton*) &autoBtn })
     {
         b->setVisible (audio);
         if (! audio) b->setBounds ({});
     }
     songClickBtn.setToggleState (engine.isClick(), juce::dontSendNotification);
+    autoBtn.setToggleState (autoArmado, juce::dontSendNotification);
 
     //  Y LAS NUEVE HERRAMIENTAS DE ARREGLO TAMPOCO. INSERTAR, QUITAR, DOBLAR,
     //  ACORTAR, ALARGAR, COPIAR, PEGAR, ATRAS y ADELANTE mueven CELDAS de

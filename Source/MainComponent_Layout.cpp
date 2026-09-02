@@ -2572,11 +2572,12 @@ void MainComponent::resized()
             //  vista de audio son CINCO -las dos brochas, GRABAR, el clic y el
             //  modo- y preguntar por cuatro seria pedir con una cuenta y
             //  colocar con otra, que es como una fila se sale de la tarjeta.
-            juce::TextButton* sb[5] = { &songPadModeBtn, &songClearBtn,
+            juce::TextButton* sb[6] = { &songPadModeBtn, &songClearBtn,
                                         songVista == Playlist::vistaAudio ? &songRecBtn : &songDoubleBtn,
                                         songVista == Playlist::vistaAudio ? &songClickBtn : &songModeBtn,
+                                        songVista == Playlist::vistaAudio ? (juce::TextButton*) &autoBtn : &songModeBtn,
                                         &songModeBtn };
-            const int nb = (songVista == Playlist::vistaAudio) ? 5 : 4;
+            const int nb = (songVista == Playlist::vistaAudio) ? 6 : 4;
             if (! moduleBarFits (anchoUtil, sb, nb)) filasModo = 2 * Metrics::hit + Metrics::halfGap;
 
             juce::TextButton* su[9] = { &songLeftBtn, &songRightBtn, &songShortBtn,
@@ -2810,11 +2811,12 @@ void MainComponent::resized()
             //  metronomo. GRABAR y CLIC van aqui y no en una fila propia
             //  porque una fila cuesta 44 px de lo unico para lo que existe la
             //  pagina - los carriles - y esta fila ya esta puesta.
-            juce::TextButton* sb[5] = { &songPadModeBtn, &songClearBtn,
+            juce::TextButton* sb[6] = { &songPadModeBtn, &songClearBtn,
                                         vistaAud ? &songRecBtn : &songDoubleBtn,
                                         vistaAud ? &songClickBtn : &songModeBtn,
+                                        vistaAud ? (juce::TextButton*) &autoBtn : &songModeBtn,
                                         &songModeBtn };
-            const int nBrochas = vistaAud ? 5 : 4;
+            const int nBrochas = vistaAud ? 6 : 4;
             if (moduleBarFits (panel.getWidth(), sb, nBrochas))
             {
                 layoutModuleBar (panel.removeFromTop (Metrics::hit), sb, 0, nBrochas);
@@ -2827,10 +2829,11 @@ void MainComponent::resized()
                 const int arriba = vistaAud ? 2 : 2;
                 layoutModuleBar (panel.removeFromTop (Metrics::hit), sb, 0, arriba);
                 panel.removeFromTop (Metrics::halfGap);
-                juce::TextButton* sc[3] = { vistaAud ? &songRecBtn : &songDoubleBtn,
+                juce::TextButton* sc[4] = { vistaAud ? &songRecBtn : &songDoubleBtn,
                                             vistaAud ? &songClickBtn : &songModeBtn,
+                                            vistaAud ? (juce::TextButton*) &autoBtn : &songModeBtn,
                                             &songModeBtn };
-                layoutModuleBar (panel.removeFromTop (Metrics::hit), sc, 0, vistaAud ? 3 : 2);
+                layoutModuleBar (panel.removeFromTop (Metrics::hit), sc, 0, vistaAud ? 4 : 2);
             }
             //  LA PALETA Y LAS BROCHAS SON UN SOLO PANEL, no dos. Entre las dos
             //  filas hay Metrics::xs y dos paneles a cuatro pixeles se tocan -

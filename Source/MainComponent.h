@@ -1087,6 +1087,7 @@ public:
     //  LAS SEIS RANURAS DE LA FILA DE EFECTOS. Ver Tests/ranuras.py.
     void auditRanuras();
     void auditEq();
+    void auditAuto();
     //  LA CUENTA ATRAS Y EL METRONOMO. Ver Tests/cuenta.py.
     void auditCuenta();
     //  EL CATALOGO DE CONTENIDO Y EL CANDADO. Ver Tests/dlc.py.
@@ -1490,6 +1491,19 @@ private:
     //  songModeBtn y que modoTapa. Una que dijera "IR A AUDIO" obliga a mirar si
     //  esta encendida para saber donde estas.
     juce::TextButton songVistaBtn { "PATRONES" };
+
+    // ------------------------------------------------------------------
+    //  LA AUTOMATIZACION. Ver AudioEngine::EventoAuto y Tests/auto.py.
+    //
+    //  La fila de efectos existe para TOCAR -esa es la mitad de por que las
+    //  seis tapas son ranuras- y todo lo que se tocaba se perdia al exportar:
+    //  el rebote salia con el numero que estuviera puesto al final. Lo que se
+    //  pidio es exactamente eso, «automatizaciones guardadas cuando se graba».
+    //
+    //  Los eventos viven AQUI y no en el motor: el motor tiene la tabla que
+    //  SUENA -inmutable y publicada de una vez- y editarla en su sitio seria
+    //  una lectura rota a medio bloque. Es la misma reparticion que ya tienen
+    //  los clips.
 
     //  GRABAR AL ARREGLO, y el metronomo al lado. Viven en la VISTA DE AUDIO y
     //  no en la cara: alli REC ya significa otra cosa -grabar pads en el
@@ -2091,6 +2105,14 @@ private:
     juce::Rectangle<int> ranuraTituloBanda;
 
     juce::OwnedArray<juce::TextButton> fxButtons;
+
+    std::vector<AudioEngine::EventoAuto> autoEventos;
+    HoldButton autoBtn { "AUTO" };
+    bool autoArmado = false;
+    void anotaAutomacion (int fx, int par, float v);
+    void publicaAutomacion();       // el espejo al motor
+    void ponAutoArmado (bool on);
+    void vaciaAutomacion();
     juce::OwnedArray<juce::Slider>     fxParams;   // kNumFx * 3, the real values
     juce::Rectangle<int> fxRowArea;
 

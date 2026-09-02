@@ -536,6 +536,11 @@ public:
                     {
                         c2->auditEq();
                     }
+                    //  LA AUTOMATIZACION. Ver Tests/auto.py.
+                    else if (UiAudit::env ("ZATI_AUTO").isNotEmpty())
+                    {
+                        c2->auditAuto();
+                    }
                     //  LA CUENTA ATRAS Y EL METRONOMO. Ver Tests/cuenta.py.
                     else if (UiAudit::env ("ZATI_CUENTA").isNotEmpty())
                     {

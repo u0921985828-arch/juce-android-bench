@@ -384,6 +384,60 @@ public:
     //  de cada fuente mientras la tabla viva: un clip cuyo buffer se suelte por
     //  otro lado dejaria al audio leyendo memoria liberada.
     void publicaClips (const ClipAudio* clips, int cuantos) noexcept;
+
+    // ------------------------------------------------------------------
+    //  LA AUTOMATIZACION, que es lo que separa «toco los efectos» de «el
+    //  rebote suena como lo toque».
+    //
+    //  Hasta aqui un parametro de efecto era UN numero: el que estuviera
+    //  puesto al exportar. La fila de la cara sirve para tocar en directo -es
+    //  la mitad de por que existe- y todo eso se perdia en el rebote, asi que
+    //  la unica forma de que un barrido de filtro saliera en el fichero era
+    //  quedarse quieto y no tocarlo.
+    //
+    //  UN EVENTO ES UN PASO DE LA CANCION Y UN VALOR, y va en la LINEA DE
+    //  TIEMPO y no en el patron: es la misma decision que ya tomaron los
+    //  clips, y por lo mismo -un barrido de ocho compases no es de ningun
+    //  patron-. En modo patron no se escribe ni se reproduce nada, que dos
+    //  relojes para una automatizacion son dos reglas.
+    struct EventoAuto
+    {
+        int          paso  = 0;    // paso absoluto de la cancion
+        juce::uint8  fx    = 0;    // tipo de efecto, no ranura: lo que suena
+        juce::uint8  par   = 0;    // 0..2
+        float        valor = 0.0f;
+    };
+
+    //  Cuatro mil eventos son 62 compases de los 64 que la cancion admite
+    //  moviendo un parametro en CADA paso, o veintiuno moviendose a la vez
+    //  cada cuatro pasos. Y el tope se cuenta, que un tope que se supera en
+    //  silencio no protege: esconde.
+    static constexpr int kMaxAuto = 4096;
+    struct TablaAuto
+    {
+        int n = 0;
+        std::array<EventoAuto, kMaxAuto> e {};
+    };
+
+    //  UN PARAMETRO DE EFECTO, POR SU NUMERO. Esta traduccion vivia entera en
+    //  `MainComponent::pushFxParam` -un switch de veintiun casos- y ahi era
+    //  correcta mientras el unico que movia un parametro fuese un mando. Con
+    //  la automatizacion hay un segundo cliente Y esta en el hilo de audio,
+    //  asi que copiarla habria sido la misma regla escrita dos veces: la que
+    //  se quedara vieja dejaria un parametro que se automatiza y no suena.
+    //  Vive aqui, que es donde estan los atomicos.
+    void setFxParam (int fx, int par, float v) noexcept;
+
+    void publicaAutomacion (const EventoAuto* ev, int cuantos) noexcept;
+    int  numAuto() const noexcept { return autoVivos.load (std::memory_order_relaxed); }
+    //  ESCRIBIR APAGA LEER, que es lo unico que separa grabar de pelearse con
+    //  lo grabado: con el modo de escritura armado, los eventos de la pasada
+    //  anterior no se aplican - si no, el mando se movia solo debajo del dedo.
+    void setAutoEscribe (bool on) noexcept { autoEscribe.store (on, std::memory_order_relaxed); }
+    bool isAutoEscribe() const noexcept { return autoEscribe.load (std::memory_order_relaxed); }
+    //  En que paso de la cancion esta el transporte, para que quien graba sepa
+    //  donde poner el evento. -1 si no hay cancion rodando.
+    int  pasoDeCancion() const noexcept { return pasoAuto.load (std::memory_order_relaxed); }
     void renderClick (juce::AudioBuffer<float>& out, int offset, int n) noexcept;
     int  numClips() const noexcept { return clipsVivos.load (std::memory_order_relaxed); }
 
@@ -779,6 +833,10 @@ public:
     void setDlyTime  (float ms)  noexcept { dlyTime.store  (ms,  std::memory_order_relaxed); }
     void setDlyFb    (float f)    noexcept { dlyFb.store    (f,   std::memory_order_relaxed); }
     void setDlyMix   (float m)    noexcept { dlyMix.store   (m,   std::memory_order_relaxed); }
+    //  Para el banco: lo que la automatizacion acaba de escribir. Sin un
+    //  getter, «el evento llego» solo se puede mirar por el sonido, y ahi un
+    //  cambio de mezcla del delay tarda su cola en notarse.
+    float getDlyMix() const noexcept { return dlyMix.load (std::memory_order_relaxed); }
 
     // --- The six effects -------------------------------------------------
     //  FLT, HPF, DRIVE, DELAY, CRUSH, REVERB. Six independent stages in that
@@ -1144,10 +1202,14 @@ private:
     //  o sea megabytes que no vuelven. Bastaban dos publicaciones adoptadas
     //  dentro del mismo tic del temporizador. Es el mismo razonamiento que
     //  RetiredQueue, con el mismo contador de lo que se tira.
-    class TablaQueue
+    //  Y ES UNA PLANTILLA desde que hay DOS tablas que se publican asi -los
+    //  clips y la automatizacion-. Copiarla habria sido la misma pieza escrita
+    //  dos veces, con el mismo contador de perdidas que arreglar en dos sitios.
+    template <typename T>
+    class TablaQueueDe
     {
     public:
-        void push (TablaClips* t) noexcept
+        void push (T* t) noexcept
         {
             if (t == nullptr) return;
             int s1, z1, s2, z2;
@@ -1169,15 +1231,32 @@ private:
     private:
         static constexpr int cap = 16;
         juce::AbstractFifo fifo { cap };
-        std::array<TablaClips*, cap> store {};
+        std::array<T*, cap> store {};
         std::atomic<int> perdidas { 0 };
     };
+    using TablaQueue = TablaQueueDe<TablaClips>;
+    using AutoQueue  = TablaQueueDe<TablaAuto>;
 
     //  Los clips: la que suena, la que espera y las que hay que soltar.
     TablaClips*               clips        = nullptr;   // solo el hilo de audio
     std::atomic<TablaClips*>  pendingClips { nullptr };
     TablaQueue                clipsRetiradas;
     std::atomic<int>          clipsVivos   { 0 };
+
+    //  Y LA AUTOMATIZACION, por el mismo camino. Esta tabla NO lleva punteros
+    //  a nada -son cuatro POD por evento- asi que no hace falta una cola de
+    //  retiradas con referencias: basta con que el `delete` caiga en el hilo
+    //  de mensajes, que es la regla de la casa y no un detalle de este caso.
+    TablaAuto*                autom        = nullptr;   // solo el hilo de audio
+    std::atomic<TablaAuto*>   pendingAuto  { nullptr };
+    AutoQueue                 autoRetiradas;
+    std::atomic<int>          autoVivos    { 0 };
+    std::atomic<bool>         autoEscribe  { false };
+    std::atomic<int>          pasoAuto     { -1 };
+    //  Aplica los eventos que caen EXACTAMENTE en este paso. Del hilo de audio
+    //  y sin bucle anidado sobre nada que reserve: es un barrido lineal de la
+    //  tabla y un `store` por acierto.
+    void aplicaAutomacion (int paso) noexcept;
     std::array<std::atomic<bool>, kAudioTracks> pistaMute {};
 
     //  Mezcla los clips que caen dentro de [pos, pos+n) de la cancion.

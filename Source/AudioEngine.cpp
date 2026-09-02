@@ -579,6 +579,18 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         clipsVivos.store (nueva->n, std::memory_order_relaxed);
     }
 
+    //  Y LA DE AUTOMATIZACION, por el mismo camino y con la misma cola: la que
+    //  sale se retira para que la suelte el hilo de mensajes, porque `delete`
+    //  aqui es lo unico que este hilo no puede hacer. Una cola y no un hueco
+    //  por lo mismo que la de clips - dos publicaciones adoptadas dentro del
+    //  mismo tic del temporizador perderian una tabla entera.
+    if (auto* nueva = pendingAuto.exchange (nullptr, std::memory_order_acquire))
+    {
+        autoRetiradas.push (autom);
+        autom = nueva;
+        autoVivos.store (nueva->n, std::memory_order_relaxed);
+    }
+
     // 2. Clear output.
     out.clear (startSample, numSamples);
 
@@ -856,6 +868,9 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     {
         currentStep = -1; stepAccum = 0.0; chainPos = 0; numPending = 0;
         songStep = -1; songBar.store (-1, std::memory_order_relaxed);
+        //  Y el paso de la automatizacion, que si no quien graba seguiria
+        //  escribiendo en el ultimo paso que sono antes de parar.
+        pasoAuto.store (-1, std::memory_order_relaxed);
         for (int ln = 0; ln < kSongLanes; ++ln) { lanePattern[ln] = -1; laneStartStep[ln] = 0; }
         playStep.store (-1, std::memory_order_relaxed);
         //  Y EL CLIC EMPIEZA EN EL PRIMER TIEMPO. Sin esto, el tono fuerte cae
@@ -1106,6 +1121,19 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
 
                 const int bar = songStep / kBarSteps;
                 songBar.store (bar, std::memory_order_relaxed);
+
+                //  LA AUTOMATIZACION, EN EL BORDE DE PASO y no por bloque: si
+                //  se aplicara al consumir la cola llegaria un bloque tarde -
+                //  5.5 ms a 128 muestras- que en un barrido rapido se oye como
+                //  un escalon. Es la misma razon por la que el bloqueo de corte
+                //  se aplica donde el paso se ANOTA.
+                //
+                //  Y el paso se publica aqui, que es el unico sitio que lo
+                //  sabe: quien graba necesita en QUE paso poner el evento, y
+                //  preguntarselo al temporizador de la cara -que late cada
+                //  60 ms- lo dejaria hasta medio paso corrido.
+                pasoAuto.store (songStep, std::memory_order_relaxed);
+                aplicaAutomacion (songStep);
 
                 // At the top of a bar, read what each lane starts here.
                 if (songStep % kBarSteps == 0)
@@ -2182,6 +2210,68 @@ void AudioEngine::renderClips (juce::AudioBuffer<float>& out, int offset, int n,
     }
 }
 
+//  LOS VEINTIUN PARAMETROS, EN UN SOLO SITIO. Ver la cabecera de setFxParam.
+void AudioEngine::setFxParam (int fx, int par, float v) noexcept
+{
+    if (! juce::isPositiveAndBelow (fx, kNumFx) || ! juce::isPositiveAndBelow (par, 3)) return;
+
+    switch (fx * 3 + par)
+    {
+        case  0: setFltSweep  (v); break;
+        case  1: setFltReso   (v); break;
+        case  2: setFltMix    (v); break;
+        case  3: setHpFreq    (v); break;
+        case  4: setHpReso    (v); break;
+        case  5: setHpMix     (v); break;
+        case  6: setFxDrive   (v); break;
+        case  7: setDrvTone   (v); break;
+        case  8: setDrvMix    (v); break;
+        case  9: setDlyTime   (v); break;
+        case 10: setDlyFb     (v); break;
+        case 11: setDlyMix    (v); break;
+        case 12: setCrushBits (v); break;
+        case 13: setCrushRate (v); break;
+        case 14: setCrushMix  (v); break;
+        case 15: setRevSize   (v); break;
+        case 16: setRevDamp   (v); break;
+        case 17: setRevMix    (v); break;
+        case 18: setEqAncho   (v); break;
+        case 19: setEqSalida  (v); break;
+        case 20: setEqMix     (v); break;
+        default: break;
+    }
+}
+
+//  LOS EVENTOS DE ESTE PASO, del hilo de audio. Un barrido lineal de la tabla
+//  entera y no un cursor: un cursor hay que re-buscarlo en cada salto -el
+//  bucle de un tramo, volver al compas cero, el arranque- y un cursor mal
+//  colocado deja la automatizacion muda sin que nada falle. Cuatro mil enteros
+//  comparados ocho veces por segundo es lo que cuesta no tener ese fallo.
+void AudioEngine::aplicaAutomacion (int paso) noexcept
+{
+    if (autom == nullptr || autom->n <= 0) return;
+    if (autoEscribe.load (std::memory_order_relaxed)) return;   // escribir apaga leer
+
+    for (int i = 0; i < autom->n; ++i)
+    {
+        const auto& ev = autom->e[(size_t) i];
+        if (ev.paso == paso) setFxParam (ev.fx, ev.par, ev.valor);
+    }
+}
+
+//  Se publica igual que la de clips y por lo mismo. Sin referencias que
+//  contar: los eventos son POD.
+void AudioEngine::publicaAutomacion (const EventoAuto* entrada, int cuantos) noexcept
+{
+    auto* t = new TablaAuto();
+    t->n = juce::jlimit (0, kMaxAuto, cuantos);
+    for (int i = 0; i < t->n; ++i) t->e[(size_t) i] = entrada[i];
+
+    //  Y se recoge lo anterior ANTES de publicar, como con los clips.
+    autoRetiradas.drain ([] (TablaAuto* v) { delete v; });
+    if (auto* anterior = pendingAuto.exchange (t, std::memory_order_release)) delete anterior;
+}
+
 //  LA TABLA SE CONSTRUYE ENTERA Y SE PUBLICA DE UNA VEZ. Modificarla en su
 //  sitio seria una lectura rota a medio bloque; un cerrojo esta prohibido.
 void AudioEngine::publicaClips (const ClipAudio* entrada, int cuantos) noexcept
@@ -2680,6 +2770,25 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
                          { &rvSize,   &s.rvSize   }, { &rvDamp,  &s.rvDamp  }, { &rvMix,   &s.rvMix   },
                          { &eqMix,    &s.eqMix    } })
         copyOne (*pair.first, *pair.second);
+
+    //  Y LA AUTOMATIZACION, que es la mitad de por que existe: el rebote tiene
+    //  que sonar como lo tocaste, y sin esta linea sale con el numero que
+    //  estuviera puesto al exportar - o sea justo lo que la automatizacion
+    //  existe para arreglar. Se copia la tabla que el motor de escucha tiene
+    //  ADOPTADA, no la que espera: la publicada puede no haberse adoptado
+    //  todavia si nadie ha renderizado un bloque desde el ultimo cambio, asi
+    //  que se miran las dos y manda la mas nueva.
+    {
+        const TablaAuto* fuente = s.pendingAuto.load (std::memory_order_acquire);
+        if (fuente == nullptr) fuente = s.autom;
+        if (fuente != nullptr && fuente->n > 0)
+            publicaAutomacion (fuente->e.data(), fuente->n);
+    }
+    //  Y el modo de ESCRITURA no viaja: un rebote no graba automatizacion, la
+    //  reproduce. Con el armado, `aplicaAutomacion` se rinde y el fichero
+    //  saldria plano - que es el fallo mas caro posible aqui, porque solo se
+    //  descubre escuchando lo exportado.
+    setAutoEscribe (false);
 
     //  Y LAS CINCO BANDAS DEL EQ, que no son atomicos sueltos sino la tabla de
     //  `Eq5`: sin esto el rebote sale con la curva PLANA mientras la persona

@@ -112,6 +112,9 @@ jobs:
       - name: El EQ de cinco bandas y su curva
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/eq.py
+      - name: La automatizacion
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/auto.py
       - name: Los paneles
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/paneles.py

@@ -2396,6 +2396,103 @@ void MainComponent::auditEq()
               << "}" << std::endl;
 }
 
+// ============================================================================
+//  LA AUTOMATIZACION. Ver Tests/auto.py.
+//
+//  NINGUNA de las nueve reglas de `expo.py` puede verla: es ESTADO. Una app que
+//  se olvida de lo que tocaste se maqueta perfecta, no solapa, no corta un
+//  rotulo y esta traducida.
+//
+//  SE MIDE POR LA TAPA Y POR EL MANDO -`autoBtn.onClick`, `macroCtrl1` con su
+//  `onValueChange`- y no llamando a `anotaAutomacion` por dentro, que es justo
+//  donde no existe ninguno de los fallos: si el evento no llega a
+//  `pushFxParam`, o si el paso que se lee no es el del transporte, llamar a la
+//  funcion por dentro pasa igual.
+void MainComponent::auditAuto()
+{
+    auto pulsa = [] (juce::Button* b) { if (b != nullptr && b->onClick) b->onClick(); };
+
+    //  La cancion rodando, que es el unico reloj que la automatizacion tiene.
+    //  Sin esto `pasoDeCancion` vale -1 y no habria donde poner el evento -que
+    //  es correcto y es la primera de las cifras-.
+    ponModoCancion (true);
+    engine.setSongLength (4);
+    vaciaAutomacion();
+
+    //  1. PARADO NO SE ESCRIBE. Un evento sin paso es un evento en cualquier
+    //     sitio, y el sintoma seria un barrido que suena al principio de la
+    //     cancion en vez de donde lo tocaste.
+    pulsa (&autoBtn);
+    const int armadoTrasTocar = autoArmado ? 1 : 0;
+    focusFx (3);                       // DLY, que tiene tres parametros de sobra
+    macroCtrl1.setValue (400.0, juce::sendNotificationSync);
+    const int paradoEscribe = (int) autoEventos.size();
+
+    //  2. RODANDO SI. Se bombea audio hasta que el transporte publica un paso
+    //     -en un escritorio sin tarjeta nadie llama al motor, que es la misma
+    //     razon por la que `clips.py` tuvo que bombear para contar clips-.
+    ponTransporte (true);
+    ponAutoArmado (true);              // ponTransporte(false) desarma, y aqui se arma
+    int pasoVisto = -1;
+    for (int i = 0; i < 400 && pasoVisto < 0; ++i)
+    {
+        bombeaAudioDePrueba();
+        pasoVisto = engine.pasoDeCancion();
+    }
+    macroCtrl1.setValue (600.0, juce::sendNotificationSync);
+    const int rodandoEscribe = (int) autoEventos.size();
+    const int pasoEscrito = autoEventos.empty() ? -1 : autoEventos.front().paso;
+
+    //  3. UN EVENTO POR PASO Y POR PARAMETRO, y el ultimo gana. Tres valores
+    //     seguidos en el mismo paso son UN evento con el ultimo, no tres: sin
+    //     esto un arrastre de dos segundos escribe cientos de eventos en el
+    //     mismo sitio y la tabla se llena con una sola frase.
+    macroCtrl1.setValue (700.0, juce::sendNotificationSync);
+    macroCtrl1.setValue (800.0, juce::sendNotificationSync);
+    const int trasTres = (int) autoEventos.size();
+    const float ultimo = autoEventos.empty() ? 0.0f : autoEventos.back().valor;
+
+    //  4. Y PARAR DESARMA. Un modo de escritura que se queda puesto es como se
+    //     borra una automatizacion buena en la pasada siguiente.
+    ponTransporte (false);
+    const int armadoTrasParar = autoArmado ? 1 : 0;
+
+    //  5. Y VUELVE DEL FICHERO DE PROYECTO. Con el mismo arbol que lo escribe,
+    //     BORRANDO los eventos a mano entre medias: si al volver siguen puestos
+    //     no es que se hayan guardado, es que nadie los quito. Y con DOS
+    //     cifras, que es lo que separa las dos formas de escribirlo mal: los
+    //     que vuelven al espejo Y los que tiene el MOTOR. Solo lo primero lo
+    //     cumple una lista que se lee del XML y no se publica nunca -la
+    //     automatizacion volveria escrita y muda-.
+    autoEventos.clear();
+    autoEventos.push_back ({ 17, 3, 2, 0.42f });
+    autoEventos.push_back ({ 48, 0, 0, -0.75f });
+    publicaAutomacion();
+    const auto arbol = captureState();
+    autoEventos.clear();
+    publicaAutomacion();
+    applyState (arbol);
+    bombeaAudioDePrueba();          // que el motor adopte la tabla publicada
+
+    juce::String vuelta;
+    for (const auto& e : autoEventos)
+        vuelta << e.paso << ":" << (int) e.fx << ":" << (int) e.par << ":"
+               << juce::String (e.valor, 2) << ";";
+
+    std::cout << "{\"auto\":1"
+              << ",\"armado_tras_tocar\":" << armadoTrasTocar
+              << ",\"parado_escribe\":"    << paradoEscribe
+              << ",\"paso_visto\":"        << pasoVisto
+              << ",\"rodando_escribe\":"   << rodandoEscribe
+              << ",\"paso_escrito\":"      << pasoEscrito
+              << ",\"tras_tres\":"         << trasTres
+              << ",\"ultimo\":"            << juce::String (ultimo, 0)
+              << ",\"armado_tras_parar\":" << armadoTrasParar
+              << ",\"vuelta\":\""          << vuelta << "\""
+              << ",\"motor\":"             << engine.numAuto()
+              << "}" << std::endl;
+}
+
 void MainComponent::auditCuenta()
 {
     auto pulsa = [] (juce::Button* b) { if (b != nullptr && b->onClick) b->onClick(); };

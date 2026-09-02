@@ -642,6 +642,21 @@ namespace
         //  sentido que el ancho estereo de un pad: cuanto ocupa- asi que se
         //  reaprovecha; SALIDA no la tenia. Ver fxDefs.
         { "SALIDA",         "",         "OUTPUT",     "输出",       "خرج" },
+        //  AUTO no pasa por T() como palabra traducida sino como CLAVE: en las
+        //  cuatro lenguas se dice igual y es la abreviatura que cualquier
+        //  aparato usa para la automatizacion, como MIDI o XY.
+        { "AUTO",           "",         "AUTO",       "AUTO",       "AUTO" },
+        { "AUTO grabando - manten pulsado para borrar", "",
+          "AUTO recording - hold to clear",
+          "AUTO 录制中 - 长按清除",
+          "AUTO يسجل - اضغط مطولا للمسح" },
+        { "AUTO: %1 eventos", "",       "AUTO: %1 events",
+                                                      "AUTO：%1 个事件",
+                                                                  "AUTO: %1 حدث" },
+        { "AUTO vacio",     "",         "AUTO cleared", "AUTO 已清空", "AUTO فارغ" },
+        { "AUTO lleno: %1 eventos", "", "AUTO full: %1 events",
+                                                      "AUTO 已满：%1 个事件",
+                                                                  "AUTO ممتلئ: %1 حدث" },
         { "EQ - arrastra el nodo", "",  "EQ - drag the node",
                                                       "EQ - 拖动节点",
                                                                   "المعادل - اسحب العقدة" },

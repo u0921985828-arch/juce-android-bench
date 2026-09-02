@@ -3389,6 +3389,81 @@ int main()
                      "el EQ llega al bus", distintas, subida, ok ? "OK" : zatiFalla());
     }
 
+    //  LA AUTOMATIZACION, con TRES cifras y no una.
+    //
+    //  «El parametro cambia» lo cumple igual una tabla que se aplica siempre y
+    //  no en su paso, que es la forma exacta de que un barrido suene de golpe
+    //  al empezar. Asi que se mira ANTES del evento -tiene que valer lo que se
+    //  dejo-, DESPUES -tiene que valer lo escrito- y en un paso INTERMEDIO en
+    //  el que no hay evento -tiene que seguir valiendo el anterior y no el
+    //  siguiente-.
+    //
+    //  Se mide por el PARAMETRO y no por el sonido: lo que esta comprobacion
+    //  vigila es que el evento llegue a `setFxParam` en el borde de paso; que
+    //  ese parametro suene ya lo miden las once filas de efectos de arriba.
+    {
+        AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+        e.setSongMode (true);
+        e.setSongLength (4);
+
+        //  DLY MIX -el parametro 11- en tres puntos de la cancion.
+        AudioEngine::EventoAuto ev[3] =
+        {
+            {  0, 3, 2, 0.10f },
+            { 16, 3, 2, 0.60f },
+            { 32, 3, 2, 0.90f },
+        };
+        e.publicaAutomacion (ev, 3);
+        e.setDlyMix (0.0f);
+
+        juce::AudioBuffer<float> b (2, 512);
+        //  Hasta el paso EXACTO y no «hasta pasarlo»: la cancion da la vuelta
+        //  al llegar al final, asi que un `>=` no sabe volver al 16 en la
+        //  segunda pasada - que es justamente donde se comprueba que escribir
+        //  apaga leer.
+        auto rueda = [&] (int paso)
+        {
+            for (int i = 0; i < 8000; ++i)
+            {
+                b.clear(); e.renderNextBlock (b, 0, 512);
+                if (e.pasoDeCancion() == paso) return;
+            }
+        };
+
+        e.setPlaying (true);
+        rueda (0);
+        const float enCero = e.getDlyMix();
+        rueda (8);                       // ningun evento aqui
+        const float enOcho = e.getDlyMix();
+        rueda (16);
+        const float enDieciseis = e.getDlyMix();
+        rueda (32);
+        const float enTreintaYDos = e.getDlyMix();
+
+        //  Y ESCRIBIR APAGA LEER: con el modo de escritura armado la tabla no
+        //  se aplica, o si no el mando se moveria solo debajo del dedo.
+        //
+        //  Y SE VUELVE A PASAR POR UN PASO QUE TIENE EVENTO, que es donde la
+        //  primera version de esta comprobacion no podia decir que no: se
+        //  rodaba hasta el 48, donde no hay ninguno, asi que con la guarda
+        //  quitada a proposito seguia saliendo verde. Una prueba que no cruza
+        //  el sitio del fallo es una linea que imprime OK.
+        e.setAutoEscribe (true);
+        e.setDlyMix (0.25f);
+        rueda (16);                      // segunda pasada: aqui hay un 0.60
+        const float armado = e.getDlyMix();
+        e.setPlaying (false);
+
+        const bool ok = std::abs (enCero - 0.10f) < 0.001f
+                     && std::abs (enOcho - 0.10f) < 0.001f
+                     && std::abs (enDieciseis - 0.60f) < 0.001f
+                     && std::abs (enTreintaYDos - 0.90f) < 0.001f
+                     && std::abs (armado - 0.25f) < 0.001f;
+        std::printf ("%-34s paso 0 %.2f   8 %.2f   16 %.2f   32 %.2f   armado %.2f   %s\n",
+                     "la automatizacion", enCero, enOcho, enDieciseis, enTreintaYDos,
+                     armado, ok ? "OK" : zatiFalla());
+    }
+
     std::printf ("\n%-34s %d FALLA\n", "motor", zatiFallos);
     return zatiFallos > 0 ? 1 : 0;
 }
