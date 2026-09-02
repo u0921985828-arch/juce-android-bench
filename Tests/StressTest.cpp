@@ -13,6 +13,7 @@
 #include "../Source/Kits.h"
 #include "../Source/Onsets.h"
 #include "../Source/Sintes.h"
+#include "../Source/Eq5.h"
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -3226,6 +3227,97 @@ int main()
         const bool ok = a.isClick() && ! b.isClick();
         std::printf ("%-34s origen %d   rebote %d   %s\n",
                      "el clic no sale en el rebote", (int) a.isClick(), (int) b.isClick(),
+                     ok ? "OK" : zatiFalla());
+    }
+
+    //  ------------------------------------------------------------------
+    //  EL ECUALIZADOR DE CINCO BANDAS, con TRES cifras y no una.
+    //
+    //  Es el piloto de «cada efecto trae su propia superficie», asi que lo que
+    //  hay que probar no es solo que filtre: es que lo que se DIBUJA y lo que
+    //  SUENA salgan de los mismos cinco numeros. Una curva que promete algo
+    //  distinto de lo que hace es peor que no dibujarla.
+    //
+    //  1. PLANO ES PLANO, BIT A BIT. «Casi lo mismo, 0.1 dB» es justo lo que
+    //     dejaria pasar un EQ que dice estar a cero y no lo esta - es la misma
+    //     comparacion que ya se le hace al filtro del pad apagado y al orden
+    //     del ancho estereo.
+    //  2. LO QUE PIDE ES LO QUE DA: +12 dB en la banda del medio tienen que
+    //     salir +12 medidos en la senal, no en la formula.
+    //  3. Y LO DIBUJADO COINCIDE CON LO SONADO, que es la unica de las tres que
+    //     no se puede deducir de las otras dos.
+    {
+        constexpr int kN = 1 << 14;
+        constexpr double kFs = 48000.0;
+
+        auto tono = [] (float* d, int n, double hz)
+        {
+            for (int i = 0; i < n; ++i)
+                d[i] = 0.25f * (float) std::sin (2.0 * juce::MathConstants<double>::pi
+                                                 * hz * (double) i / kFs);
+        };
+        //  El nivel se mide sobre la SEGUNDA mitad: la primera lleva el
+        //  transitorio de arranque del biquad, y promediarlo mide el ataque y
+        //  no la respuesta.
+        auto rms = [] (const float* d, int n)
+        {
+            double s = 0.0;
+            for (int i = n / 2; i < n; ++i) s += (double) d[i] * d[i];
+            return std::sqrt (s / (double) (n - n / 2));
+        };
+
+        std::vector<float> seco (kN), hum (kN);
+        float* canal[2] = { hum.data(), nullptr };
+
+        //  1. Plano.
+        Eq5 eq;
+        eq.prepare (kFs);
+        tono (seco.data(), kN, 1000.0);
+        hum = seco;
+        eq.procesa (canal, 1, 0, kN);
+        int distintas = 0;
+        for (int i = 0; i < kN; ++i) if (hum[(size_t) i] != seco[(size_t) i]) ++distintas;
+
+        //  2. +12 dB en la banda 2, que es la del medio (1 kHz de fabrica).
+        Eq5 eq2;
+        eq2.prepare (kFs);
+        eq2.ponBanda (2, 1000.0f, 12.0f);
+        hum = seco;
+        eq2.procesa (canal, 1, 0, kN);
+        const double subida = 20.0 * std::log10 (rms (hum.data(), kN)
+                                                 / juce::jmax (1.0e-12, rms (seco.data(), kN)));
+
+        //  3. Lo dibujado contra lo sonado, en las cinco bandas y con ganancias
+        //     DISTINTAS entre si: con las cinco iguales, un cruce de bandas
+        //     dentro de la curva pasaria desapercibido.
+        Eq5 eq3;
+        eq3.prepare (kFs);
+        const float pedido[Eq5::kBands] = { -9.0f, 6.0f, -12.0f, 9.0f, 4.0f };
+        for (int b = 0; b < Eq5::kBands; ++b)
+            eq3.ponBanda (b, Eq5::kFreqDef[b], pedido[b]);
+
+        double peorDesvio = 0.0;
+        int    peorBanda  = -1;
+        for (int b = 0; b < Eq5::kBands; ++b)
+        {
+            tono (seco.data(), kN, Eq5::kFreqDef[b]);
+            hum = seco;
+            eq3.procesa (canal, 1, 0, kN);
+            const double medido  = 20.0 * std::log10 (rms (hum.data(), kN)
+                                                      / juce::jmax (1.0e-12, rms (seco.data(), kN)));
+            const double dibujado = eq3.respuestaEnDb (Eq5::kFreqDef[b]);
+            const double d = std::abs (medido - dibujado);
+            if (d > peorDesvio) { peorDesvio = d; peorBanda = b; }
+        }
+
+        //  Medio dB de margen: las bandas vecinas se solapan por diseno -Q de
+        //  0.7- asi que en el centro de una tambien pesa lo que hacen las de al
+        //  lado, y eso lo lleva la curva dibujada tal cual. Lo que se comprueba
+        //  es que las dos cuentas digan lo MISMO, no que cada banda este sola.
+        const bool ok = (distintas == 0) && std::abs (subida - 12.0) < 0.5
+                        && peorDesvio < 0.5;
+        std::printf ("%-34s plano %d muestras   +12 da %+.2f dB   dibujo vs sonido %.2f dB (banda %d)   %s\n",
+                     "el EQ de cinco bandas", distintas, subida, peorDesvio, peorBanda,
                      ok ? "OK" : zatiFalla());
     }
 
