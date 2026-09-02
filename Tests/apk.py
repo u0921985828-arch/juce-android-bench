@@ -157,12 +157,29 @@ print(f"\ntamano: {len(raw)} bytes")
 #  Y LOS TERMINOS SE ELIGIERON MIDIENDO sobre un APK que se sabe limpio, no a
 #  ojo: en un binario de 16 MB cualquier subcadena corta sale por azar -un
 #  barrido de `\bIA\b` da veinte coincidencias y las veinte son ruido, `$(IA!`,
-#  `9BpC(Ia`-. Los diecisiete de abajo dan CERO en el binario de hoy, `opus`,
-#  `gpt` y `llm` incluidos, asi que un uno significa algo.
+#  `9BpC(Ia`-. Los de abajo dan CERO en el binario de hoy, `gpt` y `llm`
+#  incluidos, asi que un uno significa algo.
 IA = ["claude", "anthropic", "openai", "chatgpt", "copilot", "gemini", "llama",
-      "opus", "sonnet", "haiku", "gpt", "llm",
+      "sonnet", "gpt", "llm",
       "co-authored-by", "generated with", "claude.ai",
       "inteligencia artificial", "artificial intelligence"]
+
+#  Y DOS QUE SON ADEMAS PALABRAS DE AUDIO, asi que se piden CON CONTEXTO.
+#
+#  «opus» a secas suspendio la primera APK que llego hasta aqui: es
+#  `AudioFormat::OPUS`, un formato NUEVO de Oboe 1.10.0 -la version que trajo
+#  el salto a JUCE 8.0.15- cuyo `Utilities.cpp` devuelve el literal "OPUS" y lo
+#  deja en la .rodata. Un codec de audio en una app de audio no es una alusion
+#  a nada, y «haiku» es ademas un sistema operativo que JUCE nombra.
+#
+#  Quitarlos de la lista seria dejar ciega la comprobacion justo en los dos
+#  nombres que mas probable es que aparezcan. Lo que se pide es lo que los
+#  separa: un modelo se nombra con su familia delante o con su numero detras
+#  -«Claude Opus», «Opus 5»- y un formato de audio va suelto entre AAC y PCM.
+#  Roto a proposito con «generated with Claude Opus 5», los dos saltan.
+IA_CON_CONTEXTO = [
+    (t, [r"claude[- ]" + t, t + r"[- ]?[0-9]", r"modelo[- ]" + t, r"model[- ]" + t])
+    for t in ("opus", "haiku")]
 
 #  LA CADENA DE CONTROL, que es lo que separa este cero de una linea que
 #  imprime OK. Si el barrido no encuentra el texto de la app es que no esta
@@ -189,6 +206,7 @@ else:
     #  una coordenada.
     reglas =  [(t, re.compile (r"(?<![A-Za-z0-9])" + re.escape (t) + r"(?![A-Za-z0-9])", re.I))
                for t in IA]
+    reglas += [(t, re.compile ("|".join (formas), re.I)) for t, formas in IA_CON_CONTEXTO]
     reglas += [(t, re.compile (r"(?<![A-Za-z0-9])" + re.escape (t) + r"(?![A-Za-z0-9])"))
                for t in sorted (marcas)]
     reglas += [("*" + n, re.compile (r"(?<![A-Za-z0-9])[A-Za-z]{1,3}[- ]?" + n + r"(?![0-9])"))

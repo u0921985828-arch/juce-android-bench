@@ -174,7 +174,13 @@ def modulos():
 
 #  Los atributos del .jucer que Projucer lee de verdad, y los que NO existen y
 #  por tanto no pueden estar puestos: uno ahi es un numero que nadie lee.
-JUCER_VIVOS  = ("gradleVersion", "gradleWrapperVersion")
+#  `androidPushNotifications` esta aqui y vale "0" a proposito: su defecto en
+#  Projucer es ENCENDIDO para una app, y JUCE 8.0.15 le anade ademas el permiso
+#  `POST_NOTIFICATIONS` al manifiesto. Esta app no usa notificaciones push -cero
+#  ficheros de Source/ nombran PushNotifications- asi que era un permiso de mas
+#  en la ficha de Play, y lo canto Tests/apk.py sobre el APK ya firmado. Si
+#  alguien quita el atributo, el permiso vuelve en silencio.
+JUCER_VIVOS  = ("gradleVersion", "gradleWrapperVersion", "androidPushNotifications")
 JUCER_MUERTOS = {
     "androidPluginVersion":
         "el AGP se pide con gradleWrapperVersion; androidPluginVersion "
