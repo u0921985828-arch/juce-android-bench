@@ -50,6 +50,13 @@ public:
     //  single sample fired at that bar. That is what lets a break, a vocal
     //  one-shot and a drum pattern all land on bar 9 together.
     static constexpr int kSongLanes = 4;
+    //  PISTAS DE AUDIO, que es lo que separa un groovebox de un DAW: hasta
+    //  ahora la linea de tiempo solo admitia bloques de patron y golpes
+    //  sueltos, y TODO el audio entraba por un pad. Cuatro pistas y sesenta y
+    //  cuatro clips: el tope no es un numero redondo sino lo que la memoria de
+    //  la gama mas baja aguanta - ver DeviceTier y `publicaClips`.
+    static constexpr int kAudioTracks = 4;
+    static constexpr int kMaxClips    = 64;
     static constexpr int kSongBars  = 64;
     static constexpr int kBarSteps  = 16;
 
@@ -325,6 +332,56 @@ public:
             pendingClear[(size_t) slot].store (true, std::memory_order_release);
     }
     void collectRetiredSamples() noexcept;
+
+    //  UN CLIP ES UNA REFERENCIA, no un fichero que se abre.
+    //
+    //  Apunta a un `SampleBuffer` que YA esta publicado y contado, dice en que
+    //  compas de la cancion empieza, que trozo de la fuente suena y con que
+    //  ganancia. El hilo de audio solo lee: ni reserva, ni suelta, ni abre
+    //  nada, que es el invariante que gobierna todo lo de aqui.
+    //
+    //  El compas se guarda en COMPASES y el largo en MUESTRAS, y esa mezcla es
+    //  deliberada: un compas es tiempo musical -se mueve si cambia el tempo- y
+    //  el audio de un clip mide lo que mide. Sin estirado, un clip grabado a
+    //  120 deja de encajar si el proyecto se pone a 140, que es exactamente lo
+    //  que hace cualquier DAW sin warp puesto.
+    struct ClipAudio
+    {
+        SampleBuffer* fuente = nullptr;
+        int   pista  = 0;         // 0..kAudioTracks-1
+        int   compas = 0;         // donde empieza, en compases de la cancion
+        int   desde  = 0;         // primera muestra de la fuente que suena
+        int   largo  = 0;         // cuantas muestras suenan
+        float gain   = 1.0f;
+    };
+
+    //  La tabla es INMUTABLE y se publica entera por intercambio de puntero,
+    //  igual que un buffer de pad (ver pendingPad): el hilo de audio la adopta
+    //  al principio del bloque y la vieja se va a la cola de retirados para que
+    //  la suelte el hilo de mensajes. Cambiar los clips en su sitio seria una
+    //  lectura rota a medio bloque, y tomar un cerrojo esta prohibido.
+    struct TablaClips
+    {
+        int n = 0;
+        std::array<ClipAudio, kMaxClips> c {};
+    };
+
+    //  La construye y la publica el hilo de mensajes. Se queda una referencia
+    //  de cada fuente mientras la tabla viva: un clip cuyo buffer se suelte por
+    //  otro lado dejaria al audio leyendo memoria liberada.
+    void publicaClips (const ClipAudio* clips, int cuantos) noexcept;
+    int  numClips() const noexcept { return clipsVivos.load (std::memory_order_relaxed); }
+
+    void setPistaMute (int pista, bool on) noexcept
+    {
+        if (pista >= 0 && pista < kAudioTracks)
+            pistaMute[(size_t) pista].store (on, std::memory_order_relaxed);
+    }
+    bool isPistaMute (int pista) const noexcept
+    {
+        return pista >= 0 && pista < kAudioTracks
+            && pistaMute[(size_t) pista].load (std::memory_order_relaxed);
+    }
     //  Punteros que la cola de retirados tuvo que tirar por estar llena, o sea
     //  buffers cuya cuenta no bajara nunca. Cero es lo unico correcto.
     int takeRetiredLost() noexcept { return retired.takePerdidos(); }
@@ -1015,6 +1072,55 @@ private:
     std::array<std::atomic<SampleBuffer*>, kNumPads> pendingPad {};
     std::array<std::atomic<bool>, kNumPads> pendingClear {};
     RetiredQueue retired;
+
+    //  LAS TABLAS RETIRADAS SON UNA COLA Y NO UN HUECO.
+    //
+    //  El primer intento guardaba la tabla saliente en un solo `atomic` con un
+    //  compare-exchange, y si la anterior no se habia recogido todavia la CAS
+    //  fallaba y la tabla se PERDIA: con ella las referencias de sus fuentes,
+    //  o sea megabytes que no vuelven. Bastaban dos publicaciones adoptadas
+    //  dentro del mismo tic del temporizador. Es el mismo razonamiento que
+    //  RetiredQueue, con el mismo contador de lo que se tira.
+    class TablaQueue
+    {
+    public:
+        void push (TablaClips* t) noexcept
+        {
+            if (t == nullptr) return;
+            int s1, z1, s2, z2;
+            fifo.prepareToWrite (1, s1, z1, s2, z2);
+            if (z1 + z2 < 1) { perdidas.fetch_add (1, std::memory_order_relaxed); return; }
+            (z1 > 0 ? store[(size_t) s1] : store[(size_t) s2]) = t;
+            fifo.finishedWrite (z1 + z2);
+        }
+        int takePerdidas() noexcept { return perdidas.exchange (0, std::memory_order_relaxed); }
+        template <typename Fn>
+        void drain (Fn&& fn) noexcept
+        {
+            int s1, z1, s2, z2;
+            fifo.prepareToRead (fifo.getNumReady(), s1, z1, s2, z2);
+            for (int i = 0; i < z1; ++i) fn (store[(size_t) (s1 + i)]);
+            for (int i = 0; i < z2; ++i) fn (store[(size_t) (s2 + i)]);
+            fifo.finishedRead (z1 + z2);
+        }
+    private:
+        static constexpr int cap = 16;
+        juce::AbstractFifo fifo { cap };
+        std::array<TablaClips*, cap> store {};
+        std::atomic<int> perdidas { 0 };
+    };
+
+    //  Los clips: la que suena, la que espera y las que hay que soltar.
+    TablaClips*               clips        = nullptr;   // solo el hilo de audio
+    std::atomic<TablaClips*>  pendingClips { nullptr };
+    TablaQueue                clipsRetiradas;
+    std::atomic<int>          clipsVivos   { 0 };
+    std::array<std::atomic<bool>, kAudioTracks> pistaMute {};
+
+    //  Mezcla los clips que caen dentro de [pos, pos+n) de la cancion.
+    void renderClips (juce::AudioBuffer<float>& out, int offset, int n,
+                      double pos, double porCompas) noexcept;
+    static void sueltaTabla (TablaClips* t) noexcept;
 
     // Per-pad params (message writes, audio reads).
     std::array<std::atomic<float>, kNumPads> padPitch {};

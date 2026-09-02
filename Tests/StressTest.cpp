@@ -3023,5 +3023,70 @@ int main()
                      difiere == 0 ? "OK" : "FALLA");
     }
 
+    //  UN CLIP DE AUDIO SUENA DONDE SE PUSO, Y NO ANTES.
+    //
+    //  Es la primera pieza de la linea de tiempo de audio, y se mide con DOS
+    //  cifras porque una sola no separa nada: "suena en el compas 2" lo cumple
+    //  tambien un clip que suena SIEMPRE, que es exactamente el fallo que sale
+    //  de equivocarse con la posicion de la cancion. Asi que se mide el compas
+    //  1 -donde tiene que haber silencio- y el 2 -donde tiene que sonar-.
+    //
+    //  A 120 BPM en semicorcheas un paso son 6000 muestras y un compas 96 000.
+    {
+        auto ruido = [] (int n)
+        {
+            auto* sb = new SampleBuffer();
+            sb->sourceSampleRate = 48000.0;
+            sb->buffer.setSize (1, n);
+            juce::Random r (7);
+            for (int i = 0; i < n; ++i)
+                sb->buffer.setSample (0, i, r.nextFloat() * 0.8f - 0.4f);
+            return SampleBuffer::Ptr (sb);
+        };
+
+        AudioEngine e;
+        e.prepareToPlay (48000.0, 512);
+        e.setSafetyLimiter (false);
+        e.setBpm (120.0f);
+        e.setSongMode (true);
+        e.setSongLength (4);
+
+        auto fuente = ruido (48000);           // medio compas de ruido
+        AudioEngine::ClipAudio c;
+        c.fuente = fuente.get();
+        c.pista  = 0;
+        c.compas = 2;                          // <- aqui, y en ningun otro sitio
+        c.desde  = 0;
+        c.largo  = 48000;
+        c.gain   = 1.0f;
+        e.publicaClips (&c, 1);
+
+        e.setPlaying (true);
+
+        //  Pico por compas: 96 000 muestras, o sea 187.5 bloques de 512.
+        const int porCompas = 96000, bloque = 512;
+        float pico[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+        juce::AudioBuffer<float> out (2, bloque);
+        long long muestras = 0;
+        for (int b = 0; b < (porCompas * 4) / bloque; ++b)
+        {
+            out.clear();
+            e.renderNextBlock (out, 0, bloque);
+            const int compas = (int) (muestras / porCompas);
+            if (compas >= 0 && compas < 4)
+                pico[compas] = juce::jmax (pico[compas], out.getMagnitude (0, bloque));
+            muestras += bloque;
+        }
+
+        //  TRES cifras y no dos: los compases 0 y 1 CALLADOS y el 2 sonando.
+        //  Sin el compas 0 la prueba no ve el fallo mas obvio de todos - que el
+        //  clip ignore donde se puso y suene desde el principio -, porque un
+        //  clip de medio compas colocado en cero deja el 1 en silencio igual.
+        const bool ok = pico[0] < 0.001f && pico[1] < 0.001f && pico[2] > 0.05f;
+        std::printf ("%-34s compas 0 %.5f   1 %.5f   2 %.5f   clips %d   %s\n",
+                     "un clip suena donde se puso", pico[0], pico[1], pico[2],
+                     e.numClips(), ok ? "OK" : "FALLA");
+    }
+
     return 0;
 }

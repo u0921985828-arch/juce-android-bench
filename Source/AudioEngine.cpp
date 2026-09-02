@@ -563,6 +563,18 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         }
     }
 
+    //  Y LA TABLA DE CLIPS, por el mismo camino y por la misma razon: un
+    //  intercambio de puntero, la vieja a retirar, y el hilo de audio sin
+    //  reservar ni soltar nada. Ver publicaClips.
+    if (auto* nueva = pendingClips.exchange (nullptr, std::memory_order_acquire))
+    {
+        //  La que sale va a la cola: soltarla aqui seria un `delete` en el hilo
+        //  de audio, que es lo unico que este hilo no puede hacer.
+        clipsRetiradas.push (clips);
+        clips = nueva;
+        clipsVivos.store (nueva->n, std::memory_order_relaxed);
+    }
+
     // 2. Clear output.
     out.clear (startSample, numSamples);
 
@@ -1189,6 +1201,22 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             seg = juce::jlimit (1, seg, nextHitIn());
 
             renderVoices (offset, seg);
+
+            //  Y LOS CLIPS DE LA LINEA DE TIEMPO, en el MISMO segmento.
+            //
+            //  Aqui dentro y no una vez por bloque: el bucle ya parte en los
+            //  bordes de paso y ahi es donde `songStep` salta -al dar la vuelta
+            //  o al entrar en el tramo en bucle-, asi que una posicion por
+            //  bloque se comeria el salto y el clip sonaria corrido.
+            //
+            //  `songStep` vale -1 hasta que suena el primer paso, que es el
+            //  mismo instante en que empieza el compas 0: un clip puesto ahi
+            //  arranca con el patron y no antes.
+            if (songMode.load (std::memory_order_relaxed) && songStep >= 0)
+                renderClips (out, offset, seg,
+                             (double) songStep * samplesPerStep + stepAccum,
+                             samplesPerStep * (double) kBarSteps);
+
             stepAccum += seg;
             offset    += seg;
             remaining -= seg;
@@ -1965,9 +1993,94 @@ void AudioEngine::publishSample (int slot, SampleBuffer::Ptr newBuffer) noexcept
         old->decReferenceCount();
 }
 
+//  LOS CLIPS QUE CAEN DENTRO DE ESTE SEGMENTO.
+//
+//  Un clip suena a velocidad 1.0 - no hay estirado ni afinacion - asi que esto
+//  es una copia con ganancia y no una voz: ni acumulador de fase, ni Hermite,
+//  ni interpolacion. Cuesta lo que cuesta leer memoria, que es la razon por la
+//  que cuatro pistas no mueven la aguja del banco de CPU.
+void AudioEngine::renderClips (juce::AudioBuffer<float>& out, int offset, int n,
+                               double pos, double porCompas) noexcept
+{
+    if (clips == nullptr || clips->n <= 0) return;
+
+    const int canales = out.getNumChannels();
+    const auto ini = (std::int64_t) pos;
+    const auto fin = ini + n;
+
+    for (int i = 0; i < clips->n; ++i)
+    {
+        const ClipAudio& c = clips->c[(size_t) i];
+        if (c.fuente == nullptr || c.largo <= 0) continue;
+        if (pistaMute[(size_t) juce::jlimit (0, kAudioTracks - 1, c.pista)]
+                .load (std::memory_order_relaxed)) continue;
+
+        const auto cIni = (std::int64_t) ((double) c.compas * porCompas);
+        const auto cFin = cIni + c.largo;
+        if (fin <= cIni || ini >= cFin) continue;          // no toca este segmento
+
+        //  El trozo que se solapa, en coordenadas de la cancion y de la fuente.
+        const auto desdeCancion = juce::jmax (ini, cIni);
+        const auto hastaCancion = juce::jmin (fin, cFin);
+        const int  cuantas      = (int) (hastaCancion - desdeCancion);
+        if (cuantas <= 0) continue;
+
+        const auto  enFuente = (std::int64_t) c.desde + (desdeCancion - cIni);
+        const auto& src      = c.fuente->buffer;
+        const int   srcLen   = src.getNumSamples();
+        if (enFuente < 0 || enFuente >= srcLen) continue;
+
+        const int  copiar  = juce::jmin (cuantas, (int) (srcLen - enFuente));
+        const int  destino = offset + (int) (desdeCancion - ini);
+        const int  srcCh   = juce::jmax (1, src.getNumChannels());
+
+        for (int ch = 0; ch < canales; ++ch)
+            out.addFrom (ch, destino, src, juce::jmin (ch, srcCh - 1),
+                         (int) enFuente, copiar, c.gain);
+    }
+}
+
+//  LA TABLA SE CONSTRUYE ENTERA Y SE PUBLICA DE UNA VEZ. Modificarla en su
+//  sitio seria una lectura rota a medio bloque; un cerrojo esta prohibido.
+void AudioEngine::publicaClips (const ClipAudio* entrada, int cuantos) noexcept
+{
+    auto* t = new TablaClips();
+    t->n = juce::jlimit (0, kMaxClips, cuantos);
+    for (int i = 0; i < t->n; ++i)
+    {
+        t->c[(size_t) i] = entrada[i];
+        //  La tabla se queda una referencia de cada fuente MIENTRAS VIVA: sin
+        //  esto, soltar el pad del que salio el clip dejaria al hilo de audio
+        //  leyendo memoria liberada.
+        if (t->c[(size_t) i].fuente != nullptr)
+            t->c[(size_t) i].fuente->incReferenceCount();
+    }
+
+    //  Y SE RECOGE ANTES DE PUBLICAR, no solo en el temporizador: asi la cola
+    //  de retiradas esta vacia casi siempre y la unica forma de llenarla es
+    //  publicar dieciseis veces dentro de un mismo bloque de audio.
+    clipsRetiradas.drain ([] (TablaClips* v) { sueltaTabla (v); });
+
+    if (auto* anterior = pendingClips.exchange (t, std::memory_order_release))
+        sueltaTabla (anterior);          // nadie llego a adoptarla: es nuestra
+}
+
+//  Suelta una tabla y las referencias que se quedo. SIEMPRE en el hilo de
+//  mensajes: `decReferenceCount` puede acabar en un `delete`, que es lo que el
+//  hilo de audio no puede hacer.
+void AudioEngine::sueltaTabla (TablaClips* t) noexcept
+{
+    if (t == nullptr) return;
+    for (int i = 0; i < t->n; ++i)
+        if (t->c[(size_t) i].fuente != nullptr)
+            t->c[(size_t) i].fuente->decReferenceCount();
+    delete t;
+}
+
 void AudioEngine::collectRetiredSamples() noexcept
 {
     retired.drain ([] (SampleBuffer* p) { if (p) p->decReferenceCount(); });
+    clipsRetiradas.drain ([] (TablaClips* t) { sueltaTabla (t); });
 }
 
 //  The silhouette's columns, oldest first. Cosmetic like copyScope: a torn
