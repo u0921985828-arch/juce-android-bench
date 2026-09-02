@@ -35,6 +35,26 @@
 #  -un modulo sin su ruta no se encuentra, y una ruta sin su modulo es basura
 #  que nadie borra-.
 #
+#
+#  Y UN NUMERO ESCRITO DONDE NADIE LO LEE, que es el mismo salto y la misma
+#  clase de fallo. El .jucer decia `androidPluginVersion="8.9.1"` y ese
+#  atributo NO EXISTE para Projucer: en jucer_PresetIDs.h, identico en 8.0.4 y
+#  en 8.0.15, esta escrito
+#
+#      const Identifier androidPluginVersion ("gradleWrapperVersion");
+#      // old name is very confusing, but we need to remain backward compatible
+#
+#  o sea que el AGP se pide con el atributo `gradleWrapperVersion` y lo que
+#  hubiera en `androidPluginVersion` se ignora. El AGP de verdad era el DEFECTO
+#  de JUCE - 8.4.1 con 8.0.4 y 8.13.2 con 8.0.15 -, y el 8.13.2 exige Gradle
+#  8.13 mientras el .jucer pedia 8.11.1. Ahi murio la segunda corrida.
+#
+#  Lo que hace que esto sea de esta casa y no mala suerte: el numero llevaba
+#  desde que se escribio sin efecto ninguno, y GOOGLE-PLAY.md y el comentario
+#  del workflow lo citaban como si mandara. Un numero que nadie lee es una
+#  afirmacion sin medida, que es lo que este banco lleva cazando desde el
+#  principio.
+#
 #      python3 Tests/fuentes.py
 # ============================================================================
 import os, re, sys
@@ -135,6 +155,34 @@ def modulos():
     return fallos
 
 
+
+#  Los atributos del .jucer que Projucer lee de verdad, y los que NO existen y
+#  por tanto no pueden estar puestos: uno ahi es un numero que nadie lee.
+JUCER_VIVOS  = ("gradleVersion", "gradleWrapperVersion")
+JUCER_MUERTOS = {
+    "androidPluginVersion":
+        "el AGP se pide con gradleWrapperVersion; androidPluginVersion "
+        "no existe para Projucer (ver jucer_PresetIDs.h) y se ignora",
+}
+
+
+def atributos():
+    t = open (os.path.join (ROOT, "Zati.jucer")).read()
+    fallos = []
+    for a, porque in JUCER_MUERTOS.items():
+        if re.search (r'\b%s="' % a, t):
+            fallos.append ("Zati.jucer trae %s= y no sirve para nada: %s" % (a, porque))
+    for a in JUCER_VIVOS:
+        if not re.search (r'\b%s="' % a, t):
+            fallos.append ("a Zati.jucer le falta %s=: Projucer usara SU defecto "
+                           "y el fichero dira otra cosa" % a)
+    v = dict (re.findall (r'\b(gradleVersion|gradleWrapperVersion)="([^"]+)"', t))
+    if len (v) == 2:
+        print ("gradle      wrapper %s, AGP %s"
+               % (v["gradleVersion"], v["gradleWrapperVersion"]))
+    return fallos
+
+
 def main():
     cm, ju = de_cmake(), de_jucer()
     if cm is None:
@@ -153,6 +201,7 @@ def main():
                        "falta en CMakeLists.txt, o sea que el banco no lo mide" % f)
 
     fallos += modulos()
+    fallos += atributos()
 
     print ("CMakeLists  %2d fuentes" % len (cm))
     print ("Zati.jucer  %2d fuentes" % len (ju))
@@ -162,7 +211,7 @@ def main():
     if fallos:
         for f in fallos: print ("FALLA  " + f)
         return 1
-    print ("las dos listas de fuentes y la de modulos dicen lo mismo")
+    print ("las fuentes, los modulos y los atributos del .jucer dicen lo mismo")
     return 0
 
 

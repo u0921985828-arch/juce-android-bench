@@ -69,7 +69,7 @@
                    androidReadMediaAudioPermission="1" androidReadMediaImagesPermission="0" androidReadMediaVideoPermission="0" androidExternalWriteNeeded="1"
                    androidTheme="@style/ZatiLaunch"
                    androidScreenOrientation="unspecified"
-                   gradleVersion="8.11.1" androidPluginVersion="8.9.1"
+                   gradleVersion="8.13" gradleWrapperVersion="8.13.2"
                    extraLinkerFlags="-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384">
       <CONFIGURATIONS>
         <CONFIGURATION name="Debug"   isDebug="1" targetName="Zati" androidArchitectures="arm64-v8a"/>

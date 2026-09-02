@@ -68,9 +68,20 @@ jobs:
           #  La plataforma es 36 porque Play EXIGE que una app nueva apunte a
           #  Android 16, y compileSdk sigue a targetSdk. Estaba en 35, que era
           #  correcto cuando se escribio y dejo de serlo sin que nadie tocara
-          #  nada: la subida se rechaza. Por eso Zati.jucer pasa a AGP 8.9.1 /
-          #  Gradle 8.11.1, que es el par mas antiguo que acepta compileSdk 36 -
-          #  AGP 8.6.1 ni lo reconoce.
+          #  nada: la subida se rechaza.
+          #
+          #  Y el par Gradle/AGP lo pide Zati.jucer con gradleVersion="8.13"
+          #  (el wrapper) y gradleWrapperVersion="8.13.2" (el AGP), que son los
+          #  defectos de 8.0.15. El nombre esta cambiado a proposito y no es
+          #  una errata nuestra: en jucer_PresetIDs.h, el miembro que lleva el
+          #  AGP se declara como
+          #      const Identifier androidPluginVersion ("gradleWrapperVersion");
+          #  o sea que el atributo XML que manda es gradleWrapperVersion y un
+          #  androidPluginVersion= en el .jucer se IGNORA. Este comentario decia
+          #  "AGP 8.9.1", que nunca estuvo puesto: el .jucer lo escribia en el
+          #  atributo muerto y el AGP de verdad era el defecto de JUCE - 8.4.1
+          #  con 8.0.4, y con 8.0.15 el 8.13.2, que exige Gradle 8.13 y por eso
+          #  el wrapper sube tambien. Lo comprueba Tests/fuentes.py.
           sdkmanager --install \
             "platforms;android-36" \
             "build-tools;36.0.0" \
