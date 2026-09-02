@@ -90,6 +90,34 @@ static void report (const char* name, const Stats& s, double blockMsBudget)
                  s.nan ? "NaN! " : "", s.clipped ? "CLIP!" : "");
 }
 
+//  ============================================================================
+//  QUE ESTE BANCO PUEDA DECIR QUE NO.
+//
+//  Este fichero tiene CINCUENTA Y UN sitios que imprimen FALLA y dos que
+//  imprimen "<-- FAILED", y su main hacia `return 0` pasara lo que pasara.
+//  banco.yml lo corre como paso de CI, asi que un FALLA del motor salia por
+//  pantalla y el job seguia verde: es "una linea que imprime OK" aplicada
+//  justo al banco que vigila el camino de audio. Ya paso lo mismo con expo.py,
+//  session.py, apk.py y plano.py, y las cuatro se arreglaron igual.
+//
+//  No hace falta tocar los cincuenta y tres sitios uno a uno: TODOS son la
+//  rama FALSA de un ternario, y un ternario solo evalua la rama que toma. Asi
+//  que la cuenta se lleva desde el propio literal - se sustituye un token y no
+//  se toca una sola condicion - y no hay forma de anadir una comprobacion
+//  nueva y olvidarse de contarla.
+//
+//  Medido ANTES de ponerlo, con JUCE 8.0.4 y el arbol limpio: 69 OK y 0 FALLA.
+//  O sea que el codigo de salida no puede volver rojo lo que estaba verde, y
+//  eso queda demostrado y no supuesto.
+//  ============================================================================
+static int zatiFallos = 0;
+
+static const char* zatiFalla (const char* texto = "FALLA")
+{
+    ++zatiFallos;
+    return texto;
+}
+
 int main()
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -211,7 +239,7 @@ int main()
         const bool ok = ratio > 0.24 && ratio < 0.33 && back > 0.97 && back < 1.03 && rampBlocks >= 3 && rampBlocks <= 24;
         std::printf ("%-34s ducked to %.3f of level  back to %.3f  ramp %d blocks (%.1f ms)  %s\n",
                      "notification duck / restore", ratio, back, rampBlocks,
-                     rampBlocks * 1000.0 * bs / sr, ok ? "OK" : "<-- FAILED");
+                     rampBlocks * 1000.0 * bs / sr, ok ? "OK" : zatiFalla ("<-- FAILED"));
     }
 
     // 5c. RESAMPLE. The master printed back onto a pad: what lands there has
@@ -253,7 +281,7 @@ int main()
         const bool ok = sb != nullptr && len > (int) (sr * 0.5) && ratio > 0.95 && ratio < 1.05;
         std::printf ("%-34s heard %.4f  printed %.4f  ratio %.3f  %d samples  %s\n",
                      "resample master -> pad", heard, printed, ratio, len,
-                     ok ? "OK" : "<-- FAILED");
+                     ok ? "OK" : zatiFalla ("<-- FAILED"));
     }
 
     // 6. EVERY BUFFER SIZE — the load has to fit the budget at the SMALLEST
@@ -337,7 +365,7 @@ int main()
         std::printf ("%-34s %d notas  mapa %s  velocidad %s  secuenciador %d  apagada %d  %s\n",
                      "midi que sale", n, mapOk ? "ok" : "MAL", velOk ? "ok" : "MAL",
                      fromSeq, whenOff,
-                     (countOk && mapOk && velOk && fromSeq > 0 && whenOff == 0) ? "OK" : "FALLA");
+                     (countOk && mapOk && velOk && fromSeq > 0 && whenOff == 0) ? "OK" : zatiFalla());
     }
 
     //  EL DELAY, Y EL BRILLO QUE LE QUEDA A LA OCTAVA REPETICION.
@@ -402,7 +430,7 @@ int main()
         std::printf ("%-34s rep8/rep1 %.3f (ideal %.3f)   interp %+.1f dB   NaN %s   %s\n",
                      "delay 8 repeticiones a 8 kHz", got, ideal, lostDb,
                      nan ? "SI" : "no",
-                     (! nan && lostDb > -3.0) ? "OK" : "FALLA");
+                     (! nan && lostDb > -3.0) ? "OK" : zatiFalla());
     }
 
     //  LA REVERB, MEDIDA. Un cambio de algoritmo de cola no se juzga de oido
@@ -444,7 +472,7 @@ int main()
         std::printf ("%-34s T60 %.2f s   pico %.4f   NaN %s   crece %s   %s\n",
                      "reverb FDN (impulso)", t60, peak,
                      nan ? "SI" : "no", grew ? "SI" : "no",
-                     (! nan && ! grew && t60 > 0.15 && t60 < 12.0) ? "OK" : "FALLA");
+                     (! nan && ! grew && t60 > 0.15 && t60 < 12.0) ? "OK" : zatiFalla());
     }
 
     //  QUITAR RUIDO, medido y no mirado.
@@ -504,7 +532,7 @@ int main()
         std::printf ("%-34s suelo %+.1f dB   tono %+.2f dB   NaN %s   %.0f ms/s   %s\n",
                      "quitar ruido (siseo + tono)", cut, keep,
                      nan ? "SI" : "no", ms,
-                     (! nan && cut < -12.0 && keep > -1.5) ? "OK" : "FALLA");
+                     (! nan && cut < -12.0 && keep > -1.5) ? "OK" : zatiFalla());
     }
 
     //  Y QUE NO SUBA EL PICO, NUNCA.
@@ -541,7 +569,7 @@ int main()
         const double d = 20.0 * std::log10 (juce::jmax (1.0e-9f, after) / juce::jmax (1.0e-9f, before));
         std::printf ("%-34s pico %+.2f dB   maximo en %.0f ms   %s\n",
                      "quitar ruido (no amplifica)", d, 1000.0 * at / rate,
-                     (d <= 0.5) ? "OK" : "FALLA");
+                     (d <= 0.5) ? "OK" : zatiFalla());
     }
 
     //  Y LO QUE PIDE DE MEMORIA, que es la otra mitad y no estaba medida.
@@ -590,7 +618,7 @@ int main()
         std::printf ("%-34s +%.1f MB sobre 55 MB de muestra   NaN %s   %.1f s   %s\n",
                      "quitar ruido (5 min, memoria)", addedMb,
                      nan ? "SI" : "no", s,
-                     (! nan && addedMb < 32.0) ? "OK" : "FALLA");
+                     (! nan && addedMb < 32.0) ? "OK" : zatiFalla());
     }
 
     //  MUESTRAS HOSTILES.
@@ -689,7 +717,7 @@ int main()
             allOk = allOk && ok;
             std::printf ("%-24s %-9s NaN %-3s  voz colgada %-3s  %s\n",
                          c.what, limiter ? "[limit]" : "[rebote]",
-                         nan ? "SI" : "no", stuck ? "SI" : "no", ok ? "OK" : "FALLA");
+                         nan ? "SI" : "no", stuck ? "SI" : "no", ok ? "OK" : zatiFalla());
         }
         std::printf ("%-34s %s\n", "muestras hostiles",
                      allOk ? "ninguna cuelga ni envenena la salida, con y sin limitador"
@@ -755,7 +783,7 @@ int main()
         }
         const bool ok = std::isfinite (cola) && cola > 0.001f;
         std::printf ("%-34s cola despues del NaN %.5f   %s\n",
-                     "el bus se recupera", cola, ok ? "OK" : "FALLA");
+                     "el bus se recupera", cola, ok ? "OK" : zatiFalla());
     }
 
     //  LA COLA DE MIDI TIENE SU PROPIO PRESUPUESTO.
@@ -802,7 +830,7 @@ int main()
         int cuantos = 0;
         for (int p = 1; p <= 4; ++p) if (visto & (1ull << (unsigned) p)) ++cuantos;
         std::printf ("%-34s %d de 4 notas de MIDI suenan   %s\n", "la cola de MIDI no se ahoga",
-                     cuantos, cuantos == 4 ? "OK" : "FALLA");
+                     cuantos, cuantos == 4 ? "OK" : zatiFalla());
     }
 
     //  Y NINGUN PUNTERO SE TIRA POR EL CAMINO.
@@ -830,7 +858,7 @@ int main()
         }
         const int perdidos = e.takeRetiredLost();
         std::printf ("%-34s %d punteros tirados   %s\n", "la cola de retirados no pierde",
-                     perdidos, perdidos == 0 ? "OK" : "FALLA");
+                     perdidos, perdidos == 0 ? "OK" : zatiFalla());
         e.collectRetiredSamples();
     }
 
@@ -889,9 +917,9 @@ int main()
         const float mandoDespues = e.getPadCutoff (0);
         const bool  intacto = std::abs (mandoDespues - 8000.0f) < 1.0f;
         std::printf ("%-34s el mando quedo en %.0f Hz   %s\n", "el bloqueo no mueve el pad",
-                     mandoDespues, intacto ? "OK" : "FALLA");
+                     mandoDespues, intacto ? "OK" : zatiFalla());
         std::printf ("%-34s energia alta con bloqueo %.4f   %s\n", "y aun asi filtra",
-                     altaBloq, altaBloq > 0.0 ? "OK" : "FALLA");
+                     altaBloq, altaBloq > 0.0 ? "OK" : zatiFalla());
     }
 
     //  EL BOMBEO, que multiplica el MASTER entero -colas de delay y reverb
@@ -939,7 +967,7 @@ int main()
         const float sin_ = pico (false), con = pico (true);
         const bool ok = con < sin_ * 0.7f;
         std::printf ("%-34s pico %.4f -> %.4f   %s\n", "el bombeo aprieta",
-                     sin_, con, ok ? "OK" : "FALLA");
+                     sin_, con, ok ? "OK" : zatiFalla());
     }
 
     //  LOS GRUPOS DE CHOKE, que tampoco medía nadie fuera del fuzz -y alli con
@@ -975,7 +1003,7 @@ int main()
         //  medida en "tras soltar 3".
         const bool ok = antes == 1 && despues == 1;
         std::printf ("%-34s %d voz -> %d voz   %s\n", "el choke calla al hermano",
-                     antes, despues, ok ? "OK" : "FALLA");
+                     antes, despues, ok ? "OK" : zatiFalla());
     }
 
     //  CUANTIZAR EN DIRECTO: un toque entre pasos suena EN el paso siguiente y
@@ -1022,7 +1050,7 @@ int main()
         //  borde del paso, que esta a unos 47 bloques de donde se toco.
         const bool ok = libre >= 0 && atado > libre + 20;
         std::printf ("%-34s suelto en el bloque %d, cuantizado en el %d   %s\n",
-                     "cuantizar en directo espera", libre, atado, ok ? "OK" : "FALLA");
+                     "cuantizar en directo espera", libre, atado, ok ? "OK" : zatiFalla());
     }
 
     //  EL FILTRO DEL PAD, con TRES numeros a la vez o no dice nada.
@@ -1115,7 +1143,7 @@ int main()
         std::printf ("%-34s 6 kHz %+.1f dB   200 Hz %+.2f dB   reson %+.1f dB   abierto %s   NaN %s   %s\n",
                      "filtro del pad (corte 800 Hz)", cutDb, keepDb, resDb,
                      differ == 0 ? "identico" : "CAMBIA",
-                     nan ? "SI" : "no", ok ? "OK" : "FALLA");
+                     nan ? "SI" : "no", ok ? "OK" : zatiFalla());
     }
 
     //  DE DONDE SALE EL CRISP.
@@ -1220,7 +1248,7 @@ int main()
         std::printf ("%-34s %d de %d con escalon   peor %.2f de lo que cabe (#%d %s) en %.1f ms   %s\n",
                      "fabrica: chasquidos", culpables, Kits::kNumSounds,
                      peorRatio, peorIdx + 1, Kits::table()[peorIdx].name, peorMs,
-                     culpables == 0 ? "OK" : "FALLA");
+                     culpables == 0 ? "OK" : zatiFalla());
     }
 
     //  Y LO QUE DE VERDAD SUENA: la fabrica tocando un patron normal.
@@ -1275,7 +1303,7 @@ int main()
         const double pct = 100.0 * (double) hot / juce::jmax (1.0, (double) tot);
         std::printf ("%-34s pico %.3f   satura %.2f%%   NaN %s   %s\n",
                      "fabrica tocando un patron", pk, pct, nan ? "SI" : "no",
-                     (! nan && pct < 0.01 && pk < 0.99) ? "OK" : "FALLA");
+                     (! nan && pct < 0.01 && pk < 0.99) ? "OK" : zatiFalla());
     }
 
     //  ALIASING AL SUBIR EL TONO, que es la otra forma de sonar crispado.
@@ -1470,7 +1498,7 @@ int main()
         const bool ok = found >= 15 && spurious <= 3 && corteRel < 0.20 && solo == 1;
         std::printf ("%-34s %d/16 golpes   %d inventados   corte peor %.0f%% del pico   bombo solo %d   %s  %s\n",
                      "trocear por golpes", found, spurious, 100.0 * corteRel, solo,
-                     ok ? "OK" : "FALLA", perdidos.toRawUTF8());
+                     ok ? "OK" : zatiFalla(), perdidos.toRawUTF8());
     }
 
     //  EL FUNDIDO DE LOS BORDES, con TRES numeros o no dice nada.
@@ -1572,7 +1600,7 @@ int main()
         const bool ok = bajaDb < -30.0 && pierdeDb > -0.5 && differ == 0;
         std::printf ("%-34s escalon %+.1f dB   dentro %+.2f dB   seco identico %s   %s\n",
                      "fundido del recorte (5 ms)", bajaDb, pierdeDb,
-                     differ == 0 ? "si" : "NO", ok ? "OK" : "FALLA");
+                     differ == 0 ? "si" : "NO", ok ? "OK" : zatiFalla());
     }
 
     //  EL CARRIL SILENCIADO Y EL TRAMO EN BUCLE.
@@ -1636,7 +1664,7 @@ int main()
                          && (conMudo & 0xBu) == 0xBu;
         std::printf ("%-34s suenan %X   con el carril 3 mudo %X   %s\n",
                      "carril de cancion silenciado", (unsigned) (todos & 0xFu),
-                     (unsigned) (conMudo & 0xFu), mudoOk ? "OK" : "FALLA");
+                     (unsigned) (conMudo & 0xFu), mudoOk ? "OK" : zatiFalla());
 
         //  EL BUCLE. Con [0,2) puesto, los carriles 3 y 4 -que solo tienen
         //  bloque en sus compases- siguen sonando porque su bloque esta en
@@ -1715,11 +1743,11 @@ int main()
         const int dos = disparos (2);
         const bool largoOk = uno == 1 && dos == 2;
         std::printf ("%-34s bloque de 1 compas suena %d vez   de 2 suena %d   %s\n",
-                     "largo propio del bloque", uno, dos, largoOk ? "OK" : "FALLA");
+                     "largo propio del bloque", uno, dos, largoOk ? "OK" : zatiFalla());
 
         const bool bucleOk = peorCompas == 1 && sinBucle == 3;
         std::printf ("%-34s con bucle [0,2) llega al %d   sin bucle al %d   %s\n",
-                     "bucle de un tramo", peorCompas, sinBucle, bucleOk ? "OK" : "FALLA");
+                     "bucle de un tramo", peorCompas, sinBucle, bucleOk ? "OK" : zatiFalla());
     }
 
     //  EL ACORDE. Un paso con cuatro notas tiene que disparar el pad CUATRO
@@ -1767,7 +1795,7 @@ int main()
         const int acorde = vivas (true);
         const bool ok = sola == 1 && acorde == 4;
         std::printf ("%-34s una nota %d voz   acorde de cuatro %d voces   %s\n",
-                     "acorde en un paso", sola, acorde, ok ? "OK" : "FALLA");
+                     "acorde en un paso", sola, acorde, ok ? "OK" : zatiFalla());
     }
 
     //  EL MISMO ACORDE, PERO CON OTRO PAD EN EL PASO.
@@ -1830,7 +1858,7 @@ int main()
         const int acorde = vivas (true);
         const bool ok = sola == 2 && acorde == 5;
         std::printf ("%-34s sin acorde %d voces   con acorde %d voces (1+4)   %s\n",
-                     "acorde con un vecino", sola, acorde, ok ? "OK" : "FALLA");
+                     "acorde con un vecino", sola, acorde, ok ? "OK" : zatiFalla());
     }
 
     //  OIR UNA TECLA DEL PIANO ROLL. Dos cosas a la vez o no vale:
@@ -1880,7 +1908,7 @@ int main()
         const double razon = agudo > 0 ? (double) grave / (double) agudo : 0.0;
         const bool ok = razon > 1.9 && razon < 2.1 && std::abs (despues - antes) < 0.001f;
         std::printf ("%-34s +0 dura %d bloques   +12 dura %d (x%.2f)   pad sigue en %.0f   %s\n",
-                     "audicion del piano roll", grave, agudo, razon, despues, ok ? "OK" : "FALLA");
+                     "audicion del piano roll", grave, agudo, razon, despues, ok ? "OK" : zatiFalla());
     }
 
     //  EL BUCLE NO PUEDE CHASQUEAR EN CADA VUELTA.
@@ -1928,7 +1956,7 @@ int main()
         const float razon = pico > 0.0001f ? peor / pico : 0.0f;
         const bool ok = razon < 0.10f;
         std::printf ("%-34s salto peor %.4f de un pico de %.3f (%.1f%%)   %s\n",
-                     "bucle sin chasquido", peor, pico, 100.0f * razon, ok ? "OK" : "FALLA");
+                     "bucle sin chasquido", peor, pico, 100.0f * razon, ok ? "OK" : zatiFalla());
     }
 
     //  EL LARGO DE LA NOTA. Una nota no es un cuadrado: dura lo que dice el
@@ -1981,7 +2009,7 @@ int main()
         const double r2 = uno   > 0 ? (double) dos / (double) uno   : 0.0;
         const bool ok = r1 > 1.5 && r1 < 2.5 && r2 > 1.5 && r2 < 2.5;
         std::printf ("%-34s medio paso %d bloques   uno %d (x%.2f)   dos %d (x%.2f)   %s\n",
-                     "largo de la nota", medio, uno, r1, dos, r2, ok ? "OK" : "FALLA");
+                     "largo de la nota", medio, uno, r1, dos, r2, ok ? "OK" : zatiFalla());
     }
 
     //  EL EMPUJON DE UN PASO. HUMANIZAR escribe cuanto se aparta cada golpe de
@@ -2026,7 +2054,7 @@ int main()
         const int diff  = tarde - recto;
         const bool ok = recto >= 0 && tarde >= 0 && diff >= 20 && diff <= 26;
         std::printf ("%-34s recto en el bloque %d   +25%% en el %d   diferencia %d (esperada 23)   %s\n",
-                     "empujon de un paso", recto, tarde, diff, ok ? "OK" : "FALLA");
+                     "empujon de un paso", recto, tarde, diff, ok ? "OK" : zatiFalla());
     }
 
     //  EL BLOQUEO DEL CORTE, paso a paso. Un filtro por pad es un ajuste; un
@@ -2092,7 +2120,7 @@ int main()
                                                 / juce::jmax (1.0e-9, abierto));
         const bool ok = caidaDb < -20.0;
         std::printf ("%-34s sin bloqueo %.4f   con 200 Hz %.4f   %+.1f dB de agudos   %s\n",
-                     "bloqueo del corte por paso", abierto, cerrado, caidaDb, ok ? "OK" : "FALLA");
+                     "bloqueo del corte por paso", abierto, cerrado, caidaDb, ok ? "OK" : zatiFalla());
     }
 
     //  LOS OTROS CUATRO BLOQUEOS: ataque, caida, inicio y pan.
@@ -2173,7 +2201,7 @@ int main()
             const auto con = correr (AudioEngine::plockInicio, 50, 0, 12);
             const bool ok = sin.izq < 0.001 && con.izq > 0.05;
             std::printf ("%-34s sin bloqueo %.4f   al 50%% %.4f   %s\n",
-                         "bloqueo de inicio", sin.izq, con.izq, ok ? "OK" : "FALLA");
+                         "bloqueo de inicio", sin.izq, con.izq, ok ? "OK" : zatiFalla());
         }
 
         //  PAN. Todo a la izquierda, y medido DOS veces: en el primer bloque y
@@ -2199,7 +2227,7 @@ int main()
             std::printf ("%-34s L/R al centro %.2f   bloqueado a la izquierda %+.0f dB   %s\n",
                          "bloqueo de pan", ratioC,
                          20.0 * std::log10 (juce::jlimit (1.0e-9, 1.0e9, ratioT)),
-                         ok ? "OK" : "FALLA");
+                         ok ? "OK" : zatiFalla());
         }
 
         //  ATAQUE. Doscientos milisegundos son 75 bloques de 128, asi que en
@@ -2241,7 +2269,7 @@ int main()
                                                / juce::jmax (1.0e-9, corto));
             const bool ok = db < -12.0;
             std::printf ("%-34s pad 1 ms %.4f   paso 200 ms %.4f   %+.1f dB   %s\n",
-                         "bloqueo de ataque", corto, largo, db, ok ? "OK" : "FALLA");
+                         "bloqueo de ataque", corto, largo, db, ok ? "OK" : zatiFalla());
         }
 
         //  CAIDA. Se mide por lo que dura la cola DESPUES de soltar, asi que el
@@ -2277,7 +2305,7 @@ int main()
             const int larga = vive (100);                  // 800 ms
             const bool ok = larga > corta + 10;
             std::printf ("%-34s caida 1 ms %d bloques   800 ms %d   %s\n",
-                         "bloqueo de caida", corta, larga, ok ? "OK" : "FALLA");
+                         "bloqueo de caida", corta, larga, ok ? "OK" : zatiFalla());
         }
     }
 
@@ -2327,7 +2355,7 @@ int main()
         const double abierto = cola (1.0f);
         const bool ok = defecto < 1.0e-4 && abierto > 0.01;
         std::printf ("%-34s cola por defecto %.5f   con el envio a 1 %.4f   %s\n",
-                     "envio por defecto cerrado", defecto, abierto, ok ? "OK" : "FALLA");
+                     "envio por defecto cerrado", defecto, abierto, ok ? "OK" : zatiFalla());
     }
 
     //  EL MASTER DE LA PERSONA CONTRA EL AVISO DEL SISTEMA.
@@ -2359,7 +2387,7 @@ int main()
                      && std::abs (vuelto  - puesto) < 1.0e-6f
                      && std::abs (durante - 0.80f * AudioEngine::kDuckGain) < 1.0e-6f;
         std::printf ("%-34s puesto %.2f   con aviso %.3f   al volver %.2f   %s\n",
-                     "el aviso no se come el master", solo, bajado, vuelto, ok ? "OK" : "FALLA");
+                     "el aviso no se come el master", solo, bajado, vuelto, ok ? "OK" : zatiFalla());
     }
 
     //  Y NO VIAJA AL REBOTE. Bajar el master para no despertar a nadie no puede
@@ -2374,7 +2402,7 @@ int main()
         const bool ok = std::abs (rebote.getMasterGain() - 1.0f) < 1.0e-6f;
         std::printf ("%-34s en vivo %.2f   en el rebote %.2f   %s\n",
                      "el master no viaja al rebote", vivo.getMasterGain(),
-                     rebote.getMasterGain(), ok ? "OK" : "FALLA");
+                     rebote.getMasterGain(), ok ? "OK" : zatiFalla());
     }
 
     //  EL MARGEN QUE LA MAQUINA NO PODIA USAR.
@@ -2416,7 +2444,7 @@ int main()
                      && std::abs (avisado - tope * AudioEngine::kDuckGain) < 1.0e-5f;
         std::printf ("%-34s unidad %.2f   tope %.2f (+%.1f dB)   pasado %.2f   con aviso %.2f   %s\n",
                      "el master llega a donde un canal", unidad, arriba,
-                     20.0f * std::log10 (arriba), pasado, avisado, ok ? "OK" : "FALLA");
+                     20.0f * std::log10 (arriba), pasado, avisado, ok ? "OK" : zatiFalla());
     }
 
     //  UN GOLPE FLOJO NO ES UN GOLPE FUERTE BAJADO DE VOLUMEN.
@@ -2507,7 +2535,7 @@ int main()
                      && floja < media * 0.95;
         std::printf ("%-34s plena %.3f   al 50%% %.3f   al 15%% %.3f   %s\n",
                      "un golpe flojo suena mas oscuro", plena, media, floja,
-                     ok ? "OK" : "FALLA");
+                     ok ? "OK" : zatiFalla());
     }
 
     // ------------------------------------------------------------------
@@ -2596,7 +2624,7 @@ int main()
                      && costura > 0.85 && costura < 1.45;
         std::printf ("%-34s nota 0 %.3f   +24 %.3f (x%.2f)   costura +5/+7 x%.2f   %s\n",
                      "el instrumento elige zona", n0, n24, rango, costura,
-                     ok ? "OK" : "FALLA");
+                     ok ? "OK" : zatiFalla());
     }
 
     // ------------------------------------------------------------------
@@ -2645,7 +2673,7 @@ int main()
         const bool ok = mn > 0.01 && baja > -12.0;
         std::printf ("%-34s minimo %.4f   maximo %.4f   bache %.1f dB   %s\n",
                      "la nota sostenida no re-ataca", mn, mx, baja,
-                     ok ? "OK" : "FALLA");
+                     ok ? "OK" : zatiFalla());
     }
 
     // ------------------------------------------------------------------
@@ -2712,7 +2740,7 @@ int main()
 
         const bool ok = una == 1 && tres == 3 && tras == 0;
         std::printf ("%-34s una %d   tres a la vez %d   tras soltar %d   %s\n",
-                     "el dedo como tecla", una, tres, tras, ok ? "OK" : "FALLA");
+                     "el dedo como tecla", una, tres, tras, ok ? "OK" : zatiFalla());
     }
 
     // ------------------------------------------------------------------
@@ -2767,7 +2795,7 @@ int main()
 
         const bool ok = pico1 == 4 && sobra == 0 && pico2 == 4;
         std::printf ("%-34s compas 1: %d voces   sobra al final: %d   compas 2: %d   %s\n",
-                     "el acorde vuelve a sonar", pico1, sobra, pico2, ok ? "OK" : "FALLA");
+                     "el acorde vuelve a sonar", pico1, sobra, pico2, ok ? "OK" : zatiFalla());
     }
 
     // ------------------------------------------------------------------
@@ -2811,7 +2839,7 @@ int main()
         //  disparo cae dentro de un bloque, no en su borde.
         const bool ok = vivos > 80 && vivos < 110;
         std::printf ("%-34s %d bloques vivos de un paso de 93   %s\n",
-                     "un paso sin largo dura un paso", vivos, ok ? "OK" : "FALLA");
+                     "un paso sin largo dura un paso", vivos, ok ? "OK" : zatiFalla());
     }
 
     // ------------------------------------------------------------------
@@ -2877,7 +2905,7 @@ int main()
         const bool ok = distintas > 0 && c.second > 0 && c.first > 0.01;
         std::printf ("%-34s %d muestras cambian   sigue sonando %.4f con %d voz   %s\n",
                      "recortar un instrumento", distintas, c.first, c.second,
-                     ok ? "OK" : "FALLA");
+                     ok ? "OK" : zatiFalla());
     }
 
     // ------------------------------------------------------------------
@@ -2956,7 +2984,7 @@ int main()
                      && std::abs (doble.second - tal.second) < tal.second * 0.02;
         std::printf ("%-34s lado %.5f / %.5f / %.5f   centro %.5f / %.5f / %.5f   %s\n",
                      "el ancho estereo", mono.first, tal.first, doble.first,
-                     mono.second, tal.second, doble.second, ok ? "OK" : "FALLA");
+                     mono.second, tal.second, doble.second, ok ? "OK" : zatiFalla());
 
         // --------------------------------------------------------------
         //  Y EL ORDEN, que con el pan al centro no se ve.
@@ -3020,7 +3048,7 @@ int main()
 
         std::printf ("%-34s mono con el pan a -0.5: %d muestras de %d cambian   %s\n",
                      "el ancho va antes del pan", difiere, (int) pt.size(),
-                     difiere == 0 ? "OK" : "FALLA");
+                     difiere == 0 ? "OK" : zatiFalla());
     }
 
     //  UN CLIP DE AUDIO SUENA DONDE SE PUSO, Y NO ANTES.
@@ -3085,7 +3113,7 @@ int main()
         const bool ok = pico[0] < 0.001f && pico[1] < 0.001f && pico[2] > 0.05f;
         std::printf ("%-34s compas 0 %.5f   1 %.5f   2 %.5f   clips %d   %s\n",
                      "un clip suena donde se puso", pico[0], pico[1], pico[2],
-                     e.numClips(), ok ? "OK" : "FALLA");
+                     e.numClips(), ok ? "OK" : zatiFalla());
     }
 
     //  ------------------------------------------------------------------
@@ -3127,7 +3155,7 @@ int main()
 
         const bool ok = enLaNegra > 0.05f && enElHueco < 0.01f;
         std::printf ("%-34s negra %.5f   hueco %.5f   %s\n",
-                     "el metronomo marca el pulso", enLaNegra, enElHueco, ok ? "OK" : "FALLA");
+                     "el metronomo marca el pulso", enLaNegra, enElHueco, ok ? "OK" : zatiFalla());
     }
 
     //  ------------------------------------------------------------------
@@ -3175,7 +3203,7 @@ int main()
         const bool ok = duranteLaCuenta > 0.05f && compasDurante < 0 && compasDespues >= 0;
         std::printf ("%-34s clic %.5f   armada %d   compas durante %d   despues %d   %s\n",
                      "la cuenta atras suena y no avanza", duranteLaCuenta, (int) armada,
-                     compasDurante, compasDespues, ok ? "OK" : "FALLA");
+                     compasDurante, compasDespues, ok ? "OK" : zatiFalla());
     }
 
     //  ------------------------------------------------------------------
@@ -3198,8 +3226,9 @@ int main()
         const bool ok = a.isClick() && ! b.isClick();
         std::printf ("%-34s origen %d   rebote %d   %s\n",
                      "el clic no sale en el rebote", (int) a.isClick(), (int) b.isClick(),
-                     ok ? "OK" : "FALLA");
+                     ok ? "OK" : zatiFalla());
     }
 
-    return 0;
+    std::printf ("\n%-34s %d FALLA\n", "motor", zatiFallos);
+    return zatiFallos > 0 ? 1 : 0;
 }

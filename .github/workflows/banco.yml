@@ -21,7 +21,7 @@ permissions:
   contents: read
 
 env:
-  JUCE_TAG: "8.0.4"
+  JUCE_TAG: "8.0.15"
 
 jobs:
   banco:
@@ -41,7 +41,10 @@ jobs:
             libwebkit2gtk-4.1-dev ninja-build xvfb x11-utils imagemagick
 
       #  El arbol de JUCE se cachea por su tag: sin esto cada corrida se baja y
-      #  compila el mismo 8.0.4, que es la mayor parte del reloj de este job.
+      #  compila el mismo 8.0.15, que es la mayor parte del reloj de este job.
+      #  El tag va aqui Y en CMakeLists.txt, y quien resuelve de verdad es el
+      #  segundo: si divergieran, la cache traeria un arbol y CMake se bajaria
+      #  otro encima.
       - name: Cache de JUCE
         uses: actions/cache@v4
         with:

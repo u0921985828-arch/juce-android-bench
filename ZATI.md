@@ -827,7 +827,7 @@ cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build --target Zati
 ```
 
-JUCE se descarga sola, **clavada en la etiqueta 8.0.4**, nunca en una rama. El
+JUCE se descarga sola, **clavada en la etiqueta 8.0.15**, nunca en una rama. El
 escritorio vale para el DSP y la fontanería, y para el banco entero; **no vale
 para juzgar la latencia**, que la pone el teléfono.
 

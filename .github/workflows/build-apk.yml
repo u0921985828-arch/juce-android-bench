@@ -5,7 +5,7 @@ name: Build Android APK
 # JUCE's CMake API does NOT support Android ("Android targets are not currently
 # supported"), so the only supported path is: build the Projucer, have it
 # generate an Android Gradle project from Zati.jucer, then Gradle-build it.
-# JUCE is pinned to the same tag as the desktop CMake build (8.0.4). Oboe
+# JUCE is pinned to the same tag as the desktop CMake build (8.0.15). Oboe
 # (bundled in JUCE) is enabled for the low-latency audio path.
 
 on:
@@ -16,7 +16,7 @@ permissions:
   actions: write     # para poder podar los artefactos viejos
 
 env:
-  JUCE_TAG: "8.0.4"
+  JUCE_TAG: "8.0.15"
 
 jobs:
   build:
@@ -34,18 +34,36 @@ jobs:
             libcurl4-openssl-dev libgl1-mesa-dev mesa-common-dev libglu1-mesa-dev \
             libwebkit2gtk-4.1-dev ninja-build
 
+      #  Dos JDK y no uno. Gradle corre con el 17, y el 8 es para el TOOLCHAIN:
+      #  desde JUCE 8.0.15 el exportador escribe
+      #  "java.toolchain.languageVersion = JavaLanguageVersion.of(8)" en el
+      #  app/build.gradle -con el comentario de que es lo que exige Android 24,
+      #  que es nuestro minSdk- y mete el resolvedor foojay en el
+      #  settings.gradle. Sin un JDK 8 en la maquina, Gradle se lo BAJA en
+      #  mitad del build: una descarga que puede fallar y que no pinta nada en
+      #  un paso que ya sabe lo que necesita.
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: |
+            8
+            17
 
       - uses: android-actions/setup-android@v3
 
       - name: Install Android SDK packages (NDK, cmake, platform)
         run: |
           # NDK + CMake versions MUST match what Projucer writes into the
-          # generated app/build.gradle for JUCE 8.0.4 (ndkVersion 26.2.11394342,
+          # generated app/build.gradle for JUCE 8.0.15 (ndkVersion 28.1.13356709,
           # cmake 3.22.1). If a JUCE bump changes these, update them here too.
+          #
+          #  El NDK sube de 26.2.11394342 a 28.1.13356709 al pasar de JUCE 8.0.4
+          #  a 8.0.15, y NO es cosa de JUCE 9: lo escribe el exportador de
+          #  Android de 8.0.15 a pelo (jucer_ProjectExport_Android.h, "def
+          #  ndkVersionString"). Nadie contrasta lo que Projucer escribe con lo
+          #  que este paso instala, asi que si no se cambia aqui el build muere
+          #  buscando un NDK que no esta. El cmake se queda en 3.22.1, que es lo
+          #  que 8.0.15 sigue escribiendo.
           #
           #  La plataforma es 36 porque Play EXIGE que una app nueva apunte a
           #  Android 16, y compileSdk sigue a targetSdk. Estaba en 35, que era
@@ -56,7 +74,7 @@ jobs:
           sdkmanager --install \
             "platforms;android-36" \
             "build-tools;36.0.0" \
-            "ndk;26.2.11394342" \
+            "ndk;28.1.13356709" \
             "cmake;3.22.1"
 
       - name: Checkout JUCE ${{ env.JUCE_TAG }}
@@ -284,7 +302,15 @@ jobs:
         # NOT Play-Store-ready (would need a real upload key) — that's later.
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon assembleDebug assembleRelease bundleRelease
+          #  Donde esta el JDK 8 del toolchain. Gradle lo busca solo en las
+          #  rutas de siempre (/usr/lib/jvm, gestores de SDK) y setup-java lo
+          #  deja en /opt/hostedtoolcache, asi que sin esta linea no lo
+          #  encuentra y se lo baja por foojay. Se nombran los dos: el 8 es el
+          #  que pide "JavaLanguageVersion.of(8)" y el 17 es con el que corre
+          #  Gradle.
+          ./gradlew --no-daemon \
+            "-Dorg.gradle.java.installations.fromEnv=JAVA_HOME_8_X64,JAVA_HOME_17_X64" \
+            assembleDebug assembleRelease bundleRelease
 
       - name: Collect APKs and the AAB
         # Play requires an App Bundle for new apps; the APKs stay because they

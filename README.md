@@ -76,7 +76,7 @@ cmake --build build -j
 ./build/Zati_artefacts/Release/Zati
 ```
 
-La primera configuración clona JUCE 8.0.4 (versión fijada).
+La primera configuración clona JUCE 8.0.15 (versión fijada).
 
 > El escritorio sólo valida DSP y fontanería. La latencia que cuenta es la del
 > teléfono: en un móvil sin MMAP el mezclador del sistema pone un suelo de unos

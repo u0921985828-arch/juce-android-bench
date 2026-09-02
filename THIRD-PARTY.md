@@ -7,8 +7,8 @@ licencia allí donde se redistribuya el tipo.
 
 | Qué | Versión | Licencia | Dónde está |
 |---|---|---|---|
-| JUCE | 8.0.4 | GPLv3 **o** licencia comercial de JUCE — ver abajo | se compila dentro del binario |
-| Oboe (dentro de JUCE) | la que trae JUCE 8.0.4 | Apache 2.0 | `LICENSES/Oboe-Apache-2.0.txt` |
+| JUCE | 8.0.15 | GPLv3 **o** licencia comercial de JUCE — ver abajo | se compila dentro del binario |
+| Oboe (dentro de JUCE) | 1.10.0 | Apache 2.0 | `LICENSES/Oboe-Apache-2.0.txt` |
 | Oswald (Bold, Medium) | Google Fonts | SIL OFL 1.1 | `LICENSES/Oswald-OFL.txt` |
 | JetBrains Mono (Regular, Bold) | JetBrains | SIL OFL 1.1 | `LICENSES/JetBrainsMono-OFL.txt` |
 
