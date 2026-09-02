@@ -749,6 +749,34 @@ private:
     juce::TextButton seqPistasBtn { "1-16" };
     int  pistasVista = 0;               // 0 = las dieciseis, 1 = 1-8, 2 = 9-16
     static juce::File pistasPrefFile();
+
+    //  EL METRONOMO Y LA CUENTA ATRAS SON DEL APARATO, NO DE UNA FICHA.
+    //
+    //  El clic existia y su tapa vivia SOLO en la vista de audio de CANCION, y
+    //  la cuenta atras era `armaCuentaAtras (1)` escrito UNA vez en toda la
+    //  app: un compas, clavado, sin opcion, y solo en el camino de grabar al
+    //  arreglo. Grabar de normal -el microfono de la cara- no tenia ninguna de
+    //  las dos, que es la mitad que faltaba: una toma que entra a ojo entra
+    //  corrida, la grabes sobre el arreglo o sola.
+    //
+    //  Y son una PREFERENCIA de la persona, no del proyecto: cuantos compases
+    //  te hacen falta para coger aire es tuyo y del momento, igual que el
+    //  idioma, la carcasa y el master. Guardarlo en el proyecto significaria
+    //  que abrirlo en otro sitio te trae la cuenta que dejaste una noche.
+    //  El clic no lleva casilla propia: la tapa CLIC que ya existe ES la
+    //  opcion, y lo unico que le faltaba era que grabar dejara de forzarla y
+    //  que su estado se recordara. Dos sitios para una decision es lo que esta
+    //  casa llama ruido.
+    int  cuentaCompases = 1;               // 0, 1 o 2
+    juce::OwnedArray<juce::TextButton> cuentaButtons;   // SIN / 1 / 2
+    juce::Rectangle<int> cuentaRowArea;
+    static juce::File cuentaPrefFile();
+    void saveCuentaPref() const;
+    void loadCuentaPref();
+    //  Arma la cuenta y devuelve si de verdad hay que esperarla. Un solo sitio
+    //  para los dos caminos de grabacion: con `armaCuentaAtras (1)` escrito en
+    //  uno de los dos, el otro no podia tenerla sin copiar la regla.
+    bool armaCuentaSiToca (int slot);
     void loadPistasPref();
     void savePistasPref() const;
     void aplicaPistas (int modo);
@@ -1057,6 +1085,8 @@ public:
     void auditPiano();
     //  LAS SEIS RANURAS DE LA FILA DE EFECTOS. Ver Tests/ranuras.py.
     void auditRanuras();
+    //  LA CUENTA ATRAS Y EL METRONOMO. Ver Tests/cuenta.py.
+    void auditCuenta();
     //  EL CATALOGO DE CONTENIDO Y EL CANDADO. Ver Tests/dlc.py.
     void auditDlc();
     void auditNiveles();

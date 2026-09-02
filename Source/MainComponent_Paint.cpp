@@ -577,6 +577,8 @@ void MainComponent::paintAudioSheetContent (juce::Graphics& g)
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.12f));
     if (! bufRowArea.isEmpty())
         { auto r = bufRowArea;  pintaTitulo (g,  Lang::takeStart (r, 44), T ("BUFER"), "seccion"); }
+        if (! cuentaRowArea.isEmpty())
+        { auto r = cuentaRowArea; pintaTitulo (g, Lang::takeStart (r, 44), T ("CUENTA"), "seccion"); }
     if (! rateRowArea.isEmpty())
         { auto r = rateRowArea; pintaTitulo (g,  Lang::takeStart (r, 44), T ("RELOJ"), "seccion"); }
 }

@@ -2261,3 +2261,71 @@ void MainComponent::auditRanuras()
               << ",\"tras_vaciar\":"       << trasVaciar
               << "}" << std::endl;
 }
+
+// ============================================================================
+//  LA CUENTA ATRAS Y EL METRONOMO. Ver Tests/cuenta.py.
+//
+//  Las dos cosas existian a medias: el clic solo tenia tapa en la vista de
+//  audio de CANCION y grabar lo FORZABA, y `armaCuentaAtras (1)` estaba escrito
+//  UNA vez en toda la app -un compas, clavado, sin opcion- y solo en el camino
+//  de grabar al arreglo. Grabar de normal no tenia ninguna de las dos.
+//
+//  Se mide POR LA TAPA y no poniendo el numero por dentro, que es lo unico que
+//  recorre el camino de verdad: `cuentaButtons[i]->onClick` es lo que escribe
+//  la preferencia, y llamar a `saveCuentaPref` a mano se lo salta.
+void MainComponent::auditCuenta()
+{
+    auto pulsa = [] (juce::Button* b) { if (b != nullptr && b->onClick) b->onClick(); };
+
+    //  1. LOS TRES VALORES, por su tapa, y lo que arma cada uno.
+    //
+    //  Con DOS cifras: cuantos compases dice la preferencia Y si el motor se
+    //  queda esperando. Solo la primera la cumple tambien una tapa que escribe
+    //  el numero y no lo usa - que es exactamente como estaba antes en el
+    //  camino del microfono.
+    juce::String armados, esperas;
+    for (int i = 0; i < 3; ++i)
+    {
+        pulsa (cuentaButtons[i]);
+        engine.setPlaying (false);
+        const bool espera = armaCuentaSiToca (0);
+        armados += juce::String (cuentaCompases) + (i < 2 ? "," : "");
+        esperas += juce::String (espera ? 1 : 0) + (i < 2 ? "," : "");
+        engine.armaCuentaAtras (0);
+        engine.setPlaying (false);
+    }
+
+    //  2. GRABAR YA NO FUERZA EL CLIC.
+    //
+    //  Se apaga a mano, se arma la cuenta y se mira si sigue apagado. Con el
+    //  `engine.setClick (true)` de antes esto sale 1 y la persona se encuentra
+    //  el metronomo colandose en la toma por los cascos.
+    engine.setClick (false);
+    pulsa (cuentaButtons[1]);
+    armaCuentaSiToca (0);
+    const int clicTrasArmar = engine.isClick() ? 1 : 0;
+    engine.armaCuentaAtras (0);
+    engine.setPlaying (false);
+
+    //  3. Y SE RECUERDA. El fichero es de la PERSONA y no del proyecto, asi que
+    //     lo que se comprueba es que la siguiente vez que alguien lo lea salga
+    //     lo que se dejo puesto. Se borra el valor en memoria antes de leer: si
+    //     al volver sigue puesto no es que se haya guardado, es que nadie lo
+    //     quito.
+    pulsa (cuentaButtons[2]);
+    engine.setClick (true);
+    saveCuentaPref();
+    cuentaCompases = 0;
+    engine.setClick (false);
+    loadCuentaPref();
+    const int vuelve    = cuentaCompases;
+    const int clicVuelve = engine.isClick() ? 1 : 0;
+
+    std::cout << "{\"cuenta\":1"
+              << ",\"compases\":\"" << armados << "\""
+              << ",\"espera\":\""   << esperas << "\""
+              << ",\"clic_tras_armar\":" << clicTrasArmar
+              << ",\"vuelve\":"          << vuelve
+              << ",\"clic_vuelve\":"     << clicVuelve
+              << "}" << std::endl;
+}

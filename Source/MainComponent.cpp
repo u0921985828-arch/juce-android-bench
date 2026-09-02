@@ -295,6 +295,37 @@ MainComponent::MainComponent()
             else                              paintGesturesPage (g, gesturesArea);
         };
 
+        //  LA CUENTA ATRAS, tres chips en la pagina de AUDIO. Es una
+        //  preferencia de la persona -como el idioma, la carcasa y el master- y
+        //  por eso vive aqui y no en el proyecto: cuantos compases te hacen
+        //  falta para coger aire es tuyo y del momento, no de la cancion.
+        {
+            //  OFF y no «SIN»: es la palabra que esta app ya usa para el
+            //  extremo apagado de un mando -los cinco que dicen «off»- asi que
+            //  no hay una segunda forma de decir lo mismo, y ademas coincide de
+            //  verdad en los cuatro idiomas. Con «SIN» el banco lo canto a la
+            //  primera: «SIN identical in es and en», siete veces.
+            const char* kCuenta[] = { "OFF", "1", "2" };
+            for (int i = 0; i < 3; ++i)
+            {
+                auto* b = new juce::TextButton (kCuenta[i]);
+                styleButton (*b, kStepOff);
+                litAccent (*b);
+                b->setClickingTogglesState (true);
+                b->setRadioGroupId (7311);
+                b->onClick = [this, i]
+                {
+                    cuentaCompases = i;
+                    saveCuentaPref();
+                    status.setText (i == 0 ? T ("Sin cuenta atras")
+                                           : T ("Cuenta atras: %1", juce::String (i)),
+                                    juce::dontSendNotification);
+                };
+                setSheet.cuerpo.addChildComponent (b);
+                cuentaButtons.add (b);
+            }
+        }
+
         styleButton (setButton, kKey);
         litAccent (setButton);
         setButton.onClick = [this]
@@ -2406,7 +2437,14 @@ MainComponent::MainComponent()
         styleButton (songClickBtn, kKey);
         litAccent (songClickBtn);
         songClickBtn.setClickingTogglesState (true);
-        songClickBtn.onClick = [this] { engine.setClick (songClickBtn.getToggleState()); };
+        songClickBtn.onClick = [this]
+        {
+            engine.setClick (songClickBtn.getToggleState());
+            //  Y SE RECUERDA. Esta tapa ES la opcion de metronomo -por eso no
+            //  hay una segunda casilla en AJUSTES- y una opcion que se olvida
+            //  al cerrar la app no es una opcion.
+            saveCuentaPref();
+        };
         songSheet.addChildComponent (songClickBtn);
     }
 
@@ -2985,6 +3023,7 @@ MainComponent::MainComponent()
     //  esta vacia. Aqui ya esta todo construido.
     loadPianoPref();
     loadPistasPref();
+    loadCuentaPref();
 
     setSize (500, 1080);
     focusFx (0);
@@ -3993,6 +4032,14 @@ void MainComponent::showSetPage (int page)
     muestra (quantButton,   onAudio);
     muestra (testButton,    onAudio);
     for (auto* b : bufButtons)  muestra (*b, onAudio);
+    //  Y los tres de la cuenta, con el que toca encendido: la tapa dice el
+    //  ESTADO y no un verbo, que es lo que ya hacen los bancos y las carcasas.
+    for (int i = 0; i < cuentaButtons.size(); ++i)
+        if (auto* b = cuentaButtons[i])
+        {
+            b->setToggleState (i == cuentaCompases, juce::dontSendNotification);
+            muestra (*b, onAudio);
+        }
     for (auto* b : rateButtons) muestra (*b, onAudio);
     //  EL IDIOMA Y LA CARCASA SE VAN A SU PAGINA. Estaban en AUDIO porque ahi
     //  habia sitio, no porque tengan nada que ver con el reloj y el bufer.
@@ -8883,10 +8930,7 @@ void MainComponent::grabaAlArreglo()
     if (slot < 0) slot = (selectedPad >= 0) ? selectedPad : 0;
     recordingSlot = slot;
 
-    //  El clic se enciende solo si no estaba: grabar al arreglo sin metronomo
-    //  es grabar a ojo, y la cuenta atras sin clic no cuenta nada.
-    engine.setClick (true);
-    songClickBtn.setToggleState (true, juce::dontSendNotification);
+    //  El clic y la cuenta salen de la preferencia. Ver armaCuentaSiToca.
 
     using RP = juce::RuntimePermissions;
     auto arranca = [this, slot]
@@ -8894,10 +8938,15 @@ void MainComponent::grabaAlArreglo()
         recordingActive = true;               // el camino de PARAR es el del micro
         grabandoAlArreglo = true;
         setAudioChannels (2, 2);
-        engine.armaGrabacionEnCuenta (slot);
-        engine.armaCuentaAtras (1);           // un compas
         engine.setSongMode (true);
-        engine.setPlaying (true);
+        //  Con la cuenta a cero la toma entra YA y el transporte arranca igual:
+        //  grabar al arreglo sin transporte no es grabar al arreglo.
+        if (! armaCuentaSiToca (slot))
+        {
+            engine.startRecording (slot);
+            engine.setPlaying (true);
+        }
+        songClickBtn.setToggleState (engine.isClick(), juce::dontSendNotification);
         styleButton (micButton, kRec);        // la misma tapa que cierra la toma
         micButton.setButtonText (T ("PARAR"));
         styleButton (songRecBtn, kRec);
@@ -9287,6 +9336,70 @@ void MainComponent::loadMasterPref()
 //  LA VENTANA DE PISTAS, donde el master, la carcasa y las octavas del piano:
 //  cuantas pistas te caben en la mano depende de la mano y del aparato, no de
 //  la cancion.
+//  EL METRONOMO Y LA CUENTA ATRAS. Ver MainComponent.h.
+juce::File MainComponent::cuentaPrefFile()
+{
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+               .getChildFile ("zati-cuenta.txt");
+}
+
+void MainComponent::saveCuentaPref() const
+{
+    //  Los dos numeros en una linea. Escrito con `escribeTexto` y no con
+    //  `replaceWithText`, que es la red que esta casa se puso el dia que
+    //  `autosave` casi cuesta un proyecto: temporal, validador y renombrado.
+    ProjectStore::escribeTexto (cuentaPrefFile(),
+                                juce::String (cuentaCompases) + " "
+                                  + juce::String (engine.isClick() ? 1 : 0));
+}
+
+void MainComponent::loadCuentaPref()
+{
+    //  El defecto es UN compas y el clic puesto, que es exactamente lo que la
+    //  app hacia clavado hasta ahora: quien ya la usaba no nota el cambio, y
+    //  quien quiera otra cosa ya puede pedirla. Es la misma regla que gobierna
+    //  un proyecto de otra epoca - lo que no esta escrito vale lo de antes.
+    const auto f = cuentaPrefFile();
+    if (! f.existsAsFile()) return;
+
+    juce::StringArray p;
+    p.addTokens (f.loadFileAsString().trim(), " ", "");
+    //  Acotado AQUI y no en quien llama: el fichero puede estar a medias o ser
+    //  de otra version, y `armaCuentaAtras` acepta hasta ocho compases - dos es
+    //  lo que esta app ofrece.
+    if (p.size() > 0) cuentaCompases = juce::jlimit (0, 2, p[0].getIntValue());
+    if (p.size() > 1) engine.setClick (p[1].getIntValue() != 0);
+}
+
+//  UN SOLO SITIO PARA LOS DOS CAMINOS DE GRABACION.
+//
+//  `armaCuentaAtras (1)` estaba escrito en `grabaAlArreglo` y en ningun otro
+//  lado, asi que el microfono de la cara no podia tener cuenta atras sin copiar
+//  la regla - y una regla escrita dos veces son dos reglas. Devuelve si hay que
+//  ESPERARLA, que es lo unico que el que llama necesita saber para decidir si
+//  arranca la toma ahora o la deja armada.
+bool MainComponent::armaCuentaSiToca (int slot)
+{
+    //  EL CLIC YA NO SE FUERZA, y esa es la otra mitad de la peticion.
+    //
+    //  Se encendia siempre con este argumento: «grabar al arreglo sin metronomo
+    //  es grabar a ojo». Es verdad la primera vez y deja de serlo en cuanto ya
+    //  llevas la referencia puesta - y entonces el clic se cuela en la toma por
+    //  los cascos, que es peor que no tenerlo. La tapa CLIC decide, y su estado
+    //  se recuerda: el interruptor que ya existia ES la opcion, y una segunda
+    //  casilla que dijera lo mismo serian dos sitios para una decision.
+    //
+    //  Con la cuenta puesta y el clic quitado la cuenta no se oye, y eso es una
+    //  eleccion valida: cuentas mirando la rejilla. Lo que no se hace es
+    //  decidirlo por la persona.
+    if (cuentaCompases <= 0) return false;
+
+    engine.armaGrabacionEnCuenta (slot);
+    engine.armaCuentaAtras (cuentaCompases);
+    engine.setPlaying (true);
+    return true;
+}
+
 juce::File MainComponent::pistasPrefFile()
 {
     return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
@@ -11337,12 +11450,21 @@ void MainComponent::toggleMicSampling()
             //  channel and the take stays mono. Asking for two and being
             //  given one is the normal case, not a failure.
             setAudioChannels (2, 2);
-            engine.startRecording (slot);
+            recordingSlot = slot;
+            //  Y AQUI TAMBIEN LA CUENTA ATRAS, que era la mitad que faltaba: una
+            //  toma que entra a ojo entra corrida, la grabes sobre el arreglo o
+            //  sola. El mecanismo es el mismo que ya usaba el otro camino - lo
+            //  unico que no se hace aqui es poner el modo cancion, porque
+            //  muestrear una guitarra suelta no es tocar el arreglo.
+            const bool espera = armaCuentaSiToca (slot);
+            if (! espera) engine.startRecording (slot);
             recordingActive = true;
             styleButton (micButton, kRec);
             micButton.setButtonText (T ("PARAR"));
-            status.setText (T ("Grabando pad %1  %2s / %3s", juce::String (slot + 1), "0.0",
-                               juce::String ((int) engine.getRecordLimitSeconds())),
+            status.setText (espera
+                              ? T ("Cuenta atras: la toma entra en el compas")
+                              : T ("Grabando pad %1  %2s / %3s", juce::String (slot + 1), "0.0",
+                                   juce::String ((int) engine.getRecordLimitSeconds())),
                             juce::dontSendNotification);
         };
 

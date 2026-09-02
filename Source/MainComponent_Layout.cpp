@@ -1594,7 +1594,9 @@ void MainComponent::resized()
         //  como una fila se queda sin sitio. Ver dosColumnasSet.
         //  DOS filas de chips y no cuatro: IDIOMA y CARCASA se fueron a su
         //  propia pagina, aqui quedan BUFER y RELOJ.
-        const int filasChips = 2 * (Metrics::hit + Metrics::xs);
+        //  TRES filas de chips desde que la cuenta atras esta aqui: BUFER,
+            //  RELOJ y CUENTA.
+            const int filasChips = 3 * (Metrics::hit + Metrics::xs);
         //  EL RECUADRO DE AUDIO MIDE LO MISMO EN LOS CUATRO SITIOS.
         //
         //  Ese 158 estaba escrito a mano cuatro veces -dos veces para pedir el
@@ -1636,7 +1638,7 @@ void MainComponent::resized()
             : onAudio
             ? Metrics::md * 2 + 16 + Metrics::sm + tabsH + kAltoAudioInfo + Metrics::xs
                 + 14 + Metrics::hit + Metrics::sm
-                + (Metrics::hit + Metrics::xs) * 2 + Metrics::sm
+                + (Metrics::hit + Metrics::xs) * 3 + Metrics::sm
             : onAsp
               ? Metrics::md * 2 + 16 + Metrics::sm + tabsH
                   + (Metrics::hit + Metrics::xs) * 2 + filasExtra + Metrics::sm
@@ -1778,6 +1780,8 @@ void MainComponent::resized()
             block (midiInBtn,  midiInBox);
             midiArea = inner.removeFromTop (40);                // pintado: la nota
             audioInfoArea = bufRowArea = rateRowArea = langRowArea = skinRowArea = {};
+            cuentaRowArea = {};
+            for (auto* b : cuentaButtons) if (b != nullptr) { b->setVisible (false); b->setBounds ({}); }
             pruebasLabelArea = {};
             projNameRowArea = projPathRowArea = {};
         }
@@ -1902,6 +1906,12 @@ void MainComponent::resized()
             };
             bufRowArea  = chipRow (bufButtons,  44, false);
             rateRowArea = chipRow (rateButtons, 44, false);
+            //  Y LA CUENTA ATRAS, en la misma columna y con el mismo canalon.
+            //  Tres chips, no cuatro: son SIN, 1 y 2 - `armaCuentaAtras` admite
+            //  hasta ocho compases y ofrecer ocho seria ofrecer siete que nadie
+            //  usa. El clic no tiene chip porque su tapa ya existe en CANCION.
+            cuentaRowArea = chipRow (cuentaButtons, 44, false);
+            if (cuentaButtons.size() > 0) setGrupos.add (cuentaRowArea);
             //  UN panel para las dos filas y no uno por fila, que fue el primer
             //  intento y salio igual que no dibujar nada: entre BUFER y RELOJ
             //  hay Metrics::xs -cuatro- y el panel se sale dos por arriba y dos
@@ -1929,7 +1939,8 @@ void MainComponent::resized()
             //  LA PAGINA DE ASPECTO: el idioma y la carcasa, que es lo unico
             //  de esta ficha que cambia como SE VE la maquina. Estaban en AUDIO
             //  al lado del reloj y del bufer porque ahi habia sitio.
-            midiArea = audioInfoArea = bufRowArea = rateRowArea = {};
+            midiArea = audioInfoArea = bufRowArea = rateRowArea = cuentaRowArea = {};
+            for (auto* b : cuentaButtons) if (b != nullptr) { b->setVisible (false); b->setBounds ({}); }
             pruebasLabelArea = {};
             projNameRowArea = projPathRowArea = {};
 

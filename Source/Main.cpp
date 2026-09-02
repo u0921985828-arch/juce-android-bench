@@ -531,6 +531,11 @@ public:
                     {
                         c2->auditRanuras();
                     }
+                    //  LA CUENTA ATRAS Y EL METRONOMO. Ver Tests/cuenta.py.
+                    else if (UiAudit::env ("ZATI_CUENTA").isNotEmpty())
+                    {
+                        c2->auditCuenta();
+                    }
                     //  LA BANDA DE AUDIO DE LA CANCION. Ver Tests/clips.py.
                     else if (UiAudit::env ("ZATI_CLIPS").isNotEmpty())
                     {

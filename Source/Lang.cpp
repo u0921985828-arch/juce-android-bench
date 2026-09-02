@@ -931,6 +931,11 @@ namespace
         { "Tempo %1",       "",         "Tempo %1",   "速度 %1",    "إيقاع %1" },
         { "QUITAR CADENA",  "",         "CLEAR CHAIN","清除链接", "مسح السلسلة" },
         { "VACIAR",         "",         "CLEAR",      "清空",       "تفريغ" },
+        //  La cuenta atras antes de grabar, en compases. Rotulo de seccion en
+        //  AJUSTES - AUDIO, al lado de BUFER y RELOJ.
+        { "CUENTA",         "",         "COUNT",      "预备拍",      "العد" },
+        { "Sin cuenta atras", "",       "No count-in","无预备拍",    "بدون عد تنازلي" },
+        { "Cuenta atras: %1", "",       "Count-in: %1","预备拍：%1",  "العد التنازلي: %1" },
         //  El menu de una ranura de la fila de efectos. Clave propia y no
         //  reaprovechar «SLOT» ni «RANURA» a secas: el numero va DENTRO de la
         //  frase, que es la unica clase de constante que no se puede contrastar

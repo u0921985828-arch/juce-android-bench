@@ -41,6 +41,7 @@ codigo.
 | piano roll, notas, compas, EUCLIDES | `Tests/piano.py` |
 | clips de audio en la cancion, el gesto | `Tests/clips.py` |
 | las seis ranuras de la fila de efectos | `Tests/ranuras.py` |
+| la cuenta atras y el metronomo | `Tests/cuenta.py` |
 | instrumentos, packs, licencias | `Tests/dlc.py` |
 | el tour de bienvenida | `Tests/tour.py` |
 | el arranque, la portada, los margenes del sistema | `Tests/arranque.py` |
