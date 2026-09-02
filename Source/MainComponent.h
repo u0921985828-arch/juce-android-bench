@@ -2146,6 +2146,31 @@ private:
     int selectedStep    = -1;
     std::array<bool, kNumPatterns> patternActiveUI {};   // which banks are in the chain
 
+    //  LOS CLIPS DE AUDIO DE LA LINEA DE TIEMPO.
+    //
+    //  UN CLIP REFERENCIA UN PAD, no un buffer suelto, y eso no es un atajo:
+    //  es el modelo de esta app. Todo el audio entra por un pad -el micro, el
+    //  remuestreo, un fichero, un troceado- y los pads YA se guardan en el
+    //  proyecto con su WAV. Un clip que apuntara a un buffer sin pad obligaria
+    //  a escribir ficheros nuevos, a numerarlos, a compartirlos entre clips que
+    //  salen del mismo sitio -que es justo el fallo del troceado, N copias de
+    //  lo mismo- y a limpiar los huerfanos. Apuntando al pad, todo eso ya esta
+    //  resuelto y ademas el sonido sigue siendo tocable con el dedo.
+    struct ClipUI
+    {
+        int   pad    = -1;      // de que pad sale el audio
+        int   pista  = 0;       // 0..kAudioTracks-1
+        int   compas = 0;       // donde empieza en la cancion
+        int   desde  = 0;       // primera muestra que suena
+        int   largo  = 0;       // cuantas
+        float gain   = 1.0f;
+    };
+    std::vector<ClipUI> clips;
+
+    //  Traduce los clips a la tabla del motor resolviendo pad -> buffer, y la
+    //  publica. Se llama desde el hilo de mensajes y en ningun otro sitio.
+    void publicaClips();
+
     std::array<float, kNumPads> padFlash {};   // 1.0 on trigger, decays -> lit feedback
     // Chassis layout regions (set in resized(), drawn in paint()).
     juce::Rectangle<int> headerArea, screenBezel, tabBarArea,

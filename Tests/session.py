@@ -86,6 +86,7 @@ def proyecto():
             continue
         if "paso0" in d:  filas["pasos"] = d
         if "disperso" in d: filas["disperso"] = d
+        if "clips" in d: filas["clips"] = d
     return filas or None
 
 
@@ -279,6 +280,24 @@ def main():
               d.get ("bloqueo", "?"), d.get ("largo", "?"), d.get ("plock", "?"),
               "correcto" if disp_ok else "NO VUELVEN"))
 
+    #  Y LOS CLIPS DE AUDIO DE LA LINEA DE TIEMPO, que es lo ultimo que ha
+    #  entrado en el fichero de proyecto. Se escriben dos con valores distintos
+    #  entre si -un cruce de campos dentro de la fila se lee en el numero-, se
+    #  guarda, se BORRAN A MANO y se abre: si al volver siguen puestos no es
+    #  que se hayan guardado, es que nadie los quito.
+    #
+    #  Con DOS cifras y no una, que es lo que separa las dos formas de
+    #  escribirlo mal: las filas que vuelven al espejo Y las que tiene el
+    #  MOTOR. Solo lo primero lo cumple una lista que se lee del XML y no se
+    #  publica nunca -la linea de tiempo volveria dibujada y muda-, y solo lo
+    #  segundo lo cumple un motor que se quedo con la tabla de antes de vaciar.
+    c = pr.get ("clips", {})
+    ESPERADAS = [[0, 1, 3, 100, 4800, 0.75], [16, 2, 7, 250, 9600, 0.50]]
+    clip_ok = c.get ("filas") == ESPERADAS and c.get ("motor") == 2
+    print ("clips de audio: %s   motor %s   %s"
+           % (c.get ("filas", "?"), c.get ("motor", "?"),
+              "correcto" if clip_ok else "NO VUELVEN"))
+
     shutil.rmtree (TMP, ignore_errors=True)
 
     #  --- Y LOS PROYECTOS DE OTRA EPOCA ------------------------------------
@@ -323,7 +342,7 @@ def main():
     #  dijera nada. Una comprobacion que no puede suspender es una linea que
     #  imprime OK.
     return 1 if (bad or not chop_ok or not pat_ok or not proj_ok or not disp_ok
-                 or not viejo_ok) else 0
+                 or not clip_ok or not viejo_ok) else 0
 
 
 if __name__ == "__main__":

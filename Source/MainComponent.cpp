@@ -6505,6 +6505,21 @@ juce::ValueTree MainComponent::captureState() const
         }
         song.setProperty ("bucleA", engine.getSongLoopFrom(), nullptr);
         song.setProperty ("bucleB", engine.getSongLoopTo(), nullptr);
+
+        //  LOS CLIPS DE AUDIO, DISPERSOS. Una linea por clip y nada cuando no
+        //  hay ninguno, que es como se guardan el acorde y el empujon: casi
+        //  ningun proyecto los lleva y una tabla entera de sesenta y cuatro
+        //  seria ruido en todos. Y un proyecto de antes de que existieran no
+        //  tiene la propiedad, o sea que vuelve sin clips, que es exactamente
+        //  como sonaba el dia que se guardo.
+        if (! clips.empty())
+        {
+            juce::String filas;
+            for (const auto& c : clips)
+                filas << c.pad << " " << c.pista << " " << c.compas << " "
+                      << c.desde << " " << c.largo << " " << juce::String (c.gain, 4) << ";";
+            song.setProperty ("clips", filas, nullptr);
+        }
         s.addChild (song, -1, nullptr);
     }
     s.setProperty ("version", 1, nullptr);
@@ -7016,6 +7031,42 @@ void MainComponent::applyState (const juce::ValueTree& s)
         songCursor = 0;
         refreshSong();
     }
+
+    //  LOS CLIPS DE AUDIO. Se vacian SIEMPRE y se rellenan si el fichero los
+    //  trae, que es la regla que ya costo dos veces en newProject y otra al
+    //  abrir: vaciar la mitad de un proyecto es peor que no vaciar nada,
+    //  porque lo que queda parece tuyo. Un proyecto sin la propiedad -de antes
+    //  de que los clips existieran- vuelve sin ninguno.
+    clips.clear();
+    if (song.isValid())
+    {
+        const auto filas = juce::StringArray::fromTokens (
+            song.getProperty ("clips").toString(), ";", "");
+        for (const auto& fila : filas)
+        {
+            const auto n = juce::StringArray::fromTokens (fila.trim(), " ", "");
+            if (n.size() < 6) continue;
+            ClipUI c;
+            c.pad    = n[0].getIntValue();
+            c.pista  = n[1].getIntValue();
+            c.compas = n[2].getIntValue();
+            c.desde  = n[3].getIntValue();
+            c.largo  = n[4].getIntValue();
+            c.gain   = n[5].getFloatValue();
+            //  Se acota EN LA PUERTA, que es donde entra un fichero que puede
+            //  venir de otra epoca o corrupto: cada consumidor volviendo a
+            //  validar es como el color de un bloque acabo leyendo fuera del
+            //  array. Ver setSongCell.
+            if (! juce::isPositiveAndBelow (c.pad, kNumPads)) continue;
+            if (c.largo <= 0) continue;
+            c.pista  = juce::jlimit (0, AudioEngine::kAudioTracks - 1, c.pista);
+            c.compas = juce::jlimit (0, AudioEngine::kSongBars - 1, c.compas);
+            c.desde  = juce::jmax (0, c.desde);
+            c.gain   = juce::jlimit (0.0f, 4.0f, c.gain);
+            if ((int) clips.size() < AudioEngine::kMaxClips) clips.push_back (c);
+        }
+    }
+    publicaClips();
 
     focusFx ((int) s.getProperty ("focusedFx", 0));
     refreshRack();
@@ -8141,6 +8192,33 @@ void MainComponent::refreshMixStrip()
     }
     mixClearSolo.setEnabled (any);
     mixSheet.repaint();
+}
+
+//  DE LOS CLIPS DEL MODELO A LA TABLA DEL MOTOR.
+//
+//  Aqui se resuelve pad -> buffer, y solo aqui: el hilo de audio recibe
+//  punteros ya listos y no sabe que existe un pad. Un clip cuyo pad esta vacio
+//  no viaja - no es un error, es un pad que todavia no tiene sonido.
+void MainComponent::publicaClips()
+{
+    std::array<AudioEngine::ClipAudio, AudioEngine::kMaxClips> tabla {};
+    int n = 0;
+    for (const auto& c : clips)
+    {
+        if (n >= AudioEngine::kMaxClips) break;
+        if (! juce::isPositiveAndBelow (c.pad, kNumPads)) continue;
+        auto* fuente = uiSample[(size_t) c.pad].get();
+        if (fuente == nullptr || c.largo <= 0) continue;
+
+        auto& d = tabla[(size_t) n++];
+        d.fuente = fuente;
+        d.pista  = juce::jlimit (0, AudioEngine::kAudioTracks - 1, c.pista);
+        d.compas = juce::jlimit (0, AudioEngine::kSongBars - 1, c.compas);
+        d.desde  = juce::jmax (0, c.desde);
+        d.largo  = c.largo;
+        d.gain   = c.gain;
+    }
+    engine.publicaClips (tabla.data(), n);
 }
 
 void MainComponent::refreshRack()

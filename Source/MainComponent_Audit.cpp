@@ -1702,6 +1702,16 @@ void MainComponent::auditProject()
     engine.setStepPLock (0, 0, 0, AudioEngine::plockInicio, 44);
     engine.setStepPLock (0, 0, 0, AudioEngine::plockPan,    88);
 
+    //  Y DOS CLIPS DE AUDIO EN LA LINEA DE TIEMPO, con valores distintos entre
+    //  si por lo mismo que los cuatro bloqueos: con dos iguales, un cruce de
+    //  campos dentro de la fila pasaria desapercibido. Dos y no uno, porque
+    //  una lista que solo sabe guardar el primero se lee igual que una que
+    //  funciona.
+    clips.clear();
+    clips.push_back ({ /*pad*/ 0,  /*pista*/ 1, /*compas*/ 3, /*desde*/ 100, /*largo*/ 4800, 0.75f });
+    clips.push_back ({ /*pad*/ 16, /*pista*/ 2, /*compas*/ 7, /*desde*/ 250, /*largo*/ 9600, 0.50f });
+    publicaClips();
+
     saveProject ("BANCO_PRUEBA");
     //  Y SE ESPERA A QUE TERMINE, que es lo que faltaba y por lo que esta
     //  comprobacion salia verde o roja segun lo rapido que fuera el disco.
@@ -1733,6 +1743,8 @@ void MainComponent::auditProject()
     engine.setStepLen   (0, 0, 0, AudioEngine::kLenSuelto);
     engine.setStepNote  (0, 0, 0, 0);
     engine.setStepPLockRaw (0, 0, 0, 0);
+    clips.clear();
+    publicaClips();
 
     loadProject ("BANCO_PRUEBA");
     while (padJob != nullptr) stepPadJob();
@@ -1749,6 +1761,26 @@ void MainComponent::auditProject()
                                   << engine.getStepPLock (0, 0, 0, AudioEngine::plockInicio) << ","
                                   << engine.getStepPLock (0, 0, 0, AudioEngine::plockPan)    << "]"
               << "}" << std::endl;
+
+    //  Y SE BOMBEA UN TICK DE AUDIO ANTES DE PREGUNTARLE AL MOTOR. La tabla de
+    //  clips se publica por intercambio de punteros -el hilo de mensajes deja
+    //  la nueva en `pendingClips` y quien la ADOPTA es el hilo de audio, que es
+    //  tambien quien mueve `clipsVivos`-, asi que en un escritorio sin tarjeta
+    //  ese contador vale cero pase lo que pase: la primera version de esta
+    //  comprobacion saco `motor 0` con el codigo perfecto y con el roto.
+    //  Primero se duda de la prueba. Con el mismo ayudante que usa el banco de
+    //  CPU se corre el camino entero -publicar, adoptar, contar- que es lo que
+    //  se queria preguntar.
+    bombeaAudioDePrueba();
+
+    std::cout << "{\"clips\":" << (int) clips.size() << ",\"filas\":[";
+    for (size_t i = 0; i < clips.size(); ++i)
+    {
+        const auto& c = clips[i];
+        std::cout << (i ? "," : "") << "[" << c.pad << "," << c.pista << "," << c.compas
+                  << "," << c.desde << "," << c.largo << "," << c.gain << "]";
+    }
+    std::cout << "],\"motor\":" << engine.numClips() << "}" << std::endl;
 
     std::cout << "{\"proyecto\":1,\"paso0\":[";
     bool first = true;
