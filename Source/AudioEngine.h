@@ -370,6 +370,7 @@ public:
     //  de cada fuente mientras la tabla viva: un clip cuyo buffer se suelte por
     //  otro lado dejaria al audio leyendo memoria liberada.
     void publicaClips (const ClipAudio* clips, int cuantos) noexcept;
+    void renderClick (juce::AudioBuffer<float>& out, int offset, int n) noexcept;
     int  numClips() const noexcept { return clipsVivos.load (std::memory_order_relaxed); }
 
     void setPistaMute (int pista, bool on) noexcept
@@ -479,6 +480,35 @@ public:
     //  frecuencia supuesta es la regla duplicada de siempre, y el sintoma
     //  seria un clip dibujado donde no suena.
     double muestrasPorCompas() const noexcept { return samplesPerStepNow() * (double) kBarSteps; }
+
+    //  EL METRONOMO. Una ayuda para tocar y no parte de la cancion: ver
+    //  copyStateFrom, donde deliberadamente NO viaja.
+    void setClick (bool on) noexcept { clickOn.store (on, std::memory_order_relaxed); }
+    bool isClick() const noexcept    { return clickOn.load (std::memory_order_relaxed); }
+
+    //  LA CUENTA ATRAS, en compases. Mientras dura suena el clic y la cancion
+    //  no avanza; al acabar, el transporte arranca solo.
+    void armaCuentaAtras (int compases) noexcept
+    {
+        cuentaPasos.store (juce::jlimit (0, 8, compases) * kBarSteps, std::memory_order_relaxed);
+    }
+    bool enCuentaAtras() const noexcept { return cuentaPasos.load (std::memory_order_relaxed) > 0; }
+
+    //  Prepara la toma y la deja ARMADA: no graba todavia. El hilo de audio la
+    //  arranca en el primer paso que ya no es de la cuenta, o sea en la linea
+    //  de compas. Ver renderNextBlock.
+    void armaGrabacionEnCuenta (int slot) noexcept
+    {
+        if (slot < 0 || slot >= kNumPads) return;
+        recordSlot = slot;
+        recordPos.store (0, std::memory_order_relaxed);
+        recordFromMaster.store (false, std::memory_order_release);
+        compasGrabado.store (-1, std::memory_order_relaxed);
+        grabarTrasCuenta.store (true, std::memory_order_release);
+    }
+    //  En que compas empezo la toma. Lo apunta quien la arranca, que es el
+    //  unico que sabe el instante exacto.
+    int getCompasGrabado() const noexcept { return compasGrabado.load (std::memory_order_relaxed); }
     void setStep (int patternIdx, int step, int pad, bool on) noexcept;
     void clearPattern (int patternIdx) noexcept;
     int  getPlayStep() const noexcept { return playStep.load (std::memory_order_relaxed); }
@@ -1360,6 +1390,40 @@ private:
     //  patron que lleva dentro.
     int  laneBars[kSongLanes] { 1, 1, 1, 1 };
     int  songStep = 0;                    // absolute step within the song
+
+    //  EL METRONOMO Y LA CUENTA ATRAS.
+    //
+    //  No habia ninguno, y sin ellos grabar al arreglo no se puede hacer: una
+    //  toma que entra a ojo entra corrida, y una que empieza en el instante en
+    //  que se pulsa no empieza en el compas.
+    //
+    //  Todo POD y del hilo de audio salvo los dos atomicos, que es lo que el
+    //  contrato de este fichero exige: ni reservas, ni cerrojos, ni E/S.
+    std::atomic<bool> clickOn { false };
+    //  Pasos que faltan de cuenta atras. Mientras sea > 0 el clic suena y la
+    //  cancion NO avanza; al llegar a cero arranca el transporte.
+    //
+    //  EN PASOS Y NO EN MILISEGUNDOS, que es la trampa que este fichero ya se
+    //  ha comido tres veces con los ticks: un compas son dieciseis pasos pase
+    //  lo que pase, y cuantos milisegundos sean lo decide el tempo.
+    std::atomic<int>  cuentaPasos { 0 };
+    float clickEnv   = 0.0f;      // solo hilo de audio
+    float clickPhase = 0.0f;
+    float clickHz    = 0.0f;
+    int   clicPaso   = 0;         // pasos desde que el transporte arranco
+    //  EL ARRANQUE ESPERA AL BORDE DE COMPAS. Ver el primer disparo del
+    //  transporte: `if (currentStep < 0) fireStep()` corre una vez por BLOQUE
+    //  mientras no haya sonado el primer paso, asi que sin esto la cancion
+    //  arrancaria en el bloque siguiente a que la cuenta acabe -hasta 5500
+    //  muestras antes del compas- en vez de en la linea de compas.
+    bool  arranqueEnBorde = false;
+    //  GRABAR AL ARREGLO: la toma empieza cuando acaba la cuenta atras, y eso
+    //  lo decide el hilo de AUDIO. Hacerlo desde el temporizador de la cara le
+    //  metería el latido del hilo de mensajes -60 ms- justo en el instante que
+    //  decide si la toma entra a tiempo, en la app cuyo argumento entero es la
+    //  latencia.
+    std::atomic<bool> grabarTrasCuenta { false };
+    std::atomic<int>  compasGrabado { -1 };
 
     // Latency probe. The click is emitted a moment AFTER the stream starts,
     // so the measurement is of a settled stream rather than of its first

@@ -75,6 +75,9 @@ public:
     //  una identidad: quien la publica es quien la ordena.
     std::function<void (int indice, int pista, int compas)> onClipMueve;
     std::function<void (int indice)> onClipQuita;
+    //  Y EL LARGO, arrastrando un filo. Llega en COMPASES porque es lo que
+    //  esta rejilla sabe: quien traduce a muestras es quien tiene el tempo.
+    std::function<void (int indice, int desdeCompas, int hastaCompas)> onClipLargo;
     //  Un toque en la canaleta del carril: lo silencia. Ver mouseDown.
     std::function<void (int lane)> onLane;
 
@@ -96,6 +99,9 @@ public:
     //  regla en dos sitios - la que ya costo que `kContinued` estuviera
     //  definido dos veces.
     static constexpr int kAudioLanes = AudioEngine::kAudioTracks;
+    //  Lo mas corto que puede llevar asas. Con dos compases, las dos asas son
+    //  el clip entero y no quedaria medio que agarrar para moverlo.
+    static constexpr int kCompasesConAsa = 3;
 
     void ponVista (int v) noexcept
     {
@@ -461,6 +467,18 @@ public:
                 g.setColour (ZatiColours::playhead);     g.drawRect (caja, 1.6f);
             }
 
+            //  Y LAS ASAS SE DIBUJAN donde se pueden coger: dos filos verticales
+            //  en el primer y el ultimo compas. Un asa que existe y no se ve es
+            //  un gesto que nadie encuentra, y una que se ve donde no existe
+            //  -en un clip corto- es peor.
+            if ((c.hasta - c.desde) >= kCompasesConAsa)
+            {
+                g.setColour (ZatiColours::bestOn (col, ZatiColours::ink, juce::Colours::white)
+                                 .withAlpha (0.55f));
+                g.fillRect (caja.getX() + 2.0f, caja.getY() + 3.0f, 2.0f, caja.getHeight() - 6.0f);
+                g.fillRect (caja.getRight() - 4.0f, caja.getY() + 3.0f, 2.0f, caja.getHeight() - 6.0f);
+            }
+
             g.setColour (mudo ? col.withAlpha (0.85f)
                               : ZatiColours::bestOn (col, ZatiColours::ink, juce::Colours::white));
             g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
@@ -522,6 +540,27 @@ public:
         if (! arrastrando)
         {
             arrastrado = clipEn (pista, compas);
+            asa = 0;
+            if (arrastrado >= 0)
+            {
+                //  LAS ASAS, con la cuenta hecha. El precedente es
+                //  WaveformDisplay -«coge el asa mas cercana, pero solo dentro
+                //  de un dedo»- y aqui un dedo entero no vale: la celda mide
+                //  40 px por compas (medido), asi que dos asas de 40 se comen
+                //  un clip de un compas y no queda nada que arrastrar.
+                //
+                //  Un TERCIO del clip por lado y como mucho 16 px, y POR DEBAJO
+                //  DE TRES COMPASES no hay asas: ahi el gesto solo mueve, que
+                //  es lo que se quiere de un clip corto. La escalera de
+                //  siempre, y el banco la mide.
+                const auto& c = clips[arrastrado];
+                const int  ancho = c.hasta - c.desde;
+                if (ancho >= kCompasesConAsa)
+                {
+                    if (compas == c.desde)          asa = -1;
+                    else if (compas == c.hasta - 1) asa = +1;
+                }
+            }
             if (arrastrado < 0)
             {
                 //  Un hueco: aqui no hay nada que mover, asi que el gesto solo
@@ -541,6 +580,21 @@ public:
         }
 
         if (arrastrado < 0 || arrastrado >= numClips) return;
+
+        //  UN ASA CAMBIA EL LARGO Y NO LA POSICION. Son dos cosas y no una: un
+        //  asa que ademas mueve pasa cualquier prueba que solo mire el largo, y
+        //  desde el dedo es un clip que se escapa mientras lo recortas.
+        if (asa != 0)
+        {
+            const auto& c = clips[arrastrado];
+            int d = c.desde, h = c.hasta;
+            if (asa < 0) d = juce::jmin (compas, h - 1);
+            else         h = juce::jmax (compas + 1, d + 1);
+            if (d == c.desde && h == c.hasta) return;
+            if (onClipLargo) onClipLargo (arrastrado, d, h);
+            return;
+        }
+
         const int nuevoCompas = juce::jmax (0, compas - agarre);
         if (nuevoCompas == clips[arrastrado].desde && pista == clips[arrastrado].pista) return;
         if (onClipMueve) onClipMueve (arrastrado, pista, nuevoCompas);
@@ -637,5 +691,6 @@ private:
     int              clipSel  = -1;   // el que se esta moviendo, para que se vea
     int              arrastrado = -1; // el que este dedo agarro
     int              agarre = 0;      // por que compas suyo lo agarro
+    int              asa = 0;         // -1 filo izquierdo, +1 derecho, 0 el medio
     unsigned         mudoAudio = 0;   // un bit por pista de audio silenciada
 };

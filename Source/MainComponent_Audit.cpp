@@ -1342,65 +1342,104 @@ void MainComponent::auditClips()
         return "[" + juce::String (clips[(size_t) i].pista) + ","
                    + juce::String (clips[(size_t) i].compas) + "]";
     };
-
-    //  1. PONER: un toque en un hueco deja el clip en ESA pista y ESE compas.
+    auto compasesDe = [&] (int i)
     {
-        auto e = evento (punto (2, 3));
-        rej.mouseDown (e);
-    }
-    const auto puesto = fila (0);
-
-    //  2. MOVER agarrando por su PRIMER compas: de (2,3) a (1,5).
+        if (! juce::isPositiveAndBelow (i, (int) songClipsVista.size())) return 0;
+        return songClipsVista[(size_t) i].hasta - songClipsVista[(size_t) i].desde;
+    };
+    //  CADA MEDIDA PARTE DE UN ESTADO PUESTO A MANO, y no del que dejo la
+    //  anterior. La primera version las encadenaba y en cuanto las asas
+    //  existieron el agarre paso a medir un asa: tres cifras cruzadas de una
+    //  vez, y ninguna decia cual era el fallo.
+    auto pon = [&] (int pista, int compas, int compases)
     {
-        auto d = evento (punto (2, 3));  rej.mouseDown (d);
-        auto m = evento (punto (1, 5));  rej.mouseDrag (m);
-        auto u = evento (punto (1, 5));  rej.mouseUp (u);
-    }
-    const auto movido = fila (0);
-
-    //  3. Y AGARRANDO POR EL TERCERO. El clip esta en (1,5); se coge por el
-    //  compas 7 -su tercero- y se suelta en el 2: tiene que quedar en el 0, o
-    //  sea el punto del dedo MENOS el agarre. Si el codigo ignorara donde se
-    //  agarro, quedaria en el 2.
-    //
-    //  Y HAY QUE ESTIRARLO A MANO, que no es hacer trampa: un sonido de fabrica
-    //  dura medio segundo y a 120 BPM un compas son dos, asi que el clip que
-    //  pone el gesto mide UN compas y con uno el agarre vale cero siempre - o
-    //  sea que la prueba pasaria sin haber medido nada. Lo que se prueba es el
-    //  gesto, y el largo es estado.
-    if (! clips.empty())
-    {
-        clips[0].largo = (int) (3.0 * engine.muestrasPorCompas());
+        clips.clear();
+        ClipUI c;
+        c.pad = 0; c.pista = pista; c.compas = compas; c.desde = 0;
+        c.largo = (int) ((double) compases * engine.muestrasPorCompas());
+        c.gain = 1.0f;
+        clips.push_back (c);
         publicaClips();
         refreshSong (false);
-    }
-    const int largoCompases = songClipsVista.empty()
-                                ? 1 : songClipsVista[0].hasta - songClipsVista[0].desde;
-    juce::String agarrado = "n/a";
-    if (largoCompases >= 3)
+    };
+    auto arrastra = [&] (int p0, int c0, int p1, int c1)
     {
-        auto d = evento (punto (1, 7));  rej.mouseDown (d);
-        auto m = evento (punto (1, 2));  rej.mouseDrag (m);
-        auto u = evento (punto (1, 2));  rej.mouseUp (u);
-        agarrado = fila (0);
-    }
+        auto d = evento (punto (p0, c0));  rej.mouseDown (d);
+        auto m = evento (punto (p1, c1));  rej.mouseDrag (m);
+        auto u = evento (punto (p1, c1));  rej.mouseUp (u);
+    };
 
-    //  4. Y QUITAR con la brocha VACIAR, que es la misma que borra en la otra
+    //  1. PONER: un toque en un hueco deja el clip en ESA pista y ESE compas.
+    songBrush = -1; songGrid.borrando = false;
+    clips.clear(); publicaClips();
+    { auto e = evento (punto (2, 3)); rej.mouseDown (e); }
+    const auto puesto = fila (0);
+
+    //  Y EL RECORTE HEREDADO: el clip nace con LO QUE SUENA en el pad y no con
+    //  el buffer entero. Dos cifras -el largo del clip y el de la fuente-
+    //  porque si fueran iguales la prueba diria que si a no hacer nada.
+    padStart01[0] = 0.25f;
+    padEnd01[0]   = 0.75f;
+    clips.clear(); publicaClips();
+    { auto e = evento (punto (0, 0)); rej.mouseDown (e); }
+    const int largoFuente = (uiSample[0] != nullptr) ? uiSample[0]->buffer.getNumSamples() : 0;
+    const int largoClip   = clips.empty() ? 0 : clips[0].largo;
+
+    //  2. MOVER agarrando por su PRIMER compas: de (2,3) a (1,5).
+    pon (2, 3, 1);
+    arrastra (2, 3, 1, 5);
+    const auto movido = fila (0);
+
+    //  3. Y AGARRANDO POR EL TERCERO. Cuatro compases en (1,5), o sea [5,9):
+    //  los filos -5 y 8- son asas, asi que se agarra por el 7, que es interior,
+    //  y se suelta en el 2. Tiene que quedar en el 0: el dedo MENOS el agarre.
+    //  Sin esta, «arrastrar mueve» lo cumple igual un codigo que pega el bloque
+    //  por su principio de un salto, que es lo primero que se nota.
+    pon (1, 5, 4);
+    //  Y CUANTOS COMPASES MIDE, que es el control: agarrar «por el tercero»
+    //  solo significa algo si el clip tiene tres. Sin esta cifra la prueba
+    //  pasaria con un clip de uno, donde el agarre vale cero siempre.
+    const int agarreCompases = compasesDe (0);
+    arrastra (1, 7, 1, 2);
+    const auto agarrado = fila (0);
+
+    //  4. EL LARGO, arrastrando un FILO. Tres compases en (1,0), o sea [0,3):
+    //  se coge su ultimo compas -el 2- y se lleva al 4, y tiene que quedar de
+    //  CINCO compases SIN moverse de sitio. Las dos cifras, porque un asa que
+    //  ademas mueve pasa cualquier prueba que solo mire el largo.
+    pon (1, 0, 3);
+    arrastra (1, 2, 1, 4);
+    const auto trasAsa = fila (0);
+    const int compasesTrasAsa = compasesDe (0);
+
+    //  5. Y UN CLIP CORTO NO TIENE ASAS. Uno de un compas: arrastrar su filo
+    //  -que es el clip entero- tiene que MOVERLO y dejarlo de un compas. Sin
+    //  esta cifra, «aqui no caben asas» y «no hay asas» son la misma corrida en
+    //  verde.
+    pon (1, 0, 1);
+    arrastra (1, 0, 1, 3);
+    const auto cortoTrasFilo = fila (0);
+    const int cortoCompases = compasesDe (0);
+
+    //  6. Y QUITAR con la brocha VACIAR, que es la misma que borra en la otra
     //  vista: un gesto nuevo para borrar seria una segunda forma de lo mismo.
+    pon (1, 2, 1);
     songBrush = 0;
     songGrid.borrando = true;
-    {
-        const int c = juce::isPositiveAndBelow (0, (int) clips.size()) ? clips[0].compas : 0;
-        const int t = juce::isPositiveAndBelow (0, (int) clips.size()) ? clips[0].pista  : 0;
-        auto e = evento (punto (t, c));
-        rej.mouseDown (e);
-    }
+    { auto e = evento (punto (1, 2)); rej.mouseDown (e); }
+    const int trasBorrar = (int) clips.size();
 
     std::cout << "{\"clipsui\":1,\"puesto\":" << puesto
               << ",\"movido\":" << movido
-              << ",\"agarrado\":" << (agarrado == "n/a" ? juce::String ("\"n/a\"") : agarrado)
-              << ",\"largo_compases\":" << largoCompases
-              << ",\"tras_borrar\":" << (int) clips.size()
+              << ",\"agarrado\":" << agarrado
+              << ",\"agarre_compases\":" << agarreCompases
+              << ",\"tras_asa\":" << trasAsa
+              << ",\"compases_tras_asa\":" << compasesTrasAsa
+              << ",\"corto_tras_filo\":" << cortoTrasFilo
+              << ",\"corto_compases\":" << cortoCompases
+              << ",\"largo_fuente\":" << largoFuente
+              << ",\"largo_clip\":" << largoClip
+              << ",\"tras_borrar\":" << trasBorrar
               << ",\"celda\":[" << (int) barW << "," << (int) pistaH << "]"
               << "}" << std::endl;
 }

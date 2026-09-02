@@ -2314,9 +2314,28 @@ MainComponent::MainComponent()
         toggleSongLane (lane);
     };
 
+    //  GRABAR AL ARREGLO Y EL METRONOMO, en la vista de audio.
+    {
+        //  NACEN APAGADAS, con addChildComponent y no addAndMakeVisible: son de
+        //  la vista de AUDIO y la ficha abre en PATRONES, asi que puestas se
+        //  quedaban visibles y de 0x0 hasta que alguien tocara la pestana - 56
+        //  hallazgos del banco, que es la regla de «lo que esta encendido y
+        //  mide cero». showSongPage las enciende cuando toca.
+        styleButton (songRecBtn, kKey);
+        songRecBtn.onClick = [this] { grabaAlArreglo(); };
+        songSheet.addChildComponent (songRecBtn);
+
+        styleButton (songClickBtn, kKey);
+        litAccent (songClickBtn);
+        songClickBtn.setClickingTogglesState (true);
+        songClickBtn.onClick = [this] { engine.setClick (songClickBtn.getToggleState()); };
+        songSheet.addChildComponent (songClickBtn);
+    }
+
     songGrid.onClipNuevo = [this] (int pista, int compas) { ponClip (pista, compas); };
     songGrid.onClipMueve = [this] (int i, int pista, int compas) { mueveClip (i, pista, compas); };
     songGrid.onClipQuita = [this] (int i) { quitaClip (i); };
+    songGrid.onClipLargo = [this] (int i, int d, int h) { largoClip (i, d, h); };
 
 
     songGrid.onCell = [this] (int lane, int bar)
@@ -5694,6 +5713,8 @@ void MainComponent::retranslateUi()
     //  y lo caza la prueba comparativa, no la tabla.
     songDoubleBtn.setButtonText (T ("DOBLAR"));
     songVistaBtn.setButtonText (T (songVista == Playlist::vistaAudio ? "AUDIO" : "PATRONES"));
+    songRecBtn.setButtonText (T (grabandoAlArreglo ? "PARAR" : "GRABAR"));
+    songClickBtn.setButtonText (T ("CLIC"));
     songShortBtn.setButtonText (T ("ACORTAR"));
     songLongBtn.setButtonText  (T ("ALARGAR"));
     songLeftBtn.setButtonText  (T ("ATRAS"));
@@ -8185,6 +8206,15 @@ void MainComponent::showSongPage (int v)
     //  tapas que no hacen nada, que es justo lo que esta casa llama ruido.
     for (auto* b : songPatBtns) { b->setVisible (! audio); if (audio) b->setBounds ({}); }
 
+    //  Y LAS DOS DE LA BANDA, al reves: solo en AUDIO. Grabar al arreglo y el
+    //  metronomo no tienen nada que decirle a una rejilla de patrones.
+    for (juce::TextButton* b : { &songRecBtn, &songClickBtn })
+    {
+        b->setVisible (audio);
+        if (! audio) b->setBounds ({});
+    }
+    songClickBtn.setToggleState (engine.isClick(), juce::dontSendNotification);
+
     //  Y LAS NUEVE HERRAMIENTAS DE ARREGLO TAMPOCO. INSERTAR, QUITAR, DOBLAR,
     //  ACORTAR, ALARGAR, COPIAR, PEGAR, ATRAS y ADELANTE mueven CELDAS de
     //  patron: aplicadas a una banda de clips no significan nada todavia, y una
@@ -8209,6 +8239,86 @@ void MainComponent::showSongPage (int v)
     songSheet.repaint();
 }
 
+//  GRABAR AL ARREGLO, que es la mitad que le faltaba a la banda de audio.
+//
+//  Hasta aqui un clip solo se podia poner desde un pad que YA tuviera sonido,
+//  asi que «grabar una guitarra encima del arreglo» -que es exactamente lo que
+//  separa un groovebox de un DAW- no se podia hacer. La unica puerta al audio
+//  de la cancion era el fichero de proyecto.
+//
+//  Y NO HAY QUE ESCRIBIR UN GRABADOR: YA EXISTE. `toggleMicSampling` resuelve
+//  el permiso de microfono, el setAudioChannels(2,2), el recorte de la latencia
+//  de captura y la continua; `finishRecording` devuelve el buffer en el hilo de
+//  mensajes. Lo unico que faltaba es EN QUE COMPAS EMPEZO, y eso lo apunta el
+//  motor porque es el unico que sabe el instante exacto.
+//
+//  La toma entra ademas en un PAD, que es la puerta que esta maquina ya tiene
+//  para el audio: asi queda tocable desde la rejilla sin inventar un segundo
+//  sitio donde vive un sonido, y el clip la referencia como cualquier otro.
+void MainComponent::grabaAlArreglo()
+{
+    if (grabandoAlArreglo)
+    {
+        //  Parar: la toma se cierra por el camino de siempre y ademas cae en la
+        //  linea de tiempo, en el compas que el motor apunto al arrancarla.
+        grabandoAlArreglo = false;
+        const int compas = juce::jmax (0, engine.getCompasGrabado());
+        engine.setPlaying (false);
+        toggleMicSampling();                  // cierra la toma y la deja en el pad
+        if (padHasSample[(size_t) recordingSlot])
+        {
+            const int guarda = selectedPad;
+            selectedPad = recordingSlot;      // ponClip pone LO QUE SUENA en el pad elegido
+            ponClip (pistaGrabacion, compas);
+            selectedPad = guarda;
+        }
+        styleButton (songRecBtn, kKey);
+        songRecBtn.setButtonText (T ("GRABAR"));
+        refreshSong (true);
+        return;
+    }
+
+    //  Empezar. El pad de destino es el primero vacio, como el remuestreo: una
+    //  toma nueva no puede pisar un sonido que la persona haya puesto.
+    int slot = firstEmptyPad();
+    if (slot < 0) slot = (selectedPad >= 0) ? selectedPad : 0;
+    recordingSlot = slot;
+
+    //  El clic se enciende solo si no estaba: grabar al arreglo sin metronomo
+    //  es grabar a ojo, y la cuenta atras sin clic no cuenta nada.
+    engine.setClick (true);
+    songClickBtn.setToggleState (true, juce::dontSendNotification);
+
+    using RP = juce::RuntimePermissions;
+    auto arranca = [this, slot]
+    {
+        recordingActive = true;               // el camino de PARAR es el del micro
+        grabandoAlArreglo = true;
+        setAudioChannels (2, 2);
+        engine.armaGrabacionEnCuenta (slot);
+        engine.armaCuentaAtras (1);           // un compas
+        engine.setSongMode (true);
+        engine.setPlaying (true);
+        styleButton (micButton, kRec);        // la misma tapa que cierra la toma
+        micButton.setButtonText (T ("PARAR"));
+        styleButton (songRecBtn, kRec);
+        songRecBtn.setButtonText (T ("PARAR"));
+        status.setText (T ("Cuenta atras: la toma entra en el compas"),
+                        juce::dontSendNotification);
+        refreshSong (true);
+    };
+
+    if (! RP::isRequired (RP::recordAudio) || RP::isGranted (RP::recordAudio))
+        arranca();
+    else
+        RP::request (RP::recordAudio, [this, arranca] (bool granted)
+        {
+            if (granted) arranca();
+            else status.setText (T ("Sin permiso de microfono: no puedo grabar"),
+                                 juce::dontSendNotification);
+        });
+}
+
 //  PONER UN CLIP: el sonido del pad elegido, desde el compas que se toco.
 //
 //  El pad y no un navegador de ficheros, que es la puerta que ya existe para
@@ -8229,12 +8339,22 @@ void MainComponent::ponClip (int pista, int compas)
     if (buf == nullptr || buf->buffer.getNumSamples() <= 0) return;
     if ((int) clips.size() >= AudioEngine::kMaxClips) return;
 
+    //  Y EL CLIP TOMA EL RECORTE DEL PAD, que es lo que SUENA y no el fichero.
+    //
+    //  Es la misma regla que GUARDAR KIT -«se escribe lo que suena, no el
+    //  fichero entero»- y sin ella un pad de un break de cuatro minutos con el
+    //  recorte puesto en un golpe entra en la cancion como cuatro minutos: el
+    //  clip se dibujaria ocupando la cancion entera y sonaria un golpe.
+    const int total = buf->buffer.getNumSamples();
+    const int ini   = juce::jlimit (0, total, (int) (padStart01[(size_t) pad] * (float) total));
+    const int fin   = juce::jlimit (ini + 1, total, (int) (padEnd01[(size_t) pad] * (float) total));
+
     ClipUI c;
     c.pad    = pad;
     c.pista  = juce::jlimit (0, AudioEngine::kAudioTracks - 1, pista);
     c.compas = juce::jlimit (0, AudioEngine::kSongBars - 1, compas);
-    c.desde  = 0;
-    c.largo  = buf->buffer.getNumSamples();
+    c.desde  = ini;
+    c.largo  = fin - ini;
     c.gain   = 1.0f;
     clips.push_back (c);
     publicaClips();
@@ -8246,6 +8366,37 @@ void MainComponent::mueveClip (int indice, int pista, int compas)
     if (! juce::isPositiveAndBelow (indice, (int) clips.size())) return;
     clips[(size_t) indice].pista  = juce::jlimit (0, AudioEngine::kAudioTracks - 1, pista);
     clips[(size_t) indice].compas = juce::jlimit (0, AudioEngine::kSongBars - 1, compas);
+    publicaClips();
+    refreshSong (false);
+}
+
+//  EL LARGO DE UN CLIP, arrastrando un filo. Llega en COMPASES -es lo que la
+//  rejilla sabe- y aqui se traduce a muestras, que es donde vive el audio: la
+//  cuenta la hace `engine.muestrasPorCompas()`, que es la unica dueña de esa
+//  regla y la misma que usa el motor para reproducirlos.
+//
+//  Y el filo de la IZQUIERDA mueve tambien el punto de la fuente: acortar un
+//  clip por delante es empezar mas tarde dentro del sonido, no dejar un hueco.
+void MainComponent::largoClip (int indice, int desdeCompas, int hastaCompas)
+{
+    if (! juce::isPositiveAndBelow (indice, (int) clips.size())) return;
+    auto& c = clips[(size_t) indice];
+
+    const double porCompas = juce::jmax (1.0, engine.muestrasPorCompas());
+    const int d = juce::jlimit (0, AudioEngine::kSongBars - 1, desdeCompas);
+    const int h = juce::jlimit (d + 1, AudioEngine::kSongBars, hastaCompas);
+
+    if (d != c.compas)
+    {
+        //  Lo que se recorta por delante se le quita al principio de la fuente,
+        //  acotado en cero: arrastrar mas alla del principio no puede empezar a
+        //  leer antes del fichero.
+        const int mueve = (int) ((double) (d - c.compas) * porCompas);
+        c.desde = juce::jmax (0, c.desde + mueve);
+        c.compas = d;
+    }
+    c.largo = juce::jmax (1, (int) ((double) (h - d) * porCompas));
+
     publicaClips();
     refreshSong (false);
 }

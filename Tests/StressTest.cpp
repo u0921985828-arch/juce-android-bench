@@ -3088,5 +3088,118 @@ int main()
                      e.numClips(), ok ? "OK" : "FALLA");
     }
 
+    //  ------------------------------------------------------------------
+    //  EL METRONOMO: SUENA EN LA NEGRA Y CALLA ENTRE NEGRAS.
+    //
+    //  Con DOS cifras y no una, que es lo que separa un metronomo de un
+    //  zumbido: cuanto pega en el instante de la negra Y cuanto queda en mitad
+    //  del hueco. Solo lo primero lo cumple un tono continuo -que es como se
+    //  escribe mal la primera version de esto- y solo lo segundo lo cumple no
+    //  hacer nada.
+    //
+    //  A 120 BPM en semicorcheas una negra son cuatro pasos, o sea 24 000
+    //  muestras; el hueco se mira a mitad de camino.
+    {
+        AudioEngine e;
+        e.prepareToPlay (48000.0, 512);
+        e.setSafetyLimiter (false);
+        e.setBpm (120.0f);
+        e.setClick (true);
+        e.setPlaying (true);
+
+        const int bloque = 512;
+        juce::AudioBuffer<float> out (2, bloque);
+        float enLaNegra = 0.0f, enElHueco = 0.0f;
+        long long muestras = 0;
+
+        for (int b = 0; b < 200; ++b)
+        {
+            out.clear();
+            e.renderNextBlock (out, 0, bloque);
+            const float mag = out.getMagnitude (0, bloque);
+            //  Dentro de la negra son los 2000 primeros muestras de cada 24 000;
+            //  el hueco, la mitad de en medio - lejos de los dos clics.
+            const long long dentro = muestras % 24000;
+            if (dentro < 2000)                    enLaNegra = juce::jmax (enLaNegra, mag);
+            else if (dentro > 9000 && dentro < 15000) enElHueco = juce::jmax (enElHueco, mag);
+            muestras += bloque;
+        }
+
+        const bool ok = enLaNegra > 0.05f && enElHueco < 0.01f;
+        std::printf ("%-34s negra %.5f   hueco %.5f   %s\n",
+                     "el metronomo marca el pulso", enLaNegra, enElHueco, ok ? "OK" : "FALLA");
+    }
+
+    //  ------------------------------------------------------------------
+    //  LA CUENTA ATRAS: SUENA Y NO AVANZA.
+    //
+    //  Dos cifras otra vez, y son las dos mitades de la misma cosa: durante la
+    //  cuenta el clic tiene que sonar Y el compas no puede moverse; al acabar,
+    //  tiene que moverse. Solo lo primero lo cumple un metronomo sin cuenta
+    //  atras, y solo lo segundo lo cumple un transporte parado.
+    {
+        AudioEngine e;
+        e.prepareToPlay (48000.0, 512);
+        e.setSafetyLimiter (false);
+        e.setBpm (120.0f);
+        e.setSongMode (true);
+        e.setSongLength (4);
+        e.setClick (true);
+        e.armaCuentaAtras (1);          // un compas
+        const bool armada = e.enCuentaAtras();
+        e.setPlaying (true);
+
+        const int bloque = 512;
+        juce::AudioBuffer<float> out (2, bloque);
+        float duranteLaCuenta = 0.0f;
+        int   compasDurante = -99, compasDespues = -99;
+        long long muestras = 0;
+
+        //  Un compas a 120 BPM en semicorcheas son 96 000 muestras.
+        for (int b = 0; b < 400; ++b)
+        {
+            out.clear();
+            e.renderNextBlock (out, 0, bloque);
+            if (muestras < 90000)
+            {
+                duranteLaCuenta = juce::jmax (duranteLaCuenta, out.getMagnitude (0, bloque));
+                compasDurante   = e.getSongBar();
+            }
+            else if (muestras > 120000 && compasDespues == -99)
+            {
+                compasDespues = e.getSongBar();
+            }
+            muestras += bloque;
+        }
+
+        const bool ok = duranteLaCuenta > 0.05f && compasDurante < 0 && compasDespues >= 0;
+        std::printf ("%-34s clic %.5f   armada %d   compas durante %d   despues %d   %s\n",
+                     "la cuenta atras suena y no avanza", duranteLaCuenta, (int) armada,
+                     compasDurante, compasDespues, ok ? "OK" : "FALLA");
+    }
+
+    //  ------------------------------------------------------------------
+    //  Y EL METRONOMO NO VIAJA AL REBOTE.
+    //
+    //  El motor de exportacion se construye con copyStateFrom, y ahi el clic no
+    //  esta. Se comprueba porque «no esta» es exactamente la clase de cosa que
+    //  alguien anade sin querer el dia que copie un campo de mas - y el fallo
+    //  solo se descubre cuando ya has mandado el fichero con un metronomo
+    //  encima.
+    {
+        AudioEngine a;
+        a.prepareToPlay (48000.0, 512);
+        a.setClick (true);
+
+        AudioEngine b;
+        b.prepareToPlay (48000.0, 512);
+        b.copyStateFrom (a);
+
+        const bool ok = a.isClick() && ! b.isClick();
+        std::printf ("%-34s origen %d   rebote %d   %s\n",
+                     "el clic no sale en el rebote", (int) a.isClick(), (int) b.isClick(),
+                     ok ? "OK" : "FALLA");
+    }
+
     return 0;
 }

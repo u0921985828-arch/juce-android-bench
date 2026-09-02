@@ -82,15 +82,41 @@ def main():
     #  salto - el bloque se va un trozo que nadie pidio, y es lo primero que se
     #  nota.
     juzga ("respeta por donde se agarro",
-           d.get ("largo_compases") == 3 and d.get ("agarrado") == [1, 0],
-           "agarrado %s de %s compases" % (d.get ("agarrado"), d.get ("largo_compases")))
+           d.get ("agarre_compases") == 4 and d.get ("agarrado") == [1, 0],
+           "agarrado %s de %s compases" % (d.get ("agarrado"), d.get ("agarre_compases")))
 
-    #  4. BORRAR con la brocha VACIAR, que es la MISMA que borra en la vista de
+    #  4. EL RECORTE HEREDADO. El clip nace con LO QUE SUENA en el pad y no con
+    #  el buffer entero: es la misma regla que GUARDAR KIT, y sin ella un pad de
+    #  un break de cuatro minutos recortado a un golpe entra en la cancion como
+    #  cuatro minutos. Dos cifras, porque si el clip midiera lo mismo que la
+    #  fuente la prueba diria que si a no hacer nada.
+    fuente, clip = d.get ("largo_fuente", 0), d.get ("largo_clip", 0)
+    juzga ("el clip toma el recorte del pad",
+           fuente > 0 and clip > 0 and abs (clip * 2 - fuente) <= 2,
+           "%d de %d muestras" % (clip, fuente))
+
+    #  5. LAS ASAS. Un clip de tres compases en (1,0): se coge su ultimo compas
+    #  y se lleva dos mas alla, y tiene que quedar de CINCO compases SIN moverse
+    #  de sitio. Las dos cifras, porque un asa que ademas mueve pasa cualquier
+    #  prueba que solo mire el largo.
+    juzga ("el asa alarga y no mueve",
+           d.get ("tras_asa") == [1, 0] and d.get ("compases_tras_asa") == 5,
+           "%s de %s compases" % (d.get ("tras_asa"), d.get ("compases_tras_asa")))
+
+    #  6. Y UN CLIP CORTO NO TIENE ASAS: con un compas, las dos asas serian el
+    #  clip entero y no quedaria medio que agarrar para moverlo. Arrastrar su
+    #  filo tiene que MOVERLO y dejarlo de un compas. Sin esta cifra, «aqui no
+    #  caben asas» y «no hay asas» son la misma corrida en verde.
+    juzga ("un clip corto no tiene asas",
+           d.get ("corto_tras_filo") == [1, 3] and d.get ("corto_compases") == 1,
+           "%s de %s compases" % (d.get ("corto_tras_filo"), d.get ("corto_compases")))
+
+    #  7. BORRAR con la brocha VACIAR, que es la MISMA que borra en la vista de
     #  patrones: un gesto nuevo para borrar seria una segunda forma de lo mismo.
     juzga ("vaciar lo quita", d.get ("tras_borrar") == 0,
            "quedan %s" % (d.get ("tras_borrar"),))
 
-    #  5. Y LA CELDA, contra el dedo. Esta banda existe porque ocho carriles no
+    #  8. Y LA CELDA, contra el dedo. Esta banda existe porque ocho carriles no
     #  caben -20.2 px en 280x653, medido- asi que la cifra que la justifica hay
     #  que mirarla: si un dia vuelve a bajar del dedo, la decision se cae.
     celda = d.get ("celda") or [0, 0]
@@ -99,7 +125,7 @@ def main():
 
     print()
     print ("la banda de audio hace lo que dice" if malas == 0
-           else "%d de 5 no" % malas)
+           else "%d de 8 no" % malas)
     return 1 if malas else 0
 
 

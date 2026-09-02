@@ -853,10 +853,20 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         songStep = -1; songBar.store (-1, std::memory_order_relaxed);
         for (int ln = 0; ln < kSongLanes; ++ln) { lanePattern[ln] = -1; laneStartStep[ln] = 0; }
         playStep.store (-1, std::memory_order_relaxed);
+        //  Y EL CLIC EMPIEZA EN EL PRIMER TIEMPO. Sin esto, el tono fuerte cae
+        //  donde lo dejo la vez anterior y el metronomo dice que el compas
+        //  empieza en un sitio que no es - que es peor que no tenerlo.
+        clicPaso = 0;
+        //  Y si hay cuenta atras armada, la cancion espera al borde de compas.
+        arranqueEnBorde = cuentaPasos.load (std::memory_order_relaxed) > 0;
     }
     else if (! isPlaying && wasPlaying)
     {
         playStep.store (-1, std::memory_order_relaxed);
+        //  Parar cancela la cuenta atras: si no, volver a dar a PLAY se comeria
+        //  los pasos que quedaran de la anterior sin que nadie los hubiera
+        //  pedido.
+        cuentaPasos.store (0, std::memory_order_relaxed);
         //  Y AL PARAR, EL PAD VUELVE A SER EL PAD. El bloqueo de corte dura
         //  hasta que otro paso diga otra cosa, y con el transporte parado no va
         //  a decirlo nadie: sin esto, parar en mitad de un barrido dejaba el
@@ -1002,6 +1012,62 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
 
         auto fireStep = [this, chainLen, &patternIdx, &firePatternStep]() noexcept
         {
+            //  EL CLIC SE REDISPARA AQUI, en el borde de paso y ANTES de la
+            //  puerta de la cuenta atras: durante la cuenta el transporte no
+            //  avanza y el metronomo tiene que sonar igual - es justo para lo
+            //  que existe.
+            //
+            //  Y con DOS tonos: el primer tiempo del compas mas agudo que los
+            //  otros tres. Un metronomo de un solo tono dice que hay pulso y no
+            //  dice DONDE estas, que es la mitad para la que se enciende antes
+            //  de grabar.
+            if (clickOn.load (std::memory_order_relaxed))
+            {
+                if (clicPaso % 4 == 0)
+                {
+                    clickHz    = (clicPaso % kBarSteps == 0) ? 1600.0f : 1050.0f;
+                    clickPhase = 0.0f;
+                    clickEnv   = 0.42f;
+                }
+            }
+            ++clicPaso;
+
+            //  LA CUENTA ATRAS: mientras dura, el clic suena y la cancion NO
+            //  avanza. Ni songStep, ni los pasos del patron, ni los clips.
+            //
+            //  Aqui y no en la cara: un temporizador del hilo de mensajes late
+            //  cada 60 ms, asi que la cuenta acabaria hasta 60 ms antes o
+            //  despues de donde el clic dijo - en la app cuyo argumento entero
+            //  es la latencia, y justo en el instante que decide si la toma
+            //  entra a tiempo.
+            if (int q = cuentaPasos.load (std::memory_order_relaxed); q > 0)
+            {
+                cuentaPasos.store (q - 1, std::memory_order_relaxed);
+                //  Y al gastar el ultimo, la cancion NO arranca aqui sino en el
+                //  borde siguiente: este paso todavia es de la cuenta. Soltar
+                //  la espera es lo que deja que el proximo borde caiga por el
+                //  camino normal, o sea exactamente en la linea de compas.
+                if (q == 1) arranqueEnBorde = false;
+                return;
+            }
+
+            //  Y LA TOMA EMPIEZA AQUI: en el primer paso que ya no es de la
+            //  cuenta, o sea exactamente en la linea de compas. Es un store y
+            //  nada mas - `recordBuffer` se reserva en prepareToPlay y nunca
+            //  aqui - asi que el hilo de audio sigue sin reservar.
+            if (grabarTrasCuenta.exchange (false, std::memory_order_acquire))
+            {
+                //  El compas que ESTE paso va a estrenar. La rama de cancion lo
+                //  calcula igual dos lineas mas abajo, y aqui hace falta antes
+                //  porque quien pregunta -la cara, al parar- necesita saber
+                //  donde empezo y no donde acabo.
+                const int bars  = juce::jlimit (1, kSongBars, songBars.load (std::memory_order_relaxed));
+                const int total = bars * kBarSteps;
+                compasGrabado.store (((songStep + 1) % total) / kBarSteps, std::memory_order_relaxed);
+                recordPos.store (0, std::memory_order_relaxed);
+                recording.store (true, std::memory_order_release);
+            }
+
             //  Song mode: the timeline drives everything. Several lanes run at
             //  once, so a pattern, a break and a one-shot can all land on the
             //  same bar — which a single queue of banks could never express.
@@ -1129,7 +1195,14 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             playStep.store (currentStep, std::memory_order_relaxed);
         };
 
-        if (currentStep < 0)
+        //  EL PRIMER PASO, EN EL ARRANQUE DEL TRANSPORTE - salvo si hay cuenta
+        //  atras, que entonces la cancion empieza en la linea de compas.
+        //
+        //  Esta linea corre una vez por BLOQUE mientras no haya sonado el
+        //  primer paso, no una vez por paso: sin la guarda, la cuenta atras se
+        //  gastaba a razon de un paso por bloque -medido: los dieciseis en
+        //  8192 muestras, 0.17 s- y el metronomo zumbaba en vez de marcar.
+        if (currentStep < 0 && ! arranqueEnBorde)
             fireStep();   // first step exactly at transport start
 
         //  Anything already due speaks before a sample is rendered.
@@ -1216,6 +1289,12 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 renderClips (out, offset, seg,
                              (double) songStep * samplesPerStep + stepAccum,
                              samplesPerStep * (double) kBarSteps);
+
+            //  Y EL METRONOMO, en el mismo segmento y por la misma razon: se
+            //  redispara en el borde de paso, asi que pintarlo una vez por
+            //  bloque lo dejaria hasta un bloque tarde - 2.7 ms a 128 muestras,
+            //  que es exactamente lo que un clic existe para no tener.
+            renderClick (out, offset, seg);
 
             stepAccum += seg;
             offset    += seg;
@@ -1999,6 +2078,41 @@ void AudioEngine::publishSample (int slot, SampleBuffer::Ptr newBuffer) noexcept
 //  es una copia con ganancia y no una voz: ni acumulador de fase, ni Hermite,
 //  ni interpolacion. Cuesta lo que cuesta leer memoria, que es la razon por la
 //  que cuatro pistas no mueven la aguja del banco de CPU.
+//  EL METRONOMO: un seno que decae, y nada mas.
+//
+//  Sin tabla y sin fichero, por lo mismo que los iconos y la fabrica: cero
+//  bytes de instalacion y el tono se elige con un numero en vez de con un WAV
+//  que alguien tendria que licenciar.
+//
+//  La caida es exponencial y corta -unos 35 ms- porque un clic largo se
+//  solapa con el siguiente a tempos rapidos y deja de leerse como un pulso.
+void AudioEngine::renderClick (juce::AudioBuffer<float>& out, int offset, int n) noexcept
+{
+    if (clickEnv <= 1.0e-4f) return;
+
+    const float sr    = (float) juce::jmax (8000.0, systemSampleRate);
+    const float paso  = juce::MathConstants<float>::twoPi * clickHz / sr;
+    //  35 ms hasta caer a 1/e, contado en MUESTRAS y no en bloques: cuantos
+    //  bloques sean lo decide el aparato, que es el fallo que este fichero ya
+    //  tiene documentado tres veces con los ticks.
+    const float caida = std::exp (-1.0f / (0.035f * sr));
+
+    const int canales = out.getNumChannels();
+    for (int i = 0; i < n; ++i)
+    {
+        const float v = std::sin (clickPhase) * clickEnv;
+        clickPhase += paso;
+        if (clickPhase > juce::MathConstants<float>::twoPi)
+            clickPhase -= juce::MathConstants<float>::twoPi;
+        clickEnv *= caida;
+
+        for (int ch = 0; ch < canales; ++ch)
+            out.addSample (ch, offset + i, v);
+
+        if (clickEnv <= 1.0e-4f) { clickEnv = 0.0f; break; }
+    }
+}
+
 void AudioEngine::renderClips (juce::AudioBuffer<float>& out, int offset, int n,
                                double pos, double porCompas) noexcept
 {

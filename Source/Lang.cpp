@@ -548,6 +548,15 @@ namespace
                                         "每一步的时值", "مدة الخطوة الواحدة" },
         { "AUTO CHOP",      "",         "AUTO CHOP",  "切片",       "تقطيع" },
         { "GRABAR MIC",     "",         "MIC REC",    "录音",       "ميكروفون" },
+        //  GRABAR AL ARREGLO y el metronomo, en la banda de audio de CANCION.
+        //  Clave propia y no "GRABAR MIC": alli se graba a un pad y aqui a la
+        //  linea de tiempo, y reaprovechar una clave porque en espanol se
+        //  parece es como sale mal en las otras tres.
+        { "GRABAR",         "",         "RECORD",     "录制",       "تسجيل" },
+        { "CLIC",           "",         "CLICK",      "节拍",       "نقرة" },
+        { "Cuenta atras: la toma entra en el compas", "",
+          "Count-in: the take starts on the bar", "预备拍：从小节开始录制",
+          "\xd8\xaa\xd9\x86\xd8\xa7\xd8\xb2\xd9\x84\xd9\x8a: \xd9\x8a\xd8\xa8\xd8\xaf\xd8\xa3 \xd8\xa7\xd9\x84\xd8\xaa\xd8\xb3\xd8\xac\xd9\x8a\xd9\x84 \xd9\x85\xd8\xb9 \xd8\xa7\xd9\x84\xd9\x85\xd9\x8a\xd8\xb2\xd8\xa7\xd9\x86" },
         { "REMUESTREAR",    "",         "RESAMPLE",   "重采样",     "إعادة" },
         { "Remuestreando al pad %1", "", "Resampling to pad %1",
                                         "正在重采样到音垫 %1", "إعادة أخذ إلى الباد %1" },

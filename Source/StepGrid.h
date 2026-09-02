@@ -152,8 +152,28 @@ public:
 
         if (soloCabezal && ! primera)
         {
+            //  Y SI NO HAY CABEZAL QUE MOVER, NO SE REPINTA NADA.
+            //
+            //  `soloCabezal` ya dice que las 256 celdas, los zatis, las cargas
+            //  y las notas son identicas a lo pintado: lo unico que podia haber
+            //  cambiado es la marca. Con el transporte PARADO no hay marca -
+            //  `marcaDe (-1)` es vacio por los dos lados- asi que la union sale
+            //  vacia... y esto se caia al `repaint()` de abajo, o sea que
+            //  repintaba la rejilla ENTERA treinta veces por segundo para no
+            //  cambiar un pixel. Y como la ficha que la contiene es
+            //  translucida, con ella el chasis, los dieciseis pads y todo lo
+            //  que hay debajo.
+            //
+            //  Medido con `Tests/cpu.py` y la maquina sonando: la ficha SEC
+            //  pintaba **18.5 fotogramas equivalentes** en 8 s contra un tope
+            //  de 8.0 -y contra los 5.8 que su propio cabezal cuesta cuando de
+            //  verdad se mueve-. Ninguna otra ficha pasaba de 0.5.
+            //
+            //  Estaba desde que existe el atajo y no lo veia nadie porque
+            //  cpu.py mide por RELOJ y por eso no corre en el banco de CI.
             auto zona = antes.getUnion (marcaDe (playing));
-            if (! zona.isEmpty()) { repaint (zona); return; }
+            if (! zona.isEmpty()) repaint (zona);
+            return;
         }
 
         repaint();

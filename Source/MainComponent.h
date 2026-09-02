@@ -1418,6 +1418,16 @@ private:
     //  songModeBtn y que modoTapa. Una que dijera "IR A AUDIO" obliga a mirar si
     //  esta encendida para saber donde estas.
     juce::TextButton songVistaBtn { "PATRONES" };
+
+    //  GRABAR AL ARREGLO, y el metronomo al lado. Viven en la VISTA DE AUDIO y
+    //  no en la cara: alli REC ya significa otra cosa -grabar pads en el
+    //  patron- y dos verbos iguales con dos significados es lo que esta casa
+    //  llama ruido.
+    juce::TextButton songRecBtn  { "GRABAR" };
+    juce::TextButton songClickBtn { "CLIC" };
+    bool grabandoAlArreglo = false;
+    int  pistaGrabacion = 0;
+    void grabaAlArreglo();
     int songVista = Playlist::vistaPatrones;
     void showSongPage (int v);
 
@@ -1428,6 +1438,7 @@ private:
     void ponClip   (int pista, int compas);
     void mueveClip (int indice, int pista, int compas);
     void quitaClip (int indice);
+    void largoClip (int indice, int desdeCompas, int hastaCompas);
     int songCells[Playlist::kLanes * AudioEngine::kSongBars] {};
     //  El repintado de la TARJETA es opcional, y por eso es un parametro.
     //  La rejilla de la cancion se repinta sola cuando cambia su fuente; lo
