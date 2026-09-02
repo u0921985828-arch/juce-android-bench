@@ -109,6 +109,9 @@ jobs:
       - name: La cuenta atras y el metronomo
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/cuenta.py
+      - name: El EQ de cinco bandas y su curva
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/eq.py
       - name: Los paneles
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/paneles.py

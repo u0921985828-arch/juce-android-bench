@@ -35,9 +35,10 @@
 //
 //  CINCO BANDAS Y NO TRES NI DIEZ. Tres no llegan a separar el cuerpo de la
 //  presencia en una voz -que es para lo que se pidio- y diez no se pueden
-//  apuntar con el dedo: el plato de la cara mide 232 px de ancho en la
-//  pantalla mas estrecha, asi que a diez bandas les tocarian 23 px cada una,
-//  por debajo del dedo minimo. A cinco les tocan 46.
+//  apuntar con el dedo. Medido en la pantalla mas estrecha que nadie fabrica,
+//  280x653: a cinco bandas les tocan 48 px de ancho cada una -por encima del
+//  dedo minimo- y a diez les tocarian 24, la mitad. Lo publica la app y lo
+//  juzga Tests/eq.py, que ademas es donde se ve el numero.
 //
 //  Las frecuencias de fabrica son el reparto clasico -80, 250, 1k, 3.5k, 10k-
 //  y se pueden mover, pero NO cruzarse: dos bandas que se adelantan una a otra
@@ -65,14 +66,20 @@ public:
     //  esculpir y la curva deja de decir lo que hace.
     static constexpr float kGuarda = 1.26f;       // ~ un tercio de octava
 
+    Eq5() noexcept
+    {
+        for (int b = 0; b < kBands; ++b) freq[(size_t) b] = kFreqDef[b];
+    }
+
+    //  LAS BANDAS NO SE TOCAN AQUI, y eso no es un olvido. `prepareToPlay`
+    //  vuelve a llamarse en CADA cambio de ruta de audio, asi que devolver las
+    //  cinco a su sitio de fabrica aqui significaria que enchufar unos cascos
+    //  deshace el ecualizador en mitad de una sesion - que es exactamente el
+    //  fallo que ya costo una medida con el ancho estereo de un pad. Lo que
+    //  cambia con la ruta es la frecuencia de muestreo, y por eso se recalcula.
     void prepare (double sampleRate) noexcept
     {
         fs = sampleRate > 0.0 ? sampleRate : 48000.0;
-        for (int b = 0; b < kBands; ++b)
-        {
-            freq[(size_t) b] = kFreqDef[b];
-            gain[(size_t) b] = 0.0f;
-        }
         sucio = true;
         reset();
         recalcula();
@@ -83,6 +90,10 @@ public:
         for (auto& b : banda)
             for (auto& c : b.z)
                 c = { 0.0f, 0.0f };
+        //  Y la rampa de salida al valor de destino y no a uno: si no, cada
+        //  cambio de ruta de audio arranca la etapa con un fundido de veinte
+        //  milisegundos desde la unidad, que con la salida bajada es un golpe.
+        smSalida = std::pow (10.0f, salida / 20.0f);
     }
 
     //  Del hilo de MENSAJES. Marca y se va: quien recalcula es el de audio, en
@@ -95,6 +106,35 @@ public:
         sucio = true;
     }
 
+    //  LOS DOS QUE LA CURVA NO PUEDE DECIR, y por eso son mandos y no nodos.
+    //
+    //  Un nodo lleva DOS numeros -donde y cuanto- y arrastrarlo los mueve los
+    //  dos. Lo ANCHO que es una campana es el tercero, y no hay tercer eje en
+    //  un dedo: meterlo como un pellizco seria un cuarto significado en el
+    //  mismo gesto, que es lo que esta casa lleva escrito que no se puede
+    //  aprender. Y la SALIDA no es de ninguna banda: cinco bandas subidas se
+    //  comen el margen del master, y eso se corrige con un solo numero.
+    //
+    //  Los dos viven en `fxParams` como los de cualquier otro efecto -o sea
+    //  que se guardan solos y se mueven desde el XY- y no aqui: aqui solo se
+    //  aplican. Un numero, un dueno.
+    void ponAncho (float a) noexcept
+    {
+        const float v = juce::jlimit (kAnchoMin, kAnchoMax, a);
+        if (v != ancho) { ancho = v; sucio = true; }
+    }
+    void ponSalida (float dB) noexcept
+    {
+        salida = juce::jlimit (-kGainMax, kGainMax, dB);
+        //  No ensucia: es una multiplicacion a la salida y no toca un solo
+        //  coeficiente. Recalcular diez biquads por mover el volumen seria
+        //  trabajo tirado en el hilo de audio.
+    }
+
+    static constexpr float kAnchoMin = 0.40f;   // ancha: media curva por banda
+    static constexpr float kAnchoMax = 3.00f;   // estrecha: un quirurgico
+    static constexpr float kAnchoDef = 1.00f;
+
     float freqDe (int b) const noexcept
     {
         return juce::isPositiveAndBelow (b, kBands) ? freq[(size_t) b] : 0.0f;
@@ -103,6 +143,8 @@ public:
     {
         return juce::isPositiveAndBelow (b, kBands) ? gain[(size_t) b] : 0.0f;
     }
+    float anchoDe()  const noexcept { return ancho;  }
+    float salidaDe() const noexcept { return salida; }
 
     //  El techo de cada banda, para que la cara pinte el nodo donde de verdad
     //  puede ir. Se calcula aqui y no en la cara: la regla de no cruzarse es
@@ -122,6 +164,19 @@ public:
     void procesa (float* const* datos, int canales, int inicio, int n) noexcept
     {
         if (sucio) recalcula();
+
+        //  La SALIDA se suaviza y se aplica en RAMPA dentro del bloque, como
+        //  cualquier otra ganancia que multiplica una señal: un salto crudo es
+        //  un chasquido, y eso vale igual entre bloque y bloque que dentro de
+        //  uno. Los dos extremos se calculan UNA vez y los dos canales usan la
+        //  misma rampa - un suavizado por canal serian dos ganancias distintas
+        //  en los dos lados, o sea el ancho estereo moviendose solo.
+        const float objetivo = std::pow (10.0f, salida / 20.0f);
+        const float paso = 1.0f - std::exp (-(float) n / (0.020f * (float) fs));
+        const float g0 = smSalida;
+        smSalida += paso * (objetivo - smSalida);
+        const float g1 = smSalida;
+        const bool  conSalida = (std::abs (g0 - 1.0f) > 1.0e-5f || std::abs (g1 - 1.0f) > 1.0e-5f);
 
         for (int ch = 0; ch < canales && ch < 2; ++ch)
         {
@@ -147,6 +202,12 @@ public:
                     z.b = f.b2 * x - f.a2 * y;
                     p[i] = y;
                 }
+            }
+
+            if (conSalida && n > 0)
+            {
+                const float d = (g1 - g0) / (float) n;
+                for (int i = 0; i < n; ++i) p[i] *= g0 + d * (float) i;
             }
         }
     }
@@ -174,7 +235,11 @@ public:
             const double d2 = dr * dr + di * di;
             if (d2 > 1.0e-20) mag *= std::sqrt ((nr * nr + ni * ni) / d2);
         }
-        return (float) (20.0 * std::log10 (juce::jmax (1.0e-6, mag)));
+        //  Y LA SALIDA ENTRA EN LO QUE SE DIBUJA. Es una ganancia plana, asi
+        //  que en dB es una suma: dejarla fuera daria una curva centrada en
+        //  cero mientras el efecto sube o baja seis decibelios, que es la
+        //  forma exacta de que lo que se ve y lo que suena no digan lo mismo.
+        return (float) (20.0 * std::log10 (juce::jmax (1.0e-6, mag))) + salida;
     }
 
 private:
@@ -205,9 +270,12 @@ private:
             const double w  = 2.0 * juce::MathConstants<double>::pi
                                 * (double) juce::jlimit (kFreqMin, (float) (fs * 0.45), freq[(size_t) b]) / fs;
             const double cw = std::cos (w), sw = std::sin (w);
-            //  Q = 0.7 en las campanas: mas estrecho y una banda no llega a la
-            //  siguiente, asi que la curva sale con dientes entre nodo y nodo.
-            const double q  = 0.7;
+            //  Q = 0.7 por el mando en el centro: mas estrecho y una banda no
+            //  llega a la siguiente, asi que la curva sale con dientes entre
+            //  nodo y nodo; mas ancho y las cinco se solapan hasta ser un tono
+            //  general. Ese es el punto que ANCHO escala, y por eso el mando va
+            //  de 0.40 a 3.00 y no de 0 a 1: lo que se multiplica es una Q.
+            const double q  = 0.7 * (double) ancho;
             const double al = sw / (2.0 * q);
 
             double b0, b1, b2, a0, a1, a2;
@@ -257,5 +325,8 @@ private:
     //  aqui vale un bloque con la banda a medio mover, no un fallo.
     std::array<float, kBands> freq {};
     std::array<float, kBands> gain {};
+    float ancho  = kAnchoDef;
+    float salida = 0.0f;          // dB
+    float smSalida = 1.0f;        // lineal, solo del hilo de audio
     std::atomic<bool> sucio { true };
 };

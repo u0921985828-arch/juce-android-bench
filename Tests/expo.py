@@ -247,7 +247,7 @@ UNTRANSLATED_OK = {
     # (handled by the regex below)
     "ZATI",                                    # the wordmark
     "L", "R", "C", "M", "S", "A", "B", "D",    # channel, pan and bank letters
-    "FLT", "ISO", "HPF", "DRV", "DLY", "BIT", "REV",  # effect abbreviations
+    "FLT", "ISO", "HPF", "DRV", "DLY", "BIT", "REV", "EQ",  # effect abbreviations
     "TAP", "KIT",                              # universales en cualquier sampler
     "MANUAL",                                  # se escribe igual en las dos lenguas
     "MIDI",                                    # es una sigla, y es la misma en todo el mundo

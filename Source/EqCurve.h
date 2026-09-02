@@ -31,9 +31,10 @@
 //
 //  SE COGE EL NODO MAS CERCANO, PERO SOLO DENTRO DE UN DEDO. Es la misma regla
 //  que `WaveformDisplay` usa con las asas de recorte. A cinco bandas en la
-//  pantalla mas estrecha les tocan 46 px de separacion, o sea por encima del
+//  pantalla mas estrecha les tocan 48 px de separacion, o sea por encima del
 //  dedo minimo; el limite existe para que un toque en el aire no arrastre la
-//  banda del otro extremo.
+//  banda del otro extremo. Roto a proposito -sin el limite- un arrastre de
+//  arriba abajo por el centro se lleva una banda a +12.00 dB.
 //
 //
 //  Y NO GUARDA NADA. Como el pad XY: es una superficie, y quien tiene los diez

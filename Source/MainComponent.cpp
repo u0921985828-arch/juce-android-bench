@@ -495,7 +495,11 @@ MainComponent::MainComponent()
             rackPadBtns.add (b);
         }
 
-        for (int f = 0; f < kNumFx; ++f)
+        //  UNA FILA POR RANURA y no por tipo: el rack dice cuanto manda ESTE
+        //  pad a cada sitio de la fila de la cara, y la fila son seis. Con una
+        //  fila por tipo habria un fader para un efecto que no esta puesto en
+        //  ninguna parte, o sea un mando que no puede hacer nada.
+        for (int f = 0; f < kNumRanuras; ++f)
         {
             auto* sl = new juce::Slider();
             sl->setSliderStyle (juce::Slider::LinearHorizontal);
@@ -1894,13 +1898,26 @@ MainComponent::MainComponent()
         }
     }
 
+    //  LA CURVA DEL EQ, que ocupa el plato cuando el efecto que tiene los
+    //  mandos es el suyo. Nace INVISIBLE: quien la enciende es `focusFx`, que
+    //  es el unico sitio que sabe que efecto esta delante.
+    eqCurva.setFuente (&eqEspejo);
+    eqCurva.onBanda = [this] (int b, float hz, float dB) { ponBandaEq (b, hz, dB); };
+    //  Y avisa a la barra de estado como cualquier otro mando: sin eso, mover
+    //  un nodo es el unico gesto de la cara que no dice lo que acaba de hacer.
+    eqCurva.onTouch = [this] (bool cogido)
+    {
+        if (cogido) status.setText (T ("EQ - arrastra el nodo"), juce::dontSendNotification);
+    };
+    addChildComponent (eqCurva);
+
     // Six effects, six buttons, one row. A button IS its effect: tapping it
     // hands the three CTRL knobs that effect's three parameters, tapping the
     // one that already has them switches it off. No slots to re-assign, no
     // bank chips above the knobs — those were three ways to reach one delay,
     // which is how there came to be two of them.
     {
-        for (int f = 0; f < kNumFx; ++f)
+        for (int f = 0; f < kNumRanuras; ++f)
         {
             //  El rotulo lo pone `refrescaRanuras`, que es quien sabe que hay
             //  en la ranura: aqui se nace con el del tipo que le toca por
@@ -1929,7 +1946,7 @@ MainComponent::MainComponent()
         //  por omision - `std::array<int,6> {}` deja SEIS FLT, que es el mismo
         //  fallo que `notaViva` y que el cero de `padAncho`: un valor por
         //  defecto que ademas es un valor valido.
-        for (int s = 0; s < kNumFx; ++s) slotFx[(size_t) s] = s;
+        for (int s = 0; s < kNumRanuras; ++s) slotFx[(size_t) s] = s;
     }
 
     //  Dragging the hero's handles is the same edit as the START/END faders in
@@ -2762,22 +2779,33 @@ MainComponent::MainComponent()
         };
         addAndMakeVisible (xyButton);
 
-        //  Los seis efectos otra vez, dentro de la ficha. Repetirlos aqui en
-        //  vez de mandar al usuario a cerrar el panel, tocar el efecto en la
-        //  cara y volver a abrirlo es la diferencia entre una superficie de
-        //  directo y un cuadro de dialogo.
-        for (int f = 0; f < kNumFx; ++f)
+        //  LAS SEIS RANURAS otra vez, dentro de la ficha. Repetirlas aqui en
+        //  vez de mandar a cerrar el panel, tocar el efecto en la cara y volver
+        //  a abrirlo es la diferencia entre una superficie de directo y un
+        //  cuadro de dialogo.
+        //
+        //  Y son las RANURAS y no los TIPOS, que desde el EQ ya no son el
+        //  mismo numero. Con una tapa por tipo esta fila crecia sola cada vez
+        //  que entra un efecto -y son siete hoy y veinte manana-, asi que en
+        //  280 px les tocarian 40, 28, 14... Ademas seria una segunda lista de
+        //  efectos al lado de la de la cara, con la pregunta de siempre:
+        //  ¿cual de las dos es la buena? El XY toca lo que la maquina TIENE
+        //  PUESTO, que es lo que un panel de directo puede tocar.
+        for (int r = 0; r < kNumRanuras; ++r)
         {
-            auto* b = new juce::TextButton (fxDefs[f].name);
+            auto* b = new juce::TextButton();
             styleButton (*b, kKey);
             litAccent (*b);
             b->setClickingTogglesState (true);
             b->setRadioGroupId (7710);
-            b->onClick = [this, f] { selectXyFx (f); };
+            b->onClick = [this, r]
+            {
+                const int fx = slotFx[(size_t) r];
+                if (fx >= 0) selectXyFx (fx);
+            };
             xyPanel.addAndMakeVisible (b);
             xyFxButtons.add (b);
         }
-        xyFxButtons[0]->setToggleState (true, juce::dontSendNotification);
 
         styleButton (xyLatchButton, kKey);
         litAccent (xyLatchButton);
@@ -3268,20 +3296,10 @@ void MainComponent::ponIconos()
     //  cuyos rotulos son ABREVIATURAS -FLT, HPF, DRV...- y tres letras no se
     //  traducen: quien abre la app por primera vez no sabe cual es cual en
     //  ninguno de los cuatro idiomas. Aqui es donde mas rinde un dibujo.
-    {
-        const int n = kNumFx;
-        //  La fila de la CARA la pone `refrescaRanuras`, que es quien sabe que
-        //  tipo vive en cada ranura: aqui el dibujo dependeria del sitio y no
-        //  del contenido, que es justo lo que dejo de ser verdad.
-
-        //  Y LOS MISMOS SEIS EN EL XY, que se quedaron sin dibujo por escribir
-        //  la fila una sola vez. Son las MISMAS abreviaturas -FLT, HPF, DRV- y
-        //  la razon entera por la que la fila de la cara lleva dibujo vale
-        //  igual aqui: tres letras no se traducen. Que la de la cara estuviera
-        //  dibujada y la del XY no es la misma tapa contando dos historias.
-        for (int f = 0; f < xyFxButtons.size() && f < n; ++f)
-            xyFxButtons[f]->getProperties().set ("icono", (int) iconoDeFx (f));
-    }
+    //  Las dos filas -la de la cara y la del XY- las pone `refrescaRanuras`,
+    //  que es quien sabe que tipo vive en cada ranura: aqui el dibujo
+    //  dependeria del SITIO y no del contenido, que es justo lo que dejo de
+    //  ser verdad el dia que la fila paso a ser de ranuras.
 
     //  Las dos de transporte nacen paradas; a partir de ahi las mueve
     //  `transporte`, que cambia el rotulo y el dibujo a la vez.
@@ -3474,6 +3492,23 @@ const MainComponent::FxDef MainComponent::fxDefs[MainComponent::kNumFx] =
       { {    0.0,     1.0, 0.01,    0.0,    0.55, 2 },
         {    0.0,     1.0, 0.01,    0.0,    0.45, 2 },
         {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 0.30 },
+
+    //  EL EQ, Y LOS DOS MANDOS QUE LA CURVA NO PUEDE DECIR.
+    //
+    //  Los diez numeros de las cinco bandas -donde y cuanto- viven en `Eq5` y
+    //  se mueven arrastrando los nodos, que es lo que trae la superficie
+    //  propia. Aqui quedan los dos que un nodo no puede llevar: lo ANCHO que
+    //  es una campana -el tercer eje, y en un dedo no hay tercer eje- y la
+    //  SALIDA, que no es de ninguna banda: cinco bandas subidas se comen el
+    //  margen del master y eso se corrige con un solo numero.
+    //
+    //  Asi que el reparto es limpio: la curva pone DONDE y CUANTO, los mandos
+    //  ponen lo ANCHO y cuanto SALE, y MIX sigue siendo el parametro 2 de la
+    //  fila -o sea el interruptor- sin tocar una linea de `setFxEnabled`.
+    { "EQ",   { "ANCHO", "SALIDA", "MIX" },
+      { {    0.4,     3.0, 0.01,    0.0,     1.0, 7 },
+        {  -12.0,    12.0, 0.10,    0.0,     0.0, 8 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
 };
 
 // The readout always carries a unit, so a number means something on its own.
@@ -3490,6 +3525,13 @@ juce::String MainComponent::fxFormat (const FxDef::Spec& sp, double v)
         //  El barrido dice de que LADO esta, no solo cuanto. Un "-62 %" no
         //  significa nada en un filtro; "LP 62" y "HP 62" si, y el centro se
         //  llama por su nombre porque es un estado, no un numero.
+        //  El ANCHO se dice en veces y no en porcentaje: uno es el de
+        //  fabrica y lo que importa es cuanto se aparta de el.
+        case 7:  return "x" + juce::String (v, 2);
+        //  Y la SALIDA en dB CON SIGNO, que es lo unico que separa "sube tres"
+        //  de "baja tres": un "3.0 dB" a secas no dice hacia donde.
+        case 8:  return (v > 0.0 ? juce::String ("+") : juce::String())
+                          + juce::String (v, 1) + " dB";
         case 6:  return std::abs (v) <= 0.03 ? T ("fuera")
                      : (v < 0.0 ? juce::String ("LP ") : juce::String ("HP "))
                          + juce::String (juce::roundToInt (std::abs (v) * 100.0));
@@ -3523,6 +3565,9 @@ void MainComponent::pushFxParam (int f, int pi)
         case 15: engine.setRevSize   (v); break;
         case 16: engine.setRevDamp   (v); break;
         case 17: engine.setRevMix    (v); break;
+        case 18: engine.setEqAncho   (v); break;
+        case 19: engine.setEqSalida  (v); break;
+        case 20: engine.setEqMix     (v); break;
         default: break;
     }
 }
@@ -3547,6 +3592,30 @@ void MainComponent::setFxEnabled (int f, bool on)
                     juce::dontSendNotification);
 }
 
+//  UN NODO SE MUEVE EN UN SITIO Y SE ESCRIBE EN DOS: el espejo, que es de
+//  donde se pinta, y el motor, que es lo que suena. Escrito en el callback de
+//  la curva serian dos caminos el dia que un preset o el fichero de proyecto
+//  pongan una banda, y el sintoma seria «la curva y el sonido no coinciden»
+//  sin poder decir por que. Es la misma razon por la que `normaliza` salio de
+//  dentro de `render`.
+void MainComponent::ponBandaEq (int b, float hz, float dB)
+{
+    eqEspejo.ponBanda (b, hz, dB);
+    engine.setEqBand  (b, hz, dB);
+    eqCurva.repaint();
+}
+
+//  Y el espejo desde el MOTOR, que es quien acota: `Eq5::ponBanda` recorta la
+//  frecuencia y la ganancia, asi que preguntarle a el es lo unico que
+//  garantiza que la curva dibuje lo que de verdad se quedo puesto. Se llama al
+//  abrir un proyecto y al vaciar.
+void MainComponent::refrescaEq()
+{
+    for (int b = 0; b < Eq5::kBands; ++b)
+        eqEspejo.ponBanda (b, engine.getEqFreq (b), engine.getEqGain (b));
+    eqCurva.repaint();
+}
+
 // Give an effect the three knobs: re-range them to its parameters and load its
 // current values in silently.
 void MainComponent::focusFx (int f)
@@ -3563,6 +3632,7 @@ void MainComponent::focusFx (int f)
         ks[pi]->setDoubleClickReturnValue (true, sp.def);   // double-tap = this effect's default
     }
     refreshMacroValues();
+    refrescaPlato();
     repaint();
 }
 
@@ -3587,7 +3657,7 @@ void MainComponent::focusFx (int f)
 int MainComponent::slotDeFx (int fx) const
 {
     if (fx < 0) return -1;
-    for (int s = 0; s < kNumFx; ++s)
+    for (int s = 0; s < kNumRanuras; ++s)
         if (slotFx[(size_t) s] == fx) return s;
     return -1;
 }
@@ -3595,7 +3665,7 @@ int MainComponent::slotDeFx (int fx) const
 //  Poner un tipo en una ranura, o vaciarla con kSlotVacia.
 void MainComponent::ponEnRanura (int ranura, int fx)
 {
-    if (! juce::isPositiveAndBelow (ranura, kNumFx)) return;
+    if (! juce::isPositiveAndBelow (ranura, kNumRanuras)) return;
     if (fx != kSlotVacia && ! juce::isPositiveAndBelow (fx, kNumFx)) return;
 
     //  UN TIPO, UNA RANURA. Su estado en el motor es uno solo -un filtro, una
@@ -3627,7 +3697,7 @@ void MainComponent::ponEnRanura (int ranura, int fx)
 //  una ranura puede vaciar otra.
 void MainComponent::refrescaRanuras()
 {
-    for (int s = 0; s < fxButtons.size() && s < kNumFx; ++s)
+    for (int s = 0; s < fxButtons.size() && s < kNumRanuras; ++s)
     {
         const int fx = slotFx[(size_t) s];
         auto* b = fxButtons[s];
@@ -3675,6 +3745,29 @@ void MainComponent::refrescaRanuras()
             }
             rb->setToggleState (fx >= 0 && fxOn[(size_t) fx], juce::dontSendNotification);
         }
+
+        //  Y LA MISMA FILA EN EL XY, que es la tercera ventana a la ranura.
+        //  Aqui la luz NO dice si el efecto suena sino cual esta bajo el dedo
+        //  -es un selector con grupo de radio- asi que solo se reponen el
+        //  rotulo, el dibujo y si se puede tocar: una ranura vacia no lleva a
+        //  ninguna parte, y un control que no puede hacer nada no es
+        //  informacion, es ruido.
+        if (auto* xb = (s < xyFxButtons.size() ? xyFxButtons[s] : nullptr))
+        {
+            xb->setButtonText (fx < 0 ? "+" : fxDefs[fx].name);
+            if (fx < 0)
+            {
+                xb->getProperties().remove ("icono");
+                xb->getProperties().set ("valor", 1);
+                xb->setToggleState (false, juce::dontSendNotification);
+            }
+            else
+            {
+                xb->getProperties().set ("icono", (int) iconoDeFx (fx));
+                xb->getProperties().remove ("valor");
+            }
+            xb->setEnabled (fx >= 0);
+        }
     }
 
     //  Y LOS TRES MANDOS SE APAGAN CUANDO NO HAY NADA QUE TOCAR. Con la fila
@@ -3686,12 +3779,32 @@ void MainComponent::refrescaRanuras()
     macroCtrl1.setEnabled (hayAlguno);
     macroCtrl2.setEnabled (hayAlguno);
     macroCtrl3.setEnabled (hayAlguno);
+
+    refrescaPlato();
+}
+
+//  EL PLATO CAMBIA DE INQUILINO. Un efecto con cara propia se lo queda entero
+//  y los tres mandos se apagan Y se quedan sin limites -las dos cosas, que
+//  apagar sin vaciar es lo que tuvo a SEGUIR visible y de 0x0 desde el primer
+//  dia; los limites los vacia `resized`-.
+//
+//  En su propia funcion porque lo mueven DOS cosas y no una: cambiar de efecto
+//  con el dedo (`focusFx`) y vaciar la ranura donde vivia (`refrescaRanuras`).
+//  Escrito en las dos serian dos reglas, y la que se quedara vieja dejaria el
+//  plato con la curva de un efecto que ya no esta puesto.
+void MainComponent::refrescaPlato()
+{
+    const bool conCara = fxEstaPuesto (focusedFx) && fxTraeCara (focusedFx);
+    const bool cambia  = (conCara != eqCurva.isVisible());
+    eqCurva.setVisible (conCara);
+    if (cambia) resized();
+    repaint (bandaMandos());
 }
 
 //  EL MENU DE UNA RANURA, ABIERTO O CERRADO. -1 lo cierra.
 void MainComponent::abreMenuRanura (int ranura)
 {
-    const bool abrir = juce::isPositiveAndBelow (ranura, kNumFx);
+    const bool abrir = juce::isPositiveAndBelow (ranura, kNumRanuras);
     ranuraEditada = abrir ? ranura : -1;
     ranuraSheet.setVisible (abrir);
 
@@ -3717,7 +3830,7 @@ void MainComponent::abreMenuRanura (int ranura)
 
 void MainComponent::refrescaMenuRanura()
 {
-    const int puesto = juce::isPositiveAndBelow (ranuraEditada, kNumFx)
+    const int puesto = juce::isPositiveAndBelow (ranuraEditada, kNumRanuras)
                          ? slotFx[(size_t) ranuraEditada] : kSlotVacia;
 
     for (int f = 0; f < ranuraBtns.size() && f < kNumFx; ++f)
@@ -3739,7 +3852,7 @@ void MainComponent::refrescaMenuRanura()
 
 void MainComponent::ranuraTocada (int ranura)
 {
-    if (! juce::isPositiveAndBelow (ranura, kNumFx)) return;
+    if (! juce::isPositiveAndBelow (ranura, kNumRanuras)) return;
     const int fx = slotFx[(size_t) ranura];
     if (fx < 0) { abreMenuRanura (ranura); return; }
     fxTapped (fx);
@@ -3747,7 +3860,7 @@ void MainComponent::ranuraTocada (int ranura)
 
 void MainComponent::ranuraMantenida (int ranura)
 {
-    if (! juce::isPositiveAndBelow (ranura, kNumFx)) return;
+    if (! juce::isPositiveAndBelow (ranura, kNumRanuras)) return;
     const int fx = slotFx[(size_t) ranura];
     if (fx < 0) { abreMenuRanura (ranura); return; }
     fxFocusOnly (fx);
@@ -3818,7 +3931,10 @@ void MainComponent::selectXyFx (int f)
         setFxEnabled (xyFx, false);
 
     xyFx = f;
-    if (auto* b = xyFxButtons[f]) b->setToggleState (true, juce::dontSendNotification);
+    //  La luz va a la RANURA donde vive ese tipo, igual que en la cara. Un
+    //  tipo que no esta puesto no tiene tapa que encender.
+    for (int r = 0; r < xyFxButtons.size(); ++r)
+        xyFxButtons[r]->setToggleState (slotFx[(size_t) r] == f, juce::dontSendNotification);
     //  El panel toma tambien los tres mandos de la cara. Son el mismo efecto:
     //  volver de la ficha y encontrarse los mandos en otro es lo que hace que
     //  una app se sienta como dos apps.
@@ -3936,7 +4052,13 @@ void MainComponent::refreshMacroValues()
 //  El renglon de CTRL 1-3, con el aire que su rotulo pintado necesita.
 juce::Rectangle<int> MainComponent::bandaMandos() const
 {
-    return macroCtrl1.getBounds().getUnion (macroCtrl3.getBounds()).expanded (12, 26);
+    //  Con un efecto que trae su propia cara los tres mandos no se maquetan, y
+    //  la union de tres rectangulos VACIOS es el rectangulo vacio -o sea que
+    //  el repintado acotado no repintaria nada y la curva se quedaria como
+    //  estaba-. La banda es entonces la del plato, que es exactamente lo que
+    //  la superficie ocupa.
+    const auto u = macroCtrl1.getBounds().getUnion (macroCtrl3.getBounds());
+    return u.isEmpty() ? ctrlPlateArea : u.expanded (12, 26);
 }
 
 void MainComponent::macroMoved (int idx)
@@ -6991,8 +7113,25 @@ juce::ValueTree MainComponent::captureState() const
     //  serian seis y la lista no es dispersa - las seis valen siempre algo.
     {
         juce::StringArray r;
-        for (int s = 0; s < kNumFx; ++s) r.add (juce::String (slotFx[(size_t) s]));
+        for (int s = 0; s < kNumRanuras; ++s) r.add (juce::String (slotFx[(size_t) s]));
         fx.setProperty ("slots", r.joinIntoString (","), nullptr);
+    }
+    //  LAS CINCO BANDAS DEL EQ, DISPERSAS Y EN UNA SOLA PROPIEDAD, por lo
+    //  mismo que el acorde y el empujon: son diez numeros y casi ningun
+    //  proyecto los mueve. «hz:dB;hz:dB;...» y lo que no este vale su defecto,
+    //  que es ademas lo que hace que un proyecto anterior -que no tiene la
+    //  propiedad- suene exactamente igual que el dia que se guardo.
+    //
+    //  Y NO se guardan aqui ANCHO ni SALIDA: esos dos son parametros de la
+    //  fila, viven en `fxParams` y ya los escribe el bucle de arriba. Un
+    //  numero, un dueno - guardarlos dos veces es como dos sitios acaban
+    //  discrepando.
+    {
+        juce::StringArray e;
+        for (int b = 0; b < Eq5::kBands; ++b)
+            e.add (juce::String (engine.getEqFreq (b), 1) + ":"
+                     + juce::String (engine.getEqGain (b), 2));
+        fx.setProperty ("eq", e.joinIntoString (";"), nullptr);
     }
     fx.setProperty ("duckPad", engine.getDuckPad(), nullptr);
     fx.setProperty ("xyFx",    xyFx,    nullptr);
@@ -7238,13 +7377,13 @@ void MainComponent::applyState (const juce::ValueTree& s)
         //  entero cualquiera aqui es un indice fuera de `fxDefs`. Lo que no
         //  encaje vale VACIA, que es el unico valor que no puede hacer daño.
         {
-            for (int s = 0; s < kNumFx; ++s) slotFx[(size_t) s] = s;
+            for (int s = 0; s < kNumRanuras; ++s) slotFx[(size_t) s] = s;
 
             if (fx.hasProperty ("slots"))
             {
                 juce::StringArray r;
                 r.addTokens (fx.getProperty ("slots").toString(), ",", "");
-                for (int s = 0; s < kNumFx; ++s)
+                for (int s = 0; s < kNumRanuras; ++s)
                 {
                     const int v = s < r.size() ? r[s].getIntValue() : kSlotVacia;
                     slotFx[(size_t) s] = juce::isPositiveAndBelow (v, kNumFx) ? v : kSlotVacia;
@@ -7253,7 +7392,7 @@ void MainComponent::applyState (const juce::ValueTree& s)
                 //  UN TIPO, UNA RANURA, tambien al volver del disco. Un
                 //  fichero escrito a mano puede repetir un tipo y eso serian
                 //  dos ventanas al mismo aparato: se queda la primera.
-                for (int s = 1; s < kNumFx; ++s)
+                for (int s = 1; s < kNumRanuras; ++s)
                     for (int t = 0; t < s; ++t)
                         if (slotFx[(size_t) s] >= 0 && slotFx[(size_t) s] == slotFx[(size_t) t])
                             slotFx[(size_t) s] = kSlotVacia;
@@ -7272,6 +7411,28 @@ void MainComponent::applyState (const juce::ValueTree& s)
         //  jlimit porque un proyecto viejo no tiene la propiedad y getProperty
         //  devuelve 0, que es un indice valido - pero uno guardado por una
         //  version con mas efectos no lo seria.
+        //  LAS CINCO BANDAS. Sin la propiedad quedan donde `Eq5` nace -el
+        //  reparto de fabrica y la curva plana- que es como sonaba un proyecto
+        //  escrito antes de que el EQ existiera. Acotado EN LA PUERTA, o sea
+        //  en `Eq5::ponBanda`: el valor sale de un project.xml que puede estar
+        //  corrupto o ser de otra epoca.
+        for (int b = 0; b < Eq5::kBands; ++b)
+            engine.setEqBand (b, Eq5::kFreqDef[b], 0.0f);
+        if (fx.hasProperty ("eq"))
+        {
+            juce::StringArray e;
+            e.addTokens (fx.getProperty ("eq").toString(), ";", "");
+            for (int b = 0; b < Eq5::kBands && b < e.size(); ++b)
+            {
+                const auto par = e[b];
+                const int  dp  = par.indexOfChar (':');
+                if (dp <= 0) continue;
+                engine.setEqBand (b, par.substring (0, dp).getFloatValue(),
+                                     par.substring (dp + 1).getFloatValue());
+            }
+        }
+        refrescaEq();
+
         engine.setDuckPad (juce::jlimit (-1, kNumPads - 1, (int) fx.getProperty ("duckPad", -1)));
         xyLatch = (bool) fx.getProperty ("xyLatch", false);
         selectXyFx (juce::jlimit (0, kNumFx - 1, (int) fx.getProperty ("xyFx", 0)));
@@ -7893,7 +8054,16 @@ void MainComponent::newProject()
     //  Se APAGA lo que estuviera sonando antes de vaciar: un efecto encendido
     //  cuya tapa desaparece sigue sonando y no hay donde tocarlo. `ponEnRanura`
     //  ya lo hace, y por eso se vacia con ella y no escribiendo el array.
-    for (int s = 0; s < kNumFx; ++s) ponEnRanura (s, kSlotVacia);
+    for (int s = 0; s < kNumRanuras; ++s) ponEnRanura (s, kSlotVacia);
+
+    //  Y LA CURVA DEL EQ VUELVE A SU SITIO. Vaciar la ranura apaga el efecto y
+    //  deja las cinco bandas donde estaban: el proyecto siguiente nacia con el
+    //  ecualizador del anterior, y basta volver a poner el EQ para que suene.
+    //  Es la misma herencia que ya se pago dos veces aqui con los envios y con
+    //  la linea de tiempo.
+    for (int b = 0; b < Eq5::kBands; ++b)
+        engine.setEqBand (b, Eq5::kFreqDef[b], 0.0f);
+    refrescaEq();
 
     selectedPattern = 0;
     selectedStep = -1;
@@ -9185,7 +9355,7 @@ void MainComponent::refreshRack()
     //  una ranura vacia no tiene bus: su fader se apaga -no se esconde- por lo
     //  mismo que el de un efecto cerrado, que una fila que aparece y desaparece
     //  cambia de sitio las de abajo cada vez que se toca el menu.
-    for (int s = 0; s < rackSends.size() && s < kNumFx; ++s)
+    for (int s = 0; s < rackSends.size() && s < kNumRanuras; ++s)
     {
         const int fx = slotFx[(size_t) s];
         rackSends[s]->setValue (fx >= 0 ? engine.getPadSend (rackPad, fx) : 0.0,

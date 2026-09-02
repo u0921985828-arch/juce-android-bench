@@ -638,6 +638,13 @@ namespace
         { "RATE",           "",         "RATE",       "采样率",     "معدل" },
         { "SIZE",           "",         "SIZE",       "空间",       "حجم" },
         { "DAMP",           "",         "DAMP",       "阻尼",       "تخميد" },
+        //  Los dos del EQ. ANCHO ya tiene fila -es la misma palabra y el mismo
+        //  sentido que el ancho estereo de un pad: cuanto ocupa- asi que se
+        //  reaprovecha; SALIDA no la tenia. Ver fxDefs.
+        { "SALIDA",         "",         "OUTPUT",     "输出",       "خرج" },
+        { "EQ - arrastra el nodo", "",  "EQ - drag the node",
+                                                      "EQ - 拖动节点",
+                                                                  "المعادل - اسحب العقدة" },
 
         // --- SEC sheet -----------------------------------------------------
         { "PASOS",          "",         "STEPS",      "步数",       "خطوات" },

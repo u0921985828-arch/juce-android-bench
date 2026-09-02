@@ -368,6 +368,12 @@ void MainComponent::paint (juce::Graphics& g)
         for (int i = 0; i < 3; ++i)
         {
             auto r = ks[i]->getBounds();
+            //  Con un efecto que trae su propia cara los tres mandos no se
+            //  maquetan, y sus rotulos son PINTADOS: sin esto se dibujarian en
+            //  0,0 -encima de la cabecera- y la novena regla del banco los
+            //  cazaria como rotulo tapado. Un rotulo no puede sobrevivir al
+            //  control que nombra.
+            if (r.isEmpty()) continue;
             const bool touched = macroTouched[(size_t) i];
 
             // Label names, readout measures — never the other way round.
@@ -1640,7 +1646,7 @@ void MainComponent::paintRackSheetContent (juce::Graphics& g)
     //  Lo unico que queda aqui es el velo del fader, que depende de si el
     //  efecto de esa ranura esta encendido: un envio apagado no se esconde, se
     //  atenua - lo que pongas ahora es lo que usara cuando lo enciendas.
-    for (int s = 0; s < kNumFx; ++s)
+    for (int s = 0; s < kNumRanuras; ++s)
     {
         if (rackSends[s] == nullptr) continue;
         const int fx = slotFx[(size_t) s];

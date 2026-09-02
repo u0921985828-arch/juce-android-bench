@@ -8,6 +8,7 @@
 #include "SampleBuffer.h"
 #include "CommandFifo.h"
 #include "Fdn.h"
+#include "Eq5.h"
 #include "MidiIo.h"
 
 // ============================================================================
@@ -44,7 +45,12 @@ public:
     //  ademas de los tres documentos que ya se corrigieron. Una lista escrita
     //  siete veces son siete listas, y estas cuatro son comentarios: no
     //  compilan, no fallan, y por eso duraron.
-    static constexpr int kNumFx         = 6;
+    //  SIETE TIPOS Y SEIS RANURAS, que desde el EQ ya no son el mismo numero.
+    //  Aqui `kNumFx` son los TIPOS: un bus, una fila de `fxIsTone`, una columna
+    //  de envios por pad. Cuantas tapas hay en la cara lo dice
+    //  `MainComponent::kNumRanuras`, y no tiene por que coincidir - una ranura
+    //  es donde se toca, no lo que suena.
+    static constexpr int kNumFx         = 7;
     static constexpr int kNumSteps      = 64;   // max steps per pattern (length is variable, see below)
     static constexpr int kMinPatLen     = 16;
     static constexpr int kMaxPatLen     = kNumSteps;   // 64 = four bars of 16
@@ -894,6 +900,16 @@ public:
     void setRevSize (float s) noexcept { rvSize.store (s, std::memory_order_relaxed); }
     void setRevDamp (float d) noexcept { rvDamp.store (d, std::memory_order_relaxed); }
     void setRevMix  (float m) noexcept { rvMix.store  (m, std::memory_order_relaxed); }
+
+    //  EL EQ. Sus diez numeros no pasan por atomicos uno a uno: `Eq5` guarda
+    //  los cinco pares y una bandera `sucio`, y el hilo de audio recalcula los
+    //  coeficientes en el bloque siguiente. Ver la cabecera de Eq5.h.
+    void setEqBand   (int b, float hz, float dB) noexcept { eqFx.ponBanda (b, hz, dB); }
+    void setEqAncho  (float a) noexcept { eqFx.ponAncho  (a); }
+    void setEqSalida (float d) noexcept { eqFx.ponSalida (d); }
+    void setEqMix    (float m) noexcept { eqMix.store (m, std::memory_order_relaxed); }
+    float getEqFreq (int b) const noexcept { return eqFx.freqDe (b); }
+    float getEqGain (int b) const noexcept { return eqFx.gainDe (b); }
     // How much silence a bounce must keep past the last note so the tail is
     // not guillotined. Only AUDIBLE stages count — a ten-second delay with
     // its mix at zero must not pad every export.
@@ -1545,6 +1561,12 @@ private:
     std::atomic<float> rvDamp { 0.45f };
     std::atomic<float> rvMix  { 0.0f };
 
+    //  EL EQ DE CINCO BANDAS. Es un INSERTO -fxIsTone- y no un envio: lo que
+    //  un pad manda aqui deja de ir por el camino seco, porque ecualizar la
+    //  copia y dejar el original sonando al lado no ecualiza nada.
+    Eq5 eqFx;
+    std::atomic<float> eqMix { 0.0f };
+
     // ------------------------------------------------------------------
     //  Sends. Each effect is a bus with its own input, and every pad decides
     //  how much of itself goes into each one. That is what makes an effect
@@ -1557,7 +1579,11 @@ private:
     //  amount they take it on to theirs — a filter you can hear around is
     //  not a filter. Delay and reverb add on top, as sends do.
     // ------------------------------------------------------------------
-    static constexpr bool fxIsTone[kNumFx] = { true, true, true, false, true, false };
+    //  El EQ es el septimo y es de los que RESTAN SECO: un ecualizador es un
+    //  inserto. Mandar una copia al EQ y dejar el original sonando al lado da
+    //  la suma de los dos, o sea la mitad de la correccion y con fase de
+    //  regalo - que es literalmente lo que hace un filtro peine.
+    static constexpr bool fxIsTone[kNumFx] = { true, true, true, false, true, false, true };
 
     std::array<std::array<std::atomic<float>, kNumFx>, kNumPads> padSend {};
     //  Bit i puesto = el pad i manda a algun efecto. Ver setPadSend.

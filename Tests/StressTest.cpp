@@ -3321,6 +3321,74 @@ int main()
                      ok ? "OK" : zatiFalla());
     }
 
+    //  Y EL EQ DENTRO DEL MOTOR, que es la otra mitad y la que faltaba: lo de
+    //  arriba mide la CLASE, y una clase perfecta a la que no llama nadie saca
+    //  sobresaliente en las tres cifras mientras la app no ecualiza nada. Es
+    //  el mismo agujero que ya tuvo el cabezal del piano -dibujado desde el
+    //  primer dia y sin que nadie lo alimentara-.
+    //
+    //  Con DOS cifras, que una sola se engaña por los dos lados: con el envio
+    //  CERRADO el pad tiene que salir BIT A BIT igual -«casi lo mismo» es justo
+    //  lo que dejaria pasar un EQ que se cuela por el camino seco, y es la
+    //  misma comparacion que ya se hace con el filtro del pad apagado- y con el
+    //  envio abierto la banda de 1 kHz tiene que subir sus doce decibelios.
+    {
+        auto corre = [] (bool conEq, std::vector<float>& salida)
+        {
+            AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+            e.setPadGain (0, 1.0f);
+            if (conEq)
+            {
+                e.setEqMix (1.0f);
+                e.setPadSend (0, 6, 1.0f);      // el EQ es el tipo 6
+                e.setEqBand (2, 1000.0f, 12.0f);
+            }
+            //  Un tono de 1 kHz, o sea justo el centro de la banda que se sube.
+            e.publishSample (0, makeSample (48000.0, 0.40, 1000.0f));
+
+            juce::AudioBuffer<float> b (2, 512);
+            b.clear(); e.renderNextBlock (b, 0, 512);
+            e.postNoteOn (0, 1.0f);
+
+            salida.clear();
+            for (int blk = 0; blk < 20; ++blk)
+            {
+                b.clear(); e.renderNextBlock (b, 0, 512);
+                //  Los cuatro primeros bloques fuera: el envio se suaviza en
+                //  20 ms y ahi la ganancia todavia esta subiendo.
+                if (blk < 4) continue;
+                for (int i = 0; i < 512; ++i) salida.push_back (b.getSample (0, i));
+            }
+        };
+
+        //  El RMS, escrito aqui porque el de la comprobacion de arriba vive
+        //  dentro de su bloque: dos lineas duplicadas antes que sacar un
+        //  ayudante de fichero para el segundo cliente de un banco.
+        auto rmsDe = [] (const std::vector<float>& v)
+        {
+            double a = 0.0;
+            for (float x : v) a += (double) x * (double) x;
+            return std::sqrt (a / juce::jmax (1.0, (double) v.size()));
+        };
+
+        std::vector<float> seco, conEq, cerrado;
+        corre (false, seco);
+        corre (true,  conEq);
+        corre (false, cerrado);
+
+        int distintas = 0;
+        for (size_t i = 0; i < seco.size() && i < cerrado.size(); ++i)
+            if (seco[i] != cerrado[i]) ++distintas;
+
+        const double rSeco = rmsDe (seco);
+        const double rEq   = rmsDe (conEq);
+        const double subida = 20.0 * std::log10 (rEq / juce::jmax (1.0e-12, rSeco));
+
+        const bool ok = (distintas == 0) && std::abs (subida - 12.0) < 1.0;
+        std::printf ("%-34s cerrado %d muestras cambian   abierto %+.2f dB en 1 kHz   %s\n",
+                     "el EQ llega al bus", distintas, subida, ok ? "OK" : zatiFalla());
+    }
+
     std::printf ("\n%-34s %d FALLA\n", "motor", zatiFallos);
     return zatiFallos > 0 ? 1 : 0;
 }

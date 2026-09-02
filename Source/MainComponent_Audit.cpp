@@ -2058,7 +2058,7 @@ void MainComponent::auditProject()
     publicaClips();
     //  Y las ranuras, borradas a mano por lo mismo: si al volver siguen
     //  puestas no es que se hayan guardado, es que nadie las quito.
-    for (int s = 0; s < kNumFx; ++s) ponEnRanura (s, kSlotVacia);
+    for (int s = 0; s < kNumRanuras; ++s) ponEnRanura (s, kSlotVacia);
 
     loadProject ("BANCO_PRUEBA");
     while (padJob != nullptr) stepPadJob();
@@ -2148,7 +2148,7 @@ void MainComponent::auditViejos (const juce::String& carpeta)
         //  defecto de hoy, que es vacia: lo que manda no es cual es el defecto
         //  de hoy sino como sonaba el dia que se guardo. Sin vaciarla antes,
         //  «volvio en orden» lo cumple tambien no haber tocado nada.
-        for (int s = 0; s < kNumFx; ++s) ponEnRanura (s, kSlotVacia);
+        for (int s = 0; s < kNumRanuras; ++s) ponEnRanura (s, kSlotVacia);
         engine.setSongLength (32);
         engine.setSongCell (0, 0, 3);
         engine.setSongCell (1, 4, 2);
@@ -2197,7 +2197,7 @@ void MainComponent::auditRanuras()
     auto mapa = [this]
     {
         juce::StringArray r;
-        for (int s = 0; s < kNumFx; ++s) r.add (juce::String (slotFx[(size_t) s]));
+        for (int s = 0; s < kNumRanuras; ++s) r.add (juce::String (slotFx[(size_t) s]));
         return "[" + r.joinIntoString (",") + "]";
     };
     auto pulsa = [] (juce::Button* b) { if (b != nullptr && b->onClick) b->onClick(); };
@@ -2207,7 +2207,7 @@ void MainComponent::auditRanuras()
     //  Con DOS cifras y no una: «se abrio» lo cumple igual un menu que se abre
     //  siempre, que es como se escribe mal la primera version de esto - y
     //  entonces no habria forma de encender un efecto desde la cara.
-    for (int s = 0; s < kNumFx; ++s) ponEnRanura (s, kSlotVacia);
+    for (int s = 0; s < kNumRanuras; ++s) ponEnRanura (s, kSlotVacia);
     abreMenuRanura (-1);
     pulsa (fxButtons[0]);
     const int menuTrasVacia = ranuraEditada;
@@ -2222,7 +2222,7 @@ void MainComponent::auditRanuras()
 
     //  2. ELEGIR EN EL MENU LLENA LA RANURA, y desde la cara ya no se cambia:
     //     esa tapa pasa a encender y apagar. Es la ACCION UNICA que se pidio.
-    for (int s = 0; s < kNumFx; ++s) ponEnRanura (s, kSlotVacia);
+    for (int s = 0; s < kNumRanuras; ++s) ponEnRanura (s, kSlotVacia);
     pulsa (fxButtons[2]);                       // el «+» de la ranura 2
     pulsa (ranuraBtns[4]);                      // se elige BIT
     const juce::String trasElegir = mapa();
@@ -2235,14 +2235,14 @@ void MainComponent::auditRanuras()
     //  3. UN TIPO, UNA RANURA. Poner en la 0 un tipo que ya estaba en la 3
     //     tiene que DEJAR LA 3 VACIA: dos ranuras del mismo tipo serian dos
     //     ventanas al mismo aparato del motor.
-    for (int s = 0; s < kNumFx; ++s) ponEnRanura (s, s);
+    for (int s = 0; s < kNumRanuras; ++s) ponEnRanura (s, s);
     abreMenuRanura (0);
     pulsa (ranuraBtns[3]);
     const juce::String trasMover = mapa();
 
     //  4. VACIAR UNA RANURA APAGA SU EFECTO. Un efecto encendido cuya tapa
     //     desaparece sigue sonando y no hay donde tocarlo.
-    for (int s = 0; s < kNumFx; ++s) ponEnRanura (s, s);
+    for (int s = 0; s < kNumRanuras; ++s) ponEnRanura (s, s);
     setFxEnabled (3, true);
     const int antesDeVaciar = fxOn[3] ? 1 : 0;
     ponEnRanura (3, kSlotVacia);
@@ -2273,6 +2273,129 @@ void MainComponent::auditRanuras()
 //  Se mide POR LA TAPA y no poniendo el numero por dentro, que es lo unico que
 //  recorre el camino de verdad: `cuentaButtons[i]->onClick` es lo que escribe
 //  la preferencia, y llamar a `saveCuentaPref` a mano se lo salta.
+// ============================================================================
+//  EL EQ DE CINCO BANDAS Y SU CURVA. Ver Tests/eq.py.
+//
+//  NINGUNA de las nueve reglas de `expo.py` puede ver nada de esto. Una curva
+//  es un LIENZO -se pinta entera y se acierta con el dedo, como la rejilla de
+//  pasos, el piano y la linea de tiempo- asi que un nodo que escribe la banda
+//  de al lado se maqueta perfecto: no solapa, no se sale, no lleva rotulo, no
+//  mide cero y esta traducido. Es la familia de los cinco fallos del compas
+//  del piano, otra vez.
+//
+//  SE MIDE POR EL GESTO EN PIXELES y no llamando a `ponBandaEq`: el callback se
+//  salta exactamente el codigo que decide QUE nodo cae bajo el dedo y hasta
+//  donde puede llegar, que es donde vive todo lo nuevo. Se construye un
+//  `MouseEvent` y se llama a `EqCurve::mouseDown` / `mouseDrag`, igual que
+//  hacen `Tests/clips.py` con la linea de tiempo y `Tests/piano.py` con el
+//  arrastre del piano roll.
+void MainComponent::auditEq()
+{
+    //  El plato se lo lleva la curva SOLO con el EQ puesto y delante. Las dos
+    //  mitades, que «se ve» lo cumple igual una curva que se ve siempre - y
+    //  entonces los tres mandos no volverian nunca.
+    for (int s = 0; s < kNumRanuras; ++s) ponEnRanura (s, kSlotVacia);
+    ponEnRanura (0, 0);                 // FLT en la ranura 0
+    focusFx (0);
+    const int platoConFlt  = eqCurva.isVisible() ? 1 : 0;
+    const int mandosConFlt = macroCtrl1.getBounds().isEmpty() ? 0 : 1;
+
+    ponEnRanura (1, kFxEq);
+    focusFx (kFxEq);
+    const int platoConEq  = eqCurva.isVisible() ? 1 : 0;
+    const int mandosConEq = macroCtrl1.getBounds().isEmpty() ? 0 : 1;
+    //  EN COORDENADAS DE LA CURVA y no del padre, que es donde esta prueba se
+    //  equivoco antes de acertar: `getBounds()` las da en las del padre y
+    //  `MouseEvent::position` es relativa al componente, asi que el primer
+    //  intento apuntaba con la y del plato dentro de la cara -muy por debajo
+    //  del alto de la curva- y `masCercana` devolvia -1: cero movido con el
+    //  codigo perfecto. Primero se duda de la prueba.
+    const auto caja = eqCurva.getLocalBounds();
+
+    //  Y CUANTO LE TOCA A CADA NODO, que es el numero que decidio que la curva
+    //  se lleva el plato ENTERO y no dos tercios: por debajo del dedo un nodo
+    //  no se puede agarrar.
+    const int porNodo = caja.getWidth() / Eq5::kBands;
+
+    auto arrastra = [this] (juce::Point<int> desde, juce::Point<int> hasta)
+    {
+        auto ev = [this] (juce::Point<int> p)
+        {
+            return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(),
+                                     p.toFloat(), juce::ModifierKeys(),
+                                     1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                     &eqCurva, &eqCurva, juce::Time::getCurrentTime(),
+                                     p.toFloat(), juce::Time::getCurrentTime(), 1, false);
+        };
+        eqCurva.mouseDown (ev (desde));
+        //  En cuatro pasos y no de un salto: un dedo de verdad emite un evento
+        //  por movimiento, y de un salto un fallo de acumulacion pasaria - es
+        //  la leccion que ya costo una medida con el deshacer del piano roll.
+        for (int i = 1; i <= 4; ++i)
+            eqCurva.mouseDrag (ev (desde + (hasta - desde) * i / 4));
+        eqCurva.mouseUp (ev (hasta));
+    };
+
+    //  1. UN NODO ESCRIBE SU BANDA Y NO LA DE AL LADO, con un TESTIGO en otra:
+    //     «escribio» lo cumple igual un codigo que escribe siempre en la 0.
+    for (int b = 0; b < Eq5::kBands; ++b) ponBandaEq (b, Eq5::kFreqDef[b], 0.0f);
+    ponBandaEq (4, Eq5::kFreqDef[4], -7.0f);            // el testigo
+
+    const int y0 = caja.getCentreY();
+    //  El nodo de la banda 2 vive donde la curva lo pinta, y su x se deduce de
+    //  la misma escala logaritmica: el centro de los cinco cae en la mitad del
+    //  ancho porque 1 kHz es la frecuencia central de fabrica.
+    const int x2 = caja.getX() + caja.getWidth() / 2;
+    //  Hacia ARRIBA, o sea ganancia positiva. Un cuarto del alto es la mitad
+    //  del recorrido, o sea unos +6 dB.
+    arrastra ({ x2, y0 }, { x2, y0 - caja.getHeight() / 4 });
+
+    const float g2 = engine.getEqGain (2);
+    const float g4 = engine.getEqGain (4);
+
+    //  2. Y EL MOTOR SE ENTERA. El espejo y el motor son dos sitios y un
+    //     camino: si solo se escribiera el espejo, la curva subiria y no
+    //     sonaria nada - que es la forma exacta de que lo que se ve y lo que
+    //     suena dejen de decir lo mismo.
+    const float espejo2 = eqEspejo.gainDe (2);
+
+    //  3. DOS BANDAS NO SE CRUZAN. Se arrastra la 2 hasta el borde derecho, o
+    //     sea muy por encima de donde vive la 3: tiene que quedarse por debajo
+    //     de ella con su tercio de octava de guarda. Sin el tope, la curva
+    //     dibujada y la que suena dejan de estar de acuerdo y un nodo salta al
+    //     otro lado de su vecino.
+    arrastra ({ x2, y0 - caja.getHeight() / 4 }, { caja.getRight() + 40, y0 });
+    const float f2 = engine.getEqFreq (2);
+    const float f3 = engine.getEqFreq (3);
+    const int   cruza = (f2 < f3) ? 0 : 1;
+
+    //  4. UN TOQUE EN EL AIRE NO ARRASTRA NADA. `EqCurve` coge el nodo mas
+    //     cercano SOLO dentro de un dedo, que es la misma regla que las asas
+    //     del recorte: sin el limite, un toque en una esquina se lleva la banda
+    //     del otro extremo.
+    for (int b = 0; b < Eq5::kBands; ++b) ponBandaEq (b, Eq5::kFreqDef[b], 0.0f);
+    arrastra ({ caja.getX() + caja.getWidth() / 2, caja.getY() + 1 },
+              { caja.getX() + caja.getWidth() / 2, caja.getBottom() - 1 });
+    float peorLejos = 0.0f;
+    for (int b = 0; b < Eq5::kBands; ++b)
+        peorLejos = juce::jmax (peorLejos, std::abs (engine.getEqGain (b)));
+
+    std::cout << "{\"eq\":1"
+              << ",\"plato_con_flt\":"  << platoConFlt
+              << ",\"mandos_con_flt\":" << mandosConFlt
+              << ",\"plato_con_eq\":"   << platoConEq
+              << ",\"mandos_con_eq\":"  << mandosConEq
+              << ",\"por_nodo\":"       << porNodo
+              << ",\"g2\":"             << juce::String (g2, 2)
+              << ",\"g4\":"             << juce::String (g4, 2)
+              << ",\"espejo2\":"        << juce::String (espejo2, 2)
+              << ",\"f2\":"             << juce::String (f2, 1)
+              << ",\"f3\":"             << juce::String (f3, 1)
+              << ",\"cruza\":"          << cruza
+              << ",\"lejos\":"          << juce::String (peorLejos, 2)
+              << "}" << std::endl;
+}
+
 void MainComponent::auditCuenta()
 {
     auto pulsa = [] (juce::Button* b) { if (b != nullptr && b->onClick) b->onClick(); };

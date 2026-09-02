@@ -180,6 +180,10 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize, int inputC
     delayLine.prepare (spec);
     delayLine.setMaximumDelayInSamples (juce::jmax (1, (int) (systemSampleRate * 1.0)));
     delayLine.reset();
+
+    //  El EQ toma la frecuencia nueva y limpia sus diez estados; las bandas NO
+    //  se tocan, que esto corre en cada cambio de ruta. Ver Eq5::prepare.
+    eqFx.prepare (systemSampleRate);
 }
 
 void AudioEngine::releaseResources() noexcept
@@ -595,7 +599,8 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         juce::jlimit (0.0f, 1.0f, drvMix.load (std::memory_order_relaxed)),
         juce::jlimit (0.0f, 1.0f, dlyMix.load (std::memory_order_relaxed)),
         juce::jlimit (0.0f, 1.0f, crMix.load  (std::memory_order_relaxed)),
-        juce::jlimit (0.0f, 1.0f, rvMix.load  (std::memory_order_relaxed))
+        juce::jlimit (0.0f, 1.0f, rvMix.load  (std::memory_order_relaxed)),
+        juce::jlimit (0.0f, 1.0f, eqMix.load  (std::memory_order_relaxed))
     };
 
     float sendGain[kNumPads][kNumFx];
@@ -603,12 +608,12 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     bool  busFed[kNumFx] = {};
     bool  padSplit[kNumPads];
 
-    //  Dos preguntas de una vez, en lugar de 384: hay ALGUN efecto abierto, y
-    //  manda ALGUN pad. Si las dos son que no, el reparto de todos los pads es
-    //  "todo al seco" y no hay nada que suavizar - y ese es el estado en el
-    //  que la maquina pasa la mayor parte del tiempo.
-    const bool anyFxOpen = (fxMixNow[0] + fxMixNow[1] + fxMixNow[2]
-                          + fxMixNow[3] + fxMixNow[4] + fxMixNow[5]) > 0.0f;
+    //  Quien decide si un pad se salta el bucle largo es la MASCARA: si el pad
+    //  no manda a nadie, `setPadSend` garantiza que sus envios valen cero y el
+    //  producto de mas abajo sale cero pase lo que pase con las mezclas. Aqui
+    //  vivia ademas un `anyFxOpen` que sumaba las siete mezclas, y salio de la
+    //  condicion hace tandas por lo que dice el parrafo de abajo: se quedo
+    //  calculado y sin leer, o sea una cuenta por bloque que no decide nada.
     const std::uint64_t sendMask = padSendMask.load (std::memory_order_relaxed);
     //  Y la de los filtros, que decide lo mismo: un pad filtrado tiene que
     //  renderizarse APARTE aunque no mande a ningun efecto, porque no se puede
@@ -1613,6 +1618,28 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 //  deducir: la cola esta dentro de las lineas antes de estar en
                 //  la salida. Ver Fdn::ringing.
                 busRinging[5] = busRinging[5] || reverb.ringing();
+            }
+        }
+
+        // --- 7. EQ: cinco biquads por canal sobre su propio bus. -----------
+        //
+        //  Es la etapa mas barata de las siete cuando la curva esta plana, y
+        //  eso no es una casualidad: `Eq5::procesa` se salta la banda que vale
+        //  0 dB, y a 0 dB el biquad del cookbook es paso directo EXACTO. Un EQ
+        //  recien puesto no cuesta nada hasta que alguien mueve un nodo.
+        //
+        //  Y AQUI NO HAY `WasActive` que limpiar, a diferencia de DRV y de los
+        //  dos filtros. `Eq5::reset` solo se llama en `prepare`, asi que el
+        //  estado de los diez biquads sobrevive a que el bus se declare muerto.
+        //  No es un descuido: lo que se queda ahi es la cola de un filtro, o
+        //  sea muestras de audio de verdad -no continua, como el paso bajo de
+        //  DRV, que era lo que hacia falta limpiar-. Con la curva plana el
+        //  estado ni siquiera se toca.
+        {
+            if (live (6))
+            {
+                eqFx.procesa (fxBus[6].getArrayOfWritePointers(), chans, startSample, numSamples);
+                returnBus (6);
             }
         }
     }
@@ -2650,8 +2677,20 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
                          { &fxDrive,  &s.fxDrive  }, { &drvTone, &s.drvTone }, { &drvMix,  &s.drvMix  },
                          { &dlyTime,  &s.dlyTime  }, { &dlyFb,   &s.dlyFb   }, { &dlyMix,  &s.dlyMix  },
                          { &crBits,   &s.crBits   }, { &crRate,  &s.crRate  }, { &crMix,   &s.crMix   },
-                         { &rvSize,   &s.rvSize   }, { &rvDamp,  &s.rvDamp  }, { &rvMix,   &s.rvMix   } })
+                         { &rvSize,   &s.rvSize   }, { &rvDamp,  &s.rvDamp  }, { &rvMix,   &s.rvMix   },
+                         { &eqMix,    &s.eqMix    } })
         copyOne (*pair.first, *pair.second);
+
+    //  Y LAS CINCO BANDAS DEL EQ, que no son atomicos sueltos sino la tabla de
+    //  `Eq5`: sin esto el rebote sale con la curva PLANA mientras la persona
+    //  esta oyendo el EQ puesto, que es exactamente el fallo que ya se pago
+    //  tres veces aqui -los recortes, el swing, el barrido del filtro-. Y con
+    //  los dos mandos que la curva no dice, que sin ellos el ancho y la salida
+    //  volverian a su valor de fabrica en el fichero que se manda.
+    for (int b = 0; b < Eq5::kBands; ++b)
+        eqFx.ponBanda (b, s.eqFx.freqDe (b), s.eqFx.gainDe (b));
+    eqFx.ponAncho  (s.eqFx.anchoDe());
+    eqFx.ponSalida (s.eqFx.salidaDe());
 
     // Start the FX smoothers already AT their targets. A live engine glides
     // over ~20 ms because a knob just moved; a bounce has no such history,

@@ -1086,6 +1086,7 @@ public:
     void auditPiano();
     //  LAS SEIS RANURAS DE LA FILA DE EFECTOS. Ver Tests/ranuras.py.
     void auditRanuras();
+    void auditEq();
     //  LA CUENTA ATRAS Y EL METRONOMO. Ver Tests/cuenta.py.
     void auditCuenta();
     //  EL CATALOGO DE CONTENIDO Y EL CANDADO. Ver Tests/dlc.py.
@@ -2005,7 +2006,15 @@ private:
     //  Now a button IS its effect: tapping it hands the three CTRL knobs its
     //  three parameters and tapping it again switches it off. Six effects,
     //  six switches, no modes.
-    static constexpr int kNumFx = 6;
+    //  SIETE TIPOS Y SEIS RANURAS, y desde el EQ ya no son el mismo numero.
+    //  `kNumFx` son los TIPOS -una fila de `fxDefs`, un bus del motor, una
+    //  columna de envios por pad- y `kNumRanuras` cuantas tapas hay en la
+    //  fila de la cara. Escribirlos con la misma constante funcionaba mientras
+    //  coincidian y es lo que habria hecho que el septimo efecto trajera una
+    //  septima tapa que no cabe: seis por cuarenta son 240 px y el Fold cerrado
+    //  mide 225, o sea que la fila YA esta en su tope medido.
+    static constexpr int kNumFx      = 7;
+    static constexpr int kNumRanuras = 6;
     struct FxDef
     {
         const char* name;                  // face button
@@ -2014,6 +2023,12 @@ private:
         double onMix;                      // MIX applied when you switch it on
     };
     static const FxDef fxDefs[kNumFx];
+
+    //  Que efecto trae su propia superficie, escrito UNA vez. Hoy es uno; el
+    //  dia que sean cuatro esto es una tabla y no cuatro `if` repartidos por
+    //  el maquetado, el pintor y el foco.
+    static constexpr int kFxEq = 6;
+    static bool fxTraeCara (int f) noexcept { return f == kFxEq; }
 
     std::array<bool, kNumFx> fxOn {};
     int focusedFx = 0;                     // whose parameters CTRL 1-3 hold
@@ -2037,7 +2052,7 @@ private:
     //  es donde se toca, no lo que suena. Por eso este cambio no toca una sola
     //  linea del hilo de audio.
     static constexpr int kSlotVacia = -1;
-    std::array<int, kNumFx> slotFx {};     // ranura -> tipo, o kSlotVacia
+    std::array<int, kNumRanuras> slotFx {};   // ranura -> tipo, o kSlotVacia
 
     int  slotDeFx (int fx) const;          // tipo -> ranura, o -1 si no esta puesto
     bool fxEstaPuesto (int fx) const { return slotDeFx (fx) >= 0; }
@@ -2268,6 +2283,33 @@ private:
     static const char* gridName (int i);
     juce::TextButton chainClearButton { "QUITAR CADENA" };
     juce::Slider macroCtrl1, macroCtrl2, macroCtrl3;   // CTRL 1-3, bank-dependent
+
+    //  LA CARA PROPIA DE UN EFECTO, y el EQ es la primera que la trae.
+    //
+    //  Los tres mandos son de TODOS los efectos, y hay efectos que no caben en
+    //  tres numeros: un ecualizador de cinco bandas necesita diez. Asi que un
+    //  efecto puede traer su propia superficie y ocupar el plato en vez de
+    //  pedir prestados los mandos, que es lo que se pidio -«aprovechar el
+    //  espacio que ocupan los knobs y todo el contorno»-.
+    //
+    //  LA CURVA SE LLEVA EL PLATO ENTERO, y eso es una medida y no una forma
+    //  de hablar: en 280x653 a cada nodo le tocan 48 px -por encima del dedo-
+    //  y en dos tercios de plato **31**, medido con el reparto puesto a
+    //  proposito. Un nodo que no se puede agarrar es peor que un mando que hay
+    //  que ir a buscar al XY. Por eso no hay reparto entre la
+    //  curva y un mando superviviente: ANCHO y SALIDA se tocan desde el XY,
+    //  que es la ficha que existe justo para mover dos numeros con un dedo, y
+    //  MIX es el toque de la ranura.
+    EqCurve eqCurva;
+    //  El ESPEJO desde el que se pinta. No es el `Eq5` del motor: ese lo lee el
+    //  hilo de audio y dibujarlo desde aqui seria leer sus coeficientes
+    //  mientras los recalcula. Es la MISMA clase, asi que la curva que se
+    //  dibuja sale de las mismas formulas que la que suena - que es justo lo
+    //  que `respuestaEnDb` existe para garantizar.
+    Eq5  eqEspejo;
+    void ponBandaEq (int b, float hz, float dB);   // espejo + motor, un camino
+    void refrescaEq();                              // el espejo desde el motor
+    void refrescaPlato();                           // curva o mandos, segun quien tenga el foco
     juce::Label  status;
     WaveformDisplay waveform;
     //  SE LLAMA CRISTAL Y NO ESPECTRO, porque no es un espectro: no lleva una

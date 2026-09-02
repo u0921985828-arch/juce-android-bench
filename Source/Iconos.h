@@ -48,7 +48,7 @@ namespace Iconos
         atras, adelante, doblar, humanizar, lapiz, goma, tijeras, loop, cuadrar,
         pads, sec, piano, mezcla, cancion, xy, ajustes, rack, chop, instrumentos, manual,
         sonido, recorte,
-        flt, hpf, drv, dly, bit, rev,
+        flt, hpf, drv, dly, bit, rev, eq,
         mic, remuestrear, bombeo, autocut, sistema, cadena, patron, pad, fijo,
         //  --- LAS DIECISEIS FAMILIAS DE Sintes.h -------------------------
         //
@@ -120,6 +120,7 @@ namespace Iconos
             case Id::flt: return "flt";                case Id::hpf: return "hpf";
             case Id::drv: return "drv";                case Id::dly: return "dly";
             case Id::bit: return "bit";                case Id::rev: return "rev";
+            case Id::eq:  return "eq";
             case Id::mic: return "mic";                case Id::remuestrear: return "remuestrear";
             case Id::bombeo: return "bombeo";          case Id::autocut: return "autocut";
             case Id::sistema: return "sistema";        case Id::cadena: return "cadena";
@@ -692,6 +693,25 @@ namespace Iconos
                 for (int i = 0; i < 3; ++i)
                     L.addCentredArc (4.0f, 12.0f, 6.0f + (float) i * 3.6f, 6.0f + (float) i * 3.6f,
                                      0.0f, 0.62f, juce::MathConstants<float>::pi - 0.62f, true);
+                break;
+
+            //  EQ: la curva CON SUS NODOS, que es lo que lo separa de FLT y de
+            //  HPF -los tres son una linea sobre una base- y de `mezcla`, que
+            //  son faderes verticales, o sea justo el dibujo que uno pondria
+            //  primero para un ecualizador y el que ya esta usado. Sube y baja
+            //  -un pico y un valle-, que ademas es lo unico que un filtro no
+            //  puede hacer: un barrido solo quita.
+            //
+            //  Y los nodos van RELLENOS mientras la curva es trazo, que es la
+            //  misma regla que separa el golpe de sus ecos en DLY.
+            case Id::eq:
+                linea (L, 2.0f, 20.5f, 22.0f, 20.5f);
+                L.startNewSubPath (2.0f, 13.0f);
+                L.cubicTo (5.0f,  13.0f,  5.5f,  5.0f,   8.5f,  5.0f);
+                L.cubicTo (11.5f,  5.0f, 12.0f, 15.5f,  15.0f, 15.5f);
+                L.cubicTo (18.0f, 15.5f, 19.0f,  8.5f,  22.0f,  8.5f);
+                R.addEllipse (7.0f,  3.5f, 3.0f, 3.0f);
+                R.addEllipse (13.5f, 14.0f, 3.0f, 3.0f);
                 break;
 
             //  --- LO QUE ENTRA Y LO QUE SE MIDE --------------------------------

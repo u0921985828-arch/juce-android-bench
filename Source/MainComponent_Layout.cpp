@@ -640,16 +640,38 @@ void MainComponent::resized()
         auto mrow = area.removeFromTop (ZatiLookAndFeel::kCtrlPlate);
         ctrlPlateArea = mrow.expanded (4, 2);            // the plate they sit on
         juce::Slider* mk[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
-        const int w = mrow.getWidth() / 3;
-        for (int i = 0; i < 3; ++i)
+
+        //  EL PLATO ES DE QUIEN LO OCUPA. Con un efecto que trae su propia
+        //  cara -hoy el EQ- la superficie se lleva el plato ENTERO y los tres
+        //  mandos se van: apagados Y sin limites, que son las dos mitades de
+        //  la misma regla.
+        //
+        //  Entero y no dos tercios, y eso es una medida: en 280x653 a cada
+        //  nodo le tocan 48 px -por encima del dedo- y con el reparto a dos
+        //  tercios puesto a proposito, **31**. Un nodo que no se puede agarrar
+        //  es peor que un mando que hay que ir a buscar al XY.
+        if (eqCurva.isVisible())
         {
-            auto cell = (i < 2 ? mrow.removeFromLeft (w) : mrow);
-            //  The plate keeps its height and the two labels give theirs
-            //  up, so the knob inside grows by ten pixels without the section
-            //  taking one from the pads.
-            cell.removeFromTop (ZatiLookAndFeel::kCtrlName);
-            cell.removeFromBottom (ZatiLookAndFeel::kCtrlChip);
-            mk[i]->setBounds (cell.reduced (10, 0));
+            //  Sin las dos bandas de rotulo: la curva se explica sola -tiene
+            //  su linea de cero y sus decadas- y esos 34 px son el 40 % de su
+            //  alto. El nombre del efecto ya esta encendido en su ranura.
+            eqCurva.setBounds (mrow.reduced (6, 2));
+            for (auto* k : mk) k->setBounds ({});
+        }
+        else
+        {
+            eqCurva.setBounds ({});
+            const int w = mrow.getWidth() / 3;
+            for (int i = 0; i < 3; ++i)
+            {
+                auto cell = (i < 2 ? mrow.removeFromLeft (w) : mrow);
+                //  The plate keeps its height and the two labels give theirs
+                //  up, so the knob inside grows by ten pixels without the section
+                //  taking one from the pads.
+                cell.removeFromTop (ZatiLookAndFeel::kCtrlName);
+                cell.removeFromBottom (ZatiLookAndFeel::kCtrlChip);
+                mk[i]->setBounds (cell.reduced (10, 0));
+            }
         }
         fxSeamTop = area.getY();
         //  LA MISMA COSTURA QUE CONTROL, sin el Metrics::sm de mas.
@@ -676,7 +698,7 @@ void MainComponent::resized()
         fxRowArea = area.removeFromTop (ZatiLookAndFeel::kFxRow);
         {
             auto row = fxRowArea;
-            const int sw = row.getWidth() / kNumFx;
+            const int sw = row.getWidth() / kNumRanuras;
             //  EL AIRE SE CEDE ANTES QUE EL DEDO, Y SOLO LO QUE SOBRA.
             //
             //  Estas seis tapas se repartian el ancho y luego cada una se comia
@@ -692,8 +714,8 @@ void MainComponent::resized()
             //  siempre; donde no da, la separacion se cierra antes que la tapa
             //  deje de poder tocarse. Un hueco es estetica, el dedo no.
             const int aire = juce::jlimit (0, Metrics::aireTapa, (sw - Metrics::hit) / 2);
-            for (int f = 0; f < kNumFx; ++f)
-                fxButtons[f]->setBounds ((f < kNumFx - 1 ? row.removeFromLeft (sw) : row).reduced (aire, 0));
+            for (int f = 0; f < kNumRanuras; ++f)
+                fxButtons[f]->setBounds ((f < kNumRanuras - 1 ? row.removeFromLeft (sw) : row).reduced (aire, 0));
         }
         //  In two columns the pads have a column of their own and the seam
         //  above them is simply the room the square grid does not use, so the
@@ -962,11 +984,14 @@ void MainComponent::resized()
         const bool conVaciar = ranuraVaciarBtn.isVisible();
 
         //  Lo que pide, sumado y no probado: dos margenes, la cabecera, el
-        //  aire, TRES filas de tapa con sus dos huecos, y -si la hay- el aire
-        //  y la fila de VACIAR.
-        //  2*12 + 40 + 12 + 3*44 + 2*4 + (8 + 44) = 256 con ella, 204 sin.
+        //  aire, las filas de tapa con sus huecos, y -si la hay- el aire y la
+        //  fila de VACIAR. Con siete tipos son CUATRO filas y no tres, y el
+        //  numero sale de la tabla y no escrito a mano: el dia que entre el
+        //  octavo la rejilla crece sola.
+        //  2*12 + 40 + 12 + 4*44 + 3*4 + (8 + 44) = 312 con ella, 260 sin.
+        const int filas = (kNumFx + 1) / 2;
         const int quiere = 2 * Metrics::md + Metrics::hit + Metrics::md
-                           + 3 * Metrics::btn + 2 * Metrics::xs
+                           + filas * Metrics::btn + (filas - 1) * Metrics::xs
                            + (conVaciar ? Metrics::sm + Metrics::btn : 0);
         auto inner = sheetFromBottom (ranuraSheet, quiere);
 
@@ -991,12 +1016,12 @@ void MainComponent::resized()
             ranuraVaciarBtn.setBounds ({});
         }
 
-        //  DOS COLUMNAS, tres filas. Ver ranuraSheet en la cabecera: con
-        //  cuatro la celda cae a 82 px y el nombre del efecto no entra al lado
-        //  de su dibujo.
+        //  DOS COLUMNAS. Ver ranuraSheet en la cabecera: con cuatro la celda
+        //  cae a 82 px y el nombre del efecto no entra al lado de su dibujo.
+        //  Las FILAS las decide cuantos tipos hay, no un numero escrito aqui.
         const int filaH = juce::jmax (Metrics::hit,
-                                      (inner.getHeight() - 2 * Metrics::xs) / 3);
-        for (int r = 0; r < 3; ++r)
+                                      (inner.getHeight() - (filas - 1) * Metrics::xs) / filas);
+        for (int r = 0; r < filas; ++r)
         {
             auto row = inner.removeFromTop (filaH);
             const int w = row.getWidth() / 2;
@@ -1004,7 +1029,14 @@ void MainComponent::resized()
             {
                 const int f = r * 2 + c;
                 if (f >= ranuraBtns.size()) break;
-                ranuraBtns[f]->setBounds ((c < 1 ? row.removeFromLeft (w) : row).reduced (1, 0));
+                //  La ULTIMA fila puede llevar una sola tapa -siete es impar- y
+                //  entonces se queda con media fila y no con la fila entera:
+                //  una celda del doble de ancho que sus seis hermanas se lee
+                //  como otra cosa, no como la septima de la lista.
+                const bool sola = (f == ranuraBtns.size() - 1) && (c == 0);
+                ranuraBtns[f]->setBounds (((c < 1 || sola) ? row.removeFromLeft (w) : row)
+                                            .reduced (1, 0));
+                if (sola) break;
             }
             inner.removeFromTop (Metrics::xs);
         }
@@ -2078,7 +2110,7 @@ void MainComponent::resized()
         //  ask for - without it the last send row fell off the bottom edge.
         auto inner = sheetFromBottom (rackSheet, Metrics::md * 2 + Metrics::hit + 14
                                                    + (chipRowH + Metrics::xs) * 4
-                                                   + Metrics::sm + kNumFx * 48 + Metrics::sm);
+                                                   + Metrics::sm + kNumRanuras * 48 + Metrics::sm);
         auto titleRow = inner.removeFromTop (Metrics::hit);
         rackCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
         inner.removeFromTop (14);                       // painted: which pad this is
@@ -2149,21 +2181,21 @@ void MainComponent::resized()
             if (rackSends[s] != nullptr)
                 rackSends[s]->setBounds (row.reduced (2, 4));
         };
-        const bool dosCol = inner.getWidth() >= 560 && inner.getHeight() < kNumFx * filaFx;
+        const bool dosCol = inner.getWidth() >= 560 && inner.getHeight() < kNumRanuras * filaFx;
         if (dosCol)
         {
             auto izda = inner.removeFromLeft (inner.getWidth() / 2 - Metrics::sm);
             inner.removeFromLeft (Metrics::sm);
-            for (int f = 0; f < kNumFx; ++f)
+            for (int f = 0; f < kNumRanuras; ++f)
             {
-                auto& col = (f < kNumFx / 2) ? izda : inner;
+                auto& col = (f < kNumRanuras / 2) ? izda : inner;
                 auto row = col.removeFromTop (filaFx);
                 colocaFilaRack (f, row);
             }
         }
         else
         {
-            for (int f = 0; f < kNumFx; ++f)
+            for (int f = 0; f < kNumRanuras; ++f)
             {
                 auto row = inner.removeFromTop (filaFx);
                 colocaFilaRack (f, row);
@@ -3115,7 +3147,7 @@ void MainComponent::resized()
         {
             auto row = inner.removeFromTop (Metrics::hit);
             for (int f = 0; f < xyFxButtons.size(); ++f)
-                xyFxButtons[f]->setBounds (Lang::takeStart (row, row.getWidth() / (kNumFx - f))
+                xyFxButtons[f]->setBounds (Lang::takeStart (row, row.getWidth() / (kNumRanuras - f))
                                              .reduced (Metrics::halfGap / 2, 0));
             inner.removeFromTop (Metrics::sm);
         }

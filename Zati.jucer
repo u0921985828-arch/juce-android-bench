@@ -46,6 +46,8 @@
       <FILE id="srcSnc"  name="Sintes.cpp"        compile="1" resource="0" file="Source/Sintes.cpp"/>
       <FILE id="srcSnh"  name="Sintes.h"          compile="0" resource="0" file="Source/Sintes.h"/>
       <FILE id="srcSni"  name="SintesTabla.inc"   compile="0" resource="0" file="Source/SintesTabla.inc"/>
+      <FILE id="srcEq5"  name="Eq5.h"             compile="0" resource="0" file="Source/Eq5.h"/>
+      <FILE id="srcEqc"  name="EqCurve.h"         compile="0" resource="0" file="Source/EqCurve.h"/>
     </GROUP>
     <GROUP id="ZatiKits" name="kits">
     </GROUP>

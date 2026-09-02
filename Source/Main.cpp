@@ -531,6 +531,11 @@ public:
                     {
                         c2->auditRanuras();
                     }
+                    //  EL EQ Y SU CURVA. Ver Tests/eq.py.
+                    else if (UiAudit::env ("ZATI_EQ").isNotEmpty())
+                    {
+                        c2->auditEq();
+                    }
                     //  LA CUENTA ATRAS Y EL METRONOMO. Ver Tests/cuenta.py.
                     else if (UiAudit::env ("ZATI_CUENTA").isNotEmpty())
                     {

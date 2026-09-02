@@ -432,7 +432,8 @@ inline void readSourceMap (const juce::ValueTree& tree, std::array<int, AudioEng
 inline Iconos::Id iconoDeFx (int f) noexcept
 {
     static const Iconos::Id kFx[] = { Iconos::Id::flt, Iconos::Id::hpf, Iconos::Id::drv,
-                                      Iconos::Id::dly, Iconos::Id::bit, Iconos::Id::rev };
+                                      Iconos::Id::dly, Iconos::Id::bit, Iconos::Id::rev,
+                                      Iconos::Id::eq };
     if (! juce::isPositiveAndBelow (f, (int) (sizeof (kFx) / sizeof (kFx[0]))))
         return Iconos::Id::ninguno;
     return kFx[f];
