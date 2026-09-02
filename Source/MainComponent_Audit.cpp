@@ -1672,6 +1672,142 @@ void MainComponent::auditPiano()
               << ",\"sin\":" << alternando << "}" << std::endl;
 
     // ------------------------------------------------------------------
+    //  LA SELECCION, MOVER EN BLOQUE, COPIAR Y PEGAR.
+    //
+    //  Todo por el GESTO, que es donde vive: `pianoBanda` y `pianoMueveSel`
+    //  llamadas por dentro se saltan el codigo que decide si el arrastre
+    //  empieza DENTRO de la seleccion, que es lo unico que separa mover de
+    //  volver a seleccionar.
+    {
+        //  Una figura que se lee de un vistazo: tres notas en columnas 1, 2 y 3
+        //  con LARGOS DISTINTOS, para que moverla sin el largo se vea en el
+        //  numero y no haya que creerselo.
+        engine.clearPattern (0);
+        for (int st = 0; st < kNumSteps; ++st)
+            for (int q = 0; q < kNumPads; ++q) pattern[0][(size_t) st][(size_t) q] = false;
+        pianoSel.clear();
+        pianoPortapapeles.clear();
+        pianoGrid.setHerramienta (PianoRoll::dibujar);
+
+        const int fMed = filas / 2;
+        const int semiMed = pianoBase + (filas - 1 - fMed);
+        const int largos[3] = { 4, 8, 12 };
+        for (int i = 0; i < 3; ++i)
+        {
+            pianoEscribe (1 + i, semiMed + i, true, largos[i]);
+        }
+        refreshPiano();
+
+        //  1. LA BANDA coge lo que cubre y SOLO eso: se pone una cuarta nota
+        //  fuera del rectangulo, y si la banda la coge la cifra lo dice.
+        pianoEscribe (10, semiMed, true, 4);
+        refreshPiano();
+
+        pianoGrid.setHerramienta (PianoRoll::sel);
+        float ax = 0.0f, ay = 0.0f, bx = 0.0f, by = 0.0f;
+        punto (1, fMed,     ax, ay);
+        punto (3, fMed - 2, bx, by);
+        pianoGrid.gesto (ax, ay, false);
+        pianoGrid.gesto (bx, by, true);
+        pianoGrid.suelta();
+        const int seleccionadas = (int) pianoSel.size();
+
+        //  2. MOVER: se agarra una nota YA seleccionada y se arrastra dos
+        //  columnas a la derecha y una fila arriba. Tienen que llegar las tres,
+        //  con sus tres largos y sus distancias intactas.
+        const int undoAntes = (int) undoStack.size();
+
+        float cx = 0.0f, cy = 0.0f, dx = 0.0f, dy = 0.0f;
+        punto (1, fMed,     cx, cy);
+        punto (3, fMed - 1, dx, dy);
+        pianoGrid.gesto (cx, cy, false);
+        //  EL ARRASTRE, PASO A PASO Y NO DE UN SALTO.
+        //
+        //  Un dedo de verdad emite un evento por movimiento, y con UNO solo la
+        //  comprobacion de «una sola entrada de deshacer» no puede fallar:
+        //  medido, con un pushUndo por evento seguia saliendo 1. Una prueba que
+        //  no se ha visto fallar es una linea que imprime OK.
+        for (int k = 1; k <= 4; ++k)
+        {
+            const float t = (float) k / 4.0f;
+            pianoGrid.gesto (cx + (dx - cx) * t, cy + (dy - cy) * t, true);
+        }
+        pianoGrid.suelta();
+        moviendoSel = false;
+
+        juce::String trasMover = "[";
+        int largosOk = 0;
+        for (int i = 0; i < 3; ++i)
+        {
+            const int st = 3 + i;   // 1+i movido dos columnas
+            const bool hay = pattern[0][(size_t) st][(size_t) selectedPad];
+            trasMover << (i ? "," : "") << (hay ? 1 : 0);
+            if (hay && engine.getStepLen (0, st, selectedPad) == largos[i]) ++largosOk;
+        }
+        trasMover << "]";
+
+        //  Y LA CUARTA SIGUE DONDE ESTABA: mover el bloque no puede arrastrar
+        //  lo que no se selecciono.
+        const int fueraQuieta = pattern[0][10][(size_t) selectedPad] ? 1 : 0;
+
+        //  3. UNA SOLA ENTRADA DE DESHACER para el bloque entero. Deshacer un
+        //  movimiento de tres notas tres veces no es deshacer, es contar.
+        const int undoTrasMover = (int) undoStack.size() - undoAntes;
+
+        //  4. COPIAR Y PEGAR, en otro compas. Relativo: pegar cae donde se
+        //  mira y no donde se copio.
+        pianoCopiaSel();
+        const int copiadas = (int) pianoPortapapeles.size();
+        selectedBar = 1;
+        engine.setPatternLength (0, 32);
+        refreshPiano();
+        pianoPegaSel();
+        int pegadas = 0;
+        for (int st = 16; st < 32; ++st)
+            if (pattern[0][(size_t) st][(size_t) selectedPad]) ++pegadas;
+
+        pianoGrid.setHerramienta (PianoRoll::dibujar);
+        selectedBar = 0;
+
+        std::cout << "{\"piano\":\"sel\",\"seleccionadas\":" << seleccionadas
+                  << ",\"tras_mover\":" << trasMover
+                  << ",\"largos_ok\":" << largosOk
+                  << ",\"fuera_quieta\":" << fueraQuieta
+                  << ",\"undo\":" << undoTrasMover
+                  << ",\"copiadas\":" << copiadas
+                  << ",\"pegadas\":" << pegadas << "}" << std::endl;
+    }
+
+    // ------------------------------------------------------------------
+    //  EL ZOOM HORIZONTAL: cuantas columnas se ven y cuanto mide su celda.
+    {
+        engine.setPatternLength (0, 32);
+        selectedBar = 0;
+        //  POR LA TAPA y no poniendo el numero a mano, que es lo unico que
+        //  mide la ESCALERA: el ciclo salta el paso que no cabe, y llamando a
+        //  `pianoCols = 32` por dentro eso no se ve nunca. Tres pulsaciones,
+        //  que es la vuelta completa del ciclo.
+        pianoCols = AudioEngine::kBarSteps;
+        refreshPiano(); resized();
+        juce::String anchos = "[";
+        juce::String cols   = "[";
+        for (int i = 0; i < 3; ++i)
+        {
+            if (pianoZoomBtn.onClick) pianoZoomBtn.onClick();
+            const int nc = pianoGrid.numPasos();
+            const int w  = (nc > 0) ? (pianoGrid.getWidth() - PianoRoll::kGutter) / nc : 0;
+            anchos << (i ? "," : "") << w;
+            cols   << (i ? "," : "") << nc;
+        }
+        anchos << "]"; cols << "]";
+        pianoCols = AudioEngine::kBarSteps;
+        refreshPiano();
+
+        std::cout << "{\"piano\":\"zoom\",\"cols\":" << cols
+                  << ",\"ancho\":" << anchos << "}" << std::endl;
+    }
+
+    // ------------------------------------------------------------------
     //  EL MODO: UN ESTADO Y TRES TAPAS.
     //
     //  La cara, la ficha de la cancion y la del secuenciador tienen cada una su

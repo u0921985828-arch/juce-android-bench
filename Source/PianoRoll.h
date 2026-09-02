@@ -111,13 +111,43 @@ public:
     //  Y EL LAPIZ, que es la goma por el otro lado: escribe y no alterna. La
     //  pregunta la contesta quien tiene los datos - pianoCellToggled - porque
     //  aqui no se sabe que hay escrito en una casilla.
-    enum Herramienta { dibujar = 0, lapiz, goma, tijeras };
-    void setHerramienta (int h) { util = juce::jlimit (0, 3, h); }
+    //  Y LA SELECCION, que es la QUINTA herramienta y no un gesto nuevo.
+    //
+    //  Esta rejilla es de LIENZO y se pinta con el dedo arrastrado, y arrastrar
+    //  ya significa dos cosas: pintar notas cambiando de fila y estirar el
+    //  largo por la misma fila. Meter «seleccionar» y «mover» encima serian
+    //  CUATRO significados en un dedo, que es lo que esta casa lleva escrito
+    //  que no se puede aprender. Con un modo el gesto es inequivoco, y sin el
+    //  modo puesto el piano se comporta exactamente igual que antes.
+    enum Herramienta { dibujar = 0, lapiz, goma, tijeras, sel };
+    void setHerramienta (int h) { util = juce::jlimit (0, 4, h); }
     int  getHerramienta() const { return util; }
+
+    //  Cuantas columnas se estan dibujando. Lo pide el banco para no repetir la
+    //  constante: una prueba que lee el numero que ella misma se da cambia de
+    //  opinion a la vez que el fallo.
+    int  numPasos() const noexcept { return nPasos; }
 
     //  Borrar y cortar los resuelve quien tiene los datos, igual que onCelda.
     std::function<void (int paso, int semi)> onBorrar;
     std::function<void (int paso, int cuartos)> onCortar;
+
+    //  LA SELECCION LA GUARDA QUIEN TIENE LOS DATOS, no este componente: aqui
+    //  solo se dibuja y se reporta el gesto. Es el mismo reparto que el resto
+    //  de la casa - el componente sabe geometria, el anfitrion sabe que hay
+    //  escrito - y el que hizo que la tabla de zatis se pase en vez de
+    //  preguntarle al motor por cada bloque.
+    //
+    //  La banda va en (paso, semi) y no en pixeles: quien la recibe no tiene
+    //  por que saber cuanto mide una celda.
+    std::function<void (int paso0, int semi0, int paso1, int semi1)> onBanda;
+    std::function<void (int dPaso, int dSemi)> onMueveSel;
+    std::function<void()> onVaciaSel;
+    //  Si una celda esta seleccionada. Lo contesta el anfitrion porque es quien
+    //  tiene el conjunto; aqui hace falta para dibujarla y para saber si un
+    //  arrastre empieza DENTRO de la seleccion, que es lo que separa mover de
+    //  volver a seleccionar.
+    std::function<bool (int paso, int semi)> estaSel;
 
     //  `notas` trae kMaxNotas semitonos por paso; -128 es "ninguna". `pasos`
     //  es cuantas columnas se dibujan, `base` el semitono de la fila de abajo.
@@ -284,6 +314,19 @@ public:
                         g.setColour (ZatiColours::ink.withAlpha (0.55f));
                         g.fillRect (barra.withWidth (2.0f));
                     }
+
+                    //  Y LO SELECCIONADO SE VE. Una seleccion que no se dibuja
+                    //  no es una seleccion: mover en bloque sin saber que
+                    //  bloque se mueve es mover a ciegas. Con la misma marca
+                    //  que el clip elegido de la banda de audio - anillo de
+                    //  cabezal - para no inventar un tercer idioma.
+                    if (estaSel != nullptr && estaSel (c, semi))
+                    {
+                        g.setColour (ZatiColours::playheadEdge);
+                        g.drawRect (barra.expanded (1.0f), 1.4f);
+                        g.setColour (ZatiColours::playhead);
+                        g.drawRect (barra, 1.6f);
+                    }
                 }
             }
         }
@@ -333,6 +376,46 @@ public:
         const float anchoCol = (float) (r.getWidth() - kGutter) / (float) nPasos;
         const float dentro = (x - (float) r.getX() - (float) kGutter) / anchoCol;
         const int paso = juce::jlimit (0, nPasos - 1, (int) dentro);
+
+        //  LA SELECCION, antes que el candado de fila: aqui arrastrar SI cruza
+        //  filas, que es justo lo que una banda elastica tiene que hacer.
+        //
+        //  Tres respuestas y no dos, y la del medio es la que hace falta: si el
+        //  arrastre empieza DENTRO de la seleccion se mueve el bloque entero, y
+        //  si empieza fuera se selecciona de nuevo. Sin esa pregunta, mover
+        //  seria un cuarto gesto y no habria forma de decir cual de los dos se
+        //  quiso.
+        if (util == sel)
+        {
+            if (! arrastrando)
+            {
+                pasoIni = paso; filaIni = fila; semiIni = semi;
+                moviendo = (estaSel != nullptr && estaSel (paso, semi));
+                if (! moviendo)
+                {
+                    //  Tocar fuera vacia: sin esto no habria forma de soltar la
+                    //  seleccion sin seleccionar otra cosa.
+                    if (onVaciaSel) onVaciaSel();
+                    dPaso = dSemi = 0;
+                }
+                return;
+            }
+
+            if (moviendo)
+            {
+                //  EN DELTAS Y ACUMULADO, no en absolutos: quien mueve el
+                //  bloque necesita cuanto se ha movido DESDE la ultima vez, o
+                //  cada evento del raton lo desplazaria otra vez entero.
+                const int nd = paso - pasoIni, ns = semi - semiIni;
+                if (nd == dPaso && ns == dSemi) return;
+                if (onMueveSel) onMueveSel (nd - dPaso, ns - dSemi);
+                dPaso = nd; dSemi = ns;
+                return;
+            }
+
+            if (onBanda) onBanda (pasoIni, semiIni, paso, semi);
+            return;
+        }
 
         //  ARRASTRAR NO CAMBIA DE FILA.
         //
@@ -414,9 +497,14 @@ public:
         onCelda (paso, semi);
     }
 
-    void suelta() { ultima = -1; filaIni = pasoIni = -1; ultimoLargo = -1; }
+    void suelta() { ultima = -1; filaIni = pasoIni = -1; ultimoLargo = -1; moviendo = false; dPaso = dSemi = 0; }
 
 private:
+    //  El arrastre de la seleccion: donde empezo y cuanto lleva movido.
+    int  semiIni = 0;
+    bool moviendo = false;
+    int  dPaso = 0, dSemi = 0;
+
     const signed char* datos = nullptr;
     //  Un largo por PASO, en cuartos: las notas de un acorde comparten casilla
     //  y comparten largo, que es lo que un acorde es.

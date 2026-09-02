@@ -285,6 +285,44 @@ private:
     //  costura- y la misma regla escrita dos veces son dos reglas.
     static constexpr int kBankSeamWant = Metrics::hit + Metrics::gap + ZatiLookAndFeel::kPlateLip;
     void pianoCellToggled (int paso, int semi);
+
+    //  ------------------------------------------------------------------
+    //  LA SELECCION DEL PIANO, y lo que se puede hacer con ella.
+    //
+    //  Vive aqui y no en PianoRoll porque aqui estan los datos: el componente
+    //  sabe geometria y este sabe que hay escrito. Un conjunto de (paso, semi)
+    //  guardado como pares ordenados - son unas pocas decenas de notas y
+    //  buscarlas linealmente cuesta menos que mantener un indice.
+    struct NotaSel { int paso; int semi; };
+    std::vector<NotaSel> pianoSel;
+    bool pianoEnSel (int paso, int semi) const
+    {
+        for (const auto& n : pianoSel) if (n.paso == paso && n.semi == semi) return true;
+        return false;
+    }
+    int  pianoEscribe (int paso, int semi, bool poner, int cuartos);
+    bool moviendoSel = false;   // un solo pushUndo por arrastre
+    void pianoBanda (int paso0, int semi0, int paso1, int semi1);
+    void pianoMueveSel (int dPaso, int dSemi);
+    void pianoVaciaSel();
+    void pianoCopiaSel();
+    void pianoPegaSel();
+
+    //  EL PORTAPAPELES DE NOTAS, RELATIVO a la esquina de arriba a la
+    //  izquierda de lo copiado: pegar tiene que caer donde toques y no donde se
+    //  copio. Y CON EL LARGO, que es la leccion de copiarFila contada en el
+    //  piano - una copia que se deja el largo ha dejado de ser la misma figura.
+    struct NotaPeg { int dPaso; int semi; int cuartos; };
+    std::vector<NotaPeg> pianoPortapapeles;
+
+    juce::TextButton pianoSelBtn { "SEL" }, pianoCopiaBtn { "COPIAR" }, pianoPegaBtn { "PEGAR" };
+
+    //  CUANTAS COLUMNAS SE VEN. Ocho es medio compas con celdas del doble de
+    //  ancho -para escribir en 1/32-, dieciseis es el compas de siempre y
+    //  treinta y dos son dos compases para ver la frase. Con el suelo de la
+    //  celda decidiendo, como todo lo demas.
+    int pianoCols = AudioEngine::kBarSteps;
+    juce::TextButton pianoZoomBtn { "1 COMPAS" };
     void paintPianoSheetContent (juce::Graphics& g);
 
     Sheet padSheet, seqSheet, browseSheet, setSheet, mixSheet, songSheet,

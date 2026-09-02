@@ -260,6 +260,7 @@ UNTRANSLATED_OK = {
     "MONO",                                    # se dice igual en las dos lenguas
     "PRESETS",                                 # se dice igual en las dos lenguas
     "PACK -", "PACK +",                        # la palabra es la misma en las dos lenguas
+    "SEL",                                     # la abreviatura de seleccion/select es la misma
     "MASTER",                                  # la mezcla final se llama igual en las dos
     "WAV", "OGG",                              # los dos formatos, que son extensiones de fichero
     "TOUR",                                    # la palabra es la misma en las dos lenguas

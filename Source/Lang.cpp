@@ -942,6 +942,15 @@ namespace
         //  y significa otra cosa - una clave que se reaprovecha por parecerse
         //  en espanol sale mal en las otras tres.
         { "1 OCTAVA",       "",         "1 OCTAVE",   "1 个八度",     "أوكتاف واحد" },
+        //  LA SELECCION DEL PIANO y el zoom horizontal. SEL es una palabra
+        //  corta a proposito: comparte fila con nueve tapas mas y esa fila ya
+        //  se parte en dos en media pantalla.
+        { "SEL",            "",         "SEL",        "选择",       "تحديد" },
+        { "1/2 COMPAS",     "",         "1/2 BAR",    "半小节",      "نصف مازورة" },
+        { "1 COMPAS",       "",         "1 BAR",      "1 小节",      "مازورة" },
+        { "2 COMPASES",     "",         "2 BARS",     "2 小节",      "مازورتان" },
+        { "%1 notas copiadas", "",      "%1 notes copied", "已复制 %1 个音符",
+          "\xd8\xaa\xd9\x85 \xd9\x86\xd8\xb3\xd8\xae %1 \xd9\x86\xd9\x88\xd8\xaa\xd8\xa9" },
         { "2 OCTAVAS",      "",         "2 OCTAVES",  "2 个八度",     "أوكتافان" },
         { "%1 pasos",       "",         "%1 steps",   "%1 步",          "%1 خطوة" },
         { "sin cadena - repite P%1", "sin cadena · repite P%1", "no chain · P%1 repeats",

@@ -256,6 +256,71 @@ else:
     #  Y se cierra sola: dejarla abierta es un segundo toque para volver.
     mide ("y se cierra al elegir", d["cerro"] == 1, "cerro=%d" % d["cerro"])
 
+#  --- LA SELECCION, MOVER EN BLOQUE, COPIAR Y PEGAR ----------------------
+#
+#  El piano se podia escribir nota a nota y no se podia EDITAR: para mover una
+#  figura habia que borrarla y volver a escribirla, y copiar no existia. La
+#  seleccion es la quinta herramienta -no un gesto nuevo- porque esta rejilla es
+#  de lienzo y arrastrar ya significa dos cosas.
+#
+#  Se mide por el GESTO en pixeles, que es donde vive: llamar a pianoBanda o a
+#  pianoMueveSel por dentro salta el codigo que decide si el arrastre empieza
+#  DENTRO de la seleccion, que es lo unico que separa mover de volver a
+#  seleccionar.
+d = una ("sel")
+if d is None:
+    mide ("la seleccion del piano", False, "no salio")
+else:
+    #  La banda coge lo que cubre Y SOLO ESO: hay una cuarta nota fuera del
+    #  rectangulo, y "selecciono" lo cumple igual una banda que lo coge todo.
+    mide ("la banda coge lo que cubre",
+          d["seleccionadas"] == 3 and d["fuera_quieta"] == 1,
+          "%d notas, la de fuera %s" % (d["seleccionadas"],
+                                        "quieta" if d["fuera_quieta"] else "SE MOVIO"))
+
+    #  Y MOVER CONSERVA LA FIGURA: llegan las tres, y con SUS TRES LARGOS
+    #  distintos. Sin el largo la prueba pasa con una figura aplastada, que es
+    #  la leccion de copiarFila contada en el piano - una copia que se deja el
+    #  largo ha dejado de ser la misma figura.
+    mide ("mover conserva las tres y su largo",
+          d["tras_mover"] == [1, 1, 1] and d["largos_ok"] == 3,
+          "llegaron %s, largos %d de 3" % (d["tras_mover"], d["largos_ok"]))
+
+    #  Y UNA SOLA ENTRADA DE DESHACER para el bloque entero: deshacer un
+    #  movimiento de tres notas tres veces no es deshacer, es contar.
+    mide ("y una sola entrada de deshacer", d["undo"] == 1,
+          "%d entradas" % d["undo"])
+
+    #  COPIAR Y PEGAR, en otro compas: el portapapeles es RELATIVO, asi que
+    #  pegar cae donde se mira y no donde se copio.
+    mide ("copiar y pegar en otro compas",
+          d["copiadas"] == 3 and d["pegadas"] == 3,
+          "%d copiadas, %d pegadas" % (d["copiadas"], d["pegadas"]))
+
+#  --- EL ZOOM HORIZONTAL --------------------------------------------------
+#
+#  Ocho columnas son medio compas con celdas del doble de ancho -que es lo que
+#  hace falta para escribir en 1/32- y treinta y dos son dos compases para ver
+#  la frase. Con el suelo decidiendo, como todo en esta casa: medido en 412x915,
+#  32 columnas dan una celda de 10 px contra un suelo de 12, o sea dos compases
+#  que se ven y no se pueden escribir.
+#
+#  Se mide POR LA TAPA y no poniendo el numero por dentro, que es lo unico que
+#  ve la escalera: el ciclo salta el paso que no cabe.
+MIN_CELL = 12
+d = una ("zoom")
+if d is None:
+    mide ("el zoom del piano", False, "no salio")
+else:
+    mide ("el zoom da mas de una vista",
+          len (set (d["cols"])) >= 2,
+          "columnas %s" % (d["cols"],))
+    #  Y NINGUNA CELDA POR DEBAJO DEL DEDO. Es la cifra que justifica la
+    #  escalera: si un dia baja del suelo, la decision se cae.
+    mide ("y ninguna celda baja del suelo",
+          all (w >= MIN_CELL for w in d["ancho"]),
+          "anchos %s px (suelo %d)" % (d["ancho"], MIN_CELL))
+
 print()
 print ("piano: %d comprobaciones, %d FALLA" % (len (hechas), len (fallos)))
 sys.exit (1 if fallos else 0)

@@ -3349,15 +3349,20 @@ void MainComponent::resized()
             //  van delante, que es lo que se toca mientras se escribe -oir lo
             //  que llevas es la mitad de escribirlo- y las tres herramientas
             //  al final, juntas.
-            juce::TextButton* pb5[9] = { &seqModoBtn, &seqPlayBtn,
-                                         &pianoOctDownBtn, &pianoOctUpBtn, &pianoVerBtn,
-                                         &pianoClearBtn, &pianoLapizBtn, &pianoGomaBtn,
-                                         &pianoCorteBtn };
+            //  ONCE desde que la pagina tiene SEL y el zoom horizontal, y con
+            //  las MISMAS tapas que se van a colocar: preguntar por nueve y
+            //  poner once es pedir con una cuenta y colocar con otra, que es
+            //  como la rejilla se queda sin sitio.
+            juce::TextButton* pb5[11] = { &seqModoBtn, &seqPlayBtn,
+                                          &pianoOctDownBtn, &pianoOctUpBtn, &pianoVerBtn,
+                                          &pianoZoomBtn,
+                                          &pianoClearBtn, &pianoLapizBtn, &pianoGomaBtn,
+                                          &pianoCorteBtn, &pianoSelBtn };
             const int anchoDeLaTarjeta = anchoTarjetaInterior (safeArea().getWidth());
             //  Apaisado no hay fila de tapas que pedir: se van a la columna
             //  de al lado. Pedir una fila que luego no se coloca es pedir 48 px
             //  de mas de lo unico que escasea girado.
-            const int filasTapas = wideFace ? 0 : (moduleBarFits (anchoDeLaTarjeta, pb5, 9) ? 1 : 2);
+            const int filasTapas = wideFace ? 0 : (moduleBarFits (anchoDeLaTarjeta, pb5, 11) ? 1 : 2);
             filasTapasPiano = filasTapas;
             wanted = chrome + pianoGrid.getFilas() * PianoRoll::kAltoObjetivo + Metrics::sm + 14
                    + filasTapas * Metrics::hit
@@ -3581,10 +3586,15 @@ void MainComponent::resized()
             //  Dos columnas y no que se caiga una tapa, porque apaisado lo que
             //  sobra es ANCHO: es la misma regla que puso la columna aqui en
             //  primer lugar. Con la mitad, seis piden 140 px de alto.
-            juce::TextButton* pbCol[9] = { &seqModoBtn, &seqPlayBtn,
-                                           &pianoOctDownBtn, &pianoOctUpBtn, &pianoVerBtn,
-                                           &pianoClearBtn, &pianoLapizBtn, &pianoGomaBtn,
-                                           &pianoCorteBtn };
+            //  Y LAS CUATRO NUEVAS TAMBIEN VAN A LA COLUMNA. Sin ellas aqui
+            //  salian visibles y de 0x0 apaisado -48 hallazgos del banco-,
+            //  porque esta es la unica lista que las coloca girado.
+            juce::TextButton* pbCol[13] = { &seqModoBtn, &seqPlayBtn,
+                                            &pianoOctDownBtn, &pianoOctUpBtn, &pianoVerBtn,
+                                            &pianoZoomBtn,
+                                            &pianoClearBtn, &pianoLapizBtn, &pianoGomaBtn,
+                                            &pianoCorteBtn, &pianoSelBtn,
+                                            &pianoCopiaBtn, &pianoPegaBtn };
             const auto altoDe = [] (int n) { return n * Metrics::hit + (n - 1) * Metrics::halfGap; };
             int nVisibles = 0;
             for (auto* b2 : pbCol) if (b2->isVisible()) ++nVisibles;
@@ -3605,7 +3615,7 @@ void MainComponent::resized()
                 Lang::takeEnd (inner, Metrics::gap);
                 juce::Rectangle<int> col = Lang::takeStart (side, anchoCol);
                 int puestas = 0;
-                for (int i = 0; i < 9; ++i)
+                for (int i = 0; i < 13; ++i)
                 {
                     if (! pbCol[i]->isVisible()) continue;
                     if (puestas == porColumna)
@@ -3632,16 +3642,36 @@ void MainComponent::resized()
                 //  CINCO tapas, y si no caben en una fila, dos: OCTAVA -/+ y
                 //  VACIAR arriba, las dos herramientas debajo. En 280 px cinco
                 //  a lo ancho dejan "TIJERAS" en 31 de los 48 que pide.
-                juce::TextButton* pbTodas[9] = { &seqModoBtn, &seqPlayBtn,
-                                                 &pianoOctDownBtn, &pianoOctUpBtn, &pianoVerBtn,
-                                                 &pianoClearBtn, &pianoLapizBtn, &pianoGomaBtn,
-                                                 &pianoCorteBtn };
-                juce::TextButton* pbSin5[8]  = { &seqModoBtn, &seqPlayBtn,
-                                                 &pianoOctDownBtn, &pianoOctUpBtn,
-                                                 &pianoClearBtn, &pianoLapizBtn, &pianoGomaBtn,
-                                                 &pianoCorteBtn };
-                const int nb = pianoVerBtn.isVisible() ? 9 : 8;
-                juce::TextButton** pb = pianoVerBtn.isVisible() ? pbTodas : pbSin5;
+                //  Y CON LA SELECCION PUESTA, DOS TAPAS MAS: COPIAR y PEGAR.
+                //
+                //  Solo con seleccion, que es la regla de la tira del paso -un
+                //  control que no puede hacer nada no es informacion, es ruido-
+                //  y ademas es lo unico que hace que quepan: esta fila ya sale
+                //  de nueve y se parte en dos en media pantalla. PEGAR ademas
+                //  pide portapapeles: pegar lo que no se ha copiado no es nada.
+                const bool haySel = ! pianoSel.empty();
+                const bool hayPeg = ! pianoPortapapeles.empty();
+                pianoCopiaBtn.setVisible (haySel);
+                pianoPegaBtn .setVisible (hayPeg);
+                if (! haySel) pianoCopiaBtn.setBounds ({});
+                if (! hayPeg) pianoPegaBtn .setBounds ({});
+
+                juce::TextButton* pbTodas[12];
+                int nb = 0;
+                pbTodas[nb++] = &seqModoBtn;
+                pbTodas[nb++] = &seqPlayBtn;
+                pbTodas[nb++] = &pianoOctDownBtn;
+                pbTodas[nb++] = &pianoOctUpBtn;
+                if (pianoVerBtn.isVisible()) pbTodas[nb++] = &pianoVerBtn;
+                pbTodas[nb++] = &pianoZoomBtn;
+                pbTodas[nb++] = &pianoClearBtn;
+                pbTodas[nb++] = &pianoLapizBtn;
+                pbTodas[nb++] = &pianoGomaBtn;
+                pbTodas[nb++] = &pianoCorteBtn;
+                pbTodas[nb++] = &pianoSelBtn;
+                if (haySel) pbTodas[nb++] = &pianoCopiaBtn;
+                if (hayPeg && nb < 12) pbTodas[nb++] = &pianoPegaBtn;
+                juce::TextButton** pb = pbTodas;
                 if (moduleBarFits (tapas.getWidth(), pb, nb))
                 {
                     layoutModuleBar (tapas, pb, 0, nb);

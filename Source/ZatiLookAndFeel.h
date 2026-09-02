@@ -484,6 +484,19 @@ namespace Metrics
     static constexpr int canalPasos   = 30;
     static constexpr int canalPiano   = 26;
     static constexpr int canalCancion = 26;
+
+    //  Y EL SUELO DE UNA CELDA, que hasta ahora vivia SOLO en el banco
+    //  (Tests/expo.py: MIN_CELL y MIN_NOTE). Ahi era suficiente mientras
+    //  ninguna rejilla pudiera cambiar de tamano sola; desde que el piano tiene
+    //  zoom horizontal, la app tiene que poder preguntarse si lo que le van a
+    //  pedir cabe - y una regla escrita en el banco y no en el codigo es una
+    //  regla que el codigo no puede cumplir.
+    //
+    //  Dos y no uno, por lo mismo que el piano tiene dos: a lo ancho se acierta
+    //  el PASO y a lo alto la NOTA, y fallar de fila no falla el toque -escribe
+    //  otro tono, suena, y no lo dice nadie-.
+    static constexpr int celdaPaso = 12;
+    static constexpr int celdaNota = 16;
     //  LA FILA QUE CONTIENE UN OBJETIVO DE DEDO, no el objetivo.
     //
     //  hit es el suelo de lo que se toca. Casi todas las filas de este archivo

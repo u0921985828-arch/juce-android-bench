@@ -2415,6 +2415,13 @@ MainComponent::MainComponent()
         };
         //  El teclado SUENA y no escribe: buscar la nota antes de ponerla es
         //  la mitad de escribir una melodia.
+        //  LA SELECCION: la banda, el arrastre del bloque y el vaciado. El
+        //  componente reporta el gesto y aqui se resuelve contra los datos.
+        pianoGrid.estaSel    = [this] (int paso, int semi) { return pianoEnSel (paso, semi); };
+        pianoGrid.onBanda    = [this] (int p0, int s0, int p1, int s1) { pianoBanda (p0, s0, p1, s1); };
+        pianoGrid.onMueveSel = [this] (int dp, int ds) { pianoMueveSel (dp, ds); };
+        pianoGrid.onVaciaSel = [this] { pianoVaciaSel(); moviendoSel = false; resized(); };
+
         pianoGrid.onTecla = [this] (int semi)
         {
             if (selectedPad >= 0)
@@ -2492,6 +2499,12 @@ MainComponent::MainComponent()
             pianoLapizBtn.setToggleState (cual == PianoRoll::lapiz,   juce::dontSendNotification);
             pianoGomaBtn .setToggleState (cual == PianoRoll::goma,    juce::dontSendNotification);
             pianoCorteBtn.setToggleState (cual == PianoRoll::tijeras, juce::dontSendNotification);
+            pianoSelBtn  .setToggleState (cual == PianoRoll::sel,     juce::dontSendNotification);
+            //  Al salir del modo, la seleccion se va con el: dejarla puesta
+            //  seria un bloque marcado que ya no se puede mover ni copiar, o
+            //  sea una marca que miente.
+            if (cual != PianoRoll::sel) pianoVaciaSel();
+            resized();      // COPIAR y PEGAR solo existen con seleccion
         };
         //  LAS TRES SON EXCLUYENTES y las tres se apagan: sin ninguna, un toque
         //  ALTERNA -escribe donde no hay y quita donde hay-, que es como
@@ -2504,6 +2517,49 @@ MainComponent::MainComponent()
             { ponUtil (pianoGomaBtn.getToggleState()  ? PianoRoll::goma    : PianoRoll::dibujar); };
         pianoCorteBtn.onClick = [this, ponUtil]
             { ponUtil (pianoCorteBtn.getToggleState() ? PianoRoll::tijeras : PianoRoll::dibujar); };
+
+        //  Y LA CUARTA: SELECCIONAR. Es una herramienta y no un gesto nuevo -
+        //  ver PianoRoll::sel. Con ella arrastrar sobre vacio marca un bloque y
+        //  arrastrar desde una nota marcada lo mueve entero.
+        styleButton (pianoSelBtn, kKey);
+        litAccent (pianoSelBtn);
+        pianoSelBtn.setClickingTogglesState (true);
+        seqSheet.addAndMakeVisible (pianoSelBtn);
+        pianoSelBtn.onClick = [this, ponUtil]
+            { ponUtil (pianoSelBtn.getToggleState() ? PianoRoll::sel : PianoRoll::dibujar); };
+
+        //  COPIAR y PEGAR NACEN APAGADAS: solo existen con seleccion puesta,
+        //  que es la regla de la tira del paso - un control que no puede hacer
+        //  nada no es informacion, es ruido - y ademas es lo que hace que no
+        //  cuesten sitio en una fila de nueve tapas que ya se parte en dos.
+        for (juce::TextButton* b : { &pianoCopiaBtn, &pianoPegaBtn })
+        {
+            styleButton (*b, kKey);
+            seqSheet.addChildComponent (*b);
+        }
+        pianoCopiaBtn.onClick = [this] { pianoCopiaSel(); };
+        pianoPegaBtn.onClick  = [this] { pianoPegaSel(); };
+
+        //  EL ZOOM HORIZONTAL. Ocho columnas son medio compas con celdas del
+        //  doble de ancho -que es lo que hace falta para escribir en 1/32- y
+        //  treinta y dos son dos compases para ver la frase. Dieciseis es lo de
+        //  siempre. La escalera la decide el suelo de la celda, como todo.
+        styleButton (pianoZoomBtn, kKey);
+        pianoZoomBtn.onClick = [this]
+        {
+            //  SE PIDE LO QUE HAY, que es la regla de siempre. Medido en
+            //  412x915: con 32 columnas la celda del paso queda en **10 px**,
+            //  por debajo del suelo de 12 - o sea dos compases que se ven y no
+            //  se pueden escribir. Donde no caben, el ciclo salta a 8.
+            const int util = pianoGrid.getWidth() - PianoRoll::kGutter;
+            const bool caben32 = util >= 32 * Metrics::celdaPaso;
+            pianoCols = (pianoCols == 8) ? AudioEngine::kBarSteps
+                      : (pianoCols == AudioEngine::kBarSteps && caben32) ? 32 : 8;
+            pianoVaciaSel();
+            refreshPiano (true);
+            resized();
+        };
+        seqSheet.addAndMakeVisible (pianoZoomBtn);
 
         //  CUANTAS OCTAVAS SE VEN. Las dos cuentas sirven para cosas distintas
         //  y ninguna gana siempre: con una octava la fila mide 34 px en un
@@ -3720,7 +3776,14 @@ void MainComponent::showSeqPage (int page)
     pianoGrid.setVisible (onPiano);
     for (juce::TextButton* b : { &pianoOctDownBtn, &pianoOctUpBtn, &pianoClearBtn,
                                  &pianoPadDownBtn, &pianoPadUpBtn,
-                                 &pianoLapizBtn, &pianoGomaBtn, &pianoCorteBtn, &pianoVerBtn })
+                                 &pianoLapizBtn, &pianoGomaBtn, &pianoCorteBtn, &pianoVerBtn,
+                                 //  Y las cuatro nuevas. Sin ellas aqui salian
+                                 //  visibles y de 0x0 en las otras dos paginas
+                                 //  de la ficha -248 hallazgos del banco- y
+                                 //  ademas dejaban sus coordenadas puestas al
+                                 //  volver, que es la regla del RESIDUO: 24.
+                                 &pianoSelBtn, &pianoZoomBtn,
+                                 &pianoCopiaBtn, &pianoPegaBtn })
     {
         b->setVisible (onPiano);
         if (! onPiano) b->setBounds ({});
@@ -5646,6 +5709,13 @@ void MainComponent::retranslateUi()
     pianoLapizBtn  .setButtonText (T ("LAPIZ"));
     pianoGomaBtn   .setButtonText (T ("GOMA"));
     pianoCorteBtn  .setButtonText (T ("TIJERAS"));
+    pianoSelBtn    .setButtonText (T ("SEL"));
+    pianoCopiaBtn  .setButtonText (T ("COPIAR"));
+    pianoPegaBtn   .setButtonText (T ("PEGAR"));
+    //  El rotulo dice CUANTO se ve, no un verbo: es la misma gramatica que
+    //  pianoVerBtn y que la tapa de vista de la cancion.
+    pianoZoomBtn   .setButtonText (pianoCols == 8  ? T ("1/2 COMPAS")
+                                 : pianoCols == 32 ? T ("2 COMPASES") : T ("1 COMPAS"));
     pianoClearBtn  .setButtonText (T ("VACIAR"));
     //  El rotulo de esta dice el ESTADO, asi que no es una clave fija: la elige
     //  cuantas filas hay puestas. Sin esta linea, cambiar de idioma dejaba
@@ -8054,6 +8124,187 @@ void MainComponent::pianoStepPad (int dir)
 //  raiz es la que el resto de la app ya conoce - la que mueve el mando NOTA de
 //  la pagina PASO y la que se guarda en el proyecto. Asi que quitar la raiz no
 //  puede dejar el acorde huerfano: asciende la primera de las extras.
+//  ------------------------------------------------------------------------
+//  LA SELECCION DEL PIANO
+//  ------------------------------------------------------------------------
+
+//  Poner o quitar una nota SIN alternar, que es lo que mover en bloque
+//  necesita: `pianoCellToggled` alterna, y mover doce notas alternando
+//  apagaria las que caigan encima de otra en vez de ponerlas.
+//
+//  Devuelve el largo que habia, porque moverse dejandose el largo es la misma
+//  leccion de `copiarFila` contada en el piano: una nota son (semitono, largo),
+//  y la mitad no es la nota.
+int MainComponent::pianoEscribe (int paso, int semi, bool poner, int cuartos)
+{
+    if (selectedPad < 0 || paso < 0 || paso >= engine.getPatternLength (selectedPattern)) return 0;
+    const int b = selectedPattern, p = selectedPad;
+
+    juce::Array<int> notas;
+    if (pattern[(size_t) b][(size_t) paso][(size_t) p]) notas.add (engine.getStepNote (b, paso, p));
+    for (int e = 0; e < AudioEngine::kExtraNotes; ++e)
+    {
+        const int v = engine.getStepExtra (b, paso, p, e);
+        if (v != -128) notas.addIfNotAlreadyThere (v);
+    }
+
+    const int largoAntes = engine.getStepLen (b, paso, p);
+
+    if (poner)
+    {
+        if (! notas.contains (semi))
+        {
+            if (notas.size() >= PianoRoll::kMaxNotas) return largoAntes;
+            notas.add (semi);
+        }
+    }
+    else
+    {
+        notas.removeAllInstancesOf (semi);
+    }
+    notas.sort();
+
+    const bool queda = ! notas.isEmpty();
+    pattern[(size_t) b][(size_t) paso][(size_t) p] = queda;
+    engine.setStep (b, paso, p, queda);
+    engine.setStepNote (b, paso, p, queda ? notas[0] : 0);
+    engine.clearStepExtras (b, paso, p);
+    for (int e = 0; e + 1 < notas.size() && e < AudioEngine::kExtraNotes; ++e)
+        engine.setStepExtra (b, paso, p, e, notas[e + 1], true);
+
+    //  El largo es del PASO y no de la nota -asi lo guarda el motor- asi que
+    //  solo se escribe al poner, y solo si el que llama trae uno: al quitar se
+    //  deja como esta, que el paso puede seguir teniendo otras notas.
+    if (poner && cuartos > 0) engine.setStepLen (b, paso, p, cuartos);
+    else if (! queda)         engine.setStepLen (b, paso, p, AudioEngine::kLenSuelto);
+
+    return largoAntes;
+}
+
+//  LA BANDA ELASTICA. Llega en (paso, semi) porque quien la dibuja no tiene por
+//  que saber cuanto mide una celda, y aqui se resuelve contra lo que hay
+//  ESCRITO: seleccionar huecos no significa nada.
+void MainComponent::pianoBanda (int paso0, int semi0, int paso1, int semi1)
+{
+    const int b = selectedPattern, p = juce::jmax (0, selectedPad);
+    const int pa = juce::jmin (paso0, paso1), pb = juce::jmax (paso0, paso1);
+    const int sa = juce::jmin (semi0, semi1), sb = juce::jmax (semi0, semi1);
+    const int base = selectedBar * AudioEngine::kBarSteps;
+    const int len  = engine.getPatternLength (b);
+
+    pianoSel.clear();
+    for (int c = pa; c <= pb; ++c)
+    {
+        const int st = base + c;
+        if (st < 0 || st >= len) continue;
+        if (! pattern[(size_t) b][(size_t) st][(size_t) p]) continue;
+
+        auto mira = [&] (int v)
+        {
+            if (v != -128 && v >= sa && v <= sb) pianoSel.push_back ({ c, v });
+        };
+        mira (engine.getStepNote (b, st, p));
+        for (int e = 0; e < AudioEngine::kExtraNotes; ++e)
+            mira (engine.getStepExtra (b, st, p, e));
+    }
+    refreshPiano (false);
+}
+
+void MainComponent::pianoVaciaSel()
+{
+    if (pianoSel.empty()) return;
+    pianoSel.clear();
+    refreshPiano (false);
+}
+
+//  MOVER EL BLOQUE. Se QUITAN TODAS PRIMERO y se ponen despues, que es el orden
+//  y no un detalle: una nota que se mueve encima de otra del mismo bloque se
+//  comeria a su hermana antes de que a esa le tocara moverse, y el sintoma
+//  seria «al mover un acorde se pierde una nota».
+//
+//  Y UN SOLO pushUndo para el bloque entero: deshacer un movimiento de doce
+//  notas doce veces no es deshacer, es contar.
+void MainComponent::pianoMueveSel (int dPaso, int dSemi)
+{
+    if (pianoSel.empty() || (dPaso == 0 && dSemi == 0)) return;
+
+    const int b = selectedPattern;
+    const int base = selectedBar * AudioEngine::kBarSteps;
+    const int len  = engine.getPatternLength (b);
+
+    //  Lo que no cabe no se mueve, y entonces NO se mueve nada: mover medio
+    //  bloque contra el borde lo deforma, y deformar no es lo que se pidio.
+    for (const auto& n : pianoSel)
+    {
+        const int np = n.paso + dPaso, ns = n.semi + dSemi;
+        if (np < 0 || base + np >= len) return;
+        if (ns < -24 || ns > 24) return;
+    }
+
+    if (! moviendoSel) { pushUndo (T ("MOVER")); moviendoSel = true; }
+
+    //  Con su LARGO, que se lee antes de quitar nada.
+    std::vector<int> largos;
+    largos.reserve (pianoSel.size());
+    for (const auto& n : pianoSel)
+        largos.push_back (engine.getStepLen (b, base + n.paso, juce::jmax (0, selectedPad)));
+
+    for (const auto& n : pianoSel) pianoEscribe (base + n.paso, n.semi, false, 0);
+
+    for (size_t i = 0; i < pianoSel.size(); ++i)
+    {
+        pianoSel[i].paso += dPaso;
+        pianoSel[i].semi += dSemi;
+        pianoEscribe (base + pianoSel[i].paso, pianoSel[i].semi, true, largos[i]);
+    }
+    refreshPiano (false);
+}
+
+//  COPIAR, en coordenadas RELATIVAS a la esquina de arriba a la izquierda: sin
+//  eso, pegar caeria donde se copio y no donde se toca, que es la mitad de para
+//  lo que se copia.
+void MainComponent::pianoCopiaSel()
+{
+    if (pianoSel.empty()) return;
+    const int b = selectedPattern, p = juce::jmax (0, selectedPad);
+    const int base = selectedBar * AudioEngine::kBarSteps;
+
+    int p0 = pianoSel[0].paso;
+    for (const auto& n : pianoSel) p0 = juce::jmin (p0, n.paso);
+
+    pianoPortapapeles.clear();
+    for (const auto& n : pianoSel)
+        pianoPortapapeles.push_back ({ n.paso - p0, n.semi,
+                                       engine.getStepLen (b, base + n.paso, p) });
+
+    status.setText (T ("%1 notas copiadas", juce::String ((int) pianoPortapapeles.size())),
+                    juce::dontSendNotification);
+    resized();      // PEGAR aparece
+}
+
+//  PEGAR EN EL COMPAS QUE SE VE, desde su primera columna. Lo que se saldria del
+//  patron NO se pega, y no se recorta a la fuerza: una figura recortada suena
+//  como otra cosa, y «pegó» lo cumple igual algo que deja media.
+void MainComponent::pianoPegaSel()
+{
+    if (pianoPortapapeles.empty()) return;
+    const int b = selectedPattern;
+    const int base = selectedBar * AudioEngine::kBarSteps;
+    const int len  = engine.getPatternLength (b);
+
+    pushUndo (T ("PEGAR"));
+    pianoSel.clear();
+    for (const auto& n : pianoPortapapeles)
+    {
+        const int st = base + n.dPaso;
+        if (st < 0 || st >= len) continue;
+        if (n.semi < -24 || n.semi > 24) continue;
+        pianoEscribe (st, n.semi, true, n.cuartos);
+        pianoSel.push_back ({ n.dPaso, n.semi });
+    }
+    refreshPiano (false);
+}
+
 void MainComponent::pianoCellToggled (int paso, int semi)
 {
     if (selectedPad < 0 || paso < 0 || paso >= engine.getPatternLength (selectedPattern)) return;
@@ -8125,7 +8376,14 @@ void MainComponent::refreshPiano (bool repintarTarjeta)
     if (selectedBar >= compases) selectedBar = 0;
 
     const int base = selectedBar * AudioEngine::kBarSteps;
-    const int cols = juce::jlimit (0, AudioEngine::kBarSteps, len - base);
+
+    //  CUANTAS COLUMNAS SE VEN, y acotado aqui por lo mismo que el compas: esta
+    //  funcion la llama el temporizador treinta veces por segundo y `pianoCols`
+    //  lo mueve una tapa. Con 32 en un patron de 16 pasos, `base + c` se sale
+    //  de la tabla - que es exactamente el cuarto de los cinco fallos del
+    //  compas, escrito con otro numero.
+    const int verCols = juce::jlimit (1, AudioEngine::kNumSteps, pianoCols);
+    const int cols = juce::jlimit (0, verCols, len - base);
 
     //  Y SE VACIAN LAS DIECISEIS, no solo las que se rellenan.
     //
@@ -8138,7 +8396,7 @@ void MainComponent::refreshPiano (bool repintarTarjeta)
     //  Y el jmax(1, ...) de antes era peor que inutil: con `base` fuera del
     //  patron daba UNA columna en vez de ninguna, o sea que garantizaba que
     //  quince se quedaran viejas.
-    for (int c = 0; c < AudioEngine::kBarSteps; ++c)
+    for (int c = 0; c < verCols; ++c)
     {
         for (int k = 0; k < PianoRoll::kMaxNotas; ++k)
             pianoCells[c * PianoRoll::kMaxNotas + k] = -128;
