@@ -55,9 +55,25 @@
 #  afirmacion sin medida, que es lo que este banco lleva cazando desde el
 #  principio.
 #
+#  Y EL MIN SDK DE UNA CLASE JNI, que es la misma pregunta con otra pieza y
+#  costo la tercera corrida del CI.
+#
+#  `DECLARE_JNI_CLASS_WITH_MIN_SDK (ZatiView, "android/view/View", 23)` pedia
+#  23 porque `getRootWindowInsets` entro en la API 23, que es lo que dice la
+#  documentacion de Android. Pero el minSdk de la app es 24, asi que esa guarda
+#  no puede saltar NUNCA: es una condicion escrita para aparatos que esta app
+#  no admite. JUCE 8.0.15 lo convierte en error con un static_assert que no
+#  existe en 8.0.4 —cero apariciones contra una— y la APK murio en el enlace.
+#
+#  El escritorio no puede verlo: ese fichero entero vive dentro de
+#  `#if JUCE_ANDROID`. Local verde, remoto rojo, diez minutos — el mismo caso
+#  que Sintes.cpp y que la lista de modulos, que son los otros dos parrafos de
+#  esta cabecera. Se contrasta el numero de cada declaracion contra el
+#  androidMinimumSDK del .jucer, que es quien manda.
+#
 #      python3 Tests/fuentes.py
 # ============================================================================
-import os, re, sys
+import glob, os, re, sys
 
 ROOT = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
 
@@ -183,6 +199,32 @@ def atributos():
     return fallos
 
 
+def minsdk():
+    """Ninguna clase JNI puede pedir menos SDK del que la app admite: esa
+    guarda no puede saltar, y desde JUCE 8.0.15 ademas no compila."""
+    t = open (os.path.join (ROOT, "Zati.jucer")).read()
+    m = re.search (r'androidMinimumSDK="(\d+)"', t)
+    if m is None:
+        return ["Zati.jucer no dice androidMinimumSDK: esta mitad no mide nada"]
+
+    minimo, fallos, vistas = int (m.group (1)), [], 0
+    for f in sorted (glob.glob (os.path.join (ROOT, "Source", "*.cpp"))):
+        for n, linea in enumerate (open (f, encoding="utf-8", errors="replace"), 1):
+            d = re.search (r'DECLARE_(?:OPTIONAL_)?JNI_CLASS_WITH_MIN_SDK\s*\('
+                           r'\s*(\w+)\s*,[^,]*,\s*(\d+)\s*\)', linea)
+            if d is None: continue
+            vistas += 1
+            if int (d.group (2)) < minimo:
+                fallos.append ("%s:%d %s pide SDK %s y el minSdk de la app es "
+                               "%d: esa guarda no puede saltar, y JUCE 8.0.15 "
+                               "no lo compila"
+                               % (os.path.relpath (f, ROOT), n, d.group (1),
+                                  d.group (2), minimo))
+
+    print ("minSdk      %d en Zati.jucer, %d clases JNI con guarda" % (minimo, vistas))
+    return fallos
+
+
 def main():
     cm, ju = de_cmake(), de_jucer()
     if cm is None:
@@ -202,6 +244,7 @@ def main():
 
     fallos += modulos()
     fallos += atributos()
+    fallos += minsdk()
 
     print ("CMakeLists  %2d fuentes" % len (cm))
     print ("Zati.jucer  %2d fuentes" % len (ju))
@@ -211,7 +254,7 @@ def main():
     if fallos:
         for f in fallos: print ("FALLA  " + f)
         return 1
-    print ("las fuentes, los modulos y los atributos del .jucer dicen lo mismo")
+    print ("las fuentes, los modulos, los atributos y el minSdk dicen lo mismo")
     return 0
 
 

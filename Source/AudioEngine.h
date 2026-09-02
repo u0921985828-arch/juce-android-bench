@@ -36,7 +36,15 @@ public:
     static constexpr int kPadsPerBank   = 16;
     static constexpr int kNumBanks      = 4;
     static constexpr int kNumPads       = kPadsPerBank * kNumBanks;   // 64
-    static constexpr int kNumFx         = 6;    // ISO, HPF, DRV, DLY, CRSH, REV — the order the UI shows
+    //  FLT, HPF, DRV, DLY, BIT, REV — el orden que enseña la cara, que es el
+    //  de la tabla `fxDefs` de MainComponent.cpp y no otro. Este renglon decia
+    //  «ISO ... CRSH», que son dos nombres que la app no usa desde hace tandas.
+    //  Y no era este solo: la misma lista estaba mal en Lang.h, en
+    //  MainComponent.h y en AudioEngine.cpp — CUATRO sitios en el codigo,
+    //  ademas de los tres documentos que ya se corrigieron. Una lista escrita
+    //  siete veces son siete listas, y estas cuatro son comentarios: no
+    //  compilan, no fallan, y por eso duraron.
+    static constexpr int kNumFx         = 6;
     static constexpr int kNumSteps      = 64;   // max steps per pattern (length is variable, see below)
     static constexpr int kMinPatLen     = 16;
     static constexpr int kMaxPatLen     = kNumSteps;   // 64 = four bars of 16

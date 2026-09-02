@@ -1960,7 +1960,7 @@ private:
     };
 
     // --- The six effects --------------------------------------------------
-    //  One row, six buttons, one effect each: ISO, HPF, DRV, DLY, CRSH, REV.
+    //  One row, six buttons, one effect each: FLT, HPF, DRV, DLY, BIT, REV.
     //  There used to be four re-assignable slots plus three bank chips above
     //  the knobs, which meant an effect could be pointed at, switched on and
     //  edited from three different places — the "there are two delays" bug.

@@ -29,7 +29,7 @@
 //  con el castellano, y ni el chino ni el arabe lo hacen.
 //
 //  Lo que NO se traduce en ningun idioma: las seis abreviaturas de los efectos
-//  (ISO, HPF, DRV, DLY, CRSH, REV) y los sufijos de unidad (ms, Hz, dB, bpm,
+//  (FLT, HPF, DRV, DLY, BIT, REV) y los sufijos de unidad (ms, Hz, dB, bpm,
 //  st). Se leen igual en una mesa de Shanghai que en una de Madrid, y viven en
 //  botones de cuatro caracteres de ancho.
 //

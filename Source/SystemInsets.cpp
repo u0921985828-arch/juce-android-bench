@@ -24,7 +24,16 @@ namespace juce
 
     #define JNI_CLASS_MEMBERS(METHOD, STATICMETHOD, FIELD, STATICFIELD, CALLBACK) \
         METHOD (getRootWindowInsets, "getRootWindowInsets", "()Landroid/view/WindowInsets;")
-    DECLARE_JNI_CLASS_WITH_MIN_SDK (ZatiView, "android/view/View", 23)
+    //  VEINTICUATRO Y NO VEINTITRES. `getRootWindowInsets` entro en la API 23
+    //  y ese numero se copio de la documentacion de Android, que es de donde
+    //  sale; pero el minSdk de esta app es 24 (Zati.jucer, androidMinimumSDK),
+    //  asi que pedir 23 es pedir menos de lo que la app admite: una guarda que
+    //  no puede saltar nunca. JUCE 8.0.15 lo dice con un static_assert nuevo
+    //  —cero apariciones en 8.0.4, una en 8.0.15— y la APK murio en el enlace
+    //  con «static assertion failed due to requirement '23 >= 24'». Las otras
+    //  tres declaraciones de este fichero piden 29 y 30, o sea por encima, y
+    //  esas si son guardas de verdad. Lo comprueba Tests/fuentes.py.
+    DECLARE_JNI_CLASS_WITH_MIN_SDK (ZatiView, "android/view/View", 24)
     #undef JNI_CLASS_MEMBERS
 
     #define JNI_CLASS_MEMBERS(METHOD, STATICMETHOD, FIELD, STATICFIELD, CALLBACK) \

@@ -1314,7 +1314,8 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         stepPhase.store ((float) (stepAccum / samplesPerStep), std::memory_order_relaxed);
     }
 
-    // 5b. The six effect buses: ISO, HPF, DRIVE, CRUSH, DELAY, REVERB.
+    // 5b. The six effect buses: FLT, HPF, DRV, DLY, BIT, REV - the order of
+    //     the fxDefs table, which is the one the face shows.
     //     Each one runs on its own input, made upstream out of the pads that
     //     were sent to it, and returns into the master at full level. The
     //     wet/dry balance that used to live here now lives in the send, which
