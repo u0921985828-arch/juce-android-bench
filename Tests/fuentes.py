@@ -17,6 +17,24 @@
 #  Esta prueba cuesta un segundo y se corre ANTES de disparar la APK. No mide
 #  nada del sonido ni de la pantalla: mide que los dos ficheros digan lo mismo.
 #
+#
+#  Y LA LISTA DE MODULOS ESTA ESCRITA DOS VECES TAMBIEN, y esa costo una
+#  corrida entera del CI.
+#
+#  Al subir JUCE de 8.0.4 a 8.0.15 el escritorio compilo limpio y las 25
+#  pruebas salieron en verde, y ocho minutos despues Projucer se nego a
+#  guardar: "At least one of your modules has missing dependencies!".
+#  `juce_audio_processors` paso a depender de `juce_audio_processors_headless`
+#  -un modulo que NO existe en 8.0.4- y el .jucer lleva las dependencias
+#  escritas A MANO. CMake resuelve el cierre solo, asi que el escritorio no
+#  puede ver el fallo: es exactamente el caso de Sintes.cpp de arriba con otra
+#  pieza. Local verde, remoto rojo, ocho minutos.
+#
+#  Se contrasta el cierre TRANSITIVO que declaran los propios modulos de JUCE
+#  contra la lista del .jucer, y ademas que MODULE y MODULEPATH digan lo mismo
+#  -un modulo sin su ruta no se encuentra, y una ruta sin su modulo es basura
+#  que nadie borra-.
+#
 #      python3 Tests/fuentes.py
 # ============================================================================
 import os, re, sys
@@ -44,6 +62,79 @@ def de_jucer():
     return out
 
 
+
+#  Donde esta el arbol de JUCE. En el escritorio lo baja FetchContent; en el CI
+#  de la APK es el clon de la raiz. Si no esta, esta prueba NO puede medir el
+#  cierre y lo dice: dar verde sin haber mirado es lo que este fichero existe
+#  para no hacer.
+JUCE = [os.path.join (ROOT, "build", "_deps", "juce-src", "modules"),
+        os.path.join (ROOT, "JUCE", "modules")]
+
+
+def arbol_juce():
+    for d in JUCE:
+        if os.path.isdir (d): return d
+    return None
+
+
+def dependencias (mods_dir, mod):
+    """Lo que el propio modulo declara en su cabecera. La linea puede llevar
+    comas y la seccion trae ademas OSXFrameworks y compañia, que no son
+    modulos: se filtra por prefijo juce_."""
+    h = os.path.join (mods_dir, mod, mod + ".h")
+    if not os.path.exists (h): return None
+    txt = open (h, encoding="utf-8", errors="replace").read()
+    blo = re.search (r"BEGIN_JUCE_MODULE_DECLARATION(.*?)END_JUCE_MODULE_DECLARATION",
+                     txt, re.S)
+    if not blo: return []
+    d = re.search (r"^\s*dependencies:\s*(.*)$", blo.group (1), re.M)
+    if not d: return []
+    return [x for x in re.split (r"[,\s]+", d.group (1).strip()) if x.startswith ("juce_")]
+
+
+def de_jucer_modulos():
+    """Los dos sitios del .jucer donde vive la lista, que tienen que coincidir."""
+    t = open (os.path.join (ROOT, "Zati.jucer")).read()
+    mods  = set (re.findall (r'<MODULE id="([^"]+)"', t))
+    rutas = set (re.findall (r'<MODULEPATH id="([^"]+)"', t))
+    return mods, rutas
+
+
+def modulos():
+    mods, rutas = de_jucer_modulos()
+    fallos = []
+
+    for m in sorted (mods - rutas):
+        fallos.append ("el modulo %s no tiene MODULEPATH: Projucer no lo "
+                       "encuentra" % m)
+    for m in sorted (rutas - mods):
+        fallos.append ("hay un MODULEPATH para %s y ese modulo no esta en "
+                       "MODULES" % m)
+
+    d = arbol_juce()
+    if d is None:
+        print ("modulos     no hay arbol de JUCE en disco: esta mitad no mide nada")
+        print ("            (compila una vez -cmake -B build- y vuelve)")
+        return fallos + ["sin arbol de JUCE no se puede comprobar el cierre"]
+
+    faltan = {}
+    for m in sorted (mods):
+        dep = dependencias (d, m)
+        if dep is None:
+            fallos.append ("el modulo %s no existe en el JUCE de disco" % m)
+            continue
+        for x in dep:
+            if x not in mods: faltan.setdefault (x, []).append (m)
+
+    print ("modulos     %2d en Zati.jucer, cierre comprobado contra %s"
+           % (len (mods), os.path.relpath (d, ROOT)))
+    for x in sorted (faltan):
+        fallos.append ("falta el modulo %s en Zati.jucer: lo pide %s. CMake "
+                       "resuelve el cierre solo y Projucer NO"
+                       % (x, ", ".join (faltan[x])))
+    return fallos
+
+
 def main():
     cm, ju = de_cmake(), de_jucer()
     if cm is None:
@@ -61,6 +152,8 @@ def main():
         fallos.append ("%s se compila en Android y NO en el escritorio: "
                        "falta en CMakeLists.txt, o sea que el banco no lo mide" % f)
 
+    fallos += modulos()
+
     print ("CMakeLists  %2d fuentes" % len (cm))
     print ("Zati.jucer  %2d fuentes" % len (ju))
     print ("en comun    %2d" % len (cm & ju))
@@ -69,7 +162,7 @@ def main():
     if fallos:
         for f in fallos: print ("FALLA  " + f)
         return 1
-    print ("las dos listas de fuentes dicen lo mismo")
+    print ("las dos listas de fuentes y la de modulos dicen lo mismo")
     return 0
 
 

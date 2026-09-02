@@ -16,6 +16,19 @@ sys.path.insert (0, os.path.dirname (os.path.abspath (__file__)))
 from marcas import prohibido
 
 apk = sys.argv[1]
+
+#  Si el paquete no esta, se dice y no se lanza un traceback. El paso que
+#  llama a esto lleva `if: !cancelled()` a proposito -un paso saltado no es un
+#  paso verde- asi que corre TAMBIEN cuando la compilacion ha fallado antes, y
+#  entonces un FileNotFoundError de cinco lineas se lee como si el fallo
+#  estuviera aqui. Medido: la corrida que subio JUCE a 8.0.15 fallo en el
+#  --resave de Projucer y este fichero dejo un traceback encima del error de
+#  verdad.
+if not os.path.exists (apk):
+    print ("no existe %s: la compilacion no llego a producirlo, "
+           "el fallo esta antes" % apk)
+    sys.exit (1)
+
 raw = open(apk, 'rb').read()
 
 z = zipfile.ZipFile(apk)
