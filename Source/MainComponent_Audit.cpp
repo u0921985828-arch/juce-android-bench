@@ -1172,6 +1172,12 @@ void MainComponent::auditOpen (const juce::String& which)
     }
     else if (which == "midi") { showSetPage (pageMidi); refreshMidiDevices(); openSheet (setSheet, setButton); }
     else if (which == "rack") { rackPad = 0; openSheet (rackSheet, mixButton); refreshRack(); }
+    //  EL MENU DE UNA RANURA, en sus DOS estados, que es lo mismo que hizo
+    //  falta con `secp` y con `instp`: sobre una ranura VACIA -que es como se
+    //  llega desde la cara- y sobre una LLENA, que ademas enseña VACIAR y por
+    //  tanto pide una fila mas y mide otra cosa.
+    else if (which == "ranura")  { ponEnRanura (0, kSlotVacia); abreMenuRanura (0); }
+    else if (which == "ranural") { ponEnRanura (0, 3);          abreMenuRanura (0); }
     //  LA FICHA DE INSTRUMENTOS, en sus dos estados: con el pack de dentro
     //  -cuatro tapas de cuatro- y con uno de disco lleno y CERRADO, que es
     //  donde los rotulos llevan el candado delante y por tanto miden otra cosa.
@@ -2011,6 +2017,12 @@ void MainComponent::auditProject()
     clips.push_back ({ /*pad*/ 16, /*pista*/ 2, /*compas*/ 7, /*desde*/ 250, /*largo*/ 9600, 0.50f });
     publicaClips();
 
+    //  Y UN MAPA DE RANURAS RECONOCIBLE, que no es la identidad ni el vacio:
+    //  con la fila en orden, «volvio» lo cumple igual un lector que no lee
+    //  nada y deja el defecto puesto.
+    ponEnRanura (0, 5); ponEnRanura (1, kSlotVacia); ponEnRanura (2, 1);
+    ponEnRanura (3, kSlotVacia); ponEnRanura (4, kSlotVacia); ponEnRanura (5, 2);
+
     saveProject ("BANCO_PRUEBA");
     //  Y SE ESPERA A QUE TERMINE, que es lo que faltaba y por lo que esta
     //  comprobacion salia verde o roja segun lo rapido que fuera el disco.
@@ -2044,6 +2056,9 @@ void MainComponent::auditProject()
     engine.setStepPLockRaw (0, 0, 0, 0);
     clips.clear();
     publicaClips();
+    //  Y las ranuras, borradas a mano por lo mismo: si al volver siguen
+    //  puestas no es que se hayan guardado, es que nadie las quito.
+    for (int s = 0; s < kNumFx; ++s) ponEnRanura (s, kSlotVacia);
 
     loadProject ("BANCO_PRUEBA");
     while (padJob != nullptr) stepPadJob();
@@ -2059,6 +2074,8 @@ void MainComponent::auditProject()
                                   << engine.getStepPLock (0, 0, 0, AudioEngine::plockCaida)  << ","
                                   << engine.getStepPLock (0, 0, 0, AudioEngine::plockInicio) << ","
                                   << engine.getStepPLock (0, 0, 0, AudioEngine::plockPan)    << "]"
+              << ",\"ranuras\":[" << slotFx[0] << "," << slotFx[1] << "," << slotFx[2] << ","
+                                   << slotFx[3] << "," << slotFx[4] << "," << slotFx[5] << "]"
               << "}" << std::endl;
 
     //  Y SE BOMBEA UN TICK DE AUDIO ANTES DE PREGUNTARLE AL MOTOR. La tabla de
@@ -2125,6 +2142,13 @@ void MainComponent::auditViejos (const juce::String& carpeta)
             padReverse[(size_t) p] = true; engine.setPadReverse (p, true);
             for (int fx = 0; fx < kNumFx; ++fx) engine.setPadSend (p, fx, 0.75f);
         }
+        //  Y LA FILA DE EFECTOS VACIA antes de abrir el viejo. Un proyecto de
+        //  otra epoca no lleva la propiedad `slots`, asi que tiene que volver
+        //  con la fila DE SIEMPRE -la ranura s con el tipo s- y no con el
+        //  defecto de hoy, que es vacia: lo que manda no es cual es el defecto
+        //  de hoy sino como sonaba el dia que se guardo. Sin vaciarla antes,
+        //  «volvio en orden» lo cumple tambien no haber tocado nada.
+        for (int s = 0; s < kNumFx; ++s) ponEnRanura (s, kSlotVacia);
         engine.setSongLength (32);
         engine.setSongCell (0, 0, 3);
         engine.setSongCell (1, 4, 2);
@@ -2153,6 +2177,87 @@ void MainComponent::auditViejos (const juce::String& carpeta)
                   << ",\"cancion\":" << celdasCancion
                   << ",\"vel0\":" << engine.getStepVel (0, 0, 0)
                   << ",\"roll0\":" << engine.getStepRoll (0, 0, 0)
+                  << ",\"ranuras\":[" << slotFx[0] << "," << slotFx[1] << "," << slotFx[2] << ","
+                                       << slotFx[3] << "," << slotFx[4] << "," << slotFx[5] << "]"
                   << "}" << std::endl;
     }
+}
+
+// ============================================================================
+//  LAS SEIS RANURAS DE LA FILA DE EFECTOS. Ver Tests/ranuras.py.
+//
+//  SE MIDE POR EL GESTO Y NO POR EL CALLBACK, que es la leccion que este banco
+//  ya pago cinco veces con el compas del piano: llamar a `ponEnRanura` por
+//  dentro se salta justo el codigo que decide si una tapa abre el menu o
+//  enciende un efecto, que es donde vive todo lo que esta tanda anade. Se
+//  pulsan las tapas de verdad -`fxButtons[s]->onClick`, `ranuraBtns[f]->
+//  onClick`- y se lee lo que quedo.
+void MainComponent::auditRanuras()
+{
+    auto mapa = [this]
+    {
+        juce::StringArray r;
+        for (int s = 0; s < kNumFx; ++s) r.add (juce::String (slotFx[(size_t) s]));
+        return "[" + r.joinIntoString (",") + "]";
+    };
+    auto pulsa = [] (juce::Button* b) { if (b != nullptr && b->onClick) b->onClick(); };
+
+    //  1. UNA RANURA VACIA ABRE EL MENU, y una llena NO.
+    //
+    //  Con DOS cifras y no una: «se abrio» lo cumple igual un menu que se abre
+    //  siempre, que es como se escribe mal la primera version de esto - y
+    //  entonces no habria forma de encender un efecto desde la cara.
+    for (int s = 0; s < kNumFx; ++s) ponEnRanura (s, kSlotVacia);
+    abreMenuRanura (-1);
+    pulsa (fxButtons[0]);
+    const int menuTrasVacia = ranuraEditada;
+    abreMenuRanura (-1);
+
+    ponEnRanura (0, 0);
+    pulsa (fxButtons[0]);
+    const int menuTrasLlena = ranuraEditada;
+    const int encendioAlTocar = fxOn[0] ? 1 : 0;
+    abreMenuRanura (-1);
+    setFxEnabled (0, false);
+
+    //  2. ELEGIR EN EL MENU LLENA LA RANURA, y desde la cara ya no se cambia:
+    //     esa tapa pasa a encender y apagar. Es la ACCION UNICA que se pidio.
+    for (int s = 0; s < kNumFx; ++s) ponEnRanura (s, kSlotVacia);
+    pulsa (fxButtons[2]);                       // el «+» de la ranura 2
+    pulsa (ranuraBtns[4]);                      // se elige BIT
+    const juce::String trasElegir = mapa();
+    const int menuTrasElegir = ranuraEditada;   // se cierra sola
+    pulsa (fxButtons[2]);                       // y ahora ese boton enciende
+    const int enciendeDespues = fxOn[4] ? 1 : 0;
+    const juce::String mapaDespues = mapa();    // que no ha cambiado
+    setFxEnabled (4, false);
+
+    //  3. UN TIPO, UNA RANURA. Poner en la 0 un tipo que ya estaba en la 3
+    //     tiene que DEJAR LA 3 VACIA: dos ranuras del mismo tipo serian dos
+    //     ventanas al mismo aparato del motor.
+    for (int s = 0; s < kNumFx; ++s) ponEnRanura (s, s);
+    abreMenuRanura (0);
+    pulsa (ranuraBtns[3]);
+    const juce::String trasMover = mapa();
+
+    //  4. VACIAR UNA RANURA APAGA SU EFECTO. Un efecto encendido cuya tapa
+    //     desaparece sigue sonando y no hay donde tocarlo.
+    for (int s = 0; s < kNumFx; ++s) ponEnRanura (s, s);
+    setFxEnabled (3, true);
+    const int antesDeVaciar = fxOn[3] ? 1 : 0;
+    ponEnRanura (3, kSlotVacia);
+    const int trasVaciar = fxOn[3] ? 1 : 0;
+
+    std::cout << "{\"ranuras\":1"
+              << ",\"menu_tras_vacia\":"   << menuTrasVacia
+              << ",\"menu_tras_llena\":"   << menuTrasLlena
+              << ",\"enciende_al_tocar\":" << encendioAlTocar
+              << ",\"tras_elegir\":\""     << trasElegir << "\""
+              << ",\"menu_tras_elegir\":"  << menuTrasElegir
+              << ",\"enciende_despues\":"  << enciendeDespues
+              << ",\"mapa_despues\":\""    << mapaDespues << "\""
+              << ",\"tras_mover\":\""      << trasMover << "\""
+              << ",\"antes_de_vaciar\":"   << antesDeVaciar
+              << ",\"tras_vaciar\":"       << trasVaciar
+              << "}" << std::endl;
 }

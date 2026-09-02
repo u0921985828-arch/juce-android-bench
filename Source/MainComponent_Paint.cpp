@@ -174,8 +174,12 @@ void MainComponent::paint (juce::Graphics& g)
         //  whose parameters CTRL 1-3 were holding. A wedge in the seam above
         //  the button, pointing from the knobs down at the effect they
         //  belong to.
-        if (juce::isPositiveAndBelow (focusedFx, fxButtons.size()))
-            if (auto* fb = fxButtons[focusedFx])
+        //  La cuna apunta a la RANURA donde vive el tipo enfocado, que ya no
+        //  es su indice: con la fila en ranuras, `fxButtons[focusedFx]` es la
+        //  tapa que ESTA en ese sitio y no la del efecto. Y si el tipo no esta
+        //  puesto no hay a donde apuntar, asi que no se dibuja.
+        if (const int sFoco = slotDeFx (focusedFx); sFoco >= 0)
+            if (auto* fb = fxButtons[sFoco])
             {
                 //  In the band BELOW the rule, which is now empty: the word
                 //  moved to the middle of the seam and takes the rule's line
@@ -1319,6 +1323,29 @@ void MainComponent::paintPadPickContent (juce::Graphics& g)
                  "titulo", true);
 }
 
+//  EL TITULO DEL MENU DE UNA RANURA. La banda la publica `resized()` y no se
+//  calcula aqui: es la tercera vez que esta casa lo paga -el titulo de
+//  INSTRUMENTOS, el nombre de su pack y su pie se pintaban desde la TARJETA y
+//  se maquetaban desde el CUERPO, noventa pixeles de diferencia- y la regla
+//  quedo escrita: la banda la publica el maquetado.
+void MainComponent::paintRanuraContent (juce::Graphics& g)
+{
+    if (ranuraSheet.sheetBounds.isEmpty() || ranuraTituloBanda.isEmpty()) return;
+
+    auto titulo = ranuraTituloBanda;
+
+    //  Se aparta de la cruz por el lado que toque: en arabe el texto se va a
+    //  la derecha, que es donde takeEnd la ha puesto. `antesDe` decide el lado
+    //  comparando los CENTROS, que es lo que costo once hallazgos el dia que
+    //  se escribio `setRight` a mano seis veces.
+    titulo = antesDe (titulo, ranuraCloseBtn.getBounds());
+
+    g.setColour (ZatiColours::ink.withAlpha (0.9f));
+    g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
+    pintaTitulo (g, titulo, T ("RANURA %1", juce::String (ranuraEditada + 1)),
+                 "titulo", true);
+}
+
 void MainComponent::paintPadSheetContent (juce::Graphics& g)
 {
     if (padSheet.sheetBounds.isEmpty()) return;
@@ -1602,40 +1629,20 @@ void MainComponent::paintRackSheetContent (juce::Graphics& g)
     g.drawFittedText (T ("cuanto de este pad entra en cada efecto"),
                       inner.removeFromTop (14), Lang::start(), 1, 0.75f);
 
-    for (int f = 0; f < kNumFx; ++f)
+    //  EL NOMBRE Y EL DIBUJO YA NO SE PINTAN AQUI: el canalon de la izquierda
+    //  es una TAPA desde que la fila del rack es una RANURA y no un efecto,
+    //  porque es la puerta al menu donde se cambia lo que hay dentro. Un rotulo
+    //  pintado no se puede tocar, y este hay que tocarlo. Lo pone
+    //  `refreshRack`, desde la misma tabla que las seis tapas de la cara.
+    //
+    //  Lo unico que queda aqui es el velo del fader, que depende de si el
+    //  efecto de esa ranura esta encendido: un envio apagado no se esconde, se
+    //  atenua - lo que pongas ahora es lo que usara cuando lo enciendas.
+    for (int s = 0; s < kNumFx; ++s)
     {
-        if (rackSends[f] == nullptr) continue;
-        const auto r = rackSends[f]->getBounds();
-        const bool on = fxOn[(size_t) f];
-
-        //  CADA EFECTO CON SU DIBUJO, que es lo que la fila de la cara ya
-        //  lleva: aqui eran seis abreviaturas de tres letras una debajo de
-        //  otra -FLT, HPF, DRV...- y esa columna no se lee, se descifra.
-        //
-        //  Y el hueco sale de la posicion del fader y no de sheetBounds: esta
-        //  ficha se desplaza, asi que la tarjeta y el maquetado no estan en el
-        //  mismo sitio. Es el mismo fallo que costo una medida en INSTRUMENTOS.
-        static const Iconos::Id kIcono[kNumFx] = { Iconos::Id::flt, Iconos::Id::hpf,
-                                                   Iconos::Id::drv, Iconos::Id::dly,
-                                                   Iconos::Id::bit, Iconos::Id::rev };
-        auto hueco = juce::Rectangle<int> (r.getX() - 54, r.getY(), 52, r.getHeight());
-        const auto tinta = on ? ZatiColours::ink : ZatiColours::inkDim.withAlpha (0.55f);
-
-        const int lado = juce::jmin (18, hueco.getHeight() - 4);
-        if (lado >= Iconos::kLadoMin)
-        {
-            auto ic = Lang::takeStart (hueco, lado);
-            Iconos::dibuja (g, kIcono[f], ic.toFloat(), tinta);
-            Lang::takeStart (hueco, Metrics::halfGap);
-        }
-
-        g.setColour (tinta);
-        g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.10f));
-        g.drawText (fxDefs[f].name, hueco, Lang::start());
-
-        //  An effect that is switched off is not hidden, it is greyed: the
-        //  send you set now is the send it will use when you switch it on.
-        rackSends[f]->setAlpha (on ? 1.0f : 0.5f);
+        if (rackSends[s] == nullptr) continue;
+        const int fx = slotFx[(size_t) s];
+        rackSends[s]->setAlpha (fx >= 0 && fxOn[(size_t) fx] ? 1.0f : 0.5f);
     }
 }
 

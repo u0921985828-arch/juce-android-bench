@@ -223,6 +223,43 @@ MainComponent::MainComponent()
         padSheet.addAndMakeVisible (padPadPickBtn);
     }
 
+    //  EL MENU DE UNA RANURA. Ver ranuraSheet en la cabecera.
+    {
+        addAndMakeVisible (ranuraSheet);
+        ranuraSheet.setVisible (false);
+        ranuraSheet.onDismiss    = [this] { abreMenuRanura (-1); };
+        ranuraSheet.paintContent = [this] (juce::Graphics& g) { paintRanuraContent (g); };
+        styleButton (ranuraCloseBtn, kKey);
+        ranuraCloseBtn.onClick = [this] { abreMenuRanura (-1); };
+        ranuraSheet.addAndMakeVisible (ranuraCloseBtn);
+
+        for (int f = 0; f < kNumFx; ++f)
+        {
+            auto* b = new juce::TextButton (fxDefs[f].name);
+            styleButton (*b, kStepOff);
+            litAccent (*b);
+            b->getProperties().set ("icono", (int) iconoDeFx (f));
+            //  Elegir y cerrar, como la rejilla de pads: el menu existe para
+            //  llenar la ranura de un gesto, y dejarlo abierto despues de
+            //  acertar es un segundo toque para volver a lo que hacias.
+            b->onClick = [this, f] { ponEnRanura (ranuraEditada, f); abreMenuRanura (-1); };
+            ranuraSheet.addAndMakeVisible (b);
+            ranuraBtns.add (b);
+        }
+
+        //  VACIAR solo aparece con la ranura LLENA, que es la unica vez que
+        //  significa algo. Desde la cara este menu se abre sobre un «+», o sea
+        //  vacia, y entonces no esta: un control que no puede hacer nada no es
+        //  informacion, es ruido.
+        styleButton (ranuraVaciarBtn, kKey);
+        ranuraVaciarBtn.onClick = [this]
+        {
+            ponEnRanura (ranuraEditada, kSlotVacia);
+            abreMenuRanura (-1);
+        };
+        ranuraSheet.addAndMakeVisible (ranuraVaciarBtn);
+    }
+
     // Projects sheet — reached from the header chip, not the module bar (the
     // bar stays a rule of three: PADS / SEC / FX).
     {
@@ -446,9 +483,33 @@ MainComponent::MainComponent()
             sl->setSliderSnapsToMousePosition (false);
             sl->textFromValueFunction = [] (double v) { return juce::String ((int) std::round (v * 100.0)); };
             sl->updateText();
-            sl->onValueChange = [this, f, sl] { engine.setPadSend (rackPad, f, (float) sl->getValue()); rackSheet.repaint(); };
+            //  `f` es la RANURA. A que efecto va este envio lo dice `slotFx`
+            //  en el momento de mover el fader y no aqui: una ranura puede
+            //  cambiar de contenido y el mando es el mismo.
+            sl->onValueChange = [this, f, sl]
+            {
+                const int fx = slotFx[(size_t) f];
+                if (fx < 0) return;                 // ranura vacia: no hay bus
+                engine.setPadSend (rackPad, fx, (float) sl->getValue());
+                rackSheet.repaint();
+            };
             rackSheet.cuerpo.addAndMakeVisible (sl);
             rackSends.add (sl);
+
+            //  Y LA TAPA DEL CANALON, que es donde se cambia el efecto de una
+            //  ranura. Aqui el nombre y el dibujo se PINTABAN, o sea que la
+            //  columna de la izquierda era decoracion: ahora es la puerta.
+            //
+            //  Desde la cara solo se puede LLENAR una ranura -el «+» aparece
+            //  con ella vacia y se va en cuanto se elige-, asi que este es el
+            //  unico sitio desde el que se cambia o se quita lo que ya esta.
+            //  Una funcion, un dueño.
+            auto* g = new juce::TextButton();
+            styleButton (*g, kStepOff);
+            litAccent (*g);
+            g->onClick = [this, f] { abreMenuRanura (f); };
+            rackSheet.cuerpo.addAndMakeVisible (g);
+            rackSlotBtns.add (g);
         }
 
         styleButton (rackCloseButton, kKey);
@@ -1810,17 +1871,34 @@ MainComponent::MainComponent()
     {
         for (int f = 0; f < kNumFx; ++f)
         {
+            //  El rotulo lo pone `refrescaRanuras`, que es quien sabe que hay
+            //  en la ranura: aqui se nace con el del tipo que le toca por
+            //  orden y esa es la ultima vez que el sitio decide el contenido.
             auto* b = new HoldButton (fxDefs[f].name);
             styleButton (*b, kKey);
             litAccent (*b);
-            b->onClick = [this, f] { fxTapped (f); };
+            //  `f` es la RANURA y no el efecto. Quien traduce lo uno en lo
+            //  otro es `ranuraTocada`, que ademas es quien sabe que hacer con
+            //  una vacia.
+            b->onClick = [this, f] { ranuraTocada (f); };
             //  Hold to take the knobs without touching the switch: the only
             //  way to tune an effect that is already running now that a tap
             //  always means on/off.
-            b->onHold  = [this, f] { fxFocusOnly (f); };
+            b->onHold  = [this, f] { ranuraMantenida (f); };
             addAndMakeVisible (b);
             fxButtons.add (b);
         }
+
+        //  LAS SEIS RANURAS NACEN LLENAS Y EN ORDEN, y no vacias.
+        //
+        //  Este es el estado del CONSTRUCTOR, o sea lo que hay antes de que
+        //  nadie diga que proyecto se abre: si `restoreSession` encuentra una
+        //  sesion o un proyecto, lo que valga aqui se sobreescribe; si se pulsa
+        //  NUEVO, `newProject` las vacia. Lo que no puede es quedarse a ceros
+        //  por omision - `std::array<int,6> {}` deja SEIS FLT, que es el mismo
+        //  fallo que `notaViva` y que el cero de `padAncho`: un valor por
+        //  defecto que ademas es un valor valido.
+        for (int s = 0; s < kNumFx; ++s) slotFx[(size_t) s] = s;
     }
 
     //  Dragging the hero's handles is the same edit as the START/END faders in
@@ -2941,6 +3019,10 @@ MainComponent::MainComponent()
     showPadPage (padPageSound);
     showMixBank (0);
     ponIconos();
+    //  DESPUES de ponIconos, que reparte los dibujos de toda la app por su
+    //  sitio: la fila de la cara los suyos los toma de `slotFx` y no del
+    //  orden, asi que tiene que ser la ultima palabra sobre esas seis tapas.
+    refrescaRanuras();
     applySkin();
 }
 
@@ -3148,11 +3230,10 @@ void MainComponent::ponIconos()
     //  traducen: quien abre la app por primera vez no sabe cual es cual en
     //  ninguno de los cuatro idiomas. Aqui es donde mas rinde un dibujo.
     {
-        static const Iconos::Id kFx[] = { Iconos::Id::flt, Iconos::Id::hpf, Iconos::Id::drv,
-                                          Iconos::Id::dly, Iconos::Id::bit, Iconos::Id::rev };
-        const int n = (int) (sizeof (kFx) / sizeof (kFx[0]));
-        for (int f = 0; f < fxButtons.size() && f < n; ++f)
-            fxButtons[f]->getProperties().set ("icono", (int) kFx[f]);
+        const int n = kNumFx;
+        //  La fila de la CARA la pone `refrescaRanuras`, que es quien sabe que
+        //  tipo vive en cada ranura: aqui el dibujo dependeria del sitio y no
+        //  del contenido, que es justo lo que dejo de ser verdad.
 
         //  Y LOS MISMOS SEIS EN EL XY, que se quedaron sin dibujo por escribir
         //  la fila una sola vez. Son las MISMAS abreviaturas -FLT, HPF, DRV- y
@@ -3160,7 +3241,7 @@ void MainComponent::ponIconos()
         //  igual aqui: tres letras no se traducen. Que la de la cara estuviera
         //  dibujada y la del XY no es la misma tapa contando dos historias.
         for (int f = 0; f < xyFxButtons.size() && f < n; ++f)
-            xyFxButtons[f]->getProperties().set ("icono", (int) kFx[f]);
+            xyFxButtons[f]->getProperties().set ("icono", (int) iconoDeFx (f));
     }
 
     //  Las dos de transporte nacen paradas; a partir de ahi las mueve
@@ -3415,7 +3496,11 @@ void MainComponent::setFxEnabled (int f, bool on)
 {
     if (! juce::isPositiveAndBelow (f, kNumFx)) return;
     fxOn[(size_t) f] = on;
-    fxButtons[f]->setToggleState (on, juce::dontSendNotification);
+    //  La luz va a la RANURA donde este ese tipo, que ya no es su indice. Un
+    //  tipo que no esta puesto no tiene tapa que encender, y no se pierde
+    //  nada: `refrescaRanuras` vuelve a pintar las seis desde `slotFx`.
+    if (const int s = slotDeFx (f); s >= 0)
+        fxButtons[s]->setToggleState (on, juce::dontSendNotification);
     fxParam (f, 2).setValue (on ? fxDefs[f].onMix : 0.0, juce::dontSendNotification);
     pushFxParam (f, 2);
     refreshMacroValues();
@@ -3453,6 +3538,182 @@ void MainComponent::focusFx (int f)
 //  The knobs follow the tap, because you want to see what you just switched
 //  on. To reach the knobs of an effect that is already running without
 //  switching it off, hold the button.
+// --- Las seis ranuras ----------------------------------------------------
+//
+//  Una ranura es un SITIO de la fila; un efecto es lo que se pone en ella. Lo
+//  que sigue es toda la traduccion entre las dos cosas, y no hay mas: el resto
+//  de la app -el motor, el XY, los parametros, el fichero de proyecto- sigue
+//  hablando de TIPOS, que es lo que suena.
+
+int MainComponent::slotDeFx (int fx) const
+{
+    if (fx < 0) return -1;
+    for (int s = 0; s < kNumFx; ++s)
+        if (slotFx[(size_t) s] == fx) return s;
+    return -1;
+}
+
+//  Poner un tipo en una ranura, o vaciarla con kSlotVacia.
+void MainComponent::ponEnRanura (int ranura, int fx)
+{
+    if (! juce::isPositiveAndBelow (ranura, kNumFx)) return;
+    if (fx != kSlotVacia && ! juce::isPositiveAndBelow (fx, kNumFx)) return;
+
+    //  UN TIPO, UNA RANURA. Su estado en el motor es uno solo -un filtro, una
+    //  linea de retardo, una reverb- asi que dos ranuras del mismo tipo serian
+    //  dos ventanas al mismo aparato, con dos interruptores que se contradicen.
+    //  El menu ya no ofrece lo que esta puesto; esto es la red de debajo, y
+    //  MUEVE en vez de rechazar: si el tipo ya estaba en otro sitio, se va de
+    //  alli. Rechazar dejaria un toque sin efecto visible, que se lee como que
+    //  el boton no responde.
+    const int antes = slotDeFx (fx);
+    if (fx != kSlotVacia && antes >= 0 && antes != ranura)
+        slotFx[(size_t) antes] = kSlotVacia;
+
+    //  Y lo que SALE de la ranura se apaga. Un efecto encendido cuya tapa
+    //  acaba de desaparecer sigue sonando y no hay donde tocarlo: es la misma
+    //  regla que ya gobierna la ficha del XY al cambiar de efecto en
+    //  momentaneo, y la hermana de «ningun camino puede dejar la app en
+    //  silencio» por el otro lado.
+    const int salia = slotFx[(size_t) ranura];
+    if (salia >= 0 && salia != fx && fxOn[(size_t) salia])
+        setFxEnabled (salia, false);
+
+    slotFx[(size_t) ranura] = fx;
+    refrescaRanuras();
+}
+
+//  Rotulo, dibujo y luz de las seis tapas. Se llama entera y no por ranura
+//  porque `filaDeIconos` decide la fila de golpe -todo-o-nada- y porque mover
+//  una ranura puede vaciar otra.
+void MainComponent::refrescaRanuras()
+{
+    for (int s = 0; s < fxButtons.size() && s < kNumFx; ++s)
+    {
+        const int fx = slotFx[(size_t) s];
+        auto* b = fxButtons[s];
+
+        //  El signo de una ranura vacia. No pasa por T() a proposito: «+» es
+        //  el mismo caracter en los cuatro idiomas, igual que la cruz de
+        //  cerrar, y la regla de traduccion del banco ya lo da por bueno.
+        b->setButtonText (fx < 0 ? "+" : fxDefs[fx].name);
+
+        //  Y LLEVA LA MARCA `valor`, que es lo que separa «aqui no cabia el
+        //  dibujo» de «aqui no hay dibujo que poner». Sin ella, una fila con
+        //  cinco efectos dibujados y un «+» pelado sale como un HUECO en
+        //  Tests/planos.py, que es exactamente el fallo que esa regla existe
+        //  para cazar - y aqui seria falso: un signo ES el dibujo.
+        if (fx < 0)
+        {
+            b->getProperties().remove ("icono");
+            b->getProperties().set ("valor", 1);
+        }
+        else
+        {
+            b->getProperties().set ("icono", (int) iconoDeFx (fx));
+            b->getProperties().remove ("valor");
+        }
+
+        b->setToggleState (fx >= 0 && fxOn[(size_t) fx], juce::dontSendNotification);
+
+        //  Y EL CANALON DEL RACK, la MISMA ranura y la misma tabla. Eran dos
+        //  sitios que decian lo que hay en una ranura y solo uno se
+        //  actualizaba: la fila del rack pintaba su nombre de una tabla suya
+        //  -copiada- que no sabia nada de esto. Una regla escrita dos veces son
+        //  dos reglas.
+        if (auto* rb = (s < rackSlotBtns.size() ? rackSlotBtns[s] : nullptr))
+        {
+            rb->setButtonText (fx < 0 ? "+" : fxDefs[fx].name);
+            if (fx < 0)
+            {
+                rb->getProperties().remove ("icono");
+                rb->getProperties().set ("valor", 1);
+            }
+            else
+            {
+                rb->getProperties().set ("icono", (int) iconoDeFx (fx));
+                rb->getProperties().remove ("valor");
+            }
+            rb->setToggleState (fx >= 0 && fxOn[(size_t) fx], juce::dontSendNotification);
+        }
+    }
+
+    //  Y LOS TRES MANDOS SE APAGAN CUANDO NO HAY NADA QUE TOCAR. Con la fila
+    //  entera vacia -que es como abre un proyecto nuevo- CTRL 1-3 seguirian
+    //  moviendo el parametro de un efecto que no esta puesto: un mando que se
+    //  mueve y no hace nada es peor que no tenerlo, que es lo mismo que ya se
+    //  decidio con los mandos de recorte en un pad de instrumento.
+    const bool hayAlguno = fxEstaPuesto (focusedFx);
+    macroCtrl1.setEnabled (hayAlguno);
+    macroCtrl2.setEnabled (hayAlguno);
+    macroCtrl3.setEnabled (hayAlguno);
+}
+
+//  EL MENU DE UNA RANURA, ABIERTO O CERRADO. -1 lo cierra.
+void MainComponent::abreMenuRanura (int ranura)
+{
+    const bool abrir = juce::isPositiveAndBelow (ranura, kNumFx);
+    ranuraEditada = abrir ? ranura : -1;
+    ranuraSheet.setVisible (abrir);
+
+    if (abrir)
+    {
+        ranuraSheet.toFront (false);
+        refrescaMenuRanura();
+    }
+    else
+    {
+        //  APAGAR *Y* VACIAR LOS LIMITES, las dos cosas, que es lo que costo
+        //  SEGUIR y lo que la septima regla del banco existe para cazar.
+        for (auto* b : ranuraBtns) if (b != nullptr) b->setBounds ({});
+        ranuraCloseBtn.setBounds ({});
+        ranuraVaciarBtn.setBounds ({});
+        ranuraSheet.sheetBounds = {};
+        ranuraTituloBanda = {};
+    }
+
+    resized();
+    repaint();
+}
+
+void MainComponent::refrescaMenuRanura()
+{
+    const int puesto = juce::isPositiveAndBelow (ranuraEditada, kNumFx)
+                         ? slotFx[(size_t) ranuraEditada] : kSlotVacia;
+
+    for (int f = 0; f < ranuraBtns.size() && f < kNumFx; ++f)
+        if (auto* b = ranuraBtns[f])
+        {
+            //  LO QUE YA ESTA PUESTO EN OTRA RANURA NO SE OFRECE, y se apaga
+            //  en vez de esconderse: media rejilla con celdas y media sin
+            //  ellas se lee como una celda rota, y ademas el sitio de cada
+            //  efecto dejaria de ser el mismo cada vez que se abre el menu -
+            //  que es justo lo que hace que se pueda aprender donde esta.
+            const int suya = slotDeFx (f);
+            const bool libre = (suya < 0 || suya == ranuraEditada);
+            b->setEnabled (libre);
+            b->setToggleState (f == puesto, juce::dontSendNotification);
+        }
+
+    ranuraVaciarBtn.setVisible (puesto >= 0);
+}
+
+void MainComponent::ranuraTocada (int ranura)
+{
+    if (! juce::isPositiveAndBelow (ranura, kNumFx)) return;
+    const int fx = slotFx[(size_t) ranura];
+    if (fx < 0) { abreMenuRanura (ranura); return; }
+    fxTapped (fx);
+}
+
+void MainComponent::ranuraMantenida (int ranura)
+{
+    if (! juce::isPositiveAndBelow (ranura, kNumFx)) return;
+    const int fx = slotFx[(size_t) ranura];
+    if (fx < 0) { abreMenuRanura (ranura); return; }
+    fxFocusOnly (fx);
+}
+
 void MainComponent::fxTapped (int f)
 {
     if (! juce::isPositiveAndBelow (f, kNumFx)) return;
@@ -3655,7 +3916,9 @@ void MainComponent::macroMoved (int idx)
         if (on != fxOn[(size_t) focusedFx])
         {
             fxOn[(size_t) focusedFx] = on;
-            fxButtons[focusedFx]->setToggleState (on, juce::dontSendNotification);
+            //  A la RANURA del tipo enfocado, no a su indice. Ver setFxEnabled.
+            if (const int s = slotDeFx (focusedFx); s >= 0)
+                fxButtons[s]->setToggleState (on, juce::dontSendNotification);
         }
     }
     //  Only the knob strip, not the whole face: a full repaint during a drag
@@ -4045,6 +4308,10 @@ void MainComponent::closeAllSheets()
     //  esto, cerrar el secuenciador dejaba flotando su selector de pad sobre
     //  la cara. Ver abrePadPicker.
     if (padPickAbierto) abrePadPicker (false);
+
+    //  Y EL MENU DE UNA RANURA, por lo mismo: tambien vive ENCIMA de todo, asi
+    //  que sin esto se queda flotando sobre la ficha que se acaba de abrir.
+    if (ranuraEditada >= 0) abreMenuRanura (-1);
 
     //  CERRAR LA FICHA XY EN MOMENTANEO TIENE QUE APAGAR EL EFECTO.
     //
@@ -5772,6 +6039,12 @@ void MainComponent::retranslateUi()
     rackButton   .setButtonText (T ("RACK"));
     mixClearSolo .setButtonText (T ("SIN SOLO"));
     songClearBtn .setButtonText (T ("VACIAR"));
+    //  Y LA DEL MENU DE UNA RANURA. Se construyo con el literal en español y
+    //  no se retraducia jamas: es exactamente el fallo de las tres pestañas de
+    //  AJUSTES -la ficha que CONTIENE el selector de idioma- y lo canto el
+    //  banco en la primera corrida con la ficha nueva puesta, «VACIAR
+    //  identical in es and en», siete veces.
+    ranuraVaciarBtn.setButtonText (T ("VACIAR"));
     //  Las tres del modo dicen el ESTADO, no un verbo: ver modoTapa.
     for (juce::TextButton* b2 : { &songModeBtn, &modoBtn, &seqModoBtn })
         modoTapa (*b2, engine.isSongMode());
@@ -6666,6 +6939,14 @@ juce::ValueTree MainComponent::captureState() const
     //  El XY es parte del proyecto: que efecto estabas tocando y si lo dejaste
     //  fijo o momentaneo. Sin esto, abrir un proyecto te devolvia el panel en
     //  FLT y en momentaneo aunque lo hubieras dejado en el delay y fijo.
+    //  LAS SEIS RANURAS, en una sola propiedad y separadas por comas: «que
+    //  tipo vive en cada sitio», con -1 para vacia. Una propiedad por ranura
+    //  serian seis y la lista no es dispersa - las seis valen siempre algo.
+    {
+        juce::StringArray r;
+        for (int s = 0; s < kNumFx; ++s) r.add (juce::String (slotFx[(size_t) s]));
+        fx.setProperty ("slots", r.joinIntoString (","), nullptr);
+    }
     fx.setProperty ("duckPad", engine.getDuckPad(), nullptr);
     fx.setProperty ("xyFx",    xyFx,    nullptr);
     fx.setProperty ("xyLatch", xyLatch, nullptr);
@@ -6890,7 +7171,52 @@ void MainComponent::applyState (const juce::ValueTree& s)
         {
             pushFxParam (f, 0); pushFxParam (f, 1); pushFxParam (f, 2);
             fxOn[(size_t) f] = fxParam (f, 2).getValue() > 0.001;
-            fxButtons[f]->setToggleState (fxOn[(size_t) f], juce::dontSendNotification);
+            //  La luz de las seis tapas la reparte `refrescaRanuras` al
+            //  final de esta funcion, que es quien sabe donde vive cada tipo.
+            juce::ignoreUnused (f);
+        }
+
+        //  LAS SEIS RANURAS.
+        //
+        //  Y LO QUE NO ESTA EN EL FICHERO VALE SU DEFECTO ANTIGUO: un proyecto
+        //  guardado antes de que las ranuras existieran no tiene la propiedad,
+        //  y entonces vale la fila de siempre -la ranura s con el tipo s- y no
+        //  la de hoy, que es vacia. Lo que manda no es cual es el defecto de
+        //  hoy sino como sonaba el dia que se guardo, que es la regla que ya
+        //  gobierna los envios y que `Tests/proyectos` comprueba con tres
+        //  ficheros congelados.
+        //
+        //  Acotado EN LA PUERTA y no en quien llama: el valor sale de un
+        //  project.xml que puede estar corrupto o ser de otra epoca, y un
+        //  entero cualquiera aqui es un indice fuera de `fxDefs`. Lo que no
+        //  encaje vale VACIA, que es el unico valor que no puede hacer daño.
+        {
+            for (int s = 0; s < kNumFx; ++s) slotFx[(size_t) s] = s;
+
+            if (fx.hasProperty ("slots"))
+            {
+                juce::StringArray r;
+                r.addTokens (fx.getProperty ("slots").toString(), ",", "");
+                for (int s = 0; s < kNumFx; ++s)
+                {
+                    const int v = s < r.size() ? r[s].getIntValue() : kSlotVacia;
+                    slotFx[(size_t) s] = juce::isPositiveAndBelow (v, kNumFx) ? v : kSlotVacia;
+                }
+
+                //  UN TIPO, UNA RANURA, tambien al volver del disco. Un
+                //  fichero escrito a mano puede repetir un tipo y eso serian
+                //  dos ventanas al mismo aparato: se queda la primera.
+                for (int s = 1; s < kNumFx; ++s)
+                    for (int t = 0; t < s; ++t)
+                        if (slotFx[(size_t) s] >= 0 && slotFx[(size_t) s] == slotFx[(size_t) t])
+                            slotFx[(size_t) s] = kSlotVacia;
+            }
+
+            //  Y un efecto que quedo ENCENDIDO en el fichero y cuya ranura ya
+            //  no existe se apaga: seguiria sonando sin tapa donde tocarlo.
+            for (int f = 0; f < kNumFx; ++f)
+                if (fxOn[(size_t) f] && ! fxEstaPuesto (f))
+                    setFxEnabled (f, false);
         }
 
         //  ...y el estado del panel XY, UNA vez. La llave del for cerraba ocho
@@ -6903,6 +7229,10 @@ void MainComponent::applyState (const juce::ValueTree& s)
         xyLatch = (bool) fx.getProperty ("xyLatch", false);
         selectXyFx (juce::jlimit (0, kNumFx - 1, (int) fx.getProperty ("xyFx", 0)));
         xyLatchButton.setToggleState (xyLatch, juce::dontSendNotification);
+
+        //  Y LA FILA, LA ULTIMA: el rotulo, el dibujo y la luz de las seis
+        //  tapas salen de `slotFx`, que se acaba de leer.
+        refrescaRanuras();
     }
 
     //  LOS SESENTA Y CUATRO A SU DEFECTO ANTES DE APLICAR LO QUE TRAIGA.
@@ -7506,6 +7836,17 @@ void MainComponent::newProject()
     //  existen. Vaciar la mitad de un proyecto es peor que no vaciar nada,
     //  porque lo que queda parece tuyo.
     songPorDefecto();
+
+    //  Y LA FILA DE EFECTOS SALE VACIA, que es la mitad de por que existen las
+    //  ranuras. Una maquina recien abierta enseñaba seis efectos que nadie
+    //  habia puesto: seis tapas encendidas de las que no sabes cuales vas a
+    //  usar, con el mismo argumento que ya costo una medida en los envios -
+    //  «una mezcla se hace subiendo lo que quieres, no apagando lo que no».
+    //
+    //  Se APAGA lo que estuviera sonando antes de vaciar: un efecto encendido
+    //  cuya tapa desaparece sigue sonando y no hay donde tocarlo. `ponEnRanura`
+    //  ya lo hace, y por eso se vacia con ella y no escribiendo el array.
+    for (int s = 0; s < kNumFx; ++s) ponEnRanura (s, kSlotVacia);
 
     selectedPattern = 0;
     selectedStep = -1;
@@ -8791,8 +9132,18 @@ void MainComponent::refreshRack()
     rackPad = juce::jlimit (0, kNumPads - 1, rackPad);
     for (int i = 0; i < rackPadBtns.size(); ++i)
         rackPadBtns[i]->setToggleState (i == rackPad, juce::dontSendNotification);
-    for (int f = 0; f < rackSends.size(); ++f)
-        rackSends[f]->setValue (engine.getPadSend (rackPad, f), juce::dontSendNotification);
+    //  UNA FILA POR RANURA. El envio va al BUS del tipo que vive en ella, y
+    //  una ranura vacia no tiene bus: su fader se apaga -no se esconde- por lo
+    //  mismo que el de un efecto cerrado, que una fila que aparece y desaparece
+    //  cambia de sitio las de abajo cada vez que se toca el menu.
+    for (int s = 0; s < rackSends.size() && s < kNumFx; ++s)
+    {
+        const int fx = slotFx[(size_t) s];
+        rackSends[s]->setValue (fx >= 0 ? engine.getPadSend (rackPad, fx) : 0.0,
+                                juce::dontSendNotification);
+        rackSends[s]->setEnabled (fx >= 0);
+    }
+    refrescaRanuras();      // el canalon de cada fila, con las seis de la cara
     rackSheet.repaint();
 }
 

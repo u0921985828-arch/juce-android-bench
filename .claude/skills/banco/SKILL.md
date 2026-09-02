@@ -28,7 +28,7 @@ codigo.
 
 | Se toco | Se corre |
 |---|---|
-| cualquier cosa de interfaz | `Tests/expo.py` (980 corridas, ~2 min) |
+| cualquier cosa de interfaz | `Tests/expo.py` (1036 corridas, ~2 min) |
 | textos, rotulos, `T()` | `Tests/lang.py` **y** `expo.py` |
 | colores, tokens, pieles | `Tests/skins.py` |
 | motor, voces, efectos, envios | `build/StressTest_artefacts/Release/StressTest` |
@@ -40,6 +40,7 @@ codigo.
 | guardar o cargar un kit | `Tests/kit.py` |
 | piano roll, notas, compas, EUCLIDES | `Tests/piano.py` |
 | clips de audio en la cancion, el gesto | `Tests/clips.py` |
+| las seis ranuras de la fila de efectos | `Tests/ranuras.py` |
 | instrumentos, packs, licencias | `Tests/dlc.py` |
 | el tour de bienvenida | `Tests/tour.py` |
 | el arranque, la portada, los margenes del sistema | `Tests/arranque.py` |

@@ -952,6 +952,64 @@ void MainComponent::resized()
         }
     }
 
+    //  EL MENU DE UNA RANURA. Ver abreMenuRanura.
+    //
+    //  Tambien de las que se dibujan ENCIMA, asi que va aqui arriba con la
+    //  rejilla de pads y por lo mismo: sus limites no dependen de los de nadie
+    //  y no le quita un pixel a lo que hay debajo.
+    if (ranuraEditada >= 0)
+    {
+        const bool conVaciar = ranuraVaciarBtn.isVisible();
+
+        //  Lo que pide, sumado y no probado: dos margenes, la cabecera, el
+        //  aire, TRES filas de tapa con sus dos huecos, y -si la hay- el aire
+        //  y la fila de VACIAR.
+        //  2*12 + 40 + 12 + 3*44 + 2*4 + (8 + 44) = 256 con ella, 204 sin.
+        const int quiere = 2 * Metrics::md + Metrics::hit + Metrics::md
+                           + 3 * Metrics::btn + 2 * Metrics::xs
+                           + (conVaciar ? Metrics::sm + Metrics::btn : 0);
+        auto inner = sheetFromBottom (ranuraSheet, quiere);
+
+        auto titleRow = inner.removeFromTop (Metrics::hit);
+        ranuraCloseBtn.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
+                                    .withSizeKeepingCentre (Metrics::hit, Metrics::hit));
+        //  El titulo se queda con lo que sobra del renglon, y lo PUBLICA para
+        //  que el pintor no vuelva a calcularlo: una banda deducida dos veces
+        //  son dos bandas.
+        ranuraTituloBanda = titleRow.withTrimmedTop (8).withHeight (24);
+        inner.removeFromTop (Metrics::md);
+
+        //  VACIAR SE APARTA PRIMERO, que es la regla de la casa: una fila de
+        //  tapas no encoge y las filas de la rejilla si.
+        if (conVaciar)
+        {
+            ranuraVaciarBtn.setBounds (inner.removeFromBottom (Metrics::btn));
+            inner.removeFromBottom (Metrics::sm);
+        }
+        else
+        {
+            ranuraVaciarBtn.setBounds ({});
+        }
+
+        //  DOS COLUMNAS, tres filas. Ver ranuraSheet en la cabecera: con
+        //  cuatro la celda cae a 82 px y el nombre del efecto no entra al lado
+        //  de su dibujo.
+        const int filaH = juce::jmax (Metrics::hit,
+                                      (inner.getHeight() - 2 * Metrics::xs) / 3);
+        for (int r = 0; r < 3; ++r)
+        {
+            auto row = inner.removeFromTop (filaH);
+            const int w = row.getWidth() / 2;
+            for (int c = 0; c < 2; ++c)
+            {
+                const int f = r * 2 + c;
+                if (f >= ranuraBtns.size()) break;
+                ranuraBtns[f]->setBounds ((c < 1 ? row.removeFromLeft (w) : row).reduced (1, 0));
+            }
+            inner.removeFromTop (Metrics::xs);
+        }
+    }
+
     auto placeKnobRow = [] (juce::Rectangle<int> row, juce::Slider** ks, int n = 3)
     {
         const int w = row.getWidth() / juce::jmax (1, n);
@@ -2064,6 +2122,22 @@ void MainComponent::resized()
         //  Tres y tres. Lo que falta de alto lo hay de ancho, que es lo mismo
         //  que hace la pagina de AUDIO y lo que hace la cara con wideFace.
         const int filaFx = 48;
+
+        //  UNA FILA DEL RACK: el canalon a la izquierda -que desde esta tanda
+        //  es una TAPA y no texto pintado, porque es la puerta al menu de la
+        //  ranura- y el fader con lo que queda.
+        //
+        //  Seis pixeles arriba y abajo de una fila de 48 dejan el fader en 36,
+        //  cuatro por debajo del dedo. El aire entre filas ya lo da la fila
+        //  siguiente; el que se le quita al control sale del control.
+        auto colocaFilaRack = [this] (int s, juce::Rectangle<int> row)
+        {
+            auto canalon = Lang::takeStart (row, 54);
+            if (rackSlotBtns[s] != nullptr)
+                rackSlotBtns[s]->setBounds (canalon.reduced (1, 4));
+            if (rackSends[s] != nullptr)
+                rackSends[s]->setBounds (row.reduced (2, 4));
+        };
         const bool dosCol = inner.getWidth() >= 560 && inner.getHeight() < kNumFx * filaFx;
         if (dosCol)
         {
@@ -2073,11 +2147,7 @@ void MainComponent::resized()
             {
                 auto& col = (f < kNumFx / 2) ? izda : inner;
                 auto row = col.removeFromTop (filaFx);
-                //  Seis pixeles arriba y abajo de una fila de 48 dejan el fader
-                //  en 36, cuatro por debajo del dedo. El aire entre filas ya
-                //  lo da la fila siguiente; el que se le quita al control sale
-                //  del control.
-                rackSends[f]->setBounds (row.withTrimmedLeft (54).reduced (2, 4));
+                colocaFilaRack (f, row);
             }
         }
         else
@@ -2085,11 +2155,7 @@ void MainComponent::resized()
             for (int f = 0; f < kNumFx; ++f)
             {
                 auto row = inner.removeFromTop (filaFx);
-                //  Seis pixeles arriba y abajo de una fila de 48 dejan el fader
-                //  en 36, cuatro por debajo del dedo. El aire entre filas ya
-                //  lo da la fila siguiente; el que se le quita al control sale
-                //  del control.
-                rackSends[f]->setBounds (row.withTrimmedLeft (54).reduced (2, 4));
+                colocaFilaRack (f, row);
             }
         }
     }

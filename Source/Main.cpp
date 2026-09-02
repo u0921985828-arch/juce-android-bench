@@ -50,7 +50,7 @@ static void fuzz (MainComponent& mc, int semilla, int sesiones, int acciones)
 {
     static const char* kFichas[] = { "pads", "pad2", "pad3", "sec", "secp", "paso", "song",
                                      "piano", "pianod", "mix", "xy", "set", "asp", "proj", "gest",
-                                     "midi", "rack", "chop", "manual", "expo", "" };
+                                     "midi", "rack", "ranura", "chop", "manual", "expo", "" };
     static const int kAnchos[] = { 280, 320, 360, 393, 412, 480, 653, 915 };
 
     int peorSolapes = 0, peorFuera = 0, estados = 0;
@@ -456,7 +456,7 @@ public:
                     {
                         static const char* kFichas[] =
                         { "pads", "pad2", "pad3", "sec", "secp", "paso", "song", "piano",
-                          "pianod", "mix", "set", "proj", "midi", "gest", "rack", "chop",
+                          "pianod", "mix", "set", "proj", "midi", "gest", "rack", "ranura", "chop",
                           "inst", "manual", "expo", "browse", "xy" };
                         const int n2 = juce::numElementsInArray (kFichas);
 
@@ -525,6 +525,11 @@ public:
                     else if (UiAudit::env ("ZATI_PIANO").isNotEmpty())
                     {
                         c2->auditPiano();
+                    }
+                    //  LAS SEIS RANURAS. Ver Tests/ranuras.py.
+                    else if (UiAudit::env ("ZATI_RANURAS").isNotEmpty())
+                    {
+                        c2->auditRanuras();
                     }
                     //  LA BANDA DE AUDIO DE LA CANCION. Ver Tests/clips.py.
                     else if (UiAudit::env ("ZATI_CLIPS").isNotEmpty())

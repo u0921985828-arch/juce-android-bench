@@ -1055,6 +1055,8 @@ public:
     //  afinaba el pad para siempre.
     void auditClips();
     void auditPiano();
+    //  LAS SEIS RANURAS DE LA FILA DE EFECTOS. Ver Tests/ranuras.py.
+    void auditRanuras();
     //  EL CATALOGO DE CONTENIDO Y EL CANDADO. Ver Tests/dlc.py.
     void auditDlc();
     void auditNiveles();
@@ -1533,6 +1535,11 @@ private:
     juce::TextButton rackButton { "RACK" }, rackCloseButton { "x" };
     juce::OwnedArray<juce::TextButton> rackPadBtns;
     juce::OwnedArray<juce::Slider>     rackSends;
+    //  El canalon de la izquierda de cada fila. Era texto PINTADO -el nombre
+    //  del efecto y su dibujo- y ahora es una tapa, porque el RACK pasa a ser
+    //  el sitio donde se cambia lo que hay en una ranura: la fila del rack es
+    //  una RANURA y no un efecto.
+    juce::OwnedArray<juce::TextButton> rackSlotBtns;
     int rackPad = 0;
     void refreshRack();
     juce::OwnedArray<juce::TextButton> mixMutes, mixSolos;
@@ -1979,6 +1986,64 @@ private:
 
     std::array<bool, kNumFx> fxOn {};
     int focusedFx = 0;                     // whose parameters CTRL 1-3 hold
+
+    //  LA FILA SON SEIS RANURAS, NO SEIS EFECTOS.
+    //
+    //  Hasta aqui el indice de un boton ERA su efecto: el boton 3 tocaba el
+    //  DLY y no habia forma de que tocara otra cosa. Eso hace dos cosas mal a
+    //  la vez: una maquina recien abierta enseña seis efectos que nadie ha
+    //  puesto -y de los que no sabes cuales vas a usar- y el dia que haya mas
+    //  de seis tipos no hay donde meterlos.
+    //
+    //  `slotFx[s]` dice QUE tipo vive en la ranura s, o -1 si esta vacia. Un
+    //  tipo esta en UNA ranura como mucho: su estado en el motor -el filtro,
+    //  la linea de retardo, la reverb- es uno solo, asi que dos ranuras del
+    //  mismo tipo serian dos ventanas al mismo aparato. Esa es tambien la
+    //  regla de la casa: una funcion, un dueño.
+    //
+    //  Lo que NO cambia es el motor: los seis buses siguen siendo uno por
+    //  TIPO y todo lo que recibe un `fx` sigue recibiendo un tipo. Una ranura
+    //  es donde se toca, no lo que suena. Por eso este cambio no toca una sola
+    //  linea del hilo de audio.
+    static constexpr int kSlotVacia = -1;
+    std::array<int, kNumFx> slotFx {};     // ranura -> tipo, o kSlotVacia
+
+    int  slotDeFx (int fx) const;          // tipo -> ranura, o -1 si no esta puesto
+    bool fxEstaPuesto (int fx) const { return slotDeFx (fx) >= 0; }
+    void ponEnRanura (int ranura, int fx); // fx = kSlotVacia para vaciarla
+    void refrescaRanuras();                // rotulo, icono y luz de las seis
+
+    //  Los dos gestos de una tapa de la fila, que se reparten por el ESTADO de
+    //  la ranura y no por el gesto: sobre una ranura llena tocar enciende y
+    //  mantener afina, que es lo que hacian desde siempre; sobre una VACIA los
+    //  dos abren el menu, porque en un «+» no hay nada que encender ni nada
+    //  que afinar y un gesto que no hace nada se lee como una tapa rota.
+    void ranuraTocada (int ranura);
+    void ranuraMantenida (int ranura);
+
+    //  EL MENU DE UNA RANURA. Una capa encima de todo, como la rejilla de
+    //  dieciseis pads del piano y por lo mismo: no vive dentro de la maqueta
+    //  de nadie, asi que no cuesta un pixel de alto a la cara -que es la
+    //  pantalla mas apretada de la app y la que no se puede evitar-.
+    //
+    //  En DOS columnas y no en una fila ni en cuatro: cada celda lleva el
+    //  nombre del efecto y su dibujo, y eso ya esta medido en la rejilla de
+    //  instrumentos - con cuatro columnas la celda cae a 82 px y el nombre no
+    //  entra; con dos queda en 106 px hasta en la pantalla mas estrecha.
+    //
+    //  Y es un `Sheet` y no una clase nueva, asi que trae su capa para el
+    //  banco -lo que le faltaba a XyPanel-, su velo y el cierre al tocar
+    //  fuera.
+    Sheet ranuraSheet;
+    juce::TextButton ranuraCloseBtn { juce::CharPointer_UTF8 ("\xc3\x97") };
+    juce::OwnedArray<juce::TextButton> ranuraBtns;     // un tipo por celda
+    juce::TextButton ranuraVaciarBtn { "VACIAR" };
+    int  ranuraEditada = -1;               // que ranura se esta eligiendo, o -1
+    void abreMenuRanura (int ranura);      // -1 lo cierra
+    void refrescaMenuRanura();
+    void paintRanuraContent (juce::Graphics& g);
+    juce::Rectangle<int> ranuraTituloBanda;
+
     juce::OwnedArray<juce::TextButton> fxButtons;
     juce::OwnedArray<juce::Slider>     fxParams;   // kNumFx * 3, the real values
     juce::Rectangle<int> fxRowArea;

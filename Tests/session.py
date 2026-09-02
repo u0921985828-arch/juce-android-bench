@@ -273,11 +273,18 @@ def main():
                #  Y los otros cuatro bloqueos, que viven EMPAQUETADOS en un
                #  uint32: cuatro valores distintos entre si, porque con cuatro
                #  iguales un cruce de bytes pasaria desapercibido.
-               and d.get ("plock") == [11, 22, 44, 88])
+               and d.get ("plock") == [11, 22, 44, 88]
+               #  Y LAS SEIS RANURAS DE LA FILA DE EFECTOS, que es lo ultimo
+               #  que ha entrado en el fichero. El mapa que se escribe no es ni
+               #  la identidad ni el vacio a proposito: con la fila en orden,
+               #  «volvio» lo cumple igual un lector que no lee nada y deja el
+               #  defecto puesto.
+               and d.get ("ranuras") == [5, -1, 1, -1, -1, 2])
     print ("acorde, empujon, bloqueo y largo: nota %s acorde %s empujon %s bloqueo %s largo %s"
-           " bloqueos %s   %s"
+           " bloqueos %s ranuras %s   %s"
            % (d.get ("nota", "?"), d.get ("acorde", "?"), d.get ("empujon", "?"),
               d.get ("bloqueo", "?"), d.get ("largo", "?"), d.get ("plock", "?"),
+              d.get ("ranuras", "?"),
               "correcto" if disp_ok else "NO VUELVEN"))
 
     #  Y LOS CLIPS DE AUDIO DE LA LINEA DE TIEMPO, que es lo ultimo que ha
@@ -323,11 +330,20 @@ def main():
                     #  Y la cancion: sin <song> tiene que quedar VACIA. Con el
                     #  fallo, abrir un proyecto sin linea de tiempo dejaba
                     #  sonando el arreglo del que estuviera abierto.
-                    and d["cancion"] == (1 if nombre.startswith ("02") else 0))
+                    and d["cancion"] == (1 if nombre.startswith ("02") else 0)
+                    #  Y LA FILA DE EFECTOS. Ninguno de los tres lleva la
+                    #  propiedad `slots`, asi que los seis vuelven EN ORDEN -la
+                    #  fila de siempre- y no vacios, que es el defecto de hoy.
+                    #  Lo que manda no es cual es el defecto de hoy sino como
+                    #  sonaba el dia que se guardo. La corrida los vacia justo
+                    #  antes de abrir, o «volvio en orden» lo cumple tambien no
+                    #  haber tocado nada.
+                    and d.get ("ranuras") == [0, 1, 2, 3, 4, 5])
             viejo_ok = viejo_ok and bien
-            print ("  %-20s envio0 %.2f  pad20 g%.2f p%.2f c%.0f r%d e%.2f  cancion %d  %s"
+            print ("  %-20s envio0 %.2f  pad20 g%.2f p%.2f c%.0f r%d e%.2f  cancion %d"
+                   "  ranuras %s  %s"
                    % (nombre, d["envio0"], d["gain20"], d["pan20"], d["corte20"],
-                      d["reves20"], d["envio20"], d["cancion"],
+                      d["reves20"], d["envio20"], d["cancion"], d.get ("ranuras", "?"),
                       "correcto" if bien else "HEREDA DEL ANTERIOR"))
     else:
         print ("  los proyectos congelados no volvieron")

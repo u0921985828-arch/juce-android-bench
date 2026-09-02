@@ -29,7 +29,7 @@ SIZES = [
     ("915x412",  "LANDSCAPE — the orientation nobody tests"),
 ]
 LANGS = ["es", "en", "zh", "ar"]
-SHEETS = ["", "pads", "pad2", "pad3", "sec", "secp", "paso", "song", "songa", "piano", "pianod", "pick", "mix", "xy", "set", "asp", "proj", "gest", "midi", "lang", "manual", "rack", "chop", "inst", "instd", "instg", "vst", "expo", "tour", "tour1", "tour6", "tour10", "tourf", "browse", "browsedir"]
+SHEETS = ["", "pads", "pad2", "pad3", "sec", "secp", "paso", "song", "songa", "piano", "pianod", "pick", "mix", "xy", "set", "asp", "proj", "gest", "midi", "lang", "manual", "rack", "ranura", "ranural", "chop", "inst", "instd", "instg", "vst", "expo", "tour", "tour1", "tour6", "tour10", "tourf", "browse", "browsedir"]
 
 MIN_TOUCH = 40   # Metrics::hit — Android's own guideline is 48dp, this is the floor
 #  LO QUE SE DIBUJA Y SE TOCA IGUAL.

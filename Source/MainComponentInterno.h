@@ -419,6 +419,25 @@ inline void readSourceMap (const juce::ValueTree& tree, std::array<int, AudioEng
     }
 }
 
+//  EL DIBUJO DE CADA TIPO DE EFECTO, en una sola tabla. Estaba escrito dentro
+//  del bloque que reparte los iconos del constructor, que valia mientras solo
+//  lo pidiera el constructor; desde que la fila de la cara son RANURAS hay que
+//  volver a preguntarlo cada vez que una cambia de contenido, y una tabla
+//  copiada en dos sitios son dos tablas. Es la misma razon por la que
+//  `filaDeIconos` salio de dentro de `layoutModuleBar` en cuanto tuvo dos
+//  clientes.
+//
+//  Un indice fuera de la tabla devuelve `ninguno` y no una entrada al azar:
+//  una ranura VACIA vale -1 y pasa por aqui.
+inline Iconos::Id iconoDeFx (int f) noexcept
+{
+    static const Iconos::Id kFx[] = { Iconos::Id::flt, Iconos::Id::hpf, Iconos::Id::drv,
+                                      Iconos::Id::dly, Iconos::Id::bit, Iconos::Id::rev };
+    if (! juce::isPositiveAndBelow (f, (int) (sizeof (kFx) / sizeof (kFx[0]))))
+        return Iconos::Id::ninguno;
+    return kFx[f];
+}
+
 //  Los textos, fuera de la funcion que los pinta porque los mide TAMBIEN la
 //  maqueta: la altura del muelle sale del parrafo mas largo traducido al idioma
 //  que este puesto, y pedir un numero fijo es como se llega a un muelle con

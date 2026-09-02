@@ -103,6 +103,9 @@ jobs:
       - name: La banda de audio de la cancion
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/clips.py
+      - name: Las seis ranuras de efectos
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/ranuras.py
       - name: Los paneles
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/paneles.py
