@@ -655,12 +655,21 @@ void MainComponent::resized()
             //  Sin las dos bandas de rotulo: la curva se explica sola -tiene
             //  su linea de cero y sus decadas- y esos 34 px son el 40 % de su
             //  alto. El nombre del efecto ya esta encendido en su ranura.
+            eqCurva.setVisible (true);
             eqCurva.setBounds (mrow.reduced (6, 2));
-            for (auto* k : mk) k->setBounds ({});
+            //  APAGADOS *Y* SIN LIMITES, que son las dos mitades de la misma
+            //  regla y aqui solo estaba puesta una. Un control encendido y de
+            //  0x0 pasa las ocho reglas de geometria -no solapa, no se sale,
+            //  no corta un rotulo- y es lo que tuvo a SEGUIR visible desde el
+            //  primer dia. El banco lo canto en cuanto hubo una ficha que
+            //  abre el EQ: **807 CERO** en `eq` y `eqb`.
+            for (auto* k : mk) { k->setVisible (false); k->setBounds ({}); }
         }
         else
         {
+            eqCurva.setVisible (false);
             eqCurva.setBounds ({});
+            for (auto* k : mk) k->setVisible (true);
             const int w = mrow.getWidth() / 3;
             for (int i = 0; i < 3; ++i)
             {
@@ -989,7 +998,13 @@ void MainComponent::resized()
         //  numero sale de la tabla y no escrito a mano: el dia que entre el
         //  octavo la rejilla crece sola.
         //  2*12 + 40 + 12 + 4*44 + 3*4 + (8 + 44) = 312 con ella, 260 sin.
-        const int filas = (kNumFx + 1) / 2;
+        //  TRES COLUMNAS desde que son once tipos: en dos serian SEIS filas y
+        //  la tarjeta no da apaisado. En tres son cuatro, y la celda cae a
+        //  ~75 px en la pantalla mas estrecha, que es donde entran «CMP» y su
+        //  dibujo. El numero de columnas y el de filas salen de la TABLA y no
+        //  escritos a mano: el dia que entre el doce, la rejilla crece sola.
+        const int cols  = 3;
+        const int filas = (kNumFx + cols - 1) / cols;
         const int quiere = 2 * Metrics::md + Metrics::hit + Metrics::md
                            + filas * Metrics::btn + (filas - 1) * Metrics::xs
                            + (conVaciar ? Metrics::sm + Metrics::btn : 0);
@@ -1016,30 +1031,67 @@ void MainComponent::resized()
             ranuraVaciarBtn.setBounds ({});
         }
 
-        //  DOS COLUMNAS. Ver ranuraSheet en la cabecera: con cuatro la celda
-        //  cae a 82 px y el nombre del efecto no entra al lado de su dibujo.
-        //  Las FILAS las decide cuantos tipos hay, no un numero escrito aqui.
         const int filaH = juce::jmax (Metrics::hit,
                                       (inner.getHeight() - (filas - 1) * Metrics::xs) / filas);
         for (int r = 0; r < filas; ++r)
         {
             auto row = inner.removeFromTop (filaH);
-            const int w = row.getWidth() / 2;
-            for (int c = 0; c < 2; ++c)
+            const int w = row.getWidth() / cols;
+            for (int c = 0; c < cols; ++c)
             {
-                const int f = r * 2 + c;
+                const int f = r * cols + c;
                 if (f >= ranuraBtns.size()) break;
-                //  La ULTIMA fila puede llevar una sola tapa -siete es impar- y
-                //  entonces se queda con media fila y no con la fila entera:
-                //  una celda del doble de ancho que sus seis hermanas se lee
-                //  como otra cosa, no como la septima de la lista.
-                const bool sola = (f == ranuraBtns.size() - 1) && (c == 0);
-                ranuraBtns[f]->setBounds (((c < 1 || sola) ? row.removeFromLeft (w) : row)
+                //  Una fila incompleta reparte sus celdas al ANCHO DE COLUMNA
+                //  y no se reparte lo que queda entre las que hay: una celda
+                //  del doble de ancho que sus hermanas se lee como otra cosa,
+                //  no como la ultima de la lista.
+                const bool ultima = (f == ranuraBtns.size() - 1) || (c == cols - 1);
+                ranuraBtns[f]->setBounds ((ultima && c == cols - 1 ? row
+                                                                   : row.removeFromLeft (w))
                                             .reduced (1, 0));
-                if (sola) break;
+                if (f == ranuraBtns.size() - 1) break;
             }
             inner.removeFromTop (Metrics::xs);
         }
+    }
+
+    //  LA FICHA DE UNA BANDA DEL EQ. Pide: dos margenes, la cabecera, el aire,
+    //  las filas de chips de TIPO y el mando Q con su lectura.
+    if (eqBandaSheet.isVisible())
+    {
+        const int filasTipo = 2;                       // cinco chips no caben en una
+        const int quiere = 2 * Metrics::md + Metrics::hit + Metrics::md
+                           + filasTipo * Metrics::btn + Metrics::xs
+                           + Metrics::sm + ZatiLookAndFeel::kKnobRow;
+        auto inner = sheetFromBottom (eqBandaSheet, quiere);
+
+        auto titleRow = inner.removeFromTop (Metrics::hit);
+        eqBandaCloseBtn.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
+                                     .withSizeKeepingCentre (Metrics::hit, Metrics::hit));
+        eqBandaTituloBanda = titleRow.withTrimmedTop (8).withHeight (24);
+        inner.removeFromTop (Metrics::md);
+
+        //  El mando SE APARTA PRIMERO por la regla de siempre: los chips son
+        //  una fila de tapas y no encogen, el mando tiene suelo y se lleva lo
+        //  que quede.
+        auto qRow = inner.removeFromBottom (juce::jmin (ZatiLookAndFeel::kKnobRow, inner.getHeight() / 2));
+        inner.removeFromBottom (Metrics::sm);
+        eqQKnob.setBounds (qRow.withSizeKeepingCentre (juce::jmin (qRow.getWidth(), 120),
+                                                       qRow.getHeight()));
+
+        //  POR EL TEXTO y no a quintos: «PASO BAJO» pide el doble que
+        //  «CAMPANA». `layoutModuleBar` es quien ya sabe repartir asi, y quien
+        //  sube el suelo al dedo cuando cabe.
+        //  En dos filas siempre: cinco tapas en una sola le tocan 45 px en
+        //  280x653 y «PASO ALTO» pide mas. Tres arriba y dos abajo.
+        juce::TextButton* arriba[3] = { eqTipoBtns[0], eqTipoBtns[1], eqTipoBtns[2] };
+        juce::TextButton* abajo [2] = { eqTipoBtns[3], eqTipoBtns[4] };
+        layoutModuleBar (inner.removeFromTop (Metrics::btn + Metrics::xs), arriba, Metrics::xs, 3);
+        layoutModuleBar (inner.removeFromTop (Metrics::btn), abajo, 0, 2);
+    }
+    else if (! eqBandaSheet.sheetBounds.isEmpty())
+    {
+        eqBandaSheet.sheetBounds = {};
     }
 
     auto placeKnobRow = [] (juce::Rectangle<int> row, juce::Slider** ks, int n = 3)

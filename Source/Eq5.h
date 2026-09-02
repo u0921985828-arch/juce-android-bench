@@ -50,11 +50,38 @@ class Eq5
 public:
     static constexpr int kBands = 5;
 
-    //  Los extremos son ESTANTES y los tres del medio CAMPANAS. Un pico en el
-    //  extremo deja el subgrave y el aire sin tocar por debajo y por encima de
-    //  el, que es justo donde se quiere actuar al bajar retumbe o al subir
-    //  brillo.
-    enum Tipo { estanteBajo = 0, campana, estanteAlto };
+    //  CINCO TIPOS Y NO TRES, y cualquier banda puede ser cualquiera.
+    //
+    //  Los de fabrica son estante en los extremos y campana en medio -un pico
+    //  en el extremo deja el subgrave y el aire sin tocar por debajo y por
+    //  encima de el, que es justo donde se quiere actuar al bajar retumbe o al
+    //  subir brillo- y ese reparto es un DEFECTO, no una regla: la banda 0
+    //  puede pasar a paso alto para quitar retumbe de raiz, y la 4 a paso bajo
+    //  para cortar aire. Lo que un ecualizador de verdad deja hacer.
+    enum Tipo { estanteBajo = 0, campana, estanteAlto, pasoAlto, pasoBajo, kNumTipos };
+
+    //  Los dos de paso CORTAN, no realzan: su ganancia no significa nada y por
+    //  eso el nodo se queda clavado en la linea de cero. Lo que los gobierna es
+    //  la Q, y esa se toca en el menu de la banda.
+    static bool esPaso (Tipo t) noexcept { return t == pasoAlto || t == pasoBajo; }
+
+    static const char* nombreTipo (int t) noexcept
+    {
+        switch ((Tipo) t)
+        {
+            case estanteBajo: return "ESTANTE B";
+            case campana:     return "CAMPANA";
+            case estanteAlto: return "ESTANTE A";
+            case pasoAlto:    return "PASO ALTO";
+            case pasoBajo:    return "PASO BAJO";
+            default:          return "CAMPANA";
+        }
+    }
+
+    static Tipo tipoDeFabrica (int b) noexcept
+    {
+        return b == 0 ? estanteBajo : (b == kBands - 1 ? estanteAlto : campana);
+    }
 
     static constexpr float kFreqDef[kBands] = { 80.0f, 250.0f, 1000.0f, 3500.0f, 10000.0f };
     static constexpr float kFreqMin = 30.0f;
@@ -68,7 +95,12 @@ public:
 
     Eq5() noexcept
     {
-        for (int b = 0; b < kBands; ++b) freq[(size_t) b] = kFreqDef[b];
+        for (int b = 0; b < kBands; ++b)
+        {
+            freq[(size_t) b] = kFreqDef[b];
+            tipo[(size_t) b] = tipoDeFabrica (b);
+            q   [(size_t) b] = kQDef;
+        }
     }
 
     //  LAS BANDAS NO SE TOCAN AQUI, y eso no es un olvido. `prepareToPlay`
@@ -105,6 +137,51 @@ public:
         gain[(size_t) b] = juce::jlimit (-kGainMax, kGainMax, dB);
         sucio = true;
     }
+
+    //  EL TIPO Y LA Q DE UNA BANDA, que es lo que el menu de la banda toca.
+    //
+    //  La Q es de CADA banda y no una para las cinco: una campana estrecha para
+    //  quitar un zumbido de 50 Hz y otra ancha para dar cuerpo son la misma
+    //  sesion, y con una Q global hay que elegir. El mando ANCHO de la fila
+    //  sigue existiendo y las MULTIPLICA a todas -es el mando de «abre o cierra
+    //  el EQ entero»- que es lo que un mando de fila puede decir.
+    void ponTipo (int b, int t) noexcept
+    {
+        if (! juce::isPositiveAndBelow (b, kBands)) return;
+        const Tipo nuevo = (Tipo) juce::jlimit (0, (int) kNumTipos - 1, t);
+        if (nuevo != tipo[(size_t) b]) { tipo[(size_t) b] = nuevo; sucio = true; }
+    }
+    void ponQ (int b, float v) noexcept
+    {
+        if (! juce::isPositiveAndBelow (b, kBands)) return;
+        const float nueva = juce::jlimit (kQMin, kQMax, v);
+        if (nueva != q[(size_t) b]) { q[(size_t) b] = nueva; sucio = true; }
+    }
+    Tipo  tipoDe (int b) const noexcept
+    {
+        return juce::isPositiveAndBelow (b, kBands) ? tipo[(size_t) b] : campana;
+    }
+    float qDe (int b) const noexcept
+    {
+        return juce::isPositiveAndBelow (b, kBands) ? q[(size_t) b] : kQDef;
+    }
+
+    //  Q de 0.3 -media curva, para dar cuerpo- a 12 -quirurgica, para sacar un
+    //  zumbido-. El defecto es 0.7: mas estrecho y una banda no llega a la
+    //  siguiente, asi que la curva sale con dientes entre nodo y nodo.
+    static constexpr float kQMin = 0.30f;
+    static constexpr float kQMax = 12.0f;
+    static constexpr float kQDef = 0.70f;
+
+    //  RECALCULAR DESDE FUERA, y esto no es una comodidad: es un FALLO que se
+    //  vio en una foto. Los coeficientes solo se recalculaban dentro de
+    //  `procesa`, o sea en el hilo de audio, y el ESPEJO desde el que la cara
+    //  dibuja no procesa audio nunca. Resultado: `respuestaEnDb` leia una tabla
+    //  de coeficientes que seguia siendo la de la curva PLANA y la cara pintaba
+    //  una raya recta con los cinco nodos movidos. Ni el banco del motor lo veia
+    //  -mide sobre una instancia que acaba de procesar- ni podia verlo
+    //  `Tests/eq.py`, que miraba las ganancias y no la forma.
+    void refresca() noexcept { if (sucio) recalcula(); }
 
     //  LOS DOS QUE LA CURVA NO PUEDE DECIR, y por eso son mandos y no nodos.
     //
@@ -217,6 +294,14 @@ public:
     //  -la funcion de transferencia en z = e^{jw}- y no una campana de adorno:
     //  dibujar una aproximacion es como se llega a una curva que promete algo
     //  distinto de lo que hace.
+    //  El nodo de un tipo de PASO se dibuja en la linea de cero: su ganancia no
+    //  significa nada, asi que arrastrarlo arriba y abajo no puede mover algo
+    //  que no existe. Lo dice la clase y no la cara, que es donde vive la regla.
+    float gainVisible (int b) const noexcept
+    {
+        return esPaso (tipoDe (b)) ? 0.0f : gainDe (b);
+    }
+
     float respuestaEnDb (float hz) const noexcept
     {
         const double w = 2.0 * juce::MathConstants<double>::pi * (double) hz / fs;
@@ -260,36 +345,50 @@ private:
         {
             auto& f = banda[(size_t) b];
             const float dB = gain[(size_t) b];
+            const Tipo  t  = tipo[(size_t) b];
 
             //  Media decima de dB no se oye y cuesta dos multiplicaciones por
-            //  muestra y por banda. Plana es plana.
-            if (std::abs (dB) < 0.05f) { f.plana = true; continue; }
+            //  muestra y por banda. Plana es plana - y en los tipos de PASO no
+            //  aplica, porque ahi la ganancia no significa nada: un paso alto
+            //  a 0 dB sigue cortando.
+            if (! esPaso (t) && std::abs (dB) < 0.05f) { f.plana = true; continue; }
             f.plana = false;
 
             const double A  = std::pow (10.0, (double) dB / 40.0);
             const double w  = 2.0 * juce::MathConstants<double>::pi
                                 * (double) juce::jlimit (kFreqMin, (float) (fs * 0.45), freq[(size_t) b]) / fs;
             const double cw = std::cos (w), sw = std::sin (w);
-            //  Q = 0.7 por el mando en el centro: mas estrecho y una banda no
-            //  llega a la siguiente, asi que la curva sale con dientes entre
-            //  nodo y nodo; mas ancho y las cinco se solapan hasta ser un tono
-            //  general. Ese es el punto que ANCHO escala, y por eso el mando va
-            //  de 0.40 a 3.00 y no de 0 a 1: lo que se multiplica es una Q.
-            const double q  = 0.7 * (double) ancho;
-            const double al = sw / (2.0 * q);
+            //  La Q de la banda por el mando ANCHO de la fila, que las escala
+            //  todas: dos numeros con dos dueños distintos -uno de la banda y
+            //  otro del efecto- y no dos formas de decir lo mismo.
+            const double qq = juce::jlimit ((double) kQMin, (double) kQMax,
+                                            (double) q[(size_t) b] * (double) ancho);
+            const double al = sw / (2.0 * qq);
 
             double b0, b1, b2, a0, a1, a2;
-            const Tipo t = (b == 0) ? estanteBajo : (b == kBands - 1) ? estanteAlto : campana;
 
             if (t == campana)
             {
                 b0 = 1.0 + al * A;  b1 = -2.0 * cw;      b2 = 1.0 - al * A;
                 a0 = 1.0 + al / A;  a1 = -2.0 * cw;      a2 = 1.0 - al / A;
             }
+            else if (t == pasoAlto)
+            {
+                //  RBJ high-pass. Corta por debajo y deja pasar por encima.
+                b0 =  (1.0 + cw) * 0.5;  b1 = -(1.0 + cw);  b2 = (1.0 + cw) * 0.5;
+                a0 =   1.0 + al;         a1 = -2.0 * cw;    a2 =  1.0 - al;
+            }
+            else if (t == pasoBajo)
+            {
+                b0 =  (1.0 - cw) * 0.5;  b1 =  (1.0 - cw);  b2 = (1.0 - cw) * 0.5;
+                a0 =   1.0 + al;         a1 = -2.0 * cw;    a2 =  1.0 - al;
+            }
             else
             {
                 //  Los estantes usan la S del cookbook y no la Q: con S = 1 la
-                //  pendiente es la mas empinada que no rebota.
+                //  pendiente es la mas empinada que no rebota. La Q de la banda
+                //  entra igual, que es lo que hace que un estante se pueda
+                //  poner mas o menos abrupto.
                 const double sq = 2.0 * std::sqrt (A) * al;
                 if (t == estanteBajo)
                 {
@@ -325,6 +424,8 @@ private:
     //  aqui vale un bloque con la banda a medio mover, no un fallo.
     std::array<float, kBands> freq {};
     std::array<float, kBands> gain {};
+    std::array<Tipo,  kBands> tipo {};
+    std::array<float, kBands> q {};
     float ancho  = kAnchoDef;
     float salida = 0.0f;          // dB
     float smSalida = 1.0f;        // lineal, solo del hilo de audio

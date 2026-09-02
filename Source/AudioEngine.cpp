@@ -184,6 +184,12 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize, int inputC
     //  El EQ toma la frecuencia nueva y limpia sus diez estados; las bandas NO
     //  se tocan, que esto corre en cada cambio de ruta. Ver Eq5::prepare.
     eqFx.prepare (systemSampleRate);
+    //  Y los cuatro de dinamica. `prepare` aqui SI vacia el estado -es una
+    //  envolvente y una ganancia suavizada, o sea el pasado de la señal- a
+    //  diferencia de `Eq5::prepare`, que no toca las bandas: alli lo que
+    //  sobreviviria a un cambio de ruta es el ajuste de la persona, y aqui lo
+    //  que sobreviviria seria la cola de un detector que ya no vale.
+    for (auto& d : dyn) d.prepare (systemSampleRate);
 }
 
 void AudioEngine::releaseResources() noexcept
@@ -612,7 +618,11 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         juce::jlimit (0.0f, 1.0f, dlyMix.load (std::memory_order_relaxed)),
         juce::jlimit (0.0f, 1.0f, crMix.load  (std::memory_order_relaxed)),
         juce::jlimit (0.0f, 1.0f, rvMix.load  (std::memory_order_relaxed)),
-        juce::jlimit (0.0f, 1.0f, eqMix.load  (std::memory_order_relaxed))
+        juce::jlimit (0.0f, 1.0f, eqMix.load  (std::memory_order_relaxed)),
+        juce::jlimit (0.0f, 1.0f, dynMix[0].load (std::memory_order_relaxed)),
+        juce::jlimit (0.0f, 1.0f, dynMix[1].load (std::memory_order_relaxed)),
+        juce::jlimit (0.0f, 1.0f, dynMix[2].load (std::memory_order_relaxed)),
+        juce::jlimit (0.0f, 1.0f, dynMix[3].load (std::memory_order_relaxed))
     };
 
     float sendGain[kNumPads][kNumFx];
@@ -1666,9 +1676,70 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         {
             if (live (6))
             {
+                //  LO QUE ENTRA, antes de filtrar. Mono -la media de los dos
+                //  canales- porque un analizador de espectro no dice nada sobre
+                //  la imagen estereo y dos anillos por lado serian el doble de
+                //  memoria y el doble de FFT para pintar la misma mancha.
+                {
+                    const float* l = fxBus[6].getReadPointer (0, startSample);
+                    const float* r = chans > 1 ? fxBus[6].getReadPointer (1, startSample) : l;
+                    int wi = eqScopeWrite.load (std::memory_order_relaxed);
+                    for (int i = 0; i < numSamples; ++i)
+                        eqPre[(size_t) ((wi + i) & (kEqScope - 1))] = 0.5f * (l[i] + r[i]);
+                }
+
                 eqFx.procesa (fxBus[6].getArrayOfWritePointers(), chans, startSample, numSamples);
+
+                //  Y LO QUE SALE, con el MISMO indice de escritura: dos indices
+                //  serian dos relojes, y la linea de salida saldria corrida
+                //  respecto a la mancha de entrada justo donde se comparan.
+                {
+                    const float* l = fxBus[6].getReadPointer (0, startSample);
+                    const float* r = chans > 1 ? fxBus[6].getReadPointer (1, startSample) : l;
+                    int wi = eqScopeWrite.load (std::memory_order_relaxed);
+                    float pico = 0.0f;
+                    for (int i = 0; i < numSamples; ++i)
+                    {
+                        const float m = 0.5f * (l[i] + r[i]);
+                        eqPost[(size_t) ((wi + i) & (kEqScope - 1))] = m;
+                        pico = juce::jmax (pico, std::abs (m));
+                    }
+                    eqScopeWrite.store ((wi + numSamples) & (kEqScope - 1),
+                                        std::memory_order_release);
+
+                    //  Vivo mientras haya señal, y a la baja: un booleano se
+                    //  apagaria en el primer bloque de silencio entre dos golpes
+                    //  y la mancha parpadearia. Cien bloques a 128 muestras son
+                    //  0.27 s, o sea lo que dura un hueco entre semicorcheas.
+                    const int h = eqScopeHot.load (std::memory_order_relaxed);
+                    eqScopeHot.store (pico > 1.0e-5f ? 100 : juce::jmax (0, h - 1),
+                                      std::memory_order_relaxed);
+                }
+
                 returnBus (6);
             }
+        }
+
+        // --- 8. DINAMICA: CMP, GTE, DSS y LIM, cuatro buses y una pieza. ----
+        //
+        //  Un bucle y no cuatro bloques copiados: las cuatro son un detector y
+        //  un calculador de ganancia, y lo unico que cambia es la curva. Ver
+        //  Source/Dinamica.h.
+        for (int d = 0; d < 4; ++d)
+        {
+            const int f = kFxCmp + d;
+            if (! live (f)) continue;
+
+            dyn[(size_t) d].procesa (fxBus[f].getArrayOfWritePointers(), chans,
+                                     startSample, numSamples,
+                                     (Dinamica::Modo) d,
+                                     dynP0[(size_t) d].load (std::memory_order_relaxed),
+                                     dynP1[(size_t) d].load (std::memory_order_relaxed));
+            //  Y lo que baja, para la casilla de lectura. Un compresor que no
+            //  dice cuanto comprime es un compresor invisible.
+            dynRed[(size_t) d].store (dyn[(size_t) d].reduccionDb(),
+                                      std::memory_order_relaxed);
+            returnBus (f);
         }
     }
 
@@ -2238,6 +2309,20 @@ void AudioEngine::setFxParam (int fx, int par, float v) noexcept
         case 18: setEqAncho   (v); break;
         case 19: setEqSalida  (v); break;
         case 20: setEqMix     (v); break;
+        //  LOS CUATRO DE DINAMICA. Tres parametros cada uno y en el mismo
+        //  orden que la tabla `fxDefs`: p0, p1 y MIX.
+        case 21: setDynP0  (0, v); break;
+        case 22: setDynP1  (0, v); break;
+        case 23: setDynMix (0, v); break;
+        case 24: setDynP0  (1, v); break;
+        case 25: setDynP1  (1, v); break;
+        case 26: setDynMix (1, v); break;
+        case 27: setDynP0  (2, v); break;
+        case 28: setDynP1  (2, v); break;
+        case 29: setDynMix (2, v); break;
+        case 30: setDynP0  (3, v); break;
+        case 31: setDynP1  (3, v); break;
+        case 32: setDynMix (3, v); break;
         default: break;
     }
 }
@@ -2335,6 +2420,18 @@ void AudioEngine::copyScope (float* dst, int n) noexcept
     const int wi = scopeWrite.load (std::memory_order_acquire);
     for (int i = 0; i < n; ++i)
         dst[i] = scope[(size_t) ((wi - n + i) & (kScopeSize - 1))];
+}
+
+//  Los dos del EQ, del hilo de mensajes y por el mismo camino que copyScope.
+void AudioEngine::copyEqScope (float* pre, float* post, int n) noexcept
+{
+    const int wi = eqScopeWrite.load (std::memory_order_acquire);
+    for (int i = 0; i < n; ++i)
+    {
+        const size_t k = (size_t) ((wi - n + i) & (kEqScope - 1));
+        pre[i]  = eqPre[k];
+        post[i] = eqPost[k];
+    }
 }
 
 void AudioEngine::setStep (int patternIdx, int step, int pad, bool on) noexcept
@@ -2797,9 +2894,29 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     //  los dos mandos que la curva no dice, que sin ellos el ancho y la salida
     //  volverian a su valor de fabrica en el fichero que se manda.
     for (int b = 0; b < Eq5::kBands; ++b)
+    {
         eqFx.ponBanda (b, s.eqFx.freqDe (b), s.eqFx.gainDe (b));
+        //  Y el TIPO y la Q de cada banda: sin ellos el rebote sale con
+        //  campanas donde la persona puso pasos, o sea con la mitad del
+        //  ecualizador cambiada de sitio.
+        eqFx.ponTipo (b, (int) s.eqFx.tipoDe (b));
+        eqFx.ponQ    (b, s.eqFx.qDe (b));
+    }
     eqFx.ponAncho  (s.eqFx.anchoDe());
     eqFx.ponSalida (s.eqFx.salidaDe());
+
+    //  Y LOS CUATRO DE DINAMICA, que si no el rebote sale sin comprimir ni
+    //  limitar mientras la persona lo esta oyendo puesto - el mismo fallo que
+    //  ya se pago con el EQ, con los recortes y con el swing. Lo que NO se
+    //  copia es el ESTADO del detector: el rebote empieza en silencio y una
+    //  envolvente heredada le meteria una compresion de la nada en el primer
+    //  bloque.
+    for (int d = 0; d < 4; ++d)
+    {
+        dynP0 [(size_t) d].store (s.dynP0 [(size_t) d].load(), std::memory_order_relaxed);
+        dynP1 [(size_t) d].store (s.dynP1 [(size_t) d].load(), std::memory_order_relaxed);
+        dynMix[(size_t) d].store (s.dynMix[(size_t) d].load(), std::memory_order_relaxed);
+    }
 
     // Start the FX smoothers already AT their targets. A live engine glides
     // over ~20 ms because a knob just moved; a bounce has no such history,

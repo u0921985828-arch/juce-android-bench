@@ -3389,6 +3389,187 @@ int main()
                      "el EQ llega al bus", distintas, subida, ok ? "OK" : zatiFalla());
     }
 
+    //  LA FAMILIA DE DINAMICA: CMP, GTE, DSS y LIM.
+    //
+    //  CADA UNA CON DOS CIFRAS Y NO UNA, que es lo unico que separa un efecto
+    //  de un fader: la primera dice que hace algo y la segunda que hace SOLO
+    //  lo que dice. Es la misma regla que ya costo una medida en QUITAR RUIDO
+    //  -cuanto baja el suelo Y cuanto sobrevive el tono- y en el ancho estereo
+    //  -cuanto lado queda Y cuanto centro-.
+    //
+    //  Se mide por el MOTOR y no construyendo un `Dinamica` suelto: una clase
+    //  perfecta a la que no llama nadie saca sobresaliente mientras la app no
+    //  comprime nada. Es el agujero que ya tuvo el EQ y antes el cabezal del
+    //  piano.
+    {
+        auto rmsDe = [] (const std::vector<float>& v, size_t desde, size_t hasta)
+        {
+            double a = 0.0; size_t n = 0;
+            for (size_t i = desde; i < hasta && i < v.size(); ++i)
+            { a += (double) v[i] * (double) v[i]; ++n; }
+            return std::sqrt (a / juce::jmax ((size_t) 1, n));
+        };
+        auto picoDe = [] (const std::vector<float>& v, size_t desde, size_t hasta)
+        {
+            float p = 0.0f;
+            for (size_t i = desde; i < hasta && i < v.size(); ++i)
+                p = juce::jmax (p, std::abs (v[i]));
+            return p;
+        };
+
+        //  UN TONO PLANO Y SIN RUIDO, que `makeSample` no da: el suyo DECAE y
+        //  lleva un 20 % de ruido encima. Con envolvente, «cuanto baja» seria
+        //  la caida del sonido y no la del compresor, y con ruido el detector
+        //  de la puerta veria el ruido y no el tono - las dos formas de que
+        //  esta medida diga que si sin haber mirado nada.
+        auto tonoPlano = [] (double sr, double seg, float hz, float amp)
+        {
+            auto* sb = new SampleBuffer();
+            const int n = (int) (sr * seg);
+            sb->buffer.setSize (2, n);
+            for (int c = 0; c < 2; ++c)
+                for (int i = 0; i < n; ++i)
+                    sb->buffer.setSample (c, i,
+                        amp * std::sin (juce::MathConstants<float>::twoPi * hz * (float) i / (float) sr));
+            sb->sourceSampleRate = sr;
+            return SampleBuffer::Ptr (sb);
+        };
+
+        //  Un motor con UN pad enrutado al efecto que toque, y la salida
+        //  recogida entera. `nivel` es la amplitud del tono que se carga.
+        auto corre = [&tonoPlano] (int fx, float nivel, float hz, float p0, float p1,
+                                   std::vector<float>& salida, int bloques = 40)
+        {
+            AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+            e.setPadGain (0, 1.0f);
+            if (fx >= 0)
+            {
+                e.setFxParam (fx, 0, p0);
+                e.setFxParam (fx, 1, p1);
+                e.setFxParam (fx, 2, 1.0f);          // MIX al maximo
+                e.setPadSend (0, fx, 1.0f);
+            }
+            e.publishSample (0, tonoPlano (48000.0, 1.20, hz, nivel));
+
+            juce::AudioBuffer<float> b (2, 512);
+            //  EL ENVIO SE ASIENTA ANTES DE DISPARAR, y no se descartan los
+            //  primeros bloques despues. El envio se cruza con el camino seco
+            //  en 20 ms, asi que saltarse cuatro bloques deja fuera justo lo
+            //  que un limitador existe para atrapar: EL ATAQUE de la nota.
+            //  Medido con los cuatro bloques descartados, el pico salia a
+            //  0.5271 con el techo en 0.5012 y no era el limitador — era el
+            //  12 % de señal seca que quedaba en el bloque cuatro.
+            for (int i = 0; i < 30; ++i) { b.clear(); e.renderNextBlock (b, 0, 512); }
+            e.postNoteOn (0, 1.0f);
+
+            salida.clear();
+            for (int blk = 0; blk < bloques; ++blk)
+            {
+                b.clear(); e.renderNextBlock (b, 0, 512);
+                for (int i = 0; i < 512; ++i) salida.push_back (b.getSample (0, i));
+            }
+        };
+
+        //  1. CMP. Una rafaga POR ENCIMA del umbral tiene que bajar, y una POR
+        //     DEBAJO tiene que salir BIT A BIT igual: «comprime» lo cumple
+        //     igual un fader, y solo la segunda cifra dice que el umbral existe.
+        //
+        //     Y LA SEGUNDA SE COMPARA CONTRA EL MISMO CAMINO, que es donde
+        //     esta medida se equivoco antes de acertar: la primera version
+        //     comparaba contra el pad SIN enrutar y saco 13852 muestras
+        //     distintas con el compresor sin tocar una sola. No era el
+        //     compresor — CMP es un INSERTO, asi que enrutarlo saca el pad del
+        //     camino seco y lo mete por el bus, y esos dos caminos no son bit
+        //     a bit el mismo pase lo que pase dentro. Lo que se compara es el
+        //     MISMO envio con el umbral en 0 dB, o sea con el compresor puesto
+        //     y sin nada que comprimir. Primero se duda de la prueba.
+        {
+            std::vector<float> fuerteSin, fuerteCon, flojoSin, flojoCon;
+            corre (-1,                 0.80f, 220.0f, 0, 0, fuerteSin);
+            corre (AudioEngine::kFxCmp, 0.80f, 220.0f, -24.0f, 8.0f, fuerteCon);
+            corre (AudioEngine::kFxCmp, 0.02f, 220.0f,   0.0f, 8.0f, flojoSin);
+            corre (AudioEngine::kFxCmp, 0.02f, 220.0f, -24.0f, 8.0f, flojoCon);
+
+            const double baja = 20.0 * std::log10 (rmsDe (fuerteCon, 4096, 12288)
+                                                   / juce::jmax (1.0e-12, rmsDe (fuerteSin, 4096, 12288)));
+            int distintas = 0;
+            for (size_t i = 0; i < flojoSin.size() && i < flojoCon.size(); ++i)
+                if (flojoSin[i] != flojoCon[i]) ++distintas;
+
+            const bool ok = (baja < -6.0) && (distintas == 0);
+            std::printf ("%-34s fuerte %+.2f dB   flojo %d muestras cambian   %s\n",
+                         "CMP", baja, distintas, ok ? "OK" : zatiFalla());
+        }
+
+        //  2. GTE. Es el par de QUITAR RUIDO otra vez: el siseo por debajo del
+        //     umbral cae y el tono por encima sobrevive INTACTO. Solo lo
+        //     primero lo cumple un silenciador y solo lo segundo, no hacer nada.
+        {
+            std::vector<float> siseoSin, siseoCon, tonoSin, tonoCon;
+            corre (-1,                 0.010f, 220.0f, 0, 0, siseoSin);
+            corre (AudioEngine::kFxGte, 0.010f, 220.0f, -30.0f, 40.0f, siseoCon);
+            corre (-1,                 0.500f, 220.0f, 0, 0, tonoSin);
+            corre (AudioEngine::kFxGte, 0.500f, 220.0f, -30.0f, 40.0f, tonoCon);
+
+            //  Con suelo: la puerta cierra del todo y `log10(0)` es -inf, que
+            //  se lee como un error y no como «silencio».
+            const double fuera = 20.0 * std::log10 (juce::jmax (1.0e-6, rmsDe (siseoCon, 4096, 12288))
+                                                    / juce::jmax (1.0e-12, rmsDe (siseoSin, 4096, 12288)));
+            const double queda = 20.0 * std::log10 (rmsDe (tonoCon, 4096, 12288)
+                                                    / juce::jmax (1.0e-12, rmsDe (tonoSin, 4096, 12288)));
+            const bool ok = (fuera < -20.0) && (std::abs (queda) < 1.0);
+            std::printf ("%-34s bajo %+.2f dB   alto %+.2f dB   %s\n",
+                         "GTE", fuera, queda, ok ? "OK" : zatiFalla());
+        }
+
+        //  3. DSS. Un de-esser que baja la señal entera es un compresor con el
+        //     detector torcido: baja tambien la voz. Asi que se miden DOS
+        //     tonos, uno en la banda de sibilancia y otro en el fundamental, y
+        //     el segundo NO se puede mover.
+        {
+            std::vector<float> siSin, siCon, bajoSin, bajoCon;
+            //  A 9 kHz y no a 7: el paso alto de dos polos esta en 6 kHz y
+            //  ahi mismo deja pasar la mitad, o sea que a 7 la ese que llega
+            //  al detector es doce decibelios mas floja de lo que parece. Una
+            //  sibilancia de verdad vive entre 6 y 10 kHz.
+            corre (AudioEngine::kFxDss, 0.60f, 9000.0f, 6000.0f, 0.0f, siSin);
+            corre (AudioEngine::kFxDss, 0.60f, 9000.0f, 6000.0f, 1.0f, siCon);
+            corre (AudioEngine::kFxDss, 0.60f,  220.0f, 6000.0f, 0.0f, bajoSin);
+            corre (AudioEngine::kFxDss, 0.60f,  220.0f, 6000.0f, 1.0f, bajoCon);
+
+            const double sib = 20.0 * std::log10 (rmsDe (siCon, 4096, 12288)
+                                                  / juce::jmax (1.0e-12, rmsDe (siSin, 4096, 12288)));
+            const double fund = 20.0 * std::log10 (rmsDe (bajoCon, 4096, 12288)
+                                                   / juce::jmax (1.0e-12, rmsDe (bajoSin, 4096, 12288)));
+            const bool ok = (sib < -3.0) && (std::abs (fund) < 1.0);
+            std::printf ("%-34s sibilancia %+.2f dB   fundamental %+.2f dB   %s\n",
+                         "DSS", sib, fund, ok ? "OK" : zatiFalla());
+        }
+
+        //  4. LIM. El pico NUNCA pasa del techo, y el RMS sobrevive: solo lo
+        //     primero lo cumple un fader que baja diez decibelios, y solo lo
+        //     segundo lo cumple no hacer nada.
+        {
+            std::vector<float> sin_, con;
+            corre (AudioEngine::kFxLim, 0.90f, 220.0f,  0.0f, 60.0f, sin_);
+            corre (AudioEngine::kFxLim, 0.90f, 220.0f, -6.0f, 60.0f, con);
+
+            const float techo = juce::Decibels::decibelsToGain (-6.0f);
+            //  Desde la PRIMERA muestra de la nota: el ataque es el caso.
+            const float pico  = picoDe (con, 0, con.size());
+            const double queda = 20.0 * std::log10 (rmsDe (con, 8192, 16384)
+                                                    / juce::jmax (1.0e-12, rmsDe (sin_, 8192, 16384)));
+            //  Sin margen a la baja y con un 1 % arriba, que es el redondeo
+            //  de un float: el limitador sujeta en la muestra en la que pasa,
+            //  asi que un pico por encima del techo es un limitador que no
+            //  limita. Con el ataque puesto tambien en la bajada salia 0.5403
+            //  contra un techo de 0.5012.
+            const bool ok = (pico <= techo * 1.01f) && (queda > -8.0);
+            std::printf ("%-34s pico %.4f (techo %.4f)   RMS %+.2f dB   %s\n",
+                         "LIM", pico, techo, queda, ok ? "OK" : zatiFalla());
+        }
+    }
+
     //  LA AUTOMATIZACION, con TRES cifras y no una.
     //
     //  «El parametro cambia» lo cumple igual una tabla que se aplica siempre y

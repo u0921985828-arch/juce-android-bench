@@ -9,6 +9,7 @@
 #include "CommandFifo.h"
 #include "Fdn.h"
 #include "Eq5.h"
+#include "Dinamica.h"
 #include "MidiIo.h"
 
 // ============================================================================
@@ -50,7 +51,16 @@ public:
     //  de envios por pad. Cuantas tapas hay en la cara lo dice
     //  `MainComponent::kNumRanuras`, y no tiene por que coincidir - una ranura
     //  es donde se toca, no lo que suena.
-    static constexpr int kNumFx         = 7;
+    //  ONCE desde que entra la familia de DINAMICA -CMP, GTE, DSS, LIM-, que
+    //  es la que hace falta para grabar voces encima de una produccion. Las
+    //  cuatro son un INSERTO y no un envio: comprimir una copia y dejar el
+    //  original al lado no comprime nada, que es el mismo argumento que ya
+    //  puso el EQ en `fxIsTone`.
+    static constexpr int kNumFx         = 11;
+    //  Que indice es cada uno de los cuatro de dinamica, escrito UNA vez: los
+    //  usa el bucle de la etapa, `setFxParam` y la cara para saber de cual
+    //  leer la reduccion.
+    static constexpr int kFxCmp = 7, kFxGte = 8, kFxDss = 9, kFxLim = 10;
     static constexpr int kNumSteps      = 64;   // max steps per pattern (length is variable, see below)
     static constexpr int kMinPatLen     = 16;
     static constexpr int kMaxPatLen     = kNumSteps;   // 64 = four bars of 16
@@ -963,6 +973,10 @@ public:
     //  los cinco pares y una bandera `sucio`, y el hilo de audio recalcula los
     //  coeficientes en el bloque siguiente. Ver la cabecera de Eq5.h.
     void setEqBand   (int b, float hz, float dB) noexcept { eqFx.ponBanda (b, hz, dB); }
+    void setEqTipo   (int b, int t)  noexcept { eqFx.ponTipo (b, t); }
+    void setEqQ      (int b, float q) noexcept { eqFx.ponQ (b, q); }
+    int   getEqTipo (int b) const noexcept { return (int) eqFx.tipoDe (b); }
+    float getEqQ    (int b) const noexcept { return eqFx.qDe (b); }
     void setEqAncho  (float a) noexcept { eqFx.ponAncho  (a); }
     void setEqSalida (float d) noexcept { eqFx.ponSalida (d); }
     void setEqMix    (float m) noexcept { eqMix.store (m, std::memory_order_relaxed); }
@@ -983,6 +997,22 @@ public:
 
     // --- Scope (message thread): copy the last n post-FX master samples ---
     void copyScope (float* dst, int n) noexcept;
+
+    //  Y los dos del EQ, del hilo de mensajes y por el mismo camino.
+    void copyEqScope (float* pre, float* post, int n) noexcept;
+
+    //  DINAMICA. Los tres de cada uno, y la reduccion que se lee.
+    void setDynP0  (int i, float v) noexcept { if (juce::isPositiveAndBelow (i, 4)) dynP0[(size_t) i].store (v, std::memory_order_relaxed); }
+    void setDynP1  (int i, float v) noexcept { if (juce::isPositiveAndBelow (i, 4)) dynP1[(size_t) i].store (v, std::memory_order_relaxed); }
+    void setDynMix (int i, float v) noexcept { if (juce::isPositiveAndBelow (i, 4)) dynMix[(size_t) i].store (juce::jlimit (0.0f, 1.0f, v), std::memory_order_relaxed); }
+    float getDynP0  (int i) const noexcept { return juce::isPositiveAndBelow (i, 4) ? dynP0[(size_t) i].load (std::memory_order_relaxed) : 0.0f; }
+    float getDynP1  (int i) const noexcept { return juce::isPositiveAndBelow (i, 4) ? dynP1[(size_t) i].load (std::memory_order_relaxed) : 0.0f; }
+    float getDynReduccion (int i) const noexcept
+    { return juce::isPositiveAndBelow (i, 4) ? dynRed[(size_t) i].load (std::memory_order_relaxed) : 0.0f; }
+    //  Si el bus del EQ ha dado señal hace poco. Sin esto la cara no sabe
+    //  distinguir «nada suena» de «nada pasa por el EQ», y una mancha clavada en
+    //  el suelo se lee como un fallo.
+    bool eqScopeVivo() const noexcept { return eqScopeHot.load (std::memory_order_relaxed) > 0; }
 
     //  Min/max columns spanning ~0.74 s of master output, oldest first.
     //  Returns how many were written. See renderNextBlock section 5c.
@@ -1646,6 +1676,35 @@ private:
     Eq5 eqFx;
     std::atomic<float> eqMix { 0.0f };
 
+    //  LOS DOS ANILLOS DEL ANALIZADOR, que son lo que la cara dibuja detras de
+    //  la curva: lo que ENTRA al EQ dice DONDE hay que tocar y lo que SALE
+    //  confirma que la correccion hizo lo que querias. Copiados de `scope` y
+    //  `copyScope`, que es la pieza que esta casa ya tiene para esto.
+    //
+    //  Se escriben SOLO con el bus vivo. Con el EQ sin envios no se escribe
+    //  nada y el analizador cae a su suelo en vez de congelarse, que es la
+    //  diferencia entre «no pasa nada por aqui» y «esto esta roto».
+    //  LA FAMILIA DE DINAMICA: cuatro tipos y UNA sola pieza con cuatro
+    //  configuraciones (`Source/Dinamica.h`). Cada uno tiene su propio estado
+    //  -su envolvente y su ganancia suavizada- porque son cuatro buses que
+    //  pueden estar abiertos a la vez, y compartir el detector haria que la
+    //  puerta se cerrase cuando el limitador pegase.
+    std::array<Dinamica, 4> dyn;
+    std::array<std::atomic<float>, 4> dynP0 { { { -18.0f }, { -40.0f }, { 6000.0f }, { -1.0f } } };
+    std::array<std::atomic<float>, 4> dynP1 { { {   4.0f }, { 120.0f }, {    0.0f }, { 120.0f } } };
+    std::array<std::atomic<float>, 4> dynMix { { { 0.0f }, { 0.0f }, { 0.0f }, { 0.0f } } };
+    //  Lo que esta bajando cada uno, para la casilla de lectura de CTRL 3. Lo
+    //  escribe el hilo de audio y lo lee la cara: un float atomico, que es lo
+    //  mismo que ya hacen `vuL` y los demas medidores.
+    std::array<std::atomic<float>, 4> dynRed { { { 0.0f }, { 0.0f }, { 0.0f }, { 0.0f } } };
+
+    static constexpr int kEqScope = 2048;   // potencia de dos
+    std::array<float, kEqScope> eqPre {}, eqPost {};
+    std::atomic<int> eqScopeWrite { 0 };
+    //  Bloques que el bus lleva vivo, a la baja. Un booleano se apagaria el
+    //  primer bloque de silencio entre dos golpes y la mancha parpadearia.
+    std::atomic<int> eqScopeHot { 0 };
+
     // ------------------------------------------------------------------
     //  Sends. Each effect is a bus with its own input, and every pad decides
     //  how much of itself goes into each one. That is what makes an effect
@@ -1662,7 +1721,8 @@ private:
     //  inserto. Mandar una copia al EQ y dejar el original sonando al lado da
     //  la suma de los dos, o sea la mitad de la correccion y con fase de
     //  regalo - que es literalmente lo que hace un filtro peine.
-    static constexpr bool fxIsTone[kNumFx] = { true, true, true, false, true, false, true };
+    static constexpr bool fxIsTone[kNumFx] = { true, true, true, false, true, false, true,
+                                               true, true, true, true };
 
     std::array<std::array<std::atomic<float>, kNumFx>, kNumPads> padSend {};
     //  Bit i puesto = el pad i manda a algun efecto. Ver setPadSend.

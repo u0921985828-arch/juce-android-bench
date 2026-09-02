@@ -48,7 +48,7 @@ namespace Iconos
         atras, adelante, doblar, humanizar, lapiz, goma, tijeras, loop, cuadrar,
         pads, sec, piano, mezcla, cancion, xy, ajustes, rack, chop, instrumentos, manual,
         sonido, recorte,
-        flt, hpf, drv, dly, bit, rev, eq,
+        flt, hpf, drv, dly, bit, rev, eq, cmp, gte, dss, lim,
         mic, remuestrear, bombeo, autocut, sistema, cadena, patron, pad, fijo,
         //  --- LAS DIECISEIS FAMILIAS DE Sintes.h -------------------------
         //
@@ -120,7 +120,9 @@ namespace Iconos
             case Id::flt: return "flt";                case Id::hpf: return "hpf";
             case Id::drv: return "drv";                case Id::dly: return "dly";
             case Id::bit: return "bit";                case Id::rev: return "rev";
-            case Id::eq:  return "eq";
+            case Id::eq:  return "eq";                 case Id::cmp: return "cmp";
+            case Id::gte: return "gte";                case Id::dss: return "dss";
+            case Id::lim: return "lim";
             case Id::mic: return "mic";                case Id::remuestrear: return "remuestrear";
             case Id::bombeo: return "bombeo";          case Id::autocut: return "autocut";
             case Id::sistema: return "sistema";        case Id::cadena: return "cadena";
@@ -712,6 +714,66 @@ namespace Iconos
                 L.cubicTo (18.0f, 15.5f, 19.0f,  8.5f,  22.0f,  8.5f);
                 R.addEllipse (7.0f,  3.5f, 3.0f, 3.0f);
                 R.addEllipse (13.5f, 14.0f, 3.0f, 3.0f);
+                break;
+
+            //  --- LA FAMILIA DE DINAMICA -----------------------------------
+            //
+            //  CMP ES LA CURVA DE TRANSFERENCIA CON SU RODILLA, y no otra
+            //  flecha hacia dentro: `comprimir` ya existe -dos flechas que se
+            //  acercan- y dos iconos que se diferencian en el grosor del trazo
+            //  son el mismo dibujo. Aqui lo que se dibuja es lo que el efecto
+            //  HACE con el nivel: entrada abajo, salida a la izquierda, una
+            //  recta a 45 grados hasta el umbral y a partir de ahi una
+            //  pendiente menor. La rodilla se ve, que es lo unico que separa
+            //  un compresor de un fader.
+            case Id::cmp:
+                linea (L, 3.0f, 21.0f, 21.0f, 21.0f);
+                linea (L, 3.0f, 21.0f,  3.0f,  3.0f);
+                L.startNewSubPath (5.0f, 19.0f);
+                L.lineTo (12.5f, 11.5f);
+                L.cubicTo (14.5f, 9.5f, 15.5f, 9.0f, 21.0f, 7.5f);
+                R.addEllipse (11.0f, 10.0f, 3.0f, 3.0f);
+                break;
+
+            //  GTE: una puerta que se abre. Dos jambas y la hoja abierta hacia
+            //  dentro, con su tirador — no un cuadrado con una flecha, que es
+            //  lo que ya dice `cargar`.
+            case Id::gte:
+                linea (L,  3.0f,  3.0f,  3.0f, 21.0f);
+                linea (L, 21.0f,  3.0f, 21.0f, 21.0f);
+                linea (L,  3.0f, 21.0f, 21.0f, 21.0f);
+                L.startNewSubPath (9.0f, 21.0f);
+                L.lineTo (9.0f, 6.5f);
+                L.lineTo (17.0f, 3.5f);
+                L.lineTo (17.0f, 18.0f);
+                L.closeSubPath();
+                R.addEllipse (10.0f, 12.0f, 2.0f, 2.0f);
+                break;
+
+            //  DSS: la ese. La banda alta que se corta se dice con la LETRA,
+            //  que es lo unico que separa este dibujo de «un filtro» — y con
+            //  la tachadura, que es lo que se le hace.
+            case Id::dss:
+                L.startNewSubPath (16.0f, 6.5f);
+                L.cubicTo (16.0f, 3.0f, 8.0f, 3.0f, 8.0f, 7.5f);
+                L.cubicTo (8.0f, 12.0f, 16.0f, 11.5f, 16.0f, 16.0f);
+                L.cubicTo (16.0f, 20.5f, 8.0f, 20.5f, 8.0f, 17.0f);
+                linea (L, 3.5f, 20.5f, 20.5f, 3.5f);
+                break;
+
+            //  LIM: el techo. Una linea gruesa arriba y lo que llega desde
+            //  abajo aplastandose contra ella — que es literalmente lo que
+            //  hace, y no una flecha hacia abajo, que es `guardar`.
+            case Id::lim:
+                linea (L, 2.5f, 5.5f, 21.5f, 5.5f);
+                L.startNewSubPath (4.0f, 21.0f);
+                L.lineTo (7.5f, 21.0f);
+                L.lineTo (9.5f, 8.0f);
+                L.lineTo (12.0f, 8.0f);
+                L.lineTo (13.5f, 15.0f);
+                L.lineTo (16.5f, 15.0f);
+                L.lineTo (18.0f, 8.0f);
+                L.lineTo (20.5f, 8.0f);
                 break;
 
             //  --- LO QUE ENTRA Y LO QUE SE MIDE --------------------------------

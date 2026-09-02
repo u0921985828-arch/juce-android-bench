@@ -964,6 +964,31 @@ namespace
         //  leyendo el codigo de al lado -la misma razon por la que el subtitulo
         //  del manual interpola cuantos capitulos tiene-.
         { "RANURA %1",      "",         "SLOT %1",    "插槽 %1",     "فتحة %1" },
+        //  LOS CINCO TIPOS DE BANDA DEL EQ. Van por `T()` como todo, y llevan
+        //  clave propia porque «CAMPANA» aqui es la forma de un filtro y no
+        //  tiene nada que ver con ninguna otra palabra de la maquina.
+        { "ESTANTE B",      "",         "LOW SHELF",  "低架",        "رف منخفض" },
+        { "CAMPANA",        "",         "BELL",       "钟形",        "جرس" },
+        { "ESTANTE A",      "",         "HIGH SHELF", "高架",        "رف مرتفع" },
+        { "PASO ALTO",      "",         "HIGH PASS",  "高通",        "تمرير عالٍ" },
+        { "PASO BAJO",      "",         "LOW PASS",   "低通",        "تمرير منخفض" },
+        { "BANDA %1",       "",         "BAND %1",    "频段 %1",     "نطاق %1" },
+        //  LOS MANDOS DE LA FAMILIA DE DINAMICA. Los nombres de los cuatro
+        //  efectos -CMP, GTE, DSS, LIM- NO van aqui: son abreviaturas de tres
+        //  letras, que es la unica fila de la app que no se traduce, y por eso
+        //  es la que mas rinde con dibujo al lado.
+        //  ENCENDIDO Y APAGADO del renglon de estado, con clave PROPIA y no
+        //  reaprovechando «OFF»: esa palabra ya existe como el extremo apagado
+        //  de un mando y esta en `UNTRANSLATED_OK` por universal en un aparato.
+        //  Aqui es una FRASE -«EQ apagado»- y una frase se dice en cada lengua.
+        { "ENCENDIDO",      "",         "ON",         "开",          "تشغيل" },
+        { "APAGADO",        "",         "OFF",        "关",          "إيقاف" },
+        { "UMBRAL",         "",         "THRESHOLD",  "阈值",        "العتبة" },
+        { "RATIO",          "",         "RATIO",      "比率",        "النسبة" },
+        { "CIERRE",         "",         "CLOSE",      "关闭",        "الإغلاق" },
+        { "FUERZA",         "",         "AMOUNT",     "强度",        "المقدار" },
+        { "TECHO",          "",         "CEILING",    "上限",        "السقف" },
+        { "SOLTAR",         "",         "RELEASE",    "释放",        "التحرر" },
         { "GUARDAR KIT",    "",         "SAVE KIT",   "保存音色组",   "حفظ الطقم" },
         { "Guardando kit",  "",         "Saving kit", "正在保存音色组", "جارٍ حفظ الطقم" },
         { "Ponle nombre primero", "",    "Name it first", "请先命名",  "سمّه أولاً" },

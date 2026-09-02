@@ -112,6 +112,9 @@ jobs:
       - name: El EQ de cinco bandas y su curva
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/eq.py
+      - name: La familia de dinamica
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/dinamica.py
       - name: La automatizacion
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/auto.py

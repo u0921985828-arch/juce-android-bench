@@ -1354,6 +1354,29 @@ void MainComponent::paintRanuraContent (juce::Graphics& g)
                  "titulo", true);
 }
 
+//  EL TITULO DICE LA BANDA Y SU FRECUENCIA -«EQ · BANDA 3 · 1.0 kHz»- porque
+//  las cinco se parecen y el numero solo no dice cual estas tocando. Se aparta
+//  de la cruz con `antesDe`, que decide el lado comparando los CENTROS: en
+//  arabe la x esta a la izquierda y un `setRight` a mano no recorta nada.
+void MainComponent::paintEqBandaContent (juce::Graphics& g)
+{
+    if (eqBandaSheet.sheetBounds.isEmpty() || eqBandaTituloBanda.isEmpty()) return;
+
+    const int b = juce::jlimit (0, Eq5::kBands - 1, eqBandaSel);
+    const float hz = eqEspejo.freqDe (b);
+    const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
+    const juce::String fr = hz >= 1000.0f ? juce::String (hz / 1000.0f, 1) + " kHz"
+                                          : juce::String ((int) (hz + 0.5f)) + " Hz";
+
+    auto titulo = antesDe (eqBandaTituloBanda, eqBandaCloseBtn.getBounds());
+    g.setColour (ZatiColours::ink.withAlpha (0.9f));
+    g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
+    pintaTitulo (g, titulo,
+                 "EQ " + dot + " " + T ("BANDA %1", juce::String (b + 1))
+                       + " " + dot + " " + Lang::ltr (fr),
+                 "titulo", true);
+}
+
 void MainComponent::paintPadSheetContent (juce::Graphics& g)
 {
     if (padSheet.sheetBounds.isEmpty()) return;

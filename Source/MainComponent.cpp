@@ -260,6 +260,56 @@ MainComponent::MainComponent()
         ranuraSheet.addAndMakeVisible (ranuraVaciarBtn);
     }
 
+    //  LA FICHA DE UNA BANDA DEL EQ. Ver eqBandaSheet en la cabecera.
+    {
+        addAndMakeVisible (eqBandaSheet);
+        eqBandaSheet.setVisible (false);
+        eqBandaSheet.onDismiss    = [this] { abreBandaEq (-1); };
+        eqBandaSheet.paintContent = [this] (juce::Graphics& g) { paintEqBandaContent (g); };
+        styleButton (eqBandaCloseBtn, kKey);
+        eqBandaCloseBtn.onClick = [this] { abreBandaEq (-1); };
+        eqBandaSheet.addAndMakeVisible (eqBandaCloseBtn);
+
+        //  CINCO CHIPS DE TIPO, repartidos por `layoutModuleBar` -o sea POR EL
+        //  TEXTO- y no a quintos: «PASO BAJO» pide el doble que «CAMPANA» y a
+        //  quintos se corta en arabe. Es la misma cuenta que ya deciden BANCO,
+        //  PADS y la tira del paso.
+        for (int t = 0; t < Eq5::kNumTipos; ++t)
+        {
+            auto* b = new juce::TextButton (T (Eq5::nombreTipo (t)));
+            styleButton (*b, kStepOff);
+            litAccent (*b);
+            b->onClick = [this, t] { ponTipoEq (eqBandaSel, t); refrescaBandaEq(); };
+            eqBandaSheet.addAndMakeVisible (b);
+            eqTipoBtns.add (b);
+        }
+
+        //  Q es el TERCER EJE de una campana -lo ancha que es- y en un dedo
+        //  sobre la curva no hay tercer eje: la Y es la ganancia y la X la
+        //  frecuencia. Por eso es un mando y esta aqui.
+        eqQKnob.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+        eqQKnob.setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
+        eqQKnob.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
+        eqQKnob.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+        eqQKnob.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 62, Metrics::readout);
+        eqQKnob.setRange (Eq5::kQMin, Eq5::kQMax, 0.01);
+        eqQKnob.setSkewFactorFromMidPoint (1.4);
+        eqQKnob.setValue (Eq5::kQDef, juce::dontSendNotification);
+        eqQKnob.setDoubleClickReturnValue (true, Eq5::kQDef);
+        eqQKnob.setMouseDragSensitivity (320);
+        //  La lectura es del MANDO y no un rotulo al lado: un rotulo aparte es
+        //  un segundo sitio que hay que acordarse de refrescar, que es
+        //  exactamente lo que le paso a la tira del paso.
+        eqQKnob.textFromValueFunction = [] (double v)
+        { return Lang::ltr (juce::String (v, 2)); };
+        eqQKnob.onValueChange = [this]
+        {
+            ponQEq (eqBandaSel, (float) eqQKnob.getValue());
+            refrescaBandaEq();
+        };
+        eqBandaSheet.addAndMakeVisible (eqQKnob);
+    }
+
     // Projects sheet — reached from the header chip, not the module bar (the
     // bar stays a rule of three: PADS / SEC / FX).
     {
@@ -1903,6 +1953,11 @@ MainComponent::MainComponent()
     //  es el unico sitio que sabe que efecto esta delante.
     eqCurva.setFuente (&eqEspejo);
     eqCurva.onBanda = [this] (int b, float hz, float dB) { ponBandaEq (b, hz, dB); };
+    //  MANTENER sobre un nodo abre su ficha: el tipo de campana y la Q. El
+    //  gesto se reparte por el ESTADO como en la fila de efectos -tocar mueve,
+    //  mantener abre- y la curva lo cancela en cuanto el dedo se mueve seis
+    //  pixeles, o cada arrastre acabaria abriendo un menu al soltar.
+    eqCurva.onNodo = [this] (int b) { abreBandaEq (b); };
     //  Y avisa a la barra de estado como cualquier otro mando: sin eso, mover
     //  un nodo es el unico gesto de la cara que no dice lo que acaba de hacer.
     eqCurva.onTouch = [this] (bool cogido)
@@ -3438,7 +3493,26 @@ juce::String MainComponent::macroReadout (int idx) const
 {
     const juce::Slider* ks[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
     const int p = juce::jlimit (0, 2, idx);
-    return fxFormat (fxDefs[juce::jlimit (0, kNumFx - 1, focusedFx)].spec[p], ks[p]->getValue());
+    const int f = juce::jlimit (0, kNumFx - 1, focusedFx);
+
+    //  LA REDUCCION DE GANANCIA SE VE, O EL COMPRESOR ES INVISIBLE. Sin ella,
+    //  «no se si esta comprimiendo» no tiene respuesta: los tres mandos de un
+    //  compresor dicen lo que le has PEDIDO y ninguno lo que esta haciendo.
+    //
+    //  Y donde MIX, que es la unica casilla de las tres cuyo numero se puede
+    //  deducir mirando otra cosa -la tapa esta encendida o no-. Y SOLO CON EL
+    //  DEDO FUERA: mientras se toca el mando, la casilla dice el valor del
+    //  mando. Un control y su lectura contando cosas distintas es el fallo que
+    //  ya costo una medida con el corte del pad.
+    const int d = dinamicaDeFx (f);
+    if (p == 2 && d >= 0 && ! macroTouched[2])
+    {
+        const float red = engine.getDynReduccion (d);
+        if (red > 0.05f)
+            return Lang::ltr ("-" + juce::String (red, 1) + " dB");
+    }
+
+    return fxFormat (fxDefs[f].spec[p], ks[p]->getValue());
 }
 
 void MainComponent::setMacroTouched (int idx, bool touched)
@@ -3540,6 +3614,36 @@ const MainComponent::FxDef MainComponent::fxDefs[MainComponent::kNumFx] =
       { {    0.4,     3.0, 0.01,    0.0,     1.0, 7 },
         {  -12.0,    12.0, 0.10,    0.0,     0.0, 8 },
         {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
+
+    //  LA FAMILIA DE DINAMICA. Las cuatro caben en tres mandos y por eso NO
+    //  traen cara propia: es el EQ el que no cabia -diez numeros- y no estas.
+    //  El ataque y la caida de CMP van por constante musical y no por mando
+    //  (ver Dinamica.h): con MIX ocupando uno de los tres, un compresor de
+    //  cinco numeros no entra, y forzarlo seria repartir el plato entre cinco
+    //  mandos de 30 px. Cuando haga falta, CMP traera su curva de
+    //  transferencia como la trajo el EQ.
+    { "CMP",  { "UMBRAL", "RATIO", "MIX" },
+      { {  -60.0,     0.0, 0.50,    0.0,   -18.0, 8 },
+        {    1.0,    20.0, 0.10,    4.0,     4.0, 9 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
+
+    { "GTE",  { "UMBRAL", "CIERRE", "MIX" },
+      { {  -80.0,     0.0, 0.50,    0.0,   -40.0, 8 },
+        {    5.0,   500.0, 1.00,  100.0,   120.0, 3 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
+
+    { "DSS",  { "FREQ", "FUERZA", "MIX" },
+      { { 2000.0, 12000.0, 10.0, 6000.0,  6000.0, 0 },
+        {    0.0,     1.0, 0.01,    0.0,     0.5, 2 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
+
+    //  EL TECHO NO PASA DE 0 dB Y NO ES TIMIDEZ, que es lo mismo que ya se
+    //  escribio del master: por encima de la unidad lo unico que se gana es
+    //  empujar el limitador de la salida, que es donde se pierde el golpe.
+    { "LIM",  { "TECHO", "SOLTAR", "MIX" },
+      { {  -24.0,     0.0, 0.10,    0.0,    -1.0, 8 },
+        {    5.0,   500.0, 1.00,  100.0,   120.0, 3 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
 };
 
 // The readout always carries a unit, so a number means something on its own.
@@ -3559,6 +3663,9 @@ juce::String MainComponent::fxFormat (const FxDef::Spec& sp, double v)
         //  El ANCHO se dice en veces y no en porcentaje: uno es el de
         //  fabrica y lo que importa es cuanto se aparta de el.
         case 7:  return "x" + juce::String (v, 2);
+        //  Un ratio se dice «4.0:1» y no «4.00»: el «:1» es lo que dice que es
+        //  una proporcion y no un nivel.
+        case 9:  return juce::String (v, 1) + ":1";
         //  Y la SALIDA en dB CON SIGNO, que es lo unico que separa "sube tres"
         //  de "baja tres": un "3.0 dB" a secas no dice hacia donde.
         case 8:  return (v > 0.0 ? juce::String ("+") : juce::String())
@@ -3667,7 +3774,13 @@ void MainComponent::setFxEnabled (int f, bool on)
     fxParam (f, 2).setValue (on ? fxDefs[f].onMix : 0.0, juce::dontSendNotification);
     pushFxParam (f, 2);
     refreshMacroValues();
-    status.setText (juce::String (fxDefs[f].name) + (on ? " ON" : " OFF"),
+    //  ENCENDIDO Y APAGADO POR `T()`, que es la regla de la casa y llevaba sin
+    //  cumplirse desde que existe esta linea: el nombre del efecto son tres
+    //  letras y no se traduce -esa es la fila que mas rinde con dibujo al
+    //  lado-, pero «ON» y «OFF» si. El banco no podia verlo hasta que hubo una
+    //  ficha que enciende un efecto al abrirse: `EQ ON identical in es and en`,
+    //  catorce veces.
+    status.setText (juce::String (fxDefs[f].name) + " " + T (on ? "ENCENDIDO" : "APAGADO"),
                     juce::dontSendNotification);
 }
 
@@ -3684,6 +3797,67 @@ void MainComponent::ponBandaEq (int b, float hz, float dB)
     eqCurva.repaint();
 }
 
+//  Y sus dos hermanas. Van por el MISMO sitio y no directas al motor: el tipo
+//  y la Q cambian la FORMA de la curva, asi que escribir solo el motor dejaria
+//  la cara dibujando una campana donde ya suena un paso alto.
+void MainComponent::ponTipoEq (int b, int t)
+{
+    eqEspejo.ponTipo (b, t);
+    engine.setEqTipo  (b, t);
+    eqCurva.repaint();
+}
+
+void MainComponent::ponQEq (int b, float q)
+{
+    eqEspejo.ponQ (b, q);
+    engine.setEqQ  (b, q);
+    eqCurva.repaint();
+}
+
+//  MANTENER SOBRE UN NODO abre su ficha. -1 la cierra. Se apaga *y* se le
+//  vacian los limites a lo que lleva dentro, que son las dos mitades de la
+//  misma regla: apagar sin vaciar es lo que tuvo a SEGUIR visible y de 0x0
+//  desde el primer dia.
+void MainComponent::abreBandaEq (int b)
+{
+    const bool abrir = (b >= 0);
+    if (abrir) eqBandaSel = juce::jlimit (0, Eq5::kBands - 1, b);
+
+    eqBandaSheet.setVisible (abrir);
+    if (abrir)
+    {
+        refrescaBandaEq();
+        eqBandaSheet.toFront (false);
+    }
+    else
+    {
+        for (auto* t : eqTipoBtns) if (t != nullptr) t->setBounds ({});
+        eqQKnob.setBounds ({});
+        eqBandaCloseBtn.setBounds ({});
+        eqBandaSheet.sheetBounds  = {};
+        eqBandaTituloBanda        = {};
+    }
+    resized();
+    repaint();
+}
+
+//  LA GANANCIA SE APAGA EN UN TIPO DE PASO, que no la tiene: un mando que se
+//  mueve y no hace nada es peor que no tenerlo -lo mismo que ya se decidio con
+//  los mandos de recorte en un pad de instrumento-. Aqui el mando es el NODO,
+//  asi que quien lo apaga es `Eq5::esPaso` dentro de la curva; lo que esta
+//  ficha apaga es el chip del tipo que ya esta puesto.
+void MainComponent::refrescaBandaEq()
+{
+    const int b = juce::jlimit (0, Eq5::kBands - 1, eqBandaSel);
+    for (int t = 0; t < eqTipoBtns.size(); ++t)
+        if (auto* c = eqTipoBtns[t])
+            c->setToggleState (t == (int) eqEspejo.tipoDe (b), juce::dontSendNotification);
+
+    eqQKnob.setValue (eqEspejo.qDe (b), juce::dontSendNotification);
+    eqBandaSheet.repaint();
+    eqCurva.repaint();
+}
+
 //  Y el espejo desde el MOTOR, que es quien acota: `Eq5::ponBanda` recorta la
 //  frecuencia y la ganancia, asi que preguntarle a el es lo unico que
 //  garantiza que la curva dibuje lo que de verdad se quedo puesto. Se llama al
@@ -3691,8 +3865,13 @@ void MainComponent::ponBandaEq (int b, float hz, float dB)
 void MainComponent::refrescaEq()
 {
     for (int b = 0; b < Eq5::kBands; ++b)
+    {
         eqEspejo.ponBanda (b, engine.getEqFreq (b), engine.getEqGain (b));
+        eqEspejo.ponTipo  (b, engine.getEqTipo (b));
+        eqEspejo.ponQ     (b, engine.getEqQ (b));
+    }
     eqCurva.repaint();
+    if (eqBandaSheet.isVisible()) refrescaBandaEq();
 }
 
 // Give an effect the three knobs: re-range them to its parameters and load its
@@ -7230,7 +7409,9 @@ juce::ValueTree MainComponent::captureState() const
         juce::StringArray e;
         for (int b = 0; b < Eq5::kBands; ++b)
             e.add (juce::String (engine.getEqFreq (b), 1) + ":"
-                     + juce::String (engine.getEqGain (b), 2));
+                     + juce::String (engine.getEqGain (b), 2) + ":"
+                     + juce::String (engine.getEqTipo (b)) + ":"
+                     + juce::String (engine.getEqQ (b), 2));
         fx.setProperty ("eq", e.joinIntoString (";"), nullptr);
     }
     fx.setProperty ("duckPad", engine.getDuckPad(), nullptr);
@@ -7517,18 +7698,29 @@ void MainComponent::applyState (const juce::ValueTree& s)
         //  en `Eq5::ponBanda`: el valor sale de un project.xml que puede estar
         //  corrupto o ser de otra epoca.
         for (int b = 0; b < Eq5::kBands; ++b)
+        {
             engine.setEqBand (b, Eq5::kFreqDef[b], 0.0f);
+            engine.setEqTipo (b, (int) Eq5::tipoDeFabrica (b));
+            engine.setEqQ    (b, Eq5::kQDef);
+        }
         if (fx.hasProperty ("eq"))
         {
             juce::StringArray e;
             e.addTokens (fx.getProperty ("eq").toString(), ";", "");
             for (int b = 0; b < Eq5::kBands && b < e.size(); ++b)
             {
-                const auto par = e[b];
-                const int  dp  = par.indexOfChar (':');
-                if (dp <= 0) continue;
-                engine.setEqBand (b, par.substring (0, dp).getFloatValue(),
-                                     par.substring (dp + 1).getFloatValue());
+                //  Cuatro campos hoy y DOS en un proyecto de la tanda
+                //  anterior: los que falten valen su defecto ANTIGUO -el
+                //  reparto de fabrica y Q 0.70-, que es como sonaba el dia que
+                //  se guardo y no como sonaria hoy. Es la regla de siempre,
+                //  aplicada dentro de una propiedad y no a la propiedad
+                //  entera.
+                juce::StringArray c;
+                c.addTokens (e[b], ":", "");
+                if (c.size() < 2) continue;
+                engine.setEqBand (b, c[0].getFloatValue(), c[1].getFloatValue());
+                if (c.size() >= 3) engine.setEqTipo (b, c[2].getIntValue());
+                if (c.size() >= 4) engine.setEqQ    (b, c[3].getFloatValue());
             }
         }
         refrescaEq();
@@ -12259,6 +12451,23 @@ void MainComponent::timerCallback()
             float cmn[AudioEngine::kMaxScopeColumns], cmx[AudioEngine::kMaxScopeColumns];
             const int nc = engine.copyScopeColumns (cmn, cmx, AudioEngine::kMaxScopeColumns);
             cristal.setColumns (cmn, cmx, nc);
+        }
+
+        //  EL ANALIZADOR DEL EQ, y solo con la curva a la vista: son dos FFT
+        //  de 1024 por tick y pagarlas con el plato enseñando tres mandos
+        //  seria trabajo tirado. Las dos: la mancha de ENTRADA al fondo dice
+        //  DONDE hay que tocar y la linea de SALIDA delante confirma que la
+        //  correccion hizo lo que querias — con una sola no se puede
+        //  distinguir «no habia nada ahi» de «ya lo he quitado».
+        if (eqCurva.isVisible())
+        {
+            engine.copyEqScope (eqPreTmp, eqPostTmp, (int) (sizeof (eqPreTmp) / sizeof (eqPreTmp[0])));
+            eqCurva.setMuestras (eqPreTmp, eqPostTmp,
+                                 (int) (sizeof (eqPreTmp) / sizeof (eqPreTmp[0])));
+            //  Y VIVO o no: sin envios al EQ no se escribe nada en los
+            //  anillos, y una mancha congelada se lee como «esto esta roto» en
+            //  vez de «no pasa nada por aqui».
+            eqCurva.ponVivo (engine.eqScopeVivo());
         }
 
         const int scopeN = juce::jmin ((int) (sizeof (scopeTmp) / sizeof (scopeTmp[0])),

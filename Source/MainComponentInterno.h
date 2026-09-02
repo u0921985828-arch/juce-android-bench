@@ -433,7 +433,8 @@ inline Iconos::Id iconoDeFx (int f) noexcept
 {
     static const Iconos::Id kFx[] = { Iconos::Id::flt, Iconos::Id::hpf, Iconos::Id::drv,
                                       Iconos::Id::dly, Iconos::Id::bit, Iconos::Id::rev,
-                                      Iconos::Id::eq };
+                                      Iconos::Id::eq,  Iconos::Id::cmp, Iconos::Id::gte,
+                                      Iconos::Id::dss, Iconos::Id::lim };
     if (! juce::isPositiveAndBelow (f, (int) (sizeof (kFx) / sizeof (kFx[0]))))
         return Iconos::Id::ninguno;
     return kFx[f];

@@ -1088,6 +1088,7 @@ public:
     void auditRanuras();
     void auditEq();
     void auditAuto();
+    void auditDinamica();
     //  LA CUENTA ATRAS Y EL METRONOMO. Ver Tests/cuenta.py.
     void auditCuenta();
     //  EL CATALOGO DE CONTENIDO Y EL CANDADO. Ver Tests/dlc.py.
@@ -2027,7 +2028,12 @@ private:
     //  coincidian y es lo que habria hecho que el septimo efecto trajera una
     //  septima tapa que no cabe: seis por cuarenta son 240 px y el Fold cerrado
     //  mide 225, o sea que la fila YA esta en su tope medido.
-    static constexpr int kNumFx      = 7;
+    //  Y SE TOMA DEL MOTOR, que no se escribe aqui otra vez. Estaba escrito en
+    //  los dos sitios y coincidian por costumbre: al pasar a once con la
+    //  familia de dinamica, el motor los tenia y la cara seguia en siete, o sea
+    //  cuatro efectos que suenan y no aparecen en ninguna fila. Una regla
+    //  escrita dos veces son dos reglas.
+    static constexpr int kNumFx      = AudioEngine::kNumFx;
     static constexpr int kNumRanuras = 6;
     struct FxDef
     {
@@ -2043,6 +2049,19 @@ private:
     //  el maquetado, el pintor y el foco.
     static constexpr int kFxEq = 6;
     static bool fxTraeCara (int f) noexcept { return f == kFxEq; }
+
+    //  Y CUAL DE LOS CUATRO DE DINAMICA ES, o -1. Los indices salen del motor
+    //  y no se escriben aqui: son los mismos que decide `AudioEngine::kFxCmp`
+    //  y siguientes, y copiarlos seria la misma regla en dos sitios -que es
+    //  justo lo que acaba de costar `kNumFx`-. DSS no entra: un de-esser baja
+    //  una banda y no el nivel, asi que su reduccion no se lee sobre el
+    //  numero que el mando dice.
+    static int dinamicaDeFx (int f) noexcept
+    {
+        return (f == AudioEngine::kFxCmp) ? 0
+             : (f == AudioEngine::kFxGte) ? 1
+             : (f == AudioEngine::kFxLim) ? 3 : -1;
+    }
 
     std::array<bool, kNumFx> fxOn {};
     int focusedFx = 0;                     // whose parameters CTRL 1-3 hold
@@ -2330,7 +2349,26 @@ private:
     //  que `respuestaEnDb` existe para garantizar.
     Eq5  eqEspejo;
     void ponBandaEq (int b, float hz, float dB);   // espejo + motor, un camino
+    //  Y sus dos hermanas, por el MISMO camino y por la misma razon: el tipo
+    //  de una banda y su Q los mueve la ficha de banda, y si escribieran solo
+    //  el motor la curva seguiria dibujando la campana de antes.
+    void ponTipoEq  (int b, int t);
+    void ponQEq     (int b, float q);
     void refrescaEq();                              // el espejo desde el motor
+    //  LA FICHA DE UNA BANDA, que se abre MANTENIENDO sobre su nodo. Es un
+    //  `Sheet` y no un panel dibujado a mano: `XyPanel` se hizo asi y se quedo
+    //  sin numero de CAPA, o sea que sus rotulos se comparaban contra la
+    //  maquina entera y la regla del rotulo tapado no podia verlos. Un `Sheet`
+    //  trae la capa, el velo y el cierre al tocar fuera de serie.
+    Sheet eqBandaSheet;
+    int   eqBandaSel = 0;
+    juce::OwnedArray<juce::TextButton> eqTipoBtns;
+    juce::Slider eqQKnob;
+    juce::TextButton eqBandaCloseBtn { juce::CharPointer_UTF8 ("\xc3\x97") };
+    juce::Rectangle<int> eqBandaTituloBanda;
+    void abreBandaEq (int b);
+    void refrescaBandaEq();
+    void paintEqBandaContent (juce::Graphics&);
     void refrescaPlato();                           // curva o mandos, segun quien tenga el foco
     juce::Label  status;
     WaveformDisplay waveform;
@@ -2343,6 +2381,11 @@ private:
     SpectrumDisplay cristal;
     ZatiLookAndFeel lnf;
     float scopeTmp[1024] {};
+    //  Los dos anillos del analizador del EQ, del tamano de la FFT que hace la
+    //  curva. Miembros y no locales: 8 KB de pila por tick en el hilo de
+    //  mensajes es gratis hasta que un movil con la pila justa dice que no.
+    float eqPreTmp[1024] {};
+    float eqPostTmp[1024] {};
 
     // Per-pad UI state.
     std::array<bool,  kNumPads> padHasSample {};

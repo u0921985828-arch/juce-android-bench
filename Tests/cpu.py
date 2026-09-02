@@ -32,7 +32,12 @@ SEGUNDOS = int (sys.argv[1]) if len (sys.argv) > 1 else 8
 
 #  Las fichas que se abren solas y se quedan abiertas. Las que piden un
 #  dialogo del sistema quedan fuera: en un banco sin pantalla no vuelven.
-FICHAS = ["", "pads", "sec", "song", "mix", "set", "proj", "midi", "gest",
+#  «eq» ES LA CARA CON EL ANALIZADOR PUESTO, y hace falta que este: la curva
+#  vive en el PLATO -o sea en la cara, no en una ficha- y solo se enseña con el
+#  EQ en una ranura y con el foco. Sin esta entrada, las dos FFT de 1024 por
+#  tick no las corre nadie en el unico banco que mide por RELOJ, que es
+#  exactamente publicar un numero sin mirarlo.
+FICHAS = ["", "eq", "pads", "sec", "song", "mix", "set", "proj", "midi", "gest",
           "xy", "rack", "chop", "browse"]
 
 #  EL TOPE. Un arranque pinta el fondo una vez, y una ficha que se abre puede
@@ -159,7 +164,14 @@ def main():
         #  VEN, asi que repintarlos es el trabajo. Se imprime porque es el
         #  techo contra el que se leen las demas, y porque el dia que suba hay
         #  que enterarse.
-        cara = (f == "")
+        #
+        #  Y «eq» es la CARA CON EL EQ PUESTO y no una ficha: la curva vive en
+        #  el plato, o sea en la cara. Se lee CONTRA la cara y no contra el tope
+        #  de las fichas, que es lo que hace de esta fila una medida y no un
+        #  rojo: 112.3 contra 112.2 dice que el analizador —dos FFT de 1024 por
+        #  tick, la mancha de entrada y la linea de salida— cuesta UNA DECIMA de
+        #  fotograma equivalente.
+        cara = (f in ("", "eq"))
         mal  = (not cara) and equi > TOPE_SONANDO
         print ("%-8s %8.1f %11.0f%s" % (f or "(cara)", equi, r.get ("cpu_ms", 0.0),
                                         "   (se ve: no se juzga)" if cara else

@@ -536,6 +536,11 @@ public:
                     {
                         c2->auditEq();
                     }
+                    //  LA FAMILIA DE DINAMICA. Ver Tests/dinamica.py.
+                    else if (UiAudit::env ("ZATI_DYN").isNotEmpty())
+                    {
+                        c2->auditDinamica();
+                    }
                     //  LA AUTOMATIZACION. Ver Tests/auto.py.
                     else if (UiAudit::env ("ZATI_AUTO").isNotEmpty())
                     {

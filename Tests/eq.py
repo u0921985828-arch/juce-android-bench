@@ -132,13 +132,78 @@ def main():
         if r["lejos"] > 0.01:
             malas.append ("%s: un arrastre fuera de todo nodo movio una banda: %+.2f dB"
                           % (size, r["lejos"]))
+
+        #  6. LA CURVA QUE SE DIBUJA NO ES PLANA CUANDO LAS BANDAS NO LO ESTAN.
+        #     Es la regla que faltaba, y la que habria cazado el fallo que llego
+        #     en una foto del telefono: los cinco nodos movidos y una RAYA
+        #     RECTA. La causa era exacta y ninguna de las cinco de arriba podia
+        #     verla — miran las GANANCIAS y la guarda, no la FORMA de lo que se
+        #     pinta. `Eq5::recalcula` solo se llamaba desde `procesa`, o sea
+        #     desde el hilo de audio, y el ESPEJO del que se dibuja no procesa
+        #     audio nunca: su bandera `sucio` se quedaba puesta para siempre y
+        #     `respuestaEnDb` evaluaba la tabla de coeficientes de la curva
+        #     plana. El banco del motor tampoco: mide sobre una instancia que
+        #     acaba de procesar.
+        #
+        #     La app lo mide PINTANDO -quien pone los coeficientes al dia es
+        #     `EqCurve::paint`- y saca el recorrido entre el maximo y el minimo
+        #     de la respuesta en las cinco frecuencias de fabrica, con
+        #     +5/-6/+3.5/-4/+8 dB escritos. Roto a proposito quitando el
+        #     `refresca()`: 0.00 dB.
+        print ("%-9s curva   recorrido %.2f dB con las cinco bandas escritas"
+               % (size, r["recorrido"]))
+        if r["recorrido"] < 6.0:
+            malas.append ("%s: la curva sale PLANA con las bandas escritas: %.2f dB "
+                          "de recorrido" % (size, r["recorrido"]))
+
+        #  7. MANTENER SOBRE UN NODO ABRE SU FICHA Y ARRASTRAR NO, que son DOS
+        #     cifras porque una sola se engaña por los dos lados: «abre» lo
+        #     cumple igual un gesto que abre siempre, y entonces cada arrastre
+        #     acabaria con la ficha delante al soltar; «no abre al arrastrar» lo
+        #     cumple igual un gesto muerto. Medido POR EL GESTO -mouseDown,
+        #     mouseDrag y el reloj vencido como lo venceria el sistema- y no
+        #     llamando a `onNodo`, que es justo donde el fallo no existe.
+        print ("%-9s mantener  armado al apoyar %d   tras arrastrar %d   ficha %d banda %d"
+               % (size, r["armado_apoyar"], r["armado_arrastre"],
+                  r["ficha_mantener"], r["banda_abierta"] + 1))
+        if r["armado_apoyar"] != 1 or r["ficha_mantener"] != 1:
+            malas.append ("%s: mantener sobre un nodo no abre su ficha "
+                          "(armado %d ficha %d)"
+                          % (size, r["armado_apoyar"], r["ficha_mantener"]))
+        if r["banda_abierta"] != 2:
+            malas.append ("%s: se mantuvo sobre la banda 3 y se abrio la %d"
+                          % (size, r["banda_abierta"] + 1))
+        if r["armado_arrastre"] != 0:
+            malas.append ("%s: arrastrar no cancela el mantener: el menu se abriria "
+                          "al soltar" % size)
+
+        #  8. EL TIPO Y LA Q, por la TAPA y por el MANDO. Un tipo de PASO no
+        #     tiene ganancia — corta, no realza — asi que su nodo se queda
+        #     clavado en la linea de cero: con +8 dB escritos, pasar la banda a
+        #     PASO ALTO tiene que dejar `gainVisible` en 0. Y la Q escribe en
+        #     los DOS sitios, espejo y motor, que es lo unico que separa «la
+        #     curva se estrecha» de «suena mas estrecho»: con uno solo, uno de
+        #     los dos se queda contando otra cosa.
+        print ("%-9s banda   tipo tras el chip %d   ganancia visible %+.2f   "
+               "Q motor %.2f espejo %.2f"
+               % (size, r["tipo_chip"], r["visible_paso"], r["q_motor"], r["q_espejo"]))
+        if r["tipo_chip"] != 3:
+            malas.append ("%s: el chip PASO ALTO dejo la banda en el tipo %d"
+                          % (size, r["tipo_chip"]))
+        if abs (r["visible_paso"]) > 0.01:
+            malas.append ("%s: un tipo de paso dibuja %+.2f dB de ganancia"
+                          % (size, r["visible_paso"]))
+        if abs (r["q_motor"] - 4.5) > 0.02 or abs (r["q_espejo"] - 4.5) > 0.02:
+            malas.append ("%s: la Q quedo en motor %.2f y espejo %.2f, pedida 4.50"
+                          % (size, r["q_motor"], r["q_espejo"]))
         print()
 
     if malas:
         for m in malas: print ("FALLA  " + m)
         return 1
     print ("el plato pasa a la curva, cada nodo se agarra, escribe su banda, no "
-           "cruza a la vecina y no responde en el aire")
+           "cruza a la vecina, no responde en el aire, la curva sigue a las "
+           "bandas, mantener abre la ficha y el tipo y la Q escriben en los dos")
     return 0
 
 

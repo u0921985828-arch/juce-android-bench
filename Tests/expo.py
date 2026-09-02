@@ -29,7 +29,7 @@ SIZES = [
     ("915x412",  "LANDSCAPE — the orientation nobody tests"),
 ]
 LANGS = ["es", "en", "zh", "ar"]
-SHEETS = ["", "pads", "pad2", "pad3", "sec", "secp", "paso", "song", "songa", "piano", "pianod", "pick", "mix", "xy", "set", "asp", "proj", "gest", "midi", "lang", "manual", "rack", "ranura", "ranural", "chop", "inst", "instd", "instg", "vst", "expo", "tour", "tour1", "tour6", "tour10", "tourf", "browse", "browsedir"]
+SHEETS = ["", "pads", "pad2", "pad3", "sec", "secp", "paso", "eq", "eqb", "song", "songa", "piano", "pianod", "pick", "mix", "xy", "set", "asp", "proj", "gest", "midi", "lang", "manual", "rack", "ranura", "ranural", "chop", "inst", "instd", "instg", "vst", "expo", "tour", "tour1", "tour6", "tour10", "tourf", "browse", "browsedir"]
 
 MIN_TOUCH = 40   # Metrics::hit — Android's own guideline is 48dp, this is the floor
 #  LO QUE SE DIBUJA Y SE TOCA IGUAL.
@@ -248,6 +248,9 @@ UNTRANSLATED_OK = {
     "ZATI",                                    # the wordmark
     "L", "R", "C", "M", "S", "A", "B", "D",    # channel, pan and bank letters
     "FLT", "ISO", "HPF", "DRV", "DLY", "BIT", "REV", "EQ",  # effect abbreviations
+    "CMP", "GTE", "DSS", "LIM",                # la familia de dinamica, tres letras cada una
+    "RATIO",                                   # se escribe igual en las dos lenguas
+    "FREQ",                                    # la abreviatura de frecuencia, la misma
     "AUTO",                                    # la abreviatura de automatizacion, igual en las cuatro
     "TAP", "KIT",                              # universales en cualquier sampler
     "MANUAL",                                  # se escribe igual en las dos lenguas

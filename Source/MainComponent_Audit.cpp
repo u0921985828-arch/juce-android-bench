@@ -1072,6 +1072,36 @@ void MainComponent::auditOpen (const juce::String& which)
     //  que sin esta entrada el banco medía la pagina a la que le falta justo lo
     //  que se acaba de anadir.
     else if (which == "secp") { showSeqPage (seqPageGrid); openSheet (seqSheet, secButton); stepCellToggled (0, 4); }
+    //  LA CARA CON EL EQ DELANTE, que es OTRA pantalla: el plato deja de ser
+    //  tres mandos y pasa a ser una curva, y sin esta entrada nadie mide -ni
+    //  fotografia- el unico estado en el que un efecto trae su propia cara. Es
+    //  lo mismo que `secp` con la tira del paso y `songa` con la banda de
+    //  audio, y lo mismo que hacen `ZATI_SKIN` y `ZATI_DLC`: convertir en
+    //  ENTRADA lo que si no seria «lo que hubiera».
+    //
+    //  Con una curva ESCRITA y no plana: una curva plana es una raya, o sea
+    //  justo la foto en la que no se ve si los nodos estan donde deben.
+    else if (which == "eq")
+    {
+        closeAllSheets();
+        ponEnRanura (0, kFxEq);
+        setFxEnabled (kFxEq, true);
+        focusFx (kFxEq);
+        const float dB[Eq5::kBands] = { 5.0f, -6.0f, 3.5f, -4.0f, 8.0f };
+        for (int b = 0; b < Eq5::kBands; ++b)
+            ponBandaEq (b, Eq5::kFreqDef[b], dB[b]);
+    }
+    //  Y LA FICHA DE UNA BANDA, que es la pantalla a la que se llega
+    //  MANTENIENDO sobre un nodo y que ninguna otra entrada maqueta: sus cinco
+    //  chips de tipo y su mando Q solo existen con ella abierta.
+    else if (which == "eqb")
+    {
+        closeAllSheets();
+        ponEnRanura (0, kFxEq);
+        setFxEnabled (kFxEq, true);
+        focusFx (kFxEq);
+        abreBandaEq (2);
+    }
     else if (which == "song") openSheet (songSheet, songButton);
     //  LA BANDA DE AUDIO ES OTRA PANTALLA y por eso es otra entrada. Sin ella
     //  el banco mediria siempre la vista de patrones, que es justo la que no
@@ -2380,6 +2410,85 @@ void MainComponent::auditEq()
     for (int b = 0; b < Eq5::kBands; ++b)
         peorLejos = juce::jmax (peorLejos, std::abs (engine.getEqGain (b)));
 
+    //  5. LA CURVA QUE SE DIBUJA NO ES PLANA CUANDO LAS BANDAS NO LO ESTAN.
+    //     Es la regla que faltaba y la que habria cazado el fallo de la foto:
+    //     `Eq5::recalcula` solo se llamaba desde `procesa` -o sea desde el hilo
+    //     de audio- y el ESPEJO no procesa audio nunca, asi que su bandera
+    //     `sucio` se quedaba puesta para siempre y `respuestaEnDb` evaluaba la
+    //     tabla de coeficientes de la curva PLANA. Los cinco nodos movidos y
+    //     una raya recta.
+    //
+    //     Se mide PINTANDO, que es el camino de verdad: quien pone los
+    //     coeficientes al dia es `EqCurve::paint`, y preguntarle a
+    //     `eqEspejo.refresca()` desde aqui seria hacer el arreglo dentro de la
+    //     prueba. Recorrido entre el maximo y el minimo en las cinco
+    //     frecuencias de fabrica: con el `refresca()` quitado, 0.00 dB.
+    const float dBcurva[Eq5::kBands] = { 5.0f, -6.0f, 3.5f, -4.0f, 8.0f };
+    for (int b = 0; b < Eq5::kBands; ++b) ponBandaEq (b, Eq5::kFreqDef[b], dBcurva[b]);
+    {
+        juce::Image lienzo (juce::Image::ARGB, juce::jmax (1, caja.getWidth()),
+                            juce::jmax (1, caja.getHeight()), true);
+        juce::Graphics gg (lienzo);
+        eqCurva.paint (gg);
+    }
+    float lo = 1.0e9f, hi = -1.0e9f;
+    for (int b = 0; b < Eq5::kBands; ++b)
+    {
+        const float r = eqEspejo.respuestaEnDb (Eq5::kFreqDef[b]);
+        lo = juce::jmin (lo, r);
+        hi = juce::jmax (hi, r);
+    }
+    const float recorrido = hi - lo;
+
+    //  6. MANTENER SOBRE UN NODO ABRE SU FICHA, y arrastrar NO. Las dos
+    //     mitades: «abre» lo cumple igual un gesto que abre siempre, y
+    //     entonces cada arrastre acabaria con un menu delante al soltar.
+    abreBandaEq (-1);
+    auto evEn = [this] (juce::Point<int> p)
+    {
+        return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(),
+                                 p.toFloat(), juce::ModifierKeys(),
+                                 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                 &eqCurva, &eqCurva, juce::Time::getCurrentTime(),
+                                 p.toFloat(), juce::Time::getCurrentTime(), 1, false);
+    };
+    eqCurva.mouseDown (evEn ({ x2, y0 }));
+    const int armadoAlApoyar = eqCurva.mantenerArmado() ? 1 : 0;
+    eqCurva.venceElMantener();
+    const int fichaTrasMantener = eqBandaSheet.isVisible() ? 1 : 0;
+    const int bandaAbierta      = eqBandaSel;
+    eqCurva.mouseUp (evEn ({ x2, y0 }));
+
+    //  Y ARRASTRAR LO CANCELA, que es la otra mitad: sin ella «abre al
+    //  mantener» lo cumple igual un gesto que abre siempre, y entonces cada
+    //  arrastre acabaria con la ficha delante al soltar.
+    abreBandaEq (-1);
+    eqCurva.mouseDown (evEn ({ x2, y0 }));
+    eqCurva.mouseDrag (evEn ({ x2, y0 - 30 }));
+    const int armadoTrasArrastrar = eqCurva.mantenerArmado() ? 1 : 0;
+    eqCurva.mouseUp (evEn ({ x2, y0 - 30 }));
+
+    //  7. LOS CINCO TIPOS Y LA Q, por la TAPA y por el MANDO. Un tipo de PASO
+    //     no tiene ganancia -su nodo se queda clavado en el cero- y eso es lo
+    //     que dice `gainVisible`: con un realce de 8 dB puesto, la banda que
+    //     pasa a PASO ALTO tiene que dibujar 0.
+    abreBandaEq (2);
+    ponBandaEq (2, Eq5::kFreqDef[2], 8.0f);
+    if (auto* t = eqTipoBtns[Eq5::pasoAlto]) t->onClick();
+    const int   tipoTrasChip = engine.getEqTipo (2);
+    const float visibleTrasChip = eqEspejo.gainVisible (2);
+    eqQKnob.setValue (4.5, juce::sendNotificationSync);
+    const float qMotor  = engine.getEqQ (2);
+    const float qEspejo = eqEspejo.qDe (2);
+
+    abreBandaEq (-1);
+    for (int b = 0; b < Eq5::kBands; ++b)
+    {
+        ponBandaEq (b, Eq5::kFreqDef[b], 0.0f);
+        ponTipoEq  (b, (int) Eq5::tipoDeFabrica (b));
+        ponQEq     (b, Eq5::kQDef);
+    }
+
     std::cout << "{\"eq\":1"
               << ",\"plato_con_flt\":"  << platoConFlt
               << ",\"mandos_con_flt\":" << mandosConFlt
@@ -2393,6 +2502,15 @@ void MainComponent::auditEq()
               << ",\"f3\":"             << juce::String (f3, 1)
               << ",\"cruza\":"          << cruza
               << ",\"lejos\":"          << juce::String (peorLejos, 2)
+              << ",\"recorrido\":"      << juce::String (recorrido, 2)
+              << ",\"armado_apoyar\":"  << armadoAlApoyar
+              << ",\"armado_arrastre\":" << armadoTrasArrastrar
+              << ",\"ficha_mantener\":" << fichaTrasMantener
+              << ",\"banda_abierta\":"  << bandaAbierta
+              << ",\"tipo_chip\":"      << tipoTrasChip
+              << ",\"visible_paso\":"   << juce::String (visibleTrasChip, 2)
+              << ",\"q_motor\":"        << juce::String (qMotor, 2)
+              << ",\"q_espejo\":"       << juce::String (qEspejo, 2)
               << "}" << std::endl;
 }
 
@@ -2408,6 +2526,143 @@ void MainComponent::auditEq()
 //  donde no existe ninguno de los fallos: si el evento no llega a
 //  `pushFxParam`, o si el paso que se lee no es el del transporte, llamar a la
 //  funcion por dentro pasa igual.
+// ============================================================================
+//  LA FAMILIA DE DINAMICA EN LA CARA. Ver Tests/dinamica.py.
+//
+//  Lo que suena lo mide el banco del motor -cuatro filas, dos cifras cada una-.
+//  Lo que se mide aqui es lo que ninguna de las nueve reglas de `expo.py` puede
+//  ver y el motor tampoco: que los cuatro tipos LLEGUEN a la fila, que su
+//  reduccion se LEA, y que un proyecto vuelva con sus numeros. Son fallos de
+//  INDICE y de estado — una tapa que enciende el efecto de al lado se maqueta
+//  perfecta.
+//
+//  SE MIDE POR LA TAPA Y POR EL MANDO y no llamando a `setDynP0` por dentro,
+//  que es justo donde el fallo no existe: el camino de verdad va del mando a
+//  `pushFxParam`, de ahi a `AudioEngine::setFxParam` y de ahi al atomico, y es
+//  ese switch de treinta y tres casos el que se equivoca de una fila.
+void MainComponent::auditDinamica()
+{
+    auto pulsa = [] (juce::Button* b) { if (b != nullptr && b->onClick) b->onClick(); };
+
+    //  1. LOS CUATRO TIPOS ESTAN EN EL MENU. Con once tipos y seis ranuras, el
+    //     menu es la UNICA puerta a los cuatro nuevos: si la rejilla se hubiera
+    //     quedado en siete celdas, CMP, GTE, DSS y LIM sonarian y no habria
+    //     forma de ponerlos. Se cuenta lo que el menu OFRECE, no `kNumFx`.
+    for (int s = 0; s < kNumRanuras; ++s) ponEnRanura (s, kSlotVacia);
+    abreMenuRanura (0);
+    int enMenu = 0;
+    for (auto* b : ranuraBtns) if (b != nullptr && ! b->getBounds().isEmpty()) ++enMenu;
+    //  Y la celda contra el DEDO: con once en dos columnas serian seis filas y
+    //  la tarjeta no da; en tres son cuatro. Lo decide esta cifra.
+    int celdaW = 0, celdaH = 0;
+    if (auto* b = ranuraBtns[0]) { celdaW = b->getWidth(); celdaH = b->getHeight(); }
+    abreMenuRanura (-1);
+
+    //  2. CADA TIPO LLEGA A SU RANURA POR EL GESTO. Se pone CMP en la 0 y LIM
+    //     en la 1 pulsando las tapas del menu, que es donde vive el indice.
+    abreMenuRanura (0);
+    pulsa (ranuraBtns[AudioEngine::kFxCmp]);
+    abreMenuRanura (1);
+    pulsa (ranuraBtns[AudioEngine::kFxLim]);
+    const int enRanura0 = slotFx[0];
+    const int enRanura1 = slotFx[1];
+
+    //  3. LOS TRES MANDOS ESCRIBEN EN SU EFECTO Y NO EN EL DE AL LADO, con un
+    //     TESTIGO: se le da a CMP un umbral y a LIM un techo DISTINTOS, y las
+    //     dos tienen que quedarse donde se pusieron. Con un solo efecto, un
+    //     switch corrido de una fila pasa la prueba.
+    focusFx (AudioEngine::kFxCmp);
+    macroCtrl1.setValue (-30.0, juce::sendNotificationSync);   // UMBRAL
+    macroCtrl2.setValue (  6.0, juce::sendNotificationSync);   // RATIO
+    focusFx (AudioEngine::kFxLim);
+    macroCtrl1.setValue (-12.0, juce::sendNotificationSync);   // TECHO
+    macroCtrl2.setValue (200.0, juce::sendNotificationSync);   // SOLTAR
+
+    const float cmpUmbral = engine.getDynP0 (0);
+    const float cmpRatio  = engine.getDynP1 (0);
+    const float limTecho  = engine.getDynP0 (3);
+    const float limSoltar = engine.getDynP1 (3);
+
+    //  4. LA REDUCCION SE LEE, Y SOLO CON EL DEDO FUERA. Un compresor que no
+    //     dice cuanto comprime es invisible; y una casilla que dice la
+    //     reduccion mientras se mueve el mando es un control contando otra
+    //     cosa que su propio numero. Las DOS mitades.
+    engine.setFxParam (AudioEngine::kFxLim, 2, 1.0f);
+    engine.setPadSend (0, AudioEngine::kFxLim, 1.0f);
+    engine.setPadGain (0, 1.0f);
+
+    //  UN TONO PLANO Y NO EL SONIDO DE FABRICA, que es donde esta medida se
+    //  equivoco antes de acertar. El pad 0 trae un golpe de ~0.4 s, asi que al
+    //  preguntar por la reduccion cuarenta ticks despues ya se habia apagado y
+    //  la casilla decia «0 %» con el codigo perfecto. Es exactamente el fallo
+    //  del pan medido sobre medio segundo de silencio. Primero se duda de la
+    //  prueba.
+    {
+        auto* sb = new SampleBuffer();
+        const int n = 48000;
+        sb->buffer.setSize (2, n);
+        for (int c = 0; c < 2; ++c)
+            for (int i = 0; i < n; ++i)
+                sb->buffer.setSample (c, i,
+                    0.9f * std::sin (juce::MathConstants<float>::twoPi * 220.0f * (float) i / 48000.0f));
+        sb->sourceSampleRate = 48000.0;
+        engine.publishSample (0, SampleBuffer::Ptr (sb));
+    }
+
+    //  Y EL ENVIO SE ASIENTA ANTES DE DISPARAR: se cruza con el camino seco en
+    //  20 ms, asi que disparar y leer enseguida mide la mitad de un pad que
+    //  todavia no ha entrado en el efecto. Es el mismo arreglo que acaba de
+    //  costar una medida en el banco del motor.
+    //
+    //  La reduccion la escribe el HILO DE AUDIO al procesar, asi que en un
+    //  escritorio sin tarjeta vale cero pase lo que pase - el mismo agujero que
+    //  ya costo una medida con `numClips`.
+    for (int i = 0; i < 8; ++i) bombeaAudioDePrueba();
+    engine.postNoteOn (0, 1.0f);
+    //  Pocos ticks, y MIENTRAS SUENA: el tono dura un segundo y con cuarenta
+    //  ticks se pregunta cuando ya no queda nada que limitar.
+    for (int i = 0; i < 6; ++i) bombeaAudioDePrueba();
+
+    focusFx (AudioEngine::kFxLim);
+    setMacroTouched (2, false);
+    const juce::String leeSuelto = macroReadout (2);
+    setMacroTouched (2, true);
+    const juce::String leeTocado = macroReadout (2);
+    setMacroTouched (2, false);
+
+    //  5. Y VUELVEN DEL FICHERO DE PROYECTO. Se escribe con el MISMO arbol que
+    //     escribe el fichero, se BORRA a mano —si al volver sigue puesto no es
+    //     que se haya guardado, es que nadie lo quito— y se abre.
+    auto estado = captureState();
+    engine.setFxParam (AudioEngine::kFxCmp, 0, -18.0f);
+    engine.setFxParam (AudioEngine::kFxLim, 0,  -1.0f);
+    ponEnRanura (0, kSlotVacia);
+    ponEnRanura (1, kSlotVacia);
+    applyState (estado);
+    const float cmpVuelve = engine.getDynP0 (0);
+    const float limVuelve = engine.getDynP0 (3);
+    const int   r0Vuelve  = slotFx[0];
+    const int   r1Vuelve  = slotFx[1];
+
+    std::cout << "{\"dyn\":1"
+              << ",\"en_menu\":"    << enMenu
+              << ",\"celda_w\":"    << celdaW
+              << ",\"celda_h\":"    << celdaH
+              << ",\"ranura0\":"    << enRanura0
+              << ",\"ranura1\":"    << enRanura1
+              << ",\"cmp_umbral\":" << juce::String (cmpUmbral, 2)
+              << ",\"cmp_ratio\":"  << juce::String (cmpRatio, 2)
+              << ",\"lim_techo\":"  << juce::String (limTecho, 2)
+              << ",\"lim_soltar\":" << juce::String (limSoltar, 2)
+              << ",\"lee_suelto\":\"" << leeSuelto << "\""
+              << ",\"lee_tocado\":\"" << leeTocado << "\""
+              << ",\"cmp_vuelve\":" << juce::String (cmpVuelve, 2)
+              << ",\"lim_vuelve\":" << juce::String (limVuelve, 2)
+              << ",\"r0_vuelve\":"  << r0Vuelve
+              << ",\"r1_vuelve\":"  << r1Vuelve
+              << "}" << std::endl;
+}
+
 void MainComponent::auditAuto()
 {
     auto pulsa = [] (juce::Button* b) { if (b != nullptr && b->onClick) b->onClick(); };
