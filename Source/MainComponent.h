@@ -21,6 +21,7 @@
 #include "AudioPath.h"
 #include "UiAudit.h"
 #include "XyPad.h"
+#include "EqCurve.h"
 #include "MidiIo.h"
 #include "Instrumentos.h"
 
