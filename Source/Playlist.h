@@ -36,8 +36,45 @@ public:
     static constexpr int kLanes    = 4;
     static constexpr int kBarsView = 8;    // bars visible at once; pages beyond
 
+    //  LOS CARRILES DE AUDIO NO SON CUATRO CARRILES MAS DE ESTA REJILLA.
+    //
+    //  Medido antes de decidirlo, que es lo unico que separa un diseno de una
+    //  opinion: la linea de tiempo se lleva hoy 42 px por carril en un movil
+    //  grande, 28.8 en un 360x640 y **20.2 en 280x653**. Cuatro carriles mas al
+    //  mismo alto piden 160 px que no existen - en la pantalla estrecha los
+    //  ocho saldrian a diez pixeles - y un clip se ARRASTRA, que es el control
+    //  que menos puede permitirse ser fino: fallar el agarre no es fallar un
+    //  toque, es mover otra cosa.
+    //
+    //  Asi que son dos VISTAS de la misma rejilla y no ocho carriles: los
+    //  patrones o el audio, con la misma cuenta de compas a pixel escrita UNA
+    //  vez. Es la decision que ya tomo la ficha del secuenciador con PASOS,
+    //  PIANO y PATRON, y por lo mismo: dos ventanas para un trabajo es lo que
+    //  esta app no permite, y dos maquetados para la misma cuenta son dos
+    //  reglas.
+    enum Vista { vistaPatrones = 0, vistaAudio };
+
+    //  Un clip, tal y como esta rejilla necesita verlo: EN COMPASES. El motor
+    //  lo guarda en muestras -el audio mide lo que mide- y traducirlo pide el
+    //  tempo, que es cosa del motor y no de un componente que dibuja. Quien
+    //  sabe cuantas muestras son un compas lo traduce y pasa esto, igual que la
+    //  tabla de zatis se pasa en vez de preguntarle al motor por cada bloque.
+    struct ClipVista
+    {
+        int pista  = 0;      // 0..kAudioLanes-1
+        int desde  = 0;      // primer compas que ocupa
+        int hasta  = 1;      // el primero que YA NO ocupa, o sea [desde, hasta)
+        int pad    = 0;      // de que pad salio, que es de donde sale su color
+    };
+
     // (lane, bar) — the host decides what to place or whether to clear.
     std::function<void (int lane, int bar)> onCell;
+    //  UN HUECO DE LA BANDA DE AUDIO: aqui no habia nada, pon lo que tengas.
+    std::function<void (int pista, int compas)> onClipNuevo;
+    //  Y UN CLIP QUE SE ARRASTRA. El indice es el de la tabla que se paso, no
+    //  una identidad: quien la publica es quien la ordena.
+    std::function<void (int indice, int pista, int compas)> onClipMueve;
+    std::function<void (int indice)> onClipQuita;
     //  Un toque en la canaleta del carril: lo silencia. Ver mouseDown.
     std::function<void (int lane)> onLane;
 
@@ -51,6 +88,40 @@ public:
     //  constante: una prueba que lee el numero que juzga cambia de opinion a la
     //  vez que el fallo.
     int numZatis() const noexcept { return zatis; }
+
+    //  LA MISMA CUENTA DE COMPAS A PIXEL, con otra cosa dibujada encima.
+    //
+    //  Cuantos carriles tiene la banda lo dice el MOTOR y no este fichero: son
+    //  las pistas que sabe reproducir, y escribir aqui un cuatro seria la misma
+    //  regla en dos sitios - la que ya costo que `kContinued` estuviera
+    //  definido dos veces.
+    static constexpr int kAudioLanes = AudioEngine::kAudioTracks;
+
+    void ponVista (int v) noexcept
+    {
+        const int nueva = (v == vistaAudio) ? (int) vistaAudio : (int) vistaPatrones;
+        if (nueva == vista) return;
+        vista = nueva;
+        visto = false;          // la sombra es de la otra vista: no vale
+        repaint();
+    }
+    int  laVista() const noexcept { return vista; }
+
+    //  La tabla se PRESTA, no se copia: la publica quien la tiene y vive lo que
+    //  dure la llamada del temporizador, igual que `data` y `zati`.
+    void setAudio (const ClipVista* filas, int cuantas, int elegido, unsigned mudos) noexcept
+    {
+        clips = filas; numClips = juce::jmax (0, cuantas); clipSel = elegido;
+        //  SU PROPIA MASCARA DE SILENCIO y no la de los carriles de patron.
+        //  Son cuatro cosas distintas -silenciar el carril 1 no puede callar la
+        //  pista de audio 1- y compartir el numero habria hecho justo eso sin
+        //  un solo error de compilacion.
+        mudoAudio = mudos;
+        //  Sin sombra: son unas pocas filas y el repintado ya esta acotado por
+        //  la guarda de la ficha. Comparar una tabla de clips fila a fila para
+        //  ahorrar un repintado de 168 px seria pagar el ahorro dos veces.
+        if (vista == vistaAudio) repaint();
+    }
 
     void setSource (const int* cells,       // [lane][bar] flattened, stride = bars
                     const int* zatiOf,      // un zati por pad...
@@ -95,6 +166,7 @@ public:
 
     void paint (juce::Graphics& g) override
     {
+        if (vista == vistaAudio) { pintaAudio (g); return; }
         if (data == nullptr) return;
         auto r = getLocalBounds();
         const int gutter = kGutter;
@@ -250,9 +322,21 @@ public:
     //  silenciaria los cuatro carriles de una pasada- y una celda no se
     //  escribe dos veces seguidas, o pasar el dedo por encima de la misma
     //  casilla la enciende y la apaga a la velocidad de los eventos del raton.
-    void mouseDown (const juce::MouseEvent& e) override { ultima = { -1, -1 }; toca (e, false); }
-    void mouseDrag (const juce::MouseEvent& e) override { toca (e, true); }
-    void mouseUp   (const juce::MouseEvent&)   override { ultima = { -1, -1 }; }
+    //  Y EN LA BANDA DE AUDIO, ARRASTRAR MUEVE Y NO PINTA. Son dos gestos
+    //  incompatibles en el mismo dedo -uno escribe celdas y el otro desplaza un
+    //  bloque- y por eso no comparten vista: aqui no hay ninguna celda que se
+    //  pueda encender arrastrando, asi que no hay nada que aprender dos veces.
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        if (vista == vistaAudio) { tocaAudio (e, false); return; }
+        ultima = { -1, -1 }; toca (e, false);
+    }
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        if (vista == vistaAudio) { tocaAudio (e, true); return; }
+        toca (e, true);
+    }
+    void mouseUp   (const juce::MouseEvent&)   override { ultima = { -1, -1 }; arrastrado = -1; }
 
     void toca (const juce::MouseEvent& e, bool arrastrando)
     {
@@ -282,6 +366,190 @@ public:
         ultima = { lane, bar };
         onCell (lane, bar);
     }
+
+    //  ------------------------------------------------------------------
+    //  LA BANDA DE AUDIO
+    //  ------------------------------------------------------------------
+
+    //  El rectangulo de un compas en una pista, con la MISMA cuenta que la
+    //  vista de patrones. Escrita una vez y usada por el pintado y por el
+    //  gesto, que es la leccion de la canaleta: cuando el dibujo y el toque
+    //  hacen la cuenta cada uno por su lado, un dia dejan de coincidir.
+    juce::Rectangle<float> celdaAudio (int pista, int compas) const
+    {
+        auto r = getLocalBounds();
+        const float pistaH = (float) r.getHeight() / (float) kAudioLanes;
+        const float barW   = (float) (r.getWidth() - kGutter) / (float) kBarsView;
+        return { (float) r.getX() + (float) kGutter + barW * (float) (compas - pageIndex * kBarsView),
+                 (float) r.getY() + pistaH * (float) pista, barW, pistaH };
+    }
+
+    void pintaAudio (juce::Graphics& g)
+    {
+        auto r = getLocalBounds();
+        const float pistaH = (float) r.getHeight() / (float) kAudioLanes;
+        const float barW   = (float) (r.getWidth() - kGutter) / (float) kBarsView;
+        const int   base   = pageIndex * kBarsView;
+
+        for (int pista = 0; pista < kAudioLanes; ++pista)
+        {
+            const float y = (float) r.getY() + pistaH * (float) pista;
+            const bool mudo = (mudoAudio & (1u << (unsigned) pista)) != 0;
+
+            //  La canaleta es la MISMA de la otra vista y hace lo mismo:
+            //  silenciar la pista. Un numero que en una vista silencia y en la
+            //  otra no seria el mismo sitio con dos significados.
+            auto gut = juce::Rectangle<float> ((float) r.getX(), y, (float) kGutter, pistaH).reduced (1.0f, 1.0f);
+            g.setColour (mudo ? ZatiColours::red.withAlpha (0.85f)
+                              : ZatiColours::markOn (ZatiColours::chassisTop, 0.18f));
+            g.fillRect (gut);
+            g.setColour (mudo ? ZatiColours::bestOn (ZatiColours::red, ZatiColours::ink, juce::Colours::white)
+                              : ZatiColours::inkDim);
+            g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
+            //  La A dice que es una pista de AUDIO y no un carril de patrones,
+            //  que es lo unico que las dos vistas comparten en pantalla: sin
+            //  ella, "1 2 3 4" en la canaleta es el mismo dibujo en las dos.
+            g.drawText ("A" + juce::String (pista + 1), gut, juce::Justification::centred);
+            if (mudo)
+                g.fillRect (gut.getX() + 3.0f, gut.getCentreY() - 0.5f, gut.getWidth() - 6.0f, 1.4f);
+
+            for (int c = 0; c < kBarsView; ++c)
+            {
+                const int compas = base + c;
+                auto cell = juce::Rectangle<float> ((float) r.getX() + (float) kGutter + barW * (float) c,
+                                                    y, barW, pistaH).reduced (1.5f);
+                g.setColour (compas >= totalBars
+                                 ? ZatiColours::groove (0.30f)
+                                 : ZatiColours::groove ((compas % 4 == 0) ? 0.48f : 0.28f));
+                g.fillRect (cell);
+            }
+        }
+
+        //  LOS CLIPS, DESPUES DE LOS HUECOS y no celda a celda: un clip de
+        //  cuatro compases es UN bloque y no cuatro copias del mismo, que es
+        //  exactamente lo que `kContinued` existe para conseguir en la otra
+        //  vista. Aqui sale gratis porque el clip ya sabe donde acaba.
+        for (int i = 0; i < numClips; ++i)
+        {
+            const ClipVista& c = clips[i];
+            if (! juce::isPositiveAndBelow (c.pista, kAudioLanes)) continue;
+            const int d = juce::jmax (c.desde, base);
+            const int h = juce::jmin (c.hasta, base + kBarsView);
+            if (h <= d) continue;                       // no cae en esta pagina
+
+            auto caja = celdaAudio (c.pista, d)
+                            .withWidth (barW * (float) (h - d)).reduced (1.5f);
+            const auto col = (zati != nullptr && juce::isPositiveAndBelow (c.pad, zatis))
+                                 ? Zati::colour (zati[c.pad]) : Zati::colour (c.pad);
+            const bool mudo = (mudoAudio & (1u << (unsigned) c.pista)) != 0;
+
+            if (mudo)
+            {
+                g.setColour (ZatiColours::groove (0.30f)); g.fillRect (caja);
+                g.setColour (col.withAlpha (0.70f));       g.drawRect (caja, 1.4f);
+            }
+            else
+            {
+                g.setColour (col); g.fillRect (caja);
+            }
+
+            //  EL QUE SE ESTA MOVIENDO SE VE. Sin marca, arrastrar en una banda
+            //  de cuatro pistas es soltar y buscar cual se movio.
+            if (i == clipSel)
+            {
+                g.setColour (ZatiColours::playheadEdge); g.drawRect (caja.expanded (1.0f), 1.4f);
+                g.setColour (ZatiColours::playhead);     g.drawRect (caja, 1.6f);
+            }
+
+            g.setColour (mudo ? col.withAlpha (0.85f)
+                              : ZatiColours::bestOn (col, ZatiColours::ink, juce::Colours::white));
+            g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
+            g.drawText (juce::String (c.pad + 1).paddedLeft ('0', 2), caja, juce::Justification::centred);
+        }
+
+        //  El cabezal, con la misma marca que la otra vista: es el mismo
+        //  transporte y el mismo compas.
+        if (playing >= base && playing < base + kBarsView)
+        {
+            auto col = juce::Rectangle<float> ((float) r.getX() + (float) kGutter
+                                                   + barW * (float) (playing - base),
+                                               (float) r.getY(), barW, (float) r.getHeight());
+            g.setColour (ZatiColours::playhead);
+            g.drawRect (col, 1.6f);
+        }
+
+        g.setColour (ZatiColours::inkDim.withAlpha (0.7f));
+        g.setFont (ZatiColours::monoFont (Metrics::fTiny, true));
+        for (int c = 0; c < kBarsView; c += 2)
+            g.drawText (juce::String (base + c + 1),
+                        (int) ((float) r.getX() + (float) kGutter + barW * (float) c) + 2, r.getY(),
+                        (int) barW, 9, juce::Justification::topLeft);
+    }
+
+    //  Que clip cae bajo (pista, compas). El PRIMERO que lo contenga: dos clips
+    //  encima no es un estado que esta app produzca, y elegir "el de arriba"
+    //  sin que haya arriba seria inventarse una regla.
+    int clipEn (int pista, int compas) const
+    {
+        for (int i = 0; i < numClips; ++i)
+            if (clips[i].pista == pista && compas >= clips[i].desde && compas < clips[i].hasta)
+                return i;
+        return -1;
+    }
+
+    void tocaAudio (const juce::MouseEvent& e, bool arrastrando)
+    {
+        auto r = getLocalBounds();
+        const float pistaH = (float) r.getHeight() / (float) kAudioLanes;
+        const float barW   = (float) (r.getWidth() - kGutter) / (float) kBarsView;
+        if (barW <= 0.0f || pistaH <= 0.0f) return;
+
+        //  La canaleta silencia, y SOLO al toque: arrastrar por ella
+        //  silenciaria las cuatro pistas de una pasada. Es el mismo candado que
+        //  la otra vista y por el mismo motivo.
+        if (e.x < r.getX() + kGutter)
+        {
+            if (onLane && ! arrastrando)
+                onLane (juce::jlimit (0, kAudioLanes - 1, (int) ((float) (e.y - r.getY()) / pistaH)));
+            return;
+        }
+
+        const int pista  = juce::jlimit (0, kAudioLanes - 1, (int) ((float) (e.y - r.getY()) / pistaH));
+        const int compas = pageIndex * kBarsView
+                         + juce::jlimit (0, kBarsView - 1, (int) ((float) (e.x - r.getX() - kGutter) / barW));
+        if (compas >= totalBars) return;
+
+        if (! arrastrando)
+        {
+            arrastrado = clipEn (pista, compas);
+            if (arrastrado < 0)
+            {
+                //  Un hueco: aqui no hay nada que mover, asi que el gesto solo
+                //  puede significar poner algo.
+                if (onClipNuevo) onClipNuevo (pista, compas);
+                return;
+            }
+            //  DONDE SE AGARRO, en compases desde el principio del clip. Sin
+            //  esto, arrastrar un clip de cuatro compases por su tercer compas
+            //  lo pega de un salto por su primero: el bloque se mueve un trozo
+            //  que la persona no pidio, y es lo primero que se nota.
+            agarre = compas - clips[arrastrado].desde;
+            //  Un toque sobre un clip lo elige. Quitarlo es la brocha VACIAR,
+            //  que es la misma que borra en la otra vista.
+            if (onClipQuita && borrando) { onClipQuita (arrastrado); arrastrado = -1; }
+            return;
+        }
+
+        if (arrastrado < 0 || arrastrado >= numClips) return;
+        const int nuevoCompas = juce::jmax (0, compas - agarre);
+        if (nuevoCompas == clips[arrastrado].desde && pista == clips[arrastrado].pista) return;
+        if (onClipMueve) onClipMueve (arrastrado, pista, nuevoCompas);
+    }
+
+    //  Lo que la brocha VACIAR pone: quien la lleva es la ficha, y aqui solo se
+    //  lee. Un componente que decidiera solo cual es la brocha seria un segundo
+    //  dueno de la misma pregunta.
+    bool borrando = false;
 
     //  El mismo centinela que AudioEngine::kContinued, y por eso se toma de
     //  alli: estaba escrito dos veces con el mismo numero, o sea dos duenos
@@ -361,4 +629,13 @@ private:
     int  prevBars = -1, prevPage = -1, prevPlaying = -2, prevCursor = -2, prevLA = -1, prevLB = -1;
     unsigned prevMute = 0xFFFFFFFFu;
     bool visto = false;
+
+    //  LA BANDA DE AUDIO. La tabla se presta y no se copia, igual que `data`.
+    int              vista = vistaPatrones;
+    const ClipVista* clips = nullptr;
+    int              numClips = 0;
+    int              clipSel  = -1;   // el que se esta moviendo, para que se vea
+    int              arrastrado = -1; // el que este dedo agarro
+    int              agarre = 0;      // por que compas suyo lo agarro
+    unsigned         mudoAudio = 0;   // un bit por pista de audio silenciada
 };

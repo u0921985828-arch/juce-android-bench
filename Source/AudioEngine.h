@@ -470,6 +470,15 @@ public:
     // would otherwise take a runtime lock there).
     void setBpm (double b) noexcept   { bpm.store ((float) b, std::memory_order_relaxed); }
     double getBpm() const noexcept    { return (double) bpm.load (std::memory_order_relaxed); }
+
+    //  MUESTRAS POR COMPAS AL TEMPO DE AHORA, y publica porque la cara la
+    //  necesita: un clip se guarda en muestras -el audio mide lo que mide- y la
+    //  linea de tiempo lo dibuja en compases, asi que alguien tiene que
+    //  traducir. Escrita UNA vez y aqui, que es donde viven el tempo y la
+    //  frecuencia: la misma cuenta hecha en la cara con `getBpm` y una
+    //  frecuencia supuesta es la regla duplicada de siempre, y el sintoma
+    //  seria un clip dibujado donde no suena.
+    double muestrasPorCompas() const noexcept { return samplesPerStepNow() * (double) kBarSteps; }
     void setStep (int patternIdx, int step, int pad, bool on) noexcept;
     void clearPattern (int patternIdx) noexcept;
     int  getPlayStep() const noexcept { return playStep.load (std::memory_order_relaxed); }

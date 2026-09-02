@@ -1073,6 +1073,19 @@ void MainComponent::auditOpen (const juce::String& which)
     //  que se acaba de anadir.
     else if (which == "secp") { showSeqPage (seqPageGrid); openSheet (seqSheet, secButton); stepCellToggled (0, 4); }
     else if (which == "song") openSheet (songSheet, songButton);
+    //  LA BANDA DE AUDIO ES OTRA PANTALLA y por eso es otra entrada. Sin ella
+    //  el banco mediria siempre la vista de patrones, que es justo la que no
+    //  cambio: es lo mismo que `secp` con la tira del paso y que `instp` con la
+    //  lista de presets. Y con un clip PUESTO, que una banda vacia no tiene
+    //  ningun bloque cuyo rotulo medir.
+    else if (which == "songa")
+    {
+        openSheet (songSheet, songButton);
+        selectedPad = 0;
+        ponClip (0, 0);
+        ponClip (2, 3);
+        showSongPage (Playlist::vistaAudio);
+    }
     else if (which == "piano") { openSheet (seqSheet, secButton); showSeqPage (seqPagePiano); refreshPiano(); }
     //  EL PIANO CON NOTAS DE LARGOS DISTINTOS, que es otro estado: la barra de
     //  una nota de dos pasos y la de un cuarto de paso no se dibujan igual, y
@@ -1281,6 +1294,117 @@ void MainComponent::auditOpen (const juce::String& which)
 //  SUENA sin afinar el pad. La tercera es la que estaba rota - la unica forma
 //  de oir un semitono era setPadPitch, que deja el pad afinado en la ultima
 //  tecla que se paseo - y es exactamente la que no se ve mirando la pantalla.
+//  LA BANDA DE AUDIO, POR EL GESTO Y NO POR EL CALLBACK.
+//
+//  Llamar a `ponClip`/`mueveClip` por dentro se salta exactamente el codigo que
+//  decide QUE pista y QUE compas caen bajo el dedo, que es donde vivian los
+//  cinco fallos del compas del piano. Aqui hay ademas una cuenta propia que no
+//  existe en ningun otro sitio -el AGARRE: por que compas suyo se cogio el
+//  clip- y esa solo se puede medir arrastrando de verdad.
+//
+//  Con TRES cifras, que es lo que separa «se movio» de «se movio donde tocaba»:
+//  donde cae el clip que se pone, donde queda el que se arrastra por su primer
+//  compas, y donde queda el que se arrastra POR EL TERCERO. Sin la tercera,
+//  «arrastrar mueve» lo cumple igual un codigo que pega el bloque por su
+//  principio de un salto - que es lo primero que se nota y lo que el agarre
+//  existe para evitar.
+void MainComponent::auditClips()
+{
+    //  Un pad con sonido, que sin el no hay clip que poner: `ponClip` lee el
+    //  buffer que sostiene la CARA y se rinde si no hay ninguno.
+    selectedPad = 0;
+    engine.setSongLength (8);
+    clips.clear();
+    publicaClips();
+    showSongPage (Playlist::vistaAudio);
+    resized();
+
+    auto& rej = songGrid;
+    const int gutter = Playlist::kGutter;
+    const float pistaH = (float) rej.getHeight() / (float) Playlist::kAudioLanes;
+    const float barW   = (float) (rej.getWidth() - gutter) / (float) Playlist::kBarsView;
+
+    auto punto = [&] (int pista, int compas)
+    {
+        return juce::Point<float> ((float) gutter + barW * ((float) compas + 0.5f),
+                                   pistaH * ((float) pista + 0.5f));
+    };
+    auto evento = [&] (juce::Point<float> pt)
+    {
+        const auto ahora = juce::Time::getCurrentTime();
+        return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(),
+                                 pt, juce::ModifierKeys(), 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                 &rej, &rej, ahora, pt, ahora, 1, false);
+    };
+    auto fila = [&] (int i)
+    {
+        if (! juce::isPositiveAndBelow (i, (int) clips.size())) return juce::String ("[]");
+        return "[" + juce::String (clips[(size_t) i].pista) + ","
+                   + juce::String (clips[(size_t) i].compas) + "]";
+    };
+
+    //  1. PONER: un toque en un hueco deja el clip en ESA pista y ESE compas.
+    {
+        auto e = evento (punto (2, 3));
+        rej.mouseDown (e);
+    }
+    const auto puesto = fila (0);
+
+    //  2. MOVER agarrando por su PRIMER compas: de (2,3) a (1,5).
+    {
+        auto d = evento (punto (2, 3));  rej.mouseDown (d);
+        auto m = evento (punto (1, 5));  rej.mouseDrag (m);
+        auto u = evento (punto (1, 5));  rej.mouseUp (u);
+    }
+    const auto movido = fila (0);
+
+    //  3. Y AGARRANDO POR EL TERCERO. El clip esta en (1,5); se coge por el
+    //  compas 7 -su tercero- y se suelta en el 2: tiene que quedar en el 0, o
+    //  sea el punto del dedo MENOS el agarre. Si el codigo ignorara donde se
+    //  agarro, quedaria en el 2.
+    //
+    //  Y HAY QUE ESTIRARLO A MANO, que no es hacer trampa: un sonido de fabrica
+    //  dura medio segundo y a 120 BPM un compas son dos, asi que el clip que
+    //  pone el gesto mide UN compas y con uno el agarre vale cero siempre - o
+    //  sea que la prueba pasaria sin haber medido nada. Lo que se prueba es el
+    //  gesto, y el largo es estado.
+    if (! clips.empty())
+    {
+        clips[0].largo = (int) (3.0 * engine.muestrasPorCompas());
+        publicaClips();
+        refreshSong (false);
+    }
+    const int largoCompases = songClipsVista.empty()
+                                ? 1 : songClipsVista[0].hasta - songClipsVista[0].desde;
+    juce::String agarrado = "n/a";
+    if (largoCompases >= 3)
+    {
+        auto d = evento (punto (1, 7));  rej.mouseDown (d);
+        auto m = evento (punto (1, 2));  rej.mouseDrag (m);
+        auto u = evento (punto (1, 2));  rej.mouseUp (u);
+        agarrado = fila (0);
+    }
+
+    //  4. Y QUITAR con la brocha VACIAR, que es la misma que borra en la otra
+    //  vista: un gesto nuevo para borrar seria una segunda forma de lo mismo.
+    songBrush = 0;
+    songGrid.borrando = true;
+    {
+        const int c = juce::isPositiveAndBelow (0, (int) clips.size()) ? clips[0].compas : 0;
+        const int t = juce::isPositiveAndBelow (0, (int) clips.size()) ? clips[0].pista  : 0;
+        auto e = evento (punto (t, c));
+        rej.mouseDown (e);
+    }
+
+    std::cout << "{\"clipsui\":1,\"puesto\":" << puesto
+              << ",\"movido\":" << movido
+              << ",\"agarrado\":" << (agarrado == "n/a" ? juce::String ("\"n/a\"") : agarrado)
+              << ",\"largo_compases\":" << largoCompases
+              << ",\"tras_borrar\":" << (int) clips.size()
+              << ",\"celda\":[" << (int) barW << "," << (int) pistaH << "]"
+              << "}" << std::endl;
+}
+
 void MainComponent::auditPiano()
 {
     selectedPattern = 0;

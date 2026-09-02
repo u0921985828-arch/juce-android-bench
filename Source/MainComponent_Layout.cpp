@@ -2504,11 +2504,25 @@ void MainComponent::resized()
         //  vez y preguntado dos, que es la unica forma de que la respuesta valga:
         //  el primer intento comparo el tope con una cuenta inventada aqui mismo
         //  -medio presupuesto- y dijo que cabia cuando no cabia.
+        //  LA FILA DE PESTANAS, CONTADA. Es la misma regla que el secuenciador
+        //  ya paga con PASOS/PIANO/PATRON y cuesta `Metrics::tab` de alto; no
+        //  contarla aqui seria pedir con una cuenta y colocar con otra, que es
+        //  como un carril se queda en nueve pixeles.
+        //
+        //  Y en la vista de AUDIO la columna es OTRA: no hay paleta de patrones
+        //  ni herramientas de arreglo, asi que pedir el alto de la vista de
+        //  patrones dejaria la banda de audio con ciento y pico pixeles de aire
+        //  vacio debajo - una tarjeta que da un salto de tamano al cambiar de
+        //  pestana se lee como un fallo, y una que reserva sitio para lo que no
+        //  hay se lee peor.
+        const bool vistaAud = (songVista == Playlist::vistaAudio);
         auto pideCancion = [&] (int filasPal)
         {
             const int pie = filasPags * Metrics::hit + Metrics::xs + Metrics::btn + Metrics::xs;
-            const int col = filasPal * Metrics::hit + (filasPal - 1) * Metrics::halfGap + Metrics::xs
-                          + filasModo + filasUtil + Metrics::sm * 2;
+            const int col = vistaAud
+                              ? (filasModo + Metrics::sm)
+                              : (filasPal * Metrics::hit + (filasPal - 1) * Metrics::halfGap + Metrics::xs
+                                 + filasModo + filasUtil + Metrics::sm * 2);
             const int rej = Playlist::kLanes * laneH;
             return Metrics::md * 2 + Metrics::hit
                  + (wideFace ? juce::jmax (col, rej + pie) : col + Metrics::sm + pie + rej);
@@ -2537,9 +2551,11 @@ void MainComponent::resized()
         const int porFilaPal  = kNumPatterns / juce::jmax (1, filasPaleta);
 
         const int altoPie  = filasPags * Metrics::hit + Metrics::xs + Metrics::btn + Metrics::xs;
-        const int altoCol  = filasPaleta * Metrics::hit
-                           + (filasPaleta - 1) * Metrics::halfGap + Metrics::xs   // paleta
-                           + filasModo + filasUtil + Metrics::sm * 2;
+        const int altoCol  = vistaAud
+                               ? (filasModo + Metrics::sm)
+                               : (filasPaleta * Metrics::hit
+                                  + (filasPaleta - 1) * Metrics::halfGap + Metrics::xs   // paleta
+                                  + filasModo + filasUtil + Metrics::sm * 2);
         const int altoRej  = Playlist::kLanes * laneH;
         auto inner = sheetFromBottom (songSheet,
                                       Metrics::md * 2 + Metrics::hit
@@ -2547,6 +2563,28 @@ void MainComponent::resized()
                                                     : altoCol + Metrics::sm + altoPie + altoRej));
         auto titleRow = inner.removeFromTop (Metrics::hit);
         songCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
+
+        //  LAS DOS PESTANAS VAN EN EL RENGLON DEL TITULO Y NO EN UNA FILA
+        //  PROPIA, y esto se midio antes de decidirlo.
+        //
+        //  El secuenciador las lleva en su fila y ahi cuesta `Metrics::tab`. Se
+        //  copio, y el banco lo canto en la primera corrida: en 280x653 la
+        //  celda de la linea de tiempo paso de 20.2 px a **9x25**, porque esta
+        //  ficha ya llegaba al tope del 78% y `sheetFromBottom` se come lo que
+        //  falta de lo ULTIMO que se maqueta - que aqui es lo unico para lo que
+        //  la pagina existe. Es el mismo fallo que ya costo la fila de CADENA y
+        //  la rejilla de la pagina PATRON, escrito una vez mas.
+        //
+        //  El renglon del titulo ya esta ahi, mide `Metrics::hit` y solo lleva
+        //  una palabra pintada y una cruz: dos tapas cortas caben al lado sin
+        //  costar un pixel de alto. El titulo se aparta solo, que es lo que
+        //  `antesDe` hace desde que existe.
+        {
+            auto zona = Lang::takeEnd (titleRow, juce::jmin (titleRow.getWidth() / 2,
+                                                             Metrics::hit * 2));
+            juce::TextButton* vb[1] = { &songVistaBtn };
+            layoutModuleBar (zona, vb, 2, 1);
+        }
 
         //  APAISADO, LA TARJETA SE PARTE EN DOS.
         //
@@ -2583,6 +2621,13 @@ void MainComponent::resized()
         const int gBrocha = panel.getY();
 
         // Palette: P1..P8.
+        //
+        //  EN LA VISTA DE AUDIO NO SE MAQUETA. showSongPage la apaga y le vacia
+        //  los limites, y esto es la otra mitad: `resized()` corre despues y le
+        //  volveria a dar coordenadas, o sea una fila de ocho tapas invisibles
+        //  ocupando 44 px de lo unico que escasea. Apagar sin dejar de colocar
+        //  es media regla, que es exactamente lo que le paso a SEGUIR.
+        if (! vistaAud)
         {
             auto row = panel.removeFromTop (Metrics::hit);
             //  OCHO EN UNA FILA SOLO SI CABEN A DEDO.
@@ -2640,17 +2685,22 @@ void MainComponent::resized()
         //  delante - si los cuatro no caben en una fila, dos filas de dos - que
         //  es lo que ya hicieron las cuatro pestanas de AJUSTES.
         {
-            juce::TextButton* sb[4] = { &songPadModeBtn, &songClearBtn, &songDoubleBtn, &songModeBtn };
-            if (moduleBarFits (panel.getWidth(), sb, 4))
+            //  EN AUDIO, TRES Y NO CUATRO: DOBLAR duplica los compases de
+            //  patron y en una banda de clips no significa nada todavia. Una
+            //  tapa que se pulsa y no hace nada es peor que no tenerla.
+            juce::TextButton* sb[4] = { &songPadModeBtn, &songClearBtn,
+                                        vistaAud ? &songModeBtn : &songDoubleBtn, &songModeBtn };
+            const int nBrochas = vistaAud ? 3 : 4;
+            if (moduleBarFits (panel.getWidth(), sb, nBrochas))
             {
-                layoutModuleBar (panel.removeFromTop (Metrics::hit), sb, 0, 4);
+                layoutModuleBar (panel.removeFromTop (Metrics::hit), sb, 0, nBrochas);
             }
             else
             {
                 layoutModuleBar (panel.removeFromTop (Metrics::hit), sb, 0, 2);
                 panel.removeFromTop (Metrics::halfGap);
-                juce::TextButton* sc[2] = { &songDoubleBtn, &songModeBtn };
-                layoutModuleBar (panel.removeFromTop (Metrics::hit), sc, 0, 2);
+                juce::TextButton* sc[2] = { vistaAud ? &songModeBtn : &songDoubleBtn, &songModeBtn };
+                layoutModuleBar (panel.removeFromTop (Metrics::hit), sc, 0, vistaAud ? 1 : 2);
             }
             //  LA PALETA Y LAS BROCHAS SON UN SOLO PANEL, no dos. Entre las dos
             //  filas hay Metrics::xs y dos paneles a cuatro pixeles se tocan -
@@ -2671,6 +2721,10 @@ void MainComponent::resized()
         //  brochas: las de arriba eligen QUE se pinta y estas mueven lo que ya
         //  esta puesto. Mezcladas en una sola fila, INSERTAR quedaba al lado de
         //  SONIDO y las dos parecian la misma clase de cosa.
+        //  Y TAMPOCO EN LA VISTA DE AUDIO, por lo mismo que la paleta: las nueve
+        //  mueven CELDAS de patron. Apagadas por showSongPage y sin colocar
+        //  aqui, que son las dos mitades de la misma regla.
+        if (! vistaAud)
         {
             const int gUtil = panel.getY();
             juce::TextButton* su[9] = { &songLeftBtn, &songRightBtn, &songShortBtn,

@@ -2285,7 +2285,39 @@ MainComponent::MainComponent()
     }
     songPageBtns[0]->setToggleState (true, juce::dontSendNotification);
 
-    songGrid.onLane = [this] (int lane) { toggleSongLane (lane); };
+    //  LA CANALETA SILENCIA, y en la vista de audio silencia la PISTA. Es el
+    //  mismo sitio con el mismo significado en las dos, que es lo que hace que
+    //  no haya nada nuevo que aprender: lo que cambia es a quien se lo dice.
+    //  LAS DOS PESTANAS DE LA LINEA DE TIEMPO. Mismo estilo, mismo grupo de
+    //  radio y mismo gesto que las tres del secuenciador: dos fichas que hacen
+    //  lo mismo tienen que hacerlo igual, o cada una ensena su propio idioma.
+    {
+        styleButton (songVistaBtn, kKey);
+        litAccent (songVistaBtn);
+        songVistaBtn.onClick = [this]
+        {
+            showSongPage (songVista == Playlist::vistaAudio ? Playlist::vistaPatrones
+                                                            : Playlist::vistaAudio);
+        };
+        songSheet.addAndMakeVisible (songVistaBtn);
+    }
+
+    songGrid.onLane = [this] (int lane)
+    {
+        if (songVista == Playlist::vistaAudio)
+        {
+            const int p = juce::jlimit (0, AudioEngine::kAudioTracks - 1, lane);
+            engine.setPistaMute (p, ! engine.isPistaMute (p));
+            refreshSong (false);
+            return;
+        }
+        toggleSongLane (lane);
+    };
+
+    songGrid.onClipNuevo = [this] (int pista, int compas) { ponClip (pista, compas); };
+    songGrid.onClipMueve = [this] (int i, int pista, int compas) { mueveClip (i, pista, compas); };
+    songGrid.onClipQuita = [this] (int i) { quitaClip (i); };
+
 
     songGrid.onCell = [this] (int lane, int bar)
     {
@@ -5661,6 +5693,7 @@ void MainComponent::retranslateUi()
     //  tres pestanas de AJUSTES - la ficha que CONTIENE el selector de idioma -
     //  y lo caza la prueba comparativa, no la tabla.
     songDoubleBtn.setButtonText (T ("DOBLAR"));
+    songVistaBtn.setButtonText (T (songVista == Playlist::vistaAudio ? "AUDIO" : "PATRONES"));
     songShortBtn.setButtonText (T ("ACORTAR"));
     songLongBtn.setButtonText  (T ("ALARGAR"));
     songLeftBtn.setButtonText  (T ("ATRAS"));
@@ -8132,6 +8165,99 @@ void MainComponent::refreshPiano (bool repintarTarjeta)
 }
 
 
+//  LAS DOS VISTAS DE LA LINEA DE TIEMPO. Mismo patron que showSeqPage, y no
+//  uno nuevo: lo que se apaga se queda ADEMAS sin coordenadas, porque un
+//  componente invisible que conserva sus limites sigue estando ahi para todo lo
+//  que mida geometria.
+void MainComponent::showSongPage (int v)
+{
+    songVista = (v == Playlist::vistaAudio) ? (int) Playlist::vistaAudio
+                                            : (int) Playlist::vistaPatrones;
+    const bool audio = (songVista == Playlist::vistaAudio);
+
+    //  El ROTULO dice donde estas, no adonde vas. Ver el comentario de la tapa.
+    songVistaBtn.setButtonText (T (audio ? "AUDIO" : "PATRONES"));
+    songVistaBtn.setToggleState (audio, juce::dontSendNotification);
+
+    //  LA PALETA DE PATRONES NO PINTA AUDIO. P1..P8 elige que PATRON se pone en
+    //  una celda, y en la banda de audio no hay celdas que escribir: lo que se
+    //  pone es el sonido del pad elegido. Dejarla puesta seria una fila de ocho
+    //  tapas que no hacen nada, que es justo lo que esta casa llama ruido.
+    for (auto* b : songPatBtns) { b->setVisible (! audio); if (audio) b->setBounds ({}); }
+
+    //  Y LAS NUEVE HERRAMIENTAS DE ARREGLO TAMPOCO. INSERTAR, QUITAR, DOBLAR,
+    //  ACORTAR, ALARGAR, COPIAR, PEGAR, ATRAS y ADELANTE mueven CELDAS de
+    //  patron: aplicadas a una banda de clips no significan nada todavia, y una
+    //  tapa que se pulsa y no hace nada es peor que no tenerla. Vuelven el dia
+    //  que sepan mover clips, que es una tanda propia.
+    for (juce::TextButton* b : { &songInsertBtn, &songRemoveBtn, &songDoubleBtn,
+                                 &songShortBtn, &songLongBtn, &songCopyBtn,
+                                 &songPasteBtn, &songLeftBtn, &songRightBtn })
+    {
+        b->setVisible (! audio);
+        if (audio) b->setBounds ({});
+    }
+
+    //  SONIDO y VACIAR SE QUEDAN EN LAS DOS, y no por ahorrar tapas: en la
+    //  banda de audio dicen exactamente lo mismo que en la otra vista - con que
+    //  se pinta y con que se borra - asi que son la misma brocha y no una copia.
+    songGrid.ponVista (songVista);
+    songGrid.borrando = (songBrush == 0);
+
+    refreshSong (true);
+    resized();
+    songSheet.repaint();
+}
+
+//  PONER UN CLIP: el sonido del pad elegido, desde el compas que se toco.
+//
+//  El pad y no un navegador de ficheros, que es la puerta que ya existe para
+//  meter audio en esta maquina: lo que suena en un pad ya esta cargado,
+//  recortado y publicado, asi que un clip es una REFERENCIA y no una lectura de
+//  disco. Y el largo es el de la MUESTRA y no un compas: un clip que se corta
+//  al final del compas no es una toma, es un golpe - y para eso ya estan los
+//  golpes sueltos de la otra vista.
+void MainComponent::ponClip (int pista, int compas)
+{
+    const int pad = selectedPad;
+    if (! juce::isPositiveAndBelow (pad, kNumPads)) return;
+    //  El largo sale del buffer que sostiene LA CARA y nunca de
+    //  engine.getSampleLength(), que lee el puntero que ha adoptado el hilo de
+    //  audio y es nulo hasta el primer bloque. Es la regla escrita en los
+    //  invariantes, y aqui el sintoma seria un clip de largo cero.
+    auto* buf = uiSample[(size_t) pad].get();
+    if (buf == nullptr || buf->buffer.getNumSamples() <= 0) return;
+    if ((int) clips.size() >= AudioEngine::kMaxClips) return;
+
+    ClipUI c;
+    c.pad    = pad;
+    c.pista  = juce::jlimit (0, AudioEngine::kAudioTracks - 1, pista);
+    c.compas = juce::jlimit (0, AudioEngine::kSongBars - 1, compas);
+    c.desde  = 0;
+    c.largo  = buf->buffer.getNumSamples();
+    c.gain   = 1.0f;
+    clips.push_back (c);
+    publicaClips();
+    refreshSong (false);
+}
+
+void MainComponent::mueveClip (int indice, int pista, int compas)
+{
+    if (! juce::isPositiveAndBelow (indice, (int) clips.size())) return;
+    clips[(size_t) indice].pista  = juce::jlimit (0, AudioEngine::kAudioTracks - 1, pista);
+    clips[(size_t) indice].compas = juce::jlimit (0, AudioEngine::kSongBars - 1, compas);
+    publicaClips();
+    refreshSong (false);
+}
+
+void MainComponent::quitaClip (int indice)
+{
+    if (! juce::isPositiveAndBelow (indice, (int) clips.size())) return;
+    clips.erase (clips.begin() + indice);
+    publicaClips();
+    refreshSong (false);
+}
+
 void MainComponent::refreshSong (bool repintarTarjeta)
 {
     const int bars = engine.getSongLength();
@@ -8170,6 +8296,36 @@ void MainComponent::refreshSong (bool repintarTarjeta)
                         engine.isSongMode() && engine.isPlaying() ? engine.getSongBar() : -1,
                         songCursor, mudos,
                         engine.getSongLoopFrom(), engine.getSongLoopTo());
+
+    //  LOS CLIPS, TRADUCIDOS A COMPASES. La rejilla dibuja compases y el motor
+    //  guarda muestras, asi que alguien traduce; se hace aqui y con
+    //  `engine.muestrasPorCompas()`, que es la unica cuenta de esa regla - la
+    //  misma que usa renderClips. Repetirla con getBpm y una frecuencia
+    //  supuesta dibujaria el clip donde no suena.
+    //
+    //  Y REDONDEANDO HACIA ARRIBA el compas final, no hacia abajo: un clip que
+    //  acaba a la mitad del compas 3 OCUPA el compas 3, y truncando se dibujaria
+    //  terminando donde todavia suena. Con el suelo en uno, que un clip mas
+    //  corto que un compas sigue siendo un clip y sin el saldria de ancho cero
+    //  - invisible e imposible de agarrar.
+    {
+        const double porCompas = juce::jmax (1.0, engine.muestrasPorCompas());
+        songClipsVista.clear();
+        for (const auto& c : clips)
+        {
+            Playlist::ClipVista v;
+            v.pista = c.pista;
+            v.pad   = c.pad;
+            v.desde = c.compas;
+            v.hasta = c.compas + juce::jmax (1, (int) std::ceil ((double) c.largo / porCompas));
+            songClipsVista.push_back (v);
+        }
+        unsigned mudosAudio = 0;
+        for (int t = 0; t < AudioEngine::kAudioTracks; ++t)
+            if (engine.isPistaMute (t)) mudosAudio |= (1u << (unsigned) t);
+        songGrid.setAudio (songClipsVista.data(), (int) songClipsVista.size(), -1, mudosAudio);
+    }
+
     if (repintarTarjeta) songSheet.repaint();
 }
 

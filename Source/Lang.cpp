@@ -1222,6 +1222,12 @@ namespace
 
         // --- Audio panel ---------------------------------------------------
         { "AUDIO",          "",         "AUDIO",      "音频",       "الصوت" },
+        //  LA VISTA DE PATRONES DE LA CANCION. Clave propia y no "PATRON",
+        //  que esa es la pestana del secuenciador y significa otra cosa: alli
+        //  es el patron entero -cadena, swing, rejilla- y aqui son los cuatro
+        //  carriles de bloques. Reaprovechar una clave porque en espanol se
+        //  parece es como sale mal en las otras tres.
+        { "PATRONES",       "",         "PATTERNS",   "音序",       "الأنماط" },
         { "BUFER",          "",         "BUFFER",     "缓冲",       "المخزن" },
         { "RELOJ",          "",         "CLOCK",      "时钟",       "الساعة" },
         { "IDIOMA",         "",         "LANGUAGE",   "语言",       "اللغة" },

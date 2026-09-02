@@ -526,6 +526,11 @@ public:
                     {
                         c2->auditPiano();
                     }
+                    //  LA BANDA DE AUDIO DE LA CANCION. Ver Tests/clips.py.
+                    else if (UiAudit::env ("ZATI_CLIPS").isNotEmpty())
+                    {
+                        c2->auditClips();
+                    }
                     //  EL CATALOGO DE CONTENIDO Y EL CANDADO. Ver Tests/dlc.py.
                     else if (UiAudit::env ("ZATI_DLC").isNotEmpty())
                     {

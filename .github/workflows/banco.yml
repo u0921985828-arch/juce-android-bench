@@ -97,6 +97,9 @@ jobs:
       - name: El piano
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/piano.py
+      - name: La banda de audio de la cancion
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/clips.py
       - name: Los paneles
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/paneles.py
@@ -155,7 +158,7 @@ jobs:
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/store.py
 
-      #  El grande, y el ultimo: 924 corridas. En paralelo son ~2 min.
+      #  El grande, y el ultimo: 980 corridas. En paralelo son ~2 min.
       - name: La maqueta, en las siete pantallas y los cuatro idiomas
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/expo.py

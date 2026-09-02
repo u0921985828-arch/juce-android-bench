@@ -1851,8 +1851,9 @@ void MainComponent::paintSongSheetContent (juce::Graphics& g)
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
-    pintaTitulo (g, antesDe (songSheet.sheetBounds.reduced (14, 10).removeFromTop (16),
-                             songCloseButton), T ("SONG"));
+    pintaTitulo (g, antesDe (antesDe (songSheet.sheetBounds.reduced (14, 10).removeFromTop (16),
+                                     songCloseButton),
+                             songVistaBtn), T ("SONG"));
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
@@ -1863,8 +1864,17 @@ void MainComponent::paintSongSheetContent (juce::Graphics& g)
     //  of it - right-aligning into the full width ran the sentence underneath
     //  the X and off the card. Fitted, so a longer wording shrinks instead of
     //  losing its last word.
-    auto hintRow = antesDe (songSheet.sheetBounds.reduced (14, 10).removeFromTop (16),
-                            songCloseButton);
+    //  Y LA PISTA SE APARTA TAMBIEN DEL INTERRUPTOR DE VISTA, que vive en este
+    //  mismo renglon desde que la linea de tiempo tiene dos vistas. Con una
+    //  sola llamada a `antesDe` se apartaba solo de la cruz y se metia debajo
+    //  de la tapa: el banco lo canto en la primera corrida - 40 TAPADO, «toca
+    //  un compas para poner el patron» debajo de «PATRONES» en los cuatro
+    //  idiomas. Dos tapas en un renglon son dos escalones, y `antesDe` decide
+    //  el lado comparando los centros, asi que encadenarlas vale en los cuatro
+    //  idiomas y no solo en tres.
+    auto hintRow = antesDe (antesDe (songSheet.sheetBounds.reduced (14, 10).removeFromTop (16),
+                                     songCloseButton),
+                            songVistaBtn);
     apunta (g, hintRow, hint, "dato");
     g.drawFittedText (hint, hintRow, juce::Justification::centredRight, 1, 0.85f);
 }

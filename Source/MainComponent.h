@@ -1015,6 +1015,7 @@ public:
     //  pantalla no ve: el acorde vive en (patron, paso, pad) y hay que leerlo
     //  de ahi, el cambio de pad no repintaba la rejilla, y oir una tecla
     //  afinaba el pad para siempre.
+    void auditClips();
     void auditPiano();
     //  EL CATALOGO DE CONTENIDO Y EL CANDADO. Ver Tests/dlc.py.
     void auditDlc();
@@ -1402,6 +1403,31 @@ private:
     juce::OwnedArray<juce::TextButton> songPageBtns;
     int songBrush   = 1;      // >0 pattern bank+1, <0 -(pad+1), 0 = eraser
     int songPage    = 0;
+
+    //  DOS VISTAS DE LA MISMA LINEA DE TIEMPO: los cuatro carriles de patron y
+    //  las cuatro pistas de audio. No son ocho carriles porque no caben - esta
+    //  medido en Playlist: 20.2 px por carril en 280x653 y un clip se arrastra
+    //  - y son la misma ficha porque son el mismo trabajo con dos vistas, que
+    //  es la decision que ya tomo el secuenciador con PASOS, PIANO y PATRON.
+    //  UNA TAPA Y NO DOS, medido: con dos pestanas en el renglon del titulo, en
+    //  280x653 a cada una le tocaban 20 px de letra donde "AUDIO" pide 29 - y
+    //  ponerlas en su propia fila cuesta 44 px que esta ficha no tiene, que es
+    //  lo que dejo la celda de la linea de tiempo en 9 px. Con dos vistas basta
+    //  un interruptor, y ademas es el idioma que la app ya usa: la tapa dice el
+    //  ESTADO -PATRONES o AUDIO, con su dibujo- y no un verbo, igual que
+    //  songModeBtn y que modoTapa. Una que dijera "IR A AUDIO" obliga a mirar si
+    //  esta encendida para saber donde estas.
+    juce::TextButton songVistaBtn { "PATRONES" };
+    int songVista = Playlist::vistaPatrones;
+    void showSongPage (int v);
+
+    //  La tabla que la rejilla dibuja: los clips traducidos a COMPASES. Se
+    //  rehace en refreshSong y vive aqui porque el componente la presta, no la
+    //  copia - lo mismo que songCells.
+    std::vector<Playlist::ClipVista> songClipsVista;
+    void ponClip   (int pista, int compas);
+    void mueveClip (int indice, int pista, int compas);
+    void quitaClip (int indice);
     int songCells[Playlist::kLanes * AudioEngine::kSongBars] {};
     //  El repintado de la TARJETA es opcional, y por eso es un parametro.
     //  La rejilla de la cancion se repinta sola cuando cambia su fuente; lo
