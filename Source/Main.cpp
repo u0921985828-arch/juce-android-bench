@@ -551,6 +551,11 @@ public:
                     {
                         c2->auditCuenta();
                     }
+                    //  QUE LA APP SE VEA IGUAL A 60 QUE A 120. Ver Tests/fps.py.
+                    else if (UiAudit::env ("ZATI_BALISTICA").isNotEmpty())
+                    {
+                        c2->auditBalistica();
+                    }
                     //  LA BANDA DE AUDIO DE LA CANCION. Ver Tests/clips.py.
                     else if (UiAudit::env ("ZATI_CLIPS").isNotEmpty())
                     {
@@ -707,6 +712,7 @@ public:
                         const auto t0 = std::clock();
                         UiAudit::fondosPintados = 0;
                         UiAudit::pixelesPintados = 0;
+                        UiAudit::cuadrosPintados = 0;
                         juce::Timer::callAfterDelay (juce::jmax (1, sp.getIntValue()) * 1000,
                                                      [this, t0, ventana]
                         {
@@ -714,6 +720,7 @@ public:
                             std::cout << "{\"spin\":1,\"cpu_ms\":" << ms
                                       << ",\"fondos\":" << UiAudit::fondosPintados
                                       << ",\"pixeles\":" << UiAudit::pixelesPintados
+                                      << ",\"cuadros\":" << UiAudit::cuadrosPintados
                                       << ",\"ventana\":" << ventana
                                       << ",\"piano_ticks\":" << UiAudit::pianoTicks
                                       << ",\"cabezal_piano\":" << UiAudit::cabezalPiano

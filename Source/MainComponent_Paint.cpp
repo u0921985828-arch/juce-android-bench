@@ -15,6 +15,18 @@
 
 void MainComponent::paint (juce::Graphics& g)
 {
+    //  LA OTRA MITAD DE LO QUE CUESTA UN CUADRO. `pintaCuadro` alimenta y
+    //  marca; quien PINTA es esto, y las dos corren en el hilo de mensajes.
+    //  Medir solo la primera diria que un fotograma cuesta cero, que es
+    //  exactamente el numero con el que la defensa del vblank no saltaria
+    //  jamas. Con RAII porque esta funcion tiene salidas por varios sitios.
+    struct Cronometro
+    {
+        double& donde;
+        const double t0 = juce::Time::getMillisecondCounterHiRes();
+        ~Cronometro() { donde += juce::Time::getMillisecondCounterHiRes() - t0; }
+    } cronometro { cuadroGastoMs };
+
     //  El contador del banco. Ver UiAudit::fondosPintados: esta funcion solo
     //  corre cuando hay que repintar ventana entera, asi que contarla aqui
     //  cuenta fotogramas completos sin instrumentar nada mas.

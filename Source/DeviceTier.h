@@ -45,10 +45,25 @@ namespace DeviceTier
         //  con el deposito, para que un pad mantenido no deje secos a los demas.
         int voicesPerPad = 8;
 
-        //  El latido de la interfaz: medidores, osciloscopio, destellos de los
-        //  pads y cabezal de tiempo, todo repintando. Lo segundo mas caro de la
-        //  app despues de las voces.
-        int uiIntervalMs = 60;
+        //  EL LATIDO DEL RELOJ, Y EL SUELO DEL REPINTADO — que son dos cosas
+        //  y este numero era las dos a la vez.
+        //
+        //  Se llamaba `uiIntervalMs` y era «cada cuanto se repinta la cara»:
+        //  100, 60, 40 o 33 ms segun la gama, o sea **10, 16.7, 25 y 30
+        //  fotogramas por segundo**. Y la gama sale del mismo `classify()` que
+        //  el deposito de voces y el techo de muestra — nucleos y RAM — que
+        //  para esos dos es el eje correcto y para un REPINTADO no lo es: un
+        //  telefono de ocho nucleos con 6 GB caia a `mid` por un giga y movia
+        //  la interfaz entera a 16.7 fps. La RAM no dice nada de lo rapido que
+        //  refresca un panel.
+        //
+        //  Desde hoy el repintado cuelga del VBLANK -Choreographer en Android,
+        //  o sea 60, 90 o 120 segun el panel- y este numero es dos cosas mas
+        //  humildes: cada cuanto late el reloj de MANTENIMIENTO -los seis
+        //  vigilantes, que tienen que correr con la pantalla apagada, donde no
+        //  hay vblank- y **el suelo**: lo mas lento a lo que se permite caer el
+        //  dibujo cuando el aparato no llega y hay que saltar vblanks.
+        int relojMs = 60;
 
         //  Cuantas muestras del master entran en el osciloscopio. Menos puntos son
         //  menos columnas que recorrer y que rellenar.

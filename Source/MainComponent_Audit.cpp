@@ -2837,3 +2837,81 @@ void MainComponent::auditCuenta()
               << ",\"clic_vuelve\":"     << clicVuelve
               << "}" << std::endl;
 }
+
+// ==========================================================================
+//  LA APP SE VE IGUAL A 60 QUE A 120. Ver Tests/fps.py.
+//
+//  Es la regla que hacia falta y no existia, y existe porque el fallo que
+//  arregla estaba puesto HOY: las constantes de tiempo visuales estaban
+//  escritas como un factor POR CUADRO y documentadas contra treinta cuadros
+//  por segundo —`peak *= 0.72f`, `hold *= 0.985f`, `clipHold = 90` («~3 s a 30
+//  cuadros»), `padFlash *= 0.8f`—. Treinta es lo que tenia la gama ALTA: en un
+//  movil de gama basica el mismo aviso de clip duraba NUEVE segundos y la
+//  aguja caia tres veces mas lento. Desde que el dibujo cuelga del vblank
+//  serian ademas 60, 90 o 120 segun el panel, o sea el mismo fallo con mas
+//  velocidades.
+//
+//  Se mide en MILISEGUNDOS DE RELOJ y no en cuadros, que es lo unico que
+//  separa las dos formas de escribirlo: contar cuadros da el mismo numero con
+//  el fallo puesto y sin el.
+//
+//  Y por el camino de verdad —`SpectrumDisplay::setSamples` y `pintaCuadro`—
+//  y no repitiendo la formula aqui: *un banco que repite la constante del
+//  codigo no prueba el codigo*, que es lo que esta casa ya pago con la mascara
+//  del lanzador.
+void MainComponent::auditBalistica()
+{
+    auto una = [this] (double dtMs)
+    {
+        float lleno[64], vacio[64] = {};
+        for (auto& v : lleno) v = 1.0f;
+
+        //  La aguja: un pico a fondo de escala y luego silencio, contando
+        //  hasta que cae por debajo de la decima parte. Con 100 ms de
+        //  constante son 100 * ln(10) = 230 ms, se pinte a la cadencia que
+        //  se pinte.
+        cristal.setSamples (lleno, 64, dtMs);
+        double aguja = 0.0, clip = 0.0;
+        for (int i = 0; i < 20000 && cristal.nivelAguja() >= 0.1f; ++i)
+        {
+            cristal.setSamples (vacio, 64, dtMs);
+            aguja += dtMs;
+        }
+
+        //  Y el aviso de recorte, que es el otro extremo de la escala: tres
+        //  segundos enteros, o sea lo que se tarda en levantar la vista.
+        cristal.setSamples (lleno, 64, dtMs);
+        for (int i = 0; i < 20000 && cristal.avisoClipMs() > 0.0; ++i)
+        {
+            cristal.setSamples (vacio, 64, dtMs);
+            clip += dtMs;
+        }
+
+        //  Y EL DESTELLO DE UN PAD, que vive en `pintaCuadro` y no en una
+        //  clase suya: se enciende a mano y se cuentan los cuadros de verdad
+        //  hasta que se apaga. Es el unico de los tres que se mide llamando a
+        //  la funcion que dibuja.
+        padFlash[0] = 1.0f;
+        double destello = 0.0;
+        for (int i = 0; i < 20000 && padFlash[0] > 0.0f; ++i)
+        {
+            pintaCuadro (dtMs);
+            destello += dtMs;
+        }
+
+        return std::array<double, 3> { aguja, clip, destello };
+    };
+
+    //  Las dos cadencias que separan un panel de 60 de uno de 120, con el
+    //  MISMO binario y el mismo estado: lo unico que cambia es el `dt`.
+    const auto a60  = una (1000.0 / 60.0);
+    const auto a120 = una (1000.0 / 120.0);
+
+    std::cout << "{\"balistica\":1"
+              << ",\"aguja60\":"    << a60[0]  << ",\"aguja120\":"    << a120[0]
+              << ",\"clip60\":"     << a60[1]  << ",\"clip120\":"     << a120[1]
+              << ",\"destello60\":" << a60[2]  << ",\"destello120\":" << a120[2]
+              << "}" << std::endl;
+
+    juce::JUCEApplication::getInstance()->systemRequestedQuit();
+}

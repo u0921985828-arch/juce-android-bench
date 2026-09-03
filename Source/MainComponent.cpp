@@ -3127,7 +3127,40 @@ MainComponent::MainComponent()
         engine.setPolyphony  (dev.voices, dev.voicesPerPad);
         engine.setRecordLimit (dev.recordSeconds, dev.recordStereo);
         for (auto* p : pads) if (p != nullptr) p->setArtEnabled (dev.padWaveformArt);
-        startTimer (dev.uiIntervalMs);
+
+        //  EL RELOJ, que es el de MANTENIMIENTO y ya no el del dibujo. La
+        //  cadencia es la misma de siempre porque para un vigilante sobra: lo
+        //  que cambia es que ya no decide cuantas veces por segundo se ve
+        //  moverse la aguja de un medidor.
+        startTimer (dev.relojMs);
+    }
+
+    //  Y EL DIBUJO, AL RITMO DE LA PANTALLA. Se engancha DESPUES de que la
+    //  cara exista y no en la lista de inicializacion: `VBlankAttachment`
+    //  necesita un componente vivo y busca el peer del display en el que
+    //  esta, asi que atarlo a medio construir es atarlo a nada.
+    //
+    //  Con ZATI_VBLANK=hz manda el banco y no el panel: X11 entrega vblanks a
+    //  la frecuencia que declare el display -100 Hz en Xvfb, que no declara
+    //  ninguna- asi que sin esta puerta no hay forma de preguntar «¿se ve
+    //  igual a 60 que a 120?». Y son excluyentes a proposito: con las dos
+    //  puestas el cuadro se pintaria dos veces por vuelta y el `dt` mediria la
+    //  mitad de lo que dura.
+    {
+        const int hz = UiAudit::env ("ZATI_VBLANK").getIntValue();
+        if (hz > 0)
+        {
+            relojDibujo.fn = [this]
+            {
+                const double t = juce::Time::getMillisecondCounterHiRes();
+                enVBlank (t / 1000.0);
+            };
+            relojDibujo.startTimerHz (juce::jlimit (1, 240, hz));
+        }
+        else
+        {
+            vblank = juce::VBlankAttachment (this, [this] (double t) { enVBlank (t); });
+        }
     }
     //  Y AL FINAL, no donde el master. aplicaFilasPiano llama a resized(), y
     //  resized() desde la mitad del constructor es exactamente como se cerro
@@ -6747,7 +6780,7 @@ bool MainComponent::armConfirm (juce::TextButton& b, const juce::String& armedTe
 
     confirmPending = &b;
     confirmOldText = b.getButtonText();
-    confirmTicks   = 50;               // ~3 s at the 60 ms UI timer
+    confirmMs      = kConfirmMs;
     b.setButtonText (armedText);
     b.setColour (juce::TextButton::buttonColourId, ZatiColours::red);
     b.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
@@ -6761,7 +6794,7 @@ void MainComponent::disarmConfirm()
 
     auto* b = confirmPending;
     confirmPending = nullptr;
-    confirmTicks   = 0;
+    confirmMs      = 0.0;
     b->setButtonText (confirmOldText);
     //  Each button gets back the style it was BUILT with, not a guess.
     //  GUARDAR is an accent cap with white text (it is the only primary action
@@ -10507,7 +10540,7 @@ int MainComponent::loadBurstPreference()
 //  se sube un burst - hasta cuatro - y se recuerda, para que el proximo
 //  arranque empiece donde este acabo en vez de volver a crepitar para
 //  aprender lo mismo.
-void MainComponent::checkXRuns()
+void MainComponent::checkXRuns (double dtMs)
 {
     auto* dev = deviceManager.getCurrentAudioDevice();
     if (dev == nullptr) { lastXRuns = -1; return; }
@@ -10515,7 +10548,7 @@ void MainComponent::checkXRuns()
     const int now = dev->getXRunCount();
     if (now < 0) return;                     // el dispositivo no lleva la cuenta
 
-    if (xrunGraceMs > 0) { xrunGraceMs -= DeviceTier::profile().uiIntervalMs; lastXRuns = now; return; }
+    if (xrunGraceMs > 0.0) { xrunGraceMs -= dtMs; lastXRuns = now; return; }
     if (lastXRuns < 0) { lastXRuns = now; return; }
 
     const int nuevos = now - lastXRuns;
@@ -10529,15 +10562,15 @@ void MainComponent::checkXRuns()
         //  buffer mas grande hubiera hecho falta o no - y ese buffer es
         //  latencia, que es el argumento entero de esta app. Un tramo limpio
         //  lo suficientemente largo y se empieza de cero.
-        if (xrunsSeen > 0 && (xrunLimpioMs += DeviceTier::profile().uiIntervalMs) >= kXRunOlvidoMs)
+        if (xrunsSeen > 0 && (xrunLimpioMs += dtMs) >= kXRunOlvidoMs)
         {
             xrunsSeen    = 0;
-            xrunLimpioMs = 0;
+            xrunLimpioMs = 0.0;
         }
         return;
     }
 
-    xrunLimpioMs = 0;
+    xrunLimpioMs = 0.0;
     xrunsSeen += nuevos;
     if (xrunsSeen < 4 || burstMult >= kMaxBursts) return;
 
@@ -12258,7 +12291,7 @@ void MainComponent::bombeaAudioDePrueba()
     //  entregado en ese tiempo. Con menos, el osciloscopio avanzaria a camara
     //  lenta y la medida diria que la cara se repinta menos de lo que se
     //  repinta.
-    const int bloques = juce::jmax (1, (int) (kRate * (double) DeviceTier::profile().uiIntervalMs
+    const int bloques = juce::jmax (1, (int) (kRate * (double) DeviceTier::profile().relojMs
                                               / 1000.0 / (double) kRafaga));
     for (int i = 0; i < bloques; ++i)
     {
@@ -12267,18 +12300,34 @@ void MainComponent::bombeaAudioDePrueba()
     }
 }
 
+//  EL RELOJ. Lo que no puede depender de que la pantalla refresque.
+//
+//  Y CONTANDO MILISEGUNDOS DE VERDAD. Los seis contadores de aqui abajo hacian
+//  `+= DeviceTier::profile().uiIntervalMs`, o sea daban por hecho que el tick
+//  duro exactamente su intervalo nominal — falso en cuanto el temporizador
+//  llega tarde, que en un movil cargado es la mitad de las veces, y falso por
+//  construccion desde que el dibujo va por su cuenta. Es el mismo fallo que
+//  este proyecto ya tiene documentado y arreglado tres veces —«ticks donde
+//  tenia que haber milisegundos»— sin aplicar al propio reloj que los cuenta.
 void MainComponent::timerCallback()
 {
+    const double ahora = juce::Time::getMillisecondCounterHiRes();
+    //  Acotado por arriba: si el proceso se queda parado -el depurador, una
+    //  suspension, el sistema robando el hilo- un salto de dos segundos
+    //  vaciaria de golpe el ducking y el plazo de la portada. Lo que se pierde
+    //  al acotar es tiempo que la app no ha estado viva.
+    const double dt = relojUltimoMs > 0.0
+                        ? juce::jlimit (1.0, 250.0, ahora - relojUltimoMs)
+                        : (double) DeviceTier::profile().relojMs;
+    relojUltimoMs = ahora;
+
     if (bancoSonando) bombeaAudioDePrueba();
 
     guardaMasterSiHaceFalta();
 
-    //  Mientras algo este cargando, la barra se repinta sola: es lo unico de
-    //  la cara que tiene que moverse aunque no pase nada mas.
-    if (busyJobs > 0) busyBar.repaint();
     stepPadJob();
     stepPadSaveJob();
-    checkXRuns();
+    checkXRuns (dt);
 
     //  La exportacion SI sabe cuanto falta - cuenta pasadas y bloques - asi
     //  que la barra deja de ir y venir y dice el numero.
@@ -12290,7 +12339,7 @@ void MainComponent::timerCallback()
     //  deja el contador clavado y la linea de ZATI_ARRANQUE imprimiendose para
     //  siempre, que es como se descubrio.
     ++arranqueTicks;
-    portadaMs += DeviceTier::profile().uiIntervalMs;
+    portadaMs += dt;
 
     //  Once, on the first tick: the face is up by now, so a restore that takes
     //  a second reads as filling in rather than as a hang.
@@ -12373,7 +12422,7 @@ void MainComponent::timerCallback()
     //  does, not to ask slowly.
     if (insetSettleMs < kMargenesPlazoMs)
     {
-        insetSettleMs += DeviceTier::profile().uiIntervalMs;
+        insetSettleMs += dt;
         refreshSystemInsets();
     }
 
@@ -12392,8 +12441,8 @@ void MainComponent::timerCallback()
         //  y no puede deducir: el plazo esta en milisegundos y el tick lo pone
         //  el aparato. Escrito en el banco seria la misma regla en dos sitios.
         std::cout << "{\"arranque\":\"cara\",\"tope\":"
-                  << ((kPortadaTopeMs + DeviceTier::profile().uiIntervalMs - 1)
-                      / DeviceTier::profile().uiIntervalMs)
+                  << ((kPortadaTopeMs + DeviceTier::profile().relojMs - 1)
+                      / DeviceTier::profile().relojMs)
                   << ",\"tick\":" << arranqueTicks
                   << ",\"cubierta\":" << (caraLista ? 0 : 1)
                   << ",\"pintadas\":" << portadaPintadas
@@ -12433,11 +12482,11 @@ void MainComponent::timerCallback()
     //  One: ducked and never told to come back. Android owes us a GAIN after
     //  a CAN_DUCK and some builds never send it. Six seconds is far longer
     //  than any notification and far shorter than a person's patience.
-    //  Counted in MILLISECONDS, not in ticks. uiIntervalMs is a device-tier
+    //  Counted in MILLISECONDS, not in ticks. relojMs is a device-tier
     //  number and it ranges from 33 to 100, so "100 ticks, about six seconds"
     //  was anything from 3.3 to 10 - un-ducking in the middle of the very
     //  notification it was making room for on a fast phone.
-    if (duckedByFocus && (duckTicksLeft -= DeviceTier::profile().uiIntervalMs) <= 0)
+    if (duckedByFocus && (duckTicksLeft -= dt) <= 0.0)
     {
         duckedByFocus = false;
         engine.setDucked (false);
@@ -12458,9 +12507,9 @@ void MainComponent::timerCallback()
         && deviceManager.getCurrentAudioDevice() == nullptr)
     {
         //  ...same here: one second of wall clock, whatever the tier redraws at.
-        if ((deviceRevivalTicks += DeviceTier::profile().uiIntervalMs) >= 1000)
+        if ((deviceRevivalTicks += dt) >= 1000.0)
         {
-            deviceRevivalTicks = 0;
+            deviceRevivalTicks = 0.0;
             setAudioChannels (0, 2);
             keepChosenRate();
             useLowestLatency();
@@ -12469,8 +12518,139 @@ void MainComponent::timerCallback()
     }
     else
     {
-        deviceRevivalTicks = 0;
+        deviceRevivalTicks = 0.0;
     }
+
+    //  ...and from then on, every couple of seconds, hand the live pads to the
+    //  writer. With nothing changed this is sixteen pointer comparisons.
+    //
+    //  Y EN MILISEGUNDOS, que estaba en TICKS: «cada par de segundos» eran 33
+    //  ticks y un tick vale 33, 40, 60 o 100 ms segun el aparato, asi que la
+    //  sesion se sincronizaba cada 1.1 s en un movil bueno y cada 3.3 en uno de
+    //  gama basica — y desde que el reloj no es el que dibuja, un tick ya no
+    //  dura ni siquiera lo que diga la tabla.
+    if ((sessionSyncMs += dt) >= kSyncSesionMs)
+    {
+        sessionSyncMs = 0.0;
+        session.sync (uiSample.data(), kNumPads);
+        refreshSystemInsets();
+
+        //  ...and the state itself every twenty seconds or so. onPause writes
+        //  it too, but a process killed without one - a crash, a battery pull,
+        //  a task-switcher swipe on some OEM builds - never gets there, and
+        //  audio on disk with no state beside it restores nothing.
+        if ((sessionStateMs += kSyncSesionMs) >= kEstadoSesionMs)
+        {
+            sessionStateMs = 0.0;
+            session.writeState (captureState(), currentProject);
+        }
+    }
+
+    engine.collectRetiredSamples();
+    pollExport();
+    refreshDeviceStatusLine();      // Oboe settles a beat after we ask it to
+    watchAudioDevice();
+
+    //  UNA CONFIRMACION ARMADA QUE NADIE CONTESTO vuelve a ser un boton
+    //  normal, para que un SEGURO? rojo no se quede olvidado en una ficha.
+    //  Aqui y no en el dibujo: es un plazo de reloj de pared, y ademas tres
+    //  segundos de verdad — estaba en `confirmTicks = 50`, con el comentario
+    //  «~3 s at the 60 ms UI timer» al lado, que en un movil de gama alta son
+    //  1.65 s y en uno de gama basica cinco.
+    if (confirmPending != nullptr && (confirmMs -= dt) <= 0.0)
+        disarmConfirm();
+
+    //  Y SI NO HAY VBLANK, EL DIBUJO SE CAE AQUI. Un peer que no entrega
+    //  vblanks -o una ventana que todavia no tiene pantalla- dejaria la cara
+    //  congelada: la aguja clavada, el cabezal parado y el analizador quieto,
+    //  o sea una app que parece rota. Se pinta al ritmo del SUELO, que es
+    //  exactamente la cadencia que esta app tenia antes de esta tanda.
+    if (ahora - vblankUltimoMs > 2.0 * DeviceTier::profile().relojMs)
+        pintaCuadro (dt);
+}
+
+// ============================================================================
+//  UN VBLANK, Y LA APP MIDIENDOSE SOLA.
+//
+//  Pintar a 120 Hz lo que se pintaba a 16.7 es siete veces el trabajo, y un
+//  fotograma de la cara con la maquina sonando no es barato -medido con
+//  ZATI_PAINT a 412x915: 3.53 ms el arbol entero, 0.75 solo el fondo-. Asi que
+//  la app se mide lo que le cuesta un cuadro y, cuando se pasa de su
+//  presupuesto, SALTA vblanks: es la misma forma que ya tiene `bufferBursts`
+//  subiendo cuando aparecen under-runs, que es la unica regla de esta casa para
+//  un aparato que no llega.
+//
+//  El coste son las DOS mitades: `pintaCuadro` -alimentar el osciloscopio, las
+//  dos FFT del analizador, las tres rejillas- y el `paint` que ese cuadro
+//  provoca. Medir solo la primera diria que un fotograma cuesta cero, porque
+//  `repaint()` no pinta: marca.
+//
+//  Con MEDIA MOVIL y no con el ultimo valor: un solo cuadro interrumpido por el
+//  sistema partiria la tasa por dos y la subiria en el siguiente, o sea una
+//  cadencia que oscila, que se ve peor que una lenta.
+//
+//  Y NUNCA MAS LENTO QUE EL SUELO: el salto se acota a lo que `relojMs`
+//  permite. Ahi es donde ese numero dejo de ser «cada cuanto se pinta» y paso a
+//  ser «lo mas lento a lo que se nos permite caer».
+// ============================================================================
+void MainComponent::enVBlank (double timestampSec)
+{
+    const double ahora = juce::Time::getMillisecondCounterHiRes();
+    vblankUltimoMs = ahora;
+
+    //  El periodo del panel, de su propia marca de tiempo. Acotado: un salto
+    //  de segundos es la app volviendo de segundo plano, no un panel lento.
+    const double periodo = vblankUltimoSec > 0.0
+                             ? juce::jlimit (4.0, 200.0, (timestampSec - vblankUltimoSec) * 1000.0)
+                             : 16.7;
+    vblankUltimoSec = timestampSec;
+
+    if (cuadroSaltar > 0) { --cuadroSaltar; return; }
+
+    //  Lo que se pasa es el tiempo desde el ultimo cuadro PINTADO y no desde el
+    //  ultimo vblank: con saltos, los dos dejan de ser lo mismo y usar el
+    //  segundo haria que la aguja cayera a camara lenta justo en el aparato que
+    //  no llega.
+    const double dt = cuadroUltimoMs > 0.0
+                        ? juce::jlimit (1.0, 250.0, ahora - cuadroUltimoMs)
+                        : periodo;
+    cuadroUltimoMs = ahora;
+
+    cuadroGastoMs = 0.0;
+    const double t0 = juce::Time::getMillisecondCounterHiRes();
+    pintaCuadro (dt);
+    cuadroGastoMs += juce::Time::getMillisecondCounterHiRes() - t0;
+
+    //  Y el `paint` que esto acaba de pedir corre DESPUES de volver de aqui,
+    //  asi que lo que se suma es el del cuadro anterior. Un cuadro de retraso
+    //  en una media movil no cambia la respuesta y evita tener que adivinar
+    //  cuando el peer ha terminado de despachar.
+    cuadroCosteMs = 0.8 * cuadroCosteMs + 0.2 * cuadroGastoMs;
+
+    const int techo = juce::jmax (0, (int) (DeviceTier::profile().relojMs / periodo) - 1);
+    const int quiere = (int) std::floor (cuadroCosteMs / periodo);
+    cuadroSaltar = juce::jlimit (0, techo, quiere);
+}
+
+// ============================================================================
+//  EL DIBUJO, al ritmo de la pantalla.
+//
+//  `dtMs` son los milisegundos de verdad entre este cuadro y el anterior, y no
+//  un adorno: todas las constantes de tiempo de aqui abajo estaban escritas POR
+//  TICK y documentadas contra treinta cuadros por segundo, que es lo que solo
+//  tenia la gama alta. O sea que el aviso de clip duraba 3 s en un movil bueno
+//  y 9 en uno de gama basica, y la aguja del medidor caia a cuatro velocidades
+//  distintas segun el telefono. Con el vblank eso habria pasado de cuatro
+//  velocidades a una por panel. Se aplican con `exp (-dt / tau)`.
+// ============================================================================
+void MainComponent::pintaCuadro (double dtMs)
+{
+    ++UiAudit::cuadrosPintados;
+
+    //  Mientras algo este cargando, la barra se repinta sola: es lo unico de
+    //  la cara que tiene que moverse aunque no pase nada mas.
+    if (busyJobs > 0) busyBar.repaint();
+
 
     //  The lamps under the effect keys.
     //
@@ -12486,7 +12666,7 @@ void MainComponent::timerCallback()
     {
         const double periodMs = juce::jlimit (500.0, 3000.0,
                                               2.0 * 60000.0 / juce::jmax (20.0, engine.getBpm()));
-        fxPulsePhase += (double) DeviceTier::profile().uiIntervalMs / periodMs;
+        fxPulsePhase += dtMs / periodMs;
         if (fxPulsePhase >= 1.0) fxPulsePhase -= std::floor (fxPulsePhase);
 
         //  A raised cosine: never fully off, so a running effect is lit even
@@ -12507,30 +12687,6 @@ void MainComponent::timerCallback()
             b->repaint();
         }
     }
-
-    //  ...and from then on, every couple of seconds, hand the live pads to the
-    //  writer. With nothing changed this is sixteen pointer comparisons.
-    if (++sessionSyncTick >= 33)
-    {
-        sessionSyncTick = 0;
-        session.sync (uiSample.data(), kNumPads);
-        refreshSystemInsets();
-
-        //  ...and the state itself every twenty seconds or so. onPause writes
-        //  it too, but a process killed without one - a crash, a battery pull,
-        //  a task-switcher swipe on some OEM builds - never gets there, and
-        //  audio on disk with no state beside it restores nothing.
-        if (++sessionStateTick >= 10)
-        {
-            sessionStateTick = 0;
-            session.writeState (captureState(), currentProject);
-        }
-    }
-
-    engine.collectRetiredSamples();
-    pollExport();
-    refreshDeviceStatusLine();      // Oboe settles a beat after we ask it to
-    watchAudioDevice();
 
     //  Y LO DE LA CARA, SOLO CUANDO LA CARA SE VE.
     //
@@ -12574,7 +12730,7 @@ void MainComponent::timerCallback()
         {
             engine.copyEqScope (eqPreTmp, eqPostTmp, (int) (sizeof (eqPreTmp) / sizeof (eqPreTmp[0])));
             eqCurva.setMuestras (eqPreTmp, eqPostTmp,
-                                 (int) (sizeof (eqPreTmp) / sizeof (eqPreTmp[0])));
+                                 (int) (sizeof (eqPreTmp) / sizeof (eqPreTmp[0])), dtMs);
             //  Y VIVO o no: sin envios al EQ no se escribe nada en los
             //  anillos, y una mancha congelada se lee como «esto esta roto» en
             //  vez de «no pasa nada por aqui».
@@ -12584,7 +12740,7 @@ void MainComponent::timerCallback()
         const int scopeN = juce::jmin ((int) (sizeof (scopeTmp) / sizeof (scopeTmp[0])),
                                        DeviceTier::profile().scopePoints);
         engine.copyScope (scopeTmp, scopeN);
-        cristal.setSamples (scopeTmp, scopeN);
+        cristal.setSamples (scopeTmp, scopeN, dtMs);
         cristal.setBpm (bpmSlider.getValue());
     }
 
@@ -12592,12 +12748,18 @@ void MainComponent::timerCallback()
 
     // Pad trigger feedback (taps + sequencer): flash then decay.
     const std::uint64_t trig = engine.fetchTriggered();
+    const float caida = (float) std::exp (-dtMs / kTauDestelloMs);
     for (int i = 0; i < kNumPads; ++i)
     {
         if ((trig & ((std::uint64_t) 1u << i)) != 0) padFlash[(size_t) i] = 1.0f;
         if (padFlash[(size_t) i] > 0.0f)
         {
-            padFlash[(size_t) i] *= 0.8f;
+            //  EN MILISEGUNDOS. Estaba en `*= 0.8f` POR TICK, que a los 33 ms
+            //  de la gama alta son 148 ms de constante de tiempo y a los 100
+            //  de la basica, 448: el mismo destello duraba el triple en el
+            //  telefono mas lento. Con el vblank habria sido peor todavia
+            //  -a 120 Hz, 37 ms- o sea un parpadeo en vez de un destello.
+            padFlash[(size_t) i] *= caida;
             if (padFlash[(size_t) i] < 0.02f) padFlash[(size_t) i] = 0.0f;
             if (seVeLaCara) refreshPad (i);
         }
@@ -12653,11 +12815,6 @@ void MainComponent::timerCallback()
         }
     }
 
-    //  An armed confirmation that nobody answered goes back to being an
-    //  ordinary button, so a red SEGURO? is never left lying on a sheet.
-    if (confirmPending != nullptr && --confirmTicks <= 0)
-        disarmConfirm();
-
     //  El renglon de la cadena, y SOLO el renglon. Ver seqChainBand: la ficha
     //  ocupa la ventana entera y es translucida, asi que pedirle un repintado
     //  completo para mover un texto de catorce pixeles arrastraba consigo el
@@ -12680,15 +12837,18 @@ void MainComponent::timerCallback()
         shownChainPattern = -2;   // al volver a rodar, que se pinte la primera vez
     }
 
-    // Face strips: VU ballistics (fast attack, ~0.8 decay/frame) and the
+    // Face strips: VU ballistics (fast attack, 100 ms decay) and the
     // step-LED playhead.
     if (! vuHeld)
     {
         const float pl = engine.readOutPeakL();
         const float pr = engine.readOutPeakR();
         const float prevL = vuL, prevR = vuR;
-        vuL = juce::jmax (pl, vuL * 0.80f); if (vuL < 0.004f) vuL = 0.0f;
-        vuR = juce::jmax (pr, vuR * 0.80f); if (vuR < 0.004f) vuR = 0.0f;
+        //  Misma cuenta y misma razon que el destello del pad: la balistica
+        //  de una aguja es una constante de TIEMPO y no un factor por cuadro.
+        const float caidaVu = (float) std::exp (-dtMs / kTauAgujaMs);
+        vuL = juce::jmax (pl, vuL * caidaVu); if (vuL < 0.004f) vuL = 0.0f;
+        vuR = juce::jmax (pr, vuR * caidaVu); if (vuR < 0.004f) vuR = 0.0f;
         juce::ignoreUnused (prevL, prevR, prevPlayStep);
         //  La balistica corre siempre -el pico se lee y se vacia, y pararla
         //  dejaria la aguja clavada donde estuviera al abrir una ficha- y lo

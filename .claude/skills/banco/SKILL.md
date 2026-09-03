@@ -28,7 +28,7 @@ codigo.
 
 | Se toco | Se corre |
 |---|---|
-| cualquier cosa de interfaz | `Tests/expo.py` (1036 corridas, ~2 min) |
+| cualquier cosa de interfaz | `Tests/expo.py` (1092 corridas, ~2 min) |
 | textos, rotulos, `T()` | `Tests/lang.py` **y** `expo.py` |
 | colores, tokens, pieles | `Tests/skins.py` |
 | motor, voces, efectos, envios | `build/StressTest_artefacts/Release/StressTest` |
@@ -51,6 +51,7 @@ codigo.
 | iconos, la marca, la textura del chasis | `Tests/iconos.py` |
 | una APK | `Tests/apk.py <fichero>` |
 | repintados, coste de la cara | `Tests/cpu.py` **sola** (ver abajo) |
+| la tasa de refresco, cualquier constante de tiempo visual | `Tests/fps.py` |
 | titulos y rotulos pintados | `Tests/plano.py` |
 | nombres visibles, comentarios, cualquier texto de `Source/` | `Tests/marcas.py` |
 | la ficha de Play | `Tests/store.py` |

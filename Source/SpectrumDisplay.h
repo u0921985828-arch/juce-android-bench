@@ -29,7 +29,19 @@ class SpectrumDisplay : public juce::Component
 public:
     SpectrumDisplay() = default;
 
-    void setSamples (const float* src, int n)
+    //  `dtMs` SON LOS MILISEGUNDOS DE VERDAD desde el cuadro anterior, y no un
+    //  parametro de mas: las tres constantes de aqui abajo estaban escritas por
+    //  TICK y documentadas contra treinta cuadros por segundo, que es lo que
+    //  solo tenia la gama alta. En un movil de gama basica -diez cuadros- el
+    //  mismo aviso de clip duraba NUEVE segundos y la aguja caia tres veces
+    //  mas lento; desde que el dibujo cuelga del vblank serian ademas 60, 90 o
+    //  120 segun el panel. Se aplican con `exp (-dt / tau)`, y los tau son los
+    //  factores de siempre resueltos a los 33 ms contra los que se escribieron.
+    static constexpr double kTauAgujaMs     = 100.0;   // -33 / ln (0.72)
+    static constexpr double kTauRetencionMs = 2200.0;  // -33 / ln (0.985)
+    static constexpr double kAvisoClipMs    = 3000.0;  // «~3 s a 30 cuadros»
+
+    void setSamples (const float* src, int n, double dtMs)
     {
         count = juce::jmin (n, kCap);
         float pk = 0.0f;
@@ -39,15 +51,15 @@ public:
             buf[i] = s;
             pk = juce::jmax (pk, std::abs (s));
         }
-        peak = juce::jmax (peak * 0.72f, pk);   // meter with a soft decay
-        //  RETENCION DE PICO. El medidor cae en 0.72 por tick, asi que un
-        //  transitorio que llega a 0 dBFS ha desaparecido de la pantalla antes
-        //  de que levantes la vista - y clipar es exactamente lo que hay que
-        //  ver. Se retiene el maximo y se suelta despacio: veinte veces mas
-        //  lento que la aguja, que a treinta cuadros son unos dos segundos.
-        hold = juce::jmax (hold * 0.985f, peak);
-        if (hold >= 0.999f) clipHold = 90;      // ~3 s a 30 cuadros
-        else if (clipHold > 0) --clipHold;
+        peak = juce::jmax (peak * (float) std::exp (-dtMs / kTauAgujaMs), pk);
+        //  RETENCION DE PICO. El medidor cae con 100 ms de constante, asi que
+        //  un transitorio que llega a 0 dBFS ha desaparecido de la pantalla
+        //  antes de que levantes la vista - y clipar es exactamente lo que hay
+        //  que ver. Se retiene el maximo y se suelta despacio: veinte veces mas
+        //  lento que la aguja, o sea unos dos segundos.
+        hold = juce::jmax (hold * (float) std::exp (-dtMs / kTauRetencionMs), peak);
+        if (hold >= 0.999f) clipMs = kAvisoClipMs;
+        else if (clipMs > 0.0) clipMs = juce::jmax (0.0, clipMs - dtMs);
 
         //  A flat line twice running is the same picture, and this is the
         //  biggest component on the face: repainting it thirty times a second
@@ -59,6 +71,16 @@ public:
         wasSilent = silent;
         repaint();
     }
+
+    //  PARA EL BANCO, y no es un adorno: la regla que faltaba es que la app se
+    //  vea IGUAL a 60 y a 120 Hz, y eso se mide en milisegundos de reloj sobre
+    //  las dos piezas que de verdad caen — la aguja y el aviso de recorte —.
+    //  Sin poder leerlas, la unica forma de comprobarlo seria repetir la
+    //  formula en el banco, que es la trampa que este proyecto ya se comio con
+    //  la mascara del lanzador: *un banco que repite la constante del codigo
+    //  no prueba el codigo*.
+    float  nivelAguja()  const noexcept { return peak; }
+    double avisoClipMs() const noexcept { return clipMs; }
 
     //  SWIPE THE SCREEN TO CHANGE PATTERN BANK.
     //
@@ -169,7 +191,7 @@ public:
         //  El pico retenido, en rojo si toco el techo. Es la unica marca de la
         //  pantalla que dice algo que YA PASO, y por eso se queda: si has
         //  clipado, quieres enterarte aunque estuvieras mirando los pads.
-        g.setColour (clipHold > 0 ? ZatiColours::red : ZatiColours::lcdDim);
+        g.setColour (clipMs > 0.0 ? ZatiColours::red : ZatiColours::lcdDim);
         g.drawText (Lang::ltr (holdDb()), top, Lang::start (juce::Justification::topRight));
         g.setColour (ZatiColours::lcdDim);
         g.drawText (T ("OUT") + " " + Lang::ltr (peakDb()), top, Lang::start (juce::Justification::top));
@@ -379,7 +401,7 @@ private:
     int          count { 0 };
     float        peak  { 0.0f };
     float        hold  { 0.0f };
-    int          clipHold = 0;
+    double       clipMs = 0.0;
     double       bpm   { 120.0 };
     //  Decimated min/max columns from the engine, oldest first.
     static constexpr int kMaxCols = AudioEngine::kMaxScopeColumns;

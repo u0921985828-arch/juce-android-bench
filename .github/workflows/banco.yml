@@ -91,6 +91,12 @@ jobs:
       - name: El arranque
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/arranque.py
+      #  Y QUE SE VEA IGUAL A 60 QUE A 120. Es determinista -no mide por
+      #  reloj, mide milisegundos SIMULADOS a traves del codigo de verdad-
+      #  asi que entra aqui y no se queda fuera con `cpu.py`.
+      - name: La balistica, a 60 y a 120 Hz
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/fps.py
       - name: El tour
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/tour.py

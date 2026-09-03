@@ -58,8 +58,73 @@ public:
     void resized() override;
 
 private:
+    //  EL RELOJ Y EL DIBUJO SON DOS COSAS, y hasta hoy eran un temporizador.
+    //
+    //  Habia UN `startTimer (dev.uiIntervalMs)` y de el colgaba todo lo que se
+    //  mueve: medidores, osciloscopio, destellos, los tres cabezales, el
+    //  analizador del EQ y la portada, mas los seis vigilantes. O sea que la
+    //  tasa de refresco de la app la decidia una tabla de gama escrita a mano
+    //  -10, 16.7, 25 o 30 fps- y no el panel que tienes delante.
+    //
+    //  `timerCallback` se queda con lo que NO puede depender de que la
+    //  pantalla refresque: un vblank no llega con la app en segundo plano ni
+    //  con la pantalla apagada, y estos son vigilantes -el ducking sin GAIN de
+    //  vuelta, el dispositivo que no revive, los under-runs, el tope de la
+    //  portada-. Ponerlos en el vblank seria que el ducking no se deshace con
+    //  el movil en el bolsillo.
+    //
+    //  `pintaCuadro` es el DIBUJO, y cuelga del vblank. Toma los milisegundos
+    //  de verdad transcurridos porque las constantes de tiempo visuales pasan
+    //  a estar en milisegundos: a 120 Hz un `peak *= 0.72` por fotograma cae
+    //  cuatro veces mas rapido que a 30, que es exactamente el fallo que la
+    //  app YA tenia entre un movil de gama alta y uno de gama basica.
     void timerCallback() override;
+    void pintaCuadro (double dtMs);
     void watchAudioDevice();
+
+    //  EL REPINTADO CUELGA DEL VBLANK. En Android es Choreographer
+    //  (`ComponentPeerView.java` -> `handleDoFrameCallback` ->
+    //  `callVBlankListeners`), o sea la cadencia real del panel; en escritorio
+    //  X11 lo emula a la frecuencia del display. Con la firma que trae MARCA
+    //  DE TIEMPO, que es de donde sale el `dt` de verdad y no de un numero
+    //  escrito aqui.
+    juce::VBlankAttachment vblank;
+    double vblankUltimoSec = 0.0;
+    //  SIN VBLANK NO HAY APP MUDA: si no llega ninguno -un peer que no los
+    //  entrega, una ventana sin pantalla- el reloj pinta el, a la cadencia del
+    //  suelo. Es la hermana de «ningun camino puede dejar la app en silencio».
+    double vblankUltimoMs = 0.0;
+    //  LO QUE CUESTA UN FOTOGRAMA, Y CUANTOS SE SALTAN. Pintar a 120 Hz lo que
+    //  se pintaba a 16.7 es siete veces el trabajo, asi que la app se lo mide y
+    //  se defiende: cuando un cuadro se pasa de su presupuesto se saltan
+    //  vblanks, que es la misma forma que ya tiene `bufferBursts` subiendo
+    //  cuando aparecen under-runs. Media movil y no el ultimo valor: un solo
+    //  cuadro interrumpido por el sistema no puede partir la tasa por dos.
+    double cuadroCosteMs = 0.0;
+    int    cuadroSaltar  = 0;
+    //  Lo GASTADO en el cuadro que se acaba de pedir: `pintaCuadro` -que
+    //  alimenta el osciloscopio, las dos FFT del analizador y las tres
+    //  rejillas- mas lo que cueste el `paint` que ese cuadro provoca. Son las
+    //  dos mitades del mismo trabajo y las dos corren en el hilo de mensajes,
+    //  asi que sumarlas es lo unico que mide un fotograma entero.
+    double cuadroGastoMs = 0.0;
+    double cuadroUltimoMs = 0.0;
+
+    //  ZATI_VBLANK=hz — LA CADENCIA COMO ENTRADA DEL BANCO, igual que ZATI_SKIN
+    //  con la carcasa, ZATI_DLC con los packs y ZATI_INSETS con los margenes.
+    //  Sin esto solo se puede medir la maquina que haya delante: X11 entrega
+    //  vblanks a la frecuencia del display -100 Hz cuando no la declara, que es
+    //  lo que da Xvfb- y no hay forma de preguntar «¿se ve igual a 60 que a
+    //  120?», que es justo la regla que esta tanda necesita.
+    struct RelojDibujo : public juce::Timer
+    {
+        std::function<void()> fn;
+        void timerCallback() override { if (fn) fn(); }
+    };
+    RelojDibujo relojDibujo;
+    //  Y NUNCA MAS LENTO QUE EL SUELO: el salto se acota a lo que `relojMs`
+    //  permite. Un aparato que no llega cae hasta ahi y no mas.
+    void enVBlank (double timestampSec);
 
     // One perform screen; every deep feature (pad settings, sequencer,
     // pattern chain, auto chop, FX) opens as a pop-up sheet over it — a dim
@@ -850,11 +915,11 @@ private:
     int burstMult   = 0;     // 0 = aun sin leer del disco; luego 1..kMaxBursts
     int lastXRuns   = -1;    // -1 = todavia no se ha leido ninguno
     int xrunsSeen   = 0;     // desde el ultimo cambio de buffer
-    int xrunGraceMs = 0;     // gracia despues de abrir el dispositivo, en ms
+    double xrunGraceMs = 0.0; // gracia despues de abrir el dispositivo, en ms
     static constexpr int kXRunGraciaMs = 720;
     //  Cuanto tiene que aguantar limpio para que la cuenta vuelva a cero. Ver
     //  checkXRuns: sin esto «cuatro seguidos» eran cuatro EN TODA LA SESION.
-    int xrunLimpioMs = 0;
+    double xrunLimpioMs = 0.0;
     static constexpr int kXRunOlvidoMs = 5000;
     static constexpr int kMaxBursts = 4;
     void   keepChosenRate();
@@ -908,7 +973,7 @@ private:
     juce::Rectangle<int> skinRowArea;
     juce::Rectangle<int> bufRowArea, rateRowArea;
     void useLowestLatency();
-    void checkXRuns();
+    void checkXRuns (double dtMs);
     static juce::File burstPreferenceFile();
     static int loadBurstPreference();     // one native burst, not JUCE's 40 ms default
 
@@ -985,6 +1050,9 @@ private:
     //  instrumentos son 1238 ms medidos-. Sin esto se congelaria con la cara a
     //  medio hacer y sin nada dibujado encima.
     bool portadaPintada = false;
+    //  LA MARCA DEL RELOJ, para contar milisegundos de verdad y no ticks
+    //  nominales. Cero es «todavia no ha latido».
+    double relojUltimoMs = 0.0;
     //  Ticks desde que la app abrio, para el tope de abajo y para ZATI_ARRANQUE.
     int arranqueTicks = 0;
     //  CUANTAS VECES SE HA PINTADO LA PORTADA DE VERDAD, y no es un adorno del
@@ -999,7 +1067,7 @@ private:
     //
     //  Y EN MILISEGUNDOS, que estaba en TICKS. El comentario decia «treinta
     //  ticks a 60 ms son 1.8 s» y el tick es `DeviceTier::profile().
-    //  uiIntervalMs`, que vale 33, 40, 60 o 100 segun el aparato: el plazo
+    //  relojMs`, que vale 33, 40, 60 o 100 segun el aparato: el plazo
     //  real iba de 1.0 s en un movil bueno a 3.0 s en uno de gama baja, o sea
     //  que el telefono que MAS tarda en arrancar era el que mas se quedaba
     //  mirando una portada. Es el mismo fallo que el temporizador del ducking
@@ -1009,8 +1077,11 @@ private:
     //  Y el mismo plazo para dejar de preguntar por los margenes, por la misma
     //  razon y con el mismo numero: es una sola respuesta que llega tarde.
     static constexpr int kMargenesPlazoMs = 1800;
-    int portadaMs      = 0;
-    int insetSettleMs  = 0;
+    //  En MILISEGUNDOS REALES desde que el reloj se separo del dibujo: un
+    //  `+= relojMs` da por hecho que el tick duro exactamente su intervalo
+    //  nominal, que es falso en cuanto el temporizador llega tarde.
+    double portadaMs      = 0.0;
+    double insetSettleMs  = 0.0;
     void pintaPortada (juce::Graphics& g);
     void miraSiLaCaraEstaLista();
 
@@ -1104,6 +1175,7 @@ public:
     void auditDinamica();
     //  LA CUENTA ATRAS Y EL METRONOMO. Ver Tests/cuenta.py.
     void auditCuenta();
+    void auditBalistica();
     //  EL CATALOGO DE CONTENIDO Y EL CANDADO. Ver Tests/dlc.py.
     void auditDlc();
     void auditNiveles();
@@ -1136,8 +1208,15 @@ private:
     void cargaFabricaEnBanco (int origen, int destino);
     bool sessionRestorePending = true;   // done on the first timer tick
     bool startupBusy = true;             // la barra ya esta puesta al primer fotograma
-    int  sessionSyncTick  = 0;
-    int  sessionStateTick = 0;
+    //  EN MILISEGUNDOS Y NO EN TICKS, que es la misma leccion que ya costo
+    //  tres medidas en esta app -el ducking, la portada y la gracia de los
+    //  under-runs- sin aplicar a estos dos. «Cada par de segundos» eran 33
+    //  ticks, y un tick vale 33, 40, 60 o 100 ms segun el aparato: la sesion
+    //  se sincronizaba cada 1.1 s en un movil bueno y cada 3.3 en uno de gama
+    //  basica. Y desde que el reloj no es el que dibuja, un tick ya no dura ni
+    //  siquiera lo que diga la tabla.
+    double sessionSyncMs  = 0.0;
+    double sessionStateMs = 0.0;
 
     //  Android arbitrates the speaker between apps. Without asking for the
     //  focus we play over calls and can be silenced without ever being told.
@@ -1153,8 +1232,8 @@ private:
     //  builds never send it after a CAN_DUCK, and "quiet for ever" is the
     //  exact failure this whole path exists to make unreachable.
     bool duckedByFocus = false;
-    int  duckTicksLeft = 0;   // milliseconds remaining, not ticks
-    int  deviceRevivalTicks = 0;
+    double duckTicksLeft = 0.0;   // milliseconds remaining, not ticks
+    double deviceRevivalTicks = 0.0;
     //  The app starts in front; appSuspended/appResumed move it.
     bool appInForeground = true;
     //  Whether we are currently holding FLAG_KEEP_SCREEN_ON. Kept as a flag
@@ -1165,6 +1244,34 @@ private:
     //  focus loss, cleared by coming back to the foreground.
     bool focusGivenAway = false;
     static constexpr int kDuckWatchdogMs = 6000;     // longer than any notification
+
+    //  LAS CONSTANTES DE TIEMPO, EN MILISEGUNDOS Y NO POR CUADRO.
+    //
+    //  Las cinco de abajo estaban escritas como un factor por tick y
+    //  documentadas contra treinta cuadros por segundo — `peak *= 0.72f`,
+    //  `hold *= 0.985f`, `clipHold = 90` («~3 s a 30 cuadros»),
+    //  `padFlash *= 0.8f` y `s += 0.25f * (dB - s)` —. Treinta cuadros por
+    //  segundo es lo que tenia la gama ALTA: en la basica el mismo aviso de
+    //  clip duraba nueve segundos y la aguja caia tres veces mas lento. Es la
+    //  misma clase de fallo que este proyecto ya arreglo tres veces en el
+    //  reloj —«ticks donde tenia que haber milisegundos»— sin aplicar nunca al
+    //  lado visual, y con el vblank pasaria de cuatro velocidades a una por
+    //  panel.
+    //
+    //  Los numeros no se inventan: son los de hoy resueltos a 33 ms, que es la
+    //  cadencia contra la que se escribieron. `-33 / ln (0.72)` son 100 ms;
+    //  `-33 / ln (0.985)`, 2183, y su propio comentario ya decia «unos dos
+    //  segundos»; `-33 / ln (0.8)`, 148; `-33 / ln (0.75)`, 115.
+    static constexpr double kTauAgujaMs      = 100.0;   // la aguja del medidor
+    static constexpr double kTauRetencionMs  = 2200.0;  // el pico retenido
+    static constexpr double kAvisoClipMs     = 3000.0;  // el aviso de recorte
+    static constexpr double kTauDestelloMs   = 150.0;   // el destello de un pad
+    static constexpr double kTauAnalizadorMs = 115.0;   // la caida del analizador
+
+    //  Y las tres del reloj, que estaban contadas en ticks por la misma razon.
+    static constexpr double kSyncSesionMs   = 2000.0;   // los pads al escritor
+    static constexpr double kEstadoSesionMs = 20000.0;  // y el estado entero
+    static constexpr double kConfirmMs      = 3000.0;   // un SEGURO? sin contestar
     void audioFocusDucked() override;
     void audioFocusLost (bool permanently) override;
     void audioFocusGained() override;
@@ -1292,7 +1399,7 @@ private:
     void disarmConfirm();
     juce::TextButton* confirmPending = nullptr;
     juce::String      confirmOldText;
-    int               confirmTicks = 0;
+    double            confirmMs = 0.0;
 
     // --- Language ---------------------------------------------------------
     //  Every static caption on the machine is set from one place, so changing

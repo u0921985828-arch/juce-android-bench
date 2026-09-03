@@ -80,6 +80,13 @@ namespace UiAudit
     //  porque pide su banda. Con la maquina sonando las dos cosas pasan a la
     //  vez y la cuenta de llamadas deja de decir nada.
     inline long long pixelesPintados = 0;
+    //  Y CUANTOS CUADROS SE HAN PEDIDO, que desde que el dibujo cuelga del
+    //  vblank es la mitad que faltaba: los pixeles TOTALES suben por
+    //  definicion al subir la tasa -a 120 Hz se pintan cuatro veces mas
+    //  fotogramas que a 30- asi que el numero de este banco dejaria de ser
+    //  comparable con el de la tanda anterior sin decirlo. Lo que no puede
+    //  empeorar es el coste POR CUADRO.
+    inline long long cuadrosPintados = 0;
     //  CUANTAS VECES SE HA MOVIDO EL CABEZAL DEL PIANO ROLL. La barra estaba
     //  dibujada desde el primer dia y no estaba viva: el temporizador solo
     //  alimentaba la rejilla de PASOS, asi que en la pagina del piano el

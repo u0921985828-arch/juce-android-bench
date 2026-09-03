@@ -66,10 +66,32 @@ TOPE = 3
 #  42 346 644 pixeles antes -112 fotogramas equivalentes, o sea pintando la
 #  maquina entera con una tarjeta delante- y 380 660 despues, uno.
 #
-#  El tope sale de la POBLACION y no de un numero redondo: la ficha que mas
-#  pinta con razon es la rejilla de pasos, con 5.8 fotogramas equivalentes de
-#  cabezal. Ocho deja sitio y esta catorce veces por debajo del estado roto.
-TOPE_SONANDO = 8.0
+#  Y LA CIFRA QUE VIAJA PASA A SER POR CUADRO, que es lo que la separacion del
+#  reloj y el dibujo obliga a decir en voz alta.
+#
+#  Hasta esta tanda el dibujo colgaba de UN temporizador a `uiIntervalMs`, o sea
+#  entre 10 y 30 cuadros por segundo segun la gama, y ocho segundos eran ~133
+#  cuadros CLAVADOS: un total y un por-cuadro eran el mismo numero con otra
+#  escala. Desde que el repintado cuelga del vblank la cadencia la pone el panel
+#  -60, 90 o 120- o el `ZATI_VBLANK` de aqui abajo, asi que **los pixeles
+#  totales suben por definicion** y el numero de la tanda anterior deja de ser
+#  comparable. Lo que no puede empeorar es el coste POR CUADRO, y eso es lo que
+#  se juzga.
+#
+#  Y la cadencia se fija, que si no esta medida depende de la maquina: X11
+#  entrega vblanks a la frecuencia que declare el display —100 Hz en Xvfb, que
+#  no declara ninguna— asi que sin `ZATI_VBLANK` el mismo binario daria un
+#  numero distinto en el portatil y en el runner. Es la misma razon por la que
+#  esta prueba corre SOLA.
+VBLANK_HZ = 60
+
+#  El tope sale de la POBLACION y no de un numero redondo. Medido a 60 Hz con
+#  la maquina sonando: la ficha que mas pinta CON RAZON es SEC con **0.007**
+#  ventanas por cuadro —el cabezal de la rejilla de pasos, que pide su banda—
+#  y una ficha que repinta lo que no se ve mide como la CARA, **0.50**. Cinco
+#  centesimas estan siete veces por encima de la primera y diez por debajo de
+#  la segunda.
+TOPE_SONANDO = 0.05
 
 
 def display_alive():
@@ -85,7 +107,8 @@ def display_alive():
 def corre (ficha, sonando=False):
     env = dict (os.environ)
     env.update ({"ZATI_AUDIT": "1", "ZATI_SIZE": "412x915", "ZATI_LANG": "es",
-                 "ZATI_DEMO": "1", "ZATI_OPEN": ficha, "ZATI_SPIN": str (SEGUNDOS)})
+                 "ZATI_DEMO": "1", "ZATI_OPEN": ficha, "ZATI_SPIN": str (SEGUNDOS),
+                 "ZATI_VBLANK": str (VBLANK_HZ)})
     if sonando: env["ZATI_SONANDO"] = "1"
     try:
         out = subprocess.run ([APP], env=env, capture_output=True, text=True,
@@ -152,14 +175,17 @@ def main():
             malas.append (f or "(cara)")
 
     print()
-    print ("y con la maquina SONANDO, en fotogramas EQUIVALENTES (pixeles / ventana)")
+    print ("y con la maquina SONANDO, en ventanas repintadas POR CUADRO (%d Hz)"
+           % VBLANK_HZ)
+    print ("ficha    por cuadro  cuadros   CPU ms")
     for f in FICHAS:
         r = corre (f, sonando=True)
         if r is None:
             print ("%-8s  --   no contesto" % (f or "(cara)"));  malas.append (f or "(cara) sonando")
             continue
         vent = max (1, int (r.get ("ventana", 1)))
-        equi = int (r.get ("pixeles", 0)) / float (vent)
+        cuad = max (1, int (r.get ("cuadros", 1)))
+        equi = int (r.get ("pixeles", 0)) / float (vent) / float (cuad)
         #  La cara no se juzga: ahi el cristal y los destellos de los pads SE
         #  VEN, asi que repintarlos es el trabajo. Se imprime porque es el
         #  techo contra el que se leen las demas, y porque el dia que suba hay
@@ -168,16 +194,52 @@ def main():
         #  Y «eq» es la CARA CON EL EQ PUESTO y no una ficha: la curva vive en
         #  el plato, o sea en la cara. Se lee CONTRA la cara y no contra el tope
         #  de las fichas, que es lo que hace de esta fila una medida y no un
-        #  rojo: 112.3 contra 112.2 dice que el analizador —dos FFT de 1024 por
-        #  tick, la mancha de entrada y la linea de salida— cuesta UNA DECIMA de
-        #  fotograma equivalente.
+        #  rojo: lo que separa a las dos es lo que cuesta el analizador —dos FFT
+        #  de 1024 por cuadro, la mancha de entrada y la linea de salida—.
         cara = (f in ("", "eq"))
         mal  = (not cara) and equi > TOPE_SONANDO
-        print ("%-8s %8.1f %11.0f%s" % (f or "(cara)", equi, r.get ("cpu_ms", 0.0),
+        print ("%-8s %8.3f %8d %9.0f%s" % (f or "(cara)", equi, cuad, r.get ("cpu_ms", 0.0),
                                         "   (se ve: no se juzga)" if cara else
                                         ("   <-- pinta lo que no se ve" if mal else "")))
         if mal:
             malas.append ((f or "(cara)") + " sonando")
+    #  Y QUE EL VBLANK ESTE VIVO, que es la comprobacion sin la cual todo lo
+    #  de arriba puede salir verde con el dibujo cayendose al reloj.
+    #
+    #  `pintaCuadro` cuelga del vblank y tiene una red debajo: si el peer no
+    #  entrega ninguno, lo llama el temporizador de mantenimiento a la cadencia
+    #  del SUELO. Esa red es correcta —«ningun camino puede dejar la app en
+    #  silencio»— y hace que un vblank roto no falle nada: la app seguiria
+    #  pintando, a 16.7 cuadros por segundo, con las veintiocho pruebas en
+    #  verde. Es *una linea que imprime OK* aplicada a la tanda entera.
+    #
+    #  Asi que se corre UNA sin `ZATI_VBLANK` -o sea con la cadencia del panel
+    #  de verdad- y se exige que este muy por encima del suelo. Medido en Xvfb,
+    #  que no declara frecuencia y por eso JUCE cae a su valor de reserva de
+    #  100 Hz: 592 cuadros en 6 s, contra los ~100 que daria el suelo.
+    print()
+    env = dict (os.environ)
+    env.update ({"ZATI_AUDIT": "1", "ZATI_SIZE": "412x915", "ZATI_LANG": "es",
+                 "ZATI_DEMO": "1", "ZATI_OPEN": "mix", "ZATI_SPIN": str (SEGUNDOS)})
+    try:
+        out = subprocess.run ([APP], env=env, capture_output=True, text=True,
+                              timeout=SEGUNDOS + 90).stdout
+        panel = next ((json.loads (l.strip()) for l in out.splitlines()
+                       if l.strip().startswith ('{') and '"spin"' in l), None)
+    except Exception:
+        panel = None
+    if panel is None:
+        print ("la cadencia del panel no contesto");  malas.append ("vblank")
+    else:
+        hz = int (panel.get ("cuadros", 0)) / float (SEGUNDOS)
+        #  El suelo es `DeviceTier::relojMs`, que en el peor aparato son 10
+        #  cuadros por segundo y en el mejor 30. Con el vblank vivo esto tiene
+        #  que dar la frecuencia del panel; treinta y cinco deja pasar
+        #  cualquier panel real y no deja pasar la red.
+        print ("la cadencia del panel: %.1f cuadros por segundo%s"
+               % (hz, "   <-- el vblank no llega, dibuja el reloj" if hz < 35.0 else ""))
+        if hz < 35.0: malas.append ("el vblank no llega")
+
     print()
     cs = cabezal()
     if not cs:

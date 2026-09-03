@@ -103,11 +103,17 @@ public:
     //  Lo que entra y lo que sale del bus, del hilo de MENSAJES. Aqui se hacen
     //  las dos FFT: en el hilo de audio serian dos transformadas por bloque para
     //  PINTAR, que es trabajo de la cara pagado donde no se puede pagar.
-    void setMuestras (const float* pre, const float* post, int n)
+    //  Con `dtMs` por lo mismo que el medidor del cristal: la caida estaba
+    //  escrita como un factor POR CUADRO -`s += 0.25f * (dB - s)`- y eso son
+    //  115 ms de constante a treinta cuadros y 448 a diez, o sea un analizador
+    //  que se lee distinto segun el telefono. Desde que el dibujo cuelga del
+    //  vblank serian ademas 60, 90 o 120 segun el panel.
+    void setMuestras (const float* pre, const float* post, int n, double dtMs)
     {
         if (pre == nullptr || post == nullptr || n < kFft || ! isVisible()) return;
-        analiza (pre,  n, suavePre);
-        analiza (post, n, suavePost);
+        const float k = 1.0f - (float) std::exp (-dtMs / kTauCaidaMs);
+        analiza (pre,  n, suavePre,  k);
+        analiza (post, n, suavePost, k);
         repaint();
     }
 
@@ -190,7 +196,11 @@ private:
     //  Una ventana de Hann y la FFT. La ventana no es un adorno: sin ella el
     //  corte de los extremos mete faldones en TODOS los bines y el analizador
     //  sale con un suelo plano que no es el de la señal.
-    void analiza (const float* datos, int n, std::array<float, kBines>& dst)
+    //  -33 / ln (0.75), que es el 0.25 de siempre resuelto a los treinta
+    //  cuadros por segundo contra los que se escribio.
+    static constexpr double kTauCaidaMs = 115.0;
+
+    void analiza (const float* datos, int n, std::array<float, kBines>& dst, float k)
     {
         for (int i = 0; i < kFft; ++i)
         {
@@ -210,7 +220,7 @@ private:
             const float mag = fftBuf[(size_t) k] * (2.0f / (float) kFft);
             const float dB  = juce::jmax (kPiso, juce::Decibels::gainToDecibels (mag, kPiso));
             float& s = dst[(size_t) k];
-            s = (dB > s) ? dB : s + 0.25f * (dB - s);
+            s = (dB > s) ? dB : s + k * (dB - s);
         }
     }
 

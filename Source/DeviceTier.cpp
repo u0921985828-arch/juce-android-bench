@@ -42,7 +42,7 @@ namespace
                 //  costaban dieciseis; y se va la onda de las tapas, que es el
                 //  unico gasto sin retorno musical.
                 p.voices = 16;  p.voicesPerPad = 4;
-                p.uiIntervalMs = 100;
+                p.relojMs = 100;
                 p.scopePoints = 256;
                 p.recordSeconds = 20.0;  p.recordStereo = false;
                 p.sampleBudgetMB = 64;
@@ -52,7 +52,7 @@ namespace
 
             case Tier::mid:
                 p.voices = 32;  p.voicesPerPad = 6;
-                p.uiIntervalMs = 60;
+                p.relojMs = 60;
                 p.scopePoints = 512;
                 p.recordSeconds = 45.0;  p.recordStereo = true;
                 p.sampleBudgetMB = 128;
@@ -62,7 +62,7 @@ namespace
 
             case Tier::high:
                 p.voices = 48;  p.voicesPerPad = 8;
-                p.uiIntervalMs = 40;
+                p.relojMs = 40;
                 p.scopePoints = 1024;
                 p.recordSeconds = 60.0;  p.recordStereo = true;
                 p.sampleBudgetMB = 192;
@@ -71,12 +71,19 @@ namespace
                 break;
 
             case Tier::ultra:
-                //  El techo, no una suposicion: 64 es el tamano del array del
-                //  deposito, y treinta fotogramas por segundo es el punto a
-                //  partir del cual nada de esta interfaz se mueve lo bastante
-                //  rapido como para notarlo.
+                //  El techo, no una suposicion: 64 es el tamano del array
+                //  del deposito.
+                //
+                //  Aqui habia ademas una AFIRMACION SIN MEDIDA -«treinta
+                //  fotogramas por segundo es el punto a partir del cual nada
+                //  de esta interfaz se mueve lo bastante rapido como para
+                //  notarlo»- escrita antes de todo el trabajo de repintado (el
+                //  fondo horneado, los tres cabezales acotados, la guarda de
+                //  visibilidad, `EqCurve` opaca) y que nadie volvio a mirar
+                //  despues. Los paneles de hoy son de 90 y 120 Hz. Ya no
+                //  decide la tasa: decide el SUELO.
                 p.voices = 64;  p.voicesPerPad = 12;
-                p.uiIntervalMs = 33;
+                p.relojMs = 33;
                 p.scopePoints = 1024;
                 p.recordSeconds = 120.0; p.recordStereo = true;
                 p.sampleBudgetMB = 384;
