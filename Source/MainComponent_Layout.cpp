@@ -2533,6 +2533,20 @@ void MainComponent::resized()
                                                    + Metrics::sm + Metrics::btn);
         auto titleRow = inner.removeFromTop (Metrics::hit);
         chopCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
+        //  LA PUERTA A LA REJILLA DE DIECISEIS, en el mismo rincon que en EL
+        //  PAD y en el piano: las TRES fichas que editan «el pad que tengas
+        //  elegido» lo cambian desde el mismo sitio. Caja fija de Metrics::hit
+        //  -no entra en el reparto por texto, que ahi el rotulo son dos cifras
+        //  y le tocarian 38 px- y solo si queda ancho para ella y para el
+        //  titulo. Cero de ALTO: comparte el renglon que ya existe.
+        {
+            Lang::takeEnd (titleRow, Metrics::xs);
+            const bool cabe = titleRow.getWidth() >= Metrics::hit * 2;
+            chopPadPickBtn.setVisible (cabe);
+            chopPadPickBtn.setBounds (cabe ? Lang::takeEnd (titleRow, Metrics::hit)
+                                                 .withSizeKeepingCentre (Metrics::hit, Metrics::hit)
+                                           : juce::Rectangle<int>());
+        }
 
         inner.removeFromTop (explainH);                 // painted: what this does
         inner.removeFromTop (Metrics::md);
@@ -3601,6 +3615,17 @@ void MainComponent::resized()
             seqGridBtn .setBounds (Lang::takeStart (tabs, tercio).reduced (Metrics::aireTapa, 0));
             seqPianoBtn.setBounds (Lang::takeStart (tabs, tercio).reduced (Metrics::aireTapa, 0));
             seqStepBtn .setBounds (tabs.reduced (Metrics::aireTapa, 0));
+            //  UNA FILA, UN TRATO. Estas tres se reparten a tercios a mano -no
+            //  pasan por layoutModuleBar- asi que nadie les preguntaba si el
+            //  dibujo cabe en las TRES: dos con dibujo y una sin el no se lee
+            //  como «aqui no cabia», se lee como una tapa a la que le falta
+            //  algo. Es el mismo caso que obligo a la llamada explicita en
+            //  AJUSTES. Despues de colocarlas, que `reparteTapa` mide sobre los
+            //  limites que acaban de ponerse.
+            {
+                juce::TextButton* tb[3] = { &seqGridBtn, &seqPianoBtn, &seqStepBtn };
+                filaDeIconos (tb, 3);
+            }
             inner.removeFromTop (Metrics::sm);
         }
 

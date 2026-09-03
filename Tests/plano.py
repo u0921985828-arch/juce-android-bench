@@ -53,6 +53,19 @@ FICHAS = [
     ("rack",   "MEZCLA"),
     ("chop",   "PADS"),
     ("browse", "CARGAR"),
+    #  Y LAS TRES QUE FALTABAN, que es donde esta regla no podia decir que no.
+    #
+    #  El tour es la que vale: era la UNICA ficha de la app cuyo titulo se
+    #  dibujaba con `drawText` a pelo, o sea sin pasar por `pintaTitulo` y por
+    #  tanto sin publicar su banda. Invisible para el volcado de rotulos y por
+    #  tanto para esta prueba y para la regla de «ningun rotulo pintado debajo
+    #  de un control» — y como ademas no estaba en esta lista, «toda ficha
+    #  publica su titulo» era una afirmacion que nadie comprobaba en la unica
+    #  ficha donde era falsa. Roto a proposito devolviendo su drawText:
+    #  `tour no tiene titulo: se abre y no dice donde estas`.
+    ("tour",   "AJUSTES"),
+    ("vst",    "INSTRUMENTO"),
+    ("inst",   "INSTRUMENTOS"),
 ]
 
 
@@ -110,8 +123,17 @@ def main():
         #  falsos, y de la clase peor, porque aparecieron el dia que esta
         #  prueba empezo a devolver codigo. Cada ficha lleva su numero de capa
         #  y todo lo que cuelga de ella lo hereda; la cara es la 0.
+        #
+        #  Y LA CAPA DE UNA FICHA NO PUEDE SER LA CERO, que es donde esta regla
+        #  decia que si estando mal. `max(...)` se cae a 0 cuando la ficha no
+        #  publico ningun rotulo -o sea justo en el caso que hay que cazar- y
+        #  entonces coge el de la CARA, «ZATI SAMPLER», y lo da por su titulo:
+        #  con el `drawText` del tour devuelto a proposito la prueba seguia
+        #  saliendo verde. Una ficha sin rotulos propios no tiene titulo, y eso
+        #  es exactamente lo que hay que decir.
         capa = max ((r.get ("capa", 0) for r in rot), default=0) if sheet else 0
-        titulos = [r for r in rot if r["tipo"] == "titulo" and r.get ("capa", 0) == capa]
+        titulos = ([] if (sheet and capa == 0)
+                   else [r for r in rot if r["tipo"] == "titulo" and r.get ("capa", 0) == capa])
         for r in sorted (rot, key=lambda r: (r["y"], r["x"])):
             print ("  %-8s %-28s %4d,%-4d %dx%d"
                    % (r["tipo"], r["rotulo"][:28], r["x"], r["y"], r["w"], r["h"]))

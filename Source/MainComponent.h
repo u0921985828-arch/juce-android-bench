@@ -161,8 +161,13 @@ private:
         //  costaba cerrar, elegir y volver a abrir.
         //
         //  Devuelve true si el toque se consumio, y entonces la ficha se queda.
-        //  Quien no la ponga se comporta exactamente como antes - el tour, que
-        //  no se cierra por un roce a proposito.
+        //
+        //  El tour la lleva puesta como todas -entra por `openSheet`- y aun asi
+        //  no se cierra por un roce: lo que lo protege no es no tenerla sino que
+        //  `onDismiss` sea nulo. Su tarjeta ademas mide vacio, asi que TODO
+        //  toque cae «fuera» y llega aqui: tocar un pad que asoma durante el
+        //  tour lo hace sonar, que es exactamente lo que el tour esta pidiendo
+        //  que se toque.
         std::function<bool (juce::Point<int>)> onFuera;
 
         void paint (juce::Graphics& g) override;
@@ -232,11 +237,15 @@ private:
     //  Las dos puertas: la cabecera del piano y la de la ficha del pad. Dos
     //  puertas a una funcion no son dos copias - la que se va deja una tapa
     //  que lleva a ella, y aqui no se va ninguna.
-    juce::TextButton pianoPadPickBtn { "PAD" }, padPadPickBtn { "PAD" };
+    //  Y la tercera: el troceado tambien es de UN pad -«va a pads: 5 6 7 8»- y
+    //  hasta ahora la unica forma de cambiarlo era cerrar, elegir y volver a
+    //  abrir. Es exactamente el viaje que esta puerta existe para quitar.
+    juce::TextButton pianoPadPickBtn { "PAD" }, padPadPickBtn { "PAD" }, chopPadPickBtn { "PAD" };
     bool padPickAbierto = false;
     void abrePadPicker (bool abrir);
     //  Un toque en un pad que asoma por debajo de una ficha abierta. Ver
     //  Sheet::onFuera.
+    int  padDetras (juce::Point<int> p) const;
     bool tocaPadDetras (juce::Point<int> p);
     //  Los siete mandos de la tira, apuntando al paso tocado del pad elegido.
     void refrescaTiraPaso();
@@ -673,8 +682,12 @@ private:
                  const juce::String& texto, const char* tipo);
     void ponTransporte (bool on);
     void ponModoCancion (bool on);
+    //  `apretar` a cero deja el `drawText` de siempre; por encima de cero se
+    //  dibuja con `drawFittedText` a ese factor de apreton. Vive AQUI y no en
+    //  quien llama porque habia CUATRO formas de pintar el titulo de una ficha
+    //  y dos de ellas existian solo porque esta funcion no sabia apretar.
     void pintaTitulo (juce::Graphics& g, juce::Rectangle<int> caja, const juce::String& texto,
-                      const char* tipo = "titulo", bool elipsis = false);
+                      const char* tipo = "titulo", bool elipsis = false, float apretar = 0.0f);
     void paintPadSheetContent (juce::Graphics& g);
     void paintBrowseSheetContent (juce::Graphics& g);
     void paintProjSheetContent (juce::Graphics& g);
@@ -1764,10 +1777,23 @@ private:
     //  De consulta, no de lectura: capitulos de cuatro o cinco lineas.
     //  El manual largo, con el porque de cada decision, es otra cosa y va
     //  fuera; esto es lo que se mira con una mano.
+    //  LO MISMO QUE `Sheet::Cuerpo`, y por lo mismo: el manual trae su propia
+    //  lista desplazable, asi que sus titulos de capitulo se apuntaban con las
+    //  coordenadas del CUERPO -que va desplazado dentro de la ventana- y en la
+    //  capa de quien hubiera pintado antes. Es exactamente el fallo que ya se
+    //  pago con INSTRUMENTOS -pintar desde la tarjeta y maquetar desde el
+    //  cuerpo- contado en el otro sitio de la app que se desplaza solo.
     struct ManualBody : public juce::Component
     {
         std::function<void (juce::Graphics&)> paintBody;
-        void paint (juce::Graphics& g) override { if (paintBody) paintBody (g); }
+        int capa = 0;
+        void paint (juce::Graphics& g) override
+        {
+            UiAudit::capaActual = capa;
+            if (auto* top = getTopLevelComponent())
+                UiAudit::origenPintado = top->getLocalPoint (this, juce::Point<int> (0, 0));
+            if (paintBody) paintBody (g);
+        }
     };
     //  LA BARRA DE TRABAJO.
     //

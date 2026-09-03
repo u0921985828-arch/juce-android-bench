@@ -214,13 +214,14 @@ MainComponent::MainComponent()
 
         //  Las dos puertas. La misma tapa en el mismo sitio -a la derecha de la
         //  cabecera- en las dos fichas que editan "el pad que tengas elegido".
-        for (auto* b : { &pianoPadPickBtn, &padPadPickBtn })
+        for (auto* b : { &pianoPadPickBtn, &padPadPickBtn, &chopPadPickBtn })
         {
             styleButton (*b, kKey);
             b->onClick = [this] { abrePadPicker (! padPickAbierto); };
         }
         seqSheet.addAndMakeVisible (pianoPadPickBtn);
         padSheet.addAndMakeVisible (padPadPickBtn);
+        chopSheet.addAndMakeVisible (chopPadPickBtn);
     }
 
     //  EL MENU DE UNA RANURA. Ver ranuraSheet en la cabecera.
@@ -2163,6 +2164,9 @@ MainComponent::MainComponent()
         startupBusy = false;
 
     manualBody.paintBody = [this] (juce::Graphics& g) { paintManualBody (g); };
+    //  El cuerpo pinta el contenido de SU ficha, asi que lleva su numero de
+    //  capa. Ver ManualBody y UiAudit::capaActual.
+    manualBody.capa = (int) manualSheet.getProperties()["capa"];
     manualScroll.setViewedComponent (&manualBody, false);
     manualScroll.setScrollBarsShown (true, false);
     manualScroll.setScrollBarThickness (8);
@@ -3345,6 +3349,19 @@ void MainComponent::ponIconos()
 
         //  Y la fila que no tenia NINGUNO, que es la que la persona senalo.
         { &midiOutBtn, Iconos::Id::mandar },      { &midiInBtn, Iconos::Id::recibir },
+
+        //  Y LOS SIETE HUECOS QUE `Tests/planos.py` LLEVABA CANTANDO SIN QUE
+        //  NADIE LO CORRIERA. No estaba en `banco.yml` -solo `plano.py`, que es
+        //  otra prueba- asi que su rojo era permanente y mudo. Tres filas:
+        //
+        //    SEL      junto a VACIAR, LAPIZ, GOMA y TIJERAS, en el piano
+        //    GRABAR / CLIC / AUTO   junto a PATRON, en la banda de audio
+        //
+        //  GRABAR no necesitaba dibujo nuevo: `rec` existe desde el primer dia
+        //  y a esa tapa no se le habia asignado nunca.
+        { &pianoSelBtn, Iconos::Id::sel },
+        { &songRecBtn, Iconos::Id::rec },         { &songClickBtn, Iconos::Id::clic },
+        { &autoBtn, Iconos::Id::automacion },
     };
 
     for (const auto& p : tabla)
@@ -3369,7 +3386,13 @@ void MainComponent::ponIconos()
                                  &pianoOctDownBtn, &pianoOctUpBtn, &pianoVerBtn,
                                  &instPackDownBtn, &instPackUpBtn,
                                  &vstPreDown, &vstPreUp, &vstOctDown, &vstOctUp,
-                                 &zoomOutButton, &zoomInButton, &zoomFitButton })
+                                 &zoomOutButton, &zoomInButton, &zoomFitButton,
+                                 //  «1 COMPAS» dice CUANTO SE VE, o sea el
+                                 //  ESTADO del zoom del piano y no una accion:
+                                 //  no hay verbo que dibujar, y el rotulo ya
+                                 //  hace el trabajo que haria el dibujo. Es la
+                                 //  misma clase que pianoVerBtn.
+                                 &pianoZoomBtn })
         b->getProperties().set ("valor", 1);
 
     //  LOS SEIS EFECTOS, por su orden en la fila. Es la unica fila de la app
@@ -4361,9 +4384,15 @@ void MainComponent::openSheet (Sheet& s, juce::TextButton& toggle)
 
     //  Y CON ELLA, EL PERMISO PARA TOCAR LOS PADS QUE ASOMAN. Ver
     //  Sheet::onFuera y tocaPadDetras. Se pone AQUI, que es el embudo por el
-    //  que pasa toda ficha que se abre, y no en once sitios: el tour no entra
-    //  por aqui, que es justo la unica que no debe cerrarse ni desviarse por
-    //  un roce.
+    //  que pasa toda ficha que se abre, y no en once sitios.
+    //
+    //  Y el tour SI entra por aqui -dos veces: la tapa TOUR de AJUSTES y el
+    //  primer tick del arranque-, que es lo contrario de lo que decia este
+    //  comentario. Que no se cierre ni se desvie por un roce no lo consigue no
+    //  pasar por este embudo: lo consigue que `tourSheet.sheetBounds` este
+    //  vacio -ningun punto cae «dentro», asi que `Sheet::mouseDown` no llega a
+    //  preguntar- y que `onDismiss` sea nulo. El comentario mandaba a buscar
+    //  una condicion que no existe, que es lo que se le reprocha a un manual.
     s.onFuera = [this] (juce::Point<int> p) { return tocaPadDetras (p); };
 
     resized();
@@ -4926,7 +4955,8 @@ void MainComponent::ponModoCancion (bool on)
 }
 
 void MainComponent::pintaTitulo (juce::Graphics& g, juce::Rectangle<int> caja,
-                                 const juce::String& texto, const char* tipo, bool elipsis)
+                                 const juce::String& texto, const char* tipo, bool elipsis,
+                                 float apretar)
 {
     //  LO QUE SE APUNTA ES LO QUE OCUPA EL TEXTO, no la banda que se le dio.
     //
@@ -4937,7 +4967,20 @@ void MainComponent::pintaTitulo (juce::Graphics& g, juce::Rectangle<int> caja,
     //  debajo de la x, y ninguna de las reglas del banco podia verlo porque un
     //  rotulo pintado no es un componente y la banda solapaba de todas formas.
     apunta (g, caja, texto, tipo);
-    g.drawText (texto, caja, Lang::start(), elipsis);
+
+    //  Y APRETAR ES DE ESTA FUNCION, no de quien la llama. Habia CUATRO formas
+    //  de pintar el titulo de una ficha -esta, `UiAudit::rotulo` + `drawText`
+    //  en la mesa, `apunta` + `drawFittedText` en el secuenciador y NADA en el
+    //  tour- y las dos del medio existian solo porque aqui no se podia apretar.
+    //  Una regla escrita cuatro veces son cuatro reglas; la cuarta es la que un
+    //  dia se escribe mal, y en el tour ya lo estaba: era el unico titulo de
+    //  ficha que no publicaba su banda, o sea invisible para el volcado de
+    //  rotulos.
+    //
+    //  `apretar` a cero deja el `drawText` de siempre, asi que las llamadas
+    //  que ya habia no mueven un pixel.
+    if (apretar > 0.0f) g.drawFittedText (texto, caja, Lang::start(), 1, apretar);
+    else                g.drawText (texto, caja, Lang::start(), elipsis);
 }
 
 
@@ -5508,6 +5551,7 @@ void MainComponent::selectPad (int index)
         const auto dosCifras = juce::String (index + 1).paddedLeft ('0', 2);
         pianoPadPickBtn.setButtonText (dosCifras);
         padPadPickBtn  .setButtonText (dosCifras);
+        chopPadPickBtn .setButtonText (dosCifras);
     }
     updateControlsFromPad (index);
     waveform.setSample (uiSample[(size_t) index]);
@@ -5566,6 +5610,18 @@ void MainComponent::selectPad (int index)
         refreshStepGrid();      // el carril marcado es el del pad elegido
         seqSheet.repaint();     // y la cabecera dice de que pad son las notas
     }
+    //  Y EL TROCEADO, que ya se podia cambiar de pad DESDE QUE la ficha pasa
+    //  por `openSheet` -o sea desde que un toque en un pad que asoma llega a
+    //  `selectPad`- y no se enteraba: la cabecera decia «PAD 05», los golpes
+    //  eran los del pad anterior y la lista de destinos tambien. Un pad y su
+    //  ficha contando cosas distintas es el fallo que ya costo una medida con
+    //  el corte del pad.
+    if (chopSheet.isVisible())
+    {
+        if (chopHitsFor != selectedPad) refreshChopHits();
+        recalculaCortes();
+        refreshChopSheet();
+    }
     if (padPickAbierto) refrescaPadPicker();
 }
 
@@ -5581,7 +5637,11 @@ void MainComponent::selectPad (int index)
 //  medio tapado responde por su mitad visible y ni un pixel mas. Se toca lo que
 //  se ve, que es la unica regla que no hay que explicar - y para llegar a los
 //  dieciseis esta la rejilla de padPickSheet.
-bool MainComponent::tocaPadDetras (juce::Point<int> p)
+//  QUE PAD CAE DEBAJO DEL PUNTO, o -1. Sale de dentro de `tocaPadDetras` en
+//  cuanto tuvo tres clientes -el toque normal, la ficha del instrumento y el
+//  menu de INSTRUMENTOS-, por lo mismo que `normaliza` salio de dentro de
+//  `render`: dos busquedas del mismo pad escritas por su cuenta se separan.
+int MainComponent::padDetras (juce::Point<int> p) const
 {
     //  Las coordenadas cuadran porque la ficha se pone en getLocalBounds() y no
     //  en el area segura: su origen es (0,0), o sea el mismo sistema en el que
@@ -5589,16 +5649,20 @@ bool MainComponent::tocaPadDetras (juce::Point<int> p)
     for (int i = 0; i < pads.size(); ++i)
         if (auto* b = pads[i])
             if (b->isVisible() && b->getBounds().contains (p))
-            {
-                //  padClicked es el embudo de la cara: suena, anuncia la
-                //  presion, graba si REC esta armado y termina en selectPad.
-                //  Mismo gesto, mismo resultado - que es lo unico que hace que
-                //  no haya que aprender nada nuevo.
-                padClicked (i);
-                return true;
-            }
+                return i;
+    return -1;
+}
 
-    return false;
+bool MainComponent::tocaPadDetras (juce::Point<int> p)
+{
+    const int i = padDetras (p);
+    if (i < 0) return false;
+
+    //  padClicked es el embudo de la cara: suena, anuncia la presion, graba si
+    //  REC esta armado y termina en selectPad. Mismo gesto, mismo resultado -
+    //  que es lo unico que hace que no haya que aprender nada nuevo.
+    padClicked (i);
+    return true;
 }
 
 //  LA REJILLA DE DIECISEIS, ABIERTA O CERRADA. Ver padPickSheet en la cabecera.
@@ -11105,6 +11169,24 @@ void MainComponent::openInstSheet()
     instPack = juce::jlimit (0, juce::jmax (0, (int) instCatalogo.size() - 1), instPack);
     refreshInst();
     closeAllSheets();
+
+    //  Y EL TOQUE AL PAD DE DETRAS. Esta ficha tampoco pasa por `openSheet`, y
+    //  aqui el toque NO es `tocaPadDetras`: lo que esta ficha edita no es el
+    //  pad elegido sino su DESTINO -la rejilla de arriba, la que dice DONDE- y
+    //  seleccionar un pad que la ficha ignora seria un toque que parece hacer
+    //  algo. Se escribe el destino, que es exactamente lo que hace esa rejilla.
+    instSheet.onFuera = [this] (juce::Point<int> p)
+    {
+        const int i = padDetras (p);
+        if (i < 0) return false;
+        instDestPad   = i;
+        instBancoDest = i / kPadsPerBank;
+        refreshInst();
+        resized();
+        repaint();
+        return true;
+    };
+
     instSheet.setVisible (true);
     instSheet.toFront (false);
     resized();
@@ -11405,6 +11487,35 @@ void MainComponent::abreVst()
     vstTeclado.setBase (juce::jlimit (-24, 12, (t >= 0 ? t / 12 : (t - 11) / 12) * 12));
     refreshVst();
     closeAllSheets();
+
+    //  Y EL TOQUE AL PAD DE DETRAS, que esta ficha no tenia porque no pasa por
+    //  `openSheet`. Cerrarse al tocar un pad es justo lo contrario de lo que se
+    //  espera de la ficha que EDITA un pad: obliga a cerrar, elegir y volver a
+    //  abrir con la rejilla delante todo el rato, que es el viaje que
+    //  `tocaPadDetras` existe para quitar.
+    //
+    //  Aqui no vale `tocaPadDetras`, que termina en `selectPad`: esta ficha
+    //  mira `vstPad` y no el pad elegido, asi que seleccionar y no retargetear
+    //  seria un toque que parece hacer algo y no hace nada. Y si el pad tocado
+    //  NO lleva instrumento, la ficha se cierra -devolviendo false-, porque una
+    //  ficha de instrumento de un pad sin instrumento no existe.
+    vstSheet.onFuera = [this] (juce::Point<int> p)
+    {
+        const int i = padDetras (p);
+        if (i < 0 || ! padEsInstrumento (i)) return false;
+        //  Retargeteado a mano y no llamando a `abreVst`: esa reasigna este
+        //  mismo `std::function` desde DENTRO de su propia llamada, o sea
+        //  destruye el objeto que se esta ejecutando.
+        selectPad (i);
+        vstPad = i;
+        const int t = (int) std::lround (padPitch[(size_t) vstPad]);
+        vstTeclado.setBase (juce::jlimit (-24, 12, (t >= 0 ? t / 12 : (t - 11) / 12) * 12));
+        refreshVst();
+        resized();
+        repaint();
+        return true;
+    };
+
     vstSheet.setVisible (true);
     vstSheet.toFront (false);
     resized();

@@ -88,6 +88,22 @@ namespace Iconos
         //  flecha girada: la bandeja de MANDAR esta hueca y la de RECIBIR
         //  llena, que es lo que separa un espejo de una copia.
         aspecto, reves, ruido, sinsolo, comprimir, mandar, recibir,
+        //  --- Y LOS TRES QUE `Tests/planos.py` SEGUIA CANTANDO -------------
+        //
+        //  La regla de la fila lleva tandas diciendo que faltan estos tres y
+        //  nadie la corria: `planos.py` no estaba en `banco.yml` -solo
+        //  `plano.py`, que es otra prueba- asi que sus siete huecos eran rojo
+        //  permanente sin que nada fallara. Es *un numero que nadie mira se
+        //  publica*, otra vez.
+        //
+        //    SEL   junto a VACIAR, LAPIZ, GOMA y TIJERAS, en el piano
+        //    CLIC  junto a GRABAR y AUTO, en la banda de audio de CANCION
+        //    AUTO  la misma fila
+        //
+        //  Y GRABAR no necesitaba dibujo nuevo: `rec` existe desde el primer
+        //  dia y a esa tapa no se le habia asignado. Un icono que ya esta y no
+        //  se usa es la mitad de un hueco.
+        sel, clic, automacion,
         kNum
     };
 
@@ -143,6 +159,8 @@ namespace Iconos
             case Id::ruido: return "ruido";            case Id::sinsolo: return "sinsolo";
             case Id::comprimir: return "comprimir";    case Id::mandar: return "mandar";
             case Id::recibir: return "recibir";
+            case Id::sel: return "sel";                case Id::clic: return "clic";
+            case Id::automacion: return "automacion";
             case Id::ninguno:
             case Id::kNum:
             default: return "ninguno";
@@ -1034,6 +1052,54 @@ namespace Iconos
                 linea (L, 12.0f, 2.5f, 12.0f, 8.5f);
                 punta (R, 12.0f, 12.5f, 0.0f, 1.0f, 4.2f);
                 break;
+
+            //  SEL: las CUATRO ESQUINAS de un marco, o sea lo que un marquesina
+            //  deja al soltar el dedo. No un rectangulo entero, que en esta
+            //  tabla ya es media docena de cosas -`copiar`, `pegar`, `pad`- y
+            //  se separaria de ellas por el grosor del trazo y por nada mas,
+            //  que es la definicion de dos iconos que son el mismo dibujo. Lo
+            //  que la hace inconfundible es el HUECO en mitad de cada lado.
+            case Id::sel:
+            {
+                const float x0 = 3.5f, x1 = 20.5f, y0 = 4.5f, y1 = 19.5f, c = 4.5f;
+                linea (L, x0, y0, x0 + c, y0);   linea (L, x1 - c, y0, x1, y0);
+                linea (L, x0, y1, x0 + c, y1);   linea (L, x1 - c, y1, x1, y1);
+                linea (L, x0, y0, x0, y0 + c);   linea (L, x0, y1 - c, x0, y1);
+                linea (L, x1, y0, x1, y0 + c);   linea (L, x1, y1 - c, x1, y1);
+                break;
+            }
+
+            //  CLIC: una CAMPANA con su badajo, y no un metronomo -que es lo
+            //  primero que sale-, porque el metronomo YA esta dibujado en esta
+            //  tabla con el nombre `tap`: un triangulo con su varilla y su
+            //  contrapeso. Dos dibujos del mismo aparato para dos tapas que
+            //  ademas viven a dos filas una de otra es exactamente lo que la
+            //  prueba de pares existe para no dejar pasar.
+            case Id::clic:
+                L.startNewSubPath (5.5f, 17.0f);
+                L.cubicTo (5.5f, 10.0f, 7.5f, 6.5f, 12.0f, 6.5f);
+                L.cubicTo (16.5f, 6.5f, 18.5f, 10.0f, 18.5f, 17.0f);
+                L.closeSubPath();
+                linea (L, 4.0f, 17.0f, 20.0f, 17.0f);
+                linea (L, 12.0f, 3.0f, 12.0f, 6.5f);
+                R.addEllipse (10.5f, 18.0f, 3.0f, 3.0f);
+                break;
+
+            //  AUTOMACION: la rampa de un carril, con sus nodos CUADRADOS. Los
+            //  redondos son de `eq` y de `cmp` -las dos curvas de esta tabla- y
+            //  aqui la linea es RECTA a trozos, que es lo que de verdad separa
+            //  una automatizacion de una respuesta: una se escribe punto a
+            //  punto y la otra sale de una formula. Sin ejes, que los de `cmp`
+            //  son suyos.
+            case Id::automacion:
+            {
+                const float x[4] = { 3.0f, 9.0f, 15.0f, 21.0f };
+                const float y[4] = { 18.0f, 8.0f, 13.0f, 5.0f };
+                L.startNewSubPath (x[0], y[0]);
+                for (int i = 1; i < 4; ++i) L.lineTo (x[i], y[i]);
+                for (int i = 0; i < 4; ++i) R.addRectangle (x[i] - 1.7f, y[i] - 1.7f, 3.4f, 3.4f);
+                break;
+            }
 
             // --- LOS DIECISEIS INSTRUMENTOS ------------------------------
 

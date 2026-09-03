@@ -172,6 +172,14 @@ jobs:
       - name: El plano de cada pantalla
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/plano.py
+      #  Y LAS 39 PANTALLAS DIBUJADAS, que es OTRA prueba y no la de arriba:
+      #  `plano.py` mira si una ficha tiene titulo y `planos.py` mira las FILAS
+      #  -que ninguna salga con unas tapas dibujadas y otras no-. No estaba
+      #  aqui, asi que sus siete huecos llevaban tandas en rojo sin que nada
+      #  fallara: *un numero que nadie mira se publica*.
+      - name: Los planos de las 39 pantallas
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/planos.py
       - name: Las fotos de la ficha de Play
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/store.py
