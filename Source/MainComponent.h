@@ -1167,6 +1167,9 @@ public:
     //  nace -sonidos, cancion y envios- y otra vez despues de NUEVO, que es el
     //  otro camino por el que se llega a un proyecto vacio.
     void auditNuevo();
+    //  CUANTO CUESTA EL PRIMER SONIDO, con la maquina recien instalada. Ver
+    //  auditPrimerSonido y Tests/carga.py.
+    void auditPrimerSonido();
     //  Ver Tests/kit.py: guarda el banco de delante como kit y vuelca lo que
     //  quedo EN DISCO. Se mide el resultado -los ficheros y su tamano- y no que
     //  la funcion no se queje, que es la diferencia entre comprobar y mirar

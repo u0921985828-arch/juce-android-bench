@@ -396,7 +396,14 @@ namespace UiAudit
              << ",\"hit\":" << (interactive && ! insideSlider ? 1 : 0)
              << ",\"inSlider\":" << (insideSlider ? 1 : 0)
              << ",\"capa\":" << capa
-             << ",\"scrolled\":" << (scrolled ? 1 : 0);
+             << ",\"scrolled\":" << (scrolled ? 1 : 0)
+             //  Y SI TIENE NOMBRE PARA QUIEN NO LO VE. `Component::getTitle` es
+             //  lo que un lector de pantalla lee: sin el, un control se anuncia
+             //  por su clase -«boton»- y la app entera suena igual. No es una
+             //  regla dura -un chip de banco no necesita mas nombre que su
+             //  letra- pero sin la cifra, «esta accesible» y «tiene nombre el
+             //  10 %» son la misma corrida en verde. Ver Tests/carga.py.
+             << ",\"nombre\":" << (c.getTitle().isNotEmpty() ? 1 : 0);
 
         //  WHAT IS ON THE PAD. The one piece of state worth carrying in a
         //  layout dump: after leaving the app and coming back, is the sound

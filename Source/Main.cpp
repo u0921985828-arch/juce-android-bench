@@ -516,6 +516,11 @@ public:
                     {
                         c2->auditNuevo();
                     }
+                    //  CUANTO CUESTA EL PRIMER SONIDO. Ver Tests/carga.py.
+                    else if (UiAudit::env ("ZATI_PRIMER").isNotEmpty())
+                    {
+                        c2->auditPrimerSonido();
+                    }
                     //  GUARDAR EL BANCO COMO KIT, y volcar lo que quedo en el
                     //  disco. Ver Tests/kit.py.
                     else if (const auto k = UiAudit::env ("ZATI_KIT"); k.isNotEmpty())

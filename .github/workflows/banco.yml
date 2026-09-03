@@ -154,6 +154,11 @@ jobs:
       - name: Con que abre la maquina
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/nuevo.py
+      #  Lo que cada pantalla pide, y lo unico que juzga: que la maquina suene
+      #  al primer toque con la bienvenida delante.
+      - name: Lo que pide cada pantalla, y el primer sonido
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/carga.py
       - name: Que la sesion vuelva entera
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/session.py

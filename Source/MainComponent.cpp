@@ -2003,16 +2003,27 @@ MainComponent::MainComponent()
             fxButtons.add (b);
         }
 
-        //  LAS SEIS RANURAS NACEN LLENAS Y EN ORDEN, y no vacias.
+        //  LAS SEIS RANURAS NACEN VACIAS, que es lo que NUEVO ya hacia.
         //
-        //  Este es el estado del CONSTRUCTOR, o sea lo que hay antes de que
-        //  nadie diga que proyecto se abre: si `restoreSession` encuentra una
-        //  sesion o un proyecto, lo que valga aqui se sobreescribe; si se pulsa
-        //  NUEVO, `newProject` las vacia. Lo que no puede es quedarse a ceros
-        //  por omision - `std::array<int,6> {}` deja SEIS FLT, que es el mismo
-        //  fallo que `notaViva` y que el cero de `padAncho`: un valor por
-        //  defecto que ademas es un valor valido.
-        for (int s = 0; s < kNumRanuras; ++s) slotFx[(size_t) s] = s;
+        //  Nacian LLENAS y en orden -FLT HPF DRV DLY BIT REV- y eso dejaba la
+        //  maquina con DOS caras distintas para «vacia»: una instalacion limpia
+        //  enseñaba seis efectos que nadie habia puesto y NUEVO dejaba seis
+        //  huecos. El argumento de la tanda de las ranuras estaba escrito y se
+        //  aplico a un solo camino: *«una maquina recien abierta enseñaba seis
+        //  efectos que nadie habia puesto, con el mismo argumento que ya costo
+        //  una medida en los envios: una mezcla se hace subiendo lo que
+        //  quieres, no apagando lo que no»*.
+        //
+        //  Y no rompe lo de antes, que es lo unico que habia que comprobar: un
+        //  proyecto SIN la propiedad `slots` no depende de este valor - lo
+        //  repone `applyState`, con la fila de siempre, en su propia rama.
+        //  Aqui lo que se decide es con que abre una maquina en la que nadie ha
+        //  guardado nada todavia.
+        //
+        //  `std::array<int,6> {}` seguiria estando mal: cero es un tipo VALIDO
+        //  -FLT- y eso es el fallo de `notaViva` y del cero de `padAncho`. Se
+        //  escribe la sentinela a mano.
+        for (int s = 0; s < kNumRanuras; ++s) slotFx[(size_t) s] = kSlotVacia;
     }
 
     //  Dragging the hero's handles is the same edit as the START/END faders in
@@ -6650,6 +6661,36 @@ void MainComponent::retranslateUi()
     for (int i = 0; i < langButtons.size(); ++i)
         if (auto* b = langButtons[i])
             b->setToggleState (i == (int) Lang::current(), juce::dontSendNotification);
+
+    //  Y EL NOMBRE DE TODO LO DEMAS, PARA QUIEN NO VE LA PANTALLA.
+    //
+    //  `refreshAccessibleNames` nombra a mano lo que no tiene rotulo -los 64
+    //  pads, los dieciseis canales de la mesa, los mandos-, y eso deja fuera a
+    //  todo lo que SI lo tiene: medido con `Tests/carga.py`, **117 de 647
+    //  controles** llevaban nombre, con VEINTIDOS pantallas de treinta y nueve
+    //  al CERO POR CIENTO. Un control sin `getTitle` se anuncia por su clase, o
+    //  sea que la app entera suena a «boton».
+    //
+    //  Y el rotulo YA ES el nombre: si la tapa dice VACIAR, «VACIAR» es
+    //  exactamente lo que hay que leer en voz alta. Lo unico que faltaba era
+    //  copiarlo, y aqui -al final de `retranslateUi`- porque aqui los rotulos
+    //  ya estan puestos EN EL IDIOMA QUE TOCA: hacerlo en el constructor los
+    //  dejaria clavados en el idioma del arranque, que es el mismo fallo que
+    //  las tres pestañas de AJUSTES.
+    //
+    //  Sin pisar lo que ya tiene nombre a mano: ahi el rotulo dice menos que la
+    //  frase escrita -«01» contra «Pad 1»- y quien la escribio sabia por que.
+    std::function<void (juce::Component&)> nombra = [&] (juce::Component& c)
+    {
+        for (auto* h : c.getChildren())
+        {
+            if (auto* b = dynamic_cast<juce::Button*> (h))
+                if (b->getTitle().isEmpty() && b->getButtonText().isNotEmpty())
+                    b->setTitle (b->getButtonText());
+            nombra (*h);
+        }
+    };
+    nombra (*this);
 
     resized();
     repaint();

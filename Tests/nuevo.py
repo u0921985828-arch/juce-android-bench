@@ -88,14 +88,30 @@ def main():
             fallos.append ("%s: la cancion es %s y se esperaba el patron 1 en el primer hueco"
                            % (que, carriles))
 
-        print ("%-10s %2d pads   envios max %.2f suma %.2f   carril 0 %s"
-               % (que, d["pads"], d["envmax"], d["envsuma"], carriles[0]))
+        #  Y LA FILA DE EFECTOS VACIA. Nacia LLENA en el constructor y vacia en
+        #  NUEVO, asi que la maquina tenia DOS caras para «vacia»: una
+        #  instalacion limpia enseñaba FLT HPF DRV DLY BIT REV -seis efectos que
+        #  nadie ha puesto- y NUEVO seis huecos. Esta comprobacion no miraba las
+        #  ranuras, asi que la diferencia no fallaba: se publicaba.
+        #
+        #  Un proyecto de otra epoca es OTRA cosa y sigue volviendo en orden:
+        #  eso lo mide `Tests/session.py` con sus cuatro `project.xml`
+        #  congelados. Aqui se mide con que abre una maquina en la que nadie ha
+        #  guardado nada.
+        if d.get ("ranuras") != [-1] * 6:
+            fallos.append ("%s: la fila de efectos abre en %s y se esperaba vacia"
+                           % (que, d.get ("ranuras", "?")))
+
+        print ("%-10s %2d pads   envios max %.2f suma %.2f   ranuras %s   carril 0 %s"
+               % (que, d["pads"], d["envmax"], d["envsuma"],
+                  d.get ("ranuras", "?"), carriles[0]))
 
     #  Y QUE LOS DOS CAMINOS DIGAN LO MISMO en todo menos en los sonidos, que
     #  es la comprobacion que caza el fallo de verdad: no que cada uno este
     #  bien por separado, sino que no se separen.
     a, n = filas["arranque"], filas["nuevo"]
-    if a["carriles"] != n["carriles"] or a["envmax"] != n["envmax"]:
+    if (a["carriles"] != n["carriles"] or a["envmax"] != n["envmax"]
+            or a.get ("ranuras") != n.get ("ranuras")):
         fallos.append ("los dos caminos a un proyecto vacio no coinciden")
 
     print()

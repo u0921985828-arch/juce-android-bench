@@ -1002,6 +1002,70 @@ void MainComponent::auditNiveles()
     }
 }
 
+//  ==========================================================================
+//  CUANTO CUESTA EL PRIMER SONIDO. Ver Tests/carga.py.
+//
+//  Es la unica cifra de esta casa que mide el PRODUCTO y no una pieza: entre
+//  que alguien instala esto y oye algo suyo no puede haber mas que un toque. Un
+//  sampler que abre pidiendo una cuenta, o con un asistente de tres pasos, o
+//  con los sesenta y cuatro pads vacios, se desinstala antes de sonar - y eso
+//  no lo caza ninguna de las once reglas del banco, porque una pantalla de
+//  bienvenida se maqueta perfecta.
+//
+//  Se mide con la maquina RECIEN INSTALADA -HOME limpio, sin sesion- y con la
+//  BIENVENIDA puesta, que es el estado real de la primera vez y no el que sale
+//  de abrir la app dos veces: la tarjeta del tour cubre la ventana entera, y si
+//  algun dia se tragara el toque la maquina seria muda hasta que alguien
+//  encuentre SALTAR.
+//
+//  Y POR EL GESTO, que es donde vive la respuesta: se construye un `MouseEvent`
+//  y se llama a `PadButton::mouseDown`. Llamar a `padClicked` por dentro se
+//  salta el `Sheet::mouseDown` de la tarjeta que hay delante, que es
+//  exactamente lo que hay que comprobar.
+void MainComponent::auditPrimerSonido()
+{
+    engine.prepareToPlay (48000.0, 128);
+    juce::AudioBuffer<float> b (2, 128);
+    auto vivas = [&]
+    {
+        b.clear();
+        engine.renderNextBlock (b, 0, 128);
+        return engine.getActiveVoiceCount();
+    };
+
+    int conSonido = 0;
+    for (int i = 0; i < kNumPads; ++i) if (padHasSample[(size_t) i]) ++conSonido;
+
+    //  Y LA BIENVENIDA SE LEVANTA AQUI, que es la unica forma de medirla: con
+    //  `ZATI_AUDIT` la tarjeta no se enseña NUNCA a proposito -una tarjeta
+    //  encima serian diecinueve fichas medidas a traves de ella-, asi que
+    //  esperar a que salga sola es esperar a algo que el banco apaga. Se pone
+    //  el estado que se quiere medir, igual que `ZATI_DLC` planta los packs.
+    showTour (0);
+    openSheet (tourSheet, setButton);
+    const int bienvenida = tourSheet.isVisible() ? 1 : 0;
+
+    auto* pad = pads[0];
+    const auto punto = juce::Point<float> ((float) (pad->getWidth() / 2),
+                                           (float) (pad->getHeight() / 2));
+    const auto ahora = juce::Time::getCurrentTime();
+    juce::MouseEvent ev (juce::Desktop::getInstance().getMainMouseSource(),
+                         punto, juce::ModifierKeys(), 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                         pad, pad, ahora, punto, ahora, 1, false);
+
+    engine.postPanic();
+    vivas();
+    pad->mouseDown (ev);
+    const int voces = vivas();
+    pad->mouseUp (ev);
+
+    std::cout << "{\"primer\":1"
+              << ",\"bienvenida\":" << bienvenida
+              << ",\"pads_con_sonido\":" << conSonido
+              << ",\"voces\":" << voces
+              << ",\"toques\":1}" << std::endl;
+}
+
 void MainComponent::auditNuevo()
 {
     auto fila = [this] (const char* que)
@@ -1019,8 +1083,17 @@ void MainComponent::auditNuevo()
                 envSuma += v;
             }
 
+        //  Y LA FILA DE EFECTOS, que es lo que esta comprobacion no miraba y por
+        //  eso los dos caminos podian discrepar sin que nada fallara: el
+        //  arranque limpio enseñaba FLT HPF DRV DLY BIT REV -seis efectos que
+        //  nadie ha puesto- y NUEVO dejaba seis huecos. Dos caras para «vacia».
+        juce::String ranuras;
+        for (int sr = 0; sr < kNumRanuras; ++sr)
+            ranuras += (sr ? "," : "") + juce::String (slotFx[(size_t) sr]);
+
         std::cout << "{\"nuevo\":\"" << que << "\",\"pads\":" << conSonido
                   << ",\"envmax\":" << envMax << ",\"envsuma\":" << envSuma
+                  << ",\"ranuras\":[" << ranuras << "]"
                   << ",\"largo\":" << engine.getSongLength() << ",\"carriles\":[";
         for (int ln = 0; ln < AudioEngine::kSongLanes; ++ln)
         {
