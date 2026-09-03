@@ -42,6 +42,20 @@ namespace
 
 AudioEngine::AudioEngine()
 {
+    //  LOS PARAMETROS DE LOS EFECTOS, DE SU TABLA. Estaban en diecinueve
+    //  llaves de inicializacion repartidas por la cabecera mas dos arrays de
+    //  cuatro, y ahora son una tabla al lado de `fxP`, que es lo que hace que
+    //  un tipo nuevo sea una fila. Y aqui y no en `prepareToPlay`: esa se
+    //  vuelve a llamar en cada cambio de ruta, asi que devolver un efecto a su
+    //  valor de fabrica ahi significaria que enchufar unos cascos deshace el
+    //  ecualizador en mitad de una sesion.
+    for (int f = 0; f < kNumFx; ++f)
+        for (int par = 0; par < 3; ++par)
+            fxP[(size_t) f][(size_t) par].store (kFxDef[f][par], std::memory_order_relaxed);
+    //  Y el EQ, que ademas los APLICA: ver setFxParam.
+    eqFx.ponAncho  (kFxDef[kFxEq][0]);
+    eqFx.ponSalida (kFxDef[kFxEq][1]);
+
     for (auto& l : patternLength) l.store (kMinPatLen, std::memory_order_relaxed);
 
     //  -1 is "silent". Zero-initialised would mean "parked at the very start",
@@ -610,20 +624,13 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     //     here is: a raw jump in a gain that is being summed is a click.
     const int  busChans = juce::jmin (2, out.getNumChannels());
     const float kSend   = 1.0f - std::exp ((float) -numSamples / (0.020f * (float) systemSampleRate));
-    const float fxMixNow[kNumFx] =
-    {
-        juce::jlimit (0.0f, 1.0f, fxMix.load  (std::memory_order_relaxed)),
-        juce::jlimit (0.0f, 1.0f, hpMix.load  (std::memory_order_relaxed)),
-        juce::jlimit (0.0f, 1.0f, drvMix.load (std::memory_order_relaxed)),
-        juce::jlimit (0.0f, 1.0f, dlyMix.load (std::memory_order_relaxed)),
-        juce::jlimit (0.0f, 1.0f, crMix.load  (std::memory_order_relaxed)),
-        juce::jlimit (0.0f, 1.0f, rvMix.load  (std::memory_order_relaxed)),
-        juce::jlimit (0.0f, 1.0f, eqMix.load  (std::memory_order_relaxed)),
-        juce::jlimit (0.0f, 1.0f, dynMix[0].load (std::memory_order_relaxed)),
-        juce::jlimit (0.0f, 1.0f, dynMix[1].load (std::memory_order_relaxed)),
-        juce::jlimit (0.0f, 1.0f, dynMix[2].load (std::memory_order_relaxed)),
-        juce::jlimit (0.0f, 1.0f, dynMix[3].load (std::memory_order_relaxed))
-    };
+    //  La mezcla de cada tipo, que es siempre `param[2]`. Era una lista
+    //  literal de once cargas atomicas, o sea un sitio mas que escribir a mano
+    //  por cada tipo nuevo — y el peor de los tres, porque lo que falta se
+    //  inicializa a 0.0f y un efecto MUDO no da ningun aviso. Ver `fxP`.
+    float fxMixNow[kNumFx];
+    for (int f = 0; f < kNumFx; ++f)
+        fxMixNow[f] = juce::jlimit (0.0f, 1.0f, fxP[(size_t) f][2].load (std::memory_order_relaxed));
 
     float sendGain[kNumPads][kNumFx];
     float dryGain[kNumPads];
@@ -1733,8 +1740,8 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             dyn[(size_t) d].procesa (fxBus[f].getArrayOfWritePointers(), chans,
                                      startSample, numSamples,
                                      (Dinamica::Modo) d,
-                                     dynP0[(size_t) d].load (std::memory_order_relaxed),
-                                     dynP1[(size_t) d].load (std::memory_order_relaxed));
+                                     fxP[(size_t) f][0].load (std::memory_order_relaxed),
+                                     fxP[(size_t) f][1].load (std::memory_order_relaxed));
             //  Y lo que baja, para la casilla de lectura. Un compresor que no
             //  dice cuanto comprime es un compresor invisible.
             dynRed[(size_t) d].store (dyn[(size_t) d].reduccionDb(),
@@ -2281,49 +2288,34 @@ void AudioEngine::renderClips (juce::AudioBuffer<float>& out, int offset, int n,
     }
 }
 
-//  LOS VEINTIUN PARAMETROS, EN UN SOLO SITIO. Ver la cabecera de setFxParam.
+//  LOS PARAMETROS DE UN EFECTO, EN UN SOLO SITIO — y ahora de verdad.
+//
+//  Esta funcion era un `switch (fx * 3 + par)` con TREINTA Y TRES casos
+//  escritos uno a uno, bajo una cabecera que decia «los veintiun parametros» y
+//  ya mentia. Con veintiun tipos serian sesenta y tres, y lo que hace caro ese
+//  numero no es escribirlo: es que un caso que falte cae en el `default` y
+//  entonces el mando se mueve y no pasa nada, sin un aviso de nadie.
+//
+//  Con `fxP` es una escritura. Quedan DOS excepciones y las dos son reales:
+//
+//   · El EQ guarda su ANCHO y su SALIDA dentro de `Eq5` porque alli no son un
+//     numero sino un estado — `ponAncho` marca los coeficientes por recalcular
+//     y `ponSalida` a proposito no lo hace—. `fxP` sigue siendo el dueno del
+//     valor (es lo que se guarda y lo que viaja al rebote); `eqFx` es donde se
+//     APLICA. Lo dice ya el comentario de `Eq5::ponAncho`: «los dos viven en
+//     fxParams como los de cualquier otro efecto; aqui solo se aplican».
+//   · La mezcla se acota a 0..1 en la puerta, como hacia `setDynMix`.
 void AudioEngine::setFxParam (int fx, int par, float v) noexcept
 {
     if (! juce::isPositiveAndBelow (fx, kNumFx) || ! juce::isPositiveAndBelow (par, 3)) return;
 
-    switch (fx * 3 + par)
+    fxP[(size_t) fx][(size_t) par].store (par == 2 ? juce::jlimit (0.0f, 1.0f, v) : v,
+                                          std::memory_order_relaxed);
+
+    if (fx == kFxEq)
     {
-        case  0: setFltSweep  (v); break;
-        case  1: setFltReso   (v); break;
-        case  2: setFltMix    (v); break;
-        case  3: setHpFreq    (v); break;
-        case  4: setHpReso    (v); break;
-        case  5: setHpMix     (v); break;
-        case  6: setFxDrive   (v); break;
-        case  7: setDrvTone   (v); break;
-        case  8: setDrvMix    (v); break;
-        case  9: setDlyTime   (v); break;
-        case 10: setDlyFb     (v); break;
-        case 11: setDlyMix    (v); break;
-        case 12: setCrushBits (v); break;
-        case 13: setCrushRate (v); break;
-        case 14: setCrushMix  (v); break;
-        case 15: setRevSize   (v); break;
-        case 16: setRevDamp   (v); break;
-        case 17: setRevMix    (v); break;
-        case 18: setEqAncho   (v); break;
-        case 19: setEqSalida  (v); break;
-        case 20: setEqMix     (v); break;
-        //  LOS CUATRO DE DINAMICA. Tres parametros cada uno y en el mismo
-        //  orden que la tabla `fxDefs`: p0, p1 y MIX.
-        case 21: setDynP0  (0, v); break;
-        case 22: setDynP1  (0, v); break;
-        case 23: setDynMix (0, v); break;
-        case 24: setDynP0  (1, v); break;
-        case 25: setDynP1  (1, v); break;
-        case 26: setDynMix (1, v); break;
-        case 27: setDynP0  (2, v); break;
-        case 28: setDynP1  (2, v); break;
-        case 29: setDynMix (2, v); break;
-        case 30: setDynP0  (3, v); break;
-        case 31: setDynP1  (3, v); break;
-        case 32: setDynMix (3, v); break;
-        default: break;
+        if (par == 0) eqFx.ponAncho  (v);
+        else if (par == 1) eqFx.ponSalida (v);
     }
 }
 
@@ -2850,23 +2842,21 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     {
         dst.store (src.load (std::memory_order_relaxed), std::memory_order_relaxed);
     };
-    for (auto pair : { std::pair<std::atomic<float>*, const std::atomic<float>*>
-                         { &fxReso,  &s.fxReso  }, { &fxMix,   &s.fxMix   },
-                         //  fltSweep, o el rebote sale SIN filtro. Es la
-                         //  tercera vez que un parametro nuevo se olvida aqui:
-                         //  antes fueron los recortes y despues el swing, la
-                         //  velocidad y los redobles, y las tres veces el
-                         //  rebote fue una interpretacion distinta de la que
-                         //  se estaba escuchando.
-                         { &fltSweep, &s.fltSweep },
-                         { &duckAmt,  &s.duckAmt  }, { &duckRel, &s.duckRel },
-                         { &hpFreq,   &s.hpFreq   }, { &hpReso,  &s.hpReso  }, { &hpMix,   &s.hpMix   },
-                         { &fxDrive,  &s.fxDrive  }, { &drvTone, &s.drvTone }, { &drvMix,  &s.drvMix  },
-                         { &dlyTime,  &s.dlyTime  }, { &dlyFb,   &s.dlyFb   }, { &dlyMix,  &s.dlyMix  },
-                         { &crBits,   &s.crBits   }, { &crRate,  &s.crRate  }, { &crMix,   &s.crMix   },
-                         { &rvSize,   &s.rvSize   }, { &rvDamp,  &s.rvDamp  }, { &rvMix,   &s.rvMix   },
-                         { &eqMix,    &s.eqMix    } })
-        copyOne (*pair.first, *pair.second);
+    //  LOS PARAMETROS DE LOS EFECTOS, EN UN BUCLE.
+    //
+    //  Aqui habia VEINTIDOS pares escritos a mano, y el comentario que estaba
+    //  en medio contaba que eso ya se habia olvidado tres veces -los recortes,
+    //  el swing con la velocidad y los redobles, y `fltSweep`- y que las tres
+    //  el rebote salio siendo una interpretacion distinta de la que se estaba
+    //  escuchando. Con `fxP` no hay nada que olvidar: un tipo nuevo entra sin
+    //  tocar esta funcion.
+    for (int f = 0; f < kNumFx; ++f)
+        for (int par = 0; par < 3; ++par)
+            copyOne (fxP[(size_t) f][(size_t) par], s.fxP[(size_t) f][(size_t) par]);
+
+    //  Y el ducking, que no es de ningun efecto.
+    copyOne (duckAmt, s.duckAmt);
+    copyOne (duckRel, s.duckRel);
 
     //  Y LA AUTOMATIZACION, que es la mitad de por que existe: el rebote tiene
     //  que sonar como lo tocaste, y sin esta linea sale con el numero que
@@ -2905,18 +2895,11 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     eqFx.ponAncho  (s.eqFx.anchoDe());
     eqFx.ponSalida (s.eqFx.salidaDe());
 
-    //  Y LOS CUATRO DE DINAMICA, que si no el rebote sale sin comprimir ni
-    //  limitar mientras la persona lo esta oyendo puesto - el mismo fallo que
-    //  ya se pago con el EQ, con los recortes y con el swing. Lo que NO se
-    //  copia es el ESTADO del detector: el rebote empieza en silencio y una
-    //  envolvente heredada le meteria una compresion de la nada en el primer
-    //  bloque.
-    for (int d = 0; d < 4; ++d)
-    {
-        dynP0 [(size_t) d].store (s.dynP0 [(size_t) d].load(), std::memory_order_relaxed);
-        dynP1 [(size_t) d].store (s.dynP1 [(size_t) d].load(), std::memory_order_relaxed);
-        dynMix[(size_t) d].store (s.dynMix[(size_t) d].load(), std::memory_order_relaxed);
-    }
+    //  Los cuatro de DINAMICA ya han viajado en el bucle de `fxP` de arriba,
+    //  que es la mitad de lo que esa tabla existe para arreglar. Lo que NO se
+    //  copia sigue siendo el ESTADO del detector: el rebote empieza en
+    //  silencio y una envolvente heredada le meteria una compresion de la nada
+    //  en el primer bloque.
 
     // Start the FX smoothers already AT their targets. A live engine glides
     // over ~20 ms because a knob just moved; a bounce has no such history,

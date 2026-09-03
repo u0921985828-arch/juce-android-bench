@@ -478,9 +478,9 @@ namespace
         { "Mantenlo pulsado para cogerle los mandos sin encenderlo", "",
           "hold it to take its knobs without switching it on",
           "长按可接管其旋钮而不开启", "اضغطه مطولًا لأخذ مقابضه دون تشغيله" },
-        { "RACK: un efecto y los 64 pads. EL PAD: los seis envios de uno", "",
-          "RACK: one effect, 64 pads. THE PAD: one pad's six sends",
-          "机架：一个效果对 64 个音垫；此音垫：一个音垫的六路发送", "الرف: مؤثر واحد و64 بادًا. الباد: إرسالاته الستة" },
+        { "RACK: un efecto y los 64 pads. EL PAD: los envios de uno", "",
+          "RACK: one effect, 64 pads. THE PAD: one pad's sends",
+          "机架：一个效果对 64 个音垫；此音垫：一个音垫的发送", "الرف: مؤثر واحد و64 بادًا. الباد: إرسالات باد واحد" },
         { "El XY deja los pads tocables debajo, para las dos manos", "",
           "XY leaves the pads playable underneath, for two hands",
           "XY 让下方音垫仍可弹奏，双手并用", "XY يترك الوسادات قابلة للعزف تحته، لليدين" },
@@ -621,7 +621,7 @@ namespace
                                                       "XY 锁定 - 停在你放开的位置", "XY تثبيت - يبقى حيث تتركه" },
         { "XY momentaneo - suena mientras tocas", "", "XY momentary - sounds while you touch",
                                                       "XY 瞬时 - 触摸时发声", "XY لحظي - يعمل أثناء اللمس" },
-        // --- Los parametros de los seis efectos ----------------------------
+        // --- Los parametros de los efectos ----------------------------
         //  No pasaban por T(): dieciocho rotulos en la cara de la maquina, en
         //  espanol, en las cuatro compilaciones. No los vio el banco de
         //  traduccion porque compara el TEXTO DE LOS COMPONENTES y estos se
@@ -632,6 +632,14 @@ namespace
         { "RESO",           "",         "RESO",       "共振",       "رنين" },
         { "FREQ",           "",         "FREQ",       "频率",       "تردد" },
         { "DRIVE",          "",         "DRIVE",      "驱动",       "إشباع" },
+        //  TONE, que llevaba desde que existe DRV sin fila. Pasa por T() como
+        //  todos los parametros -`fxDefs[f].param[pi]`- y `T()` cae a la clave
+        //  cuando no la encuentra, asi que CTRL 2 de DRV decia «TONE» en las
+        //  cuatro compilaciones. No lo veia `Tests/lang.py` porque esa prueba
+        //  recoge los literales que estan escritos dentro de un `T ("...")` y
+        //  aqui la clave llega por VARIABLE: por eso la app publica ahora sus
+        //  `param[]` y el banco los contrasta contra la tabla.
+        { "TONE|fx",        "TONO",     "TONE",       "音色",       "نغمة" },
         { "TIME",           "",         "TIME",       "时间",       "زمن" },
         { "FBK",            "",         "FBK",        "反馈",       "ارتجاع" },
         { "BITS",           "",         "BITS",       "位深",       "بِتّات" },
@@ -711,7 +719,7 @@ namespace
         { "CUATRO BANCOS",  "",         "FOUR BANKS", "四个音垫组", "أربعة بنوك" },
         { "CARGAR, GRABAR, TOCAR", "",
           "LOAD, RECORD, PLAY", "载入、录音、播放", "تحميل وتسجيل وعزف" },
-        { "LOS SEIS EFECTOS", "",       "THE SIX EFFECTS", "六个效果", "المؤثرات الستة" },
+        { "LOS EFECTOS",    "",         "THE EFFECTS", "效果",       "المؤثرات" },
         { "LOS TRES MANDOS", "",        "THE THREE KNOBS", "三个旋钮", "المقابض الثلاثة" },
         { "LA REJILLA DE PASOS", "",    "THE STEP GRID", "步进网格", "شبكة الخطوات" },
         { "LO QUE HACE UN PASO", "",    "WHAT A STEP DOES", "每一步的作用", "ما تفعله الخطوة" },
@@ -752,13 +760,19 @@ namespace
           "载入可将文件放入音垫，录音可采集麦克风输入，播放则启动图案。",
           "«تحميل» يجلب ملفًا إلى باد، و«تسجيل» يسجل ما يسمعه الميكروفون، و«تشغيل» يبدأ النمط." },
 
-        { "Filtro, paso alto, saturacion, eco, reduccion y reverberacion. Son de "
-          "la maquina, no del pad: cada pad decide cuanto les manda.", "",
-          "Filter, high-pass, drive, delay, bit crush and reverb. They belong to "
-          "the machine and not to the pad: each pad decides how much it sends.",
-          "滤波、高通、失真、延迟、位压缩与混响。它们属于整机而非单个音垫：各音垫自行决定发送量。",
-          "مرشح ومرشح عالٍ وتشبع وصدى وتقليل بتات وارتداد. هي ملك للآلة لا للباد: "
-          "كل باد يقرر مقدار ما يرسله." },
+        //  Enumerarlos por su nombre valia cuando la fila ERA la lista. Con
+        //  ranuras y un menu detras, esa frase se queda vieja con cada efecto
+        //  que entra: se dice lo que la fila ES y no cuantos hay dentro.
+        { "Seis ranuras y un menu de efectos para llenarlas. Una vacia pone «+» "
+          "y lo abre. Son de la maquina, no del pad: cada pad decide cuanto les "
+          "manda.", "",
+          "Six slots and a menu of effects to fill them. An empty one shows «+» "
+          "and opens it. They belong to the machine and not to the pad: each pad "
+          "decides how much it sends.",
+          "六个插槽，配有效果菜单来填充。空槽显示「+」，点触即打开。效果属于整机而非单个音垫："
+          "各音垫自行决定发送量。",
+          "ستة مقاعد وقائمة مؤثرات لملئها. المقعد الفارغ يعرض «+» ويفتحها. هي ملك "
+          "للآلة لا للباد: كل باد يقرر مقدار ما يرسله." },
 
         { "Los tres de arriba mueven el efecto que tengas abierto. Debajo de cada "
           "uno pone lo que hace en ese momento.", "",
@@ -915,17 +929,17 @@ namespace
           "في «التتابع» الشبكة ستة عشر خطوة في ستة عشر بادًا: المس خانة فتُعزف هناك. "
           "وعند اختيار خطوة تظهر مقابضها أسفلها - النغمة والقوة والتكرار والمرشح "
           "والأقفال. وفي «البيانو» تكتب بالنغمة، بنوتات تدوم ما تشاء." },
-        { "Cada pad tiene su filtro, su recorte y sus seis envios. Los efectos "
+        { "Cada pad tiene su filtro, su recorte y sus envios. Los efectos "
           "son de la maquina y no del pad: se abren desde la cara y cada pad "
           "decide cuanto le manda, en el RACK. La ficha XY mueve dos a la vez "
           "con el dedo.", "",
-          "Every pad has its own filter, its own trim and its own six sends. "
+          "Every pad has its own filter, its own trim and its own sends. "
           "The effects belong to the machine and not to the pad: you switch "
           "them on from the front and each pad decides how much it sends, in "
           "the RACK. The XY card moves two of them at once with one finger.",
-          "每个音垫都有自己的滤波、裁切与六路发送。效果属于整机而非单个音垫："
+          "每个音垫都有自己的滤波、裁切与发送。效果属于整机而非单个音垫："
           "在面板上开启，各音垫在机架页决定各自的发送量。XY 页可用一根手指同时控制两个参数。",
-          "لكل باد مرشحه وقصّه وإرسالاته الستة. المؤثرات ملك للآلة لا للباد: "
+          "لكل باد مرشحه وقصّه وإرسالاته. المؤثرات ملك للآلة لا للباد: "
           "تُشغَّل من الواجهة ويقرر كل باد مقدار ما يرسله إليها في «الرف». "
           "وبطاقة XY تحرك اثنين منها معًا بإصبع واحد." },
         { "EXPORTAR saca la mezcla entera o una pista por pad, en WAV o en OGG. "

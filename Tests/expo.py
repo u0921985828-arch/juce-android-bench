@@ -317,6 +317,43 @@ def judge_tapado(rows, size, lang, sheet):
     return out
 
 
+#  LO QUE UNA TARJETA PIDE Y LO QUE HAY. Se imprime, no se juzga.
+#
+#  Las nueve anteriores miden el SINTOMA. `sheetFromBottom` recorta al tope de
+#  la tarjeta con un `jmin` que no se queja, asi que lo que falta se lo come en
+#  silencio lo ULTIMO que se maqueta: la fila de CADENA, la REJILLA de la pagina
+#  PATRON saliendo a 217x0, las cuatro tapas de CARCASA a 4 px de alto y la
+#  celda de la linea de tiempo cayendo de 20.2 px a 9. Cuando lo que se cae es
+#  un control, lo cazan CERO o TOUCH o CELDA; cuando es un texto pintado o el
+#  aire entre dos filas, no lo caza nadie.
+#
+#  Aqui se mide la CAUSA, que la app publica desde el sitio donde se decide. Una
+#  ficha que se DESPLAZA -o que trae su propia lista dentro- puede pedir lo que
+#  quiera; una que no, no.
+#
+#  Y NO SE JUZGA, que es lo que la primera corrida obligo a decir en voz alta.
+#  Salio con NOVENTA Y DOS y ni uno era un fallo: son CINCO fichas -el piano,
+#  las dos paginas del pad, CANCION y el troceado- que piden su deseo entero y
+#  dejan que el recorte se lo coma un elemento ELASTICO con suelo propio. Lo
+#  prueban las otras nueve reglas en la misma corrida: cero CERO, cero CELDA y
+#  cero solapes, o sea que nada acabo en cero ni por debajo de su suelo. Un
+#  numero que no separa el fallo del deseo no puede ser un veredicto - se
+#  imprime, como TOUCH y como el porcentaje de iconos, para que una regresion se
+#  vea como un numero que cambia. Lo que si vale de esto es que las cinco cifras
+#  no las habia visto nadie: el piano pide 672 px donde la tarjeta da 663 en un
+#  movil grande y 370 apaisado.
+def judge_tarjeta(rows, size, lang, sheet):
+    out = []
+    for r in rows:
+        if not r.get("tarjeta") or r.get("desplaza"):
+            continue
+        if r["pedido"] > r["tope"]:
+            out.append(("TARJETA", f"{size}/{lang}/{sheet or 'face'}",
+                        f'pide {r["pedido"]} px y la tarjeta da {r["tope"]}',
+                        r["pedido"] - r["tope"]))
+    return out
+
+
 def judge_lang(rows_es, rows_en, size, sheet):
     if not rows_es or not rows_en: return []
     def m(rows):
@@ -376,7 +413,8 @@ def corre_y_juzga(combo, casa):
     #  estrecho" y "los iconos no salen" son la misma corrida en verde.
     puestos = sum (1 for r in rows if "icono" in r)
     pintados = sum (1 for r in rows if r.get ("icono"))
-    return (judge(rows, size, lang, sheet) + judge_tapado(rows, size, lang, sheet),
+    return (judge(rows, size, lang, sheet) + judge_tapado(rows, size, lang, sheet)
+                                           + judge_tarjeta(rows, size, lang, sheet),
             (rows if lang in ("es", "en") else []), (puestos, pintados))
 
 

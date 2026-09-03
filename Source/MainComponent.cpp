@@ -318,6 +318,14 @@ MainComponent::MainComponent()
         //  pasaba: en 915x412 pedia 458 px dentro de una tarjeta de 346 y las
         //  cuatro tapas de CARCASA salian a CERO de alto. Ver Sheet::hazDesplazable.
         setSheet.hazDesplazable();
+        //  LAS TRES QUE TRAEN SU PROPIA LISTA. No se desplazan como ficha
+        //  -anidar dos arrastres es la otra forma de que un gesto no se sepa de
+        //  quien es- y piden a proposito mas alto del que hay, porque lo que
+        //  las llena ya se desplaza solo. Ver Sheet::listaPropia. (PROYECTOS no
+        //  esta: es una pagina de AJUSTES, y esa ficha si se desplaza entera.)
+        manualSheet.listaPropia = true;
+        browseSheet.listaPropia = true;
+        mixSheet.listaPropia    = true;
         addAndMakeVisible (setSheet);
         setSheet.setVisible (false);
         setSheet.onDismiss = [this] { closeAllSheets(); };
@@ -3629,7 +3637,7 @@ const MainComponent::FxDef MainComponent::fxDefs[MainComponent::kNumFx] =
         {    0.3,     4.0, 0.01,    0.0,   0.707, 1 },
         {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
 
-    { "DRV",  { "DRIVE", "TONE", "MIX" },
+    { "DRV",  { "DRIVE", "TONE|fx", "MIX" },
       { {    0.0,     1.0, 0.01,    0.0,    0.55, 2 },
         {  200.0, 20000.0, 1.00, 2000.0,  8000.0, 0 },
         {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 0.80 },
@@ -7891,15 +7899,28 @@ void MainComponent::applyState (const juce::ValueTree& s)
             engine.setPadReso   (i, padReso[(size_t) i]);
             padZati[(size_t) i]    = (int)   p.getProperty ("zati", Zati::forPad (i));
 
-            //  Un proyecto sin la propiedad "sends" es anterior a que los
+            //  Un proyecto SIN la propiedad "sends" es anterior a que los
             //  envios existieran, y entonces cada pad iba entero a los seis:
             //  vuelve con uno y no con el cero nuevo, porque lo que manda aqui
             //  no es cual es el defecto de hoy sino como sonaba el dia que se
             //  guardo. El cero es para lo que nace ahora, no para lo que vuelve.
+            //
+            //  Y NO ES LO MISMO QUE UNO CON LA PROPIEDAD Y MENOS TOKENS, que
+            //  es lo que hacia esta linea y donde estaba el fallo. La lista es
+            //  POSICIONAL, asi que un proyecto guardado con once tipos abre con
+            //  once numeros; el dia que `kNumFx` suba, los tipos que no
+            //  existian cuando se guardo caian en la rama del `1.0f` y los 64
+            //  pads nacerian con **todos los efectos nuevos abiertos a tope**,
+            //  y con ellos `padSendMask` a sesenta y cuatro bits, o sea el
+            //  bucle largo de `renderNextBlock` recorriendose entero desde el
+            //  primer bloque. Un efecto que no existia el dia que se guardo no
+            //  sonaba: vale CERO.
+            const bool traeEnvios = p.hasProperty ("sends");
             juce::StringArray sends;
             sends.addTokens (p.getProperty ("sends", juce::String()).toString(), ",", "");
             for (int f = 0; f < kNumFx; ++f)
-                engine.setPadSend (i, f, f < sends.size() ? sends[f].getFloatValue() : 1.0f);
+                engine.setPadSend (i, f, f < sends.size() ? sends[f].getFloatValue()
+                                                          : (traeEnvios ? 0.0f : 1.0f));
 
             // Trim is stored 0..1 but the engine wants samples, and
             // publishSample has just reset the window to the whole file — so
@@ -12674,10 +12695,18 @@ void MainComponent::pintaCuadro (double dtMs)
         //  a fault indicator, not a power light.
         const double lit = 0.42 + 0.58 * (0.5 - 0.5 * std::cos (fxPulsePhase * juce::MathConstants<double>::twoPi));
 
-        for (int f = 0; f < kNumFx; ++f)
+        //  POR RANURA Y NO POR TIPO. `fxButtons` tiene `kNumRanuras` tapas y
+        //  este bucle iba hasta `kNumFx`: se salvaba por el `continue` de
+        //  abajo -y por que los seis primeros tipos coincidian con las seis
+        //  ranuras de fabrica- pero encendia la lampara del tipo f en la tapa
+        //  f, y desde que una ranura puede llevar cualquier tipo esas dos
+        //  cosas dejaron de ser la misma. `setFxEnabled` ya traduce con
+        //  `slotDeFx`; esto no lo hacia.
+        for (int sRan = 0; sRan < fxButtons.size() && sRan < kNumRanuras; ++sRan)
         {
-            auto* b = fxButtons[f];
-            if (b == nullptr) continue;
+            auto* b = fxButtons[sRan];
+            const int f = slotFx[(size_t) sRan];
+            if (b == nullptr || f < 0) continue;
 
             const double want = fxOn[(size_t) f] ? lit : 0.0;
             const double had  = (double) b->getProperties().getWithDefault ("pulse", 0.0);

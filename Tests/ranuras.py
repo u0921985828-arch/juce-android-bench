@@ -35,6 +35,21 @@ ROOT = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
 APP  = os.path.join (ROOT, "build", "Zati_artefacts", "Release", "Zati")
 
 
+#  Las siete pantallas del banco, importadas y no escritas otra vez: una lista
+#  de pantallas escrita dos veces es media app sin medir.
+sys.path.insert (0, os.path.dirname (os.path.abspath (__file__)))
+from expo import SIZES as _SIZES
+SIZES = [w for w, _ in _SIZES]
+DEDO  = 40
+
+
+def leeForma (s):
+    """«3x7:460:115» -> columnas, filas, lo que pide de alto, ancho de celda."""
+    cf, pide, celda = s.split (":")
+    c, f = cf.split ("x")
+    return int (c), int (f), int (pide), int (celda)
+
+
 def corre (extra=None):
     """Una corrida con HOME propio: con el de verdad la app restaura la sesion
     que hubiera y no pasa por el camino que se quiere medir."""
@@ -125,12 +140,63 @@ def main():
         malas.append ("vaciar la ranura dejo su efecto SONANDO y sin tapa donde "
                       "tocarlo")
 
+    #  5. EL MOTOR Y SU MANDO ARRANCAN EN EL MISMO NUMERO.
+    #
+    #     `AudioEngine::kFxDef` y `MainComponent::fxDefs[f].spec[p].def` son la
+    #     misma regla escrita dos veces, y el mando se construye con
+    #     `dontSendNotification` a proposito -no hay motor al que empujar
+    #     todavia- asi que nadie los iguala nunca. Cuando se puso esta linea
+    #     habia TRES que no cuadraban: DRV arrancaba con el drive en 0.0 y el
+    #     tono en 20 kHz mientras su mando decia 0.55 y 8 kHz, y la FUERZA del
+    #     de-esser en 0.0 con el mando en 0.5 — o sea un mando que se movia y
+    #     no hacia nada, que es un fallo que esta casa ya ha pagado.
+    print ("defectos el motor y la cara discrepan en %d de %d"
+           % (r["defectos_cruzados"], r["tipos"] * 3))
+    if r["defectos_cruzados"] != 0:
+        malas.append ("%d parametros arrancan con un numero en el motor y otro en "
+                      "el mando" % r["defectos_cruzados"])
+
+    #  6. LA REJILLA DEL MENU, EN LAS SIETE PANTALLAS — Y NO SOLO LA DE HOY.
+    #
+    #     Con once tipos la rejilla son tres columnas y cuatro filas en las
+    #     siete, o sea que la regla que la decide no se puede VER fallar. El
+    #     dia que sean veintiuno son SIETE filas, y siete filas piden 460 px
+    #     con VACIAR contra los **370** que da una tarjeta apaisada: las filas
+    #     reales salen 40,40,40,40,40,22,0 — la sexta por debajo del dedo y la
+    #     septima de 0x0—. Y esta ficha NO se desplaza, asi que lo que no cabe
+    #     no se alcanza arrastrando.
+    #
+    #     Se pregunta a la funcion de verdad -la misma que llama `resized()`,
+    #     no una formula repetida aqui- por el numero de hoy y por veintiuno,
+    #     con la geometria de cada pantalla. Lo que se exige de las dos: que lo
+    #     pedido quepa en la tarjeta y que la celda llegue al dedo.
+    print()
+    print ("pantalla   hoy            a 21           tope")
+    for size in SIZES:
+        g = corre ({"ZATI_SIZE": size})
+        if g is None:
+            malas.append ("%s no contesto" % size);  continue
+        tope = g["tope_tarjeta"]
+        linea = "%-10s %-14s %-14s %4d" % (size, g["forma"], g["forma21"], tope)
+        for cual in ("forma", "forma21"):
+            cols, filas, pide, celda = leeForma (g[cual])
+            if pide > tope:
+                malas.append ("%s: %s pide %d px y la tarjeta da %d"
+                              % (size, g[cual], pide, tope));  linea += "  <--"
+            if celda < DEDO:
+                malas.append ("%s: %s deja la celda en %d px de ancho"
+                              % (size, g[cual], celda));  linea += "  <--"
+            if filas < 2:
+                malas.append ("%s: %s es UNA fila, que es lo que este menu "
+                              "existe para no ser" % (size, g[cual]));  linea += "  <--"
+        print (linea)
+
     print()
     if malas:
         for m in malas: print ("FALLA  " + m)
         return 1
-    print ("las seis ranuras: el menu, la accion unica, un tipo una ranura, y "
-           "vaciar apaga")
+    print ("las seis ranuras: el menu, la accion unica, un tipo una ranura, "
+           "vaciar apaga, los defectos cuadran y la rejilla cabe a 21")
     return 0
 
 

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- Un proyecto de la EPOCA DE SEIS EFECTOS: trae la propiedad "sends" y trae
+     SEIS numeros, que es lo que la app escribia entonces. Es el caso que separa
+     "no hay propiedad" de "hay propiedad y faltan tokens", y son dos respuestas
+     distintas: sin la propiedad el proyecto es anterior a que los envios
+     existieran y cada pad iba entero a todos -vuelve con uno-; con la propiedad
+     y seis tokens, los tipos del septimo en adelante NO EXISTIAN el dia que se
+     guardo, asi que no sonaban y valen CERO. Con la rama del 1.0f puesta otra
+     vez, los 64 pads abren con los cinco efectos nuevos a tope y `padSendMask`
+     se pone a sesenta y cuatro bits desde el primer bloque. -->
+<ZATI version="1" bpm="100.0" selectedPattern="0">
+  <PADS>
+    <PAD i="0" name="A" sends="0.30,0.000,0.000,0.000,0.000,0.000"/>
+    <PAD i="1" name="B" sends="0.000,0.000,0.000,0.000,0.000,0.000"/>
+  </PADS>
+  <FX/>
+</ZATI>

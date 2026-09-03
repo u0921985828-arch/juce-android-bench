@@ -62,14 +62,28 @@ def proyecto():
     solo en el del proyecto, la prueba habria seguido en verde y la persona
     habria seguido viendo su banco A clonado en el C. Se mide el camino que se
     usa: un paso en el pad 0 de cada banco, guardar, vaciar, abrir."""
+    #  CON SU PROPIO HOME, que es lo que le faltaba y por lo que esta
+    #  comprobacion decia una cosa sola y otra en el banco entero. Sin el, la
+    #  app abre la SESION que dejara la corrida anterior -las ocho de arriba
+    #  escriben en la suya, y cualquier otra prueba en la de la maquina- asi
+    #  que los pads de ese proyecto se suman a los cuatro que esta prueba pone:
+    #  medido, `paso0` salia [0, 2, 6, 16, 32, 48] en el banco y [0, 16, 32, 48]
+    #  corriendo sola. Un veredicto que depende de lo que dejara el de antes no
+    #  es un veredicto, que es exactamente lo que ya costo una tarde con el
+    #  troceado de `saveProject`.
+    casa = tempfile.mkdtemp (prefix="zati-proy-")
     env = dict (os.environ)
-    env.update ({"ZATI_AUDIT": "1", "ZATI_SIZE": "412x915", "ZATI_LANG": "es",
+    env.update ({"HOME": casa,
+                 "XDG_DATA_HOME": os.path.join (casa, ".local", "share"),
+                 "ZATI_AUDIT": "1", "ZATI_SIZE": "412x915", "ZATI_LANG": "es",
                  "ZATI_PROJ": "1"})
     try:
         out = subprocess.run ([APP], env=env, capture_output=True, text=True,
                               timeout=300).stdout
     except subprocess.TimeoutExpired:
         return None
+    finally:
+        shutil.rmtree (casa, ignore_errors=True)
     #  DOS lineas y cada una con su clave. La segunda -lo disperso- se llamaba
     #  tambien "proyecto" y esta funcion devolvia la primera que encontrara: la
     #  del acorde, que no lleva paso0, asi que el banco anunciaba que se perdian
@@ -99,7 +113,7 @@ def viejos():
     defecto que cambie hoy se lleva por delante los proyectos de ayer sin que
     nada falle.
 
-    Los tres ficheros viven en Tests/proyectos y son texto plano a proposito:
+    Los cuatro ficheros viven en Tests/proyectos y son texto plano a proposito:
     congelados, no generados, porque generarlos con la app de hoy seria volver
     a medir la app de hoy contra si misma.
 
@@ -309,7 +323,7 @@ def main():
 
     #  --- Y LOS PROYECTOS DE OTRA EPOCA ------------------------------------
     vj = viejos()
-    viejo_ok = vj is not None and len (vj) == 3
+    viejo_ok = vj is not None and len (vj) == 4
     print()
     if vj:
         for nombre, d in sorted (vj.items()):
@@ -317,7 +331,22 @@ def main():
             #  sin `sends` es anterior a que los envios existieran -cada pad iba
             #  entero a los seis- asi que vuelve con UNO y no con el cero de
             #  hoy. Igual el autocorte: sin la propiedad, puesto.
-            bien = (abs (d["envio0"] - 1.0) < 0.01 and d["autocorte0"] == 1
+            #  LOS ENVIOS SON DOS RESPUESTAS Y NO UNA, y la del medio es la
+            #  que hacia falta: la lista `sends` es POSICIONAL, asi que un
+            #  proyecto guardado con seis efectos trae SEIS numeros. Sin la
+            #  propiedad -los tres primeros ficheros- el proyecto es anterior a
+            #  que los envios existieran y cada pad iba entero: vuelve con UNO.
+            #  Con la propiedad y menos tokens -el cuarto-, los tipos que no
+            #  existian el dia que se guardo NO SONABAN: valen CERO, y el
+            #  primero vuelve con el 0.30 que trae escrito. Con la rama del 1.0
+            #  puesta otra vez, los 64 pads abren con los cinco efectos nuevos
+            #  a tope y `padSendMask` a sesenta y cuatro bits.
+            trae = nombre.startswith ("04")
+            e0 = 0.30 if trae else 1.0
+            en = 0.00 if trae else 1.0
+            bien = (abs (d["envio0"] - e0) < 0.01
+                    and abs (d["envio_nuevo"] - en) < 0.01
+                    and d["autocorte0"] == 1
                     and d["vel0"] == 127 and d["roll0"] == 1
                     #  Y lo que el fichero no menciona no se HEREDA del proyecto
                     #  anterior: el pad 20 no esta en ninguno de los tres, asi
@@ -340,10 +369,11 @@ def main():
                     #  haber tocado nada.
                     and d.get ("ranuras") == [0, 1, 2, 3, 4, 5])
             viejo_ok = viejo_ok and bien
-            print ("  %-20s envio0 %.2f  pad20 g%.2f p%.2f c%.0f r%d e%.2f  cancion %d"
-                   "  ranuras %s  %s"
-                   % (nombre, d["envio0"], d["gain20"], d["pan20"], d["corte20"],
-                      d["reves20"], d["envio20"], d["cancion"], d.get ("ranuras", "?"),
+            print ("  %-20s envio0 %.2f  ultimo %.2f  pad20 g%.2f p%.2f c%.0f r%d e%.2f"
+                   "  cancion %d  ranuras %s  %s"
+                   % (nombre, d["envio0"], d["envio_nuevo"], d["gain20"], d["pan20"],
+                      d["corte20"], d["reves20"], d["envio20"], d["cancion"],
+                      d.get ("ranuras", "?"),
                       "correcto" if bien else "HEREDA DEL ANTERIOR"))
     else:
         print ("  los proyectos congelados no volvieron")

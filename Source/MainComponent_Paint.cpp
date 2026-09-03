@@ -643,6 +643,10 @@ void MainComponent::paintBrowseSheetContent (juce::Graphics& g)
                                          ? T ("entra donde quieras y pulsa USAR ESTA CARPETA")
                                          : juce::String();
     else                         sub = T ("elige una muestra  -  wav / aiff / flac / ogg / mp3");
+    //  APUNTADO: se recorta con `antesDe` y nadie lo comprobaba. Un rotulo que
+    //  el banco no ve puede acabar debajo de la cruz sin que las mil corridas
+    //  digan nada — es como la mesa estuvo titulada «MIX» a mano durante meses.
+    apunta (g, browseSubRow, sub, "dato");
     g.drawText (sub, browseSubRow, Lang::start(), true);
 }
 
@@ -1580,11 +1584,12 @@ void MainComponent::paintPianoSheetContent (juce::Graphics& g)
     auto ayuda = inner.removeFromTop (14);
     ayuda.setLeft  (titulo.getX());
     ayuda.setRight (titulo.getRight());
-    g.drawFittedText (T ("toca el teclado para oir, la rejilla para escribir")
-                        + "   " + dot + "   " + T ("OCTAVA") + " "
-                        + PianoRoll::nombreDe (pianoBase)
-                        + " - " + PianoRoll::nombreDe (pianoBase + pianoGrid.getFilas() - 1),
-                      ayuda, Lang::start(), 1, 0.8f);
+    const auto ayudaPiano = T ("toca el teclado para oir, la rejilla para escribir")
+                              + "   " + dot + "   " + T ("OCTAVA") + " "
+                              + PianoRoll::nombreDe (pianoBase)
+                              + " - " + PianoRoll::nombreDe (pianoBase + pianoGrid.getFilas() - 1);
+    apunta (g, ayuda, ayudaPiano, "dato");
+    g.drawFittedText (ayudaPiano, ayuda, Lang::start(), 1, 0.8f);
 }
 
 //  The PROJECTS card. The name, where it lives, and the list.
@@ -1608,12 +1613,13 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
     //  `antesDe`, que es quien tiene esa regla: el lado lo dice la TAPA y no el
     //  idioma.
     auto subRow = antesDe (inner.removeFromTop (14), setCloseButton);
-    g.drawFittedText (currentProject.isNotEmpty()
-                          ? T ("abierto: %1", currentProject)
-                          : (projModel.names.isEmpty()
-                                 ? T ("sin proyectos - GUARDAR crea el primero")
-                                 : T ("elige uno de la lista")),
-                      subRow, Lang::start(), 1, 0.8f);
+    const auto subProj = currentProject.isNotEmpty()
+                             ? T ("abierto: %1", currentProject)
+                             : (projModel.names.isEmpty()
+                                    ? T ("sin proyectos - GUARDAR crea el primero")
+                                    : T ("elige uno de la lista"));
+    apunta (g, subRow, subProj, "dato");
+    g.drawFittedText (subProj, subRow, Lang::start(), 1, 0.8f);
 
     //  NAME, and under it the folder these projects actually live in. The
     //  path is there because when a save goes missing the answer is almost
@@ -1639,6 +1645,7 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
         //  ahi al lado y no se aplico al vecino.
         if (raizCache == juce::File())
             raizCache = ProjectStore::root();
+        apunta (g, r, Lang::ltr (raizCache.getFullPathName()), "dato");
         g.drawFittedText (Lang::ltr (raizCache.getFullPathName()),
                           r, Lang::start(), 1, 0.7f);
     }
@@ -1664,8 +1671,20 @@ void MainComponent::paintRackSheetContent (juce::Graphics& g)
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
-    g.drawFittedText (T ("cuanto de este pad entra en cada efecto"),
-                      inner.removeFromTop (14), Lang::start(), 1, 0.75f);
+    {
+        //  Y APARTADO DE LA CRUZ, que es lo que la regla del rotulo tapado
+        //  saco en la primera corrida en que este renglon se apunto: la tapa
+        //  mide un dedo entero -40 px- sobre un renglon de titulo de 16, asi
+        //  que se derrama VEINTICUATRO sobre la banda de abajo y el texto le
+        //  pasaba por debajo en 280x653 en es, en y ar -en chino no, que ahi
+        //  la frase es mas corta-. Es el mismo caso que la cadena del
+        //  secuenciador y el parrafo de AUTO CHOP, y se arregla igual: quien
+        //  sabe de que lado esta la tapa es la TAPA y no el idioma.
+        auto bandaRack = antesDe (inner.removeFromTop (14), rackCloseButton);
+        apunta (g, bandaRack, T ("cuanto de este pad entra en cada efecto"), "dato");
+        g.drawFittedText (T ("cuanto de este pad entra en cada efecto"),
+                          bandaRack, Lang::start(), 1, 0.75f);
+    }
 
     //  EL NOMBRE Y EL DIBUJO YA NO SE PINTAN AQUI: el canalon de la izquierda
     //  es una TAPA desde que la fila del rack es una RANURA y no un efecto,
@@ -1853,10 +1872,11 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     {
         g.setColour (ZatiColours::inkDim.withAlpha (selectedStep < 0 ? 0.95f : 0.75f));
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
-        g.drawText (selectedStep < 0
-                      ? T ("toca un paso en la rejilla y sus mandos salen debajo")
-                      : T ("editando el paso %1", Lang::ltr (juce::String (selectedStep + 1))),
-                    seqFootArea, Lang::start());
+        const auto pieSec = selectedStep < 0
+                              ? T ("toca un paso en la rejilla y sus mandos salen debajo")
+                              : T ("editando el paso %1", Lang::ltr (juce::String (selectedStep + 1)));
+        apunta (g, seqFootArea, pieSec, "dato");
+        g.drawText (pieSec, seqFootArea, Lang::start());
     }
 
     // The grid paints its own playhead and lane colours (see StepGrid).

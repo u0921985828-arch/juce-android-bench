@@ -2204,6 +2204,13 @@ void MainComponent::auditViejos (const juce::String& carpeta)
                   << ",\"corte20\":" << padCut[20]
                   << ",\"reves20\":" << (padReverse[20] ? 1 : 0)
                   << ",\"envio20\":" << engine.getPadSend (20, 0)
+                  //  EL ENVIO AL ULTIMO TIPO, que es el que separa las dos
+                  //  respuestas. La lista `sends` es POSICIONAL: un proyecto de
+                  //  la epoca de seis trae seis numeros, y los tipos que no
+                  //  existian entonces no sonaban, o sea CERO. Con la rama del
+                  //  1.0f -la de un proyecto SIN la propiedad- los 64 pads
+                  //  abririan con los cinco nuevos a tope.
+                  << ",\"envio_nuevo\":" << engine.getPadSend (0, kNumFx - 1)
                   << ",\"cancion\":" << celdasCancion
                   << ",\"vel0\":" << engine.getStepVel (0, 0, 0)
                   << ",\"roll0\":" << engine.getStepRoll (0, 0, 0)
@@ -2278,7 +2285,65 @@ void MainComponent::auditRanuras()
     ponEnRanura (3, kSlotVacia);
     const int trasVaciar = fxOn[3] ? 1 : 0;
 
+    //  5. LA REJILLA, Y NO SOLO LA DE HOY.
+    //
+    //  Con once tipos la rejilla son tres columnas y cuatro filas en las siete
+    //  pantallas, o sea que la regla que la decide no se puede ver fallar. Y
+    //  el dia que sean veintiuno son SIETE filas, que apaisado no caben: la
+    //  tarjeta da 370 px y siete piden 460. Asi que se publica lo que
+    //  `menuRanuraColumnas` contesta para el numero de HOY y para veintiuno,
+    //  con la geometria de esta ventana — que es la funcion de verdad, la
+    //  misma que llama `resized()`, y no una formula repetida en el script.
+    const auto zonaR    = safeArea();
+    const int  topeR    = altoTarjeta (zonaR);
+    const int  anchoR   = anchoTarjetaInterior (zonaR.getWidth());
+    auto forma = [&] (int n)
+    {
+        const int c = menuRanuraColumnas (n, topeR, anchoR, true);
+        const int f = (n + c - 1) / c;
+        return juce::String (c) + "x" + juce::String (f) + ":"
+                 + juce::String (menuRanuraPide (f, true)) + ":"
+                 + juce::String (anchoR / c);
+    };
+
+    //  Y QUE EL MOTOR Y SU MANDO ARRANQUEN EN EL MISMO NUMERO. `kFxDef` en el
+    //  motor y `fxDefs[f].spec[p].def` en la cara son la misma regla escrita
+    //  dos veces, y un control y su motor contando cosas distintas es el fallo
+    //  que ya costo una medida con el corte del pad.
+    int defectosQueNoCuadran = 0;
+    for (int f = 0; f < kNumFx; ++f)
+        for (int p = 0; p < 3; ++p)
+            if (std::abs (AudioEngine::kFxDef[f][p] - (float) fxDefs[f].spec[p].def) > 0.001f)
+                ++defectosQueNoCuadran;
+
+    //  Y LOS NOMBRES DE PARAMETRO QUE LA APP VA A PEDIRLE A `T()`.
+    //
+    //  Pasan por `T()` desde `fxDefs[f].param[pi]`, o sea por VARIABLE, y
+    //  `Tests/lang.py` recoge los literales escritos dentro de un `T ("...")`:
+    //  no puede verlos. Asi estuvo «TONE» -CTRL 2 de DRV- sin fila en la tabla
+    //  desde que existe ese efecto, diciendo lo mismo en las cuatro
+    //  compilaciones. Con veinte nombres mas por venir, eso deja de ser un
+    //  descuido y pasa a ser una clase de fallo.
+    juce::String claves, nombres;
+    for (int f = 0; f < kNumFx; ++f)
+    {
+        nombres += juce::String (fxDefs[f].name);
+        if (f < kNumFx - 1) nombres += ",";
+        for (int p = 0; p < 3; ++p)
+        {
+            claves += juce::String (fxDefs[f].param[p]);
+            if (f < kNumFx - 1 || p < 2) claves += ",";
+        }
+    }
+
     std::cout << "{\"ranuras\":1"
+              << ",\"tipos\":"     << kNumFx
+              << ",\"params\":\""   << claves  << "\""
+              << ",\"nombres\":\""  << nombres << "\""
+              << ",\"forma\":\""          << forma (kNumFx) << "\""
+              << ",\"forma21\":\""        << forma (21) << "\""
+              << ",\"tope_tarjeta\":"    << topeR
+              << ",\"defectos_cruzados\":" << defectosQueNoCuadran
               << ",\"menu_tras_vacia\":"   << menuTrasVacia
               << ",\"menu_tras_llena\":"   << menuTrasLlena
               << ",\"enciende_al_tocar\":" << encendioAlTocar
@@ -2677,7 +2742,11 @@ void MainComponent::auditDinamica()
     const int   r0Vuelve  = slotFx[0];
     const int   r1Vuelve  = slotFx[1];
 
+    //  CUANTOS TIPOS HAY lo dice la app y no una cuenta escrita en el script:
+    //  el dia que entre el doce, lo que tiene que fallar es el menu y no una
+    //  linea del banco que nadie obliga a decir lo mismo.
     std::cout << "{\"dyn\":1"
+              << ",\"tipos\":"      << AudioEngine::kNumFx
               << ",\"en_menu\":"    << enMenu
               << ",\"celda_w\":"    << celdaW
               << ",\"celda_h\":"    << celdaH

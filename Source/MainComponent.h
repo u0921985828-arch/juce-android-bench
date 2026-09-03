@@ -196,6 +196,15 @@ private:
             }
             void mouseDown (const juce::MouseEvent& e) override { if (onClick) onClick (e.getPosition()); }
         };
+        //  Y LA QUE TRAE SU PROPIA LISTA DENTRO. La mesa, el manual, el
+        //  navegador y PROYECTOS no se desplazan como ficha -anidar dos
+        //  arrastres es la otra forma de que un gesto no se sepa de quien es-
+        //  pero se alcanzan enteras igual, porque lo que las llena es una lista
+        //  que ya se desplaza sola. Piden a proposito mas alto del que hay, asi
+        //  que la regla de UiAudit::tarjeta no les aplica: sin decirlo, la
+        //  decima regla del banco las sacaria como fallo en cada corrida.
+        bool listaPropia = false;
+
         Cuerpo cuerpo;
         juce::Viewport vista;
         bool desplazable = false;
@@ -783,6 +792,18 @@ private:
     { return (int) ((float) anchoVentana * 0.92f); }
     static int anchoTarjetaInterior (int anchoVentana) noexcept
     { return anchoTarjeta (anchoVentana) - 2 * Metrics::lg; }
+
+    //  Y EL TOPE DE ALTO, por lo mismo. Estaba escrito TRES veces —el propio
+    //  `sheetFromBottom`, el reparto de columnas de AJUSTES y el menu de la
+    //  ranura— y es la misma clase de duplicado que el `0.92` de arriba, que
+    //  llego a estar en seis sitios. Girado no queda nada que proteger -la
+    //  cara ya esta en dos columnas- y de pie el 0.78 deja ver la maquina
+    //  detras, que es para lo que la tarjeta se centro.
+    static int altoTarjeta (juce::Rectangle<int> zona) noexcept
+    {
+        return (int) ((float) zona.getHeight()
+                        * (zona.getWidth() > zona.getHeight() ? 0.90f : 0.78f));
+    }
 
     //  Lo que mide el recuadro de AUDIO, que es texto pintado y por tanto no
     //  lo dice ningun componente. Ver estAltoAudio: estaba escrito a mano en

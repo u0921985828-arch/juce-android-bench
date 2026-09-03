@@ -50,8 +50,8 @@ llevar un **instrumento**: dieciséis familias sintetizadas de dieciséis preset
 cada una, multizona, que se tocan con el dedo como una tecla.
 
 Encima de eso hay un secuenciador de ocho patrones con cadena y una canción de
-cuatro carriles por sesenta y cuatro compases, seis efectos de envío con un
-mando por pad, una mesa de dieciséis canales con máster, y una exportación que
+cuatro carriles por sesenta y cuatro compases, once efectos en seis ranuras
+con un mando por pad, una mesa de dieciséis canales con máster, y una exportación que
 saca el máster o las pistas por separado.
 
 **Lo que la separa de las demás**, y es lo que hay que saber para entender por
@@ -135,9 +135,10 @@ el foco. Encima de cada uno, el nombre del parámetro; debajo, su lectura con
 unidades. No guardan nada: escriben directamente sobre el parámetro y lo leen de
 vuelta de él.
 
-**Los seis efectos.** `FLT`, `HPF`, `DRV`, `DLY`, `BIT`, `REV`. Tocar uno lo
-enciende **y** le da los tres mandos; mantenerlo le da los mandos **sin**
-encenderlo, que es como se prepara un efecto antes de abrirlo.
+**Las seis ranuras.** Once tipos y seis sitios donde ponerlos. Una ranura
+vacía dice «+» y abre su menú; llena, tocarla la enciende **y** le da los tres
+mandos, y mantenerla le da los mandos **sin** encenderla, que es como se
+prepara un efecto antes de abrirlo.
 
 **Los cuatro bancos.** A, B, C y D, repartidos a los dos lados de la palabra
 PADS grabada en el chasis.
@@ -255,7 +256,7 @@ atenuado: *lo que pongas ahora es lo que usará cuando lo enciendas*.
 
 No es una ficha: es un panel opaco en la mitad de arriba de la cara, **para que
 los dieciséis pads sigan tocándose debajo**, que es la razón de ser del gesto.
-Los seis efectos, el cuadro XY que barre los dos primeros parámetros, y `FIJO`:
+Las seis ranuras, el cuadro XY que barre los dos primeros parámetros, y `FIJO`:
 momentáneo —entra al tocar y sale al soltar— o enganchado.
 
 ### AUTO CHOP
@@ -383,13 +384,14 @@ distinto y cada uno está medido contra su fila.
 3. **Se adoptan** los buffers que la interfaz haya publicado, por intercambio de
    punteros.
 4. **El reparto por bloque**: para cada pad, seis ganancias de envío suavizadas y
-   una ganancia seca. Cuatro de los seis efectos (FLT, HPF, DRV, BIT) **restan**
-   el seco en la misma medida —son inserciones—; DLY y REV suman encima. Un pad
+   una ganancia seca. Los que `fxIsTone` marca (FLT, HPF, DRV, BIT, EQ, CMP,
+   GTE, DSS, LIM) **restan** el seco en la misma medida —son inserciones—; DLY
+   y REV suman encima. Un pad
    que no manda a ningún efecto y no tiene filtro se salta este bucle entero.
 5. **Las dos colas de comandos** se vacían, cada una en su propio cubo.
 6. **El transporte y las voces**, con el bloque partido en los bordes de paso.
    El filtro por pad se aplica aquí, en el camino separado.
-7. **Los seis buses**, y un bus que nadie alimenta y que no está sonando **ni se
+7. **Los once buses**, y un bus que nadie alimenta y que no está sonando **ni se
    limpia siquiera**.
 8. **La seguridad del máster**: por encima de −0.5 dBFS se dobla con una
    tangente rápida, y lo no finito se pone a cero **fuera** de esa rama.
@@ -418,7 +420,7 @@ inclina con la fuerza del golpe, fundidos de canto en coseno alzado, ancho
 estéreo en medio/lado **antes** del pan, y pan de potencia constante que desliza
 en exactamente un bloque.
 
-### Los seis efectos
+### Los once efectos
 
 | | mando 1 | mando 2 | mando 3 |
 |---|---|---|---|
@@ -428,6 +430,11 @@ en exactamente un bloque.
 | **DLY** | TIME 20–1000 ms | FBK | MIX |
 | **BIT** | BITS 1–16 | RATE | MIX |
 | **REV** | SIZE | DAMP | MIX |
+| **EQ** | ANCHO | SALIDA | MIX — y una cara propia con la curva y el analizador |
+| **CMP** | UMBRAL | RATIO | MIX — la casilla lee la reducción con el dedo fuera |
+| **GTE** | UMBRAL | CIERRE | MIX |
+| **DSS** | FREQ | FUERZA | MIX |
+| **LIM** | TECHO | SOLTAR | MIX |
 
 FLT es un barrido bidireccional con zona muerta: negativo cierra por arriba,
 positivo abre por abajo, el centro se salta la etapa. HPF tiene **su propio**

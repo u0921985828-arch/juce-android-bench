@@ -435,9 +435,89 @@ inline Iconos::Id iconoDeFx (int f) noexcept
                                       Iconos::Id::dly, Iconos::Id::bit, Iconos::Id::rev,
                                       Iconos::Id::eq,  Iconos::Id::cmp, Iconos::Id::gte,
                                       Iconos::Id::dss, Iconos::Id::lim };
+    //  UNA FILA POR TIPO, y que lo diga el compilador. Es la misma lista corta
+    //  en silencio que ya costo `fxIsTone` y `fxMixNow`: aqui el sintoma seria
+    //  una fila con un hueco -o sea lo que `Tests/planos.py` existe para cazar-
+    //  y el efecto nuevo llegando sin dibujo. Un tope que se supera en silencio
+    //  no protege, esconde.
+    static_assert (sizeof (kFx) / sizeof (kFx[0]) == (size_t) AudioEngine::kNumFx,
+                   "iconoDeFx tiene que tener una fila por tipo");
     if (! juce::isPositiveAndBelow (f, (int) (sizeof (kFx) / sizeof (kFx[0]))))
         return Iconos::Id::ninguno;
     return kFx[f];
+}
+
+//  ==========================================================================
+//  LA REJILLA DEL MENU DE RANURA SE PIDE, NO SE ESCRIBE.
+//
+//  `cols` estaba clavado en 3 con un comentario que prometia lo contrario -«el
+//  numero de columnas y el de filas salen de la TABLA»- y solo lo cumplia la
+//  mitad: las filas si, las columnas no. Con once tipos daba igual; con
+//  veintiuno son SIETE filas, y siete filas piden 460 px con VACIAR contra los
+//  **370** que da una tarjeta apaisada (915x412, tope del 0.90). Medido con el
+//  clavado puesto, las filas reales salen 40,40,40,40,40,22,0: la sexta por
+//  debajo del dedo y la septima de 0x0, o sea `TOUCH` y `CERO` en `expo.py`.
+//  Y esta ficha NO se desplaza -es la regla de la casa, y aqui ademas la
+//  tarjeta se dibuja encima de la rejilla de pads- asi que lo que no cabe no
+//  se alcanza arrastrando.
+//
+//  Se pregunta con las DOS cosas y no con una: que las filas quepan de ALTO y
+//  que la celda se pueda tocar de ANCHO. Con una sola, siete columnas cabrian
+//  de pie en el Fold a 32 px de celda.
+//
+//  Y se prefiere el reparto que NO deja fila corta —«una celda del doble de
+//  ancho que sus hermanas se lee como otra cosa», que ya estaba escrito ahi—:
+//  se prueban antes los divisores. Con 21 eso da **3 columnas x 7 filas de
+//  pie** y **7 x 3 apaisado**, que es la misma rejilla transpuesta; girado
+//  sobra ancho y falta alto, que es la regla de siempre.
+inline int menuRanuraPide (int filas, bool conVaciar) noexcept
+{
+    return 2 * Metrics::md + Metrics::hit + Metrics::md
+           + filas * Metrics::btn + (filas - 1) * Metrics::xs
+           + (conVaciar ? Metrics::sm + Metrics::btn : 0);
+}
+
+inline int menuRanuraColumnas (int n, int topeAlto, int anchoDentro, bool conVaciar) noexcept
+{
+    if (n <= 0) return 1;
+
+    //  Un candidato vale si cabe de ALTO y se puede tocar de ANCHO, y ademas
+    //  si deja mas de una fila: **una rejilla de una sola fila no es una
+    //  rejilla, es la fila** — la de la cara, de seis ranuras, que es
+    //  exactamente lo que este menu existe para no ser. Sin ese tercer
+    //  requisito, once tipos salen a 11x1 en tableta y apaisado, que es donde
+    //  once celdas de 64 px caben a lo ancho: la regla contestaria «cabe» a lo
+    //  que esta casa ya decidio que no se lee, cuando el selector de dieciseis
+    //  del RACK dejo de ser una fila.
+    auto vale = [&] (int c)
+    {
+        if (c < 1 || c > n) return false;
+        const int filas = (n + c - 1) / c;
+        return filas >= 2
+                 && menuRanuraPide (filas, conVaciar) <= topeAlto
+                 && anchoDentro / c >= Metrics::hit;
+    };
+
+    //  MENOS COLUMNAS ES MEJOR: la rejilla mas alta que quepa es la que se
+    //  recorre con el pulgar sin cruzar la pantalla, y es la forma que el
+    //  telefono pide.
+    int elegido = 0;
+    for (int c = 3; c <= n && elegido == 0; ++c)
+        if (vale (c)) elegido = c;
+
+    //  Y SOLO SI ESA DEJA LA ULTIMA FILA CORTA se cambia por una que reparta
+    //  exacto — «una celda del doble de ancho que sus hermanas se lee como
+    //  otra cosa», que ya estaba escrito abajo—. Con 21 apaisado eso es lo que
+    //  separa 5x5 (una huerfana, y cabiendo por SEIS pixeles) de **7x3**, que
+    //  es la misma rejilla transpuesta y sobra de largo: girado sobra ancho y
+    //  falta alto.
+    if (elegido > 0 && n % elegido != 0)
+        for (int c = elegido + 1; c <= n; ++c)
+            if (n % c == 0 && vale (c)) { elegido = c; break; }
+
+    //  Y si no cabe ninguno, tres: lo que hay se reparte y la escalera de
+    //  `sheetFromBottom` recorta, que es lo que pasaba antes de esta funcion.
+    return elegido > 0 ? elegido : 3;
 }
 
 //  Los textos, fuera de la funcion que los pinta porque los mide TAMBIEN la
@@ -459,7 +539,7 @@ namespace ZatiTour
           "LOS PADS",
           "CUATRO BANCOS",
           "CARGAR, GRABAR, TOCAR",
-          "LOS SEIS EFECTOS",
+          "LOS EFECTOS",
           "LOS TRES MANDOS",
           "LA REJILLA DE PASOS",
           "LO QUE HACE UN PASO",

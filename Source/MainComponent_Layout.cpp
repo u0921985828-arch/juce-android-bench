@@ -225,6 +225,11 @@ void MainComponent::layoutPadGrid (juce::Rectangle<int> area, int cols, int rows
 
 void MainComponent::resized()
 {
+    //  Lo que cada tarjeta pide se apunta en esta pasada y no en la anterior:
+    //  sin vaciarla, un maquetado deja el suyo encima del de antes y el banco
+    //  juzgaria una ficha que ya no esta abierta.
+    UiAudit::tarjetas.clear();
+
     //  Height reserved on a seam that carries an engraved name.
     constexpr int kSeamLabelH = 12;
 
@@ -903,8 +908,15 @@ void MainComponent::resized()
         //
         //  Medido en 915x412: con 0.78, la ficha de PASO dejaba un mando de
         //  393x0 - la REJILLA, la ultima de su columna - y con 0.90 cabe.
-        const float tope = full.getWidth() > full.getHeight() ? 0.90f : 0.78f;
-        const int h = juce::jmin (desiredH, (int) ((float) full.getHeight() * tope));
+        const int h = juce::jmin (desiredH, altoTarjeta (full));
+        //  LO QUE PIDE Y LO QUE HAY, apuntado. Este `jmin` recorta EN SILENCIO
+        //  y lo que falta se lo come lo ultimo que se maqueta: es la causa de
+        //  la fila de CADENA, de la REJILLA a 217x0, de las cuatro tapas de
+        //  CARCASA a 4 px y de la celda de la linea de tiempo cayendo a 9. Las
+        //  nueve reglas ven el sintoma y solo cuando lo que se cae es medible.
+        //  Ver UiAudit::tarjeta.
+        if (s.isVisible())
+            UiAudit::tarjeta (desiredH, altoTarjeta (full), s.desplazable || s.listaPropia);
         const int w = anchoTarjeta (full.getWidth());
         auto sheet = juce::Rectangle<int> (0, 0, w, h).withCentre (full.getCentre());
         s.sheetBounds = sheet;
@@ -992,22 +1004,23 @@ void MainComponent::resized()
     {
         const bool conVaciar = ranuraVaciarBtn.isVisible();
 
-        //  Lo que pide, sumado y no probado: dos margenes, la cabecera, el
-        //  aire, las filas de tapa con sus huecos, y -si la hay- el aire y la
-        //  fila de VACIAR. Con siete tipos son CUATRO filas y no tres, y el
-        //  numero sale de la tabla y no escrito a mano: el dia que entre el
-        //  octavo la rejilla crece sola.
-        //  2*12 + 40 + 12 + 4*44 + 3*4 + (8 + 44) = 312 con ella, 260 sin.
-        //  TRES COLUMNAS desde que son once tipos: en dos serian SEIS filas y
-        //  la tarjeta no da apaisado. En tres son cuatro, y la celda cae a
-        //  ~75 px en la pantalla mas estrecha, que es donde entran «CMP» y su
-        //  dibujo. El numero de columnas y el de filas salen de la TABLA y no
-        //  escritos a mano: el dia que entre el doce, la rejilla crece sola.
-        const int cols  = 3;
+        //  LAS COLUMNAS SE PIDEN, como las filas. Ver `menuRanuraColumnas`:
+        //  `cols` estaba clavado en 3 debajo de un comentario que prometia que
+        //  «el numero de columnas y el de filas salen de la TABLA», y solo lo
+        //  cumplia la mitad. Con once tipos daba lo mismo -tres columnas y
+        //  cuatro filas en las siete pantallas-; con veintiuno son siete filas
+        //  y apaisado no caben.
+        //
+        //  Se pregunta con el tope de tarjeta de esta ventana y con el ancho
+        //  que va a tener dentro, que son exactamente los dos numeros con los
+        //  que `sheetFromBottom` decide. Escribirlos aqui a ojo seria la misma
+        //  regla en dos sitios.
+        const auto zona = safeArea();
+        const int topeAlto = altoTarjeta (zona);
+        const int anchoDentro = anchoTarjeta (zona.getWidth()) - 2 * Metrics::lg;
+        const int cols  = menuRanuraColumnas (kNumFx, topeAlto, anchoDentro, conVaciar);
         const int filas = (kNumFx + cols - 1) / cols;
-        const int quiere = 2 * Metrics::md + Metrics::hit + Metrics::md
-                           + filas * Metrics::btn + (filas - 1) * Metrics::xs
-                           + (conVaciar ? Metrics::sm + Metrics::btn : 0);
+        const int quiere = menuRanuraPide (filas, conVaciar);
         auto inner = sheetFromBottom (ranuraSheet, quiere);
 
         auto titleRow = inner.removeFromTop (Metrics::hit);
@@ -1701,9 +1714,7 @@ void MainComponent::resized()
         //  de pie - menos el margen vertical de la tarjeta. Escrito aqui
         //  porque aqui es donde se decide, y decidirlo con otro numero es
         //  como se llega a una fila de altura cero.
-        const int topeCarta = (int) ((float) full.getHeight()
-                                     * (full.getWidth() > full.getHeight() ? 0.90f : 0.78f))
-                            - 2 * Metrics::md;
+        const int topeCarta = altoTarjeta (full) - 2 * Metrics::md;
         const bool dosColumnasSet = setInnerW >= 560 && estAltoAudio > topeCarta;
         const int anchoChip = (dosColumnasSet ? setInnerW / 2 - Metrics::sm : setInnerW) - 44;
         auto chipsCaben = [this, anchoChip] (juce::OwnedArray<juce::TextButton>& btns)
@@ -2729,8 +2740,7 @@ void MainComponent::resized()
         //  wideFace es falso y la tarjeta mide 0.90: la pregunta de si la
         //  paleta cabe en dos filas se hacia con 50 px menos de los que hay, y
         //  la paleta se quedaba de ocho sin necesidad.
-        const int topeCancion = (int) ((float) full.getHeight()
-                                        * (full.getWidth() > full.getHeight() ? 0.90f : 0.78f));
+        const int topeCancion = altoTarjeta (full);
         const bool paletaAnchaCabe = (anchoPaleta / kNumPatterns - 2 >= Metrics::hit);
         const int filasPaleta = (paletaAnchaCabe || pideCancion (2) > topeCancion) ? 1 : 2;
         const int porFilaPal  = kNumPatterns / juce::jmax (1, filasPaleta);
@@ -3178,7 +3188,7 @@ void MainComponent::resized()
                         + Metrics::hit             // titulo
                         + 14                       // que hace soltar el dedo
                         + Metrics::sm
-                        + Metrics::hit             // los seis efectos, en UNA fila
+                        + Metrics::hit             // las seis ranuras, en UNA fila
                         + Metrics::sm;
         const int side = juce::jlimit (60,
                                        juce::jmax (60, faceTopArea.getWidth() - 2 * Metrics::lg),
@@ -3261,8 +3271,7 @@ void MainComponent::resized()
         //  asi que en 915x412 esta cuenta trabajaba con 321 px de tarjeta
         //  cuando la tarjeta iba a medir 371: cincuenta px de menos, y de ahi
         //  sale la altura del carril de la rejilla.
-        const int capH   = (int) (full.getHeight()
-                                   * (full.getWidth() > full.getHeight() ? 0.90f : 0.78f));
+        const int capH   = altoTarjeta (full);
         const int chrome = Metrics::md * 2          // the card's own margins
                          + Metrics::hit             // title row
                          + Metrics::sm
@@ -3425,8 +3434,7 @@ void MainComponent::resized()
             //  pregunta con el mismo tope que aplica sheetFromBottom, que es
             //  el unico numero con el que la respuesta es la de la tarjeta que
             //  se va a dibujar.
-            const int topeSeq = (int) ((float) full.getHeight()
-                                       * (full.getWidth() > full.getHeight() ? 0.90f : 0.78f));
+            const int topeSeq = altoTarjeta (full);
             //  La altura que pide la pagina, con y sin la banda de bloqueos y
             //  con la MISMA cuenta: preguntar con una y colocar con otra es
             //  como se llega a un control de altura cero.

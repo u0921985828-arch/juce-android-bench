@@ -61,6 +61,43 @@ public:
     //  usa el bucle de la etapa, `setFxParam` y la cara para saber de cual
     //  leer la reduccion.
     static constexpr int kFxCmp = 7, kFxGte = 8, kFxDss = 9, kFxLim = 10;
+    //  Y LOS OTROS SIETE, que estaban escritos como literales dentro de
+    //  `setFxParam` y de las etapas. Ver `fxP`.
+    static constexpr int kFxFlt = 0, kFxHpf = 1, kFxDrv = 2, kFxDly = 3,
+                         kFxBit = 4, kFxRev = 5, kFxEq  = 6;
+
+    //  Los valores de fabrica de los tres parametros de cada tipo, en una
+    //  tabla y no en diecinueve llaves de inicializacion repartidas por esta
+    //  cabecera. Tienen que decir lo mismo que `MainComponent::fxDefs[f]
+    //  .spec[p].def`, que es donde arranca el MANDO: lo comprueba
+    //  `Tests/ranuras.py`, porque un control y su motor contando cosas
+    //  distintas es el fallo que ya costo una medida con el corte del pad. Y
+    //  es publica por eso: para que el banco pueda compararlas.
+    //
+    //  Y en cuanto se compararon, TRES no cuadraban: DRV arrancaba con el
+    //  DRIVE en 0.0 y el TONO en 20 kHz mientras su mando decia 0.55 y 8 kHz,
+    //  y la FUERZA del de-esser en 0.0 con el mando en 0.5. El mando se
+    //  construye con `setValue (def, dontSendNotification)` —a proposito: no
+    //  hay motor al que empujar todavia— asi que nadie los igualaba nunca, y
+    //  hasta que alguien tocara el mando o abriera un proyecto el motor sonaba
+    //  con un numero y la cara decia otro. Manda la CARA, que es donde el
+    //  numero esta razonado (0.55 de drive y 8 kHz de tono llevan su parrafo
+    //  al lado en `fxDefs`), y la fuerza a cero era ademas un mando que se
+    //  movia y no hacia nada, que es un fallo que esta casa ya ha pagado.
+    static constexpr float kFxDef[kNumFx][3] =
+    {
+        {     0.0f,   0.707f, 0.0f },   // FLT  barrido, reso, mix
+        {   200.0f,   0.707f, 0.0f },   // HPF  freq, reso, mix
+        {    0.55f,  8000.0f, 0.0f },   // DRV  drive, tono, mix
+        {   250.0f,    0.35f, 0.0f },   // DLY  tiempo, realimentacion, mix
+        {     8.0f,     4.0f, 0.0f },   // BIT  bits, rate, mix
+        {    0.55f,    0.45f, 0.0f },   // REV  tamano, amortiguado, mix
+        {     1.0f,     0.0f, 0.0f },   // EQ   ancho, salida, mix
+        {   -18.0f,     4.0f, 0.0f },   // CMP  umbral, ratio, mix
+        {   -40.0f,   120.0f, 0.0f },   // GTE  umbral, cierre, mix
+        {  6000.0f,     0.5f, 0.0f },   // DSS  freq, fuerza, mix
+        {    -1.0f,   120.0f, 0.0f },   // LIM  techo, soltar, mix
+    };
     static constexpr int kNumSteps      = 64;   // max steps per pattern (length is variable, see below)
     static constexpr int kMinPatLen     = 16;
     static constexpr int kMaxPatLen     = kNumSteps;   // 64 = four bars of 16
@@ -1002,11 +1039,11 @@ public:
     void copyEqScope (float* pre, float* post, int n) noexcept;
 
     //  DINAMICA. Los tres de cada uno, y la reduccion que se lee.
-    void setDynP0  (int i, float v) noexcept { if (juce::isPositiveAndBelow (i, 4)) dynP0[(size_t) i].store (v, std::memory_order_relaxed); }
-    void setDynP1  (int i, float v) noexcept { if (juce::isPositiveAndBelow (i, 4)) dynP1[(size_t) i].store (v, std::memory_order_relaxed); }
-    void setDynMix (int i, float v) noexcept { if (juce::isPositiveAndBelow (i, 4)) dynMix[(size_t) i].store (juce::jlimit (0.0f, 1.0f, v), std::memory_order_relaxed); }
-    float getDynP0  (int i) const noexcept { return juce::isPositiveAndBelow (i, 4) ? dynP0[(size_t) i].load (std::memory_order_relaxed) : 0.0f; }
-    float getDynP1  (int i) const noexcept { return juce::isPositiveAndBelow (i, 4) ? dynP1[(size_t) i].load (std::memory_order_relaxed) : 0.0f; }
+    void setDynP0  (int i, float v) noexcept { setFxParam (dynIdx (i), 0, v); }
+    void setDynP1  (int i, float v) noexcept { setFxParam (dynIdx (i), 1, v); }
+    void setDynMix (int i, float v) noexcept { setFxParam (dynIdx (i), 2, v); }
+    float getDynP0  (int i) const noexcept { return juce::isPositiveAndBelow (i, 4) ? fxP[(size_t) dynIdx (i)][0].load (std::memory_order_relaxed) : 0.0f; }
+    float getDynP1  (int i) const noexcept { return juce::isPositiveAndBelow (i, 4) ? fxP[(size_t) dynIdx (i)][1].load (std::memory_order_relaxed) : 0.0f; }
     float getDynReduccion (int i) const noexcept
     { return juce::isPositiveAndBelow (i, 4) ? dynRed[(size_t) i].load (std::memory_order_relaxed) : 0.0f; }
     //  Si el bus del EQ ha dado señal hace poco. Sin esto la cara no sabe
@@ -1587,11 +1624,42 @@ private:
     //  asignaban ahi, y `fxDry`, que reservaba 2 x maxBlock de memoria y no lo
     //  leia nadie. Un parametro que se copia y no se usa se lee como si
     //  hiciera algo, y el dia que alguien lo mueva no pasara nada.
+    //  ==================================================================
+    //  LOS PARAMETROS DE TODOS LOS EFECTOS, EN UNA TABLA.
+    //
+    //  Estaban en diecinueve atomicos con nombre propio repartidos por esta
+    //  cabecera, mas dos arrays de cuatro para la dinamica, y de ahi salian
+    //  TRES sitios que hay que escribir a mano por cada tipo nuevo — y los
+    //  tres fallan en SILENCIO, que es lo que los hace caros:
+    //
+    //    · `fxMixNow[kNumFx]` (seccion 5b) era una lista literal de once
+    //      cargas atomicas: el tipo que falte se inicializa a 0.0f, o sea
+    //      MUDO, sin un aviso del compilador.
+    //    · `setFxParam` era un `switch (fx * 3 + par)` con TREINTA Y TRES
+    //      casos escritos uno a uno — sesenta y tres con veintiun tipos — y
+    //      el que falte cae en el `default`, o sea un mando que se mueve y no
+    //      hace nada.
+    //    · `copyStateFrom` copiaba VEINTIDOS pares de atomicos a mano, y su
+    //      propio comentario dice que eso ya se olvido tres veces. El sintoma
+    //      es que el rebote no suena como la escucha, y solo se descubre
+    //      cuando ya lo has mandado.
+    //
+    //  Con la tabla, los tres son un bucle. El indice es el MISMO que usan
+    //  `fxDefs` en la cara y `setFxParam (fx, par)` aqui, asi que no hay una
+    //  segunda numeracion que mantener.
+    //
+    //  Y LOS NOMBRES SE QUEDAN, como REFERENCIAS a su hueco. No son una
+    //  segunda copia -son el mismo atomico- y hacen que las etapas sigan
+    //  diciendo `dlyTime` y no `fxP[3][0]`, que es la mitad de por que se
+    //  entiende esa parte del fichero. Cuestan un puntero cada una y ni una
+    //  linea de las cincuenta lecturas que ya habia.
+    std::array<std::array<std::atomic<float>, 3>, kNumFx> fxP;
+
     //  El barrido bidireccional de FLT: -1 cerrado por arriba, 0 neutro,
     //  +1 abierto por abajo. Ver setFltSweep.
-    std::atomic<float> fltSweep { 0.0f };
-    std::atomic<float> fxReso   { 0.707f };
-    std::atomic<float> fxDrive  { 0.0f };        // 0..1
+    std::atomic<float>& fltSweep = fxP[kFxFlt][0];
+    std::atomic<float>& fxReso   = fxP[kFxFlt][1];
+    std::atomic<float>& fxDrive  = fxP[kFxDrv][0];        // 0..1
 
     // Audio-thread-only smoothed FX params (one-pole toward the atomics):
     // knob moves arrive as per-block jumps otherwise — zipper on the filter,
@@ -1628,34 +1696,34 @@ private:
     //  Cuesta tres multiplicaciones-acumulaciones mas por muestra y por canal
     //  sobre una etapa que no llega al 1% de carga.
     juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> delayLine { 96000 };
-    std::atomic<float> dlyTime { 250.0f };       // ms
-    std::atomic<float> dlyFb   { 0.35f };        // 0..0.95
-    std::atomic<float> dlyMix  { 0.0f };         // 0..1
+    std::atomic<float>& dlyTime = fxP[kFxDly][0];   // ms
+    std::atomic<float>& dlyFb   = fxP[kFxDly][1];   // 0..0.95
+    std::atomic<float>& dlyMix  = fxP[kFxDly][2];   // 0..1
 
     // ISO wet/dry, so the low-pass can be blended rather than only replacing.
-    std::atomic<float> fxMix { 0.0f };
+    std::atomic<float>& fxMix = fxP[kFxFlt][2];
 
     // HPF: its OWN filter, not the ISO one switched to high-pass. Two objects
     // cost a few hundred bytes and buy a band-pass you can sweep from both
     // ends — one shared filter would have made them mutually exclusive.
     juce::dsp::StateVariableTPTFilter<float> hpFilter;
-    std::atomic<float> hpFreq { 200.0f };
-    std::atomic<float> hpReso { 0.707f };
-    std::atomic<float> hpMix  { 0.0f };
+    std::atomic<float>& hpFreq = fxP[kFxHpf][0];
+    std::atomic<float>& hpReso = fxP[kFxHpf][1];
+    std::atomic<float>& hpMix  = fxP[kFxHpf][2];
     float smHpFreq = 200.0f, smHpReso = 0.707f, smHpMix = 0.0f;
 
     // Drive tone: a one-pole low-pass after the tanh, because saturation
     // without somewhere for the harmonics to go is just harsh.
-    std::atomic<float> drvTone { 20000.0f };
-    std::atomic<float> drvMix  { 0.0f };
+    std::atomic<float>& drvTone = fxP[kFxDrv][1];
+    std::atomic<float>& drvMix  = fxP[kFxDrv][2];
     float smDrvTone = 20000.0f, smDrvMix = 0.0f;
     float drvLp[2] { 0.0f, 0.0f };
     bool  drvWasActive = false;   // flanco de reactivacion: ver seccion 5b/3
 
     // Crush: bit depth and sample-and-hold rate, the two halves of lo-fi.
-    std::atomic<float> crBits { 8.0f };
-    std::atomic<float> crRate { 4.0f };
-    std::atomic<float> crMix  { 0.0f };
+    std::atomic<float>& crBits = fxP[kFxBit][0];
+    std::atomic<float>& crRate = fxP[kFxBit][1];
+    std::atomic<float>& crMix  = fxP[kFxBit][2];
     float crHold[2] { 0.0f, 0.0f };
     float crPhase = 0.0f;
     bool  crWasActive = false;    // idem, ver seccion 5b/4
@@ -1666,15 +1734,15 @@ private:
     //  implica. En una caja que apunta a produccion, la reverb es lo primero
     //  que delata que el motor es de juguete.
     Fdn reverb;
-    std::atomic<float> rvSize { 0.55f };
-    std::atomic<float> rvDamp { 0.45f };
-    std::atomic<float> rvMix  { 0.0f };
+    std::atomic<float>& rvSize = fxP[kFxRev][0];
+    std::atomic<float>& rvDamp = fxP[kFxRev][1];
+    std::atomic<float>& rvMix  = fxP[kFxRev][2];
 
     //  EL EQ DE CINCO BANDAS. Es un INSERTO -fxIsTone- y no un envio: lo que
     //  un pad manda aqui deja de ir por el camino seco, porque ecualizar la
     //  copia y dejar el original sonando al lado no ecualiza nada.
     Eq5 eqFx;
-    std::atomic<float> eqMix { 0.0f };
+    std::atomic<float>& eqMix = fxP[kFxEq][2];
 
     //  LOS DOS ANILLOS DEL ANALIZADOR, que son lo que la cara dibuja detras de
     //  la curva: lo que ENTRA al EQ dice DONDE hay que tocar y lo que SALE
@@ -1690,9 +1758,11 @@ private:
     //  pueden estar abiertos a la vez, y compartir el detector haria que la
     //  puerta se cerrase cuando el limitador pegase.
     std::array<Dinamica, 4> dyn;
-    std::array<std::atomic<float>, 4> dynP0 { { { -18.0f }, { -40.0f }, { 6000.0f }, { -1.0f } } };
-    std::array<std::atomic<float>, 4> dynP1 { { {   4.0f }, { 120.0f }, {    0.0f }, { 120.0f } } };
-    std::array<std::atomic<float>, 4> dynMix { { { 0.0f }, { 0.0f }, { 0.0f }, { 0.0f } } };
+    //  Sus parametros viven en `fxP` como los de cualquier otro tipo: un
+    //  array de cuatro indexado por MODO era una segunda numeracion al lado
+    //  de la de `fxDefs`, y traducir entre las dos es de donde salen los
+    //  cruces. `dynIdx` hace la unica traduccion que queda.
+    static constexpr int dynIdx (int d) noexcept { return kFxCmp + d; }
     //  Lo que esta bajando cada uno, para la casilla de lectura de CTRL 3. Lo
     //  escribe el hilo de audio y lo lee la cara: un float atomico, que es lo
     //  mismo que ya hacen `vuL` y los demas medidores.
@@ -1723,6 +1793,16 @@ private:
     //  regalo - que es literalmente lo que hace un filtro peine.
     static constexpr bool fxIsTone[kNumFx] = { true, true, true, false, true, false, true,
                                                true, true, true, true };
+    //  Y NO SE PUEDE QUEDAR CORTA EN SILENCIO. Una lista de inicializacion de
+    //  agregado rellena con `false` lo que no se nombre, asi que un tipo nuevo
+    //  al que se le olvide su fila aqui entraria como ENVIO —sumando encima en
+    //  vez de sustituir— sin un aviso de nadie. Es lo mas barato que puede
+    //  costar una regla escrita dos veces, y es lo que ya hace `MidiIo` con
+    //  `kMaxPads`.
+    static_assert (sizeof (fxIsTone) / sizeof (fxIsTone[0]) == kNumFx,
+                   "fxIsTone tiene que tener una fila por tipo");
+    static_assert (sizeof (kFxDef) / sizeof (kFxDef[0]) == kNumFx,
+                   "kFxDef tiene que tener una fila por tipo");
 
     std::array<std::array<std::atomic<float>, kNumFx>, kNumPads> padSend {};
     //  Bit i puesto = el pad i manda a algun efecto. Ver setPadSend.

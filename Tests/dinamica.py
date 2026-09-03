@@ -29,9 +29,10 @@ APP  = os.path.join (ROOT, "build", "Zati_artefacts", "Release", "Zati")
 #  la de al lado.
 DEDO = 40
 
-#  ONCE TIPOS. Sale de la tabla de la app y no de una cuenta escrita aqui: el
-#  dia que entre el doce, lo que tiene que fallar es esta linea y no el menu.
-TIPOS = 11
+#  CUANTOS TIPOS HAY lo dice la APP (`AudioEngine::kNumFx`, en la linea del
+#  volcado) y no una cuenta escrita aqui: escrito en los dos sitios son dos
+#  reglas, y el dia que entre el doce la que se queda vieja es esta. Lo que si
+#  se comprueba aqui es que el menu OFREZCA todos los que hay.
 
 #  Los indices de los cuatro, que son los de `AudioEngine::kFxCmp` y
 #  siguientes. Escritos aqui porque es lo que la prueba comprueba: que la tapa
@@ -97,11 +98,11 @@ def main():
         #     hubiera quedado en siete celdas, CMP, GTE, DSS y LIM sonarian y
         #     no habria forma de ponerlos — un efecto al que no se llega es un
         #     efecto que no esta.
-        print ("%-9s menu    %d tipos ofrecidos   celda %dx%d px   (dedo %d)"
-               % (size, r["en_menu"], r["celda_w"], r["celda_h"], DEDO))
-        if r["en_menu"] != TIPOS:
+        print ("%-9s menu    %d de %d tipos ofrecidos   celda %dx%d px   (dedo %d)"
+               % (size, r["en_menu"], r["tipos"], r["celda_w"], r["celda_h"], DEDO))
+        if r["en_menu"] != r["tipos"]:
             malas.append ("%s: el menu ofrece %d tipos de %d"
-                          % (size, r["en_menu"], TIPOS))
+                          % (size, r["en_menu"], r["tipos"]))
         #  Y la celda contra el dedo, que es lo que decidio tres columnas y no
         #  dos: en dos serian seis filas y la tarjeta no da apaisado.
         if r["celda_w"] < DEDO or r["celda_h"] < DEDO:

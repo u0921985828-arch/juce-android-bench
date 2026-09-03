@@ -167,6 +167,35 @@ namespace UiAudit
         paneles.push_back ({ r.getX(), r.getY(), r.getWidth(), r.getHeight(), capaActual });
     }
 
+    //  LO QUE UNA TARJETA PIDE Y LO QUE HAY.
+    //
+    //  `sheetFromBottom` recorta al tope de la tarjeta con un `jmin` y NO SE
+    //  QUEJA: lo que falta se lo come en silencio lo ULTIMO que se maqueta, que
+    //  es como esta casa ha pagado la fila de CADENA, la REJILLA de la pagina
+    //  PATRON a 217x0, las cuatro tapas de CARCASA a 4 px y la celda de la
+    //  linea de tiempo cayendo de 20.2 a 9. Las nueve reglas ven el SINTOMA
+    //  -una celda por debajo de su suelo, un control de 0x0- y solo cuando lo
+    //  que se cae es medible: una tarjeta que pide cincuenta pixeles de mas y
+    //  se los quita a un texto pintado no la ve ninguna.
+    //
+    //  Se apunta la CAUSA y no se juzga: la primera corrida saco 92 y ni uno era
+    //  un fallo -cinco fichas que piden su deseo entero y dejan que el recorte se
+    //  lo coma un elemento elastico con suelo propio, con cero CERO y cero CELDA
+    //  en la misma corrida-. Una ficha que se desplaza puede pedir lo que quiera
+    //  -para eso se desplaza-; una que no, no. Ver Tests/expo.py.
+    struct Tarjeta { int pedido, tope; bool desplaza; };
+    inline std::vector<Tarjeta> tarjetas;
+
+    //  Y no se guarda con `midiendo`, que solo esta puesto durante la pasada
+    //  de pintado: esto lo escribe `resized()`, que corre antes. La lista la
+    //  vacia el propio `resized()` al empezar, o cada maquetado dejaria el
+    //  suyo encima del anterior.
+    inline void tarjeta (int pedido, int tope, bool desplaza)
+    {
+        if (! enabled()) return;
+        tarjetas.push_back ({ pedido, tope, desplaza });
+    }
+
     //  EL JUEGO DE ICONOS, RASTERIZADO.
     //
     //  Un icono se juzga por tres cosas y solo la primera se ve mirandolo:
@@ -676,6 +705,12 @@ namespace UiAudit
                       << ",\"x\":" << p.x << ",\"y\":" << p.y
                       << ",\"w\":" << p.w << ",\"h\":" << p.h
                       << ",\"capa\":" << p.capa << "}" << std::endl;
+
+        for (const auto& t : tarjetas)
+            std::cout << "{\"tarjeta\":1"
+                      << ",\"pedido\":" << t.pedido
+                      << ",\"tope\":" << t.tope
+                      << ",\"desplaza\":" << (t.desplaza ? 1 : 0) << "}" << std::endl;
 
         if (tourPaso >= 0)
             std::cout << "{\"tour\":" << tourPaso

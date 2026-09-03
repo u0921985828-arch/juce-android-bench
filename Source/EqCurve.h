@@ -77,6 +77,8 @@ public:
         //  `padAncho` -un valor por defecto que ademas es un valor valido-.
         suavePre.fill (kPiso);
         suavePost.fill (kPiso);
+        pintadoPre.fill (kPiso);
+        pintadoPost.fill (kPiso);
     }
 
     //  banda, frecuencia en Hz, ganancia en dB. Lo escribe quien lo reciba.
@@ -114,6 +116,31 @@ public:
         const float k = 1.0f - (float) std::exp (-dtMs / kTauCaidaMs);
         analiza (pre,  n, suavePre,  k);
         analiza (post, n, suavePost, k);
+
+        //  Y SOLO SI SE HA MOVIDO ALGO, que es la regla de la casa -«lo que SI
+        //  se mueve se repinta, pero solo lo que se mueve»- y aqui faltaba: la
+        //  caida es exponencial, asi que con la maquina en silencio las bandas
+        //  bajan hacia su suelo y NUNCA lo alcanzan. Este `repaint` era
+        //  incondicional, o sea que una app parada con el EQ puesto repintaba
+        //  la curva en cada cuadro para siempre. Medido con `Tests/cpu.py`:
+        //  **375 entradas en 8 s** contra 1, y 21.8 millones de pixeles contra
+        //  56 400 - y no lo veia nadie porque esa tabla contaba LLAMADAS, asi
+        //  que una banda de 376x155 se leia igual que un fotograma entero.
+        //
+        //  Una decima de decibelio es la mitad de lo que un pixel de esta curva
+        //  representa a su escala, asi que por debajo de eso el dibujo saldria
+        //  identico: repintar es trabajo tirado.
+        bool movio = false;
+        for (int i = 0; i < kBines && ! movio; ++i)
+            movio = std::abs (suavePre[i] - pintadoPre[i]) > 0.1f
+                 || std::abs (suavePost[i] - pintadoPost[i]) > 0.1f;
+        if (! movio) return;
+
+        for (int i = 0; i < kBines; ++i)
+        {
+            pintadoPre[i]  = suavePre[i];
+            pintadoPost[i] = suavePost[i];
+        }
         repaint();
     }
 
@@ -479,4 +506,9 @@ private:
     std::array<float, 2 * kFft> fftBuf {};
     std::array<float, kBines>   suavePre  {};
     std::array<float, kBines>   suavePost {};
+    //  Lo ultimo que se DIBUJO, para no repintar una curva identica. Ver
+    //  `setMuestras`: la caida es exponencial y en silencio no llega nunca al
+    //  suelo, asi que sin esto la curva se repinta en cada cuadro para siempre.
+    std::array<float, kBines>   pintadoPre  {};
+    std::array<float, kBines>   pintadoPost {};
 };

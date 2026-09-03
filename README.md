@@ -34,9 +34,11 @@ El repositorio se compila de dos formas y las dos importan:
   con granos solapados) —, recorte, bucle, reverso, choke, paneo y envolvente.
 - **Secuenciador** de 8 bancos, longitud variable de 16 a 64 pasos, cadena de
   bancos, nota por paso y una línea de tiempo de canción.
-- **Seis efectos** de envío, con cuánto manda cada pad a cada uno: FLT (un
-  barrido bidireccional, paso bajo a un lado y paso alto al otro, con el centro
-  neutro), HPF, DRV, DLY, BIT y REV.
+- **Once efectos** y **seis ranuras** en la cara para ponerlos, con cuánto
+  manda cada pad a cada uno: FLT (un barrido bidireccional, paso bajo a un lado
+  y paso alto al otro, con el centro neutro), HPF, DRV, DLY, BIT, REV, un EQ de
+  cinco bandas con su propia cara y analizador, y la familia de dinámica —CMP,
+  GTE, DSS y LIM—. Una ranura vacía dice «+» y abre el menú.
 - **Panel XY** para tocarlos: dos parámetros a la vez, momentáneo o fijo, en la
   mitad de arriba de la cara — los pads siguen debajo y se pueden disparar
   mientras barres.

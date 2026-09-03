@@ -23,7 +23,7 @@
 #
 #      python3 Tests/cpu.py [segundos]
 # ============================================================================
-import json, os, subprocess, sys
+import json, os, shutil, subprocess, sys, tempfile
 
 ROOT = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
 APP  = os.path.join (ROOT, "build", "Zati_artefacts", "Release", "Zati")
@@ -40,11 +40,17 @@ SEGUNDOS = int (sys.argv[1]) if len (sys.argv) > 1 else 8
 FICHAS = ["", "eq", "pads", "sec", "song", "mix", "set", "proj", "midi", "gest",
           "xy", "rack", "chop", "browse"]
 
-#  EL TOPE. Un arranque pinta el fondo una vez, y una ficha que se abre puede
-#  pedir otro; a partir de ahi, con nadie tocando nada, no hay motivo para
-#  ninguno mas. Tres deja sitio para el asentamiento de los margenes del
-#  sistema sin dejar pasar un repintado periodico, que es lo que se busca:
-#  a treinta por segundo, ocho segundos son doscientos cuarenta.
+#  EL TOPE, en VENTANAS y no en llamadas. Un arranque pinta el fondo una vez y
+#  una ficha que se abre puede pedir otro; a partir de ahi, con nadie tocando
+#  nada, no hay motivo para ninguno mas.
+#
+#  Y en ventanas porque contar LLAMADAS no separa un fotograma de una banda -la
+#  leccion que la tabla de abajo ya tenia y esta no-: medido, una ficha abierta
+#  sobre una maquina con dos efectos encendidos entra 370 veces en
+#  `MainComponent::paint` con un recorte de 2622 pixeles, que son **0.007**
+#  ventanas. Tres ventanas dejan sitio al asentamiento de los margenes del
+#  sistema sin dejar pasar un repintado periodico: a treinta por segundo, ocho
+#  segundos son doscientas cuarenta.
 TOPE = 3
 
 #  Y LA MISMA PREGUNTA CON LA MAQUINA SONANDO, que es el estado que este banco
@@ -105,8 +111,17 @@ def display_alive():
 
 
 def corre (ficha, sonando=False):
+    #  CON SU PROPIO HOME, que es lo que le faltaba. Sin el, la app restaura la
+    #  SESION que dejara la ultima prueba que corriera - y `Tests/ranuras.py` y
+    #  `Tests/dinamica.py` dejan DOS efectos encendidos, cuyas lamparas laten a
+    #  proposito («nothing lit means nothing repainted»). Un veredicto que
+    #  depende de lo que dejara el de antes no es un veredicto: es el mismo
+    #  fallo que `Tests/session.py` acaba de pagar en `proyecto()`.
+    casa = tempfile.mkdtemp (prefix="zati-cpu-")
     env = dict (os.environ)
-    env.update ({"ZATI_AUDIT": "1", "ZATI_SIZE": "412x915", "ZATI_LANG": "es",
+    env.update ({"HOME": casa,
+                 "XDG_DATA_HOME": os.path.join (casa, ".local", "share"),
+                 "ZATI_AUDIT": "1", "ZATI_SIZE": "412x915", "ZATI_LANG": "es",
                  "ZATI_DEMO": "1", "ZATI_OPEN": ficha, "ZATI_SPIN": str (SEGUNDOS),
                  "ZATI_VBLANK": str (VBLANK_HZ)})
     if sonando: env["ZATI_SONANDO"] = "1"
@@ -115,6 +130,8 @@ def corre (ficha, sonando=False):
                               timeout=SEGUNDOS + 90).stdout
     except subprocess.TimeoutExpired:
         return None
+    finally:
+        shutil.rmtree (casa, ignore_errors=True)
 
     for linea in out.splitlines():
         linea = linea.strip()
@@ -161,17 +178,28 @@ def main():
     if not display_alive():
         print ("no hay DISPLAY vivo");  return 1
 
-    print ("ficha    fotogramas   CPU ms / %d s" % SEGUNDOS)
+    print ("ficha    entradas  ventanas   CPU ms / %d s" % SEGUNDOS)
     malas = []
     for f in FICHAS:
         r = corre (f)
         if r is None:
             print ("%-8s  --   no contesto" % (f or "(cara)"));  malas.append (f or "(cara)")
             continue
+        #  EN PIXELES Y NO EN LLAMADAS, que es la leccion que la tabla de
+        #  abajo aprendio y esta no: «contar llamadas no separa un fotograma de
+        #  una banda». Medido, una ficha abierta sobre una maquina con DOS
+        #  efectos encendidos entra 370 veces en `MainComponent::paint` con un
+        #  recorte de **2622 pixeles** -las dos lamparas, que laten a
+        #  proposito- y eso salia como «se repinta sola» al lado de una que
+        #  repinta la ventana entera. Son 0.007 ventanas: dos ordenes de
+        #  magnitud.
         fondos = int (r.get ("fondos", -1))
-        print ("%-8s %6d %12.0f%s" % (f or "(cara)", fondos, r.get ("cpu_ms", 0.0),
-                                      "   <-- se repinta sola" if fondos > TOPE else ""))
-        if fondos > TOPE:
+        vent = max (1, int (r.get ("ventana", 1)))
+        equi = int (r.get ("pixeles", 0)) / float (vent)
+        print ("%-8s %6d  %7.2f %10.0f%s"
+               % (f or "(cara)", fondos, equi, r.get ("cpu_ms", 0.0),
+                  "   <-- se repinta sola" if equi > TOPE else ""))
+        if equi > TOPE:
             malas.append (f or "(cara)")
 
     print()
