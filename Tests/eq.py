@@ -39,6 +39,20 @@ DEDO = 40
 PANTALLAS = ["412x915", "280x653"]
 
 
+#  SIN PANTALLA NO SE MIDE NADA, y hay que DECIRLO. Sin esta guarda, un Xvfb
+#  muerto sale como «la app no publico la linea» —o sea como un fallo de la
+#  app— y se pierde media tarde buscando un cambio que no era. Es la misma
+#  guarda que ya abre `expo.py`, `kits.py` y las demas.
+def display_alive():
+    d = os.environ.get ("DISPLAY", ":99")
+    try:
+        return subprocess.run (["xdpyinfo", "-display", d],
+                               stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL, timeout=10).returncode == 0
+    except Exception:
+        return False
+
+
 def corre (size):
     casa = tempfile.mkdtemp (prefix="zati-eq-")
     env = dict (os.environ, HOME=casa,
@@ -60,6 +74,10 @@ def corre (size):
 def main():
     if not os.path.exists (APP):
         print ("no existe %s: compila antes -cmake --build build-" % APP)
+        return 1
+    if not display_alive():
+        print ("no hay DISPLAY vivo: arranca Xvfb antes -esto no mide nada sin "
+               "pantalla, y sin decirlo saldria como un fallo de la app-")
         return 1
 
     malas = []
@@ -177,7 +195,46 @@ def main():
             malas.append ("%s: arrastrar no cancela el mantener: el menu se abriria "
                           "al soltar" % size)
 
-        #  8. EL TIPO Y LA Q, por la TAPA y por el MANDO. Un tipo de PASO no
+        #  8. EL RECORRIDO ES LA BANDA AUDIBLE ENTERA, y la banda mas aguda
+        #     LLEGA a donde dice el mando. Va con DOS cifras porque una sola se
+        #     engaña: «donde queda» lo cumple igual un numero guardado y no
+        #     aplicado, y solo la respuesta DIBUJADA ahi arriba dice que el
+        #     filtro esta de verdad en esos 20 kHz.
+        #
+        #     El tope interno de `recalcula` era `fs * 0.45` —19 845 Hz a
+        #     44.1 kHz— asi que con el techo en 20 000 la banda se habria
+        #     quedado 156 Hz por debajo de donde el nodo la dibuja, en silencio:
+        #     el mando diciendo una cosa y el filtro haciendo otra, que es el
+        #     fallo que ya costo una medida con el corte del pad.
+        print ("%-9s rango   %.0f Hz a %.0f   la aguda a tope queda en %.0f Hz "
+               "y dibuja %+.2f dB"
+               % (size, r["f_min"], r["f_max"], r["f_tope"], r["db_tope"]))
+        if abs (r["f_min"] - 20.0) > 0.5 or abs (r["f_max"] - 20000.0) > 0.5:
+            malas.append ("%s: el recorrido va de %.0f a %.0f y tiene que ir de "
+                          "20 a 20000" % (size, r["f_min"], r["f_max"]))
+        if abs (r["f_tope"] - r["f_max"]) > 1.0:
+            malas.append ("%s: la banda aguda a tope quedo en %.0f Hz de los %.0f "
+                          "que dice el mando" % (size, r["f_tope"], r["f_max"]))
+        #  Y NO «MAS DE TANTO», sino una IDENTIDAD: un estante alto sube la
+        #  MITAD de su ganancia justo en su propia frecuencia —esa es la
+        #  definicion de la frecuencia de un estante— asi que con +10 dB
+        #  escritos en 20 kHz lo que se dibuja ahi son **5.00 clavados**. Un
+        #  liston de «mas de 3» lo cumple igual un filtro arrastrado a otro
+        #  sitio: por encima de su esquina un estante tiende a su ganancia
+        #  entera, o sea que un tope que se llevara la banda a 16.8 kHz daria
+        #  +9 y pasaria. La identidad no.
+        #
+        #  El banco corre a 48 kHz, donde el `fs * 0.45` de antes no llegaba a
+        #  morder -21 600 > 20 000-: el fallo es de 44.1 kHz. Se rompe a
+        #  proposito bajando el tope a `fs * 0.35`, que es exactamente lo que
+        #  44.1 kHz le haria a una banda de 20 kHz.
+        if abs (r["db_tope"] - 5.0) > 0.5:
+            malas.append ("%s: la banda aguda esta escrita en %.0f Hz con +10 dB y "
+                          "la curva dibuja %+.2f dB ahi -un estante en su propia "
+                          "frecuencia sube 5.00-"
+                          % (size, r["f_max"], r["db_tope"]))
+
+        #  9. EL TIPO Y LA Q, por la TAPA y por el MANDO. Un tipo de PASO no
         #     tiene ganancia — corta, no realza — asi que su nodo se queda
         #     clavado en la linea de cero: con +8 dB escritos, pasar la banda a
         #     PASO ALTO tiene que dejar `gainVisible` en 0. Y la Q escribe en
@@ -203,7 +260,8 @@ def main():
         return 1
     print ("el plato pasa a la curva, cada nodo se agarra, escribe su banda, no "
            "cruza a la vecina, no responde en el aire, la curva sigue a las "
-           "bandas, mantener abre la ficha y el tipo y la Q escriben en los dos")
+           "bandas, va de 20 Hz a 20 kHz y llega, mantener abre la ficha y el "
+           "tipo y la Q escriben en los dos")
     return 0
 
 

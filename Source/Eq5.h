@@ -84,14 +84,36 @@ public:
     }
 
     static constexpr float kFreqDef[kBands] = { 80.0f, 250.0f, 1000.0f, 3500.0f, 10000.0f };
-    static constexpr float kFreqMin = 30.0f;
-    static constexpr float kFreqMax = 16000.0f;
+    //  DE 20 Hz A 20 kHz, que es la banda audible entera. Estaban en 30 y
+    //  16 000 y se quedaban cortas por los dos lados: por abajo no se llegaba
+    //  al sub, y 16 kHz es donde un estante alto EMPIEZA a servir, no donde
+    //  acaba. Es ademas el recorrido que el HPF de `fxDefs` ya usa.
+    //
+    //  Y NO 22 kHz, que es lo primero que uno escribe: a 44.1 kHz -que es lo
+    //  que entrega media Android- Nyquist son 22 050, asi que una banda en
+    //  22 000 cae a **0.9977 de Nyquist** y ahi el mapeo bilineal de RBJ manda
+    //  la frecuencia al infinito. El tope de abajo la habria arrastrado en
+    //  silencio a 19 845, o sea el mando diciendo una cosa y el filtro
+    //  haciendo otra - el fallo que ya costo una medida con el corte del pad.
+    static constexpr float kFreqMin = 20.0f;
+    static constexpr float kFreqMax = 20000.0f;
     static constexpr float kGainMax = 12.0f;      // dB, a los dos lados
 
     //  Lo que la banda i puede recorrer sin adelantar a sus vecinas. Un tercio
     //  de octava de guarda: pegadas del todo, dos campanas se suman en vez de
     //  esculpir y la curva deja de decir lo que hace.
     static constexpr float kGuarda = 1.26f;       // ~ un tercio de octava
+
+    //  HASTA DONDE LLEGA UNA BANDA DE VERDAD, escrito UNA vez. Vivia dentro de
+    //  `recalcula` como un `fs * 0.45` suelto, y ese numero deja 19 845 Hz a
+    //  44.1 kHz: con el techo en 20 000 la banda mas aguda se habria quedado
+    //  156 Hz por debajo de donde dice el mando. A 0.49 da 21 609 a 44.1 k,
+    //  asi que los 20 kHz se alcanzan; por encima de esa frecuencia de
+    //  muestreo el que manda es `kFreqMax` y no Nyquist.
+    float topeUtil() const noexcept
+    {
+        return juce::jmin (kFreqMax, (float) (fs * 0.49));
+    }
 
     Eq5() noexcept
     {
@@ -356,7 +378,7 @@ private:
 
             const double A  = std::pow (10.0, (double) dB / 40.0);
             const double w  = 2.0 * juce::MathConstants<double>::pi
-                                * (double) juce::jlimit (kFreqMin, (float) (fs * 0.45), freq[(size_t) b]) / fs;
+                                * (double) juce::jlimit (kFreqMin, topeUtil(), freq[(size_t) b]) / fs;
             const double cw = std::cos (w), sw = std::sin (w);
             //  La Q de la banda por el mando ANCHO de la fila, que las escala
             //  todas: dos numeros con dos dueños distintos -uno de la banda y

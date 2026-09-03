@@ -2481,6 +2481,35 @@ void MainComponent::auditEq()
     const float qMotor  = engine.getEqQ (2);
     const float qEspejo = eqEspejo.qDe (2);
 
+    //  8. LA BANDA MAS AGUDA LLEGA A DONDE DICE EL MANDO. El recorrido pasa a
+    //     ser 20 Hz - 20 kHz, y el tope interno de `recalcula` era `fs * 0.45`
+    //     -19 845 Hz a 44.1 kHz-: con el techo en 20 000 la banda se habria
+    //     quedado 156 Hz por debajo de donde el nodo la dibuja, en silencio.
+    //
+    //     Con DOS cifras, porque una sola se engaña: **donde queda** -que lo
+    //     cumple igual un numero guardado y no aplicado- y **cuanto sube la
+    //     respuesta dibujada ahi arriba**, que es lo que dice que el filtro
+    //     esta de verdad en esos 20 kHz.
+    //     Y SE ESCRIBE, NO SE ARRASTRA. La primera version llevaba el nodo
+    //     con el gesto y se equivoco por los dos lados a la vez -las dos
+    //     pantallas dieron cosas distintas, que es lo que delata a la medida-:
+    //     `mueve` escribe la frecuencia Y la ganancia, asi que arrastrar por el
+    //     centro vertical dejaba la banda en 0 dB; y en 412x915 el nodo de
+    //     10 kHz cae al 90 % del ancho, o sea a mas de un dedo del borde, y el
+    //     agarre fallaba. Lo que esta regla mira es el TOPE y no el gesto -eso
+    //     ya lo miden las comprobaciones 3 y 4-.
+    abreBandaEq (-1);
+    for (int b = 0; b < Eq5::kBands; ++b) ponBandaEq (b, Eq5::kFreqDef[b], 0.0f);
+    ponBandaEq (4, Eq5::kFreqMax, 10.0f);
+    const float fTope = engine.getEqFreq (4);
+    {
+        juce::Image lienzo (juce::Image::ARGB, juce::jmax (1, caja.getWidth()),
+                            juce::jmax (1, caja.getHeight()), true);
+        juce::Graphics gg (lienzo);
+        eqCurva.paint (gg);
+    }
+    const float dbEnTope = eqEspejo.respuestaEnDb (Eq5::kFreqMax);
+
     abreBandaEq (-1);
     for (int b = 0; b < Eq5::kBands; ++b)
     {
@@ -2511,6 +2540,10 @@ void MainComponent::auditEq()
               << ",\"visible_paso\":"   << juce::String (visibleTrasChip, 2)
               << ",\"q_motor\":"        << juce::String (qMotor, 2)
               << ",\"q_espejo\":"       << juce::String (qEspejo, 2)
+              << ",\"f_min\":"         << juce::String (Eq5::kFreqMin, 0)
+              << ",\"f_max\":"         << juce::String (Eq5::kFreqMax, 0)
+              << ",\"f_tope\":"        << juce::String (fTope, 1)
+              << ",\"db_tope\":"       << juce::String (dbEnTope, 2)
               << "}" << std::endl;
 }
 

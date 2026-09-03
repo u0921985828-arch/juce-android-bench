@@ -43,6 +43,20 @@ CMP, GTE, DSS, LIM = 7, 8, 9, 10
 PANTALLAS = ["412x915", "280x653"]
 
 
+#  SIN PANTALLA NO SE MIDE NADA, y hay que DECIRLO. Sin esta guarda, un Xvfb
+#  muerto sale como «la app no publico la linea» —o sea como un fallo de la
+#  app— y se pierde media tarde buscando un cambio que no era. Es la misma
+#  guarda que ya abre `expo.py`, `kits.py` y las demas.
+def display_alive():
+    d = os.environ.get ("DISPLAY", ":99")
+    try:
+        return subprocess.run (["xdpyinfo", "-display", d],
+                               stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL, timeout=10).returncode == 0
+    except Exception:
+        return False
+
+
 def corre (size):
     casa = tempfile.mkdtemp (prefix="zati-dyn-")
     env = dict (os.environ, HOME=casa,
@@ -64,6 +78,10 @@ def corre (size):
 def main():
     if not os.path.exists (APP):
         print ("no existe %s: compila antes -cmake --build build-" % APP)
+        return 1
+    if not display_alive():
+        print ("no hay DISPLAY vivo: arranca Xvfb antes -esto no mide nada sin "
+               "pantalla, y sin decirlo saldria como un fallo de la app-")
         return 1
 
     malas = []
