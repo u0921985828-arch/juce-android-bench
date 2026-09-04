@@ -4,6 +4,7 @@
 #include "ZatiLookAndFeel.h"
 #include "AudioEngine.h"
 #include "FxVisor.h"
+#include "Analizador.h"
 #include "UiAudit.h"
 
 // ============================================================================
@@ -93,8 +94,148 @@ public:
         repaint();
     }
 
+    //  ------------------------------------------------------------------
+    //  Y LA SEÑAL VIVA, que es la otra mitad.
+    //
+    //  Lo de arriba dibuja lo que el efecto HARIA con cualquier cosa que le
+    //  entre: sale de la misma formula que suena y hay once filas del banco
+    //  del motor que lo comprueban. Lo que no decia era si por ahi esta
+    //  pasando algo AHORA — un visor perfecto de un bus mudo se lee igual que
+    //  uno de un bus que esta trabajando.
+    //
+    //  Y cada familia tiene su forma de contestarlo, porque cada eje pregunta
+    //  otra cosa:
+    //
+    //    - FRECUENCIA (FLT, HPF): el espectro de lo que SALE, debajo de la
+    //      respuesta. Es la gramatica que ya usa la curva grande del EQ y la
+    //      de cualquier filtro: aqui esta el sonido, y aqui lo que el filtro
+    //      le hace.
+    //    - TRANSFERENCIA (DRV, CMP, GTE, DSS, LIM): un PUNTO en la curva,
+    //      donde el nivel que entra la cruza. En los cuatro de dinamica su
+    //      altura es la reduccion MEDIDA -no la calculada- asi que el punto
+    //      cayendo sobre la curva es, ademas, la comprobacion de que lo
+    //      dibujado y lo que suena dicen lo mismo.
+    //    - TIEMPO (DLY, REV): la cola de VERDAD, una columna cada 42 ms, con
+    //      los ecos previstos delante.
+    //    - ONDA (BIT): la onda que de verdad esta saliendo cuantizada.
+    //
+    //  Todas se pintan igual: la capa viva DETRAS y atenuada, lo previsto
+    //  DELANTE y con la tinta del cristal. Dos gramaticas distintas en un
+    //  visor de 64 px serian dos cosas que aprender.
+    //  ------------------------------------------------------------------
+    void ponVivo (bool v) { if (v != vivo) { vivo = v; repaint(); } }
+    bool estaVivo() const noexcept { return vivo; }
+
+    void setMuestras (const float* pre, const float* post, int n,
+                      double dtMs, float reduccionDb)
+    {
+        if (fx < 0 || pre == nullptr || post == nullptr || n <= 0 || ! isVisible()) return;
+
+        Viva v {};
+        if (esFrecuencia (fx))
+        {
+            if (n < Analizador::kFft) return;
+            ana.analiza (post, n, dtMs);
+            //  Del espectro a las mismas columnas que la curva, que es lo
+            //  unico que hace que un pico se lea DEBAJO del trozo de respuesta
+            //  que lo esta tocando.
+            for (int i = 0; i < kPuntos; ++i)
+            {
+                const float t  = (float) i / (float) (kPuntos - 1);
+                const float hz = std::exp (std::log (Eq5::kFreqMin)
+                                           + t * (std::log (Eq5::kFreqMax) - std::log (Eq5::kFreqMin)));
+                //  -78..0 dB repartidos en el alto, que es el recorrido del
+                //  analizador y no el de la respuesta: son dos ejes verticales
+                //  distintos y mezclarlos seria dibujar una mentira.
+                v.col[(size_t) i] = juce::jlimit (0.0f, 1.0f,
+                                                  (ana.enHz (hz, 48000.0) - Analizador::kPiso)
+                                                  / -Analizador::kPiso);
+            }
+        }
+        else if (fx == AudioEngine::kFxBit)
+        {
+            //  La onda que sale, en las mismas columnas. Sin analisis: lo que
+            //  este visor dibuja ES una onda.
+            for (int i = 0; i < kPuntos; ++i)
+            {
+                const int k = juce::jlimit (0, n - 1,
+                                            n - FxVisor::kVentanaBit
+                                              + i * (FxVisor::kVentanaBit - 1) / (kPuntos - 1));
+                v.col[(size_t) i] = juce::jlimit (0.0f, 1.0f, 0.5f + 0.5f * post[k]);
+            }
+        }
+        else if (deTiempo (fx))
+        {
+            //  LA COLA, una columna cada 42 ms de RELOJ y no por cuadro: el
+            //  dibujo cuelga del vblank, asi que por cuadro la cola se leeria
+            //  al doble de velocidad en un panel de 120 Hz. Es el mismo fallo
+            //  que las cinco constantes visuales tenian en ticks.
+            colaMs += dtMs;
+            const double paso = (double) FxVisor::kVentanaMs / (double) (kPuntos - 1);
+            float pico = 0.0f;
+            for (int i = juce::jmax (0, n - 512); i < n; ++i) pico = juce::jmax (pico, std::abs (post[i]));
+            picoCola = juce::jmax (picoCola, pico);
+            while (colaMs >= paso)
+            {
+                colaMs -= paso;
+                for (int i = kPuntos - 1; i > 0; --i) cola[(size_t) i] = cola[(size_t) i - 1];
+                cola[0] = picoCola;
+                picoCola = 0.0f;
+            }
+            //  De izquierda -ahora- a derecha -hace dos segundos-, que es como
+            //  el dibujo de los ecos ya reparte el tiempo.
+            for (int i = 0; i < kPuntos; ++i) v.col[(size_t) i] = juce::jmin (1.0f, cola[(size_t) i]);
+        }
+        else
+        {
+            //  EL PUNTO DE TRABAJO. El pico de lo que entra dice DONDE cruza
+            //  la curva, y en los cuatro de dinamica la reduccion medida dice
+            //  a que altura sale.
+            float pico = 0.0f;
+            for (int i = juce::jmax (0, n - 512); i < n; ++i) pico = juce::jmax (pico, std::abs (pre[i]));
+            v.punto = true;
+            if (fx == AudioEngine::kFxDrv)
+            {
+                //  Su eje va de -1 a +1 en amplitud, asi que el pico cae en la
+                //  columna (1 + a) / 2 — que es exactamente donde el banco del
+                //  motor se equivoco la primera vez.
+                v.px = juce::jlimit (0.0f, 1.0f, 0.5f + 0.5f * pico);
+                v.py = curva[(size_t) juce::jlimit (0, kPuntos - 1,
+                                                    (int) std::lround (v.px * (kPuntos - 1)))];
+            }
+            else
+            {
+                const float inDb = juce::jlimit (-60.0f, 0.0f,
+                                                 juce::Decibels::gainToDecibels (pico, -60.0f));
+                v.px = (inDb + 60.0f) / 60.0f;
+                v.py = juce::jlimit (0.0f, 1.0f, (inDb - reduccionDb + 60.0f) / 60.0f);
+            }
+        }
+
+        //  Y SOLO SI SE MOVIO, que es la regla de la casa y la que costo una
+        //  medida en `EqCurve::setMuestras`: la caida es exponencial, asi que
+        //  con la maquina en silencio esto baja hacia su suelo y no llega
+        //  nunca — un `repaint` incondicional aqui son treinta fotogramas
+        //  completos por segundo para no cambiar un pixel.
+        bool movio = (v.punto != viva.punto)
+                  || std::abs (v.px - viva.px) > 0.004f
+                  || std::abs (v.py - viva.py) > 0.004f;
+        for (int i = 0; i < kPuntos && ! movio; ++i)
+            movio = std::abs (v.col[(size_t) i] - viva.col[(size_t) i]) > 0.004f;
+        viva = v;
+        if (movio) repaint();
+    }
+
     //  Para el banco: lo que se acaba de muestrear. Ver Tests/rack.py.
     const FxVisor::Curva& puntos() const noexcept { return curva; }
+    //  Y la capa viva, que es lo unico que separa un visor que mide de uno que
+    //  dibuja bien y no mira nada.
+    const FxVisor::Curva& vivos()  const noexcept { return viva.col; }
+    float puntoX() const noexcept { return viva.punto ? viva.px : -1.0f; }
+    float puntoY() const noexcept { return viva.punto ? viva.py : -1.0f; }
+
+    static bool esFrecuencia (int f) noexcept
+    { return f == AudioEngine::kFxFlt || f == AudioEngine::kFxHpf; }
 
     void paint (juce::Graphics& g) override
     {
@@ -123,17 +264,60 @@ public:
         const float base = dentro.getBottom() - 0.5f;
         g.drawLine (dentro.getX(), base, dentro.getRight(), base, 1.0f);
 
+        //  LA CAPA VIVA VA DETRAS Y ATENUADA. Delante taparia lo previsto, que
+        //  es lo que este visor existe para decir; y al mismo tono no se
+        //  sabria cual es cual.
+        if (vivo) pintaVivo (g, dentro);
+
         g.setColour (ZatiColours::lcdFg);
         if (deTiempo (fx)) pintaBarras (g, dentro);
         else               pintaCurva  (g, dentro);
+
+        //  Y EL PUNTO DE TRABAJO, DELANTE: es la unica pieza viva que no es un
+        //  fondo sino una lectura, y detras de la curva no se veria.
+        if (vivo && viva.punto)
+        {
+            const float x = dentro.getX() + dentro.getWidth()  * viva.px;
+            const float y = dentro.getBottom() - dentro.getHeight() * viva.py;
+            //  Y SU TINTA SE MIDE contra el cristal, que es la regla de la
+            //  casa. El acento es lo primero que sale y esta MAL aqui: se
+            //  elige para leerse sobre el CHASIS, y este punto cae sobre
+            //  `screenBg`. Es el mismo fallo que costo tres rondas con la
+            //  letra del icono, por el otro lado.
+            g.setColour (ZatiColours::markOn (ZatiColours::screenBg, 1.0f));
+            g.fillEllipse (x - 2.6f, y - 2.6f, 5.2f, 5.2f);
+            //  Con un anillo del color del cristal alrededor: sobre la curva,
+            //  que es del mismo tono, un disco solo se lee como un bulto.
+            g.setColour (ZatiColours::screenBg);
+            g.drawEllipse (x - 2.6f, y - 2.6f, 5.2f, 5.2f, 1.0f);
+        }
     }
 
     static bool deTiempo (int f) noexcept { return FxVisor::deTiempo (f); }
 
 private:
+    //  Lo VIVO en una sola pieza: o son columnas -espectro, onda, cola- o es
+    //  un punto de trabajo. Nunca las dos, porque nunca hay una familia que
+    //  pregunte las dos cosas.
+    struct Viva
+    {
+        FxVisor::Curva col {};
+        bool  punto = false;
+        float px = 0.0f, py = 0.0f;
+    };
+
     int fx = -1;
+    bool vivo = false;
     FxVisor::Curva curva {};
     FxVisor::Curva pintado {};
+    Viva viva {};
+    Analizador ana;
+    //  La cola, en columnas de 42 ms, y el pico que se esta juntando para la
+    //  siguiente. Con el pico y no con la media: una cola se lee por lo que
+    //  llega, y promediar un eco con el silencio que tiene al lado lo borra.
+    FxVisor::Curva cola {};
+    double colaMs = 0.0;
+    float  picoCola = 0.0f;
 
     void pintaCurva (juce::Graphics& g, juce::Rectangle<float> r)
     {
@@ -146,6 +330,34 @@ private:
         }
         g.strokePath (p, juce::PathStrokeType (1.4f, juce::PathStrokeType::curved,
                                                      juce::PathStrokeType::rounded));
+    }
+
+    //  ES UNA MANCHA Y NO UNA LINEA, en las tres familias que la usan: lo
+    //  vivo es el fondo sobre el que se lee lo previsto, y una segunda linea
+    //  al lado de la primera se lee como dos curvas discutiendo.
+    void pintaVivo (juce::Graphics& g, juce::Rectangle<float> r)
+    {
+        if (viva.punto) return;
+
+        //  La onda de BIT cruza el cero, asi que se rellena desde el CENTRO;
+        //  un espectro y una cola no, y se rellenan desde el suelo. Rellenar
+        //  la onda desde abajo la convertiria en una envolvente, que es otra
+        //  cosa.
+        const bool  desdeElCentro = (fx == AudioEngine::kFxBit);
+        const float y0 = desdeElCentro ? r.getCentreY() : r.getBottom();
+
+        juce::Path p;
+        p.startNewSubPath (r.getX(), y0);
+        for (int i = 0; i < kPuntos; ++i)
+        {
+            const float x = r.getX() + r.getWidth() * (float) i / (float) (kPuntos - 1);
+            p.lineTo (x, r.getBottom() - r.getHeight() * viva.col[(size_t) i]);
+        }
+        p.lineTo (r.getRight(), y0);
+        p.closeSubPath();
+
+        g.setColour (ZatiColours::lcdFg.withAlpha (0.28f));
+        g.fillPath (p);
     }
 
     void pintaBarras (juce::Graphics& g, juce::Rectangle<float> r)

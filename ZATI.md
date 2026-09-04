@@ -267,7 +267,10 @@ le quita señal seca al pad— y sólo DLY y REV suman encima. Lo que hay DENTRO
 ve en el plato de la cara, con los números de ahora: el dibujo sale de la MISMA
 fórmula que suena (`FxVisor::muestrea`, que llama a `svfDb`, `saturaDe`,
 `crush`, `bajaDb` y `Fdn::tauSegundos`) y el banco del motor compara lo dibujado
-contra lo medido, efecto por efecto.
+contra lo medido, efecto por efecto. Y detrás, la señal **viva** del bus que
+estés mirando —el espectro de un filtro, el punto de trabajo de una
+transferencia, la cola de un eco, la onda que sale del crusher—: se captura sólo
+el efecto que se ve (`AudioEngine::miraFx`), que es uno.
 
 ### XY
 

@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include "ZatiLookAndFeel.h"
 #include "Eq5.h"
+#include "Analizador.h"
 #include "Zati.h"
 #include "Lang.h"
 
@@ -55,11 +56,10 @@
 class EqCurve : public juce::Component
 {
 public:
-    //  1024 a 48 kHz son 21 ms de ventana y bines de 47 Hz. Mas resolucion no
-    //  se ve: a 412 px de ancho y en escala logaritmica, la primera octava se
-    //  lleva 80 px y ahi 47 Hz ya son cuatro pixeles por bin.
-    static constexpr int kFft   = 1024;
-    static constexpr int kBines = kFft / 2;
+    //  Ver Analizador.h: la ventana, la FFT y el par ataque/caida salieron de
+    //  aqui el dia que los visores del plato tuvieron que dibujar lo mismo.
+    static constexpr int kFft   = Analizador::kFft;
+    static constexpr int kBines = Analizador::kBines;
 
     EqCurve()
     {
@@ -75,8 +75,6 @@ public:
         //  con las dos curvas pegadas al techo y bajando, que se lee como que
         //  la maquina esta saturando. Es el mismo fallo que el cero de
         //  `padAncho` -un valor por defecto que ademas es un valor valido-.
-        suavePre.fill (kPiso);
-        suavePost.fill (kPiso);
         pintadoPre.fill (kPiso);
         pintadoPost.fill (kPiso);
     }
@@ -113,9 +111,10 @@ public:
     void setMuestras (const float* pre, const float* post, int n, double dtMs)
     {
         if (pre == nullptr || post == nullptr || n < kFft || ! isVisible()) return;
-        const float k = 1.0f - (float) std::exp (-dtMs / kTauCaidaMs);
-        analiza (pre,  n, suavePre,  k);
-        analiza (post, n, suavePost, k);
+        anaPre .analiza (pre,  n, dtMs);
+        anaPost.analiza (post, n, dtMs);
+        const auto& suavePre  = anaPre .bines();
+        const auto& suavePost = anaPost.bines();
 
         //  Y SOLO SI SE HA MOVIDO ALGO, que es la regla de la casa -«lo que SI
         //  se mueve se repinta, pero solo lo que se mueve»- y aqui faltaba: la
@@ -208,7 +207,7 @@ private:
     //  EL SUELO DEL ANALIZADOR. -78 dB deja ver el ruido de fondo de una
     //  grabacion de movil sin que el dibujo se pegue al borde de abajo, y por
     //  encima de -90, donde ya solo hay ruido de cuantizacion.
-    static constexpr float kPiso  = -78.0f;
+    static constexpr float kPiso  = Analizador::kPiso;
     static constexpr float kTecho =   0.0f;
 
     struct Reloj : public juce::Timer
@@ -219,37 +218,6 @@ private:
     };
     Reloj reloj;
     void avisaNodo() { if (agarrada >= 0 && onNodo) onNodo (agarrada); }
-
-    //  Una ventana de Hann y la FFT. La ventana no es un adorno: sin ella el
-    //  corte de los extremos mete faldones en TODOS los bines y el analizador
-    //  sale con un suelo plano que no es el de la señal.
-    //  -33 / ln (0.75), que es el 0.25 de siempre resuelto a los treinta
-    //  cuadros por segundo contra los que se escribio.
-    static constexpr double kTauCaidaMs = 115.0;
-
-    void analiza (const float* datos, int n, std::array<float, kBines>& dst, float k)
-    {
-        for (int i = 0; i < kFft; ++i)
-        {
-            const float w = 0.5f - 0.5f * std::cos (2.0f * juce::MathConstants<float>::pi
-                                                     * (float) i / (float) (kFft - 1));
-            fftBuf[(size_t) i] = datos[n - kFft + i] * w;
-        }
-        std::fill (fftBuf.begin() + kFft, fftBuf.end(), 0.0f);
-        fft.performFrequencyOnlyForwardTransform (fftBuf.data());
-
-        //  ATAQUE INSTANTANEO Y CAIDA LENTA, que es lo que hace legible un
-        //  analizador: sin la caida lenta el dibujo tiembla treinta veces por
-        //  segundo y no se puede leer un pico; sin el ataque rapido, un golpe de
-        //  caja no llega a verse. Es el mismo par que gobierna un medidor.
-        for (int k = 0; k < kBines; ++k)
-        {
-            const float mag = fftBuf[(size_t) k] * (2.0f / (float) kFft);
-            const float dB  = juce::jmax (kPiso, juce::Decibels::gainToDecibels (mag, kPiso));
-            float& s = dst[(size_t) k];
-            s = (dB > s) ? dB : s + k * (dB - s);
-        }
-    }
 
     //  El eje X es LOGARITMICO, que es como se oye: repartido lineal, la mitad
     //  del ancho se gasta entre 10 y 20 kHz -donde casi no pasa nada- y todo lo
@@ -359,10 +327,10 @@ private:
         if (! vivo) return;
 
         g.setColour (ZatiColours::lcdFg.withAlpha (0.14f));
-        g.fillPath (caminoDe (suavePre, dentro, true));
+        g.fillPath (caminoDe (anaPre.bines(), dentro, true));
 
         g.setColour (ZatiColours::lcdFg.withAlpha (0.55f));
-        g.strokePath (caminoDe (suavePost, dentro, false), juce::PathStrokeType (1.0f));
+        g.strokePath (caminoDe (anaPost.bines(), dentro, false), juce::PathStrokeType (1.0f));
     }
 
     //  LA CURVA, evaluada en el filtro de verdad y no aproximada. Un punto por
@@ -502,10 +470,7 @@ private:
     juce::Point<float> bajoDedo;
     bool vivo = false;
 
-    juce::dsp::FFT fft { 10 };                       // 2^10 = 1024
-    std::array<float, 2 * kFft> fftBuf {};
-    std::array<float, kBines>   suavePre  {};
-    std::array<float, kBines>   suavePost {};
+    Analizador anaPre, anaPost;
     //  Lo ultimo que se DIBUJO, para no repintar una curva identica. Ver
     //  `setMuestras`: la caida es exponencial y en silencio no llega nunca al
     //  suelo, asi que sin esto la curva se repinta en cada cuadro para siempre.

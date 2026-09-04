@@ -2637,7 +2637,131 @@ void MainComponent::auditRack()
         dichos .add (juce::String (di));
     }
 
-    //  3. Y LA GEOMETRIA DE LA FILA, que es lo que la ficha paga por dibujar:
+    //  3. LA CAPA VIVA: que se mueva con señal Y que se quede quieta sin ella.
+    //
+    //  Es la unica pregunta que separa las dos formas de escribir esto mal, y
+    //  las dos se dibujan preciosas: una capa que pinta RUIDO se mueve con
+    //  señal y tambien sin ella, y una que es un adorno no se mueve con
+    //  ninguna. Con una sola cifra las dos pasan.
+    //
+    //  Y SE MIDE POR EL CAMINO DE VERDAD: se publica un sonido en el pad 0, se
+    //  le abre el envio al tipo que toca, se bombean bloques -que es lo que el
+    //  aparato habria entregado, y en un escritorio no hay aparato- y se lee lo
+    //  que el visor acaba teniendo. Llamar a `setMuestras` con un vector
+    //  inventado mediria el dibujo y no la captura, que es justo el eslabon
+    //  nuevo.
+    //  Mil veinticuatro, que es lo que `Analizador` necesita para su ventana:
+    //  con menos, la rama de frecuencia se rinde y las dos lecturas saldrian
+    //  identicas — o sea la prueba diria «no se mueve» por no haberla
+    //  alimentado.
+    constexpr int kFxScopeBanco = Analizador::kFft;
+    int mueven = 0, quietosSinSenal = 0, medibles = 0;
+    {
+        //  Un ruido, que es lo unico que llena TODAS las columnas de un
+        //  espectro: con un seno, cuarenta y siete de las cuarenta y ocho se
+        //  quedarian en el suelo y «se movio» dependeria de en cual cayo.
+        auto ruido = [] ()
+        {
+            auto* sb = new SampleBuffer();
+            const int n = 24000;
+            sb->buffer.setSize (2, n);
+            juce::Random r (20260904);
+            for (int c = 0; c < 2; ++c)
+                for (int i = 0; i < n; ++i)
+                    sb->buffer.setSample (c, i, 0.6f * (r.nextFloat() * 2.0f - 1.0f));
+            sb->sourceSampleRate = 48000.0;
+            return SampleBuffer::Ptr (sb);
+        };
+
+        closeAllSheets();
+        resized();
+
+        std::vector<float> pre ((size_t) kFxScopeBanco), post ((size_t) kFxScopeBanco);
+
+        for (int f = 0; f < kNumFx; ++f)
+        {
+            if (fxTraeCara (f)) continue;          // el EQ trae la curva grande
+            ++medibles;
+
+            ponEnRanura (0, f);
+            focusedFx = f;
+            for (int p = 0; p < 3; ++p)
+                engine.setFxParam (f, p, (float) fxParam (f, p).getValue());
+            engine.setFxParam (f, 2, 1.0f);
+            //  `refreshMacroValues` y no `refrescaPlato`, que es donde esta
+            //  medida se equivoco primero: la segunda enseña u oculta la curva
+            //  grande del EQ y no toca el visor, asi que el plato se quedaba
+            //  con el tipo de la comprobacion anterior y `miraFx` con el suyo.
+            //  Lo canto la propia linea de diagnostico -«tipo 10 mirado 10» en
+            //  las diez vueltas- y por eso solo se movia el ultimo.
+            refrescaPlato();
+            refreshMacroValues();
+            resized();
+
+            auto lee = [&] (bool conSenal, int tics)
+            {
+                for (int p = 0; p < kNumPads; ++p) engine.setPadSend (p, f, 0.0f);
+                if (conSenal)
+                {
+                    engine.setPadGain (0, 1.0f);
+                    engine.setPadSend (0, f, 1.0f);
+                    engine.publishSample (0, ruido());
+                }
+                for (int i = 0; i < tics; ++i)
+                {
+                    if (conSenal) engine.postNoteOn (0, 1.0f);
+                    bombeaAudioDePrueba();
+                    engine.copyFxScope (pre.data(), post.data(), kFxScopeBanco);
+                    const int dd = dinamicaDeFx (f);
+                    platoMini.setMuestras (pre.data(), post.data(), kFxScopeBanco, 33.0,
+                                           dd >= 0 ? engine.getDynReduccion (dd) : 0.0f);
+                }
+                platoMini.ponVivo (engine.fxScopeVivo());
+                return std::make_pair (platoMini.vivos(),
+                                       juce::Point<float> (platoMini.puntoX(), platoMini.puntoY()));
+            };
+
+            //  SE DEJA ASENTAR ANTES DE PREGUNTAR SI ESTA QUIETO, que es donde
+            //  esta medida se equivoco: leia dos veces con cinco tics de por
+            //  medio y sacaba «cinco de diez dibujan ruido» con el codigo
+            //  perfecto. No dibujaban ruido — estaban CAYENDO. La caida del
+            //  analizador es exponencial y no llega al suelo nunca, y la cola
+            //  desplaza una columna cada 42 ms, asi que dos lecturas seguidas
+            //  despues de un golpe salen distintas porque tienen que salirlo.
+            //
+            //  Ochenta tics son 2.6 s: mas que los dos segundos que la ventana
+            //  de la cola tarda en vaciarse enteros y mas de veinte veces la
+            //  constante de 115 ms del analizador. Lo que se mide asi es lo
+            //  que de verdad importa — que se asiente y se PARE — que es
+            //  ademas lo unico que impide que esto repinte para siempre, que
+            //  es el fallo que `Tests/cpu.py` ya cazo en la curva del EQ.
+            lee (false, 80);
+            const auto callado = lee (false, 5);
+            const auto sonando = lee (true, 12);
+            auto distinto = [] (const std::pair<FxVisor::Curva, juce::Point<float>>& a,
+                                const std::pair<FxVisor::Curva, juce::Point<float>>& b)
+            {
+                if (a.second.x >= 0.0f || b.second.x >= 0.0f)
+                    return a.second.getDistanceFrom (b.second) > 0.01f;
+                for (int i = 0; i < FxVisor::kPuntos; ++i)
+                    if (std::abs (a.first[(size_t) i] - b.first[(size_t) i]) > 0.01f) return true;
+                return false;
+            };
+
+            if (distinto (callado, sonando)) ++mueven;
+
+            //  Y QUIETA SIN SEÑAL, con el mismo asentado delante: una capa que
+            //  dibuja ruido falla aqui, y una que se ha parado no.
+            lee (false, 80);
+            const auto otra = lee (false, 5);
+            if (! distinto (callado, otra)) ++quietosSinSenal;
+        }
+
+        for (int p = 0; p < kNumPads; ++p)
+            for (int f = 0; f < kNumFx; ++f) engine.setPadSend (p, f, 0.0f);
+    }
+
+    //  4. Y LA GEOMETRIA DE LA FILA, que es lo que la ficha paga por dibujar:
     //     el fader tiene que seguir midiendo un dedo y la miniatura tiene que
     //     tener sitio. Con la ficha ABIERTA, o los limites son los de la ultima
     //     vez que se maqueto.
@@ -2659,6 +2783,9 @@ void MainComponent::auditRack()
               << ",\"quietos\":" << quietos
               << ",\"discrepan\":" << discrepan
               << ",\"medidos\":[" << medidos.joinIntoString (",") << "]"
+              << ",\"mueven\":" << mueven
+              << ",\"quietos_sin\":" << quietosSinSenal
+              << ",\"medibles\":" << medibles
               << ",\"dichos\":["  << dichos .joinIntoString (",") << "]"
               << ",\"tipos\":" << kNumFx
               << ",\"fader\":[" << fader.getWidth() << "," << fader.getHeight() << "]"

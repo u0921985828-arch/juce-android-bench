@@ -1173,8 +1173,9 @@ public:
     // --- Scope (message thread): copy the last n post-FX master samples ---
     void copyScope (float* dst, int n) noexcept;
 
-    //  Y los dos del EQ, del hilo de mensajes y por el mismo camino.
-    void copyEqScope (float* pre, float* post, int n) noexcept;
+    //  Y LOS DOS DEL EFECTO QUE LA CARA ESTA MIRANDO, del hilo de mensajes y
+    //  por el mismo camino. Ver `miraFx`.
+    void copyFxScope (float* pre, float* post, int n) noexcept;
 
     //  DINAMICA. Los tres de cada uno, y la reduccion que se lee.
     void setDynP0  (int i, float v) noexcept { setFxParam (dynIdx (i), 0, v); }
@@ -1184,10 +1185,29 @@ public:
     float getDynP1  (int i) const noexcept { return juce::isPositiveAndBelow (i, 4) ? fxP[(size_t) dynIdx (i)][1].load (std::memory_order_relaxed) : 0.0f; }
     float getDynReduccion (int i) const noexcept
     { return juce::isPositiveAndBelow (i, 4) ? dynRed[(size_t) i].load (std::memory_order_relaxed) : 0.0f; }
-    //  Si el bus del EQ ha dado señal hace poco. Sin esto la cara no sabe
-    //  distinguir «nada suena» de «nada pasa por el EQ», y una mancha clavada en
+    //  Si el bus MIRADO ha dado señal hace poco. Sin esto la cara no sabe
+    //  distinguir «nada suena» de «nada pasa por aqui», y una mancha clavada en
     //  el suelo se lee como un fallo.
-    bool eqScopeVivo() const noexcept { return eqScopeHot.load (std::memory_order_relaxed) > 0; }
+    bool fxScopeVivo() const noexcept { return mirHot.load (std::memory_order_relaxed) > 0; }
+
+    //  QUE EFECTO ESTA MIRANDO LA CARA, y por tanto de cual se captura.
+    //
+    //  El plato enseña UN visor a la vez -el del efecto que tengas enfocado- y
+    //  la curva grande del EQ es el mismo sitio con otro inquilino. Asi que
+    //  capturar los once seria pagar diez anillos y diez analisis para dibujar
+    //  uno: se captura el que se mira y ya. -1 es «ninguno», que es lo que vale
+    //  con una ficha abierta encima o con el plato en su fila de mandos.
+    //
+    //  Y al cambiar de efecto se apaga el testigo: los anillos siguen llenos
+    //  con las muestras del ANTERIOR durante un bloque, y dibujarlas seria
+    //  enseñar el eco de un delay dentro del visor de una puerta de ruido.
+    void miraFx (int f) noexcept
+    {
+        const int nuevo = (f >= 0 && f < kNumFx) ? f : -1;
+        if (mirado.exchange (nuevo, std::memory_order_relaxed) != nuevo)
+            mirHot.store (0, std::memory_order_relaxed);
+    }
+    int fxMirado() const noexcept { return mirado.load (std::memory_order_relaxed); }
 
     //  Min/max columns spanning ~0.74 s of master output, oldest first.
     //  Returns how many were written. See renderNextBlock section 5c.
@@ -1906,12 +1926,18 @@ private:
     //  mismo que ya hacen `vuL` y los demas medidores.
     std::array<std::atomic<float>, 4> dynRed { { { 0.0f }, { 0.0f }, { 0.0f }, { 0.0f } } };
 
-    static constexpr int kEqScope = 2048;   // potencia de dos
-    std::array<float, kEqScope> eqPre {}, eqPost {};
-    std::atomic<int> eqScopeWrite { 0 };
+    //  LOS ANILLOS DEL EFECTO MIRADO. Eran del EQ y ahora son de quien la cara
+    //  este enseñando: el analizador del EQ resulto ser un caso de la misma
+    //  pregunta -«que esta pasando por este bus AHORA»- y tener dos capturas,
+    //  una para el EQ y otra para los demas, habria sido la misma regla
+    //  escrita dos veces. El nombre viejo decia lo que ya no es.
+    static constexpr int kFxScope = 2048;   // potencia de dos
+    std::array<float, kFxScope> mirPre {}, mirPost {};
+    std::atomic<int> mirWrite { 0 };
     //  Bloques que el bus lleva vivo, a la baja. Un booleano se apagaria el
     //  primer bloque de silencio entre dos golpes y la mancha parpadearia.
-    std::atomic<int> eqScopeHot { 0 };
+    std::atomic<int> mirHot { 0 };
+    std::atomic<int> mirado { -1 };
 
     // ------------------------------------------------------------------
     //  Sends. Each effect is a bus with its own input, and every pad decides

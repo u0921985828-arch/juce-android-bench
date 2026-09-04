@@ -4432,6 +4432,13 @@ void MainComponent::refreshMacroValues()
         platoMini.refresca ((float) fxParam (focusedFx, 0).getValue(),
                             (float) fxParam (focusedFx, 1).getValue(),
                             (float) fxParam (focusedFx, 2).getValue());
+
+    //  Y SE LE DICE AL MOTOR DE CUAL SE CAPTURA. El plato enseña UN visor a la
+    //  vez y la curva grande del EQ es ese mismo sitio con otro inquilino, asi
+    //  que capturar los once seria pagar diez anillos para dibujar uno. Ver
+    //  AudioEngine::miraFx.
+    engine.miraFx (fxTraeCara (focusedFx) && fxEstaPuesto (focusedFx) ? focusedFx
+                                                                     : platoMini.tipo());
     //  SOLO EL RENGLON DE LOS MANDOS, que es lo unico que esta funcion cambia.
     //  El `repaint()` pelado que habia aqui es exactamente el que `macroMoved`
     //  ya tenia acotado veinticuatro lineas mas abajo -«un repintado completo
@@ -13333,15 +13340,39 @@ void MainComponent::pintaCuadro (double dtMs)
         //  DONDE hay que tocar y la linea de SALIDA delante confirma que la
         //  correccion hizo lo que querias — con una sola no se puede
         //  distinguir «no habia nada ahi» de «ya lo he quitado».
-        if (eqCurva.isVisible())
+        //  UNA COPIA Y NO DOS, que es lo que el motor ya garantiza: los
+        //  anillos son del efecto MIRADO, y mirado hay uno. Con la curva
+        //  grande delante alimenta a la curva, y con el plato en su fila de
+        //  mandos alimenta al visor — nunca los dos, porque nunca se ven los
+        //  dos.
+        const int nScope = (int) (sizeof (eqPreTmp) / sizeof (eqPreTmp[0]));
+        if (eqCurva.isVisible() || (platoMini.isVisible() && platoMini.tipo() >= 0))
         {
-            engine.copyEqScope (eqPreTmp, eqPostTmp, (int) (sizeof (eqPreTmp) / sizeof (eqPreTmp[0])));
-            eqCurva.setMuestras (eqPreTmp, eqPostTmp,
-                                 (int) (sizeof (eqPreTmp) / sizeof (eqPreTmp[0])), dtMs);
-            //  Y VIVO o no: sin envios al EQ no se escribe nada en los
-            //  anillos, y una mancha congelada se lee como «esto esta roto» en
-            //  vez de «no pasa nada por aqui».
-            eqCurva.ponVivo (engine.eqScopeVivo());
+            engine.copyFxScope (eqPreTmp, eqPostTmp, nScope);
+
+            if (eqCurva.isVisible())
+            {
+                eqCurva.setMuestras (eqPreTmp, eqPostTmp, nScope, dtMs);
+                //  Y VIVO o no: sin envios al bus no se escribe nada en los
+                //  anillos, y una mancha congelada se lee como «esto esta
+                //  roto» en vez de «no pasa nada por aqui».
+                eqCurva.ponVivo (engine.fxScopeVivo());
+            }
+            else
+            {
+                //  La reduccion MEDIDA, que es lo que pone la altura del
+                //  punto de trabajo en los cuatro de dinamica. `dinamicaDeFx`
+                //  ya hace la unica traduccion que hay entre las dos
+                //  numeraciones, asi que no hace falta una segunda.
+                const int dd = dinamicaDeFx (platoMini.tipo());
+                platoMini.setMuestras (eqPreTmp, eqPostTmp, nScope, dtMs,
+                                       dd >= 0 ? engine.getDynReduccion (dd) : 0.0f);
+                platoMini.ponVivo (engine.fxScopeVivo());
+            }
+        }
+        else if (platoMini.isVisible())
+        {
+            platoMini.ponVivo (false);
         }
 
         const int scopeN = juce::jmin ((int) (sizeof (scopeTmp) / sizeof (scopeTmp[0])),

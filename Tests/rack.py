@@ -125,7 +125,25 @@ def main ():
         print ("           %d tipos: lo que mueve el visor es lo que la app declara"
                % (r["tipos"] - r["medidos"].count (-1)))
 
-    #  4. Y LO QUE EL VISOR CUESTA, EN LA PANTALLA MAS ESTRECHA.
+    #  4. LA CAPA VIVA, con DOS cifras o no vale.
+    #
+    #  Lo de arriba dice que el dibujo sale de la formula que suena. Lo que no
+    #  decia es si por ese bus esta pasando algo AHORA: un visor perfecto de un
+    #  bus mudo se lee igual que uno de un bus trabajando.
+    #
+    #  Y las dos cifras porque separan las dos formas de escribirlo mal, y las
+    #  dos se dibujan preciosas: una capa que pinta RUIDO se mueve con señal y
+    #  tambien sin ella, y una que es un adorno no se mueve con ninguna.
+    print ("vivo       %d de %d se mueven con señal, %d de %d quietos sin ella"
+           % (r["mueven"], r["medibles"], r["quietos_sin"], r["medibles"]))
+    if r["mueven"] != r["medibles"]:
+        malo.append ("%d de %d capas vivas no se mueven con señal: son un adorno"
+                     % (r["medibles"] - r["mueven"], r["medibles"]))
+    if r["quietos_sin"] != r["medibles"]:
+        malo.append ("%d de %d capas vivas se mueven sin señal: dibujan ruido"
+                     % (r["medibles"] - r["quietos_sin"], r["medibles"]))
+
+    #  5. Y LO QUE EL VISOR CUESTA, EN LA PANTALLA MAS ESTRECHA.
     #
     #  Vive en el PLATO, al lado de los tres mandos, que son lo unico que se
     #  toca ahi: no puede costarles un pixel de dedo. Y se mide en 280x653 y no

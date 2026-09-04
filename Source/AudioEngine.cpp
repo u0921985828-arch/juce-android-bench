@@ -1375,10 +1375,77 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         auto returnBus = [this, &out, startSample, numSamples, chans] (int f) noexcept
         {
             auto& bus = fxBus[(size_t) f];
+
+            //  LO QUE SALE DEL BUS MIRADO, y AQUI porque es el unico sitio por
+            //  el que pasan los once. Escrito en cada etapa serian once copias
+            //  de la misma regla, y la que se quedara vieja seria un visor que
+            //  dibuja la señal de otro efecto.
+            //
+            //  Con el MISMO indice de escritura que la entrada: dos indices son
+            //  dos relojes, y lo que se dibuja delante saldria corrido respecto
+            //  a lo de detras justo donde se comparan.
+            if (f == mirado.load (std::memory_order_relaxed))
+            {
+                const float* l = bus.getReadPointer (0, startSample);
+                const float* r = chans > 1 ? bus.getReadPointer (1, startSample) : l;
+                const int wi = mirWrite.load (std::memory_order_relaxed);
+                float pico = 0.0f;
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    const float m = 0.5f * (l[i] + r[i]);
+                    mirPost[(size_t) ((wi + i) & (kFxScope - 1))] = m;
+                    pico = juce::jmax (pico, std::abs (m));
+                }
+                mirWrite.store ((wi + numSamples) & (kFxScope - 1), std::memory_order_release);
+
+                //  Vivo mientras haya señal, y a la baja: un booleano se
+                //  apagaria en el primer bloque de silencio entre dos golpes y
+                //  el dibujo parpadearia. Cien bloques a 128 muestras son
+                //  0.27 s, o sea lo que dura un hueco entre semicorcheas.
+                const int h = mirHot.load (std::memory_order_relaxed);
+                mirHot.store (pico > 1.0e-5f ? 100 : juce::jmax (0, h - 1),
+                              std::memory_order_relaxed);
+            }
+
             for (int ch = 0; ch < chans; ++ch)
                 out.addFrom (ch, startSample, bus, ch, startSample, numSamples);
             busRinging[(size_t) f] = (bus.getMagnitude (startSample, numSamples) > 1.0e-5f);
         };
+
+        //  LO QUE ENTRA AL BUS MIRADO, antes de que ninguna etapa lo toque.
+        //
+        //  Y aqui y no dentro de cada etapa por lo mismo que la salida: en
+        //  este punto los once buses llevan exactamente lo que los pads les
+        //  mandaron, asi que una sola linea vale para los once.
+        //
+        //  MONO -la media de los dos canales- porque nada de lo que se dibuja
+        //  aqui habla de la imagen estereo, y dos anillos por lado serian el
+        //  doble de memoria y el doble de analisis para pintar lo mismo.
+        {
+            const int fm = mirado.load (std::memory_order_relaxed);
+            if (fm >= 0)
+            {
+                if (live (fm))
+                {
+                    const float* l = fxBus[(size_t) fm].getReadPointer (0, startSample);
+                    const float* r = chans > 1 ? fxBus[(size_t) fm].getReadPointer (1, startSample) : l;
+                    const int wi = mirWrite.load (std::memory_order_relaxed);
+                    for (int i = 0; i < numSamples; ++i)
+                        mirPre[(size_t) ((wi + i) & (kFxScope - 1))] = 0.5f * (l[i] + r[i]);
+                }
+                else
+                {
+                    //  Y EL TESTIGO BAJA TAMBIEN CON EL BUS MUERTO, que es lo
+                    //  que le faltaba a la version del EQ: la cuenta atras
+                    //  vivia DENTRO de su rama, asi que en cuanto el bus se
+                    //  declaraba muerto dejaba de bajar y el analizador se
+                    //  quedaba diciendo «vivo» para siempre sobre un dibujo
+                    //  congelado.
+                    const int h = mirHot.load (std::memory_order_relaxed);
+                    mirHot.store (juce::jmax (0, h - 1), std::memory_order_relaxed);
+                }
+            }
+        }
 
         // --- 1. FLT: el barrido, en las dos direcciones. -------------------
         //
@@ -1640,46 +1707,11 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         {
             if (live (6))
             {
-                //  LO QUE ENTRA, antes de filtrar. Mono -la media de los dos
-                //  canales- porque un analizador de espectro no dice nada sobre
-                //  la imagen estereo y dos anillos por lado serian el doble de
-                //  memoria y el doble de FFT para pintar la misma mancha.
-                {
-                    const float* l = fxBus[6].getReadPointer (0, startSample);
-                    const float* r = chans > 1 ? fxBus[6].getReadPointer (1, startSample) : l;
-                    int wi = eqScopeWrite.load (std::memory_order_relaxed);
-                    for (int i = 0; i < numSamples; ++i)
-                        eqPre[(size_t) ((wi + i) & (kEqScope - 1))] = 0.5f * (l[i] + r[i]);
-                }
-
+                //  La captura de lo que entra y de lo que sale ya no vive aqui:
+                //  el analizador del EQ era una respuesta a la misma pregunta
+                //  que ahora se le hace a los once -«que esta pasando por este
+                //  bus»- asi que la hace `returnBus` y el bloque de arriba.
                 eqFx.procesa (fxBus[6].getArrayOfWritePointers(), chans, startSample, numSamples);
-
-                //  Y LO QUE SALE, con el MISMO indice de escritura: dos indices
-                //  serian dos relojes, y la linea de salida saldria corrida
-                //  respecto a la mancha de entrada justo donde se comparan.
-                {
-                    const float* l = fxBus[6].getReadPointer (0, startSample);
-                    const float* r = chans > 1 ? fxBus[6].getReadPointer (1, startSample) : l;
-                    int wi = eqScopeWrite.load (std::memory_order_relaxed);
-                    float pico = 0.0f;
-                    for (int i = 0; i < numSamples; ++i)
-                    {
-                        const float m = 0.5f * (l[i] + r[i]);
-                        eqPost[(size_t) ((wi + i) & (kEqScope - 1))] = m;
-                        pico = juce::jmax (pico, std::abs (m));
-                    }
-                    eqScopeWrite.store ((wi + numSamples) & (kEqScope - 1),
-                                        std::memory_order_release);
-
-                    //  Vivo mientras haya señal, y a la baja: un booleano se
-                    //  apagaria en el primer bloque de silencio entre dos golpes
-                    //  y la mancha parpadearia. Cien bloques a 128 muestras son
-                    //  0.27 s, o sea lo que dura un hueco entre semicorcheas.
-                    const int h = eqScopeHot.load (std::memory_order_relaxed);
-                    eqScopeHot.store (pico > 1.0e-5f ? 100 : juce::jmax (0, h - 1),
-                                      std::memory_order_relaxed);
-                }
-
                 returnBus (6);
             }
         }
@@ -2371,15 +2403,16 @@ void AudioEngine::copyScope (float* dst, int n) noexcept
         dst[i] = scope[(size_t) ((wi - n + i) & (kScopeSize - 1))];
 }
 
-//  Los dos del EQ, del hilo de mensajes y por el mismo camino que copyScope.
-void AudioEngine::copyEqScope (float* pre, float* post, int n) noexcept
+//  Los dos del efecto MIRADO, del hilo de mensajes y por el mismo camino que
+//  copyScope. Ver AudioEngine::miraFx.
+void AudioEngine::copyFxScope (float* pre, float* post, int n) noexcept
 {
-    const int wi = eqScopeWrite.load (std::memory_order_acquire);
+    const int wi = mirWrite.load (std::memory_order_acquire);
     for (int i = 0; i < n; ++i)
     {
-        const size_t k = (size_t) ((wi - n + i) & (kEqScope - 1));
-        pre[i]  = eqPre[k];
-        post[i] = eqPost[k];
+        const size_t k = (size_t) ((wi - n + i) & (kFxScope - 1));
+        pre[i]  = mirPre[k];
+        post[i] = mirPost[k];
     }
 }
 
