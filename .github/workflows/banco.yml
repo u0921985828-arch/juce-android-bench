@@ -194,7 +194,7 @@ jobs:
       #  -que ninguna salga con unas tapas dibujadas y otras no-. No estaba
       #  aqui, asi que sus siete huecos llevaban tandas en rojo sin que nada
       #  fallara: *un numero que nadie mira se publica*.
-      - name: Los planos de las 39 pantallas
+      - name: Los planos de cada pantalla
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/planos.py
       - name: Las fotos de la ficha de Play
