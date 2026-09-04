@@ -93,10 +93,16 @@ def main ():
     #
     #  Solo la primera la cumple una miniatura que dibuja ruido; solo la
     #  segunda, un icono fijo — que es exactamente lo que habia antes.
+    #
+    #  Y SE MIDE MOVIENDO EL MANDO, que es lo que esta comprobacion no hacia:
+    #  escribia el parametro y llamaba a la funcion que rehace la curva, o sea
+    #  a la unica que no le faltaba nada. Con un dedo, la curva se quedaba en
+    #  la de antes hasta que salias del efecto y volvias. Ver
+    #  MainComponent::refrescaVisorPlato.
     print ("visor      %d de %d cambian al mover un mando, %d de %d quietos sin tocar nada"
            % (r["cambian"], r["tipos"], r["quietos"], r["tipos"]))
     if r["cambian"] != r["tipos"]:
-        malo.append ("%d de %d visores no cambian: son un icono"
+        malo.append ("%d de %d visores no se actualizan al mover el mando"
                      % (r["tipos"] - r["cambian"], r["tipos"]))
     if r["quietos"] != r["tipos"]:
         malo.append ("%d de %d visores cambian sin que nadie toque nada"

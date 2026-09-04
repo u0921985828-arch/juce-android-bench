@@ -2585,9 +2585,11 @@ void MainComponent::auditRack()
             continue;
         }
         ponEnRanura (0, f);
-        focusedFx = f;
+        //  `focusFx` y no `focusedFx = f`: es quien le pone a los tres mandos
+        //  el RANGO de este efecto. Sin el, un mando conserva el del tipo
+        //  anterior y moverlo a su minimo y su maximo mide otra cosa.
+        focusFx (f);
 
-        refreshMacroValues();
         const auto base = platoMini.puntos();
         refreshMacroValues();
         if (base == platoMini.puntos()) ++quietos;
@@ -2603,29 +2605,40 @@ void MainComponent::auditRack()
         //  pregunta que `mandosDe` contesta es «¿cabe en el eje de este
         //  visor?», asi que basta con que EXISTA un sitio del otro mando donde
         //  se vea. Primero se duda de la prueba.
+        //  Y SE MUEVE EL MANDO, no el parametro. Esta medida escribia en
+        //  `fxParam` -el deslizador escondido que guarda el valor- y llamaba
+        //  despues a `refreshMacroValues`, o sea a la funcion que rehace la
+        //  curva. Un dedo no hace eso: arrastra el mando, y de ahi sale
+        //  `macroMoved`, que NO la rehacia. Asi que el visor llevaba tandas
+        //  sin actualizarse al girar un mando -se veia en el telefono, y sólo
+        //  cambiaba al salir del efecto y volver- con esta comprobacion en
+        //  verde, porque preguntaba justo donde el fallo no existe.
+        //
+        //  `sendNotificationSync` es el equivalente de `->onClick` en una
+        //  tapa: dispara el callback de la app, que es donde vive lo que hay
+        //  que medir. Lo que se salta es el mapeo pixel->valor, que es de
+        //  JUCE y no nuestro.
+        juce::Slider* mk[2] = { &macroCtrl1, &macroCtrl2 };
         int mide = 0;
         for (int p = 0; p < 2; ++p)
         {
-            auto& mando = fxParam (f, p);
-            auto& otro  = fxParam (f, 1 - p);
+            auto& mando = *mk[p];
+            auto& otro  = *mk[1 - p];
             const double antesM = mando.getValue(), antesO = otro.getValue();
             bool movio = false;
 
             for (double ctx : { antesO, otro.getMinimum(), otro.getMaximum() })
             {
-                otro.setValue (ctx, juce::dontSendNotification);
-                refreshMacroValues();
+                otro.setValue (ctx, juce::sendNotificationSync);
                 const auto ref = platoMini.puntos();
                 for (double v : { mando.getMinimum(), mando.getMaximum() })
                 {
-                    mando.setValue (v, juce::dontSendNotification);
-                    refreshMacroValues();
+                    mando.setValue (v, juce::sendNotificationSync);
                     movio = movio || (platoMini.puntos() != ref);
                 }
-                mando.setValue (antesM, juce::dontSendNotification);
+                mando.setValue (antesM, juce::sendNotificationSync);
             }
-            otro.setValue (antesO, juce::dontSendNotification);
-            refreshMacroValues();
+            otro.setValue (antesO, juce::sendNotificationSync);
             if (movio) mide |= (1 << p);
         }
         if (mide != 0) ++cambian;

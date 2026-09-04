@@ -4424,9 +4424,38 @@ void MainComponent::refreshMacroValues()
         ks[pi]->updateText();
     }
 
-    //  Y EL VISOR DEL PLATO, que es la otra cosa que esos tres numeros mueven.
-    //  Ver FxMini.h: se repinta solo si la curva se movio, asi que esto puede
-    //  llamarse una vez por fotograma de arrastre sin costar un repintado.
+    refrescaVisorPlato();
+
+    //  SOLO EL RENGLON DE LOS MANDOS, que es lo unico que esta funcion cambia.
+    //  El `repaint()` pelado que habia aqui es exactamente el que `macroMoved`
+    //  ya tenia acotado veinticuatro lineas mas abajo -«un repintado completo
+    //  durante un arrastre redibujaba dieciseis pads y su onda en cada
+    //  movimiento del raton»- y esta funcion la llama `xyMoved`, o sea UNA VEZ
+    //  POR FOTOGRAMA DE ARRASTRE del pad XY. La misma regla escrita en un
+    //  sitio y no en el de al lado: ahora el rectangulo lo dice una funcion y
+    //  lo usan las dos.
+    repaint (bandaMandos());
+}
+
+//  EL VISOR DEL PLATO, QUE ES LA OTRA COSA QUE ESOS TRES NUMEROS MUEVEN.
+//
+//  Y ES UNA FUNCION PORQUE TIENE DOS DUEÑOS, que es el fallo que la trajo.
+//  Esto vivia DENTRO de `refreshMacroValues`, y esa la llaman `focusFx`, el
+//  pad XY y la apertura de un proyecto — pero NO `macroMoved`, que es el
+//  callback de los tres mandos. O sea que arrastrar CORTE movia el sonido y
+//  dejaba dibujada la curva de antes; cambiabas de efecto y volvias, y
+//  entonces si se rehacia. Exactamente lo que se vio en el telefono.
+//
+//  Y EL BANCO DECIA QUE SI: `auditRack` escribia el parametro a mano y
+//  llamaba a `refreshMacroValues`, o sea a la funcion donde el fallo NO
+//  existe. Ahora mueve el MANDO con notificacion, que es lo que acaba
+//  llamando un dedo. Es la misma leccion que los cinco fallos del compas del
+//  piano y que la del pad que sonaba al levantar.
+//
+//  Ver FxMini.h: se repinta solo si la curva se movio, asi que esto puede
+//  llamarse una vez por fotograma de arrastre sin costar un repintado.
+void MainComponent::refrescaVisorPlato()
+{
     platoMini.ponTipo (fxEstaPuesto (focusedFx) && ! fxTraeCara (focusedFx) ? focusedFx : -1);
     if (platoMini.tipo() >= 0)
         platoMini.refresca ((float) fxParam (focusedFx, 0).getValue(),
@@ -4439,15 +4468,6 @@ void MainComponent::refreshMacroValues()
     //  AudioEngine::miraFx.
     engine.miraFx (fxTraeCara (focusedFx) && fxEstaPuesto (focusedFx) ? focusedFx
                                                                      : platoMini.tipo());
-    //  SOLO EL RENGLON DE LOS MANDOS, que es lo unico que esta funcion cambia.
-    //  El `repaint()` pelado que habia aqui es exactamente el que `macroMoved`
-    //  ya tenia acotado veinticuatro lineas mas abajo -«un repintado completo
-    //  durante un arrastre redibujaba dieciseis pads y su onda en cada
-    //  movimiento del raton»- y esta funcion la llama `xyMoved`, o sea UNA VEZ
-    //  POR FOTOGRAMA DE ARRASTRE del pad XY. La misma regla escrita en un
-    //  sitio y no en el de al lado: ahora el rectangulo lo dice una funcion y
-    //  lo usan las dos.
-    repaint (bandaMandos());
 }
 
 //  El renglon de CTRL 1-3, con el aire que su rotulo pintado necesita.
@@ -4483,6 +4503,10 @@ void MainComponent::macroMoved (int idx)
                 fxButtons[s]->setToggleState (on, juce::dontSendNotification);
         }
     }
+    //  Y LA CURVA DEL PLATO, que es lo que este mando acaba de cambiar. Ver
+    //  refrescaVisorPlato: faltaba justo aqui.
+    refrescaVisorPlato();
+
     //  Only the knob strip, not the whole face: a full repaint during a drag
     //  redrew sixteen pad tiles and their waveform art on every mouse move.
     repaint (bandaMandos());

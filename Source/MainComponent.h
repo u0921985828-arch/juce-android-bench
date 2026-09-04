@@ -2648,6 +2648,7 @@ private:
     void refrescaBandaEq();
     void paintEqBandaContent (juce::Graphics&);
     void refrescaPlato();                           // curva o mandos, segun quien tenga el foco
+    void refrescaVisorPlato();                      // la forma del efecto enfocado; dos dueños
     juce::Label  status;
     WaveformDisplay waveform;
     //  SE LLAMA CRISTAL Y NO ESPECTRO, porque no es un espectro: no lleva una
