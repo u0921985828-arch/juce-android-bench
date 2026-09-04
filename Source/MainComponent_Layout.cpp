@@ -2171,12 +2171,31 @@ void MainComponent::resized()
         //  sheetFromBottom takes the card's OUTER height and hands back the
         //  inside, so the vertical margin it removes has to be part of what we
         //  ask for - without it the last send row fell off the bottom edge.
-        auto inner = sheetFromBottom (rackSheet, Metrics::md * 2 + Metrics::hit + 14
+        //  LA FILA CRECE PORQUE ENSEÑA LO QUE HAY DENTRO. Ver FxMini.h: 48 px
+        //  eran el canalon y el fader, y ahora la mitad derecha se parte en
+        //  horizontal — la miniatura de 26 arriba y el fader de 40 debajo. El
+        //  alto sale gratis AQUI y solo aqui: `rackSheet.hazDesplazable()`, o
+        //  sea que lo que no cabe se alcanza arrastrando. El ancho no, que el
+        //  fader ya le cede 44 px a su caja de lectura y en 280x653 el cuerpo
+        //  mide unos 193.
+        const int altoMini = 26;
+        const int filaFx   = altoMini + Metrics::xs + Metrics::hit + Metrics::xs;   // 74
+
+        //  Y LA CABECERA RESERVA LO QUE SE PINTA.
+        //
+        //  Reservaba `Metrics::hit` para el titulo y 14 px mas «painted: which
+        //  pad this is», y el pintor dibuja el titulo en 0..16 y la ayuda en
+        //  16..30 — o sea los dos DENTRO del renglon de 40, con la banda de 14
+        //  vacia debajo. No solapaba nada -por eso TAPADO daba 0- y son catorce
+        //  pixeles muertos con la reserva en un sitio y el dibujo en otro, que
+        //  es exactamente como se acaba pintando encima de algo. La cruz mide
+        //  un dedo y manda sobre el alto de la banda; el texto cabe debajo.
+        const int cabecera = juce::jmax (Metrics::hit, 16 + 14);
+        auto inner = sheetFromBottom (rackSheet, Metrics::md * 2 + cabecera
                                                    + (chipRowH + Metrics::xs) * 4
-                                                   + Metrics::sm + kNumRanuras * 48 + Metrics::sm);
-        auto titleRow = inner.removeFromTop (Metrics::hit);
+                                                   + Metrics::sm + kNumRanuras * filaFx + Metrics::sm);
+        auto titleRow = inner.removeFromTop (cabecera);
         rackCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
-        inner.removeFromTop (14);                       // painted: which pad this is
 
         //  CUATRO POR CUATRO, COMO LA CARA. El rack elige un pad del banco que
         //  esta en pantalla; los otros cuarenta y ocho se esconden en vez de
@@ -2227,22 +2246,29 @@ void MainComponent::resized()
         //
         //  Tres y tres. Lo que falta de alto lo hay de ancho, que es lo mismo
         //  que hace la pagina de AUDIO y lo que hace la cara con wideFace.
-        const int filaFx = 48;
+        //  (`filaFx` y `altoMini` se deciden arriba, junto a lo que la tarjeta
+        //  pide: quien reserva y quien coloca tienen que contar lo mismo.)
 
         //  UNA FILA DEL RACK: el canalon a la izquierda -que desde esta tanda
         //  es una TAPA y no texto pintado, porque es la puerta al menu de la
-        //  ranura- y el fader con lo que queda.
+        //  ranura-, y a la derecha la MINIATURA arriba y el fader debajo.
         //
-        //  Seis pixeles arriba y abajo de una fila de 48 dejan el fader en 36,
-        //  cuatro por debajo del dedo. El aire entre filas ya lo da la fila
-        //  siguiente; el que se le quita al control sale del control.
-        auto colocaFilaRack = [this] (int s, juce::Rectangle<int> row)
+        //  El canalon se queda con el alto entero: es una tapa y un dedo mide
+        //  40. Y seis pixeles arriba y abajo de una fila de 48 dejaban el fader
+        //  en 36, cuatro por debajo del dedo, asi que el aire sale de la FILA y
+        //  no del control — la misma regla que gobierna la rejilla de pads.
+        auto colocaFilaRack = [this, altoMini] (int s, juce::Rectangle<int> row)
         {
             auto canalon = Lang::takeStart (row, 54);
             if (rackSlotBtns[s] != nullptr)
-                rackSlotBtns[s]->setBounds (canalon.reduced (1, 4));
+                rackSlotBtns[s]->setBounds (canalon.reduced (1, Metrics::xs));
+            //  La miniatura arriba, el fader debajo y el aire entre los dos.
+            auto arriba = row.removeFromTop (altoMini);
+            row.removeFromTop (Metrics::xs);
+            if (rackMinis[s] != nullptr)
+                rackMinis[s]->setBounds (arriba.reduced (2, 0));
             if (rackSends[s] != nullptr)
-                rackSends[s]->setBounds (row.reduced (2, 4));
+                rackSends[s]->setBounds (row.removeFromTop (Metrics::hit).reduced (2, 0));
         };
         const bool dosCol = inner.getWidth() >= 560 && inner.getHeight() < kNumRanuras * filaFx;
         if (dosCol)

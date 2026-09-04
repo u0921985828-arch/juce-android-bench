@@ -323,7 +323,6 @@ namespace
                                         "音垫 %1 将压低其他声音", "الباد %1 يخفض الباقي" },
         { "Bombeo apagado", "",         "duck off",   "闪避已关闭", "الخفض متوقف" },
         //  Los rotulos de la segunda pagina de la ficha del pad.
-        { "ENVIOS",         "",         "SENDS",      "发送",       "إرسال" },
         { "CORTE",          "",         "CUT",        "切断",       "القطع" },
         { "FUENTE",         "",         "SOURCE",     "来源",       "المصدر" },
         { "Envio a %1",     "",         "Send to %1", "发送到 %1",  "إرسال إلى %1" },
@@ -478,8 +477,8 @@ namespace
         { "Mantenlo pulsado para cogerle los mandos sin encenderlo", "",
           "hold it to take its knobs without switching it on",
           "长按可接管其旋钮而不开启", "اضغطه مطولًا لأخذ مقابضه دون تشغيله" },
-        { "RACK: un efecto y los 64 pads. EL PAD: los envios de uno", "",
-          "RACK: one effect, 64 pads. THE PAD: one pad's sends",
+        { "RACK: un efecto y los 64 pads. EL PAD: lo que pasa por uno", "",
+          "RACK: one effect, 64 pads. THE PAD: what goes through one",
           "机架：一个效果对 64 个音垫；此音垫：一个音垫的发送", "الرف: مؤثر واحد و64 بادًا. الباد: إرسالات باد واحد" },
         { "El XY deja los pads tocables debajo, para las dos manos", "",
           "XY leaves the pads playable underneath, for two hands",
@@ -764,15 +763,15 @@ namespace
         //  ranuras y un menu detras, esa frase se queda vieja con cada efecto
         //  que entra: se dice lo que la fila ES y no cuantos hay dentro.
         { "Seis ranuras y un menu de efectos para llenarlas. Una vacia pone «+» "
-          "y lo abre. Son de la maquina, no del pad: cada pad decide cuanto les "
-          "manda.", "",
+          "y lo abre. Son de la maquina, no del pad: cada pad decide cuanto pasa "
+          "por ellos.", "",
           "Six slots and a menu of effects to fill them. An empty one shows «+» "
           "and opens it. They belong to the machine and not to the pad: each pad "
-          "decides how much it sends.",
+          "decides how much goes through them.",
           "六个插槽，配有效果菜单来填充。空槽显示「+」，点触即打开。效果属于整机而非单个音垫："
-          "各音垫自行决定发送量。",
+          "各音垫自行决定经过效果的量。",
           "ستة مقاعد وقائمة مؤثرات لملئها. المقعد الفارغ يعرض «+» ويفتحها. هي ملك "
-          "للآلة لا للباد: كل باد يقرر مقدار ما يرسله." },
+          "للآلة لا للباد: كل باد يقرر كم يمر منه عبرها." },
 
         { "Los tres de arriba mueven el efecto que tengas abierto. Debajo de cada "
           "uno pone lo que hace en ese momento.", "",
@@ -820,12 +819,12 @@ namespace
           "القص والدوزنة والمرشح والمغلف والحلقة. و«التقطيع التلقائي» يقسم اللفة "
           "عند ضرباتها ويوزعها على البادات." },
 
-        { "La mesa pone los dieciseis a su nivel. El RACK dice cuanto manda cada "
-          "pad a cada efecto, sin cerrar nada.", "",
-          "The mixer sets all sixteen to their level. The RACK says how much each "
-          "pad sends to each effect, without closing anything.",
-          "混音台设定十六个音垫的电平。机架页可在不关闭任何界面的情况下设定各音垫到各效果的发送量。",
-          "المازج يضبط مستوى الستة عشر. و«الرف» يحدد كم يرسل كل باد إلى كل مؤثر دون إغلاق شيء." },
+        { "La mesa pone los dieciseis a su nivel. El RACK dice cuanto de cada pad "
+          "pasa por cada efecto, y cuales sustituyen y cuales suman.", "",
+          "The mixer sets all sixteen to their level. The RACK says how much of "
+          "each pad goes through each effect, and which ones replace and which add.",
+          "混音台设定十六个音垫的电平。机架页显示各音垫经过各效果的量，以及哪些是替换、哪些是叠加。",
+          "المازج يضبط مستوى الستة عشر. و«الرف» يبين كم يمر من كل باد عبر كل مؤثر، وأيها يستبدل وأيها يضيف." },
 
         { "Los patrones colocados en el tiempo, en cuatro carriles. Un bloque "
           "dura lo que ocupa, no lo que dure su patron.", "",
@@ -929,18 +928,18 @@ namespace
           "في «التتابع» الشبكة ستة عشر خطوة في ستة عشر بادًا: المس خانة فتُعزف هناك. "
           "وعند اختيار خطوة تظهر مقابضها أسفلها - النغمة والقوة والتكرار والمرشح "
           "والأقفال. وفي «البيانو» تكتب بالنغمة، بنوتات تدوم ما تشاء." },
-        { "Cada pad tiene su filtro, su recorte y sus envios. Los efectos "
-          "son de la maquina y no del pad: se abren desde la cara y cada pad "
-          "decide cuanto le manda, en el RACK. La ficha XY mueve dos a la vez "
-          "con el dedo.", "",
-          "Every pad has its own filter, its own trim and its own sends. "
-          "The effects belong to the machine and not to the pad: you switch "
-          "them on from the front and each pad decides how much it sends, in "
-          "the RACK. The XY card moves two of them at once with one finger.",
-          "每个音垫都有自己的滤波、裁切与发送。效果属于整机而非单个音垫："
-          "在面板上开启，各音垫在机架页决定各自的发送量。XY 页可用一根手指同时控制两个参数。",
-          "لكل باد مرشحه وقصّه وإرسالاته. المؤثرات ملك للآلة لا للباد: "
-          "تُشغَّل من الواجهة ويقرر كل باد مقدار ما يرسله إليها في «الرف». "
+        { "Cada pad tiene su filtro y su recorte. Los efectos son de la "
+          "maquina y no del pad: se abren desde la cara y cada pad decide "
+          "cuanto pasa por cada uno, en el RACK. La ficha XY mueve dos a la "
+          "vez con el dedo.", "",
+          "Every pad has its own filter and its own trim. The effects belong "
+          "to the machine and not to the pad: you switch them on from the "
+          "front and each pad decides how much goes through each one, in the "
+          "RACK. The XY card moves two of them at once with one finger.",
+          "每个音垫都有自己的滤波与裁切。效果属于整机而非单个音垫："
+          "在面板上开启，各音垫在机架页决定经过各效果的量。XY 页可用一根手指同时控制两个参数。",
+          "لكل باد مرشحه وقصّه. المؤثرات ملك للآلة لا للباد: "
+          "تُشغَّل من الواجهة ويقرر كل باد كم يمر منه عبر كل مؤثر في «الرف». "
           "وبطاقة XY تحرك اثنين منها معًا بإصبع واحد." },
         { "EXPORTAR saca la mezcla entera o una pista por pad, en WAV o en OGG. "
           "El proyecto se guarda solo, y en AJUSTES estan el idioma, las cuatro "
@@ -1238,9 +1237,21 @@ namespace
         { "RACK",           "",         "RACK",       "机架",       "الرف" },
         { "SIN SOLO",       "",         "NO SOLO",    "取消独奏", "إلغاء الإفراد" },
         { "SOLO ACTIVO",    "",         "SOLO ACTIVE","独奏中",  "إفراد فعّال" },
-        { "cuanto de este pad entra en cada efecto", "", "how much of this pad goes into each effect",
-                                        "这个音垫进入每个效果的量",
-                                        "مقدار ما يدخل من هذا الباد إلى كل مؤثر" },
+        //  Y NO «CUANTO ENTRA EN», que describe un ENVIO y por tanto era falso
+        //  en nueve de los once tipos: subir el fader de un inserto no anade,
+        //  QUITA senal seca. «Pasa por» es verdad en los dos, y cual de las dos
+        //  cosas es cada fila lo dice el fader dibujado. Ver
+        //  ZatiLookAndFeel::drawLinearSlider y AudioEngine::sustituye.
+        { "cuanto de este pad pasa por cada efecto", "", "how much of this pad goes through each effect",
+                                        "这个音垫经过每个效果的量",
+                                        "مقدار ما يمر من هذا الباد عبر كل مؤثر" },
+        //  LAS DOS FAMILIAS, en palabras, para quien no ve la pantalla. Claves
+        //  propias y no `ENVIOS` ni `MEZCLA`, que ya significan otra cosa en
+        //  esta app: reaprovechar una clave por parecerse en espanol sale mal
+        //  en las otras tres, que es lo que costo ATRAS y EMPEZAR en el tour.
+        { "SUSTITUYE",      "",         "REPLACES",   "替换",       "يستبدل" },
+        { "SUMA",           "",         "ADDS",       "叠加",       "يضيف" },
+        { "VACIA",          "",         "EMPTY",      "空",         "فارغ" },
         { "SONIDO|cancion", "SONIDO",   "ONE SHOT",   "单音",       "لقطة" },
         { "CANCION",        "",         "SONG MODE",  "歌曲模式", "وضع الأغنية" },
         { "toca un compas para poner el patron", "", "tap a bar to place the pattern",

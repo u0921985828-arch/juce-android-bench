@@ -47,7 +47,7 @@ public:
     //  siete veces son siete listas, y estas cuatro son comentarios: no
     //  compilan, no fallan, y por eso duraron.
     //  SIETE TIPOS Y SEIS RANURAS, que desde el EQ ya no son el mismo numero.
-    //  Aqui `kNumFx` son los TIPOS: un bus, una fila de `fxIsTone`, una columna
+    //  Aqui `kNumFx` son los TIPOS: un bus, una fila de `fxSustituye`, una columna
     //  de envios por pad. Cuantas tapas hay en la cara lo dice
     //  `MainComponent::kNumRanuras`, y no tiene por que coincidir - una ranura
     //  es donde se toca, no lo que suena.
@@ -55,7 +55,7 @@ public:
     //  es la que hace falta para grabar voces encima de una produccion. Las
     //  cuatro son un INSERTO y no un envio: comprimir una copia y dejar el
     //  original al lado no comprime nada, que es el mismo argumento que ya
-    //  puso el EQ en `fxIsTone`.
+    //  puso el EQ en `fxSustituye`.
     static constexpr int kNumFx         = 11;
     //  Que indice es cada uno de los cuatro de dinamica, escrito UNA vez: los
     //  usa el bucle de la etapa, `setFxParam` y la cara para saber de cual
@@ -949,6 +949,30 @@ public:
     bool getLiveQuantise() const noexcept { return liveQuant.load (std::memory_order_relaxed); }
 
     void setFltSweep (float s)  noexcept { fltSweep.store (s, std::memory_order_relaxed); }
+
+    //  DONDE CAE EL BARRIDO, escrito UNA vez.
+    //
+    //  El reparto es exponencial y con zona muerta -el oido oye octavas, y el
+    //  centro no procesa- y esos tres numeros vivian sueltos dentro de la etapa
+    //  del hilo de audio. Desde que la fila del rack DIBUJA lo que el efecto
+    //  hace, hay un segundo cliente, y una regla escrita dos veces son dos
+    //  reglas: el dia que se moviera el recorrido, el dibujo seguiria contando
+    //  el de ayer sin que nada fallara.
+    struct Barrido { bool activo; bool alto; float hz; };
+    static Barrido barridoDe (float sweep) noexcept
+    {
+        constexpr float kDead = 0.03f;
+        const float s   = juce::jlimit (-1.0f, 1.0f, sweep);
+        const float mag = std::abs (s);
+        if (mag <= kDead) return { false, false, 0.0f };
+
+        const float t = (mag - kDead) / (1.0f - kDead);            // 0..1
+        return s < 0.0f
+             //  Cerrando por arriba: de 20 kHz a 90 Hz.
+             ? Barrido { true, false, 20000.0f * std::pow (90.0f / 20000.0f, t) }
+             //  Abriendo por abajo: de 20 Hz a 6 kHz.
+             : Barrido { true, true,     20.0f * std::pow (6000.0f /  20.0f, t) };
+    }
     void setFltReso  (float q)  noexcept { fxReso.store   (q, std::memory_order_relaxed); }
     void setFltMix   (float m)  noexcept { fxMix.store    (m, std::memory_order_relaxed); }
 
@@ -1000,6 +1024,24 @@ public:
     {
         if (slot < 0 || slot >= kNumPads || fx < 0 || fx >= kNumFx) return 0.0f;
         return padSend[(size_t) slot][(size_t) fx].load (std::memory_order_relaxed);
+    }
+
+    //  QUE HACE ESE FADER, PARA QUIEN LO DIBUJA.
+    //
+    //  De los once tipos, NUEVE son insertos: `renderNextBlock` hace
+    //  `if (fxSustituye[f]) dry *= (1.0f - g)`, o sea que subir su envio le
+    //  QUITA senal seca al pad. Solo DLY y REV suman encima. Los dos caminos
+    //  mandan igual -una copia escalada entra en el bus y el bus vuelve al
+    //  master a nivel pleno-; la unica diferencia es esa resta.
+    //
+    //  El rack dibujaba las once filas identicas y las titulaba «cuanto de
+    //  este pad entra en cada efecto», que describe un envio y por tanto es
+    //  falso en nueve de once. Esto es la puerta por la que la cara pregunta
+    //  cual de las dos cosas esta dibujando, para no escribir la tabla dos
+    //  veces: una regla escrita dos veces son dos reglas.
+    static bool sustituye (int fx) noexcept
+    {
+        return fx >= 0 && fx < kNumFx && fxSustituye[fx];
     }
 
     void setRevSize (float s) noexcept { rvSize.store (s, std::memory_order_relaxed); }
@@ -1738,7 +1780,7 @@ private:
     std::atomic<float>& rvDamp = fxP[kFxRev][1];
     std::atomic<float>& rvMix  = fxP[kFxRev][2];
 
-    //  EL EQ DE CINCO BANDAS. Es un INSERTO -fxIsTone- y no un envio: lo que
+    //  EL EQ DE CINCO BANDAS. Es un INSERTO -fxSustituye- y no un envio: lo que
     //  un pad manda aqui deja de ir por el camino seco, porque ecualizar la
     //  copia y dejar el original sonando al lado no ecualiza nada.
     Eq5 eqFx;
@@ -1791,16 +1833,22 @@ private:
     //  inserto. Mandar una copia al EQ y dejar el original sonando al lado da
     //  la suma de los dos, o sea la mitad de la correccion y con fase de
     //  regalo - que es literalmente lo que hace un filtro peine.
-    static constexpr bool fxIsTone[kNumFx] = { true, true, true, false, true, false, true,
-                                               true, true, true, true };
+    //  Y SE LLAMA POR LO QUE HACE. Se llamo `fxIsTone` mientras los que
+    //  restaban seco eran los cuatro «de tono» -filtro, paso alto, saturacion,
+    //  reduccion-; desde el EQ y la familia de dinamica son NUEVE de once, o
+    //  sea que el nombre describia una coincidencia de aquel dia y no la
+    //  regla. Un campo que ya no significa lo que dice su nombre manda a
+    //  buscar, que es lo mismo que costo renombrar `uiIntervalMs` a `relojMs`.
+    static constexpr bool fxSustituye[kNumFx] = { true, true, true, false, true, false, true,
+                                                  true, true, true, true };
     //  Y NO SE PUEDE QUEDAR CORTA EN SILENCIO. Una lista de inicializacion de
     //  agregado rellena con `false` lo que no se nombre, asi que un tipo nuevo
     //  al que se le olvide su fila aqui entraria como ENVIO —sumando encima en
     //  vez de sustituir— sin un aviso de nadie. Es lo mas barato que puede
     //  costar una regla escrita dos veces, y es lo que ya hace `MidiIo` con
     //  `kMaxPads`.
-    static_assert (sizeof (fxIsTone) / sizeof (fxIsTone[0]) == kNumFx,
-                   "fxIsTone tiene que tener una fila por tipo");
+    static_assert (sizeof (fxSustituye) / sizeof (fxSustituye[0]) == kNumFx,
+                   "fxSustituye tiene que tener una fila por tipo");
     static_assert (sizeof (kFxDef) / sizeof (kFxDef[0]) == kNumFx,
                    "kFxDef tiene que tener una fila por tipo");
 

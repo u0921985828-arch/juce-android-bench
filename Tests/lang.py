@@ -90,11 +90,33 @@ def main():
         params.update (x.strip().strip ('"') for x in trio.split (",") if x.strip())
     used |= params
 
+    #  Y LOS QUINCE PASOS DEL TOUR, por lo mismo y con el mismo agujero.
+    #
+    #  `ZatiTour::titulos` y `ZatiTour::cuerpos` son dos tablas de literales que
+    #  se pasan a `T()` POR INDICE, asi que la expresion de arriba no ve ni uno.
+    #  Se pago: la tanda de las ranuras reescribio la fila del paso 5 en
+    #  `Lang.cpp` y dejo la CLAVE con el texto viejo -«Filtro, paso alto,
+    #  saturacion, eco, reduccion y reverberacion»-, o sea que ese paso salia en
+    #  espanol en las cuatro compilaciones y la fila nueva no la usaba nadie. Y
+    #  las dos mitades pasaban todas las reglas: la clave no estaba duplicada y
+    #  la fila no estaba vacia.
+    tour = joined_literals (open (os.path.join (SRC, "MainComponentInterno.h"), encoding="utf8").read())
+    pasos = set()
+    for nombre in ("titulos", "cuerpos"):
+        j = tour.index ("* " + nombre + "[MainComponent::kTourPasos]")
+        blk = tour[j:tour.index ("};", j)]
+        pasos.update (re.findall (r'"((?:[^"\\]|\\.)+)"', blk))
+    #  El titulo del primer paso es el NOMBRE de la app, que es el mismo en los
+    #  cuatro idiomas por definicion: pedirle una fila seria pedir que la marca
+    #  se traduzca. Es la misma clase de excepcion que `UNTRANSLATED_OK`.
+    pasos.discard ("ZATI")
+    used |= pasos
+
     for k in sorted (used - set (keys)):
         bad.append ("clave usada y NO en la tabla (sale en espanol en los cuatro): %r" % k)
 
-    print ("%d filas, %d claves usadas en el codigo (%d de ellas parametros de efecto)"
-           % (len (rows), len (used), len (params)))
+    print ("%d filas, %d claves usadas en el codigo (%d parametros de efecto, %d pasos del tour)"
+           % (len (rows), len (used), len (params), len (pasos)))
     if bad:
         for b in bad: print ("FALLA  " + b)
         sys.exit (1)

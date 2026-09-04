@@ -1435,8 +1435,8 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
         //  instead of eleven controls in a column.
         static const char* secSound[3] = { "SONIDO", "", "" };
         static const char* secTrim[3]  = { "RECORTE", "", "" };
-        static const char* secRig[3]   = { "ENVIOS", "CORTE",   "FUENTE" };
-        static const char* secRigT[3]  = { "ENVIOS", "EL PAD",  "" };
+        static const char* secRig[3]   = { "EFECTOS", "CORTE",   "FUENTE" };
+        static const char* secRigT[3]  = { "EFECTOS", "EL PAD",  "" };
         const char* const* secNames = (padPage == padPageSound) ? secSound
                                     : (padPage == padPageTrim)   ? secTrim
                                                                  : (padRigTight ? secRigT : secRig);
@@ -1681,8 +1681,8 @@ void MainComponent::paintRackSheetContent (juce::Graphics& g)
         //  secuenciador y el parrafo de AUTO CHOP, y se arregla igual: quien
         //  sabe de que lado esta la tapa es la TAPA y no el idioma.
         auto bandaRack = antesDe (inner.removeFromTop (14), rackCloseButton);
-        apunta (g, bandaRack, T ("cuanto de este pad entra en cada efecto"), "dato");
-        g.drawFittedText (T ("cuanto de este pad entra en cada efecto"),
+        apunta (g, bandaRack, T ("cuanto de este pad pasa por cada efecto"), "dato");
+        g.drawFittedText (T ("cuanto de este pad pasa por cada efecto"),
                           bandaRack, Lang::start(), 1, 0.75f);
     }
 

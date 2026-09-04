@@ -45,7 +45,8 @@ se ve, no lo que suena.
 
 Cada pad guarda una muestra —tuya, de fábrica, grabada por el micro o
 remuestreada de la propia máquina— con su recorte, su afinación, su envolvente,
-su filtro, su pan, su ancho estéreo y sus seis envíos. Un pad también puede
+su filtro, su pan, su ancho estéreo y cuánto de él pasa por cada una de las
+seis ranuras de efecto. Un pad también puede
 llevar un **instrumento**: dieciséis familias sintetizadas de dieciséis presets
 cada una, multizona, que se tocan con el dedo como una tecla.
 
@@ -249,8 +250,11 @@ tres segundos.
 
 Un efecto contra los sesenta y cuatro pads. El selector de pad es una rejilla de
 cuatro por cuatro por banco —dieciséis en fila no caben: en 280 px les tocan 26—
-y debajo los seis envíos del pad elegido, con el envío de un efecto apagado
-atenuado: *lo que pongas ahora es lo que usará cuando lo enciendas*.
+y debajo las seis filas del pad elegido, con la de un efecto apagado atenuada:
+*lo que pongas ahora es lo que usará cuando lo enciendas*. Cada fila dibuja lo
+que hay dentro con sus números de ahora (`FxMini`) y dice de qué familia es: de
+los once tipos, **nueve son insertos** —subir el fader le quita señal seca al
+pad, así que la pista pinta el cruce— y sólo DLY y REV suman encima.
 
 ### XY
 

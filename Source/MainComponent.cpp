@@ -604,6 +604,11 @@ MainComponent::MainComponent()
             g->onClick = [this, f] { abreMenuRanura (f); };
             rackSheet.cuerpo.addAndMakeVisible (g);
             rackSlotBtns.add (g);
+
+            //  Y LA MINIATURA, encima del fader. Ver FxMini.h.
+            auto* m = new FxMini();
+            rackSheet.cuerpo.addAndMakeVisible (m);
+            rackMinis.add (m);
         }
 
         styleButton (rackCloseButton, kKey);
@@ -4058,6 +4063,13 @@ void MainComponent::refrescaRanuras()
 
         b->setToggleState (fx >= 0 && fxOn[(size_t) fx], juce::dontSendNotification);
 
+        //  Y EL NOMBRE PARA QUIEN NO VE LA PANTALLA. El rotulo YA es el nombre
+        //  -eso lo hace `retranslateUi` para todo el arbol- y ahi esta el
+        //  agujero: estas dos tapas cambian de texto DESPUES, cada vez que una
+        //  ranura cambia de contenido, asi que se quedaban con el nombre del
+        //  efecto de antes. Un «+» ademas no dice nada: se lee «ranura vacia».
+        b->setTitle (fx < 0 ? T ("VACIA") : juce::String (fxDefs[fx].name));
+
         //  Y EL CANALON DEL RACK, la MISMA ranura y la misma tabla. Eran dos
         //  sitios que decian lo que hay en una ranura y solo uno se
         //  actualizaba: la fila del rack pintaba su nombre de una tabla suya
@@ -4077,6 +4089,7 @@ void MainComponent::refrescaRanuras()
                 rb->getProperties().remove ("valor");
             }
             rb->setToggleState (fx >= 0 && fxOn[(size_t) fx], juce::dontSendNotification);
+            rb->setTitle (fx < 0 ? T ("VACIA") : juce::String (fxDefs[fx].name));
         }
 
         //  Y LA MISMA FILA EN EL XY, que es la tercera ventana a la ranura.
@@ -6392,7 +6405,7 @@ void MainComponent::refreshAccessibleNames()
         n.s.setDescription (T (n.what));
     }
 
-    padRackBtn.setTitle (T ("ENVIOS"));
+    padRackBtn.setTitle (T ("RACK"));
     padRackBtn.setDescription (T ("del pad"));
 
     juce::Slider* macros[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
@@ -6512,7 +6525,7 @@ void MainComponent::retranslateUi()
     padSoundBtn  .setButtonText (T ("SONIDO"));
     padTrimBtn   .setButtonText (T ("RECORTE"));
     padRigBtn    .setButtonText (T ("EL PAD"));
-    padRackBtn   .setButtonText (T ("ENVIOS"));
+    padRackBtn   .setButtonText (T ("RACK"));
     nivelesButton.setButtonText (T ("16 NIVELES"));
     pianoButton  .setButtonText (T ("PIANO"));
     //  SOLO EL SIGNO, como las flechas del preset en la ficha del instrumento
@@ -9855,6 +9868,30 @@ void MainComponent::refreshRack()
         rackSends[s]->setValue (fx >= 0 ? engine.getPadSend (rackPad, fx) : 0.0,
                                 juce::dontSendNotification);
         rackSends[s]->setEnabled (fx >= 0);
+
+        //  QUE HACE ESE FADER, dibujado. Ver ZatiLookAndFeel::drawLinearSlider:
+        //  un inserto pinta el cruce -lo lleno es lo que vuelve por el efecto y
+        //  lo que queda es el pad que sobrevive- y un envio la pista de serie.
+        //  Lo dice el MOTOR y no una tabla de aqui: `AudioEngine::sustituye` es
+        //  la misma fila que decide `dry *= (1 - g)`.
+        rackSends[s]->getProperties().set ("cruce", fx >= 0 && AudioEngine::sustituye (fx));
+
+        //  Y EN PALABRAS PARA QUIEN NO VE LA PANTALLA, que es lo que lee
+        //  TalkBack y no cuesta un pixel: sin esto la fila se anuncia como
+        //  «deslizador» seis veces seguidas.
+        rackSends[s]->setTitle (fx < 0 ? T ("VACIA")
+                                       : juce::String (fxDefs[fx].name) + " "
+                                         + juce::String::charToString ((juce::juce_wchar) 0x00B7) + " "
+                                         + T (AudioEngine::sustituye (fx) ? "SUSTITUYE" : "SUMA"));
+
+        if (auto* m = rackMinis[s])
+        {
+            m->ponTipo (fx);
+            if (fx >= 0)
+                m->refresca ((float) fxParam (fx, 0).getValue(),
+                             (float) fxParam (fx, 1).getValue(),
+                             (float) fxParam (fx, 2).getValue(), &eqEspejo);
+        }
     }
     refrescaRanuras();      // el canalon de cada fila, con las seis de la cara
     rackSheet.repaint();

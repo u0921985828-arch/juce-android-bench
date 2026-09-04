@@ -67,6 +67,43 @@ struct Dinamica
     //  es lo que separa un compresor de bus de uno de canal.
     static constexpr float kRodilla = 6.0f;
 
+    //  CUANTOS dB SE QUITAN, dado cuantos sobran del umbral. Es la curva
+    //  ESTATICA de un compresor: lo que su bucle calcula por muestra y lo que
+    //  la fila del rack DIBUJA. Desde que hay dos clientes vive aqui, porque
+    //  la rodilla es una parabola con una constante dentro y no un minimo: el
+    //  dia que se moviera, un dibujo con la copia vieja seguiria pareciendo
+    //  correcto. La puerta y el limitador no pasan por aqui a proposito - un
+    //  escalon y un `min` no son una regla, son su propia definicion.
+    static float bajaDb (float sobre, float rr) noexcept
+    {
+        if (sobre > kRodilla * 0.5f)  return sobre - sobre / rr;
+        if (sobre > -kRodilla * 0.5f)
+        {
+            //  La rodilla: una parabola que empalma con pendiente 0 abajo y
+            //  con 1-1/r arriba, o sea sin escalon en la derivada. Un `if` a
+            //  secas ahi es lo que se oye como bombeo de grano fino.
+            const float x = sobre + kRodilla * 0.5f;
+            return (1.0f - 1.0f / rr) * x * x / (2.0f * kRodilla);
+        }
+        return 0.0f;
+    }
+
+    //  Y EL RATIO EFECTIVO, que en un de-esser no es un mando sino la mitad de
+    //  lo que significa FUERZA. Ver el comentario de `procesa`.
+    static float ratioDe (Modo modo, float p1) noexcept
+    {
+        if (modo == compresor) return juce::jmax (1.0f, p1);
+        return 2.0f + 6.0f * juce::jlimit (0.0f, 1.0f, p1);       // de-esser
+    }
+
+    //  Y DONDE ESTA SU UMBRAL: el de-esser lo saca de FUERZA y los demas lo
+    //  llevan en su primer mando.
+    static float umbralDeDb (Modo modo, float p0, float p1) noexcept
+    {
+        if (modo != deesser) return p0;
+        return -6.0f - 30.0f * juce::jlimit (0.0f, 1.0f, p1);
+    }
+
     void prepare (double fs) noexcept
     {
         sr = fs > 0.0 ? fs : 48000.0;
@@ -158,10 +195,8 @@ struct Dinamica
         //  Un solo mando mueve las dos cosas -el umbral y el ratio- porque eso
         //  es lo que «cuanto» significa en un de-esser: al 0 apenas toca las
         //  eses mas fuertes, y al 1 las persigue con 8:1.
-        const float fuerza   = (modo == deesser ? juce::jlimit (0.0f, 1.0f, p1) : 0.0f);
-        const float umbralDb = (modo == deesser ? -6.0f - 30.0f * fuerza : p0);
+        const float umbralDb = umbralDeDb (modo, p0, p1);
         const float umbral   = juce::Decibels::decibelsToGain (umbralDb, -100.0f);
-        const float ratio    = (modo == compresor ? juce::jmax (1.0f, p1) : 1.0f);
 
         float peorG = 1.0f;
 
@@ -188,21 +223,11 @@ struct Dinamica
                 case compresor:
                 case deesser:
                 {
-                    const float rr = (modo == compresor ? ratio : 2.0f + 6.0f * fuerza);
-                    const float eDb = juce::Decibels::gainToDecibels (env, -100.0f);
-                    const float sobre = eDb - (modo == deesser ? umbralDb : umbralDb);
-                    float baja = 0.0f;
-                    if (sobre > kRodilla * 0.5f)
-                        baja = sobre - sobre / rr;
-                    else if (sobre > -kRodilla * 0.5f)
-                    {
-                        //  La rodilla: una parabola que empalma con pendiente
-                        //  0 abajo y con 1-1/r arriba, o sea sin escalon en la
-                        //  derivada. Un `if` a secas ahi es lo que se oye como
-                        //  bombeo de grano fino.
-                        const float x = sobre + kRodilla * 0.5f;
-                        baja = (1.0f - 1.0f / rr) * x * x / (2.0f * kRodilla);
-                    }
+                    //  Ver bajaDb: la rodilla vive alli desde que la fila del
+                    //  rack dibuja esta misma curva.
+                    const float rr    = ratioDe (modo, p1);
+                    const float eDb   = juce::Decibels::gainToDecibels (env, -100.0f);
+                    const float baja  = bajaDb (eDb - umbralDb, rr);
                     g = juce::Decibels::decibelsToGain (-baja);
                     break;
                 }

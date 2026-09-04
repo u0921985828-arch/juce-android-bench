@@ -685,7 +685,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             sendGain[p][f] = g;
             if (g > 0.0f) { any = true; busFed[f] = true; }
             if (sm != 0.0f) hot = true;      // aun no ha terminado de bajar
-            if (fxIsTone[f]) dry *= (1.0f - g);
+            if (fxSustituye[f]) dry *= (1.0f - g);
         }
         dryGain[p]  = dry;
         padSplit[p] = any || filtered;
@@ -1419,32 +1419,17 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             //  Exponencial, no lineal: el oido oye octavas. Repartido lineal,
             //  la mitad del recorrido se gasta entre 10 y 20 kHz, donde no pasa
             //  nada, y todo lo que importa cae en el ultimo centimetro.
-            constexpr float kDead = 0.03f;
-            const float mag = std::abs (smSweep);
-            const bool  swept = mag > kDead;
-            float freq = 0.0f;
-            auto  type = juce::dsp::StateVariableTPTFilterType::lowpass;
-
-            if (swept)
-            {
-                const float t = (mag - kDead) / (1.0f - kDead);            // 0..1
-                if (smSweep < 0.0f)
-                {
-                    //  Cerrando por arriba: de 20 kHz a 90 Hz.
-                    type = juce::dsp::StateVariableTPTFilterType::lowpass;
-                    freq = 20000.0f * std::pow (90.0f / 20000.0f, t);
-                }
-                else
-                {
-                    //  Abriendo por abajo: de 20 Hz a 6 kHz.
-                    type = juce::dsp::StateVariableTPTFilterType::highpass;
-                    freq = 20.0f * std::pow (6000.0f / 20.0f, t);
-                }
-            }
+            //  Ver AudioEngine::barridoDe: el reparto vive alli desde que la
+            //  fila del rack lo dibuja, o serian dos reglas.
+            const auto  barr  = barridoDe (smSweep);
+            const bool  swept = barr.activo;
+            const float freq  = barr.hz;
+            const auto  type  = barr.alto ? juce::dsp::StateVariableTPTFilterType::highpass
+                                          : juce::dsp::StateVariableTPTFilterType::lowpass;
 
             //  EL BUS SE DEVUELVE SIEMPRE QUE ESTE VIVO, SE FILTRE O NO.
             //
-            //  FLT es de los que RESTAN SECO - fxIsTone[0] - porque un filtro
+            //  FLT es de los que RESTAN SECO - fxSustituye[0] - porque un filtro
             //  es un inserto y no un envio: lo que un pad manda a este bus deja
             //  de ir por el camino seco. Saltarse returnBus en la zona muerta
             //  dejaba entonces al pad SIN camino: el seco quitado y el bus sin

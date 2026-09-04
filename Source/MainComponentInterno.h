@@ -436,7 +436,7 @@ inline Iconos::Id iconoDeFx (int f) noexcept
                                       Iconos::Id::eq,  Iconos::Id::cmp, Iconos::Id::gte,
                                       Iconos::Id::dss, Iconos::Id::lim };
     //  UNA FILA POR TIPO, y que lo diga el compilador. Es la misma lista corta
-    //  en silencio que ya costo `fxIsTone` y `fxMixNow`: aqui el sintoma seria
+    //  en silencio que ya costo `fxSustituye` y `fxMixNow`: aqui el sintoma seria
     //  una fila con un hueco -o sea lo que `Tests/planos.py` existe para cazar-
     //  y el efecto nuevo llegando sin dibujo. Un tope que se supera en silencio
     //  no protege, esconde.
@@ -564,8 +564,9 @@ namespace ZatiTour
           "CARGAR trae un fichero a un pad. REC graba lo que oiga el microfono. "
           "PLAY pone en marcha el patron.",
 
-          "Filtro, paso alto, saturacion, eco, reduccion y reverberacion. Son de "
-          "la maquina, no del pad: cada pad decide cuanto les manda.",
+          "Seis ranuras y un menu de efectos para llenarlas. Una vacia pone «+» "
+          "y lo abre. Son de la maquina, no del pad: cada pad decide cuanto pasa "
+          "por ellos.",
 
           "Los tres de arriba mueven el efecto que tengas abierto. Debajo de cada "
           "uno pone lo que hace en ese momento.",
@@ -585,8 +586,8 @@ namespace ZatiTour
           "Recorte, afinado, filtro, envolvente y bucle. AUTO CHOP parte un break "
           "por sus golpes y lo reparte por los pads.",
 
-          "La mesa pone los dieciseis a su nivel. El RACK dice cuanto manda cada "
-          "pad a cada efecto, sin cerrar nada.",
+          "La mesa pone los dieciseis a su nivel. El RACK dice cuanto de cada pad "
+          "pasa por cada efecto, y cuales sustituyen y cuales suman.",
 
           "Los patrones colocados en el tiempo, en cuatro carriles. Un bloque "
           "dura lo que ocupa, no lo que dure su patron.",

@@ -22,6 +22,7 @@
 #include "UiAudit.h"
 #include "XyPad.h"
 #include "EqCurve.h"
+#include "FxMini.h"
 #include "MidiIo.h"
 #include "Instrumentos.h"
 
@@ -655,7 +656,7 @@ private:
     //  Se quedo el RACK, que apaga el envio cuyo efecto esta cerrado y trae su
     //  propio selector de pad; aqui queda una tapa que lo abre en el pad que
     //  se esta editando, y 86 px de alto que vuelven a la pagina mas apretada.
-    juce::TextButton padRackBtn { "ENVIOS" };
+    juce::TextButton padRackBtn { "RACK" };
 
     //  DIECISEIS NIVELES.
     //
@@ -1194,6 +1195,7 @@ public:
     void auditPiano();
     //  LAS SEIS RANURAS DE LA FILA DE EFECTOS. Ver Tests/ranuras.py.
     void auditRanuras();
+    void auditRack();
     void auditEq();
     void auditAuto();
     void auditDinamica();
@@ -1731,6 +1733,12 @@ private:
     //  el sitio donde se cambia lo que hay en una ranura: la fila del rack es
     //  una RANURA y no un efecto.
     juce::OwnedArray<juce::TextButton> rackSlotBtns;
+    //  Y LO QUE HAY DENTRO, dibujado con sus numeros de ahora. Ver FxMini.h:
+    //  la fila contestaba «un numero» a la pregunta «¿que le estoy mandando a
+    //  esto?». Cabe porque el rack SE DESPLAZA -`rackSheet.hazDesplazable`- o
+    //  sea que ahi el alto es el eje que sobra, al reves que en el resto de la
+    //  app; el ancho no, que el fader ya le cede 44 px a su caja de lectura.
+    juce::OwnedArray<FxMini>           rackMinis;
     int rackPad = 0;
     void refreshRack();
     juce::OwnedArray<juce::TextButton> mixMutes, mixSolos;

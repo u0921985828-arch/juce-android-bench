@@ -48,6 +48,7 @@
       <FILE id="srcSni"  name="SintesTabla.inc"   compile="0" resource="0" file="Source/SintesTabla.inc"/>
       <FILE id="srcEq5"  name="Eq5.h"             compile="0" resource="0" file="Source/Eq5.h"/>
       <FILE id="srcEqc"  name="EqCurve.h"         compile="0" resource="0" file="Source/EqCurve.h"/>
+      <FILE id="srcFxm"  name="FxMini.h"          compile="0" resource="0" file="Source/FxMini.h"/>
       <FILE id="srcDin"  name="Dinamica.h"        compile="0" resource="0" file="Source/Dinamica.h"/>
     </GROUP>
     <GROUP id="ZatiKits" name="kits">

@@ -1275,6 +1275,20 @@ void MainComponent::auditOpen (const juce::String& which)
     }
     else if (which == "midi") { showSetPage (pageMidi); refreshMidiDevices(); openSheet (setSheet, setButton); }
     else if (which == "rack") { rackPad = 0; openSheet (rackSheet, mixButton); refreshRack(); }
+    //  Y EL RACK CON LAS SEIS RANURAS LLENAS.
+    //
+    //  Desde que la maquina abre vacia, `rack` mide seis filas con «+» en el
+    //  canalon, el fader apagado y ninguna miniatura — o sea la ficha a la que
+    //  le falta justo lo que esta tanda anade. Es la leccion de `secp`, `eqb` e
+    //  `instp`: sin la segunda entrada se mide siempre el estado que no cambio.
+    //  Con los seis primeros tipos, que son los que caben en las seis ranuras.
+    else if (which == "rackf")
+    {
+        for (int s = 0; s < kNumRanuras; ++s) ponEnRanura (s, s);
+        rackPad = 0;
+        openSheet (rackSheet, mixButton);
+        refreshRack();
+    }
     //  EL MENU DE UNA RANURA, en sus DOS estados, que es lo mismo que hizo
     //  falta con `secp` y con `instp`: sobre una ranura VACIA -que es como se
     //  llega desde la cara- y sobre una LLENA, que ademas enseña VACIAR y por
@@ -2441,6 +2455,95 @@ void MainComponent::auditRanuras()
 //  Se mide POR LA TAPA y no poniendo el numero por dentro, que es lo unico que
 //  recorre el camino de verdad: `cuentaButtons[i]->onClick` es lo que escribe
 //  la preferencia, y llamar a `saveCuentaPref` a mano se lo salta.
+
+// ============================================================================
+//  LA FILA DEL RACK: de que familia es cada una, y que hay dentro.
+//
+//  Ninguna de las diez reglas de `expo.py` puede ver nada de esto. Una fila que
+//  dibuja un envio donde hay un inserto se maqueta perfecta: no solapa, no se
+//  sale, no corta el rotulo, no mide cero y esta traducida. Es la familia de
+//  los cinco fallos del compas del piano, otra vez.
+//
+//  Se mide por lo que la fila ACABA teniendo puesto -la propiedad del fader,
+//  que es lo que lee el pintor- y no llamando a `AudioEngine::sustituye` dos
+//  veces: eso compararia la tabla consigo misma y saldria verde con el rack
+//  dibujando lo que le diera la gana.
+// ============================================================================
+void MainComponent::auditRack()
+{
+    //  1. LA FAMILIA, EN LOS ONCE TIPOS. Se pone el tipo `f` en la ranura 0 y
+    //     se mira como quedo dibujada su fila.
+    int mal = 0;
+    juce::StringArray dibujo;
+    for (int f = 0; f < kNumFx; ++f)
+    {
+        ponEnRanura (0, f);
+        refreshRack();
+        const bool cruce = (bool) rackSends[0]->getProperties().getWithDefault ("cruce", false);
+        dibujo.add (cruce ? "1" : "0");
+        if (cruce != AudioEngine::sustituye (f)) ++mal;
+    }
+
+    //  2. LA MINIATURA LEE LOS NUMEROS DE AHORA, con DOS cifras.
+    //
+    //  Los once tienen que CAMBIAR al mover un mando y salir IDENTICOS sin
+    //  tocar nada. Solo lo primero lo cumple una miniatura que dibuja ruido, y
+    //  solo lo segundo un icono fijo — que es exactamente lo que habia antes.
+    int cambian = 0, quietos = 0;
+    for (int f = 0; f < kNumFx; ++f)
+    {
+        ponEnRanura (0, f);
+
+        //  SE MUEVEN LOS TRES MANDOS y basta con que UNO cambie el dibujo, en
+        //  vez de exigirselo al primero: el primer mando no significa lo mismo
+        //  en las once familias y en dos de ellas no toca la forma. Medido: con
+        //  el mando 0 solo salen 9 de 11, y las dos que faltan son correctas —
+        //  el ANCHO del EQ no hace nada con las cinco bandas planas, y la
+        //  FRECUENCIA del de-esser no mueve su umbral, que sale de FUERZA. Una
+        //  tabla de «que mando mirar por tipo» seria la misma regla escrita
+        //  otra vez, y en el banco.
+        refreshRack();
+        const auto base = rackMinis[0]->puntos();
+        refreshRack();
+        if (base == rackMinis[0]->puntos()) ++quietos;
+
+        bool movio = false;
+        for (int p = 0; p < 3; ++p)
+        {
+            auto& mando = fxParam (f, p);
+            const double antes = mando.getValue();
+            for (double v : { mando.getMinimum(), mando.getMaximum() })
+            {
+                mando.setValue (v, juce::dontSendNotification);
+                refreshRack();
+                movio = movio || (rackMinis[0]->puntos() != base);
+            }
+            mando.setValue (antes, juce::dontSendNotification);
+        }
+        if (movio) ++cambian;
+    }
+
+    //  3. Y LA GEOMETRIA DE LA FILA, que es lo que la ficha paga por dibujar:
+    //     el fader tiene que seguir midiendo un dedo y la miniatura tiene que
+    //     tener sitio. Con la ficha ABIERTA, o los limites son los de la ultima
+    //     vez que se maqueto.
+    ponEnRanura (0, AudioEngine::kFxEq);
+    openSheet (rackSheet, mixButton);
+    resized();
+    const auto fader = rackSends[0]->getBounds();
+    const auto mini  = rackMinis[0]->getBounds();
+
+    std::cout << "{\"rack\":1"
+              << ",\"mal\":" << mal
+              << ",\"dibujo\":[" << dibujo.joinIntoString (",") << "]"
+              << ",\"cambian\":" << cambian
+              << ",\"quietos\":" << quietos
+              << ",\"tipos\":" << kNumFx
+              << ",\"fader\":[" << fader.getWidth() << "," << fader.getHeight() << "]"
+              << ",\"mini\":["  << mini.getWidth()  << "," << mini.getHeight()  << "]"
+              << "}" << std::endl;
+}
+
 // ============================================================================
 //  EL EQ DE CINCO BANDAS Y SU CURVA. Ver Tests/eq.py.
 //

@@ -38,7 +38,7 @@ SEGUNDOS = int (sys.argv[1]) if len (sys.argv) > 1 else 8
 #  tick no las corre nadie en el unico banco que mide por RELOJ, que es
 #  exactamente publicar un numero sin mirarlo.
 FICHAS = ["", "eq", "pads", "sec", "song", "mix", "set", "proj", "midi", "gest",
-          "xy", "rack", "chop", "browse"]
+          "xy", "rack", "rackf", "chop", "browse"]
 
 #  EL TOPE, en VENTANAS y no en llamadas. Un arranque pinta el fondo una vez y
 #  una ficha que se abre puede pedir otro; a partir de ahi, con nadie tocando

@@ -536,6 +536,12 @@ public:
                     {
                         c2->auditRanuras();
                     }
+                    //  LA FILA DEL RACK: inserto contra envio, y la miniatura.
+                    //  Ver Tests/rack.py.
+                    else if (UiAudit::env ("ZATI_RACK").isNotEmpty())
+                    {
+                        c2->auditRack();
+                    }
                     //  EL EQ Y SU CURVA. Ver Tests/eq.py.
                     else if (UiAudit::env ("ZATI_EQ").isNotEmpty())
                     {
