@@ -1175,6 +1175,19 @@ void MainComponent::auditOpen (const juce::String& which)
         focusFx (kFxEq);
         abreBandaEq (2);
     }
+    //  LA CARA CON UN EFECTO QUE NO ES EL EQ, que es la otra mitad del plato.
+    //
+    //  `eq` mide la cara con la curva ocupandolo entero y `""` la mide con la
+    //  fila vacia, o sea que el reparto de los tres mandos MAS el visor no lo
+    //  medía nadie: es el estado al que le falta justo lo que se acaba de
+    //  anadir, que es la leccion de `secp`, `eqb`, `songa` e `instp`.
+    else if (which == "plato")
+    {
+        closeAllSheets();
+        ponEnRanura (0, AudioEngine::kFxDly);
+        setFxEnabled (AudioEngine::kFxDly, true);
+        focusFx (AudioEngine::kFxDly);
+    }
     else if (which == "song") openSheet (songSheet, songButton);
     //  LA BANDA DE AUDIO ES OTRA PANTALLA y por eso es otra entrada. Sin ella
     //  el banco mediria siempre la vista de patrones, que es justo la que no
@@ -1285,6 +1298,10 @@ void MainComponent::auditOpen (const juce::String& which)
     else if (which == "rackf")
     {
         for (int s = 0; s < kNumRanuras; ++s) ponEnRanura (s, s);
+        //  Y CON LOS SEIS ENVIOS PUESTOS. Seis valores distintos, que con seis
+        //  iguales un cruce de filas pasaria desapercibido.
+        for (int s = 0; s < kNumRanuras; ++s)
+            engine.setPadSend (0, s, 0.15f + 0.15f * (float) s);
         rackPad = 0;
         openSheet (rackSheet, mixButton);
         refreshRack();
@@ -2472,16 +2489,17 @@ void MainComponent::auditRanuras()
 void MainComponent::auditRack()
 {
     //  1. LA FAMILIA, EN LOS ONCE TIPOS. Se pone el tipo `f` en la ranura 0 y
-    //     se mira como quedo dibujada su fila.
+    //     se mira que dice la fila del rack de ella — en palabras, que es lo
+    //     que lee TalkBack y lo unico que la app afirma sobre esto.
     int mal = 0;
     juce::StringArray dibujo;
     for (int f = 0; f < kNumFx; ++f)
     {
         ponEnRanura (0, f);
         refreshRack();
-        const bool cruce = (bool) rackSends[0]->getProperties().getWithDefault ("cruce", false);
-        dibujo.add (cruce ? "1" : "0");
-        if (cruce != AudioEngine::sustituye (f)) ++mal;
+        const bool dice = rackSends[0]->getTitle().contains (T ("SUSTITUYE"));
+        dibujo.add (dice ? "1" : "0");
+        if (dice != AudioEngine::sustituye (f)) ++mal;
     }
 
     //  2. LA MINIATURA LEE LOS NUMEROS DE AHORA, con DOS cifras.
@@ -2489,10 +2507,14 @@ void MainComponent::auditRack()
     //  Los once tienen que CAMBIAR al mover un mando y salir IDENTICOS sin
     //  tocar nada. Solo lo primero lo cumple una miniatura que dibuja ruido, y
     //  solo lo segundo un icono fijo — que es exactamente lo que habia antes.
+    //  Y SE MIDE EN EL PLATO, que es donde vive: `refreshMacroValues` la
+    //  alimenta con los tres mandos del efecto que tengas enfocado.
     int cambian = 0, quietos = 0;
     for (int f = 0; f < kNumFx; ++f)
     {
+        if (fxTraeCara (f)) { ++cambian; ++quietos; continue; }   // el EQ trae la grande
         ponEnRanura (0, f);
+        focusedFx = f;
 
         //  SE MUEVEN LOS TRES MANDOS y basta con que UNO cambie el dibujo, en
         //  vez de exigirselo al primero: el primer mando no significa lo mismo
@@ -2502,10 +2524,10 @@ void MainComponent::auditRack()
         //  FRECUENCIA del de-esser no mueve su umbral, que sale de FUERZA. Una
         //  tabla de «que mando mirar por tipo» seria la misma regla escrita
         //  otra vez, y en el banco.
-        refreshRack();
-        const auto base = rackMinis[0]->puntos();
-        refreshRack();
-        if (base == rackMinis[0]->puntos()) ++quietos;
+        refreshMacroValues();
+        const auto base = platoMini.puntos();
+        refreshMacroValues();
+        if (base == platoMini.puntos()) ++quietos;
 
         bool movio = false;
         for (int p = 0; p < 3; ++p)
@@ -2515,8 +2537,8 @@ void MainComponent::auditRack()
             for (double v : { mando.getMinimum(), mando.getMaximum() })
             {
                 mando.setValue (v, juce::dontSendNotification);
-                refreshRack();
-                movio = movio || (rackMinis[0]->puntos() != base);
+                refreshMacroValues();
+                movio = movio || (platoMini.puntos() != base);
             }
             mando.setValue (antes, juce::dontSendNotification);
         }
@@ -2527,11 +2549,16 @@ void MainComponent::auditRack()
     //     el fader tiene que seguir midiendo un dedo y la miniatura tiene que
     //     tener sitio. Con la ficha ABIERTA, o los limites son los de la ultima
     //     vez que se maqueto.
-    ponEnRanura (0, AudioEngine::kFxEq);
+    //     Y la del visor del plato, que no puede costarle un pixel a los tres
+    //     mandos: son lo unico que se toca ahi.
+    ponEnRanura (0, AudioEngine::kFxDly);
+    focusedFx = AudioEngine::kFxDly;
+    refrescaPlato();
     openSheet (rackSheet, mixButton);
     resized();
     const auto fader = rackSends[0]->getBounds();
-    const auto mini  = rackMinis[0]->getBounds();
+    const auto mini  = platoMini.getBounds();
+    const auto mando = macroCtrl1.getBounds();
 
     std::cout << "{\"rack\":1"
               << ",\"mal\":" << mal
@@ -2541,6 +2568,7 @@ void MainComponent::auditRack()
               << ",\"tipos\":" << kNumFx
               << ",\"fader\":[" << fader.getWidth() << "," << fader.getHeight() << "]"
               << ",\"mini\":["  << mini.getWidth()  << "," << mini.getHeight()  << "]"
+              << ",\"mando\":[" << mando.getWidth() << "," << mando.getHeight() << "]"
               << "}" << std::endl;
 }
 

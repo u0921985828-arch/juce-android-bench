@@ -103,19 +103,29 @@ public:
         auto r = getLocalBounds().toFloat();
         if (r.getWidth() < 8.0f || r.getHeight() < 6.0f || fx < 0) return;
 
-        //  La superficie es la tarjeta -`chassisTop`, ver Sheet::paint- asi que
-        //  la tinta se MIDE contra ella y no se elige por el nombre.
-        const auto tinta = ZatiColours::textOn (ZatiColours::chassisTop);
-        auto dentro = r.reduced (1.0f, 1.0f);
+        //  ES UN CRISTAL, no un dibujo sobre el chasis. Sin fondo el trazo
+        //  flotaba encima del plato y la fila se leia desordenada — mirado en
+        //  la foto. Con el par que la app ya usa para todo lo que MUESTRA un
+        //  numero -`screenBg` y `lcdFg`, el mismo de las casillas que hay
+        //  justo debajo de los tres mandos- se lee como el visor del aparato,
+        //  que es lo que es. Y no son tokens nuevos: `Tests/skins.py` ya mide
+        //  ese par en las cuatro carcasas.
+        g.setColour (ZatiColours::screenBg);
+        g.fillRoundedRectangle (r, 2.0f);
+        g.setColour (ZatiColours::lcdDim.withAlpha (0.55f));
+        g.drawRoundedRectangle (r.reduced (0.5f), 2.0f, 1.0f);
+
+        auto dentro = r.reduced (3.0f, 3.0f);
+        if (dentro.getWidth() < 6.0f || dentro.getHeight() < 5.0f) return;
 
         //  El renglon de referencia: el cero de una transferencia, el suelo de
         //  un tren de ecos. Sin el, una curva plana y una curva caida se
         //  dibujan igual de bien y no se sabe cual es cual.
-        g.setColour (tinta.withAlpha (0.16f));
+        g.setColour (ZatiColours::lcdDim.withAlpha (0.55f));
         const float base = dentro.getBottom() - 0.5f;
         g.drawLine (dentro.getX(), base, dentro.getRight(), base, 1.0f);
 
-        g.setColour (tinta.withAlpha (0.80f));
+        g.setColour (ZatiColours::lcdFg);
         if (deTiempo (fx)) pintaBarras (g, dentro);
         else               pintaCurva  (g, dentro);
     }

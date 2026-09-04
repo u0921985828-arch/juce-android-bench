@@ -38,7 +38,7 @@ SEGUNDOS = int (sys.argv[1]) if len (sys.argv) > 1 else 8
 #  tick no las corre nadie en el unico banco que mide por RELOJ, que es
 #  exactamente publicar un numero sin mirarlo.
 FICHAS = ["", "eq", "pads", "sec", "song", "mix", "set", "proj", "midi", "gest",
-          "xy", "rack", "rackf", "chop", "browse"]
+          "xy", "rack", "rackf", "chop", "browse", "plato"]
 
 #  EL TOPE, en VENTANAS y no en llamadas. Un arranque pinta el fondo una vez y
 #  una ficha que se abre puede pedir otro; a partir de ahi, con nadie tocando
@@ -224,7 +224,13 @@ def main():
         #  de las fichas, que es lo que hace de esta fila una medida y no un
         #  rojo: lo que separa a las dos es lo que cuesta el analizador —dos FFT
         #  de 1024 por cuadro, la mancha de entrada y la linea de salida—.
-        cara = (f in ("", "eq"))
+        #
+        #  Y «plato» es la MISMA cara con un efecto que no es el EQ: el visor
+        #  vive en el plato igual que la curva, asi que se lee contra la cara y
+        #  no contra el tope de las fichas. Lo que separa a las tres es lo que
+        #  cuesta cada superficie; lo que se juzga de esta es la columna QUIETA,
+        #  que es donde un visor que se repintara para siempre lo diria.
+        cara = (f in ("", "eq", "plato"))
         mal  = (not cara) and equi > TOPE_SONANDO
         print ("%-8s %8.3f %8d %9.0f%s" % (f or "(cara)", equi, cuad, r.get ("cpu_ms", 0.0),
                                         "   (se ve: no se juzga)" if cara else

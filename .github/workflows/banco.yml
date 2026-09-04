@@ -115,7 +115,7 @@ jobs:
       - name: La cuenta atras y el metronomo
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/cuenta.py
-      - name: La fila del rack, inserto contra envio
+      - name: El visor del plato y la familia de un efecto
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/rack.py
       - name: El EQ de cinco bandas y su curva

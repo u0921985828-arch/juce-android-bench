@@ -662,6 +662,10 @@ void MainComponent::resized()
             //  alto. El nombre del efecto ya esta encendido en su ranura.
             eqCurva.setVisible (true);
             eqCurva.setBounds (mrow.reduced (6, 2));
+            //  Y la miniatura de los otros diez no pinta nada aqui: el EQ trae
+            //  su propia cara, que es la version grande de lo mismo.
+            platoMini.setVisible (false);
+            platoMini.setBounds ({});
             //  APAGADOS *Y* SIN LIMITES, que son las dos mitades de la misma
             //  regla y aqui solo estaba puesta una. Un control encendido y de
             //  0x0 pasa las ocho reglas de geometria -no solapa, no se sale,
@@ -675,6 +679,36 @@ void MainComponent::resized()
             eqCurva.setVisible (false);
             eqCurva.setBounds ({});
             for (auto* k : mk) k->setVisible (true);
+
+            //  Y LOS OTROS DIEZ ENSEÑAN LO QUE SON EN EL MISMO PLATO.
+            //
+            //  Tres mandos dicen lo que le has PEDIDO al efecto y ninguno lo
+            //  que esta haciendo: el EQ contesta esa pregunta con su curva y
+            //  los demas no contestaban nada. La miniatura va donde ya vive esa
+            //  respuesta -a la izquierda del plato, como el visor de un aparato
+            //  al lado de sus mandos- y no en la fila del rack, que es donde
+            //  estuvo una tanda y donde no encajaba.
+            //
+            //  UN TERCIO Y CON SUELO, que es una medida y no una proporcion
+            //  elegida: cada celda de mando pierde 20 px en su `reduced (10, 0)`
+            //  y el mando no puede bajar del dedo, asi que a las tres celdas se
+            //  les garantizan `hit + 20` antes de dar un pixel al visor. En
+            //  280x653 el plato mide 268: el tercio serian 89 y el suelo deja
+            //  88, con la celda en 60 y el mando en 40 clavados.
+            const int cellMin = Metrics::hit + 20;
+            const int visorW  = juce::jlimit (0, juce::jmin (120, mrow.getWidth() - 3 * cellMin),
+                                              mrow.getWidth() / 3);
+            platoMini.setVisible (visorW >= 48);
+            if (visorW >= 48)
+            {
+                platoMini.setBounds (Lang::takeStart (mrow, visorW).reduced (4, 6));
+            }
+            else
+            {
+                //  APAGADO *Y* SIN LIMITES, las dos mitades de la misma regla.
+                platoMini.setBounds ({});
+            }
+
             const int w = mrow.getWidth() / 3;
             for (int i = 0; i < 3; ++i)
             {
@@ -2171,15 +2205,15 @@ void MainComponent::resized()
         //  sheetFromBottom takes the card's OUTER height and hands back the
         //  inside, so the vertical margin it removes has to be part of what we
         //  ask for - without it the last send row fell off the bottom edge.
-        //  LA FILA CRECE PORQUE ENSEÑA LO QUE HAY DENTRO. Ver FxMini.h: 48 px
-        //  eran el canalon y el fader, y ahora la mitad derecha se parte en
-        //  horizontal — la miniatura de 26 arriba y el fader de 40 debajo. El
-        //  alto sale gratis AQUI y solo aqui: `rackSheet.hazDesplazable()`, o
-        //  sea que lo que no cabe se alcanza arrastrando. El ancho no, que el
-        //  fader ya le cede 44 px a su caja de lectura y en 280x653 el cuerpo
-        //  mide unos 193.
-        const int altoMini = 26;
-        const int filaFx   = altoMini + Metrics::xs + Metrics::hit + Metrics::xs;   // 74
+        //  LA FILA SE QUEDA COMO ESTABA, y eso es una vuelta atras medida.
+        //
+        //  La miniatura de un efecto estuvo aqui una tanda: la fila crecia a 74
+        //  px y la mitad derecha se partia en horizontal. Se deshizo mirando la
+        //  foto — el dibujo quedaba flotando encima del fader, sin alinear con
+        //  el canalon, y la fila entera perdia el orden que tenia. Y ademas el
+        //  sitio era el equivocado: lo que dice QUE ES un efecto va donde el EQ
+        //  ya lo dice, o sea en el PLATO. Ver FxMini.h y layoutFace.
+        const int filaFx = 48;
 
         //  Y LA CABECERA RESERVA LO QUE SE PINTA.
         //
@@ -2246,29 +2280,23 @@ void MainComponent::resized()
         //
         //  Tres y tres. Lo que falta de alto lo hay de ancho, que es lo mismo
         //  que hace la pagina de AUDIO y lo que hace la cara con wideFace.
-        //  (`filaFx` y `altoMini` se deciden arriba, junto a lo que la tarjeta
-        //  pide: quien reserva y quien coloca tienen que contar lo mismo.)
+        //  (`filaFx` se decide arriba, junto a lo que la tarjeta pide: quien
+        //  reserva y quien coloca tienen que contar lo mismo.)
 
         //  UNA FILA DEL RACK: el canalon a la izquierda -que desde esta tanda
         //  es una TAPA y no texto pintado, porque es la puerta al menu de la
-        //  ranura-, y a la derecha la MINIATURA arriba y el fader debajo.
+        //  ranura- y el fader con lo que queda.
         //
-        //  El canalon se queda con el alto entero: es una tapa y un dedo mide
-        //  40. Y seis pixeles arriba y abajo de una fila de 48 dejaban el fader
-        //  en 36, cuatro por debajo del dedo, asi que el aire sale de la FILA y
-        //  no del control — la misma regla que gobierna la rejilla de pads.
-        auto colocaFilaRack = [this, altoMini] (int s, juce::Rectangle<int> row)
+        //  Seis pixeles arriba y abajo de una fila de 48 dejan el fader en 36,
+        //  cuatro por debajo del dedo. El aire entre filas ya lo da la fila
+        //  siguiente; el que se le quita al control sale del control.
+        auto colocaFilaRack = [this] (int s, juce::Rectangle<int> row)
         {
             auto canalon = Lang::takeStart (row, 54);
             if (rackSlotBtns[s] != nullptr)
-                rackSlotBtns[s]->setBounds (canalon.reduced (1, Metrics::xs));
-            //  La miniatura arriba, el fader debajo y el aire entre los dos.
-            auto arriba = row.removeFromTop (altoMini);
-            row.removeFromTop (Metrics::xs);
-            if (rackMinis[s] != nullptr)
-                rackMinis[s]->setBounds (arriba.reduced (2, 0));
+                rackSlotBtns[s]->setBounds (canalon.reduced (1, 4));
             if (rackSends[s] != nullptr)
-                rackSends[s]->setBounds (row.removeFromTop (Metrics::hit).reduced (2, 0));
+                rackSends[s]->setBounds (row.reduced (2, 4));
         };
         const bool dosCol = inner.getWidth() >= 560 && inner.getHeight() < kNumRanuras * filaFx;
         if (dosCol)

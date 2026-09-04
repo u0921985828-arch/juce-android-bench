@@ -1733,12 +1733,6 @@ private:
     //  el sitio donde se cambia lo que hay en una ranura: la fila del rack es
     //  una RANURA y no un efecto.
     juce::OwnedArray<juce::TextButton> rackSlotBtns;
-    //  Y LO QUE HAY DENTRO, dibujado con sus numeros de ahora. Ver FxMini.h:
-    //  la fila contestaba «un numero» a la pregunta «¿que le estoy mandando a
-    //  esto?». Cabe porque el rack SE DESPLAZA -`rackSheet.hazDesplazable`- o
-    //  sea que ahi el alto es el eje que sobra, al reves que en el resto de la
-    //  app; el ancho no, que el fader ya le cede 44 px a su caja de lectura.
-    juce::OwnedArray<FxMini>           rackMinis;
     int rackPad = 0;
     void refreshRack();
     juce::OwnedArray<juce::TextButton> mixMutes, mixSolos;
@@ -2507,6 +2501,11 @@ private:
     //  que es la ficha que existe justo para mover dos numeros con un dedo, y
     //  MIX es el toque de la ranura.
     EqCurve eqCurva;
+    //  Y LA MINIATURA DE LOS OTROS DIEZ, en el MISMO plato. Ver FxMini.h: la
+    //  curva del EQ contesta «que hay dentro» para uno de los once tipos y los
+    //  demas no contestaban nada — tres mandos dicen lo que le has PEDIDO al
+    //  efecto y ninguno lo que esta haciendo. Vive donde ya vive esa respuesta.
+    FxMini platoMini;
     //  El ESPEJO desde el que se pinta. No es el `Eq5` del motor: ese lo lee el
     //  hilo de audio y dibujarlo desde aqui seria leer sus coeficientes
     //  mientras los recalcula. Es la MISMA clase, asi que la curva que se

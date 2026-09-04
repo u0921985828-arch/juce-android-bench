@@ -251,10 +251,10 @@ tres segundos.
 Un efecto contra los sesenta y cuatro pads. El selector de pad es una rejilla de
 cuatro por cuatro por banco —dieciséis en fila no caben: en 280 px les tocan 26—
 y debajo las seis filas del pad elegido, con la de un efecto apagado atenuada:
-*lo que pongas ahora es lo que usará cuando lo enciendas*. Cada fila dibuja lo
-que hay dentro con sus números de ahora (`FxMini`) y dice de qué familia es: de
-los once tipos, **nueve son insertos** —subir el fader le quita señal seca al
-pad, así que la pista pinta el cruce— y sólo DLY y REV suman encima.
+*lo que pongas ahora es lo que usará cuando lo enciendas*. Cada fila dice de qué
+familia es su efecto: de los once tipos, **nueve son insertos** —subir el fader
+le quita señal seca al pad— y sólo DLY y REV suman encima. Lo que hay DENTRO se
+ve en el plato de la cara, con los números de ahora (`FxMini`).
 
 ### XY
 

@@ -66,6 +66,7 @@ NOMBRES = {
     "proj":     ("AJUSTES · PROYECTOS",      "AJUSTES, tapa PROYECTOS"),
     "gest":     ("AJUSTES · GESTOS",         "AJUSTES, tapa GESTOS"),
     "manual":   ("MANUAL",                   "AJUSTES · GESTOS, tapa MANUAL"),
+    "plato":    ("LA CARA CON UN EFECTO PUESTO", "cara, ranura con DLY"),
     "rack":     ("RACK, RANURAS VACIAS",       "EL PAD, tapa RACK"),
     "rackf":    ("RACK CON LAS SEIS LLENAS",   "EL PAD, tapa RACK"),
     "chop":     ("TROCEAR",                  "EL PAD, tapa CHOP"),

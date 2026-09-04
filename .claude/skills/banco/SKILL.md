@@ -28,7 +28,7 @@ codigo.
 
 | Se toco | Se corre |
 |---|---|
-| cualquier cosa de interfaz | `Tests/expo.py` (1120 corridas, ~2 min) |
+| cualquier cosa de interfaz | `Tests/expo.py` (1148 corridas, ~2 min) |
 | textos, rotulos, `T()` | `Tests/lang.py` **y** `expo.py` |
 | colores, tokens, pieles | `Tests/skins.py` |
 | motor, voces, efectos, envios | `build/StressTest_artefacts/Release/StressTest` |
@@ -41,7 +41,7 @@ codigo.
 | piano roll, notas, compas, EUCLIDES | `Tests/piano.py` |
 | clips de audio en la cancion, el gesto | `Tests/clips.py` |
 | las seis ranuras de la fila de efectos | `Tests/ranuras.py` |
-| la fila del RACK: inserto contra envio, la miniatura | `Tests/rack.py` |
+| el visor del plato y la familia de un efecto | `Tests/rack.py` |
 | la cuenta atras y el metronomo | `Tests/cuenta.py` |
 | el EQ de cinco bandas y su curva | `Tests/eq.py` |
 | la familia de dinamica: CMP, GTE, DSS, LIM | `Tests/dinamica.py` |

@@ -604,11 +604,6 @@ MainComponent::MainComponent()
             g->onClick = [this, f] { abreMenuRanura (f); };
             rackSheet.cuerpo.addAndMakeVisible (g);
             rackSlotBtns.add (g);
-
-            //  Y LA MINIATURA, encima del fader. Ver FxMini.h.
-            auto* m = new FxMini();
-            rackSheet.cuerpo.addAndMakeVisible (m);
-            rackMinis.add (m);
         }
 
         styleButton (rackCloseButton, kKey);
@@ -1981,6 +1976,8 @@ MainComponent::MainComponent()
         else if (autoArmado) publicaAutomacion();
     };
     addChildComponent (eqCurva);
+    //  Y la miniatura de los otros diez, en el mismo plato. Ver FxMini.h.
+    addChildComponent (platoMini);
 
     // Six effects, six buttons, one row. A button IS its effect: tapping it
     // hands the three CTRL knobs that effect's three parameters, tapping the
@@ -4384,6 +4381,15 @@ void MainComponent::refreshMacroValues()
         ks[pi]->setValue (fxParam (focusedFx, pi).getValue(), juce::dontSendNotification);
         ks[pi]->updateText();
     }
+
+    //  Y EL VISOR DEL PLATO, que es la otra cosa que esos tres numeros mueven.
+    //  Ver FxMini.h: se repinta solo si la curva se movio, asi que esto puede
+    //  llamarse una vez por fotograma de arrastre sin costar un repintado.
+    platoMini.ponTipo (fxEstaPuesto (focusedFx) && ! fxTraeCara (focusedFx) ? focusedFx : -1);
+    if (platoMini.tipo() >= 0)
+        platoMini.refresca ((float) fxParam (focusedFx, 0).getValue(),
+                            (float) fxParam (focusedFx, 1).getValue(),
+                            (float) fxParam (focusedFx, 2).getValue(), &eqEspejo);
     //  SOLO EL RENGLON DE LOS MANDOS, que es lo unico que esta funcion cambia.
     //  El `repaint()` pelado que habia aqui es exactamente el que `macroMoved`
     //  ya tenia acotado veinticuatro lineas mas abajo -«un repintado completo
@@ -9869,13 +9875,6 @@ void MainComponent::refreshRack()
                                 juce::dontSendNotification);
         rackSends[s]->setEnabled (fx >= 0);
 
-        //  QUE HACE ESE FADER, dibujado. Ver ZatiLookAndFeel::drawLinearSlider:
-        //  un inserto pinta el cruce -lo lleno es lo que vuelve por el efecto y
-        //  lo que queda es el pad que sobrevive- y un envio la pista de serie.
-        //  Lo dice el MOTOR y no una tabla de aqui: `AudioEngine::sustituye` es
-        //  la misma fila que decide `dry *= (1 - g)`.
-        rackSends[s]->getProperties().set ("cruce", fx >= 0 && AudioEngine::sustituye (fx));
-
         //  Y EN PALABRAS PARA QUIEN NO VE LA PANTALLA, que es lo que lee
         //  TalkBack y no cuesta un pixel: sin esto la fila se anuncia como
         //  «deslizador» seis veces seguidas.
@@ -9883,15 +9882,6 @@ void MainComponent::refreshRack()
                                        : juce::String (fxDefs[fx].name) + " "
                                          + juce::String::charToString ((juce::juce_wchar) 0x00B7) + " "
                                          + T (AudioEngine::sustituye (fx) ? "SUSTITUYE" : "SUMA"));
-
-        if (auto* m = rackMinis[s])
-        {
-            m->ponTipo (fx);
-            if (fx >= 0)
-                m->refresca ((float) fxParam (fx, 0).getValue(),
-                             (float) fxParam (fx, 1).getValue(),
-                             (float) fxParam (fx, 2).getValue(), &eqEspejo);
-        }
     }
     refrescaRanuras();      // el canalon de cada fila, con las seis de la cara
     rackSheet.repaint();

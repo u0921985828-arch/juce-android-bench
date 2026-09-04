@@ -1019,45 +1019,6 @@ public:
                            float sliderPos, float minPos, float maxPos,
                            juce::Slider::SliderStyle style, juce::Slider& s) override
     {
-        //  EL FADER DE UN INSERTO DIBUJA EL CRUCE, y el de un envio no.
-        //
-        //  De los once efectos, NUEVE son insertos: `renderNextBlock` hace
-        //  `if (fxSustituye[f]) dry *= (1 - g)`, o sea que subir ese fader le
-        //  QUITA senal seca al pad. Solo DLY y REV suman encima. El rack
-        //  dibujaba las once filas identicas -mismo gesto, dos significados- y
-        //  las titulaba «cuanto de este pad entra en cada efecto», que describe
-        //  un envio y por tanto es falso en nueve de once.
-        //
-        //  Asi que un inserto pinta la pista ENTERA: lo lleno es lo que vuelve
-        //  por el efecto y lo que queda es EL PAD que sobrevive, con su propio
-        //  tono. Un envio se queda con la pista de serie -vacia detras del
-        //  relleno- porque el pad no se toca. Cero palabras y cero
-        //  traducciones: es literalmente lo que hace esa linea del motor.
-        //
-        //  Y es la gramatica de FORMA que faltaba: hasta aqui lo unico que
-        //  separaba dos controles que hacen cosas distintas era el color de
-        //  acento cuando estan encendidos.
-        if ((bool) s.getProperties().getWithDefault ("cruce", false))
-        {
-            const auto pista = juce::Rectangle<float> ((float) x, (float) y + (float) h * 0.5f - 3.0f,
-                                                       (float) w, 6.0f);
-            //  Lo que queda del pad: mismo alto, tono propio y por debajo del
-            //  relleno, que es lo que hace que se lea como UNA barra que se
-            //  cambia por la otra y no como dos cosas.
-            g.setColour (ZatiColours::markOn (ZatiColours::chassisTop, 0.34f));
-            g.fillRoundedRectangle (pista, 3.0f);
-
-            g.setColour (s.findColour (juce::Slider::trackColourId));
-            g.fillRect (juce::Rectangle<float> (pista.getX(), pista.getY(),
-                                                juce::jmax (0.0f, sliderPos - pista.getX()),
-                                                pista.getHeight()));
-
-            const float r = juce::jmin (5.5f, (float) h * 0.42f);
-            g.setColour (ZatiColours::ink);
-            g.fillEllipse (sliderPos - r, pista.getCentreY() - r, r * 2.0f, r * 2.0f);
-            return;
-        }
-
         if (! (bool) s.getProperties().getWithDefault ("pan", false))
         {
             juce::LookAndFeel_V4::drawLinearSlider (g, x, y, w, h, sliderPos, minPos, maxPos, style, s);
