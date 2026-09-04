@@ -30,16 +30,39 @@
 class Fdn
 {
 public:
+    //  CUANTAS LINEAS Y CUANTOS DIFUSORES. Estaban abajo, en el bloque privado,
+    //  y suben porque `kBase44` los necesita en su DECLARACION: el tamaño de un
+    //  array se lee al vuelo y no en el contexto de clase completa, que es lo
+    //  que si tiene el cuerpo de un metodo — que es donde vivia esa tabla.
+    static constexpr int kLines = 4;
+    static constexpr int kDiff  = 2;
+
+    //  Longitudes en muestras a 44.1 kHz, escaladas despues a la frecuencia de
+    //  trabajo. PRIMAS ENTRE SI a proposito: si dos lineas comparten divisor,
+    //  sus ecos coinciden una y otra vez y la cola suena a tubo en vez de a
+    //  sala.
+    //
+    //  Y AQUI Y NO DENTRO DE `prepare`, que es donde estaban: en cuanto
+    //  `tauSegundos` tuvo que saber cuanto dura una vuelta habia DOS copias de
+    //  la misma tabla, y la segunda es la que un dia se queda vieja — que es
+    //  literalmente el fallo que esta tanda existe para arreglar, cometido
+    //  dentro del arreglo.
+    static constexpr int kBase44[kLines] = { 1447, 1637, 1861, 2053 };
+
+    //  LOS DOS NUMEROS QUE MANDAN EN LA COLA, por la misma razon. 0.72 a 0.94:
+    //  por debajo no es una sala y por encima de 0.95 una FDN de cuatro lineas
+    //  empieza a sonar a bucle infinito antes que a sitio. Y el polo va al
+    //  reves que el mando: damping alto = mas oscuro.
+    static float realimentacionDe (float size) noexcept
+    { return 0.72f + 0.22f * juce::jlimit (0.0f, 1.0f, size); }
+    static float amortiguadoDe (float damping) noexcept
+    { return 0.05f + 0.75f * juce::jlimit (0.0f, 1.0f, damping); }
+
     void prepare (double sampleRate, int channels)
     {
         fs = juce::jmax (8000.0, sampleRate);
         chans = juce::jlimit (1, 2, channels);
 
-        //  Longitudes en muestras a la frecuencia de trabajo, escaladas desde
-        //  las de 44.1 kHz. PRIMAS ENTRE SI a proposito: si dos lineas
-        //  comparten divisor, sus ecos coinciden una y otra vez y la cola
-        //  suena a tubo en vez de a sala.
-        static constexpr int base44[kLines] = { 1447, 1637, 1861, 2053 };
         //  Los dos difusores, tambien primos y mucho mas cortos: su trabajo es
         //  romper el impulso, no crear cola.
         static constexpr int dif44[kDiff]   = { 241, 359 };
@@ -47,7 +70,7 @@ public:
         int maxLen = 0;
         for (int i = 0; i < kLines; ++i)
         {
-            lineLen[i] = juce::jmax (16, (int) std::lround (base44[i] * fs / 44100.0));
+            lineLen[i] = juce::jmax (16, (int) std::lround (kBase44[i] * fs / 44100.0));
             maxLen = juce::jmax (maxLen, lineLen[i]);
         }
         for (int i = 0; i < kDiff; ++i)
@@ -80,13 +103,47 @@ public:
     //  size 0..1 -> cuanto dura la cola. damping 0..1 -> cuanto se apagan los
     //  agudos en cada vuelta, que es lo que separa una sala con cortinas de
     //  una con azulejos.
+    //  CUANTO DURA LA COLA, en segundos y derivado de lo que la reverb HACE.
+    //
+    //  El visor del plato la dibujaba con `tau = 0.12 + 0.75*size*(1-0.55*damp)`
+    //  -tres constantes que no existen en esta clase-, y medido contra lo que
+    //  hay aqui coinciden abajo y se separan un 36 % arriba: 0.87 s dibujados
+    //  contra 0.64 reales. La firma de un ajuste hecho a ojo.
+    //
+    //  La cuenta es la de la propia rejilla: cada vuelta por una linea de L
+    //  muestras multiplica por `fb`, asi que la amplitud a los t segundos es
+    //  `fb^(t*fs/L)` y `tau = -L / (fs * ln fb)`. La L es la MEDIA de las
+    //  cuatro, que es lo que un oido oye de un conjunto de cuatro.
+    //
+    //  Y el amortiguado entra donde de verdad esta: es un paso bajo de un polo
+    //  DENTRO del lazo, o sea que la ganancia por vuelta ya no es `fb` sino
+    //  `fb * |H(w)|`. A continua vale uno -por eso una cola muy amortiguada
+    //  sigue durando en los graves- asi que se evalua a 1 kHz, que es donde
+    //  vive lo que se oye de una cola. Sin esto, DAMP no movia el dibujo.
+    static float tauSegundos (float size, float damping, double fs) noexcept
+    {
+        const float fb    = realimentacionDe (size);
+        const float dampC = amortiguadoDe (damping);
+
+        double lMedia = 0.0;
+        for (int i = 0; i < kLines; ++i) lMedia += kBase44[i] * (fs / 44100.0);
+        lMedia /= (double) kLines;
+
+        //  |H| de un polo `y += a (x - y)`, o sea a/(1-(1-a)z^-1), a 1 kHz.
+        const double w  = 2.0 * juce::MathConstants<double>::pi * 1000.0 / fs;
+        const double p  = 1.0 - (double) dampC;
+        const double hm = (double) dampC / std::sqrt (1.0 - 2.0 * p * std::cos (w) + p * p);
+
+        const double g = juce::jlimit (1.0e-4, 0.9999, (double) fb * hm);
+        return (float) (-(lMedia / fs) / std::log (g));
+    }
+
     void setParameters (float size, float damping) noexcept
     {
-        //  0.72 a 0.94: por debajo no es una sala y por encima de 0.95 una FDN
-        //  de cuatro lineas empieza a sonar a bucle infinito antes que a sitio.
-        fb   = 0.72f + 0.22f * juce::jlimit (0.0f, 1.0f, size);
-        //  El polo va al reves que el mando: damping alto = mas oscuro.
-        dampC = 0.05f + 0.75f * juce::jlimit (0.0f, 1.0f, damping);
+        //  Ver realimentacionDe y amortiguadoDe: los dos numeros viven arriba
+        //  desde que `tauSegundos` los necesita para decir cuanto dura la cola.
+        fb    = realimentacionDe (size);
+        dampC = amortiguadoDe (damping);
     }
 
     //  Sustituye el contenido del bloque por la senal HUMEDA, que es lo que
@@ -194,8 +251,6 @@ public:
     }
 
 private:
-    static constexpr int   kLines = 4;
-    static constexpr int   kDiff  = 2;
     static constexpr float kDiffG = 0.62f;
 
     double fs = 44100.0;

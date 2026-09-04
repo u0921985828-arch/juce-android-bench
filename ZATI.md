@@ -264,7 +264,10 @@ y debajo las seis filas del pad elegido, con la de un efecto apagado atenuada:
 *lo que pongas ahora es lo que usará cuando lo enciendas*. Cada fila dice de qué
 familia es su efecto: de los once tipos, **nueve son insertos** —subir el fader
 le quita señal seca al pad— y sólo DLY y REV suman encima. Lo que hay DENTRO se
-ve en el plato de la cara, con los números de ahora (`FxMini`).
+ve en el plato de la cara, con los números de ahora: el dibujo sale de la MISMA
+fórmula que suena (`FxVisor::muestrea`, que llama a `svfDb`, `saturaDe`,
+`crush`, `bajaDb` y `Fdn::tauSegundos`) y el banco del motor compara lo dibujado
+contra lo medido, efecto por efecto.
 
 ### XY
 
@@ -957,7 +960,7 @@ que SOLO se arme desde la cara y que el lienzo diga en qué modo está ·
 `niveles` los dieciséis niveles · `nuevo` con qué abre la máquina, por sus
 **dos** caminos · `paneles` los paneles al píxel · `piano` el compás del piano
 por el camino de verdad · `plano` y `planos`, la estructura y el dibujo de cada
-pantalla · `rack` de qué familia es cada efecto y qué enseña el plato ·
+pantalla · `rack` de qué familia es cada efecto, qué enseña el plato y qué mando lo mueve ·
 `ranuras` las seis ranuras y su menú · `session` que la sesión vuelva entera,
 por repetición · `skins` las cuatro carcasas en contraste y ΔE · `store` las
 fotos de la ficha de Play · `tour` que cada paso señale algo.

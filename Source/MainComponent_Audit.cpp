@@ -2560,40 +2560,81 @@ void MainComponent::auditRack()
     //  solo lo segundo un icono fijo — que es exactamente lo que habia antes.
     //  Y SE MIDE EN EL PLATO, que es donde vive: `refreshMacroValues` la
     //  alimenta con los tres mandos del efecto que tengas enfocado.
-    int cambian = 0, quietos = 0;
+    //  Y MANDO A MANDO, que es lo que la version anterior no podia ver.
+    //
+    //  Movia los TRES y le bastaba con que UNO cambiara el dibujo, asi que
+    //  CINCO mandos que no mueven nada llevaban ahi desde el primer dia sin que
+    //  ninguna regla pudiera decirlo. Ahora se mueve uno cada vez y sale una
+    //  LISTA, que se contrasta contra la que la app DECLARA
+    //  (`FxVisor::mandosDe`): es la misma decision que la marca `valor` de los
+    //  iconos — una lista de excepciones escrita en el script solo sabe medir
+    //  una de las cuatro compilaciones, y ademas compararia la tabla consigo
+    //  misma.
+    //
+    //  Solo el MANDO 0 y el 1: el 2 es MIX, que es el interruptor de la ranura
+    //  y no una forma — un visor que cambiara con el no estaria dibujando el
+    //  efecto sino su fader.
+    int cambian = 0, quietos = 0, discrepan = 0;
+    juce::StringArray medidos, dichos;
     for (int f = 0; f < kNumFx; ++f)
     {
-        if (fxTraeCara (f)) { ++cambian; ++quietos; continue; }   // el EQ trae la grande
+        if (fxTraeCara (f))                       // el EQ trae la grande
+        {
+            ++cambian; ++quietos;
+            medidos.add ("-1"); dichos.add ("-1");
+            continue;
+        }
         ponEnRanura (0, f);
         focusedFx = f;
 
-        //  SE MUEVEN LOS TRES MANDOS y basta con que UNO cambie el dibujo, en
-        //  vez de exigirselo al primero: el primer mando no significa lo mismo
-        //  en las once familias y en dos de ellas no toca la forma. Medido: con
-        //  el mando 0 solo salen 9 de 11, y las dos que faltan son correctas —
-        //  el ANCHO del EQ no hace nada con las cinco bandas planas, y la
-        //  FRECUENCIA del de-esser no mueve su umbral, que sale de FUERZA. Una
-        //  tabla de «que mando mirar por tipo» seria la misma regla escrita
-        //  otra vez, y en el banco.
         refreshMacroValues();
         const auto base = platoMini.puntos();
         refreshMacroValues();
         if (base == platoMini.puntos()) ++quietos;
 
-        bool movio = false;
-        for (int p = 0; p < 3; ++p)
+        //  Y CON EL OTRO MANDO EN VARIOS SITIOS, que es donde esta medida se
+        //  equivoco en su primera corrida — la undecima vez en este banco.
+        //
+        //  Saco que la RESONANCIA de FLT no mueve el dibujo y era verdad: se
+        //  medía con el BARRIDO en su defecto, o sea dentro de la zona muerta
+        //  de 0.03 que `barridoDe` declara, y ahi el filtro esta APAGADO y
+        //  dibuja una raya plana pase lo que pase con la resonancia. Eso no es
+        //  un mando muerto, es un mando medido con el efecto apagado. La
+        //  pregunta que `mandosDe` contesta es «¿cabe en el eje de este
+        //  visor?», asi que basta con que EXISTA un sitio del otro mando donde
+        //  se vea. Primero se duda de la prueba.
+        int mide = 0;
+        for (int p = 0; p < 2; ++p)
         {
             auto& mando = fxParam (f, p);
-            const double antes = mando.getValue();
-            for (double v : { mando.getMinimum(), mando.getMaximum() })
+            auto& otro  = fxParam (f, 1 - p);
+            const double antesM = mando.getValue(), antesO = otro.getValue();
+            bool movio = false;
+
+            for (double ctx : { antesO, otro.getMinimum(), otro.getMaximum() })
             {
-                mando.setValue (v, juce::dontSendNotification);
+                otro.setValue (ctx, juce::dontSendNotification);
                 refreshMacroValues();
-                movio = movio || (platoMini.puntos() != base);
+                const auto ref = platoMini.puntos();
+                for (double v : { mando.getMinimum(), mando.getMaximum() })
+                {
+                    mando.setValue (v, juce::dontSendNotification);
+                    refreshMacroValues();
+                    movio = movio || (platoMini.puntos() != ref);
+                }
+                mando.setValue (antesM, juce::dontSendNotification);
             }
-            mando.setValue (antes, juce::dontSendNotification);
+            otro.setValue (antesO, juce::dontSendNotification);
+            refreshMacroValues();
+            if (movio) mide |= (1 << p);
         }
-        if (movio) ++cambian;
+        if (mide != 0) ++cambian;
+
+        const auto md = FxVisor::mandosDe (f);
+        const int  di = (md.p0 ? 1 : 0) | (md.p1 ? 2 : 0);
+        if (mide != di) ++discrepan;
+        medidos.add (juce::String (mide));
+        dichos .add (juce::String (di));
     }
 
     //  3. Y LA GEOMETRIA DE LA FILA, que es lo que la ficha paga por dibujar:
@@ -2616,6 +2657,9 @@ void MainComponent::auditRack()
               << ",\"dibujo\":[" << dibujo.joinIntoString (",") << "]"
               << ",\"cambian\":" << cambian
               << ",\"quietos\":" << quietos
+              << ",\"discrepan\":" << discrepan
+              << ",\"medidos\":[" << medidos.joinIntoString (",") << "]"
+              << ",\"dichos\":["  << dichos .joinIntoString (",") << "]"
               << ",\"tipos\":" << kNumFx
               << ",\"fader\":[" << fader.getWidth() << "," << fader.getHeight() << "]"
               << ",\"mini\":["  << mini.getWidth()  << "," << mini.getHeight()  << "]"

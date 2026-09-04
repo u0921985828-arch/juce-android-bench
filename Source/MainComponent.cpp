@@ -4431,7 +4431,7 @@ void MainComponent::refreshMacroValues()
     if (platoMini.tipo() >= 0)
         platoMini.refresca ((float) fxParam (focusedFx, 0).getValue(),
                             (float) fxParam (focusedFx, 1).getValue(),
-                            (float) fxParam (focusedFx, 2).getValue(), &eqEspejo);
+                            (float) fxParam (focusedFx, 2).getValue());
     //  SOLO EL RENGLON DE LOS MANDOS, que es lo unico que esta funcion cambia.
     //  El `repaint()` pelado que habia aqui es exactamente el que `macroMoved`
     //  ya tenia acotado veinticuatro lineas mas abajo -«un repintado completo

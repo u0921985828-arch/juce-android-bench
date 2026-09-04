@@ -973,6 +973,102 @@ public:
              //  Abriendo por abajo: de 20 Hz a 6 kHz.
              : Barrido { true, true,     20.0f * std::pow (6000.0f /  20.0f, t) };
     }
+    //  ------------------------------------------------------------------
+    //  LO QUE EL VISOR DEL PLATO TIENE QUE PODER PREGUNTAR.
+    //
+    //  `barridoDe` salio de la etapa el dia que la fila del rack dibujo lo que
+    //  el efecto hace, con este argumento: «una regla escrita dos veces son dos
+    //  reglas». Lo que no se hizo entonces fue mirar las otras diez, y medidas
+    //  salio esto: FLT y HPF se DIBUJABAN con un polo de 6 dB/oct mientras el
+    //  motor es un SVF de 12 con resonancia -mas un pico gaussiano inventado en
+    //  el visor-, y DRV y BIT llevaban la formula del motor COPIADA caracter
+    //  por caracter, o sea funcionando hoy y dibujando la de ayer el dia que
+    //  alguien moviera el 24.0f o el *0.5f. Las cuatro pasan a salir de aqui.
+    //  ------------------------------------------------------------------
+
+    //  EL tanh DE LA CASA, que vivia en un namespace anonimo del .cpp y por
+    //  tanto no se podia dibujar. Importa que sea EL MISMO y no `std::tanh`:
+    //  es un Pade acotado en +-5, y esa cota es la barrera que impide que una
+    //  muestra de 1e30 apague la maquina entera. Un visor con `std::tanh`
+    //  dibujaria una curva que el motor no hace.
+    static float fastTanh (float x) noexcept
+    {
+        //  FUERA DE RANGO, ANTES DE ELEVAR AL CUADRADO: el cuadrado de 1e30 no
+        //  cabe en un float, e inf/inf es NaN — y `jlimit` no lo tapa, porque
+        //  comparar con NaN siempre es falso.
+        if (! std::isfinite (x)) return 0.0f;
+        if (x >  5.0f) return  1.0f;
+        if (x < -5.0f) return -1.0f;
+
+        const float x2 = x * x;
+        const float a  = x  * (135135.0f + x2 * (17325.0f + x2 * (378.0f + x2)));
+        const float b  = 135135.0f + x2 * (62370.0f + x2 * (3150.0f + x2 * 28.0f));
+        return juce::jlimit (-1.0f, 1.0f, a / b);
+    }
+
+    //  LA SATURACION DE DRV, con sus dos numeros. `mk` compensa por la
+    //  ganancia que ENTRA y no por el techo del tanh: `tanh(k)` vale ~1 para
+    //  cualquier k util, asi que aquel «makeup» no hacia nada y DRIVE al 70 %
+    //  salia tres veces mas alto que el seco.
+    struct Drive { float k, mk; };
+    static Drive driveDe (float drive) noexcept
+    {
+        const float d = juce::jlimit (0.0f, 1.0f, drive);
+        return { 1.0f + d * 24.0f, 1.0f / (1.0f + d * 2.5f) };
+    }
+    static float saturaDe (float x, Drive dr) noexcept { return fastTanh (dr.k * x) * dr.mk; }
+
+    //  BIT: cuantos escalones de amplitud, y el retenedor.
+    static float nivelesDe (float bits) noexcept
+    {
+        return juce::jmax (1.0f, std::pow (2.0f, juce::jlimit (1.0f, 16.0f, bits)) * 0.5f);
+    }
+    //  Y EL RETENEDOR ENTERO, no solo el cuantizador. Las dos mitades de un
+    //  crusher son la amplitud y el TIEMPO, y el visor dibujaba solo la
+    //  primera: RATE se movia y el dibujo no decia nada. La fase es del EFECTO
+    //  y no del canal -por eso viaja por referencia y el motor la guarda
+    //  despues del primer canal-, que es lo que mantiene los dos canales
+    //  retenidos a la vez y lo que hace que suene un crusher y no dos.
+    static void crush (float* w, int n, float levels, float step,
+                       float& fase, float& hold) noexcept
+    {
+        for (int i = 0; i < n; ++i)
+        {
+            fase += 1.0f;
+            if (fase >= step) { fase -= step; hold = std::round (w[i] * levels) / levels; }
+            w[i] = hold;
+        }
+    }
+
+    //  EL MODULO DE UN SVF DE SEGUNDO ORDEN, que es lo que FLT y HPF SON.
+    //
+    //  `juce::dsp::StateVariableTPTFilter` con `setResonance(q)` deja
+    //  `R2 = 1/q` y `g = tan(pi fc/fs)`, y su respuesta es exactamente la del
+    //  prototipo analogico con la frecuencia PREDISTORSIONADA: con
+    //  `x = tan(pi f/fs) / tan(pi fc/fs)`, el paso bajo es
+    //  `1 / |1 - x^2 + j x/q|` y el alto ese mismo modulo por `x^2`. Doce
+    //  decibelios por octava y el pico de resonancia SALE DE LA FORMULA, que
+    //  es lo que el visor dibujaba con una gaussiana inventada.
+    //
+    //  `fs` por parametro y con defecto de 48 kHz: el visor no tiene motor al
+    //  que preguntarle la ruta, y a 44.1 kHz la diferencia solo se ve pegada a
+    //  Nyquist. El banco mide a 48 k, que es donde las dos cuentas coinciden.
+    static float svfDb (float hz, float corte, float q, bool alto,
+                        float fs = 48000.0f) noexcept
+    {
+        const float nyq = fs * 0.5f;
+        const float f   = juce::jlimit (1.0f, nyq * 0.999f, hz);
+        const float fc  = juce::jlimit (1.0f, nyq * 0.999f, corte);
+        const float w   = std::tan (juce::MathConstants<float>::pi * f  / fs);
+        const float wc  = std::tan (juce::MathConstants<float>::pi * fc / fs);
+        const float x   = w / juce::jmax (1.0e-9f, wc);
+        const float re  = 1.0f - x * x;
+        const float im  = x / juce::jmax (0.05f, q);
+        const float den = std::sqrt (re * re + im * im);
+        const float mag = (alto ? x * x : 1.0f) / juce::jmax (1.0e-6f, den);
+        return juce::Decibels::gainToDecibels (juce::jmax (1.0e-5f, mag));
+    }
+
     void setFltReso  (float q)  noexcept { fxReso.store   (q, std::memory_order_relaxed); }
     void setFltMix   (float m)  noexcept { fxMix.store    (m, std::memory_order_relaxed); }
 

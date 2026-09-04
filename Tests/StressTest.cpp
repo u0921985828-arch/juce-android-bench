@@ -14,6 +14,7 @@
 #include "../Source/Onsets.h"
 #include "../Source/Sintes.h"
 #include "../Source/Eq5.h"
+#include "../Source/FxVisor.h"
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -3567,6 +3568,494 @@ int main()
             const bool ok = (pico <= techo * 1.01f) && (queda > -8.0);
             std::printf ("%-34s pico %.4f (techo %.4f)   RMS %+.2f dB   %s\n",
                          "LIM", pico, techo, queda, ok ? "OK" : zatiFalla());
+        }
+    }
+
+    //  ========================================================================
+    //  LO QUE EL VISOR DIBUJA CONTRA LO QUE EL EFECTO HACE.
+    //
+    //  La pregunta llego asi: «los visuales y graficos de los efectos son
+    //  imagenes no? no son reales que digamos». Imagenes no son -los once se
+    //  dibujan con `juce::Path` a partir de los mandos vivos, y `Tests/rack.py`
+    //  ya lo mide-, pero «no es un icono» tampoco es «dice la verdad»: hasta
+    //  hoy la unica comprobacion que comparaba dibujo contra sonido era la del
+    //  EQ, y encima sobre un `Eq5` suelto. Los otros diez eran una AFIRMACION
+    //  SIN MEDIDA, que es el patron que esta casa lleva trece veces pagando.
+    //
+    //  Se mide contra el MOTOR y no contra la clase, por lo mismo que la fila
+    //  «el EQ llega al bus»: una formula perfecta a la que no llama nadie saca
+    //  sobresaliente mientras la app dibuja otra cosa.
+    //
+    //  Y CON DOS CIFRAS CADA UNA: el desvio MEDIO dice que la forma es la
+    //  misma, y el PEOR PUNTO que no lo es sólo de media. Una curva que acierta
+    //  en cuarenta y siete columnas y se va veinte decibelios en una es
+    //  exactamente el dibujo que hace creer que un filtro corta donde no corta.
+    //  ========================================================================
+    {
+        constexpr double kFs = 48000.0;
+        constexpr int    kBs = 512;
+
+        //  Un seno LIMPIO: `makeSample` lleva un 20 % de ruido y una fase al
+        //  azar, que para medir carga estan bien y para medir una respuesta
+        //  son el error. Sin caida, que lo que se mide es el regimen.
+        auto seno = [] (float hz, float amp)
+        {
+            auto* sb = new SampleBuffer();
+            const int n = (int) (kFs * 0.5);
+            sb->buffer.setSize (2, n);
+            for (int c = 0; c < 2; ++c)
+                for (int i = 0; i < n; ++i)
+                    sb->buffer.setSample (c, i, amp * std::sin (juce::MathConstants<float>::twoPi
+                                                                * hz * (float) i / (float) kFs));
+            sb->sourceSampleRate = kFs;
+            return SampleBuffer::Ptr (sb);
+        };
+
+        //  UNA CORRIDA POR EL MOTOR, con el efecto enrutado o sin el.
+        //
+        //  Los seis primeros bloques fuera: el envio se suaviza en 20 ms y ahi
+        //  la ganancia todavia esta subiendo — es la misma razon por la que la
+        //  fila del EQ tira los cuatro primeros, con dos mas de margen porque
+        //  aqui hay filtros que ademas arrancan.
+        auto corre = [&seno] (int fx, float p0, float p1, float hz, float amp,
+                              std::vector<float>& out, int bloques = 24)
+        {
+            AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+            e.setPadGain (0, 1.0f);
+            e.setPadAttack (0, 0.0f);
+            if (fx >= 0)
+            {
+                e.setFxParam (fx, 0, p0);
+                e.setFxParam (fx, 1, p1);
+                e.setFxParam (fx, 2, 1.0f);
+                if (fx == AudioEngine::kFxEq) e.setEqMix (1.0f);
+                e.setPadSend (0, fx, 1.0f);
+            }
+            e.publishSample (0, seno (hz, amp));
+
+            juce::AudioBuffer<float> b (2, kBs);
+            b.clear(); e.renderNextBlock (b, 0, kBs);
+            e.postNoteOn (0, 1.0f);
+
+            out.clear();
+            for (int blk = 0; blk < bloques; ++blk)
+            {
+                b.clear(); e.renderNextBlock (b, 0, kBs);
+                if (blk < 6) continue;
+                for (int i = 0; i < kBs; ++i) out.push_back (b.getSample (0, i));
+            }
+        };
+
+        auto rms = [] (const std::vector<float>& v)
+        {
+            double a = 0.0;
+            for (float x : v) a += (double) x * (double) x;
+            return std::sqrt (a / juce::jmax (1.0, (double) v.size()));
+        };
+        auto pico = [] (const std::vector<float>& v)
+        {
+            float m = 0.0f;
+            for (float x : v) m = juce::jmax (m, std::abs (x));
+            return m;
+        };
+
+        //  Los ejes del visor, escritos al REVES: la curva viene en 0..1 y
+        //  aqui hace falta lo que ese 0..1 significa. Son los mismos tres de
+        //  `FxVisor::muestrea` y se escriben aqui a proposito -el banco tiene
+        //  que poder equivocarse por su cuenta y que la diferencia se vea-.
+        auto hzDe    = [] (int i) { const float t = (float) i / (float) (FxVisor::kPuntos - 1);
+                                    const float lo = std::log (Eq5::kFreqMin), hi = std::log (Eq5::kFreqMax);
+                                    return std::exp (lo + t * (hi - lo)); };
+        auto dbDeAlto = [] (float y) { return y * 36.0f - 24.0f; };      // -24..+12
+        auto nivelDe  = [] (int i) { const float t = (float) i / (float) (FxVisor::kPuntos - 1);
+                                     return -60.0f + 60.0f * t; };      // dB de entrada
+        auto dbDeY    = [] (float y) { return y * 60.0f - 60.0f; };     // salida en dB
+
+        //  Diecisiete columnas de las cuarenta y ocho, repartidas: medir las
+        //  cuarenta y ocho son cuarenta y ocho arranques de motor por efecto y
+        //  no dice nada mas — una curva que se sale lo hace en una banda, no en
+        //  una columna suelta.
+        constexpr int kMuestras = 17;
+        auto columna = [] (int k) { return k * (FxVisor::kPuntos - 1) / (kMuestras - 1); };
+
+        auto fila = [] (const char* nombre, double medio, double peor,
+                        double tope, const char* unidad)
+        {
+            const bool ok = (peor <= tope);
+            std::printf ("%-34s dibujo vs motor  medio %.2f %s  peor %.2f %s (tope %.2f)   %s\n",
+                         nombre, medio, unidad, peor, unidad, tope, ok ? "OK" : zatiFalla());
+        };
+
+        //  ------------------------------------------------------------------
+        //  1. RESPUESTA EN FRECUENCIA: FLT y HPF.
+        //
+        //  Se compara contra la corrida SECA en la misma frecuencia, o sea en
+        //  ganancia relativa: asi la envolvente del pad, su ganancia y el
+        //  suavizado del envio se van en la division y lo que queda es el
+        //  filtro. El tope es 1.5 dB — el envio tarda 20 ms en subir y un SVF
+        //  con resonancia tiene su propio transitorio.
+        //  ------------------------------------------------------------------
+        {
+            struct Caso { int fx; const char* nombre; float p0, p1; };
+            const Caso casos[] = {
+                { AudioEngine::kFxFlt, "FLT: dibujo contra el filtro", -0.55f, 1.6f },
+                { AudioEngine::kFxHpf, "HPF: dibujo contra el filtro", 800.0f, 2.2f },
+            };
+
+            for (const auto& c : casos)
+            {
+                FxVisor::Curva curva {};
+                FxVisor::muestrea (c.fx, c.p0, c.p1, curva);
+
+                double suma = 0.0, peor = 0.0;
+                int    n = 0;
+                for (int k = 0; k < kMuestras; ++k)
+                {
+                    const int   i  = columna (k);
+                    const float hz = hzDe (i);
+                    //  Por encima de 15 kHz la muestra de medio segundo y el
+                    //  bloque de 512 dejan pocos ciclos por ventana y el RMS
+                    //  empieza a medir el borde; la banda util de esta medida
+                    //  es la que el oido usa.
+                    if (hz > 15000.0f) continue;
+
+                    std::vector<float> seco, mojado;
+                    corre (-1,   0.0f, 0.0f, hz, 0.30f, seco);
+                    corre (c.fx, c.p0, c.p1, hz, 0.30f, mojado);
+
+                    const double medido  = 20.0 * std::log10 (juce::jmax (1.0e-9, rms (mojado))
+                                                              / juce::jmax (1.0e-9, rms (seco)));
+                    //  El dibujo se acota en -24 dB porque la tira acaba ahi:
+                    //  comparar mas abajo seria medir el borde del dibujo y no
+                    //  el filtro.
+                    const double dibujado = dbDeAlto (curva[(size_t) i]);
+                    if (dibujado <= -23.5) continue;
+
+                    const double d = std::abs (medido - dibujado);
+                    suma += d; peor = juce::jmax (peor, d); ++n;
+                }
+                fila (c.nombre, suma / juce::jmax (1, n), peor, 1.5, "dB");
+            }
+        }
+
+        //  ------------------------------------------------------------------
+        //  2. TRANSFERENCIA: DRV, CMP, GTE, DSS y LIM.
+        //
+        //  El eje X de estos cinco es el NIVEL que entra, asi que se barre la
+        //  amplitud y se mide lo que sale. Y se mide el PICO y no el RMS: una
+        //  transferencia es punto a punto, y el RMS de un seno saturado
+        //  mezclaria la forma de onda con el nivel.
+        //  ------------------------------------------------------------------
+        {
+            //  Y CADA UNO CON EL TONO QUE LO CRUZA, que es donde esta prueba
+            //  se equivoco primero: el de-esser parte la banda en un cruce
+            //  Linkwitz-Riley y solo comprime la MITAD ALTA, asi que medirlo
+            //  con los 220 Hz de los demas es medir un efecto que no toca la
+            //  señal — 22.53 dB de desvio con el dibujo perfecto. Primero se
+            //  duda de la prueba.
+            struct Caso { int fx; const char* nombre; float p0, p1; bool enDb; double tope; float hz; };
+            const Caso casos[] = {
+                //  DRV lleva su eje en amplitud -1..+1 y no en dB.
+                { AudioEngine::kFxDrv, "DRV: dibujo contra el saturador", 0.55f,  8000.0f, false, 0.08,  220.0f },
+                { AudioEngine::kFxCmp, "CMP: dibujo contra el compresor", -18.0f, 4.0f,    true,  2.0,   220.0f },
+                { AudioEngine::kFxGte, "GTE: dibujo contra la puerta",    -30.0f, 120.0f,  true,  2.0,   220.0f },
+                { AudioEngine::kFxDss, "DSS: dibujo contra el de-esser",  6000.0f, 0.7f,   true,  2.5, 14000.0f },
+                { AudioEngine::kFxLim, "LIM: dibujo contra el limitador", -6.0f,  60.0f,   true,  2.0,   220.0f },
+            };
+
+            for (const auto& c : casos)
+            {
+                FxVisor::Curva curva {};
+                FxVisor::muestrea (c.fx, c.p0, c.p1, curva);
+
+                double suma = 0.0, peor = 0.0;
+                int    n = 0;
+                for (int k = 0; k < kMuestras; ++k)
+                {
+                    //  DONDE CAE ESA AMPLITUD EN EL DIBUJO. En los cuatro que
+                    //  miden en dB la columna ES el nivel; en DRV el eje va de
+                    //  -1 a +1, asi que una amplitud `a` no esta en la columna
+                    //  `a` sino en la `(1+a)/2`. Compararlas sin esto da 0.85
+                    //  de desvio con el saturador dibujado perfecto.
+                    const float objetivo = c.enDb
+                                             ? juce::Decibels::decibelsToGain (nivelDe (columna (k)))
+                                             : (float) k / (float) (kMuestras - 1);
+                    if (objetivo < 1.0e-4f) continue;
+
+                    const int i = c.enDb
+                                    ? columna (k)
+                                    : juce::jlimit (0, FxVisor::kPuntos - 1,
+                                                    (int) std::round ((1.0f + objetivo) * 0.5f
+                                                                      * (float) (FxVisor::kPuntos - 1)));
+
+                    std::vector<float> seco;
+                    corre (-1, 0.0f, 0.0f, c.hz, objetivo, seco);
+                    const float entra = pico (seco);
+                    if (entra < 1.0e-5f) continue;
+                    const float ajuste = objetivo / entra;
+
+                    std::vector<float> mojado;
+                    corre (c.fx, c.p0, c.p1, c.hz, objetivo * ajuste, mojado);
+                    const float sale = pico (mojado);
+
+                    double medido, dibujado;
+                    if (c.enDb)
+                    {
+                        medido   = juce::Decibels::gainToDecibels (juce::jmax (1.0e-6f, sale));
+                        dibujado = dbDeY (curva[(size_t) i]);
+                        //  Por debajo del suelo del eje la curva esta pegada al
+                        //  renglon y no dice nada.
+                        if (dibujado <= -59.0) continue;
+                    }
+                    else
+                    {
+                        medido   = sale;
+                        dibujado = curva[(size_t) i] * 2.0f - 1.0f;
+                    }
+
+                    const double d = std::abs (medido - dibujado);
+                    suma += d; peor = juce::jmax (peor, d); ++n;
+                }
+                fila (c.nombre, suma / juce::jmax (1, n), peor, c.tope, c.enDb ? "dB" : "  ");
+            }
+        }
+        //  ------------------------------------------------------------------
+        //  3. TIEMPO: DLY y REV.
+        //
+        //  Estos dos no tienen respuesta en frecuencia ni transferencia: lo que
+        //  dibujan es lo que LLEGA en cada instante, asi que se mide con un
+        //  impulso y se compara la envolvente. Y AQUI NO SE TIRAN BLOQUES: en
+        //  las dos familias de arriba los seis primeros sobran porque el envio
+        //  esta subiendo, y aqui tirarlos correria el eje de tiempo 64 ms — o
+        //  sea mediria los ecos en el sitio equivocado.
+        //  ------------------------------------------------------------------
+        {
+            //  EL IMPULSO NO PUEDE IR EN LA MUESTRA 0, que es donde esta
+            //  prueba se equivoco y de la forma mas cara: daba numeros.
+            //
+            //  `Voice::start` hace `winStart = jlimit (1, srcLen - 3, ...)`, o
+            //  sea que la muestra CERO es la unica que una voz no lee nunca —
+            //  la interpolacion necesita un dato por detras—. Con el clic
+            //  entero ahi, el pad sonaba EXACTAMENTE a cero y las dos filas
+            //  sacaban 0.36 y 67.51 dB de desvio contra un dibujo perfecto:
+            //  midiendo silencio, no ecos. Se arranca en la 1 y se le dan ocho
+            //  muestras -0.17 ms contra un eco de 250 y una cola de dos
+            //  segundos, o sea un impulso igual- para que el anti-alias no se
+            //  lo coma tampoco.
+            auto click = [] ()
+            {
+                auto* sb = new SampleBuffer();
+                const int n = 64;
+                sb->buffer.setSize (2, n);
+                sb->buffer.clear();
+                for (int c = 0; c < 2; ++c)
+                    for (int i = 1; i <= 8; ++i) sb->buffer.setSample (c, i, 0.9f);
+                sb->sourceSampleRate = kFs;
+                return SampleBuffer::Ptr (sb);
+            };
+
+            auto correImpulso = [&click] (int fx, float p0, float p1,
+                                          std::vector<float>& out, double segs,
+                                          bool abierto = true)
+            {
+                AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+                e.setPadGain (0, 1.0f);
+                e.setPadAttack (0, 0.0f);
+                if (abierto)
+                {
+                    e.setFxParam (fx, 0, p0);
+                    e.setFxParam (fx, 1, p1);
+                    e.setFxParam (fx, 2, 1.0f);
+                    e.setPadSend (0, fx, 1.0f);
+                }
+                e.publishSample (0, click());
+
+                juce::AudioBuffer<float> b (2, kBs);
+                //  EL ENVIO SE ASIENTA ANTES DE DISPARAR, que es la leccion
+                //  que `Tests/dinamica.py` ya escribio para el limitador: el
+                //  envio sube con una constante de 20 ms y un impulso dura
+                //  1.3 ms, asi que disparando en el primer bloque el bus
+                //  recibe el 6 % de lo que el fader dice.
+                for (int k = 0; k < 8; ++k) { b.clear(); e.renderNextBlock (b, 0, kBs); }
+                e.postNoteOn (0, 1.0f);
+
+                out.clear();
+                const int bloques = (int) (segs * kFs / kBs) + 2;
+                for (int blk = 0; blk < bloques; ++blk)
+                {
+                    b.clear(); e.renderNextBlock (b, 0, kBs);
+                    for (int i = 0; i < kBs; ++i) out.push_back (b.getSample (0, i));
+                }
+            };
+
+            //  Y LO QUE SE COMPARA ES LO QUE EL EFECTO AÑADE.
+            //
+            //  DLY y REV son los dos que SUMAN, asi que su bus sale con el
+            //  camino seco delante — y el seco de un impulso es el pico mas
+            //  alto de la ventana. Normalizando por ese pico, la cola entera se
+            //  hunde: la primera version saco 67.51 dB de desvio medio en REV
+            //  con el dibujo perfecto, midiendo el clic y no la reverb. Se
+            //  resta la corrida con el envio CERRADO, que es determinista y da
+            //  exactamente lo que el efecto pone.
+            auto soloMojado = [&correImpulso] (int fx, float p0, float p1,
+                                               std::vector<float>& out, double segs)
+            {
+                std::vector<float> abierto, cerrado;
+                correImpulso (fx, p0, p1, abierto, segs, true);
+                correImpulso (fx, p0, p1, cerrado, segs, false);
+                out.clear();
+                for (size_t i = 0; i < abierto.size(); ++i)
+                    out.push_back (abierto[i] - (i < cerrado.size() ? cerrado[i] : 0.0f));
+            };
+
+            //  La envolvente en las mismas cuarenta y ocho columnas que el
+            //  visor, y normalizada a su maximo: lo que se compara es la FORMA
+            //  de la cola, no el nivel — el nivel lo pone el fader.
+            auto envolvente = [] (const std::vector<float>& v, bool porPico)
+            {
+                std::array<double, FxVisor::kPuntos> e {};
+                const double ancho = (double) v.size() / (double) FxVisor::kPuntos;
+                for (int i = 0; i < FxVisor::kPuntos; ++i)
+                {
+                    const size_t a = (size_t) (i * ancho), b = (size_t) ((i + 1) * ancho);
+                    double acc = 0.0; int n = 0;
+                    for (size_t j = a; j < b && j < v.size(); ++j, ++n)
+                        acc = porPico ? juce::jmax (acc, (double) std::abs (v[j]))
+                                      : acc + (double) v[j] * v[j];
+                    e[(size_t) i] = porPico ? acc : std::sqrt (acc / juce::jmax (1, n));
+                }
+                double m = 0.0;
+                for (double x : e) m = juce::jmax (m, x);
+                if (m > 1.0e-9) for (double& x : e) x /= m;
+                return e;
+            };
+
+            //  DLY: los ecos, donde caen y con que amplitud. Se compara SOLO
+            //  donde el dibujo pone un eco -las columnas vacias son el 90 % de
+            //  la ventana y compararlas seria medir el silencio-, y con la
+            //  columna de al lado admitida: una ventana de dos segundos en
+            //  cuarenta y ocho columnas son 42 ms cada una, asi que un eco no
+            //  cae nunca en el centro de la suya.
+            {
+                const float ms = 250.0f, fbk = 0.55f;
+                FxVisor::Curva curva {};
+                FxVisor::muestrea (AudioEngine::kFxDly, ms, fbk, curva);
+
+                std::vector<float> v;
+                soloMojado (AudioEngine::kFxDly, ms, fbk, v, FxVisor::kVentanaMs * 0.001);
+                const auto env = envolvente (v, true);
+                double suma = 0.0, peor = 0.0; int n = 0;
+                for (int i = 0; i < FxVisor::kPuntos; ++i)
+                {
+                    if (curva[(size_t) i] < 0.05f) continue;
+                    double m = 0.0;
+                    for (int d = -1; d <= 1; ++d)
+                        if (i + d >= 0 && i + d < FxVisor::kPuntos)
+                            m = juce::jmax (m, env[(size_t) (i + d)]);
+                    const double dif = std::abs (m - (double) curva[(size_t) i]);
+                    suma += dif; peor = juce::jmax (peor, dif); ++n;
+                }
+                fila ("DLY: dibujo contra los ecos", suma / juce::jmax (1, n), peor, 0.12, "  ");
+            }
+
+            //  REV: la cola. En dB y por RMS, que la salida de una rejilla de
+            //  realimentacion es ruido y su pico brinca de bin a bin.
+            {
+                const float size = 0.70f, damp = 0.35f;
+                FxVisor::Curva curva {};
+                FxVisor::muestrea (AudioEngine::kFxRev, size, damp, curva);
+
+                std::vector<float> v;
+                soloMojado (AudioEngine::kFxRev, size, damp, v, FxVisor::kVentanaMs * 0.001);
+                const auto env = envolvente (v, false);
+                double suma = 0.0, peor = 0.0; int n = 0;
+                for (int i = 1; i < FxVisor::kPuntos; ++i)
+                {
+                    const double dib = 20.0 * std::log10 (juce::jmax (1.0e-4, (double) curva[(size_t) i]));
+                    if (dib < -24.0) continue;                     // el resto es el suelo del dibujo
+                    const double med = 20.0 * std::log10 (juce::jmax (1.0e-4, env[(size_t) i]));
+                    const double dif = std::abs (med - dib);
+                    suma += dif; peor = juce::jmax (peor, dif); ++n;
+                }
+                fila ("REV: dibujo contra la cola", suma / juce::jmax (1, n), peor, 4.0, "dB");
+            }
+        }
+
+        //  ------------------------------------------------------------------
+        //  4. BIT, que es el unico cuyo dibujo es una ONDA.
+        //
+        //  Y por eso se juzga con lo que define un crusher y no con un desvio
+        //  punto a punto: CUANTOS NIVELES distintos hay -eso es BITS- y
+        //  CUANTOS CAMBIOS de valor por ventana -eso es RATE-. Las dos cifras,
+        //  porque cada una sola la cumple la mitad del efecto: contar niveles
+        //  pasa con el retenedor apagado, y contar cambios pasa sin cuantizar.
+        //  Y asi no hace falta alinear la fase, que es lo que hace fragil
+        //  comparar dos ondas muestra a muestra.
+        //  ------------------------------------------------------------------
+        {
+            const float bits = 4.0f, rate = 8.0f;
+            FxVisor::Curva curva {};
+            FxVisor::muestrea (AudioEngine::kFxBit, bits, rate, curva);
+
+            //  Un tono cuyo periodo son exactamente las muestras de la ventana
+            //  del visor, o sea el mismo ciclo que se dibuja.
+            const float hz = (float) kFs / (float) FxVisor::kVentanaBit;
+            std::vector<float> v;
+            corre (AudioEngine::kFxBit, bits, rate, hz, 0.60f, v);
+
+            //  EL PASO Y NO LA CUENTA DE NIVELES, que es donde esta prueba se
+            //  equivoco: cuantizar es ABSOLUTO -los escalones estan en k/N
+            //  pase lo que pase- asi que cuantos niveles VISITA una onda
+            //  depende de su amplitud, y al bus no llega la misma que el visor
+            //  dibuja. Salieron 11 contra 7 con el dibujo correcto. El PASO
+            //  entre escalones si es el mismo, y su inverso es exactamente lo
+            //  que BITS pone.
+            auto cuenta = [] (const std::vector<float>& x)
+            {
+                std::vector<float> vals;
+                int cambios = 0;
+                for (size_t i = 0; i < x.size(); ++i)
+                {
+                    if (i > 0 && std::abs (x[i] - x[i - 1]) > 1.0e-5f) ++cambios;
+                    bool visto = false;
+                    for (float u : vals) if (std::abs (u - x[i]) < 1.0e-5f) { visto = true; break; }
+                    if (! visto) vals.push_back (x[i]);
+                }
+                std::sort (vals.begin(), vals.end());
+                double paso = 1.0e9;
+                for (size_t i = 1; i < vals.size(); ++i)
+                    paso = juce::jmin (paso, (double) (vals[i] - vals[i - 1]));
+                return std::pair<double,int> (paso > 1.0e8 ? 0.0 : paso, cambios);
+            };
+
+            //  Del dibujo: sus cuarenta y ocho columnas son un submuestreo de
+            //  la ventana. Se pasa a -1..+1, que es donde vive el escalon.
+            std::vector<float> dib;
+            for (float y : curva) dib.push_back (y * 2.0f - 1.0f);
+            const auto d = cuenta (dib);
+
+            //  Del motor: el MISMO submuestreo sobre un ciclo del regimen, ya
+            //  lejos del arranque del envio.
+            std::vector<float> mues;
+            const int base = (int) v.size() - FxVisor::kVentanaBit * 2;
+            for (int i = 0; i < FxVisor::kPuntos; ++i)
+            {
+                const int n = (int) std::round ((float) i * (float) (FxVisor::kVentanaBit - 1)
+                                                / (float) (FxVisor::kPuntos - 1));
+                mues.push_back (v[(size_t) (base + n)]);
+            }
+            const auto m = cuenta (mues);
+
+            //  Dos cifras y no una: el PASO es BITS y los CAMBIOS son RATE.
+            //  Cada una sola la cumple media maquina — contar el paso pasa con
+            //  el retenedor apagado, y contar cambios pasa sin cuantizar.
+            const double relacion = (m.first > 1.0e-9 && d.first > 1.0e-9)
+                                      ? m.first / d.first : 0.0;
+            const bool ok = std::abs (relacion - 1.0) < 0.10
+                            && std::abs (d.second - m.second) <= 2;
+            std::printf ("%-34s paso x%.3f del dibujado   cambios %d contra %d   %s\n",
+                         "BIT: dibujo contra el crusher", relacion, m.second, d.second,
+                         ok ? "OK" : zatiFalla());
         }
     }
 

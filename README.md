@@ -39,7 +39,8 @@ El repositorio se compila de dos formas y las dos importan:
   HPF, DRV, DLY, BIT, REV, un EQ de cinco bandas con su propia cara y
   analizador, y la familia de dinámica —CMP, GTE, DSS y LIM—. Una ranura vacía
   dice «+» y abre el menú. El plato de la cara enseña lo que hay dentro del
-  efecto que tengas abierto, con sus números de ahora. En el RACK cada pad
+  efecto que tengas abierto, con sus números de ahora — dibujado con la misma
+  fórmula que suena, y medido contra ella. En el RACK cada pad
   decide cuánto de él **pasa por** cada uno, y la fila dice de qué familia es:
   nueve de los once son **insertos** —sustituyen el sonido seco— y sólo DLY y
   REV **suman** encima.

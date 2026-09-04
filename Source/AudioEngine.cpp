@@ -2,39 +2,15 @@
 #include <cmath>
 #include <limits>
 
-namespace
-{
-    //  Padé approximant of tanh. std::tanh is a libm call of ~30 cycles and
-    //  the drive stage runs it on every sample of every channel; this is a
-    //  handful of multiplies, accurate to well under a dB inside the range
-    //  that matters, and clamped so the ratio cannot run away for large
-    //  arguments (drive pushes |x| up to ~25).
-    inline float fastTanh (float x) noexcept
-    {
-        //  FUERA DE RANGO, ANTES DE ELEVAR AL CUADRADO.
-        //
-        //  Esta aproximacion empieza por x*x, y el cuadrado de un valor grande
-        //  NO CABE en un float: 1e30 al cuadrado es infinito, arriba y abajo
-        //  de la fraccion, e inf/inf es NaN. Y jlimit no lo tapa - una
-        //  comparacion con NaN siempre es falsa, asi que lo deja pasar tal
-        //  cual. De ahi salia el NaN que apagaba la maquina con una muestra de
-        //  valores enormes: el saturador del master es lo ultimo que toca el
-        //  audio y lo convertia en silencio permanente.
-        //
-        //  Mas alla de +-5 la tangente hiperbolica vale +-1 con nueve cifras,
-        //  asi que cortar ahi no cambia el sonido de nada y quita el infinito
-        //  de en medio. Cuesta dos comparaciones, y este es el mismo tanh que
-        //  usa DRV, que tenia el mismo agujero.
-        if (! std::isfinite (x)) return 0.0f;
-        if (x >  5.0f) return  1.0f;
-        if (x < -5.0f) return -1.0f;
+//  `fastTanh` VIVE AHORA EN LA CABECERA (`AudioEngine::fastTanh`).
+//
+//  Estaba en un namespace anonimo aqui, que es correcto mientras el unico
+//  cliente sea esta unidad. Desde que el visor del plato DIBUJA la curva de
+//  DRV hay un segundo, y dibujarla con `std::tanh` seria dibujar una curva que
+//  el motor no hace: este es un Pade acotado en +-5, y esa cota es una de las
+//  cuatro barreras que impiden que una muestra de 1e30 apague la maquina.
+using juce::jlimit;
 
-        const float x2 = x * x;
-        const float a  = x  * (135135.0f + x2 * (17325.0f + x2 * (378.0f + x2)));
-        const float b  = 135135.0f + x2 * (62370.0f + x2 * (3150.0f + x2 * 28.0f));
-        return juce::jlimit (-1.0f, 1.0f, a / b);
-    }
-}
 
 // ============================================================================
 //  AudioEngine implementation. See AudioEngine.h for the threading contract.
@@ -1514,12 +1490,11 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
 
             if (drvNow)
             {
-                const float k  = 1.0f + smDrive * 24.0f;      // gain into the tanh
-                //  Compensate by the gain going IN, not by tanh's own ceiling:
-                //  tanh(k) is ~1 for any useful k, so that "makeup" was a
-                //  no-op and DRIVE at 70% came out three times louder than
-                //  dry - a distortion knob that is really a volume knob.
-                const float mk = 1.0f / (1.0f + smDrive * 2.5f);
+                //  Ver AudioEngine::driveDe: los dos numeros viven alli desde
+                //  que el visor del plato dibuja esta misma curva. `mk`
+                //  compensa por la ganancia que ENTRA y no por el techo del
+                //  tanh, que para cualquier k util vale ~1.
+                const auto  dr = driveDe (smDrive);
                 const float a  = juce::jlimit (0.0f, 1.0f,
                                     1.0f - std::exp (-2.0f * juce::MathConstants<float>::pi
                                                      * smDrvTone / (float) systemSampleRate));
@@ -1529,7 +1504,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     float lp = drvLp[ch];
                     for (int i = 0; i < numSamples; ++i)
                     {
-                        lp += a * (fastTanh (k * w[i]) * mk - lp);
+                        lp += a * (saturaDe (w[i], dr) - lp);
                         w[i] = lp;
                     }
                     drvLp[ch] = lp;
@@ -1551,8 +1526,10 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
 
             if (crNow)
             {
-                const float bits   = juce::jlimit (1.0f, 16.0f, crBits.load (std::memory_order_relaxed));
-                const float levels = juce::jmax (1.0f, std::pow (2.0f, bits) * 0.5f);
+                //  Ver AudioEngine::nivelesDe y AudioEngine::crush: las dos
+                //  mitades de un crusher -la amplitud y el TIEMPO- viven alli
+                //  desde que el visor las dibuja.
+                const float levels = nivelesDe (crBits.load (std::memory_order_relaxed));
                 const float step   = juce::jmax (1.0f, crRate.load (std::memory_order_relaxed));
 
                 //  El canal por FUERA y la muestra por dentro. Estaba al reves,
@@ -1574,12 +1551,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     float phase = phase0;
                     float hold  = crHold[ch];
 
-                    for (int i = 0; i < numSamples; ++i)
-                    {
-                        phase += 1.0f;
-                        if (phase >= step) { phase -= step; hold = std::round (w[i] * levels) / levels; }
-                        w[i] = hold;
-                    }
+                    crush (w, numSamples, levels, step, phase, hold);
 
                     crHold[ch] = hold;
                     if (ch == 0) crPhase = phase;

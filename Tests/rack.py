@@ -102,7 +102,30 @@ def main ():
         malo.append ("%d de %d visores cambian sin que nadie toque nada"
                      % (r["tipos"] - r["quietos"], r["tipos"]))
 
-    #  3. Y LO QUE EL VISOR CUESTA, EN LA PANTALLA MAS ESTRECHA.
+    #  3. Y MANDO A MANDO, contra la lista que la app DECLARA.
+    #
+    #  La comprobacion de arriba movia los tres y le bastaba con que uno
+    #  cambiara el dibujo, asi que CINCO mandos que no mueven nada llevaban ahi
+    #  desde el primer dia: el TONE de DRV, el RATE de BIT, el FREQ del
+    #  de-esser, el CIERRE de la puerta y el SOLTAR del limitador. Lo que se
+    #  compara es lo MEDIDO contra `FxVisor::mandosDe`, que es donde la app
+    #  dice cuales caben en el eje de cada visor y cuales no — escribir esa
+    #  lista aqui serian dos reglas, y la del script solo sabria medir una de
+    #  las cuatro compilaciones.
+    NOM = ("ninguno", "el 1", "el 2", "los dos")
+    print ("mandos     medido %s" % r["medidos"])
+    print ("           dicho  %s" % r["dichos"])
+    for f, (me, di) in enumerate (zip (r["medidos"], r["dichos"])):
+        if me == -1:
+            continue                       # el EQ trae su cara y no un visor
+        if me != di:
+            malo.append ("el tipo %d dice que mueven %s y mueven %s"
+                         % (f, NOM[di], NOM[me]))
+    if not r["discrepan"]:
+        print ("           %d tipos: lo que mueve el visor es lo que la app declara"
+               % (r["tipos"] - r["medidos"].count (-1)))
+
+    #  4. Y LO QUE EL VISOR CUESTA, EN LA PANTALLA MAS ESTRECHA.
     #
     #  Vive en el PLATO, al lado de los tres mandos, que son lo unico que se
     #  toca ahi: no puede costarles un pixel de dedo. Y se mide en 280x653 y no
