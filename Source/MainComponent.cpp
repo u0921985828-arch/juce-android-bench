@@ -911,6 +911,21 @@ MainComponent::MainComponent()
         skinButtons[juce::jlimit (0, 3, ZatiColours::currentSkin)]
             ->setToggleState (true, juce::dontSendNotification);
 
+        //  Y EL MOVIMIENTO, en la misma pagina y con la misma forma de
+        //  control: dos chips, uno encendido. Es lo que ve la persona de «como
+        //  se ve la maquina», que es de lo que trata esta pagina.
+        for (int i = 0; i < 2; ++i)
+        {
+            auto* b = new juce::TextButton (T (i == 0 ? "SI|mov" : "NO|mov"));
+            styleButton (*b, kKey);
+            litAccent (*b);
+            b->setClickingTogglesState (true);
+            b->setRadioGroupId (7413);
+            b->onClick = [this, i] { ponMovimiento (i == 0); };
+            setSheet.cuerpo.addAndMakeVisible (b);
+            movButtons.add (b);
+        }
+
         styleButton (quantButton, kKey);
         litAccent (quantButton);
         quantButton.setClickingTogglesState (true);
@@ -1160,6 +1175,9 @@ MainComponent::MainComponent()
     loadButton.onClick = [this]
     {
         loadArmed = loadButton.getToggleState();
+        //  Un modo armado a la vez: ver ponSoloArmado.
+        if (loadArmed) ponSoloArmado (false);
+        else           refrescaRejillaModo();
         // ASCII only: a raw UTF-8 dash in a literal renders as mojibake on the
         // Android build (different execution charset), so keep these plain.
         status.setText (loadArmed ? T ("LOAD armado - toca un pad para cargarlo")
@@ -1174,6 +1192,20 @@ MainComponent::MainComponent()
     styleButton (recButton, kKey);
     recButton.onClick = [this] { toggleRecordArm(); };
     addAndMakeVisible (recButton);
+
+    //  TOCAR ARMA, MANTENER LIMPIA. Vaciar los solos es lo unico de esta
+    //  funcion que no se deshace tocando otra vez, asi que no puede compartir
+    //  gesto con armarla: es la misma pareja que AUTO en la cancion.
+    styleButton (soloButton, kKey);
+    soloButton.setClickingTogglesState (true);
+    soloButton.onClick = [this] { ponSoloArmado (soloButton.getToggleState()); };
+    soloButton.onHold  = [this]
+    {
+        engine.clearSolo();
+        refrescaRejillaModo();
+        status.setText (T ("Sin solos"), juce::dontSendNotification);
+    };
+    addAndMakeVisible (soloButton);
 
     styleButton (micButton, kKey);
     micButton.onClick = [this] { toggleMicSampling(); };
@@ -2237,7 +2269,7 @@ MainComponent::MainComponent()
     tourBackBtn.onClick = [this] { showTour (tourPaso - 1); };
     tourNextBtn.onClick = [this]
     {
-        if (tourPaso + 1 < kTourPasos) { showTour (tourPaso + 1); return; }
+        if (! tourEsLaPuerta() && tourPaso + 1 < kTourPasos) { showTour (tourPaso + 1); return; }
         //  Al final se marca visto y se cierra. Ya lo esta desde que se enseño
         //  -ver el arranque- asi que esto es idempotente; se deja porque el
         //  tour tambien se abre a mano desde AJUSTES y acabarlo por ahi tiene
@@ -2247,7 +2279,11 @@ MainComponent::MainComponent()
     };
     tourSkipBtn.onClick = [this]
     {
+        //  La marca se escribe en los dos caminos, y en el de la puerta
+        //  tambien: quien se va a los once ya ha visto la bienvenida, y sin
+        //  esto cerrar a mitad del recorrido largo la traeria manana entera.
         ProjectStore::escribeTexto (tourFile(), "1");
+        if (tourEsLaPuerta()) { showTour (kTourBienvenida); return; }
         closeAllSheets();
     };
     addAndMakeVisible (tourSheet);
@@ -3190,6 +3226,7 @@ MainComponent::MainComponent()
     loadPianoPref();
     loadPistasPref();
     loadCuentaPref();
+    loadMovPref();
 
     setSize (500, 1080);
     focusFx (0);
@@ -3325,6 +3362,7 @@ void MainComponent::ponIconos()
         { &rackButton, Iconos::Id::rack },        { &manualButton, Iconos::Id::manual },
         { &chopButton, Iconos::Id::chop },        { &pianoButton, Iconos::Id::piano },
         { &recButton,  Iconos::Id::rec },         { &tapButton,  Iconos::Id::tap },
+        { &soloButton, Iconos::Id::solo },
         { &clearButton, Iconos::Id::vaciar },     { &loopButton, Iconos::Id::loop },
         { &undoButton, Iconos::Id::deshacer },    { &redoButton, Iconos::Id::rehacer },
         { &quantButton, Iconos::Id::cuadrar },
@@ -3385,7 +3423,7 @@ void MainComponent::ponIconos()
 
         //  AJUSTES: sus cuatro paginas y sus tres pruebas.
         { &pageAudioBtn, Iconos::Id::sonido },    { &pageMidiBtn, Iconos::Id::midi },
-        { &pageProjBtn, Iconos::Id::carpeta },    { &pageGestBtn, Iconos::Id::mano },
+        { &pageProjBtn, Iconos::Id::lista },      { &pageGestBtn, Iconos::Id::mano },
         { &measureButton, Iconos::Id::medir },    { &testButton, Iconos::Id::altavoz },
         { &tourButton, Iconos::Id::mano },
 
@@ -3820,6 +3858,10 @@ void MainComponent::ponAutoArmado (bool on)
     autoArmado = on;
     engine.setAutoEscribe (on);
     autoBtn.setToggleState (on, juce::dontSendNotification);
+    //  Y LA LINEA DE TIEMPO LO DICE, que es donde cae el dedo. La tapa AUTO
+    //  esta en la fila de arriba y el gesto que cambia esta aqui: rojo, que es
+    //  lo que esta casa reserva para «se esta escribiendo».
+    songGrid.setModo (on ? kRec : juce::Colours::transparentBlack);
     //  Al DESARMAR se publica: lo que se acaba de tocar tiene que estar en la
     //  tabla que suena antes de la vuelta siguiente, y no en el tic que venga.
     if (! on) publicaAutomacion();
@@ -4525,6 +4567,14 @@ void MainComponent::showSetPage (int page)
     //  habia sitio, no porque tengan nada que ver con el reloj y el bufer.
     for (auto* b : langButtons) muestra (*b, onAsp);
     for (auto* b : skinButtons) muestra (*b, onAsp);
+    //  Con el que toca encendido, y las dos cosas de la regla: apagar Y
+    //  vaciar los limites fuera de su pagina.
+    for (int i = 0; i < movButtons.size(); ++i)
+        if (auto* b = movButtons[i])
+        {
+            b->setToggleState ((i == 0) == movimiento, juce::dontSendNotification);
+            muestra (*b, onAsp);
+        }
 
     muestra (projList,         onProj);
     muestra (projNameBox,      onProj);
@@ -5321,6 +5371,30 @@ void MainComponent::padClicked (int index)
         return;
     }
 
+    //  CON SOLO ARMADO, TOCAR AISLA Y NO SUENA. Las dos mitades: si ademas
+    //  disparara, «aisla» seria verdad y «es un modo» no — y el golpe que
+    //  buscas oir aislado te lo comerias tu mismo en el mismo toque.
+    //
+    //  Y NO SE ARMA SOLO EN UN PAD VACIO: aislar un hueco deja la maquina muda
+    //  y con cara de rota. Es la misma guardia que ya tiene el disparo.
+    if (soloArmado)
+    {
+        if (! padHasSample[(size_t) index])
+        {
+            status.setText (T ("Pad vacio - no hay nada que aislar"), juce::dontSendNotification);
+            return;
+        }
+
+        const bool ahora = ! engine.isPadSoloed (index);
+        engine.setPadSolo (index, ahora);
+        selectPad (index);
+        refrescaRejillaModo();
+        status.setText (ahora ? T ("SOLO pad %1", juce::String (index + 1))
+                              : T ("SOLO fuera del pad %1", juce::String (index + 1)),
+                        juce::dontSendNotification);
+        return;
+    }
+
     //  EN MODO TECLA LA NOTA YA EMPEZO al apretar y ya se solto al levantar.
     //  Dispararla otra vez aqui seria un golpe de mas por toque - el mismo
     //  fallo que la prueba de la cancion tuvo con el compas que vuelve a cero.
@@ -5581,7 +5655,89 @@ void MainComponent::refreshPad (int index)
     {
         p->setSelected (index == selectedPad);
         p->setFlash (padFlash[(size_t) index]);
+        //  Callado por el solo de OTRO. Se pregunta al motor y no a un espejo:
+        //  el solo se pone tambien desde la mesa y desde un proyecto, y una
+        //  copia aqui seria la tercera version de la misma verdad.
+        p->setMudo (engine.anySolo() && ! engine.isPadSoloed (index));
+        p->setModo (tinteDelModo());
     }
+}
+
+//  DE QUE COLOR ES EL MODO QUE HAY ARMADO, o transparente si no hay ninguno.
+//
+//  Escrito UNA vez y no en los tres sitios que arman: LOAD, REC y SOLO son la
+//  misma clase de estado -tocar un pad deja de sonar y hace otra cosa- y el
+//  aviso que la rejilla da tiene que ser el mismo mecanismo, o el dia que
+//  entre un cuarto modo se quedara sin el.
+//
+//  Rojo grabando, que es la regla de la casa escrita en `Zati.h`; el acento
+//  para los otros dos, que es lo que ya dice «esta tapa esta encendida».
+//  COMO SE LLAMA CADA MANDO, escrito UNA vez.
+//
+//  Lo usan dos: `retranslateUi`, que lo pone como nombre accesible -lo que lee
+//  TalkBack-, y `paintPadSheetContent`, que lo DIBUJA en la banda de encima del
+//  dial. Antes el pintor llevaba los literales y el nombre accesible no
+//  existia; con la tabla, la palabra que se ve y la que se oye son la misma por
+//  construccion.
+//
+//  Las claves son las que ya estaban en el pintor, sin traducir aqui: quien
+//  llama decide si las pasa por `T()` -el pintor si, y el nombre accesible
+//  tambien-.
+const std::vector<MainComponent::Mando>& MainComponent::tablaDeMandos()
+{
+    //  Se llena una vez y se queda: son punteros a miembros de ESTA instancia,
+    //  asi que un `static` local los congelaria del primer objeto que llamara.
+    if (! mandos.empty()) return mandos;
+
+    mandos =
+    {
+        //  EL PAD, pagina SONIDO. Estos los dibuja el pintor leyendo esta misma
+        //  tabla.
+        { &pitchSlider,   "PITCH" },      { &fineSlider,    "FINO" },
+        { &volSlider,     "GANANCIA" },   { &panSlider,     "PAN" },
+        { &attackSlider,  "ATTACK" },     { &releaseSlider, "RELEASE" },
+        { &cutSlider,     "CORTE|filtro" },{ &resoSlider,   "RESON" },
+        { &anchoSlider,   "ANCHO" },      { &chokeSlider,   "CHOKE" },
+        //  ...y pagina RECORTE.
+        { &startSlider,   "START" },      { &endSlider,     "END" },
+        { &fadeInSlider,  "SUAVE IN" },   { &fadeOutSlider, "SUAVE OUT" },
+
+        //  EL SECUENCIADOR. Aqui el nombre lo pinta la maqueta -`seqLabelBands`
+        //  guarda la banda con su clave, no el mando- asi que la palabra vuelve
+        //  a aparecer alli. Es la unica pareja que esta tabla no puede unir sin
+        //  reescribir como se colocan esas bandas, y va anotado en vez de
+        //  arreglado a medias.
+        { &bpmSlider,     "TEMPO" },      { &patternSlider, "PATRON" },
+        { &lengthSlider,  "LARGO" },      { &swingSlider,   "SWING" },
+        { &gridSlider,    "REJILLA" },    { &euclidSlider,  "EUCLIDES" },
+        { &noteSlider,    "NOTA" },       { &velSlider,     "GOLPE" },
+        { &rollSlider,    "REPETIR" },    { &lockSlider,    "CORTE|filtro" },
+        { &atkPasoSlider, "ATTACK" },     { &relPasoSlider, "RELEASE" },
+        { &iniPasoSlider, "START" },      { &panPasoSlider, "PAN" },
+
+        //  LA CANCION y el maestro.
+        { &songLenSlider, "COMPASES" },   { &masterFader,   "MASTER" },
+
+        //  Y el ANCHO de una banda del EQ, que vive en su propia ficha.
+        { &eqQKnob,       "ANCHO" },
+    };
+    return mandos;
+}
+
+//  La clave de UN mando, o nullptr si no esta en la tabla.
+const char* MainComponent::claveDeMando (const juce::Slider& s)
+{
+    for (const auto& m : tablaDeMandos())
+        if (m.s == &s) return m.clave;
+    return nullptr;
+}
+
+juce::Colour MainComponent::tinteDelModo() const
+{
+    if (recArmed)   return kRec;
+    if (soloArmado) return ZatiColours::accent;
+    if (loadArmed)  return ZatiColours::accent;
+    return juce::Colours::transparentBlack;
 }
 
 //  Point the grid at another sixteen.
@@ -6458,6 +6614,7 @@ void MainComponent::retranslateUi()
     measureButton.setButtonText (T ("MEDIR"));
     quantButton .setButtonText (T ("CUADRAR"));
     recButton   .setButtonText (recArmed ? T ("REC ON") : T ("REC"));
+    soloButton  .setButtonText (T ("SOLO"));
     transporte (playButton, engine.isPlaying());
     clearButton .setButtonText (T ("VACIAR"));
     seqGridBtn  .setButtonText (T ("PASOS"));
@@ -6487,13 +6644,20 @@ void MainComponent::retranslateUi()
     //  compilaciones. La regla comparativa lo canto -35 hallazgos-, que es para
     //  lo que existe.
     pageAspBtn  .setButtonText (T ("ASPECTO"));
+    //  Y LOS DOS CHIPS DEL MOVIMIENTO, por lo mismo que la linea de arriba:
+    //  se construyen con el literal en espanol y sin esto se quedarian con el
+    //  para siempre. El banco lo canta a la primera —«SI identical in es and
+    //  en»— y es el mismo fallo que ya costo tres pestanas de esta ficha, la
+    //  fila VACIAR de las ranuras y los chips de la cuenta atras.
+    for (int i = 0; i < movButtons.size(); ++i)
+        if (auto* b = movButtons[i]) b->setButtonText (T (i == 0 ? "SI|mov" : "NO|mov"));
     pageProjBtn .setButtonText (T ("PROYECTOS"));
     pageGestBtn .setButtonText (T ("GESTOS"));
     pageMidiBtn .setButtonText (T ("MIDI"));
     manualButton.setButtonText (T ("MANUAL"));
     tourButton  .setButtonText (T ("TOUR"));
     tourBackBtn .setButtonText (T ("TOUR ATRAS"));
-    tourSkipBtn .setButtonText (T ("SALTAR"));
+    tourSkipBtn .setButtonText (tourSkipCaption());
     //  Y LA DE AVANZAR SOLO EL ROTULO, que es lo unico que hace falta aqui.
     //
     //  Esto llamaba a showTour, y showTour no pone un rotulo: ENSEÑA un paso.
@@ -6522,6 +6686,9 @@ void MainComponent::retranslateUi()
     else                       tourNextBtn.setButtonText (tourNextCaption());
     undoButton  .setButtonText (T ("DESHACER"));
     redoButton  .setButtonText (T ("REHACER"));
+    //  Y su nombre accesible, que lleva ADEMAS que se va a deshacer y por eso
+    //  no lo puede poner el barrido de abajo: ese solo rellena los vacios.
+    refrescaNombresDeshacer();
 
     reverseButton.setButtonText (T ("REV|reverso"));
     loopButton   .setButtonText (T ("LOOP"));
@@ -6699,6 +6866,21 @@ void MainComponent::retranslateUi()
     //
     //  Sin pisar lo que ya tiene nombre a mano: ahi el rotulo dice menos que la
     //  frase escrita -«01» contra «Pad 1»- y quien la escribio sabia por que.
+    //  Y LOS DESLIZADORES, QUE NO LLEVAN ROTULO Y POR ESO SE QUEDABAN FUERA.
+    //
+    //  El barrido de abajo copia el rotulo de una TAPA a su nombre, y con eso
+    //  la app paso del 18 % al 79 %. Lo que quedaba —lo dice la propia medida—
+    //  son los mandos: un `juce::Slider` no tiene rotulo que copiar, su nombre
+    //  lo PINTA la ficha en la banda de encima, y sin `setTitle` se anuncia
+    //  como «deslizador» y ya.
+    //
+    //  La clave es la MISMA que se dibuja, y para el plato del pad la lee de
+    //  aqui el propio pintor (ver `claveDeMando`): dos sitios escribiendo el
+    //  nombre del mismo mando es uno de los dos quedandose viejo, que es el
+    //  fallo que este fichero lleva encontrando desde el principio.
+    for (const auto& m : tablaDeMandos())
+        if (m.s != nullptr) m.s->setTitle (T (m.clave));
+
     std::function<void (juce::Component&)> nombra = [&] (juce::Component& c)
     {
         for (auto* h : c.getChildren())
@@ -6985,12 +7167,36 @@ void MainComponent::pushUndo (const juce::String& what)
     redoStack.clear();              // una accion nueva termina la rama de rehacer
     undoButton.setVisible (true);
     redoButton.setVisible (false);
+    refrescaNombresDeshacer();
     resized();
 }
 
 //  Undo and redo are the same move in opposite directions: each keeps what it
 //  is about to replace, so you can step back and forth over one action instead
 //  of the one-way trip DESHACER was on its own.
+//  QUE SE VA A DESHACER, DICHO ANTES Y NO DESPUES.
+//
+//  `pushUndo` recibe una etiqueta desde el dia que existe -«PEGAR», «VACIAR
+//  PAD», «CARGAR KIT»- y no la ensenaba nadie: dieciseis pasos de pila y una
+//  tapa que dice DESHACER a secas, o sea una apuesta en vez de una decision.
+//
+//  Va al NOMBRE ACCESIBLE, que es lo que lee TalkBack y lo que la tanda de la
+//  feria subio del 18 % al 79 %, y no al rotulo: esa tapa mide 96 px clavados
+//  en la banda de estado y «DESHACER PEGAR» no cabe — cambiar un rotulo
+//  entero por uno cortado no es un arreglo, que es lo que ya costo deshacer
+//  dos veces el reparto de `layoutModuleBar`. Para quien ve la pantalla, la
+//  frase que la accion deja en el renglon de estado —justo a la izquierda de
+//  la tapa— ya dice lo mismo, y ese renglon existe precisamente por eso.
+void MainComponent::refrescaNombresDeshacer()
+{
+    undoButton.setTitle (undoStack.empty()
+                           ? T ("DESHACER")
+                           : T ("DESHACER %1", undoStack.back().label));
+    redoButton.setTitle (redoStack.empty()
+                           ? T ("REHACER")
+                           : T ("REHACER %1", redoStack.back().label));
+}
+
 void MainComponent::performUndo()
 {
     if (undoStack.empty()) return;
@@ -7008,6 +7214,7 @@ void MainComponent::performUndo()
     applyState (snap.state);
     undoButton.setVisible (! undoStack.empty());
     redoButton.setVisible (true);
+    refrescaNombresDeshacer();
     status.setText (T ("Deshecho: %1", snap.label), juce::dontSendNotification);
     resized();
 }
@@ -7029,6 +7236,7 @@ void MainComponent::performRedo()
     applyState (snap.state);
     redoButton.setVisible (! redoStack.empty());
     undoButton.setVisible (true);
+    refrescaNombresDeshacer();
     status.setText (T ("Rehecho: %1", snap.label), juce::dontSendNotification);
     resized();
 }
@@ -8343,8 +8551,7 @@ void MainComponent::finishProjectSave (const juce::String& name, const juce::Fil
         return;
     }
 
-    currentProject = name;
-    repaint (headerArea);
+    apuntaProyecto (name);
     refreshProjectList();
 
     status.setText (failed == 0
@@ -8406,8 +8613,7 @@ void MainComponent::finishProjectOpen (const juce::String& name, const juce::Val
             && uiSample[(size_t) (int) c.getProperty ("i", 0)] == nullptr)
             ++missing;
 
-    currentProject = name;
-    repaint (headerArea);
+    apuntaProyecto (name);
     closeAllSheets();
     status.setText (missing > 0
                         ? T ("Abierto \"%1\"  [%2 pads, %3 sin audio]", name,
@@ -8416,13 +8622,86 @@ void MainComponent::finishProjectOpen (const juce::String& name, const juce::Val
                     juce::dontSendNotification);
 }
 
+//  EL PROYECTO Y SU FECHA SON UN SOLO HECHO, asi que los escribe una sola
+//  funcion. Estaban en cinco `currentProject = ...` sueltos -guardar, abrir,
+//  borrar, NUEVO y restaurar la sesion- y una fecha anadida a mano en cinco
+//  sitios es una fecha que se queda vieja en el que se olvide. Es la misma
+//  leccion que `padPorDefecto` y que `armaCuentaSiToca`.
+//
+//  Y AQUI ES DONDE SE LEE EL DISCO, que es el otro motivo de que exista: una
+//  sola vez por apertura o por guardado, y nunca desde `paint`.
+void MainComponent::apuntaProyecto (const juce::String& name)
+{
+    currentProject = name;
+    proyectoFecha  = name.isEmpty()
+                       ? juce::Time()
+                       : ProjectStore::folderFor (name).getChildFile ("project.xml")
+                                                       .getLastModificationTime();
+    repaint (headerArea);
+}
+
+//  QUE PROYECTO, CUANTO TRABAJO Y DE CUANDO — y en ese orden de importancia,
+//  que es el orden en que se CAEN al reves.
+//
+//  El nombre es el unico de los tres que no se puede deducir mirando la
+//  maquina: los pads llenos se ven en la rejilla y «hace dos dias» se intuye.
+//  Asi que el nombre no se cae nunca y los otros dos se piden con el TEXTO
+//  puesto, que es la misma pregunta que ya deciden BANCO, PADS, la tira del
+//  paso y las seis pestanas — y no con el ancho de la ventana, que es lo que
+//  hace que una escalera mienta en arabe y en chino.
+//
+//  La cifra va dentro de `Lang::ltr`, que es la regla de la casa para numeros
+//  latinos en escritura arabe, y «HACE n D» lleva CLAVE PROPIA: reaprovechar
+//  una por parecerse en espanol es lo que costo ATRAS y EMPEZAR en el tour.
+juce::String MainComponent::lineaDeContinuidad (int anchoDisponible,
+                                                const juce::Font& fuente) const
+{
+    auto cabe = [&fuente, anchoDisponible] (const juce::String& t)
+    {
+        return (int) std::ceil (juce::GlyphArrangement::getStringWidth (fuente, t))
+                   <= anchoDisponible;
+    };
+
+    juce::String linea = currentProject.isNotEmpty() ? currentProject.toUpperCase()
+                                                     : T ("SIN GUARDAR");
+
+    const juce::String sep = juce::String::fromUTF8 ("  \xc2\xb7  ");
+
+    //  Los pads llenos, del mismo array que la tira de zatis de la banda de
+    //  abajo: cero E/S y cero estado nuevo que mantener al dia.
+    int llenos = 0;
+    for (int i = 0; i < kNumPads; ++i)
+        if (padHasSample[(size_t) i]) ++llenos;
+
+    if (llenos > 0)
+    {
+        const auto pads = T ("%1 PADS|cont", Lang::ltr (juce::String (llenos)));
+        if (cabe (linea + sep + pads)) linea += sep + pads;
+    }
+
+    //  De cuando es. Sin fecha valida no hay campo — «nunca se ha guardado» no
+    //  es un hueco que rellenar con un cero, es un estado real: el trabajo esta
+    //  en la sesion y vuelve entero igual.
+    if (proyectoFecha.toMilliseconds() > 0)
+    {
+        const auto d = juce::Time::getCurrentTime() - proyectoFecha;
+        const juce::String cuando =
+              d.inHours() <  1.0 ? T ("AHORA|cont")
+            : d.inDays()  <  1.0 ? T ("HACE %1 H|cont", Lang::ltr (juce::String ((int) d.inHours())))
+                                 : T ("HACE %1 D|cont", Lang::ltr (juce::String ((int) d.inDays())));
+
+        if (cabe (linea + sep + cuando)) linea += sep + cuando;
+    }
+
+    return linea;
+}
+
 void MainComponent::deleteProject (const juce::String& name)
 {
     ProjectStore::folderFor (name).deleteRecursively();
     if (currentProject == name)
     {
-        currentProject = {};
-        repaint (headerArea);
+        apuntaProyecto ({});
     }
     refreshProjectList();
     status.setText (T ("Borrado \"%1\"", name), juce::dontSendNotification);
@@ -8577,8 +8856,7 @@ void MainComponent::newProject()
 
     selectedPattern = 0;
     selectedStep = -1;
-    currentProject = {};
-    repaint (headerArea);
+    apuntaProyecto ({});
 
     //  A new project means there is nothing to come back to: without this the
     //  next launch would restore the machine the user just emptied.
@@ -10028,6 +10306,65 @@ void MainComponent::loadMasterPref()
 //  cuantas pistas te caben en la mano depende de la mano y del aparato, no de
 //  la cancion.
 //  EL METRONOMO Y LA CUENTA ATRAS. Ver MainComponent.h.
+//  EL MOVIMIENTO, donde el master, el idioma, la carcasa y la cuenta atras: en
+//  el directorio interno de la app y no en la biblioteca, porque hay que poder
+//  leerlo antes de que `ProjectStore` haya decidido donde esta la biblioteca —
+//  que es exactamente el orden en que arranca esto.
+juce::File MainComponent::movPrefFile()
+{
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+               .getChildFile ("zati-movimiento.txt");
+}
+
+void MainComponent::saveMovPref() const
+{
+    //  Por `escribeTexto` y no con un `replaceWithText` a pelo: es la puerta
+    //  unica desde que `autosave()` casi costo un proyecto, y una regla escrita
+    //  ocho veces son ocho reglas.
+    ProjectStore::escribeTexto (movPrefFile(), movimiento ? "1" : "0");
+}
+
+void MainComponent::loadMovPref()
+{
+    //  Lo que no esta escrito vale lo de antes: la app latia, asi que sin
+    //  fichero late. Quien ya la usaba no nota el cambio.
+    const auto f = movPrefFile();
+    if (! f.existsAsFile()) return;
+    movimiento = f.loadFileAsString().trim().getIntValue() != 0;
+}
+
+//  AL APAGARLO, UN CUADRO EN SILENCIO Y LUEGO NADA.
+//
+//  Sin esto el cristal se queda con el ultimo fotograma dibujado y una onda
+//  congelada se lee como «esto esta roto», que es exactamente lo que ya obligo
+//  a que el analizador del EQ cayera a su suelo en vez de quedarse quieto. Se
+//  le da un cuadro de ceros —su propia guardia de silencio hace el resto— y a
+//  partir de ahi no se le vuelve a hablar.
+void MainComponent::ponMovimiento (bool on)
+{
+    if (movimiento == on) return;
+    movimiento = on;
+    saveMovPref();
+
+    if (! movimiento)
+    {
+        float cero[64] {};
+        cristal.setSamples (cero, 64, (double) DeviceTier::profile().relojMs);
+        cristal.setColumns (cero, cero, 0);
+        cristal.setVu (0.0f, 0.0f);
+        for (auto* b : fxButtons)
+            if (b != nullptr && (double) b->getProperties().getWithDefault ("pulse", 0.0) != 0.0)
+            {
+                b->getProperties().set ("pulse", 0.0);
+                b->repaint();
+            }
+        for (int i = 0; i < kNumPads; ++i) refreshPad (i);
+    }
+
+    status.setText (movimiento ? T ("La cara se mueve") : T ("La cara esta quieta"),
+                    juce::dontSendNotification);
+}
+
 juce::File MainComponent::cuentaPrefFile()
 {
     return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
@@ -10168,7 +10505,23 @@ juce::File MainComponent::tourFile()
 //  ultima tarjeta es una promesa de una siguiente que no existe.
 juce::String MainComponent::tourNextCaption() const
 {
-    return tourPaso + 1 < kTourPasos ? T ("SIGUIENTE") : T ("TOUR EMPEZAR");
+    //  Y en el paso de la PUERTA tambien dice EMPEZAR, que es lo que hace:
+    //  cerrar y ponerse a tocar. Seguir leyendo es la otra tapa.
+    if (tourEsLaPuerta() || tourPaso + 1 >= kTourPasos) return T ("TOUR EMPEZAR");
+    return T ("SIGUIENTE");
+}
+
+//  LA TERCERA TAPA. En los tres primeros pasos es SALTAR -salirse del
+//  recorrido- y en el cuarto es la PUERTA a los once que quedan. No es una tapa
+//  mas: esa fila son tres y una cuarta la parte en dos justo en la pantalla que
+//  se ve la primera vez que alguien abre esto.
+//
+//  Y en el cuarto no se pierde nada por reaprovecharla: alli SALTAR y EMPEZAR
+//  hacen ya exactamente lo mismo -marcar visto y cerrar- asi que una de las dos
+//  sobraba.
+juce::String MainComponent::tourSkipCaption() const
+{
+    return tourEsLaPuerta() ? T ("TOUR VER MAS") : T ("SALTAR");
 }
 
 void MainComponent::showTour (int paso)
@@ -10180,6 +10533,7 @@ void MainComponent::showTour (int paso)
     tourPrepara (tourPaso);
     tourBackBtn.setEnabled (tourPaso > 0);
     tourNextBtn.setButtonText (tourNextCaption());
+    tourSkipBtn.setButtonText (tourSkipCaption());
     resized();
     tourSheet.repaint();
 }
@@ -10325,7 +10679,11 @@ int MainComponent::tourBodyHeight (int ancho) const
 
 juce::String MainComponent::exportSourceLabel() const
 {
-    if (engine.isSongMode())        return T ("CANCION");
+    //  Y AQUI LA CLAVE ES «SONG» Y NO «CANCION». La fila de «CANCION» decia
+    //  «SONG MODE» en ingles -es la de la tapa de modo, que ahora tiene clave
+    //  propia- asi que esta linea decia «Origen: SONG MODE» en tres de los
+    //  cuatro idiomas. Lo que exporta es la CANCION, no un modo.
+    if (engine.isSongMode())        return T ("SONG");
     if (engine.getChainLength() > 0) return T ("CADENA (%1 patrones)", juce::String (engine.getChainLength()));
     return T ("PATRON P%1", juce::String (engine.getEditPattern() + 1));
 }
@@ -11233,6 +11591,109 @@ void MainComponent::repartePorBanco (const juce::Array<juce::File>& files, const
 //  Un fichero de audio de verdad y no uno vacio: el catalogo cuenta ficheros
 //  por su extension, pero cargar el instrumento los abre, y un banco que
 //  planta ceros mediria la mitad del camino.
+// ============================================================================
+//  LA APP CON TRABAJO DENTRO.
+//
+//  Todo lo que este banco mide -las once reglas de `expo.py`, la carga de cada
+//  pantalla, los planos, el coste por cuadro- se mide sobre una maquina VACIA o
+//  con el kit de fabrica. Un proyecto de treinta pads con nombres de fichero de
+//  verdad, ocho patrones llenos, una cancion de sesenta y cuatro compases con
+//  sus clips y su automatizacion no lo abria ningun banco, y esa es media app
+//  sin medir: casi todo lo que puede fallar aqui es una fila que cabia vacia.
+//
+//  NO ES UNA REGLA NUEVA: es un ESTADO nuevo para las que ya hay. Exactamente
+//  lo mismo que `ZATI_DLC` plantando dos packs, `ZATI_SKIN` fijando la carcasa
+//  y `ZATI_SONANDO` bombeando bloques — convertir en ENTRADA lo que si no seria
+//  «lo que hubiera».
+//
+//  Y con NOMBRES LARGOS, que es la mitad del valor: un pad se llama como el
+//  fichero que cargaste y no «01», y la cabecera, la mesa y el troceado
+//  reparten su ancho por el TEXTO.
+void MainComponent::llenaDePrueba()
+{
+    //  Nombres de fichero de verdad y no «PAD 12»: lo que se mide es lo que
+    //  pasa cuando el rotulo mide lo que mide fuera del banco.
+    static const char* kNombres[] =
+    {
+        "amen_break_bar1", "808 sub deep long", "vinyl crackle loop",
+        "snare_rimshot_hard", "hihat closed tight", "clap layered wide",
+        "kick punchy 60hz", "perc shaker offbeat", "tom floor low",
+        "crash cymbal long", "bass saw detuned", "pad strings warm",
+        "vocal chop female", "fx riser 4 bars", "impact hit big",
+        "conga slap high", "rim click short", "ride bell ping",
+        "sub drop long tail", "noise sweep down"
+    };
+    const int nNombres = (int) (sizeof (kNombres) / sizeof (kNombres[0]));
+
+    //  TREINTA PADS, que es un kit de trabajo y no los sesenta y cuatro de
+    //  fabrica: lo que se quiere medir es una maquina usada, no una llena.
+    for (int i = 0; i < 30 && i < kNumPads; ++i)
+    {
+        padName[(size_t) i] = juce::String (kNombres[i % nNombres]);
+        refreshPadArt (i);
+        refreshPad (i);
+    }
+
+    //  LOS OCHO PATRONES LLENOS, con nota y fuerza distintas por casilla: un
+    //  patron de unos y ceros no mueve un solo rotulo de la tira del paso.
+    for (int pat = 0; pat < AudioEngine::kNumPatterns; ++pat)
+    {
+        engine.setPatternLength (pat, 32);
+        for (int st = 0; st < 32; ++st)
+            for (int pad = 0; pad < 16; ++pad)
+                if (((st + pad * 3 + pat) % 5) == 0)
+                {
+                    engine.setStep     (pat, st, pad, true);
+                    engine.setStepNote (pat, st, pad, ((st + pad) % 25) - 12);
+                    engine.setStepVel  (pat, st, pad, 40 + (st * 5 + pad * 7) % 87);
+                }
+    }
+
+    //  Y LA CANCION ENTERA. Sesenta y cuatro compases es el tope que la app
+    //  admite, y es donde la linea de tiempo reparte su celda mas estrecha.
+    engine.setSongLength (AudioEngine::kSongBars);
+    for (int bar = 0; bar < AudioEngine::kSongBars; ++bar)
+        for (int lane = 0; lane < 4; ++lane)
+            if (((bar + lane) % 3) != 2)
+                engine.setSongCell (lane, bar, 1 + ((bar / 2 + lane) % AudioEngine::kNumPatterns));
+
+    //  Cuatro clips de audio, uno por pista, del recorte de su pad — que es lo
+    //  que `ponClip` hace y por eso se llama a `ponClip` y no se rellena la
+    //  lista a mano: un clip escrito aqui no pasaria por el recorte.
+    const int guardado = selectedPad;
+    for (int pista = 0; pista < 4; ++pista)
+    {
+        selectedPad = pista * 4;
+        ponClip (pista, pista * 8);
+    }
+    selectedPad = guardado;
+
+    //  Y una automatizacion de verdad: un barrido por compas sobre el primer
+    //  parametro del primer efecto.
+    autoEventos.clear();
+    for (int bar = 0; bar < AudioEngine::kSongBars; ++bar)
+    {
+        AudioEngine::EventoAuto e;
+        e.paso  = bar * 16;
+        e.fx    = 0;
+        e.par   = 0;
+        e.valor = (float) bar / (float) AudioEngine::kSongBars;
+        autoEventos.push_back (e);
+    }
+    publicaAutomacion();
+
+    //  Con nombre de proyecto y su fecha, que es lo que la cabecera dice desde
+    //  esta misma tanda. Sin esto la linea de continuidad se mediria en el
+    //  unico estado en el que no tiene nada que contar.
+    currentProject = "sesion nocturna larga";
+    proyectoFecha  = juce::Time::getCurrentTime() - juce::RelativeTime::days (2);
+
+    refreshStepGrid();
+    refreshSong (false);
+    refreshMixStrip();
+    resized();
+}
+
 void MainComponent::plantaPacksDePrueba()
 {
     const auto raiz = ProjectStore::instrumentos();
@@ -11697,6 +12158,43 @@ void MainComponent::loadBrowserSelection()
 // REC on the transport arms PATTERN recording: pads you hit while the
 // sequencer runs are written into the playing bank, quantised to the nearest
 // step. Sampling from the mic is a per-pad action and lives in the PADS sheet.
+//  ARMAR EL SOLO, Y UN SOLO MODO ARMADO A LA VEZ.
+//
+//  LOAD y SOLO son la misma clase de estado —tocar un pad deja de sonar y hace
+//  otra cosa— y los dos entran por el mismo embudo, `padClicked`. Con los dos
+//  armados a la vez habria que decidir cual gana, y esa es una pregunta que no
+//  deberia existir: armar uno desarma el otro. REC no, que REC no cambia lo que
+//  el toque hace sino lo que ADEMAS ocurre, y por eso convive con los dos.
+void MainComponent::ponSoloArmado (bool on)
+{
+    if (soloArmado == on) { refrescaRejillaModo(); return; }
+    soloArmado = on;
+
+    if (soloArmado && loadArmed)
+    {
+        loadArmed = false;
+        loadButton.setToggleState (false, juce::dontSendNotification);
+    }
+
+    styleButton (soloButton, soloArmado ? kRec : kKey);
+    soloButton.setToggleState (soloArmado, juce::dontSendNotification);
+
+    status.setText (soloArmado
+                      ? T ("SOLO: toca pads para aislarlos - manten SOLO para quitarlos todos")
+                      : T ("SOLO apagado"),
+                    juce::dontSendNotification);
+    refrescaRejillaModo();
+}
+
+//  LA REJILLA ENTERA, que es donde se ve el modo y quien esta callado. Los dos
+//  estados son de los dieciseis a la vez -«cual suena» solo significa algo
+//  comparando- asi que se repasan los dieciseis y no el que se acaba de tocar.
+void MainComponent::refrescaRejillaModo()
+{
+    for (int i = 0; i < kNumPads; ++i) refreshPad (i);
+    refreshMixStrip();
+}
+
 void MainComponent::toggleRecordArm()
 {
     recArmed = ! recArmed;
@@ -11712,6 +12210,9 @@ void MainComponent::toggleRecordArm()
     status.setText (recArmed ? T ("REC: toca pads para grabarlos en el patron")
                              : T ("REC apagado"),
                     juce::dontSendNotification);
+    //  Y la rejilla lo dice: el aviso de que tocar un pad hace otra cosa tiene
+    //  que estar donde esta el dedo.
+    refrescaRejillaModo();
     repaint();
 }
 
@@ -12097,8 +12598,7 @@ void MainComponent::finishSessionRestore (const juce::ValueTree& tree, int resto
             p->setSampleInfo (uiSample[(size_t) i], padName[(size_t) i],
                               padStart01[(size_t) i], padEnd01[(size_t) i]);
 
-    currentProject = tree.getProperty ("proyecto", "").toString();
-    repaint (headerArea);
+    apuntaProyecto (tree.getProperty ("proyecto", "").toString());
     refreshProjectList();
 
     //  These buffers came off this very folder: nothing to write back.
@@ -12776,7 +13276,11 @@ void MainComponent::pintaCuadro (double dtMs)
             const int f = slotFx[(size_t) sRan];
             if (b == nullptr || f < 0) continue;
 
-            const double want = fxOn[(size_t) f] ? lit : 0.0;
+            //  Y CON EL MOVIMIENTO APAGADO, la lampara se queda ENCENDIDA y
+            //  quieta: lo que sobra es el latido, no la informacion de que ese
+            //  efecto esta puesto. Apagarla del todo convertiria «no quiero que
+            //  parpadee» en «no se cual esta sonando».
+            const double want = fxOn[(size_t) f] ? (movimiento ? lit : 1.0) : 0.0;
             const double had  = (double) b->getProperties().getWithDefault ("pulse", 0.0);
             if (std::abs (want - had) < 0.004) continue;
 
@@ -12806,7 +13310,13 @@ void MainComponent::pintaCuadro (double dtMs)
     //  repintado.
     const bool seVeLaCara = ! caraTapada();
 
-    if (seVeLaCara)
+    //  Y LO QUE SE MUEVE SOLO, solo si la persona lo quiere. Es la misma
+    //  guardia que `seVeLaCara` y por la misma razon —saltarse el repintado de
+    //  lo que nadie esta mirando— con otro motivo: aqui se ve y no se quiere
+    //  ver moverse. Ver `movimiento`.
+    const bool animar = seVeLaCara && movimiento;
+
+    if (animar)
     {
         //  The master silhouette. The engine has already decimated its ~0.74 s
         //  window into min/max columns, so this copies 256 pairs instead of the
@@ -12858,7 +13368,11 @@ void MainComponent::pintaCuadro (double dtMs)
             //  -a 120 Hz, 37 ms- o sea un parpadeo en vez de un destello.
             padFlash[(size_t) i] *= caida;
             if (padFlash[(size_t) i] < 0.02f) padFlash[(size_t) i] = 0.0f;
-            if (seVeLaCara) refreshPad (i);
+            //  La CUENTA sigue corriendo con el movimiento apagado y lo unico
+            //  que se salta es el repintado — igual que debajo de una ficha. Si
+            //  se parara, al volver a encenderlo dieciseis pads se quedarian
+            //  destellando donde estuvieran.
+            if (animar) refreshPad (i);
         }
     }
 
@@ -12950,7 +13464,7 @@ void MainComponent::pintaCuadro (double dtMs)
         //  La balistica corre siempre -el pico se lee y se vacia, y pararla
         //  dejaria la aguja clavada donde estuviera al abrir una ficha- y lo
         //  unico que se salta es el repintado. Ver `seVeLaCara`.
-        if (seVeLaCara) cristal.setVu (vuL, vuR);
+        if (animar) cristal.setVu (vuL, vuR);
         // (the LCD no longer carries a step strip)
     }
 

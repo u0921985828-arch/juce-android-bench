@@ -211,9 +211,21 @@ return antesDe (banda, tapa.getBounds(), aire);
 //  en el que esta -PATRON o CANCION- con su dibujo, asi que se lee de un
 //  vistazo sin acordarse de nada. Una tapa que dijera "IR A CANCION" obligaria
 //  a mirar si esta encendida para saber donde estas.
+//  Y CON CLAVE PROPIA, que es lo que arregla un HOMONIMO de la compilacion
+//  espanola. La tapa decia `T("CANCION")` y la pestana que abre la ficha dice
+//  `T("SONG")`, cuya fila en espanol es tambien «CANCION»: en modo cancion, y
+//  girado —donde el transporte comparte renglon con las seis pestanas— habia
+//  dos tapas seguidas con la MISMA palabra y el MISMO dibujo, una abriendo una
+//  ficha y la otra cambiando lo que toca PLAY.
+//
+//  En las otras tres lenguas ya estaba bien: la fila decia «SONG MODE», «歌曲
+//  模式» y «وضع الأغنية». O sea que era una fila con la traduccion buena y el
+//  espanol prestado de otra clave — y `Tests/desglose.py` no podia verlo porque
+//  mide el estado APAGADO, donde las cuatro dicen PATRON. Un estado que el banco
+//  no abre es un estado sin medir.
 inline void modoTapa (juce::TextButton& b, bool cancion)
 {
-b.setButtonText (cancion ? T ("CANCION") : T ("PATRON"));
+b.setButtonText (T (cancion ? "MODO CANCION|modo" : "MODO PATRON|modo"));
 b.getProperties().set ("icono", (int) (cancion ? Iconos::Id::cancion : Iconos::Id::patron));
 b.repaint();
 }
@@ -562,7 +574,8 @@ namespace ZatiTour
           "los otros tres siguen sonando.",
 
           "CARGAR trae un fichero a un pad. REC graba lo que oiga el microfono. "
-          "PLAY pone en marcha el patron.",
+          "PLAY pone en marcha el patron. Con esto ya se toca: EMPEZAR cierra "
+          "esto y VER MAS sigue con el secuenciador, los efectos y lo demas.",
 
           "Seis ranuras y un menu de efectos para llenarlas. Una vacia pone «+» "
           "y lo abre. Son de la maquina, no del pad: cada pad decide cuanto pasa "

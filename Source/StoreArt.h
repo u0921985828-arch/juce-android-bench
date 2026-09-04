@@ -84,10 +84,15 @@ namespace StoreArt
                                   .translated (textX, title.getY() - lado - (float) h * 0.045f));
             g.fillPath (m);
         }
-        //  El nombre COMPLETO, que es como se llama la app en la tienda. En la
-        //  cara de la maquina sigue poniendo ZATI a secas: ahi es la marca
-        //  serigrafiada en el chasis, y "ZATI SAMPLER" cruzado por la cabecera
-        //  se comeria la fila entera para decir lo que la maquina ya es.
+        //  El nombre COMPLETO, que es como se llama la app en la tienda -y
+        //  desde la tanda de la cabecera, tambien en la cara-. Este comentario
+        //  decia lo contrario ("ahi es la marca serigrafiada en el chasis, y
+        //  ZATI SAMPLER cruzado por la cabecera se comeria la fila entera") y
+        //  esa segunda mitad era una CIFRA SIN MEDIR: medida, la palabra corta
+        //  ocupa 47 px y la larga 152, y hasta la pantalla mas estrecha que
+        //  nadie fabrica -280x653- deja 172. La cara la dice entera por encima
+        //  de una ventana de 260 px y cae a "ZATI" por debajo, asi que la
+        //  tienda y la maquina dicen lo mismo.
         drawFitted ("ZATI SAMPLER", title, ZatiColours::labelFont ((float) h * 0.26f, 0.20f));
 
         g.setColour (ZatiColours::inkDim);

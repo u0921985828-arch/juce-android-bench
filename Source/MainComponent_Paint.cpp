@@ -336,12 +336,30 @@ void MainComponent::paint (juce::Graphics& g)
             const int nameW = h.getRight() - nameX;
             if (nameW > 40)
             {
+                //  EL RENGLON DE CONTINUIDAD. Aqui decia el nombre del
+                //  proyecto y nada mas; ahora dice ademas cuanto trabajo hay
+                //  dentro y de cuando es. Lo compone `lineaDeContinuidad`, que
+                //  es quien sabe que campos caben — con el TEXTO puesto, no con
+                //  el ancho de la ventana.
                 const bool named = currentProject.isNotEmpty();
+                const auto fuenteMeta = ZatiColours::monoFont (Metrics::fMeta, true)
+                                            .withExtraKerningFactor (0.10f);
+                const auto texto = lineaDeContinuidad (nameW, fuenteMeta);
+
                 g.setColour (ZatiColours::ink.withAlpha (named ? 0.55f : 0.28f));
-                g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
-                g.drawText (named ? currentProject.toUpperCase() : T ("SIN GUARDAR"),
-                            nameX, h.getY(), nameW, h.getHeight(),
-                            juce::Justification::bottomRight, true);
+                g.setFont (fuenteMeta);
+
+                //  APUNTADO, que es lo que no estaba. Esta linea se dibuja con
+                //  `drawText` a pelo igual que su vecina de arriba: no es un
+                //  componente, asi que ninguna de las once reglas de `expo.py`
+                //  la ve, y hasta hoy tampoco salia en el volcado de rotulos
+                //  que leen `plano.py` y `planos.py`. Es la unica de esta banda
+                //  que dice algo que CAMBIA — y acaba de pasar de una palabra a
+                //  tres campos, o sea exactamente el caso en que eso importa:
+                //  si se metiera debajo de algo no fallaria, se publicaria.
+                const auto cajaProy = juce::Rectangle<int> (nameX, h.getY(), nameW, h.getHeight());
+                UiAudit::rotulo (cajaProy, texto, "proyecto");
+                g.drawText (texto, cajaProy, juce::Justification::bottomRight, true);
             }
         }
 
@@ -421,6 +439,8 @@ void MainComponent::paintAspectoPage (juce::Graphics& g)
         { auto r = langRowArea; pintaTitulo (g, Lang::takeStart (r, 44), T ("IDIOMA"), "seccion"); }
     if (! skinRowArea.isEmpty())
         { auto r = skinRowArea; pintaTitulo (g, Lang::takeStart (r, 44), T ("CARCASA"), "seccion"); }
+    if (! movRowArea.isEmpty())
+        { auto r = movRowArea; pintaTitulo (g, Lang::takeStart (r, 44), T ("MOVIMIENTO"), "seccion"); }
 }
 
 // The audio path, measured rather than assumed. Everything here comes from
@@ -1483,18 +1503,23 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
         //  placeKnobRow reserves 16 for the name and then insets the knob by
         //  2, so the band is the sixteen pixels that end two above the dial.
-        auto name = [&g] (juce::Slider& s, const char* t)
+        //  Y LA PALABRA SALE DE LA TABLA, no de un literal aqui. La misma que
+        //  `retranslateUi` pone como nombre accesible: lo que se ve y lo que
+        //  lee TalkBack no pueden ser dos cadenas distintas mantenidas a mano.
+        auto name = [this, &g] (juce::Slider& s)
         {
-            g.drawText (T (t), bandAbove (s, ZatiLookAndFeel::kKnobName, 2, 6), juce::Justification::centred);
+            if (const char* t = claveDeMando (s))
+                g.drawText (T (t), bandAbove (s, ZatiLookAndFeel::kKnobName, 2, 6),
+                            juce::Justification::centred);
         };
         if (padPage == padPageSound)
         {
-            name (pitchSlider, "PITCH"); name (fineSlider, "FINO"); name (volSlider, "GANANCIA");
-            name (panSlider, "PAN");
-            name (attackSlider, "ATTACK"); name (releaseSlider, "RELEASE");
-            name (cutSlider, "CORTE|filtro"); name (resoSlider, "RESON");
-            name (anchoSlider, "ANCHO");
-            name (chokeSlider, "CHOKE");
+            name (pitchSlider); name (fineSlider); name (volSlider);
+            name (panSlider);
+            name (attackSlider); name (releaseSlider);
+            name (cutSlider); name (resoSlider);
+            name (anchoSlider);
+            name (chokeSlider);
 
             //  Same band, one pixel lower: the third row insets its cells by 3.
             g.drawText (T ("MODO"), bandAbove (modeButton, ZatiLookAndFeel::kKnobName, 3, 6), juce::Justification::centred);
@@ -1504,14 +1529,17 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
             // Start/End stay linear (a trim range, not a knob): label to the left.
             g.setColour (ZatiColours::ink.withAlpha (0.55f));
             g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.06f));
-            auto lab = [&g] (juce::Slider& s, const char* t)
+            auto lab = [this, &g] (juce::Slider& s)
             {
-                auto r = s.getBounds();
-                g.drawText (T (t), r.getX() - (ZatiLookAndFeel::kTrimLabel + 2), r.getY(),
-                            ZatiLookAndFeel::kTrimLabel - 4, r.getHeight(), Lang::start());
+                if (const char* t = claveDeMando (s))
+                {
+                    auto r = s.getBounds();
+                    g.drawText (T (t), r.getX() - (ZatiLookAndFeel::kTrimLabel + 2), r.getY(),
+                                ZatiLookAndFeel::kTrimLabel - 4, r.getHeight(), Lang::start());
+                }
             };
-            lab (startSlider, "START"); lab (endSlider, "END");
-            lab (fadeInSlider, "SUAVE IN"); lab (fadeOutSlider, "SUAVE OUT");
+            lab (startSlider); lab (endSlider);
+            lab (fadeInSlider); lab (fadeOutSlider);
         }
         else
         {

@@ -109,9 +109,12 @@ De arriba abajo. Girado, la cara se parte en dos columnas: los mandos a un lado
 y los pads al otro.
 
 **La cabecera.** La marca **ZATI SAMPLER** a la izquierda —o `ZATI` a secas
-cuando la ventana no llega a 260 px— y a la derecha el nombre del proyecto
-abierto, o `SIN GUARDAR`. Debajo, una tira de ocho segmentos de color: se
-enciende el segmento de cada zati que algún pad cargado lleve puesto.
+cuando la ventana no llega a 260 px— y a la derecha el **renglón de
+continuidad**: qué proyecto, cuántos pads llenos y cuándo fue la última vez
+(`SESION NOCTURNA · 64 PADS · HACE 2 D`). Los tres campos caen por orden según
+lo que quepa, y sin proyecto dice `SIN GUARDAR`. Debajo, una tira de ocho
+segmentos de color: se enciende el segmento de cada zati que algún pad cargado
+lleve puesto.
 
 **El cristal.** La pieza más grande de la cara. Arriba el pico de salida en
 decibelios y el pico retenido, que se queda en rojo tres segundos si has
@@ -123,8 +126,12 @@ pieza más grande, no tiene otro gesto encima y ya es donde estás mirando.
 **La fila de módulos.** Seis pestañas que abren las fichas: `PAD`, `SEC`,
 `SONG`, `MIX`, `XY`, `SET`.
 
-**El transporte.** `LOAD`, `REC`, el interruptor de modo (`PATRÓN` / `CANCIÓN`)
-y `PLAY`. LOAD arma el siguiente toque en un pad para abrir la biblioteca ahí;
+**El transporte.** `LOAD`, `REC`, `SOLO`, el interruptor de modo (`PATRÓN` /
+`CANCIÓN`) y `PLAY` — cinco donde caben, y donde no se cae primero el modo, que
+está además en las filas de transporte de SEC y de CANCIÓN, y después SOLO, que
+desde la cara no está en ningún otro sitio. `SOLO` es hermano de `REC`: tocar
+arma, y con el modo armado tocar un pad lo **aísla** en vez de dispararlo, con
+la rejilla diciendo cuáles suenan; mantenerlo quita todos los solos. LOAD arma el siguiente toque en un pad para abrir la biblioteca ahí;
 mantenerlo la abre directamente en el pad elegido. **Mantener PLAY es el
 pánico**: para el transporte y corta todo lo que esté sonando. El interruptor de
 modo dice el ESTADO —lo que va a tocar PLAY— y no un verbo, y las tres tapas que
@@ -239,8 +246,11 @@ Cinco páginas, y se desplaza:
 - **GESTOS** — los seis gestos escritos, y las puertas al `MANUAL` y al `TOUR`.
 - **PROYECTOS** — el nombre, la carpeta, `EXPORTAR`, `GUARDAR KIT`, y guardar,
   abrir, nuevo y borrar, con la lista de proyectos.
-- **ASPECTO** — los cuatro idiomas, cada uno escrito en su propia escritura, y
-  las cuatro carcasas.
+- **ASPECTO** — los cuatro idiomas, cada uno escrito en su propia escritura, las
+  cuatro carcasas y **MOVIMIENTO**, que apaga lo que se mueve solo —la lámpara
+  de un efecto respirando al tempo, el destello de los pads, el osciloscopio y
+  el analizador del EQ— y deja lo que mueve el transporte: un cabezal parado no
+  es una app más tranquila, es una que ha dejado de decir dónde está.
 
 Las acciones que destruyen algo piden **dos toques**: la tapa se rearma con la
 pregunta (`BORRA TODO?`, `BORRAR X?`, `SOBRESCRIBIR X?`) y se desarma sola a los
@@ -312,8 +322,11 @@ en la mano y en mitad de algo, así que cada línea se vale sola.
 El **tour** son quince pasos y cada uno señala un control **de verdad**: abre la
 ficha que explica, agujerea el velo alrededor del control para que se vea con su
 color real, le pone un anillo y un número, y manda el texto a la mitad contraria
-de la pantalla. Se enseña una vez, y `AJUSTES → GESTOS → TOUR` lo vuelve a abrir
-cuando quieras.
+de la pantalla. La **bienvenida son los cuatro primeros** —los pads, los bancos,
+cargar/grabar/tocar y PLAY, que es la máquina— y el cuarto ofrece la puerta a
+los once restantes en vez de encadenarlos: quince es el manual otra vez. Se
+enseña una vez, y `AJUSTES → GESTOS → TOUR` lo vuelve a abrir cuando quieras,
+entero.
 
 ### El selector de pads
 
@@ -886,23 +899,31 @@ máquina ocupada no es una medida, y `Soak`, que es un millón de sesiones.
 
 ## 13. El banco
 
-Veintinueve programas de Python y tres de C++. La regla de cabecera: **nada se
-entrega sin medirlo**, y **una prueba que nunca se ha visto fallar no es una
+Treinta y nueve programas de Python y tres de C++. La regla de cabecera: **nada
+se entrega sin medirlo**, y **una prueba que nunca se ha visto fallar no es una
 prueba: es una línea que imprime OK**, así que cada comprobación nueva se valida
 rompiendo el código a propósito y comprobando que sale FALLA con el número que se
 esperaba. Y su hermana: **cuando una prueba falle, primero se duda de la
-prueba** — ha pasado ocho veces.
+prueba** — ha pasado diez veces.
 
-### Las ocho reglas duras
+### Las diez reglas duras
 
-`Tests/expo.py` monta la app **952 veces** —siete pantallas por cuatro idiomas
-por treinta y cuatro fichas— y cada una tiene que dar cero en: solapes entre
-hermanos, controles fuera de la ventana, celdas de rejilla por debajo de su
-suelo, rótulos cortados o apretados, textos sin traducir, controles encendidos
-que miden cero, rótulos pintados debajo de un control, y residuo al cambiar de
+`Tests/expo.py` monta la app **1400 veces** —siete pantallas por cuatro idiomas
+por cincuenta fichas— y cada una tiene que dar cero en: solapes entre hermanos,
+controles fuera de la ventana, celdas de rejilla por debajo de su suelo, rótulos
+cortados o apretados, textos sin traducir, controles encendidos que miden cero,
+rótulos pintados debajo de un control, arranques caídos, y residuo al cambiar de
 página. Los incumplimientos del dedo mínimo se cuentan y **no fallan**: son una
-escalera medida y escrita, y hoy son 2344 — de los cuales 2282 son las
-924 corridas de antes de que `lang` entrara en la lista, al caso.
+escalera medida y escrita, y hoy son 3612 — de los cuales 2888 son las 1148
+corridas de antes de que entraran las siete pantallas con la app LLENA, `songm`
+y `tour3`.
+
+Nueve de las cincuenta son un ESTADO y no una ficha: `llena`, `llena-song`,
+`llena-songa`, `llena-sec`, `llena-piano`, `llena-proj` y `llena-mix` abren la
+misma pantalla con **treinta pads, ocho patrones llenos y una canción de sesenta
+y cuatro compases** dentro, que es lo que ningún banco abría. En su primera
+tirada sacaron tres suelos de celda rotos —la rejilla de pasos a 11 px, el piano
+a 14.4 y la línea de tiempo a 10— que nadie podía ver con un patrón de un compás.
 
 ### Los tres del motor
 
@@ -912,26 +933,34 @@ escalera medida y escrita, y hoy son 2344 — de los cuales 2282 son las
 | `Soak` | **mucha gente, que no es lo mismo que mucha carga**: cada sesión es una semilla —un aparato de los que hay en la calle, sonidos de formas distintas y una tirada de acciones— y se comprueba lo único que no puede pasar nunca: NaN, salida fuera de rango y voz colgada tras el pánico |
 | `Cpu` | el coste por etapa, con la **mediana** de dos mil bloques y no la media, contra el presupuesto de 2.67 ms de un bloque de 128 a 48 kHz |
 
-### Los veintinueve de Python
+### Los treinta y nueve de Python
 
-`analiza` lo que cada sonido de fábrica es de verdad · `apk` una APK **o un AAB** sin herramientas de
-Android · `arr` las ocho herramientas de arreglo, dos de ellas por **identidad**
-· `arranque` la portada y los márgenes ·
-`cpu` lo que la app cuesta quieta **y sonando**, contando píxeles y
-no llamadas · `desglose` qué controles tiene cada pantalla y qué está repetido ·
-`dlc` el catálogo y el candado por sus dos mitades · `export` máster, pistas, OGG
-y destino · `expo` la maqueta · `fuentes` que las dos listas de ficheros digan lo
-mismo · `icono` el icono del lanzador · `iconos` que no haya dos dibujos iguales ·
-`informe` y `maquetas`, que dibujan · `instr` los 256 instrumentos y sus 32 640
-pares · `kit` guardar un kit, juzgado leyendo de vuelta del **disco** · `kits` los
-64 de fábrica por **sonoridad y no por pico** · `lang` la tabla de idiomas ·
-`marcas` que no haya una marca ajena en lo que se publica ·
-`niveles` los dieciséis niveles · `nuevo` con qué abre la máquina, por sus **dos**
-caminos · `paneles` los paneles al píxel · `piano` el compás del piano por el
-camino de verdad · `plano` y `planos`, la estructura y el dibujo de cada
-pantalla · `session` que la sesión vuelva entera, por repetición · `skins` las
-cuatro carcasas en contraste y ΔE · `store` las fotos de la ficha de Play ·
-`tour` que cada paso señale algo.
+`analiza` lo que cada sonido de fábrica es de verdad · `apk` una APK **o un AAB**
+sin herramientas de Android · `arr` las ocho herramientas de arreglo, dos de
+ellas por **identidad** · `arranque` la portada y los márgenes · `auto` la
+automatización, que se escribe sólo rodando · `carga` cuántos controles tiene
+cada pantalla, cuántos tienen nombre para un lector de pantalla, y **lo único
+que juzga: que la máquina suene al primer toque** · `clips` la banda de audio,
+por el gesto · `cpu` lo que la app cuesta quieta **y sonando**, contando píxeles
+y no llamadas · `cuenta` la cuenta atrás y el metrónomo · `desglose` qué
+controles tiene cada pantalla y qué está repetido · `dinamica` los once tipos y
+la reducción que se lee · `dlc` el catálogo y el candado por sus dos mitades ·
+`eq` la curva por el gesto en píxeles · `export` máster, pistas, OGG y destino ·
+`expo` la maqueta · `fps` que la app se vea igual a 60 y a 120 · `fuentes` que
+las dos listas de ficheros, los módulos y los atributos del `.jucer` digan lo
+mismo · `icono` el icono del lanzador · `iconos` que no haya dos dibujos iguales
+· `informe` y `maquetas`, que dibujan · `instr` los 256 instrumentos y sus
+32 640 pares · `kit` guardar un kit, juzgado leyendo de vuelta del **disco** ·
+`kits` los 64 de fábrica por **sonoridad y no por pico** · `lang` la tabla de
+idiomas · `marcas` que no haya una marca ajena en lo que se publica · `modos`
+que SOLO se arme desde la cara y que el lienzo diga en qué modo está ·
+`niveles` los dieciséis niveles · `nuevo` con qué abre la máquina, por sus
+**dos** caminos · `paneles` los paneles al píxel · `piano` el compás del piano
+por el camino de verdad · `plano` y `planos`, la estructura y el dibujo de cada
+pantalla · `rack` de qué familia es cada efecto y qué enseña el plato ·
+`ranuras` las seis ranuras y su menú · `session` que la sesión vuelva entera,
+por repetición · `skins` las cuatro carcasas en contraste y ΔE · `store` las
+fotos de la ficha de Play · `tour` que cada paso señale algo.
 
 ### Las entradas
 

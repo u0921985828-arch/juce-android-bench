@@ -110,7 +110,7 @@ def display_alive():
         return False
 
 
-def corre (ficha, sonando=False):
+def corre (ficha, sonando=False, quieta=False):
     #  CON SU PROPIO HOME, que es lo que le faltaba. Sin el, la app restaura la
     #  SESION que dejara la ultima prueba que corriera - y `Tests/ranuras.py` y
     #  `Tests/dinamica.py` dejan DOS efectos encendidos, cuyas lamparas laten a
@@ -125,6 +125,18 @@ def corre (ficha, sonando=False):
                  "ZATI_DEMO": "1", "ZATI_OPEN": ficha, "ZATI_SPIN": str (SEGUNDOS),
                  "ZATI_VBLANK": str (VBLANK_HZ)})
     if sonando: env["ZATI_SONANDO"] = "1"
+
+    #  APAGAR EL MOVIMIENTO se pide como se pide de verdad: escribiendo la
+    #  PREFERENCIA en el HOME de la corrida. No hace falta una entrada de banco
+    #  nueva —hay HOME propio, asi que es determinista— y ademas asi se mide el
+    #  camino entero: fichero, `loadMovPref` y la guardia de `pintaCuadro`. Una
+    #  variable de entorno se habria saltado los dos primeros.
+    if quieta:
+        cfg = os.path.join (casa, ".config")
+        os.makedirs (cfg, exist_ok=True)
+        with open (os.path.join (cfg, "zati-movimiento.txt"), "w") as f:
+            f.write ("0")
+
     try:
         out = subprocess.run ([APP], env=env, capture_output=True, text=True,
                               timeout=SEGUNDOS + 90).stdout
@@ -141,6 +153,16 @@ def corre (ficha, sonando=False):
             except Exception:
                 pass
     return None
+
+
+#  Ventanas repintadas POR CUADRO. Contar LLAMADAS no separa un fotograma de
+#  una banda; contar PIXELES entre el area de la ventana y los cuadros que se
+#  pintaron, si.
+def ventanas (r):
+    if r is None: return -1.0
+    vent = max (1, int (r.get ("ventana", 1)))
+    cuad = max (1, int (r.get ("cuadros", 1)))
+    return int (r.get ("pixeles", 0)) / float (vent) / float (cuad)
 
 
 def cabezal():
@@ -203,6 +225,7 @@ def main():
             malas.append (f or "(cara)")
 
     print()
+    caraLate = 0.0
     print ("y con la maquina SONANDO, en ventanas repintadas POR CUADRO (%d Hz)"
            % VBLANK_HZ)
     print ("ficha    por cuadro  cuadros   CPU ms")
@@ -231,6 +254,7 @@ def main():
         #  cuesta cada superficie; lo que se juzga de esta es la columna QUIETA,
         #  que es donde un visor que se repintara para siempre lo diria.
         cara = (f in ("", "eq", "plato"))
+        if f == "": caraLate = equi        # el techo con el que se lee lo de abajo
         mal  = (not cara) and equi > TOPE_SONANDO
         print ("%-8s %8.3f %8d %9.0f%s" % (f or "(cara)", equi, cuad, r.get ("cpu_ms", 0.0),
                                         "   (se ve: no se juzga)" if cara else
@@ -273,6 +297,40 @@ def main():
         print ("la cadencia del panel: %.1f cuadros por segundo%s"
                % (hz, "   <-- el vblank no llega, dibuja el reloj" if hz < 35.0 else ""))
         if hz < 35.0: malas.append ("el vblank no llega")
+
+    #  --- APAGAR EL MOVIMIENTO, CON DOS CIFRAS -----------------------------
+    #
+    #  La cara late: la lampara de un efecto encendido respira, los pads
+    #  destellan, el cristal y el analizador corren treinta veces por segundo. Y
+    #  no habia forma de pararlo — para alguien con sensibilidad vestibular o
+    #  con epilepsia fotosensible, «no hay forma de apagarlo» es «no hay forma
+    #  de usarlo».
+    #
+    #  Lo que se apaga es lo que se mueve SOLO. Un cabezal parado no es una app
+    #  mas tranquila: es una app que ha dejado de decir por donde va el
+    #  transporte. Por eso son DOS cifras y no una — solo la primera la cumple
+    #  una app congelada, y solo la segunda una que no apaga nada.
+    print()
+    caraSin  = corre ("",    sonando=True, quieta=True)
+    secSin   = corre ("sec", sonando=True, quieta=True)
+    if caraSin is None or secSin is None:
+        print ("la corrida con el movimiento apagado no contesto")
+        malas.append ("movimiento")
+    else:
+        cs_ = ventanas (caraSin)
+        ss_ = ventanas (secSin)
+        print ("con el MOVIMIENTO apagado: la cara %.3f ventanas por cuadro "
+               "(latiendo %.3f) y el cabezal de la rejilla sigue en %.3f"
+               % (cs_, caraLate, ss_))
+        #  El liston de la cara sale de su propia medida latiendo: apagarlo
+        #  tiene que dejarla una decima parte de lo que costaba, y ahi no hay
+        #  numero redondo que inventar.
+        if cs_ > caraLate * 0.10:
+            malas.append ("apagar el movimiento no para la cara: %.3f contra %.3f latiendo"
+                          % (cs_, caraLate))
+        if ss_ <= 0.0:
+            malas.append ("apagar el movimiento se lleva tambien el cabezal de la "
+                          "rejilla de pasos, que es lo que dice por donde va el transporte")
 
     print()
     cs = cabezal()

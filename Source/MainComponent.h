@@ -41,6 +41,19 @@ public:
     //  Cuantas tarjetas tiene el tour. Publico porque los textos viven fuera de
     //  la clase - los mide la maqueta ademas de pintarlos.
     static constexpr int kTourPasos = 15;
+
+    //  LA BIENVENIDA SON CUATRO, Y LOS OTROS ONCE ESTAN DETRAS DE UNA PUERTA.
+    //
+    //  Quince tarjetas la primera vez son el manual otra vez: este proyecto ya
+    //  escribio que «un parrafo largo encima de una maquina oscurecida no se
+    //  lee, se salta», y quince tarjetas son la misma frase a otra escala.
+    //
+    //  Los cuatro primeros -los pads, los bancos, CARGAR/REC/PLAY y el
+    //  transporte- son LA APP: con eso ya suena. Los otros once son el
+    //  recorrido, y se piden. No se borra ninguno: el cuarto ofrece seguir, y
+    //  la tapa TOUR de AJUSTES sigue abriendo el recorrido entero desde el
+    //  principio.
+    static constexpr int kTourBienvenida = 4;
     MainComponent();
     ~MainComponent() override;
 
@@ -729,6 +742,11 @@ private:
     //  ultima maqueta. Lo apunta resized() y lo lee paint(): es lo que decide
     //  si la pagina del patron todavia tiene algo del paso que explicar.
     int seqTiraFilas = 0;
+    //  SI LA FILA DE COMPAS LLEVA SU ROTULO. Se decide en resized() -es la
+    //  unica que sabe cuanto alto queda- y la lee el propio maquetado en el
+    //  sitio donde coloca la fila: dos cuentas para lo mismo es como una banda
+    //  se reserva en un sitio y se dibuja en otro.
+    bool seqBarsRotulo = true;
     juce::Rectangle<int> seqFootArea;
 
     //  EL RENGLON DE LA CADENA, apuntado para poder repintar SOLO ese.
@@ -888,6 +906,35 @@ private:
 
     juce::String currentProject;
 
+    //  EL RENGLON DE CONTINUIDAD, Y POR QUE LA FECHA SE CACHEA.
+    //
+    //  La banda de la cabecera decia el nombre del proyecto y nada mas. La
+    //  feria pidio que dijera ademas cuanto trabajo hay dentro y cuando fue la
+    //  ultima vez -«eso es lo que hace volver: no un premio, sino la sensacion
+    //  de que hay algo empezado»- y de las tres cosas dos son gratis: el
+    //  nombre ya esta aqui y los pads llenos se cuentan sobre `padHasSample`,
+    //  que es el mismo bucle que la tira de zatis de dos lineas mas abajo.
+    //
+    //  La tercera NO es gratis: la fecha vive en el disco, y leerla desde
+    //  `paint` es exactamente el fallo que ya se pago dos veces -el
+    //  `createDirectory` de PROYECTOS y el fichero de un byte que
+    //  `paintExportSheetContent` escribia y borraba en cada tic del rebote-.
+    //  Se lee UNA vez, cuando el proyecto se abre o se guarda, y aqui queda.
+    //  Invalida es «este trabajo no se ha guardado nunca», que es un estado
+    //  real y no un hueco: la sesion vuelve entera igual.
+    juce::Time proyectoFecha;
+
+    //  Un solo sitio que escribe los dos, porque son un solo hecho: el
+    //  proyecto que hay puesto y de cuando es. Estaban en cinco `currentProject
+    //  = ...` sueltos y la fecha habria quedado vieja en el que se olvidara.
+    void apuntaProyecto (const juce::String& name);
+
+    //  Lo que la banda dice, compuesto donde se sabe cuanto sitio hay. Los tres
+    //  campos caen POR ORDEN -primero el cuando, luego los pads- porque el
+    //  nombre es el unico que no se puede deducir mirando la maquina.
+    juce::String lineaDeContinuidad (int anchoDisponible,
+                                     const juce::Font& fuente) const;
+
     // --- Export -----------------------------------------------------------
     //  The bounce runs on its own thread through a clone of the engine (see
     //  Exporter.h). The UI only starts it, polls its progress from the timer
@@ -992,6 +1039,37 @@ private:
     //  ZatiColours::skinTable. It sits beside the language because both are
     //  the same kind of question - what this app is, rather than what it does.
     juce::OwnedArray<juce::TextButton> skinButtons;
+
+    //  APAGAR EL MOVIMIENTO, Y LO QUE NO SE APAGA.
+    //
+    //  La cara late: la lampara de un efecto encendido respira a la mitad del
+    //  tempo, los pads destellan, el osciloscopio y el analizador del EQ corren
+    //  treinta veces por segundo. Todo eso esta acotado y medido y no habia
+    //  forma de pararlo — y para alguien con sensibilidad vestibular o con
+    //  epilepsia fotosensible «no hay forma de apagarlo» es «no hay forma de
+    //  usarlo».
+    //
+    //  Y NO ES UN INTERRUPTOR DE «SIN ANIMACION», que es lo primero que sale y
+    //  es peor que no tenerlo: un cabezal parado no es una app mas tranquila,
+    //  es una app que ha dejado de decir por donde va el transporte, y un VU
+    //  clavado ha dejado de ser un medidor. Lo que se apaga es lo que se mueve
+    //  SOLO —respirar, destellar, el cristal, el analizador—; lo que mueve el
+    //  transporte se queda. La banda de riesgo es la primera y no la segunda.
+    //
+    //  Y se apaga el REPINTADO, no la cuenta: la balistica de la aguja y la
+    //  caida del destello siguen corriendo, igual que ya hacen debajo de una
+    //  ficha. Pararlas dejaria una lampara congelada a media respiracion el dia
+    //  que se vuelva a encender.
+    //
+    //  Es preferencia de la PERSONA y no del proyecto, como el idioma, la
+    //  carcasa, el master y la cuenta atras.
+    bool movimiento = true;
+    juce::OwnedArray<juce::TextButton> movButtons;      // SI / NO
+    juce::Rectangle<int> movRowArea;
+    static juce::File movPrefFile();
+    void saveMovPref() const;
+    void loadMovPref();
+    void ponMovimiento (bool on);
     juce::Rectangle<int> skinRowArea;
     juce::Rectangle<int> bufRowArea, rateRowArea;
     void useLowestLatency();
@@ -1196,6 +1274,8 @@ public:
     //  LAS SEIS RANURAS DE LA FILA DE EFECTOS. Ver Tests/ranuras.py.
     void auditRanuras();
     void auditRack();
+    //  SOLO desde la cara y el modo visto en el lienzo. Ver Tests/modos.py.
+    void auditModos();
     void auditEq();
     void auditAuto();
     void auditDinamica();
@@ -1443,6 +1523,8 @@ private:
     juce::Rectangle<int> langRowArea;
 
     void pushUndo (const juce::String& what);   // snapshot before a destructive action
+    //  Y que la tapa DIGA que. Ver refrescaNombresDeshacer.
+    void refrescaNombresDeshacer();
 
     //  ...and WHICH SOUND was on each pad, which the ValueTree does not carry.
     //
@@ -1819,6 +1901,8 @@ private:
             && uiSample[(size_t) i] != nullptr && uiSample[(size_t) i]->familia >= 0;
     }
     void repartePorBanco (const juce::Array<juce::File>& files, const juce::String& motivo);
+    //  LA APP CON TRABAJO DENTRO, para el banco. Ver llenaDePrueba.
+    void llenaDePrueba();
     void plantaPacksDePrueba();
     void openInstSheet();
     void refreshInst();
@@ -2077,6 +2161,9 @@ private:
     //  alli. Escrito dos veces, el dia que el tour tenga un paso mas la ultima
     //  tarjeta promete una siguiente que no existe desde uno de los dos lados.
     juce::String tourNextCaption() const;
+    //  Y la tercera tapa, que en el paso de la puerta deja de decir SALTAR.
+    juce::String tourSkipCaption() const;
+    bool tourEsLaPuerta() const { return tourPaso == kTourBienvenida - 1; }
     int  tourBodyHeight (int ancho) const;
     //  LA LETRA DEL PARRAFO DEL TOUR, en un solo sitio. La escribian dos -quien
     //  mide el alto del muelle y quien lo pinta- y tienen que decir lo MISMO o
@@ -2386,6 +2473,33 @@ private:
     HoldButton loadButton { "LOAD" };
     juce::TextButton testButton { "TEST" };
     juce::TextButton recButton  { "REC" };
+
+    //  SOLO DESDE LA CARA, que es el gesto mas repetido de una sesion y estaba
+    //  en la mesa — a un toque, y la mesa TAPA la rejilla: aislar un sonido
+    //  mientras tocas obligaba a cerrar, mirar y volver.
+    //
+    //  ES UN MODO Y NO UN GESTO, porque en un pad no queda ninguno: tocar
+    //  dispara -al APOYAR, desde que se midio que el `onClick` le sumaba al
+    //  golpe todo el tiempo del dedo- y mantener abre la ficha. Inventar un
+    //  tercero es lo que esta casa lleva escrito que no se puede aprender.
+    //
+    //  Y hermano de REC, que es el precedente exacto de esta fila: una tapa
+    //  armada que cambia lo que hace tocar un pad. Con las dos mitades de AUTO:
+    //  TOCAR ARMA y MANTENER LIMPIA, porque vaciar los solos es lo unico de
+    //  esta funcion que no se deshace tocando otra vez.
+    HoldButton   soloButton { "SOLO" };
+    bool soloArmado = false;
+    void ponSoloArmado (bool on);
+    //  De que color avisa la rejilla, o transparente si no hay modo armado.
+    juce::Colour tinteDelModo() const;
+
+    //  COMO SE LLAMA CADA MANDO. Ver tablaDeMandos: la misma palabra la dibuja
+    //  el pintor y la lee TalkBack.
+    struct Mando { juce::Slider* s; const char* clave; };
+    std::vector<Mando> mandos;                 // se llena una vez, ver tablaDeMandos
+    const std::vector<Mando>& tablaDeMandos();
+    const char* claveDeMando (const juce::Slider& s);
+    void refrescaRejillaModo();
     HoldButton playButton { "PLAY" };
     juce::TextButton clearButton { "VACIAR" };
     juce::TextButton reverseButton { "REV" };

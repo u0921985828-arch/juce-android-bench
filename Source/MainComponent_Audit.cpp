@@ -1110,7 +1110,7 @@ void MainComponent::auditNuevo()
     fila ("nuevo");
 }
 
-void MainComponent::auditOpen (const juce::String& which)
+void MainComponent::auditOpen (const juce::String& pedido)
 {
     //  Let the bench ask the ENGINE what it is holding, not just the tile.
     //  A pad that looks loaded and is silent is the failure this whole round
@@ -1131,6 +1131,34 @@ void MainComponent::auditOpen (const juce::String& which)
             if (uiSample[(size_t) j] == uiSample[(size_t) pad]) return j;
         return pad;
     };
+
+    //  Y LA APP CON TRABAJO DENTRO, ANTES de abrir nada.
+    //
+    //  Antes de la ficha porque casi todo lo que esta entrada puede cazar se
+    //  decide al MAQUETAR: un rotulo que cabia vacio, una celda que se reparte
+    //  entre sesenta y cuatro compases en vez de entre ocho, una lista con
+    //  filas de verdad. Llenar despues seria medir la ficha vacia y luego
+    //  cambiarle el contenido.
+    //
+    //  Fuera del `if (which.isEmpty())` a proposito: la CARA es la pantalla
+    //  que mas cambia con trabajo dentro -la linea de continuidad, los nombres
+    //  de los pads, la tira de zatis- y es justo la que se mide con la ficha
+    //  vacia.
+    //  Y ES UN ESTADO DE LA LISTA, no una variable aparte. Empezo siendo
+    //  `ZATI_LLENA` y eso dejaba la regla en DOS sitios: la lista de pantallas
+    //  vive en `Tests/expo.py` y la leen ademas `planos.py`, `carga.py` y
+    //  `desglose.py`, asi que un estado que solo se alcanza con otra variable
+    //  es un estado que esas tres no saben abrir. Como prefijo -«llena» es la
+    //  CARA con trabajo dentro, «llena-song» la linea de tiempo llena- lo
+    //  abren las cuatro sin saber nada de esto, igual que `secp` o `rackf`.
+    juce::String which = pedido;
+
+    if (which == "llena" || which.startsWith ("llena-"))
+    {
+        llenaDePrueba();
+        which = which.fromFirstOccurrenceOf ("llena", false, false)
+                     .trimCharactersAtStart ("-");
+    }
 
     if (which.isEmpty()) return;
 
@@ -1419,6 +1447,29 @@ void MainComponent::auditOpen (const juce::String& which)
         showTour (n);
     }
     else if (which == "tourf") { closeAllSheets(); showTour (kTourPasos - 1); openSheet (tourSheet, setButton); }
+    //  LA PUERTA, PULSADA DE VERDAD. Se abre el paso de la bienvenida que la
+    //  ofrece y se pulsa su `onClick`, que es donde vive la decision: llamar a
+    //  `showTour (kTourBienvenida)` por dentro se salta justo el codigo que
+    //  decide si esa tapa salta o sigue.
+    else if (which == "tourpuerta")
+    {
+        closeAllSheets();
+        showTour (kTourBienvenida - 1);
+        openSheet (tourSheet, setButton);
+        if (tourSkipBtn.onClick) tourSkipBtn.onClick();
+        resized();
+    }
+    //  LA CARA EN MODO CANCION, que es un estado que el banco no abria y por
+    //  eso no medía: alli la tapa de modo dice CANCION y las seis pestañas
+    //  llevan una que tambien lo dice, y girado comparten renglon. «Un estado
+    //  que el banco no abre es un estado sin medir» — la misma leccion que
+    //  obligo a medir `secp` y `instd`.
+    else if (which == "songm")
+    {
+        closeAllSheets();
+        ponModoCancion (true);
+        resized();
+    }
     else if (which == "browse") openBrowseForPad (0);
     //  EL MISMO NAVEGADOR ELIGIENDO CARPETA, que es OTRO estado y no el mismo:
     //  la fila de acciones cambia de cuatro tapas a una, y una fila que solo
@@ -3187,4 +3238,124 @@ void MainComponent::auditBalistica()
               << "}" << std::endl;
 
     juce::JUCEApplication::getInstance()->systemRequestedQuit();
+}
+
+// ============================================================================
+//  LOS MODOS ARMADOS. Ver Tests/modos.py.
+//
+//  NINGUNA DE LAS ONCE REGLAS DE `expo.py` PUEDE VER NADA DE ESTO. Un modo es
+//  un ESTADO -cambia lo que hace el MISMO gesto- y una rejilla que dispara
+//  donde deberia aislar se maqueta perfecta: no solapa, no se sale, no corta un
+//  rotulo, no mide cero y esta traducida. Es la familia de los cinco fallos del
+//  compas del piano, otra vez.
+//
+//  Y SE MIDE POR EL GESTO: se construye un `MouseEvent` y se llama a
+//  `PadButton::mouseDown`, que es donde vive todo lo nuevo. Llamar a
+//  `setPadSolo` por dentro se salta justo el codigo que decide si tocar un pad
+//  suena o aisla.
+// ============================================================================
+void MainComponent::auditModos()
+{
+    juce::AudioBuffer<float> b (2, 128);
+    auto vivas = [this, &b]
+    {
+        b.clear();
+        engine.renderNextBlock (b, 0, 128);
+        return engine.getActiveVoiceCount();
+    };
+
+    auto tocaPad = [this] (int i)
+    {
+        auto* pad = pads[i];
+        const auto punto = juce::Point<float> ((float) (pad->getWidth() / 2),
+                                               (float) (pad->getHeight() / 2));
+        const auto ahora = juce::Time::getCurrentTime();
+        juce::MouseEvent ev (juce::Desktop::getInstance().getMainMouseSource(),
+                             punto, juce::ModifierKeys(), 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                             pad, pad, ahora, punto, ahora, 1, false);
+        pad->mouseDown (ev);
+        pad->mouseUp (ev);
+    };
+
+    //  1. CON EL MODO ARMADO, TOCAR AISLA Y NO SUENA — las dos mitades.
+    //
+    //  Solo la primera la cumple un modo que ademas dispara: «aisla» seria
+    //  verdad y «es un modo» no, y el golpe que quieres oir aislado te lo
+    //  comerias tu en el mismo toque. Y solo la segunda la cumple una tapa
+    //  muerta, que no aisla nada.
+    engine.postPanic();
+    vivas();
+    soloButton.setToggleState (true, juce::sendNotificationSync);
+    tocaPad (5);
+    const int vocesConSolo = vivas();
+    const int aislado = engine.isPadSoloed (5) ? 5 : -1;
+
+    std::cout << "{\"modos\":1,\"armado\":" << (soloArmado ? 1 : 0)
+              << ",\"aislado\":" << aislado
+              << ",\"anySolo\":" << (engine.anySolo() ? 1 : 0)
+              << ",\"voces\":" << vocesConSolo << "}" << std::endl;
+
+    //  2. Y MANTENER LOS QUITA TODOS, que es la otra mitad de la pareja: vaciar
+    //     los solos es lo unico de esta funcion que no se deshace tocando otra
+    //     vez, asi que no puede compartir gesto con armarla.
+    if (soloButton.onHold) soloButton.onHold();
+    std::cout << "{\"modos\":2,\"trasMantener\":" << (engine.anySolo() ? 1 : 0) << "}" << std::endl;
+
+    //  3. EL LIENZO DICE QUE HAY UN MODO PUESTO, y se mide en PIXELES.
+    //
+    //  Un booleano que el codigo se pone a si mismo no mide nada: es
+    //  exactamente el fallo de `caraLista`, que decia «tapada» con la cara
+    //  entera a la vista. Se pinta el MISMO pad con el modo quitado y con el
+    //  modo puesto y se cuentan los pixeles que cambian.
+    auto pinta = [] (juce::Component& c)
+    {
+        juce::Image img (juce::Image::ARGB, juce::jmax (1, c.getWidth()),
+                         juce::jmax (1, c.getHeight()), true);
+        juce::Graphics gg (img);
+        c.paint (gg);
+        return img;
+    };
+    auto difieren = [] (const juce::Image& a, const juce::Image& c)
+    {
+        if (a.getWidth() != c.getWidth() || a.getHeight() != c.getHeight()) return -1;
+        int n = 0;
+        for (int y = 0; y < a.getHeight(); ++y)
+            for (int x = 0; x < a.getWidth(); ++x)
+                if (a.getPixelAt (x, y) != c.getPixelAt (x, y)) ++n;
+        return n;
+    };
+
+    ponSoloArmado (false);
+    const auto padSin = pinta (*pads[0]);
+    ponSoloArmado (true);
+    const auto padCon = pinta (*pads[0]);
+    ponSoloArmado (false);
+
+    //  Y EL PIANO, con su herramienta. Sin herramienta la rejilla se comporta
+    //  como siempre y por eso no lleva marco: un aviso permanente no avisa.
+    showSeqPage (seqPagePiano);
+    openSheet (seqSheet, secButton);
+    resized();
+    pianoGrid.setHerramienta (0);
+    const auto pianoSin = pinta (pianoGrid);
+    pianoGrid.setHerramienta (2);            // TIJERAS
+    const auto pianoCon = pinta (pianoGrid);
+    pianoGrid.setHerramienta (0);
+
+    std::cout << "{\"modos\":3,\"pad\":" << difieren (padSin, padCon)
+              << ",\"piano\":" << difieren (pianoSin, pianoCon) << "}" << std::endl;
+
+    //  4. Y UN PAD CALLADO POR EL SOLO DE OTRO SE VE. El solo se pone en la
+    //     mesa y la mesa TAPA la rejilla: hasta hoy la cara no decia nada de
+    //     que doce pads estuvieran mudos, asi que tocabas uno y no sonaba.
+    engine.clearSolo();
+    refrescaRejillaModo();
+    const auto mudoSin = pinta (*pads[3]);
+    engine.setPadSolo (0, true);
+    refrescaRejillaModo();
+    const auto mudoCon = pinta (*pads[3]);
+    engine.clearSolo();
+    refrescaRejillaModo();
+
+    std::cout << "{\"modos\":4,\"mudo\":" << difieren (mudoSin, mudoCon) << "}" << std::endl;
 }

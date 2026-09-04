@@ -118,6 +118,9 @@ jobs:
       - name: El visor del plato y la familia de un efecto
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/rack.py
+      - name: Los modos armados y el lienzo que los dice
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/modos.py
       - name: El EQ de cinco bandas y su curva
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/eq.py

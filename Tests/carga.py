@@ -135,6 +135,35 @@ def main():
     print ("con nombre para un lector de pantalla: %d de %d  (%d%%)"
            % (conNombre, sum (ctrl), 100 * conNombre // max (1, sum (ctrl))))
 
+    #  --- EL RENGLON DE CONTINUIDAD ---------------------------------------
+    #
+    #  La banda de la cabecera decia el nombre del proyecto y nada mas. Lo que
+    #  hace volver a un instrumento no es un premio: es la sensacion de que hay
+    #  algo empezado, y para eso la app tiene que decir QUE proyecto, CUANTO
+    #  trabajo hay dentro y DE CUANDO es.
+    #
+    #  Con DOS cifras, que es lo que separa las dos formas de escribirlo mal:
+    #  que diga el proyecto Y que diga cuanto trabajo hay. La primera la cumple
+    #  la linea de siempre; la segunda, una que se olvida del nombre.
+    #
+    #  Se mide con la app LLENA -la pantalla `llena` de la lista- porque vacia
+    #  esta linea no tiene nada que contar: es el estado al que le falta justo
+    #  lo que se mide. Y es una PANTALLA y no una variable aparte, o seria un
+    #  estado que solo esta prueba sabe abrir.
+    print()
+    cont = ""
+    for r in corre ({"ZATI_AUDIT": "1", "ZATI_OPEN": "llena"}, "800x1280"):
+        if r.get ("tipo") == "proyecto": cont = r.get ("rotulo", "")
+    print ("el renglon de continuidad dice: %s" % (cont or "(nada)"))
+    faltan = []
+    if "SESION NOCTURNA LARGA" not in cont: faltan.append ("que proyecto es")
+    if "PADS" not in cont:                  faltan.append ("cuanto trabajo hay dentro")
+    if "HACE" not in cont:                  faltan.append ("de cuando es")
+    if faltan:
+        for f in faltan:
+            print ("FALLA  el renglon de continuidad no dice %s" % f)
+        return 1
+
     #  --- Y LO UNICO QUE SE JUZGA ------------------------------------------
     p = primer_sonido()
     print()

@@ -170,10 +170,15 @@ public:
         repaint();
     }
 
+    //  EL MODO ARMADO, VISTO DONDE SE ACTUA. AUTO cambia si mover un mando
+    //  ESCRIBE en la linea de tiempo, y su tapa esta en la fila de arriba
+    //  mientras el dedo esta aqui. Transparente es «ningun modo».
+    void setModo (juce::Colour c) { if (modoTinte != c) { modoTinte = c; repaint(); } }
+
     void paint (juce::Graphics& g) override
     {
-        if (vista == vistaAudio) { pintaAudio (g); return; }
-        if (data == nullptr) return;
+        if (vista == vistaAudio) { pintaAudio (g); marcoDelModo (g); return; }
+        if (data == nullptr) { marcoDelModo (g); return; }
         auto r = getLocalBounds();
         const int gutter = kGutter;
         const float laneH = (float) r.getHeight() / (float) kLanes;
@@ -313,6 +318,18 @@ public:
             g.drawText (juce::String (base + c + 1),
                         (int) ((float) r.getX() + gutter + barW * (float) c) + 2, r.getY(),
                         (int) barW, 9, juce::Justification::topLeft);
+    }
+
+    //  Un marco alrededor del LIENZO y no de la ficha, por lo mismo que en el
+    //  piano: lo que tiene que decir «esto esta en un modo» es la superficie
+    //  sobre la que cae el dedo.
+    void marcoDelModo (juce::Graphics& g)
+    {
+        if (modoTinte.isTransparent()) return;
+        auto marco = getLocalBounds().toFloat().reduced (0.75f);
+        marco.setLeft (marco.getX() + (float) kGutter);
+        g.setColour (modoTinte.withAlpha (0.9f));
+        g.drawRect (marco, 1.5f);
     }
 
     //  SE PINTA CON EL DEDO ARRASTRADO, como la rejilla de pasos y como el
@@ -693,4 +710,5 @@ private:
     int              agarre = 0;      // por que compas suyo lo agarro
     int              asa = 0;         // -1 filo izquierdo, +1 derecho, 0 el medio
     unsigned         mudoAudio = 0;   // un bit por pista de audio silenciada
+    juce::Colour     modoTinte { juce::Colours::transparentBlack };
 };

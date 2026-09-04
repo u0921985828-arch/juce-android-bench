@@ -13,9 +13,9 @@ un duplicado.
 
 ---
 
-## 1. CANCION dicho dos veces, con el mismo dibujo, y solo en un estado
+## 1. ~~CANCION dicho dos veces~~ — ARREGLADO
 
-Es la queja que motivo este desglose y es real:
+Era la queja que motivo este desglose y era real:
 
 | control | rotulo ES | rotulo EN | que hace | donde |
 |---|---|---|---|---|
@@ -31,10 +31,25 @@ dibujo**: una abre una ficha y la otra cambia lo que toca PLAY.
 En ingles se separan (`SONG` / `SONG MODE`), o sea que es un homonimo **de esta
 compilacion**: quien lea el codigo en ingles no lo ve nunca.
 
-Y `Tests/desglose.py` tampoco lo ve, porque mide el estado apagado —ahi las
+Y `Tests/desglose.py` tampoco lo veia, porque mide el estado apagado —ahi las
 cuatro dicen PATRON—. Es el mismo agujero que ya obligo a medir `secp` (la
 pagina con un paso tocado) e `instd` (con packs instalados): **un estado que el
 banco no abre es un estado sin medir**.
+
+**Arreglado, y por el lado que estaba mal.** La fila de la tapa de modo ya decia
+«SONG MODE», «歌曲模式» y «وضع الأغنية» en las otras tres lenguas: era el ESPANOL
+el que estaba prestado de otra clave. Ahora `modoTapa` tiene claves propias
+—`MODO CANCION|modo` y `MODO PATRON|modo`— y en espanol dice **MODO CANCION**,
+que es lo que las otras tres decian desde siempre.
+
+Y de paso salio una segunda: la fila «CANCION» que la tapa dejaba de usar tenia
+un unico cliente mas, `exportSourceLabel`, que con ella escribia **«Origen: SONG
+MODE»** en tres de los cuatro idiomas. Lo que se exporta es la cancion y no un
+modo, asi que esa linea pasa a `T("SONG")` y la fila se retira.
+
+**Y el estado entra en el banco**: `ZATI_OPEN=songm` abre la cara EN MODO
+CANCION, que es donde el duplicado vivia. Sin esa entrada, arreglarlo y volver a
+romperlo darian la misma corrida en verde.
 
 ## 2. El mismo dibujo en rotulos distintos
 
@@ -42,7 +57,7 @@ Sale del volcado, y no todos son un fallo. Los que lo son estan marcados.
 
 | dibujo | lo llevan | juicio |
 |---|---|---|
-| `carpeta` | CAMBIAR, CARGAR KIT, PROYECTOS, USAR ESTA CARPETA | **cuatro** cosas distintas con el mismo dibujo |
+| `carpeta` | ~~CAMBIAR, CARGAR KIT, PROYECTOS,~~ USAR ESTA CARPETA | **arreglado a medias, y a proposito**: ver debajo |
 | `exportar` | EXPORTAR, MASTER, PISTAS | MASTER y PISTAS son dos formas de exportar y estan en la MISMA fila |
 | `play` | OIR, PLAY | OIR es escuchar el pad, PLAY es el transporte |
 | `sec` | PASOS, SEC | puerta y pagina: correcto |
@@ -51,6 +66,20 @@ Sale del volcado, y no todos son un fallo. Los que lo son estan marcados.
 | `mano` | GESTOS, TOUR | dos cosas distintas de la misma ficha |
 | `abrir` | ABRIR, MIS KITS | dos cosas |
 | `copiar`/`pegar`/`guardar` | COPIAR / COPIAR FILA, etc. | el verbo es el mismo, el alcance no |
+
+**Lo de `carpeta`, con su razon.** De las cuatro, tres son literalmente la misma
+accion —«senala una carpeta»: CAMBIAR elige donde cae el rebote, CARGAR KIT
+elige la carpeta de sonidos y USAR ESTA CARPETA la confirma— y ademas **nunca
+salen dos en la misma fila**: el navegador tiene un modo y en modo carpeta su
+fila de acciones es UNA tapa. Ahi el dibujo repetido es correcto: una funcion,
+un dueno.
+
+La cuarta si era un fallo. **PROYECTOS** es una PAGINA de AJUSTES, hermana de
+AUDIO, MIDI y ASPECTO, y lo que ensena es una LISTA de cosas guardadas con su
+nombre; una carpeta ahi dice «ficheros» donde pone «proyectos». Lleva dibujo
+propio (`lista`): tres renglones con su punto delante, horizontales a proposito
+—`mezcla` son lineas VERTICALES y `sec` una fila de barras, asi que el eje ya lo
+separa de los dos con los que se podria confundir—.
 
 ## 3. El mismo rotulo en controles distintos
 

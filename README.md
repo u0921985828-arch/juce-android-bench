@@ -47,7 +47,14 @@ El repositorio se compila de dos formas y las dos importan:
   mitad de arriba de la cara — los pads siguen debajo y se pueden disparar
   mientras barres.
 - **Cuatro carcasas** (PAPEL, GRAFITO, ACERO, LACA) y **cuatro idiomas**
-  (español, inglés, chino, árabe, con la interfaz espejada en árabe).
+  (español, inglés, chino, árabe, con la interfaz espejada en árabe). Y
+  **MOVIMIENTO**, que apaga lo que se mueve solo sin parar lo que mueve el
+  transporte: para quien tiene sensibilidad vestibular, «no hay forma de
+  apagarlo» es «no hay forma de usarlo».
+- **SOLO desde la cara**, hermano de REC: tocar arma el modo, y entonces tocar
+  un pad lo aísla en vez de dispararlo — con la rejilla diciendo cuáles suenan,
+  que es donde está el dedo. Los siete modos armados de la app se ven ahora
+  **donde se actúa** y no sólo donde se armaron.
 - **Grabación por micro** a un pad y grabación de la interpretación al patrón,
   con compensación de la latencia de salida.
 - **Proyectos** autocontenidos (audio incluido) y **sesión recuperable**: lo que

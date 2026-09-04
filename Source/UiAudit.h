@@ -232,6 +232,9 @@ namespace UiAudit
 
     inline int tourPaso = -1;
     inline int tourFocoW = 0, tourFocoH = 0;
+    //  Lo que dicen las dos salidas de la tarjeta: la que avanza y la tercera,
+    //  que en el paso de la PUERTA deja de decir SALTAR. Ver `tourSkipCaption`.
+    inline std::string tourSig, tourTercera;
 
     inline int cabezalPiano = 0;
     //  Y cuantas veces se ha ALIMENTADO la pagina del piano. Son dos cifras y
@@ -722,7 +725,14 @@ namespace UiAudit
         if (tourPaso >= 0)
             std::cout << "{\"tour\":" << tourPaso
                       << ",\"focoW\":" << tourFocoW
-                      << ",\"focoH\":" << tourFocoH << "}" << std::endl;
+                      << ",\"focoH\":" << tourFocoH
+                      //  Y LO QUE DICEN LAS DOS SALIDAS. La bienvenida son
+                      //  CUATRO pasos y los otros once estan detras de una
+                      //  PUERTA: en el cuarto, la tapa que decia SALTAR pasa a
+                      //  ofrecer seguir. Sin estas dos cadenas, partir el tour
+                      //  y no partirlo dan la misma corrida en verde.
+                      << ",\"sig\":\"" << tourSig << "\""
+                      << ",\"tercera\":\"" << tourTercera << "\"}" << std::endl;
         walk (root, root, "root", 0);
 
         if (padSource != nullptr)

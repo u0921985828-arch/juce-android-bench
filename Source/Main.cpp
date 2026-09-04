@@ -542,6 +542,12 @@ public:
                     {
                         c2->auditRack();
                     }
+                    //  LOS MODOS ARMADOS: SOLO desde la cara, y que el LIENZO
+                    //  diga que hay un modo puesto. Ver Tests/modos.py.
+                    else if (UiAudit::env ("ZATI_MODOS").isNotEmpty())
+                    {
+                        c2->auditModos();
+                    }
                     //  EL EQ Y SU CURVA. Ver Tests/eq.py.
                     else if (UiAudit::env ("ZATI_EQ").isNotEmpty())
                     {

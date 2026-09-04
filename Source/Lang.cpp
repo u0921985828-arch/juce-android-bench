@@ -47,6 +47,17 @@ namespace
         { "PRUEBAS",            "",  "TESTS",     "测试",   "اختبارات" },
         //  La quinta pagina de AJUSTES: el idioma y la carcasa.
         { "ASPECTO",            "",  "LOOK",      "外观",   "المظهر" },
+        //  APAGAR EL MOVIMIENTO. Las dos tapas dicen el ESTADO y no un verbo,
+        //  que es lo que ya hacen los bancos, las carcasas y la cuenta atras.
+        //  Clave propia para las dos: «SI» y «NO» sueltos son de las palabras
+        //  que un dia alguien reaprovecha para otra cosa.
+        { "MOVIMIENTO",         "",  "MOTION",    "动效",   "الحركة" },
+        { "SI|mov",             "",  "ON",        "开",     "تشغيل" },
+        { "NO|mov",             "",  "OFF",       "关",     "إيقاف" },
+        { "La cara se mueve",   "",  "The face moves", "界面会动",
+                                     "الواجهة تتحرك" },
+        { "La cara esta quieta","",  "The face is still", "界面静止",
+                                     "الواجهة ساكنة" },
         //  DIECISEIS NIVELES: el pad elegido tocado a dieciseis fuerzas.
         { "16 NIVELES",         "",  "16 LEVELS", "16级",   "16 مستوى" },
         { "16 NIVELES: PAD %1", "",  "16 LEVELS: PAD %1", "16级: 音垫 %1", "16 مستوى: باد %1" },
@@ -752,12 +763,21 @@ namespace
           "A、B、C、D 共六十四个音垫。网格只显示一组，其余三组照常发声。",
           "A و B و C و D: أربعة وستون بادًا. تعرض الشبكة واحدًا وتستمر الثلاثة الأخرى في العزف." },
 
+        //  EL CUARTO PASO CIERRA LA BIENVENIDA, asi que su texto nombra las dos
+        //  salidas. Y la clave es el texto ENTERO: la tanda de las ranuras
+        //  reescribio el paso 5 en ZatiTour y dejo aqui la clave vieja, o sea
+        //  un paso que salia en espanol en las cuatro compilaciones sin que
+        //  ninguna regla lo viera. Los quince pasos llegan por INDICE.
         { "CARGAR trae un fichero a un pad. REC graba lo que oiga el microfono. "
-          "PLAY pone en marcha el patron.", "",
+          "PLAY pone en marcha el patron. Con esto ya se toca: EMPEZAR cierra "
+          "esto y VER MAS sigue con el secuenciador, los efectos y lo demas.", "",
           "LOAD brings a file into a pad. REC records whatever the microphone "
-          "hears. PLAY starts the pattern.",
-          "载入可将文件放入音垫，录音可采集麦克风输入，播放则启动图案。",
-          "«تحميل» يجلب ملفًا إلى باد، و«تسجيل» يسجل ما يسمعه الميكروفون، و«تشغيل» يبدأ النمط." },
+          "hears. PLAY starts the pattern. That is enough to play: START closes "
+          "this and MORE goes on with the sequencer, the effects and the rest.",
+          "载入可将文件放入音垫，录音可采集麦克风输入，播放则启动图案。这样就能演奏了："
+          "开始会关闭导览，了解更多则继续介绍音序器、效果器等其余部分。",
+          "«تحميل» يجلب ملفًا إلى باد، و«تسجيل» يسجل ما يسمعه الميكروفون، و«تشغيل» يبدأ النمط. "
+          "بهذا يمكنك العزف: «ابدأ» يغلق هذه الجولة و«المزيد» يتابع مع المتتابع والمؤثرات وبقية الأشياء." },
 
         //  Enumerarlos por su nombre valia cuando la fila ERA la lista. Con
         //  ranuras y un menu detras, esa frase se queda vieja con cada efecto
@@ -875,6 +895,10 @@ namespace
         { "SALTAR",         "",         "SKIP",       "跳过",       "تخطٍ" },
         { "SIGUIENTE",      "",         "NEXT",       "下一步",     "التالي" },
         { "TOUR EMPEZAR",   "EMPEZAR",  "START",      "开始",       "ابدأ" },
+        //  LA PUERTA A LOS ONCE QUE QUEDAN. Clave propia, como ATRAS y
+        //  EMPEZAR y por lo mismo: «VER MAS» suelto se reaprovecharia el dia
+        //  que otra pantalla necesite decir lo mismo con otro sentido.
+        { "TOUR VER MAS",   "VER MAS",  "MORE",       "了解更多",   "المزيد" },
         { "SESENTA Y CUATRO PADS", "",
           "SIXTY-FOUR PADS",
           "六十四个音垫", "أربعة وستون بادًا" },
@@ -1079,6 +1103,16 @@ namespace
         { "EXPORTAR",       "",         "EXPORT",     "导出",       "تصدير" },
         { "CONTROL",        "",         "CONTROL",    "控制",       "تحكم" },
         { "SIN GUARDAR",    "",         "UNSAVED",    "未保存",     "غير محفوظ" },
+
+        //  EL RENGLON DE CONTINUIDAD. Tres campos con clave PROPIA y no
+        //  reaprovechada: «PADS» ya existe como el nombre de una ficha y
+        //  «AHORA» no existia. Reaprovechar una clave por parecerse en espanol
+        //  es lo que costo ATRAS y EMPEZAR en el tour, que en chino decian otra
+        //  cosa. La cifra viaja en %1 y quien llama la mete en `Lang::ltr`.
+        { "%1 PADS|cont",   "",         "%1 PADS",    "%1 个音垫", "%1 باد" },
+        { "AHORA|cont",     "",         "JUST NOW",   "刚刚",       "الآن" },
+        { "HACE %1 H|cont", "",         "%1 H AGO",   "%1 小时前",  "قبل %1 س" },
+        { "HACE %1 D|cont", "",         "%1 D AGO",   "%1 天前",    "قبل %1 ي" },
         { "BORRA TODO?",    "",         "ERASE ALL?", "全部清空？", "مسح الكل؟" },
         { "BORRAR %1?",     "",         "DELETE %1?", "删除 %1？", "حذف %1؟" },
         { "sin proyectos - GUARDAR crea el primero", "", "no projects - SAVE makes the first one",
@@ -1237,6 +1271,28 @@ namespace
         { "RACK",           "",         "RACK",       "机架",       "الرف" },
         { "SIN SOLO",       "",         "NO SOLO",    "取消独奏", "إلغاء الإفراد" },
         { "SOLO ACTIVO",    "",         "SOLO ACTIVE","独奏中",  "إفراد فعّال" },
+        //  SOLO DESDE LA CARA. La palabra es la misma en las cuatro lenguas
+        //  del sector -es la que lleva escrita cualquier mesa- asi que va en
+        //  UNTRANSLATED_OK; lo que si se dice en cada lengua son las frases.
+        { "SOLO",           "",         "SOLO",       "SOLO",     "SOLO" },
+        //  QUE SE VA A DESHACER. Solo para el lector de pantalla: en la tapa
+        //  no cabe -96 px clavados- y en el renglon de estado ya lo dice la
+        //  frase que deja la accion.
+        { "DESHACER %1",    "",         "UNDO %1",    "撤销 %1",  "تراجع %1" },
+        { "REHACER %1",     "",         "REDO %1",    "重做 %1",  "إعادة %1" },
+        { "SOLO: toca pads para aislarlos - manten SOLO para quitarlos todos", "",
+                                        "SOLO: tap pads to isolate them - hold SOLO to clear",
+                                        "SOLO：点击音垫以独奏，长按 SOLO 全部取消",
+                                        "SOLO: انقر الباد للإفراد - اضغط مطولاً على SOLO للمسح" },
+        { "SOLO apagado",   "",         "SOLO off",   "SOLO 已关闭", "تم إيقاف SOLO" },
+        { "SOLO pad %1",    "",         "SOLO pad %1","独奏音垫 %1", "إفراد الباد %1" },
+        { "SOLO fuera del pad %1", "",  "SOLO off pad %1", "取消独奏音垫 %1",
+                                        "إلغاء إفراد الباد %1" },
+        { "Sin solos",      "",         "No solos",   "没有独奏",   "لا إفراد" },
+        { "Pad vacio - no hay nada que aislar", "",
+                                        "Empty pad - nothing to isolate",
+                                        "空音垫 — 没有可独奏的内容",
+                                        "باد فارغ — لا شيء لإفراده" },
         //  Y NO «CUANTO ENTRA EN», que describe un ENVIO y por tanto era falso
         //  en nueve de los once tipos: subir el fader de un inserto no anade,
         //  QUITA senal seca. «Pasa por» es verdad en los dos, y cual de las dos
@@ -1253,7 +1309,28 @@ namespace
         { "SUMA",           "",         "ADDS",       "叠加",       "يضيف" },
         { "VACIA",          "",         "EMPTY",      "空",         "فارغ" },
         { "SONIDO|cancion", "SONIDO",   "ONE SHOT",   "单音",       "لقطة" },
-        { "CANCION",        "",         "SONG MODE",  "歌曲模式", "وضع الأغنية" },
+        //  LAS DOS DE LA TAPA DE MODO, con clave propia. La de CANCION vivia
+        //  en la clave «CANCION» a secas y en espanol coincidia con la
+        //  pestana que abre la ficha — el homonimo que `Tests/duplicados.md`
+        //  senala. Las otras tres lenguas ya decian «modo».
+        //  Y EL ROTULO SE QUEDA CORTO, QUE ES EL SEXTO ARREGLO DE ESTA CASA
+        //  QUE SALE PEOR Y SE DESHACE.
+        //
+        //  El primer intento fue decirlo entero -«MODO CANCION» y «MODO
+        //  PATRON», que es lo que las otras tres lenguas ya decian- y el banco
+        //  lo tumbo con su cifra: de 0 TRUNC a 211, «MODO CANCION» pidiendo
+        //  70 px con 51 en la cara de un 344x882 y «PATTERN MODE» con 54 en un
+        //  360x640. Esta casa ya tiene escrito dos veces que **cambiar un
+        //  rotulo entero por uno cortado no es un arreglo**, y aqui el precio
+        //  de quitar un homonimo eran doscientas once tapas cortadas.
+        //
+        //  Lo que SI se queda es la clave propia: la tapa de modo y la pestana
+        //  que abre la ficha dejan de compartir fila, asi que tocar una no
+        //  mueve la otra, y de paso `exportSourceLabel` deja de decir «Origen:
+        //  SONG MODE» en tres de los cuatro idiomas. El homonimo del espanol
+        //  queda, medido y escrito: cuesta menos que su arreglo.
+        { "MODO CANCION|modo", "CANCION", "SONG",       "歌曲",     "أغنية" },
+        { "MODO PATRON|modo",  "PATRON",  "PATTERN",    "乐句",     "نمط" },
         { "toca un compas para poner el patron", "", "tap a bar to place the pattern",
                                         "点一个小节放置乐句",
                                         "المس مازورة لوضع النمط" },

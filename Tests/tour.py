@@ -87,6 +87,60 @@ def main():
             estado = "correcto"
         print ("%-6d %10s   %s" % (n, "%dx%d" % (w, h), estado))
 
+    #  --- LA BIENVENIDA SON CUATRO PASOS Y UNA PUERTA ---------------------
+    #
+    #  Quince tarjetas la primera vez son el manual otra vez, y este proyecto
+    #  ya lo tiene escrito a otra escala: «un parrafo largo encima de una
+    #  maquina oscurecida no se lee, se salta». Los cuatro primeros -los pads,
+    #  los bancos, CARGAR/REC/PLAY y el transporte- son LA APP; los otros once
+    #  son el recorrido, y se piden.
+    #
+    #  Con DOS cifras, que es lo que separa las dos formas de escribirlo mal:
+    #  que el cuarto OFREZCA la puerta -y no encadene- y que tomarla LLEGUE al
+    #  quinto. Solo la primera la cumple una tapa que cambia de rotulo y no
+    #  hace nada; solo la segunda, un tour que no se corta en ninguna parte.
+    print()
+    d3 = foco (3, size)
+    d2 = foco (2, size)
+    if d3 is None or d2 is None:
+        malas.append ("el paso de la puerta no contesto")
+    else:
+        print ("paso 3 (la puerta):  avanzar dice %-14s  la tercera dice %s"
+               % ('"%s"' % d3.get ("sig", ""), '"%s"' % d3.get ("tercera", "")))
+        print ("paso 2 (antes):      avanzar dice %-14s  la tercera dice %s"
+               % ('"%s"' % d2.get ("sig", ""), '"%s"' % d2.get ("tercera", "")))
+        if d3.get ("tercera") == d2.get ("tercera"):
+            malas.append ("el cuarto paso no ofrece la puerta: la tercera tapa sigue "
+                          "diciendo \"%s\"" % d3.get ("tercera"))
+        if d3.get ("sig") == d2.get ("sig"):
+            malas.append ("el cuarto paso encadena al quinto en vez de cerrar: "
+                          "avanzar sigue diciendo \"%s\"" % d3.get ("sig"))
+
+    #  Y TOMARLA LLEGA AL QUINTO, pulsando la tapa DE VERDAD: llamar a
+    #  `showTour(4)` por dentro se salta justo el codigo que decide si esa tapa
+    #  salta o sigue.
+    dp = None
+    casaP = tempfile.mkdtemp (prefix="zati-puerta-")
+    try:
+        env = dict (os.environ, HOME=casaP, ZATI_AUDIT="1", ZATI_SIZE=size,
+                    ZATI_LANG="es", ZATI_OPEN="tourpuerta",
+                    DISPLAY=os.environ.get ("DISPLAY", ":99"))
+        out = subprocess.run ([APP], env=env, capture_output=True, timeout=180)\
+                        .stdout.decode ("utf8", "replace")
+        for l in out.splitlines():
+            l = l.strip()
+            if l.startswith ("{") and '"tour"' in l:
+                try: dp = json.loads (l)
+                except Exception: pass
+    finally:
+        shutil.rmtree (casaP, ignore_errors=True)
+
+    paso = dp.get ("tour", -1) if dp else -1
+    print ("tomando la puerta:   el tour queda en el paso %d" % paso)
+    if paso != 4:
+        malas.append ("tomar la puerta deja el tour en el paso %d y tenia que "
+                      "llevar al 4" % paso)
+
     #  --- Y QUE SOLO SALGA LA PRIMERA VEZ ---------------------------------
     #
     #  Es la otra mitad del tour y la que no miraba nadie: los quince pasos

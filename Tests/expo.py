@@ -29,7 +29,16 @@ SIZES = [
     ("915x412",  "LANDSCAPE — the orientation nobody tests"),
 ]
 LANGS = ["es", "en", "zh", "ar"]
-SHEETS = ["", "plato", "pads", "pad2", "pad3", "sec", "secp", "paso", "eq", "eqb", "song", "songa", "piano", "pianod", "pick", "mix", "xy", "set", "asp", "proj", "gest", "midi", "lang", "manual", "rack", "rackf", "ranura", "ranural", "chop", "inst", "instd", "instg", "vst", "expo", "tour", "tour1", "tour6", "tour10", "tourf", "browse", "browsedir"]
+SHEETS = ["", "plato", "songm", "pads", "pad2", "pad3", "sec", "secp", "paso", "eq", "eqb", "song", "songa", "piano", "pianod", "pick", "mix", "xy", "set", "asp", "proj", "gest", "midi", "lang", "manual", "rack", "rackf", "ranura", "ranural", "chop", "inst", "instd", "instg", "vst", "expo", "tour", "tour1", "tour3", "tour6", "tour10", "tourf", "browse", "browsedir",
+#  Y LA MISMA MAQUINA CON TRABAJO DENTRO. Todo lo de arriba se mide con
+#  un proyecto vacio o con el kit de fabrica, y casi todo lo que un
+#  rotulo puede romper solo aparece lleno: un nombre de pad que es el
+#  del fichero que cargaste, una linea de tiempo de sesenta y cuatro
+#  compases repartiendo la misma celda, una lista de PROYECTOS con
+#  filas de verdad y el renglon de continuidad con sus tres campos.
+#  Es un ESTADO y no una regla nueva, como `ZATI_SKIN` con la carcasa.
+                    "llena", "llena-song", "llena-songa", "llena-sec",
+                    "llena-piano", "llena-proj", "llena-mix"]
 
 MIN_TOUCH = 40   # Metrics::hit — Android's own guideline is 48dp, this is the floor
 #  LO QUE SE DIBUJA Y SE TOCA IGUAL.
@@ -258,6 +267,7 @@ UNTRANSLATED_OK = {
     "XY",                                      # los dos ejes se llaman igual en todas partes
     "PADS", "PAD", "SEC", "MIX", "SET", "SONG", "REC", "PLAY", "STOP", "LOAD",
     "RACK", "TEST", "AUDIO", "AUTOCUT", "AUTO CHOP", "SWING", "off",
+    "SOLO",                                    # la palabra que lleva escrita cualquier mesa
     "PIANO",                                   # el instrumento se llama igual en las dos
     "PAD -", "PAD +",                          # PAD pasa por T() y coincide de verdad en es/en
     "OCT -", "OCT +",                          # la abreviatura de octava es la misma
@@ -401,6 +411,33 @@ def una_pagina(combo):
 #  Solo se devuelven las filas cuando hacen falta para la prueba comparativa de
 #  idioma, que es la unica que necesita el volcado entero de vuelta.
 def corre_y_juzga(combo, casa):
+    size, lang, sheet = combo
+    #  LO QUE PLANTA ESTADO SE LLEVA SU PROPIA CASA.
+    #
+    #  Cada trabajador reutiliza su HOME -de ahi el paso de 5 min 36 a 1 min
+    #  57- y eso vale mientras una corrida no deje nada escrito. `llena` deja:
+    #  el hilo de sesion escribe treinta pads, ocho patrones y una cancion de
+    #  sesenta y cuatro compases, y la corrida siguiente del mismo trabajador
+    #  los RESTAURA. La primera tirada con la app llena lo canto en rojo:
+    #  `SQUEEZE 43` con la cara diciendo «Sesion recuperada - sesion nocturna
+    #  larga» en pantallas donde nadie habia abierto nada, y `CELDA 40` con la
+    #  rejilla de pasos a 11 px en `sec` -no en `llena-sec`-. Ni un hallazgo
+    #  era de la app: eran corridas midiendo el estado de la de antes.
+    #
+    #  Cuesta los 400 ms de la primera apertura -la fabrica se sintetiza otra
+    #  vez- y son 196 corridas de 1400.
+    propia = None
+    if sheet.startswith ("llena"):
+        propia = tempfile.mkdtemp (prefix="zati-llena-")
+        casa = propia
+    try:
+        return _corre_y_juzga (combo, casa)
+    finally:
+        if propia:
+            shutil.rmtree (propia, ignore_errors=True)
+
+
+def _corre_y_juzga(combo, casa):
     size, lang, sheet = combo
     rows = run(size, lang, sheet, casa)
     if rows is None:

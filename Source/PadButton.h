@@ -118,6 +118,26 @@ public:
     void setPlaying  (bool p) { if (playing  != p) { playing  = p; repaint(); } }
     void setFlash    (float f) { flash = f; repaint(); }
 
+    //  CALLADO POR UN SOLO DE OTRO. Un solo se pone en la mesa, y la mesa tapa
+    //  la rejilla: hasta hoy la cara no decia nada de que doce pads estuvieran
+    //  mudos, asi que tocabas uno y no sonaba. Se dibuja con el mismo susurro
+    //  que un pad VACIO —«este pad SERIA turquesa»— porque es exactamente lo
+    //  que significa: esta puesto y no se oye.
+    void setMudo (bool m) { if (mudo != m) { mudo = m; repaint(); } }
+
+    //  Y EL MODO ARMADO, VISTO DONDE SE ACTUA. La tapa encendida esta en una
+    //  fila y el dedo esta en la rejilla: con LOAD, REC o SOLO armados, tocar
+    //  un pad hace algo que no es sonar, y hasta hoy eso solo se sabia mirando
+    //  a otro sitio. El anillo es del color del modo y va por FUERA del borde
+    //  del pad, asi que no pisa el zati -que es como se encuentra un sonido en
+    //  esta maquina- ni el anillo de seleccion, que va por dentro.
+    void setModo (juce::Colour c)
+    {
+        if (modoTinte == c) return;
+        modoTinte = c;
+        repaint();
+    }
+
     //  How hard the last strike was, 0.10 to 1.
     //
     //  A touchscreen has no strike force, so the pad has to get it from
@@ -247,8 +267,12 @@ public:
         //  Los dos colores de reposo salen de PadArt, que es de donde los coge
         //  tambien el icono del lanzador: dos escrituras del mismo pad se
         //  separan, y el sintoma seria «el icono ya no se parece a la app».
-        juce::Colour base   = PadArt::cuerpoDe (frag, loaded);
-        juce::Colour edge   = PadArt::bordeDe  (frag, loaded);
+        //  Un pad callado por el solo de otro se pinta como uno vacio: no es un
+        //  estado nuevo que inventar, es el que ya dice «de este color, y sin
+        //  nada que suene».
+        const bool suena = loaded && ! mudo;
+        juce::Colour base   = PadArt::cuerpoDe (frag, suena);
+        juce::Colour edge   = PadArt::bordeDe  (frag, suena);
         //  The number on an empty pad was ink at 30%, on a tint that was barely
         //  there, on a plate the same value as everything else - three weak
         //  contrasts stacked. It is the only thing an empty pad has to say.
@@ -367,6 +391,16 @@ public:
             g.setColour ((loaded ? frag : ZatiColours::ink).brighter (0.45f).withAlpha (0.6f));
             g.drawRoundedRectangle (r.reduced (0.6f), rad, 1.8f);
         }
+
+        //  EL MODO ARMADO, EL ULTIMO Y POR FUERA. Va encima de todo porque es
+        //  lo que decide que hace el dedo: si lo tapara el borde del pad o el
+        //  anillo de seleccion, el aviso valdria en quince pads y no en el que
+        //  estas mirando.
+        if (! modoTinte.isTransparent())
+        {
+            g.setColour (modoTinte.withAlpha (0.85f));
+            g.drawRoundedRectangle (r.reduced (0.9f), rad, 1.8f);
+        }
     }
 
 private:
@@ -419,6 +453,8 @@ private:
     float lastVelocity = 1.0f;   // set by mouseDown, read by padClicked
     bool  usedPressure = false;  // ...and whether the panel gave a real force
     float flash = 0.0f;
+    bool  mudo  = false;
+    juce::Colour modoTinte { juce::Colours::transparentBlack };
     juce::String padName;
     juce::Array<float> spark;   // interleaved min,max per column
     bool art = true;            // whether this tile draws its waveform at all

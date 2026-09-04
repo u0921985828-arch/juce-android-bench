@@ -343,6 +343,22 @@ public:
             g.setColour (ZatiColours::playhead);
             g.fillRect (xx - 1.0f, (float) r.getY(), 2.0f, (float) r.getHeight());
         }
+
+        //  Y LA HERRAMIENTA ARMADA, VISTA DONDE SE ACTUA.
+        //
+        //  LAPIZ, GOMA, TIJERAS y SEL cambian lo que hace arrastrar, y hasta
+        //  hoy eso solo se sabia mirando la fila de tapas: la encendida esta
+        //  arriba y el dedo esta aqui. Un marco del color del acento alrededor
+        //  del LIENZO —no de la ficha— dice «esta rejilla esta en un modo»
+        //  justo donde cae el dedo. Sin herramienta no hay marco: dibujar es lo
+        //  que la rejilla hace de por si, y un aviso permanente no avisa.
+        if (util != dibujar)
+        {
+            auto marco = r.toFloat().reduced (0.75f);
+            marco.setLeft (marco.getX() + (float) kGutter);
+            g.setColour (ZatiColours::accent.withAlpha (0.9f));
+            g.drawRect (marco, 1.5f);
+        }
     }
 
     void mouseDown (const juce::MouseEvent& e) override { gesto ((float) e.x, (float) e.y, false); }

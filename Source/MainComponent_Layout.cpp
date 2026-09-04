@@ -567,14 +567,34 @@ void MainComponent::resized()
         //  pestañas y se queda con 190 px, o sea 42 por tapa - "PATTERN" pide
         //  41 px de letra y tenia 36. Se cae, como se cae SEGUIR, y el
         //  interruptor sigue estando en las otras dos filas de transporte.
-        juce::TextButton* tr[4] = { &loadButton, &recButton, &modoBtn, &playButton };
-        const bool cabeModo = moduleBarFits (row.getWidth(), tr, 4);
+        //  CINCO DONDE CABEN, Y LA ESCALERA DICE EN QUE ORDEN SE CAEN.
+        //
+        //  SOLO entra aqui porque es lo mismo que REC —una tapa armada que
+        //  cambia lo que hace tocar un pad— y no cabe siempre: cinco por
+        //  cuarenta son 200 px y esta fila mide 190 girada.
+        //
+        //  Y cae DESPUES de MODO, que es al reves de como se leen: el
+        //  interruptor de modo esta ademas en las filas de transporte de SEC y
+        //  de CANCION, asi que perderlo aqui lo deja a un toque; SOLO desde la
+        //  cara no esta en ningun otro sitio y perderlo es perderlo. «Cada
+        //  mando en UN sitio en cada pantalla, nunca en dos, y nunca en
+        //  ninguno.»
+        juce::TextButton* tr5[5] = { &loadButton, &recButton, &soloButton, &modoBtn, &playButton };
+        juce::TextButton* tr4[4] = { &loadButton, &recButton, &soloButton, &playButton };
+        const bool cabeModo = moduleBarFits (row.getWidth(), tr5, 5);
+        const bool cabeSolo = cabeModo || moduleBarFits (row.getWidth(), tr4, 4);
+
         modoBtn.setVisible (cabeModo);
         if (! cabeModo) modoBtn.setBounds ({});
+        soloButton.setVisible (cabeSolo);
+        if (! cabeSolo) soloButton.setBounds ({});
 
-        const int u = row.getWidth() / (cabeModo ? 4 : 3);
+        const int n = 3 + (cabeSolo ? 1 : 0) + (cabeModo ? 1 : 0);
+        const int u = row.getWidth() / n;
         loadButton.setBounds (row.removeFromLeft (u).reduced (Metrics::aireTapa, 0));
         recButton.setBounds  (row.removeFromLeft (u).reduced (Metrics::aireTapa, 0));
+        if (cabeSolo)
+            soloButton.setBounds (row.removeFromLeft (u).reduced (Metrics::aireTapa, 0));
         if (cabeModo)
             modoBtn.setBounds (row.removeFromLeft (u).reduced (Metrics::aireTapa, 0));
         playButton.setBounds (row.reduced (Metrics::aireTapa, 0));
@@ -600,14 +620,34 @@ void MainComponent::resized()
         //  literalmente la mitad de PLAY, que era el ancho que sobraba en esta
         //  fila. Las cuatro tapas quedan iguales, y donde no quepan se cae el
         //  modo - la misma pregunta que se hace girado.
-        juce::TextButton* tr[4] = { &loadButton, &recButton, &modoBtn, &playButton };
-        const bool cabeModo = moduleBarFits (row.getWidth(), tr, 4);
+        //  CINCO DONDE CABEN, Y LA ESCALERA DICE EN QUE ORDEN SE CAEN.
+        //
+        //  SOLO entra aqui porque es lo mismo que REC —una tapa armada que
+        //  cambia lo que hace tocar un pad— y no cabe siempre: cinco por
+        //  cuarenta son 200 px y esta fila mide 190 girada.
+        //
+        //  Y cae DESPUES de MODO, que es al reves de como se leen: el
+        //  interruptor de modo esta ademas en las filas de transporte de SEC y
+        //  de CANCION, asi que perderlo aqui lo deja a un toque; SOLO desde la
+        //  cara no esta en ningun otro sitio y perderlo es perderlo. «Cada
+        //  mando en UN sitio en cada pantalla, nunca en dos, y nunca en
+        //  ninguno.»
+        juce::TextButton* tr5[5] = { &loadButton, &recButton, &soloButton, &modoBtn, &playButton };
+        juce::TextButton* tr4[4] = { &loadButton, &recButton, &soloButton, &playButton };
+        const bool cabeModo = moduleBarFits (row.getWidth(), tr5, 5);
+        const bool cabeSolo = cabeModo || moduleBarFits (row.getWidth(), tr4, 4);
+
         modoBtn.setVisible (cabeModo);
         if (! cabeModo) modoBtn.setBounds ({});
+        soloButton.setVisible (cabeSolo);
+        if (! cabeSolo) soloButton.setBounds ({});
 
-        const int u = row.getWidth() / (cabeModo ? 4 : 3);
+        const int n = 3 + (cabeSolo ? 1 : 0) + (cabeModo ? 1 : 0);
+        const int u = row.getWidth() / n;
         loadButton.setBounds (row.removeFromLeft (u).reduced (Metrics::aireTapa, 0));
         recButton.setBounds  (row.removeFromLeft (u).reduced (Metrics::aireTapa, 0));
+        if (cabeSolo)
+            soloButton.setBounds (row.removeFromLeft (u).reduced (Metrics::aireTapa, 0));
         if (cabeModo)
             modoBtn.setBounds (row.removeFromLeft (u).reduced (Metrics::aireTapa, 0));
         playButton.setBounds (row.reduced (Metrics::aireTapa, 0));
@@ -1760,8 +1800,10 @@ void MainComponent::resized()
         };
         const bool partirLang = ! chipsCaben (langButtons);
         const bool partirSkin = ! chipsCaben (skinButtons);
+        const bool partirMov  = ! chipsCaben (movButtons);
         const int filasExtra = (partirLang ? Metrics::hit + Metrics::xs : 0)
-                             + (partirSkin ? Metrics::hit + Metrics::xs : 0);
+                             + (partirSkin ? Metrics::hit + Metrics::xs : 0)
+                             + (partirMov  ? Metrics::hit + Metrics::xs : 0);
 
         const int wanted = onMidi ? midiH
             : onAudio
@@ -1770,7 +1812,7 @@ void MainComponent::resized()
                 + (Metrics::hit + Metrics::xs) * 3 + Metrics::sm
             : onAsp
               ? Metrics::md * 2 + 16 + Metrics::sm + tabsH
-                  + (Metrics::hit + Metrics::xs) * 2 + filasExtra + Metrics::sm
+                  + (Metrics::hit + Metrics::xs) * 3 + filasExtra + Metrics::sm
             : onGest
               ? Metrics::md * 2 + 16 + Metrics::sm + tabsH
                   + kNumGestures * gestRowH + Metrics::sm
@@ -1908,7 +1950,7 @@ void MainComponent::resized()
             block (midiOutBtn, midiOutBox);
             block (midiInBtn,  midiInBox);
             midiArea = inner.removeFromTop (40);                // pintado: la nota
-            audioInfoArea = bufRowArea = rateRowArea = langRowArea = skinRowArea = {};
+            audioInfoArea = bufRowArea = rateRowArea = langRowArea = skinRowArea = movRowArea = {};
             cuentaRowArea = {};
             for (auto* b : cuentaButtons) if (b != nullptr) { b->setVisible (false); b->setBounds ({}); }
             pruebasLabelArea = {};
@@ -2060,7 +2102,7 @@ void MainComponent::resized()
             if (bufButtons.size() + rateButtons.size() > 0)
                 setGrupos.add (bufRowArea.getUnion (rateRowArea));
             //  IDIOMA y CARCASA viven ahora en su pagina.
-            langRowArea = skinRowArea = {};
+            langRowArea = skinRowArea = movRowArea = {};
             projNameRowArea = projPathRowArea = {};
         }
         else if (onAsp)
@@ -2109,11 +2151,12 @@ void MainComponent::resized()
             };
             langRowArea = chipRow (langButtons, 44, partirLang);
             skinRowArea = chipRow (skinButtons, 44, partirSkin);
-            //  Y ESTA PAGINA NO LLEVA PANELES. Es la unica de las cuatro con
-            //  dos filas y nada mas: dos paneles a Metrics::xs se tocan y se
-            //  leen como uno, y uno solo cubre la pagina entera - que agrupa
-            //  exactamente lo mismo que no dibujar nada. Un panel dice "estos
-            //  van juntos y esos no", y aqui no hay esos.
+            movRowArea  = chipRow (movButtons,  44, partirMov);
+            //  Y ESTA PAGINA SIGUE SIN PANELES con tres filas por lo mismo que
+            //  con dos: son filas de la MISMA pregunta -como se ve la maquina-
+            //  asi que un panel las cubriria todas, y eso agrupa exactamente lo
+            //  mismo que no dibujar nada. Un panel dice "estos van juntos y
+            //  esos no", y aqui sigue sin haber esos.
         }
         else
         {
@@ -2159,7 +2202,7 @@ void MainComponent::resized()
             inner.removeFromBottom (8);
 
             projList.setBounds (inner);
-            bufRowArea = rateRowArea = langRowArea = audioInfoArea = {};
+            bufRowArea = rateRowArea = langRowArea = movRowArea = audioInfoArea = {};
         }
     }
 
@@ -2747,7 +2790,7 @@ void MainComponent::resized()
         for (int i = 0; i < songPageBtns.size(); ++i)
             if (i * Playlist::kBarsView < engine.getSongLength()) ++pagsUsadas;
         pagsUsadas = juce::jlimit (1, juce::jmax (1, songPageBtns.size()), pagsUsadas);
-        const int filasPags = (anchoPaleta / pagsUsadas - 2 >= Metrics::hit) ? 1 : 2;
+        int filasPags = (anchoPaleta / pagsUsadas - 2 >= Metrics::hit) ? 1 : 2;
 
         //  LO QUE PIDE LA FICHA, con la paleta de una fila o de dos. Escrito una
         //  vez y preguntado dos, que es la unica forma de que la respuesta valga:
@@ -2795,6 +2838,19 @@ void MainComponent::resized()
         //  paleta cabe en dos filas se hacia con 50 px menos de los que hay, y
         //  la paleta se quedaba de ocho sin necesidad.
         const int topeCancion = altoTarjeta (full);
+
+        //  Y MANDA TAMBIEN SOBRE LAS PAGINAS, que es la misma regla y estaba
+        //  escrita solo para la paleta. Lo saco el banco con la app LLENA: una
+        //  cancion de sesenta y cuatro compases tiene OCHO paginas, en 280x653
+        //  no caben a dedo en una fila y se partian en dos - 44 px que salen de
+        //  los cuatro carriles, que es lo unico para lo que existe la pagina.
+        //  Medido: el carril pasaba de 21 px a DIEZ, con el suelo en doce.
+        //  Se pregunta con la paleta ya en UNA fila -la mas generosa- porque
+        //  esa tambien puede caerse, y si ni asi cabe, las paginas se quedan de
+        //  ocho: una tapa de 28 px se acierta con cuidado y un carril de diez
+        //  no se acierta.
+        if (filasPags == 2 && pideCancion (1) > topeCancion) filasPags = 1;
+
         const bool paletaAnchaCabe = (anchoPaleta / kNumPatterns - 2 >= Metrics::hit);
         const int filasPaleta = (paletaAnchaCabe || pideCancion (2) > topeCancion) ? 1 : 2;
         const int porFilaPal  = kNumPatterns / juce::jmax (1, filasPaleta);
@@ -3311,6 +3367,11 @@ void MainComponent::resized()
         //  A lone "1" is a control that can never do anything, so a one-bar
         //  pattern gets no bar row - and no band budgeted for it either.
         const bool showBars = (bars > 1);
+        //  Y con rotulo mientras nadie diga lo contrario: la pagina de
+        //  la rejilla es la unica que puede quitarselo, y una bandera que
+        //  se queda puesta de la pasada anterior es un rotulo que
+        //  desaparece en una pagina que no lo decidio.
+        seqBarsRotulo = true;
 
         //  ASK FOR WHAT YOU WILL ACTUALLY GET. sheetFromBottom clamps the card
         //  at 78% of the window and says nothing; whatever the layout asked
@@ -3417,6 +3478,23 @@ void MainComponent::resized()
             //  la rejilla. Medido: celda de 8 px de alto en 360x640 pidiendo
             //  doce. Pedir lo que hay y quitar filas prescindibles hasta que
             //  quepa es lo que de verdad sube la celda.
+            //  Y EL ROTULO DE LA FILA DE COMPAS SE CAE ANTES QUE LA CELDA.
+            //
+            //  Lo saco el banco con la app LLENA, que es la primera pantalla
+            //  que abre esta pagina con un patron de mas de un compas: la fila
+            //  COMPAS aparece, se lleva 65 px con su rotulo y la celda de paso
+            //  cae a 11 px en 280x653 y en 360x640, con el suelo en 12. Las dos
+            //  filas prescindibles -BANCO y COPIAR/PEGAR- ya se habian caido
+            //  las dos: no quedaba nada que quitar y faltaban DOS pixeles.
+            //
+            //  La FILA no es prescindible -sin ella no se llega al compas 2- y
+            //  su ROTULO si: las tapas dicen 1, 2, 3 y 4 y la que manda esta
+            //  encendida, asi que la palabra COMPAS no anade nada que no este
+            //  dibujado. Diecisiete pixeles, y solo donde hacen falta.
+            seqBarsRotulo = (! showBars) || wideFace
+                          || ((capH - chrome - stacked) / lanes >= kMinLaneH);
+            if (! seqBarsRotulo) stacked -= nameH;
+
             laneH  = juce::jmin (26, (capH - chrome - stacked) / lanes);
             //  Girado la tarjeta se queda con TODO el alto: la rejilla esta al
             //  lado de los controles, no debajo, asi que pedir "lo que suman
@@ -3969,7 +4047,25 @@ void MainComponent::resized()
             //  Y solo cuando hay mas de uno: una fila con un solo "1" es un
             //  control que no puede hacer nada, que es la misma razon por la
             //  que la rejilla tampoco la enseña.
-            if (bars > 1 && inner.getHeight() > Metrics::hit * 3)
+            //  Y SE CAE ANTES QUE LA FILA DE NOTA, que es lo que la guardia
+            //  de arriba -"que queden tres dedos"- no preguntaba. Lo saco el
+            //  banco con la app LLENA, que es la primera pantalla que abre el
+            //  piano con un patron de mas de un compas: apaisado la fila
+            //  cuesta 44 px y el rollo pasa de 232 a 188, o sea de 17.8 px de
+            //  fila a 14.4 con el suelo de la NOTA en 16. Y ahi no hay de
+            //  donde sacarlos: la columna de tapas ya lleva cinco filas de 44
+            //  en los 232 que tiene.
+            //
+            //  Fallar de fila en esta rejilla no falla el toque -escribe otro
+            //  tono, suena, y no lo dice nadie-, asi que la fila se va y la
+            //  funcion se queda a un toque: el compas se elige en PASOS, que
+            //  es la pestaña de al lado, mira el MISMO selectedBar y ahi si
+            //  cabe. Es el trato de siempre, escrito al reves que en CANCION:
+            //  alli se estrecha una tapa antes que un carril.
+            const int costeBarras = Metrics::hit + Metrics::halfGap;
+            if (bars > 1 && inner.getHeight() > Metrics::hit * 3
+                && (inner.getHeight() - costeBarras) / pianoGrid.getFilas()
+                       >= Metrics::celdaNota)
             {
                 auto fila = inner.removeFromBottom (Metrics::hit);
                 inner.removeFromBottom (Metrics::halfGap);
@@ -3983,6 +4079,14 @@ void MainComponent::resized()
                     else
                         barButtons[b2]->setBounds ({});
                 }
+            }
+            //  APAGAR *Y* VACIAR, las dos cosas: un control invisible que
+            //  conserva sus coordenadas sigue estando ahi para todo lo que
+            //  mida geometria, y esa media regla es la que tuvo a SEGUIR
+            //  visible y de 0x0 desde el primer dia.
+            else
+            {
+                for (auto* b2 : barButtons) { b2->setVisible (false); b2->setBounds ({}); }
             }
 
             pianoGrid.setBounds (inner);
@@ -4056,7 +4160,8 @@ void MainComponent::resized()
             //  fuera los dos rotulos - COMPAS y TEMPO, 17 px cada uno - asi
             //  que creia tener 34 px mas de los que iba a tener.
             const int tempoCost = Metrics::hit + nameH + Metrics::sm;
-            const int barsCost  = showBars ? (nameH + Metrics::hit + Metrics::sm) : 0;
+            const int barsCost  = showBars ? ((seqBarsRotulo ? nameH : 0)
+                                              + Metrics::hit + Metrics::sm) : 0;
             //  Y LA TIRA DEL PASO TAMBIEN CUENTA AQUI.
             //
             //  Se aparta del fondo mas abajo, asi que a esta altura col aun la
@@ -4168,7 +4273,7 @@ void MainComponent::resized()
 
             if (showBars)
             {
-                nameBand (col, "COMPAS");
+                if (seqBarsRotulo) nameBand (col, "COMPAS");
                 auto row = col.removeFromTop (Metrics::hit);
                 const int bw = row.getWidth() / bars;
                 for (int b = 0; b < barButtons.size(); ++b)
@@ -4642,6 +4747,10 @@ void MainComponent::resized()
         UiAudit::tourPaso  = tourPaso;
         UiAudit::tourFocoW = tourFoco.getWidth();
         UiAudit::tourFocoH = tourFoco.getHeight();
+        //  Y lo que dicen las dos salidas: en el paso de la PUERTA la tercera
+        //  tapa deja de decir SALTAR y ofrece seguir con los once que quedan.
+        UiAudit::tourSig     = tourNextBtn.getButtonText().toStdString();
+        UiAudit::tourTercera = tourSkipBtn.getButtonText().toStdString();
 
         const int anchoDock = getWidth();
         const int alto = Metrics::md * 2 + 16 + Metrics::xs

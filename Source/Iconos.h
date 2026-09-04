@@ -104,6 +104,31 @@ namespace Iconos
         //  dia y a esa tapa no se le habia asignado. Un icono que ya esta y no
         //  se usa es la mitad de un hueco.
         sel, clic, automacion,
+        //  --- Y EL DE SOLO DESDE LA CARA ------------------------------------
+        //
+        //  `sinsolo` ya existe -el arco con sus dos auriculares y la barra
+        //  encima- y es el OPUESTO, asi que no se puede reaprovechar: seria la
+        //  misma tapa diciendo dos cosas. Y tampoco es ese sin la barra, que
+        //  dos dibujos separados por un trazo son el mismo dibujo — la leccion
+        //  que costo redibujar REV.
+        //
+        //  Lo que SOLO significa es «de todos estos, solo ese»: un auricular
+        //  puesto y el otro hueco. La diferencia es de RELLENO y no de trazo,
+        //  que es lo que separa un espejo de una copia — igual que la bandeja
+        //  de MANDAR contra la de RECIBIR.
+        solo,
+        //  --- Y EL DE LA PAGINA DE PROYECTOS --------------------------------
+        //
+        //  `carpeta` lo llevaban CUATRO cosas distintas: CAMBIAR (donde cae el
+        //  rebote), CARGAR KIT, USAR ESTA CARPETA y la pestana PROYECTOS. Las
+        //  tres primeras son literalmente lo mismo -«senala una carpeta»- y
+        //  ademas nunca salen dos en la misma fila, asi que ahi el dibujo
+        //  repetido es correcto: una funcion, un dueno.
+        //
+        //  La cuarta no: PROYECTOS es una PAGINA de AJUSTES, hermana de AUDIO,
+        //  MIDI y ASPECTO, y lo que ensena es una LISTA de cosas guardadas con
+        //  su nombre. Una carpeta ahi dice «ficheros» donde pone «proyectos».
+        lista,
         kNum
     };
 
@@ -161,6 +186,8 @@ namespace Iconos
             case Id::recibir: return "recibir";
             case Id::sel: return "sel";                case Id::clic: return "clic";
             case Id::automacion: return "automacion";
+            case Id::solo: return "solo";
+            case Id::lista: return "lista";
             case Id::ninguno:
             case Id::kNum:
             default: return "ninguno";
@@ -293,6 +320,21 @@ namespace Iconos
 
             case Id::carpeta:
                 carpetaBase (L, 5.0f);
+                break;
+
+            case Id::lista:
+                //  Tres renglones con su punto delante, que es lo que una lista
+                //  de nombres guardados es. Horizontal a proposito: `mezcla`
+                //  son lineas VERTICALES con bloques encima y `sec` una fila de
+                //  barras, asi que el eje ya separa este de los dos con los que
+                //  se podria confundir.
+                for (int i = 0; i < 3; ++i)
+                {
+                    const float y = 6.5f + (float) i * 5.5f;
+                    R.addEllipse (3.5f, y - 1.4f, 2.8f, 2.8f);
+                    L.startNewSubPath (9.0f, y);
+                    L.lineTo (20.5f - (float) i * 2.5f, y);
+                }
                 break;
 
             case Id::nuevo:
@@ -1008,6 +1050,16 @@ namespace Iconos
             //  es lo que diria un altavoz tachado y ademas es el mute de al
             //  lado-. La diadema es un arco y las dos orejas dos manchas: no
             //  se parece a `altavoz`, que es un cono con dos ondas.
+            case Id::solo:
+                //  El mismo arco que `sinsolo` -es el mismo aparato- con un
+                //  auricular RELLENO y el otro de contorno, y sin la barra.
+                L.addCentredArc (12.0f, 12.5f, 8.0f, 8.0f, 0.0f,
+                                 -juce::MathConstants<float>::halfPi * 1.55f,
+                                 juce::MathConstants<float>::halfPi * 1.55f, true);
+                R.addRoundedRectangle (2.6f, 12.0f, 4.2f, 7.5f, 1.6f);
+                L.addRoundedRectangle (17.2f, 12.0f, 4.2f, 7.5f, 1.6f);
+                break;
+
             case Id::sinsolo:
                 L.addCentredArc (12.0f, 12.5f, 8.0f, 8.0f, 0.0f,
                                  -juce::MathConstants<float>::halfPi * 1.55f,
