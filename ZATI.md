@@ -471,7 +471,7 @@ primeros ~1600 muestras.
 
 Afinación, ganancia, inicio y fin del recorte, bucle, reverso, CINTA/TONO, grupo
 de choke, autocorte, pan, ancho estéreo, ataque, caída, los dos fundidos de
-canto, corte y resonancia del filtro, silencio, solo, y los seis envíos. Todos
+canto, corte y resonancia del filtro, silencio, solo, y un envío por tipo. Todos
 se acotan **en la puerta** —el mismo sitio por donde entran el fichero, el mando,
 el bloqueo de un paso y un kit— y no en quien llama.
 
@@ -659,7 +659,7 @@ negro sobre blanco), el tempo, el efecto con el foco y el patrón que se edita.
 **La carcasa no se guarda**: es de la persona y no de la canción.
 
 Dentro: la **canción** (los cuatro carriles, los silenciados y el tramo en
-bucle), los **efectos** (los seis por tres parámetros, más el pad del bombeo y el
+bucle), los **efectos** (tres parámetros por tipo, más el pad del bombeo y el
 estado del XY), los **sesenta y cuatro pads** con todos sus parámetros —incluidos
 la **fuente**, que es el pad más bajo que comparte el mismo buffer y es lo que
 hace que dieciséis pads sean un *troceado* y no dieciséis sonidos sueltos, y la
@@ -1030,7 +1030,8 @@ dibujaron**. Roto a propósito: `el subtitulo dice 10 capitulos y se dibujan 9`.
 `BIT` —la buena—; `ESTUDIO-2026.md` decía `ISO` y `CRUSH`; y `GOOGLE-PLAY.md`
 decía `CRSH` y añadía un `BEAT REPEAT` que no existe, en el párrafo que
 justifica que los nombres de efecto son seguros. La del código es la tabla
-`fxDefs`: **FLT, HPF, DRV, DLY, BIT, REV**, y es la que dan ahora los tres.
+`fxDefs`, y la regla que se les exige —abreviatura generica del sector, sin
+numero de modelo— la comprueba `Tests/marcas.py` sobre los nombres de verdad.
 
 Y los dos huecos de medida menores, cerrados también: `ZATI_OPEN=lang` entra en
 `SHEETS` —de 924 corridas a 952— y `SKILL.md` decía «812 corridas».

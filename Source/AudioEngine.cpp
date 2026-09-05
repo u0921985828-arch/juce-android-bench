@@ -171,6 +171,19 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize, int inputC
     delayLine.setMaximumDelayInSamples (juce::jmax (1, (int) (systemSampleRate * 1.0)));
     delayLine.reset();
 
+    //  Las dos lineas de la familia de modulacion. Cortas: 30 ms de coro y 10
+    //  de flanger. Ver AudioEngine.h.
+    choLine.prepare (spec);
+    choLine.setMaximumDelayInSamples ((int) (systemSampleRate * 0.030) + 4);
+    choLine.reset();
+    flaLine.prepare (spec);
+    flaLine.setMaximumDelayInSamples ((int) (systemSampleRate * 0.010) + 4);
+    flaLine.reset();
+    for (auto& fila : phaZ) for (auto& z : fila) z = 0.0f;
+    flaFbZ[0] = flaFbZ[1] = 0.0f;
+    modWasActive.fill (false);
+    for (auto& l : mod) l.reinicia();
+
     //  El EQ toma la frecuencia nueva y limpia sus diez estados; las bandas NO
     //  se tocan, que esto corre en cada cambio de ruta. Ver Eq5::prepare.
     eqFx.prepare (systemSampleRate);
@@ -1737,6 +1750,219 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                                       std::memory_order_relaxed);
             returnBus (f);
         }
+
+        // --- 9. MODULACION: CHO, FLA, PHA y TRM. ---------------------------
+        //
+        //  Cuatro topologias distintas y por eso cuatro bloques y no un bucle
+        //  -al reves que la dinamica, que si son la misma pieza-. Lo que SI
+        //  comparten es el oscilador (`Source/Lfo.h`), y de ahi sale la unica
+        //  regla que no puede estar escrita dos veces: el visor dibuja con
+        //  `Lfo::valorEn`, o sea con esta misma funcion.
+        //
+        //  Y EL LFO SOLO AVANZA CON EL BUS VIVO, dentro del `if (live)`. Es lo
+        //  que hace que la capa viva del visor se quede quieta sin señal, que
+        //  es la mitad que `Tests/rack.py` exige -una capa que se mueve sin
+        //  señal esta dibujando ruido-.
+        {
+            const float fsF = (float) systemSampleRate;
+
+            //  Y AL CALLARSE, LA FASE VUELVE A CERO. El LFO solo avanza con el
+            //  bus vivo -eso es lo que hace que el punto del visor se pare sin
+            //  señal- y sin esto se queda parado DONDE LA MUSICA LO DEJO, que
+            //  es un punto a media curva sin nada pasando. Lo canto el banco:
+            //  `4 de 14 capas vivas se mueven sin señal`, comparando la lectura
+            //  de antes de sonar con la de despues de callar. No dibujaban
+            //  ruido — las dos estaban quietas y en sitios distintos.
+            //
+            //  Cada arranque empieza en cero de todas formas -lo hace el flanco
+            //  de subida- asi que esto no cambia como suena: cambia lo que el
+            //  visor dice mientras no pasa nada, que es «el LFO esta en su
+            //  sitio» en vez de «esta a mitad de vuelta».
+            for (int m = 0; m < 4; ++m)
+                if (! live (modIdx (m)) && modWasActive[(size_t) m])
+                    modFase[(size_t) m].store (0.0f, std::memory_order_relaxed);
+
+            // --- CHO: retardo corto barrido, sin realimentacion. -----------
+            {
+                const int m = modDe (kFxCho);
+                const float prof = juce::jlimit (0.0f, 1.0f,
+                                     fxP[(size_t) kFxCho][1].load (std::memory_order_relaxed));
+                smChoProf += kBlock * (prof - smChoProf);
+
+                const bool ahora = live (kFxCho);
+                //  El flanco limpia la linea: sin esto, volver a abrir el coro
+                //  suena con la cola de la vez anterior. Es lo mismo que hacen
+                //  DRV con su paso bajo y BIT con su retenedor.
+                if (ahora && ! modWasActive[(size_t) m]) { choLine.reset(); mod[(size_t) m].reinicia(); }
+                modWasActive[(size_t) m] = ahora;
+
+                if (ahora)
+                {
+                    mod[(size_t) m].ponPaso (fxP[(size_t) kFxCho][0].load (std::memory_order_relaxed), systemSampleRate);
+                    //  Centro y recorrido en MILISEGUNDOS y convertidos aqui:
+                    //  doce milisegundos es un coro en cualquier aparato, y en
+                    //  muestras seria un numero que cambia con la ruta.
+                    const float centro = 0.012f * fsF;
+                    const float amp    = 0.005f * fsF * smChoProf;
+                    float* w0 = fxBus[kFxCho].getWritePointer (0, startSample);
+                    float* w1 = (chans > 1) ? fxBus[kFxCho].getWritePointer (1, startSample) : w0;
+
+                    for (int i = 0; i < numSamples; ++i)
+                    {
+                        const float v = mod[(size_t) m].avanza();
+                        const float q = (chans > 1) ? mod[(size_t) m].enCuadratura() : v;
+                        const float x0 = w0[i], x1 = w1[i];
+
+                        choLine.pushSample (0, std::isfinite (x0) ? x0 : 0.0f);
+                        choLine.setDelay (juce::jmax (1.0f, centro + amp * v));
+                        const float d0 = choLine.popSample (0);
+
+                        if (chans > 1)
+                        {
+                            choLine.pushSample (1, std::isfinite (x1) ? x1 : 0.0f);
+                            choLine.setDelay (juce::jmax (1.0f, centro + amp * q));
+                            const float d1 = choLine.popSample (1);
+                            w1[i] = std::isfinite (d1) ? d1 : 0.0f;
+                        }
+                        w0[i] = std::isfinite (d0) ? d0 : 0.0f;
+                    }
+                    modFase[(size_t) m].store (mod[(size_t) m].fase, std::memory_order_relaxed);
+                    returnBus (kFxCho);
+                }
+            }
+
+            // --- FLA: retardo mas corto, con realimentacion con signo. -----
+            {
+                const int m = modDe (kFxFla);
+                const float fb = juce::jlimit (-kFlaFbMax, kFlaFbMax,
+                                   (fxP[(size_t) kFxFla][1].load (std::memory_order_relaxed) * 2.0f - 1.0f) * kFlaFbMax);
+                smFlaFb += kBlock * (fb - smFlaFb);
+
+                const bool ahora = live (kFxFla);
+                if (ahora && ! modWasActive[(size_t) m])
+                {
+                    flaLine.reset(); flaFbZ[0] = flaFbZ[1] = 0.0f; mod[(size_t) m].reinicia();
+                }
+                modWasActive[(size_t) m] = ahora;
+
+                if (ahora)
+                {
+                    mod[(size_t) m].ponPaso (fxP[(size_t) kFxFla][0].load (std::memory_order_relaxed), systemSampleRate);
+                    //  De 0.5 a 6 ms: por debajo de un milisegundo la primera
+                    //  muesca se va por encima de la banda y el peine deja de
+                    //  oirse; por encima de seis ya es un coro.
+                    const float centro = 0.00325f * fsF;
+                    const float amp    = 0.00275f * fsF;
+                    float* w0 = fxBus[kFxFla].getWritePointer (0, startSample);
+                    float* w1 = (chans > 1) ? fxBus[kFxFla].getWritePointer (1, startSample) : w0;
+
+                    for (int i = 0; i < numSamples; ++i)
+                    {
+                        const float v = mod[(size_t) m].avanza();
+                        const float dl = juce::jmax (1.0f, centro + amp * v);
+
+                        for (int ch = 0; ch < chans; ++ch)
+                        {
+                            float* w = (ch == 0) ? w0 : w1;
+                            const float in = w[i] + smFlaFb * flaFbZ[ch];
+                            flaLine.pushSample (ch, std::isfinite (in) ? in : 0.0f);
+                            flaLine.setDelay (dl);
+                            const float d = flaLine.popSample (ch);
+                            flaFbZ[ch] = std::isfinite (d) ? d : 0.0f;
+                            w[i] = flaFbZ[ch];
+                        }
+                    }
+                    modFase[(size_t) m].store (mod[(size_t) m].fase, std::memory_order_relaxed);
+                    returnBus (kFxFla);
+                }
+            }
+
+            // --- PHA: cuatro allpass de primer orden con la esquina barrida.
+            //
+            //  De PRIMER orden y no el allpass de retardo de `Fdn.h`: aquel
+            //  desplaza en el tiempo -es un difusor- y este gira la FASE con la
+            //  frecuencia, que es lo unico que puede producir muescas al
+            //  sumarse con el seco.
+            {
+                const int m = modDe (kFxPha);
+                const float prof = juce::jlimit (0.0f, 1.0f,
+                                     fxP[(size_t) kFxPha][1].load (std::memory_order_relaxed));
+                smPhaProf += kBlock * (prof - smPhaProf);
+
+                const bool ahora = live (kFxPha);
+                if (ahora && ! modWasActive[(size_t) m])
+                {
+                    for (auto& fila : phaZ) for (auto& z : fila) z = 0.0f;
+                    mod[(size_t) m].reinicia();
+                }
+                modWasActive[(size_t) m] = ahora;
+
+                if (ahora)
+                {
+                    mod[(size_t) m].ponPaso (fxP[(size_t) kFxPha][0].load (std::memory_order_relaxed), systemSampleRate);
+                    for (int i = 0; i < numSamples; ++i)
+                    {
+                        const float v = mod[(size_t) m].avanza();
+                        //  La esquina se barre en OCTAVAS y no en Hz: 300 Hz
+                        //  arriba de 300 son una octava y 300 arriba de 3000
+                        //  no se oyen, que es la misma razon por la que
+                        //  `barridoDe` reparte el filtro exponencialmente.
+                        const float hz = 300.0f * std::pow (8.0f, 0.5f * smPhaProf * (v + 1.0f));
+                        const float t  = std::tan (juce::MathConstants<float>::pi
+                                                     * juce::jlimit (20.0f, fsF * 0.45f, hz) / fsF);
+                        const float a  = (t - 1.0f) / (t + 1.0f);
+
+                        for (int ch = 0; ch < chans; ++ch)
+                        {
+                            float* w = fxBus[kFxPha].getWritePointer (ch, startSample);
+                            float x = w[i];
+                            for (int e = 0; e < kPhaEtapas; ++e)
+                            {
+                                const float y = a * x + phaZ[ch][e];
+                                phaZ[ch][e] = x - a * y;
+                                x = y;
+                            }
+                            w[i] = std::isfinite (x) ? x : 0.0f;
+                        }
+                    }
+                    modFase[(size_t) m].store (mod[(size_t) m].fase, std::memory_order_relaxed);
+                    returnBus (kFxPha);
+                }
+            }
+
+            // --- TRM: ganancia por muestra. --------------------------------
+            {
+                const int m = modDe (kFxTrm);
+                const float prof = juce::jlimit (0.0f, 1.0f,
+                                     fxP[(size_t) kFxTrm][1].load (std::memory_order_relaxed));
+                smTrmProf += kBlock * (prof - smTrmProf);
+
+                const bool ahora = live (kFxTrm);
+                if (ahora && ! modWasActive[(size_t) m]) mod[(size_t) m].reinicia();
+                modWasActive[(size_t) m] = ahora;
+
+                if (ahora)
+                {
+                    mod[(size_t) m].ponPaso (fxP[(size_t) kFxTrm][0].load (std::memory_order_relaxed), systemSampleRate);
+                    for (int i = 0; i < numSamples; ++i)
+                    {
+                        //  Solo hacia ABAJO: la ganancia va de 1 a 1-prof y
+                        //  nunca por encima de uno. Subirla metería golpes por
+                        //  encima de lo que la persona puso y el margen del
+                        //  master no es nuestro para gastarlo -es la misma
+                        //  regla que ya tiene HUMANIZAR con la fuerza-.
+                        const float g = 1.0f - smTrmProf * 0.5f * (1.0f - mod[(size_t) m].avanza());
+                        for (int ch = 0; ch < chans; ++ch)
+                        {
+                            float* w = fxBus[kFxTrm].getWritePointer (ch, startSample);
+                            w[i] *= g;
+                        }
+                    }
+                    modFase[(size_t) m].store (mod[(size_t) m].fase, std::memory_order_relaxed);
+                    returnBus (kFxTrm);
+                }
+            }
+        }
     }
 
     // 5d. Master safety. Sixteen pads at full level plus a delay with
@@ -2907,6 +3133,10 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     smDlyMix  = dlyMix.load   (std::memory_order_relaxed);
     smDlyFb   = dlyFb.load    (std::memory_order_relaxed);
     smDlySamp = (float) (dlyTime.load (std::memory_order_relaxed) * 0.001 * systemSampleRate);
+    smChoProf = fxP[(size_t) kFxCho][1].load (std::memory_order_relaxed);
+    smFlaFb   = (fxP[(size_t) kFxFla][1].load (std::memory_order_relaxed) * 2.0f - 1.0f) * kFlaFbMax;
+    smPhaProf = fxP[(size_t) kFxPha][1].load (std::memory_order_relaxed);
+    smTrmProf = fxP[(size_t) kFxTrm][1].load (std::memory_order_relaxed);
 }
 
 int AudioEngine::lengthInSteps() const noexcept

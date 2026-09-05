@@ -660,6 +660,12 @@ namespace
         //  sentido que el ancho estereo de un pad: cuanto ocupa- asi que se
         //  reaprovecha; SALIDA no la tenia. Ver fxDefs.
         { "SALIDA",         "",         "OUTPUT",     "输出",       "خرج" },
+    //  LOS DE MODULACION. `RATE` ya existe -es el de BIT- y en chino dice
+    //  采样率, o sea «frecuencia de muestreo»: un LFO no es eso. Clave propia,
+    //  que es el mecanismo de `TONE|fx` y por lo mismo — reaprovechar una
+    //  clave por parecerse en espanol sale mal en las otras tres.
+    { "RATE|lfo",       "VEL",      "RATE",       "速率",       "سرعة" },
+    { "PROF",           "",         "DEPTH",      "深度",       "عمق" },
         //  AUTO no pasa por T() como palabra traducida sino como CLAVE: en las
         //  cuatro lenguas se dice igual y es la abreviatura que cualquier
         //  aparato usa para la automatizacion, como MIDI o XY.

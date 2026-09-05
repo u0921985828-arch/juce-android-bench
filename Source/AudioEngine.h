@@ -10,6 +10,7 @@
 #include "Fdn.h"
 #include "Eq5.h"
 #include "Dinamica.h"
+#include "Lfo.h"
 #include "MidiIo.h"
 
 // ============================================================================
@@ -56,7 +57,17 @@ public:
     //  cuatro son un INSERTO y no un envio: comprimir una copia y dejar el
     //  original al lado no comprime nada, que es el mismo argumento que ya
     //  puso el EQ en `fxSustituye`.
-    static constexpr int kNumFx         = 11;
+//  Y QUINCE desde que entra la familia de MODULACION -CHO, FLA, PHA, TRM-,
+    //  que son cuatro clientes de UNA pieza: `Lfo`. Se agrupan por eso y no por
+    //  contarlos de cuatro en cuatro; los seis que faltan van con la suya -tres
+    //  extracciones para WID, EXC y TRN, y de cero para PIT y FRZ-.
+    //
+    //  Tres de los cuatro SUMAN, que es una decision y no una copia: el peine
+    //  de un flanger y las muescas de un phaser SON la suma de la copia
+    //  procesada con la seca, asi que restarle el seco al pad los convierte en
+    //  un vibrato y en un allpass puro. TRM al reves -dejar el seco al lado
+    //  CANCELA el temblor-. Ver `fxSustituye`.
+    static constexpr int kNumFx         = 15;
     //  Que indice es cada uno de los cuatro de dinamica, escrito UNA vez: los
     //  usa el bucle de la etapa, `setFxParam` y la cara para saber de cual
     //  leer la reduccion.
@@ -65,6 +76,8 @@ public:
     //  `setFxParam` y de las etapas. Ver `fxP`.
     static constexpr int kFxFlt = 0, kFxHpf = 1, kFxDrv = 2, kFxDly = 3,
                          kFxBit = 4, kFxRev = 5, kFxEq  = 6;
+    //  Y LOS CUATRO DE MODULACION. Ver `Lfo.h`.
+    static constexpr int kFxCho = 11, kFxFla = 12, kFxPha = 13, kFxTrm = 14;
 
     //  Los valores de fabrica de los tres parametros de cada tipo, en una
     //  tabla y no en diecinueve llaves de inicializacion repartidas por esta
@@ -97,6 +110,10 @@ public:
         {   -40.0f,   120.0f, 0.0f },   // GTE  umbral, cierre, mix
         {  6000.0f,     0.5f, 0.0f },   // DSS  freq, fuerza, mix
         {    -1.0f,   120.0f, 0.0f },   // LIM  techo, soltar, mix
+        {    0.80f,    0.55f, 0.0f },   // CHO  rate, profundidad, mix
+        {    0.25f,    0.55f, 0.0f },   // FLA  rate, realimentacion, mix
+        {    0.35f,    0.70f, 0.0f },   // PHA  rate, profundidad, mix
+        {    4.50f,    0.80f, 0.0f },   // TRM  rate, profundidad, mix
     };
     static constexpr int kNumSteps      = 64;   // max steps per pattern (length is variable, see below)
     static constexpr int kMinPatLen     = 16;
@@ -1185,6 +1202,17 @@ public:
     float getDynP1  (int i) const noexcept { return juce::isPositiveAndBelow (i, 4) ? fxP[(size_t) dynIdx (i)][1].load (std::memory_order_relaxed) : 0.0f; }
     float getDynReduccion (int i) const noexcept
     { return juce::isPositiveAndBelow (i, 4) ? dynRed[(size_t) i].load (std::memory_order_relaxed) : 0.0f; }
+
+    //  MODULACION. La fase de AHORA del tipo `f`, o -1 si ese tipo no lleva
+    //  LFO. Es lo que hace visible el mando RATE: su eje se mide en PERIODOS,
+    //  asi que la curva no puede enseñarlo -lo declara `FxVisor::mandosDe`- y
+    //  quien lo enseña es el punto de trabajo viajando a la velocidad de
+    //  verdad. Hermana de `getDynReduccion`, y por lo mismo.
+    float getLfoFase (int f) const noexcept
+    {
+        const int m = modDe (f);
+        return m >= 0 ? modFase[(size_t) m].load (std::memory_order_relaxed) : -1.0f;
+    }
     //  Si el bus MIRADO ha dado señal hace poco. Sin esto la cara no sabe
     //  distinguir «nada suena» de «nada pasa por aqui», y una mancha clavada en
     //  el suelo se lee como un fallo.
@@ -1926,6 +1954,45 @@ private:
     //  mismo que ya hacen `vuL` y los demas medidores.
     std::array<std::atomic<float>, 4> dynRed { { { 0.0f }, { 0.0f }, { 0.0f }, { 0.0f } } };
 
+    //  LA FAMILIA DE MODULACION: cuatro tipos y UNA pieza (`Source/Lfo.h`).
+    //  Un LFO por tipo y no uno compartido, por lo mismo que la dinamica tiene
+    //  cuatro detectores: son cuatro buses que pueden estar abiertos a la vez
+    //  y compartir la fase haria que el coro latiera al ritmo del temblor.
+    std::array<Lfo, 4> mod;
+    static constexpr int modIdx (int m) noexcept { return kFxCho + m; }
+    //  Cual de los cuatro es un tipo, o -1. La usan la etapa y `getLfoFase`.
+    static constexpr int modDe (int f) noexcept
+    { return (f >= kFxCho && f <= kFxTrm) ? f - kFxCho : -1; }
+
+    //  LA FASE DE AHORA, para el punto de trabajo del visor. Es el hermano de
+    //  `dynRed`, y por la misma razon: el eje de esta familia se mide en
+    //  PERIODOS, asi que RATE no cabe en la curva -eso lo declara
+    //  `FxVisor::mandosDe`- y donde se ve es en el punto viajando a la
+    //  velocidad de verdad. La escribe el hilo de audio, la lee la cara.
+    std::array<std::atomic<float>, 4> modFase { { { 0.0f }, { 0.0f }, { 0.0f }, { 0.0f } } };
+
+    //  Las dos lineas de retardo de CHO y FLA. Del MISMO tipo que la de DLY
+    //  -`Lagrange3rd`- porque un retardo que se barre y no interpola crepita, y
+    //  este proyecto ya lo tiene medido: 5.9 dB de perdida con lineal contra
+    //  0.7 con Lagrange de tercer orden. Cortas a proposito: 30 ms de coro y
+    //  10 de flanger son los recorridos del sector, y reservar un segundo como
+    //  DLY seria pagar 96000 muestras por canal para usar mil.
+    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> choLine { 4096 };
+    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> flaLine { 2048 };
+    //  EL TOPE DE LA REALIMENTACION DE FLA, medido y no elegido. A 0.95 el
+    //  peine sale de 14.32 dB y el nivel MEDIO de la banda sube +5.13: eso es
+    //  margen del master gastado por abrir un efecto, y el margen del master
+    //  no es nuestro -es la misma regla que ya tiene HUMANIZAR con la fuerza y
+    //  el tope de 0 dB del fader-.
+    static constexpr float kFlaFbMax = 0.85f;
+    float smChoProf = 0.0f, smFlaFb = 0.0f, smPhaProf = 0.0f, smTrmProf = 0.0f;
+    std::array<bool, 4> modWasActive {};
+    //  Los cuatro allpass de PHA, uno por etapa y por canal. Estado de primer
+    //  orden: una muestra cada uno.
+    static constexpr int kPhaEtapas = 4;
+    float phaZ[2][kPhaEtapas] {};
+    float flaFbZ[2] {};
+
     //  LOS ANILLOS DEL EFECTO MIRADO. Eran del EQ y ahora son de quien la cara
     //  este enseñando: el analizador del EQ resulto ser un caso de la misma
     //  pregunta -«que esta pasando por este bus AHORA»- y tener dos capturas,
@@ -1961,8 +2028,17 @@ private:
     //  sea que el nombre describia una coincidencia de aquel dia y no la
     //  regla. Un campo que ya no significa lo que dice su nombre manda a
     //  buscar, que es lo mismo que costo renombrar `uiIntervalMs` a `relojMs`.
+    //  Y LOS CUATRO DE MODULACION: CHO, FLA y PHA SUMAN; TRM SUSTITUYE. El
+    //  peine de un flanger y las muescas de un phaser salen de sumar la copia
+    //  procesada con la seca, asi que restarle el seco al pad deja un vibrato
+    //  y un allpass puro -que no suenan a nada-. Un temblor es al reves: la
+    //  suma de una senal y su version modulada no tiembla, porque lo que el
+    //  LFO quita de una lo tiene la otra. Lo mide `Tests/rack.py`
+    //  comprobacion 1, comparando lo que la fila del rack DICE contra lo que
+    //  el motor hace.
     static constexpr bool fxSustituye[kNumFx] = { true, true, true, false, true, false, true,
-                                                  true, true, true, true };
+                                                  true, true, true, true,
+                                                  false, false, false, true };
     //  Y NO SE PUEDE QUEDAR CORTA EN SILENCIO. Una lista de inicializacion de
     //  agregado rellena con `false` lo que no se nombre, asi que un tipo nuevo
     //  al que se le olvide su fila aqui entraria como ENVIO —sumando encima en

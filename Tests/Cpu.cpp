@@ -109,6 +109,20 @@ static void prepara (AudioEngine& e, bool tono = false)
     }
 }
 
+//  Los nombres, en el idioma del banco y no en el de la cara: `fxDefs` vive en
+//  `MainComponent` y esto es una consola. Tres letras y su indice bastan para
+//  leer la tabla, y el orden es el de `kFxDef`.
+static const char* nombreDeFx (int f) noexcept
+{
+    static const char* n[] = { "FLT filtro", "HPF paso alto", "DRV saturacion",
+                               "DLY eco", "BIT crujido", "REV reverb", "EQ cinco bandas",
+                               "CMP compresor", "GTE puerta", "DSS de-esser", "LIM limitador",
+                               "CHO coro", "FLA flanger", "PHA phaser", "TRM tremolo" };
+    static_assert (sizeof (n) / sizeof (n[0]) == (size_t) AudioEngine::kNumFx,
+                   "nombreDeFx tiene que tener una fila por tipo");
+    return juce::isPositiveAndBelow (f, (int) (sizeof (n) / sizeof (n[0]))) ? n[f] : "?";
+}
+
 int main()
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -213,51 +227,55 @@ int main()
         fila ("16 pads con filtro", corre (e, buf, 2000));
     }
 
-    std::printf ("\n-- los seis efectos -------------------------------------------------\n");
+    std::printf ("\n-- los efectos -------------------------------------------------\n");
 
     //  5. CADA BUS POR SEPARADO. Los dieciseis pads mandando a uno solo, al
     //     maximo. Un bus que nadie alimenta ni suena no se limpia siquiera,
     //     asi que esta es la unica forma de saber lo que cuesta encendido.
-    struct Fx { const char* nombre; int idx; std::function<void (AudioEngine&)> pon; };
-    const Fx efectos[] =
-    {
-        { "FILTRO barrido", 0, [] (AudioEngine& e) { e.setFltSweep (0.4f); e.setFltReso (0.6f); e.setFltMix (1.0f); } },
-        { "PASA ALTOS",     1, [] (AudioEngine& e) { e.setHpFreq (400.0f); e.setHpReso (0.5f);  e.setHpMix  (1.0f); } },
-        { "SATURACION",     2, [] (AudioEngine& e) { e.setDrvTone (4000.0f);                    e.setDrvMix (1.0f); } },
-        { "ECO",            3, [] (AudioEngine& e) { e.setDlyTime (280.0f); e.setDlyFb (0.45f); e.setDlyMix (1.0f); } },
-        { "CRUJIDO",        4, [] (AudioEngine& e) { e.setCrushBits (6.0f); e.setCrushRate (0.3f); e.setCrushMix (1.0f); } },
-        { "REVERB",         5, [] (AudioEngine& e) { e.setRevSize (0.7f);  e.setRevDamp (0.4f);  e.setRevMix (1.0f); } }
-    };
-
-    for (const auto& fx : efectos)
+    //  Y LA TABLA SALE DE `kFxDef` Y NO ESCRITA A MANO, que es como estaba y
+    //  como se habia quedado en SEIS: ni el EQ ni los cuatro de dinamica
+    //  tenian fila, o sea cinco etapas del hilo de audio que nadie medía —y
+    //  el rotulo de la seccion decia «los seis efectos» con once en la tabla—.
+    //  *Un numero que nadie mira se publica*, y aqui ni se calculaba.
+    //
+    //  Cada uno se pone con SUS defectos y el MIX al maximo: los defectos son
+    //  los que la maquina trae, asi que la fila dice lo que cuesta ese efecto
+    //  tal y como lo enciende una persona.
+    for (int f = 0; f < AudioEngine::kNumFx; ++f)
     {
         AudioEngine e; prepara (e);
-        fx.pon (e);
+        e.setFxParam (f, 0, AudioEngine::kFxDef[f][0]);
+        e.setFxParam (f, 1, AudioEngine::kFxDef[f][1]);
+        e.setFxParam (f, 2, 1.0f);
         for (int p = 0; p < 16; ++p)
         {
             e.setPadPitch (p, 0.0f); e.setPadLoop (p, true);
-            e.setPadSend (p, fx.idx, 1.0f);
+            e.setPadSend (p, f, 1.0f);
         }
         corre (e, buf, 64, [&e] (int b) { if (b == 0) for (int p = 0; p < 16; ++p) e.postNoteOn (p, 0.9f); });
         char nombre[64];
-        std::snprintf (nombre, sizeof (nombre), "16 pads -> %s", fx.nombre);
+        std::snprintf (nombre, sizeof (nombre), "16 pads -> %s", nombreDeFx (f));
         fila (nombre, corre (e, buf, 2000));
     }
 
-    //  6. LOS SEIS A LA VEZ. No es la suma de los seis: el pad se renderiza
-    //     UNA vez al scratch y se reparte, asi que el desvio se paga una sola
-    //     vez. La diferencia entre esta fila y esa suma es lo que ahorra el
-    //     reparto.
+    //  6. TODOS A LA VEZ. No es la suma: el pad se renderiza UNA vez al
+    //     scratch y se reparte, asi que el desvio se paga una sola vez. La
+    //     diferencia entre esta fila y esa suma es lo que ahorra el reparto.
     {
         AudioEngine e; prepara (e);
-        for (const auto& fx : efectos) fx.pon (e);
+        for (int f = 0; f < AudioEngine::kNumFx; ++f)
+        {
+            e.setFxParam (f, 0, AudioEngine::kFxDef[f][0]);
+            e.setFxParam (f, 1, AudioEngine::kFxDef[f][1]);
+            e.setFxParam (f, 2, 1.0f);
+        }
         for (int p = 0; p < 16; ++p)
         {
             e.setPadPitch (p, 0.0f); e.setPadLoop (p, true);
-            for (int f = 0; f < 6; ++f) e.setPadSend (p, f, 0.5f);
+            for (int f = 0; f < AudioEngine::kNumFx; ++f) e.setPadSend (p, f, 0.5f);
         }
         corre (e, buf, 64, [&e] (int b) { if (b == 0) for (int p = 0; p < 16; ++p) e.postNoteOn (p, 0.9f); });
-        fila ("16 pads -> los SEIS", corre (e, buf, 2000));
+        fila ("16 pads -> TODOS", corre (e, buf, 2000));
     }
 
     std::printf ("\n-- el transporte ----------------------------------------------------\n");
@@ -283,7 +301,14 @@ int main()
     //     verdad; las de arriba son para saber a quien culpar.
     {
         AudioEngine e; prepara (e);
-        for (const auto& fx : efectos) fx.pon (e);
+        //  Seis abiertos, que es lo que una sesion tiene puesto a la vez —no
+        //  los quince: la fila de la cara son seis ranuras.
+        for (int f = 0; f < 6; ++f)
+        {
+            e.setFxParam (f, 0, AudioEngine::kFxDef[f][0]);
+            e.setFxParam (f, 1, AudioEngine::kFxDef[f][1]);
+            e.setFxParam (f, 2, 1.0f);
+        }
         for (int p = 0; p < 16; ++p)
         {
             e.setPadKeepLength (p, p < 4);          // cuatro en tono, como en una sesion

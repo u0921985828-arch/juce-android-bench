@@ -2727,7 +2727,8 @@ void MainComponent::auditRack()
                     engine.copyFxScope (pre.data(), post.data(), kFxScopeBanco);
                     const int dd = dinamicaDeFx (f);
                     platoMini.setMuestras (pre.data(), post.data(), kFxScopeBanco, 33.0,
-                                           dd >= 0 ? engine.getDynReduccion (dd) : 0.0f);
+                                           dd >= 0 ? engine.getDynReduccion (dd) : 0.0f,
+                                           engine.getLfoFase (f));
                 }
                 platoMini.ponVivo (engine.fxScopeVivo());
                 return std::make_pair (platoMini.vivos(),

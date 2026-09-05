@@ -126,8 +126,11 @@ public:
     void ponVivo (bool v) { if (v != vivo) { vivo = v; repaint(); } }
     bool estaVivo() const noexcept { return vivo; }
 
+    //  `lfoFase` es la de AHORA del motor, o -1 si este tipo no lleva LFO.
+    //  Es el hermano de `reduccionDb`: las dos son cifras que el hilo de audio
+    //  MIDE y la cara no puede calcular sin repetir la regla.
     void setMuestras (const float* pre, const float* post, int n,
-                      double dtMs, float reduccionDb)
+                      double dtMs, float reduccionDb, float lfoFase = -1.0f)
     {
         if (fx < 0 || pre == nullptr || post == nullptr || n <= 0 || ! isVisible()) return;
 
@@ -185,6 +188,23 @@ public:
             //  De izquierda -ahora- a derecha -hace dos segundos-, que es como
             //  el dibujo de los ecos ya reparte el tiempo.
             for (int i = 0; i < kPuntos; ++i) v.col[(size_t) i] = juce::jmin (1.0f, cola[(size_t) i]);
+        }
+        else if (FxVisor::deModulacion (fx))
+        {
+            //  MODULACION: el punto viaja por la curva a la fase del MOTOR, y
+            //  eso es lo unico que enseña el mando RATE — su eje se mide en
+            //  periodos, asi que la curva no puede. La fase la mide el hilo de
+            //  audio y la publica `AudioEngine::getLfoFase`; calcularla aqui
+            //  con el reloj de la cara seria la misma regla escrita dos veces
+            //  y ademas iria a otra velocidad.
+            if (lfoFase < 0.0f) return;
+            v.punto = true;
+            //  La ventana son `kPeriodosMod` periodos, asi que una vuelta del
+            //  LFO es esa fraccion del ancho.
+            const float t = std::fmod (lfoFase, 1.0f) / FxVisor::kPeriodosMod;
+            v.px = juce::jlimit (0.0f, 1.0f, t);
+            v.py = curva[(size_t) juce::jlimit (0, kPuntos - 1,
+                                                (int) std::lround (v.px * (kPuntos - 1)))];
         }
         else
         {

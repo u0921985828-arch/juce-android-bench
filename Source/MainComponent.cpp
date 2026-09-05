@@ -3759,6 +3759,43 @@ const MainComponent::FxDef MainComponent::fxDefs[MainComponent::kNumFx] =
       { {  -24.0,     0.0, 0.10,    0.0,    -1.0, 8 },
         {    5.0,   500.0, 1.00,  100.0,   120.0, 3 },
         {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
+
+    //  LOS CUATRO DE MODULACION. Sus RATE llevan clave propia -`RATE|lfo`-
+    //  porque `RATE` ya existe y es el de BIT, que en chino dice 采样率, o sea
+    //  «frecuencia de muestreo»: un LFO no es eso. Es el mecanismo que
+    //  `TONE|fx` ya usa, y por lo mismo — reaprovechar una clave por parecerse
+    //  en espanol sale mal en las otras tres.
+    //
+    //  El recorrido de RATE es exponencial con el punto medio en 1 Hz: de 0.05
+    //  a 8 Hz repartidos linealmente deja los tres primeros milimetros del
+    //  mando para todo lo que se usa. Es lo mismo que hace el tiempo de DLY.
+    { "CHO",  { "RATE|lfo", "PROF", "MIX" },
+      { {   0.05,     8.0, 0.01,    1.0,    0.80, 10 },
+        {    0.0,     1.0, 0.01,    0.0,    0.55, 2 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 0.50 },
+
+    //  FLA lleva REALIMENTACION donde CHO lleva profundidad, que es lo que los
+    //  separa: el recorrido del retardo es fijo y corto, y lo que hace el
+    //  peine es cuantas veces vuelve. El mando va de 0 a 1 y se mapea a
+    //  -0.95..+0.95 en el motor: por debajo de la mitad la realimentacion es
+    //  NEGATIVA, que es el flanger que suena a avion y no a metal.
+    { "FLA",  { "RATE|lfo", "FBK", "MIX" },
+      { {   0.05,     8.0, 0.01,    1.0,    0.25, 10 },
+        {    0.0,     1.0, 0.01,    0.0,    0.55, 2 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 0.50 },
+
+    { "PHA",  { "RATE|lfo", "PROF", "MIX" },
+      { {   0.05,     8.0, 0.01,    1.0,    0.35, 10 },
+        {    0.0,     1.0, 0.01,    0.0,    0.70, 2 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 0.50 },
+
+    //  TRM llega a 20 Hz y los otros tres a 8: por encima de dieciseis un
+    //  temblor deja de oirse como pulso y empieza a sonar a timbre, y eso es
+    //  justo lo que un trémolo rapido hace.
+    { "TRM",  { "RATE|lfo", "PROF", "MIX" },
+      { {   0.20,    20.0, 0.01,    3.0,    4.50, 10 },
+        {    0.0,     1.0, 0.01,    0.0,    0.80, 2 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
 };
 
 // The readout always carries a unit, so a number means something on its own.
@@ -3772,6 +3809,11 @@ juce::String MainComponent::fxFormat (const FxDef::Spec& sp, double v)
         case 3:  return juce::String ((int) v) + " ms";
         case 4:  return juce::String ((int) v) + " bit";
         case 5:  return juce::String ((int) v) + "x";
+        //  Un LFO se dice con DECIMAL. Con el formato de frecuencia de los
+        //  filtros -entero- los cuatro de modulacion arrancarian diciendo
+        //  «0 Hz» debajo de 1 Hz, que es un mando roto: la mitad de su
+        //  recorrido cae ahi.
+        case 10: return juce::String (v, 2) + " Hz";
         //  El barrido dice de que LADO esta, no solo cuanto. Un "-62 %" no
         //  significa nada en un filtro; "LP 62" y "HP 62" si, y el centro se
         //  llama por su nombre porque es un estado, no un numero.
@@ -13390,7 +13432,8 @@ void MainComponent::pintaCuadro (double dtMs)
                 //  numeraciones, asi que no hace falta una segunda.
                 const int dd = dinamicaDeFx (platoMini.tipo());
                 platoMini.setMuestras (eqPreTmp, eqPostTmp, nScope, dtMs,
-                                       dd >= 0 ? engine.getDynReduccion (dd) : 0.0f);
+                                       dd >= 0 ? engine.getDynReduccion (dd) : 0.0f,
+                                       engine.getLfoFase (platoMini.tipo()));
                 platoMini.ponVivo (engine.fxScopeVivo());
             }
         }

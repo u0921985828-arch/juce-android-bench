@@ -124,8 +124,44 @@ def main():
                 if rx.search (linea):
                     hallazgos.append ((rel, i, nombre, linea.strip()[:78]))
 
+    #  Y LOS NOMBRES DE LOS EFECTOS, por las MISMAS dos reglas.
+    #
+    #  La regla 3 de §1.5 enumeraba los nuestros a mano y se quedo vieja DOS
+    #  veces -dijo ISO y CRSH cuando el codigo decia FLT y BIT, y luego se
+    #  quedo en seis con once en la tabla-. Una copia de `fxDefs` escrita en un
+    #  documento es una copia que se queda vieja; el criterio no. Asi que el
+    #  documento dice el criterio y esto pasa los nombres DE VERDAD por las
+    #  reglas 1 y 2: un efecto llamado `LOOPER` o `TB3` falla en vez de
+    #  publicarse.
+    #
+    #  Y se leen del fuente y no de una lista aqui, que es la misma razon por
+    #  la que `Tests/lang.py` los parsea: dos listas son dos reglas.
+    fx = open (os.path.join (ROOT, "Source", "MainComponent.cpp"),
+               encoding="utf-8").read()
+    k = fx.index ("const MainComponent::FxDef MainComponent::fxDefs")
+    nombresFx = re.findall (r'\{\s*"([A-Z0-9]{2,8})"\s*,\s*\{', fx[k:fx.index ("\n};", k)])
+
+    #  Y SE CUENTAN CONTRA `kNumFx`, que es lo que hizo falta al romperlo a
+    #  proposito. El ancla de `lang.py` es `"[A-Z]{2,3}"` y se copio aqui: un
+    #  nombre CON UN NUMERO —o sea justo el que esta regla existe para cazar—
+    #  no casa, la fila no se parsea y el barrido sale verde con catorce
+    #  nombres de quince. Un nombre que no se lee no es un nombre limpio.
+    ae = open (os.path.join (ROOT, "Source", "AudioEngine.h"), encoding="utf-8").read()
+    m = re.search (r"kNumFx\s*=\s*(\d+)", ae)
+    cuantos = int (m.group (1)) if m else -1
+    if cuantos < 0 or len (nombresFx) != cuantos:
+        print ("FALLA  lei %d nombres de fxDefs y kNumFx dice %d: esto no mide nada"
+               % (len (nombresFx), cuantos))
+        return 1
+    for nom in nombresFx:
+        for etiqueta, rx in pats:
+            if rx.search (nom):
+                hallazgos.append (("Source/MainComponent.cpp", 0,
+                                   etiqueta, "el efecto se llama «%s»" % nom))
+
     print ("prohibido   %s" % "  ".join (sorted (palabras) + sorted (nums)))
     print ("mirados     %d ficheros de %s" % (nf, ", ".join (ARBOL)))
+    print ("efectos     %d nombres: %s" % (len (nombresFx), " ".join (nombresFx)))
     print()
 
     if hallazgos:

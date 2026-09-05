@@ -5,6 +5,7 @@
 #include "Eq5.h"
 #include "Dinamica.h"
 #include "Fdn.h"
+#include "Lfo.h"
 
 // ============================================================================
 //  LO QUE EL VISOR DE UN EFECTO DIBUJA, SIN COMPONENTE DELANTE.
@@ -72,6 +73,26 @@ namespace FxVisor
         return f == AudioEngine::kFxDly || f == AudioEngine::kFxRev;
     }
 
+    //  LA QUINTA FAMILIA: MODULACION. Su forma es el LFO, y sale de
+    //  `Lfo::valorEn`, o sea de la MISMA funcion que avanza el hilo de audio.
+    //  Nace compartida y no copiada porque copiarla es exactamente el fallo
+    //  que esta cabecera enumera arriba: nueve de once visores dibujaban una
+    //  formula parecida escrita al lado, y REV llevaba tres constantes que no
+    //  existen en la reverb.
+    inline bool deModulacion (int f) noexcept
+    {
+        return f >= AudioEngine::kFxCho && f <= AudioEngine::kFxTrm;
+    }
+
+    //  DOS PERIODOS, y la ventana se mide en PERIODOS y no en milisegundos.
+    //  Con una ventana de tiempo fijo el mando RATE si moveria el dibujo
+    //  -saldrian mas ciclos- y a 8 Hz en dos segundos son 48 columnas para 16
+    //  ciclos: tres puntos por ciclo, o sea una forma que ya no es la que
+    //  suena. En periodos la forma se lee igual a 0.05 Hz que a 8, y lo que se
+    //  pierde -RATE- se dice en `mandosDe` y se enseña en la capa VIVA, donde
+    //  el punto viaja a la velocidad de verdad.
+    static constexpr float kPeriodosMod = 2.0f;
+
     //  QUE MANDOS MUEVEN EL DIBUJO, dicho por la app y no adivinado por el
     //  banco.
     //
@@ -104,6 +125,14 @@ namespace FxVisor
             //  CIERRE y SOLTAR son TIEMPOS, y esto es una transferencia.
             case AudioEngine::kFxGte: return { true,  false };
             case AudioEngine::kFxLim: return { true,  false };
+            //  LOS CUATRO DE MODULACION: RATE es un TIEMPO y su eje se mide
+            //  en periodos, asi que no cabe -y se dice, no se finge-. Donde
+            //  RATE se ve es en el punto de trabajo, que viaja a la fase del
+            //  motor.
+            case AudioEngine::kFxCho:
+            case AudioEngine::kFxFla:
+            case AudioEngine::kFxPha:
+            case AudioEngine::kFxTrm: return { false, true  };
             default:                  return { false, false };
         }
     }
@@ -255,7 +284,40 @@ namespace FxVisor
                     break;
                 }
 
-                default: pon (i, 0.5f); break;
+                //  MODULACION: el LFO, con la amplitud puesta por el segundo
+            //  mando. La curva sale de `Lfo::valorEn` y no de un seno escrito
+            //  aqui: si algun dia la forma deja de ser un seno, el dibujo va
+            //  detras sin que nadie tenga que acordarse.
+            case AudioEngine::kFxCho:
+            case AudioEngine::kFxPha:
+            case AudioEngine::kFxTrm:
+            {
+                const float amp = juce::jlimit (0.0f, 1.0f, p1);
+                for (int i = 0; i < kPuntos; ++i)
+                {
+                    const float t = (float) i / (float) (kPuntos - 1);
+                    pon (i, 0.5f + 0.45f * amp * Lfo::valorEn (t * kPeriodosMod));
+                }
+                break;
+            }
+
+            //  FLA lo mismo, pero su mando va de 0 a 1 y la realimentacion de
+            //  -0.95 a +0.95, asi que el centro del recorrido es CERO y los dos
+            //  extremos son profundos. Se dibuja el MODULO, que es lo que se
+            //  oye: un peine con la realimentacion invertida no suena mas
+            //  flojo, suena distinto.
+            case AudioEngine::kFxFla:
+            {
+                const float amp = std::abs (juce::jlimit (0.0f, 1.0f, p1) * 2.0f - 1.0f);
+                for (int i = 0; i < kPuntos; ++i)
+                {
+                    const float t = (float) i / (float) (kPuntos - 1);
+                    pon (i, 0.5f + 0.45f * amp * Lfo::valorEn (t * kPeriodosMod));
+                }
+                break;
+            }
+
+            default: pon (i, 0.5f); break;
             }
         }
     }

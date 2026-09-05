@@ -65,6 +65,7 @@ namespace Iconos
         insCampana, insMetales, insLead, insCoro, insGuitarra, insMazo,
         insClav, insFlauta, insArpa,
         midi, medir, altavoz, mano, momentaneo, niveles,
+        cho, fla, pha, trm,
         //  --- LOS SEIS QUE FALTABAN, y por que faltaban ------------------
         //
         //  No se eligieron mirando: salieron de `Tests/planos.py`, que dibuja
@@ -164,6 +165,8 @@ namespace Iconos
             case Id::eq:  return "eq";                 case Id::cmp: return "cmp";
             case Id::gte: return "gte";                case Id::dss: return "dss";
             case Id::lim: return "lim";
+            case Id::cho: return "cho";                case Id::fla: return "fla";
+            case Id::pha: return "pha";                case Id::trm: return "trm";
             case Id::mic: return "mic";                case Id::remuestrear: return "remuestrear";
             case Id::bombeo: return "bombeo";          case Id::autocut: return "autocut";
             case Id::sistema: return "sistema";        case Id::cadena: return "cadena";
@@ -743,6 +746,68 @@ namespace Iconos
                 L.lineTo (12.0f, 15.5f); L.lineTo (12.0f, 11.0f);
                 L.lineTo (17.0f, 11.0f); L.lineTo (17.0f, 6.5f);
                 L.lineTo (22.0f, 6.5f);
+                break;
+
+            //  --- LOS CUATRO DE MODULACION -----------------------------
+            //
+            //  Cuatro efectos de la MISMA familia son justo donde es facil
+            //  dibujar cuatro veces lo mismo, que es lo que ya paso con
+            //  MANDAR/RECIBIR y con REV contra `deshacer`. Asi que cada uno
+            //  dibuja lo que lo separa de sus tres hermanos y no «modulacion»:
+            //  CHO la COPIA, FLA el PEINE, PHA las MUESCAS y TRM la
+            //  ENVOLVENTE.
+
+            //  CHO: la misma onda dos veces y desfasada. El efecto ES la
+            //  copia, y por eso son dos trazos iguales y no uno ondulado -que
+            //  seria `automacion` con otro nombre-.
+            case Id::cho:
+                for (int c = 0; c < 2; ++c)
+                {
+                    const float dy = 4.5f + (float) c * 8.0f;
+                    const float dx = (float) c * 2.6f;
+                    L.startNewSubPath (2.0f + dx, dy + 2.5f);
+                    L.cubicTo (6.0f + dx, dy - 2.5f, 9.0f + dx, dy + 7.5f, 13.0f + dx, dy + 2.5f);
+                    L.cubicTo (16.0f + dx, dy - 1.5f, 18.0f + dx, dy + 5.0f, 21.0f - dx, dy + 2.5f);
+                }
+                break;
+
+            //  FLA: el peine. Muescas EQUIESPACIADAS sobre el renglon, que es
+            //  lo que hace un retardo corto sumado al seco — y lo que lo
+            //  separa de PHA, cuyas muescas ni son tantas ni estan repartidas.
+            case Id::fla:
+                linea (L, 2.0f, 6.0f, 22.0f, 6.0f);
+                for (int i = 0; i < 5; ++i)
+                {
+                    const float x = 4.0f + (float) i * 4.2f;
+                    L.startNewSubPath (x - 1.6f, 6.0f);
+                    L.quadraticTo (x, 20.0f, x + 1.6f, 6.0f);
+                }
+                break;
+
+            //  PHA: DOS muescas anchas y separadas sobre una linea plana. Un
+            //  phaser no peina: pone unos pocos ceros y los pasea.
+            case Id::pha:
+                L.startNewSubPath (2.0f, 7.0f);
+                L.lineTo (5.0f, 7.0f);
+                L.quadraticTo (7.5f, 19.5f, 10.0f, 7.0f);
+                L.lineTo (13.0f, 7.0f);
+                L.quadraticTo (16.0f, 21.0f, 19.0f, 7.0f);
+                L.lineTo (22.0f, 7.0f);
+                break;
+
+            //  TRM: la ENVOLVENTE que late. El relleno dice amplitud y no
+            //  tono, que es lo unico que un temblor cambia; dibujarlo como una
+            //  onda lo dejaria a un pelo de `cho`.
+            case Id::trm:
+                for (int i = 0; i < 3; ++i)
+                {
+                    const float x = 3.0f + (float) i * 6.6f;
+                    R.startNewSubPath (x, 12.0f);
+                    R.quadraticTo (x + 2.6f, 2.5f, x + 5.2f, 12.0f);
+                    R.quadraticTo (x + 2.6f, 21.5f, x, 12.0f);
+                    R.closeSubPath();
+                }
+                t.lleno = 0.88f;
                 break;
 
             //  REV: la fuente y lo que rebota. Tres arcos que se abren.

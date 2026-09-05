@@ -4134,6 +4134,251 @@ int main()
                      armado, ok ? "OK" : zatiFalla());
     }
 
+    //  ========================================================================
+    //  LOS CUATRO DE MODULACION: CHO, FLA, PHA y TRM.
+    //
+    //  DOS CIFRAS CADA UNO, que es lo que separa un efecto de un fader: una
+    //  dice que hace algo y la otra que hace SOLO lo que dice. Con una sola,
+    //  las dos formas de escribirlo mal pasan — es la misma regla que ya costo
+    //  una medida en QUITAR RUIDO, en el bucle de la cancion y en el ancho
+    //  estereo de un pad.
+    //
+    //  Y el par de PHA es el que mas vale escrito: «suena distinto» lo cumple
+    //  igual un filtro mal escrito, y «casi lo mismo» lo cumple un phaser que
+    //  no hace nada. Solo las dos juntas dicen ALLPASS.
+    //  ========================================================================
+    {
+        constexpr double kFs = 48000.0;
+        constexpr int    kBs = 512;
+
+        //  Un tono plano, sin envolvente y sin ruido: con envolvente «cuanto
+        //  cambia el nivel» seria la caida del sonido, que es una de las dos
+        //  formas de que esto diga que si sin mirar nada.
+        auto tono = [] (double sr, double seg, float hz, float amp)
+        {
+            auto* sb = new SampleBuffer();
+            const int n = (int) (sr * seg);
+            sb->buffer.setSize (2, n);
+            for (int c = 0; c < 2; ++c)
+                for (int i = 0; i < n; ++i)
+                    sb->buffer.setSample (c, i,
+                        amp * std::sin (juce::MathConstants<float>::twoPi * hz * (float) i / (float) sr));
+            sb->sourceSampleRate = sr;
+            return SampleBuffer::Ptr (sb);
+        };
+
+        //  Un motor de verdad con el pad 0 enrutado. Treinta bloques de
+        //  asentado ANTES de disparar, que el envio se suaviza en 20 ms: si se
+        //  descartan despues se pierde el ataque, que es literalmente lo que
+        //  esta casa ya pago con el limitador.
+        auto corre = [&tono] (int fx, float p0, float p1, float mix,
+                              std::vector<float>& salida, int bloques = 120,
+                              float hz = 440.0f)
+        {
+            AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+            e.setPadGain (0, 1.0f);
+            if (fx >= 0)
+            {
+                e.setFxParam (fx, 0, p0);
+                e.setFxParam (fx, 1, p1);
+                e.setFxParam (fx, 2, mix);
+                e.setPadSend (0, fx, 1.0f);
+            }
+            e.publishSample (0, tono (kFs, 2.5, hz, 0.5f));
+
+            juce::AudioBuffer<float> b (2, kBs);
+            for (int i = 0; i < 30; ++i) { b.clear(); e.renderNextBlock (b, 0, kBs); }
+            e.postNoteOn (0, 1.0f);
+
+            salida.clear();
+            for (int blk = 0; blk < bloques; ++blk)
+            {
+                b.clear(); e.renderNextBlock (b, 0, kBs);
+                for (int i = 0; i < kBs; ++i) salida.push_back (b.getSample (0, i));
+            }
+        };
+
+        auto rms = [] (const std::vector<float>& v, size_t desde, size_t hasta)
+        {
+            double a = 0.0; size_t n = 0;
+            for (size_t i = desde; i < hasta && i < v.size(); ++i) { a += (double) v[i] * v[i]; ++n; }
+            return std::sqrt (a / juce::jmax ((size_t) 1, n));
+        };
+
+        // --- CHO ------------------------------------------------------------
+        //
+        //  (1) con PROF a tope se separa de un coro SIN barrido -o sea de un
+        //      retardo fijo-, y (2) el nivel medio no se mueve: un coro no es
+        //      un fader. Solo lo primero lo cumple un tremolo escrito por
+        //      error, y solo lo segundo lo cumple no hacer nada.
+        {
+            std::vector<float> quieto, barrido;
+            corre (AudioEngine::kFxCho, 1.0f, 0.0f, 1.0f, quieto);
+            corre (AudioEngine::kFxCho, 1.0f, 1.0f, 1.0f, barrido);
+
+            double dif = 0.0;
+            const size_t n = juce::jmin (quieto.size(), barrido.size());
+            for (size_t i = n / 4; i < n; ++i) dif += (double) (barrido[i] - quieto[i])
+                                                    * (double) (barrido[i] - quieto[i]);
+            const double difRms = std::sqrt (dif / juce::jmax ((size_t) 1, n - n / 4));
+            const double nivel  = 20.0 * std::log10 (rms (barrido, n / 4, n)
+                                                     / juce::jmax (1.0e-12, rms (quieto, n / 4, n)));
+            const bool ok = (difRms > 0.02) && (std::abs (nivel) < 1.5);
+            std::printf ("%-34s barrido vs fijo %.4f   nivel %+.2f dB   %s\n",
+                         "CHO", difRms, nivel, ok ? "OK" : zatiFalla());
+        }
+
+        // --- FLA ------------------------------------------------------------
+        //
+        //  Dos cifras: (1) hay PEINE -ceros profundos repartidos por la banda-
+        //  y (2) lo hace la REALIMENTACION, o sea el mando. Sin la segunda,
+        //  «hay peine» lo cumple igual un retardo corto sumado al seco con el
+        //  mando muerto, que es exactamente como se escribe mal un flanger.
+        //
+        //  Y ESTA MEDIDA SE EQUIVOCO DOS VECES. La primera pedia «el nivel
+        //  medio se conserva dentro de 6 dB» y salia +5.13: pasaba por ocho
+        //  decimas, y ademas medía lo que no era -un peine con 0.95 de
+        //  realimentacion SUBE de verdad donde suma-. La segunda comparaba el
+        //  recorrido del nivel con el LFO «parado» a 0.05 Hz contra corriendo,
+        //  y saco 34.41 parado contra 20.76 corriendo: al reves. Tampoco era
+        //  el codigo — a 0.05 Hz el LFO NO esta parado en dos segundos, y
+        //  ademas arranca en fase cero, que es justo donde un seno se mueve
+        //  mas deprisa: el retardo se iba 1.7 ms, o sea dos ciclos de fase a
+        //  1300 Hz. No hay forma de parar el barrido con un mando, asi que la
+        //  pregunta se cambia por una que si se puede contestar.
+        {
+            auto peineCon = [&] (float fbk)
+            {
+                double alto = -200.0, bajo = 200.0;
+                for (float hz : { 500.0f, 900.0f, 1300.0f, 1700.0f, 2100.0f, 2500.0f, 2900.0f, 3300.0f })
+                {
+                    std::vector<float> con, sin_;
+                    corre (AudioEngine::kFxFla, 0.05f, fbk, 1.0f, con,  60, hz);
+                    corre (-1,                  0.0f,  0.0f, 0.0f, sin_, 60, hz);
+                    const double r = 20.0 * std::log10 (rms (con, 8192, 24576)
+                                                        / juce::jmax (1.0e-12, rms (sin_, 8192, 24576)));
+                    alto = juce::jmax (alto, r); bajo = juce::jmin (bajo, r);
+                }
+                return alto - bajo;
+            };
+            auto medioCon = [&] (float fbk)
+            {
+                double sc = 0.0, ss = 0.0;
+                for (float hz : { 500.0f, 900.0f, 1300.0f, 1700.0f, 2100.0f, 2500.0f, 2900.0f, 3300.0f })
+                {
+                    std::vector<float> con, sin_;
+                    corre (AudioEngine::kFxFla, 0.05f, fbk, 1.0f, con,  60, hz);
+                    corre (-1,                  0.0f,  0.0f, 0.0f, sin_, 60, hz);
+                    sc += rms (con, 8192, 24576); ss += rms (sin_, 8192, 24576);
+                }
+                return 20.0 * std::log10 (sc / juce::jmax (1.0e-12, ss));
+            };
+
+            const double tope = peineCon (1.0f);
+            //  Y EL EXCESO CONTRA LA REALIMENTACION A CERO, no contra cero
+            //  decibelios. Sumar una copia de algo a si mismo son +3 dB por
+            //  construccion, en este y en cualquier efecto de los que SUMAN,
+            //  asi que un liston absoluto suspendia a la aritmetica. Lo que se
+            //  pregunta es si SUBIR la realimentacion sube el volumen — o sea
+            //  si el mando es un peine o es un fader.
+            const double exceso = medioCon (1.0f) - medioCon (0.5f);
+
+            const bool ok = (tope > 10.0) && (std::abs (exceso) < 1.5);
+            std::printf ("%-34s peine %.2f dB   FBK sube el nivel %+.2f dB   %s\n",
+                         "FLA", tope, exceso, ok ? "OK" : zatiFalla());
+        }
+
+        // --- PHA ------------------------------------------------------------
+        //
+        //  Y ESTA MEDIDA SE EQUIVOCO ANTES DE ACERTAR, que en este banco ya es
+        //  el patron. La primera version pedia que el MODULO fuese plano
+        //  -«un phaser es una cadena de allpass»- y saco 23.97 dB con el codigo
+        //  perfecto. No era el codigo: PHA **suma**, asi que lo que sale del
+        //  motor es seco + humedo, o sea el phaser ENTERO con sus muescas. Se
+        //  estaba midiendo la propiedad de una pieza en la salida de otra cosa.
+        //
+        //  Las dos cifras buenas son las dos mitades del efecto: (1) la SUMA
+        //  tiene muescas -eso es lo que hace un phaser- y (2) el HUMEDO SOLO es
+        //  plano -eso es lo que dice que es un allpass y no un filtro-. Solo la
+        //  primera la cumple cualquier filtro puesto ahi; solo la segunda, no
+        //  hacer nada.
+        //
+        //  El humedo se saca restando la corrida con el envio CERRADO, que es
+        //  la misma pieza que `soloMojado` ya usa para DLY y REV, y por lo
+        //  mismo: en los efectos que suman, el seco es lo mas alto de la
+        //  ventana y se lleva por delante lo que se quiere medir.
+        {
+            double sumaAlto = -200.0, sumaBajo = 200.0;
+            double humedoAlto = -200.0, humedoBajo = 200.0;
+            for (float hz : { 300.0f, 700.0f, 1100.0f, 1500.0f, 2200.0f, 3000.0f, 4500.0f, 6000.0f })
+            {
+                std::vector<float> abierto, cerrado;
+                corre (AudioEngine::kFxPha, 0.05f, 0.7f, 1.0f, abierto, 60, hz);
+                corre (AudioEngine::kFxPha, 0.05f, 0.7f, 0.0f, cerrado, 60, hz);
+
+                std::vector<float> humedo;
+                humedo.reserve (abierto.size());
+                for (size_t k = 0; k < abierto.size(); ++k)
+                    humedo.push_back (abierto[k] - (k < cerrado.size() ? cerrado[k] : 0.0f));
+
+                const double seco = rms (cerrado, 8192, 24576);
+                const double s1 = 20.0 * std::log10 (rms (abierto, 8192, 24576) / juce::jmax (1.0e-12, seco));
+                const double s2 = 20.0 * std::log10 (rms (humedo,  8192, 24576) / juce::jmax (1.0e-12, seco));
+                sumaAlto = juce::jmax (sumaAlto, s1);  sumaBajo = juce::jmin (sumaBajo, s1);
+                humedoAlto = juce::jmax (humedoAlto, s2); humedoBajo = juce::jmin (humedoBajo, s2);
+            }
+            const double muescas = sumaAlto - sumaBajo;
+            const double plano   = humedoAlto - humedoBajo;
+
+            const bool ok = (muescas > 6.0) && (plano < 1.5);
+            std::printf ("%-34s muescas %.2f dB   humedo plano %.2f dB   %s\n",
+                         "PHA", muescas, plano, ok ? "OK" : zatiFalla());
+        }
+
+        // --- TRM ------------------------------------------------------------
+        //
+        //  (1) el valle contra el pico casa con PROF y (2) el periodo entre
+        //  valles casa con RATE. Solo la primera la cumple un fader con pasos,
+        //  y solo la segunda un LFO cuya profundidad no hace nada.
+        {
+            std::vector<float> v;
+            const float prof = 0.8f, rate = 4.0f;
+            corre (AudioEngine::kFxTrm, rate, prof, 1.0f, v, 200);
+
+            //  La envolvente por ventanas de un ciclo del TONO -no del LFO-,
+            //  que es lo unico que mide un nivel: una ventana mas corta que un
+            //  ciclo mide por donde cayo la ventana, y esta casa ya se comio
+            //  esa con el bache del bucle de los instrumentos.
+            const int vent = (int) (kFs / 440.0);
+            std::vector<double> env;
+            for (size_t i = kBs * 20; i + (size_t) vent < v.size(); i += (size_t) vent)
+                env.push_back (rms (v, i, i + (size_t) vent));
+
+            double pico = 0.0, valle = 1.0e9;
+            for (double e : env) { pico = juce::jmax (pico, e); valle = juce::jmin (valle, e); }
+            const double medido   = valle / juce::jmax (1.0e-12, pico);
+            const double esperado = 1.0 - prof;
+
+            //  Y el periodo, contado en cruces de la envolvente por su punto
+            //  medio: dos cruces seguidos hacia abajo son una vuelta del LFO.
+            const double medio = 0.5 * (pico + valle);
+            int primero = -1, ultimo = -1, vueltas = 0;
+            for (size_t i = 1; i < env.size(); ++i)
+                if (env[i - 1] >= medio && env[i] < medio)
+                {
+                    if (primero < 0) primero = (int) i; else { ultimo = (int) i; ++vueltas; }
+                }
+            const double segs = (vueltas > 0 && ultimo > primero)
+                                  ? (double) (ultimo - primero) * vent / kFs / vueltas : 0.0;
+            const double hz = segs > 0.0 ? 1.0 / segs : 0.0;
+
+            const bool ok = (std::abs (medido - esperado) < 0.08)
+                         && (std::abs (hz - rate) < 0.5);
+            std::printf ("%-34s valle/pico %.3f (PROF dice %.3f)   %.2f Hz (RATE dice %.2f)   %s\n",
+                         "TRM", medido, esperado, hz, (double) rate, ok ? "OK" : zatiFalla());
+        }
+    }
+
     std::printf ("\n%-34s %d FALLA\n", "motor", zatiFallos);
     return zatiFallos > 0 ? 1 : 0;
 }
