@@ -36,11 +36,36 @@ cuatro dicen PATRON—. Es el mismo agujero que ya obligo a medir `secp` (la
 pagina con un paso tocado) e `instd` (con packs instalados): **un estado que el
 banco no abre es un estado sin medir**.
 
-**Arreglado, y por el lado que estaba mal.** La fila de la tapa de modo ya decia
-«SONG MODE», «歌曲模式» y «وضع الأغنية» en las otras tres lenguas: era el ESPANOL
-el que estaba prestado de otra clave. Ahora `modoTapa` tiene claves propias
-—`MODO CANCION|modo` y `MODO PATRON|modo`— y en espanol dice **MODO CANCION**,
-que es lo que las otras tres decian desde siempre.
+**Arreglado dos veces, y la primera salio peor.** La fila de la tapa de modo ya
+decia «SONG MODE», «歌曲模式» y «وضع الأغنية» en las otras tres lenguas: era el
+ESPANOL el que estaba prestado de otra clave. Se le pusieron claves propias
+—`MODO CANCION|modo` y `MODO PATRON|modo`— y el texto paso a «MODO CANCION», y
+**eso se deshizo con su cifra**: esa fila se reparte por el TEXTO y «MODO
+CANCION» pide 70 px donde tiene 51, «PATTERN MODE» 70 donde tiene 54. De 0 TRUNC
+a **211**. La clave se quedo -el desacople era lo que estaba bien- y la palabra
+volvio a la corta, o sea que **el homonimo volvio con ella** y este apartado lo
+dio por cerrado una tanda entera.
+
+**Arreglado de verdad: la palabra tampoco es la de nadie.** `CICLO` y `ARREGLO`.
+La segunda es la que esta casa ya usa para la linea de tiempo —«grabar al
+arreglo», «las herramientas de arreglo»— y la primera no es BUCLE porque BUCLE
+ya es el tramo de la cancion y volveria a chocar en la ficha donde esta tapa
+tambien vive. Las dos son mas cortas que las que sustituyen: **3736 TOUCH a
+3726**, cero TRUNC.
+
+**Y ahora lo juzga algo.** `Tests/planos.py` gana la regla `gemelas`: dos tapas
+de la MISMA capa con el mismo rotulo y el mismo dibujo. Dentro de la misma capa
+y no de la misma pantalla, que es lo que separa un homonimo de una ficha abierta
+encima de la cara —con `ZATI_OPEN=sec` el PLAY de la ficha y el de la cara son
+dos tapas visibles con la misma palabra, y eso NO es un duplicado: son dos tapas
+de un estado—. Y `planos.py` si corre en CI, que es lo que a este fichero le
+faltaba.
+
+**Y en su primera corrida saco una SEGUNDA que no habia visto nadie:** en la
+pagina del PIANO, la pestana `PATRON` (265,181 113x44) y la tapa de modo
+(35,741 63x40), misma palabra, mismo dibujo, misma ficha. Cuatro pantallas
+—`piano`, `pianod`, `pick` y `llena-piano`—. Es exactamente la misma familia, y
+el mismo arreglo la cierra.
 
 Y de paso salio una segunda: la fila «CANCION» que la tapa dejaba de usar tenia
 un unico cliente mas, `exportSourceLabel`, que con ella escribia **«Origen: SONG

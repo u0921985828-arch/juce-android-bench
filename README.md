@@ -12,7 +12,7 @@ prototipo en WebView y hoy es la aplicación entera: pads, secuenciador,
 mezclador, efectos, proyectos y exportación.
 
 **La referencia completa de la máquina está en [`ZATI.md`](ZATI.md)**: qué es,
-la cara y las catorce fichas control por control, los gestos, el motor, los 256
+la cara y las veintiuna fichas control por control, los gestos, el motor, los 256
 instrumentos, la fábrica, los formatos de fichero, el aparato, la compilación y
 el banco. Este fichero es la portada; ése es el manual de la máquina.
 
@@ -66,7 +66,8 @@ El repositorio se compila de dos formas y las dos importan:
   con compensación de la latencia de salida.
 - **Proyectos** autocontenidos (audio incluido) y **sesión recuperable**: lo que
   estabas haciendo vuelve al abrir aunque el sistema matara el proceso.
-- **Exportación** a WAV, master o pistas.
+- **Exportación** a WAV o a OGG —veinte veces más pequeño y sin patentes—,
+  máster o pistas, a la carpeta que elijas.
 
 ## Disciplina de hilos (el núcleo)
 
@@ -149,6 +150,10 @@ sí lo sería si imitara un aparato existente. Las reglas que sigue el proyecto:
   prestada la etiqueta de una marca.
 - **Sin "404" ni terminología de terceros** en cadenas visibles, en el
   identificador de paquete (`com.artifacts.zati`) ni en la ficha de la tienda.
-  Comprobado: no hay ninguna mención a marcas ajenas en `Source/`.
+  **Medido** en cada corrida del banco: `Tests/marcas.py` lee las reglas 1 y 2
+  de `GOOGLE-PLAY.md` §1.6 —del propio documento, para que no sean dos listas—
+  y las contrasta contra `Source/`, contra `Zati.jucer` y contra los nombres
+  que `fxDefs` tiene de verdad. Era una afirmación que no comprobaba nadie, y
+  era falsa: había trece nombres de pad acabados en `808`.
 
 (Esto no es asesoramiento legal. Antes de publicar, que lo mire alguien que sepa.)

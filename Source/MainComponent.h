@@ -2819,6 +2819,9 @@ private:
                          editInfoArea, audioInfoArea,
                          padPlateArea, ctrlPlateArea;
     float vuL = 0.0f, vuR = 0.0f;   // smoothed output peaks for the VU strip
+    //  Y el del canal del pad elegido, que vive en la misma banda del cristal.
+    //  Ver SpectrumDisplay::setCanal y AudioEngine::miraCanal.
+    float vuCanal = 0.0f;
     bool  vuHeld = false;           // solo el banco: ZATI_VU congela la tira
 
     int  selectedPad   = -1;

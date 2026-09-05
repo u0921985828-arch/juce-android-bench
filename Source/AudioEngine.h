@@ -1356,6 +1356,34 @@ public:
     float readOutPeakL() noexcept { return outPeakL.exchange (0.0f, std::memory_order_relaxed); }
     float readOutPeakR() noexcept { return outPeakR.exchange (0.0f, std::memory_order_relaxed); }
 
+    //  Y EL DEL CANAL QUE LA CARA ESTA MIRANDO, con la forma de `miraFx`.
+    //
+    //  Un medidor por canal en la cara era la ultima fila viva de la lente del
+    //  productor -«hay VU de master; el nivel de un pad solo se ve en la
+    //  mesa»- y desde que el canal es lo que pasa por los efectos no hay forma
+    //  de ver uno trabajando sin abrir la mesa, que tapa la rejilla.
+    //
+    //  No hay bus por canal que medir: el canal es un RE-INDICE de las
+    //  ganancias, que es justo lo que hace barato el reparto. Asi que el pico
+    //  se saca de `padScratch`, que es donde un pad ya suena solo, y **solo de
+    //  los pads del canal MIRADO**: la cara enseña UNO a la vez -el del pad
+    //  elegido- asi que medir los dieciseis seria pagar sesenta y cuatro
+    //  barridos para dibujar uno. Es la cuenta de `miraFx` con otra pieza.
+    //
+    //  El precio es que esos pads toman el camino LARGO aunque no manden a
+    //  nadie. Son cuatro de sesenta y cuatro de media y esta medido en
+    //  `Tests/Cpu.cpp` contra la fila de al lado; -1 -que es lo que vale con
+    //  una ficha abierta encima o sin cara- no cuesta nada.
+    void miraCanal (int c) noexcept
+    {
+        canalMirado.store ((c >= 0 && c < kNumCanales) ? c : -1, std::memory_order_relaxed);
+    }
+    int getCanalMirado() const noexcept { return canalMirado.load (std::memory_order_relaxed); }
+
+    //  Max |muestra| del canal mirado desde la ultima lectura, como los dos de
+    //  arriba: la balistica es de la cara y el motor solo dice el pico.
+    float readCanalPico() noexcept { return canalPico.exchange (0.0f, std::memory_order_relaxed); }
+
     // --- Offline bounce (message thread) --------------------------------
     //  An export does NOT render through this engine. It builds a SECOND
     //  engine, copies the whole machine into it and drives that one from a
@@ -2243,6 +2271,9 @@ private:
     std::array<std::array<std::atomic<float>, kNumFx>, kNumCanales> canalSend {};
     std::array<std::atomic<float>, kNumCanales> canalGain {};
     std::array<std::atomic<bool>,  kNumCanales> canalMute {};
+    //  Ver `miraCanal`: cual se mide y cuanto ha dado desde que se leyo.
+    std::atomic<int>   canalMirado { -1 };
+    std::atomic<float> canalPico   { 0.0f };
     //  Bit i puesto = el pad i manda a algun efecto. Ver refrescaSendMask.
     std::atomic<std::uint64_t> padSendMask { 0 };
     static_assert (kNumPads <= 64, "padSendMask es de 64 bits");

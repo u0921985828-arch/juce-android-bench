@@ -817,6 +817,45 @@ def huecos (filas):
     return fuera
 
 
+def gemelas (filas):
+    """DOS TAPAS DE LA MISMA PANTALLA QUE DICEN Y DIBUJAN LO MISMO.
+
+    Es la hermana de `huecos` y la unica que puede cazar un HOMONIMO. Ninguna
+    de las once reglas de `expo.py` lo ve: dos tapas con la misma palabra se
+    maquetan perfectas, no solapan, no se salen, no cortan el rotulo, no miden
+    cero y estan traducidas. Y `Tests/desglose.py` -que fue quien lo encontro
+    la primera vez- no corre en CI y ademas mide el estado APAGADO, donde las
+    cuatro tapas de modo dicen PATRON.
+
+    Se pago: en espanol, en modo cancion, la cara tenia DOS tapas seguidas
+    diciendo CANCION con el mismo dibujo -`songButton`, que abre la ficha, y
+    `modoTapa`, que cambia lo que toca PLAY-. Se arreglo con clave propia y se
+    DESHIZO al medir que «MODO CANCION» costaba 211 TRUNC: la clave se quedo y
+    el texto volvio, asi que el homonimo volvio con el.
+
+    Dentro de la MISMA CAPA, que es lo que separa un homonimo de una ficha
+    abierta encima de la cara: con `ZATI_OPEN=sec` el PLAY de la ficha y el de
+    la cara son dos tapas visibles con el mismo rotulo y el mismo dibujo, y no
+    es un duplicado -son dos tapas de un estado, sincronizadas-. Es la misma
+    pieza que hizo falta para la regla del rotulo tapado.
+
+    Y hace falta el DIBUJO ademas del rotulo: COPIAR en la pagina de un patron
+    y COPIAR FILA dicen cosas distintas con verbos parecidos, y separarlos por
+    el texto solo daria falsos positivos en media app.
+    """
+    b = [r for r in filas
+         if r.get ("kind") == "button" and r.get ("hit") and r.get ("icono")
+         and str (r.get ("text", "")).strip()]
+    visto, fuera = {}, []
+    for r in b:
+        k = (r.get ("capa", 0), str (r["text"]).strip(), r["icono"])
+        if k in visto:
+            fuera.append ((k[1], k[2], visto[k], r["path"]))
+        else:
+            visto[k] = r["path"]
+    return fuera
+
+
 def una (clave):
     tam  = os.environ.get ("ZATI_PLANOS_SIZE", "412x915")
     lang = os.environ.get ("ZATI_PLANOS_LANG", "es")
@@ -833,10 +872,13 @@ def una (clave):
     #  bien -un chip de banco o un mando de valor no lleva dibujo a proposito-.
     #  Un plano que marca en rojo lo que esta bien no se puede leer.
     rotos = huecos (filas)
+    #  Y las gemelas, que no se marcan en el plano -las dos tapas estan bien
+    #  dibujadas, lo que esta mal es que digan lo mismo- pero si se juzgan.
+    pares = gemelas (filas)
     marcados = frozenset (q for _, _, _, rutas in rotos for q in rutas)
     dibujo, cuenta = svg (clave, filas, tam, piel, marcados)
     if dibujo is None:
-        return clave, None, None, (0, 0), []
+        return clave, None, None, (0, 0), [], []
 
     #  Y la foto, en OTRA corrida: ZATI_SHOT y el volcado son excluyentes.
     png = os.path.join (SALIDA, "%s.png" % (clave or "cara"))
@@ -849,7 +891,7 @@ def una (clave):
     if os.path.exists (png):
         with open (png, "rb") as f:
             datos = base64.b64encode (f.read()).decode ("ascii")
-    return clave, dibujo, datos, cuenta, rotos
+    return clave, dibujo, datos, cuenta, rotos, pares
 
 
 def main():
@@ -873,8 +915,8 @@ def main():
     trabajos = max (1, min (16, os.cpu_count() or 4))
     hechos = {}
     with concurrent.futures.ThreadPoolExecutor (max_workers=trabajos) as pool:
-        for clave, dibujo, png, cuenta, rotos in pool.map (una, claves):
-            hechos[clave] = (dibujo, png, cuenta, rotos)
+        for clave, dibujo, png, cuenta, rotos, pares in pool.map (una, claves):
+            hechos[clave] = (dibujo, png, cuenta, rotos, pares)
 
     #  El indice, con todo dentro: se abre en el telefono sin nada al lado.
     #
@@ -887,9 +929,9 @@ def main():
 
     print ("%-11s %-34s %s" % ("clave", "pantalla", "tapas con dibujo / sin el"))
     faltan = 0
-    rotas = []
+    rotas, gem = [], []
     for clave in claves:
-        dibujo, png, (si, no), rotos = hechos.get (clave, (None, None, (0, 0), []))
+        dibujo, png, (si, no), rotos, pares = hechos.get (clave, (None, None, (0, 0), [], []))
         nombre, comose = NOMBRES.get (clave, (clave.upper(), ""))
         if dibujo is None:
             print ("%-11s %-34s SIN VOLCADO" % (clave or "cara", nombre))
@@ -900,6 +942,8 @@ def main():
                                             "   HUECO" if rotos else ""))
         for y, con, sin, _rutas in rotos:
             rotas.append ((clave or "cara", y, con, sin))
+        for txt, ico, a, b in pares:
+            gem.append ((clave or "cara", txt, ico, a, b))
         doc.append (
             '<section id="s-%s"><header class="cab"><div><h2>%s</h2>'
             '<p class="ruta">%s</p></div><div class="cifras">'
@@ -918,7 +962,7 @@ def main():
     #  treinta y dos pantallas no es un indice.
     indice = ['<nav class="indice" aria-label="las pantallas"><p class="rot">32 pantallas</p><ol>']
     for clave in claves:
-        dibujo, _png, (si, no), _r = hechos.get (clave, (None, None, (0, 0), []))
+        dibujo, _png, (si, no), _r, _p = hechos.get (clave, (None, None, (0, 0), [], []))
         if dibujo is None:
             continue
         nombre, _ = NOMBRES.get (clave, (clave.upper(), ""))
@@ -945,9 +989,23 @@ def main():
                    % (clave, y if y >= 0 else "?",
                       ",".join (c[:12] for c in con), ",".join (s[:16] for s in sin)))
         print ("FALLA: %d filas con hueco" % len (rotas))
+
+    #  Y LAS GEMELAS. Ver `gemelas`: dos tapas de la misma capa que dicen la
+    #  misma palabra con el mismo dibujo. Se dice QUIENES son y no una cuenta,
+    #  que es lo que hace falta para arreglarlo.
+    if gem:
+        print()
+        for clave, txt, ico, a, b in gem:
+            print ("  GEMELA %-10s «%s» con el dibujo «%s»" % (clave, txt, ico))
+            print ("         %s" % a)
+            print ("         %s" % b)
+        print ("FALLA: %d pares de tapas dicen y dibujan lo mismo" % len (gem))
+
+    if rotas or gem:
         return 1
 
-    print ("planos: %d pantallas, ninguna fila con un hueco de dibujo" % len (claves))
+    print ("planos: %d pantallas, ninguna fila con un hueco de dibujo y "
+           "ninguna pareja que diga lo mismo" % len (claves))
     return 0
 
 

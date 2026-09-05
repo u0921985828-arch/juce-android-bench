@@ -315,6 +315,25 @@ int main()
         fila ("16 pads en 16 CANALES -> TODOS", corre (e, buf, 2000));
     }
 
+    //  Y LO QUE CUESTA EL MEDIDOR DEL CANAL QUE SE MIRA.
+    //
+    //  El precio no es el barrido -que es un `findMinAndMax` sobre memoria que
+    //  el filtro del pad acaba de tocar- sino que los pads de ESE canal toman
+    //  el camino LARGO aunque no manden a nadie, que es justo lo que la mascara
+    //  existe para evitar. Por eso se mide con los dieciseis pads en el canal 0
+    //  y sin un solo envio abierto, que es el peor caso posible: los dieciseis
+    //  medidos a la vez, cuando en la maquina son cuatro de sesenta y cuatro de
+    //  media. Se lee CONTRA la fila de al lado -los mismos dieciseis pads sin
+    //  mirar ningun canal- y no contra un numero absoluto.
+    {
+        AudioEngine e; prepara (e);
+        for (int p = 0; p < 16; ++p) { e.setPadPitch (p, 0.0f); e.setPadLoop (p, true); }
+        corre (e, buf, 64, [&e] (int b) { if (b == 0) for (int p = 0; p < 16; ++p) e.postNoteOn (p, 0.9f); });
+        fila ("16 pads, sin mirar ningun canal", corre (e, buf, 2000));
+        e.miraCanal (0);
+        fila ("16 pads, los 16 en el canal MIRADO", corre (e, buf, 2000));
+    }
+
     std::printf ("\n-- el transporte ----------------------------------------------------\n");
 
     //  7. SECUENCIADOR. Un patron lleno a 120 BPM parte el bloque en cada

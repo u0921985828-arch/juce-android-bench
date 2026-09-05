@@ -12,6 +12,11 @@ name: El banco
 #  `Tests/cpu.py` se queda fuera a proposito -mide por RELOJ y este fichero ya
 #  tiene escrito que con la maquina ocupada no es una medida- y `Tests/expo.py`
 #  entra en su modo paralelo, que son ~2 min y no cuarenta.
+#
+#  Y las tres que no caben aqui —`cpu.py`, `Soak` y `Cpu`— ya no dependen de
+#  que alguien se acuerde: viven en `medidas.yml`, con el runner para ellas
+#  solas y una vez al dia. La razon por la que estaban fuera se conserva; lo
+#  que se arregla es que no las mirara nadie.
 on:
   push:
     branches: ["**"]

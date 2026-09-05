@@ -4781,6 +4781,44 @@ int main()
     }
 
     {
+        //  EL MEDIDOR DEL CANAL, CON DOS CIFRAS.
+        //
+        //  Un medidor que copia el master sube igual con cualquier pad, asi que
+        //  «el canal 1 sube» lo cumple tambien un cable puesto al sitio
+        //  equivocado. Lo que lo separa es la SEGUNDA: el pad suena en el canal
+        //  1 y el 2 tiene que quedarse en CERO — mismo motor, mismo bloque,
+        //  misma muestra, y lo unico que cambia es a cual se le pregunta.
+        //
+        //  Y se lee por `readCanalPico`, que vacia: dos lecturas seguidas de un
+        //  silencio dan cero, que es lo que hace que la de abajo signifique
+        //  algo.
+        auto mide = [&tonoPlano] (int canalMirado)
+        {
+            AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+            e.setPadGain (0, 1.0f);
+            e.setPadCanal (0, 1);            // el pad suena en el canal 1
+            e.miraCanal (canalMirado);
+            e.publishSample (0, tonoPlano (kFs, 0.20, 440.0));
+
+            juce::AudioBuffer<float> b (2, kBs);
+            double pico = 0.0;
+            for (int i = 0; i < 60; ++i)
+            {
+                if (i == 5) e.postNoteOn (0, 1.0f);
+                b.clear(); e.renderNextBlock (b, 0, kBs);
+                if (i > 5) pico = juce::jmax (pico, (double) e.readCanalPico());
+            }
+            return pico;
+        };
+
+        const double suyo  = mide (1);
+        const double ajeno = mide (2);
+        const bool ok = (suyo > 0.2) && (ajeno < 1.0e-6);
+        std::printf ("%-34s el suyo %.5f   el de al lado %.5f   %s\n",
+                     "el medidor es del canal", suyo, ajeno, ok ? "OK" : zatiFalla());
+    }
+
+    {
         //  EL FADER DEL CANAL ESCALA LAS DOS MITADES, que es lo que separa un
         //  canal de mesa de un fader del seco: con el envio abierto, bajar el
         //  canal 6 dB tiene que bajar el SECO y la COLA lo mismo. Solo lo

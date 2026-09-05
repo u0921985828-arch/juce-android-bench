@@ -63,7 +63,7 @@ qué está hecha así:
   milisegundos de ida y vuelta. No es una estimación.
 - **Cuatro idiomas** (español, inglés, chino, árabe) con la maqueta espejada en
   árabe, y **cuatro carcasas** medidas en contraste y ΔE, no elegidas a ojo.
-- **Un banco de pruebas propio**: veintinueve programas de Python y tres de C++
+- **Un banco de pruebas propio**: cuarenta programas de Python y tres de C++
   que miden la interfaz en siete pantallas por cuatro idiomas por treinta y tres
   fichas, el motor por etapas, los sonidos de fábrica por sonoridad, y un millón
   de sesiones distintas. La regla de la casa es que **nada se entrega sin
@@ -192,10 +192,12 @@ Todo lo que es de un pad. Su cabecera lleva `OIR` —escucharlo desde arriba— 
   de **choke** (off, 1–8), `CINTA`/`TONO` y `NORMALIZAR`.
 - **RECORTE** — inicio, fin y los dos fundidos, en segundos; `REV`, `LOOP` y
   `QUITAR RUIDO`; y la **onda**, con sus asas y tres tapas de zoom.
-- **EL PAD** — `ENVIOS` (puerta al RACK), `PIANO` (puerta a la página del
-  piano), `16 NIVELES` y, si el pad lleva un instrumento, `PRESETS`. Más
-  `AUTOCUT` y `BOMBEO`, la fila de fuente (`AUTO CHOP`, `GRABAR MIC`,
-  `REMUESTREAR`) y los ocho colores del pad.
+- **RIG** — `CANAL nn` (a cuál de los dieciséis va este pad, con su rejilla de
+  cuatro por cuatro), `RACK` (puerta al rack de ese canal), `PIANO` (puerta a la
+  página del piano), `16 NIVELES` y, si el pad lleva un instrumento, `PRESETS`.
+  Donde las cinco no caben en una fila, se parten en dos. Más `AUTOCUT` y
+  `BOMBEO`, la fila de fuente (`AUTO CHOP`, `GRABAR MIC`, `REMUESTREAR`) y los
+  ocho colores del pad.
 
 ### SEC — el secuenciador
 
@@ -233,10 +235,17 @@ al toque.
 
 ### MEZCLA
 
-Dieciséis canales del banco que elijas: color, nombre, fader en decibelios, pan,
-`M` y `S`. Debajo y **fuera del desplazamiento**, el **máster** —que se recuerda
-con las preferencias de la persona y no con el proyecto— más `SIN SOLO` y la
-puerta al `RACK`.
+**Dos páginas y un interruptor**, no dos pestañas: la fila del título mide
+`Metrics::hit` y una fila de pestañas costaría 44 px de las dieciséis tiras.
+
+- **PADS** — dieciséis tiras del banco que elijas: color, nombre, fader en
+  decibelios, pan, `M` y `S`.
+- **CANALES** — las dieciséis del mezclador: color, número, fader, `M` y
+  cuántos pads le entran. Sin pan —el sitio en la imagen es del pad— y sin
+  `SIN SOLO`, que es de un pad y allí no hay ninguno que quitar.
+
+Debajo y **fuera del desplazamiento**, el **máster** —que se recuerda con las
+preferencias de la persona y no con el proyecto— más la puerta al `RACK`.
 
 ### AJUSTES
 
@@ -924,7 +933,7 @@ máquina ocupada no es una medida, y `Soak`, que es un millón de sesiones.
 
 ## 13. El banco
 
-Treinta y nueve programas de Python y tres de C++. La regla de cabecera: **nada
+Cuarenta programas de Python y tres de C++. La regla de cabecera: **nada
 se entrega sin medirlo**, y **una prueba que nunca se ha visto fallar no es una
 prueba: es una línea que imprime OK**, así que cada comprobación nueva se valida
 rompiendo el código a propósito y comprobando que sale FALLA con el número que se
@@ -933,17 +942,18 @@ prueba** — ha pasado diez veces.
 
 ### Las diez reglas duras
 
-`Tests/expo.py` monta la app **1400 veces** —siete pantallas por cuatro idiomas
-por cincuenta fichas— y cada una tiene que dar cero en: solapes entre hermanos,
+`Tests/expo.py` monta la app **1456 veces** —siete pantallas por cuatro idiomas
+por cincuenta y dos fichas— y cada una tiene que dar cero en: solapes entre hermanos,
 controles fuera de la ventana, celdas de rejilla por debajo de su suelo, rótulos
 cortados o apretados, textos sin traducir, controles encendidos que miden cero,
 rótulos pintados debajo de un control, arranques caídos, y residuo al cambiar de
 página. Los incumplimientos del dedo mínimo se cuentan y **no fallan**: son una
-escalera medida y escrita, y hoy son 3612 — de los cuales 2888 son las 1148
+escalera medida y escrita, y hoy son 3726 — de los cuales 2888 son las 1148
 corridas de antes de que entraran las siete pantallas con la app LLENA, `songm`
-y `tour3`.
+y `tour3`, y 3736 los de antes de que la tapa de modo dejara de decir la
+palabra de la ficha que hay al lado.
 
-Nueve de las cincuenta son un ESTADO y no una ficha: `llena`, `llena-song`,
+Nueve de las cincuenta y dos son un ESTADO y no una ficha: `llena`, `llena-song`,
 `llena-songa`, `llena-sec`, `llena-piano`, `llena-proj` y `llena-mix` abren la
 misma pantalla con **treinta pads, ocho patrones llenos y una canción de sesenta
 y cuatro compases** dentro, que es lo que ningún banco abría. En su primera
@@ -1025,7 +1035,7 @@ dicen «una caja de ritmos» y «el proyecto anterior».
 
 Y sobre todo: `GOOGLE-PLAY.md` §1.4 lo **afirmaba** desde el principio sin que
 lo comprobara nadie. Ahora es una medida — `Tests/marcas.py` lee las reglas 1 y
-2 de §1.5 **del propio documento**, para que no sean dos listas, y las contrasta
+2 de §1.6 **del propio documento**, para que no sean dos listas, y las contrasta
 contra `Source/` y `Zati.jucer` en cada corrida del banco. Los nombres de los
 aparatos vivían en `Tools/fabrica.py` y `Tests/clon.py`, que no entraban en el
 APK; los dos se retiraron con las grabaciones, así que `marcas.py` corre hoy
@@ -1104,10 +1114,13 @@ de las correcciones de arriba movió un píxel.
 | `Lang.cpp` | los cuatro idiomas |
 | `ZatiLookAndFeel.h` | `Metrics`, las cuatro carcasas y el dibujo de una tapa |
 | `Zati.h` | los ocho colores |
-| `Iconos.h`, `PadArt.h`, `StoreArt.h` | los ochenta y seis dibujos, la tapa de un pad y la marca |
+| `Iconos.h`, `PadArt.h`, `StoreArt.h` | los ciento seis dibujos, la tapa de un pad y la marca |
 | `UiAudit.h` | el volcado que lee el banco |
 | `StepGrid.h`, `PianoRoll.h`, `Playlist.h`, `WaveformDisplay.h`, `SpectrumDisplay.h`, `XyPad.h`, `Teclado.h`, `ChopPreview.h`, `PadButton.h` | los componentes que se pintan enteros |
 | `Onsets.h`, `Denoise.h`, `MidiIo.h`, `AudioFocus.cpp`, `SampleLoader.cpp` | troceo por golpes, quitar ruido, MIDI, el foco de audio y la carga |
+| `Eq5.h`, `Dinamica.h`, `Lfo.h`, `Estereo.h` | las piezas de DSP que los veintiún efectos comparten |
+| `EqCurve.h`, `FxMini.h`, `FxVisor.h`, `Analizador.h` | la cara propia del EQ, el plato y los once visores |
+| `SampleBuffer.h`, `SampleLoader.h`, `AppStorage.h`, `Lang.h` | lo que sostiene un sonido, quién lo lee, dónde se guarda y la puerta de `T()` |
 
 ### Qué documento contesta qué
 

@@ -3,7 +3,7 @@
 #  NINGUNA MARCA AJENA EN LO QUE SE PUBLICA.
 #
 #  GOOGLE-PLAY.md §1.4 lo AFIRMA -«se ha comprobado que no hay ni una mencion a
-#  SP-404, Roland, Akai, MPC ni Koala en Source/»- y §1.5 lo prohibe «ni en
+#  SP-404, Roland, Akai, MPC ni Koala en Source/»- y §1.6 lo prohibe «ni en
 #  codigo, ni en comentarios, ni en la ficha, ni en capturas». Las dos frases
 #  llevaban ahi desde el principio y no las comprobaba nadie, asi que eran
 #  falsas: el banco B tenia TRECE nombres de pad visibles con `808` -BD 808,
@@ -15,7 +15,7 @@
 #
 #  LA LISTA SALE DEL DOCUMENTO, no de aqui. Escribirla otra vez serian dos
 #  reglas: el dia que alguien anadiera una marca a GOOGLE-PLAY.md, este banco
-#  seguiria mirando las de ayer. Se leen las reglas 1 y 2 de §1.5 y se saca de
+#  seguiria mirando las de ayer. Se leen las reglas 1 y 2 de §1.6 y se saca de
 #  ellas lo que esta prohibido; si el documento cambia de forma y no se puede
 #  leer, esto FALLA en vez de dar verde con la lista vacia -que es como una
 #  prueba de esta clase se muere sin que nadie se entere-.
@@ -45,7 +45,7 @@ FUERA = ()
 
 
 def prohibido():
-    """Las reglas 1 y 2 de GOOGLE-PLAY.md §1.5, leidas del documento.
+    """Las reglas 1 y 2 de GOOGLE-PLAY.md §1.6, leidas del documento.
 
     Dos regex ANCLADAS en las palabras del propio documento y no un barrido de
     mayusculas: el primer intento cogia la seccion entera y se traia la regla 3
@@ -90,7 +90,7 @@ def ficheros():
 def main():
     palabras, nums = prohibido()
     if not palabras or not nums:
-        print ("FALLA  no puedo leer las reglas 1 y 2 de GOOGLE-PLAY.md §1.5: "
+        print ("FALLA  no puedo leer las reglas 1 y 2 de GOOGLE-PLAY.md §1.6: "
                "sin lista no hay prueba")
         return 1
 
@@ -126,7 +126,7 @@ def main():
 
     #  Y LOS NOMBRES DE LOS EFECTOS, por las MISMAS dos reglas.
     #
-    #  La regla 3 de §1.5 enumeraba los nuestros a mano y se quedo vieja DOS
+    #  La regla 3 de §1.6 enumeraba los nuestros a mano y se quedo vieja DOS
     #  veces -dijo ISO y CRSH cuando el codigo decia FLT y BIT, y luego se
     #  quedo en seis con once en la tabla-. Una copia de `fxDefs` escrita en un
     #  documento es una copia que se queda vieja; el criterio no. Asi que el

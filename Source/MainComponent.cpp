@@ -14075,6 +14075,23 @@ void MainComponent::pintaCuadro (double dtMs)
         //  unico que se salta es el repintado. Ver `seVeLaCara`.
         if (animar) cristal.setVu (vuL, vuR);
         // (the LCD no longer carries a step strip)
+
+        //  Y LA TERCERA TIRA: el canal del pad elegido.
+        //
+        //  Se le dice al motor QUE canal medir aqui y no en `selectPad`, que es
+        //  lo unico que lo apaga solo: con una ficha abierta encima el medidor
+        //  no se ve, y medirlo igual pagaria el camino largo de esos pads para
+        //  dibujar algo que esta tapado. -1 es «ninguno». Ver `miraCanal`.
+        const int canalVisto = animar ? engine.getPadCanal (selectedPad) : -1;
+        engine.miraCanal (canalVisto);
+
+        //  Misma balistica que la aguja del master, y por lo mismo: es una
+        //  constante de TIEMPO y no un factor por cuadro.
+        const float pc = engine.readCanalPico();
+        const float caidaCan = (float) std::exp (-dtMs / kTauAgujaMs);
+        vuCanal = juce::jmax (pc, vuCanal * caidaCan);
+        if (vuCanal < 0.004f) vuCanal = 0.0f;
+        if (animar) cristal.setCanal (canalVisto, vuCanal);
     }
 
     if (recordingActive)

@@ -151,6 +151,28 @@ public:
         repaint();
     }
 
+    //  EL MEDIDOR DEL CANAL, en la MISMA banda y por eso a coste cero de alto.
+    //
+    //  Era la ultima fila viva de la lente del productor: «hay VU de master; el
+    //  nivel de un pad solo se ve en la mesa» — y desde que el canal es lo que
+    //  pasa por los efectos, ver uno trabajando obligaba a abrir la mesa, que
+    //  tapa la rejilla. La banda mide 22 px y las dos filas del master ocupan
+    //  hasta la 13: la tercera cabe entera sin pedir un pixel.
+    //
+    //  Es el del canal del pad ELEGIDO y no los dieciseis: dieciseis tiras en
+    //  la cara no caben, y ademas medir los dieciseis costaria sesenta y cuatro
+    //  barridos en el hilo de audio para dibujar uno. Ver `AudioEngine::miraCanal`.
+    //
+    //  Y el numero en el canalon, donde ya estan la L y la R: sin el, la tira
+    //  dice que ALGO suena y no de que — que es justo lo que un medidor de
+    //  canal existe para decir.
+    void setCanal (int canal, float nivel)
+    {
+        if (canal == canalNum && std::abs (nivel - canalVu) < 0.002f) return;
+        canalNum = canal; canalVu = nivel;
+        repaint();
+    }
+
     void paint (juce::Graphics& g) override
     {
         auto b = getLocalBounds().toFloat();
@@ -357,6 +379,23 @@ public:
 
             row (vuL, clipL > 0, band.withHeight (5.0f).withY (band.getY() + 1.0f));
             row (vuR, clipR > 0, band.withHeight (5.0f).withY (band.getY() + 8.0f));
+
+            //  Y LA TERCERA, la del canal, solo cuando hay uno que mirar: con
+            //  una ficha abierta encima el motor deja de medir y una tira
+            //  clavada en el suelo se lee como un canal mudo y no como uno que
+            //  nadie esta midiendo.
+            if (canalNum >= 0)
+            {
+                //  Dos cifras siempre, como el rotulo del selector de pad: un
+                //  «9» que pasa a «10» cambia de ancho, y aqui el hueco son
+                //  diez pixeles.
+                g.setColour (ZatiColours::lcdFg.withAlpha (0.55f));
+                g.setFont (ZatiColours::monoFont (Metrics::fTiny, true));
+                g.drawText (Lang::ltr (juce::String (canalNum + 1).paddedLeft ('0', 2)),
+                            gutter.withHeight (7.0f).withY (band.getY() + 14.0f),
+                            juce::Justification::centredLeft);
+                row (canalVu, false, band.withHeight (5.0f).withY (band.getY() + 15.0f));
+            }
         }
 
         // LCD inner bezel.
@@ -409,6 +448,10 @@ private:
     int   colCount   = 0;
 
     float        vuL   { 0.0f }, vuR { 0.0f };
+    //  Ver setCanal: -1 es «no hay canal que mirar», que no es lo mismo que uno
+    //  en silencio.
+    int          canalNum { -1 };
+    float        canalVu  { 0.0f };
     bool         wasSilent { false };
     juce::String readout { "ZATI" };
     float        dragFromX { -1.0f };

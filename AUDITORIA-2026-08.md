@@ -29,6 +29,16 @@ función de 3 428 líneas**. `Tests/` son 6 040 líneas en 21 bancos.
 Si sólo hay tiempo para una cosa, la primera. Mientras el banco no pueda
 suspender, cualquier arreglo de los otros se puede volver a perder sin ruido.
 
+> **Estado: las cinco están hechas**, y con ellas el resto de este documento.
+> Se deja como estaba porque es el DIAGNÓSTICO y no el estado — es la misma
+> decisión que `ESTUDIO-2026.md` tomó con su bloque de `androidTargetSDK`—, y
+> lo que encontró cada una y con qué cifra vive en `CLAUDE.md`. Lo que no puede
+> quedarse es sin decir que ya no es verdad: el banco devuelve código de salida
+> en las veintitantas pruebas y corre solo en `.github/workflows/banco.yml`, el
+> `project.xml` pasa por `ProjectStore::escribeTexto`, abrir y vaciar un
+> proyecto ya no heredan —`padPorDefecto`—, el NaN no se queda encerrado en el
+> delay ni en la reverb, y el manifiesto ya no clava la app en vertical.
+
 ---
 
 ## A · El banco no puede fallar

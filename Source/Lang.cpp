@@ -1372,8 +1372,28 @@ namespace
         //  mueve la otra, y de paso `exportSourceLabel` deja de decir «Origen:
         //  SONG MODE» en tres de los cuatro idiomas. El homonimo del espanol
         //  queda, medido y escrito: cuesta menos que su arreglo.
-        { "MODO CANCION|modo", "CANCION", "SONG",       "歌曲",     "أغنية" },
-        { "MODO PATRON|modo",  "PATRON",  "PATTERN",    "乐句",     "نمط" },
+        //  Y LA PALABRA DE ESTA TAPA NO ES LA DE NINGUN SITIO.
+        //
+        //  La columna de anulacion decia CANCION y PATRON — prestadas de la
+        //  puerta que abre la ficha y de la pestaña de la pagina— y eso ponia
+        //  DOS tapas con la misma palabra y el mismo dibujo en la MISMA
+        //  pantalla: en la cara en modo cancion, `songButton` y esta; y en la
+        //  pagina del piano, la pestaña PATRON y esta. Lo canto la regla nueva
+        //  de `Tests/planos.py` con las dos, y la segunda no la habia visto
+        //  nadie.
+        //
+        //  Se arreglo una vez con «MODO CANCION» y se DESHIZO: esa fila se
+        //  reparte por el TEXTO y pedia 70 px donde tiene 51 — de 0 TRUNC a
+        //  211. Asi que la palabra tiene que ser corta Y suya, y la que ya usa
+        //  esta casa para la linea de tiempo es ARREGLO: «grabar al arreglo»,
+        //  «las herramientas de arreglo». Enfrente, CICLO — el patron dando
+        //  vueltas— que no es BUCLE porque BUCLE ya es el tramo de la cancion y
+        //  volveria a chocar en la ficha donde esta tapa tambien vive.
+        //
+        //  El DIBUJO se queda: sigue significando lo mismo, y la pareja ya se
+        //  separa por la palabra, que es lo que se lee primero.
+        { "MODO CANCION|modo", "ARREGLO", "ARRANGE",    "编排",     "ترتيب" },
+        { "MODO PATRON|modo",  "CICLO",   "CYCLE",      "循环",     "دورة" },
         { "toca un compas para poner el patron", "", "tap a bar to place the pattern",
                                         "点一个小节放置乐句",
                                         "المس مازورة لوضع النمط" },

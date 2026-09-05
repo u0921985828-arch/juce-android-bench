@@ -208,21 +208,37 @@ return antesDe (banda, tapa.getBounds(), aire);
 //  LA TAPA DEL MODO, que dice lo que SUENA y no lo que va a pasar si la tocas.
 //
 //  Es la misma gramatica que `transporte`: la tapa lleva el nombre del estado
-//  en el que esta -PATRON o CANCION- con su dibujo, asi que se lee de un
+//  en el que esta -CICLO o ARREGLO- con su dibujo, asi que se lee de un
 //  vistazo sin acordarse de nada. Una tapa que dijera "IR A CANCION" obligaria
 //  a mirar si esta encendida para saber donde estas.
-//  Y CON CLAVE PROPIA, que es lo que arregla un HOMONIMO de la compilacion
-//  espanola. La tapa decia `T("CANCION")` y la pestana que abre la ficha dice
-//  `T("SONG")`, cuya fila en espanol es tambien «CANCION»: en modo cancion, y
-//  girado —donde el transporte comparte renglon con las seis pestanas— habia
-//  dos tapas seguidas con la MISMA palabra y el MISMO dibujo, una abriendo una
-//  ficha y la otra cambiando lo que toca PLAY.
+//  Y CON CLAVE PROPIA Y PALABRA PROPIA, que hicieron falta las dos y en dos
+//  tandas distintas.
 //
-//  En las otras tres lenguas ya estaba bien: la fila decia «SONG MODE», «歌曲
-//  模式» y «وضع الأغنية». O sea que era una fila con la traduccion buena y el
-//  espanol prestado de otra clave — y `Tests/desglose.py` no podia verlo porque
-//  mide el estado APAGADO, donde las cuatro dicen PATRON. Un estado que el banco
-//  no abre es un estado sin medir.
+//  La tapa decia `T("CANCION")` y la pestana que abre la ficha dice `T("SONG")`,
+//  cuya fila en espanol es tambien «CANCION»: en la cara en modo cancion habia
+//  DOS tapas con la MISMA palabra y el MISMO dibujo, una abriendo una ficha y
+//  la otra cambiando lo que toca PLAY. La clave propia lo desacoplo; el texto
+//  paso a «MODO CANCION» y **se deshizo**, porque esa fila se reparte por el
+//  TEXTO y pedia 70 px donde tiene 51: de 0 TRUNC a 211. Asi que la clave se
+//  quedo y la palabra volvio, y con ella el homonimo — que es lo que este
+//  comentario dio por arreglado una tanda entera.
+//
+//  Ahora la palabra tampoco es la de nadie: CICLO y ARREGLO. La segunda es la
+//  que esta casa ya usa para la linea de tiempo -«grabar al arreglo», «las
+//  herramientas de arreglo»- y la primera no es BUCLE porque BUCLE ya es el
+//  tramo de la cancion, y volveria a chocar en la ficha donde esta tapa
+//  tambien vive. Las dos son mas cortas que las que sustituyen, asi que no
+//  cuestan un pixel: 3736 TOUCH a 3726.
+//
+//  Y lo canto una regla NUEVA -`gemelas`, en `Tests/planos.py`- porque ninguna
+//  de las once de `expo.py` puede verlo: dos tapas con la misma palabra se
+//  maquetan perfectas. `Tests/desglose.py`, que fue quien lo encontro la
+//  primera vez, no corre en CI y ademas mide el estado APAGADO, donde las
+//  cuatro dicen PATRON. Y en su primera corrida saco una SEGUNDA que no habia
+//  visto nadie: en la pagina del piano, la pestana PATRON y esta.
+//
+//  El DIBUJO se queda: sigue significando lo mismo y la pareja ya se separa
+//  por la palabra, que es lo que se lee primero.
 inline void modoTapa (juce::TextButton& b, bool cancion)
 {
 b.setButtonText (T (cancion ? "MODO CANCION|modo" : "MODO PATRON|modo"));

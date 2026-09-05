@@ -658,6 +658,11 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
 
     float sendGain[kNumPads][kNumFx];
     float dryGain[kNumPads];
+    //  Lo que el CANAL escala, aparte del seco: el medidor mide lo que pasa por
+    //  el canal y no lo que le queda al pad despues de que los insertos se
+    //  lleven su parte -con `dryGain` un inserto al 100% dejaria el medidor a
+    //  cero justo cuando el canal mas trabaja-.
+    float canGain[kNumPads];
     bool  busFed[kNumFx] = {};
     bool  padSplit[kNumPads];
 
@@ -672,6 +677,10 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     //  renderizarse APARTE aunque no mande a ningun efecto, porque no se puede
     //  filtrar una senal que ya se sumo con otras quince.
     const std::uint64_t filtMask = padFiltMask.load (std::memory_order_relaxed);
+    //  UNA vez por bloque, no una por pad: es un atomico que la cara mueve con
+    //  el dedo y el bucle lo consulta sesenta y cuatro veces.
+    const int miraCan = canalMirado.load (std::memory_order_relaxed);
+    float picoCan = 0.0f;
 
     for (int p = 0; p < kNumPads; ++p)
     {
@@ -704,8 +713,13 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         float& smCan = smCanalDePad[(size_t) p];
         smCan += kSend * (gCan - smCan);
         const bool canalHot = std::abs (smCan - gCan) > 0.0005f;
+        //  Y si es el canal que la cara esta MIRANDO, el pad se aparta aunque
+        //  no mande a nadie: no se puede medir lo que ya se sumo con otros
+        //  quince. Ver `miraCanal` — son los pads de UN canal, no los 64.
+        const bool medido = (canal == miraCan);
+        canGain[p] = smCan;
 
-        if (! listed && ! smSendHot[(size_t) p])
+        if (! listed && ! smSendHot[(size_t) p] && ! medido)
         {
             dryGain[p]  = smCan;
             //  Un canal con el fader en uno y sin mute no obliga a nada: el pad
@@ -741,7 +755,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             if (fxSustituye[f]) dry *= (1.0f - g);
         }
         dryGain[p]  = dry * smCan;
-        padSplit[p] = any || filtered || canalHot || smCan < 0.9995f;
+        padSplit[p] = any || filtered || canalHot || smCan < 0.9995f || medido;
         smSendHot[(size_t) p] = hot;
     }
 
@@ -850,6 +864,24 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     if (! std::isfinite (ic1) || ! std::isfinite (ic2)) ic1 = ic2 = 0.0f;
                     st.ic1 = ic1; st.ic2 = ic2;
                 }
+            }
+
+            //  EL PICO DEL CANAL MIRADO, aqui y no en el master: aqui el pad
+            //  suena SOLO -para eso existe padScratch- y por el fader del canal
+            //  ya ha pasado. Un barrido por pad medido y por bloque, y solo de
+            //  los pads de UN canal. Ver `miraCanal`.
+            if (miraCan >= 0 && (int) padCanal[(size_t) p].load (std::memory_order_relaxed) == miraCan)
+            {
+                float mn = 0.0f, mx = 0.0f;
+                for (int ch = 0; ch < busChans; ++ch)
+                {
+                    const auto r = juce::FloatVectorOperations::findMinAndMax (
+                                       padScratch.getReadPointer (ch, s), nn);
+                    mn = juce::jmin (mn, r.getStart());
+                    mx = juce::jmax (mx, r.getEnd());
+                }
+                picoCan = juce::jmax (picoCan,
+                                      juce::jmax (std::abs (mn), std::abs (mx)) * canGain[p]);
             }
 
             if (dryGain[p] > 0.0005f)
@@ -2762,6 +2794,15 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         if (pl > prev) outPeakL.store (pl, std::memory_order_relaxed);
         prev = outPeakR.load (std::memory_order_relaxed);
         if (pr > prev) outPeakR.store (pr, std::memory_order_relaxed);
+
+        //  Y el del canal mirado, con el mismo trato -max-hold hasta que la
+        //  cara lo lea- pero medido MUCHO antes: alli el canal suena solo, y
+        //  aqui ya se ha sumado con los otros quince y ha pasado el master.
+        if (picoCan > 0.0f)
+        {
+            prev = canalPico.load (std::memory_order_relaxed);
+            if (picoCan > prev) canalPico.store (picoCan, std::memory_order_relaxed);
+        }
     }
 }
 
