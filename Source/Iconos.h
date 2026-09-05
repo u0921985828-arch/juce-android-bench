@@ -629,14 +629,25 @@ namespace Iconos
             //  a 1.8 px las tres cajas se leian como tres barras y la rejilla
             //  de `pads` quedaba a 0.33 - y las dos son pestanas de la cara,
             //  o sea que se ven una al lado de la otra.
+            //  EL RACK PASABA RASPANDO, y un liston que se cumple por dos
+            //  decimas no protege.
+            //
+            //  Eran tres cajas con filo, un punto relleno y una barra rellena
+            //  cada una: 0.550 de tinta contra un tope de 0.55, o sea una
+            //  mancha a los trece pixeles a los que se dibuja — y el quinto par
+            //  mas cercano de los 5565, contra `pads`, que es la otra mancha
+            //  compacta. Un armario son sus unidades y las separa una linea, no
+            //  tres marcos: el filo de fuera y dos tabiques dicen lo mismo con
+            //  la mitad de la tinta, y el punto de cada unidad se queda porque
+            //  es lo que dice que ahi hay un aparato y no un cajon.
             case Id::rack:
                 for (int i = 0; i < 3; ++i)
                 {
-                    const float y = 2.6f + (float) i * 6.6f;
-                    L.addRoundedRectangle (2.5f, y, 19.0f, 5.4f, 1.2f);
-                    R.addEllipse (4.2f, y + 1.0f, 3.4f, 3.4f);
-                    R.addRectangle (10.0f, y + 2.1f, 8.5f, 1.2f);
+                    const float y = 2.6f + (float) i * 7.0f;
+                    R.addRoundedRectangle (2.5f, y, 19.0f, 3.4f, 1.0f);
+                    L.addEllipse (16.6f, y + 0.5f, 2.4f, 2.4f);
                 }
+                t.lleno = 0.94f;
                 break;
 
             //  CHOP: la muestra con sus MARCAS DE CORTE.
