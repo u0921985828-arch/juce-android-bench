@@ -262,7 +262,7 @@ Un efecto contra los sesenta y cuatro pads. El selector de pad es una rejilla de
 cuatro por cuatro por banco —dieciséis en fila no caben: en 280 px les tocan 26—
 y debajo las seis filas del pad elegido, con la de un efecto apagado atenuada:
 *lo que pongas ahora es lo que usará cuando lo enciendas*. Cada fila dice de qué
-familia es su efecto: de los once tipos, **nueve son insertos** —subir el fader
+familia es su efecto: de los veintiun tipos, **dieciseis son insertos** —subir el fader
 le quita señal seca al pad— y sólo DLY y REV suman encima. Lo que hay DENTRO se
 ve en el plato de la cara, con los números de ahora: el dibujo sale de la MISMA
 fórmula que suena (`FxVisor::muestrea`, que llama a `svfDb`, `saturaDe`,
@@ -959,7 +959,7 @@ cada pantalla, cuántos tienen nombre para un lector de pantalla, y **lo único
 que juzga: que la máquina suene al primer toque** · `clips` la banda de audio,
 por el gesto · `cpu` lo que la app cuesta quieta **y sonando**, contando píxeles
 y no llamadas · `cuenta` la cuenta atrás y el metrónomo · `desglose` qué
-controles tiene cada pantalla y qué está repetido · `dinamica` los once tipos y
+controles tiene cada pantalla y qué está repetido · `dinamica` los veintiún tipos y
 la reducción que se lee · `dlc` el catálogo y el candado por sus dos mitades ·
 `eq` la curva por el gesto en píxeles · `export` máster, pistas, OGG y destino ·
 `expo` la maqueta · `fps` que la app se vea igual a 60 y a 120 · `fuentes` que

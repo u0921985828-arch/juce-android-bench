@@ -1164,7 +1164,7 @@ public:
 
     //  QUE HACE ESE FADER, PARA QUIEN LO DIBUJA.
     //
-    //  De los once tipos, NUEVE son insertos: `renderNextBlock` hace
+    //  De los veintiun tipos, DIECISEIS son insertos: `renderNextBlock` hace
     //  `if (fxSustituye[f]) dry *= (1.0f - g)`, o sea que subir su envio le
     //  QUITA senal seca al pad. Solo DLY y REV suman encima. Los dos caminos
     //  mandan igual -una copia escalada entra en el bus y el bus vuelve al

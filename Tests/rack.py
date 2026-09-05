@@ -2,7 +2,7 @@
 # ============================================================================
 #  LO QUE LA APP DICE DE UN EFECTO: de que familia es, y que hay dentro.
 #
-#  De los once tipos, NUEVE son insertos: `renderNextBlock` hace
+#  De los veintiun tipos, DIECISEIS son insertos: `renderNextBlock` hace
 #  `if (fxSustituye[f]) dry *= (1.0f - g)`, o sea que subir ese fader le QUITA
 #  senal seca al pad. Solo DLY y REV suman encima. El rack titulaba su fila
 #  «cuanto de este pad entra en cada efecto», que describe un envio: con DRV al
