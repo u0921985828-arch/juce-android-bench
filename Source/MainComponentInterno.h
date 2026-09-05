@@ -342,7 +342,7 @@ namespace
         { "MEZCLA Y EFECTOS", {
             "Tocar un efecto lo enciende y le da los tres mandos",
             "Mantenlo pulsado para cogerle los mandos sin encenderlo",
-            "RACK: un efecto y los 64 pads. EL PAD: los seis envios de uno",
+            "RACK: un efecto y los 16 canales. EL PAD: a que canal va uno",
             "El XY deja los pads tocables debajo, para las dos manos",
             "Verde hasta -12 dB, amarillo hasta -3, y el rojo se queda puesto" } },
         { "GUARDAR Y EXPORTAR", {
@@ -359,7 +359,7 @@ namespace
             nullptr } },
         { "SI ALGO NO SUENA", {
             "Mira la ganancia del pad y si hay un SOLO puesto en otro",
-            "Mira su envio al efecto que estas oyendo",
+            "Mira el envio de su CANAL al efecto que estas oyendo",
             "Si la onda no reacciona estas ampliado: toca la tapa del medio",
             "AJUSTES > AUDIO ensena la latencia y el tamano de bloque",
             nullptr } },
@@ -583,8 +583,8 @@ namespace ZatiTour
           "esto y VER MAS sigue con el secuenciador, los efectos y lo demas.",
 
           "Seis ranuras y un menu de efectos para llenarlas. Una vacia pone «+» "
-          "y lo abre. Son de la maquina, no del pad: cada pad decide cuanto pasa "
-          "por ellos.",
+          "y lo abre. Son del CANAL en el que este el pad que tengas elegido: "
+          "cambiar de pad cambia la fila.",
 
           "Los tres de arriba mueven el efecto que tengas abierto. Debajo de cada "
           "uno pone lo que hace en ese momento.",
@@ -604,8 +604,9 @@ namespace ZatiTour
           "Recorte, afinado, filtro, envolvente y bucle. AUTO CHOP parte un break "
           "por sus golpes y lo reparte por los pads.",
 
-          "La mesa pone los dieciseis a su nivel. El RACK dice cuanto de cada pad "
-          "pasa por cada efecto, y cuales sustituyen y cuales suman.",
+          "La mesa tiene dieciseis PADS y dieciseis CANALES: cada pad entra en "
+          "uno, y el canal es el que pasa por los efectos. El RACK dice cuanto "
+          "de cada canal pasa por cada uno, y cuales sustituyen y cuales suman.",
 
           "Los patrones colocados en el tiempo, en cuatro carriles. Un bloque "
           "dura lo que ocupa, no lo que dure su patron.",

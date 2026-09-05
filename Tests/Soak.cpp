@@ -138,8 +138,19 @@ namespace
                          e.setPadSelfCut (pad, r.nextBool()); break;
                 case 8:  e.setPadAttack (pad, r.nextFloat() * 200.0f);
                          e.setPadRelease (pad, 1.0f + r.nextFloat() * 800.0f); break;
-                case 9:  for (int f = 0; f < AudioEngine::kNumFx; ++f)
-                             e.setPadSend (pad, f, r.nextFloat());
+                //  LA MESA, que desde que existe es por donde pasa todo el
+                //  audio hacia los efectos: el pad cambia de canal, el canal
+                //  abre sus envios y mueve su fader. Las tres cosas a la vez
+                //  porque el fuzz existe para la COMBINACION, que es lo que
+                //  nadie escribe a mano.
+                case 9:  e.setPadCanal (pad, r.nextInt (AudioEngine::kNumCanales));
+                         {
+                             const int c = r.nextInt (AudioEngine::kNumCanales);
+                             for (int f = 0; f < AudioEngine::kNumFx; ++f)
+                                 e.setCanalSend (c, f, r.nextFloat());
+                             e.setCanalGain (c, r.nextFloat() * 4.0f);
+                             e.setCanalMute (c, r.nextBool());
+                         }
                          break;
                 case 10: e.setStep (r.nextInt (AudioEngine::kNumPatterns),
                                     r.nextInt (AudioEngine::kNumSteps), pad, r.nextBool()); break;

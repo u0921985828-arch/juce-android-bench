@@ -100,7 +100,12 @@ def main():
     #  espanol en las cuatro compilaciones y la fila nueva no la usaba nadie. Y
     #  las dos mitades pasaban todas las reglas: la clave no estaba duplicada y
     #  la fila no estaba vacia.
-    tour = joined_literals (open (os.path.join (SRC, "MainComponentInterno.h"), encoding="utf8").read())
+    #  SIN COMENTARIOS, que es lo que ya hace el barrido de arriba y por lo
+    #  mismo: los parrafos que explican estas tablas citan claves entre comillas
+    #  -«la pestana PASO»- y una clave nombrada en prosa no es una clave usada.
+    interno = joined_literals (sin_comentarios (
+        open (os.path.join (SRC, "MainComponentInterno.h"), encoding="utf8").read()))
+    tour = interno
     pasos = set()
     for nombre in ("titulos", "cuerpos"):
         j = tour.index ("* " + nombre + "[MainComponent::kTourPasos]")
@@ -112,11 +117,29 @@ def main():
     pasos.discard ("ZATI")
     used |= pasos
 
+    #  Y EL MANUAL, que es la TERCERA tabla que llega por indice y la unica que
+    #  seguia sin mirar nadie.
+    #
+    #  `kManual` son diez capitulos con su titulo y sus lineas, y el pintor las
+    #  pasa por `T()` una a una: exactamente el mismo agujero que los pasos del
+    #  tour, con la misma consecuencia -una linea cuya clave no esta en la tabla
+    #  sale en espanol en las cuatro compilaciones- y ademas INVISIBLE para la
+    #  regla comparativa de `expo.py`, porque el manual se PINTA y no es un
+    #  componente. Se pago: la tanda de las ranuras reescribio la fila del RACK
+    #  en `Lang.cpp` y dejo la clave del manual con el texto viejo -«EL PAD: los
+    #  seis envios de uno»-, que llevaba desde entonces sin traducirse.
+    man = interno
+    m = man.index ("kManual[kManualChapterCount]")
+    blkman = man[m:man.index ("\n    };", m)]
+    manual = set (re.findall (r'"((?:[^"\\]|\\.)+)"', blkman))
+    used |= manual
+
     for k in sorted (used - set (keys)):
         bad.append ("clave usada y NO en la tabla (sale en espanol en los cuatro): %r" % k)
 
-    print ("%d filas, %d claves usadas en el codigo (%d parametros de efecto, %d pasos del tour)"
-           % (len (rows), len (used), len (params), len (pasos)))
+    print ("%d filas, %d claves usadas en el codigo (%d parametros de efecto, "
+           "%d pasos del tour, %d lineas de manual)"
+           % (len (rows), len (used), len (params), len (pasos), len (manual)))
     if bad:
         for b in bad: print ("FALLA  " + b)
         sys.exit (1)

@@ -50,7 +50,8 @@ static void fuzz (MainComponent& mc, int semilla, int sesiones, int acciones)
 {
     static const char* kFichas[] = { "pads", "pad2", "pad3", "sec", "secp", "paso", "song",
                                      "piano", "pianod", "mix", "xy", "set", "asp", "proj", "gest",
-                                     "midi", "rack", "ranura", "chop", "manual", "expo", "" };
+                                     "midi", "mixc", "canal", "rack", "ranura", "chop",
+                                     "manual", "expo", "" };
     static const int kAnchos[] = { 280, 320, 360, 393, 412, 480, 653, 915 };
 
     int peorSolapes = 0, peorFuera = 0, estados = 0;
@@ -456,7 +457,8 @@ public:
                     {
                         static const char* kFichas[] =
                         { "pads", "pad2", "pad3", "sec", "secp", "paso", "song", "piano",
-                          "pianod", "mix", "set", "proj", "midi", "gest", "rack", "ranura", "chop",
+                          "pianod", "mix", "mixc", "canal", "set", "proj", "midi", "gest",
+                          "rack", "ranura", "chop",
                           "inst", "manual", "expo", "browse", "xy" };
                         const int n2 = juce::numElementsInArray (kFichas);
 
@@ -535,6 +537,12 @@ public:
                     else if (UiAudit::env ("ZATI_RANURAS").isNotEmpty())
                     {
                         c2->auditRanuras();
+                    }
+                    //  LA MESA ENTRE LOS PADS Y LOS EFECTOS. Ver
+                    //  Tests/canales.py.
+                    else if (UiAudit::env ("ZATI_CANALES").isNotEmpty())
+                    {
+                        c2->auditCanales();
                     }
                     //  LA FILA DEL RACK: inserto contra envio, y la miniatura.
                     //  Ver Tests/rack.py.

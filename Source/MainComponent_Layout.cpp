@@ -1069,6 +1069,38 @@ void MainComponent::resized()
         }
     }
 
+    //  LA REJILLA DE DIECISEIS CANALES. Ver canalSheet en la cabecera.
+    //
+    //  La misma cuenta que la de pads menos la fila de bancos: dieciseis
+    //  canales caben exactos en cuatro por cuatro y no hay sesenta y cuatro
+    //  entre los que pasear. 2*12 + 40 + 12 + 4*44 + 3*4 = 264.
+    if (canalPickAbierto)
+    {
+        const int quiere = 2 * Metrics::md + Metrics::hit + Metrics::md
+                           + 4 * Metrics::btn + 3 * Metrics::xs;
+        auto inner = sheetFromBottom (canalSheet, quiere);
+
+        auto titleRow = inner.removeFromTop (Metrics::hit);
+        canalCloseBtn.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
+                                   .withSizeKeepingCentre (Metrics::hit, Metrics::hit));
+        inner.removeFromTop (Metrics::md);
+
+        const int filaH = juce::jmax (Metrics::hit,
+                                      (inner.getHeight() - 3 * Metrics::xs) / 4);
+        for (int r = 0; r < 4; ++r)
+        {
+            auto row = inner.removeFromTop (filaH);
+            const int w = row.getWidth() / 4;
+            for (int c = 0; c < 4; ++c)
+            {
+                //  De abajo arriba, como la cara, el RACK y la rejilla de pads.
+                const int i = (3 - r) * 4 + c;
+                canalBtns[i]->setBounds ((c < 3 ? row.removeFromLeft (w) : row).reduced (1, 0));
+            }
+            inner.removeFromTop (Metrics::xs);
+        }
+    }
+
     //  EL MENU DE UNA RANURA. Ver abreMenuRanura.
     //
     //  Tambien de las que se dibujan ENCIMA, asi que va aqui arriba con la
@@ -1198,7 +1230,6 @@ void MainComponent::resized()
     // de EL PAD no arrastra el hueco de la onda, que no lleva.
     {
         constexpr int secH = 15 + 2 * ZatiLookAndFeel::kTextPad;
-        const bool onSound = (padPage == padPageSound);
         //  644 y 418 salen de sumar lo que lleva cada pagina, no de probar:
         //  ver el desglose de cada bloque mas abajo.
         const int sheetInnerW = anchoTarjetaInterior (full.getWidth());
@@ -1322,8 +1353,33 @@ void MainComponent::resized()
                 //  visibilidad de arriba, que corre en TODAS las paginas.
                 const bool esInstr = vstButton.isVisible();
 
-                juce::TextButton* pb[4] = { &padRackBtn, &pianoButton, &nivelesButton, &vstButton };
-                layoutModuleBar (inner.removeFromTop (Metrics::hit), pb, 0, esInstr ? 4 : 3);
+                //  Y EL CANAL, que no es una puerta a otra ficha sino a DONDE VA
+                //  este pad — y es lo que hace que la fila de la cara
+                //  signifique algo al cambiar de pad. Va aqui y no en la fila
+                //  de CHOKE porque es reparto y no ajuste: la seccion se llama
+                //  EFECTOS y esto es por donde el pad llega a ellos.
+                //
+                //  Y SE CAE A SU PROPIA FILA DONDE NO CABEN TODAS, que es la
+                //  misma escalera que la fila de FUENTE y la de CHOKE: con el
+                //  CANAL dentro son cuatro tapas y en 280x653 a RACK le tocaban
+                //  35 px de ancho contra un dedo de 40. La pregunta la contesta
+                //  `padPuertasWraps`, que es la MISMA con la que se presupuesta
+                //  el alto — dos cuentas parecidas son dos reglas.
+                if (padPuertasWraps (inner.getWidth()))
+                {
+                    juce::TextButton* cb[1] = { &padCanalBtn };
+                    layoutModuleBar (inner.removeFromTop (Metrics::hit), cb, 0, 1);
+                    inner.removeFromTop (Metrics::halfGap);
+                    juce::TextButton* pb[4] = { &padRackBtn, &pianoButton,
+                                                &nivelesButton, &vstButton };
+                    layoutModuleBar (inner.removeFromTop (Metrics::hit), pb, 0, esInstr ? 4 : 3);
+                }
+                else
+                {
+                    juce::TextButton* pb[5] = { &padCanalBtn, &padRackBtn, &pianoButton,
+                                                &nivelesButton, &vstButton };
+                    layoutModuleBar (inner.removeFromTop (Metrics::hit), pb, 0, esInstr ? 5 : 4);
+                }
             }
             cierra (gEnvios);
             inner.removeFromTop (Metrics::sm);
@@ -2296,7 +2352,11 @@ void MainComponent::resized()
             const int w = row.getWidth() / 4;
             for (int c = 0; c < 4; ++c)
             {
-                const int i = currentBank * kPadsPerBank + (3 - r) * 4 + c;
+                //  Y SIN EL BANCO, que es lo que cambia desde que el selector
+                //  elige CANAL: dieciseis canales caben exactos en cuatro por
+                //  cuatro, asi que no hay sesenta y cuatro entre los que pasear
+                //  ni una fila de bancos que mantener.
+                const int i = (3 - r) * 4 + c;
                 rackPadBtns[i]->setVisible (true);
                 //  Sin aire VERTICAL: la fila ya mide Metrics::hit y quitarle
                 //  un pixel por arriba y otro por abajo deja las tapas dos por
@@ -3149,7 +3209,14 @@ void MainComponent::resized()
         //  rest of the app is held to, on the two keys you hit fastest while
         //  something is playing. Four pixels of row is what buys them.
         const int rowH = Metrics::row;
-        const int tabsH = Metrics::tab + Metrics::sm;
+        //  Dieciseis pads o dieciseis canales: son el mismo numero hoy, y se
+        //  escribe con el de la pagina que se esta maquetando para que el dia
+        //  que uno de los dos cambie no haya que acordarse de esto.
+        const int kMixFilas = (mixPage == mixPageCanales) ? kNumCanales : kPadsPerBank;
+        //  La fila de chips es de la pagina de PADS: en CANALES no hay bancos
+        //  que elegir, asi que la ficha pide `Metrics::tab` menos y las
+        //  dieciseis tiras se quedan con ese alto.
+        const int tabsH = (mixPage == mixPageCanales) ? 0 : Metrics::tab + Metrics::sm;
         //  Y el master cuenta como mueble: es una fila fija que no se desplaza,
         //  asi que si no entra en la cuenta se la come al Viewport y la mesa
         //  pierde media fila de canal en las pantallas justas.
@@ -3157,18 +3224,43 @@ void MainComponent::resized()
         const int mixFurniture = Metrics::md * 2 + Metrics::hit + Metrics::sm + tabsH
                                + Metrics::btn + masterH + Metrics::lg;
         auto inner = sheetFromBottom (mixSheet,
-                                      mixFurniture + (wideFace ? kPadsPerBank / 2 : kPadsPerBank) * rowH);
+                                      mixFurniture + (wideFace ? kMixFilas / 2 : kMixFilas) * rowH);
         auto titleRow = inner.removeFromTop (Metrics::hit);
         mixCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
         inner.removeFromTop (Metrics::sm);
 
+        //  EL INTERRUPTOR DE VISTA VA EN EL RENGLON DEL TITULO, no en la fila
+        //  de chips — y eso es una medida y no una preferencia.
+        //
+        //  Estuvo en la fila de los bancos, como una quinta tapa, y el banco lo
+        //  canto: cinco chips en 280x653 dejan los cuatro bancos en **29 px de
+        //  ancho** contra un dedo de 40, o sea 35 TOUCH nuevos en pantallas que
+        //  ya estaban. Es exactamente el caso que la ficha de CANCION ya tenia
+        //  resuelto y escrito: con DOS vistas basta un interruptor, y el
+        //  renglon del titulo mide `Metrics::hit` y solo lleva una palabra
+        //  pintada y una cruz, asi que una tapa corta cabe ahi sin costar un
+        //  pixel de alto. El titulo se aparta solo con `antesDe`.
         {
-            auto tabs = inner.removeFromTop (Metrics::tab);
-            const int bw = tabs.getWidth() / kNumBanks;
-            for (int b = 0; b < mixBankBtns.size(); ++b)
-                mixBankBtns[b]->setBounds ((b < kNumBanks - 1 ? Lang::takeStart (tabs, bw) : tabs)
-                                             .reduced (Metrics::aireTapa, 0));
-            inner.removeFromTop (Metrics::sm);
+            auto zona = Lang::takeEnd (titleRow, juce::jmin (titleRow.getWidth() / 2,
+                                                             Metrics::hit * 2));
+            juce::TextButton* vb[1] = { &mixVistaBtn };
+            layoutModuleBar (zona, vb, 2, 1);
+        }
+
+        {
+            //  Y LA FILA DE CHIPS SIGUE SIENDO LA DE LOS BANCOS, con sus cuatro
+            //  tapas de siempre. En la pagina de CANALES no hay bancos que
+            //  elegir -un canal no vive en un banco- asi que no se maqueta y
+            //  la ficha pide `Metrics::tab` menos: la pagina nueva no le quita
+            //  alto a una ficha que ya pide 936 px en un tope de 499.
+            if (mixPage != mixPageCanales)
+            {
+                auto tabs = inner.removeFromTop (Metrics::tab);
+                juce::TextButton* pb[kNumBanks] = { mixBankBtns[0], mixBankBtns[1],
+                                                   mixBankBtns[2], mixBankBtns[3] };
+                layoutModuleBar (tabs, pb, 0, kNumBanks);
+                inner.removeFromTop (Metrics::sm);
+            }
         }
 
         //  Aire SOLO a los lados: la fila mide Metrics::btn -44- y quitarle
@@ -3213,7 +3305,11 @@ void MainComponent::resized()
         //  ancho que la pantalla ya tiene. Cada fila sigue siendo la misma
         //  fila: no se quita ningun control, se reparte el sitio.
         const int columnas = wideFace ? 2 : 1;
-        const int porCol   = kPadsPerBank / columnas;
+        //  Dieciseis pads de un banco o dieciseis canales: la cuenta es la
+        //  misma, que es lo que hace que la pagina nueva no traiga geometria
+        //  nueva.
+        const int cuantas  = mixPage == mixPageCanales ? kNumCanales : kPadsPerBank;
+        const int porCol   = cuantas / columnas;
         const int contentH = porCol * rowH;
         //  Leave the bar its width only when there IS a bar, or every row is
         //  eight pixels short on the screens that did not need one.
@@ -3224,6 +3320,33 @@ void MainComponent::resized()
         const int anchoCol = rows.getWidth() / columnas;
         juce::Rectangle<int> columna;
 
+        //  LAS DIECISEIS TIRAS DE CANAL, con la misma fila menos el pan y el
+        //  solo: el sitio en la imagen es del PAD -es lo que se coloca- y el
+        //  solo se queda en el pad, que es donde `effectiveGain` lo resuelve.
+        //  En su hueco va la cuenta de pads, que la pinta `paintMixRows`.
+        if (mixPage == mixPageCanales)
+        {
+            for (int c = 0; c < kNumCanales; ++c)
+            {
+                if (c % porCol == 0)
+                    columna = (c / porCol < columnas - 1)
+                                ? Lang::takeStart (rows, anchoCol) : rows;
+
+                auto row = columna.removeFromTop (rowH).reduced (columnas > 1 ? Metrics::halfGap : 0, 1);
+                canRowX[(size_t) c] = row.getX();
+                row.removeFromLeft (juce::jlimit (48, 92, columna.getWidth() * 24 / 100));
+
+                canMutes[c]->setBounds (row.removeFromRight (Metrics::hit).reduced (0, 1));
+                row.removeFromRight (Metrics::halfGap);
+
+                auto faderCell = row.reduced (4, 1);
+                const bool tight = faderCell.getWidth() - Metrics::gap - 46 < 70;
+                canFaders[c]->setTextBoxStyle (tight ? juce::Slider::NoTextBox : juce::Slider::TextBoxRight,
+                                               false, 46, Metrics::readout);
+                canFaders[c]->setBounds (faderCell);
+            }
+        }
+        else
         for (int i = mixBank * kPadsPerBank; i < (mixBank + 1) * kPadsPerBank; ++i)
         {
             const int enBanco = i - mixBank * kPadsPerBank;

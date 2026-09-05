@@ -64,6 +64,11 @@ FICHAS = [
     #  ficha donde era falsa. Roto a proposito devolviendo su drawText:
     #  `tour no tiene titulo: se abre y no dice donde estas`.
     ("tour",   "AJUSTES"),
+    #  Y LA PAGINA DE CANALES DE LA MESA: la misma ficha con otro contenido no
+    #  es el mismo estado —su fila de chips lleva dos tapas en vez de cinco y
+    #  sus tiras pierden el pan y el solo—, y una pagina que el banco no abre es
+    #  una pagina sin medir.
+    ("mixc",   "MEZCLA"),
     ("vst",    "INSTRUMENTO"),
     ("inst",   "INSTRUMENTOS"),
 ]

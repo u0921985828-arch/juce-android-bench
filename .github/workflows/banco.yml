@@ -112,6 +112,9 @@ jobs:
       - name: Las seis ranuras de efectos
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/ranuras.py
+      - name: Los dieciseis canales de la mesa
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/canales.py
       - name: La cuenta atras y el metronomo
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/cuenta.py

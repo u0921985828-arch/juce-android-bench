@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- UN PROYECTO CON MESA, que es la QUINTA rama y la unica que los otros cuatro
+     no pueden tocar: los cuatro se guardaron antes de que los canales
+     existieran, asi que los cuatro caen en la rama de «este fichero no trae
+     mesa» y de ahi salen el recorte y el canalSend[0] deducidos. Sin este,
+     esa rama se prueba cuatro veces y la otra ninguna.
+
+     Lo que dice, y son las tres cifras que lo separan de sus hermanos:
+
+       · el pad 0 vive en el CANAL 2 y no en el 0, asi que su envio sale de la
+         fila del canal 2 y no de la de siempre;
+       · el canal 2 manda 0.60 al tipo 0 y CERO a los demas, escrito y no
+         deducido;
+       · y el pad 0 trae ademas su `sends` — que aqui NO es un envio sino el
+         RECORTE con el que se guardo, 0.50. Lo que llega al efecto es el
+         producto, 0.30.
+
+     Con la rama de la mesa quitada a proposito, el fichero se lee como si no
+     la trajera: el pad vuelve al canal 0, el canal 0 se rellena desde los
+     `sends` del primer pad y el envio sale 0.50 en vez de 0.30. -->
+<ZATI version="1" bpm="100.0" selectedPattern="0">
+  <PADS>
+    <PAD i="0" name="A" canal="2" sends="0.50,1.000,1.000,1.000,1.000,1.000,1.000,1.000,1.000,1.000,1.000,1.000,1.000,1.000,1.000,1.000,1.000,1.000,1.000,1.000,1.000"/>
+    <PAD i="1" name="B" canal="2" sends="1.000,1.000,1.000,1.000,1.000,1.000,1.000,1.000,1.000,1.000,1.000,1.000,1.000,1.000,1.000,1.000,1.000,1.000,1.000,1.000,1.000"/>
+  </PADS>
+  <FX csends="0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0;0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0;0.60,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0;0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0;0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0;0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0;0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0;0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0;0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0;0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0;0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0;0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0;0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0;0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0;0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0;0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0"/>
+</ZATI>

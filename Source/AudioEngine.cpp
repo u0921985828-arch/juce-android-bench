@@ -63,13 +63,28 @@ AudioEngine::AudioEngine()
     //
     //  Y de paso sale gratis en CPU: con la mascara a cero el camino de envios
     //  por pad no se recorre hasta que alguien sube el primero.
-    for (auto& pad : padSend)  for (auto& s : pad) s.store (0.0f, std::memory_order_relaxed);
+    //  Y AHORA EL DUEÑO ES EL CANAL, asi que el cero vive en `canalSend`. El
+    //  recorte del pad nace en UNO —neutro—, que es lo que hace que un fichero
+    //  SIN la propiedad `sends` -o sea uno nuevo- suene por lo que el canal
+    //  diga y nada mas. Un cero aqui dejaria la maquina muda pasara lo que
+    //  pasara con el canal, que es un valor por defecto que ademas es valido:
+    //  el mismo fallo que el `brillo` del `Recipe` y el cero de `padAncho`.
+    for (auto& pad : padRecorte) for (auto& s : pad) s.store (1.0f, std::memory_order_relaxed);
+    for (auto& c : padCanal)   c.store (0, std::memory_order_relaxed);
+    for (auto& ch : canalSend) for (auto& s : ch) s.store (0.0f, std::memory_order_relaxed);
+    for (auto& g : canalGain)  g.store (1.0f, std::memory_order_relaxed);
+    for (auto& m : canalMute)  m.store (false, std::memory_order_relaxed);
+    padSendMask.store (0, std::memory_order_relaxed);
     //  The SMOOTHER, though, starts closed. What it follows is the pad send
     //  times the effect's own MIX, and every MIX starts at zero - starting it
     //  at the pad value instead opened all six sends for the first 20 ms of
     //  the app's life, which with the tone effects meant the dry path was
     //  nearly muted for exactly as long.
     for (auto& pad : smSend)   pad.fill (0.0f);
+    //  Este si arranca en UNO y no en cero, que es lo contrario que el envio:
+    //  es un fader, y un fader que arranca cerrado deja la maquina muda los
+    //  primeros 20 ms de cada arranque.
+    smCanalDePad.fill (1.0f);
 
     //  El filtro de cada pad, abierto del todo. Cero seria 0 Hz - los 64 pads
     //  mudos en el arranque - que es lo que pasa cuando un parametro cuyo
@@ -674,30 +689,59 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         //  atomicas y 384 pasos de suavizado por bloque. Medido con la fila
         //  nueva de Tests/Cpu.cpp, que es la que faltaba para verlo.
         const bool listed = (sendMask >> (unsigned) p) & 1ull;
+
+        //  EL CANAL DEL PAD, y su ganancia y su mute. Se leen una vez por pad y
+        //  por bloque, como el pan y el ancho: multiplican lo que ya se
+        //  calculaba -el seco y los envios- asi que no hay una etapa nueva.
+        //
+        //  Y el suavizado es el MISMO `kSend` de 20 ms que los envios: un fader
+        //  sin suavizar da un salto de nivel en el borde del bloque, que es
+        //  exactamente el chasquido que la constante existe para no tener.
+        const int   canal = (int) padCanal[(size_t) p].load (std::memory_order_relaxed);
+        const float gCan  = canalMute[(size_t) canal].load (std::memory_order_relaxed)
+                              ? 0.0f
+                              : canalGain[(size_t) canal].load (std::memory_order_relaxed);
+        float& smCan = smCanalDePad[(size_t) p];
+        smCan += kSend * (gCan - smCan);
+        const bool canalHot = std::abs (smCan - gCan) > 0.0005f;
+
         if (! listed && ! smSendHot[(size_t) p])
         {
-            dryGain[p]  = 1.0f;
-            padSplit[p] = filtered;      // sin envios pero con filtro: tambien aparte
+            dryGain[p]  = smCan;
+            //  Un canal con el fader en uno y sin mute no obliga a nada: el pad
+            //  sigue yendo entero al master por el camino corto, que es el que
+            //  la mascara existe para proteger. Solo se aparta si el canal lo
+            //  esta MOVIENDO o lo ha bajado.
+            padSplit[p] = filtered || canalHot || smCan < 0.9995f;
             for (int f = 0; f < kNumFx; ++f) sendGain[p][f] = 0.0f;
             continue;
         }
 
         float dry = 1.0f;
         bool  any = false;
-        bool  hot = false;
+        bool  hot = canalHot;
         for (int f = 0; f < kNumFx; ++f)
         {
-            const float target = fxMixNow[f] * padSend[(size_t) p][(size_t) f].load (std::memory_order_relaxed);
+            //  EL PRODUCTO DE TRES: la mezcla del efecto, lo que el CANAL manda
+            //  y el recorte con el que el pad se guardo. Los dos ultimos son la
+            //  linea entera del cambio: el envio dejo de ser del pad.
+            const float target = fxMixNow[f]
+                                   * canalSend[(size_t) canal][(size_t) f].load (std::memory_order_relaxed)
+                                   * padRecorte[(size_t) p][(size_t) f].load (std::memory_order_relaxed);
             float& sm = smSend[(size_t) p][(size_t) f];
             sm += kSend * (target - sm);
             const float g = (sm < 0.0005f && target < 0.0005f) ? 0.0f : sm;
-            sendGain[p][f] = g;
-            if (g > 0.0f) { any = true; busFed[f] = true; }
+            sendGain[p][f] = g * smCan;
+            if (sendGain[p][f] > 0.0f) { any = true; busFed[f] = true; }
             if (sm != 0.0f) hot = true;      // aun no ha terminado de bajar
+            //  La resta del seco va con la parte SIN la ganancia del canal: lo
+            //  que el inserto se lleva es una fraccion del pad, y el fader del
+            //  canal escala las dos mitades por igual mas abajo. Con `g * smCan`
+            //  aqui, bajar el canal a la mitad devolveria seco al pad.
             if (fxSustituye[f]) dry *= (1.0f - g);
         }
-        dryGain[p]  = dry;
-        padSplit[p] = any || filtered;
+        dryGain[p]  = dry * smCan;
+        padSplit[p] = any || filtered || canalHot || smCan < 0.9995f;
         smSendHot[(size_t) p] = hot;
     }
 
@@ -3431,10 +3475,19 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     padFiltMask.store (s.padFiltMask.load (std::memory_order_relaxed), std::memory_order_relaxed);
     copyArr (padMute,    s.padMute);
     copyArr (padSolo,    s.padSolo);
-    for (size_t i = 0; i < padSend.size(); ++i) copyArr (padSend[i], s.padSend[i]);
-    for (size_t i = 0; i < smSend.size();  ++i) smSend[i] = s.smSend[i];
+    for (size_t i = 0; i < padRecorte.size(); ++i) copyArr (padRecorte[i], s.padRecorte[i]);
+    for (size_t i = 0; i < smSend.size();     ++i) smSend[i] = s.smSend[i];
+    //  Y LA MESA ENTERA, que es lo que decide cuanto llega a cada bus desde que
+    //  el envio es del CANAL: sin `padCanal` los 64 pads del rebote caerian en
+    //  el canal 0 y la cancion saldria con los efectos de un canal que nadie
+    //  uso, y sin `canalSend` saldria sin ninguno.
+    copyArr (padCanal,  s.padCanal);
+    for (size_t i = 0; i < canalSend.size(); ++i) copyArr (canalSend[i], s.canalSend[i]);
+    copyArr (canalGain, s.canalGain);
+    copyArr (canalMute, s.canalMute);
+    smCanalDePad = s.smCanalDePad;
     //  Y LA MASCARA CON ELLOS. El motor del rebote no pasa nunca por
-    //  setPadSend - se le copia el estado entero de golpe - asi que sin esta
+    //  setCanalSend - se le copia el estado entero de golpe - asi que sin esta
     //  linea arrancaba con la mascara a cero, se saltaba los 64 pads y
     //  exportaba la cancion sin un solo efecto. Todo dato que decida si algo
     //  se PROCESA tiene que viajar con el que dice cuanto.

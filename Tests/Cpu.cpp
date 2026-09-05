@@ -117,7 +117,16 @@ static const char* nombreDeFx (int f) noexcept
     static const char* n[] = { "FLT filtro", "HPF paso alto", "DRV saturacion",
                                "DLY eco", "BIT crujido", "REV reverb", "EQ cinco bandas",
                                "CMP compresor", "GTE puerta", "DSS de-esser", "LIM limitador",
-                               "CHO coro", "FLA flanger", "PHA phaser", "TRM tremolo" };
+                               "CHO coro", "FLA flanger", "PHA phaser", "TRM tremolo",
+                               //  Y LOS SEIS DE CARACTER, que faltaban desde
+                               //  que entraron: el `static_assert` lo decia y
+                               //  nadie lo leyo porque `Cpu.cpp` no corre en el
+                               //  CI -mide por RELOJ- y `cpu.py` es otra prueba.
+                               //  Un banco que no compila no falla: no esta. Es
+                               //  el mismo fallo que ya tuvieron `StressTest`,
+                               //  `Soak` y este mismo con `ZatiData`.
+                               "RNG ring mod", "PIT pitch", "WID ancho",
+                               "EXC excitador", "TRN transitorios", "FRZ congelador" };
     static_assert (sizeof (n) / sizeof (n[0]) == (size_t) AudioEngine::kNumFx,
                    "nombreDeFx tiene que tener una fila por tipo");
     return juce::isPositiveAndBelow (f, (int) (sizeof (n) / sizeof (n[0]))) ? n[f] : "?";
@@ -250,8 +259,10 @@ int main()
         for (int p = 0; p < 16; ++p)
         {
             e.setPadPitch (p, 0.0f); e.setPadLoop (p, true);
-            e.setPadSend (p, f, 1.0f);
         }
+        //  Los dieciseis pads nacen en el canal 0, asi que UNA llamada abre el
+        //  envio de los dieciseis: eso es lo que la mesa hace por el reparto.
+        e.setCanalSend (0, f, 1.0f);
         corre (e, buf, 64, [&e] (int b) { if (b == 0) for (int p = 0; p < 16; ++p) e.postNoteOn (p, 0.9f); });
         char nombre[64];
         std::snprintf (nombre, sizeof (nombre), "16 pads -> %s", nombreDeFx (f));
@@ -272,10 +283,36 @@ int main()
         for (int p = 0; p < 16; ++p)
         {
             e.setPadPitch (p, 0.0f); e.setPadLoop (p, true);
-            for (int f = 0; f < AudioEngine::kNumFx; ++f) e.setPadSend (p, f, 0.5f);
         }
+        for (int f = 0; f < AudioEngine::kNumFx; ++f) e.setCanalSend (0, f, 0.5f);
         corre (e, buf, 64, [&e] (int b) { if (b == 0) for (int p = 0; p < 16; ++p) e.postNoteOn (p, 0.9f); });
         fila ("16 pads -> TODOS", corre (e, buf, 2000));
+    }
+
+    //  Y LA MISMA CARGA CON LOS PADS REPARTIDOS POR DIECISEIS CANALES, que es
+    //  la unica pregunta que la mesa anade al hilo de audio: el reparto por
+    //  bloque pasa de leer `padSend[p][f]` a leer `canalSend[padCanal[p]][f] x
+    //  padRecorte[p][f]`, o sea la misma forma con un indice mas. Se lee
+    //  CONTRA la fila de arriba -los mismos dieciseis pads con los mismos
+    //  envios, todos en el canal 0- y no contra un numero absoluto, que es como
+    //  se leen todas las filas de este banco.
+    {
+        AudioEngine e; prepara (e);
+        for (int f = 0; f < AudioEngine::kNumFx; ++f)
+        {
+            e.setFxParam (f, 0, AudioEngine::kFxDef[f][0]);
+            e.setFxParam (f, 1, AudioEngine::kFxDef[f][1]);
+            e.setFxParam (f, 2, 1.0f);
+        }
+        for (int p = 0; p < 16; ++p)
+        {
+            e.setPadPitch (p, 0.0f); e.setPadLoop (p, true);
+            e.setPadCanal (p, p);
+        }
+        for (int c = 0; c < AudioEngine::kNumCanales; ++c)
+            for (int f = 0; f < AudioEngine::kNumFx; ++f) e.setCanalSend (c, f, 0.5f);
+        corre (e, buf, 64, [&e] (int b) { if (b == 0) for (int p = 0; p < 16; ++p) e.postNoteOn (p, 0.9f); });
+        fila ("16 pads en 16 CANALES -> TODOS", corre (e, buf, 2000));
     }
 
     std::printf ("\n-- el transporte ----------------------------------------------------\n");
@@ -315,8 +352,13 @@ int main()
             e.setPadPitch (p, p < 4 ? 5.0f : 0.0f);
             e.setPadCutoff (p, p % 3 == 0 ? 2500.0f : 20000.0f);
             e.setPadReso (p, 0.3f);
-            e.setPadSend (p, p % 6, 0.45f);
+            //  Seis canales con un efecto cada uno, que es lo que una sesion de
+            //  verdad tiene desde que la mesa existe: el pad elige canal y el
+            //  canal manda. Antes era `setPadSend (p, p % 6, ...)`, o sea la
+            //  misma forma sin la capa que ahora reparte.
+            e.setPadCanal (p, p % 6);
         }
+        for (int c = 0; c < 6; ++c) e.setCanalSend (c, c, 0.45f);
         for (int st = 0; st < 16; ++st)
             for (int p = 0; p < 16; ++p)
                 if ((st + p) % 3 == 0) e.setStep (0, st, p, true);

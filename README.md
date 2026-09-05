@@ -42,7 +42,9 @@ El repositorio se compila de dos formas y las dos importan:
   —RNG, PIT, WID, EXC, TRN y FRZ—. Una ranura vacía dice «+» y abre el menú. El plato de la cara enseña lo que hay dentro del
   efecto que tengas abierto, con sus números de ahora — dibujado con la misma
   fórmula que suena, medido contra ella, y con la señal que está pasando por ese
-  bus detrás. En el RACK cada pad
+  bus detrás. Y los efectos no son de la máquina ni de un pad sino de un
+  **canal**: hay dieciséis en la mesa, cada pad elige el suyo en sus ajustes, y
+  cambiar de pad cambia la fila de efectos de la cara. En el RACK cada canal
   decide cuánto de él **pasa por** cada uno, y la fila dice de qué familia es:
   dieciséis de los veintiuno son **insertos** —sustituyen el sonido seco— y
   cinco **suman** encima: DLY, REV y los tres de modulación que sólo existen

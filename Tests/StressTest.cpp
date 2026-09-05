@@ -392,7 +392,7 @@ int main()
         //  con las dos y no estaba midiendo nada. Primero se duda de la prueba.
         e.setDlyMix (1.0f); e.setDlyTime (33.34375f); e.setDlyFb (0.9f);
         e.setPadGain (0, 1.0f);
-        e.setPadSend (0, 3, 1.0f);
+        e.setCanalSend (0, 3, 1.0f);
         //  8 kHz: bastante agudo para que la perdida se vea, bastante por
         //  debajo de Nyquist para que no sea la propia banda del generador.
         e.publishSample (0, makeSample (48000.0, 0.02, 8000.0f, false));
@@ -447,7 +447,7 @@ int main()
         //  esta sonda no la ponia y midio una reverb muda durante tres
         //  intentos. Primero se duda de la prueba.
         e.setPadGain (0, 1.0f);
-        e.setPadSend (0, 5, 1.0f);
+        e.setCanalSend (0, 5, 1.0f);
         e.publishSample (0, makeSample (48000.0, 0.05, 400.0f));
 
         juce::AudioBuffer<float> b (2, 512);
@@ -678,8 +678,8 @@ int main()
             //  parte: media el camino seco y el master. El delay y la reverb
             //  son los dos sitios donde un NaN se queda a vivir, porque tienen
             //  memoria y solo se limpian al cambiar de ruta.
-            e.setPadSend (0, 3, 1.0f);   // DLY
-            e.setPadSend (0, 5, 1.0f);   // REV
+            e.setCanalSend (0, 3, 1.0f);   // DLY
+            e.setCanalSend (0, 5, 1.0f);   // REV
             e.setDlyMix (1.0f); e.setDlyTime (50.0f); e.setDlyFb (0.9f);
             e.setRevMix (1.0f); e.setRevSize (0.7f);
 
@@ -745,8 +745,8 @@ int main()
         e.prepareToPlay (48000.0, 512);
         e.setPolyphony (8, 2);
         e.setPadGain (0, 1.0f);
-        e.setPadSend (0, 3, 1.0f);
-        e.setPadSend (0, 5, 1.0f);
+        e.setCanalSend (0, 3, 1.0f);
+        e.setCanalSend (0, 5, 1.0f);
         e.setDlyMix (1.0f); e.setDlyTime (50.0f); e.setDlyFb (0.9f);
         e.setRevMix (1.0f); e.setRevSize (0.7f);
 
@@ -2331,7 +2331,7 @@ int main()
             //  Menos de cero significa "no se toca": asi la corrida de control
             //  es exactamente la maquina recien encendida y no una que alguien
             //  ha puesto a cero, que no es lo mismo aunque de el mismo numero.
-            if (envio >= 0.0f) e.setPadSend (0, 3, envio);
+            if (envio >= 0.0f) e.setCanalSend (0, 3, envio);
             e.publishSample (0, makeSample (48000.0, 0.05, 400.0f));
 
             juce::AudioBuffer<float> b (2, 512);
@@ -3341,7 +3341,7 @@ int main()
             if (conEq)
             {
                 e.setEqMix (1.0f);
-                e.setPadSend (0, 6, 1.0f);      // el EQ es el tipo 6
+                e.setCanalSend (0, 6, 1.0f);      // el EQ es el tipo 6
                 e.setEqBand (2, 1000.0f, 12.0f);
             }
             //  Un tono de 1 kHz, o sea justo el centro de la banda que se sube.
@@ -3448,7 +3448,7 @@ int main()
                 e.setFxParam (fx, 0, p0);
                 e.setFxParam (fx, 1, p1);
                 e.setFxParam (fx, 2, 1.0f);          // MIX al maximo
-                e.setPadSend (0, fx, 1.0f);
+                e.setCanalSend (0, fx, 1.0f);
             }
             e.publishSample (0, tonoPlano (48000.0, 1.20, hz, nivel));
 
@@ -3629,7 +3629,7 @@ int main()
                 e.setFxParam (fx, 1, p1);
                 e.setFxParam (fx, 2, 1.0f);
                 if (fx == AudioEngine::kFxEq) e.setEqMix (1.0f);
-                e.setPadSend (0, fx, 1.0f);
+                e.setCanalSend (0, fx, 1.0f);
             }
             e.publishSample (0, seno (hz, amp));
 
@@ -3866,7 +3866,7 @@ int main()
                     e.setFxParam (fx, 0, p0);
                     e.setFxParam (fx, 1, p1);
                     e.setFxParam (fx, 2, 1.0f);
-                    e.setPadSend (0, fx, 1.0f);
+                    e.setCanalSend (0, fx, 1.0f);
                 }
                 e.publishSample (0, click());
 
@@ -4182,7 +4182,7 @@ int main()
                 e.setFxParam (fx, 0, p0);
                 e.setFxParam (fx, 1, p1);
                 e.setFxParam (fx, 2, mix);
-                e.setPadSend (0, fx, 1.0f);
+                e.setCanalSend (0, fx, 1.0f);
             }
             e.publishSample (0, tono (kFs, 2.5, hz, 0.5f));
 
@@ -4475,7 +4475,7 @@ int main()
                 e.setFxParam (AudioEngine::kFxWid, 0, ancho);
                 e.setFxParam (AudioEngine::kFxWid, 1, 120.0f);
                 e.setFxParam (AudioEngine::kFxWid, 2, 1.0f);
-                e.setPadSend (0, AudioEngine::kFxWid, 1.0f);
+                e.setCanalSend (0, AudioEngine::kFxWid, 1.0f);
                 e.publishSample (0, ruidoLR (kFs, 2.0));
                 juce::AudioBuffer<float> b (2, kBs);
                 for (int i = 0; i < 30; ++i) { b.clear(); e.renderNextBlock (b, 0, kBs); }
@@ -4541,7 +4541,7 @@ int main()
                 e.setFxParam (AudioEngine::kFxExc, 0, 1000.0f);
                 e.setFxParam (AudioEngine::kFxExc, 1, fuerza);
                 e.setFxParam (AudioEngine::kFxExc, 2, 1.0f);
-                e.setPadSend (0, AudioEngine::kFxExc, 1.0f);
+                e.setCanalSend (0, AudioEngine::kFxExc, 1.0f);
                 e.publishSample (0, dosTonos (kFs, 2.0));
                 juce::AudioBuffer<float> b (2, kBs);
                 for (int i = 0; i < 30; ++i) { b.clear(); e.renderNextBlock (b, 0, kBs); }
@@ -4597,7 +4597,7 @@ int main()
                 e.setFxParam (AudioEngine::kFxTrn, 0, at);
                 e.setFxParam (AudioEngine::kFxTrn, 1, 0.0f);
                 e.setFxParam (AudioEngine::kFxTrn, 2, 1.0f);
-                e.setPadSend (0, AudioEngine::kFxTrn, 1.0f);
+                e.setCanalSend (0, AudioEngine::kFxTrn, 1.0f);
                 e.publishSample (0, golpe (kFs, 1.0));
                 juce::AudioBuffer<float> b (2, kBs);
                 for (int i = 0; i < 30; ++i) { b.clear(); e.renderNextBlock (b, 0, kBs); }
@@ -4660,7 +4660,7 @@ int main()
                     e.setFxParam (AudioEngine::kFxFrz, 0, 180.0f);
                     e.setFxParam (AudioEngine::kFxFrz, 1, 0.0f);
                     e.setFxParam (AudioEngine::kFxFrz, 2, 1.0f);
-                    e.setPadSend (0, AudioEngine::kFxFrz, 1.0f);
+                    e.setCanalSend (0, AudioEngine::kFxFrz, 1.0f);
                 }
                 e.publishSample (0, corto (kFs));
                 juce::AudioBuffer<float> b (2, kBs);
@@ -4695,6 +4695,190 @@ int main()
             std::printf ("%-34s al segundo %.5f (sin FRZ %.5f)   dos vueltas difieren %.6f   %s\n",
                          "FRZ", vivo, mudo, peor, ok ? "OK" : zatiFalla());
         }
+    }
+
+    // ------------------------------------------------------------------
+    //  LA MESA: EL CANAL ES EL DUEÑO DEL ENVIO.
+    //
+    //  Hasta aqui el envio era del PAD y la fila de la cara era GLOBAL, asi que
+    //  cambiar de pad no cambiaba nada de lo que ese pad suena por dentro. El
+    //  pad elige CANAL y el canal manda; el recorte del pad sobrevive como el
+    //  numero con el que un proyecto anterior se guardo.
+    //
+    //  Las tres cifras que se miden aqui son de MOTOR y no de cara: que el
+    //  envio sea del canal, que el fader del canal escale las DOS mitades, y
+    //  que la maquina de hoy con todo en el canal 0 sea BIT A BIT la de ayer.
+    {
+    constexpr double kFs = 48000.0;
+    constexpr int    kBs = 512;
+    //  Un tono SIN envolvente: lo que se mide aqui es el reparto, y una
+    //  envolvente haria que la respuesta dependiera de cuando se pregunta —el
+    //  fallo que este banco ya tiene escrito dos veces.
+    auto tonoPlano = [] (double sr, double seg, double hz)
+    {
+        auto* sb = new SampleBuffer();
+        const int n = (int) (sr * seg);
+        sb->buffer.setSize (1, n);
+        for (int i = 0; i < n; ++i)
+            sb->buffer.setSample (0, i, 0.5f * (float) std::sin (2.0 * juce::MathConstants<double>::pi
+                                                                  * hz * (double) i / sr));
+        sb->sourceSampleRate = sr;
+        return SampleBuffer::Ptr (sb);
+    };
+
+    {
+        //  El pad 0 en el canal 1 y el pad 1 en el canal 2, y solo el canal 1
+        //  manda al delay. Se mide LA COLA y no el nivel, que es donde la
+        //  prueba obvia se equivocaria: el camino seco no pasa por el envio,
+        //  asi que los dos pads suenan igual mientras la muestra dura y
+        //  comparar picos daria «casi lo mismo». Lo que las separa es lo que
+        //  suena DESPUES.
+        auto cola = [&tonoPlano] (int canalDelPad)
+        {
+            AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+            e.setPadGain (0, 1.0f);
+            e.setPadCanal (0, canalDelPad);
+            e.setFxParam (AudioEngine::kFxDly, 0, 250.0f);
+            e.setFxParam (AudioEngine::kFxDly, 1, 0.6f);
+            e.setFxParam (AudioEngine::kFxDly, 2, 1.0f);
+            e.setCanalSend (1, AudioEngine::kFxDly, 1.0f);   // solo el canal 1
+
+            //  Y EL PAD ENTRA EN LA MASCARA EN LAS DOS CORRIDAS, que es lo que
+            //  hace que esta cifra mida el REPARTO y no el atajo.
+            //
+            //  `padSendMask` se calcula del producto de las dos mitades, asi
+            //  que con el canal 2 cerrado el pad se salta el bucle largo
+            //  entero: la primera version de esta comprobacion siguio saliendo
+            //  VERDE con el reparto roto a proposito -mandando desde el
+            //  recorte- porque nunca llegaba a multiplicar. Un envio abierto a
+            //  un efecto cuya MEZCLA esta en cero pone el bit y no suena nada,
+            //  asi que las dos corridas recorren el mismo codigo y lo unico que
+            //  las separa es de quien sale el numero.
+            e.setCanalSend (canalDelPad, AudioEngine::kFxFlt, 1.0f);
+            e.publishSample (0, tonoPlano (kFs, 0.20, 440.0));
+
+            juce::AudioBuffer<float> b (2, kBs);
+            double peor = 0.0;
+            const int total = (int) (kFs * 1.2) / kBs;
+            for (int i = 0; i < total; ++i)
+            {
+                if (i == 30) e.postNoteOn (0, 1.0f);
+                b.clear(); e.renderNextBlock (b, 0, kBs);
+                //  Desde bien pasada la muestra: 0.20 s de sonido disparados en
+                //  el bloque 30, o sea que a partir del 0.6 s lo unico que
+                //  puede sonar es el eco.
+                if (i > (int) (kFs * 0.6) / kBs)
+                    peor = juce::jmax (peor, (double) b.getMagnitude (0, kBs));
+            }
+            return peor;
+        };
+
+        const double enUno = cola (1);
+        const double enDos = cola (2);
+        const bool ok = (enUno > 0.02) && (enDos < 1.0e-5);
+        std::printf ("%-34s canal 1 %.5f   canal 2 %.5f   %s\n",
+                     "el canal es dueño del envio", enUno, enDos, ok ? "OK" : zatiFalla());
+    }
+
+    {
+        //  EL FADER DEL CANAL ESCALA LAS DOS MITADES, que es lo que separa un
+        //  canal de mesa de un fader del seco: con el envio abierto, bajar el
+        //  canal 6 dB tiene que bajar el SECO y la COLA lo mismo. Solo lo
+        //  primero lo cumple una ganancia puesta en el camino corto, y solo lo
+        //  segundo una puesta en el envio.
+        auto corre = [&tonoPlano] (float gan, double& seco, double& colaOut)
+        {
+            AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+            e.setPadGain (0, 1.0f);
+            e.setCanalGain (0, gan);
+            e.setFxParam (AudioEngine::kFxDly, 0, 250.0f);
+            e.setFxParam (AudioEngine::kFxDly, 1, 0.6f);
+            e.setFxParam (AudioEngine::kFxDly, 2, 1.0f);
+            e.setCanalSend (0, AudioEngine::kFxDly, 0.5f);
+            e.publishSample (0, tonoPlano (kFs, 0.20, 440.0));
+
+            juce::AudioBuffer<float> b (2, kBs);
+            seco = colaOut = 0.0;
+            const int total = (int) (kFs * 1.2) / kBs;
+            for (int i = 0; i < total; ++i)
+            {
+                //  Treinta bloques de asentado antes de disparar: el envio y el
+                //  fader suben con 20 ms de constante, que es la leccion que ya
+                //  costo una medida con el limitador.
+                if (i == 30) e.postNoteOn (0, 1.0f);
+                b.clear(); e.renderNextBlock (b, 0, kBs);
+                if (i >= 34 && i < 60)                    seco    = juce::jmax (seco,    (double) b.getMagnitude (0, kBs));
+                if (i > (int) (kFs * 0.6) / kBs)          colaOut = juce::jmax (colaOut, (double) b.getMagnitude (0, kBs));
+            }
+        };
+
+        double s1 = 0, c1 = 0, s2 = 0, c2 = 0;
+        corre (1.0f, s1, c1);
+        corre (0.5f, s2, c2);
+        const double dSeco = 20.0 * std::log10 (juce::jmax (1.0e-9, s2 / juce::jmax (1.0e-9, s1)));
+        const double dCola = 20.0 * std::log10 (juce::jmax (1.0e-9, c2 / juce::jmax (1.0e-9, c1)));
+        const bool ok = std::abs (dSeco + 6.02) < 0.5 && std::abs (dCola + 6.02) < 0.7;
+        std::printf ("%-34s seco %+.2f dB   cola %+.2f dB   %s\n",
+                     "el fader del canal", dSeco, dCola, ok ? "OK" : zatiFalla());
+    }
+
+    {
+        //  Y LA CORRIDA DE CONTROL, que es la que hace creible todo lo demas:
+        //  con los 64 pads en el canal 0 y el canal 0 mandando lo que ayer
+        //  mandaba cada pad, la salida tiene que ser BIT A BIT la de antes.
+        //
+        //  «Casi lo mismo» es justo lo que dejaria pasar una capa que escala de
+        //  mas o de menos — es la misma comparacion que el filtro del pad
+        //  apagado y el orden del ancho estereo.
+        auto corre = [&tonoPlano] (bool porCanal, std::vector<float>& out)
+        {
+            AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+            e.setPadGain (0, 1.0f);
+            e.setFxParam (AudioEngine::kFxDly, 0, 180.0f);
+            e.setFxParam (AudioEngine::kFxDly, 1, 0.5f);
+            e.setFxParam (AudioEngine::kFxDly, 2, 1.0f);
+            e.setFxParam (AudioEngine::kFxFlt, 0, 0.7f);
+            e.setFxParam (AudioEngine::kFxFlt, 2, 0.6f);
+            if (porCanal)
+            {
+                e.setCanalSend (0, AudioEngine::kFxDly, 0.4f);
+                e.setCanalSend (0, AudioEngine::kFxFlt, 0.6f);
+            }
+            else
+            {
+                //  La forma de AYER: el numero en el recorte del pad y el canal
+                //  a uno, que es exactamente como abre un proyecto anterior.
+                e.setCanalSend (0, AudioEngine::kFxDly, 1.0f);
+                e.setCanalSend (0, AudioEngine::kFxFlt, 1.0f);
+                for (int p = 0; p < AudioEngine::kNumPads; ++p)
+                {
+                    e.setPadRecorte (p, AudioEngine::kFxDly, 0.4f);
+                    e.setPadRecorte (p, AudioEngine::kFxFlt, 0.6f);
+                }
+            }
+            e.publishSample (0, tonoPlano (kFs, 0.20, 440.0));
+
+            juce::AudioBuffer<float> b (2, kBs);
+            out.clear();
+            const int total = (int) (kFs * 1.0) / kBs;
+            for (int i = 0; i < total; ++i)
+            {
+                if (i == 30) e.postNoteOn (0, 1.0f);
+                b.clear(); e.renderNextBlock (b, 0, kBs);
+                for (int n = 0; n < kBs; ++n) out.push_back (b.getSample (0, n));
+            }
+        };
+
+        std::vector<float> a, c;
+        corre (true, a);
+        corre (false, c);
+        int distintas = 0;
+        for (size_t i = 0; i < a.size() && i < c.size(); ++i)
+            if (a[i] != c[i]) ++distintas;
+        const bool ok = distintas == 0 && ! a.empty();
+        std::printf ("%-34s %d de %d muestras cambian   %s\n",
+                     "canal y recorte dan lo mismo", distintas, (int) a.size(), ok ? "OK" : zatiFalla());
+    }
     }
 
     std::printf ("\n%-34s %d FALLA\n", "motor", zatiFallos);

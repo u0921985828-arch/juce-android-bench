@@ -45,14 +45,14 @@ se ve, no lo que suena.
 
 Cada pad guarda una muestra —tuya, de fábrica, grabada por el micro o
 remuestreada de la propia máquina— con su recorte, su afinación, su envolvente,
-su filtro, su pan, su ancho estéreo y cuánto de él pasa por cada una de las
-seis ranuras de efecto. Un pad también puede
+su filtro, su pan, su ancho estéreo y **a qué canal de la mesa entra**, que es
+lo que decide por qué efectos pasa. Un pad también puede
 llevar un **instrumento**: dieciséis familias sintetizadas de dieciséis presets
 cada una, multizona, que se tocan con el dedo como una tecla.
 
 Encima de eso hay un secuenciador de ocho patrones con cadena y una canción de
 cuatro carriles por sesenta y cuatro compases, veintiun efectos en seis ranuras
-con un mando por pad, una mesa de dieciséis canales con máster, y una exportación que
+**por canal**, una mesa de dieciséis canales con máster, y una exportación que
 saca el máster o las pistas por separado.
 
 **Lo que la separa de las demás**, y es lo que hay que saber para entender por
@@ -143,7 +143,11 @@ el foco. Encima de cada uno, el nombre del parámetro; debajo, su lectura con
 unidades. No guardan nada: escriben directamente sobre el parámetro y lo leen de
 vuelta de él.
 
-**Las seis ranuras.** Once tipos y seis sitios donde ponerlos. Una ranura
+**Las seis ranuras.** Veintiún tipos y seis sitios donde ponerlos, y los seis
+son **del canal que tenga el pad elegido**: cambiar de pad cambia la fila. Un
+inserto es de UN canal —su estado en el motor es uno solo, así que dos canales
+serían dos interruptores del mismo aparato— y un envío es de TODOS, que es
+literalmente lo que un envío significa. Una ranura
 vacía dice «+» y abre su menú; llena, tocarla la enciende **y** le da los tres
 mandos, y mantenerla le da los mandos **sin** encenderla, que es como se
 prepara un efecto antes de abrirlo.
@@ -406,11 +410,14 @@ distinto y cada uno está medido contra su fila.
 2. **La entrada del micro se captura antes de limpiar** la salida.
 3. **Se adoptan** los buffers que la interfaz haya publicado, por intercambio de
    punteros.
-4. **El reparto por bloque**: para cada pad, seis ganancias de envío suavizadas y
-   una ganancia seca. Los que `fxIsTone` marca (FLT, HPF, DRV, BIT, EQ, CMP,
-   GTE, DSS, LIM) **restan** el seco en la misma medida —son inserciones—; DLY
-   y REV suman encima. Un pad
-   que no manda a ningún efecto y no tiene filtro se salta este bucle entero.
+4. **El reparto por bloque**: para cada pad, la ganancia de su CANAL y
+   veintiuna ganancias de envío suavizadas —el envío del canal por el recorte
+   del pad— más una ganancia seca. Los dieciséis que `fxSustituye` marca
+   **restan** el seco en la misma medida —son insertos—; los cinco restantes
+   —DLY, REV, CHO, FLA y PHA— suman encima. Un pad que no manda a ningún efecto
+   y no tiene filtro se salta este bucle entero. El canal no es una etapa
+   nueva: es un re-índice de una tabla que ya se calculaba una vez por bloque,
+   así que no hay un solo bus más en el hilo de audio.
 5. **Las dos colas de comandos** se vacían, cada una en su propio cubo.
 6. **El transporte y las voces**, con el bloque partido en los bordes de paso.
    El filtro por pad se aplica aquí, en el camino separado.
@@ -481,7 +488,9 @@ primeros ~1600 muestras.
 
 Afinación, ganancia, inicio y fin del recorte, bucle, reverso, CINTA/TONO, grupo
 de choke, autocorte, pan, ancho estéreo, ataque, caída, los dos fundidos de
-canto, corte y resonancia del filtro, silencio, solo, y un envío por tipo. Todos
+canto, corte y resonancia del filtro, silencio, solo, **su canal** y un recorte
+por tipo —lo que un proyecto anterior guardaba como envío, que hoy multiplica al
+del canal y nace en uno—. Todos
 se acotan **en la puerta** —el mismo sitio por donde entran el fichero, el mando,
 el bloqueo de un paso y un kit— y no en quien llama.
 
@@ -974,17 +983,18 @@ que SOLO se arme desde la cara y que el lienzo diga en qué modo está ·
 **dos** caminos · `paneles` los paneles al píxel · `piano` el compás del piano
 por el camino de verdad · `plano` y `planos`, la estructura y el dibujo de cada
 pantalla · `rack` de qué familia es cada efecto, qué enseña el plato y qué mando lo mueve ·
-`ranuras` las seis ranuras y su menú · `session` que la sesión vuelva entera,
+`ranuras` las seis ranuras y su menú · `canales` los dieciséis canales de la
+mesa y el canal de un pad · `session` que la sesión vuelva entera,
 por repetición · `skins` las cuatro carcasas en contraste y ΔE · `store` las
 fotos de la ficha de Play · `tour` que cada paso señale algo.
 
 ### Las entradas
 
-Cincuenta y una variables `ZATI_*` convierten en **entrada** lo que si no sería
+Sesenta y cuatro variables `ZATI_*` convierten en **entrada** lo que si no sería
 «lo que hubiera»: la carcasa (`ZATI_SKIN`), los packs instalados (`ZATI_DLC`),
 los márgenes del sistema y cuándo contestan (`ZATI_INSETS`, `ZATI_INSETS_TICK`),
 la máquina **sonando** cuando no hay tarjeta de sonido (`ZATI_SONANDO`), el fondo
-sin hornear (`ZATI_FONDO_VIVO`). Más las de medida —`ZATI_AUDIT`, `ZATI_SIZE`, `ZATI_LANG`,
+sin hornear (`ZATI_FONDO_VIVO`), el reparto por canales (`ZATI_CANALES`). Más las de medida —`ZATI_AUDIT`, `ZATI_SIZE`, `ZATI_LANG`,
 `ZATI_OPEN`, `ZATI_PAINT`, `ZATI_SPIN`, `ZATI_PAGES`, `ZATI_FUZZ`— y las que
 generan los gráficos de la tienda y el icono. La lista completa está en la
 cabecera de `Source/UiAudit.h`.

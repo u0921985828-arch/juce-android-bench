@@ -98,20 +98,41 @@ def main():
         #  eso lo mide `Tests/session.py` con sus cuatro `project.xml`
         #  congelados. Aqui se mide con que abre una maquina en la que nadie ha
         #  guardado nada.
-        if d.get ("ranuras") != [-1] * 6:
-            fallos.append ("%s: la fila de efectos abre en %s y se esperaba vacia"
+        #  Y LAS DIECISEIS FILAS, no la del canal que se este mirando: desde que
+        #  la fila es del CANAL hay dieciseis, y vaciar la mitad de un proyecto
+        #  es peor que no vaciar nada — que es la herencia que este mismo
+        #  fichero ya cazo dos veces.
+        if d.get ("ranuras") != [-1] * 96:
+            fallos.append ("%s: las 16 filas de efectos abren en %s y se esperaban vacias"
                            % (que, d.get ("ranuras", "?")))
 
-        print ("%-10s %2d pads   envios max %.2f suma %.2f   ranuras %s   carril 0 %s"
+        #  Y EL REPARTO POR CANALES, con las TRES cifras que lo definen: los 64
+        #  pads en el canal 0 -uno solo en el 3 basta para que canalmax salga 3-,
+        #  los dieciseis faders en uno -o sea suma 16- y ningun mute puesto. Un
+        #  proyecto vacio que hereda la mesa del anterior es exactamente la
+        #  herencia que ya se pago con los envios y con la linea de tiempo.
+        if d["canalmax"] != 0:
+            fallos.append ("%s: hay pads repartidos hasta el canal %d y se "
+                           "esperaban los 64 en el 0" % (que, d["canalmax"]))
+        if abs (d["cgansuma"] - 16.0) > 0.01 or d["cmuten"] != 0:
+            fallos.append ("%s: los dieciseis canales abren con suma de ganancia "
+                           "%.2f y %d mutes puestos" % (que, d["cgansuma"], d["cmuten"]))
+
+        print ("%-10s %2d pads   envios max %.2f suma %.2f   canal max %d gan %.1f "
+               "mutes %d   ranuras %s   carril 0 %s"
                % (que, d["pads"], d["envmax"], d["envsuma"],
-                  d.get ("ranuras", "?"), carriles[0]))
+                  d["canalmax"], d["cgansuma"], d["cmuten"],
+                  "todas vacias" if d.get ("ranuras") == [-1] * 96 else d.get ("ranuras", "?"),
+                  carriles[0]))
 
     #  Y QUE LOS DOS CAMINOS DIGAN LO MISMO en todo menos en los sonidos, que
     #  es la comprobacion que caza el fallo de verdad: no que cada uno este
     #  bien por separado, sino que no se separen.
     a, n = filas["arranque"], filas["nuevo"]
     if (a["carriles"] != n["carriles"] or a["envmax"] != n["envmax"]
-            or a.get ("ranuras") != n.get ("ranuras")):
+            or a.get ("ranuras") != n.get ("ranuras")
+            or a["canalmax"] != n["canalmax"] or a["cmuten"] != n["cmuten"]
+            or abs (a["cgansuma"] - n["cgansuma"]) > 0.01):
         fallos.append ("los dos caminos a un proyecto vacio no coinciden")
 
     print()

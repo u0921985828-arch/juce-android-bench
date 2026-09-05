@@ -224,6 +224,47 @@ MainComponent::MainComponent()
         chopSheet.addAndMakeVisible (chopPadPickBtn);
     }
 
+    //  LA REJILLA DE DIECISEIS PARA ELEGIR CANAL. Ver canalSheet en la cabecera.
+    {
+        addAndMakeVisible (canalSheet);
+        canalSheet.setVisible (false);
+        canalSheet.onDismiss    = [this] { abreCanalPicker (false); };
+        canalSheet.paintContent = [this] (juce::Graphics& g) { paintCanalPickContent (g); };
+        styleButton (canalCloseBtn, kKey);
+        canalCloseBtn.onClick = [this] { abreCanalPicker (false); };
+        canalSheet.addAndMakeVisible (canalCloseBtn);
+
+        for (int i = 0; i < kNumCanales; ++i)
+        {
+            auto* b = new juce::TextButton (juce::String (i + 1).paddedLeft ('0', 2));
+            styleButton (*b, kStepOff);
+            litAccent (*b);
+            b->setClickingTogglesState (true);
+            //  Elegir y cerrar, como la rejilla de pads: llegar de un gesto es
+            //  todo el argumento, y dejarla abierta seria un segundo toque para
+            //  volver a lo que se estaba haciendo.
+            b->onClick = [this, i]
+            {
+                pushUndo (T ("CANAL"));
+                engine.setPadCanal (selectedPad, i);
+                //  Y LA FILA DE LA CARA CON EL, que es para lo que el canal
+                //  existe: mover el pad de canal cambia sus seis ranuras.
+                canalActual = i;
+                refrescaRanuras();
+                refrescaCanalDelPad();
+                if (rackSheet.isVisible()) refreshRack();
+                refreshMixStrip();
+                abreCanalPicker (false);
+            };
+            canalSheet.addAndMakeVisible (b);
+            canalBtns.add (b);
+        }
+
+        styleButton (padCanalBtn, kKey);
+        padCanalBtn.onClick = [this] { abreCanalPicker (! canalPickAbierto); };
+        padSheet.addAndMakeVisible (padCanalBtn);
+    }
+
     //  EL MENU DE UNA RANURA. Ver ranuraSheet en la cabecera.
     {
         addAndMakeVisible (ranuraSheet);
@@ -538,26 +579,38 @@ MainComponent::MainComponent()
         };
         setSheet.cuerpo.addAndMakeVisible (projKitButton);
 
-        // --- RACK: one pad's sends, opened from the mixer. ---------------
+        // --- RACK: los envios de UN CANAL, abierto desde la mesa. ---------
+        //
+        //  Era «los envios de un pad» y son mil trescientos cuarenta y cuatro
+        //  numeros que nadie gestiona. Desde que el canal es el dueño del envio
+        //  son dieciseis filas de seis, y el selector de abajo elige canal.
         styleButton (rackButton, kKey);
-        rackButton.onClick = [this] { rackPad = juce::jmax (0, selectedPad); openSheet (rackSheet, mixButton); refreshRack(); };
+        rackButton.onClick = [this] { openSheet (rackSheet, mixButton); refreshRack(); };
         mixSheet.addAndMakeVisible (rackButton);
 
-        for (int i = 0; i < kNumPads; ++i)
+        //  DIECISEIS CANALES EN CUATRO POR CUATRO, que es la forma de la cara y
+        //  la del selector de pad que ya estaba aqui — con la diferencia de que
+        //  ahora son dieciseis y no sesenta y cuatro, asi que la fila de bancos
+        //  se va: cuatro por cuatro son exactamente los que hay.
+        for (int i = 0; i < kNumCanales; ++i)
         {
             auto* b = new juce::TextButton (juce::String (i + 1).paddedLeft ('0', 2));
             styleButton (*b, kStepOff);
             litAccent (*b);
             b->setClickingTogglesState (true);
-            b->onClick = [this, i] { rackPad = i; selectPad (i); refreshRack(); };
+            //  Y CAMBIA EL CANAL ACTUAL, que es el mismo que lee la cara: hay UN
+            //  canal elegido y no dos. Con un `rackCanal` propio, la fila de la
+            //  cara y la del rack dirian cosas distintas del mismo aparato — que
+            //  es el desajuste que el `rackPad` de antes tenia con `selectPad`.
+            b->onClick = [this, i] { canalActual = i; refrescaRanuras(); refreshRack(); };
             rackSheet.cuerpo.addAndMakeVisible (b);
             rackPadBtns.add (b);
         }
 
         //  UNA FILA POR RANURA y no por tipo: el rack dice cuanto manda ESTE
-        //  pad a cada sitio de la fila de la cara, y la fila son seis. Con una
-        //  fila por tipo habria un fader para un efecto que no esta puesto en
-        //  ninguna parte, o sea un mando que no puede hacer nada.
+        //  canal a cada sitio de su fila, y la fila son seis. Con una fila por
+        //  tipo habria un fader para un efecto que no esta puesto en ninguna
+        //  parte, o sea un mando que no puede hacer nada.
         for (int f = 0; f < kNumRanuras; ++f)
         {
             auto* sl = new juce::Slider();
@@ -582,9 +635,9 @@ MainComponent::MainComponent()
             //  cambiar de contenido y el mando es el mismo.
             sl->onValueChange = [this, f, sl]
             {
-                const int fx = slotFx[(size_t) f];
+                const int fx = enRanura (f);
                 if (fx < 0) return;                 // ranura vacia: no hay bus
-                engine.setPadSend (rackPad, fx, (float) sl->getValue());
+                engine.setCanalSend (canalActual, fx, (float) sl->getValue());
                 rackSheet.repaint();
             };
             rackSheet.cuerpo.addAndMakeVisible (sl);
@@ -2057,7 +2110,7 @@ MainComponent::MainComponent()
         //  `std::array<int,6> {}` seguiria estando mal: cero es un tipo VALIDO
         //  -FLT- y eso es el fallo de `notaViva` y del cero de `padAncho`. Se
         //  escribe la sentinela a mano.
-        for (int s = 0; s < kNumRanuras; ++s) slotFx[(size_t) s] = kSlotVacia;
+        for (auto& fila : slotFx) fila.fill (kSlotVacia);
     }
 
     //  Dragging the hero's handles is the same edit as the START/END faders in
@@ -2187,6 +2240,49 @@ MainComponent::MainComponent()
         mixRows.addAndMakeVisible (so);
         mixSolos.add (so);
     }
+    //  Y LAS DIECISEIS TIRAS DE CANAL, en el mismo Viewport y con la misma
+    //  forma de fila: color, numero, fader, `M` y cuantos pads le entran. Sin
+    //  pan —el sitio en la imagen es del pad, que es lo que se coloca— y sin
+    //  SOLO, que se queda donde ya estaba.
+    for (int c = 0; c < kNumCanales; ++c)
+    {
+        auto* f = new juce::Slider (juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight);
+        f->setRange (kGainMinDb, kGainMaxDb, 0.1);
+        f->setValue (0.0, juce::dontSendNotification);
+        f->setSkewFactorFromMidPoint (-9.0);
+        f->setDoubleClickReturnValue (true, 0.0);
+        f->setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
+        f->setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
+        f->setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+        f->setColour (juce::Slider::trackColourId, Zati::colour (c));
+        f->setTextBoxStyle (juce::Slider::TextBoxRight, false, 46, Metrics::readout);
+        f->setSliderSnapsToMousePosition (false);
+        f->textFromValueFunction = [] (double v) { return gainText (v, false); };
+        f->onValueChange = [this, c, f] { engine.setCanalGain (c, gainFromDb (f->getValue())); };
+        mixRows.addAndMakeVisible (f);
+        canFaders.add (f);
+
+        auto* m = new juce::TextButton ("M");
+        styleButton (*m, kStepOff);
+        m->setColour (juce::TextButton::buttonOnColourId, ZatiColours::red);
+        m->setColour (juce::TextButton::textColourOnId, juce::Colours::white);
+        m->setClickingTogglesState (true);
+        m->onClick = [this, c, m] { engine.setCanalMute (c, m->getToggleState()); refreshMixStrip(); };
+        mixRows.addAndMakeVisible (m);
+        canMutes.add (m);
+    }
+
+    //  EL INTERRUPTOR DE VISTA, en el renglon del titulo y no en la fila de
+    //  chips: mismo estilo, mismo gesto y mismo sitio que el de CANCION, que
+    //  es la otra ficha con dos vistas de la misma rejilla.
+    styleButton (mixVistaBtn, kKey);
+    litAccent (mixVistaBtn);
+    mixVistaBtn.onClick = [this]
+    {
+        showMixPage (mixPage == mixPageCanales ? mixPagePads : mixPageCanales);
+    };
+    mixSheet.addAndMakeVisible (mixVistaBtn);
+
     //  The strips live in a scrolled panel and paint their own chips and
     //  names: those used to be drawn on the sheet behind the sliders, using
     //  the sliders' bounds, which stops working the moment the sliders move
@@ -2941,7 +3037,7 @@ MainComponent::MainComponent()
             b->setRadioGroupId (7710);
             b->onClick = [this, r]
             {
-                const int fx = slotFx[(size_t) r];
+                const int fx = enRanura (r);
                 if (fx >= 0) selectXyFx (fx);
             };
             xyPanel.addAndMakeVisible (b);
@@ -3127,7 +3223,10 @@ MainComponent::MainComponent()
     litAccent (padRackBtn);
     padRackBtn.onClick = [this]
     {
-        rackPad = juce::jmax (0, selectedPad);
+        //  El canal ya lo puso `selectPad`: la puerta lleva al rack DEL CANAL
+        //  de este pad, que es lo que hace que abrirla desde aqui signifique
+        //  algo. Con un canal propio del rack, esta puerta habria abierto la
+        //  fila de otro.
         openSheet (rackSheet, mixButton);
         refreshRack();
     };
@@ -3411,6 +3510,9 @@ void MainComponent::ponIconos()
         //  El pad, y lo que se le hace.
         { &padSoundBtn, Iconos::Id::sonido },     { &padTrimBtn, Iconos::Id::recorte },
         { &padRigBtn, Iconos::Id::pad },          { &padRackBtn, Iconos::Id::rack },
+        //  El canal del pad y las dos paginas de la mesa. `mezcla` para las dos
+        //  del canal: es literalmente lo que son, y el dibujo ya existe.
+        { &padCanalBtn, Iconos::Id::mezcla },
         { &nivelesButton, Iconos::Id::niveles },
         { &autocutButton, Iconos::Id::autocut },  { &duckButton, Iconos::Id::bombeo },
         { &micButton, Iconos::Id::mic },          { &resampleButton, Iconos::Id::remuestrear },
@@ -4136,41 +4238,65 @@ void MainComponent::focusFx (int f)
 //  de la app -el motor, el XY, los parametros, el fichero de proyecto- sigue
 //  hablando de TIPOS, que es lo que suena.
 
-int MainComponent::slotDeFx (int fx) const
+int MainComponent::slotDeFxEn (int canal, int fx) const
 {
-    if (fx < 0) return -1;
+    if (fx < 0 || ! juce::isPositiveAndBelow (canal, kNumCanales)) return -1;
     for (int s = 0; s < kNumRanuras; ++s)
-        if (slotFx[(size_t) s] == fx) return s;
+        if (slotFx[(size_t) canal][(size_t) s] == fx) return s;
     return -1;
 }
 
-//  Poner un tipo en una ranura, o vaciarla con kSlotVacia.
+int MainComponent::canalDeFx (int fx) const
+{
+    if (fx < 0) return -1;
+    for (int c = 0; c < kNumCanales; ++c)
+        if (slotDeFxEn (c, fx) >= 0) return c;
+    return -1;
+}
+
+//  Poner un tipo en una ranura del canal actual, o vaciarla con kSlotVacia.
 void MainComponent::ponEnRanura (int ranura, int fx)
 {
     if (! juce::isPositiveAndBelow (ranura, kNumRanuras)) return;
     if (fx != kSlotVacia && ! juce::isPositiveAndBelow (fx, kNumFx)) return;
+    const size_t c = (size_t) juce::jlimit (0, kNumCanales - 1, canalActual);
 
-    //  UN TIPO, UNA RANURA. Su estado en el motor es uno solo -un filtro, una
-    //  linea de retardo, una reverb- asi que dos ranuras del mismo tipo serian
-    //  dos ventanas al mismo aparato, con dos interruptores que se contradicen.
-    //  El menu ya no ofrece lo que esta puesto; esto es la red de debajo, y
-    //  MUEVE en vez de rechazar: si el tipo ya estaba en otro sitio, se va de
-    //  alli. Rechazar dejaria un toque sin efecto visible, que se lee como que
-    //  el boton no responde.
-    const int antes = slotDeFx (fx);
-    if (fx != kSlotVacia && antes >= 0 && antes != ranura)
-        slotFx[(size_t) antes] = kSlotVacia;
+    //  UN INSERTO, UN CANAL. Su estado en el motor es uno solo -un filtro, un
+    //  compresor, un congelador- asi que dos canales con el mismo inserto
+    //  serian dos ventanas al mismo aparato, con dos interruptores que se
+    //  contradicen. Y MUEVE en vez de rechazar: si el tipo ya estaba en otro
+    //  sitio, se va de alli. Rechazar dejaria un toque sin efecto visible, que
+    //  se lee como que el boton no responde.
+    //
+    //  UN ENVIO ES DE TODOS, que es la otra mitad y no una excepcion: DLY, REV,
+    //  CHO, FLA y PHA SUMAN, y una linea de retardo existe justo para que
+    //  varias fuentes entren en la misma cola. Restringirlos a un canal es lo
+    //  contrario de lo que un envio significa. Lo dice `sustituye` y no una
+    //  lista escrita aqui: la misma tabla que el hilo de audio usa para restar
+    //  seco, que es lo unico que separa las dos familias.
+    const bool inserto = AudioEngine::sustituye (fx);
+    if (fx != kSlotVacia)
+    {
+        const int mismoCanal = slotDeFxEn ((int) c, fx);
+        if (mismoCanal >= 0 && mismoCanal != ranura)
+            slotFx[c][(size_t) mismoCanal] = kSlotVacia;   // dentro del canal, siempre
+        else if (inserto)
+            for (int oc = 0; oc < kNumCanales; ++oc)
+                if (oc != (int) c)
+                    if (const int s = slotDeFxEn (oc, fx); s >= 0)
+                        slotFx[(size_t) oc][(size_t) s] = kSlotVacia;
+    }
 
-    //  Y lo que SALE de la ranura se apaga. Un efecto encendido cuya tapa
-    //  acaba de desaparecer sigue sonando y no hay donde tocarlo: es la misma
-    //  regla que ya gobierna la ficha del XY al cambiar de efecto en
-    //  momentaneo, y la hermana de «ningun camino puede dejar la app en
-    //  silencio» por el otro lado.
-    const int salia = slotFx[(size_t) ranura];
-    if (salia >= 0 && salia != fx && fxOn[(size_t) salia])
+    //  Y lo que SALE de la ranura se apaga, pero SOLO si no le queda ningun
+    //  otro sitio: un envio puede estar en tres canales y vaciarlo de uno no lo
+    //  deja sin tapa. Un efecto encendido al que no le queda ninguna sigue
+    //  sonando y no hay donde tocarlo — la hermana de «ningun camino puede
+    //  dejar la app en silencio» por el otro lado.
+    const int salia = slotFx[c][(size_t) ranura];
+    slotFx[c][(size_t) ranura] = fx;
+    if (salia >= 0 && salia != fx && fxOn[(size_t) salia] && canalDeFx (salia) < 0)
         setFxEnabled (salia, false);
 
-    slotFx[(size_t) ranura] = fx;
     refrescaRanuras();
 }
 
@@ -4181,7 +4307,7 @@ void MainComponent::refrescaRanuras()
 {
     for (int s = 0; s < fxButtons.size() && s < kNumRanuras; ++s)
     {
-        const int fx = slotFx[(size_t) s];
+        const int fx = enRanura (s);
         auto* b = fxButtons[s];
 
         //  El signo de una ranura vacia. No pasa por T() a proposito: «+» es
@@ -4321,7 +4447,7 @@ void MainComponent::abreMenuRanura (int ranura)
 void MainComponent::refrescaMenuRanura()
 {
     const int puesto = juce::isPositiveAndBelow (ranuraEditada, kNumRanuras)
-                         ? slotFx[(size_t) ranuraEditada] : kSlotVacia;
+                         ? enRanura (ranuraEditada) : kSlotVacia;
 
     for (int f = 0; f < ranuraBtns.size() && f < kNumFx; ++f)
         if (auto* b = ranuraBtns[f])
@@ -4343,7 +4469,7 @@ void MainComponent::refrescaMenuRanura()
 void MainComponent::ranuraTocada (int ranura)
 {
     if (! juce::isPositiveAndBelow (ranura, kNumRanuras)) return;
-    const int fx = slotFx[(size_t) ranura];
+    const int fx = enRanura (ranura);
     if (fx < 0) { abreMenuRanura (ranura); return; }
     fxTapped (fx);
 }
@@ -4351,7 +4477,7 @@ void MainComponent::ranuraTocada (int ranura)
 void MainComponent::ranuraMantenida (int ranura)
 {
     if (! juce::isPositiveAndBelow (ranura, kNumRanuras)) return;
-    const int fx = slotFx[(size_t) ranura];
+    const int fx = enRanura (ranura);
     if (fx < 0) { abreMenuRanura (ranura); return; }
     fxFocusOnly (fx);
 }
@@ -4424,7 +4550,7 @@ void MainComponent::selectXyFx (int f)
     //  La luz va a la RANURA donde vive ese tipo, igual que en la cara. Un
     //  tipo que no esta puesto no tiene tapa que encender.
     for (int r = 0; r < xyFxButtons.size(); ++r)
-        xyFxButtons[r]->setToggleState (slotFx[(size_t) r] == f, juce::dontSendNotification);
+        xyFxButtons[r]->setToggleState (enRanura (r) == f, juce::dontSendNotification);
     //  El panel toma tambien los tres mandos de la cara. Son el mismo efecto:
     //  volver de la ficha y encontrarse los mandos en otro es lo que hace que
     //  una app se sienta como dos apps.
@@ -4822,7 +4948,16 @@ int MainComponent::altoContenidoElPad (int ancho) const
     constexpr int secH = 15 + 2 * ZatiLookAndFeel::kTextPad;
     const int srcH = Metrics::hit
                    + (padSourceWraps (ancho) ? Metrics::hit + Metrics::halfGap : 0);
-    return secH + Metrics::hit + Metrics::sm
+    //  Y LA FILA DE PUERTAS PUEDE SER DOS, por lo mismo que la de FUENTE: con
+    //  el CANAL dentro son cuatro tapas -cinco en un pad de instrumento- y en
+    //  280x653 a RACK le tocaban 35 px de ancho contra un dedo de 40. Medido:
+    //  35 TOUCH nuevos en pantallas que ya estaban. Donde no caben, el CANAL
+    //  se queda una fila entera -es el unico que dice un VALOR y no abre una
+    //  ficha, asi que solo se lee bien- y las puertas vuelven a repartirse
+    //  como siempre. Es lo que ya hace CHOKE en la pagina de SONIDO.
+    const int puertasH = Metrics::hit
+                       + (padPuertasWraps (ancho) ? Metrics::hit + Metrics::halfGap : 0);
+    return secH + puertasH     + Metrics::sm
          + secH + Metrics::hit + Metrics::sm
          + secH + srcH         + Metrics::sm + Metrics::chip;
 }
@@ -4836,6 +4971,22 @@ int MainComponent::altoContenidoElPad (int ancho) const
 bool MainComponent::padSourceWraps (int rowWidth) const
 {
     return ! padRowFits (rowWidth, { &chopButton, &micButton, &resampleButton });
+}
+
+//  ¿CABEN LAS PUERTAS DEL PAD EN UNA FILA, CON EL CANAL DENTRO?
+//
+//  La misma pregunta y por el mismo sitio que `padSourceWraps`: se hace al
+//  presupuestar la altura de la pagina y al colocar la fila, y las dos tienen
+//  que contestar lo mismo o la ficha reserva una fila que no usa o usa una que
+//  no reservo. La quinta tapa solo cuenta cuando la hay - un pad de
+//  instrumento -, que es la misma condicion con la que se coloca.
+bool MainComponent::padPuertasWraps (int rowWidth) const
+{
+    return vstButton.isVisible()
+             ? ! padRowFits (rowWidth, { &padCanalBtn, &padRackBtn, &pianoButton,
+                                         &nivelesButton, &vstButton })
+             : ! padRowFits (rowWidth, { &padCanalBtn, &padRackBtn, &pianoButton,
+                                         &nivelesButton });
 }
 
 //  ¿CABEN LAS CUATRO PESTANAS DE AJUSTES EN UNA FILA?
@@ -4927,6 +5078,8 @@ void MainComponent::showPadPage (int page)
         c->setVisible (onTrim);
 
     padRackBtn.setVisible (onRig);
+    padCanalBtn.setVisible (onRig);
+    if (! onRig) padCanalBtn.setBounds ({});
     nivelesButton.setVisible (onRig);
     if (! onRig) nivelesButton.setBounds ({});
     //  Y LA PUERTA DEL INSTRUMENTO, apagada Y sin limites cuando no toca. Las
@@ -4953,6 +5106,36 @@ void MainComponent::showPadPage (int page)
 //  the paint are concerned. Hidden, not merely unpositioned: forty-eight
 //  sliders left visible inside a viewport keep painting and keep taking drags
 //  through the sixteen in front of them.
+//  LAS DOS PAGINAS DE LA MESA. Apagar *Y* vaciar los limites, las dos cosas:
+//  una tira encendida y de 0x0 -o apagada con las coordenadas de la ultima
+//  vez- es lo que tuvo a SEGUIR visible desde el primer dia y lo que las
+//  reglas de CERO y de RESIDUO existen para cazar. Lo segundo lo hace
+//  `showMixBank`, que corre justo detras.
+void MainComponent::showMixPage (MixPage p)
+{
+    mixPage = p;
+    mixVistaBtn.setButtonText (T (p == mixPageCanales ? "CANALES" : "PADS"));
+    mixVistaBtn.setToggleState (p == mixPageCanales, juce::dontSendNotification);
+
+    for (int c = 0; c < kNumCanales; ++c)
+    {
+        const bool on = (p == mixPageCanales);
+        if (auto* f = canFaders[c]) { f->setVisible (on); if (! on) f->setBounds ({}); }
+        if (auto* m = canMutes[c])  { m->setVisible (on); if (! on) m->setBounds ({}); }
+    }
+    //  Los cuatro chips de banco son de la pagina de PADS: un canal no vive en
+    //  un banco.
+    for (auto* t : mixBankBtns) if (t != nullptr)
+    {
+        t->setVisible (p == mixPagePads);
+        if (p != mixPagePads) t->setBounds ({});
+    }
+
+    mixScroll.setViewPosition (0, 0);
+    showMixBank (mixBank);       // apaga y vacia las tiras de pad si toca
+    refreshMixStrip();
+}
+
 void MainComponent::showMixBank (int bank)
 {
     mixBank = juce::jlimit (0, kNumBanks - 1, bank);
@@ -4960,7 +5143,16 @@ void MainComponent::showMixBank (int bank)
 
     for (int i = 0; i < kNumPads; ++i)
     {
-        const bool on = (i / kPadsPerBank) == mixBank;
+        //  Y con la pagina: en CANALES no se ve ni una tira de pad, y las que
+        //  se apagan se quedan ademas sin coordenadas.
+        const bool on = mixPage == mixPagePads && (i / kPadsPerBank) == mixBank;
+        if (! on)
+        {
+            if (auto* f = mixFaders[i]) f->setBounds ({});
+            if (auto* p = mixPans[i])   p->setBounds ({});
+            if (auto* m = mixMutes[i])  m->setBounds ({});
+            if (auto* s = mixSolos[i])  s->setBounds ({});
+        }
         if (auto* f = mixFaders[i]) f->setVisible (on);
         if (auto* p = mixPans[i])   p->setVisible (on);
         if (auto* m = mixMutes[i])  m->setVisible (on);
@@ -5021,6 +5213,8 @@ void MainComponent::closeAllSheets()
     //  esto, cerrar el secuenciador dejaba flotando su selector de pad sobre
     //  la cara. Ver abrePadPicker.
     if (padPickAbierto) abrePadPicker (false);
+    //  Y la de canales, que vive igual.
+    if (canalPickAbierto) abreCanalPicker (false);
 
     //  Y EL MENU DE UNA RANURA, por lo mismo: tambien vive ENCIMA de todo, asi
     //  que sin esto se queda flotando sobre la ficha que se acaba de abrir.
@@ -5986,6 +6180,27 @@ void MainComponent::selectPad (int index)
         refreshChopSheet();
     }
     if (padPickAbierto) refrescaPadPicker();
+
+    //  Y EL CANAL DEL PAD, que es la linea que arregla «cuando pasas de un pad
+    //  a otro, los huecos de los efectos sigue igual».
+    //
+    //  `selectPad` refrescaba quince cosas y NINGUNA era del lado de los
+    //  efectos: ni las seis ranuras, ni los tres mandos, ni el plato, ni el
+    //  rack. Con la fila siendo del CANAL, elegir un pad elige su canal y los
+    //  tres espejos se rehacen desde `refrescaRanuras`, que ya era el unico
+    //  punto de reparto.
+    //
+    //  Y el RACK con ellos, que es ademas el desajuste que ya existia: su
+    //  `rackPad` era suyo y `selectPad` no lo tocaba, asi que tocar un pad que
+    //  asoma detras de la tarjeta dejaba el rack enseñando los envios de otro.
+    const int canalDelPad = engine.getPadCanal (index);
+    if (canalDelPad != canalActual)
+    {
+        canalActual = canalDelPad;
+        refrescaRanuras();
+        if (rackSheet.isVisible()) refreshRack();
+    }
+    refrescaCanalDelPad();
 }
 
 //  UN TOQUE EN UN PAD QUE ASOMA POR DEBAJO DE UNA FICHA ABIERTA.
@@ -6026,6 +6241,41 @@ bool MainComponent::tocaPadDetras (juce::Point<int> p)
     //  que es lo unico que hace que no haya que aprender nada nuevo.
     padClicked (i);
     return true;
+}
+
+//  EL ROTULO DE LA PUERTA Y LA LUZ DE LA REJILLA. Dos cifras siempre: un «9»
+//  que pasa a «10» cambia de ancho, y la fila se reparte por el texto — la
+//  cabecera daria un salto al cambiar de pad.
+void MainComponent::refrescaCanalDelPad()
+{
+    const int c = engine.getPadCanal (selectedPad);
+    padCanalBtn.setButtonText (T ("CANAL") + " " + Lang::ltr (juce::String (c + 1).paddedLeft ('0', 2)));
+    for (int i = 0; i < canalBtns.size(); ++i)
+        canalBtns[i]->setToggleState (i == c, juce::dontSendNotification);
+}
+
+//  LA REJILLA DE DIECISEIS CANALES, ABIERTA O CERRADA.
+void MainComponent::abreCanalPicker (bool abrir)
+{
+    canalPickAbierto = abrir;
+    canalSheet.setVisible (abrir);
+
+    if (abrir)
+    {
+        canalSheet.toFront (false);
+        refrescaCanalDelPad();
+    }
+    else
+    {
+        //  APAGAR *Y* VACIAR LOS LIMITES, las dos cosas — la regla que tuvo a
+        //  SEGUIR visible y de 0x0 desde el primer dia.
+        for (auto* b : canalBtns) if (b != nullptr) b->setBounds ({});
+        canalCloseBtn.setBounds ({});
+        canalSheet.sheetBounds = {};
+    }
+
+    resized();
+    repaint();
 }
 
 //  LA REJILLA DE DIECISEIS, ABIERTA O CERRADA. Ver padPickSheet en la cabecera.
@@ -6559,9 +6809,15 @@ void MainComponent::ponPadPorDefecto (int i)
     engine.setPadReso       (i, 0.0f);
     engine.setPadFadeIn     (i, 0.0f);
     engine.setPadFadeOut    (i, 0.0f);
-    //  Y LOS ENVIOS, que no tienen espejo -viven solo en el motor, el RACK los
-    //  lee de ahi- y que son justo los que ya sobrevivieron una vez a NUEVO.
-    for (int f = 0; f < AudioEngine::kNumFx; ++f) engine.setPadSend (i, f, 0.0f);
+    //  Y EL REPARTO: el canal 0 y el recorte NEUTRO.
+    //
+    //  Era `setPadSend (i, f, 0.0f)` y el cero se ha mudado: quien manda ahora
+    //  es `canalSend`, que nace a cero, y el recorte del pad es lo que
+    //  MULTIPLICA. Dejarlo en cero aqui haria un pad al que ningun canal puede
+    //  llegar — un valor por defecto que ademas es valido, que es el fallo del
+    //  `brillo` del `Recipe` y el del cero de `padAncho`.
+    engine.setPadCanal (i, 0);
+    for (int f = 0; f < AudioEngine::kNumFx; ++f) engine.setPadRecorte (i, f, 1.0f);
 }
 
 void MainComponent::assignSampleToPad (int index, SampleBuffer::Ptr sb, const juce::String& name)
@@ -6705,6 +6961,7 @@ void MainComponent::refreshAccessibleNames()
 
     padRackBtn.setTitle (T ("RACK"));
     padRackBtn.setDescription (T ("del pad"));
+    padCanalBtn.setDescription (T ("del pad"));
 
     juce::Slider* macros[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
     for (int i = 0; i < 3; ++i)
@@ -6719,10 +6976,18 @@ void MainComponent::refreshAccessibleNames()
     for (int i = 0; i < kNumPads; ++i)
     {
         const auto ch = juce::String (i + 1);
-        if (auto* f = mixFaders[i]) { f->setTitle (T ("Ganancia canal %1", ch)); f->setDescription (T ("del mezclador")); }
-        if (auto* p = mixPans[i])   { p->setTitle (T ("Paneo canal %1",   ch)); p->setDescription (T ("del mezclador")); }
+        if (auto* f = mixFaders[i]) { f->setTitle (T ("Ganancia pad %1", ch)); f->setDescription (T ("del mezclador")); }
+        if (auto* p = mixPans[i])   { p->setTitle (T ("Paneo pad %1",   ch)); p->setDescription (T ("del mezclador")); }
         if (auto* m = mixMutes[i])  { m->setTitle (T ("Silencio %1", ch)); }
         if (auto* s = mixSolos[i])  { s->setTitle (T ("Solo %1",     ch)); }
+    }
+    //  Y LAS DIECISEIS TIRAS DE CANAL, que sin esto se anuncian «deslizador»
+    //  dieciseis veces seguidas.
+    for (int c = 0; c < kNumCanales; ++c)
+    {
+        const auto ch = juce::String (c + 1);
+        if (auto* f = canFaders[c]) { f->setTitle (T ("Ganancia canal %1", ch)); f->setDescription (T ("del mezclador")); }
+        if (auto* m = canMutes[c])  { m->setTitle (T ("Silencio canal %1", ch)); }
     }
 }
 
@@ -6835,6 +7100,13 @@ void MainComponent::retranslateUi()
     padTrimBtn   .setButtonText (T ("RECORTE"));
     padRigBtn    .setButtonText (T ("EL PAD"));
     padRackBtn   .setButtonText (T ("RACK"));
+    //  Y EL CANAL, que lleva su numero dentro: `refrescaCanalDelPad` lo escribe
+    //  entero -rotulo y cifra- asi que aqui basta con volver a llamarla. Sin
+    //  esto la tapa se construye con el literal en espanol y no se retraduce
+    //  jamas, que es el fallo de las tres pestañas de AJUSTES y el que el banco
+    //  ya canto tres veces en dos tandas.
+    refrescaCanalDelPad();
+    mixVistaBtn.setButtonText (T (mixPage == mixPageCanales ? "CANALES" : "PADS"));
     nivelesButton.setButtonText (T ("16 NIVELES"));
     pianoButton  .setButtonText (T ("PIANO"));
     //  SOLO EL SIGNO, como las flechas del preset en la ficha del instrumento
@@ -7896,13 +8168,46 @@ juce::ValueTree MainComponent::captureState() const
     //  El XY es parte del proyecto: que efecto estabas tocando y si lo dejaste
     //  fijo o momentaneo. Sin esto, abrir un proyecto te devolvia el panel en
     //  FLT y en momentaneo aunque lo hubieras dejado en el delay y fijo.
-    //  LAS SEIS RANURAS, en una sola propiedad y separadas por comas: «que
-    //  tipo vive en cada sitio», con -1 para vacia. Una propiedad por ranura
-    //  serian seis y la lista no es dispersa - las seis valen siempre algo.
+    //  LAS SEIS RANURAS DE CADA CANAL, en una sola propiedad: las seis de un
+    //  canal separadas por comas -«que tipo vive en cada sitio», con -1 para
+    //  vacia- y los canales por punto y coma. Una propiedad por canal serian
+    //  dieciseis y la lista no es dispersa: las seis de cada uno valen siempre
+    //  algo.
     {
-        juce::StringArray r;
-        for (int s = 0; s < kNumRanuras; ++s) r.add (juce::String (slotFx[(size_t) s]));
-        fx.setProperty ("slots", r.joinIntoString (","), nullptr);
+        juce::StringArray filas;
+        for (int c = 0; c < kNumCanales; ++c)
+        {
+            juce::StringArray r;
+            for (int s = 0; s < kNumRanuras; ++s) r.add (juce::String (slotFx[(size_t) c][(size_t) s]));
+            filas.add (r.joinIntoString (","));
+        }
+        fx.setProperty ("slots", filas.joinIntoString (";"), nullptr);
+    }
+
+    //  Y LOS ENVIOS DEL CANAL, con la misma forma: veintiun numeros por canal,
+    //  los canales por punto y coma. Es lo que ANTES vivia en cada `<PAD>` como
+    //  `sends`, y esa propiedad ya no se escribe — ver la rama de lectura.
+    {
+        juce::StringArray filas;
+        for (int c = 0; c < kNumCanales; ++c)
+        {
+            juce::StringArray r;
+            for (int f = 0; f < kNumFx; ++f) r.add (juce::String (engine.getCanalSend (c, f), 3));
+            filas.add (r.joinIntoString (","));
+        }
+        fx.setProperty ("csends", filas.joinIntoString (";"), nullptr);
+    }
+
+    //  El fader y el mute de cada canal, dos listas cortas y no dispersas.
+    {
+        juce::StringArray g, m;
+        for (int c = 0; c < kNumCanales; ++c)
+        {
+            g.add (juce::String (engine.getCanalGain (c), 3));
+            m.add (engine.getCanalMute (c) ? "1" : "0");
+        }
+        fx.setProperty ("cgain", g.joinIntoString (","), nullptr);
+        fx.setProperty ("cmute", m.joinIntoString (","), nullptr);
     }
     //  LAS CINCO BANDAS DEL EQ, DISPERSAS Y EN UNA SOLA PROPIEDAD, por lo
     //  mismo que el acorde y el empujon: son diez numeros y casi ningun
@@ -7994,12 +8299,16 @@ juce::ValueTree MainComponent::captureState() const
         p.setProperty ("suaveout",padFadeOut[(size_t) i], nullptr);
         p.setProperty ("zati",    padZati[(size_t) i],    nullptr);
 
-        //  The six sends, as one string, so adding a seventh effect later
-        //  does not need a seventh property or a migration.
-        juce::StringArray sends;
-        for (int f = 0; f < kNumFx; ++f)
-            sends.add (juce::String (engine.getPadSend (i, f), 3));
-        p.setProperty ("sends", sends.joinIntoString (","), nullptr);
+        //  A QUE CANAL VA. Es lo unico del reparto que es del PAD desde que el
+        //  envio es del canal; el cuanto vive en `<FX csends=...>`.
+        p.setProperty ("canal", engine.getPadCanal (i), nullptr);
+
+        //  Y `sends` YA NO SE ESCRIBE, que no es un olvido: era el envio del
+        //  pad y hoy es el RECORTE con el que un fichero anterior se guardo.
+        //  Un proyecto nuevo no lo trae, y «sin la propiedad vale uno» —o sea
+        //  neutro— es exactamente la respuesta que hace falta. Escribirlo con
+        //  todo unos seria un campo que dice lo mismo siempre y que el dia que
+        //  alguien lo lea al reves apaga los sesenta y cuatro pads.
         pads.addChild (p, -1, nullptr);
     }
     s.addChild (pads, -1, nullptr);
@@ -8167,32 +8476,114 @@ void MainComponent::applyState (const juce::ValueTree& s)
         //  entero cualquiera aqui es un indice fuera de `fxDefs`. Lo que no
         //  encaje vale VACIA, que es el unico valor que no puede hacer daño.
         {
-            for (int s = 0; s < kNumRanuras; ++s) slotFx[(size_t) s] = s;
+            //  El defecto ANTIGUO es la fila de siempre EN EL CANAL 0, que es
+            //  donde caen los pads de un proyecto sin canales: alli la maquina
+            //  suena como sonaba, y los otros quince nacen vacios.
+            for (auto& fila : slotFx) fila.fill (kSlotVacia);
+            for (int s = 0; s < kNumRanuras; ++s) slotFx[0][(size_t) s] = s;
 
             if (fx.hasProperty ("slots"))
             {
-                juce::StringArray r;
-                r.addTokens (fx.getProperty ("slots").toString(), ",", "");
-                for (int s = 0; s < kNumRanuras; ++s)
+                //  DIECISEIS FILAS SEPARADAS POR PUNTO Y COMA, y una sola sin
+                //  el es el fichero de la epoca de una fila: entonces esa es la
+                //  del canal 0 y los demas quedan vacios, que es como sonaba.
+                juce::StringArray filas;
+                filas.addTokens (fx.getProperty ("slots").toString(), ";", "");
+                for (auto& fila : slotFx) fila.fill (kSlotVacia);
+
+                for (int c = 0; c < kNumCanales && c < filas.size(); ++c)
                 {
-                    const int v = s < r.size() ? r[s].getIntValue() : kSlotVacia;
-                    slotFx[(size_t) s] = juce::isPositiveAndBelow (v, kNumFx) ? v : kSlotVacia;
+                    juce::StringArray r;
+                    r.addTokens (filas[c], ",", "");
+                    for (int s = 0; s < kNumRanuras; ++s)
+                    {
+                        const int v = s < r.size() ? r[s].getIntValue() : kSlotVacia;
+                        slotFx[(size_t) c][(size_t) s] = juce::isPositiveAndBelow (v, kNumFx) ? v : kSlotVacia;
+                    }
                 }
 
-                //  UN TIPO, UNA RANURA, tambien al volver del disco. Un
+                //  UN INSERTO, UN CANAL, tambien al volver del disco. Un
                 //  fichero escrito a mano puede repetir un tipo y eso serian
-                //  dos ventanas al mismo aparato: se queda la primera.
-                for (int s = 1; s < kNumRanuras; ++s)
-                    for (int t = 0; t < s; ++t)
-                        if (slotFx[(size_t) s] >= 0 && slotFx[(size_t) s] == slotFx[(size_t) t])
-                            slotFx[(size_t) s] = kSlotVacia;
+                //  dos ventanas al mismo aparato: se queda la primera. Los
+                //  cinco que SUMAN pueden repetirse entre canales -es lo que un
+                //  envio significa- pero no dentro del mismo.
+                for (int c = 0; c < kNumCanales; ++c)
+                    for (int s = 0; s < kNumRanuras; ++s)
+                    {
+                        const int v = slotFx[(size_t) c][(size_t) s];
+                        if (v < 0) continue;
+                        bool repe = false;
+                        for (int t = 0; t < s && ! repe; ++t)
+                            repe = slotFx[(size_t) c][(size_t) t] == v;
+                        if (! repe && AudioEngine::sustituye (v))
+                            for (int oc = 0; oc < c && ! repe; ++oc)
+                                repe = slotDeFxEn (oc, v) >= 0;
+                        if (repe) slotFx[(size_t) c][(size_t) s] = kSlotVacia;
+                    }
             }
 
             //  Y un efecto que quedo ENCENDIDO en el fichero y cuya ranura ya
             //  no existe se apaga: seguiria sonando sin tapa donde tocarlo.
             for (int f = 0; f < kNumFx; ++f)
-                if (fxOn[(size_t) f] && ! fxEstaPuesto (f))
+                if (fxOn[(size_t) f] && canalDeFx (f) < 0)
                     setFxEnabled (f, false);
+        }
+
+        //  LOS ENVIOS DEL CANAL, y LAS DOS RAMAS QUE HACEN QUE UN PROYECTO
+        //  ANTERIOR SUENE IGUAL.
+        //
+        //  Un fichero SIN `csends` es anterior a que la mesa existiera, y
+        //  entonces el envio era del PAD: vuelve con el canal 0 a UNO en los
+        //  tipos que el fichero NOMBRA y a cero en los demas, y el recorte de
+        //  cada pad lleva lo que su `sends` decia. El producto de los dos es
+        //  exactamente el numero de antes.
+        //
+        //  Y el «en los tipos que nombra» es la mitad que hay que escribir con
+        //  cuidado: con el canal 0 a uno en los veintiuno, un proyecto de la
+        //  epoca de seis abriria con los quince nuevos DE PAR EN PAR — que es
+        //  el mismo fallo que `04-seis-envios.xml` ya caza entrando por la otra
+        //  puerta. Cuantos nombra lo dice el primer `<PAD sends=...>`, y si no
+        //  hay ninguno el fichero es anterior a los envios y valen los
+        //  veintiuno, que es como sonaba entonces.
+        {
+            const bool traeCanales = fx.hasProperty ("csends");
+            int viejos = kNumFx;
+            if (! traeCanales)
+            {
+                viejos = 0;
+                if (auto padsV = s.getChildWithName ("PADS"); padsV.isValid())
+                    for (int n = 0; n < padsV.getNumChildren() && viejos == 0; ++n)
+                        if (padsV.getChild (n).hasProperty ("sends"))
+                        {
+                            juce::StringArray t;
+                            t.addTokens (padsV.getChild (n).getProperty ("sends").toString(), ",", "");
+                            viejos = t.size();
+                        }
+                if (viejos == 0) viejos = kNumFx;   // anterior a los envios: todo abierto
+            }
+
+            juce::StringArray filas;
+            filas.addTokens (fx.getProperty ("csends", juce::String()).toString(), ";", "");
+            for (int c = 0; c < kNumCanales; ++c)
+            {
+                juce::StringArray r;
+                if (c < filas.size()) r.addTokens (filas[c], ",", "");
+                for (int f = 0; f < kNumFx; ++f)
+                    engine.setCanalSend (c, f,
+                                         traeCanales ? (f < r.size() ? r[f].getFloatValue() : 0.0f)
+                                                     : (c == 0 && f < viejos ? 1.0f : 0.0f));
+            }
+
+            //  El fader y el mute, con su defecto antiguo: uno y apagado, que
+            //  es una mesa que no existia y por tanto no atenuaba nada.
+            juce::StringArray gs, ms;
+            gs.addTokens (fx.getProperty ("cgain", juce::String()).toString(), ",", "");
+            ms.addTokens (fx.getProperty ("cmute", juce::String()).toString(), ",", "");
+            for (int c = 0; c < kNumCanales; ++c)
+            {
+                engine.setCanalGain (c, c < gs.size() ? gs[c].getFloatValue() : 1.0f);
+                engine.setCanalMute (c, c < ms.size() && ms[c].getIntValue() != 0);
+            }
         }
 
         //  ...y el estado del panel XY, UNA vez. La llave del for cerraba ocho
@@ -8303,28 +8694,35 @@ void MainComponent::applyState (const juce::ValueTree& s)
             engine.setPadReso   (i, padReso[(size_t) i]);
             padZati[(size_t) i]    = (int)   p.getProperty ("zati", Zati::forPad (i));
 
-            //  Un proyecto SIN la propiedad "sends" es anterior a que los
-            //  envios existieran, y entonces cada pad iba entero a los seis:
-            //  vuelve con uno y no con el cero nuevo, porque lo que manda aqui
-            //  no es cual es el defecto de hoy sino como sonaba el dia que se
-            //  guardo. El cero es para lo que nace ahora, no para lo que vuelve.
+            //  EL CANAL DEL PAD. Sin la propiedad, el 0: es donde `applyState`
+            //  pone la fila de siempre y los envios de un proyecto anterior, o
+            //  sea el unico canal que en aquel fichero significaba algo.
+            engine.setPadCanal (i, (int) p.getProperty ("canal", 0));
+
+            //  Y `sends` PASA A SER EL RECORTE, que es lo que hace que un
+            //  proyecto anterior suene igual.
+            //
+            //  Un proyecto SIN la propiedad es una de dos cosas y las dos piden
+            //  lo mismo: o es anterior a que los envios existieran -y entonces
+            //  cada pad iba entero a todos- o es de HOY, que ya no la escribe
+            //  porque el dueño del envio es el canal. En los dos casos el
+            //  recorte es NEUTRO y quien manda es `canalSend`, que la rama de
+            //  arriba deja en uno para el primero y en lo que el fichero diga
+            //  para el segundo.
             //
             //  Y NO ES LO MISMO QUE UNO CON LA PROPIEDAD Y MENOS TOKENS, que
-            //  es lo que hacia esta linea y donde estaba el fallo. La lista es
-            //  POSICIONAL, asi que un proyecto guardado con once tipos abre con
-            //  once numeros; el dia que `kNumFx` suba, los tipos que no
-            //  existian cuando se guardo caian en la rama del `1.0f` y los 64
-            //  pads nacerian con **todos los efectos nuevos abiertos a tope**,
-            //  y con ellos `padSendMask` a sesenta y cuatro bits, o sea el
-            //  bucle largo de `renderNextBlock` recorriendose entero desde el
-            //  primer bloque. Un efecto que no existia el dia que se guardo no
-            //  sonaba: vale CERO.
+            //  es donde estaba el fallo que esto ya arreglo una vez. La lista
+            //  es POSICIONAL, asi que un proyecto guardado con once tipos abre
+            //  con once numeros; los que no existian cuando se guardo no
+            //  sonaban, asi que su recorte vale CERO — y con el canal 0 abierto
+            //  solo en esos once, los diez nuevos siguen mudos por los dos
+            //  lados.
             const bool traeEnvios = p.hasProperty ("sends");
             juce::StringArray sends;
             sends.addTokens (p.getProperty ("sends", juce::String()).toString(), ",", "");
             for (int f = 0; f < kNumFx; ++f)
-                engine.setPadSend (i, f, f < sends.size() ? sends[f].getFloatValue()
-                                                          : (traeEnvios ? 0.0f : 1.0f));
+                engine.setPadRecorte (i, f, f < sends.size() ? sends[f].getFloatValue()
+                                                             : (traeEnvios ? 0.0f : 1.0f));
 
             // Trim is stored 0..1 but the engine wants samples, and
             // publishSample has just reset the window to the whole file — so
@@ -8924,9 +9322,12 @@ void MainComponent::padPorDefecto (int i)
     engine.setPadFadeOut    (i, 0.0f);
     engine.setPadMute       (i, false);
     engine.setPadSolo       (i, false);
-    //  A cero, que es como nace una mezcla: se sube lo que quieres y no se
-    //  apaga lo que no. Ver Tests/nuevo.py.
-    for (int f = 0; f < AudioEngine::kNumFx; ++f) engine.setPadSend (i, f, 0.0f);
+    //  El canal 0 y el recorte NEUTRO. El cero que hace que una mezcla se haga
+    //  subiendo lo que quieres vive ahora en `canalSend`, que es su dueño; el
+    //  recorte multiplica, asi que a cero aqui el pad no llegaria a ningun
+    //  canal. Ver Tests/nuevo.py.
+    engine.setPadCanal (i, 0);
+    for (int f = 0; f < AudioEngine::kNumFx; ++f) engine.setPadRecorte (i, f, 1.0f);
 }
 
 void MainComponent::newProject()
@@ -8972,7 +9373,30 @@ void MainComponent::newProject()
     //  Se APAGA lo que estuviera sonando antes de vaciar: un efecto encendido
     //  cuya tapa desaparece sigue sonando y no hay donde tocarlo. `ponEnRanura`
     //  ya lo hace, y por eso se vacia con ella y no escribiendo el array.
-    for (int s = 0; s < kNumRanuras; ++s) ponEnRanura (s, kSlotVacia);
+    //  LAS DIECISEIS FILAS y no solo la del canal actual: vaciar la mitad de un
+    //  proyecto es peor que no vaciar nada, porque lo que queda parece tuyo. Es
+    //  la misma herencia que ya se pago dos veces aqui.
+    {
+        const int guarda = canalActual;
+        for (int c = 0; c < kNumCanales; ++c)
+        {
+            canalActual = c;
+            for (int s = 0; s < kNumRanuras; ++s) ponEnRanura (s, kSlotVacia);
+        }
+        canalActual = guarda;
+    }
+
+    //  Y LA MESA ENTERA con ellas: los envios a cero -que es como nace una
+    //  mezcla-, el fader en uno y sin mute. Sin esto, el proyecto siguiente
+    //  nacia con los envios y el volumen de canal del de ayer, que es
+    //  exactamente lo que `Tests/nuevo.py` existe para cazar.
+    for (int c = 0; c < kNumCanales; ++c)
+    {
+        for (int f = 0; f < kNumFx; ++f) engine.setCanalSend (c, f, 0.0f);
+        engine.setCanalGain (c, 1.0f);
+        engine.setCanalMute (c, false);
+    }
+    canalActual = 0;
 
     //  Y LA CURVA DEL EQ VUELVE A SU SITIO. Vaciar la ranura apaga el efecto y
     //  deja las cinco bandas donde estaban: el proyecto siguiente nacia con el
@@ -10230,6 +10654,16 @@ void MainComponent::refreshSong (bool repintarTarjeta)
 //  has to look silenced or you cannot tell why they went quiet.
 void MainComponent::refreshMixStrip()
 {
+    //  Y LAS DIECISEIS TIRAS DE CANAL, con lo que el motor tiene: el fader y el
+    //  mute vuelven de un proyecto y nadie los reponia.
+    for (int c = 0; c < kNumCanales; ++c)
+    {
+        if (auto* f = canFaders[c])
+            f->setValue (dbFromGain (engine.getCanalGain (c)), juce::dontSendNotification);
+        if (auto* m = canMutes[c])
+            m->setToggleState (engine.getCanalMute (c), juce::dontSendNotification);
+    }
+
     const bool any = engine.anySolo();
     for (int i = 0; i < kNumPads; ++i)
     {
@@ -10275,17 +10709,17 @@ void MainComponent::publicaClips()
 
 void MainComponent::refreshRack()
 {
-    rackPad = juce::jlimit (0, kNumPads - 1, rackPad);
+    canalActual = juce::jlimit (0, kNumCanales - 1, canalActual);
     for (int i = 0; i < rackPadBtns.size(); ++i)
-        rackPadBtns[i]->setToggleState (i == rackPad, juce::dontSendNotification);
+        rackPadBtns[i]->setToggleState (i == canalActual, juce::dontSendNotification);
     //  UNA FILA POR RANURA. El envio va al BUS del tipo que vive en ella, y
     //  una ranura vacia no tiene bus: su fader se apaga -no se esconde- por lo
     //  mismo que el de un efecto cerrado, que una fila que aparece y desaparece
     //  cambia de sitio las de abajo cada vez que se toca el menu.
     for (int s = 0; s < rackSends.size() && s < kNumRanuras; ++s)
     {
-        const int fx = slotFx[(size_t) s];
-        rackSends[s]->setValue (fx >= 0 ? engine.getPadSend (rackPad, fx) : 0.0,
+        const int fx = enRanura (s);
+        rackSends[s]->setValue (fx >= 0 ? engine.getCanalSend (canalActual, fx) : 0.0,
                                 juce::dontSendNotification);
         rackSends[s]->setEnabled (fx >= 0);
 
@@ -13409,7 +13843,7 @@ void MainComponent::pintaCuadro (double dtMs)
         for (int sRan = 0; sRan < fxButtons.size() && sRan < kNumRanuras; ++sRan)
         {
             auto* b = fxButtons[sRan];
-            const int f = slotFx[(size_t) sRan];
+            const int f = enRanura (sRan);
             if (b == nullptr || f < 0) continue;
 
             //  Y CON EL MOVIMIENTO APAGADO, la lampara se queda ENCENDIDA y

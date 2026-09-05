@@ -1252,6 +1252,43 @@ void MainComponent::paintMidiPage (juce::Graphics& g, juce::Rectangle<int> area)
 //  strips moved and every channel ended up wearing another channel's name.
 void MainComponent::paintMixRows (juce::Graphics& g)
 {
+    //  LA PAGINA DE CANALES: el mismo chip y el mismo renglon, con la CUENTA DE
+    //  PADS donde un pad lleva su nombre. Un canal no tiene nombre que enseñar
+    //  y si tiene algo que decir de si mismo — cuantos le entran, que es lo que
+    //  separa un canal vacio de uno que suena y no se oye.
+    if (mixPage == mixPageCanales)
+    {
+        int cuentan[kNumCanales] = {};
+        for (int p = 0; p < kNumPads; ++p)
+            if (padHasSample[(size_t) p])
+                ++cuentan[juce::jlimit (0, kNumCanales - 1, engine.getPadCanal (p))];
+
+        for (int c = 0; c < kNumCanales; ++c)
+        {
+            if (canFaders[c] == nullptr || ! canFaders[c]->isVisible()) continue;
+            const auto fr   = canFaders[c]->getBounds();
+            const auto frag = Zati::colour (c);
+            const bool has  = cuentan[c] > 0;
+
+            auto chip = juce::Rectangle<int> (canRowX[(size_t) c] + 4, fr.getY() + 4, 22, fr.getHeight() - 8);
+            g.setColour (has ? frag : ZatiColours::markOn (ZatiColours::chassisTop, 0.20f));
+            g.fillRect (chip);
+            g.setColour (has ? ZatiColours::bestOn (frag, ZatiColours::ink, juce::Colours::white)
+                             : ZatiColours::inkDim);
+            g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
+            g.drawText (juce::String (c + 1).paddedLeft ('0', 2), chip, juce::Justification::centred);
+
+            g.setColour (has ? ZatiColours::ink.withAlpha (0.8f) : ZatiColours::inkDim.withAlpha (0.5f));
+            g.setFont (ZatiColours::monoFont (Metrics::fMeta));
+            const int nameX = chip.getRight() + 6;
+            g.drawText (has ? T ("%1 PADS", Lang::ltr (juce::String (cuentan[c])))
+                            : juce::String (juce::CharPointer_UTF8 ("\xe2\x80\x94")),
+                        nameX, fr.getY(), juce::jmax (24, fr.getX() - 6 - nameX), fr.getHeight(),
+                        Lang::start(), true);
+        }
+        return;
+    }
+
     //  Only the bank on show. Painting all sixty-four drew the chip, number and
     //  name of forty-eight strips whose sliders are hidden - at whatever
     //  coordinates they were left holding - straight over the sixteen in front.
@@ -1348,6 +1385,25 @@ void MainComponent::paintOverChildren (juce::Graphics& g)
     //  1238 ms medidos- asi que lanzarla antes de que la portada llegue a la
     //  pantalla la dejaria congelada sin nada dibujado. Ver timerCallback.
     portadaPintada = true;
+}
+
+//  EL TITULO DE LA REJILLA DE CANALES, que dice a que canal va el pad que se
+//  esta editando: sin el, dieciseis cifras iguales no dicen de que hablan.
+void MainComponent::paintCanalPickContent (juce::Graphics& g)
+{
+    if (canalSheet.sheetBounds.isEmpty()) return;
+
+    auto inner = canalSheet.sheetBounds.reduced (Metrics::lg, Metrics::md);
+    auto titulo = antesDe (inner.removeFromTop (Metrics::hit).withTrimmedTop (8).withHeight (24),
+                           canalCloseBtn, Metrics::sm);
+
+    const int sp = juce::jmax (0, selectedPad);
+    g.setColour (ZatiColours::ink.withAlpha (0.9f));
+    g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
+    pintaTitulo (g, titulo,
+                 T ("PAD %1", Lang::ltr (juce::String (sp + 1))) + "  "
+                   + juce::String::charToString ((juce::juce_wchar) 0x00B7) + "  " + T ("CANAL"),
+                 "titulo", true);
 }
 
 void MainComponent::paintPadPickContent (juce::Graphics& g)
@@ -1690,12 +1746,16 @@ void MainComponent::paintRackSheetContent (juce::Graphics& g)
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
     const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
-    const juce::String nm  = padName[(size_t) rackPad];
+    //  Y DICE EL CANAL Y CUANTOS PADS LE ENTRAN, que es lo que hace falta
+    //  saber antes de mover un fader: un envio de un canal vacio no se oye, y
+    //  sin la cuenta no hay forma de distinguirlo de uno que no suena.
+    int cuantos = 0;
+    for (int p = 0; p < kNumPads; ++p) if (engine.getPadCanal (p) == canalActual) ++cuantos;
     auto titleRow = inner.removeFromTop (16);
     titleRow = antesDe (titleRow, rackCloseButton);
     pintaTitulo (g, titleRow,
-                 T ("RACK") + "  " + dot + "  " + T ("PAD %1", juce::String (rackPad + 1))
-                + (nm.isNotEmpty() ? "  " + dot + "  " + nm.toUpperCase() : juce::String()), "titulo", true);
+                 T ("RACK") + "  " + dot + "  " + T ("CANAL %1", Lang::ltr (juce::String (canalActual + 1)))
+                + "  " + dot + "  " + T ("%1 PADS", Lang::ltr (juce::String (cuantos))), "titulo", true);
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
@@ -1709,8 +1769,8 @@ void MainComponent::paintRackSheetContent (juce::Graphics& g)
         //  secuenciador y el parrafo de AUTO CHOP, y se arregla igual: quien
         //  sabe de que lado esta la tapa es la TAPA y no el idioma.
         auto bandaRack = antesDe (inner.removeFromTop (14), rackCloseButton);
-        apunta (g, bandaRack, T ("cuanto de este pad pasa por cada efecto"), "dato");
-        g.drawFittedText (T ("cuanto de este pad pasa por cada efecto"),
+        apunta (g, bandaRack, T ("cuanto de este canal pasa por cada efecto"), "dato");
+        g.drawFittedText (T ("cuanto de este canal pasa por cada efecto"),
                           bandaRack, Lang::start(), 1, 0.75f);
     }
 
@@ -1726,7 +1786,7 @@ void MainComponent::paintRackSheetContent (juce::Graphics& g)
     for (int s = 0; s < kNumRanuras; ++s)
     {
         if (rackSends[s] == nullptr) continue;
-        const int fx = slotFx[(size_t) s];
+        const int fx = enRanura (s);
         rackSends[s]->setAlpha (fx >= 0 && fxOn[(size_t) fx] ? 1.0f : 0.5f);
     }
 }

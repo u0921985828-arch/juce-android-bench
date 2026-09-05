@@ -331,6 +331,26 @@ private:
     juce::TextButton pianoPadPickBtn { "PAD" }, padPadPickBtn { "PAD" }, chopPadPickBtn { "PAD" };
     bool padPickAbierto = false;
     void abrePadPicker (bool abrir);
+
+    //  A QUE CANAL VA ESTE PAD. La misma rejilla y por lo mismo: dieciseis en
+    //  fila son 26 px en 280, y cuatro por cuatro son exactamente los que hay
+    //  -sin fila de bancos, que es lo unico que la separa de la de pads-.
+    //
+    //  Y va como CAPA por el mismo argumento: la pagina RIG de EL PAD ya se
+    //  mide contra el hueco que le dan y tiene su propia escalera de lo que se
+    //  cae; cuatro filas de tapas dentro se llevarian por delante la fila de
+    //  puertas. Encima cuesta CERO de alto permanente y una tapa en la fila que
+    //  ya estaba.
+    Sheet canalSheet;
+    juce::TextButton canalCloseBtn { juce::CharPointer_UTF8 ("\xc3\x97") };
+    juce::OwnedArray<juce::TextButton> canalBtns;
+    juce::TextButton padCanalBtn { "CANAL" };
+    bool canalPickAbierto = false;
+    void abreCanalPicker (bool abrir);
+    void paintCanalPickContent (juce::Graphics& g);
+    //  El rotulo de la puerta, que dice a que canal va el pad elegido. Lo llama
+    //  `selectPad` y quien mueva la asignacion.
+    void refrescaCanalDelPad();
     //  Un toque en un pad que asoma por debajo de una ficha abierta. Ver
     //  Sheet::onFuera.
     int  padDetras (juce::Point<int> p) const;
@@ -651,6 +671,7 @@ private:
     //  412x915: 499 px pedidos para 365 de contenido, 134 de hueco al final de
     //  la ficha. La misma regla escrita dos veces son dos reglas.
     int  altoContenidoElPad (int ancho) const;
+    bool padPuertasWraps (int rowWidth) const;
     bool setTabsFit (int rowWidth) const;
     bool padRowFits (int rowWidth, std::initializer_list<const juce::TextButton*> bs) const;
     //  El reparto apretado de EL PAD, decidido en resized() y necesario en
@@ -1273,6 +1294,7 @@ public:
     void auditPiano();
     //  LAS SEIS RANURAS DE LA FILA DE EFECTOS. Ver Tests/ranuras.py.
     void auditRanuras();
+    void auditCanales();
     void auditRack();
     //  SOLO desde la cara y el modo visto en el lienzo. Ver Tests/modos.py.
     void auditModos();
@@ -1590,6 +1612,9 @@ private:
     static constexpr int kNumPads      = AudioEngine::kNumPads;      // 64
     static constexpr int kPadsPerBank  = AudioEngine::kPadsPerBank;  // 16 on screen
     static constexpr int kNumBanks     = AudioEngine::kNumBanks;     // A B C D
+    //  Y los canales de la mesa, que son los del motor: escribirlos aqui otra
+    //  vez son dos reglas, que es lo que ya costo `kNumFx`.
+    static constexpr int kNumCanales   = AudioEngine::kNumCanales;   // 16
 
     //  WHICH SIXTEEN THE GRID IS POINTING AT.
     //
@@ -1815,7 +1840,6 @@ private:
     //  el sitio donde se cambia lo que hay en una ranura: la fila del rack es
     //  una RANURA y no un efecto.
     juce::OwnedArray<juce::TextButton> rackSlotBtns;
-    int rackPad = 0;
     void refreshRack();
     juce::OwnedArray<juce::TextButton> mixMutes, mixSolos;
     juce::TextButton mixClearSolo { "SIN SOLO" };
@@ -1957,6 +1981,35 @@ private:
     int mixBank = 0;
     juce::OwnedArray<juce::TextButton> mixBankBtns;
     void showMixBank (int bank);
+
+    //  LA MESA TIENE DOS PAGINAS: los pads y los CANALES.
+    //
+    //  Es el patron de la casa —`SetPage`, `SeqPage`, `PadPage`,
+    //  `showSongPage`— y la fila de chips ya estaba puesta: los cuatro del
+    //  banco son `Metrics::tab` con su grupo de radio, asi que la pagina no
+    //  cuesta un pixel de mueble nuevo.
+    //
+    //  Y los dieciseis canales tienen las MISMAS cuatro cosas que un pad
+    //  —color, nombre, fader y mute— menos SOLO, que se queda en el pad: acaba
+    //  de entrar en la cara como modo hermano de REC y `effectiveGain` lo
+    //  resuelve en una lectura, y dos ambitos de solo son dos respuestas a «oye
+    //  solo esto». En su sitio va la cuenta de PADS que le entran, que es lo
+    //  que un canal vacio necesita decir de si mismo.
+    enum MixPage { mixPagePads = 0, mixPageCanales };
+    MixPage mixPage = mixPagePads;
+    //  UNA tapa y no dos pestanas, que es la leccion que la ficha de CANCION
+    //  ya tenia medida: con dos vistas basta un INTERRUPTOR, y meterlas en la
+    //  fila de chips de los bancos deja los cuatro en 29 px de ancho en
+    //  280x653 -medido: 35 TOUCH nuevos en pantallas que ya estaban-. La tapa
+    //  dice el ESTADO -PADS o CANALES-, como `songVistaBtn` y `modoTapa`.
+    juce::TextButton mixVistaBtn { "PADS" };
+    void showMixPage (MixPage p);
+    juce::OwnedArray<juce::Slider>     canFaders;
+    juce::OwnedArray<juce::TextButton> canMutes;
+    //  Donde empieza cada tira, por lo mismo que `mixRowX`: el chip de color, el
+    //  numero y la cuenta de pads se PINTAN, asi que el pintor necesita saber
+    //  donde el maquetado los dejo.
+    std::array<int, kNumCanales> canRowX {};
 
     //  SIXTEEN STRIPS THAT SCROLL RATHER THAN SIXTEEN STRIPS THAT SHRINK.
     //
@@ -2330,10 +2383,42 @@ private:
     //  TIPO y todo lo que recibe un `fx` sigue recibiendo un tipo. Una ranura
     //  es donde se toca, no lo que suena. Por eso este cambio no toca una sola
     //  linea del hilo de audio.
+    //
+    //  Y LA FILA ES DEL CANAL, que es lo que arregla «cuando pasas de un pad a
+    //  otro, los huecos de los efectos sigue igual». `slotFx[c][s]` es la fila
+    //  del canal c; `canalActual` es el canal del pad elegido y lo pone
+    //  `selectPad`. Los tres espejos -la cara, el canalon del rack y la fila del
+    //  XY- siguen saliendo de `refrescaRanuras`, asi que ninguno sabe que
+    //  existe un canal.
+    //
+    //  UN INSERTO ES DE UN CANAL Y UN ENVIO ES DE TODOS, que es la regla «un
+    //  tipo, una ranura» generalizada y sale de `AudioEngine::sustituye`: de
+    //  los veintiun tipos, dieciseis SUSTITUYEN -y su estado en el motor es uno
+    //  solo, asi que dos canales con el mismo inserto serian dos ventanas al
+    //  mismo aparato- y cinco SUMAN, que es lo que un envio significa y por eso
+    //  cualquier canal puede mandarle.
     static constexpr int kSlotVacia = -1;
-    std::array<int, kNumRanuras> slotFx {};   // ranura -> tipo, o kSlotVacia
+    std::array<std::array<int, kNumRanuras>, kNumCanales> slotFx {};
+    int canalActual = 0;
 
-    int  slotDeFx (int fx) const;          // tipo -> ranura, o -1 si no esta puesto
+    //  QUE HAY EN LA RANURA s DEL CANAL ACTUAL, que es lo que leen los tres
+    //  espejos. Con `slotFx[canalActual][s]` escrito en los quince sitios que
+    //  lo preguntan, el dia que el canal deje de ser el del pad elegido habria
+    //  que tocar los quince.
+    int enRanura (int s) const
+    {
+        return juce::isPositiveAndBelow (s, kNumRanuras)
+                 ? slotFx[(size_t) juce::jlimit (0, kNumCanales - 1, canalActual)][(size_t) s]
+                 : kSlotVacia;
+    }
+
+    //  Tipo -> ranura DENTRO DE UN CANAL, o -1. El que no lleva canal pregunta
+    //  por el actual, que es lo que hace la cara.
+    int  slotDeFx (int fx) const { return slotDeFxEn (canalActual, fx); }
+    int  slotDeFxEn (int canal, int fx) const;
+    //  Y EN QUE CANAL VIVE UN TIPO, o -1. Es la mitad que hace falta para «un
+    //  inserto, un canal»: al ponerlo en otro hay que quitarlo de donde estaba.
+    int  canalDeFx (int fx) const;
     bool fxEstaPuesto (int fx) const { return slotDeFx (fx) >= 0; }
     void ponEnRanura (int ranura, int fx); // fx = kSlotVacia para vaciarla
     void refrescaRanuras();                // rotulo, icono y luz de las seis

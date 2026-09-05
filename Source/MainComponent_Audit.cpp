@@ -515,7 +515,10 @@ void MainComponent::auditDlc()
         padReverse[(size_t) i] = true;   engine.setPadReverse (i, true);
         padChokeUI[(size_t) i] = 3;      engine.setPadChoke   (i, 3);
         engine.setPadCutoff (i, 200.0f);                       // como un bloqueo de paso
-        for (int f = 0; f < AudioEngine::kNumFx; ++f) engine.setPadSend (i, f, 1.0f);
+        //  Y EL REPARTO: el canal 7 y el recorte a cero, que son los dos
+        //  numeros del pad que un banco nuevo tiene que devolver a su sitio.
+        engine.setPadCanal (i, 7);
+        for (int f = 0; f < AudioEngine::kNumFx; ++f) engine.setPadRecorte (i, f, 0.0f);
     }
 
     cargaInstrumento (2);      // TEXTURA, que vive en el banco C
@@ -526,16 +529,23 @@ void MainComponent::auditDlc()
 
     //  Lo peor de cada uno de los dieciseis, que es lo que hay que mirar: con
     //  el maximo, un solo pad que herede lo canta.
-    float pitchMax = 0.0f, envioMax = 0.0f, corteMin = AudioEngine::kFiltOpenHz;
-    int   revesN = 0, chokeN = 0, espejoMal = 0;
+    float pitchMax = 0.0f, envioMax = 1.0f, corteMin = AudioEngine::kFiltOpenHz;
+    int   revesN = 0, chokeN = 0, espejoMal = 0, canalMax = 0;
     for (int i = 0; i < kPadsPerBank; ++i)
     {
         pitchMax = juce::jmax (pitchMax, std::abs (padPitch[(size_t) i]));
+        //  Y EL CANAL, aparte y no dentro de `espejo_mal`: son dos preguntas
+        //  distintas -«hereda el reparto de ayer» y «el mando dice lo que el
+        //  motor tiene»- y meterlas en un contador deja una sin poder fallar
+        //  sola.
+        canalMax = juce::jmax (canalMax, engine.getPadCanal (i));
         corteMin = juce::jmin (corteMin, engine.getPadCutoff (i));
         if (padReverse[(size_t) i]) ++revesN;
         if (padChokeUI[(size_t) i] != 0) ++chokeN;
+        //  El RECORTE al reves que antes: hereda si sigue en CERO, que es lo
+        //  que el proyecto de ayer le dejo. Se mide el minimo por eso.
         for (int f = 0; f < AudioEngine::kNumFx; ++f)
-            envioMax = juce::jmax (envioMax, engine.getPadSend (i, f));
+            envioMax = juce::jmin (envioMax, engine.getPadRecorte (i, f));
         //  Y QUE EL ESPEJO Y EL MOTOR DIGAN LO MISMO, que es la clase de fallo
         //  que no se ve mirando la pantalla: un pad filtrado con el mando
         //  abierto.
@@ -546,6 +556,7 @@ void MainComponent::auditDlc()
               << ",\"reves\":" << revesN
               << ",\"choke\":" << chokeN
               << ",\"envio\":" << envioMax
+              << ",\"canal\":" << canalMax
               << ",\"espejo_mal\":" << espejoMal << "}" << std::endl;
 }
 
@@ -1073,26 +1084,46 @@ void MainComponent::auditNuevo()
         int conSonido = 0;
         for (int i = 0; i < kNumPads; ++i) if (padHasSample[(size_t) i]) ++conSonido;
 
+        //  LO QUE DE VERDAD LLEGA A UN BUS, que es el producto del envio del
+        //  CANAL por el recorte del pad — `sendDePad`, escrito una vez y en el
+        //  motor. Con el envio a cero da cero pase lo que pase con el recorte,
+        //  que es lo que hace que la maquina nazca sin efectos.
         float envMax = 0.0f;
         double envSuma = 0.0;
         for (int i = 0; i < kNumPads; ++i)
             for (int f = 0; f < AudioEngine::kNumFx; ++f)
             {
-                const float v = engine.getPadSend (i, f);
+                const float v = engine.sendDePad (i, f);
                 envMax = juce::jmax (envMax, v);
                 envSuma += v;
             }
+
+        //  Y EL REPARTO ENTERO, que es lo que un camino puede heredar del otro:
+        //  a que canal va cada pad, y el fader y el mute de los dieciseis.
+        int canalMax = 0, muteN = 0;
+        double ganSuma = 0.0;
+        for (int i = 0; i < kNumPads; ++i) canalMax = juce::jmax (canalMax, engine.getPadCanal (i));
+        for (int c = 0; c < kNumCanales; ++c)
+        {
+            ganSuma += engine.getCanalGain (c);
+            if (engine.getCanalMute (c)) ++muteN;
+        }
 
         //  Y LA FILA DE EFECTOS, que es lo que esta comprobacion no miraba y por
         //  eso los dos caminos podian discrepar sin que nada fallara: el
         //  arranque limpio enseñaba FLT HPF DRV DLY BIT REV -seis efectos que
         //  nadie ha puesto- y NUEVO dejaba seis huecos. Dos caras para «vacia».
+        //  Y LAS DIECISEIS FILAS, no la del canal actual: vaciar la mitad de
+        //  un proyecto es peor que no vaciar nada.
         juce::String ranuras;
-        for (int sr = 0; sr < kNumRanuras; ++sr)
-            ranuras += (sr ? "," : "") + juce::String (slotFx[(size_t) sr]);
+        for (int c = 0; c < kNumCanales; ++c)
+            for (int sr = 0; sr < kNumRanuras; ++sr)
+                ranuras += ((c || sr) ? "," : "") + juce::String (slotFx[(size_t) c][(size_t) sr]);
 
         std::cout << "{\"nuevo\":\"" << que << "\",\"pads\":" << conSonido
                   << ",\"envmax\":" << envMax << ",\"envsuma\":" << envSuma
+                  << ",\"canalmax\":" << canalMax << ",\"cgansuma\":" << ganSuma
+                  << ",\"cmuten\":" << muteN
                   << ",\"ranuras\":[" << ranuras << "]"
                   << ",\"largo\":" << engine.getSongLength() << ",\"carriles\":[";
         for (int ln = 0; ln < AudioEngine::kSongLanes; ++ln)
@@ -1106,6 +1137,21 @@ void MainComponent::auditNuevo()
     };
 
     fila ("arranque");
+
+    //  Y EL PROYECTO DE AYER, PUESTO A MANO ANTES DE PULSAR NUEVO.
+    //
+    //  Sin esto las dos filas se miden sobre una maquina que nadie ha tocado,
+    //  asi que «NUEVO deja la mesa vacia» lo cumple igual un NUEVO que no la
+    //  toca — o sea la comprobacion no puede decir que no, que es exactamente
+    //  el fallo que este mismo fichero cazo dos veces con los envios y con la
+    //  linea de tiempo. Se mueve LO QUE SE PUEDE HEREDAR: a que canal va un
+    //  pad, cuanto manda ese canal, su fader, su mute y su fila de ranuras.
+    engine.setPadCanal (3, 7);
+    engine.setCanalSend (7, AudioEngine::kFxDly, 0.8f);
+    engine.setCanalGain (7, 0.25f);
+    engine.setCanalMute (2, true);
+    slotFx[7][0] = AudioEngine::kFxDly;
+
     newProject();
     fila ("nuevo");
 }
@@ -1258,7 +1304,23 @@ void MainComponent::auditOpen (const juce::String& pedido)
     //  exactamente donde vive el residuo que ZATI_PAGES existe para cazar.
     else if (which == "pick")
     { openSheet (seqSheet, secButton); showSeqPage (seqPagePiano); abrePadPicker (true); }
-    else if (which == "mix")  { refreshMixStrip(); openSheet (mixSheet, mixButton); }
+    else if (which == "mix")  { showMixPage (mixPagePads); openSheet (mixSheet, mixButton); }
+    //  LA PAGINA DE CANALES DE LA MESA, que es un estado propio y no la misma
+    //  ficha con otro contenido: la fila de chips lleva dos tapas en vez de
+    //  cinco, las tiras pierden el pan y el solo, y el renglon dice la cuenta
+    //  de pads en vez de un nombre. Es la leccion de `secp`, `eqb` e `instp`.
+    else if (which == "mixc")
+    {
+        //  Con pads repartidos, o las dieciseis tiras dirian «—» y el renglon
+        //  que mas puede romper un rotulo no se mediria nunca.
+        for (int p = 0; p < kNumPads; ++p) engine.setPadCanal (p, p % kNumCanales);
+        showMixPage (mixPageCanales);
+        openSheet (mixSheet, mixButton);
+    }
+    //  Y LA REJILLA DE DIECISEIS CANALES, que se dibuja ENCIMA de la ficha del
+    //  pad: una capa que se pone sobre otra es donde vive el residuo.
+    else if (which == "canal")
+    { showPadPage (padPageRig); openSheet (padSheet, padsButton); abreCanalPicker (true); }
     else if (which == "set")  { showSetPage (pageAudio);    refreshAudioOptions(); openSheet (setSheet, setButton); }
     else if (which == "proj") { showSetPage (pageProjects); refreshProjectList(); openSheet (setSheet, setButton); }
     else if (which == "gest") { showSetPage (pageGestures); openSheet (setSheet, setButton); }
@@ -1315,7 +1377,7 @@ void MainComponent::auditOpen (const juce::String& pedido)
                   << ",\"tour\":" << (tourSheet.isVisible() ? 1 : 0) << "}" << std::endl;
     }
     else if (which == "midi") { showSetPage (pageMidi); refreshMidiDevices(); openSheet (setSheet, setButton); }
-    else if (which == "rack") { rackPad = 0; openSheet (rackSheet, mixButton); refreshRack(); }
+    else if (which == "rack") { canalActual = 0; openSheet (rackSheet, mixButton); refreshRack(); }
     //  Y EL RACK CON LAS SEIS RANURAS LLENAS.
     //
     //  Desde que la maquina abre vacia, `rack` mide seis filas con «+» en el
@@ -1329,8 +1391,8 @@ void MainComponent::auditOpen (const juce::String& pedido)
         //  Y CON LOS SEIS ENVIOS PUESTOS. Seis valores distintos, que con seis
         //  iguales un cruce de filas pasaria desapercibido.
         for (int s = 0; s < kNumRanuras; ++s)
-            engine.setPadSend (0, s, 0.15f + 0.15f * (float) s);
-        rackPad = 0;
+            engine.setCanalSend (0, s, 0.15f + 0.15f * (float) s);
+        canalActual = 0;
         openSheet (rackSheet, mixButton);
         refreshRack();
     }
@@ -2259,8 +2321,8 @@ void MainComponent::auditProject()
                                   << engine.getStepPLock (0, 0, 0, AudioEngine::plockCaida)  << ","
                                   << engine.getStepPLock (0, 0, 0, AudioEngine::plockInicio) << ","
                                   << engine.getStepPLock (0, 0, 0, AudioEngine::plockPan)    << "]"
-              << ",\"ranuras\":[" << slotFx[0] << "," << slotFx[1] << "," << slotFx[2] << ","
-                                   << slotFx[3] << "," << slotFx[4] << "," << slotFx[5] << "]"
+              << ",\"ranuras\":[" << slotFx[0][0] << "," << slotFx[0][1] << "," << slotFx[0][2] << ","
+                                   << slotFx[0][3] << "," << slotFx[0][4] << "," << slotFx[0][5] << "]"
               << "}" << std::endl;
 
     //  Y SE BOMBEA UN TICK DE AUDIO ANTES DE PREGUNTARLE AL MOTOR. La tabla de
@@ -2325,15 +2387,25 @@ void MainComponent::auditViejos (const juce::String& carpeta)
             padPan[(size_t) p]  = 0.9f;   engine.setPadPan  (p, 0.9f);
             padCut[(size_t) p]  = 300.0f; engine.setPadCutoff (p, 300.0f);
             padReverse[(size_t) p] = true; engine.setPadReverse (p, true);
-            for (int fx = 0; fx < kNumFx; ++fx) engine.setPadSend (p, fx, 0.75f);
+            //  Y LA MESA DE AYER: el pad en otro canal y su recorte movido,
+            //  con los envios del canal 0 puestos. Un proyecto de otra epoca
+            //  tiene que devolver los tres a lo que aquel dia significaban.
+            engine.setPadCanal (p, 5);
+            for (int fx = 0; fx < kNumFx; ++fx) engine.setPadRecorte (p, fx, 0.75f);
         }
+        for (int fx = 0; fx < kNumFx; ++fx) engine.setCanalSend (0, fx, 0.5f);
         //  Y LA FILA DE EFECTOS VACIA antes de abrir el viejo. Un proyecto de
         //  otra epoca no lleva la propiedad `slots`, asi que tiene que volver
         //  con la fila DE SIEMPRE -la ranura s con el tipo s- y no con el
         //  defecto de hoy, que es vacia: lo que manda no es cual es el defecto
         //  de hoy sino como sonaba el dia que se guardo. Sin vaciarla antes,
         //  «volvio en orden» lo cumple tambien no haber tocado nada.
-        for (int s = 0; s < kNumRanuras; ++s) ponEnRanura (s, kSlotVacia);
+        for (int c = 0; c < kNumCanales; ++c)
+        {
+            canalActual = c;
+            for (int s = 0; s < kNumRanuras; ++s) ponEnRanura (s, kSlotVacia);
+        }
+        canalActual = 0;
         engine.setSongLength (32);
         engine.setSongCell (0, 0, 3);
         engine.setSongCell (1, 4, 2);
@@ -2351,26 +2423,44 @@ void MainComponent::auditViejos (const juce::String& carpeta)
                 if (engine.getSongCell (ln, bar) != 0) ++celdasCancion;
 
         std::cout << "{\"viejo\":\"" << UiAudit::esc (f.getFileNameWithoutExtension()) << "\""
-                  << ",\"envio0\":" << engine.getPadSend (0, 0)
+                  << ",\"envio0\":" << engine.sendDePad (0, 0)
                   << ",\"autocorte0\":" << (padSelfCut[0] ? 1 : 0)
                   << ",\"corte0\":" << padCut[0]
                   << ",\"gain20\":" << padGain[20]
                   << ",\"pan20\":" << padPan[20]
                   << ",\"corte20\":" << padCut[20]
                   << ",\"reves20\":" << (padReverse[20] ? 1 : 0)
-                  << ",\"envio20\":" << engine.getPadSend (20, 0)
+                  << ",\"envio20\":" << engine.sendDePad (20, 0)
+                  //  Y LA MITAD DEL PAD POR SEPARADO, que es la unica que se
+                  //  puede HEREDAR desde que los envios son del canal. Lo que
+                  //  llega a un efecto es `canalSend[canal] x padRecorte[pad]`,
+                  //  y el primero es de la MAQUINA: un fichero de la epoca de
+                  //  «cada pad va entero a todos» deja el canal 0 en uno y eso
+                  //  alcanza a los sesenta y cuatro, tengan o no fila propia.
+                  //  Lo que no puede pasar es que el pad 20 -que no esta en
+                  //  ninguno de los cinco- vuelva con el 0.75 que el proyecto
+                  //  ANTERIOR le dejo puesto, y eso lo dice esta cifra y no la
+                  //  de arriba.
+                  << ",\"recorte20\":" << engine.getPadRecorte (20, 0)
                   //  EL ENVIO AL ULTIMO TIPO, que es el que separa las dos
                   //  respuestas. La lista `sends` es POSICIONAL: un proyecto de
                   //  la epoca de seis trae seis numeros, y los tipos que no
                   //  existian entonces no sonaban, o sea CERO. Con la rama del
                   //  1.0f -la de un proyecto SIN la propiedad- los 64 pads
                   //  abririan con los cinco nuevos a tope.
-                  << ",\"envio_nuevo\":" << engine.getPadSend (0, kNumFx - 1)
+                  << ",\"envio_nuevo\":" << engine.sendDePad (0, kNumFx - 1)
+                  //  Y LAS DOS MITADES POR SEPARADO, que es lo unico que separa
+                  //  «suena igual» de «suena igual por casualidad»: el recorte
+                  //  del pad es lo que el fichero traia y el envio del canal lo
+                  //  que `applyState` dedujo de que el fichero no traia mesa.
+                  << ",\"recorte0\":" << engine.getPadRecorte (0, 0)
+                  << ",\"csend0\":" << engine.getCanalSend (0, 0)
+                  << ",\"canal20\":" << engine.getPadCanal (20)
                   << ",\"cancion\":" << celdasCancion
                   << ",\"vel0\":" << engine.getStepVel (0, 0, 0)
                   << ",\"roll0\":" << engine.getStepRoll (0, 0, 0)
-                  << ",\"ranuras\":[" << slotFx[0] << "," << slotFx[1] << "," << slotFx[2] << ","
-                                       << slotFx[3] << "," << slotFx[4] << "," << slotFx[5] << "]"
+                  << ",\"ranuras\":[" << slotFx[0][0] << "," << slotFx[0][1] << "," << slotFx[0][2] << ","
+                                       << slotFx[0][3] << "," << slotFx[0][4] << "," << slotFx[0][5] << "]"
                   << "}" << std::endl;
     }
 }
@@ -2384,12 +2474,122 @@ void MainComponent::auditViejos (const juce::String& carpeta)
 //  enciende un efecto, que es donde vive todo lo que esta tanda anade. Se
 //  pulsan las tapas de verdad -`fxButtons[s]->onClick`, `ranuraBtns[f]->
 //  onClick`- y se lee lo que quedo.
+// ============================================================================
+//  LA MESA ENTRE LOS PADS Y LOS EFECTOS. Ver Tests/canales.py.
+//
+//  NINGUNA DE LAS ONCE REGLAS DE `expo.py` PUEDE VER NADA DE ESTO: son fallos
+//  de INDICE y de ESTADO, y un pad que manda al canal equivocado se maqueta
+//  perfecto -no solapa, no se sale, no corta un rotulo, no mide cero y esta
+//  traducido-. Es la familia de los cinco fallos del compas del piano.
+//
+//  SE MIDE POR EL GESTO Y NO POR EL CALLBACK, que es la misma leccion: llamar a
+//  `setPadCanal` por dentro se salta justo el codigo que decide si la fila de
+//  la cara sigue al pad, que es donde vive todo lo que esta tanda anade.
+// ============================================================================
+void MainComponent::auditCanales()
+{
+    auto pulsa = [] (juce::Button* b) { if (b != nullptr && b->onClick) b->onClick(); };
+    auto fila  = [this] (int c)
+    {
+        juce::StringArray r;
+        for (int s = 0; s < kNumRanuras; ++s) r.add (juce::String (slotFx[(size_t) c][(size_t) s]));
+        return "[" + r.joinIntoString (",") + "]";
+    };
+
+    //  1. LA REJILLA DE CANALES MUEVE EL PAD, y la fila de la cara VA CON EL.
+    //
+    //  Con DOS cifras: a que canal fue el pad *y* que la fila de la cara sea la
+    //  de ese canal. Solo la primera la cumple un `setPadCanal` al que no le
+    //  sigue nadie -que es exactamente como estaba la app antes de esta tanda,
+    //  con las seis ranuras globales- y solo la segunda la cumple una cara que
+    //  cambia de fila sin mover el pad.
+    for (auto& f : slotFx) f.fill (kSlotVacia);
+    canalActual = 0;
+    slotFx[0][0] = AudioEngine::kFxFlt;      // el canal 0 lleva FLT
+    slotFx[3][0] = AudioEngine::kFxBit;      // y el 3, BIT
+    selectPad (5);
+    pulsa (canalBtns[3]);
+    const int canalDelPad = engine.getPadCanal (5);
+    const juce::String filaTrasMover = fila (canalActual);
+
+    //  2. CAMBIAR DE PAD CAMBIA LA FILA. Por el GESTO -un toque en el pad, que
+    //     es lo que `padClicked` encadena- y no llamando a `selectPad`, que es
+    //     donde el fallo no existe. Dos pads en dos canales distintos: la fila
+    //     de la cara tiene que decir dos cosas distintas.
+    engine.setPadCanal (2, 0);
+    juce::MouseEvent me (juce::Desktop::getInstance().getMainMouseSource(),
+                         {}, juce::ModifierKeys(), 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                         pads[2], pads[2], juce::Time::getCurrentTime(),
+                         {}, juce::Time::getCurrentTime(), 1, false);
+    if (pads[2] != nullptr) pads[2]->mouseDown (me);
+    const juce::String filaPad2 = fila (canalActual);
+    const int canalPad2 = canalActual;
+
+    juce::MouseEvent me5 (juce::Desktop::getInstance().getMainMouseSource(),
+                          {}, juce::ModifierKeys(), 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                          pads[5], pads[5], juce::Time::getCurrentTime(),
+                          {}, juce::Time::getCurrentTime(), 1, false);
+    if (pads[5] != nullptr) pads[5]->mouseDown (me5);
+    const juce::String filaPad5 = fila (canalActual);
+    const int canalPad5 = canalActual;
+
+    //  3. UN INSERTO ES DE UN CANAL Y UN ENVIO ES DE TODOS.
+    //
+    //  Las dos mitades, y las dos hacen falta: solo la primera la cumple una
+    //  regla que mueve TODO -y entonces dos canales no pueden compartir un
+    //  delay, que es lo contrario de lo que un envio significa- y solo la
+    //  segunda la cumple una que no mueve nada, y entonces dos canales tendrian
+    //  dos interruptores del mismo compresor.
+    for (auto& f : slotFx) f.fill (kSlotVacia);
+    canalActual = 0; ponEnRanura (0, AudioEngine::kFxCmp);
+    canalActual = 4; ponEnRanura (0, AudioEngine::kFxCmp);
+    const juce::String insertoDe0 = fila (0), insertoDe4 = fila (4);
+
+    for (auto& f : slotFx) f.fill (kSlotVacia);
+    canalActual = 0; ponEnRanura (0, AudioEngine::kFxDly);
+    canalActual = 4; ponEnRanura (0, AudioEngine::kFxDly);
+    const juce::String envioDe0 = fila (0), envioDe4 = fila (4);
+
+    //  4. VACIAR UNA RANURA APAGA SU EFECTO **SOLO SI NO LE QUEDA OTRA**. Un
+    //     envio puede vivir en tres canales, y quitarlo de uno no lo deja sin
+    //     tapa: apagarlo ahi seria callar un delay que se sigue viendo.
+    canalActual = 0;
+    setFxEnabled (AudioEngine::kFxDly, true);
+    ponEnRanura (0, kSlotVacia);                       // sigue en el canal 4
+    const int trasQuitarUna = fxOn[(size_t) AudioEngine::kFxDly] ? 1 : 0;
+    canalActual = 4;
+    ponEnRanura (0, kSlotVacia);                       // ya no queda ninguna
+    const int trasQuitarLaUltima = fxOn[(size_t) AudioEngine::kFxDly] ? 1 : 0;
+
+    //  5. EL FADER DEL CANAL LLEGA AL MOTOR, por la TIRA de la mesa y no
+    //     llamando a `setCanalGain`: lo que se prueba es el camino.
+    showMixPage (mixPageCanales);
+    if (canFaders[6] != nullptr) canFaders[6]->setValue (-6.0, juce::sendNotificationSync);
+    const float ganCanal6 = engine.getCanalGain (6);
+    if (canMutes[6] != nullptr) { canMutes[6]->setToggleState (true, juce::dontSendNotification);
+                                  if (canMutes[6]->onClick) canMutes[6]->onClick(); }
+    const int muteCanal6 = engine.getCanalMute (6) ? 1 : 0;
+
+    std::cout << "{\"canales\":" << kNumCanales
+              << ",\"canal_del_pad\":" << canalDelPad
+              << ",\"fila_tras_mover\":" << filaTrasMover
+              << ",\"canal_pad2\":" << canalPad2 << ",\"fila_pad2\":" << filaPad2
+              << ",\"canal_pad5\":" << canalPad5 << ",\"fila_pad5\":" << filaPad5
+              << ",\"inserto0\":" << insertoDe0 << ",\"inserto4\":" << insertoDe4
+              << ",\"envio0\":" << envioDe0 << ",\"envio4\":" << envioDe4
+              << ",\"tras_quitar_una\":" << trasQuitarUna
+              << ",\"tras_quitar_ultima\":" << trasQuitarLaUltima
+              << ",\"gan_canal6\":" << ganCanal6
+              << ",\"mute_canal6\":" << muteCanal6
+              << "}" << std::endl;
+}
+
 void MainComponent::auditRanuras()
 {
     auto mapa = [this]
     {
         juce::StringArray r;
-        for (int s = 0; s < kNumRanuras; ++s) r.add (juce::String (slotFx[(size_t) s]));
+        for (int s = 0; s < kNumRanuras; ++s) r.add (juce::String (slotFx[0][(size_t) s]));
         return "[" + r.joinIntoString (",") + "]";
     };
     auto pulsa = [] (juce::Button* b) { if (b != nullptr && b->onClick) b->onClick(); };
@@ -2716,11 +2916,13 @@ void MainComponent::auditRack()
 
             auto lee = [&] (bool conSenal, int tics)
             {
-                for (int p = 0; p < kNumPads; ++p) engine.setPadSend (p, f, 0.0f);
+                //  Los 64 pads nacen en el canal 0, asi que cerrar el envio
+                //  del canal los cierra a los 64: es lo que la mesa hace.
+                engine.setCanalSend (0, f, 0.0f);
                 if (conSenal)
                 {
                     engine.setPadGain (0, 1.0f);
-                    engine.setPadSend (0, f, 1.0f);
+                    engine.setCanalSend (0, f, 1.0f);
                     engine.publishSample (0, ruido());
                 }
                 for (int i = 0; i < tics; ++i)
@@ -2778,8 +2980,7 @@ void MainComponent::auditRack()
             }
         }
 
-        for (int p = 0; p < kNumPads; ++p)
-            for (int f = 0; f < kNumFx; ++f) engine.setPadSend (p, f, 0.0f);
+        for (int f = 0; f < kNumFx; ++f) engine.setCanalSend (0, f, 0.0f);
     }
 
     //  4. Y LA GEOMETRIA DE LA FILA, que es lo que la ficha paga por dibujar:
@@ -3111,8 +3312,8 @@ void MainComponent::auditDinamica()
     pulsa (ranuraBtns[AudioEngine::kFxCmp]);
     abreMenuRanura (1);
     pulsa (ranuraBtns[AudioEngine::kFxLim]);
-    const int enRanura0 = slotFx[0];
-    const int enRanura1 = slotFx[1];
+    const int enRanura0 = slotFx[0][0];
+    const int enRanura1 = slotFx[0][1];
 
     //  3. LOS TRES MANDOS ESCRIBEN EN SU EFECTO Y NO EN EL DE AL LADO, con un
     //     TESTIGO: se le da a CMP un umbral y a LIM un techo DISTINTOS, y las
@@ -3135,7 +3336,7 @@ void MainComponent::auditDinamica()
     //     reduccion mientras se mueve el mando es un control contando otra
     //     cosa que su propio numero. Las DOS mitades.
     engine.setFxParam (AudioEngine::kFxLim, 2, 1.0f);
-    engine.setPadSend (0, AudioEngine::kFxLim, 1.0f);
+    engine.setCanalSend (0, AudioEngine::kFxLim, 1.0f);
     engine.setPadGain (0, 1.0f);
 
     //  UN TONO PLANO Y NO EL SONIDO DE FABRICA, que es donde esta medida se
@@ -3188,8 +3389,8 @@ void MainComponent::auditDinamica()
     applyState (estado);
     const float cmpVuelve = engine.getDynP0 (0);
     const float limVuelve = engine.getDynP0 (3);
-    const int   r0Vuelve  = slotFx[0];
-    const int   r1Vuelve  = slotFx[1];
+    const int   r0Vuelve  = slotFx[0][0];
+    const int   r1Vuelve  = slotFx[0][1];
 
     //  CUANTOS TIPOS HAY lo dice la app y no una cuenta escrita en el script:
     //  el dia que entre el doce, lo que tiene que fallar es el menu y no una

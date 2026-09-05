@@ -37,7 +37,7 @@ SEGUNDOS = int (sys.argv[1]) if len (sys.argv) > 1 else 8
 #  EQ en una ranura y con el foco. Sin esta entrada, las dos FFT de 1024 por
 #  tick no las corre nadie en el unico banco que mide por RELOJ, que es
 #  exactamente publicar un numero sin mirarlo.
-FICHAS = ["", "eq", "pads", "sec", "song", "mix", "set", "proj", "midi", "gest",
+FICHAS = ["", "eq", "pads", "sec", "song", "mix", "mixc", "set", "proj", "midi", "gest",
           "xy", "rack", "rackf", "chop", "browse", "plato"]
 
 #  EL TOPE, en VENTANAS y no en llamadas. Un arranque pinta el fondo una vez y

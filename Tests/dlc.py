@@ -196,16 +196,24 @@ mide ("la fabrica llena el banco", d is not None and d["pads"] == 16,
 #  dieciseis sonidos nuevos que no se oian bien, sin nada que dijera por que.
 #  Es la misma herencia que ya se cazo en NUEVO.
 #
-#  La app ensucia los dieciseis ANTES de cargar -pitch +12, reves, choke 3, los
-#  seis envios a uno y el corte a 200 Hz- y esto mira lo peor de cada uno: con
-#  el maximo, un solo pad que herede lo canta. Roto a proposito (quitando
-#  ponPadPorDefecto de cargaFabricaEnBanco) vuelven los cinco.
+#  La app ensucia los dieciseis ANTES de cargar -pitch +12, reves, choke 3, el
+#  corte a 200 Hz, el RECORTE a cero y el pad en el canal 7- y esto mira lo peor
+#  de cada uno: con el maximo, un solo pad que herede lo canta. Roto a proposito
+#  (quitando ponPadPorDefecto de cargaFabricaEnBanco) vuelven los cinco.
+#
+#  Y EL RECORTE SE MIDE AL REVES QUE ANTES, que es lo que cambio con la mesa:
+#  ya no es «cuanto manda este pad» -eso es del canal- sino «con cuanto se
+#  guardo», y nace en UNO. Hereda si vuelve en CERO, que es lo que el proyecto
+#  de ayer le dejo puesto, asi que lo que se mira es el MINIMO y tiene que
+#  salir 1. Una cifra que cambia de significado se vuelve a elegir; no se
+#  afloja.
 d = filas.get ("herencia")
 mide ("el instrumento nuevo no hereda",
       d is not None and d["pitch"] == 0 and d["reves"] == 0
-      and d["choke"] == 0 and d["envio"] == 0 and d["corte"] >= 20000,
-      "" if d is None else "pitch %g  corte %g Hz  reves %d  choke %d  envio %g"
-        % (d["pitch"], d["corte"], d["reves"], d["choke"], d["envio"]))
+      and d["choke"] == 0 and d["envio"] == 1 and d["corte"] >= 20000
+      and d["canal"] == 0,
+      "" if d is None else "pitch %g  corte %g Hz  reves %d  choke %d  recorte %g  canal %d"
+        % (d["pitch"], d["corte"], d["reves"], d["choke"], d["envio"], d["canal"]))
 
 #  Y LA MITAD QUE NO SE VE: el corte lo escribe tambien el bloqueo de paso,
 #  desde el hilo de audio, y assignSampleToPad no empujaba setPadCutoff nunca.

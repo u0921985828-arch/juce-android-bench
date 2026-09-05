@@ -89,6 +89,40 @@ public:
     static constexpr int kFxRng = 15, kFxPit = 16, kFxWid = 17,
                          kFxExc = 18, kFxTrn = 19, kFxFrz = 20;
 
+    //  DIECISEIS CANALES, que es la mesa entre los pads y los efectos.
+    //
+    //  Hasta aqui el envio era del PAD: 64 x 21 numeros, y su unica puerta el
+    //  RACK. Eso hace dos cosas mal a la vez. Son mil trescientos cuarenta y
+    //  cuatro numeros que nadie gestiona, y sobre todo la fila de la cara —las
+    //  seis ranuras y sus tres mandos— era GLOBAL, asi que cambiar de pad no
+    //  cambiaba nada de lo que el pad suena por dentro: «cuando pasas de un pad
+    //  a otro, los huecos de los efectos sigue igual».
+    //
+    //  Ahora el pad elige su CANAL y el canal es el dueño del envio. Y el
+    //  reparto entre canales no se inventa: sale de `fxSustituye`, que ya
+    //  estaba y ya se mide. De los veintiun tipos, CINCO suman -DLY, REV, CHO,
+    //  FLA, PHA- y DIECISEIS sustituyen.
+    //
+    //    · un INSERTO es de UN canal. Es la regla «un tipo, una ranura»
+    //      generalizada y existe por lo mismo: el estado en el motor es uno
+    //      solo -un filtro, un compresor, un congelador- asi que dos canales
+    //      con el mismo inserto serian dos ventanas al mismo aparato con dos
+    //      interruptores que se contradicen. Dieciseis insertos, dieciseis
+    //      canales: el numero ya cuadraba.
+    //    · un ENVIO es de TODOS. Una linea de retardo existe para que varias
+    //      fuentes entren en la misma cola; restringir el DLY a un canal es lo
+    //      contrario de lo que un envio significa.
+    //
+    //  Y por eso el motor NO CRECE: cero buses nuevos, cero etapas nuevas, cero
+    //  estado pesado nuevo. Lo unico que cambia es de donde sale el numero que
+    //  ya se calculaba una vez por bloque. Medido, la alternativa -una seccion
+    //  de efectos por canal- son 1.3 MB por canal, o sea 21 MB por dieciseis,
+    //  mas el indice de canal en `fxP`, en las diez etapas y en `EventoAuto`.
+    //  Queda para su propia tanda y no tira nada de esta: la abstraccion de
+    //  canal hace falta igual, y lo unico que cambiaria es de quien es el
+    //  array.
+    static constexpr int kNumCanales = 16;
+
     //  Los valores de fabrica de los tres parametros de cada tipo, en una
     //  tabla y no en diecinueve llaves de inicializacion repartidas por esta
     //  cabecera. Tienen que decir lo mismo que `MainComponent::fxDefs[f]
@@ -1123,43 +1157,96 @@ public:
     void setCrushRate (float r) noexcept { crRate.store (r, std::memory_order_relaxed); }
     void setCrushMix  (float m) noexcept { crMix.store  (m, std::memory_order_relaxed); }
 
-    //  How much of one pad reaches one effect. 1 is everything, which is the
-    //  default so that switching an effect on still colours the whole kit the
-    //  way it always did; pull a pad down and that pad stops being sent.
-    void setPadSend (int slot, int fx, float v) noexcept
+    //  A QUE CANAL VA ESTE PAD. Es lo unico que el pad decide del reparto: el
+    //  cuanto lo dice el canal.
+    void setPadCanal (int slot, int canal) noexcept
+    {
+        if (slot < 0 || slot >= kNumPads) return;
+        padCanal[(size_t) slot].store ((juce::uint8) juce::jlimit (0, kNumCanales - 1, canal),
+                                       std::memory_order_relaxed);
+        refrescaSendMask();
+    }
+    int getPadCanal (int slot) const noexcept
+    {
+        if (slot < 0 || slot >= kNumPads) return 0;
+        return (int) padCanal[(size_t) slot].load (std::memory_order_relaxed);
+    }
+
+    //  CUANTO MANDA UN CANAL A UN EFECTO. Es el envio de verdad, y lo que la
+    //  fila del RACK mueve.
+    void setCanalSend (int canal, int fx, float v) noexcept
+    {
+        if (canal < 0 || canal >= kNumCanales || fx < 0 || fx >= kNumFx) return;
+        canalSend[(size_t) canal][(size_t) fx].store (juce::jlimit (0.0f, 1.0f, v),
+                                                      std::memory_order_relaxed);
+        refrescaSendMask();
+    }
+    float getCanalSend (int canal, int fx) const noexcept
+    {
+        if (canal < 0 || canal >= kNumCanales || fx < 0 || fx >= kNumFx) return 0.0f;
+        return canalSend[(size_t) canal][(size_t) fx].load (std::memory_order_relaxed);
+    }
+
+    //  EL FADER Y EL MUTE DEL CANAL, que es lo que lo hace un canal de mesa y
+    //  no una etiqueta. Cuestan dos multiplicaciones: `dryGain[p]` y
+    //  `sendGain[p][f]` ya se calculan una vez por bloque, asi que la ganancia
+    //  del canal las multiplica ahi y no hay una etapa nueva en el hilo de
+    //  audio.
+    //
+    //  Y SOLO se queda en el PAD. Acaba de entrar en la cara como modo hermano
+    //  de REC y `effectiveGain` lo resuelve en una lectura; dos ambitos de solo
+    //  son dos respuestas a «oye solo esto».
+    void setCanalGain (int canal, float g) noexcept
+    {
+        if (canal < 0 || canal >= kNumCanales) return;
+        canalGain[(size_t) canal].store (juce::jlimit (0.0f, 4.0f, g), std::memory_order_relaxed);
+    }
+    float getCanalGain (int canal) const noexcept
+    {
+        if (canal < 0 || canal >= kNumCanales) return 1.0f;
+        return canalGain[(size_t) canal].load (std::memory_order_relaxed);
+    }
+    void setCanalMute (int canal, bool m) noexcept
+    {
+        if (canal < 0 || canal >= kNumCanales) return;
+        canalMute[(size_t) canal].store (m, std::memory_order_relaxed);
+    }
+    bool getCanalMute (int canal) const noexcept
+    {
+        if (canal < 0 || canal >= kNumCanales) return false;
+        return canalMute[(size_t) canal].load (std::memory_order_relaxed);
+    }
+
+    //  EL RECORTE DEL PAD, que es el `padSend` de siempre con otro papel.
+    //
+    //  Dejo de ser EL ENVIO el dia que el canal paso a serlo, y sobrevive
+    //  porque es lo unico que hace posible abrir un proyecto anterior sonando
+    //  igual: un fichero con `sends` trae 64 filas distintas y no hay forma de
+    //  meterlas en dieciseis canales sin cambiar como suena. Nace en UNO
+    //  -neutro- y NO tiene mando: no es un control, es parte del formato viejo.
+    //  Por eso `applyState` lo escribe desde `sends` y `captureState` ya no
+    //  escribe esa propiedad — un fichero nuevo no la trae, y «sin la propiedad
+    //  vale uno» es exactamente la respuesta que hace falta.
+    void setPadRecorte (int slot, int fx, float v) noexcept
     {
         if (slot < 0 || slot >= kNumPads || fx < 0 || fx >= kNumFx) return;
-
-        const float g = juce::jlimit (0.0f, 1.0f, v);
-        padSend[(size_t) slot][(size_t) fx].store (g, std::memory_order_relaxed);
-
-        //  UN BIT POR PAD, para que el hilo de audio no tenga que preguntar
-        //  384 veces por bloque si alguien manda algo a algun sitio.
-        //
-        //  El reparto de envios recorria kNumPads x kNumFx entero en CADA
-        //  bloque - 384 cargas atomicas y 384 pasos de suavizado, 288.000
-        //  cargas por segundo con buffer de 64 - hiciera lo que hiciera la
-        //  maquina. Con los seis efectos apagados y ni un pad sonando el
-        //  trabajo era exactamente el mismo que con dieciseis pads sonando.
-        //
-        //  El bit se pone aqui, en el hilo de mensajes, que es el unico sitio
-        //  desde el que un envio cambia. Se pone ANTES de mirar los demas
-        //  para que no exista un instante con el valor puesto y el bit sin
-        //  poner: un bloque que leyera ese instante se saltaria el pad.
-        std::uint64_t bit = 0;
-        for (int f = 0; f < kNumFx; ++f)
-            if (padSend[(size_t) slot][(size_t) f].load (std::memory_order_relaxed) > 0.0f)
-                { bit = 1ull << (unsigned) slot; break; }
-
-        std::uint64_t was = padSendMask.load (std::memory_order_relaxed);
-        std::uint64_t now;
-        do { now = bit != 0 ? (was | bit) : (was & ~(1ull << (unsigned) slot)); }
-        while (! padSendMask.compare_exchange_weak (was, now, std::memory_order_relaxed));
+        padRecorte[(size_t) slot][(size_t) fx].store (juce::jlimit (0.0f, 1.0f, v),
+                                                      std::memory_order_relaxed);
+        refrescaSendMask();
     }
-    float getPadSend (int slot, int fx) const noexcept
+    float getPadRecorte (int slot, int fx) const noexcept
     {
-        if (slot < 0 || slot >= kNumPads || fx < 0 || fx >= kNumFx) return 0.0f;
-        return padSend[(size_t) slot][(size_t) fx].load (std::memory_order_relaxed);
+        if (slot < 0 || slot >= kNumPads || fx < 0 || fx >= kNumFx) return 1.0f;
+        return padRecorte[(size_t) slot][(size_t) fx].load (std::memory_order_relaxed);
+    }
+
+    //  CUANTO DE ESTE PAD LLEGA A ESTE EFECTO, que es el producto de los dos y
+    //  lo unico que el hilo de audio pregunta. Escrito UNA vez: la cara lo usa
+    //  para dibujar y el motor para repartir, y las dos cuentas escritas por
+    //  separado serian dos reglas.
+    float sendDePad (int slot, int fx) const noexcept
+    {
+        return getCanalSend (getPadCanal (slot), fx) * getPadRecorte (slot, fx);
     }
 
     //  QUE HACE ESE FADER, PARA QUIEN LO DIBUJA.
@@ -2149,11 +2236,50 @@ private:
     static_assert (sizeof (kFxDef) / sizeof (kFxDef[0]) == kNumFx,
                    "kFxDef tiene que tener una fila por tipo");
 
-    std::array<std::array<std::atomic<float>, kNumFx>, kNumPads> padSend {};
-    //  Bit i puesto = el pad i manda a algun efecto. Ver setPadSend.
+    //  EL RECORTE DEL PAD -uno por defecto- y EL ENVIO DEL CANAL. El producto
+    //  de los dos es lo que llega al bus. Ver `setPadRecorte` y `setCanalSend`.
+    std::array<std::array<std::atomic<float>, kNumFx>, kNumPads> padRecorte {};
+    std::array<std::atomic<juce::uint8>, kNumPads> padCanal {};
+    std::array<std::array<std::atomic<float>, kNumFx>, kNumCanales> canalSend {};
+    std::array<std::atomic<float>, kNumCanales> canalGain {};
+    std::array<std::atomic<bool>,  kNumCanales> canalMute {};
+    //  Bit i puesto = el pad i manda a algun efecto. Ver refrescaSendMask.
     std::atomic<std::uint64_t> padSendMask { 0 };
     static_assert (kNumPads <= 64, "padSendMask es de 64 bits");
+
+    //  UN BIT POR PAD, para que el hilo de audio no tenga que preguntar 1344
+    //  veces por bloque si alguien manda algo a algun sitio.
+    //
+    //  El reparto de envios recorria kNumPads x kNumFx entero en CADA bloque
+    //  -1344 cargas atomicas y 1344 pasos de suavizado- hiciera lo que hiciera
+    //  la maquina. Con los efectos apagados y ni un pad sonando el trabajo era
+    //  exactamente el mismo que con dieciseis pads sonando.
+    //
+    //  Y SE RECALCULA ENTERA y no un pad cada vez, que es lo que cambia al
+    //  entrar el canal: el envio ya no es del pad, asi que mover UN numero del
+    //  canal 3 cambia el bit de todos los pads que viven en el canal 3. Un
+    //  recorrido de 64 x 21 en el hilo de mensajes cuando alguien mueve un
+    //  fader es gratis; el fallo que evita es un pad que manda y al que el
+    //  bloque se salta.
+    void refrescaSendMask() noexcept
+    {
+        std::uint64_t m = 0;
+        for (int p = 0; p < kNumPads; ++p)
+        {
+            const int c = (int) padCanal[(size_t) p].load (std::memory_order_relaxed);
+            for (int f = 0; f < kNumFx; ++f)
+                if (canalSend[(size_t) c][(size_t) f].load (std::memory_order_relaxed) > 0.0f
+                    && padRecorte[(size_t) p][(size_t) f].load (std::memory_order_relaxed) > 0.0f)
+                    { m |= 1ull << (unsigned) p; break; }
+        }
+        padSendMask.store (m, std::memory_order_relaxed);
+    }
     std::array<std::array<float, kNumFx>, kNumPads> smSend {};    // audio thread only
+    //  El fader del canal, suavizado POR PAD y no por canal: el pad es quien lo
+    //  aplica -es su seco y sus envios los que se escalan- y guardarlo por
+    //  canal obligaria a leer dos suavizados en el mismo bucle para saber si
+    //  este pad ya termino de moverse. Nace en uno, como el fader.
+    std::array<float, kNumPads> smCanalDePad {};
     //  Que pads siguen moviendose. Sin esto, saltarse un pad congelaba su
     //  envio a medio cerrar. Solo del hilo de audio, como smSend.
     std::array<bool, kNumPads> smSendHot {};

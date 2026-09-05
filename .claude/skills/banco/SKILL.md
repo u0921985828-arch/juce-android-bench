@@ -28,7 +28,7 @@ codigo.
 
 | Se toco | Se corre |
 |---|---|
-| cualquier cosa de interfaz | `Tests/expo.py` (1400 corridas, ~7 min) |
+| cualquier cosa de interfaz | `Tests/expo.py` (1456 corridas, ~7 min) |
 | textos, rotulos, `T()` | `Tests/lang.py` **y** `expo.py` |
 | colores, tokens, pieles | `Tests/skins.py` |
 | motor, voces, efectos, envios | `build/StressTest_artefacts/Release/StressTest` |
@@ -41,6 +41,7 @@ codigo.
 | piano roll, notas, compas, EUCLIDES | `Tests/piano.py` |
 | clips de audio en la cancion, el gesto | `Tests/clips.py` |
 | las seis ranuras de la fila de efectos | `Tests/ranuras.py` |
+| los dieciseis canales de la mesa, el canal de un pad | `Tests/canales.py` |
 | el visor del plato y la familia de un efecto | `Tests/rack.py` |
 | la cuenta atras y el metronomo | `Tests/cuenta.py` |
 | el EQ de cinco bandas y su curva | `Tests/eq.py` |
@@ -80,7 +81,7 @@ ninguna otra ficha pasaba de 0.5- porque `StepGrid::setSource` se caia al
 18.5 a 3.8. **Se corre al cerrar cada tanda, antes de compilar la APK.**
 
 **Y `cpu.py` se corre SOLA.** Es la unica prueba de esta casa que mide por
-RELOJ, y con las 1400 corridas de `expo.py` compartiendo nucleos saco nueve
+RELOJ, y con las 1456 corridas de `expo.py` compartiendo nucleos saco nueve
 fichas «repintandose solas» —la cara a 19 fotogramas contra un tope de 3— con el
 codigo intacto. Una medida de tiempo con la maquina ocupada no es una medida.
 

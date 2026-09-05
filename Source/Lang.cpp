@@ -488,9 +488,10 @@ namespace
         { "Mantenlo pulsado para cogerle los mandos sin encenderlo", "",
           "hold it to take its knobs without switching it on",
           "长按可接管其旋钮而不开启", "اضغطه مطولًا لأخذ مقابضه دون تشغيله" },
-        { "RACK: un efecto y los 64 pads. EL PAD: lo que pasa por uno", "",
-          "RACK: one effect, 64 pads. THE PAD: what goes through one",
-          "机架：一个效果对 64 个音垫；此音垫：一个音垫的发送", "الرف: مؤثر واحد و64 بادًا. الباد: إرسالات باد واحد" },
+        { "RACK: un efecto y los 16 canales. EL PAD: a que canal va uno", "",
+          "RACK: one effect, 16 channels. THE PAD: which channel a pad goes to",
+          "机架：一个效果对 16 个通道；此音垫：该音垫进入哪个通道",
+          "الرف: مؤثر واحد و16 قناة. الباد: إلى أي قناة يدخل" },
         { "El XY deja los pads tocables debajo, para las dos manos", "",
           "XY leaves the pads playable underneath, for two hands",
           "XY 让下方音垫仍可弹奏，双手并用", "XY يترك الوسادات قابلة للعزف تحته، لليدين" },
@@ -535,9 +536,10 @@ namespace
         { "Mira la ganancia del pad y si hay un SOLO puesto en otro", "",
           "check the pad's gain, and whether another pad is SOLO",
           "检查该音垫增益，以及是否有其他音垫处于独奏", "افحص كسب الباد وهل هناك باد آخر منفرد" },
-        { "Mira su envio al efecto que estas oyendo", "",
-          "check its send to the effect you are listening to",
-          "检查它到当前所听效果的发送量", "افحص إرساله إلى المؤثر الذي تسمعه" },
+        { "Mira el envio de su CANAL al efecto que estas oyendo", "",
+          "check its CHANNEL send to the effect you are listening to",
+          "检查其通道到当前所听效果的发送量",
+          "افحص إرسال قناته إلى المؤثر الذي تسمعه" },
         { "Si la onda no reacciona estas ampliado: toca la tapa del medio", "",
           "if the wave will not move you are zoomed in: tap the middle cap",
           "若波形无反应说明已放大：按中间的键", "إن لم تستجب الموجة فأنت مكبّر: انقر المفتاح الأوسط" },
@@ -789,15 +791,15 @@ namespace
         //  ranuras y un menu detras, esa frase se queda vieja con cada efecto
         //  que entra: se dice lo que la fila ES y no cuantos hay dentro.
         { "Seis ranuras y un menu de efectos para llenarlas. Una vacia pone «+» "
-          "y lo abre. Son de la maquina, no del pad: cada pad decide cuanto pasa "
-          "por ellos.", "",
+          "y lo abre. Son del CANAL en el que este el pad que tengas elegido: "
+          "cambiar de pad cambia la fila.", "",
           "Six slots and a menu of effects to fill them. An empty one shows «+» "
-          "and opens it. They belong to the machine and not to the pad: each pad "
-          "decides how much goes through them.",
-          "六个插槽，配有效果菜单来填充。空槽显示「+」，点触即打开。效果属于整机而非单个音垫："
-          "各音垫自行决定经过效果的量。",
+          "and opens it. They belong to the CHANNEL the pad you picked is in: "
+          "changing pad changes the row.",
+          "六个插槽，配有效果菜单来填充。空槽显示「+」，点触即打开。"
+          "效果属于所选音垫所在的通道：切换音垫即切换该行。",
           "ستة مقاعد وقائمة مؤثرات لملئها. المقعد الفارغ يعرض «+» ويفتحها. هي ملك "
-          "للآلة لا للباد: كل باد يقرر كم يمر منه عبرها." },
+          "للقناة التي فيها الباد المختار: تغيير الباد يغير الصف." },
 
         { "Los tres de arriba mueven el efecto que tengas abierto. Debajo de cada "
           "uno pone lo que hace en ese momento.", "",
@@ -845,12 +847,18 @@ namespace
           "القص والدوزنة والمرشح والمغلف والحلقة. و«التقطيع التلقائي» يقسم اللفة "
           "عند ضرباتها ويوزعها على البادات." },
 
-        { "La mesa pone los dieciseis a su nivel. El RACK dice cuanto de cada pad "
-          "pasa por cada efecto, y cuales sustituyen y cuales suman.", "",
-          "The mixer sets all sixteen to their level. The RACK says how much of "
-          "each pad goes through each effect, and which ones replace and which add.",
-          "混音台设定十六个音垫的电平。机架页显示各音垫经过各效果的量，以及哪些是替换、哪些是叠加。",
-          "المازج يضبط مستوى الستة عشر. و«الرف» يبين كم يمر من كل باد عبر كل مؤثر، وأيها يستبدل وأيها يضيف." },
+        { "La mesa tiene dieciseis PADS y dieciseis CANALES: cada pad entra en "
+          "uno, y el canal es el que pasa por los efectos. El RACK dice cuanto "
+          "de cada canal pasa por cada uno, y cuales sustituyen y cuales suman.", "",
+          "The mixer has sixteen PADS and sixteen CHANNELS: each pad goes into "
+          "one, and it is the channel that runs through the effects. The RACK "
+          "says how much of each channel goes through each one, and which "
+          "replace and which add.",
+          "混音台有十六个音垫与十六个通道：每个音垫进入一个通道，由通道经过效果。"
+          "机架页显示各通道经过各效果的量，以及哪些是替换、哪些是叠加。",
+          "المازج فيه ستة عشر بادًا وستة عشرة قناة: كل باد يدخل قناة، والقناة هي "
+          "التي تمر عبر المؤثرات. و«الرف» يبين كم يمر من كل قناة عبر كل مؤثر، "
+          "وأيها يستبدل وأيها يضيف." },
 
         { "Los patrones colocados en el tiempo, en cuatro carriles. Un bloque "
           "dura lo que ocupa, no lo que dure su patron.", "",
@@ -958,19 +966,21 @@ namespace
           "في «التتابع» الشبكة ستة عشر خطوة في ستة عشر بادًا: المس خانة فتُعزف هناك. "
           "وعند اختيار خطوة تظهر مقابضها أسفلها - النغمة والقوة والتكرار والمرشح "
           "والأقفال. وفي «البيانو» تكتب بالنغمة، بنوتات تدوم ما تشاء." },
-        { "Cada pad tiene su filtro y su recorte. Los efectos son de la "
-          "maquina y no del pad: se abren desde la cara y cada pad decide "
-          "cuanto pasa por cada uno, en el RACK. La ficha XY mueve dos a la "
-          "vez con el dedo.", "",
+        { "Cada pad tiene su filtro y su recorte. Los efectos son de un CANAL: "
+          "el pad elige el suyo en sus ajustes, y cambiar de pad cambia la fila "
+          "de efectos de la cara. Cuanto pasa por cada uno se pone en el RACK. "
+          "La ficha XY mueve dos a la vez con el dedo.", "",
           "Every pad has its own filter and its own trim. The effects belong "
-          "to the machine and not to the pad: you switch them on from the "
-          "front and each pad decides how much goes through each one, in the "
-          "RACK. The XY card moves two of them at once with one finger.",
-          "每个音垫都有自己的滤波与裁切。效果属于整机而非单个音垫："
-          "在面板上开启，各音垫在机架页决定经过各效果的量。XY 页可用一根手指同时控制两个参数。",
-          "لكل باد مرشحه وقصّه. المؤثرات ملك للآلة لا للباد: "
-          "تُشغَّل من الواجهة ويقرر كل باد كم يمر منه عبر كل مؤثر في «الرف». "
-          "وبطاقة XY تحرك اثنين منها معًا بإصبع واحد." },
+          "to a CHANNEL: a pad picks its own in its settings, and changing pad "
+          "changes the effect row on the front. How much goes through each one "
+          "is set in the RACK. The XY card moves two of them at once with one "
+          "finger.",
+          "每个音垫都有自己的滤波与裁切。效果属于通道：音垫在其设置中选择通道，"
+          "切换音垫即切换面板上的效果行。经过各效果的量在机架页设定。"
+          "XY 页可用一根手指同时控制两个参数。",
+          "لكل باد مرشحه وقصّه. المؤثرات ملك لقناة: يختار الباد قناته في إعداداته، "
+          "وتغيير الباد يغير صف المؤثرات في الواجهة. وكم يمر عبر كل مؤثر يُضبط في "
+          "«الرف». وبطاقة XY تحرك اثنين منها معًا بإصبع واحد." },
         { "EXPORTAR saca la mezcla entera o una pista por pad, en WAV o en OGG. "
           "El proyecto se guarda solo, y en AJUSTES estan el idioma, las cuatro "
           "carcasas y el MANUAL, que cuenta todo esto con calma.", "",
@@ -1285,6 +1295,23 @@ namespace
 
         // --- MIX / RACK / SONG ---------------------------------------------
         { "RACK",           "",         "RACK",       "机架",       "الرف" },
+        //  LA MESA ENTRE LOS PADS Y LOS EFECTOS. Claves propias y no `MEZCLA`
+        //  ni `ENVIOS`, que ya significan otra cosa en esta app: reaprovechar
+        //  una clave por parecerse en espanol sale mal en las otras tres, que
+        //  es lo que costo ATRAS y EMPEZAR en el tour.
+        //
+        //  Y «CANAL» a secas es clave nueva aunque la palabra ya este en la
+        //  tabla: lo que hay es «Ganancia canal %1», que es el nombre para
+        //  TalkBack del fader de un PAD en la mesa — o sea la palabra cogida
+        //  por lo que no era, y que esta tanda corrige a «pad».
+        { "CANAL",          "",         "CHANNEL",    "通道",       "قناة" },
+        { "CANALES",        "",         "CHANNELS",   "通道",       "القنوات" },
+        { "CANAL %1",       "",         "CHANNEL %1", "通道 %1",    "قناة %1" },
+        { "%1 PADS",        "",         "%1 PADS",    "%1 音垫",    "%1 باد" },
+        { "cuanto de este canal pasa por cada efecto", "",
+                                        "how much of this channel goes through each effect",
+                                                      "该通道有多少经过每个效果",
+                                                      "مقدار ما يمر من هذه القناة عبر كل تأثير" },
         { "SIN SOLO",       "",         "NO SOLO",    "取消独奏", "إلغاء الإفراد" },
         { "SOLO ACTIVO",    "",         "SOLO ACTIVE","独奏中",  "إفراد فعّال" },
         //  SOLO DESDE LA CARA. La palabra es la misma en las cuatro lenguas
@@ -1399,8 +1426,15 @@ namespace
         { "Control %1",     "",         "Control %1", "控制 %1",    "تحكم %1" },
         { "Silencio %1",    "",         "Mute %1",    "静音 %1",    "كتم %1" },
         { "Solo %1",        "",         "Solo %1",    "独奏 %1",    "إفراد %1" },
-        { "Ganancia canal %1", "",      "Gain channel %1",   "通道 %1 增益", "كسب القناة %1" },
-        { "Paneo canal %1", "",         "Pan channel %1", "通道 %1 声像", "اتزان القناة %1" },
+        //  DEL PAD Y NO «DEL CANAL». Estas dos nombran el fader y el pan de un
+        //  PAD en la mesa, y la palabra «canal» la coge ahora la mesa que hay
+        //  entre los pads y los efectos — dos cosas con el mismo nombre son dos
+        //  cosas que se confunden, y para quien no ve la pantalla es lo unico
+        //  que las distingue.
+        { "Ganancia pad %1", "",      "Gain pad %1",   "音垫 %1 增益", "كسب الباد %1" },
+        { "Paneo pad %1",  "",        "Pan pad %1",    "音垫 %1 声像", "اتزان الباد %1" },
+        { "Ganancia canal %1", "",    "Gain channel %1", "通道 %1 增益", "كسب القناة %1" },
+        { "Silencio canal %1", "",    "Mute channel %1", "通道 %1 静音", "كتم القناة %1" },
         { "semitonos",      "",         "semitones",  "半音",       "أنصاف نغمات" },
         { "centesimas",     "",         "cents",      "音分",       "سنتات" },
         { "del pad",        "",         "of the pad", "音垫的",     "للباد" },

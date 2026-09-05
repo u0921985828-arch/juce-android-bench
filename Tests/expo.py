@@ -29,7 +29,7 @@ SIZES = [
     ("915x412",  "LANDSCAPE — the orientation nobody tests"),
 ]
 LANGS = ["es", "en", "zh", "ar"]
-SHEETS = ["", "plato", "songm", "pads", "pad2", "pad3", "sec", "secp", "paso", "eq", "eqb", "song", "songa", "piano", "pianod", "pick", "mix", "xy", "set", "asp", "proj", "gest", "midi", "lang", "manual", "rack", "rackf", "ranura", "ranural", "chop", "inst", "instd", "instg", "vst", "expo", "tour", "tour1", "tour3", "tour6", "tour10", "tourf", "browse", "browsedir",
+SHEETS = ["", "plato", "songm", "pads", "pad2", "pad3", "sec", "secp", "paso", "eq", "eqb", "song", "songa", "piano", "pianod", "pick", "mix", "xy", "set", "asp", "proj", "gest", "midi", "lang", "manual", "mixc", "canal", "rack", "rackf", "ranura", "ranural", "chop", "inst", "instd", "instg", "vst", "expo", "tour", "tour1", "tour3", "tour6", "tour10", "tourf", "browse", "browsedir",
 #  Y LA MISMA MAQUINA CON TRABAJO DENTRO. Todo lo de arriba se mide con
 #  un proyecto vacio o con el kit de fabrica, y casi todo lo que un
 #  rotulo puede romper solo aparece lleno: un nombre de pad que es el
@@ -427,9 +427,15 @@ def corre_y_juzga(combo, casa):
     #  era de la app: eran corridas midiendo el estado de la de antes.
     #
     #  Cuesta los 400 ms de la primera apertura -la fabrica se sintetiza otra
-    #  vez- y son 196 corridas de 1400.
+    #  vez- y son 224 corridas de 1456.
+    #  Y `mixc` por lo mismo: para medir la pagina de CANALES hay que repartir
+    #  los sesenta y cuatro pads por los dieciseis canales -si no, las dieciseis
+    #  tiras dicen «0 PADS» y el renglon que mas puede romper un rotulo no se
+    #  mide nunca-, y eso lo escribe la sesion igual que lo de `llena`. Sin casa
+    #  propia, la corrida siguiente del mismo trabajador abriria con los pads
+    #  repartidos y midiendo un estado que nadie puso.
     propia = None
-    if sheet.startswith ("llena"):
+    if sheet.startswith ("llena") or sheet == "mixc":
         propia = tempfile.mkdtemp (prefix="zati-llena-")
         casa = propia
     try:

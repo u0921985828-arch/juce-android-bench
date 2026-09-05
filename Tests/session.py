@@ -323,7 +323,7 @@ def main():
 
     #  --- Y LOS PROYECTOS DE OTRA EPOCA ------------------------------------
     vj = viejos()
-    viejo_ok = vj is not None and len (vj) == 4
+    viejo_ok = vj is not None and len (vj) == 5
     print()
     if vj:
         for nombre, d in sorted (vj.items()):
@@ -341,11 +341,29 @@ def main():
             #  primero vuelve con el 0.30 que trae escrito. Con la rama del 1.0
             #  puesta otra vez, los 64 pads abren con los cinco efectos nuevos
             #  a tope y `padSendMask` a sesenta y cuatro bits.
-            trae = nombre.startswith ("04")
-            e0 = 0.30 if trae else 1.0
-            en = 0.00 if trae else 1.0
+            #
+            #  Y EL QUINTO ES LA OTRA RAMA, la unica que los cuatro anteriores
+            #  no pueden tocar: TRAE MESA. Los cuatro se guardaron antes de que
+            #  los canales existieran, asi que los cuatro entran por «este
+            #  fichero no trae mesa» y de ahi salen el recorte y el
+            #  `canalSend[0]` deducidos — o sea que esa rama se probaba cuatro
+            #  veces y la otra ninguna. El quinto pone el pad 0 en el CANAL 2,
+            #  con el canal mandando 0.60 al tipo 0 y el pad con un recorte de
+            #  0.50: lo que llega al efecto es el PRODUCTO, 0.30. Con la rama
+            #  de la mesa quitada, el pad vuelve al canal 0, el canal 0 se
+            #  rellena desde los `sends` del pad y sale 0.50.
+            trae  = nombre.startswith ("04")
+            mesa  = nombre.startswith ("05")
+            e0 = 0.30 if (trae or mesa) else 1.0
+            en = 0.00 if (trae or mesa) else 1.0
             bien = (abs (d["envio0"] - e0) < 0.01
                     and abs (d["envio_nuevo"] - en) < 0.01
+                    #  Las DOS mitades del producto por separado, que es lo
+                    #  unico que separa «suena igual» de «suena igual por
+                    #  casualidad»: el recorte es lo que el fichero traia y el
+                    #  envio del canal lo que `applyState` dedujo o leyo.
+                    and abs (d["recorte0"] - (0.50 if mesa else (0.30 if trae else 1.0))) < 0.01
+                    and abs (d["csend0"] - (0.0 if mesa else 1.0)) < 0.01
                     and d["autocorte0"] == 1
                     and d["vel0"] == 127 and d["roll0"] == 1
                     #  Y lo que el fichero no menciona no se HEREDA del proyecto
@@ -355,7 +373,18 @@ def main():
                     #  que la corrida anterior le dejo puestos.
                     and abs (d["gain20"] - 0.85) < 0.01 and abs (d["pan20"]) < 0.01
                     and d["corte20"] >= 19999 and d["reves20"] == 0
-                    and abs (d["envio20"]) < 0.01
+                    #  El pad 20 no esta en NINGUNO de los cinco ficheros, y lo
+                    #  que se mira de el es su RECORTE y no lo que le llega al
+                    #  efecto: desde que los envios son del canal, lo que llega
+                    #  es `canalSend[canal] x padRecorte[pad]` y el primero es
+                    #  de la MAQUINA — un fichero de la epoca de «cada pad va
+                    #  entero a todos» deja el canal 0 en uno y eso alcanza a
+                    #  los sesenta y cuatro, que es exactamente como sonaba ese
+                    #  dia. Lo que no puede pasar es que el pad vuelva con el
+                    #  0.75 que el proyecto ANTERIOR le dejo, ni en el canal 5
+                    #  donde lo dejo.
+                    and abs (d["recorte20"] - 1.0) < 0.01
+                    and d["canal20"] == 0
                     #  Y la cancion: sin <song> tiene que quedar VACIA. Con el
                     #  fallo, abrir un proyecto sin linea de tiempo dejaba
                     #  sonando el arreglo del que estuviera abierto.
@@ -369,11 +398,12 @@ def main():
                     #  haber tocado nada.
                     and d.get ("ranuras") == [0, 1, 2, 3, 4, 5])
             viejo_ok = viejo_ok and bien
-            print ("  %-20s envio0 %.2f  ultimo %.2f  pad20 g%.2f p%.2f c%.0f r%d e%.2f"
-                   "  cancion %d  ranuras %s  %s"
-                   % (nombre, d["envio0"], d["envio_nuevo"], d["gain20"], d["pan20"],
-                      d["corte20"], d["reves20"], d["envio20"], d["cancion"],
-                      d.get ("ranuras", "?"),
+            print ("  %-20s envio0 %.2f (%.2f x %.2f)  ultimo %.2f  pad20 g%.2f "
+                   "p%.2f c%.0f r%d e%.2f canal%d  cancion %d  ranuras %s  %s"
+                   % (nombre, d["envio0"], d["csend0"], d["recorte0"],
+                      d["envio_nuevo"], d["gain20"], d["pan20"],
+                      d["corte20"], d["reves20"], d["envio20"], d["canal20"],
+                      d["cancion"], d.get ("ranuras", "?"),
                       "correcto" if bien else "HEREDA DEL ANTERIOR"))
     else:
         print ("  los proyectos congelados no volvieron")
