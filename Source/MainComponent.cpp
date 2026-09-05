@@ -5123,6 +5123,13 @@ void MainComponent::showMixPage (MixPage p)
         if (auto* f = canFaders[c]) { f->setVisible (on); if (! on) f->setBounds ({}); }
         if (auto* m = canMutes[c])  { m->setVisible (on); if (! on) m->setBounds ({}); }
     }
+    //  Y SIN SOLO tampoco: el solo es de un PAD, y en la pagina de CANALES no
+    //  hay una sola tapa de solo que quitar. Un control que no puede hacer
+    //  nada visible en la pagina donde esta es lo que esta casa llama ruido.
+    //  Apagar *Y* vaciar los limites, las dos cosas.
+    mixClearSolo.setVisible (p == mixPagePads);
+    if (p != mixPagePads) mixClearSolo.setBounds ({});
+
     //  Los cuatro chips de banco son de la pagina de PADS: un canal no vive en
     //  un banco.
     for (auto* t : mixBankBtns) if (t != nullptr)
@@ -11198,7 +11205,14 @@ void MainComponent::tourPrepara (int paso)
         case 8:  openSheet (seqSheet, secButton); showSeqPage (seqPagePiano); refreshPiano(); break;
         case 9:  showSeqPage (seqPageStep);  openSheet (seqSheet, secButton); break;
         case 10: showPadPage (padPageTrim);  openSheet (padSheet, padsButton); break;
-        case 11: refreshMixStrip();          openSheet (mixSheet, mixButton);  break;
+        //  Y EL PASO 11 ABRE LA PAGINA QUE NOMBRA. Su texto dice «la mesa tiene
+        //  dieciseis PADS y dieciseis CANALES», y sin fijar la pagina la mesa
+        //  abre en la que hubiera - por defecto PADS, o sea que la palabra
+        //  CANALES no se ve por ningun sitio. Es el residuo de siempre: los
+        //  pasos 6 a 9 llaman a showSeqPage y el 10 a showPadPage justo por
+        //  esto, y este se habia quedado sin su linea.
+        case 11: showMixPage (mixPageCanales); refreshMixStrip();
+                 openSheet (mixSheet, mixButton);  break;
         case 12: openSheet (songSheet, songButton); break;
         case 13: exportStatus.clear(); exportOk = false; destinoCache = juce::File();
                  openSheet (exportSheet, setButton); break;

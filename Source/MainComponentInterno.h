@@ -342,7 +342,7 @@ namespace
         { "MEZCLA Y EFECTOS", {
             "Tocar un efecto lo enciende y le da los tres mandos",
             "Mantenlo pulsado para cogerle los mandos sin encenderlo",
-            "RACK: un efecto y los 16 canales. EL PAD: a que canal va uno",
+            "La mesa: PADS y CANALES. EL PAD elige el suyo y el RACK es de un canal",
             "El XY deja los pads tocables debajo, para las dos manos",
             "Verde hasta -12 dB, amarillo hasta -3, y el rojo se queda puesto" } },
         { "GUARDAR Y EXPORTAR", {

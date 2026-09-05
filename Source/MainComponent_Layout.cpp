@@ -3268,9 +3268,20 @@ void MainComponent::resized()
         //  por debajo del dedo minimo de 40. Es el mismo fallo que
         //  layoutModuleBar tenia con el mismo numero, escrito a mano aqui.
         auto bottom = inner.removeFromBottom (Metrics::btn);
-        rackButton.setBounds (bottom.removeFromRight (bottom.getWidth() / 3)
-                                  .reduced (Metrics::halfGap, (Metrics::btn - Metrics::hit) / 2));
-        mixClearSolo.setBounds (bottom.reduced (Metrics::halfGap, (Metrics::btn - Metrics::hit) / 2));
+        //  En CANALES la fila es SOLO el RACK, y se lleva el renglon entero:
+        //  SIN SOLO no se maqueta alli -ver showMixPage- porque el solo es de
+        //  un pad y esa pagina no tiene ninguno.
+        if (mixPage == mixPageCanales)
+        {
+            rackButton.setBounds (bottom.reduced (Metrics::halfGap,
+                                                  (Metrics::btn - Metrics::hit) / 2));
+        }
+        else
+        {
+            rackButton.setBounds (bottom.removeFromRight (bottom.getWidth() / 3)
+                                      .reduced (Metrics::halfGap, (Metrics::btn - Metrics::hit) / 2));
+            mixClearSolo.setBounds (bottom.reduced (Metrics::halfGap, (Metrics::btn - Metrics::hit) / 2));
+        }
         inner.removeFromBottom (Metrics::xs);
 
         //  EL MASTER, encima de las dos tapas y debajo de los canales. Fuera
@@ -4874,6 +4885,9 @@ void MainComponent::resized()
         //  tapa deja de decir SALTAR y ofrece seguir con los once que quedan.
         UiAudit::tourSig     = tourNextBtn.getButtonText().toStdString();
         UiAudit::tourTercera = tourSkipBtn.getButtonText().toStdString();
+        //  Y en que pagina quedo la mesa, que es lo unico que separa «el
+        //  paso 11 abre la mesa» de «la abre donde lo explica».
+        UiAudit::tourMixPag  = (mixPage == mixPageCanales ? 1 : 0);
 
         const int anchoDock = getWidth();
         const int alto = Metrics::md * 2 + 16 + Metrics::xs

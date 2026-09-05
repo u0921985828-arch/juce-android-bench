@@ -326,6 +326,12 @@ namespace UiAudit
     //  Lo que dicen las dos salidas de la tarjeta: la que avanza y la tercera,
     //  que en el paso de la PUERTA deja de decir SALTAR. Ver `tourSkipCaption`.
     inline std::string tourSig, tourTercera;
+    //  Y EN QUE PAGINA QUEDO LA MESA. El paso 11 nombra los dieciseis
+    //  CANALES y abria la mesa en la pagina que hubiera - por defecto
+    //  PADS - asi que la palabra no se veia. Es una CIFRA y no un si/no:
+    //  dice QUE pagina quedo, asi que caza tambien el caso contrario, que
+    //  otro paso deje la mesa en CANALES, sin escribir una segunda regla.
+    inline int tourMixPag = 0;
 
     inline int cabezalPiano = 0;
     //  Y cuantas veces se ha ALIMENTADO la pagina del piano. Son dos cifras y
@@ -823,7 +829,8 @@ namespace UiAudit
                       //  ofrecer seguir. Sin estas dos cadenas, partir el tour
                       //  y no partirlo dan la misma corrida en verde.
                       << ",\"sig\":\"" << tourSig << "\""
-                      << ",\"tercera\":\"" << tourTercera << "\"}" << std::endl;
+                      << ",\"tercera\":\"" << tourTercera << "\""
+                      << ",\"mixpag\":" << tourMixPag << "}" << std::endl;
         walk (root, root, "root", 0);
 
         if (padSource != nullptr)

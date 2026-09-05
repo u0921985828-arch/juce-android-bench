@@ -64,6 +64,7 @@ def main():
 
     size = sys.argv[1] if len (sys.argv) > 1 else "412x915"
     malas = []
+    pags  = {}
     print ("%-6s %10s   %s" % ("paso", "objetivo", "que pasa"))
     for n in range (PASOS):
         d = foco (n, size)
@@ -71,6 +72,7 @@ def main():
             malas.append ("el paso %d no contesto" % n); continue
         w, h = d.get ("focoW", 0), d.get ("focoH", 0)
         vacio = (w <= 0 or h <= 0)
+        pags[n] = d.get ("mixpag", -1)
 
         if n == PORTADA:
             estado = "portada, sin objetivo a proposito"
@@ -86,6 +88,33 @@ def main():
         else:
             estado = "correcto"
         print ("%-6d %10s   %s" % (n, "%dx%d" % (w, h), estado))
+
+    #  --- Y EL PASO ABRE LA PAGINA QUE NOMBRA -----------------------------
+    #
+    #  El paso 11 dice «la mesa tiene dieciseis PADS y dieciseis CANALES» y
+    #  abria la mesa sin tocar `mixPage`, o sea en la que hubiera - por defecto
+    #  PADS, asi que la palabra CANALES no se veia por ningun sitio. Es el
+    #  residuo de siempre, el mismo que hizo que los pasos 6 a 9 llamen a
+    #  `showSeqPage` explicitamente.
+    #
+    #  Ninguna de las reglas de arriba puede verlo: el objetivo del paso es
+    #  `rackButton`, que se maqueta en las DOS paginas, asi que el anillo sale
+    #  igual de bien con la mesa abierta donde no toca.
+    #
+    #  Es una CIFRA y no un si/no -dice QUE pagina quedo- asi que caza tambien
+    #  el caso contrario, que otro paso deje la mesa en CANALES, sin escribir
+    #  una segunda regla.
+    print()
+    CANALES = 11
+    print ("la mesa queda en: %s" % ", ".join ("%d:%s" % (n, "CANALES" if v == 1
+                                                          else "PADS" if v == 0 else "?")
+                                               for n, v in sorted (pags.items())
+                                               if v != 0))
+    if pags.get (CANALES) != 1:
+        malas.append ("el paso %d habla de los canales y abre la mesa en PADS" % CANALES)
+    for n, v in sorted (pags.items()):
+        if n != CANALES and v != 0:
+            malas.append ("el paso %d deja la mesa en la pagina %d" % (n, v))
 
     #  --- LA BIENVENIDA SON CUATRO PASOS Y UNA PUERTA ---------------------
     #
