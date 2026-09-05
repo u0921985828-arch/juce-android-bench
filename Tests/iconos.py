@@ -40,7 +40,21 @@ ROOT = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
 APP  = os.environ.get ("ZATI_BIN") or os.path.join (
         ROOT, "build", "Zati_artefacts", "Release", "Zati")
 
-N = 24                     # lado del rasterizado
+N = 24                     # lado del rasterizado para la GEOMETRIA
+#  Y EL DE LA PRUEBA DE PARES ES OTRO, que lo dice la app.
+#
+#  Los dos numeros existen porque son dos preguntas. La caja, la tinta y lo
+#  que llena se miden en la rejilla de 24, que es donde el dibujo se ESCRIBE.
+#  Que dos iconos sean distintos se mide donde se LEE, y eso es
+#  `Iconos::kLadoMin` - trece pixeles, el lado mas pequeño al que `reparteTapa`
+#  saca un dibujo.
+#
+#  Y no es lo mismo: con la prueba puesta a 24 pasaban dos pares que a trece
+#  son el MISMO dibujo. `insEp` era `piano` con una tecla mas -0.3676 a 24,
+#  0.1987 a trece- y `vaciar` era `pad` con una equis en vez de un punto
+#  -0.3676 y 0.2378-. Los dos redibujados: el piano electrico es la varilla que
+#  el martillo golpea, y VACIAR se queda sin su caja.
+N_LEE = None               # lo publica la app: Iconos::kLadoMin
 
 #  LOS LISTONES. Salen de la primera medida y no de una opinion: se corrio el
 #  juego entero, se miraron los numeros y se puso el liston donde separa lo
@@ -54,10 +68,10 @@ LLENA_MIN  = 0.70          # el lado mayor del dibujo, en fraccion de la caja
 DISTINTO   = 0.25
 
 
-def corre():
+def corre (lado = None):
     env = dict (os.environ)
     env.update ({"ZATI_AUDIT": "1", "ZATI_SIZE": "412x915", "ZATI_LANG": "es",
-                 "ZATI_OPEN": "pads", "ZATI_ICONOS": str (N)})
+                 "ZATI_OPEN": "pads", "ZATI_ICONOS": str (lado or N)})
     r = subprocess.run ([APP], env=env, capture_output=True, text=True, timeout=300)
 
     iconos = []
@@ -126,6 +140,74 @@ def caja (m, n, umbral=0.15):
     return (max (xs) - min (xs) + 1), (max (ys) - min (ys) + 1)
 
 
+#  ==========================================================================
+#  EL DIBUJO Y LA PALABRA COMPARTEN RENGLON.
+#
+#  La queja llego mirando el telefono - "los sprites deben estar centrados en
+#  altura con el texto" - y ninguna de las once reglas de `expo.py` puede
+#  verla: un icono descentrado se maqueta perfecto, no solapa, no se sale, no
+#  corta el rotulo y esta traducido.
+#
+#  Y LA PRIMERA MEDIDA SE EQUIVOCO, que a estas alturas es el patron. Se
+#  miraron los LIMITES NOMINALES del camino - los `x,y,w,h` que esta misma
+#  prueba imprime - y salieron DIECIOCHO descentrados, con `deshacer` a 2.73
+#  unidades de 24. No lo estaban: `Iconos::dibuja` centra por la TINTA desde
+#  que todos ocupan la misma caja, asi que lo nominal no es lo que se pinta.
+#  Se mide lo PINTADO y contra el ROTULO, que es la pregunta que se hizo.
+#
+#  Con DOS cifras, que es lo que separa las dos formas de que esto se lea mal:
+#  que compartan renglon Y que guarden la misma proporcion de una fila a otra.
+#  Un icono perfectamente centrado que pesa el doble en una pestana que en una
+#  tapa se lee igual de mal, y es lo que habia: 1.80 alturas de letra en una
+#  pestana de 26 px contra 1.32 en una tapa de 48.
+TAPA_DESVIO = 0.50         # px entre el centro de tinta del dibujo y el del rotulo
+TAPA_SPREAD = 0.25         # cuanto puede abrirse el lado del icono por altura de letra
+
+
+def tapas():
+    env = dict (os.environ)
+    env.update ({"ZATI_AUDIT": "1", "ZATI_SIZE": "412x915", "ZATI_LANG": "es",
+                 "ZATI_OPEN": "pads", "ZATI_TAPA": "8"})
+    r = subprocess.run ([APP], env=env, capture_output=True, text=True, timeout=300)
+    out = []
+    for linea in r.stdout.splitlines():
+        linea = linea.strip()
+        if linea.startswith ('{') and '"tapa"' in linea:
+            try:    out.append (json.loads (linea))
+            except Exception: pass
+    return out
+
+
+def juzgaTapas (fallos):
+    filas = tapas()
+    if not filas:
+        fallos.append ("la app no volco ninguna tapa: no se mide el renglon")
+        return
+
+    print ("\n== el dibujo y la palabra, en %d tapas ==" % len (filas))
+    print ("%-9s %8s %6s %8s %8s %8s" % ("tapa", "wxh", "letra", "lado", "desvio", "lado/letra"))
+    razones = []
+    for f in filas:
+        ci = (f["icono"][0] + f["icono"][1]) / 2.0
+        ct = (f["texto"][0] + f["texto"][1]) / 2.0
+        d  = ci - ct
+        razon = f["lado"] / max (1.0, f["letra"])
+        razones.append (razon)
+        marca = ""
+        if abs (d) > TAPA_DESVIO:
+            marca = "  DESCENTRADO"
+            fallos.append ("%s: el dibujo va %+.2f px del rotulo" % (f["tapa"], d))
+        print ("%-9s %4dx%-3d %6.2f %8d %+8.2f %8.2f%s"
+               % (f["tapa"], f["w"], f["h"], f["letra"], f["lado"], d, razon, marca))
+
+    abre = max (razones) - min (razones)
+    print ("   proporcion %.2f a %.2f  (se abre %.2f, liston %.2f)"
+           % (min (razones), max (razones), abre, TAPA_SPREAD))
+    if abre > TAPA_SPREAD:
+        fallos.append ("el dibujo pesa %.2f alturas de letra en una fila y %.2f en otra"
+                       % (max (razones), min (razones)))
+
+
 def main():
     if not os.path.exists (APP):
         sys.exit ("no hay binario: compila primero (cmake --build build --target Zati)")
@@ -165,7 +247,15 @@ def main():
         print ("%-14s %6.3f %6.2f   %5.1f %5.1f %5.1f %5.1f%s"
                % (nombre, tinta, llena, x0, y0, d["w"], d["h"], marca))
 
-    #  --- los que se parecen ------------------------------------------------
+    #  --- los que se parecen, AL TAMANO AL QUE SE LEEN ----------------------
+    lee = iconos[0].get ("min") or 13
+    leidos, _ = corre (lee)
+    borrosos = {}
+    for d in leidos:
+        m, n = mapa (d)
+        borrosos[d["icono"]] = desenfoca (m, n)
+    print ("\n== y comparados al lado mas pequeno al que la app los dibuja: %d px ==" % lee)
+
     nombres = sorted (borrosos)
     pares = []
     for i in range (len (nombres)):
@@ -190,6 +280,8 @@ def main():
     for d, a, b in pares:
         if d < DISTINTO and (a, b) not in ESTADOS and (b, a) not in ESTADOS:
             fallos.append ("%s y %s son el mismo dibujo (%.4f)" % (a, b, d))
+
+    juzgaTapas (fallos)
 
     print()
     if fallos:

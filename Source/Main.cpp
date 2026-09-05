@@ -603,6 +603,10 @@ public:
                     {
                         UiAudit::volcadoIconos (juce::jlimit (8, 64, ic.getIntValue() > 1 ? ic.getIntValue() : 24));
                     }
+                    else if (const auto tp = UiAudit::env ("ZATI_TAPA"); tp.isNotEmpty())
+                    {
+                        UiAudit::volcadoTapa (tp.getIntValue() > 1 ? tp.getIntValue() : 8);
+                    }
                     else if (const auto ex = UiAudit::env ("ZATI_EXPORT"); ex.isNotEmpty())
                     {
                         //  asinc / cancel se van por el camino de verdad - hilo

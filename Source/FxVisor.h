@@ -63,14 +63,58 @@ namespace FxVisor
     //  asi que con menos ventana el retenedor no daria ni dos escalones.
     static constexpr int kVentanaBit = 128;
 
+    //  Y LAS DOS DE LA FAMILIA DE CARACTER, que no son la de DLY y REV a
+    //  proposito: la de PIT tiene que enseñar el diente del grano mas largo
+    //  -120 ms- y la de FRZ dos vueltas de la ventana mas larga -500-. Con los
+    //  dos segundos compartidos, la de PIT daria veinte dientes en cuarenta y
+    //  ocho columnas y la de FRZ cien. Una ventana compartida vale cuando las
+    //  dos escalas se parecen; aqui no.
+    static constexpr float kVentanaPit = 480.0f;
+    static constexpr float kVentanaFrz = 1000.0f;
+    //  Y la de TRN, que es lo que dura un golpe con su cola.
+    static constexpr float kVentanaTrn = 300.0f;
+
     //  LOS DOS QUE SUMAN DIBUJAN TIEMPO Y LOS NUEVE QUE SUSTITUYEN DIBUJAN
     //  NIVEL. No es la misma pregunta que `AudioEngine::sustituye` aunque hoy
     //  den lo mismo: aquella dice lo que el motor HACE con el camino seco y
     //  esta dice que forma tiene el dibujo. Escritas por separado a proposito,
     //  o el banco no podria comprobar la primera contra la segunda.
-    inline bool deTiempo (int f) noexcept
+    //  Y CADA UNO CON SU VENTANA, que es lo que la familia crecio a pedir. La
+    //  compartida vale mientras las escalas se parezcan: DLY y REV van los dos
+    //  en segundos. PIT dibuja un diente de 20 a 120 ms y FRZ una vuelta de 20
+    //  a 500, asi que con los dos segundos compartidos saldrian veinte y cien
+    //  dientes en cuarenta y ocho columnas. Devuelve 0 el que no dibuja
+    //  tiempo, que es lo que `deTiempo` pregunta.
+    inline float ventanaDe (int f) noexcept
     {
-        return f == AudioEngine::kFxDly || f == AudioEngine::kFxRev;
+        switch (f)
+        {
+            case AudioEngine::kFxDly:
+            case AudioEngine::kFxRev: return kVentanaMs;
+            case AudioEngine::kFxPit: return kVentanaPit;
+            case AudioEngine::kFxTrn: return kVentanaTrn;
+            case AudioEngine::kFxFrz: return kVentanaFrz;
+            default:                  return 0.0f;
+        }
+    }
+
+    inline bool deTiempo (int f) noexcept { return ventanaDe (f) > 0.0f; }
+
+    //  LOS QUE DIBUJAN UNA ONDA. BIT desde que su visor pasa la onda por
+    //  `crush`, y RNG porque su curva ES la portadora: los dos tienen amplitud
+    //  en el eje vertical, asi que su capa viva es la onda que de verdad sale.
+    inline bool deOnda (int f) noexcept
+    {
+        return f == AudioEngine::kFxBit || f == AudioEngine::kFxRng;
+    }
+
+    //  Y LOS QUE DIBUJAN FRECUENCIA. FLT y HPF desde el principio; WID y EXC
+    //  porque su eje tambien es la frecuencia -donde se abre el lado y donde
+    //  se anaden los armonicos- y por tanto su capa viva es el mismo espectro.
+    inline bool deFrecuencia (int f) noexcept
+    {
+        return f == AudioEngine::kFxFlt || f == AudioEngine::kFxHpf
+            || f == AudioEngine::kFxWid || f == AudioEngine::kFxExc;
     }
 
     //  LA QUINTA FAMILIA: MODULACION. Su forma es el LFO, y sale de
@@ -133,6 +177,18 @@ namespace FxVisor
             case AudioEngine::kFxFla:
             case AudioEngine::kFxPha:
             case AudioEngine::kFxTrm: return { false, true  };
+            //  RNG: su FREQ es lo mismo que un RATE -un tiempo- y la ventana
+            //  de su visor se mide en periodos, asi que tampoco cabe.
+            case AudioEngine::kFxRng: return { false, true  };
+            //  Y los cinco que quedan mueven los DOS: la pendiente y el
+            //  periodo del diente de PIT, el ancho y el cruce de WID, el cruce
+            //  y la fuerza de EXC, los dos tramos de TRN y la vuelta y la
+            //  costura de FRZ.
+            case AudioEngine::kFxPit:
+            case AudioEngine::kFxWid:
+            case AudioEngine::kFxExc:
+            case AudioEngine::kFxTrn:
+            case AudioEngine::kFxFrz: return { true,  true  };
             default:                  return { false, false };
         }
     }
@@ -206,6 +262,132 @@ namespace FxVisor
             return;
         }
 
+
+        //  ==================================================================
+        //  LOS SEIS DE CARACTER. Cuatro traen su propio eje y se escriben
+        //  aqui, antes del bucle, como ya hacen DLY y BIT: su dibujo no es
+        //  «una funcion de la columna» sino una simulacion, y meterla dentro
+        //  del bucle la correria cuarenta y ocho veces para el mismo
+        //  resultado. WID y EXC si son funciones de la frecuencia y van con
+        //  los filtros, abajo.
+
+        //  RNG: la PORTADORA, que es la unica forma que este efecto tiene. Su
+        //  FREQ no cabe -es un tiempo, igual que el RATE de los cuatro de
+        //  modulacion- asi que la ventana se mide en PERIODOS y lo que se ve
+        //  es ANILLO: a 1 la portadora cruza el cero y a 0 no lo cruza nunca.
+        //  Y sale de `Lfo::valorEn`, o sea de la misma funcion que multiplica
+        //  en el hilo de audio.
+        if (fx == AudioEngine::kFxRng)
+        {
+            const float an = juce::jlimit (0.0f, 1.0f, p1);
+            for (int i = 0; i < kPuntos; ++i)
+            {
+                const float t = (float) i / (float) (kPuntos - 1);
+                const float p = Lfo::valorEn (t * kPeriodosMod);
+                const float g = an * p + (1.0f - an) * (0.5f + 0.5f * p);
+                pon (i, 0.5f + 0.45f * g);
+            }
+            return;
+        }
+
+        //  PIT: el RECORRIDO DE LA CABEZA, que es lo unico que enseña los dos
+        //  mandos a la vez. La pendiente es `1 - ratio` -o sea los semitonos-
+        //  y el periodo del diente es el GRANO, que es exactamente la cuenta
+        //  que corre en el motor. Con cero semitonos la pendiente es cero y
+        //  sale una raya: eso es correcto, ahi el afinador no hace nada.
+        if (fx == AudioEngine::kFxPit)
+        {
+            const float ratio = std::pow (2.0f, juce::jlimit (-12.0f, 12.0f, p0) / 12.0f);
+            const float gran  = juce::jlimit (10.0f, (float) (AudioEngine::kPitGranoMax * 1000.0), p1);
+            for (int i = 0; i < kPuntos; ++i)
+            {
+                const float ms = (float) i / (float) (kPuntos - 1) * kVentanaPit;
+                float f = std::fmod (ms * (1.0f - ratio) / gran, 1.0f);
+                if (f < 0.0f) f += 1.0f;
+                pon (i, 0.05f + 0.90f * f);
+            }
+            return;
+        }
+
+        //  TRN: la envolvente de un golpe pasada por los MISMOS dos seguidores
+        //  y la misma cuenta de ganancia que corre en el hilo de audio. No es
+        //  una curva parecida escrita al lado: si algun dia cambian las cuatro
+        //  constantes de tiempo, el dibujo va detras.
+        if (fx == AudioEngine::kFxTrn)
+        {
+            constexpr double fsD = 48000.0;
+            const int n = (int) (fsD * kVentanaTrn * 0.001);
+            const float aRap = Dinamica::coefDe (1.0f,   fsD);
+            const float rRap = Dinamica::coefDe (25.0f,  fsD);
+            const float aLen = Dinamica::coefDe (35.0f,  fsD);
+            const float rLen = Dinamica::coefDe (300.0f, fsD);
+            float rapido = 0.0f, lento = 0.0f, tope = 1.0e-6f;
+
+            std::array<float, kPuntos> env {};
+            for (int k = 0; k < n; ++k)
+            {
+                //  Un golpe: ataque de dos milisegundos y caida de ciento
+                //  veinte. Es la forma que un moldeador existe para tocar.
+                const float ms = (float) k / (float) fsD * 1000.0f;
+                const float x  = ms < 2.0f ? ms * 0.5f : std::exp (-(ms - 2.0f) / 120.0f);
+
+                rapido = (x > rapido) ? aRap * rapido + (1.0f - aRap) * x
+                                      : rRap * rapido + (1.0f - rRap) * x;
+                lento  = (x > lento)  ? aLen * lento  + (1.0f - aLen) * x
+                                      : rLen * lento  + (1.0f - rLen) * x;
+
+                const float dif = juce::Decibels::gainToDecibels (rapido, -100.0f)
+                                - juce::Decibels::gainToDecibels (lento,  -100.0f);
+                const float dB  = juce::jlimit (-18.0f, 18.0f,
+                                     juce::jlimit (-1.0f, 1.0f, p0) * juce::jmax (0.0f,  dif)
+                                   + juce::jlimit (-1.0f, 1.0f, p1) * juce::jmax (0.0f, -dif));
+                const float y = x * juce::Decibels::decibelsToGain (dB);
+
+                const int i = juce::jlimit (0, kPuntos - 1,
+                                            (int) ((float) k * (float) (kPuntos - 1) / (float) (n - 1)));
+                env[(size_t) i] = juce::jmax (env[(size_t) i], std::abs (y));
+                tope = juce::jmax (tope, std::abs (y));
+            }
+            //  Normalizado contra su propio pico: lo que este visor dice es la
+            //  FORMA -cuanto pega el golpe contra lo que queda detras- y no el
+            //  nivel, que ya lo dice el punto de trabajo.
+            for (int i = 0; i < kPuntos; ++i) pon (i, env[(size_t) i] / tope);
+            return;
+        }
+
+        //  FRZ: la ventana dando vueltas. Se pasa la envolvente de un sonido
+        //  que decae y el dibujo enseña las dos cosas que el efecto hace: que
+        //  el trozo se REPITE -el periodo es VENTANA- y que en la costura las
+        //  dos mitades se cruzan, que es lo que SUAVE mueve.
+        //
+        //  Y su ventana no es la de DLY y REV: la lap mas larga son 500 ms, y
+        //  con dos segundos la mas corta daria cien vueltas en cuarenta y ocho
+        //  columnas. Un segundo son dos vueltas de la mas larga, que es lo
+        //  minimo para que «se repite» se vea.
+        if (fx == AudioEngine::kFxFrz)
+        {
+            const float vent  = juce::jlimit (20.0f, (float) (AudioEngine::kFrzVentanaMax * 1000.0), p0);
+            const float suave = juce::jlimit (0.0f, 1.0f, p1);
+            const float cruce = juce::jmax (1.0f, suave * vent * 0.25f);
+            for (int i = 0; i < kPuntos; ++i)
+            {
+                const float ms = (float) i / (float) (kPuntos - 1) * kVentanaFrz;
+                const float dentro = std::fmod (ms, vent);
+                float y = std::exp (-dentro / 140.0f);
+                //  En la costura suenan las dos mitades a la vez. Dos trozos
+                //  sin relacion suman en potencia, o sea `sqrt((1-t)^2 + t^2)`,
+                //  que baja a 0.707 en el medio: ese es el bache que SUAVE
+                //  ensancha.
+                if (dentro > vent - cruce)
+                {
+                    const float t = (vent - dentro) / cruce;
+                    y *= std::sqrt (t * t + (1.0f - t) * (1.0f - t));
+                }
+                pon (i, 0.05f + 0.90f * y);
+            }
+            return;
+        }
+
         //  De 20 Hz a 20 kHz en logaritmico, que es el mismo eje que ya usa la
         //  curva del EQ. Ver EqCurve::xDe.
         auto hzDe = [] (float t)
@@ -271,6 +453,32 @@ namespace FxVisor
                 {
                     const float in = dbDe (t);
                     pon (i, (juce::jmin (in, p0) + 60.0f) / 60.0f);
+                    break;
+                }
+
+                //  WID: cuanto LADO sobrevive en cada frecuencia. Debajo del
+                //  cruce vale cero -ahi el grave se suma a mono- y encima vale
+                //  el ancho. El modulo del cruce sale de `svfDb` con la Q del
+                //  cruce de `Dinamica`, que es la misma pieza que corre en el
+                //  hilo de audio, y por DOS porque un Linkwitz-Riley son dos
+                //  Butterworth en cascada.
+                case AudioEngine::kFxWid:
+                {
+                    const float m = juce::Decibels::decibelsToGain (
+                                      2.0f * AudioEngine::svfDb (hzDe (t), p1, 1.0f / Dinamica::kQ, true));
+                    pon (i, 0.05f + 0.45f * juce::jlimit (0.0f, 2.0f, p0) * m);
+                    break;
+                }
+
+                //  EXC: lo que se AÑADE encima de la banda. El renglon de
+                //  abajo es la señal tal cual y lo que sube son los armonicos
+                //  que el saturador mete en la banda alta — por eso la curva
+                //  arranca en el suelo y no en el centro.
+                case AudioEngine::kFxExc:
+                {
+                    const float m = juce::Decibels::decibelsToGain (
+                                      2.0f * AudioEngine::svfDb (hzDe (t), p0, 1.0f / Dinamica::kQ, true));
+                    pon (i, 0.12f + 0.80f * juce::jlimit (0.0f, 1.0f, p1) * m);
                     break;
                 }
 

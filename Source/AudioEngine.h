@@ -11,6 +11,7 @@
 #include "Eq5.h"
 #include "Dinamica.h"
 #include "Lfo.h"
+#include "Estereo.h"
 #include "MidiIo.h"
 
 // ============================================================================
@@ -67,7 +68,13 @@ public:
     //  procesada con la seca, asi que restarle el seco al pad los convierte en
     //  un vibrato y en un allpass puro. TRM al reves -dejar el seco al lado
     //  CANCELA el temblor-. Ver `fxSustituye`.
-    static constexpr int kNumFx         = 15;
+    //  Y VEINTIUNO con los seis de CARACTER: RNG, PIT, WID, EXC, TRN y FRZ.
+    //  Estos no comparten una pieza como los cuatro de modulacion — se agrupan
+    //  por lo contrario: tres son EXTRACCIONES de codigo que ya existia
+    //  escrito dos veces o privado (`Estereo::ancho` salia de dos copias en
+    //  linea de `Voice.h`, y `Dinamica::cruza` y `coefDe` eran privadas) y
+    //  tres se escriben de cero.
+    static constexpr int kNumFx         = 21;
     //  Que indice es cada uno de los cuatro de dinamica, escrito UNA vez: los
     //  usa el bucle de la etapa, `setFxParam` y la cara para saber de cual
     //  leer la reduccion.
@@ -78,6 +85,9 @@ public:
                          kFxBit = 4, kFxRev = 5, kFxEq  = 6;
     //  Y LOS CUATRO DE MODULACION. Ver `Lfo.h`.
     static constexpr int kFxCho = 11, kFxFla = 12, kFxPha = 13, kFxTrm = 14;
+    //  Y LOS SEIS DE CARACTER.
+    static constexpr int kFxRng = 15, kFxPit = 16, kFxWid = 17,
+                         kFxExc = 18, kFxTrn = 19, kFxFrz = 20;
 
     //  Los valores de fabrica de los tres parametros de cada tipo, en una
     //  tabla y no en diecinueve llaves de inicializacion repartidas por esta
@@ -97,6 +107,13 @@ public:
     //  numero esta razonado (0.55 de drive y 8 kHz de tono llevan su parrafo
     //  al lado en `fxDefs`), y la fuerza a cero era ademas un mando que se
     //  movia y no hacia nada, que es un fallo que esta casa ya ha pagado.
+    //  LOS DOS TOPES DE LA FAMILIA DE CARACTER, publicos porque los pide el
+    //  VISOR: el grano mas largo de PIT y la ventana mas larga de FRZ deciden
+    //  la escala del eje que dibujan, y escribirlos alli otra vez son dos
+    //  reglas -que es exactamente el fallo que `FxVisor` existe para no tener-.
+    static constexpr double kPitGranoMax   = 0.120;   // segundos
+    static constexpr double kFrzVentanaMax = 0.500;   // segundos
+
     static constexpr float kFxDef[kNumFx][3] =
     {
         {     0.0f,   0.707f, 0.0f },   // FLT  barrido, reso, mix
@@ -114,6 +131,12 @@ public:
         {    0.25f,    0.55f, 0.0f },   // FLA  rate, realimentacion, mix
         {    0.35f,    0.70f, 0.0f },   // PHA  rate, profundidad, mix
         {    4.50f,    0.80f, 0.0f },   // TRM  rate, profundidad, mix
+        {   220.0f,    1.00f, 0.0f },   // RNG  frecuencia, anillo, mix
+        {     7.00f,   60.0f, 0.0f },   // PIT  semitonos, grano ms, mix
+        {     1.40f,  120.0f, 0.0f },   // WID  ancho, mono Hz, mix
+        {  4000.0f,    0.50f, 0.0f },   // EXC  cruce, fuerza, mix
+        {     0.60f,    0.00f, 0.0f },   // TRN  ataque, caida, mix
+        {   180.0f,    0.35f, 0.0f },   // FRZ  ventana ms, suave, mix
     };
     static constexpr int kNumSteps      = 64;   // max steps per pattern (length is variable, see below)
     static constexpr int kMinPatLen     = 16;
@@ -1993,6 +2016,69 @@ private:
     float phaZ[2][kPhaEtapas] {};
     float flaFbZ[2] {};
 
+    //  LA FAMILIA DE CARACTER: RNG · PIT · WID · EXC · TRN · FRZ.
+    //
+    //  No comparten una pieza como los cuatro de modulacion — se agrupan por
+    //  lo contrario, que es lo que hace que entren juntos: TRES son
+    //  EXTRACCIONES de codigo que ya existia escrito dos veces o privado
+    //  (`Estereo::ancho` salia de dos copias en linea de `Voice.h`, y
+    //  `Dinamica::cruceEn` y `Dinamica::cruza` eran privadas) y tres se
+    //  escriben de cero.
+    //
+    //  RNG: su oscilador es de AUDIO y por eso no es un `Lfo`. `Lfo::ponPaso`
+    //  acota a 40 Hz A PROPOSITO -es lo que separa un temblor de un zumbido- y
+    //  aqui el recorrido llega a 4 kHz. Lo que SI se reutiliza es la FORMA:
+    //  `Lfo::valorEn` es la misma funcion que dibuja el visor, que es la razon
+    //  por la que nacio estatica.
+    float rngFase = 0.0f, smRngAnillo = 0.0f;
+
+    //  PIT: una linea de retardo leida a otra velocidad, con DOS cabezas
+    //  desfasadas medio grano y cruzadas. Una sola cabeza da un salto audible
+    //  cada vez que da la vuelta -eso es un «glitch» y no un afinador-, y el
+    //  cruce es lo que lo tapa. 16384 muestras son 341 ms a 48 kHz, o sea tres
+    //  granos del mas largo.
+    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> pitLine { 16384 };
+    float pitFase = 0.0f, smPitSemis = 0.0f;
+
+    //  WID: el cruce que deja los graves en MONO. Sin el, abrir el ancho de
+    //  una mezcla con bajo desplaza el bajo -que es lo unico que NO puede
+    //  moverse: en un sistema grande el sub es mono por construccion-. Cuarto
+    //  orden por lo mismo que el de-esser: es el unico cuyas dos mitades SUMAN
+    //  planas, y con segundo orden la suma tiene un bache de 3 dB justo en el
+    //  corte.
+    Dinamica::Svf widAlta[2][2], widBaja[2][2];
+    float smWidAncho = 0.0f;
+
+    //  EXC: el MISMO cruce, y el mismo argumento. Lo que se satura es la banda
+    //  alta sola y se vuelve a sumar con la baja intacta: saturar la mezcla
+    //  entera es DRV, que ya existe.
+    Dinamica::Svf excAlta[2][2], excBaja[2][2];
+    float smExcFuerza = 0.0f;
+
+    //  TRN: dos seguidores de envolvente por canal —uno rapido y uno lento— y
+    //  su DIFERENCIA es el transitorio. Enlazados como los de `Dinamica` y por
+    //  lo mismo: con un detector por canal, el lado que pega baja y el otro se
+    //  queda, o sea que la imagen estereo se mueve con cada golpe.
+    float trnRapido = 0.0f, trnLento = 0.0f;
+    float smTrnAtaque = 0.0f, smTrnCaida = 0.0f;
+
+    //  FRZ: la ventana capturada y por donde va su lectura. Estereo y del
+    //  largo del tope del mando -500 ms a 48 kHz son 24000- porque reservar
+    //  aqui esta prohibido: se reserva en `prepareToPlay` y el mando solo
+    //  mueve CUANTO se usa.
+    std::array<std::vector<float>, 2> frzVent;
+    int   frzEscritas = 0, frzLargo = 0;
+    float frzLee = 0.0f;
+    bool  frzLlena = false, frzOyo = false;
+    float smFrzSuave = 0.0f;
+
+    //  El flanco de cada uno, para limpiar su estado al volver a abrirse. Es
+    //  lo mismo que `modWasActive` y por la misma razon: sin el, un efecto que
+    //  se reabre suena con la cola de la vez anterior.
+    std::array<bool, 6> carWasActive {};
+    static constexpr int carDe (int f) noexcept
+    { return (f >= kFxRng && f <= kFxFrz) ? f - kFxRng : -1; }
+
     //  LOS ANILLOS DEL EFECTO MIRADO. Eran del EQ y ahora son de quien la cara
     //  este enseñando: el analizador del EQ resulto ser un caso de la misma
     //  pregunta -«que esta pasando por este bus AHORA»- y tener dos capturas,
@@ -2038,7 +2124,20 @@ private:
     //  el motor hace.
     static constexpr bool fxSustituye[kNumFx] = { true, true, true, false, true, false, true,
                                                   true, true, true, true,
-                                                  false, false, false, true };
+                                                  false, false, false, true,
+                                                  //  Los seis de caracter: los seis
+                                                  //  SUSTITUYEN. Un ancho, un
+                                                  //  excitador o un moldeador de
+                                                  //  transitorios que deja el original
+                                                  //  al lado no hace nada -la suma
+                                                  //  devuelve lo que habia-, y un
+                                                  //  congelador con el seco encima es
+                                                  //  el seco. RNG igual: la suma de la
+                                                  //  señal y su producto por una
+                                                  //  portadora deja la fundamental
+                                                  //  intacta, que es justo lo que un
+                                                  //  ring mod existe para quitar.
+                                                  true, true, true, true, true, true };
     //  Y NO SE PUEDE QUEDAR CORTA EN SILENCIO. Una lista de inicializacion de
     //  agregado rellena con `false` lo que no se nombre, asi que un tipo nuevo
     //  al que se le olvide su fila aqui entraria como ENVIO —sumando encima en

@@ -93,11 +93,12 @@ def main():
             print ("FALLA  %s: la app no publico la linea de dinamica" % size)
             return 1
 
-        #  1. LOS ONCE TIPOS ESTAN EN EL MENU. Con once tipos y seis ranuras el
-        #     menu es la UNICA puerta a los cuatro nuevos: si la rejilla se
+        #  1. TODOS LOS TIPOS ESTAN EN EL MENU. Con mas tipos que ranuras el
+        #     menu es la UNICA puerta a los que no caben en la fila: si la rejilla se
         #     hubiera quedado en siete celdas, CMP, GTE, DSS y LIM sonarian y
         #     no habria forma de ponerlos — un efecto al que no se llega es un
         #     efecto que no esta.
+        tipos = r["tipos"]
         print ("%-9s menu    %d de %d tipos ofrecidos   celda %dx%d px   (dedo %d)"
                % (size, r["en_menu"], r["tipos"], r["celda_w"], r["celda_h"], DEDO))
         if r["en_menu"] != r["tipos"]:
@@ -164,9 +165,9 @@ def main():
     if malas:
         for m in malas: print ("FALLA  " + m)
         return 1
-    print ("los once tipos caben en el menu, cada tapa pone el suyo, los mandos "
+    print ("los %d tipos caben en el menu, cada tapa pone el suyo, los mandos "
            "escriben en su efecto, la reduccion se lee con el dedo fuera y todo "
-           "vuelve del proyecto")
+           "vuelve del proyecto" % tipos)
     return 0
 
 

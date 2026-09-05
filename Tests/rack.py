@@ -145,6 +145,9 @@ def main ():
     if r["mueven"] != r["medibles"]:
         malo.append ("%d de %d capas vivas no se mueven con señal: son un adorno"
                      % (r["medibles"] - r["mueven"], r["medibles"]))
+    if r.get ("vivo_mudo") or r.get ("vivo_ruido"):
+        print ("           mudos %s   ruidosos %s"
+               % (r.get ("vivo_mudo"), r.get ("vivo_ruido")))
     if r["quietos_sin"] != r["medibles"]:
         malo.append ("%d de %d capas vivas se mueven sin señal: dibujan ruido"
                      % (r["medibles"] - r["quietos_sin"], r["medibles"]))

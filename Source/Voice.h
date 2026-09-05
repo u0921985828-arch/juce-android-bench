@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "Estereo.h"
 #include <cmath>
 #include "SampleBuffer.h"
 
@@ -573,8 +574,7 @@ struct Voice
                               ? wA * hermite4 (fa, srcR, ia) + wB * hermite4 (fb, srcR, ib)
                               : l;
                 ancho += anchoInc;
-                { const float m = 0.5f * (l + r), sd = 0.5f * (l - r) * ancho;
-                  l = m + sd; r = m - sd; }
+                Estereo::ancho (l, r, ancho);
                 const float ge = hayFundido ? gain * bordeGain (pos) : gain;
                 dstL[i] += ge * panL * l;
                 if (stereoOut)
@@ -661,8 +661,7 @@ struct Voice
                 }
                 //  DESPUES del antialias y ANTES del pan. Ver `ancho`.
                 ancho += anchoInc;
-                { const float m = 0.5f * (l + r), sd = 0.5f * (l - r) * ancho;
-                  l = m + sd; r = m - sd; }
+                Estereo::ancho (l, r, ancho);
                 const float ge = hayFundido ? gain * bordeGain (pos) : gain;
                 dstL[i] += ge * panL * l;
                 if (stereoOut)

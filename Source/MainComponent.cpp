@@ -3796,6 +3796,61 @@ const MainComponent::FxDef MainComponent::fxDefs[MainComponent::kNumFx] =
       { {   0.20,    20.0, 0.01,    3.0,    4.50, 10 },
         {    0.0,     1.0, 0.01,    0.0,    0.80, 2 },
         {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
+
+    //  LOS SEIS DE CARACTER. Los seis SUSTITUYEN -ver `fxSustituye`- asi que
+    //  su `onMix` es 1.00 salvo RNG: un ancho, un excitador o un moldeador de
+    //  transitorios a medias suena a dos cosas a la vez, y un anillo a tope es
+    //  lo que menos falta hace de fabrica.
+    //
+    //  RNG lleva ANILLO y no «simetria»: lo que el mando mueve es cuanto de
+    //  anillo hay. A 1 la portadora cruza el cero -el tono original desaparece
+    //  y quedan las dos bandas laterales, que es la definicion- y a 0 no lo
+    //  cruza nunca, o sea que el original sigue ahi con un temblor encima. El
+    //  nombre dice el estado del extremo alto, como las demas.
+    { "RNG",  { "FREQ", "ANILLO", "MIX" },
+      { {   20.0,  4000.0, 1.00,  400.0,   220.0, 0 },
+        {    0.0,     1.0, 0.01,    0.0,    1.00, 2 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 0.50 },
+
+    //  PIT dice los semitonos CON SIGNO: «7» no distingue subir de bajar, y
+    //  esa es toda la funcion del mando. Y el GRANO en milisegundos, que es lo
+    //  unico que se oye de el -corto suena metalico y largo emborrona el
+    //  ataque-.
+    { "PIT",  { "SEMIS", "GRANO", "MIX" },
+      { {  -12.0,    12.0, 1.00,    0.0,    7.00, 11 },
+        {   20.0,   120.0, 1.00,    0.0,    60.0, 3 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
+
+    //  WID dice el ancho en VECES y no en porcentaje, como la salida del EQ y
+    //  por lo mismo: uno es «como viene» y lo que importa es cuanto se aparta.
+    //  Y MONO es la frecuencia por debajo de la cual no se abre nada: el sub
+    //  es lo unico que no puede moverse -en un sistema grande es mono por
+    //  construccion-.
+    { "WID",  { "ANCHO", "MONO", "MIX" },
+      { {    0.0,     2.0, 0.01,    1.0,    1.40, 7 },
+        {   20.0,   400.0, 1.00,  120.0,   120.0, 0 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
+
+    { "EXC",  { "CRUCE", "FUERZA", "MIX" },
+      { { 1000.0, 10000.0, 10.0, 4000.0,  4000.0, 0 },
+        {    0.0,     1.0, 0.01,    0.0,    0.50, 2 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
+
+    //  TRN va de -1 a +1 y no de 0 a 1: los dos mandos SUBEN y BAJAN su tramo,
+    //  y un recorrido que solo sube dejaria fuera la mitad para la que existe
+    //  un moldeador -quitarle el golpe a una caja que pega demasiado-. El
+    //  centro es no hacer nada.
+    { "TRN",  { "ATTACK", "RELEASE", "MIX" },
+      { {   -1.0,     1.0, 0.01,    0.0,    0.60, 12 },
+        {   -1.0,     1.0, 0.01,    0.0,    0.00, 12 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
+
+    //  FRZ: la ventana en milisegundos y el cruce de su costura. Ver la etapa
+    //  en `AudioEngine.cpp` — captura en el flanco y despues da vueltas.
+    { "FRZ",  { "VENTANA", "SUAVE", "MIX" },
+      { {   20.0,   500.0, 1.00,  180.0,   180.0, 3 },
+        {    0.0,     1.0, 0.01,    0.0,    0.35, 2 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
 };
 
 // The readout always carries a unit, so a number means something on its own.
@@ -3814,6 +3869,14 @@ juce::String MainComponent::fxFormat (const FxDef::Spec& sp, double v)
         //  «0 Hz» debajo de 1 Hz, que es un mando roto: la mitad de su
         //  recorrido cae ahi.
         case 10: return juce::String (v, 2) + " Hz";
+        //  Los semitonos, CON SIGNO y con la unidad del sector. Un «7» a secas
+        //  no distingue subir de bajar, y esa es toda la funcion del mando.
+        case 11: return (v > 0.0 ? juce::String ("+") : juce::String())
+                          + juce::String ((int) v) + " st";
+        //  Y el porcentaje con signo, por lo mismo: los dos mandos de TRN
+        //  suben y bajan, y el defecto de abajo se come el «+».
+        case 12: return (v > 0.0 ? juce::String ("+") : juce::String())
+                          + juce::String (juce::roundToInt (v * 100.0)) + " %";
         //  El barrido dice de que LADO esta, no solo cuanto. Un "-62 %" no
         //  significa nada en un filtro; "LP 62" y "HP 62" si, y el centro se
         //  llama por su nombre porque es un estado, no un numero.

@@ -34,17 +34,20 @@ El repositorio se compila de dos formas y las dos importan:
   con granos solapados) —, recorte, bucle, reverso, choke, paneo y envolvente.
 - **Secuenciador** de 8 bancos, longitud variable de 16 a 64 pasos, cadena de
   bancos, nota por paso y una línea de tiempo de canción.
-- **Once efectos** y **seis ranuras** en la cara para ponerlos: FLT (un barrido
-  bidireccional, paso bajo a un lado y paso alto al otro, con el centro neutro),
-  HPF, DRV, DLY, BIT, REV, un EQ de cinco bandas con su propia cara y
-  analizador, y la familia de dinámica —CMP, GTE, DSS y LIM—. Una ranura vacía
-  dice «+» y abre el menú. El plato de la cara enseña lo que hay dentro del
+- **Veintiún efectos** y **seis ranuras** en la cara para ponerlos: FLT (un
+  barrido bidireccional, paso bajo a un lado y paso alto al otro, con el centro
+  neutro), HPF, DRV, DLY, BIT, REV, un EQ de cinco bandas con su propia cara y
+  analizador, la familia de dinámica —CMP, GTE, DSS y LIM—, la de modulación
+  —CHO, FLA, PHA y TRM, cuatro clientes de un mismo oscilador— y la de carácter
+  —RNG, PIT, WID, EXC, TRN y FRZ—. Una ranura vacía dice «+» y abre el menú. El plato de la cara enseña lo que hay dentro del
   efecto que tengas abierto, con sus números de ahora — dibujado con la misma
   fórmula que suena, medido contra ella, y con la señal que está pasando por ese
   bus detrás. En el RACK cada pad
   decide cuánto de él **pasa por** cada uno, y la fila dice de qué familia es:
-  nueve de los once son **insertos** —sustituyen el sonido seco— y sólo DLY y
-  REV **suman** encima.
+  dieciséis de los veintiuno son **insertos** —sustituyen el sonido seco— y
+  cinco **suman** encima: DLY, REV y los tres de modulación que sólo existen
+  como suma, porque el peine de un flanger y las muescas de un phaser SON la
+  suma de la copia con la seca.
 - **Panel XY** para tocarlos: dos parámetros a la vez, momentáneo o fijo, en la
   mitad de arriba de la cara — los pads siguen debajo y se pueden disparar
   mientras barres.

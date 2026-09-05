@@ -4377,6 +4377,324 @@ int main()
             std::printf ("%-34s valle/pico %.3f (PROF dice %.3f)   %.2f Hz (RATE dice %.2f)   %s\n",
                          "TRM", medido, esperado, hz, (double) rate, ok ? "OK" : zatiFalla());
         }
+
+        // ====================================================================
+        //  LOS SEIS DE CARACTER: RNG, PIT, WID, EXC, TRN y FRZ.
+        //
+        //  Las mismas DOS CIFRAS: la primera dice que hace algo y la segunda
+        //  que hace SOLO lo que dice. Y las seis van por el MOTOR y no
+        //  llamando a la etapa por dentro, que es donde ninguno de los fallos
+        //  de indice existe.
+        // ====================================================================
+
+        //  La amplitud en una frecuencia suelta, por Goertzel. Hace falta
+        //  porque estas seis se juzgan por DONDE esta la energia y no por
+        //  cuanta hay: un anillo que baja el nivel y uno que mueve el tono dan
+        //  el mismo RMS.
+        auto amp = [] (const std::vector<float>& v, size_t desde, size_t hasta, double hz)
+        {
+            double re = 0.0, im = 0.0; size_t n = 0;
+            for (size_t i = desde; i < hasta && i < v.size(); ++i, ++n)
+            {
+                const double w = juce::MathConstants<double>::twoPi * hz * (double) n / kFs;
+                re += (double) v[i] * std::cos (w);
+                im += (double) v[i] * std::sin (w);
+            }
+            return 2.0 * std::sqrt (re * re + im * im) / juce::jmax ((size_t) 1, n);
+        };
+        auto db = [] (double a, double b)
+        { return 20.0 * std::log10 (juce::jmax (1.0e-12, a) / juce::jmax (1.0e-12, b)); };
+
+        // --- RNG --------------------------------------------------------------
+        //
+        //  (1) con ANILLO a uno la PORTADORA se suprime: de un tono de 440 y
+        //      una portadora de 220 salen 220 y 660, y en 440 no queda nada.
+        //      Eso es la definicion de un modulador en anillo.
+        //  (2) y con ANILLO a cero NO se suprime: es una amplitud modulada, o
+        //      sea el tono original con un temblor encima. Sin la segunda,
+        //      «el 440 desaparece» lo cumple igual un efecto que se come la
+        //      señal entera.
+        {
+            std::vector<float> anillo, am;
+            corre (AudioEngine::kFxRng, 220.0f, 1.0f, 1.0f, anillo);
+            corre (AudioEngine::kFxRng, 220.0f, 0.0f, 1.0f, am);
+            const size_t a = (size_t) kBs * 20, b = anillo.size();
+
+            const double supr = db (amp (anillo, a, b, 440.0), amp (anillo, a, b, 660.0));
+            const double queda = db (amp (am, a, b, 440.0), amp (am, a, b, 660.0));
+            const bool ok = (supr < -20.0) && (queda > 0.0);
+            std::printf ("%-34s portadora %+.1f dB   con ANILLO a cero %+.1f dB   %s\n",
+                         "RNG", supr, queda, ok ? "OK" : zatiFalla());
+        }
+
+        // --- PIT --------------------------------------------------------------
+        //
+        //  (1) a +12 semitonos el tono de 440 sale en 880, y (2) a cero sigue
+        //      en 440. Solo la primera la cumple un afinador clavado en una
+        //      octava, y solo la segunda uno que no hace nada.
+        {
+            std::vector<float> arriba, recto;
+            corre (AudioEngine::kFxPit, 12.0f, 60.0f, 1.0f, arriba);
+            corre (AudioEngine::kFxPit,  0.0f, 60.0f, 1.0f, recto);
+            const size_t a = (size_t) kBs * 40, b = arriba.size();
+
+            const double subio = db (amp (arriba, a, b, 880.0), amp (arriba, a, b, 440.0));
+            const double quieto = db (amp (recto,  a, b, 440.0), amp (recto,  a, b, 880.0));
+            const bool ok = (subio > 6.0) && (quieto > 12.0);
+            std::printf ("%-34s +12 st: 880 gana %+.1f dB   0 st: 440 gana %+.1f dB   %s\n",
+                         "PIT", subio, quieto, ok ? "OK" : zatiFalla());
+        }
+
+        // --- WID --------------------------------------------------------------
+        //
+        //  Las MISMAS dos cifras que el ancho de un pad, y por lo mismo:
+        //  cuanto LADO queda y cuanto CENTRO sobrevive. Solo la primera la
+        //  cumple un fader y solo la segunda no hacer nada.
+        //
+        //  Y la fuente son DOS RUIDOS DISTINTOS, uno por canal: con la misma
+        //  señal en los dos el lado vale cero y la prueba diria que si a
+        //  cualquier cosa, incluso a un ancho que no esta conectado.
+        {
+            auto ruidoLR = [] (double sr, double seg)
+            {
+                auto* sb = new SampleBuffer();
+                const int n = (int) (sr * seg);
+                sb->buffer.setSize (2, n);
+                juce::Random r (20260905);
+                for (int c = 0; c < 2; ++c)
+                    for (int i = 0; i < n; ++i)
+                        sb->buffer.setSample (c, i, 0.3f * (r.nextFloat() * 2.0f - 1.0f));
+                sb->sourceSampleRate = sr;
+                return SampleBuffer::Ptr (sb);
+            };
+
+            auto correLR = [&ruidoLR] (float ancho, std::vector<float>& L, std::vector<float>& R)
+            {
+                AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+                e.setPadGain (0, 1.0f);
+                e.setFxParam (AudioEngine::kFxWid, 0, ancho);
+                e.setFxParam (AudioEngine::kFxWid, 1, 120.0f);
+                e.setFxParam (AudioEngine::kFxWid, 2, 1.0f);
+                e.setPadSend (0, AudioEngine::kFxWid, 1.0f);
+                e.publishSample (0, ruidoLR (kFs, 2.0));
+                juce::AudioBuffer<float> b (2, kBs);
+                for (int i = 0; i < 30; ++i) { b.clear(); e.renderNextBlock (b, 0, kBs); }
+                e.postNoteOn (0, 1.0f);
+                L.clear(); R.clear();
+                for (int blk = 0; blk < 60; ++blk)
+                {
+                    b.clear(); e.renderNextBlock (b, 0, kBs);
+                    for (int i = 0; i < kBs; ++i) { L.push_back (b.getSample (0, i)); R.push_back (b.getSample (1, i)); }
+                }
+            };
+
+            auto ladoY = [] (const std::vector<float>& L, const std::vector<float>& R, bool lado)
+            {
+                double a = 0.0; size_t n = 0;
+                for (size_t i = 2048; i < L.size() && i < R.size(); ++i, ++n)
+                {
+                    const double v = lado ? 0.5 * (L[i] - R[i]) : 0.5 * (L[i] + R[i]);
+                    a += v * v;
+                }
+                return std::sqrt (a / juce::jmax ((size_t) 1, n));
+            };
+
+            std::vector<float> l0, r0, l1, r1, l2, r2;
+            correLR (0.0f, l0, r0);
+            correLR (1.0f, l1, r1);
+            correLR (2.0f, l2, r2);
+
+            const double s0 = ladoY (l0, r0, true),  s1 = ladoY (l1, r1, true),  s2 = ladoY (l2, r2, true);
+            const double m0 = ladoY (l0, r0, false), m1 = ladoY (l1, r1, false), m2 = ladoY (l2, r2, false);
+            //  El lado a cero NO es «casi cero»: con el mono de los graves
+            //  puesto queda lo que el cruce deja pasar, o sea nada del lado.
+            const bool ok = (s0 < 0.01 * s1) && (s2 > 1.6 * s1)
+                         && (std::abs (m1 - m0) < 0.03 * m1) && (std::abs (m2 - m0) < 0.03 * m1);
+            std::printf ("%-34s lado %.5f / %.5f / %.5f   centro %.5f / %.5f / %.5f   %s\n",
+                         "WID", s0, s1, s2, m0, m1, m2, ok ? "OK" : zatiFalla());
+        }
+
+        // --- EXC --------------------------------------------------------------
+        //
+        //  (1) aparecen armonicos que la fuente no tiene -el tercero de un tono
+        //      de 2 kHz, o sea 6 kHz- y (2) la banda BAJA no se mueve. Solo lo
+        //      primero lo cumple una distorsion, que satura la mezcla entera;
+        //      solo lo segundo, no hacer nada.
+        {
+            auto dosTonos = [] (double sr, double seg)
+            {
+                auto* sb = new SampleBuffer();
+                const int n = (int) (sr * seg);
+                sb->buffer.setSize (2, n);
+                for (int c = 0; c < 2; ++c)
+                    for (int i = 0; i < n; ++i)
+                        sb->buffer.setSample (c, i,
+                            0.35f * std::sin (juce::MathConstants<float>::twoPi * 200.0f  * (float) i / (float) sr)
+                          + 0.35f * std::sin (juce::MathConstants<float>::twoPi * 2000.0f * (float) i / (float) sr));
+                sb->sourceSampleRate = sr;
+                return SampleBuffer::Ptr (sb);
+            };
+            auto correExc = [&dosTonos] (float fuerza, std::vector<float>& v)
+            {
+                AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+                e.setPadGain (0, 1.0f);
+                e.setFxParam (AudioEngine::kFxExc, 0, 1000.0f);
+                e.setFxParam (AudioEngine::kFxExc, 1, fuerza);
+                e.setFxParam (AudioEngine::kFxExc, 2, 1.0f);
+                e.setPadSend (0, AudioEngine::kFxExc, 1.0f);
+                e.publishSample (0, dosTonos (kFs, 2.0));
+                juce::AudioBuffer<float> b (2, kBs);
+                for (int i = 0; i < 30; ++i) { b.clear(); e.renderNextBlock (b, 0, kBs); }
+                e.postNoteOn (0, 1.0f);
+                v.clear();
+                for (int blk = 0; blk < 60; ++blk)
+                {
+                    b.clear(); e.renderNextBlock (b, 0, kBs);
+                    for (int i = 0; i < kBs; ++i) v.push_back (b.getSample (0, i));
+                }
+            };
+
+            std::vector<float> sin_, con;
+            correExc (0.0f, sin_);
+            correExc (1.0f, con);
+            const size_t a = (size_t) kBs * 20, b = con.size();
+
+            const double armonico = db (amp (con, a, b, 6000.0), amp (sin_, a, b, 6000.0));
+            const double grave    = db (amp (con, a, b,  200.0), amp (sin_, a, b,  200.0));
+            const bool ok = (armonico > 12.0) && (std::abs (grave) < 0.5);
+            std::printf ("%-34s tercer armonico %+.1f dB   grave %+.2f dB   %s\n",
+                         "EXC", armonico, grave, ok ? "OK" : zatiFalla());
+        }
+
+        // --- TRN --------------------------------------------------------------
+        //
+        //  (1) con ATAQUE a tope el GOLPE pega mas, y (2) la COLA se queda
+        //      donde estaba. Solo la primera la cumple un fader, y solo la
+        //      segunda no hacer nada. Y la fuente es un golpe con envolvente,
+        //      no el tono plano de los demas: un moldeador de transitorios
+        //      sobre una señal sin transitorio no tiene sobre que actuar.
+        {
+            auto golpe = [] (double sr, double seg)
+            {
+                auto* sb = new SampleBuffer();
+                const int n = (int) (sr * seg);
+                sb->buffer.setSize (2, n);
+                for (int c = 0; c < 2; ++c)
+                    for (int i = 0; i < n; ++i)
+                    {
+                        const double ms = (double) i / sr * 1000.0;
+                        const double env = ms < 2.0 ? ms * 0.5 : std::exp (-(ms - 2.0) / 120.0);
+                        sb->buffer.setSample (c, i, (float) (0.5 * env
+                            * std::sin (juce::MathConstants<double>::twoPi * 440.0 * (double) i / sr)));
+                    }
+                sb->sourceSampleRate = sr;
+                return SampleBuffer::Ptr (sb);
+            };
+            auto correTrn = [&golpe] (float at, std::vector<float>& v)
+            {
+                AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+                e.setPadGain (0, 1.0f);
+                e.setFxParam (AudioEngine::kFxTrn, 0, at);
+                e.setFxParam (AudioEngine::kFxTrn, 1, 0.0f);
+                e.setFxParam (AudioEngine::kFxTrn, 2, 1.0f);
+                e.setPadSend (0, AudioEngine::kFxTrn, 1.0f);
+                e.publishSample (0, golpe (kFs, 1.0));
+                juce::AudioBuffer<float> b (2, kBs);
+                for (int i = 0; i < 30; ++i) { b.clear(); e.renderNextBlock (b, 0, kBs); }
+                e.postNoteOn (0, 1.0f);
+                v.clear();
+                for (int blk = 0; blk < 60; ++blk)
+                {
+                    b.clear(); e.renderNextBlock (b, 0, kBs);
+                    for (int i = 0; i < kBs; ++i) v.push_back (b.getSample (0, i));
+                }
+            };
+
+            std::vector<float> plano, moldeado;
+            correTrn (0.0f, plano);
+            correTrn (1.0f, moldeado);
+
+            auto pico = [] (const std::vector<float>& v, size_t d, size_t h)
+            { double p = 0.0; for (size_t i = d; i < h && i < v.size(); ++i) p = juce::jmax (p, (double) std::abs (v[i])); return p; };
+
+            //  El golpe son los primeros 15 ms y la cola los 150 a 400.
+            const size_t nAtk = (size_t) (kFs * 0.015), c0 = (size_t) (kFs * 0.150), c1 = (size_t) (kFs * 0.400);
+            const double golpeDb = db (pico (moldeado, 0, nAtk), pico (plano, 0, nAtk));
+            const double colaDb  = db (rms (moldeado, c0, c1),   rms (plano, c0, c1));
+            const bool ok = (golpeDb > 2.0) && (std::abs (colaDb) < 1.0);
+            std::printf ("%-34s golpe %+.2f dB   cola %+.2f dB   %s\n",
+                         "TRN", golpeDb, colaDb, ok ? "OK" : zatiFalla());
+        }
+
+        // --- FRZ --------------------------------------------------------------
+        //
+        //  (1) sigue sonando cuando la fuente ya se acabo, y (2) lo que suena
+        //      es el MISMO trozo — dos vueltas seguidas son identicas. Solo la
+        //      primera la cumple una reverb infinita, y solo la segunda un
+        //      congelador mudo.
+        {
+            auto corto = [] (double sr)
+            {
+                auto* sb = new SampleBuffer();
+                const int n = (int) (sr * 1.5);
+                sb->buffer.setSize (2, n);
+                for (int c = 0; c < 2; ++c)
+                    for (int i = 0; i < n; ++i)
+                    {
+                        //  Un cuarto de segundo de tono y despues silencio:
+                        //  con la fuente sonando siempre, «sigue sonando» lo
+                        //  cumple no hacer nada.
+                        const float g = ((double) i / sr < 0.25) ? 0.5f : 0.0f;
+                        sb->buffer.setSample (c, i, g
+                            * std::sin (juce::MathConstants<float>::twoPi * 440.0f * (float) i / (float) sr));
+                    }
+                sb->sourceSampleRate = sr;
+                return SampleBuffer::Ptr (sb);
+            };
+            auto correFrz = [&corto] (bool puesto, std::vector<float>& v)
+            {
+                AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+                e.setPadGain (0, 1.0f);
+                if (puesto)
+                {
+                    e.setFxParam (AudioEngine::kFxFrz, 0, 180.0f);
+                    e.setFxParam (AudioEngine::kFxFrz, 1, 0.0f);
+                    e.setFxParam (AudioEngine::kFxFrz, 2, 1.0f);
+                    e.setPadSend (0, AudioEngine::kFxFrz, 1.0f);
+                }
+                e.publishSample (0, corto (kFs));
+                juce::AudioBuffer<float> b (2, kBs);
+                for (int i = 0; i < 30; ++i) { b.clear(); e.renderNextBlock (b, 0, kBs); }
+                e.postNoteOn (0, 1.0f);
+                v.clear();
+                for (int blk = 0; blk < 120; ++blk)
+                {
+                    b.clear(); e.renderNextBlock (b, 0, kBs);
+                    for (int i = 0; i < kBs; ++i) v.push_back (b.getSample (0, i));
+                }
+            };
+
+            std::vector<float> con, sin_;
+            correFrz (true, con);
+            correFrz (false, sin_);
+
+            //  Al segundo, la fuente lleva 750 ms callada.
+            const size_t t1 = (size_t) (kFs * 1.00), t2 = (size_t) (kFs * 1.05);
+            const double vivo  = rms (con,  t1, t2);
+            const double mudo  = rms (sin_, t1, t2);
+
+            //  Y las dos vueltas: 180 ms de ventana, asi que lo que suena en
+            //  el segundo 0.9 tiene que ser lo mismo que en el 0.72.
+            const size_t vent = (size_t) (kFs * 0.180);
+            const size_t p0 = (size_t) (kFs * 0.72);
+            double peor = 0.0;
+            for (size_t i = 0; i < vent && p0 + vent + i < con.size(); ++i)
+                peor = juce::jmax (peor, (double) std::abs (con[p0 + i] - con[p0 + vent + i]));
+
+            const bool ok = (vivo > 0.05) && (mudo < 1.0e-4) && (peor < 1.0e-3);
+            std::printf ("%-34s al segundo %.5f (sin FRZ %.5f)   dos vueltas difieren %.6f   %s\n",
+                         "FRZ", vivo, mudo, peor, ok ? "OK" : zatiFalla());
+        }
     }
 
     std::printf ("\n%-34s %d FALLA\n", "motor", zatiFallos);

@@ -50,6 +50,9 @@
       <FILE id="srcEqc"  name="EqCurve.h"         compile="0" resource="0" file="Source/EqCurve.h"/>
       <FILE id="srcFxm"  name="FxMini.h"          compile="0" resource="0" file="Source/FxMini.h"/>
       <FILE id="srcDin"  name="Dinamica.h"        compile="0" resource="0" file="Source/Dinamica.h"/>
+      <FILE id="srcLfo"  name="Lfo.h"             compile="0" resource="0" file="Source/Lfo.h"/>
+      <FILE id="srcEst"  name="Estereo.h"         compile="0" resource="0" file="Source/Estereo.h"/>
+      <FILE id="srcFxv"  name="FxVisor.h"         compile="0" resource="0" file="Source/FxVisor.h"/>
     </GROUP>
     <GROUP id="ZatiKits" name="kits">
     </GROUP>

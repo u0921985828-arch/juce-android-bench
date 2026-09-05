@@ -51,7 +51,7 @@ llevar un **instrumento**: dieciséis familias sintetizadas de dieciséis preset
 cada una, multizona, que se tocan con el dedo como una tecla.
 
 Encima de eso hay un secuenciador de ocho patrones con cadena y una canción de
-cuatro carriles por sesenta y cuatro compases, once efectos en seis ranuras
+cuatro carriles por sesenta y cuatro compases, veintiun efectos en seis ranuras
 con un mando por pad, una mesa de dieciséis canales con máster, y una exportación que
 saca el máster o las pistas por separado.
 
@@ -443,7 +443,7 @@ inclina con la fuerza del golpe, fundidos de canto en coseno alzado, ancho
 estéreo en medio/lado **antes** del pan, y pan de potencia constante que desliza
 en exactamente un bloque.
 
-### Los once efectos
+### Los veintiun efectos
 
 | | mando 1 | mando 2 | mando 3 |
 |---|---|---|---|
@@ -458,6 +458,16 @@ en exactamente un bloque.
 | **GTE** | UMBRAL | CIERRE | MIX |
 | **DSS** | FREQ | FUERZA | MIX |
 | **LIM** | TECHO | SOLTAR | MIX |
+| **CHO** | RATE 0.05–8 Hz | PROF | MIX — **suma** |
+| **FLA** | RATE | FBK −0.85…+0.85 | MIX — **suma** |
+| **PHA** | RATE | PROF | MIX — **suma** |
+| **TRM** | RATE 0.2–20 Hz | PROF | MIX |
+| **RNG** | FREQ 20–4000 Hz | ANILLO | MIX |
+| **PIT** | SEMIS ±12 | GRANO 20–120 ms | MIX |
+| **WID** | ANCHO 0–2 | MONO 20–400 Hz | MIX |
+| **EXC** | CRUCE 1–10 kHz | FUERZA | MIX |
+| **TRN** | ATAQUE −1…+1 | CAIDA −1…+1 | MIX |
+| **FRZ** | VENTANA 20–500 ms | SUAVE | MIX |
 
 FLT es un barrido bidireccional con zona muerta: negativo cierra por arriba,
 positivo abre por abajo, el centro se salta la etapa. HPF tiene **su propio**

@@ -184,6 +184,26 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize, int inputC
     modWasActive.fill (false);
     for (auto& l : mod) l.reinicia();
 
+    //  Y la familia de CARACTER. La linea de PIT se dimensiona al grano mas
+    //  largo por DOS -las dos cabezas van desfasadas medio grano y la de atras
+    //  lee hasta un grano entero por detras-, y la ventana de FRZ al tope de su
+    //  mando: reservar en el hilo de audio esta prohibido, asi que se reserva
+    //  aqui y el mando solo mueve CUANTO se usa.
+    pitLine.prepare (spec);
+    pitLine.setMaximumDelayInSamples ((int) (systemSampleRate * kPitGranoMax * 2.0) + 4);
+    pitLine.reset();
+    pitFase = 0.0f;
+    rngFase = 0.0f;
+    for (auto& fila : widAlta) for (auto& st : fila) st = {};
+    for (auto& fila : widBaja) for (auto& st : fila) st = {};
+    for (auto& fila : excAlta) for (auto& st : fila) st = {};
+    for (auto& fila : excBaja) for (auto& st : fila) st = {};
+    trnRapido = trnLento = 0.0f;
+    for (auto& c : frzVent) { c.assign ((size_t) (systemSampleRate * kFrzVentanaMax) + 4, 0.0f); }
+    frzEscritas = 0; frzLee = 0.0f; frzLlena = false; frzOyo = false;
+    frzLargo = (int) (systemSampleRate * 0.180);
+    carWasActive.fill (false);
+
     //  El EQ toma la frecuencia nueva y limpia sus diez estados; las bandas NO
     //  se tocan, que esto corre en cada cambio de ruta. Ver Eq5::prepare.
     eqFx.prepare (systemSampleRate);
@@ -1448,6 +1468,26 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 }
                 else
                 {
+                    //  Y CON EL BUS MUERTO LO QUE SALE DE EL ES SILENCIO, Y HAY
+                    //  QUE ESCRIBIRLO.
+                    //
+                    //  `returnBus` es quien avanza el anillo, y no se llama
+                    //  cuando el bus no esta vivo: los dos anillos se quedaban
+                    //  congelados con lo ULTIMO que paso, asi que el visor
+                    //  seguia dibujando esa cola para siempre. Con casi todos
+                    //  no se notaba porque lo ultimo ya era casi silencio -el
+                    //  envio se suaviza en 20 ms y la nota se apaga-, y FRZ lo
+                    //  saco: se corta a nivel PLENO, asi que el dibujo se
+                    //  quedaba en su ultimo trozo. El banco lo canto con su
+                    //  nombre: `ruidosos [20]`, la columna 1 a 0.4095.
+                    const int wi = mirWrite.load (std::memory_order_relaxed);
+                    for (int i = 0; i < numSamples; ++i)
+                    {
+                        mirPre [(size_t) ((wi + i) & (kFxScope - 1))] = 0.0f;
+                        mirPost[(size_t) ((wi + i) & (kFxScope - 1))] = 0.0f;
+                    }
+                    mirWrite.store ((wi + numSamples) & (kFxScope - 1), std::memory_order_release);
+
                     //  Y EL TESTIGO BAJA TAMBIEN CON EL BUS MUERTO, que es lo
                     //  que le faltaba a la version del EQ: la cuenta atras
                     //  vivia DENTRO de su rama, asi que en cuanto el bus se
@@ -1960,6 +2000,404 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     }
                     modFase[(size_t) m].store (mod[(size_t) m].fase, std::memory_order_relaxed);
                     returnBus (kFxTrm);
+                }
+            }
+        }
+
+        // --- 10. CARACTER: RNG, PIT, WID, EXC, TRN y FRZ. ------------------
+        //
+        //  Seis topologias y por eso seis bloques, como la modulacion. Lo que
+        //  las agrupa no es una pieza compartida sino lo contrario: TRES son
+        //  extracciones de codigo que ya existia -`Estereo::ancho` salia de
+        //  dos copias en linea de `Voice.h`, y `Dinamica::cruceEn` y
+        //  `Dinamica::cruza` eran privadas- y tres se escriben de cero.
+        //
+        //  Las SEIS SUSTITUYEN, y es una decision y no una copia: un ancho, un
+        //  excitador o un moldeador de transitorios que deja el original al
+        //  lado no hace absolutamente nada -la suma devuelve lo que habia-, y
+        //  un afinador o un congelador con el seco encima suenan a las dos
+        //  cosas a la vez. Ver `fxSustituye`.
+        {
+            const float fsF = (float) systemSampleRate;
+            const float kBlockC = kBlock;
+
+            //  El flanco de los seis, igual que `modWasActive`: lo que se
+            //  limpia va en cada bloque porque un efecto que se reabre con la
+            //  cola de la vez anterior suena a otra cosa.
+            //  Y FRZ PREGUNTA POR `busFed` Y NO POR `live`, que es lo unico
+            //  de los seis que no se sostiene solo.
+            //
+            //  Un congelador que da vueltas escribe en su bus, asi que
+            //  `busRinging` se queda puesto por su propia salida y `live`
+            //  vuelve a ser cierto: el efecto no se apaga NUNCA — ni cerrando
+            //  el envio, ni parando la maquina, ni quitando el pad— y el bus
+            //  se queda vivo para siempre con su coste por bloque. Lo canto el
+            //  banco: `1 de 20 capas vivas se mueven sin señal`, y no dibujaba
+            //  ruido: seguia sonando. Se congela lo que ENTRA mientras entra
+            //  algo, que ademas es lo que un pedal de freeze hace con el pie
+            //  encima.
+            const bool carVivo[6] = { live (kFxRng), live (kFxPit), live (kFxWid),
+                                      live (kFxExc), live (kFxTrn), live (kFxFrz) };
+
+            // --- RNG: modulador en anillo. ----------------------------------
+            //
+            //  Su oscilador NO es un `Lfo`: `ponPaso` acota a 40 Hz a proposito
+            //  y aqui el recorrido llega a 4 kHz. Lo que se reutiliza es la
+            //  FORMA -`Lfo::valorEn`, la misma que dibuja el visor-, que es
+            //  para lo que nacio estatica.
+            {
+                const int c = carDe (kFxRng);
+                const float an = juce::jlimit (0.0f, 1.0f,
+                                   fxP[(size_t) kFxRng][1].load (std::memory_order_relaxed));
+                smRngAnillo += kBlockC * (an - smRngAnillo);
+
+                if (carVivo[c] && ! carWasActive[(size_t) c]) rngFase = 0.0f;
+                carWasActive[(size_t) c] = carVivo[c];
+
+                if (carVivo[c])
+                {
+                    const float hz   = juce::jlimit (20.0f, 4000.0f,
+                                         fxP[(size_t) kFxRng][0].load (std::memory_order_relaxed));
+                    const float paso = hz / fsF;
+
+                    for (int i = 0; i < numSamples; ++i)
+                    {
+                        const float p = Lfo::valorEn (rngFase);
+                        //  ANILLO es lo que separa un anillo de una amplitud
+                        //  modulada, que es el mismo aparato con la portadora
+                        //  desplazada: a 1 la portadora cruza el cero -el tono
+                        //  original desaparece y quedan las dos bandas
+                        //  laterales, que es la definicion- y a 0 no lo cruza
+                        //  nunca, o sea que el original sigue ahi con un
+                        //  temblor encima.
+                        const float g = smRngAnillo * p
+                                      + (1.0f - smRngAnillo) * (0.5f + 0.5f * p);
+                        for (int ch = 0; ch < chans; ++ch)
+                            fxBus[kFxRng].getWritePointer (ch, startSample)[i] *= g;
+
+                        rngFase += paso;
+                        if (rngFase >= 1.0f) rngFase -= 1.0f;
+                    }
+                    returnBus (kFxRng);
+                }
+            }
+
+            // --- PIT: afinador por granos, con DOS cabezas. -----------------
+            //
+            //  Una sola cabeza da un salto audible cada vez que da la vuelta
+            //  -eso es un glitch y no un afinador-. Las dos van desfasadas
+            //  MEDIO grano y se cruzan con una ventana de Hann, que sumada a
+            //  si misma medio periodo mas alla vale exactamente uno: la
+            //  costura no cambia el nivel.
+            {
+                const int c = carDe (kFxPit);
+                const float semis = juce::jlimit (-12.0f, 12.0f,
+                                      fxP[(size_t) kFxPit][0].load (std::memory_order_relaxed));
+                smPitSemis += kBlockC * (semis - smPitSemis);
+
+                if (carVivo[c] && ! carWasActive[(size_t) c]) { pitLine.reset(); pitFase = 0.0f; }
+                carWasActive[(size_t) c] = carVivo[c];
+
+                if (carVivo[c])
+                {
+                    const float ratio = std::pow (2.0f, smPitSemis / 12.0f);
+                    const float gran  = juce::jlimit (0.010f, (float) kPitGranoMax,
+                                          fxP[(size_t) kFxPit][1].load (std::memory_order_relaxed) * 0.001f) * fsF;
+                    //  El retardo avanza a `1 - ratio` por muestra: la fuente
+                    //  se recorre a `ratio`, que es la definicion de afinar.
+                    const float dp = (1.0f - ratio) / juce::jmax (1.0f, gran);
+
+                    for (int i = 0; i < numSamples; ++i)
+                    {
+                        const float pA = pitFase;
+                        const float pB = (pitFase >= 0.5f) ? pitFase - 0.5f : pitFase + 0.5f;
+                        //  Hann por cabeza. La de atras entra mientras la de
+                        //  delante sale, y las dos suman uno.
+                        const float wA = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * pA);
+                        const float wB = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * pB);
+
+                        for (int ch = 0; ch < chans; ++ch)
+                        {
+                            float* w = fxBus[kFxPit].getWritePointer (ch, startSample);
+                            const float x = w[i];
+                            pitLine.pushSample (ch, std::isfinite (x) ? x : 0.0f);
+                            pitLine.setDelay (juce::jmax (1.0f, 1.0f + pA * gran));
+                            const float a = pitLine.popSample (ch, -1.0f, false);
+                            pitLine.setDelay (juce::jmax (1.0f, 1.0f + pB * gran));
+                            const float b = pitLine.popSample (ch, -1.0f, true);
+                            const float y = wA * a + wB * b;
+                            w[i] = std::isfinite (y) ? y : 0.0f;
+                        }
+
+                        pitFase += dp;
+                        while (pitFase >= 1.0f) pitFase -= 1.0f;
+                        while (pitFase <  0.0f) pitFase += 1.0f;
+                    }
+                    returnBus (kFxPit);
+                }
+            }
+
+            // --- WID: ancho estereo con los graves en MONO. -----------------
+            //
+            //  `Estereo::ancho` es la misma funcion que usa un pad, que es por
+            //  lo que salio de las dos copias en linea de `Voice.h`. Lo que
+            //  esta etapa anade es el CRUCE: sin el, abrir el ancho de una
+            //  mezcla con bajo desplaza el bajo, y el sub es lo unico que no
+            //  puede moverse -en un sistema grande es mono por construccion-.
+            {
+                const int c = carDe (kFxWid);
+                const float anc = juce::jlimit (0.0f, 2.0f,
+                                    fxP[(size_t) kFxWid][0].load (std::memory_order_relaxed));
+                smWidAncho += kBlockC * (anc - smWidAncho);
+
+                if (carVivo[c] && ! carWasActive[(size_t) c])
+                {
+                    for (auto& fila : widAlta) for (auto& st : fila) st = {};
+                    for (auto& fila : widBaja) for (auto& st : fila) st = {};
+                }
+                carWasActive[(size_t) c] = carVivo[c];
+
+                if (carVivo[c] && chans > 1)
+                {
+                    const auto cr = Dinamica::cruceEn (
+                        fxP[(size_t) kFxWid][1].load (std::memory_order_relaxed), systemSampleRate);
+                    float* w0 = fxBus[kFxWid].getWritePointer (0, startSample);
+                    float* w1 = fxBus[kFxWid].getWritePointer (1, startSample);
+
+                    for (int i = 0; i < numSamples; ++i)
+                    {
+                        float bL = 0.0f, aL = 0.0f, bR = 0.0f, aR = 0.0f;
+                        Dinamica::cruza (w0[i], widAlta[0], widBaja[0], cr.a1, cr.a2, cr.a3, cr.k, bL, aL);
+                        Dinamica::cruza (w1[i], widAlta[1], widBaja[1], cr.a1, cr.a2, cr.a3, cr.k, bR, aR);
+                        //  El grave se suma a mono ANTES de nada; el agudo es
+                        //  el unico que se abre.
+                        const float mono = 0.5f * (bL + bR);
+                        Estereo::ancho (aL, aR, smWidAncho);
+                        w0[i] = mono + aL;
+                        w1[i] = mono + aR;
+                    }
+                    returnBus (kFxWid);
+                }
+                else if (carVivo[c])
+                {
+                    //  Una fuente MONO no tiene lado que abrir ni cerrar, que
+                    //  es la misma regla que ya tiene el ancho de un pad.
+                    returnBus (kFxWid);
+                }
+            }
+
+            // --- EXC: excitador de agudos. ----------------------------------
+            //
+            //  El MISMO cruce, y el mismo argumento que el de-esser: se satura
+            //  la banda alta SOLA y se vuelve a sumar con la baja intacta.
+            //  Saturar la mezcla entera es DRV, que ya existe.
+            {
+                const int c = carDe (kFxExc);
+                const float fue = juce::jlimit (0.0f, 1.0f,
+                                    fxP[(size_t) kFxExc][1].load (std::memory_order_relaxed));
+                smExcFuerza += kBlockC * (fue - smExcFuerza);
+
+                if (carVivo[c] && ! carWasActive[(size_t) c])
+                {
+                    for (auto& fila : excAlta) for (auto& st : fila) st = {};
+                    for (auto& fila : excBaja) for (auto& st : fila) st = {};
+                }
+                carWasActive[(size_t) c] = carVivo[c];
+
+                if (carVivo[c])
+                {
+                    const auto cr = Dinamica::cruceEn (
+                        fxP[(size_t) kFxExc][0].load (std::memory_order_relaxed), systemSampleRate);
+                    //  Cuanto se empuja la banda alta contra el saturador. Los
+                    //  armonicos que salen son lo que se anade; el nivel de la
+                    //  banda BAJA no se toca, que es lo que separa un
+                    //  excitador de una distorsion.
+                    const float emp = 1.0f + 8.0f * smExcFuerza;
+
+                    for (int ch = 0; ch < chans; ++ch)
+                    {
+                        float* w = fxBus[kFxExc].getWritePointer (ch, startSample);
+                        for (int i = 0; i < numSamples; ++i)
+                        {
+                            float b = 0.0f, a = 0.0f;
+                            Dinamica::cruza (w[i], excAlta[ch], excBaja[ch],
+                                             cr.a1, cr.a2, cr.a3, cr.k, b, a);
+                            const float sat = AudioEngine::fastTanh (a * emp) / emp;
+                            const float y = b + a + smExcFuerza * (sat - a) * 4.0f;
+                            w[i] = std::isfinite (y) ? y : 0.0f;
+                        }
+                    }
+                    returnBus (kFxExc);
+                }
+            }
+
+            // --- TRN: moldeador de transitorios. ----------------------------
+            //
+            //  DOS seguidores de envolvente y su DIFERENCIA. El rapido sube
+            //  con el golpe y el lento no llega, asi que mientras dura el
+            //  ataque el rapido va por encima; en la cola es al reves. Por eso
+            //  un solo mando no bastaria: son dos tramos distintos del mismo
+            //  sonido y cada uno tiene el suyo.
+            //
+            //  Y ENLAZADOS, o sea sobre el maximo de los dos canales: con un
+            //  detector por canal el lado que pega sube y el otro se queda, y
+            //  la imagen estereo se mueve con cada golpe. Es la misma leccion
+            //  que la deteccion de `Dinamica`.
+            {
+                const int c = carDe (kFxTrn);
+                const float at = juce::jlimit (-1.0f, 1.0f,
+                                   fxP[(size_t) kFxTrn][0].load (std::memory_order_relaxed));
+                const float ca = juce::jlimit (-1.0f, 1.0f,
+                                   fxP[(size_t) kFxTrn][1].load (std::memory_order_relaxed));
+                smTrnAtaque += kBlockC * (at - smTrnAtaque);
+                smTrnCaida  += kBlockC * (ca - smTrnCaida);
+
+                if (carVivo[c] && ! carWasActive[(size_t) c]) trnRapido = trnLento = 0.0f;
+                carWasActive[(size_t) c] = carVivo[c];
+
+                if (carVivo[c])
+                {
+                    //  Los cuatro coeficientes salen de `Dinamica::coefDe`, que
+                    //  es la misma cuenta que usan los cuatro de dinamica: una
+                    //  constante de tiempo escrita dos veces son dos reglas.
+                    const float aRap = Dinamica::coefDe (1.0f,   systemSampleRate);
+                    const float rRap = Dinamica::coefDe (25.0f,  systemSampleRate);
+                    const float aLen = Dinamica::coefDe (35.0f,  systemSampleRate);
+                    const float rLen = Dinamica::coefDe (300.0f, systemSampleRate);
+
+                    float* w0 = fxBus[kFxTrn].getWritePointer (0, startSample);
+                    float* w1 = (chans > 1) ? fxBus[kFxTrn].getWritePointer (1, startSample) : w0;
+
+                    for (int i = 0; i < numSamples; ++i)
+                    {
+                        const float pico = juce::jmax (std::abs (w0[i]), std::abs (w1[i]));
+                        trnRapido = (pico > trnRapido) ? aRap * trnRapido + (1.0f - aRap) * pico
+                                                       : rRap * trnRapido + (1.0f - rRap) * pico;
+                        trnLento  = (pico > trnLento)  ? aLen * trnLento  + (1.0f - aLen) * pico
+                                                       : rLen * trnLento  + (1.0f - rLen) * pico;
+
+                        const float dif = juce::Decibels::gainToDecibels (trnRapido, -100.0f)
+                                        - juce::Decibels::gainToDecibels (trnLento,  -100.0f);
+                        //  Positiva es ataque y negativa es cola, asi que cada
+                        //  mando actua sobre SU tramo y en el otro vale cero.
+                        const float dB = juce::jlimit (-18.0f, 18.0f,
+                                            smTrnAtaque * juce::jmax (0.0f,  dif)
+                                          + smTrnCaida  * juce::jmax (0.0f, -dif));
+                        const float g = juce::Decibels::decibelsToGain (dB);
+                        for (int ch = 0; ch < chans; ++ch)
+                            fxBus[kFxTrn].getWritePointer (ch, startSample)[i] *= g;
+                    }
+                    returnBus (kFxTrn);
+                }
+            }
+
+            // --- FRZ: congelador. -------------------------------------------
+            //
+            //  CAPTURA EN EL FLANCO y despues da vueltas. Es lo unico que
+            //  «congelar» puede significar: capturar continuamente seria un
+            //  retardo, y capturar al cerrar seria capturar lo que ya no esta.
+            //  El flanco ya existe para limpiar estado y aqui ademas ARMA.
+            //
+            //  Y SUAVE es el cruce de la costura, que es la misma leccion que
+            //  el bucle de un instrumento: un bucle sin fundido chasquea en
+            //  cada vuelta, y aqui la vuelta llega ocho veces por segundo.
+            {
+                const int c = carDe (kFxFrz);
+                const float suave = juce::jlimit (0.0f, 1.0f,
+                                      fxP[(size_t) kFxFrz][1].load (std::memory_order_relaxed));
+                smFrzSuave += kBlockC * (suave - smFrzSuave);
+
+                if (carVivo[c] && ! carWasActive[(size_t) c])
+                {
+                    frzEscritas = 0;
+                    frzLee      = 0.0f;
+                    frzLlena    = false;
+                    frzOyo      = false;
+                    frzLargo    = juce::jlimit (1, (int) frzVent[0].size() - 1,
+                                    (int) (fsF * juce::jlimit (0.020f, (float) kFrzVentanaMax,
+                                             fxP[(size_t) kFxFrz][0].load (std::memory_order_relaxed) * 0.001f)));
+                }
+                carWasActive[(size_t) c] = carVivo[c];
+
+                //  Y SIN NADA QUE ENTRE, EL BUS SE APAGA — que es lo unico de
+                //  los seis que no se apagaria solo.
+                //
+                //  Un congelador que da vueltas escribe en su propio bus, asi
+                //  que `returnBus` deja `busRinging` puesto por su propia
+                //  salida y `live` vuelve a ser cierto: el efecto no se apaga
+                //  NUNCA —ni cerrando el envio, ni parando la maquina— y el bus
+                //  se queda vivo para siempre con su coste por bloque. Lo canto
+                //  el banco, y no dibujaba ruido: seguia sonando. Se congela lo
+                //  que ENTRA mientras entra algo, que ademas es lo que un pedal
+                //  de freeze hace con el pie encima.
+                //
+                //  Y se DEVUELVE el bus vacio en vez de saltarse la etapa: sin
+                //  eso `busRinging` se queda en el valor de la ultima vuelta y
+                //  el bus no muere, que es el mismo fallo por la puerta de
+                //  atras. Ademas es lo que escribe el silencio en el anillo del
+                //  visor.
+                if (carVivo[c] && ! busFed[kFxFrz])
+                {
+                    carWasActive[(size_t) c] = false;
+                    returnBus (kFxFrz);
+                }
+                else if (carVivo[c])
+                {
+                    //  El cruce mide como mucho un cuarto de la ventana: mas
+                    //  alla el trozo que se oye dos veces es mayor que el que
+                    //  se oye una y deja de ser un bucle.
+                    const int cruce = juce::jlimit (1, frzLargo / 4,
+                                        (int) (smFrzSuave * (float) frzLargo * 0.25f) + 1);
+
+                    for (int i = 0; i < numSamples; ++i)
+                    {
+                        for (int ch = 0; ch < chans; ++ch)
+                        {
+                            float* w = fxBus[kFxFrz].getWritePointer (ch, startSample);
+                            const float x = std::isfinite (w[i]) ? w[i] : 0.0f;
+
+                            if (! frzLlena)
+                            {
+                                frzVent[(size_t) ch][(size_t) frzEscritas] = x;
+                                w[i] = x;
+                                if (std::abs (x) > 1.0e-5f) frzOyo = true;
+                            }
+                            else
+                            {
+                                const int p = (int) frzLee;
+                                float y = frzVent[(size_t) ch][(size_t) p];
+                                //  El final se cruza con el principio: en la
+                                //  costura las dos mitades son la MISMA
+                                //  ventana, asi que no hay salto.
+                                if (p >= frzLargo - cruce)
+                                {
+                                    const float t = (float) (p - (frzLargo - cruce)) / (float) cruce;
+                                    y = (1.0f - t) * y + t * frzVent[(size_t) ch][(size_t) (p - (frzLargo - cruce))];
+                                }
+                                w[i] = y;
+                            }
+                        }
+
+                        //  Y LA CAPTURA NO EMPIEZA HASTA QUE LLEGA SEÑAL.
+                        //
+                        //  El flanco ARMA y el primer sonido llena, que no es
+                        //  lo mismo: un envio se abre antes de que suene nada
+                        //  -en la app, tocando la ranura entre dos golpes; en
+                        //  el banco, los treinta bloques de asentado- y sin
+                        //  esta guarda el congelador captura SILENCIO y lo da
+                        //  vueltas para siempre. Lo canto la primera corrida:
+                        //  `al segundo 0.00000` con la etapa entera correcta.
+                        if (! frzLlena && frzOyo)
+                        {
+                            if (++frzEscritas >= frzLargo) { frzLlena = true; frzEscritas = frzLargo; }
+                        }
+                        else
+                        {
+                            frzLee += 1.0f;
+                            if (frzLee >= (float) frzLargo) frzLee -= (float) frzLargo;
+                        }
+                    }
+                    returnBus (kFxFrz);
                 }
             }
         }

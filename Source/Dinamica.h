@@ -179,7 +179,6 @@ struct Dinamica
         const float gT = (modo == deesser
                             ? std::tan (juce::MathConstants<float>::pi * fc / (float) sr)
                             : 0.0f);
-        const float kQ = 1.4142f;                       // Butterworth
         const float a1 = 1.0f / (1.0f + gT * (gT + kQ));
         const float a2 = gT * a1;
         const float a3 = gT * a2;
@@ -289,7 +288,40 @@ struct Dinamica
         reduccion = -juce::Decibels::gainToDecibels (juce::jmax (1.0e-4f, peorG));
     }
 
-private:
+    //  EL CRUCE Y EL DETECTOR SON PUBLICOS desde que tienen un segundo
+    //  cliente. `cruza` la usa el EXCITADOR —que necesita exactamente esto:
+    //  partir en dos ramas que SUMAN plano, para saturar solo la de arriba y
+    //  volver a juntarlas sin un bache en el corte— y `coefDe` el moldeador de
+    //  transitorios. Es la misma extraccion que `barridoDe`, `bajaDb` y
+    //  `FxVisor::muestrea`: en cuanto hay dos, la regla no puede vivir dentro
+    //  de uno de los dos.
+    //
+    //  Y `coefDe` pasa a ser ESTATICA y con la frecuencia por parametro: la
+    //  version de miembro leia `sr`, que es de esta instancia, y un cliente de
+    //  fuera no tiene ninguna.
+    static constexpr float kQ = 1.4142f;            // Butterworth, las dos ramas
+
+    static float coefDe (float ms, double fs) noexcept
+    {
+        const float t = juce::jmax (0.01f, ms) * 0.001f;
+        return std::exp (-1.0f / (t * (float) juce::jmax (8000.0, fs)));
+    }
+
+    //  Los coeficientes del cruce, que los dos clientes necesitan igual.
+    struct Cruce { float a1, a2, a3, k; };
+    static Cruce cruceEn (float hz, double fs) noexcept
+    {
+        const float g = std::tan (juce::MathConstants<float>::pi
+                                    * juce::jlimit (20.0f, (float) fs * 0.45f, hz) / (float) fs);
+        Cruce c;
+        c.a1 = 1.0f / (1.0f + g * (g + kQ));
+        c.a2 = g * c.a1;
+        c.a3 = g * c.a2;
+        c.k  = kQ;
+        return c;
+    }
+
+public:
     //  Un filtro de variable de estado por transposicion. Devuelve las dos
     //  salidas de una vez porque el cruce necesita las dos y calcularlas por
     //  separado seria correr el mismo filtro dos veces.
@@ -319,11 +351,8 @@ private:
         svf (l1, baja[1], a1, a2, a3, k, lp, h2);
     }
 
-    float coef (float ms) const noexcept
-    {
-        const float t = juce::jmax (0.01f, ms) * 0.001f;
-        return std::exp (-1.0f / (t * (float) sr));
-    }
+private:
+    float coef (float ms) const noexcept { return coefDe (ms, sr); }
 
     double sr = 48000.0;
     float env = 0.0f;

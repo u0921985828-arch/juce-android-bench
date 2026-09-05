@@ -221,6 +221,11 @@ namespace UiAudit
 
             std::cout << "{\"icono\":\"" << Iconos::nombre (id) << "\""
                       << ",\"n\":" << n
+                      //  El lado mas pequeño al que la app dibuja un icono. Lo
+                      //  dice ella y no el script: es donde la prueba de pares
+                      //  tiene que preguntar, y escrito en los dos sitios seria
+                      //  el numero de ayer el dia que suba.
+                      << ",\"min\":" << Iconos::kLadoMin
                       << ",\"x\":" << juce::String (lim.getX(), 2)
                       << ",\"y\":" << juce::String (lim.getY(), 2)
                       << ",\"w\":" << juce::String (lim.getWidth(), 2)
@@ -228,6 +233,92 @@ namespace UiAudit
                       << ",\"px\":\"" << hex << "\"}" << std::endl;
         }
 
+    }
+
+
+    //  ==========================================================================
+    //  EL DIBUJO Y LA PALABRA COMPARTEN LINEA, y hasta hoy nadie lo media.
+    //
+    //  La queja llego mirando el telefono -«los sprites deben estar centrados en
+    //  altura con el texto»- y las once reglas de `expo.py` no pueden verla: un
+    //  icono dos pixeles alto se maqueta perfecto, no solapa, no se sale, no
+    //  corta el rotulo y esta traducido. Es la familia de los cinco fallos del
+    //  compas del piano otra vez, en el unico sitio donde el ojo si lo ve.
+    //
+    //  Y LA PRIMERA MEDIDA SE EQUIVOCO, que a estas alturas es el patron: se
+    //  midieron los LIMITES NOMINALES del camino (`Iconos::limites`) y salieron
+    //  dieciocho descentrados, con `deshacer` a 2.73 unidades de 24. No lo
+    //  estaban: `Iconos::dibuja` ya centra por la TINTA desde que todos ocupan
+    //  la misma caja -`dx = caja.getCentreX() - lim.getCentreX() * esc`- asi que
+    //  lo nominal no es lo que se pinta. Se mide lo PINTADO, que es la regla de
+    //  la casa, y se mide contra el ROTULO y no contra la caja: dos cosas
+    //  centradas cada una en su mitad pueden seguir sin compartir renglon.
+    //
+    //  Se pinta SOLO el primer plano -`drawButtonText` sobre un lienzo
+    //  transparente- porque con la tapa debajo «tinta» seria cualquier pixel que
+    //  no sea el fondo, y el fondo de una tapa lleva degradado, filo y sombra.
+    //  ==========================================================================
+    inline void volcadoTapa (int escala)
+    {
+        struct Caso { const char* rot; Iconos::Id id; int w, h; };
+        static const Caso casos[] =
+        {
+            { "CANCION", Iconos::Id::cancion, 120, 44 },
+            { "PLAY",    Iconos::Id::play,     90, 44 },
+            { "AJUSTES", Iconos::Id::sistema, 130, 40 },
+            { "MEDIR",   Iconos::Id::medir,   120, 32 },
+            { "SEC",     Iconos::Id::sec,      80, 26 },
+            { "VACIAR",  Iconos::Id::vaciar,  140, 48 },
+        };
+
+        ZatiLookAndFeel laf;
+        for (const auto& c : casos)
+        {
+            juce::TextButton b (c.rot);
+            b.setLookAndFeel (&laf);
+            b.getProperties().set ("icono", (int) c.id);
+            b.setSize (c.w, c.h);
+
+            const auto rep = ZatiLookAndFeel::reparteTapa (b);
+            if (rep.id == Iconos::Id::ninguno) { b.setLookAndFeel (nullptr); continue; }
+
+            const int S = juce::jlimit (2, 16, escala);
+            juce::Image img (juce::Image::ARGB, c.w * S, c.h * S, true);
+            {
+                juce::Graphics g (img);
+                g.addTransform (juce::AffineTransform::scale ((float) S));
+                laf.drawButtonText (g, b, false, false);
+            }
+
+            //  El primero y el ultimo renglon con tinta dentro de una banda de
+            //  columnas, en unidades del boton.
+            auto banda = [&img, S] (int x0, int x1, float& arriba, float& abajo)
+            {
+                arriba = -1.0f; abajo = -1.0f;
+                juce::Image::BitmapData bd (img, juce::Image::BitmapData::readOnly);
+                for (int y = 0; y < img.getHeight(); ++y)
+                    for (int x = juce::jmax (0, x0 * S); x < juce::jmin (img.getWidth(), x1 * S); ++x)
+                        if (bd.getPixelColour (x, y).getAlpha() > 40)
+                        {
+                            if (arriba < 0.0f) arriba = (float) y / (float) S;
+                            abajo = (float) y / (float) S;
+                            break;
+                        }
+            };
+
+            float ia = 0.0f, ib = 0.0f, ta = 0.0f, tb = 0.0f;
+            banda (rep.icono.getX(), rep.icono.getRight(), ia, ib);
+            banda (rep.texto.getX(), c.w,                  ta, tb);
+
+            std::cout << "{\"tapa\":\"" << c.rot << "\""
+                      << ",\"w\":" << c.w << ",\"h\":" << c.h
+                      << ",\"letra\":" << juce::String (rep.fuente.getHeight(), 2)
+                      << ",\"lado\":" << rep.icono.getWidth()
+                      << ",\"icono\":[" << juce::String (ia, 3) << "," << juce::String (ib, 3) << "]"
+                      << ",\"texto\":[" << juce::String (ta, 3) << "," << juce::String (tb, 3) << "]"
+                      << "}" << std::endl;
+            b.setLookAndFeel (nullptr);
+        }
     }
 
     inline int tourPaso = -1;

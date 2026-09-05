@@ -584,6 +584,24 @@ namespace Metrics
     //  agranda ni le come el margen de dentro.
     static constexpr float panelBorde = 0.12f;
 
+    //  EL DIBUJO CRECE CON LA PALABRA Y NO CON LA TAPA.
+    //
+    //  `reparteTapa` sacaba el lado del icono del ALTO de la tapa acotado a 18,
+    //  y la letra sale de otro sitio -`tapa.getHeight() * 0.38` acotada entre
+    //  10 y 14.5-. Los dos topes se alcanzan en sitios distintos, asi que el
+    //  dibujo pesaba lo mismo en todas las filas y la palabra no: medido con
+    //  `ZATI_TAPA`, la caja del icono valia 3.2 alturas de letra en una pestana
+    //  de 26 px y 2.5 en una tapa de 44. Es la MISMA regla que ya gobierna el
+    //  interior de un icono -«todos ocupan la misma caja, o en una fila se leen
+    //  como si el pequeno estuviera mas lejos»- sin aplicar entre filas.
+    //
+    //  El 1.45 no se elige: es lo que hoy vale la fila mas grande -18 sobre una
+    //  letra de 12.54- asi que las tapas altas no se mueven un pixel y las
+    //  bajas bajan hasta la misma proporcion. Y solo puede haber MAS dibujos,
+    //  no menos: el icono se encoge, y el que decide si sale es `lado >=
+    //  kLadoMin` contra el hueco que queda.
+    static constexpr float iconoPorLetra = 1.45f;
+
     //  LA PESTANA DE UNA FICHA TAMBIEN SE TOCA.
     //
     //  Valia 32 con el argumento de que una pestana abre una pagina y no actua,
@@ -1161,7 +1179,8 @@ public:
 
         //  Cuadrado y sacado del ALTO de la tapa: un tercio del ancho daria un
         //  icono de sesenta pixeles en la tapa de PLAY.
-        const int tope = juce::jmin (r.texto.getHeight(), 18);
+        const int tope = juce::jmin (juce::jmin (r.texto.getHeight(), 18),
+                                     (int) std::lround (r.fuente.getHeight() * Metrics::iconoPorLetra));
         if (tope < Iconos::kLadoMin) return r;
 
         if (texto.isEmpty()) { r.id = id; r.icono = r.texto; r.texto = {}; return r; }

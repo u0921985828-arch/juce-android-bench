@@ -2669,6 +2669,9 @@ void MainComponent::auditRack()
     //  alimentado.
     constexpr int kFxScopeBanco = Analizador::kFft;
     int mueven = 0, quietosSinSenal = 0, medibles = 0;
+    //  Y QUIENES, que un contador no dice cual redibujar. Es la misma
+    //  leccion que el `1 @35,320 39x36` del residuo: el hallazgo nombra.
+    juce::StringArray vivoMudo, vivoRuido;
     {
         //  Un ruido, que es lo unico que llena TODAS las columnas de un
         //  espectro: con un seno, cuarenta y siete de las cuarenta y ocho se
@@ -2762,13 +2765,17 @@ void MainComponent::auditRack()
                 return false;
             };
 
-            if (distinto (callado, sonando)) ++mueven;
+            if (distinto (callado, sonando)) ++mueven; else vivoMudo.add (juce::String (f));
 
             //  Y QUIETA SIN SEÑAL, con el mismo asentado delante: una capa que
             //  dibuja ruido falla aqui, y una que se ha parado no.
             lee (false, 80);
             const auto otra = lee (false, 5);
             if (! distinto (callado, otra)) ++quietosSinSenal;
+            else
+            {
+                vivoRuido.add (juce::String (f));
+            }
         }
 
         for (int p = 0; p < kNumPads; ++p)
@@ -2797,6 +2804,8 @@ void MainComponent::auditRack()
               << ",\"quietos\":" << quietos
               << ",\"discrepan\":" << discrepan
               << ",\"medidos\":[" << medidos.joinIntoString (",") << "]"
+              << ",\"vivo_mudo\":[" << vivoMudo.joinIntoString (",") << "]"
+              << ",\"vivo_ruido\":[" << vivoRuido.joinIntoString (",") << "]"
               << ",\"mueven\":" << mueven
               << ",\"quietos_sin\":" << quietosSinSenal
               << ",\"medibles\":" << medibles

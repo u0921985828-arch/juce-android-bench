@@ -135,7 +135,7 @@ public:
         if (fx < 0 || pre == nullptr || post == nullptr || n <= 0 || ! isVisible()) return;
 
         Viva v {};
-        if (esFrecuencia (fx))
+        if (FxVisor::deFrecuencia (fx))
         {
             if (n < Analizador::kFft) return;
             ana.analiza (post, n, dtMs);
@@ -155,7 +155,7 @@ public:
                                                   / -Analizador::kPiso);
             }
         }
-        else if (fx == AudioEngine::kFxBit)
+        else if (FxVisor::deOnda (fx))
         {
             //  La onda que sale, en las mismas columnas. Sin analisis: lo que
             //  este visor dibuja ES una onda.
@@ -174,7 +174,7 @@ public:
             //  al doble de velocidad en un panel de 120 Hz. Es el mismo fallo
             //  que las cinco constantes visuales tenian en ticks.
             colaMs += dtMs;
-            const double paso = (double) FxVisor::kVentanaMs / (double) (kPuntos - 1);
+            const double paso = (double) FxVisor::ventanaDe (fx) / (double) (kPuntos - 1);
             float pico = 0.0f;
             for (int i = juce::jmax (0, n - 512); i < n; ++i) pico = juce::jmax (pico, std::abs (post[i]));
             picoCola = juce::jmax (picoCola, pico);
@@ -254,8 +254,6 @@ public:
     float puntoX() const noexcept { return viva.punto ? viva.px : -1.0f; }
     float puntoY() const noexcept { return viva.punto ? viva.py : -1.0f; }
 
-    static bool esFrecuencia (int f) noexcept
-    { return f == AudioEngine::kFxFlt || f == AudioEngine::kFxHpf; }
 
     void paint (juce::Graphics& g) override
     {

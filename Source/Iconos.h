@@ -66,6 +66,7 @@ namespace Iconos
         insClav, insFlauta, insArpa,
         midi, medir, altavoz, mano, momentaneo, niveles,
         cho, fla, pha, trm,
+        rng, pit, wid, exc, trn, frz,
         //  --- LOS SEIS QUE FALTABAN, y por que faltaban ------------------
         //
         //  No se eligieron mirando: salieron de `Tests/planos.py`, que dibuja
@@ -167,6 +168,9 @@ namespace Iconos
             case Id::lim: return "lim";
             case Id::cho: return "cho";                case Id::fla: return "fla";
             case Id::pha: return "pha";                case Id::trm: return "trm";
+            case Id::rng: return "rng";                case Id::pit: return "pit";
+            case Id::wid: return "wid";                case Id::exc: return "exc";
+            case Id::trn: return "trn";                case Id::frz: return "frz";
             case Id::mic: return "mic";                case Id::remuestrear: return "remuestrear";
             case Id::bombeo: return "bombeo";          case Id::autocut: return "autocut";
             case Id::sistema: return "sistema";        case Id::cadena: return "cadena";
@@ -384,10 +388,17 @@ namespace Iconos
             //  lo que hay escrito. Con las cuatro celdas tachadas que llevaba
             //  antes era `pads` -0.30- y ademas `rack` -0.37-: una rejilla de
             //  bloques es el dibujo mas repetido de esta app.
+            //  VACIAR SE QUEDA SIN SU CAJA, y por una medida.
+            //
+            //  Era una caja redondeada con una equis dentro y `pad` es una
+            //  caja redondeada con un punto dentro: a 24 px salen a 0.3676 y a
+            //  los TRECE a los que se dibujan, a 0.2378 — por debajo del
+            //  liston. Y la caja no aportaba nada: una equis dentro de un
+            //  recuadro se lee como «cerrar la ventana», que es justo lo que
+            //  esta tapa NO hace. Sola y grande dice vaciar.
             case Id::vaciar:
-                L.addRoundedRectangle (3.0f, 3.0f, 18.0f, 18.0f, 2.0f);
-                linea (L, 8.2f, 8.2f, 15.8f, 15.8f);
-                linea (L, 15.8f, 8.2f, 8.2f, 15.8f);
+                linea (L, 4.5f, 4.5f, 19.5f, 19.5f);
+                linea (L, 19.5f, 4.5f, 4.5f, 19.5f);
                 break;
 
             //  INSERTAR y QUITAR se dibujan por lo que le pasa al COMPAS del
@@ -808,6 +819,106 @@ namespace Iconos
                     R.closeSubPath();
                 }
                 t.lleno = 0.88f;
+                break;
+
+            //  ==================================================================
+            //  LOS SEIS DE CARACTER. Cada uno dibuja lo que lo separa de sus
+            //  hermanos y no «un efecto»: seis dibujos de la misma tanda son
+            //  justo donde es facil dibujar seis veces lo mismo, que es lo que
+            //  ya paso con MANDAR/RECIBIR y con REV contra `deshacer`.
+
+            //  RNG: la portadora suprimida y sus DOS bandas laterales, que es
+            //  literalmente lo que sale de un modulador en anillo. El palo del
+            //  medio es un muñon -el tono original se ha ido- y los dos de los
+            //  lados estan a la misma distancia. Va sobre un renglon y hacia
+            //  ARRIBA, que es lo que lo separa de `fla`, cuyas muescas cuelgan.
+            case Id::rng:
+                linea (L, 2.0f, 19.0f, 22.0f, 19.0f);
+                linea (L, 6.0f, 19.0f, 6.0f,  5.0f);
+                linea (L, 18.0f, 19.0f, 18.0f, 5.0f);
+                linea (L, 12.0f, 19.0f, 12.0f, 15.0f);
+                break;
+
+            //  PIT: UNA onda que se aprieta. El periodo se acorta de izquierda
+            //  a derecha, o sea que la nota sube: dibujar dos ondas sueltas lo
+            //  dejaria a un pelo de `cho`, y una flecha hacia arriba a un pelo
+            //  de media tabla.
+            case Id::pit:
+            {
+                const float pasos[] = { 6.0f, 5.0f, 4.0f, 3.2f, 2.6f };
+                float x = 2.0f;
+                L.startNewSubPath (x, 12.0f);
+                for (int i = 0; i < 5 && x < 22.0f; ++i)
+                {
+                    const float w = pasos[i];
+                    L.quadraticTo (x + w * 0.25f, 12.0f - 7.5f, x + w * 0.5f, 12.0f);
+                    L.quadraticTo (x + w * 0.75f, 12.0f + 7.5f, x + w, 12.0f);
+                    x += w;
+                }
+                break;
+            }
+
+            //  WID: el campo que se abre. Dos lineas que divergen desde un
+            //  punto de abajo y el eje del medio, que es donde queda el mono.
+            //  No es una flecha de dos puntas: `alargar` ya es eso y los dos
+            //  espejos de esa pareja son el par mas cercano de la tabla.
+            case Id::wid:
+                linea (L, 12.0f, 21.0f, 3.0f,  4.0f);
+                linea (L, 12.0f, 21.0f, 21.0f, 4.0f);
+                linea (L, 12.0f, 21.0f, 12.0f, 8.5f);
+                linea (L, 3.0f,  4.0f, 21.0f,  4.0f);
+                break;
+
+            //  EXC: el destello que se anade encima de la banda. La estrella
+            //  de cuatro puntas no la lleva nadie mas en la tabla, y va a la
+            //  DERECHA porque los agudos estan a la derecha en todos los ejes
+            //  de esta app.
+            case Id::exc:
+                linea (L, 2.0f, 18.0f, 22.0f, 18.0f);
+                linea (L, 2.0f, 18.0f, 12.0f, 18.0f);
+                R.startNewSubPath (17.0f,  2.5f);
+                R.quadraticTo (18.0f,  8.0f, 22.5f,  9.0f);
+                R.quadraticTo (18.0f, 10.0f, 17.0f, 15.5f);
+                R.quadraticTo (16.0f, 10.0f, 11.5f,  9.0f);
+                R.quadraticTo (16.0f,  8.0f, 17.0f,  2.5f);
+                R.closeSubPath();
+                linea (L, 6.0f, 18.0f, 6.0f, 13.0f);
+                break;
+
+            //  TRN: la envolvente con el golpe exagerado. El pico sube por
+            //  encima de la caja de la caida, que es lo que un moldeador hace
+            //  y lo que lo separa de `trm` -tres lentes iguales- y de `ruido`.
+            case Id::trn:
+                R.startNewSubPath (4.0f, 21.0f);
+                R.lineTo (7.0f,  3.0f);
+                R.lineTo (10.0f, 21.0f);
+                R.closeSubPath();
+                t.lleno = 0.88f;
+                L.startNewSubPath (11.5f, 12.5f);
+                L.quadraticTo (16.0f, 13.5f, 22.0f, 20.5f);
+                linea (L, 11.5f, 20.5f, 22.0f, 20.5f);
+                break;
+
+            //  FRZ: el copo. Seis brazos con su barba, que es la unica forma
+            //  radial de la tabla entera — y es ademas el simbolo del sector
+            //  para congelar, asi que no hay que aprenderlo.
+            case Id::frz:
+                for (int i = 0; i < 3; ++i)
+                {
+                    const float ang = 0.5235988f + (float) i * 1.0471976f;   // 30 + k*60 grados
+                    const float dx = std::cos (ang) * 9.5f, dy = std::sin (ang) * 9.5f;
+                    linea (L, 12.0f - dx, 12.0f - dy, 12.0f + dx, 12.0f + dy);
+                    for (int lado = -1; lado <= 1; lado += 2)
+                    {
+                        const float bx = 12.0f + dx * 0.62f * (float) lado;
+                        const float by = 12.0f + dy * 0.62f * (float) lado;
+                        const float px = -dy * 0.30f, py = dx * 0.30f;
+                        linea (L, bx, by, bx + dx * 0.22f * (float) lado + px,
+                                          by + dy * 0.22f * (float) lado + py);
+                        linea (L, bx, by, bx + dx * 0.22f * (float) lado - px,
+                                          by + dy * 0.22f * (float) lado - py);
+                    }
+                }
                 break;
 
             //  REV: la fuente y lo que rebota. Tres arcos que se abren.
@@ -1244,14 +1355,21 @@ namespace Iconos
             //  PIANO ELEC: cuatro teclas blancas y tres negras. Es el dibujo
             //  mas literal de los dieciseis y a proposito: un teclado no se
             //  confunde con nada.
+            //  EL PIANO ELECTRICO ES LA VARILLA, no un tercer teclado.
+            //
+            //  Era `piano` con una tecla mas: mismo marco, mismas rayas,
+            //  mismas negras. A 24 px la prueba de pares los daba por
+            //  distintos -0.3676- y a los TRECE a los que se dibujan de verdad
+            //  se juntan en 0.1987, o sea el mismo dibujo. Lo que separa un
+            //  Rhodes de un piano no es una tecla: es el diapason que el
+            //  martillo golpea, y eso no se parece a nada de la tabla.
             case Id::insEp:
-                L.addRectangle (2.0f, 5.0f, 20.0f, 14.0f);
-                linea (L, 7.0f, 5.0f, 7.0f, 19.0f);
-                linea (L, 12.0f, 5.0f, 12.0f, 19.0f);
-                linea (L, 17.0f, 5.0f, 17.0f, 19.0f);
-                R.addRectangle (5.3f, 5.0f, 3.2f, 8.0f);
-                R.addRectangle (10.3f, 5.0f, 3.2f, 8.0f);
-                R.addRectangle (15.3f, 5.0f, 3.2f, 8.0f);
+                linea (L, 8.0f, 4.0f, 8.0f, 13.0f);          // las dos puas
+                linea (L, 16.0f, 4.0f, 16.0f, 13.0f);
+                L.startNewSubPath (8.0f, 13.0f);             // y la horquilla
+                L.quadraticTo (12.0f, 17.5f, 16.0f, 13.0f);
+                linea (L, 12.0f, 16.4f, 12.0f, 21.0f);       // el mango
+                R.addEllipse (2.0f, 6.0f, 4.4f, 4.4f);       // el martillo
                 break;
 
             //  ORGANOS: las tres barras de registro, cada una a su altura. Un

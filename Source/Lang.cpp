@@ -1032,6 +1032,16 @@ namespace
         { "FUERZA",         "",         "AMOUNT",     "强度",        "المقدار" },
         { "TECHO",          "",         "CEILING",    "上限",        "السقف" },
         { "SOLTAR",         "",         "RELEASE",    "释放",        "التحرر" },
+        //  LOS SEIS DE CARACTER. `ANCHO`, `MONO`, `FUERZA`, `ATTACK` y
+        //  `RELEASE` ya tenian fila y se reutilizan: son la misma palabra con
+        //  el mismo sentido, que es lo contrario de reaprovechar una clave por
+        //  parecerse en espanol.
+        { "ANILLO",         "",         "RING",       "环形",        "الحلقي" },
+        { "SEMIS",          "",         "SEMIS",      "半音",        "أنصاف" },
+        { "GRANO",          "",         "GRAIN",      "颗粒",        "الحبيبة" },
+        { "CRUCE",          "",         "CROSS",      "分频",        "التقاطع" },
+        { "VENTANA",        "",         "WINDOW",     "窗口",        "النافذة" },
+        { "SUAVE",          "",         "SMOOTH",     "平滑",        "النعومة" },
         { "GUARDAR KIT",    "",         "SAVE KIT",   "保存音色组",   "حفظ الطقم" },
         { "Guardando kit",  "",         "Saving kit", "正在保存音色组", "جارٍ حفظ الطقم" },
         { "Ponle nombre primero", "",    "Name it first", "请先命名",  "سمّه أولاً" },

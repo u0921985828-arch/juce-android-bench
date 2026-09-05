@@ -259,6 +259,7 @@ UNTRANSLATED_OK = {
     "FLT", "ISO", "HPF", "DRV", "DLY", "BIT", "REV", "EQ",  # effect abbreviations
     "CMP", "GTE", "DSS", "LIM",                # la familia de dinamica, tres letras cada una
     "CHO", "FLA", "PHA", "TRM",                # la de modulacion, igual: tres letras
+    "RNG", "PIT", "WID", "EXC", "TRN", "FRZ",  # la de caracter, igual
     "RATIO",                                   # se escribe igual en las dos lenguas
     "FREQ",                                    # la abreviatura de frecuencia, la misma
     "AUTO",                                    # la abreviatura de automatizacion, igual en las cuatro
