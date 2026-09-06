@@ -129,5 +129,28 @@ namespace Bitacora
         paso ("arranque");
     }
 
+    //  LA SALIDA LIMPIA SE ESCRIBE DONDE ANDROID DE VERDAD SE VA.
+    //
+    //  Tenia un solo llamante -`Main.cpp::shutdown()`- y en Android ese camino
+    //  casi nunca corre: con `targetSDK 36` el boton ATRAS manda la tarea al
+    //  fondo sin destruir la actividad, asi que solo llega `onPause`, y la
+    //  muerte posterior del proceso es un SIGKILL que ni se puede capturar. O
+    //  sea que CUALQUIER salida normal dejaba el fichero sin esta linea y el
+    //  arranque siguiente enseñaba «La vez anterior se cerro en: ...» encima de
+    //  la linea de sesion recuperada. Un parte de caida que sale siempre no es
+    //  un parte: es ruido, y ademas entrena a no leer el que importe.
+    //
+    //  El tell que lo separa de una caida de verdad sigue intacto: `alCaer`
+    //  escribe CON PREFIJO -«CAIDA senal 11 en ...»- asi que un paso desnudo
+    //  nunca fue una caida.
     inline void finLimpio() noexcept { paso ("fin limpio"); }
+
+    //  Y VOLVER A PRIMER PLANO ANOTA UN PASO, que es la otra mitad.
+    //
+    //  Sin esto, «fin limpio» se quedaria como ultima linea mientras la app
+    //  sigue viva delante de la persona, y una caida DESPUES de reanudar se
+    //  leeria como un cierre correcto. Es el mismo fallo por el otro lado: un
+    //  mecanismo que no avisa nunca pasa la mitad de la prueba que uno que
+    //  avisa siempre.
+    inline void reanudada() noexcept { paso ("reanudada"); }
 }

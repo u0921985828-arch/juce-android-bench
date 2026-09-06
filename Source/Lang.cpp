@@ -132,10 +132,20 @@ namespace
         { "CARCASA",            "",  "CHASSIS",   "外壳",   "الهيكل" },
         { "MANTEN UN PAD",      "",  "HOLD A PAD",
                                      "长按音垫", "اضغط بادًا مطولًا" },
-        { "abre sus ajustes sin sonar", "",
-                                     "opens its settings, silently",
-                                     "打开它的设置，不发声",
-                                     "يفتح إعداداته دون صوت" },
+        //  «SIN SONAR» ERA VERDAD Y DEJO DE SERLO, y la fila se quedo.
+        //
+        //  El pad dispara al APOYAR desde que se midio que el `onClick` le
+        //  sumaba al golpe todo el tiempo del dedo (ver `PadButton.h`), asi que
+        //  mantener suena SIEMPRE: el `onHold` llega 420 ms despues y solo abre
+        //  la ficha. La pagina que existe para decir la verdad sobre los gestos
+        //  llevaba tres tandas diciendo lo contrario de lo que hace la maquina.
+        //  El tour ya lo decia bien -«toca uno y suena; mantenlo pulsado y se
+        //  abre todo lo que se le puede hacer»- o sea que el modelo estaba
+        //  dentro de la propia app.
+        { "suena y abre sus ajustes", "",
+                                     "plays, and opens its settings",
+                                     "发声并打开它的设置",
+                                     "يعزف ويفتح إعداداته" },
         { "MANTEN UN EFECTO",   "",  "HOLD AN EFFECT",
                                      "长按效果", "اضغط مؤثرًا مطولًا" },
         { "coge los mandos sin apagarlo", "",
@@ -150,13 +160,23 @@ namespace
                                      "يفتح المكتبة على الباد المحدد" },
         { "MANTEN PLAY",        "",  "HOLD PLAY",
                                      "长按播放", "اضغط تشغيل مطولًا" },
-        { "para y corta todo lo que suene", "",
-                                     "stops and cuts everything still sounding",
-                                     "停止并切断所有仍在发声的内容",
-                                     "يوقف ويقطع كل ما يزال يُسمع" },
+        //  Y «TODO LO QUE SUENE» TAMPOCO ERA VERDAD. `postPanic` mata las
+        //  VOCES (`AudioEngine.cpp`, `for (auto& v : voices) v.kill()`), y el
+        //  delay y la reverb son buses realimentados con estado propio: sus
+        //  colas siguen sonando su decaimiento. Se dice lo que corta y no se
+        //  toca el motor - cortar una cola de reverb en seco es otro
+        //  instrumento, y no hay ninguna medida que lo pida.
+        { "para y corta todos los pads", "",
+                                     "stops and cuts every pad",
+                                     "停止并切断所有音垫",
+                                     "يوقف ويقطع كل الوسادات" },
         { "ARRASTRA LA PANTALLA", "", "DRAG THE SCREEN",
                                      "拖动屏幕", "اسحب الشاشة" },
-        { "cambia de patron",   "",  "changes pattern bank",
+        //  Y AQUI EL INGLES DECIA OTRA COSA QUE EL ESPAÑOL: «changes pattern
+        //  BANK». El gesto mueve `selectedPattern` por `patternSlider`, o sea
+        //  el PATRON; un banco es otra cosa y en esta app son A B C D. El chino
+        //  y el arabe ya decian patron.
+        { "cambia de patron",   "",  "changes pattern",
                                      "切换乐句", "يغيّر النمط" },
         { "GOLPEA ARRIBA O ABAJO", "", "STRIKE HIGH OR LOW",
                                      "打上或打下", "اضرب أعلى أو أسفل" },
@@ -164,6 +184,24 @@ namespace
                                      "plays harder or softer",
                                      "力度更强或更弱",
                                      "يعزف أقوى أو أخف" },
+        //  Y LOS DOS QUE FALTABAN. Esta pagina existe para que un gesto que no
+        //  deja marca en la cara se pueda descubrir sin tocarlo por casualidad,
+        //  y dos entraron en tandas posteriores sin fila: SOLO mantenido limpia
+        //  los solos y AUTO mantenido vacia la automatizacion. Las dos son
+        //  «mantener para deshacer lo que no se deshace tocando otra vez», que
+        //  es la mitad de por que la lista existe.
+        { "MANTEN SOLO",        "",  "HOLD SOLO",
+                                     "长按独奏", "اضغط منفرد مطولًا" },
+        { "quita todos los solos", "",
+                                     "clears every solo",
+                                     "清除所有独奏",
+                                     "يمسح كل العزلات" },
+        { "MANTEN AUTO",        "",  "HOLD AUTO",
+                                     "长按自动化", "اضغط أتمتة مطولًا" },
+        { "vacia la automatizacion", "",
+                                     "empties the automation",
+                                     "清空自动化",
+                                     "يفرغ الأتمتة" },
         { "Todo parado",        "",  "Everything stopped",
                                      "全部停止", "توقف كل شيء" },
 
@@ -405,9 +443,12 @@ namespace
         { "Un toque toca; una pulsacion larga configura", "",
           "a tap plays; a long press configures",
           "轻触发声，长按设置", "النقر يعزف، والضغط المطول يضبط" },
-        { "Manten un pad para abrir su ficha sin que suene", "",
-          "hold a pad to open its settings without a sound",
-          "长按音垫可打开其设置而不发声", "اضغط بادًا مطولًا لفتح إعداداته دون صوت" },
+        //  La misma correccion que la fila de GESTOS, y en la misma tanda: el
+        //  manual y la ficha decian los dos «sin sonar» y el pad dispara al
+        //  apoyar. Dos sitios con la misma frase falsa son dos sitios.
+        { "Manten un pad para abrir su ficha: el golpe suena igual", "",
+          "hold a pad to open its settings: the hit still sounds",
+          "长按音垫打开其设置：这一击仍会发声", "اضغط بادًا مطولًا لفتح إعداداته: تُسمع الضربة كذلك" },
         //  Y LA EXCEPCION, que hay que decir porque el gesto CAMBIA: en un pad
         //  con instrumento mantener es tocar una nota larga, asi que ahi la
         //  ficha se abre por la pestana PAD. Un manual que promete un gesto que
@@ -422,9 +463,13 @@ namespace
         { "Cuatro bancos de dieciseis pads: los otros 48 siguen sonando", "",
           "four banks of sixteen: the other 48 keep sounding",
           "四个音库各十六个音垫，其余 48 个继续发声", "أربعة بنوك من ستة عشر: الباقي 48 يستمر في الصوت" },
-        { "Arrastra la rejilla para cambiar de banco", "",
-          "drag the grid to change bank",
-          "拖动网格可切换音库", "اسحب الشبكة لتغيير البنك" },
+        //  ESTA LINEA PROMETIA UN GESTO QUE NO EXISTE. `PadButton::mouseDrag`
+        //  solo cancela el temporizador de mantener: arrastrar la rejilla no
+        //  cambia de banco ni de nada. El unico arrastre de la cara vive en el
+        //  cristal y cambia de PATRON, que es lo que dice la ficha GESTOS.
+        { "Toca A, B, C o D para cambiar de banco", "",
+          "tap A, B, C or D to change bank",
+          "点击 A、B、C 或 D 切换音库", "المس A أو B أو C أو D لتغيير البنك" },
         { "El color de un pad lo acompana en la onda y en la rejilla", "",
           "a pad's colour follows it into the wave and the grid",
           "音垫的颜色会带到波形与网格中", "لون الباد يرافقه في الموجة والشبكة" },

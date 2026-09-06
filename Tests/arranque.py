@@ -25,6 +25,12 @@ TRES cifras y no una, que es la regla de la casa:
      que la persona llama «no hay ajuste».
 
 Mas el tope: si el aparato no contesta nunca, la portada se levanta igual.
+
+Y LA CAJA NEGRA, que es el otro arranque y no la medi­a nadie: «La vez anterior
+se cerro en: ficha MEZCLA» salia en CADA arranque -un parte de caida que sale
+siempre no es un parte, es ruido, y ademas entrena a no leer el que importe-.
+Con las dos mitades: una salida normal de Android no avisa, y una caida si, con
+su prefijo. Ver la funcion `bitacora` de abajo.
 """
 import json, os, shutil, subprocess, sys, tempfile
 
@@ -42,6 +48,76 @@ LLEGAN  = 4         # y en cual contestan los margenes
 #  misma regla en dos sitios, y la de aqui se quedaria vieja el dia que cambie
 #  la otra. Este es solo el respaldo por si la linea no trae el campo.
 TOPE    = 30
+
+
+def corre (casa, ticks, muere=0, senal=0):
+    """Un arranque en `casa`, que NO se borra: la bitacora vive ahi.
+
+    `muere` es el tick en el que la app se va como se va en Android -onPause y
+    el proceso desaparece, sin pasar por `shutdown()`- y `senal` la que levanta
+    en vez de eso. Ver ZATI_MUERE en MainComponent.h."""
+    env = dict (os.environ, HOME=casa, ZATI_SIZE="412x915",
+                ZATI_ARRANQUE=str (ticks),
+                ZATI_INSETS="100,0,50,0", ZATI_INSETS_TICK="2",
+                XDG_DATA_HOME=os.path.join (casa, ".local", "share"),
+                DISPLAY=os.environ.get ("DISPLAY", ":99"))
+    if muere: env["ZATI_MUERE"] = str (muere)
+    if senal: env["ZATI_SENAL"] = str (senal)
+    try:
+        out = subprocess.run ([APP], env=env, capture_output=True, text=True,
+                              timeout=300).stdout
+    except subprocess.TimeoutExpired:
+        return []
+    filas = []
+    for l in out.splitlines():
+        l = l.strip()
+        if not l.startswith ('{'): continue
+        try:    d = json.loads (l)
+        except Exception: continue
+        if d.get ("arranque") == "cara": filas.append (d)
+    return filas
+
+
+def bitacora (malas):
+    """LA CAJA NEGRA, con las DOS mitades.
+
+    Un mecanismo que no avisa NUNCA pasa la primera comprobacion solo, y el de
+    ayer -que avisaba SIEMPRE- pasaba la segunda: «La vez anterior se cerro en:
+    ficha MEZCLA» salia en cada arranque, en un telefono donde no se habia
+    caido nada. La causa es que `finLimpio()` tenia un solo llamante,
+    `Main.cpp::shutdown()`, y en Android ese camino no corre: ATRAS manda la
+    tarea al fondo y lo que la mata despues es un SIGKILL.
+
+    Y no lo miraba nadie: el unico `grep` de `zati-bitacora.txt` en `Tests/`
+    era `expo.py` BORRANDOLA.
+
+    Se arranca DOS VECES CON EL MISMO HOME, que es lo unico que hace medible
+    «la vez anterior» - con un HOME por corrida las dos serian la primera. Es
+    lo mismo que ya hace la marca del tour."""
+    #  1. Salida normal de Android: onPause y el proceso se va. NO avisa.
+    casa = tempfile.mkdtemp (prefix="zati-bit-")
+    try:
+        corre (casa, 30, muere=4)
+        segunda = corre (casa, 3)
+        limpia = segunda[0].get ("previa", "?") if segunda else "?"
+        print ("tras una salida normal de Android, la vez anterior dice %r" % limpia)
+        if not segunda:
+            malas.append ("bitacora: el segundo arranque no contesto")
+        elif limpia:
+            malas.append ("bitacora: parte de caida tras una salida limpia: %r" % limpia)
+
+        #  2. Y UNA CAIDA DE VERDAD SI AVISA, con su prefijo. Sin esta, apagar
+        #     el aviso del todo pasaria la primera.
+        corre (casa, 30, muere=4, senal=11)
+        tercera = corre (casa, 3)
+        rota = tercera[0].get ("previa", "?") if tercera else "?"
+        print ("tras una caida, la vez anterior dice %r" % rota)
+        if not tercera:
+            malas.append ("bitacora: el arranque tras la caida no contesto")
+        elif not rota.startswith ("CAIDA senal 11"):
+            malas.append ("bitacora: una caida no deja parte: %r" % rota)
+    finally:
+        shutil.rmtree (casa, ignore_errors=True)
 
 
 def arranca (ticks, tick_insets, size="412x915"):
@@ -143,6 +219,9 @@ def main():
                % next ((d["tick"] for d in lentas if not d["cubierta"]), "NUNCA"))
         if lentas[-1]["cubierta"]:
             malas.append ("sin respuesta del sistema la portada se queda puesta para siempre")
+
+    print()
+    bitacora (malas)
 
     print()
     for m in malas: print ("FALLA ", m)

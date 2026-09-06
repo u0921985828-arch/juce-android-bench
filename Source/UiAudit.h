@@ -196,6 +196,34 @@ namespace UiAudit
         tarjetas.push_back ({ pedido, tope, desplaza });
     }
 
+    //  QUE TAPAS DE LA CARA TIENEN UN GESTO ESCONDIDO.
+    //
+    //  Un `HoldButton` hace DOS cosas y solo una se ve: la de mantener no deja
+    //  marca en la cara, asi que no se descubre tocando. La unica pantalla que
+    //  las enumera es AJUSTES · GESTOS, y esa lista se escribio a mano y se
+    //  quedo vieja dos veces —MANTEN SOLO y MANTEN AUTO llevaban dos tandas
+    //  existiendo sin fila—. Ninguna de las once reglas puede verlo: un gesto
+    //  que no esta en una lista se maqueta perfecto.
+    //
+    //  La lista NO se escribe en el script, que serian dos listas y la del
+    //  banco se quedaria vieja igual: la BUSCA la app recorriendo los hijos de
+    //  la cara, con el rotulo puesto en el idioma de la corrida. El banco pide
+    //  que alguna fila de GESTOS lo NOMBRE, que es lo unico que separa «tiene
+    //  fila» de «tiene la fila de otro»: quitando la de SOLO, las de abajo se
+    //  corren y la comprobacion por indice seguiria en verde.
+    //
+    //  `familia` es la excepcion declarada: las ranuras de efecto comparten una
+    //  sola fila -«MANTEN UN EFECTO»- que no las nombra una por una, porque
+    //  seis filas iguales son el manual otra vez.
+    struct Mantener { juce::String tapa; int familia; };
+    inline std::vector<Mantener> mantener;
+
+    inline void gestoDe (const juce::String& tapa, int familia)
+    {
+        if (! enabled()) return;
+        mantener.push_back ({ tapa, familia });
+    }
+
     //  EL JUEGO DE ICONOS, RASTERIZADO.
     //
     //  Un icono se juzga por tres cosas y solo la primera se ve mirandolo:
@@ -818,6 +846,10 @@ namespace UiAudit
                       << ",\"pedido\":" << t.pedido
                       << ",\"tope\":" << t.tope
                       << ",\"desplaza\":" << (t.desplaza ? 1 : 0) << "}" << std::endl;
+
+        for (const auto& m : mantener)
+            std::cout << "{\"mantener\":\"" << m.tapa << "\",\"familia\":" << m.familia << "}"
+                      << std::endl;
 
         if (tourPaso >= 0)
             std::cout << "{\"tour\":" << tourPaso

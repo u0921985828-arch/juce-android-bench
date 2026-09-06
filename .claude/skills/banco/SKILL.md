@@ -49,12 +49,12 @@ codigo.
 | la automatizacion de los efectos | `Tests/auto.py` |
 | instrumentos, packs, licencias | `Tests/dlc.py` |
 | el tour de bienvenida | `Tests/tour.py` |
-| el arranque, la portada, los margenes del sistema | `Tests/arranque.py` |
+| el arranque, la portada, los margenes del sistema, la caja negra | `Tests/arranque.py` |
 | iconos, la marca, la textura del chasis | `Tests/iconos.py` |
 | una APK | `Tests/apk.py <fichero>` |
 | repintados, coste de la cara | `Tests/cpu.py` **sola** (ver abajo) |
 | la tasa de refresco, cualquier constante de tiempo visual | `Tests/fps.py` |
-| titulos y rotulos pintados | `Tests/plano.py` |
+| titulos y rotulos pintados, los gestos escondidos | `Tests/plano.py` |
 | nombres visibles, comentarios, cualquier texto de `Source/` | `Tests/marcas.py` |
 | la ficha de Play | `Tests/store.py` |
 | afinar una receta de la fabrica | `Tests/analiza.py` |

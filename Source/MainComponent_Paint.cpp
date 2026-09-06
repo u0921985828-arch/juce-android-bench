@@ -974,18 +974,34 @@ void MainComponent::paintGesturesPage (juce::Graphics& g, juce::Rectangle<int> a
     //  El titulo lo pinta paintSetTitle para las cuatro paginas. Aqui habia
     //  un segundo "GESTOS" en otra caja: dos titulos para una pagina.
 
+    //  LAS CLAVES LLEGAN POR INDICE, que es lo que hay que saber antes de
+    //  tocar una: `T (rows[i].how)` no es un literal que `Tests/lang.py` pueda
+    //  recoger barriendo el fuente, asi que esta tabla es la CUARTA que la
+    //  prueba tiene que leer aparte -como `fxDefs`, `ZatiTour` y `kManual`- y
+    //  hasta esta tanda no estaba. Cambiar el texto sin cambiar la fila de
+    //  `Lang.cpp` deja la linea en español en las cuatro compilaciones.
     struct Row { const char* how; const char* what; };
     const Row rows[kNumGestures] =
     {
-        { "MANTEN UN PAD",      "abre sus ajustes sin sonar" },
+        { "MANTEN UN PAD",      "suena y abre sus ajustes" },
         { "MANTEN UN EFECTO",   "coge los mandos sin apagarlo" },
         { "MANTEN CARGAR",      "abre la biblioteca en el pad elegido" },
-        { "MANTEN PLAY",        "para y corta todo lo que suene" },
+        { "MANTEN PLAY",        "para y corta todos los pads" },
+        { "MANTEN SOLO",        "quita todos los solos" },
+        { "MANTEN AUTO",        "vacia la automatizacion" },
         { "ARRASTRA LA PANTALLA", "cambia de patron" },
         { "GOLPEA ARRIBA O ABAJO", "toca mas fuerte o mas flojo" },
     };
 
-    const int rowH = juce::jmax (24, area.getHeight() / kNumGestures);
+    //  SE REPARTE LO QUE HAY, no se pide un suelo.
+    //
+    //  Esto era `jmax (24, alto / kNumGestures)`, o sea un clamp HACIA ARRIBA
+    //  disfrazado de suelo - el fallo mas repetido de esta casa, ya pagado en
+    //  `layoutPadGrid`, en la celda de paso y en `jlimit (60, kKnobRow, ...)`.
+    //  Con seis filas pedia 144 px donde la maqueta dejaba 140, asi que las
+    //  cinco primeras se llevaban 120 y a la sexta le quedaban VEINTE. Quien
+    //  sabe cuanto alto hay es la maqueta; aqui solo se reparte.
+    const int rowH = juce::jmax (1, area.getHeight() / kNumGestures);
 
     for (int i = 0; i < kNumGestures; ++i)
     {
@@ -1010,10 +1026,20 @@ void MainComponent::paintGesturesPage (juce::Graphics& g, juce::Rectangle<int> a
                                        (int) juce::GlyphArrangement::getStringWidth (g.getCurrentFont(),
                                                                                      T (rows[i].how)) + 10);
         auto howCell = Lang::takeStart (text, howW);
+        //  Y APUNTADOS, que es lo que faltaba para que existieran.
+        //
+        //  Estas dieciseis cadenas se PINTAN, asi que ninguna de las once
+        //  reglas de `expo.py` las ve -todas recorren el arbol de COMPONENTES-
+        //  y tampoco salian en el volcado de rotulos que leen `plano.py` y
+        //  `planos.py`. Es exactamente por eso que «abre sus ajustes sin sonar»
+        //  sobrevivio tres tandas siendo falsa: la unica pantalla cuyo trabajo
+        //  entero es decir la verdad era la unica que el banco no podia leer.
+        apunta (g, howCell, T (rows[i].how), "gesto");
         g.drawFittedText (T (rows[i].how), howCell, Lang::start(), 2, 0.9f);
 
         g.setColour (ZatiColours::inkDim);
         g.setFont (ZatiColours::monoFont (Metrics::fFine));
+        apunta (g, text, T (rows[i].what), "gesto");
         g.drawFittedText (T (rows[i].what), text, Lang::start(), 2, 0.85f);
     }
 }

@@ -1,5 +1,7 @@
 #include "MainComponentInterno.h"
 
+#include <csignal>
+#include <cstdlib>
 #include <thread>
 #include <vector>
 
@@ -58,7 +60,8 @@ MainComponent::MainComponent()
         //  Y en modo tecla, apretar y levantar. Ver PadButton::setModoNota.
         p->onNotaOn  = [this, i] (float vel) { padNotaOn (i, vel); };
         p->onNotaOff = [this, i] { padNotaOff (i); };
-        //  ...and holding it edits it, without a sound. See PadButton::onHold.
+        //  ...and holding it edits it. Suena igual, que es lo que este
+        //  comentario negaba: ver PadButton::onHold.
         p->onHold  = [this, i]
         {
             loadArmed = false;
@@ -174,6 +177,22 @@ MainComponent::MainComponent()
             cb[i]->onClick = [this] { closeAllSheets(); };
             s->addAndMakeVisible (cb[i]);
         }
+    }
+
+    //  Y COMO SE LLAMA CADA FICHA, en un solo sitio. Ver Sheet::nombre: lo
+    //  escribe la caja negra al abrirla, asi que tiene que ser el mismo nombre
+    //  con el que el banco la abre (`ZATI_OPEN`) y no el rotulo traducido de la
+    //  tapa que la levanta.
+    {
+        padSheet   .nombre = "pad";      seqSheet   .nombre = "sec";
+        mixSheet   .nombre = "mix";      songSheet  .nombre = "song";
+        setSheet   .nombre = "set";      rackSheet  .nombre = "rack";
+        chopSheet  .nombre = "chop";     browseSheet.nombre = "browse";
+        exportSheet.nombre = "exportar"; manualSheet.nombre = "manual";
+        tourSheet  .nombre = "tour";     instSheet  .nombre = "inst";
+        vstSheet   .nombre = "vst";      padPickSheet.nombre = "padpick";
+        canalSheet .nombre = "canal";    ranuraSheet.nombre = "ranura";
+        eqBandaSheet.nombre = "eqb";
     }
 
     //  LA REJILLA DE DIECISEIS PARA ELEGIR PAD. Ver padPickSheet en la cabecera.
@@ -3137,8 +3156,11 @@ MainComponent::MainComponent()
     //  trim handles on the face was one job done twice — and it meant the
     //  biggest element on the instrument showed a sample sitting still
     //  instead of the sound actually coming out.
-    //  Swipe the screen to walk the pattern banks. The one gesture on the face
+    //  Swipe the screen to walk the PATTERNS. The one gesture on the face
     //  that changes what is PLAYING without covering the pads with a sheet.
+    //  Y patrones y no «bancos», que es lo que decia este comentario y lo que
+    //  acabo diciendo el ingles de la ficha GESTOS: un banco en esta app es
+    //  A B C D y son dieciseis pads, no un patron del secuenciador.
     cristal.onSwipe = [this] (int dir)
     {
         const int next = (selectedPattern + dir + kNumPatterns) % kNumPatterns;
@@ -4844,8 +4866,10 @@ void MainComponent::openSheet (Sheet& s, juce::TextButton& toggle)
 {
     //  Que ficha estaba abierta es la mitad de cualquier informe de un cierre:
     //  "se cerro al exportar" y "se cerro al abrir la mezcla" no se arreglan en
-    //  el mismo sitio. Ver Bitacora.h.
-    Bitacora::paso (("ficha " + toggle.getButtonText()).toRawUTF8());
+    //  el mismo sitio. Ver Bitacora.h y Sheet::nombre - va el nombre de la
+    //  FICHA y no el rotulo de la tapa, que esta traducido y ademas no la
+    //  identifica.
+    Bitacora::paso ((juce::String ("ficha ") + s.nombre).toRawUTF8());
 
     closeAllSheets();
     if (selectedPad < 0) selectPad (0);
@@ -13126,10 +13150,26 @@ void MainComponent::appSuspended()
     audioFocus.abandon();        // ...and hand the speaker back
     pausedByFocus = false;
     appInForeground = false;
+
+    //  Y LA ULTIMA LINEA DE LA CAJA NEGRA, aqui y no solo en `shutdown()`.
+    //
+    //  En Android este es el unico gancho que corre al salir: ATRAS manda la
+    //  tarea al fondo sin destruir la actividad, y lo que la mata despues es un
+    //  SIGKILL. Sin esta linea el fichero se quedaba SIEMPRE sin «fin limpio» y
+    //  el arranque siguiente daba un parte de caida que no lo era. Va la
+    //  ULTIMA, cuando ya no queda nada que pueda fallar en esta funcion: si
+    //  algo de arriba se cayera, eso si es una caida y tiene que constar.
+    Bitacora::finLimpio();
 }
 
 void MainComponent::appResumed()
 {
+    //  LO PRIMERO, que es lo que hace util al «fin limpio» de appSuspended:
+    //  mientras la app este delante, la ultima linea no puede decir que se
+    //  cerro bien. Sin esto, una caida DESPUES de volver de segundo plano se
+    //  leeria como un cierre correcto.
+    Bitacora::reanudada();
+
     appInForeground = true;
     focusGivenAway  = false;
     audioFocus.request();
@@ -13909,8 +13949,26 @@ void MainComponent::timerCallback()
                   << ",\"pintadas\":" << portadaPintadas
                   << ",\"placa\":[" << padPlateArea.getX() << "," << padPlateArea.getY()
                   << "," << padPlateArea.getWidth() << "," << padPlateArea.getHeight()
-                  << "]}" << std::endl;
+                  //  Y COMO ACABO LA VEZ ANTERIOR, que es lo unico de la caja
+                  //  negra que se puede medir desde fuera: vacio es «acabo
+                  //  bien». No lo miraba nadie -el unico `grep` de la bitacora
+                  //  en `Tests/` era `expo.py` BORRANDOLA- y por eso el parte
+                  //  falso salia en cada arranque. Ver Bitacora.h.
+                  << "],\"previa\":\""
+                  << Bitacora::previa.replaceCharacter ('"', '\'') << "\"}" << std::endl;
         if (arranqueTicks == bancoArranque) juce::JUCEApplication::getInstance()->systemRequestedQuit();
+    }
+
+    //  Y LA MUERTE DE ANDROID, SIMULADA. Ver bancoMuere en la cabecera.
+    if (bancoMuere > 0 && arranqueTicks >= bancoMuere)
+    {
+        if (bancoSenal > 0) std::raise (bancoSenal);
+        //  El orden ES la secuencia del telefono: onPause primero -que es donde
+        //  vive «fin limpio»- y el proceso desaparece despues sin pasar por
+        //  `shutdown()`. Con `_Exit` no corre ni un destructor, igual que un
+        //  SIGKILL.
+        appSuspended();
+        std::_Exit (0);
     }
 
     //  THE SCREEN DOES NOT GO OUT IN THE MIDDLE OF A TAKE.

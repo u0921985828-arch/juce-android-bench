@@ -86,17 +86,18 @@ def corre (sheet, size, lang):
     finally:
         shutil.rmtree (casa, ignore_errors=True)
 
-    rot, comp, raiz = [], [], None
+    rot, comp, mant, raiz = [], [], [], None
     for l in out.splitlines():
         l = l.strip()
         if not (l.startswith ("{") and l.endswith ("}")): continue
         try: d = json.loads (l)
         except Exception: continue
-        if "root" in d:      raiz = d
-        elif "rotulo" in d:  rot.append (d)
+        if "root" in d:        raiz = d
+        elif "mantener" in d:  mant.append (d)
+        elif "rotulo" in d:    rot.append (d)
         elif "path" in d and d.get ("w", 0) > 0 and d.get ("h", 0) > 0:
             comp.append (d)
-    return raiz, (rot, comp)
+    return raiz, (rot, comp, mant)
 
 
 def main():
@@ -113,7 +114,7 @@ def main():
         raiz, datos = corre (sheet, size, lang)
         if datos is None:
             avisos.append ("%s no contesto" % (sheet or "cara")); continue
-        rot, comp = datos
+        rot, comp, mant = datos
 
         nombre = sheet or "cara"
         print ("\n%s   %dx%d   se abre desde %s"
@@ -172,6 +173,43 @@ def main():
             elif dice != len (caps):
                 avisos.append ("manual: el subtitulo dice %d capitulos y se dibujan %d"
                                % (dice, len (caps)))
+
+        #  CADA TAPA DE MANTENER DE LA CARA TIENE SU FILA EN GESTOS.
+        #
+        #  Un `HoldButton` hace dos cosas y solo una deja marca: la de mantener
+        #  no se descubre tocando, asi que la unica forma de saber que existe es
+        #  que AJUSTES · GESTOS la enumere. Esa lista se escribio a mano y se
+        #  quedo vieja dos veces -MANTEN SOLO y MANTEN AUTO llevaban dos tandas
+        #  existiendo sin fila- y ninguna de las once reglas de expo.py puede
+        #  verlo: un gesto que no esta en una lista se maqueta perfecto.
+        #
+        #  Y LA LISTA NO SE ESCRIBE AQUI. La publica la app recorriendo los
+        #  hijos de la cara (UiAudit::gestoDe), con el rotulo YA traducido: dos
+        #  listas serian dos reglas y la de este script se quedaria vieja
+        #  igual, que es exactamente el fallo que esta regla existe para cazar.
+        #
+        #  Se pide que alguna fila NOMBRE la tapa y no que exista una fila en
+        #  su indice: quitando la de SOLO, las de abajo se corren y una
+        #  comprobacion por indice seguiria saliendo en verde. La excepcion es
+        #  declarada por la app -las ranuras de efecto comparten «MANTEN UN
+        #  EFECTO», que no las nombra una por una-.
+        if sheet == "gest":
+            filas = sorted ({r["y"] for r in rot if r["tipo"] == "gesto"})
+            texto = " ".join (r["rotulo"].upper() for r in rot if r["tipo"] == "gesto")
+            print ("  %d filas de gesto, %d tapas de mantener en la cara"
+                   % (len (filas), len (mant)))
+            if not mant:
+                avisos.append ("gest: la app no publica ni una tapa de mantener: no mide nada")
+            for m in mant:
+                #  `quien` y no `tapa`: la del bucle de arriba es la tapa que
+                #  ABRE la ficha, y pisarla hacia que la comprobacion del
+                #  titulo comparase «AJUSTES» contra el rotulo de la ultima
+                #  tapa de mantener - «+», que es una ranura vacia.
+                quien = m["mantener"].upper()
+                if m.get ("familia", 0):
+                    continue
+                if quien not in texto:
+                    avisos.append ("gest: MANTENER %s no tiene fila en GESTOS" % quien)
 
         #  LA PREGUNTA QUE ESTO EXISTE PARA CONTESTAR.
         if sheet and not titulos:

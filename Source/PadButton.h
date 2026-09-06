@@ -41,8 +41,14 @@ public:
     //  Reaching a pad's own settings took a tap - which PLAYS it, in the
     //  middle of whatever you are recording - and then a second tap on PADS.
     //  Two actions, one of them audible, to answer "what is this pad doing".
-    //  Holding the pad goes straight there and never triggers it: the press
-    //  that opens the sheet is swallowed.
+    //  Holding the pad goes straight there.
+    //
+    //  Y SUENA IGUAL, que es lo que este parrafo prometia al reves. Decia «the
+    //  press that opens the sheet is swallowed» y dejo de ser verdad el dia que
+    //  el disparo se movio al `mouseDown` de abajo: el click sale al APOYAR, o
+    //  sea 420 ms antes de que este `onHold` exista. Se acepta a proposito -en
+    //  un sampler de pads tocar un pad suena siempre- y lo que costo fue que la
+    //  ficha GESTOS y el manual siguieran diciendo «sin sonar» tres tandas.
     //
     //  Fires AT the threshold with the finger still down, like the effect
     //  keys, because a gesture you only find out about on release is one
@@ -173,7 +179,18 @@ public:
     {
         held = false;
         //  En modo tecla no hay gesto de mantener: mantener ES tocar.
-        if (! modoNota) startTimer (kHoldMs);
+        //
+        //  Y CON UN MODO ARMADO TAMPOCO. Con LOAD armado, tocar un pad abre el
+        //  navegador y `padClicked` se va; el temporizador seguia corriendo, asi
+        //  que 420 ms despues la ficha del pad se levantaba ENCIMA del navegador
+        //  que acababas de pedir. Con SOLO armado, igual: «tocar aisla y no
+        //  suena» y a la mitad de un segundo aparece una ficha que nadie pidio.
+        //  Un modo armado ya cambia lo que hace el dedo -eso es lo que dice el
+        //  anillo-, asi que mantener seria un TERCER significado en el mismo
+        //  gesto, que es lo que esta casa lleva escrito que no se puede
+        //  aprender. La pregunta no se escribe otra vez: el pad ya tiene la
+        //  respuesta, que es el anillo que `tinteDelModo` le acaba de poner.
+        if (! modoNota && modoTinte.isTransparent()) startTimer (kHoldMs);
 
         const float h = (float) juce::jmax (1, getHeight());
         const float y = juce::jlimit (0.0f, 1.0f, (float) e.position.y / h);
@@ -223,7 +240,12 @@ public:
         //  arrastre fuera y un levantar dentro tienen que acabar los dos en
         //  silencio, o queda una voz colgada que solo se apaga con el panico.
         if (modoNota && onNotaOff) onNotaOff();
-        if (held) { setState (buttonNormal); return; }   // the hold was the gesture
+        //  Y ESTO YA NO SE TRAGA NADA, pero se queda: el click salio en el
+        //  `mouseDown`, asi que a estas alturas no hay disparo que evitar. Lo
+        //  que si hace es devolver la tapa a su estado normal sin que JUCE
+        //  vuelva a pasar por su maquinaria de click - un `held` que llegara
+        //  aqui con el boton todavia «down» dejaria el pad encendido.
+        if (held) { setState (buttonNormal); return; }
         juce::Button::mouseUp (e);
     }
 

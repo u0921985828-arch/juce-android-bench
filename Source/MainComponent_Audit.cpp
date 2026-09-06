@@ -1178,6 +1178,30 @@ void MainComponent::auditOpen (const juce::String& pedido)
         return pad;
     };
 
+    //  LAS TAPAS DE LA CARA QUE ESCONDEN UN GESTO. Ver UiAudit::gestoDe.
+    //
+    //  SE BUSCAN, no se enumeran. Una lista escrita a mano aqui seria la misma
+    //  lista que la de `paintGesturesPage` escrita dos veces, y la que un dia
+    //  se queda vieja es justo la que tiene que avisar: MANTEN SOLO y MANTEN
+    //  AUTO llevaban dos tandas existiendo sin fila. Recorriendo los hijos de
+    //  la cara, una tapa de mantener nueva aparece sola y sin fila que la
+    //  nombre, y el banco la canta.
+    //
+    //  Con el ROTULO PUESTO y no con su nombre de variable: la fila de GESTOS
+    //  esta traducida —«MANTEN CARGAR», «HOLD LOAD»— asi que lo unico que
+    //  compara en los cuatro idiomas es el mismo `T()` por los dos lados.
+    //
+    //  Y las ranuras de efecto van marcadas como FAMILIA: su fila es «MANTEN
+    //  UN EFECTO» y no las nombra una por una, que serian seis filas iguales.
+    //  Y se vacia antes: `auditOpen` corre una vez por ficha en el ciclado de
+    //  paginas y otra por accion en el fuzz, asi que sin esto la lista crece
+    //  con cada llamada. Es el mismo cuidado que `resized()` tiene con
+    //  `UiAudit::tarjetas`.
+    UiAudit::mantener.clear();
+    for (auto* hijo : getChildren())
+        if (auto* h = dynamic_cast<HoldButton*> (hijo))
+            UiAudit::gestoDe (h->getButtonText(), fxButtons.contains (h) ? 1 : 0);
+
     //  Y LA APP CON TRABAJO DENTRO, ANTES de abrir nada.
     //
     //  Antes de la ficha porque casi todo lo que esta entrada puede cazar se

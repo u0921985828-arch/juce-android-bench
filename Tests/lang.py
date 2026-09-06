@@ -48,6 +48,46 @@ def joined_literals (text):
     Sin esto, el comprobador da falsos positivos en cada texto largo."""
     return re.sub (r'"\s*\n\s*"', "", text)
 
+def literales_en_T (text):
+    """Todos los literales que hay DENTRO de una llamada a T().
+
+    La expresion de siempre —`T \\("...`— solo ve el literal pegado al
+    parentesis, asi que se perdia todo lo que llega por un ternario:
+    `T (cancion ? "MODO CANCION|modo" : "MODO PATRON|modo")`, los tres `SI|chip`
+    / `NO|chip` y una docena mas. Quince claves que estaban usadas y esta prueba
+    daba por muertas — lo que ademas hacia inutil la cuenta de huerfanas de mas
+    abajo, que es para lo que se escribio esto.
+
+    Se equilibran parentesis a mano y respetando los literales, por lo mismo que
+    `sin_comentarios`: un `)` dentro de una cadena cerraria la llamada antes de
+    tiempo."""
+    out, i, n = set(), 0, len (text)
+    while True:
+        i = text.find ("T (", i)
+        if i < 0: break
+        j, depth, clave = i + 2, 0, True
+        while j < n:
+            c = text[j]
+            if c == '"':
+                k = j + 1
+                while k < n and text[k] != '"':
+                    k += 2 if text[k] == '\\' else 1
+                if clave: out.add (text[j + 1:k])
+                j = k + 1; continue
+            if   c == '(': depth += 1
+            elif c == ')':
+                depth -= 1
+                if depth == 0: break
+            #  Y SOLO EL PRIMER ARGUMENTO. `T (clave, valor)` sustituye %1 por
+            #  el segundo, que a veces es un literal: contarlo como clave saco
+            #  «/», «0.0» y «ZATI/Instrumentos» como filas que faltaban. La coma
+            #  de un `juce::String (a, b)` de dentro va a profundidad 2 y no
+            #  cuenta.
+            elif c == ',' and depth == 1: clave = False
+            j += 1
+        i = j + 1
+    return out
+
 def main():
     lang = joined_literals (open (os.path.join (SRC, "Lang.cpp"), encoding="utf8").read())
     blk  = lang[lang.index ("const Row kTable[]"):]
@@ -69,7 +109,7 @@ def main():
     code = ""
     for f in sorted (glob.glob (os.path.join (SRC, "*.cpp")) + glob.glob (os.path.join (SRC, "*.h"))):
         code += joined_literals (sin_comentarios (open (f, encoding="utf8").read()))
-    used = set (re.findall (r'T \("((?:[^"\\]|\\.)*)"', code))
+    used = literales_en_T (code)
 
     #  Y LAS CLAVES QUE LLEGAN POR VARIABLE, que esta prueba no puede ver.
     #
@@ -134,12 +174,43 @@ def main():
     manual = set (re.findall (r'"((?:[^"\\]|\\.)+)"', blkman))
     used |= manual
 
+    #  Y LOS GESTOS, que es la CUARTA tabla por indice — y la que mas duele,
+    #  porque esa pagina es la unica de la app cuyo trabajo entero es decir la
+    #  verdad. `paintGesturesPage` lleva un `Row rows[kNumGestures]` y las pasa
+    #  por `T (rows[i].how)`, asi que ninguna de sus dieciseis cadenas la ve el
+    #  barrido de arriba. Cambiar el texto de una fila sin cambiar la clave la
+    #  deja en espanol en las cuatro compilaciones, que es lo que ya paso dos
+    #  veces con el tour y una con el manual.
+    pin = joined_literals (sin_comentarios (
+        open (os.path.join (SRC, "MainComponent_Paint.cpp"), encoding="utf8").read()))
+    gi = pin.index ("const Row rows[kNumGestures]")
+    blkg = pin[gi:pin.index ("\n    };", gi)]
+    gestos = set (re.findall (r'"((?:[^"\\]|\\.)+)"', blkg))
+    used |= gestos
+
     for k in sorted (used - set (keys)):
         bad.append ("clave usada y NO en la tabla (sale en espanol en los cuatro): %r" % k)
 
+    #  Y LA DIRECCION CONTRARIA, que se imprime y NO se juzga.
+    #
+    #  `used - keys` caza la fila que falta; `keys - used` seria la fila que
+    #  sobra —una que se reescribio dejando la vieja detras, que es como el
+    #  paso 5 del tour se quedo sin traducir dos veces—. Medido antes de
+    #  escribir la regla: 127 huerfanas y casi todas legitimas, porque media
+    #  tabla llega por VARIABLE —`tablaDeMandos`, los nombres de los ocho
+    #  zatis, las dieciseis familias de `Sintes::tabla()`, los `Named` de las
+    #  casillas— y ahi no hay literal dentro de un `T()` que recoger. Un numero
+    #  que no separa el fallo del caso legitimo no puede ser un veredicto: se
+    #  publica, como TOUCH y como TARJETA, para que una fila muerta se vea como
+    #  un numero que sube. `ZATI_LANG_HUERFANAS=1` las lista.
+    huerfanas = sorted (set (keys) - used)
     print ("%d filas, %d claves usadas en el codigo (%d parametros de efecto, "
-           "%d pasos del tour, %d lineas de manual)"
-           % (len (rows), len (used), len (params), len (pasos), len (manual)))
+           "%d pasos del tour, %d lineas de manual, %d gestos), %d filas sin "
+           "cliente visible"
+           % (len (rows), len (used), len (params), len (pasos), len (manual),
+              len (gestos), len (huerfanas)))
+    if os.environ.get ("ZATI_LANG_HUERFANAS"):
+        for k in huerfanas: print ("  sin cliente visible  %r" % k)
     if bad:
         for b in bad: print ("FALLA  " + b)
         sys.exit (1)

@@ -1803,6 +1803,17 @@ void MainComponent::resized()
         //  The gestures page is a printed list: one row per gesture, and the
         //  card is exactly as tall as the list is. See paintGesturesPage.
         const int gestRowH = 30;
+        //  Y LA FILA DE MANUAL/TOUR SE PIDE AQUI, que es donde no se pedia.
+        //
+        //  Se le quitaba al mismo rectangulo cien lineas mas abajo, con un
+        //  `removeFromBottom` que no aparecia en `wanted`: la tarjeta pedia
+        //  alto para seis filas y despues se gastaba 48 px en una fila que
+        //  nadie habia presupuestado, asi que a la lista le quedaban 140 px
+        //  para 180 de filas y la ULTIMA salia a 20 px -a 16 en 280x653, con
+        //  las pestañas partidas en dos-. Es la misma cuenta que ya costo la
+        //  fila de CADENA y la REJILLA a 217x0: lo que falta se lo come en
+        //  silencio lo ultimo que se maqueta.
+        const int gestPieH = Metrics::hit + Metrics::sm;
         //  La pagina de MIDI: dos bloques de rotulo + tapa + selector, y el
         //  texto que explica la nota de cada pad.
         const int midiH = Metrics::md * 2 + Metrics::hit + Metrics::sm + tabsH
@@ -1879,7 +1890,7 @@ void MainComponent::resized()
                   + (Metrics::hit + Metrics::xs) * 3 + filasExtra + Metrics::sm
             : onGest
               ? Metrics::md * 2 + 16 + Metrics::sm + tabsH
-                  + kNumGestures * gestRowH + Metrics::sm
+                  + kNumGestures * gestRowH + gestPieH + Metrics::sm
               : Metrics::md * 2 + 16 + 14 + Metrics::sm + tabsH
                   + Metrics::hit + 14 + Metrics::sm
                   + Metrics::btn * 2 + Metrics::xs * 2 + 8 + listH + Metrics::sm;
@@ -1985,10 +1996,13 @@ void MainComponent::resized()
             }
             else
             {
-                manualButton.setVisible (false);
                 //  Y con sus limites vaciados: un componente invisible que
                 //  conserva sus coordenadas sigue estando ahi para todo lo que
-                //  mida geometria. Es el fallo de las tapas de banco.
+                //  mida geometria. Es el fallo de las tapas de banco - y estaba
+                //  aplicado a UNA de las dos tapas de esta fila, con el
+                //  comentario que lo explica escrito justo entre las dos.
+                manualButton.setVisible (false);
+                manualButton.setBounds ({});
                 tourButton.setVisible (false);
                 tourButton.setBounds ({});
                 gesturesArea = {};

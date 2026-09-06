@@ -154,6 +154,18 @@ private:
         //  maquetadas. Se pone al construir y lo hereda todo lo que cuelga.
         Sheet() { getProperties().set ("capa", UiAudit::siguienteCapa++); }
 
+        //  EL NOMBRE DE LA FICHA, SIN TRADUCIR. Lo escribe la caja negra
+        //  (`openSheet`) y por eso NO puede ser el rotulo de la tapa que la
+        //  abre, que es lo que hacia: un parte de un telefono en chino decia
+        //  «ficha 混音» y no se puede buscar en el fuente. Y ademas el rotulo
+        //  no identifica la ficha - el RACK se abre pasando `mixButton`, asi
+        //  que escribia «ficha MEZCLA» igual que la mesa.
+        //
+        //  Son los mismos nombres que `ZATI_OPEN`, y eso no es una casualidad
+        //  comoda: un parte que dice «ficha rack» se reproduce en el banco con
+        //  `ZATI_OPEN=rack`. Una lista escrita dos veces son dos listas.
+        const char* nombre = "?";
+
         std::function<void()> onDismiss;
         std::function<void (juce::Graphics&)> paintContent;   // titles, readouts, rings
         //  A click INSIDE the card. Painted controls - things with no
@@ -510,7 +522,11 @@ private:
     juce::Rectangle<int> gesturesArea;
     //  Donde se pinta el parrafo del tour. Ver paintTourSheetContent.
     juce::Rectangle<int> tourBodyArea;
-    static constexpr int kNumGestures = 6;
+    //  OCHO Y NO SEIS: entraron MANTEN SOLO y MANTEN AUTO, que llevaban dos
+    //  tandas existiendo sin fila en la unica pagina que los enumera. Ver
+    //  paintGesturesPage, y la regla de `Tests/plano.py` que exige que cada
+    //  HoldButton de la cara tenga la suya.
+    static constexpr int kNumGestures = 8;
     void showSetPage (int page);
 
     //  THE SEQUENCER CARD HAS TWO PAGES, and it has them because measuring it
@@ -1257,6 +1273,25 @@ private:
     //  de ZATI_AUDIT a proposito: ese no puede llevar portada -las 924 corridas
     //  miden la cara y las fotos de ZATI_SHOT saldrian con el chasis vacio-.
     const int bancoArranque = juce::SystemStats::getEnvironmentVariable ("ZATI_ARRANQUE", "0").getIntValue();
+
+    //  ZATI_MUERE=n: MORIRSE COMO SE MUERE EN ANDROID, que es lo que un
+    //  escritorio no sabe hacer solo.
+    //
+    //  Alli el boton ATRAS manda la tarea al fondo -corre `appSuspended`- y lo
+    //  que mata el proceso despues es un SIGKILL, que no se puede capturar: o
+    //  sea que `shutdown()` NO corre. Aqui pasa lo contrario: cualquier salida
+    //  pasa por `shutdown()`, asi que la caja negra siempre acaba con «fin
+    //  limpio» y el parte falso que esto existe para medir no se puede
+    //  reproducir. Con la entrada, la app llama a `appSuspended` y se va con
+    //  `_Exit` -sin destructores y sin `shutdown()`-, que es exactamente la
+    //  secuencia del telefono.
+    //
+    //  Y con ZATI_SENAL=n en vez de eso se levanta esa senal, que es la OTRA
+    //  mitad: un parte de caida de verdad lleva prefijo -«CAIDA senal 11 en
+    //  ...»- y sin las dos, un mecanismo que no avisa nunca pasa la primera
+    //  comprobacion sola y el de ayer -que avisaba siempre- pasaba la segunda.
+    const int bancoMuere = juce::SystemStats::getEnvironmentVariable ("ZATI_MUERE", "0").getIntValue();
+    const int bancoSenal = juce::SystemStats::getEnvironmentVariable ("ZATI_SENAL", "0").getIntValue();
 
     int lastDeviceBlock = 0, lastDeviceRate = 0;   // compared before a string is built
 

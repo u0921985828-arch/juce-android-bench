@@ -316,14 +316,14 @@ namespace
         { "EMPEZAR", {
             "CARGAR y luego un pad abre la biblioteca en ese pad",
             "Un toque toca; una pulsacion larga configura",
-            "Manten un pad para abrir su ficha sin que suene",
+            "Manten un pad para abrir su ficha: el golpe suena igual",
             //  Y la excepcion, aqui y no en otro capitulo: el gesto se aprende
             //  en el primero, asi que su excepcion va al lado o no se lee.
             "En un pad con instrumento, mantener es tocar: su ficha se abre desde PAD",
             nullptr } },
         { "PADS Y BANCOS", {
             "Cuatro bancos de dieciseis pads: los otros 48 siguen sonando",
-            "Arrastra la rejilla para cambiar de banco",
+            "Toca A, B, C o D para cambiar de banco",
             "El color de un pad lo acompana en la onda y en la rejilla",
             "CARGAR KIT reparte una carpeta entera por los pads",
             nullptr } },
