@@ -546,6 +546,27 @@ namespace Metrics
     //  separarse de el.
     static constexpr int aireTapa = halfGap / 2;
 
+    //  EL MARGEN DE DENTRO DE UNA TAPA, y es UNO.
+    //
+    //  Era `jlimit (3, 5, ancho / 14)`, o sea una proporcion del ancho, y de
+    //  ahi salia que dos tapas de la MISMA FILA tuvieran marcos distintos: en
+    //  393x851 la fila de pestanas de la cara da PAD 46 px -margen 3- y
+    //  AJUSTES 73 -margen 5-, asi que lo que cada una lleva dentro empieza a
+    //  distinta distancia de su filo. El margen de dentro es una propiedad de
+    //  la tapa y no de lo ancha que le haya tocado ser.
+    //
+    //  Y es TRES y no cinco, que es el que ya tienen casi todas -toda tapa por
+    //  debajo de 70 px de ancho- : subirlo a cinco le quitaria dos pixeles por
+    //  lado a las estrechas, que son justo las que no los tienen. Con este
+    //  numero ninguna tapa pierde sitio y las anchas ganan cuatro.
+    //
+    //  Escrito UNA vez, que estaba escrito CUATRO: aqui, en `moduleBarFits`
+    //  como un `2 * 5` literal, en `layoutModuleBar` igual y en `setTabsFit`
+    //  como un comentario que citaba la formula. Un margen que se dibuja con
+    //  una cuenta y se presupuesta con otra es como una fila cabe en la cuenta
+    //  y no en la pantalla.
+    static constexpr int margenTapa = 3;
+
     //  EL AIRE QUE UN PANEL DE GRUPO DEJA ALREDEDOR DE LO QUE ENVUELVE, y por
     //  que NO es el mismo por los cuatro lados.
     //
@@ -597,9 +618,12 @@ namespace Metrics
     //
     //  El 1.45 no se elige: es lo que hoy vale la fila mas grande -18 sobre una
     //  letra de 12.54- asi que las tapas altas no se mueven un pixel y las
-    //  bajas bajan hasta la misma proporcion. Y solo puede haber MAS dibujos,
-    //  no menos: el icono se encoge, y el que decide si sale es `lado >=
-    //  kLadoMin` contra el hueco que queda.
+    //  bajas bajan hasta la misma proporcion.
+    //
+    //  Y DESDE QUE EL LADO ES UNO, esta proporcion se evalua una sola vez y
+    //  sobre la tapa mas pequena que se puede tocar: ver iconoLado. Lo que
+    //  gobierna es la misma idea -un dibujo pesa lo mismo que su palabra- y lo
+    //  que cambia es que la respuesta ya no depende de en que fila caiga.
     static constexpr float iconoPorLetra = 1.45f;
 
     //  LA PESTANA DE UNA FICHA TAMBIEN SE TOCA.
@@ -1123,6 +1147,46 @@ public:
                                         : full.withSizeKeepingCentre (full.getWidth(), alto);
     }
 
+    //  CON QUE LETRA SE ESCRIBE UNA TAPA DE ESTE ALTO.
+    //
+    //  Estaba escrita a mano en DOS sitios -aqui abajo, en reparteTapa, y en
+    //  MainComponent::setTabsFit- con los mismos cuatro numeros copiados, que
+    //  es la forma mas barata que tiene esta casa de acabar con dos reglas: el
+    //  dia que el 0.38 cambie, la pestana se presupuesta con la letra de ayer
+    //  y se parte en dos filas donde cabia en una. Ese fallo exacto ya se pago
+    //  una vez ahi -«PROYECTOS pide 56 y tiene 42»- por medir con OTRA fuente.
+    //  El tercer sitio que mide texto, `moduleBarFits`, se queda con su 11.0
+    //  a proposito y con su medida al lado: igualarlo salio PEOR.
+    static juce::Font letraDeTapa (float altoTapa)
+    {
+        return ZatiColours::monoFont (juce::jlimit (10.0f, 14.5f, altoTapa * 0.38f), true)
+                 .withExtraKerningFactor (0.06f);
+    }
+
+    //  UN SOLO LADO DE ICONO EN TODA LA APP.
+    //
+    //  Habia SIETE. Medido tapa por tapa en las siete pantallas: 13, 14, 15,
+    //  16, 17, 18 y 26 -las tapas sin rotulo se llevaban la banda entera-,
+    //  porque el lado se pedia del alto de CADA tapa y luego se recortaba
+    //  contra el hueco que quedara. Cada uno de esos numeros es defendible por
+    //  separado y el conjunto no: dos filas de la misma ficha dibujaban el
+    //  mismo trazo a dos tamanos, que es exactamente lo que `Iconos::dibuja` ya
+    //  prohibe DENTRO de un icono -«todos ocupan la misma caja, o en una fila
+    //  se leen como si el pequeno estuviera mas lejos»- sin aplicar entre
+    //  tapas.
+    //
+    //  Y sale de la tapa mas PEQUENA que esta casa deja tocar -Metrics::hit- y
+    //  no de un numero escrito: 40 de fila son 30 de tapa (capaDe), 11.4 px de
+    //  letra y 17 px de lado. Asi cabe de alto en cualquier fila que cumpla el
+    //  dedo, que es la unica garantia que hace posible un lado unico. Lo que
+    //  NO cambia es la escalera: donde el rotulo y el dibujo no caben los dos a
+    //  lo ancho, sigue saliendo la palabra.
+    static int iconoLado() noexcept
+    {
+        const auto tapa = capaDe (juce::Rectangle<float> (0.0f, 0.0f, 10.0f, (float) Metrics::hit));
+        return (int) std::lround (letraDeTapa (tapa.getHeight()).getHeight() * Metrics::iconoPorLetra);
+    }
+
     //  EL REPARTO DE UNA TAPA: con que letra se escribe, donde cae el rotulo y
     //  si hay sitio para un icono.
     //
@@ -1149,12 +1213,9 @@ public:
 
         //  Ver drawButtonText: el rotulo pertenece a la TAPA, no al componente.
         const auto tapa = capaDe (b.getLocalBounds().toFloat());
-        r.fuente = ZatiColours::monoFont (juce::jlimit (10.0f, 14.5f, tapa.getHeight() * 0.38f), true)
-                     .withExtraKerningFactor (0.06f);
+        r.fuente = letraDeTapa (tapa.getHeight());
 
-        //  El inset lateral es una PROPORCION de la tapa, no una constante.
-        const int inset = juce::jlimit (3, 5, b.getWidth() / 14);
-        r.texto = tapa.getSmallestIntegerContainer().reduced (inset, 2);
+        r.texto = tapa.getSmallestIntegerContainer().reduced (Metrics::margenTapa, 2);
 
         const auto id = (Iconos::Id) (int) b.getProperties().getWithDefault ("icono", 0);
         if (id == Iconos::Id::ninguno || id == Iconos::Id::kNum) return r;
@@ -1177,13 +1238,34 @@ public:
         //  regla se borro, que una salida que contradice a la de al lado se
         //  acaba usando. Ver MainComponent::rejillaDeIconos.
 
-        //  Cuadrado y sacado del ALTO de la tapa: un tercio del ancho daria un
-        //  icono de sesenta pixeles en la tapa de PLAY.
-        const int tope = juce::jmin (juce::jmin (r.texto.getHeight(), 18),
-                                     (int) std::lround (r.fuente.getHeight() * Metrics::iconoPorLetra));
-        if (tope < Iconos::kLadoMin) return r;
+        //  EL LADO ES UNO Y ES EL MISMO EN TODA LA APP. Ver iconoLado.
+        //
+        //  Antes se pedia del alto de ESTA tapa, y de ahi salian los siete
+        //  tamanos: la caja del icono cambiaba de fila en fila y el mismo trazo
+        //  se leia mas cerca o mas lejos segun donde estuviera dibujado.
+        const int lado0 = iconoLado();
 
-        if (texto.isEmpty()) { r.id = id; r.icono = r.texto; r.texto = {}; return r; }
+        //  El suelo sigue existiendo y ahora protege al lado UNICO: por debajo
+        //  de el un trazo con antialias es una mancha, asi que no sale en
+        //  ningun sitio en vez de salir mal en todos. Hoy no dispara -17 contra
+        //  13- y el dia que `Metrics::hit` baje, esto es lo que lo dice.
+        if (lado0 < Iconos::kLadoMin) return r;
+
+        //  Y DE ALTO TIENE QUE CABER. Con el lado sacado del dedo minimo, esto
+        //  solo puede fallar en una tapa que ya esta por debajo de el.
+        if (r.texto.getHeight() < lado0) return r;
+
+        //  Una tapa SIN ROTULO se llevaba la banda entera -26 px medidos en la
+        //  tapa de apagar del rack-, que es el septimo tamano y el mas grande
+        //  de todos. Cuadrado y centrado, del mismo lado que los demas: lo que
+        //  la tapa no tiene es palabra, no es que su dibujo sea otro.
+        if (texto.isEmpty())
+        {
+            r.id = id;
+            r.icono = r.texto.withSizeKeepingCentre (lado0, lado0);
+            r.texto = {};
+            return r;
+        }
 
         //  Y SOLO SI EL ROTULO SIGUE CABIENDO ENTERO.
         //
@@ -1192,16 +1274,18 @@ public:
         //  regla es que un apreton no se cambia por un corte. Aqui es mas
         //  barato todavia - lo que se pierde es el dibujo, que es el adorno,
         //  no la palabra, que es la funcion. Donde no cabe, no sale.
-        //  Y EL ICONO SE PIDE DEL TAMANO QUE HAYA, entre su suelo y su tope.
-        //  Con el lado clavado en dieciocho, una tapa a la que le sobraban
-        //  dieciseis se quedaba sin dibujo por dos pixeles - que es la misma
-        //  regla de la casa que ya gobierna la celda de la rejilla y la fila de
-        //  bancos: se pide lo que hay, no lo que gustaria.
+        //  Y EL ICONO NO SE ENCOGE PARA CABER, que es lo que hacia y lo que
+        //  producia los cuatro tamanos pequenos -13, 14, 15 y 16-: donde
+        //  sobraban catorce pixeles salia un dibujo de catorce, mas pequeno que
+        //  el de su hermana de fila. Esa regla decia «se pide lo que hay» y es
+        //  la correcta para una CELDA, que tiene que llenar su hueco; un icono
+        //  es una unidad de lectura y se lee contra los de al lado. O cabe
+        //  entero al lado del rotulo, o sale la palabra sola.
         const float necesita = juce::GlyphArrangement::getStringWidth (r.fuente, texto);
         const int ancho = (int) std::ceil (necesita);
         const int libre = r.texto.getWidth() - ancho - Metrics::halfGap;
-        const int lado  = juce::jmin (tope, libre);
-        if (lado >= Iconos::kLadoMin)
+        const int lado  = lado0;
+        if (libre >= lado0)
         {
             //  EL DIBUJO Y LA PALABRA SE CENTRAN JUNTOS.
             //
@@ -1218,7 +1302,14 @@ public:
             r.texto.removeFromRight (sobra - sobra / 2);
 
             r.id = id;
-            r.icono = r.texto.removeFromLeft (lado);
+            //  Y LA CAJA QUE SE DEVUELVE ES LA QUE SE DIBUJA.
+            //
+            //  Salia de 17x26 -el ancho del icono por el alto de la banda- y
+            //  `Iconos::dibuja` la cuadraba y la centraba por dentro, asi que
+            //  el dibujo era correcto y lo que el volcado publicaba no: la
+            //  regla del banco leia un lado que nadie pinta. Cuadrada aqui, la
+            //  cuenta se hace una vez y en el sitio que la sabe.
+            r.icono = r.texto.removeFromLeft (lado).withSizeKeepingCentre (lado, lado);
             r.texto.removeFromLeft (Metrics::halfGap);
             return r;
         }

@@ -5137,8 +5137,7 @@ bool MainComponent::setTabsFit (int rowWidth) const
     //  ya costo 93 apretones inexistentes en UiAudit::captionOf.
     const auto capH = ZatiLookAndFeel::capaDe (juce::Rectangle<float> (0.0f, 0.0f, 10.0f,
                                                                        (float) Metrics::tab)).getHeight();
-    const auto capFont = ZatiColours::monoFont (juce::jlimit (10.0f, 14.5f, capH * 0.38f), true)
-                             .withExtraKerningFactor (0.06f);
+    const auto capFont = ZatiLookAndFeel::letraDeTapa (capH);
     const juce::TextButton* tabs[] = { &pageAudioBtn, &pageMidiBtn, &pageAspBtn,
                                        &pageProjBtn, &pageGestBtn };
 
@@ -5150,17 +5149,18 @@ bool MainComponent::setTabsFit (int rowWidth) const
         widest = juce::jmax (widest, juce::GlyphArrangement::getStringWidth (capFont, b->getButtonText()));
 
     //  Lo que le queda a la letra dentro de un cuarto. El margen NO es
-    //  kTextPad: drawButtonText reduce por `jlimit (3, 5, ancho / 14)`, que en
-    //  una pestana de 56 px son 4 px por lado. Poner 3 dejaba pasar 344x882 -
-    //  una fila, PROYECTOS recortado - mientras 280 y 360 salian bien, que es
-    //  el sintoma clasico de un margen que se queda corto por dos pixeles.
+    //  kTextPad: es el que `drawButtonText` deja por dentro, o sea
+    //  `Metrics::margenTapa`, y se pide de alli en vez de escribirlo aqui.
+    //  Estaba puesto a mano y la formula del dibujo era otra -`jlimit (3, 5,
+    //  ancho / 14)`-, que es como una fila cabe en la cuenta y no en la
+    //  pantalla: con un 3 escrito a mano contra un 4 dibujado, 344x882 pasaba
+    //  con PROYECTOS recortado mientras 280 y 360 salian bien.
     //  Y la fila lleva ademas la x de cerrar, que no es una pestana pero se
     //  lleva su ancho: preguntar por el ancho entero es como una fila cabe en
     //  la cuenta y no en la pantalla.
     const float tabW   = (float) (rowWidth - Metrics::hit - Metrics::xs) / 5.0f
                            - 2.0f * (float) Metrics::halfGap;
-    const float inset  = juce::jlimit (3.0f, 5.0f, tabW / 14.0f);
-    return widest <= tabW - 2.0f * inset;
+    return widest <= tabW - 2.0f * (float) Metrics::margenTapa;
 }
 
 //  ¿Caben estas tapas en una fila de este ancho? Con margen, porque la fuente
@@ -5705,7 +5705,7 @@ bool MainComponent::moduleBarFits (int rowWidth, juce::TextButton** mb, int coun
     //  EL AIRE QUE HAY QUE CONTAR NO ES EL DEL REPARTO, ES EL QUE SE COME LA
     //  CADENA DE DIBUJO ENTERA. layoutModuleBar reserva 2*Metrics::sm por tapa
     //  y luego encoge la tapa 2 px por lado (reduced), y encima
-    //  drawButtonText le quita jlimit (3, 5, ancho / 14) mas por lado. Contar
+    //  drawButtonText le quita `Metrics::margenTapa` mas por lado. Contar
     //  solo los 16 del reparto dejaba pasar por un pixel - "CARGAR KIT" pedia
     //  75 y tenia 74 - que es exactamente el fallo que esta funcion existe
     //  para no tener.
@@ -5720,7 +5720,7 @@ bool MainComponent::moduleBarFits (int rowWidth, juce::TextButton** mb, int coun
     //  justas. Es el tercer arreglo de maquetado que esta casa deshace por
     //  medirlo, y va escrito para no volver a intentarlo.
     const auto capFont = ZatiColours::monoFont (11.0f, true).withExtraKerningFactor (0.06f);
-    constexpr int kChrome = 2 * Metrics::sm + 2 * (Metrics::halfGap / 2) + 2 * 5;
+    constexpr int kChrome = 2 * Metrics::sm + 2 * (Metrics::halfGap / 2) + 2 * Metrics::margenTapa;
     int total = 0;
     //  Doce, el mismo tope que layoutModuleBar: si esta contase ocho y aquella
     //  colocase nueve, la respuesta "cabe" seria sobre una fila que no es la

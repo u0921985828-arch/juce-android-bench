@@ -55,7 +55,7 @@ void MainComponent::layoutModuleBar (juce::Rectangle<int> row, juce::TextButton*
     //  Donde SI hace falta el aire completo es donde se DECIDE - moduleBarFits
     //  y el suelo del dedo de abajo - porque alli la pregunta es "¿cabe?" y no
     //  "¿cuanto le toca?".
-    constexpr int kChrome = 2 * Metrics::sm + 2 * (Metrics::halfGap / 2) + 2 * 5;
+    constexpr int kChrome = 2 * Metrics::sm + 2 * (Metrics::halfGap / 2) + 2 * Metrics::margenTapa;
     int need[12] {}; int total = 0;
     for (int i = 0; i < kMods; ++i)
     {

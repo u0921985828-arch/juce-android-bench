@@ -249,11 +249,19 @@ namespace UiAudit
 
             std::cout << "{\"icono\":\"" << Iconos::nombre (id) << "\""
                       << ",\"n\":" << n
-                      //  El lado mas pequeño al que la app dibuja un icono. Lo
-                      //  dice ella y no el script: es donde la prueba de pares
-                      //  tiene que preguntar, y escrito en los dos sitios seria
-                      //  el numero de ayer el dia que suba.
-                      << ",\"min\":" << Iconos::kLadoMin
+                      //  El lado al que la app dibuja un icono. Lo dice ella y
+                      //  no el script: es donde la prueba de pares tiene que
+                      //  preguntar, y escrito en los dos sitios seria el numero
+                      //  de ayer el dia que suba.
+                      //
+                      //  Y ES `iconoLado` Y NO `kLadoMin`. Mientras el lado se
+                      //  pedia del alto de cada tapa, el mas pequeno posible
+                      //  era el suelo y ahi habia que preguntar; desde que es
+                      //  uno solo, `kLadoMin` es el suelo que ese lado tiene
+                      //  que superar y NO un tamano al que se dibuje nada. La
+                      //  prueba de pares llevaba una tanda comparando a 13 px
+                      //  dibujos que la app pinta a 17.
+                      << ",\"min\":" << ZatiLookAndFeel::iconoLado()
                       << ",\"x\":" << juce::String (lim.getX(), 2)
                       << ",\"y\":" << juce::String (lim.getY(), 2)
                       << ",\"w\":" << juce::String (lim.getWidth(), 2)
@@ -825,6 +833,11 @@ namespace UiAudit
     {
         recogeRotulos (root);
         std::cout << "{\"root\":1,\"w\":" << root.getWidth() << ",\"h\":" << root.getHeight()
+                  //  EL LADO QUE LA APP DICE QUE DIBUJA. Lo publica ella y no
+                  //  lo escribe el script: escrito en los dos sitios, el banco
+                  //  compararia contra el numero de ayer el dia que suba, que
+                  //  es justo lo que esta regla existe para cazar.
+                  << ",\"icoLado\":" << ZatiLookAndFeel::iconoLado()
                   << ",\"lang\":\"" << env ("ZATI_LANG") << "\""
                   << ",\"open\":\"" << env ("ZATI_OPEN") << "\"}" << std::endl;
 

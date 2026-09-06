@@ -161,7 +161,21 @@ def caja (m, n, umbral=0.15):
 #  tapa se lee igual de mal, y es lo que habia: 1.80 alturas de letra en una
 #  pestana de 26 px contra 1.32 en una tapa de 48.
 TAPA_DESVIO = 0.50         # px entre el centro de tinta del dibujo y el del rotulo
-TAPA_SPREAD = 0.25         # cuanto puede abrirse el lado del icono por altura de letra
+#
+#  Y LA PROPORCION DEJA DE SER LA PREGUNTA: lo es el LADO.
+#
+#  Aqui habia un `TAPA_SPREAD = 0.25` que exigia que el lado del icono valiese
+#  las mismas alturas de letra en todas las filas. Era un RODEO: lo que el
+#  parrafo de arriba quiere -«todos ocupan la misma caja, o se leen como si el
+#  pequeno estuviera mas lejos»- es que el dibujo mida lo mismo, y la
+#  proporcion era la forma indirecta de pedirlo mientras el lado se sacaba del
+#  alto de cada tapa. Desde que el lado es UNO -ver ZatiLookAndFeel::iconoLado-
+#  la proporcion ya NO puede ser constante, porque la letra no lo es: en una
+#  tapa de 26 px la letra vale 10 px por su propio suelo y en una de 48 vale
+#  14.5 por su tope, asi que el mismo dibujo de 17 px pesa 1.70 y 1.24. Las dos
+#  reglas se contradicen y la que vale es la directa.
+#
+#  El lado no se escribe aqui: lo dice la app en cada fila del volcado.
 
 
 def tapas():
@@ -200,12 +214,12 @@ def juzgaTapas (fallos):
         print ("%-9s %4dx%-3d %6.2f %8d %+8.2f %8.2f%s"
                % (f["tapa"], f["w"], f["h"], f["letra"], f["lado"], d, razon, marca))
 
-    abre = max (razones) - min (razones)
-    print ("   proporcion %.2f a %.2f  (se abre %.2f, liston %.2f)"
-           % (min (razones), max (razones), abre, TAPA_SPREAD))
-    if abre > TAPA_SPREAD:
-        fallos.append ("el dibujo pesa %.2f alturas de letra en una fila y %.2f en otra"
-                       % (max (razones), min (razones)))
+    lados = sorted (set (f["lado"] for f in filas))
+    print ("   lados: %s   proporcion %.2f a %.2f"
+           % (", ".join (str (l) for l in lados), min (razones), max (razones)))
+    if len (lados) != 1:
+        fallos.append ("hay %d lados de icono en la app: %s"
+                       % (len (lados), ", ".join (str (l) for l in lados)))
 
 
 def main():

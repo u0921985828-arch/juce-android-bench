@@ -128,6 +128,7 @@ def judge(rows, size, lang, sheet):
     #  arranque de tres campos.
     head = next((r for r in rows if r.get("root")), {})
     W, H = head.get("w", 0), head.get("h", 0)
+    LADO = head.get("icoLado", 0)
     comps = [r for r in rows if "path" in r]
 
     for r in comps:
@@ -185,6 +186,21 @@ def judge(rows, size, lang, sheet):
         if r.get("hit") and r.get("on"):
             if r["w"] < MIN_TOUCH or r["h"] < MIN_TOUCH:
                 findings.append(("TOUCH", tag, f'{r.get("text","?")} {r["w"]}x{r["h"]}', min(r["w"], r["h"])))
+        # 1b. TODOS LOS DIBUJOS MIDEN LO MISMO.
+        #
+        #     Ninguna de las once reglas anteriores puede verlo: un icono de
+        #     catorce pixeles dentro de una tapa de cuarenta no solapa, no se
+        #     sale, no corta su rotulo, no mide cero y esta traducido. Y habia
+        #     SIETE tamanos a la vez -13, 14, 15, 16, 17, 18 y 26-, o sea el
+        #     mismo trazo leyendose mas cerca o mas lejos segun la fila.
+        #
+        #     El lado NO se escribe aqui: lo publica la app en su linea raiz.
+        #     Escrito en los dos sitios seria el numero de ayer el dia que suba,
+        #     que es exactamente el fallo que esta regla existe para cazar.
+        if LADO and r.get("icono") and r.get("icoW", 0) > 0:
+            if r["icoW"] != LADO or r["icoH"] != LADO:
+                findings.append(("SPRITE", tag,
+                                 f'{r["icono"]} {r["icoW"]}x{r["icoH"]} y el lado es {LADO}', 0))
         # 2. Nothing may be laid out off the window.
         if r["w"] > 0 and r["h"] > 0 and not r.get("scrolled"):
             if r["x"] < -1 or r["y"] < -1 or r["x"] + r["w"] > W + 1 or r["y"] + r["h"] > H + 1:
@@ -600,7 +616,7 @@ def main():
     #  -seis efectos por cuarenta no caben en un Fold cerrado- y esta medido en
     #  CLAUDE.md con su cifra. Lo que no puede pasar de cero es lo demas.
     duros = [k for k in ("TRUNC", "SQUEEZE", "OVERLAP", "OFFSCREEN", "CELDA",
-                         "UNTRANSLATED", "CERO", "TAPADO", "CRASH") if by.get(k)]
+                         "UNTRANSLATED", "CERO", "TAPADO", "SPRITE", "CRASH") if by.get(k)]
     if resto:
         duros.append("RESIDUO")
     print()
