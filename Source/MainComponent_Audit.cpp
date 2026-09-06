@@ -3603,14 +3603,29 @@ void MainComponent::auditVivo()
         //  instante, el hilo escritor no ha tenido ni un turno y lo que se
         //  cuenta como «perdido» es la prueba corriendo mas rapido que el
         //  disco. `tiradas` se IMPRIME igualmente: si el andamio pierde, se ve.
+        //
+        //  Y LO ESCRITO SE LEE CON LA CUENTA TODAVIA VIVA, que es donde esta
+        //  medida se equivoco. Leerlo al SALIR del bucle lee tambien lo que el
+        //  ULTIMO bombeo metio despues del borde: un tic no es un bloque, son
+        //  los que el aparato habria entregado en `relojMs` -veintidos aqui y
+        //  treinta y siete en el runner del CI, que clasifica en otra gama- asi
+        //  que la cuenta se acaba a MITAD de un bombeo y lo que sigue es audio
+        //  de la cancion, no del clic. Salio 0 en este contenedor y **256
+        //  muestras, o sea dos bloques**, en el CI: la prueba llamando fallo a
+        //  justo lo que tiene que sonar, con la app intacta.
+        //
+        //  Leido aqui arriba, el guardia acaba de decir que la cuenta sigue
+        //  puesta, asi que TODO lo escrito hasta este instante se escribio con
+        //  ella viva. Es la unica lectura que contesta la pregunta.
         int enCuenta = 0;
+        juce::int64 trasCuenta = (vivoJob != nullptr ? vivoJob->escritas() : -1);
         for (int i = 0; i < 40 && engine.enCuentaAtras(); ++i)
         {
+            trasCuenta = (vivoJob != nullptr ? vivoJob->escritas() : -1);
             bombeaAudioDePrueba();
             juce::Thread::sleep (8);
             ++enCuenta;
         }
-        const juce::int64 trasCuenta = (vivoJob != nullptr ? vivoJob->escritas() : -1);
 
         for (int i = 0; i < 60; ++i) { bombeaAudioDePrueba(); juce::Thread::sleep (8); }
 
