@@ -51,9 +51,27 @@ namespace
         //  que es lo que ya hacen los bancos, las carcasas y la cuenta atras.
         //  Clave propia para las dos: «SI» y «NO» sueltos son de las palabras
         //  que un dia alguien reaprovecha para otra cosa.
+        //
+        //  Y el sufijo es `|chip` y no `|mov` desde que hay un SEGUNDO cliente
+        //  -la fila del MONITOR-: las dos filas dicen exactamente lo mismo
+        //  -encendido o apagado- asi que una segunda pareja identica serian dos
+        //  filas para una palabra, y el dia que alguien corrigiera el arabe de
+        //  una se quedaria la otra. Lo que nombra la clave es lo que la palabra
+        //  DICE, no quien la usa.
         { "MOVIMIENTO",         "",  "MOTION",    "动效",   "الحركة" },
-        { "SI|mov",             "",  "ON",        "开",     "تشغيل" },
-        { "NO|mov",             "",  "OFF",       "关",     "إيقاف" },
+        { "SI|chip",            "",  "ON",        "开",     "تشغيل" },
+        { "NO|chip",            "",  "OFF",       "关",     "إيقاف" },
+        //  EL MONITOR: oirte por los cascos mientras grabas. Rotulo de seccion
+        //  en AJUSTES - AUDIO, al lado de CUENTA. Ver AudioEngine::setMonitor.
+        { "MONITOR",            "",  "MONITOR",   "监听",   "المراقبة" },
+        { "Monitor encendido",  "",  "Monitor on","监听已开启", "المراقبة مفعلة" },
+        { "Monitor apagado",    "",  "Monitor off","监听已关闭","المراقبة معطلة" },
+        //  Y la unica de las tres que dice algo que no es un estado: sin cascos
+        //  el microfono saliendo por el altavoz es un acople, asi que la guarda
+        //  lo impide y hay que decir POR QUE, o se lee como que la app no
+        //  responde.
+        { "Monitor: hacen falta cascos", "",  "Monitor needs headphones",
+                                     "监听需要耳机", "المراقبة تحتاج سماعات" },
         { "La cara se mueve",   "",  "The face moves", "界面会动",
                                      "الواجهة تتحرك" },
         { "La cara esta quieta","",  "The face is still", "界面静止",
@@ -511,6 +529,12 @@ namespace
         { "MASTER es lo que oyes; PISTAS son los stems que suman a el", "",
           "MASTER is what you hear; STEMS sum back to it",
           "主输出即所听；分轨相加还原主输出", "الماستر ما تسمعه، والمسارات تجمع إليه" },
+        //  El tercer modo de EXPORTAR. Ver RebotVivo en Exporter.h: MASTER y
+        //  PISTAS son offline -un motor clonado- y esto suena mientras escribe.
+        { "EN VIVO graba lo que suena mientras suena, con su cuenta atras", "",
+          "LIVE records what sounds while it sounds, with its count-in",
+          "实时：一边播放一边录，带预备拍",
+          "مباشر: يسجل ما يُسمع أثناء سماعه، مع العد التنازلي" },
         { "Deshacer y rehacer, dieciseis pasos", "",
           "undo and redo, sixteen steps",
           "撤销与重做，十六步", "تراجع وإعادة، ست عشرة خطوة" },
@@ -1411,6 +1435,21 @@ namespace
         { "PISTAS",         "",         "STEMS",      "分轨",       "المسارات" },
         { "CANCELAR",       "",         "CANCEL",     "取消",       "إلغاء" },
         { "renderizando...", "",        "rendering...", "正在渲染…", "جارٍ التصدير…" },
+        //  EL REBOTE EN VIVO, que es el tercer modo de EXPORTAR: la cancion
+        //  SUENA y lo que suena se escribe. Ver RebotVivo en Exporter.h.
+        { "EN VIVO",        "",         "LIVE",       "实时",        "مباشر" },
+        { "grabando en vivo...", "",    "recording live...", "正在实时录制…",
+                                        "جارٍ التسجيل المباشر…" },
+        { "En vivo: %1",    "",         "Live: %1",   "实时：%1",     "مباشر: %1" },
+        //  Y LO TIRADO SE DICE. Un anillo que se llena porque el disco no llega
+        //  deja huecos en el fichero, y un rebote con huecos que no avisa es
+        //  peor que uno que falla.
+        { "En vivo: %1 con %2 muestras perdidas", "",
+          "Live: %1 with %2 samples dropped", "实时：%1，丢失 %2 个采样",
+          "مباشر: %1 مع فقدان %2 عينة" },
+        { "no se pudo escribir el rebote en vivo", "",
+          "could not write the live bounce", "无法写入实时导出",
+          "تعذر كتابة التصدير المباشر" },
         { "escribiendo %1", "",         "writing %1", "正在写入 %1", "جارٍ كتابة %1" },
         { "listo: %1",      "",         "done: %1",   "完成：%1", "تمّ: %1" },
         { "destino",        "",         "goes to",    "保存到",  "إلى" },

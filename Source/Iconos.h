@@ -131,6 +131,46 @@ namespace Iconos
         //  MIDI y ASPECTO, y lo que ensena es una LISTA de cosas guardadas con
         //  su nombre. Una carpeta ahi dice «ficheros» donde pone «proyectos».
         lista,
+        //  --- Y EL DEL MUTE DEL RACK ----------------------------------------
+        //
+        //  Se pidio «al lado del boton del plugin, una opcion para sustituirlo
+        //  o MUTEARLO»: sustituir ya se hacia desde el canalon y apagar seguia
+        //  siendo exclusivo de la fila de la cara y del XY -el rack PINTABA el
+        //  estado y no dejaba tocarlo-.
+        //
+        //  Y no vale `sinsolo` ni `altavoz` tachado: lo que esta tapa hace no
+        //  es silenciar una fuente, es SACAR EL EFECTO DE EN MEDIO. El simbolo
+        //  de eso lleva cien anos dibujado -el anillo abierto por arriba con
+        //  la barra dentro- y no se parece a nada de esta tabla: `rec` es un
+        //  circulo relleno con anillo y aqui el anillo esta PARTIDO, que es lo
+        //  unico que lo hace legible a trece pixeles.
+        apagar,
+        //  --- Y LAS DOS QUE DICEN QUE LE HACE UNA FILA A LA SEÑAL -----------
+        //
+        //  «En el rack el envio al ecualizador, y algunos efectos, el visual
+        //  molaria que fuese diferente». Dieciseis de los veintiun tipos
+        //  SUSTITUYEN -`if (fxSustituye[f]) dry *= (1.0f - g)`, o sea que subir
+        //  ese fader le QUITA seco al canal- y cinco SUMAN encima. Desde el
+        //  dedo son dos cosas distintas: con DRV al 50 % oyes mitad sucio y
+        //  mitad limpio, con DLY al 50 % oyes el canal ENTERO mas un eco.
+        //
+        //  Se intento dos veces y las dos se deshicieron MIRANDO LA FOTO: la
+        //  pista del fader pintada entera -con la de serie de JUCE al lado, un
+        //  inserto y un envio salian identicos- y el visor en la fila -flotaba
+        //  sobre el fader y desordenaba la fila-. Lo que quedaba era el nombre
+        //  accesible, o sea que un ojo humano no tenia NADA.
+        //
+        //  Una MARCA y no una palabra: tiene que leerse en los cuatro idiomas,
+        //  y tres letras sin traducir solo se sostienen en los nombres de
+        //  efecto. Y no cuesta un pixel porque no es una tapa nueva: ocupa el
+        //  sitio del dibujo del tipo en el canalon, donde el NOMBRE -«FLT»- ya
+        //  dice cual es el efecto. El icono es el adorno y la palabra la
+        //  funcion; aqui la palabra ya hace su trabajo, asi que el dibujo puede
+        //  decir lo otro.
+        //
+        //  La diferencia es de CAMINO: en un inserto la señal ATRAVIESA la
+        //  caja, en un envio SIGUE de largo y una rama baja a ella.
+        inserto, envio,
         kNum
     };
 
@@ -195,6 +235,8 @@ namespace Iconos
             case Id::automacion: return "automacion";
             case Id::solo: return "solo";
             case Id::lista: return "lista";
+            case Id::apagar: return "apagar";
+            case Id::inserto: return "inserto";        case Id::envio: return "envio";
             case Id::ninguno:
             case Id::kNum:
             default: return "ninguno";
@@ -1245,6 +1287,39 @@ namespace Iconos
                                  juce::MathConstants<float>::halfPi * 1.55f, true);
                 R.addRoundedRectangle (2.6f, 12.0f, 4.2f, 7.5f, 1.6f);
                 L.addRoundedRectangle (17.2f, 12.0f, 4.2f, 7.5f, 1.6f);
+                break;
+
+            //  INSERTO: la señal entra por la izquierda, ATRAVIESA la caja y
+            //  sale por la derecha. Un solo camino y la caja EN el.
+            case Id::inserto:
+                linea (L, 1.5f, 12.0f, 7.0f, 12.0f);
+                R.addRectangle (7.0f, 7.0f, 10.0f, 10.0f);
+                linea (L, 17.0f, 12.0f, 22.5f, 12.0f);
+                break;
+
+            //  ENVIO: la señal SIGUE de largo por arriba y una rama baja a la
+            //  caja. Dos caminos, y la caja colgando de uno — que es
+            //  exactamente lo que el motor hace con DLY y REV.
+            case Id::envio:
+                linea (L, 1.5f, 6.0f, 22.5f, 6.0f);
+                linea (L, 8.0f, 6.0f, 8.0f, 13.0f);
+                R.addRectangle (4.0f, 13.0f, 8.0f, 8.0f);
+                break;
+
+            //  APAGAR: el anillo partido y la barra. Ver la enum.
+            case Id::apagar:
+                //  El arco NO se cierra por arriba -de 40 a 320 grados- que es
+                //  lo que separa este dibujo de un circulo y lo que hace que a
+                //  trece pixeles se lea como un interruptor y no como un punto.
+                //  El arco en L y no en R: `R` se RELLENA y un arco relleno
+                //  es un disco, no un anillo — mirado en la foto salia una
+                //  mancha redonda que se leia como un mando. Es la misma
+                //  distincion que ya usa `solo`: la diadema en L, los
+                //  auriculares en R.
+                L.addCentredArc (12.0f, 13.0f, 7.6f, 7.6f, 0.0f,
+                                 juce::MathConstants<float>::pi * 0.22f,
+                                 juce::MathConstants<float>::pi * 1.78f, true);
+                linea (L, 12.0f, 3.4f, 12.0f, 11.0f);
                 break;
 
             case Id::sinsolo:

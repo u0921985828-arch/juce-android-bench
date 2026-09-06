@@ -21,9 +21,18 @@ namespace juce
 {
     #define JNI_CLASS_MEMBERS(METHOD, STATICMETHOD, FIELD, STATICFIELD, CALLBACK) \
         METHOD (requestAudioFocus,  "requestAudioFocus",  "(Landroid/media/AudioManager$OnAudioFocusChangeListener;II)I") \
-        METHOD (abandonAudioFocus,  "abandonAudioFocus",  "(Landroid/media/AudioManager$OnAudioFocusChangeListener;)I")
+        METHOD (abandonAudioFocus,  "abandonAudioFocus",  "(Landroid/media/AudioManager$OnAudioFocusChangeListener;)I") \
+        METHOD (getDevices,         "getDevices",         "(I)[Landroid/media/AudioDeviceInfo;")
 
     DECLARE_JNI_CLASS (ZatiAudioManager, "android/media/AudioManager")
+    #undef JNI_CLASS_MEMBERS
+
+    //  Y el trozo de AudioDeviceInfo que hace falta para saber por donde sale
+    //  el sonido. Ver RutaAudio::porAltavoz.
+    #define JNI_CLASS_MEMBERS(METHOD, STATICMETHOD, FIELD, STATICFIELD, CALLBACK) \
+        METHOD (getType, "getType", "()I")
+
+    DECLARE_JNI_CLASS (ZatiAudioDeviceInfo, "android/media/AudioDeviceInfo")
     #undef JNI_CLASS_MEMBERS
 }
 
@@ -114,6 +123,57 @@ AudioFocus::~AudioFocus()
     abandon();
 }
 
+//  ---------------------------------------------------------------------------
+//  Por donde sale el sonido. Ver RutaAudio en la cabecera.
+//
+//  Se pregunta cada vez y no se cachea: los cascos se enchufan y se quitan en
+//  mitad de una sesion, y una respuesta guardada al arrancar seria exactamente
+//  la clase de dato que el fichero de preferencias tiene y el aparato no - lo
+//  mismo que una tarjeta desmontada que sigue en la ruta de exportacion. La
+//  llama el hilo de mensajes, no el de audio.
+bool RutaAudio::porAltavoz()
+{
+    auto* env = juce::getEnv();
+    if (env == nullptr) return true;      // sin JNI, lo prudente es el altavoz
+
+    juce::LocalRef<jobject> am (env->CallObjectMethod (juce::getAppContext().get(),
+                                                       juce::AndroidContext.getSystemService,
+                                                       juce::javaString ("audio").get()));
+    if (am.get() == nullptr) return true;
+
+    constexpr jint kOutputs = 2;          // AudioManager.GET_DEVICES_OUTPUTS
+    juce::LocalRef<jobjectArray> devs ((jobjectArray) env->CallObjectMethod (
+        am.get(), juce::ZatiAudioManager.getDevices, kOutputs));
+    if (devs.get() == nullptr) return true;
+
+    //  Los tipos de AudioDeviceInfo que son escucha PERSONAL. Lo que no este
+    //  en esta lista -el altavoz, el HDMI, el auricular de llamada- va al aire
+    //  o no es una salida de monitorizacion.
+    const int n = env->GetArrayLength (devs.get());
+    for (int i = 0; i < n; ++i)
+    {
+        juce::LocalRef<jobject> d (env->GetObjectArrayElement (devs.get(), i));
+        if (d.get() == nullptr) continue;
+
+        switch ((int) env->CallIntMethod (d.get(), juce::ZatiAudioDeviceInfo.getType))
+        {
+            case 3:    // TYPE_WIRED_HEADSET
+            case 4:    // TYPE_WIRED_HEADPHONES
+            case 7:    // TYPE_BLUETOOTH_SCO
+            case 8:    // TYPE_BLUETOOTH_A2DP
+            case 11:   // TYPE_USB_DEVICE
+            case 22:   // TYPE_USB_HEADSET
+            case 23:   // TYPE_HEARING_AID
+            case 26:   // TYPE_BLE_HEADSET
+                return false;
+            default:
+                break;
+        }
+    }
+
+    return true;
+}
+
 bool AudioFocus::request()
 {
     if (held || impl == nullptr || impl->manager.get() == nullptr)
@@ -145,5 +205,15 @@ AudioFocus::AudioFocus (Listener& l) : listener (l) {}
 AudioFocus::~AudioFocus() = default;
 bool AudioFocus::request() { held = true; return true; }
 void AudioFocus::abandon() { held = false; }
+
+//  Y la ruta: en un escritorio no hay altavoz de telefono que realimentar, asi
+//  que la respuesta honesta es que no estorba. El banco la fuerza con
+//  `ZATI_RUTA=altavoz` para poder medir la guarda, que si no seria una regla
+//  que solo existe en el telefono y que por tanto no mide nadie.
+bool RutaAudio::porAltavoz()
+{
+    return juce::SystemStats::getEnvironmentVariable ("ZATI_RUTA", {})
+             .trim().equalsIgnoreCase ("altavoz");
+}
 
 #endif

@@ -1861,11 +1861,19 @@ void MainComponent::resized()
                              + (partirSkin ? Metrics::hit + Metrics::xs : 0)
                              + (partirMov  ? Metrics::hit + Metrics::xs : 0);
 
+        //  CUANTAS FILAS DE CHIPS LLEVA LA PAGINA DE AUDIO: BUFER, RELOJ,
+        //  CUENTA y MONITOR. Escrito UNA vez porque lo piden dos sitios —lo que
+        //  la pagina pide de alto y lo que el recuadro de AUDIO tiene que
+        //  cederles— y ya se pago: el `2 *` de mas abajo se quedo en dos el dia
+        //  que entro la CUENTA, asi que la fila de abajo se quedaba con lo que
+        //  sobrara. Medido con el MONITOR puesto: tres tapas de 4 px de alto.
+        constexpr int kFilasChipsAudio = 4;
+
         const int wanted = onMidi ? midiH
             : onAudio
             ? Metrics::md * 2 + 16 + Metrics::sm + tabsH + kAltoAudioInfo + Metrics::xs
                 + 14 + Metrics::hit + Metrics::sm
-                + (Metrics::hit + Metrics::xs) * 3 + Metrics::sm
+                + (Metrics::hit + Metrics::xs) * kFilasChipsAudio + Metrics::sm
             : onAsp
               ? Metrics::md * 2 + 16 + Metrics::sm + tabsH
                   + (Metrics::hit + Metrics::xs) * 3 + filasExtra + Metrics::sm
@@ -2007,8 +2015,9 @@ void MainComponent::resized()
             block (midiInBtn,  midiInBox);
             midiArea = inner.removeFromTop (40);                // pintado: la nota
             audioInfoArea = bufRowArea = rateRowArea = langRowArea = skinRowArea = movRowArea = {};
-            cuentaRowArea = {};
+            cuentaRowArea = monRowArea = {};
             for (auto* b : cuentaButtons) if (b != nullptr) { b->setVisible (false); b->setBounds ({}); }
+            for (auto* b : monButtons)    if (b != nullptr) { b->setVisible (false); b->setBounds ({}); }
             pruebasLabelArea = {};
             projNameRowArea = projPathRowArea = {};
         }
@@ -2081,7 +2090,7 @@ void MainComponent::resized()
                 //  Y las tres pruebas cuentan como mueble que no encoge, igual
                 //  que los chips: si no se restan aqui, el recuadro se queda
                 //  con su altura entera y la fila de PRUEBAS se cae por abajo.
-                const int chipsNecesarios = 2 * (Metrics::hit + Metrics::xs)
+                const int chipsNecesarios = kFilasChipsAudio * (Metrics::hit + Metrics::xs)
                                           + Metrics::xs + 14 + Metrics::hit + Metrics::sm;
                 audioInfoArea = inner.removeFromTop (
                                     juce::jlimit (0, kAltoAudioInfo, inner.getHeight() - Metrics::xs - chipsNecesarios));
@@ -2138,7 +2147,22 @@ void MainComponent::resized()
             //  hasta ocho compases y ofrecer ocho seria ofrecer siete que nadie
             //  usa. El clic no tiene chip porque su tapa ya existe en CANCION.
             cuentaRowArea = chipRow (cuentaButtons, 44, false);
-            if (cuentaButtons.size() > 0) setGrupos.add (cuentaRowArea);
+            //  Y EL MONITOR, dos chips en la misma columna: es la otra mitad de
+            //  «como se prepara una toma», y como la cuenta es una preferencia
+            //  de la persona y de su aparato.
+            monRowArea = chipRow (monButtons, 44, false);
+            //  UN panel para las DOS, y no uno por fila: entre ellas hay
+            //  `Metrics::xs` -cuatro- y dos paneles que se salen dos por lado
+            //  dejan CERO de hueco, que se lee igual que no dibujar ninguno. Es
+            //  el mismo intento fallido que ya esta contado aqui abajo para
+            //  BUFER y RELOJ, y `Tests/paneles.py` lo canto en la primera
+            //  corrida: PEGADOS 28.
+            //
+            //  Y ademas es la lectura correcta: las dos son «como se prepara
+            //  una toma» -cuantos compases para coger aire y si te oyes por los
+            //  cascos- contra el reloj del aparato de abajo.
+            if (cuentaButtons.size() + monButtons.size() > 0)
+                setGrupos.add (cuentaRowArea.getUnion (monRowArea));
             //  UN panel para las dos filas y no uno por fila, que fue el primer
             //  intento y salio igual que no dibujar nada: entre BUFER y RELOJ
             //  hay Metrics::xs -cuatro- y el panel se sale dos por arriba y dos
@@ -2166,8 +2190,9 @@ void MainComponent::resized()
             //  LA PAGINA DE ASPECTO: el idioma y la carcasa, que es lo unico
             //  de esta ficha que cambia como SE VE la maquina. Estaban en AUDIO
             //  al lado del reloj y del bufer porque ahi habia sitio.
-            midiArea = audioInfoArea = bufRowArea = rateRowArea = cuentaRowArea = {};
+            midiArea = audioInfoArea = bufRowArea = rateRowArea = cuentaRowArea = monRowArea = {};
             for (auto* b : cuentaButtons) if (b != nullptr) { b->setVisible (false); b->setBounds ({}); }
+            for (auto* b : monButtons)    if (b != nullptr) { b->setVisible (false); b->setBounds ({}); }
             pruebasLabelArea = {};
             projNameRowArea = projPathRowArea = {};
 
@@ -2267,8 +2292,13 @@ void MainComponent::resized()
         //  Con la fila de CAMBIAR contada: pedir sin ella y colocarla igual es
         //  como una fila se queda con altura cero, que en esta app ya tiene
         //  nombre y medidas.
+        //  Y CON LA FILA DE EN VIVO CONTADA, por lo mismo. El banco lo canto en
+        //  la primera corrida: la tapa salia a 28 px de alto en las siete
+        //  pantallas -pedida sin ella, `removeFromBottom` devuelve lo que
+        //  queda- o sea 28 TOUCH nuevos de un solo control.
         auto inner = sheetFromBottom (exportSheet, 32 + 96 + Metrics::hit + Metrics::sm
-                                                     + Metrics::btn * 2 + Metrics::sm * 2);
+                                                     + Metrics::btn * 2 + Metrics::sm * 2
+                                                     + Metrics::hit + Metrics::sm);
         auto titleRow = inner.removeFromTop (Metrics::hit);
         exportCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
 
@@ -2289,6 +2319,16 @@ void MainComponent::resized()
 
         auto row = inner.removeFromBottom (Metrics::btn);
         exportCancelButton.setBounds (row);
+        //  Y EL REBOTE EN VIVO, en su PROPIA fila justo encima. MASTER y PISTAS
+        //  son dos PRODUCTOS del mismo rebote offline; esto es otro MODO, y una
+        //  cuarta palabra en esa fila le quitaria ancho a las tres que ya estan
+        //  medidas -se reparten por el texto-.
+        {
+            auto fila = inner.removeFromBottom (Metrics::hit);
+            inner.removeFromBottom (Metrics::sm);
+            juce::TextButton* lb[1] = { &exportLiveButton };
+            layoutModuleBar (fila, lb, 0, 1);
+        }
         //  Tres tapas: el formato primero porque se elige ANTES de decidir si
         //  es master o pistas, y repartidas por el texto - "PISTAS" y "MASTER"
         //  no miden lo mismo que "WAV".
@@ -2398,6 +2438,22 @@ void MainComponent::resized()
             auto canalon = Lang::takeStart (row, 54);
             if (rackSlotBtns[s] != nullptr)
                 rackSlotBtns[s]->setBounds (canalon.reduced (1, 4));
+            //  Y LA TAPA DE APAGAR, entre el canalon y el fader.
+            //
+            //  Lo que cuesta sale del FADER y no del canalon, que es donde
+            //  sobra ancho: medido, en 412x915 el fader pasa de 289 px a 245 y
+            //  en la tarjeta mas estrecha de 157 a 113 — sigue muy por encima
+            //  del dedo, que es lo que `expo.py` mide. Quitarselo al canalon
+            //  habria dejado «FLT» sin sitio para su dibujo, que es la mitad de
+            //  lo que esa tapa dice.
+            //  Y DOS PIXELES MAS DE LOS QUE MIDE EL DEDO, que es lo que el
+            //  `reduced (1, 4)` de abajo se lleva: pedir `Metrics::hit` clavado
+            //  deja la tapa en 38 y el banco lo canta -medido, 38x40-. Es el
+            //  mismo `reduced` que ya cuesta dos pixeles en el canalon, contado
+            //  donde se PIDE y no donde se coloca.
+            auto mute = Lang::takeStart (row, Metrics::hit + 2);
+            if (rackMuteBtns[s] != nullptr)
+                rackMuteBtns[s]->setBounds (mute.reduced (1, 4));
             if (rackSends[s] != nullptr)
                 rackSends[s]->setBounds (row.reduced (2, 4));
         };

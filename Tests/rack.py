@@ -177,11 +177,68 @@ def main ():
                          % (tam, kw, kh))
         if mh < 24 or mw < 48:
             malo.append ("%s: el visor queda en %dx%d y no se lee" % (tam, mw, mh))
+        #  Y LA TAPA DE APAGAR, que es lo que esta fila acaba de ganar. Lo que
+        #  cuesta sale del FADER -de 163 px a 117 en la tarjeta mas estrecha- y
+        #  eso es lo que se comprueba: que la tapa mida un dedo y que el fader
+        #  siga midiendo uno. Un `Metrics::hit` clavado la dejaba en 38 px de
+        #  ancho, que el `reduced (1, 4)` de la fila se lleva dos.
+        uw, uh = g["mute"]
+        if min (uw, uh) < MIN_TOUCH:
+            malo.append ("%s: la tapa de apagar del rack queda en %dx%d" % (tam, uw, uh))
+        if fw < MIN_TOUCH:
+            malo.append ("%s: el fader del rack queda en %d px de ancho" % (tam, fw))
+
+    #  6. Y LA MARCA QUE LO DICE MIRANDO, que es lo que faltaba de verdad.
+    #
+    #  Lo de arriba es el nombre ACCESIBLE — lo que lee TalkBack — y hasta hoy
+    #  era lo unico: un ojo humano no tenia nada en la fila que le dijera si
+    #  esa fila resta seco o lo suma encima. Se intento dos veces y las dos se
+    #  deshicieron mirando la foto (la pista del fader pintada entera y el
+    #  visor dentro de la fila), asi que esta vez es una MARCA en el sitio del
+    #  dibujo del tipo: el nombre del canalon ya dice CUAL es el efecto.
+    #
+    #  Y son dos caminos distintos de la app — el titulo lo escribe
+    #  `refreshRack` y la marca `refrescaRanuras` — asi que compararlos es lo
+    #  que separa «la fila lo dice» de «una de las dos ventanas se quedo
+    #  vieja». Que las dos marcas no sean el MISMO dibujo lo mide `iconos.py`
+    #  con el listón de siempre.
+    print ("marca      %s" % r["marcas"])
+    if -1 in r["marcas"]:
+        malo.append ("hay filas del rack sin marca de familia: %s" % r["marcas"])
+    elif r["marcas"] != r["dibujo"]:
+        malo.append ("la marca del canalon y lo que la fila DICE no coinciden:\n"
+                     "           marca  %s\n           dice   %s"
+                     % (r["marcas"], r["dibujo"]))
+
+    #  7. MUTEAR DESDE EL RACK, con DOS cifras y por la TAPA.
+    #
+    #  Se pidio «al lado del boton del plugin, una opcion para sustituirlo o
+    #  MUTEARLO tambien»: sustituir y vaciar ya se hacian desde el canalon, y
+    #  apagar seguia siendo exclusivo de la fila de la cara y del XY — el rack
+    #  PINTABA el estado (el canalon con el acento, el fader al 50 % de alfa) y
+    #  no dejaba tocarlo.
+    #
+    #  Y las DOS mitades, porque una sola se engaña: que la tapa APAGUE y que
+    #  el canalon SIGA abriendo el menu. Convertir el canalon en interruptor
+    #  cumple la primera y se lleva por delante la unica puerta que hay para
+    #  cambiar o vaciar una ranura.
+    print ("mute       %d -> %d -> %d   sobre vacia %s   el canalon abre el menu %d"
+           % (r["mute_antes"], r["mute_despues"], r["mute_vuelve"],
+              r["mute_vacia"], r["menu_abre"]))
+    if not (r["mute_antes"] == 1 and r["mute_despues"] == 0 and r["mute_vuelve"] == 1):
+        malo.append ("la tapa del rack no apaga el efecto: %d -> %d -> %d"
+                     % (r["mute_antes"], r["mute_despues"], r["mute_vuelve"]))
+    if r["mute_vacia"][0] != r["mute_vacia"][1]:
+        malo.append ("sobre una ranura VACIA la tapa apaga algo: %s" % r["mute_vacia"])
+    if r["menu_abre"] != 1:
+        malo.append ("el canalon dejo de abrir el menu: el rack se queda sin la "
+                     "unica puerta para cambiar o vaciar una ranura")
 
     if malo:
         for m in malo: print ("FALLA  " + m)
         return 1
-    print ("cada efecto dice de que familia es y el plato ensena lo que hay dentro")
+    print ("cada efecto dice de que familia es, el plato ensena lo que hay dentro "
+           "y desde el rack se cambia Y se apaga")
     return 0
 
 

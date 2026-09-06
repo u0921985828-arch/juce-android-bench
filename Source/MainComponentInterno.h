@@ -365,8 +365,8 @@ namespace
             "Un proyecto lleva sus muestras dentro y se puede mover entero",
             "La sesion se recupera sola al abrir la app",
             "MASTER es lo que oyes; PISTAS son los stems que suman a el",
-            "Deshacer y rehacer, dieciseis pasos",
-            nullptr } },
+            "EN VIVO graba lo que suena mientras suena, con su cuenta atras",
+            "Deshacer y rehacer, dieciseis pasos" } },
         { "MIDI", {
             "AJUSTES > MIDI: manda las notas de lo que suena a otro aparato",
             "El pad 1 es la nota 36, y de ahi hacia arriba",

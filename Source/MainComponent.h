@@ -909,6 +909,25 @@ private:
     //  casa llama ruido.
     int  cuentaCompases = 1;               // 0, 1 o 2
     juce::OwnedArray<juce::TextButton> cuentaButtons;   // SIN / 1 / 2
+
+    //  MONITOR: oirte por los cascos mientras grabas. Ver
+    //  `AudioEngine::setMonitor` y `RutaAudio::porAltavoz`.
+    //
+    //  Vive aqui y no en la fila FUENTE del pad por lo mismo que la cuenta
+    //  atras: es una preferencia de la PERSONA y de su aparato -si llevas
+    //  cascos o no-, no del proyecto ni de la toma. Y ademas esa fila ya se
+    //  parte en dos en 280x653 con las tres palabras que tiene.
+    juce::OwnedArray<juce::TextButton> monButtons;      // OFF / ON
+    juce::Rectangle<int> monRowArea;
+    bool monitorOn = false;
+    static juce::File monitorPrefFile();
+    void saveMonitorPref();
+    void loadMonitorPref();
+    //  Escribe la ganancia que toca AHORA: cero si la persona lo tiene apagado
+    //  y cero tambien si la salida es el altavoz, que es la guarda. Se llama al
+    //  tocar el chip y cada vez que se arma una toma, porque los cascos se
+    //  enchufan y se quitan en mitad de una sesion.
+    void aplicaMonitor (bool avisa);
     juce::Rectangle<int> cuentaRowArea;
     static juce::File cuentaPrefFile();
     void saveCuentaPref() const;
@@ -965,6 +984,23 @@ private:
     juce::TextButton exportStemsButton  { "PISTAS" };
     juce::TextButton exportCancelButton { "CANCELAR" };
     std::unique_ptr<Exporter> exportJob;
+
+    //  EL REBOTE EN VIVO: la cancion suena y lo que suena se escribe.
+    //
+    //  Se pidio «opcion de exportar en Live, con un count in para no perder el
+    //  tiempo». MASTER y PISTAS son los dos OFFLINE -un motor clonado fuera de
+    //  tiempo real- y REMUESTREAR es un rebote en vivo pero a un PAD.
+    //
+    //  EN SU PROPIA FILA y no como cuarta tapa al lado de MASTER y PISTAS: esas
+    //  dos son dos PRODUCTOS del mismo rebote -el mismo render con las pistas
+    //  aparte- y esto es otro MODO. Ademas de que la fila se reparte por el
+    //  texto y una cuarta palabra le quita ancho a las tres que ya estan
+    //  medidas.
+    juce::TextButton exportLiveButton { "EN VIVO" };
+    std::unique_ptr<RebotVivo> vivoJob;
+    juce::File vivoFichero;
+    void alternaRebotVivo();
+    void terminaRebotVivo();
     //  WAV o comprimido. Ver Exporter: un master de tres minutos pasa de 30 MB
     //  a 3, que es lo que separa "lo tengo" de "te lo mando".
     //  ELEGIR DONDE CAE EL REBOTE.
@@ -1312,6 +1348,8 @@ public:
     //  monta un patron con los sonidos de fabrica y hace el rebote entero -
     //  master y pistas - en el hilo que llama, contando ficheros y bytes.
     void auditExport();
+    //  EL REBOTE EN VIVO, que es el tercer modo. Ver Tests/export.py.
+    void auditVivo();
     void auditExportAsync (bool cancelar);
     void esperaExport (bool cancelar, int vueltas);
 
@@ -1840,6 +1878,19 @@ private:
     //  el sitio donde se cambia lo que hay en una ranura: la fila del rack es
     //  una RANURA y no un efecto.
     juce::OwnedArray<juce::TextButton> rackSlotBtns;
+    //  Y LA TAPA DE APAGAR, al lado del canalon.
+    //
+    //  Se pidio con esas palabras -«al lado del boton del plugin, una opcion
+    //  para sustituirlo o MUTEARLO tambien»-: sustituir y vaciar ya se hacian
+    //  desde el canalon y apagar no, porque `setFxEnabled` solo se alcanzaba
+    //  desde la fila de la cara y desde el XY. El rack PINTABA el estado -el
+    //  canalon con el acento, el fader al 50 % de alfa- y no dejaba tocarlo.
+    //
+    //  Escribe por `fxTapped`, o sea por el MISMO camino que la fila de la
+    //  cara: las tres ventanas -cara, rack y XY- siguen siendo tapas de un
+    //  estado y `refrescaRanuras` ya las reparte. Un segundo camino a
+    //  `setFxEnabled` seria la misma regla escrita dos veces.
+    juce::OwnedArray<juce::TextButton> rackMuteBtns;
     void refreshRack();
     juce::OwnedArray<juce::TextButton> mixMutes, mixSolos;
     juce::TextButton mixClearSolo { "SIN SOLO" };

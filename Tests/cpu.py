@@ -100,10 +100,21 @@ VBLANK_HZ = 60
 TOPE_SONANDO = 0.05
 
 
+#  LA PANTALLA QUE SE COMPRUEBA ES LA QUE SE USA.
+#
+#  `display_alive` caia a ":99" cuando `DISPLAY` no esta puesta y las corridas
+#  heredaban `os.environ` tal cual, o sea SIN pantalla: la comprobacion decia
+#  que si contra :99 y los treinta y cuatro arranques se iban sin ventana, con
+#  el veredicto entero saliendo «no contesto». Una hora buscando un cambio que
+#  no era —el binario a mano, con la misma orden y `DISPLAY=:99` delante, daba
+#  su linea a la primera—. Es la misma regla que este banco lleva escrita desde
+#  el principio: una regla con dos respuestas acierta por accidente.
+DISPLAY = os.environ.get ("DISPLAY") or ":99"
+
+
 def display_alive():
-    d = os.environ.get ("DISPLAY", ":99")
     try:
-        return subprocess.run (["xdpyinfo", "-display", d],
+        return subprocess.run (["xdpyinfo", "-display", DISPLAY],
                                stdout=subprocess.DEVNULL,
                                stderr=subprocess.DEVNULL, timeout=10).returncode == 0
     except Exception:
@@ -119,6 +130,7 @@ def corre (ficha, sonando=False, quieta=False):
     #  fallo que `Tests/session.py` acaba de pagar en `proyecto()`.
     casa = tempfile.mkdtemp (prefix="zati-cpu-")
     env = dict (os.environ)
+    env["DISPLAY"] = DISPLAY
     env.update ({"HOME": casa,
                  "XDG_DATA_HOME": os.path.join (casa, ".local", "share"),
                  "ZATI_AUDIT": "1", "ZATI_SIZE": "412x915", "ZATI_LANG": "es",
@@ -175,6 +187,7 @@ def cabezal():
     y se comparan los pixeles: un fallo aqui deja un rastro de marcas por la
     rejilla, que es el tipo de fallo que solo se ve en un video."""
     env = dict (os.environ)
+    env["DISPLAY"] = DISPLAY
     env.update ({"ZATI_AUDIT": "1", "ZATI_SIZE": "412x915", "ZATI_LANG": "es",
                  "ZATI_HEAD": "1"})
     try:
@@ -277,6 +290,7 @@ def main():
     #  100 Hz: 592 cuadros en 6 s, contra los ~100 que daria el suelo.
     print()
     env = dict (os.environ)
+    env["DISPLAY"] = DISPLAY
     env.update ({"ZATI_AUDIT": "1", "ZATI_SIZE": "412x915", "ZATI_LANG": "es",
                  "ZATI_DEMO": "1", "ZATI_OPEN": "mix", "ZATI_SPIN": str (SEGUNDOS)})
     try:

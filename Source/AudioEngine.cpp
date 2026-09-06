@@ -151,6 +151,15 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize, int inputC
         }
 
         recordBuffer.clear();
+
+        //  Y EL BUFFER DEL MONITOR, por lo mismo y aqui mismo: la entrada hay
+        //  que guardarla en la etapa 0 porque el `out.clear` de la etapa 2 la
+        //  destruye, y la suma ocurre nueve etapas mas abajo. Un bloque, no un
+        //  minuto: esto no guarda nada, solo cruza la funcion.
+        monitorInChans = juce::jlimit (0, 2, inputChannels);
+        monitorBuf.setSize (juce::jmax (1, monitorInChans), maxBlock);
+        monitorBuf.clear();
+        smMonitor = 0.0f;
     }
 
     //  How many frames one silhouette column covers. The earlier project put the
@@ -571,6 +580,23 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         }
         if (rp >= cap)
             recording.store (false, std::memory_order_release);   // full -> auto stop
+    }
+
+    //  0-mon. Y LA COPIA PARA EL MONITOR, aqui y no mas abajo: la entrada vive
+    //        en `out` hasta la etapa 2, que la borra. La suma se hace en 5d-mon
+    //        -antes del master- y para entonces esto ya no existe.
+    //
+    //        Se copia si el monitor esta pedido O si todavia se esta apagando:
+    //        sin la segunda mitad, apagarlo cortaria la rampa a la mitad y eso
+    //        es un click, que es justo lo que la rampa existe para no dar.
+    const bool monPedido = monitorTarget.load (std::memory_order_relaxed) > 0.0f
+                           || smMonitor > 1.0e-6f;
+    if (monPedido && monitorInChans > 0)
+    {
+        const int chans = juce::jmin (monitorInChans, out.getNumChannels());
+        const int n     = juce::jmin (numSamples, monitorBuf.getNumSamples());
+        for (int ch = 0; ch < chans; ++ch)
+            monitorBuf.copyFrom (ch, 0, out.getReadPointer (ch, startSample), n);
     }
 
     // 0b. Latency probe: arm on the first block after the request, so the
@@ -2479,6 +2505,37 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         }
     }
 
+    //  5d-mon. EL MONITOR, justo encima de la barrera y del limitador.
+    //
+    //  Ver `setMonitor`: aqui es donde se decide que un NaN que entre por el
+    //  aparato no salga por los altavoces, porque la etapa de abajo lo filtra.
+    //  Un monitor colgado DESPUES del master -que es lo corto- se salta las
+    //  dos cosas.
+    //
+    //  Con rampa por bloque y no con el valor crudo, que es la misma razon por
+    //  la que la lleva cualquier otra ganancia que se suma aqui: un salto en
+    //  una ganancia sumada es un click. La constante es la de los envios.
+    {
+        const float objetivo = monitorTarget.load (std::memory_order_relaxed);
+        const float previo   = smMonitor;
+        smMonitor += (objetivo - smMonitor) * kSend;
+        if (smMonitor < 1.0e-6f && objetivo <= 0.0f) smMonitor = 0.0f;
+
+        if ((previo > 0.0f || smMonitor > 0.0f) && monitorInChans > 0)
+        {
+            const int salidas = juce::jmin (2, out.getNumChannels());
+            const int n       = juce::jmin (numSamples, monitorBuf.getNumSamples());
+            for (int ch = 0; ch < salidas; ++ch)
+            {
+                //  Un microfono de telefono da UN canal, y ese uno va a los
+                //  dos: repartirlo dejaria la voz pegada al oido izquierdo.
+                const int src = juce::jmin (ch, monitorInChans - 1);
+                out.addFromWithRamp (ch, startSample, monitorBuf.getReadPointer (src), n,
+                                     previo, smMonitor);
+            }
+        }
+    }
+
     // 5d. Master safety. Sixteen pads at full level plus a delay with
     //     feedback and a reverb tail will pass 0 dBFS, and what comes out of
     //     an integer DAC then is hard clipping: the ugliest sound a sampler
@@ -2540,6 +2597,40 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 }
             }
         }
+    }
+
+    //  5e-vivo. EL REBOTE EN VIVO, en el MISMO sitio que el remuestreo y por
+    //           la misma razon: despues de los efectos y del saturador, antes
+    //           del fader del master y del ducking. Ver `vivoArma`.
+    //
+    //           El hilo de audio EMPUJA y se va. Si el anillo esta lleno -el
+    //           hilo escritor no ha vuelto- se cuenta y no se bloquea: parar
+    //           aqui a esperar un disco es exactamente lo que este hilo no
+    //           puede hacer, y lo tirado se dice en vez de esconderse.
+    //  Y LA CUENTA ATRAS NO ENTRA EN EL FICHERO, que es la mitad que se
+    //  olvida: el clic es una referencia para tocar, no parte de la cancion.
+    //  El anillo se arma antes de que el transporte ruede -si no, los primeros
+    //  bloques se pierden- asi que quien tiene que callarse es la captura y no
+    //  el armado. Es el mismo argumento por el que el remuestreo se escribe
+    //  ANTES del fader del master: lo que se manda no lleva dentro lo que solo
+    //  servia para tocarlo.
+    if (vivoOn.load (std::memory_order_acquire) && ! enCuentaAtras()
+        && out.getNumChannels() > 0)
+    {
+        int i1 = 0, n1 = 0, i2 = 0, n2 = 0;
+        vivoFifo.prepareToWrite (numSamples, i1, n1, i2, n2);
+        const int chans = juce::jmin (2, out.getNumChannels());
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            //  Un solo canal de salida se copia a los dos: el fichero es
+            //  estereo pase lo que pase, como el del rebote offline.
+            const int src = juce::jmin (ch, chans - 1);
+            if (n1 > 0) vivoRing.copyFrom (ch, i1, out.getReadPointer (src, startSample), n1);
+            if (n2 > 0) vivoRing.copyFrom (ch, i2, out.getReadPointer (src, startSample + n1), n2);
+        }
+        vivoFifo.finishedWrite (n1 + n2);
+        if (n1 + n2 < numSamples)
+            vivoPerdidas.fetch_add (numSamples - n1 - n2, std::memory_order_relaxed);
     }
 
     // 5e. RESAMPLE. The master, after everything, which is the whole point:

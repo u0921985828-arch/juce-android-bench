@@ -45,11 +45,12 @@ El repositorio se compila de dos formas y las dos importan:
   bus detrás. Y los efectos no son de la máquina ni de un pad sino de un
   **canal**: hay dieciséis en la mesa, cada pad elige el suyo en sus ajustes, y
   cambiar de pad cambia la fila de efectos de la cara. En el RACK cada canal
-  decide cuánto de él **pasa por** cada uno, y la fila dice de qué familia es:
-  dieciséis de los veintiuno son **insertos** —sustituyen el sonido seco— y
-  cinco **suman** encima: DLY, REV y los tres de modulación que sólo existen
-  como suma, porque el peine de un flanger y las muescas de un phaser SON la
-  suma de la copia con la seca.
+  decide cuánto de él **pasa por** cada uno, lo cambia, lo vacía y lo **apaga**,
+  y la fila **dibuja** de qué familia es: dieciséis de los veintiuno son
+  **insertos** —la señal atraviesa la caja, y sustituyen el sonido seco— y cinco
+  **suman** encima —la señal sigue de largo y una rama baja a la caja—: DLY, REV
+  y los tres de modulación que sólo existen como suma, porque el peine de un
+  flanger y las muescas de un phaser SON la suma de la copia con la seca.
 - **Panel XY** para tocarlos: dos parámetros a la vez, momentáneo o fijo, en la
   mitad de arriba de la cara — los pads siguen debajo y se pueden disparar
   mientras barres.
@@ -63,11 +64,17 @@ El repositorio se compila de dos formas y las dos importan:
   que es donde está el dedo. Los siete modos armados de la app se ven ahora
   **donde se actúa** y no sólo donde se armaron.
 - **Grabación por micro** a un pad y grabación de la interpretación al patrón,
-  con compensación de la latencia de salida.
+  con compensación de la latencia de salida, **cuenta atrás** y **monitor
+  directo** — te oyes por los cascos mientras grabas, con la guarda que
+  pregunta al aparato por dónde sale el sonido: sin cascos el monitor no suena,
+  porque el micro saliendo por el altavoz es un acople y además imprime la
+  producción dentro de la toma.
 - **Proyectos** autocontenidos (audio incluido) y **sesión recuperable**: lo que
   estabas haciendo vuelve al abrir aunque el sistema matara el proceso.
 - **Exportación** a WAV o a OGG —veinte veces más pequeño y sin patentes—,
-  máster o pistas, a la carpeta que elijas.
+  máster o pistas, a la carpeta que elijas. Y **en vivo**: la canción suena y
+  lo que suena se escribe, con la misma cuenta atrás — que es lo que separa
+  «rebotar» de «tocar el rebote».
 
 ## Disciplina de hilos (el núcleo)
 

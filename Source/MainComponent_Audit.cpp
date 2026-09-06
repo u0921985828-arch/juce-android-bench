@@ -2743,7 +2743,7 @@ void MainComponent::auditRack()
     //     se mira que dice la fila del rack de ella — en palabras, que es lo
     //     que lee TalkBack y lo unico que la app afirma sobre esto.
     int mal = 0;
-    juce::StringArray dibujo;
+    juce::StringArray dibujo, marcas;
     for (int f = 0; f < kNumFx; ++f)
     {
         ponEnRanura (0, f);
@@ -2751,6 +2751,15 @@ void MainComponent::auditRack()
         const bool dice = rackSends[0]->getTitle().contains (T ("SUSTITUYE"));
         dibujo.add (dice ? "1" : "0");
         if (dice != AudioEngine::sustituye (f)) ++mal;
+
+        //  Y LA MARCA DEL CANALON, que es la mitad que se VE. Lo de arriba es
+        //  el nombre accesible -lo que lee TalkBack- y lo escribe `refreshRack`;
+        //  esto lo escribe `refrescaRanuras`, o sea otro camino. Que los dos
+        //  digan lo mismo es lo unico que separa «la fila lo dice» de «una de
+        //  las dos ventanas se quedo vieja».
+        const int id = (int) rackSlotBtns[0]->getProperties().getWithDefault ("icono", 0);
+        marcas.add (juce::String (id == (int) Iconos::Id::inserto ? 1
+                                : id == (int) Iconos::Id::envio   ? 0 : -1));
     }
 
     //  2. LA MINIATURA LEE LOS NUMEROS DE AHORA, con DOS cifras.
@@ -2997,10 +3006,56 @@ void MainComponent::auditRack()
     const auto fader = rackSends[0]->getBounds();
     const auto mini  = platoMini.getBounds();
     const auto mando = macroCtrl1.getBounds();
+    const auto mute  = rackMuteBtns[0]->getBounds();
+
+    //  5. MUTEAR DESDE EL RACK, con DOS cifras y POR LA TAPA.
+    //
+    //  Se pidio «al lado del boton del plugin, una opcion para sustituirlo o
+    //  MUTEARLO», y apagar seguia siendo exclusivo de la fila de la cara: el
+    //  rack pintaba el estado y no dejaba tocarlo. Llamar a `fxTapped` por
+    //  dentro se salta justo el `onClick`, que es donde vive lo que se ha
+    //  anadido — la misma leccion de los cinco fallos del compas del piano.
+    //
+    //  Y las DOS mitades: que la tapa APAGUE y que el canalon SIGA abriendo el
+    //  menu. Solo la primera la cumple un canalon convertido en interruptor,
+    //  que es lo corto y se lleva por delante la unica puerta para cambiar o
+    //  vaciar una ranura.
+    auto pulsa = [] (juce::Button* b) { if (b != nullptr && b->onClick) b->onClick(); };
+
+    setFxEnabled (AudioEngine::kFxDly, true);
+    refrescaRanuras();
+    const int muteAntes = fxOn[(size_t) AudioEngine::kFxDly] ? 1 : 0;
+    pulsa (rackMuteBtns[0]);
+    const int muteDespues = fxOn[(size_t) AudioEngine::kFxDly] ? 1 : 0;
+    pulsa (rackMuteBtns[0]);
+    const int muteVuelve = fxOn[(size_t) AudioEngine::kFxDly] ? 1 : 0;
+
+    //  Y sobre una ranura VACIA no hace nada: no hay efecto que sacar de en
+    //  medio, y un toque que apaga «lo que hubiera» apagaria el tipo del
+    //  vecino.
+    const int ranuraLibre = kNumRanuras - 1;
+    ponEnRanura (ranuraLibre, kSlotVacia);
+    refrescaRanuras();
+    auto encendidos = [this]
+    {
+        int n = 0;
+        for (int i = 0; i < kNumFx; ++i) if (fxOn[(size_t) i]) ++n;
+        return n;
+    };
+    const int mudoAntes = encendidos();
+    pulsa (rackMuteBtns[ranuraLibre]);
+    const int mudoDespues = encendidos();
+
+    //  Y el canalon: sigue siendo la puerta del menu.
+    abreMenuRanura (-1);
+    pulsa (rackSlotBtns[0]);
+    const int menuAbre = ranuraSheet.isVisible() ? 1 : 0;
+    abreMenuRanura (-1);
 
     std::cout << "{\"rack\":1"
               << ",\"mal\":" << mal
               << ",\"dibujo\":[" << dibujo.joinIntoString (",") << "]"
+              << ",\"marcas\":[" << marcas.joinIntoString (",") << "]"
               << ",\"cambian\":" << cambian
               << ",\"quietos\":" << quietos
               << ",\"discrepan\":" << discrepan
@@ -3015,6 +3070,12 @@ void MainComponent::auditRack()
               << ",\"fader\":[" << fader.getWidth() << "," << fader.getHeight() << "]"
               << ",\"mini\":["  << mini.getWidth()  << "," << mini.getHeight()  << "]"
               << ",\"mando\":[" << mando.getWidth() << "," << mando.getHeight() << "]"
+              << ",\"mute\":["  << mute.getWidth()  << "," << mute.getHeight()  << "]"
+              << ",\"mute_antes\":"   << muteAntes
+              << ",\"mute_despues\":" << muteDespues
+              << ",\"mute_vuelve\":"  << muteVuelve
+              << ",\"mute_vacia\":["  << mudoAntes << "," << mudoDespues << "]"
+              << ",\"menu_abre\":"    << menuAbre
               << "}" << std::endl;
 }
 
@@ -3500,6 +3561,87 @@ void MainComponent::auditAuto()
               << "}" << std::endl;
 }
 
+// ==========================================================================
+//  EL REBOTE EN VIVO. Ver Tests/export.py y RebotVivo en Exporter.h.
+//
+//  Se mide POR LA TAPA -`exportLiveButton.onClick`- y no llamando a
+//  `alternaRebotVivo` por dentro: la tapa es la que arranca Y para, y es donde
+//  vive el orden que importa -armar el anillo antes de que el transporte ruede-.
+//
+//  Y el audio lo bombea el banco, que aqui no hay tarjeta: `bombeaAudioDePrueba`
+//  es el mismo ayudante que ya usan `cpu.py` y `clips.py`. Sin el, el anillo se
+//  queda vacio, el hilo escritor no escribe nada y la prueba diria «no salio
+//  fichero» con el codigo perfecto.
+// ==========================================================================
+void MainComponent::auditVivo()
+{
+    auto pulsa = [] (juce::Button* b) { if (b != nullptr && b->onClick) b->onClick(); };
+
+    //  Una cancion que suena: un pad con sonido, un patron con un golpe y el
+    //  patron 1 en los cuatro primeros compases.
+    engine.publishSample (0, Kits::render (0));
+    engine.setPadGain (0, 1.0f);
+    engine.setStep (0, 0, 0, true);
+    engine.setStep (0, 4, 0, true);
+    engine.setStep (0, 8, 0, true);
+    engine.setStep (0, 12, 0, true);
+    engine.setSongMode (true);
+    engine.setSongLength (4);
+    for (int b = 0; b < 4; ++b) engine.setSongCell (0, b, 1);
+
+    auto corre = [this, &pulsa] (int compases)
+    {
+        cuentaCompases = compases;
+        engine.setClick (true);
+        pulsa (&exportLiveButton);
+
+        //  Durante la cuenta el compas no avanza Y el anillo no recibe nada:
+        //  el clic es una referencia para tocar, no parte de la cancion.
+        //  Y CON AIRE ENTRE TICS, que es andamio y no la app: aqui el bombeo
+        //  es un bucle sincrono y en el aparato el hilo de audio va en tiempo
+        //  real. Sin la pausa se le meten dos segundos de audio al anillo en un
+        //  instante, el hilo escritor no ha tenido ni un turno y lo que se
+        //  cuenta como «perdido» es la prueba corriendo mas rapido que el
+        //  disco. `tiradas` se IMPRIME igualmente: si el andamio pierde, se ve.
+        int enCuenta = 0;
+        for (int i = 0; i < 40 && engine.enCuentaAtras(); ++i)
+        {
+            bombeaAudioDePrueba();
+            juce::Thread::sleep (8);
+            ++enCuenta;
+        }
+        const juce::int64 trasCuenta = (vivoJob != nullptr ? vivoJob->escritas() : -1);
+
+        for (int i = 0; i < 60; ++i) { bombeaAudioDePrueba(); juce::Thread::sleep (8); }
+
+        //  Y LOS ULTIMOS DIEZ SIN AIRE, a proposito: al parar tiene que quedar
+        //  COLA dentro del anillo. Con el escritor siempre al dia -que es lo
+        //  que pasa cuando el banco le deja ocho milisegundos por tic- la
+        //  mitad del codigo que vacia la cola al salir no la ejercia nadie, y
+        //  romperla a proposito seguia saliendo verde. En el telefono el
+        //  anillo SI lleva dentro lo ultimo que sono cuando se toca PARAR.
+        for (int i = 0; i < 10; ++i) bombeaAudioDePrueba();
+        pulsa (&exportLiveButton);
+
+        const auto f = vivoFichero;
+        return std::make_tuple (enCuenta, trasCuenta,
+                                (juce::int64) (f.existsAsFile() ? f.getSize() : 0),
+                                f.getFileName());
+    };
+
+    const auto sinCuenta = corre (0);
+    const auto conCuenta = corre (1);
+
+    std::cout << "{\"vivo\":1"
+              << ",\"bytes\":"        << std::get<2> (sinCuenta)
+              << ",\"nombre\":\""    << std::get<3> (sinCuenta) << "\""
+              << ",\"cuenta_ticks\":" << std::get<0> (conCuenta)
+              << ",\"tras_cuenta\":"  << std::get<1> (conCuenta)
+              << ",\"bytes_cuenta\":" << std::get<2> (conCuenta)
+              << ",\"tiradas\":"      << engine.vivoTiradas()
+              << "}" << std::endl;
+}
+
 void MainComponent::auditCuenta()
 {
     auto pulsa = [] (juce::Button* b) { if (b != nullptr && b->onClick) b->onClick(); };
@@ -3548,12 +3690,40 @@ void MainComponent::auditCuenta()
     const int vuelve    = cuentaCompases;
     const int clicVuelve = engine.isClick() ? 1 : 0;
 
+    //  4. EL MONITOR, que es la otra mitad de «como se prepara una toma».
+    //
+    //  Con DOS cifras y por la TAPA, como los tres de arriba: lo que la
+    //  preferencia dice Y lo que el motor acaba teniendo. Solo la primera la
+    //  cumple una casilla que escribe un booleano y no lo empuja - que es
+    //  exactamente el fallo que ya costo una medida con la cuenta.
+    pulsa (monButtons[0]);
+    const int monApagado = engine.getMonitor() > 0.0f ? 1 : 0;
+    pulsa (monButtons[1]);
+    const int monPuesto  = engine.getMonitor() > 0.0f ? 1 : 0;
+
+    //  Y LA GUARDA DE RUTA, que es lo que separa un monitor de un acople: sin
+    //  cascos la produccion se cuela en la toma y el microfono cierra el lazo.
+    //  `ZATI_RUTA=altavoz` la convierte en una ENTRADA del banco -lo mismo que
+    //  ZATI_SKIN con la carcasa- porque en un escritorio no hay ruta que
+    //  preguntar y esta regla solo existiria en el telefono.
+    const int monAltavoz = RutaAudio::porAltavoz() ? 1 : 0;
+
+    //  Y se recuerda, con el valor borrado a mano antes de leer.
+    saveMonitorPref();
+    monitorOn = false;
+    loadMonitorPref();
+    const int monVuelve = monitorOn ? 1 : 0;
+
     std::cout << "{\"cuenta\":1"
               << ",\"compases\":\"" << armados << "\""
               << ",\"espera\":\""   << esperas << "\""
               << ",\"clic_tras_armar\":" << clicTrasArmar
               << ",\"vuelve\":"          << vuelve
               << ",\"clic_vuelve\":"     << clicVuelve
+              << ",\"mon_apagado\":"     << monApagado
+              << ",\"mon_puesto\":"      << monPuesto
+              << ",\"mon_altavoz\":"     << monAltavoz
+              << ",\"mon_vuelve\":"      << monVuelve
               << "}" << std::endl;
 }
 

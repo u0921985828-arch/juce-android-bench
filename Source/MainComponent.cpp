@@ -426,6 +426,37 @@ MainComponent::MainComponent()
             }
         }
 
+        //  Y EL MONITOR, dos chips en la misma columna y por la misma razon:
+        //  llevar cascos o no es de la persona y del momento. Ver
+        //  `AudioEngine::setMonitor`.
+        //
+        //  Apagado de fabrica, que no es timidez: encendido sobre el altavoz de
+        //  un telefono es un acople, y ademas la produccion se cuela en la toma.
+        //  La guarda de ruta lo impide igualmente -ver `aplicaMonitor`- y un
+        //  defecto que hay que impedir es un defecto mal elegido.
+        {
+            for (int i = 0; i < 2; ++i)
+            {
+                //  Con la MISMA pareja de claves que la fila del movimiento:
+                //  las dos dicen encendido o apagado y nada mas. Aqui el
+                //  encendido es el segundo, que es el orden de la cuenta atras
+                //  -lo apagado primero-.
+                auto* b = new juce::TextButton (T (i == 1 ? "SI|chip" : "NO|chip"));
+                styleButton (*b, kStepOff);
+                litAccent (*b);
+                b->setClickingTogglesState (true);
+                b->setRadioGroupId (7312);
+                b->onClick = [this, i]
+                {
+                    monitorOn = (i == 1);
+                    saveMonitorPref();
+                    aplicaMonitor (true);
+                };
+                setSheet.cuerpo.addChildComponent (b);
+                monButtons.add (b);
+            }
+        }
+
         styleButton (setButton, kKey);
         litAccent (setButton);
         setButton.onClick = [this]
@@ -657,6 +688,26 @@ MainComponent::MainComponent()
             g->onClick = [this, f] { abreMenuRanura (f); };
             rackSheet.cuerpo.addAndMakeVisible (g);
             rackSlotBtns.add (g);
+
+            //  Y LA TAPA DE APAGAR, al lado. Ver MainComponent.h.
+            //
+            //  Sin rotulo: lo que dice es el ESTADO de un interruptor y el
+            //  nombre del efecto ya esta en el canalon de al lado, o sea que
+            //  una palabra aqui seria la segunda vez que la fila dice lo
+            //  mismo. `reparteTapa` ya admite ese caso -con el rotulo vacio el
+            //  dibujo se lleva la tapa entera- y `Tests/planos.py` no la
+            //  cuenta como gemela por lo mismo: sin texto no hay homonimo.
+            auto* m = new juce::TextButton();
+            styleButton (*m, kStepOff);
+            litAccent (*m);
+            m->onClick = [this, f]
+            {
+                const int fx = enRanura (f);
+                if (fx < 0) return;             // ranura vacia: no hay que apagar
+                fxTapped (fx);   // el mismo camino que la fila de la cara
+            };
+            rackSheet.cuerpo.addAndMakeVisible (m);
+            rackMuteBtns.add (m);
         }
 
         styleButton (rackCloseButton, kKey);
@@ -969,7 +1020,7 @@ MainComponent::MainComponent()
         //  se ve la maquina», que es de lo que trata esta pagina.
         for (int i = 0; i < 2; ++i)
         {
-            auto* b = new juce::TextButton (T (i == 0 ? "SI|mov" : "NO|mov"));
+            auto* b = new juce::TextButton (T (i == 0 ? "SI|chip" : "NO|chip"));
             styleButton (*b, kKey);
             litAccent (*b);
             b->setClickingTogglesState (true);
@@ -1069,6 +1120,12 @@ MainComponent::MainComponent()
         styleButton (exportDirBtn, kKey);
         exportDirBtn.onClick = [this] { openBrowseForExportDir(); };
         exportSheet.addAndMakeVisible (exportDirBtn);
+
+        //  EL TERCER MODO: la cancion suena y lo que suena se escribe. Ver
+        //  MainComponent.h y `RebotVivo`.
+        styleButton (exportLiveButton, kKey);
+        exportLiveButton.onClick = [this] { alternaRebotVivo(); };
+        exportSheet.addAndMakeVisible (exportLiveButton);
 
         styleButton (exportStemsButton, kKey);
         exportStemsButton.onClick = [this] { startExport (true); };
@@ -3326,6 +3383,11 @@ MainComponent::MainComponent()
     loadPistasPref();
     loadCuentaPref();
     loadMovPref();
+    //  Y el monitor. `aplicaMonitor` sin avisar: en el constructor no hay
+    //  nadie a quien decirselo, y la linea de estado la escribe lo que la
+    //  persona toque despues.
+    loadMonitorPref();
+    aplicaMonitor (false);
 
     setSize (500, 1080);
     focusFx (0);
@@ -3597,6 +3659,12 @@ void MainComponent::ponIconos()
     //  que es quien sabe que tipo vive en cada ranura: aqui el dibujo
     //  dependeria del SITIO y no del contenido, que es justo lo que dejo de
     //  ser verdad el dia que la fila paso a ser de ranuras.
+
+    //  Y LA TAPA DE APAGAR DE CADA FILA DEL RACK. El dibujo es FIJO -no
+    //  depende del tipo que viva en la ranura, que eso ya lo dice el canalon
+    //  de al lado- asi que va aqui y no en `refrescaRanuras`.
+    for (auto* m : rackMuteBtns)
+        if (m != nullptr) m->getProperties().set ("icono", (int) Iconos::Id::apagar);
 
     //  Las dos de transporte nacen paradas; a partir de ahi las mueve
     //  `transporte`, que cambia el rotulo y el dibujo a la vez.
@@ -4355,11 +4423,39 @@ void MainComponent::refrescaRanuras()
             }
             else
             {
-                rb->getProperties().set ("icono", (int) iconoDeFx (fx));
+                //  Y AQUI EL DIBUJO NO ES EL DEL TIPO SINO EL DE LA FAMILIA.
+                //
+                //  El canalon ya dice CUAL es el efecto con su nombre —«FLT»,
+                //  «DLY»— asi que el dibujo del tipo repetiria lo mismo. Lo que
+                //  no decia nadie es si esa fila RESTA seco o SUMA encima, que
+                //  es la unica diferencia que hay entre las dos familias y la
+                //  que se pidio ver. Ver Iconos::inserto.
+                rb->getProperties().set ("icono", (int) (AudioEngine::sustituye (fx)
+                                                           ? Iconos::Id::inserto
+                                                           : Iconos::Id::envio));
                 rb->getProperties().remove ("valor");
             }
             rb->setToggleState (fx >= 0 && fxOn[(size_t) fx], juce::dontSendNotification);
             rb->setTitle (fx < 0 ? T ("VACIA") : juce::String (fxDefs[fx].name));
+        }
+
+        //  Y LA TAPA DE APAGAR DE ESA MISMA FILA, aqui y no en `refreshRack`:
+        //  este es el UNICO punto de reparto a las ventanas de una ranura, y
+        //  escribirlo en los dos seria la misma regla dos veces con una que un
+        //  dia se queda vieja. Con las dos mitades: se apaga cuando la ranura
+        //  esta vacia -no hay efecto que sacar de en medio- y se enciende con
+        //  el acento cuando el efecto SUENA.
+        if (auto* m = (s < rackMuteBtns.size() ? rackMuteBtns[s] : nullptr))
+        {
+            m->setEnabled (fx >= 0);
+            m->setToggleState (fx >= 0 && fxOn[(size_t) fx], juce::dontSendNotification);
+            //  Y EN PALABRAS PARA QUIEN NO VE LA PANTALLA: sin rotulo esta tapa
+            //  se anuncia como «boton» seis veces seguidas, que es lo que la
+            //  tanda de la feria subio del 18 % al 79 %.
+            m->setTitle (fx < 0 ? T ("VACIA")
+                                : juce::String (fxDefs[fx].name) + " "
+                                  + juce::String::charToString ((juce::juce_wchar) 0x00B7) + " "
+                                  + T (fxOn[(size_t) fx] ? "ENCENDIDO" : "APAGADO"));
         }
 
         //  Y LA MISMA FILA EN EL XY, que es la tercera ventana a la ranura.
@@ -4822,6 +4918,13 @@ void MainComponent::showSetPage (int page)
         if (auto* b = cuentaButtons[i])
         {
             b->setToggleState (i == cuentaCompases, juce::dontSendNotification);
+            muestra (*b, onAudio);
+        }
+    //  Y los dos del monitor, con la misma regla.
+    for (int i = 0; i < monButtons.size(); ++i)
+        if (auto* b = monButtons[i])
+        {
+            b->setToggleState (i == (monitorOn ? 1 : 0), juce::dontSendNotification);
             muestra (*b, onAudio);
         }
     for (auto* b : rateButtons) muestra (*b, onAudio);
@@ -7058,7 +7161,13 @@ void MainComponent::retranslateUi()
     //  en»— y es el mismo fallo que ya costo tres pestanas de esta ficha, la
     //  fila VACIAR de las ranuras y los chips de la cuenta atras.
     for (int i = 0; i < movButtons.size(); ++i)
-        if (auto* b = movButtons[i]) b->setButtonText (T (i == 0 ? "SI|mov" : "NO|mov"));
+        if (auto* b = movButtons[i]) b->setButtonText (T (i == 0 ? "SI|chip" : "NO|chip"));
+    //  Y los dos del monitor. Sin esta linea la fila se construye con el
+    //  literal del idioma de arranque y no se retraduce jamas, que es el fallo
+    //  de las tres pestañas de AJUSTES y el que el banco ya cazo en la fila
+    //  VACIAR de las ranuras.
+    for (int i = 0; i < monButtons.size(); ++i)
+        if (auto* b = monButtons[i]) b->setButtonText (T (i == 1 ? "SI|chip" : "NO|chip"));
     pageProjBtn .setButtonText (T ("PROYECTOS"));
     pageGestBtn .setButtonText (T ("GESTOS"));
     pageMidiBtn .setButtonText (T ("MIDI"));
@@ -7185,6 +7294,10 @@ void MainComponent::retranslateUi()
 
     exportMasterButton.setButtonText (T ("MASTER"));
     exportStemsButton .setButtonText (T ("PISTAS"));
+    //  Y la del rebote en vivo, que dice PARAR mientras rueda: retraducirla a
+    //  «EN VIVO» a mitad de una toma dejaria la tapa mintiendo. Es la misma
+    //  guarda que ya lleva la del microfono.
+    exportLiveButton  .setButtonText (T (vivoJob != nullptr ? "PARAR" : "EN VIVO"));
     exportCancelButton.setButtonText (T ("CANCELAR"));
 
     rackButton   .setButtonText (T ("RACK"));
@@ -10466,6 +10579,8 @@ void MainComponent::grabaAlArreglo()
         recordingActive = true;               // el camino de PARAR es el del micro
         grabandoAlArreglo = true;
         setAudioChannels (2, 2);
+        useLowestLatency();                   // ver toggleMicSampling
+        aplicaMonitor (false);
         engine.setSongMode (true);
         //  Con la cuenta a cero la toma entra YA y el transporte arranca igual:
         //  grabar al arreglo sin transporte no es grabar al arreglo.
@@ -10976,6 +11091,61 @@ void MainComponent::loadCuentaPref()
     if (p.size() > 1) engine.setClick (p[1].getIntValue() != 0);
 }
 
+
+// ---------------------------------------------------------------------------
+//  EL MONITOR. Ver MainComponent.h y AudioEngine::setMonitor.
+//
+//  Fichero propio y no un tercer numero en el de la cuenta: ese se llama
+//  `zati-cuenta.txt` y meterle dentro algo que no es la cuenta es como un
+//  nombre deja de ser verdad, que en esta casa ya costo renombrar
+//  `uiIntervalMs` y `fxIsTone`.
+// ---------------------------------------------------------------------------
+juce::File MainComponent::monitorPrefFile()
+{
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+               .getChildFile ("zati-monitor.txt");
+}
+
+void MainComponent::saveMonitorPref()
+{
+    ProjectStore::escribeTexto (monitorPrefFile(), juce::String (monitorOn ? 1 : 0));
+}
+
+void MainComponent::loadMonitorPref()
+{
+    const auto f = monitorPrefFile();
+    if (! f.existsAsFile()) return;
+    monitorOn = (f.loadFileAsString().trim().getIntValue() != 0);
+}
+
+//  LA GUARDA ES LA RUTA Y NO LA CASILLA.
+//
+//  Sin cascos, el microfono saliendo por el altavoz es un lazo, y ademas la
+//  produccion se imprime dentro de la toma. Se le pregunta al APARATO en cada
+//  toma y no al arrancar - los cascos se enchufan y se quitan en mitad de una
+//  sesion, que es el mismo argumento por el que la carpeta de exportacion se
+//  revalida en cada rebote y no solo al elegirla.
+//
+//  Y se DICE. Un monitor que la persona ha encendido y que no suena, sin una
+//  linea que lo explique, se lee como que la app esta rota.
+void MainComponent::aplicaMonitor (bool avisa)
+{
+    const bool altavoz = RutaAudio::porAltavoz();
+    const bool suena   = monitorOn && ! altavoz;
+
+    engine.setMonitor (suena ? 1.0f : 0.0f);
+
+    for (int i = 0; i < monButtons.size(); ++i)
+        if (auto* b = monButtons[i])
+            b->setToggleState (i == (monitorOn ? 1 : 0), juce::dontSendNotification);
+
+    if (avisa)
+        status.setText (! monitorOn      ? T ("Monitor apagado")
+                        : altavoz        ? T ("Monitor: hacen falta cascos")
+                                         : T ("Monitor encendido"),
+                        juce::dontSendNotification);
+}
+
 //  UN SOLO SITIO PARA LOS DOS CAMINOS DE GRABACION.
 //
 //  `armaCuentaAtras (1)` estaba escrito en `grabaAlArreglo` y en ningun otro
@@ -11303,12 +11473,120 @@ void MainComponent::startExport (bool stems)
 
     exportMasterButton.setVisible (false);
     exportStemsButton.setVisible (false);
+    exportLiveButton.setVisible (false);
     exportFmtBtn.setVisible (false);
     //  Y CAMBIAR, que a mitad de un rebote dejaria las pistas repartidas en dos
     //  carpetas: el hilo ya tiene su destino y no lo vuelve a mirar.
     exportDirBtn.setVisible (false);
     exportCancelButton.setVisible (true);
     exportJob->startThread (juce::Thread::Priority::normal);
+    exportSheet.repaint();
+}
+
+// ---------------------------------------------------------------------------
+//  EL REBOTE EN VIVO. Ver MainComponent.h y RebotVivo en Exporter.h.
+//
+//  La misma tapa arranca y para, como GRABAR MIC y como REMUESTREAR: es una
+//  toma, y una toma no tiene dos botones.
+//
+//  Y LA CUENTA ATRAS ES LA QUE YA HAY. `armaCuentaSiToca` devuelve si hay que
+//  esperarla y `arranqueEnBorde` hace que la cancion entre en la linea de
+//  compas; escribir una segunda aqui seria la misma regla dos veces, que es
+//  exactamente lo que se arreglo el dia que grabar de normal no tenia ninguna.
+// ---------------------------------------------------------------------------
+void MainComponent::alternaRebotVivo()
+{
+    if (vivoJob != nullptr) { terminaRebotVivo(); return; }
+    if (exportJob != nullptr) return;         // un rebote a la vez
+
+    if (engine.lengthInSteps() <= 0 || ! engine.hasContentToRender())
+    {
+        exportOk = false;
+        exportStatus = T ("no hay nada grabado en %1", exportSourceLabel().toLowerCase());
+        exportSheet.repaint();
+        return;
+    }
+
+    //  EL DESTINO Y EL FORMATO SON LOS QUE YA HAY. Un segundo camino a la
+    //  carpeta serian dos reglas, y ademas se saltaria la revalidacion por
+    //  escritura que `ProjectStore::exports()` hace en cada exportacion.
+    auto base = (currentProject.isNotEmpty() ? currentProject : juce::String ("ZATI"))
+                  .retainCharacters ("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_ ")
+                  .trim().replaceCharacter (' ', '-');
+    if (base.isEmpty()) base = "ZATI";
+
+    Bitacora::paso ("exportar/arranca en vivo");
+
+    vivoFichero = ProjectStore::exports()
+                    .getChildFile (base + " VIVO" + (exportOgg ? ".ogg" : ".wav"));
+    vivoJob = std::make_unique<RebotVivo> (engine, vivoFichero, deviceSampleRate,
+                                           exportOgg, artistaPref(), base);
+
+    //  EL ORDEN IMPORTA: el anillo se arma ANTES de que el transporte ruede, o
+    //  los primeros bloques de la cancion se pierden. Y el hilo escritor
+    //  arranca despues del anillo, que si no lee un FIFO de tamano uno.
+    engine.vivoArma (2);
+    vivoJob->startThread (juce::Thread::Priority::normal);
+
+    engine.setSongMode (true);
+    //  Con la cuenta a cero la cancion entra YA. Y con cuenta, el transporte lo
+    //  arranca `armaCuentaSiToca` en el borde de compas: el clic suena, el
+    //  compas no avanza, y lo que se escribe empieza en la linea.
+    if (! armaCuentaSiToca (-1))
+        engine.setPlaying (true);
+
+    ponModoCancion (true);
+    styleButton (exportLiveButton, kRec);
+    exportLiveButton.setButtonText (T ("PARAR"));
+    exportOk = false;
+    exportStatus = T ("grabando en vivo...");
+    exportSheet.repaint();
+}
+
+void MainComponent::terminaRebotVivo()
+{
+    if (vivoJob == nullptr) return;
+
+    //  PRIMERO SE CIERRA EL GRIFO Y DESPUES SE PARA EL HILO, que es el orden y
+    //  no un detalle: al reves, el hilo sale con lo ultimo que sono todavia
+    //  dentro del anillo y la cancion se corta antes de tiempo.
+    engine.vivoPara();
+    engine.setPlaying (false);
+    vivoJob->signalThreadShouldExit();
+    vivoJob->stopThread (4000);
+
+    const auto n     = vivoJob->escritas();
+    const bool mal   = vivoJob->fueMal();
+    const int  tiradas = engine.vivoTiradas();
+    vivoJob.reset();
+
+    styleButton (exportLiveButton, kKey);
+    exportLiveButton.setButtonText (T ("EN VIVO"));
+    exportOk = (! mal && n > 0);
+    if (! exportOk)
+        exportStatus = T ("no se pudo escribir el rebote en vivo");
+    else
+        //  Y LO TIRADO SE DICE. Un anillo que se llena porque el disco no
+        //  llega deja huecos en el fichero, y un rebote con huecos que no
+        //  avisa es peor que uno que falla.
+        exportStatus = tiradas > 0
+                         ? T ("En vivo: %1 con %2 muestras perdidas",
+                              vivoFichero.getFileName(), juce::String (tiradas))
+                         : T ("En vivo: %1", vivoFichero.getFileName());
+
+    //  Y AL ALMACEN DE MEDIOS, por el MISMO camino que el rebote offline: es
+    //  un fichero suelto y no una carpeta, asi que va directo a `MediaStore` en
+    //  vez de por `publicarExport`, que barre una carpeta entera.
+    //
+    //  Se COPIA y no se mueve mientras la copia no este puesta, que es la regla
+    //  que ya gobierna el otro camino: un fallo aqui no puede costar el
+    //  trabajo.
+    if (exportOk && ! ProjectStore::exportsElegida())
+    {
+        const auto ruta = MediaStore::publicar (vivoFichero, "ZATI",
+                                                exportOgg ? "audio/ogg" : "audio/wav");
+        if (ruta.isNotEmpty()) vivoFichero.deleteFile();
+    }
     exportSheet.repaint();
 }
 
@@ -11431,9 +11709,8 @@ void MainComponent::pollExport()
         publicarExport (salio);
 
     exportMasterButton.setVisible (true);
-
-    exportMasterButton.setVisible (true);
     exportStemsButton.setVisible (true);
+    exportLiveButton.setVisible (true);
     exportFmtBtn.setVisible (true);
     exportDirBtn.setVisible (true);
     exportCancelButton.setVisible (false);
@@ -13272,7 +13549,18 @@ void MainComponent::toggleMicSampling()
             //  channel and the take stays mono. Asking for two and being
             //  given one is the normal case, not a failure.
             setAudioChannels (2, 2);
+            //  Y EL BURST MAS CORTO TAMBIEN AL ABRIR, que solo se pedia al
+            //  CERRAR: `setAudioChannels` reabre el dispositivo en duplex con
+            //  el tamano por defecto del driver, asi que la toma entera corria
+            //  con el bloque grande. No se notaba mientras no hubiera monitor
+            //  —lo que se graba llega igual— y con monitor es latencia de
+            //  monitor regalada, que es justo lo que un cantante oye.
+            useLowestLatency();
             recordingSlot = slot;
+            //  Y la ruta se vuelve a preguntar AQUI, con el dispositivo ya
+            //  reabierto: los cascos se enchufan justo antes de grabar, que es
+            //  cuando mas probable es. Ver `aplicaMonitor`.
+            aplicaMonitor (false);
             //  Y AQUI TAMBIEN LA CUENTA ATRAS, que era la mitad que faltaba: una
             //  toma que entra a ojo entra corrida, la grabes sobre el arreglo o
             //  sola. El mecanismo es el mismo que ya usaba el otro camino - lo

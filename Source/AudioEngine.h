@@ -1434,6 +1434,84 @@ public:
     float getRecordLimitSeconds() const noexcept { return (float) recordSeconds; }
     int   getRecordChannels() const noexcept { return juce::jmax (1, recordBuffer.getNumChannels()); }
 
+    //  EL REBOTE EN VIVO: la cancion suena y lo que suena se escribe.
+    //
+    //  Se pidio «opcion de exportar en Live, con un count in para no perder el
+    //  tiempo». MASTER y PISTAS son los dos OFFLINE -un motor clonado fuera de
+    //  tiempo real, tres minutos de musica en un par de segundos- y REMUESTREAR
+    //  es un rebote en vivo pero a un PAD, no a un fichero. Ningun camino de
+    //  exportacion sonaba, y ninguno tenia cuenta atras.
+    //
+    //  Se captura DONDE EL REMUESTREO y por lo mismo: despues de los efectos y
+    //  del saturador del master, y ANTES del fader y del ducking. Bajar el
+    //  master para no despertar a nadie es monitorizacion y dura un segundo; el
+    //  fichero que mandas no puede llevarlo impreso.
+    //
+    //  El hilo de audio solo EMPUJA a un anillo. Reservar, abrir un fichero o
+    //  escribir en disco desde aqui es lo que esta casa no hace nunca.
+    void vivoArma (int segundos) noexcept
+    {
+        //  El anillo se dimensiona AQUI y no en el callback. Dos segundos es
+        //  mucho mas de lo que el hilo escritor puede tardar en volver, y son
+        //  768 KB: la memoria del rebote sigue siendo constante y no depende de
+        //  lo que dure la cancion, que es lo que este diseño existe para tener.
+        const int n = juce::jmax (4096, (int) (systemSampleRate * juce::jlimit (1, 8, segundos)));
+        vivoRing.setSize (2, n);
+        vivoRing.clear();
+        vivoFifo.setTotalSize (n);
+        vivoFifo.reset();
+        vivoPerdidas.store (0, std::memory_order_relaxed);
+        vivoOn.store (true, std::memory_order_release);
+    }
+
+    void vivoPara() noexcept { vivoOn.store (false, std::memory_order_release); }
+    bool vivoArmado() const noexcept { return vivoOn.load (std::memory_order_acquire); }
+    int  vivoTiradas() const noexcept { return vivoPerdidas.load (std::memory_order_relaxed); }
+
+    //  Lo que el hilo escritor saca. Devuelve cuantas muestras por canal ha
+    //  copiado, que puede ser cero: un anillo vacio no es un fallo, es que el
+    //  escritor va mas rapido que la musica.
+    int vivoLee (juce::AudioBuffer<float>& dest, int max) noexcept
+    {
+        const int quiere = juce::jmin (max, dest.getNumSamples());
+        int i1 = 0, n1 = 0, i2 = 0, n2 = 0;
+        vivoFifo.prepareToRead (quiere, i1, n1, i2, n2);
+        for (int ch = 0; ch < juce::jmin (2, dest.getNumChannels()); ++ch)
+        {
+            if (n1 > 0) dest.copyFrom (ch, 0,  vivoRing, ch, i1, n1);
+            if (n2 > 0) dest.copyFrom (ch, n1, vivoRing, ch, i2, n2);
+        }
+        vivoFifo.finishedRead (n1 + n2);
+        return n1 + n2;
+    }
+
+    //  MONITORIZACION DIRECTA: oirte por los cascos mientras grabas.
+    //
+    //  Se pidio «grabar voces con el micro con cascos, mientras escucho la
+    //  produccion», y la mitad que faltaba es esta: la produccion se oia desde
+    //  el primer dia -no hay una sola rama que atenue la salida por estar
+    //  grabando- y lo que entraba por el microfono se copiaba a `recordBuffer`
+    //  y MORIA en el `out.clear` de la etapa 2. O sea que se cantaba a ciegas.
+    //
+    //  LA SUMA VA ANTES DEL MASTER (etapa 5d-mon, justo encima de la barrera)
+    //  y no despues, que es lo corto y esta mal: la ultima etapa del master es
+    //  uno de los tres sitios por los que pasan TODOS los caminos, y colgar la
+    //  entrada detras de ella deja que un NaN del aparato apague la maquina
+    //  entera -que es exactamente lo que costo cuatro formas de enmudecer la
+    //  app con un fichero-. De paso pasa por el limitador, que es lo que
+    //  convierte un grito pegado al microfono en saturacion y no en desgarro.
+    //
+    //  Y NO ENTRA EN LA TOMA, y eso no es una comprobacion sino la forma: la
+    //  toma se captura en la etapa 0, antes de que esta suma exista. Se mide
+    //  igualmente, porque «no esta» es la clase de cosa que alguien anade sin
+    //  querer.
+    //
+    //  Cero es apagado, y ademas es el defecto: un monitor encendido de
+    //  fabrica sobre el altavoz de un telefono es un acople.
+    void setMonitor (float gain) noexcept
+    { monitorTarget.store (juce::jlimit (0.0f, 1.0f, gain), std::memory_order_relaxed); }
+    float getMonitor() const noexcept { return monitorTarget.load (std::memory_order_relaxed); }
+
     //  RESAMPLING: record the MASTER back onto a pad.
     //
     //  The move this whole lineage is built on - play something, catch it,
@@ -1937,6 +2015,31 @@ private:
     double recordSeconds  = 60.0;
     bool   recordAllowStereo = true;
     int recordSlot = 0;
+
+    //  EL REBOTE EN VIVO: lo que suena, escrito a un fichero mientras suena.
+    //
+    //  Ver `vivoArma`. Un anillo y no un buffer del largo de la cancion, que es
+    //  la misma leccion que ya obligo al rebote offline a escribir por bloques:
+    //  `recordBuffer` mide de 20 a 120 s segun la gama del aparato y una
+    //  cancion larga son 128, asi que aqui no cabe. Con un anillo la memoria es
+    //  constante y el hilo de audio no reserva ni escribe en disco: empuja y
+    //  sigue.
+    //
+    //  Un solo productor -el hilo de audio- y un solo consumidor -el hilo que
+    //  escribe-, que es el contrato de todo lo demas en esta casa.
+    juce::AbstractFifo vivoFifo { 1 };
+    juce::AudioBuffer<float> vivoRing;
+    std::atomic<bool> vivoOn { false };
+    std::atomic<int>  vivoPerdidas { 0 };
+
+    //  MONITORIZACION DIRECTA: lo que entra por el micro, saliendo por los
+    //  cascos. Ver `setMonitor`. El buffer se reserva en prepareToPlay y nunca
+    //  en el callback, como el de grabacion, y no existe en el motor del
+    //  rebote -que no tiene entrada y no monitoriza nada-.
+    std::atomic<float> monitorTarget { 0.0f };
+    juce::AudioBuffer<float> monitorBuf;
+    int   monitorInChans = 0;        // cuantos canales trae de verdad la entrada
+    float smMonitor = 0.0f;          // solo el hilo de audio
 
     // Master FX: filter + drive.
     juce::dsp::StateVariableTPTFilter<float> masterFilter;

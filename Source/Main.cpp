@@ -615,6 +615,10 @@ public:
                     {
                         UiAudit::volcadoTapa (tp.getIntValue() > 1 ? tp.getIntValue() : 8);
                     }
+                    else if (UiAudit::env ("ZATI_VIVO").isNotEmpty())
+                    {
+                        c2->auditVivo();
+                    }
                     else if (const auto ex = UiAudit::env ("ZATI_EXPORT"); ex.isNotEmpty())
                     {
                         //  asinc / cancel se van por el camino de verdad - hilo

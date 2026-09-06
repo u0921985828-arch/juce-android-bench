@@ -27,12 +27,17 @@ ROOT = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
 APP  = os.path.join (ROOT, "build", "Zati_artefacts", "Release", "Zati")
 
 
-def corre():
+def corre (ruta=None):
     casa = tempfile.mkdtemp (prefix="zati-cuenta-")
     env = dict (os.environ, HOME=casa,
                 XDG_DATA_HOME=os.path.join (casa, ".local", "share"),
                 ZATI_AUDIT="1", ZATI_SIZE="412x915", ZATI_LANG="es",
                 ZATI_CUENTA="1")
+    #  LA RUTA DE SALIDA COMO ENTRADA DEL BANCO. En un escritorio no hay
+    #  altavoz de telefono que realimentar, asi que sin esto la guarda del
+    #  monitor solo existiria en el aparato y no la mediria nadie. Es lo mismo
+    #  que hacen ZATI_SKIN con la carcasa y ZATI_DLC con los packs.
+    if ruta is not None: env["ZATI_RUTA"] = ruta
     try:
         p = subprocess.run ([APP], env=env, capture_output=True, text=True, timeout=180)
     except subprocess.TimeoutExpired:
@@ -88,12 +93,53 @@ def main():
     if r["clic_vuelve"] != 1:
         malas.append ("el metronomo no vuelve del disco: %s" % r["clic_vuelve"])
 
+    #  4. EL MONITOR: oirte por los cascos mientras grabas. Es la otra mitad de
+    #     «como se prepara una toma» y por eso vive aqui.
+    #
+    #     Con DOS cifras y por la TAPA, igual que la cuenta: lo que la
+    #     preferencia dice Y lo que el motor acaba teniendo. Solo la primera la
+    #     cumple una casilla que escribe un booleano y no lo empuja.
+    print ("monitor  apagado %d   puesto %d   vuelve %d   (altavoz %d)"
+           % (r["mon_apagado"], r["mon_puesto"], r["mon_vuelve"], r["mon_altavoz"]))
+    if r["mon_altavoz"] != 0:
+        malas.append ("la corrida normal cree que la salida es el altavoz: "
+                      "la guarda mide otra cosa")
+    if r["mon_apagado"] != 0:
+        malas.append ("con el monitor APAGADO el motor lo tiene puesto")
+    if r["mon_puesto"] != 1:
+        malas.append ("con el monitor ENCENDIDO el motor no lo tiene: la tapa "
+                      "escribe la preferencia y no la empuja")
+    if r["mon_vuelve"] != 1:
+        malas.append ("el monitor no vuelve del disco: %s" % r["mon_vuelve"])
+
+    #  5. Y LA GUARDA, que es lo que separa un monitor de un acople: sin cascos
+    #     la produccion sale por el altavoz, se cuela en la toma y el microfono
+    #     cierra el lazo. Se pregunta AL APARATO -`AudioManager.getDevices`- y
+    #     no a una casilla de buena fe, que es la regla de `canReallyWriteInto`.
+    #
+    #     La preferencia sigue diciendo que si; lo que no puede es SONAR. Sin
+    #     las dos cifras, «no suena» lo cumple igual una tapa muerta.
+    a = corre ("altavoz")
+    if a is None:
+        malas.append ("la app no publico la linea con la ruta forzada")
+    else:
+        print ("altavoz  puesto %d   vuelve %d   (altavoz %d)"
+               % (a["mon_puesto"], a["mon_vuelve"], a["mon_altavoz"]))
+        if a["mon_altavoz"] != 1:
+            malas.append ("ZATI_RUTA=altavoz no llega a la guarda")
+        if a["mon_puesto"] != 0:
+            malas.append ("con la salida en el ALTAVOZ el monitor suena igual: "
+                          "eso es un acople y la toma se lleva la produccion dentro")
+        if a["mon_vuelve"] != 1:
+            malas.append ("la guarda se llevo por delante la preferencia: "
+                          "no suena Y ademas se apaga sola")
+
     print()
     if malas:
         for m in malas: print ("FALLA  " + m)
         return 1
-    print ("la cuenta atras es una opcion, el metronomo no se fuerza, y las dos "
-           "se recuerdan")
+    print ("la cuenta atras es una opcion, el metronomo no se fuerza, el monitor "
+           "sale por los cascos y no por el altavoz, y las cuatro se recuerdan")
     return 0
 
 

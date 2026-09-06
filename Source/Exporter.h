@@ -447,3 +447,124 @@ private:
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Exporter)
 };
+
+
+// ============================================================================
+//  RebotVivo — el tercer modo de EXPORTAR: la cancion SUENA y lo que suena se
+//  escribe.
+//
+//  Se pidio «opcion de exportar en Live, con un count in para no perder el
+//  tiempo», y no existia: MASTER y PISTAS son los dos OFFLINE -un motor
+//  clonado, tres minutos de musica en un par de segundos- y REMUESTREAR es un
+//  rebote en vivo pero a un PAD, no a un fichero.
+//
+//  VIVE AQUI y no en una unidad propia porque es lo mismo que hace `Exporter`
+//  -escribir un fichero de audio de la cancion- con el mismo formato, el mismo
+//  destino y las mismas dos respuestas de WAV y OGG. Un segundo sitio que
+//  abriera un `AudioFormatWriter` seria la misma regla escrita dos veces.
+//
+//  LA DIFERENCIA ES DE QUIEN RENDERIZA. Alli el hilo del rebote llama a un
+//  motor propio; aqui el motor es el VIVO y quien renderiza es la tarjeta de
+//  sonido, asi que este hilo no puede pedirle nada: se limita a vaciar el
+//  anillo que el hilo de audio va llenando (ver `AudioEngine::vivoArma`) y a
+//  escribirlo. Cero contacto con el hilo de audio mas alla del FIFO.
+//
+//  Y NO SE MIDE EL PICO NI SE COMPENSA, que es la otra diferencia y va
+//  escrita: el rebote offline hace DOS pasadas porque el pico manda la
+//  ganancia y hay que conocerlo antes de escribir la primera muestra. En vivo
+//  no hay segunda pasada posible — la musica pasa una vez — asi que lo que se
+//  escribe es exactamente lo que sale por los altavoces, con el limitador del
+//  master ya puesto. Es la misma decision que el remuestreo.
+// ============================================================================
+class RebotVivo : public juce::Thread
+{
+public:
+    RebotVivo (AudioEngine& motorVivo, juce::File destino, double sr, bool comprimido,
+               juce::String quien = {}, juce::String titulo = {})
+        : juce::Thread ("zati-vivo"),
+          motor (motorVivo), fichero (std::move (destino)), sampleRate (sr),
+          ogg (comprimido), artista (std::move (quien)), nombre (std::move (titulo)) {}
+
+    ~RebotVivo() override { stopThread (4000); }
+
+    juce::int64 escritas() const noexcept { return puestas.load (std::memory_order_relaxed); }
+    bool        fueMal()   const noexcept { return roto.load (std::memory_order_relaxed); }
+
+    void run() override
+    {
+        fichero.deleteFile();
+        auto stream = fichero.createOutputStream();
+        if (stream == nullptr || ! stream->openedOk()) { roto = true; return; }
+
+        std::unique_ptr<juce::AudioFormat> fmt;
+        if (ogg) fmt.reset (new juce::OggVorbisAudioFormat());
+        else     fmt.reset (new juce::WavAudioFormat());
+
+        juce::StringPairArray m;
+        if (ogg)
+        {
+            m.set (juce::OggVorbisAudioFormat::id3title, nombre);
+            m.set (juce::OggVorbisAudioFormat::encoderName, "ZATI Sampler");
+            if (artista.isNotEmpty()) m.set (juce::OggVorbisAudioFormat::id3artist, artista);
+        }
+        else
+        {
+            m.set (juce::WavAudioFormat::riffInfoTitle, nombre);
+            if (artista.isNotEmpty()) m.set (juce::WavAudioFormat::riffInfoArtist, artista);
+        }
+
+        std::unique_ptr<juce::AudioFormatWriter> writer (
+            fmt->createWriterFor (stream.get(), sampleRate, 2, ogg ? 16 : 24, m, ogg ? 5 : 0));
+        if (writer == nullptr) { roto = true; return; }
+        stream.release();
+
+        juce::AudioBuffer<float> trozo (2, kTrozo);
+
+        //  Y SE VACIA TAMBIEN DESPUES DE PARAR, que es la mitad que se olvida:
+        //  cuando la persona toca PARAR el anillo lleva dentro lo ultimo que
+        //  sono, y salir del bucle ahi corta la cancion antes de tiempo.
+        //
+        //  Lo garantiza la FORMA del bucle y no una guarda: la unica salida
+        //  esta en la rama de «no habia nada que leer», asi que mientras quede
+        //  cola se escribe pase lo que pase con la señal de parada. La primera
+        //  version llevaba ademas un `&& ! motor.vivoArmado()` y se quito
+        //  midiendo: no cambiaba una muestra -el banco da el mismo fichero con
+        //  el y sin el- y empeoraba el unico caso donde habria hecho algo, que
+        //  es que alguien pare el hilo sin cerrar el grifo antes: con la guarda
+        //  ese bucle no sale nunca y se come los cuatro segundos de
+        //  `stopThread`.
+        for (;;)
+        {
+            const int n = motor.vivoLee (trozo, kTrozo);
+            if (n > 0)
+            {
+                if (! writer->writeFromAudioSampleBuffer (trozo, 0, n)) { roto = true; break; }
+                puestas.fetch_add (n, std::memory_order_relaxed);
+            }
+            else
+            {
+                if (threadShouldExit()) break;
+                //  Veinte milisegundos: el anillo son dos segundos, asi que ni
+                //  de lejos se llena mientras este hilo duerme, y despertar mil
+                //  veces por segundo para copiar nada es gastar bateria.
+                wait (20);
+            }
+        }
+
+        writer.reset();
+        if (roto.load (std::memory_order_relaxed)) fichero.deleteFile();
+    }
+
+private:
+    static constexpr int kTrozo = 4096;
+
+    AudioEngine& motor;
+    juce::File   fichero;
+    double       sampleRate;
+    bool         ogg;
+    juce::String artista, nombre;
+    std::atomic<juce::int64> puestas { 0 };
+    std::atomic<bool>        roto { false };
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RebotVivo)
+};

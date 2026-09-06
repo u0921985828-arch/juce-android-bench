@@ -46,6 +46,35 @@
 //  Fuera de Android son dos llamadas vacias, para que quien llama no lleve
 //  ramas por plataforma.
 // ============================================================================
+// ============================================================================
+//  RutaAudio - por donde esta saliendo el sonido AHORA MISMO.
+//
+//  Vive en esta unidad y no en una suya porque la pregunta se le hace al MISMO
+//  `android.media.AudioManager` que el foco, y esa clase se declara con un
+//  `DECLARE_JNI_CLASS` que no se puede escribir dos veces: dos declaraciones de
+//  la misma clase de Java son dos reglas, y la que se quede vieja seria una
+//  llamada a una firma que ya no existe.
+//
+//  Existe por la monitorizacion directa (ver `AudioEngine::setMonitor`). Sin
+//  cascos, sacar el microfono por el altavoz es un acople - y ademas la
+//  produccion se cuela en la toma. Se le pregunta AL APARATO, no a una casilla
+//  de buena fe, que es la misma regla que `canReallyWriteInto`: en Android la
+//  mitad de las respuestas que uno se imagina no son la que da el sistema.
+//
+//  `getDevices` es de API 23 y `minSdk` es 24, asi que no hay que caer a
+//  `isWiredHeadsetOn`, que ademas lleva obsoleta desde la 14 y no sabe nada de
+//  Bluetooth ni de USB.
+//
+//  Fuera de Android devuelve false: en un escritorio no hay altavoz de
+//  telefono que realimentar, y el banco fuerza la respuesta con `ZATI_RUTA`.
+// ============================================================================
+namespace RutaAudio
+{
+    //  true cuando NO hay ninguna salida de escucha personal enchufada, o sea
+    //  cuando lo que suene va a ir al aire.
+    bool porAltavoz();
+}
+
 class AudioFocus
 {
 public:

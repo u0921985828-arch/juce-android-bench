@@ -101,6 +101,34 @@ def corre():
         if "export" in d: filas[d["export"]] = d
     return filas, marcas
 
+#  EL REBOTE EN VIVO va en OTRA corrida: `ZATI_VIVO` y `ZATI_EXPORT` son
+#  excluyentes en `Main.cpp` -una cadena if/else- y ademas este bombea audio en
+#  tiempo casi real, asi que meterlo en la de arriba le sumaria su medio minuto
+#  a una prueba que ya tarda.
+def corre_vivo():
+    casa = tempfile.mkdtemp (prefix="zati-vivo-")
+    env = dict (os.environ, ZATI_AUDIT="1", ZATI_VIVO="1",
+                DISPLAY=os.environ.get ("DISPLAY", ":99"),
+                HOME=casa, XDG_DATA_HOME=casa)
+    try:
+        out = subprocess.run ([BIN], env=env, capture_output=True,
+                              timeout=600).stdout.decode ("utf8", "replace")
+    except subprocess.TimeoutExpired:
+        out = ""
+    shutil.rmtree (casa, ignore_errors=True)
+    return out
+
+
+def vivo (out):
+    for l in out.splitlines():
+        l = l.strip()
+        if not (l.startswith ("{") and l.endswith ("}")): continue
+        try: d = json.loads (l)
+        except Exception: continue
+        if d.get ("vivo"): return d
+    return None
+
+
 def main():
     if not os.path.exists (BIN):
         sys.exit ("no hay binario: compila primero (cmake --build build)")
@@ -190,10 +218,42 @@ def main():
              % (d.get ("acepta", "?"), d.get ("vuelve", "?"), d.get ("rechaza", "?"),
                 d.get ("aguanta", "?"), d.get ("limpia", "?")))
 
+    #  EL REBOTE EN VIVO, que es el tercer modo y el que no existia.
+    #
+    #  Se pidio «opcion de exportar en Live, con un count in para no perder el
+    #  tiempo»: MASTER y PISTAS son los dos OFFLINE -un motor clonado, tres
+    #  minutos de musica en un par de segundos- y REMUESTREAR es un rebote en
+    #  vivo pero a un PAD, no a un fichero.
+    #
+    #  CON TRES CIFRAS, y la del medio es la que hace falta:
+    #    - sale un fichero y pesa lo suyo;
+    #    - durante la CUENTA ATRAS no se escribe ni una muestra, o sea que el
+    #      clic no acaba dentro del fichero que mandas — que es la clase de
+    #      cosa que solo se descubre escuchando lo que ya has mandado;
+    #    - y con cuenta y sin cuenta sale el MISMO fichero, que es lo unico que
+    #      separa «la cuenta no se escribe» de «con cuenta se escribe menos».
+    v = vivo (corre_vivo())
+    if v is None:
+        malas.append ("vivo")
+        print ("%-14s %s" % ("vivo", "la app no publico la linea"))
+    else:
+        #  Un cuarto de segundo a 48 kHz, 24 bits y dos canales son 72 KB: por
+        #  debajo de eso no hay cancion, hay una cabecera. No se compara contra
+        #  un numero exacto porque lo que se escribe depende de cuantos bloques
+        #  bombee el banco, o sea del reloj — y esta casa ya tiene escrito que
+        #  una medida que depende de la maquina no es un veredicto.
+        pesa  = v["bytes"] > 72000
+        limpio = v["tras_cuenta"] == 0
+        igual = v["bytes_cuenta"] > 72000 and abs (v["bytes_cuenta"] - v["bytes"]) < v["bytes"] // 10
+        juzga ("vivo",
+               pesa and limpio and igual,
+               "%s %d bytes   con cuenta %d   escrito durante la cuenta %d   tiradas %d"
+                 % (v["nombre"], v["bytes"], v["bytes_cuenta"], v["tras_cuenta"], v["tiradas"]))
+
     print()
     if malas:
         print ("FALLA:", ", ".join (malas));  return 1
-    print ("lo que sale del telefono sale entero")
+    print ("lo que sale del telefono sale entero, y ahora tambien mientras suena")
     return 0
 
 if __name__ == "__main__":

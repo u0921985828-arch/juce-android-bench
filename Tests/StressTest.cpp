@@ -4919,6 +4919,88 @@ int main()
     }
     }
 
+    // -----------------------------------------------------------------
+    //  EL MONITOR: oirte por los cascos mientras grabas.
+    //
+    //  Se pidio «grabar voces con el micro con cascos, mientras escucho la
+    //  produccion», y la mitad que faltaba era esta: lo que entra por el
+    //  microfono se copiaba a `recordBuffer` y MORIA en el `out.clear` de la
+    //  etapa 2, o sea que se cantaba a ciegas.
+    //
+    //  CON DOS CIFRAS, que es lo unico que separa las dos formas de escribirlo
+    //  mal y las dos parecen bien: que la entrada SALGA -eso solo lo cumple un
+    //  camino conectado- y que la TOMA salga BIT A BIT igual con monitor y sin
+    //  el -eso solo lo cumple no meterse en el camino de grabacion-. Con una
+    //  sola, un monitor que ademas se imprime dentro de la toma pasaria.
+    //
+    //  La entrada se inyecta en el mismo buffer que `renderNextBlock` recibe,
+    //  que es EXACTAMENTE como llega en el aparato: JUCE entrega un solo
+    //  buffer con la entrada dentro y la etapa 2 lo borra.
+    {
+        constexpr double kFs = 48000.0;
+        constexpr int    kBs = 128;
+        constexpr int    kBloques = 40;
+
+        auto corre = [] (float monitor, std::vector<float>& salida,
+                         std::vector<float>& toma)
+        {
+            AudioEngine e; e.prepareToPlay (kFs, kBs, 1);
+            e.setMonitor (monitor);
+            e.startRecording (0);
+
+            juce::AudioBuffer<float> b (2, kBs);
+            salida.clear();
+            for (int i = 0; i < kBloques; ++i)
+            {
+                //  La «entrada del microfono»: un tono que no se parece a nada
+                //  de lo que la maquina produce, para que aparecer en la salida
+                //  solo pueda significar que ha pasado por el monitor.
+                b.clear();
+                for (int n = 0; n < kBs; ++n)
+                {
+                    const double t = (double) (i * kBs + n) / kFs;
+                    b.setSample (0, n, 0.5f * (float) std::sin (2.0 * juce::MathConstants<double>::pi
+                                                                  * 1000.0 * t));
+                }
+                e.renderNextBlock (b, 0, kBs);
+                for (int n = 0; n < kBs; ++n) salida.push_back (b.getSample (0, n));
+            }
+
+            auto sb = e.finishRecording();
+            toma.clear();
+            if (sb != nullptr)
+                for (int n = 0; n < sb->buffer.getNumSamples(); ++n)
+                    toma.push_back (sb->buffer.getSample (0, n));
+        };
+
+        std::vector<float> sinMon, conMon, tomaSin, tomaCon;
+        corre (0.0f, sinMon,  tomaSin);
+        corre (1.0f, conMon,  tomaCon);
+
+        auto pico = [] (const std::vector<float>& v)
+        {
+            float m = 0.0f;
+            //  Los ultimos bloques, que la rampa del monitor sube con la misma
+            //  constante que los envios -20 ms- y medir desde la primera
+            //  muestra seria medir la rampa y no el monitor.
+            for (size_t i = v.size() / 2; i < v.size(); ++i) m = juce::jmax (m, std::abs (v[i]));
+            return m;
+        };
+
+        const float apagado = pico (sinMon);
+        const float puesto  = pico (conMon);
+
+        int tomaDistintas = 0;
+        for (size_t i = 0; i < tomaSin.size() && i < tomaCon.size(); ++i)
+            if (tomaSin[i] != tomaCon[i]) ++tomaDistintas;
+
+        const bool ok = apagado < 1.0e-6f && puesto > 0.40f
+                        && tomaDistintas == 0 && ! tomaSin.empty();
+        std::printf ("%-34s apagado %.5f  puesto %.5f  la toma cambia en %d de %d   %s\n",
+                     "el monitor sale por los cascos", apagado, puesto,
+                     tomaDistintas, (int) tomaSin.size(), ok ? "OK" : zatiFalla());
+    }
+
     std::printf ("\n%-34s %d FALLA\n", "motor", zatiFallos);
     return zatiFallos > 0 ? 1 : 0;
 }
