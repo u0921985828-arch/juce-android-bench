@@ -567,6 +567,31 @@ namespace Metrics
     //  y no en la pantalla.
     static constexpr int margenTapa = 3;
 
+    //  Y EL MARCO DE DENTRO DE UNA TARJETA, que estaba escrito de TRES maneras.
+    //
+    //  `sheetFromBottom` y diez pintores decian `reduced (Metrics::lg,
+    //  Metrics::md)`; la mesa y EL PAD decian `reduced (14, 12)` y CANCION
+    //  `reduced (14, 10)`, todos a mano. Eso no es una preferencia de cada
+    //  ficha: es que el MAQUETADO y el PINTOR de la misma tarjeta empezaban en
+    //  sitios distintos —dos pixeles en x en las tres y dos mas en y en
+    //  CANCION—, que es exactamente como se acaba pintando un titulo encima de
+    //  una tapa. Once tarjetas se leen como una familia porque su marco es el
+    //  mismo, y para eso el numero tiene que estar escrito una vez.
+    //  Y EL CANALON DEL ROTULO DE UNA FILA DE CHIPS, que estaba escrito DOS
+    //  veces: un 44 en `chipRow` -quien reparte la fila- y otro 44 en cada uno
+    //  de los siete pintores. La misma regla en dos sitios, y la que se quedara
+    //  vieja dejaria los chips empezando donde el rotulo no acaba.
+    //
+    //  Y SIGUE VALIENDO 44, que es una MEDIDA y no una herencia: pedirlo con el
+    //  texto puesto -«MOVIMIENTO» pide 58, «LANGUAGE» 46 y «المراقبة» 45- quita
+    //  catorce pixeles a los chips y sale PEOR, 3492 incumplimientos del dedo a
+    //  3498. Lo que se aprieta es el ROTULO, que es lo que esta casa ya tiene
+    //  escrito: *entre un rotulo apretado y uno cortado no hay duda*.
+    static constexpr int canalonSeccion = 44;
+
+    static constexpr int margenFichaX = lg;
+    static constexpr int margenFichaY = md;
+
     //  EL AIRE QUE UN PANEL DE GRUPO DEJA ALREDEDOR DE LO QUE ENVUELVE, y por
     //  que NO es el mismo por los cuatro lados.
     //

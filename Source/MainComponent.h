@@ -812,16 +812,41 @@ private:
     //  entero, en fraccion de lo que pide: 1.0 para un `drawText` -por debajo
     //  se corta-, el factor de apreton para un `drawFittedText`, y CERO para lo
     //  que se elide a proposito, que es «no lo juzgues». Ver UiAudit::Rotulo.
-    void apunta (juce::Graphics& g, juce::Rectangle<int> caja,
-                 const juce::String& texto, const char* tipo, float minimo = 1.0f);
+    //  Y DEVUELVEN EL RECTANGULO QUE EL TEXTO OCUPA, que es lo que hacia falta
+    //  para que un rotulo se pueda apartar de OTRO: `antesDe` ya sabe hacerlo
+    //  con un rectangulo, y hasta ahora solo se le podian dar tapas. En CANCION
+    //  el titulo y la ayuda se apartaban cada uno de las dos tapas del renglon
+    //  y NINGUNO del otro - 112 hallazgos, 46x16 px de solape.
+    juce::Rectangle<int> apunta (juce::Graphics& g, juce::Rectangle<int> caja,
+                                 const juce::String& texto, const char* tipo,
+                                 float minimo = 1.0f);
     void ponTransporte (bool on);
     void ponModoCancion (bool on);
     //  `apretar` a cero deja el `drawText` de siempre; por encima de cero se
     //  dibuja con `drawFittedText` a ese factor de apreton. Vive AQUI y no en
     //  quien llama porque habia CUATRO formas de pintar el titulo de una ficha
     //  y dos de ellas existian solo porque esta funcion no sabia apretar.
-    void pintaTitulo (juce::Graphics& g, juce::Rectangle<int> caja, const juce::String& texto,
-                      const char* tipo = "titulo", bool elipsis = false, float apretar = 0.0f);
+    //  UN RENGLON DE AYUDA NO SE DIBUJA A MEDIAS.
+    //
+    //  Los quince renglones de ayuda de esta app se pintaban con `drawText` o
+    //  con `drawFittedText` sobre la banda que hubiera, o sea que donde no
+    //  cabian salian CORTADOS: «toca el teclado para oir, la rejilla para
+    //  escribir · OCTAVA C-1 - C» pedia 316 px con 41 en 280x653 —se veia un
+    //  octavo de frase— y el de EXPORTAR 273 con 181.
+    //
+    //  El orden es el que esta casa ya tiene escrito para una tapa: entero,
+    //  apretado, y solo entonces fuera. *Cambiar un apreton por un corte no es
+    //  un arreglo*, y media frase de ayuda se lee como un fallo mientras que
+    //  ninguna se lee como una pantalla limpia — el manual lo dice todo entero.
+    //  Devuelve si se dibujo, que es lo que hace falta cuando debajo hay algo
+    //  que ocupa su sitio.
+    bool pintaAyuda (juce::Graphics& g, juce::Rectangle<int> banda,
+                     const juce::String& texto, juce::Justification justif,
+                     float apreton = 0.75f);
+
+    juce::Rectangle<int> pintaTitulo (juce::Graphics& g, juce::Rectangle<int> caja,
+                                      const juce::String& texto, const char* tipo = "titulo",
+                                      bool elipsis = false, float apretar = 0.0f);
     void paintPadSheetContent (juce::Graphics& g);
     void paintBrowseSheetContent (juce::Graphics& g);
     void paintProjSheetContent (juce::Graphics& g);
@@ -1620,6 +1645,7 @@ private:
 
     juce::OwnedArray<juce::TextButton> langButtons;
     juce::Rectangle<int> langRowArea;
+
 
     void pushUndo (const juce::String& what);   // snapshot before a destructive action
     //  Y que la tapa DIGA que. Ver refrescaNombresDeshacer.

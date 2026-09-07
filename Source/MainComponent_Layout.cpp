@@ -994,7 +994,7 @@ void MainComponent::resized()
         const int w = anchoTarjeta (full.getWidth());
         auto sheet = juce::Rectangle<int> (0, 0, w, h).withCentre (full.getCentre());
         s.sheetBounds = sheet;
-        auto dentro = sheet.reduced (Metrics::lg, Metrics::md);
+        auto dentro = sheet.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
 
         //  LA QUE NO SE DESPLAZA, EXACTAMENTE COMO ESTABA. Ver Sheet::hazDesplazable.
         if (! s.desplazable)
@@ -2154,17 +2154,17 @@ void MainComponent::resized()
                 columnaChips.removeFromTop (Metrics::xs);
                 return row;
             };
-            bufRowArea  = chipRow (bufButtons,  44, false);
-            rateRowArea = chipRow (rateButtons, 44, false);
+            bufRowArea  = chipRow (bufButtons,  Metrics::canalonSeccion, false);
+            rateRowArea = chipRow (rateButtons, Metrics::canalonSeccion, false);
             //  Y LA CUENTA ATRAS, en la misma columna y con el mismo canalon.
             //  Tres chips, no cuatro: son SIN, 1 y 2 - `armaCuentaAtras` admite
             //  hasta ocho compases y ofrecer ocho seria ofrecer siete que nadie
             //  usa. El clic no tiene chip porque su tapa ya existe en CANCION.
-            cuentaRowArea = chipRow (cuentaButtons, 44, false);
+            cuentaRowArea = chipRow (cuentaButtons, Metrics::canalonSeccion, false);
             //  Y EL MONITOR, dos chips en la misma columna: es la otra mitad de
             //  «como se prepara una toma», y como la cuenta es una preferencia
             //  de la persona y de su aparato.
-            monRowArea = chipRow (monButtons, 44, false);
+            monRowArea = chipRow (monButtons, Metrics::canalonSeccion, false);
             //  UN panel para las DOS, y no uno por fila: entre ellas hay
             //  `Metrics::xs` -cuatro- y dos paneles que se salen dos por lado
             //  dejan CERO de hueco, que se lee igual que no dibujar ninguno. Es
@@ -2244,9 +2244,9 @@ void MainComponent::resized()
                 columnaChips.removeFromTop (Metrics::xs);
                 return row;
             };
-            langRowArea = chipRow (langButtons, 44, partirLang);
-            skinRowArea = chipRow (skinButtons, 44, partirSkin);
-            movRowArea  = chipRow (movButtons,  44, partirMov);
+            langRowArea = chipRow (langButtons, Metrics::canalonSeccion, partirLang);
+            skinRowArea = chipRow (skinButtons, Metrics::canalonSeccion, partirSkin);
+            movRowArea  = chipRow (movButtons,  Metrics::canalonSeccion, partirMov);
             //  Y ESTA PAGINA SIGUE SIN PANELES con tres filas por lo mismo que
             //  con dos: son filas de la MISMA pregunta -como se ve la maquina-
             //  asi que un panel las cubriria todas, y eso agrupa exactamente lo
@@ -3510,7 +3510,7 @@ void MainComponent::resized()
         xyPanel.setBounds (faceTopArea.withHeight (juce::jmin (faceTopArea.getHeight(),
                                                               fixed + side)));
 
-        auto inner = xyPanel.getLocalBounds().reduced (Metrics::lg, Metrics::md);
+        auto inner = xyPanel.getLocalBounds().reduced (Metrics::margenFichaX, Metrics::margenFichaY);
 
         auto titleRow = inner.removeFromTop (Metrics::hit);
         xyCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
@@ -4988,7 +4988,7 @@ void MainComponent::resized()
                                   : ventana.removeFromTop (altoDock);
         //  Y si aun asi se solapan -un objetivo que ocupa media pantalla-, manda
         //  el texto: sin leerlo el foco no explica nada.
-        auto inner = tourDock.reduced (Metrics::lg, Metrics::md);
+        auto inner = tourDock.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
         inner.removeFromTop (16 + Metrics::xs);              // pintado: titulo y puntos
         {
             auto row = inner.removeFromBottom (Metrics::hit);

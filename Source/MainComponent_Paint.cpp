@@ -314,8 +314,7 @@ void MainComponent::paint (juce::Graphics& g)
         //  del pad y la palabra son una sola cosa y van juntos a la izquierda-
         //  y no se elide, se cae a la palabra corta.
         const auto cajaTitulo = juce::Rectangle<int> (xTitulo, h.getY(), wTitulo + 2, h.getHeight());
-        UiAudit::rotulo (cajaTitulo, nombre, "titulo", wTitulo,
-                         UiAudit::tintaDe (g.getCurrentFont(), nombre));
+        UiAudit::rotulo (cajaTitulo, nombre, "titulo", wTitulo);
         g.drawText (nombre, cajaTitulo, juce::Justification::centredLeft);
 
         rule ((float) h.getX(), (float) h.getRight(), (float) h.getBottom() + 2.0f, 0.22f);
@@ -366,8 +365,7 @@ void MainComponent::paint (juce::Graphics& g)
                 //  largo-. Lo dice la app y no una lista de rotulos en el
                 //  script, que solo sabria medir una de las cuatro
                 //  compilaciones.
-                UiAudit::rotulo (cajaProy, texto, "proyecto", 0,
-                                 UiAudit::tintaDe (g.getCurrentFont(), texto));
+                UiAudit::rotulo (cajaProy, texto, "proyecto", 0);
                 g.drawText (texto, cajaProy, juce::Justification::bottomRight, true);
             }
         }
@@ -445,11 +443,11 @@ void MainComponent::paintAspectoPage (juce::Graphics& g)
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.12f));
     if (! langRowArea.isEmpty())
-        { auto r = langRowArea; pintaTitulo (g, Lang::takeStart (r, 44), T ("IDIOMA"), "seccion"); }
+        { auto r = langRowArea; pintaTitulo (g, Lang::takeStart (r, Metrics::canalonSeccion), T ("IDIOMA"), "seccion", false, 0.75f); }
     if (! skinRowArea.isEmpty())
-        { auto r = skinRowArea; pintaTitulo (g, Lang::takeStart (r, 44), T ("CARCASA"), "seccion"); }
+        { auto r = skinRowArea; pintaTitulo (g, Lang::takeStart (r, Metrics::canalonSeccion), T ("CARCASA"), "seccion", false, 0.75f); }
     if (! movRowArea.isEmpty())
-        { auto r = movRowArea; pintaTitulo (g, Lang::takeStart (r, 44), T ("MOVIMIENTO"), "seccion"); }
+        { auto r = movRowArea; pintaTitulo (g, Lang::takeStart (r, Metrics::canalonSeccion), T ("MOVIMIENTO"), "seccion", false, 0.75f); }
 }
 
 // The audio path, measured rather than assumed. Everything here comes from
@@ -623,13 +621,13 @@ void MainComponent::paintAudioSheetContent (juce::Graphics& g)
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.12f));
     if (! bufRowArea.isEmpty())
-        { auto r = bufRowArea;  pintaTitulo (g,  Lang::takeStart (r, 44), T ("BUFER"), "seccion"); }
+        { auto r = bufRowArea;  pintaTitulo (g,  Lang::takeStart (r, Metrics::canalonSeccion), T ("BUFER"), "seccion", false, 0.75f); }
         if (! cuentaRowArea.isEmpty())
-        { auto r = cuentaRowArea; pintaTitulo (g, Lang::takeStart (r, 44), T ("CUENTA"), "seccion"); }
+        { auto r = cuentaRowArea; pintaTitulo (g, Lang::takeStart (r, Metrics::canalonSeccion), T ("CUENTA"), "seccion", false, 0.75f); }
         if (! monRowArea.isEmpty())
-        { auto r = monRowArea; pintaTitulo (g, Lang::takeStart (r, 44), T ("MONITOR"), "seccion"); }
+        { auto r = monRowArea; pintaTitulo (g, Lang::takeStart (r, Metrics::canalonSeccion), T ("MONITOR"), "seccion", false, 0.75f); }
     if (! rateRowArea.isEmpty())
-        { auto r = rateRowArea; pintaTitulo (g,  Lang::takeStart (r, 44), T ("RELOJ"), "seccion"); }
+        { auto r = rateRowArea; pintaTitulo (g,  Lang::takeStart (r, Metrics::canalonSeccion), T ("RELOJ"), "seccion", false, 0.75f); }
 }
 
 // Sheet header: which pad is being filled and what is currently picked.
@@ -637,7 +635,7 @@ void MainComponent::paintBrowseSheetContent (juce::Graphics& g)
 {
     if (browseSheet.sheetBounds.isEmpty()) return;
 
-    auto inner = browseSheet.sheetBounds.reduced (Metrics::lg, Metrics::md);
+    auto inner = browseSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
     //  Y EL ENCABEZADO DICE A QUE SE HA ENTRADO. El mismo navegador sirve para
@@ -677,8 +675,20 @@ void MainComponent::paintBrowseSheetContent (juce::Graphics& g)
     //  APUNTADO: se recorta con `antesDe` y nadie lo comprobaba. Un rotulo que
     //  el banco no ve puede acabar debajo de la cruz sin que las mil corridas
     //  digan nada — es como la mesa estuvo titulada «MIX» a mano durante meses.
-    apunta (g, browseSubRow, sub, "dato");
-    g.drawText (sub, browseSubRow, Lang::start(), true);
+    //  Y EL NOMBRE ELEGIDO SE ELIDE, que es lo otro: un nombre de fichero no
+    //  tiene largo con el que contar —uno de Instagram es
+    //  «instagram_1786902180894(44.1K)»— asi que exigirle que quepa entero es
+    //  exigirle algo que no depende de la app. Los otros dos son AYUDA y caen
+    //  por orden: enteros, apretados, y donde ni asi, fuera.
+    if (picked)
+    {
+        apunta (g, browseSubRow, sub, "dato", 0.0f);
+        g.drawText (sub, browseSubRow, Lang::start(), true);
+    }
+    else
+    {
+        pintaAyuda (g, browseSubRow, sub, Lang::start());
+    }
 }
 
 void MainComponent::paintBusy (juce::Graphics& g)
@@ -753,7 +763,7 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
 
     const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
     const int sp = juce::jmax (0, selectedPad);
-    auto inner = chopSheet.sheetBounds.reduced (Metrics::lg, Metrics::md);
+    auto inner = chopSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
 
     auto titleRow = inner.removeFromTop (32).withTrimmedTop (8);
     //  Y de la puerta a la rejilla de dieciseis, que vive en este mismo
@@ -867,7 +877,7 @@ void MainComponent::paintExportSheetContent (juce::Graphics& g)
 {
     if (exportSheet.sheetBounds.isEmpty()) return;
 
-    auto inner = exportSheet.sheetBounds.reduced (Metrics::lg, Metrics::md);
+    auto inner = exportSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
     inner.removeFromTop (2);
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
@@ -1043,12 +1053,16 @@ void MainComponent::paintGesturesPage (juce::Graphics& g, juce::Rectangle<int> a
         //  `planos.py`. Es exactamente por eso que «abre sus ajustes sin sonar»
         //  sobrevivio tres tandas siendo falsa: la unica pantalla cuyo trabajo
         //  entero es decir la verdad era la unica que el banco no podia leer.
-        apunta (g, howCell, T (rows[i].how), "gesto");
+        //  Con `pide` en CERO: estas dos columnas se dibujan en DOS lineas, asi
+        //  que el ancho de la cadena entera no dice si se lee — un texto que
+        //  parte por palabras cabe en la mitad de lo que mide. La regla del
+        //  rotulo cortado es de una linea y estas no lo son.
+        apunta (g, howCell, T (rows[i].how), "gesto", 0.0f);
         g.drawFittedText (T (rows[i].how), howCell, Lang::start(), 2, 0.9f);
 
         g.setColour (ZatiColours::inkDim);
         g.setFont (ZatiColours::monoFont (Metrics::fFine));
-        apunta (g, text, T (rows[i].what), "gesto");
+        apunta (g, text, T (rows[i].what), "gesto", 0.0f);
         g.drawFittedText (T (rows[i].what), text, Lang::start(), 2, 0.85f);
     }
 }
@@ -1221,7 +1235,7 @@ void MainComponent::paintManualSheetContent (juce::Graphics& g)
 {
     if (manualSheet.sheetBounds.isEmpty()) return;
 
-    auto inner = manualSheet.sheetBounds.reduced (Metrics::lg, Metrics::md);
+    auto inner = manualSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
     //  Se para antes del boton de cerrar, como todas las demas fichas - y por
     //  el lado en el que ESTE, que en arabe es el izquierdo.
     auto titleRow = antesDe (inner.removeFromTop (16), manualCloseButton);
@@ -1243,10 +1257,11 @@ void MainComponent::paintManualSheetContent (juce::Graphics& g)
     //
     //  Apuntado y recortado antes de la x, como el titulo: se dibuja con
     //  drawText y no era un componente, asi que no lo veia nadie.
+    //  Y APRETADO donde no cabe entero: pedia 206 px con 181 en 280x653.
     pintaTitulo (g, antesDe (inner.removeFromTop (14), manualCloseButton),
                  T ("lo que hay que saber, en %1 capitulos",
                     Lang::ltr (juce::String (kManualChapterCount))),
-                 "subtitulo");
+                 "subtitulo", false, 0.85f);
 }
 
 // Build the chips from what THIS device actually offers. Nothing is
@@ -1378,7 +1393,7 @@ void MainComponent::paintMixSheetContent (juce::Graphics& g)
     //  componente y por eso llevaba aqui desde el principio.
     const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
     {
-        const auto caja = antesDe (mixSheet.sheetBounds.reduced (14, 12).removeFromTop (16),
+        const auto caja = antesDe (mixSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY).removeFromTop (16),
                                    mixCloseButton);
         const auto txt = engine.anySolo() ? T ("MIX") + "  " + dot + "  " + T ("SOLO ACTIVO") : T ("MIX");
         pintaTitulo (g, caja, txt);
@@ -1430,7 +1445,7 @@ void MainComponent::paintCanalPickContent (juce::Graphics& g)
 {
     if (canalSheet.sheetBounds.isEmpty()) return;
 
-    auto inner = canalSheet.sheetBounds.reduced (Metrics::lg, Metrics::md);
+    auto inner = canalSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
     auto titulo = antesDe (inner.removeFromTop (Metrics::hit).withTrimmedTop (8).withHeight (24),
                            canalCloseBtn, Metrics::sm);
 
@@ -1447,7 +1462,7 @@ void MainComponent::paintPadPickContent (juce::Graphics& g)
 {
     if (padPickSheet.sheetBounds.isEmpty()) return;
 
-    auto inner = padPickSheet.sheetBounds.reduced (Metrics::lg, Metrics::md);
+    auto inner = padPickSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
     //  El titulo se aparta de la cruz por `antesDe`, que decide el lado
     //  comparando los CENTROS. Estaba escrito a mano preguntando por el idioma,
     //  que es la cuenta que ya se arreglo seis veces y luego cinco mas: quien
@@ -1521,7 +1536,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
     //  The pad's name is a file name and files are named by whoever made
     //  them, so this line has no length it can count on. Stop it before the
     //  close button and let it shrink rather than run underneath.
-    auto padTitleRow = padSheet.sheetBounds.reduced (14, 12).removeFromTop (16);
+    auto padTitleRow = padSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY).removeFromTop (16);
     //  Y DE LA TERCERA TAPA DE LA FILA: la puerta de la rejilla de dieciseis
     //  pads. Sin ella el titulo -"PAD 64 · ARP"- se le metia debajo en 280x653,
     //  doce hallazgos. Es la misma cuenta que ya hacian las otras dos.
@@ -1675,7 +1690,7 @@ void MainComponent::paintPianoSheetContent (juce::Graphics& g)
 {
     if (seqSheet.sheetBounds.isEmpty()) return;
 
-    auto inner = seqSheet.sheetBounds.reduced (Metrics::lg, Metrics::md);
+    auto inner = seqSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
     const int sp = juce::jmax (0, selectedPad);
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
@@ -1690,9 +1705,16 @@ void MainComponent::paintPianoSheetContent (juce::Graphics& g)
                                     pianoPadDownBtn, Metrics::sm),
                            pianoPadUpBtn,   Metrics::sm);
     const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
-    const juce::String tPiano = T ("PIANO") + "  " + dot + "  " + T ("PAD %1", juce::String (sp + 1))
-                              + (padName[(size_t) sp].isNotEmpty() ? "   " + padName[(size_t) sp]
-                                                                   : juce::String());
+    //  Y CAE POR CAMPOS: primero el nombre del pad —que se lee en el propio pad,
+    //  ahi abajo— y despues «PAD nn», que lo dice la tapa del selector. Queda
+    //  «PIANO», que es lo unico que no se puede deducir mirando la maquina. Ver
+    //  campoAcampo.
+    const juce::String tPiano = campoAcampo (g.getCurrentFont(), titulo.getWidth(),
+                                             T ("PIANO"),
+                                             { "  " + dot + "  " + T ("PAD %1", juce::String (sp + 1)),
+                                               padName[(size_t) sp].isNotEmpty()
+                                                   ? "   " + padName[(size_t) sp] : juce::String() },
+                                             0.85f);
     pintaTitulo (g, titulo, tPiano, "titulo", false, 0.85f);
 
     //  Que se esta mirando, en notas y no en semitonos: "-12 a +12" no dice
@@ -1705,12 +1727,21 @@ void MainComponent::paintPianoSheetContent (juce::Graphics& g)
     auto ayuda = inner.removeFromTop (14);
     ayuda.setLeft  (titulo.getX());
     ayuda.setRight (titulo.getRight());
-    const auto ayudaPiano = T ("toca el teclado para oir, la rejilla para escribir")
-                              + "   " + dot + "   " + T ("OCTAVA") + " "
-                              + PianoRoll::nombreDe (pianoBase)
-                              + " - " + PianoRoll::nombreDe (pianoBase + pianoGrid.getFilas() - 1);
-    apunta (g, ayuda, ayudaPiano, "dato");
-    g.drawFittedText (ayudaPiano, ayuda, Lang::start(), 1, 0.8f);
+    //  Y CAE POR ORDEN: primero la AYUDA y despues el renglon entero.
+    //
+    //  Este renglon lleva dos cosas y solo una cambia: «toca el teclado para
+    //  oir, la rejilla para escribir» dice siempre lo mismo -y el manual lo
+    //  dice entero- mientras que «OCTAVA C-1 - C» es el unico sitio de la
+    //  pantalla que dice que se esta mirando. Medido en 280x653: los dos piden
+    //  316 px y hay 41, o sea que se veia un octavo de frase; el dato solo pide
+    //  99. Se cae la ayuda y queda el dato, que es la misma regla que gobierna
+    //  el icono contra la palabra en una tapa.
+    const auto ayudaPiano = ayudaYDato (g, ayuda,
+                                        T ("toca el teclado para oir, la rejilla para escribir"),
+                                        T ("OCTAVA") + " " + PianoRoll::nombreDe (pianoBase)
+                                          + " - " + PianoRoll::nombreDe (pianoBase + pianoGrid.getFilas() - 1),
+                                        "   " + dot + "   ", 0.8f);
+    pintaAyuda (g, ayuda, ayudaPiano, Lang::start(), 0.8f);
 }
 
 //  The PROJECTS card. The name, where it lives, and the list.
@@ -1739,8 +1770,7 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
                              : (projModel.names.isEmpty()
                                     ? T ("sin proyectos - GUARDAR crea el primero")
                                     : T ("elige uno de la lista"));
-    apunta (g, subRow, subProj, "dato");
-    g.drawFittedText (subProj, subRow, Lang::start(), 1, 0.8f);
+    pintaAyuda (g, subRow, subProj, Lang::start(), 0.8f);
 
     //  NAME, and under it the folder these projects actually live in. The
     //  path is there because when a save goes missing the answer is almost
@@ -1766,7 +1796,14 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
         //  ahi al lado y no se aplico al vecino.
         if (raizCache == juce::File())
             raizCache = ProjectStore::root();
-        apunta (g, r, Lang::ltr (raizCache.getFullPathName()), "dato");
+        //  Y SE ELIDE A PROPOSITO, como el nombre del proyecto en la cabecera:
+        //  una RUTA no tiene largo con el que contar -depende de donde este
+        //  montada la tarjeta- asi que exigirle que quepa entera seria exigirle
+        //  algo que no depende de la app. Se apunta con `pide` en CERO, que es
+        //  como el volcado dice «no lo juzgues». Y ademas la que sale en el
+        //  banco es la del ANDAMIO: esta casa ya pago una vez que sus hallazgos
+        //  crecieran con el nombre del directorio temporal.
+        apunta (g, r, Lang::ltr (raizCache.getFullPathName()), "dato", 0.0f);
         g.drawFittedText (Lang::ltr (raizCache.getFullPathName()),
                           r, Lang::start(), 1, 0.7f);
     }
@@ -1805,10 +1842,14 @@ void MainComponent::paintRackSheetContent (juce::Graphics& g)
         //  la frase es mas corta-. Es el mismo caso que la cadena del
         //  secuenciador y el parrafo de AUTO CHOP, y se arregla igual: quien
         //  sabe de que lado esta la tapa es la TAPA y no el idioma.
+        //  Y NO SALE A MEDIAS. Esto es SOLO ayuda -no dice ningun numero que no
+        //  se vea en la fila de abajo- asi que donde no cabe entera se cae: en
+        //  ingles pedia 262 px con 247. Media frase se lee como un fallo.
+        //  Y se mide con el MISMO 0.75 con el que se dibuja: `apunta` medía a
+        //  1.0 mientras `drawFittedText` aprieta, o sea la misma regla escrita
+        //  con dos numeros.
         auto bandaRack = antesDe (inner.removeFromTop (14), rackCloseButton);
-        apunta (g, bandaRack, T ("cuanto de este canal pasa por cada efecto"), "dato");
-        g.drawFittedText (T ("cuanto de este canal pasa por cada efecto"),
-                          bandaRack, Lang::start(), 1, 0.75f);
+        pintaAyuda (g, bandaRack, T ("cuanto de este canal pasa por cada efecto"), Lang::start());
     }
 
     //  EL NOMBRE Y EL DIBUJO YA NO SE PINTAN AQUI: el canalon de la izquierda
@@ -1837,7 +1878,7 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
 
     const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
     const int sp = juce::jmax (0, selectedPad);
-    auto inner = seqSheet.sheetBounds.reduced (Metrics::lg, Metrics::md);
+    auto inner = seqSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
 
     //  La pagina del piano tiene su propia cabecera - dice de que PAD son las
     //  notas, que es lo unico que hace falta saber ahi - y su propia ayuda.
@@ -1849,10 +1890,6 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
-    const juce::String t = T (seqPage == seqPageStep ? "PATRON" : "PASOS")
-                         + "  " + dot + "  " + T ("PAD %1", juce::String (sp + 1))
-                         + (padName[(size_t) sp].isNotEmpty() ? "   " + padName[(size_t) sp] : juce::String())
-                         + "   " + dot + "   P" + juce::String (selectedPattern + 1);
     //  EL TITULO SE PARA DONDE EMPIEZA LA TAPA DE CERRAR.
     //
     //  El nombre de la muestra entra aqui y no tiene largo: uno importado de
@@ -1874,6 +1911,17 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     auto tituloRow = antesDe (antesDe (antesDe (inner.removeFromTop (16), seqCloseButton, Metrics::sm),
                                        pianoPadPickBtn, Metrics::sm),
                               seqPistasBtn, Metrics::sm);
+    //  Y CAE POR CAMPOS, como el del piano: el nombre del pad se lee en el pad,
+    //  «PAD nn» en la tapa del selector y «P1» en la paleta de patrones, asi que
+    //  los tres se piden con el TEXTO puesto y se caen por orden. Queda PASOS o
+    //  PATRON, que es lo unico que dice donde estas. Ver campoAcampo.
+    const juce::String t = campoAcampo (g.getCurrentFont(), tituloRow.getWidth(),
+                                        T (seqPage == seqPageStep ? "PATRON" : "PASOS"),
+                                        { "  " + dot + "  " + T ("PAD %1", juce::String (sp + 1)),
+                                          padName[(size_t) sp].isNotEmpty()
+                                              ? "   " + padName[(size_t) sp] : juce::String(),
+                                          "   " + dot + "   P" + juce::String (selectedPattern + 1) },
+                                        0.85f);
     pintaTitulo (g, tituloRow, t, "titulo", false, 0.85f);
 
     //  The bank selector and the chain toggles used to sit adjacent, look
@@ -2000,8 +2048,7 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
         const auto pieSec = selectedStep < 0
                               ? T ("toca un paso en la rejilla y sus mandos salen debajo")
                               : T ("editando el paso %1", Lang::ltr (juce::String (selectedStep + 1)));
-        apunta (g, seqFootArea, pieSec, "dato");
-        g.drawText (pieSec, seqFootArea, Lang::start());
+        pintaAyuda (g, seqFootArea, pieSec, Lang::start());
     }
 
     // The grid paints its own playhead and lane colours (see StepGrid).
@@ -2054,11 +2101,13 @@ void MainComponent::paintSongSheetContent (juce::Graphics& g)
     //  porque estan una debajo de otra. Ver pintaPaneles.
     pintaPaneles (g, songGrupos);
 
+    auto renglon = antesDe (antesDe (songSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY).removeFromTop (16),
+                                     songCloseButton),
+                            songVistaBtn);
+
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
-    pintaTitulo (g, antesDe (antesDe (songSheet.sheetBounds.reduced (14, 10).removeFromTop (16),
-                                     songCloseButton),
-                             songVistaBtn), T ("SONG"));
+    const auto tituloReal = pintaTitulo (g, renglon, T ("SONG"));
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
@@ -2077,11 +2126,19 @@ void MainComponent::paintSongSheetContent (juce::Graphics& g)
     //  idiomas. Dos tapas en un renglon son dos escalones, y `antesDe` decide
     //  el lado comparando los centros, asi que encadenarlas vale en los cuatro
     //  idiomas y no solo en tres.
-    auto hintRow = antesDe (antesDe (songSheet.sheetBounds.reduced (14, 10).removeFromTop (16),
-                                     songCloseButton),
-                            songVistaBtn);
-    apunta (g, hintRow, hint, "dato");
-    g.drawFittedText (hint, hintRow, juce::Justification::centredRight, 1, 0.85f);
+    //  Y DEL TITULO, que es el que faltaba y el que costo 112 hallazgos. Los dos
+    //  salian de `removeFromTop (16)` del MISMO rectangulo, o sea que son la
+    //  misma banda: cada uno se apartaba de las dos tapas y NINGUNO del otro,
+    //  asi que «CANCION» caia encima de «toca un compas...» 46x16 px, en las
+    //  cuatro lenguas por veintiocho pantallas. `antesDe` decide el lado
+    //  comparando los centros, asi que vale tambien en arabe.
+    auto hintRow = antesDe (renglon, tituloReal);
+
+    //  Y DONDE NO CABE ENTERA NO SALE. Media frase de ayuda no ayuda: se lee
+    //  como un fallo, y esta es SOLO ayuda -no lleva ningun dato que no se vea
+    //  en la pantalla-, asi que se cae entera. La misma escalera que ya deciden
+    //  BANCO, PADS y la cabecera de la cara.
+    pintaAyuda (g, hintRow, hint, juce::Justification::centredRight, 0.85f);
 }
 
 void MainComponent::paintTourSheetContent (juce::Graphics& g)
@@ -2136,7 +2193,7 @@ void MainComponent::paintTourSheetContent (juce::Graphics& g)
     //  EL MUELLE. Su sitio lo decidio resized(), en la mitad contraria a la del
     //  objetivo. Aqui solo se pinta.
     if (tourDock.isEmpty()) return;
-    auto inner = tourDock.reduced (Metrics::lg, Metrics::md);
+    auto inner = tourDock.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
 
     g.setColour (ZatiColours::chassisTop);
     g.fillRect (tourDock);
@@ -2268,8 +2325,7 @@ void MainComponent::paintVstSheetContent (juce::Graphics& g)
         UiAudit::rotulo (vstPreArea.withSizeKeepingCentre (usado, vstPreArea.getHeight()),
                          txt, "dato",
                          (int) std::ceil (juce::GlyphArrangement::getStringWidth (
-                                              g.getCurrentFont(), txt)),
-                         UiAudit::tintaDe (g.getCurrentFont(), txt));
+                                              g.getCurrentFont(), txt)));
         g.drawText (txt, vstPreArea, juce::Justification::centred, true);
     }
 
@@ -2358,7 +2414,7 @@ void MainComponent::paintXySheetContent (juce::Graphics& g)
     g.drawRoundedRectangle (card.reduced (0.75f), rad, 1.5f);
 
     const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
-    auto inner = xyPanel.getLocalBounds().reduced (Metrics::lg, Metrics::md);
+    auto inner = xyPanel.getLocalBounds().reduced (Metrics::margenFichaX, Metrics::margenFichaY);
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
@@ -2385,8 +2441,7 @@ void MainComponent::paintXySheetContent (juce::Graphics& g)
         //  debajo de esa tapa.
         const auto banda = antesDe (inner.removeFromTop (14),
                                     getLocalArea (&xyLatchButton, xyLatchButton.getLocalBounds()));
-        apunta (g, banda, ayuda, "dato");
-        g.drawText (ayuda, banda, Lang::start());
+        pintaAyuda (g, banda, ayuda, Lang::start());
     }
 
 }

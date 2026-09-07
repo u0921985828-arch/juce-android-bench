@@ -205,6 +205,82 @@ if (! tapa.isVisible()) return banda;
 return antesDe (banda, tapa.getBounds(), aire);
 }
 
+//  SI UN ROTULO PINTADO CABE ENTERO EN SU BANDA.
+//
+//  `drawFittedText` no dice que no: aprieta hasta el minimo que se le pasa y a
+//  partir de ahi CORTA, y eso solo se ve mirando la pantalla. Los quince
+//  renglones de ayuda de esta app se dibujaban asi sobre la banda que hubiera:
+//  el del piano pedia 316 px con 41 en 280x653 -o sea que se veia un octavo de
+//  frase- y el del navegador 273 con 181.
+//
+//  Se mide con el MISMO apreton con el que se dibuja, que es la trampa de
+//  siempre: `apunta` medía a 1.0 mientras el dibujo iba a 0.8, o sea la misma
+//  regla escrita con dos numeros.
+inline bool cabeEntero (juce::Graphics& g, juce::Rectangle<int> banda,
+                        const juce::String& t, float apreton = 1.0f)
+{
+    if (t.isEmpty() || banda.getWidth() <= 0) return false;
+    const float pide = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), t) * apreton;
+    return (int) std::ceil (pide) <= banda.getWidth();
+}
+
+//  Y LA VERSION QUE CAE POR ORDEN, para el renglon que lleva DATO y AYUDA.
+//
+//  El del piano es «toca el teclado para oir, la rejilla para escribir  ·
+//  OCTAVA C-1 - C»: la primera mitad es ADORNO -siempre dice lo mismo, y el
+//  manual lo dice entero- y la segunda es el DATO, lo unico que cambia y lo
+//  unico que no se puede deducir mirando la pantalla. Donde no caben los dos se
+//  cae la ayuda y queda el dato, que es la misma regla que gobierna el icono
+//  contra la palabra en una tapa.
+//
+//  Y NO se parte en dos lineas, que es lo primero que sale: cuesta ALTO, que es
+//  lo unico que no sobra en una ficha — este proyecto lleva diez parrafos
+//  contando lo que costo cada fila que aparecio.
+inline juce::String ayudaYDato (juce::Graphics& g, juce::Rectangle<int> banda,
+                                const juce::String& ayuda, const juce::String& dato,
+                                const juce::String& union_, float apreton = 1.0f)
+{
+    const auto todo = ayuda + union_ + dato;
+    if (cabeEntero (g, banda, todo, apreton)) return todo;
+    if (cabeEntero (g, banda, dato,  apreton)) return dato;
+    return {};
+}
+
+//  Y LA ESCALERA DE UN TITULO DE VARIOS CAMPOS, que es la MISMA que ya usa el
+//  renglon de continuidad de la cabecera —«SESION NOCTURNA · 64 PADS · HACE
+//  2 D»— y por eso vive aqui y no escrita dos veces: se parte del campo que no
+//  se puede deducir mirando la maquina y se van sumando los demas mientras
+//  quepan enteros.
+//
+//  Cada campo trae SU separador delante, porque no todos usan el mismo: en el
+//  titulo del piano «PAD 5» se une con un punto y el nombre del pad con tres
+//  espacios. Con un separador unico habria que elegir uno de los dos y el otro
+//  se leeria mal.
+//
+//  Lo que costo: «PIANO · PAD 64  ARP» pedia 104 px con 99, y «PASOS · PAD 64
+//  ARP · P1» 139 con 128, en 280x653 y en los cuatro idiomas. El nombre de un
+//  pad no tiene largo con el que contar -uno importado de Instagram es
+//  «instagram_1786902180894(44.1K)»- asi que un titulo que lo lleve dentro no
+//  puede prometer que cabe.
+inline juce::String campoAcampo (const juce::Font& fuente, int ancho,
+                                 const juce::String& base,
+                                 const juce::StringArray& campos,
+                                 float apreton = 1.0f)
+{
+    auto cabe = [&fuente, ancho, apreton] (const juce::String& t)
+    {
+        return (int) std::ceil (juce::GlyphArrangement::getStringWidth (fuente, t) * apreton)
+                   <= ancho;
+    };
+
+    juce::String linea = base;
+    for (const auto& c : campos)
+        if (c.isNotEmpty() && cabe (linea + c))
+            linea += c;
+
+    return linea;
+}
+
 //  LA TAPA DEL MODO, que dice lo que SUENA y no lo que va a pasar si la tocas.
 //
 //  Es la misma gramatica que `transporte`: la tapa lleva el nombre del estado

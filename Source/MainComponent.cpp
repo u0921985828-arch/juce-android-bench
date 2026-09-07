@@ -5464,8 +5464,9 @@ void MainComponent::releaseResources()
 //  nadie. Un rotulo que el banco no ve es un rotulo que puede acabar debajo de
 //  la x sin que 896 corridas digan nada: es exactamente como la mesa estuvo
 //  titulada "MIX" a mano durante meses.
-void MainComponent::apunta (juce::Graphics& g, juce::Rectangle<int> caja,
-                            const juce::String& texto, const char* tipo, float minimo)
+juce::Rectangle<int> MainComponent::apunta (juce::Graphics& g, juce::Rectangle<int> caja,
+                                            const juce::String& texto, const char* tipo,
+                                            float minimo)
 {
     auto real = caja;
     const int pide  = (int) std::ceil (juce::GlyphArrangement::getStringWidth (
@@ -5478,8 +5479,20 @@ void MainComponent::apunta (juce::Graphics& g, juce::Rectangle<int> caja,
     //  la banda, asi que un texto que no cabe salia con el mismo rectangulo que
     //  uno que cabe justo y no habia forma de preguntar si se lee entero. Ver
     //  UiAudit::Rotulo.
-    UiAudit::rotulo (real, texto, tipo, (int) std::ceil (pide * minimo),
-                     UiAudit::tintaDe (g.getCurrentFont(), texto));
+    UiAudit::rotulo (real, texto, tipo, (int) std::ceil (pide * minimo));
+    return real;
+}
+
+bool MainComponent::pintaAyuda (juce::Graphics& g, juce::Rectangle<int> banda,
+                                const juce::String& texto, juce::Justification justif,
+                                float apreton)
+{
+    if (! cabeEntero (g, banda, texto, apreton))
+        return false;
+
+    apunta (g, banda, texto, "dato", apreton);
+    g.drawFittedText (texto, banda, justif, 1, apreton);
+    return true;
 }
 
 //  EL MODO ES UNO Y LAS TAPAS SON TRES.
@@ -5545,9 +5558,9 @@ void MainComponent::ponModoCancion (bool on)
                     juce::dontSendNotification);
 }
 
-void MainComponent::pintaTitulo (juce::Graphics& g, juce::Rectangle<int> caja,
-                                 const juce::String& texto, const char* tipo, bool elipsis,
-                                 float apretar)
+juce::Rectangle<int> MainComponent::pintaTitulo (juce::Graphics& g, juce::Rectangle<int> caja,
+                                                 const juce::String& texto, const char* tipo,
+                                                 bool elipsis, float apretar)
 {
     //  LO QUE SE APUNTA ES LO QUE OCUPA EL TEXTO, no la banda que se le dio.
     //
@@ -5557,7 +5570,8 @@ void MainComponent::pintaTitulo (juce::Graphics& g, juce::Rectangle<int> caja,
     //  control. "AJUSTES - AUDIO" pasaba por debajo de la tapa de CUADRAR y por
     //  debajo de la x, y ninguna de las reglas del banco podia verlo porque un
     //  rotulo pintado no es un componente y la banda solapaba de todas formas.
-    apunta (g, caja, texto, tipo, elipsis ? 0.0f : (apretar > 0.0f ? apretar : 1.0f));
+    const auto real = apunta (g, caja, texto, tipo,
+                              elipsis ? 0.0f : (apretar > 0.0f ? apretar : 1.0f));
 
     //  Y APRETAR ES DE ESTA FUNCION, no de quien la llama. Habia CUATRO formas
     //  de pintar el titulo de una ficha -esta, `UiAudit::rotulo` + `drawText`
@@ -5572,6 +5586,7 @@ void MainComponent::pintaTitulo (juce::Graphics& g, juce::Rectangle<int> caja,
     //  que ya habia no mueven un pixel.
     if (apretar > 0.0f) g.drawFittedText (texto, caja, Lang::start(), 1, apretar);
     else                g.drawText (texto, caja, Lang::start(), elipsis);
+    return real;
 }
 
 

@@ -342,7 +342,84 @@ def judge_tapado(rows, size, lang, sheet):
                 out.append(("TAPADO", f"{size}/{lang}/{sheet or 'face'}",
                             f'"{r["rotulo"]}" debajo de "{c.get("text","?")}"', 0))
                 break
+
+    #  Y DOS COSAS MAS QUE UN ROTULO PINTADO PUEDE HACER Y NADIE MEDIA.
+    #
+    #  TAPADO mira un rotulo contra un CONTROL. Faltaban las dos preguntas que
+    #  se le hacen a cualquier rotulo que sea un componente desde hace tandas
+    #  -TRUNC y SQUEEZE- y que a estos no se les podia hacer, porque `apunta`
+    #  apuntaba el ancho que el texto OCUPA y ese va acotado a la banda: un
+    #  texto que no cabe salia con el mismo `w` que uno que cabe justo.
+    #
+    #   - CORTADO: pide mas de lo que tiene. `pide` es el minimo al que se
+    #     sigue leyendo entero, ya con el apreton del dibujo aplicado, y CERO
+    #     es «se elide a proposito, no lo juzgues» - lo dice la app y no una
+    #     lista de textos en el script, que solo sabria medir una de las cuatro
+    #     compilaciones.
+    #   - PISADO: dos rotulos pintados de la MISMA capa, uno encima de otro. La
+    #     regla de solapes recorre componentes y un rotulo no lo es, asi que el
+    #     renglon de ayuda de CANCION llevaba metido 46x16 px debajo de su
+    #     propio titulo en las cuatro lenguas sin que nada fallara.
+    pin = [r for r in rows if r.get("rotulo") and r.get("w", 0) > 0 and r.get("h", 0) > 0]
+    for r in pin:
+        if r.get("pide", 0) > r["w"]:
+            out.append(("CORTADO", f"{size}/{lang}/{sheet or 'face'}",
+                        f'"{r["rotulo"]}" pide {r["pide"]} tiene {r["w"]}', r["w"] - r["pide"]))
+    for i, a in enumerate(pin):
+        for b in pin[i + 1:]:
+            if a.get("capa", 0) != b.get("capa", 0):
+                continue
+            ix = min(a["x"] + a["w"], b["x"] + b["w"]) - max(a["x"], b["x"])
+            iy = min(a["y"] + a["h"], b["y"] + b["h"]) - max(a["y"], b["y"])
+            if ix > 2 and iy > 2:
+                out.append(("PISADO", f"{size}/{lang}/{sheet or 'face'}",
+                            f'"{a["rotulo"]}" sobre "{b["rotulo"]}" {ix}x{iy} px', 0))
     return out
+
+
+#  EL AIRE ENTRE FILAS HERMANAS. Se imprime, no se juzga.
+#
+#  «Que todos los apartados de todas las pestanas guarden la relacion de aire
+#  entre componentes logica con el demas aire y distancia que hay» — y eso hoy
+#  no lo mide nadie: las once reglas miden que todo QUEPA y ninguna mira a que
+#  distancia queda de lo de al lado.
+#
+#  Medido antes de escribir un liston, que es lo que separa esto de inventarse
+#  uno: **227 huecos verticales entre hermanos y quince valores distintos** —0,
+#  4, 6, 8, 10, 13, 14, 16, 19, 22, 24, 25, 28, 29, 33—. Los de la escala de
+#  `Metrics` (4, 8, 12, 16, 24) son mayoria y el resto es lo que deja un
+#  `removeFromTop` despues de repartir, que no es un fallo: una fila elastica
+#  acaba donde acaba.
+#
+#  Un numero que no separa el fallo del caso legitimo NO puede ser un veredicto
+#  —es la leccion de TARJETA, y antes la del porcentaje de iconos— asi que se
+#  publica para que una regresion se vea como un numero que cambia. Con
+#  poblacion delante se decidira el liston en otra tanda.
+def mide_aire(rows):
+    aire = collections.Counter()
+    comps = [r for r in rows if "path" in r and r.get("hit") and r["w"] > 0 and r["h"] > 0]
+    fam = collections.defaultdict(list)
+    for r in comps:
+        fam[r["path"].rsplit("/", 1)[0]].append(r)
+    for hermanos in fam.values():
+        if len(hermanos) < 2:
+            continue
+        #  Una FILA son los hermanos que comparten banda de y: el aire entre dos
+        #  tapas de la misma fila es horizontal y lo decide `layoutModuleBar`
+        #  repartiendo por el texto, asi que no es el aire del que se habla.
+        filas = []
+        for r in sorted(hermanos, key=lambda r: (r["y"], r["x"])):
+            if filas and r["y"] < filas[-1][1]:
+                filas[-1][1] = max(filas[-1][1], r["y"] + r["h"])
+            else:
+                filas.append([r["y"], r["y"] + r["h"]])
+        for a, b in zip(filas, filas[1:]):
+            hueco = b[0] - a[1]
+            #  Por encima de un dedo ya no es aire entre filas, es una fila que
+            #  falta o una banda pintada en medio.
+            if 0 <= hueco <= 48:
+                aire[hueco] += 1
+    return aire
 
 
 #  LO QUE UNA TARJETA PIDE Y LO QUE HAY. Se imprime, no se juzga.
@@ -465,7 +542,7 @@ def _corre_y_juzga(combo, casa):
     size, lang, sheet = combo
     rows = run(size, lang, sheet, casa)
     if rows is None:
-        return [], None, (0, 0)
+        return [], None, (0, 0), collections.Counter()
     #  CUANTAS TAPAS LLEVAN DIBUJO Y CUANTAS LO ENSENAN.
     #
     #  El icono es el adorno y la palabra la funcion, asi que donde no caben
@@ -476,7 +553,8 @@ def _corre_y_juzga(combo, casa):
     pintados = sum (1 for r in rows if r.get ("icono"))
     return (judge(rows, size, lang, sheet) + judge_tapado(rows, size, lang, sheet)
                                            + judge_tarjeta(rows, size, lang, sheet),
-            (rows if lang in ("es", "en") else []), (puestos, pintados))
+            (rows if lang in ("es", "en") else []), (puestos, pintados),
+            mide_aire(rows))
 
 
 def paginas():
@@ -514,6 +592,7 @@ def main():
     allf = []
     pairs = collections.defaultdict(dict)
     iconos = collections.defaultdict(lambda: [0, 0])
+    aire   = collections.Counter()
     runs = fails = 0
 
     combos = [(size, lang, sheet)
@@ -541,9 +620,10 @@ def main():
                 futuros[pool.submit(corre_y_juzga, c, casa)] = c
             for fut in concurrent.futures.as_completed(futuros):
                 size, lang, sheet = futuros[fut]
-                findings, rows, ico = fut.result()
+                findings, rows, ico, aireRun = fut.result()
                 iconos[size][0] += ico[0]
                 iconos[size][1] += ico[1]
+                aire += aireRun
                 runs += 1
                 if rows is None:
                     fails += 1
@@ -592,6 +672,14 @@ def main():
         if p:
             print("  %-9s %4d de %4d   %3.0f%%" % (size, d, p, 100.0 * d / p))
 
+    #  Y EL AIRE ENTRE FILAS HERMANAS, que se imprime y no se juzga. Ver
+    #  mide_aire: quince valores distintos y ningun liston con poblacion que lo
+    #  respalde todavia.
+    print()
+    print("aire vertical entre filas hermanas (%d huecos, %d valores distintos):"
+          % (sum(aire.values()), len(aire)))
+    print("  " + "   ".join("%d px x%d" % (h, n) for h, n in sorted(aire.items())))
+
     #  Y el residuo al cambiar de pagina, que ninguna de las 476 corridas de
     #  arriba puede ver porque cada una abre una ficha y se va.
     resto = paginas()
@@ -616,7 +704,8 @@ def main():
     #  -seis efectos por cuarenta no caben en un Fold cerrado- y esta medido en
     #  CLAUDE.md con su cifra. Lo que no puede pasar de cero es lo demas.
     duros = [k for k in ("TRUNC", "SQUEEZE", "OVERLAP", "OFFSCREEN", "CELDA",
-                         "UNTRANSLATED", "CERO", "TAPADO", "SPRITE", "CRASH") if by.get(k)]
+                         "UNTRANSLATED", "CERO", "TAPADO", "SPRITE", "CORTADO", "PISADO",
+                         "CRASH") if by.get(k)]
     if resto:
         duros.append("RESIDUO")
     print()
