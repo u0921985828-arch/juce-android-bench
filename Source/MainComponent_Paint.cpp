@@ -314,7 +314,8 @@ void MainComponent::paint (juce::Graphics& g)
         //  del pad y la palabra son una sola cosa y van juntos a la izquierda-
         //  y no se elide, se cae a la palabra corta.
         const auto cajaTitulo = juce::Rectangle<int> (xTitulo, h.getY(), wTitulo + 2, h.getHeight());
-        UiAudit::rotulo (cajaTitulo, nombre, "titulo", wTitulo, g.getCurrentFont().getHeight());
+        UiAudit::rotulo (cajaTitulo, nombre, "titulo", wTitulo,
+                         UiAudit::tintaDe (g.getCurrentFont(), nombre));
         g.drawText (nombre, cajaTitulo, juce::Justification::centredLeft);
 
         rule ((float) h.getX(), (float) h.getRight(), (float) h.getBottom() + 2.0f, 0.22f);
@@ -366,7 +367,7 @@ void MainComponent::paint (juce::Graphics& g)
                 //  script, que solo sabria medir una de las cuatro
                 //  compilaciones.
                 UiAudit::rotulo (cajaProy, texto, "proyecto", 0,
-                                 g.getCurrentFont().getHeight());
+                                 UiAudit::tintaDe (g.getCurrentFont(), texto));
                 g.drawText (texto, cajaProy, juce::Justification::bottomRight, true);
             }
         }
@@ -2268,7 +2269,7 @@ void MainComponent::paintVstSheetContent (juce::Graphics& g)
                          txt, "dato",
                          (int) std::ceil (juce::GlyphArrangement::getStringWidth (
                                               g.getCurrentFont(), txt)),
-                         g.getCurrentFont().getHeight());
+                         UiAudit::tintaDe (g.getCurrentFont(), txt));
         g.drawText (txt, vstPreArea, juce::Justification::centred, true);
     }
 

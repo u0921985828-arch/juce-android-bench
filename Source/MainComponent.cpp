@@ -5479,7 +5479,7 @@ void MainComponent::apunta (juce::Graphics& g, juce::Rectangle<int> caja,
     //  uno que cabe justo y no habia forma de preguntar si se lee entero. Ver
     //  UiAudit::Rotulo.
     UiAudit::rotulo (real, texto, tipo, (int) std::ceil (pide * minimo),
-                     g.getCurrentFont().getHeight());
+                     UiAudit::tintaDe (g.getCurrentFont(), texto));
 }
 
 //  EL MODO ES UNO Y LAS TAPAS SON TRES.

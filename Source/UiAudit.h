@@ -125,8 +125,16 @@ namespace UiAudit
     //  Para los rotulos que son componentes eso lo miden TRUNC y SQUEEZE desde
     //  hace tandas; los pintados -que son media pantalla en esta app- no los
     //  miraba nadie. `pide` es el ancho a la fuente con la que se dibuja y
-    //  `letra` su altura, que es la otra mitad: una banda mas baja que su
-    //  propia letra recorta el texto por arriba y por abajo.
+    //  `tinta` el alto que de verdad se pinta, que es la otra mitad: una banda
+    //  mas baja que el texto lo recorta por arriba y por abajo.
+    //
+    //  Y ES LA TINTA Y NO `Font::getHeight()`, que fue la primera version y
+    //  saco 1456 casos con UN SOLO rotulo distinto - la firma de un liston mal
+    //  puesto. `getHeight` es ascendente mas descendente, o sea el hueco que
+    //  una linea de texto reserva; lo que se RECORTA es la caja de los glifos,
+    //  y en un rotulo de mayusculas sin descendentes esos dos numeros se
+    //  separan un tercio. «ZATI SAMPLER» pedia 26.0 en una banda de 24 y se ve
+    //  entero. Primero se duda de la prueba.
     //  `pide` es el ancho MINIMO al que ese texto se sigue leyendo entero, ya
     //  con el apreton aplicado, y CERO significa «no se juzga»: un rotulo que
     //  se elide a proposito -el nombre del proyecto- se corta con puntos
@@ -134,7 +142,7 @@ namespace UiAudit
     //  quien lo dibuja y no una lista de textos en el script, que solo sabria
     //  medir una de las cuatro compilaciones -es el argumento de la marca
     //  `valor` de los iconos-.
-    struct Rotulo { int x, y, w, h; juce::String texto, tipo; int capa; int pide; float letra; };
+    struct Rotulo { int x, y, w, h; juce::String texto, tipo; int capa; int pide; float tinta; };
     inline std::vector<Rotulo> rotulos;
 
     //  EN QUE CAPA SE ESTA PINTANDO.
@@ -161,13 +169,23 @@ namespace UiAudit
     //  por que llevar la cuenta de lo que dibuja.
     inline bool midiendo = false;
 
+    //  EL ALTO QUE DE VERDAD SE PINTA. Una sola cuenta y en el sitio que la
+    //  sabe: los cuatro sitios que apuntan un rotulo la pedirian igual, y
+    //  escrita cuatro veces seria la de ayer el dia que cambie.
+    inline float tintaDe (const juce::Font& f, const juce::String& t)
+    {
+        juce::GlyphArrangement ga;
+        ga.addLineOfText (f, t, 0.0f, 0.0f);
+        return ga.getBoundingBox (0, -1, true).getHeight();
+    }
+
     inline void rotulo (juce::Rectangle<int> r, const juce::String& t, const char* tipo,
-                        int pide = 0, float letra = 0.0f)
+                        int pide = 0, float tinta = 0.0f)
     {
         if (! midiendo || t.isEmpty()) return;
         r += origenPintado;
         rotulos.push_back ({ r.getX(), r.getY(), r.getWidth(), r.getHeight(), t, tipo, capaActual,
-                             pide, letra });
+                             pide, tinta });
     }
 
     //  LOS PANELES DE GRUPO, apuntados igual que los rotulos y por lo mismo:
@@ -867,7 +885,7 @@ namespace UiAudit
                       << ",\"w\":" << r.w << ",\"h\":" << r.h
                       << ",\"capa\":" << r.capa
                       << ",\"pide\":" << r.pide
-                      << ",\"letra\":" << juce::String (r.letra, 2) << "}" << std::endl;
+                      << ",\"tinta\":" << juce::String (r.tinta, 2) << "}" << std::endl;
 
         for (const auto& p : paneles)
             std::cout << "{\"panel\":1"
