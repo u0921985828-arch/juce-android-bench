@@ -117,7 +117,24 @@ namespace UiAudit
     //  Se apuntan aqui con su rectangulo y su TIPO, que es lo que permite
     //  levantar el plano de una pantalla: titulo, seccion, subseccion. Sin el
     //  tipo serian una lista de palabras sueltas y el orden no se podria juzgar.
-    struct Rotulo { int x, y, w, h; juce::String texto, tipo; int capa; };
+    //  Y LO QUE EL TEXTO PIDE, ademas de lo que ocupa.
+    //
+    //  `w` es lo que el rotulo OCUPA -acotado a la banda que le dieron- asi que
+    //  un texto que no cabe sale con el mismo `w` que uno que cabe justo: la
+    //  pregunta «¿se lee entero?» no se podia hacer sobre un rotulo PINTADO.
+    //  Para los rotulos que son componentes eso lo miden TRUNC y SQUEEZE desde
+    //  hace tandas; los pintados -que son media pantalla en esta app- no los
+    //  miraba nadie. `pide` es el ancho a la fuente con la que se dibuja y
+    //  `letra` su altura, que es la otra mitad: una banda mas baja que su
+    //  propia letra recorta el texto por arriba y por abajo.
+    //  `pide` es el ancho MINIMO al que ese texto se sigue leyendo entero, ya
+    //  con el apreton aplicado, y CERO significa «no se juzga»: un rotulo que
+    //  se elide a proposito -el nombre del proyecto- se corta con puntos
+    //  suspensivos y eso se lee como un nombre largo, no como un fallo. Lo dice
+    //  quien lo dibuja y no una lista de textos en el script, que solo sabria
+    //  medir una de las cuatro compilaciones -es el argumento de la marca
+    //  `valor` de los iconos-.
+    struct Rotulo { int x, y, w, h; juce::String texto, tipo; int capa; int pide; float letra; };
     inline std::vector<Rotulo> rotulos;
 
     //  EN QUE CAPA SE ESTA PINTANDO.
@@ -144,11 +161,13 @@ namespace UiAudit
     //  por que llevar la cuenta de lo que dibuja.
     inline bool midiendo = false;
 
-    inline void rotulo (juce::Rectangle<int> r, const juce::String& t, const char* tipo)
+    inline void rotulo (juce::Rectangle<int> r, const juce::String& t, const char* tipo,
+                        int pide = 0, float letra = 0.0f)
     {
         if (! midiendo || t.isEmpty()) return;
         r += origenPintado;
-        rotulos.push_back ({ r.getX(), r.getY(), r.getWidth(), r.getHeight(), t, tipo, capaActual });
+        rotulos.push_back ({ r.getX(), r.getY(), r.getWidth(), r.getHeight(), t, tipo, capaActual,
+                             pide, letra });
     }
 
     //  LOS PANELES DE GRUPO, apuntados igual que los rotulos y por lo mismo:
@@ -846,7 +865,9 @@ namespace UiAudit
                       << ",\"tipo\":\"" << r.tipo << "\""
                       << ",\"x\":" << r.x << ",\"y\":" << r.y
                       << ",\"w\":" << r.w << ",\"h\":" << r.h
-                      << ",\"capa\":" << r.capa << "}" << std::endl;
+                      << ",\"capa\":" << r.capa
+                      << ",\"pide\":" << r.pide
+                      << ",\"letra\":" << juce::String (r.letra, 2) << "}" << std::endl;
 
         for (const auto& p : paneles)
             std::cout << "{\"panel\":1"

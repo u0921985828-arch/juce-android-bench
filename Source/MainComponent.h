@@ -808,8 +808,12 @@ private:
     void paintSeqSheetContent (juce::Graphics& g);
     //  Ver el .cpp: apunta lo que un texto OCUPA para que el banco lo vea,
     //  sin dibujarlo. pintaTitulo es apunta + drawText.
+    //  `minimo` es el ancho por debajo del cual ese texto deja de leerse
+    //  entero, en fraccion de lo que pide: 1.0 para un `drawText` -por debajo
+    //  se corta-, el factor de apreton para un `drawFittedText`, y CERO para lo
+    //  que se elide a proposito, que es «no lo juzgues». Ver UiAudit::Rotulo.
     void apunta (juce::Graphics& g, juce::Rectangle<int> caja,
-                 const juce::String& texto, const char* tipo);
+                 const juce::String& texto, const char* tipo, float minimo = 1.0f);
     void ponTransporte (bool on);
     void ponModoCancion (bool on);
     //  `apretar` a cero deja el `drawText` de siempre; por encima de cero se

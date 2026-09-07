@@ -314,7 +314,7 @@ void MainComponent::paint (juce::Graphics& g)
         //  del pad y la palabra son una sola cosa y van juntos a la izquierda-
         //  y no se elide, se cae a la palabra corta.
         const auto cajaTitulo = juce::Rectangle<int> (xTitulo, h.getY(), wTitulo + 2, h.getHeight());
-        UiAudit::rotulo (cajaTitulo, nombre, "titulo");
+        UiAudit::rotulo (cajaTitulo, nombre, "titulo", wTitulo, g.getCurrentFont().getHeight());
         g.drawText (nombre, cajaTitulo, juce::Justification::centredLeft);
 
         rule ((float) h.getX(), (float) h.getRight(), (float) h.getBottom() + 2.0f, 0.22f);
@@ -358,7 +358,15 @@ void MainComponent::paint (juce::Graphics& g)
                 //  tres campos, o sea exactamente el caso en que eso importa:
                 //  si se metiera debajo de algo no fallaria, se publicaria.
                 const auto cajaProy = juce::Rectangle<int> (nameX, h.getY(), nameW, h.getHeight());
-                UiAudit::rotulo (cajaProy, texto, "proyecto");
+                //  Marcada como ELIDIBLE: esta linea se corta con puntos
+                //  suspensivos a proposito -un nombre de proyecto no tiene
+                //  largo con el que contar, y cortado a media letra se lee como
+                //  un fallo mientras que con la elipsis se lee como un nombre
+                //  largo-. Lo dice la app y no una lista de rotulos en el
+                //  script, que solo sabria medir una de las cuatro
+                //  compilaciones.
+                UiAudit::rotulo (cajaProy, texto, "proyecto", 0,
+                                 g.getCurrentFont().getHeight());
                 g.drawText (texto, cajaProy, juce::Justification::bottomRight, true);
             }
         }
@@ -2257,7 +2265,10 @@ void MainComponent::paintVstSheetContent (juce::Graphics& g)
                                       (int) std::ceil (juce::GlyphArrangement::getStringWidth (
                                                            g.getCurrentFont(), txt)));
         UiAudit::rotulo (vstPreArea.withSizeKeepingCentre (usado, vstPreArea.getHeight()),
-                         txt, "dato");
+                         txt, "dato",
+                         (int) std::ceil (juce::GlyphArrangement::getStringWidth (
+                                              g.getCurrentFont(), txt)),
+                         g.getCurrentFont().getHeight());
         g.drawText (txt, vstPreArea, juce::Justification::centred, true);
     }
 

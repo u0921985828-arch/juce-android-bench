@@ -5465,15 +5465,21 @@ void MainComponent::releaseResources()
 //  la x sin que 896 corridas digan nada: es exactamente como la mesa estuvo
 //  titulada "MIX" a mano durante meses.
 void MainComponent::apunta (juce::Graphics& g, juce::Rectangle<int> caja,
-                            const juce::String& texto, const char* tipo)
+                            const juce::String& texto, const char* tipo, float minimo)
 {
     auto real = caja;
-    const int usado = juce::jmin (caja.getWidth(),
-                                  (int) std::ceil (juce::GlyphArrangement::getStringWidth (
-                                                       g.getCurrentFont(), texto)));
+    const int pide  = (int) std::ceil (juce::GlyphArrangement::getStringWidth (
+                                           g.getCurrentFont(), texto));
+    const int usado = juce::jmin (caja.getWidth(), pide);
     if (Lang::isRightToLeft (Lang::current())) real = real.removeFromRight (usado);
     else                                       real = real.removeFromLeft (usado);
-    UiAudit::rotulo (real, texto, tipo);
+
+    //  Y SE APUNTA LO QUE PIDE, ademas de lo que ocupa. `usado` esta acotado a
+    //  la banda, asi que un texto que no cabe salia con el mismo rectangulo que
+    //  uno que cabe justo y no habia forma de preguntar si se lee entero. Ver
+    //  UiAudit::Rotulo.
+    UiAudit::rotulo (real, texto, tipo, (int) std::ceil (pide * minimo),
+                     g.getCurrentFont().getHeight());
 }
 
 //  EL MODO ES UNO Y LAS TAPAS SON TRES.
@@ -5551,7 +5557,7 @@ void MainComponent::pintaTitulo (juce::Graphics& g, juce::Rectangle<int> caja,
     //  control. "AJUSTES - AUDIO" pasaba por debajo de la tapa de CUADRAR y por
     //  debajo de la x, y ninguna de las reglas del banco podia verlo porque un
     //  rotulo pintado no es un componente y la banda solapaba de todas formas.
-    apunta (g, caja, texto, tipo);
+    apunta (g, caja, texto, tipo, elipsis ? 0.0f : (apretar > 0.0f ? apretar : 1.0f));
 
     //  Y APRETAR ES DE ESTA FUNCION, no de quien la llama. Habia CUATRO formas
     //  de pintar el titulo de una ficha -esta, `UiAudit::rotulo` + `drawText`
