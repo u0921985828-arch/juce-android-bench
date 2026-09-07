@@ -50,8 +50,8 @@
 #  8.13 mientras el .jucer pedia 8.11.1. Ahi murio la segunda corrida.
 #
 #  Lo que hace que esto sea de esta casa y no mala suerte: el numero llevaba
-#  desde que se escribio sin efecto ninguno, y GOOGLE-PLAY.md y el comentario
-#  del workflow lo citaban como si mandara. Un numero que nadie lee es una
+#  desde que se escribio sin efecto ninguno, y el comentario del workflow lo
+#  citaba como si mandara. Un numero que nadie lee es una
 #  afirmacion sin medida, que es lo que este banco lleva cazando desde el
 #  principio.
 #

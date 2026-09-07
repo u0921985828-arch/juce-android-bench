@@ -336,7 +336,7 @@ public:
     //  piano.
     //
     //  Solo habia mouseDown: escribir ocho compases eran ocho toques, y la
-    //  regla escrita en CLAUDE.md dice que esta ficha no se desplaza
+    //  regla de la casa dice que esta ficha no se desplaza
     //  precisamente porque "se pinta con el dedo arrastrado". O faltaba el
     //  gesto o sobraba el argumento; faltaba el gesto.
     //

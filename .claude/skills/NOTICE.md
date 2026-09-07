@@ -1,5 +1,9 @@
 # De donde salen estas habilidades
 
+*(Este fichero nombra `CLAUDE.md`, que es el cuaderno de bitacora de la casa y
+manda sobre todo lo de aqui. No se versiona: vive en el disco de quien trabaja
+en esto y no en el repositorio, asi que un clon limpio no lo trae.)*
+
 `banco` es de la casa. Las otras son de fuera, copiadas **sin tocar** para
 poder actualizarlas desde su origen:
 

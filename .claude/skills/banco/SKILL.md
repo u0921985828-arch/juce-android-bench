@@ -7,8 +7,8 @@ description: Correr el banco de pruebas de ZATI y juzgar lo que sale. Usar SIEMP
 
 Nada se entrega sin medirlo. Este proyecto tiene banco propio y existe porque
 cada fallo serio que ha aparecido lo encontro una medida y no una captura de
-pantalla. `CLAUDE.md` cuenta QUE encontro cada prueba; esto es como se corren y
-como se juzgan.
+pantalla. El cuaderno de bitacora cuenta QUE encontro cada prueba; esto es
+como se corren y como se juzgan.
 
 ## Antes de nada
 
@@ -88,7 +88,7 @@ codigo intacto. Una medida de tiempo con la maquina ocupada no es una medida.
 **Y todas devuelven codigo de salida.** `expo.py`, `session.py` y `apk.py` no lo
 hacian: imprimian sus numeros y terminaban con cero pasara lo que pasara, o sea
 que los juzgaba un ojo humano leyendo texto. `expo.py` no cuenta TOUCH -esa
-escalera esta medida y escrita en CLAUDE.md- y si todo lo demas.
+escalera esta medida y escrita- y si todo lo demas.
 
 ## Como se juzga
 

@@ -8,7 +8,7 @@ cmake_minimum_required(VERSION 3.22)
 
 #  La version la manda Zati.jucer, que es lo que compila la APK: aqui se
 #  repite y el dia que una cambie sin la otra el escritorio y el telefono dicen
-#  cosas distintas. Ver GOOGLE-PLAY.md.
+#  cosas distintas.
 project(Zati VERSION 1.0.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)

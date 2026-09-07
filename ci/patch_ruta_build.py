@@ -9,10 +9,9 @@ asi que no es informacion de depuracion que se pueda quitar despues, son
 literales de verdad.
 
 No es un fallo de funcionamiento y por eso duro: nadie miraba lo que va ESCRITO
-dentro del paquete. Lo que filtra es el nombre viejo del proyecto, que
-`GOOGLE-PLAY.md` 1.5 regla 2 llama «el mayor riesgo que ha tenido: misma
-categoria, mismo numero, mismo comprador que el SP-404», dentro del fichero que
-se publica. `Tests/marcas.py` no puede verlo porque mira `Source/`, y `Source/`
+dentro del paquete. Lo que filtra es el nombre viejo del proyecto, que la regla
+2 de `Tests/marcas.md` llama «el mayor riesgo que ha tenido: misma categoria,
+mismo numero, mismo comprador», dentro del fichero que se publica. `Tests/marcas.py` no puede verlo porque mira `Source/`, y `Source/`
 esta limpio.
 
 `-ffile-prefix-map=<raiz>=.` deja esos `__FILE__` en ruta relativa sin tocar una

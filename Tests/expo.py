@@ -701,8 +701,8 @@ def main():
     #  mas cita esa regla.
     #
     #  TOUCH no cuenta: el dedo por debajo del minimo es una escalera conocida
-    #  -seis efectos por cuarenta no caben en un Fold cerrado- y esta medido en
-    #  CLAUDE.md con su cifra. Lo que no puede pasar de cero es lo demas.
+    #  -seis efectos por cuarenta no caben en un Fold cerrado- y esta medido con
+    #  su cifra. Lo que no puede pasar de cero es lo demas.
     duros = [k for k in ("TRUNC", "SQUEEZE", "OVERLAP", "OFFSCREEN", "CELDA",
                          "UNTRANSLATED", "CERO", "TAPADO", "SPRITE", "CORTADO", "PISADO",
                          "CRASH") if by.get(k)]

@@ -1,10 +1,8 @@
-# Zati Sampler — sampler nativo para Android (JUCE / C++) · por ARTiFACTS
+# Sampler nativo para Android (JUCE / C++)
 
-En la tienda y bajo el icono se llama **Zati Sampler**. El proyecto, las rutas
-de compilación y la marca serigrafiada en la cara de la máquina siguen diciendo
-**ZATI**, y el identificador de Android es `com.artifacts.zati` — ése no se
-toca: cambiarlo sería otra aplicación distinta, sin actualización posible desde
-ésta.
+Código de trabajo. No es una plantilla ni un ejemplo: se publica para que los
+runners de CI puedan compilarlo, y no lleva licencia — todos los derechos
+reservados.
 
 Un sampler de 64 pads en cuatro bancos escrito en C++ sobre JUCE 8, con motor propio y camino de
 audio de baja latencia por Oboe/AAudio. Nació como prueba de latencia contra un
@@ -132,14 +130,12 @@ significa nada:
 El workflow es manual (`workflow_dispatch`). Construye el Projucer, genera el
 proyecto Gradle desde `Zati.jucer`, compila debug y release y los cuelga de la
 etiqueta `apk-latest`. Firma con la clave de subida si están configurados los
-secretos, y con la de debug si no — ver `GOOGLE-PLAY.md`.
+secretos, y con la de debug si no.
 
 ## Antes de publicar
 
-Tres documentos, y ninguno es opcional:
+Dos documentos, y ninguno es opcional:
 
-- **`GOOGLE-PLAY.md`** — qué falta para subirla, separado entre lo que se
-  arregla en el repositorio y lo que sólo puedes hacer tú.
 - **`THIRD-PARTY.md`** — qué lleva dentro y con qué licencia. La decisión de
   JUCE (GPLv3 o licencia comercial) se toma **antes** del primer release.
 - **`PRIVACY.md`** — la política de privacidad, lista para publicar y enlazar
@@ -158,7 +154,7 @@ sí lo sería si imitara un aparato existente. Las reglas que sigue el proyecto:
 - **Sin "404" ni terminología de terceros** en cadenas visibles, en el
   identificador de paquete (`com.artifacts.zati`) ni en la ficha de la tienda.
   **Medido** en cada corrida del banco: `Tests/marcas.py` lee las reglas 1 y 2
-  de `GOOGLE-PLAY.md` §1.6 —del propio documento, para que no sean dos listas—
+  de `Tests/marcas.md` —del propio documento, para que no sean dos listas—
   y las contrasta contra `Source/`, contra `Zati.jucer` y contra los nombres
   que `fxDefs` tiene de verdad. Era una afirmación que no comprobaba nadie, y
   era falsa: había trece nombres de pad acabados en `808`.

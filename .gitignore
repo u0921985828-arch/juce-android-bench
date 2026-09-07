@@ -64,3 +64,13 @@ __pycache__/
 
 #  Las maquetas: la salida se rehace en un minuto, la fuente es el script.
 /maquetas/
+
+#  LOS CUATRO DOCUMENTOS INTERNOS. El cuaderno de bitacora (CLAUDE.md, 534 KB),
+#  el papeleo de la tienda, el estudio de producto y el informe de la feria son
+#  de trabajo y no de codigo: viven en el disco de quien trabaja en esto y no
+#  en el repositorio. La lista de marcas ajenas SI se versiona, porque una
+#  prueba la lee: vive en Tests/marcas.md.
+/CLAUDE.md
+/GOOGLE-PLAY.md
+/ESTUDIO-2026.md
+/FERIA-2026.md

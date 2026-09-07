@@ -14,9 +14,8 @@ name: Las medidas que nadie mira
 #      proporcion entre filas y nunca el valor.
 #
 #  Esa razon sigue siendo buena y no se toca. Lo que estaba mal es lo otro: que
-#  las tres dependieran de que alguien se acordara. `FERIA-2026.md` §8.3 lo
-#  llama por su nombre -«la lista de los que nadie mira sigue teniendo tres
-#  entradas»- y esta casa ya lo ha pagado dos veces: `Tests/planos.py` llevo
+#  las tres dependieran de que alguien se acordara -«la lista de los que nadie
+#  mira sigue teniendo tres entradas»- y esta casa ya lo ha pagado dos veces: `Tests/planos.py` llevo
 #  TANDAS en rojo sin que nadie lo corriera, y el analizador del EQ repintaba
 #  para siempre con `cpu.py` diciendo «1». Las dos las cazo alguien
 #  ejecutandolo a mano.

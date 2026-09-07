@@ -57,8 +57,8 @@ TABLET_SHOTS = {"", "sec", "pad2", "mix"}
 #
 #  Esto generaba capturas en es/en mientras la app se compila en cuatro
 #  (Source/Lang.h). Publicar la ficha en chino o en arabe era publicarla SIN
-#  capturas, y son justo los dos mercados que ESTUDIO-2026.md llama «lo mas
-#  barato y lo mas infravalorado de toda la lista»: cuatro idiomas es la unica
+#  capturas, y son justo los dos mercados mas baratos y mas infravalorados de
+#  la lista: cuatro idiomas es la unica
 #  ventaja de catalogo que este producto tiene sobre el que manda.
 #
 #  Y en arabe la maqueta va espejada, asi que no son las mismas capturas con

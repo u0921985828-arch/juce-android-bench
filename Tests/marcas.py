@@ -2,11 +2,9 @@
 # ============================================================================
 #  NINGUNA MARCA AJENA EN LO QUE SE PUBLICA.
 #
-#  GOOGLE-PLAY.md §1.4 lo AFIRMA -«se ha comprobado que no hay ni una mencion a
-#  SP-404, Roland, Akai, MPC ni Koala en Source/»- y §1.6 lo prohibe «ni en
-#  codigo, ni en comentarios, ni en la ficha, ni en capturas». Las dos frases
-#  llevaban ahi desde el principio y no las comprobaba nadie, asi que eran
-#  falsas: el banco B tenia TRECE nombres de pad visibles con `808` -BD 808,
+#  `Tests/marcas.md` lo prohibe «ni en codigo, ni en comentarios, ni en la
+#  ficha, ni en capturas», y esa frase llevaba ahi desde el principio -en otro
+#  documento- sin que la comprobara nadie, asi que era falsa: el banco B tenia TRECE nombres de pad visibles con `808` -BD 808,
 #  SD 808, CH 808...-, un preset «808 SUB» en la tabla de instrumentos, dos
 #  comentarios que nombraban la MPC y diecinueve mas que nombraban el modelo.
 #  Una afirmacion que nadie mide es una linea que imprime OK, y esta ademas es
@@ -14,8 +12,8 @@
 #  formulario que retira la ficha sin juicio.
 #
 #  LA LISTA SALE DEL DOCUMENTO, no de aqui. Escribirla otra vez serian dos
-#  reglas: el dia que alguien anadiera una marca a GOOGLE-PLAY.md, este banco
-#  seguiria mirando las de ayer. Se leen las reglas 1 y 2 de §1.6 y se saca de
+#  reglas: el dia que alguien anadiera una marca a `Tests/marcas.md`, este
+#  banco seguiria mirando las de ayer. Se leen las reglas 1 y 2 y se saca de
 #  ellas lo que esta prohibido; si el documento cambia de forma y no se puede
 #  leer, esto FALLA en vez de dar verde con la lista vacia -que es como una
 #  prueba de esta clase se muere sin que nadie se entere-.
@@ -29,7 +27,14 @@
 # ============================================================================
 import os, re, sys
 
-ROOT = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
+AQUI = os.path.dirname (os.path.abspath (__file__))
+ROOT = os.path.dirname (AQUI)
+
+#  El dueno de la lista. Vive al lado de la prueba y dentro del repositorio,
+#  que es lo que hace que la prueba pueda leerlo: la lista estuvo en un
+#  documento de producto que hoy no se versiona, y una prueba que depende de un
+#  fichero que no esta es una prueba que no corre.
+DOC = os.path.join (AQUI, "marcas.md")
 
 #  Lo que se publica: el codigo que entra en el binario y el proyecto de
 #  Android, que es donde viven el nombre de la app y el del paquete.
@@ -45,7 +50,7 @@ FUERA = ()
 
 
 def prohibido():
-    """Las reglas 1 y 2 de GOOGLE-PLAY.md §1.6, leidas del documento.
+    """Las reglas 1 y 2 de `Tests/marcas.md`, leidas del documento.
 
     Dos regex ANCLADAS en las palabras del propio documento y no un barrido de
     mayusculas: el primer intento cogia la seccion entera y se traia la regla 3
@@ -54,7 +59,10 @@ def prohibido():
     forma, esto devuelve vacio y la prueba FALLA en vez de dar verde con la
     lista corta, que es como una prueba de esta clase se muere sin ruido.
     """
-    t = open (os.path.join (ROOT, "GOOGLE-PLAY.md"), encoding="utf-8").read()
+    try:
+        t = open (DOC, encoding="utf-8").read()
+    except OSError:
+        return None, None
 
     r1 = re.search (r"\*\*Nombres de modelo ajenos\.\*\*(.*?)\n\s*\d\. \*\*", t, re.S)
     r2 = re.search (r"Nada de ([^.]*?) en el nombre", t, re.S)
@@ -90,7 +98,7 @@ def ficheros():
 def main():
     palabras, nums = prohibido()
     if not palabras or not nums:
-        print ("FALLA  no puedo leer las reglas 1 y 2 de GOOGLE-PLAY.md §1.6: "
+        print ("FALLA  no puedo leer las reglas 1 y 2 de Tests/marcas.md: "
                "sin lista no hay prueba")
         return 1
 
@@ -126,7 +134,7 @@ def main():
 
     #  Y LOS NOMBRES DE LOS EFECTOS, por las MISMAS dos reglas.
     #
-    #  La regla 3 de §1.6 enumeraba los nuestros a mano y se quedo vieja DOS
+    #  La regla 3 enumeraba los nuestros a mano y se quedo vieja DOS
     #  veces -dijo ISO y CRSH cuando el codigo decia FLT y BIT, y luego se
     #  quedo en seis con once en la tabla-. Una copia de `fxDefs` escrita en un
     #  documento es una copia que se queda vieja; el criterio no. Asi que el

@@ -4,10 +4,10 @@ Qué hay hoy en el código y qué hay que hacer con ello, en orden. Todo lo que 
 afirma aquí está comprobado contra el árbol en `555b1f9`, con ruta y cifra; lo
 que es opinión va marcado.
 
-Esto **no** repite lo que ya está escrito: `CLAUDE.md` cuenta qué encontró cada
-prueba, `ESTUDIO-2026.md` es el estudio de producto y `GOOGLE-PLAY.md` lo que
-sólo puede hacer una persona con la cuenta. De los bloqueos de aquel estudio,
-`targetSDK` 36 y MIDI **ya están hechos**.
+Esto **no** repite lo que ya está escrito: el cuaderno de bitácora cuenta qué
+encontró cada prueba, y el estudio de producto y el papeleo de la tienda viven
+fuera del repositorio. De los bloqueos de aquel estudio, `targetSDK` 36 y MIDI
+**ya están hechos**.
 
 Tamaño, para calibrar: `Source/` son 34 928 líneas, de las que `MainComponent.cpp`
 son 15 994 (9 558 de código y 5 022 de comentario). `resized()` es **una sola
@@ -31,8 +31,8 @@ suspender, cualquier arreglo de los otros se puede volver a perder sin ruido.
 
 > **Estado: las cinco están hechas**, y con ellas el resto de este documento.
 > Se deja como estaba porque es el DIAGNÓSTICO y no el estado — es la misma
-> decisión que `ESTUDIO-2026.md` tomó con su bloque de `androidTargetSDK`—, y
-> lo que encontró cada una y con qué cifra vive en `CLAUDE.md`. Lo que no puede
+> decisión que el estudio de producto tomó con su bloque de `androidTargetSDK`—,
+> y lo que encontró cada una y con qué cifra vive en el cuaderno de bitácora. Lo que no puede
 > quedarse es sin decir que ya no es verdad: el banco devuelve código de salida
 > en las veintitantas pruebas y corre solo en `.github/workflows/banco.yml`, el
 > `project.xml` pasa por `ProjectStore::escribeTexto`, abrir y vaciar un
@@ -73,7 +73,8 @@ es el único del repositorio y compila la APK sin correr `expo.py`, `session.py`
 **A5. Once ganchos huérfanos.** `ZATI_FUZZ`, `ZATI_PAINT`, `ZATI_CYCLE`,
 `ZATI_TRIM`, `ZATI_VU`, `ZATI_ZOOM`, `ZATI_BANK`, `ZATI_BUSY`, `ZATI_CHECK`,
 `ZATI_CHOP` y `ZATI_TOUR` existen en `Source/` y ningún script los usa — y tres
-de ellos son, según `CLAUDE.md`, la única forma de medir lo que miden. Y cinco
+de ellos son, según el cuaderno de bitácora, la única forma de medir lo que
+miden. Y cinco
 bancos (`cpu.py`, `store.py`, `clon.py`, `plano.py`, `analiza.py`) más los
 objetivos `Soak` y `Cpu` no están en la tabla de `SKILL.md`: por regla, no se
 corren nunca.
@@ -228,7 +229,7 @@ llamadas sin `T()`** (`MainComponent.cpp:513`). Sale en español en las cuatro
 compilaciones, en la confirmación de la única acción que vacía la máquina.
 
 **D7. CANCIÓN no se pinta con el dedo arrastrado.** `Playlist` sólo implementa
-`mouseDown`; `StepGrid` y `PianoRoll` tienen `mouseDrag`. Y `CLAUDE.md` justifica
+`mouseDown`; `StepGrid` y `PianoRoll` tienen `mouseDrag`. Y la casa justifica
 que esa ficha no se desplace precisamente porque «se pinta con el dedo
 arrastrado». O falta el gesto o sobra el argumento.
 
@@ -261,8 +262,8 @@ toggle corren seis veces —una por efecto— al abrir un proyecto.
 
 **E1. La app está clavada en VERTICAL y una séptima parte del banco mide
 apaisado.** `Zati.jucer` dice `androidScreenOrientation="portrait"`; `expo.py`
-mide `915x412` como una de sus siete pantallas (~128 corridas) y `CLAUDE.md`
-dedica cinco párrafos al girado. En un teléfono ese trabajo es inalcanzable; en
+mide `915x412` como una de sus siete pantallas (~128 corridas) y el cuaderno de
+bitácora dedica cinco párrafos al girado. En un teléfono ese trabajo es inalcanzable; en
 tableta y plegable con `targetSdk 36` Android **ignora** la restricción, así que
 gira justo donde nadie decidió que girara. Una de las dos cosas sobra.
 
@@ -278,8 +279,8 @@ APK», que reconstruye el zip: lo verificado no es lo que se sube. Y el `.aab`
 - **`MainComponent` es el modelo además de la vista:** ~25 arrays de 64 pads que
   espejan el estado del motor, 413 llamadas a `engine.get/set` y el fichero de
   proyecto como tercera copia. Cada parámetro nuevo hay que añadirlo en tres
-  sitios y sincronizarlo a mano. `ESTUDIO-2026.md` ya lo señala como la deuda a
-  atacar **antes** de meter stems.
+  sitios y sincronizarlo a mano. El estudio de producto ya lo señala como la
+  deuda a atacar **antes** de meter stems.
 
 ## G · Lo que está bien, para no romperlo
 
@@ -291,8 +292,8 @@ APK», que reconstruye el zip: lo verificado no es lo que se sube. Y el `.aab`
   no pueden decir que no**.
 - **La latencia ya se puede medir desde la app.** `startLatencyProbe` /
   `finishLatencyProbe` con eco por micrófono, botón MEDIR en AJUSTES y el
-  resultado pintado en milisegundos con color. `ESTUDIO-2026.md` dice que ese
-  número «nunca se ha medido» y propone una tarde con cable y OboeTester: es un
+  resultado pintado en milisegundos con color. El estudio de producto dice que
+  ese número «nunca se ha medido» y propone una tarde con cable y OboeTester: es un
   toque en el teléfono y escribirlo en el README.
 
 ---

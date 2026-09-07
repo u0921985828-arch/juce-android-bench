@@ -1,19 +1,16 @@
-# ZATI Sampler — la máquina, entera
+# La máquina, entera
 
 Sampler y groovebox nativo para Android, escrito en C++ sobre JUCE 8.
-Estudio: **ARTiFACTS**. Identificador de Android: `com.artifacts.zati`.
 
 Este documento describe **qué es la app y cómo está hecha**, una vez y en orden.
-Es la pieza que faltaba: los otros documentos del repositorio son evidencia
-(`CLAUDE.md`), defectos (`AUDITORIA-2026-08.md`), producto (`ESTUDIO-2026.md`),
-papeleo (`GOOGLE-PLAY.md`, `PRIVACY.md`, `THIRD-PARTY.md`) o proceso
+Es la pieza que faltaba: los otros documentos del repositorio son defectos
+(`AUDITORIA-2026-08.md`), papeleo (`PRIVACY.md`, `THIRD-PARTY.md`) o proceso
 (`.claude/skills/banco/SKILL.md`, `MODO_ABSOLUTO.md`). Ninguno contesta la
 pregunta estructural.
 
-Aquí no se repite `CLAUDE.md`. Allí vive **por qué** cada decisión se tomó, con
-la medida que la motivó; aquí vive **qué** hace la máquina. Una cifra aparece
-sólo cuando define el comportamiento — un suelo, un tope, un plazo, un tamaño —
-y donde hace falta el razonamiento, se cita dónde está.
+El cuaderno de bitácora —**por qué** cada decisión se tomó, con la medida que la
+motivó— no se versiona; aquí vive **qué** hace la máquina. Una cifra aparece
+sólo cuando define el comportamiento — un suelo, un tope, un plazo, un tamaño.
 
 ---
 
@@ -528,8 +525,8 @@ llega el MIDI no es el de mensajes. El hilo de audio es el único consumidor y
 vacía las dos, **en cubos separados**: con un cubo compartido, una ráfaga de la
 interfaz se comía el presupuesto del MIDI y lo tiraba sin contarlo.
 
-Y los invariantes que no se tocan, que están escritos en `CLAUDE.md` y se
-repiten aquí porque gobiernan todo lo demás:
+Y los invariantes que no se tocan, que se repiten aquí porque gobiernan todo lo
+demás:
 
 - **En el hilo de audio: cero reservas, cero cerrojos, cero E/S, cero `String`,
   cero `delete`.**
@@ -1033,9 +1030,10 @@ abreviaturas genéricas del sector —**BD, SD, CH, OH, RS, LT, MT, HT, CP, CY,
 CB, LC, MC, HC**, que además son las de sus propios recursos— y los comentarios
 dicen «una caja de ritmos» y «el proyecto anterior».
 
-Y sobre todo: `GOOGLE-PLAY.md` §1.4 lo **afirmaba** desde el principio sin que
-lo comprobara nadie. Ahora es una medida — `Tests/marcas.py` lee las reglas 1 y
-2 de §1.6 **del propio documento**, para que no sean dos listas, y las contrasta
+Y sobre todo: se **afirmaba** desde el principio sin que lo comprobara nadie.
+Ahora es una medida — `Tests/marcas.py` lee las reglas 1 y 2 de
+`Tests/marcas.md` **del propio documento**, para que no sean dos listas, y las
+contrasta
 contra `Source/` y `Zati.jucer` en cada corrida del banco. Los nombres de los
 aparatos vivían en `Tools/fabrica.py` y `Tests/clon.py`, que no entraban en el
 APK; los dos se retiraron con las grabaciones, así que `marcas.py` corre hoy
@@ -1057,8 +1055,8 @@ script: **el número que dice el subtítulo contra los títulos de capítulo que
 dibujaron**. Roto a propósito: `el subtitulo dice 10 capitulos y se dibujan 9`.
 
 **4 · Tres documentos daban tres listas de efectos.** `README.md` decía `FLT` y
-`BIT` —la buena—; `ESTUDIO-2026.md` decía `ISO` y `CRUSH`; y `GOOGLE-PLAY.md`
-decía `CRSH` y añadía un `BEAT REPEAT` que no existe, en el párrafo que
+`BIT` —la buena—; el estudio de producto decía `ISO` y `CRUSH`; y el de la
+tienda decía `CRSH` y añadía un `BEAT REPEAT` que no existe, en el párrafo que
 justifica que los nombres de efecto son seguros. La del código es la tabla
 `fxDefs`, y la regla que se les exige —abreviatura generica del sector, sin
 numero de modelo— la comprueba `Tests/marcas.py` sobre los nombres de verdad.
@@ -1127,11 +1125,9 @@ de las correcciones de arriba movió un píxel.
 | pregunta | dónde |
 |---|---|
 | ¿qué es la app y cómo está hecha? | **este fichero** |
-| ¿por qué está hecha así, y qué midió cada decisión? | `CLAUDE.md` |
 | ¿cómo se corre el banco y cómo se juzga? | `.claude/skills/banco/SKILL.md` |
 | ¿qué defectos se encontraron en agosto? | `AUDITORIA-2026-08.md` |
-| ¿dónde está el producto y qué **no** hay que hacer? | `ESTUDIO-2026.md` |
-| ¿qué falta para publicar? | `GOOGLE-PLAY.md` |
+| ¿qué marcas ajenas no pueden volver a entrar? | `Tests/marcas.md` |
 | ¿qué lleva dentro que no es nuestro? | `THIRD-PARTY.md` |
 | ¿qué se le dice a quien la instala? | `PRIVACY.md` |
 | ¿cómo se compila y qué hace el proyecto? | `README.md` |

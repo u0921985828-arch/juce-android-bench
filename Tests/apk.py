@@ -107,7 +107,8 @@ permisos = sorted({c for c in cadenas if c.startswith('android.permission.')})
 #  la escritura en los telefonos viejos- salia como texto y no como fallo, y
 #  uno nuevo que apareciera sin querer es lo que hace que Play pida una
 #  declaracion mas y la ficha se quede en revision. Son cuatro y estan
-#  decididos: ver el bloque del permiso de escritura en CLAUDE.md.
+#  decididos: el de escritura va acotado a SDK 28 en el manifiesto, que es la
+#  forma que Play acepta.
 ESPERADOS = ['android.permission.READ_EXTERNAL_STORAGE',
              'android.permission.READ_MEDIA_AUDIO',
              'android.permission.RECORD_AUDIO',
@@ -147,10 +148,10 @@ print(f"\ntamano: {len(raw)} bytes")
 #  Se midio antes de escribir la regla y hoy sale a cero, que es justo cuando
 #  hay que ponerla: una afirmacion sin medida se publica en cuanto deja de ser
 #  verdad, y este banco lleva pagandolo once veces. Ver EXPORTAR, ver la
-#  cabecera de la cara, ver GOOGLE-PLAY.md 1.4.
+#  cabecera de la cara.
 #
 #  DOS LISTAS, Y SOLO UNA VIVE AQUI. Las marcas ajenas las lee `marcas.py` de
-#  las reglas 1 y 2 de GOOGLE-PLAY.md, asi que se importan: una regla escrita
+#  las reglas 1 y 2 de `Tests/marcas.md`, asi que se importan: una regla escrita
 #  dos veces son dos reglas, y esa ya tiene dueno. La otra no esta escrita en
 #  ningun documento del repositorio y por eso se escribe aqui.
 #
@@ -185,7 +186,7 @@ IA_CON_CONTEXTO = [
 #  imprime OK. Si el barrido no encuentra el texto de la app es que no esta
 #  llegando a el -otra compresion, otro formato, un `strings` que no ve
 #  UTF-16- y entonces daria verde sin haber mirado nada. Falla en vez de pasar,
-#  igual que `marcas.py` cuando no puede leer la seccion 1.5.
+#  igual que `marcas.py` cuando no puede leer su documento.
 CONTROL = "ZATI SAMPLER"
 
 
@@ -199,7 +200,7 @@ texto = {f: cadenas (b) for f, b in miembros.items()}
 
 marcas, numeros = prohibido()
 if not marcas or not numeros:
-    escrito = ["no puedo leer las reglas 1 y 2 de GOOGLE-PLAY.md: sin lista no hay barrido"]
+    escrito = ["no puedo leer las reglas 1 y 2 de Tests/marcas.md: sin lista no hay barrido"]
 else:
     #  Las mismas guardas que `marcas.py`, y por lo mismo: letra alrededor de
     #  una palabra, y los numeros SOLO con forma de modelo, que 404 es tambien
