@@ -3207,10 +3207,18 @@ void MainComponent::resized()
                 const int n = songToolBtns.size();
                 if (n > 0)
                 {
-                    //  Centrada y a `Metrics::hit` por tapa: cuatro iconos
-                    //  estirados a todo lo ancho de la tarjeta se leerian como
-                    //  cuatro tapas de otra cosa - lo que dice que son una
-                    //  familia es que miden lo que mide un dedo y nada mas.
+                    //  A `Metrics::hit` por tapa y NO estirada: cuatro iconos
+                    //  a todo lo ancho de la tarjeta se leerian como cuatro
+                    //  tapas de otra cosa - lo que dice que son una familia es
+                    //  que miden lo que mide un dedo y nada mas.
+                    //
+                    //  Y ARRIMADA AL FILO Y NO CENTRADA, que es lo que el banco
+                    //  de paneles pidio: esta tira vive dentro del panel de la
+                    //  brocha, y ahi «las filas empiezan todas en el mismo
+                    //  sitio» no tiene excepcion legitima - centrada arrancaba
+                    //  en 60 px donde sus hermanas arrancan en 6, y salieron 28
+                    //  hallazgos en las siete pantallas. Alinearla no le cuesta
+                    //  un pixel a la tapa; lo unico que se pierde es el centrado.
                     //
                     //  Y LA CELDA ES EL DEDO MAS LO QUE EL AIRE SE COME, que es
                     //  la unica forma de que la tapa ACABE midiendo cuarenta.
@@ -3230,7 +3238,13 @@ void MainComponent::resized()
                     //  el dedo y no por el texto.
                     const int celda = juce::jmin (Metrics::hit + 2 * Metrics::aireTapa,
                                                   fila.getWidth() / n);
-                    auto zona = fila.withSizeKeepingCentre (celda * n, fila.getHeight());
+                    //  Por el borde de ENTRADA y no por la izquierda: en
+                    //  arabe la fila empieza a la DERECHA, y leer siempre la
+                    //  izquierda daba por bueno alli justo lo que se rechaza
+                    //  aqui - siete hallazgos, uno por pantalla y solo en `ar`.
+                    //  Es la misma leccion que el propio banco de paneles tiene
+                    //  escrita sobre por que mide el borde de entrada.
+                    auto zona = Lang::takeStart (fila, celda * n);
                     for (int i = 0; i < n; ++i)
                         songToolBtns[i]->setBounds (zona.removeFromLeft (celda)
                                                         .reduced (Metrics::aireTapa, 0));
