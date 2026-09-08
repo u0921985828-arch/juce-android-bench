@@ -408,12 +408,12 @@ namespace
             "Toca la onda en medio y suena desde ahi",
             "Pellizca para ampliar hasta x64; arrastra para mover la vista",
             "El zoom se centra en el recorte, no en donde estas mirando",
-            nullptr } },
+            "RECORTAR tira lo que queda fuera de las asas, y no se deshace solo" } },
         { "SONIDO DEL PAD", {
             "CINTA afina cambiando la duracion; TONO la mantiene",
             "La ganancia va en decibelios, de -60 a +12",
             "NORMALIZAR deja el pico del recorte en -0.3 dBFS",
-            "QUITAR RUIDO saca el siseo sin comerse lo que suena",
+            "QUITAR RUIDO saca el siseo y devuelve el nivel que se llevo",
             "Doble toque en un mando: vuelve a su valor de siempre" } },
         //  Este capitulo prometia una pestana que ya no existe -"la pestana
         //  PASO"- desde que sus mandos bajaron a la tira que hay debajo de la

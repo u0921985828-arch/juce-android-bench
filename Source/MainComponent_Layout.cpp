@@ -1260,6 +1260,10 @@ void MainComponent::resized()
         const int wantH = (padPage == padPageSound) ? 438 + secH
                                                     + (chokeSolo ? Metrics::hit + Metrics::halfGap : 0)
                         : (padPage == padPageTrim)  ? 436 + secH + 2 * (ZatiLookAndFeel::kTrimRow + Metrics::xs)
+                                                    //  Y la fila de la muestra puede ser DOS desde que
+                                                    //  esta RECORTAR: la misma pregunta que la coloca.
+                                                    + (padMuestraWraps (sheetInnerW - 2 * Metrics::lg)
+                                                         ? Metrics::hit + Metrics::halfGap : 0)
                                                     : rigH;
         auto inner = sheetFromBottom (padSheet, wantH);
         auto titleRow = inner.removeFromTop (Metrics::hit);
@@ -1620,9 +1624,26 @@ void MainComponent::resized()
         //  con ellas por lo mismo: es de la muestra.
         {
             const int gLectura = inner.getY();
-            auto rr = inner.removeFromTop (Metrics::hit);
-            juce::TextButton* pb[3] = { &reverseButton, &loopButton, &denoiseButton };
-            layoutModuleBar (rr, pb, 0, 3);
+            //  CUATRO TAPAS Y NO TRES desde que esta RECORTAR, asi que la fila
+            //  se parte donde no caben - con la MISMA pregunta que se hace al
+            //  presupuestar el alto (`padMuestraWraps`), o la ficha reserva una
+            //  fila que no usa o usa una que no reservo. Es lo que ya pasa con
+            //  las puertas del pad y con CHOKE.
+            juce::TextButton* pb[4] = { &reverseButton, &loopButton,
+                                        &denoiseButton, &recorteButton };
+            if (padMuestraWraps (inner.getWidth()))
+            {
+                auto r1 = inner.removeFromTop (Metrics::hit);
+                layoutModuleBar (r1, pb, 0, 2);
+                inner.removeFromTop (Metrics::halfGap);
+                auto r2 = inner.removeFromTop (Metrics::hit);
+                layoutModuleBar (r2, pb + 2, 0, 2);
+            }
+            else
+            {
+                auto rr = inner.removeFromTop (Metrics::hit);
+                layoutModuleBar (rr, pb, 0, 4);
+            }
             cierra (gLectura);
         }
         inner.removeFromTop (Metrics::sm);

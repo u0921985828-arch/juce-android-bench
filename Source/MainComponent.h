@@ -688,6 +688,12 @@ private:
     //  la ficha. La misma regla escrita dos veces son dos reglas.
     int  altoContenidoElPad (int ancho) const;
     bool padPuertasWraps (int rowWidth) const;
+    //  Y LA DE LA MUESTRA: REV, BUCLE, QUITAR RUIDO y RECORTAR.
+    //  Cuatro tapas con dos rotulos largos no caben en un movil
+    //  estrecho, y la pregunta se hace en DOS sitios -al pedir el
+    //  alto de la pagina y al colocar la fila- que tienen que
+    //  contestar lo mismo.
+    bool padMuestraWraps (int rowWidth) const;
     bool setTabsFit (int rowWidth) const;
     bool padRowFits (int rowWidth, std::initializer_list<const juce::TextButton*> bs) const;
     //  El reparto apretado de EL PAD, decidido en resized() y necesario en
@@ -2742,6 +2748,23 @@ private:
     //  audio nunca ve un buffer a medio escribir.
     juce::TextButton denoiseButton { "QUITAR RUIDO" };
     void denoisePad();
+
+    //  RECORTAR: tira lo que queda fuera de las asas y deja el trozo.
+    //
+    //  Es la contraria de NORMALIZAR y por eso van en paginas distintas: esa
+    //  no toca la muestra a proposito -es una ganancia, un atomic float que se
+    //  deshace y no gasta memoria- y esta la REESCRIBE, porque lo que se pide
+    //  es justo que lo de fuera deje de existir. Un pad de un break de cuatro
+    //  minutos con el recorte en un golpe pesa cuatro minutos en la sesion, en
+    //  el proyecto y en el kit que salga de el; recortado pesa el golpe.
+    //
+    //  Y SIEMPRE SOBRE UNA COPIA, nunca en el sitio. Un troceado son N pads
+    //  apuntando al MISMO SampleBuffer -se diferencian por su recorte- asi que
+    //  reescribir el buffer le cambiaria el sonido a los otros quince sin que
+    //  nadie los haya tocado. La copia cuesta el trozo, que es menos que el
+    //  original por definicion.
+    juce::TextButton recorteButton { "RECORTAR" };
+    void recortaPad();
     //  Un hilo para limpiar, porque la limpieza NO cabe en el hilo de la
     //  interfaz: son 7 ms por segundo de audio medidos en el banco, o sea 2.1 s
     //  con una muestra de cinco minutos y ocho con una de veinte. Android

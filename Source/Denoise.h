@@ -118,7 +118,7 @@ namespace Denoise
         //  perfil, 8 KB de acumuladores y poco mas. Y con red, porque una
         //  muestra sin limpiar es un fastidio y un proceso muerto es el
         //  trabajo de la tarde.
-        std::vector<float> fd, prof, col, noise, gain, prevGain, acc, accN;
+        std::vector<float> fd, prof, col, noise, gain, sPrev, acc, accN;
         try
         {
             fd      .assign ((size_t) fft * 2, 0.0f);
@@ -126,7 +126,7 @@ namespace Denoise
             col     .assign ((size_t) profFrames, 0.0f);
             noise   .assign ((size_t) bins, 0.0f);
             gain    .assign ((size_t) bins, 1.0f);
-            prevGain.assign ((size_t) bins, 1.0f);
+            sPrev   .assign ((size_t) bins, 0.0f);
             acc     .assign ((size_t) fft, 0.0f);
             accN    .assign ((size_t) fft, 0.0f);
         }
@@ -135,13 +135,19 @@ namespace Denoise
             return;                     // la muestra se queda como estaba
         }
 
-        //  Cuanto se resta y hasta donde se deja bajar. alpha por encima de
-        //  1 resta MAS de lo estimado, que es lo que hace falta porque el
-        //  ruido fluctua y restar justo la media deja la mitad de las
-        //  ventanas por encima. El suelo evita el silencio absoluto, que
-        //  suena peor que el ruido: un hueco perfecto entre notas delata
-        //  el proceso.
-        const float alpha  = 1.5f + 2.5f * strength;
+        //  Cuanto se sobre-estima el ruido y hasta donde se deja bajar.
+        //
+        //  `over` por encima de 1 da por hecho que hay MAS ruido del medido,
+        //  que hace falta porque el ruido fluctua y restar justo la media deja
+        //  la mitad de las ventanas por encima. Y es MUCHO mas pequeno que el
+        //  1.5-4.0 de la resta cruda que habia antes: el estimador dirigido de
+        //  abajo ya no necesita que se le empuje: 3.0 de sobre-resta en
+        //  magnitud son NUEVE en potencia, y con Wiener eso se lleva el sonido
+        //  por delante.
+        //
+        //  El suelo evita el silencio absoluto, que suena peor que el ruido:
+        //  un hueco perfecto entre notas delata el proceso.
+        const float over   = 1.0f + 1.0f * strength;
         const float floorG = 0.06f * (1.0f - strength) + 0.008f;
 
         //  Una ventana, transformada y con su magnitud puesta donde se pida.
@@ -160,7 +166,7 @@ namespace Denoise
 
             std::fill (acc.begin(),  acc.end(),  0.0f);
             std::fill (accN.begin(), accN.end(), 0.0f);
-            std::fill (prevGain.begin(), prevGain.end(), 1.0f);
+            std::fill (sPrev.begin(), sPrev.end(), 0.0f);
 
             // --- Pasada 1: el perfil, de profFrames ventanas repartidas. ----
             for (int q = 0; q < profFrames; ++q)
@@ -254,36 +260,56 @@ namespace Denoise
 
                 analyse (d, at);                // la fase, otra vez: no se guardo
 
+                //  WIENER CON SNR A PRIORI DIRIGIDO POR DECISION, que es lo
+                //  que separa una limpieza de una resta.
+                //
+                //  La resta cruda que habia aqui decide la ganancia de cada
+                //  banda MIRANDO SOLO ESA VENTANA: |Y| - alpha*ruido. Y el
+                //  ruido es aleatorio, asi que en dos ventanas seguidas la
+                //  misma banda cae a un lado y a otro del umbral. Eso son las
+                //  campanitas -bandas sueltas que se abren un fotograma y se
+                //  cierran al siguiente- y es lo que obligaba a los dos
+                //  suavizados de detras: uno en frecuencia y otro en el
+                //  tiempo, los dos sobre la GANANCIA, que es tapar el sintoma.
+                //
+                //  Lo que se estima aqui es el SNR A PRIORI -cuanta senal hay
+                //  de verdad en esa banda- y no la magnitud de esta ventana:
+                //
+                //    gamma = |Y|^2 / lambda            (a posteriori, medido)
+                //    xi    = a * S_ant^2 / lambda
+                //          + (1-a) * max (gamma-1, 0)  (a priori, DIRIGIDO)
+                //    G     = xi / (1 + xi)             (Wiener)
+                //
+                //  El primer termino es la memoria: lo que se estimo limpio en
+                //  la ventana anterior. Con a = 0.98 el estimador se apoya casi
+                //  entero en el pasado mientras el nivel no cambie -o sea que
+                //  el ruido deja de fluctuar la ganancia- y suelta la memoria
+                //  en cuanto llega un ataque, porque ahi gamma se dispara y el
+                //  segundo termino manda. Suaviza donde hace falta y no
+                //  suaviza donde no, que es justo lo que un suavizado fijo no
+                //  puede hacer.
+                //
+                //  Por eso se van los dos suavizados: no es que sobren, es que
+                //  eran el parche de este estimador.
+                constexpr float aDD = 0.98f;
                 for (int k = 0; k < bins; ++k)
                 {
                     const float re = fd[(size_t) (2 * k)];
                     const float im = fd[(size_t) (2 * k + 1)];
                     const float m  = std::sqrt (re * re + im * im);
-                    const float clean = m - alpha * noise[(size_t) k];
-                    gain[(size_t) k] = (m > 1.0e-9f) ? juce::jmax (floorG, clean / m) : 1.0f;
-                }
 
-                //  Suavizado en frecuencia: tres bandas. Sin esto quedan
-                //  bandas sueltas abiertas en medio de bandas cerradas, que es
-                //  exactamente lo que se oye como campanitas.
-                float prev = gain[0];
-                for (int k = 1; k < bins - 1; ++k)
-                {
-                    const float sm = (prev + gain[(size_t) k] + gain[(size_t) (k + 1)]) / 3.0f;
-                    prev = gain[(size_t) k];
-                    gain[(size_t) k] = sm;
-                }
+                    const float nk     = over * noise[(size_t) k];
+                    const float lambda = juce::jmax (1.0e-18f, nk * nk);
 
-                //  Y en el tiempo: abre rapido y cierra despacio. Al reves se
-                //  come el ataque de cada golpe, que es justo lo unico que no
-                //  se puede tocar en una caja de ritmos.
-                for (int k = 0; k < bins; ++k)
-                {
-                    const float g0 = gain[(size_t) k];
-                    const float p  = prevGain[(size_t) k];
-                    gain[(size_t) k] = (g0 > p) ? (0.60f * p + 0.40f * g0)
-                                                : (0.85f * p + 0.15f * g0);
-                    prevGain[(size_t) k] = gain[(size_t) k];
+                    const float gamma = (m * m) / lambda;
+                    const float inst  = juce::jmax (0.0f, gamma - 1.0f);
+                    const float mem   = (sPrev[(size_t) k] * sPrev[(size_t) k]) / lambda;
+
+                    const float xi = aDD * mem + (1.0f - aDD) * inst;
+                    const float g  = juce::jmax (floorG, xi / (1.0f + xi));
+
+                    gain [(size_t) k] = g;
+                    sPrev[(size_t) k] = g * m;      // la limpia de ESTA, memoria de la siguiente
                 }
 
                 for (int k = 0; k < bins; ++k)

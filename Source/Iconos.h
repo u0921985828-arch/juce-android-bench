@@ -47,7 +47,7 @@ namespace Iconos
         insertar, quitar, acortar, alargar,
         atras, adelante, doblar, humanizar, lapiz, goma, tijeras, loop, cuadrar,
         pads, sec, piano, mezcla, cancion, xy, ajustes, rack, chop, instrumentos, manual,
-        sonido, recorte,
+        sonido, recorte, recortar,
         flt, hpf, drv, dly, bit, rev, eq, cmp, gte, dss, lim,
         mic, remuestrear, bombeo, autocut, sistema, cadena, patron, pad, fijo,
         //  --- LAS DIECISEIS FAMILIAS DE Sintes.h -------------------------
@@ -200,6 +200,7 @@ namespace Iconos
             case Id::rack: return "rack";              case Id::chop: return "chop";
             case Id::instrumentos: return "instrumentos"; case Id::manual: return "manual";
             case Id::sonido: return "sonido";          case Id::recorte: return "recorte";
+            case Id::recortar: return "recortar";
             case Id::flt: return "flt";                case Id::hpf: return "hpf";
             case Id::drv: return "drv";                case Id::dly: return "dly";
             case Id::bit: return "bit";                case Id::rev: return "rev";
@@ -755,6 +756,23 @@ namespace Iconos
                 L.startNewSubPath (16.0f, 2.5f); L.lineTo (20.0f, 2.5f);
                 L.lineTo (20.0f, 21.5f); L.lineTo (16.0f, 21.5f);
                 R.addRectangle (10.6f, 7.0f, 2.8f, 10.0f);
+                break;
+
+            //  RECORTAR no puede ser el dibujo de la pestana RECORTE: las dos
+            //  se ven a la vez en la misma ficha -la pestana arriba y la tapa
+            //  en la fila de la muestra- y dos veces el mismo trazo se lee como
+            //  que una de las dos esta mal puesta.
+            //
+            //  Y lo que dice es otra cosa. La pestana dice DONDE estan las
+            //  asas; la tapa dice que LO DE FUERA SE VA. Asi que el trozo del
+            //  medio se queda a su altura y los dos de los lados estan CAIDOS
+            //  y separados: se leen como dos pedazos que se desprenden.
+            //  Tampoco es `tijeras`, que CORTA por un punto y deja las dos
+            //  mitades.
+            case Id::recortar:
+                R.addRectangle ( 8.5f,  4.0f, 7.0f, 16.0f);   // lo que queda
+                R.addRectangle ( 2.0f, 15.5f, 4.0f,  5.0f);   // lo que cae, izquierda
+                R.addRectangle (18.0f, 15.5f, 4.0f,  5.0f);   // y derecha
                 break;
 
             //  --- LOS SEIS EFECTOS -------------------------------------------

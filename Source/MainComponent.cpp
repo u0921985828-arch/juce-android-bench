@@ -3221,6 +3221,13 @@ MainComponent::MainComponent()
     denoiseButton.onClick = [this] { denoisePad(); };
     padSheet.addAndMakeVisible (denoiseButton);
 
+    //  RECORTAR va en esa misma fila: las cuatro son cosas de la MUESTRA que
+    //  se esta mirando, y esta ademas actua sobre lo que las asas de justo
+    //  debajo estan marcando.
+    styleButton (recorteButton, kKey);
+    recorteButton.onClick = [this] { recortaPad(); };
+    padSheet.addAndMakeVisible (recorteButton);
+
     //  El zoom. Tres tapas sobre la esquina de la pantalla: menos, cuanto, mas.
     //  La del medio dice a que aumento se esta y vuelve al fichero entero.
     {
@@ -3623,6 +3630,7 @@ void MainComponent::ponIconos()
         //  de carcasa, o sea la pagina de la que va el dibujo.
         { &pageAspBtn, Iconos::Id::aspecto },
         { &reverseButton, Iconos::Id::reves },    { &denoiseButton, Iconos::Id::ruido },
+        { &recorteButton, Iconos::Id::recortar },
         { &mixClearSolo, Iconos::Id::sinsolo },   { &exportFmtBtn, Iconos::Id::comprimir },
 
         //  Y la fila que no tenia NINGUNO, que es la que la persona senalo.
@@ -5107,6 +5115,12 @@ bool MainComponent::padSourceWraps (int rowWidth) const
 //  que contestar lo mismo o la ficha reserva una fila que no usa o usa una que
 //  no reservo. La quinta tapa solo cuenta cuando la hay - un pad de
 //  instrumento -, que es la misma condicion con la que se coloca.
+bool MainComponent::padMuestraWraps (int rowWidth) const
+{
+    return ! padRowFits (rowWidth, { &reverseButton, &loopButton,
+                                     &denoiseButton, &recorteButton });
+}
+
 bool MainComponent::padPuertasWraps (int rowWidth) const
 {
     return vstButton.isVisible()
@@ -5199,10 +5213,18 @@ void MainComponent::showPadPage (int page)
     for (juce::Component* c : { (juce::Component*) &startSlider,   (juce::Component*) &endSlider,
                                 (juce::Component*) &reverseButton, (juce::Component*) &loopButton,
                                 (juce::Component*) &waveform,      (juce::Component*) &denoiseButton,
+                                (juce::Component*) &recorteButton,
                                 (juce::Component*) &zoomOutButton, (juce::Component*) &zoomFitButton,
                                 (juce::Component*) &zoomInButton,
                                 (juce::Component*) &fadeInSlider,  (juce::Component*) &fadeOutSlider })
         c->setVisible (onTrim);
+    //  Y VACIADA ADEMAS DE APAGADA. RECORTAR es la unica de esta lista que
+    //  puede quedarse SIN COLOCAR estando encendida: la fila donde vive se
+    //  parte en dos donde no caben las cuatro, asi que hay un camino en el que
+    //  `layoutModuleBar` no le da coordenadas. El banco lo canto en la primera
+    //  corrida - CERO 84 y RESIDUO 28 - que es exactamente para lo que esa
+    //  regla existe: apagar sin vaciar es media regla.
+    if (! onTrim) recorteButton.setBounds ({});
 
     padRackBtn.setVisible (onRig);
     padCanalBtn.setVisible (onRig);
@@ -6723,7 +6745,34 @@ void MainComponent::denoisePad()
         Denoise::process (clean->buffer, 0.6f);
         const float after = clean->buffer.getMagnitude (0, len);
 
-        juce::MessageManager::callAsync ([this, clean, keepSrc, pad, len, keepStart, keepEnd, keepName, before, after]
+        //  Y SE DEVUELVE EL NIVEL QUE LA LIMPIEZA SE LLEVO.
+        //
+        //  Una resta espectral solo puede ATENUAR -eso es una regla del motor
+        //  y el banco la mide-, asi que despues de limpiar la muestra suena
+        //  mas baja SIEMPRE. Sin esto, limpiar una toma costaba bajarla de
+        //  nivel y la persona tenia que ir a NORMALIZAR a mano cada vez, o
+        //  sea que la funcion dejaba trabajo hecho a medias.
+        //
+        //  Y ES COMPENSAR LO SUYO, NO NORMALIZAR: se devuelve el pico QUE
+        //  TENIA y no se lleva a -0.3 dBFS. NORMALIZAR es el dueno del nivel
+        //  absoluto y sigue siendolo -*una funcion, un dueno*-; lo que esto
+        //  hace es no cobrar nivel por limpiar. La diferencia se ve en una
+        //  toma que ya venia baja: con esto sigue igual de baja, y es
+        //  NORMALIZAR quien la sube.
+        //
+        //  Va AQUI y no dentro de `Denoise::process` a proposito: alli
+        //  romperia la regla del banco que dice que esa funcion nunca
+        //  amplifica, que es la que caza el fallo del divisor sin suelo en los
+        //  bordes. La etapa que no amplifica sigue sin amplificar; quien
+        //  devuelve el nivel es quien llama.
+        float recupera = 1.0f;
+        if (after > 1.0e-6f && before > 1.0e-6f && after < before)
+        {
+            recupera = before / after;
+            clean->buffer.applyGain (recupera);
+        }
+
+        juce::MessageManager::callAsync ([this, clean, keepSrc, pad, len, keepStart, keepEnd, keepName, before, after, recupera]
         {
             denoiseBusy = false;
             denoiseButton.setEnabled (true);
@@ -6757,12 +6806,108 @@ void MainComponent::denoisePad()
             //  imposible: siempre es cero o menos. Lo que sale de aqui es la
             //  DIFERENCIA entre antes y despues, asi que el rotulo lo dice y el
             //  signo se invierte para que el numero cuente lo que se ha quitado.
+            //  Se mide ANTES de devolver el nivel y no despues, o el numero
+            //  saldria siempre cero: lo que se quiere decir es cuanto se ha
+            //  quitado, no en que nivel ha quedado.
             const double db = juce::Decibels::gainToDecibels ((double) juce::jmax (1.0e-6f, after)
                                                             / (double) juce::jmax (1.0e-6f, before), -60.0);
-            status.setText (T ("Ruido fuera - el pico baja %1 dB", Lang::ltr (juce::String (-db, 1))),
+            const double sube = juce::Decibels::gainToDecibels ((double) recupera, -60.0);
+            status.setText (T ("Ruido fuera - baja %1 dB y se recupera %2 dB",
+                               Lang::ltr (juce::String (-db, 1)),
+                               Lang::ltr (juce::String (sube, 1))),
                             juce::dontSendNotification);
         });
     });
+}
+
+//  RECORTAR: la muestra pasa a ser el trozo que las asas marcan.
+//
+//  Lo que cuesta que esto no exista: un pad de un break de cuatro minutos con
+//  el recorte en un golpe ARRASTRA los cuatro minutos a todas partes -a la
+//  sesion, al proyecto, al kit que se guarde, al clip que se ponga en la
+//  cancion- para tocar medio segundo. GUARDAR KIT ya tenia esa regla escrita
+//  -«se escribe lo que suena, no el fichero entero»- y aqui no habia forma de
+//  aplicarla al propio pad.
+//
+//  SOBRE UNA COPIA Y NUNCA EN EL SITIO. Un troceado son N pads apuntando al
+//  MISMO SampleBuffer, asi que reescribirlo le cambiaria el sonido a los otros
+//  quince. Ademas el hilo de audio puede estar leyendolo AHORA: el buffer nuevo
+//  entra por el mismo intercambio de punteros que un corte o un remuestreo, y
+//  el viejo lo suelta el temporizador.
+//
+//  Y SE VACIAN LAS ASAS. Despues de recortar, el trozo ES la muestra, asi que
+//  dejarlas donde estaban seria recortar dos veces lo mismo: la segunda
+//  pulsacion se quedaria con la cuarta parte. 0..1.
+//
+//  Lo que NO se toca: el nombre, la ganancia, el pan, el filtro y lo demas del
+//  pad. Cambia el material, no los ajustes -que es justo lo contrario de
+//  cargar un instrumento, donde lo que cambia es todo-.
+void MainComponent::recortaPad()
+{
+    if (selectedPad < 0) return;
+    const size_t sp = (size_t) selectedPad;
+
+    auto src = uiSample[sp];
+    const int len = padSourceLength (selectedPad);
+    if (src == nullptr || len <= 0)
+    {
+        status.setText (T ("El pad %1 no tiene sonido", juce::String (selectedPad + 1)),
+                        juce::dontSendNotification);
+        return;
+    }
+
+    //  Un pad de instrumento son DIEZ zonas pegadas y el recorte es una
+    //  fraccion de la zona, no una posicion en el buffer: recortar aqui
+    //  dejaria un buffer que ya no son diez zonas y el instrumento se
+    //  convertiria en una muestra afinada. Es la misma razon por la que BUCLE,
+    //  REVES y CINTA/TONO estan apagados en esos pads.
+    if (src->nZonas > 0)
+    {
+        status.setText (T ("Un instrumento son diez zonas: no se puede recortar"),
+                        juce::dontSendNotification);
+        return;
+    }
+
+    const int a = juce::jlimit (0, len - 1, (int) std::floor (padStart01[sp] * (float) len));
+    const int b = juce::jlimit (a + 1, len, (int) std::ceil  (padEnd01[sp]   * (float) len));
+    const int n = b - a;
+
+    //  Si las asas estan donde nacieron no hay nada fuera que tirar, y hacerlo
+    //  igual gastaria una entrada de deshacer y una copia entera del buffer
+    //  para dejarlo exactamente como estaba.
+    if (n >= len)
+    {
+        status.setText (T ("El recorte es la muestra entera: no hay nada que tirar"),
+                        juce::dontSendNotification);
+        return;
+    }
+
+    pushUndo (T ("RECORTAR"));
+
+    SampleBuffer::Ptr corto = new SampleBuffer();
+    corto->sourceSampleRate = src->sourceSampleRate;
+    const int ch = src->buffer.getNumChannels();
+    corto->buffer.setSize (ch, n);
+    for (int c = 0; c < ch; ++c)
+        corto->buffer.copyFrom (c, 0, src->buffer, c, a, n);
+
+    const juce::String keepName = padName[sp];
+    assignSampleToPad (selectedPad, corto, {});
+    padName[sp]    = keepName;
+    padStart01[sp] = 0.0f;
+    padEnd01[sp]   = 1.0f;
+    engine.setPadStart (selectedPad, 0);
+    engine.setPadEnd   (selectedPad, n);
+    if (auto* pb = pads[selectedPad])
+        pb->setSampleInfo (uiSample[sp], padName[sp], padStart01[sp], padEnd01[sp]);
+    selectPad (selectedPad);
+
+    //  Se dicen las DOS cifras y no el porcentaje: «se queda el 12%» no dice
+    //  si lo que queda son mil muestras o un millon, y el largo es justo lo
+    //  que esta funcion existe para cambiar.
+    status.setText (T ("Recortado a %1 de %2 muestras",
+                       Lang::ltr (juce::String (n)), Lang::ltr (juce::String (len))),
+                    juce::dontSendNotification);
 }
 
 //  LA ZONA QUE SE ENSEÑA de un pad de instrumento: raiz 0 y capa fuerte, que
@@ -7297,6 +7442,7 @@ void MainComponent::retranslateUi()
     pianoVerBtn    .setButtonText (pianoGrid.getFilas() >= PianoRoll::kFilasMax
                                      ? T ("2 OCTAVAS") : T ("1 OCTAVA"));
     denoiseButton.setButtonText (T ("QUITAR RUIDO"));
+    recorteButton.setButtonText (T ("RECORTAR"));
     chopButton   .setButtonText (T ("AUTO CHOP"));
     micButton    .setButtonText (recordingActive ? T ("PARAR") : T ("GRABAR MIC"));
     resampleButton.setButtonText (resamplingActive ? T ("PARAR") : T ("REMUESTREAR"));

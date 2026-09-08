@@ -515,6 +515,38 @@ int main()
         const double floorBefore = rms (b, 2000, 20000);
         const double toneBefore  = rms (b, len / 2 + 4000, 20000);
 
+        //  Y LA TERCERA, QUE ES LA QUE MIDE EL RUIDO MUSICAL.
+        //
+        //  Las dos de arriba dicen CUANTO queda y no COMO queda, y por ahi se
+        //  cuela lo unico que de verdad delata una limpieza: las campanitas.
+        //  Son bandas sueltas que se abren un fotograma y se cierran al
+        //  siguiente, asi que el residuo deja de ser un siseo parejo y pasa a
+        //  ser un burbujeo -mismo nivel medio, misma cifra de `cut`, y se oye
+        //  fatal-. Lo que las separa es la DISPERSION del residuo en el
+        //  tiempo: un siseo limpio tiene el mismo RMS ventana a ventana y un
+        //  burbujeo salta.
+        //
+        //  Se mide en ventanas de 512 sobre la mitad que solo lleva ruido, y
+        //  se publica la desviacion tipica del RMS en dB. Y CON CONTROL: el
+        //  mismo siseo SIN TOCAR se mide tambien, porque «1.1 dB» no dice nada
+        //  hasta que se sabe cuanto vale no hacer nada.
+        auto dispersión = [&] (const juce::AudioBuffer<float>& buf)
+        {
+            std::vector<double> db;
+            for (int at = 2000; at + 512 <= 22000; at += 512)
+            {
+                double acc = 0.0;
+                for (int i = 0; i < 512; ++i)
+                {
+                    const double v = buf.getSample (0, at + i); acc += v * v;
+                }
+                db.push_back (20.0 * std::log10 (juce::jmax (1.0e-9, std::sqrt (acc / 512.0))));
+            }
+            double m = 0.0; for (double v : db) m += v; m /= (double) juce::jmax ((size_t) 1, db.size());
+            double s = 0.0; for (double v : db) s += (v - m) * (v - m);
+            return std::sqrt (s / (double) juce::jmax ((size_t) 1, db.size()));
+        };
+        const double burbujaAntes = dispersión (b);      // el siseo sin tocar
         const auto t0 = std::chrono::steady_clock::now();
         Denoise::process (b, 0.6f);
         const double ms = std::chrono::duration<double, std::milli> (std::chrono::steady_clock::now() - t0).count();
@@ -522,8 +554,10 @@ int main()
         const double floorAfter = rms (b, 2000, 20000);
         const double toneAfter  = rms (b, len / 2 + 4000, 20000);
 
+        const double burbuja = dispersión (b);
         const double cut  = 20.0 * std::log10 (juce::jmax (1.0e-9, floorAfter) / juce::jmax (1.0e-9, floorBefore));
         const double keep = 20.0 * std::log10 (juce::jmax (1.0e-9, toneAfter)  / juce::jmax (1.0e-9, toneBefore));
+
 
         bool nan = false;
         for (int i = 0; i < len; ++i) if (! std::isfinite (b.getSample (0, i))) { nan = true; break; }
@@ -531,10 +565,16 @@ int main()
         //  Pide 12 dB de suelo fuera y menos de 1.5 dB perdidos en el tono. La
         //  segunda condicion es la que importa: una limpieza que baja 40 dB y
         //  se lleva el sonido por delante no es una limpieza.
-        std::printf ("%-34s suelo %+.1f dB   tono %+.2f dB   NaN %s   %.0f ms/s   %s\n",
-                     "quitar ruido (siseo + tono)", cut, keep,
+        //  El liston sale de la POBLACION y no de un numero redondo. Medidos
+        //  los tres: el siseo sin tocar deja 0.2 dB -eso es lo que cuesta no
+        //  hacer nada-, la resta cruda que habia antes dejaba 2.8, y el
+        //  estimador dirigido deja 1.1. Dos separa a los dos algoritmos y
+        //  deja sitio de sobra por arriba; tres no separaba nada, porque el
+        //  viejo pasaba por dos decimas.
+        std::printf ("%-34s suelo %+.1f dB   tono %+.2f dB   burbuja %.1f dB (sin tocar %.1f)   NaN %s   %.0f ms/s   %s\n",
+                     "quitar ruido (siseo + tono)", cut, keep, burbuja, burbujaAntes,
                      nan ? "SI" : "no", ms,
-                     (! nan && cut < -12.0 && keep > -1.5) ? "OK" : zatiFalla());
+                     (! nan && cut < -12.0 && keep > -1.5 && burbuja < 2.0) ? "OK" : zatiFalla());
     }
 
     //  Y QUE NO SUBA EL PICO, NUNCA.
