@@ -1584,6 +1584,11 @@ namespace
         //  carriles de bloques. Reaprovechar una clave porque en espanol se
         //  parece es como sale mal en las otras tres.
         { "PATRONES",       "",         "PATTERNS",   "音序",       "الأنماط" },
+        //  EL ZOOM DE LA LINEA DE TIEMPO. Clave propia -"COMPAS" ya es la fila
+        //  del secuenciador- y la cifra INTERPOLADA: una sola fila para los
+        //  tres pasos, que es lo que hace que anadir un cuarto no cueste tres
+        //  traducciones. Es la misma decision que el subtitulo del manual.
+        { "%1 COMPASES|zoom", "",       "%1 BARS",    "%1 小节",    "%1 مازورة" },
         { "BUFER",          "",         "BUFFER",     "缓冲",       "المخزن" },
         { "RELOJ",          "",         "CLOCK",      "时钟",       "الساعة" },
         { "IDIOMA",         "",         "LANGUAGE",   "语言",       "اللغة" },

@@ -39,9 +39,9 @@ def display_alive():
         return False
 
 
-def corre():
+def corre(size="412x915"):
     env = dict (os.environ)
-    env.update ({"ZATI_AUDIT": "1", "ZATI_SIZE": "412x915", "ZATI_LANG": "es",
+    env.update ({"ZATI_AUDIT": "1", "ZATI_SIZE": size, "ZATI_LANG": "es",
                  "ZATI_OPEN": "song", "ZATI_ARR": "1"})
     out = subprocess.run ([APP], env=env, capture_output=True, text=True,
                           timeout=300).stdout
@@ -225,6 +225,79 @@ def main():
             malas.append ("el bloque no dibuja sus pasos: sigue siendo un color")
         if mini["giro"] <= 0:
             malas.append ("el bloque enseña siempre el compas cero del patron: no da la vuelta")
+
+    #  EL ZOOM DE LA LINEA DE TIEMPO: cuantos compases se ven de una vez.
+    #
+    #  DOS cifras, y la segunda es la que hace falta. «El ciclo pasa por 8, 16
+    #  y 4» lo cumple igual un zoom que salta al compas cero en cada toque - y
+    #  entonces mirar la cancion mas ancha te deja mirando OTRA PARTE de la
+    #  cancion. El compas que tenias delante tiene que seguir delante.
+    #
+    #  Y LA ESCALERA se mide en la pantalla donde el paso NO CABE, que es la
+    #  unica en la que existe: en un movil grande los tres pasos entran y un
+    #  ciclo sin suelo saldria igual de verde. En 280x653 la celda a dieciseis
+    #  compases mide 12 px contra un suelo de 20, asi que ese paso se salta y
+    #  el ciclo es 8 -> 4 -> 8.
+    z = song.get ("zoom")
+    if not z:
+        print ("%-22s %s" % ("zoom", "MAL - sin respuesta")); malas.append ("zoom")
+    else:
+        print ("%-22s vistas %s   anchos %s   primer compas %s   suelo %d"
+               % ("zoom", z["vistas"], z["anchos"], z["primeros"], z["suelo"]))
+        if len (set (z["vistas"][:3])) < 2:
+            malas.append ("la tapa de zoom no cicla: %s" % (z["vistas"],))
+        flacas = [a for a in z["anchos"] if a < z["suelo"]]
+        if flacas:
+            malas.append ("el zoom ofrece una celda de %s px con el suelo en %d"
+                          % (flacas, z["suelo"]))
+        if len (set (z["primeros"])) != 1:
+            malas.append ("el zoom se lleva la vista a otro compas: %s" % (z["primeros"],))
+
+        #  La escalera, en la pantalla estrecha.
+        songE, _, _, _, _ = corre ("280x653")
+        ze = songE.get ("zoom")
+        if not ze:
+            malas.append ("el zoom no contesto en 280x653")
+        else:
+            print ("%-22s vistas %s   anchos %s" % ("  y en 280x653", ze["vistas"], ze["anchos"]))
+            if 16 in ze["vistas"]:
+                malas.append ("en 280x653 el zoom ofrece 16 compases y la celda no cabe: %s"
+                              % (ze["anchos"],))
+            flacas = [a for a in ze["anchos"] if a < ze["suelo"]]
+            if flacas:
+                malas.append ("en 280x653 el zoom ofrece una celda de %s px" % (flacas,))
+
+    #  EL FILO DE UN BLOQUE LO ESTIRA.
+    #
+    #  TRES cifras, y ninguna sobra. «Se estira» lo cumple igual un asa que
+    #  ademas MUEVE el bloque -y desde el dedo eso es un bloque que se escapa
+    #  mientras lo recortas- asi que se mira la cabeza Y el largo. «Una entrada
+    #  de deshacer» solo significa algo con el arrastre partido en cuatro
+    #  eventos, que es como lo emite un dedo: de un salto la cifra sale igual
+    #  con el fallo y sin el. Y la tercera es el candado que hace que esto no
+    #  cueste el pincel: apoyar sobre el filo no escribe nada -puede ser el
+    #  principio de un estiron- pero un TOQUE sigue pintando, o el filo de un
+    #  bloque largo seria una celda en la que la rejilla no responde.
+    asa = song.get ("asa")
+    if not asa:
+        print ("%-22s %s" % ("asa del bloque", "MAL - sin respuesta")); malas.append ("asa")
+    else:
+        print ("%-22s %s -> %s   %d entrada(s) de deshacer   tras el toque %s"
+               % ("asa del bloque", asa["antes"], asa["estirado"],
+                  asa["entradas"], asa["tras el toque"]))
+        if asa["antes"] != [2, 3]:
+            malas.append ("el bloque de partida no es el que se puso: %s" % (asa["antes"],))
+        if asa["estirado"][0] != asa["antes"][0]:
+            malas.append ("el asa MUEVE el bloque en vez de estirarlo: %s -> %s"
+                          % (asa["antes"], asa["estirado"]))
+        if asa["estirado"][1] != 6:
+            malas.append ("el asa no estira: el bloque mide %d compases y tenia que medir 6"
+                          % asa["estirado"][1])
+        if asa["entradas"] != 1:
+            malas.append ("un solo estiron deja %d entradas de deshacer" % asa["entradas"])
+        if asa["tras el toque"] != [-1, 0]:
+            malas.append ("un toque sobre el filo ya no pinta: queda %s"
+                          % (asa["tras el toque"],))
 
     print()
     if malas:

@@ -1854,6 +1854,14 @@ private:
     //  songModeBtn y que modoTapa. Una que dijera "IR A AUDIO" obliga a mirar si
     //  esta encendida para saber donde estas.
     juce::TextButton songVistaBtn { "PATRONES" };
+    //  CUANTOS COMPASES SE VEN. La vista estaba clavada en ocho, asi que un
+    //  estribillo de dieciseis no cabia en una pantalla y no habia forma de
+    //  mirarlo entero. Una tapa que CICLA -8, 16, 4- y no tres, que es lo que
+    //  ya hace el zoom del piano; y salta el paso que no cabe, con la misma
+    //  pregunta que ya deciden BANCO y PADS. Vive en el renglon del titulo,
+    //  al lado del interruptor de vista, asi que cuesta CERO de alto - que es
+    //  lo unico que en esta ficha no sobra.
+    juce::TextButton songZoomBtn { "8 COMPASES" };
 
     // ------------------------------------------------------------------
     //  LA AUTOMATIZACION. Ver AudioEngine::EventoAuto y Tests/auto.py.
@@ -1879,6 +1887,12 @@ private:
     void grabaAlArreglo();
     int songVista = Playlist::vistaPatrones;
     void showSongPage (int v);
+    //  El zoom de la linea de tiempo: cuantos compases se ven de una vez.
+    //  Re-deriva `songPage` para que el compas que estabas mirando siga en
+    //  pantalla -poner cero seria saltar al principio cada vez que se toca- y
+    //  reescribe los rotulos de las tapas de pagina, que dicen el compas en el
+    //  que empiezan y por tanto dependen de la vista.
+    void ponVistaCompases (int n);
 
     //  La tabla que la rejilla dibuja: los clips traducidos a COMPASES. Se
     //  rehace en refreshSong y vive aqui porque el componente la presta, no la
@@ -1935,6 +1949,7 @@ private:
     //  lleva dentro: acortar un bloque obligaba antes a acortar el patron
     //  entero, o sea a cambiarlo en los otros sitios donde estuviera puesto.
     void resizeSongBlock (int dir);
+    void ponLargoBloque (int carril, int cabeza, int nuevo, bool apunta = true);
     void toggleSongLane (int lane);
     juce::TextButton setButton      { "SET" };   // skins + proyectos (spec: SET)
     juce::TextButton seqCloseButton   { juce::CharPointer_UTF8 ("\xc3\x97") },

@@ -2101,13 +2101,29 @@ void MainComponent::paintSongSheetContent (juce::Graphics& g)
     //  porque estan una debajo de otra. Ver pintaPaneles.
     pintaPaneles (g, songGrupos);
 
-    auto renglon = antesDe (antesDe (songSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY).removeFromTop (16),
-                                     songCloseButton),
-                            songVistaBtn);
+    //  Y DE LA TERCERA, que es la que este renglon acaba de ganar: el zoom de
+    //  compases vive aqui desde que la vista dejo de estar clavada en ocho. El
+    //  banco lo canto en la primera corrida - `TAPADO 26`, la ayuda debajo de
+    //  «8 COMPASES» en tres idiomas y el TITULO debajo de «8 مازورة» en arabe -
+    //  que es LETRA POR LETRA el hallazgo que el parrafo de mas abajo cuenta de
+    //  la tapa anterior. La cuenta estaba escrita para dos tapas y ahora son
+    //  tres: se encadena una llamada mas, y `antesDe` decide el lado
+    //  comparando los centros, asi que sigue valiendo en los cuatro idiomas.
+    auto renglon = antesDe (antesDe (antesDe (songSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY).removeFromTop (16),
+                                              songCloseButton),
+                                     songVistaBtn),
+                            songZoomBtn);
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
-    const auto tituloReal = pintaTitulo (g, renglon, T ("SONG"));
+    //  Y APRIETA ANTES DE CORTARSE. Con tres tapas en el renglon, en 280x653
+    //  «CANCION» pide 46 px y tiene 45: UNO. Estrecharles la zona a las tapas
+    //  para devolverselo cambia un corte del titulo por un corte del ROTULO de
+    //  una tapa -medido: `CORTADO 4` pasa a `TRUNC 2`- que es la vuelta atras
+    //  que este proyecto ya tiene escrita dos veces: *cambiar un apreton por un
+    //  corte no es un arreglo*. `drawFittedText` aprieta hasta el 0.9 y se
+    //  sigue leyendo, asi que el pixel se lo come la letra.
+    const auto tituloReal = pintaTitulo (g, renglon, T ("SONG"), "titulo", false, 0.9f);
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));

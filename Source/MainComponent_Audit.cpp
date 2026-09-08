@@ -273,6 +273,127 @@ void MainComponent::auditArrange()
         std::cout << "{\"arr\":\"miniatura\",\"pasos\":" << zatiDifieren (conPasos, sinPasos)
                   << ",\"giro\":" << zatiDifieren (dosCompases, unCompas) << "}" << std::endl;
     }
+
+    //  ------------------------------------------------------------------
+    //  EL ZOOM DE LA LINEA DE TIEMPO
+    //  ------------------------------------------------------------------
+    //
+    //  DOS cifras, y la segunda es la que hace falta. «El ciclo pasa por
+    //  8, 16 y 4» lo cumple igual un zoom que salta al compas cero en cada
+    //  toque, y entonces mirar la cancion mas ancha te deja mirando otra parte
+    //  de la cancion: el compas que tenias delante tiene que seguir delante.
+    //
+    //  Y SE MIDE POR LA TAPA -`songZoomBtn.onClick()`- y no llamando a
+    //  `ponVistaCompases`, que es lo unico que ve la ESCALERA: poniendo el
+    //  numero por dentro el paso que no cabe no se salta nunca, que es
+    //  exactamente donde vive la unica decision de esta funcion.
+    {
+        engine.setSongLength (AudioEngine::kSongBars);
+        resized();
+
+        //  Se parte del compas 16, o sea de la pagina 2 con la vista de ocho.
+        //  Con songPage en cero las dos cifras salen bien de las dos formas.
+        songPage = 2;
+        refreshSong();
+
+        juce::String vistas, anchos, primeros;
+        for (int i = 0; i < 4; ++i)
+        {
+            if (i > 0) { vistas << ","; anchos << ","; primeros << ","; }
+            const int v = songGrid.getCompasesVista();
+            vistas   << v;
+            anchos   << juce::String ((songGrid.getWidth() - Playlist::kGutter) / juce::jmax (1, v));
+            primeros << (songPage * v);
+            songZoomBtn.onClick();
+        }
+
+        std::cout << "{\"arr\":\"zoom\",\"vistas\":[" << vistas
+                  << "],\"anchos\":[" << anchos
+                  << "],\"primeros\":[" << primeros
+                  << "],\"suelo\":" << Metrics::celdaCancion << "}" << std::endl;
+    }
+
+    //  ------------------------------------------------------------------
+    //  ESTIRAR UN BLOQUE ARRASTRANDO SU FILO
+    //  ------------------------------------------------------------------
+    //
+    //  POR EL GESTO Y NO POR EL CALLBACK. Llamar a `ponLargoBloque` por dentro
+    //  se salta exactamente el codigo que decide si el dedo cayo sobre un asa,
+    //  sobre el medio o sobre un hueco - que es donde vive todo lo nuevo. Es la
+    //  leccion de los cinco fallos del compas del piano.
+    //
+    //  Y CON EL ARRASTRE PARTIDO EN CUATRO EVENTOS, que es lo unico que separa
+    //  «una entrada de deshacer» de «una por movimiento»: de un salto la cifra
+    //  sale igual de las dos formas. Es el fallo que ya se midio en el piano.
+    {
+        engine.setSongLength (16);
+        for (int ln = 0; ln < AudioEngine::kSongLanes; ++ln)
+            for (int b = 0; b < 16; ++b)
+                engine.setSongCell (ln, b, 0);
+        //  Un bloque de TRES compases en el carril 1, del 2 al 4: tres es el
+        //  minimo que lleva asas, asi que con dos la prueba pasaria sin haber
+        //  medido nada.
+        engine.setSongCell (1, 2, 1);
+        engine.setSongCell (1, 3, AudioEngine::kContinued);
+        engine.setSongCell (1, 4, AudioEngine::kContinued);
+        songPage = 0;
+        resized();
+        refreshSong();
+
+        auto& rej = songGrid;
+        const float pistaH = (float) rej.getHeight() / (float) Playlist::kLanes;
+        const float barW   = (float) (rej.getWidth() - Playlist::kGutter)
+                           / (float) rej.getCompasesVista();
+        auto centro = [&] (int carril, int compas)
+        {
+            return juce::Point<float> ((float) Playlist::kGutter + barW * ((float) compas + 0.5f),
+                                       pistaH * ((float) carril + 0.5f));
+        };
+        auto evento = [&] (juce::Point<float> pt)
+        {
+            const auto ahora = juce::Time::getCurrentTime();
+            return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(),
+                                     pt, juce::ModifierKeys(), 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                     &rej, &rej, ahora, pt, ahora, 1, false);
+        };
+        auto bloque = [&] (int carril)
+        {
+            int cabeza = -1, fin = -1;
+            for (int b = 0; b < engine.getSongLength(); ++b)
+            {
+                const int v = engine.getSongCell (carril, b);
+                if (v != 0 && v != AudioEngine::kContinued) { cabeza = b; fin = b + 1; }
+                else if (v == AudioEngine::kContinued && cabeza >= 0) fin = b + 1;
+            }
+            return juce::String ("[") + juce::String (cabeza) + ","
+                                      + juce::String (fin - cabeza) + "]";
+        };
+
+        const juce::String antes = bloque (1);
+
+        //  Se coge por el FILO DERECHO -el compas 4- y se lleva al 7, en cuatro
+        //  eventos como los emite un dedo.
+        const int undoAntes = (int) undoStack.size();
+        rej.mouseDown (evento (centro (1, 4)));
+        for (int b = 5; b <= 7; ++b) rej.mouseDrag (evento (centro (1, b)));
+        rej.mouseUp (evento (centro (1, 7)));
+        const juce::String estirado = bloque (1);
+        const int entradas = (int) undoStack.size() - undoAntes;
+
+        //  Y UN TOQUE SOBRE EL MISMO FILO SIGUE PINTANDO, que es el candado que
+        //  hace que esto no cueste el pincel: apoyar y levantar sin mover
+        //  escribe la celda como siempre. Con el pincel en VACIAR, la celda que
+        //  se toca se va - o sea que la rejilla responde.
+        songBrush = 0;
+        rej.mouseDown (evento (centro (1, 2)));
+        rej.mouseUp   (evento (centro (1, 2)));
+        const juce::String traselToque = bloque (1);
+
+        std::cout << "{\"arr\":\"asa\",\"antes\":" << antes
+                  << ",\"estirado\":" << estirado
+                  << ",\"entradas\":" << entradas
+                  << ",\"tras el toque\":" << traselToque << "}" << std::endl;
+    }
 }
 
 // ============================================================================

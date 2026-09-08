@@ -80,6 +80,18 @@ public:
 
     // (lane, bar) — the host decides what to place or whether to clear.
     std::function<void (int lane, int bar)> onCell;
+
+    //  ESTIRAR UN BLOQUE ARRASTRANDO SU FILO. El largo de un bloque de patron
+    //  solo se cambiaba con ACORTAR / ALARGAR, de compas en compas y sobre el
+    //  bloque donde estuviera el cursor - mientras que un clip de audio, en la
+    //  MISMA rejilla y en la vista de al lado, se estira arrastrando su borde.
+    //  La misma accion con dos gestos segun lo que hubiera en la celda.
+    //  El cuarto argumento es si este cambio es el PRIMERO del gesto, que es
+    //  lo unico que hace falta para que deshacer se lleve el estiron entero:
+    //  un arrastre emite un evento por movimiento, asi que apilar una entrada
+    //  por evento no es deshacer, es contar. Medido: 3 entradas por un solo
+    //  gesto antes de esta linea.
+    std::function<void (int lane, int cabeza, int largo, bool primero)> onLargoBloque;
     //  UN HUECO DE LA BANDA DE AUDIO: aqui no habia nada, pon lo que tengas.
     std::function<void (int pista, int compas)> onClipNuevo;
     //  Y UN CLIP QUE SE ARRASTRA. El indice es el de la tabla que se paso, no
@@ -485,7 +497,20 @@ public:
         if (vista == vistaAudio) { tocaAudio (e, true); return; }
         toca (e, true);
     }
-    void mouseUp   (const juce::MouseEvent&)   override { ultima = { -1, -1 }; arrastrado = -1; }
+    void mouseUp   (const juce::MouseEvent&)   override
+    {
+        //  UN TOQUE SOBRE EL FILO DE UN BLOQUE SIGUE PINTANDO. Apoyar ahi no
+        //  escribe nada -puede ser el principio de un estiron- asi que la celda
+        //  se escribe al levantar, si el dedo no llego a moverse. Sin esto, el
+        //  filo de un bloque largo seria una celda en la que el pincel no
+        //  funciona, y eso no se lee como «aqui se estira»: se lee como que la
+        //  rejilla no responde.
+        if (pendiente.first >= 0 && onCell) onCell (pendiente.first, pendiente.second);
+        pendiente = { -1, -1 };
+        asaBloque = 0;
+        ultima = { -1, -1 };
+        arrastrado = -1;
+    }
 
     void toca (const juce::MouseEvent& e, bool arrastrando)
     {
@@ -504,13 +529,75 @@ public:
             return;
         }
 
-        if (! onCell) return;
         const float laneH = (float) r.getHeight() / (float) kLanes;
         const float barW  = (float) (r.getWidth() - gutter) / (float) barsView;
         const int lane = juce::jlimit (0, kLanes - 1, (int) ((float) (e.y - r.getY()) / laneH));
         const int bar  = pageIndex * barsView
                        + juce::jlimit (0, barsView - 1, (int) ((float) (e.x - r.getX() - gutter) / barW));
         if (bar >= totalBars) return;
+
+        //  EL FILO DE UN BLOQUE ESTIRA, Y EL TOQUE SIGUE PINTANDO.
+        //
+        //  Aqui arrastrar YA significa pintar, asi que meter «estirar» encima
+        //  serian dos significados en un dedo - lo que esta casa lleva escrito
+        //  que no se puede aprender. Lo que los separa es el TOQUE contra el
+        //  ARRASTRE: apoyar sobre el filo no escribe nada todavia; si el dedo
+        //  se mueve, estira; si se levanta sin moverse, pinta. Asi lo unico que
+        //  se pierde es «arrastrar pintando DESDE el filo de un bloque largo»,
+        //  que es la version mas estrecha posible del coste.
+        //
+        //  Con las dos condiciones que la vista de audio ya midio: solo el
+        //  primer y el ultimo compas del bloque, y solo POR DEBAJO DE TRES
+        //  COMPASES no hay asas -dos asas de un compas se comen un bloque de
+        //  dos y no queda nada que arrastrar-. Y con la GOMA armada no hay asa
+        //  ninguna: el borrador borra, que es lo que su propio parrafo del
+        //  piano ya dice.
+        if (! arrastrando)
+        {
+            asaBloque = 0;
+            bloqueCarril = -1;
+            pendiente = { -1, -1 };
+
+            if (onLargoBloque && ! borrando)
+            {
+                const auto b = bloqueEn (lane, bar);
+                if (b.first >= 0 && (b.second - b.first) >= kCompasesConAsa)
+                {
+                    if (bar == b.first)           asaBloque = -1;
+                    else if (bar == b.second - 1) asaBloque = +1;
+                }
+                if (asaBloque != 0)
+                {
+                    bloquePrimero = true;
+                    bloqueCarril = lane;
+                    bloqueCabeza = b.first;
+                    bloqueFin    = b.second;
+                    //  Lo que se pintaria si el dedo se levanta sin moverse.
+                    pendiente = { lane, bar };
+                    return;
+                }
+            }
+        }
+        else if (asaBloque != 0)
+        {
+            //  UN ASA CAMBIA EL LARGO Y NO LA POSICION, que es la misma regla
+            //  que ya lleva escrita la banda de audio: un asa que ademas mueve
+            //  pasa cualquier prueba que solo mire el largo, y desde el dedo es
+            //  un bloque que se escapa mientras lo recortas. Por el filo
+            //  izquierdo la cabeza no se toca: lo que se mueve es el FINAL.
+            pendiente = { -1, -1 };
+            const int nuevo = (asaBloque < 0) ? juce::jmax (1, bloqueFin - bar)
+                                              : juce::jmax (1, bar - bloqueCabeza + 1);
+            if (nuevo != bloqueFin - bloqueCabeza)
+            {
+                onLargoBloque (bloqueCarril, bloqueCabeza, nuevo, bloquePrimero);
+                bloquePrimero = false;
+                bloqueFin = bloqueCabeza + nuevo;
+            }
+            return;
+        }
+
+        if (! onCell) return;
         if (arrastrando && lane == ultima.first && bar == ultima.second) return;
         ultima = { lane, bar };
         onCell (lane, bar);
@@ -852,6 +939,22 @@ private:
         }
         return ZatiColours::padBorder;
     }
+    //  El bloque que ocupa una celda: su cabeza y su final EXCLUSIVO, o
+    //  {-1,-1} si ahi no hay ninguno. La cabeza se busca hacia atras -una
+    //  continuacion no dice de quien es- y la cola hacia delante, que es la
+    //  misma cuenta que ya hacen el pintado y `resizeSongBlock`.
+    std::pair<int, int> bloqueEn (int lane, int bar) const
+    {
+        if (data == nullptr || lane < 0 || bar < 0 || bar >= totalBars) return { -1, -1 };
+        int cabeza = bar;
+        while (cabeza > 0 && data[lane * totalBars + cabeza] == kContinued) --cabeza;
+        const int v = data[lane * totalBars + cabeza];
+        if (v == 0 || v == kContinued) return { -1, -1 };
+        int fin = cabeza + 1;
+        while (fin < totalBars && data[lane * totalBars + fin] == kContinued) ++fin;
+        return { cabeza, fin };
+    }
+
     int findStart (int lane, int bar) const
     {
         for (int b = bar - 1; b >= 0; --b)
@@ -907,6 +1010,14 @@ private:
     int              numClips = 0;
     int              clipSel  = -1;   // el que se esta moviendo, para que se vea
     int              arrastrado = -1; // el que este dedo agarro
+    //  El asa de un BLOQUE de patron, que no es la de un clip: aquella vive en
+    //  `arrastrado`/`asa` y esta en el carril y la cabeza, porque un bloque no
+    //  tiene indice - es lo que haya escrito en las celdas.
+    int  asaBloque = 0;               // -1 filo izquierdo, +1 derecho, 0 ninguno
+    int  bloqueCarril = -1, bloqueCabeza = 0, bloqueFin = 0;
+    bool bloquePrimero = true;        // el primer cambio de largo del gesto
+    std::pair<int, int> pendiente { -1, -1 };   // la celda que pintaria un TOQUE
+
     int              agarre = 0;      // por que compas suyo lo agarro
     int              asa = 0;         // -1 filo izquierdo, +1 derecho, 0 el medio
     unsigned         mudoAudio = 0;   // un bit por pista de audio silenciada

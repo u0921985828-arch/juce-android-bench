@@ -2718,6 +2718,38 @@ MainComponent::MainComponent()
         songSheet.addAndMakeVisible (songVistaBtn);
     }
 
+    //  EL ZOOM DE LA LINEA DE TIEMPO. La vista estaba clavada en ocho compases
+    //  y por eso un estribillo de dieciseis no se podia mirar entero. Una tapa
+    //  que CICLA y no tres -8, 16, 4- que es lo que ya hace el zoom del piano,
+    //  y por lo mismo: tres tapas en el renglon del titulo no caben, y aqui
+    //  ademas la fila la comparte con el interruptor de vista.
+    {
+        styleButton (songZoomBtn, kStepOff);
+        songZoomBtn.onClick = [this]
+        {
+            //  EL CICLO SALTA EL PASO QUE NO CABE, con la misma pregunta que ya
+            //  deciden BANCO, PADS y la tira del paso: a dieciseis compases la
+            //  celda cae a la mitad de ancho, y una celda que se pinta con el
+            //  dedo arrastrado por debajo de su suelo es una celda que se
+            //  falla. Se prueban los pasos en orden y se coge el primero que
+            //  quepa; si no cabe ninguno, se queda donde esta.
+            static const int pasos[] = { Playlist::kBarsViewDef, 16, 4 };
+            const int n = (int) (sizeof (pasos) / sizeof (pasos[0]));
+            int donde = 0;
+            for (int i = 0; i < n; ++i) if (pasos[i] == songGrid.getCompasesVista()) donde = i;
+            for (int k = 1; k <= n; ++k)
+            {
+                const int cand = pasos[(donde + k) % n];
+                if (cand == songGrid.getCompasesVista() || songGrid.cabeVista (cand))
+                {
+                    ponVistaCompases (cand);
+                    return;
+                }
+            }
+        };
+        songSheet.addAndMakeVisible (songZoomBtn);
+    }
+
     songGrid.onLane = [this] (int lane)
     {
         if (songVista == Playlist::vistaAudio)
@@ -2783,6 +2815,15 @@ MainComponent::MainComponent()
     songGrid.onClipQuita = [this] (int i) { quitaClip (i); };
     songGrid.onClipLargo = [this] (int i, int d, int h) { largoClip (i, d, h); };
 
+
+    //  EL FILO DE UN BLOQUE LO ESTIRA, por el MISMO camino que las tapas
+    //  ACORTAR y ALARGAR: dos caminos que calculan el largo por su cuenta se
+    //  separan, y el sintoma seria un bloque que se come al vecino arrastrando
+    //  y no con la tapa. Ver `ponLargoBloque`.
+    songGrid.onLargoBloque = [this] (int carril, int cabeza, int largo, bool primero)
+    {
+        ponLargoBloque (carril, cabeza, largo, primero);
+    };
 
     songGrid.onCell = [this] (int lane, int bar)
     {
@@ -3678,7 +3719,11 @@ void MainComponent::ponIconos()
                                  //  no hay verbo que dibujar, y el rotulo ya
                                  //  hace el trabajo que haria el dibujo. Es la
                                  //  misma clase que pianoVerBtn.
-                                 &pianoZoomBtn })
+                                 &pianoZoomBtn,
+                                 //  Y el de la linea de tiempo, que es la misma
+                                 //  clase con otra rejilla: «8 COMPASES» dice
+                                 //  cuanto se ve, no lo que pasa al tocarlo.
+                                 &songZoomBtn })
         b->getProperties().set ("valor", 1);
 
     //  LOS SEIS EFECTOS, por su orden en la fila. Es la unica fila de la app
@@ -7511,6 +7556,7 @@ void MainComponent::retranslateUi()
     //  y lo caza la prueba comparativa, no la tabla.
     songDoubleBtn.setButtonText (T ("DOBLAR"));
     songVistaBtn.setButtonText (T (songVista == Playlist::vistaAudio ? "AUDIO" : "PATRONES"));
+    songZoomBtn.setButtonText (T ("%1 COMPASES|zoom", juce::String (songGrid.getCompasesVista())));
     songRecBtn.setButtonText (T (grabandoAlArreglo ? "PARAR" : "GRABAR"));
     autoBtn.setButtonText (T ("AUTO"));
     songClickBtn.setButtonText (T ("CLIC"));
@@ -10239,19 +10285,51 @@ void MainComponent::resizeSongBlock (int dir)
     while (cabeza + largo < len
            && engine.getSongCell (carril, cabeza + largo) == AudioEngine::kContinued) ++largo;
 
-    const int nuevo = largo + dir;
+    ponLargoBloque (carril, cabeza, largo + dir);
+}
+
+//  EL LARGO DE UN BLOQUE LO ESCRIBE UNA FUNCION.
+//
+//  La regla entera vivia dentro de `resizeSongBlock`, que es quien la llamaba
+//  desde las tapas ACORTAR y ALARGAR; en cuanto el gesto del filo fue un
+//  segundo cliente, dejarla ahi habria sido la misma cuenta escrita dos veces
+//  -«alargar solo se come compases VACIOS», el tope de la cancion, el
+//  `pushUndo`- y la que se quedara vieja seria un bloque que se come al vecino
+//  desde un camino y no desde el otro. Es la extraccion de `normaliza` fuera de
+//  `render` con otra pieza.
+//
+//  Y UNA SOLA ENTRADA DE DESHACER POR GESTO: un arrastre emite un evento por
+//  movimiento, asi que apilar uno por evento no es deshacer, es contar. Se
+//  apunta solo cuando el largo de verdad cambia, y quien arrastra vuelve a
+//  llamar con el mismo numero mientras el dedo no cruce a otra celda.
+void MainComponent::ponLargoBloque (int carril, int cabeza, int nuevo, bool apunta)
+{
+    const int len = engine.getSongLength();
+    if (carril < 0 || carril >= AudioEngine::kSongLanes || cabeza < 0 || cabeza >= len) return;
+
+    int largo = 1;
+    while (cabeza + largo < len
+           && engine.getSongCell (carril, cabeza + largo) == AudioEngine::kContinued) ++largo;
+
+    if (nuevo == largo) return;
     if (nuevo < 1 || cabeza + nuevo > len)
     {
         status.setText (T ("El bloque no puede medir eso"), juce::dontSendNotification);
         return;
     }
-    if (dir > 0 && engine.getSongCell (carril, cabeza + largo) != 0)
-    {
-        status.setText (T ("El compas siguiente ya esta ocupado"), juce::dontSendNotification);
-        return;
-    }
+    //  Alargar solo se come compases VACIOS: comerse el bloque de al lado seria
+    //  borrar algo que nadie ha pedido borrar, y para eso ya esta la goma. Con
+    //  el gesto hace falta mirar TODOS los que se van a ocupar y no solo el
+    //  siguiente - un dedo salta varias celdas de una vez donde una tapa avanza
+    //  de uno en uno.
+    for (int b = cabeza + largo; b < cabeza + nuevo; ++b)
+        if (engine.getSongCell (carril, b) != 0)
+        {
+            status.setText (T ("El compas siguiente ya esta ocupado"), juce::dontSendNotification);
+            return;
+        }
 
-    pushUndo (T ("LARGO"));
+    if (apunta) pushUndo (T ("LARGO"));
 
     for (int b = cabeza + 1; b < cabeza + nuevo; ++b)
         engine.setSongCell (carril, b, AudioEngine::kContinued);
@@ -10665,6 +10743,44 @@ void MainComponent::refreshPiano (bool repintarTarjeta)
 //  uno nuevo: lo que se apaga se queda ADEMAS sin coordenadas, porque un
 //  componente invisible que conserva sus limites sigue estando ahi para todo lo
 //  que mida geometria.
+//  CUANTOS COMPASES SE VEN DE UNA VEZ.
+//
+//  Dos cosas que hay que hacer aqui y no en la tapa, porque las dos dependen de
+//  la vista y no del gesto:
+//
+//  - `songPage` se RE-DERIVA en vez de ponerse a cero. El compas que estabas
+//    mirando tiene que seguir en pantalla: saltar al principio cada vez que se
+//    toca el zoom es exactamente lo que hace que un zoom no se use.
+//  - Y los ROTULOS de las tapas de pagina dicen el compas en el que empiezan,
+//    asi que con la vista variable dejan de ser su indice. Se escriben aqui,
+//    que es donde se sabe cuanto vale una pagina.
+void MainComponent::ponVistaCompases (int n)
+{
+    const int antes  = songGrid.getCompasesVista();
+    const int visible = songPage * antes;           //  el primer compas de la pagina
+
+    songGrid.setCompasesVista (n);
+    const int ahora = songGrid.getCompasesVista();
+
+    songPage = juce::jlimit (0, juce::jmax (0, songGrid.getPaginas() - 1), visible / ahora);
+    for (int k = 0; k < songPageBtns.size(); ++k)
+    {
+        songPageBtns[k]->setToggleState (k == songPage, juce::dontSendNotification);
+        songPageBtns[k]->setButtonText (juce::String (k * ahora + 1));
+    }
+
+    //  Una cifra dentro de una frase traducida es la unica clase de constante
+    //  que no se puede contrastar leyendo el codigo de al lado, asi que se
+    //  INTERPOLA - la misma decision que el subtitulo del manual - y la fila de
+    //  la tabla es una sola. Clave propia: COMPAS ya significa otra cosa en la
+    //  fila del secuenciador, y reaprovecharla por parecerse en espanol sale
+    //  mal en las otras tres.
+    songZoomBtn.setButtonText (T ("%1 COMPASES|zoom", juce::String (ahora)));
+
+    resized();
+    refreshSong();
+}
+
 void MainComponent::showSongPage (int v)
 {
     songVista = (v == Playlist::vistaAudio) ? (int) Playlist::vistaAudio

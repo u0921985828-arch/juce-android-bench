@@ -3036,10 +3036,15 @@ void MainComponent::resized()
         //  costar un pixel de alto. El titulo se aparta solo, que es lo que
         //  `antesDe` hace desde que existe.
         {
-            auto zona = Lang::takeEnd (titleRow, juce::jmin (titleRow.getWidth() / 2,
-                                                             Metrics::hit * 2));
-            juce::TextButton* vb[1] = { &songVistaBtn };
-            layoutModuleBar (zona, vb, 2, 1);
+            //  Y con el zoom son DOS: el interruptor de vista y cuantos
+            //  compases se ven. Las dos dicen el ESTADO y ninguna es un
+            //  verbo, asi que se leen juntas - y las dos caben aqui sin
+            //  costar un pixel de alto, que es lo unico que en esta ficha
+            //  no sobra.
+            auto zona = Lang::takeEnd (titleRow, juce::jmin (titleRow.getWidth() * 3 / 4,
+                                                             Metrics::hit * 4));
+            juce::TextButton* vb[2] = { &songZoomBtn, &songVistaBtn };
+            layoutModuleBar (zona, vb, 2, 2);
         }
 
         //  APAISADO, LA TARJETA SE PARTE EN DOS.
