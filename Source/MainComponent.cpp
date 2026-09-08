@@ -2591,15 +2591,13 @@ MainComponent::MainComponent()
     };
     songSheet.addAndMakeVisible (songPadModeBtn);
 
-    styleButton (songClearBtn, kStepOff);
-    songClearBtn.setColour (juce::TextButton::buttonOnColourId, ZatiColours::red);
-    songClearBtn.setClickingTogglesState (true);
-    songClearBtn.onClick = [this] { songBrush = songClearBtn.getToggleState() ? 0 : 1; refreshSong(); };
+    //  VACIAR se retiro: es la GOMA de la barra de herramientas. Dos tapas
+    //  para borrar eran dos duenos de la misma funcion, y la que se queda es
+    //  la que ademas se VE armada - que es lo que un modo tiene que hacer.
 
     styleButton (songDoubleBtn, kKey);
     songDoubleBtn.onClick = [this] { doubleSong(); };
     songSheet.addAndMakeVisible (songDoubleBtn);
-    songSheet.addAndMakeVisible (songClearBtn);
 
     //  Las cinco herramientas de arreglo. Ver songCursor: las cuatro primeras
     //  actuan sobre el compas marcado y sobre los cuatro carriles a la vez.
@@ -2718,6 +2716,38 @@ MainComponent::MainComponent()
         songSheet.addAndMakeVisible (songVistaBtn);
     }
 
+    //  LAS CUATRO HERRAMIENTAS, en iconos y sin rotulo.
+    //
+    //  Sin rotulo a proposito: `reparteTapa` admite ese caso desde siempre -con
+    //  el rotulo vacio el dibujo se lleva la tapa entera- y es lo que hace que
+    //  cuatro tapas ocupen 160 px en vez de los 300 y pico que piden MOVER,
+    //  LAPIZ, GOMA y SILENCIAR escritos. El nombre para quien no ve la pantalla
+    //  lo pone `setTitle`, que es lo que lee TalkBack: una tapa sin rotulo se
+    //  anunciaria por su clase, o sea «boton».
+    //
+    //  Y la GOMA no es una tapa nueva: es la brocha VACIAR de siempre, con su
+    //  dibujo y vista como lo que es -un modo armado-. Dos sitios para borrar
+    //  serian dos duenos de la misma funcion.
+    {
+        for (int i = 0; i < kNumHerramientas; ++i)
+        {
+            auto* b = new juce::TextButton();
+            styleButton (*b, kStepOff);
+            litAccent (*b);
+            b->getProperties().set ("icono", (int) kHerramientas[i].ico);
+            b->setClickingTogglesState (true);
+            //  EL VALOR SALE DE LA TABLA Y NO DEL INDICE DE LA TAPA. La primera
+            //  version paso `i`, y el orden en pantalla -MANO, LAPIZ, GOMA,
+            //  MUTE- no es el del enum -lapiz, goma, mano, mute-: la tapa de
+            //  MOVER armaba el LAPIZ. El banco lo canto entero, `estirado
+            //  [7,2]`, que es exactamente lo que pinta un lapiz arrastrado.
+            const int h = kHerramientas[i].id;
+            b->onClick = [this, h] { ponHerramienta (h); };
+            songSheet.addAndMakeVisible (b);
+            songToolBtns.add (b);
+        }
+    }
+
     //  EL ZOOM DE LA LINEA DE TIEMPO. La vista estaba clavada en ocho compases
     //  y por eso un estribillo de dieciseis no se podia mirar entero. Una tapa
     //  que CICLA y no tres -8, 16, 4- que es lo que ya hace el zoom del piano,
@@ -2820,6 +2850,61 @@ MainComponent::MainComponent()
     //  ACORTAR y ALARGAR: dos caminos que calculan el largo por su cuenta se
     //  separan, y el sintoma seria un bloque que se come al vecino arrastrando
     //  y no con la tapa. Ver `ponLargoBloque`.
+    //  MOVER UN BLOQUE ENTERO. Se quita de donde estaba y se pone donde cae,
+    //  y en ese orden: escribir primero y borrar despues se llevaria por
+    //  delante lo que se acaba de poner cuando el destino solapa al origen -
+    //  que es exactamente lo que pasa al arrastrar un compas. Es la misma
+    //  leccion que el mover del piano, donde quitar todas antes de poner es lo
+    //  que impide que un acorde pierda una nota.
+    songGrid.onMueveBloque = [this] (int carril, int cabeza, int nuevoCarril, int nuevoCompas, bool primero)
+    {
+        const int len = engine.getSongLength();
+        int largo = 1;
+        while (cabeza + largo < len
+               && engine.getSongCell (carril, cabeza + largo) == AudioEngine::kContinued) ++largo;
+        if (nuevoCompas < 0 || nuevoCompas + largo > len) return;
+
+        //  Y NO SE COME AL VECINO, que es la misma regla que ya tiene ALARGAR:
+        //  pisar un bloque que hay debajo seria borrar algo que nadie ha pedido
+        //  borrar, y para eso esta la goma. Se mira TODO el tramo de destino
+        //  saltandose el origen, que se va a quedar vacio.
+        for (int b = nuevoCompas; b < nuevoCompas + largo; ++b)
+        {
+            const bool esMio = (nuevoCarril == carril && b >= cabeza && b < cabeza + largo);
+            if (! esMio && engine.getSongCell (nuevoCarril, b) != 0) return;
+        }
+
+        if (primero) pushUndo (T ("MOVER"));
+
+        const int v = engine.getSongCell (carril, cabeza);
+        const bool mudo = engine.isSongCellMuted (carril, cabeza);
+        for (int b = cabeza; b < cabeza + largo; ++b)
+        {
+            engine.setSongCell (carril, b, 0);
+            engine.setSongCellMute (carril, b, false);
+        }
+        engine.setSongCell (nuevoCarril, nuevoCompas, v);
+        engine.setSongCellMute (nuevoCarril, nuevoCompas, mudo);
+        for (int b = nuevoCompas + 1; b < nuevoCompas + largo; ++b)
+            engine.setSongCell (nuevoCarril, b, AudioEngine::kContinued);
+
+        songCursor = nuevoCompas;
+        refreshSong();
+    };
+
+    //  SILENCIAR UN BLOQUE. Se apunta en la CABEZA, que es donde el motor lo
+    //  lee: una continuacion no adopta patron, asi que silenciarla no callaria
+    //  nada y el bloque seguiria sonando con la tapa encendida.
+    songGrid.onMuteBloque = [this] (int carril, int cabeza)
+    {
+        const bool nuevo = ! engine.isSongCellMuted (carril, cabeza);
+        pushUndo (T ("SILENCIAR"));
+        engine.setSongCellMute (carril, cabeza, nuevo);
+        refreshSong();
+        status.setText (nuevo ? T ("Bloque en silencio") : T ("Bloque suena"),
+                        juce::dontSendNotification);
+    };
+
     songGrid.onLargoBloque = [this] (int carril, int cabeza, int largo, bool primero)
     {
         ponLargoBloque (carril, cabeza, largo, primero);
@@ -3492,6 +3577,11 @@ MainComponent::MainComponent()
     showPadPage (padPageSound);
     showMixBank (0);
     ponIconos();
+    //  Y la herramienta de arranque: el LAPIZ, o sea la rejilla comportandose
+    //  exactamente como siempre. Sin esta linea las cuatro tapas nacerian
+    //  apagadas y la rejilla armada con la que fuera - un modo que nadie ha
+    //  pedido es peor que ninguno.
+    ponHerramienta (Playlist::hLapiz);
     //  DESPUES de ponIconos, que reparte los dibujos de toda la app por su
     //  sitio: la fila de la cara los suyos los toma de `slotFx` y no del
     //  orden, asi que tiene que ser la ultima palabra sobre esas seis tapas.
@@ -3616,7 +3706,7 @@ void MainComponent::ponIconos()
         //  songModeBtn, modoBtn y seqModoBtn NO estan en esta tabla: su dibujo
         //  cambia con el estado -CANCION o PATRON- y lo pone modoTapa. Dos
         //  sitios escribiendo el mismo icono es uno de los dos quedandose viejo.
-        { &songClearBtn, Iconos::Id::vaciar },    { &songDoubleBtn, Iconos::Id::doblar },
+        { &songDoubleBtn, Iconos::Id::doblar },
         { &songInsertBtn, Iconos::Id::insertar }, { &songRemoveBtn, Iconos::Id::quitar },
         { &songCopyBtn, Iconos::Id::copiar },     { &songPasteBtn, Iconos::Id::pegar },
         { &songLoopBtn, Iconos::Id::loop },       { &songLeftBtn, Iconos::Id::atras },
@@ -7538,7 +7628,6 @@ void MainComponent::retranslateUi()
 
     rackButton   .setButtonText (T ("RACK"));
     mixClearSolo .setButtonText (T ("SIN SOLO"));
-    songClearBtn .setButtonText (T ("VACIAR"));
     //  Y LA DEL MENU DE UNA RANURA. Se construyo con el literal en español y
     //  no se retraducia jamas: es exactamente el fallo de las tres pestañas de
     //  AJUSTES -la ficha que CONTIENE el selector de idioma- y lo canto el
@@ -7557,18 +7646,41 @@ void MainComponent::retranslateUi()
     songDoubleBtn.setButtonText (T ("DOBLAR"));
     songVistaBtn.setButtonText (T (songVista == Playlist::vistaAudio ? "AUDIO" : "PATRONES"));
     songZoomBtn.setButtonText (T ("%1 COMPASES|zoom", juce::String (songGrid.getCompasesVista())));
+    //  LAS CUATRO HERRAMIENTAS NO LLEVAN ROTULO, asi que su nombre para quien
+    //  no ve la pantalla hay que ponerlo a mano: sin esto TalkBack las anuncia
+    //  por su clase, o sea «boton» cuatro veces. Y aqui y no en el
+    //  constructor, que es donde los textos ya estan en el idioma que toca.
+    {
+        for (int i = 0; i < songToolBtns.size() && i < kNumHerramientas; ++i)
+            songToolBtns[i]->setTitle (T (kHerramientas[i].nombre));
+    }
     songRecBtn.setButtonText (T (grabandoAlArreglo ? "PARAR" : "GRABAR"));
     autoBtn.setButtonText (T ("AUTO"));
     songClickBtn.setButtonText (T ("CLIC"));
-    songShortBtn.setButtonText (T ("ACORTAR"));
-    songLongBtn.setButtonText  (T ("ALARGAR"));
-    songLeftBtn.setButtonText  (T ("ATRAS"));
-    songRightBtn.setButtonText (T ("ADELANTE"));
-    songInsertBtn.setButtonText (T ("INSERTAR"));
-    songRemoveBtn.setButtonText (T ("QUITAR"));
-    songCopyBtn.setButtonText   (T ("COPIAR"));
-    songPasteBtn.setButtonText  (T ("PEGAR"));
-    songLoopBtn.setButtonText   (T ("LOOP"));
+    //  LAS NUEVE DE ARREGLO SE QUEDAN SIN ROTULO Y CON SU DIBUJO.
+    //
+    //  Eran DOS Y HASTA TRES FILAS de palabras -medido antes de tocarlas: una
+    //  en tableta, dos en un movil grande y tres en 360x640, 280x653 y
+    //  apaisado- en la ficha cuyo unico trabajo son cuatro carriles. Y los
+    //  nueve dibujos ya estaban asignados desde la tanda de los iconos: lo
+    //  unico que hacian las palabras era pedir ancho.
+    //
+    //  El nombre no se pierde, cambia de sitio: va a `setTitle`, que es lo que
+    //  lee TalkBack. Una tapa sin rotulo se anunciaria por su clase - «boton»
+    //  nueve veces - y eso es exactamente lo que la tanda de la feria subio del
+    //  18 % al 79 %.
+    {
+        static const char* kArr[] = { "ACORTAR", "ALARGAR", "ATRAS", "ADELANTE",
+                                      "INSERTAR", "QUITAR", "COPIAR", "PEGAR", "LOOP" };
+        juce::TextButton* arr[] = { &songShortBtn, &songLongBtn, &songLeftBtn, &songRightBtn,
+                                    &songInsertBtn, &songRemoveBtn, &songCopyBtn,
+                                    &songPasteBtn, &songLoopBtn };
+        for (int i = 0; i < 9; ++i)
+        {
+            arr[i]->setButtonText ({});
+            arr[i]->setTitle (T (kArr[i]));
+        }
+    }
     chopEvenBtn.setButtonText (T ("IGUALES"));
     chopHitsBtn.setButtonText (T ("GOLPES"));
 
@@ -8473,6 +8585,18 @@ juce::ValueTree MainComponent::captureState() const
                 mudos += (engine.isSongLaneMuted (lane) ? "1" : "0");
             song.setProperty ("mudos", mudos, nullptr);
         }
+        //  Y EL SILENCIO POR BLOQUE, cuatro numeros y no una lista dispersa:
+        //  es un bit por compas en un uint64 por carril, o sea que la tabla
+        //  ENTERA son cuatro enteros. Escribir tripletes «carril compas 1»
+        //  seria mas largo que el dato. Se guardan en decimal porque
+        //  `getProperty` devuelve un var y un uint64 en hexadecimal habria que
+        //  parsearlo a mano.
+        {
+            juce::StringArray cm;
+            for (int lane = 0; lane < Playlist::kLanes; ++lane)
+                cm.add (juce::String ((juce::int64) engine.songCellMuteMask (lane)));
+            song.setProperty ("bmudos", cm.joinIntoString (","), nullptr);
+        }
         song.setProperty ("bucleA", engine.getSongLoopFrom(), nullptr);
         song.setProperty ("bucleB", engine.getSongLoopTo(), nullptr);
 
@@ -9230,7 +9354,10 @@ void MainComponent::applyState (const juce::ValueTree& s)
         songLenSlider.setValue (8.0, juce::dontSendNotification);
         ponModoCancion (false);
         for (int lane = 0; lane < Playlist::kLanes; ++lane)
+        {
             engine.setSongLaneMute (lane, false);
+            engine.setSongCellMuteMask (lane, 0);
+        }
         engine.setSongLoop (0, 0);
     }
     else
@@ -9254,6 +9381,18 @@ void MainComponent::applyState (const juce::ValueTree& s)
             const auto mudos = song.getProperty ("mudos").toString();
             for (int lane = 0; lane < Playlist::kLanes; ++lane)
                 engine.setSongLaneMute (lane, lane < mudos.length() && mudos[lane] == '1');
+        }
+        //  Y el silencio por bloque. Un proyecto anterior no trae la propiedad
+        //  y vuelve con los cuatro a CERO - o sea, todos los bloques sonando,
+        //  que es exactamente como sonaba el dia que se guardo. Lo que manda no
+        //  es cual es el defecto de hoy sino como sonaba entonces.
+        {
+            const auto cm = juce::StringArray::fromTokens (
+                                song.getProperty ("bmudos").toString(), ",", "");
+            for (int lane = 0; lane < Playlist::kLanes; ++lane)
+                engine.setSongCellMuteMask (lane, lane < cm.size()
+                                                    ? (juce::uint64) cm[lane].getLargeIntValue()
+                                                    : 0);
         }
         engine.setSongLoop ((int) song.getProperty ("bucleA", 0),
                             (int) song.getProperty ("bucleB", 0));
@@ -10743,6 +10882,34 @@ void MainComponent::refreshPiano (bool repintarTarjeta)
 //  uno nuevo: lo que se apaga se queda ADEMAS sin coordenadas, porque un
 //  componente invisible que conserva sus limites sigue estando ahi para todo lo
 //  que mida geometria.
+//  ARMAR UNA DE LAS CUATRO HERRAMIENTAS.
+//
+//  La GOMA no es un modo aparte del pincel: ES la brocha VACIAR, que ya
+//  existia. Armarla la pone y desarmarla devuelve el pincel al patron 1, asi
+//  que borrar tiene UN dueno y ademas se ve armado - que es justo lo que la
+//  tapa VACIAR no hacia: encendida y apagada se distinguian por un color, y el
+//  dedo estaba en la rejilla y no en la tapa.
+void MainComponent::ponHerramienta (int h)
+{
+    songHerramienta = juce::jlimit (0, (int) Playlist::hMute, h);
+    songGrid.herramienta = songHerramienta;
+
+    if (songHerramienta == Playlist::hGoma)      songBrush = 0;
+    else if (songBrush == 0)                     songBrush = 1;
+
+    for (int i = 0; i < songToolBtns.size() && i < kNumHerramientas; ++i)
+        songToolBtns[i]->setToggleState (kHerramientas[i].id == songHerramienta,
+                                         juce::dontSendNotification);
+
+    //  EL MODO SE VE DONDE SE ACTUA y no donde se armo, que es la regla que ya
+    //  gobierna SOLO en la cara y las cuatro del piano: el dedo esta en la
+    //  rejilla, no en la tapa. Transparente es «el lapiz», o sea lo de siempre.
+    songGrid.setModo (songHerramienta == Playlist::hLapiz
+                        ? juce::Colours::transparentBlack
+                        : ZatiColours::accent.withAlpha (0.85f));
+    refreshSong();
+}
+
 //  CUANTOS COMPASES SE VEN DE UNA VEZ.
 //
 //  Dos cosas que hay que hacer aqui y no en la tapa, porque las dos dependen de
@@ -10796,6 +10963,12 @@ void MainComponent::showSongPage (int v)
     //  pone es el sonido del pad elegido. Dejarla puesta seria una fila de ocho
     //  tapas que no hacen nada, que es justo lo que esta casa llama ruido.
     for (auto* b : songPatBtns) { b->setVisible (! audio); if (audio) b->setBounds ({}); }
+    //  Y LAS CUATRO HERRAMIENTAS, por lo mismo: mover y silenciar son de un
+    //  BLOQUE DE PATRON, y en la banda de audio no hay ninguno - los clips
+    //  tienen sus propias asas desde que existen. Apagar Y vaciar los limites,
+    //  que media regla es lo que tuvo a SEGUIR visible y de 0x0 desde el primer
+    //  dia.
+    for (auto* b : songToolBtns) { b->setVisible (! audio); if (audio) b->setBounds ({}); }
 
     //  Y LAS TRES DE LA BANDA, al reves: solo en AUDIO. Grabar al arreglo, el
     //  metronomo y la automatizacion no tienen nada que decirle a una rejilla
@@ -11017,7 +11190,6 @@ void MainComponent::refreshSong (bool repintarTarjeta)
     for (int i = 0; i < songPatBtns.size(); ++i)
         songPatBtns[i]->setToggleState (songBrush == i + 1, juce::dontSendNotification);
     songPadModeBtn.setToggleState (songBrush < 0, juce::dontSendNotification);
-    songClearBtn.setToggleState   (songBrush == 0, juce::dontSendNotification);
     songPadModeBtn.setButtonText (songBrush < 0
         ? T ("SONIDO|cancion") + " " + juce::String (-songBrush).paddedLeft ('0', 2)
         : T ("SONIDO|cancion"));
@@ -11048,10 +11220,18 @@ void MainComponent::refreshSong (bool repintarTarjeta)
     for (int q = 0; q < kNumPatterns; ++q) songLargos[(size_t) q] = engine.getPatternLength (q);
     songGrid.setPatrones (&pattern[0][0][0], songLargos, kNumPatterns, kNumSteps, kNumPads);
 
+    //  El silencio por bloque, cuatro enteros: el motor los guarda como un bit
+    //  por compas y la rejilla los lee igual, asi que no hay traduccion que
+    //  pueda quedarse vieja.
+    juce::uint64 bmudos[Playlist::kLanes] {};
+    for (int ln = 0; ln < Playlist::kLanes; ++ln)
+        bmudos[ln] = engine.songCellMuteMask (ln);
+
     songGrid.setSource (songCells, padZati.data(), (int) padZati.size(), bars, songPage,
                         engine.isSongMode() && engine.isPlaying() ? engine.getSongBar() : -1,
                         songCursor, mudos,
-                        engine.getSongLoopFrom(), engine.getSongLoopTo());
+                        engine.getSongLoopFrom(), engine.getSongLoopTo(),
+                        bmudos);
 
     //  LOS CLIPS, TRADUCIDOS A COMPASES. La rejilla dibuja compases y el motor
     //  guarda muestras, asi que alguien traduce; se hace aqui y con

@@ -762,6 +762,11 @@ public:
     void clearSong() noexcept
     {
         for (auto& lane : songCell) for (auto& c : lane) c.store (0, std::memory_order_relaxed);
+        //  Y el silencio por bloque con ellas: vaciar la cancion y dejar los
+        //  bits puestos es exactamente la herencia que ya se pago dos veces en
+        //  NUEVO - lo que queda parece tuyo. Un bloque escrito donde antes
+        //  hubo uno silenciado naceria mudo sin que nadie lo haya pedido.
+        for (auto& m : songCellMute) m.store (0, std::memory_order_relaxed);
     }
     void setSongLength (int bars) noexcept { songBars.store (juce::jlimit (1, kSongBars, bars), std::memory_order_relaxed); }
     int  getSongLength() const noexcept    { return songBars.load (std::memory_order_relaxed); }
@@ -781,6 +786,45 @@ public:
     {
         return lane >= 0 && lane < kSongLanes
             && songLaneMute[(size_t) lane].load (std::memory_order_relaxed);
+    }
+
+    //  Y EL SILENCIO DE UN BLOQUE SUELTO, que es otra cosa: el del carril
+    //  calla la pista entera y este calla UN bloque de la linea de tiempo -
+    //  probar una cancion sin ese estribillo sin borrarlo y volver a
+    //  escribirlo, que es exactamente para lo que existe en un secuenciador de
+    //  patrones.
+    //
+    //  UN BIT POR COMPAS EN UN `uint64` POR CARRIL, y no una tabla de bool: la
+    //  cancion mide SESENTA Y CUATRO compases clavados, asi que caben exactos
+    //  en un entero de 64 bits y el hilo de audio lee UNA carga atomica por
+    //  compas en vez de recorrer nada. Y con `static_assert`, que el dia que
+    //  `kSongBars` deje de valer 64 esto tiene que fallar al compilar y no
+    //  silenciar el compas equivocado.
+    static_assert (kSongBars <= 64, "el silencio por bloque es un bit por compas en un uint64");
+
+    void setSongCellMute (int lane, int bar, bool m) noexcept
+    {
+        if (lane < 0 || lane >= kSongLanes || bar < 0 || bar >= kSongBars) return;
+        const juce::uint64 bit = (juce::uint64) 1 << bar;
+        auto& v = songCellMute[(size_t) lane];
+        const juce::uint64 antes = v.load (std::memory_order_relaxed);
+        v.store (m ? (antes | bit) : (antes & ~bit), std::memory_order_relaxed);
+    }
+    bool isSongCellMuted (int lane, int bar) const noexcept
+    {
+        if (lane < 0 || lane >= kSongLanes || bar < 0 || bar >= kSongBars) return false;
+        return (songCellMute[(size_t) lane].load (std::memory_order_relaxed)
+                  >> bar) & 1u;
+    }
+    juce::uint64 songCellMuteMask (int lane) const noexcept
+    {
+        return (lane >= 0 && lane < kSongLanes)
+                 ? songCellMute[(size_t) lane].load (std::memory_order_relaxed) : 0;
+    }
+    void setSongCellMuteMask (int lane, juce::uint64 m) noexcept
+    {
+        if (lane >= 0 && lane < kSongLanes)
+            songCellMute[(size_t) lane].store (m, std::memory_order_relaxed);
     }
 
     //  EL BUCLE DE UN TRAMO. Trabajar en el estribillo de una cancion de
@@ -1950,6 +1994,7 @@ private:
     std::array<std::array<std::atomic<int>, kSongBars>, kSongLanes> songCell {};
     std::atomic<int> songBars { 8 };      // how many bars the song is long
     std::array<std::atomic<bool>, kSongLanes> songLaneMute {};   // ver setSongLaneMute
+    std::array<std::atomic<juce::uint64>, kSongLanes> songCellMute {};  // ver setSongCellMute
     //  El tramo en bucle, en COMPASES y medio abierto: [A, B). A >= B es
     //  apagado, que es lo que vale un proyecto que no lo conocia.
     std::atomic<int> songLoopA { 0 }, songLoopB { 0 };

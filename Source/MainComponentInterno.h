@@ -734,3 +734,20 @@ namespace ZatiTour
           "El idioma, las cuatro carcasas y el MANUAL, que cuenta todo esto con "
           "calma. Ya puedes empezar." };
 }
+
+//  LAS CUATRO HERRAMIENTAS DE LA LINEA DE TIEMPO, en una tabla.
+//
+//  El orden en PANTALLA no es el del enum -alli el lapiz es el cero, porque es
+//  el defecto y lo que la rejilla hacia siempre- asi que la tapa y el valor
+//  tienen que viajar juntos. Escribirlos en dos sitios ya costo una medida: la
+//  tapa de MOVER armaba el LAPIZ y el banco saco `estirado [7,2]`, que es
+//  exactamente lo que pinta un lapiz arrastrado.
+struct HerramientaCancion { const char* nombre; Iconos::Id ico; int id; };
+
+inline constexpr HerramientaCancion kHerramientas[] = {
+    { "MOVER",     Iconos::Id::mano,   Playlist::hMano  },
+    { "LAPIZ",     Iconos::Id::lapiz,  Playlist::hLapiz },
+    { "GOMA",      Iconos::Id::goma,   Playlist::hGoma  },
+    { "SILENCIAR", Iconos::Id::apagar, Playlist::hMute  },
+};
+inline constexpr int kNumHerramientas = (int) (sizeof (kHerramientas) / sizeof (kHerramientas[0]));

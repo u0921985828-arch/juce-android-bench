@@ -2871,10 +2871,32 @@ void MainComponent::resized()
 
     // SONG sheet: palette, timeline, page row.
     {
-        const int laneH = 40;
+        //  EL CARRIL DEJA DE ESTAR CLAVADO EN CUARENTA.
+        //
+        //  Era una constante escrita a mano, asi que compactar las filas de
+        //  arriba NO agrandaba el area de trabajo: dejaba la tarjeta mas corta
+        //  y el carril donde estaba. Medido antes de tocar nada: 42.0 px en un
+        //  movil grande, en tableta y en el Fold - los tres capados por el 40 -
+        //  y 28.8 y 20.2 en las dos estrechas, que es donde `sheetFromBottom`
+        //  ya se comia la diferencia.
+        //
+        //  Ahora pide un SUELO y se lleva lo que sobre hasta un tope. Es la
+        //  regla de siempre -lo que no puede encoger se aparta primero y el
+        //  elastico se queda el resto- aplicada a lo unico para lo que esta
+        //  pagina existe. El tope existe porque un carril de doscientos pixeles
+        //  no es mas util que uno de setenta: lo que sobra por encima se lo
+        //  queda la maquina, que se sigue viendo detras de la tarjeta.
+        const int laneMin = juce::jmax (Metrics::celdaCancion, 34);
+        const int laneMax = 72;
+        int laneH = laneMin;
         //  Y la fila de modos puede ser DOS desde que son cuatro tapas, asi que
         //  la altura que se pide lo cuenta: pedirla de una y usar dos es como
         //  un control se queda con altura cero.
+        //  La tira de herramientas cuesta su fila, y se cuenta AQUI: pedir sin
+        //  ella y colocarla abajo es como un control se queda con altura cero -
+        //  el fallo que esta misma ficha ya pago con la fila de paginas.
+        const int filasHerr = (songVista == Playlist::vistaAudio)
+                                ? 0 : Metrics::hit + Metrics::halfGap;
         int filasModo = Metrics::hit;
         //  Y la de herramientas puede ser dos por lo mismo: son cinco tapas y
         //  en arabe INSERTAR y QUITAR piden bastante mas ancho que en ingles.
@@ -2897,12 +2919,12 @@ void MainComponent::resized()
             //  vista de audio son CINCO -las dos brochas, GRABAR, el clic y el
             //  modo- y preguntar por cuatro seria pedir con una cuenta y
             //  colocar con otra, que es como una fila se sale de la tarjeta.
-            juce::TextButton* sb[6] = { &songPadModeBtn, &songClearBtn,
+            juce::TextButton* sb[5] = { &songPadModeBtn,
                                         songVista == Playlist::vistaAudio ? &songRecBtn : &songDoubleBtn,
                                         songVista == Playlist::vistaAudio ? &songClickBtn : &songModeBtn,
                                         songVista == Playlist::vistaAudio ? (juce::TextButton*) &autoBtn : &songModeBtn,
                                         &songModeBtn };
-            const int nb = (songVista == Playlist::vistaAudio) ? 6 : 4;
+            const int nb = (songVista == Playlist::vistaAudio) ? 5 : 3;
             if (! moduleBarFits (anchoUtil, sb, nb)) filasModo = 2 * Metrics::hit + Metrics::halfGap;
 
             juce::TextButton* su[9] = { &songLeftBtn, &songRightBtn, &songShortBtn,
@@ -2913,9 +2935,15 @@ void MainComponent::resized()
             //  51. Tres escalones, y el que se elige aqui es el mismo que se
             //  maqueta abajo, que pedir uno y usar otro deja la ultima fila
             //  con altura cero.
-            filasUtil = moduleBarFits (anchoUtil, su, 9) ? Metrics::hit
-                      : moduleBarFits (anchoUtil, su, 5) ? 2 * Metrics::hit + Metrics::halfGap
-                                                         : 3 * Metrics::hit + 2 * Metrics::halfGap;
+            //  Y DESDE QUE SON ICONOS SIN ROTULO, LA PREGUNTA ES EL DEDO Y NO
+            //  EL TEXTO. `moduleBarFits` mide rotulos, y con el rotulo vacio
+            //  diria que si siempre: nueve tapas en 225 px son 25, la mitad de
+            //  un dedo, y el banco lo cantaria entero. Nueve por cuarenta, y
+            //  donde no caben, en dos filas.
+            juce::ignoreUnused (su);
+            filasUtil = (anchoUtil >= 9 * Metrics::hit) ? Metrics::hit
+                      : (anchoUtil >= 5 * Metrics::hit) ? 2 * Metrics::hit + Metrics::halfGap
+                                                        : 3 * Metrics::hit + 2 * Metrics::halfGap;
         }
         //  Girado, la tarjeta no tiene que ser tan alta como la suma de las
         //  filas: las filas estan en una columna al lado de la rejilla, asi
@@ -2965,7 +2993,7 @@ void MainComponent::resized()
             const int col = vistaAud
                               ? (filasModo + Metrics::sm)
                               : (filasPal * Metrics::hit + (filasPal - 1) * Metrics::halfGap + Metrics::xs
-                                 + filasModo + filasUtil + Metrics::sm * 2);
+                                 + filasHerr + filasModo + filasUtil + Metrics::sm * 2);
             juce::ignoreUnused (col);
             const int rej = Playlist::kLanes * laneH;
             return Metrics::md * 2 + Metrics::hit
@@ -3011,7 +3039,21 @@ void MainComponent::resized()
                                ? (filasModo + Metrics::sm)
                                : (filasPaleta * Metrics::hit
                                   + (filasPaleta - 1) * Metrics::halfGap + Metrics::xs   // paleta
-                                  + filasModo + filasUtil + Metrics::sm * 2);
+                                  + filasHerr + filasModo + filasUtil + Metrics::sm * 2);
+        //  Y AQUI SE REPARTE LO QUE SOBRA. Se pide la ficha con el carril en
+        //  su SUELO -que es lo que el resto de la maqueta necesita para caber-
+        //  y lo que quede hasta el tope de la tarjeta se lo llevan los cuatro
+        //  carriles, acotado por arriba. Donde no sobra nada, el suelo, que es
+        //  exactamente lo que habia en las dos pantallas estrechas.
+        {
+            const int pedidoConSuelo = Metrics::md * 2 + Metrics::hit
+                                     + (wideFace ? juce::jmax (altoCol, Playlist::kLanes * laneMin + altoPie)
+                                                 : altoCol + Metrics::sm + altoPie
+                                                   + Playlist::kLanes * laneMin);
+            const int sobra = topeCancion - pedidoConSuelo;
+            if (sobra > 0)
+                laneH = juce::jmin (laneMax, laneMin + sobra / Playlist::kLanes);
+        }
         const int altoRej  = Playlist::kLanes * laneH;
         auto inner = sheetFromBottom (songSheet,
                                       Metrics::md * 2 + Metrics::hit
@@ -3153,12 +3195,55 @@ void MainComponent::resized()
             //  metronomo. GRABAR y CLIC van aqui y no en una fila propia
             //  porque una fila cuesta 44 px de lo unico para lo que existe la
             //  pagina - los carriles - y esta fila ya esta puesta.
-            juce::TextButton* sb[6] = { &songPadModeBtn, &songClearBtn,
+            //  LA TIRA DE HERRAMIENTAS: cuatro iconos sin rotulo.
+            //
+            //  Se reparte por el DEDO y no por el texto -no hay texto- asi que
+            //  la pregunta es 4 x Metrics::hit y no `moduleBarFits`, que mide
+            //  rotulos. Con cuatro son 160 px y caben en las siete pantallas,
+            //  incluida la mas estrecha que nadie fabrica.
+            if (! vistaAud)
+            {
+                auto fila = panel.removeFromTop (Metrics::hit);
+                const int n = songToolBtns.size();
+                if (n > 0)
+                {
+                    //  Centrada y a `Metrics::hit` por tapa: cuatro iconos
+                    //  estirados a todo lo ancho de la tarjeta se leerian como
+                    //  cuatro tapas de otra cosa - lo que dice que son una
+                    //  familia es que miden lo que mide un dedo y nada mas.
+                    //
+                    //  Y LA CELDA ES EL DEDO MAS LO QUE EL AIRE SE COME, que es
+                    //  la unica forma de que la tapa ACABE midiendo cuarenta.
+                    //  La primera version pidio la celda de `Metrics::hit`
+                    //  clavada y la recorto `(aireTapa, 4)`: las cuatro salieron
+                    //  a 36x32 y el banco lo canto con 222 TOUCH nuevos - en una
+                    //  ficha donde ninguna de las once reglas duras se movio.
+                    //  Es el mismo fallo que ya costo una medida en la tapa de
+                    //  apagar del rack, donde el `reduced (1, 4)` de la fila
+                    //  dejaba 38x40.
+                    //
+                    //  Y EL AIRE VERTICAL ES CERO Y NO CUATRO: la fila mide
+                    //  `Metrics::hit` justo, asi que no hay holgura de la que
+                    //  sacarlo. Es lo que `layoutModuleBar` hace desde que se
+                    //  midio -acotar el aire a lo que sobra por encima del
+                    //  dedo- y esta tira no pasa por ella porque se reparte por
+                    //  el dedo y no por el texto.
+                    const int celda = juce::jmin (Metrics::hit + 2 * Metrics::aireTapa,
+                                                  fila.getWidth() / n);
+                    auto zona = fila.withSizeKeepingCentre (celda * n, fila.getHeight());
+                    for (int i = 0; i < n; ++i)
+                        songToolBtns[i]->setBounds (zona.removeFromLeft (celda)
+                                                        .reduced (Metrics::aireTapa, 0));
+                }
+                panel.removeFromTop (Metrics::halfGap);
+            }
+
+            juce::TextButton* sb[5] = { &songPadModeBtn,
                                         vistaAud ? &songRecBtn : &songDoubleBtn,
                                         vistaAud ? &songClickBtn : &songModeBtn,
                                         vistaAud ? (juce::TextButton*) &autoBtn : &songModeBtn,
                                         &songModeBtn };
-            const int nBrochas = vistaAud ? 6 : 4;
+            const int nBrochas = vistaAud ? 5 : 3;
             if (moduleBarFits (panel.getWidth(), sb, nBrochas))
             {
                 layoutModuleBar (panel.removeFromTop (Metrics::hit), sb, 0, nBrochas);
@@ -3168,7 +3253,7 @@ void MainComponent::resized()
                 //  Y EN DOS FILAS DONDE NO CABEN, que es la misma pregunta
                 //  que ya deciden BANCO y PADS. En audio, arriba las dos
                 //  brochas y abajo lo que ACTUA - grabar, el clic y el modo.
-                const int arriba = vistaAud ? 2 : 2;
+                const int arriba = 1;   // la brocha SONIDO; lo que ACTUA baja
                 layoutModuleBar (panel.removeFromTop (Metrics::hit), sb, 0, arriba);
                 panel.removeFromTop (Metrics::halfGap);
                 juce::TextButton* sc[4] = { vistaAud ? &songRecBtn : &songDoubleBtn,
@@ -3176,6 +3261,7 @@ void MainComponent::resized()
                                             vistaAud ? (juce::TextButton*) &autoBtn : &songModeBtn,
                                             &songModeBtn };
                 layoutModuleBar (panel.removeFromTop (Metrics::hit), sc, 0, vistaAud ? 4 : 2);
+
             }
             //  LA PALETA Y LAS BROCHAS SON UN SOLO PANEL, no dos. Entre las dos
             //  filas hay Metrics::xs y dos paneles a cuatro pixeles se tocan -
@@ -3185,7 +3271,7 @@ void MainComponent::resized()
             //  Y separarlas costaria cuatro pixeles de alto que salen de lo
             //  unico para lo que existe esta pagina: en 280x653 el carril anda
             //  por 21 px y son cuatro carriles. Ademas la lectura buena es esa:
-            //  P1..P8 dice QUE pinta la brocha y SONIDO/VACIAR con QUE pinta -
+            //  P1..P8 dice QUE pinta la brocha y SONIDO con QUE pinta -
             //  las dos son la brocha. Lo otro son las nueve herramientas, que
             //  actuan sobre lo que YA esta puesto.
             cierraSong (gBrocha);
@@ -3205,11 +3291,15 @@ void MainComponent::resized()
             juce::TextButton* su[9] = { &songLeftBtn, &songRightBtn, &songShortBtn,
                                         &songLongBtn, &songInsertBtn, &songRemoveBtn,
                                         &songCopyBtn, &songPasteBtn, &songLoopBtn };
-            if (moduleBarFits (panel.getWidth(), su, 9))
+            //  La MISMA pregunta que decidio la altura y no otra parecida: por
+            //  el DEDO, que estas nueve son iconos sin rotulo y `moduleBarFits`
+            //  mide rotulos. Pedir con una cuenta y colocar con otra es como
+            //  una fila se sale de la tarjeta.
+            if (panel.getWidth() >= 9 * Metrics::hit)
             {
                 layoutModuleBar (panel.removeFromTop (Metrics::hit), su, 0, 9);
             }
-            else if (moduleBarFits (panel.getWidth(), su, 5))
+            else if (panel.getWidth() >= 5 * Metrics::hit)
             {
                 //  Cinco y cuatro. Arriba lo que le pasa AL BLOQUE - moverlo,
                 //  cortarlo, alargarlo - y abajo lo que le pasa a la linea de

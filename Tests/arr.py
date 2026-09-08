@@ -151,8 +151,12 @@ def main():
     if vuelta is None:
         print ("%-22s %s" % ("guardar y volver", "MAL - sin respuesta")); malas.append ("vuelta")
     else:
-        mira ("guardar y volver", [vuelta["mudos"], vuelta["bucle"]],
-              [[1,0,0,1], [2,5]])
+        #  Y el silencio por BLOQUE con ellos. Dos bloques y en carriles
+        #  distintos: una mascara que vuelve con un solo bit puesto la cumple
+        #  igual un lector que se quedo con el primer numero de la lista.
+        mira ("guardar y volver", [vuelta["mudos"], vuelta["bucle"],
+                                   vuelta["bloques mudos"]],
+              [[1,0,0,1], [2,5], [[0,1],[2,6]]])
 
     #  --- UN GOLPE SUELTO DE UN PAD QUE NO ESTA EN LA REJILLA -------------
     #
@@ -296,8 +300,36 @@ def main():
         if asa["entradas"] != 1:
             malas.append ("un solo estiron deja %d entradas de deshacer" % asa["entradas"])
         if asa["tras el toque"] != [-1, 0]:
-            malas.append ("un toque sobre el filo ya no pinta: queda %s"
+            malas.append ("con la goma armada el bloque no se borra: queda %s"
                           % (asa["tras el toque"],))
+
+    #  LAS CUATRO HERRAMIENTAS: MOVER, LAPIZ, GOMA y SILENCIAR.
+    #
+    #  Medidas POR LA TAPA -que es lo que arma el modo- y POR EL GESTO. Con DOS
+    #  cifras donde una se engana: «mover mueve» lo cumple igual un codigo que
+    #  ademas pinta por el camino, asi que se mira que la cabeza llegue Y que el
+    #  largo siga siendo el mismo; y «silenciar silencia» lo cumple una tapa que
+    #  escribe el bit y no lo lee nadie, asi que se mira que el MISMO toque con
+    #  el lapiz armado PINTE - o sea que la herramienta es la que decide.
+    her = song.get ("herramientas")
+    if not her:
+        print ("%-22s %s" % ("herramientas", "MAL - sin respuesta")); malas.append ("herramientas")
+    else:
+        print ("%-22s movido %s   %d entrada(s)   mudo %s   con lapiz pinta %d"
+               % ("herramientas", her["movido"], her["entradas"],
+                  her["mudo"], her["con lapiz pinta"]))
+        #  El bloque de tres compases empieza en el 2, se agarra por el 3 -o sea
+        #  por su SEGUNDO compas- y se suelta en el 6: tiene que quedar en el 5,
+        #  el dedo MENOS el agarre. Sin el agarre saldria en el 6.
+        if her["movido"] != [5, 3]:
+            malas.append ("MOVER no lleva el bloque donde el dedo lo suelta: %s, y tenia que ser [5, 3]"
+                          % (her["movido"],))
+        if her["entradas"] != 1:
+            malas.append ("un solo arrastre de MOVER deja %d entradas de deshacer" % her["entradas"])
+        if her["mudo"] != [1, 0]:
+            malas.append ("SILENCIAR no alterna el bloque: %s" % (her["mudo"],))
+        if her["con lapiz pinta"] == 0:
+            malas.append ("con el LAPIZ armado el mismo toque ya no pinta: la herramienta no decide")
 
     print()
     if malas:

@@ -1589,6 +1589,13 @@ namespace
         //  tres pasos, que es lo que hace que anadir un cuarto no cueste tres
         //  traducciones. Es la misma decision que el subtitulo del manual.
         { "%1 COMPASES|zoom", "",       "%1 BARS",    "%1 小节",    "%1 مازورة" },
+        //  La cuarta herramienta de la linea de tiempo, y las dos lineas que
+        //  dice al usarla. SILENCIAR y no MUTE: la app dice SIN SOLO, VACIAR y
+        //  QUITAR RUIDO en castellano, y una palabra inglesa suelta en medio de
+        //  esa fila se lee como que la escribio otra persona.
+        { "SILENCIAR",      "",         "MUTE",       "静音",       "كتم" },
+        { "Bloque en silencio", "",     "Block muted","块已静音",   "تم كتم المقطع" },
+        { "Bloque suena",   "",         "Block plays","块发声",     "المقطع يعمل" },
         { "BUFER",          "",         "BUFFER",     "缓冲",       "المخزن" },
         { "RELOJ",          "",         "CLOCK",      "时钟",       "الساعة" },
         { "IDIOMA",         "",         "LANGUAGE",   "语言",       "اللغة" },

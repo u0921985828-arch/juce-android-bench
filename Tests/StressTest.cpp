@@ -1708,6 +1708,43 @@ int main()
                      "carril de cancion silenciado", (unsigned) (todos & 0xFu),
                      (unsigned) (conMudo & 0xFu), mudoOk ? "OK" : zatiFalla());
 
+        //  Y EL SILENCIO DE UN BLOQUE SUELTO, que es otra cosa y se mide por
+        //  COMPAS y no por pasada.
+        //
+        //  El del carril calla la pista entera; este calla UN bloque. Con la
+        //  cuenta hecha sobre la pasada completa las dos salen igual -el pad
+        //  suena, porque sigue sonando en los otros tres compases- asi que lo
+        //  que se anota es QUE suena en CADA compas.
+        //
+        //  Con TRES cifras, que dos se enganan: el pad 3 tiene que sonar en el
+        //  compas 0, NO sonar en el 1, y el pad 4 -que no lleva silencio- tiene
+        //  que sonar en los dos. Sin la tercera, «no suena en el 1» lo cumple
+        //  igual un transporte que no llega al compas 1, y sin la primera lo
+        //  cumple el carril entero mudo.
+        std::uint64_t porCompas[4] {};
+        e.setSongCellMute (2, 1, true);
+        e.setPlaying (true);
+        for (int i = 0; i < blocksPerBar * 6; ++i)
+        {
+            e.renderNextBlock (b, 0, 256);
+            const int bar = juce::jlimit (0, 3, e.getSongBar());
+            porCompas[bar] |= e.fetchTriggered();
+        }
+        e.setPlaying (false);
+        e.renderNextBlock (b, 0, 256);
+        e.fetchTriggered();
+        e.setSongCellMute (2, 1, false);
+
+        const bool bloqueOk = (porCompas[0] & (1u << 2)) != 0
+                           && (porCompas[1] & (1u << 2)) == 0
+                           && (porCompas[0] & (1u << 3)) != 0
+                           && (porCompas[1] & (1u << 3)) != 0;
+        std::printf ("%-34s compas 0 %X   compas 1 %X   %s\n",
+                     "bloque de cancion silenciado",
+                     (unsigned) (porCompas[0] & 0xFu),
+                     (unsigned) (porCompas[1] & 0xFu),
+                     bloqueOk ? "OK" : zatiFalla());
+
         //  EL BUCLE. Con [0,2) puesto, los carriles 3 y 4 -que solo tienen
         //  bloque en sus compases- siguen sonando porque su bloque esta en
         //  todos los compases; lo que hay que mirar es el COMPAS que reporta

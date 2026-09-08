@@ -108,21 +108,44 @@ void MainComponent::auditArrange()
     //  al volver suena todo. Se comprueba por el MISMO arbol que escribe el
     //  fichero de proyecto -captureState y applyState-, que es el camino que
     //  de verdad recorre un proyecto al guardarse.
+    //  Y CON ELLOS EL SILENCIO POR BLOQUE, que se escribe y se lee desde que
+    //  existe SILENCIAR y no lo cruzaba ninguna prueba: un bit por compas en
+    //  `bmudos`, o sea exactamente la clase de propiedad que se publica el dia
+    //  que deja de escribirse. Se marcan DOS bloques y no uno -y en carriles
+    //  distintos- porque una mascara que vuelve con un solo bit puesto la
+    //  cumple igual un lector que se quedo con el primer numero de la lista.
     engine.setSongLaneMute (0, true);
     engine.setSongLaneMute (3, true);
     engine.setSongLoop (2, 5);
+    engine.setSongCellMute (0, 1, true);
+    engine.setSongCellMute (2, 6, true);
 
     const auto arbol = captureState();
     engine.setSongLaneMute (0, false);
     engine.setSongLaneMute (3, false);
     engine.clearSongLoop();
+    //  BORRADA A MANO ENTRE MEDIAS, que es lo unico que separa «se ha
+    //  guardado» de «nadie lo quito».
+    for (int ln = 0; ln < AudioEngine::kSongLanes; ++ln)
+        engine.setSongCellMuteMask (ln, 0);
     applyState (arbol);
 
     std::cout << "{\"vuelta\":1,\"mudos\":[";
     for (int ln = 0; ln < AudioEngine::kSongLanes; ++ln)
         std::cout << (ln ? "," : "") << (engine.isSongLaneMuted (ln) ? 1 : 0);
     std::cout << "],\"bucle\":[" << engine.getSongLoopFrom() << ","
-              << engine.getSongLoopTo() << "]}" << std::endl;
+              << engine.getSongLoopTo() << "],\"bloques mudos\":[";
+    {
+        bool primero = true;
+        for (int ln = 0; ln < AudioEngine::kSongLanes; ++ln)
+            for (int b = 0; b < AudioEngine::kSongBars; ++b)
+                if (engine.isSongCellMuted (ln, b))
+                {
+                    std::cout << (primero ? "" : ",") << "[" << ln << "," << b << "]";
+                    primero = false;
+                }
+    }
+    std::cout << "]}" << std::endl;
 
     //  --- UN GOLPE SUELTO DE UN PAD QUE NO ESTA EN LA REJILLA -------------
     //
@@ -371,6 +394,13 @@ void MainComponent::auditArrange()
 
         const juce::String antes = bloque (1);
 
+        //  CON LA MANO ARMADA, que es donde vive el asa desde que las
+        //  herramientas son modos: con el lapiz este mismo arrastre PINTA, que
+        //  es lo que tiene que hacer. La primera version de esta medida se
+        //  quedo con el lapiz y saco `estirado [7,2]` - el bloque pintado
+        //  encima - con el codigo correcto.
+        if (songToolBtns.size() > 0) songToolBtns[0]->onClick();
+
         //  Se coge por el FILO DERECHO -el compas 4- y se lleva al 7, en cuatro
         //  eventos como los emite un dedo.
         const int undoAntes = (int) undoStack.size();
@@ -380,11 +410,11 @@ void MainComponent::auditArrange()
         const juce::String estirado = bloque (1);
         const int entradas = (int) undoStack.size() - undoAntes;
 
-        //  Y UN TOQUE SOBRE EL MISMO FILO SIGUE PINTANDO, que es el candado que
-        //  hace que esto no cueste el pincel: apoyar y levantar sin mover
-        //  escribe la celda como siempre. Con el pincel en VACIAR, la celda que
-        //  se toca se va - o sea que la rejilla responde.
-        songBrush = 0;
+        //  Y CON LA GOMA, EL MISMO SITIO SE BORRA. Es la otra mitad: «el asa
+        //  estira» lo cumple igual una rejilla que ha dejado de responder a
+        //  todo lo demas, asi que se comprueba que otra herramienta hace lo
+        //  suyo en la misma celda.
+        if (songToolBtns.size() > 2) songToolBtns[2]->onClick();
         rej.mouseDown (evento (centro (1, 2)));
         rej.mouseUp   (evento (centro (1, 2)));
         const juce::String traselToque = bloque (1);
@@ -393,6 +423,77 @@ void MainComponent::auditArrange()
                   << ",\"estirado\":" << estirado
                   << ",\"entradas\":" << entradas
                   << ",\"tras el toque\":" << traselToque << "}" << std::endl;
+
+        //  ------------------------------------------------------------------
+        //  LAS CUATRO HERRAMIENTAS
+        //  ------------------------------------------------------------------
+        //
+        //  POR LA TAPA Y POR EL GESTO. Llamar a `ponHerramienta` o a
+        //  `setSongCellMute` por dentro se salta lo unico que hay que medir:
+        //  que la tapa arma el modo y que el modo cambia lo que hace el dedo.
+        //
+        //  Con DOS cifras donde una se engana. «Mover mueve» lo cumple igual un
+        //  codigo que ademas PINTA por el camino, asi que se mira que el bloque
+        //  llegue Y que el carril de origen quede vacio. Y «silenciar
+        //  silencia» lo cumple una tapa que escribe el bit y no lo lee nadie,
+        //  asi que se mira ademas que con el LAPIZ armado ese mismo toque
+        //  PINTE y no silencie - o sea que la herramienta decide.
+        engine.setSongLength (16);
+        for (int ln = 0; ln < AudioEngine::kSongLanes; ++ln)
+        {
+            engine.setSongCellMuteMask (ln, 0);
+            for (int b = 0; b < 16; ++b) engine.setSongCell (ln, b, 0);
+        }
+        engine.setSongCell (1, 2, 1);
+        engine.setSongCell (1, 3, AudioEngine::kContinued);
+        engine.setSongCell (1, 4, AudioEngine::kContinued);
+        songPage = 0;
+        resized();
+        refreshSong();
+
+        //  MOVER: se arma por la tapa y se arrastra del compas 3 al 8, o sea
+        //  agarrando por el SEGUNDO compas del bloque. Tiene que quedar en el
+        //  7 -el dedo menos el agarre- y no en el 8: sin el agarre el bloque
+        //  se mueve un trozo que la persona no pidio.
+        if (songToolBtns.size() > 0) songToolBtns[0]->onClick();
+        const int undoA = (int) undoStack.size();
+        //  DENTRO DE LA PAGINA VISIBLE. Con ocho compases a la vista, un
+        //  evento en el compas 9 lo acota `jlimit` al 7 y el gesto mide otra
+        //  cosa: la primera version arrastro al 9 y saco `movido [-1,0]` con
+        //  el codigo correcto. Primero se duda de la prueba.
+        rej.mouseDown (evento (centro (1, 3)));
+        for (int b = 4; b <= 6; ++b) rej.mouseDrag (evento (centro (1, b)));
+        rej.mouseUp (evento (centro (1, 6)));
+        const juce::String movido = bloque (1);
+        const int entradasMov = (int) undoStack.size() - undoA;
+
+        //  SILENCIAR: se arma por su tapa y se toca el bloque. Y despues, con
+        //  el LAPIZ armado, el MISMO toque tiene que pintar y no silenciar.
+        if (songToolBtns.size() > 3) songToolBtns[3]->onClick();
+        int cab = -1;
+        for (int b = 0; b < engine.getSongLength(); ++b)
+        {
+            const int v = engine.getSongCell (1, b);
+            if (v != 0 && v != AudioEngine::kContinued) { cab = b; break; }
+        }
+        rej.mouseDown (evento (centro (1, cab >= 0 ? cab : 0)));
+        rej.mouseUp   (evento (centro (1, cab >= 0 ? cab : 0)));
+        const int mudo1 = (cab >= 0 && engine.isSongCellMuted (1, cab)) ? 1 : 0;
+        rej.mouseDown (evento (centro (1, cab >= 0 ? cab : 0)));
+        rej.mouseUp   (evento (centro (1, cab >= 0 ? cab : 0)));
+        const int mudo2 = (cab >= 0 && engine.isSongCellMuted (1, cab)) ? 1 : 0;
+
+        //  Y con el LAPIZ, el mismo toque escribe: la herramienta decide.
+        if (songToolBtns.size() > 1) songToolBtns[1]->onClick();
+        songBrush = 5;
+        rej.mouseDown (evento (centro (1, 12)));
+        rej.mouseUp   (evento (centro (1, 12)));
+        const int pintado = engine.getSongCell (1, 12);
+
+        std::cout << "{\"arr\":\"herramientas\",\"movido\":" << movido
+                  << ",\"entradas\":" << entradasMov
+                  << ",\"mudo\":[" << mudo1 << "," << mudo2 << "]"
+                  << ",\"con lapiz pinta\":" << pintado << "}" << std::endl;
     }
 }
 

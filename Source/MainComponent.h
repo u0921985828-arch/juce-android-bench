@@ -1807,7 +1807,6 @@ private:
     Playlist songGrid;
     juce::OwnedArray<juce::TextButton> songPatBtns;   // P1..P8
     juce::TextButton songPadModeBtn { "SONIDO" };     // place a one-shot instead
-    juce::TextButton songClearBtn   { "VACIAR" };
     juce::TextButton songModeBtn    { "CANCION" };    // song transport vs pattern/chain
     //  DOBLAR: la operacion que convierte esta pagina en un arreglo.
     //
@@ -1863,6 +1862,21 @@ private:
     //  lo unico que en esta ficha no sobra.
     juce::TextButton songZoomBtn { "8 COMPASES" };
 
+    //  LA BARRA DE HERRAMIENTAS DE LA LINEA DE TIEMPO: MANO, LAPIZ, GOMA y
+    //  MUTE, en iconos y sin rotulo.
+    //
+    //  Eran DOS Y HASTA TRES FILAS DE PALABRAS -medido: una en tableta, dos en
+    //  un movil grande y TRES en 360x640, 280x653 y apaisado- en la ficha cuyo
+    //  unico trabajo son cuatro carriles. Un icono no pide ancho de texto, asi
+    //  que la fila se reparte por el DEDO y no por el rotulo, y con eso caben
+    //  en una donde antes hacian falta tres.
+    //
+    //  Y son MODOS y no acciones: con el lapiz armado la rejilla se comporta
+    //  exactamente como siempre, y cada gesto tiene UN significado. Ver
+    //  `Playlist::Herramienta`.
+    juce::OwnedArray<juce::TextButton> songToolBtns;
+    int songHerramienta = 0;   // Playlist::hLapiz
+
     // ------------------------------------------------------------------
     //  LA AUTOMATIZACION. Ver AudioEngine::EventoAuto y Tests/auto.py.
     //
@@ -1893,6 +1907,10 @@ private:
     //  reescribe los rotulos de las tapas de pagina, que dicen el compas en el
     //  que empiezan y por tanto dependen de la vista.
     void ponVistaCompases (int n);
+    //  Arma una de las cuatro herramientas de la linea de tiempo. Toca las
+    //  cuatro tapas, la rejilla y el pincel: la GOMA es la brocha VACIAR, asi
+    //  que armarla es ponerla, y ese es el unico dueno de borrar.
+    void ponHerramienta (int h);
 
     //  La tabla que la rejilla dibuja: los clips traducidos a COMPASES. Se
     //  rehace en refreshSong y vive aqui porque el componente la presta, no la

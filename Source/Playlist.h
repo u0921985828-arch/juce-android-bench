@@ -92,6 +92,13 @@ public:
     //  por evento no es deshacer, es contar. Medido: 3 entradas por un solo
     //  gesto antes de esta linea.
     std::function<void (int lane, int cabeza, int largo, bool primero)> onLargoBloque;
+
+    //  MOVER un bloque entero y SILENCIARLO, que son las dos herramientas que
+    //  esta rejilla no tenia y que un playlist de verdad si: probar una cancion
+    //  sin el estribillo, o correrlo dos compases, se hacia borrando y
+    //  volviendo a escribir.
+    std::function<void (int lane, int cabeza, int carrilNuevo, int compasNuevo, bool primero)> onMueveBloque;
+    std::function<void (int lane, int cabeza)> onMuteBloque;
     //  UN HUECO DE LA BANDA DE AUDIO: aqui no habia nada, pon lo que tengas.
     std::function<void (int pista, int compas)> onClipNuevo;
     //  Y UN CLIP QUE SE ARRASTRA. El indice es el de la tabla que se paso, no
@@ -158,11 +165,15 @@ public:
                     int bars, int page, int playBar,
                     int cursorBar = -1,     // el compas sobre el que actuan las herramientas
                     unsigned mudos = 0,     // un bit por carril silenciado
-                    int loopA = 0, int loopB = 0)   // el tramo en bucle, [A,B) en compases
+                    int loopA = 0, int loopB = 0,   // el tramo en bucle, [A,B) en compases
+                    const juce::uint64* bloquesMudos = nullptr)  // un bit por compas y carril
     {
         data = cells; zati = zatiOf; zatis = numZatis;
         totalBars = bars; pageIndex = page; playing = playBar;
         cursor = cursorBar; mute = mudos; lA = loopA; lB = loopB;
+        juce::uint64 bm[kLanes] {};
+        if (bloquesMudos != nullptr)
+            for (int i = 0; i < kLanes; ++i) bm[i] = bloquesMudos[i];
 
         //  REPINTAR SOLO SI HA CAMBIADO ALGO. Por lo mismo que la rejilla de
         //  pasos: el temporizador llama aqui treinta veces por segundo
@@ -176,6 +187,10 @@ public:
         bool igual = data != nullptr && visto
                   && totalBars == prevBars && pageIndex == prevPage && playing == prevPlaying
                   && cursor == prevCursor && mute == prevMute
+                  //  Y el silencio por bloque, o silenciar uno no repintaria:
+                  //  el atajo de arriba existe para no arrastrar el chasis
+                  //  treinta veces por segundo, no para tragarse un cambio.
+                  && std::memcmp (bmute, bm, sizeof (bmute)) == 0
                   && lA == prevLA && lB == prevLB
                   && sombra.size() == nCel
                   && std::memcmp (sombra.data(), data, nCel * sizeof (int)) == 0
@@ -188,6 +203,7 @@ public:
         if (zati != nullptr) std::memcpy (sombraZati.data(), zati, sizeof (sombraZati));
         prevBars = totalBars; prevPage = pageIndex; prevPlaying = playing;
         prevCursor = cursor; prevMute = mute; prevLA = lA; prevLB = lB;
+        std::memcpy (bmute, bm, sizeof (bmute));
         visto = true;
 
         repaint();
@@ -338,7 +354,8 @@ public:
                     const int startBar = findStart (lane, bar);
                     const int sv = startBar >= 0 ? data[lane * totalBars + startBar] : 0;
                     const bool mini = cabeMini (cell) && sv > 0;
-                    g.setColour (blockColour (sv).withAlpha (mudo ? 0.18f : (mini ? 0.22f : 0.55f)));
+                    const bool mudoB = mudo || bloqueMudo (lane, bar);
+                    g.setColour (blockColour (sv).withAlpha (mudoB ? 0.18f : (mini ? 0.22f : 0.55f)));
                     g.fillRect (cell.withTrimmedLeft (-1.5f));
                     //  Y LA COLA ENSEÑA SU TROZO, que es lo que la hace cola y
                     //  no una copia: un bloque de cuatro compases con un patron
@@ -347,7 +364,7 @@ public:
                     //  exactamente lo que suena.
                     if (mini && startBar >= 0)
                         pintaPasos (g, cell.reduced (2.0f).withTrimmedTop (0.0f), sv,
-                                    (bar - startBar) * StepGrid::kBarSteps, mudo);
+                                    (bar - startBar) * StepGrid::kBarSteps, mudoB);
                 }
                 else
                 {
@@ -355,7 +372,12 @@ public:
                     //  Un carril silenciado ensena sus bloques HUECOS: siguen
                     //  ahi, con su color y su nombre, y no suenan. Borrarlos
                     //  seria otra cosa, y esa ya existe.
-                    if (mudo)
+                    //
+                    //  Y un bloque silenciado SOLO se ve igual, que es lo que
+                    //  hace que la herramienta se vea: un mute que no se
+                    //  distingue de sonar no es un mute, es un boton.
+                    const bool mudoB = mudo || bloqueMudo (lane, bar);
+                    if (mudoB)
                     {
                         g.setColour (ZatiColours::groove (0.30f));
                         g.fillRect (cell);
@@ -499,15 +521,8 @@ public:
     }
     void mouseUp   (const juce::MouseEvent&)   override
     {
-        //  UN TOQUE SOBRE EL FILO DE UN BLOQUE SIGUE PINTANDO. Apoyar ahi no
-        //  escribe nada -puede ser el principio de un estiron- asi que la celda
-        //  se escribe al levantar, si el dedo no llego a moverse. Sin esto, el
-        //  filo de un bloque largo seria una celda en la que el pincel no
-        //  funciona, y eso no se lee como «aqui se estira»: se lee como que la
-        //  rejilla no responde.
-        if (pendiente.first >= 0 && onCell) onCell (pendiente.first, pendiente.second);
-        pendiente = { -1, -1 };
         asaBloque = 0;
+        bloqueCarril = -1;
         ultima = { -1, -1 };
         arrastrado = -1;
     }
@@ -536,63 +551,87 @@ public:
                        + juce::jlimit (0, barsView - 1, (int) ((float) (e.x - r.getX() - gutter) / barW));
         if (bar >= totalBars) return;
 
-        //  EL FILO DE UN BLOQUE ESTIRA, Y EL TOQUE SIGUE PINTANDO.
-        //
-        //  Aqui arrastrar YA significa pintar, asi que meter «estirar» encima
-        //  serian dos significados en un dedo - lo que esta casa lleva escrito
-        //  que no se puede aprender. Lo que los separa es el TOQUE contra el
-        //  ARRASTRE: apoyar sobre el filo no escribe nada todavia; si el dedo
-        //  se mueve, estira; si se levanta sin moverse, pinta. Asi lo unico que
-        //  se pierde es «arrastrar pintando DESDE el filo de un bloque largo»,
-        //  que es la version mas estrecha posible del coste.
-        //
-        //  Con las dos condiciones que la vista de audio ya midio: solo el
-        //  primer y el ultimo compas del bloque, y solo POR DEBAJO DE TRES
-        //  COMPASES no hay asas -dos asas de un compas se comen un bloque de
-        //  dos y no queda nada que arrastrar-. Y con la GOMA armada no hay asa
-        //  ninguna: el borrador borra, que es lo que su propio parrafo del
-        //  piano ya dice.
-        if (! arrastrando)
+        //  SILENCIAR UN BLOQUE: un toque, y solo un toque. Arrastrar por una
+        //  fila silenciandolos todos es lo mismo que la canaleta ya tiene
+        //  prohibido y por la misma razon: un roce se llevaria la cancion.
+        if (herramienta == hMute)
         {
-            asaBloque = 0;
-            bloqueCarril = -1;
-            pendiente = { -1, -1 };
-
-            if (onLargoBloque && ! borrando)
+            if (! arrastrando && onMuteBloque)
             {
                 const auto b = bloqueEn (lane, bar);
-                if (b.first >= 0 && (b.second - b.first) >= kCompasesConAsa)
+                if (b.first >= 0) onMuteBloque (lane, b.first);
+            }
+            return;
+        }
+
+        //  LA MANO: EL FILO ESTIRA Y EL MEDIO MUEVE.
+        //
+        //  Las dos viven aqui y no en el lapiz, que es lo que hace que no
+        //  cuesten el pincel: con el lapiz armado esta rejilla se comporta
+        //  exactamente como siempre. La primera version puso el asa en el
+        //  lapiz con un candado -el toque pinta, el arrastre estira- y
+        //  funcionaba, pero seguia siendo un segundo significado en el mismo
+        //  dedo, que es lo que esta casa lleva escrito que no se aprende. Con
+        //  la mano cada gesto tiene uno. Es la leccion de la SELECCION del
+        //  piano: la herramienta es la quinta, no un gesto nuevo.
+        //
+        //  Y el asa con las dos condiciones que la vista de audio ya midio:
+        //  solo el primer y el ultimo compas, y POR DEBAJO DE TRES COMPASES no
+        //  hay asas - dos asas de un compas se comen un bloque de dos y no
+        //  queda nada que arrastrar.
+        if (herramienta == hMano)
+        {
+            if (! arrastrando)
+            {
+                asaBloque = 0;
+                bloqueCarril = -1;
+                bloquePrimero = true;
+                const auto b = bloqueEn (lane, bar);
+                if (b.first < 0) return;
+                bloqueCarril = lane;
+                bloqueCabeza = b.first;
+                bloqueFin    = b.second;
+                if ((b.second - b.first) >= kCompasesConAsa)
                 {
                     if (bar == b.first)           asaBloque = -1;
                     else if (bar == b.second - 1) asaBloque = +1;
                 }
-                if (asaBloque != 0)
-                {
-                    bloquePrimero = true;
-                    bloqueCarril = lane;
-                    bloqueCabeza = b.first;
-                    bloqueFin    = b.second;
-                    //  Lo que se pintaria si el dedo se levanta sin moverse.
-                    pendiente = { lane, bar };
-                    return;
-                }
+                //  DONDE SE AGARRO, en compases desde la cabeza. Sin esto,
+                //  arrastrar un bloque de cuatro por su tercer compas lo pega
+                //  de un salto por su primero: se mueve un trozo que la persona
+                //  no pidio, y es lo primero que se nota.
+                agarre = bar - b.first;
+                return;
             }
-        }
-        else if (asaBloque != 0)
-        {
-            //  UN ASA CAMBIA EL LARGO Y NO LA POSICION, que es la misma regla
-            //  que ya lleva escrita la banda de audio: un asa que ademas mueve
-            //  pasa cualquier prueba que solo mire el largo, y desde el dedo es
-            //  un bloque que se escapa mientras lo recortas. Por el filo
-            //  izquierdo la cabeza no se toca: lo que se mueve es el FINAL.
-            pendiente = { -1, -1 };
-            const int nuevo = (asaBloque < 0) ? juce::jmax (1, bloqueFin - bar)
-                                              : juce::jmax (1, bar - bloqueCabeza + 1);
-            if (nuevo != bloqueFin - bloqueCabeza)
+
+            if (bloqueCarril < 0) return;
+
+            if (asaBloque != 0)
             {
-                onLargoBloque (bloqueCarril, bloqueCabeza, nuevo, bloquePrimero);
+                //  UN ASA CAMBIA EL LARGO Y NO LA POSICION. Son dos cosas y no
+                //  una: un asa que ademas mueve pasa cualquier prueba que solo
+                //  mire el largo, y desde el dedo es un bloque que se escapa
+                //  mientras lo recortas. Por el filo izquierdo la cabeza no se
+                //  toca: lo que se mueve es el FINAL.
+                const int nuevoL = (asaBloque < 0) ? juce::jmax (1, bloqueFin - bar)
+                                                   : juce::jmax (1, bar - bloqueCabeza + 1);
+                if (onLargoBloque && nuevoL != bloqueFin - bloqueCabeza)
+                {
+                    onLargoBloque (bloqueCarril, bloqueCabeza, nuevoL, bloquePrimero);
+                    bloquePrimero = false;
+                    bloqueFin = bloqueCabeza + nuevoL;
+                }
+                return;
+            }
+
+            const int destino = juce::jmax (0, bar - agarre);
+            if (onMueveBloque && (destino != bloqueCabeza || lane != bloqueCarril))
+            {
+                onMueveBloque (bloqueCarril, bloqueCabeza, lane, destino, bloquePrimero);
                 bloquePrimero = false;
-                bloqueFin = bloqueCabeza + nuevo;
+                bloqueFin    = destino + (bloqueFin - bloqueCabeza);
+                bloqueCabeza = destino;
+                bloqueCarril = lane;
             }
             return;
         }
@@ -830,6 +869,20 @@ public:
         if (onClipMueve) onClipMueve (arrastrado, pista, nuevoCompas);
     }
 
+    //  LA HERRAMIENTA ARMADA, que es lo que hace que el gesto sea inequivoco.
+    //
+    //  Esta rejilla se pinta con el dedo arrastrado, asi que arrastrar YA
+    //  significa pintar: meter «mover» y «estirar» encima serian tres
+    //  significados en un dedo, que es lo que esta casa lleva escrito que no se
+    //  puede aprender. Con una herramienta armada cada gesto tiene UN
+    //  significado, y sin ninguna la rejilla se comporta exactamente como
+    //  siempre - que es la leccion de la SELECCION del piano: la herramienta es
+    //  la quinta, no un gesto nuevo.
+    //  Con prefijo: `mute` a secas choca con la mascara de carriles
+    //  silenciados, que se llama asi desde que existe.
+    enum Herramienta { hLapiz = 0, hGoma, hMano, hMute };
+    int herramienta = hLapiz;
+
     //  Lo que la brocha VACIAR pone: quien la lleva es la ficha, y aqui solo se
     //  lee. Un componente que decidiera solo cual es la brocha seria un segundo
     //  dueno de la misma pregunta.
@@ -955,6 +1008,18 @@ private:
         return { cabeza, fin };
     }
 
+    //  El silencio del BLOQUE al que pertenece una celda, que no es el del
+    //  carril: aquel calla la pista entera. Se apunta en la CABEZA, que es
+    //  donde el motor lo lee, asi que la cola pregunta por la suya.
+    bool bloqueMudo (int lane, int bar) const
+    {
+        if (lane < 0 || lane >= kLanes || bar < 0 || bar >= 64) return false;
+        int cabeza = bar;
+        while (cabeza > 0 && data != nullptr
+               && data[lane * totalBars + cabeza] == kContinued) --cabeza;
+        return ((bmute[(size_t) lane] >> cabeza) & 1u) != 0;
+    }
+
     int findStart (int lane, int bar) const
     {
         for (int b = bar - 1; b >= 0; --b)
@@ -973,6 +1038,10 @@ private:
     int totalBars = 8, pageIndex = 0, playing = -1;
     int cursor = -1;          // el compas que las herramientas van a tocar
     unsigned mute = 0;        // un bit por carril silenciado
+    //  Y un bit por COMPAS y por carril: el silencio de un bloque suelto. Son
+    //  cuatro enteros copiados en cada refresco - la cancion mide sesenta y
+    //  cuatro compases clavados, asi que la tabla entera cabe en 32 bytes.
+    juce::uint64 bmute[kLanes] {};
     int lA = 0, lB = 0;       // el tramo en bucle, [A,B)
 
     //  Los pasos de los ocho patrones, y que pads usa cada uno.
@@ -1016,7 +1085,6 @@ private:
     int  asaBloque = 0;               // -1 filo izquierdo, +1 derecho, 0 ninguno
     int  bloqueCarril = -1, bloqueCabeza = 0, bloqueFin = 0;
     bool bloquePrimero = true;        // el primer cambio de largo del gesto
-    std::pair<int, int> pendiente { -1, -1 };   // la celda que pintaria un TOQUE
 
     int              agarre = 0;      // por que compas suyo lo agarro
     int              asa = 0;         // -1 filo izquierdo, +1 derecho, 0 el medio

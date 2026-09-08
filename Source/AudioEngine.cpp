@@ -1283,6 +1283,20 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                         const int cell = songCell[(size_t) ln][(size_t) bar].load (std::memory_order_relaxed);
                         if (cell == kContinued)
                             continue;                         // a pattern from an earlier bar still owns this lane
+
+                        //  Y EL SILENCIO DE ESTE BLOQUE, mirado donde se mira
+                        //  el del carril y por la misma razon: en la CABEZA del
+                        //  bloque. Silenciar a mitad cortaria un patron por la
+                        //  mitad, y ademas asi el bloque silenciado no adopta
+                        //  el patron - o sea que al quitarle el silencio no
+                        //  entra a mitad de algo que nadie oyo empezar. Una
+                        //  carga atomica y un desplazamiento, una vez por
+                        //  compas y por carril.
+                        if (isSongCellMuted (ln, bar))
+                        {
+                            lanePattern[ln] = -1;
+                            continue;
+                        }
                         if (cell > 0 && cell <= kNumPatterns)
                         {
                             lanePattern[ln]   = cell - 1;
@@ -3674,6 +3688,7 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     //  monta con un motor aparte sonaria con los cuatro carriles y la cancion
     //  entera, que no es lo que la persona esta oyendo.
     copyArr (songLaneMute, s.songLaneMute);
+    copyArr (songCellMute, s.songCellMute);
     songLoopA.store (s.songLoopA.load (std::memory_order_relaxed), std::memory_order_relaxed);
     songLoopB.store (s.songLoopB.load (std::memory_order_relaxed), std::memory_order_relaxed);
 
