@@ -45,6 +45,25 @@ jobs:
             libcurl4-openssl-dev libgl1-mesa-dev mesa-common-dev libglu1-mesa-dev \
             libwebkit2gtk-4.1-dev ninja-build xvfb x11-utils imagemagick
 
+      #  LAS FUENTES, QUE NO SON UN ADORNO: este banco mide ANCHOS DE TEXTO
+      #  -TRUNC, SQUEEZE y CORTADO- asi que sin las mismas caras instaladas la
+      #  misma app da otro veredicto. La primera corrida en el repositorio
+      #  nuevo lo cazo: `FALLA CORTADO 3` con la app intacta y el mismo commit
+      #  que aqui da CORTADO 0, y de paso los iconos dibujados en 280x653
+      #  saltaron del 34% al 48% -otra cara, otras metricas, otro reparto-.
+      #  `wqy-zenhei` es el chino y `ipafont-gothic` el japones; sin ellas el
+      #  runner cae en Unifont y mide otra cosa. Es *un veredicto que depende
+      #  de la maquina no es un veredicto*, que esta casa ya pago dos veces con
+      #  el reloj, aplicado a la tipografia.
+      - name: Las mismas fuentes que la maquina de trabajo
+        run: |
+          sudo apt-get install -y --no-install-recommends \
+            fonts-dejavu-core fonts-dejavu-mono fonts-freefont-ttf \
+            fonts-liberation fonts-ipafont-gothic fonts-wqy-zenhei \
+            fonts-unifont fonts-noto-color-emoji fonts-tlwg-loma-otf
+          fc-cache -f
+          fc-list | wc -l
+
       #  El arbol de JUCE se cachea por su tag: sin esto cada corrida se baja y
       #  compila el mismo 8.0.15, que es la mayor parte del reloj de este job.
       #  El tag va aqui Y en CMakeLists.txt, y quien resuelve de verdad es el
