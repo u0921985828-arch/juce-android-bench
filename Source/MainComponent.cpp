@@ -2683,9 +2683,9 @@ MainComponent::MainComponent()
     };
     songSheet.addAndMakeVisible (songLenSlider);
 
-    for (int i = 0; i < AudioEngine::kSongBars / Playlist::kBarsView; ++i)
+    for (int i = 0; i < AudioEngine::kSongBars / 4; ++i)   // el maximo: vista de 4
     {
-        auto* b = new juce::TextButton (juce::String (i * Playlist::kBarsView + 1));
+        auto* b = new juce::TextButton (juce::String (i * Playlist::kBarsViewDef + 1));
         styleButton (*b, kStepOff);
         litAccent (*b);
         b->setClickingTogglesState (true);
@@ -10200,7 +10200,7 @@ void MainComponent::moveSongBar (int dir)
     }
 
     songCursor = b;
-    songPage = b / Playlist::kBarsView;
+    songPage = b / songGrid.getCompasesVista();
     for (int k = 0; k < songPageBtns.size(); ++k)
         songPageBtns[k]->setToggleState (k == songPage, juce::dontSendNotification);
 
@@ -10271,8 +10271,8 @@ void MainComponent::resizeSongBlock (int dir)
 void MainComponent::toggleSongLoop()
 {
     const int len  = engine.getSongLength();
-    const int a    = songPage * Playlist::kBarsView;
-    const int b    = juce::jmin (len, a + Playlist::kBarsView);
+    const int a    = songPage * songGrid.getCompasesVista();
+    const int b    = juce::jmin (len, a + songGrid.getCompasesVista());
 
     if (engine.hasSongLoop() && engine.getSongLoopFrom() == a && engine.getSongLoopTo() == b)
     {
@@ -10925,6 +10925,13 @@ void MainComponent::refreshSong (bool repintarTarjeta)
     //  de un solo golpe guarda -(pad+1) con el pad de los 64, asi que pasarle
     //  `gridZati` -que tiene dieciseis- era leer fuera del array en cada
     //  repintado. Ver Playlist::blockColour.
+    //  Y LO QUE CADA BLOQUE LLEVA DENTRO. La tabla de pasos es la MISMA que
+    //  alimenta la rejilla del secuenciador y viaja por puntero: copiarla
+    //  serian 32 KB duplicados y una segunda copia que un dia se queda vieja.
+    //  Los largos se leen del motor, que es quien los guarda.
+    for (int q = 0; q < kNumPatterns; ++q) songLargos[(size_t) q] = engine.getPatternLength (q);
+    songGrid.setPatrones (&pattern[0][0][0], songLargos, kNumPatterns, kNumSteps, kNumPads);
+
     songGrid.setSource (songCells, padZati.data(), (int) padZati.size(), bars, songPage,
                         engine.isSongMode() && engine.isPlaying() ? engine.getSongBar() : -1,
                         songCursor, mudos,

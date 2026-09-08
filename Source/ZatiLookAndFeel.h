@@ -484,6 +484,18 @@ namespace Metrics
     static constexpr int canalPasos   = 30;
     static constexpr int canalPiano   = 26;
     static constexpr int canalCancion = 26;
+    //  EL SUELO DE UNA CELDA DE LA LINEA DE TIEMPO, que vivia solo en el banco
+    //  (`Tests/expo.py`) y ahi bastaba mientras la vista no pudiera cambiar de
+    //  tamano sola. Desde que se eligen 4, 8 o 16 compases, la app tiene que
+    //  poder preguntarse si lo que le van a pedir cabe — y una regla escrita en
+    //  el banco y no en el codigo es una regla que el codigo no puede cumplir.
+    //  Es la misma mudanza que ya hizo el suelo de la celda del piano.
+    //
+    //  Veinte y no cuarenta: esto no es una tapa, es una celda de un LIENZO que
+    //  se pinta con el dedo arrastrado, asi que su suelo es el de la rejilla de
+    //  pasos y no el del dedo. A dieciseis compases en un movil grande la celda
+    //  queda en 24 px y en uno estrecho en 15, que es donde ese paso se cae.
+    static constexpr int celdaCancion = 20;
 
     //  Y EL SUELO DE UNA CELDA, que hasta ahora vivia SOLO en el banco
     //  (Tests/expo.py: MIN_CELL y MIN_NOTE). Ahi era suficiente mientras

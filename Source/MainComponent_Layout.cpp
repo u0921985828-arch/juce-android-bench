@@ -2939,7 +2939,7 @@ void MainComponent::resized()
                                          : anchoTarjetaInterior (safeArea().getWidth());
         int pagsUsadas = 0;
         for (int i = 0; i < songPageBtns.size(); ++i)
-            if (i * Playlist::kBarsView < engine.getSongLength()) ++pagsUsadas;
+            if (i * songGrid.getCompasesVista() < engine.getSongLength()) ++pagsUsadas;
         pagsUsadas = juce::jlimit (1, juce::jmax (1, songPageBtns.size()), pagsUsadas);
         int filasPags = (anchoPaleta / pagsUsadas - 2 >= Metrics::hit) ? 1 : 2;
 

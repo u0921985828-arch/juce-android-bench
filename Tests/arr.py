@@ -205,6 +205,27 @@ def main():
             malas.append ("la puerta rechaza un golpe suelto valido (el pad 63): %d"
                           % celda["puestas"][2])
 
+    #  LA MINIATURA: el bloque dibuja sus pasos, y los dibuja DONDE TOCA.
+    #
+    #  Dos cifras, y la segunda es la que hace falta. «Dibuja algo» lo cumple
+    #  igual un bloque que enseña SIEMPRE el compas cero del patron: en un
+    #  bloque de cuatro compases con un patron de dos, eso son cuatro copias
+    #  del primer compas y suena otra cosa. `giro` compara el mismo bloque con
+    #  el patron declarado de dos compases y de uno: con la vuelta bien, las
+    #  celdas 1 y 3 cambian de contenido y las dos imagenes difieren; con el
+    #  fallo puesto son identicas y sale CERO — mientras `pasos` sigue
+    #  diciendo que si.
+    mini = song.get ("miniatura")
+    if not mini:
+        print ("%-22s %s" % ("miniatura", "MAL - sin respuesta")); malas.append ("miniatura")
+    else:
+        print ("%-22s pasos %d px   giro %d px"
+               % ("miniatura", mini["pasos"], mini["giro"]))
+        if mini["pasos"] <= 0:
+            malas.append ("el bloque no dibuja sus pasos: sigue siendo un color")
+        if mini["giro"] <= 0:
+            malas.append ("el bloque enseña siempre el compas cero del patron: no da la vuelta")
+
     print()
     if malas:
         print ("FALLA:", ", ".join (malas))

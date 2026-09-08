@@ -1889,6 +1889,12 @@ private:
     void quitaClip (int indice);
     void largoClip (int indice, int desdeCompas, int hastaCompas);
     int songCells[Playlist::kLanes * AudioEngine::kSongBars] {};
+    //  Y CUANTOS PASOS DURA CADA PATRON, al lado de las celdas y por lo mismo:
+    //  la rejilla guarda el PUNTERO -no copia- asi que un array local se
+    //  quedaria colgando en cuanto acabara el bloque que lo llena. Es la misma
+    //  razon por la que `songCells` es un miembro y no una variable de
+    //  `refreshSong`.
+    int songLargos[AudioEngine::kNumPatterns] {};
     //  El repintado de la TARJETA es opcional, y por eso es un parametro.
     //  La rejilla de la cancion se repinta sola cuando cambia su fuente; lo
     //  que hay pintado en la tarjeta -titulo y pista- no depende del

@@ -262,6 +262,31 @@ inline juce::String ayudaYDato (juce::Graphics& g, juce::Rectangle<int> banda,
 //  pad no tiene largo con el que contar -uno importado de Instagram es
 //  «instagram_1786902180894(44.1K)»- asi que un titulo que lo lleve dentro no
 //  puede prometer que cabe.
+//  PINTAR UN COMPONENTE SOBRE UNA IMAGEN Y CONTAR EN QUE SE DIFERENCIAN DOS.
+//
+//  Es como se mide lo que se PINTA y no es un componente: un marco de modo, la
+//  miniatura de un bloque, un cabezal. Vivian dentro de `auditModos` y ahi
+//  estaban bien mientras hubo un solo cliente; en cuanto hubo dos salieron,
+//  que es lo mismo que ya le paso a `normaliza` dentro de `render`.
+inline juce::Image zatiPinta (juce::Component& c)
+{
+    juce::Image img (juce::Image::ARGB, juce::jmax (1, c.getWidth()),
+                     juce::jmax (1, c.getHeight()), true);
+    juce::Graphics gg (img);
+    c.paint (gg);
+    return img;
+}
+
+inline int zatiDifieren (const juce::Image& a, const juce::Image& c)
+{
+    if (a.getWidth() != c.getWidth() || a.getHeight() != c.getHeight()) return -1;
+    int n = 0;
+    for (int y = 0; y < a.getHeight(); ++y)
+        for (int x = 0; x < a.getWidth(); ++x)
+            if (a.getPixelAt (x, y) != c.getPixelAt (x, y)) ++n;
+    return n;
+}
+
 inline juce::String campoAcampo (const juce::Font& fuente, int ancho,
                                  const juce::String& base,
                                  const juce::StringArray& campos,

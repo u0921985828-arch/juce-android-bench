@@ -169,6 +169,110 @@ void MainComponent::auditArrange()
     std::cout << "{\"celda\":\"acotada\",\"puestas\":["
               << engine.getSongCell (2, 0) << "," << engine.getSongCell (2, 1)
               << "," << engine.getSongCell (2, 2) << "]}" << std::endl;
+
+    //  LO QUE UN BLOQUE LLEVA DENTRO, con DOS cifras y no una.
+    //
+    //  Un bloque era un color con «P3» escrito en medio, asi que la pagina
+    //  decia DONDE va cada patron y no decia ninguno. Ahora dibuja sus pasos, y
+    //  eso se puede escribir mal de dos formas que se ven igual de bien:
+    //
+    //    - que no dibuje nada -«sigue siendo un color»-, y
+    //    - que dibuje SIEMPRE el compas cero del patron.
+    //
+    //  La segunda es la que importa y la que ninguna prueba obvia caza: un
+    //  bloque de cuatro compases con un patron de DOS da la vuelta dentro, asi
+    //  que la celda 0 y la celda 2 tienen que salir IGUALES y la 0 y la 1
+    //  DISTINTAS. Con el fallo puesto -leer siempre desde el paso cero- las
+    //  tres salen iguales, y la primera cifra sigue diciendo que si.
+    {
+        openSheet (songSheet, songButton);
+        songVista = 0;                       // PATRONES
+        resized();
+
+        //  Un patron de DOS compases con contenido distinto en cada uno: sin
+        //  eso las dos mitades son iguales por construccion y la prueba diria
+        //  que si con el codigo roto.
+        const int pat = 0;
+        engine.setPatternLength (pat, 32);
+        //  El espejo ES el lado de lectura -el motor no tiene getter de paso-
+        //  asi que se escriben los dos, que es lo que hace `stepCellToggled`.
+        auto pon = [this, pat] (int st, int pd)
+        {
+            engine.setStep (pat, st, pd, true);
+            pattern[(size_t) pat][(size_t) st][(size_t) pd] = true;
+        };
+        for (int st = 0; st < AudioEngine::kNumSteps; ++st)
+            for (int pd = 0; pd < AudioEngine::kNumPads; ++pd)
+                pattern[(size_t) pat][(size_t) st][(size_t) pd] = false;
+        pon (0,  0);   // primer compas: un pad en el paso 0
+        pon (8,  2);
+        pon (16, 4);   // segundo compas: otro pad, otro paso
+        pon (20, 6);
+        const auto espejo = pattern[(size_t) pat];
+
+        //  Un bloque de CUATRO compases en el carril 0.
+        for (int b = 0; b < AudioEngine::kSongBars; ++b)
+            for (int ln = 0; ln < AudioEngine::kSongLanes; ++ln)
+                engine.setSongCell (ln, b, 0);
+        engine.setSongCell (0, 0, pat + 1);
+        for (int b = 1; b < 4; ++b) engine.setSongCell (0, b, AudioEngine::kContinued);
+        engine.setSongLength (8);
+        songPage = 0;
+        //  Y SIN CURSOR NI CABEZAL: los dos dibujan un marco sobre UNA celda,
+        //  asi que con el cursor en el compas 1 o en el 3 las dos colas dejan
+        //  de ser identicas por algo que no es su contenido. La primera
+        //  version lo pago con `c1c3 240` donde tenia que salir cero.
+        songCursor = -1;
+        engine.setPlaying (false);
+        refreshSong();
+        resized();
+
+        const auto conPasos = zatiPinta (songGrid);
+
+        //  Y la misma rejilla con el patron VACIO: si el bloque no dibuja lo
+        //  que lleva dentro, las dos imagenes son identicas.
+        for (int st = 0; st < AudioEngine::kNumSteps; ++st)
+            for (int pd = 0; pd < AudioEngine::kNumPads; ++pd)
+                pattern[(size_t) pat][(size_t) st][(size_t) pd] = false;
+        refreshSong();
+        const auto sinPasos = zatiPinta (songGrid);
+
+        //  Vuelta a poner, para las cifras de la vuelta.
+        pattern[(size_t) pat] = espejo;
+        refreshSong();
+
+        //  Las tres celdas, recortadas de la imagen ya pintada: la 0, la 1 y la
+        //  2 del mismo bloque.
+        //  Y LA VUELTA SE MIDE CAMBIANDO EL LARGO DEL PATRON, no recortando
+        //  celdas de la imagen.
+        //
+        //  La primera version recortaba la celda 1 y la 3 -las dos son COLAS,
+        //  asi que se dibujan igual y solo las separa su contenido- y saco
+        //  `c1c3 240` donde tenia que salir cero. No era el codigo: el ancho de
+        //  celda es un FLOAT -(ancho - canaleta) / vista- y el recorte se hacia
+        //  con division entera, asi que las dos ventanas caian en fases
+        //  distintas del mismo dibujo y comparaban pixeles corridos. Primero se
+        //  duda de la prueba.
+        //
+        //  Sin recortar: el MISMO bloque con el patron de DOS compases y con el
+        //  mismo patron declarado de UNO. Con la vuelta bien, las celdas 1 y 3
+        //  enseñan los pasos 16..31 en el primer caso y los 0..15 en el
+        //  segundo, asi que las dos imagenes difieren. La clave es `giro` y no
+        //  `vuelta` porque esa ya la usa la linea de la ida y vuelta del
+        //  proyecto, y `arr.py` reparte por clave: dos lineas con la misma se
+        //  pisan y la segunda gana. Con el fallo puesto
+        //  -leer siempre desde el paso cero- las dos son identicas y la cifra
+        //  sale CERO.
+        const auto dosCompases = zatiPinta (songGrid);
+        engine.setPatternLength (pat, 16);
+        refreshSong();
+        const auto unCompas = zatiPinta (songGrid);
+        engine.setPatternLength (pat, 32);
+        refreshSong();
+
+        std::cout << "{\"arr\":\"miniatura\",\"pasos\":" << zatiDifieren (conPasos, sinPasos)
+                  << ",\"giro\":" << zatiDifieren (dosCompases, unCompas) << "}" << std::endl;
+    }
 }
 
 // ============================================================================
@@ -1599,7 +1703,7 @@ void MainComponent::auditClips()
     auto& rej = songGrid;
     const int gutter = Playlist::kGutter;
     const float pistaH = (float) rej.getHeight() / (float) Playlist::kAudioLanes;
-    const float barW   = (float) (rej.getWidth() - gutter) / (float) Playlist::kBarsView;
+    const float barW   = (float) (rej.getWidth() - gutter) / (float) songGrid.getCompasesVista();
 
     auto punto = [&] (int pista, int compas)
     {
@@ -3962,4 +4066,5 @@ void MainComponent::auditModos()
     refrescaRejillaModo();
 
     std::cout << "{\"modos\":4,\"mudo\":" << difieren (mudoSin, mudoCon) << "}" << std::endl;
+
 }

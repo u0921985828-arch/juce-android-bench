@@ -4,8 +4,10 @@
 #include "ZatiLookAndFeel.h"
 #include "Zati.h"
 #include "AudioEngine.h"
+#include "StepGrid.h"
 #include <array>
 #include <cstring>
+#include <vector>
 #include <vector>
 #include <utility>
 
@@ -34,7 +36,16 @@ public:
     static constexpr int kGutter = Metrics::canalCancion;
 
     static constexpr int kLanes    = 4;
-    static constexpr int kBarsView = 8;    // bars visible at once; pages beyond
+    //  CUANTOS COMPASES SE VEN A LA VEZ. Era `constexpr 8` y por eso un
+    //  estribillo de dieciseis no cabia en una pantalla: no se podia mirar
+    //  entero. Ahora es 4, 8 o 16 y lo decide la persona, con el suelo de
+    //  celda diciendo cual de los tres se puede ofrecer en cada pantalla.
+    //
+    //  El maximo se queda `constexpr` porque de el salen las tapas de pagina,
+    //  que se crean UNA vez en el constructor: crear tapas al vuelo es lo que
+    //  cerro la app la unica vez que la caja negra sirvio para algo.
+    static constexpr int kBarsViewMax = 16;
+    static constexpr int kBarsViewDef = 8;    // bars visible at once; pages beyond
 
     //  LOS CARRILES DE AUDIO NO SON CUATRO CARRILES MAS DE ESTA REJILLA.
     //
@@ -170,6 +181,80 @@ public:
         repaint();
     }
 
+    //  LO QUE UN BLOQUE LLEVA DENTRO, que es lo que separa una lista de
+    //  bloques de una LINEA DE TIEMPO.
+    //
+    //  Un bloque era un rectangulo de color con «P3» escrito en medio, asi que
+    //  la pagina decia DONDE va cada patron y no decia NINGUNO de ellos: para
+    //  saber si el 3 es el que lleva el bombo hay que abrir la ficha del
+    //  secuenciador, mirar, y volver. Con ocho patrones repartidos por sesenta
+    //  y cuatro compases eso es la mitad del trabajo de arreglar una cancion.
+    //
+    //  Ahora el bloque dibuja SUS PASOS: una fila por pad que suene en ese
+    //  patron y una marca por paso puesto, con el color del pad. No es un
+    //  adorno - es la misma informacion que la rejilla de pasos, a la escala a
+    //  la que cabe -, y a un vistazo se distingue un patron de bombo de uno de
+    //  charles sin leer un solo numero.
+    //
+    //  La tabla es la MISMA que alimenta la rejilla de pasos y llega por
+    //  puntero: 8 x 64 x 64 booleanos son 32 KB que ya existen, y copiarlos
+    //  seria una segunda copia que un dia se queda vieja.
+    void setPatrones (const bool* pasos,     // [patron][paso][pad]
+                      const int*  largos,    // pasos que dura cada patron
+                      int nPatrones, int nPasos, int nPads)
+    {
+        //  Las filas de cada patron -que pads suenan- se calculan AQUI y no en
+        //  `paint`: alli habria que recorrer 64x64 booleanos por celda y por
+        //  repintado, y el cabezal repinta esta rejilla en cada compas.
+        const bool cambio = pasos != patPasos || largos != patLargos
+                         || nPatrones != patN || nPasos != patPasos_ || nPads != patPads
+                         || (pasos != nullptr
+                             && std::memcmp (sombraPat.data(), pasos,
+                                             juce::jmin (sombraPat.size(),
+                                                         (size_t) nPatrones * (size_t) nPasos * (size_t) nPads)) != 0);
+        patPasos = pasos; patLargos = largos;
+        patN = nPatrones; patPasos_ = nPasos; patPads = nPads;
+        if (! cambio || pasos == nullptr) return;
+
+        const size_t n = (size_t) nPatrones * (size_t) nPasos * (size_t) nPads;
+        sombraPat.resize (n);
+        std::memcpy (sombraPat.data(), pasos, n);
+
+        for (int q = 0; q < kMaxPat; ++q) filasDe[(size_t) q].clear();
+        for (int q = 0; q < juce::jmin (kMaxPat, nPatrones); ++q)
+            for (int pad = 0; pad < nPads; ++pad)
+                for (int st = 0; st < nPasos; ++st)
+                    if (pasos[((size_t) q * (size_t) nPasos + (size_t) st) * (size_t) nPads + (size_t) pad])
+                    { filasDe[(size_t) q].push_back (pad); break; }
+
+        repaint();
+    }
+
+    //  CUANTOS COMPASES SE VEN, y cuantos caben.
+    //
+    //  El suelo lo decide la CELDA y no un numero escrito aqui: a dieciseis
+    //  compases la celda cae a la mitad de ancho, y una celda que se pinta con
+    //  el dedo arrastrado por debajo de su suelo es una celda que se falla. La
+    //  pregunta se hace con el ancho que la rejilla TIENE, asi que en una
+    //  tableta se ofrecen los tres pasos y en un movil estrecho no.
+    int  getCompasesVista() const noexcept { return barsView; }
+    int  getPaginas()       const noexcept
+    {
+        return juce::jmax (1, (AudioEngine::kSongBars + barsView - 1) / barsView);
+    }
+    bool cabeVista (int n) const noexcept
+    {
+        const int w = getWidth() - kGutter;
+        return n > 0 && w > 0 && (float) w / (float) n >= (float) Metrics::celdaCancion;
+    }
+    void setCompasesVista (int n)
+    {
+        n = juce::jlimit (4, kBarsViewMax, n);
+        if (n == barsView) return;
+        barsView = n;
+        repaint();
+    }
+
     //  EL MODO ARMADO, VISTO DONDE SE ACTUA. AUTO cambia si mover un mando
     //  ESCRIBE en la linea de tiempo, y su tapa esta en la fila de arriba
     //  mientras el dedo esta aqui. Transparente es «ningun modo».
@@ -182,8 +267,8 @@ public:
         auto r = getLocalBounds();
         const int gutter = kGutter;
         const float laneH = (float) r.getHeight() / (float) kLanes;
-        const float barW  = (float) (r.getWidth() - gutter) / (float) kBarsView;
-        const int   base  = pageIndex * kBarsView;
+        const float barW  = (float) (r.getWidth() - gutter) / (float) barsView;
+        const int   base  = pageIndex * barsView;
 
         for (int lane = 0; lane < kLanes; ++lane)
         {
@@ -213,7 +298,7 @@ public:
             if (mudo)
                 g.fillRect (gut.getX() + 3.0f, gut.getCentreY() - 0.5f, gut.getWidth() - 6.0f, 1.4f);
 
-            for (int c = 0; c < kBarsView; ++c)
+            for (int c = 0; c < barsView; ++c)
             {
                 const int bar = base + c;
                 const float x = (float) r.getX() + (float) gutter + barW * (float) c;
@@ -240,8 +325,17 @@ public:
                     // four-bar block reads as ONE block instead of four copies.
                     const int startBar = findStart (lane, bar);
                     const int sv = startBar >= 0 ? data[lane * totalBars + startBar] : 0;
-                    g.setColour (blockColour (sv).withAlpha (mudo ? 0.18f : 0.55f));
+                    const bool mini = cabeMini (cell) && sv > 0;
+                    g.setColour (blockColour (sv).withAlpha (mudo ? 0.18f : (mini ? 0.22f : 0.55f)));
                     g.fillRect (cell.withTrimmedLeft (-1.5f));
+                    //  Y LA COLA ENSEÑA SU TROZO, que es lo que la hace cola y
+                    //  no una copia: un bloque de cuatro compases con un patron
+                    //  de cuatro enseña compases distintos en cada celda, y con
+                    //  uno de uno enseña el mismo cuatro veces - que es
+                    //  exactamente lo que suena.
+                    if (mini && startBar >= 0)
+                        pintaPasos (g, cell.reduced (2.0f).withTrimmedTop (0.0f), sv,
+                                    (bar - startBar) * StepGrid::kBarSteps, mudo);
                 }
                 else
                 {
@@ -258,15 +352,47 @@ public:
                     }
                     else
                     {
-                        g.setColour (col);
+                        //  EL FONDO DEL BLOQUE SE HUNDE cuando lleva
+                        //  miniatura. Con el color a pleno las marcas de los
+                        //  pads caen sobre su propio tono y desaparecen: el
+                        //  bloque es del color del PATRON y las marcas del
+                        //  color de cada PAD, y dos colores plenos uno sobre
+                        //  otro no se separan. Con la tapa al 30% el bloque
+                        //  sigue diciendo cual es y las marcas se leen encima.
+                        g.setColour (cabeMini (cell) ? col.withAlpha (0.30f) : col);
                         g.fillRect (cell);
+                        if (cabeMini (cell))
+                        {
+                            g.setColour (col.withAlpha (0.85f));
+                            g.drawRect (cell, 1.2f);
+                        }
                     }
+
+                    //  LO QUE EL BLOQUE LLEVA DENTRO. Solo un patron - un
+                    //  golpe de pad suelto no tiene pasos que enseñar - y solo
+                    //  donde cabe: por debajo de kAltoMini el bloque se queda
+                    //  como estaba, que es la escalera de siempre.
+                    juce::Rectangle<float> texto = cell;
+                    if (v > 0 && cabeMini (cell))
+                    {
+                        auto dentro = cell.reduced (2.0f);
+                        texto = dentro.removeFromTop (kFilaRotulo);
+                        //  El primer compas del bloque empieza en el paso cero
+                        //  del patron; los de detras siguen contando, y el
+                        //  resto da la vuelta si el bloque es mas largo que el
+                        //  patron.
+                        const int desde = (bar - findStart (lane, bar)) * StepGrid::kBarSteps;
+                        pintaPasos (g, dentro, v, juce::jmax (0, desde), mudo);
+                    }
+
                     g.setColour (mudo ? col.withAlpha (0.85f)
                                       : ZatiColours::bestOn (col, ZatiColours::ink, juce::Colours::white));
                     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
                     g.drawText (v > 0 ? "P" + juce::String (v)
                                       : juce::String (-v).paddedLeft ('0', 2),
-                                cell, juce::Justification::centred);
+                                texto,
+                                texto == cell ? juce::Justification::centred
+                                              : juce::Justification::centredLeft);
                 }
 
                 if (bar == playing)
@@ -289,8 +415,8 @@ public:
         if (lB > lA)
         {
             const float x0 = (float) r.getX() + gutter + barW * (float) juce::jmax (0, lA - base);
-            const float x1 = (float) r.getX() + gutter + barW * (float) juce::jmin (kBarsView, lB - base);
-            if (x1 > x0 && lB > base && lA < base + kBarsView)
+            const float x1 = (float) r.getX() + gutter + barW * (float) juce::jmin (barsView, lB - base);
+            if (x1 > x0 && lB > base && lA < base + barsView)
             {
                 g.setColour (ZatiColours::green.withAlpha (0.85f));
                 g.fillRect (x0, (float) r.getY(), x1 - x0, 3.0f);
@@ -304,7 +430,7 @@ public:
         //  inventar un gesto para decirselo. Una columna entera marcada, no
         //  una celda: las cuatro herramientas trabajan sobre el COMPAS, con
         //  sus cuatro carriles, y marcar una sola celda diria lo contrario.
-        if (cursor >= base && cursor < base + kBarsView && cursor < totalBars)
+        if (cursor >= base && cursor < base + barsView && cursor < totalBars)
         {
             const float x = (float) r.getX() + gutter + barW * (float) (cursor - base);
             g.setColour (ZatiColours::ink.withAlpha (0.85f));
@@ -314,7 +440,7 @@ public:
         // Bar numbers along the top edge of the first lane.
         g.setColour (ZatiColours::inkDim.withAlpha (0.7f));
         g.setFont (ZatiColours::monoFont (Metrics::fTiny, true));
-        for (int c = 0; c < kBarsView; c += 2)
+        for (int c = 0; c < barsView; c += 2)
             g.drawText (juce::String (base + c + 1),
                         (int) ((float) r.getX() + gutter + barW * (float) c) + 2, r.getY(),
                         (int) barW, 9, juce::Justification::topLeft);
@@ -380,10 +506,10 @@ public:
 
         if (! onCell) return;
         const float laneH = (float) r.getHeight() / (float) kLanes;
-        const float barW  = (float) (r.getWidth() - gutter) / (float) kBarsView;
+        const float barW  = (float) (r.getWidth() - gutter) / (float) barsView;
         const int lane = juce::jlimit (0, kLanes - 1, (int) ((float) (e.y - r.getY()) / laneH));
-        const int bar  = pageIndex * kBarsView
-                       + juce::jlimit (0, kBarsView - 1, (int) ((float) (e.x - r.getX() - gutter) / barW));
+        const int bar  = pageIndex * barsView
+                       + juce::jlimit (0, barsView - 1, (int) ((float) (e.x - r.getX() - gutter) / barW));
         if (bar >= totalBars) return;
         if (arrastrando && lane == ultima.first && bar == ultima.second) return;
         ultima = { lane, bar };
@@ -402,8 +528,8 @@ public:
     {
         auto r = getLocalBounds();
         const float pistaH = (float) r.getHeight() / (float) kAudioLanes;
-        const float barW   = (float) (r.getWidth() - kGutter) / (float) kBarsView;
-        return { (float) r.getX() + (float) kGutter + barW * (float) (compas - pageIndex * kBarsView),
+        const float barW   = (float) (r.getWidth() - kGutter) / (float) barsView;
+        return { (float) r.getX() + (float) kGutter + barW * (float) (compas - pageIndex * barsView),
                  (float) r.getY() + pistaH * (float) pista, barW, pistaH };
     }
 
@@ -411,8 +537,8 @@ public:
     {
         auto r = getLocalBounds();
         const float pistaH = (float) r.getHeight() / (float) kAudioLanes;
-        const float barW   = (float) (r.getWidth() - kGutter) / (float) kBarsView;
-        const int   base   = pageIndex * kBarsView;
+        const float barW   = (float) (r.getWidth() - kGutter) / (float) barsView;
+        const int   base   = pageIndex * barsView;
 
         for (int pista = 0; pista < kAudioLanes; ++pista)
         {
@@ -436,7 +562,7 @@ public:
             if (mudo)
                 g.fillRect (gut.getX() + 3.0f, gut.getCentreY() - 0.5f, gut.getWidth() - 6.0f, 1.4f);
 
-            for (int c = 0; c < kBarsView; ++c)
+            for (int c = 0; c < barsView; ++c)
             {
                 const int compas = base + c;
                 auto cell = juce::Rectangle<float> ((float) r.getX() + (float) kGutter + barW * (float) c,
@@ -457,7 +583,7 @@ public:
             const ClipVista& c = clips[i];
             if (! juce::isPositiveAndBelow (c.pista, kAudioLanes)) continue;
             const int d = juce::jmax (c.desde, base);
-            const int h = juce::jmin (c.hasta, base + kBarsView);
+            const int h = juce::jmin (c.hasta, base + barsView);
             if (h <= d) continue;                       // no cae en esta pagina
 
             auto caja = celdaAudio (c.pista, d)
@@ -504,7 +630,7 @@ public:
 
         //  El cabezal, con la misma marca que la otra vista: es el mismo
         //  transporte y el mismo compas.
-        if (playing >= base && playing < base + kBarsView)
+        if (playing >= base && playing < base + barsView)
         {
             auto col = juce::Rectangle<float> ((float) r.getX() + (float) kGutter
                                                    + barW * (float) (playing - base),
@@ -515,7 +641,7 @@ public:
 
         g.setColour (ZatiColours::inkDim.withAlpha (0.7f));
         g.setFont (ZatiColours::monoFont (Metrics::fTiny, true));
-        for (int c = 0; c < kBarsView; c += 2)
+        for (int c = 0; c < barsView; c += 2)
             g.drawText (juce::String (base + c + 1),
                         (int) ((float) r.getX() + (float) kGutter + barW * (float) c) + 2, r.getY(),
                         (int) barW, 9, juce::Justification::topLeft);
@@ -536,7 +662,7 @@ public:
     {
         auto r = getLocalBounds();
         const float pistaH = (float) r.getHeight() / (float) kAudioLanes;
-        const float barW   = (float) (r.getWidth() - kGutter) / (float) kBarsView;
+        const float barW   = (float) (r.getWidth() - kGutter) / (float) barsView;
         if (barW <= 0.0f || pistaH <= 0.0f) return;
 
         //  La canaleta silencia, y SOLO al toque: arrastrar por ella
@@ -550,8 +676,8 @@ public:
         }
 
         const int pista  = juce::jlimit (0, kAudioLanes - 1, (int) ((float) (e.y - r.getY()) / pistaH));
-        const int compas = pageIndex * kBarsView
-                         + juce::jlimit (0, kBarsView - 1, (int) ((float) (e.x - r.getX() - kGutter) / barW));
+        const int compas = pageIndex * barsView
+                         + juce::jlimit (0, barsView - 1, (int) ((float) (e.x - r.getX() - kGutter) / barW));
         if (compas >= totalBars) return;
 
         if (! arrastrando)
@@ -655,6 +781,60 @@ private:
     //  se pinta del color del pad 33 y no del 01 del banco de delante — y el
     //  subindice se acota igual, porque una tabla correcta hoy no impide que
     //  alguien vuelva a pasar una corta manana.
+    //  LA MINIATURA DE UN PATRON dentro de su celda.
+    //
+    //  Una fila por pad que suene y una marca por paso puesto. `paso0` es el
+    //  paso del patron con el que empieza ESTA celda, que no es siempre cero:
+    //  un bloque de cuatro compases con un patron de dos DA LA VUELTA dentro
+    //  -esa es la regla del largo de bloque, medida contando disparos- asi que
+    //  la tercera celda vuelve a empezar. Dibujarla desde cero seria enseñar
+    //  cuatro veces el mismo compas y sonar otra cosa.
+    //
+    //  Y NO CABEN LAS SESENTA Y CUATRO FILAS: a 42 px de carril, dieciseis
+    //  pads dan 2.6 px por fila y sesenta y cuatro dan 0.65. Se enseñan las
+    //  que quepan a `kMinFila` cada una, en orden de pad — que es el orden de
+    //  la rejilla — y las de mas no se dibujan. Es la escalera de siempre: se
+    //  pide lo que hay.
+    void pintaPasos (juce::Graphics& g, juce::Rectangle<float> caja,
+                     int patron, int paso0, bool mudo) const
+    {
+        if (patPasos == nullptr || patron < 1 || patron > juce::jmin (kMaxPat, patN)) return;
+        const auto& filas = filasDe[(size_t) (patron - 1)];
+        if (filas.empty() || caja.getHeight() < 6.0f) return;
+
+        const int largo = (patLargos != nullptr)
+                            ? juce::jlimit (1, patPasos_, patLargos[patron - 1]) : patPasos_;
+
+        constexpr float kMinFila = 2.0f;
+        const int cabenF = juce::jmax (1, (int) (caja.getHeight() / kMinFila));
+        const int nF     = juce::jmin ((int) filas.size(), cabenF);
+        const float fh   = caja.getHeight() / (float) nF;
+        const float cw   = caja.getWidth()  / (float) StepGrid::kBarSteps;
+
+        for (int r = 0; r < nF; ++r)
+        {
+            const int pad = filas[(size_t) r];
+            const auto col = (zati != nullptr && pad >= 0 && pad < zatis)
+                               ? Zati::colour (zati[pad]) : ZatiColours::inkDim;
+            g.setColour (mudo ? col.withAlpha (0.35f) : col);
+
+            const float y = caja.getY() + fh * (float) r;
+            //  La marca no llena su fila: un pixel de aire entre filas es lo
+            //  que hace que ocho filas se lean como ocho y no como una mancha.
+            const float mh = juce::jmax (1.0f, fh - 1.0f);
+
+            for (int c = 0; c < StepGrid::kBarSteps; ++c)
+            {
+                const int st = (paso0 + c) % largo;
+                if (! patPasos[((size_t) (patron - 1) * (size_t) patPasos_ + (size_t) st)
+                               * (size_t) patPads + (size_t) pad])
+                    continue;
+                g.fillRect (caja.getX() + cw * (float) c, y,
+                            juce::jmax (1.0f, cw - 0.6f), mh);
+            }
+        }
+    }
+
     juce::Colour blockColour (int v) const
     {
         if (v > 0 && v != kContinued) return Zati::colour (v - 1);
@@ -691,6 +871,26 @@ private:
     int cursor = -1;          // el compas que las herramientas van a tocar
     unsigned mute = 0;        // un bit por carril silenciado
     int lA = 0, lB = 0;       // el tramo en bucle, [A,B)
+
+    //  Los pasos de los ocho patrones, y que pads usa cada uno.
+    int barsView = kBarsViewDef;
+
+    static constexpr int kMaxPat = 8;
+    //  Por debajo de esto no cabe rotulo Y miniatura, asi que el bloque se
+    //  queda como estaba: un color y su numero. Medido - en 280x653 el carril
+    //  son 20 px y la celda 17, y ahi ocho filas darian dos pixeles cada una
+    //  contando el rotulo, o sea una mancha.
+    static constexpr float kAltoMini  = 26.0f;
+    static constexpr float kFilaRotulo = 10.0f;
+    static bool cabeMini (juce::Rectangle<float> cell) noexcept
+    {
+        return cell.getHeight() >= kAltoMini && cell.getWidth() >= 12.0f;
+    }
+    const bool* patPasos  = nullptr;
+    const int*  patLargos = nullptr;
+    int patN = 0, patPasos_ = 0, patPads = 0;
+    std::vector<unsigned char> sombraPat;
+    std::array<std::vector<int>, kMaxPat> filasDe;
 
     //  La copia de lo ultimo PINTADO, para no volver a pintarlo. Ver setSource.
     //  El numero de compases lo elige la persona, asi que la sombra de la tabla
