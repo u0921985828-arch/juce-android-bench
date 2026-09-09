@@ -87,9 +87,11 @@ NOMBRES = {
 #  Las tres que se pintan enteras, con la cuenta de su celda. Es la MISMA de
 #  Tests/expo.py -si se separan, el plano dibuja una rejilla que el banco mide
 #  de otra forma-.
-REJILLAS = (("StepGrid",  16, 16, 30),
-            ("Playlist",   8,  4, 26),
-            ("PianoRoll", 16, 13, 26))
+#  Cuantas celdas tiene cada una lo dice el VOLCADO -`cols`, `filas`, `canal`-
+#  y no esta lista: desde que las tres tienen ventana continua y zoom, un
+#  numero escrito aqui dibuja una rejilla que la app no tiene. Lo que queda es
+#  QUIENES son.
+REJILLAS = ("StepGrid", "Playlist", "PianoRoll")
 
 #  UN PLANO ES LA PAGINA, LITERAL. La paleta no se inventa: es la de la app,
 #  fila por fila de ZatiLookAndFeel::skinTable, y la letra tambien -Oswald para
@@ -521,7 +523,7 @@ def svg (clave, filas, tam, piel=0, marcados=frozenset()):
         #  va DESPUES de mirar si esto es uno. La primera version saltaba todo
         #  `other` de entrada y la ficha SEC salia sin su rejilla de pasos, que
         #  es justo lo que esa pagina es: 256 celdas y catorce tapas alrededor.
-        lienzo = (next ((q for q in REJILLAS if q[0] in cl), None) is not None
+        lienzo = (any (q in cl for q in REJILLAS)
                   or any (q in cl for q in ("Spectrum", "Wave", "Display", "Preview",
                                             "Meter", "Keyboard", "Teclado")))
         if "Sheet" in cl or "XyPanel" in cl:
@@ -632,12 +634,17 @@ def svg (clave, filas, tam, piel=0, marcados=frozenset()):
             continue
 
         # ---- LAS TRES REJILLAS DE LIENZO -----------------------------------
-        rej = next (((n, c, l, ca) for n, c, l, ca in REJILLAS if n in cl), None)
-        if rej is not None:
-            n, cols, carriles, canal = rej
+        n = next ((q for q in REJILLAS if q in cl), None)
+        if n is not None:
+            #  Las tres cifras las dice el volcado; sin ellas -una rejilla que
+            #  no las publica- se dibuja la caja y nada mas, que es mejor que
+            #  dibujar una rejilla inventada.
+            cols     = int (r.get ("cols", 0))
+            carriles = int (r.get ("filas", 0))
+            canal    = int (r.get ("canal", 0))
             p.append ('<rect x="%d" y="%d" width="%d" height="%d" rx="3" fill="%s" stroke="%s"/>'
                       % (x, y, w, h, C["lcd"], C["plateEdge"]))
-            if w > canal and h > 0:
+            if cols > 0 and carriles > 0 and w > canal and h > 0:
                 cw = (w - canal) / float (cols); ch = h / float (carriles)
                 #  El canal de la izquierda, que en las tres dice de que fila es.
                 p.append ('<rect x="%d" y="%d" width="%d" height="%d" fill="%s" opacity=".5"/>'

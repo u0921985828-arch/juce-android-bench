@@ -95,40 +95,46 @@ MainComponent::MainComponent()
     stepGrid.onCell = [this] (int lane, int step) { stepCellToggled (currentBank * kPadsPerBank + lane, step); };
     seqSheet.addAndMakeVisible (stepGrid);
 
-    // Bar selector: 64 steps will not fit across a phone at a size worth
-    // tapping, so the grid pages a bar at a time instead of shrinking.
-    for (int b = 0; b < kNumSteps / kStepCols; ++b)
+    //  LA BARRA, QUE SUSTITUYE A LA FILA DE COMPASES.
+    //
+    //  Eran ocho tapas —1, 2, 3, 4…— y hacian dos cosas mal a la vez: la
+    //  ventana saltaba de dieciseis en dieciseis, asi que una figura que cruza
+    //  el filo de un compas no se podia mirar entera —«cambiar de pantalla todo
+    //  el rato», que fue como se pidio esto—, y un numero no dice cuanto queda
+    //  ni por donde va el cabezal cuando lo que suena esta fuera de la vista.
+    //  Esa segunda mitad la hacian pintando de rojo la tapa del compas vivo, y
+    //  se muda a la barra, que ademas dice DONDE cae sobre el total.
+    //
+    //  UNA SOLA para las dos paginas, que es lo que ya eran las ocho tapas: el
+    //  piano y la rejilla son dos VISTAS del mismo patron, con distinto numero
+    //  de columnas, asi que compartir el primer paso es lo que hace que cambiar
+    //  de pestaña no te mueva de sitio. Dos variables serian dos reglas.
+    seqBarra.onMueve = [this] (int primero)
     {
-        auto* t = new juce::TextButton (juce::String (b + 1));
-        styleButton (*t, kStepOff);
-        litAccent (*t);
-        t->setClickingTogglesState (true);
-        t->onClick = [this, b]
-        {
-            selectedBar = b;
-            for (int i = 0; i < barButtons.size(); ++i)
-                barButtons[i]->setToggleState (i == b, juce::dontSendNotification);
+        seqPrimerPaso = primero;
+        //  LA QUE SE ESTA VIENDO, y no siempre la rejilla. La FICHA no es la
+        //  PAGINA: el mismo fallo que ya tuvo el cabezal del piano.
+        if (seqPage == seqPagePiano) refreshPiano();
+        else                         refreshStepGrid();
+    };
+    seqBarra.setTitle (T ("PASOS"));
+    seqSheet.addAndMakeVisible (seqBarra);
 
-            //  LA QUE SE ESTA VIENDO, y no siempre la rejilla.
-            //
-            //  Esto llamaba solo a refreshStepGrid, asi que desde que la fila
-            //  de compases tambien vive en la pagina del PIANO, cambiar de
-            //  compas movia selectedBar y dejaba el piano dibujando el compas
-            //  ANTERIOR. Con la escritura ya arreglada eso es PEOR que antes:
-            //  la nota se escribe en el compas nuevo y la vista enseña el
-            //  viejo, o sea que la rejilla parece no responder - que es
-            //  exactamente como llego la queja las dos veces.
-            //
-            //  Es el mismo fallo que el cabezal del piano: la FICHA no es la
-            //  PAGINA. Aquel preguntaba por seqSheet.isVisible() y este por
-            //  nada; los dos se arreglan preguntando por seqPage.
-            if (seqPage == seqPagePiano) refreshPiano();
-            else                         refreshStepGrid();
-        };
-        seqSheet.addAndMakeVisible (t);
-        barButtons.add (t);
-    }
-    barButtons[0]->setToggleState (true, juce::dontSendNotification);
+    //  Y LA VERTICAL DEL PIANO, que sustituye al salto de OCTAVA de doce en
+    //  doce. Recorre `pianoBase` semitono a semitono hasta donde `baseMax`
+    //  admite, asi que una melodia que cruza un DO se puede centrar. Donde no
+    //  cabe —se lleva `Metrics::hit` de ANCHO de la rejilla, y en las pantallas
+    //  estrechas eso deja la columna del paso por debajo de su suelo— se queda
+    //  el par de tapas: cada mando en UN sitio en cada pantalla, nunca en dos y
+    //  nunca en ninguno, que es la regla de REPETIR y CORTE en la tira.
+    pianoBarra.ponEje (true);
+    pianoBarra.onMueve = [this] (int primero)
+    {
+        pianoBase = juce::jlimit (-24, pianoGrid.baseMax(), primero - 24);
+        refreshPiano();
+    };
+    pianoBarra.setTitle (T ("OCTAVA"));
+    seqSheet.addAndMakeVisible (pianoBarra);
 
     //  Y las cuatro de banco, dentro de la ficha. Ver seqBankButtons.
     for (int b = 0; b < kNumBanks; ++b)
@@ -1734,7 +1740,7 @@ MainComponent::MainComponent()
         velSlider.setValue  (127.0, juce::dontSendNotification);
         rollSlider.setValue (1.0, juce::dontSendNotification);
         lengthSlider.setValue (engine.getPatternLength (selectedPattern), juce::dontSendNotification);
-        selectedBar = 0;
+        seqPrimerPaso = 0;
         resized();
         refreshStepGrid();
         seqSheet.repaint();   // sheet card itself can grow/shrink with the bank's LEN
@@ -1930,6 +1936,35 @@ MainComponent::MainComponent()
             savePistasPref();
         };
         seqSheet.addAndMakeVisible (seqPistasBtn);
+
+        //  EL ZOOM DE ANCHO, con la escalera de siempre: se prueban los pasos
+        //  en orden y se coge el primero que deje la celda por encima de su
+        //  suelo. Se mide POR LA TAPA y no poniendo el numero por dentro, que
+        //  es lo unico que ve la escalera — con `seqZoomW = 0.75f` el paso que
+        //  no cabe no se salta nunca.
+        styleButton (seqZoomBtn, kKey);
+        seqZoomBtn.onClick = [this]
+        {
+            //  Cuadrado, el doble de ancho —para escribir un redoble— y tres
+            //  cuartos, que es ver mas de golpe. Por debajo no se ofrece: media
+            //  celda cae por debajo del suelo en las siete pantallas, asi que
+            //  seria un paso que la escalera salta siempre.
+            static const float pasos[] = { 1.0f, 2.0f, 0.75f };
+            const int n = (int) (sizeof (pasos) / sizeof (pasos[0]));
+            int donde = 0;
+            for (int i = 0; i < n; ++i)
+                if (std::abs (pasos[i] - seqZoomW) < 0.001f) donde = i;
+            for (int k = 1; k <= n; ++k)
+            {
+                const float cand = pasos[(donde + k) % n];
+                if (std::abs (cand - seqZoomW) < 0.001f || stepGrid.cabeZoom (cand))
+                {
+                    aplicaZoomPasos (cand);
+                    return;
+                }
+            }
+        };
+        seqSheet.addAndMakeVisible (seqZoomBtn);
 
         styleButton (seqPlayBtn, kKey);
         litAccent (seqPlayBtn);
@@ -2580,13 +2615,20 @@ MainComponent::MainComponent()
     }
     songPatBtns[0]->setToggleState (true, juce::dontSendNotification);
 
+    //  LA BROCHA CICLA: PATRON · SONIDO · CLIP.
+    //
+    //  Con las dos familias en la misma rejilla hace falta poder decir «lo que
+    //  suelto aqui es un CLIP», y eso es un estado de la brocha y no una tapa
+    //  nueva: la fila ya esta medida y una septima tapa la parte en dos. La
+    //  tapa sigue diciendo el ESTADO, que es lo que ya hacia.
     styleButton (songPadModeBtn, kStepOff);
     litAccent (songPadModeBtn);
     songPadModeBtn.setClickingTogglesState (true);
     songPadModeBtn.onClick = [this]
     {
-        // The selected pad becomes the brush: a one-shot dropped on a bar.
-        songBrush = songPadModeBtn.getToggleState() ? -(juce::jmax (0, selectedPad) + 1) : 1;
+        songPincel = (songPincel + 1) % 3;
+        if (songPincel == 0) songBrush = juce::jmax (1, songBrush);   // vuelve al patron
+        else                 songBrush = -(juce::jmax (0, selectedPad) + 1);
         refreshSong();
     };
     songSheet.addAndMakeVisible (songPadModeBtn);
@@ -2681,41 +2723,20 @@ MainComponent::MainComponent()
     };
     songSheet.addAndMakeVisible (songLenSlider);
 
-    for (int i = 0; i < AudioEngine::kSongBars / 4; ++i)   // el maximo: vista de 4
+    //  LA BARRA DE LA LINEA DE TIEMPO, en el sitio de la fila de paginas.
+    //
+    //  Escribe el primer compas visible y refresca; no toca el zoom, que es de
+    //  la tapa de al lado. Una funcion, un dueno.
+    songBarra.onMueve = [this] (int primero)
     {
-        auto* b = new juce::TextButton (juce::String (i * Playlist::kBarsViewDef + 1));
-        styleButton (*b, kStepOff);
-        litAccent (*b);
-        b->setClickingTogglesState (true);
-        b->onClick = [this, i]
-        {
-            songPage = i;
-            for (int k = 0; k < songPageBtns.size(); ++k)
-                songPageBtns[k]->setToggleState (k == i, juce::dontSendNotification);
-            refreshSong();
-        };
-        songSheet.addAndMakeVisible (b);
-        songPageBtns.add (b);
-    }
-    songPageBtns[0]->setToggleState (true, juce::dontSendNotification);
+        songPrimerCompas = primero;
+        refreshSong();
+    };
+    songSheet.addAndMakeVisible (songBarra);
 
     //  LA CANALETA SILENCIA, y en la vista de audio silencia la PISTA. Es el
     //  mismo sitio con el mismo significado en las dos, que es lo que hace que
     //  no haya nada nuevo que aprender: lo que cambia es a quien se lo dice.
-    //  LAS DOS PESTANAS DE LA LINEA DE TIEMPO. Mismo estilo, mismo grupo de
-    //  radio y mismo gesto que las tres del secuenciador: dos fichas que hacen
-    //  lo mismo tienen que hacerlo igual, o cada una ensena su propio idioma.
-    {
-        styleButton (songVistaBtn, kKey);
-        litAccent (songVistaBtn);
-        songVistaBtn.onClick = [this]
-        {
-            showSongPage (songVista == Playlist::vistaAudio ? Playlist::vistaPatrones
-                                                            : Playlist::vistaAudio);
-        };
-        songSheet.addAndMakeVisible (songVistaBtn);
-    }
-
     //  LAS CUATRO HERRAMIENTAS, en iconos y sin rotulo.
     //
     //  Sin rotulo a proposito: `reparteTapa` admite ese caso desde siempre -con
@@ -2780,28 +2801,29 @@ MainComponent::MainComponent()
         songSheet.addAndMakeVisible (songZoomBtn);
     }
 
+    //  UN CARRIL, UN SILENCIO. El motor guarda DOS mascaras -los carriles de
+    //  patron y las pistas de audio- y las dos son correctas: son dos caminos
+    //  de render distintos. Lo que dejo de ser verdad es que sean dos COSAS
+    //  para quien mira, desde que el carril 1 y la pista 1 son el mismo carril.
+    //  La canaleta escribe las dos; `Playlist.h` avisaba de compartir el numero
+    //  SIN QUERER y aqui se comparte a proposito.
     songGrid.onLane = [this] (int lane)
     {
-        if (songVista == Playlist::vistaAudio)
-        {
-            const int p = juce::jlimit (0, AudioEngine::kAudioTracks - 1, lane);
-            engine.setPistaMute (p, ! engine.isPistaMute (p));
-            refreshSong (false);
-            return;
-        }
+        const int p = juce::jlimit (0, AudioEngine::kAudioTracks - 1, lane);
+        const bool ahora = ! engine.isSongLaneMuted (juce::jlimit (0, Playlist::kLanes - 1, lane));
+        engine.setPistaMute (p, ahora);
         toggleSongLane (lane);
     };
 
     //  GRABAR AL ARREGLO Y EL METRONOMO, en la vista de audio.
     {
-        //  NACEN APAGADAS, con addChildComponent y no addAndMakeVisible: son de
-        //  la vista de AUDIO y la ficha abre en PATRONES, asi que puestas se
-        //  quedaban visibles y de 0x0 hasta que alguien tocara la pestana - 56
-        //  hallazgos del banco, que es la regla de «lo que esta encendido y
-        //  mide cero». showSongPage las enciende cuando toca.
+        //  NACEN VISIBLES desde que la ficha tiene una sola vista: eran de la
+        //  de AUDIO y por eso se creaban apagadas -puestas se quedaban visibles
+        //  y de 0x0 hasta que alguien tocara la pestaña, 56 hallazgos del
+        //  banco-. Con una rejilla sola no hay pestaña que tocar.
         styleButton (songRecBtn, kKey);
         songRecBtn.onClick = [this] { grabaAlArreglo(); };
-        songSheet.addChildComponent (songRecBtn);
+        songSheet.addAndMakeVisible (songRecBtn);
 
         styleButton (songClickBtn, kKey);
         litAccent (songClickBtn);
@@ -2814,7 +2836,7 @@ MainComponent::MainComponent()
             //  al cerrar la app no es una opcion.
             saveCuentaPref();
         };
-        songSheet.addChildComponent (songClickBtn);
+        songSheet.addAndMakeVisible (songClickBtn);
 
         //  AUTO, la tercera de la fila de grabar. Va aqui y no en la cara por
         //  lo mismo que GRABAR y el clic: la automatizacion es de la CANCION
@@ -2837,7 +2859,7 @@ MainComponent::MainComponent()
             if (autoArmado) ponAutoArmado (false);
             vaciaAutomacion();
         };
-        songSheet.addChildComponent (autoBtn);
+        songSheet.addAndMakeVisible (autoBtn);
     }
 
     songGrid.onClipNuevo = [this] (int pista, int compas) { ponClip (pista, compas); };
@@ -2972,7 +2994,7 @@ MainComponent::MainComponent()
         //  saltaba, porque una columna siempre vale menos de dieciseis.
         pianoGrid.onCelda = [this] (int paso, int semi)
         {
-            pianoCellToggled (selectedBar * AudioEngine::kBarSteps + paso, semi);
+            pianoCellToggled (seqPrimerPaso + paso, semi);
         };
         //  ESTIRAR UNA NOTA. El largo es del PASO y no de cada nota del acorde:
         //  las cuatro notas de una columna son un acorde y un acorde dura lo
@@ -2980,7 +3002,7 @@ MainComponent::MainComponent()
         pianoGrid.onLargo = [this] (int paso, int, int cuartos)
         {
             if (selectedPad < 0) return;
-            const int st = selectedBar * AudioEngine::kBarSteps + paso;
+            const int st = seqPrimerPaso + paso;
             if (st < 0 || st >= engine.getPatternLength (selectedPattern)) return;
             engine.setStepLen (selectedPattern, st, selectedPad, cuartos);
             refreshPiano();
@@ -3153,7 +3175,7 @@ MainComponent::MainComponent()
         pianoGrid.onBorrar = [this] (int paso, int semi)
         {
             if (selectedPad < 0) return;
-            const int st = selectedBar * AudioEngine::kBarSteps + paso;
+            const int st = seqPrimerPaso + paso;
             if (st < 0 || st >= engine.getPatternLength (selectedPattern)) return;
 
             bool tenia = false;
@@ -3172,7 +3194,7 @@ MainComponent::MainComponent()
         pianoGrid.onCortar = [this] (int paso, int cuartos)
         {
             if (selectedPad < 0) return;
-            const int st = selectedBar * AudioEngine::kBarSteps + paso;
+            const int st = seqPrimerPaso + paso;
             if (st < 0 || st >= engine.getPatternLength (selectedPattern)) return;
             engine.setStepLen (selectedPattern, st, selectedPad, cuartos);
             refreshPiano();
@@ -3536,6 +3558,14 @@ MainComponent::MainComponent()
     //  esta vacia. Aqui ya esta todo construido.
     loadPianoPref();
     loadPistasPref();
+    //  Y EL ROTULO DEL ZOOM DE ANCHO SE ESCRIBE UNA VEZ AL ARRANCAR, por lo
+    //  mismo que sus dos hermanos: `aplicaZoomPasos` es quien lo pone y sin
+    //  esta linea la tapa salia con el texto del constructor -o sea vacia en
+    //  el volcado- y ademas sin pasar por `Lang::ltr`, que es lo que decide
+    //  como se lee "2:1" en arabe. No es una preferencia que se guarde: la
+    //  celda arranca CUADRADA por decision, asi que lo unico que hace falta es
+    //  que la tapa diga en que paso esta.
+    aplicaZoomPasos (seqZoomW);
     loadCuentaPref();
     loadMovPref();
     //  Y el monitor. `aplicaMonitor` sin avisar: en el constructor no hay
@@ -5185,11 +5215,14 @@ void MainComponent::showSeqPage (int page)
     tapButton.setVisible     (onGrid);
     copyPatBtn.setVisible    (onGrid);
     pastePatBtn.setVisible   (onGrid);
-    //  The bar row has a second condition - a one-bar pattern has nothing to
-    //  select - so resized() is the only place allowed to turn it ON. Here it
-    //  can only ever turn it off.
-    if (! onGrid)
-        for (auto* b : barButtons) b->setVisible (false);
+    //  La barra tiene una segunda condicion —un patron que cabe entero no
+    //  tiene nada que desplazar— asi que resized() es el unico que puede
+    //  ENCENDERLA. Aqui solo se apaga, y con los limites vaciados: media regla
+    //  es lo que tuvo a SEGUIR visible y de 0x0 desde el primer dia.
+    if (! onGrid && seqPage != seqPagePiano)
+    { seqBarra.setVisible (false); seqBarra.setBounds ({}); }
+    if (seqPage != seqPagePiano)
+    { pianoBarra.setVisible (false); pianoBarra.setBounds ({}); }
 
     for (auto* b : patternButtons) b->setVisible (onPat);
     chainClearButton.setVisible (onPat);
@@ -6197,13 +6230,18 @@ void MainComponent::seguirCompas (int ps)
 {
     if (! seqFollow || ps < 0) return;
 
-    const int compas = ps / kStepCols;
-    if (compas == selectedBar) return;
+    //  SEGUIR MUEVE LA VENTANA POR PAGINAS Y NO POR COMPASES, que es lo que la
+    //  ventana continua obliga a decidir: si el paso que suena ya se ve no se
+    //  mueve nada —una vista que se recentra en cada paso no se puede leer— y
+    //  si se sale, salta a la pagina que lo contiene. Cuantas columnas son una
+    //  pagina lo dice la rejilla que se este mirando, que es quien conoce su
+    //  ancho y su zoom.
+    const int cols = juce::jmax (1, (seqPage == seqPagePiano) ? pianoGrid.numPasos()
+                                                             : stepGrid.numCols());
+    if (ps >= seqPrimerPaso && ps < seqPrimerPaso + cols) return;
 
-    selectedBar = compas;
-    for (int b2 = 0; b2 < barButtons.size(); ++b2)
-        if (auto* t = barButtons[b2])
-            t->setToggleState (b2 == selectedBar, juce::dontSendNotification);
+    const int len = engine.getPatternLength (selectedPattern);
+    seqPrimerPaso = juce::jlimit (0, juce::jmax (0, len - cols), (ps / cols) * cols);
 }
 
 void MainComponent::refreshStepGrid()
@@ -6240,28 +6278,23 @@ void MainComponent::refreshStepGrid()
 
     stepGrid.setSource (gridCells, gridZati, gridLoaded, gridNotes,
                         engine.getPatternLength (selectedPattern),
-                        selectedBar, ps, selectedPad - base,
+                        seqPrimerPaso, ps, selectedPad - base,
                         ps >= 0 ? engine.getStepPhase() : 0.0f,
                         base);   // el pad del carril 0, para que el canalon diga 17..32 en el banco B
 
-    //  The grid can only ring the live column when that column is on screen,
-    //  so at four bars you would lose the beat entirely while editing bar 1
-    //  and bar 3 played. The bar buttons carry it instead: the one sounding
-    //  goes red, which keeps you oriented without yanking the view away from
-    //  what you are editing.
-    const int playingBar = ps >= 0 ? ps / kStepCols : -1;
-    for (int b = 0; b < barButtons.size(); ++b)
-        if (auto* t = barButtons[b])
-        {
-            //  Both colours, because the bar you are editing is usually also
-            //  the one playing: the toggle-on colour would otherwise win and
-            //  swallow the red exactly when you most want to see it.
-            const bool live = (b == playingBar);
-            t->setColour (juce::TextButton::buttonColourId,   live ? ZatiColours::red : kStepOff);
-            t->setColour (juce::TextButton::buttonOnColourId, live ? ZatiColours::red : kAccent);
-            t->setColour (juce::TextButton::textColourOffId,  live ? juce::Colours::white : ZatiColours::ink);
-            t->setColour (juce::TextButton::textColourOnId,   juce::Colours::white);
-        }
+    //  Y LA BARRA DICE DONDE ESTA LA VENTANA Y DONDE EL CABEZAL.
+    //
+    //  Lo segundo lo hacian las tapas de compas pintando de rojo la que sonaba:
+    //  la rejilla solo puede marcar la columna viva cuando esa columna esta en
+    //  pantalla, asi que con cuatro compases se perdia el pulso entero mientras
+    //  editabas el 1 y sonaba el 3. La barra lo dice sobre el TOTAL, que es
+    //  ademas lo que la fila de tapas no podia decir.
+    {
+        const int len  = engine.getPatternLength (selectedPattern);
+        const int cols = stepGrid.numCols();
+        seqBarra.ponRango (seqPrimerPaso, cols, len);
+        seqBarra.ponCabezal (ps);
+    }
 }
 
 // The tile art is the pad's own slice, so it has to be rebuilt whenever the
@@ -7644,7 +7677,6 @@ void MainComponent::retranslateUi()
     //  tres pestanas de AJUSTES - la ficha que CONTIENE el selector de idioma -
     //  y lo caza la prueba comparativa, no la tabla.
     songDoubleBtn.setButtonText (T ("DOBLAR"));
-    songVistaBtn.setButtonText (T (songVista == Playlist::vistaAudio ? "AUDIO" : "PATRONES"));
     songZoomBtn.setButtonText (T ("%1 COMPASES|zoom", juce::String (songGrid.getCompasesVista())));
     //  LAS CUATRO HERRAMIENTAS NO LLEVAN ROTULO, asi que su nombre para quien
     //  no ve la pantalla hay que ponerlo a mano: sin esto TalkBack las anuncia
@@ -9397,7 +9429,7 @@ void MainComponent::applyState (const juce::ValueTree& s)
         engine.setSongLoop ((int) song.getProperty ("bucleA", 0),
                             (int) song.getProperty ("bucleB", 0));
 
-        songPage = 0;
+        songPrimerCompas = 0;
         songCursor = 0;
         refreshSong();
     }
@@ -10227,6 +10259,37 @@ void MainComponent::doubleSong()
                     juce::dontSendNotification);
 }
 
+//  Y LO QUE MUEVE LA LINEA DE TIEMPO MUEVE LAS DOS COSAS, que es literalmente
+//  «para que se puedan cuadrar mejor».
+//
+//  INSERTAR y QUITAR corren las celdas de patron de los cuatro carriles y
+//  dejaban los clips donde estaban: meter un compas desincronizaba el audio del
+//  arreglo — la toma de voz sonando un compas antes de la parte que acompaña, y
+//  sin que nada fallara. Es exactamente el fallo que esta ficha existe para no
+//  tener, y solo aparecio cuando las dos vistas se fundieron en una: con la
+//  banda de audio aparte, «el arreglo» y «el audio» eran dos paginas y nadie
+//  esperaba que una herramienta de la primera tocara la segunda.
+//
+//  Se corre lo que empieza EN el compas o despues, que es la misma frontera que
+//  usa el bucle de celdas de arriba, y lo que se saldria de la cancion se queda
+//  en el ultimo compas en vez de perderse: un clip que desaparece al meter un
+//  compas es trabajo que no se puede deshacer mirando la pantalla.
+void MainComponent::corredClips (int desdeCompas, int delta)
+{
+    if (delta == 0 || clips.empty()) return;
+    bool tocado = false;
+    for (auto& c : clips)
+    {
+        if (c.compas < desdeCompas) continue;
+        const int nuevo = juce::jlimit (0, AudioEngine::kSongBars - 1, c.compas + delta);
+        if (nuevo == c.compas) continue;
+        c.compas = nuevo;
+        tocado = true;
+    }
+    if (! tocado) return;
+    publicaClips();
+}
+
 //  METER UN COMPAS DONDE FALTA.
 //
 //  Todo lo que va detras del cursor se corre un compas a la derecha, en los
@@ -10267,6 +10330,8 @@ void MainComponent::insertSongBar()
             engine.setSongCell (lane, b, 0);
         }
 
+    corredClips (at, +1);
+
     engine.setSongLength (len + 1);
     songLenSlider.setValue (len + 1, juce::dontSendNotification);
     resized();
@@ -10303,6 +10368,12 @@ void MainComponent::removeSongBar()
                 engine.setSongCell (lane, b, 0);
             }
     }
+
+    //  Y los clips van detras, igual que en INSERTAR: los que empiezan DESPUES
+    //  del compas que se va se corren uno a la izquierda. El que empezaba en el
+    //  compas quitado se queda donde estaba, que es lo que hace la celda de
+    //  patron de al lado — lo que ocupaba ese compas pasa a ocupar el siguiente.
+    corredClips (at + 1, -1);
 
     engine.setSongLength (len - 1);
     songLenSlider.setValue (len - 1, juce::dontSendNotification);
@@ -10385,9 +10456,11 @@ void MainComponent::moveSongBar (int dir)
     }
 
     songCursor = b;
-    songPage = b / songGrid.getCompasesVista();
-    for (int k = 0; k < songPageBtns.size(); ++k)
-        songPageBtns[k]->setToggleState (k == songPage, juce::dontSendNotification);
+    //  Y LA VENTANA SE ACERCA AL COMPAS, en vez de saltar a su pagina: con la
+    //  ventana continua «la pagina del compas b» ya no existe, y lo que hace
+    //  falta es que b se vea. Si ya se ve, no se mueve nada - desplazar por
+    //  desplazar es lo que hace que se pierda de vista lo que estabas mirando.
+    songPrimerCompas = acercaCompas (b);
 
     refreshSong();
     status.setText (T ("Compas movido al %1", juce::String (b + 1)), juce::dontSendNotification);
@@ -10488,7 +10561,7 @@ void MainComponent::ponLargoBloque (int carril, int cabeza, int nuevo, bool apun
 void MainComponent::toggleSongLoop()
 {
     const int len  = engine.getSongLength();
-    const int a    = songPage * songGrid.getCompasesVista();
+    const int a    = songPrimerCompas;
     const int b    = juce::jmin (len, a + songGrid.getCompasesVista());
 
     if (engine.hasSongLoop() && engine.getSongLoopFrom() == a && engine.getSongLoopTo() == b)
@@ -10623,7 +10696,7 @@ void MainComponent::pianoBanda (int paso0, int semi0, int paso1, int semi1)
     const int b = selectedPattern, p = juce::jmax (0, selectedPad);
     const int pa = juce::jmin (paso0, paso1), pb = juce::jmax (paso0, paso1);
     const int sa = juce::jmin (semi0, semi1), sb = juce::jmax (semi0, semi1);
-    const int base = selectedBar * AudioEngine::kBarSteps;
+    const int base = seqPrimerPaso;
     const int len  = engine.getPatternLength (b);
 
     pianoSel.clear();
@@ -10663,7 +10736,7 @@ void MainComponent::pianoMueveSel (int dPaso, int dSemi)
     if (pianoSel.empty() || (dPaso == 0 && dSemi == 0)) return;
 
     const int b = selectedPattern;
-    const int base = selectedBar * AudioEngine::kBarSteps;
+    const int base = seqPrimerPaso;
     const int len  = engine.getPatternLength (b);
 
     //  Lo que no cabe no se mueve, y entonces NO se mueve nada: mover medio
@@ -10701,7 +10774,7 @@ void MainComponent::pianoCopiaSel()
 {
     if (pianoSel.empty()) return;
     const int b = selectedPattern, p = juce::jmax (0, selectedPad);
-    const int base = selectedBar * AudioEngine::kBarSteps;
+    const int base = seqPrimerPaso;
 
     int p0 = pianoSel[0].paso;
     for (const auto& n : pianoSel) p0 = juce::jmin (p0, n.paso);
@@ -10723,7 +10796,7 @@ void MainComponent::pianoPegaSel()
 {
     if (pianoPortapapeles.empty()) return;
     const int b = selectedPattern;
-    const int base = selectedBar * AudioEngine::kBarSteps;
+    const int base = seqPrimerPaso;
     const int len  = engine.getPatternLength (b);
 
     pushUndo (T ("PEGAR"));
@@ -10800,23 +10873,20 @@ void MainComponent::refreshPiano (bool repintarTarjeta)
     if (engine.isPlaying() && engine.getPlayingPattern() == b)
         seguirCompas (engine.getPlayStep());
 
-    //  EL COMPAS SE ACOTA AQUI Y NO SOLO EN resized().
-    //
-    //  selectedBar lo clampaba la maqueta, que corre cuando le toca; esta
-    //  funcion la llama el temporizador treinta veces por segundo. Con un
-    //  patron que acaba de encoger -de 32 pasos a 16- el compas 2 sigue puesto
-    //  y `base` apunta fuera de la tabla.
-    const int compases = juce::jmax (1, len / AudioEngine::kBarSteps);
-    if (selectedBar >= compases) selectedBar = 0;
-
-    const int base = selectedBar * AudioEngine::kBarSteps;
-
-    //  CUANTAS COLUMNAS SE VEN, y acotado aqui por lo mismo que el compas: esta
-    //  funcion la llama el temporizador treinta veces por segundo y `pianoCols`
-    //  lo mueve una tapa. Con 32 en un patron de 16 pasos, `base + c` se sale
-    //  de la tabla - que es exactamente el cuarto de los cinco fallos del
-    //  compas, escrito con otro numero.
+    //  CUANTAS COLUMNAS SE VEN, y acotado aqui por lo mismo que el primer
+    //  paso: esta funcion la llama el temporizador treinta veces por segundo y
+    //  `pianoCols` lo mueve una tapa. Con 32 en un patron de 16 pasos, `base +
+    //  c` se sale de la tabla - que es exactamente el cuarto de los cinco
+    //  fallos del compas, escrito con otro numero.
     const int verCols = juce::jlimit (1, AudioEngine::kNumSteps, pianoCols);
+
+    //  Y EL PRIMER PASO SE ACOTA AQUI Y NO SOLO EN resized(): la maqueta corre
+    //  cuando le toca y esto treinta veces por segundo, asi que un patron que
+    //  acaba de encoger -de 32 pasos a 16- deja la ventana apuntando fuera de
+    //  la tabla.
+    seqPrimerPaso = juce::jlimit (0, juce::jmax (0, len - verCols), seqPrimerPaso);
+
+    const int base = seqPrimerPaso;
     const int cols = juce::jlimit (0, verCols, len - base);
 
     //  Y SE VACIAN LAS DIECISEIS, no solo las que se rellenan.
@@ -10871,6 +10941,16 @@ void MainComponent::refreshPiano (bool repintarTarjeta)
                          ps >= 0 ? engine.getStepPhase() : 0.0f,
                          pianoLargos);
 
+    //  LAS DOS BARRAS. La horizontal es la MISMA que la de la rejilla —una
+    //  ventana, un dueño— y solo cambia cuantas columnas caben; la vertical es
+    //  del tono, y su total son las cuarenta y nueve posiciones que `setStepNote`
+    //  admite (-24..+24) contadas desde cero, que es lo unico que una barra sabe
+    //  manejar.
+    seqBarra.ponRango (base, verCols, juce::jmax (1, len));
+    seqBarra.ponCabezal (engine.isPlaying() && engine.getPlayingPattern() == b
+                             ? engine.getPlayStep() : -1);
+    pianoBarra.ponRango (pianoBase + 24, pianoGrid.getFilas(), 49);
+
     //  El transporte de esta ficha es seqPlayBtn, que vive en la pagina de la
     //  rejilla: el piano tenia su propio PLAY y era una tapa que hacia lo mismo
     //  en dos paginas de la misma ficha.
@@ -10910,31 +10990,45 @@ void MainComponent::ponHerramienta (int h)
     refreshSong();
 }
 
+//  QUE UN COMPAS SE VEA, moviendo la ventana lo MINIMO.
+//
+//  Con la ventana continua «la pagina del compas b» no existe, asi que lo que
+//  se pide es que b caiga dentro y nada mas: si ya se ve, la ventana no se
+//  mueve. Desplazar por desplazar es lo que hace que se pierda de vista lo que
+//  estabas mirando, y es lo que hacia la fila de paginas cada vez que el
+//  cursor cruzaba un multiplo de ocho.
+int MainComponent::acercaCompas (int compas) const
+{
+    const int ven = songGrid.getCompasesVista();
+    const int tope = juce::jmax (0, engine.getSongLength() - ven);
+    int p = songPrimerCompas;
+    if (compas <  p)       p = compas;
+    if (compas >= p + ven) p = compas - ven + 1;
+    return juce::jlimit (0, tope, p);
+}
+
 //  CUANTOS COMPASES SE VEN DE UNA VEZ.
 //
 //  Dos cosas que hay que hacer aqui y no en la tapa, porque las dos dependen de
 //  la vista y no del gesto:
 //
-//  - `songPage` se RE-DERIVA en vez de ponerse a cero. El compas que estabas
-//    mirando tiene que seguir en pantalla: saltar al principio cada vez que se
-//    toca el zoom es exactamente lo que hace que un zoom no se use.
-//  - Y los ROTULOS de las tapas de pagina dicen el compas en el que empiezan,
-//    asi que con la vista variable dejan de ser su indice. Se escriben aqui,
-//    que es donde se sabe cuanto vale una pagina.
+//  - El primer compas visible se CONSERVA en vez de ponerse a cero. El que
+//    estabas mirando tiene que seguir en pantalla: saltar al principio cada
+//    vez que se toca el zoom es lo que hace que un zoom no se use.
+//  - Y se acota al final, porque al abrir la vista lo que era el ultimo compas
+//    visible puede caer detras del final de la cancion.
 void MainComponent::ponVistaCompases (int n)
 {
-    const int antes  = songGrid.getCompasesVista();
-    const int visible = songPage * antes;           //  el primer compas de la pagina
+    const int visible = songPrimerCompas;           //  el primer compas que se ve
 
     songGrid.setCompasesVista (n);
     const int ahora = songGrid.getCompasesVista();
 
-    songPage = juce::jlimit (0, juce::jmax (0, songGrid.getPaginas() - 1), visible / ahora);
-    for (int k = 0; k < songPageBtns.size(); ++k)
-    {
-        songPageBtns[k]->setToggleState (k == songPage, juce::dontSendNotification);
-        songPageBtns[k]->setButtonText (juce::String (k * ahora + 1));
-    }
+    //  EL PRIMER COMPAS SE CONSERVA, no se re-deriva de una pagina. Con la
+    //  ventana continua el que estabas mirando ES el primero, asi que basta
+    //  con acotarlo al final: al abrir la vista, lo que era el ultimo compas
+    //  visible puede caer detras del final de la cancion.
+    songPrimerCompas = juce::jlimit (0, juce::jmax (0, engine.getSongLength() - ahora), visible);
 
     //  Una cifra dentro de una frase traducida es la unica clase de constante
     //  que no se puede contrastar leyendo el codigo de al lado, asi que se
@@ -10946,64 +11040,6 @@ void MainComponent::ponVistaCompases (int n)
 
     resized();
     refreshSong();
-}
-
-void MainComponent::showSongPage (int v)
-{
-    songVista = (v == Playlist::vistaAudio) ? (int) Playlist::vistaAudio
-                                            : (int) Playlist::vistaPatrones;
-    const bool audio = (songVista == Playlist::vistaAudio);
-
-    //  El ROTULO dice donde estas, no adonde vas. Ver el comentario de la tapa.
-    songVistaBtn.setButtonText (T (audio ? "AUDIO" : "PATRONES"));
-    songVistaBtn.setToggleState (audio, juce::dontSendNotification);
-
-    //  LA PALETA DE PATRONES NO PINTA AUDIO. P1..P8 elige que PATRON se pone en
-    //  una celda, y en la banda de audio no hay celdas que escribir: lo que se
-    //  pone es el sonido del pad elegido. Dejarla puesta seria una fila de ocho
-    //  tapas que no hacen nada, que es justo lo que esta casa llama ruido.
-    for (auto* b : songPatBtns) { b->setVisible (! audio); if (audio) b->setBounds ({}); }
-    //  Y LAS CUATRO HERRAMIENTAS, por lo mismo: mover y silenciar son de un
-    //  BLOQUE DE PATRON, y en la banda de audio no hay ninguno - los clips
-    //  tienen sus propias asas desde que existen. Apagar Y vaciar los limites,
-    //  que media regla es lo que tuvo a SEGUIR visible y de 0x0 desde el primer
-    //  dia.
-    for (auto* b : songToolBtns) { b->setVisible (! audio); if (audio) b->setBounds ({}); }
-
-    //  Y LAS TRES DE LA BANDA, al reves: solo en AUDIO. Grabar al arreglo, el
-    //  metronomo y la automatizacion no tienen nada que decirle a una rejilla
-    //  de patrones - y los eventos de AUTO van en pasos de la CANCION, asi que
-    //  en modo patron no habria donde ponerlos.
-    for (juce::TextButton* b : { &songRecBtn, &songClickBtn, (juce::TextButton*) &autoBtn })
-    {
-        b->setVisible (audio);
-        if (! audio) b->setBounds ({});
-    }
-    songClickBtn.setToggleState (engine.isClick(), juce::dontSendNotification);
-    autoBtn.setToggleState (autoArmado, juce::dontSendNotification);
-
-    //  Y LAS NUEVE HERRAMIENTAS DE ARREGLO TAMPOCO. INSERTAR, QUITAR, DOBLAR,
-    //  ACORTAR, ALARGAR, COPIAR, PEGAR, ATRAS y ADELANTE mueven CELDAS de
-    //  patron: aplicadas a una banda de clips no significan nada todavia, y una
-    //  tapa que se pulsa y no hace nada es peor que no tenerla. Vuelven el dia
-    //  que sepan mover clips, que es una tanda propia.
-    for (juce::TextButton* b : { &songInsertBtn, &songRemoveBtn, &songDoubleBtn,
-                                 &songShortBtn, &songLongBtn, &songCopyBtn,
-                                 &songPasteBtn, &songLeftBtn, &songRightBtn })
-    {
-        b->setVisible (! audio);
-        if (audio) b->setBounds ({});
-    }
-
-    //  SONIDO y VACIAR SE QUEDAN EN LAS DOS, y no por ahorrar tapas: en la
-    //  banda de audio dicen exactamente lo mismo que en la otra vista - con que
-    //  se pinta y con que se borra - asi que son la misma brocha y no una copia.
-    songGrid.ponVista (songVista);
-    songGrid.borrando = (songBrush == 0);
-
-    refreshSong (true);
-    resized();
-    songSheet.repaint();
 }
 
 //  GRABAR AL ARREGLO, que es la mitad que le faltaba a la banda de audio.
@@ -11198,6 +11234,20 @@ void MainComponent::refreshSong (bool repintarTarjeta)
     for (int ln = 0; ln < Playlist::kLanes; ++ln)
         if (engine.isSongLaneMuted (ln)) mudos |= (1u << (unsigned) ln);
 
+    //  LA BROCHA EN **CLIP** LA LEE LA REJILLA, que es quien decide a que
+    //  familia va el gesto (`Playlist::tocaAlClip`). Estaba escrita dos veces
+    //  -`songPincel` aqui y `pincelClip` alli- y solo se escribia la primera:
+    //  la segunda no la ponia NADIE, asi que el unico camino que soltaba un
+    //  clip era el `mouseDown` de la vista de audio, que dejo de existir al
+    //  fundir las dos vistas. La brocha CLIP se veia armada y no hacia nada, y
+    //  `Tests/clips.py` lo canto entero: `puesto []`.
+    //
+    //  Y se resuelve poniendo la que ya existe en vez de desviar el gesto
+    //  desde `onCell`: la rejilla no sabe -ni tiene por que- que brochas hay,
+    //  pero si tiene que saber si el hueco de debajo del dedo es de patron o de
+    //  audio, que es lo unico que este booleano dice. Una funcion, un dueño.
+    songGrid.pincelClip = (songPincel == 2);
+
     songCursor = juce::jlimit (0, juce::jmax (0, bars - 1), songCursor);
     songPasteBtn.setEnabled (songClipLleno);
     //  El transporte se puede parar desde la cara, desde un gesto o solo, asi
@@ -11227,7 +11277,7 @@ void MainComponent::refreshSong (bool repintarTarjeta)
     for (int ln = 0; ln < Playlist::kLanes; ++ln)
         bmudos[ln] = engine.songCellMuteMask (ln);
 
-    songGrid.setSource (songCells, padZati.data(), (int) padZati.size(), bars, songPage,
+    songGrid.setSource (songCells, padZati.data(), (int) padZati.size(), bars, songPrimerCompas,
                         engine.isSongMode() && engine.isPlaying() ? engine.getSongBar() : -1,
                         songCursor, mudos,
                         engine.getSongLoopFrom(), engine.getSongLoopTo(),
@@ -11698,6 +11748,21 @@ void MainComponent::aplicaPistas (int modo)
     seqPistasBtn.setButtonText (Lang::ltr (pistasVista == 0 ? "1-16"
                                          : pistasVista == 1 ? "1-8" : "9-16"));
     resized();
+    refreshStepGrid();
+}
+
+//  Un solo sitio que mueve las tres cosas que dependen del zoom: la rejilla,
+//  el rotulo de la tapa y la ventana —al ensanchar la celda caben menos
+//  columnas, asi que el primer paso puede haberse quedado por encima de su
+//  nuevo maximo y la ventana apuntaria fuera del patron.
+void MainComponent::aplicaZoomPasos (float z)
+{
+    stepGrid.ponZoomAncho (z);
+    seqZoomW = stepGrid.getZoomAncho();
+    seqZoomBtn.setButtonText (Lang::ltr (seqZoomW > 1.5f ? "2:1"
+                                       : seqZoomW < 0.9f ? "3:4" : "1:1"));
+    const int len = engine.getPatternLength (selectedPattern);
+    seqPrimerPaso = juce::jlimit (0, juce::jmax (0, len - stepGrid.numCols()), seqPrimerPaso);
     refreshStepGrid();
 }
 

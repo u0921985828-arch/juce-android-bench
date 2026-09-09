@@ -34,9 +34,18 @@
 //  abajo: el patron 2-3 de un teclado es lo unico que orienta la vista, y es
 //  gratis - sale de saber si el semitono cae en {1,3,6,8,10}.
 // ============================================================================
-class PianoRoll : public juce::Component
+class PianoRoll : public juce::Component, public Rejilla
 {
 public:
+    //  Las tres cifras del banco. El piano cambia de columnas con el zoom y
+    //  de filas con OCTAVA -trece o veinticinco-, asi que escribirlas fuera
+    //  seria medir la rejilla de ayer.
+    int celdasAncho() const override { return numPasos(); }
+    int celdasAlto()  const override { return filas; }
+    int canalIzq()    const override { return kGutter; }
+    float celdaAnchoPx() const override { return (float) juce::jmax (0, getWidth() - kGutter) / (float) juce::jmax (1, nPasos); }
+    float celdaAltoPx()  const override { return (float) getHeight() / (float) juce::jmax (1, filas); }
+
     //  UNA OCTAVA Y SU RAIZ, trece filas. Eran veinticinco -dos octavas- y esa
     //  cuenta se hizo por el rango del motor y no por el dedo: veinticinco
     //  filas se reparten el alto que quede, y medido ficha por ficha la fila

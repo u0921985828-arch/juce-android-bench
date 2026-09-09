@@ -752,7 +752,14 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             //  sigue yendo entero al master por el camino corto, que es el que
             //  la mascara existe para proteger. Solo se aparta si el canal lo
             //  esta MOVIENDO o lo ha bajado.
-            padSplit[p] = filtered || canalHot || smCan < 0.9995f;
+            //  Y «distinto de uno» por los DOS lados, que es el mismo fallo
+            //  que el guardia del master tenia y por el mismo motivo: el
+            //  camino corto renderiza las voces DIRECTAMENTE en la salida y no
+            //  multiplica por `dryGain`, asi que solo vale cuando el canal
+            //  esta en la unidad clavada. Con `smCan < 0.9995f` un canal por
+            //  ENCIMA de 0 dB tomaba el camino corto y su ganancia no se
+            //  aplicaba nunca: bajar el fader se oia y subirlo no.
+            padSplit[p] = filtered || canalHot || std::abs (smCan - 1.0f) > 0.0005f;
             for (int f = 0; f < kNumFx; ++f) sendGain[p][f] = 0.0f;
             continue;
         }
@@ -781,7 +788,8 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             if (fxSustituye[f]) dry *= (1.0f - g);
         }
         dryGain[p]  = dry * smCan;
-        padSplit[p] = any || filtered || canalHot || smCan < 0.9995f || medido;
+        padSplit[p] = any || filtered || canalHot
+                          || std::abs (smCan - 1.0f) > 0.0005f || medido;
         smSendHot[(size_t) p] = hot;
     }
 
@@ -2739,7 +2747,22 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     {
         const float target = masterTarget.load (std::memory_order_relaxed);
 
-        if (target < 0.99999f || masterGain < 0.99999f)
+        //  Y LA MITAD DE ARRIBA DEL FADER NO SE APLICABA NUNCA.
+        //
+        //  Aqui ponia `target < 0.99999f || masterGain < 0.99999f`, y esa
+        //  condicion era CORRECTA el dia que se escribio: `masterTarget` solo
+        //  valia 0.28 -la atenuacion de un aviso del sistema- o 1.0, asi que
+        //  «distinto de uno» y «menor que uno» eran lo mismo. Dejo de serlo el
+        //  dia que el fader de la persona entro en el producto y nadie volvio
+        //  a mirar el guardia: de 0 dB a +12 el fader se movia, la casilla
+        //  decia «+12.0 dB» y **el audio salia intacto**. Es el mismo fallo de
+        //  siempre -un control y su lectura contando cosas distintas- por el
+        //  camino mas barato que tiene: una condicion que se quedo vieja.
+        //
+        //  Se pregunta por lo que se quiere decir -«no es la unidad»- y no por
+        //  un lado solo. El coste de equivocarse hacia el otro lado es cero:
+        //  con el master en su sitio el bloque se salta igual que antes.
+        if (std::abs (target - 1.0f) > 1.0e-5f || std::abs (masterGain - 1.0f) > 1.0e-5f)
         {
             //  A 12 ms time constant: settled in about forty milliseconds,
             //  which is fast enough to be under the chime it is making room

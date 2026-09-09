@@ -128,6 +128,20 @@ def main():
     #  la respuesta, las dos juntas no.
     mira ("quitar lo insertado", song["quitar el 2"]["carriles"], INICIAL,
           song["quitar el 2"]["largo"], 8)
+    #  Y LO QUE MUEVE LA LINEA DE TIEMPO MUEVE LAS DOS COSAS.
+    #
+    #  Con las dos vistas fundidas, un carril lleva bloques de patron Y clips de
+    #  audio, asi que meter un compas tiene que correr los dos: si no, la toma
+    #  de voz suena un compas antes de la parte que acompaña — desincronizada,
+    #  sin que nada falle y sin verse hasta que suena. El clip esta en el compas
+    #  4 y el cursor en el 2, o sea DETRAS, que es donde la operacion actua.
+    #
+    #  Con DOS cifras y no una: solo «se corre al insertar» lo cumple igual un
+    #  codigo que corre siempre, y solo «vuelve al quitar» uno que no mueve
+    #  nada. Es la misma identidad que las dos filas de arriba.
+    mira ("insertar corre el clip", song["clip tras insertar"]["clip"], 5)
+    mira ("y quitar lo devuelve",   song["clip tras quitar"]["clip"],   4)
+
     mira ("copiar y pegar", song["pegar el 2 en el 5"]["carriles"], PEGADO,
           song["pegar el 2 en el 5"]["largo"], 8)
 

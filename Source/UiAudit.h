@@ -217,17 +217,55 @@ namespace UiAudit
     //  lo coma un elemento elastico con suelo propio, con cero CERO y cero CELDA
     //  en la misma corrida-. Una ficha que se desplaza puede pedir lo que quiera
     //  -para eso se desplaza-; una que no, no. Ver Tests/expo.py.
-    struct Tarjeta { int pedido, tope; bool desplaza; };
+    //  Y LO QUE LA TARJETA DEJA VER DEBAJO, que es la otra mitad y la que
+    //  ninguna de las once reglas tiene: el tope de pie dejo de ser un
+    //  porcentaje y pasa a DERIVARSE de que asome un pad entero -que desde la
+    //  tanda de `onFuera` ademas se puede tocar-. Una derivacion que nadie
+    //  comprueba es una afirmacion, asi que la app publica el hueco que queda
+    //  por debajo y el suelo que ese hueco tiene que cumplir.
+    struct Tarjeta { int pedido, tope, libreAbajo, sueloAbajo; bool desplaza; };
     inline std::vector<Tarjeta> tarjetas;
 
     //  Y no se guarda con `midiendo`, que solo esta puesto durante la pasada
     //  de pintado: esto lo escribe `resized()`, que corre antes. La lista la
     //  vacia el propio `resized()` al empezar, o cada maquetado dejaria el
     //  suyo encima del anterior.
-    inline void tarjeta (int pedido, int tope, bool desplaza)
+    inline void tarjeta (int pedido, int tope, bool desplaza,
+                         int libreAbajo = -1, int sueloAbajo = 0)
     {
         if (! enabled()) return;
-        tarjetas.push_back ({ pedido, tope, desplaza });
+        tarjetas.push_back ({ pedido, tope, libreAbajo, sueloAbajo, desplaza });
+    }
+
+    //  UNA FILA DE TAPAS LLENA EL RECTANGULO QUE SE LE DIO.
+    //
+    //  Cada tapa de una fila se recorta por los lados -es el hueco que la
+    //  separa de su hermana- y ese recorte sobra en los DOS extremos, asi que
+    //  la fila entera acababa dos pixeles dentro. Medido en la cara a 412x915:
+    //  el cristal, los cuatro bancos y los dieciseis pads de 14 a 398, y las
+    //  pestanas de modulo, el transporte y los seis efectos de 16 a 396. Tres
+    //  filos izquierdos en la pantalla que no se puede evitar.
+    //
+    //  NINGUNA de las once reglas puede verlo: dos pixeles de margen no
+    //  solapan, no se salen de la ventana, no cortan un rotulo, no miden cero
+    //  y estan traducidos. Y no vale preguntarselo a todas las filas de la
+    //  app - en RECORTE los cuatro deslizadores empiezan 68 px dentro porque a
+    //  su izquierda va el nombre de cada uno, PINTADO, que es exactamente el
+    //  falso positivo que `Tests/paneles.py` ya se comio.
+    //
+    //  Lo que SI es exacto y no tiene excepcion legitima es esto: quien coloca
+    //  una fila de tapas recibe un rectangulo y tiene que llenarlo. Se apunta
+    //  el que se dio y la union de lo que se puso, y los dos filos tienen que
+    //  coincidir. Lo dice quien lo sabe -el maquetado- y no un script que
+    //  tenga que adivinar que filas son hermanas.
+    struct Fila { int dadaX, dadaR, puestaX, puestaR, y; };
+    inline std::vector<Fila> filas;
+
+    inline void fila (juce::Rectangle<int> dada, juce::Rectangle<int> puesta)
+    {
+        if (! enabled() || puesta.isEmpty()) return;
+        filas.push_back ({ dada.getX(), dada.getRight(),
+                           puesta.getX(), puesta.getRight(), dada.getY() });
     }
 
     //  QUE TAPAS DE LA CARA TIENEN UN GESTO ESCONDIDO.
@@ -653,6 +691,19 @@ namespace UiAudit
         //  PROPORCION de su caja, que falla en cuanto la caja incluye el
         //  rotulo. Lo dice quien lo sabe, que es la misma regla por la que la
         //  marca `valor` la pone ponIconos y no una lista en Python.
+        //  Y CUANTAS CELDAS TIENE UNA REJILLA QUE SE PINTA ENTERA.
+        //
+        //  La unica regla que las mide es la de la CELDA -ancho util entre
+        //  columnas, alto entre filas- y el banco llevaba esos numeros escritos
+        //  a mano en dos ficheros. Desde que las tres tienen ventana continua y
+        //  zoom, la cuenta de ayer mide otra rejilla: lo dice quien lo sabe.
+        if (auto* rj = dynamic_cast<Rejilla*> (&c))
+            line << ",\"cols\":" << rj->celdasAncho()
+                 << ",\"filas\":" << rj->celdasAlto()
+                 << ",\"canal\":" << rj->canalIzq()
+                 << ",\"cw\":" << juce::String (rj->celdaAnchoPx(), 2)
+                 << ",\"ch\":" << juce::String (rj->celdaAltoPx(), 2);
+
         if (auto* pb = dynamic_cast<PadButton*> (&c))
             line << ",\"zati\":" << pb->getZati()
                  << ",\"color\":\"" << Zati::colour (pb->getZati()).toDisplayString (false) << "\"";
@@ -889,10 +940,18 @@ namespace UiAudit
                       << ",\"w\":" << p.w << ",\"h\":" << p.h
                       << ",\"capa\":" << p.capa << "}" << std::endl;
 
+        for (const auto& f : filas)
+            std::cout << "{\"fila\":1"
+                      << ",\"dadaX\":" << f.dadaX << ",\"dadaR\":" << f.dadaR
+                      << ",\"puestaX\":" << f.puestaX << ",\"puestaR\":" << f.puestaR
+                      << ",\"y\":" << f.y << "}" << std::endl;
+
         for (const auto& t : tarjetas)
             std::cout << "{\"tarjeta\":1"
                       << ",\"pedido\":" << t.pedido
                       << ",\"tope\":" << t.tope
+                      << ",\"libre\":" << t.libreAbajo
+                      << ",\"suelo\":" << t.sueloAbajo
                       << ",\"desplaza\":" << (t.desplaza ? 1 : 0) << "}" << std::endl;
 
         for (const auto& m : mantener)

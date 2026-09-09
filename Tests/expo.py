@@ -29,7 +29,7 @@ SIZES = [
     ("915x412",  "LANDSCAPE — the orientation nobody tests"),
 ]
 LANGS = ["es", "en", "zh", "ar"]
-SHEETS = ["", "plato", "songm", "pads", "pad2", "pad3", "sec", "secp", "paso", "eq", "eqb", "song", "songa", "piano", "pianod", "pick", "mix", "xy", "set", "asp", "proj", "gest", "midi", "lang", "manual", "mixc", "canal", "rack", "rackf", "ranura", "ranural", "chop", "inst", "instd", "instg", "vst", "expo", "tour", "tour1", "tour3", "tour6", "tour10", "tourf", "browse", "browsedir",
+SHEETS = ["", "plato", "songm", "pads", "pad2", "pad3", "sec", "secp", "paso", "eq", "eqb", "song", "piano", "pianod", "pick", "mix", "xy", "set", "asp", "proj", "gest", "midi", "lang", "manual", "mixc", "canal", "rack", "rackf", "ranura", "ranural", "chop", "inst", "instd", "instg", "vst", "expo", "tour", "tour1", "tour3", "tour6", "tour10", "tourf", "browse", "browsedir",
 #  Y LA MISMA MAQUINA CON TRABAJO DENTRO. Todo lo de arriba se mide con
 #  un proyecto vacio o con el kit de fabrica, y casi todo lo que un
 #  rotulo puede romper solo aparece lleno: un nombre de pad que es el
@@ -37,7 +37,7 @@ SHEETS = ["", "plato", "songm", "pads", "pad2", "pad3", "sec", "secp", "paso", "
 #  compases repartiendo la misma celda, una lista de PROYECTOS con
 #  filas de verdad y el renglon de continuidad con sus tres campos.
 #  Es un ESTADO y no una regla nueva, como `ZATI_SKIN` con la carcasa.
-                    "llena", "llena-song", "llena-songa", "llena-sec",
+                    "llena", "llena-song", "llena-sec",
                     "llena-piano", "llena-proj", "llena-mix"]
 
 MIN_TOUCH = 40   # Metrics::hit — Android's own guideline is 48dp, this is the floor
@@ -144,15 +144,43 @@ def judge(rows, size, lang, sheet):
         #  la rejilla de pasos, con el mismo suelo-; a lo alto se elige la
         #  NOTA, y fallar de fila no falla el toque: escribe otro tono, suena,
         #  y no lo dice nadie. Por eso el suelo vertical es mas alto.
-        for grid, cols, lanes, gutter, sx, sy in (("StepGrid",  16, 16, 30, MIN_CELL, MIN_CELL),
-                                                  ("Playlist",   8,  4, 26, MIN_CELL, MIN_CELL),
-                                                  ("PianoRoll", 16, 13, 26, MIN_CELL, MIN_NOTE)):
-            if grid in r["path"] and r["w"] > gutter and r["h"] > 0:
-                cw = (r["w"] - gutter) / cols
-                ch = r["h"] / lanes
+        #  Y LAS TRES CIFRAS LAS DICE LA APP, no este fichero.
+        #
+        #  Estaban escritas a mano -16x16, 8x4 y 16x13- aqui y otra vez en
+        #  planos.py, y eso valia mientras ninguna rejilla pudiera cambiar de
+        #  tamano sola. Desde que las tres tienen ventana continua y zoom,
+        #  medir con la cuenta de ayer es medir OTRA rejilla: la de pasos
+        #  ensena las columnas que entren a celda cuadrada, el piano va de
+        #  ocho a treinta y dos y la linea de tiempo de cuatro a dieciseis.
+        #  Es la misma decision que `Iconos::kLadoMin` y la marca `valor`.
+        for grid, sx, sy in (("StepGrid",  MIN_CELL, MIN_CELL),
+                             ("Playlist",  MIN_CELL, MIN_CELL),
+                             ("PianoRoll", MIN_CELL, MIN_NOTE)):
+            if grid not in r["path"] or "cols" not in r:
+                continue
+            #  Y LA CELDA ES LA DIBUJADA, no `(ancho - canal) / columnas`: la
+            #  rejilla de pasos pinta cuadrado y deja lo que sobra sin usar
+            #  -para eso esta la barra-, asi que la division da un numero que
+            #  nadie pinta. Lo dice la app.
+            cw, ch = float (r["cw"]), float (r["ch"])
+            if cw > 0 and ch > 0:
                 if cw < sx or ch < sy:
                     findings.append(("CELDA", tag,
                                      f'{grid} {cw:.0f}x{ch:.0f} px por celda', min(cw, ch)))
+
+        #  Y LA CELDA DE PASOS ES CUADRADA, que es lo que se pidio y lo unico
+        #  que ninguna otra regla puede ver: una celda de 20x36 se maqueta
+        #  perfecta -no solapa, no se sale, no lleva rotulo, esta traducida- y
+        #  se falla al tocarla porque el dedo apunta a un cuadrado.
+        #
+        #  Es el estado de ARRANQUE: los dos zooms son sueltos a proposito, asi
+        #  que la cuadratura se exige con el zoom sin tocar. Un pixel de margen
+        #  porque el ancho sale de una division entera.
+        if "StepGrid" in r["path"] and "cw" in r:
+            cw, ch = float (r["cw"]), float (r["ch"])
+            if cw > 0 and ch > 0 and abs (cw - ch) > 1.0:
+                findings.append(("CUADRADA", tag,
+                                 f'la celda de pasos es {cw:.1f}x{ch:.1f}', abs (cw - ch)))
         #  0. VISIBLE Y DE CERO PIXELES, que es el punto ciego de todas las
         #     demas: las seis reglas de abajo se saltan lo que mide 0x0 -y con
         #     razon, porque la casa APAGA lo que no cabe *y* le vacia los
@@ -450,12 +478,71 @@ def mide_aire(rows):
 def judge_tarjeta(rows, size, lang, sheet):
     out = []
     for r in rows:
-        if not r.get("tarjeta") or r.get("desplaza"):
+        if not r.get("tarjeta"):
+            continue
+
+        #  Y LO QUE LA TARJETA DEJA VER DEBAJO, que ESTA SI SE JUZGA.
+        #
+        #  El tope de pie dejo de ser un porcentaje y pasa a derivarse de una
+        #  condicion medida: que por debajo asome un PAD ENTERO, que desde la
+        #  tanda de `onFuera` ademas se puede tocar -`Sheet::onFuera` lo dispara
+        #  y lo selecciona-. Con el 0.90 clavado en 412x915 quedan 29 px de pad
+        #  asomando y `tocaPadDetras` deja de poder acertarse: se cambiaria una
+        #  funcion medida por unos pixeles, y ninguna de las once reglas lo veria
+        #  porque el pad esta colocado, entero y en su sitio — lo que le falta es
+        #  estar TAPADO por la tarjeta, y una tarjeta encima no es un solape.
+        #
+        #  Las dos cifras las dice la APP: el hueco que quedo con la tarjeta ya
+        #  colocada -y no «ventana menos alto», que la tarjeta se centra- y el
+        #  suelo que ese hueco tiene que cumplir, que apaisado vale cero porque
+        #  alli no hay pad debajo que proteger.
+        libre, suelo = r.get("libre", -1), r.get("suelo", 0)
+        if libre >= 0 and suelo > 0 and libre < suelo:
+            out.append(("ASOMA", f"{size}/{lang}/{sheet or 'face'}",
+                        f'la tarjeta deja {libre} px por debajo y el pad pide {suelo}',
+                        suelo - libre))
+
+        if r.get("desplaza"):
             continue
         if r["pedido"] > r["tope"]:
             out.append(("TARJETA", f"{size}/{lang}/{sheet or 'face'}",
                         f'pide {r["pedido"]} px y la tarjeta da {r["tope"]}',
                         r["pedido"] - r["tope"]))
+    return out
+
+
+#  UNA FILA DE TAPAS LLENA EL RECTANGULO QUE SE LE DIO.
+#
+#  Cada tapa de una fila se recorta por los lados -es el hueco que la separa de
+#  su hermana- y ese recorte SOBRA en los dos extremos, asi que la fila entera
+#  acababa dos pixeles dentro. Medido en la cara a 412x915 antes del arreglo: el
+#  cristal, los cuatro bancos y los dieciseis pads de 14 a 398, y las pestanas de
+#  modulo, el transporte y los seis efectos de 16 a 396. Tres filos izquierdos en
+#  la pantalla que no se puede evitar, y la queja llego con esas palabras -«hay
+#  varios ligeros fallos de colocacion, revisalo en la barra de efectos».
+#
+#  NINGUNA de las once anteriores puede verlo: dos pixeles de margen no solapan,
+#  no se salen, no cortan un rotulo, no miden cero y estan traducidos.
+#
+#  Y NO se pregunta «que todas las filas de la app compartan filo», que es lo
+#  primero que sale y tiene excepciones legitimas -en RECORTE los cuatro
+#  deslizadores empiezan 68 px dentro porque a su izquierda va el nombre de cada
+#  uno, PINTADO, que es el falso positivo que `paneles.py` ya se comio-. Lo que
+#  no tiene excepcion es esto: quien coloca una fila de tapas recibe un
+#  rectangulo y tiene que llenarlo. Lo dice la APP -el maquetado apunta el que
+#  se dio y la union de lo que puso- y no un script adivinando que filas son
+#  hermanas.
+def judge_fila(rows, size, lang, sheet):
+    out = []
+    for r in rows:
+        if not r.get("fila"):
+            continue
+        dx, dr = r["dadaX"], r["dadaR"]
+        px, pr = r["puestaX"], r["puestaR"]
+        if px != dx or pr != dr:
+            out.append(("FILA", f"{size}/{lang}/{sheet or 'face'}",
+                        f'la fila y={r["y"]} recibio {dx}..{dr} y ocupa {px}..{pr}',
+                        max(abs(px - dx), abs(pr - dr))))
     return out
 
 
@@ -552,7 +639,8 @@ def _corre_y_juzga(combo, casa):
     puestos = sum (1 for r in rows if "icono" in r)
     pintados = sum (1 for r in rows if r.get ("icono"))
     return (judge(rows, size, lang, sheet) + judge_tapado(rows, size, lang, sheet)
-                                           + judge_tarjeta(rows, size, lang, sheet),
+                                           + judge_tarjeta(rows, size, lang, sheet)
+                                           + judge_fila(rows, size, lang, sheet),
             (rows if lang in ("es", "en") else []), (puestos, pintados),
             mide_aire(rows))
 
@@ -705,7 +793,7 @@ def main():
     #  su cifra. Lo que no puede pasar de cero es lo demas.
     duros = [k for k in ("TRUNC", "SQUEEZE", "OVERLAP", "OFFSCREEN", "CELDA",
                          "UNTRANSLATED", "CERO", "TAPADO", "SPRITE", "CORTADO", "PISADO",
-                         "CRASH") if by.get(k)]
+                         "FILA", "CUADRADA", "ASOMA", "CRASH") if by.get(k)]
     if resto:
         duros.append("RESIDUO")
     print()

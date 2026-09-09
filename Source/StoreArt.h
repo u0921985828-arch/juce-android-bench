@@ -6,6 +6,7 @@
 #include "Iconos.h"
 #include "PadArt.h"
 #include "Kits.h"
+#include "AudioEngine.h"
 
 // ============================================================================
 //  EL GRAFICO DESTACADO DE LA FICHA, dibujado por la propia app.
@@ -101,7 +102,14 @@ namespace StoreArt
                     ZatiColours::monoFont ((float) h * 0.058f, true).withExtraKerningFactor (0.16f));
 
         g.setColour (ZatiColours::ink.withAlpha (0.75f));
-        drawFitted (juce::String::fromUTF8 ("64 PADS  \xc2\xb7  SECUENCIADOR  \xc2\xb7  6 EFECTOS"),
+        //  Y LA CUENTA DE EFECTOS SE INTERPOLA, no se escribe. Decia SEIS con
+        //  veintiuno en la tabla: se quedo vieja el dia que entro el septimo y
+        //  nadie la volvio a mirar, que es el mismo fallo que la regla 3 de
+        //  `Tests/marcas.md` cometio dos veces y el subtitulo del manual una.
+        //  Una cifra escrita al lado de una tabla no es la tabla.
+        drawFitted (juce::String::fromUTF8 ("64 PADS  \xc2\xb7  SECUENCIADOR  \xc2\xb7  ")
+                      + juce::String (AudioEngine::kNumFx)
+                      + juce::String::fromUTF8 (" EFECTOS"),
                     title.translated (0.0f, (float) h * 0.44f),
                     ZatiColours::monoFont ((float) h * 0.050f, false).withExtraKerningFactor (0.10f));
 

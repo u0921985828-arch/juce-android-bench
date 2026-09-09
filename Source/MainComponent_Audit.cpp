@@ -40,8 +40,33 @@ void MainComponent::auditArrange()
     songCursor = 2;
     fila ("inicial");
 
-    insertSongBar();   fila ("insertar en 2");
-    removeSongBar();   fila ("quitar el 2");
+    //  Y CON UN CLIP PUESTO, que es lo que las dos vistas escondian.
+    //
+    //  INSERTAR corre las celdas de patron de los cuatro carriles, y desde que
+    //  la rejilla es una sola tiene que correr tambien los clips: si no, meter
+    //  un compas deja la toma de voz sonando un compas antes de la parte que
+    //  acompaña — desincronizada, sin que nada falle y sin que se vea hasta que
+    //  suena. Se pone en el compas 4, o sea DESPUES del cursor, que es el unico
+    //  sitio donde la operacion tiene que moverlo.
+    clips.clear();
+    {
+        ClipUI c;
+        c.pad = 0; c.pista = 1; c.compas = 4; c.desde = 0;
+        c.largo = (int) engine.muestrasPorCompas();
+        c.gain = 1.0f;
+        clips.push_back (c);
+        publicaClips();
+    }
+    auto clipEn = [this] (const char* que)
+    {
+        std::cout << "{\"arr\":\"" << que << "\",\"clip\":"
+                  << (clips.empty() ? -1 : clips[0].compas) << "}" << std::endl;
+    };
+
+    insertSongBar();   fila ("insertar en 2");   clipEn ("clip tras insertar");
+    removeSongBar();   fila ("quitar el 2");     clipEn ("clip tras quitar");
+    clips.clear();
+    publicaClips();
     copySongBar();
     songCursor = 5;
     pasteSongBar();    fila ("pegar el 2 en el 5");
@@ -209,7 +234,6 @@ void MainComponent::auditArrange()
     //  tres salen iguales, y la primera cifra sigue diciendo que si.
     {
         openSheet (songSheet, songButton);
-        songVista = 0;                       // PATRONES
         resized();
 
         //  Un patron de DOS compases con contenido distinto en cada uno: sin
@@ -240,7 +264,7 @@ void MainComponent::auditArrange()
         engine.setSongCell (0, 0, pat + 1);
         for (int b = 1; b < 4; ++b) engine.setSongCell (0, b, AudioEngine::kContinued);
         engine.setSongLength (8);
-        songPage = 0;
+        songPrimerCompas = 0;
         //  Y SIN CURSOR NI CABEZAL: los dos dibujan un marco sobre UNA celda,
         //  asi que con el cursor en el compas 1 o en el 3 las dos colas dejan
         //  de ser identicas por algo que no es su contenido. La primera
@@ -314,9 +338,10 @@ void MainComponent::auditArrange()
         engine.setSongLength (AudioEngine::kSongBars);
         resized();
 
-        //  Se parte del compas 16, o sea de la pagina 2 con la vista de ocho.
-        //  Con songPage en cero las dos cifras salen bien de las dos formas.
-        songPage = 2;
+        //  Se parte del compas 16. Con el primer compas en cero las dos
+        //  cifras salen bien de las dos formas, asi que la prueba no diria
+        //  nada: lo que se mide es que el zoom lo CONSERVE.
+        songPrimerCompas = 16;
         refreshSong();
 
         juce::String vistas, anchos, primeros;
@@ -326,7 +351,7 @@ void MainComponent::auditArrange()
             const int v = songGrid.getCompasesVista();
             vistas   << v;
             anchos   << juce::String ((songGrid.getWidth() - Playlist::kGutter) / juce::jmax (1, v));
-            primeros << (songPage * v);
+            primeros << songPrimerCompas;
             songZoomBtn.onClick();
         }
 
@@ -359,7 +384,7 @@ void MainComponent::auditArrange()
         engine.setSongCell (1, 2, 1);
         engine.setSongCell (1, 3, AudioEngine::kContinued);
         engine.setSongCell (1, 4, AudioEngine::kContinued);
-        songPage = 0;
+        songPrimerCompas = 0;
         resized();
         refreshSong();
 
@@ -447,7 +472,7 @@ void MainComponent::auditArrange()
         engine.setSongCell (1, 2, 1);
         engine.setSongCell (1, 3, AudioEngine::kContinued);
         engine.setSongCell (1, 4, AudioEngine::kContinued);
-        songPage = 0;
+        songPrimerCompas = 0;
         resized();
         refreshSong();
 
@@ -1624,7 +1649,6 @@ void MainComponent::auditOpen (const juce::String& pedido)
         selectedPad = 0;
         ponClip (0, 0);
         ponClip (2, 3);
-        showSongPage (Playlist::vistaAudio);
     }
     else if (which == "piano") { openSheet (seqSheet, secButton); showSeqPage (seqPagePiano); refreshPiano(); }
     //  EL PIANO CON NOTAS DE LARGOS DISTINTOS, que es otro estado: la barra de
@@ -1919,7 +1943,6 @@ void MainComponent::auditClips()
     engine.setSongLength (8);
     clips.clear();
     publicaClips();
-    showSongPage (Playlist::vistaAudio);
     resized();
 
     auto& rej = songGrid;
@@ -1973,8 +1996,24 @@ void MainComponent::auditClips()
     };
 
     //  1. PONER: un toque en un hueco deja el clip en ESA pista y ESE compas.
-    songBrush = -1; songGrid.borrando = false;
-    clips.clear(); publicaClips();
+    //
+    //  CON LA BROCHA EN **CLIP**, que es lo que cambio al fundir las dos
+    //  vistas: antes esto se medi­a en la vista de audio, donde un toque en un
+    //  hueco solo podia significar un clip. En una rejilla que lleva las dos
+    //  familias, lo que significa un hueco lo dice la brocha - y por eso se
+    //  pone aqui a mano y no se da por hecho: medir con la de patrones y
+    //  esperar un clip es medir otra cosa.
+    //  POR LA TAPA: la brocha cicla PATRON - SONIDO - CLIP con
+    //  `songPadModeBtn`, asi que se pulsa dos veces. Escribir `songPincel` a
+    //  mano se salta justo el codigo que traduce la brocha a lo que la rejilla
+    //  lee (`songGrid.pincelClip`), que es donde vivia el fallo: el campo
+    //  estaba escrito en la cara y muerto en la rejilla.
+    ponHerramienta (Playlist::hLapiz);
+    songPincel = 0;
+    songPadModeBtn.onClick();
+    songPadModeBtn.onClick();
+    const int pincel = songPincel;
+    clips.clear(); publicaClips(); refreshSong (false);
     { auto e = evento (punto (2, 3)); rej.mouseDown (e); }
     const auto puesto = fila (0);
 
@@ -1984,11 +2023,23 @@ void MainComponent::auditClips()
     padStart01[0] = 0.25f;
     padEnd01[0]   = 0.75f;
     clips.clear(); publicaClips();
-    { auto e = evento (punto (0, 0)); rej.mouseDown (e); }
+    //  En un hueco DE VERDAD y no en (0,0): la cancion de un proyecto nuevo
+    //  trae el patron 1 en el primer compas -lo pone `nuevo.py` y esta escrito
+    //  ahi- y un clip solo entra donde no hay nada. Con las dos familias en la
+    //  misma rejilla, «hueco» dejo de ser «cualquier celda».
+    { auto e = evento (punto (3, 6)); rej.mouseDown (e); }
     const int largoFuente = (uiSample[0] != nullptr) ? uiSample[0]->buffer.getNumSamples() : 0;
     const int largoClip   = clips.empty() ? 0 : clips[0].largo;
 
     //  2. MOVER agarrando por su PRIMER compas: de (2,3) a (1,5).
+    //
+    //  CON LA MANO ARMADA, que es lo que cambio al fundir las dos vistas: en
+    //  una rejilla que se pinta con el dedo arrastrado, «arrastrar» ya
+    //  significa pintar, asi que mover es un MODO y no un gesto - la misma
+    //  decision que el piano tomo con LAPIZ, GOMA, TIJERAS y SEL. Antes esto
+    //  se medi­a en la vista de audio, donde arrastrar solo podia significar
+    //  mover.
+    ponHerramienta (Playlist::hMano);
     pon (2, 3, 1);
     arrastra (2, 3, 1, 5);
     const auto movido = fila (0);
@@ -2026,11 +2077,34 @@ void MainComponent::auditClips()
 
     //  6. Y QUITAR con la brocha VACIAR, que es la misma que borra en la otra
     //  vista: un gesto nuevo para borrar seria una segunda forma de lo mismo.
+    //  Y CON LA GOMA ARMADA, que es su dueña desde que la fila de herramientas
+    //  existe: la tapa VACIAR se retiro porque eran dos dueños de la misma
+    //  funcion. `borrando` sigue valiendo -`ponHerramienta` lo pone- y por eso
+    //  se arma la herramienta y no el booleano: escribirlo a mano se salta la
+    //  traduccion, que es el mismo fallo que la brocha CLIP acaba de costar.
     pon (1, 2, 1);
-    songBrush = 0;
-    songGrid.borrando = true;
+    ponHerramienta (Playlist::hGoma);
     { auto e = evento (punto (1, 2)); rej.mouseDown (e); }
     const int trasBorrar = (int) clips.size();
+
+    //  7. Y LA CANALETA SILENCIA LAS DOS COSAS.
+    //
+    //  Con las dos vistas fundidas un carril lleva bloques de patron Y clips,
+    //  asi que su MUTE tiene que callar los dos: las mascaras son distintas a
+    //  proposito -silenciar el carril 1 no puede callar la pista de audio 1 en
+    //  una app donde fueran cosas separadas- y aqui, con la rejilla fundida,
+    //  carril 1 y pista 1 SON el mismo carril, asi que la canaleta escribe las
+    //  dos. Con una sola, la persona calla un carril y el audio sigue sonando.
+    //
+    //  Por el GESTO: un toque a la izquierda del canalon, que es donde
+    //  `Playlist::toca` decide que es la canaleta y no una celda.
+    {
+        const juce::Point<float> pt ((float) gutter * 0.5f, pistaH * 2.5f);
+        auto e = evento (pt);
+        rej.mouseDown (e);
+    }
+    const int carrilMudo = engine.isSongLaneMuted (2) ? 1 : 0;
+    const int pistaMuda  = engine.isPistaMute (2) ? 1 : 0;
 
     std::cout << "{\"clipsui\":1,\"puesto\":" << puesto
               << ",\"movido\":" << movido
@@ -2043,8 +2117,79 @@ void MainComponent::auditClips()
               << ",\"largo_fuente\":" << largoFuente
               << ",\"largo_clip\":" << largoClip
               << ",\"tras_borrar\":" << trasBorrar
+              << ",\"pincel\":" << pincel
+              << ",\"carril_mudo\":" << carrilMudo
+              << ",\"pista_muda\":" << pistaMuda
               << ",\"celda\":[" << (int) barW << "," << (int) pistaH << "]"
               << "}" << std::endl;
+}
+
+//  UN TOQUE EN LA PISTA DE UNA BARRA, en la fraccion que se le diga de su
+//  recorrido. Se construye un `MouseEvent` y se llama a `BarraVista::mouseDown`
+//  y no a `onMueve`: llamar al callback salta justo el codigo que decide cuanto
+//  avanza el toque y donde cae el pulgar, que es donde vive lo que hay que
+//  medir. Es la misma leccion que los cinco fallos del compas del piano.
+static void tocaBarra (BarraVista& b, float t)
+{
+    if (b.getWidth() <= 0 || b.getHeight() <= 0) return;
+    const juce::Point<float> pt (b.esVertical() ? (float) b.getWidth() * 0.5f
+                                                : (float) b.getWidth() * t,
+                                 b.esVertical() ? (float) b.getHeight() * (1.0f - t)
+                                                : (float) b.getHeight() * 0.5f);
+    const auto ahora = juce::Time::getCurrentTime();
+    juce::MouseEvent ev (juce::Desktop::getInstance().getMainMouseSource(),
+                         pt, juce::ModifierKeys(), 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                         &b, &b, ahora, pt, ahora, 1, false);
+    b.mouseDown (ev);
+    b.mouseUp (ev);
+}
+
+//  ARRASTRAR EL PULGAR HASTA UNA FRACCION DEL RECORRIDO, que es el otro gesto
+//  de la barra y el unico que llega a los extremos: un toque en la pista salta
+//  UNA pagina -a proposito, ver `BarraVista::mouseDown`- asi que con sesenta y
+//  cuatro compases a la vista de ocho harian falta siete toques para llegar al
+//  final, y lo que se quiere medir es que la barra ALCANCE, no cuantos toques
+//  cuesta.
+//
+//  Se apoya sobre el pulgar -si no, `mouseDown` lo lee como un toque en la
+//  pista y `agarrePx` se queda en -1, o sea que el arrastre no hace nada- y se
+//  suelta en el extremo que se pida.
+static void arrastraBarra (BarraVista& b, float t)
+{
+    if (b.getWidth() <= 0 || b.getHeight() <= 0) return;
+    const bool v = b.esVertical();
+    const float largo = v ? (float) b.getHeight() : (float) b.getWidth();
+    const auto ahora = juce::Time::getCurrentTime();
+
+    //  El centro del pulgar, que es donde un dedo lo cogeria. No se calcula
+    //  aqui de donde esta -eso seria repetir la formula que se juzga- sino que
+    //  se barre la barra buscando el punto que `mouseDown` acepta como agarre:
+    //  se apoya, se arrastra un pixel y se mira si la vista se movio o no.
+    auto punto = [&] (float f)
+    {
+        return v ? juce::Point<float> ((float) b.getWidth() * 0.5f, largo * (1.0f - f))
+                 : juce::Point<float> (largo * f, (float) b.getHeight() * 0.5f);
+    };
+    auto evento = [&] (juce::Point<float> pt)
+    {
+        return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(),
+                                 pt, juce::ModifierKeys(), 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                 &b, &b, ahora, pt, ahora, 1, false);
+    };
+
+    //  Se agarra donde el pulgar esta AHORA -o sea en la fraccion que la vista
+    //  ocupa- y se arrastra hasta la que se pide, en varios pasos: un dedo
+    //  emite un evento por movimiento, y de un salto la cuenta del agarre no se
+    //  ejercita.
+    const int rec = juce::jmax (1, b.getTotal() - b.getVisibles());
+    const float desde = (float) b.getPrimero() / (float) rec;
+    auto d = evento (punto (desde));  b.mouseDown (d);
+    for (int i = 1; i <= 4; ++i)
+    {
+        const float f = desde + (t - desde) * (float) i / 4.0f;
+        auto m = evento (punto (f));  b.mouseDrag (m);
+    }
+    auto u = evento (punto (t));  b.mouseUp (u);
 }
 
 void MainComponent::auditPiano()
@@ -2151,20 +2296,64 @@ void MainComponent::auditPiano()
     //  escribe o se borra en el compas equivocado.
     if (pianoGrid.onCelda) pianoGrid.onCelda (3, 9);
 
-    //  Y ahora al compas 1, por la tapa y no moviendo selectedBar a mano.
-    if (barButtons.size() > 1 && barButtons[1]->onClick) barButtons[1]->onClick();
+    //  Y AHORA AL COMPAS 1, POR LA BARRA y no moviendo `seqPrimerPaso` a
+    //  mano: mover la variable por dentro se salta el codigo que decide cuanto
+    //  avanza un toque y quien repinta despues, que es donde vivieron dos de
+    //  los cinco fallos. Un toque en la PISTA, mas alla del pulgar, salta una
+    //  pagina — o sea las columnas que se ven, que aqui son dieciseis.
+    tocaBarra (seqBarra, 1.0f);
     if (pianoGrid.onCelda) pianoGrid.onCelda (3, 5);
 
-    std::cout << "{\"piano\":\"compas\",\"sel\":" << selectedBar
-              << ",\"paso19\":" << (pattern[0][19][0] ? 1 : 0)
-              << ",\"nota19\":" << engine.getStepNote (0, 19, 0)
+    //  Y LA VENTANA SE PUBLICA, que es lo que esta medida daba por hecho y
+    //  dejo de ser verdad.
+    //
+    //  Decia «un toque en la pista salta una pagina - o sea las columnas que se
+    //  ven, que aqui son dieciseis», y con la ventana CONTINUA eso ya no es un
+    //  compas: la barra avanza las columnas que quepan y se acota en
+    //  `total - visibles`, que con un patron de 32 y veinte columnas a la vista
+    //  deja el primer paso en DOCE. La comprobacion pedia el compas 1 y salia
+    //  cero con el codigo perfecto — la undecima vez que en este banco falla la
+    //  medida y no lo medido.
+    //
+    //  Se publica DONDE quedo la ventana y se comprueba contra eso: que se haya
+    //  MOVIDO -sin eso «escribio en su sitio» lo cumple una barra muerta- y que
+    //  la nota caiga en `primerPaso + columna`, que es la unica cuenta que el
+    //  gesto promete. El testigo del principio sigue siendo lo que separa
+    //  «escribio» de «escribio donde tocaba».
+    const int baseTrasTocar = seqPrimerPaso;
+    std::cout << "{\"piano\":\"compas\",\"base\":" << baseTrasTocar
+              << ",\"escrito\":" << (pattern[0][(size_t) juce::jlimit (0, kNumSteps - 1, baseTrasTocar + 3)][0] ? 1 : 0)
+              << ",\"nota\":" << engine.getStepNote (0, juce::jlimit (0, kNumSteps - 1, baseTrasTocar + 3), 0)
               << ",\"paso3\":" << (pattern[0][3][0] ? 1 : 0)
               << ",\"nota3\":" << engine.getStepNote (0, 3, 0) << "}" << std::endl;
 
-    //  LA VISTA. La tapa de compas tiene que haber repintado el piano, asi que
-    //  la columna 3 lleva el 5 del compas 1 y no el 9 del 0.
+    //  LA VISTA. La barra tiene que haber repintado el piano, asi que la
+    //  columna 3 lleva el 5 que se acaba de escribir y no el 9 del principio.
     std::cout << "{\"piano\":\"vista\",\"col3\":" << (int) pianoCells[3 * PianoRoll::kMaxNotas]
               << "}" << std::endl;
+
+    //  Y LA BARRA ALCANZA TODO, que es la pregunta que la fila de tapas de
+    //  compas contestaba sola: con 1, 2, 3 y 4 dibujadas, «se llega al compas
+    //  4» era evidente. Con una ventana continua deja de serlo — una barra que
+    //  se queda a un paso del final no se ve, porque el pulgar SI llega al
+    //  filo: el suelo de `pulgar()` lo pone en `kGrueso` cuando la proporcion
+    //  daria menos, asi que el dibujo miente en cuanto la vista es pequena
+    //  contra el total.
+    //
+    //  CON DOS CIFRAS, que una se engaña: «el ultimo paso se ve» lo cumple
+    //  igual una barra clavada en el final, y «el primero se ve» una clavada
+    //  en el principio. Se arrastra el pulgar a los dos extremos y se pregunta
+    //  por el paso de mas a la derecha y el de mas a la izquierda.
+    {
+        arrastraBarra (seqBarra, 1.0f);
+        const int alFinal = seqBarra.getUltimo();
+        arrastraBarra (seqBarra, 0.0f);
+        const int alPrincipio = seqBarra.getPrimero();
+        std::cout << "{\"piano\":\"barra\",\"ultimo\":" << alFinal
+                  << ",\"primero\":" << alPrincipio
+                  << ",\"total\":" << seqBarra.getTotal()
+                  << ",\"visibles\":" << seqBarra.getVisibles() << "}" << std::endl;
+    }
 
     //  LA GOMA, montada APARTE y con el paso absoluto en vez de con el gesto.
     //
@@ -2177,11 +2366,27 @@ void MainComponent::auditPiano()
     for (int st = 0; st < kNumSteps; ++st)
         for (int p = 0; p < kNumPads; ++p)
             pattern[0][(size_t) st][(size_t) p] = false;
-    pianoCellToggled (3, 9);      // testigo, compas 0
-    pianoCellToggled (19, 5);     // el que se frota, compas 1
+    //  Y CONTRA LA VENTANA QUE HAYA, por lo mismo que la de arriba: la goma
+    //  recibe una COLUMNA y el codigo la convierte con `seqPrimerPaso`, asi que
+    //  el paso absoluto que borra depende de donde este la ventana. Con «19»
+    //  escrito a mano la comprobacion medi­a otro paso en cuanto la ventana dejo
+    //  de empezar en un borde de compas.
+    //  Y CON LA VENTANA PUESTA A MANO, que es la regla de esta casa y lo que
+    //  la comprobacion de la barra obligo a escribir: esta medida daba por
+    //  buena la ventana que dejara la de arriba, y en cuanto la barra empezo a
+    //  medirse a los dos extremos la ultima la dejaba en CERO — y con la
+    //  ventana en cero el paso que se frota y el testigo son la misma casilla,
+    //  o sea que la prueba se borraba su propio testigo. Cada medida parte de
+    //  un estado puesto, no del que dejo la anterior.
+    arrastraBarra (seqBarra, 1.0f);
+    const int baseGoma = juce::jlimit (0, kNumSteps - 4, seqPrimerPaso);
+    const int frotado  = baseGoma + 3;
+    pianoCellToggled (3, 9);           // testigo, fuera de la ventana
+    pianoCellToggled (frotado, 5);     // el que se frota, columna 3 de la vista
     refreshPiano();
     if (pianoGrid.onBorrar) pianoGrid.onBorrar (3, 5);
-    std::cout << "{\"piano\":\"goma\",\"paso19\":" << (pattern[0][19][0] ? 1 : 0)
+    std::cout << "{\"piano\":\"goma\",\"base\":" << baseGoma
+              << ",\"frotado\":" << (pattern[0][(size_t) frotado][0] ? 1 : 0)
               << ",\"paso3\":" << (pattern[0][3][0] ? 1 : 0) << "}" << std::endl;
 
     //  Y UN PATRON QUE ENCOGE con el compas 1 puesto: el compas se acota en
@@ -2193,7 +2398,7 @@ void MainComponent::auditPiano()
     for (int c = 0; c < AudioEngine::kBarSteps; ++c)
         for (int k = 0; k < PianoRoll::kMaxNotas; ++k)
             if (pianoCells[c * PianoRoll::kMaxNotas + k] != -128) ++viejas;
-    std::cout << "{\"piano\":\"encoge\",\"sel\":" << selectedBar
+    std::cout << "{\"piano\":\"encoge\",\"sel\":" << (seqPrimerPaso / AudioEngine::kBarSteps)
               << ",\"puestas\":" << viejas
               << ",\"col3\":" << (int) pianoCells[3 * PianoRoll::kMaxNotas] << "}" << std::endl;
 
@@ -2215,7 +2420,7 @@ void MainComponent::auditPiano()
     for (int st = 0; st < kNumSteps; ++st)
         for (int p = 0; p < kNumPads; ++p)
             pattern[0][(size_t) st][(size_t) p] = false;
-    selectedBar = 0;
+    seqPrimerPaso = 0;
     showSeqPage (seqPagePiano);
     resized();
     refreshPiano();
@@ -2361,7 +2566,7 @@ void MainComponent::auditPiano()
         //  mira y no donde se copio.
         pianoCopiaSel();
         const int copiadas = (int) pianoPortapapeles.size();
-        selectedBar = 1;
+        seqPrimerPaso = AudioEngine::kBarSteps;
         engine.setPatternLength (0, 32);
         refreshPiano();
         pianoPegaSel();
@@ -2370,7 +2575,7 @@ void MainComponent::auditPiano()
             if (pattern[0][(size_t) st][(size_t) selectedPad]) ++pegadas;
 
         pianoGrid.setHerramienta (PianoRoll::dibujar);
-        selectedBar = 0;
+        seqPrimerPaso = 0;
 
         std::cout << "{\"piano\":\"sel\",\"seleccionadas\":" << seleccionadas
                   << ",\"tras_mover\":" << trasMover
@@ -2385,7 +2590,7 @@ void MainComponent::auditPiano()
     //  EL ZOOM HORIZONTAL: cuantas columnas se ven y cuanto mide su celda.
     {
         engine.setPatternLength (0, 32);
-        selectedBar = 0;
+        seqPrimerPaso = 0;
         //  POR LA TAPA y no poniendo el numero a mano, que es lo unico que
         //  mide la ESCALERA: el ciclo salta el paso que no cabe, y llamando a
         //  `pianoCols = 32` por dentro eso no se ve nunca. Tres pulsaciones,

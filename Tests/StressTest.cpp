@@ -2526,6 +2526,61 @@ int main()
                      20.0f * std::log10 (arriba), pasado, avisado, ok ? "OK" : zatiFalla());
     }
 
+    //  Y ESA MEDIDA ERA UNA LINEA QUE IMPRIMIA OK.
+    //
+    //  Su propio comentario promete comprobar "que +12 dB llegue de verdad al
+    //  motor - un jlimit olvidado en 1.0 dejaria el mando subiendo en la
+    //  pantalla y el sonido quieto" y lo que lee es `getMasterGain()`, o sea
+    //  el ATOMICO que la linea de arriba acaba de escribir. Pasaba con el
+    //  fader desconectado del audio, que es exactamente lo que pasaba: la
+    //  etapa 5c-duck se saltaba entera para todo lo que estuviera POR ENCIMA
+    //  de la unidad, asi que de 0 dB a +12 la casilla decia una cosa y por los
+    //  cascos salia otra. La queja llego con esas palabras - "de 0 db a +12 db
+    //  no hay cambio".
+    //
+    //  Se mide RENDERIZANDO, que es el unico sitio donde la respuesta es
+    //  verdad, y con DOS cifras: el pico a 0 dB y el pico a +12, porque "sube"
+    //  lo cumple tambien un fader que se pasa y "no cambia" lo cumple el fallo.
+    //  El pad se deja bajo a proposito -0.1 de pico- para que la subida entera
+    //  quepa sin tocar techo: lo que se mide es el fader y no un recorte.
+    //
+    //  Y con la RAMPA cumplida antes de mirar: el master sube con una
+    //  constante de 12 ms, asi que los primeros bloques van por el camino y no
+    //  en el destino. Ocho bloques de 512 a 48 kHz son 85 ms, siete veces la
+    //  constante.
+    {
+        auto picoCon = [] (float master)
+        {
+            AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+            e.setMasterUser (master);
+            e.setPadGain (0, 0.1f);
+            e.publishSample (0, makeSample (48000.0, 1.0, 400.0f));
+
+            juce::AudioBuffer<float> b (2, 512);
+            b.clear(); e.renderNextBlock (b, 0, 512);
+            e.postNoteOn (0, 1.0f);
+
+            double pico = 0.0;
+            for (int blk = 0; blk < 24; ++blk)
+            {
+                b.clear(); e.renderNextBlock (b, 0, 512);
+                if (blk < 8) continue;
+                for (int ch = 0; ch < 2; ++ch)
+                    for (int i = 0; i < 512; ++i)
+                        pico = juce::jmax (pico, (double) std::abs (b.getSample (ch, i)));
+            }
+            return pico;
+        };
+
+        const double unidad = picoCon (1.0f);
+        const double arriba = picoCon (AudioEngine::kMasterMaxGain);
+        const double subida = (unidad > 1.0e-6) ? 20.0 * std::log10 (arriba / unidad) : 0.0;
+        const bool ok = unidad > 0.01 && std::abs (subida - 12.0) < 0.3;
+        std::printf ("%-34s a 0 dB %.5f   a +12 dB %.5f   sube %+.2f dB   %s\n",
+                     "el fader del master SUENA", unidad, arriba, subida,
+                     ok ? "OK" : zatiFalla());
+    }
+
     //  UN GOLPE FLOJO NO ES UN GOLPE FUERTE BAJADO DE VOLUMEN.
     //
     //  `velocity` solo multiplicaba la ganancia, asi que la unica diferencia
@@ -4935,6 +4990,73 @@ int main()
         const bool ok = std::abs (dSeco + 6.02) < 0.5 && std::abs (dCola + 6.02) < 0.7;
         std::printf ("%-34s seco %+.2f dB   cola %+.2f dB   %s\n",
                      "el fader del canal", dSeco, dCola, ok ? "OK" : zatiFalla());
+
+        //  Y HACIA ARRIBA, que es la mitad que esta medida no preguntaba.
+        //
+        //  Las dos corridas de aqui arriba van de 1.0 a 0.5 - las DOS por
+        //  debajo de la unidad- y por ahi se colo el mismo fallo que tenia el
+        //  master: el camino corto renderiza las voces directamente en la
+        //  salida sin multiplicar por `dryGain`, y el guardia que decide si un
+        //  pad se aparta preguntaba `smCan < 0.9995f`, o sea UN solo lado. Un
+        //  canal por encima de 0 dB tomaba el camino corto y su fader no hacia
+        //  nada: bajarlo se oia y subirlo no.
+        //
+        //  Es la tercera vez que este banco se come la misma forma de fallo
+        //  -una condicion de un lado para una pregunta de dos- y la segunda en
+        //  la misma tanda. Se mide con las dos mitades a la vez: el seco y la
+        //  cola suben los dos +6.02, que es lo unico que separa «el fader
+        //  sube» de «el fader sube el seco y se deja el envio».
+        double s3 = 0, c3 = 0;
+        corre (1.9953f, s3, c3);              // +6 dB
+        const double uSeco = 20.0 * std::log10 (juce::jmax (1.0e-9, s3 / juce::jmax (1.0e-9, s1)));
+        const double uCola = 20.0 * std::log10 (juce::jmax (1.0e-9, c3 / juce::jmax (1.0e-9, c1)));
+        const bool okUp = std::abs (uSeco - 6.02) < 0.5 && std::abs (uCola - 6.02) < 0.7;
+        std::printf ("%-34s seco %+.2f dB   cola %+.2f dB   %s\n",
+                     "el fader del canal SUBE", uSeco, uCola, okUp ? "OK" : zatiFalla());
+    }
+
+    {
+        //  Y SIN UN SOLO ENVIO ABIERTO, que es el unico camino donde el fallo
+        //  vive y el unico que la medida de aqui arriba NO puede tocar.
+        //
+        //  Un pad que no manda a nadie toma el CAMINO CORTO: sus voces se
+        //  renderizan directamente en la salida y no pasan por `dryGain`. El
+        //  guardia que decide si un pad se aparta preguntaba `smCan < 0.9995f`
+        //  -UN solo lado- asi que un canal por ENCIMA de 0 dB se quedaba en el
+        //  camino corto y su fader no hacia absolutamente nada. Bajarlo se oia,
+        //  subirlo no: el mismo fallo que el guardia del master, en la misma
+        //  tanda y por el mismo motivo -una condicion que era correcta cuando
+        //  el numero solo podia bajar-.
+        //
+        //  Y la primera version de esta medida NO LO CAZO: se escribio dentro
+        //  del bloque de arriba, que abre un envio al delay para poder mirar la
+        //  cola, y con un envio abierto el pad toma el camino LARGO de todas
+        //  formas. Roto a proposito seguia saliendo OK. Se mide donde el fallo
+        //  vive, que es una maquina sin un solo envio.
+        auto seco = [&tonoPlano] (float gan)
+        {
+            AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+            e.setPadGain (0, 1.0f);
+            e.setCanalGain (0, gan);
+            e.publishSample (0, tonoPlano (kFs, 0.40, 440.0));
+
+            juce::AudioBuffer<float> b (2, kBs);
+            double pico = 0.0;
+            for (int i = 0; i < 90; ++i)
+            {
+                if (i == 30) e.postNoteOn (0, 1.0f);
+                b.clear(); e.renderNextBlock (b, 0, kBs);
+                if (i >= 40 && i < 70) pico = juce::jmax (pico, (double) b.getMagnitude (0, kBs));
+            }
+            return pico;
+        };
+
+        const double base   = seco (1.0f);
+        const double subido = seco (1.9953f);      // +6 dB
+        const double d = 20.0 * std::log10 (juce::jmax (1.0e-9, subido / juce::jmax (1.0e-9, base)));
+        const bool ok = base > 0.01 && std::abs (d - 6.02) < 0.5;
+        std::printf ("%-34s a 0 dB %.5f   a +6 dB %.5f   sube %+.2f dB   %s\n",
+                     "el canal SUBE sin envios", base, subido, d, ok ? "OK" : zatiFalla());
     }
 
     {

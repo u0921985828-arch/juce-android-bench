@@ -1908,9 +1908,16 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     //  este rotulo se dibujaba a mano y no lo apuntaba ninguna regla; en cuanto
     //  paso por `apunta`, once hallazgos. La tercera es la puerta de la rejilla
     //  de dieciseis pads, que vive en esta misma cabecera.
-    auto tituloRow = antesDe (antesDe (antesDe (inner.removeFromTop (16), seqCloseButton, Metrics::sm),
-                                       pianoPadPickBtn, Metrics::sm),
-                              seqPistasBtn, Metrics::sm);
+    //  Y LA CUARTA es el zoom de ancho, que entro con la celda cuadrada y se
+    //  colo debajo del titulo el mismo dia: 55 hallazgos en la primera corrida
+    //  con la tapa puesta. Es la cadena de siempre y no una cuenta nueva -cada
+    //  tapa que se deja fuera saca su propio hallazgo- y `antesDe` decide el
+    //  lado comparando los centros, que es lo unico que vale en arabe.
+    auto tituloRow = antesDe (antesDe (antesDe (antesDe (inner.removeFromTop (16),
+                                                         seqCloseButton, Metrics::sm),
+                                                pianoPadPickBtn, Metrics::sm),
+                                       seqPistasBtn, Metrics::sm),
+                              seqZoomBtn, Metrics::sm);
     //  Y CAE POR CAMPOS, como el del piano: el nombre del pad se lee en el pad,
     //  «PAD nn» en la tapa del selector y «P1» en la paleta de patrones, asi que
     //  los tres se piden con el TEXTO puesto y se caen por orden. Queda PASOS o
@@ -1928,19 +1935,45 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     //  identical and never say which does what. Now each row is named, and the
     //  chain shows its ACTUAL ORDER — "P1 P1 P2 P3" — instead of eight
     //  switches you have to decode.
-    juce::String chainStr;
-    if (engine.getChainLength() <= 0)
-        chainStr = T ("sin cadena - repite P%1", juce::String (selectedPattern + 1));
-    else
-    {
-        chainStr = T ("cadena: ");
-        for (int i = 0; i < engine.getChainLength(); ++i)
-            chainStr += "P" + juce::String (engine.getChainSlot (i) + 1) + (i + 1 < engine.getChainLength() ? " " : "");
-        if (engine.isPlaying())
-            chainStr += "   " + dot + "  " + T ("suena P%1", juce::String (engine.getPlayingPattern() + 1));
-    }
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
+
+    //  Y ESTE RENGLON CAE POR CAMPOS, como el titulo de arriba.
+    //
+    //  Desde que el zoom de ancho vive en la cabecera, esta banda pierde 60 px
+    //  -la tapa mide un dedo entero sobre un renglon de 14- y la frase entera
+    //  no cabia: veinte hallazgos en 360x640 y en 393x851, «pide 122 tiene
+    //  83». Un renglon de dato no se dibuja a medias, y partirlo por el guion
+    //  de la frase traducida seria inventarse donde corta cada lengua: son dos
+    //  campos con su clave, y el segundo se cae cuando no hay sitio.
+    //
+    //  Lo que se queda es lo que no se puede deducir mirando la maquina: que
+    //  no hay cadena. Que repite el patron puesto lo dice la paleta, donde P1
+    //  esta encendido.
+    seqChainBand = antesDe (antesDe (antesDe (antesDe (inner.removeFromTop (14),
+                                                       seqPistasBtn,    Metrics::sm),
+                                              seqCloseButton,  Metrics::sm),
+                                     pianoPadPickBtn, Metrics::sm),
+                            seqZoomBtn, Metrics::sm);
+
+    juce::String chainStr;
+    if (engine.getChainLength() <= 0)
+    {
+        chainStr = campoAcampo (g.getCurrentFont(), seqChainBand.getWidth(),
+                                T ("sin cadena"),
+                                { "  " + dot + "  "
+                                    + T ("repite P%1", juce::String (selectedPattern + 1)) });
+    }
+    else
+    {
+        juce::String cad = T ("cadena: ");
+        for (int i = 0; i < engine.getChainLength(); ++i)
+            cad += "P" + juce::String (engine.getChainSlot (i) + 1) + (i + 1 < engine.getChainLength() ? " " : "");
+        chainStr = campoAcampo (g.getCurrentFont(), seqChainBand.getWidth(), cad,
+                                { engine.isPlaying()
+                                    ? "   " + dot + "  " + T ("suena P%1", juce::String (engine.getPlayingPattern() + 1))
+                                    : juce::String() });
+    }
     //  Apuntado al pintarlo y no calculado aparte, para que la banda que se
     //  repinta sea LA MISMA que se dibuja: dos cuentas del mismo rectangulo
     //  en dos sitios distintos es como quedan renglones a medio borrar.
@@ -1956,10 +1989,6 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     //  Las TRES de la cabecera y no una: cada una que se dejaba fuera saco su
     //  propio hallazgo -«1-16», luego la cruz, luego «64»- porque las tres
     //  miden un dedo y las tres se derraman sobre esta banda.
-    seqChainBand = antesDe (antesDe (antesDe (inner.removeFromTop (14),
-                                              seqPistasBtn,    Metrics::sm),
-                                     seqCloseButton,  Metrics::sm),
-                            pianoPadPickBtn, Metrics::sm);
     apunta (g, seqChainBand, chainStr, "dato");
     g.drawText (chainStr, seqChainBand, juce::Justification::centredLeft);
 
@@ -2109,9 +2138,8 @@ void MainComponent::paintSongSheetContent (juce::Graphics& g)
     //  la tapa anterior. La cuenta estaba escrita para dos tapas y ahora son
     //  tres: se encadena una llamada mas, y `antesDe` decide el lado
     //  comparando los centros, asi que sigue valiendo en los cuatro idiomas.
-    auto renglon = antesDe (antesDe (antesDe (songSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY).removeFromTop (16),
-                                              songCloseButton),
-                                     songVistaBtn),
+    auto renglon = antesDe (antesDe (songSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY).removeFromTop (16),
+                                     songCloseButton),
                             songZoomBtn);
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));

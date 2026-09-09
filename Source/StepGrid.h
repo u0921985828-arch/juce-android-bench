@@ -23,11 +23,31 @@
 //  Drawn, not built from 256 buttons: one component paints the lot and hit-
 //  tests on mouseDown, which keeps layout and repaints cheap.
 // ============================================================================
-class StepGrid : public juce::Component
+class StepGrid : public juce::Component, public Rejilla
 {
 public:
+    //  LO QUE EL BANCO NECESITA SABER de una rejilla que se pinta entera.
+    //  Las tres cifras salen de aqui y no de un numero escrito en Python: las
+    //  columnas dependen del zoom y del ancho, y los carriles de si la ventana
+    //  ensena dieciseis pads o ocho.
+    int celdasAncho() const override { return numCols(); }
+    int celdasAlto()  const override { return getCarriles(); }
+    int canalIzq()    const override { return kGutter; }
+    float celdaAnchoPx() const override { return anchoCelda(); }
+    float celdaAltoPx()  const override { return altoCelda(); }
+
     static constexpr int kLanes    = 16;   // pads
-    static constexpr int kBarSteps = 16;   // steps shown at once
+    //  UN COMPAS, que es lo que un paso "vale" y lo que la fila de compas
+    //  contaba. Ya no es cuantas columnas se dibujan -eso lo decide la celda-
+    //  pero sigue siendo la unidad en la que la vista salta y en la que el
+    //  patron se mide.
+    static constexpr int kBarSteps = 16;
+    //  Lo mas ancho que esta ventana puede llegar a ser, que es el patron
+    //  entero: AudioEngine::kNumSteps. Escrito aqui para no arrastrar el motor
+    //  a un componente que solo dibuja, y comprobado donde se llenan las
+    //  sombras -si un dia el patron crece, esto falla en la primera corrida en
+    //  vez de leer fuera del array-.
+    static constexpr int kMaxCols  = 64;
     //  La columna de los numeros de pad, a la izquierda de la rejilla. Estaba
     //  escrita a mano TRES veces - dos en el pintado y una en el acierto del
     //  toque - y esas tres tienen que decir lo mismo o los toques caen en una
@@ -63,6 +83,58 @@ public:
     int getCarriles() const noexcept { return carriles; }
     int getMedio()    const noexcept { return medio; }
 
+    //  LA CELDA ES CUADRADA, Y EL LADO SALE DEL ALTO.
+    //
+    //  Los dos ejes se calculaban por separado y sin ninguna relacion entre
+    //  ellos: `cellW = (w - 30) / 16` y `laneH = h / 16`. Medido, eso daba
+    //  19.8 x 17.9 px en un movil grande y 12.2 x 15.0 en el Fold cerrado - una
+    //  celda mas ancha que alta en una pantalla y mas alta que ancha en la
+    //  otra, o sea que el blanco cambia de forma segun el telefono y el dedo
+    //  tiene que aprender dos.
+    //
+    //  Con el lado sacado del ALTO entran los dieciseis pads lo mas altos que
+    //  la tarjeta permite -que es lo que se pidio- y a lo ancho entran las que
+    //  entren. Que sean menos de dieciseis no es un problema desde que hay
+    //  barra: antes lo era, porque la unica forma de llegar al paso 15 era que
+    //  estuviera dibujado.
+    //
+    //  Y EL ZOOM MULTIPLICA EL LADO, no lo sustituye. Asi el cuadrado se
+    //  conserva en el paso de arranque de las dos ventanas -dieciseis carriles
+    //  y ocho- sin escribir la regla dos veces: con ocho carriles el lado se
+    //  dobla y el ancho va detras.
+    void ponZoomAncho (float z)
+    {
+        const float nuevo = juce::jlimit (0.5f, 4.0f, z);
+        if (std::abs (nuevo - zoomW) < 0.001f) return;
+        zoomW = nuevo;
+        visto = false;                      // la sombra ya no describe lo que se ve
+        repaint();
+    }
+    float getZoomAncho() const noexcept { return zoomW; }
+
+    //  El lado de una celda, en los dos ejes. Lo pide el banco: una prueba que
+    //  repite la formula que juzga cambia de opinion a la vez que el fallo.
+    float altoCelda()  const noexcept
+    { return (float) getHeight() / (float) juce::jmax (1, carriles); }
+    float anchoCelda() const noexcept
+    { return juce::jmax (1.0f, altoCelda() * zoomW); }
+
+    //  CUANTAS COLUMNAS SE VEN ENTERAS. La que asoma por el filo derecho se
+    //  dibuja igual -es lo que dice que hay mas- pero no cuenta: la ventana que
+    //  la barra recorre son las enteras, o el ultimo paso del patron quedaria
+    //  siempre a medias.
+    int numCols() const noexcept
+    {
+        const float cw = anchoCelda();
+        return juce::jlimit (1, kMaxCols, (int) ((float) (getWidth() - kGutter) / cw));
+    }
+
+    //  Si a ese zoom la celda sigue por encima de su suelo. Es la pregunta que
+    //  hace la escalera de la tapa, y se contesta con el ancho que la rejilla
+    //  TIENE - no con el de la ventana.
+    bool cabeZoom (float z) const noexcept
+    { return getHeight() > 0 && altoCelda() * z >= (float) Metrics::celdaPaso; }
+
     // Called with the absolute step index (bar offset already applied).
     std::function<void (int pad, int step)> onCell;
 
@@ -70,11 +142,18 @@ public:
                     const int*  zati,           // per pad
                     const bool* loaded,         // per pad
                     const signed char* notes,   // [step][pad] semitone offset, same stride
-                    int patternLength, int bar, int playStep, int selectedPad,
+                    int patternLength, int desdePaso, int playStep, int selectedPad,
                     float stepPhase = 0.0f, int firstPad = 0)
     {
         data = cells; zatiOf = zati; loadedOf = loaded; noteOf = notes;
-        patLen = patternLength; barIndex = bar; playing = playStep; selPad = selectedPad;
+        patLen = patternLength;
+        //  ACOTADO AQUI Y NO SOLO EN LA MAQUETA. El primer paso lo mueve una
+        //  barra y lo mueve SEGUIR, y esta funcion la llama el temporizador
+        //  treinta veces por segundo: un patron que encoge de 32 pasos a 16
+        //  deja la ventana apuntando fuera de la tabla. Es el mismo fallo que
+        //  ya costo cinco compases del piano.
+        primerPaso = juce::jlimit (0, juce::jmax (0, patLen - numCols()), desdePaso);
+        playing = playStep; selPad = selectedPad;
         //  EL NUMERO QUE SE PINTA EN EL CANALON ES EL DEL PAD, NO EL DEL CARRIL.
         //
         //  Esta rejilla trabaja en carriles - dieciseis, del 0 al 15 - y quien
@@ -102,11 +181,17 @@ public:
         //  Comparar cuesta 512 bytes de memcmp mas treinta y dos escalares.
         //  Repintar cuesta la rejilla entera Y, como la ficha que la contiene
         //  es translucida y ocupa la ventana, todo lo que hay debajo.
-        const size_t nCel = (size_t) kLanes * (size_t) kBarSteps;
-        const size_t off  = (size_t) barIndex * (size_t) kBarSteps * (size_t) kLanes;
+        //  Y SE COMPARA LA VENTANA QUE SE VE, que ya no es un compas: son las
+        //  columnas que entran a este zoom, desde el paso que la barra dejo. Se
+        //  acota al patron para no leer fuera de la tabla cuando la ventana es
+        //  mas ancha que lo que queda.
+        const int  cols  = juce::jmin (numCols() + 1, kMaxCols);
+        const size_t nCel = (size_t) kLanes
+                          * (size_t) juce::jlimit (0, cols, patLen - primerPaso);
+        const size_t off  = (size_t) primerPaso * (size_t) kLanes;
 
         bool igual = data != nullptr && visto
-                  && patLen == prevPatLen && barIndex == prevBar && playing == prevPlaying
+                  && patLen == prevPatLen && primerPaso == prevPaso && playing == prevPlaying
                   && selPad == prevSelPad && laneBase == prevLaneBase
                   && std::abs (phase - prevPhase) < 0.004f
                   && std::memcmp (sombraCeldas.data(), data + off, nCel * sizeof (bool)) == 0
@@ -129,7 +214,7 @@ public:
         //  La union de donde estaba y donde esta: dos columnas como mucho, y
         //  una sola cuando la marca solo se desliza dentro de su paso.
         const bool soloCabezal = visto && data != nullptr
-                              && patLen == prevPatLen && barIndex == prevBar
+                              && patLen == prevPatLen && primerPaso == prevPaso
                               && selPad == prevSelPad && laneBase == prevLaneBase
                               && std::memcmp (sombraCeldas.data(), data + off, nCel * sizeof (bool)) == 0
                               && std::memcmp (sombraZati.data(),  zatiOf,   sizeof (sombraZati)) == 0
@@ -145,7 +230,7 @@ public:
         if (zatiOf != nullptr) std::memcpy (sombraZati.data(),  zatiOf,   sizeof (sombraZati));
         if (loadedOf != nullptr) std::memcpy (sombraCarga.data(), loadedOf, sizeof (sombraCarga));
 
-        prevPatLen = patLen; prevBar = barIndex; prevPlaying = playing;
+        prevPatLen = patLen; prevPaso = primerPaso; prevPlaying = playing;
         prevSelPad = selPad; prevLaneBase = laneBase; prevPhase = phase;
         const bool primera = ! visto;
         visto = true;
@@ -194,10 +279,10 @@ public:
         const auto r = getLocalBounds();
         if (r.isEmpty() || step < 0) return {};
 
-        const int base = prevBar * kBarSteps;
-        if (step < base || step >= base + kBarSteps || step >= prevPatLen) return {};
+        const int base = prevPaso;
+        if (step < base || step >= base + numCols() + 1 || step >= prevPatLen) return {};
 
-        const float cellW = (float) (r.getWidth() - kGutter) / (float) kBarSteps;
+        const float cellW = anchoCelda();
         const float col   = (float) r.getX() + (float) kGutter + cellW * (float) (step - base);
 
         //  La columna entera, no solo la linea: debajo de la marca hay un
@@ -213,9 +298,14 @@ public:
 
         auto r = getLocalBounds();
         const int gutter = kGutter;
-        const float laneH = (float) r.getHeight() / (float) carriles;
-        const float cellW = (float) (r.getWidth() - gutter) / (float) kBarSteps;
-        const int   base  = barIndex * kBarSteps;
+        const float laneH = altoCelda();
+        const float cellW = anchoCelda();
+        const int   base  = primerPaso;
+        //  UNA COLUMNA DE MAS, la que asoma por el filo. No es un adorno: es lo
+        //  unico que dice que la ventana no llega al final, y sin ella una
+        //  rejilla llena y una a medias se ven igual. Cae fuera de los limites
+        //  y la recorta el propio componente.
+        const int  cols  = juce::jmin (numCols() + 1, kMaxCols);
 
         for (int fila = 0; fila < carriles; ++fila)
         {
@@ -242,7 +332,7 @@ public:
             g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
             g.drawText (juce::String (laneBase + pad + 1).paddedLeft ('0', 2), gut, juce::Justification::centred);
 
-            for (int c = 0; c < kBarSteps; ++c)
+            for (int c = 0; c < cols; ++c)
             {
                 const int step = base + c;
                 const float x  = (float) r.getX() + (float) gutter + cellW * (float) c;
@@ -293,7 +383,7 @@ public:
                     //  claro que la tarjeta en las dos carcasas oscuras, o sea
                     //  del lado equivocado: la rejilla se leia como si todos los
                     //  pasos estuvieran puestos a medias.
-                    const bool beat = (c % 4) == 0;
+                    const bool beat = (step % 4) == 0;
                     g.setColour (ZatiColours::groove (beat ? 0.48f : 0.28f));
                     g.fillRect (cell);
                 }
@@ -302,17 +392,24 @@ public:
         }
 
         // Bar rules every 4 steps — structure, drawn over the cells.
+        //  Y LAS REGLAS CAEN EN LOS PASOS MULTIPLOS DE CUATRO DEL PATRON, no
+        //  cada cuatro columnas: con la ventana continua las dos cosas dejaron
+        //  de ser la misma: empezando en el paso 3, una linea cada cuatro
+        //  columnas cae en 7 y 11 - o sea marca el contratiempo y borra el
+        //  pulso, que es justo lo contrario de lo que esta regla existe para
+        //  decir.
         g.setColour (ZatiColours::groove (0.28f));
-        for (int c = 4; c < kBarSteps; c += 4)
-            g.fillRect ((float) r.getX() + gutter + cellW * (float) c - 0.5f,
-                        (float) r.getY(), 1.0f, (float) r.getHeight());
+        for (int c = 0; c < cols; ++c)
+            if (((base + c) % 4) == 0 && c > 0)
+                g.fillRect ((float) r.getX() + gutter + cellW * (float) c - 0.5f,
+                            (float) r.getY(), 1.0f, (float) r.getHeight());
 
         //  The playhead. It used to be a red outline drawn around each of the
         //  sixteen cells of the live column, which is sixteen boxes announcing
         //  one position - the eye reads a stack of empty frames, not a beat.
         //  One bar instead: the column it is over, and a line sliding across it
         //  with the step, so the grid has a hand sweeping over it.
-        if (playing >= base && playing < base + kBarSteps && playing < patLen)
+        if (playing >= base && playing < base + cols && playing < patLen)
         {
             const float col = (float) r.getX() + gutter + cellW * (float) (playing - base);
             const float y0  = (float) r.getY();
@@ -350,15 +447,15 @@ private:
         const int gutter = kGutter;
         if (e.x < r.getX() + gutter) return;
 
-        const float laneH = (float) r.getHeight() / (float) carriles;
-        const float cellW = (float) (r.getWidth() - gutter) / (float) kBarSteps;
+        const float laneH = altoCelda();
+        const float cellW = anchoCelda();
         //  Y el toque hace el camino de vuelta: fila a carril. Sin sumar el
         //  medio, con la mitad de abajo a la vista se escribiria en los pads de
         //  arriba - la rejilla ensenaria una cosa y la maquina tocaria otra.
         const int fila = juce::jlimit (0, carriles - 1, (int) ((float) (e.y - r.getY()) / laneH));
         const int lane = medio + fila;
-        const int col  = juce::jlimit (0, kBarSteps - 1, (int) ((float) (e.x - r.getX() - gutter) / cellW));
-        const int step = barIndex * kBarSteps + col;
+        const int col  = juce::jlimit (0, numCols(), (int) ((float) (e.x - r.getX() - gutter) / cellW));
+        const int step = primerPaso + col;
         if (step >= patLen) return;
 
         // A drag paints, but only across cells it has not already touched this
@@ -373,17 +470,18 @@ private:
     const int*  zatiOf = nullptr;
     const bool* loadedOf = nullptr;
     const signed char* noteOf = nullptr;
-    int patLen = 16, barIndex = 0, playing = -1, selPad = -1, lastKey = -1;
+    int patLen = 16, primerPaso = 0, playing = -1, selPad = -1, lastKey = -1;
     int laneBase = 0;      // el pad del carril 0: 0, 16, 32 o 48. Ver setSource.
     int carriles = kLanes, medio = 0;   // la ventana de pistas. Ver setVentana.
+    float zoomW = 1.0f;                 // el ancho de la celda contra su alto
     float phase = 0.0f;   // how far through the live step, 0..1
 
     //  La copia de lo ultimo PINTADO, para no volver a pintarlo. Ver setSource.
-    std::array<bool, (size_t) kLanes * (size_t) kBarSteps>        sombraCeldas {};
-    std::array<signed char, (size_t) kLanes * (size_t) kBarSteps> sombraNotas  {};
+    std::array<bool, (size_t) kLanes * (size_t) kMaxCols>        sombraCeldas {};
+    std::array<signed char, (size_t) kLanes * (size_t) kMaxCols> sombraNotas  {};
     std::array<int,  (size_t) kLanes> sombraZati  {};
     std::array<bool, (size_t) kLanes> sombraCarga {};
-    int   prevPatLen = -1, prevBar = -1, prevPlaying = -2, prevSelPad = -2, prevLaneBase = -1;
+    int   prevPatLen = -1, prevPaso = -1, prevPlaying = -2, prevSelPad = -2, prevLaneBase = -1;
     float prevPhase = -1.0f;
     bool  visto = false;      // aun no se ha pintado nunca: la primera vez siempre pasa
 };

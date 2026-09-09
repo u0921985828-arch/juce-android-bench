@@ -11,6 +11,7 @@
 #include "PadButton.h"
 #include "ProjectStore.h"
 #include "StepGrid.h"
+#include "BarraVista.h"
 #include "Playlist.h"
 #include "PianoRoll.h"
 #include "Teclado.h"
@@ -785,11 +786,14 @@ private:
     //  ultima maqueta. Lo apunta resized() y lo lee paint(): es lo que decide
     //  si la pagina del patron todavia tiene algo del paso que explicar.
     int seqTiraFilas = 0;
-    //  SI LA FILA DE COMPAS LLEVA SU ROTULO. Se decide en resized() -es la
-    //  unica que sabe cuanto alto queda- y la lee el propio maquetado en el
-    //  sitio donde coloca la fila: dos cuentas para lo mismo es como una banda
-    //  se reserva en un sitio y se dibuja en otro.
-    bool seqBarsRotulo = true;
+    //  SI LA BARRA DE LA VENTANA SE COLOCA. Se decide en resized() -es la
+    //  unica que sabe cuanto alto queda y cuantas columnas caben- y la lee el
+    //  propio maquetado donde la coloca: dos cuentas para lo mismo es como una
+    //  banda se reserva en un sitio y se dibuja en otro.
+    bool seqHayBarra = false;
+    //  Y si la del TONO cabe, que es lo que decide si el par de tapas de
+    //  OCTAVA se queda: cada mando en un sitio en cada pantalla.
+    bool pianoHayBarraVert = false;
     juce::Rectangle<int> seqFootArea;
 
     //  EL RENGLON DE LA CADENA, apuntado para poder repintar SOLO ese.
@@ -887,13 +891,33 @@ private:
     //  Y EL TOPE DE ALTO, por lo mismo. Estaba escrito TRES veces —el propio
     //  `sheetFromBottom`, el reparto de columnas de AJUSTES y el menu de la
     //  ranura— y es la misma clase de duplicado que el `0.92` de arriba, que
-    //  llego a estar en seis sitios. Girado no queda nada que proteger -la
-    //  cara ya esta en dos columnas- y de pie el 0.78 deja ver la maquina
-    //  detras, que es para lo que la tarjeta se centro.
+    //  llego a estar en seis sitios.
+    //
+    //  Y DE PIE DEJA DE SER UN PORCENTAJE: SE DERIVA.
+    //
+    //  El 78 % existia por una razon medida -que por debajo de la tarjeta se
+    //  sigan viendo los pads- y desde la tanda de `onFuera` esos pads ademas se
+    //  PUEDEN TOCAR: `Sheet::onFuera` los dispara y los selecciona. O sea que
+    //  la condicion no es «tres cuartos de pantalla», es «que asome un pad
+    //  entero» — un dedo de pad, `Metrics::hit`, mas el renglon de estado que
+    //  va debajo. Y eso es un numero que sale de la maqueta y no una fraccion
+    //  elegida a ojo.
+    //
+    //  Medido: en 412x915 el tope pasa de 713 px a 803 -0.878, noventa pixeles
+    //  que se lleva la rejilla que la ficha muestre- y en 280x653 de 509 a 541.
+    //  Con el 0.90 clavado en 412x915 quedarian 29 px de pad asomando y
+    //  `tocaPadDetras` dejaria de poder acertarse: se cambiaria una funcion
+    //  medida por unos pixeles.
+    //
+    //  Girado no se toca: alli la cara ya esta en dos columnas y no hay pad que
+    //  proteger debajo, asi que el tope es el sitio que hay.
     static int altoTarjeta (juce::Rectangle<int> zona) noexcept
     {
-        return (int) ((float) zona.getHeight()
-                        * (zona.getWidth() > zona.getHeight() ? 0.90f : 0.78f));
+        if (zona.getWidth() > zona.getHeight())
+            return (int) ((float) zona.getHeight() * 0.90f);
+
+        return juce::jmax (zona.getHeight() / 2,
+                           zona.getHeight() - 2 * (ZatiLookAndFeel::kStatus + Metrics::hit));
     }
 
     //  Lo que mide el recuadro de AUDIO, que es texto pintado y por tanto no
@@ -940,6 +964,14 @@ private:
     juce::TextButton seqPistasBtn { "1-16" };
     int  pistasVista = 0;               // 0 = las dieciseis, 1 = 1-8, 2 = 9-16
     static juce::File pistasPrefFile();
+
+    //  EL ZOOM DE ANCHO DE LA REJILLA DE PASOS. Su rotulo es la PROPORCION
+    //  —«1:1», «2:1», «3:4»— y no una palabra, por lo mismo que el de arriba:
+    //  dice el estado y es el mismo en los cuatro idiomas. La celda es CUADRADA
+    //  de arranque, que es lo que se pidio, y este multiplicador es lo unico
+    //  que la separa de serlo.
+    juce::TextButton seqZoomBtn { "1:1" };
+    void aplicaZoomPasos (float z);
 
     //  EL METRONOMO Y LA CUENTA ATRAS SON DEL APARATO, NO DE UNA FICHA.
     //
@@ -1750,13 +1782,21 @@ private:
 
     juce::OwnedArray<PadButton> pads;
     StepGrid stepGrid;
-    juce::OwnedArray<juce::TextButton> barButtons;   // bar 1..4 when the pattern is longer than one
+    //  LA BARRA DE LA VENTANA, una para las dos paginas. Ver el constructor:
+    //  eran ocho tapas de compas y la ventana saltaba de dieciseis en dieciseis.
+    BarraVista seqBarra, pianoBarra;
     //  The grid shows ONE bank: sixteen lanes, whichever sixteen those are.
     bool  gridCells[AudioEngine::kNumSteps * AudioEngine::kPadsPerBank] {};
     signed char gridNotes[AudioEngine::kNumSteps * AudioEngine::kPadsPerBank] {};
     int   gridZati[AudioEngine::kPadsPerBank] {};
     bool  gridLoaded[AudioEngine::kPadsPerBank] {};
-    int   selectedBar = 0;
+    //  EL PRIMER PASO DE LA VENTANA, continuo y no en multiplos de dieciseis.
+    //  Lo comparten la rejilla y el piano porque son dos vistas del mismo
+    //  patron: cambiar de pestaña no puede moverte de sitio.
+    int   seqPrimerPaso = 0;
+    //  El ancho de la celda contra su alto, que es el zoom horizontal de la
+    //  rejilla de pasos. Uno es CUADRADO, que es como arranca. Ver seqZoomBtn.
+    float seqZoomW = 1.0f;
     void  refreshStepGrid();
 
     // Module bar — rule of three: PADS / SEC / FX, each opening its floating
@@ -1835,9 +1875,19 @@ private:
     juce::TextButton songPlayBtn { "PLAY" };
     juce::TextButton songCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
     juce::Slider     songLenSlider;
-    juce::OwnedArray<juce::TextButton> songPageBtns;
+    //  LA BARRA DE LA LINEA DE TIEMPO, donde estaba la fila de paginas
+    //  -1, 9, 17...-. Ocho tapas numeradas saltaban de pagina en pagina, asi
+    //  que un estribillo que cruzara el compas 8 no se podia mirar entero;
+    //  esta desplaza compas a compas y dibuja el cabezal sobre el total.
+    BarraVista songBarra;
     int songBrush   = 1;      // >0 pattern bank+1, <0 -(pad+1), 0 = eraser
-    int songPage    = 0;
+    //  QUE SUELTA LA BROCHA en un hueco: 0 el patron de la paleta, 1 el sonido
+    //  del pad elegido, 2 un CLIP de ese pad. Ver songPadModeBtn.
+    int songPincel  = 0;
+    //  EL PRIMER COMPAS VISIBLE, continuo y no un numero de pagina. Era
+    //  `songPage` y la ventana empezaba en `pagina * compasesVista`, asi que
+    //  un estribillo que cruzara el compas 8 obligaba a elegir una mitad.
+    int songPrimerCompas = 0;
 
     //  DOS VISTAS DE LA MISMA LINEA DE TIEMPO: los cuatro carriles de patron y
     //  las cuatro pistas de audio. No son ocho carriles porque no caben - esta
@@ -1852,7 +1902,6 @@ private:
     //  ESTADO -PATRONES o AUDIO, con su dibujo- y no un verbo, igual que
     //  songModeBtn y que modoTapa. Una que dijera "IR A AUDIO" obliga a mirar si
     //  esta encendida para saber donde estas.
-    juce::TextButton songVistaBtn { "PATRONES" };
     //  CUANTOS COMPASES SE VEN. La vista estaba clavada en ocho, asi que un
     //  estribillo de dieciseis no cabia en una pantalla y no habia forma de
     //  mirarlo entero. Una tapa que CICLA -8, 16, 4- y no tres, que es lo que
@@ -1899,14 +1948,13 @@ private:
     bool grabandoAlArreglo = false;
     int  pistaGrabacion = 0;
     void grabaAlArreglo();
-    int songVista = Playlist::vistaPatrones;
-    void showSongPage (int v);
     //  El zoom de la linea de tiempo: cuantos compases se ven de una vez.
-    //  Re-deriva `songPage` para que el compas que estabas mirando siga en
-    //  pantalla -poner cero seria saltar al principio cada vez que se toca- y
-    //  reescribe los rotulos de las tapas de pagina, que dicen el compas en el
-    //  que empiezan y por tanto dependen de la vista.
+    //  Re-deriva el primer compas visible para que el que estabas mirando siga
+    //  en pantalla -poner cero seria saltar al principio cada vez que se toca-.
     void ponVistaCompases (int n);
+    //  Devuelve el primer compas visible que hace falta para que `compas` se
+    //  vea, moviendo la ventana lo minimo: si ya se ve, el que hay.
+    int  acercaCompas (int compas) const;
     //  Arma una de las cuatro herramientas de la linea de tiempo. Toca las
     //  cuatro tapas, la rejilla y el pincel: la GOMA es la brocha VACIAR, asi
     //  que armarla es ponerla, y ese es el unico dueno de borrar.
@@ -1952,6 +2000,8 @@ private:
     bool songClipLleno = false;
     void insertSongBar();
     void removeSongBar();
+    //  Y LO QUE MUEVE LA LINEA DE TIEMPO MUEVE LAS DOS COSAS. Ver el cuerpo.
+    void corredClips (int desdeCompas, int delta);
     void copySongBar();
     void pasteSongBar();
     void toggleSongLoop();

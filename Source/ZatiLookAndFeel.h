@@ -481,7 +481,14 @@ namespace Metrics
     //  columna del teclado, el silenciador de un carril- y cada uno esta medido
     //  contra su fila. Lo que hacian falta era verlos juntos: escritos cada uno
     //  en su fichero, nadie podia saber si eran tres reglas o una mal copiada.
-    static constexpr int canalPasos   = 30;
+    //  VEINTE Y NO TREINTA. Este canal lleva DOS CIFRAS -«01».. «16»- en
+    //  `monoFont (fMeta)`, o sea doce pixeles de letra, y encima es el UNICO
+    //  de los tres que no se toca: `StepGrid::hit` devuelve sin mirar si el
+    //  dedo cae dentro. Treinta eran diez pixeles de ancho de rejilla
+    //  regalados a un rotulo de dos digitos, y el ancho es justo lo que
+    //  decide cuantos pasos entran con la celda cuadrada. Doce de letra, dos
+    //  de aire por lado y el pixel de inset de la propia chapa: veinte.
+    static constexpr int canalPasos   = 20;
     static constexpr int canalPiano   = 26;
     static constexpr int canalCancion = 26;
     //  EL SUELO DE UNA CELDA DE LA LINEA DE TIEMPO, que vivia solo en el banco
@@ -685,6 +692,38 @@ namespace Metrics
     static constexpr float fValue = 13.0f;  // readouts
     static constexpr float fTitle = 26.0f;
 }
+
+//  UNA REJILLA QUE SE PINTA ENTERA DICE CUANTAS CELDAS TIENE.
+//
+//  Las tres -la de pasos, la del piano y la linea de tiempo- son un LIENZO y no
+//  botones, asi que el dedo minimo pasa de largo por encima y la unica regla
+//  que las mide es la de la CELDA: ancho util entre columnas, alto entre filas.
+//
+//  El banco llevaba esos numeros ESCRITOS -16x16, 8x4 y 16x13, en `expo.py` y
+//  otra vez en `planos.py`- y eso valia mientras ninguna pudiera cambiar de
+//  tamano sola. Desde que las tres tienen ventana continua y zoom, medir con la
+//  cuenta de ayer es medir OTRA rejilla: la de pasos ensena las columnas que
+//  entren a celda cuadrada, el piano cambia de ocho a treinta y dos y la linea
+//  de tiempo de cuatro a dieciseis compases. Lo dice quien lo sabe, que es la
+//  misma regla por la que `Iconos::kLadoMin` y la marca `valor` viajan en el
+//  volcado en vez de escribirse en Python.
+struct Rejilla
+{
+    virtual ~Rejilla() = default;
+    virtual int celdasAncho() const = 0;   //  columnas que se dibujan
+    virtual int celdasAlto()  const = 0;   //  filas que se dibujan
+    virtual int canalIzq()    const = 0;   //  lo que se lleva la columna de nombres
+
+    //  Y LO QUE MIDE UNA CELDA, EN PIXELES Y DIBUJADA.
+    //
+    //  No es `(ancho - canal) / columnas`: la rejilla de pasos dibuja celdas
+    //  CUADRADAS y deja lo que sobra sin usar -para eso esta la barra-, asi
+    //  que la division da un numero que nadie pinta. El banco medía asi y
+    //  sacaba «19.9x18.9 no es cuadrada» con la celda dibujada a 18.9x18.9.
+    //  Lo dice quien la dibuja.
+    virtual float celdaAnchoPx() const = 0;
+    virtual float celdaAltoPx()  const = 0;
+};
 
 namespace ZatiColours
 {

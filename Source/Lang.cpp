@@ -1170,6 +1170,13 @@ namespace
         { "sin cadena - repite P%1", "sin cadena · repite P%1", "no chain · P%1 repeats",
                                         "无链接 · 重复 P%1",
                                         "بلا سلسلة · تكرار P%1" },
+        //  Y LAS DOS MITADES SUELTAS, que es lo que la fila entera no puede
+        //  dar: el renglon de la cadena cae POR CAMPOS -«sin cadena» primero y
+        //  «repite P1» si queda sitio- desde que el zoom de ancho comparte
+        //  cabecera con el, y una frase traducida entera no se puede partir
+        //  por el guion sin inventarse donde corta cada lengua.
+        { "sin cadena",     "",         "no chain",   "无链接",   "\xd8\xa8\xd9\x84\xd8\xa7 \xd8\xb3\xd9\x84\xd8\xb3\xd9\x84\xd8\xa9" },
+        { "repite P%1",     "",         "P%1 repeats","\xe9\x87\x8d\xe5\xa4\x8d P%1", "\xd8\xaa\xd9\x83\xd8\xb1\xd8\xa7\xd8\xb1 P%1" },
         { "cadena: ",       "",         "chain: ",    "链接：",  "سلسلة: " },
         { "suena P%1",      "",         "playing P%1","正在播放 P%1", "يعمل P%1" },
 

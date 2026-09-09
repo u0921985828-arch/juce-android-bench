@@ -23,8 +23,9 @@
 #     arreglada: borrar en el compas 1 se llevaba la nota del compas 0.
 #
 #  Los cinco dan el mismo sintoma - "la rejilla no responde" - y por eso se
-#  miden juntos. Y se miden por el CAMINO DE VERDAD: la tapa de compas se
-#  pulsa (barButtons[1]->onClick) y la nota se escribe por el gesto de la
+#  miden juntos. Y se miden por el CAMINO DE VERDAD: el compas se cambia
+#  ARRASTRANDO la barra -la fila de tapas de compas dejo de existir cuando la
+#  ventana paso a ser continua- y la nota se escribe por el gesto de la
 #  rejilla (pianoGrid.onCelda), no llamando a pianoCellToggled por dentro,
 #  que es justo el sitio donde ninguno de los cinco existia.
 #
@@ -120,24 +121,56 @@ d = una ("compas")
 if d is None:
     mide ("compas", False, "no salio")
 else:
-    #  La tapa deja selectedBar en 1 y la nota cae en el paso 19 -compas 1,
-    #  columna 3- con el semitono 5. El testigo del compas 0 sigue en su sitio
-    #  con el 9: si la nota nueva lo hubiera pisado, nota3 valdria 5.
-    mide ("compas sel",  d["sel"] == 1, "selectedBar %d" % d["sel"])
-    mide ("compas escribe", d["paso19"] == 1 and d["nota19"] == 5,
-           "paso 19 puesto=%d nota=%d" % (d["paso19"], d["nota19"]))
+    #  La barra mueve la ventana y la nota cae en `base + 3`, que es la unica
+    #  cuenta que el gesto promete: con la ventana CONTINUA una pagina ya no es
+    #  un compas -avanza las columnas que quepan y se acota en total-visibles-
+    #  asi que pedir «el compas 1» era pedirle a la barra algo que no hace.
+    #
+    #  Tres cifras: que la ventana se haya MOVIDO -sin eso «escribio en su
+    #  sitio» lo cumple una barra muerta-, que la nota este donde la ventana
+    #  dice, y que el testigo del principio siga con su 9. Si la nota nueva lo
+    #  hubiera pisado, nota3 valdria 5.
+    mide ("compas mueve", d["base"] > 0, "primer paso %d" % d["base"])
+    mide ("compas escribe", d["escrito"] == 1 and d["nota"] == 5,
+           "paso %d puesto=%d nota=%d" % (d["base"] + 3, d["escrito"], d["nota"]))
     mide ("compas testigo", d["paso3"] == 1 and d["nota3"] == 9,
            "paso 3 puesto=%d nota=%d" % (d["paso3"], d["nota3"]))
 
 d = una ("vista")
-#  Y la vista tiene que haberse repintado con la tapa: la columna 3 lleva el 5
-#  del compas 1 y no el 9 del 0. Este es el fallo 2 y el unico que se ve.
+#  Y la vista tiene que haberse repintado con la barra: la columna 3 lleva el 5
+#  que se acaba de escribir y no el 9 del principio. Este es el fallo 2 y el
+#  unico que se ve.
 mide ("compas vista", d is not None and d["col3"] == 5,
-       "" if d is None else "columna 3 = %d (5 es el compas 1, 9 el 0)" % d["col3"])
+       "" if d is None else "columna 3 = %d (5 es lo nuevo, 9 el testigo)" % d["col3"])
+
+#  --- LA BARRA ALCANZA TODO ------------------------------------------------
+#
+#  La fila de tapas de compas contestaba esto sola: con 1, 2, 3 y 4 dibujadas,
+#  «se llega al compas 4» era evidente. Con una ventana continua deja de serlo,
+#  y ademas el DIBUJO no lo dice: el pulgar tiene suelo -un dedo- asi que llega
+#  al filo de la pista aunque la vista se quede a pasos del final.
+#
+#  CON DOS CIFRAS, que una sola se engaña por los dos lados: «el ultimo paso se
+#  ve» lo cumple igual una barra clavada en el final, y «el primero se ve» una
+#  clavada en el principio. Y las dos contra lo que la APP dice que hay -total y
+#  visibles- y no contra un numero escrito aqui: la ventana cambia con el zoom y
+#  con el ancho de la pantalla, asi que un 31 escrito en el script mediria otra
+#  rejilla en cuanto alguno de los dos se mueva.
+d = una ("barra")
+if d is None:
+    mide ("barra", False, "no salio")
+else:
+    mide ("barra llega al final", d["ultimo"] == d["total"] - 1,
+           "ultimo paso visible %d de %d" % (d["ultimo"], d["total"]))
+    mide ("y vuelve al principio", d["primero"] == 0,
+           "primer paso visible %d" % d["primero"])
 
 d = una ("goma")
-mide ("goma", d is not None and d["paso19"] == 0 and d["paso3"] == 1,
-       "" if d is None else "borrado 19=%d, testigo 3=%d" % (d["paso19"], d["paso3"]))
+#  La goma recibe una COLUMNA y el codigo la convierte con la ventana, asi que
+#  el paso que borra sale de `base`. El testigo vive fuera de la ventana.
+mide ("goma", d is not None and d["frotado"] == 0 and d["paso3"] == 1,
+       "" if d is None else "borrado %d=%d, testigo 3=%d"
+                              % (d["base"] + 3, d["frotado"], d["paso3"]))
 
 d = una ("encoge")
 #  El patron pasa de 32 a 16 pasos con el compas 1 puesto. refreshPiano tiene

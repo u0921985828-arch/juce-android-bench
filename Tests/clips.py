@@ -8,7 +8,7 @@
 #  se salta exactamente el codigo que decide QUE pista y QUE compas caen bajo el
 #  dedo, que es donde vivian los cinco fallos del compas del piano.
 #
-#  Y ninguna de las ocho reglas de expo.py puede verlo, porque no es geometria:
+#  Y ninguna de las once reglas de expo.py puede verlo, porque no es geometria:
 #  una banda que escribe el clip en el compas de al lado se maqueta perfecta, no
 #  solapa, no se sale, no corta ningun rotulo y esta traducida.
 #
@@ -65,13 +65,24 @@ def main():
 
     #  1. PONER. Un toque en un hueco deja el clip en ESA pista y ESE compas, y
     #  no en el (0,0) que saldria de no leer el punto del dedo.
-    juzga ("un toque pone el clip ahi", d.get ("puesto") == [2, 3],
-           "puesto %s" % (d.get ("puesto"),))
+    #
+    #  CON DOS CIFRAS, y la primera es un control: que la brocha llegase de
+    #  verdad a CLIP. Se cicla por la TAPA -PATRON, SONIDO, CLIP- porque
+    #  escribir el estado a mano se salta la traduccion a lo que la rejilla lee,
+    #  y ahi es exactamente donde estaba el fallo: el campo se escribia en la
+    #  cara y el de la rejilla no lo ponia nadie, asi que la brocha se veia
+    #  armada y no hacia nada. Sin el control, «puesto [2,3]» lo cumpliria
+    #  tambien un toque que cayera en la familia equivocada.
+    juzga ("un toque pone el clip ahi",
+           d.get ("pincel") == 2 and d.get ("puesto") == [2, 3],
+           "brocha %s  puesto %s" % (d.get ("pincel"), d.get ("puesto")))
 
-    #  2. MOVER. Arrastrar lo lleva a la pista y al compas de destino: es el
-    #  gesto que separa esta banda de la vista de patrones, donde arrastrar
-    #  PINTA. Dos gestos incompatibles en el mismo dedo, y por eso son dos
-    #  vistas.
+    #  2. MOVER, CON LA MANO ARMADA. Arrastrar lo lleva a la pista y al compas
+    #  de destino. Antes esto se medi­a en la vista de audio, donde arrastrar
+    #  solo podia significar mover; con las dos familias en la misma rejilla
+    #  arrastrar YA significa pintar, asi que mover es un MODO -la misma
+    #  decision que el piano tomo con LAPIZ, GOMA, TIJERAS y SEL- y sin armarlo
+    #  el gesto pinta, que es lo correcto.
     juzga ("arrastrar lo mueve", d.get ("movido") == [1, 5],
            "movido %s" % (d.get ("movido"),))
 
@@ -111,12 +122,29 @@ def main():
            d.get ("corto_tras_filo") == [1, 3] and d.get ("corto_compases") == 1,
            "%s de %s compases" % (d.get ("corto_tras_filo"), d.get ("corto_compases")))
 
-    #  7. BORRAR con la brocha VACIAR, que es la MISMA que borra en la vista de
-    #  patrones: un gesto nuevo para borrar seria una segunda forma de lo mismo.
-    juzga ("vaciar lo quita", d.get ("tras_borrar") == 0,
+    #  7. BORRAR con la GOMA, que es la MISMA herramienta que borra un bloque de
+    #  patron: una funcion, un dueño. La tapa VACIAR se retiro justo por eso -
+    #  eran dos dueños de lo mismo, y la que se queda es la que ademas se VE
+    #  armada.
+    juzga ("la goma lo quita", d.get ("tras_borrar") == 0,
            "quedan %s" % (d.get ("tras_borrar"),))
 
-    #  8. Y LA CELDA, contra el dedo. Esta banda existe porque ocho carriles no
+    #  8. LA CANALETA SILENCIA LAS DOS COSAS.
+    #
+    #  Un carril lleva bloques de patron Y clips desde que las dos vistas se
+    #  fundieron, asi que su MUTE tiene que callar los dos. Las dos mascaras son
+    #  distintas a proposito -carril y pista de audio no eran el mismo numero
+    #  cuando eran dos paginas- y aqui son el mismo carril, asi que la canaleta
+    #  escribe las dos. Con una sola, se calla el carril y el audio sigue
+    #  sonando: no falla nada, y la persona oye la toma sobre el silencio.
+    #
+    #  Medido POR EL GESTO -un toque a la izquierda del canalon- y con las DOS
+    #  cifras, que cada una sola la cumple media maquina.
+    juzga ("la canaleta calla las dos",
+           d.get ("carril_mudo") == 1 and d.get ("pista_muda") == 1,
+           "carril %s  pista %s" % (d.get ("carril_mudo"), d.get ("pista_muda")))
+
+    #  9. Y LA CELDA, contra el dedo. Esta banda existe porque ocho carriles no
     #  caben -20.2 px en 280x653, medido- asi que la cifra que la justifica hay
     #  que mirarla: si un dia vuelve a bajar del dedo, la decision se cae.
     celda = d.get ("celda") or [0, 0]
@@ -125,7 +153,7 @@ def main():
 
     print()
     print ("la banda de audio hace lo que dice" if malas == 0
-           else "%d de 8 no" % malas)
+           else "%d de 9 no" % malas)
     return 1 if malas else 0
 
 
