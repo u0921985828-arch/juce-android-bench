@@ -105,6 +105,15 @@ jobs:
           python3 Tests/fuentes.py
           python3 Tests/marcas.py
 
+      #  Y el aire de maquetado, que tampoco necesita pantalla: lee la tabla de
+      #  `Metrics` del propio fuente y barre los ficheros que maquetan. Cuesta
+      #  menos de un segundo y caza lo que ninguna de las catorce reglas de
+      #  `expo.py` puede ver: un margen escrito a mano no solapa, no se sale, no
+      #  corta un rotulo y no mide cero.
+      - name: El aire de maquetado
+        if: '!cancelled()'
+        run: python3 Tests/maqueta.py
+
       - name: El motor
         if: '!cancelled()'
         run: ./build/StressTest_artefacts/Release/StressTest

@@ -70,7 +70,7 @@ public:
 
         //  La onda, en columnas de minimo y maximo como la del pad: dibujar
         //  muestra a muestra a esta anchura es pintar lo mismo cien veces.
-        const auto caja = getLocalBounds().reduced (2);
+        const auto caja = getLocalBounds().reduced (Metrics::aireTapa);
         const float mitad = (float) caja.getCentreY();
         const float alto  = (float) caja.getHeight() * 0.5f - 1.0f;
         g.setColour (ZatiColours::lcdFg.withAlpha (0.55f));
@@ -139,7 +139,7 @@ private:
 
     int muestraEn (int x) const
     {
-        const auto caja = getLocalBounds().reduced (2);
+        const auto caja = getLocalBounds().reduced (Metrics::aireTapa);
         const int len = largo();
         if (caja.getWidth() < 1 || len < 2) return 0;
         return juce::jlimit (0, len - 1,
@@ -151,7 +151,7 @@ private:
     //  que agarrar una marca se sienta igual en las dos.
     int marcaEn (int x) const
     {
-        const auto caja = getLocalBounds().reduced (2);
+        const auto caja = getLocalBounds().reduced (Metrics::aireTapa);
         const int len = largo();
         if (len < 2) return -1;
         int mejor = -1, mejorD = kAgarre + 1;
@@ -168,7 +168,7 @@ private:
     {
         picos.clear();
         const int len = largo();
-        const auto caja = getLocalBounds().reduced (2);
+        const auto caja = getLocalBounds().reduced (Metrics::aireTapa);
         if (len < 2 || caja.getWidth() < 2 || fuente == nullptr) return;
 
         const auto* d = fuente->buffer.getReadPointer (0);

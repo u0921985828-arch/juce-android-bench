@@ -565,6 +565,25 @@ namespace Metrics
     //  separarse de el.
     static constexpr int aireTapa = halfGap / 2;
 
+    //  Y EL AIRE DE UNA TAPA EN UNA REJILLA DENSA, que es la MITAD y no es
+    //  aflojar la regla: es una excepcion que este proyecto ya midio y ya
+    //  documento, escrita a mano en siete sitios desde entonces.
+    //
+    //  Ocho tapas en una fila -la paleta de patrones de CANCION- o dieciseis en
+    //  una rejilla de cuatro por cuatro -el selector de pad, el del rack, el de
+    //  canales, los dieciseis instrumentos- no pueden gastar dos pixeles por
+    //  lado cada una: medido, ponerle `aireTapa` a las ocho de la paleta las
+    //  deja en 39x40 y `expo.py` saco 28 TOUCH nuevos. *Cambiar un desliz de un
+    //  pixel por un objetivo que no se puede tocar no es un arreglo.*
+    //
+    //  Lo que faltaba es que ese uno tuviera NOMBRE: escrito a mano en siete
+    //  rejillas, nadie podia saber si eran siete reglas o una mal copiada. Y va
+    //  con la otra mitad de aquel parrafo, que tambien estaba escrita a mano:
+    //  el pixel de fuera se lo come la FILA una sola vez -`expanded` antes de
+    //  repartir- para que el filo exterior quede donde el de cualquier otra
+    //  fila y `FILA` no dispare.
+    static constexpr int aireTapaDensa = aireTapa / 2;
+
     //  EL MARGEN DE DENTRO DE UNA TAPA, y es UNO.
     //
     //  Era `jlimit (3, 5, ancho / 14)`, o sea una proporcion del ancho, y de
@@ -610,6 +629,23 @@ namespace Metrics
 
     static constexpr int margenFichaX = lg;
     static constexpr int margenFichaY = md;
+
+    //  Y EL MARGEN DE UN INQUILINO DEL PLATO DE LA CARA, que eran TRES numeros
+    //  para un solo filo.
+    //
+    //  En esa fila viven la curva del EQ, el visor de los otros diez y los tres
+    //  mandos, y cada uno se metia lo que le parecia: `reduced (6, 2)` la
+    //  curva, `reduced (4, 6)` el visor y `reduced (10, 0)` los mandos —o sea,
+    //  medidos desde el filo del plato, a 10, 8 y 14 pixeles—. El visor y los
+    //  mandos son vecinos de fila y sus margenes de dentro se separaban SEIS
+    //  pixeles; ninguna de las catorce reglas del banco puede ver eso, porque
+    //  un margen no solapa, no se sale, no corta un rotulo y no mide cero.
+    //
+    //  Y con el, `cellMin` deja de ser `hit + 20`: ese veinte ERA el
+    //  `reduced (10, 0)` de la celda del mando contado a mano dos parrafos mas
+    //  abajo, o sea la misma regla escrita dos veces. Sale del token, asi que
+    //  el dia que el margen cambie el suelo del visor va detras.
+    static constexpr int margenPlato = halfGap;
 
     //  EL APRETON DE UN RENGLON DE AYUDA, escrito UNA vez.
     //
@@ -1038,12 +1074,12 @@ public:
         {
             g.setColour (fg.withAlpha (0.55f));
             g.setFont (ZatiColours::monoFont (Metrics::fMeta));
-            g.drawText (fileSizeDescription, sizeArea.reduced (6, 0), juce::Justification::centredRight);
+            g.drawText (fileSizeDescription, sizeArea.reduced (kEdgeV, 0), juce::Justification::centredRight);
         }
 
         g.setColour (fg);
         g.setFont (ZatiColours::monoFont (Metrics::fValue, isDirectory).withExtraKerningFactor (0.02f));
-        g.drawFittedText (filename, r.reduced (6, 0), juce::Justification::centredLeft, 1, 0.9f);
+        g.drawFittedText (filename, r.reduced (kEdgeV, 0), juce::Justification::centredLeft, 1, 0.9f);
     }
 
     // ---- Flat dark knob: plain rim, subtle body shade, white needle, blue tip dot.
@@ -1312,7 +1348,7 @@ public:
         const auto tapa = capaDe (b.getLocalBounds().toFloat());
         r.fuente = letraDeTapa (tapa.getHeight());
 
-        r.texto = tapa.getSmallestIntegerContainer().reduced (Metrics::margenTapa, 2);
+        r.texto = tapa.getSmallestIntegerContainer().reduced (Metrics::margenTapa, Metrics::keyAir);
 
         const auto id = (Iconos::Id) (int) b.getProperties().getWithDefault ("icono", 0);
         if (id == Iconos::Id::ninguno || id == Iconos::Id::kNum) return r;
@@ -1598,7 +1634,7 @@ public:
             {
                 g.setColour (ZatiColours::inkDim);
                 g.setFont (ZatiColours::monoFont (Metrics::fLabel).withExtraKerningFactor (0.02f));
-                g.drawFittedText (fn, strip.reduced (6, 0), juce::Justification::centred, 1, 0.85f);
+                g.drawFittedText (fn, strip.reduced (kEdgeV, 0), juce::Justification::centred, 1, 0.85f);
             }
             return;
         }

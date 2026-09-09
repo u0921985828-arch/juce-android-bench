@@ -731,8 +731,10 @@ void MainComponent::resized()
         //  has gone to the PADS seam, where four controls were living in 22 px.
         area.removeFromBottom (juce::jmax (Metrics::xs,
                                            ZatiLookAndFeel::kAir + layoutAir - padBottomGive));
-        if (undoButton.isVisible()) undoButton.setBounds (strip.removeFromRight (96).reduced (1, 0));
-        if (redoButton.isVisible()) redoButton.setBounds (strip.removeFromRight (96).reduced (1, 0));
+        if (undoButton.isVisible())
+            undoButton.setBounds (strip.removeFromRight (96).reduced (Metrics::aireTapa, 0));
+        if (redoButton.isVisible())
+            redoButton.setBounds (strip.removeFromRight (96).reduced (Metrics::aireTapa, 0));
         status.setBounds (strip);
     }
     area.removeFromBottom (Metrics::sm);
@@ -740,7 +742,7 @@ void MainComponent::resized()
     // --- Machine face: CTRL 1-3 and their readout, the six FX, pads ---
     {
         auto mrow = area.removeFromTop (ZatiLookAndFeel::kCtrlPlate);
-        ctrlPlateArea = mrow.expanded (4, 2);            // the plate they sit on
+        ctrlPlateArea = mrow.expanded (Metrics::margenPlato, Metrics::aireTapa);   // the plate they sit on
         juce::Slider* mk[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
 
         //  EL PLATO ES DE QUIEN LO OCUPA. Con un efecto que trae su propia
@@ -758,7 +760,7 @@ void MainComponent::resized()
             //  su linea de cero y sus decadas- y esos 34 px son el 40 % de su
             //  alto. El nombre del efecto ya esta encendido en su ranura.
             eqCurva.setVisible (true);
-            eqCurva.setBounds (mrow.reduced (6, 2));
+            eqCurva.setBounds (mrow.reduced (Metrics::margenPlato, Metrics::margenPlato));
             //  Y la miniatura de los otros diez no pinta nada aqui: el EQ trae
             //  su propia cara, que es la version grande de lo mismo.
             platoMini.setVisible (false);
@@ -787,18 +789,23 @@ void MainComponent::resized()
             //  estuvo una tanda y donde no encajaba.
             //
             //  UN TERCIO Y CON SUELO, que es una medida y no una proporcion
-            //  elegida: cada celda de mando pierde 20 px en su `reduced (10, 0)`
-            //  y el mando no puede bajar del dedo, asi que a las tres celdas se
-            //  les garantizan `hit + 20` antes de dar un pixel al visor. En
-            //  280x653 el plato mide 268: el tercio serian 89 y el suelo deja
-            //  88, con la celda en 60 y el mando en 40 clavados.
-            const int cellMin = Metrics::hit + 20;
+            //  elegida: cada celda de mando pierde `2 * margenPlato` en su
+            //  inset y el mando no puede bajar del dedo, asi que a las tres se
+            //  les garantiza eso antes de dar un pixel al visor.
+            //
+            //  Y EL SUELO SALE DEL TOKEN. Era `hit + 20` escrito a mano, y ese
+            //  veinte ERA el `reduced (10, 0)` de la celda del mando contado a
+            //  mano dos lineas mas arriba: la misma regla escrita dos veces, y
+            //  la que se quedara vieja dejaria el visor comiendole el dedo al
+            //  mando sin que nada fallara. Ver Metrics::margenPlato.
+            const int cellMin = Metrics::hit + 2 * Metrics::margenPlato;
             const int visorW  = juce::jlimit (0, juce::jmin (120, mrow.getWidth() - 3 * cellMin),
                                               mrow.getWidth() / 3);
             platoMini.setVisible (visorW >= 48);
             if (visorW >= 48)
             {
-                platoMini.setBounds (Lang::takeStart (mrow, visorW).reduced (4, 6));
+                platoMini.setBounds (Lang::takeStart (mrow, visorW)
+                                         .reduced (Metrics::margenPlato, Metrics::margenPlato));
             }
             else
             {
@@ -815,7 +822,7 @@ void MainComponent::resized()
                 //  taking one from the pads.
                 cell.removeFromTop (ZatiLookAndFeel::kCtrlName);
                 cell.removeFromBottom (ZatiLookAndFeel::kCtrlChip);
-                mk[i]->setBounds (cell.reduced (10, 0));
+                mk[i]->setBounds (cell.reduced (Metrics::margenPlato, 0));
             }
         }
         //  Y LA COSTURA EMPIEZA DONDE ACABA LA TINTA, no donde acaba el
@@ -1154,7 +1161,8 @@ void MainComponent::resized()
                 //  mismo instrumento.
                 const int i = currentBank * kPadsPerBank + (3 - r) * 4 + c;
                 padPickBtns[i]->setVisible (true);
-                padPickBtns[i]->setBounds ((c < 3 ? row.removeFromLeft (w) : row).reduced (1, 0));
+                padPickBtns[i]->setBounds ((c < 3 ? row.removeFromLeft (w) : row)
+                                               .reduced (Metrics::aireTapaDensa, 0));
             }
             inner.removeFromTop (Metrics::xs);
         }
@@ -1163,7 +1171,7 @@ void MainComponent::resized()
             const int w = bancos.getWidth() / kNumBanks;
             for (int b = 0; b < kNumBanks; ++b)
                 padPickBankBtns[b]->setBounds ((b < kNumBanks - 1 ? bancos.removeFromLeft (w) : bancos)
-                                                 .reduced (1, 0));
+                                                 .reduced (Metrics::aireTapaDensa, 0));
         }
     }
 
@@ -1193,7 +1201,8 @@ void MainComponent::resized()
             {
                 //  De abajo arriba, como la cara, el RACK y la rejilla de pads.
                 const int i = (3 - r) * 4 + c;
-                canalBtns[i]->setBounds ((c < 3 ? row.removeFromLeft (w) : row).reduced (1, 0));
+                canalBtns[i]->setBounds ((c < 3 ? row.removeFromLeft (w) : row)
+                                             .reduced (Metrics::aireTapaDensa, 0));
             }
             inner.removeFromTop (Metrics::xs);
         }
@@ -1233,7 +1242,7 @@ void MainComponent::resized()
         //  El titulo se queda con lo que sobra del renglon, y lo PUBLICA para
         //  que el pintor no vuelva a calcularlo: una banda deducida dos veces
         //  son dos bandas.
-        ranuraTituloBanda = titleRow.withTrimmedTop (8).withHeight (24);
+        ranuraTituloBanda = centraEnRenglon (titleRow.withHeight (Metrics::bandaTitulo));
         inner.removeFromTop (Metrics::md);
 
         //  VACIAR SE APARTA PRIMERO, que es la regla de la casa: una fila de
@@ -1265,7 +1274,7 @@ void MainComponent::resized()
                 const bool ultima = (f == ranuraBtns.size() - 1) || (c == cols - 1);
                 ranuraBtns[f]->setBounds ((ultima && c == cols - 1 ? row
                                                                    : row.removeFromLeft (w))
-                                            .reduced (1, 0));
+                                            .reduced (Metrics::aireTapaDensa, 0));
                 if (f == ranuraBtns.size() - 1) break;
             }
             inner.removeFromTop (Metrics::xs);
@@ -1285,7 +1294,7 @@ void MainComponent::resized()
         auto titleRow = inner.removeFromTop (Metrics::hit);
         eqBandaCloseBtn.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
                                      .withSizeKeepingCentre (Metrics::hit, Metrics::hit));
-        eqBandaTituloBanda = titleRow.withTrimmedTop (8).withHeight (24);
+        eqBandaTituloBanda = centraEnRenglon (titleRow.withHeight (Metrics::bandaTitulo));
         inner.removeFromTop (Metrics::md);
 
         //  El mando SE APARTA PRIMERO por la regla de siempre: los chips son
@@ -1318,7 +1327,7 @@ void MainComponent::resized()
         {
             auto cell = (i < n - 1 ? row.removeFromLeft (w) : row);
             cell.removeFromTop (ZatiLookAndFeel::kKnobName);   // gap for knob name
-            ks[i]->setBounds (cell.reduced (6, 0));
+            ks[i]->setBounds (cell.reduced (Metrics::halfGap, 0));
         }
     };
 
@@ -1550,7 +1559,7 @@ void MainComponent::resized()
             //  esta pagina que no cambia como suena nada.
             zatiSwatchArea = (inner.getHeight() < Metrics::chip)
                                  ? juce::Rectangle<int>()
-                                 : inner.removeFromTop (Metrics::chip).reduced (4, 0);
+                                 : inner.removeFromTop (Metrics::chip).reduced (Metrics::halfGap, 0);
             editInfoArea = {};
         }
         else if (padPage == padPageSound)
@@ -1898,7 +1907,7 @@ void MainComponent::resized()
             layoutModuleBar (upper, pb, 0, 2);
         }
         }
-        inner.removeFromBottom (8);
+        inner.removeFromBottom (Metrics::gap);
         if (browser != nullptr) browser->setBounds (inner);
     }
 
@@ -2039,9 +2048,9 @@ void MainComponent::resized()
         //  mide -16 px- y la x se va a la fila de las pestanas, que es donde
         //  hay un renglon de verdad: mismo alto, misma linea, y veinticuatro
         //  pixeles menos de tarjeta.
-        inner.removeFromTop (16);
+        inner.removeFromTop (Metrics::bandaTitulo);
 
-        if (onProj) inner.removeFromTop (14);         // painted: which project is open
+        if (onProj) inner.removeFromTop (Metrics::bandaSubtitulo);   // painted: which project
         inner.removeFromTop (Metrics::sm);
 
         //  The tab row, directly under the title on both pages so it does not
@@ -2151,11 +2160,12 @@ void MainComponent::resized()
                 //  grupo: SALIDA y ENTRADA son dos cosas y aqui se leian como
                 //  cuatro filas seguidas.
                 const int g0 = inner.getY();
-                inner.removeFromTop (14);                       // pintado: el rotulo
+                inner.removeFromTop (Metrics::bandaSubtitulo);       // pintado: el rotulo
                 auto row = inner.removeFromTop (Metrics::hit);
-                btn.setBounds (Lang::takeStart (row, juce::jmax (96, row.getWidth() / 3)).reduced (1, 0));
+                btn.setBounds (Lang::takeStart (row, juce::jmax (96, row.getWidth() / 3))
+                                   .reduced (Metrics::aireTapa, 0));
                 inner.removeFromTop (Metrics::xs);
-                box.setBounds (inner.removeFromTop (Metrics::hit).reduced (1, 0));
+                box.setBounds (inner.removeFromTop (Metrics::hit).reduced (Metrics::aireTapa, 0));
                 setGrupos.add ({ inner.getX(), g0, inner.getWidth(), inner.getY() - g0 });
                 inner.removeFromTop (Metrics::sm);
             };
@@ -2207,7 +2217,7 @@ void MainComponent::resized()
             auto ponPruebas = [this] (juce::Rectangle<int>& donde)
             {
                 donde.removeFromTop (Metrics::xs);
-                pruebasLabelArea = donde.removeFromTop (14);
+                pruebasLabelArea = donde.removeFromTop (Metrics::bandaSubtitulo);
                 auto fila = donde.removeFromTop (Metrics::hit);
                 juce::TextButton* ab[3] = { &quantButton, &measureButton, &testButton };
                 layoutModuleBar (fila, ab, 0, 3);
@@ -2406,9 +2416,9 @@ void MainComponent::resized()
                 //  dejaba la caja donde se escribe el nombre del proyecto en
                 //  32: es el mismo reduced (x, n) que ya costo las tapas de la
                 //  mesa y las de la cadena.
-                projNameBox.setBounds (r.reduced (2, 0));
+                projNameBox.setBounds (r.reduced (Metrics::aireTapa, 0));
             }
-            projPathRowArea = inner.removeFromTop (14);
+            projPathRowArea = inner.removeFromTop (Metrics::bandaSubtitulo);
             //  El nombre del proyecto y la ruta donde vive son UNA cosa; las
             //  seis tapas de abajo, otra. Sin panel, la caja de escribir se
             //  leia como una fila mas de la lista que hay debajo.
@@ -2434,7 +2444,7 @@ void MainComponent::resized()
             }
             setGrupos.add ({ inner.getX(), inner.getBottom(),
                              inner.getWidth(), gAcciones - inner.getBottom() });
-            inner.removeFromBottom (8);
+            inner.removeFromBottom (Metrics::gap);
 
             projList.setBounds (inner);
             bufRowArea = rateRowArea = langRowArea = movRowArea = audioInfoArea = {};
@@ -2580,7 +2590,8 @@ void MainComponent::resized()
                 //  debajo del dedo minimo para ganar un hueco que la fila de al
                 //  lado ya paga con Metrics::xs. Es el mismo reduced (x, n) que
                 //  costo 656 tapas en la cara.
-                rackPadBtns[i]->setBounds ((c < 3 ? row.removeFromLeft (w) : row).reduced (1, 0));
+                rackPadBtns[i]->setBounds ((c < 3 ? row.removeFromLeft (w) : row)
+                                               .reduced (Metrics::aireTapaDensa, 0));
             }
             inner.removeFromTop (Metrics::xs);
         }
@@ -2614,7 +2625,7 @@ void MainComponent::resized()
         {
             auto canalon = Lang::takeStart (row, 54);
             if (rackSlotBtns[s] != nullptr)
-                rackSlotBtns[s]->setBounds (canalon.reduced (1, 4));
+                rackSlotBtns[s]->setBounds (canalon.reduced (Metrics::aireTapaDensa, Metrics::halfGap));
             //  Y LA TAPA DE APAGAR, entre el canalon y el fader.
             //
             //  Lo que cuesta sale del FADER y no del canalon, que es donde
@@ -2630,9 +2641,9 @@ void MainComponent::resized()
             //  donde se PIDE y no donde se coloca.
             auto mute = Lang::takeStart (row, Metrics::hit + 2);
             if (rackMuteBtns[s] != nullptr)
-                rackMuteBtns[s]->setBounds (mute.reduced (1, 4));
+                rackMuteBtns[s]->setBounds (mute.reduced (Metrics::aireTapaDensa, Metrics::halfGap));
             if (rackSends[s] != nullptr)
-                rackSends[s]->setBounds (row.reduced (2, 4));
+                rackSends[s]->setBounds (row.reduced (Metrics::aireTapaDensa, Metrics::halfGap));
         };
         const bool dosCol = inner.getWidth() >= 560 && inner.getHeight() < kNumRanuras * filaFx;
         if (dosCol)
@@ -2718,7 +2729,7 @@ void MainComponent::resized()
         //  que el titulo caia encima de la primera tapa y el nombre del pack
         //  encima de la segunda. Es la misma regla que ya siguen las bandas de
         //  AJUSTES y los paneles del secuenciador: una cuenta, un dueno.
-        instTitleArea = titleRow.reduced (Metrics::lg, 0).withTrimmedTop (8).withHeight (24);
+        instTitleArea = centraEnRenglon (titleRow.reduced (Metrics::lg, 0).withHeight (Metrics::bandaTitulo));
         inner.removeFromTop (Metrics::md);
 
         //  MENOS Y MAS EN LOS EXTREMOS y el nombre del pack pintado en medio.
@@ -2758,7 +2769,8 @@ void MainComponent::resized()
                     bs[i]->setVisible (true);
                     //  Sin aire vertical, que es el reduced (x, n) que ya costo
                     //  656 tapas en la cara.
-                    bs[i]->setBounds ((c < 3 ? row.removeFromLeft (w) : row).reduced (1, 0));
+                    bs[i]->setBounds ((c < 3 ? row.removeFromLeft (w) : row)
+                                      .reduced (Metrics::aireTapaDensa, 0));
                 }
                 caja.removeFromTop (Metrics::xs);
             }
@@ -2784,7 +2796,8 @@ void MainComponent::resized()
                     const int i = r * 2 + c;
                     if (i >= n) continue;
                     bs[i]->setVisible (true);
-                    bs[i]->setBounds ((c == 0 ? row.removeFromLeft (w) : row).reduced (1, 0));
+                    bs[i]->setBounds ((c == 0 ? row.removeFromLeft (w) : row)
+                                      .reduced (Metrics::aireTapaDensa, 0));
                 }
                 caja.removeFromTop (Metrics::xs);
             }
@@ -2799,7 +2812,7 @@ void MainComponent::resized()
                 {
                     instBancoBtns[b4]->setVisible (true);
                     instBancoBtns[b4]->setBounds ((b4 < kNumBanks - 1 ? fila.removeFromLeft (w) : fila)
-                                                      .reduced (1, 0));
+                                                      .reduced (Metrics::aireTapaDensa, 0));
                 }
             }
             inner.removeFromTop (Metrics::sm);
@@ -2860,7 +2873,7 @@ void MainComponent::resized()
         auto titleRow = inner.removeFromTop (Metrics::hit);
         vstCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
                                       .withSizeKeepingCentre (Metrics::hit, Metrics::hit));
-        vstTitleArea = titleRow.reduced (Metrics::lg, 0).withTrimmedTop (8).withHeight (24);
+        vstTitleArea = centraEnRenglon (titleRow.reduced (Metrics::lg, 0).withHeight (Metrics::bandaTitulo));
         inner.removeFromTop (Metrics::md);
 
         //  LA CABECERA: el dibujo a la izquierda y el nombre de la familia al
@@ -2870,7 +2883,7 @@ void MainComponent::resized()
         {
             auto fila = inner.removeFromTop (cabecera).reduced (Metrics::lg, 0);
             vstPanelCab = fila;
-            vstIconArea = Lang::takeStart (fila, cabecera).reduced (4);
+            vstIconArea = Lang::takeStart (fila, cabecera).reduced (Metrics::halfGap);
             fila.removeFromLeft (Metrics::sm);
             vstNombreArea = fila;
         }
@@ -2887,7 +2900,7 @@ void MainComponent::resized()
             const int w = juce::jmin (Metrics::hit * 2, fila.getWidth() / 4);
             vstPreDown.setBounds (fila.removeFromLeft (w));
             vstPreUp  .setBounds (fila.removeFromRight (w));
-            vstPreArea = fila.reduced (Metrics::halfGap, 2);
+            vstPreArea = fila.reduced (Metrics::halfGap, Metrics::keyAir);
         }
         inner.removeFromTop (Metrics::sm);
 
@@ -2905,8 +2918,8 @@ void MainComponent::resized()
             const int w = juce::jmin (Metrics::hit * 2, fila.getWidth() / 3);
             vstOctDown.setBounds (fila.removeFromLeft (w));
             vstOctUp  .setBounds (fila.removeFromRight (w));
-            vstOctArea = fila.reduced (Metrics::halfGap, 4);
-            vstTeclado.setBounds (caja.reduced (Metrics::lg, 2));
+            vstOctArea = fila.reduced (Metrics::halfGap, Metrics::halfGap);
+            vstTeclado.setBounds (caja.reduced (Metrics::lg, Metrics::keyAir));
         }
     }
 
@@ -2951,25 +2964,25 @@ void MainComponent::resized()
 
         inner.removeFromTop (explainH);                 // painted: what this does
         inner.removeFromTop (Metrics::md);
-        inner.removeFromTop (14);                       // pintado: "COMO"
+        inner.removeFromTop (Metrics::bandaSubtitulo);                       // pintado: "COMO"
         {
             auto row = inner.removeFromTop (Metrics::hit);
             juce::TextButton* mb[2] = { &chopEvenBtn, &chopHitsBtn };
             layoutModuleBar (row, mb, 0, 2);
         }
         inner.removeFromTop (Metrics::md);
-        inner.removeFromTop (14);                       // pintado: "TROZOS"
+        inner.removeFromTop (Metrics::bandaSubtitulo);                       // pintado: "TROZOS"
 
         {
             auto row = inner.removeFromTop (Metrics::hit);
             const int w = row.getWidth() / chopCountBtns.size();
             for (int i = 0; i < chopCountBtns.size(); ++i)
                 chopCountBtns[i]->setBounds ((i < chopCountBtns.size() - 1 ? row.removeFromLeft (w) : row)
-                                                 .reduced (2, 0));
+                                                 .reduced (Metrics::aireTapa, 0));
         }
 
         inner.removeFromTop (Metrics::sm);
-        chopSafeButton.setBounds (inner.removeFromTop (Metrics::hit).reduced (2, 0));
+        chopSafeButton.setBounds (inner.removeFromTop (Metrics::hit).reduced (Metrics::aireTapa, 0));
         //  EL VERBO ROJO SE APARTA PRIMERO.
         //
         //  Se colocaba con lo que quedara despues de todo lo demas, y girado
@@ -3008,7 +3021,7 @@ void MainComponent::resized()
         }
 
         inner.removeFromTop (juce::jmin (plannedH, inner.getHeight()));   // painted: where they land
-        chopGoButton.setBounds (verbo.reduced (2, 0));
+        chopGoButton.setBounds (verbo.reduced (Metrics::aireTapa, 0));
     }
 
     // SONG sheet: palette, timeline, page row.
@@ -3301,8 +3314,8 @@ void MainComponent::resized()
                 //  Esta paleta sobresalia UN pixel por los dos lados respecto a
                 //  la fila de brochas que comparte panel con ella -filas que
                 //  empiezan en 5 y en 6, dicho por Tests/paneles.py- porque
-                //  llevaba su margen escrito a mano en `reduced (1, 0)` y
-                //  layoutModuleBar usa Metrics::aireTapa.
+                //  llevaba su margen escrito a mano y layoutModuleBar usa
+                //  Metrics::aireTapa.
                 //
                 //  Y ponerle aireTapa a cada tapa SALIO PEOR, que es lo que
                 //  hacia falta medir antes de creerselo: son ocho en una fila y
@@ -3323,13 +3336,13 @@ void MainComponent::resized()
                 //  mas dentro que la fila de brochas que comparte panel con
                 //  ella - las mismas «filas que empiezan en 4 y en 6» que este
                 //  parrafo ya arreglo una vez con la referencia anterior.
-                fila = fila.expanded (1, 0);
+                fila = fila.expanded (Metrics::aireTapaDensa, 0);
                 const int w = fila.getWidth() / porFila;
                 for (int i = 0; i < porFila; ++i)
                 {
                     const int k = f * porFila + i;
                     songPatBtns[k]->setBounds ((i < porFila - 1 ? fila.removeFromLeft (w) : fila)
-                                                   .reduced (1, 0));
+                                                   .reduced (Metrics::aireTapaDensa, 0));
                 }
                 if (f + 1 < kNumPatterns / porFila) panel.removeFromTop (Metrics::halfGap);
             }
@@ -3502,7 +3515,7 @@ void MainComponent::resized()
             //  DOS de aire y no seis: la fila mide 44 y seis por lado dejaban
             //  PLAY en 32, por debajo del suelo de 40. Es la tapa que se toca
             //  con la cancion rodando, asi que es la ultima que puede encoger.
-            songPlayBtn.setBounds (Lang::takeStart (bottom, pw).reduced (Metrics::halfGap, 2));
+            songPlayBtn.setBounds (Lang::takeStart (bottom, pw).reduced (Metrics::halfGap, Metrics::keyAir));
             //  Idem: seis por arriba y seis por abajo de una fila de 44 dejan
             //  el mando del largo de la cancion en 32.
             songLenSlider.setBounds (bottom.reduced (Metrics::halfGap,
@@ -3645,7 +3658,7 @@ void MainComponent::resized()
             const bool cabeCifra = fila.getWidth() - Metrics::gap - 52 >= 70;
             masterFader.setTextBoxStyle (cabeCifra ? juce::Slider::TextBoxRight : juce::Slider::NoTextBox,
                                          false, 52, Metrics::readout);
-            masterFader.setBounds (fila.reduced (4, (Metrics::btn - Metrics::hit) / 2));
+            masterFader.setBounds (fila.reduced (Metrics::aireTapa, (Metrics::btn - Metrics::hit) / 2));
             inner.removeFromBottom (Metrics::xs);
         }
 
@@ -3687,14 +3700,14 @@ void MainComponent::resized()
                     columna = (c / porCol < columnas - 1)
                                 ? Lang::takeStart (rows, anchoCol) : rows;
 
-                auto row = columna.removeFromTop (rowH).reduced (columnas > 1 ? Metrics::halfGap : 0, 1);
+                auto row = columna.removeFromTop (rowH).reduced (columnas > 1 ? Metrics::halfGap : 0, Metrics::aireTapaDensa);
                 canRowX[(size_t) c] = row.getX();
                 row.removeFromLeft (juce::jlimit (48, 92, columna.getWidth() * 24 / 100));
 
-                canMutes[c]->setBounds (row.removeFromRight (Metrics::hit).reduced (0, 1));
+                canMutes[c]->setBounds (row.removeFromRight (Metrics::hit).reduced (0, Metrics::aireTapaDensa));
                 row.removeFromRight (Metrics::halfGap);
 
-                auto faderCell = row.reduced (4, 1);
+                auto faderCell = row.reduced (Metrics::aireTapa, Metrics::aireTapaDensa);
                 const bool tight = faderCell.getWidth() - Metrics::gap - 46 < 70;
                 canFaders[c]->setTextBoxStyle (tight ? juce::Slider::NoTextBox : juce::Slider::TextBoxRight,
                                                false, 46, Metrics::readout);
@@ -3709,7 +3722,7 @@ void MainComponent::resized()
                 columna = (enBanco / porCol < columnas - 1)
                             ? Lang::takeStart (rows, anchoCol) : rows;
 
-            auto row = columna.removeFromTop (rowH).reduced (columnas > 1 ? Metrics::halfGap : 0, 1);
+            auto row = columna.removeFromTop (rowH).reduced (columnas > 1 ? Metrics::halfGap : 0, Metrics::aireTapaDensa);
             mixRowX[(size_t) i] = row.getX();
             row.removeFromLeft (juce::jlimit (48, 92, columna.getWidth() * 24 / 100));   // chip + number + name
             //  Padding here is not decoration, it is the hit area coming off
@@ -3723,9 +3736,9 @@ void MainComponent::resized()
             //  already there: the halfGap between them is what separates M from
             //  S, so taking it out of the key as well paid for the same gap
             //  twice and left both under the floor on every screen measured.
-            mixSolos[i]->setBounds (row.removeFromRight (Metrics::hit).reduced (0, 1));
+            mixSolos[i]->setBounds (row.removeFromRight (Metrics::hit).reduced (0, Metrics::aireTapaDensa));
             row.removeFromRight (Metrics::halfGap);
-            mixMutes[i]->setBounds (row.removeFromRight (Metrics::hit).reduced (0, 1));
+            mixMutes[i]->setBounds (row.removeFromRight (Metrics::hit).reduced (0, Metrics::aireTapaDensa));
             row.removeFromRight (Metrics::halfGap);
             //  ...and the pan is a target too, so it gets a floor rather than a
             //  share: a third of the row came to twenty-six pixels of travel on
@@ -3768,11 +3781,13 @@ void MainComponent::resized()
             mixAnchos[i]->setVisible (roomAncho);
             mixAnchos[i]->setEnabled (estereo);
             if (roomAncho)
-                mixAnchos[i]->setBounds (row.removeFromRight (celda).reduced (2, 1));
+                mixAnchos[i]->setBounds (row.removeFromRight (celda)
+                                        .reduced (Metrics::aireTapa, Metrics::aireTapaDensa));
             else
                 mixAnchos[i]->setBounds ({});
             if (room)
-                mixPans[i]->setBounds (row.removeFromRight (celda).reduced (2, 1));
+                mixPans[i]->setBounds (row.removeFromRight (celda)
+                                          .reduced (Metrics::aireTapa, Metrics::aireTapaDensa));
 
             //  On a narrow phone the level's number was eating the level.
             //  Forty-six pixels of readout plus its air out of an eighty-five
@@ -3781,7 +3796,7 @@ void MainComponent::resized()
             //  Where it does not fit, the number goes and the fader stays: the
             //  exact figure is one tap away in the PADS sheet, and a mixer is
             //  read by the shape of its faders, not by sixteen decimals.
-            auto faderCell = row.reduced (4, 1);
+            auto faderCell = row.reduced (Metrics::aireTapa, Metrics::aireTapaDensa);
             const bool tight = faderCell.getWidth() - Metrics::gap - 46 < 70;
             mixFaders[i]->setTextBoxStyle (tight ? juce::Slider::NoTextBox : juce::Slider::TextBoxRight,
                                            false, 46, Metrics::readout);
@@ -3837,7 +3852,7 @@ void MainComponent::resized()
                                             capFont, xyLatchButton.getButtonText())) + 2 * Metrics::md);
             xyLatchButton.setBounds (Lang::takeEnd (titleRow, w).reduced (0, 0));
         }
-        inner.removeFromTop (14);              // pintado: que hace soltar el dedo
+        inner.removeFromTop (Metrics::bandaSubtitulo);              // pintado: que hace soltar el dedo
         inner.removeFromTop (Metrics::sm);
 
         //  Los seis, en una fila y del mismo ancho que los seis de la cara.
@@ -4436,7 +4451,7 @@ void MainComponent::resized()
                 //  faltaban.
                 layoutModuleBar (Lang::takeEnd (titleRow, anchoPad * 2), pn, 0, 2);
             }
-            inner.removeFromTop (14);                 // pintado: que se esta mirando
+            inner.removeFromTop (Metrics::bandaSubtitulo);                 // pintado: que se esta mirando
 
             //  APAISADO LAS CINCO TAPAS SE VAN A SU COLUMNA, que es la misma
             //  regla que ya usa la pagina de la rejilla y por el mismo motivo:
@@ -5127,7 +5142,7 @@ void MainComponent::resized()
                             //  -el minimo- y quitarle dos por arriba y dos por
                             //  abajo dejaba las ocho tapas en 36.
                             patternButtons[i2]->setBounds ((c2 < porFila - 1 ? row.removeFromLeft (pw) : row)
-                                                               .reduced (2, 0));
+                                                               .reduced (Metrics::aireTapa, 0));
                             patternButtons[i2]->setVisible (true);
                         }
                         if ((f + 1) * porFila < kNumPatterns) colA.removeFromTop (Metrics::halfGap);

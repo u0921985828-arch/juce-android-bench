@@ -104,9 +104,9 @@ public:
         //  con arabe dentro es como se pierde una tarde.
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
         g.setColour (ZatiColours::lcdDim);
-        auto top = r.removeFromTop (kInset).toNearestInt().reduced (4, 0);
+        auto top = r.removeFromTop (kInset).toNearestInt().reduced (Metrics::halfGap, 0);
         g.drawText (yName + "  " + Lang::ltr (yValue), top, Lang::start());
-        auto bot = r.removeFromBottom (kInset).toNearestInt().reduced (4, 0);
+        auto bot = r.removeFromBottom (kInset).toNearestInt().reduced (Metrics::halfGap, 0);
         g.drawText (xName + "  " + Lang::ltr (xValue), bot, Lang::start());
     }
 

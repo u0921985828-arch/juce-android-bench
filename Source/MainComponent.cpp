@@ -5063,8 +5063,15 @@ juce::Rectangle<int> MainComponent::bandaMandos() const
     //  el repintado acotado no repintaria nada y la curva se quedaria como
     //  estaba-. La banda es entonces la del plato, que es exactamente lo que
     //  la superficie ocupa.
+    //  Y EL ALTO SALE DEL PLATO Y NO DE UN NUMERO. Eran `expanded (12, 26)`,
+    //  o sea la union de los tres mandos crecida a ojo hasta tapar el plato:
+    //  veintiseis por lado sobre una celda de mando de 52 son 104 px para un
+    //  plato que mide 86, asi que ademas repintaba de mas. El plato ya esta
+    //  medido aqui al lado.
     const auto u = macroCtrl1.getBounds().getUnion (macroCtrl3.getBounds());
-    return u.isEmpty() ? ctrlPlateArea : u.expanded (12, 26);
+    return u.isEmpty() ? ctrlPlateArea
+                       : u.expanded (Metrics::md, 0).withTop (ctrlPlateArea.getY())
+                                                    .withBottom (ctrlPlateArea.getBottom());
 }
 
 void MainComponent::macroMoved (int idx)
@@ -8698,7 +8705,7 @@ void MainComponent::ProjectList::paintListBoxItem (int row, juce::Graphics& g, i
         : ZatiColours::ink;
     g.setColour (fg);
     g.setFont (ZatiColours::monoFont (Metrics::fValue, true).withExtraKerningFactor (0.04f));
-    g.drawFittedText (names[row], r.reduced (10, 0), juce::Justification::centredLeft, 1, 0.9f);
+    g.drawFittedText (names[row], r.reduced (ZatiLookAndFeel::kAir, 0), juce::Justification::centredLeft, 1, 0.9f);
 }
 
 juce::ValueTree MainComponent::captureState() const

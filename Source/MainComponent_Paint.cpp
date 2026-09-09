@@ -484,7 +484,7 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
 
     g.setColour (ZatiColours::screenBg);
     g.fillRoundedRectangle (area.toFloat(), 3.0f);
-    auto inner = area.reduced (10, 7);
+    auto inner = area.reduced (ZatiLookAndFeel::kAir, 7);
 
     auto* dev = deviceManager.getCurrentAudioDevice();
 
@@ -496,7 +496,7 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
     //  a report - and it is true whether or not a stream ever opened, so it
     //  goes above the part that needs one.
     {
-        auto r = inner.removeFromTop (14);
+        auto r = inner.removeFromTop (Metrics::bandaSubtitulo);
         g.setColour (ZatiColours::lcdDim);
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
         g.drawText (T ("EQUIPO"), r.removeFromLeft (54), juce::Justification::centredLeft);
@@ -526,7 +526,7 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
 
     auto line = [&g, &inner] (const juce::String& k, const juce::String& v, juce::Colour c)
     {
-        auto r = inner.removeFromTop (14);
+        auto r = inner.removeFromTop (Metrics::bandaSubtitulo);
         g.setColour (ZatiColours::lcdDim);
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
         g.drawText (k, r.removeFromLeft (54), juce::Justification::centredLeft);
@@ -626,7 +626,7 @@ void MainComponent::paintAudioSheetContent (juce::Graphics& g)
     auto inner = setSheet.cuerpo.getLocalBounds();
     //  El titulo lo pinta paintSetTitle para las cuatro paginas; aqui solo se
     //  salta su banda para que lo de debajo caiga donde el maquetado lo puso.
-    inner.removeFromTop (16);
+    inner.removeFromTop (Metrics::bandaTitulo);
 
     paintAudioInfo (g, audioInfoArea);
 
@@ -755,7 +755,7 @@ void MainComponent::paintBusy (juce::Graphics& g)
     g.setColour (ZatiColours::lcdFg.withAlpha (0.30f));
     g.drawRoundedRectangle (r.reduced (0.5f), 2.0f, 1.0f);
 
-    auto in = busyBar.getLocalBounds().reduced (Metrics::sm, 5);
+    auto in = busyBar.getLocalBounds().reduced (Metrics::sm, Metrics::halfGap);
 
     //  Lo que lleva, en segundos. Es el numero que convierte "esto no responde"
     //  en "esto esta tardando", y son dos cosas distintas.
@@ -766,7 +766,7 @@ void MainComponent::paintBusy (juce::Graphics& g)
     const int timeW = (int) std::ceil (juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), time)) + 6;
     auto timeCell = Lang::takeEnd (in, timeW);
 
-    auto label = in.removeFromTop (14);
+    auto label = in.removeFromTop (Metrics::bandaSubtitulo);
     g.setColour (ZatiColours::lcdFg);
     g.drawText (busyWhat, label, Lang::start(), true);
     g.setColour (ZatiColours::lcdDim);
@@ -813,7 +813,7 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
     const int sp = juce::jmax (0, selectedPad);
     auto inner = chopSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
 
-    auto titleRow = inner.removeFromTop (32).withTrimmedTop (8);
+    auto titleRow = inner.removeFromTop (32).withTrimmedTop (Metrics::sm);
     //  Y de la puerta a la rejilla de dieciseis, que vive en este mismo
     //  renglon desde que esta ficha tambien puede cambiar de pad.
     titleRow = antesDe (antesDe (titleRow, chopCloseButton), chopPadPickBtn);
@@ -847,7 +847,7 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
     inner.removeFromTop (Metrics::md);
     g.setColour (ZatiColours::ink.withAlpha (0.75f));
     g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.16f));
-    pintaTitulo (g, inner.removeFromTop (14), T ("COMO"));
+    pintaTitulo (g, inner.removeFromTop (Metrics::bandaSubtitulo), T ("COMO"));
     inner.removeFromTop (Metrics::hit + Metrics::md);
 
     g.setColour (ZatiColours::ink.withAlpha (0.75f));
@@ -860,7 +860,7 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
     //  `pintaTitulo` el dia que tuvo un segundo cliente.
     {
         const auto tTrozos = chopByHits ? T ("TROZOS (como mucho)") : T ("TROZOS");
-        const auto banda   = inner.removeFromTop (14);
+        const auto banda   = inner.removeFromTop (Metrics::bandaSubtitulo);
         apunta (g, banda, tTrozos, "capitulo");
         g.drawText (tTrozos, banda, Lang::start());
     }
@@ -937,7 +937,7 @@ void MainComponent::paintExportSheetContent (juce::Graphics& g)
     //  decidia nada que el maquetado no hubiera decidido ya.
     pintaTitulo (g, antesDe (centraEnRenglon (inner.removeFromTop (Metrics::bandaTitulo)),
                              exportCloseButton), T ("EXPORTAR"));
-    inner.removeFromTop (14);
+    inner.removeFromTop (Metrics::bandaSubtitulo);
 
     // What is going to be rendered, and how long it will be. Stated before
     // you press, not after: a bounce is the one action here you cannot undo
@@ -988,7 +988,7 @@ void MainComponent::paintExportSheetContent (juce::Graphics& g)
               ZatiColours::inkDim);
     }
 
-    inner.removeFromTop (6);
+    inner.removeFromTop (Metrics::sm);
 
     // Progress, then the verdict.
     if (exportJob != nullptr)
@@ -1088,7 +1088,7 @@ void MainComponent::paintGesturesPage (juce::Graphics& g, juce::Rectangle<int> a
             g.fillRect (r.getX(), r.getY(), r.getWidth(), 1);
         }
 
-        auto text = r.reduced (2, 0);
+        auto text = r.reduced (Metrics::aireTapa, 0);
 
         g.setColour (ZatiColours::ink.withAlpha (0.92f));
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.06f));
@@ -1278,7 +1278,7 @@ void MainComponent::paintManualBody (juce::Graphics& g)
 
             g.setColour (ZatiColours::ink.withAlpha (0.92f));
             g.setFont (ZatiColours::monoFont (Metrics::fMeta));
-            g.drawFittedText (T (line), row.reduced (2, 0), Lang::start(), 2, 0.9f);
+            g.drawFittedText (T (line), row.reduced (Metrics::aireTapa, 0), Lang::start(), 2, 0.9f);
         }
 
         r.removeFromTop (kManualGap);
@@ -1504,7 +1504,8 @@ void MainComponent::paintCanalPickContent (juce::Graphics& g)
     if (canalSheet.sheetBounds.isEmpty()) return;
 
     auto inner = canalSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
-    auto titulo = antesDe (inner.removeFromTop (Metrics::hit).withTrimmedTop (8).withHeight (24),
+    auto titulo = antesDe (centraEnRenglon (inner.removeFromTop (Metrics::hit)
+                                                 .withHeight (Metrics::bandaTitulo)),
                            canalCloseBtn, Metrics::sm);
 
     const int sp = juce::jmax (0, selectedPad);
@@ -1525,7 +1526,8 @@ void MainComponent::paintPadPickContent (juce::Graphics& g)
     //  comparando los CENTROS. Estaba escrito a mano preguntando por el idioma,
     //  que es la cuenta que ya se arreglo seis veces y luego cinco mas: quien
     //  sabe donde esta la tapa es la tapa, no la lengua.
-    auto titulo = antesDe (inner.removeFromTop (Metrics::hit).withTrimmedTop (8).withHeight (24),
+    auto titulo = antesDe (centraEnRenglon (inner.removeFromTop (Metrics::hit)
+                                                 .withHeight (Metrics::bandaTitulo)),
                            padPickCloseBtn, Metrics::sm);
 
     const int sp = juce::jmax (0, selectedPad);
@@ -2180,7 +2182,7 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
             auto band = lb.band;
             if (band.isEmpty()) continue;
             band.setWidth (juce::jmax (60, band.getWidth()));
-            g.drawText (T (lb.key), band.translated (2, 0), Lang::start());
+            g.drawText (T (lb.key), band.translated (Metrics::aireTapa, 0), Lang::start());
         }
     }
 
@@ -2366,7 +2368,7 @@ void MainComponent::paintTourSheetContent (juce::Graphics& g)
     g.setColour (ZatiColours::ink.withAlpha (0.85f));
     g.drawRect (tourDock, 1);
 
-    auto titleRow = inner.removeFromTop (16);
+    auto titleRow = inner.removeFromTop (Metrics::bandaTitulo);
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
     //  Por pintaTitulo y no por drawText: era el UNICO titulo de ficha que no
@@ -2531,7 +2533,7 @@ void MainComponent::paintVstSheetContent (juce::Graphics& g)
 
             for (int i = 0; i < n; ++i)
             {
-                auto celda = caja.removeFromLeft (w).reduced (1, 0);
+                auto celda = caja.removeFromLeft (w).reduced (Metrics::aireTapaDensa, 0);
                 const bool on = (i == viva);
                 g.setColour (on ? ZatiColours::accent : ZatiColours::groove (0.34f));
                 g.fillRoundedRectangle (celda.toFloat(), 2.0f);
