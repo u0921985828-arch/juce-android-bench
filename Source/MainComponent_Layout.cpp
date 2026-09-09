@@ -2007,12 +2007,12 @@ void MainComponent::resized()
                              + (partirMov  ? Metrics::hit + Metrics::xs : 0);
 
         //  CUANTAS FILAS DE CHIPS LLEVA LA PAGINA DE AUDIO: BUFER, RELOJ,
-        //  CUENTA y MONITOR. Escrito UNA vez porque lo piden dos sitios —lo que
+        //  CUENTA, MONITOR y TOMAS. Escrito UNA vez porque lo piden dos sitios —lo que
         //  la pagina pide de alto y lo que el recuadro de AUDIO tiene que
         //  cederles— y ya se pago: el `2 *` de mas abajo se quedo en dos el dia
         //  que entro la CUENTA, asi que la fila de abajo se quedaba con lo que
         //  sobrara. Medido con el MONITOR puesto: tres tapas de 4 px de alto.
-        constexpr int kFilasChipsAudio = 4;
+        constexpr int kFilasChipsAudio = 5;
 
         const int wanted = onMidi ? midiH
             : onAudio
@@ -2163,9 +2163,10 @@ void MainComponent::resized()
             block (midiInBtn,  midiInBox);
             midiArea = inner.removeFromTop (40);                // pintado: la nota
             audioInfoArea = bufRowArea = rateRowArea = langRowArea = skinRowArea = movRowArea = {};
-            cuentaRowArea = monRowArea = {};
+            cuentaRowArea = monRowArea = tomasRowArea = {};
             for (auto* b : cuentaButtons) if (b != nullptr) { b->setVisible (false); b->setBounds ({}); }
             for (auto* b : monButtons)    if (b != nullptr) { b->setVisible (false); b->setBounds ({}); }
+            for (auto* b : tomasButtons)  if (b != nullptr) { b->setVisible (false); b->setBounds ({}); }
             pruebasLabelArea = {};
             projNameRowArea = projPathRowArea = {};
         }
@@ -2299,6 +2300,10 @@ void MainComponent::resized()
             //  «como se prepara una toma», y como la cuenta es una preferencia
             //  de la persona y de su aparato.
             monRowArea = chipRow (monButtons, Metrics::canalonSeccion, false);
+            //  Y EL BANCO DE TOMAS, la tercera de la misma pregunta: donde cae
+            //  lo que grabes. Cuatro chips, las mismas letras que la fila de
+            //  bancos de la cara.
+            tomasRowArea = chipRow (tomasButtons, Metrics::canalonSeccion, false);
             //  UN panel para las DOS, y no uno por fila: entre ellas hay
             //  `Metrics::xs` -cuatro- y dos paneles que se salen dos por lado
             //  dejan CERO de hueco, que se lee igual que no dibujar ninguno. Es
@@ -2309,8 +2314,8 @@ void MainComponent::resized()
             //  Y ademas es la lectura correcta: las dos son «como se prepara
             //  una toma» -cuantos compases para coger aire y si te oyes por los
             //  cascos- contra el reloj del aparato de abajo.
-            if (cuentaButtons.size() + monButtons.size() > 0)
-                setGrupos.add (cuentaRowArea.getUnion (monRowArea));
+            if (cuentaButtons.size() + monButtons.size() + tomasButtons.size() > 0)
+                setGrupos.add (cuentaRowArea.getUnion (monRowArea).getUnion (tomasRowArea));
             //  UN panel para las dos filas y no uno por fila, que fue el primer
             //  intento y salio igual que no dibujar nada: entre BUFER y RELOJ
             //  hay Metrics::xs -cuatro- y el panel se sale dos por arriba y dos
@@ -2338,9 +2343,10 @@ void MainComponent::resized()
             //  LA PAGINA DE ASPECTO: el idioma y la carcasa, que es lo unico
             //  de esta ficha que cambia como SE VE la maquina. Estaban en AUDIO
             //  al lado del reloj y del bufer porque ahi habia sitio.
-            midiArea = audioInfoArea = bufRowArea = rateRowArea = cuentaRowArea = monRowArea = {};
+            midiArea = audioInfoArea = bufRowArea = rateRowArea = cuentaRowArea = monRowArea = tomasRowArea = {};
             for (auto* b : cuentaButtons) if (b != nullptr) { b->setVisible (false); b->setBounds ({}); }
             for (auto* b : monButtons)    if (b != nullptr) { b->setVisible (false); b->setBounds ({}); }
+            for (auto* b : tomasButtons)  if (b != nullptr) { b->setVisible (false); b->setBounds ({}); }
             pruebasLabelArea = {};
             projNameRowArea = projPathRowArea = {};
 

@@ -142,6 +142,9 @@ jobs:
       - name: La cuenta atras y el metronomo
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/cuenta.py
+      - name: El banco de tomas
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/tomas.py
       - name: El visor del plato y la familia de un efecto
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/rack.py

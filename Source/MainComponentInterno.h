@@ -69,6 +69,20 @@ enum Role { roleKey = 0, roleAccent = 1, roleRec = 2, roleFixed = 3 };
 constexpr double kGainMinDb = -60.0;   // el ultimo paso de abajo es SILENCIO
 constexpr double kGainMaxDb =  12.0;
 
+//  COMO SE LLAMA UN PAD CUANDO HAY QUE DECIRLO EN UNA FRASE.
+//
+//  «El pad 34» no lo encuentra nadie: la mano busca por banco y hueco, que es
+//  como estan la rejilla, el selector del RACK y el menu de instrumentos. Dos
+//  cifras siempre, que un «9» que pasa a «10» cambia de ancho y estas frases
+//  van en el renglon de estado.
+inline juce::String etiquetaPad (int pad)
+{
+    const int banco = pad / AudioEngine::kPadsPerBank;
+    const int hueco = pad % AudioEngine::kPadsPerBank;
+    return juce::String::charToString ((juce::juce_wchar) ('A' + banco))
+         + (hueco + 1 < 10 ? "0" : "") + juce::String (hueco + 1);
+}
+
 inline float gainFromDb (double db) noexcept
 {
     return db <= kGainMinDb ? 0.0f : (float) juce::Decibels::decibelsToGain (db);
@@ -468,7 +482,11 @@ namespace
             "Toca A, B, C o D para cambiar de banco",
             "El color de un pad lo acompana en la onda y en la rejilla",
             "CARGAR KIT reparte una carpeta entera por los pads",
-            nullptr } },
+            //  DONDE CAE LO QUE GRABAS, que hasta hoy no lo decia nadie: la
+            //  toma iba «al primero libre» y en una maquina de fabrica no hay
+            //  ninguno. Va en este capitulo y no en el de exportar porque lo
+            //  que se elige es un BANCO.
+            "Lo que grabes cae en el banco de tomas, que eliges en AJUSTES" } },
         { "RECORTE", {
             "Arrastra las asas para mover el inicio y el fin",
             "Toca la onda en medio y suena desde ahi",

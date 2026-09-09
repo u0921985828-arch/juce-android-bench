@@ -652,6 +652,8 @@ void MainComponent::paintAudioSheetContent (juce::Graphics& g)
         { auto r = cuentaRowArea; pintaTitulo (g, Lang::takeStart (r, Metrics::canalonSeccion), T ("CUENTA"), "seccion", false, 0.75f); }
         if (! monRowArea.isEmpty())
         { auto r = monRowArea; pintaTitulo (g, Lang::takeStart (r, Metrics::canalonSeccion), T ("MONITOR"), "seccion", false, 0.75f); }
+        if (! tomasRowArea.isEmpty())
+        { auto r = tomasRowArea; pintaTitulo (g, Lang::takeStart (r, Metrics::canalonSeccion), T ("TOMAS"), "seccion", false, 0.75f); }
     if (! rateRowArea.isEmpty())
         { auto r = rateRowArea; pintaTitulo (g,  Lang::takeStart (r, Metrics::canalonSeccion), T ("RELOJ"), "seccion", false, 0.75f); }
 }

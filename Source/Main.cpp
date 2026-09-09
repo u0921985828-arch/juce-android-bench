@@ -571,6 +571,11 @@ public:
                     {
                         c2->auditAuto();
                     }
+                    //  EL BANCO DE TOMAS. Ver Tests/tomas.py.
+                    else if (UiAudit::env ("ZATI_TOMAS").isNotEmpty())
+                    {
+                        c2->auditTomas();
+                    }
                     //  LA CUENTA ATRAS Y EL METRONOMO. Ver Tests/cuenta.py.
                     else if (UiAudit::env ("ZATI_CUENTA").isNotEmpty())
                     {

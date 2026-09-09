@@ -4558,3 +4558,115 @@ void MainComponent::auditModos()
     std::cout << "{\"modos\":4,\"mudo\":" << difieren (mudoSin, mudoCon) << "}" << std::endl;
 
 }
+
+// ---------------------------------------------------------------------------
+//  EL BANCO DE TOMAS: DONDE CAE LO QUE SE GRABA.
+//
+//  NINGUNA DE LAS TRECE REGLAS DE `expo.py` PUEDE VER NADA DE ESTO: es un fallo
+//  de INDICE y de estado, y una toma que cae en el pad equivocado se maqueta
+//  perfecta -no solapa, no se sale, no corta un rotulo, no mide cero y esta
+//  traducida-. Es la familia de los cinco fallos del compas del piano.
+//
+//  Y SE MIDE POR LA TAPA -`songRecBtn.onClick`- y no llamando a
+//  `grabaAlArreglo` por dentro, que es justo donde no vive ninguno de estos
+//  fallos. Lo unico que se planta es el MICROFONO, que en un escritorio no
+//  existe: la toma se cierra grabando el MASTER, que es la otra puerta del
+//  mismo grabador, y asi `finishRecording` devuelve un buffer de verdad y el
+//  camino de aterrizaje -`assignSampleToPad (recordingSlot, ...)`- corre
+//  entero. Es lo mismo que hacen `ZATI_DLC` con los packs y `ZATI_INSETS` con
+//  los margenes: convertir en ENTRADA lo que si no seria «lo que hubiera».
+// ---------------------------------------------------------------------------
+void MainComponent::auditTomas()
+{
+    auto pulsa = [] (juce::Button* b) { if (b != nullptr && b->onClick) b->onClick(); };
+
+    //  Sin cuenta atras, o la toma se queda esperando un compas que en el banco
+    //  no llega: lo que se mide aqui es el destino y no el arranque, que ya lo
+    //  mide `Tests/cuenta.py` con sus dos cifras.
+    pulsa (cuentaButtons[0]);
+
+    //  Y CON EL PAD 01 ELEGIDO, que es donde la queja llego: la caida de antes
+    //  cogia `selectedPad`, asi que lo que se comia era el pad que tuvieras
+    //  tocado - y recien abierta la app ese es el primero.
+    selectPad (0);
+
+    auto toma = [this, &pulsa] () -> int
+    {
+        pulsa (&songRecBtn);
+        if (! grabandoAlArreglo) return -1;         // no habia sitio: no arranco
+        const int slot = recordingSlot;
+        engine.startRecording (slot, true);         // el master en vez del micro
+        engine.setPlaying (true);
+        for (int i = 0; i < 4; ++i) bombeaAudioDePrueba();
+        pulsa (&songRecBtn);
+        return slot;
+    };
+
+    auto cuantosDeFabrica = [this]
+    {
+        int n = 0;
+        for (int i = 0; i < kNumPads; ++i) if (padDeFabrica[(size_t) i]) ++n;
+        return n;
+    };
+
+    //  1. LA TOMA CAE EN EL BANCO DE TOMAS *Y EL PAD 01 SIGUE INTACTO*.
+    //
+    //  Con DOS cifras porque una se engaña: «cae en C01» lo cumple tambien un
+    //  codigo que escribe siempre el mismo pad, y «el 01 sigue intacto» lo
+    //  cumple una toma que no llego a grabarse. La segunda es la queja tal cual
+    //  llego -«cuando grabo se sobrescribe el pad uno»- y con la caida de antes
+    //  sale `A01` y el nombre de fabrica sustituido.
+    const juce::String nombre01 = padName[0];
+    const int primera = toma();
+
+    //  2. Y LA SEGUNDA CAE EN OTRO PAD. Es la mitad que no se ve: un clip
+    //     apunta al PAD, asi que dos tomas en el mismo hueco reescriben el
+    //     audio de la primera y el clip ya puesto pasa a sonar otra cosa.
+    const int segunda = toma();
+
+    std::cout << "{\"tomas\":1,\"primera\":\"" << etiquetaPad (juce::jmax (0, primera))
+              << "\",\"segunda\":\"" << etiquetaPad (juce::jmax (0, segunda))
+              << "\",\"pad01\":\"" << padName[0]
+              << "\",\"pad01antes\":\"" << nombre01
+              << "\",\"nombre\":\"" << padName[(size_t) juce::jmax (0, primera)]
+              << "\",\"banco\":" << bancoTomas << "}" << std::endl;
+
+    //  3. CON EL BANCO LLENO DE LO QUE PUSO LA PERSONA, NO GRABA Y LO DICE.
+    //
+    //  El estado se pone a mano -los dieciseis del banco dejan de ser de
+    //  fabrica, que es lo que pasa cuando los cargas tu- y lo que se mide es la
+    //  puerta: que `padParaToma` diga -1 y que la tapa NO arranque. Con dos
+    //  cifras: sin la segunda, «dice que esta lleno» lo cumple tambien una app
+    //  que lo dice y graba igual.
+    const int base = bancoTomas * kPadsPerBank;
+    for (int i = 0; i < kPadsPerBank; ++i)
+    {
+        padHasSample[(size_t) (base + i)] = true;
+        padDeFabrica[(size_t) (base + i)] = false;
+    }
+    const int hueco = padParaToma();
+    pulsa (&songRecBtn);
+    const int arranco = grabandoAlArreglo ? 1 : 0;
+    if (grabandoAlArreglo) { pulsa (&songRecBtn); }
+
+    std::cout << "{\"tomas\":2,\"lleno\":" << (hueco < 0 ? 1 : 0)
+              << ",\"grabando\":" << arranco << "}" << std::endl;
+
+    //  4. Y LA MARCA VUELVE DEL FICHERO.
+    //
+    //  Con el MISMO arbol que escribe el proyecto y la sesion, borrandola a
+    //  mano entre medias: si al volver sigue puesta no es que se haya guardado,
+    //  es que nadie la quito. Sin esto la regla cambiaria entre el primer
+    //  arranque y el segundo -la sesion devuelve los sesenta y cuatro desde sus
+    //  WAV- y la toma siguiente se comeria la anterior.
+    for (int i = 0; i < kNumPads; ++i) padDeFabrica[(size_t) i] = true;
+    padDeFabrica[(size_t) base] = false;
+    const int antesDeGuardar = cuantosDeFabrica();
+    const auto estado = captureState();
+    for (int i = 0; i < kNumPads; ++i) padDeFabrica[(size_t) i] = false;
+    applyState (estado);
+    const int vuelven = cuantosDeFabrica();
+
+    std::cout << "{\"tomas\":3,\"antes\":" << antesDeGuardar
+              << ",\"vuelven\":" << vuelven << "}" << std::endl;
+}

@@ -451,6 +451,36 @@ MainComponent::MainComponent()
             }
         }
 
+        //  Y EL BANCO DONDE CAEN LAS TOMAS.
+        //
+        //  Cuatro chips y no una lista de sesenta y cuatro pads: lo que se
+        //  elige es DONDE se acumulan, no en cual cae la siguiente - eso lo
+        //  decide `padParaToma`, del 01 hacia arriba, para que queden en orden.
+        //  Las letras no se traducen: son las mismas cuatro que la fila de
+        //  bancos de la cara, y ahi es donde la mano las busca.
+        {
+            for (int b4 = 0; b4 < kNumBanks; ++b4)
+            {
+                auto* b = new juce::TextButton (juce::String::charToString ((juce::juce_wchar) ('A' + b4)));
+                styleButton (*b, kStepOff);
+                litAccent (*b);
+                b->setClickingTogglesState (true);
+                b->setRadioGroupId (7312);
+                b->setTitle (T ("Banco de tomas %1",
+                                juce::String::charToString ((juce::juce_wchar) ('A' + b4))));
+                b->onClick = [this, b4]
+                {
+                    bancoTomas = b4;
+                    saveTomasPref();
+                    status.setText (T ("Las tomas van al banco %1",
+                                       juce::String::charToString ((juce::juce_wchar) ('A' + b4))),
+                                    juce::dontSendNotification);
+                };
+                setSheet.cuerpo.addChildComponent (b);
+                tomasButtons.add (b);
+            }
+        }
+
         //  Y EL MONITOR, dos chips en la misma columna y por la misma razon:
         //  llevar cascos o no es de la persona y del momento. Ver
         //  `AudioEngine::setMonitor`.
@@ -3599,6 +3629,7 @@ MainComponent::MainComponent()
     //  que la tapa diga en que paso esta.
     aplicaZoomPasos (seqZoomW);
     loadCuentaPref();
+    loadTomasPref();
     loadMovPref();
     //  Y el monitor. `aplicaMonitor` sin avisar: en el constructor no hay
     //  nadie a quien decirselo, y la linea de estado la escribe lo que la
@@ -5147,6 +5178,13 @@ void MainComponent::showSetPage (int page)
         if (auto* b = cuentaButtons[i])
         {
             b->setToggleState (i == cuentaCompases, juce::dontSendNotification);
+            muestra (*b, onAudio);
+        }
+    //  Y los cuatro del banco de tomas.
+    for (int i = 0; i < tomasButtons.size(); ++i)
+        if (auto* b = tomasButtons[i])
+        {
+            b->setToggleState (i == bancoTomas, juce::dontSendNotification);
             muestra (*b, onAudio);
         }
     //  Y los dos del monitor, con la misma regla.
@@ -7227,6 +7265,11 @@ void MainComponent::cargaFabricaEnBanco (int origen, int destino)
             //  sonido que hubiera, y el instrumento nuevo sonaba como el viejo.
             ponPadPorDefecto (dst);
             assignSampleToPad (dst, sb, Kits::table()[src].name);
+            //  Y SE MARCA DE FABRICA, DESPUES: `assignSampleToPad` lo borra
+            //  porque es el embudo de todo lo que entra en un pad, asi que
+            //  quien sabe que esto es la fabrica es esta funcion. Es lo que
+            //  hace que una toma pueda ocupar el hueco sin pisar nada tuyo.
+            padDeFabrica[(size_t) dst] = true;
             //  El color del pad lo pone Zati::forPad y no se toca: el orden de
             //  corte manda sobre cualquier idea decorativa.
             padHasSample[(size_t) dst] = true;
@@ -7326,6 +7369,11 @@ void MainComponent::assignSampleToPad (int index, SampleBuffer::Ptr sb, const ju
 {
     if (sb == nullptr || ! juce::isPositiveAndBelow (index, kNumPads)) return;
     padHasSample[(size_t) index] = true;
+    //  Y DEJA DE SER DE FABRICA, sea lo que sea lo que entra. Esta es la unica
+    //  puerta por la que un pad recibe audio -LOAD, un kit, un troceado, un
+    //  instrumento, el remuestreo y la toma- asi que la marca se borra aqui una
+    //  vez y no en cada camino: quien lo pone otra vez es la fabrica.
+    padDeFabrica[(size_t) index] = false;
     uiSample[(size_t) index]     = sb;
     padStart01[(size_t) index]   = 0.0f;
     padEnd01[(size_t) index]     = 1.0f;
@@ -7561,6 +7609,14 @@ void MainComponent::retranslateUi()
     //  VACIAR de las ranuras.
     for (int i = 0; i < monButtons.size(); ++i)
         if (auto* b = monButtons[i]) b->setButtonText (T (i == 1 ? "SI|chip" : "NO|chip"));
+    //  Y EL NOMBRE ACCESIBLE de los cuatro chips del banco de tomas: su ROTULO
+    //  es una letra y no cambia de idioma, pero lo que TalkBack lee si. Puesto
+    //  aqui y no en el constructor, que ahi se quedaria clavado en el idioma
+    //  del arranque - el fallo de las tres pestañas de AJUSTES.
+    for (int i = 0; i < tomasButtons.size(); ++i)
+        if (auto* b = tomasButtons[i])
+            b->setTitle (T ("Banco de tomas %1",
+                            juce::String::charToString ((juce::juce_wchar) ('A' + i))));
     pageProjBtn .setButtonText (T ("PROYECTOS"));
     pageGestBtn .setButtonText (T ("GESTOS"));
     pageMidiBtn .setButtonText (T ("MIDI"));
@@ -8422,6 +8478,24 @@ int MainComponent::firstEmptyPad() const
     return -1;
 }
 
+//  Ver la cabecera: una toma cae dentro del banco de tomas y solo ahi.
+int MainComponent::padParaToma() const
+{
+    const int base = juce::jlimit (0, kNumBanks - 1, bancoTomas) * kPadsPerBank;
+
+    //  Primero los huecos de verdad, que es lo que la persona espera al vaciar
+    //  un pad para hacer sitio.
+    for (int i = 0; i < kPadsPerBank; ++i)
+        if (! padHasSample[(size_t) (base + i)]) return base + i;
+
+    //  Y despues los de fabrica, que no son «lo que la persona haya puesto»:
+    //  vuelven enteros desde INSTRUMENTOS - FABRICA en cualquier momento.
+    for (int i = 0; i < kPadsPerBank; ++i)
+        if (padDeFabrica[(size_t) (base + i)]) return base + i;
+
+    return -1;
+}
+
 // Ask once for audio-read access, then run `then` either way — a refusal must
 // still open the browser (internal/app storage is always readable).
 void MainComponent::ensureStoragePermission (std::function<void()> then)
@@ -8788,6 +8862,11 @@ juce::ValueTree MainComponent::captureState() const
         p.setProperty ("i", i, nullptr);
         p.setProperty ("name",    padName[(size_t) i],    nullptr);
         p.setProperty ("has",     padHasSample[(size_t) i], nullptr);
+        //  Y DE DONDE SALIO. Sin esto la marca se perderia entre el primer
+        //  arranque y el segundo -la sesion devuelve los sesenta y cuatro desde
+        //  sus WAV- y la regla del banco de tomas diria una cosa hoy y otra
+        //  mañana con la misma maquina.
+        p.setProperty ("fab",     padDeFabrica[(size_t) i], nullptr);
         p.setProperty ("pitch",   padPitch[(size_t) i],   nullptr);
         p.setProperty ("cents",   padCents[(size_t) i],   nullptr);
         p.setProperty ("keeplen", padKeepLen[(size_t) i], nullptr);
@@ -9199,6 +9278,17 @@ void MainComponent::applyState (const juce::ValueTree& s)
             if (! juce::isPositiveAndBelow (i, kNumPads)) continue;
 
             padName[(size_t) i]    = p.getProperty ("name", juce::String()).toString();
+            //  LO QUE NO TRAE LA PROPIEDAD SE MIGRA UNA VEZ, y no se le da un
+            //  defecto: un fichero escrito antes de que esta marca existiera no
+            //  puede decir de donde salio cada pad, y las dos respuestas fijas
+            //  son malas -«todo de fabrica» deja que una toma se coma algo tuyo
+            //  y «nada de fabrica» deja la maquina sin sitio donde grabar-. Se
+            //  reconoce por el nombre, que es exacto para el caso que importa
+            //  -una maquina que no ha cargado nada todavia- y solo puede
+            //  equivocarse hacia el lado seguro, que es negarse a grabar.
+            padDeFabrica[(size_t) i] = p.hasProperty ("fab")
+                                         ? (bool) p.getProperty ("fab")
+                                         : (padName[(size_t) i] == Kits::table()[(size_t) i].name);
             padPitch[(size_t) i]   = (float) p.getProperty ("pitch", 0.0);
             padCents[(size_t) i]   = (float) p.getProperty ("cents", 0.0);
             padKeepLen[(size_t) i] = (bool)  p.getProperty ("keeplen", false);
@@ -9847,6 +9937,7 @@ void MainComponent::padPorDefecto (int i)
     const auto k = (size_t) i;
 
     padName[k]    = {};
+    padDeFabrica[k] = false;
     padPitch[k]   = 0.0f;
     padCents[k]   = 0.0f;
     padKeepLen[k] = false;
@@ -11117,10 +11208,19 @@ void MainComponent::grabaAlArreglo()
         return;
     }
 
-    //  Empezar. El pad de destino es el primero vacio, como el remuestreo: una
-    //  toma nueva no puede pisar un sonido que la persona haya puesto.
-    int slot = firstEmptyPad();
-    if (slot < 0) slot = (selectedPad >= 0) ? selectedPad : 0;
+    //  Empezar. El destino sale del BANCO DE TOMAS y no de «el primero vacio»,
+    //  que en una maquina de fabrica no existe: los sesenta y cuatro vienen
+    //  llenos, asi que la caida que habia aqui se comia el pad elegido -el 01-
+    //  en cada toma. Ver padParaToma.
+    const int slot = padParaToma();
+    if (slot < 0)
+    {
+        //  Y NO SE GRABA. Pisar la toma anterior seria ademas llevarse el audio
+        //  de su clip, que ya esta puesto en la linea de tiempo.
+        status.setText (T ("El banco de tomas esta lleno: vacia un pad o elige otro"),
+                        juce::dontSendNotification);
+        return;
+    }
     recordingSlot = slot;
 
     //  El clic y la cuenta salen de la preferencia. Ver armaCuentaSiToca.
@@ -11146,7 +11246,12 @@ void MainComponent::grabaAlArreglo()
         micButton.setButtonText (T ("PARAR"));
         styleButton (songRecBtn, kRec);
         songRecBtn.setButtonText (T ("PARAR"));
-        status.setText (T ("Cuenta atras: la toma entra en el compas"),
+        //  Y SE DICE DONDE VA A CAER, antes y no despues: es lo unico que
+        //  convierte «graba» en «graba ahi». Va en el renglon de estado, que es
+        //  texto pintado y no cuesta un pixel; en la tapa no, que esa fila se
+        //  reparte por el TEXTO y un rotulo que crece le quita el dedo a sus
+        //  hermanas.
+        status.setText (T ("La toma va al pad %1", etiquetaPad (slot)),
                         juce::dontSendNotification);
         refreshSong (true);
     };
@@ -11652,6 +11757,27 @@ void MainComponent::saveCuentaPref() const
     ProjectStore::escribeTexto (cuentaPrefFile(),
                                 juce::String (cuentaCompases) + " "
                                   + juce::String (engine.isClick() ? 1 : 0));
+}
+
+juce::File MainComponent::tomasPrefFile()
+{
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+               .getChildFile ("zati-tomas.txt");
+}
+
+void MainComponent::saveTomasPref() const
+{
+    ProjectStore::escribeTexto (tomasPrefFile(), juce::String (bancoTomas));
+}
+
+void MainComponent::loadTomasPref()
+{
+    //  Acotado AQUI y no en quien llama, como el resto: el fichero puede estar
+    //  a medias o ser de otra version, y un banco fuera de rango dejaria a
+    //  `padParaToma` buscando en un sitio que no existe.
+    const auto f = tomasPrefFile();
+    if (! f.existsAsFile()) return;
+    bancoTomas = juce::jlimit (0, kNumBanks - 1, f.loadFileAsString().trim().getIntValue());
 }
 
 void MainComponent::loadCuentaPref()
@@ -14109,8 +14235,15 @@ void MainComponent::toggleResample()
     {
         if (recordingActive) toggleMicSampling();     // one recorder, one take
 
-        int slot = firstEmptyPad();
-        if (slot < 0) slot = (selectedPad >= 0) ? selectedPad : 0;
+        //  El mismo destino que una toma de microfono al arreglo, y por la
+        //  misma razon: un remuestreo es una toma. Una regla, un dueño.
+        const int slot = padParaToma();
+        if (slot < 0)
+        {
+            status.setText (T ("El banco de tomas esta lleno: vacia un pad o elige otro"),
+                            juce::dontSendNotification);
+            return;
+        }
 
         resamplingSlot   = slot;
         resamplingActive = true;
@@ -14118,7 +14251,7 @@ void MainComponent::toggleResample()
 
         styleButton (resampleButton, kRec);
         resampleButton.setButtonText (T ("PARAR"));
-        status.setText (T ("Remuestreando al pad %1", juce::String (slot + 1)),
+        status.setText (T ("Remuestreando al pad %1", etiquetaPad (slot)),
                         juce::dontSendNotification);
         return;
     }
@@ -14130,7 +14263,7 @@ void MainComponent::toggleResample()
     if (auto sb = engine.finishRecording())
     {
         pushUndo (T ("REMUESTREAR"));
-        assignSampleToPad (resamplingSlot, sb, "RE " + juce::String (resamplingSlot + 1));
+        assignSampleToPad (resamplingSlot, sb, "TOMA " + juce::String (resamplingSlot % kPadsPerBank + 1));
         refreshPad (resamplingSlot);
         refreshPadArt (resamplingSlot);
         session.sync (uiSample.data(), kNumPads);
@@ -14185,7 +14318,7 @@ void MainComponent::toggleMicSampling()
             micButton.setButtonText (T ("PARAR"));
             status.setText (espera
                               ? T ("Cuenta atras: la toma entra en el compas")
-                              : T ("Grabando pad %1  %2s / %3s", juce::String (slot + 1), "0.0",
+                              : T ("Grabando pad %1  %2s / %3s", etiquetaPad (slot), "0.0",
                                    juce::String ((int) engine.getRecordLimitSeconds())),
                             juce::dontSendNotification);
         };
@@ -14266,8 +14399,13 @@ void MainComponent::toggleMicSampling()
         micButton.setButtonText (T ("GRABAR MIC"));
         if (sb != nullptr)
         {
-            assignSampleToPad (recordingSlot, sb, "REC " + juce::String (recordingSlot + 1));
-            status.setText (T ("Grabado en el pad %1  [%2s]", juce::String (recordingSlot + 1),
+            //  «TOMA 3» y no «REC 34»: el numero que importa es cual de tus
+            //  tomas es y no en que hueco del banco cayo, que eso ya lo dice el
+            //  pad donde esta. Dieciseis pads con nombre en un banco son la
+            //  lista, sin inventar un segundo sitio donde vive un sonido.
+            assignSampleToPad (recordingSlot, sb,
+                               "TOMA " + juce::String (recordingSlot % kPadsPerBank + 1));
+            status.setText (T ("Grabado en el pad %1  [%2s]", etiquetaPad (recordingSlot),
                                juce::String (engine.getRecordSeconds(), 1)), juce::dontSendNotification);
         }
         else
@@ -15029,7 +15167,7 @@ void MainComponent::pintaCuadro (double dtMs)
         if (! engine.isRecording())
             toggleMicSampling();
         else
-            status.setText (T ("Grabando pad %1  %2s / %3s", juce::String (recordingSlot + 1),
+            status.setText (T ("Grabando pad %1  %2s / %3s", etiquetaPad (recordingSlot),
                                juce::String (engine.getRecordSeconds(), 1),
                                juce::String ((int) engine.getRecordLimitSeconds())),
                             juce::dontSendNotification);

@@ -1017,6 +1017,10 @@ private:
     int  cuentaCompases = 1;               // 0, 1 o 2
     juce::OwnedArray<juce::TextButton> cuentaButtons;   // SIN / 1 / 2
 
+    //  Y LOS CUATRO CHIPS DEL BANCO DE TOMAS, en la misma pagina y por la misma
+    //  razon. Ver `padParaToma` y `bancoTomas`.
+    juce::OwnedArray<juce::TextButton> tomasButtons;    // A B C D
+
     //  MONITOR: oirte por los cascos mientras grabas. Ver
     //  `AudioEngine::setMonitor` y `RutaAudio::porAltavoz`.
     //
@@ -1036,9 +1040,17 @@ private:
     //  enchufan y se quitan en mitad de una sesion.
     void aplicaMonitor (bool avisa);
     juce::Rectangle<int> cuentaRowArea;
+    juce::Rectangle<int> tomasRowArea;
     static juce::File cuentaPrefFile();
     void saveCuentaPref() const;
     void loadCuentaPref();
+
+    //  Fichero propio y no un numero mas en el de la cuenta, por lo mismo que
+    //  el del monitor: ese se llama `zati-cuenta.txt` y meterle dentro algo que
+    //  no es la cuenta es como un nombre deja de ser verdad.
+    static juce::File tomasPrefFile();
+    void saveTomasPref() const;
+    void loadTomasPref();
     //  Arma la cuenta y devuelve si de verdad hay que esperarla. Un solo sitio
     //  para los dos caminos de grabacion: con `armaCuentaAtras (1)` escrito en
     //  uno de los dos, el otro no podia tenerla sin copiar la regla.
@@ -1467,6 +1479,8 @@ public:
     void auditDinamica();
     //  LA CUENTA ATRAS Y EL METRONOMO. Ver Tests/cuenta.py.
     void auditCuenta();
+    //  EL BANCO DE TOMAS: donde cae lo que se graba. Ver Tests/tomas.py.
+    void auditTomas();
     void auditBalistica();
     //  EL CATALOGO DE CONTENIDO Y EL CANDADO. Ver Tests/dlc.py.
     void auditDlc();
@@ -1774,6 +1788,25 @@ private:
     juce::TextButton redoButton { "REHACER" };
     void rebuildChain();
     int  firstEmptyPad() const;
+
+    //  EL DESTINO DE UNA TOMA, que no es «el primero libre».
+    //
+    //  Lo era, y en una maquina de fabrica eso es -1 SIEMPRE: los sesenta y
+    //  cuatro pads vienen llenos (`Tests/carga.py` mide 64 con sonido en una
+    //  instalacion limpia), asi que la caida de al lado -«y si no hay, el pad
+    //  elegido»- se comia el pad 01 en cada toma, justo debajo del comentario
+    //  que prometia que una toma nueva no pisa lo que la persona haya puesto.
+    //  Y peor: un clip apunta al PAD, asi que la segunda toma reescribia el
+    //  audio de la primera y el clip ya puesto en la linea de tiempo pasaba a
+    //  sonar otra cosa. Dos tomas al arreglo no se podian hacer.
+    //
+    //  Ahora una toma cae dentro del BANCO DE TOMAS y solo ahi, del 01 hacia
+    //  arriba para que queden en orden y se lean como una lista. Ocupado es
+    //  «tiene sonido y NO es de fabrica»: sin esa mitad una maquina recien
+    //  instalada diria «lleno» a la primera, y sin la otra la segunda toma se
+    //  comeria la primera. Si no queda ninguno devuelve -1 y quien llama lo
+    //  dice y no arranca la toma - nada se pierde nunca.
+    int  padParaToma() const;
     void layoutPadGrid (juce::Rectangle<int> area, int cols, int rows, int gap);
 
     static constexpr int kNumPads      = AudioEngine::kNumPads;      // 64
@@ -1792,6 +1825,14 @@ private:
     //  means not one of them has to learn about banks, and there is no
     //  off-by-sixteen to get wrong.
     int currentBank = 0;
+    //  EL BANCO DONDE CAEN LAS TOMAS. Preferencia de la PERSONA y no del
+    //  proyecto -como el idioma, la carcasa, el master y la cuenta atras-:
+    //  cuantos sonidos de fabrica estas dispuesto a gastar es tuyo y del
+    //  momento. El defecto se DERIVA y no se elige a ojo: el D es la casa de
+    //  los instrumentos por diseño -el instrumento n va siempre al pad n del
+    //  banco D- asi que el de las tomas es el ultimo que no lo es.
+    static constexpr int kBancoTomasDeFabrica = kNumBanks - 2;   // C
+    int bancoTomas = kBancoTomasDeFabrica;
     void selectBank (int bank);
     juce::OwnedArray<juce::TextButton> bankButtons;
     //  Two chips at each end of the seam, not four bunched at one end: the
@@ -3007,6 +3048,13 @@ private:
 
     // Per-pad UI state.
     std::array<bool,  kNumPads> padHasSample {};
+    //  DE DONDE SALIO LO QUE HAY EN EL PAD, que es lo unico que hace posible la
+    //  regla de `padParaToma`: la fabrica lo pone al repartir y lo borra
+    //  `assignSampleToPad`, que es el embudo por el que entra todo lo demas
+    //  -LOAD, un kit, un troceado, un instrumento y la propia toma-. Se guarda
+    //  con los pads, o la regla cambiaria entre el primer arranque y el
+    //  segundo: la sesion devuelve los sesenta y cuatro desde sus WAV.
+    std::array<bool,  kNumPads> padDeFabrica {};
     std::array<float, kNumPads> padPitch {};      // whole semitones
     std::array<float, kNumPads> padCents {};      // -100..100, the part between them
     std::array<bool,  kNumPads> padKeepLen {};

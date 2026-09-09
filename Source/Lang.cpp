@@ -495,6 +495,10 @@ namespace
         { "CARGAR KIT reparte una carpeta entera por los pads", "",
           "LOAD KIT spreads a whole folder across the pads",
           "载入套件会把整个文件夹分配到各音垫", "تحميل الطقم يوزّع مجلدًا كاملًا على الوسادات" },
+        { "Lo que grabes cae en el banco de tomas, que eliges en AJUSTES", "",
+                                        "Takes land in the takes bank, which you pick in SETTINGS",
+                                        "录音会进入你在设置里选择的录音音库",
+                                        "تذهب التسجيلات إلى بنك التسجيلات الذي تختاره في الإعدادات" },
         { "Arrastra las asas para mover el inicio y el fin", "",
           "drag the handles to move start and end",
           "拖动手柄可移动起点和终点", "اسحب المقبضين لتحريك البداية والنهاية" },
@@ -1104,6 +1108,17 @@ namespace
         { "CUENTA",         "",         "COUNT",      "预备拍",      "العد" },
         { "Sin cuenta atras", "",       "No count-in","无预备拍",    "بدون عد تنازلي" },
         { "Cuenta atras: %1", "",       "Count-in: %1","预备拍：%1",  "العد التنازلي: %1" },
+        //  EL BANCO DONDE CAEN LAS TOMAS, la tercera fila de la misma pregunta.
+        //  La letra del banco viaja como argumento y no se traduce: son las
+        //  mismas cuatro que la fila de bancos de la cara.
+        { "TOMAS",          "",         "TAKES",      "录音",       "التسجيلات" },
+        { "Banco de tomas %1", "",      "Takes bank %1","录音音库 %1", "بنك التسجيلات %1" },
+        { "Las tomas van al banco %1", "", "Takes go to bank %1", "录音进入音库 %1", "تذهب التسجيلات إلى البنك %1" },
+        { "La toma va al pad %1", "",   "The take goes to pad %1", "录音将进入音垫 %1", "سيذهب التسجيل إلى الباد %1" },
+        { "El banco de tomas esta lleno: vacia un pad o elige otro", "",
+                                        "The takes bank is full: clear a pad or pick another",
+                                        "录音音库已满：请清空一个音垫或选择其他音库",
+                                        "بنك التسجيلات ممتلئ: أفرغ بادًا أو اختر بنكًا آخر" },
         //  El menu de una ranura de la fila de efectos. Clave propia y no
         //  reaprovechar «SLOT» ni «RANURA» a secas: el numero va DENTRO de la
         //  frase, que es la unica clase de constante que no se puede contrastar
