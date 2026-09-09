@@ -234,6 +234,29 @@ def main ():
         malo.append ("el canalon dejo de abrir el menu: el rack se queda sin la "
                      "unica puerta para cambiar o vaciar una ranura")
 
+    #  6. EL CRISTAL DEL PLATO SIN EFECTO, en PIXELES.
+    #
+    #  `FxMini::paint` se rendia arriba del todo con `fx < 0` -o sea en una
+    #  instalacion limpia, con las seis ranuras vacias- asi que el visor
+    #  quedaba VISIBLE, colocado en 112x74 y sin pintar un pixel: al lado de
+    #  los tres mandos se veia el plato pelado. Un rectangulo vacio se lee como
+    #  una pieza que falta, y esa fue la queja: «aunque sea una pantalla negra,
+    #  para que no este el hueco ese ahi».
+    #
+    #  DOS CIFRAS, que una sola se engaña por los dos lados: solo «vacio > 0»
+    #  lo cumple tambien un visor que se quedo dibujando la curva del efecto
+    #  anterior, y solo «vacio distinto de puesto» lo cumple el fallo de hoy,
+    #  que es cero contra algo. Juntas dicen que hay cristal y que el cristal
+    #  no es la curva.
+    print ("cristal    sin efecto %d px pintados, y con un efecto puesto cambian %d"
+           % (r["visor_vacio"], r["visor_dif"]))
+    if r["visor_vacio"] <= 0:
+        malo.append ("el plato sin efecto no pinta un pixel: donde va el visor "
+                     "queda un hueco (%d px)" % r["visor_vacio"])
+    if not (0 < r["visor_dif"] < r["visor_vacio"]):
+        malo.append ("poner un efecto cambia %d px de %d: el cristal vacio no es "
+                     "un cristal o es ya la curva" % (r["visor_dif"], r["visor_vacio"]))
+
     if malo:
         for m in malo: print ("FALLA  " + m)
         return 1

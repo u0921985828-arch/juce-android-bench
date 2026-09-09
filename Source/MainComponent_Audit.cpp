@@ -3607,6 +3607,66 @@ void MainComponent::auditRack()
     const int menuAbre = ranuraSheet.isVisible() ? 1 : 0;
     abreMenuRanura (-1);
 
+    //  6. EL CRISTAL DEL PLATO SIN EFECTO, MEDIDO EN PIXELES.
+    //
+    //  `FxMini::paint` se rendia arriba del todo con `fx < 0`, o sea en una
+    //  instalacion limpia -ninguna ranura puesta-: el visor quedaba VISIBLE,
+    //  colocado en 112x74 y sin pintar un pixel, asi que al lado de los tres
+    //  mandos se veia el plato. Un rectangulo vacio se lee como una pieza que
+    //  falta, y esa fue la queja.
+    //
+    //  DOS CIFRAS, que una sola se engaña por los dos lados: solo «vacio > 0»
+    //  lo cumple tambien un visor que se quedo dibujando la curva del efecto
+    //  anterior, y solo «vacio distinto de puesto» lo cumple el fallo de hoy
+    //  -cero contra algo-. Juntas dicen que hay cristal y que el cristal no es
+    //  la curva.
+    //
+    //  Y se cuenta lo PINTADO y no una bandera: un booleano que el codigo se
+    //  pone a si mismo es el fallo de `caraLista`, que decia «tapada» con la
+    //  cara entera a la vista.
+    auto pintaVisor = [this]
+    {
+        juce::Image img (juce::Image::ARGB, juce::jmax (1, platoMini.getWidth()),
+                         juce::jmax (1, platoMini.getHeight()), true);
+        { juce::Graphics gg (img); platoMini.paint (gg); }
+        return img;
+    };
+    auto difieren = [] (const juce::Image& a, const juce::Image& c)
+    {
+        if (a.getWidth() != c.getWidth() || a.getHeight() != c.getHeight()) return -1;
+        int n = 0;
+        for (int y = 0; y < a.getHeight(); ++y)
+            for (int x = 0; x < a.getWidth(); ++x)
+                if (a.getPixelAt (x, y) != c.getPixelAt (x, y)) ++n;
+        return n;
+    };
+    auto cuenta = [] (const juce::Image& img)
+    {
+        int n = 0;
+        for (int y = 0; y < img.getHeight(); ++y)
+            for (int x = 0; x < img.getWidth(); ++x)
+                if (img.getPixelAt (x, y).getAlpha() > 0) ++n;
+        return n;
+    };
+
+    closeAllSheets();
+    for (int s = 0; s < kNumRanuras; ++s) ponEnRanura (s, kSlotVacia);
+    focusFx (AudioEngine::kFxFlt);
+    refrescaPlato();
+    refrescaVisorPlato();
+    resized();
+    const auto imgVacio = pintaVisor();
+    const int visorVacio = cuenta (imgVacio);
+
+    ponEnRanura (0, AudioEngine::kFxFlt);
+    focusFx (AudioEngine::kFxFlt);
+    refrescaPlato();
+    refrescaVisorPlato();
+    resized();
+    const auto imgPuesto = pintaVisor();
+    const int visorPuesto = cuenta (imgPuesto);
+    const int visorDif    = difieren (imgVacio, imgPuesto);
+
     std::cout << "{\"rack\":1"
               << ",\"mal\":" << mal
               << ",\"dibujo\":[" << dibujo.joinIntoString (",") << "]"
@@ -3631,6 +3691,9 @@ void MainComponent::auditRack()
               << ",\"mute_vuelve\":"  << muteVuelve
               << ",\"mute_vacia\":["  << mudoAntes << "," << mudoDespues << "]"
               << ",\"menu_abre\":"    << menuAbre
+              << ",\"visor_vacio\":"  << visorVacio
+              << ",\"visor_puesto\":" << visorPuesto
+              << ",\"visor_dif\":"    << visorDif
               << "}" << std::endl;
 }
 

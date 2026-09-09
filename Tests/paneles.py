@@ -40,7 +40,11 @@ SIZES = ["360x640", "393x851", "412x915", "344x882", "280x653", "800x1280", "915
 LANGS = ["es", "en", "zh", "ar"]
 #  Solo las fichas que llevan paneles. Abrir las otras veintitantas seria
 #  cuadruplicar el tiempo para leer cero paneles en cada una.
-SHEETS = ["pads", "pad2", "pad3", "sec", "secp", "paso", "song", "set", "asp", "proj", "midi"]
+#  Y el PIANO, que entra el dia que tiene paneles: era la unica de las tres
+#  paginas de la ficha del secuenciador sin ninguno, asi que esta lista no lo
+#  abria y una pagina sin paneles no se puede medir mal.
+SHEETS = ["pads", "pad2", "pad3", "sec", "secp", "paso", "piano", "song", "set", "asp",
+          "proj", "midi"]
 
 #  El aire que la app dice que deja. Se lee del fichero y no se copia: una
 #  prueba que lleva su propia copia del numero pasa cuando el numero cambia.

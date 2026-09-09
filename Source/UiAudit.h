@@ -226,6 +226,25 @@ namespace UiAudit
     struct Tarjeta { int pedido, tope, libreAbajo, sueloAbajo; bool desplaza; };
     inline std::vector<Tarjeta> tarjetas;
 
+    //  UNA COSTURA GRABADA: donde la app DICE que dibujo el rayado, y por que
+    //  columna pasa.
+    //
+    //  Es la mitad que se juzga; la otra -donde esta el hueco de verdad- la
+    //  da la FOTO, contando pixeles. Publicar aqui tambien los dos bordes que
+    //  `engraveIn` recibio seria repetir la constante del codigo, que es
+    //  exactamente el fallo que `Tests/icono.py` ya cometio dos veces con la
+    //  mascara del lanzador: un banco que repite el numero no prueba nada.
+    //  Con el TRAMO de rayado entero y no una columna: una fila de tapas deja
+    //  huecos entre tapa y tapa, y una sola columna puede caer justo en uno —
+    //  medido, la de CONTROL caia entre CARGAR y REC y la foto decia que el
+    //  hueco empezaba sesenta pixeles mas arriba. Lo que el ojo centra es
+    //  contra las TAPAS, asi que se busca la tinta mas cercana de todo el
+    //  tramo.
+    struct Costura { int y, x0, x1; };
+    inline std::vector<Costura> costuras;
+    inline void costura (int y, int x0, int x1)
+    { if (enabled()) costuras.push_back ({ y, x0, x1 }); }
+
     //  Y no se guarda con `midiendo`, que solo esta puesto durante la pasada
     //  de pintado: esto lo escribe `resized()`, que corre antes. La lista la
     //  vacia el propio `resized()` al empezar, o cada maquetado dejaria el
@@ -953,6 +972,11 @@ namespace UiAudit
                       << ",\"libre\":" << t.libreAbajo
                       << ",\"suelo\":" << t.sueloAbajo
                       << ",\"desplaza\":" << (t.desplaza ? 1 : 0) << "}" << std::endl;
+
+        for (const auto& c : costuras)
+            std::cout << "{\"costura\":1,\"y\":" << c.y
+                      << ",\"x0\":" << c.x0 << ",\"x1\":" << c.x1 << "}"
+                      << std::endl;
 
         for (const auto& m : mantener)
             std::cout << "{\"mantener\":\"" << m.tapa << "\",\"familia\":" << m.familia << "}"

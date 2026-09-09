@@ -818,7 +818,13 @@ void MainComponent::resized()
                 mk[i]->setBounds (cell.reduced (10, 0));
             }
         }
-        fxSeamTop = area.getY();
+        //  Y LA COSTURA EMPIEZA DONDE ACABA LA TINTA, no donde acaba el
+        //  rectangulo que se reservo. El plato se pinta hasta su borde -son
+        //  dos px por debajo de `mrow`, que es lo que `expanded (4, 2)` le
+        //  anade- asi que tomar `area.getY()` metia esos dos en el hueco y la
+        //  palabra salia alta. Ver el parrafo de engraveIn en el pintor: es la
+        //  misma correccion que `ctrlSeamTop` ya hacia por el otro lado.
+        fxSeamTop = ctrlPlateArea.isEmpty() ? area.getY() : ctrlPlateArea.getBottom();
         //  LA MISMA COSTURA QUE CONTROL, sin el Metrics::sm de mas.
         //
         //  Las tres bandas grabadas de la cara se reservaban con tres formulas
@@ -993,7 +999,15 @@ void MainComponent::resized()
         }
         else
         {
-            padSeamTop = area.getY();
+            //  Y descontando lo que la fila de efectos deja vacio DENTRO de
+            //  su propio rectangulo: la tapa se pinta tres cuartos, asi que
+            //  entre la ultima tinta del efecto y `area.getY()` hay cinco px
+            //  que el hueco ya tiene y la banda no contaba. Es la correccion
+            //  de `ctrlSeamTop` -su comentario la cuenta- aplicada a la
+            //  costura que estaba sin ella: sin esto PADS se dibujaba en 462.5
+            //  con el hueco visible de 431 a 487, o sea centro 459.
+            padSeamTop = area.getY()
+                       - ZatiLookAndFeel::aireTapaVertical (fxRowArea.getHeight());
 
             //  Y LO QUE LE SIGA FALTANDO A LA COSTURA SE LO PRESTAN LOS PADS.
             //
@@ -3795,6 +3809,7 @@ void MainComponent::resized()
 
         const bool onGrid  = (seqPage == seqPageGrid);
         const bool onPiano = (seqPage == seqPagePiano);
+        pianoGrupos.clear();
 
         const int patLen   = engine.getPatternLength (selectedPattern);
         const int bars     = juce::jmax (1, patLen / kStepCols);
@@ -4486,6 +4501,14 @@ void MainComponent::resized()
                 Lang::takeEnd (inner, Metrics::gap);
                 juce::Rectangle<int> col = Lang::takeStart (side, anchoCol);
                 int puestas = 0;
+                //  Y LAS DOS COLUMNAS SON UN PANEL Y NO DOS. Entre ellas hay
+                //  `Metrics::gap` y `panelAireX` vale la mitad de eso a cada
+                //  lado, asi que dos paneles saldrian TOCANDOSE — que se lee
+                //  igual que no dibujar ninguno. Es el intento fallido que esta
+                //  casa ya escribio dos veces: los tres de la tira del paso y
+                //  el par MONITOR/CUENTA de AJUSTES. Uno, deducido de lo que se
+                //  acaba de colocar, asi que no cuesta un pixel.
+                juce::Rectangle<int> grupo;
                 for (int i = 0; i < 13; ++i)
                 {
                     if (! pbCol[i]->isVisible()) continue;
@@ -4495,10 +4518,13 @@ void MainComponent::resized()
                         col = Lang::takeStart (side, anchoCol);
                         puestas = 0;
                     }
-                    pbCol[i]->setBounds (col.removeFromTop (Metrics::hit).reduced (Metrics::aireTapa, 0));
+                    auto celda = col.removeFromTop (Metrics::hit);
+                    pbCol[i]->setBounds (celda.reduced (Metrics::aireTapa, 0));
+                    grupo = grupo.isEmpty() ? celda : grupo.getUnion (celda);
                     col.removeFromTop (Metrics::halfGap);
                     ++puestas;
                 }
+                if (! grupo.isEmpty()) pianoGrupos.add (grupo);
             }
             else
             {
@@ -4546,6 +4572,7 @@ void MainComponent::resized()
                 if (moduleBarFits (tapas.getWidth(), pb, nb))
                 {
                     layoutModuleBar (tapas, pb, 0, nb);
+                    pianoGrupos.add (tapas);
                 }
                 else
                 {
@@ -4569,6 +4596,17 @@ void MainComponent::resized()
                     auto fila2 = inner.removeFromBottom (Metrics::hit);
                     inner.removeFromBottom (Metrics::halfGap);
                     layoutModuleBar (fila2, pb + arriba, 0, nb - arriba);
+                    //  DOS FILAS Y UN SOLO PANEL. Son dos preguntas -arriba lo
+                    //  que mueve la VISTA, abajo lo que toca las NOTAS- y aun
+                    //  asi no pueden ser dos paneles: entre las dos filas hay
+                    //  `halfGap` y cada panel se sale `panelAireY` por lado, o
+                    //  sea que quedarian pegados y eso se lee igual que no
+                    //  dibujar ninguno. Separarlas con `Metrics::sm` costaria
+                    //  cuatro pixeles de la unica cosa que en esta pagina no
+                    //  sobra: la fila de nota. Es el mismo desenlace que la
+                    //  tira del paso, que eran tres paneles tocandose y paso a
+                    //  ser uno.
+                    pianoGrupos.add (tapas.getUnion (fila2));
                 }
             }
 

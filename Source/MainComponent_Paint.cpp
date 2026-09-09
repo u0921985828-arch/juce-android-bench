@@ -40,6 +40,7 @@ void MainComponent::paint (juce::Graphics& g)
     //  UiAudit::capaActual.
     UiAudit::capaActual = 0;
     UiAudit::origenPintado = { 0, 0 };
+    UiAudit::costuras.clear();
 
     auto full = getLocalBounds().toFloat();
 
@@ -90,8 +91,14 @@ void MainComponent::paint (juce::Graphics& g)
         const float x0  = cx - tw * 0.5f;
         const float gap = 9.0f;                       // air the rule leaves around the word
 
-        rule (s.getX() + 10.0f, x0 - gap, y, 0.16f);
+        const float rx0 = s.getX() + 10.0f, rx1 = x0 - gap;
+        rule (rx0, rx1, y, 0.16f);
         rule (x0 + tw + gap, s.getRight() - 10.0f, y, 0.16f);
+
+        //  Y SE APUNTA DONDE HA CAIDO, con una columna que pasa por el rayado.
+        //  Es la mitad que se juzga; donde esta el hueco lo dice la FOTO.
+        if (rx1 - rx0 > 6.0f)
+            UiAudit::costura ((int) y, (int) rx0, (int) rx1);
 
         g.setColour (ZatiColours::ink.withAlpha (0.42f));
         g.drawText (t, (int) x0 - 1, (int) (y - 5.0f), (int) tw + 3, 11,
@@ -150,8 +157,25 @@ void MainComponent::paint (juce::Graphics& g)
     if (! ctrlPlateArea.isEmpty())
         engraveIn (T ("CONTROL"), ctrlSeamTop, ctrlPlateArea.getY(), faceColumn);
 
+    //  ...Y CONTRA LO QUE SE PINTA, NO CONTRA LO QUE SE RESERVO.
+    //
+    //  Una fila de tapas deja `aireTapaVertical` vacio DENTRO de su propio
+    //  rectangulo -la tapa se pinta tres cuartos- y un plato pinta hasta su
+    //  borde. Asi que la banda que `resized()` reserva y el hueco que se VE no
+    //  son el mismo, y una palabra centrada en la primera sale descentrada en
+    //  el segundo. `ctrlSeamTop` ya lo descontaba para CONTROL -su comentario
+    //  lo cuenta- y las otras dos costuras se quedaron sin ello, que es media
+    //  regla.
+    //
+    //  Medido en 412x915 sobre la captura: el hueco de EFECTOS se ve de 367 a
+    //  401 -centro 384- y el rayado se dibujaba en 380.5; el de PADS de 431 a
+    //  487 -centro 459- y se dibujaba en 462.5. Tres pixeles y medio cada uno
+    //  y en direcciones CONTRARIAS, porque EFECTOS tiene el plato encima y la
+    //  fila debajo y PADS al reves. Es la queja, con su cifra.
     if (! fxRowArea.isEmpty())
-        engraveIn (T ("EFECTOS"), fxSeamTop, fxRowArea.getY(), faceColumn);
+        engraveIn (T ("EFECTOS"), fxSeamTop,
+                   fxRowArea.getY() + ZatiLookAndFeel::aireTapaVertical (fxRowArea.getHeight()),
+                   faceColumn);
 
     if (! padPlateArea.isEmpty())
     {
@@ -1693,6 +1717,20 @@ void MainComponent::paintPianoSheetContent (juce::Graphics& g)
     auto inner = seqSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
     const int sp = juce::jmax (0, selectedPad);
 
+    //  Y LOS GRUPOS, que esta pagina era la unica de las tres sin ninguno.
+    //
+    //  PASOS lleva tres paneles con nombre y PATRON cinco; el PIANO llevaba
+    //  cero, o sea dos filas de tapas flotando sobre el mismo fondo que la
+    //  rejilla — la queja fue exactamente esa, «la riqueza del pop-up del
+    //  secuenciador contra la falta de cosas en el piano roll».
+    //
+    //  Como RECTANGULOS y no como bandas de rotulo: una banda con nombre
+    //  cuesta su alto, y esta pagina ya pide 672 px donde la tarjeta da 663 en
+    //  un movil grande. Es el camino de `padGrupos` y `songGrupos`, que nacio
+    //  por lo mismo. Y los nombres no hacen falta aqui: las cuatro
+    //  herramientas se llaman LAPIZ, GOMA, TIJERAS y SEL en su propia tapa.
+    pintaPaneles (g, pianoGrupos);
+
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
     //  El titulo se aparta de las TRES tapas de la cabecera, y por el lado que
@@ -1709,9 +1747,17 @@ void MainComponent::paintPianoSheetContent (juce::Graphics& g)
     //  ahi abajo— y despues «PAD nn», que lo dice la tapa del selector. Queda
     //  «PIANO», que es lo unico que no se puede deducir mirando la maquina. Ver
     //  campoAcampo.
+    //  Y DICE EN QUE PATRON SE ESCRIBE, que es lo que le faltaba. PASOS dice
+    //  «PASOS · PAD 1 · P1» y PATRON «PATRON · PAD 1 · P1»; el piano decia
+    //  «PIANO · PAD 1» y era la unica de las tres paginas que ESCRIBE notas
+    //  sin nombrar donde van. Va el segundo, antes que el nombre del pad: el
+    //  pad se lee en el propio pad, ahi abajo, y el patron no se lee en ningun
+    //  sitio de esta pagina. Y cae por campos como los otros dos, asi que
+    //  donde no quepa no cuesta un pixel.
     const juce::String tPiano = campoAcampo (g.getCurrentFont(), titulo.getWidth(),
                                              T ("PIANO"),
                                              { "  " + dot + "  " + T ("PAD %1", juce::String (sp + 1)),
+                                               "  " + dot + "  P" + juce::String (selectedPattern + 1),
                                                padName[(size_t) sp].isNotEmpty()
                                                    ? "   " + padName[(size_t) sp] : juce::String() },
                                              0.85f);

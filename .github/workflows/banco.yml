@@ -227,6 +227,13 @@ jobs:
       - name: Las fotos de la ficha de Play
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/store.py
+      #  Y LAS TRES PALABRAS GRABADAS DE LA CARA, medidas en la FOTO: la app
+      #  dice donde dibujo el rayado y los pixeles dicen donde esta el hueco.
+      #  Catorce corridas -siete pantallas por dos, dump y foto, que son
+      #  excluyentes en el mismo arranque-.
+      - name: Las costuras de la cara
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/costuras.py
 
       #  El grande, y el ultimo: 1036 corridas. En paralelo son ~2 min.
       - name: La maqueta, en las siete pantallas y los cuatro idiomas

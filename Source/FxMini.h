@@ -258,7 +258,7 @@ public:
     void paint (juce::Graphics& g) override
     {
         auto r = getLocalBounds().toFloat();
-        if (r.getWidth() < 8.0f || r.getHeight() < 6.0f || fx < 0) return;
+        if (r.getWidth() < 8.0f || r.getHeight() < 6.0f) return;
 
         //  ES UN CRISTAL, no un dibujo sobre el chasis. Sin fondo el trazo
         //  flotaba encima del plato y la fila se leia desordenada — mirado en
@@ -272,8 +272,23 @@ public:
         g.setColour (ZatiColours::lcdDim.withAlpha (0.55f));
         g.drawRoundedRectangle (r.reduced (0.5f), 2.0f, 1.0f);
 
+        //  Y EL CRISTAL SE DIBUJA AUNQUE NO HAYA EFECTO, que es la queja y
+        //  no un adorno. `fx < 0` es una instalacion limpia -ninguna ranura
+        //  puesta- y la guarda estaba arriba del todo: el visor quedaba
+        //  VISIBLE, colocado en 112x74 y sin pintar un pixel, asi que lo que
+        //  se veia al lado de los tres mandos era el plato, y un plato con
+        //  forma de rectangulo vacio se lee como una pieza que falta y no como
+        //  un aparato. Una pantalla apagada sigue siendo una pantalla: es la
+        //  misma razon por la que la tira del medidor de canal solo aparece
+        //  cuando hay canal que mirar -una clavada en el suelo mentiria- y
+        //  aqui al reves, porque el sitio del visor no se mueve.
+        //
+        //  Lo que pide el efecto es el CONTENIDO: el renglon de referencia, la
+        //  capa viva, la curva y el punto de trabajo. Ninguno de los cuatro
+        //  significa nada sin un tipo, y el cristal significa lo mismo con el
+        //  y sin el.
         auto dentro = r.reduced (3.0f, 3.0f);
-        if (dentro.getWidth() < 6.0f || dentro.getHeight() < 5.0f) return;
+        if (fx < 0 || dentro.getWidth() < 6.0f || dentro.getHeight() < 5.0f) return;
 
         //  El renglon de referencia: el cero de una transferencia, el suelo de
         //  un tren de ecos. Sin el, una curva plana y una curva caida se

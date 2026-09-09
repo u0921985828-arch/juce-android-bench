@@ -777,7 +777,13 @@ private:
     //  eso no cuestan un pixel - que es lo que el banco comprueba en las 896
     //  corridas de expo.py, donde la celda de una rejilla canta cualquier
     //  altura que alguien se haya llevado.
-    juce::Array<juce::Rectangle<int>> padGrupos, setGrupos, songGrupos;
+    //  Y los del PIANO. Era la unica de las tres paginas de la ficha del
+    //  secuenciador sin un solo panel -PASOS lleva tres y PATRON cinco- asi
+    //  que sus dos filas de tapas flotaban sobre el mismo fondo que la
+    //  rejilla. Como rectangulos y no como bandas de rotulo (`SeqLabel`):
+    //  una banda con nombre cuesta su alto, y esta pagina pide 672 px donde la
+    //  tarjeta da 663. Ver `padGrupos`, que nacio por lo mismo.
+    juce::Array<juce::Rectangle<int>> padGrupos, setGrupos, songGrupos, pianoGrupos;
     //  ...and the line at the foot of the PASO page that names the step being
     //  edited. Reserved by resized() for the same reason: drawn from the card's
     //  bottom edge without being booked, it landed on the swing slider.
