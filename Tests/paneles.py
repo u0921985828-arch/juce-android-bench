@@ -44,7 +44,7 @@ LANGS = ["es", "en", "zh", "ar"]
 #  paginas de la ficha del secuenciador sin ninguno, asi que esta lista no lo
 #  abria y una pagina sin paneles no se puede medir mal.
 SHEETS = ["pads", "pad2", "pad3", "sec", "secp", "paso", "piano", "song", "set", "asp",
-          "proj", "midi"]
+          "proj", "midi", "expo", "chop"]
 
 #  El aire que la app dice que deja. Se lee del fichero y no se copia: una
 #  prueba que lleva su propia copia del numero pasa cuando el numero cambia.

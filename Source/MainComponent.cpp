@@ -1564,7 +1564,8 @@ MainComponent::MainComponent()
     //  el que vuelve cualquier proyecto anterior.
     initKnob (anchoSlider, 0.0, 2.0, 0.01, 1.0, 1.0,
              [this] { if (selectedPad >= 0) { padAnchoUI[(size_t) selectedPad] = (float) anchoSlider.getValue();
-                                              engine.setPadAncho (selectedPad, (float) anchoSlider.getValue()); } });
+                                              engine.setPadAncho (selectedPad, (float) anchoSlider.getValue());
+                                              if (auto* ma = mixAnchos[selectedPad]) ma->setValue (anchoSlider.getValue(), juce::dontSendNotification); } });
     initKnob (attackSlider, 0.0, 200.0, 1.0, 2.0, 20.0,
              [this] { if (selectedPad >= 0) { padAttack[(size_t) selectedPad] = (float) attackSlider.getValue(); engine.setPadAttack (selectedPad, (float) attackSlider.getValue()); } });
     initKnob (releaseSlider, 1.0, 800.0, 1.0, 5.0, 40.0,
@@ -2334,6 +2335,36 @@ MainComponent::MainComponent()
         mixRows.addAndMakeVisible (p);
         mixPans.add (p);
 
+        //  Y EL ANCHO AL LADO DEL PAN, que es la otra mitad de donde se pone un
+        //  sonido: el pan dice DONDE esta y el ancho CUANTO ocupa, y sin los
+        //  dos no hay forma de estrechar un break que se come el centro ni de
+        //  abrir un colchon que suena plano sin ir pad por pad a EL PAD.
+        //
+        //  El motor no crece: `setPadAncho` existe desde la tanda del ancho
+        //  estereo -medio/lado antes del pan, acotado 0..2 con uno de defecto-
+        //  asi que esto es una segunda ventana al MISMO numero, como el pan.
+        //
+        //  Y APAGADO EN UNA MUESTRA MONO, que es lo que ya hace su mando en EL
+        //  PAD: sin lado que abrir ni cerrar, un mando que se mueve y no hace
+        //  nada es peor que no tenerlo.
+        auto* an = new juce::Slider();
+        an->setSliderStyle (juce::Slider::LinearHorizontal);
+        an->setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+        an->setRange (0.0, 2.0, 0.01);
+        an->setValue (padAnchoUI[(size_t) i], juce::dontSendNotification);
+        an->setDoubleClickReturnValue (true, 1.0);
+        an->setColour (juce::Slider::trackColourId, ZatiColours::inkDim.withAlpha (0.55f));
+        an->getProperties().set ("pan", true);
+        an->setSliderSnapsToMousePosition (false);
+        an->onValueChange = [this, i, an]
+        {
+            padAnchoUI[(size_t) i] = (float) an->getValue();
+            engine.setPadAncho (i, (float) an->getValue());
+            if (i == selectedPad) anchoSlider.setValue (an->getValue(), juce::dontSendNotification);
+        };
+        mixRows.addAndMakeVisible (an);
+        mixAnchos.add (an);
+
         auto* m = new juce::TextButton ("M");
         styleButton (*m, kStepOff);
         m->setColour (juce::TextButton::buttonOnColourId, ZatiColours::red);
@@ -2595,6 +2626,7 @@ MainComponent::MainComponent()
         {
             if (mixFaders[i] != nullptr) mixFaders[i]->setValue (dbFromGain (padGain[(size_t) i]), juce::dontSendNotification);
             if (mixPans[i]   != nullptr) mixPans[i]  ->setValue (padPan[(size_t) i],  juce::dontSendNotification);
+            if (mixAnchos[i] != nullptr) mixAnchos[i]->setValue (padAnchoUI[(size_t) i], juce::dontSendNotification);
         }
         openSheet (mixSheet, mixButton);
         refreshMixStrip();
@@ -5474,11 +5506,13 @@ void MainComponent::showMixBank (int bank)
         {
             if (auto* f = mixFaders[i]) f->setBounds ({});
             if (auto* p = mixPans[i])   p->setBounds ({});
+        if (auto* a = mixAnchos[i]) a->setBounds ({});
             if (auto* m = mixMutes[i])  m->setBounds ({});
             if (auto* s = mixSolos[i])  s->setBounds ({});
         }
         if (auto* f = mixFaders[i]) f->setVisible (on);
         if (auto* p = mixPans[i])   p->setVisible (on);
+        if (auto* a = mixAnchos[i]) a->setVisible (on);
         if (auto* m = mixMutes[i])  m->setVisible (on);
         if (auto* s = mixSolos[i])  s->setVisible (on);
     }
@@ -7446,6 +7480,7 @@ void MainComponent::refreshAccessibleNames()
         const auto ch = juce::String (i + 1);
         if (auto* f = mixFaders[i]) { f->setTitle (T ("Ganancia pad %1", ch)); f->setDescription (T ("del mezclador")); }
         if (auto* p = mixPans[i])   { p->setTitle (T ("Paneo pad %1",   ch)); p->setDescription (T ("del mezclador")); }
+        if (auto* a = mixAnchos[i]) { a->setTitle (T ("Ancho pad %1",   ch)); a->setDescription (T ("del mezclador")); }
         if (auto* m = mixMutes[i])  { m->setTitle (T ("Silencio %1", ch)); }
         if (auto* s = mixSolos[i])  { s->setTitle (T ("Solo %1",     ch)); }
     }
@@ -9509,6 +9544,7 @@ void MainComponent::applyState (const juce::ValueTree& s)
     {
         if (mixFaders[i] != nullptr) mixFaders[i]->setValue (dbFromGain (padGain[(size_t) i]), juce::dontSendNotification);
         if (mixPans[i]   != nullptr) mixPans[i]  ->setValue (padPan[(size_t) i],  juce::dontSendNotification);
+            if (mixAnchos[i] != nullptr) mixAnchos[i]->setValue (padAnchoUI[(size_t) i], juce::dontSendNotification);
     }
     refreshMixStrip();
     selectPad (juce::jmax (0, selectedPad));
@@ -11340,6 +11376,7 @@ void MainComponent::refreshMixStrip()
             const bool audible = ! engine.isPadMuted (i) && (! any || engine.isPadSoloed (i));
             mixFaders[i]->setAlpha (audible ? 1.0f : 0.45f);
             if (mixPans[i] != nullptr) mixPans[i]->setAlpha (audible ? 1.0f : 0.45f);
+            if (mixAnchos[i] != nullptr) mixAnchos[i]->setAlpha (audible ? 1.0f : 0.45f);
         }
     }
     mixClearSolo.setEnabled (any);
@@ -14834,10 +14871,20 @@ void MainComponent::pintaCuadro (double dtMs)
             platoMini.ponVivo (false);
         }
 
+        //  LA VENTANA DEL ANALIZADOR MANDA SOBRE `scopePoints`, y esa es la
+        //  unica linea que el espectro del cristal costo aqui. `scopePoints`
+        //  vale 256 en la gama baja y sale del mismo `classify()` que el
+        //  deposito de voces: para el pico y la aguja da igual cuantas
+        //  muestras se miren, pero una FFT de 1024 necesita 1024 - con menos
+        //  `Analizador::analiza` se rinde y la gama baja se quedaria sin
+        //  espectro. El anillo del motor son 2048, asi que pedirlas es siempre
+        //  valido, y lo que cuesta de mas es copiar 768 floats: la FFT es el
+        //  coste y esa se paga o no se paga entera.
         const int scopeN = juce::jmin ((int) (sizeof (scopeTmp) / sizeof (scopeTmp[0])),
-                                       DeviceTier::profile().scopePoints);
+                                       juce::jmax (DeviceTier::profile().scopePoints,
+                                                   Analizador::kFft));
         engine.copyScope (scopeTmp, scopeN);
-        cristal.setSamples (scopeTmp, scopeN, dtMs);
+        cristal.setSamples (scopeTmp, scopeN, dtMs, deviceSampleRate);
         cristal.setBpm (bpmSlider.getValue());
     }
 

@@ -495,7 +495,20 @@ private:
             //  pasaba por debajo-. Quitar un falso positivo no puede costar
             //  una comprobacion de verdad.
             UiAudit::capaActual = (int) getProperties()["capa"];
+
+            //  Y EN SUS COORDENADAS, que es la otra mitad y la que faltaba.
+            //  Este panel pinta en LAS SUYAS -esta en 14,6- y el volcado va en
+            //  las de la ventana, asi que su titulo y su renglon de ayuda se
+            //  apuntaban catorce pixeles a la izquierda y seis mas arriba de
+            //  donde de verdad estan: el banco llevaba desde el primer dia
+            //  midiendo esta cabecera en el sitio equivocado. Es exactamente
+            //  el fallo de INSTRUMENTOS -pintar desde la tarjeta y maquetar
+            //  desde el cuerpo- y el de `ManualBody`, en el tercer y ultimo
+            //  sitio de la app que pinta fuera de la cara.
+            const auto antes = UiAudit::origenPintado;
+            UiAudit::origenPintado = getPosition();
             if (paintContent) paintContent (g);
+            UiAudit::origenPintado = antes;
         }
     };
     XyPanel xyPanel;
@@ -783,7 +796,12 @@ private:
     //  rejilla. Como rectangulos y no como bandas de rotulo (`SeqLabel`):
     //  una banda con nombre cuesta su alto, y esta pagina pide 672 px donde la
     //  tarjeta da 663. Ver `padGrupos`, que nacio por lo mismo.
-    juce::Array<juce::Rectangle<int>> padGrupos, setGrupos, songGrupos, pianoGrupos;
+    //  Y LOS DE EXPORTAR y el TROCEADO, que eran dos de las fichas que se
+    //  quedaron sin agrupar: la referencia que llego del telefono es la
+    //  ficha EL PAD con sus paneles, y estas dos son las que mas se leen
+    //  como una columna de renglones sueltos sobre el mismo fondo.
+    juce::Array<juce::Rectangle<int>> padGrupos, setGrupos, songGrupos, pianoGrupos,
+                                      exportGrupos, chopGrupos;
     //  ...and the line at the foot of the PASO page that names the step being
     //  edited. Reserved by resized() for the same reason: drawn from the card's
     //  bottom edge without being booked, it landed on the swing slider.
@@ -858,7 +876,7 @@ private:
     //  que ocupa su sitio.
     bool pintaAyuda (juce::Graphics& g, juce::Rectangle<int> banda,
                      const juce::String& texto, juce::Justification justif,
-                     float apreton = 0.75f);
+                     float apreton = Metrics::apretonAyuda);
 
     juce::Rectangle<int> pintaTitulo (juce::Graphics& g, juce::Rectangle<int> caja,
                                       const juce::String& texto, const char* tipo = "titulo",
@@ -1399,6 +1417,8 @@ public:
     //  en las coordenadas donde se cree que esta PLAY, que es la clase de
     //  prueba que pasa porque ha fallado el tiro.
     void auditPlay (bool on);
+    //  El pico del espectro del cristal, para el banco. Ver SpectrumDisplay.
+    float auditPicoEspectro() const { return cristal.picoEspectro(); }
     //  LAS HERRAMIENTAS DE ARREGLO, medidas. Ver auditArrange: monta una
     //  cancion y un patron conocidos, ejecuta las seis operaciones y dice lo
     //  que quedo. Sin esto, "insertar un compas" es una tapa que se pulsa y
@@ -2031,7 +2051,7 @@ private:
                      mixCloseButton   { juce::CharPointer_UTF8 ("\xc3\x97") };
     //  A studio is where a track gets finished, and nothing gets finished
     //  without balancing it. One strip per pad: level, mute, solo.
-    juce::OwnedArray<juce::Slider>     mixFaders, mixPans;
+    juce::OwnedArray<juce::Slider>     mixFaders, mixPans, mixAnchos;
 
     //  The rack: one pad's six sends, opened from the mixer. An effect here
     //  is not on or off, it is how much of THIS channel goes into it - which

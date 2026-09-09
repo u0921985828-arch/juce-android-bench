@@ -41,6 +41,8 @@ void MainComponent::paint (juce::Graphics& g)
     UiAudit::capaActual = 0;
     UiAudit::origenPintado = { 0, 0 };
     UiAudit::costuras.clear();
+    UiAudit::vus.clear();
+    UiAudit::vuRotulos.clear();
 
     auto full = getLocalBounds().toFloat();
 
@@ -674,28 +676,48 @@ void MainComponent::paintBrowseSheetContent (juce::Graphics& g)
     //  rotulo se dibuja a mano. La ficha que mas necesita decir a que has
     //  entrado es justo esta: el mismo navegador carga una muestra y elige la
     //  carpeta del rebote.
-    pintaTitulo (g, antesDe (inner.removeFromTop (16), browseCloseButton),
-                 eligiendoCarpeta
-                   ? T ("CARPETA DE EXPORTAR")
-                   : T ("CARGAR EN PAD %1", juce::String (juce::jmax (0, browseTargetPad) + 1)),
-                 "titulo", true);
+    auto browseTitleRow = antesDe (inner.removeFromTop (Metrics::bandaTitulo), browseCloseButton);
 
     //  LO ELEGIDO LO DICE `selectionChanged`, no un `stat` dentro de `paint`.
     //  Esto llamaba a `existsAsFile()` y a `getFileName()` sobre el fichero
     //  senalado en cada repintado del navegador, y esa pregunta ya la contesta
     //  -con el mismo `existsAsFile`- la funcion que enciende CARGAR. Un dueno.
     const bool picked = ! eligiendoCarpeta && browsePickName.isNotEmpty();
-    g.setColour (ZatiColours::inkDim);
-    g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
     //  Same reason as the pad sheet: this is a file name, and the close button
     //  shares the band.
-    auto browseSubRow = antesDe (inner.removeFromTop (14), browseCloseButton);
+    auto browseSubRow = antesDe (inner.removeFromTop (Metrics::bandaSubtitulo), browseCloseButton);
     juce::String sub;
     if (picked)                  sub = browsePickName;
     else if (eligiendoCarpeta)   sub = browser != nullptr
                                          ? T ("entra donde quieras y pulsa USAR ESTA CARPETA")
                                          : juce::String();
     else                         sub = T ("elige una muestra  -  wav / aiff / flac / ogg / mp3");
+
+    //  Y LA CABECERA MIDE UNA LINEA O DOS SEGUN SI ESA SEGUNDA SE DIBUJA. Ver
+    //  la del piano: aqui la frase de ayuda no cabe en 280x653 -y ademas
+    //  puede estar VACIA, cuando el navegador todavia no existe- asi que ahi
+    //  la cabecera es de una linea. El nombre elegido se elide, o sea que ese
+    //  siempre se dibuja.
+    bool hayBrowseSub = sub.isNotEmpty();
+    if (hayBrowseSub && ! picked)
+    {
+        g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
+        hayBrowseSub = cabeEntero (g, browseSubRow, sub, Metrics::apretonAyuda);
+    }
+    const int desplazaBrowse = (Metrics::hit - altoCabecera (hayBrowseSub)) / 2;
+    browseTitleRow = browseTitleRow.translated (0, desplazaBrowse);
+    browseSubRow   = browseSubRow.translated   (0, desplazaBrowse);
+
+    g.setColour (ZatiColours::ink.withAlpha (0.9f));
+    g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
+    pintaTitulo (g, browseTitleRow,
+                 eligiendoCarpeta
+                   ? T ("CARPETA DE EXPORTAR")
+                   : T ("CARGAR EN PAD %1", juce::String (juce::jmax (0, browseTargetPad) + 1)),
+                 "titulo", true);
+
+    g.setColour (ZatiColours::inkDim);
+    g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
     //  APUNTADO: se recorta con `antesDe` y nadie lo comprobaba. Un rotulo que
     //  el banco no ve puede acabar debajo de la cruz sin que las mil corridas
     //  digan nada — es como la mesa estuvo titulada «MIX» a mano durante meses.
@@ -899,15 +921,21 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
 
 void MainComponent::paintExportSheetContent (juce::Graphics& g)
 {
+    //  Ver pintaPaneles: los grupos los publica `resized()`, asi que no
+    //  cuestan un pixel de alto.
+    pintaPaneles (g, exportGrupos);
     if (exportSheet.sheetBounds.isEmpty()) return;
 
     auto inner = exportSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
-    inner.removeFromTop (2);
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
-    pintaTitulo (g, antesDe (inner.removeFromTop (18), exportCloseButton), T ("EXPORTAR"));
-    inner.removeFromTop (10);
+    //  Con los dos numeros a mano -un 2 de arriba y una banda de 18- el titulo
+    //  caia NUEVE pixeles por encima del centro de la cruz. Ninguno de los dos
+    //  decidia nada que el maquetado no hubiera decidido ya.
+    pintaTitulo (g, antesDe (centraEnRenglon (inner.removeFromTop (Metrics::bandaTitulo)),
+                             exportCloseButton), T ("EXPORTAR"));
+    inner.removeFromTop (14);
 
     // What is going to be rendered, and how long it will be. Stated before
     // you press, not after: a bounce is the one action here you cannot undo
@@ -1262,7 +1290,8 @@ void MainComponent::paintManualSheetContent (juce::Graphics& g)
     auto inner = manualSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
     //  Se para antes del boton de cerrar, como todas las demas fichas - y por
     //  el lado en el que ESTE, que en arabe es el izquierdo.
-    auto titleRow = antesDe (inner.removeFromTop (16), manualCloseButton);
+    auto titleRow = antesDe (centraEnRenglon (inner.removeFromTop (Metrics::bandaTitulo), Metrics::bandaTitulo + Metrics::bandaSubtitulo),
+                             manualCloseButton);
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
@@ -1282,7 +1311,8 @@ void MainComponent::paintManualSheetContent (juce::Graphics& g)
     //  Apuntado y recortado antes de la x, como el titulo: se dibuja con
     //  drawText y no era un componente, asi que no lo veia nadie.
     //  Y APRETADO donde no cabe entero: pedia 206 px con 181 en 280x653.
-    pintaTitulo (g, antesDe (inner.removeFromTop (14), manualCloseButton),
+    pintaTitulo (g, antesDe (centraEnRenglon (inner.removeFromTop (Metrics::bandaSubtitulo), Metrics::bandaTitulo + Metrics::bandaSubtitulo),
+                             manualCloseButton),
                  T ("lo que hay que saber, en %1 capitulos",
                     Lang::ltr (juce::String (kManualChapterCount))),
                  "subtitulo", false, 0.85f);
@@ -1417,7 +1447,9 @@ void MainComponent::paintMixSheetContent (juce::Graphics& g)
     //  componente y por eso llevaba aqui desde el principio.
     const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
     {
-        const auto caja = antesDe (mixSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY).removeFromTop (16),
+        const auto caja = antesDe (centraEnRenglon (mixSheet.sheetBounds
+                                       .reduced (Metrics::margenFichaX, Metrics::margenFichaY)
+                                       .removeFromTop (Metrics::bandaTitulo)),
                                    mixCloseButton);
         const auto txt = engine.anySolo() ? T ("MIX") + "  " + dot + "  " + T ("SOLO ACTIVO") : T ("MIX");
         pintaTitulo (g, caja, txt);
@@ -1560,7 +1592,9 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
     //  The pad's name is a file name and files are named by whoever made
     //  them, so this line has no length it can count on. Stop it before the
     //  close button and let it shrink rather than run underneath.
-    auto padTitleRow = padSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY).removeFromTop (16);
+    auto padTitleRow = centraEnRenglon (padSheet.sheetBounds
+                                            .reduced (Metrics::margenFichaX, Metrics::margenFichaY)
+                                            .removeFromTop (Metrics::bandaTitulo));
     //  Y DE LA TERCERA TAPA DE LA FILA: la puerta de la rejilla de dieciseis
     //  pads. Sin ella el titulo -"PAD 64 · ARP"- se le metia debajo en 280x653,
     //  doce hallazgos. Es la misma cuenta que ya hacian las otras dos.
@@ -1737,12 +1771,41 @@ void MainComponent::paintPianoSheetContent (juce::Graphics& g)
     //  toque. Antes se apartaba solo de la cruz y solo por la derecha: en arabe
     //  el texto se va a la derecha, que es justo donde takeEnd habia puesto las
     //  tapas, asi que el nombre del pad aterrizaba encima de ellas.
-    auto titulo = antesDe (antesDe (antesDe (antesDe (inner.removeFromTop (16),
+    auto titulo = antesDe (antesDe (antesDe (antesDe (inner.removeFromTop (Metrics::bandaTitulo),
                                                       seqCloseButton,  Metrics::sm),
                                              pianoPadPickBtn, Metrics::sm),
                                     pianoPadDownBtn, Metrics::sm),
                            pianoPadUpBtn,   Metrics::sm);
     const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
+
+    //  Y LA SEGUNDA LINEA SE DECIDE ANTES DE COLOCAR LA PRIMERA.
+    //
+    //  La cabecera se centra en el renglon que `resized()` reservo, y cuanto
+    //  mide depende de si el renglon de ayuda se va a dibujar: en 280x653 no
+    //  cabe ni en su forma corta -pide 99 px y hay 41- asi que ahi la cabecera
+    //  es de UNA linea y centrar la pareja dejaba el titulo siete pixeles
+    //  alto. Es la escalera de siempre, hecha con el TEXTO PUESTO.
+    //
+    //  El desplazamiento es VERTICAL y el reparto de `ayudaYDato` es de ancho,
+    //  asi que preguntar antes de mover no cambia la respuesta. La fuente si:
+    //  se pone la del renglon de ayuda para preguntar y se devuelve la del
+    //  titulo para dibujarlo.
+    auto ayuda = inner.removeFromTop (Metrics::bandaSubtitulo);
+    ayuda.setLeft  (titulo.getX());
+    ayuda.setRight (titulo.getRight());
+
+    const auto fuenteTit = g.getCurrentFont();
+    g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
+    const auto ayudaPiano = ayudaYDato (g, ayuda,
+                                        T ("toca el teclado para oir, la rejilla para escribir"),
+                                        T ("OCTAVA") + " " + PianoRoll::nombreDe (pianoBase)
+                                          + " - " + PianoRoll::nombreDe (pianoBase + pianoGrid.getFilas() - 1),
+                                        "   " + dot + "   ", 0.8f);
+    g.setFont (fuenteTit);
+
+    const int desplaza = (Metrics::hit - altoCabecera (ayudaPiano.isNotEmpty())) / 2;
+    titulo = titulo.translated (0, desplaza);
+    ayuda  = ayuda.translated  (0, desplaza);
     //  Y CAE POR CAMPOS: primero el nombre del pad —que se lee en el propio pad,
     //  ahi abajo— y despues «PAD nn», que lo dice la tapa del selector. Queda
     //  «PIANO», que es lo unico que no se puede deducir mirando la maquina. Ver
@@ -1770,9 +1833,6 @@ void MainComponent::paintPianoSheetContent (juce::Graphics& g)
     //  Y la ayuda se para donde el titulo, que va justo encima: la cabecera
     //  lleva PAD -, PAD + y la cruz, y este renglon se metia por debajo de las
     //  tres - "la rejilla para escribir" acababa detras de PAD -.
-    auto ayuda = inner.removeFromTop (14);
-    ayuda.setLeft  (titulo.getX());
-    ayuda.setRight (titulo.getRight());
     //  Y CAE POR ORDEN: primero la AYUDA y despues el renglon entero.
     //
     //  Este renglon lleva dos cosas y solo una cambia: «toca el teclado para
@@ -1781,12 +1841,8 @@ void MainComponent::paintPianoSheetContent (juce::Graphics& g)
     //  pantalla que dice que se esta mirando. Medido en 280x653: los dos piden
     //  316 px y hay 41, o sea que se veia un octavo de frase; el dato solo pide
     //  99. Se cae la ayuda y queda el dato, que es la misma regla que gobierna
-    //  el icono contra la palabra en una tapa.
-    const auto ayudaPiano = ayudaYDato (g, ayuda,
-                                        T ("toca el teclado para oir, la rejilla para escribir"),
-                                        T ("OCTAVA") + " " + PianoRoll::nombreDe (pianoBase)
-                                          + " - " + PianoRoll::nombreDe (pianoBase + pianoGrid.getFilas() - 1),
-                                        "   " + dot + "   ", 0.8f);
+    //  el icono contra la palabra en una tapa. Lo que se dibuje ya se decidio
+    //  arriba, que es lo que dice cuanto mide la cabecera.
     pintaAyuda (g, ayuda, ayudaPiano, Lang::start(), 0.8f);
 }
 
@@ -1799,7 +1855,7 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
     //  sus bandas viven en coordenadas del cuerpo - las mismas de las
     //  que sale el maquetado. Ver Sheet::hazDesplazable.
     auto inner = setSheet.cuerpo.getLocalBounds();
-    inner.removeFromTop (16);          // el titulo, ver paintSetTitle
+    inner.removeFromTop (Metrics::bandaTitulo);   // el titulo, ver paintSetTitle
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
@@ -1810,7 +1866,8 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
     //  collapsed the row to nothing and the subtitle vanished entirely. Por
     //  `antesDe`, que es quien tiene esa regla: el lado lo dice la TAPA y no el
     //  idioma.
-    auto subRow = antesDe (inner.removeFromTop (14), setCloseButton);
+    auto subRow = antesDe (centraEnRenglon (inner.removeFromTop (Metrics::bandaSubtitulo), Metrics::bandaTitulo + Metrics::bandaSubtitulo),
+                           setCloseButton);
     const auto subProj = currentProject.isNotEmpty()
                              ? T ("abierto: %1", currentProject)
                              : (projModel.names.isEmpty()
@@ -1871,8 +1928,24 @@ void MainComponent::paintRackSheetContent (juce::Graphics& g)
     //  sin la cuenta no hay forma de distinguirlo de uno que no suena.
     int cuantos = 0;
     for (int p = 0; p < kNumPads; ++p) if (engine.getPadCanal (p) == canalActual) ++cuantos;
-    auto titleRow = inner.removeFromTop (16);
-    titleRow = antesDe (titleRow, rackCloseButton);
+    //  Y LA CABECERA MIDE UNA LINEA O DOS SEGUN SI LA SEGUNDA SE DIBUJA. Ver
+    //  la del piano: en 280x653 esta ayuda pide 262 px con 247 y se cae, asi
+    //  que ahi la cabecera es de una linea y centrar la pareja dejaba el
+    //  titulo siete pixeles alto. Se pregunta con el texto puesto y con la
+    //  fuente con la que se dibuja.
+    auto titleRow  = antesDe (inner.removeFromTop (Metrics::bandaTitulo), rackCloseButton);
+    auto bandaRack = antesDe (inner.removeFromTop (Metrics::bandaSubtitulo), rackCloseButton);
+    const auto ayudaRack = T ("cuanto de este canal pasa por cada efecto");
+    bool hayAyudaRack = false;
+    {
+        const auto fuenteTit = g.getCurrentFont();
+        g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
+        hayAyudaRack = cabeEntero (g, bandaRack, ayudaRack, Metrics::apretonAyuda);
+        g.setFont (fuenteTit);
+    }
+    const int desplazaRack = (Metrics::hit - altoCabecera (hayAyudaRack)) / 2;
+    titleRow  = titleRow.translated  (0, desplazaRack);
+    bandaRack = bandaRack.translated (0, desplazaRack);
     pintaTitulo (g, titleRow,
                  T ("RACK") + "  " + dot + "  " + T ("CANAL %1", Lang::ltr (juce::String (canalActual + 1)))
                 + "  " + dot + "  " + T ("%1 PADS", Lang::ltr (juce::String (cuantos))), "titulo", true);
@@ -1894,8 +1967,7 @@ void MainComponent::paintRackSheetContent (juce::Graphics& g)
         //  Y se mide con el MISMO 0.75 con el que se dibuja: `apunta` medía a
         //  1.0 mientras `drawFittedText` aprieta, o sea la misma regla escrita
         //  con dos numeros.
-        auto bandaRack = antesDe (inner.removeFromTop (14), rackCloseButton);
-        pintaAyuda (g, bandaRack, T ("cuanto de este canal pasa por cada efecto"), Lang::start());
+        pintaAyuda (g, bandaRack, ayudaRack, Lang::start());
     }
 
     //  EL NOMBRE Y EL DIBUJO YA NO SE PINTAN AQUI: el canalon de la izquierda
@@ -1959,7 +2031,7 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     //  con la tapa puesta. Es la cadena de siempre y no una cuenta nueva -cada
     //  tapa que se deja fuera saca su propio hallazgo- y `antesDe` decide el
     //  lado comparando los centros, que es lo unico que vale en arabe.
-    auto tituloRow = antesDe (antesDe (antesDe (antesDe (inner.removeFromTop (16),
+    auto tituloRow = antesDe (antesDe (antesDe (antesDe (centraEnRenglon (inner.removeFromTop (Metrics::bandaTitulo), Metrics::bandaTitulo + Metrics::bandaSubtitulo),
                                                          seqCloseButton, Metrics::sm),
                                                 pianoPadPickBtn, Metrics::sm),
                                        seqPistasBtn, Metrics::sm),
@@ -1996,7 +2068,7 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     //  Lo que se queda es lo que no se puede deducir mirando la maquina: que
     //  no hay cadena. Que repite el patron puesto lo dice la paleta, donde P1
     //  esta encendido.
-    seqChainBand = antesDe (antesDe (antesDe (antesDe (inner.removeFromTop (14),
+    seqChainBand = antesDe (antesDe (antesDe (antesDe (centraEnRenglon (inner.removeFromTop (Metrics::bandaSubtitulo), Metrics::bandaTitulo + Metrics::bandaSubtitulo),
                                                        seqPistasBtn,    Metrics::sm),
                                               seqCloseButton,  Metrics::sm),
                                      pianoPadPickBtn, Metrics::sm),
@@ -2146,7 +2218,7 @@ void MainComponent::paintSetTitle (juce::Graphics& g)
     if (setSheet.sheetBounds.isEmpty()) return;
 
     //  Del CUERPO y no de la tarjeta: esta ficha se desplaza.
-    auto banda = setSheet.cuerpo.getLocalBounds().removeFromTop (16);
+    auto banda = centraEnRenglon (setSheet.cuerpo.getLocalBounds().removeFromTop (Metrics::bandaTitulo), Metrics::bandaTitulo + Metrics::bandaSubtitulo);
 
     //  Y SE PARA ANTES DE LA TAPA DE CERRAR, en el lado en que este.
     //  El titulo se pintaba en la banda ENTERA y la x vive en el mismo
@@ -2184,7 +2256,9 @@ void MainComponent::paintSongSheetContent (juce::Graphics& g)
     //  la tapa anterior. La cuenta estaba escrita para dos tapas y ahora son
     //  tres: se encadena una llamada mas, y `antesDe` decide el lado
     //  comparando los centros, asi que sigue valiendo en los cuatro idiomas.
-    auto renglon = antesDe (antesDe (songSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY).removeFromTop (16),
+    auto renglon = antesDe (antesDe (centraEnRenglon (songSheet.sheetBounds
+                                         .reduced (Metrics::margenFichaX, Metrics::margenFichaY)
+                                         .removeFromTop (Metrics::bandaTitulo)),
                                      songCloseButton),
                             songZoomBtn);
 
@@ -2511,10 +2585,19 @@ void MainComponent::paintXySheetContent (juce::Graphics& g)
     //  Se para antes del interruptor, que ahora comparte fila con el. Sin el
     //  tope, "XY - DLY - EN ESPERA" en arabe pasa por debajo de MOMENTANEO.
     {
-        auto row = inner.removeFromTop (16);
-        //  Convertidas a coordenadas de la cara: estas dos cuelgan de XyPanel.
-        row = antesDe (antesDe (row, getLocalArea (&xyLatchButton, xyLatchButton.getLocalBounds())),
-                       getLocalArea (&xyCloseButton, xyCloseButton.getLocalBounds()));
+        //  EL RENGLON QUE EL MAQUETADO RESERVO -`Metrics::hit`- y el titulo
+        //  centrado en el, como en las otras once fichas. El pintor carvaba su
+        //  propio 16 desde arriba y dejaba el texto DOCE pixeles por encima del
+        //  centro de la cruz y de MOMENTANEO.
+        auto row = centraEnRenglon (inner.removeFromTop (Metrics::hit)
+                                        .withHeight (Metrics::bandaTitulo));
+        //  Y las dos tapas se comparan TAL CUAL: cuelgan de XyPanel, o sea que
+        //  sus limites ya estan en el espacio en el que este pintor dibuja.
+        //  `getLocalArea (this, ...)` las llevaba a las coordenadas de la CARA
+        //  -catorce pixeles a la derecha y seis mas abajo- que es justo la
+        //  trampa contra la que avisa el comentario que habia aqui, escrita al
+        //  reves.
+        row = antesDe (antesDe (row, xyLatchButton), xyCloseButton);
         pintaTitulo (g, row,
                  T ("XY") + "  " + dot + "  " + juce::String (fxDefs[xyFx].name)
                       + "  " + dot + "  " + (fxOn[(size_t) xyFx] ? T ("SUENA") : T ("EN ESPERA")), "titulo", true);
@@ -2525,12 +2608,13 @@ void MainComponent::paintXySheetContent (juce::Graphics& g)
     {
         const auto ayuda = xyLatch ? T ("se queda donde lo dejes")
                                    : T ("entra al tocar y sale al soltar");
-        //  Y se aparta de MOMENTANEO, que cuelga de XyPanel: sus limites hay
-        //  que convertirlos a las coordenadas de la banda, que es la misma
-        //  trampa que ya costo que el titulo del XY se metiera diez pixeles
-        //  debajo de esa tapa.
-        const auto banda = antesDe (inner.removeFromTop (14),
-                                    getLocalArea (&xyLatchButton, xyLatchButton.getLocalBounds()));
+        //  Y en la banda que el maquetado le reservo DEBAJO del renglon del
+        //  titulo, no dentro de el: el pintor se comia el renglon en 16 px y
+        //  dibujaba esta linea a la altura de las tapas, dejando muertos los
+        //  catorce de abajo. Es el mismo hallazgo que ya costo una medida en
+        //  la cabecera del RACK.
+        const auto banda = antesDe (inner.removeFromTop (Metrics::bandaSubtitulo),
+                                    xyLatchButton);
         pintaAyuda (g, banda, ayuda, Lang::start());
     }
 

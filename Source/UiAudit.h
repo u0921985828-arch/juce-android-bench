@@ -245,6 +245,39 @@ namespace UiAudit
     inline void costura (int y, int x0, int x1)
     { if (enabled()) costuras.push_back ({ y, x0, x1 }); }
 
+    //  EL MEDIDOR DEL CRISTAL, FILA POR FILA Y CON EL CRISTAL QUE LAS TIENE
+    //  QUE CONTENER.
+    //
+    //  La tercera fila -la del canal- se salio del cristal desde el dia que
+    //  entro: cuatro pixeles por los segmentos y cinco por el rotulo, asi que
+    //  en el telefono el numero se veia partido por la mitad. Ninguna de las
+    //  trece reglas del banco podia verlo, y por una razon de fondo: TODAS
+    //  recorren el arbol de COMPONENTES, y aqui el que se sale no es un
+    //  componente sino una fila que `SpectrumDisplay::paint` dibuja DENTRO de
+    //  uno. Desde fuera el cristal esta entero, en su sitio y sin solapar a
+    //  nadie.
+    //
+    //  Se publica el rectangulo que cada fila OCUPA y el del cristal, los dos
+    //  en coordenadas del propio cristal, y la regla pregunta si lo dibujado
+    //  cabe en lo dibujado. No se publican `kMeterBand` ni el paso de fila: un
+    //  banco que repite la constante del codigo no prueba el codigo — es lo
+    //  que esta casa ya pago dos veces con la mascara del lanzador.
+    struct Vu { int x, y, w, h; juce::String que; };
+    inline std::vector<Vu> vus;
+    inline void vuFila (juce::Rectangle<int> r, const juce::String& que)
+    { if (enabled()) vus.push_back ({ r.getX(), r.getY(), r.getWidth(), r.getHeight(), que }); }
+
+    //  Y POR CUAL DE LAS DOS RAMAS SALIO EL ROTULO DE LA TERCERA FILA. La
+    //  palabra cabe hoy en las siete pantallas por los cuatro idiomas, asi que
+    //  sin esto la rama corta -las dos cifras en el canalon- no la ve nadie y
+    //  la escalera seria una linea que imprime OK. Se publica y no se juzga,
+    //  como TOUCH: las dos ramas son correctas y lo que importa es que el
+    //  banco pueda decir cual se tomo y verla caer al romperla.
+    struct VuRot { juce::String texto; int pide, tiene; };
+    inline std::vector<VuRot> vuRotulos;
+    inline void vuRotulo (const juce::String& t, int pide, int tiene)
+    { if (enabled()) vuRotulos.push_back ({ t, pide, tiene }); }
+
     //  Y no se guarda con `midiendo`, que solo esta puesto durante la pasada
     //  de pintado: esto lo escribe `resized()`, que corre antes. La lista la
     //  vacia el propio `resized()` al empezar, o cada maquetado dejaria el
@@ -976,6 +1009,16 @@ namespace UiAudit
         for (const auto& c : costuras)
             std::cout << "{\"costura\":1,\"y\":" << c.y
                       << ",\"x0\":" << c.x0 << ",\"x1\":" << c.x1 << "}"
+                      << std::endl;
+
+        for (const auto& r : vuRotulos)
+            std::cout << "{\"vurot\":1,\"texto\":\"" << r.texto.toRawUTF8() << "\""
+                      << ",\"pide\":" << r.pide << ",\"tiene\":" << r.tiene << "}" << std::endl;
+
+        for (const auto& v : vus)
+            std::cout << "{\"vu\":1,\"que\":\"" << v.que << "\""
+                      << ",\"x\":" << v.x << ",\"y\":" << v.y
+                      << ",\"w\":" << v.w << ",\"h\":" << v.h << "}"
                       << std::endl;
 
         for (const auto& m : mantener)

@@ -611,6 +611,27 @@ namespace Metrics
     static constexpr int margenFichaX = lg;
     static constexpr int margenFichaY = md;
 
+    //  EL APRETON DE UN RENGLON DE AYUDA, escrito UNA vez.
+    //
+    //  `pintaAyuda` lo traia por defecto en 0.75 y las dos cabeceras que
+    //  preguntan ANTES de colocar -el rack y el navegador- lo preguntaban a
+    //  1.0: la misma regla con dos numeros, que es el fallo que esta casa lleva
+    //  contando desde `moduleBarFits`. El sintoma salio en el banco y es
+    //  exacto: `cabeEntero` decia que no cabia, la cabecera se colocaba de UNA
+    //  linea -doce pixeles de desplazamiento en vez de cinco- y `pintaAyuda` la
+    //  dibujaba igual, porque a 0.75 si cabe. Diecisiete hallazgos de CABECERA,
+    //  siete pixeles cada uno.
+    static constexpr float apretonAyuda = 0.75f;
+
+
+    //  LA CABECERA DE UNA FICHA: el alto del titulo y el de su subtitulo.
+    //
+    //  Estaban escritos a mano en los pintores y con CUATRO valores -16, 14,
+    //  18 y 12- para una banda que el maquetado ya reserva una sola vez con
+    //  `Metrics::hit`. Ver `centraEnRenglon`, que es quien la centra.
+    static constexpr int bandaTitulo    = 16;
+    static constexpr int bandaSubtitulo = 14;
+
     //  EL AIRE QUE UN PANEL DE GRUPO DEJA ALREDEDOR DE LO QUE ENVUELVE, y por
     //  que NO es el mismo por los cuatro lados.
     //

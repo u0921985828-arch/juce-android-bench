@@ -546,6 +546,77 @@ def judge_fila(rows, size, lang, sheet):
     return out
 
 
+#  LA CABECERA DE UNA FICHA COMPARTE RENGLON CON SUS TAPAS.
+#
+#  Llego mirando la foto de la ficha de un pad: «el espacio entre el texto de
+#  PAD 1 y el primer menu -donde pone 01, OIR y la x- esta mas abajo que la
+#  parte de arriba del texto». Medido, no era de esa ficha: **DOCE PIXELES en
+#  veintiuna**, mas 18 en XY y 9 en EXPORTAR.
+#
+#  El maquetado abre todas con `inner.removeFromTop (Metrics::hit)` y centra
+#  sus tapas ahi -centro en y+20-; el PINTOR se inventaba su banda del MISMO
+#  rectangulo con `removeFromTop (16)` -centro en y+8-. Cuatro numeros escritos
+#  a mano (16, 14, 18 y 12) para un renglon que ya estaba reservado.
+#
+#  Y NINGUNA DE LAS TRECE REGLAS PODIA VERLO: el titulo no solapa a nadie
+#  -`antesDe` lo aparta-, no se sale, no se corta, no mide cero y esta
+#  traducido. Lo unico que le pasa es que no esta a la altura de su fila.
+#
+#  Se mide el BLOQUE de cabecera y no solo el titulo: donde hay subtitulo los
+#  dos se mueven juntos y la pareja queda centrada, asi que cada linea cae
+#  siete pixeles a un lado - que es lo que hace una cabecera de dos lineas en
+#  cualquier aparato y no un desvio.
+def judge_cabecera(rows, size, lang, sheet):
+    out = []
+    #  El titulo de la ficha es el de su CAPA, como en plano.py: la cabecera de
+    #  la cara -«ZATI SAMPLER»- es un rotulo de tipo titulo y ademas el primero
+    #  de la lista, asi que sin la capa toda ficha saldria comparada con el.
+    rot = [r for r in rows if r.get("rotulo")]
+    capa = max((r.get("capa", 0) for r in rot), default=0)
+    #  Y SOLO DE UNA FICHA. La cara no tiene cabecera de ficha: su banda es la
+    #  marca serigrafiada con su raya debajo, y apaisado la columna de la
+    #  derecha empieza a la misma altura -los cuatro chips A B C D, 10..50-
+    #  asi que «las tapas que cruzan la banda del titulo» los coge a ellos y
+    #  saca veinte hallazgos de una fila que no es su fila. La cabecera de la
+    #  cara ya la miran TAPADO y CORTADO.
+    if capa == 0:
+        return out
+    tit = [r for r in rot if r.get("tipo") == "titulo" and r.get("capa", 0) == capa]
+    if not tit:
+        return out
+    t = tit[0]
+    t0, t1 = t["y"], t["y"] + t["h"]
+    if t["h"] <= 0:
+        return out
+
+    #  Las tapas de SU renglon: las de la misma capa cuya banda vertical cruza
+    #  la del titulo. Coger «la mas cercana» daba la de dos filas mas abajo en
+    #  las fichas que no tienen ninguna en la cabecera.
+    caps = [r for r in rows if r.get("path") and r.get("capa", 0) == capa
+            and r.get("hit") and r.get("h", 0) > 0
+            and r["y"] < t1 and (r["y"] + r["h"]) > t0]
+    if not caps:
+        return out
+    fila0 = min(c["y"] for c in caps)
+    fila1 = max(c["y"] + c["h"] for c in caps)
+
+    #  Y EL BLOQUE ENTERO: los rotulos de la capa que caen dentro de ese
+    #  renglon. El subtitulo de una ficha vive ahi y baja el centro de la
+    #  pareja; medir solo el titulo pediria que la primera linea estuviese
+    #  centrada, que es lo contrario de lo que una cabecera de dos lineas hace.
+    bloque = [r for r in rot if r.get("capa", 0) == capa and r.get("h", 0) > 0
+              and r["y"] < fila1 and (r["y"] + r["h"]) > fila0]
+    b0 = min(r["y"] for r in bloque)
+    b1 = max(r["y"] + r["h"] for r in bloque)
+
+    desvio = abs((b0 + b1) / 2.0 - (fila0 + fila1) / 2.0)
+    if desvio > 1.0:
+        out.append(("CABECERA", f"{size}/{lang}/{sheet or 'face'}",
+                    f'"{t["rotulo"]}" ocupa {b0}..{b1} y su fila de tapas {fila0}..{fila1}'
+                    f' ({desvio:.0f} px)', int(desvio)))
+    return out
+
+
 def judge_lang(rows_es, rows_en, size, sheet):
     if not rows_es or not rows_en: return []
     def m(rows):
@@ -640,7 +711,8 @@ def _corre_y_juzga(combo, casa):
     pintados = sum (1 for r in rows if r.get ("icono"))
     return (judge(rows, size, lang, sheet) + judge_tapado(rows, size, lang, sheet)
                                            + judge_tarjeta(rows, size, lang, sheet)
-                                           + judge_fila(rows, size, lang, sheet),
+                                           + judge_fila(rows, size, lang, sheet)
+                                           + judge_cabecera(rows, size, lang, sheet),
             (rows if lang in ("es", "en") else []), (puestos, pintados),
             mide_aire(rows))
 
@@ -793,7 +865,7 @@ def main():
     #  su cifra. Lo que no puede pasar de cero es lo demas.
     duros = [k for k in ("TRUNC", "SQUEEZE", "OVERLAP", "OFFSCREEN", "CELDA",
                          "UNTRANSLATED", "CERO", "TAPADO", "SPRITE", "CORTADO", "PISADO",
-                         "FILA", "CUADRADA", "ASOMA", "CRASH") if by.get(k)]
+                         "FILA", "CUADRADA", "ASOMA", "CABECERA", "CRASH") if by.get(k)]
     if resto:
         duros.append("RESIDUO")
     print()

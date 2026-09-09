@@ -2447,6 +2447,7 @@ void MainComponent::resized()
         auto inner = sheetFromBottom (exportSheet, 32 + 96 + Metrics::hit + Metrics::sm
                                                      + Metrics::btn * 2 + Metrics::sm * 2
                                                      + Metrics::hit + Metrics::sm);
+        exportGrupos.clear();
         auto titleRow = inner.removeFromTop (Metrics::hit);
         exportCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
 
@@ -2462,6 +2463,12 @@ void MainComponent::resized()
             layoutModuleBar (Lang::takeEnd (fila, juce::jmin (fila.getWidth(),
                                                               juce::jmax (110, fila.getWidth() / 3))),
                              db, 0, 1);
+            //  Y EL DESTINO NO LLEVA PANEL, que es la misma decision que la
+            //  pagina de ASPECTO y la pagina SONIDO de EL PAD: es UNA tapa, y
+            //  un panel alrededor de un solo control no agrupa nada — con el
+            //  de abajo ya hay UNA frontera y se ve. (El primer intento
+            //  ademas envolvia el hueco: `Lang::takeEnd` MUTA la fila, asi que
+            //  lo que quedaba era el lado por el que no hay nada.)
             inner.removeFromTop (Metrics::sm);
         }
 
@@ -2483,6 +2490,22 @@ void MainComponent::resized()
         {
             juce::TextButton* eb[3] = { &exportFmtBtn, &exportMasterButton, &exportStemsButton };
             layoutModuleBar (row, eb, 4, 3);
+        }
+
+        //  Y LAS DOS FILAS DE ABAJO EN UN SOLO PANEL, que es el intento fallido
+        //  que esta casa ya escribio tres veces -los tres de la tira del paso y
+        //  el par MONITOR/CUENTA de AJUSTES-: entre ellas hay `Metrics::sm` y
+        //  cada panel se sale `panelAireY` por lado, asi que dos saldrian
+        //  TOCANDOSE, que se lee igual que no dibujar ninguno. Y ademas es la
+        //  lectura buena: el formato, el master, las pistas y el rebote en vivo
+        //  son todos «como sale el fichero». CANCELAR se queda fuera porque no
+        //  es una forma de exportar, es no hacerlo.
+        {
+            auto fila = row;
+            for (auto* b : { (juce::Component*) &exportLiveButton })
+                if (b->isVisible() && ! b->getBounds().isEmpty())
+                    fila = fila.getUnion (b->getBounds());
+            if (! fila.isEmpty()) exportGrupos.add (fila);
         }
     }
 
@@ -3707,11 +3730,43 @@ void MainComponent::resized()
             //  fader you cannot aim has no such second home. Hidden, not
             //  shrunk: jlimit would have clamped it back up to a width the row
             //  does not have and drawn it over the fader.
-            const int panW  = juce::jlimit (Metrics::hit + 4, 78, row.getWidth() / 3);
-            const bool room = row.getWidth() - panW >= 96;
+            //  Y LA ESCALERA PASA A SER DE TRES, con el ANCHO cayendo PRIMERO.
+            //
+            //  El pan dice DONDE esta el sonido y el ancho CUANTO ocupa: los
+            //  dos son de la misma decision y por eso van juntos. Y el orden
+            //  no es arbitrario — de los dos, el pan es el que se mueve en
+            //  cada mezcla y el ancho el que se toca una vez, asi que donde
+            //  solo cabe uno se queda el pan. Ninguno de los dos desaparece
+            //  de la app: los dos tienen su mando a tamaño real en EL PAD, a
+            //  un toque.
+            //  Con los dos puestos cada uno pide un CUARTO y no un tercio: a
+            //  tercios, dos deslizadores dejan al fader la tercera parte de la
+            //  fila y en 412x915 la cuenta salia por dos pixeles -94 contra el
+            //  suelo de 96- o sea que el ancho no aparecia en NINGUNA pantalla.
+            //  El reparto de uno solo se queda en su tercio, que es el medido.
+            const int panW    = juce::jlimit (Metrics::hit + 4, 78, row.getWidth() / 3);
+            const int dosW    = juce::jlimit (Metrics::hit + 4, 78, row.getWidth() / 4);
+            const bool roomAncho = row.getWidth() - 2 * dosW >= 96;
+            const bool room = roomAncho || (row.getWidth() - panW >= 96);
+            const int celda = roomAncho ? dosW : panW;
             mixPans[i]->setVisible (room);
+            //  Y APAGADO EN UNA MUESTRA MONO: no hay lado que abrir ni cerrar,
+            //  que es lo que su mando de EL PAD ya hace. Apagado y no
+            //  escondido, que esconderlo daria una fila con dos formas.
+            //  Y la pregunta es la MISMA que la de EL PAD -el buffer que
+            //  sostiene la interfaz, nunca el que adopto el hilo de audio-
+            //  o serian dos reglas y una diria que si donde la otra dice
+            //  que no.
+            const bool estereo = uiSample[(size_t) i] != nullptr
+                                 && uiSample[(size_t) i]->buffer.getNumChannels() > 1;
+            mixAnchos[i]->setVisible (roomAncho);
+            mixAnchos[i]->setEnabled (estereo);
+            if (roomAncho)
+                mixAnchos[i]->setBounds (row.removeFromRight (celda).reduced (2, 1));
+            else
+                mixAnchos[i]->setBounds ({});
             if (room)
-                mixPans[i]->setBounds (row.removeFromRight (panW).reduced (2, 1));
+                mixPans[i]->setBounds (row.removeFromRight (celda).reduced (2, 1));
 
             //  On a narrow phone the level's number was eating the level.
             //  Forty-six pixels of readout plus its air out of an eighty-five

@@ -747,7 +747,7 @@ public:
                         UiAudit::pixelesPintados = 0;
                         UiAudit::cuadrosPintados = 0;
                         juce::Timer::callAfterDelay (juce::jmax (1, sp.getIntValue()) * 1000,
-                                                     [this, t0, ventana]
+                                                     [this, t0, ventana, c2]
                         {
                             const double ms = 1000.0 * (double) (std::clock() - t0) / (double) CLOCKS_PER_SEC;
                             std::cout << "{\"spin\":1,\"cpu_ms\":" << ms
@@ -757,6 +757,11 @@ public:
                                       << ",\"ventana\":" << ventana
                                       << ",\"piano_ticks\":" << UiAudit::pianoTicks
                                       << ",\"cabezal_piano\":" << UiAudit::cabezalPiano
+                                      //  Y EL PICO DEL ESPECTRO DEL CRISTAL, que es lo
+                                      //  unico que separa una capa que DIBUJA de una que
+                                      //  esta ahi: se lee sonando y callada, y las dos
+                                      //  cifras son la medida. Ver SpectrumDisplay.
+                                      << ",\"espectro_db\":" << c2->auditPicoEspectro()
                                       << "}" << std::endl;
                             quit();
                         });

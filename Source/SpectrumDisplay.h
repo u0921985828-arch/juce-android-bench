@@ -4,6 +4,8 @@
 #include "ZatiLookAndFeel.h"
 #include "Lang.h"
 #include "AudioEngine.h"
+#include "Analizador.h"
+#include "UiAudit.h"
 
 // ============================================================================
 //  SpectrumDisplay — the "screen", ported from the earlier project's
@@ -41,7 +43,7 @@ public:
     static constexpr double kTauRetencionMs = 2200.0;  // -33 / ln (0.985)
     static constexpr double kAvisoClipMs    = 3000.0;  // «~3 s a 30 cuadros»
 
-    void setSamples (const float* src, int n, double dtMs)
+    void setSamples (const float* src, int n, double dtMs, double fs = 48000.0)
     {
         count = juce::jmin (n, kCap);
         float pk = 0.0f;
@@ -50,6 +52,30 @@ public:
             const float s = src[i];
             buf[i] = s;
             pk = juce::jmax (pk, std::abs (s));
+        }
+
+        //  Y EL ESPECTRO, QUE ES LO QUE ESTA CLASE PROMETIA Y NO HACIA.
+        //
+        //  Se llama `SpectrumDisplay` desde el primer dia y dentro no habia
+        //  una sola FFT: dibuja la SILUETA de la onda del master por min/max,
+        //  y con la maquina callada `colCount` vale cero, asi que lo unico que
+        //  quedaba en 145 px de cristal era la linea base al 6 %. Eso es lo
+        //  que se ve en la foto que llego del telefono.
+        //
+        //  `buf` llevaba escribiendose aqui y no lo leia NADIE - mil veinticuatro
+        //  floats por cuadro para nada- y es justo la ventana que hace falta.
+        //  El analizador es el MISMO que la curva del EQ y los visores del
+        //  plato (`Source/Analizador.h`): ventana de Hann, FFT de 1024, ataque
+        //  instantaneo con caida de 115 ms por bin y suelo en -78 dB. No hace
+        //  falta un anillo nuevo en el hilo de audio: la cara ya recibe las
+        //  muestras del master, que son las que dibujan la silueta.
+        srHz = fs > 0.0 ? fs : 48000.0;
+        if (count >= Analizador::kFft)
+        {
+            const auto antes = espectro.bines();
+            std::copy (antes.begin(), antes.end(), previos.begin());
+            espectro.analiza (buf, count, dtMs);
+            hayEspectro = true;
         }
         peak = juce::jmax (peak * (float) std::exp (-dtMs / kTauAgujaMs), pk);
         //  RETENCION DE PICO. El medidor cae con 100 ms de constante, asi que
@@ -65,8 +91,24 @@ public:
         //  biggest component on the face: repainting it thirty times a second
         //  with nothing playing is the app's largest idle cost. v232 gates its
         //  own loop the same way (lcdShouldAnimate).
+        //  Y EL ESPECTRO TAMBIEN CAE, asi que la guarda de silencio no puede
+        //  mirar solo el nivel: la caida de un bin es exponencial y no llega
+        //  al suelo nunca, o sea que con la maquina parada esto repintaria el
+        //  cristal -y con el, el chasis y los dieciseis pads- para siempre.
+        //  Es exactamente el fallo que `Tests/cpu.py` saco en el analizador
+        //  del EQ, de 57.27 ventanas a 2.66, y se arregla igual: se repinta
+        //  solo si algun bin se movio mas de una decima de decibelio, que es
+        //  la mitad de lo que un pixel de este dibujo representa.
+        bool movio = false;
+        if (hayEspectro)
+        {
+            const auto& ahora = espectro.bines();
+            for (size_t i = 0; i < ahora.size(); ++i)
+                if (std::abs (ahora[i] - previos[i]) > 0.1f) { movio = true; break; }
+        }
+
         const bool silent = (pk <= 0.0f && peak < 0.0005f);
-        if (silent && wasSilent) return;
+        if (silent && wasSilent && ! movio) return;
 
         wasSilent = silent;
         repaint();
@@ -79,6 +121,17 @@ public:
     //  formula en el banco, que es la trampa que este proyecto ya se comio con
     //  la mascara del lanzador: *un banco que repite la constante del codigo
     //  no prueba el codigo*.
+    //  Y EL PICO DEL ESPECTRO, que es la cifra con la que el banco puede
+    //  preguntar las DOS mitades: que se mueva con señal y que se quede quieto
+    //  sin ella. Sale del ANALIZADOR -o sea del DSP- y no de una bandera que
+    //  el codigo se ponga a si mismo, que es el fallo de `caraLista`.
+    float  picoEspectro() const noexcept
+    {
+        float m = Analizador::kPiso;
+        if (hayEspectro) for (auto v : espectro.bines()) m = juce::jmax (m, v);
+        return m;
+    }
+
     float  nivelAguja()  const noexcept { return peak; }
     double avisoClipMs() const noexcept { return clipMs; }
 
@@ -156,8 +209,11 @@ public:
     //  Era la ultima fila viva de la lente del productor: «hay VU de master; el
     //  nivel de un pad solo se ve en la mesa» — y desde que el canal es lo que
     //  pasa por los efectos, ver uno trabajando obligaba a abrir la mesa, que
-    //  tapa la rejilla. La banda mide 22 px y las dos filas del master ocupan
-    //  hasta la 13: la tercera cabe entera sin pedir un pixel.
+    //  tapa la rejilla.
+    //
+    //  Y AQUI DECIA «la tercera cabe entera sin pedir un pixel», que era falso
+    //  y no lo habia medido nadie: la banda pide ahora sus 28 px y no 22. Ver
+    //  `kMeterBand`.
     //
     //  Es el del canal del pad ELEGIDO y no los dieciseis: dieciseis tiras en
     //  la cara no caben, y ademas medir los dieciseis costaria sesenta y cuatro
@@ -237,6 +293,48 @@ public:
         //  the accent is a near-black chassis colour - painting it on a
         //  near-black screen is the exact bug that left the meter invisible.
         juce::ignoreUnused (halfH);
+
+        //  Y EL BANCO SABE DONDE CAE, que es lo que le hace falta para contar
+        //  la tinta del espectro en la foto sin repetir aqui el recorte —
+        //  «un banco que repite la constante del codigo no prueba el codigo».
+        UiAudit::vuFila (wave.getSmallestIntegerContainer(), "onda");
+
+        //  EL ESPECTRO VA DETRAS Y ATENUADO, y la onda delante: es la misma
+        //  gramatica que el visor del plato -«la capa viva DETRAS y atenuada,
+        //  lo nitido DELANTE»- y por eso no se inventa otra. Las dos dicen
+        //  cosas distintas del mismo master: la silueta dice CUANTO y con que
+        //  forma, y el espectro DONDE — que es lo unico que no se puede
+        //  deducir mirando una onda.
+        //
+        //  EJE LOGARITMICO, por lo que ya esta escrito en el analizador: la
+        //  primera decada -20 a 200 Hz- se lleva un tercio del ancho, que es
+        //  donde vive todo lo que se mezcla. Lineal dejaria las ocho octavas
+        //  de abajo en el 2 % del cristal.
+        if (hayEspectro)
+        {
+            const int NC = juce::jlimit (24, kMaxCols, (int) (wave.getWidth() / 3.0f));
+            const float lo = std::log (20.0f);
+            const float hi = std::log ((float) juce::jmin (20000.0, srHz * 0.5));
+            const float suelo = Analizador::kPiso;
+
+            juce::Path esp;
+            esp.startNewSubPath (wave.getX(), wave.getBottom());
+            for (int i = 0; i < NC; ++i)
+            {
+                const float t  = (float) i / (float) (NC - 1);
+                const float hz = std::exp (lo + t * (hi - lo));
+                const float dB = espectro.enHz (hz, srHz);
+                const float u  = juce::jlimit (0.0f, 1.0f, (dB - suelo) / (0.0f - suelo));
+                esp.lineTo (wave.getX() + t * wave.getWidth(),
+                            wave.getBottom() - u * wave.getHeight());
+            }
+            esp.lineTo (wave.getRight(), wave.getBottom());
+            esp.closeSubPath();
+
+            g.setColour (ZatiColours::lcdFg.withAlpha (0.13f));
+            g.fillPath (esp);
+        }
+
         {
             const float mid  = cy;
             const float yamp = wave.getHeight() * 0.5f - 1.0f;
@@ -302,15 +400,21 @@ public:
         //  screen instead of interrupting it, and the wave gets the sixteen
         //  pixels back.
         {
-            auto band = b.reduced (8.0f, 0.0f).removeFromBottom (kMeterBand).reduced (0.0f, 3.0f);
+            auto band = b.reduced (8.0f, 0.0f).removeFromBottom (kMeterBand)
+                         .reduced (0.0f, kMeterAire);
 
             //  The tempo takes the right end - the corner "SIG" used to
             //  occupy, and the one number you look for without looking away
             //  from what you are playing.
+            //
+            //  Y EN LAS DOS FILAS DEL MASTER, no en la banda entera: desde que
+            //  son tres, centrarlo en las tres lo dejaba justo encima de donde
+            //  la tercera dice de quien es.
             auto bpmCell = band.removeFromRight (68.0f);
             g.setColour (ZatiColours::lcdDim);
             g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
-            g.drawText (Lang::ltr (juce::String (bpm, 1) + " BPM"), bpmCell,
+            g.drawText (Lang::ltr (juce::String (bpm, 1) + " BPM"),
+                        bpmCell.withHeight (kMeterFila * 2.0f).withY (band.getY()),
                         juce::Justification::centredRight);
 
             band.removeFromRight (8.0f);
@@ -318,8 +422,8 @@ public:
 
             g.setColour (ZatiColours::lcdFg.withAlpha (0.55f));
             g.setFont (ZatiColours::monoFont (Metrics::fTiny, true));
-            g.drawText ("L", gutter.withHeight (7.0f).withY (band.getY()), juce::Justification::centredLeft);
-            g.drawText ("R", gutter.withHeight (7.0f).withY (band.getY() + 7.0f), juce::Justification::centredLeft);
+            g.drawText ("L", gutter.withHeight (kMeterFila).withY (band.getY()), juce::Justification::centredLeft);
+            g.drawText ("R", gutter.withHeight (kMeterFila).withY (band.getY() + kMeterFila), juce::Justification::centredLeft);
 
             const int nSeg = 32;
             const float segW = band.getWidth() / (float) nSeg;
@@ -345,8 +449,24 @@ public:
             const int   segYellow = (int) std::round ((kMeterFloorDb - kYellowDb) / -segDb);
             const int   segRed    = (int) std::round ((kMeterFloorDb - kRedDb)    / -segDb);
 
-            auto row = [&] (float level, bool clipHeld, juce::Rectangle<float> r)
+            //  Y SE APUNTA LO QUE SE DIBUJA, en la MISMA funcion que lo
+            //  dibuja: la primera version tenia el trazado en `row` y un
+            //  `apunta` al lado calculando su rectangulo otra vez, o sea la
+            //  misma regla escrita dos veces — y la que se quedara vieja
+            //  daria un banco en verde con la fila fuera del cristal, que es
+            //  exactamente el fallo que esta medida existe para cazar.
+            //
+            //  Se apunta el PASO ENTERO de la fila y no solo sus segmentos:
+            //  lo que mas se salia era el rotulo, que es dos pixeles mas
+            //  alto. Ver `UiAudit::vuFila`.
+            auto row = [&] (int i, const char* que, float level, bool clipHeld)
             {
+                const auto fila = band.withHeight (kMeterFila)
+                                      .withY (band.getY() + 1.0f + kMeterFila * (float) i);
+                UiAudit::vuFila (fila.getSmallestIntegerContainer(), que);
+
+                const auto r = fila.withHeight (kMeterSeg);
+
                 const float db  = juce::Decibels::gainToDecibels (juce::jlimit (0.0f, 1.0f, level),
                                                                  kMeterFloorDb);
                 const int   lit = (int) std::round ((db - kMeterFloorDb) / segDb);
@@ -377,8 +497,13 @@ public:
                 }
             };
 
-            row (vuL, clipL > 0, band.withHeight (5.0f).withY (band.getY() + 1.0f));
-            row (vuR, clipR > 0, band.withHeight (5.0f).withY (band.getY() + 8.0f));
+            const auto filaY = [&] (int i) { return band.getY() + 1.0f + kMeterFila * (float) i; };
+
+            //  Y EL CRISTAL CON ELLAS, o «se sale» no tendria contra que.
+            UiAudit::vuFila (getLocalBounds(), "cristal");
+
+            row (0, "L", vuL, clipL > 0);
+            row (1, "R", vuR, clipR > 0);
 
             //  Y LA TERCERA, la del canal, solo cuando hay uno que mirar: con
             //  una ficha abierta encima el motor deja de medir y una tira
@@ -386,15 +511,55 @@ public:
             //  nadie esta midiendo.
             if (canalNum >= 0)
             {
-                //  Dos cifras siempre, como el rotulo del selector de pad: un
-                //  «9» que pasa a «10» cambia de ancho, y aqui el hueco son
-                //  diez pixeles.
+                row (2, "canal", canalVu, false);
+
+                //  Y DICE DE QUE ES, que es la otra mitad de por que no se
+                //  entendia. Cortada por el filo no se leia; entera seguia
+                //  siendo un «01» mudo al lado de una L y una R, o sea un
+                //  tercer canal del master. La palabra va al filo de la
+                //  DERECHA -que en las tres filas esta vacio desde que el BPM
+                //  se centra en las dos de arriba- y no al canalon: alli
+                //  caben dos cifras y ninguna lengua tiene una palabra de dos
+                //  cifras.
+                //
+                //  Y se pregunta CON EL TEXTO PUESTO, que es la escalera que
+                //  ya deciden BANCO, PADS y la cabecera de la cara: si la
+                //  palabra no cabe en su idioma, se cae y quedan las dos
+                //  cifras en el canalon, que es donde el master pone las
+                //  suyas. Nunca las dos cosas, que seria decirlo dos veces.
+                //
+                //  Y SE PUBLICA POR CUAL DE LAS DOS SALIO, que es lo que
+                //  separa una escalera de una linea que imprime OK: hoy la
+                //  palabra cabe en las siete pantallas por los cuatro idiomas
+                //  -68 px de celda contra los 44 que pide el arabe, que es la
+                //  mas larga- asi que la rama corta no la ve nadie a menos que
+                //  el banco pueda decir cual se tomo. Se imprime y no se
+                //  juzga, como TOUCH: las dos son correctas.
+                const auto nn = Lang::ltr (juce::String (canalNum + 1).paddedLeft ('0', 2));
+                const auto entera = T ("CANAL") + " " + nn;
+
                 g.setColour (ZatiColours::lcdFg.withAlpha (0.55f));
                 g.setFont (ZatiColours::monoFont (Metrics::fTiny, true));
-                g.drawText (Lang::ltr (juce::String (canalNum + 1).paddedLeft ('0', 2)),
-                            gutter.withHeight (7.0f).withY (band.getY() + 14.0f),
-                            juce::Justification::centredLeft);
-                row (canalVu, false, band.withHeight (5.0f).withY (band.getY() + 15.0f));
+
+                const auto cajaFila = bpmCell.withHeight (kMeterFila).withY (filaY (2) - 1.0f);
+                const auto cajaGut  = gutter.withHeight (kMeterFila).withY (filaY (2) - 1.0f);
+                const auto ancho    = [&g] (const juce::String& t)
+                { return juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), t); };
+
+                //  Y SE APUNTA LO QUE SE DIBUJA Y SU CAJA, no la palabra larga
+                //  y la celda ancha pase lo que pase: la rama corta mete dos
+                //  cifras en un canalon de diez pixeles, que es la unica de
+                //  las dos que de verdad puede no caber. Publicar siempre la
+                //  primera daria un banco en verde justo en el caso que hay
+                //  que vigilar.
+                const bool cabe = ancho (entera) <= cajaFila.getWidth();
+                const auto caja = cabe ? cajaFila : cajaGut;
+                const auto dice = cabe ? entera   : nn;
+
+                g.drawText (dice, caja, cabe ? juce::Justification::centredRight
+                                             : juce::Justification::centredLeft);
+
+                UiAudit::vuRotulo (dice, (int) std::ceil (ancho (dice)), (int) caja.getWidth());
             }
         }
 
@@ -416,9 +581,31 @@ private:
         return juce::String ((int) juce::Decibels::gainToDecibels (peak)) + "dB";
     }
 
-    //  How much of the panel the meter band takes along the bottom: two rows
-    //  of segments, their L/R gutter, and air above and below.
-    static constexpr float kMeterBand = 22.0f;
+    //  Cuanto se lleva la banda del medidor por el filo de abajo: TRES filas
+    //  de segmentos, su canalon y el aire de arriba y de abajo.
+    //
+    //  Y VEINTIDOS ERAN DOS FILAS, NO TRES. El dia que entro la del canal se
+    //  escribio al lado que «las dos del master ocupan hasta la 13, asi que la
+    //  tercera cabe entera sin pedir un pixel». Los 13 eran ciertos y la
+    //  tercera NO cabia: la banda util son 22 - 2*kMeterAire = 16 px, y a paso
+    //  de kMeterFila la tercera pide de la 14 a la 21 -o sea CUATRO fuera por
+    //  los segmentos y SEIS por el rotulo-. Contra el CRISTAL, que es lo que
+    //  el banco mide porque es lo que se ve, la fila se salia TRES pixeles en
+    //  las siete pantallas: en el telefono el numero salia partido por el filo
+    //  de abajo, que es por lo que nadie podia leerlo y por lo que la pregunta
+    //  que llego no fue «que es ese 01» sino «no entiendo que es eso».
+    //
+    //  Es *una afirmacion sin medida*, otra vez: la cuenta cabia en dos lineas
+    //  y no la hizo nadie. Ahora sale de las piezas y no de un numero escrito
+    //  a mano, asi que una cuarta fila -si algun dia la hay- no puede volver a
+    //  salirse en silencio.
+    static constexpr float kMeterFila = 7.0f;    // el paso de una fila
+    static constexpr float kMeterSeg  = 5.0f;    // el alto de sus segmentos
+    static constexpr float kMeterAire = 3.0f;    // arriba y abajo de la banda
+    static constexpr int   kMeterFilas = 3;      // L, R y el canal
+
+    static constexpr float kMeterBand = 1.0f + kMeterFila * (float) kMeterFilas
+                                             + 2.0f * kMeterAire;   // 28
 
     //  El suelo de la tira y donde cambia de color. -48 dB porque por debajo
     //  de eso ya no se decide nada, y 32 segmentos caen justos a 1.5 dB.
@@ -437,6 +624,11 @@ private:
 
     static constexpr int kCap = 1024;
     float        buf[kCap] {};
+    Analizador   espectro;
+    Analizador::Bines previos {};
+    bool         hayEspectro = false;
+    double       srHz = 48000.0;
+
     int          count { 0 };
     float        peak  { 0.0f };
     float        hold  { 0.0f };

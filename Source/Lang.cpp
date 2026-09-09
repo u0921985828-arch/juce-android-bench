@@ -1568,6 +1568,7 @@ namespace
         //  que las distingue.
         { "Ganancia pad %1", "",      "Gain pad %1",   "音垫 %1 增益", "كسب الباد %1" },
         { "Paneo pad %1",  "",        "Pan pad %1",    "音垫 %1 声像", "اتزان الباد %1" },
+        { "Ancho pad %1",  "",        "Width pad %1",  "音垫 %1 宽度", "عرض الباد %1" },
         { "Ganancia canal %1", "",    "Gain channel %1", "通道 %1 增益", "كسب القناة %1" },
         { "Silencio canal %1", "",    "Mute channel %1", "通道 %1 静音", "كتم القناة %1" },
         { "semitonos",      "",         "semitones",  "半音",       "أنصاف نغمات" },

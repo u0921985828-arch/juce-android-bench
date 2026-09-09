@@ -205,6 +205,47 @@ if (! tapa.isVisible()) return banda;
 return antesDe (banda, tapa.getBounds(), aire);
 }
 
+//  LA CABECERA DE UNA FICHA, CENTRADA EN EL RENGLON QUE `resized()` RESERVO.
+//
+//  Llego mirando la foto de una ficha: «el espacio que hay entre el texto de
+//  PAD 1 y el primer menu -donde pone 01, OIR y la x- esta mas abajo que la
+//  parte de arriba del texto». Y no era de esa ficha.
+//
+//  El maquetado abre TODAS con `inner.removeFromTop (Metrics::hit)` -cuarenta
+//  pixeles- y coloca sus tapas ahi con `withSizeKeepingCentre`, o sea con el
+//  centro en y+20. El PINTOR se inventaba su propia banda del MISMO
+//  rectangulo: `removeFromTop (16)`, centro en y+8. **DOCE PIXELES**, y no en
+//  una ficha sino en VEINTIUNA - mas 18 en XY, 9 en EXPORTAR y 0 en las siete
+//  que ya pasaban una banda centrada.
+//
+//  Cuatro numeros -16, 14, 18 y 12- para una banda que el maquetado ya habia
+//  reservado: es la familia de *INSTRUMENTOS se pintaba desde la TARJETA y se
+//  maquetaba desde el CUERPO*, y la regla de la casa es la misma - la banda la
+//  publica quien la reserva.
+//
+//  Se DESPLAZA y no se agranda, que es lo que hace que esto no cueste un
+//  pixel: el rectangulo que se le da al que llama sigue avanzando lo mismo,
+//  asi que lo que el pintor dibuje debajo cae exactamente donde estaba. Y
+//  `alto` es el de la CABECERA ENTERA cuando lleva subtitulo -diecisiete mas
+//  catorce-, o el titulo se bajaria encima de el: los dos se mueven juntos y
+//  la pareja queda centrada, que es lo que hace una cabecera de dos lineas en
+//  cualquier aparato.
+//  Y CUANTO MIDE ESA CABECERA: una linea, o dos si la segunda se va a
+//  dibujar de verdad. Se pregunta ANTES de colocar el titulo y con el texto
+//  puesto, que es la escalera de siempre: en 280x653 el renglon de ayuda del
+//  piano no cabe ni en su forma corta, asi que ahi la cabecera es de UNA linea
+//  y centrar la pareja dejaba el titulo siete pixeles alto. Veintiun hallazgos,
+//  todos en la pantalla mas estrecha.
+inline int altoCabecera (bool conSegunda) noexcept
+{ return Metrics::bandaTitulo + (conSegunda ? Metrics::bandaSubtitulo : 0); }
+
+inline juce::Rectangle<int> centraEnRenglon (juce::Rectangle<int> banda, int altoCabecera = 0)
+{
+    const int total = altoCabecera > 0 ? altoCabecera : banda.getHeight();
+    return banda.translated (0, (Metrics::hit - total) / 2);
+}
+
+
 //  SI UN ROTULO PINTADO CABE ENTERO EN SU BANDA.
 //
 //  `drawFittedText` no dice que no: aprieta hasta el minimo que se le pasa y a
