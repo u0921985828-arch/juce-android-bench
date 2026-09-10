@@ -910,7 +910,7 @@ private:
     static int anchoTarjeta (int anchoVentana) noexcept
     { return (int) ((float) anchoVentana * 0.92f); }
     static int anchoTarjetaInterior (int anchoVentana) noexcept
-    { return anchoTarjeta (anchoVentana) - 2 * Metrics::lg; }
+    { return anchoTarjeta (anchoVentana) - 2 * Metrics::margenFichaX; }
 
     //  Y EL TOPE DE ALTO, por lo mismo. Estaba escrito TRES veces —el propio
     //  `sheetFromBottom`, el reparto de columnas de AJUSTES y el menu de la

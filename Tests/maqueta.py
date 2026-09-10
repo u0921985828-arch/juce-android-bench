@@ -81,6 +81,51 @@ AIRE = ("reduced", "expanded", "translated")
 SEPARADOR = re.compile(r"^\s*\w+\.removeFrom(?:Top|Bottom|Left|Right)\s*\(\s*-?\d+\s*\)\s*;\s*$")
 LIT = re.compile(r"^-?\d+$")
 
+# ============================================================================
+#  Y LA SEGUNDA PREGUNTA: ¿EL MISMO SITIO USA SIEMPRE EL MISMO NOMBRE?
+#
+#  La de arriba pregunta si un literal ya tiene nombre, y con eso el fichero
+#  salia en verde. Llego entonces «sigo viendo espacio de mas entre ciertas
+#  secciones, y luego otras que no hay espacio entre ellas», y medido: la
+#  frontera entre dos grupos estaba escrita con CINCO nombres para TRES valores
+#  — `sm` (8) x54, `xs` (4) x24, `halfGap` (4) x18, `md` (12) x10 y `gap` (8) x2.
+#  La mitad de la dispersion era el mismo pixel escrito de dos maneras.
+#
+#  Y no es una preferencia: `Metrics::panelAireY = sm / 4` esta DERIVADO de que
+#  la frontera valga siempre `sm` -su propio comentario lo dice- y un panel se
+#  sale ese aire por arriba y por abajo, asi que con la frontera en `xs` los dos
+#  paneles quedan a CERO de hueco y con `md` a ocho, el doble de lo previsto. El
+#  contrato ya estaba escrito; lo que faltaba es que alguien lo comprobara.
+#
+#  UN SEPARADOR VERTICAL USA LA ESCALA DE ESPACIADO Y NO LA FAMILIA DEL CONTROL.
+#  Es la misma linea que la tanda anterior trazo entre el aire de una FILA y el
+#  de una CELDA, dicha con los nombres de la tabla: `xs..xl` es la escala de
+#  espaciado -«multiples of 4 only»- y `gap`/`halfGap`/`aireTapa` es lo que un
+#  control se deja DENTRO de su fila. Un separador es aire entre filas, asi que
+#  la familia del control no pinta nada ahi: `halfGap` como separador entero es
+#  usar la MITAD de algo como un todo.
+#
+#  Dos valores y no tres: `sm` entre grupos, `xs` entre filas de un mismo grupo.
+#  `md` era la misma frontera con otro valor -el titulo de una ficha contra su
+#  cuerpo valia `md` en siete fichas y `sm` en otras tres- y una de las dos tenia
+#  que estar mal.
+#
+#  HORIZONTAL NO, y por eso la regla dice VERTICAL. Ahi `sm` separa dos columnas
+#  y `halfGap` dos celdas de la misma fila, que es exactamente lo que su
+#  comentario dice que hace: son seis lineas y las dos familias son correctas.
+#
+#  Y LA CARA TAMPOCO, que tiene su propia familia -`ZatiLookAndFeel::kAir`, diez
+#  pixeles medidos contra el chasis- y no es una ficha. Es una clase entera y no
+#  una lista de excepciones: la regla mira los tokens de `Metrics` y nada mas.
+# ============================================================================
+VERTICAL = re.compile(r"^\s*\w+\.removeFrom(?:Top|Bottom)\s*\(\s*Metrics::(\w+)\s*\)\s*;\s*$")
+#  La escala de espaciado y la familia del control, con su papel. Si alguna
+#  desaparece de la tabla la prueba FALLA en vez de dejar de mirar: una regla
+#  que se queda sin vocabulario da verde sin haber preguntado nada.
+ESPACIADO = ("xs", "sm", "md", "lg", "xl")
+CONTROL = ("gap", "halfGap", "aireTapa", "aireTapaDensa")
+FRONTERA = ("sm", "xs")
+
 
 def sin_comentarios(txt):
     #  A mano y no con una regex, que `//` vive tambien dentro de una cadena:
@@ -180,7 +225,7 @@ def barre(met, laf):
             if isinstance(v, int) and v > 0:
                 porValor.setdefault(v, []).append(pref + k)
 
-    fallas, sueltos, tam = [], {}, {}
+    fallas, sueltos, tam, fronteras = [], {}, {}, []
     src = os.path.join(RAIZ, "Source")
     ficheros = [f for f in sorted(os.listdir(src))
                 if (f.endswith(".h") or f.startswith("MainComponent"))
@@ -195,6 +240,10 @@ def barre(met, laf):
             #  la app y las tres caben en su linea.
             if "repaint" in linea:
                 continue
+            #  La segunda pregunta. Ver la cabecera de VERTICAL.
+            v = VERTICAL.match(linea)
+            if v and v.group(1) in ESPACIADO + CONTROL and v.group(1) not in FRONTERA:
+                fronteras.append((f, n, v.group(1), crudo[n - 1].strip()[:90]))
             for m in CALL.finditer(linea):
                 for arg in coma(m.group(2)):
                     arg = arg.strip()
@@ -210,7 +259,7 @@ def barre(met, laf):
                                        crudo[n - 1].strip()[:90]))
                     else:
                         tam.setdefault(v, []).append("%s:%d" % (f, n))
-    return fallas, sueltos, tam, porValor
+    return fallas, sueltos, tam, porValor, fronteras
 
 
 def main():
@@ -222,7 +271,16 @@ def main():
     print("tabla de tokens: %d en Metrics, %d en ZatiLookAndFeel"
           % (len(met), len(laf or {})))
 
-    fallas, sueltos, tam, porValor = barre(met, laf or {})
+    #  El vocabulario tiene que existir. Sin esto, renombrar un token deja la
+    #  segunda pregunta sin nada que mirar y la prueba sale verde por no haber
+    #  preguntado — que es la misma linea que imprime OK de siempre.
+    faltan = [k for k in ESPACIADO + CONTROL + FRONTERA if k not in met]
+    if faltan:
+        print("FALLA  la tabla ya no tiene %s: la regla de la frontera no mide nada"
+              % ", ".join(sorted(set(faltan))))
+        return 1
+
+    fallas, sueltos, tam, porValor, fronteras = barre(met, laf or {})
 
     #  Los TAMANOS que coinciden con un token: se imprimen y no se juzgan.
     print()
@@ -239,14 +297,25 @@ def main():
         print("  " + "   ".join("%d x%d" % (v, n) for v, n in sorted(sueltos.items())))
 
     print()
-    if not fallas:
-        print("VEREDICTO: OK  ningun literal de AIRE vale lo que un token")
-        return 0
-    print("FALLA  %d literales de AIRE tienen ya un token con ese valor:" % len(fallas))
-    for f, n, call, v, nombres, linea in fallas:
-        print("  Source/%s:%d  %s(%d)  es %s" % (f, n, call, v, " / ".join(nombres)))
-        print("      %s" % linea)
-    return 1
+    mal = 0
+    if fallas:
+        mal = 1
+        print("FALLA  %d literales de AIRE tienen ya un token con ese valor:" % len(fallas))
+        for f, n, call, v, nombres, linea in fallas:
+            print("  Source/%s:%d  %s(%d)  es %s" % (f, n, call, v, " / ".join(nombres)))
+            print("      %s" % linea)
+    if fronteras:
+        mal = 1
+        print("FALLA  %d separadores verticales no usan la escala de espaciado"
+              " (%s):" % (len(fronteras), " / ".join("Metrics::" + k for k in FRONTERA)))
+        for f, n, tok, linea in fronteras:
+            print("  Source/%s:%d  Metrics::%s (%d px)" % (f, n, tok, met[tok]))
+            print("      %s" % linea)
+    if mal:
+        return 1
+    print("VEREDICTO: OK  ningun literal de AIRE vale lo que un token,"
+          " y la frontera vertical es %s" % " o ".join(FRONTERA))
+    return 0
 
 
 if __name__ == "__main__":

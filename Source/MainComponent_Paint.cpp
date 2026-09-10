@@ -807,6 +807,9 @@ void MainComponent::paintBusy (juce::Graphics& g)
 
 void MainComponent::paintChopSheetContent (juce::Graphics& g)
 {
+    //  Ver pintaPaneles: los dos grupos -COMO y TROZOS- los publica `resized()`
+    //  desde las bandas que ya reserva, asi que no cuestan un pixel de alto.
+    pintaPaneles (g, chopGrupos);
     if (chopSheet.sheetBounds.isEmpty()) return;
 
     const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
@@ -844,11 +847,11 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
                           para, Lang::start (juce::Justification::top), 3, 1.0f);
     }
 
-    inner.removeFromTop (Metrics::md);
+    inner.removeFromTop (Metrics::sm);
     g.setColour (ZatiColours::ink.withAlpha (0.75f));
     g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.16f));
     pintaTitulo (g, inner.removeFromTop (Metrics::bandaSubtitulo), T ("COMO"));
-    inner.removeFromTop (Metrics::hit + Metrics::md);
+    inner.removeFromTop (Metrics::hit + Metrics::sm);
 
     g.setColour (ZatiColours::ink.withAlpha (0.75f));
     g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.16f));
@@ -865,7 +868,7 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
         g.drawText (tTrozos, banda, Lang::start());
     }
 
-    inner.removeFromTop (Metrics::hit + Metrics::sm + Metrics::hit + Metrics::md);
+    inner.removeFromTop (Metrics::hit + Metrics::sm + Metrics::hit + Metrics::sm);
 
     //  The plan, in pad numbers. This is the whole point of the sheet: the
     //  old one-tap chop was destructive precisely because it never said this.

@@ -223,7 +223,14 @@ namespace UiAudit
     //  tanda de `onFuera` ademas se puede tocar-. Una derivacion que nadie
     //  comprueba es una afirmacion, asi que la app publica el hueco que queda
     //  por debajo y el suelo que ese hueco tiene que cumplir.
-    struct Tarjeta { int pedido, tope, libreAbajo, sueloAbajo; bool desplaza; };
+    //  Y EL RECTANGULO DE LA TARJETA CON EL MARCO QUE DECLARA, que es la
+    //  tercera mitad de la queja -«se olvida el aire del marco»- y lo unico de
+    //  ella que ninguna regla podia ver: `sheetFromBottom` mete el contenido
+    //  `margenFichaX` x `margenFichaY` y devuelve ESE rectangulo, asi que una
+    //  ficha que despues expande una fila hacia fuera -como la cara hace con
+    //  `aireTapa` para alinear su filo- se come el marco sin que nada falle.
+    struct Tarjeta { int pedido, tope, libreAbajo, sueloAbajo; bool desplaza;
+                     int x, y, w, h, marcoX, marcoY, capa; };
     inline std::vector<Tarjeta> tarjetas;
 
     //  UNA COSTURA GRABADA: donde la app DICE que dibujo el rayado, y por que
@@ -283,10 +290,14 @@ namespace UiAudit
     //  vacia el propio `resized()` al empezar, o cada maquetado dejaria el
     //  suyo encima del anterior.
     inline void tarjeta (int pedido, int tope, bool desplaza,
-                         int libreAbajo = -1, int sueloAbajo = 0)
+                         int libreAbajo = -1, int sueloAbajo = 0,
+                         juce::Rectangle<int> r = {}, int marcoX = 0, int marcoY = 0,
+                         int capa = 0)
     {
         if (! enabled()) return;
-        tarjetas.push_back ({ pedido, tope, libreAbajo, sueloAbajo, desplaza });
+        tarjetas.push_back ({ pedido, tope, libreAbajo, sueloAbajo, desplaza,
+                              r.getX(), r.getY(), r.getWidth(), r.getHeight(),
+                              marcoX, marcoY, capa });
     }
 
     //  UNA FILA DE TAPAS LLENA EL RECTANGULO QUE SE LE DIO.
@@ -663,7 +674,28 @@ namespace UiAudit
              //  regla dura -un chip de banco no necesita mas nombre que su
              //  letra- pero sin la cifra, «esta accesible» y «tiene nombre el
              //  10 %» son la misma corrida en verde. Ver Tests/carga.py.
-             << ",\"nombre\":" << (c.getTitle().isNotEmpty() ? 1 : 0);
+             << ",\"nombre\":" << (c.getTitle().isNotEmpty() ? 1 : 0)
+             //  Y CUANTO AIRE DEJA SU PROPIO DIBUJO, que es lo que separa la
+             //  banda RESERVADA del hueco que se VE.
+             //
+             //  Una tapa se pinta tres cuartos de alta y centrada -`capaDe`-
+             //  asi que deja cinco pixeles vacios por arriba y otros cinco por
+             //  abajo DENTRO de su rectangulo. El histograma de aire medía el
+             //  rectangulo, o sea que dos filas de tapas pegadas salian a CERO
+             //  con diez pixeles a la vista: 1232 de los 1312 huecos «a cero»
+             //  eran esa misma pareja de la cara, que ademas esta pegada A
+             //  PROPOSITO y con su medida escrita al lado. Un banco que mide la
+             //  reserva y no lo dibujado da la cifra de otra pantalla.
+             //
+             //  Lo dice la app y no el script, que es la decision de siempre
+             //  -`pide`, la marca `valor`, `Iconos::kLadoMin`, `MIN_CELL`-: la
+             //  cuenta la hace `aireTapaVertical`, que es la MISMA que usan
+             //  `ctrlSeamTop` y las costuras, y repetirla en Python serian dos
+             //  reglas. Cero para todo lo que llena su rectangulo, que es lo
+             //  que hace un `PadButton` -deriva de `juce::Button` y pinta el
+             //  suyo entero- y lo que hace un deslizador.
+             << ",\"aire\":" << (dynamic_cast<juce::TextButton*> (&c) != nullptr
+                                     ? ZatiLookAndFeel::aireTapaVertical (abs.getHeight()) : 0);
 
         //  WHAT IS ON THE PAD. The one piece of state worth carrying in a
         //  layout dump: after leaving the app and coming back, is the sound
@@ -1004,7 +1036,12 @@ namespace UiAudit
                       << ",\"tope\":" << t.tope
                       << ",\"libre\":" << t.libreAbajo
                       << ",\"suelo\":" << t.sueloAbajo
-                      << ",\"desplaza\":" << (t.desplaza ? 1 : 0) << "}" << std::endl;
+                      << ",\"desplaza\":" << (t.desplaza ? 1 : 0)
+                      << ",\"x\":" << t.x << ",\"y\":" << t.y
+                      << ",\"w\":" << t.w << ",\"h\":" << t.h
+                      << ",\"marcoX\":" << t.marcoX << ",\"marcoY\":" << t.marcoY
+                      << ",\"capa\":" << t.capa
+                      << "}" << std::endl;
 
         for (const auto& c : costuras)
             std::cout << "{\"costura\":1,\"y\":" << c.y

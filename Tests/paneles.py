@@ -193,6 +193,42 @@ def juzga (rows, tag, lang):
     #  como esta prueba ya se equivoco dos veces. Lo que si queda medido es que
     #  dos paneles de la MISMA columna no se toquen, que es lo de abajo.
 
+    #  Y DESPUES SE CAYERON OTRAS DOS, las dos de la misma tanda y las dos
+    #  medidas antes de creerlas. Llego «espacio de mas entre ciertas secciones,
+    #  y luego otras que no hay espacio entre ellas», que se lee como que al
+    #  minimo de abajo le falta su maximo. Ni ese maximo ni el aire vertical
+    #  sobreviven a mirar lo que senalan:
+    #
+    #  - EL MAXIMO -«dos paneles de la misma columna quedan a `sm - 2 *
+    #    panelAireY` y a nada mas»- saco **124 hallazgos y ni uno era un
+    #    fallo**: 268 px en `sec` y 522 en tableta son la REJILLA DE PASOS
+    #    sentada entre dos paneles, y 92 en AJUSTES son el recuadro de AUDIO.
+    #    Dos paneles de una columna no son dos grupos ADYACENTES, y adyacente
+    #    no se puede decidir desde el volcado: es la misma frase que la tercera
+    #    regla de aqui arriba, con otra pieza. El minimo no tiene ese problema
+    #    porque por debajo del token los dos paneles SE TOCAN, y eso no tiene
+    #    lectura legitima ninguna.
+    #
+    #  - EL AIRE VERTICAL -que el contenido empiece `panelAireY` por debajo del
+    #    filo y acabe otro tanto por encima- saco **464**, y la razon por la que
+    #    no vale es peor: `pintaPaneles` hace UN `expanded (panelAireX,
+    #    panelAireY)` sin condiciones, asi que preguntar eso es preguntar si un
+    #    `expanded` expande — la prueba repitiendo la constante del codigo, que
+    #    es como `Tests/icono.py` dio verde dos veces con la mascara del
+    #    lanzador rota. Y lo unico que SI puede ver es otra cosa: un panel se
+    #    deduce de las BANDAS de rotulo que `resized()` publica y lo que el
+    #    volcado trae es el TEXTO, que dentro de su banda va centrado — de ahi
+    #    los «19 px arriba» de `sec`. Eso no es un panel torcido.
+    #
+    #    Y contar los rotulos pintados como contenido, que fue el intento de
+    #    salvarla, cuesta **21 FILAS falsos** en RECORTE: alli los cuatro
+    #    deslizadores empiezan 68 px dentro porque a su izquierda va su nombre
+    #    PINTADO, que es la excepcion que esta misma prueba ya tiene escrita
+    #    arriba. Se fue con la regla que lo pedia.
+
+    #  Y SIGUE SIENDO UN MINIMO Y NO UN VALOR EXACTO, que se probo y salio
+    #  medido — ver el parrafo de arriba, que es donde viven las reglas que
+    #  esta prueba ha tenido que retirar.
     for clave, lista in columnas.items():
         orden = sorted (lista, key=lambda p: p["y"])
         for a, b in zip (orden, orden[1:]):

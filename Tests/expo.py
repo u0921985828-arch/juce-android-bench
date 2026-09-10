@@ -421,9 +421,65 @@ def judge_tapado(rows, size, lang, sheet):
 #
 #  Un numero que no separa el fallo del caso legitimo NO puede ser un veredicto
 #  —es la leccion de TARJETA, y antes la del porcentaje de iconos— asi que se
-#  publica para que una regresion se vea como un numero que cambia. Con
-#  poblacion delante se decidira el liston en otra tanda.
-def mide_aire(rows):
+#  publica para que una regresion se vea como un numero que cambia.
+#
+#  Y DICE QUIEN, que es lo que faltaba para poder hacer algo con el.
+#
+#  «Sigo viendo espacio de mas entre ciertas secciones, y luego otras que no hay
+#  espacio entre ellas» — y el histograma daba la razon con 15 073 huecos en 24
+#  valores, con el tercer monton mas grande en CERO (x1312). Pero un monton no se
+#  puede arreglar: hay que saber CUALES. Es la leccion que esta casa ya pago con
+#  el residuo al cambiar de pagina, que paso de «8 solapes» a `1 @35,320 39x36`.
+#
+#  Los dos extremos y no todos: el CERO -dos filas pegadas- y lo que pase de un
+#  `Metrics::lg`, que es donde vive «espacio de mas». La banda de en medio son
+#  los dos valores de la escala y no hay nada que mirar. Y agregado por PAR, que
+#  el mismo par sale en siete pantallas por cuatro idiomas y son un solo sitio
+#  del fuente.
+def quienEs(r):
+    #  EL INDICE DE HERMANO Y LA CLASE — `root/64:e10TextButtonE` sale «64
+    #  TextButton» — que es lo unico que nombra un control y aguanta la
+    #  agregacion.
+    #
+    #  Y NO el rotulo, que fue el primer intento y salio medido: el rotulo esta
+    #  TRADUCIDO, asi que el mismo par del fuente sale con cuatro nombres y su
+    #  cuenta se parte en cuatro. Con eso, el monton de CERO dejaba ver 56 de
+    #  1312 y los otros 1256 caian por debajo del corte de la lista. Es la
+    #  leccion que esta casa ya pago con la marca `valor` de los iconos: una
+    #  regla escrita sobre ROTULOS solo sabe medir una de las cuatro
+    #  compilaciones.
+    #
+    #  Y EL INDICE SE QUEDA, que la segunda version lo tiraba «porque cambia
+    #  con la maqueta» — una AFIRMACION SIN MEDIDA, y medida es falsa: es la
+    #  posicion en el array de hijos del padre, o sea el orden de
+    #  `addAndMakeVisible` en el constructor, asi que no lo mueven ni el tamano
+    #  ni el idioma. Comprobado con `pick` en 412x915 y 280x653 por `es` y
+    #  `ar`: las cuatro corridas dan `64 65 66 67` para A B C D. Sin el, las
+    #  dos mitades de un par salen las dos como «TextButton» y la lista dice
+    #  que hay dos filas de tapas sin decir CUALES.
+    hoja = r["path"].rsplit("/", 1)[-1]
+    m = re.match(r"^(\d+):", hoja)
+    idx = m.group(1) if m else "?"
+    #  El nombre de la clase viene MANGLED (`e10TextButtonE`, `N4juce6SliderE`):
+    #  cada tramo es su largo seguido del identificador. Se quedan los tramos,
+    #  que es lo legible.
+    #  Se lee en ORDEN y no con un `findall`, que fue el primer intento y
+    #  salio medido: `[A-Za-z_]\w*` es codicioso, asi que en `N4juce6SliderE`
+    #  se traga `juce6SliderE` entero y el segundo tramo se pierde — «juce» en
+    #  vez de «juce::Slider».
+    resto, tramos = hoja[len(idx) + 1:], []
+    i = 0
+    while i < len(resto):
+        j = i
+        while j < len(resto) and resto[j].isdigit(): j += 1
+        if j == i: i += 1; continue
+        n = int(resto[i:j])
+        tramos.append(resto[j:j + n])
+        i = j + n
+    return ("%s %s" % (idx, "::".join(tramos) or hoja))[:22]
+
+
+def mide_aire(rows, quien=None, ficha=""):
     aire = collections.Counter()
     comps = [r for r in rows if "path" in r and r.get("hit") and r["w"] > 0 and r["h"] > 0]
     fam = collections.defaultdict(list)
@@ -435,18 +491,33 @@ def mide_aire(rows):
         #  Una FILA son los hermanos que comparten banda de y: el aire entre dos
         #  tapas de la misma fila es horizontal y lo decide `layoutModuleBar`
         #  repartiendo por el texto, asi que no es el aire del que se habla.
+        #  Y EL FILO DE UNA FILA ES EL DE LO QUE SE DIBUJA, no el de lo que se
+        #  reserva. Una tapa se pinta tres cuartos de alta y centrada, asi que
+        #  deja `aire` px vacios por arriba y otros tantos por abajo dentro de
+        #  su rectangulo — la app lo publica, ver UiAudit::walk. Sin descontarlo
+        #  esta cuenta mide la RESERVA: dos filas de tapas pegadas salian a CERO
+        #  con diez pixeles a la vista, y esa sola pareja de la cara era 1232 de
+        #  los 1312 huecos «a cero» del histograma. Es el mismo descuento que
+        #  `ctrlSeamTop` hace para colocar las palabras grabadas.
         filas = []
         for r in sorted(hermanos, key=lambda r: (r["y"], r["x"])):
-            if filas and r["y"] < filas[-1][1]:
-                filas[-1][1] = max(filas[-1][1], r["y"] + r["h"])
+            ar = r.get("aire", 0)
+            arriba, abajo = r["y"] + ar, r["y"] + r["h"] - ar
+            if filas and arriba < filas[-1][1]:
+                filas[-1][1] = max(filas[-1][1], abajo)
+                filas[-1][3] = r
             else:
-                filas.append([r["y"], r["y"] + r["h"]])
+                filas.append([arriba, abajo, r, r])
         for a, b in zip(filas, filas[1:]):
             hueco = b[0] - a[1]
             #  Por encima de un dedo ya no es aire entre filas, es una fila que
             #  falta o una banda pintada en medio.
             if 0 <= hueco <= 48:
                 aire[hueco] += 1
+                if quien is not None and (hueco == 0 or hueco > 16):
+                    quien["%-9s %2d px  %s | %s"
+                          % (ficha or "cara", hueco,
+                             quienEs(a[2]), quienEs(b[2]))] += 1
     return aire
 
 
@@ -508,6 +579,65 @@ def judge_tarjeta(rows, size, lang, sheet):
             out.append(("TARJETA", f"{size}/{lang}/{sheet or 'face'}",
                         f'pide {r["pedido"]} px y la tarjeta da {r["tope"]}',
                         r["pedido"] - r["tope"]))
+    return out
+
+
+#  EL AIRE DEL MARCO: NADA DE UNA FICHA SE METE EN EL.
+#
+#  Es la tercera mitad de la queja -«o se olvida el aire del marco»- y la unica
+#  de las tres que no medía nadie. Las otras dos resultaron ser la misma cosa:
+#  el histograma medía la BANDA reservada y no lo dibujado, y con el aire de la
+#  tapa descontado los 1312 «huecos a cero» se quedaron en CERO.
+#
+#  `sheetFromBottom` es la unica puerta: mete el contenido `margenFichaX` por
+#  `margenFichaY` y devuelve ESE rectangulo, asi que la invariante se cumple por
+#  construccion... mientras nadie expanda hacia fuera. Y la app expande en nueve
+#  sitios -`row.expanded (Metrics::aireTapa, 0)` y sus hermanos- para que el
+#  filo de una fila caiga donde el de sus vecinas, que es lo que pide la regla
+#  FILA. Hoy las nueve se compensan con el `reduced` de cada tapa y no se comen
+#  un pixel; una que se descompense no la ve ninguna de las otras doce, porque
+#  dos pixeles de marco no solapan, no se salen de la ventana, no cortan un
+#  rotulo, no miden cero y estan traducidos.
+#
+#  POR CAPA, que es lo que costo la primera medida: el tour NO pasa por
+#  `sheetFromBottom` -su muelle se reduce contra su propio rectangulo, con los
+#  mismos dos tokens- asi que sus tres tapas se comparaban con la tarjeta de la
+#  ficha que el paso hubiera abierto y salian 60 px «por dentro del marco».
+#  Catorce hallazgos y ninguno de la app. La tarjeta dice de que capa es y solo
+#  juzga a los suyos, que es la misma pieza que hizo falta para el rotulo
+#  tapado.
+#
+#  Y solo lo que NO se desplaza: dentro de un Viewport el contenido se sale a
+#  proposito -para eso es un desplazamiento- que es lo que ya distingue
+#  `scrolled` en la regla de fuera de ventana.
+def judge_marco(rows, size, lang, sheet):
+    out = []
+    for t in rows:
+        if not t.get("tarjeta") or t.get("w", 0) <= 0:
+            continue
+        capa = t.get("capa", 0)
+        if capa <= 0:
+            continue
+        x0, y0 = t["x"] + t["marcoX"], t["y"] + t["marcoY"]
+        x1, y1 = t["x"] + t["w"] - t["marcoX"], t["y"] + t["h"] - t["marcoY"]
+        for r in rows:
+            if "path" not in r or not r.get("hit") or r.get("scrolled"):
+                continue
+            if r.get("capa", 0) != capa or r["w"] <= 0 or r["h"] <= 0:
+                continue
+            #  El contenedor de la ficha no: `Sheet` cubre la ventana y dibuja
+            #  la tarjeta dentro, asi que preguntarle si respeta su propio marco
+            #  no significa nada.
+            if r["w"] >= t["w"] or r["h"] >= t["h"]:
+                continue
+            for lado, v, marco in (("izq", r["x"] - x0, t["marcoX"]),
+                                   ("der", x1 - (r["x"] + r["w"]), t["marcoX"]),
+                                   ("arr", r["y"] - y0, t["marcoY"]),
+                                   ("aba", y1 - (r["y"] + r["h"]), t["marcoY"])):
+                if v < 0:
+                    out.append(("MARCO", f"{size}/{lang}/{sheet or 'face'}",
+                                f'"{(r.get("text") or quienEs(r))}" se mete {-v} px en el marco '
+                                f'{lado} de la ficha, que declara {marco}', 0))
     return out
 
 
@@ -700,7 +830,7 @@ def _corre_y_juzga(combo, casa):
     size, lang, sheet = combo
     rows = run(size, lang, sheet, casa)
     if rows is None:
-        return [], None, (0, 0), collections.Counter()
+        return [], None, (0, 0), collections.Counter(), collections.Counter()
     #  CUANTAS TAPAS LLEVAN DIBUJO Y CUANTAS LO ENSENAN.
     #
     #  El icono es el adorno y la palabra la funcion, asi que donde no caben
@@ -709,12 +839,14 @@ def _corre_y_juzga(combo, casa):
     #  estrecho" y "los iconos no salen" son la misma corrida en verde.
     puestos = sum (1 for r in rows if "icono" in r)
     pintados = sum (1 for r in rows if r.get ("icono"))
+    quien = collections.Counter()
     return (judge(rows, size, lang, sheet) + judge_tapado(rows, size, lang, sheet)
                                            + judge_tarjeta(rows, size, lang, sheet)
+                                           + judge_marco(rows, size, lang, sheet)
                                            + judge_fila(rows, size, lang, sheet)
                                            + judge_cabecera(rows, size, lang, sheet),
             (rows if lang in ("es", "en") else []), (puestos, pintados),
-            mide_aire(rows))
+            mide_aire(rows, quien, sheet), quien)
 
 
 def paginas():
@@ -753,6 +885,7 @@ def main():
     pairs = collections.defaultdict(dict)
     iconos = collections.defaultdict(lambda: [0, 0])
     aire   = collections.Counter()
+    quien  = collections.Counter()
     runs = fails = 0
 
     combos = [(size, lang, sheet)
@@ -780,10 +913,11 @@ def main():
                 futuros[pool.submit(corre_y_juzga, c, casa)] = c
             for fut in concurrent.futures.as_completed(futuros):
                 size, lang, sheet = futuros[fut]
-                findings, rows, ico, aireRun = fut.result()
+                findings, rows, ico, aireRun, quienRun = fut.result()
                 iconos[size][0] += ico[0]
                 iconos[size][1] += ico[1]
                 aire += aireRun
+                quien += quienRun
                 runs += 1
                 if rows is None:
                     fails += 1
@@ -839,6 +973,10 @@ def main():
     print("aire vertical entre filas hermanas (%d huecos, %d valores distintos):"
           % (sum(aire.values()), len(aire)))
     print("  " + "   ".join("%d px x%d" % (h, n) for h, n in sorted(aire.items())))
+    if quien:
+        print("  los dos extremos, por par (0 px = pegadas, > 16 px = de mas):")
+        for k, n in sorted(quien.items(), key=lambda kv: (-kv[1], kv[0]))[:24]:
+            print("    x%-4d %s" % (n, k))
 
     #  Y el residuo al cambiar de pagina, que ninguna de las 476 corridas de
     #  arriba puede ver porque cada una abre una ficha y se va.
@@ -865,7 +1003,7 @@ def main():
     #  su cifra. Lo que no puede pasar de cero es lo demas.
     duros = [k for k in ("TRUNC", "SQUEEZE", "OVERLAP", "OFFSCREEN", "CELDA",
                          "UNTRANSLATED", "CERO", "TAPADO", "SPRITE", "CORTADO", "PISADO",
-                         "FILA", "CUADRADA", "ASOMA", "CABECERA", "CRASH") if by.get(k)]
+                         "FILA", "CUADRADA", "ASOMA", "CABECERA", "MARCO", "CRASH") if by.get(k)]
     if resto:
         duros.append("RESIDUO")
     print()

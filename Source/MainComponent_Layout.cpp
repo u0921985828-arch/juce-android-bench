@@ -1097,7 +1097,9 @@ void MainComponent::resized()
                               s.desplazable || s.listaPropia,
                               full.getBottom() - sheet.getBottom(),
                               full.getWidth() > full.getHeight()
-                                  ? 0 : ZatiLookAndFeel::kStatus + Metrics::hit);
+                                  ? 0 : ZatiLookAndFeel::kStatus + Metrics::hit,
+                              sheet, Metrics::margenFichaX, Metrics::margenFichaY,
+                              (int) s.getProperties()["capa"]);
         s.sheetBounds = sheet;
         auto dentro = sheet.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
 
@@ -1112,7 +1114,7 @@ void MainComponent::resized()
         //  desplazamiento solo existe en las pantallas donde antes se caian
         //  filas enteras.
         s.vista.setBounds (dentro);
-        const int pedido = desiredH - 2 * Metrics::md;
+        const int pedido = desiredH - 2 * Metrics::margenFichaY;
         const bool sobra = pedido > dentro.getHeight();
         //  La barra solo se lleva su ancho cuando la hay, o cada fila sale
         //  ocho pixeles corta en las pantallas que no la necesitaban.
@@ -1139,7 +1141,7 @@ void MainComponent::resized()
         auto titleRow = inner.removeFromTop (Metrics::hit);
         padPickCloseBtn.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
                                      .withSizeKeepingCentre (Metrics::hit, Metrics::hit));
-        inner.removeFromTop (Metrics::md);
+        inner.removeFromTop (Metrics::sm);
 
         //  LA FILA DE BANCOS SE APARTA PRIMERO, que es la regla de la casa:
         //  cuatro tapas no encogen y las filas de la rejilla si.
@@ -1189,7 +1191,7 @@ void MainComponent::resized()
         auto titleRow = inner.removeFromTop (Metrics::hit);
         canalCloseBtn.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
                                    .withSizeKeepingCentre (Metrics::hit, Metrics::hit));
-        inner.removeFromTop (Metrics::md);
+        inner.removeFromTop (Metrics::sm);
 
         const int filaH = juce::jmax (Metrics::hit,
                                       (inner.getHeight() - 3 * Metrics::xs) / 4);
@@ -1230,7 +1232,7 @@ void MainComponent::resized()
         //  regla en dos sitios.
         const auto zona = safeArea();
         const int topeAlto = altoTarjeta (zona);
-        const int anchoDentro = anchoTarjeta (zona.getWidth()) - 2 * Metrics::lg;
+        const int anchoDentro = anchoTarjeta (zona.getWidth()) - 2 * Metrics::margenFichaX;
         const int cols  = menuRanuraColumnas (kNumFx, topeAlto, anchoDentro, conVaciar);
         const int filas = (kNumFx + cols - 1) / cols;
         const int quiere = menuRanuraPide (filas, conVaciar);
@@ -1243,7 +1245,7 @@ void MainComponent::resized()
         //  que el pintor no vuelva a calcularlo: una banda deducida dos veces
         //  son dos bandas.
         ranuraTituloBanda = centraEnRenglon (titleRow.withHeight (Metrics::bandaTitulo));
-        inner.removeFromTop (Metrics::md);
+        inner.removeFromTop (Metrics::sm);
 
         //  VACIAR SE APARTA PRIMERO, que es la regla de la casa: una fila de
         //  tapas no encoge y las filas de la rejilla si.
@@ -1295,7 +1297,7 @@ void MainComponent::resized()
         eqBandaCloseBtn.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
                                      .withSizeKeepingCentre (Metrics::hit, Metrics::hit));
         eqBandaTituloBanda = centraEnRenglon (titleRow.withHeight (Metrics::bandaTitulo));
-        inner.removeFromTop (Metrics::md);
+        inner.removeFromTop (Metrics::sm);
 
         //  El mando SE APARTA PRIMERO por la regla de siempre: los chips son
         //  una fila de tapas y no encogen, el mando tiene suelo y se lleva lo
@@ -1360,7 +1362,7 @@ void MainComponent::resized()
         //  suyo: donde los tres no caben, CHOKE se queda una fila entera y las
         //  otras dos bajan. Es lo que ya hacen las pestanas de AJUSTES y la
         //  barra de modulos del pad.
-        const int anchoFila3 = sheetInnerW - 2 * Metrics::lg;
+        const int anchoFila3 = sheetInnerW - 2 * Metrics::margenFichaX;
         const bool chokeSolo = ! padRowFits (anchoFila3 * 68 / 100, { &modeButton, &normButton })
                              || anchoFila3 * 32 / 100 < 12 + 34 + Metrics::gap + 2 * Metrics::stepKey;
         //  438 y no 352: la fila del filtro son 86 mas. Ver el desglose.
@@ -1369,7 +1371,7 @@ void MainComponent::resized()
                         : (padPage == padPageTrim)  ? 436 + secH + 2 * (ZatiLookAndFeel::kTrimRow + Metrics::xs)
                                                     //  Y la fila de la muestra puede ser DOS desde que
                                                     //  esta RECORTAR: la misma pregunta que la coloca.
-                                                    + (padMuestraWraps (sheetInnerW - 2 * Metrics::lg)
+                                                    + (padMuestraWraps (sheetInnerW - 2 * Metrics::margenFichaX)
                                                          ? Metrics::hit + Metrics::halfGap : 0)
                                                     : rigH;
         auto inner = sheetFromBottom (padSheet, wantH);
@@ -1480,7 +1482,7 @@ void MainComponent::resized()
                 {
                     juce::TextButton* cb[1] = { &padCanalBtn };
                     layoutModuleBar (inner.removeFromTop (Metrics::hit), cb, 0, 1);
-                    inner.removeFromTop (Metrics::halfGap);
+                    inner.removeFromTop (Metrics::xs);
                     juce::TextButton* pb[4] = { &padRackBtn, &pianoButton,
                                                 &nivelesButton, &vstButton };
                     layoutModuleBar (inner.removeFromTop (Metrics::hit), pb, 0, esInstr ? 4 : 3);
@@ -1536,7 +1538,7 @@ void MainComponent::resized()
                     auto ra = inner.removeFromTop (Metrics::hit);
                     juce::TextButton* p2[2] = { &chopButton, &micButton };
                     layoutModuleBar (ra, p2, 0, 2);
-                    inner.removeFromTop (Metrics::halfGap);
+                    inner.removeFromTop (Metrics::xs);
                     auto rb = inner.removeFromTop (Metrics::hit);
                     juce::TextButton* p1[1] = { &resampleButton };
                     layoutModuleBar (rb, p1, 0, 1);
@@ -1692,7 +1694,7 @@ void MainComponent::resized()
             const int gBajo = inner.getY();
             if (chokeSolo)
             {
-                inner.removeFromTop (Metrics::halfGap);
+                inner.removeFromTop (Metrics::xs);
                 layoutModuleBar (inner.removeFromTop (Metrics::hit), r3b, 0, 2);
             }
             else
@@ -1757,7 +1759,7 @@ void MainComponent::resized()
             {
                 auto r1 = inner.removeFromTop (Metrics::hit);
                 layoutModuleBar (r1, pb, 0, 2);
-                inner.removeFromTop (Metrics::halfGap);
+                inner.removeFromTop (Metrics::xs);
                 auto r2 = inner.removeFromTop (Metrics::hit);
                 layoutModuleBar (r2, pb + 2, 0, 2);
             }
@@ -1829,7 +1831,7 @@ void MainComponent::resized()
         auto titleRow = inner.removeFromTop (Metrics::hit);
         manualCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
                                         .withSizeKeepingCentre (Metrics::hit, Metrics::hit));
-        inner.removeFromTop (14 + Metrics::sm);   // pintado: el subtitulo
+        inner.removeFromTop (Metrics::bandaSubtitulo + Metrics::sm);   // pintado: el subtitulo
 
         manualScroll.setBounds (inner);
         const int barW = manualScroll.getScrollBarThickness();
@@ -1907,7 +1909,7 @@ void MainComponent::resized()
             layoutModuleBar (upper, pb, 0, 2);
         }
         }
-        inner.removeFromBottom (Metrics::gap);
+        inner.removeFromBottom (Metrics::sm);
         if (browser != nullptr) browser->setBounds (inner);
     }
 
@@ -1998,7 +2000,7 @@ void MainComponent::resized()
         //  de pie - menos el margen vertical de la tarjeta. Escrito aqui
         //  porque aqui es donde se decide, y decidirlo con otro numero es
         //  como se llega a una fila de altura cero.
-        const int topeCarta = altoTarjeta (full) - 2 * Metrics::md;
+        const int topeCarta = altoTarjeta (full) - 2 * Metrics::margenFichaY;
         const bool dosColumnasSet = setInnerW >= 560 && estAltoAudio > topeCarta;
         const int anchoChip = (dosColumnasSet ? setInnerW / 2 - Metrics::sm : setInnerW) - 44;
         auto chipsCaben = [this, anchoChip] (juce::OwnedArray<juce::TextButton>& btns)
@@ -2444,7 +2446,7 @@ void MainComponent::resized()
             }
             setGrupos.add ({ inner.getX(), inner.getBottom(),
                              inner.getWidth(), gAcciones - inner.getBottom() });
-            inner.removeFromBottom (Metrics::gap);
+            inner.removeFromBottom (Metrics::sm);
 
             projList.setBounds (inner);
             bufRowArea = rateRowArea = langRowArea = movRowArea = audioInfoArea = {};
@@ -2464,6 +2466,7 @@ void MainComponent::resized()
                                                      + Metrics::btn * 2 + Metrics::sm * 2
                                                      + Metrics::hit + Metrics::sm);
         exportGrupos.clear();
+
         auto titleRow = inner.removeFromTop (Metrics::hit);
         exportCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
 
@@ -2730,7 +2733,7 @@ void MainComponent::resized()
         //  encima de la segunda. Es la misma regla que ya siguen las bandas de
         //  AJUSTES y los paneles del secuenciador: una cuenta, un dueno.
         instTitleArea = centraEnRenglon (titleRow.reduced (Metrics::lg, 0).withHeight (Metrics::bandaTitulo));
-        inner.removeFromTop (Metrics::md);
+        inner.removeFromTop (Metrics::sm);
 
         //  MENOS Y MAS EN LOS EXTREMOS y el nombre del pack pintado en medio.
         //  Es lo mismo que hace el RACK con el nombre del efecto: un rotulo que
@@ -2817,7 +2820,7 @@ void MainComponent::resized()
             }
             inner.removeFromTop (Metrics::sm);
             pon4x4 (inner.removeFromTop (alto4x4), instDestBtns);
-            inner.removeFromTop (Metrics::md);
+            inner.removeFromTop (Metrics::sm);
             pon2col (inner.removeFromTop (alto2col), instBtns);
             //  Y AQUI, con las celdas ya colocadas: reparteTapa mide el ancho
             //  del componente, asi que preguntarlo antes seria preguntarle a
@@ -2874,7 +2877,7 @@ void MainComponent::resized()
         vstCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
                                       .withSizeKeepingCentre (Metrics::hit, Metrics::hit));
         vstTitleArea = centraEnRenglon (titleRow.reduced (Metrics::lg, 0).withHeight (Metrics::bandaTitulo));
-        inner.removeFromTop (Metrics::md);
+        inner.removeFromTop (Metrics::sm);
 
         //  LA CABECERA: el dibujo a la izquierda y el nombre de la familia al
         //  lado. El del PRESET se fue de aqui a su propia pantalla, que es
@@ -2925,6 +2928,7 @@ void MainComponent::resized()
 
     // AUTO CHOP sheet: how many pieces, where they land, and one red verb.
     {
+        chopGrupos.clear();
         const int explainH = 40, plannedH = 40;
         //  Una fila mas que antes: la de COMO se corta, encima de la de en
         //  cuantos trozos, porque el modo cambia lo que significa el numero.
@@ -2963,23 +2967,45 @@ void MainComponent::resized()
         }
 
         inner.removeFromTop (explainH);                 // painted: what this does
-        inner.removeFromTop (Metrics::md);
-        inner.removeFromTop (Metrics::bandaSubtitulo);                       // pintado: "COMO"
+        inner.removeFromTop (Metrics::sm);
+
+        //  LOS DOS GRUPOS DE ESTA FICHA, que llevaban una tanda declarados y sin
+        //  dueño: `chopGrupos` estaba en el `.h` -al lado de un comentario que
+        //  daba por agrupados EXPORTAR y el TROCEADO- y no lo escribia ni lo
+        //  leia nadie. EXPORTAR si; este seguia siendo una columna de renglones
+        //  sueltos sobre el mismo fondo, que es exactamente la queja que trajo
+        //  los paneles a las otras cuatro fichas.
+        //
+        //  Son DOS y no uno: COMO dice de que manera se corta y TROZOS en
+        //  cuantos, y entre los dos hay `Metrics::sm` -la frontera de la casa-
+        //  asi que los dos paneles se salen `panelAireY` por lado y queda el
+        //  hueco de cuatro que se ve. Y CUADRAR se queda fuera, como CANCELAR
+        //  en EXPORTAR: un panel alrededor de un solo control no agrupa nada.
+        //
+        //  Cada uno envuelve su banda de ROTULO y su fila, que es lo que hace
+        //  que el nombre pintado quede dentro de la placa y no encima del filo.
+        //  No cuestan un pixel: se deducen de lo que `resized()` ya reserva.
+        auto grupoComo = inner.removeFromTop (Metrics::bandaSubtitulo);      // pintado: "COMO"
         {
             auto row = inner.removeFromTop (Metrics::hit);
+            grupoComo = grupoComo.getUnion (row);
             juce::TextButton* mb[2] = { &chopEvenBtn, &chopHitsBtn };
             layoutModuleBar (row, mb, 0, 2);
         }
-        inner.removeFromTop (Metrics::md);
-        inner.removeFromTop (Metrics::bandaSubtitulo);                       // pintado: "TROZOS"
+        chopGrupos.add (grupoComo);
+
+        inner.removeFromTop (Metrics::sm);
+        auto grupoTrozos = inner.removeFromTop (Metrics::bandaSubtitulo);    // pintado: "TROZOS"
 
         {
             auto row = inner.removeFromTop (Metrics::hit);
+            grupoTrozos = grupoTrozos.getUnion (row);
             const int w = row.getWidth() / chopCountBtns.size();
             for (int i = 0; i < chopCountBtns.size(); ++i)
                 chopCountBtns[i]->setBounds ((i < chopCountBtns.size() - 1 ? row.removeFromLeft (w) : row)
                                                  .reduced (Metrics::aireTapa, 0));
         }
+        chopGrupos.add (grupoTrozos);
 
         inner.removeFromTop (Metrics::sm);
         chopSafeButton.setBounds (inner.removeFromTop (Metrics::hit).reduced (Metrics::aireTapa, 0));
@@ -2993,7 +3019,7 @@ void MainComponent::resized()
         auto verbo = inner.removeFromBottom (Metrics::btn);
         inner.removeFromBottom (Metrics::sm);
 
-        inner.removeFromTop (Metrics::md);
+        inner.removeFromTop (Metrics::sm);
 
         //  LA VISTA PREVIA SE QUEDA CON LO QUE HAY, y lo que encoge es el texto.
         //
@@ -3070,7 +3096,7 @@ void MainComponent::resized()
             //  el pie entero -PLAY, el largo y las paginas- quedaba en 72x0:
             //  la ficha de CANCION no tenia boton de play en apaisado, que es
             //  justo la orientacion en la que se pidio.
-            const int anchoUtil = wideFace ? colUtil - 2 * Metrics::lg
+            const int anchoUtil = wideFace ? colUtil - 2 * Metrics::margenFichaX
                                            : anchoTarjetaInterior (safeArea().getWidth());
             //  LA MISMA FILA QUE SE VA A MAQUETAR, y no otra parecida: en la
             //  vista de audio son CINCO -las dos brochas, GRABAR, el clic y el
@@ -3123,7 +3149,7 @@ void MainComponent::resized()
         //  a 9 px por carril en 280x653: la cuarta parte del suelo. Es el mismo
         //  fallo que ya costo el TEMPO del secuenciador y la fila de
         //  herramientas de esta misma ficha, contado por tercera vez.
-        const int anchoPaleta = wideFace ? colUtil - 2 * Metrics::lg
+        const int anchoPaleta = wideFace ? colUtil - 2 * Metrics::margenFichaX
                                          : anchoTarjetaInterior (safeArea().getWidth());
 
         //  LA FILA DE PAGINAS -1, 9, 17...- PASA A SER UNA BARRA QUE SE ARRASTRA.
@@ -3426,7 +3452,7 @@ void MainComponent::resized()
                         songToolBtns[i]->setBounds (zona.removeFromLeft (celda)
                                                         .reduced (Metrics::aireTapa, 0));
                 }
-                panel.removeFromTop (Metrics::halfGap);
+                panel.removeFromTop (Metrics::xs);
             }
 
             //  LAS MISMAS CINCO SIEMPRE. Eran cinco en la banda de audio y
@@ -3447,7 +3473,7 @@ void MainComponent::resized()
                 //  brochas y abajo lo que ACTUA - grabar, el clic y el modo.
                 const int arriba = 1;   // la brocha SONIDO; lo que ACTUA baja
                 layoutModuleBar (panel.removeFromTop (Metrics::hit), sb, 0, arriba);
-                panel.removeFromTop (Metrics::halfGap);
+                panel.removeFromTop (Metrics::xs);
                 juce::TextButton* sc[4] = { &songRecBtn, &songClickBtn,
                                             (juce::TextButton*) &autoBtn, &songModeBtn };
                 layoutModuleBar (panel.removeFromTop (Metrics::hit), sc, 0, 4);
@@ -3826,7 +3852,7 @@ void MainComponent::resized()
                         + Metrics::hit             // las seis ranuras, en UNA fila
                         + Metrics::sm;
         const int side = juce::jlimit (60,
-                                       juce::jmax (60, faceTopArea.getWidth() - 2 * Metrics::lg),
+                                       juce::jmax (60, faceTopArea.getWidth() - 2 * Metrics::margenFichaX),
                                        faceTopArea.getHeight() - fixed);
         xyPanel.setBounds (faceTopArea.withHeight (juce::jmin (faceTopArea.getHeight(),
                                                               fixed + side)));
@@ -4597,7 +4623,7 @@ void MainComponent::resized()
                     auto celda = col.removeFromTop (Metrics::hit);
                     pbCol[i]->setBounds (celda.reduced (Metrics::aireTapa, 0));
                     grupo = grupo.isEmpty() ? celda : grupo.getUnion (celda);
-                    col.removeFromTop (Metrics::halfGap);
+                    col.removeFromTop (Metrics::xs);
                     ++puestas;
                 }
                 if (! grupo.isEmpty()) pianoGrupos.add (grupo);
@@ -4670,7 +4696,7 @@ void MainComponent::resized()
                         { arriba = k; break; }
                     layoutModuleBar (tapas, pb, 0, arriba);
                     auto fila2 = inner.removeFromBottom (Metrics::hit);
-                    inner.removeFromBottom (Metrics::halfGap);
+                    inner.removeFromBottom (Metrics::xs);
                     layoutModuleBar (fila2, pb + arriba, 0, nb - arriba);
                     //  DOS FILAS Y UN SOLO PANEL. Son dos preguntas -arriba lo
                     //  que mueve la VISTA, abajo lo que toca las NOTAS- y aun
@@ -4708,7 +4734,7 @@ void MainComponent::resized()
             if (hayBarraH)
             {
                 seqBarra.setBounds (inner.removeFromBottom (BarraVista::kGrueso));
-                inner.removeFromBottom (Metrics::halfGap);
+                inner.removeFromBottom (Metrics::xs);
             }
             else
             {
@@ -5021,12 +5047,12 @@ void MainComponent::resized()
                 fila (noteSlider, "NOTA", velSlider, "GOLPE");
                 if (tiraFilas > 1)
                 {
-                    tira.removeFromTop (Metrics::halfGap);
+                    tira.removeFromTop (Metrics::xs);
                     fila (rollSlider, "REPETIR", lockSlider, "CORTE");
                 }
                 if (tiraFilas > 2)
                 {
-                    tira.removeFromTop (Metrics::halfGap);
+                    tira.removeFromTop (Metrics::xs);
                     //  CUATRO en la misma fila y no dos: ver la declaracion de
                     //  atkPasoSlider. Una fila mas costaria otros 58 px y en un
                     //  telefono la rejilla no los tiene.
@@ -5091,7 +5117,7 @@ void MainComponent::resized()
             if (seqHayBarra)
             {
                 seqBarra.setBounds (inner.removeFromBottom (Metrics::hit));
-                inner.removeFromBottom (Metrics::halfGap);
+                inner.removeFromBottom (Metrics::xs);
             }
             else
             {
@@ -5235,15 +5261,15 @@ void MainComponent::resized()
                 else if (nFilas == 2)
                 {
                     layoutModuleBar (colA.removeFromTop (Metrics::hit), pb, 0, 4);
-                    colA.removeFromTop (Metrics::halfGap);
+                    colA.removeFromTop (Metrics::xs);
                     layoutModuleBar (colA.removeFromTop (Metrics::hit), pb + 4, 0, 4);
                 }
                 else
                 {
                     layoutModuleBar (colA.removeFromTop (Metrics::hit), pb, 0, 3);
-                    colA.removeFromTop (Metrics::halfGap);
+                    colA.removeFromTop (Metrics::xs);
                     layoutModuleBar (colA.removeFromTop (Metrics::hit), pb + 3, 0, 3);
-                    colA.removeFromTop (Metrics::halfGap);
+                    colA.removeFromTop (Metrics::xs);
                     layoutModuleBar (colA.removeFromTop (Metrics::hit), pb + 6, 0, 2);
                 }
                 colA.removeFromTop (Metrics::sm);
@@ -5390,7 +5416,7 @@ void MainComponent::resized()
 
         const int anchoDock = getWidth();
         const int alto = Metrics::md * 2 + 16 + Metrics::xs
-                       + tourBodyHeight (anchoDock - 2 * Metrics::lg)
+                       + tourBodyHeight (anchoDock - 2 * Metrics::margenFichaX)
                        + Metrics::sm + Metrics::hit;
 
         //  EN LA MITAD CONTRARIA A LA DEL OBJETIVO. Es lo unico que garantiza
@@ -5418,7 +5444,7 @@ void MainComponent::resized()
         //  Y si aun asi se solapan -un objetivo que ocupa media pantalla-, manda
         //  el texto: sin leerlo el foco no explica nada.
         auto inner = tourDock.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
-        inner.removeFromTop (16 + Metrics::xs);              // pintado: titulo y puntos
+        inner.removeFromTop (Metrics::bandaTitulo + Metrics::xs);      // pintado: titulo y puntos
         {
             auto row = inner.removeFromBottom (Metrics::hit);
             juce::TextButton* tb[3] = { &tourSkipBtn, &tourBackBtn, &tourNextBtn };
