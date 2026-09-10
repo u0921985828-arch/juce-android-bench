@@ -373,11 +373,18 @@ public:
         //  «puede dar a confundirse donde pone uno las notas siguiendo los
         //  pasos de los beat». Caen en los pasos multiplos de cuatro DEL
         //  PATRON, por lo mismo que el tinte.
-        g.setColour (ZatiColours::groove (0.28f));
-        for (int c = 1; c < nPasos; ++c)
-            if (((primerPaso + c) % 4) == 0)
-                g.fillRect ((float) r.getX() + (float) kGutter + anchoCol * (float) c - 0.5f,
-                            (float) r.getY(), 1.0f, (float) r.getHeight());
+        //  `sinCompases` es una entrada del BANCO y no un ajuste: la unica
+        //  forma exacta de medir estas lineas es pintar la rejilla dos veces y
+        //  restar, porque no hay una sola fila de la imagen donde no pinte
+        //  nada mas. Ver `auditPiano`.
+        if (! sinCompases)
+        {
+            g.setColour (ZatiColours::groove (0.28f));
+            for (int c = 1; c < nPasos; ++c)
+                if (((primerPaso + c) % 4) == 0)
+                    g.fillRect ((float) r.getX() + (float) kGutter + anchoCol * (float) c - 0.5f,
+                                (float) r.getY(), 1.0f, (float) r.getHeight());
+        }
 
         //  El cabezal, encima de todo y en su color.
         if (tocando >= 0 && tocando < nPasos)
@@ -579,6 +586,11 @@ private:
     //  El paso del patron de la primera columna. Lo mismo que `StepGrid`
     //  llama asi, y por lo mismo.
     int primerPaso = 0;
+    //  Solo el banco lo toca: con el puesto la rejilla sale sin sus lineas de
+    //  compas, que es la referencia contra la que se restan.
+public:
+    bool sinCompases = false;
+private:
     //  Donde empezo el arrastre, para saber si estira o pinta.
     int filaIni = -1, pasoIni = -1, ultimoLargo = -1;
     int util = 0;                       // 0 dibujar, 1 goma, 2 tijeras

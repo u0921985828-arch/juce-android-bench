@@ -2782,10 +2782,9 @@ void MainComponent::auditPiano()
     //  se sale, no lleva rotulo, no mide cero y esta traducida-. Es la familia
     //  de los cinco fallos del compas.
     //
-    //  Se mide PINTANDO y sobre el pixel, que es donde vive: la junta entre
-    //  dos columnas es 1.6 px transparentes -una celda va `reduced (0.8f)`- y
-    //  la linea de compas es 1 px dibujado justo ahi, asi que a media altura
-    //  esa junta vale cero salvo donde hay linea. Preguntarle a la app en que
+    //  Se mide PINTANDO y sobre el pixel, que es donde vive: la rejilla se
+    //  dibuja DOS veces -con sus lineas de compas y sin ellas- y se restan, asi
+    //  que lo que sale son las lineas y nada mas. Preguntarle a la app en que
     //  columnas CREE que hay pulso seria repetir la constante en vez de medir,
     //  que es el fallo que `icono.py` ya cometio dos veces con la mascara del
     //  lanzador.
@@ -2807,39 +2806,53 @@ void MainComponent::auditPiano()
             if (seqBarra.onMueve) seqBarra.onMueve (desde);
             refreshPiano();
 
+            //  Y SE RESTAN DOS RENDERS, que es la unica forma exacta.
+            //
+            //  Los dos primeros intentos midieron OTRA COSA y los dos daban
+            //  numeros, que es la peor forma de fallar. El primero barria la
+            //  fila y=0 con el alfa en 8: una celda va `reduced (0.8f)`, asi
+            //  que en el pixel de arriba deja el 20 % de su tinte -ocho
+            //  unidades para una fila blanca y trece para un pulso- y lo que
+            //  encontraba eran las celdas TEÑIDAS, `[0, 4, 8, 8, 12]`, con un
+            //  cero que no lleva linea y un ocho repetido. El segundo miro la
+            //  junta entre columnas a media altura -1.6 px transparentes- y
+            //  ahi pinta lo unico que de verdad hay a media altura: las NOTAS.
+            //  `[1, 3, 4, 5, 7, 8, 10, 12, 14]`. No hay una sola fila de esta
+            //  imagen donde no pinte nadie mas.
+            //
+            //  Asi que se pinta la rejilla DOS veces -con sus lineas y sin
+            //  ellas- y se restan: lo que cambia son las lineas y nada mas, sin
+            //  umbral que elegir y sin dar por hecho que hay una fila libre. Es
+            //  la misma pieza que `ZATI_Z_RECTA` en su dia. Donde MIRAR lo dice
+            //  la app -`celdaAnchoPx` y `canalIzq`, que son las que dibujan- y
+            //  el PASO sale de `seqPrimerPaso + columna`, que es la unica
+            //  conversion que hace falta.
             juce::String s = "[";
             const int w = juce::jmax (1, pianoGrid.getWidth());
             const int h = juce::jmax (1, pianoGrid.getHeight());
-            juce::Image img (juce::Image::ARGB, w, h, true);
-            { juce::Graphics g (img); pianoGrid.paintEntireComponent (g, false); }
+            juce::Image con (juce::Image::ARGB, w, h, true);
+            juce::Image raso (juce::Image::ARGB, w, h, true);
+            { juce::Graphics g (con); pianoGrid.paintEntireComponent (g, false); }
+            pianoGrid.sinCompases = true;
+            { juce::Graphics g (raso); pianoGrid.paintEntireComponent (g, false); }
+            pianoGrid.sinCompases = false;
 
-            //  Y SE MIRA LA JUNTA ENTRE DOS COLUMNAS, A MEDIA ALTURA.
-            //
-            //  La primera version barria la fila y=0 con el alfa en 8, y salio
-            //  midiendo OTRA COSA: una celda se dibuja `reduced (0.8)`, asi que
-            //  en el pixel de arriba deja el 20 % de su tinte -ocho unidades de
-            //  alfa para una fila blanca y trece para un pulso- y lo que el
-            //  barrido encontraba eran las celdas TEÑIDAS y no las lineas.
-            //  Cambiaba con la ventana y caia en multiplos de cuatro, o sea que
-            //  daba verde por el motivo equivocado, y ademas dependia de si la
-            //  fila de arriba salia blanca o negra: `[0, 4, 8, 8, 12]`, con un
-            //  cero que no lleva linea y un ocho repetido. Primero se duda de
-            //  la prueba, por decimotercera vez en este banco.
-            //
-            //  Una celda deja 0.8 px de hueco por lado, o sea que entre dos
-            //  columnas hay 1.6 px TRANSPARENTES; la linea de compas es 1 px
-            //  dibujado justo ahi. Asi que a media altura la junta vale cero
-            //  salvo donde hay linea, que es la unica pregunta que esto tiene
-            //  que hacer. Donde MIRAR lo dice la app -`celdaAnchoPx` y
-            //  `canalIzq`, que son los que dibujan- y no una cuenta repetida
-            //  aqui.
             const float ancho = pianoGrid.celdaAnchoPx();
             bool first = true;
             for (int c = 1; c < pianoGrid.numPasos(); ++c)
             {
-                const int x = (int) std::lround ((float) pianoGrid.canalIzq() + ancho * (float) c);
-                if (x <= 0 || x >= w) continue;
-                if (img.getPixelAt (x, h / 2).getAlpha() > 20)
+                //  Los dos pixeles de la junta: la linea va centrada en el
+                //  borde, asi que a media unidad puede caer en cualquiera.
+                bool cambia = false;
+                for (int d = -1; d <= 1 && ! cambia; ++d)
+                {
+                    const int x = (int) std::lround ((float) pianoGrid.canalIzq()
+                                                     + ancho * (float) c) + d;
+                    if (x < 0 || x >= w) continue;
+                    for (int y = 0; y < h && ! cambia; y += juce::jmax (1, h / 8))
+                        cambia = (con.getPixelAt (x, y) != raso.getPixelAt (x, y));
+                }
+                if (cambia)
                 {
                     s << (first ? "" : ",") << (seqPrimerPaso + c);
                     first = false;
