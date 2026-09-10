@@ -18,6 +18,17 @@ using juce::jlimit;
 
 AudioEngine::AudioEngine()
 {
+    //  Y CUANTOS INSERTOS HAY LO CUENTA `fxSustituye`, que es la unica linea
+    //  que separa las dos familias. La comprobacion vive AQUI -dentro del
+    //  cuerpo de una funcion miembro- y no al lado de `kNumIns`, porque el
+    //  cuerpo de una funcion miembro es un contexto de clase COMPLETA y el
+    //  cuerpo de la clase no lo es: `kNumBuses` necesita el numero antes de
+    //  que la clase acabe. El dia que un tipo nuevo entre como inserto y a
+    //  `kNumIns` se le olvide subir, esto deja de compilar en vez de dejar
+    //  quince canales sin bus.
+    static_assert (contarInsertos() == kNumIns,
+                   "kNumIns se ha quedado por detras de fxSustituye");
+
     //  LOS PARAMETROS DE LOS EFECTOS, DE SU TABLA. Estaban en diecinueve
     //  llaves de inicializacion repartidas por la cabecera mas dos arrays de
     //  cuatro, y ahora son una tabla al lado de `fxP`, que es lo que hace que
@@ -689,7 +700,16 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     //  lleven su parte -con `dryGain` un inserto al 100% dejaria el medidor a
     //  cero justo cuando el canal mas trabaja-.
     float canGain[kNumPads];
-    bool  busFed[kNumFx] = {};
+    //  ALIMENTADOS POR BUS Y NO POR TIPO, que es el cambio entero de esta
+    //  tanda visto desde aqui: un inserto tiene un bus por canal. Ver `busDe`.
+    bool  busFed[kNumBuses] = {};
+    //  Y EL CANAL DEL PAD SE RECUERDA. El bucle que acumula en los buses corre
+    //  por SEGMENTO -el transporte parte el bloque en los bordes de paso- asi
+    //  que volver a leer el atomico alli seria leerlo varias veces por bloque
+    //  y, peor, poder leer dos valores distintos dentro del mismo bloque si la
+    //  cara mueve el pad de canal entre dos segmentos: la mitad del pad se iria
+    //  a un bus y la otra mitad a otro.
+    int   canalDePad[kNumPads] = {};
     bool  padSplit[kNumPads];
 
     //  Quien decide si un pad se salta el bucle largo es la MASCARA: si el pad
@@ -760,6 +780,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             //  ENCIMA de 0 dB tomaba el camino corto y su ganancia no se
             //  aplicaba nunca: bajar el fader se oia y subirlo no.
             padSplit[p] = filtered || canalHot || std::abs (smCan - 1.0f) > 0.0005f;
+            canalDePad[p] = canal;
             for (int f = 0; f < kNumFx; ++f) sendGain[p][f] = 0.0f;
             continue;
         }
@@ -779,7 +800,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             sm += kSend * (target - sm);
             const float g = (sm < 0.0005f && target < 0.0005f) ? 0.0f : sm;
             sendGain[p][f] = g * smCan;
-            if (sendGain[p][f] > 0.0f) { any = true; busFed[f] = true; }
+            if (sendGain[p][f] > 0.0f) { any = true; busFed[(size_t) busDe (canal, f)] = true; }
             if (sm != 0.0f) hot = true;      // aun no ha terminado de bajar
             //  La resta del seco va con la parte SIN la ganancia del canal: lo
             //  que el inserto se lleva es una fraccion del pad, y el fader del
@@ -788,14 +809,15 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             if (fxSustituye[f]) dry *= (1.0f - g);
         }
         dryGain[p]  = dry * smCan;
+        canalDePad[p] = canal;
         padSplit[p] = any || filtered || canalHot
                           || std::abs (smCan - 1.0f) > 0.0005f || medido;
         smSendHot[(size_t) p] = hot;
     }
 
-    for (int f = 0; f < kNumFx; ++f)
-        if (busFed[f] || busRinging[f])
-            fxBus[(size_t) f].clear (startSample, numSamples);
+    for (int b = 0; b < kNumBuses; ++b)
+        if (busFed[b] || busRinging[(size_t) b])
+            fxBus[(size_t) b].clear (startSample, numSamples);
 
     auto renderVoices = [&] (int s, int nn) noexcept
     {
@@ -924,8 +946,11 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
 
             for (int f = 0; f < kNumFx; ++f)
                 if (sendGain[p][f] > 0.0f)
+                {
+                    auto& bus = fxBus[(size_t) busDe (canalDePad[p], f)];
                     for (int ch = 0; ch < busChans; ++ch)
-                        fxBus[(size_t) f].addFrom (ch, s, padScratch, ch, s, nn, sendGain[p][f]);
+                        bus.addFrom (ch, s, padScratch, ch, s, nn, sendGain[p][f]);
+                }
         }
     };
 
@@ -1518,20 +1543,34 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         const float kBlock = 1.0f - std::exp ((float) -numSamples / (0.020f * (float) systemSampleRate));
         const float nyq    = (float) (systemSampleRate * 0.45);
 
-        auto live = [&] (int f) noexcept { return busFed[f] || busRinging[f]; };
+        //  EL CANAL QUE LA ETAPA ESTA PROCESANDO. Las tres funciones de abajo
+        //  siguen recibiendo un TIPO -que es lo que las once etapas escriben-
+        //  y resuelven el bus con `busDe`. Asi el bucle de canal de mas abajo
+        //  mueve una variable y no reescribe once etapas, y con el canal en
+        //  cero -que es donde nace- el motor lee exactamente los mismos
+        //  buffers que leia: la fila de control del banco sale bit a bit.
+        int canalEtapa = 0;
 
-        auto blockFor = [this, startSample, numSamples, chans] (int f) noexcept
+        auto busIdx = [&canalEtapa] (int f) noexcept { return (size_t) busDe (canalEtapa, f); };
+
+        auto live = [&] (int f) noexcept
         {
-            return juce::dsp::AudioBlock<float> (fxBus[(size_t) f].getArrayOfWritePointers(),
+            const auto b = busIdx (f);
+            return busFed[b] || busRinging[b];
+        };
+
+        auto blockFor = [this, &busIdx, startSample, numSamples, chans] (int f) noexcept
+        {
+            return juce::dsp::AudioBlock<float> (fxBus[busIdx (f)].getArrayOfWritePointers(),
                                                  (size_t) chans, (size_t) startSample, (size_t) numSamples);
         };
 
         //  Return the bus to the master and decide whether it is still alive.
         //  The threshold is far below anything audible; it exists so a reverb
         //  tail is not processed forever after it has decayed to nothing.
-        auto returnBus = [this, &out, startSample, numSamples, chans] (int f) noexcept
+        auto returnBus = [this, &out, &busIdx, startSample, numSamples, chans] (int f) noexcept
         {
-            auto& bus = fxBus[(size_t) f];
+            auto& bus = fxBus[busIdx (f)];
 
             //  LO QUE SALE DEL BUS MIRADO, y AQUI porque es el unico sitio por
             //  el que pasan los once. Escrito en cada etapa serian once copias
@@ -1566,7 +1605,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
 
             for (int ch = 0; ch < chans; ++ch)
                 out.addFrom (ch, startSample, bus, ch, startSample, numSamples);
-            busRinging[(size_t) f] = (bus.getMagnitude (startSample, numSamples) > 1.0e-5f);
+            busRinging[busIdx (f)] = (bus.getMagnitude (startSample, numSamples) > 1.0e-5f);
         };
 
         //  LO QUE ENTRA AL BUS MIRADO, antes de que ninguna etapa lo toque.
@@ -1584,8 +1623,8 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             {
                 if (live (fm))
                 {
-                    const float* l = fxBus[(size_t) fm].getReadPointer (0, startSample);
-                    const float* r = chans > 1 ? fxBus[(size_t) fm].getReadPointer (1, startSample) : l;
+                    const float* l = fxBus[busIdx (fm)].getReadPointer (0, startSample);
+                    const float* r = chans > 1 ? fxBus[busIdx (fm)].getReadPointer (1, startSample) : l;
                     const int wi = mirWrite.load (std::memory_order_relaxed);
                     for (int i = 0; i < numSamples; ++i)
                         mirPre[(size_t) ((wi + i) & (kFxScope - 1))] = 0.5f * (l[i] + r[i]);
@@ -1744,7 +1783,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                                                      * smDrvTone / (float) systemSampleRate));
                 for (int ch = 0; ch < chans; ++ch)
                 {
-                    float* w = fxBus[2].getWritePointer (ch, startSample);
+                    float* w = fxBus[busIdx (kFxDrv)].getWritePointer (ch, startSample);
                     float lp = drvLp[ch];
                     for (int i = 0; i < numSamples; ++i)
                     {
@@ -1791,7 +1830,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 const float phase0 = crPhase;
                 for (int ch = 0; ch < chans; ++ch)
                 {
-                    float* w    = fxBus[4].getWritePointer (ch, startSample);
+                    float* w    = fxBus[busIdx (kFxBit)].getWritePointer (ch, startSample);
                     float phase = phase0;
                     float hold  = crHold[ch];
 
@@ -1817,8 +1856,8 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
 
             if (live (3))
             {
-                float* w0 = fxBus[3].getWritePointer (0, startSample);
-                float* w1 = (chans > 1) ? fxBus[3].getWritePointer (1, startSample) : w0;
+                float* w0 = fxBus[busIdx (kFxDly)].getWritePointer (0, startSample);
+                float* w1 = (chans > 1) ? fxBus[busIdx (kFxDly)].getWritePointer (1, startSample) : w0;
                 for (int i = 0; i < numSamples; ++i)
                 {
                     smDlySamp += kSamp * (dsT - smDlySamp);
@@ -1858,12 +1897,12 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             {
                 reverb.setParameters (rvSize.load (std::memory_order_relaxed),
                                       rvDamp.load (std::memory_order_relaxed));
-                reverb.process (fxBus[5], startSample, numSamples);
+                reverb.process (fxBus[busIdx (kFxRev)], startSample, numSamples);
                 returnBus (5);
                 //  ...y la reverb manda sobre lo que returnBus acaba de
                 //  deducir: la cola esta dentro de las lineas antes de estar en
                 //  la salida. Ver Fdn::ringing.
-                busRinging[5] = busRinging[5] || reverb.ringing();
+                busRinging[busIdx (kFxRev)] = busRinging[busIdx (kFxRev)] || reverb.ringing();
             }
         }
 
@@ -1888,7 +1927,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 //  el analizador del EQ era una respuesta a la misma pregunta
                 //  que ahora se le hace a los once -«que esta pasando por este
                 //  bus»- asi que la hace `returnBus` y el bloque de arriba.
-                eqFx.procesa (fxBus[6].getArrayOfWritePointers(), chans, startSample, numSamples);
+                eqFx.procesa (fxBus[busIdx (kFxEq)].getArrayOfWritePointers(), chans, startSample, numSamples);
                 returnBus (6);
             }
         }
@@ -1903,7 +1942,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             const int f = kFxCmp + d;
             if (! live (f)) continue;
 
-            dyn[(size_t) d].procesa (fxBus[f].getArrayOfWritePointers(), chans,
+            dyn[(size_t) d].procesa (fxBus[busIdx (f)].getArrayOfWritePointers(), chans,
                                      startSample, numSamples,
                                      (Dinamica::Modo) d,
                                      fxP[(size_t) f][0].load (std::memory_order_relaxed),
@@ -1968,8 +2007,8 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     //  muestras seria un numero que cambia con la ruta.
                     const float centro = 0.012f * fsF;
                     const float amp    = 0.005f * fsF * smChoProf;
-                    float* w0 = fxBus[kFxCho].getWritePointer (0, startSample);
-                    float* w1 = (chans > 1) ? fxBus[kFxCho].getWritePointer (1, startSample) : w0;
+                    float* w0 = fxBus[busIdx (kFxCho)].getWritePointer (0, startSample);
+                    float* w1 = (chans > 1) ? fxBus[busIdx (kFxCho)].getWritePointer (1, startSample) : w0;
 
                     for (int i = 0; i < numSamples; ++i)
                     {
@@ -2017,8 +2056,8 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     //  oirse; por encima de seis ya es un coro.
                     const float centro = 0.00325f * fsF;
                     const float amp    = 0.00275f * fsF;
-                    float* w0 = fxBus[kFxFla].getWritePointer (0, startSample);
-                    float* w1 = (chans > 1) ? fxBus[kFxFla].getWritePointer (1, startSample) : w0;
+                    float* w0 = fxBus[busIdx (kFxFla)].getWritePointer (0, startSample);
+                    float* w1 = (chans > 1) ? fxBus[busIdx (kFxFla)].getWritePointer (1, startSample) : w0;
 
                     for (int i = 0; i < numSamples; ++i)
                     {
@@ -2078,7 +2117,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
 
                         for (int ch = 0; ch < chans; ++ch)
                         {
-                            float* w = fxBus[kFxPha].getWritePointer (ch, startSample);
+                            float* w = fxBus[busIdx (kFxPha)].getWritePointer (ch, startSample);
                             float x = w[i];
                             for (int e = 0; e < kPhaEtapas; ++e)
                             {
@@ -2118,7 +2157,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                         const float g = 1.0f - smTrmProf * 0.5f * (1.0f - mod[(size_t) m].avanza());
                         for (int ch = 0; ch < chans; ++ch)
                         {
-                            float* w = fxBus[kFxTrm].getWritePointer (ch, startSample);
+                            float* w = fxBus[busIdx (kFxTrm)].getWritePointer (ch, startSample);
                             w[i] *= g;
                         }
                     }
@@ -2197,7 +2236,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                         const float g = smRngAnillo * p
                                       + (1.0f - smRngAnillo) * (0.5f + 0.5f * p);
                         for (int ch = 0; ch < chans; ++ch)
-                            fxBus[kFxRng].getWritePointer (ch, startSample)[i] *= g;
+                            fxBus[busIdx (kFxRng)].getWritePointer (ch, startSample)[i] *= g;
 
                         rngFase += paso;
                         if (rngFase >= 1.0f) rngFase -= 1.0f;
@@ -2242,7 +2281,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
 
                         for (int ch = 0; ch < chans; ++ch)
                         {
-                            float* w = fxBus[kFxPit].getWritePointer (ch, startSample);
+                            float* w = fxBus[busIdx (kFxPit)].getWritePointer (ch, startSample);
                             const float x = w[i];
                             pitLine.pushSample (ch, std::isfinite (x) ? x : 0.0f);
                             pitLine.setDelay (juce::jmax (1.0f, 1.0f + pA * gran));
@@ -2285,8 +2324,8 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 {
                     const auto cr = Dinamica::cruceEn (
                         fxP[(size_t) kFxWid][1].load (std::memory_order_relaxed), systemSampleRate);
-                    float* w0 = fxBus[kFxWid].getWritePointer (0, startSample);
-                    float* w1 = fxBus[kFxWid].getWritePointer (1, startSample);
+                    float* w0 = fxBus[busIdx (kFxWid)].getWritePointer (0, startSample);
+                    float* w1 = fxBus[busIdx (kFxWid)].getWritePointer (1, startSample);
 
                     for (int i = 0; i < numSamples; ++i)
                     {
@@ -2340,7 +2379,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
 
                     for (int ch = 0; ch < chans; ++ch)
                     {
-                        float* w = fxBus[kFxExc].getWritePointer (ch, startSample);
+                        float* w = fxBus[busIdx (kFxExc)].getWritePointer (ch, startSample);
                         for (int i = 0; i < numSamples; ++i)
                         {
                             float b = 0.0f, a = 0.0f;
@@ -2389,8 +2428,8 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     const float aLen = Dinamica::coefDe (35.0f,  systemSampleRate);
                     const float rLen = Dinamica::coefDe (300.0f, systemSampleRate);
 
-                    float* w0 = fxBus[kFxTrn].getWritePointer (0, startSample);
-                    float* w1 = (chans > 1) ? fxBus[kFxTrn].getWritePointer (1, startSample) : w0;
+                    float* w0 = fxBus[busIdx (kFxTrn)].getWritePointer (0, startSample);
+                    float* w1 = (chans > 1) ? fxBus[busIdx (kFxTrn)].getWritePointer (1, startSample) : w0;
 
                     for (int i = 0; i < numSamples; ++i)
                     {
@@ -2409,7 +2448,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                                           + smTrnCaida  * juce::jmax (0.0f, -dif));
                         const float g = juce::Decibels::decibelsToGain (dB);
                         for (int ch = 0; ch < chans; ++ch)
-                            fxBus[kFxTrn].getWritePointer (ch, startSample)[i] *= g;
+                            fxBus[busIdx (kFxTrn)].getWritePointer (ch, startSample)[i] *= g;
                     }
                     returnBus (kFxTrn);
                 }
@@ -2460,7 +2499,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 //  el bus no muere, que es el mismo fallo por la puerta de
                 //  atras. Ademas es lo que escribe el silencio en el anillo del
                 //  visor.
-                if (carVivo[c] && ! busFed[kFxFrz])
+                if (carVivo[c] && ! busFed[busIdx (kFxFrz)])
                 {
                     carWasActive[(size_t) c] = false;
                     returnBus (kFxFrz);
@@ -2477,7 +2516,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     {
                         for (int ch = 0; ch < chans; ++ch)
                         {
-                            float* w = fxBus[kFxFrz].getWritePointer (ch, startSample);
+                            float* w = fxBus[busIdx (kFxFrz)].getWritePointer (ch, startSample);
                             const float x = std::isfinite (w[i]) ? w[i] : 0.0f;
 
                             if (! frzLlena)

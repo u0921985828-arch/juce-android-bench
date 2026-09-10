@@ -2412,6 +2412,71 @@ private:
     static_assert (sizeof (kFxDef) / sizeof (kFxDef[0]) == kNumFx,
                    "kFxDef tiene que tener una fila por tipo");
 
+    //  ============================================================
+    //  EL INDICE DEL BUS: UN INSERTO ES DE UN CANAL, UN ENVIO ES DE TODOS
+    //  ============================================================
+    //
+    //  Llego del telefono: «hay un error cuando colocas en diferentes canales
+    //  ciertos efectos como un ecualizador, solo es posible que funcione y sea
+    //  colocado en un canal solo». Era exacto, y no era de la cara: `fxBus`
+    //  tenia UN buffer por TIPO, asi que poner el EQ en el canal 4 se lo
+    //  quitaba al 0 sin decir nada.
+    //
+    //  EL REPARTO NO SE INVENTA: sale de `fxSustituye`, que es la unica linea
+    //  que separa las dos familias y la que `Tests/rack.py` ya mide. Los
+    //  DIECISEIS insertos se replican -su estado es uno solo, asi que dos
+    //  canales con el mismo inserto serian dos ventanas al mismo aparato- y
+    //  los CINCO envios se quedan globales, que es lo que un envio significa:
+    //  una linea de retardo existe para que varias fuentes entren en la misma
+    //  cola, y restringir el DLY a un canal es exactamente lo contrario.
+    //
+    //  Y `kIns` se DERIVA de `fxSustituye` y no se escribe: una lista literal
+    //  aqui seria la tercera copia de la misma regla, y este fichero ya lleva
+    //  tres fallos en silencio de esa clase -`fxIsTone`, `fxMixNow` y el
+    //  `switch` de `setFxParam`-.
+    //  El numero va a mano y lo VIGILA EL COMPILADOR, que es lo mas barato que
+    //  puede costar una regla derivada: `contarInsertos()` recorre
+    //  `fxSustituye` y el `static_assert` de debajo de la clase los contrasta.
+    //  Aqui dentro no se puede llamar -la clase todavia esta incompleta en el
+    //  punto en el que haria falta el valor- y ahi fuera si.
+    static constexpr int kNumIns = 16;
+    static constexpr int contarInsertos() noexcept
+    {
+        int n = 0;
+        for (int f = 0; f < kNumFx; ++f) if (fxSustituye[f]) ++n;
+        return n;
+    }
+
+    //  Cual de los `kNumIns` es este tipo, o -1 si es un envio.
+    static constexpr int insIdx (int f) noexcept
+    {
+        if (f < 0 || f >= kNumFx || ! fxSustituye[f]) return -1;
+        int n = 0;
+        for (int i = 0; i < f; ++i) if (fxSustituye[i]) ++n;
+        return n;
+    }
+
+    //  EL ORDEN DE LAS ETAPAS SE QUEDA INTACTO, y ese es el argumento fuerte y
+    //  no la memoria. Los primeros `kNumFx` huecos siguen indexados POR TIPO
+    //  -o sea `busDe (c, f) == f` para los cinco envios- y los insertos se
+    //  apilan detras. Reordenar a canal-mayor tumbaria la fila de control BIT A
+    //  BIT por construccion: hoy `returnBus` acumula en orden de etapa, y con
+    //  canal-mayor los cinco envios volverian DESPUES de los dieciseis canales.
+    //  La suma en coma flotante no es asociativa, asi que saldria rojo sin que
+    //  nadie mueva un mando y no habria forma de distinguir «reordene la suma»
+    //  de «rompi un inserto». Con este orden, `live` es falso en los quince
+    //  canales vacios y la secuencia de `out.addFrom` es identica muestra a
+    //  muestra.
+    static constexpr int kNumBuses = kNumFx + kNumIns * kNumCanales;
+
+    static constexpr int busDe (int canal, int fx) noexcept
+    {
+        const int i = insIdx (fx);
+        if (i < 0) return fx;                       // un envio es de todos
+        const int c = (canal < 0 || canal >= kNumCanales) ? 0 : canal;
+        return kNumFx + i * kNumCanales + c;
+    }
+
     //  EL RECORTE DEL PAD -uno por defecto- y EL ENVIO DEL CANAL. El producto
     //  de los dos es lo que llega al bus. Ver `setPadRecorte` y `setCanalSend`.
     std::array<std::array<std::atomic<float>, kNumFx>, kNumPads> padRecorte {};
@@ -2462,8 +2527,11 @@ private:
     //  Que pads siguen moviendose. Sin esto, saltarse un pad congelaba su
     //  envio a medio cerrar. Solo del hilo de audio, como smSend.
     std::array<bool, kNumPads> smSendHot {};
-    std::array<juce::AudioBuffer<float>, kNumFx> fxBus;
-    std::array<bool, kNumFx> busRinging {};
+    //  Un buffer por BUS y no por tipo. Ver `busDe`: los primeros `kNumFx`
+    //  siguen siendo los del tipo -que es lo que usan los cinco envios- y
+    //  detras van los dieciseis insertos por los dieciseis canales.
+    std::array<juce::AudioBuffer<float>, kNumBuses> fxBus;
+    std::array<bool, kNumBuses> busRinging {};
     juce::AudioBuffer<float> padScratch;
 
     // Scope ring (post-FX mono), written by the audio thread.
@@ -2503,3 +2571,4 @@ private:
 //  coincidir, que es lo mas barato que puede costar una regla duplicada.
 static_assert (MidiIo::kMaxPads >= AudioEngine::kNumPads,
                "MidiIo::kMaxPads se ha quedado por debajo de los pads del motor");
+
