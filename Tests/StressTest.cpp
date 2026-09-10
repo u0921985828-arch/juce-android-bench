@@ -3472,9 +3472,9 @@ int main()
             e.setPadGain (0, 1.0f);
             if (conEq)
             {
-                e.setEqMix (1.0f);
+                e.setEqMix (0, 1.0f);
                 e.setCanalSend (0, 6, 1.0f);      // el EQ es el tipo 6
-                e.setEqBand (2, 1000.0f, 12.0f);
+                e.setEqBand (0, 2, 1000.0f, 12.0f);
             }
             //  Un tono de 1 kHz, o sea justo el centro de la banda que se sube.
             e.publishSample (0, makeSample (48000.0, 0.40, 1000.0f));
@@ -3577,9 +3577,9 @@ int main()
             e.setPadGain (0, 1.0f);
             if (fx >= 0)
             {
-                e.setFxParam (fx, 0, p0);
-                e.setFxParam (fx, 1, p1);
-                e.setFxParam (fx, 2, 1.0f);          // MIX al maximo
+                e.setFxParam (0, fx, 0, p0);
+                e.setFxParam (0, fx, 1, p1);
+                e.setFxParam (0, fx, 2, 1.0f);          // MIX al maximo
                 e.setCanalSend (0, fx, 1.0f);
             }
             e.publishSample (0, tonoPlano (48000.0, 1.20, hz, nivel));
@@ -3757,10 +3757,10 @@ int main()
             e.setPadAttack (0, 0.0f);
             if (fx >= 0)
             {
-                e.setFxParam (fx, 0, p0);
-                e.setFxParam (fx, 1, p1);
-                e.setFxParam (fx, 2, 1.0f);
-                if (fx == AudioEngine::kFxEq) e.setEqMix (1.0f);
+                e.setFxParam (0, fx, 0, p0);
+                e.setFxParam (0, fx, 1, p1);
+                e.setFxParam (0, fx, 2, 1.0f);
+                if (fx == AudioEngine::kFxEq) e.setEqMix (0, 1.0f);
                 e.setCanalSend (0, fx, 1.0f);
             }
             e.publishSample (0, seno (hz, amp));
@@ -3995,9 +3995,9 @@ int main()
                 e.setPadAttack (0, 0.0f);
                 if (abierto)
                 {
-                    e.setFxParam (fx, 0, p0);
-                    e.setFxParam (fx, 1, p1);
-                    e.setFxParam (fx, 2, 1.0f);
+                    e.setFxParam (0, fx, 0, p0);
+                    e.setFxParam (0, fx, 1, p1);
+                    e.setFxParam (0, fx, 2, 1.0f);
                     e.setCanalSend (0, fx, 1.0f);
                 }
                 e.publishSample (0, click());
@@ -4209,11 +4209,14 @@ int main()
         e.setSongLength (4);
 
         //  DLY MIX -el parametro 11- en tres puntos de la cancion.
+        //  Con el CANAL delante del valor: `EventoAuto` lo gana en el hueco de
+        //  alineacion que ya tenia, y DLY es un envio -su canal se ignora- asi
+        //  que esta fila mide lo mismo que media.
         AudioEngine::EventoAuto ev[3] =
         {
-            {  0, 3, 2, 0.10f },
-            { 16, 3, 2, 0.60f },
-            { 32, 3, 2, 0.90f },
+            {  0, 3, 2, 0, 0.10f },
+            { 16, 3, 2, 0, 0.60f },
+            { 32, 3, 2, 0, 0.90f },
         };
         e.publicaAutomacion (ev, 3);
         e.setDlyMix (0.0f);
@@ -4311,9 +4314,9 @@ int main()
             e.setPadGain (0, 1.0f);
             if (fx >= 0)
             {
-                e.setFxParam (fx, 0, p0);
-                e.setFxParam (fx, 1, p1);
-                e.setFxParam (fx, 2, mix);
+                e.setFxParam (0, fx, 0, p0);
+                e.setFxParam (0, fx, 1, p1);
+                e.setFxParam (0, fx, 2, mix);
                 e.setCanalSend (0, fx, 1.0f);
             }
             e.publishSample (0, tono (kFs, 2.5, hz, 0.5f));
@@ -4604,9 +4607,9 @@ int main()
             {
                 AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
                 e.setPadGain (0, 1.0f);
-                e.setFxParam (AudioEngine::kFxWid, 0, ancho);
-                e.setFxParam (AudioEngine::kFxWid, 1, 120.0f);
-                e.setFxParam (AudioEngine::kFxWid, 2, 1.0f);
+                e.setFxParam (0, AudioEngine::kFxWid, 0, ancho);
+                e.setFxParam (0, AudioEngine::kFxWid, 1, 120.0f);
+                e.setFxParam (0, AudioEngine::kFxWid, 2, 1.0f);
                 e.setCanalSend (0, AudioEngine::kFxWid, 1.0f);
                 e.publishSample (0, ruidoLR (kFs, 2.0));
                 juce::AudioBuffer<float> b (2, kBs);
@@ -4670,9 +4673,9 @@ int main()
             {
                 AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
                 e.setPadGain (0, 1.0f);
-                e.setFxParam (AudioEngine::kFxExc, 0, 1000.0f);
-                e.setFxParam (AudioEngine::kFxExc, 1, fuerza);
-                e.setFxParam (AudioEngine::kFxExc, 2, 1.0f);
+                e.setFxParam (0, AudioEngine::kFxExc, 0, 1000.0f);
+                e.setFxParam (0, AudioEngine::kFxExc, 1, fuerza);
+                e.setFxParam (0, AudioEngine::kFxExc, 2, 1.0f);
                 e.setCanalSend (0, AudioEngine::kFxExc, 1.0f);
                 e.publishSample (0, dosTonos (kFs, 2.0));
                 juce::AudioBuffer<float> b (2, kBs);
@@ -4726,9 +4729,9 @@ int main()
             {
                 AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
                 e.setPadGain (0, 1.0f);
-                e.setFxParam (AudioEngine::kFxTrn, 0, at);
-                e.setFxParam (AudioEngine::kFxTrn, 1, 0.0f);
-                e.setFxParam (AudioEngine::kFxTrn, 2, 1.0f);
+                e.setFxParam (0, AudioEngine::kFxTrn, 0, at);
+                e.setFxParam (0, AudioEngine::kFxTrn, 1, 0.0f);
+                e.setFxParam (0, AudioEngine::kFxTrn, 2, 1.0f);
                 e.setCanalSend (0, AudioEngine::kFxTrn, 1.0f);
                 e.publishSample (0, golpe (kFs, 1.0));
                 juce::AudioBuffer<float> b (2, kBs);
@@ -4789,9 +4792,9 @@ int main()
                 e.setPadGain (0, 1.0f);
                 if (puesto)
                 {
-                    e.setFxParam (AudioEngine::kFxFrz, 0, 180.0f);
-                    e.setFxParam (AudioEngine::kFxFrz, 1, 0.0f);
-                    e.setFxParam (AudioEngine::kFxFrz, 2, 1.0f);
+                    e.setFxParam (0, AudioEngine::kFxFrz, 0, 180.0f);
+                    e.setFxParam (0, AudioEngine::kFxFrz, 1, 0.0f);
+                    e.setFxParam (0, AudioEngine::kFxFrz, 2, 1.0f);
                     e.setCanalSend (0, AudioEngine::kFxFrz, 1.0f);
                 }
                 e.publishSample (0, corto (kFs));
@@ -4870,9 +4873,9 @@ int main()
             AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
             e.setPadGain (0, 1.0f);
             e.setPadCanal (0, canalDelPad);
-            e.setFxParam (AudioEngine::kFxDly, 0, 250.0f);
-            e.setFxParam (AudioEngine::kFxDly, 1, 0.6f);
-            e.setFxParam (AudioEngine::kFxDly, 2, 1.0f);
+            e.setFxParam (0, AudioEngine::kFxDly, 0, 250.0f);
+            e.setFxParam (0, AudioEngine::kFxDly, 1, 0.6f);
+            e.setFxParam (0, AudioEngine::kFxDly, 2, 1.0f);
             e.setCanalSend (1, AudioEngine::kFxDly, 1.0f);   // solo el canal 1
 
             //  Y EL PAD ENTRA EN LA MASCARA EN LAS DOS CORRIDAS, que es lo que
@@ -4961,9 +4964,9 @@ int main()
             AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
             e.setPadGain (0, 1.0f);
             e.setCanalGain (0, gan);
-            e.setFxParam (AudioEngine::kFxDly, 0, 250.0f);
-            e.setFxParam (AudioEngine::kFxDly, 1, 0.6f);
-            e.setFxParam (AudioEngine::kFxDly, 2, 1.0f);
+            e.setFxParam (0, AudioEngine::kFxDly, 0, 250.0f);
+            e.setFxParam (0, AudioEngine::kFxDly, 1, 0.6f);
+            e.setFxParam (0, AudioEngine::kFxDly, 2, 1.0f);
             e.setCanalSend (0, AudioEngine::kFxDly, 0.5f);
             e.publishSample (0, tonoPlano (kFs, 0.20, 440.0));
 
@@ -5071,11 +5074,11 @@ int main()
         {
             AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
             e.setPadGain (0, 1.0f);
-            e.setFxParam (AudioEngine::kFxDly, 0, 180.0f);
-            e.setFxParam (AudioEngine::kFxDly, 1, 0.5f);
-            e.setFxParam (AudioEngine::kFxDly, 2, 1.0f);
-            e.setFxParam (AudioEngine::kFxFlt, 0, 0.7f);
-            e.setFxParam (AudioEngine::kFxFlt, 2, 0.6f);
+            e.setFxParam (0, AudioEngine::kFxDly, 0, 180.0f);
+            e.setFxParam (0, AudioEngine::kFxDly, 1, 0.5f);
+            e.setFxParam (0, AudioEngine::kFxDly, 2, 1.0f);
+            e.setFxParam (0, AudioEngine::kFxFlt, 0, 0.7f);
+            e.setFxParam (0, AudioEngine::kFxFlt, 2, 0.6f);
             if (porCanal)
             {
                 e.setCanalSend (0, AudioEngine::kFxDly, 0.4f);
@@ -5115,6 +5118,215 @@ int main()
         const bool ok = distintas == 0 && ! a.empty();
         std::printf ("%-34s %d de %d muestras cambian   %s\n",
                      "canal y recorte dan lo mismo", distintas, (int) a.size(), ok ? "OK" : zatiFalla());
+    }
+
+    // ------------------------------------------------------------------
+    //  Y EL EQ ES DE CADA CANAL, que es la queja con la que empieza esta tanda
+    //  dicha en decibelios: «solo es posible que funcione y sea colocado en un
+    //  canal solo, deberia haber un plugin de cada tipo para cada canal».
+    //
+    //  Los dos pads llevan LA MISMA muestra a proposito: si fueran dos sonidos
+    //  distintos, «suenan distinto» lo cumpliria la FUENTE y no el reparto. Y
+    //  las dos bandas van a lados CONTRARIOS -+12 y -12- porque con un solo
+    //  `Eq5` la segunda escritura pisa a la primera y los dos canales salen con
+    //  lo ultimo que se escribio: ese es el fallo, dicho en dB.
+    //
+    //  Y LOS DOS CANALES SE CONFIGURAN EN LAS DOS CORRIDAS, que es lo unico que
+    //  hace que la rotura se vea: con un motor por canal, un `Eq5` compartido
+    //  seguiria dando +12 en una corrida y -12 en la otra, porque cada una solo
+    //  habria escrito su banda.
+    //
+    //  TRES cifras, y la primera es la que impide que un canal MUDO pase: sin
+    //  EQ los dos tienen que salir al mismo nivel.
+    {
+        auto rmsDe = [&tonoPlano] (int pad, bool conEq)
+        {
+            AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+            //  Y CON MARGEN DE SOBRA, que es lo que la primera corrida
+            //  enseño: con el pad a uno, +12 dB sobre un tono de 0.5 son 1.99
+            //  de pico y el saturador del master se los come — salia +10.4 dB
+            //  con el EQ perfecto. Lo que se mide aqui es el reparto, no el
+            //  limitador. Primero se duda de la prueba.
+            e.setPadGain (0, 0.15f); e.setPadCanal (0, 0);
+            e.setPadGain (1, 0.15f); e.setPadCanal (1, 4);
+            if (conEq)
+            {
+                for (int c : { 0, 4 })
+                {
+                    e.setEqMix (c, 1.0f);
+                    e.setCanalSend (c, AudioEngine::kFxEq, 1.0f);
+                }
+                e.setEqBand (0, 2, 1000.0f, +12.0f);
+                e.setEqBand (4, 2, 1000.0f, -12.0f);
+            }
+            //  Un tono de 1 kHz, o sea justo el centro de la banda que se mueve.
+            e.publishSample (pad, tonoPlano (kFs, 0.60, 1000.0));
+
+            juce::AudioBuffer<float> b (2, kBs);
+            b.clear(); e.renderNextBlock (b, 0, kBs);
+            e.postNoteOn (pad, 1.0f);
+
+            double a = 0.0; int n = 0;
+            for (int blk = 0; blk < 20; ++blk)
+            {
+                b.clear(); e.renderNextBlock (b, 0, kBs);
+                //  Los cuatro primeros fuera: el envio se suaviza en 20 ms y
+                //  ahi la ganancia todavia esta subiendo.
+                if (blk < 4) continue;
+                for (int i = 0; i < kBs; ++i)
+                { const double x = b.getSample (0, i); a += x * x; ++n; }
+            }
+            return std::sqrt (a / (double) juce::jmax (1, n));
+        };
+
+        auto dB = [] (double a, double b)
+        { return 20.0 * std::log10 (juce::jmax (1.0e-12, a) / juce::jmax (1.0e-12, b)); };
+
+        const double s0 = rmsDe (0, false);
+        const double s4 = rmsDe (1, false);
+        const double e0 = rmsDe (0, true);
+        const double e4 = rmsDe (1, true);
+
+        const double sinEq = dB (s4, s0);
+        const double c0    = dB (e0, s0);
+        const double c4    = dB (e4, s4);
+
+        const bool ok = std::abs (sinEq) < 0.5
+                     && std::abs (c0 - 12.0) < 1.0
+                     && std::abs (c4 + 12.0) < 1.0;
+        std::printf ("%-34s sin EQ %+.2f dB   canal 0 %+.1f dB   canal 4 %+.1f dB   %s\n",
+                     "el EQ es de cada canal", sinEq, c0, c4, ok ? "OK" : zatiFalla());
+    }
+
+    // ------------------------------------------------------------------
+    //  Y LA OTRA MITAD: UN ENVIO SIGUE SIENDO DE TODOS.
+    //
+    //  Es la regla que ya estaba medida y publicada -«restringir el DLY a un
+    //  canal es exactamente lo contrario de lo que un envio significa»- y lo
+    //  que hay que comprobar es que la puerta de `fxParamDe` la escribe UNA
+    //  vez: los cinco tipos que SUMAN colapsan al canal 0 escriba quien
+    //  escriba, asi que pedir 180 ms desde el canal 0 y 60 desde el 4 deja los
+    //  dos en 60.
+    //
+    //  Con DOS cifras y no una: la de ESTADO -por la misma puerta que lee el
+    //  hilo de audio- y la de AUDIO, que es donde se ve que el numero llega al
+    //  sitio. Solo la primera la cumple tambien una tabla que guarda bien y no
+    //  la usa nadie.
+    {
+        //  Un impulso, y desde la muestra 1: la CERO es la unica que una voz no
+        //  lee nunca -la interpolacion necesita un dato por detras-.
+        auto clic = [] (double sr)
+        {
+            auto* sb = new SampleBuffer();
+            sb->buffer.setSize (1, 8192);
+            sb->buffer.clear();
+            for (int i = 1; i < 9; ++i) sb->buffer.setSample (0, i, 1.0f);
+            sb->sourceSampleRate = sr;
+            return SampleBuffer::Ptr (sb);
+        };
+
+        AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+        e.setPadGain (0, 1.0f);
+        e.setPadCanal (0, 0);
+        e.setFxParam (0, AudioEngine::kFxDly, 0, 180.0f);   // el canal 0 pide 180 ms
+        e.setFxParam (4, AudioEngine::kFxDly, 0,  60.0f);   // y el canal 4 pide 60
+        e.setFxParam (0, AudioEngine::kFxDly, 1, 0.0f);     // sin realimentacion: UN eco
+        e.setFxParam (0, AudioEngine::kFxDly, 2, 1.0f);
+        e.setCanalSend (0, AudioEngine::kFxDly, 1.0f);
+        e.publishSample (0, clic (kFs));
+
+        const float ms0 = e.getFxParam (0, AudioEngine::kFxDly, 0);
+        const float ms4 = e.getFxParam (4, AudioEngine::kFxDly, 0);
+
+        //  Y EL ENVIO SE ASIENTA ANTES DE DISPARAR, que es la leccion que este
+        //  banco ya tiene escrita para el limitador: sube con 20 ms de
+        //  constante y un impulso dura 0.17 ms, asi que sin asentar el eco
+        //  saldria a la ganancia con la que arrancaba la rampa.
+        juce::AudioBuffer<float> b (2, kBs);
+        for (int i = 0; i < 30; ++i) { b.clear(); e.renderNextBlock (b, 0, kBs); }
+
+        e.postNoteOn (0, 1.0f);
+        std::vector<float> v;
+        for (int i = 0; i < 40; ++i)
+        {
+            b.clear(); e.renderNextBlock (b, 0, kBs);
+            for (int n = 0; n < kBs; ++n) v.push_back (b.getSample (0, n));
+        }
+
+        //  El pico DESPUES del golpe directo, que son las ocho primeras
+        //  muestras: lo que quede es el eco y donde cae dice su tiempo.
+        int pico = 0; double mejor = 0.0;
+        for (size_t i = 500; i < v.size(); ++i)
+            if (std::abs ((double) v[i]) > mejor) { mejor = std::abs ((double) v[i]); pico = (int) i; }
+        const double ecoMs = 1000.0 * (double) pico / kFs;
+
+        const bool ok = std::abs (ms0 - 60.0f) < 0.5f && std::abs (ms4 - 60.0f) < 0.5f
+                     && std::abs (ecoMs - 60.0) < 3.0;
+        std::printf ("%-34s canal 0 %.1f ms   canal 4 %.1f ms   el eco cae en %.1f ms   %s\n",
+                     "un envio sigue siendo de todos", ms0, ms4, ecoMs, ok ? "OK" : zatiFalla());
+    }
+
+    // ------------------------------------------------------------------
+    //  LA FILA DE CONTROL, que es la que sostiene todo lo demas: los 64 pads
+    //  en el canal 0 contra los mismos 64 repartidos por los dieciseis CON LOS
+    //  MISMOS AJUSTES. Con los dieciseis canales diciendo lo mismo, repartir es
+    //  un re-indice de una tabla y nada mas, asi que la salida tiene que ser
+    //  BIT A BIT la misma.
+    //
+    //  Y SOLO UN ENVIO ABIERTO, que es la parte que hay que decir en voz alta:
+    //  un envio es global, asi que su estado es uno solo en las dos corridas.
+    //  Con un INSERTO abierto la comparacion no valdria y no seria un fallo -
+    //  sesenta y cuatro pads por UN filtro es `filtro(suma)` y cuatro por cada
+    //  uno de dieciseis es `suma(filtro)`, y esas dos no son la misma cuenta en
+    //  coma flotante ni tienen por que serlo.
+    {
+        auto corre = [&tonoPlano] (bool reparte, std::vector<float>& out)
+        {
+            AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (64, 2);
+            for (int c = 0; c < AudioEngine::kNumCanales; ++c)
+            {
+                e.setCanalSend (c, AudioEngine::kFxDly, 0.5f);
+            }
+            //  Y EL FADER DEL CANAL NO SE TOCA A PROPOSITO. La primera version
+            //  lo ponia a uno en los dieciseis y con eso la prueba se hacia el
+            //  trabajo del motor: con `canalGain` lleno solo para el canal 0
+            //  -que es el fallo de `notaViva` en esta pieza- las dos corridas
+            //  seguian saliendo identicas, porque el andamio tapaba el defecto
+            //  que la fila existe para mirar. Lo que se compara son los
+            //  DEFECTOS de los dieciseis, y esos los pone el constructor.
+            e.setFxParam (0, AudioEngine::kFxDly, 0, 250.0f);
+            e.setFxParam (0, AudioEngine::kFxDly, 1, 0.5f);
+            e.setFxParam (0, AudioEngine::kFxDly, 2, 0.5f);
+
+            for (int p = 0; p < AudioEngine::kNumPads; ++p)
+            {
+                e.setPadGain (p, 0.5f);
+                e.setPadCanal (p, reparte ? (p % AudioEngine::kNumCanales) : 0);
+                e.publishSample (p, tonoPlano (kFs, 0.20, 200.0 + 10.0 * (double) p));
+            }
+
+            juce::AudioBuffer<float> b (2, kBs);
+            out.clear();
+            const int total = (int) (kFs * 1.0) / kBs;
+            for (int i = 0; i < total; ++i)
+            {
+                if (i == 30)
+                    for (int p = 0; p < AudioEngine::kNumPads; ++p) e.postNoteOn (p, 1.0f);
+                b.clear(); e.renderNextBlock (b, 0, kBs);
+                for (int n = 0; n < kBs; ++n) out.push_back (b.getSample (0, n));
+            }
+        };
+
+        std::vector<float> uno, dieciseis;
+        corre (false, uno);
+        corre (true,  dieciseis);
+        int distintas = 0;
+        for (size_t i = 0; i < uno.size() && i < dieciseis.size(); ++i)
+            if (uno[i] != dieciseis[i]) ++distintas;
+        const bool ok = distintas == 0 && ! uno.empty();
+        std::printf ("%-34s %d de %d muestras cambian   %s\n",
+                     "repartir por canales no cuesta", distintas, (int) uno.size(),
+                     ok ? "OK" : zatiFalla());
     }
     }
 

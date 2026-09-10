@@ -3306,21 +3306,19 @@ void AudioEngine::renderClips (juce::AudioBuffer<float>& out, int offset, int n,
 //     APLICA. Lo dice ya el comentario de `Eq5::ponAncho`: «los dos viven en
 //     fxParams como los de cualquier otro efecto; aqui solo se aplican».
 //   · La mezcla se acota a 0..1 en la puerta, como hacia `setDynMix`.
-void AudioEngine::setFxParam (int fx, int par, float v) noexcept
+void AudioEngine::setFxParam (int canal, int fx, int par, float v) noexcept
 {
     if (! juce::isPositiveAndBelow (fx, kNumFx) || ! juce::isPositiveAndBelow (par, 3)) return;
 
-    //  En el canal CERO mientras la puerta no lleva canal: la fase 4 se lo
-    //  pone. `fxParamDe` es quien sabe que un envio lo ignora.
-    fxParamDe (0, fx, par).store (par == 2 ? juce::jlimit (0.0f, 1.0f, v) : v,
-                                  std::memory_order_relaxed);
+    //  `fxParamDe` es quien sabe que un envio ignora el canal, asi que aqui no
+    //  hay una segunda copia de esa condicion.
+    fxParamDe (canal, fx, par).store (par == 2 ? juce::jlimit (0.0f, 1.0f, v) : v,
+                                      std::memory_order_relaxed);
 
     if (fx == kFxEq)
     {
-        //  Del canal CERO mientras la puerta no lleva canal. La fase 4 se lo
-        //  pone, que es cuando la cara sabe preguntar por dieciseis.
-        if (par == 0) ins[0].eqFx.ponAncho  (v);
-        else if (par == 1) ins[0].eqFx.ponSalida (v);
+        if (par == 0) insDe (canal).eqFx.ponAncho  (v);
+        else if (par == 1) insDe (canal).eqFx.ponSalida (v);
     }
 }
 
@@ -3337,7 +3335,7 @@ void AudioEngine::aplicaAutomacion (int paso) noexcept
     for (int i = 0; i < autom->n; ++i)
     {
         const auto& ev = autom->e[(size_t) i];
-        if (ev.paso == paso) setFxParam (ev.fx, ev.par, ev.valor);
+        if (ev.paso == paso) setFxParam (ev.canal, ev.fx, ev.par, ev.valor);
     }
 }
 

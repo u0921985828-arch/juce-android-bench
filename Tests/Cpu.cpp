@@ -253,9 +253,9 @@ int main()
     for (int f = 0; f < AudioEngine::kNumFx; ++f)
     {
         AudioEngine e; prepara (e);
-        e.setFxParam (f, 0, AudioEngine::kFxDef[f][0]);
-        e.setFxParam (f, 1, AudioEngine::kFxDef[f][1]);
-        e.setFxParam (f, 2, 1.0f);
+        e.setFxParam (0, f, 0, AudioEngine::kFxDef[f][0]);
+        e.setFxParam (0, f, 1, AudioEngine::kFxDef[f][1]);
+        e.setFxParam (0, f, 2, 1.0f);
         for (int p = 0; p < 16; ++p)
         {
             e.setPadPitch (p, 0.0f); e.setPadLoop (p, true);
@@ -276,9 +276,9 @@ int main()
         AudioEngine e; prepara (e);
         for (int f = 0; f < AudioEngine::kNumFx; ++f)
         {
-            e.setFxParam (f, 0, AudioEngine::kFxDef[f][0]);
-            e.setFxParam (f, 1, AudioEngine::kFxDef[f][1]);
-            e.setFxParam (f, 2, 1.0f);
+            e.setFxParam (0, f, 0, AudioEngine::kFxDef[f][0]);
+            e.setFxParam (0, f, 1, AudioEngine::kFxDef[f][1]);
+            e.setFxParam (0, f, 2, 1.0f);
         }
         for (int p = 0; p < 16; ++p)
         {
@@ -300,9 +300,9 @@ int main()
         AudioEngine e; prepara (e);
         for (int f = 0; f < AudioEngine::kNumFx; ++f)
         {
-            e.setFxParam (f, 0, AudioEngine::kFxDef[f][0]);
-            e.setFxParam (f, 1, AudioEngine::kFxDef[f][1]);
-            e.setFxParam (f, 2, 1.0f);
+            e.setFxParam (0, f, 0, AudioEngine::kFxDef[f][0]);
+            e.setFxParam (0, f, 1, AudioEngine::kFxDef[f][1]);
+            e.setFxParam (0, f, 2, 1.0f);
         }
         for (int p = 0; p < 16; ++p)
         {
@@ -361,9 +361,9 @@ int main()
         //  los quince: la fila de la cara son seis ranuras.
         for (int f = 0; f < 6; ++f)
         {
-            e.setFxParam (f, 0, AudioEngine::kFxDef[f][0]);
-            e.setFxParam (f, 1, AudioEngine::kFxDef[f][1]);
-            e.setFxParam (f, 2, 1.0f);
+            e.setFxParam (0, f, 0, AudioEngine::kFxDef[f][0]);
+            e.setFxParam (0, f, 1, AudioEngine::kFxDef[f][1]);
+            e.setFxParam (0, f, 2, 1.0f);
         }
         for (int p = 0; p < 16; ++p)
         {

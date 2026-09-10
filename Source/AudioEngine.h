@@ -526,8 +526,13 @@ public:
         int          paso  = 0;    // paso absoluto de la cancion
         juce::uint8  fx    = 0;    // tipo de efecto, no ranura: lo que suena
         juce::uint8  par   = 0;    // 0..2
+        //  Y EL CANAL, que cabe en el hueco de alineacion que ya habia: doce
+        //  bytes antes y doce despues. Un inserto es de un canal, asi que un
+        //  barrido de filtro sin decir cual se aplicaria siempre al cero.
+        juce::uint8  canal = 0;
         float        valor = 0.0f;
     };
+    static_assert (sizeof (EventoAuto) == 12, "el canal tiene que caber en el hueco");
 
     //  Cuatro mil eventos son 62 compases de los 64 que la cancion admite
     //  moviendo un parametro en CADA paso, o veintiuno moviendose a la vez
@@ -547,7 +552,19 @@ public:
     //  asi que copiarla habria sido la misma regla escrita dos veces: la que
     //  se quedara vieja dejaria un parametro que se automatiza y no suena.
     //  Vive aqui, que es donde estan los atomicos.
-    void setFxParam (int fx, int par, float v) noexcept;
+    void setFxParam (int canal, int fx, int par, float v) noexcept;
+
+    //  Y SU LECTOR, que es lo que le faltaba a esta tabla desde que existe: la
+    //  cara guardaba en el fichero de proyecto lo que tuvieran sus sesenta y
+    //  tres deslizadores, o sea el ALMACEN, y con dieciseis canales esos
+    //  deslizadores pasan a ser una VENTANA al canal de delante. Quien tiene
+    //  los 1008 numeros es el motor.
+    float getFxParam (int canal, int fx, int par) const noexcept
+    {
+        if (! juce::isPositiveAndBelow (fx, kNumFx) || ! juce::isPositiveAndBelow (par, 3))
+            return 0.0f;
+        return fxParamDe (canal, fx, par).load (std::memory_order_relaxed);
+    }
 
     void publicaAutomacion (const EventoAuto* ev, int cuantos) noexcept;
     int  numAuto() const noexcept { return autoVivos.load (std::memory_order_relaxed); }
@@ -993,8 +1010,6 @@ public:
     std::uint64_t fetchTriggered() noexcept { return triggeredMask.exchange (0, std::memory_order_relaxed); }
 
     // --- Master FX: filter + drive (message thread setters) ---
-    void setFxReso   (float q)   noexcept { fxParamDe (0, kFxFlt, 1).store (q, std::memory_order_relaxed); }
-    void setFxDrive  (float amt) noexcept { fxParamDe (0, kFxDrv, 0).store (amt, std::memory_order_relaxed); }  // 0..1
     void setDlyTime  (float ms)  noexcept { dlyTime.store  (ms,  std::memory_order_relaxed); }
     void setDlyFb    (float f)    noexcept { dlyFb.store    (f,   std::memory_order_relaxed); }
     void setDlyMix   (float m)    noexcept { dlyMix.store   (m,   std::memory_order_relaxed); }
@@ -1066,7 +1081,8 @@ public:
     void setLiveQuantise (bool on) noexcept { liveQuant.store (on, std::memory_order_relaxed); }
     bool getLiveQuantise() const noexcept { return liveQuant.load (std::memory_order_relaxed); }
 
-    void setFltSweep (float s)  noexcept { fxParamDe (0, kFxFlt, 0).store (s, std::memory_order_relaxed); }
+    void setFltSweep (int canal, float s) noexcept
+    { fxParamDe (canal, kFxFlt, 0).store (s, std::memory_order_relaxed); }
 
     //  DONDE CAE EL BARRIDO, escrito UNA vez.
     //
@@ -1187,20 +1203,6 @@ public:
         return juce::Decibels::gainToDecibels (juce::jmax (1.0e-5f, mag));
     }
 
-    void setFltReso  (float q)  noexcept { fxParamDe (0, kFxFlt, 1).store (q, std::memory_order_relaxed); }
-    void setFltMix   (float m)  noexcept { fxParamDe (0, kFxFlt, 2).store (m, std::memory_order_relaxed); }
-
-    void setHpFreq (float hz) noexcept { fxParamDe (0, kFxHpf, 0).store (hz, std::memory_order_relaxed); }
-    void setHpReso (float q)  noexcept { fxParamDe (0, kFxHpf, 1).store (q, std::memory_order_relaxed); }
-    void setHpMix  (float m)  noexcept { fxParamDe (0, kFxHpf, 2).store (m, std::memory_order_relaxed); }
-
-    void setDrvTone (float hz) noexcept { fxParamDe (0, kFxDrv, 1).store (hz, std::memory_order_relaxed); }
-    void setDrvMix  (float m)  noexcept { fxParamDe (0, kFxDrv, 2).store (m, std::memory_order_relaxed); }
-
-    void setCrushBits (float b) noexcept { fxParamDe (0, kFxBit, 0).store (b, std::memory_order_relaxed); }
-    void setCrushRate (float r) noexcept { fxParamDe (0, kFxBit, 1).store (r, std::memory_order_relaxed); }
-    void setCrushMix  (float m) noexcept { fxParamDe (0, kFxBit, 2).store (m, std::memory_order_relaxed); }
-
     //  A QUE CANAL VA ESTE PAD. Es lo unico que el pad decide del reparto: el
     //  cuanto lo dice el canal.
     void setPadCanal (int slot, int canal) noexcept
@@ -1318,18 +1320,18 @@ public:
     //  EL EQ. Sus diez numeros no pasan por atomicos uno a uno: `Eq5` guarda
     //  los cinco pares y una bandera `sucio`, y el hilo de audio recalcula los
     //  coeficientes en el bloque siguiente. Ver la cabecera de Eq5.h.
-    //  Del canal CERO mientras estas siete puertas no llevan canal: la fase 4
-    //  se lo pone, que es cuando la cara sabe preguntar por dieciseis.
-    void setEqBand   (int b, float hz, float dB) noexcept { ins[0].eqFx.ponBanda (b, hz, dB); }
-    void setEqTipo   (int b, int t)  noexcept { ins[0].eqFx.ponTipo (b, t); }
-    void setEqQ      (int b, float q) noexcept { ins[0].eqFx.ponQ (b, q); }
-    int   getEqTipo (int b) const noexcept { return (int) ins[0].eqFx.tipoDe (b); }
-    float getEqQ    (int b) const noexcept { return ins[0].eqFx.qDe (b); }
-    void setEqAncho  (float a) noexcept { ins[0].eqFx.ponAncho  (a); }
-    void setEqSalida (float d) noexcept { ins[0].eqFx.ponSalida (d); }
-    void setEqMix    (float m) noexcept { fxParamDe (0, kFxEq, 2).store (m, std::memory_order_relaxed); }
-    float getEqFreq (int b) const noexcept { return ins[0].eqFx.freqDe (b); }
-    float getEqGain (int b) const noexcept { return ins[0].eqFx.gainDe (b); }
+    //  CON CANAL, que es la queja entera de esta tanda dicha en una firma: el
+    //  EQ es un INSERTO, asi que hay uno por canal y preguntar sin decir cual
+    //  es preguntar por el cero. `insDe` acota y es la unica que lo hace.
+    void setEqBand  (int canal, int b, float hz, float dB) noexcept { insDe (canal).eqFx.ponBanda (b, hz, dB); }
+    void setEqTipo  (int canal, int b, int t)   noexcept { insDe (canal).eqFx.ponTipo (b, t); }
+    void setEqQ     (int canal, int b, float q) noexcept { insDe (canal).eqFx.ponQ (b, q); }
+    int   getEqTipo (int canal, int b) const noexcept { return (int) insDe (canal).eqFx.tipoDe (b); }
+    float getEqQ    (int canal, int b) const noexcept { return insDe (canal).eqFx.qDe (b); }
+    float getEqFreq (int canal, int b) const noexcept { return insDe (canal).eqFx.freqDe (b); }
+    float getEqGain (int canal, int b) const noexcept { return insDe (canal).eqFx.gainDe (b); }
+    void setEqMix   (int canal, float m) noexcept
+    { fxParamDe (canal, kFxEq, 2).store (m, std::memory_order_relaxed); }
     // How much silence a bounce must keep past the last note so the tail is
     // not guillotined. Only AUDIBLE stages count — a ten-second delay with
     // its mix at zero must not pad every export.
@@ -1350,18 +1352,19 @@ public:
     //  por el mismo camino. Ver `miraFx`.
     void copyFxScope (float* pre, float* post, int n) noexcept;
 
-    //  DINAMICA. Los tres de cada uno, y la reduccion que se lee.
-    void setDynP0  (int i, float v) noexcept { setFxParam (dynIdx (i), 0, v); }
-    void setDynP1  (int i, float v) noexcept { setFxParam (dynIdx (i), 1, v); }
-    void setDynMix (int i, float v) noexcept { setFxParam (dynIdx (i), 2, v); }
-    float getDynP0  (int i) const noexcept { return juce::isPositiveAndBelow (i, 4) ? fxParamDe (0, dynIdx (i), 0).load (std::memory_order_relaxed) : 0.0f; }
-    float getDynP1  (int i) const noexcept { return juce::isPositiveAndBelow (i, 4) ? fxParamDe (0, dynIdx (i), 1).load (std::memory_order_relaxed) : 0.0f; }
-    float getDynReduccion (int i) const noexcept
+    //  DINAMICA. Los tres de cada uno, y la reduccion que se lee. Los cuatro
+    //  SUSTITUYEN, asi que son de un canal como el EQ.
+    void setDynP0  (int canal, int i, float v) noexcept { setFxParam (canal, dynIdx (i), 0, v); }
+    void setDynP1  (int canal, int i, float v) noexcept { setFxParam (canal, dynIdx (i), 1, v); }
+    void setDynMix (int canal, int i, float v) noexcept { setFxParam (canal, dynIdx (i), 2, v); }
+    float getDynP0 (int canal, int i) const noexcept
+    { return juce::isPositiveAndBelow (i, 4) ? fxParamDe (canal, dynIdx (i), 0).load (std::memory_order_relaxed) : 0.0f; }
+    float getDynP1 (int canal, int i) const noexcept
+    { return juce::isPositiveAndBelow (i, 4) ? fxParamDe (canal, dynIdx (i), 1).load (std::memory_order_relaxed) : 0.0f; }
+    float getDynReduccion (int canal, int i) const noexcept
     {
-        //  Del canal CERO mientras la cara solo sabe mirar uno. La fase 4 le
-        //  pone el canal, que es cuando hay dieciseis que preguntar.
         return juce::isPositiveAndBelow (i, 4)
-             ? ins[0].dynRed[(size_t) i].load (std::memory_order_relaxed) : 0.0f;
+             ? insDe (canal).dynRed[(size_t) i].load (std::memory_order_relaxed) : 0.0f;
     }
 
     //  MODULACION. La fase de AHORA del tipo `f`, o -1 si ese tipo no lleva
@@ -1369,12 +1372,12 @@ public:
     //  asi que la curva no puede enseñarlo -lo declara `FxVisor::mandosDe`- y
     //  quien lo enseña es el punto de trabajo viajando a la velocidad de
     //  verdad. Hermana de `getDynReduccion`, y por lo mismo.
-    float getLfoFase (int f) const noexcept
+    float getLfoFase (int canal, int f) const noexcept
     {
         //  TRM SUSTITUYE, asi que su LFO vive en `Inserto` y los otros tres
         //  -que SUMAN- en la clase. La familia se parte 3/1 y esta es la unica
         //  puerta que tiene que saberlo.
-        if (f == kFxTrm) return ins[0].trmFase.load (std::memory_order_relaxed);
+        if (f == kFxTrm) return insDe (canal).trmFase.load (std::memory_order_relaxed);
         const int m = modDe (f);
         return (m >= 0 && m < kNumModEnvio)
              ? modFase[(size_t) m].load (std::memory_order_relaxed) : -1.0f;
@@ -2594,6 +2597,16 @@ private:
     //  fuera de `frzVent` y `pitLine`, que se dimensionan en `prepareToPlay`
     //  como se dimensionaban antes.
     std::array<Inserto, kNumCanales> ins;
+
+public:
+    //  LA PUERTA ACOTADA, que es la hermana de `fxParamDe` para el ESTADO: el
+    //  canal llega de la cara, del fichero de proyecto y de la automatizacion,
+    //  y ninguno de los tres esta obligado a traerlo dentro del rango.
+    Inserto&       insDe (int c) noexcept
+    { return ins[(size_t) juce::jlimit (0, kNumCanales - 1, c)]; }
+    const Inserto& insDe (int c) const noexcept
+    { return ins[(size_t) juce::jlimit (0, kNumCanales - 1, c)]; }
+private:
 
     //  EL RECORTE DEL PAD -uno por defecto- y EL ENVIO DEL CANAL. El producto
     //  de los dos es lo que llega al bus. Ver `setPadRecorte` y `setCanalSend`.
