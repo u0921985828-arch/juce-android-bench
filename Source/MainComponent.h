@@ -2640,7 +2640,32 @@ private:
              : (f == AudioEngine::kFxLim) ? 3 : -1;
     }
 
-    std::array<bool, kNumFx> fxOn {};
+    //  Y LA LUZ TAMBIEN ES DEL CANAL, que es la otra mitad de que un inserto
+    //  lo sea: `fxOn` era una fila de veintiuno y con dieciseis canales el
+    //  mismo tipo puede estar encendido en uno y apagado en el de al lado.
+    //  Quien decide que casilla se mira es `AudioEngine::canalDeParam`, que es
+    //  la MISMA condicion con la que el motor indexa `fxP`: un envio colapsa
+    //  al canal cero, asi que su luz es una y no dieciseis.
+    std::array<std::array<bool, kNumFx>, kNumCanales> fxOn {};
+    bool  fxEncendido (int fx) const
+    { return juce::isPositiveAndBelow (fx, kNumFx)
+          && fxOn[(size_t) AudioEngine::canalDeParam (canalActual, fx)][(size_t) fx]; }
+    void  ponFxEncendido (int fx, bool on)
+    { if (juce::isPositiveAndBelow (fx, kNumFx))
+          fxOn[(size_t) AudioEngine::canalDeParam (canalActual, fx)][(size_t) fx] = on; }
+
+    //  EL CANAL DE DELANTE SE PONE POR UNA PUERTA, que es lo que hace posible
+    //  que los sesenta y tres deslizadores dejen de ser el ALMACEN y pasen a
+    //  ser una VENTANA. Mil ocho mandos moverian el recuento de componentes y
+    //  con el los TOUCH que se leen contra la tanda anterior, asi que quien
+    //  tiene los 1008 numeros es el MOTOR y la cara los relee al cambiar.
+    //
+    //  Y el orden es el que va escrito: `canalActual` PRIMERO y la recarga
+    //  DESPUES, siempre con `dontSendNotification`. Al reves, el primer mando
+    //  que se toque escribe el ajuste del canal viejo en el nuevo, en silencio
+    //  y solo a partir del segundo cambio.
+    void  ponCanalActual (int c);
+    void  recargaFxDelCanal();
     int focusedFx = 0;                     // whose parameters CTRL 1-3 hold
 
     //  LA FILA SON SEIS RANURAS, NO SEIS EFECTOS.
@@ -2737,7 +2762,7 @@ private:
     std::vector<AudioEngine::EventoAuto> autoEventos;
     HoldButton autoBtn { "AUTO" };
     bool autoArmado = false;
-    void anotaAutomacion (int fx, int par, float v);
+    void anotaAutomacion (int canal, int fx, int par, float v);
     void publicaAutomacion();       // el espejo al motor
     void ponAutoArmado (bool on);
     void vaciaAutomacion();

@@ -9,10 +9,15 @@
 #  nadie gestiona.
 #
 #  Ahora hay dieciseis canales. El pad elige el suyo en los ajustes del pad, y
-#  el canal se lleva sus seis ranuras y sus envios; el numero no se eligio: de
-#  los veintiun tipos, dieciseis SUSTITUYEN y cinco SUMAN, asi que un inserto
-#  es de UN canal -la regla «un tipo, una ranura» generalizada- y un envio es
-#  de TODOS, que es literalmente lo que un envio significa.
+#  el canal se lleva sus seis ranuras, sus envios y sus sesenta y tres numeros;
+#  el reparto no se eligio: de los veintiun tipos, dieciseis SUSTITUYEN y cinco
+#  SUMAN, asi que hay un INSERTO por canal -dieciseis compresores, dieciseis
+#  ecualizadores- y un ENVIO de TODOS, que es literalmente lo que un envio
+#  significa.
+#
+#  Y esa es la queja que abrio la tanda, con sus palabras: «solo es posible que
+#  un ecualizador funcione y sea colocado en un canal solo, deberia de haber un
+#  plugin disponible de cada tipo para cada canal».
 #
 #  NINGUNA DE LAS ONCE REGLAS DE `expo.py` PUEDE VER NADA DE ESTO. Son fallos
 #  de INDICE y de ESTADO: un pad que manda al canal equivocado se maqueta
@@ -116,26 +121,68 @@ def main():
                       "la MISMA fila %s: cambiar de pad no cambia los efectos"
                       % r["fila_pad2"])
 
-    #  3. UN INSERTO ES DE UN CANAL Y UN ENVIO ES DE TODOS.
+    #  3a. UN INSERTO ESTA EN LOS DIECISEIS CANALES A LA VEZ — que es la queja
+    #      con la que empezo esta tanda, dicha al derecho: «solo es posible que
+    #      un ecualizador funcione y sea colocado en un canal solo».
     #
-    #     Las dos mitades, y las dos hacen falta: solo la primera la cumple una
-    #     regla que mueve TODO -y entonces dos canales no pueden compartir un
-    #     delay, que es lo contrario de lo que un envio significa- y solo la
-    #     segunda la cumple una que no mueve nada, y entonces dos canales
-    #     tendrian dos interruptores del mismo compresor.
+    #      Esta cifra se INVIERTE respecto a la tanda anterior. Antes se exigia
+    #      `[-1,…] / [7,…]` porque `ponEnRanura` recorria los dieciseis canales
+    #      vaciando la ranura donde ese tipo estuviera, y eso era CORRECTO el
+    #      dia que se escribio: su premisa era «su estado en el motor es uno
+    #      solo, asi que dos canales serian dos ventanas al mismo aparato».
+    #      Ahora hay dieciseis `Inserto`, uno por canal, asi que la premisa ya
+    #      no existe y la rotura a proposito es DEJAR EL BUCLE — o sea el verde
+    #      de ayer.
     print ("inserto  CMP en el 0 y luego en el 4:  %s / %s"
            % (r["inserto0"], r["inserto4"]))
     print ("envio    DLY en el 0 y luego en el 4:  %s / %s"
            % (r["envio0"], r["envio4"]))
-    if r["inserto0"] != [-1, -1, -1, -1, -1, -1] or r["inserto4"] == [-1, -1, -1, -1, -1, -1]:
+    lleno = [7, -1, -1, -1, -1, -1]
+    if r["inserto0"] != lleno or r["inserto4"] != lleno:
         malas.append ("poner CMP en el canal 4 dejo el 0 en %s y el 4 en %s: un "
-                      "inserto tiene UN estado en el motor, asi que dos canales "
-                      "serian dos interruptores del mismo aparato"
-                      % (r["inserto0"], r["inserto4"]))
+                      "inserto es de CADA canal, asi que ponerlo en uno no puede "
+                      "quitarselo al otro" % (r["inserto0"], r["inserto4"]))
+
+    #  3b. Y UN ENVIO SIGUE SIENDO DE TODOS. La cifra NO cambia: una linea de
+    #      retardo existe para que varias fuentes entren en la misma cola, y
+    #      restringirla a un canal es exactamente lo contrario de lo que un
+    #      envio significa. Los cinco que SUMAN se quedan globales.
     if r["envio0"] == [-1, -1, -1, -1, -1, -1] or r["envio0"] != r["envio4"]:
         malas.append ("poner DLY en el canal 4 dejo el 0 en %s y el 4 en %s: una "
                       "linea de retardo existe para que varias fuentes entren en "
                       "la misma cola" % (r["envio0"], r["envio4"]))
+
+    #  3c. Y EL AJUSTE ES DEL CANAL, que es la que hace falta de verdad.
+    #
+    #      Con 3a y 3b imprimiendo ya la MISMA forma —`[7,…]` en los dos y
+    #      `[3,…]` en los dos— solas no separan nada: las dos las cumple igual
+    #      una app en la que los sesenta y tres numeros siguen siendo globales
+    #      y lo unico por canal es la fila de tapas. Lo que las separa es si el
+    #      NUMERO viaja con la fila.
+    #
+    #      TRES cifras y no dos, y la tercera es la que impide que «en el canal
+    #      4 sale otro» lo cumpla un codigo que BORRA el ajuste al cambiar de
+    #      canal: se vuelve al 0 y tiene que estar el que se puso. El defecto
+    #      de RATIO de CMP es 4.0, asi que el canal que nadie ha tocado dice
+    #      4.00 — y el 6.00 no puede salir de ahi por casualidad.
+    #
+    #      Medido por el MANDO —`macroCtrl2` con `sendNotificationSync`, que es
+    #      el equivalente de `->onClick` en una tapa— y no llamando a
+    #      `setFxParam`: lo que se prueba es la VENTANA de sesenta y tres
+    #      deslizadores sobre el canal, y la ventana vive en el callback.
+    print ("ajuste   RATIO de CMP: canal 0 %.2f -> canal 4 %.2f -> canal 0 %.2f"
+           % (r["ajuste0"], r["ajuste4"], r["ajuste_vuelve"]))
+    if abs (r["ajuste0"] - 6.0) > 0.01:
+        malas.append ("el mando dejo %.2f en el canal 0 y se puso 6.00"
+                      % r["ajuste0"])
+    if abs (r["ajuste4"] - 6.0) <= 0.01:
+        malas.append ("el canal 4 dice %.2f, lo mismo que el 0: los sesenta y "
+                      "tres numeros siguen siendo globales y la fila de tapas es "
+                      "lo unico que cambia" % r["ajuste4"])
+    if abs (r["ajuste_vuelve"] - 6.0) > 0.01:
+        malas.append ("al volver al canal 0 el ajuste vale %.2f y valia 6.00: "
+                      "cambiar de canal no lee la ventana, la BORRA"
+                      % r["ajuste_vuelve"])
 
     #  4. VACIAR UNA RANURA APAGA SU EFECTO **SOLO SI NO LE QUEDA OTRA**. Un
     #     envio puede vivir en tres canales, y quitarlo de uno no lo deja sin
@@ -149,6 +196,17 @@ def main():
     if r["tras_quitar_ultima"] != 0:
         malas.append ("quitar la ULTIMA ranura del DLY lo dejo sonando y sin tapa "
                       "donde tocarlo")
+    #     Y la otra mitad, que es la que la partio en dos: un INSERTO se apaga
+    #     SIEMPRE. Puede estar en dos canales a la vez —eso es 3a— y el que se
+    #     va es el de ESTE canal, con su propia instancia en el motor: con la
+    #     guardia del envio puesta tambien aqui, el compresor del canal 0 se
+    #     queda comprimiendo sin una tapa donde tocarlo.
+    print ("         y quitando un INSERTO que sigue en otro canal: %s"
+           % r["inserto_tras_quitar"])
+    if r["inserto_tras_quitar"] != 0:
+        malas.append ("quitar el CMP del canal 0 lo dejo encendido porque sigue "
+                      "puesto en el 4: un inserto tiene UNA instancia por canal, "
+                      "asi que la del 0 se queda sonando sin tapa")
 
     #  5. EL FADER Y EL MUTE DEL CANAL LLEGAN AL MOTOR, por la TIRA de la mesa
     #     y no llamando a `setCanalGain`: lo que se prueba es el camino.
@@ -166,8 +224,9 @@ def main():
         for m in malas: print ("FALLA  " + m)
         return 1
     print ("los dieciseis canales: la rejilla mueve el pad, cambiar de pad "
-           "cambia la fila, un inserto es de un canal y un envio de todos, "
-           "vaciar apaga solo si no queda otra, y la tira llega al motor")
+           "cambia la fila, un inserto es de CADA canal con su propio ajuste y "
+           "un envio de todos, vaciar apaga al inserto siempre y al envio solo "
+           "si no le queda otra, y la tira llega al motor")
     return 0
 
 

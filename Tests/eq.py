@@ -253,6 +253,40 @@ def main():
         if abs (r["q_motor"] - 4.5) > 0.02 or abs (r["q_espejo"] - 4.5) > 0.02:
             malas.append ("%s: la Q quedo en motor %.2f y espejo %.2f, pedida 4.50"
                           % (size, r["q_motor"], r["q_espejo"]))
+
+        #  9. Y LA CURVA ES DEL CANAL, que es la queja con la que empezo la
+        #     tanda dicha en su efecto: «solo es posible que un ecualizador
+        #     funcione y sea colocado en un canal solo». Hay DIECISEIS `Eq5`,
+        #     uno por canal.
+        #
+        #     Con CUATRO cifras porque el EQ tiene dos lados y cada uno puede
+        #     mentir por su cuenta: lo que el MOTOR guarda en el canal 0 y en
+        #     el 4, y lo que la curva DIBUJA al llegar al 4 y al volver al 0.
+        #     Solo las dos primeras las cumple una app con dieciseis
+        #     ecualizadores y un espejo que no se recarga —la curva enseñaria
+        #     la del canal anterior sobre el filtro nuevo— y solo las dos
+        #     ultimas una que recarga el espejo de un motor con uno solo. Y la
+        #     cuarta es la que impide que «en el 4 sale plana» lo cumpla un
+        #     codigo que BORRA la curva al cambiar de canal.
+        print ("%-9s canal   motor c0 %+.2f dB  c4 %+.2f   curva en c4 %+.2f  "
+               "al volver %+.2f"
+               % (size, r["curva_c0"], r["curva_c4"], r["espejo_c4"],
+                  r["espejo_vuelve"]))
+        if abs (r["curva_c0"] - 9.0) > 0.05:
+            malas.append ("%s: se escribieron +9 dB en el canal 0 y el motor "
+                          "guardo %+.2f" % (size, r["curva_c0"]))
+        if abs (r["curva_c4"]) > 0.05:
+            malas.append ("%s: escribir la banda 2 en el canal 0 dejo %+.2f dB en "
+                          "el canal 4: un ecualizador es de CADA canal"
+                          % (size, r["curva_c4"]))
+        if abs (r["espejo_c4"]) > 0.05:
+            malas.append ("%s: al ir al canal 4 la curva sigue dibujando %+.2f dB: "
+                          "el espejo se quedo con el canal anterior"
+                          % (size, r["espejo_c4"]))
+        if abs (r["espejo_vuelve"] - 9.0) > 0.05:
+            malas.append ("%s: al volver al canal 0 la curva dibuja %+.2f dB y se "
+                          "escribieron +9: cambiar de canal no lee la curva, la "
+                          "BORRA" % (size, r["espejo_vuelve"]))
         print()
 
     if malas:

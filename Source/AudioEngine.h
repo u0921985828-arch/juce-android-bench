@@ -113,15 +113,57 @@ public:
     //      fuentes entren en la misma cola; restringir el DLY a un canal es lo
     //      contrario de lo que un envio significa.
     //
-    //  Y por eso el motor NO CRECE: cero buses nuevos, cero etapas nuevas, cero
-    //  estado pesado nuevo. Lo unico que cambia es de donde sale el numero que
-    //  ya se calculaba una vez por bloque. Medido, la alternativa -una seccion
-    //  de efectos por canal- son 1.3 MB por canal, o sea 21 MB por dieciseis,
-    //  mas el indice de canal en `fxP`, en las diez etapas y en `EventoAuto`.
-    //  Queda para su propia tanda y no tira nada de esta: la abstraccion de
-    //  canal hace falta igual, y lo unico que cambiaria es de quien es el
-    //  array.
+    //  Y CADA CANAL TIENE SUS DIECISEIS INSERTOS DE VERDAD, que es lo que
+    //  costo la tanda siguiente: `struct Inserto` con su estado y un array de
+    //  dieciseis, `busDe (canal, fx)` sobre un solo array de `kNumBuses`, y el
+    //  indice de canal en `fxP`, en las etapas y en `EventoAuto`.
+    //
+    //  El precio ESTA MEDIDO y no estimado, que es lo unico que hace que la
+    //  proxima tanda decida sobre lo que cuesta -`Tests/StressTest.cpp` lo
+    //  imprime en su fila «los dieciseis insertos»-: **1.6 KB por canal** de
+    //  parte estatica, o sea **25 KB** los dieciseis, dentro de los 653 KB que
+    //  mide el motor entero. Lo que de verdad pesa se reserva en
+    //  `prepareToPlay` -los buses, `frzVent`, `pitLine` y `recordBuffer`- y son
+    //  **16.5 MB** para el motor ENTERO, no por canal.
+    //
+    //  Aqui hubo escrito «1.3 MB por canal, o sea 21 MB por dieciseis» como el
+    //  precio de esta misma alternativa, y las dos mitades estaban tres ordenes
+    //  de magnitud altas: la cuenta metia dentro la linea de retardo del DLY,
+    //  que es un ENVIO y no se replica, y ademas la daba por de dos segundos
+    //  cuando es de uno. Un numero ESTIMADO que sobrevivio al cambio que lo
+    //  invalido, en un fichero cuya regla es que nada se afirma sin medirlo.
     static constexpr int kNumCanales = 16;
+
+    //  QUE CANAL LLEVA DE VERDAD ESE PARAMETRO, escrito UNA vez y aqui.
+    //
+    //  Un INSERTO es de un canal y un ENVIO es de todos, asi que la fila de un
+    //  envio vive en el canal cero escriba quien escriba. `fxParamDe` lo usa
+    //  para indexar `fxP` y la CARA para saber que casilla de `fxOn` mira y de
+    //  donde recarga sus sesenta y tres deslizadores: con la condicion escrita
+    //  en los dos sitios, la que se quedara vieja dejaria la fila de la cara
+    //  diciendo lo que el motor no hace — y eso no lo ve ninguna regla de
+    //  `expo.py`, que es la familia de los cinco fallos del compas del piano.
+    //  LA FORMA DEL MOTOR, para el banco. `kNumIns` y `kNumBuses` viven abajo,
+    //  al lado de `busDe` y del parrafo que explica por que el orden de las
+    //  etapas se queda intacto: subirlos aqui para que `Tests/rack.py` los lea
+    //  seria mover la regla de sitio por una medida, asi que se leen y no se
+    //  mudan. El cuerpo de una funcion miembro se compila con la clase ya
+    //  completa, asi que nombrarlos antes de declararlos es legal.
+    static constexpr int numInsertos() noexcept;
+    static constexpr int numBuses()    noexcept;
+
+    //  Y LO QUE PESA UN CANAL, que es la cifra sobre la que se decide si algun
+    //  dia hay mas: la parte estatica de un `Inserto`, sin lo que `frzVent` y
+    //  `pitLine` reservan en `prepareToPlay`. La cuenta la hace el compilador,
+    //  asi que no hay nada que estimar - y estimarla es justo lo que dejo en
+    //  este fichero un «1.3 MB por canal» que nunca fue verdad.
+    static constexpr std::size_t bytesPorCanal() noexcept;
+
+    static constexpr int canalDeParam (int canal, int fx) noexcept
+    {
+        if (! (fx >= 0 && fx < kNumFx)) return 0;
+        return (fxSustituye[fx] && canal > 0 && canal < kNumCanales) ? canal : 0;
+    }
 
     //  Los valores de fabrica de los tres parametros de cada tipo, en una
     //  tabla y no en diecinueve llaves de inicializacion repartidas por esta
@@ -2148,13 +2190,11 @@ private:
     //  se quedara vieja seria un delay por canal que no existe.
     std::atomic<float>& fxParamDe (int c, int f, int par) noexcept
     {
-        const int cc = (fxSustituye[f] && c > 0 && c < kNumCanales) ? c : 0;
-        return fxP[(size_t) cc][(size_t) f][(size_t) par];
+        return fxP[(size_t) canalDeParam (c, f)][(size_t) f][(size_t) par];
     }
     const std::atomic<float>& fxParamDe (int c, int f, int par) const noexcept
     {
-        const int cc = (fxSustituye[f] && c > 0 && c < kNumCanales) ? c : 0;
-        return fxP[(size_t) cc][(size_t) f][(size_t) par];
+        return fxP[(size_t) canalDeParam (c, f)][(size_t) f][(size_t) par];
     }
 
     //  Y LOS NOMBRES SE QUEDAN, como REFERENCIAS a su hueco — pero SOLO los de
@@ -2693,6 +2733,12 @@ private:
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AudioEngine)
 };
+
+//  Y sus dos cuerpos, aqui: dentro de la clase `kNumIns` todavia no esta
+//  declarado en el punto en el que hace falta su VALOR para un constexpr.
+constexpr int AudioEngine::numInsertos() noexcept { return kNumIns; }
+constexpr int AudioEngine::numBuses()    noexcept { return kNumBuses; }
+constexpr std::size_t AudioEngine::bytesPorCanal() noexcept { return sizeof (Inserto); }
 
 //  EL 64 ESTA ESCRITO DOS VECES Y LAS DOS COPIAS SE INDEXAN ENTRE SI.
 //

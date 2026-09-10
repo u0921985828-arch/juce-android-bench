@@ -1751,7 +1751,7 @@ void MainComponent::auditOpen (const juce::String& pedido)
                   << ",\"tour\":" << (tourSheet.isVisible() ? 1 : 0) << "}" << std::endl;
     }
     else if (which == "midi") { showSetPage (pageMidi); refreshMidiDevices(); openSheet (setSheet, setButton); }
-    else if (which == "rack") { canalActual = 0; openSheet (rackSheet, mixButton); refreshRack(); }
+    else if (which == "rack") { ponCanalActual (0); openSheet (rackSheet, mixButton); refreshRack(); }
     //  Y EL RACK CON LAS SEIS RANURAS LLENAS.
     //
     //  Desde que la maquina abre vacia, `rack` mide seis filas con «+» en el
@@ -1766,7 +1766,7 @@ void MainComponent::auditOpen (const juce::String& pedido)
         //  iguales un cruce de filas pasaria desapercibido.
         for (int s = 0; s < kNumRanuras; ++s)
             engine.setCanalSend (0, s, 0.15f + 0.15f * (float) s);
-        canalActual = 0;
+        ponCanalActual (0);
         //  Y CON LA ULTIMA ENFOCADA, que es lo que hace medible la cuña.
         //  `plato` la deja en la ranura 0 y sin un segundo estado «apunta a la
         //  ranura enfocada» lo cumple igual una cuña clavada en la primera
@@ -3055,6 +3055,15 @@ void MainComponent::auditViejos (const juce::String& carpeta)
             for (int fx = 0; fx < kNumFx; ++fx) engine.setPadRecorte (p, fx, 0.75f);
         }
         for (int fx = 0; fx < kNumFx; ++fx) engine.setCanalSend (0, fx, 0.5f);
+        //  Y LOS EFECTOS DE AYER, en un canal que no es el cero: `fxp` y
+        //  `eqc` son las dos propiedades que nacieron con los canales, asi que
+        //  hace falta dejarlas MOVIDAS antes de abrir el viejo o «volvio»
+        //  lo cumple tambien no haber tocado nada. Un proyecto sin ellas tiene
+        //  que devolver los dieciseis al numero del mando, y uno con ellas al
+        //  que trae escrito.
+        engine.setFxParam (3, AudioEngine::kFxFlt, 0, -0.90f);
+        engine.setFxParam (3, AudioEngine::kFxCmp, 0, -55.0f);
+        engine.setEqBand  (5, 2, Eq5::kFreqDef[2], -9.0f);
         //  Y LA FILA DE EFECTOS VACIA antes de abrir el viejo. Un proyecto de
         //  otra epoca no lleva la propiedad `slots`, asi que tiene que volver
         //  con la fila DE SIEMPRE -la ranura s con el tipo s- y no con el
@@ -3066,7 +3075,7 @@ void MainComponent::auditViejos (const juce::String& carpeta)
             canalActual = c;
             for (int s = 0; s < kNumRanuras; ++s) ponEnRanura (s, kSlotVacia);
         }
-        canalActual = 0;
+        ponCanalActual (0);
         engine.setSongLength (32);
         engine.setSongCell (0, 0, 3);
         engine.setSongCell (1, 4, 2);
@@ -3120,6 +3129,13 @@ void MainComponent::auditViejos (const juce::String& carpeta)
                   << ",\"cancion\":" << celdasCancion
                   << ",\"vel0\":" << engine.getStepVel (0, 0, 0)
                   << ",\"roll0\":" << engine.getStepRoll (0, 0, 0)
+                  //  Y LOS EFECTOS POR CANAL, que es la sexta rama. Se lee un
+                  //  canal que NO es el cero a proposito: con el cero,
+                  //  «volvio» lo cumple igual un lector que coge la primera
+                  //  fila y la reparte a los dieciseis — o sea la rama vieja.
+                  << ",\"flt3\":" << engine.getFxParam (3, AudioEngine::kFxFlt, 0)
+                  << ",\"cmp3\":" << engine.getFxParam (3, AudioEngine::kFxCmp, 0)
+                  << ",\"eq5\":"  << engine.getEqGain (5, 2)
                   << ",\"ranuras\":[" << slotFx[0][0] << "," << slotFx[0][1] << "," << slotFx[0][2] << ","
                                        << slotFx[0][3] << "," << slotFx[0][4] << "," << slotFx[0][5] << "]"
                   << "}" << std::endl;
@@ -3165,7 +3181,7 @@ void MainComponent::auditCanales()
     //  con las seis ranuras globales- y solo la segunda la cumple una cara que
     //  cambia de fila sin mover el pad.
     for (auto& f : slotFx) f.fill (kSlotVacia);
-    canalActual = 0;
+    ponCanalActual (0);
     slotFx[0][0] = AudioEngine::kFxFlt;      // el canal 0 lleva FLT
     slotFx[3][0] = AudioEngine::kFxBit;      // y el 3, BIT
     selectPad (5);
@@ -3202,25 +3218,65 @@ void MainComponent::auditCanales()
     //  segunda la cumple una que no mueve nada, y entonces dos canales tendrian
     //  dos interruptores del mismo compresor.
     for (auto& f : slotFx) f.fill (kSlotVacia);
-    canalActual = 0; ponEnRanura (0, AudioEngine::kFxCmp);
-    canalActual = 4; ponEnRanura (0, AudioEngine::kFxCmp);
+    ponCanalActual (0); ponEnRanura (0, AudioEngine::kFxCmp);
+    ponCanalActual (4); ponEnRanura (0, AudioEngine::kFxCmp);
     const juce::String insertoDe0 = fila (0), insertoDe4 = fila (4);
 
     for (auto& f : slotFx) f.fill (kSlotVacia);
-    canalActual = 0; ponEnRanura (0, AudioEngine::kFxDly);
-    canalActual = 4; ponEnRanura (0, AudioEngine::kFxDly);
+    ponCanalActual (0); ponEnRanura (0, AudioEngine::kFxDly);
+    ponCanalActual (4); ponEnRanura (0, AudioEngine::kFxDly);
     const juce::String envioDe0 = fila (0), envioDe4 = fila (4);
+
+    //  3c. Y EL AJUSTE ES DEL CANAL, que es lo que hace falta de verdad desde
+    //      que un inserto puede estar en los dieciseis: con 3a y 3b dando ya la
+    //      MISMA forma -`[7,...]` en los dos-, solas no separan nada. Lo que
+    //      las separa es si el NUMERO viaja con la fila.
+    //
+    //      TRES cifras, y la tercera es la que impide que «sale a cero» lo
+    //      cumpla un codigo que BORRA el ajuste al cambiar de canal. Y por el
+    //      MANDO -`macroCtrl2` con `sendNotificationSync`, que es el
+    //      equivalente de `->onClick` en una tapa- y no llamando a
+    //      `setFxParam`: lo que se prueba es la ventana, y la ventana vive en
+    //      el callback.
+    for (auto& f : slotFx) f.fill (kSlotVacia);
+    ponCanalActual (0); ponEnRanura (0, AudioEngine::kFxCmp);
+    ponCanalActual (4); ponEnRanura (0, AudioEngine::kFxCmp);
+    ponCanalActual (0);
+    focusFx (AudioEngine::kFxCmp);
+    macroCtrl2.setValue (6.0, juce::sendNotificationSync);
+    const double ajusteEn0 = fxParam (AudioEngine::kFxCmp, 1).getValue();
+    ponCanalActual (4);
+    const double ajusteEn4 = fxParam (AudioEngine::kFxCmp, 1).getValue();
+    ponCanalActual (0);
+    const double ajusteVuelve = fxParam (AudioEngine::kFxCmp, 1).getValue();
 
     //  4. VACIAR UNA RANURA APAGA SU EFECTO **SOLO SI NO LE QUEDA OTRA**. Un
     //     envio puede vivir en tres canales, y quitarlo de uno no lo deja sin
     //     tapa: apagarlo ahi seria callar un delay que se sigue viendo.
-    canalActual = 0;
+    for (auto& f : slotFx) f.fill (kSlotVacia);
+    ponCanalActual (0); ponEnRanura (0, AudioEngine::kFxDly);
+    ponCanalActual (4); ponEnRanura (0, AudioEngine::kFxDly);
+    ponCanalActual (0);
     setFxEnabled (AudioEngine::kFxDly, true);
     ponEnRanura (0, kSlotVacia);                       // sigue en el canal 4
-    const int trasQuitarUna = fxOn[(size_t) AudioEngine::kFxDly] ? 1 : 0;
-    canalActual = 4;
+    const int trasQuitarUna = fxEncendido (AudioEngine::kFxDly) ? 1 : 0;
+    ponCanalActual (4);
     ponEnRanura (0, kSlotVacia);                       // ya no queda ninguna
-    const int trasQuitarLaUltima = fxOn[(size_t) AudioEngine::kFxDly] ? 1 : 0;
+    const int trasQuitarLaUltima = fxEncendido (AudioEngine::kFxDly) ? 1 : 0;
+
+    //  Y LA OTRA MITAD: UN INSERTO SE APAGA SIEMPRE. Desde esta tanda puede
+    //  estar en dos canales a la vez -es lo que la separa de un envio- y el
+    //  que se va es el de ESTE canal, con su propia instancia en el motor:
+    //  dejarlo encendido es una tapa menos y un compresor que sigue
+    //  comprimiendo. Con la guardia del envio puesta tambien aqui, sale 1.
+    for (auto& f : slotFx) f.fill (kSlotVacia);
+    ponCanalActual (0); ponEnRanura (0, AudioEngine::kFxCmp);
+    ponCanalActual (4); ponEnRanura (0, AudioEngine::kFxCmp);
+    ponCanalActual (0);
+    setFxEnabled (AudioEngine::kFxCmp, true);
+    ponEnRanura (0, kSlotVacia);                       // sigue en el canal 4
+    const int insertoTrasQuitar = fxEncendido (AudioEngine::kFxCmp) ? 1 : 0;
+    ponCanalActual (4); setFxEnabled (AudioEngine::kFxCmp, false);
 
     //  5. EL FADER DEL CANAL LLEGA AL MOTOR, por la TIRA de la mesa y no
     //     llamando a `setCanalGain`: lo que se prueba es el camino.
@@ -3238,8 +3294,12 @@ void MainComponent::auditCanales()
               << ",\"canal_pad5\":" << canalPad5 << ",\"fila_pad5\":" << filaPad5
               << ",\"inserto0\":" << insertoDe0 << ",\"inserto4\":" << insertoDe4
               << ",\"envio0\":" << envioDe0 << ",\"envio4\":" << envioDe4
+              << ",\"ajuste0\":" << juce::String (ajusteEn0, 2)
+              << ",\"ajuste4\":" << juce::String (ajusteEn4, 2)
+              << ",\"ajuste_vuelve\":" << juce::String (ajusteVuelve, 2)
               << ",\"tras_quitar_una\":" << trasQuitarUna
               << ",\"tras_quitar_ultima\":" << trasQuitarLaUltima
+              << ",\"inserto_tras_quitar\":" << insertoTrasQuitar
               << ",\"gan_canal6\":" << ganCanal6
               << ",\"mute_canal6\":" << muteCanal6
               << "}" << std::endl;
@@ -3247,6 +3307,42 @@ void MainComponent::auditCanales()
 
 void MainComponent::auditRanuras()
 {
+    //  0. LOS DIECISEIS CANALES NACEN EN EL MISMO SITIO.
+    //
+    //  Desde que un inserto es de CADA canal, `fxP` son dieciseis filas de
+    //  sesenta y tres numeros y el constructor las llena de `kFxDef`. Un
+    //  `std::array` con `{}` deja las quince de detras a CERO, y cero es un
+    //  valor valido en los tres parametros de casi todos los tipos: es el
+    //  fallo de `notaViva` y el del cero de `padAncho`, contado en 1008
+    //  casillas. El sintoma seria que el compresor del canal 7 abre con umbral
+    //  0 dB y ratio 1, o sea SIN COMPRIMIR, mientras la ficha dice lo que dice
+    //  el canal 0.
+    //
+    //  Y LO PRIMERO DE TODO, que es donde esta medida se equivoco antes de
+//  acertar: al final de la funcion salio `30 de 336` con el codigo
+//  perfecto — las comprobaciones de arriba mueven mandos, y un canal que
+//  alguien acaba de tocar no dice ya como NACIO. Se pregunta antes de
+//  tocar nada.
+//
+//  Se cuenta por (canal, tipo) y contra el canal CERO —que es donde
+    //  aterriza todo lo que ya estaba medido— y no contra `kFxDef` copiada
+    //  aqui: eso seria la tabla comparandose consigo misma, que es como
+    //  `Tests/icono.py` dio verde dos veces con la mascara del lanzador rota.
+    //  Los cinco ENVIOS resuelven al canal cero por `canalDeParam`, asi que
+    //  cuentan y salen iguales por construccion — que es exactamente lo que
+    //  dicen ser.
+    int canalesRaros = 0;
+    for (int c = 0; c < kNumCanales; ++c)
+        for (int f = 0; f < kNumFx; ++f)
+        {
+            bool igual = true;
+            for (int par = 0; par < 3; ++par)
+                if (std::abs (engine.getFxParam (c, f, par)
+                            - engine.getFxParam (0, f, par)) > 1.0e-6f)
+                    igual = false;
+            if (! igual) ++canalesRaros;
+        }
+
     auto mapa = [this]
     {
         juce::StringArray r;
@@ -3269,7 +3365,7 @@ void MainComponent::auditRanuras()
     ponEnRanura (0, 0);
     pulsa (fxButtons[0]);
     const int menuTrasLlena = ranuraEditada;
-    const int encendioAlTocar = fxOn[0] ? 1 : 0;
+    const int encendioAlTocar = fxEncendido (0) ? 1 : 0;
     abreMenuRanura (-1);
     setFxEnabled (0, false);
 
@@ -3281,7 +3377,7 @@ void MainComponent::auditRanuras()
     const juce::String trasElegir = mapa();
     const int menuTrasElegir = ranuraEditada;   // se cierra sola
     pulsa (fxButtons[2]);                       // y ahora ese boton enciende
-    const int enciendeDespues = fxOn[4] ? 1 : 0;
+    const int enciendeDespues = fxEncendido (4) ? 1 : 0;
     const juce::String mapaDespues = mapa();    // que no ha cambiado
     setFxEnabled (4, false);
 
@@ -3297,9 +3393,9 @@ void MainComponent::auditRanuras()
     //     desaparece sigue sonando y no hay donde tocarlo.
     for (int s = 0; s < kNumRanuras; ++s) ponEnRanura (s, s);
     setFxEnabled (3, true);
-    const int antesDeVaciar = fxOn[3] ? 1 : 0;
+    const int antesDeVaciar = fxEncendido (3) ? 1 : 0;
     ponEnRanura (3, kSlotVacia);
-    const int trasVaciar = fxOn[3] ? 1 : 0;
+    const int trasVaciar = fxEncendido (3) ? 1 : 0;
 
     //  5. LA REJILLA, Y NO SOLO LA DE HOY.
     //
@@ -3360,6 +3456,8 @@ void MainComponent::auditRanuras()
               << ",\"forma21\":\""        << forma (21) << "\""
               << ",\"tope_tarjeta\":"    << topeR
               << ",\"defectos_cruzados\":" << defectosQueNoCuadran
+              << ",\"canales\":"           << kNumCanales
+              << ",\"canales_raros\":"     << canalesRaros
               << ",\"menu_tras_vacia\":"   << menuTrasVacia
               << ",\"menu_tras_llena\":"   << menuTrasLlena
               << ",\"enciende_al_tocar\":" << encendioAlTocar
@@ -3572,8 +3670,8 @@ void MainComponent::auditRack()
             ponEnRanura (0, f);
             focusedFx = f;
             for (int p = 0; p < 3; ++p)
-                engine.setFxParam (f, p, (float) fxParam (f, p).getValue());
-            engine.setFxParam (f, 2, 1.0f);
+                engine.setFxParam (canalActual, f, p, (float) fxParam (f, p).getValue());
+            engine.setFxParam (canalActual, f, 2, 1.0f);
             //  `refreshMacroValues` y no `refrescaPlato`, que es donde esta
             //  medida se equivoco primero: la segunda enseña u oculta la curva
             //  grande del EQ y no toca el visor, asi que el plato se quedaba
@@ -3602,8 +3700,8 @@ void MainComponent::auditRack()
                     engine.copyFxScope (pre.data(), post.data(), kFxScopeBanco);
                     const int dd = dinamicaDeFx (f);
                     platoMini.setMuestras (pre.data(), post.data(), kFxScopeBanco, 33.0,
-                                           dd >= 0 ? engine.getDynReduccion (dd) : 0.0f,
-                                           engine.getLfoFase (f));
+                                           dd >= 0 ? engine.getDynReduccion (canalActual, dd) : 0.0f,
+                                           engine.getLfoFase (canalActual, f));
                 }
                 platoMini.ponVivo (engine.fxScopeVivo());
                 return std::make_pair (platoMini.vivos(),
@@ -3685,11 +3783,11 @@ void MainComponent::auditRack()
 
     setFxEnabled (AudioEngine::kFxDly, true);
     refrescaRanuras();
-    const int muteAntes = fxOn[(size_t) AudioEngine::kFxDly] ? 1 : 0;
+    const int muteAntes = fxEncendido (AudioEngine::kFxDly) ? 1 : 0;
     pulsa (rackMuteBtns[0]);
-    const int muteDespues = fxOn[(size_t) AudioEngine::kFxDly] ? 1 : 0;
+    const int muteDespues = fxEncendido (AudioEngine::kFxDly) ? 1 : 0;
     pulsa (rackMuteBtns[0]);
-    const int muteVuelve = fxOn[(size_t) AudioEngine::kFxDly] ? 1 : 0;
+    const int muteVuelve = fxEncendido (AudioEngine::kFxDly) ? 1 : 0;
 
     //  Y sobre una ranura VACIA no hace nada: no hay efecto que sacar de en
     //  medio, y un toque que apaga «lo que hubiera» apagaria el tipo del
@@ -3700,7 +3798,7 @@ void MainComponent::auditRack()
     auto encendidos = [this]
     {
         int n = 0;
-        for (int i = 0; i < kNumFx; ++i) if (fxOn[(size_t) i]) ++n;
+        for (int i = 0; i < kNumFx; ++i) if (fxEncendido (i)) ++n;
         return n;
     };
     const int mudoAntes = encendidos();
@@ -3788,6 +3886,9 @@ void MainComponent::auditRack()
               << ",\"medibles\":" << medibles
               << ",\"dichos\":["  << dichos .joinIntoString (",") << "]"
               << ",\"tipos\":" << kNumFx
+              << ",\"insertos\":"  << AudioEngine::numInsertos()
+              << ",\"canales\":"   << AudioEngine::kNumCanales
+              << ",\"buses\":"     << AudioEngine::numBuses()
               << ",\"fader\":[" << fader.getWidth() << "," << fader.getHeight() << "]"
               << ",\"mini\":["  << mini.getWidth()  << "," << mini.getHeight()  << "]"
               << ",\"mando\":[" << mando.getWidth() << "," << mando.getHeight() << "]"
@@ -3880,8 +3981,8 @@ void MainComponent::auditEq()
     //  del recorrido, o sea unos +6 dB.
     arrastra ({ x2, y0 }, { x2, y0 - caja.getHeight() / 4 });
 
-    const float g2 = engine.getEqGain (2);
-    const float g4 = engine.getEqGain (4);
+    const float g2 = engine.getEqGain (canalActual, 2);
+    const float g4 = engine.getEqGain (canalActual, 4);
 
     //  2. Y EL MOTOR SE ENTERA. El espejo y el motor son dos sitios y un
     //     camino: si solo se escribiera el espejo, la curva subiria y no
@@ -3895,8 +3996,8 @@ void MainComponent::auditEq()
     //     dibujada y la que suena dejan de estar de acuerdo y un nodo salta al
     //     otro lado de su vecino.
     arrastra ({ x2, y0 - caja.getHeight() / 4 }, { caja.getRight() + 40, y0 });
-    const float f2 = engine.getEqFreq (2);
-    const float f3 = engine.getEqFreq (3);
+    const float f2 = engine.getEqFreq (canalActual, 2);
+    const float f3 = engine.getEqFreq (canalActual, 3);
     const int   cruza = (f2 < f3) ? 0 : 1;
 
     //  4. UN TOQUE EN EL AIRE NO ARRASTRA NADA. `EqCurve` coge el nodo mas
@@ -3908,7 +4009,7 @@ void MainComponent::auditEq()
               { caja.getX() + caja.getWidth() / 2, caja.getBottom() - 1 });
     float peorLejos = 0.0f;
     for (int b = 0; b < Eq5::kBands; ++b)
-        peorLejos = juce::jmax (peorLejos, std::abs (engine.getEqGain (b)));
+        peorLejos = juce::jmax (peorLejos, std::abs (engine.getEqGain (canalActual, b)));
 
     //  5. LA CURVA QUE SE DIBUJA NO ES PLANA CUANDO LAS BANDAS NO LO ESTAN.
     //     Es la regla que faltaba y la que habria cazado el fallo de la foto:
@@ -3975,10 +4076,10 @@ void MainComponent::auditEq()
     abreBandaEq (2);
     ponBandaEq (2, Eq5::kFreqDef[2], 8.0f);
     if (auto* t = eqTipoBtns[Eq5::pasoAlto]) t->onClick();
-    const int   tipoTrasChip = engine.getEqTipo (2);
+    const int   tipoTrasChip = engine.getEqTipo (canalActual, 2);
     const float visibleTrasChip = eqEspejo.gainVisible (2);
     eqQKnob.setValue (4.5, juce::sendNotificationSync);
-    const float qMotor  = engine.getEqQ (2);
+    const float qMotor  = engine.getEqQ (canalActual, 2);
     const float qEspejo = eqEspejo.qDe (2);
 
     //  8. LA BANDA MAS AGUDA LLEGA A DONDE DICE EL MANDO. El recorrido pasa a
@@ -4001,7 +4102,7 @@ void MainComponent::auditEq()
     abreBandaEq (-1);
     for (int b = 0; b < Eq5::kBands; ++b) ponBandaEq (b, Eq5::kFreqDef[b], 0.0f);
     ponBandaEq (4, Eq5::kFreqMax, 10.0f);
-    const float fTope = engine.getEqFreq (4);
+    const float fTope = engine.getEqFreq (canalActual, 4);
     {
         juce::Image lienzo (juce::Image::ARGB, juce::jmax (1, caja.getWidth()),
                             juce::jmax (1, caja.getHeight()), true);
@@ -4009,6 +4110,41 @@ void MainComponent::auditEq()
         eqCurva.paint (gg);
     }
     const float dbEnTope = eqEspejo.respuestaEnDb (Eq5::kFreqMax);
+
+    //  9. Y LA CURVA ES DEL CANAL, que es la queja con la que empezo la tanda
+    //     dicha en su efecto: «solo es posible que un ecualizador funcione y
+    //     sea colocado en un canal solo». Hay DIECISEIS `Eq5`, uno por canal.
+    //
+    //     Con CUATRO cifras porque el EQ tiene dos lados y los dos pueden
+    //     mentir por su cuenta: lo que el MOTOR guarda en el canal 0 y en el
+    //     4, y lo que la curva DIBUJA al llegar al 4 y al volver al 0. Solo
+    //     las dos primeras las cumple una app con dieciseis `Eq5` y un espejo
+    //     que no se recarga -la curva se quedaria enseñando la del canal
+    //     anterior sobre el filtro nuevo- y solo las dos ultimas una que
+    //     recarga el espejo de un motor con un solo ecualizador.
+    //
+    //     La cuarta es ademas la que impide que «en el 4 sale plana» lo cumpla
+    //     un codigo que BORRA la curva al cambiar de canal.
+    abreBandaEq (-1);
+    for (int c : { 0, 4 })
+    {
+        ponCanalActual (c);
+        for (int b = 0; b < Eq5::kBands; ++b) ponBandaEq (b, Eq5::kFreqDef[b], 0.0f);
+    }
+    ponCanalActual (0);
+    ponBandaEq (2, Eq5::kFreqDef[2], 9.0f);
+    const float curvaEn0 = engine.getEqGain (0, 2);
+    const float curvaEn4 = engine.getEqGain (4, 2);
+    ponCanalActual (4);
+    const float espejoEn4 = eqEspejo.gainDe (2);
+    ponCanalActual (0);
+    const float espejoVuelve = eqEspejo.gainDe (2);
+
+    for (int c : { 4, 0 })
+    {
+        ponCanalActual (c);
+        for (int b = 0; b < Eq5::kBands; ++b) ponBandaEq (b, Eq5::kFreqDef[b], 0.0f);
+    }
 
     abreBandaEq (-1);
     for (int b = 0; b < Eq5::kBands; ++b)
@@ -4044,6 +4180,10 @@ void MainComponent::auditEq()
               << ",\"f_max\":"         << juce::String (Eq5::kFreqMax, 0)
               << ",\"f_tope\":"        << juce::String (fTope, 1)
               << ",\"db_tope\":"       << juce::String (dbEnTope, 2)
+              << ",\"curva_c0\":"      << juce::String (curvaEn0, 2)
+              << ",\"curva_c4\":"      << juce::String (curvaEn4, 2)
+              << ",\"espejo_c4\":"     << juce::String (espejoEn4, 2)
+              << ",\"espejo_vuelve\":" << juce::String (espejoVuelve, 2)
               << "}" << std::endl;
 }
 
@@ -4111,16 +4251,16 @@ void MainComponent::auditDinamica()
     macroCtrl1.setValue (-12.0, juce::sendNotificationSync);   // TECHO
     macroCtrl2.setValue (200.0, juce::sendNotificationSync);   // SOLTAR
 
-    const float cmpUmbral = engine.getDynP0 (0);
-    const float cmpRatio  = engine.getDynP1 (0);
-    const float limTecho  = engine.getDynP0 (3);
-    const float limSoltar = engine.getDynP1 (3);
+    const float cmpUmbral = engine.getDynP0 (canalActual, 0);
+    const float cmpRatio  = engine.getDynP1 (canalActual, 0);
+    const float limTecho  = engine.getDynP0 (canalActual, 3);
+    const float limSoltar = engine.getDynP1 (canalActual, 3);
 
     //  4. LA REDUCCION SE LEE, Y SOLO CON EL DEDO FUERA. Un compresor que no
     //     dice cuanto comprime es invisible; y una casilla que dice la
     //     reduccion mientras se mueve el mando es un control contando otra
     //     cosa que su propio numero. Las DOS mitades.
-    engine.setFxParam (AudioEngine::kFxLim, 2, 1.0f);
+    engine.setFxParam (canalActual, AudioEngine::kFxLim, 2, 1.0f);
     engine.setCanalSend (0, AudioEngine::kFxLim, 1.0f);
     engine.setPadGain (0, 1.0f);
 
@@ -4163,17 +4303,26 @@ void MainComponent::auditDinamica()
     const juce::String leeTocado = macroReadout (2);
     setMacroTouched (2, false);
 
+    //  4b. Y LA REDUCCION ES DEL CANAL. Hay DIECISEIS limitadores, uno por
+    //      canal, y el pad 0 vive en el canal cero: el del cuatro no ha visto
+    //      una muestra en su vida. Con DOS cifras, o «el limitador reduce» lo
+    //      cumple igual un motor con UN limitador compartido — que es
+    //      exactamente lo que habia antes de esta tanda y lo que dejaria dos
+    //      canales enseñando el mismo medidor de reduccion.
+    const float redEn0 = engine.getDynReduccion (0, 3);
+    const float redEn4 = engine.getDynReduccion (4, 3);
+
     //  5. Y VUELVEN DEL FICHERO DE PROYECTO. Se escribe con el MISMO arbol que
     //     escribe el fichero, se BORRA a mano —si al volver sigue puesto no es
     //     que se haya guardado, es que nadie lo quito— y se abre.
     auto estado = captureState();
-    engine.setFxParam (AudioEngine::kFxCmp, 0, -18.0f);
-    engine.setFxParam (AudioEngine::kFxLim, 0,  -1.0f);
+    engine.setFxParam (canalActual, AudioEngine::kFxCmp, 0, -18.0f);
+    engine.setFxParam (canalActual, AudioEngine::kFxLim, 0,  -1.0f);
     ponEnRanura (0, kSlotVacia);
     ponEnRanura (1, kSlotVacia);
     applyState (estado);
-    const float cmpVuelve = engine.getDynP0 (0);
-    const float limVuelve = engine.getDynP0 (3);
+    const float cmpVuelve = engine.getDynP0 (canalActual, 0);
+    const float limVuelve = engine.getDynP0 (canalActual, 3);
     const int   r0Vuelve  = slotFx[0][0];
     const int   r1Vuelve  = slotFx[0][1];
 
@@ -4193,6 +4342,8 @@ void MainComponent::auditDinamica()
               << ",\"lim_soltar\":" << juce::String (limSoltar, 2)
               << ",\"lee_suelto\":\"" << leeSuelto << "\""
               << ",\"lee_tocado\":\"" << leeTocado << "\""
+              << ",\"red_c0\":"     << juce::String (redEn0, 2)
+              << ",\"red_c4\":"     << juce::String (redEn4, 2)
               << ",\"cmp_vuelve\":" << juce::String (cmpVuelve, 2)
               << ",\"lim_vuelve\":" << juce::String (limVuelve, 2)
               << ",\"r0_vuelve\":"  << r0Vuelve
@@ -4256,9 +4407,13 @@ void MainComponent::auditAuto()
     //     que vuelven al espejo Y los que tiene el MOTOR. Solo lo primero lo
     //     cumple una lista que se lee del XML y no se publica nunca -la
     //     automatizacion volveria escrita y muda-.
+    //  Y CON UN INSERTO EN UN CANAL QUE NO ES EL CERO, que es la mitad nueva:
+    //  el 3 es DLY -un ENVIO, asi que su canal colapsa al cero escriba quien
+    //  escriba- y el 0 es FLT en el canal 4. Con los dos en el cero, «vuelve el
+    //  canal» lo cumpliria tambien un fichero que no lo guarda.
     autoEventos.clear();
-    autoEventos.push_back ({ 17, 3, 2, 0.42f });
-    autoEventos.push_back ({ 48, 0, 0, -0.75f });
+    autoEventos.push_back ({ 17, 3, 2, 0, 0.42f });
+    autoEventos.push_back ({ 48, 0, 0, 4, -0.75f });
     publicaAutomacion();
     const auto arbol = captureState();
     autoEventos.clear();
@@ -4269,7 +4424,7 @@ void MainComponent::auditAuto()
     juce::String vuelta;
     for (const auto& e : autoEventos)
         vuelta << e.paso << ":" << (int) e.fx << ":" << (int) e.par << ":"
-               << juce::String (e.valor, 2) << ";";
+               << juce::String (e.valor, 2) << ":" << (int) e.canal << ";";
 
     std::cout << "{\"auto\":1"
               << ",\"armado_tras_tocar\":" << armadoTrasTocar

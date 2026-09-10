@@ -2063,7 +2063,7 @@ void MainComponent::paintRackSheetContent (juce::Graphics& g)
     {
         if (rackSends[s] == nullptr) continue;
         const int fx = enRanura (s);
-        rackSends[s]->setAlpha (fx >= 0 && fxOn[(size_t) fx] ? 1.0f : 0.5f);
+        rackSends[s]->setAlpha (fx >= 0 && fxEncendido (fx) ? 1.0f : 0.5f);
     }
 }
 
@@ -2680,7 +2680,7 @@ void MainComponent::paintXySheetContent (juce::Graphics& g)
         row = antesDe (antesDe (row, xyLatchButton), xyCloseButton);
         pintaTitulo (g, row,
                  T ("XY") + "  " + dot + "  " + juce::String (fxDefs[xyFx].name)
-                      + "  " + dot + "  " + (fxOn[(size_t) xyFx] ? T ("SUENA") : T ("EN ESPERA")), "titulo", true);
+                      + "  " + dot + "  " + (fxEncendido (xyFx) ? T ("SUENA") : T ("EN ESPERA")), "titulo", true);
     }
 
     g.setColour (ZatiColours::inkDim);

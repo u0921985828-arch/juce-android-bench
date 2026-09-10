@@ -274,7 +274,7 @@ MainComponent::MainComponent()
                 engine.setPadCanal (selectedPad, i);
                 //  Y LA FILA DE LA CARA CON EL, que es para lo que el canal
                 //  existe: mover el pad de canal cambia sus seis ranuras.
-                canalActual = i;
+                ponCanalActual (i);
                 refrescaRanuras();
                 refrescaCanalDelPad();
                 if (rackSheet.isVisible()) refreshRack();
@@ -688,7 +688,7 @@ MainComponent::MainComponent()
             //  canal elegido y no dos. Con un `rackCanal` propio, la fila de la
             //  cara y la del rack dirian cosas distintas del mismo aparato — que
             //  es el desajuste que el `rackPad` de antes tenia con `selectPad`.
-            b->onClick = [this, i] { canalActual = i; refrescaRanuras(); refreshRack(); };
+            b->onClick = [this, i] { ponCanalActual (i); refrescaRanuras(); refreshRack(); };
             rackSheet.cuerpo.addAndMakeVisible (b);
             rackPadBtns.add (b);
         }
@@ -3339,7 +3339,7 @@ MainComponent::MainComponent()
             //  Al pasar a momentaneo con el dedo levantado, el efecto no puede
             //  quedarse colgado sonando: el modo cambia lo que significa
             //  SOLTAR, y ahora mismo esta soltado.
-            if (! xyLatch && ! xyPad.isTouched() && fxOn[(size_t) xyFx])
+            if (! xyLatch && ! xyPad.isTouched() && fxEncendido (xyFx))
                 setFxEnabled (xyFx, false);
             status.setText (xyLatch ? T ("XY fijo - se queda donde lo dejes")
                                     : T ("XY momentaneo - suena mientras tocas"),
@@ -3545,11 +3545,27 @@ MainComponent::MainComponent()
     status.setText (T ("Toca un pad para sonar"), juce::dontSendNotification);
     addAndMakeVisible (status);
 
-    // Every parameter reaches the engine once, so the DSP and the knobs agree
-    // before anything is touched.
+    //  CADA PARAMETRO LLEGA AL MOTOR UNA VEZ, para que el DSP y los mandos
+    //  esten de acuerdo antes de tocar nada — Y EN LOS DIECISEIS CANALES.
+    //
+    //  Esa promesa la cumplia MEDIA regla: `pushFxParam` escribe en
+    //  `canalActual`, que aqui vale cero, asi que los quince de detras se
+    //  quedaban con `kFxDef` y el cero con lo que el MANDO acaba resolviendo.
+    //  Y no son el mismo numero: un `Slider` con paso 0.01 redondea el 0.707
+    //  de la resonancia a 0.71, o sea que abrir el canal cuatro enseñaba 0.71
+    //  con el motor en 0.707 hasta que alguien moviera el mando. Lo canto
+    //  `Tests/ranuras.py` con su cifra — `30 de 336`, que son quince canales
+    //  por las dos resonancias, FLT y HPF.
+    //
+    //  Los cinco ENVIOS se colapsan al canal cero dentro de `fxParamDe`, asi
+    //  que escribirlos dieciseis veces es escribir dieciseis veces lo mismo y
+    //  no hace falta una lista aparte que diga cuales.
     for (int f = 0; f < kNumFx; ++f)
         for (int pi = 0; pi < 3; ++pi)
-            pushFxParam (f, pi);
+        {
+            const float v = (float) fxParam (f, pi).getValue();
+            for (int c = 0; c < kNumCanales; ++c) engine.setFxParam (c, f, pi, v);
+        }
 
     //  Accessible names.
     //
@@ -4050,7 +4066,7 @@ juce::String MainComponent::macroReadout (int idx) const
     const int d = dinamicaDeFx (f);
     if (p == 2 && d >= 0 && ! macroTouched[2])
     {
-        const float red = engine.getDynReduccion (d);
+        const float red = engine.getDynReduccion (canalActual, d);
         if (red > 0.05f)
             return Lang::ltr ("-" + juce::String (red, 1) + " dB");
     }
@@ -4336,13 +4352,13 @@ void MainComponent::pushFxParam (int f, int pi)
     //  fuese un mando; con la automatizacion hay un segundo cliente y esta en
     //  el hilo de audio, asi que copiarlo habria sido la misma regla escrita
     //  dos veces. Ver AudioEngine::setFxParam.
-    engine.setFxParam (f, pi, v);
+    engine.setFxParam (canalActual, f, pi, v);
 
     //  Y SI ESTA ARMADO, SE ESCRIBE. Aqui y no en `onValueChange` del mando:
     //  por esta funcion pasan TODOS los caminos que mueven un parametro -el
     //  mando, el pad XY, la curva del EQ y el interruptor- y escribir en cada
     //  uno serian cuatro reglas.
-    anotaAutomacion (f, pi, v);
+    anotaAutomacion (canalActual, f, pi, v);
 }
 
 //  UN EVENTO POR PASO Y POR PARAMETRO, y el ultimo gana.
@@ -4352,14 +4368,23 @@ void MainComponent::pushFxParam (int f, int pi)
 //  es lo que hace un groovebox y lo que se puede aprender sin leer nada. La
 //  alternativa -borrar el tramo entero al entrar en el- es "latch", y con ella
 //  una pasada en la que no tocas nada BORRA lo que habia.
-void MainComponent::anotaAutomacion (int fx, int par, float v)
+//
+//  Y CON CANAL, que es la otra mitad desde que un inserto es de uno: el evento
+//  dice DONDE se aplica, o un barrido de filtro escrito en el canal cuatro
+//  volveria en el cero. Un envio no tiene canal que guardar y `canalDeParam` lo
+//  colapsa antes de escribirlo, asi que dos pasadas por el mismo paso desde dos
+//  canales distintos siguen siendo UN evento y no dos.
+void MainComponent::anotaAutomacion (int canal, int fx, int par, float v)
 {
     if (! autoArmado) return;
     const int paso = engine.pasoDeCancion();
     if (paso < 0) return;                    // sin cancion rodando no hay donde
 
+    const auto cc = (juce::uint8) AudioEngine::canalDeParam (canal, fx);
+
     for (auto& e : autoEventos)
-        if (e.paso == paso && e.fx == (juce::uint8) fx && e.par == (juce::uint8) par)
+        if (e.paso == paso && e.fx == (juce::uint8) fx && e.par == (juce::uint8) par
+              && e.canal == cc)
         {
             e.valor = v;
             return;
@@ -4375,7 +4400,7 @@ void MainComponent::anotaAutomacion (int fx, int par, float v)
         return;
     }
 
-    autoEventos.push_back ({ paso, (juce::uint8) fx, (juce::uint8) par, v });
+    autoEventos.push_back ({ paso, (juce::uint8) fx, (juce::uint8) par, cc, v });
 }
 
 //  El espejo al motor. Se publica al SOLTAR el mando y al parar el transporte,
@@ -4417,7 +4442,7 @@ void MainComponent::vaciaAutomacion()
 void MainComponent::setFxEnabled (int f, bool on)
 {
     if (! juce::isPositiveAndBelow (f, kNumFx)) return;
-    fxOn[(size_t) f] = on;
+    ponFxEncendido (f, on);
     //  La luz va a la RANURA donde este ese tipo, que ya no es su indice. Un
     //  tipo que no esta puesto no tiene tapa que encender, y no se pierde
     //  nada: `refrescaRanuras` vuelve a pintar las seis desde `slotFx`.
@@ -4445,7 +4470,7 @@ void MainComponent::setFxEnabled (int f, bool on)
 void MainComponent::ponBandaEq (int b, float hz, float dB)
 {
     eqEspejo.ponBanda (b, hz, dB);
-    engine.setEqBand  (b, hz, dB);
+    engine.setEqBand  (canalActual, b, hz, dB);
     eqCurva.repaint();
 }
 
@@ -4455,14 +4480,14 @@ void MainComponent::ponBandaEq (int b, float hz, float dB)
 void MainComponent::ponTipoEq (int b, int t)
 {
     eqEspejo.ponTipo (b, t);
-    engine.setEqTipo  (b, t);
+    engine.setEqTipo  (canalActual, b, t);
     eqCurva.repaint();
 }
 
 void MainComponent::ponQEq (int b, float q)
 {
     eqEspejo.ponQ (b, q);
-    engine.setEqQ  (b, q);
+    engine.setEqQ  (canalActual, b, q);
     eqCurva.repaint();
 }
 
@@ -4518,9 +4543,9 @@ void MainComponent::refrescaEq()
 {
     for (int b = 0; b < Eq5::kBands; ++b)
     {
-        eqEspejo.ponBanda (b, engine.getEqFreq (b), engine.getEqGain (b));
-        eqEspejo.ponTipo  (b, engine.getEqTipo (b));
-        eqEspejo.ponQ     (b, engine.getEqQ (b));
+        eqEspejo.ponBanda (b, engine.getEqFreq (canalActual, b), engine.getEqGain (canalActual, b));
+        eqEspejo.ponTipo  (b, engine.getEqTipo (canalActual, b));
+        eqEspejo.ponQ     (b, engine.getEqQ (canalActual, b));
     }
     eqCurva.repaint();
     if (eqBandaSheet.isVisible()) refrescaBandaEq();
@@ -4587,43 +4612,79 @@ void MainComponent::ponEnRanura (int ranura, int fx)
     if (fx != kSlotVacia && ! juce::isPositiveAndBelow (fx, kNumFx)) return;
     const size_t c = (size_t) juce::jlimit (0, kNumCanales - 1, canalActual);
 
-    //  UN INSERTO, UN CANAL. Su estado en el motor es uno solo -un filtro, un
-    //  compresor, un congelador- asi que dos canales con el mismo inserto
-    //  serian dos ventanas al mismo aparato, con dos interruptores que se
-    //  contradicen. Y MUEVE en vez de rechazar: si el tipo ya estaba en otro
-    //  sitio, se va de alli. Rechazar dejaria un toque sin efecto visible, que
-    //  se lee como que el boton no responde.
+    //  UN TIPO, UNA RANURA — DENTRO DE UN CANAL, y ya no fuera de el.
     //
-    //  UN ENVIO ES DE TODOS, que es la otra mitad y no una excepcion: DLY, REV,
-    //  CHO, FLA y PHA SUMAN, y una linea de retardo existe justo para que
-    //  varias fuentes entren en la misma cola. Restringirlos a un canal es lo
-    //  contrario de lo que un envio significa. Lo dice `sustituye` y no una
-    //  lista escrita aqui: la misma tabla que el hilo de audio usa para restar
-    //  seco, que es lo unico que separa las dos familias.
-    const bool inserto = AudioEngine::sustituye (fx);
+    //  Ese bucle que vaciaba la ranura de los otros quince era correcto el dia
+    //  que se escribio y su premisa era la que se acaba de quitar: «su estado
+    //  en el motor es uno solo, asi que dos canales con el mismo inserto serian
+    //  dos ventanas al mismo aparato». Ahora hay DIECISEIS `Inserto`, uno por
+    //  canal, asi que poner el ecualizador en el canal cuatro deja de
+    //  quitarselo al cero — que es la queja con la que empezo esta tanda. La
+    //  forma de quitar el bucle era quitarle la premisa.
+    //
+    //  Y dentro del canal SIGUE MOVIENDO en vez de rechazar: rechazar dejaria
+    //  un toque sin efecto visible, que se lee como que el boton no responde.
     if (fx != kSlotVacia)
-    {
-        const int mismoCanal = slotDeFxEn ((int) c, fx);
-        if (mismoCanal >= 0 && mismoCanal != ranura)
-            slotFx[c][(size_t) mismoCanal] = kSlotVacia;   // dentro del canal, siempre
-        else if (inserto)
-            for (int oc = 0; oc < kNumCanales; ++oc)
-                if (oc != (int) c)
-                    if (const int s = slotDeFxEn (oc, fx); s >= 0)
-                        slotFx[(size_t) oc][(size_t) s] = kSlotVacia;
-    }
+        if (const int mismoCanal = slotDeFxEn ((int) c, fx);
+            mismoCanal >= 0 && mismoCanal != ranura)
+            slotFx[c][(size_t) mismoCanal] = kSlotVacia;
 
-    //  Y lo que SALE de la ranura se apaga, pero SOLO si no le queda ningun
-    //  otro sitio: un envio puede estar en tres canales y vaciarlo de uno no lo
-    //  deja sin tapa. Un efecto encendido al que no le queda ninguna sigue
-    //  sonando y no hay donde tocarlo — la hermana de «ningun camino puede
-    //  dejar la app en silencio» por el otro lado.
+    //  Y lo que SALE de la ranura se apaga. Un INSERTO se apaga siempre: el
+    //  que se va es el de ESTE canal y su instancia se queda encendida sin una
+    //  tapa donde tocarla. Un ENVIO solo si no le queda ningun otro sitio en
+    //  ningun canal, porque su fila es UNA — apagarlo desde el canal cuatro
+    //  callaria el delay que el canal cero sigue enseñando.
+    //
+    //  Lo dice `sustituye` y no una lista escrita aqui: la misma tabla con la
+    //  que el hilo de audio decide si resta seco, que es lo unico que separa
+    //  las dos familias.
     const int salia = slotFx[c][(size_t) ranura];
     slotFx[c][(size_t) ranura] = fx;
-    if (salia >= 0 && salia != fx && fxOn[(size_t) salia] && canalDeFx (salia) < 0)
+    if (salia >= 0 && salia != fx && fxEncendido (salia)
+          && (AudioEngine::sustituye (salia) || canalDeFx (salia) < 0))
         setFxEnabled (salia, false);
 
     refrescaRanuras();
+}
+
+//  EL CANAL DE DELANTE, POR UNA PUERTA — y los sesenta y tres mandos detras.
+//
+//  Los mandos dejan de ser el ALMACEN y pasan a ser una VENTANA al canal
+//  actual: mil ocho deslizadores moverian el recuento de componentes y con el
+//  los TOUCH que se leen contra la tanda anterior, asi que quien tiene los
+//  1008 numeros es el MOTOR. La cara los relee.
+//
+//  Y EL ORDEN NO ES UN DETALLE: `canalActual` primero y la recarga despues,
+//  siempre con `dontSendNotification`. Al reves, el `onValueChange` del mando
+//  dispararia `pushFxParam` con el canal NUEVO ya puesto y escribiria el
+//  ajuste del viejo encima — en silencio, y solo a partir del segundo cambio.
+//  Es el modo de fallo que `Tests/canales.py` 3c mide con TRES cifras.
+void MainComponent::ponCanalActual (int c)
+{
+    canalActual = juce::jlimit (0, kNumCanales - 1, c);
+    recargaFxDelCanal();
+}
+
+void MainComponent::recargaFxDelCanal()
+{
+    for (int f = 0; f < kNumFx; ++f)
+        for (int pi = 0; pi < 3; ++pi)
+            fxParam (f, pi).setValue ((double) engine.getFxParam (canalActual, f, pi),
+                                      juce::dontSendNotification);
+
+    //  Y la luz sale del MISMO numero que el mando -la mezcla en cero es
+    //  «apagado»- pero de LOS DIECISEIS y no solo del de delante: `fxOn` es la
+    //  tabla que leen el rack, el XY y la lampara de la fila, y llenar una fila
+    //  de dieciseis la dejaria vieja en cuanto alguien preguntara por otra.
+    //  Cuesta 336 lecturas relajadas y no se puede quedar a medias.
+    for (int c = 0; c < kNumCanales; ++c)
+        for (int f = 0; f < kNumFx; ++f)
+            fxOn[(size_t) c][(size_t) f] = engine.getFxParam (c, f, 2) > 0.001f;
+
+    //  El EQ tiene su propio espejo -es de donde se PINTA la curva- y tambien
+    //  es del canal. `refrescaEq` ya lo lee del motor, que es quien acota.
+    refrescaEq();
+    refreshMacroValues();
 }
 
 //  Rotulo, dibujo y luz de las seis tapas. Se llama entera y no por ranura
@@ -4657,7 +4718,7 @@ void MainComponent::refrescaRanuras()
             b->getProperties().remove ("valor");
         }
 
-        b->setToggleState (fx >= 0 && fxOn[(size_t) fx], juce::dontSendNotification);
+        b->setToggleState (fx >= 0 && fxEncendido (fx), juce::dontSendNotification);
 
         //  Y EL NOMBRE PARA QUIEN NO VE LA PANTALLA. El rotulo YA es el nombre
         //  -eso lo hace `retranslateUi` para todo el arbol- y ahi esta el
@@ -4693,7 +4754,7 @@ void MainComponent::refrescaRanuras()
                                                            : Iconos::Id::envio));
                 rb->getProperties().remove ("valor");
             }
-            rb->setToggleState (fx >= 0 && fxOn[(size_t) fx], juce::dontSendNotification);
+            rb->setToggleState (fx >= 0 && fxEncendido (fx), juce::dontSendNotification);
             rb->setTitle (fx < 0 ? T ("VACIA") : juce::String (fxDefs[fx].name));
         }
 
@@ -4706,14 +4767,14 @@ void MainComponent::refrescaRanuras()
         if (auto* m = (s < rackMuteBtns.size() ? rackMuteBtns[s] : nullptr))
         {
             m->setEnabled (fx >= 0);
-            m->setToggleState (fx >= 0 && fxOn[(size_t) fx], juce::dontSendNotification);
+            m->setToggleState (fx >= 0 && fxEncendido (fx), juce::dontSendNotification);
             //  Y EN PALABRAS PARA QUIEN NO VE LA PANTALLA: sin rotulo esta tapa
             //  se anuncia como «boton» seis veces seguidas, que es lo que la
             //  tanda de la feria subio del 18 % al 79 %.
             m->setTitle (fx < 0 ? T ("VACIA")
                                 : juce::String (fxDefs[fx].name) + " "
                                   + juce::String::charToString ((juce::juce_wchar) 0x00B7) + " "
-                                  + T (fxOn[(size_t) fx] ? "ENCENDIDO" : "APAGADO"));
+                                  + T (fxEncendido (fx) ? "ENCENDIDO" : "APAGADO"));
         }
 
         //  Y LA MISMA FILA EN EL XY, que es la tercera ventana a la ranura.
@@ -4840,7 +4901,7 @@ void MainComponent::fxTapped (int f)
 {
     if (! juce::isPositiveAndBelow (f, kNumFx)) return;
 
-    const bool wasOn = fxOn[(size_t) f];
+    const bool wasOn = fxEncendido (f);
     setFxEnabled (f, ! wasOn);
     focusFx (f);
 
@@ -4871,7 +4932,7 @@ void MainComponent::toggleXyPanel()
 {
     if (xyPanel.isVisible())
     {
-        if (! xyLatch && ! xyWasOn && fxOn[(size_t) xyFx]) setFxEnabled (xyFx, false);
+        if (! xyLatch && ! xyWasOn && fxEncendido (xyFx)) setFxEnabled (xyFx, false);
         xyPad.setTouched (false);
         xyPanel.setVisible (false);
         xyButton.setToggleState (false, juce::dontSendNotification);
@@ -4897,7 +4958,7 @@ void MainComponent::selectXyFx (int f)
     //  dejaria abierto para siempre: el dedo que lo encendio ya no va a
     //  levantarse sobre EL. Se apaga al salir de el, no al entrar en el
     //  siguiente, que es cuando todavia se sabe cual era.
-    if (! xyLatch && f != xyFx && ! xyPad.isTouched() && fxOn[(size_t) xyFx])
+    if (! xyLatch && f != xyFx && ! xyPad.isTouched() && fxEncendido (xyFx))
         setFxEnabled (xyFx, false);
 
     xyFx = f;
@@ -4946,14 +5007,14 @@ void MainComponent::xyTouched (bool down)
     //  en la cara. Lo que cambia entre los dos modos es lo que hace SOLTAR.
     if (xyLatch)
     {
-        if (down && ! fxOn[(size_t) xyFx]) setFxEnabled (xyFx, true);
+        if (down && ! fxEncendido (xyFx)) setFxEnabled (xyFx, true);
         refreshXyPad();
         return;
     }
 
     if (down)
     {
-        xyWasOn = fxOn[(size_t) xyFx];
+        xyWasOn = fxEncendido (xyFx);
         if (! xyWasOn) setFxEnabled (xyFx, true);
     }
     else if (! xyWasOn)
@@ -5087,9 +5148,9 @@ void MainComponent::macroMoved (int idx)
     if (idx == 2)
     {
         const bool on = ks[2]->getValue() > 0.001;
-        if (on != fxOn[(size_t) focusedFx])
+        if (on != fxEncendido (focusedFx))
         {
-            fxOn[(size_t) focusedFx] = on;
+            ponFxEncendido (focusedFx, on);
             //  A la RANURA del tipo enfocado, no a su indice. Ver setFxEnabled.
             if (const int s = slotDeFx (focusedFx); s >= 0)
                 fxButtons[s]->setToggleState (on, juce::dontSendNotification);
@@ -5629,7 +5690,7 @@ void MainComponent::closeAllSheets()
     //  - tocando fuera, o con la tecla de cerrar - se lleva el panel por
     //  delante sin que llegue nunca el mouseUp. Sin esto te quedas con un
     //  delive abierto sobre el master y sin panel con el que quitarlo.
-    if (xyPanel.isVisible() && ! xyLatch && ! xyWasOn && fxOn[(size_t) xyFx])
+    if (xyPanel.isVisible() && ! xyLatch && ! xyWasOn && fxEncendido (xyFx))
         setFxEnabled (xyFx, false);
     xyPad.setTouched (false);
     xyPanel.setVisible (false);
@@ -6620,7 +6681,7 @@ void MainComponent::selectPad (int index)
     const int canalDelPad = engine.getPadCanal (index);
     if (canalDelPad != canalActual)
     {
-        canalActual = canalDelPad;
+        ponCanalActual (canalDelPad);
         refrescaRanuras();
         if (rackSheet.isVisible()) refreshRack();
     }
@@ -8772,7 +8833,7 @@ juce::ValueTree MainComponent::captureState() const
             juce::String filas;
             for (const auto& e : autoEventos)
                 filas << e.paso << " " << (int) e.fx << " " << (int) e.par << " "
-                      << juce::String (e.valor, 4) << ";";
+                      << juce::String (e.valor, 4) << " " << (int) e.canal << ";";
             song.setProperty ("auto", filas, nullptr);
         }
         s.addChild (song, -1, nullptr);
@@ -8790,10 +8851,29 @@ juce::ValueTree MainComponent::captureState() const
     s.setProperty ("selectedPattern", selectedPattern, nullptr);
 
     juce::ValueTree fx ("FX");
-    for (int f = 0; f < kNumFx; ++f)
-        for (int pi = 0; pi < 3; ++pi)
-            fx.setProperty (juce::String (fxDefs[f].name) + juce::String (pi),
-                            fxParams[f * 3 + pi]->getValue(), nullptr);
+    //  LOS SESENTA Y TRES PARAMETROS DE CADA CANAL, y LEIDOS DEL MOTOR.
+    //
+    //  Aqui se escribia lo que tuvieran los sesenta y tres deslizadores, o sea
+    //  el ALMACEN. Desde que un inserto es de un canal esos mandos son una
+    //  VENTANA al canal de delante y quien tiene los 1008 numeros es el motor,
+    //  asi que guardar la ventana guardaria un canal de dieciseis y los quince
+    //  restantes volverian a su defecto.
+    //
+    //  Con la misma forma que `slots` y `csends` -los valores por coma y los
+    //  canales por punto y coma-, que ya es la del fichero: una propiedad por
+    //  canal serian dieciseis y la lista no es dispersa.
+    {
+        juce::StringArray filas;
+        for (int c = 0; c < kNumCanales; ++c)
+        {
+            juce::StringArray r;
+            for (int f = 0; f < kNumFx; ++f)
+                for (int pi = 0; pi < 3; ++pi)
+                    r.add (juce::String (engine.getFxParam (c, f, pi), 4));
+            filas.add (r.joinIntoString (","));
+        }
+        fx.setProperty ("fxp", filas.joinIntoString (";"), nullptr);
+    }
     //  El XY es parte del proyecto: que efecto estabas tocando y si lo dejaste
     //  fijo o momentaneo. Sin esto, abrir un proyecto te devolvia el panel en
     //  FLT y en momentaneo aunque lo hubieras dejado en el delay y fijo.
@@ -8848,14 +8928,24 @@ juce::ValueTree MainComponent::captureState() const
     //  fila, viven en `fxParams` y ya los escribe el bucle de arriba. Un
     //  numero, un dueno - guardarlos dos veces es como dos sitios acaban
     //  discrepando.
+    //  Y POR CANAL, que es lo que el EQ obliga a decir en voz alta: es el
+    //  efecto de la queja -«solo es posible que funcione en un canal»- asi que
+    //  guardar UNA curva seria guardar la de uno de dieciseis. Las bandas por
+    //  punto y coma como antes y los canales por BARRA, que el `;` ya esta
+    //  cogido dentro de una fila.
     {
-        juce::StringArray e;
-        for (int b = 0; b < Eq5::kBands; ++b)
-            e.add (juce::String (engine.getEqFreq (b), 1) + ":"
-                     + juce::String (engine.getEqGain (b), 2) + ":"
-                     + juce::String (engine.getEqTipo (b)) + ":"
-                     + juce::String (engine.getEqQ (b), 2));
-        fx.setProperty ("eq", e.joinIntoString (";"), nullptr);
+        juce::StringArray filas;
+        for (int c = 0; c < kNumCanales; ++c)
+        {
+            juce::StringArray e;
+            for (int b = 0; b < Eq5::kBands; ++b)
+                e.add (juce::String (engine.getEqFreq (c, b), 1) + ":"
+                         + juce::String (engine.getEqGain (c, b), 2) + ":"
+                         + juce::String (engine.getEqTipo (c, b)) + ":"
+                         + juce::String (engine.getEqQ (c, b), 2));
+            filas.add (e.joinIntoString (";"));
+        }
+        fx.setProperty ("eqc", filas.joinIntoString ("|"), nullptr);
     }
     fx.setProperty ("duckPad", engine.getDuckPad(), nullptr);
     fx.setProperty ("xyFx",    xyFx,    nullptr);
@@ -9086,13 +9176,38 @@ void MainComponent::applyState (const juce::ValueTree& s)
             fxParam (2, 2).setValue ((double) fx.getProperty ("drive", 0.0) > 0.0 ? 1.0 : 0.0,
                                      juce::dontSendNotification);
         }
-        for (int f = 0; f < kNumFx; ++f)
+        //  Y DE LA VENTANA AL MOTOR, que es quien tiene los 1008 numeros.
+        //
+        //  `fxp` trae los sesenta y tres de CADA canal. Y si no esta, el
+        //  fichero es de antes de que un inserto fuera de un canal: alli habia
+        //  UNA instancia compartida por toda la maquina, asi que los sesenta y
+        //  tres que se acaban de resolver arriba van a LOS DIECISEIS. Lo que
+        //  manda no es cual es el reparto de hoy sino como sonaba el dia que
+        //  se guardo — y con todos los pads en el canal cero, que es lo que un
+        //  fichero de esa epoca trae, es ademas la misma maquina.
         {
-            pushFxParam (f, 0); pushFxParam (f, 1); pushFxParam (f, 2);
-            fxOn[(size_t) f] = fxParam (f, 2).getValue() > 0.001;
-            //  La luz de las seis tapas la reparte `refrescaRanuras` al
-            //  final de esta funcion, que es quien sabe donde vive cada tipo.
-            juce::ignoreUnused (f);
+            const juce::String fxp = fx.getProperty ("fxp").toString();
+            juce::StringArray filas;
+            if (fxp.isNotEmpty()) filas.addTokens (fxp, ";", "");
+
+            for (int c = 0; c < kNumCanales; ++c)
+            {
+                juce::StringArray r;
+                if (c < filas.size()) r.addTokens (filas[c], ",", "");
+
+                for (int f = 0; f < kNumFx; ++f)
+                    for (int pi = 0; pi < 3; ++pi)
+                    {
+                        const int k = f * 3 + pi;
+                        //  Un canal que no esta en el fichero -o un valor que
+                        //  falta dentro de su fila- vale lo que el MANDO acaba
+                        //  de resolver arriba, que ya sabe poner el defecto de
+                        //  cada parametro: una segunda lista de defectos aqui
+                        //  seria la misma tabla escrita dos veces.
+                        engine.setFxParam (c, f, pi, k < r.size() ? r[k].getFloatValue()
+                                                                 : (float) fxParam (f, pi).getValue());
+                    }
+            }
         }
 
         //  LAS SEIS RANURAS.
@@ -9136,11 +9251,13 @@ void MainComponent::applyState (const juce::ValueTree& s)
                     }
                 }
 
-                //  UN INSERTO, UN CANAL, tambien al volver del disco. Un
-                //  fichero escrito a mano puede repetir un tipo y eso serian
-                //  dos ventanas al mismo aparato: se queda la primera. Los
-                //  cinco que SUMAN pueden repetirse entre canales -es lo que un
-                //  envio significa- pero no dentro del mismo.
+                //  UN TIPO, UNA RANURA — DENTRO DE UN CANAL, tambien al
+                //  volver del disco. Un fichero escrito a mano puede repetir un
+                //  tipo en dos ranuras del MISMO canal y eso serian dos
+                //  ventanas al mismo aparato: se queda la primera. Entre
+                //  canales ya no se mira, que es la mitad que esta tanda
+                //  quita: hay dieciseis instancias y un inserto puede estar en
+                //  todas.
                 for (int c = 0; c < kNumCanales; ++c)
                     for (int s = 0; s < kNumRanuras; ++s)
                     {
@@ -9149,18 +9266,26 @@ void MainComponent::applyState (const juce::ValueTree& s)
                         bool repe = false;
                         for (int t = 0; t < s && ! repe; ++t)
                             repe = slotFx[(size_t) c][(size_t) t] == v;
-                        if (! repe && AudioEngine::sustituye (v))
-                            for (int oc = 0; oc < c && ! repe; ++oc)
-                                repe = slotDeFxEn (oc, v) >= 0;
                         if (repe) slotFx[(size_t) c][(size_t) s] = kSlotVacia;
                     }
             }
 
             //  Y un efecto que quedo ENCENDIDO en el fichero y cuya ranura ya
-            //  no existe se apaga: seguiria sonando sin tapa donde tocarlo.
-            for (int f = 0; f < kNumFx; ++f)
-                if (fxOn[(size_t) f] && canalDeFx (f) < 0)
-                    setFxEnabled (f, false);
+            //  no existe se apaga: seguiria sonando sin tapa donde tocarlo. Por
+            //  CANAL, que es lo que un inserto es desde hoy: apagar el del
+            //  cuatro no puede callar el del cero.
+            {
+                const int guarda = canalActual;
+                for (int c = 0; c < kNumCanales; ++c)
+                {
+                    canalActual = c;
+                    for (int f = 0; f < kNumFx; ++f)
+                        if (fxEncendido (f) && slotDeFxEn (c, f) < 0
+                              && (AudioEngine::sustituye (f) || canalDeFx (f) < 0))
+                            setFxEnabled (f, false);
+                }
+                ponCanalActual (guarda);
+            }
         }
 
         //  LOS ENVIOS DEL CANAL, y LAS DOS RAMAS QUE HACEN QUE UN PROYECTO
@@ -9231,30 +9356,46 @@ void MainComponent::applyState (const juce::ValueTree& s)
         //  escrito antes de que el EQ existiera. Acotado EN LA PUERTA, o sea
         //  en `Eq5::ponBanda`: el valor sale de un project.xml que puede estar
         //  corrupto o ser de otra epoca.
-        for (int b = 0; b < Eq5::kBands; ++b)
-        {
-            engine.setEqBand (b, Eq5::kFreqDef[b], 0.0f);
-            engine.setEqTipo (b, (int) Eq5::tipoDeFabrica (b));
-            engine.setEqQ    (b, Eq5::kQDef);
-        }
-        if (fx.hasProperty ("eq"))
-        {
-            juce::StringArray e;
-            e.addTokens (fx.getProperty ("eq").toString(), ";", "");
-            for (int b = 0; b < Eq5::kBands && b < e.size(); ++b)
+        for (int c = 0; c < kNumCanales; ++c)
+            for (int b = 0; b < Eq5::kBands; ++b)
             {
-                //  Cuatro campos hoy y DOS en un proyecto de la tanda
-                //  anterior: los que falten valen su defecto ANTIGUO -el
-                //  reparto de fabrica y Q 0.70-, que es como sonaba el dia que
-                //  se guardo y no como sonaria hoy. Es la regla de siempre,
-                //  aplicada dentro de una propiedad y no a la propiedad
-                //  entera.
-                juce::StringArray c;
-                c.addTokens (e[b], ":", "");
-                if (c.size() < 2) continue;
-                engine.setEqBand (b, c[0].getFloatValue(), c[1].getFloatValue());
-                if (c.size() >= 3) engine.setEqTipo (b, c[2].getIntValue());
-                if (c.size() >= 4) engine.setEqQ    (b, c[3].getFloatValue());
+                engine.setEqBand (c, b, Eq5::kFreqDef[b], 0.0f);
+                engine.setEqTipo (c, b, (int) Eq5::tipoDeFabrica (b));
+                engine.setEqQ    (c, b, Eq5::kQDef);
+            }
+        {
+            //  `eqc` trae una curva por canal -las bandas por punto y coma y
+            //  los canales por barra-. Y `eq`, que es lo que escribia la tanda
+            //  anterior, trae UNA: alli el ecualizador era uno solo, asi que
+            //  esa curva es la de los dieciseis. Es la misma decision que los
+            //  sesenta y tres de arriba y por lo mismo.
+            const bool porCanal = fx.hasProperty ("eqc");
+            juce::StringArray filas;
+            if (porCanal) filas.addTokens (fx.getProperty ("eqc").toString(), "|", "");
+
+            for (int c = 0; c < kNumCanales; ++c)
+            {
+                const juce::String fila = porCanal ? (c < filas.size() ? filas[c] : juce::String())
+                                                   : fx.getProperty ("eq", juce::String()).toString();
+                if (fila.isEmpty()) continue;
+
+                juce::StringArray e;
+                e.addTokens (fila, ";", "");
+                for (int b = 0; b < Eq5::kBands && b < e.size(); ++b)
+                {
+                    //  Cuatro campos hoy y DOS en un proyecto de dos tandas
+                    //  atras: los que falten valen su defecto ANTIGUO -el
+                    //  reparto de fabrica y Q 0.70-, que es como sonaba el dia
+                    //  que se guardo y no como sonaria hoy. Es la regla de
+                    //  siempre, aplicada dentro de una propiedad y no a la
+                    //  propiedad entera.
+                    juce::StringArray campos;
+                    campos.addTokens (e[b], ":", "");
+                    if (campos.size() < 2) continue;
+                    engine.setEqBand (c, b, campos[0].getFloatValue(), campos[1].getFloatValue());
+                    if (campos.size() >= 3) engine.setEqTipo (c, b, campos[2].getIntValue());
+                    if (campos.size() >= 4) engine.setEqQ    (c, b, campos[3].getFloatValue());
+                }
             }
         }
         refrescaEq();
@@ -9621,7 +9762,15 @@ void MainComponent::applyState (const juce::ValueTree& s)
             if (paso < 0 || paso >= AudioEngine::kSongBars * AudioEngine::kBarSteps) continue;
             if (! juce::isPositiveAndBelow (fx, kNumFx) || ! juce::isPositiveAndBelow (par, 3)) continue;
             if ((int) autoEventos.size() >= AudioEngine::kMaxAuto) break;
+            //  EL CANAL VA AL FINAL y no en su sitio, que es lo que hace que un
+            //  proyecto de la tanda anterior vuelva entero: alli la fila tenia
+            //  cuatro campos y el quinto no existe, asi que vale CERO — que es
+            //  el canal donde vivia el unico ecualizador que habia. Puesto en
+            //  medio, los cuatro campos de un fichero de ayer se leerian
+            //  corridos y el valor caeria en el canal.
+            const int canal = n.size() >= 5 ? n[4].getIntValue() : 0;
             autoEventos.push_back ({ paso, (juce::uint8) fx, (juce::uint8) par,
+                                     (juce::uint8) AudioEngine::canalDeParam (canal, fx),
                                      n[3].getFloatValue() });
         }
     }
@@ -10045,7 +10194,7 @@ void MainComponent::newProject()
             canalActual = c;
             for (int s = 0; s < kNumRanuras; ++s) ponEnRanura (s, kSlotVacia);
         }
-        canalActual = guarda;
+        ponCanalActual (guarda);
     }
 
     //  Y LA MESA ENTERA con ellas: los envios a cero -que es como nace una
@@ -10058,15 +10207,20 @@ void MainComponent::newProject()
         engine.setCanalGain (c, 1.0f);
         engine.setCanalMute (c, false);
     }
-    canalActual = 0;
+    ponCanalActual (0);
 
     //  Y LA CURVA DEL EQ VUELVE A SU SITIO. Vaciar la ranura apaga el efecto y
     //  deja las cinco bandas donde estaban: el proyecto siguiente nacia con el
     //  ecualizador del anterior, y basta volver a poner el EQ para que suene.
     //  Es la misma herencia que ya se pago dos veces aqui con los envios y con
     //  la linea de tiempo.
-    for (int b = 0; b < Eq5::kBands; ++b)
-        engine.setEqBand (b, Eq5::kFreqDef[b], 0.0f);
+    //  LOS DIECISEIS, que es la misma herencia contada una vez mas: vaciar la
+    //  curva del canal de delante y dejar las quince restantes con la del
+    //  proyecto de ayer es vaciar la mitad de un proyecto, y lo que queda
+    //  parece tuyo.
+    for (int c = 0; c < kNumCanales; ++c)
+        for (int b = 0; b < Eq5::kBands; ++b)
+            engine.setEqBand (c, b, Eq5::kFreqDef[b], 0.0f);
     refrescaEq();
 
     //  Y LA AUTOMATIZACION, que es de la cancion y se va con ella: sin esto el
@@ -14932,7 +15086,7 @@ void MainComponent::pintaCuadro (double dtMs)
             //  quieta: lo que sobra es el latido, no la informacion de que ese
             //  efecto esta puesto. Apagarla del todo convertiria «no quiero que
             //  parpadee» en «no se cual esta sonando».
-            const double want = fxOn[(size_t) f] ? (movimiento ? lit : 1.0) : 0.0;
+            const double want = fxEncendido (f) ? (movimiento ? lit : 1.0) : 0.0;
             const double had  = (double) b->getProperties().getWithDefault ("pulse", 0.0);
             if (std::abs (want - had) < 0.004) continue;
 
@@ -15011,8 +15165,8 @@ void MainComponent::pintaCuadro (double dtMs)
                 //  numeraciones, asi que no hace falta una segunda.
                 const int dd = dinamicaDeFx (platoMini.tipo());
                 platoMini.setMuestras (eqPreTmp, eqPostTmp, nScope, dtMs,
-                                       dd >= 0 ? engine.getDynReduccion (dd) : 0.0f,
-                                       engine.getLfoFase (platoMini.tipo()));
+                                       dd >= 0 ? engine.getDynReduccion (canalActual, dd) : 0.0f,
+                                       engine.getLfoFase (canalActual, platoMini.tipo()));
                 platoMini.ponVivo (engine.fxScopeVivo());
             }
         }

@@ -323,7 +323,7 @@ def main():
 
     #  --- Y LOS PROYECTOS DE OTRA EPOCA ------------------------------------
     vj = viejos()
-    viejo_ok = vj is not None and len (vj) == 5
+    viejo_ok = vj is not None and len (vj) == 6
     print()
     if vj:
         for nombre, d in sorted (vj.items()):
@@ -352,8 +352,22 @@ def main():
             #  0.50: lo que llega al efecto es el PRODUCTO, 0.30. Con la rama
             #  de la mesa quitada, el pad vuelve al canal 0, el canal 0 se
             #  rellena desde los `sends` del pad y sale 0.50.
+            #
+            #  Y EL SEXTO es la rama de los EFECTOS POR CANAL. Los cinco de al
+            #  lado se guardaron antes de que un inserto fuera de un canal, asi
+            #  que los cinco entran por «este fichero no trae `fxp`» -donde los
+            #  sesenta y tres que el mando resuelve van a los dieciseis- y esa
+            #  rama se probaba cinco veces y la otra ninguna. Sus envios entran
+            #  por la MISMA rama vieja que los tres primeros: lo que trae de
+            #  suyo son los efectos, y se leen en un canal que NO es el cero
+            #  —con el cero, «volvio» lo cumple igual un lector que coge la
+            #  primera fila y la reparte a los dieciseis—.
             trae  = nombre.startswith ("04")
             mesa  = nombre.startswith ("05")
+            porfx = nombre.startswith ("06")
+            flt3 = 0.42  if porfx else 0.0
+            cmp3 = -24.0 if porfx else -18.0
+            eq5  = 7.50  if porfx else 0.0
             e0 = 0.30 if (trae or mesa) else 1.0
             en = 0.00 if (trae or mesa) else 1.0
             bien = (abs (d["envio0"] - e0) < 0.01
@@ -396,7 +410,16 @@ def main():
                     #  sonaba el dia que se guardo. La corrida los vacia justo
                     #  antes de abrir, o «volvio en orden» lo cumple tambien no
                     #  haber tocado nada.
-                    and d.get ("ranuras") == [0, 1, 2, 3, 4, 5])
+                    and d.get ("ranuras") == [0, 1, 2, 3, 4, 5]
+                    #  Y LOS EFECTOS DEL CANAL 3 Y LA CURVA DEL 5. La corrida
+                    #  los deja MOVIDOS antes de abrir -−0.90, −55 y −9 dB- asi
+                    #  que «volvio» no lo puede cumplir no haber tocado nada; y
+                    #  los tres numeros del fichero estan elegidos para no
+                    #  poder salir de un defecto: 0.42 contra 0.00, −24 contra
+                    #  −18 y +7.50 contra plano.
+                    and abs (d["flt3"] - flt3) < 0.01
+                    and abs (d["cmp3"] - cmp3) < 0.01
+                    and abs (d["eq5"]  - eq5)  < 0.01)
             viejo_ok = viejo_ok and bien
             print ("  %-20s envio0 %.2f (%.2f x %.2f)  ultimo %.2f  pad20 g%.2f "
                    "p%.2f c%.0f r%d e%.2f canal%d  cancion %d  ranuras %s  %s"
@@ -405,6 +428,8 @@ def main():
                       d["corte20"], d["reves20"], d["envio20"], d["canal20"],
                       d["cancion"], d.get ("ranuras", "?"),
                       "correcto" if bien else "HEREDA DEL ANTERIOR"))
+            print ("  %-20s canal 3: FLT %.2f  CMP %.0f dB   canal 5: EQ %+.2f dB"
+                   % ("", d["flt3"], d["cmp3"], d["eq5"]))
     else:
         print ("  los proyectos congelados no volvieron")
 

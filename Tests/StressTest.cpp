@@ -112,6 +112,25 @@ static void report (const char* name, const Stats& s, double blockMsBudget)
 //  O sea que el codigo de salida no puede volver rojo lo que estaba verde, y
 //  eso queda demostrado y no supuesto.
 //  ============================================================================
+//  ============================================================================
+//  LO QUE EL PROCESO HA LLEGADO A OCUPAR, en KB.
+//
+//  `VmHWM` es el MAXIMO y no el de ahora: quien pregunta despues de que una
+//  funcion suelte sus vectores ya no ve lo que pidio. Vivia dentro del bloque
+//  de QUITAR RUIDO y sale aqui en cuanto tuvo un segundo cliente -la huella de
+//  los dieciseis insertos-, por lo mismo que `normaliza` salio de dentro de
+//  `render`: dos copias de la misma lectura se separan.
+//  ============================================================================
+static long zatiRssKb()
+{
+    std::ifstream f ("/proc/self/status");
+    std::string line;
+    while (std::getline (f, line))
+        if (line.rfind ("VmHWM:", 0) == 0)
+            return std::atol (line.c_str() + 6);
+    return -1;
+}
+
 static int zatiFallos = 0;
 
 static const char* zatiFalla (const char* texto = "FALLA")
@@ -128,9 +147,44 @@ int main()
     const int    bs = 128;                       // Oboe's low-latency burst on a modern phone
     const double budgetMs = 1000.0 * bs / sr;    // 2.67 ms
 
+    //  ------------------------------------------------------------------
+    //  LO QUE CUESTAN LOS DIECISEIS INSERTOS, medido y no deducido.
+    //
+    //  `AudioEngine.h` llevaba escrito «1.3 MB por canal, o sea 21 MB por
+    //  dieciseis» como el precio de la alternativa que HOY es lo que hay, y
+    //  esa cifra era de cuando el DLY entraba en la cuenta: es un ENVIO y no
+    //  se replica, y ademas su linea de retardo es de UN segundo y no de dos.
+    //  Un numero medido que sobrevivio al cambio que lo invalido, o sea el
+    //  patron de esta casa.
+    //
+    //  Se mide y no se deriva: lo estatico es `sizeof`, y lo que `frzVent` y
+    //  `pitLine` reservan sale del maximo que el proceso ha llegado a ocupar,
+    //  preguntado ANTES de construir nada -si no, el pico de cualquier fila de
+    //  mas abajo se lo come-.
+    //
+    //  SE IMPRIME Y NO SE JUZGA: no hay poblacion contra la que poner un
+    //  liston, y un tope inventado suspenderia al motor por existir. Es la
+    //  leccion de TARJETA y la del porcentaje de iconos. Lo que vale es que la
+    //  cifra este a la vista para que la proxima tanda decida sobre lo que
+    //  cuesta y no sobre lo que costaba.
+    const long rssAntes = zatiRssKb();
+
     AudioEngine e;
+    const long rssMotor = zatiRssKb();
     e.prepareToPlay (sr, bs);
     e.setPolyphony (32, 4);
+
+    {
+        const long rssTras = zatiRssKb();
+        const double canalKb = (double) AudioEngine::bytesPorCanal() / 1024.0;
+        const double motorKb = (double) sizeof (AudioEngine) / 1024.0;
+        const double vivoKb  = (double) (rssTras - rssAntes);
+        std::printf ("%-34s %.1f KB por canal x %d = %.0f KB estaticos   el motor entero"
+                     " %.0f KB   construir %.0f KB   preparar %.0f KB   total %.0f KB\n",
+                     "los dieciseis insertos", canalKb, AudioEngine::kNumCanales,
+                     canalKb * AudioEngine::kNumCanales, motorKb,
+                     (double) (rssMotor - rssAntes), (double) (rssTras - rssMotor), vivoKb);
+    }
 
     juce::AudioBuffer<float> buf (2, bs);
 
@@ -623,17 +677,7 @@ int main()
     //  que solo mirara el sonido. Aqui se limpia una muestra de cinco minutos
     //  - el tope de setRecordLimit - y se mira cuanto crece el proceso.
     {
-        auto rssKb = [] () -> long
-        {
-            //  VmHWM: el maximo que ha llegado a ocupar, no el de ahora. El de
-            //  ahora ya ha soltado los vectores cuando se pregunta.
-            std::ifstream f ("/proc/self/status");
-            std::string line;
-            while (std::getline (f, line))
-                if (line.rfind ("VmHWM:", 0) == 0)
-                    return std::atol (line.c_str() + 6);
-            return -1;
-        };
+        auto rssKb = zatiRssKb;
 
         const double rate = 48000.0;
         const int    len  = (int) (300.0 * rate);        // cinco minutos, mono

@@ -147,6 +147,24 @@ def main():
             malas.append ("%s: la casilla no vuelve al valor del mando al tocarlo: «%s»"
                           % (size, r["lee_tocado"]))
 
+        #  4b. Y LA REDUCCION ES DEL CANAL. Hay DIECISEIS limitadores, uno por
+        #      canal, y el pad 0 vive en el canal cero: el del cuatro no ha
+        #      visto una muestra en su vida. Con DOS cifras, o «el limitador
+        #      reduce» lo cumple igual un motor con UNO compartido —que es
+        #      exactamente lo que habia antes de los canales— y entonces dos
+        #      canales enseñarian el mismo medidor de reduccion.
+        print ("%-9s canal   reduccion en el canal 0 %.2f dB   en el 4 %.2f"
+               % (size, r["red_c0"], r["red_c4"]))
+        #  `getDynReduccion` devuelve CUANTO se quita, o sea positivo: es la
+        #  casilla la que lo escribe con signo menos.
+        if r["red_c0"] < 0.5:
+            malas.append ("%s: el limitador del canal 0 quita %.2f dB con el tono "
+                          "entrando: no esta limitando" % (size, r["red_c0"]))
+        if abs (r["red_c4"]) > 0.01:
+            malas.append ("%s: el limitador del canal 4 quita %.2f dB y por ese "
+                          "canal no pasa nada: los dieciseis comparten uno"
+                          % (size, r["red_c4"]))
+
         #  5. Y VUELVEN DEL FICHERO DE PROYECTO. Se escribe con el MISMO arbol
         #     que escribe el fichero, se BORRA a mano —si al volver sigue
         #     puesto no es que se haya guardado, es que nadie lo quito— y se

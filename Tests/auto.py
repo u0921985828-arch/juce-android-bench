@@ -29,7 +29,14 @@ APP  = os.path.join (ROOT, "build", "Zati_artefacts", "Release", "Zati")
 #  Lo que se escribe a mano antes de guardar. Dos eventos y no uno, y con
 #  valores DISTINTOS entre si y de distinto signo: con dos iguales, un cruce de
 #  campos dentro de la fila pasaria desapercibido.
-ESPERADO = "17:3:2:0.42;48:0:0:-0.75;"
+#
+#  Y desde que un inserto es de cada canal, la tupla lleva un CAMPO MAS —el
+#  canal— asi que los dos eventos van a canales distintos: con los dos en el
+#  cero, «vuelve el canal» lo cumple igual un lector que no lee ese campo y
+#  deja el defecto puesto. El primero es un envio y el segundo un inserto en el
+#  canal 4, que es la unica pareja que distingue las dos ramas de
+#  `canalDeParam`.
+ESPERADO = "17:3:2:0.42:0;48:0:0:-0.75:4;"
 
 
 def corre():

@@ -89,6 +89,25 @@ def main ():
     if len (fam) < 2:
         malo.append ("las once filas dicen lo mismo: no distinguen nada")
 
+    #  1b. Y LA FORMA DEL MOTOR SALE DE ESA MISMA TABLA.
+    #
+    #  Los dieciseis canales no eligieron su numero: `fxSustituye` marca
+    #  DIECISEIS insertos de los veintiuno, y de ahi salen los dieciseis
+    #  `Inserto` del motor -uno por canal- y los `kNumFx + kNumIns *
+    #  kNumCanales` buses. Los tres los DERIVA el codigo con `static_assert`
+    #  detras, asi que lo unico que hace falta aqui es que la fila del rack y
+    #  el reparto del motor cuenten lo mismo: el dia que un tipo nuevo entre
+    #  como envio y alguien lo sume a `kNumIns` a mano, esto lo dice.
+    print ("forma      %d insertos · %d envios · %d canales · %d buses"
+           % (r["insertos"], r["tipos"] - r["insertos"], r["canales"], r["buses"]))
+    if r["insertos"] != r["dibujo"].count (1):
+        malo.append ("el motor reserva %d insertos y la fila del rack cuenta %d"
+                     % (r["insertos"], r["dibujo"].count (1)))
+    if r["buses"] != r["tipos"] + r["insertos"] * r["canales"]:
+        malo.append ("el motor dice %d buses y %d + %d x %d son %d"
+                     % (r["buses"], r["tipos"], r["insertos"], r["canales"],
+                        r["tipos"] + r["insertos"] * r["canales"]))
+
     #  2. EL VISOR LEE LOS NUMEROS DE AHORA, con DOS cifras.
     #
     #  Solo la primera la cumple una miniatura que dibuja ruido; solo la

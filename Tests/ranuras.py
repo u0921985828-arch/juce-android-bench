@@ -156,6 +156,28 @@ def main():
         malas.append ("%d parametros arrancan con un numero en el motor y otro en "
                       "el mando" % r["defectos_cruzados"])
 
+    #  5b. Y LOS DIECISEIS CANALES NACEN EN EL MISMO SITIO.
+    #
+    #      La regla 3 -«un tipo, una ranura»- NO cambia con los canales: dentro
+    #      de un canal sigue habiendo una ranura por tipo, y eso va escrito
+    #      aqui para que nadie la «arregle» leyendo la tanda al reves. Lo que
+    #      esa tanda anade es su segunda mitad: desde que un inserto es de cada
+    #      canal, `fxP` son dieciseis filas de sesenta y tres numeros y las
+    #      quince de detras no las mira nadie hasta que alguien abre ese canal.
+    #
+    #      Un `std::array` con `{}` las deja a CERO, y cero es un valor valido
+    #      en casi todos los parametros: el compresor del canal 7 abriria con
+    #      umbral 0 dB y ratio 1 -o sea sin comprimir- mientras la ficha dice
+    #      lo que dice el canal 0. Es el fallo de `notaViva` y el del cero de
+    #      `padAncho`, contado en 1008 casillas.
+    print ("nacer    de %d (canal, tipo) arrancan distintos del canal 0: %d"
+           % (r["canales"] * r["tipos"], r["canales_raros"]))
+    if r["canales_raros"] != 0:
+        malas.append ("%d de %d (canal, tipo) arrancan con otro numero que el "
+                      "canal 0: los quince que nadie ha tocado tienen que nacer "
+                      "donde nace el cero"
+                      % (r["canales_raros"], r["canales"] * r["tipos"]))
+
     #  6. LA REJILLA DEL MENU, EN LAS SIETE PANTALLAS — Y NO SOLO LA DE HOY.
     #
     #     Con once tipos la rejilla son tres columnas y cuatro filas en las
