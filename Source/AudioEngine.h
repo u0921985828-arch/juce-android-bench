@@ -993,8 +993,8 @@ public:
     std::uint64_t fetchTriggered() noexcept { return triggeredMask.exchange (0, std::memory_order_relaxed); }
 
     // --- Master FX: filter + drive (message thread setters) ---
-    void setFxReso   (float q)   noexcept { fxReso.store   (q, std::memory_order_relaxed); }
-    void setFxDrive  (float amt) noexcept { fxDrive.store  (amt, std::memory_order_relaxed); }  // 0..1
+    void setFxReso   (float q)   noexcept { fxParamDe (0, kFxFlt, 1).store (q, std::memory_order_relaxed); }
+    void setFxDrive  (float amt) noexcept { fxParamDe (0, kFxDrv, 0).store (amt, std::memory_order_relaxed); }  // 0..1
     void setDlyTime  (float ms)  noexcept { dlyTime.store  (ms,  std::memory_order_relaxed); }
     void setDlyFb    (float f)    noexcept { dlyFb.store    (f,   std::memory_order_relaxed); }
     void setDlyMix   (float m)    noexcept { dlyMix.store   (m,   std::memory_order_relaxed); }
@@ -1066,7 +1066,7 @@ public:
     void setLiveQuantise (bool on) noexcept { liveQuant.store (on, std::memory_order_relaxed); }
     bool getLiveQuantise() const noexcept { return liveQuant.load (std::memory_order_relaxed); }
 
-    void setFltSweep (float s)  noexcept { fltSweep.store (s, std::memory_order_relaxed); }
+    void setFltSweep (float s)  noexcept { fxParamDe (0, kFxFlt, 0).store (s, std::memory_order_relaxed); }
 
     //  DONDE CAE EL BARRIDO, escrito UNA vez.
     //
@@ -1187,19 +1187,19 @@ public:
         return juce::Decibels::gainToDecibels (juce::jmax (1.0e-5f, mag));
     }
 
-    void setFltReso  (float q)  noexcept { fxReso.store   (q, std::memory_order_relaxed); }
-    void setFltMix   (float m)  noexcept { fxMix.store    (m, std::memory_order_relaxed); }
+    void setFltReso  (float q)  noexcept { fxParamDe (0, kFxFlt, 1).store (q, std::memory_order_relaxed); }
+    void setFltMix   (float m)  noexcept { fxParamDe (0, kFxFlt, 2).store (m, std::memory_order_relaxed); }
 
-    void setHpFreq (float hz) noexcept { hpFreq.store (hz, std::memory_order_relaxed); }
-    void setHpReso (float q)  noexcept { hpReso.store (q,  std::memory_order_relaxed); }
-    void setHpMix  (float m)  noexcept { hpMix.store  (m,  std::memory_order_relaxed); }
+    void setHpFreq (float hz) noexcept { fxParamDe (0, kFxHpf, 0).store (hz, std::memory_order_relaxed); }
+    void setHpReso (float q)  noexcept { fxParamDe (0, kFxHpf, 1).store (q, std::memory_order_relaxed); }
+    void setHpMix  (float m)  noexcept { fxParamDe (0, kFxHpf, 2).store (m, std::memory_order_relaxed); }
 
-    void setDrvTone (float hz) noexcept { drvTone.store (hz, std::memory_order_relaxed); }
-    void setDrvMix  (float m)  noexcept { drvMix.store  (m,  std::memory_order_relaxed); }
+    void setDrvTone (float hz) noexcept { fxParamDe (0, kFxDrv, 1).store (hz, std::memory_order_relaxed); }
+    void setDrvMix  (float m)  noexcept { fxParamDe (0, kFxDrv, 2).store (m, std::memory_order_relaxed); }
 
-    void setCrushBits (float b) noexcept { crBits.store (b, std::memory_order_relaxed); }
-    void setCrushRate (float r) noexcept { crRate.store (r, std::memory_order_relaxed); }
-    void setCrushMix  (float m) noexcept { crMix.store  (m, std::memory_order_relaxed); }
+    void setCrushBits (float b) noexcept { fxParamDe (0, kFxBit, 0).store (b, std::memory_order_relaxed); }
+    void setCrushRate (float r) noexcept { fxParamDe (0, kFxBit, 1).store (r, std::memory_order_relaxed); }
+    void setCrushMix  (float m) noexcept { fxParamDe (0, kFxBit, 2).store (m, std::memory_order_relaxed); }
 
     //  A QUE CANAL VA ESTE PAD. Es lo unico que el pad decide del reparto: el
     //  cuanto lo dice el canal.
@@ -1327,7 +1327,7 @@ public:
     float getEqQ    (int b) const noexcept { return ins[0].eqFx.qDe (b); }
     void setEqAncho  (float a) noexcept { ins[0].eqFx.ponAncho  (a); }
     void setEqSalida (float d) noexcept { ins[0].eqFx.ponSalida (d); }
-    void setEqMix    (float m) noexcept { eqMix.store (m, std::memory_order_relaxed); }
+    void setEqMix    (float m) noexcept { fxParamDe (0, kFxEq, 2).store (m, std::memory_order_relaxed); }
     float getEqFreq (int b) const noexcept { return ins[0].eqFx.freqDe (b); }
     float getEqGain (int b) const noexcept { return ins[0].eqFx.gainDe (b); }
     // How much silence a bounce must keep past the last note so the tail is
@@ -1354,8 +1354,8 @@ public:
     void setDynP0  (int i, float v) noexcept { setFxParam (dynIdx (i), 0, v); }
     void setDynP1  (int i, float v) noexcept { setFxParam (dynIdx (i), 1, v); }
     void setDynMix (int i, float v) noexcept { setFxParam (dynIdx (i), 2, v); }
-    float getDynP0  (int i) const noexcept { return juce::isPositiveAndBelow (i, 4) ? fxP[(size_t) dynIdx (i)][0].load (std::memory_order_relaxed) : 0.0f; }
-    float getDynP1  (int i) const noexcept { return juce::isPositiveAndBelow (i, 4) ? fxP[(size_t) dynIdx (i)][1].load (std::memory_order_relaxed) : 0.0f; }
+    float getDynP0  (int i) const noexcept { return juce::isPositiveAndBelow (i, 4) ? fxParamDe (0, dynIdx (i), 0).load (std::memory_order_relaxed) : 0.0f; }
+    float getDynP1  (int i) const noexcept { return juce::isPositiveAndBelow (i, 4) ? fxParamDe (0, dynIdx (i), 1).load (std::memory_order_relaxed) : 0.0f; }
     float getDynReduccion (int i) const noexcept
     {
         //  Del canal CERO mientras la cara solo sabe mirar uno. La fase 4 le
@@ -2130,18 +2130,34 @@ private:
     //  `fxDefs` en la cara y `setFxParam (fx, par)` aqui, asi que no hay una
     //  segunda numeracion que mantener.
     //
-    //  Y LOS NOMBRES SE QUEDAN, como REFERENCIAS a su hueco. No son una
-    //  segunda copia -son el mismo atomico- y hacen que las etapas sigan
-    //  diciendo `dlyTime` y no `fxP[3][0]`, que es la mitad de por que se
-    //  entiende esa parte del fichero. Cuestan un puntero cada una y ni una
-    //  linea de las cincuenta lecturas que ya habia.
-    std::array<std::array<std::atomic<float>, 3>, kNumFx> fxP;
+    //  Y POR CANAL, que es la otra mitad de que un inserto sea de UN canal:
+    //  su ESTADO se replica en `Inserto` y sus PARAMETROS aqui. Un corte de
+    //  filtro compartido por los dieciseis seria la misma ventana al mismo
+    //  aparato por la puerta de los mandos en vez de por la del estado.
+    //
+    //  Los CINCO ENVIOS no: una linea de retardo es de todos, asi que su fila
+    //  vive en el canal cero y los quince restantes no se leen nunca. Quien
+    //  escribe esa regla UNA vez es `fxParamDe`, y nadie mas indexa `fxP`.
+    std::array<std::array<std::array<std::atomic<float>, 3>, kNumFx>, kNumCanales> fxP;
 
-    //  El barrido bidireccional de FLT: -1 cerrado por arriba, 0 neutro,
-    //  +1 abierto por abajo. Ver setFltSweep.
-    std::atomic<float>& fltSweep = fxP[kFxFlt][0];
-    std::atomic<float>& fxReso   = fxP[kFxFlt][1];
-    std::atomic<float>& fxDrive  = fxP[kFxDrv][0];        // 0..1
+    //  LA PUERTA UNICA. `sustituye` decide si el canal cuenta: escrito en cada
+    //  sitio de lectura serian cincuenta copias de la misma condicion y la que
+    //  se quedara vieja seria un delay por canal que no existe.
+    std::atomic<float>& fxParamDe (int c, int f, int par) noexcept
+    {
+        const int cc = (fxSustituye[f] && c > 0 && c < kNumCanales) ? c : 0;
+        return fxP[(size_t) cc][(size_t) f][(size_t) par];
+    }
+    const std::atomic<float>& fxParamDe (int c, int f, int par) const noexcept
+    {
+        const int cc = (fxSustituye[f] && c > 0 && c < kNumCanales) ? c : 0;
+        return fxP[(size_t) cc][(size_t) f][(size_t) par];
+    }
+
+    //  Y LOS NOMBRES SE QUEDAN, como REFERENCIAS a su hueco — pero SOLO los de
+    //  los dos ENVIOS que quedan aqui: los trece de inserto se retiran, porque
+    //  una referencia no sabe de canal y dejarla seria una puerta trasera al
+    //  canal cero. Las ~50 lecturas de las etapas de DLY y REV no se tocan.
 
     // Audio-thread-only smoothed FX params (one-pole toward the atomics):
     // knob moves arrive as per-block jumps otherwise — zipper on the filter,
@@ -2172,29 +2188,20 @@ private:
     //  Cuesta tres multiplicaciones-acumulaciones mas por muestra y por canal
     //  sobre una etapa que no llega al 1% de carga.
     juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> delayLine { 96000 };
-    std::atomic<float>& dlyTime = fxP[kFxDly][0];   // ms
-    std::atomic<float>& dlyFb   = fxP[kFxDly][1];   // 0..0.95
-    std::atomic<float>& dlyMix  = fxP[kFxDly][2];   // 0..1
+    std::atomic<float>& dlyTime = fxP[0][kFxDly][0];   // ms
+    std::atomic<float>& dlyFb   = fxP[0][kFxDly][1];   // 0..0.95
+    std::atomic<float>& dlyMix  = fxP[0][kFxDly][2];   // 0..1
 
     // ISO wet/dry, so the low-pass can be blended rather than only replacing.
-    std::atomic<float>& fxMix = fxP[kFxFlt][2];
 
     // HPF: its OWN filter, not the ISO one switched to high-pass. Two objects
     // cost a few hundred bytes and buy a band-pass you can sweep from both
     // ends — one shared filter would have made them mutually exclusive.
-    std::atomic<float>& hpFreq = fxP[kFxHpf][0];
-    std::atomic<float>& hpReso = fxP[kFxHpf][1];
-    std::atomic<float>& hpMix  = fxP[kFxHpf][2];
 
     // Drive tone: a one-pole low-pass after the tanh, because saturation
     // without somewhere for the harmonics to go is just harsh.
-    std::atomic<float>& drvTone = fxP[kFxDrv][1];
-    std::atomic<float>& drvMix  = fxP[kFxDrv][2];
 
     // Crush: bit depth and sample-and-hold rate, the two halves of lo-fi.
-    std::atomic<float>& crBits = fxP[kFxBit][0];
-    std::atomic<float>& crRate = fxP[kFxBit][1];
-    std::atomic<float>& crMix  = fxP[kFxBit][2];
 
     // Reverb, last in the chain so everything ahead of it lands in the room.
     //  Ver Fdn.h. Sustituye a juce::dsp::Reverb, que es Freeverb: ocho peines
@@ -2202,14 +2209,13 @@ private:
     //  implica. En una caja que apunta a produccion, la reverb es lo primero
     //  que delata que el motor es de juguete.
     Fdn reverb;
-    std::atomic<float>& rvSize = fxP[kFxRev][0];
-    std::atomic<float>& rvDamp = fxP[kFxRev][1];
-    std::atomic<float>& rvMix  = fxP[kFxRev][2];
+    std::atomic<float>& rvSize = fxP[0][kFxRev][0];
+    std::atomic<float>& rvDamp = fxP[0][kFxRev][1];
+    std::atomic<float>& rvMix  = fxP[0][kFxRev][2];
 
     //  EL EQ DE CINCO BANDAS. Es un INSERTO -fxSustituye- y no un envio: lo que
     //  un pad manda aqui deja de ir por el camino seco, porque ecualizar la
     //  copia y dejar el original sonando al lado no ecualiza nada.
-    std::atomic<float>& eqMix = fxP[kFxEq][2];
 
     //  LOS DOS ANILLOS DEL ANALIZADOR, que son lo que la cara dibuja detras de
     //  la curva: lo que ENTRA al EQ dice DONDE hay que tocar y lo que SALE
@@ -2567,10 +2573,10 @@ private:
         //  Un motor vivo desliza en ~20 ms porque un mando acaba de moverse; un
         //  rebote no tiene ese pasado, y deslizar desde los defectos meteria el
         //  filtro en el primer compas de cada exportacion.
-        void cebaSuavizados (const std::array<std::array<std::atomic<float>, 3>, kNumFx>& P) noexcept
+        void cebaSuavizados (const std::array<std::array<std::atomic<float>, 3>, kNumFx>& fila) noexcept
         {
-            const auto v = [&P] (int f, int par) noexcept
-            { return P[(size_t) f][(size_t) par].load (std::memory_order_relaxed); };
+            const auto v = [&fila] (int f, int par) noexcept
+            { return fila[(size_t) f][(size_t) par].load (std::memory_order_relaxed); };
 
             smSweep   = v (kFxFlt, 0);
             smReso    = v (kFxFlt, 1);
