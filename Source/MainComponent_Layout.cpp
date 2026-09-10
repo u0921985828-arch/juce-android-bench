@@ -428,9 +428,21 @@ void MainComponent::resized()
         //  la rejilla de pads, que se lleva lo que sobre. Medido con el testigo
         //  de abajo antes de tocarlo: la rejilla recibia `padsNeed + 8` en las
         //  cinco pantallas de pie.
-        const int bodyNeed = ZatiLookAndFeel::kCtrlPlate + ZatiLookAndFeel::kAir
-                           + ZatiLookAndFeel::kFxRow + ZatiLookAndFeel::kAir
-                           + padsNeed + (wideFace ? 2 : 3) * kSeamLabelH;
+        //  Y APAISADO SON DOS COSTURAS Y NO TRES, tambien en el kAir.
+        //
+        //  Los dos `kAir` de aqui son CONTROL->EFECTOS y EFECTOS->PADS, y el
+        //  segundo vive en `padCol` cuando la cara va en dos columnas: se
+        //  reservaba en ESTA columna y lo colocaba la otra. El `kSeamLabelH`
+        //  de al lado ya llevaba su `wideFace ? 2 : 3` y el `kAir` se quedo
+        //  sin el — la misma regla escrita dos veces con una mitad puesta al
+        //  dia. Es el tercer termino de este mismo presupuesto que se queda
+        //  viejo, y el primero que no ha hecho falta encontrar leyendo: lo
+        //  saco el testigo en su primera corrida, `la cara reserva 10 px de
+        //  mas`, diez que son `kAir` clavado, en las 200 corridas apaisadas.
+        const int bodyNeed = ZatiLookAndFeel::kCtrlPlate + ZatiLookAndFeel::kFxRow
+                           + padsNeed
+                           + (wideFace ? 1 : 2) * ZatiLookAndFeel::kAir
+                           + (wideFace ? 2 : 3) * kSeamLabelH;
 
         //  ...and what it recovers goes into the SEAMS, not into one pool.
         //
