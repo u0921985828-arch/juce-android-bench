@@ -28,6 +28,13 @@ correcto y otro olvidado es como se esconde el segundo.
 """
 import json, os, shutil, subprocess, sys, tempfile
 
+#  LA PANTALLA QUE SE COMPRUEBA ES LA QUE SE USA: `PANTALLA` vive en
+#  `kits.py`, al lado de `display_alive`, y quien arranca la app la escribe
+#  en su entorno. Sin esta linea la comprobacion dice que si contra :99 y el
+#  arranque se va sin ventana — el veredicto entero en rojo con la app
+#  perfecta, que es lo que ya costo una tarde en `cpu.py` y otra en `instr.py`.
+from kits import PANTALLA                                          # noqa: E402
+
 sys.path.insert (0, os.path.dirname (os.path.abspath (__file__)))
 from kits import display_alive
 
@@ -42,7 +49,7 @@ def foco (paso, size):
     casa = tempfile.mkdtemp (prefix="zati-tour-")
     env = dict (os.environ, HOME=casa, ZATI_AUDIT="1", ZATI_SIZE=size,
                 ZATI_LANG="es", ZATI_OPEN="tour%d" % paso,
-                DISPLAY=os.environ.get ("DISPLAY", ":99"))
+                DISPLAY=PANTALLA)
     try:
         out = subprocess.run ([APP], env=env, capture_output=True, timeout=180).stdout.decode ("utf8", "replace")
     except subprocess.TimeoutExpired:
@@ -153,7 +160,7 @@ def main():
     try:
         env = dict (os.environ, HOME=casaP, ZATI_AUDIT="1", ZATI_SIZE=size,
                     ZATI_LANG="es", ZATI_OPEN="tourpuerta",
-                    DISPLAY=os.environ.get ("DISPLAY", ":99"))
+                    DISPLAY=PANTALLA)
         out = subprocess.run ([APP], env=env, capture_output=True, timeout=180)\
                         .stdout.decode ("utf8", "replace")
         for l in out.splitlines():
@@ -189,7 +196,7 @@ def main():
             env = dict (os.environ, HOME=casa, ZATI_AUDIT="1", ZATI_SIZE="412x915",
                         ZATI_LANG="es", ZATI_OPEN="",
                         XDG_DATA_HOME=os.path.join (casa, ".local", "share"),
-                        DISPLAY=os.environ.get ("DISPLAY", ":99"))
+                        DISPLAY=PANTALLA)
             out = subprocess.run ([APP], env=env, capture_output=True, text=True,
                                   timeout=300).stdout
             v = p = None
@@ -241,7 +248,7 @@ def main():
         env = dict (os.environ, HOME=casa, ZATI_AUDIT="1", ZATI_SIZE="412x915",
                     ZATI_LANG="es", ZATI_OPEN="lang",
                     XDG_DATA_HOME=os.path.join (casa, ".local", "share"),
-                    DISPLAY=os.environ.get ("DISPLAY", ":99"))
+                    DISPLAY=PANTALLA)
         out = subprocess.run ([APP], env=env, capture_output=True, text=True,
                               timeout=300).stdout
         idi = None

@@ -38,6 +38,13 @@
 # ============================================================================
 import json, os, shutil, subprocess, sys, tempfile
 
+#  LA PANTALLA QUE SE COMPRUEBA ES LA QUE SE USA: `PANTALLA` vive en
+#  `kits.py`, al lado de `display_alive`, y quien arranca la app la escribe
+#  en su entorno. Sin esta linea la comprobacion dice que si contra :99 y el
+#  arranque se va sin ventana — el veredicto entero en rojo con la app
+#  perfecta, que es lo que ya costo una tarde en `cpu.py` y otra en `instr.py`.
+from kits import PANTALLA                                          # noqa: E402
+
 ROOT = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
 APP  = os.environ.get ("ZATI_BIN") or os.path.join (
         ROOT, "build", "Zati_artefacts", "Release", "Zati")
@@ -46,7 +53,7 @@ APP  = os.environ.get ("ZATI_BIN") or os.path.join (
 def corre():
     casa = tempfile.mkdtemp (prefix="zati-piano-")
     try:
-        env = dict (os.environ)
+        env = dict (os.environ, DISPLAY=PANTALLA)
         env.update ({"HOME": casa, "XDG_DATA_HOME": os.path.join (casa, ".local", "share"),
                      "ZATI_AUDIT": "1", "ZATI_SIZE": "412x915", "ZATI_LANG": "es",
                      "ZATI_OPEN": "sec", "ZATI_PIANO": "1"})

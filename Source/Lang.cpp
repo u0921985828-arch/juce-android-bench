@@ -93,10 +93,6 @@ namespace
         { "PRESETS",     "",  "PRESETS",    "预设",   "إعدادات" },
         { "OCT",         "",  "OCT",        "八度",   "أوكتاف" },
         { "INSTRUMENTO", "",  "INSTRUMENT", "乐器",   "آلة" },
-        { "El teclado suena mientras lo tengas tocado. Las flechas cambian el preset.", "",
-          "The keys sound while you hold them. The arrows change the preset.",
-          "按住琴键即持续发声。箭头用于切换预设。",
-          "تصدر المفاتيح الصوت ما دمت ضاغطا عليها. والسهمان يغيران الإعداد المسبق." },
         //  LAS DIECISEIS FAMILIAS DE Sintes.h. Son nombres COMUNES -una familia
         //  de instrumentos, no un modelo- asi que se traducen, igual que se
         //  traducen ACUSTICA, MAQUINA, TEXTURA y TONOS. Lo que no se traduce es
@@ -765,6 +761,86 @@ namespace
     //  clave por parecerse en espanol sale mal en las otras tres.
     { "RATE|lfo",       "VEL",      "RATE",       "速率",       "سرعة" },
     { "PROF",           "",         "DEPTH",      "深度",       "عمق" },
+    //  LA VUELTA DE LA RECETA, y no reaprovecha «ATRAS»: esa es la
+    //  herramienta que desplaza el patron -en chino dice «mover»- y es
+    //  literalmente la clave que ya costo una medida en el tour.
+    { "VOLVER",         "",         "REVERT",     "还原",       "استرجاع" },
+    //  EL PIE DICE LAS DOS COSAS QUE NO SE DEDUCEN MIRANDO LA FICHA: que el
+    //  teclado suena mientras lo tengas TOCADO -un gesto escondido, que es la
+    //  mitad de por que existe un renglon de ayuda- y que los ocho mandos
+    //  afinan la receta con VOLVER al lado. Lo que se CAE es «las flechas
+    //  cambian el preset», que es la escalera de siempre: esas dos tapas se
+    //  ven, llevan el nombre del preset pintado entre ellas y no hay nada que
+    //  explicar. Y las dos mitades van en UNA fila porque son un solo renglon:
+    //  con dos, la de arriba se quedo sin un solo cliente el dia que el pie se
+    //  reescribio, y una fila sin cliente se retira.
+    { "El teclado suena mientras lo tengas tocado. Los ocho mandos afinan este preset y VOLVER lo devuelve.", "",
+      "The keys sound while you hold them. The eight knobs tune this preset and REVERT puts it back.",
+      "按住琴键即持续发声。八个旋钮调节这个音色，还原可恢复原状。",
+      "تصدر المفاتيح الصوت ما دمت ضاغطا عليها. المقابض الثمانية تضبط هذا النمط، واسترجاع يعيده." },
+    //  LOS OCHO MANDOS DE UN INSTRUMENTO, que son la QUINTA tabla que llega
+    //  por INDICE — `Sintes::mando (familia, i)`, o sea que aqui no hay
+    //  literal que recoger, igual que los `param[]` de un efecto y las
+    //  cuatro tablas que `Tests/lang.py` ya lee del fuente.
+    //
+    //  CON SUFIJO LOS CINCUENTA, y no reaprovechando las filas que ya
+    //  existen con la misma palabra en espanol -RESO, ANCHO, TIEMPO,
+    //  ATAQUE-. Un parametro de efecto y un mando de instrumento coinciden
+    //  en espanol y no tienen por que coincidir en las otras tres: el RESO
+    //  de un filtro es 共振 y el de un cuerpo que resuena puede no serlo, y
+    //  ahi la clave compartida no se puede deshacer sin tocar las dos
+    //  familias. Es el mecanismo de `TONE|fx` y de `RATE|lfo`, aplicado de
+    //  una vez a una familia entera en vez de fila a fila cuando duela.
+    { "AIRE|ins",            "",           "AIR",          "气声",          "هواء" },
+    { "ANCHO|ins",           "",           "WIDTH",        "宽度",          "عرض" },
+    { "ARCO|ins",            "",           "BOW",          "弓压",          "قوس" },
+    { "ARMONICO|ins",        "",           "HARM",         "泛音",          "توافقي" },
+    { "ATAQUE|ins",          "",           "ATTACK",       "起音",          "هجوم" },
+    { "BALANCE|ins",         "",           "BALANCE",      "平衡",          "توازن" },
+    { "BRILLO|ins",          "",           "TONE",         "亮度",          "سطوع" },
+    { "CAIDA|ins",           "",           "DECAY",        "衰减",          "تلاشٍ" },
+    { "CAIDA ENV|ins",       "",           "DECAY",        "包络衰减",        "تلاشي الغلاف" },
+    { "CAIDA TONO|ins",      "",           "PITCH DEC",    "音高衰减",        "تلاشي النغمة" },
+    { "CENTRO|ins",          "",           "CENTRE",       "中心",          "مركز" },
+    { "CUANTOS|ins",         "",           "COUNT",        "数量",          "عدد" },
+    { "CUERPO|ins",          "",           "BODY",         "共鸣",          "جسم" },
+    { "DEDO|ins",            "",           "PLUCK",        "拨弦",          "نقر" },
+    { "DESAFINE|ins",        "",           "DETUNE",       "失谐",          "إزاحة" },
+    { "DISPERSA|ins",        "",           "SPREAD",       "扩散",          "انتشار" },
+    { "ENTRADA|ins",         "",           "BREATH",       "吹入",          "نفَس" },
+    { "FILTRO|ins",          "",           "FILTER",       "滤波",          "مرشّح" },
+    { "FORMA|ins",           "",           "SHAPE",        "波形",          "شكل" },
+    { "GOLPE|ins",           "",           "STRIKE",       "敲击",          "ضربة" },
+    { "IMPARES|ins",         "",           "ODD",          "奇次",          "فردي" },
+    { "INARMONICO|ins",      "",           "INHARM",       "非谐",          "لاتوافقي" },
+    { "INCLINA|ins",         "",           "TILT",         "倾斜",          "ميل" },
+    { "INDICE|ins",          "",           "INDEX",        "指数",          "مؤشر" },
+    { "LESLIE|ins",          "",           "LESLIE",       "旋转",          "ليزلي" },
+    { "MARTILLO|ins",        "",           "HAMMER",       "音锤",          "مطرقة" },
+    { "MODULA|ins",          "",           "MOD",          "调制",          "تعديل" },
+    { "MUERTE|ins",          "",           "MUTE",         "制音",          "كتم" },
+    { "PARCIAL 1|ins",       "",           "PART 1",       "分音 1",        "جزئي 1" },
+    { "PARCIAL 2|ins",       "",           "PART 2",       "分音 2",        "جزئي 2" },
+    { "PASO ALTO|ins",       "",           "HI PASS",      "高通",          "تمرير عال" },
+    { "PERCU|ins",           "",           "PERC",         "打击",          "طرق" },
+    { "PERDIDA|ins",         "",           "LOSS",         "损耗",          "فقد" },
+    { "PROFUNDO|ins",        "",           "DEPTH",        "深度",          "عمق" },
+    { "PULSO|ins",           "",           "PULSE",        "脉宽",          "نبضة" },
+    { "Q|ins",               "",           "Q",            "Q",           "Q" },
+    { "RAZON|ins",           "",           "RATIO",        "比率",          "نسبة" },
+    { "RAZON 1|ins",         "",           "RATIO 1",      "比率 1",        "نسبة 1" },
+    { "RAZON 2|ins",         "",           "RATIO 2",      "比率 2",        "نسبة 2" },
+    { "RESO|ins",            "",           "RESO",         "共振",          "رنين" },
+    { "RUIDO|ins",           "",           "NOISE",        "噪声",          "ضجيج" },
+    { "SATURA|ins",          "",           "DRIVE",        "驱动",          "إشباع" },
+    { "SOBREPASO|ins",       "",           "OVERSHOOT",    "超冲",          "تجاوز" },
+    { "SOPLO|ins",           "",           "BLOW",         "气流",          "نفخ" },
+    { "SUB|ins",             "",           "SUB",          "超低",          "تحت" },
+    { "SUELTA|ins",          "",           "RELEASE",      "释音",          "إفلات" },
+    { "TIEMPO|ins",          "",           "TIME",         "时间",          "زمن" },
+    { "VELOCIDAD|ins",       "",           "SPEED",        "速度",          "سرعة" },
+    { "VIBRATO|ins",         "",           "VIBRATO",      "颤音",          "فيبراتو" },
+    { "VOCAL|ins",           "",           "VOWEL",        "元音",          "حرف علة" },
         //  AUTO no pasa por T() como palabra traducida sino como CLAVE: en las
         //  cuatro lenguas se dice igual y es la abreviatura que cualquier
         //  aparato usa para la automatizacion, como MIDI o XY.

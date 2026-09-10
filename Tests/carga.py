@@ -33,6 +33,13 @@
 import json, os, shutil, subprocess, sys, tempfile
 import concurrent.futures as cf
 
+#  LA PANTALLA QUE SE COMPRUEBA ES LA QUE SE USA: `PANTALLA` vive en
+#  `kits.py`, al lado de `display_alive`, y quien arranca la app la escribe
+#  en su entorno. Sin esta linea la comprobacion dice que si contra :99 y el
+#  arranque se va sin ventana — el veredicto entero en rojo con la app
+#  perfecta, que es lo que ya costo una tarde en `cpu.py` y otra en `instr.py`.
+from kits import PANTALLA                                          # noqa: E402
+
 HERE = os.path.dirname (os.path.abspath (__file__))
 ROOT = os.path.dirname (HERE)
 APP  = os.path.join (ROOT, "build", "Zati_artefacts", "Release", "Zati")
@@ -42,7 +49,7 @@ from expo import SHEETS          # la lista de pantallas vive en UN sitio
 
 
 def display_alive():
-    d = os.environ.get ("DISPLAY", ":99")
+    d = PANTALLA
     try:
         return subprocess.run (["xdpyinfo", "-display", d],
                                stdout=subprocess.DEVNULL,
@@ -55,7 +62,7 @@ def corre (env_extra, size="412x915"):
     #  HOME propio: sin el, la app restaura la sesion que dejara la prueba
     #  anterior y la cuenta de controles cambia con lo que hubiera puesto.
     casa = tempfile.mkdtemp (prefix="zati-carga-")
-    env = dict (os.environ, HOME=casa,
+    env = dict (os.environ, DISPLAY=PANTALLA, HOME=casa,
                 XDG_DATA_HOME=os.path.join (casa, ".local", "share"),
                 ZATI_SIZE=size, ZATI_LANG="es")
     env.update (env_extra)

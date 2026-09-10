@@ -27,6 +27,13 @@ El plano se lee de arriba abajo, que es como se lee la pantalla:
 """
 import json, os, re, shutil, subprocess, sys, tempfile
 
+#  LA PANTALLA QUE SE COMPRUEBA ES LA QUE SE USA: `PANTALLA` vive en
+#  `kits.py`, al lado de `display_alive`, y quien arranca la app la escribe
+#  en su entorno. Sin esta linea la comprobacion dice que si contra :99 y el
+#  arranque se va sin ventana — el veredicto entero en rojo con la app
+#  perfecta, que es lo que ya costo una tarde en `cpu.py` y otra en `instr.py`.
+from kits import PANTALLA                                          # noqa: E402
+
 sys.path.insert (0, os.path.dirname (os.path.abspath (__file__)))
 from kits import display_alive
 
@@ -78,7 +85,7 @@ def corre (sheet, size, lang):
     casa = tempfile.mkdtemp (prefix="zati-plano-")
     env = dict (os.environ, HOME=casa, ZATI_AUDIT="1", ZATI_SIZE=size,
                 ZATI_LANG=lang, ZATI_OPEN=sheet,
-                DISPLAY=os.environ.get ("DISPLAY", ":99"))
+                DISPLAY=PANTALLA)
     try:
         out = subprocess.run ([APP], env=env, capture_output=True, timeout=180).stdout.decode ("utf8", "replace")
     except subprocess.TimeoutExpired:

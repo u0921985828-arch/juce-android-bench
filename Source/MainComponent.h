@@ -26,6 +26,7 @@
 #include "FxMini.h"
 #include "MidiIo.h"
 #include "Instrumentos.h"
+#include "Sintes.h"
 
 // ============================================================================
 //  MainComponent — ZATI: a 16-pad matrix whose fragments carry the colour, an
@@ -2175,6 +2176,13 @@ private:
     juce::TextButton vstPreDown { "-" }, vstPreUp { "+" };
     juce::Rectangle<int> vstPreArea;
     juce::TextButton vstCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
+    //  LA PUERTA A EL PAD, en la cabecera y del lado del cierre, que es donde
+    //  esta ficha ya tiene sus tapas. Existe desde que la pestaña PAD de la
+    //  cara abre LO QUE EL PAD ES: un pad de instrumento llega aqui y no a EL
+    //  PAD, y la ganancia, el pan, el filtro y la envolvente son suyos igual
+    //  que de una muestra. La que va al reves ya existia y se queda -
+    //  `vstButton`, en EL PAD · RIG -: dos puertas y ninguna copia.
+    juce::TextButton vstPadBtn { "PAD" };
     juce::TextButton vstOctDown { "OCT -" }, vstOctUp { "OCT +" };
     //  Y LA PUERTA, en EL PAD y solo cuando el pad lleva instrumento.
     juce::TextButton vstButton { "PRESETS" };
@@ -2186,6 +2194,28 @@ private:
     //  no cuestan un pixel de alto. Ver paintVstSheetContent.
     juce::Rectangle<int> vstPanelCab, vstPanelPre, vstPanelTec;
 
+    //  LOS OCHO MANDOS DEL INSTRUMENTO, que es lo que le faltaba a esta ficha
+    //  para ser la de un instrumento y no la de una LISTA de instrumentos.
+    //
+    //  Los dieciseis por dieciseis eran de SOLO LECTURA: se pasaba de un preset
+    //  al siguiente y no habia una sola forma de tocar ninguno. Con eso, «un
+    //  pad se convierte en un instrumento» era medio verdad - suena como un
+    //  instrumento y no se puede ajustar como uno.
+    //
+    //  Cuatro de FORMA y cuatro comunes, que es la particion que Sintes ya
+    //  tiene escrita: los cuatro primeros significan cosas distintas en cada
+    //  una de las dieciseis -y eso es justo lo que las hace dieciseis
+    //  instrumentos y no uno con los numeros movidos- asi que su NOMBRE y su
+    //  RECORRIDO los dice la familia, no esta ficha.
+    juce::OwnedArray<juce::Slider> vstMandos;
+    //  Y LA VUELTA, que es lo unico que hace que mover sea reversible sin
+    //  contar toques: deshacer devuelve UN paso y esto devuelve la receta de
+    //  fabrica de ese preset. Solo existe con la receta movida - un control que
+    //  no puede hacer nada no es informacion, es ruido.
+    juce::TextButton vstVolver { "VOLVER" };
+    juce::Rectangle<int> vstPanelMandos, vstPieArea;
+
+    void abreFichaDelPad();
     void abreVst();
     //  QUE PADS SE TOCAN COMO TECLAS y cual esta sonando por cual. Ver
     //  PadButton::setModoNota: un instrumento sostiene, asi que su nota tiene
@@ -2195,6 +2225,12 @@ private:
     void refreshModoNota();
     std::array<int, AudioEngine::kNumPads> notaViva {};
     void refreshVst();
+    //  RE-SINTETIZAR AL SOLTAR EL MANDO Y NO AL MOVERLO. Un preset son diez
+    //  zonas y cuesta 77 ms medidos: hacerlo por cada valor del arrastre serian
+    //  setenta y siete milisegundos por fotograma, o sea un mando que no se
+    //  puede mover. Mientras el dedo esta encima solo se escribe el numero.
+    void resintetizaInstrumento (int pad);
+    void refrescaMandosVst();
     void paintVstSheetContent (juce::Graphics& g);
     //  Y SI ESTE PAD ES UN INSTRUMENTO, que lo preguntan cuatro sitios.
     bool padEsInstrumento (int i) const noexcept
@@ -2222,7 +2258,12 @@ private:
     //  siempre en el pad n de este banco. Que este clavado es la funcion: el
     //  07 esta donde la mano lo busca sin tener que acordarse de donde lo dejo.
     static constexpr int kBancoInstr = AudioEngine::kNumBanks - 1;   // D
-    void ponInstrumentoEnPad (int pad, int familia, int preset);
+    //  Y CON SU RECETA, que es lo que hace que abrir un proyecto no cueste dos
+    //  sintesis: nulo es «la de la tabla», que es como nace un preset recien
+    //  elegido. Escribir la receta a mano y re-sintetizar despues rendiria los
+    //  diez zonas dos veces para dejar el pad como se queria a la primera.
+    void ponInstrumentoEnPad (int pad, int familia, int preset,
+                              const Sintes::Preset* receta = nullptr, bool movida = false);
     void paintInstSheetContent (juce::Graphics& g);
 
     //  EL MASTER, y vive en la mesa por la misma razon que los faders: es el
@@ -2409,6 +2450,14 @@ private:
         //  el sonido, era lo que ese sonido ERA.
         //  -1 = no es un instrumento; si no, familia * 16 + preset.
         std::array<int, AudioEngine::kNumPads> inst;
+        //  Y LA RECETA MOVIDA, por la MISMA razon que las dos de arriba y en
+        //  el mismo sitio. `applyState` corre en el `onDone`, o sea DESPUES de
+        //  que este trabajo haya rendido los pads, asi que si la receta se
+        //  leyera alli el instrumento habria sonado ya con la fila de la
+        //  tabla: vuelve del fichero con los ocho mandos donde la persona los
+        //  dejo y suena con los de fabrica hasta que alguien mueva uno.
+        //  Vacia = la receta es la de la tabla.
+        std::array<juce::String, AudioEngine::kNumPads> receta;
         PadLoadJob() { source.fill (-1); inst.fill (-1); }
         std::function<void (int restored)> onDone;
     };
@@ -3104,6 +3153,18 @@ private:
     std::array<float, kNumPads> padReso {};       // 0..1
     std::array<float, kNumPads> padFadeIn {};     // ms
     std::array<float, kNumPads> padFadeOut {};    // ms
+    //  LA RECETA VIVA DE UN PAD DE INSTRUMENTO, y el bit que dice si esta
+    //  movida. El `SampleBuffer` guarda de QUE fila salio -familia y preset- y
+    //  eso es lo que el interruptor de presets mueve; esto guarda los ocho
+    //  numeros que se estan oyendo, que ya no tienen por que ser los de la
+    //  tabla.
+    //
+    //  Y el bit no es «distinta de la tabla»: es «la persona la ha tocado».
+    //  Deducirlo comparando los ocho numeros seria una regla escrita dos veces
+    //  -aqui y en la tabla- y ademas mentiria en el unico caso que importa,
+    //  volver a poner a mano el valor de fabrica de un mando.
+    std::array<Sintes::Preset, kNumPads> padReceta {};
+    std::array<bool, kNumPads> padRecetaMovida {};
     std::array<SampleBuffer::Ptr, kNumPads> uiSample;
     std::array<juce::String, kNumPads> padName {};
     std::array<int, kNumPads> padZati {};       // fragment colour per pad (cut order)

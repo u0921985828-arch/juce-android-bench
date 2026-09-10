@@ -2507,12 +2507,12 @@ void MainComponent::paintVstSheetContent (juce::Graphics& g)
     //  `Tests/paneles.py`: la unica prueba que mide un panel.
     {
         juce::Array<juce::Rectangle<int>> grupos;
-        for (const auto& r : { vstPanelCab, vstPanelPre, vstPanelTec })
+        for (const auto& r : { vstPanelCab, vstPanelPre, vstPanelTec, vstPanelMandos })
             if (! r.isEmpty()) grupos.add (r);
         pintaPaneles (g, grupos);
     }
 
-    auto titleRow = antesDe (vstTitleArea, vstCloseButton);
+    auto titleRow = antesDe (antesDe (vstTitleArea, vstCloseButton), vstPadBtn);
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
     pintaTitulo (g, titleRow,
@@ -2621,13 +2621,38 @@ void MainComponent::paintVstSheetContent (juce::Graphics& g)
         }
     }
 
-    auto inner = vstSheet.cuerpo.getLocalBounds().reduced (Metrics::lg, 0)
-                     .withTop (vstPanelTec.isEmpty() ? vstSheet.cuerpo.getHeight() - 40
-                                                     : vstPanelTec.getBottom() + Metrics::sm);
-    g.setColour (ZatiColours::inkDim);
-    g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.06f));
-    g.drawFittedText (T ("El teclado suena mientras lo tengas tocado. Las flechas cambian el preset."),
-                      inner.removeFromTop (40), Lang::start (juce::Justification::top), 2, 1.0f);
+    //  LOS NOMBRES DE LOS OCHO MANDOS, y salen de la FAMILIA.
+    //
+    //  `claveDeMando` no vale aqui, que es la tabla slider->clave con la que se
+    //  pintan los del pad y los del rack: la de estos ocho no es fija - los
+    //  cuatro primeros los dice la forma, y por eso hay dieciseis instrumentos
+    //  y no uno con los numeros movidos. La misma cadena que `refrescaMandosVst`
+    //  pone como nombre accesible: lo que se ve y lo que lee TalkBack no pueden
+    //  ser dos textos mantenidos a mano.
+    if (fam >= 0 && vstMandos.size() == Sintes::kMandos && ! vstPanelMandos.isEmpty())
+    {
+        g.setColour (ZatiColours::ink.withAlpha (0.55f));
+        g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
+        for (int i = 0; i < Sintes::kMandos; ++i)
+            if (auto* k = vstMandos[i])
+                if (! k->getBounds().isEmpty())
+                    g.drawText (T (Sintes::mando (fam, i)),
+                                bandAbove (*k, ZatiLookAndFeel::kKnobName, 2, 6),
+                                juce::Justification::centred);
+    }
+
+    if (! vstPieArea.isEmpty())
+    {
+        g.setColour (ZatiColours::inkDim);
+        g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.06f));
+        //  TRES lineas y no dos, y no cuesta un pixel: la banda mide 40 px y
+        //  `fMeta` son diez unidades, o sea que tres renglones caben dentro de
+        //  lo que ya se reservaba. Con dos, la frase merged -que dice el gesto
+        //  del teclado Y los ocho mandos- se cortaba por la mitad, y media
+        //  frase de ayuda se lee como un fallo.
+        g.drawFittedText (T ("El teclado suena mientras lo tengas tocado. Los ocho mandos afinan este preset y VOLVER lo devuelve."),
+                          vstPieArea, Lang::start (juce::Justification::top), 3, 1.0f);
+    }
 }
 
 //  Each row says three things: which effect, whether it is switched on at

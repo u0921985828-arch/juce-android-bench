@@ -16,6 +16,13 @@
 # ============================================================================
 import json, os, subprocess, sys, tempfile
 
+#  LA PANTALLA QUE SE COMPRUEBA ES LA QUE SE USA: `PANTALLA` vive en
+#  `kits.py`, al lado de `display_alive`, y quien arranca la app la escribe
+#  en su entorno. Sin esta linea la comprobacion dice que si contra :99 y el
+#  arranque se va sin ventana — el veredicto entero en rojo con la app
+#  perfecta, que es lo que ya costo una tarde en `cpu.py` y otra en `instr.py`.
+from kits import PANTALLA                                          # noqa: E402
+
 ROOT = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
 APP  = os.path.join (ROOT, "build", "Zati_artefacts", "Release", "Zati")
 
@@ -26,7 +33,7 @@ DEDO = 40
 
 
 def display_alive():
-    d = os.environ.get ("DISPLAY", ":99")
+    d = PANTALLA
     try:
         return subprocess.run (["xdpyinfo", "-display", d], stdout=subprocess.DEVNULL,
                                stderr=subprocess.DEVNULL, timeout=10).returncode == 0
@@ -38,7 +45,7 @@ def corre (size="412x915"):
     casa = tempfile.mkdtemp (prefix="zati-clips-")
     env = dict (os.environ, HOME=casa, ZATI_AUDIT="1", ZATI_SIZE=size,
                 ZATI_LANG="es", ZATI_CLIPS="1",
-                DISPLAY=os.environ.get ("DISPLAY", ":99"))
+                DISPLAY=PANTALLA)
     out = subprocess.run ([APP], env=env, capture_output=True, timeout=300)
     for l in out.stdout.decode ("utf8", "replace").splitlines():
         l = l.strip()

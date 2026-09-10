@@ -30,6 +30,13 @@ dentro (las fotos en base64) para poder mirarlo de una vez. La carpeta va al
 import base64, json, os, shutil, subprocess, sys, tempfile
 import concurrent.futures
 
+#  LA PANTALLA QUE SE COMPRUEBA ES LA QUE SE USA: `PANTALLA` vive en
+#  `kits.py`, al lado de `display_alive`, y quien arranca la app la escribe
+#  en su entorno. Sin esta linea la comprobacion dice que si contra :99 y el
+#  arranque se va sin ventana — el veredicto entero en rojo con la app
+#  perfecta, que es lo que ya costo una tarde en `cpu.py` y otra en `instr.py`.
+from kits import PANTALLA                                          # noqa: E402
+
 ROOT = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
 APP  = os.environ.get ("ZATI_BIN") or os.path.join (
         ROOT, "build", "Zati_artefacts", "Release", "Zati")
@@ -162,7 +169,7 @@ def iconos_del_binario (n=24):
     env = dict (os.environ)
     env.update ({"ZATI_AUDIT": "1", "ZATI_SIZE": "412x915", "ZATI_LANG": "es",
                  "ZATI_OPEN": "pads", "ZATI_ICONOS": str (n),
-                 "DISPLAY": os.environ.get ("DISPLAY", ":99")})
+                 "DISPLAY": PANTALLA})
     try:
         out = subprocess.run ([APP], env=env, capture_output=True,
                               timeout=300).stdout.decode ("utf8", "replace")
@@ -371,7 +378,7 @@ def corre (clave, tam, lang, extra=None):
         env = dict (os.environ)
         env.update ({"HOME": casa, "XDG_DATA_HOME": os.path.join (casa, ".local", "share"),
                      "ZATI_AUDIT": "1", "ZATI_SIZE": tam, "ZATI_LANG": lang,
-                     "ZATI_OPEN": clave, "DISPLAY": os.environ.get ("DISPLAY", ":99")})
+                     "ZATI_OPEN": clave, "DISPLAY": PANTALLA})
         if extra:
             env.update (extra)
         out = subprocess.run ([APP], env=env, capture_output=True,

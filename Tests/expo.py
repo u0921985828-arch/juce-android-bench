@@ -65,14 +65,12 @@ MIN_NOTE = 16   # la fila del piano roll: ver el bloque 0 de juzga()
 #  Ha pasado cuatro veces, y cada una costo un rato de mirar codigo que estaba
 #  bien. Un banco que no distingue "la app falla" de "no hay donde dibujarla"
 #  no es un banco, es una fuente de sustos.
-def display_alive():
-    d = os.environ.get("DISPLAY", ":99")
-    try:
-        return subprocess.run(["xdpyinfo", "-display", d],
-                              stdout=subprocess.DEVNULL,
-                              stderr=subprocess.DEVNULL, timeout=10).returncode == 0
-    except Exception:
-        return False
+#  Y LA PANTALLA QUE SE COMPRUEBA ES LA QUE SE USA: la constante vive en
+#  `kits.py`, al lado de `display_alive`, y no se vuelve a escribir aqui. Este
+#  fichero llevaba `DISPLAY=":99"` clavado en `run()` mientras la comprobacion
+#  leia el entorno — la misma regla con dos numeros, que es como `cpu.py` y
+#  `instr.py` acabaron dando el veredicto entero en rojo con la app perfecta.
+from kits import PANTALLA, display_alive                           # noqa: E402
 
 
 #  EN PARALELO, Y CADA UNA CON SU CASA.
@@ -87,7 +85,7 @@ def display_alive():
 #  da carpetas distintas y no se pisan.
 def run(size, lang, sheet, casa=None):
     env = dict(os.environ, ZATI_AUDIT="1", ZATI_SIZE=size, ZATI_LANG=lang,
-               ZATI_OPEN=sheet, DISPLAY=":99")
+               ZATI_OPEN=sheet, DISPLAY=PANTALLA)
     if casa:
         env["HOME"] = casa
         env["XDG_DATA_HOME"] = casa
@@ -818,7 +816,8 @@ def una_pagina(combo):
     """Un recorrido de paginas. Devuelve el culpable, o None si esta limpio."""
     size, lang = combo
     env = dict (os.environ)
-    env.update ({"ZATI_AUDIT": "1", "ZATI_SIZE": size, "ZATI_LANG": lang,
+    env.update ({"DISPLAY": PANTALLA,
+                 "ZATI_AUDIT": "1", "ZATI_SIZE": size, "ZATI_LANG": lang,
                  "ZATI_DEMO": "1", "ZATI_PAGES": "1"})
     try:
         out = subprocess.run([BIN], env=env, capture_output=True,
@@ -831,7 +830,18 @@ def una_pagina(combo):
             d = json.loads (linea)
             if d.get ("solapes", 0) or d.get ("fuera", 0):
                 return d.get ("culpable", "?")
-    return None
+            return None
+    #  Y SI NO PUBLICO LA LINEA, NO ESTA LIMPIA: NO SE HA MEDIDO.
+    #
+    #  Esta funcion devolvia None -o sea «limpio»- por el mismo camino con el
+    #  que sale una corrida buena y con el que sale una que no llego a abrir la
+    #  ventana. Con la pantalla sin poner, las corridas del ciclado de paginas
+    #  daban cero solapes sin haber recorrido una sola ficha: la regla del
+    #  RESIDUO -la unica que caza un control que conserva las coordenadas de la
+    #  pagina anterior- imprimia OK y no miraba nada. Es la cadena de control
+    #  que `marcas.py` y `apk.py` ya tienen: si el barrido no ve lo que tiene
+    #  que ver, FALLA.
+    return "no publico paginas"
 
 
 #  Una corrida entera dentro de UN proceso: lanzar la app, leer su volcado y
@@ -925,7 +935,7 @@ def main():
     if not display_alive():
         sys.exit("la pantalla virtual %s no responde: sin ella las 448 corridas "
                  "salen vacias y parece que la app esta rota.\n"
-                 "    Xvfb :99 -screen 0 1920x1080x24 &" % os.environ.get("DISPLAY", ":99"))
+                 "    Xvfb :99 -screen 0 1920x1080x24 &" % PANTALLA)
 
     only = sys.argv[1:]
     allf = []

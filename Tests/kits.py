@@ -89,10 +89,36 @@ ENVBINS = 8                # tramos de tiempo, tambien logaritmicos
 FLOOR   = -60.0            # por debajo de esto ya es silencio y no forma
 
 
+#  LA PANTALLA QUE SE COMPRUEBA ES LA QUE SE USA, y vive en UN sitio.
+#
+#  `display_alive` caia a ":99" cuando `DISPLAY` no esta puesta en el entorno, y
+#  las corridas se lanzaban con `dict (os.environ)` TAL CUAL, o sea sin pantalla:
+#  la comprobacion decia que si contra :99 y los arranques se iban sin ventana.
+#  Es una regla escrita dos veces con la forma mas barata que tiene -un defecto
+#  en un sitio y ninguno en el otro- y ya se pago una vez en `cpu.py`, donde el
+#  veredicto entero salio en rojo con la app perfecta. Aqui volvio a costar lo
+#  mismo en `instr.py`: `salieron 0 presets y son 256` con el binario bueno.
+#
+#  Por eso la constante sale de `display_alive` y se exporta: quien arranca la
+#  app escribe `env["DISPLAY"] = PANTALLA` y no vuelve a adivinar.
+#
+#  Y SE ESCRIBE EN EL ENTORNO, que es lo que hace que no se pueda olvidar. Con
+#  la constante sola la regla queda escrita en los cuarenta y nueve sitios que
+#  arrancan la app, y tres se quedaron fuera: `expo.py` en el ciclado de
+#  paginas y las dos de `session.py` -el proyecto que se guarda y se abre, y
+#  los seis `project.xml` congelados-. Los tres construyen su entorno con
+#  `dict (os.environ)` y `env.update`, o sea heredando, asi que ponerla AQUI
+#  los arregla por construccion y arregla tambien el sitio que alguien escriba
+#  manana. Los `DISPLAY=PANTALLA` que ya estan puestos no sobran ni son una
+#  segunda regla: dicen el mismo valor del mismo dueno, en el sitio donde se
+#  lee que la corrida necesita ventana.
+PANTALLA = os.environ.get ("DISPLAY") or ":99"
+os.environ["DISPLAY"] = PANTALLA
+
+
 def display_alive():
-    d = os.environ.get ("DISPLAY", ":99")
     try:
-        return subprocess.run (["xdpyinfo", "-display", d], stdout=subprocess.DEVNULL,
+        return subprocess.run (["xdpyinfo", "-display", PANTALLA], stdout=subprocess.DEVNULL,
                                stderr=subprocess.DEVNULL, timeout=10).returncode == 0
     except Exception:
         return False

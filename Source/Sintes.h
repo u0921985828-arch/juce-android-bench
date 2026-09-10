@@ -115,4 +115,62 @@ namespace Sintes
     //  Sintetiza un preset entero -diez zonas- en un solo buffer con su tabla.
     //  HILO DE FONDO: reserva memoria y tarda. Nunca desde el de audio.
     SampleBuffer::Ptr sintetiza (int familia, int preset);
+
+    // ------------------------------------------------------------------------
+    //  Y UNA RECETA SE PUEDE MOVER, que es lo que separa «elegir un sonido» de
+    //  «tener un instrumento».
+    //
+    //  Los dieciseis por dieciseis eran una tabla de SOLO LECTURA: la ficha del
+    //  pad podia pasar de un preset al siguiente y no habia una sola forma de
+    //  tocar ninguno. Un instrumento que no se toca es un sample con nombre.
+    //
+    //  Los ocho numeros son los que ya tenia un `Preset`: los CUATRO de la
+    //  forma -que significan cosas distintas en cada una de las dieciseis, y
+    //  eso es justo lo que las hace dieciseis instrumentos y no uno con los
+    //  numeros movidos- mas ataque, caida, suelta y brillo, que significan lo
+    //  mismo en todas.
+    static constexpr int kMandos = 8;
+
+    //  EL RECORRIDO SALE DE LA TABLA Y NO SE ESCRIBE.
+    //
+    //  Escrito a mano serian dos reglas -la tabla y el rango- y la que se
+    //  quedara vieja dejaria un mando que llega donde la forma no admite, o
+    //  uno que no llega a un preset que si existe. Derivado, un preset nuevo
+    //  que se salga ensancha su mando solo.
+    //
+    //  Y en DOS poblaciones y no una, que es una decision y no un descuido:
+    //
+    //   · los cuatro de FORMA, del rango de las dieciseis filas de SU familia.
+    //     Su significado es de la forma -«razon del modulador» no es «mas» de
+    //     nada fuera de lo que esa forma admite- asi que la poblacion que lo
+    //     define son sus propios presets.
+    //   · ataque, caida, suelta y brillo, del rango de las 256. Ahi el limite
+    //     es MUSICAL y no de la forma: un bajo con dos segundos de ataque es un
+    //     bajo con dos segundos de ataque, y negarselo seria inventarse una
+    //     regla que la tabla no dice.
+    struct Rango { float lo, hi; };
+    Rango rango (int familia, int i);
+
+    //  COMO SE LLAMA EL MANDO i DE ESA FAMILIA. La CLAVE, sin traducir: quien
+    //  traduce es `T()` en la cara, igual que los `param[]` de un efecto. Los
+    //  cuatro primeros los dice la forma; los cuatro de atras son los mismos en
+    //  las dieciseis.
+    const char* mando (int familia, int i);
+
+    //  LOS OCHO POR INDICE, que es lo que hace que la ficha no tenga que
+    //  escribir ocho ramas -y que el fichero de proyecto los guarde en un
+    //  bucle-.
+    float valor    (const Preset& r, int i);
+    void  ponValor (Preset& r, int i, float v);
+
+    //  LA PUERTA ACOTADA. La receta llega de la cara y del `project.xml`, que
+    //  puede estar corrupto o ser de otra epoca, asi que se acota DONDE SE
+    //  ENTRA y no en quien llama - la misma regla que los seis parametros de un
+    //  pad y que `setSongCell`.
+    Preset acota (int familia, const Preset& r);
+
+    //  Y la puerta de verdad: rinde LA RECETA QUE SE LE DE. `preset` se queda
+    //  para decir de que fila salio, que es lo que el fichero guarda y lo que
+    //  el interruptor de presets mueve.
+    SampleBuffer::Ptr sintetiza (int familia, int preset, const Preset& receta);
 }

@@ -1,5 +1,6 @@
 #include "Sintes.h"
 
+#include <cmath>
 #include <cstring>
 #include <vector>
 
@@ -12,8 +13,125 @@ namespace Sintes
     static constexpr double kRate = Kits::kRate;
 
     #include "SintesTabla.inc"
+    #include "SintesMandos.inc"
+
+    static_assert (sizeof (kMandosDeForma) / sizeof (kMandosDeForma[0]) == kFamilias,
+                   "una fila de mas o de menos pone los nombres de una forma en la de al lado");
 
     const Familia* tabla() { return kTabla; }
+
+    // ------------------------------------------------------------------------
+    //  LOS OCHO POR INDICE. Escrito UNA vez: la ficha, el fichero de proyecto y
+    //  la puerta acotada preguntan los tres por aqui, y con ocho ramas en cada
+    //  sitio la tercera es la que un dia se escribe con el indice cambiado.
+    // ------------------------------------------------------------------------
+    float valor (const Preset& r, int i)
+    {
+        switch (i)
+        {
+            case 0: return r.p1;   case 1: return r.p2;
+            case 2: return r.p3;   case 3: return r.p4;
+            case 4: return r.atk;  case 5: return r.dec;
+            case 6: return r.rel;  case 7: return r.brillo;
+            default: return 0.0f;
+        }
+    }
+
+    void ponValor (Preset& r, int i, float v)
+    {
+        switch (i)
+        {
+            case 0: r.p1 = v; break;   case 1: r.p2 = v; break;
+            case 2: r.p3 = v; break;   case 3: r.p4 = v; break;
+            case 4: r.atk = v; break;  case 5: r.dec = v; break;
+            case 6: r.rel = v; break;  case 7: r.brillo = v; break;
+            default: break;
+        }
+    }
+
+    const char* mando (int familia, int i)
+    {
+        if (! juce::isPositiveAndBelow (i, kMandos)) return "";
+        if (i >= 4) return kMandosComunes[i - 4];
+        const int f = juce::jlimit (0, kFamilias - 1, familia);
+        return kMandosDeForma[(int) kTabla[f].forma][i];
+    }
+
+    // ------------------------------------------------------------------------
+    //  EL RECORRIDO SE DERIVA DE LA TABLA, en dos poblaciones. Ver Sintes.h.
+    //
+    //  Se calcula una vez y se guarda: son 16 x 8 numeros y esto lo pregunta el
+    //  maquetado de la ficha, o sea muchas veces por segundo.
+    // ------------------------------------------------------------------------
+    Rango rango (int familia, int i)
+    {
+        //  Y CON LA INICIALIZACION DEL LENGUAJE Y NO CON UN BOOLEANO. Esto lo
+        //  pregunta el maquetado de la ficha -hilo de mensajes- y tambien
+        //  `acota`, que corre dentro de `sintetiza`, o sea en el hilo del
+        //  cargador: un `static bool hecha` es una carrera entre los dos, con
+        //  la tabla a medio llenar durante el par de microsegundos que dura.
+        //  Un `static` de funcion con inicializador SI lo garantiza el
+        //  lenguaje desde C++11.
+        struct Tabla { Rango r[kFamilias][kMandos]; };
+        static const Tabla tablaRango = []
+        {
+            Tabla t {};
+            //  Los cuatro comunes, de las 256: significan lo mismo en las
+            //  dieciseis formas, asi que su limite es musical y no de la forma.
+            Rango comun[4];
+            for (int k = 0; k < 4; ++k) comun[k] = { 1.0e30f, -1.0e30f };
+            for (int f = 0; f < kFamilias; ++f)
+                for (int pz = 0; pz < kPresets; ++pz)
+                    for (int k = 0; k < 4; ++k)
+                    {
+                        const float v = valor (kTabla[f].p[pz], 4 + k);
+                        comun[k].lo = juce::jmin (comun[k].lo, v);
+                        comun[k].hi = juce::jmax (comun[k].hi, v);
+                    }
+
+            for (int f = 0; f < kFamilias; ++f)
+            {
+                //  Y los cuatro de forma, de las dieciseis filas de SU familia.
+                for (int k = 0; k < 4; ++k)
+                {
+                    Rango r { 1.0e30f, -1.0e30f };
+                    for (int pz = 0; pz < kPresets; ++pz)
+                    {
+                        const float v = valor (kTabla[f].p[pz], k);
+                        r.lo = juce::jmin (r.lo, v);
+                        r.hi = juce::jmax (r.hi, v);
+                    }
+                    //  UN MANDO QUE NO SE MUEVE ES PEOR QUE NO TENERLO, y una
+                    //  familia cuyas dieciseis filas escriben el mismo numero
+                    //  dejaria el suyo clavado. Hoy no pasa en ninguna de las
+                    //  sesenta y cuatro -medido- y esto es lo que hace que una
+                    //  fila nueva no pueda crearlo sin que nadie se entere.
+                    if (r.hi - r.lo < 1.0e-6f) r.hi = r.lo + juce::jmax (1.0e-3f, std::abs (r.lo));
+                    t.r[f][k] = r;
+                }
+                for (int k = 0; k < 4; ++k) t.r[f][4 + k] = comun[k];
+            }
+            return t;
+        }();
+
+        const int f = juce::jlimit (0, kFamilias - 1, familia);
+        return juce::isPositiveAndBelow (i, kMandos) ? tablaRango.r[f][i] : Rango { 0.0f, 1.0f };
+    }
+
+    Preset acota (int familia, const Preset& r)
+    {
+        Preset out = r;
+        for (int i = 0; i < kMandos; ++i)
+        {
+            const auto ra = rango (familia, i);
+            const float v = valor (r, i);
+            //  Un NaN de un fichero a medio escribir no lo tapa un jlimit:
+            //  comparar con NaN siempre es falso. Es la misma barrera que ya
+            //  esta en `Voice::start` y en `fastTanh`.
+            ponValor (out, i, std::isfinite (v) ? juce::jlimit (ra.lo, ra.hi, v) : ra.lo);
+        }
+        return out;
+    }
 
     juce::String nombreDe (int familia, int preset)
     {
@@ -590,12 +708,33 @@ namespace Sintes
     // ------------------------------------------------------------------------
     //  EL PRESET ENTERO: cinco raices por dos capas en un solo buffer.
     // ------------------------------------------------------------------------
+    //  LA RECETA ES UN ARGUMENTO, que es lo que hace editable un instrumento.
+    //
+    //  Hasta aqui esta funcion leia `kTabla[familia].p[preset]` y no habia
+    //  forma de rendir otra cosa: los dieciseis por dieciseis eran una tabla
+    //  de solo lectura, asi que la ficha del pad podia ELEGIR un sonido y no
+    //  TOCARLO. La receta pasa a entrar por la puerta y el `preset` se queda
+    //  para decir de que FILA salio -que es lo que el fichero de proyecto
+    //  guarda y lo que el interruptor de presets mueve-.
+    //
+    //  Y las dos, con la de la tabla como el CASO en que nadie la ha movido:
+    //  es la misma forma que `cargaFabricaEnBanco` contra `loadFactoryKits`, y
+    //  por lo mismo - dos caminos que rinden por su cuenta se separan, y el
+    //  sintoma seria «el preset y el editado no suenan igual» sin poder decir
+    //  por que.
     SampleBuffer::Ptr sintetiza (int familia, int preset)
     {
         const int fi = juce::jlimit (0, kFamilias - 1, familia);
         const int pi = juce::jlimit (0, kPresets  - 1, preset);
+        return sintetiza (fi, pi, kTabla[fi].p[pi]);
+    }
+
+    SampleBuffer::Ptr sintetiza (int familia, int preset, const Preset& receta)
+    {
+        const int fi = juce::jlimit (0, kFamilias - 1, familia);
+        const int pi = juce::jlimit (0, kPresets  - 1, preset);
         const auto& F = kTabla[fi];
-        const auto& P = F.p[pi];
+        const Preset P = acota (fi, receta);
 
         //  CUANTO DURA UNA ZONA.
         //

@@ -31,6 +31,13 @@ import json, os, subprocess, sys, tempfile, shutil
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 
+#  LA PANTALLA QUE SE COMPRUEBA ES LA QUE SE USA: `PANTALLA` vive en
+#  `kits.py`, al lado de `display_alive`, y quien arranca la app la escribe
+#  en su entorno. Sin esta linea la comprobacion dice que si contra :99 y el
+#  arranque se va sin ventana — el veredicto entero en rojo con la app
+#  perfecta, que es lo que ya costo una tarde en `cpu.py` y otra en `instr.py`.
+from kits import PANTALLA                                          # noqa: E402
+
 HERE = os.path.dirname (os.path.abspath (__file__))
 APP  = os.path.join (HERE, "..", "build", "Zati_artefacts", "Release", "Zati")
 
@@ -68,7 +75,7 @@ AIRE_X, AIRE_Y, SEPARACION = tokens()
 
 
 def run (size, lang, sheet, casa):
-    env = dict (os.environ)
+    env = dict (os.environ, DISPLAY=PANTALLA)
     env.update ({"ZATI_AUDIT": "1", "ZATI_SIZE": size, "ZATI_LANG": lang,
                  "ZATI_OPEN": sheet, "ZATI_SKIN": "3", "HOME": casa})
     try:

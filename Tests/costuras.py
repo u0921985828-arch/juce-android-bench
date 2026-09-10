@@ -56,6 +56,13 @@
 # ============================================================================
 import json, os, subprocess, sys, tempfile, zlib, struct
 
+#  LA PANTALLA QUE SE COMPRUEBA ES LA QUE SE USA: `PANTALLA` vive en
+#  `kits.py`, al lado de `display_alive`, y quien arranca la app la escribe
+#  en su entorno. Sin esta linea la comprobacion dice que si contra :99 y el
+#  arranque se va sin ventana — el veredicto entero en rojo con la app
+#  perfecta, que es lo que ya costo una tarde en `cpu.py` y otra en `instr.py`.
+from kits import PANTALLA                                          # noqa: E402
+
 ROOT = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
 APP  = os.path.join (ROOT, "build", "Zati_artefacts", "Release", "Zati")
 sys.path.insert (0, os.path.join (ROOT, "Tests"))
@@ -76,7 +83,7 @@ LISTON = 1.0
 
 
 def display_alive():
-    d = os.environ.get ("DISPLAY", ":99")
+    d = PANTALLA
     try:
         return subprocess.run (["xdpyinfo", "-display", d], stdout=subprocess.DEVNULL,
                                stderr=subprocess.DEVNULL, timeout=10).returncode == 0
@@ -120,7 +127,7 @@ def lee_png (ruta):
 def corre (size, shot, abre=None):
     casa = tempfile.mkdtemp (prefix="zati-costura-")
     env = dict (os.environ, HOME=casa, ZATI_AUDIT="1", ZATI_SIZE=size, ZATI_LANG="es",
-                DISPLAY=os.environ.get ("DISPLAY", ":99"))
+                DISPLAY=PANTALLA)
     if shot: env["ZATI_SHOT"] = shot
     if abre: env["ZATI_OPEN"] = abre
     out = subprocess.run ([APP], env=env, capture_output=True, timeout=300)
@@ -180,7 +187,7 @@ def espectro (size):
     def corrida (sonando):
         env = dict (os.environ, HOME=tempfile.mkdtemp (prefix="zati-esp-"),
                     ZATI_AUDIT="1", ZATI_SIZE=size, ZATI_LANG="es", ZATI_DEMO="1",
-                    ZATI_SPIN="3", DISPLAY=os.environ.get ("DISPLAY", ":99"))
+                    ZATI_SPIN="3", DISPLAY=PANTALLA)
         if sonando: env["ZATI_SONANDO"] = "1"
         out = subprocess.run ([APP], env=env, capture_output=True, timeout=300)
         for l in out.stdout.decode ("utf8", "replace").splitlines():

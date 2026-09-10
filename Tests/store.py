@@ -27,6 +27,9 @@
 # ============================================================================
 import os, re, shutil, struct, subprocess, sys
 
+sys.path.insert (0, os.path.dirname (os.path.abspath (__file__)))
+from kits import PANTALLA                                          # noqa: E402
+
 ROOT = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
 APP  = os.path.join (ROOT, "build", "Zati_artefacts", "Release", "Zati")
 OUT  = sys.argv[1] if len (sys.argv) > 1 else os.path.join (ROOT, "store")
@@ -73,8 +76,14 @@ def png_size (path):
 
 
 def run (env_extra, home):
+    #  LA PANTALLA LA DICE `kits.PANTALLA`, que es su unico dueño. Aqui estaba
+    #  escrita por TERCERA vez y con la forma que ademas no funciona:
+    #  `env.get ("DISPLAY", ":99")` devuelve el defecto cuando la variable NO
+    #  esta, y "" cuando esta puesta y vacia — que es exactamente el entorno de
+    #  esta maquina. Un defecto que solo cubre la mitad de los casos se lee como
+    #  si los cubriera los dos.
     env = dict (os.environ)
-    env["DISPLAY"] = env.get ("DISPLAY", ":99")
+    env["DISPLAY"] = PANTALLA
     env["HOME"] = home
     env.update (env_extra)
     subprocess.run ([APP], env=env, stdout=subprocess.DEVNULL,

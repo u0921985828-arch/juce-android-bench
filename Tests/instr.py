@@ -52,7 +52,7 @@ import json, math, os, shutil, subprocess, sys, tempfile
 
 sys.path.insert (0, os.path.dirname (os.path.abspath (__file__)))
 from kits import (APP, BANDS, ENVBINS, FLOOR, NFFT, MAX_LOUD_SPREAD_DB,
-                  MAX_PEAK, MIN_LOUD, MIN_PEAK, descriptor, display_alive,
+                  MAX_PEAK, MIN_LOUD, MIN_PEAK, PANTALLA, descriptor, display_alive,
                   distancia, fft, load, loudness)
 
 RAICES   = [-24, -12, 0, 12, 24]
@@ -159,7 +159,12 @@ def corre (dirtemp):
     casa = tempfile.mkdtemp (prefix="zati-instr-")
     try:
         env = dict (os.environ)
-        env.update ({"HOME": casa, "XDG_DATA_HOME": os.path.join (casa, ".local", "share"),
+        #  DISPLAY va PUESTA: `display_alive` cae a ":99" cuando el entorno no
+        #  la trae, asi que sin esta linea la comprobacion decia que si contra
+        #  una pantalla y la app arrancaba sin ninguna — `salieron 0 presets y
+        #  son 256` con el binario bueno. Ver `PANTALLA` en `kits.py`.
+        env.update ({"DISPLAY": PANTALLA,
+                     "HOME": casa, "XDG_DATA_HOME": os.path.join (casa, ".local", "share"),
                      "ZATI_AUDIT": "1", "ZATI_SIZE": "412x915", "ZATI_LANG": "es",
                      "ZATI_OPEN": "pads", "ZATI_INSTR": dirtemp})
         out = subprocess.run ([APP], env=env, capture_output=True, text=True,
@@ -177,6 +182,8 @@ def corre (dirtemp):
         elif d.get ("instr") == "bancoD": extra["bancoD"] = d["ms"]
         elif d.get ("instr") == "vuelta": extra["vuelta"] = d
         elif d.get ("instr") == "destino": extra["destino"] = d
+        elif d.get ("instr") == "receta":  extra["receta"] = d
+        elif d.get ("instr") == "pestana": extra["pestana"] = d
         elif d.get ("instr") == "error":  extra["error"] = d.get ("que", "")
     return filas, extra
 
@@ -402,6 +409,77 @@ def main():
             if de["pedido"] == de["clavado"]:
                 fallos.append ("la prueba pide justo el pad clavado (%d): no mide nada"
                                % de["pedido"])
+
+        # ---- LA RECETA ES DEL PAD --------------------------------------
+        #
+        #  Los dieciseis por dieciseis eran una tabla de SOLO LECTURA: la ficha
+        #  podia pasar de un preset al siguiente y no habia una sola forma de
+        #  tocar ninguno. Un instrumento que no se toca es un sample con
+        #  nombre.
+        #
+        #  CON DOS CIFRAS Y NO UNA. «Mover un mando cambia el audio» lo cumple
+        #  tambien un codigo que rinde algo distinto cada vez -y entonces
+        #  VOLVER no devolveria nada-, y «volver deja el mismo audio» lo cumple
+        #  un mando que no esta conectado. Bit a bit y no por nivel: la
+        #  sintesis iguala la sonoridad por octava, asi que «casi el mismo
+        #  pico» es justo lo que dejaria pasar una receta que no llega al
+        #  oscilador.
+        rc = extra.get ("receta")
+        if rc is None:
+            fallos.append ("no hay linea de receta: nadie mide si los ocho mandos hacen algo")
+        else:
+            print ("\nreceta movida: %d muestras cambian al mover el mando, "
+                   "%d al volver a la fila" % (rc["suena"], rc["vuelve"]))
+            print ("y del fichero vuelven %s mandos, audio %d muestras de diferencia"
+                   % (rc["mandos"], rc["audio"]))
+            if rc["suena"] <= 0:
+                fallos.append ("mover un mando de la receta no cambia una sola muestra: "
+                               "los ocho no llegan al oscilador")
+            if rc["vuelve"] != 0:
+                fallos.append ("VOLVER no devuelve la fila de la tabla: %d muestras "
+                               "de diferencia" % rc["vuelve"])
+            #  Y LA IDA Y VUELTA POR EL FICHERO, por el camino de verdad -el
+            #  trabajo troceado, que es quien rinde los pads al abrir-. Las dos
+            #  mitades: los ocho numeros y el AUDIO. Solo los numeros lo cumple
+            #  un lector que los guarda y sintetiza la fila igualmente, que es
+            #  exactamente lo que pasaba mientras la receta se leia en
+            #  `applyState` -o sea DESPUES de rendir los pads-.
+            a, b = rc["mandos"].split ("/")
+            if a != b:
+                fallos.append ("del fichero vuelven %s mandos de la receta" % rc["mandos"])
+            if not rc["movida"]:
+                fallos.append ("la receta vuelve del fichero y el pad no se sabe movido: "
+                               "VOLVER no aparecera y el proyecto siguiente no la guardara")
+            if rc["audio"] != 0:
+                fallos.append ("el pad vuelve del fichero sonando distinto: %d muestras "
+                               "-se rindio la fila de la tabla y no la receta-" % rc["audio"])
+
+        # ---- LA PESTAÑA PAD ABRE LO QUE EL PAD ES ----------------------
+        #
+        #  Ninguna de las catorce reglas de expo.py puede verlo: una pestaña
+        #  que abre la ficha equivocada se maqueta perfecta. Y con DOS cifras,
+        #  que una se engaña: QUE ficha queda abierta *y* si la pestaña se
+        #  queda ENCENDIDA - «abre la del instrumento» lo cumple igual un
+        #  camino que se salta `openSheet`, y entonces la fila de la cara dice
+        #  que no hay ninguna ficha abierta con una delante.
+        pe = extra.get ("pestana")
+        if pe is None:
+            fallos.append ("no hay linea de pestana: nadie mide que abre PAD")
+        else:
+            print ("\nla pestana PAD: con una muestra abre %s (tapa %d), con un "
+                   "instrumento %s (tapa %d), y la puerta vuelve a %s"
+                   % (pe["normal"], pe["tapaN"], pe["instrumento"], pe["tapaI"], pe["vuelta"]))
+            if pe["normal"] != "pad":
+                fallos.append ("con una muestra la pestana PAD abre %s" % pe["normal"])
+            if pe["instrumento"] != "vst":
+                fallos.append ("con un instrumento la pestana PAD abre %s y no su ficha"
+                               % pe["instrumento"])
+            if not pe["tapaN"] or not pe["tapaI"]:
+                fallos.append ("la pestana se queda apagada con su ficha delante: "
+                               "la cara dice que no hay ninguna abierta")
+            if pe["vuelta"] != "pad":
+                fallos.append ("la puerta de la ficha del instrumento no lleva a EL PAD: "
+                               "la ganancia, el pan y el filtro se quedan sin camino")
 
         if "bancoD" in extra:
             print ("\nllenar el banco D con los 16: %.0f ms" % extra["bancoD"])

@@ -67,7 +67,13 @@ MainComponent::MainComponent()
             loadArmed = false;
             loadButton.setToggleState (false, juce::dontSendNotification);
             selectPad (i);
-            openSheet (padSheet, padsButton);
+            //  Por la MISMA puerta que la pestaña PAD y no con la decision
+            //  escrita otra vez: dos sitios que eligen ficha por su cuenta se
+            //  separan, y el sintoma seria «mantener abre una y la pestaña
+            //  otra». Hoy este camino no llega nunca con un instrumento -en
+            //  modo tecla no hay mantener- y por eso mismo tiene que ser el
+            //  mismo codigo: si algun dia llega, ya esta bien.
+            abreFichaDelPad();
             status.setText (T ("PAD %1", juce::String (i + 1)), juce::dontSendNotification);
         };
         addAndMakeVisible (p);
@@ -165,6 +171,31 @@ MainComponent::MainComponent()
             b->onClick = [this, s, b] { if (s->isVisible()) closeAllSheets(); else openSheet (*s, *b); };
             addAndMakeVisible (b);
         }
+
+        //  Y LA PESTAÑA PAD ABRE LO QUE EL PAD ES.
+        //
+        //  Se pidio asi -«cuando cargas un instrumento, cambiamos ese pad
+        //  settings por un pop up en el que puedas modificar ese plugin»- y es
+        //  ademas la unica forma de que la ficha del instrumento este a UN
+        //  toque: hasta aqui vivia detras de EL PAD · RIG · INSTRUMENTO, o sea
+        //  tres toques con la rejilla de pads tapada todo el rato.
+        //
+        //  Y NO se resuelve con MANTENER, que es lo primero que sale: un pad
+        //  de instrumento va en modo tecla y ahi `PadButton` no arranca el
+        //  temporizador a proposito -`if (! modoNota ...) startTimer`-, porque
+        //  una nota de mas de 420 ms abriria la ficha a media frase. Medido en
+        //  el codigo antes de escribir una linea: mantener no puede ser la
+        //  puerta de un instrumento.
+        //
+        //  No se pierde nada: los dos sentidos tienen su tapa -`vstPadBtn` en
+        //  la cabecera de la ficha del instrumento y `vstButton` en EL PAD-,
+        //  que es la regla de la casa: la que se va deja una puerta y nunca una
+        //  copia.
+        padsButton.onClick = [this]
+        {
+            if (padSheet.isVisible() || vstSheet.isVisible()) { closeAllSheets(); return; }
+            abreFichaDelPad();
+        };
 
         juce::TextButton* cb[2] = { &padCloseButton, &seqCloseButton };
         std::function<void (juce::Graphics&)> pc[2] =
@@ -839,6 +870,7 @@ MainComponent::MainComponent()
         }
         styleButton (vstButton, kKey);
         vstButton.onClick = [this] { abreVst(); };
+
         padSheet.addAndMakeVisible (vstButton);
 
         instPackDownBtn.onClick = [this] { pasoPack (-1); };
@@ -904,9 +936,100 @@ MainComponent::MainComponent()
         vstTeclado.onSuelta = [this] { engine.postNoteOff (vstPad); };
         vstSheet.cuerpo.addAndMakeVisible (vstTeclado);
 
+        // --------------------------------------------------------------
+        //  LOS OCHO MANDOS DE LA RECETA.
+        //
+        //  El rango se pone en `refrescaMandosVst` y no aqui: depende de la
+        //  FAMILIA, y en el constructor no hay pad elegido. Aqui solo se
+        //  construyen y se cablean.
+        //
+        //  Y SE RE-SINTETIZA AL SOLTAR, no al mover. Un preset son diez zonas
+        //  y cuesta 77 ms medidos - por valor de arrastre serian 77 ms por
+        //  fotograma, o sea un mando que no se puede mover. `onValueChange`
+        //  escribe el numero, que es gratis, y quien rinde es `onDragEnd`.
+        //
+        //  Y EL DOBLE TOQUE QUE DEVUELVE EL DEFECTO PASA POR LAS DOS, que es
+        //  lo que se olvida y no es suerte: la primera version llevaba un
+        //  `! isMouseButtonDown()` escrito a mano para ese caso, y se fue
+        //  despues de leer JUCE. `juce::Slider::mouseDoubleClick` envuelve su
+        //  `setValue` en un `ScopedDragNotification`, asi que `onDragStart` y
+        //  `onDragEnd` llegan igual que en un arrastre: el deshacer se apunta
+        //  y el sonido se rinde. Una guarda a mano para un caso que el
+        //  framework ya cubre es una regla escrita dos veces.
+        for (int i = 0; i < Sintes::kMandos; ++i)
+        {
+            auto* s = new juce::Slider();
+            vstMandos.add (s);
+            s->setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+            s->setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
+            s->setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
+            s->setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+            s->setTextBoxStyle (juce::Slider::TextBoxBelow, false, 62, Metrics::readout);
+            s->setMouseDragSensitivity (320);
+            //  EL NUMERO SE LEE EN POR CIENTO DEL RECORRIDO, y los ocho igual.
+            //
+            //  Con el valor crudo, el MISMO mando decia su numero con tres,
+            //  cinco o seis decimales segun la FAMILIA -«0.300», «0.29978»,
+            //  «0.001000»- porque JUCE saca los decimales del paso y el paso es
+            //  `(hi - lo) / 1000`, o sea que depende del recorrido. Es la misma
+            //  regla escrita con tres numeros, y era ademas la causa medida de
+            //  que tres casillas de la MISMA fila pidieran 41, 48 y 56 px.
+            //
+            //  Y por ciento y no la unidad, que aqui no existe: los cuatro de
+            //  FORMA significan cents en una familia y una razon en la de al
+            //  lado -eso es lo que `SintesMandos.inc` documenta- asi que no hay
+            //  unidad que escribir. Lo que si dice algo es donde cae dentro de
+            //  lo que la fabrica usa, que es exactamente de donde sale el rango.
+            //  Y ocho mandos con dos formatos se leen peor que ocho con uno.
+            s->textFromValueFunction = [s] (double v)
+            {
+                const auto r = s->getRange();
+                const double t = r.getLength() > 0.0 ? (v - r.getStart()) / r.getLength() : 0.0;
+                return Lang::ltr (juce::String (juce::roundToInt (juce::jlimit (0.0, 1.0, t) * 100.0)) + " %");
+            };
+            s->valueFromTextFunction = [s] (const juce::String& t)
+            {
+                const auto r = s->getRange();
+                return r.getStart() + r.getLength() * (t.getDoubleValue() / 100.0);
+            };
+            s->onDragStart = [this] { if (padEsInstrumento (vstPad)) pushUndo (T ("INSTRUMENTO")); };
+            s->onValueChange = [this, i, s]
+            {
+                if (! padEsInstrumento (vstPad)) return;
+                Sintes::ponValor (padReceta[(size_t) vstPad], i, (float) s->getValue());
+                padRecetaMovida[(size_t) vstPad] = true;
+                vstSheet.repaint();
+            };
+            s->onDragEnd = [this] { resintetizaInstrumento (vstPad); };
+            vstSheet.cuerpo.addAndMakeVisible (*s);
+        }
+
+        styleButton (vstVolver, kKey);
+        vstVolver.onClick = [this]
+        {
+            if (! padEsInstrumento (vstPad) || ! padRecetaMovida[(size_t) vstPad]) return;
+            auto* sb = uiSample[(size_t) vstPad].get();
+            pushUndo (T ("VOLVER"));
+            padReceta[(size_t) vstPad] = Sintes::tabla()[juce::jlimit (0, Sintes::kFamilias - 1, sb->familia)]
+                                             .p[juce::jlimit (0, Sintes::kPresets - 1, sb->preset)];
+            padRecetaMovida[(size_t) vstPad] = false;
+            resintetizaInstrumento (vstPad);
+        };
+        vstSheet.cuerpo.addAndMakeVisible (vstVolver);
+
         styleButton (vstCloseButton, kKey);
         vstCloseButton.onClick = [this] { closeAllSheets(); };
         vstSheet.cuerpo.addAndMakeVisible (vstCloseButton);
+
+        //  Y LA PUERTA DE VUELTA A EL PAD. Un instrumento tiene ganancia, pan,
+        //  filtro, envolvente y canal igual que una muestra, asi que la
+        //  pestaña PAD abriendo ESTA ficha no puede dejar EL PAD sin camino.
+        //  A la pagina SONIDO y no a la que estuviera: es donde viven esos
+        //  mandos, y la de RECORTE esta apagada en un instrumento.
+        styleButton (vstPadBtn, kKey);
+        litAccent (vstPadBtn);
+        vstPadBtn.onClick = [this] { showPadPage (padPageSound); openSheet (padSheet, padsButton); };
+        vstSheet.cuerpo.addAndMakeVisible (vstPadBtn);
 
         vstSheet.hazDesplazable();
         addAndMakeVisible (vstSheet);
@@ -3787,6 +3910,7 @@ void MainComponent::ponIconos()
     {
         //  La cara: las seis pestanas de modulo y el transporte.
         { &padsButton, Iconos::Id::pads },        { &secButton,  Iconos::Id::sec },
+        { &vstPadBtn,  Iconos::Id::pads },
         { &mixButton,  Iconos::Id::mezcla },      { &songButton, Iconos::Id::cancion },
         { &xyButton,   Iconos::Id::xy },          { &setButton,  Iconos::Id::ajustes },
         { &rackButton, Iconos::Id::rack },        { &manualButton, Iconos::Id::manual },
@@ -7623,6 +7747,7 @@ void MainComponent::retranslateUi()
     //  que un rotulo de tres palabras se lo quita a las otras cinco. Singular
     //  cuesta una letra MENOS que el plural.
     padsButton  .setButtonText (T ("PAD"));
+    vstPadBtn   .setButtonText (T ("PAD"));
     secButton   .setButtonText (T ("SEC"));
     songButton  .setButtonText (T ("SONG"));
     xyButton    .setButtonText (T ("XY"));
@@ -7801,6 +7926,13 @@ void MainComponent::retranslateUi()
     vstPreUp  .setButtonText ("+");
     vstOctDown.setButtonText (T ("OCT") + " -");
     vstOctUp  .setButtonText (T ("OCT") + " +");
+    //  Y VOLVER, que es la tapa nueva: sin esta linea se construye con el
+    //  literal en espanol y no se retraduce jamas, que es exactamente el fallo
+    //  de las tres pestanas de AJUSTES -la ficha que CONTIENE el selector de
+    //  idioma- y el que el banco ya ha cazado tres veces desde entonces.
+    vstVolver.setButtonText (T ("VOLVER"));
+    //  Y los ocho mandos, cuyo nombre accesible depende ademas de la familia.
+    refrescaMandosVst();
     instPackDownBtn.setButtonText (T ("PACK") + " -");
     instPackUpBtn  .setButtonText (T ("PACK") + " +");
     //  Y los nombres de la rejilla, que salen del disco y no de la tabla: si el
@@ -9017,6 +9149,20 @@ juce::ValueTree MainComponent::captureState() const
                                  + uiSample[(size_t) i]->preset
                            : -1,
                        nullptr);
+        //  Y LA RECETA, solo si esta MOVIDA.
+        //
+        //  Sin esto, un instrumento volvia siendo el de la TABLA: los ocho
+        //  mandos se movian, sonaba, se guardaba, y al abrir el pad estaba
+        //  otra vez de fabrica. Es la mitad que le faltaba a «un instrumento
+        //  vuelve siendo un instrumento» - alli lo que no volvia eran las diez
+        //  zonas y aqui es lo que la persona hizo con ellas.
+        //
+        //  DISPERSA -solo el pad tocado la lleva- por lo mismo que el acorde y
+        //  el empujon: y lo que no la tiene vale la fila de su preset, que es
+        //  exactamente como sonaba un proyecto anterior a que esto existiera.
+        if (padRecetaMovida[(size_t) i] && uiSample[(size_t) i] != nullptr
+            && uiSample[(size_t) i]->familia >= 0)
+            p.setProperty ("receta", recetaATexto (padReceta[(size_t) i]), nullptr);
         p.setProperty ("corte",   padCut[(size_t) i],     nullptr);
         p.setProperty ("reson",   padReso[(size_t) i],    nullptr);
         p.setProperty ("suavein", padFadeIn[(size_t) i],  nullptr);
@@ -9480,6 +9626,28 @@ void MainComponent::applyState (const juce::ValueTree& s)
             engine.setPadReso   (i, padReso[(size_t) i]);
             padZati[(size_t) i]    = (int)   p.getProperty ("zati", Zati::forPad (i));
 
+            //  LA RECETA DEL INSTRUMENTO, que se escribe AQUI y no donde se
+            //  sintetiza: el pad puede llegar por tres caminos -el trabajo
+            //  troceado que lo rinde, `restorePads` cuando se deshace, y un
+            //  proyecto que ya lo tenia puesto- y los tres pasan por este
+            //  bucle. Escribirla en el que sintetiza dejaria el deshacer
+            //  devolviendo el buffer viejo con la receta nueva puesta, o sea
+            //  los mandos diciendo lo que no suena.
+            {
+                const int k = (int) p.getProperty ("inst", -1);
+                const juce::String txt = p.getProperty ("receta", juce::String()).toString();
+                if (k >= 0)
+                {
+                    padReceta[(size_t) i] = recetaDeTexto (k / Sintes::kPresets,
+                                                           k % Sintes::kPresets, txt);
+                    padRecetaMovida[(size_t) i] = txt.isNotEmpty();
+                }
+                else
+                {
+                    padRecetaMovida[(size_t) i] = false;
+                }
+            }
+
             //  EL CANAL DEL PAD. Sin la propiedad, el 0: es donde `applyState`
             //  pone la fila de siempre y los envios de un proyecto anterior, o
             //  sea el unico canal que en aquel fichero significaba algo.
@@ -9937,6 +10105,7 @@ void MainComponent::loadProject (const juce::String& name)
     padJob->clearMissing = true;
     readSourceMap (tree, padJob->source);
     readInstMap   (tree, padJob->inst);
+    readRecetaMap (tree, padJob->receta);
     padJob->onDone = [this, name, tree] (int restored) { finishProjectOpen (name, tree, restored); };
     setBusyProgress (0.0f);
     stepPadJob();
@@ -13770,10 +13939,19 @@ void MainComponent::eligePreset (int pre)
 //  respuesta a un toque que tenga que pintar antes. Corre en el de mensajes -
 //  como leer un WAV - y por eso la ficha se cierra primero: lo que se ve es la
 //  rejilla de pads mientras se hace, y no una tarjeta congelada.
-void MainComponent::ponInstrumentoEnPad (int pad, int familia, int preset)
+void MainComponent::ponInstrumentoEnPad (int pad, int familia, int preset,
+                                         const Sintes::Preset* receta, bool movida)
 {
     if (! juce::isPositiveAndBelow (pad, kNumPads)) return;
-    auto sb = Sintes::sintetiza (familia, preset);
+    const int fam = juce::jlimit (0, Sintes::kFamilias - 1, familia);
+    const int pre = juce::jlimit (0, Sintes::kPresets  - 1, preset);
+    //  La receta ES el estado del pad: se guarda ANTES de rendir, porque lo que
+    //  se rinde es ella y no la fila de la tabla. Nulo es «la de la tabla», que
+    //  es como nace un preset recien elegido.
+    padReceta[(size_t) pad] = Sintes::acota (fam, receta != nullptr ? *receta
+                                                                   : Sintes::tabla()[fam].p[pre]);
+    padRecetaMovida[(size_t) pad] = (receta != nullptr && movida);
+    auto sb = Sintes::sintetiza (fam, pre, padReceta[(size_t) pad]);
     if (sb == nullptr) return;
 
     assignSampleToPad (pad, sb, Sintes::nombreDe (familia, preset));
@@ -13806,8 +13984,105 @@ void MainComponent::ponInstrumentoEnPad (int pad, int familia, int preset)
 }
 
 // ----------------------------------------------------------------------------
+//  RE-SINTETIZAR SIN CAMBIAR DE PAD, que es lo que separa mover un mando de
+//  elegir otro preset.
+//
+//  `ponInstrumentoEnPad` es «este pad pasa a ser este instrumento» y por eso
+//  devuelve el recorte, la caida y el bucle a su sitio; aqui el pad ya es el
+//  que es y lo unico que cambia es como suena, asi que todo lo que la persona
+//  haya ajustado tiene que sobrevivir. `assignSampleToPad` reinicia el recorte
+//  -en la interfaz y en el motor- porque un buffer nuevo puede medir otra cosa,
+//  asi que se guarda y se devuelve, que es el mismo patron que ya usa QUITAR
+//  RUIDO cuando le devuelve al pad su muestra limpia.
+//
+//  Y CUESTA 77 ms MEDIDOS en el hilo de mensajes, una vez por gesto. Por valor
+//  de arrastre serian 77 ms por fotograma; por eso quien llama aqui es
+//  `onDragEnd` y no `onValueChange`.
+// ----------------------------------------------------------------------------
+void MainComponent::resintetizaInstrumento (int pad)
+{
+    if (! padEsInstrumento (pad)) return;
+    auto* viejo = uiSample[(size_t) pad].get();
+    const int fam = viejo->familia, pre = viejo->preset;
+
+    auto sb = Sintes::sintetiza (fam, pre, padReceta[(size_t) pad]);
+    if (sb == nullptr) return;
+
+    //  SE SUELTA LO QUE ESTE SONANDO ANTES DE CAMBIAR LA MUESTRA, por lo mismo
+    //  que al elegir preset: debajo del pad se cambian el buffer y sus diez
+    //  zonas, y una voz viva se quedaria leyendo la ventana de la zona anterior
+    //  sobre el sonido nuevo.
+    engine.postNoteOff (pad);
+
+    const float keepStart = padStart01[(size_t) pad], keepEnd = padEnd01[(size_t) pad];
+    const juce::String keepName = padName[(size_t) pad];
+
+    assignSampleToPad (pad, sb, {});
+    padName[(size_t) pad]    = keepName;
+    padStart01[(size_t) pad] = keepStart;
+    padEnd01[(size_t) pad]   = keepEnd;
+    const int len = sb->buffer.getNumSamples();
+    engine.setPadStart (pad, (int) (keepStart * (float) len));
+    engine.setPadEnd   (pad, (int) (keepEnd   * (float) len));
+    if (auto* p = pads[pad])
+        p->setSampleInfo (uiSample[(size_t) pad], padName[(size_t) pad], keepStart, keepEnd);
+
+    refreshVst();
+    resized();
+    repaint();
+}
+
+// ----------------------------------------------------------------------------
+//  LOS OCHO MANDOS DICEN LO QUE ESTE INSTRUMENTO ADMITE.
+//
+//  El recorrido y el nombre salen de la FAMILIA -`Sintes::rango` y
+//  `Sintes::mando`- y no de una tabla escrita aqui: los cuatro de forma
+//  significan cosas distintas en cada una de las dieciseis, asi que una tabla
+//  en la cara seria la de la tabla escrita dos veces y la que se quedara vieja
+//  dejaria un mando que llega donde la forma no admite.
+//
+//  Con `dontSendNotification` siempre: escribir el valor del mando dispara su
+//  callback, y su callback marca la receta como MOVIDA y re-sintetiza. Poner el
+//  numero que ya esta puesto no es una edicion de nadie.
+// ----------------------------------------------------------------------------
+void MainComponent::refrescaMandosVst()
+{
+    const bool hay = padEsInstrumento (vstPad);
+    const int fam = hay ? uiSample[(size_t) vstPad]->familia : 0;
+
+    for (int i = 0; i < vstMandos.size(); ++i)
+    {
+        auto* s = vstMandos[i];
+        s->setEnabled (hay);
+        if (! hay) continue;
+        const auto r = Sintes::rango (fam, i);
+        //  El paso sale del recorrido y no es un numero escrito: un mando que
+        //  va de 0.1 a 0.9 con paso 1 tiene dos posiciones. Mil pasos es lo que
+        //  un dedo puede distinguir con la sensibilidad de arrastre de la casa.
+        s->setRange ((double) r.lo, (double) r.hi, (double) (r.hi - r.lo) / 1000.0);
+        s->setValue ((double) Sintes::valor (padReceta[(size_t) vstPad], i),
+                     juce::dontSendNotification);
+        //  Y EL NOMBRE ACCESIBLE, que es lo que lee TalkBack. Se pone aqui y no
+        //  en el constructor por lo mismo que el rango: no lo sabe nadie hasta
+        //  que hay una familia elegida.
+        s->setTitle (T (Sintes::mando (fam, i)));
+    }
+
+    //  VOLVER solo existe con la receta movida.
+    vstVolver.setVisible (hay && padRecetaMovida[(size_t) vstPad]);
+}
+
+// ----------------------------------------------------------------------------
 //  LA FICHA DEL INSTRUMENTO.
 // ----------------------------------------------------------------------------
+//  QUE FICHA EDITA EL PAD ELEGIDO. Una decision y un dueño: la pestaña PAD de
+//  la cara y el mantener de un pad preguntan aqui, y no cada uno por su cuenta.
+void MainComponent::abreFichaDelPad()
+{
+    if (padEsInstrumento (selectedPad)) abreVst();
+    else                                openSheet (padSheet, padsButton);
+}
+
 void MainComponent::abreVst()
 {
     if (! padEsInstrumento (selectedPad)) return;
@@ -13818,7 +14093,15 @@ void MainComponent::abreVst()
     const int t = (int) std::lround (padPitch[(size_t) vstPad]);
     vstTeclado.setBase (juce::jlimit (-24, 12, (t >= 0 ? t / 12 : (t - 11) / 12) * 12));
     refreshVst();
-    closeAllSheets();
+
+    //  POR EL EMBUDO Y NO A MANO. Esta ficha se abria con `closeAllSheets()` y
+    //  un `setVisible`, o sea saltandose las tres cosas que `openSheet` hace
+    //  por todas: el paso de la CAJA NEGRA -un cierre aqui decia el nombre de
+    //  la ficha que estuviera abierta ANTES, que es media pista perdida-, el
+    //  toque al pad que asoma, y sobre todo el ESTADO de la pestaña. Desde que
+    //  PAD abre lo que el pad es, esa pestaña tiene que quedarse encendida con
+    //  esta ficha delante o dice que no hay ninguna abierta.
+    openSheet (vstSheet, padsButton);
 
     //  Y EL TOQUE AL PAD DE DETRAS, que esta ficha no tenia porque no pasa por
     //  `openSheet`. Cerrarse al tocar un pad es justo lo contrario de lo que se
@@ -13848,8 +14131,6 @@ void MainComponent::abreVst()
         return true;
     };
 
-    vstSheet.setVisible (true);
-    vstSheet.toFront (false);
     resized();
 }
 
@@ -13867,6 +14148,7 @@ void MainComponent::refreshVst()
     //  recorta - las mismas doce filas que mentian en el piano roll.
     vstOctDown.setEnabled (vstTeclado.getBase() > -24);
     vstOctUp  .setEnabled (vstTeclado.getBase() < 12);
+    refrescaMandosVst();
     vstSheet.repaint();
 }
 
@@ -14241,10 +14523,21 @@ void MainComponent::stepPadJob()
         const int receta = padJob->inst[(size_t) i];
         if (receta >= 0)
         {
-            if (auto sb = Sintes::sintetiza (receta / Sintes::kPresets, receta % Sintes::kPresets))
+            const int fam = receta / Sintes::kPresets;
+            const int pre = receta % Sintes::kPresets;
+
+            //  CON LA RECETA QUE EL FICHERO TRAIGA y no con la fila de la
+            //  tabla: los ocho mandos son del PAD desde que se pueden mover,
+            //  asi que rendir la fila devolveria un instrumento que suena
+            //  distinto del que se guardo. Sin la propiedad, `recetaDeTexto`
+            //  devuelve la fila, que es como sonaba antes de que existieran.
+            const juce::String& txt = padJob->receta[(size_t) i];
+            padReceta[(size_t) i]       = recetaDeTexto (fam, pre, txt);
+            padRecetaMovida[(size_t) i] = txt.isNotEmpty();
+
+            if (auto sb = Sintes::sintetiza (fam, pre, padReceta[(size_t) i]))
             {
-                assignSampleToPad (i, sb, Sintes::nombreDe (receta / Sintes::kPresets,
-                                                            receta % Sintes::kPresets));
+                assignSampleToPad (i, sb, Sintes::nombreDe (fam, pre));
                 ++padJob->restored;
                 continue;
             }
@@ -14329,6 +14622,7 @@ void MainComponent::restoreSession()
     padJob->fromSession = true;
     readSourceMap (tree, padJob->source);
     readInstMap   (tree, padJob->inst);
+    readRecetaMap (tree, padJob->receta);
     padJob->onDone = [this, tree] (int restored) { finishSessionRestore (tree, restored); };
     setBusyProgress (0.0f);
     stepPadJob();

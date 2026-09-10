@@ -188,6 +188,22 @@ def main():
     gestos = set (re.findall (r'"((?:[^"\\]|\\.)+)"', blkg))
     used |= gestos
 
+    #  Y LOS OCHO MANDOS DE UN INSTRUMENTO, que es la QUINTA por indice.
+    #
+    #  `Sintes::mando (familia, i)` devuelve la clave de una tabla de 16x4 mas
+    #  otra de cuatro comunes, y la cara la pasa por `T()`: mismo agujero que
+    #  los `param[]` de un efecto, con la misma consecuencia -un mando sin fila
+    #  dice lo mismo en las cuatro compilaciones- y ademas cincuenta claves de
+    #  una vez, o sea cincuenta oportunidades de que se cuele una.
+    inc = joined_literals (sin_comentarios (
+        open (os.path.join (SRC, "SintesMandos.inc"), encoding="utf8").read()))
+    mandos = set()
+    for nombre in ("kMandosDeForma[kFamilias][4]", "kMandosComunes[4]"):
+        j = inc.index (nombre)
+        blkm = inc[j:inc.index ("};", j)]
+        mandos.update (re.findall (r'"((?:[^"\\]|\\.)+)"', blkm))
+    used |= mandos
+
     for k in sorted (used - set (keys)):
         bad.append ("clave usada y NO en la tabla (sale en espanol en los cuatro): %r" % k)
 
@@ -205,10 +221,10 @@ def main():
     #  un numero que sube. `ZATI_LANG_HUERFANAS=1` las lista.
     huerfanas = sorted (set (keys) - used)
     print ("%d filas, %d claves usadas en el codigo (%d parametros de efecto, "
-           "%d pasos del tour, %d lineas de manual, %d gestos), %d filas sin "
-           "cliente visible"
+           "%d pasos del tour, %d lineas de manual, %d gestos, %d mandos de "
+           "instrumento), %d filas sin cliente visible"
            % (len (rows), len (used), len (params), len (pasos), len (manual),
-              len (gestos), len (huerfanas)))
+              len (gestos), len (mandos), len (huerfanas)))
     if os.environ.get ("ZATI_LANG_HUERFANAS"):
         for k in huerfanas: print ("  sin cliente visible  %r" % k)
     if bad:

@@ -42,6 +42,13 @@
 # ============================================================================
 import os, re, subprocess, sys, tempfile, shutil, json, math, hashlib
 
+#  LA PANTALLA QUE SE COMPRUEBA ES LA QUE SE USA: `PANTALLA` vive en
+#  `kits.py`, al lado de `display_alive`, y quien arranca la app la escribe
+#  en su entorno. Sin esta linea la comprobacion dice que si contra :99 y el
+#  arranque se va sin ventana — el veredicto entero en rojo con la app
+#  perfecta, que es lo que ya costo una tarde en `cpu.py` y otra en `instr.py`.
+from kits import PANTALLA                                          # noqa: E402
+
 ROOT = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
 APP  = os.environ.get ("ZATI_BIN") or os.path.join (
         ROOT, "build", "Zati_artefacts", "Release", "Zati")
@@ -87,7 +94,7 @@ def mide (nombre, ok, detalle=""):
 def genera (destino=None, estilo=None, mascara=None):
     casa = tempfile.mkdtemp (prefix="zati-icono-")
     try:
-        env = dict (os.environ)
+        env = dict (os.environ, DISPLAY=PANTALLA)
         env.update ({"HOME": casa, "ZATI_ICONO": destino or DEST})
         if estilo  is not None: env["ZATI_ICONO_ESTILO"]  = str (estilo)
         if mascara is not None: env["ZATI_ICONO_MASCARA"] = mascara
@@ -507,7 +514,7 @@ for piel in range (4):
     f = tempfile.mktemp (suffix="-piel%d.png" % piel)
     casa = tempfile.mkdtemp (prefix="zati-piel-")
     try:
-        env = dict (os.environ)
+        env = dict (os.environ, DISPLAY=PANTALLA)
         env.update ({"HOME": casa, "ZATI_ICONO": f, "ZATI_ICONO_ESTILO": "10",
                      "ZATI_SKIN": str (piel)})
         subprocess.run ([APP], env=env, capture_output=True, text=True, timeout=300)
@@ -624,7 +631,7 @@ print()
 spl = tempfile.mktemp (suffix="-splash.png")
 casa = tempfile.mkdtemp (prefix="zati-splash-")
 try:
-    env = dict (os.environ); env.update ({"HOME": casa, "ZATI_SPLASH": spl})
+    env = dict (os.environ, DISPLAY=PANTALLA); env.update ({"HOME": casa, "ZATI_SPLASH": spl})
     subprocess.run ([APP], env=env, capture_output=True, text=True, timeout=300)
 finally:
     shutil.rmtree (casa, ignore_errors=True)

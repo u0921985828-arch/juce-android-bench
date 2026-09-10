@@ -29,7 +29,7 @@ ROOT = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
 APP  = os.path.join (ROOT, "build", "Zati_artefacts", "Release", "Zati")
 
 sys.path.insert (0, os.path.dirname (os.path.abspath (__file__)))
-from expo import display_alive                                    # noqa: E402
+from expo import PANTALLA, display_alive                                    # noqa: E402
 
 #  El dedo minimo, importado y no escrito otra vez.
 from expo import MIN_TOUCH                                        # noqa: E402
@@ -39,7 +39,10 @@ def corre (tam="412x915"):
     """Con HOME propio: con el de verdad la app restaura la sesion que hubiera
     y las ranuras no serian las que esta prueba pone."""
     casa = tempfile.mkdtemp (prefix="zati-rack-")
-    env = dict (os.environ, HOME=casa,
+    #  DISPLAY va PUESTA y sale de `PANTALLA`: `display_alive` cae a ":99"
+    #  cuando el entorno no la trae, asi que sin esta linea la comprobacion dice
+    #  que si contra una pantalla y la app arranca sin ninguna. Ver `kits.py`.
+    env = dict (os.environ, DISPLAY=PANTALLA, HOME=casa,
                 XDG_DATA_HOME=os.path.join (casa, ".local", "share"),
                 ZATI_AUDIT="1", ZATI_SIZE=tam, ZATI_LANG="es",
                 ZATI_RACK="1")

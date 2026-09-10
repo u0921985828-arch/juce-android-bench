@@ -34,6 +34,13 @@ su prefijo. Ver la funcion `bitacora` de abajo.
 """
 import json, os, shutil, subprocess, sys, tempfile
 
+#  LA PANTALLA QUE SE COMPRUEBA ES LA QUE SE USA: `PANTALLA` vive en
+#  `kits.py`, al lado de `display_alive`, y quien arranca la app la escribe
+#  en su entorno. Sin esta linea la comprobacion dice que si contra :99 y el
+#  arranque se va sin ventana — el veredicto entero en rojo con la app
+#  perfecta, que es lo que ya costo una tarde en `cpu.py` y otra en `instr.py`.
+from kits import PANTALLA                                          # noqa: E402
+
 sys.path.insert (0, os.path.dirname (os.path.abspath (__file__)))
 from kits import display_alive
 
@@ -60,7 +67,7 @@ def corre (casa, ticks, muere=0, senal=0):
                 ZATI_ARRANQUE=str (ticks),
                 ZATI_INSETS="100,0,50,0", ZATI_INSETS_TICK="2",
                 XDG_DATA_HOME=os.path.join (casa, ".local", "share"),
-                DISPLAY=os.environ.get ("DISPLAY", ":99"))
+                DISPLAY=PANTALLA)
     if muere: env["ZATI_MUERE"] = str (muere)
     if senal: env["ZATI_SENAL"] = str (senal)
     try:
@@ -127,7 +134,7 @@ def arranca (ticks, tick_insets, size="412x915"):
                 ZATI_ARRANQUE=str (ticks),
                 ZATI_INSETS="100,0,50,0", ZATI_INSETS_TICK=str (tick_insets),
                 XDG_DATA_HOME=os.path.join (casa, ".local", "share"),
-                DISPLAY=os.environ.get ("DISPLAY", ":99"))
+                DISPLAY=PANTALLA)
     try:
         out = subprocess.run ([APP], env=env, capture_output=True, text=True,
                               timeout=300).stdout

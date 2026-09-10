@@ -109,7 +109,8 @@ TOPE_SONANDO = 0.05
 #  no era —el binario a mano, con la misma orden y `DISPLAY=:99` delante, daba
 #  su linea a la primera—. Es la misma regla que este banco lleva escrita desde
 #  el principio: una regla con dos respuestas acierta por accidente.
-DISPLAY = os.environ.get ("DISPLAY") or ":99"
+from kits import PANTALLA                                          # noqa: E402
+DISPLAY = PANTALLA
 
 
 def display_alive():

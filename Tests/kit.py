@@ -20,6 +20,13 @@ Cuatro preguntas, y las cuatro tienen respuesta en el disco:
 """
 import json, os, re, shutil, subprocess, sys, tempfile
 
+#  LA PANTALLA QUE SE COMPRUEBA ES LA QUE SE USA: `PANTALLA` vive en
+#  `kits.py`, al lado de `display_alive`, y quien arranca la app la escribe
+#  en su entorno. Sin esta linea la comprobacion dice que si contra :99 y el
+#  arranque se va sin ventana — el veredicto entero en rojo con la app
+#  perfecta, que es lo que ya costo una tarde en `cpu.py` y otra en `instr.py`.
+from kits import PANTALLA                                          # noqa: E402
+
 APP = os.path.join(os.path.dirname(__file__), "..", "build",
                    "Zati_artefacts", "Release", "Zati")
 NOMBRE = "BANCO DE PRUEBA"
@@ -30,7 +37,7 @@ MIN_BYTES = 128
 
 
 def pantalla():
-    d = os.environ.get("DISPLAY", ":99")
+    d = PANTALLA
     if subprocess.run(["xdpyinfo"], env={**os.environ, "DISPLAY": d},
                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0:
         print("FALLA  no hay pantalla virtual en", d,

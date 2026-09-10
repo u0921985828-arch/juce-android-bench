@@ -2940,16 +2940,61 @@ void MainComponent::resized()
         const int cabecera = 56;      // el dibujo grande y el nombre de la familia
         const int teclas   = 72;      // una octava que se pueda tocar con el dedo
         const int filaP    = Metrics::hit;
+        //  LOS OCHO MANDOS CUESTAN ALTO en la unica ficha de la casa que ya se
+        //  desplazaba: una lista de dieciseis presets no cabia en una tarjeta el
+        //  dia que existia, asi que `hazDesplazable` esta puesto desde entonces.
+        //  Por eso esto no puede costarle un pixel a ninguna rejilla - no hay
+        //  ninguna aqui - y por eso el ALTO es la moneda barata.
+        //
+        //  Y POR ESO LA ESCALERA VA EN LAS COLUMNAS Y NO EN LAS FILAS. Cuatro
+        //  por fila es lo que se lee mejor -los cuatro de FORMA en un renglon y
+        //  los cuatro COMUNES en el de abajo- y en 280x653 la celda se quedaba
+        //  en 46 px, o sea el mando en **38x70**: por debajo del dedo, y un
+        //  mando giratorio se ajusta ARRASTRANDO, que es el control que menos
+        //  puede permitirse ser fino. El banco lo cantaba con su cifra, 32
+        //  TOUCH. Donde cuatro no caben van DOS, que en esa misma pantalla
+        //  deja la celda en 97 px - y las cuatro filas que cuesta salen del
+        //  desplazamiento, que aqui no le quita nada a nadie.
+        //
+        //  La pregunta es la del dedo y no la del texto: el rotulo va PINTADO
+        //  encima -`bandAbove`- y el numero se lee en por ciento, o sea tres
+        //  cifras como mucho. Lo que decide es el mando.
+        const int filaM = ZatiLookAndFeel::kKnobRow;
+        //  Y EL ANCHO SE PIDE CON LA BARRA PUESTA, que es la unica forma de no
+        //  repetir aqui el fallo que `anchoTarjetaInterior` existe para evitar:
+        //  esta ficha se desplaza, asi que el cuerpo mide la tarjeta MENOS la
+        //  barra, y la barra depende del alto pedido, que depende de las
+        //  columnas. La circularidad se corta por el lado conservador -se da la
+        //  barra por puesta- y lo que cuesta esta medido: nueve pixeles, que no
+        //  mueven la respuesta en ninguna de las siete pantallas.
+        const int anchoCuerpoM = anchoTarjetaInterior (full.getWidth())
+                                     - vstSheet.vista.getScrollBarThickness();
+        const int zonaM = juce::jmax (1, anchoCuerpoM - Metrics::lg * 2);
+        const int colsM = (zonaM / 4 >= Metrics::hit + Metrics::halfGap * 2) ? 4 : 2;
+        const int filasM = Sintes::kMandos / colsM;
 
         auto inner = sheetFromBottom (vstSheet, Metrics::md * 2 + Metrics::hit
                                                   + Metrics::md + cabecera
                                                   + Metrics::sm + filaP
                                                   + Metrics::sm + Metrics::hit + teclas
+                                                  + Metrics::sm + filaM * filasM + Metrics::hit
                                                   + Metrics::sm + 40);
 
         auto titleRow = inner.removeFromTop (Metrics::hit);
         vstCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
                                       .withSizeKeepingCentre (Metrics::hit, Metrics::hit));
+        //  LA PUERTA A EL PAD, del lado del cierre y con la misma pregunta que
+        //  ya decide la de la rejilla de dieciseis en EL PAD y en el piano:
+        //  solo si queda ancho para ella Y para el titulo. Su rotulo es una
+        //  palabra de tres letras, asi que le basta el dedo.
+        {
+            Lang::takeEnd (titleRow, Metrics::xs);
+            const bool cabe = titleRow.getWidth() >= Metrics::hit * 2;
+            vstPadBtn.setVisible (cabe);
+            vstPadBtn.setBounds (cabe ? Lang::takeEnd (titleRow, Metrics::hit)
+                                          .withSizeKeepingCentre (Metrics::hit, Metrics::hit)
+                                      : juce::Rectangle<int>());
+        }
         vstTitleArea = centraEnRenglon (titleRow.reduced (Metrics::lg, 0).withHeight (Metrics::bandaTitulo));
         inner.removeFromTop (Metrics::sm);
 
@@ -2998,6 +3043,46 @@ void MainComponent::resized()
             vstOctArea = fila.reduced (Metrics::halfGap, Metrics::halfGap);
             vstTeclado.setBounds (caja.reduced (Metrics::lg, Metrics::keyAir));
         }
+        inner.removeFromTop (Metrics::sm);
+
+        //  Y LOS OCHO MANDOS, en su propio panel: los cuatro de arriba son de
+        //  la FORMA -lo que hace que un organo no sea un bajo con otros
+        //  numeros- y los cuatro de abajo son los mismos en las dieciseis. Dos
+        //  grupos que se leen como uno porque los ocho son la misma pregunta:
+        //  como suena este preset.
+        {
+            auto caja = inner.removeFromTop (filaM * filasM + Metrics::hit);
+            vstPanelMandos = caja.reduced (Metrics::lg - Metrics::halfGap, 0);
+            auto zona = caja.reduced (Metrics::lg, 0);
+            if (vstMandos.size() == Sintes::kMandos)
+            {
+                //  El orden no cambia con las columnas: los de FORMA primero y
+                //  los COMUNES detras, asi que con dos columnas la mitad de
+                //  arriba sigue siendo la forma y la de abajo lo que comparten
+                //  las dieciseis familias.
+                for (int f = 0; f < filasM; ++f)
+                {
+                    juce::Slider* fila[4] = {};
+                    for (int c = 0; c < colsM; ++c) fila[c] = vstMandos[f * colsM + c];
+                    placeKnobRow (zona.removeFromTop (filaM), fila, colsM);
+                }
+            }
+            //  VOLVER se lleva un tercio: lleva la palabra, y las dos tapas de
+            //  al lado de esta ficha que tambien la llevan -OCT - y OCT +- ya
+            //  estan medidas en un tercio por la misma razon.
+            vstVolver.setBounds (Lang::takeStart (zona, juce::jmin (Metrics::hit * 3,
+                                                                    zona.getWidth() / 3))
+                                     .withHeight (Metrics::hit));
+        }
+        inner.removeFromTop (Metrics::sm);
+        //  Y EL PIE LO COLOCA EL MAQUETADO, no el pintor. Lo calculaba el
+        //  pintor «debajo del panel del teclado», que era cierto mientras el
+        //  teclado fuera lo ultimo de la ficha: con los ocho mandos debajo, esa
+        //  cuenta lo dibujaba ENCIMA de ellos. Es la tercera vez que se paga en
+        //  una ficha de este proyecto -ya paso con el titulo y el nombre del
+        //  pack de INSTRUMENTOS- y la regla es la misma: la banda la publica
+        //  quien coloca.
+        vstPieArea = inner.removeFromTop (40);
     }
 
     // AUTO CHOP sheet: how many pieces, where they land, and one red verb.

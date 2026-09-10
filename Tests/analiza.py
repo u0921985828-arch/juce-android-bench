@@ -22,6 +22,13 @@ la MISMA fuente que usa kits.py - asi los dos hablan de los mismos bytes.
 """
 import glob, math, os, re, shutil, subprocess, sys, tempfile
 
+#  LA PANTALLA QUE SE COMPRUEBA ES LA QUE SE USA: `PANTALLA` vive en
+#  `kits.py`, al lado de `display_alive`, y quien arranca la app la escribe
+#  en su entorno. Sin esta linea la comprobacion dice que si contra :99 y el
+#  arranque se va sin ventana — el veredicto entero en rojo con la app
+#  perfecta, que es lo que ya costo una tarde en `cpu.py` y otra en `instr.py`.
+from kits import PANTALLA                                          # noqa: E402
+
 sys.path.insert (0, os.path.dirname (os.path.abspath (__file__)))
 from kits import load, display_alive, fft   # la MISMA FFT, no otra a mano
 
@@ -66,7 +73,7 @@ def tabla():
 def fabrica():
     casa = tempfile.mkdtemp (prefix="zati-anal-")
     env = dict (os.environ, HOME=casa, ZATI_AUDIT="1", ZATI_SIZE="412x915",
-                DISPLAY=os.environ.get ("DISPLAY", ":99"))
+                DISPLAY=PANTALLA)
     subprocess.run ([APP], env=env, capture_output=True, timeout=300)
     fich = sorted (glob.glob (os.path.join (casa, "Music", "ZATI", ".sesion", "samples", "*.wav")))
     out = [load (f) for f in fich]

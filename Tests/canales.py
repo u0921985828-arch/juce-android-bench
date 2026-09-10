@@ -44,14 +44,17 @@ ROOT = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
 APP  = os.path.join (ROOT, "build", "Zati_artefacts", "Release", "Zati")
 
 sys.path.insert (0, os.path.dirname (os.path.abspath (__file__)))
-from expo import display_alive
+from expo import PANTALLA, display_alive
 
 
 def corre (extra=None):
     """Una corrida con HOME propio: con el de verdad la app restaura la sesion
     que hubiera y no pasa por el camino que se quiere medir."""
     casa = tempfile.mkdtemp (prefix="zati-canales-")
-    env = dict (os.environ, HOME=casa,
+    #  DISPLAY va PUESTA y sale de `PANTALLA`: `display_alive` cae a ":99"
+    #  cuando el entorno no la trae, asi que sin esta linea la comprobacion dice
+    #  que si contra una pantalla y la app arranca sin ninguna. Ver `kits.py`.
+    env = dict (os.environ, DISPLAY=PANTALLA, HOME=casa,
                 XDG_DATA_HOME=os.path.join (casa, ".local", "share"),
                 ZATI_AUDIT="1", ZATI_SIZE="412x915", ZATI_LANG="es",
                 ZATI_CANALES="1")

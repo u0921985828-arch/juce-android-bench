@@ -1138,6 +1138,139 @@ void MainComponent::auditInstr()
     }
 
     // ------------------------------------------------------------------
+    //  Y QUE LA RECETA SEA DEL PAD: que se pueda mover, que se OIGA, que
+    //  VOLVER la devuelva y que vuelva del fichero.
+    //
+    //  Los dieciseis por dieciseis eran una tabla de SOLO LECTURA: la ficha
+    //  podia pasar de un preset al siguiente y no habia una sola forma de
+    //  tocar ninguno. Un instrumento que no se toca es un sample con nombre.
+    //
+    //  CON DOS CIFRAS Y NO UNA, que es lo que separa las dos formas de
+    //  escribirlo mal: «mover un mando cambia el audio» lo cumple tambien un
+    //  codigo que rinde otra cosa cada vez -y entonces VOLVER no devolveria
+    //  nada-, y «volver deja el mismo audio» lo cumple un mando que no esta
+    //  conectado. Bit a bit y no por nivel: `Sintes::sintetiza` iguala la
+    //  sonoridad por octava, asi que «casi el mismo pico» es justo lo que
+    //  dejaria pasar una receta que no llega al oscilador.
+    {
+        const int pad = kBancoInstr * kPadsPerBank + 7;
+        const int fam = 0, pre = 2;
+
+        auto difieren = [] (const SampleBuffer* a, const SampleBuffer* b) -> int
+        {
+            if (a == nullptr || b == nullptr) return -1;
+            const int n = juce::jmin (a->buffer.getNumSamples(), b->buffer.getNumSamples());
+            if (n <= 0) return -1;
+            int d = std::abs (a->buffer.getNumSamples() - b->buffer.getNumSamples());
+            const auto* x = a->buffer.getReadPointer (0);
+            const auto* y = b->buffer.getReadPointer (0);
+            for (int i = 0; i < n; ++i) if (x[i] != y[i]) ++d;
+            return d;
+        };
+
+        ponInstrumentoEnPad (pad, fam, pre);
+        auto tabla = uiSample[(size_t) pad];
+
+        //  Al extremo MAS LEJANO del valor de hoy y no a un tope escrito: si
+        //  el preset ya estuviera en ese tope, «moverlo» no moveria nada y la
+        //  prueba saldria verde sin haber medido.
+        Sintes::Preset r = Sintes::tabla()[fam].p[pre];
+        const auto rg = Sintes::rango (fam, 0);
+        const float v0 = Sintes::valor (r, 0);
+        Sintes::ponValor (r, 0, std::abs (v0 - rg.lo) > std::abs (v0 - rg.hi) ? rg.lo : rg.hi);
+        ponInstrumentoEnPad (pad, fam, pre, &r, true);
+        auto movido = uiSample[(size_t) pad];
+        const int suena = difieren (tabla.get(), movido.get());
+
+        //  Y VOLVER devuelve la fila, bit a bit.
+        ponInstrumentoEnPad (pad, fam, pre);
+        const int vuelve = difieren (tabla.get(), uiSample[(size_t) pad].get());
+
+        //  Y AHORA LA IDA Y VUELTA POR EL FICHERO, con el mismo arbol que lo
+        //  escribe y POR EL CAMINO DE VERDAD -el trabajo troceado, que es
+        //  quien rinde los pads al abrir un proyecto-: `applyState` corre en
+        //  su `onDone`, o sea DESPUES, asi que leer la receta alli habria
+        //  devuelto el instrumento sonando con la fila de la tabla.
+        //
+        //  Y BORRANDO EL PAD Y SU RECETA A MANO entre medias: si al volver
+        //  siguen puestos no es que se hayan guardado, es que nadie los quito.
+        ponInstrumentoEnPad (pad, fam, pre, &r, true);
+        const auto arbol = captureState();
+
+        uiSample[(size_t) pad] = nullptr;
+        padHasSample[(size_t) pad] = false;
+        engine.clearPad (pad);
+        padReceta[(size_t) pad] = Sintes::tabla()[fam].p[pre];
+        padRecetaMovida[(size_t) pad] = false;
+
+        padJob = std::make_unique<PadLoadJob>();
+        padJob->folder = juce::File();
+        padJob->clearMissing = false;
+        readSourceMap (arbol, padJob->source);
+        readInstMap   (arbol, padJob->inst);
+        readRecetaMap (arbol, padJob->receta);
+        while (padJob != nullptr) stepPadJob();
+
+        int iguales = 0;
+        for (int i = 0; i < Sintes::kMandos; ++i)
+            if (juce::approximatelyEqual (Sintes::valor (padReceta[(size_t) pad], i),
+                                          Sintes::valor (r, i)))
+                ++iguales;
+
+        std::cout << "{\"instr\":\"receta\",\"suena\":" << suena
+                  << ",\"vuelve\":" << vuelve
+                  << ",\"mandos\":\"" << iguales << "/" << Sintes::kMandos << "\""
+                  << ",\"movida\":" << (padRecetaMovida[(size_t) pad] ? 1 : 0)
+                  << ",\"audio\":" << difieren (movido.get(), uiSample[(size_t) pad].get())
+                  << "}" << std::endl;
+    }
+
+    // ------------------------------------------------------------------
+    //  Y QUE LA PESTAÑA PAD ABRA LO QUE EL PAD ES.
+    //
+    //  Se pidio asi, y ninguna de las catorce reglas de `expo.py` puede verlo:
+    //  una pestaña que abre la ficha equivocada se maqueta perfecta -no
+    //  solapa, no se sale, no corta un rotulo, no mide cero y esta traducida-.
+    //
+    //  POR LA TAPA -`padsButton.onClick()`- y no llamando a
+    //  `abreFichaDelPad`, que es justo donde el fallo no existe: lo que se
+    //  mide es el reparto que el dedo dispara.
+    //
+    //  Y con DOS cifras, que una se engaña: QUE ficha queda abierta *y* si la
+    //  pestaña se queda ENCENDIDA. «Abre la del instrumento» lo cumple igual
+    //  un camino que se salta `openSheet`, y entonces la fila de la cara dice
+    //  que no hay ninguna ficha abierta con una delante.
+    {
+        auto abre = [this] (int pad)
+        {
+            closeAllSheets();
+            selectPad (pad);
+            if (padsButton.onClick) padsButton.onClick();
+        };
+
+        const int normal = 0;                                  // fabrica: una muestra
+        const int instr  = kBancoInstr * kPadsPerBank + 7;
+
+        abre (normal);
+        const juce::String qn = padSheet.isVisible() ? "pad" : (vstSheet.isVisible() ? "vst" : "ninguna");
+        const int tn = padsButton.getToggleState() ? 1 : 0;
+
+        abre (instr);
+        const juce::String qi = padSheet.isVisible() ? "pad" : (vstSheet.isVisible() ? "vst" : "ninguna");
+        const int ti = padsButton.getToggleState() ? 1 : 0;
+        //  Y la puerta de vuelta, que es lo que hace que no se pierda nada:
+        //  un instrumento tiene ganancia, pan, filtro y envolvente igual que
+        //  una muestra.
+        if (vstPadBtn.onClick) vstPadBtn.onClick();
+        const juce::String qv = padSheet.isVisible() ? "pad" : (vstSheet.isVisible() ? "vst" : "ninguna");
+        closeAllSheets();
+
+        std::cout << "{\"instr\":\"pestana\",\"normal\":\"" << qn << "\",\"tapaN\":" << tn
+                  << ",\"instrumento\":\"" << qi << "\",\"tapaI\":" << ti
+                  << ",\"vuelta\":\"" << qv << "\"}" << std::endl;
+    }
+
+    // ------------------------------------------------------------------
     //  Y QUE EL DESTINO SE ELIJA DE VERDAD.
     //
     //  Era el pad del mismo numero que la familia dentro del banco D, asi que

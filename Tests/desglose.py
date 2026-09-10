@@ -26,7 +26,7 @@ import concurrent.futures
 
 sys.path.insert (0, os.path.dirname (os.path.abspath (__file__)))
 from planos import corre, clase, NOMBRES, SALIDA as SALIDA_PLANOS, iconos_del_binario
-from expo import SHEETS, display_alive
+from expo import SHEETS, PANTALLA, display_alive
 
 ROOT   = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
 SALIDA = os.path.join (ROOT, "desglose")

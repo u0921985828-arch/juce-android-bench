@@ -573,6 +573,43 @@ inline juce::Rectangle<int> bandAbove (const juce::Component& c, int bandH,
 //  Los mismos dos bucles y el mismo arbol: quien es trozo de quien, y quien es
 //  un instrumento. Leidos ANTES de empezar a cargar por lo mismo que el primero
 //  - el trabajo va en tandas de 25 ms y applyState no corre hasta el final.
+// ----------------------------------------------------------------------------
+//  LA RECETA DE UN INSTRUMENTO, DE IDA Y DE VUELTA.
+//
+//  Ocho numeros separados por espacio, y ESCRITO UNA VEZ: lo leen el fichero de
+//  proyecto, la sesion -que es el mismo `state.xml`- y el banco. Con la cuenta
+//  en dos sitios, el dia que `kMandos` cambie uno de los dos se queda leyendo
+//  siete y el octavo vuelve a su defecto sin que nada falle.
+//
+//  Y DISPERSA: solo se escribe si la receta esta MOVIDA. Casi ningun pad lo
+//  esta, y sin la propiedad vale la de la TABLA -que es exactamente como sonaba
+//  el dia que se guardo un proyecto anterior a que esto existiera-, que es la
+//  misma decision que ya tomaron el acorde, el empujon y los clips.
+inline juce::String recetaATexto (const Sintes::Preset& r)
+{
+    juce::String out;
+    for (int i = 0; i < Sintes::kMandos; ++i)
+        out << (i ? " " : "") << juce::String (Sintes::valor (r, i), 6);
+    return out;
+}
+
+//  De vuelta: se parte de la fila de la TABLA y se sobreescribe lo que venga.
+//  Asi un texto a medio escribir -un proceso muerto guardando- deja los que
+//  faltan en su valor de fabrica en vez de en cero, que en la mitad de los
+//  mandos es un sonido mudo. Y acotado en la puerta, como los seis parametros
+//  de un pad: el numero sale de un `project.xml` que puede ser de otra epoca.
+inline Sintes::Preset recetaDeTexto (int familia, int preset, const juce::String& txt)
+{
+    const int f = juce::jlimit (0, Sintes::kFamilias - 1, familia);
+    const int p = juce::jlimit (0, Sintes::kPresets  - 1, preset);
+    Sintes::Preset r = Sintes::tabla()[f].p[p];
+    auto toks = juce::StringArray::fromTokens (txt, " ", "");
+    toks.removeEmptyStrings();
+    for (int i = 0; i < juce::jmin (toks.size(), Sintes::kMandos); ++i)
+        Sintes::ponValor (r, i, toks[i].getFloatValue());
+    return Sintes::acota (f, r);
+}
+
 inline void readInstMap (const juce::ValueTree& tree, std::array<int, AudioEngine::kNumPads>& out)
 {
     out.fill (-1);
@@ -585,6 +622,25 @@ inline void readInstMap (const juce::ValueTree& tree, std::array<int, AudioEngin
         if (! juce::isPositiveAndBelow (i, AudioEngine::kNumPads)) continue;
         const int k = (int) p.getProperty ("inst", -1);
         out[(size_t) i] = (k >= 0 && k < Sintes::kFamilias * Sintes::kPresets) ? k : -1;
+    }
+}
+
+//  Y LA RECETA MOVIDA DE CADA PAD, leida del mismo sitio y en el mismo
+//  momento que `readInstMap`: el trabajo troceado la necesita para sintetizar
+//  con los ocho mandos que la persona movio, y `applyState` no ha corrido
+//  todavia cuando eso pasa. Vacia = ese pad no la movio.
+inline void readRecetaMap (const juce::ValueTree& tree,
+                           std::array<juce::String, AudioEngine::kNumPads>& out)
+{
+    for (auto& s : out) s = {};
+    auto padsTree = tree.getChildWithName ("PADS");
+    if (! padsTree.isValid()) return;
+
+    for (const auto& p : padsTree)
+    {
+        const int i = (int) p.getProperty ("i", -1);
+        if (! juce::isPositiveAndBelow (i, AudioEngine::kNumPads)) continue;
+        out[(size_t) i] = p.getProperty ("receta", juce::String()).toString();
     }
 }
 
