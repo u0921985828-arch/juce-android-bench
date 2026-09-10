@@ -329,6 +329,18 @@ void MainComponent::resized()
     //  `padBottomGive` is the part of it that comes out of the band under the
     //  grid rather than out of the screen.
     int padSeamExtra = 0, padBottomGive = 0;
+    //  Y LO QUE EL PRESUPUESTO LE RESERVA A LA REJILLA, que es el TESTIGO de
+    //  que la cuenta entera cuadra.
+    //
+    //  Los pads son el elastico de esta columna: todo lo demas tiene un alto
+    //  fijo y ellos se llevan lo que quede, asi que un termino de mas o de
+    //  menos en CUALQUIER banda del presupuesto aterriza aqui y en ningun otro
+    //  sitio. Una cifra en vez de catorce, y exacta.
+    int padsNeed = 0;
+    //  Y si el cristal se quedo clavado en su suelo — o sea si la cara va
+    //  sobre-suscrita. Ahi los pads absorben el deficit A PROPOSITO y la
+    //  diferencia es la escalera y no un fallo.
+    bool cristalApretado = false;
     //  Y CUANTO MIDE LA FILA DE MODULOS, que hasta ahora era una constante de
     //  26 px. Son las seis tapas que abren las fichas -PADS SEC CANCION MEZCLA
     //  XY AJUSTES-, o sea lo que mas se toca de la cara despues de los pads, y
@@ -400,8 +412,23 @@ void MainComponent::resized()
         //  ...and in two columns the pads are not in this budget at all: they
         //  are in the other one, together with the seam that names them.
         const int cellW    = (area.getWidth() - 3 * ZatiLookAndFeel::kPadGap) / 4;
-        const int padsNeed = wideFace ? 0 : 4 * cellW + 3 * ZatiLookAndFeel::kPadGap;
-        const int bodyNeed = ZatiLookAndFeel::kCtrlPlate + ZatiLookAndFeel::kAir + Metrics::sm
+        padsNeed = wideFace ? 0 : 4 * cellW + 3 * ZatiLookAndFeel::kPadGap;
+        //  Y SIN EL `Metrics::sm` QUE YA NADIE COLOCA.
+        //
+        //  La costura de EFECTOS se reservaba `kAir + layoutAir + kSeamLabelH +
+        //  Metrics::sm` y el `sm` se quito de donde se COLOCA -su parrafo esta
+        //  ochenta lineas mas abajo: «LA MISMA COSTURA QUE CONTROL, sin el
+        //  Metrics::sm de mas»- y se quedo aqui. La misma regla escrita dos
+        //  veces con una copia sin actualizar, que es el mismo fallo que este
+        //  presupuesto ya se comio con el `Metrics::xs` entre las pestañas y el
+        //  transporte y con la costura de EFECTOS.
+        //
+        //  Ocho pixeles que se restan de `freeH`, o sea que se le quitan al
+        //  CRISTAL — la unica banda de esta columna que puede dar — y acaban en
+        //  la rejilla de pads, que se lleva lo que sobre. Medido con el testigo
+        //  de abajo antes de tocarlo: la rejilla recibia `padsNeed + 8` en las
+        //  cinco pantallas de pie.
+        const int bodyNeed = ZatiLookAndFeel::kCtrlPlate + ZatiLookAndFeel::kAir
                            + ZatiLookAndFeel::kFxRow + ZatiLookAndFeel::kAir
                            + padsNeed + (wideFace ? 2 : 3) * kSeamLabelH;
 
@@ -417,7 +444,16 @@ void MainComponent::resized()
         //  own). Reserving the lettering here rather than hoping the seam is
         //  fat enough is what makes those two labels safe on a short screen:
         //  they are laid out, not squeezed in.
-        constexpr int kSeams   = 6;
+        //  SEIS DE PIE Y CINCO GIRADO, contadas y no supuestas. De pie son
+        //  cabecera-cristal, cristal-pestañas, transporte-CONTROL, la banda de
+        //  debajo de la rejilla, CONTROL-EFECTOS y EFECTOS-PADS. Girado la
+        //  ultima no existe en esta columna: los pads viven en `padCol` y su
+        //  costura se paga alli, asi que la sexta se reservaba y no la colocaba
+        //  nadie — once pixeles muertos debajo de la fila de efectos, que es
+        //  exactamente el mismo fallo que el `Metrics::sm` de arriba con otro
+        //  numero. Medido con el testigo: la columna izquierda salia con
+        //  `sm + layoutAir` de sobra apaisado.
+        const int kSeams       = wideFace ? 5 : 6;
         constexpr int kAirMax  = 11;   // past this the face reads as loose
         //  The screen is the protagonist and it is also the ONLY band that may
         //  give: everything else on this column is a target a finger has to
@@ -485,6 +521,10 @@ void MainComponent::resized()
                       : 0;
 
         screenH = juce::jmax (kMinScreen, freeH - layoutAir * kSeams);
+        //  Y SI EL CRISTAL SE QUEDO CLAVADO EN SU SUELO, la cara va
+        //  sobre-suscrita y quien absorbe el deficit es la rejilla. Ahi el
+        //  testigo de abajo mide la ESCALERA y no un descuadre.
+        cristalApretado = (freeH - layoutAir * kSeams) < kMinScreen;
 
         //  AIRE PARA LOS CHIPS DE BANCO.
         //
@@ -996,6 +1036,28 @@ void MainComponent::resized()
                                : juce::Rectangle<int> (area.getX(), faceTop,
                                                        area.getWidth(),
                                                        juce::jmax (0, area.getY() - faceTop));
+
+        //  EL TESTIGO DEL PRESUPUESTO, que es una cifra y no catorce.
+        //
+        //  «Aprovechar el espacio al maximo» se contesta con un numero o no se
+        //  contesta, y lo que no habia mirado nadie NUNCA es si lo que la cara
+        //  RESERVA es lo que la cara COLOCA. Hay dos precedentes escritos de
+        //  que se desvia -el `Metrics::xs` de las pestañas y el `Metrics::sm`
+        //  de esta misma costura- y las dos veces se encontro a mano.
+        //
+        //  No hace falta un libro de catorce bandas: los pads son el ELASTICO
+        //  de esta columna -todo lo demas tiene alto fijo y ellos se llevan lo
+        //  que quede- asi que un termino de mas o de menos en cualquier sitio
+        //  del presupuesto aterriza aqui y solo aqui. Se mide ANTES de que la
+        //  costura les pida prestado, que ese prestamo es deliberado y esta
+        //  medido.
+        {
+            const int costura = ZatiLookAndFeel::kAir + (wideFace ? 0 : layoutAir)
+                              + kSeamLabelH + padSeamExtra;
+            UiAudit::caraSobra (wideFace ? area.getHeight()
+                                         : area.getHeight() - costura - padsNeed,
+                                cristalApretado);
+        }
 
         if (wideFace)
         {

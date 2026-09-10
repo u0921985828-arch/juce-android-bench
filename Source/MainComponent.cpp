@@ -11069,11 +11069,16 @@ void MainComponent::refreshPiano (bool repintarTarjeta)
         ultimo = ps;
     }
 
+    //  Y `base`, QUE ES EL PASO DE LA PRIMERA COLUMNA. Las notas ya llegaban
+    //  recolocadas y el cabezal relativizado, asi que el piano tenia todo lo que
+    //  se MUEVE y nada con lo que dibujar el fondo: su cuadricula se teñia por
+    //  la columna. La rejilla de pasos lo recibe desde el dia que la ventana es
+    //  continua.
     pianoGrid.setSource (pianoCells, cols, pianoBase,
                          (ps >= 0 && ps < cols) ? ps : -1,
                          padZati[(size_t) p],
                          ps >= 0 ? engine.getStepPhase() : 0.0f,
-                         pianoLargos);
+                         pianoLargos, base);
 
     //  LAS DOS BARRAS. La horizontal es la MISMA que la de la rejilla —una
     //  ventana, un dueño— y solo cambia cuantas columnas caben; la vertical es

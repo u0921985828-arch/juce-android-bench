@@ -354,6 +354,42 @@ else:
           all (w >= MIN_CELL for w in d["ancho"]),
           "anchos %s px (suelo %d)" % (d["ancho"], MIN_CELL))
 
+#  --- LA CUADRICULA SE DESPLAZA CON LAS NOTAS ------------------------------
+#
+#  «Cuando arrastras la barra lateral, se desplazan las notas pero no las
+#  cuadriculas, con lo que puede dar a confundirse donde pone uno las notas
+#  siguiendo los pasos de los beat». La causa cabia en una linea: el fondo se
+#  teñia por la COLUMNA y `StepGrid` lo hace por el PASO desde el dia que la
+#  ventana es continua — el piano no recibia el paso de la primera columna, asi
+#  que no tenia con que.
+#
+#  Ninguna de las catorce reglas de `expo.py` puede verlo: una cuadricula que
+#  marca el contratiempo se maqueta perfecta. Es la familia de los cinco fallos
+#  del compas.
+#
+#  Lo mide la app PINTANDO -las lineas de compas son las unicas de alto
+#  completo, asi que la primera fila de la imagen las delata sin saber nada de
+#  la formula- y publica en que PASO cayo cada una. Con DOS cifras: que la
+#  cuadricula se MUEVA -un dibujo que no mira la ventana da la misma lista en
+#  las dos- y que caiga donde tiene que caer, que es una IDENTIDAD y no un
+#  numero escrito aqui: un pulso es un paso multiplo de cuatro.
+#
+#  Roto a proposito devolviendo `c % 4`: la ventana en 2 saca [6, 10, 14].
+d = una ("cuadricula")
+if d is None:
+    mide ("la cuadricula del piano", False, "no salio")
+else:
+    v0, v2 = d["ventana0"], d["ventana2"]
+    mide ("la cuadricula se dibuja",
+          len (v0) >= 2 and len (v2) >= 2,
+          "ventana 0 %s, ventana 2 %s" % (v0, v2))
+    mide ("y se mueve con la ventana",
+          v0 != v2, "las dos ventanas dan %s" % (v0,))
+    mala = [x for x in v0 + v2 if x % 4 != 0]
+    mide ("y cae en el pulso del PATRON",
+          not mala,
+          "ventana 0 %s, ventana 2 %s" % (v0, v2))
+
 print()
 print ("piano: %d comprobaciones, %d FALLA" % (len (hechas), len (fallos)))
 sys.exit (1 if fallos else 0)

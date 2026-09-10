@@ -1767,6 +1767,12 @@ void MainComponent::auditOpen (const juce::String& pedido)
         for (int s = 0; s < kNumRanuras; ++s)
             engine.setCanalSend (0, s, 0.15f + 0.15f * (float) s);
         canalActual = 0;
+        //  Y CON LA ULTIMA ENFOCADA, que es lo que hace medible la cuña.
+        //  `plato` la deja en la ranura 0 y sin un segundo estado «apunta a la
+        //  ranura enfocada» lo cumple igual una cuña clavada en la primera
+        //  tapa — y ademas seis ranuras llenas y NINGUNA enfocada no es un
+        //  estado al que se llegue tocando. Cero corridas nuevas.
+        focusFx (kNumRanuras - 1);
         openSheet (rackSheet, mixButton);
         refreshRack();
     }
@@ -2759,6 +2765,93 @@ void MainComponent::auditPiano()
                   << ",\"celda_w\":" << celda.getWidth() << ",\"celda_h\":" << celda.getHeight()
                   << ",\"elegido\":" << selectedPad
                   << ",\"cerro\":" << (padPickAbierto ? 0 : 1) << "}" << std::endl;
+    }
+
+    //  Y LA CUADRICULA SE DESPLAZA CON LAS NOTAS.
+    //
+    //  «Cuando arrastras la barra lateral, se desplazan las notas pero no las
+    //  cuadriculas, con lo que puede dar a confundirse donde pone uno las notas
+    //  siguiendo los pasos de los beat». Era exacto y la causa cabe en una
+    //  linea: el fondo se teñia por la COLUMNA -`c % 4`- y `StepGrid` lo hace
+    //  por el PASO desde el dia que la ventana es continua, con el parrafo que
+    //  lo explica escrito ahi mismo. El piano nunca recibio el paso de la
+    //  primera columna, asi que no tenia con que.
+    //
+    //  Y NINGUNA DE LAS CATORCE REGLAS DE `expo.py` PUEDE VERLO: una
+    //  cuadricula que marca el contratiempo se maqueta perfecta -no solapa, no
+    //  se sale, no lleva rotulo, no mide cero y esta traducida-. Es la familia
+    //  de los cinco fallos del compas.
+    //
+    //  Se mide PINTANDO y sobre el pixel, que es donde vive: la junta entre
+    //  dos columnas es 1.6 px transparentes -una celda va `reduced (0.8f)`- y
+    //  la linea de compas es 1 px dibujado justo ahi, asi que a media altura
+    //  esa junta vale cero salvo donde hay linea. Preguntarle a la app en que
+    //  columnas CREE que hay pulso seria repetir la constante en vez de medir,
+    //  que es el fallo que `icono.py` ya cometio dos veces con la mascara del
+    //  lanzador.
+    //
+    //  CON DOS CIFRAS, que es lo que separa las dos formas de escribirlo mal:
+    //  un dibujo que no mira la ventana no se mueve, y uno que se mueve por
+    //  otra razon tampoco vale. Las lineas se publican en PASOS ABSOLUTOS
+    //  -primerPaso + columna, que es la unica conversion que hace falta- asi
+    //  que la pregunta es una identidad y no un numero escrito aqui: TODAS
+    //  tienen que caer en multiplos de cuatro, en las dos ventanas. Con el
+    //  fallo puesto y la ventana en 2 salen en 6, 10 y 14.
+    {
+        openSheet (seqSheet, secButton);
+        showSeqPage (seqPagePiano);
+        engine.setPatternLength (0, 32);          // dos compases, para que la barra tenga donde ir
+
+        auto lineasCon = [this] (int desde)
+        {
+            if (seqBarra.onMueve) seqBarra.onMueve (desde);
+            refreshPiano();
+
+            juce::String s = "[";
+            const int w = juce::jmax (1, pianoGrid.getWidth());
+            const int h = juce::jmax (1, pianoGrid.getHeight());
+            juce::Image img (juce::Image::ARGB, w, h, true);
+            { juce::Graphics g (img); pianoGrid.paintEntireComponent (g, false); }
+
+            //  Y SE MIRA LA JUNTA ENTRE DOS COLUMNAS, A MEDIA ALTURA.
+            //
+            //  La primera version barria la fila y=0 con el alfa en 8, y salio
+            //  midiendo OTRA COSA: una celda se dibuja `reduced (0.8)`, asi que
+            //  en el pixel de arriba deja el 20 % de su tinte -ocho unidades de
+            //  alfa para una fila blanca y trece para un pulso- y lo que el
+            //  barrido encontraba eran las celdas TEÑIDAS y no las lineas.
+            //  Cambiaba con la ventana y caia en multiplos de cuatro, o sea que
+            //  daba verde por el motivo equivocado, y ademas dependia de si la
+            //  fila de arriba salia blanca o negra: `[0, 4, 8, 8, 12]`, con un
+            //  cero que no lleva linea y un ocho repetido. Primero se duda de
+            //  la prueba, por decimotercera vez en este banco.
+            //
+            //  Una celda deja 0.8 px de hueco por lado, o sea que entre dos
+            //  columnas hay 1.6 px TRANSPARENTES; la linea de compas es 1 px
+            //  dibujado justo ahi. Asi que a media altura la junta vale cero
+            //  salvo donde hay linea, que es la unica pregunta que esto tiene
+            //  que hacer. Donde MIRAR lo dice la app -`celdaAnchoPx` y
+            //  `canalIzq`, que son los que dibujan- y no una cuenta repetida
+            //  aqui.
+            const float ancho = pianoGrid.celdaAnchoPx();
+            bool first = true;
+            for (int c = 1; c < pianoGrid.numPasos(); ++c)
+            {
+                const int x = (int) std::lround ((float) pianoGrid.canalIzq() + ancho * (float) c);
+                if (x <= 0 || x >= w) continue;
+                if (img.getPixelAt (x, h / 2).getAlpha() > 20)
+                {
+                    s << (first ? "" : ",") << (seqPrimerPaso + c);
+                    first = false;
+                }
+            }
+            return s + "]";
+        };
+
+        const auto en0 = lineasCon (0);
+        const auto en2 = lineasCon (2);
+        std::cout << "{\"piano\":\"cuadricula\",\"ventana0\":" << en0
+                  << ",\"ventana2\":" << en2 << "}" << std::endl;
     }
 }
 

@@ -117,11 +117,12 @@ def lee_png (ruta):
     return w, h, bpp, bytes (out)
 
 
-def corre (size, shot):
+def corre (size, shot, abre=None):
     casa = tempfile.mkdtemp (prefix="zati-costura-")
     env = dict (os.environ, HOME=casa, ZATI_AUDIT="1", ZATI_SIZE=size, ZATI_LANG="es",
                 DISPLAY=os.environ.get ("DISPLAY", ":99"))
     if shot: env["ZATI_SHOT"] = shot
+    if abre: env["ZATI_OPEN"] = abre
     out = subprocess.run ([APP], env=env, capture_output=True, timeout=300)
     filas = []
     for l in out.stdout.decode ("utf8", "replace").splitlines():
@@ -191,12 +192,63 @@ def espectro (size):
     return corrida (False), corrida (True)
 
 
+def cunas (size):
+    """LA CUÑA DEL EFECTO ENFOCADO, con las DOS cifras.
+
+       Se PINTA y no reserva alto, asi que ninguna de las catorce reglas de
+       `expo.py` le aplica: no es un componente, no solapa a un hermano, no se
+       sale de la ventana y no lleva rotulo. Y llevaba anclada a la tapa
+       -`fb->getY() - 3`- desde el dia que se escribio, mientras el rayado de
+       EFECTOS se movia con su hueco: la tanda de las costuras lo bajo 3.5 px y
+       la barra le paso a cruzar por dentro. Medido en 412x915 antes del
+       arreglo: la cuña de F-9 a F-3 y el rayado en F-8.5.
+
+       PRIMERA: la cuña no toca lo que la costura PINTA. Los dos rectangulos
+       los publica la misma funcion que los dibuja -`engraveIn` la banda,
+       `MainComponent::paint` la cuña- asi que es «lo dibujado contra lo
+       dibujado», la misma pregunta que las filas del medidor. Y con el filo
+       DERECHO de la zona ademas del izquierdo, que apaisado la cara son dos
+       columnas y las tres costuras comparten alturas.
+
+       SEGUNDA: la cuña apunta a la ranura ENFOCADA. Sin ella, «no toca el
+       rayado» lo cumple igual una cuña que no se mueve nunca — que es lo unico
+       que un dibujo colocado por Y puede hacer mal sin que la primera lo vea.
+       `plato` enfoca la ranura 0 y `rackf` la ultima, asi que en `es` la
+       primera tiene que caer a la IZQUIERDA de la segunda; que sean distintas
+       no basta, porque una clavada en el centro de la fila tambien lo seria."""
+    malas, centros = 0, {}
+    for ficha in ("plato", "rackf"):
+        dump = corre (size, None, ficha)
+        cs   = [d for d in dump if d.get ("cuna")]
+        if len (cs) != 1:
+            print ("%-9s %-6s FALLA  la cuña se dibuja %d veces" % (size, ficha, len (cs)))
+            malas += 1
+            continue
+        c = cs[0]
+        centros[ficha] = c["x"] + c["w"] / 2.0
+        for k in [d for d in dump if "costura" in d]:
+            if (c["y"] < k["y1"] and c["y"] + c["h"] > k["y0"]
+                    and c["x"] < k["x2"] and c["x"] + c["w"] > k["x0"]):
+                print ("%-9s %-6s FALLA  la cuña %d..%d cruza el rayado %d..%d"
+                       % (size, ficha, c["y"], c["y"] + c["h"], k["y0"], k["y1"]))
+                malas += 1
+    if len (centros) == 2 and not centros["plato"] < centros["rackf"]:
+        print ("%-9s FALLA  la cuña no sigue a la ranura: ranura 0 en %.0f y la ultima en %.0f"
+               % (size, centros["plato"], centros["rackf"]))
+        malas += 1
+    return malas, centros
+
+
 def main():
     if not os.path.exists (APP): sys.exit ("no hay binario")
     if not display_alive():      sys.exit ("la pantalla virtual no responde")
 
     malas, medidas, sin_medir, filas, rotulos = 0, 0, 0, 0, []
+    cunasVistas = 0
     for size, _nombre in SIZES:
+        m, cent = cunas (size)
+        malas += m
+        cunasVistas += len (cent)
         dump = corre (size, None)
         cost = [d for d in dump if "costura" in d]
 
@@ -287,9 +339,17 @@ def main():
         print ("el espectro del cristal: %.1f dB sonando y %.1f callada"
                % (sonando, quieto))
 
+    #  CADENA DE CONTROL DE LA CUÑA. Sin una sola cuña vista esto daria verde
+    #  sin haber mirado nada — que es literalmente el fallo que ya costo una
+    #  medida con el barrido del APK.
+    if cunasVistas < 2 * len (SIZES):
+        print ("solo %d cuñas de %d: la cuña no se esta midiendo"
+               % (cunasVistas, 2 * len (SIZES)))
+        malas += 1
+
     print()
-    print ("%d costuras medidas, %d sin borde a la vista, %d filas de medidor"
-           % (medidas, sin_medir, filas))
+    print ("%d costuras medidas, %d sin borde a la vista, %d filas de medidor,"
+           " %d cuñas" % (medidas, sin_medir, filas, cunasVistas))
     if rotulos:
         cortos = [r for r in rotulos if len (r[1]) <= 2]
         print ("el rotulo de la tercera fila: %d con la palabra entera, %d con las dos"

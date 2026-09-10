@@ -160,11 +160,23 @@ public:
 
     //  `notas` trae kMaxNotas semitonos por paso; -128 es "ninguna". `pasos`
     //  es cuantas columnas se dibujan, `base` el semitono de la fila de abajo.
+    //
+    //  Y `desdePaso`, QUE ES EL PASO DEL PATRON DE LA PRIMERA COLUMNA. Sin el,
+    //  la rejilla de fondo se tenia que teñir por la COLUMNA -`c % 4`- y esa
+    //  cuenta solo coincide con el pulso cuando la ventana arranca en un
+    //  multiplo de cuatro. `StepGrid` lo recibe desde el dia que la ventana es
+    //  continua y su parrafo lo cuenta entero: «empezando en el paso 3, una
+    //  linea cada cuatro columnas cae en 7 y 11, o sea marca el contratiempo y
+    //  borra el pulso». El piano no lo recibio nunca — las notas se desplazan
+    //  con la barra y la cuadricula se quedaba quieta, que es exactamente la
+    //  queja: «se desplazan las notas pero no las cuadriculas, con lo que puede
+    //  dar a confundirse donde pone uno las notas siguiendo los pasos».
     void setSource (const signed char* notas, int pasos, int base,
                     int pasoTocando, int zati, float fase = 0.0f,
-                    const unsigned char* largos = nullptr)
+                    const unsigned char* largos = nullptr, int desdePaso = 0)
     {
         datos = notas; nPasos = juce::jmax (1, pasos); semiBase = base;
+        primerPaso = juce::jmax (0, desdePaso);
         cuartos = largos;
         tocando = pasoTocando; color = zati;
         faseAct = juce::jlimit (0.0f, 1.0f, fase);
@@ -179,8 +191,13 @@ public:
                                                      [] (unsigned char v) { return v == 0; })
                                       : std::memcmp (sombraLargos.data(), cuartos,
                                                      (size_t) nPasos * sizeof (unsigned char)) == 0);
+        //  Y `primerPaso` ENTRA EN LA COMPARACION, que es la trampa de este
+        //  atajo: sin el, arrastrar la barra por una zona VACIA no repinta -las
+        //  256 celdas salen identicas- y la cuadricula se queda donde estaba.
+        //  O sea el mismo fallo mudado de sitio.
         bool igual = datos != nullptr && visto
                   && nPasos == prevPasos && semiBase == prevBase
+                  && primerPaso == prevPrimer
                   && tocando == prevTocando && color == prevColor
                   && std::abs (faseAct - prevFase) < 0.004f
                   && sombra.size() == n
@@ -191,6 +208,7 @@ public:
         const auto antes = marcaDe (prevTocando);
         const bool soloCabezal = visto && datos != nullptr
                               && nPasos == prevPasos && semiBase == prevBase
+                              && primerPaso == prevPrimer
                               && color == prevColor
                               && sombra.size() == n
                               && std::memcmp (sombra.data(), datos, n * sizeof (signed char)) == 0
@@ -202,6 +220,7 @@ public:
         if (cuartos != nullptr)
             std::memcpy (sombraLargos.data(), cuartos, (size_t) nPasos * sizeof (unsigned char));
         prevPasos = nPasos; prevBase = semiBase; prevTocando = tocando;
+        prevPrimer = primerPaso;
         prevColor = color; prevFase = faseAct;
         const bool primera = ! visto;
         visto = true;
@@ -290,7 +309,12 @@ public:
                 //  El hueco de una fila negra se hunde un poco mas: es la
                 //  misma pista que da el teclado, repetida a lo ancho para que
                 //  no haya que mirar a la izquierda en cada nota.
-                g.setColour (ZatiColours::groove (negra ? 0.34f : (c % 4 == 0 ? 0.26f : 0.16f)));
+                //  El pulso se tiñe por el PASO y no por la columna: son la
+                //  misma cuenta solo cuando la ventana arranca en un borde de
+                //  compas, y desde que hay barra de arrastre eso deja de estar
+                //  garantizado.
+                const bool pulso = (((primerPaso + c) % 4) == 0);
+                g.setColour (ZatiColours::groove (negra ? 0.34f : (pulso ? 0.26f : 0.16f)));
                 g.fillRect (celda);
 
                 bool puesta = false;
@@ -339,6 +363,21 @@ public:
                 }
             }
         }
+
+        //  Y LAS LINEAS DE COMPAS, que es la mitad que de verdad se pidio.
+        //
+        //  El tinte de una celda vacia es un matiz -0.26 contra 0.16- y a
+        //  quince pixeles de fila eso no se cuenta de un vistazo; una linea es
+        //  una REFERENCIA. `StepGrid` las lleva desde que su ventana es
+        //  continua y el piano se quedo sin ellas, que es la otra mitad de
+        //  «puede dar a confundirse donde pone uno las notas siguiendo los
+        //  pasos de los beat». Caen en los pasos multiplos de cuatro DEL
+        //  PATRON, por lo mismo que el tinte.
+        g.setColour (ZatiColours::groove (0.28f));
+        for (int c = 1; c < nPasos; ++c)
+            if (((primerPaso + c) % 4) == 0)
+                g.fillRect ((float) r.getX() + (float) kGutter + anchoCol * (float) c - 0.5f,
+                            (float) r.getY(), 1.0f, (float) r.getHeight());
 
         //  El cabezal, encima de todo y en su color.
         if (tocando >= 0 && tocando < nPasos)
@@ -537,6 +576,9 @@ private:
     std::vector<unsigned char> sombraLargos;
     int filas = kFilasMin;              // ver setFilas
     int nPasos = 16, semiBase = -12, tocando = -1, color = 0, ultima = -1;
+    //  El paso del patron de la primera columna. Lo mismo que `StepGrid`
+    //  llama asi, y por lo mismo.
+    int primerPaso = 0;
     //  Donde empezo el arrastre, para saber si estira o pinta.
     int filaIni = -1, pasoIni = -1, ultimoLargo = -1;
     int util = 0;                       // 0 dibujar, 1 goma, 2 tijeras
@@ -544,6 +586,7 @@ private:
 
     std::vector<signed char> sombra;
     int prevPasos = -1, prevBase = -99, prevTocando = -2, prevColor = -1;
+    int prevPrimer = -1;
     float prevFase = -1.0f;
     bool visto = false;
 };

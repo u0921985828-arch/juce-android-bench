@@ -582,6 +582,49 @@ def judge_tarjeta(rows, size, lang, sheet):
     return out
 
 
+#  EL PRESUPUESTO DE LA CARA CONTRA LO QUE LA CARA COLOCA.
+#
+#  Ninguna de las catorce reglas de arriba puede verlo, y por una razon de
+#  fondo: un presupuesto que pide de mas no solapa, no se sale, no corta un
+#  rotulo y no mide cero. Lo unico que hace es restarse de `freeH`, o sea
+#  quitarle alto al CRISTAL -la unica banda de esa columna que puede dar- y
+#  regalarselo a la rejilla de pads, que se lleva lo que sobre. El error se
+#  cobra en la unica banda que la cara tiene para MIRAR.
+#
+#  Y se ha encontrado a mano dos veces, las dos leyendo el fichero: el
+#  `Metrics::xs` entre las pestañas y el transporte, y el `Metrics::sm` de la
+#  costura de EFECTOS. Con la tercera ya hay patron.
+#
+#  UNA CIFRA Y NO CATORCE, porque el elastico es el testigo: todo lo demas de
+#  la columna tiene alto fijo, asi que un termino de mas o de menos en
+#  CUALQUIER banda aterriza en los pads y en ningun otro sitio. `apretada` dice
+#  si el cristal se quedo clavado en su suelo -la cara sobre-suscrita-, y ahi
+#  los pads absorben el deficit A PROPOSITO: esa cifra es la escalera y no un
+#  descuadre, asi que se imprime y no se juzga.
+def judge_cara(rows, size, lang, sheet):
+    out = []
+    for r in rows:
+        if not r.get("cara"):
+            continue
+        #  Y LA CARA SOBRE-SUSCRITA SE IMPRIME Y NO SE JUZGA: ahi el cristal
+        #  se queda clavado en su suelo y los pads absorben el deficit A
+        #  PROPOSITO, o sea que esa cifra es la escalera y no un descuadre. Sin
+        #  imprimirla, «cero CARA» no distingue una cara cuadrada de una que no
+        #  se mide nunca.
+        if r.get("apretada"):
+            out.append(("APRETADA", f"{size}/{lang}/{sheet or 'face'}",
+                        f'el cristal se queda en su suelo y los pads absorben {r["sobra"]} px',
+                        0))
+            continue
+        if r["sobra"] != 0:
+            out.append(("CARA", f"{size}/{lang}/{sheet or 'face'}",
+                        (f'la cara reserva {r["sobra"]} px de mas: se los come la rejilla'
+                         if r["sobra"] > 0 else
+                         f'la cara coloca {-r["sobra"]} px mas de los que reserva'),
+                        abs(r["sobra"])))
+    return out
+
+
 #  EL AIRE DEL MARCO: NADA DE UNA FICHA SE METE EN EL.
 #
 #  Es la tercera mitad de la queja -«o se olvida el aire del marco»- y la unica
@@ -843,6 +886,7 @@ def _corre_y_juzga(combo, casa):
     return (judge(rows, size, lang, sheet) + judge_tapado(rows, size, lang, sheet)
                                            + judge_tarjeta(rows, size, lang, sheet)
                                            + judge_marco(rows, size, lang, sheet)
+                                           + judge_cara(rows, size, lang, sheet)
                                            + judge_fila(rows, size, lang, sheet)
                                            + judge_cabecera(rows, size, lang, sheet),
             (rows if lang in ("es", "en") else []), (puestos, pintados),
@@ -1003,7 +1047,8 @@ def main():
     #  su cifra. Lo que no puede pasar de cero es lo demas.
     duros = [k for k in ("TRUNC", "SQUEEZE", "OVERLAP", "OFFSCREEN", "CELDA",
                          "UNTRANSLATED", "CERO", "TAPADO", "SPRITE", "CORTADO", "PISADO",
-                         "FILA", "CUADRADA", "ASOMA", "CABECERA", "MARCO", "CRASH") if by.get(k)]
+                         "FILA", "CUADRADA", "ASOMA", "CABECERA", "MARCO", "CARA",
+                         "CRASH") if by.get(k)]
     if resto:
         duros.append("RESIDUO")
     print()

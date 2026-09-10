@@ -41,6 +41,7 @@ void MainComponent::paint (juce::Graphics& g)
     UiAudit::capaActual = 0;
     UiAudit::origenPintado = { 0, 0 };
     UiAudit::costuras.clear();
+    UiAudit::cunas.clear();
     UiAudit::vus.clear();
     UiAudit::vuRotulos.clear();
 
@@ -80,12 +81,26 @@ void MainComponent::paint (juce::Graphics& g)
     //  whole face in portrait and one of the two columns when the window is
     //  wider than it is tall - a rule for the pads that crossed the screen and
     //  the knobs on its way there would be naming all three.
+    //  Y DEVUELVE LA BANDA QUE HA PINTADO, por la misma razon por la que
+    //  `apunta` y `pintaTitulo` devuelven el rectangulo del texto: para que
+    //  otro pueda APARTARSE de ella sin volver a calcular donde cayo.
+    //
+    //  La cuña del efecto enfocado se anclaba a la tapa -`fb->getY() - 3`- y
+    //  eso era correcto el dia que se escribio, con el rayado ocho pixeles mas
+    //  arriba. La tanda de las costuras lo bajo 3.5 px para centrarlo en el
+    //  hueco que se VE, y desde entonces la barra le cruza por dentro: medido
+    //  en 412x915, la cuña ocupa F-9..F-3 y el rayado cae en F-8.5. El
+    //  comentario que hay junto a la cuña -«in the band BELOW the rule, which
+    //  is now empty»- dejo de ser verdad ese dia y nadie lo volvio a mirar.
+    //
+    //  Con la banda devuelta las dos salen del MISMO numero, que es lo unico
+    //  que impide que vuelvan a separarse.
     auto engraveIn = [&g, &full, &rule] (const juce::String& text, int seamTop, int zoneTop,
-                                         juce::Rectangle<int> span = {})
+                                         juce::Rectangle<int> span = {}) -> juce::Range<float>
     {
         const auto s = span.isEmpty() ? full : span.toFloat();
 
-        auto engrave = [&g, &rule, &s] (const juce::String& t, float y)
+        auto engrave = [&g, &rule, &s] (const juce::String& t, float y) -> juce::Range<float>
         {
         g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.30f));
         const float tw  = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), t);
@@ -97,17 +112,26 @@ void MainComponent::paint (juce::Graphics& g)
         rule (rx0, rx1, y, 0.16f);
         rule (x0 + tw + gap, s.getRight() - 10.0f, y, 0.16f);
 
-        //  Y SE APUNTA DONDE HA CAIDO, con una columna que pasa por el rayado.
-        //  Es la mitad que se juzga; donde esta el hueco lo dice la FOTO.
-        if (rx1 - rx0 > 6.0f)
-            UiAudit::costura ((int) y, (int) rx0, (int) rx1);
-
         g.setColour (ZatiColours::ink.withAlpha (0.42f));
         g.drawText (t, (int) x0 - 1, (int) (y - 5.0f), (int) tw + 3, 11,
                     juce::Justification::centred);
+
+        //  Lo que la costura PINTA: la caja del rotulo -once pixeles centrados
+        //  en `y`- unida a las dos filas del rayado. `rule` traza la tinta en
+        //  `y` y el brillo en `y+1`, asi que la banda acaba en `y+2`.
+        const juce::Range<float> banda (y - 5.0f, juce::jmax (y + 6.0f, y + 2.0f));
+
+        //  Y SE APUNTA DONDE HA CAIDO, con una columna que pasa por el rayado.
+        //  Es la mitad que se juzga; donde esta el hueco lo dice la FOTO.
+        if (rx1 - rx0 > 6.0f)
+            UiAudit::costura ((int) y, (int) rx0, (int) rx1,
+                              (int) (s.getRight() - 10.0f),
+                              (int) std::floor (banda.getStart()),
+                              (int) std::ceil  (banda.getEnd()));
+        return banda;
         };
 
-        engrave (text, (float) (seamTop + zoneTop) * 0.5f);
+        return engrave (text, (float) (seamTop + zoneTop) * 0.5f);
     };
 
     // 2. The pad plate: the pads are bolted to a recessed panel, not floating
@@ -174,10 +198,11 @@ void MainComponent::paint (juce::Graphics& g)
     //  487 -centro 459- y se dibujaba en 462.5. Tres pixeles y medio cada uno
     //  y en direcciones CONTRARIAS, porque EFECTOS tiene el plato encima y la
     //  fila debajo y PADS al reves. Es la queja, con su cifra.
+    juce::Range<float> bandaEfectos;
     if (! fxRowArea.isEmpty())
-        engraveIn (T ("EFECTOS"), fxSeamTop,
-                   fxRowArea.getY() + ZatiLookAndFeel::aireTapaVertical (fxRowArea.getHeight()),
-                   faceColumn);
+        bandaEfectos = engraveIn (T ("EFECTOS"), fxSeamTop,
+                                  fxRowArea.getY() + ZatiLookAndFeel::aireTapaVertical (fxRowArea.getHeight()),
+                                  faceColumn);
 
     if (! padPlateArea.isEmpty())
     {
@@ -219,17 +244,65 @@ void MainComponent::paint (juce::Graphics& g)
         if (const int sFoco = slotDeFx (focusedFx); sFoco >= 0)
             if (auto* fb = fxButtons[sFoco])
             {
-                //  In the band BELOW the rule, which is now empty: the word
-                //  moved to the middle of the seam and takes the rule's line
-                //  with it, so the pixels between that line and the caps are
-                //  free - and they are the right place for a pointer, because
-                //  it is nearer the thing it points at than to the lettering.
-                const float cx = (float) fb->getBounds().getCentreX();
-                const float y  = (float) fb->getY() - 3.0f;
-                juce::Path wedge;
-                wedge.addTriangle (cx - 5.0f, y - 6.0f, cx + 5.0f, y - 6.0f, cx, y);
-                g.setColour (ZatiColours::ink.withAlpha (0.75f));
-                g.fillPath (wedge);
+                //  DEBAJO DEL RAYADO, Y NO ANCLADA A LA TAPA. Se escribio como
+                //  `fb->getY() - 3` con el comentario «in the band BELOW the
+                //  rule, which is now empty», y esa frase era verdad el dia que
+                //  se escribio: el rayado caia ocho pixeles por encima del filo
+                //  de la fila. La tanda de las costuras lo bajo 3.5 px para
+                //  centrarlo en el hueco que se VE -no en la banda que
+                //  `resized()` reserva- y desde entonces la barra le pasaba POR
+                //  DENTRO. Medido en 412x915: la cuña ocupaba F-9..F-3 y el
+                //  rayado cae en F-8.5..F-7.5, con F el filo de la fila. Es una
+                //  afirmacion sin medida con su fecha.
+                //
+                //  Las dos salen ahora del MISMO numero: `engraveIn` devuelve
+                //  la banda que ha PINTADO -la caja del rotulo unida a las dos
+                //  filas del rayado- y la cuña se centra entre su filo de abajo
+                //  y la primera tinta de la tapa, que empieza en
+                //  `aireTapaVertical` porque una tapa se pinta al 75 % de su
+                //  fila. Con `layoutAir` en cero son 11.5 px de hueco para una
+                //  cuña de seis.
+                const float tapaInk = (float) (fxRowArea.getY()
+                                               + ZatiLookAndFeel::aireTapaVertical (fxRowArea.getHeight()));
+                const float arriba  = bandaEfectos.isEmpty() ? tapaInk - 9.0f
+                                                             : bandaEfectos.getEnd() + 1.0f;
+
+                //  Y LA CUÑA SE PIDE DEL TAMAÑO QUE HAYA, entre su suelo y su
+                //  tope, que es la escalera de siempre y no «si no cabe no se
+                //  dibuja». Lo primero que se escribio fue eso ultimo -un
+                //  objetivo escondido no es un objetivo- y salio medido: el
+                //  hueco vale 10.5 px en 412x915 y **5.5 en 360x640 y en
+                //  280x653**, o sea que una cuña clavada en seis desaparece en
+                //  dos de las siete pantallas. Y no es un adorno lo que se
+                //  pierde: es lo UNICO que dice cual de las seis ranuras tiene
+                //  los tres mandos, asi que quitarlo devuelve exactamente el
+                //  problema por el que la cuña existe.
+                //
+                //  Se encoge con su FORMA -el ancho sigue al alto- porque una
+                //  cuña de diez por tres es una raya torcida y no una flecha, y
+                //  el suelo esta en cuatro: por debajo el triangulo se lee como
+                //  una mota. Medido en las siete: 10x6 en cinco y **8x4** en las
+                //  dos estrechas, con el hueco en 10.5 px y en 5.5.
+                const float alto  = juce::jmin (6.0f, tapaInk - arriba - 1.0f);
+                const float medio = alto * (5.0f / 6.0f);
+                if (alto >= 4.0f)
+                {
+                    const float cx = (float) fb->getBounds().getCentreX();
+                    const float y  = arriba + (tapaInk - arriba - alto) * 0.5f + alto;
+                    juce::Path wedge;
+                    wedge.addTriangle (cx - medio, y - alto, cx + medio, y - alto, cx, y);
+                    g.setColour (ZatiColours::ink.withAlpha (0.75f));
+                    g.fillPath (wedge);
+
+                    //  Se apunta lo que se acaba de pintar, que es la mitad que
+                    //  el banco juzga: `Tests/costuras.py` compara este
+                    //  rectangulo contra el que publica la costura, o sea lo
+                    //  dibujado contra lo dibujado. Repetir aqui la cuenta del
+                    //  rayado seria la regla escrita dos veces y el banco daria
+                    //  verde con el fallo puesto.
+                    UiAudit::cuna (juce::Rectangle<float> (cx - medio, y - alto,
+                                                          medio * 2.0f, alto).toNearestInt());
+                }
             }
 
     // 3. Recessed LCD bezel around the scope, with the screws that hold the

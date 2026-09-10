@@ -247,10 +247,55 @@ namespace UiAudit
     //  hueco empezaba sesenta pixeles mas arriba. Lo que el ojo centra es
     //  contra las TAPAS, asi que se busca la tinta mas cercana de todo el
     //  tramo.
-    struct Costura { int y, x0, x1; };
+    //  Y LA BANDA QUE LA COSTURA PINTA, que no es lo mismo que los dos bordes
+    //  que `engraveIn` recibio: aquellos son la ENTRADA -repetirlos aqui seria
+    //  el fallo de la mascara del lanzador- y esta es la SALIDA, el alto que la
+    //  palabra y su rayado ocupan de verdad. La publica la misma funcion que
+    //  los dibuja, asi que la pregunta que se puede hacer con ella es la de las
+    //  filas del medidor: lo dibujado cabe donde lo dibujado deja sitio.
+    //  Y EL FILO DERECHO DE LA ZONA, que es lo que hace falta para poder
+    //  preguntar si algo cae DEBAJO de esta costura y no de la de al lado.
+    //  `x0..x1` es el tramo IZQUIERDO del rayado -lo que la foto recorre para
+    //  buscar el hueco- y una costura pinta ademas la palabra y el tramo de la
+    //  derecha, asi que su extension real es `x0..x2`. Apaisado la cara son dos
+    //  columnas y las tres costuras comparten alturas: sin el filo derecho, una
+    //  pregunta por Y sola confundiria la de PADS con la de EFECTOS.
+    struct Costura { int y, x0, x1, x2, y0, y1; };
     inline std::vector<Costura> costuras;
-    inline void costura (int y, int x0, int x1)
-    { if (enabled()) costuras.push_back ({ y, x0, x1 }); }
+    inline void costura (int y, int x0, int x1, int x2, int y0, int y1)
+    { if (enabled()) costuras.push_back ({ y, x0, x1, x2, y0, y1 }); }
+
+    //  LA CUÑA QUE APUNTA A LA RANURA ENFOCADA, que no la miraba nadie.
+    //
+    //  Se PINTA y no reserva alto, asi que ninguna de las catorce reglas de
+    //  `expo.py` le aplica: no es un componente, no solapa a un hermano, no se
+    //  sale de la ventana y no lleva rotulo. Y estaba anclada a la tapa
+    //  mientras el rayado de EFECTOS se movia con su hueco, asi que la barra le
+    //  cruzaba por dentro en las seis ranuras.
+    struct Cuna { int x, y, w, h; };
+    inline std::vector<Cuna> cunas;
+    inline void cuna (juce::Rectangle<int> r)
+    { if (enabled()) cunas.push_back ({ r.getX(), r.getY(), r.getWidth(), r.getHeight() }); }
+
+    //  LO QUE LA CARA PRESUPUESTA CONTRA LO QUE COLOCA.
+    //
+    //  Ninguna de las catorce reglas de `expo.py` puede verlo: un presupuesto
+    //  que pide de mas no solapa, no se sale, no corta un rotulo y no mide
+    //  cero — lo unico que hace es quitarle alto al CRISTAL, que es la unica
+    //  banda de esta columna que da, y regalarselo a la rejilla de pads, que
+    //  se lleva lo que sobre. Se ha encontrado a mano DOS veces (el
+    //  `Metrics::xs` de las pestañas y el `Metrics::sm` de la costura de
+    //  EFECTOS) y las dos leyendo el fichero.
+    //
+    //  Y no hace falta un libro de catorce bandas, porque el elastico es el
+    //  testigo: todo lo demas de la columna tiene alto fijo, asi que cualquier
+    //  descuadre aterriza aqui. `apretada` dice si el cristal se quedo clavado
+    //  en su suelo — ahi los pads absorben el deficit A PROPOSITO y la cifra
+    //  mide la escalera, no un fallo.
+    inline int caraSobraPx = 0;
+    inline bool caraApretada = false, caraSobraVista = false;
+    inline void caraSobra (int px, bool apretada)
+    { if (enabled()) { caraSobraPx = px; caraApretada = apretada; caraSobraVista = true; } }
 
     //  EL MEDIDOR DEL CRISTAL, FILA POR FILA Y CON EL CRISTAL QUE LAS TIENE
     //  QUE CONTENER.
@@ -1045,7 +1090,19 @@ namespace UiAudit
 
         for (const auto& c : costuras)
             std::cout << "{\"costura\":1,\"y\":" << c.y
-                      << ",\"x0\":" << c.x0 << ",\"x1\":" << c.x1 << "}"
+                      << ",\"x0\":" << c.x0 << ",\"x1\":" << c.x1
+                      << ",\"x2\":" << c.x2
+                      << ",\"y0\":" << c.y0 << ",\"y1\":" << c.y1 << "}"
+                      << std::endl;
+
+        for (const auto& c : cunas)
+            std::cout << "{\"cuna\":1,\"x\":" << c.x << ",\"y\":" << c.y
+                      << ",\"w\":" << c.w << ",\"h\":" << c.h << "}"
+                      << std::endl;
+
+        if (caraSobraVista)
+            std::cout << "{\"cara\":1,\"sobra\":" << caraSobraPx
+                      << ",\"apretada\":" << (caraApretada ? 1 : 0) << "}"
                       << std::endl;
 
         for (const auto& r : vuRotulos)
