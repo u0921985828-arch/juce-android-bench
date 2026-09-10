@@ -613,7 +613,10 @@ def judge_cara(rows, size, lang, sheet):
         #  se mide nunca.
         if r.get("apretada"):
             out.append(("APRETADA", f"{size}/{lang}/{sheet or 'face'}",
-                        f'el cristal se queda en su suelo y los pads absorben {r["sobra"]} px',
+                        (f'el cristal se queda en su suelo y los pads absorben '
+                         f'{-r["sobra"]} px de deficit' if r["sobra"] < 0 else
+                         f'el cristal se queda en su suelo y a los pads les '
+                         f'sobran {r["sobra"]} px'),
                         0))
             continue
         if r["sobra"] != 0:

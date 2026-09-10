@@ -384,7 +384,7 @@ else:
           len (v0) >= 2 and len (v2) >= 2,
           "ventana 0 %s, ventana 2 %s" % (v0, v2))
     mide ("y se mueve con la ventana",
-          v0 != v2, "las dos ventanas dan %s" % (v0,))
+          v0 != v2, "ventana 0 %s, ventana 2 %s" % (v0, v2))
     mala = [x for x in v0 + v2 if x % 4 != 0]
     mide ("y cae en el pulso del PATRON",
           not mala,
