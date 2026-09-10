@@ -39,9 +39,14 @@ AudioEngine::AudioEngine()
     for (int f = 0; f < kNumFx; ++f)
         for (int par = 0; par < 3; ++par)
             fxP[(size_t) f][(size_t) par].store (kFxDef[f][par], std::memory_order_relaxed);
-    //  Y el EQ, que ademas los APLICA: ver setFxParam.
-    eqFx.ponAncho  (kFxDef[kFxEq][0]);
-    eqFx.ponSalida (kFxDef[kFxEq][1]);
+    //  Y el EQ, que ademas los APLICA: ver setFxParam. En los DIECISEIS, que
+    //  un inserto es de un canal y los quince que nadie ha tocado todavia
+    //  tienen que nacer donde nace el cero.
+    for (auto& I : ins)
+    {
+        I.eqFx.ponAncho  (kFxDef[kFxEq][0]);
+        I.eqFx.ponSalida (kFxDef[kFxEq][1]);
+    }
 
     for (auto& l : patternLength) l.store (kMinPatLen, std::memory_order_relaxed);
 
@@ -111,8 +116,11 @@ AudioEngine::AudioEngine()
     //  vuelve a pasar por aqui con el motor cargado, y dejar la muestra
     //  retenida del dispositivo anterior es un escalon de continua en la
     //  primera muestra del nuevo.
-    drvLp[0] = drvLp[1] = 0.0f;   drvWasActive = false;
-    crHold[0] = crHold[1] = 0.0f; crPhase = 0.0f; crWasActive = false;
+    for (auto& I : ins)
+    {
+        I.drvLp[0] = I.drvLp[1] = 0.0f;   I.drvWasActive = false;
+        I.crHold[0] = I.crHold[1] = 0.0f; I.crPhase = 0.0f; I.crWasActive = false;
+    }
 }
 
 AudioEngine::~AudioEngine()
@@ -180,12 +188,6 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize, int inputC
     scopeColLen = juce::jmax (1, (int) (0.74 * systemSampleRate / (double) kScopeCols));
 
     juce::dsp::ProcessSpec spec { systemSampleRate, (juce::uint32) juce::jmax (1, maxBlock), 2 };
-    masterFilter.prepare (spec);
-    masterFilter.reset();
-
-    hpFilter.prepare (spec);
-    hpFilter.reset();
-    hpFilter.setType (juce::dsp::StateVariableTPTFilterType::highpass);
 
     //  La FDN reserva sus cuatro lineas y sus dos difusores aqui, que es el
     //  unico sitio donde puede reservar: en el render no se toca memoria.
@@ -219,35 +221,54 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize, int inputC
     modWasActive.fill (false);
     for (auto& l : mod) l.reinicia();
 
-    //  Y la familia de CARACTER. La linea de PIT se dimensiona al grano mas
-    //  largo por DOS -las dos cabezas van desfasadas medio grano y la de atras
-    //  lee hasta un grano entero por detras-, y la ventana de FRZ al tope de su
-    //  mando: reservar en el hilo de audio esta prohibido, asi que se reserva
-    //  aqui y el mando solo mueve CUANTO se usa.
-    pitLine.prepare (spec);
-    pitLine.setMaximumDelayInSamples ((int) (systemSampleRate * kPitGranoMax * 2.0) + 4);
-    pitLine.reset();
-    pitFase = 0.0f;
-    rngFase = 0.0f;
-    for (auto& fila : widAlta) for (auto& st : fila) st = {};
-    for (auto& fila : widBaja) for (auto& st : fila) st = {};
-    for (auto& fila : excAlta) for (auto& st : fila) st = {};
-    for (auto& fila : excBaja) for (auto& st : fila) st = {};
-    trnRapido = trnLento = 0.0f;
-    for (auto& c : frzVent) { c.assign ((size_t) (systemSampleRate * kFrzVentanaMax) + 4, 0.0f); }
-    frzEscritas = 0; frzLee = 0.0f; frzLlena = false; frzOyo = false;
-    frzLargo = (int) (systemSampleRate * 0.180);
-    carWasActive.fill (false);
+    //  Y LOS DIECISEIS INSERTOS, en un bucle y no dieciseis veces a mano.
+    //  Es la razon entera por la que `Inserto` existe: cada uno de estos
+    //  `prepare` y cada uno de estos `reset` se escribia UNA vez cuando habia
+    //  un solo juego, y multiplicarlos a mano por dieciseis multiplica por
+    //  dieciseis la probabilidad de que a uno se le olvide el suyo — que es lo
+    //  que el comentario de `copyStateFrom` ya dice que ha pasado tres veces.
+    for (auto& I : ins)
+    {
+        I.masterFilter.prepare (spec);
+        I.masterFilter.reset();
 
-    //  El EQ toma la frecuencia nueva y limpia sus diez estados; las bandas NO
-    //  se tocan, que esto corre en cada cambio de ruta. Ver Eq5::prepare.
-    eqFx.prepare (systemSampleRate);
-    //  Y los cuatro de dinamica. `prepare` aqui SI vacia el estado -es una
-    //  envolvente y una ganancia suavizada, o sea el pasado de la señal- a
-    //  diferencia de `Eq5::prepare`, que no toca las bandas: alli lo que
-    //  sobreviviria a un cambio de ruta es el ajuste de la persona, y aqui lo
-    //  que sobreviviria seria la cola de un detector que ya no vale.
-    for (auto& d : dyn) d.prepare (systemSampleRate);
+        I.hpFilter.prepare (spec);
+        I.hpFilter.reset();
+        I.hpFilter.setType (juce::dsp::StateVariableTPTFilterType::highpass);
+
+        I.modTrm.reinicia();
+        I.trmWasActive = false;
+
+        //  La familia de CARACTER. La linea de PIT se dimensiona al grano mas
+        //  largo por DOS -las dos cabezas van desfasadas medio grano y la de
+        //  atras lee hasta un grano entero por detras-, y la ventana de FRZ al
+        //  tope de su mando: reservar en el hilo de audio esta prohibido, asi
+        //  que se reserva aqui y el mando solo mueve CUANTO se usa.
+        I.pitLine.prepare (spec);
+        I.pitLine.setMaximumDelayInSamples ((int) (systemSampleRate * kPitGranoMax * 2.0) + 4);
+        I.pitLine.reset();
+        I.pitFase = 0.0f;
+        I.rngFase = 0.0f;
+        for (auto& fila : I.widAlta) for (auto& st : fila) st = {};
+        for (auto& fila : I.widBaja) for (auto& st : fila) st = {};
+        for (auto& fila : I.excAlta) for (auto& st : fila) st = {};
+        for (auto& fila : I.excBaja) for (auto& st : fila) st = {};
+        I.trnRapido = I.trnLento = 0.0f;
+        for (auto& c : I.frzVent) c.assign ((size_t) (systemSampleRate * kFrzVentanaMax) + 4, 0.0f);
+        I.frzEscritas = 0; I.frzLee = 0.0f; I.frzLlena = false; I.frzOyo = false;
+        I.frzLargo = (int) (systemSampleRate * 0.180);
+        I.carWasActive.fill (false);
+
+        //  El EQ toma la frecuencia nueva y limpia sus diez estados; las bandas
+        //  NO se tocan, que esto corre en cada cambio de ruta. Ver Eq5::prepare.
+        I.eqFx.prepare (systemSampleRate);
+        //  Y los cuatro de dinamica. `prepare` aqui SI vacia el estado -es una
+        //  envolvente y una ganancia suavizada, o sea el pasado de la señal- a
+        //  diferencia de `Eq5::prepare`, que no toca las bandas: alli lo que
+        //  sobreviviria a un cambio de ruta es el ajuste de la persona, y aqui
+        //  lo que sobreviviria seria la cola de un detector que ya no vale.
+        for (auto& d : I.dyn) d.prepare (systemSampleRate);
+    }
 }
 
 void AudioEngine::releaseResources() noexcept
@@ -1551,6 +1572,13 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         //  buffers que leia: la fila de control del banco sale bit a bit.
         int canalEtapa = 0;
 
+        //  Y SU ESTADO. Las once etapas de inserto leen y escriben aqui en vez
+        //  de en la clase: un inserto es de UN canal, asi que su filtro, su
+        //  compresor y su ventana de congelador se replican dieciseis veces.
+        //  Con el canal en cero -que es donde nace- esto es exactamente el
+        //  mismo estado que habia suelto en la clase.
+        Inserto& I = ins[(size_t) canalEtapa];
+
         auto busIdx = [&canalEtapa] (int f) noexcept { return (size_t) busDe (canalEtapa, f); };
 
         auto live = [&] (int f) noexcept
@@ -1672,15 +1700,15 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         {
             const float swT  = juce::jlimit (-1.0f, 1.0f, fltSweep.load (std::memory_order_relaxed));
             const float resT = juce::jlimit (0.1f, 4.0f, fxReso.load (std::memory_order_relaxed));
-            smSweep += kBlock * (swT - smSweep);
-            smReso  += kBlock * (resT - smReso);
+            I.smSweep += kBlock * (swT - I.smSweep);
+            I.smReso  += kBlock * (resT - I.smReso);
 
             //  Exponencial, no lineal: el oido oye octavas. Repartido lineal,
             //  la mitad del recorrido se gasta entre 10 y 20 kHz, donde no pasa
             //  nada, y todo lo que importa cae en el ultimo centimetro.
             //  Ver AudioEngine::barridoDe: el reparto vive alli desde que la
             //  fila del rack lo dibuja, o serian dos reglas.
-            const auto  barr  = barridoDe (smSweep);
+            const auto  barr  = barridoDe (I.smSweep);
             const bool  swept = barr.activo;
             const float freq  = barr.hz;
             const auto  type  = barr.alto ? juce::dsp::StateVariableTPTFilterType::highpass
@@ -1710,52 +1738,52 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     //  alto suelta su estado de golpe: un golpe seco justo al
                     //  cruzar el centro, que es por donde pasa el dedo cada vez
                     //  que vuelve.
-                    if (! filterWasActive || fltWasHigh != (smSweep > 0.0f))
-                        masterFilter.reset();
-                    masterFilter.setType (type);
-                    masterFilter.setCutoffFrequency (juce::jlimit (20.0f, nyq, freq));
-                    masterFilter.setResonance (smReso);
+                    if (! I.filterWasActive || I.fltWasHigh != (I.smSweep > 0.0f))
+                        I.masterFilter.reset();
+                    I.masterFilter.setType (type);
+                    I.masterFilter.setCutoffFrequency (juce::jlimit (20.0f, nyq, freq));
+                    I.masterFilter.setResonance (I.smReso);
                     auto b = blockFor (0);
                     juce::dsp::ProcessContextReplacing<float> ctx (b);
-                    masterFilter.process (ctx);
-                    fltWasHigh = (smSweep > 0.0f);
+                    I.masterFilter.process (ctx);
+                    I.fltWasHigh = (I.smSweep > 0.0f);
                 }
                 returnBus (0);
             }
-            filterWasActive = fed && swept;
+            I.filterWasActive = fed && swept;
         }
 
         // --- 2. HPF: its own filter, so ISO + HPF = band-pass. ------------
         {
             const float frqT = juce::jlimit (20.0f, nyq, hpFreq.load (std::memory_order_relaxed));
             const float resT = juce::jlimit (0.1f, 4.0f, hpReso.load (std::memory_order_relaxed));
-            smHpFreq += kBlock * (frqT - smHpFreq);
-            smHpReso += kBlock * (resT - smHpReso);
+            I.smHpFreq += kBlock * (frqT - I.smHpFreq);
+            I.smHpReso += kBlock * (resT - I.smHpReso);
 
             const bool active = live (1);
             if (active)
             {
-                if (! hpWasActive) hpFilter.reset();
-                hpFilter.setCutoffFrequency (smHpFreq);
-                hpFilter.setResonance (smHpReso);
+                if (! I.hpWasActive) I.hpFilter.reset();
+                I.hpFilter.setCutoffFrequency (I.smHpFreq);
+                I.hpFilter.setResonance (I.smHpReso);
                 auto b = blockFor (1);
                 juce::dsp::ProcessContextReplacing<float> ctx (b);
-                hpFilter.process (ctx);
+                I.hpFilter.process (ctx);
                 returnBus (1);
             }
-            hpWasActive = active;
+            I.hpWasActive = active;
         }
 
         // --- 3. DRIVE: tanh, then a tone control. -------------------------
         {
             const float drvT  = juce::jlimit (0.0f, 1.0f, fxDrive.load (std::memory_order_relaxed));
             const float toneT = juce::jlimit (200.0f, 20000.0f, drvTone.load (std::memory_order_relaxed));
-            smDrive   += kBlock * (drvT  - smDrive);
-            smDrvTone += kBlock * (toneT - smDrvTone);
+            I.smDrive   += kBlock * (drvT  - I.smDrive);
+            I.smDrvTone += kBlock * (toneT - I.smDrvTone);
 
             //  ESTADO QUE SOBREVIVE A UN BUS MUERTO ES UN GOLPE ESPERANDO.
             //
-            //  `drvLp` es el estado del paso bajo de salida y no se reiniciaba
+            //  `I.drvLp` es el estado del paso bajo de salida y no se reiniciaba
             //  nunca: ni en prepareToPlay - que solo limpiaba smSend - ni al
             //  volver a encenderse. Un bus se declara muerto (busRinging
             //  falso), la etapa deja de correr, pasan diez segundos, se vuelve
@@ -1768,8 +1796,8 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             //  Se limpia AL ENTRAR y no al preparar, porque cambiar un envio
             //  no pasa por prepareToPlay.
             const bool drvNow = live (2);
-            if (drvNow && ! drvWasActive) { drvLp[0] = drvLp[1] = 0.0f; }
-            drvWasActive = drvNow;
+            if (drvNow && ! I.drvWasActive) { I.drvLp[0] = I.drvLp[1] = 0.0f; }
+            I.drvWasActive = drvNow;
 
             if (drvNow)
             {
@@ -1777,20 +1805,20 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 //  que el visor del plato dibuja esta misma curva. `mk`
                 //  compensa por la ganancia que ENTRA y no por el techo del
                 //  tanh, que para cualquier k util vale ~1.
-                const auto  dr = driveDe (smDrive);
+                const auto  dr = driveDe (I.smDrive);
                 const float a  = juce::jlimit (0.0f, 1.0f,
                                     1.0f - std::exp (-2.0f * juce::MathConstants<float>::pi
-                                                     * smDrvTone / (float) systemSampleRate));
+                                                     * I.smDrvTone / (float) systemSampleRate));
                 for (int ch = 0; ch < chans; ++ch)
                 {
                     float* w = fxBus[busIdx (kFxDrv)].getWritePointer (ch, startSample);
-                    float lp = drvLp[ch];
+                    float lp = I.drvLp[ch];
                     for (int i = 0; i < numSamples; ++i)
                     {
                         lp += a * (saturaDe (w[i], dr) - lp);
                         w[i] = lp;
                     }
-                    drvLp[ch] = lp;
+                    I.drvLp[ch] = lp;
                 }
                 returnBus (2);
             }
@@ -1798,14 +1826,14 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
 
         // --- 4. CRUSH: bit depth and sample-and-hold, the two halves of lo-fi.
         {
-            //  Mismo agujero que DRV, y aqui peor: `crHold` es literalmente la
+            //  Mismo agujero que DRV, y aqui peor: `I.crHold` es literalmente la
             //  muestra retenida, asi que al reactivarse el bus salia el ultimo
             //  valor cuantizado de hace diez segundos, mantenido hasta que la
             //  fase volviera a disparar - con crRate alto, cientos de muestras
             //  de continua seguidas.
             const bool crNow = live (4);
-            if (crNow && ! crWasActive) { crHold[0] = crHold[1] = 0.0f; crPhase = 0.0f; }
-            crWasActive = crNow;
+            if (crNow && ! I.crWasActive) { I.crHold[0] = I.crHold[1] = 0.0f; I.crPhase = 0.0f; }
+            I.crWasActive = crNow;
 
             if (crNow)
             {
@@ -1827,17 +1855,17 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 //  bucle anterior y lo que mantiene los dos canales retenidos
                 //  a la vez - que es de donde sale el sonido de un crusher y
                 //  no de dos.
-                const float phase0 = crPhase;
+                const float phase0 = I.crPhase;
                 for (int ch = 0; ch < chans; ++ch)
                 {
                     float* w    = fxBus[busIdx (kFxBit)].getWritePointer (ch, startSample);
                     float phase = phase0;
-                    float hold  = crHold[ch];
+                    float hold  = I.crHold[ch];
 
                     crush (w, numSamples, levels, step, phase, hold);
 
-                    crHold[ch] = hold;
-                    if (ch == 0) crPhase = phase;
+                    I.crHold[ch] = hold;
+                    if (ch == 0) I.crPhase = phase;
                 }
                 returnBus (4);
             }
@@ -1927,7 +1955,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 //  el analizador del EQ era una respuesta a la misma pregunta
                 //  que ahora se le hace a los once -«que esta pasando por este
                 //  bus»- asi que la hace `returnBus` y el bloque de arriba.
-                eqFx.procesa (fxBus[busIdx (kFxEq)].getArrayOfWritePointers(), chans, startSample, numSamples);
+                I.eqFx.procesa (fxBus[busIdx (kFxEq)].getArrayOfWritePointers(), chans, startSample, numSamples);
                 returnBus (6);
             }
         }
@@ -1942,14 +1970,14 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             const int f = kFxCmp + d;
             if (! live (f)) continue;
 
-            dyn[(size_t) d].procesa (fxBus[busIdx (f)].getArrayOfWritePointers(), chans,
+            I.dyn[(size_t) d].procesa (fxBus[busIdx (f)].getArrayOfWritePointers(), chans,
                                      startSample, numSamples,
                                      (Dinamica::Modo) d,
                                      fxP[(size_t) f][0].load (std::memory_order_relaxed),
                                      fxP[(size_t) f][1].load (std::memory_order_relaxed));
             //  Y lo que baja, para la casilla de lectura. Un compresor que no
             //  dice cuanto comprime es un compresor invisible.
-            dynRed[(size_t) d].store (dyn[(size_t) d].reduccionDb(),
+            I.dynRed[(size_t) d].store (I.dyn[(size_t) d].reduccionDb(),
                                       std::memory_order_relaxed);
             returnBus (f);
         }
@@ -1981,9 +2009,13 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             //  de subida- asi que esto no cambia como suena: cambia lo que el
             //  visor dice mientras no pasa nada, que es «el LFO esta en su
             //  sitio» en vez de «esta a mitad de vuelta».
-            for (int m = 0; m < 4; ++m)
+            for (int m = 0; m < kNumModEnvio; ++m)
                 if (! live (modIdx (m)) && modWasActive[(size_t) m])
                     modFase[(size_t) m].store (0.0f, std::memory_order_relaxed);
+            //  Y TRM aparte, que es el unico de los cuatro que SUSTITUYE: su
+            //  LFO vive en el inserto del canal y no en la clase.
+            if (! live (kFxTrm) && I.trmWasActive)
+                I.trmFase.store (0.0f, std::memory_order_relaxed);
 
             // --- CHO: retardo corto barrido, sin realimentacion. -----------
             {
@@ -2135,18 +2167,17 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
 
             // --- TRM: ganancia por muestra. --------------------------------
             {
-                const int m = modDe (kFxTrm);
                 const float prof = juce::jlimit (0.0f, 1.0f,
                                      fxP[(size_t) kFxTrm][1].load (std::memory_order_relaxed));
-                smTrmProf += kBlock * (prof - smTrmProf);
+                I.smTrmProf += kBlock * (prof - I.smTrmProf);
 
                 const bool ahora = live (kFxTrm);
-                if (ahora && ! modWasActive[(size_t) m]) mod[(size_t) m].reinicia();
-                modWasActive[(size_t) m] = ahora;
+                if (ahora && ! I.trmWasActive) I.modTrm.reinicia();
+                I.trmWasActive = ahora;
 
                 if (ahora)
                 {
-                    mod[(size_t) m].ponPaso (fxP[(size_t) kFxTrm][0].load (std::memory_order_relaxed), systemSampleRate);
+                    I.modTrm.ponPaso (fxP[(size_t) kFxTrm][0].load (std::memory_order_relaxed), systemSampleRate);
                     for (int i = 0; i < numSamples; ++i)
                     {
                         //  Solo hacia ABAJO: la ganancia va de 1 a 1-prof y
@@ -2154,14 +2185,14 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                         //  encima de lo que la persona puso y el margen del
                         //  master no es nuestro para gastarlo -es la misma
                         //  regla que ya tiene HUMANIZAR con la fuerza-.
-                        const float g = 1.0f - smTrmProf * 0.5f * (1.0f - mod[(size_t) m].avanza());
+                        const float g = 1.0f - I.smTrmProf * 0.5f * (1.0f - I.modTrm.avanza());
                         for (int ch = 0; ch < chans; ++ch)
                         {
                             float* w = fxBus[busIdx (kFxTrm)].getWritePointer (ch, startSample);
                             w[i] *= g;
                         }
                     }
-                    modFase[(size_t) m].store (mod[(size_t) m].fase, std::memory_order_relaxed);
+                    I.trmFase.store (I.modTrm.fase, std::memory_order_relaxed);
                     returnBus (kFxTrm);
                 }
             }
@@ -2212,10 +2243,10 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 const int c = carDe (kFxRng);
                 const float an = juce::jlimit (0.0f, 1.0f,
                                    fxP[(size_t) kFxRng][1].load (std::memory_order_relaxed));
-                smRngAnillo += kBlockC * (an - smRngAnillo);
+                I.smRngAnillo += kBlockC * (an - I.smRngAnillo);
 
-                if (carVivo[c] && ! carWasActive[(size_t) c]) rngFase = 0.0f;
-                carWasActive[(size_t) c] = carVivo[c];
+                if (carVivo[c] && ! I.carWasActive[(size_t) c]) I.rngFase = 0.0f;
+                I.carWasActive[(size_t) c] = carVivo[c];
 
                 if (carVivo[c])
                 {
@@ -2225,7 +2256,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
 
                     for (int i = 0; i < numSamples; ++i)
                     {
-                        const float p = Lfo::valorEn (rngFase);
+                        const float p = Lfo::valorEn (I.rngFase);
                         //  ANILLO es lo que separa un anillo de una amplitud
                         //  modulada, que es el mismo aparato con la portadora
                         //  desplazada: a 1 la portadora cruza el cero -el tono
@@ -2233,13 +2264,13 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                         //  laterales, que es la definicion- y a 0 no lo cruza
                         //  nunca, o sea que el original sigue ahi con un
                         //  temblor encima.
-                        const float g = smRngAnillo * p
-                                      + (1.0f - smRngAnillo) * (0.5f + 0.5f * p);
+                        const float g = I.smRngAnillo * p
+                                      + (1.0f - I.smRngAnillo) * (0.5f + 0.5f * p);
                         for (int ch = 0; ch < chans; ++ch)
                             fxBus[busIdx (kFxRng)].getWritePointer (ch, startSample)[i] *= g;
 
-                        rngFase += paso;
-                        if (rngFase >= 1.0f) rngFase -= 1.0f;
+                        I.rngFase += paso;
+                        if (I.rngFase >= 1.0f) I.rngFase -= 1.0f;
                     }
                     returnBus (kFxRng);
                 }
@@ -2256,14 +2287,14 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 const int c = carDe (kFxPit);
                 const float semis = juce::jlimit (-12.0f, 12.0f,
                                       fxP[(size_t) kFxPit][0].load (std::memory_order_relaxed));
-                smPitSemis += kBlockC * (semis - smPitSemis);
+                I.smPitSemis += kBlockC * (semis - I.smPitSemis);
 
-                if (carVivo[c] && ! carWasActive[(size_t) c]) { pitLine.reset(); pitFase = 0.0f; }
-                carWasActive[(size_t) c] = carVivo[c];
+                if (carVivo[c] && ! I.carWasActive[(size_t) c]) { I.pitLine.reset(); I.pitFase = 0.0f; }
+                I.carWasActive[(size_t) c] = carVivo[c];
 
                 if (carVivo[c])
                 {
-                    const float ratio = std::pow (2.0f, smPitSemis / 12.0f);
+                    const float ratio = std::pow (2.0f, I.smPitSemis / 12.0f);
                     const float gran  = juce::jlimit (0.010f, (float) kPitGranoMax,
                                           fxP[(size_t) kFxPit][1].load (std::memory_order_relaxed) * 0.001f) * fsF;
                     //  El retardo avanza a `1 - ratio` por muestra: la fuente
@@ -2272,8 +2303,8 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
 
                     for (int i = 0; i < numSamples; ++i)
                     {
-                        const float pA = pitFase;
-                        const float pB = (pitFase >= 0.5f) ? pitFase - 0.5f : pitFase + 0.5f;
+                        const float pA = I.pitFase;
+                        const float pB = (I.pitFase >= 0.5f) ? I.pitFase - 0.5f : I.pitFase + 0.5f;
                         //  Hann por cabeza. La de atras entra mientras la de
                         //  delante sale, y las dos suman uno.
                         const float wA = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * pA);
@@ -2283,18 +2314,18 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                         {
                             float* w = fxBus[busIdx (kFxPit)].getWritePointer (ch, startSample);
                             const float x = w[i];
-                            pitLine.pushSample (ch, std::isfinite (x) ? x : 0.0f);
-                            pitLine.setDelay (juce::jmax (1.0f, 1.0f + pA * gran));
-                            const float a = pitLine.popSample (ch, -1.0f, false);
-                            pitLine.setDelay (juce::jmax (1.0f, 1.0f + pB * gran));
-                            const float b = pitLine.popSample (ch, -1.0f, true);
+                            I.pitLine.pushSample (ch, std::isfinite (x) ? x : 0.0f);
+                            I.pitLine.setDelay (juce::jmax (1.0f, 1.0f + pA * gran));
+                            const float a = I.pitLine.popSample (ch, -1.0f, false);
+                            I.pitLine.setDelay (juce::jmax (1.0f, 1.0f + pB * gran));
+                            const float b = I.pitLine.popSample (ch, -1.0f, true);
                             const float y = wA * a + wB * b;
                             w[i] = std::isfinite (y) ? y : 0.0f;
                         }
 
-                        pitFase += dp;
-                        while (pitFase >= 1.0f) pitFase -= 1.0f;
-                        while (pitFase <  0.0f) pitFase += 1.0f;
+                        I.pitFase += dp;
+                        while (I.pitFase >= 1.0f) I.pitFase -= 1.0f;
+                        while (I.pitFase <  0.0f) I.pitFase += 1.0f;
                     }
                     returnBus (kFxPit);
                 }
@@ -2311,14 +2342,14 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 const int c = carDe (kFxWid);
                 const float anc = juce::jlimit (0.0f, 2.0f,
                                     fxP[(size_t) kFxWid][0].load (std::memory_order_relaxed));
-                smWidAncho += kBlockC * (anc - smWidAncho);
+                I.smWidAncho += kBlockC * (anc - I.smWidAncho);
 
-                if (carVivo[c] && ! carWasActive[(size_t) c])
+                if (carVivo[c] && ! I.carWasActive[(size_t) c])
                 {
-                    for (auto& fila : widAlta) for (auto& st : fila) st = {};
-                    for (auto& fila : widBaja) for (auto& st : fila) st = {};
+                    for (auto& fila : I.widAlta) for (auto& st : fila) st = {};
+                    for (auto& fila : I.widBaja) for (auto& st : fila) st = {};
                 }
-                carWasActive[(size_t) c] = carVivo[c];
+                I.carWasActive[(size_t) c] = carVivo[c];
 
                 if (carVivo[c] && chans > 1)
                 {
@@ -2330,12 +2361,12 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     for (int i = 0; i < numSamples; ++i)
                     {
                         float bL = 0.0f, aL = 0.0f, bR = 0.0f, aR = 0.0f;
-                        Dinamica::cruza (w0[i], widAlta[0], widBaja[0], cr.a1, cr.a2, cr.a3, cr.k, bL, aL);
-                        Dinamica::cruza (w1[i], widAlta[1], widBaja[1], cr.a1, cr.a2, cr.a3, cr.k, bR, aR);
+                        Dinamica::cruza (w0[i], I.widAlta[0], I.widBaja[0], cr.a1, cr.a2, cr.a3, cr.k, bL, aL);
+                        Dinamica::cruza (w1[i], I.widAlta[1], I.widBaja[1], cr.a1, cr.a2, cr.a3, cr.k, bR, aR);
                         //  El grave se suma a mono ANTES de nada; el agudo es
                         //  el unico que se abre.
                         const float mono = 0.5f * (bL + bR);
-                        Estereo::ancho (aL, aR, smWidAncho);
+                        Estereo::ancho (aL, aR, I.smWidAncho);
                         w0[i] = mono + aL;
                         w1[i] = mono + aR;
                     }
@@ -2358,14 +2389,14 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 const int c = carDe (kFxExc);
                 const float fue = juce::jlimit (0.0f, 1.0f,
                                     fxP[(size_t) kFxExc][1].load (std::memory_order_relaxed));
-                smExcFuerza += kBlockC * (fue - smExcFuerza);
+                I.smExcFuerza += kBlockC * (fue - I.smExcFuerza);
 
-                if (carVivo[c] && ! carWasActive[(size_t) c])
+                if (carVivo[c] && ! I.carWasActive[(size_t) c])
                 {
-                    for (auto& fila : excAlta) for (auto& st : fila) st = {};
-                    for (auto& fila : excBaja) for (auto& st : fila) st = {};
+                    for (auto& fila : I.excAlta) for (auto& st : fila) st = {};
+                    for (auto& fila : I.excBaja) for (auto& st : fila) st = {};
                 }
-                carWasActive[(size_t) c] = carVivo[c];
+                I.carWasActive[(size_t) c] = carVivo[c];
 
                 if (carVivo[c])
                 {
@@ -2375,7 +2406,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     //  armonicos que salen son lo que se anade; el nivel de la
                     //  banda BAJA no se toca, que es lo que separa un
                     //  excitador de una distorsion.
-                    const float emp = 1.0f + 8.0f * smExcFuerza;
+                    const float emp = 1.0f + 8.0f * I.smExcFuerza;
 
                     for (int ch = 0; ch < chans; ++ch)
                     {
@@ -2383,10 +2414,10 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                         for (int i = 0; i < numSamples; ++i)
                         {
                             float b = 0.0f, a = 0.0f;
-                            Dinamica::cruza (w[i], excAlta[ch], excBaja[ch],
+                            Dinamica::cruza (w[i], I.excAlta[ch], I.excBaja[ch],
                                              cr.a1, cr.a2, cr.a3, cr.k, b, a);
                             const float sat = AudioEngine::fastTanh (a * emp) / emp;
-                            const float y = b + a + smExcFuerza * (sat - a) * 4.0f;
+                            const float y = b + a + I.smExcFuerza * (sat - a) * 4.0f;
                             w[i] = std::isfinite (y) ? y : 0.0f;
                         }
                     }
@@ -2412,11 +2443,11 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                                    fxP[(size_t) kFxTrn][0].load (std::memory_order_relaxed));
                 const float ca = juce::jlimit (-1.0f, 1.0f,
                                    fxP[(size_t) kFxTrn][1].load (std::memory_order_relaxed));
-                smTrnAtaque += kBlockC * (at - smTrnAtaque);
-                smTrnCaida  += kBlockC * (ca - smTrnCaida);
+                I.smTrnAtaque += kBlockC * (at - I.smTrnAtaque);
+                I.smTrnCaida  += kBlockC * (ca - I.smTrnCaida);
 
-                if (carVivo[c] && ! carWasActive[(size_t) c]) trnRapido = trnLento = 0.0f;
-                carWasActive[(size_t) c] = carVivo[c];
+                if (carVivo[c] && ! I.carWasActive[(size_t) c]) I.trnRapido = I.trnLento = 0.0f;
+                I.carWasActive[(size_t) c] = carVivo[c];
 
                 if (carVivo[c])
                 {
@@ -2434,18 +2465,18 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     for (int i = 0; i < numSamples; ++i)
                     {
                         const float pico = juce::jmax (std::abs (w0[i]), std::abs (w1[i]));
-                        trnRapido = (pico > trnRapido) ? aRap * trnRapido + (1.0f - aRap) * pico
-                                                       : rRap * trnRapido + (1.0f - rRap) * pico;
-                        trnLento  = (pico > trnLento)  ? aLen * trnLento  + (1.0f - aLen) * pico
-                                                       : rLen * trnLento  + (1.0f - rLen) * pico;
+                        I.trnRapido = (pico > I.trnRapido) ? aRap * I.trnRapido + (1.0f - aRap) * pico
+                                                       : rRap * I.trnRapido + (1.0f - rRap) * pico;
+                        I.trnLento  = (pico > I.trnLento)  ? aLen * I.trnLento  + (1.0f - aLen) * pico
+                                                       : rLen * I.trnLento  + (1.0f - rLen) * pico;
 
-                        const float dif = juce::Decibels::gainToDecibels (trnRapido, -100.0f)
-                                        - juce::Decibels::gainToDecibels (trnLento,  -100.0f);
+                        const float dif = juce::Decibels::gainToDecibels (I.trnRapido, -100.0f)
+                                        - juce::Decibels::gainToDecibels (I.trnLento,  -100.0f);
                         //  Positiva es ataque y negativa es cola, asi que cada
                         //  mando actua sobre SU tramo y en el otro vale cero.
                         const float dB = juce::jlimit (-18.0f, 18.0f,
-                                            smTrnAtaque * juce::jmax (0.0f,  dif)
-                                          + smTrnCaida  * juce::jmax (0.0f, -dif));
+                                            I.smTrnAtaque * juce::jmax (0.0f,  dif)
+                                          + I.smTrnCaida  * juce::jmax (0.0f, -dif));
                         const float g = juce::Decibels::decibelsToGain (dB);
                         for (int ch = 0; ch < chans; ++ch)
                             fxBus[busIdx (kFxTrn)].getWritePointer (ch, startSample)[i] *= g;
@@ -2468,19 +2499,19 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 const int c = carDe (kFxFrz);
                 const float suave = juce::jlimit (0.0f, 1.0f,
                                       fxP[(size_t) kFxFrz][1].load (std::memory_order_relaxed));
-                smFrzSuave += kBlockC * (suave - smFrzSuave);
+                I.smFrzSuave += kBlockC * (suave - I.smFrzSuave);
 
-                if (carVivo[c] && ! carWasActive[(size_t) c])
+                if (carVivo[c] && ! I.carWasActive[(size_t) c])
                 {
-                    frzEscritas = 0;
-                    frzLee      = 0.0f;
-                    frzLlena    = false;
-                    frzOyo      = false;
-                    frzLargo    = juce::jlimit (1, (int) frzVent[0].size() - 1,
+                    I.frzEscritas = 0;
+                    I.frzLee      = 0.0f;
+                    I.frzLlena    = false;
+                    I.frzOyo      = false;
+                    I.frzLargo    = juce::jlimit (1, (int) I.frzVent[0].size() - 1,
                                     (int) (fsF * juce::jlimit (0.020f, (float) kFrzVentanaMax,
                                              fxP[(size_t) kFxFrz][0].load (std::memory_order_relaxed) * 0.001f)));
                 }
-                carWasActive[(size_t) c] = carVivo[c];
+                I.carWasActive[(size_t) c] = carVivo[c];
 
                 //  Y SIN NADA QUE ENTRE, EL BUS SE APAGA — que es lo unico de
                 //  los seis que no se apagaria solo.
@@ -2501,7 +2532,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 //  visor.
                 if (carVivo[c] && ! busFed[busIdx (kFxFrz)])
                 {
-                    carWasActive[(size_t) c] = false;
+                    I.carWasActive[(size_t) c] = false;
                     returnBus (kFxFrz);
                 }
                 else if (carVivo[c])
@@ -2509,8 +2540,8 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     //  El cruce mide como mucho un cuarto de la ventana: mas
                     //  alla el trozo que se oye dos veces es mayor que el que
                     //  se oye una y deja de ser un bucle.
-                    const int cruce = juce::jlimit (1, frzLargo / 4,
-                                        (int) (smFrzSuave * (float) frzLargo * 0.25f) + 1);
+                    const int cruce = juce::jlimit (1, I.frzLargo / 4,
+                                        (int) (I.smFrzSuave * (float) I.frzLargo * 0.25f) + 1);
 
                     for (int i = 0; i < numSamples; ++i)
                     {
@@ -2519,23 +2550,23 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                             float* w = fxBus[busIdx (kFxFrz)].getWritePointer (ch, startSample);
                             const float x = std::isfinite (w[i]) ? w[i] : 0.0f;
 
-                            if (! frzLlena)
+                            if (! I.frzLlena)
                             {
-                                frzVent[(size_t) ch][(size_t) frzEscritas] = x;
+                                I.frzVent[(size_t) ch][(size_t) I.frzEscritas] = x;
                                 w[i] = x;
-                                if (std::abs (x) > 1.0e-5f) frzOyo = true;
+                                if (std::abs (x) > 1.0e-5f) I.frzOyo = true;
                             }
                             else
                             {
-                                const int p = (int) frzLee;
-                                float y = frzVent[(size_t) ch][(size_t) p];
+                                const int p = (int) I.frzLee;
+                                float y = I.frzVent[(size_t) ch][(size_t) p];
                                 //  El final se cruza con el principio: en la
                                 //  costura las dos mitades son la MISMA
                                 //  ventana, asi que no hay salto.
-                                if (p >= frzLargo - cruce)
+                                if (p >= I.frzLargo - cruce)
                                 {
-                                    const float t = (float) (p - (frzLargo - cruce)) / (float) cruce;
-                                    y = (1.0f - t) * y + t * frzVent[(size_t) ch][(size_t) (p - (frzLargo - cruce))];
+                                    const float t = (float) (p - (I.frzLargo - cruce)) / (float) cruce;
+                                    y = (1.0f - t) * y + t * I.frzVent[(size_t) ch][(size_t) (p - (I.frzLargo - cruce))];
                                 }
                                 w[i] = y;
                             }
@@ -2550,14 +2581,14 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                         //  esta guarda el congelador captura SILENCIO y lo da
                         //  vueltas para siempre. Lo canto la primera corrida:
                         //  `al segundo 0.00000` con la etapa entera correcta.
-                        if (! frzLlena && frzOyo)
+                        if (! I.frzLlena && I.frzOyo)
                         {
-                            if (++frzEscritas >= frzLargo) { frzLlena = true; frzEscritas = frzLargo; }
+                            if (++I.frzEscritas >= I.frzLargo) { I.frzLlena = true; I.frzEscritas = I.frzLargo; }
                         }
                         else
                         {
-                            frzLee += 1.0f;
-                            if (frzLee >= (float) frzLargo) frzLee -= (float) frzLargo;
+                            I.frzLee += 1.0f;
+                            if (I.frzLee >= (float) I.frzLargo) I.frzLee -= (float) I.frzLargo;
                         }
                     }
                     returnBus (kFxFrz);
@@ -3219,8 +3250,10 @@ void AudioEngine::setFxParam (int fx, int par, float v) noexcept
 
     if (fx == kFxEq)
     {
-        if (par == 0) eqFx.ponAncho  (v);
-        else if (par == 1) eqFx.ponSalida (v);
+        //  Del canal CERO mientras la puerta no lleva canal. La fase 4 se lo
+        //  pone, que es cuando la cara sabe preguntar por dieciseis.
+        if (par == 0) ins[0].eqFx.ponAncho  (v);
+        else if (par == 1) ins[0].eqFx.ponSalida (v);
     }
 }
 
@@ -3799,17 +3832,20 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     //  tres veces aqui -los recortes, el swing, el barrido del filtro-. Y con
     //  los dos mandos que la curva no dice, que sin ellos el ancho y la salida
     //  volverian a su valor de fabrica en el fichero que se manda.
-    for (int b = 0; b < Eq5::kBands; ++b)
+    for (size_t c = 0; c < ins.size(); ++c)
     {
-        eqFx.ponBanda (b, s.eqFx.freqDe (b), s.eqFx.gainDe (b));
-        //  Y el TIPO y la Q de cada banda: sin ellos el rebote sale con
-        //  campanas donde la persona puso pasos, o sea con la mitad del
-        //  ecualizador cambiada de sitio.
-        eqFx.ponTipo (b, (int) s.eqFx.tipoDe (b));
-        eqFx.ponQ    (b, s.eqFx.qDe (b));
+        for (int b = 0; b < Eq5::kBands; ++b)
+        {
+            ins[c].eqFx.ponBanda (b, s.ins[c].eqFx.freqDe (b), s.ins[c].eqFx.gainDe (b));
+            //  Y el TIPO y la Q de cada banda: sin ellos el rebote sale con
+            //  campanas donde la persona puso pasos, o sea con la mitad del
+            //  ecualizador cambiada de sitio.
+            ins[c].eqFx.ponTipo (b, (int) s.ins[c].eqFx.tipoDe (b));
+            ins[c].eqFx.ponQ    (b, s.ins[c].eqFx.qDe (b));
+        }
+        ins[c].eqFx.ponAncho  (s.ins[c].eqFx.anchoDe());
+        ins[c].eqFx.ponSalida (s.ins[c].eqFx.salidaDe());
     }
-    eqFx.ponAncho  (s.eqFx.anchoDe());
-    eqFx.ponSalida (s.eqFx.salidaDe());
 
     //  Los cuatro de DINAMICA ya han viajado en el bucle de `fxP` de arriba,
     //  que es la mitad de lo que esa tabla existe para arreglar. Lo que NO se
@@ -3821,22 +3857,20 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     // over ~20 ms because a knob just moved; a bounce has no such history,
     // and gliding from the defaults would fade the filter in over the first
     // bar of every export.
-    smSweep   = fltSweep.load (std::memory_order_relaxed);
+    //
+    //  Los de INSERTO los ceba su dueño -`Inserto::cebaSuavizados`- y no esta
+    //  lista escrita a mano: es el sitio cuyo propio comentario dice que ya se
+    //  olvido tres veces, y con dieciseis copias esa probabilidad se multiplica
+    //  por dieciseis.
+    for (auto& I : ins) I.cebaSuavizados (fxP);
+
     duckPad.store (s.duckPad.load (std::memory_order_relaxed), std::memory_order_relaxed);
-    smReso    = fxReso.load   (std::memory_order_relaxed);
-    smHpFreq  = hpFreq.load   (std::memory_order_relaxed);
-    smHpReso  = hpReso.load   (std::memory_order_relaxed);
-    smHpMix   = hpMix.load    (std::memory_order_relaxed);
-    smDrive   = fxDrive.load  (std::memory_order_relaxed);
-    smDrvTone = drvTone.load  (std::memory_order_relaxed);
-    smDrvMix  = drvMix.load   (std::memory_order_relaxed);
     smDlyMix  = dlyMix.load   (std::memory_order_relaxed);
     smDlyFb   = dlyFb.load    (std::memory_order_relaxed);
     smDlySamp = (float) (dlyTime.load (std::memory_order_relaxed) * 0.001 * systemSampleRate);
     smChoProf = fxP[(size_t) kFxCho][1].load (std::memory_order_relaxed);
     smFlaFb   = (fxP[(size_t) kFxFla][1].load (std::memory_order_relaxed) * 2.0f - 1.0f) * kFlaFbMax;
     smPhaProf = fxP[(size_t) kFxPha][1].load (std::memory_order_relaxed);
-    smTrmProf = fxP[(size_t) kFxTrm][1].load (std::memory_order_relaxed);
 }
 
 int AudioEngine::lengthInSteps() const noexcept

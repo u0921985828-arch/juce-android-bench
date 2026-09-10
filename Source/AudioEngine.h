@@ -1318,16 +1318,18 @@ public:
     //  EL EQ. Sus diez numeros no pasan por atomicos uno a uno: `Eq5` guarda
     //  los cinco pares y una bandera `sucio`, y el hilo de audio recalcula los
     //  coeficientes en el bloque siguiente. Ver la cabecera de Eq5.h.
-    void setEqBand   (int b, float hz, float dB) noexcept { eqFx.ponBanda (b, hz, dB); }
-    void setEqTipo   (int b, int t)  noexcept { eqFx.ponTipo (b, t); }
-    void setEqQ      (int b, float q) noexcept { eqFx.ponQ (b, q); }
-    int   getEqTipo (int b) const noexcept { return (int) eqFx.tipoDe (b); }
-    float getEqQ    (int b) const noexcept { return eqFx.qDe (b); }
-    void setEqAncho  (float a) noexcept { eqFx.ponAncho  (a); }
-    void setEqSalida (float d) noexcept { eqFx.ponSalida (d); }
+    //  Del canal CERO mientras estas siete puertas no llevan canal: la fase 4
+    //  se lo pone, que es cuando la cara sabe preguntar por dieciseis.
+    void setEqBand   (int b, float hz, float dB) noexcept { ins[0].eqFx.ponBanda (b, hz, dB); }
+    void setEqTipo   (int b, int t)  noexcept { ins[0].eqFx.ponTipo (b, t); }
+    void setEqQ      (int b, float q) noexcept { ins[0].eqFx.ponQ (b, q); }
+    int   getEqTipo (int b) const noexcept { return (int) ins[0].eqFx.tipoDe (b); }
+    float getEqQ    (int b) const noexcept { return ins[0].eqFx.qDe (b); }
+    void setEqAncho  (float a) noexcept { ins[0].eqFx.ponAncho  (a); }
+    void setEqSalida (float d) noexcept { ins[0].eqFx.ponSalida (d); }
     void setEqMix    (float m) noexcept { eqMix.store (m, std::memory_order_relaxed); }
-    float getEqFreq (int b) const noexcept { return eqFx.freqDe (b); }
-    float getEqGain (int b) const noexcept { return eqFx.gainDe (b); }
+    float getEqFreq (int b) const noexcept { return ins[0].eqFx.freqDe (b); }
+    float getEqGain (int b) const noexcept { return ins[0].eqFx.gainDe (b); }
     // How much silence a bounce must keep past the last note so the tail is
     // not guillotined. Only AUDIBLE stages count — a ten-second delay with
     // its mix at zero must not pad every export.
@@ -1355,7 +1357,12 @@ public:
     float getDynP0  (int i) const noexcept { return juce::isPositiveAndBelow (i, 4) ? fxP[(size_t) dynIdx (i)][0].load (std::memory_order_relaxed) : 0.0f; }
     float getDynP1  (int i) const noexcept { return juce::isPositiveAndBelow (i, 4) ? fxP[(size_t) dynIdx (i)][1].load (std::memory_order_relaxed) : 0.0f; }
     float getDynReduccion (int i) const noexcept
-    { return juce::isPositiveAndBelow (i, 4) ? dynRed[(size_t) i].load (std::memory_order_relaxed) : 0.0f; }
+    {
+        //  Del canal CERO mientras la cara solo sabe mirar uno. La fase 4 le
+        //  pone el canal, que es cuando hay dieciseis que preguntar.
+        return juce::isPositiveAndBelow (i, 4)
+             ? ins[0].dynRed[(size_t) i].load (std::memory_order_relaxed) : 0.0f;
+    }
 
     //  MODULACION. La fase de AHORA del tipo `f`, o -1 si ese tipo no lleva
     //  LFO. Es lo que hace visible el mando RATE: su eje se mide en PERIODOS,
@@ -1364,8 +1371,13 @@ public:
     //  verdad. Hermana de `getDynReduccion`, y por lo mismo.
     float getLfoFase (int f) const noexcept
     {
+        //  TRM SUSTITUYE, asi que su LFO vive en `Inserto` y los otros tres
+        //  -que SUMAN- en la clase. La familia se parte 3/1 y esta es la unica
+        //  puerta que tiene que saberlo.
+        if (f == kFxTrm) return ins[0].trmFase.load (std::memory_order_relaxed);
         const int m = modDe (f);
-        return m >= 0 ? modFase[(size_t) m].load (std::memory_order_relaxed) : -1.0f;
+        return (m >= 0 && m < kNumModEnvio)
+             ? modFase[(size_t) m].load (std::memory_order_relaxed) : -1.0f;
     }
     //  Si el bus MIRADO ha dado señal hace poco. Sin esto la cara no sabe
     //  distinguir «nada suena» de «nada pasa por aqui», y una mancha clavada en
@@ -2086,8 +2098,6 @@ private:
     int   monitorInChans = 0;        // cuantos canales trae de verdad la entrada
     float smMonitor = 0.0f;          // solo el hilo de audio
 
-    // Master FX: filter + drive.
-    juce::dsp::StateVariableTPTFilter<float> masterFilter;
     //  ESTADO MUERTO, QUITADO. `fxType`, `fxCutoff` y sus dos setters no
     //  tenian un solo llamante en toda la app: se copiaban de un motor a otro
     //  en `copyStateFrom` y ya. Son de cuando el FLT era un corte y un tipo, y
@@ -2136,15 +2146,9 @@ private:
     // Audio-thread-only smoothed FX params (one-pole toward the atomics):
     // knob moves arrive as per-block jumps otherwise — zipper on the filter,
     // crackle on the delay time. ~20 ms time constant.
-    float smSweep   = 0.0f;      // el barrido de FLT, suavizado como el resto
-    float smReso    = 0.707f;
-    float smDrive   = 0.0f;
     float smDlyMix  = 0.0f;
     float smDlyFb   = 0.35f;
     float smDlySamp = 0.0f;      // delay time in samples, smoothed per sample
-    bool  filterWasActive = false;
-    bool  fltWasHigh      = false;   // de que lado del centro venia FLT
-    bool  hpWasActive     = false;
 
     // Master delay.
     //  LAGRANGE, NO LINEAL, PORQUE HAY REALIMENTACION.
@@ -2178,27 +2182,19 @@ private:
     // HPF: its OWN filter, not the ISO one switched to high-pass. Two objects
     // cost a few hundred bytes and buy a band-pass you can sweep from both
     // ends — one shared filter would have made them mutually exclusive.
-    juce::dsp::StateVariableTPTFilter<float> hpFilter;
     std::atomic<float>& hpFreq = fxP[kFxHpf][0];
     std::atomic<float>& hpReso = fxP[kFxHpf][1];
     std::atomic<float>& hpMix  = fxP[kFxHpf][2];
-    float smHpFreq = 200.0f, smHpReso = 0.707f, smHpMix = 0.0f;
 
     // Drive tone: a one-pole low-pass after the tanh, because saturation
     // without somewhere for the harmonics to go is just harsh.
     std::atomic<float>& drvTone = fxP[kFxDrv][1];
     std::atomic<float>& drvMix  = fxP[kFxDrv][2];
-    float smDrvTone = 20000.0f, smDrvMix = 0.0f;
-    float drvLp[2] { 0.0f, 0.0f };
-    bool  drvWasActive = false;   // flanco de reactivacion: ver seccion 5b/3
 
     // Crush: bit depth and sample-and-hold rate, the two halves of lo-fi.
     std::atomic<float>& crBits = fxP[kFxBit][0];
     std::atomic<float>& crRate = fxP[kFxBit][1];
     std::atomic<float>& crMix  = fxP[kFxBit][2];
-    float crHold[2] { 0.0f, 0.0f };
-    float crPhase = 0.0f;
-    bool  crWasActive = false;    // idem, ver seccion 5b/4
 
     // Reverb, last in the chain so everything ahead of it lands in the room.
     //  Ver Fdn.h. Sustituye a juce::dsp::Reverb, que es Freeverb: ocho peines
@@ -2213,7 +2209,6 @@ private:
     //  EL EQ DE CINCO BANDAS. Es un INSERTO -fxSustituye- y no un envio: lo que
     //  un pad manda aqui deja de ir por el camino seco, porque ecualizar la
     //  copia y dejar el original sonando al lado no ecualiza nada.
-    Eq5 eqFx;
     std::atomic<float>& eqMix = fxP[kFxEq][2];
 
     //  LOS DOS ANILLOS DEL ANALIZADOR, que son lo que la cara dibuja detras de
@@ -2229,7 +2224,6 @@ private:
     //  -su envolvente y su ganancia suavizada- porque son cuatro buses que
     //  pueden estar abiertos a la vez, y compartir el detector haria que la
     //  puerta se cerrase cuando el limitador pegase.
-    std::array<Dinamica, 4> dyn;
     //  Sus parametros viven en `fxP` como los de cualquier otro tipo: un
     //  array de cuatro indexado por MODO era una segunda numeracion al lado
     //  de la de `fxDefs`, y traducir entre las dos es de donde salen los
@@ -2238,14 +2232,18 @@ private:
     //  Lo que esta bajando cada uno, para la casilla de lectura de CTRL 3. Lo
     //  escribe el hilo de audio y lo lee la cara: un float atomico, que es lo
     //  mismo que ya hacen `vuL` y los demas medidores.
-    std::array<std::atomic<float>, 4> dynRed { { { 0.0f }, { 0.0f }, { 0.0f }, { 0.0f } } };
 
     //  LA FAMILIA DE MODULACION: cuatro tipos y UNA pieza (`Source/Lfo.h`).
     //  Un LFO por tipo y no uno compartido, por lo mismo que la dinamica tiene
     //  cuatro detectores: son cuatro buses que pueden estar abiertos a la vez
     //  y compartir la fase haria que el coro latiera al ritmo del temblor.
-    std::array<Lfo, 4> mod;
+    //  TRES Y NO CUATRO. TRM es el unico de la familia que SUSTITUYE, asi que
+    //  su LFO vive en `Inserto` -uno por canal- y aqui se quedan los tres que
+    //  SUMAN. Dejar el hueco de TRM sin escribir habria sido estado muerto, que
+    //  es lo que este fichero ya llama por su nombre con `fxType` y `fxDry`.
+    std::array<Lfo, 3> mod;
     static constexpr int modIdx (int m) noexcept { return kFxCho + m; }
+    static constexpr int kNumModEnvio = 3;
     //  Cual de los cuatro es un tipo, o -1. La usan la etapa y `getLfoFase`.
     static constexpr int modDe (int f) noexcept
     { return (f >= kFxCho && f <= kFxTrm) ? f - kFxCho : -1; }
@@ -2255,7 +2253,7 @@ private:
     //  PERIODOS, asi que RATE no cabe en la curva -eso lo declara
     //  `FxVisor::mandosDe`- y donde se ve es en el punto viajando a la
     //  velocidad de verdad. La escribe el hilo de audio, la lee la cara.
-    std::array<std::atomic<float>, 4> modFase { { { 0.0f }, { 0.0f }, { 0.0f }, { 0.0f } } };
+    std::array<std::atomic<float>, 3> modFase { { { 0.0f }, { 0.0f }, { 0.0f } } };
 
     //  Las dos lineas de retardo de CHO y FLA. Del MISMO tipo que la de DLY
     //  -`Lagrange3rd`- porque un retardo que se barre y no interpola crepita, y
@@ -2271,8 +2269,8 @@ private:
     //  no es nuestro -es la misma regla que ya tiene HUMANIZAR con la fuerza y
     //  el tope de 0 dB del fader-.
     static constexpr float kFlaFbMax = 0.85f;
-    float smChoProf = 0.0f, smFlaFb = 0.0f, smPhaProf = 0.0f, smTrmProf = 0.0f;
-    std::array<bool, 4> modWasActive {};
+    float smChoProf = 0.0f, smFlaFb = 0.0f, smPhaProf = 0.0f;
+    std::array<bool, 3> modWasActive {};
     //  Los cuatro allpass de PHA, uno por etapa y por canal. Estado de primer
     //  orden: una muestra cada uno.
     static constexpr int kPhaEtapas = 4;
@@ -2293,15 +2291,12 @@ private:
     //  aqui el recorrido llega a 4 kHz. Lo que SI se reutiliza es la FORMA:
     //  `Lfo::valorEn` es la misma funcion que dibuja el visor, que es la razon
     //  por la que nacio estatica.
-    float rngFase = 0.0f, smRngAnillo = 0.0f;
 
     //  PIT: una linea de retardo leida a otra velocidad, con DOS cabezas
     //  desfasadas medio grano y cruzadas. Una sola cabeza da un salto audible
     //  cada vez que da la vuelta -eso es un «glitch» y no un afinador-, y el
     //  cruce es lo que lo tapa. 16384 muestras son 341 ms a 48 kHz, o sea tres
     //  granos del mas largo.
-    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> pitLine { 16384 };
-    float pitFase = 0.0f, smPitSemis = 0.0f;
 
     //  WID: el cruce que deja los graves en MONO. Sin el, abrir el ancho de
     //  una mezcla con bajo desplaza el bajo -que es lo unico que NO puede
@@ -2309,36 +2304,23 @@ private:
     //  orden por lo mismo que el de-esser: es el unico cuyas dos mitades SUMAN
     //  planas, y con segundo orden la suma tiene un bache de 3 dB justo en el
     //  corte.
-    Dinamica::Svf widAlta[2][2], widBaja[2][2];
-    float smWidAncho = 0.0f;
 
     //  EXC: el MISMO cruce, y el mismo argumento. Lo que se satura es la banda
     //  alta sola y se vuelve a sumar con la baja intacta: saturar la mezcla
     //  entera es DRV, que ya existe.
-    Dinamica::Svf excAlta[2][2], excBaja[2][2];
-    float smExcFuerza = 0.0f;
 
     //  TRN: dos seguidores de envolvente por canal —uno rapido y uno lento— y
     //  su DIFERENCIA es el transitorio. Enlazados como los de `Dinamica` y por
     //  lo mismo: con un detector por canal, el lado que pega baja y el otro se
     //  queda, o sea que la imagen estereo se mueve con cada golpe.
-    float trnRapido = 0.0f, trnLento = 0.0f;
-    float smTrnAtaque = 0.0f, smTrnCaida = 0.0f;
 
     //  FRZ: la ventana capturada y por donde va su lectura. Estereo y del
     //  largo del tope del mando -500 ms a 48 kHz son 24000- porque reservar
     //  aqui esta prohibido: se reserva en `prepareToPlay` y el mando solo
     //  mueve CUANTO se usa.
-    std::array<std::vector<float>, 2> frzVent;
-    int   frzEscritas = 0, frzLargo = 0;
-    float frzLee = 0.0f;
-    bool  frzLlena = false, frzOyo = false;
-    float smFrzSuave = 0.0f;
 
-    //  El flanco de cada uno, para limpiar su estado al volver a abrirse. Es
-    //  lo mismo que `modWasActive` y por la misma razon: sin el, un efecto que
-    //  se reabre suena con la cola de la vez anterior.
-    std::array<bool, 6> carWasActive {};
+    //  El flanco de cada uno vive en `Inserto`, que es donde vive el estado
+    //  que limpia. Aqui se queda solo la traduccion de tipo a indice.
     static constexpr int carDe (int f) noexcept
     { return (f >= kFxRng && f <= kFxFrz) ? f - kFxRng : -1; }
 
@@ -2476,6 +2458,136 @@ private:
         const int c = (canal < 0 || canal >= kNumCanales) ? 0 : canal;
         return kNumFx + i * kNumCanales + c;
     }
+
+    //  ============================================================
+    //  EL ESTADO DE LOS DIECISEIS INSERTOS, EN UNA PIEZA
+    //  ============================================================
+    //
+    //  Un inserto es de UN canal, asi que su estado se replica dieciseis
+    //  veces. Estaba suelto por la cabecera -un filtro aqui, dos flotantes de
+    //  suavizado alla, una ventana de congelador mas abajo- y multiplicarlo a
+    //  mano por dieciseis multiplica por dieciseis la probabilidad de que a
+    //  uno se le olvide su `prepare`, su `reset` o su cebado. Es el mismo
+    //  argumento que ya vale para `copyStateFrom`, cuyo propio comentario dice
+    //  que ese sitio ya se olvido tres veces.
+    //
+    //  Lo que NO entra aqui son los CINCO ENVIOS -DLY, REV, CHO, FLA y PHA-,
+    //  que siguen siendo unicos: su linea de retardo, su reverb y sus LFO se
+    //  quedan en la clase. Un envio existe para que varias fuentes entren en
+    //  la misma cola.
+    //
+    //  Y tampoco los PARAMETROS: `fxP` es lo que la persona mueve y lo que se
+    //  guarda; esto es lo que el hilo de audio se lleva de un bloque al
+    //  siguiente.
+    struct Inserto
+    {
+        //  FLT: el filtro del barrido bidireccional. Se sigue llamando
+        //  `masterFilter` de cuando el FLT era el unico y era del master.
+        juce::dsp::StateVariableTPTFilter<float> masterFilter;
+        float smSweep = 0.0f;        // el barrido, suavizado como el resto
+        float smReso  = 0.707f;
+        bool  filterWasActive = false;
+        bool  fltWasHigh      = false;   // de que lado del centro venia FLT
+
+        //  HPF: su PROPIO filtro y no el de FLT conmutado, que es lo que hace
+        //  que se pueda barrer una banda desde los dos extremos.
+        juce::dsp::StateVariableTPTFilter<float> hpFilter;
+        float smHpFreq = 200.0f, smHpReso = 0.707f, smHpMix = 0.0f;
+        bool  hpWasActive = false;
+
+        //  DRV: la saturacion y el paso bajo que va detras, porque saturar sin
+        //  sitio donde poner los armonicos es solo aspereza.
+        float smDrive   = 0.0f;
+        float smDrvTone = 20000.0f, smDrvMix = 0.0f;
+        float drvLp[2] { 0.0f, 0.0f };
+        bool  drvWasActive = false;   // flanco de reactivacion: ver seccion 5b/3
+
+        //  BIT: la retencion y la fase del diezmado.
+        float crHold[2] { 0.0f, 0.0f };
+        float crPhase = 0.0f;
+        bool  crWasActive = false;
+
+        //  EQ: el de cinco bandas. Es el efecto de la queja que abrio esta
+        //  tanda -«solo es posible que funcione en un canal»- y ahora hay uno
+        //  por canal.
+        Eq5 eqFx;
+
+        //  LA FAMILIA DE DINAMICA: CMP, GTE, DSS y LIM, una pieza con cuatro
+        //  configuraciones. `dynIdx` hace la unica traduccion que queda.
+        std::array<Dinamica, 4> dyn;
+        //  Lo que esta bajando cada uno, para la casilla de lectura de CTRL 3.
+        std::array<std::atomic<float>, 4> dynRed { { { 0.0f }, { 0.0f }, { 0.0f }, { 0.0f } } };
+
+        //  TRM: el UNICO de los cuatro de modulacion que SUSTITUYE, asi que la
+        //  familia se parte 3/1. CHO, FLA y PHA suman y su LFO se queda en la
+        //  clase; el de TRM viene aqui, con su fase para el punto de trabajo
+        //  del visor.
+        Lfo   modTrm;
+        float smTrmProf = 0.0f;
+        bool  trmWasActive = false;
+        std::atomic<float> trmFase { 0.0f };
+
+        //  RNG: su oscilador es de AUDIO -llega a 4 kHz- y por eso no es un
+        //  `Lfo`, que acota a 40 Hz a proposito.
+        float rngFase = 0.0f, smRngAnillo = 0.0f;
+
+        //  PIT: la linea que se lee a otra velocidad, con sus dos cabezas.
+        juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> pitLine { 16384 };
+        float pitFase = 0.0f, smPitSemis = 0.0f;
+
+        //  WID y EXC: el MISMO cruce Linkwitz-Riley, uno para dejar los graves
+        //  en mono y otro para saturar solo la banda alta.
+        Dinamica::Svf widAlta[2][2], widBaja[2][2];
+        float smWidAncho = 0.0f;
+        Dinamica::Svf excAlta[2][2], excBaja[2][2];
+        float smExcFuerza = 0.0f;
+
+        //  TRN: los dos seguidores de envolvente, uno rapido y uno lento.
+        float trnRapido = 0.0f, trnLento = 0.0f;
+        float smTrnAtaque = 0.0f, smTrnCaida = 0.0f;
+
+        //  FRZ: la ventana capturada y por donde va su lectura.
+        std::array<std::vector<float>, 2> frzVent;
+        int   frzEscritas = 0, frzLargo = 0;
+        float frzLee = 0.0f;
+        bool  frzLlena = false, frzOyo = false;
+        float smFrzSuave = 0.0f;
+
+        //  EL FLANCO de los seis de caracter, para limpiar su estado al volver
+        //  a abrirse: sin el, un efecto que se reabre suena con la cola de la
+        //  vez anterior. Es lo mismo que `modWasActive` y por lo mismo.
+        std::array<bool, 6> carWasActive {};
+
+        //  LOS SUAVIZADOS ARRANCAN YA EN SU DESTINO, y esto vive AQUI y no
+        //  suelto en `copyStateFrom` por la razon que ese sitio ya lleva
+        //  escrita: es la lista que se ha olvidado TRES veces. Con dieciseis
+        //  insertos, escribirla a mano multiplica por dieciseis esa
+        //  probabilidad — asi que la escribe quien es dueño de los campos.
+        //
+        //  Un motor vivo desliza en ~20 ms porque un mando acaba de moverse; un
+        //  rebote no tiene ese pasado, y deslizar desde los defectos meteria el
+        //  filtro en el primer compas de cada exportacion.
+        void cebaSuavizados (const std::array<std::array<std::atomic<float>, 3>, kNumFx>& P) noexcept
+        {
+            const auto v = [&P] (int f, int par) noexcept
+            { return P[(size_t) f][(size_t) par].load (std::memory_order_relaxed); };
+
+            smSweep   = v (kFxFlt, 0);
+            smReso    = v (kFxFlt, 1);
+            smHpFreq  = v (kFxHpf, 0);
+            smHpReso  = v (kFxHpf, 1);
+            smHpMix   = v (kFxHpf, 2);
+            smDrive   = v (kFxDrv, 0);
+            smDrvTone = v (kFxDrv, 1);
+            smDrvMix  = v (kFxDrv, 2);
+            smTrmProf = v (kFxTrm, 1);
+        }
+    };
+
+    //  Y DIECISEIS, uno por canal. `Inserto` no tiene punteros ni reserva
+    //  fuera de `frzVent` y `pitLine`, que se dimensionan en `prepareToPlay`
+    //  como se dimensionaban antes.
+    std::array<Inserto, kNumCanales> ins;
 
     //  EL RECORTE DEL PAD -uno por defecto- y EL ENVIO DEL CANAL. El producto
     //  de los dos es lo que llega al bus. Ver `setPadRecorte` y `setCanalSend`.
