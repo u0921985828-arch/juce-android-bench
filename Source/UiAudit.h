@@ -779,6 +779,54 @@ namespace UiAudit
         if (c.getProperties().contains ("dato"))
             line << ",\"dato\":1";
 
+        //  LA FILA DE RADIO A LA QUE PERTENECE Y SI ESTA ENCENDIDA.
+        //
+        //  Las catorce reglas de este banco miden GEOMETRIA, y una fila de
+        //  chips con dos encendidos -o con ninguno- se maqueta perfecta: no
+        //  solapa, no se sale, no corta su rotulo, no mide cero y esta
+        //  traducida. Es la familia de los cinco fallos del compas del piano, y
+        //  se pago dos veces a la vez: TOMAS salia con los cuatro apagados
+        //  porque compartia id con el MONITOR, y la mesa salia con dos bancos
+        //  encendidos porque `showMixBank` escribia una sola tapa.
+        //
+        //  Se vuelca lo que hace falta para las dos preguntas y el juicio vive
+        //  en Python, como con los iconos: el `grupo` dice quienes son hermanas
+        //  para JUCE -y el padre sale ya del `path`, que es como la regla del
+        //  rotulo tapado deduce la capa-, la `fila` dice quienes lo son de
+        //  verdad, y `toggle` dice cual esta encendida. Un grupo de cero es un
+        //  control suelto y no se vuelca: seria una columna de ceros por linea.
+        //
+        //  Y LOS TRES NOMBRES SE ELIGIERON A LA TERCERA, que es lo que vale
+        //  escrito: el espacio de claves de este volcado es PLANO y no lo
+        //  vigilaba nadie.
+        //
+        //    - `on` ya existe cien lineas mas arriba y significa otra cosa -si
+        //      el control esta HABILITADO-. Dos claves iguales en el mismo
+        //      objeto JSON no dan un error: al parsearlo gana la ultima, asi
+        //      que la regla nueva habria funcionado y la de al lado habria
+        //      empezado a llamar «deshabilitado» a todo chip apagado.
+        //    - `lit` es el nombre de la propiedad con la que `litAccent` marca
+        //      las tapas que se encienden en el acento.
+        //    - `fila` ya es una LINEA entera del volcado -la que `judge_fila`
+        //      mide contra el rectangulo que se le dio-, y esa regla reconoce
+        //      sus lineas por la presencia de la clave: con una tapa trayendola
+        //      tambien, el banco entero reventaba con KeyError.
+        //
+        //  Una clave, un significado. Y como esto se ha pagado tres veces en
+        //  una tarde, `Tests/expo.py` comprueba ahora que ninguna linea repita
+        //  una clave, que es la unica forma de que la cuarta falle en vez de
+        //  publicarse.
+        if (auto* bt = dynamic_cast<juce::Button*> (&c))
+            if (bt->getRadioGroupId() != 0)
+            {
+                line << ",\"grupo\":" << bt->getRadioGroupId()
+                     << ",\"toggle\":" << (bt->getToggleState() ? 1 : 0)
+                     << ",\"radio\":\""
+                     << esc (bt->getProperties().getWithDefault ("fila", "").toString()) << "\"";
+                if ((int) bt->getProperties().getWithDefault ("filaVacia", 0) != 0)
+                    line << ",\"radioVacia\":1";
+            }
+
         //  EL ICONO QUE LE HA TOCADO A ESTA TAPA Y A QUE TAMANO.
         //
         //  No es un componente, asi que ninguna de las reglas de geometria lo

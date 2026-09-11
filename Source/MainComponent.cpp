@@ -91,7 +91,7 @@ MainComponent::MainComponent()
         styleButton (*t, kStepOff);
         litAccent (*t);
         t->setClickingTogglesState (true);
-        t->setRadioGroupId (5150);
+        filaDeRadio (*t, "banco cara", 5150);
         t->onClick = [this, b] { selectBank (b); };
         addAndMakeVisible (t);
         bankButtons.add (t);
@@ -149,7 +149,7 @@ MainComponent::MainComponent()
         styleButton (*t, kStepOff);
         litAccent (*t);
         t->setClickingTogglesState (true);
-        t->setRadioGroupId (5151);
+        filaDeRadio (*t, "banco sec", 5151);
         t->onClick = [this, b] { selectBank (b); };
         seqSheet.addAndMakeVisible (t);
         seqBankButtons.add (t);
@@ -262,7 +262,7 @@ MainComponent::MainComponent()
             styleButton (*t, kStepOff);
             litAccent (*t);
             t->setClickingTogglesState (true);
-            t->setRadioGroupId (5151);
+            filaDeRadio (*t, "banco pick", 5151);
             t->onClick = [this, b] { selectBank (b); refrescaPadPicker(); };
             padPickSheet.addAndMakeVisible (t);
             padPickBankBtns.add (t);
@@ -482,7 +482,7 @@ MainComponent::MainComponent()
                 styleButton (*b, kStepOff);
                 litAccent (*b);
                 b->setClickingTogglesState (true);
-                b->setRadioGroupId (7311);
+                filaDeRadio (*b, "cuenta", 7311);
                 b->onClick = [this, i]
                 {
                     cuentaCompases = i;
@@ -510,7 +510,7 @@ MainComponent::MainComponent()
                 styleButton (*b, kStepOff);
                 litAccent (*b);
                 b->setClickingTogglesState (true);
-                b->setRadioGroupId (7312);
+                filaDeRadio (*b, "tomas", 7312);
                 b->setTitle (T ("Banco de tomas %1",
                                 juce::String::charToString ((juce::juce_wchar) ('A' + b4))));
                 b->onClick = [this, b4]
@@ -545,7 +545,23 @@ MainComponent::MainComponent()
                 styleButton (*b, kStepOff);
                 litAccent (*b);
                 b->setClickingTogglesState (true);
-                b->setRadioGroupId (7312);
+                //  7313 Y NO 7312, QUE ES EL DE TOMAS.
+                //
+                //  Los dos juegos compartian id Y padre -`setSheet.cuerpo`- asi
+                //  que para JUCE eran UNA fila de radio de seis tapas: el grupo
+                //  mira a los HERMANOS, no a la fila que uno se imagina. Y
+                //  `setToggleState (true, ...)` llama a `turnOffOtherButtonsInGroup`
+                //  AUNQUE la notificacion sea `dontSendNotification`, asi que en
+                //  `showSetPage` se encendia el chip de TOMAS y siete lineas
+                //  despues el del MONITOR -que siempre enciende uno de sus dos-
+                //  apagaba los cuatro. No es que el defecto no se aplicara:
+                //  `bancoTomas` valia C y la linea lo escribia bien. Se aplicaba
+                //  y se pisaba, y la foto del telefono es esa: CUENTA con «1»
+                //  encendido, MONITOR con «NO» encendido y TOMAS con los cuatro
+                //  apagados. Repasadas las dieciseis filas de radio de la app,
+                //  esta era la unica colision: el 5151 lo comparten tres juegos
+                //  y con TRES padres distintos, que es lo que lo hace correcto.
+                filaDeRadio (*b, "monitor", 7313);
                 b->onClick = [this, i]
                 {
                     monitorOn = (i == 1);
@@ -1073,7 +1089,7 @@ MainComponent::MainComponent()
             styleButton (*b, kStepOff);
             litAccent (*b);
             b->setClickingTogglesState (true);
-            b->setRadioGroupId (7301);
+            filaDeRadio (*b, "chop trozos", 7301);
             b->onClick = [this, n] { chopSlices = n; recalculaCortes(); refreshChopSheet(); };
             chopSheet.addAndMakeVisible (b);
             chopCountBtns.add (b);
@@ -1087,7 +1103,7 @@ MainComponent::MainComponent()
             styleButton (*b, kStepOff);
             litAccent (*b);
             b->setClickingTogglesState (true);
-            b->setRadioGroupId (7302);
+            filaDeRadio (*b, "chop modo", 7302);
             chopSheet.addAndMakeVisible (b);
         }
         //  Cambiar de modo REHACE la lista: son dos formas de proponer los
@@ -1175,9 +1191,25 @@ MainComponent::MainComponent()
             styleButton (*b, kStepOff);
             litAccent (*b);
             b->setClickingTogglesState (true);
-            b->setRadioGroupId (7411);
+            filaDeRadio (*b, "idioma", 7411);
             b->onClick = [this, i]
             {
+                //  LA GUARDA DE REENTRADA, que es la que `selectBank` ya tiene.
+                //
+                //  El callback de un chip de radio corre TAMBIEN cuando la tapa
+                //  se APAGA: `turnOffOtherButtonsInGroup` le pasa la misma
+                //  notificacion, y un dedo trae `sendNotification`. Asi que
+                //  tocar ENGLISH con ESPANOL encendido disparaba primero el
+                //  callback de ESPANOL -idioma a es, preferencia escrita al
+                //  disco, `retranslateUi` + `resized` + `repaint` enteros- y
+                //  despues el de ENGLISH. El estado final era correcto, que es
+                //  por lo que nadie lo vio; lo que costaba era una maqueta
+                //  entera de mas y una escritura al fichero de preferencias con
+                //  el idioma EQUIVOCADO. Aqui la fila si se reescribe -al final
+                //  de `retranslateUi`-, asi que el chip no se quedaba mal: es
+                //  trabajo doble y no un fallo visible.
+                if ((Lang::Id) i == Lang::current()) return;
+
                 Lang::set ((Lang::Id) i);
                 Lang::savePreference();
                 retranslateUi();
@@ -1198,7 +1230,7 @@ MainComponent::MainComponent()
             styleButton (*b, kKey);
             litAccent (*b);
             b->setClickingTogglesState (true);
-            b->setRadioGroupId (7412);
+            filaDeRadio (*b, "carcasa", 7412);
             b->onClick = [this, i]
             {
                 ZatiColours::setSkin (i);
@@ -1230,7 +1262,7 @@ MainComponent::MainComponent()
             styleButton (*b, kKey);
             litAccent (*b);
             b->setClickingTogglesState (true);
-            b->setRadioGroupId (7413);
+            filaDeRadio (*b, "movimiento", 7413);
             b->onClick = [this, i] { ponMovimiento (i == 0); };
             setSheet.cuerpo.addAndMakeVisible (b);
             movButtons.add (b);
@@ -1263,7 +1295,7 @@ MainComponent::MainComponent()
         {
             styleButton (*pb[i], kKey);
             pb[i]->setClickingTogglesState (true);
-            pb[i]->setRadioGroupId (8802);
+            filaDeRadio (*pb[i], "pagina ajustes", 8802);
             litAccent (*pb[i]);
             pb[i]->onClick = [this, i] { showSetPage (i); };
             setSheet.cuerpo.addAndMakeVisible (pb[i]);
@@ -2100,7 +2132,7 @@ MainComponent::MainComponent()
         {
             styleButton (*sb[i], kKey);
             sb[i]->setClickingTogglesState (true);
-            sb[i]->setRadioGroupId (8803);
+            filaDeRadio (*sb[i], "pagina sec", 8803);
             litAccent (*sb[i]);
             sb[i]->onClick = [this, i] { showSeqPage (i); if (i == seqPagePiano) refreshPiano(); };
             seqSheet.addAndMakeVisible (sb[i]);
@@ -2729,7 +2761,7 @@ MainComponent::MainComponent()
         styleButton (*t, kKey);
         litAccent (*t);
         t->setClickingTogglesState (true);
-        t->setRadioGroupId (5151);
+        filaDeRadio (*t, "banco mezcla", 5151);
         t->onClick = [this, b] { showMixBank (b); };
         mixSheet.addAndMakeVisible (t);
         mixBankBtns.add (t);
@@ -2927,7 +2959,12 @@ MainComponent::MainComponent()
     //  the "%1 compases" row it belongs to was already sitting in Lang.cpp
     //  translated into the other three.
     songLenSlider.textFromValueFunction = [] (double v)
-    { return T ("%1 compases", juce::String ((int) v)); };
+    {
+        //  Y ARRANCA EN UNO, asi que el singular no es un caso raro: es el que
+        //  se ve al abrir la ficha.
+        return (int) v == 1 ? T ("1 compas")
+                            : T ("%1 compases", Lang::ltr (juce::String ((int) v)));
+    };
     songLenSlider.updateText();
     songLenSlider.onValueChange = [this]
     {
@@ -3471,7 +3508,7 @@ MainComponent::MainComponent()
             styleButton (*b, kKey);
             litAccent (*b);
             b->setClickingTogglesState (true);
-            b->setRadioGroupId (7710);
+            filaDeRadio (*b, "ranura xy", 7710, true);
             b->onClick = [this, r]
             {
                 const int fx = enRanura (r);
@@ -3640,7 +3677,7 @@ MainComponent::MainComponent()
         {
             styleButton (*pb[i], kKey);
             pb[i]->setClickingTogglesState (true);
-            pb[i]->setRadioGroupId (8804);
+            filaDeRadio (*pb[i], "pagina pad", 8804);
             litAccent (*pb[i]);
             pb[i]->onClick = [this, i] { showPadPage (i); };
             padSheet.addAndMakeVisible (pb[i]);
@@ -5774,7 +5811,29 @@ void MainComponent::showMixPage (MixPage p)
 void MainComponent::showMixBank (int bank)
 {
     mixBank = juce::jlimit (0, kNumBanks - 1, bank);
-    if (auto* t = mixBankBtns[mixBank]) t->setToggleState (true, juce::dontSendNotification);
+
+    //  LA FILA ENTERA Y NO SOLO LA QUE SE ENCIENDE, que es lo que costo que la
+    //  mesa saliera con A y D encendidas a la vez en el telefono.
+    //
+    //  Escribia UNA tapa y dejaba las otras tres al grupo de radio, y ahi hay
+    //  una reentrada que ninguna de las catorce reglas del banco puede ver
+    //  -seis chips con dos encendidos se maquetan perfectos-. Con D encendida y
+    //  el dedo en A, JUCE hace: A.setToggleState (true, sendNotification) ->
+    //  turnOffOtherButtonsInGroup -> D.setToggleState (false, sendNotification)
+    //  -> D.onClick -> showMixBank (3) -> D vuelve a encenderse, y no puede
+    //  apagar A porque A todavia no tiene su `lastToggleState` escrito; al
+    //  volver, A.onClick -> showMixBank (0) encuentra A ya encendida y no hace
+    //  nada, asi que D se queda. El chip de mas es SIEMPRE el que estaba
+    //  encendido antes, que es la firma que la foto cumple entera.
+    //
+    //  Se arregla como ya lo tienen `showSetPage`, `showSeqPage`, `showPadPage`
+    //  y `selectXyFx`: la funcion que manda escribe el estado de TODA su fila.
+    //  Asi la segunda pasada apaga de verdad a la que volvio, y ademas se cura
+    //  sola venga el estado de donde venga - una guarda de reentrada solo tapa
+    //  el camino que se trazo.
+    for (int i = 0; i < mixBankBtns.size(); ++i)
+        if (auto* t = mixBankBtns[i])
+            t->setToggleState (i == mixBank, juce::dontSendNotification);
 
     for (int i = 0; i < kNumPads; ++i)
     {
@@ -10245,7 +10304,7 @@ juce::String MainComponent::lineaDeContinuidad (int anchoDisponible,
 
     if (llenos > 0)
     {
-        const auto pads = T ("%1 PADS|cont", Lang::ltr (juce::String (llenos)));
+        const auto pads = padsTexto (llenos, true);
         if (cabe (linea + sep + pads)) linea += sep + pads;
     }
 
@@ -10634,9 +10693,10 @@ void MainComponent::euclidesPattern (int golpes)
     refreshStepGrid();
     refreshPiano (false);
     seqSheet.repaint();
-    status.setText (n > 0 ? T ("%1 golpes repartidos en %2 pasos",
-                               juce::String (n), juce::String (len))
-                          : T ("Fila vacia"),
+    status.setText (n == 1 ? T ("1 golpe repartido en %1 pasos", Lang::ltr (juce::String (len)))
+                    : n > 0 ? T ("%1 golpes repartidos en %2 pasos",
+                                 Lang::ltr (juce::String (n)), Lang::ltr (juce::String (len)))
+                            : T ("Fila vacia"),
                     juce::dontSendNotification);
 }
 
@@ -11298,7 +11358,10 @@ void MainComponent::pianoCopiaSel()
         pianoPortapapeles.push_back ({ n.paso - p0, n.semi,
                                        engine.getStepLen (b, base + n.paso, p) });
 
-    status.setText (T ("%1 notas copiadas", juce::String ((int) pianoPortapapeles.size())),
+    status.setText (pianoPortapapeles.size() == 1
+                        ? T ("1 nota copiada")
+                        : T ("%1 notas copiadas",
+                             Lang::ltr (juce::String ((int) pianoPortapapeles.size()))),
                     juce::dontSendNotification);
     resized();      // PEGAR aparece
 }

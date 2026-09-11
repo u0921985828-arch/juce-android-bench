@@ -1812,7 +1812,24 @@ void MainComponent::auditOpen (const juce::String& pedido)
     //  exactamente donde vive el residuo que ZATI_PAGES existe para cazar.
     else if (which == "pick")
     { openSheet (seqSheet, secButton); showSeqPage (seqPagePiano); abrePadPicker (true); }
-    else if (which == "mix")  { showMixPage (mixPagePads); openSheet (mixSheet, mixButton); }
+    //  LA MESA, Y SE CAMBIA DE BANCO CON EL DEDO ANTES DE MEDIRLA.
+    //
+    //  Sin el gesto, esta ficha se mide recien abierta -banco A, una encendida-
+    //  y la reentrada que dejaba A y D encendidos a la vez no existe: hace
+    //  falta VOLVER de un banco a otro. Es lo mismo que el selector de canal ya
+    //  obligo a hacer, y por lo mismo.
+    //
+    //  Ida y vuelta, y se acaba en el banco A: asi la geometria medida es
+    //  exactamente la de antes -las mismas dieciseis tiras- y el numero del
+    //  banco no se mueve por haber anadido el gesto. Lo unico que cambia es que
+    //  la fila de chips ha pasado por el camino de verdad.
+    else if (which == "mix")
+    {
+        showMixPage (mixPagePads);
+        openSheet (mixSheet, mixButton);
+        pulsaTapa (mixBankBtns[kNumBanks - 1]);
+        pulsaTapa (mixBankBtns[0]);
+    }
     //  LA PAGINA DE CANALES DE LA MESA, que es un estado propio y no la misma
     //  ficha con otro contenido: la fila de chips lleva dos tapas en vez de
     //  cinco, las tiras pierden el pan y el solo, y el renglon dice la cuenta
@@ -1870,11 +1887,16 @@ void MainComponent::auditOpen (const juce::String& pedido)
 
         const int mio   = (int) Lang::current();
         const int otro  = (mio == 0 ? 1 : 0);
+        //  Y POR EL CAMINO DEL DEDO Y NO POR `onClick()` a pelo, que es lo
+        //  que el chip de radio obliga a decir en voz alta: un dedo hace
+        //  `setToggleState (true, sendNotification)`, y eso apaga a las
+        //  hermanas DISPARANDO sus callbacks. Llamando al callback directo ese
+        //  camino no se ejerce jamas, que es como la reentrada de la mesa pudo
+        //  vivir en el codigo con el banco entero en verde.
         auto pulsa = [this] (int i)
         {
-            if (juce::isPositiveAndBelow (i, langButtons.size())
-                && langButtons[i] != nullptr && langButtons[i]->onClick)
-                langButtons[i]->onClick();
+            if (juce::isPositiveAndBelow (i, langButtons.size()))
+                pulsaTapa (langButtons[i]);
         };
         pulsa (otro);
         pulsa (mio);
@@ -3299,7 +3321,6 @@ void MainComponent::auditViejos (const juce::String& carpeta)
 // ============================================================================
 void MainComponent::auditCanales()
 {
-    auto pulsa = [] (juce::Button* b) { if (b != nullptr && b->onClick) b->onClick(); };
     auto fila  = [this] (int c)
     {
         juce::StringArray r;
@@ -3319,7 +3340,7 @@ void MainComponent::auditCanales()
     slotFx[0][0] = AudioEngine::kFxFlt;      // el canal 0 lleva FLT
     slotFx[3][0] = AudioEngine::kFxBit;      // y el 3, BIT
     selectPad (5);
-    pulsa (canalBtns[3]);
+    pulsaTapa (canalBtns[3]);
     const int canalDelPad = engine.getPadCanal (5);
     const juce::String filaTrasMover = fila (canalActual);
 
@@ -3436,7 +3457,7 @@ void MainComponent::auditCanales()
     selectPad (5);
     engine.setPadCanal (5, 0);
     abreCanalPicker (true);
-    pulsa (canalBankBtns[1]);
+    pulsaTapa (canalBankBtns[1]);
     const int canalTrasPasear = engine.getPadCanal (5);
     //  La primera celda VISIBLE de la rejilla: con el banco B tiene que ser el
     //  canal 17 (indice 16) y no el 01.
@@ -3449,7 +3470,7 @@ void MainComponent::auditCanales()
                 primeraVisible = i;
                 celdaCanal = b->getBounds();
             }
-    pulsa (canalBtns[20]);
+    pulsaTapa (canalBtns[20]);
     const int canalTrasElegir = engine.getPadCanal (5);
     abreCanalPicker (false);
 
@@ -3464,7 +3485,7 @@ void MainComponent::auditCanales()
     //  fallar: la comprobacion de arriba dejo el selector en el banco B, asi
     //  que reabrir lo encontraria alli con el arrastre puesto y sin el. Primero
     //  se duda de la prueba.
-    pulsa (canalBankBtns[0]);
+    pulsaTapa (canalBankBtns[0]);
     abreCanalPicker (true);
     int reabrePrimera = -1;
     for (int i = 0; i < canalBtns.size() && reabrePrimera < 0; ++i)
@@ -3485,7 +3506,7 @@ void MainComponent::auditCanales()
     //  ficha abierta, y eso solo pasa aqui. Medido: quitando el `setBounds ({})`
     //  las 1400 corridas de `expo.py` dan CERO y RESIDUO a cero — o sea que la
     //  regla estaba escrita, era necesaria, y no la comprobaba nadie.
-    pulsa (canalBankBtns[0]);
+    pulsaTapa (canalBankBtns[0]);
     int bancoVivas = 0;
     for (auto* b : canalBtns)
         if (b != nullptr && b->isVisible() && ! b->getBounds().isEmpty())
@@ -3561,7 +3582,6 @@ void MainComponent::auditRanuras()
         for (int s = 0; s < kNumRanuras; ++s) r.add (juce::String (slotFx[0][(size_t) s]));
         return "[" + r.joinIntoString (",") + "]";
     };
-    auto pulsa = [] (juce::Button* b) { if (b != nullptr && b->onClick) b->onClick(); };
 
     //  1. UNA RANURA VACIA ABRE EL MENU, y una llena NO.
     //
@@ -3570,12 +3590,12 @@ void MainComponent::auditRanuras()
     //  entonces no habria forma de encender un efecto desde la cara.
     for (int s = 0; s < kNumRanuras; ++s) ponEnRanura (s, kSlotVacia);
     abreMenuRanura (-1);
-    pulsa (fxButtons[0]);
+    pulsaTapa (fxButtons[0]);
     const int menuTrasVacia = ranuraEditada;
     abreMenuRanura (-1);
 
     ponEnRanura (0, 0);
-    pulsa (fxButtons[0]);
+    pulsaTapa (fxButtons[0]);
     const int menuTrasLlena = ranuraEditada;
     const int encendioAlTocar = fxEncendido (0) ? 1 : 0;
     abreMenuRanura (-1);
@@ -3584,11 +3604,11 @@ void MainComponent::auditRanuras()
     //  2. ELEGIR EN EL MENU LLENA LA RANURA, y desde la cara ya no se cambia:
     //     esa tapa pasa a encender y apagar. Es la ACCION UNICA que se pidio.
     for (int s = 0; s < kNumRanuras; ++s) ponEnRanura (s, kSlotVacia);
-    pulsa (fxButtons[2]);                       // el «+» de la ranura 2
-    pulsa (ranuraBtns[4]);                      // se elige BIT
+    pulsaTapa (fxButtons[2]);                       // el «+» de la ranura 2
+    pulsaTapa (ranuraBtns[4]);                      // se elige BIT
     const juce::String trasElegir = mapa();
     const int menuTrasElegir = ranuraEditada;   // se cierra sola
-    pulsa (fxButtons[2]);                       // y ahora ese boton enciende
+    pulsaTapa (fxButtons[2]);                       // y ahora ese boton enciende
     const int enciendeDespues = fxEncendido (4) ? 1 : 0;
     const juce::String mapaDespues = mapa();    // que no ha cambiado
     setFxEnabled (4, false);
@@ -3598,7 +3618,7 @@ void MainComponent::auditRanuras()
     //     ventanas al mismo aparato del motor.
     for (int s = 0; s < kNumRanuras; ++s) ponEnRanura (s, s);
     abreMenuRanura (0);
-    pulsa (ranuraBtns[3]);
+    pulsaTapa (ranuraBtns[3]);
     const juce::String trasMover = mapa();
 
     //  4. VACIAR UNA RANURA APAGA SU EFECTO. Un efecto encendido cuya tapa
@@ -3991,14 +4011,13 @@ void MainComponent::auditRack()
     //  menu. Solo la primera la cumple un canalon convertido en interruptor,
     //  que es lo corto y se lleva por delante la unica puerta para cambiar o
     //  vaciar una ranura.
-    auto pulsa = [] (juce::Button* b) { if (b != nullptr && b->onClick) b->onClick(); };
 
     setFxEnabled (AudioEngine::kFxDly, true);
     refrescaRanuras();
     const int muteAntes = fxEncendido (AudioEngine::kFxDly) ? 1 : 0;
-    pulsa (rackMuteBtns[0]);
+    pulsaTapa (rackMuteBtns[0]);
     const int muteDespues = fxEncendido (AudioEngine::kFxDly) ? 1 : 0;
-    pulsa (rackMuteBtns[0]);
+    pulsaTapa (rackMuteBtns[0]);
     const int muteVuelve = fxEncendido (AudioEngine::kFxDly) ? 1 : 0;
 
     //  Y sobre una ranura VACIA no hace nada: no hay efecto que sacar de en
@@ -4014,12 +4033,12 @@ void MainComponent::auditRack()
         return n;
     };
     const int mudoAntes = encendidos();
-    pulsa (rackMuteBtns[ranuraLibre]);
+    pulsaTapa (rackMuteBtns[ranuraLibre]);
     const int mudoDespues = encendidos();
 
     //  Y el canalon: sigue siendo la puerta del menu.
     abreMenuRanura (-1);
-    pulsa (rackSlotBtns[0]);
+    pulsaTapa (rackSlotBtns[0]);
     const int menuAbre = ranuraSheet.isVisible() ? 1 : 0;
     abreMenuRanura (-1);
 
@@ -4427,7 +4446,6 @@ void MainComponent::auditEq()
 //  ese switch de treinta y tres casos el que se equivoca de una fila.
 void MainComponent::auditDinamica()
 {
-    auto pulsa = [] (juce::Button* b) { if (b != nullptr && b->onClick) b->onClick(); };
 
     //  1. LOS CUATRO TIPOS ESTAN EN EL MENU. Con once tipos y seis ranuras, el
     //     menu es la UNICA puerta a los cuatro nuevos: si la rejilla se hubiera
@@ -4446,9 +4464,9 @@ void MainComponent::auditDinamica()
     //  2. CADA TIPO LLEGA A SU RANURA POR EL GESTO. Se pone CMP en la 0 y LIM
     //     en la 1 pulsando las tapas del menu, que es donde vive el indice.
     abreMenuRanura (0);
-    pulsa (ranuraBtns[AudioEngine::kFxCmp]);
+    pulsaTapa (ranuraBtns[AudioEngine::kFxCmp]);
     abreMenuRanura (1);
-    pulsa (ranuraBtns[AudioEngine::kFxLim]);
+    pulsaTapa (ranuraBtns[AudioEngine::kFxLim]);
     const int enRanura0 = slotFx[0][0];
     const int enRanura1 = slotFx[0][1];
 
@@ -4565,7 +4583,6 @@ void MainComponent::auditDinamica()
 
 void MainComponent::auditAuto()
 {
-    auto pulsa = [] (juce::Button* b) { if (b != nullptr && b->onClick) b->onClick(); };
 
     //  La cancion rodando, que es el unico reloj que la automatizacion tiene.
     //  Sin esto `pasoDeCancion` vale -1 y no habria donde poner el evento -que
@@ -4577,7 +4594,7 @@ void MainComponent::auditAuto()
     //  1. PARADO NO SE ESCRIBE. Un evento sin paso es un evento en cualquier
     //     sitio, y el sintoma seria un barrido que suena al principio de la
     //     cancion en vez de donde lo tocaste.
-    pulsa (&autoBtn);
+    pulsaTapa (&autoBtn);
     const int armadoTrasTocar = autoArmado ? 1 : 0;
     focusFx (3);                       // DLY, que tiene tres parametros de sobra
     macroCtrl1.setValue (400.0, juce::sendNotificationSync);
@@ -4666,7 +4683,6 @@ void MainComponent::auditAuto()
 // ==========================================================================
 void MainComponent::auditVivo()
 {
-    auto pulsa = [] (juce::Button* b) { if (b != nullptr && b->onClick) b->onClick(); };
 
     //  Una cancion que suena: un pad con sonido, un patron con un golpe y el
     //  patron 1 en los cuatro primeros compases.
@@ -4680,11 +4696,11 @@ void MainComponent::auditVivo()
     engine.setSongLength (4);
     for (int b = 0; b < 4; ++b) engine.setSongCell (0, b, 1);
 
-    auto corre = [this, &pulsa] (int compases)
+    auto corre = [this] (int compases)
     {
         cuentaCompases = compases;
         engine.setClick (true);
-        pulsa (&exportLiveButton);
+        pulsaTapa (&exportLiveButton);
 
         //  Durante la cuenta el compas no avanza Y el anillo no recibe nada:
         //  el clic es una referencia para tocar, no parte de la cancion.
@@ -4727,7 +4743,7 @@ void MainComponent::auditVivo()
         //  romperla a proposito seguia saliendo verde. En el telefono el
         //  anillo SI lleva dentro lo ultimo que sono cuando se toca PARAR.
         for (int i = 0; i < 10; ++i) bombeaAudioDePrueba();
-        pulsa (&exportLiveButton);
+        pulsaTapa (&exportLiveButton);
 
         const auto f = vivoFichero;
         return std::make_tuple (enCuenta, trasCuenta,
@@ -4750,7 +4766,6 @@ void MainComponent::auditVivo()
 
 void MainComponent::auditCuenta()
 {
-    auto pulsa = [] (juce::Button* b) { if (b != nullptr && b->onClick) b->onClick(); };
 
     //  1. LOS TRES VALORES, por su tapa, y lo que arma cada uno.
     //
@@ -4761,7 +4776,7 @@ void MainComponent::auditCuenta()
     juce::String armados, esperas;
     for (int i = 0; i < 3; ++i)
     {
-        pulsa (cuentaButtons[i]);
+        pulsaTapa (cuentaButtons[i]);
         engine.setPlaying (false);
         const bool espera = armaCuentaSiToca (0);
         armados += juce::String (cuentaCompases) + (i < 2 ? "," : "");
@@ -4776,7 +4791,7 @@ void MainComponent::auditCuenta()
     //  `engine.setClick (true)` de antes esto sale 1 y la persona se encuentra
     //  el metronomo colandose en la toma por los cascos.
     engine.setClick (false);
-    pulsa (cuentaButtons[1]);
+    pulsaTapa (cuentaButtons[1]);
     armaCuentaSiToca (0);
     const int clicTrasArmar = engine.isClick() ? 1 : 0;
     engine.armaCuentaAtras (0);
@@ -4787,7 +4802,7 @@ void MainComponent::auditCuenta()
     //     lo que se dejo puesto. Se borra el valor en memoria antes de leer: si
     //     al volver sigue puesto no es que se haya guardado, es que nadie lo
     //     quito.
-    pulsa (cuentaButtons[2]);
+    pulsaTapa (cuentaButtons[2]);
     engine.setClick (true);
     saveCuentaPref();
     cuentaCompases = 0;
@@ -4802,9 +4817,9 @@ void MainComponent::auditCuenta()
     //  preferencia dice Y lo que el motor acaba teniendo. Solo la primera la
     //  cumple una casilla que escribe un booleano y no lo empuja - que es
     //  exactamente el fallo que ya costo una medida con la cuenta.
-    pulsa (monButtons[0]);
+    pulsaTapa (monButtons[0]);
     const int monApagado = engine.getMonitor() > 0.0f ? 1 : 0;
-    pulsa (monButtons[1]);
+    pulsaTapa (monButtons[1]);
     const int monPuesto  = engine.getMonitor() > 0.0f ? 1 : 0;
 
     //  Y LA GUARDA DE RUTA, que es lo que separa un monitor de un acople: sin
@@ -5051,27 +5066,26 @@ void MainComponent::auditModos()
 // ---------------------------------------------------------------------------
 void MainComponent::auditTomas()
 {
-    auto pulsa = [] (juce::Button* b) { if (b != nullptr && b->onClick) b->onClick(); };
 
     //  Sin cuenta atras, o la toma se queda esperando un compas que en el banco
     //  no llega: lo que se mide aqui es el destino y no el arranque, que ya lo
     //  mide `Tests/cuenta.py` con sus dos cifras.
-    pulsa (cuentaButtons[0]);
+    pulsaTapa (cuentaButtons[0]);
 
     //  Y CON EL PAD 01 ELEGIDO, que es donde la queja llego: la caida de antes
     //  cogia `selectedPad`, asi que lo que se comia era el pad que tuvieras
     //  tocado - y recien abierta la app ese es el primero.
     selectPad (0);
 
-    auto toma = [this, &pulsa] () -> int
+    auto toma = [this] () -> int
     {
-        pulsa (&songRecBtn);
+        pulsaTapa (&songRecBtn);
         if (! grabandoAlArreglo) return -1;         // no habia sitio: no arranco
         const int slot = recordingSlot;
         engine.startRecording (slot, true);         // el master en vez del micro
         engine.setPlaying (true);
         for (int i = 0; i < 4; ++i) bombeaAudioDePrueba();
-        pulsa (&songRecBtn);
+        pulsaTapa (&songRecBtn);
         return slot;
     };
 
@@ -5118,9 +5132,9 @@ void MainComponent::auditTomas()
         padDeFabrica[(size_t) (base + i)] = false;
     }
     const int hueco = padParaToma();
-    pulsa (&songRecBtn);
+    pulsaTapa (&songRecBtn);
     const int arranco = grabandoAlArreglo ? 1 : 0;
-    if (grabandoAlArreglo) { pulsa (&songRecBtn); }
+    if (grabandoAlArreglo) { pulsaTapa (&songRecBtn); }
 
     std::cout << "{\"tomas\":2,\"lleno\":" << (hueco < 0 ? 1 : 0)
               << ",\"grabando\":" << arranco << "}" << std::endl;

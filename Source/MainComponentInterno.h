@@ -161,6 +161,91 @@ inline void litAccent (juce::TextButton& b)
     b.setColour (juce::TextButton::textColourOnId,   ZatiColours::textOn (ZatiColours::accent));
 }
 
+//  UN CONTADOR DE UNO NO DICE «1 PADS».
+//
+//  Llego en una foto del telefono: la pagina CANALES de la mesa con «01 1 PADS»
+//  en tres de sus cuatro filas. Ese rotulo lo componen TRES sitios -la fila de
+//  canal, la cabecera del RACK y el renglon de continuidad de la cara- y es la
+//  misma frase en los tres, asi que la decision vive UNA vez y no tres.
+//
+//  El plural solo mueve dos columnas de cuatro: en chino va con clasificador y
+//  en arabe la forma de uno ya es distinta -«باد واحد»-, que es justo por lo
+//  que esto no se arregla quitandole la «S» al literal espanol. El precedente
+//  es de la casa y se sigue: `Exporter.h` elige entre «%1 archivo» y «%1
+//  archivos», y la sesion restaurada entre «[1 pad]» y «[%1 pads]».
+//
+//  No cuesta un pixel: la forma de uno es mas corta que la de muchos.
+inline juce::String padsTexto (int n, bool continuidad = false)
+{
+    if (n == 1)
+        return T (continuidad ? "1 PAD|cont" : "1 PAD");
+
+    return T (continuidad ? "%1 PADS|cont" : "%1 PADS",
+              Lang::ltr (juce::String (n)));
+}
+
+//  UNA FILA DE RADIO DICE COMO SE LLAMA.
+//
+//  El id de grupo era un numero pelado repetido en dieciseis sitios y sin nada
+//  que dijera de quien es, y eso costo exactamente lo que tenia que costar: los
+//  cuatro chips de TOMAS y los dos del MONITOR escribian los dos `7312` y
+//  colgaban los dos de `setSheet.cuerpo`, asi que para JUCE eran UNA fila de
+//  seis. Nadie lo vio leyendo, porque las dos lineas estan a treinta y cinco de
+//  distancia y las dos dicen lo mismo.
+//
+//  Con el nombre al lado del numero, el banco puede preguntar lo que ninguna de
+//  sus catorce reglas de geometria puede: si dos filas DISTINTAS comparten
+//  grupo -que es este fallo- y si una fila visible tiene exactamente una
+//  encendida -que es el de la mesa-. Es la regla de la marca `valor` de los
+//  iconos: lo dice la app, que es quien lo sabe, y no una lista en Python que
+//  solo sabria medir una de las cuatro compilaciones.
+//
+//  `puedeVacia` es la unica excepcion que la poblacion tiene, y tambien la dice
+//  la app: las seis ranuras de efecto del XY salen con CERO encendidas en las 28
+//  corridas de esa ficha, y es correcto - desde que las ranuras nacen vacias, un
+//  tipo que no esta puesto no tiene tapa que encender.
+inline void filaDeRadio (juce::Button& b, const char* fila, int grupo,
+                         bool puedeVacia = false)
+{
+    b.setRadioGroupId (grupo);
+    b.getProperties().set ("fila", juce::String (fila));
+    if (puedeVacia)
+        b.getProperties().set ("filaVacia", 1);
+}
+
+//  PULSAR UNA TAPA COMO LA PULSA UN DEDO.
+//
+//  Los ganchos del banco llamaban a `b->onClick()` a pelo, y eso estaba escrito
+//  OCHO veces en `MainComponent_Audit.cpp` -la misma regla copiada ocho veces-.
+//  Y para una tapa suelta es correcto; para un CHIP DE RADIO se salta
+//  exactamente el codigo donde vive lo que hay que medir: `internalClickCallback`
+//  hace `setToggleState (true, sendNotification)`, que apaga a las hermanas Y
+//  DISPARA SUS `onClick`. Ese callback espurio es la causa de los dos bancos
+//  encendidos a la vez en la mesa, y con `onClick()` a pelo no existe: es *un
+//  gesto que no se puede llamar es un gesto que no se mide*, otra vez.
+//
+//  Esto es `Button::internalClickCallback` escrito con la API publica. No vale
+//  `triggerClick()`, que es `postCommandMessage`: en el banco no hay bucle de
+//  mensajes que lo recoja.
+inline void pulsaTapa (juce::Button* b)
+{
+    if (b == nullptr)
+        return;
+
+    if (b->getClickingTogglesState())
+    {
+        const bool quiere = (b->getRadioGroupId() != 0 || ! b->getToggleState());
+        if (quiere != b->getToggleState())
+        {
+            b->setToggleState (quiere, juce::sendNotification);
+            return;
+        }
+    }
+
+    if (b->onClick)
+        b->onClick();
+}
+
 // Cycle the 3 primaries across the 8 pattern banks so each has its own
 // colour identity in the chain-include row.
 // Pattern banks are told apart by TONE, not hue: the chassis carries no

@@ -985,13 +985,24 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
     g.drawFittedText (T ("va a pads: %1", nums.joinIntoString (" ")),
                       planned.removeFromTop (22), Lang::start (juce::Justification::top), 2, 0.8f);
 
+    //  Y ESTAS TRES FRASES PASAN POR `T()`, que es donde no estaban.
+    //
+    //  Las cuatro filas EXISTEN en la tabla desde hace tandas -«PISA %1 pads
+    //  con sonido», su singular, «solo caben %1 sin pisar nada» y «no pisa
+    //  ningun pad con sonido»- y no las usaba nadie: la frase se componia aqui
+    //  a mano, o sea en espanol en las cuatro compilaciones. Ninguna regla
+    //  podia verlo - la comparativa de `expo.py` recorre COMPONENTES y esto se
+    //  PINTA, y `lang.py` recoge los literales escritos DENTRO de un `T (...)`,
+    //  asi que para ella esa clave no la usaba nadie y las filas salian como
+    //  huerfanas, que es una cifra que se imprime y no se juzga.
     juce::String warn;
     if (! chopByHits && targets.size() < chopSlices)
-        warn = "solo caben " + juce::String (targets.size()) + " sin pisar nada";
+        warn = T ("solo caben %1 sin pisar nada", Lang::ltr (juce::String (targets.size())));
     else if (overwritten > 0)
-        warn = "PISA " + juce::String (overwritten) + (overwritten == 1 ? " pad con sonido" : " pads con sonido");
+        warn = overwritten == 1 ? T ("PISA 1 pad con sonido")
+                                : T ("PISA %1 pads con sonido", Lang::ltr (juce::String (overwritten)));
     else
-        warn = "no pisa ningun pad con sonido";
+        warn = T ("no pisa ningun pad con sonido");
 
     g.setColour (overwritten > 0 ? ZatiColours::red : ZatiColours::inkDim);
     g.drawFittedText (warn, planned, Lang::start (juce::Justification::top), 1, 0.8f);
@@ -1036,10 +1047,14 @@ void MainComponent::paintExportSheetContent (juce::Graphics& g)
 
     line (T ("fuente"), exportSourceLabel(), ZatiColours::ink);
     line (T ("duracion"), steps > 0 ? Lang::ltr (juce::String (secs, 1) + " s") + "  ·  "
-                                        + T ("%1 compases", juce::String (steps / 16))
+                                        + (steps / 16 == 1
+                                               ? T ("1 compas")
+                                               : T ("%1 compases", Lang::ltr (juce::String (steps / 16))))
                                     : T ("vacio"),
           steps > 0 ? ZatiColours::ink : ZatiColours::red);
-    line (T ("pistas"), T ("%1 pads con muestra", juce::String (loaded)), ZatiColours::ink);
+    line (T ("pistas"), loaded == 1 ? T ("1 pad con muestra")
+                                   : T ("%1 pads con muestra", Lang::ltr (juce::String (loaded))),
+          ZatiColours::ink);
     //  El destino DE VERDAD, no el de siempre escrito a mano. Decia
     //  "ZATI/Exports/..." pasara lo que pasara, asi que el dia que la carpeta
     //  se pudo elegir habria mentido en la unica linea que dice donde acaba el
@@ -1465,7 +1480,7 @@ void MainComponent::paintMixRows (juce::Graphics& g)
             g.setColour (has ? ZatiColours::ink.withAlpha (0.8f) : ZatiColours::inkDim.withAlpha (0.5f));
             g.setFont (ZatiColours::monoFont (Metrics::fMeta));
             const int nameX = chip.getRight() + 6;
-            g.drawText (has ? T ("%1 PADS", Lang::ltr (juce::String (cuentan[c])))
+            g.drawText (has ? padsTexto (cuentan[c])
                             : juce::String (juce::CharPointer_UTF8 ("\xe2\x80\x94")),
                         nameX, fr.getY(), juce::jmax (24, fr.getX() - 6 - nameX), fr.getHeight(),
                         Lang::start(), true);
@@ -2028,7 +2043,7 @@ void MainComponent::paintRackSheetContent (juce::Graphics& g)
     bandaRack = bandaRack.translated (0, desplazaRack);
     pintaTitulo (g, titleRow,
                  T ("RACK") + "  " + dot + "  " + T ("CANAL %1", Lang::ltr (juce::String (canalActual + 1)))
-                + "  " + dot + "  " + T ("%1 PADS", Lang::ltr (juce::String (cuantos))), "titulo", true);
+                + "  " + dot + "  " + padsTexto (cuantos), "titulo", true);
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));

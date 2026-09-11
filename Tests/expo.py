@@ -111,9 +111,41 @@ def run(size, lang, sheet, casa=None):
     for line in out.splitlines():
         line = line.strip()
         if line.startswith("{") and line.endswith("}"):
-            try: rows.append(json.loads(line))
-            except Exception: pass
+            #  Y SOLO SE TRAGA LO QUE NO ES JSON.
+            #
+            #  Era `except Exception`, asi que una clave repetida -que es lo que
+            #  el hook levanta- se habria comido la linea entera en silencio: la
+            #  cadena de control se habria tragado a si misma. Lo que se ignora
+            #  es una linea que no es un objeto; lo demas sube y para la tanda.
+            try: rows.append(json.loads(line, object_pairs_hook=_sin_repetir))
+            except json.JSONDecodeError: pass
     return rows or None
+
+
+#  NINGUNA LINEA DEL VOLCADO REPITE UNA CLAVE.
+#
+#  El espacio de claves de este volcado es PLANO y no lo vigilaba nadie, y se
+#  pago TRES VECES en una tarde al anadir la fila de radio: `on` ya significaba
+#  «habilitado», `lit` es la marca de `litAccent`, y `fila` es una LINEA entera
+#  del volcado. `json.loads` no protesta -al parsear gana la ultima- asi que las
+#  dos primeras habrian funcionado dejando a la regla de al lado midiendo otra
+#  cosa, en silencio. La tercera si reventaba, y solo porque `judge_fila`
+#  reconoce sus lineas por la presencia de la clave.
+#
+#  Una clave, un significado. Se comprueba al parsear, que es donde se puede.
+class ClaveRepetida(Exception):
+    pass
+
+
+def _sin_repetir(pares):
+    d = {}
+    for k, v in pares:
+        if k in d:
+            raise ClaveRepetida(
+                f"FALLA el volcado repite la clave «{k}» en una linea: "
+                "una clave, un significado (ver UiAudit::walk)")
+        d[k] = v
+    return d
 
 def judge(rows, size, lang, sheet):
     findings = []
@@ -179,6 +211,34 @@ def judge(rows, size, lang, sheet):
             if cw > 0 and ch > 0 and abs (cw - ch) > 1.0:
                 findings.append(("CUADRADA", tag,
                                  f'la celda de pasos es {cw:.1f}x{ch:.1f}', abs (cw - ch)))
+
+        #  Y LO QUE SOBRA POR EL FILO DERECHO. SE IMPRIME Y NO SE JUZGA.
+        #
+        #  Llego en una foto -«la rejilla deja una columna partida a la
+        #  derecha»- y que asome es DELIBERADO: es lo unico que dice que la
+        #  ventana no llega al final del patron, y `paint` dibuja `numCols()+1`
+        #  justo para eso. Lo que no decidia nadie es CUANTO, porque
+        #  `stepGrid.setBounds (inner)` no acota `inner` a un multiplo del lado
+        #  de la celda.
+        #
+        #  Medido en las siete pantallas: la del piano y la de la cancion
+        #  reparten su ancho entre un numero fijo de columnas y les sobran
+        #  0.08 px; la de pasos es la unica con celda CUADRADA y le sobra de
+        #  1.00 a 14.70 px, o sea del 8% al 96% de una celda.
+        #
+        #  Y no se juzga porque no hay nada que este mal: el gesto acota a
+        #  `numCols()`, asi que esa columna partida se DIBUJA y se TOCA con el
+        #  mismo indice y escribe el paso que enseña. Acotarla costaria la unica
+        #  señal de que hay mas a la derecha - y esa señal ya tiene dueño, la
+        #  barra que va justo debajo. Lo que hacia falta es que no pueda cambiar
+        #  sin que nadie se entere.
+        if "StepGrid" in r["path"] and "cw" in r and "canal" in r:
+            sobra = r["w"] - r["canal"] - r["cols"] * float (r["cw"])
+            findings.append(("FILO", tag,
+                             "a la rejilla de pasos le sobran %.0f px por el filo "
+                             "derecho (%.0f%% de celda)"
+                             % (sobra, 100.0 * sobra / max (1.0, float (r["cw"]))),
+                             sobra))
         #  0. VISIBLE Y DE CERO PIXELES, que es el punto ciego de todas las
         #     demas: las seis reglas de abajo se saltan lo que mide 0x0 -y con
         #     razon, porque la casa APAGA lo que no cabe *y* le vacia los
@@ -720,6 +780,79 @@ def judge_fila(rows, size, lang, sheet):
     return out
 
 
+#  UNA FILA DE CHIPS: UN GRUPO DE RADIO, Y UNA ENCENDIDA.
+#
+#  Llego en una foto del telefono y eran DOS fallos a la vez, los dos de la
+#  misma raiz y ninguno visible para las catorce reglas de geometria: una fila
+#  de chips con dos encendidos -o con ninguno- se maqueta perfecta, no solapa,
+#  no se sale, no corta su rotulo, no mide cero y esta traducida. Es la familia
+#  de los cinco fallos del compas del piano.
+#
+#  La pieza de JUCE que los explica, leida y no supuesta: `setToggleState (true)`
+#  llama a `turnOffOtherButtonsInGroup` AUNQUE la notificacion sea
+#  `dontSendNotification`, y lo hace ANTES de escribir su propio estado; y ese
+#  barrido pasa la MISMA notificacion a las hermanas, o sea que con un dedo
+#  -`sendNotification`- apagar a una hermana DISPARA su `onClick`.
+#
+#    - AJUSTES · AUDIO salia con los cuatro chips de TOMAS apagados: compartian
+#      id 7312 Y padre con los dos del MONITOR, asi que para JUCE eran una fila
+#      de seis, y el monitor -que siempre enciende uno- apagaba los cuatro siete
+#      lineas mas abajo.
+#    - MEZCLA salia con dos bancos encendidos: `showMixBank` escribia UNA tapa y
+#      dejaba el resto al grupo, asi que el `onClick` espurio de la que se apaga
+#      la volvia a encender antes de que la nueva tuviera su estado escrito.
+#
+#  DOS PREGUNTAS Y NO UNA, porque cada fallo pasa la del otro: con el 7312
+#  puesto, el grupo tiene SEIS tapas y UNA encendida -o sea que «exactamente una
+#  encendida» daba verde-, y con la mesa rota las dos filas son la misma. Asi
+#  que se pregunta ademas de QUIEN es cada tapa, y eso lo dice la app
+#  (`filaDeRadio`): es la marca `valor` de los iconos otra vez -una lista de
+#  rotulos en Python solo sabria medir una de las cuatro compilaciones-.
+#
+#  Y EL LISTON SALE DE LA POBLACION. Censadas las 1400 corridas antes de
+#  escribir el veredicto: dieciseis grupos, y TODOS con exactamente una
+#  encendida salvo uno - las seis ranuras de efecto del XY, con CERO en las 28
+#  corridas de esa ficha. Eso es correcto y no una excepcion inventada: desde
+#  que las ranuras nacen vacias, un tipo que no esta puesto no tiene tapa que
+#  encender. Lo marca la app y no una lista aqui.
+#
+#  Con cadena de control: si el barrido no encuentra ni un grupo con dos o mas
+#  tapas visibles, FALLA en vez de dar verde sin haber mirado.
+def judge_chips(rows, size, lang, sheet):
+    out = []
+    donde = f"{size}/{lang}/{sheet or 'face'}"
+    grupos = collections.defaultdict(list)
+    for r in rows:
+        if "grupo" not in r:
+            continue
+        padre = r["path"].rsplit("/", 1)[0] if "/" in r["path"] else ""
+        grupos[(padre, r["grupo"])].append(r)
+
+    #  El grupo solo mira a los HERMANOS, asi que la clave es (padre, id): tres
+    #  juegos de chips comparten el 5151 con tres padres distintos y eso es
+    #  correcto por construccion.
+    vistos = 0
+    for (padre, grupo), chips in sorted(grupos.items()):
+        if len(chips) < 2:
+            continue
+        vistos += 1
+        filas = sorted({c.get("radio", "") for c in chips})
+        if len(filas) > 1:
+            out.append(("CHIPS", donde,
+                        "las filas " + " y ".join(f"«{f}»" for f in filas)
+                        + f" comparten el grupo {grupo}: JUCE las trata como UNA",
+                        len(filas)))
+            continue
+        on = sum(c.get("toggle", 0) for c in chips)
+        if on == 0 and all(c.get("radioVacia") for c in chips):
+            continue
+        if on != 1:
+            out.append(("CHIPS", donde,
+                        f'la fila «{filas[0]}» tiene {on} encendidas de {len(chips)}',
+                        abs(on - 1)))
+    return out, vistos
+
+
 #  LA CABECERA DE UNA FICHA COMPARTE RENGLON CON SUS TAPAS.
 #
 #  Llego mirando la foto de la ficha de un pad: «el espacio entre el texto de
@@ -886,7 +1019,7 @@ def _corre_y_juzga(combo, casa):
     size, lang, sheet = combo
     rows = run(size, lang, sheet, casa)
     if rows is None:
-        return [], None, (0, 0), collections.Counter(), collections.Counter()
+        return [], None, (0, 0), collections.Counter(), collections.Counter(), 0
     #  CUANTAS TAPAS LLEVAN DIBUJO Y CUANTAS LO ENSENAN.
     #
     #  El icono es el adorno y la palabra la funcion, asi que donde no caben
@@ -896,14 +1029,16 @@ def _corre_y_juzga(combo, casa):
     puestos = sum (1 for r in rows if "icono" in r)
     pintados = sum (1 for r in rows if r.get ("icono"))
     quien = collections.Counter()
+    chips, chipsVistos = judge_chips(rows, size, lang, sheet)
     return (judge(rows, size, lang, sheet) + judge_tapado(rows, size, lang, sheet)
                                            + judge_tarjeta(rows, size, lang, sheet)
                                            + judge_marco(rows, size, lang, sheet)
                                            + judge_cara(rows, size, lang, sheet)
                                            + judge_fila(rows, size, lang, sheet)
-                                           + judge_cabecera(rows, size, lang, sheet),
+                                           + judge_cabecera(rows, size, lang, sheet)
+                                           + chips,
             (rows if lang in ("es", "en") else []), (puestos, pintados),
-            mide_aire(rows, quien, sheet), quien)
+            mide_aire(rows, quien, sheet), quien, chipsVistos)
 
 
 def paginas():
@@ -943,7 +1078,7 @@ def main():
     iconos = collections.defaultdict(lambda: [0, 0])
     aire   = collections.Counter()
     quien  = collections.Counter()
-    runs = fails = 0
+    runs = fails = chipsVistos = 0
 
     combos = [(size, lang, sheet)
               for size, _ in SIZES for lang in LANGS for sheet in SHEETS
@@ -970,7 +1105,8 @@ def main():
                 futuros[pool.submit(corre_y_juzga, c, casa)] = c
             for fut in concurrent.futures.as_completed(futuros):
                 size, lang, sheet = futuros[fut]
-                findings, rows, ico, aireRun, quienRun = fut.result()
+                findings, rows, ico, aireRun, quienRun, chipsRun = fut.result()
+                chipsVistos += chipsRun
                 iconos[size][0] += ico[0]
                 iconos[size][1] += ico[1]
                 aire += aireRun
@@ -1004,6 +1140,17 @@ def main():
         shutil.rmtree(casas, ignore_errors=True)
     for (size, sheet), d in pairs.items():
         allf += judge_lang(d.get("es"), d.get("en"), size, sheet)
+
+    #  LA CADENA DE CONTROL DE CHIPS.
+    #
+    #  «Cero filas mal» y «no he mirado ninguna fila» dan la misma corrida en
+    #  verde, y esta regla es la mas facil de dejar muda sin querer: basta con
+    #  que alguien renombre la clave del volcado. Es lo mismo que hacen
+    #  `marcas.py` cuando no puede leer sus reglas y `apk.py` cuando no ve el
+    #  texto de la app.
+    if not only and chipsVistos == 0:
+        allf.append(("CHIPS", "control", "ni una fila de radio con dos o mas "
+                     "tapas visibles: la regla no mide nada", 1))
     by = collections.Counter(f[0] for f in allf)
     print(f"\n=== {runs} runs, {fails} produced nothing ===")
     print("findings:", dict(by))
@@ -1061,7 +1208,7 @@ def main():
     duros = [k for k in ("TRUNC", "SQUEEZE", "OVERLAP", "OFFSCREEN", "CELDA",
                          "UNTRANSLATED", "CERO", "TAPADO", "SPRITE", "CORTADO", "PISADO",
                          "FILA", "CUADRADA", "ASOMA", "CABECERA", "MARCO", "CARA",
-                         "CRASH") if by.get(k)]
+                         "CHIPS", "CRASH") if by.get(k)]
     if resto:
         duros.append("RESIDUO")
     print()
