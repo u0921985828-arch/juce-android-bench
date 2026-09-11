@@ -1605,6 +1605,7 @@ void MainComponent::auditNuevo()
                 ranuras += ((c || sr) ? "," : "") + juce::String (slotFx[(size_t) c][(size_t) sr]);
 
         std::cout << "{\"nuevo\":\"" << que << "\",\"pads\":" << conSonido
+                  << ",\"canales\":" << kNumCanales << ",\"ranurasPorCanal\":" << kNumRanuras
                   << ",\"envmax\":" << envMax << ",\"envsuma\":" << envSuma
                   << ",\"canalmax\":" << canalMax << ",\"cgansuma\":" << ganSuma
                   << ",\"cmuten\":" << muteN
@@ -3420,7 +3421,85 @@ void MainComponent::auditCanales()
                                   if (canMutes[6]->onClick) canMutes[6]->onClick(); }
     const int muteCanal6 = engine.getCanalMute (6) ? 1 : 0;
 
+    //  6. EL BANCO DE LA REJILLA: que se llegue a los dieciseis de detras.
+    //
+    //  Desde que hay treinta y dos canales la rejilla sigue siendo de cuatro
+    //  por cuatro -dieciseis en fila estan medidos y no caben, 26 px en 280- y
+    //  lo que crece es el numero de bancos. Con DOS cifras, que una se engaña:
+    //  el chip mueve la rejilla *y* NO cambia el canal del pad. Solo la primera
+    //  la cumple un chip que ademas reasigna -o sea pasear seria tocar- y solo
+    //  la segunda la cumple un chip muerto.
+    //
+    //  Y POR EL GESTO, con la ficha ABIERTA: la rejilla la coloca `resized()`,
+    //  asi que preguntar por los limites con el selector cerrado es preguntar
+    //  por los que `abreCanalPicker` acaba de vaciar.
+    selectPad (5);
+    engine.setPadCanal (5, 0);
+    abreCanalPicker (true);
+    pulsa (canalBankBtns[1]);
+    const int canalTrasPasear = engine.getPadCanal (5);
+    //  La primera celda VISIBLE de la rejilla: con el banco B tiene que ser el
+    //  canal 17 (indice 16) y no el 01.
+    int primeraVisible = -1;
+    juce::Rectangle<int> celdaCanal;
+    for (int i = 0; i < canalBtns.size(); ++i)
+        if (auto* b = canalBtns[i])
+            if (b->isVisible() && ! b->getBounds().isEmpty() && primeraVisible < 0)
+            {
+                primeraVisible = i;
+                celdaCanal = b->getBounds();
+            }
+    pulsa (canalBtns[20]);
+    const int canalTrasElegir = engine.getPadCanal (5);
+    abreCanalPicker (false);
+
+    //  Y LA REJILLA SE ABRE DONDE ESTA EL PAD, que es la otra mitad y la que
+    //  el chip no puede decir: el pad acaba de irse al canal 21 -indice 20, o
+    //  sea banco B- asi que al VOLVER a abrir la primera celda tiene que ser
+    //  la 16 y no la 0. Sin el arrastre de `abreCanalPicker`, el selector abre
+    //  en el 1-16 con NINGUNA tapa encendida, que es un menu que no dice donde
+    //  estas. Se mide reabriendo y no llamando a `ponCanalBanco`, que es justo
+    //  donde el fallo no existe.
+    //  Y EL BANCO SE DEVUELVE AL A ANTES DE REABRIR, o la medida no puede
+    //  fallar: la comprobacion de arriba dejo el selector en el banco B, asi
+    //  que reabrir lo encontraria alli con el arrastre puesto y sin el. Primero
+    //  se duda de la prueba.
+    pulsa (canalBankBtns[0]);
+    abreCanalPicker (true);
+    int reabrePrimera = -1;
+    for (int i = 0; i < canalBtns.size() && reabrePrimera < 0; ++i)
+        if (auto* b = canalBtns[i])
+            if (b->isVisible() && ! b->getBounds().isEmpty())
+                reabrePrimera = i;
+
+    //  Y CUANTAS TAPAS QUEDAN VIVAS, que es la mitad que NINGUNA regla de
+    //  `expo.py` puede ver y por la que esta cifra existe. Son treinta y dos
+    //  tapas para dieciseis celdas, asi que `resized()` tiene que APAGARLAS *Y*
+    //  vaciarles los limites antes de colocar las del banco que toca — la regla
+    //  que tuvo a SEGUIR visible y de 0x0 desde el primer dia.
+    //
+    //  El banco no la veia: su pantalla `canal` abre el selector en el banco A y
+    //  no lo mueve nunca, y `abreCanalPicker (false)` vacia los limites al
+    //  cerrar, asi que las dieciseis de detras jamas llegan a tener unas
+    //  coordenadas que quedarse. Hace falta VOLVER de un banco al otro con la
+    //  ficha abierta, y eso solo pasa aqui. Medido: quitando el `setBounds ({})`
+    //  las 1400 corridas de `expo.py` dan CERO y RESIDUO a cero — o sea que la
+    //  regla estaba escrita, era necesaria, y no la comprobaba nadie.
+    pulsa (canalBankBtns[0]);
+    int bancoVivas = 0;
+    for (auto* b : canalBtns)
+        if (b != nullptr && b->isVisible() && ! b->getBounds().isEmpty())
+            ++bancoVivas;
+    abreCanalPicker (false);
+
     std::cout << "{\"canales\":" << kNumCanales
+              << ",\"bancos\":" << kNumCanalBancos
+              << ",\"banco_primera\":" << primeraVisible
+              << ",\"banco_celda\":\"" << celdaCanal.getWidth() << "x" << celdaCanal.getHeight() << "\""
+              << ",\"banco_pasear\":" << canalTrasPasear
+              << ",\"banco_elegir\":" << canalTrasElegir
+              << ",\"banco_reabre\":" << reabrePrimera
+              << ",\"banco_vivas\":" << bancoVivas
               << ",\"canal_del_pad\":" << canalDelPad
               << ",\"fila_tras_mover\":" << filaTrasMover
               << ",\"canal_pad2\":" << canalPad2 << ",\"fila_pad2\":" << filaPad2

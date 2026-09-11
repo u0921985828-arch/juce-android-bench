@@ -358,7 +358,16 @@ private:
     Sheet canalSheet;
     juce::TextButton canalCloseBtn { juce::CharPointer_UTF8 ("\xc3\x97") };
     juce::OwnedArray<juce::TextButton> canalBtns;
+    //  LOS DOS CHIPS DE BANCO, que es lo que treinta y dos canales obligan a
+    //  tener: la rejilla enseña dieciseis y el resto sigue estando. El indice
+    //  es UNO para los dos selectores -el de aqui y el del RACK- porque el
+    //  canal elegido tambien es uno: con un banco por selector, abrir el rack
+    //  despues de mover un pad al canal 20 enseñaria la rejilla del 1 al 16 con
+    //  el elegido fuera de ella.
+    juce::OwnedArray<juce::TextButton> canalBankBtns;
     juce::TextButton padCanalBtn { "CANAL" };
+    int  canalBanco = 0;
+    void ponCanalBanco (int b);
     bool canalPickAbierto = false;
     void abreCanalPicker (bool abrir);
     void paintCanalPickContent (juce::Graphics& g);
@@ -1815,7 +1824,21 @@ private:
     static constexpr int kNumBanks     = AudioEngine::kNumBanks;     // A B C D
     //  Y los canales de la mesa, que son los del motor: escribirlos aqui otra
     //  vez son dos reglas, que es lo que ya costo `kNumFx`.
-    static constexpr int kNumCanales   = AudioEngine::kNumCanales;   // 16
+    static constexpr int kNumCanales   = AudioEngine::kNumCanales;   // 32
+
+    //  Y CUANTOS ENSEÑA UN SELECTOR DE CANAL. Los dos que hay -el de EL PAD y
+    //  el del RACK- son la MISMA rejilla de cuatro por cuatro que la cara, asi
+    //  que con treinta y dos canales hacen falta dos bancos y una fila de dos
+    //  chips, exactamente como los pads tienen A B C D. Dieciseis en fila ya
+    //  estaba medido y no cabe -26 px en 280- y treinta y dos menos.
+    //
+    //  Derivado y no escrito: el dia que `kNumCanales` vuelva a subir, los dos
+    //  selectores crecen solos y nadie tiene que acordarse de una segunda
+    //  constante. Es lo mismo que hace el menu de una ranura con `kNumFx`.
+    static constexpr int kCanalesPorBanco = 16;
+    static constexpr int kNumCanalBancos  = kNumCanales / kCanalesPorBanco;
+    static_assert (kNumCanales % kCanalesPorBanco == 0,
+                   "un banco a medias dejaria celdas vacias en la rejilla");
 
     //  WHICH SIXTEEN THE GRID IS POINTING AT.
     //
@@ -2100,6 +2123,8 @@ private:
     //  is the only place where "the delay belongs to the snare" can be said.
     juce::TextButton rackButton { "RACK" }, rackCloseButton { "x" };
     juce::OwnedArray<juce::TextButton> rackPadBtns;
+    //  Y sus dos chips de banco. Ver `canalBankBtns`: el indice es compartido.
+    juce::OwnedArray<juce::TextButton> rackBankBtns;
     juce::OwnedArray<juce::Slider>     rackSends;
     //  El canalon de la izquierda de cada fila. Era texto PINTADO -el nombre
     //  del efecto y su dibujo- y ahora es una tapa, porque el RACK pasa a ser

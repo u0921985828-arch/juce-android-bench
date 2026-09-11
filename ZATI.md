@@ -49,7 +49,7 @@ cada una, multizona, que se tocan con el dedo como una tecla.
 
 Encima de eso hay un secuenciador de ocho patrones con cadena y una canción de
 cuatro carriles por sesenta y cuatro compases, veintiun efectos en seis ranuras
-**por canal**, una mesa de dieciséis canales con máster, y una exportación que
+**por canal**, una mesa de treinta y dos canales con máster, y una exportación que
 saca el máster o las pistas por separado.
 
 **Lo que la separa de las demás**, y es lo que hay que saber para entender por
@@ -142,9 +142,9 @@ vuelta de él.
 
 **Las seis ranuras.** Veintiún tipos y seis sitios donde ponerlos, y los seis
 son **del canal que tenga el pad elegido**: cambiar de pad cambia la fila. Un
-inserto es de UN canal —su estado en el motor es uno solo, así que dos canales
-serían dos interruptores del mismo aparato— y un envío es de TODOS, que es
-literalmente lo que un envío significa. Una ranura
+inserto es de UN canal por RANURA y cada canal tiene su propia instancia en el
+motor, así que el mismo tipo puede estar en varios a la vez con ajustes
+distintos; un envío es de TODOS, que es literalmente lo que un envío significa. Una ranura
 vacía dice «+» y abre su menú; llena, tocarla la enciende **y** le da los tres
 mandos, y mantenerla le da los mandos **sin** encenderla, que es como se
 prepara un efecto antes de abrirlo.
@@ -990,8 +990,8 @@ que SOLO se arme desde la cara y que el lienzo diga en qué modo está ·
 **dos** caminos · `paneles` los paneles al píxel · `piano` el compás del piano
 por el camino de verdad · `plano` y `planos`, la estructura y el dibujo de cada
 pantalla · `rack` de qué familia es cada efecto, qué enseña el plato y qué mando lo mueve ·
-`ranuras` las seis ranuras y su menú · `canales` los dieciséis canales de la
-mesa y el canal de un pad · `session` que la sesión vuelva entera,
+`ranuras` las seis ranuras y su menú · `canales` los treinta y dos canales de
+la mesa en dos bancos y el canal de un pad · `session` que la sesión vuelva entera,
 por repetición · `skins` las cuatro carcasas en contraste y ΔE · `store` las
 fotos de la ficha de Play · `tour` que cada paso señale algo.
 

@@ -132,7 +132,31 @@ public:
     //  que es un ENVIO y no se replica, y ademas la daba por de dos segundos
     //  cuando es de uno. Un numero ESTIMADO que sobrevivio al cambio que lo
     //  invalido, en un fichero cuya regla es que nada se afirma sin medirlo.
-    static constexpr int kNumCanales = 16;
+    //
+    //  Y DIECISEIS MAS, que es la fila 13 de la lista de la feria y la unica
+    //  que se pedia con una cifra al lado. Lo que la hace barata es lo de
+    //  arriba: el canal ya es un RE-INDICE -`busDe`, `insDe`, `fxParamDe`- asi
+    //  que subir el numero no anade una etapa, un bucle ni una rama. Lo que SI
+    //  anade esta medido en la misma fila del banco y no estimado, que es la
+    //  leccion que este parrafo lleva escrita: la parte estatica pasa de 25 KB
+    //  a 50 KB, el motor entero de 653 KB a 758 KB, y lo que `prepareToPlay`
+    //  reserva -los 256 buses nuevos, y `frzVent` y `pitLine` de los dieciseis
+    //  canales nuevos- de 16 792 KB a 21 700 KB. Unos **4.7 MB** por dieciseis
+    //  canales mas, y la fila de control sigue en «0 de 47 616 muestras
+    //  cambian», que es lo que dice que no se ha movido una etapa.
+    //
+    //  Las dos ultimas salen de `/proc/self/status` y por tanto bailan unas
+    //  decenas de KB entre corridas: se leen en la fila del banco, que es
+    //  quien las imprime, y no se copian a mano aqui — dos numeros para la
+    //  misma cosa es como uno se queda viejo.
+    //
+    //  Y el fichero de proyecto no cuesta NADA, que es lo que se comprobo
+    //  antes de subirlo: `fxp`, `slots`, `csends`, `cgain`, `cmute` y `eqc` ya
+    //  se leen con `if (c < filas.size())`, o sea que un proyecto de dieciseis
+    //  canales deja los dieciseis nuevos en su defecto por construccion. Es la
+    //  regla de siempre -*lo que no esta en el fichero vale su defecto*- que
+    //  aqui ya estaba generalizada sin que nadie lo hubiera necesitado.
+    static constexpr int kNumCanales = 32;
 
     //  QUE CANAL LLEVA DE VERDAD ESE PARAMETRO, escrito UNA vez y aqui.
     //

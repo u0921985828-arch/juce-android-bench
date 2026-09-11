@@ -316,6 +316,20 @@ MainComponent::MainComponent()
             canalBtns.add (b);
         }
 
+        //  LOS DOS CHIPS DE BANCO. Pasear por los bancos es MIRAR y elegir una
+        //  celda es TOCAR, que es la misma separacion que la fila A B C D de la
+        //  cara tiene con los pads: `ponCanalBanco` no mueve el canal del pad.
+        for (int b = 0; b < kNumCanalBancos; ++b)
+        {
+            auto* t = new juce::TextButton (juce::String::charToString ((juce::juce_wchar) ('A' + b)));
+            styleButton (*t, kStepOff);
+            litAccent (*t);
+            t->setClickingTogglesState (true);
+            t->onClick = [this, b] { ponCanalBanco (b); };
+            canalSheet.addAndMakeVisible (t);
+            canalBankBtns.add (t);
+        }
+
         styleButton (padCanalBtn, kKey);
         padCanalBtn.onClick = [this] { abreCanalPicker (! canalPickAbierto); };
         padSheet.addAndMakeVisible (padCanalBtn);
@@ -705,10 +719,10 @@ MainComponent::MainComponent()
         rackButton.onClick = [this] { openSheet (rackSheet, mixButton); refreshRack(); };
         mixSheet.addAndMakeVisible (rackButton);
 
-        //  DIECISEIS CANALES EN CUATRO POR CUATRO, que es la forma de la cara y
-        //  la del selector de pad que ya estaba aqui — con la diferencia de que
-        //  ahora son dieciseis y no sesenta y cuatro, asi que la fila de bancos
-        //  se va: cuatro por cuatro son exactamente los que hay.
+        //  LOS CANALES EN CUATRO POR CUATRO, que es la forma de la cara y la del
+        //  selector de pad que ya estaba aqui — y con su fila de bancos, que es
+        //  lo que treinta y dos canales obligan a tener: la rejilla enseña
+        //  dieciseis y los otros dieciseis se alcanzan con un chip.
         for (int i = 0; i < kNumCanales; ++i)
         {
             auto* b = new juce::TextButton (juce::String (i + 1).paddedLeft ('0', 2));
@@ -722,6 +736,20 @@ MainComponent::MainComponent()
             b->onClick = [this, i] { ponCanalActual (i); refrescaRanuras(); refreshRack(); };
             rackSheet.cuerpo.addAndMakeVisible (b);
             rackPadBtns.add (b);
+        }
+
+        //  Y SUS DOS CHIPS DE BANCO, con el MISMO indice que los del selector de
+        //  EL PAD: el canal elegido es uno, asi que un banco por selector
+        //  dejaria el rack abriendose en el 1-16 despues de mover un pad al 20.
+        for (int b = 0; b < kNumCanalBancos; ++b)
+        {
+            auto* t = new juce::TextButton (juce::String::charToString ((juce::juce_wchar) ('A' + b)));
+            styleButton (*t, kStepOff);
+            litAccent (*t);
+            t->setClickingTogglesState (true);
+            t->onClick = [this, b] { ponCanalBanco (b); };
+            rackSheet.cuerpo.addAndMakeVisible (t);
+            rackBankBtns.add (t);
         }
 
         //  UNA FILA POR RANURA y no por tipo: el rack dice cuanto manda ESTE
@@ -4786,7 +4814,28 @@ void MainComponent::ponEnRanura (int ranura, int fx)
 void MainComponent::ponCanalActual (int c)
 {
     canalActual = juce::jlimit (0, kNumCanales - 1, c);
+    //  Y LA REJILLA SE VA DONDE ESTA EL ELEGIDO, que es la mitad sin la cual
+    //  dos bancos se leen como un fallo: mover un pad al canal 20 desde la
+    //  mesa y abrir despues el selector enseñaria del 1 al 16 con ninguna tapa
+    //  encendida. Es lo mismo que ya hace PAD -/+ del piano, que arrastra la
+    //  vista de bancos con el pad que elige.
+    ponCanalBanco (canalActual / kCanalesPorBanco);
     recargaFxDelCanal();
+}
+
+//  QUE DIECISEIS ENSEÑAN LOS DOS SELECTORES. No toca el canal elegido: pasear
+//  por los bancos es mirar, y elegir es tocar una celda — la misma separacion
+//  que la fila A B C D de la cara tiene con los pads.
+void MainComponent::ponCanalBanco (int b)
+{
+    canalBanco = juce::jlimit (0, kNumCanalBancos - 1, b);
+
+    for (int i = 0; i < canalBankBtns.size(); ++i)
+        canalBankBtns[i]->setToggleState (i == canalBanco, juce::dontSendNotification);
+    for (int i = 0; i < rackBankBtns.size(); ++i)
+        rackBankBtns[i]->setToggleState (i == canalBanco, juce::dontSendNotification);
+
+    resized();
 }
 
 void MainComponent::recargaFxDelCanal()
@@ -6863,7 +6912,7 @@ void MainComponent::refrescaCanalDelPad()
         canalBtns[i]->setToggleState (i == c, juce::dontSendNotification);
 }
 
-//  LA REJILLA DE DIECISEIS CANALES, ABIERTA O CERRADA.
+//  LA REJILLA DE CANALES, ABIERTA O CERRADA.
 void MainComponent::abreCanalPicker (bool abrir)
 {
     canalPickAbierto = abrir;
@@ -6872,13 +6921,21 @@ void MainComponent::abreCanalPicker (bool abrir)
     if (abrir)
     {
         canalSheet.toFront (false);
+        //  Y SE ABRE DONDE ESTA EL PAD, que con dos bancos es la diferencia
+        //  entre una rejilla con el elegido dentro y una con ninguna tapa
+        //  encendida. Aqui y no en `refrescaCanalDelPad`: a esa la llama
+        //  `retranslateUi` desde el CONSTRUCTOR y `ponCanalBanco` termina en
+        //  `resized()` — un `resized` anidado desde ahi es como se cerro la app
+        //  una vez (`CAIDA senal 11 en arranque`).
+        ponCanalBanco (engine.getPadCanal (selectedPad) / kCanalesPorBanco);
         refrescaCanalDelPad();
     }
     else
     {
         //  APAGAR *Y* VACIAR LOS LIMITES, las dos cosas — la regla que tuvo a
         //  SEGUIR visible y de 0x0 desde el primer dia.
-        for (auto* b : canalBtns) if (b != nullptr) b->setBounds ({});
+        for (auto* b : canalBtns)     if (b != nullptr) b->setBounds ({});
+        for (auto* b : canalBankBtns) if (b != nullptr) b->setBounds ({});
         canalCloseBtn.setBounds ({});
         canalSheet.sheetBounds = {};
     }

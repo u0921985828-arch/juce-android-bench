@@ -222,14 +222,77 @@ def main():
     if r["mute_canal6"] != 1:
         malas.append ("el mute del canal 6 no llego al motor")
 
+    #  6. EL BANCO DE LA REJILLA: que se llegue a los de detras.
+    #
+    #     Con treinta y dos canales la rejilla sigue siendo de cuatro por cuatro
+    #     —dieciseis en fila estan medidos y no caben, 26 px en 280— y lo que
+    #     crece es el numero de bancos, exactamente como los pads llegan a
+    #     sesenta y cuatro con A B C D.
+    #
+    #     Con DOS cifras, que una se engaña: el chip MUEVE la rejilla *y* NO
+    #     cambia el canal del pad. Solo la primera la cumple un chip que ademas
+    #     reasigna —o sea pasear seria tocar, que es lo contrario de la fila A B
+    #     C D— y solo la segunda la cumple un chip muerto, que deja los
+    #     dieciseis de detras inalcanzables. Mas la tercera, que es la que dice
+    #     que la celda sigue cumpliendo el dedo: la rejilla no crece.
+    #     Y la CUARTA, que es la que el chip no puede decir: la rejilla se abre
+    #     DONDE ESTA EL PAD. Con el pad ya en el canal 21, volver a abrirla
+    #     tiene que empezar en el 17 —o sea banco B— y no en el 01 con ninguna
+    #     tapa encendida, que es un menu que no dice donde estas.
+    #     Y la QUINTA, que es la que ninguna de las once reglas de `expo.py`
+    #     puede ver y por la que la app publica esta cifra: son treinta y dos
+    #     tapas para dieciseis celdas, asi que volver del banco B al A tiene que
+    #     dejar DIECISEIS vivas y no treinta y dos. El banco de maqueta no llega:
+    #     su pantalla `canal` abre el selector en el banco A y no lo mueve, y
+    #     cerrarlo vacia los limites — medido, quitar el `setBounds ({})` deja
+    #     las 1400 corridas con CERO y RESIDUO a cero.
+    print ("banco    %d bancos de %d; el chip B deja la primera celda en el canal "
+           "%d (%s), el pad sigue en el %d, al reabrir empieza en el %d y al "
+           "volver al A quedan %d tapas vivas"
+           % (r["bancos"], r["canales"] // r["bancos"], r["banco_primera"] + 1,
+              r["banco_celda"], r["banco_pasear"], r["banco_reabre"] + 1,
+              r["banco_vivas"]))
+    if r["bancos"] * 16 != r["canales"]:
+        malas.append ("%d canales en %d bancos de dieciseis no cuadran"
+                      % (r["canales"], r["bancos"]))
+    if r["banco_primera"] != 16:
+        malas.append ("el chip B deja la rejilla empezando en el canal %d y tiene "
+                      "que empezar en el 17: los dieciseis de detras no se alcanzan"
+                      % (r["banco_primera"] + 1))
+    if r["banco_pasear"] != 0:
+        malas.append ("pasear por los bancos movio el pad al canal %d: elegir un "
+                      "banco es MIRAR y tocar una celda es elegir"
+                      % r["banco_pasear"])
+    if r["banco_elegir"] != 20:
+        malas.append ("tocar el canal 21 del banco B dejo el pad en el canal %d"
+                      % (r["banco_elegir"] + 1))
+    if r["banco_vivas"] != 16:
+        malas.append ("volver del banco B al A deja %d tapas visibles y con "
+                      "limites para %d celdas: las del banco de atras se quedan "
+                      "con las coordenadas de la pasada anterior"
+                      % (r["banco_vivas"], r["canales"] // r["bancos"]))
+    if r["banco_reabre"] != 16:
+        malas.append ("con el pad en el canal 21, reabrir el selector empieza en "
+                      "el canal %d: la rejilla no se abre donde esta el pad"
+                      % (r["banco_reabre"] + 1))
+    try:
+        cw, ch = [int (v) for v in r["banco_celda"].split ("x")]
+    except Exception:
+        cw = ch = 0
+    if cw < 40 or ch < 40:
+        malas.append ("la celda de la rejilla de canales mide %s y el dedo pide 40"
+                      % r["banco_celda"])
+
     print()
     if malas:
         for m in malas: print ("FALLA  " + m)
         return 1
-    print ("los dieciseis canales: la rejilla mueve el pad, cambiar de pad "
-           "cambia la fila, un inserto es de CADA canal con su propio ajuste y "
-           "un envio de todos, vaciar apaga al inserto siempre y al envio solo "
-           "si no le queda otra, y la tira llega al motor")
+    print ("los %d canales: la rejilla mueve el pad, cambiar de pad cambia la "
+           "fila, un inserto es de CADA canal con su propio ajuste y un envio de "
+           "todos, vaciar apaga al inserto siempre y al envio solo si no le queda "
+           "otra, la tira llega al motor y los %d bancos alcanzan los %d y se "
+           "abren donde esta el pad"
+           % (r["canales"], r["bancos"], r["canales"]))
     return 0
 
 

@@ -1251,21 +1251,36 @@ void MainComponent::resized()
         }
     }
 
-    //  LA REJILLA DE DIECISEIS CANALES. Ver canalSheet en la cabecera.
+    //  LA REJILLA DE CANALES. Ver canalSheet en la cabecera.
     //
-    //  La misma cuenta que la de pads menos la fila de bancos: dieciseis
-    //  canales caben exactos en cuatro por cuatro y no hay sesenta y cuatro
-    //  entre los que pasear. 2*12 + 40 + 12 + 4*44 + 3*4 = 264.
+    //  La MISMA cuenta que la de pads, fila de bancos incluida: desde que hay
+    //  treinta y dos canales la rejilla enseña dieciseis y los otros dieciseis
+    //  se alcanzan con un chip, exactamente como los pads llegan a sesenta y
+    //  cuatro con A B C D. Dieciseis en fila ya estan medidos y no caben -26 px
+    //  en 280- y treinta y dos menos, asi que la rejilla no crece: crece el
+    //  numero de bancos. 2*12 + 40 + 12 + 4*44 + 3*4 + 8 + 40 = 312.
     if (canalPickAbierto)
     {
         const int quiere = 2 * Metrics::md + Metrics::hit + Metrics::md
-                           + 4 * Metrics::btn + 3 * Metrics::xs;
+                           + 4 * Metrics::btn + 3 * Metrics::xs
+                           + Metrics::sm + Metrics::hit;
         auto inner = sheetFromBottom (canalSheet, quiere);
 
         auto titleRow = inner.removeFromTop (Metrics::hit);
         canalCloseBtn.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
                                    .withSizeKeepingCentre (Metrics::hit, Metrics::hit));
         inner.removeFromTop (Metrics::sm);
+
+        //  LA FILA DE BANCOS SE APARTA PRIMERO, que es la regla de la casa: los
+        //  chips no encogen y las filas de la rejilla si.
+        auto bancos = inner.removeFromBottom (Metrics::hit);
+        inner.removeFromBottom (Metrics::sm);
+
+        //  LAS DOS MITADES -apagar Y vaciar-, que es lo que tuvo a SEGUIR
+        //  visible y de 0x0 desde el primer dia. Con treinta y dos tapas en
+        //  dieciseis celdas, sin esto dieciseis se quedan VISIBLES y con las
+        //  coordenadas de la pasada anterior: CERO, RESIDUO y solapes.
+        for (auto* b : canalBtns) if (b != nullptr) { b->setVisible (false); b->setBounds ({}); }
 
         const int filaH = juce::jmax (Metrics::hit,
                                       (inner.getHeight() - 3 * Metrics::xs) / 4);
@@ -1276,11 +1291,19 @@ void MainComponent::resized()
             for (int c = 0; c < 4; ++c)
             {
                 //  De abajo arriba, como la cara, el RACK y la rejilla de pads.
-                const int i = (3 - r) * 4 + c;
+                const int i = canalBanco * kCanalesPorBanco + (3 - r) * 4 + c;
+                canalBtns[i]->setVisible (true);
                 canalBtns[i]->setBounds ((c < 3 ? row.removeFromLeft (w) : row)
                                              .reduced (Metrics::aireTapaDensa, 0));
             }
             inner.removeFromTop (Metrics::xs);
+        }
+
+        {
+            const int w = bancos.getWidth() / kNumCanalBancos;
+            for (int b = 0; b < kNumCanalBancos; ++b)
+                canalBankBtns[b]->setBounds ((b < kNumCanalBancos - 1 ? bancos.removeFromLeft (w) : bancos)
+                                               .reduced (Metrics::aireTapaDensa, 0));
         }
     }
 
@@ -2630,6 +2653,7 @@ void MainComponent::resized()
         const int cabecera = juce::jmax (Metrics::hit, 16 + 14);
         auto inner = sheetFromBottom (rackSheet, Metrics::md * 2 + cabecera
                                                    + (chipRowH + Metrics::xs) * 4
+                                                   + Metrics::hit + Metrics::xs
                                                    + Metrics::sm + kNumRanuras * filaFx + Metrics::sm);
         auto titleRow = inner.removeFromTop (cabecera);
         rackCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
@@ -2648,7 +2672,11 @@ void MainComponent::resized()
         //
         //  Y de abajo arriba, tambien como la cara: el 01 abajo a la izquierda.
         //  Numerar al reves aqui seria un mapa distinto del mismo instrumento.
-        for (auto* b : rackPadBtns) if (b != nullptr) b->setVisible (false);
+        //
+        //  LAS DOS MITADES -apagar Y vaciar-: esconder sin vaciar es media
+        //  regla, y con treinta y dos tapas en dieciseis celdas las dieciseis
+        //  que no salen conservarian las coordenadas de la pasada anterior.
+        for (auto* b : rackPadBtns) if (b != nullptr) { b->setVisible (false); b->setBounds ({}); }
 
         for (int r = 0; r < 4; ++r)
         {
@@ -2656,11 +2684,11 @@ void MainComponent::resized()
             const int w = row.getWidth() / 4;
             for (int c = 0; c < 4; ++c)
             {
-                //  Y SIN EL BANCO, que es lo que cambia desde que el selector
-                //  elige CANAL: dieciseis canales caben exactos en cuatro por
-                //  cuatro, asi que no hay sesenta y cuatro entre los que pasear
-                //  ni una fila de bancos que mantener.
-                const int i = (3 - r) * 4 + c;
+                //  CON SU BANCO, y el MISMO indice que la rejilla de EL PAD:
+                //  el canal elegido es uno solo, asi que un banco por selector
+                //  dejaria el rack enseñando del 1 al 16 despues de mover un pad
+                //  al canal 20 -o sea el elegido fuera de la rejilla-.
+                const int i = canalBanco * kCanalesPorBanco + (3 - r) * 4 + c;
                 rackPadBtns[i]->setVisible (true);
                 //  Sin aire VERTICAL: la fila ya mide Metrics::hit y quitarle
                 //  un pixel por arriba y otro por abajo deja las tapas dos por
@@ -2670,6 +2698,15 @@ void MainComponent::resized()
                 rackPadBtns[i]->setBounds ((c < 3 ? row.removeFromLeft (w) : row)
                                                .reduced (Metrics::aireTapaDensa, 0));
             }
+            inner.removeFromTop (Metrics::xs);
+        }
+
+        {
+            auto bancos = inner.removeFromTop (Metrics::hit);
+            const int w = bancos.getWidth() / kNumCanalBancos;
+            for (int b = 0; b < kNumCanalBancos; ++b)
+                rackBankBtns[b]->setBounds ((b < kNumCanalBancos - 1 ? bancos.removeFromLeft (w) : bancos)
+                                              .reduced (Metrics::aireTapaDensa, 0));
             inner.removeFromTop (Metrics::xs);
         }
         inner.removeFromTop (Metrics::sm);

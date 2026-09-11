@@ -105,13 +105,19 @@ def main():
         #  eso lo mide `Tests/session.py` con sus cuatro `project.xml`
         #  congelados. Aqui se mide con que abre una maquina en la que nadie ha
         #  guardado nada.
-        #  Y LAS DIECISEIS FILAS, no la del canal que se este mirando: desde que
-        #  la fila es del CANAL hay dieciseis, y vaciar la mitad de un proyecto
-        #  es peor que no vaciar nada — que es la herencia que este mismo
-        #  fichero ya cazo dos veces.
-        if d.get ("ranuras") != [-1] * 96:
-            fallos.append ("%s: las 16 filas de efectos abren en %s y se esperaban vacias"
-                           % (que, d.get ("ranuras", "?")))
+        #  Y TODAS LAS FILAS, no la del canal que se este mirando: desde que
+        #  la fila es del CANAL hay una por canal, y vaciar la mitad de un
+        #  proyecto es peor que no vaciar nada — que es la herencia que este
+        #  mismo fichero ya cazo dos veces.
+        #
+        #  CUANTAS SON LO DICE LA APP y no un 96 escrito aqui: el dia que
+        #  `kNumCanales` subio de dieciseis a treinta y dos, este numero se
+        #  quedo viejo y la prueba salio en rojo con el codigo perfecto. Es la
+        #  misma decision que `Iconos::kLadoMin` y la marca `valor`.
+        vacias = [-1] * (d["canales"] * d["ranurasPorCanal"])
+        if d.get ("ranuras") != vacias:
+            fallos.append ("%s: las %d filas de efectos abren en %s y se esperaban vacias"
+                           % (que, d["canales"], d.get ("ranuras", "?")))
 
         #  Y EL REPARTO POR CANALES, con las TRES cifras que lo definen: los 64
         #  pads en el canal 0 -uno solo en el 3 basta para que canalmax salga 3-,
@@ -121,15 +127,16 @@ def main():
         if d["canalmax"] != 0:
             fallos.append ("%s: hay pads repartidos hasta el canal %d y se "
                            "esperaban los 64 en el 0" % (que, d["canalmax"]))
-        if abs (d["cgansuma"] - 16.0) > 0.01 or d["cmuten"] != 0:
-            fallos.append ("%s: los dieciseis canales abren con suma de ganancia "
-                           "%.2f y %d mutes puestos" % (que, d["cgansuma"], d["cmuten"]))
+        if abs (d["cgansuma"] - d["canales"]) > 0.01 or d["cmuten"] != 0:
+            fallos.append ("%s: los %d canales abren con suma de ganancia "
+                           "%.2f y %d mutes puestos"
+                           % (que, d["canales"], d["cgansuma"], d["cmuten"]))
 
         print ("%-10s %2d pads   envios max %.2f suma %.2f   canal max %d gan %.1f "
                "mutes %d   ranuras %s   carril 0 %s"
                % (que, d["pads"], d["envmax"], d["envsuma"],
                   d["canalmax"], d["cgansuma"], d["cmuten"],
-                  "todas vacias" if d.get ("ranuras") == [-1] * 96 else d.get ("ranuras", "?"),
+                  "todas vacias" if d.get ("ranuras") == vacias else d.get ("ranuras", "?"),
                   carriles[0]))
 
     #  Y QUE LOS DOS CAMINOS DIGAN LO MISMO en todo menos en los sonidos, que
