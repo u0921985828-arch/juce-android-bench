@@ -1,0 +1,23 @@
+#  LO QUE HACE QUE EL PIN SIGA SIENDO VERDAD.
+#
+#  Clavar las diez acciones por SHA cambia un fallo silencioso -«la etiqueta se
+#  movio aguas arriba»- por otro -«llevamos dos anos en una version con un
+#  agujero conocido»-, y esta casa tiene escrito que cambiar un apreton por un
+#  corte no es un arreglo. Dependabot cubre `github-actions` de forma nativa y
+#  actualiza el SHA Y el comentario de la etiqueta a la vez, asi que el coste
+#  pasa de «los pines se pudren» a «un PR que se mira».
+#
+#  Y LO QUE NO CUBRE, dicho y no escondido: un `git clone` a pelo no lo ve
+#  nadie, asi que el SHA de JUCE se sube a mano -- igual que hoy se sube la
+#  etiqueta. No cambia el trabajo que ya habia; cambia que ahora falla si no se
+#  hace, porque el paso del clone contrasta el commit y `Tests/suministro.py`
+#  comprueba que ese contraste existe.
+
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
