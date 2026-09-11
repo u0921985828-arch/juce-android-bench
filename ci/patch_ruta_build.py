@@ -2,17 +2,27 @@
 """Que la ruta de compilacion no viaje dentro de la .so.
 
 El binario que se instala llevaba **320 veces** la ruta absoluta del runner
--`/home/runner/work/FX-404/FX-404/Builds/Android/app/../../../JUCE/...`- en su
+-el dia que se midio,
+`/home/runner/work/FX-404/FX-404/Builds/Android/app/../../../JUCE/...`- en su
 `.rodata`. Son los `__FILE__` de las macros de asercion de JUCE, que en release
 siguen ahi: la libreria ya sale *stripped* -no hay una sola seccion `.debug_*`-
 asi que no es informacion de depuracion que se pueda quitar despues, son
 literales de verdad.
 
 No es un fallo de funcionamiento y por eso duro: nadie miraba lo que va ESCRITO
-dentro del paquete. Lo que filtra es el nombre viejo del proyecto, que la regla
-2 de `Tests/marcas.md` llama «el mayor riesgo que ha tenido: misma categoria,
-mismo numero, mismo comprador», dentro del fichero que se publica. `Tests/marcas.py` no puede verlo porque mira `Source/`, y `Source/`
-esta limpio.
+dentro del paquete. Lo que filtraba entonces era ademas el nombre viejo del
+proyecto, que la regla 2 de `Tests/marcas.md` llama «el mayor riesgo que ha
+tenido: misma categoria, mismo numero, mismo comprador», dentro del fichero que
+se publica -y `Tests/marcas.py` no podia verlo porque mira `Source/`, y
+`Source/` esta limpio-.
+
+Ese medio riesgo ya no existe: el repositorio publico se llama
+`juce-android-bench`, asi que el runner escribe
+`/home/runner/work/juce-android-bench/juce-android-bench/...`. Este paso se
+queda por la otra mitad, que nunca dependio del nombre: **la ruta de la maquina
+que compila no tiene nada que hacer dentro del fichero que se publica**, se
+llame como se llame. Por eso `Tests/apk.py` barre `/home/runner` y no una
+marca, y por eso el lazo se cierra solo si el parche deja de aplicarse.
 
 `-ffile-prefix-map=<raiz>=.` deja esos `__FILE__` en ruta relativa sin tocar una
 linea de codigo ni cambiar lo que hace el programa.

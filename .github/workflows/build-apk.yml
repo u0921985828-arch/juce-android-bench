@@ -157,13 +157,19 @@ jobs:
 
       #  QUE LA RUTA DE COMPILACION NO VIAJE DENTRO DE LA .so.
       #
-      #  La libreria que se instala llevaba 320 veces
-      #  `/home/runner/work/FX-404/FX-404/...` en su `.rodata`: son los
-      #  `__FILE__` de las macros de asercion de JUCE, que en release siguen ahi
-      #  -la .so ya sale stripped, no es informacion de depuracion-. Lo que
-      #  filtra es el nombre viejo del proyecto, que la regla 2 de
-      #  Tests/marcas.md llama el mayor riesgo que ha tenido, dentro del
-      #  fichero que se publica.
+      #  La libreria que se instala llevaba 320 veces la ruta absoluta del
+      #  runner en su `.rodata`: son los `__FILE__` de las macros de asercion
+      #  de JUCE, que en release siguen ahi -la .so ya sale stripped, no es
+      #  informacion de depuracion-.
+      #
+      #  El dia que se midio, esa ruta era `/home/runner/work/FX-404/FX-404/`
+      #  y lo que filtraba era ademas el nombre viejo del proyecto, que la
+      #  regla 2 de Tests/marcas.md llama el mayor riesgo que ha tenido. Hoy
+      #  el repositorio publico se llama juce-android-bench, asi que el runner
+      #  escribe otro nombre y ese medio riesgo ya no existe. El paso se queda
+      #  por la otra mitad, que nunca dependio del nombre: la ruta de la
+      #  maquina que compila no tiene nada que hacer dentro del fichero que se
+      #  publica. Por eso Tests/apk.py barre `/home/runner` y no una marca.
       #
       #  Va aqui y no en Zati.jucer porque la bandera necesita la ruta ABSOLUTA
       #  de la raiz, que solo existe cuando el runner ya ha hecho el checkout:
