@@ -114,6 +114,17 @@ jobs:
         if: '!cancelled()'
         run: python3 Tests/maqueta.py
 
+      #  Y LA CLAVE DE SUBIDA, que tampoco necesita pantalla y que es lo unico
+      #  de este repositorio cuya perdida no se puede deshacer desde la app.
+      #  Mide el workflow y no el binario, asi que corre aqui y no en el de la
+      #  APK: lo que hay que cazar es el commit que lo escribe, no la corrida
+      #  que lo usa. Y existe porque el arreglo YA se deshizo solo -`2d243ef`
+      #  lo puso, `d4206d5` lo devolvio al dia siguiente sin ir de eso- y
+      #  `CLAUDE.md` siguio contandolo como hecho durante trece tandas.
+      - name: La clave de subida
+        if: '!cancelled()'
+        run: python3 Tests/firma.py
+
       - name: El motor
         if: '!cancelled()'
         run: ./build/StressTest_artefacts/Release/StressTest

@@ -394,12 +394,36 @@ jobs:
           fi
 
           echo "$KS_B64" | base64 -d > upload.jks
+          #  Y SE BORRA POR TRAP Y NO RAMA A RAMA.
+          #
+          #  Estuvo escrito un `rm -f upload.jks` por camino, y eso deja fuera
+          #  los que nadie enumera: el `test -n` de las dos huellas, y sobre
+          #  todo un apksigner que falle, que con el `bash -e` de Actions se va
+          #  sin pasar por ninguna rama. Un borrado por rama protege las ramas
+          #  que alguien recordo. El trap cubre la salida, que es por donde se
+          #  va todo.
+          trap 'rm -f upload.jks' EXIT
           APKSIGNER="$(find "$ANDROID_SDK_ROOT/build-tools" -name apksigner | sort | tail -1)"
+          #  LAS CONTRASENAS POR EL ENTORNO Y NO POR LA LINEA DE ORDENES.
+          #
+          #  `pass:$KS_PASS` deja la contrasena de la clave de subida en el
+          #  argv del proceso, o sea legible en /proc/<pid>/cmdline para
+          #  cualquier otro proceso del runner y para cualquier cosa que
+          #  fotografie la tabla de procesos. apksigner acepta `env:VAR` y
+          #  `file:`, que es la forma que no la publica. Es la unica credencial
+          #  de este proyecto cuya perdida no se puede deshacer desde la app.
+          #
+          #  Y esto ESTUVO arreglado y se deshizo solo: 2d243ef lo puso el 28
+          #  de agosto y d4206d5 -que va de la etiqueta `latest` y no toca la
+          #  firma- lo devolvio al dia siguiente al reescribir el paso entero,
+          #  comentario incluido. `CLAUDE.md` siguio contandolo como hecho.
+          #  Por eso ahora lo mide `Tests/firma.py`: un arreglo que nada
+          #  comprueba es un arreglo que vuelve.
           "$APKSIGNER" sign \
             --ks upload.jks \
-            --ks-pass "pass:$KS_PASS" \
+            --ks-pass env:KS_PASS \
             --ks-key-alias "$KEY_ALIAS" \
-            --key-pass "pass:$KEY_PASS" \
+            --key-pass env:KEY_PASS \
             --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
             Zati-release.apk
           "$APKSIGNER" verify --print-certs Zati-release.apk
@@ -441,11 +465,16 @@ jobs:
           # and apksigner only knows how to sign APKs. Play re-signs it with the
           # app signing key anyway - this signature is what proves the upload
           # came from you.
-          "$JAVA_HOME/bin/jarsigner" -verbose:false \
-            -keystore upload.jks -storepass "$KS_PASS" -keypass "$KEY_PASS" \
+          #  Y por la entrada estandar, que es lo que jarsigner ofrece en vez de
+          #  `env:`: `-storepass "$KS_PASS"` la deja en el argv igual que la de
+          #  apksigner. `-storepass:env` no existe en jarsigner; `:file` si, y
+          #  un fichero en el runner es lo mismo que la variable pero ademas se
+          #  queda escrito, asi que se pasa por un descriptor y se borra solo.
+          printf '%s\n%s\n' "$KS_PASS" "$KEY_PASS" | "$JAVA_HOME/bin/jarsigner" \
+            -verbose:false \
+            -keystore upload.jks -storepass:file /dev/stdin -keypass:file /dev/stdin \
             -sigalg SHA256withRSA -digestalg SHA-256 \
             Zati-release.aab "$KEY_ALIAS"
-          rm -f upload.jks
           echo "Release APK and AAB signed with the upload key."
 
       #  Y EL BANCO DEL APK, QUE NO LO CORRIA NADIE.
