@@ -149,7 +149,22 @@ namespace UiAudit
     //  quien lo dibuja y no una lista de textos en el script, que solo sabria
     //  medir una de las cuatro compilaciones -es el argumento de la marca
     //  `valor` de los iconos-.
-    struct Rotulo { int x, y, w, h; juce::String texto, tipo; int capa; int pide; };
+    //  Y EL CUERPO DE LETRA CON EL QUE SE DIBUJO, que es lo que hacia falta
+    //  para poder CENSAR cuantos hay. `SPRITE` existe porque habia SIETE lados
+    //  de icono en la app y hoy hay uno; el mismo argumento -«dos filas de la
+    //  misma ficha dibujando el mismo trazo a dos tamanos»- vale igual para la
+    //  LETRA, y aqui no lo mide nadie: cinco tamanos con nombre (`fTiny`
+    //  .. `fValue`) mas CATORCE sitios con un literal o una cuenta al vuelo.
+    //  Se apunta antes de escribir ninguna regla: un liston inventado antes de
+    //  censar es exactamente lo que esta casa no hace.
+    //
+    //  Y LA CLAVE SE LLAMA `cuerpoLetra` Y NO `cuerpo`, que fue el primer
+    //  nombre y duro una tarde: el gancho de INSTRUMENTOS ya publica
+    //  `"cuerpo"` para el ALTO del cuerpo de la ficha -736 px-, asi que un
+    //  censo que filtre «tiene la clave cuerpo» mezcla las dos lineas y saca
+    //  un cuerpo de letra de 736. El espacio de claves del volcado es PLANO,
+    //  que es lo que ya costo `on`, `lit` y `fila` en la tanda de los chips.
+    struct Rotulo { int x, y, w, h; juce::String texto, tipo; int capa; int pide; float cuerpoLetra; };
     inline std::vector<Rotulo> rotulos;
 
     //  EN QUE CAPA SE ESTA PINTANDO.
@@ -177,12 +192,12 @@ namespace UiAudit
     inline bool midiendo = false;
 
     inline void rotulo (juce::Rectangle<int> r, const juce::String& t, const char* tipo,
-                        int pide = 0)
+                        int pide = 0, float cuerpo = 0.0f)
     {
         if (! midiendo || t.isEmpty()) return;
         r += origenPintado;
         rotulos.push_back ({ r.getX(), r.getY(), r.getWidth(), r.getHeight(), t, tipo, capaActual,
-                             pide });
+                             pide, cuerpo });
     }
 
     //  LOS PANELES DE GRUPO, apuntados igual que los rotulos y por lo mismo:
@@ -1109,7 +1124,8 @@ namespace UiAudit
                       << ",\"x\":" << r.x << ",\"y\":" << r.y
                       << ",\"w\":" << r.w << ",\"h\":" << r.h
                       << ",\"capa\":" << r.capa
-                      << ",\"pide\":" << r.pide << "}" << std::endl;
+                      << ",\"pide\":" << r.pide
+                      << ",\"cuerpoLetra\":" << juce::String (r.cuerpoLetra, 2) << "}" << std::endl;
 
         for (const auto& p : paneles)
             std::cout << "{\"panel\":1"

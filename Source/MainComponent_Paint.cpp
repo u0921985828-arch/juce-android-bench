@@ -413,7 +413,7 @@ void MainComponent::paint (juce::Graphics& g)
         //  del pad y la palabra son una sola cosa y van juntos a la izquierda-
         //  y no se elide, se cae a la palabra corta.
         const auto cajaTitulo = juce::Rectangle<int> (xTitulo, h.getY(), wTitulo + 2, h.getHeight());
-        UiAudit::rotulo (cajaTitulo, nombre, "titulo", wTitulo);
+        UiAudit::rotulo (cajaTitulo, nombre, "titulo", wTitulo, g.getCurrentFont().getHeight());
         g.drawText (nombre, cajaTitulo, juce::Justification::centredLeft);
 
         rule ((float) h.getX(), (float) h.getRight(), (float) h.getBottom() + 2.0f, 0.22f);
@@ -464,7 +464,7 @@ void MainComponent::paint (juce::Graphics& g)
                 //  largo-. Lo dice la app y no una lista de rotulos en el
                 //  script, que solo sabria medir una de las cuatro
                 //  compilaciones.
-                UiAudit::rotulo (cajaProy, texto, "proyecto", 0);
+                UiAudit::rotulo (cajaProy, texto, "proyecto", 0, g.getCurrentFont().getHeight());
                 g.drawText (texto, cajaProy, juce::Justification::bottomRight, true);
             }
         }
@@ -2522,9 +2522,15 @@ void MainComponent::paintVstSheetContent (juce::Graphics& g)
     //  `Tests/paneles.py`: la unica prueba que mide un panel.
     {
         juce::Array<juce::Rectangle<int>> grupos;
-        for (const auto& r : { vstPanelCab, vstPanelPre, vstPanelTec, vstPanelMandos })
+        for (const auto& r : { vstPanelCab, vstPanelPre, vstPanelTec,
+                               vstPanelForma, vstPanelMandos })
             if (! r.isEmpty()) grupos.add (r);
-        pintaPaneles (g, grupos);
+        //  Y EL FILO LLEVA EL COLOR DEL PAD, que es lo unico que esta ficha
+        //  puede decir y ninguna otra: las nueve que agrupan controles son de
+        //  la maquina y esta es de UN pad. Ver pintaPaneles: el tinte es el
+        //  zati que ese pad ya tiene en la cara, y el lado se mide.
+        pintaPaneles (g, grupos,
+                      fam >= 0 ? Zati::colour (Zati::forPad (vstPad)) : juce::Colour());
     }
 
     auto titleRow = antesDe (antesDe (vstTitleArea, vstCloseButton), vstPadBtn);
@@ -2535,11 +2541,27 @@ void MainComponent::paintVstSheetContent (juce::Graphics& g)
                      + T ("PAD %1", Lang::ltr (juce::String (vstPad + 1))),
                  "titulo", true);
 
-    //  EL DIBUJO DE LA FAMILIA, grande. Es lo que hace que esta ficha se
-    //  reconozca antes de leer nada, y es el MISMO dibujo que lleva el pad.
+    //  LA CHAPA DE LA FAMILIA. Es lo que hace que esta ficha se reconozca
+    //  antes de leer nada, y es el MISMO dibujo que lleva el pad.
+    //
+    //  Y SU TINTE SE MIDE, que es lo que lo separa de un adorno. Iba con
+    //  `ZatiColours::ink` -un token de PIEL- asi que el dibujo decia de que
+    //  CARCASA es la app y no de que pad viene. Ahora la FORMA la dice la
+    //  familia -los 5995 pares de `iconos.py` ya garantizan que esas dieciseis
+    //  no se parecen- y el COLOR lo dice el pad, que es como se encuentra un
+    //  sonido en esta maquina. Dos ejes y ninguno inventado.
+    //
+    //  Y el lado se elige midiendo contra el CHASIS y no contra el relleno del
+    //  panel, por lo mismo que `pintaPaneles` ya tiene escrito: ese relleno es
+    //  blanco o negro con alfa, asi que preguntarle su brillo daria el del
+    //  blanco o el del negro y no el de la superficie.
     if (fam >= 0 && ! vstIconArea.isEmpty())
+    {
+        const auto frag = Zati::colour (Zati::forPad (vstPad));
         Iconos::dibuja (g, Iconos::deFamilia (fam), vstIconArea.toFloat(),
-                        ZatiColours::ink.withAlpha (0.92f));
+                        ZatiColours::bestOn (ZatiColours::chassisTop,
+                                             frag.brighter (0.55f), frag.darker (0.55f)));
+    }
 
     //  Y EL NOMBRE DE LA FAMILIA, solo. El del preset estaba tambien aqui y se
     //  fue a la pantalla: el mismo dato en dos sitios de la MISMA tarjeta, y
@@ -2547,8 +2569,7 @@ void MainComponent::paintVstSheetContent (juce::Graphics& g)
     if (! vstNombreArea.isEmpty())
     {
         g.setColour (ZatiColours::ink);
-        g.setFont (ZatiColours::displayFont (juce::jmin (26.0f,
-                                                         (float) vstNombreArea.getHeight() * 0.46f)));
+        g.setFont (fuenteFamilia (vstNombreArea.getHeight()));
         pintaTitulo (g, vstNombreArea.withSizeKeepingCentre (vstNombreArea.getWidth(), 30),
                      fam >= 0 ? T (Sintes::tabla()[fam].nombre) : juce::String ("-"),
                      "titulo", true);
@@ -2562,10 +2583,10 @@ void MainComponent::paintVstSheetContent (juce::Graphics& g)
     //  que se lea como una pantalla y no como un rotulo suelto.
     if (! vstPreArea.isEmpty())
     {
-        const juce::String txt = (fam >= 0 && pre >= 0)
-            ? Lang::ltr (juce::String (pre + 1) + "/" + juce::String (Sintes::kPresets))
-                  + "   " + juce::String (Sintes::tabla()[fam].p[pre].nombre)
-            : juce::String ("-");
+        //  El texto y la fuente los dice `textoPreset` / `fuentePreset`, que
+        //  es la MISMA pareja con la que `resized()` decide cuanto ancho le
+        //  toca al cristal. Escritas aqui serian dos reglas.
+        const juce::String txt = textoPreset (fam, pre);
 
         g.setColour (ZatiColours::screenBg);
         g.fillRoundedRectangle (vstPreArea.toFloat(), 3.0f);
@@ -2573,7 +2594,7 @@ void MainComponent::paintVstSheetContent (juce::Graphics& g)
         g.drawRoundedRectangle (vstPreArea.toFloat().reduced (0.5f), 3.0f, 1.0f);
 
         g.setColour (ZatiColours::lcdFg);
-        g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.06f));
+        g.setFont (fuentePreset());
         //  Se APUNTA lo que el texto ocupa, como hace pintaTitulo: un rotulo
         //  pintado no es un componente y sin esto la regla que comprueba que
         //  ningun rotulo cae debajo de una tapa no lo ve. Centrado, asi que el
@@ -2584,7 +2605,8 @@ void MainComponent::paintVstSheetContent (juce::Graphics& g)
         UiAudit::rotulo (vstPreArea.withSizeKeepingCentre (usado, vstPreArea.getHeight()),
                          txt, "dato",
                          (int) std::ceil (juce::GlyphArrangement::getStringWidth (
-                                              g.getCurrentFont(), txt)));
+                                              g.getCurrentFont(), txt)),
+                         g.getCurrentFont().getHeight());
         g.drawText (txt, vstPreArea, juce::Justification::centred, true);
     }
 
@@ -2665,7 +2687,14 @@ void MainComponent::paintVstSheetContent (juce::Graphics& g)
         //  lo que ya se reservaba. Con dos, la frase merged -que dice el gesto
         //  del teclado Y los ocho mandos- se cortaba por la mitad, y media
         //  frase de ayuda se lee como un fallo.
-        g.drawFittedText (T ("El teclado suena mientras lo tengas tocado. Los ocho mandos afinan este preset y VOLVER lo devuelve."),
+        //  Y CUAL DE LAS DOS FRASES lo dice `sostiene`, que es el MISMO campo
+        //  con el que `triggerPad` decide si la nota se sostiene o se acaba
+        //  sola: siete familias de las dieciseis no sostienen, asi que «suena
+        //  mientras lo tengas tocado» era falso en casi la mitad de la ficha.
+        const bool sost = (fam >= 0) && Sintes::tabla()[fam].sostiene;
+        g.drawFittedText (sost
+                              ? T ("El teclado suena mientras lo tengas tocado. Los ocho mandos afinan este preset y VOLVER lo devuelve.")
+                              : T ("El teclado suena y cada nota se acaba sola. Los ocho mandos afinan este preset y VOLVER lo devuelve."),
                           vstPieArea, Lang::start (juce::Justification::top), 3, 1.0f);
     }
 }

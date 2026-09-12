@@ -193,21 +193,37 @@ def brillo (v):
     es la que hace que un cambio de tabla pase la prueba y falle en pantalla."""
     r, g, b = [c / 255.0 for c in rgb (v)]
     return math.sqrt (0.241 * r * r + 0.691 * g * g + 0.068 * b * b)
+def brighter (v, amount):
+    """juce::Colour::brighter, escrita aqui desde la definicion de JUCE."""
+    a = 1.0 / (1.0 + amount)
+    return sum (int (255 - a * (255 - c)) << (16 - 8 * i) for i, c in enumerate (rgb (v)))
+def darker (v, amount):
+    a = 1.0 / (1.0 + amount)
+    return sum (int (a * c) << (16 - 8 * i) for i, c in enumerate (rgb (v)))
+def filo_de_zati (z, panel):
+    """MainComponent::pintaPaneles con tinte: los dos candidatos salen del
+    propio zati y bestOn elige contra el relleno YA COMPUESTO."""
+    a, b = brighter (z, 0.55), darker (z, 0.55)
+    return a if ratio (a, panel) >= ratio (b, panel) else b
 def ink_on (d, surface):
     """La misma eleccion que ZatiColours::textOn: se MIDE, no se supone."""
     return d['ink'] if ratio (d['ink'], surface) >= ratio (d['inkLight'], surface) else d['inkLight']
 
+
+#  LA CABECERA, EN EL ORDEN DEL DICCIONARIO de `main`. Las dos listas y el
+#  diccionario tienen que decir lo mismo, asi que la fila se dibuja de aqui y
+#  no con quince indices escritos a mano: ver el comentario de la fila.
+TITULOS = ['apag/enc', 'escalon', 'tinta/tapa', 'tinta/acento', 'paso/hueco',
+           'hueco/tarj', 'panel/tarj', 'borde/pan', 'pantalla', 'seccion',
+           'mando', 'tira', 'zonas', 'filo/pad', 'zati/acento']
+ANCHOS  = [9, 8, 11, 13, 10, 11, 11, 10, 9, 8, 7, 6, 7, 9, 12]
 
 def main():
     skins = parse()
     ZATI = zati_colours()
     SIG  = signal_colours()
     bad = []
-    print (f"{'carcasa':9} {'apag/enc':>9} {'escalon':>8} {'tinta/tapa':>11} "
-           f"{'tinta/acento':>13} {'paso/hueco':>10} {'hueco/tarj':>11} "
-           f"{'panel/tarj':>11} {'borde/pan':>10} "
-           f"{'pantalla':>9} {'seccion':>8} {'mando':>7} {'tira':>6} {'zonas':>7} "
-           f"{'zati/acento':>12}")
+    print (f"{'carcasa':9} " + " ".join (f"{t:>{w}}" for t, w in zip (TITULOS, ANCHOS)))
     for name, d in zip (SKINS, skins):
         #  La sombra cae sobre la superficie que hay detras de la tapa, que es
         #  la tarjeta o el chasis: los dos son chassisTop.
@@ -289,6 +305,16 @@ def main():
             "zona contra zona":         (min (dE (SIG['green'],  SIG['yellow']),
                                               dE (SIG['yellow'], SIG['red'])),
                                          MIN_ZONE),
+            #  EL FILO DEL PANEL CUANDO LLEVA EL ZATI DE UN PAD. La ficha
+            #  del instrumento es de UN pad y su filo lo dice con el color que
+            #  ese pad ya tiene en la cara -ver MainComponent::pintaPaneles-,
+            #  asi que hay OCHO filos posibles y el que manda es el PEOR: uno
+            #  que no se separe del relleno deja la ficha de ese pad sin filo y
+            #  las otras siete con el, que se lee como que falta algo. Mismo
+            #  liston que las dos de arriba, porque es la misma pregunta: dos
+            #  superficies contiguas.
+            "filo del pad":             (min (dE (filo_de_zati (z, panel), panel) for z in ZATI),
+                                         MIN_WELL),
             #  EL ACENTO NO PUEDE SER LA NOTA DE COLOR MAS FUERTE DEL
             #  PRODUCTO. Ver MIN_CHROMA. El liston sale de la POBLACION -los
             #  ocho zatis, leidos de Zati.h- y no de un numero redondo.
@@ -296,12 +322,12 @@ def main():
                                          / max (1e-6, croma (d['accent'])),
                                          MIN_CHROMA),
         }
-        vals = list (m.values())
-        print (f"{name:9} {vals[0][0]:9.2f} {vals[1][0]:8.2f} {vals[2][0]:11.2f} "
-               f"{vals[3][0]:13.2f} {vals[4][0]:10.2f} {vals[5][0]:11.2f} "
-               f"{vals[6][0]:11.2f} {vals[7][0]:10.2f} "
-               f"{vals[8][0]:9.2f} {vals[9][0]:8.2f} {vals[10][0]:7.2f} "
-               f"{vals[11][0]:6.2f} {vals[12][0]:7.2f} {vals[13][0]:12.2f}")
+        #  La fila se dibuja DEL diccionario y no con quince indices a mano:
+        #  la columna nueva de una tanda se colaba entre dos y dejaba las seis
+        #  de detras corridas, o sea una tabla que dice un numero debajo del
+        #  titulo de otro. Los anchos salen de la cabecera.
+        print (f"{name:9} " + " ".join (f"{v:{w}.2f}" for (v, _), w
+                                        in zip (m.values(), ANCHOS)))
         for what, (v, floor) in m.items():
             if v < floor:
                 bad.append (f"{name}: {what} {v:.2f} < {floor:.2f}")

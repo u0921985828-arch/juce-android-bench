@@ -774,10 +774,23 @@ namespace
     //  explicar. Y las dos mitades van en UNA fila porque son un solo renglon:
     //  con dos, la de arriba se quedo sin un solo cliente el dia que el pie se
     //  reescribio, y una fila sin cliente se retira.
+    //  Y DOS FILAS Y NO UNA, elegidas por `Sintes::Familia::sostiene`. La
+    //  primera mitad de la frase -«suena mientras lo tengas tocado»- es FALSA
+    //  en SIETE de las dieciseis: piano, plucks, campanas, guitarra, mazos,
+    //  claves y arpas no sostienen, se acaban solas, y eso no es una excepcion
+    //  sino lo que `triggerPad` ya decide con ese mismo campo. Un renglon de
+    //  ayuda que promete un gesto que en siete instrumentos de dieciseis hace
+    //  otra cosa es peor que no decir nada - es literalmente lo que ya costo
+    //  una tanda entera en la ficha de GESTOS. No cuesta un pixel: la frase
+    //  corta mide menos.
     { "El teclado suena mientras lo tengas tocado. Los ocho mandos afinan este preset y VOLVER lo devuelve.", "",
       "The keys sound while you hold them. The eight knobs tune this preset and REVERT puts it back.",
       "按住琴键即持续发声。八个旋钮调节这个音色，还原可恢复原状。",
       "تصدر المفاتيح الصوت ما دمت ضاغطا عليها. المقابض الثمانية تضبط هذا النمط، واسترجاع يعيده." },
+    { "El teclado suena y cada nota se acaba sola. Los ocho mandos afinan este preset y VOLVER lo devuelve.", "",
+      "The keys sound and each note ends on its own. The eight knobs tune this preset and REVERT puts it back.",
+      "按下琴键即发声，每个音会自行结束。八个旋钮调节这个音色，还原可恢复原状。",
+      "تصدر المفاتيح الصوت وينتهي كل نغم من تلقاء نفسه. المقابض الثمانية تضبط هذا النمط، واسترجاع يعيده." },
     //  LOS OCHO MANDOS DE UN INSTRUMENTO, que son la QUINTA tabla que llega
     //  por INDICE — `Sintes::mando (familia, i)`, o sea que aqui no hay
     //  literal que recoger, igual que los `param[]` de un efecto y las

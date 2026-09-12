@@ -427,6 +427,52 @@ inline int zatiDifieren (const juce::Image& a, const juce::Image& c)
     return n;
 }
 
+//  LA FUENTE DEL NOMBRE DE UNA FAMILIA, escrita UNA vez. La mide `resized()`
+//  para decidir si el conmutador del preset cabe en el renglon de la cabecera,
+//  y la usa el pintor para dibujarlo: dos numeros aqui serian una decision
+//  tomada con una letra y un dibujo hecho con otra, que es el fallo que ya
+//  costo 93 apretones inexistentes en `captionOf` y la fila de CARCASA a 4 px.
+inline juce::Font fuenteFamilia (int altoBanda)
+{
+    return ZatiColours::displayFont (juce::jmin (26.0f, (float) altoBanda * 0.46f));
+}
+
+//  LA PANTALLA DEL PRESET, escrita UNA vez: la fuente y el texto.
+//
+//  La MIDE `resized()` -para decidir si el conmutador cabe en el renglon de la
+//  cabecera y cuanto ancho le toca al cristal- y la DIBUJA el pintor. Escritas
+//  dos veces serian dos reglas, y la que se quedara vieja dejaria un cristal
+//  que pide un ancho y dibuja otro: exactamente el fallo que ya costo doce
+//  pixeles en las veintiuna cabeceras.
+inline juce::Font fuentePreset()
+{
+    return ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.06f);
+}
+
+inline juce::String textoPreset (int fam, int pre)
+{
+    if (fam < 0 || pre < 0) return "-";
+    return Lang::ltr (juce::String (pre + 1) + "/" + juce::String (Sintes::kPresets))
+               + "   " + juce::String (Sintes::tabla()[fam].p[pre].nombre);
+}
+
+//  Y EL ANCHO SE PIDE PARA EL PEOR DE LOS DIECISEIS Y NO PARA EL PUESTO.
+//
+//  Las flechas cambian de preset sin salir de la ficha, asi que un cristal
+//  medido contra el que hay puesto cambiaria de ancho en cada toque - y una
+//  fila que se recoloca al pasar de «1/16 NYLON» a «14/16 BRIGHT GT» se lee
+//  como un fallo. Se mide el mas ancho de la familia y no se mueve.
+inline int anchoPeorPreset (int fam)
+{
+    if (fam < 0) return Metrics::hit;
+    const auto f = fuentePreset();
+    int peor = 0;
+    for (int i = 0; i < Sintes::kPresets; ++i)
+        peor = juce::jmax (peor, (int) std::ceil (juce::GlyphArrangement::getStringWidth (
+                                                      f, textoPreset (fam, i))));
+    return peor;
+}
+
 inline juce::String campoAcampo (const juce::Font& fuente, int ancho,
                                  const juce::String& base,
                                  const juce::StringArray& campos,

@@ -6041,7 +6041,11 @@ juce::Rectangle<int> MainComponent::apunta (juce::Graphics& g, juce::Rectangle<i
     //  la banda, asi que un texto que no cabe salia con el mismo rectangulo que
     //  uno que cabe justo y no habia forma de preguntar si se lee entero. Ver
     //  UiAudit::Rotulo.
-    UiAudit::rotulo (real, texto, tipo, (int) std::ceil (pide * minimo));
+    //  Y el CUERPO con el que se acaba de dibujar, que es lo que hace posible
+    //  censar cuantos hay por papel. Lo dice `g` y no una tabla al lado: el
+    //  tamano de media docena de rotulos se calcula al vuelo.
+    UiAudit::rotulo (real, texto, tipo, (int) std::ceil (pide * minimo),
+                     g.getCurrentFont().getHeight());
     return real;
 }
 
@@ -6172,7 +6176,8 @@ juce::Rectangle<int> MainComponent::pintaTitulo (juce::Graphics& g, juce::Rectan
 //  dejaba TOCANDOSE y los seis paneles de la pagina PASO se leian como una sola
 //  losa, que es lo mismo que se lee sin dibujar nada.
 void MainComponent::pintaPaneles (juce::Graphics& g,
-                                  const juce::Array<juce::Rectangle<int>>& grupos) const
+                                  const juce::Array<juce::Rectangle<int>>& grupos,
+                                  juce::Colour tinte) const
 {
     const auto relleno = ZatiColours::groupOn (ZatiColours::chassisTop, Metrics::panelHondura);
     //  El filo se decide contra el CHASIS y no contra el relleno: groupOn
@@ -6180,7 +6185,29 @@ void MainComponent::pintaPaneles (juce::Graphics& g,
     //  un color TRANSLUCIDO -blanco o negro con alfa- asi que preguntarle su
     //  brillo daria el del blanco o el del negro y no el de la superficie.
     //  Pintado encima del relleno, el resultado compuesto es el mismo.
-    const auto filo = ZatiColours::groupOn (ZatiColours::chassisTop, Metrics::panelBorde);
+    auto filo = ZatiColours::groupOn (ZatiColours::chassisTop, Metrics::panelBorde);
+
+    //  Y EL FILO PUEDE DECIR DE QUE PAD ES LA FICHA.
+    //
+    //  Un filo neutro dice «esto es un grupo»; con el zati del pad dice ademas
+    //  CUAL, que es la unica forma que esta maquina tiene de encontrar un
+    //  sonido -«el color pertenece al sistema de zatis», y un pad cargado ya
+    //  lleva el suyo en su banda-. No es un color nuevo: es el que el pad ya
+    //  tiene, leido de `Zati::forPad`.
+    //
+    //  Y SE MIDE, que es lo que lo separa de un adorno: los dos candidatos
+    //  salen del propio zati -`brighter`/`darker`, el mismo par que la letra
+    //  de `marcaPad` y que la chapa de esta ficha- y `bestOn` elige contra la
+    //  superficie de VERDAD, que es el relleno YA COMPUESTO sobre el chasis y
+    //  no el chasis pelado: el relleno es blanco o negro con alfa, asi que
+    //  medir contra el a secas daria el brillo del blanco y no el de la
+    //  superficie. Es el mismo parrafo de dos lineas mas arriba, con la
+    //  diferencia de que aqui lo que se compone SI hace falta.
+    if (! tinte.isTransparent())
+    {
+        const auto sobre = ZatiColours::chassisTop.overlaidWith (relleno);
+        filo = ZatiColours::bestOn (sobre, tinte.brighter (0.55f), tinte.darker (0.55f));
+    }
 
     for (const auto& e : grupos)
     {

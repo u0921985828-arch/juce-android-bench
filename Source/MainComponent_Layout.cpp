@@ -2961,7 +2961,7 @@ void MainComponent::resized()
         //  regla que ya costo el titulo y el nombre del pack: una cuenta, un
         //  dueno, y el dueno es quien coloca.
         inner.removeFromTop (Metrics::sm);
-        instPieArea = inner.removeFromTop (40);
+        instPieArea = inner.removeFromTop (Metrics::hit);
     }
 
     // ------------------------------------------------------------------
@@ -2974,7 +2974,10 @@ void MainComponent::resized()
     //  abajo, sale mas alta que la tarjeta, y por eso esta ficha se desplaza.
     // ------------------------------------------------------------------
     {
-        const int cabecera = 56;      // el dibujo grande y el nombre de la familia
+        //  LA CHAPA: el dibujo de la familia se lleva el alto entero de la
+        //  cabecera, asi que el alto de la banda ES el lado del dibujo. Sale
+        //  del dedo y no de un numero a ojo - un dedo y medio.
+        const int cabecera = Metrics::hit + Metrics::xl;
         const int teclas   = 72;      // una octava que se pueda tocar con el dedo
         const int filaP    = Metrics::hit;
         //  LOS OCHO MANDOS CUESTAN ALTO en la unica ficha de la casa que ya se
@@ -3010,12 +3013,67 @@ void MainComponent::resized()
         const int colsM = (zonaM / 4 >= Metrics::hit + Metrics::halfGap * 2) ? 4 : 2;
         const int filasM = Sintes::kMandos / colsM;
 
+        //  ¿CABE EL CONMUTADOR DEL PRESET EN EL RENGLON DE LA CABECERA? Se
+        //  pregunta AQUI y no ahi abajo porque la respuesta decide el alto que
+        //  la ficha pide, y `sheetFromBottom` recorta en silencio lo que se le
+        //  pida de mas: es el mismo fallo que costo la fila de CARCASA a 4 px
+        //  cuando `setTabsFit` preguntaba con el ancho de la ventana y el
+        //  maquetado colocaba con el de la tarjeta.
+        //
+        //  Y se pregunta con el TEXTO puesto -el nombre de la familia- porque
+        //  de los dos es el unico que no puede encoger: las dos flechas llevan
+        //  el signo y el cristal es una pantalla, que elide.
+        const auto fuenteNombre = fuenteFamilia (cabecera);
+        auto* sbCab = uiSample[(size_t) juce::jlimit (0, kNumPads - 1, vstPad)].get();
+        const int famCab = (sbCab != nullptr) ? sbCab->familia : -1;
+        //  Y EL CRISTAL PIDE LO QUE SU PEOR CADENA MIDE, no un numero redondo.
+        //  Estaba en `hit * 4` -160 px escritos a mano- y el peor de los 256 es
+        //  «16/16   BRIGHT GT», DIECISIETE caracteres: en 280x653 el cristal
+        //  salia a 85 px pidiendo 97, o sea CORTADO, y las dos flechas se
+        //  llevaban 48 cada una teniendo el dedo en 40. Lo que no puede encoger
+        //  se aparta primero, y aqui lo que no encoge es el TEXTO: las flechas
+        //  bajan hasta el dedo y el cristal se queda el resto.
+        //  Y son DOS numeros y no uno: lo que pide el CRISTAL y lo que pide el
+        //  conmutador entero, que es el cristal mas sus dos flechas. Con uno
+        //  solo, la pregunta de si cabe en el renglon se hacia con el ancho del
+        //  cristal pelado y decia que si donde no cabe: en 412x915 la caja
+        //  salia de 119 px para 185, y el cristal se quedaba en 47 pidiendo 97.
+        //  EL CANALON DE DENTRO DEL CRISTAL ES `aireTapa` Y NO `halfGap`, y
+        //  eso lo decidio el banco por un pixel: en 280x653 y en ARABE la fila
+        //  del preset mide 185 px, las dos flechas estan CLAVADAS en su suelo
+        //  de dedo -40 cada una, o sea que no tienen nada que ceder- y
+        //  «14/16   BRIGHT GT» pedia 98 con 97. `CORTADO 2`.
+        //
+        //  `halfGap` es el aire ENTRE dos celdas vecinas y aqui no hay dos: es
+        //  el canalon de dentro de UN cristal, que es la familia de `aireTapa`
+        //  -lo que un control se deja dentro de su fila-. Es la misma
+        //  distincion con la que se renombraron los separadores, aplicada a lo
+        //  de dentro. Cuatro pixeles, y el cristal pasa a 101 con 98 pedidos.
+        const int pideLcd    = anchoPeorPreset (famCab) + Metrics::aireTapa * 2;
+        const int pidePreset = Metrics::hit * 2 + pideLcd;
+        const int pideNombre = famCab >= 0
+            ? (int) std::ceil (juce::GlyphArrangement::getStringWidth (
+                                   fuenteNombre, T (Sintes::tabla()[famCab].nombre)))
+            : Metrics::hit;
+        const bool presetArriba = anchoCuerpoM - Metrics::lg * 2 - cabecera - Metrics::sm
+                                      >= pideNombre + Metrics::sm + pidePreset;
+
+        //  LOS OCHO MANDOS SON DOS GRUPOS Y NO UNO: los cuatro de FORMA -cuyo
+        //  nombre lo dice la familia, y por eso hay dieciseis instrumentos y no
+        //  uno con los numeros movidos- y los cuatro COMUNES, que son los
+        //  mismos en las dieciseis. Dos paneles con su frontera de `Metrics::sm`
+        //  y VOLVER fuera de los dos: no es un mando, es la vuelta atras de los
+        //  ocho, igual que CANCELAR se queda fuera del panel de EXPORTAR.
+        const int filasG = juce::jmax (1, filasM / 2);
+
         auto inner = sheetFromBottom (vstSheet, Metrics::md * 2 + Metrics::hit
                                                   + Metrics::md + cabecera
-                                                  + Metrics::sm + filaP
+                                                  + (presetArriba ? 0 : Metrics::xs + filaP)
                                                   + Metrics::sm + Metrics::hit + teclas
-                                                  + Metrics::sm + filaM * filasM + Metrics::hit
-                                                  + Metrics::sm + 40);
+                                                  + Metrics::sm + filaM * filasG
+                                                  + Metrics::sm + filaM * filasG
+                                                  + Metrics::sm + Metrics::hit
+                                                  + Metrics::sm + Metrics::hit);
 
         auto titleRow = inner.removeFromTop (Metrics::hit);
         vstCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
@@ -3035,31 +3093,78 @@ void MainComponent::resized()
         vstTitleArea = centraEnRenglon (titleRow.reduced (Metrics::lg, 0).withHeight (Metrics::bandaTitulo));
         inner.removeFromTop (Metrics::sm);
 
-        //  LA CABECERA: el dibujo a la izquierda y el nombre de la familia al
-        //  lado. El del PRESET se fue de aqui a su propia pantalla, que es
-        //  donde se cambia: escrito en los dos sitios eran dos rotulos que
-        //  dicen lo mismo y uno de ellos lejos de la tapa que lo mueve.
+        //  LA CABECERA ES LA CHAPA DE LA FAMILIA, y es lo unico de esta ficha
+        //  que dice QUE instrumento es antes de leer una palabra.
+        //
+        //  Se pidio que «el pop up de cada instrumento tenga algo en el diseno
+        //  diferente», y la identidad no se INVENTA: no entra una tabla
+        //  familia->color -seria un segundo sistema de color al lado de los
+        //  zatis, elegido a mano y sin una prueba que lo mida- ni el zati del
+        //  pad como senal de familia, que el zati contesta QUE PAD y no que
+        //  instrumento: los pads 49 y 57 comparten color con dos familias
+        //  distintas. Lo que SI separa dieciseis familias y ya existe es el
+        //  DIBUJO (Iconos::deFamilia), que `Tests/iconos.py` ya juzga contra
+        //  los otros 109. Era un adorno de 48 px en un rincon de una banda de
+        //  56; ahora se lleva el alto ENTERO de la cabecera.
+        //
+        //  Y EL CONMUTADOR DEL PRESET SUBE AQUI DONDE CABE. Era una fila
+        //  propia debajo, y la cabecera dejaba **160 px de hueco a la derecha
+        //  en un movil grande -el 51 % de la banda- y 614 apaisado, el 80 %**:
+        //  una fila entera de alto gastada al lado de medio renglon vacio. Se
+        //  pregunta con el TEXTO puesto -el nombre de la familia es lo unico
+        //  de los dos que no puede encoger- y donde no cabe baja a su fila,
+        //  que es la escalera que ya deciden BANCO, PADS y la tira del paso.
+        //
+        //  Y LOS DOS COMPARTEN UN SOLO PANEL, esten en uno o en dos renglones:
+        //  son la misma pregunta -que instrumento y cual de sus dieciseis- asi
+        //  que un panel por fila diria «estos y aquellos no son lo mismo»
+        //  siendo lo mismo. De paso resuelve por construccion el `VACIO` que
+        //  `Tests/paneles.py` habria cantado el dia que esta ficha entrase en
+        //  su lista: la cabecera SOLA no envuelve un solo control -su dibujo y
+        //  su nombre se PINTAN- y era una losa detras de dos rotulos, que es
+        //  exactamente lo que ya se cazo detras de BUFER y RELOJ.
         {
-            auto fila = inner.removeFromTop (cabecera).reduced (Metrics::lg, 0);
-            vstPanelCab = fila;
-            vstIconArea = Lang::takeStart (fila, cabecera).reduced (Metrics::halfGap);
+            auto banda = inner.removeFromTop (cabecera);
+            auto fila  = banda.reduced (Metrics::lg, 0);
+            vstIconArea = Lang::takeStart (fila, cabecera).reduced (Metrics::xs);
             fila.removeFromLeft (Metrics::sm);
-            vstNombreArea = fila;
-        }
-        inner.removeFromTop (Metrics::sm);
 
-        //  EL PRESET: menos, UNA PANTALLA con el nombre, y mas. La pantalla es
-        //  lo que la persona pidio con estas palabras -"una flecha, un
-        //  cuadradito y otra flecha"- y ademas es lo que separa un dato que
-        //  CAMBIA de un rotulo grabado en el chasis: en un aparato de verdad,
-        //  lo que cambia se lee sobre cristal.
-        {
-            auto fila = inner.removeFromTop (filaP).reduced (Metrics::lg, 0);
-            vstPanelPre = fila;
-            const int w = juce::jmin (Metrics::hit * 2, fila.getWidth() / 4);
-            vstPreDown.setBounds (fila.removeFromLeft (w));
-            vstPreUp  .setBounds (fila.removeFromRight (w));
-            vstPreArea = fila.reduced (Metrics::halfGap, Metrics::keyAir);
+            auto ponPreset = [this, pideLcd] (juce::Rectangle<int> f)
+            {
+                //  Las dos flechas llevan SOLO el signo -el nombre se lee en el
+                //  cristal de en medio- asi que les basta el dedo y el resto es
+                //  pantalla. Con SUELO en `hit` y no un cuarto pelado: en la
+                //  pantalla mas estrecha un cuarto son 48 px de flecha y el
+                //  cristal se quedaba doce por debajo de lo que su texto pide.
+                const int w = juce::jlimit (Metrics::hit, Metrics::hit * 2,
+                                            (f.getWidth() - pideLcd) / 2);
+                vstPreDown.setBounds (f.removeFromLeft (w));
+                vstPreUp  .setBounds (f.removeFromRight (w));
+                vstPreArea = f.reduced (Metrics::aireTapa, Metrics::keyAir);
+            };
+
+            if (presetArriba)
+            {
+                auto caja = Lang::takeEnd (fila, juce::jmax (pidePreset,
+                                                            fila.getWidth() - pideNombre
+                                                                - Metrics::sm));
+                ponPreset (caja.withSizeKeepingCentre (caja.getWidth(), filaP));
+                fila.removeFromRight (Metrics::sm);
+                vstNombreArea = fila;
+                vstPanelCab = banda.reduced (Metrics::md, 0);
+                vstPanelPre = {};
+            }
+            else
+            {
+                vstNombreArea = fila;
+                //  Dentro de un grupo las filas se separan con `xs`; `sm` es la
+                //  frontera ENTRE grupos, y aqui no hay dos.
+                inner.removeFromTop (Metrics::xs);
+                auto segunda = inner.removeFromTop (filaP);
+                ponPreset (segunda.reduced (Metrics::lg, 0));
+                vstPanelCab = banda.getUnion (segunda).reduced (Metrics::md, 0);
+                vstPanelPre = {};
+            }
         }
         inner.removeFromTop (Metrics::sm);
 
@@ -3068,7 +3173,13 @@ void MainComponent::resized()
         //  porque dice exactamente lo que la octava cambia.
         {
             auto caja = inner.removeFromTop (Metrics::hit + teclas);
-            vstPanelTec = caja.reduced (Metrics::lg - Metrics::halfGap, 0);
+            //  UN SOLO FILO IZQUIERDO en los cuatro paneles de la ficha. La
+            //  cabecera y el preset entraban por `Metrics::lg` y estos dos por
+            //  `lg - halfGap`, asi que los paneles se dibujaban en **45 y 41**:
+            //  cuatro pixeles de desnivel entre hermanos de la misma tarjeta,
+            //  con el segundo numero escrito como una resta en vez de por su
+            //  nombre. `lg - halfGap` ES `Metrics::md`, y el de dentro `lg`.
+            vstPanelTec = caja.reduced (Metrics::md, 0);
             auto fila = caja.removeFromTop (Metrics::hit).reduced (Metrics::lg, 0);
             //  UN TERCIO Y NO UN CUARTO: estas dos tapas llevan la palabra
             //  -"OCT -"- y las del preset solo el signo. Con un cuarto, en
@@ -3088,27 +3199,42 @@ void MainComponent::resized()
         //  grupos que se leen como uno porque los ocho son la misma pregunta:
         //  como suena este preset.
         {
-            auto caja = inner.removeFromTop (filaM * filasM + Metrics::hit);
-            vstPanelMandos = caja.reduced (Metrics::lg - Metrics::halfGap, 0);
-            auto zona = caja.reduced (Metrics::lg, 0);
-            if (vstMandos.size() == Sintes::kMandos)
+            auto ponGrupo = [&] (juce::Rectangle<int>& donde,
+                                                          int desde) -> juce::Rectangle<int>
             {
-                //  El orden no cambia con las columnas: los de FORMA primero y
-                //  los COMUNES detras, asi que con dos columnas la mitad de
-                //  arriba sigue siendo la forma y la de abajo lo que comparten
-                //  las dieciseis familias.
-                for (int f = 0; f < filasM; ++f)
-                {
-                    juce::Slider* fila[4] = {};
-                    for (int c = 0; c < colsM; ++c) fila[c] = vstMandos[f * colsM + c];
-                    placeKnobRow (zona.removeFromTop (filaM), fila, colsM);
-                }
-            }
+                auto caja = donde.removeFromTop (filaM * filasG);
+                auto zona = caja.reduced (Metrics::lg, 0);
+                if (vstMandos.size() == Sintes::kMandos)
+                    for (int f = 0; f < filasG; ++f)
+                    {
+                        juce::Slider* fila[4] = {};
+                        for (int c = 0; c < colsM; ++c)
+                        {
+                            const int i = desde + f * colsM + c;
+                            if (i < Sintes::kMandos) fila[c] = vstMandos[i];
+                        }
+                        placeKnobRow (zona.removeFromTop (filaM), fila, colsM);
+                    }
+                return caja.reduced (Metrics::md, 0);
+            };
+
+            //  El orden no cambia con las columnas: los de FORMA primero y los
+            //  COMUNES detras, asi que con dos columnas la mitad de arriba
+            //  sigue siendo la forma y la de abajo lo que comparten las
+            //  dieciseis familias. Lo que cambia es que ahora eso se VE.
+            vstPanelForma  = ponGrupo (inner, 0);
+            inner.removeFromTop (Metrics::sm);
+            vstPanelMandos = ponGrupo (inner, filasG * colsM);
+            inner.removeFromTop (Metrics::sm);
+
             //  VOLVER se lleva un tercio: lleva la palabra, y las dos tapas de
             //  al lado de esta ficha que tambien la llevan -OCT - y OCT +- ya
-            //  estan medidas en un tercio por la misma razon.
-            vstVolver.setBounds (Lang::takeStart (zona, juce::jmin (Metrics::hit * 3,
-                                                                    zona.getWidth() / 3))
+            //  estan medidas en un tercio por la misma razon. Y fuera de los
+            //  dos paneles: no es un mando de forma ni uno comun, es la vuelta
+            //  atras de los ocho.
+            auto filaV = inner.removeFromTop (Metrics::hit).reduced (Metrics::lg, 0);
+            vstVolver.setBounds (Lang::takeStart (filaV, juce::jmin (Metrics::hit * 3,
+                                                                     filaV.getWidth() / 3))
                                      .withHeight (Metrics::hit));
         }
         inner.removeFromTop (Metrics::sm);
@@ -3119,7 +3245,7 @@ void MainComponent::resized()
         //  una ficha de este proyecto -ya paso con el titulo y el nombre del
         //  pack de INSTRUMENTOS- y la regla es la misma: la banda la publica
         //  quien coloca.
-        vstPieArea = inner.removeFromTop (40);
+        vstPieArea = inner.removeFromTop (Metrics::hit);
     }
 
     // AUTO CHOP sheet: how many pieces, where they land, and one red verb.

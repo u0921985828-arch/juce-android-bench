@@ -1986,14 +1986,58 @@ void MainComponent::auditOpen (const juce::String& pedido)
                   << ",\"pieAbajo\":" << instPieArea.getBottom()
                   << ",\"cuerpo\":" << instSheet.cuerpo.getHeight() << "}" << std::endl;
     }
-    else if (which == "vst")
+    else if (which == "vst" || which == "vstm")
     {
-        //  CUERDA PULS, que es el nombre de familia mas largo de los dieciseis.
-        const int pad = kBancoInstr * kPadsPerBank + 11;
-        ponInstrumentoEnPad (pad, 11, 0);
+        //  LA FAMILIA MAS LARGA Y SU PRESET MAS LARGO, y las dos se PIDEN a la
+        //  tabla en vez de escribirse aqui.
+        //
+        //  La familia decide dos cosas -si el conmutador del preset cabe en el
+        //  renglon de la cabecera, y si el nombre se corta- y es CUERDA PULS,
+        //  once caracteres. El preset decide el ancho de la pantalla, y el
+        //  gancho pedia el 0: "1/16 NYLON", DOCE caracteres, cuando el peor de
+        //  los 256 son DIECISIETE. O sea que la regla del rotulo cortado se le
+        //  hacia a la cadena mas corta posible - una linea que imprime OK.
+        //
+        //  La cuenta es la del pintor MENOS lo que es constante: "/16" y los
+        //  tres espacios valen lo mismo en las 256, asi que lo que separa a una
+        //  de otra son las cifras del numero y las letras del nombre. Y sale 17
+        //  clavados, o sea el peor de la tabla entera: "16/16   BRIGHT GT".
+        int fam = 0;
+        for (int f = 1; f < Sintes::kFamilias; ++f)
+            if (juce::String (Sintes::tabla()[f].nombre).length()
+                > juce::String (Sintes::tabla()[fam].nombre).length())
+                fam = f;
+
+        int pre = 0, peor = -1;
+        for (int i = 0; i < Sintes::kPresets; ++i)
+        {
+            const int n = juce::String (i + 1).length()
+                        + juce::String (Sintes::tabla()[fam].p[i].nombre).length();
+            if (n > peor) { peor = n; pre = i; }
+        }
+
+        const int pad = kBancoInstr * kPadsPerBank + fam;
+        ponInstrumentoEnPad (pad, fam, pre);
         selectBank (kBancoInstr);
         selectPad (pad);
         abreVst();
+
+        //  Y `vstm` ES LA MISMA FICHA CON LA RECETA MOVIDA, que es el UNICO
+        //  estado en el que VOLVER existe -`refreshVst` la apaga si no-. Sin
+        //  esta entrada esa tapa no se maqueta en ninguna de las 1400 corridas,
+        //  o sea que ninguna de las reglas la ha medido nunca. Precedente:
+        //  `secp`, que mide la pagina del secuenciador con un paso tocado.
+        //
+        //  Y se mueve el MANDO con `sendNotificationSync` y no se escribe
+        //  `padRecetaMovida` a mano: el callback es quien pone la marca, y
+        //  llamarlo por dentro se salta justo el codigo que decide.
+        if (which == "vstm" && vstMandos.size() == Sintes::kMandos)
+        {
+            auto* s0 = vstMandos[0];
+            s0->setValue (s0->getMaximum(), juce::sendNotificationSync);
+            refreshVst();
+            resized();
+        }
     }
     else if (which == "instd")
     {

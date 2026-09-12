@@ -50,8 +50,13 @@ LANGS = ["es", "en", "zh", "ar"]
 #  Y el PIANO, que entra el dia que tiene paneles: era la unica de las tres
 #  paginas de la ficha del secuenciador sin ninguno, asi que esta lista no lo
 #  abria y una pagina sin paneles no se puede medir mal.
+#  Y `vst`, que entra por lo mismo: sus tres paneles se rellenaban a mano con
+#  `groove (0.16f)` -una SOMBRA, que en LACA deja el panel a 5.3 de dE contra la
+#  tarjeta- y no publicaban `UiAudit::panel`, asi que eran invisibles para la
+#  unica prueba que mide un panel. Desde que pasan por `pintaPaneles` se pueden
+#  medir, y son cuatro y no tres: la cabecera y el preset son UNO.
 SHEETS = ["pads", "pad2", "pad3", "sec", "secp", "paso", "piano", "song", "set", "asp",
-          "proj", "midi", "expo", "chop"]
+          "proj", "midi", "expo", "chop", "vst"]
 
 #  El aire que la app dice que deja. Se lee del fichero y no se copia: una
 #  prueba que lleva su propia copia del numero pasa cuando el numero cambia.

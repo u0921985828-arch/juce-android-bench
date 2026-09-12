@@ -788,7 +788,12 @@ private:
     //  de un kit cuando le salio el segundo: dos sitios que dibujan el mismo
     //  panel por su cuenta se separan, y el sintoma habria sido "en AJUSTES
     //  los grupos se ven distinto" sin poder decir por que.
-    void pintaPaneles (juce::Graphics& g, const juce::Array<juce::Rectangle<int>>& grupos) const;
+    //  `tinte` invalido -el defecto- deja el filo NEUTRO, que es lo que
+    //  llevan las nueve fichas que agrupan controles. Con un color puesto el
+    //  filo lo toma del PAD, que es la unica ficha donde eso significa algo:
+    //  ver paintVstSheetContent.
+    void pintaPaneles (juce::Graphics& g, const juce::Array<juce::Rectangle<int>>& grupos,
+                       juce::Colour tinte = {}) const;
 
     //  ...y los grupos de las tres fichas que no son el secuenciador. Uno por
     //  ficha y no uno compartido: resized() maqueta TODAS las fichas en la
@@ -2238,7 +2243,12 @@ private:
     //  fabrica de ese preset. Solo existe con la receta movida - un control que
     //  no puede hacer nada no es informacion, es ruido.
     juce::TextButton vstVolver { "VOLVER" };
-    juce::Rectangle<int> vstPanelMandos, vstPieArea;
+    //  DOS PANELES Y NO UNO para los ocho mandos: los cuatro de FORMA -cuyo
+    //  nombre y recorrido los dice la FAMILIA- y los cuatro COMUNES, que son
+    //  los mismos en las dieciseis. Esa particion es la que hace que haya
+    //  dieciseis instrumentos y no uno con los numeros movidos, y hasta aqui
+    //  no se veia: los ocho se leian como una lista plana.
+    juce::Rectangle<int> vstPanelForma, vstPanelMandos, vstPieArea;
 
     void abreFichaDelPad();
     void abreVst();

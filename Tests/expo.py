@@ -29,7 +29,7 @@ SIZES = [
     ("915x412",  "LANDSCAPE — the orientation nobody tests"),
 ]
 LANGS = ["es", "en", "zh", "ar"]
-SHEETS = ["", "plato", "songm", "pads", "pad2", "pad3", "sec", "secp", "paso", "eq", "eqb", "song", "piano", "pianod", "pick", "mix", "xy", "set", "asp", "proj", "gest", "midi", "lang", "manual", "mixc", "canal", "rack", "rackf", "ranura", "ranural", "chop", "inst", "instd", "instg", "vst", "expo", "tour", "tour1", "tour3", "tour6", "tour10", "tourf", "browse", "browsedir",
+SHEETS = ["", "plato", "songm", "pads", "pad2", "pad3", "sec", "secp", "paso", "eq", "eqb", "song", "piano", "pianod", "pick", "mix", "xy", "set", "asp", "proj", "gest", "midi", "lang", "manual", "mixc", "canal", "rack", "rackf", "ranura", "ranural", "chop", "inst", "instd", "instg", "vst", "vstm", "expo", "tour", "tour1", "tour3", "tour6", "tour10", "tourf", "browse", "browsedir",
 #  Y LA MISMA MAQUINA CON TRABAJO DENTRO. Todo lo de arriba se mide con
 #  un proyecto vacio o con el kit de fabrica, y casi todo lo que un
 #  rotulo puede romper solo aparece lleno: un nombre de pad que es el
