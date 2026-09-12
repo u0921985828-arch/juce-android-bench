@@ -1307,6 +1307,57 @@ void MainComponent::resized()
         }
     }
 
+    // ------------------------------------------------------------------
+    //  LA FICHA MIDI: dos verbos y un renglon que dice lo que paso.
+    //
+    //  Pequeña a proposito. Lo que hay que decidir aqui es de que patron y de
+    //  que pad sale el fichero, y eso no se elige: sale del que estas editando.
+    //  Una ficha con selectores seria pedir dos veces lo que la ficha del
+    //  secuenciador ya tiene puesto.
+    // ------------------------------------------------------------------
+    if (midiSheet.isVisible())
+    {
+        auto inner = sheetFromBottom (midiSheet,
+                                      Metrics::md * 2 + Metrics::hit + Metrics::sm
+                                        + Metrics::hit + Metrics::sm
+                                        + Metrics::hit + Metrics::sm + Metrics::hit);
+
+        auto titleRow = inner.removeFromTop (Metrics::hit);
+        midiCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
+                                     .withSizeKeepingCentre (Metrics::hit, Metrics::hit));
+        midiTitleArea = centraEnRenglon (titleRow.reduced (Metrics::lg, 0)
+                                             .withHeight (Metrics::bandaTitulo));
+        inner.removeFromTop (Metrics::sm);
+
+        //  El renglon de ayuda, que dice la convencion: sin el, «do central» y
+        //  «una semicorchea por paso» son dos cosas que hay que adivinar
+        //  probando, y probando se pierde el patron que tenias escrito.
+        midiAyudaArea = inner.removeFromTop (Metrics::hit)
+                            .reduced (Metrics::lg, 0)
+                            .withHeight (Metrics::bandaSubtitulo);
+        inner.removeFromTop (Metrics::sm);
+
+        {
+            auto fila = inner.removeFromTop (Metrics::hit);
+            midiPanel = fila.reduced (Metrics::md, 0);
+            juce::TextButton* pb[2] = { &midiExportBtn, &midiImportBtn };
+            layoutModuleBar (fila.reduced (Metrics::lg, 0), pb, 0, 2);
+        }
+        inner.removeFromTop (Metrics::sm);
+        //  Y EL PARTE, en su propia banda y publicada por el maquetado: es la
+        //  tercera vez que esta casa paga que el pintor se invente una banda.
+        midiParteArea = inner.removeFromTop (Metrics::hit)
+                            .reduced (Metrics::lg, 0)
+                            .withHeight (Metrics::bandaSubtitulo);
+    }
+    else
+    {
+        midiCloseButton.setBounds ({});
+        midiExportBtn.setBounds ({});
+        midiImportBtn.setBounds ({});
+        midiTitleArea = midiAyudaArea = midiParteArea = midiPanel = {};
+    }
+
     //  EL MENU DE UNA RANURA. Ver abreMenuRanura.
     //
     //  Tambien de las que se dibujan ENCIMA, asi que va aqui arriba con la
@@ -1957,21 +2008,27 @@ void MainComponent::resized()
         //  unica accion posible es "esta". Ensenar las otras cuatro apagadas
         //  seria ensenar cuatro controles muertos, que es lo que esta app no
         //  hace desde la tira del paso.
+        //  Y EN MODO MIDI, igual: la unica accion es traerse ese fichero. Las
+        //  cinco de cargar sonido no significan nada con un .mid delante.
         const bool eligiendoCarpeta = (browseModo == browseCarpeta);
+        const bool buscandoMidi     = (browseModo == browseMidi);
+        const bool unaSola          = eligiendoCarpeta || buscandoMidi;
         for (auto* b : { &browseLoadButton, &browseKitButton,
                          &browseFactoryButton, &browseSystemButton,
                          &browseKitsDirButton })
         {
-            b->setVisible (! eligiendoCarpeta);
-            if (eligiendoCarpeta) b->setBounds ({});
+            b->setVisible (! unaSola);
+            if (unaSola) b->setBounds ({});
         }
         browseUseDirBtn.setVisible (eligiendoCarpeta);
         if (! eligiendoCarpeta) browseUseDirBtn.setBounds ({});
+        browseMidiBtn.setVisible (buscandoMidi);
+        if (! buscandoMidi) browseMidiBtn.setBounds ({});
 
-        if (eligiendoCarpeta)
+        if (unaSola)
         {
             auto actions = inner.removeFromBottom (Metrics::btn);
-            juce::TextButton* ub[1] = { &browseUseDirBtn };
+            juce::TextButton* ub[1] = { eligiendoCarpeta ? &browseUseDirBtn : &browseMidiBtn };
             layoutModuleBar (actions, ub, 0, 1);
         }
         else
@@ -4709,6 +4766,69 @@ void MainComponent::resized()
             seqPistasBtn.setBounds ({});
             seqZoomBtn.setVisible (false);
             seqZoomBtn.setBounds ({});
+        }
+
+        //  Y LA PUERTA DEL MIDI, LA ULTIMA DE SU FILA Y CON EL TEXTO PUESTO.
+        //
+        //  Va en el renglon del titulo por lo que cuesta: CERO de alto. La fila
+        //  de herramientas del piano sale ya de once tapas y se parte en dos en
+        //  media pantalla, asi que dos mas ahi se las quita a la rejilla de
+        //  tono, que es lo unico que esa pagina no tiene. Y vale para las TRES
+        //  paginas, que es lo correcto: el fichero es del PATRON y del PAD, no
+        //  de una vista - lo mismo que el selector de pad de al lado.
+        //
+        //  SE PIDE LA ULTIMA, y eso no es un detalle de orden: es la unica
+        //  forma de que la pregunta sea EXACTA. Pedida en su sitio de lectura
+        //  -al lado del selector de pad- la cuenta no sabe todavia que la
+        //  pagina de la rejilla va a llevarse ademas «1-16» y el zoom, asi que
+        //  contestaba que si y el titulo se quedaba con 25 px pidiendo 29:
+        //  «PASOS», «STEPS», «خطوات» y «بيانو» CORTADOS en 280x653, dieciseis
+        //  hallazgos. Ultima, lo que queda es lo que hay.
+        //
+        //  Y la pregunta se hace con el TEXTO PUESTO y en el idioma que toque
+        //  -la misma que ya deciden BANCO, PADS y la cabecera de la cara- con
+        //  el apreton con el que se DIBUJA: `pintaTitulo` va a 0.85, asi que
+        //  medir a 1.0 seria la misma regla escrita con dos numeros, que es lo
+        //  que ya costo los quince renglones de ayuda.
+        //
+        //  Es ademas la mas prescindible de la fila: la cruz cierra, el
+        //  selector de pad cambia lo que se edita y «1-16» decide la celda; el
+        //  MIDI es la unica que se puede dejar para la pantalla siguiente, y
+        //  no se pierde -el fichero se importa y se exporta igual desde la
+        //  pantalla donde la tapa si cabe-.
+        {
+            const auto fTitulo = ZatiColours::labelFont (Metrics::fLabel, 0.14f);
+            const auto base = T (seqPage == seqPagePiano ? "PIANO"
+                                                         : (seqPage == seqPageStep ? "PATRON"
+                                                                                   : "PASOS"));
+            const int pideTitulo = (int) std::ceil (
+                juce::GlyphArrangement::getStringWidth (fTitulo, base) * 0.85f);
+
+            //  Y EN EL PIANO SE CUENTA ADEMAS EL PAR PAD -/+, que vive en esta
+            //  MISMA fila y se coloca DESPUES: crece hasta que su rotulo cabe,
+            //  con el tope en dos tercios de LO QUE QUEDE, asi que quitarle 48
+            //  px por delante le baja el tope y le corta el rotulo sin que la
+            //  cuenta de arriba se entere. Medido en 280x653: «音垫 +» pedia 31
+            //  con 27 -cuatro TRUNC- y el titulo arabe se quedaba en 9 px
+            //  pidiendo 22. Se reserva su SUELO, que es el dedo por tapa; si
+            //  con eso no le llega para su rotulo, la que decide es su propia
+            //  escalera y no esta.
+            const int parDelPiano = (seqPage == seqPagePiano) ? Metrics::hit * 2 : 0;
+
+            const bool cabe = titleRow.getWidth() >= Metrics::hit + Metrics::xs
+                                                       + parDelPiano
+                                                       + Metrics::sm + pideTitulo;
+            midiBtn.setVisible (cabe);
+            if (cabe)
+            {
+                Lang::takeEnd (titleRow, Metrics::xs);
+                midiBtn.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
+                                     .withSizeKeepingCentre (Metrics::hit, Metrics::hit));
+            }
+            else
+            {
+                midiBtn.setBounds ({});
+            }
         }
 
         inner.removeFromTop (Metrics::sm);

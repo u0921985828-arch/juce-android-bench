@@ -160,6 +160,9 @@ jobs:
       - name: El piano
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/piano.py
+      - name: El MIDI del piano roll
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/midi.py
       - name: La banda de audio de la cancion
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/clips.py

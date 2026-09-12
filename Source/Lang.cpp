@@ -1392,6 +1392,31 @@ namespace
                                         "تعذّر الحفظ في %1" },
         // --- MIDI ----------------------------------------------------------
         { "MIDI",           "",         "MIDI",       "MIDI",       "ميدي" },
+        //  EL PATRON DE UN PAD COMO FICHERO. «IMPORTAR» es la unica palabra
+        //  nueva de la ficha: «MIDI» y «EXPORTAR» ya tenian fila y se
+        //  reaprovechan porque significan lo mismo aqui — que es lo contrario
+        //  de lo que costo ATRAS y EMPEZAR en el tour, donde la palabra
+        //  espanola coincidia y el sentido no.
+        { "IMPORTAR",       "",         "IMPORT",     "导入",       "استيراد" },
+        { "PATRON %1",      "",         "PATTERN %1", "音型 %1",    "نمط %1" },
+        { "El do central es la nota del pad, y un paso es una semicorchea", "",
+                                        "Middle C is the pad's own note, and one step is a sixteenth",
+                                        "中央 C 就是音垫本身的音高，一步为十六分音符",
+                                        "دو الوسطى هي نوتة الباد نفسها، والخطوة سُداسية عشرية" },
+        { "%1 - %2 notas",  "",         "%1 - %2 notes", "%1 — %2 个音符", "%1 — %2 نوتة" },
+        { "%1 fuera",       "",         "%1 left out", "%1 个放不下", "%1 لم تتسع" },
+        { "Ese pad no tiene notas en este patron", "",
+                                        "That pad has no notes in this pattern",
+                                        "该音垫在此音型中没有音符",
+                                        "لا نوتات لهذا الباد في هذا النمط" },
+        { "No se pudo escribir en esa carpeta - cambiala en EXPORTAR", "",
+                                        "Could not write into that folder - change it in EXPORT",
+                                        "无法写入该文件夹 — 请在导出中更改",
+                                        "تعذّرت الكتابة في هذا المجلد — غيّره في تصدير" },
+        { "Ese fichero no trae notas que quepan en el patron", "",
+                                        "That file has no notes that fit in the pattern",
+                                        "该文件没有能放进音型的音符",
+                                        "لا يحمل هذا الملف نوتات تتسع في النمط" },
         { "MANDAR NOTAS A", "",         "SEND NOTES TO", "发送音符到", "إرسال النوتات إلى" },
         { "RECIBIR NOTAS DE", "",       "RECEIVE NOTES FROM", "接收音符来自", "استقبال النوتات من" },
         { "MANDAR",         "",         "SEND",       "发送",       "إرسال" },

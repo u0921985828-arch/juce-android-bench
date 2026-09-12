@@ -1866,9 +1866,13 @@ void MainComponent::paintPianoSheetContent (juce::Graphics& g)
     //  toque. Antes se apartaba solo de la cruz y solo por la derecha: en arabe
     //  el texto se va a la derecha, que es justo donde takeEnd habia puesto las
     //  tapas, asi que el nombre del pad aterrizaba encima de ellas.
-    auto titulo = antesDe (antesDe (antesDe (antesDe (inner.removeFromTop (Metrics::bandaTitulo),
-                                                      seqCloseButton,  Metrics::sm),
-                                             pianoPadPickBtn, Metrics::sm),
+    //  Y de la QUINTA, la puerta del MIDI, que entro en esa misma cabecera:
+    //  cada tapa que se deja fuera de la cadena saca su propio hallazgo, y
+    //  esta costo 48 de los 174 de su primera corrida.
+    auto titulo = antesDe (antesDe (antesDe (antesDe (antesDe (inner.removeFromTop (Metrics::bandaTitulo),
+                                                               seqCloseButton,  Metrics::sm),
+                                                      pianoPadPickBtn, Metrics::sm),
+                                             midiBtn,         Metrics::sm),
                                     pianoPadDownBtn, Metrics::sm),
                            pianoPadUpBtn,   Metrics::sm);
     const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
@@ -2126,9 +2130,10 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     //  con la tapa puesta. Es la cadena de siempre y no una cuenta nueva -cada
     //  tapa que se deja fuera saca su propio hallazgo- y `antesDe` decide el
     //  lado comparando los centros, que es lo unico que vale en arabe.
-    auto tituloRow = antesDe (antesDe (antesDe (antesDe (centraEnRenglon (inner.removeFromTop (Metrics::bandaTitulo), Metrics::bandaTitulo + Metrics::bandaSubtitulo),
-                                                         seqCloseButton, Metrics::sm),
-                                                pianoPadPickBtn, Metrics::sm),
+    auto tituloRow = antesDe (antesDe (antesDe (antesDe (antesDe (centraEnRenglon (inner.removeFromTop (Metrics::bandaTitulo), Metrics::bandaTitulo + Metrics::bandaSubtitulo),
+                                                                  seqCloseButton, Metrics::sm),
+                                                         pianoPadPickBtn, Metrics::sm),
+                                                midiBtn, Metrics::sm),
                                        seqPistasBtn, Metrics::sm),
                               seqZoomBtn, Metrics::sm);
     //  Y CAE POR CAMPOS, como el del piano: el nombre del pad se lee en el pad,
@@ -2163,10 +2168,11 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     //  Lo que se queda es lo que no se puede deducir mirando la maquina: que
     //  no hay cadena. Que repite el patron puesto lo dice la paleta, donde P1
     //  esta encendido.
-    seqChainBand = antesDe (antesDe (antesDe (antesDe (centraEnRenglon (inner.removeFromTop (Metrics::bandaSubtitulo), Metrics::bandaTitulo + Metrics::bandaSubtitulo),
-                                                       seqPistasBtn,    Metrics::sm),
-                                              seqCloseButton,  Metrics::sm),
-                                     pianoPadPickBtn, Metrics::sm),
+    seqChainBand = antesDe (antesDe (antesDe (antesDe (antesDe (centraEnRenglon (inner.removeFromTop (Metrics::bandaSubtitulo), Metrics::bandaTitulo + Metrics::bandaSubtitulo),
+                                                                seqPistasBtn,    Metrics::sm),
+                                                       seqCloseButton,  Metrics::sm),
+                                              pianoPadPickBtn, Metrics::sm),
+                                     midiBtn,         Metrics::sm),
                             seqZoomBtn, Metrics::sm);
 
     juce::String chainStr;
@@ -2496,6 +2502,39 @@ void MainComponent::paintTourSheetContent (juce::Graphics& g)
     //  su problema y no el de la letra.
     g.drawFittedText (T (ZatiTour::cuerpos[tourPaso]), tourBodyArea,
                       Lang::start (juce::Justification::top), 8, 1.0f);
+}
+
+//  LA FICHA MIDI. Dos verbos, la convencion escrita y lo ultimo que paso.
+void MainComponent::paintMidiSheetContent (juce::Graphics& g)
+{
+    if (midiSheet.sheetBounds.isEmpty()) return;
+    if (! midiPanel.isEmpty())
+    {
+        juce::Array<juce::Rectangle<int>> grupos;
+        grupos.add (midiPanel);
+        pintaPaneles (g, grupos);
+    }
+
+    g.setColour (ZatiColours::ink.withAlpha (0.9f));
+    g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
+    //  EL TITULO DICE DE DONDE SALE Y A DONDE ENTRA, por campos y con la
+    //  escalera de siempre: un fichero que se escribe con el patron equivocado
+    //  no falla, se publica.
+    pintaTitulo (g, midiTitleArea,
+                 campoAcampo (g.getCurrentFont(), midiTitleArea.getWidth(), "MIDI",
+                              { T ("PATRON %1", Lang::ltr (juce::String (selectedPattern + 1))),
+                                T ("PAD %1", etiquetaPad (selectedPad)) }),
+                 "titulo", true);
+
+    //  LA CONVENCION, escrita donde se actua: sin ella «do central» y «una
+    //  semicorchea por paso» son dos cosas que se averiguan probando, y probar
+    //  cuesta el patron que tenias escrito.
+    pintaAyuda (g, midiAyudaArea,
+                T ("El do central es la nota del pad, y un paso es una semicorchea"),
+                juce::Justification::centredLeft);
+
+    if (midiParte.isNotEmpty())
+        pintaAyuda (g, midiParteArea, midiParte, juce::Justification::centredLeft);
 }
 
 void MainComponent::paintVstSheetContent (juce::Graphics& g)

@@ -27,6 +27,7 @@
 #include "MidiIo.h"
 #include "Instrumentos.h"
 #include "Sintes.h"
+#include "MidiArchivo.h"
 
 // ============================================================================
 //  MainComponent — ZATI: a 16-pad matrix whose fragments carry the colour, an
@@ -1144,9 +1145,14 @@ private:
     //  altura de fila y el mismo permiso de almacenamiento ya resuelto. Lo
     //  unico que cambia es QUE se acepta al final, asi que el navegador tiene
     //  un modo y no dos vidas.
-    enum ModoBrowse { browsePad = 0, browseCarpeta };
+    //  Y UN TERCER MODO: buscar un .mid para meterlo en el piano roll. Mismo
+    //  gesto, misma lista, mismo permiso ya resuelto — lo unico que cambia es
+    //  que se acepta al final y QUE se enseña, que lo decide `FiltroBrowse`.
+    enum ModoBrowse { browsePad = 0, browseCarpeta, browseMidi };
     ModoBrowse browseModo = browsePad;
     juce::TextButton browseUseDirBtn { "USAR ESTA CARPETA" };
+    //  Y la unica accion del modo MIDI: traerse el fichero senalado.
+    juce::TextButton browseMidiBtn { "IMPORTAR" };
     juce::TextButton exportDirBtn { "CAMBIAR" };
     void openBrowseForExportDir();
     //  Deja el rebote donde cualquier gestor lo vea. Ver MediaStore.
@@ -1496,6 +1502,7 @@ public:
     void auditCuenta();
     //  EL BANCO DE TOMAS: donde cae lo que se graba. Ver Tests/tomas.py.
     void auditTomas();
+    void auditMidi();
     void auditBalistica();
     //  EL CATALOGO DE CONTENIDO Y EL CANDADO. Ver Tests/dlc.py.
     void auditDlc();
@@ -1613,7 +1620,28 @@ private:
     void fileDoubleClicked (const juce::File& f) override;
     void browserRootChanged (const juce::File&) override {}
 
-    std::unique_ptr<juce::WildcardFileFilter>   browseFilter;   // declared first: outlives the browser
+    //  EL FILTRO PREGUNTA POR EL MODO, y por eso no es un `WildcardFileFilter`
+    //  a secas: la lista tiene que enseñar muestras cuando se busca un sonido y
+    //  ficheros .mid cuando se busca una melodia. Con un comodin fijo habria
+    //  dos reglas -lo que se lista y lo que se acepta- y la de listar diria que
+    //  la carpeta esta vacia con el fichero delante.
+    struct FiltroBrowse : public juce::FileFilter
+    {
+        explicit FiltroBrowse (const ModoBrowse& m)
+            : juce::FileFilter ("Muestras de audio"), modo (m) {}
+
+        bool isFileSuitable (const juce::File& f) const override
+        {
+            const auto ext = f.getFileExtension().toLowerCase();
+            return modo == browseMidi ? (ext == ".mid" || ext == ".midi")
+                                      : juce::String (".wav .aiff .aif .flac .ogg .mp3")
+                                            .containsWholeWord (ext);
+        }
+        bool isDirectorySuitable (const juce::File&) const override { return true; }
+
+        const ModoBrowse& modo;
+    };
+    std::unique_ptr<FiltroBrowse>   browseFilter;   // declared first: outlives the browser
     std::unique_ptr<juce::FileBrowserComponent> browser;
     juce::TextButton browseCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
     juce::TextButton browseLoadButton  { "CARGAR" };
@@ -2278,6 +2306,38 @@ private:
     void abreRackDelPad();
     void abrePianoDelPad();
 
+    //  ==================================================================
+    //  MIDI: EL PATRON DE UN PAD SALE Y ENTRA COMO FICHERO
+    //  ==================================================================
+    //
+    //  Se pidio asi: «en el piano roll se podria tanto exportar como importar
+    //  midi para que se lean y se apliquen bien en las cuadriculas». La
+    //  conversion no vive aqui sino en `MidiArchivo.h`, que no conoce el motor
+    //  y por eso el banco la puede cruzar entera; esto es la puerta.
+    //
+    //  Y LA PUERTA VA EN EL RENGLON DEL TITULO de la ficha del secuenciador,
+    //  que es lo unico que cuesta CERO de alto y ademas es lo correcto: el
+    //  fichero es del PATRON y del PAD, no de una de las tres paginas. La fila
+    //  de herramientas del piano ya sale de once tapas y se parte en dos en
+    //  media pantalla — meter dos mas ahi es quitarle sitio a la rejilla, que
+    //  es lo unico que esa pagina no tiene.
+    juce::TextButton midiBtn { "MIDI" };
+    Sheet midiSheet;
+    juce::TextButton midiExportBtn { "EXPORTAR" }, midiImportBtn { "IMPORTAR" };
+    juce::TextButton midiCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
+    juce::Rectangle<int> midiTitleArea, midiAyudaArea, midiParteArea, midiPanel;
+    //  Lo ultimo que paso, para que la ficha lo diga donde se actua y no en el
+    //  renglon de estado de la cara, que queda detras de la tarjeta.
+    juce::String midiParte;
+    void abreMidiSheet();
+    void exportaMidiPatron();
+    void importaMidiPatron (const juce::File& f);
+    void openBrowseForMidi();
+    //  Las notas del pad elegido en el patron actual, en las unidades de
+    //  `MidiArchivo`. Escrito una vez porque lo piden el exportador y el gancho
+    //  del banco: dos lecturas del mismo sitio se separan.
+    std::vector<MidiArchivo::Nota> notasDelPatron (int patron, int pad) const;
+
     void abreFichaDelPad();
     void abreVst();
     //  QUE PADS SE TOCAN COMO TECLAS y cual esta sonando por cual. Ver
@@ -2295,6 +2355,7 @@ private:
     void resintetizaInstrumento (int pad);
     void refrescaMandosVst();
     void paintVstSheetContent (juce::Graphics& g);
+    void paintMidiSheetContent (juce::Graphics& g);
     //  Y SI ESTE PAD ES UN INSTRUMENTO, que lo preguntan cuatro sitios.
     bool padEsInstrumento (int i) const noexcept
     {

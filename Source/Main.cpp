@@ -457,7 +457,7 @@ public:
                     {
                         static const char* kFichas[] =
                         { "pads", "pad2", "pad3", "sec", "secp", "paso", "song", "piano",
-                          "pianod", "mix", "mixc", "canal", "set", "proj", "midi", "gest",
+                          "pianod", "mix", "mixc", "canal", "set", "proj", "midi", "midf", "gest",
                           "rack", "ranura", "chop",
                           "inst", "manual", "expo", "browse", "xy" };
                         const int n2 = juce::numElementsInArray (kFichas);
@@ -570,6 +570,11 @@ public:
                     else if (UiAudit::env ("ZATI_AUTO").isNotEmpty())
                     {
                         c2->auditAuto();
+                    }
+                    //  EL MIDI DEL PIANO ROLL. Ver Tests/midi.py.
+                    else if (UiAudit::env ("ZATI_MIDI").isNotEmpty())
+                    {
+                        c2->auditMidi();
                     }
                     //  EL BANCO DE TOMAS. Ver Tests/tomas.py.
                     else if (UiAudit::env ("ZATI_TOMAS").isNotEmpty())

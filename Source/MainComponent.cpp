@@ -230,6 +230,11 @@ MainComponent::MainComponent()
         vstSheet   .nombre = "vst";      padPickSheet.nombre = "padpick";
         canalSheet .nombre = "canal";    ranuraSheet.nombre = "ranura";
         eqBandaSheet.nombre = "eqb";
+        //  «midf» y no «midi»: esa ya es la pagina AJUSTES · MIDI —los
+        //  puertos— en `ZATI_OPEN` y en `ZATI_PAGES` desde hace tandas, y
+        //  dos fichas con el mismo nombre son dos partes de caja negra que
+        //  no se pueden distinguir.
+        midiSheet  .nombre = "midf";
     }
 
     //  LA REJILLA DE DIECISEIS PARA ELEGIR PAD. Ver padPickSheet en la cabecera.
@@ -1086,6 +1091,31 @@ MainComponent::MainComponent()
             vstSheet.cuerpo.addAndMakeVisible (b);
         }
         vstCanalBtn.onClick = [this] { abreCanalPicker (! canalPickAbierto); };
+
+        //  LA FICHA MIDI. Pequeña a proposito: dos verbos y un renglon que dice
+        //  lo que acaba de pasar. El renglon va AQUI y no en el estado de la
+        //  cara, que queda detras de la tarjeta — es la regla de «el estado se
+        //  ve donde se actua».
+        addAndMakeVisible (midiSheet);
+        midiSheet.setVisible (false);
+        midiSheet.onDismiss = [this] { closeAllSheets(); };
+        midiSheet.paintContent = [this] (juce::Graphics& g) { paintMidiSheetContent (g); };
+        styleButton (midiCloseButton, kKey);
+        midiCloseButton.onClick = [this] { closeAllSheets(); };
+        midiSheet.addAndMakeVisible (midiCloseButton);
+        for (auto* b : { &midiExportBtn, &midiImportBtn })
+        {
+            styleButton (*b, kKey);
+            litAccent (*b);
+            midiSheet.addAndMakeVisible (b);
+        }
+        midiExportBtn.onClick = [this] { exportaMidiPatron(); };
+        midiImportBtn.onClick = [this] { openBrowseForMidi(); };
+
+        styleButton (midiBtn, kKey);
+        litAccent (midiBtn);
+        midiBtn.onClick = [this] { abreMidiSheet(); };
+        seqSheet.addAndMakeVisible (midiBtn);
         vstRackBtn .onClick = [this] { abreRackDelPad(); };
         vstPianoBtn.onClick = [this] { abrePianoDelPad(); };
 
@@ -1413,8 +1443,7 @@ MainComponent::MainComponent()
         browseSheet.onDismiss = [this] { closeAllSheets(); };
         browseSheet.paintContent = [this] (juce::Graphics& g) { paintBrowseSheetContent (g); };
 
-        browseFilter = std::make_unique<juce::WildcardFileFilter> (
-            "*.wav;*.aiff;*.aif;*.flac;*.ogg;*.mp3", "*", "Muestras de audio");
+        browseFilter = std::make_unique<FiltroBrowse> (browseModo);
 
         // Start one level above Music: on Android that is the shared-storage
         // root, so Music AND Download (where most samples land) are one tap
@@ -1458,6 +1487,20 @@ MainComponent::MainComponent()
         browseUseDirBtn.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
         browseUseDirBtn.onClick = [this] { usarCarpetaDeExport(); };
         browseSheet.addAndMakeVisible (browseUseDirBtn);
+
+        styleButton (browseMidiBtn, kAccent);
+        browseMidiBtn.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+        browseMidiBtn.onClick = [this]
+        {
+            if (browser == nullptr) return;
+            //  El SENALADO si hay uno, y si no nada: a diferencia de la
+            //  carpeta, «el que estoy mirando» no significa nada con ficheros.
+            if (browser->getNumSelectedFiles() <= 0) return;
+            const auto f = browser->getSelectedFile (0);
+            if (f.isDirectory()) return;
+            importaMidiPatron (f);
+        };
+        browseSheet.addAndMakeVisible (browseMidiBtn);
 
         styleButton (browseKitButton, kKey);
         //  KIT se lleva por delante los dieciseis pads del banco, al lado de
@@ -3979,6 +4022,8 @@ void MainComponent::ponIconos()
         { &vstPadBtn,  Iconos::Id::pads },
         { &vstRackBtn, Iconos::Id::rack },   { &vstPianoBtn, Iconos::Id::piano },
         { &vstCanalBtn, Iconos::Id::mezcla },
+        { &midiBtn, Iconos::Id::midi },       { &midiExportBtn, Iconos::Id::exportar },
+        { &midiImportBtn, Iconos::Id::cargar }, { &browseMidiBtn, Iconos::Id::cargar },
         { &mixButton,  Iconos::Id::mezcla },      { &songButton, Iconos::Id::cancion },
         { &xyButton,   Iconos::Id::xy },          { &setButton,  Iconos::Id::ajustes },
         { &rackButton, Iconos::Id::rack },        { &manualButton, Iconos::Id::manual },
@@ -5928,6 +5973,7 @@ void MainComponent::closeAllSheets()
     rackSheet.setVisible (false);
     instSheet.setVisible (false);
     vstSheet.setVisible (false);
+    midiSheet.setVisible (false);
     pianoButton.setToggleState (false, juce::dontSendNotification);
     chopSheet.setVisible (false);
     manualSheet.setVisible (false);
@@ -7924,6 +7970,10 @@ void MainComponent::retranslateUi()
     padsButton  .setButtonText (T ("PAD"));
     vstPadBtn   .setButtonText (T ("PAD"));
     vstRackBtn  .setButtonText (T ("RACK"));
+    midiBtn       .setButtonText (T ("MIDI"));
+    midiExportBtn .setButtonText (T ("EXPORTAR"));
+    midiImportBtn .setButtonText (T ("IMPORTAR"));
+    browseMidiBtn .setButtonText (T ("IMPORTAR"));
     vstPianoBtn .setButtonText (T ("PIANO"));
     secButton   .setButtonText (T ("SEC"));
     songButton  .setButtonText (T ("SONG"));
@@ -14274,6 +14324,198 @@ void MainComponent::abrePianoDelPad()
     openSheet (seqSheet, secButton);
     showSeqPage (seqPagePiano);
     refreshPiano();
+}
+
+// ----------------------------------------------------------------------------
+//  MIDI: EL PATRON DE UN PAD SALE Y ENTRA COMO FICHERO
+// ----------------------------------------------------------------------------
+//  Las notas del pad elegido en un patron, en las unidades de `MidiArchivo`.
+//  Escrito UNA vez porque lo piden el exportador y el gancho del banco: dos
+//  lecturas del mismo sitio se separan, y el sintoma seria «el fichero y lo que
+//  el banco dice que hay dentro no coinciden» sin poder decir por que.
+std::vector<MidiArchivo::Nota> MainComponent::notasDelPatron (int patron, int pad) const
+{
+    std::vector<MidiArchivo::Nota> notas;
+    const int largo = engine.getPatternLength (patron);
+
+    for (int paso = 0; paso < largo; ++paso)
+    {
+        if (! pattern[(size_t) patron][(size_t) paso][(size_t) pad]) continue;
+
+        MidiArchivo::Nota n;
+        n.paso  = paso;
+        n.semis = engine.getStepNote (patron, paso, pad);
+        n.vel   = engine.getStepVel  (patron, paso, pad);
+        n.largo = engine.getStepLen  (patron, paso, pad);
+        notas.push_back (n);
+
+        //  Y LAS TRES DE MAS, que son lo que hace que un acorde sea un acorde.
+        //  Sin ellas el fichero saldria con la raiz sola y «se exporta el piano
+        //  roll» seria verdad a la cuarta parte — que es exactamente el fallo
+        //  que ya costo una medida cuando un acorde volvia del proyecto siendo
+        //  una nota.
+        for (int i = 0; i < 3; ++i)
+        {
+            const int ex = engine.getStepExtra (patron, paso, pad, i);
+            if (ex == -128) continue;
+            MidiArchivo::Nota e = n;
+            e.semis = ex;
+            notas.push_back (e);
+        }
+    }
+    return notas;
+}
+
+//  ESCRIBE EL FICHERO DONDE CAE EL REBOTE, que es la carpeta que la persona ya
+//  eligio y la unica de esta app que esta COMPROBADA a escritura
+//  (`canReallyWriteInto`). Montar una segunda carpeta para esto serian dos
+//  sitios donde buscar lo que sale del telefono.
+void MainComponent::exportaMidiPatron()
+{
+    const auto notas = notasDelPatron (selectedPattern, selectedPad);
+    if (notas.empty())
+    {
+        midiParte = T ("Ese pad no tiene notas en este patron");
+        midiSheet.repaint();
+        return;
+    }
+
+    //  El nombre dice de donde sale: patron y pad. Sin eso, exportar dos
+    //  patrones deja dos ficheros que hay que abrir para distinguir.
+    const auto nombre = "ZATI-P" + juce::String (selectedPattern + 1)
+                      + "-" + etiquetaPad (selectedPad) + ".mid";
+    const auto destino = ProjectStore::exports().getChildFile (nombre);
+
+    if (! MidiArchivo::escribe (destino, notas, engine.getBpm()))
+    {
+        midiParte = T ("No se pudo escribir en esa carpeta - cambiala en EXPORTAR");
+        midiSheet.repaint();
+        return;
+    }
+
+    //  Y SE PUBLICA COMO EL REBOTE: en Android un fichero que no pasa por el
+    //  almacen de medios existe y no lo ve ningun gestor. Es la misma puerta y
+    //  por la misma razon, asi que no se escribe otra vez.
+    publicarExport (destino.getParentDirectory());
+
+    //  UNA CLAVE CON LOS DOS HUECOS Y NO UNA DENTRO DE OTRA. Anidar un `T`
+    //  dentro del argumento de otro es invisible para `Tests/lang.py`, que lee
+    //  el PRIMER argumento y nada mas -y esa regla existe por algo: contando
+    //  los demas, `T ("...%1", "/")` metia «/» y «0.0» como filas que faltan-.
+    //  O sea que la de dentro saldria en espanol en las cuatro compilaciones
+    //  sin que nadie lo dijera. Con los dos huecos en una clave hay una fila,
+    //  la ve la prueba, y ademas el orden de las dos mitades lo decide cada
+    //  lengua en vez de este renglon.
+    midiParte = T ("%1 - %2 notas", nombre, Lang::ltr (juce::String ((int) notas.size())));
+    midiSheet.repaint();
+}
+
+//  Y AL REVES. Con `pushUndo` por delante, que esto SUSTITUYE lo que el pad
+//  tuviera escrito en este patron: importar sin poder deshacer es la unica
+//  accion de esta ficha que no se arregla tocando otra vez.
+void MainComponent::importaMidiPatron (const juce::File& f)
+{
+    MidiArchivo::Parte parte;
+    const auto notas = MidiArchivo::lee (f, AudioEngine::kNumSteps, parte);
+
+    if (notas.empty())
+    {
+        midiParte = T ("Ese fichero no trae notas que quepan en el patron");
+        closeAllSheets();
+        abreMidiSheet();
+        return;
+    }
+
+    pushUndo (T ("MIDI"));
+
+    //  SE VACIA EL PAD ENTERO ANTES, y no solo los pasos que la importacion
+    //  toca: dejar lo de antes donde el fichero no llega da una mezcla de dos
+    //  melodias que se lee como tuya. Es la leccion de NUEVO — «vaciar la mitad
+    //  de un proyecto es peor que no vaciar nada, porque lo que queda parece
+    //  tuyo».
+    for (int paso = 0; paso < AudioEngine::kNumSteps; ++paso)
+    {
+        engine.vaciaPaso (selectedPattern, paso, selectedPad);
+        //  Y EL ESPEJO, que es lo que la rejilla dibuja: vaciar solo el motor
+        //  deja la pagina enseñando notas que ya no estan y que no se pueden
+        //  borrar porque no existen — el mismo fallo que `refreshPiano` tuvo
+        //  con las columnas de la derecha.
+        pattern[(size_t) selectedPattern][(size_t) paso][(size_t) selectedPad] = false;
+    }
+
+    //  Y EL PATRON CRECE HASTA DONDE LLEGUE EL FICHERO, redondeando a compases:
+    //  un patron de dieciseis pasos con un fichero de dos compases dentro
+    //  dejaria la segunda mitad escrita y muda. Acotado a `kMaxPatLen`, que es
+    //  lo que la maquina tiene.
+    const int compases = (parte.pasos + 15) / 16;
+    const int pide     = juce::jlimit (AudioEngine::kMinPatLen, AudioEngine::kMaxPatLen,
+                                       juce::jmax (1, compases) * 16);
+    if (pide > engine.getPatternLength (selectedPattern))
+        engine.setPatternLength (selectedPattern, pide);
+
+    //  La PRIMERA de cada columna es la raiz y las otras tres van aparte, que
+    //  es como el motor guarda un acorde: `stepNote` mas `stepChord`.
+    std::array<int, AudioEngine::kNumSteps> puestas {};
+    for (const auto& n : notas)
+    {
+        const int paso = n.paso;
+        if (! juce::isPositiveAndBelow (paso, AudioEngine::kNumSteps)) continue;
+
+        if (puestas[(size_t) paso] == 0)
+        {
+            engine.setStep     (selectedPattern, paso, selectedPad, true);
+            engine.setStepNote (selectedPattern, paso, selectedPad, n.semis);
+            engine.setStepVel  (selectedPattern, paso, selectedPad, n.vel);
+            engine.setStepLen  (selectedPattern, paso, selectedPad, n.largo);
+            pattern[(size_t) selectedPattern][(size_t) paso][(size_t) selectedPad] = true;
+        }
+        else
+        {
+            engine.setStepExtra (selectedPattern, paso, selectedPad,
+                                 puestas[(size_t) paso] - 1, n.semis, true);
+        }
+        ++puestas[(size_t) paso];
+    }
+
+    midiParte = T ("%1 - %2 notas", f.getFileName(),
+                   Lang::ltr (juce::String (parte.puestas)));
+    //  Y LO QUE NO CUPO SE DICE. Un fichero de fuera no tiene por que caber, y
+    //  una importacion que se come la mitad en silencio es la peor forma de
+    //  funcionar: la que parece que funciona.
+    const int perdidas = parte.fuera + parte.tarde + parte.apiladas;
+    if (perdidas > 0)
+        midiParte += "  (" + T ("%1 fuera", Lang::ltr (juce::String (perdidas))) + ")";
+
+    refreshStepGrid();
+    refreshPiano();
+    closeAllSheets();
+    abreMidiSheet();
+}
+
+void MainComponent::openBrowseForMidi()
+{
+    browseModo = browseMidi;
+    browseTargetPad = -1;
+    auditionedFile = juce::File();
+    closeAllSheets();
+    browseSheet.setVisible (true);
+    browseSheet.toFront (false);
+    //  Empieza donde la app los deja, que es de donde salen los que ella misma
+    //  escribio. Los de fuera se alcanzan subiendo, como cualquier otro.
+    if (browser != nullptr)
+        browser->setRoot (ProjectStore::exports());
+    resized();
+    repaint();
+
+    ensureStoragePermission ([this]
+    {
+        if (browser != nullptr) browser->refresh();
+    });
+}
+
+void MainComponent::abreMidiSheet()
+{
+    openSheet (midiSheet, secButton);
 }
 
 //  QUE FICHA EDITA EL PAD ELEGIDO. Una decision y un dueño: la pestaña PAD de

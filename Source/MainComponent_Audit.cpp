@@ -2021,6 +2021,11 @@ void MainComponent::auditOpen (const juce::String& pedido)
                   << ",\"tour\":" << (tourSheet.isVisible() ? 1 : 0) << "}" << std::endl;
     }
     else if (which == "midi") { showSetPage (pageMidi); refreshMidiDevices(); openSheet (setSheet, setButton); }
+    //  Y LA FICHA MIDI DEL PIANO ROLL, que es otra: «midi» de arriba es la
+    //  pagina de los PUERTOS. Sin nombre propio seria *una ficha que nadie
+    //  mide*, que es como esta casa ha pagado el residuo, las tapas de 0x0
+    //  y los rotulos cortados.
+    else if (which == "midf") { abreMidiSheet(); }
     else if (which == "rack") { ponCanalActual (0); openSheet (rackSheet, mixButton); refreshRack(); }
     //  Y EL RACK CON LAS SEIS RANURAS LLENAS.
     //
@@ -5229,6 +5234,191 @@ void MainComponent::auditModos()
 //  entero. Es lo mismo que hacen `ZATI_DLC` con los packs y `ZATI_INSETS` con
 //  los margenes: convertir en ENTRADA lo que si no seria «lo que hubiera».
 // ---------------------------------------------------------------------------
+// ============================================================================
+//  EL MIDI DEL PIANO ROLL. Ver Tests/midi.py.
+// ============================================================================
+//
+//  NINGUNA DE LAS QUINCE REGLAS DE `expo.py` PUEDE VER NADA DE ESTO: un
+//  importador que deja las notas una octava mas abajo, o media casilla tarde,
+//  se maqueta perfecto -no solapa, no se sale, no corta un rotulo, no mide cero
+//  y esta traducido-. Es la familia de los cinco fallos del compas del piano.
+//
+//  Y LA CIFRA QUE MANDA ES UNA IDENTIDAD: lo que sale y vuelve a entrar tiene
+//  que ser EL MISMO patron, nota a nota. «Se exporta» lo cumple un fichero con
+//  la raiz sola y «se importa» lo cumple uno que cae una octava abajo; solo la
+//  vuelta entera dice que las dos mitades hablan el mismo idioma. Es la misma
+//  figura que las dos filas que mas valen de `Tests/arr.py` -quitar el compas
+//  que se acaba de insertar devuelve la cancion exacta- y la del troceado que
+//  volvia siendo N copias.
+void MainComponent::auditMidi()
+{
+    const int pat = 0;
+    const int pad = 0;
+    selectedPattern = pat;
+    selectedPad = pad;
+    engine.setPatternLength (pat, 16);
+
+    //  UN PATRON QUE SE LEE DE UN VISTAZO, y con las cuatro cosas que un .mid
+    //  puede perder: el semitono, la fuerza, el LARGO y el ACORDE. Sin el
+    //  acorde, «vuelve igual» lo cumple un exportador que escribe la raiz sola
+    //  -que es exactamente el fallo que ya costo una medida cuando un acorde
+    //  volvia del proyecto siendo una nota-.
+    //
+    //  Y NINGUNO DE LOS CUATRO LARGOS ES EL CUATRO, que no es esquivar el caso
+    //  sino que ese es la OTRA ortografia del cero -un paso- y las dos no
+    //  pueden volver las dos: el fichero lleva una duracion y no dos formas de
+    //  escribirla. Que un paso vuelve como cero lo mide la fila de abajo, que
+    //  es donde esa eleccion vive.
+    struct Puesta { int paso, semis, vel, largo; };
+    const Puesta puestas[] = { { 0,   0, 100,  8 },
+                               { 3,   7,  80,  2 },
+                               { 8, -12, 120, 16 },
+                               { 12, 24,  60,  0 } };
+    for (const auto& p : puestas)
+    {
+        engine.setStep     (pat, p.paso, pad, true);
+        engine.setStepNote (pat, p.paso, pad, p.semis);
+        engine.setStepVel  (pat, p.paso, pad, p.vel);
+        engine.setStepLen  (pat, p.paso, pad, p.largo);
+        pattern[(size_t) pat][(size_t) p.paso][(size_t) pad] = true;
+    }
+    //  Un acorde en el paso 0: raiz 0 mas tercera, quinta y octava.
+    const int extras[3] = { 4, 7, 12 };
+    for (int i = 0; i < 3; ++i)
+        engine.setStepExtra (pat, 0, pad, i, extras[i], true);
+
+    const auto antes = notasDelPatron (pat, pad);
+
+    //  EL FICHERO DE VERDAD Y POR EL CAMINO DE VERDAD: `exportaMidiPatron`
+    //  escribe donde cae el rebote, que en el banco es la carpeta del HOME de
+    //  esta corrida. Llamar a `MidiArchivo::escribe` por dentro se saltaria la
+    //  mitad que puede fallar - de donde salen las notas y donde acaba.
+    exportaMidiPatron();
+
+    juce::File escrito;
+    for (const auto& f : ProjectStore::exports().findChildFiles (juce::File::findFiles, false, "*.mid"))
+        escrito = f;
+
+    //  Y SE BORRA EL PAD A MANO ENTRE MEDIAS, que es lo unico que separa «se ha
+    //  guardado» de «nadie lo quito». Es la misma linea que la prueba de la
+    //  sesion y la del troceado.
+    for (int s2 = 0; s2 < AudioEngine::kNumSteps; ++s2)
+    {
+        engine.vaciaPaso (pat, s2, pad);
+        pattern[(size_t) pat][(size_t) s2][(size_t) pad] = false;
+    }
+    const int trasBorrar = (int) notasDelPatron (pat, pad).size();
+
+    if (escrito.existsAsFile()) importaMidiPatron (escrito);
+    const auto despues = notasDelPatron (pat, pad);
+
+    //  Cuantas de las de antes vuelven EXACTAS: paso, semitono, fuerza y largo.
+    //  Compararlas por cuenta seria decir que si a un importador que las pone
+    //  todas en el paso cero.
+    int iguales = 0;
+    for (const auto& a : antes)
+        for (const auto& b : despues)
+            if (a.paso == b.paso && a.semis == b.semis && a.vel == b.vel && a.largo == b.largo)
+                { ++iguales; break; }
+
+    std::cout << "{\"midi\":\"vuelta\",\"antes\":" << (int) antes.size()
+              << ",\"bytes\":" << (int) (escrito.existsAsFile() ? escrito.getSize() : 0)
+              << ",\"tras_borrar\":" << trasBorrar
+              << ",\"despues\":" << (int) despues.size()
+              << ",\"iguales\":" << iguales << "}" << std::endl;
+
+    // ------------------------------------------------------------------
+    //  Y LO QUE NO CABE SE CUENTA Y SE DICE. Un fichero de fuera no tiene por
+    //  que caber: notas a tres octavas del pad, compases mas alla del patron y
+    //  una quinta voz en la misma columna. Una importacion que se come la mitad
+    //  en silencio es la peor forma de funcionar: la que parece que funciona.
+    //
+    //  Se escribe un .mid A MANO -no por el exportador- porque lo que hay que
+    //  medir es justo lo que esta maquina NO sabe escribir.
+    {
+        juce::MidiMessageSequence pista;
+        auto pon = [&pista] (int nota, double tick, double dur)
+        {
+            pista.addEvent (juce::MidiMessage::noteOn  (1, nota, (juce::uint8) 100), tick);
+            pista.addEvent (juce::MidiMessage::noteOff (1, nota), tick + dur);
+        };
+        const double tp = (double) MidiArchivo::kTicksPaso;
+        pon (60, 0.0, tp);                 // cabe
+        pon (100, tp, tp);                 // +40 semitonos: fuera del pad
+        pon (20,  tp * 2, tp);             // -40: fuera por abajo
+        pon (60,  tp * 200, tp);           // paso 200: mas alla del patron
+        for (int i = 0; i < 6; ++i) pon (60 + i, tp * 4, tp);   // seis en la misma columna
+        pista.updateMatchedPairs();
+        pista.addEvent (juce::MidiMessage::endOfTrack(), pista.getEndTime() + 1.0);
+
+        juce::MidiFile mf;
+        mf.setTicksPerQuarterNote (MidiArchivo::kPpq);
+        mf.addTrack (pista);
+
+        const auto hostil = ProjectStore::exports().getChildFile ("hostil.mid");
+        hostil.deleteFile();
+        if (auto out = std::unique_ptr<juce::FileOutputStream> (hostil.createOutputStream()))
+        {
+            mf.writeTo (*out);
+            out->flush();
+        }
+
+        MidiArchivo::Parte parte;
+        const auto leidas = MidiArchivo::lee (hostil, AudioEngine::kNumSteps, parte);
+
+        std::cout << "{\"midi\":\"hostil\",\"puestas\":" << parte.puestas
+                  << ",\"fuera\":" << parte.fuera
+                  << ",\"tarde\":" << parte.tarde
+                  << ",\"apiladas\":" << parte.apiladas
+                  << ",\"leidas\":" << (int) leidas.size() << "}" << std::endl;
+    }
+
+    // ------------------------------------------------------------------
+    //  Y LAS DOS CONVENCIONES, medidas y no supuestas: que el do central caiga
+    //  en el semitono cero y que una NEGRA ocupe cuatro pasos. Las dos son
+    //  elecciones, asi que las dos tienen que poder fallar.
+    {
+        juce::MidiMessageSequence pista;
+        //  Do central en el tick cero, y la siguiente una NEGRA despues.
+        pista.addEvent (juce::MidiMessage::noteOn  (1, 60, (juce::uint8) 100), 0.0);
+        pista.addEvent (juce::MidiMessage::noteOff (1, 60), (double) MidiArchivo::kPpq);
+        pista.addEvent (juce::MidiMessage::noteOn  (1, 67, (juce::uint8) 100), (double) MidiArchivo::kPpq);
+        pista.addEvent (juce::MidiMessage::noteOff (1, 67), (double) MidiArchivo::kPpq * 2.0);
+        //  Y una de UN PASO, que es la que dice con que ortografia vuelve: cero
+        //  y cuatro son el mismo sonido y el fichero solo puede llevar uno.
+        pista.addEvent (juce::MidiMessage::noteOn  (1, 62, (juce::uint8) 100), (double) MidiArchivo::kPpq * 3.0);
+        pista.addEvent (juce::MidiMessage::noteOff (1, 62), (double) MidiArchivo::kPpq * 3.0 + (double) MidiArchivo::kTicksPaso);
+        pista.updateMatchedPairs();
+        pista.addEvent (juce::MidiMessage::endOfTrack(), pista.getEndTime() + 1.0);
+
+        juce::MidiFile mf;
+        mf.setTicksPerQuarterNote (MidiArchivo::kPpq);
+        mf.addTrack (pista);
+
+        const auto conv = ProjectStore::exports().getChildFile ("convencion.mid");
+        conv.deleteFile();
+        if (auto out = std::unique_ptr<juce::FileOutputStream> (conv.createOutputStream()))
+        {
+            mf.writeTo (*out);
+            out->flush();
+        }
+
+        MidiArchivo::Parte parte;
+        const auto leidas = MidiArchivo::lee (conv, AudioEngine::kNumSteps, parte);
+        const int semis0 = leidas.size() > 0 ? leidas[0].semis : -99;
+        const int paso1  = leidas.size() > 1 ? leidas[1].paso  : -1;
+        const int largo0 = leidas.size() > 0 ? leidas[0].largo : -1;
+        const int largo2 = leidas.size() > 2 ? leidas[2].largo : -1;
+
+        std::cout << "{\"midi\":\"convencion\",\"do_central\":" << semis0
+                  << ",\"paso_de_la_negra\":" << paso1
+                  << ",\"largo_de_una_negra\":" << largo0
+                  << ",\"largo_de_un_paso\":" << largo2 << "}" << std::endl;
+    }
+
+    juce::JUCEApplication::getInstance()->systemRequestedQuit();
+}
+
 void MainComponent::auditTomas()
 {
 
