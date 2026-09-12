@@ -464,14 +464,18 @@ namespace
         { "Manten un pad para abrir su ficha: el golpe suena igual", "",
           "hold a pad to open its settings: the hit still sounds",
           "长按音垫打开其设置：这一击仍会发声", "اضغط بادًا مطولًا لفتح إعداداته: تُسمع الضربة كذلك" },
-        //  Y LA EXCEPCION, que hay que decir porque el gesto CAMBIA: en un pad
-        //  con instrumento mantener es tocar una nota larga, asi que ahi la
-        //  ficha se abre por la pestana PAD. Un manual que promete un gesto que
-        //  en un cuarto de la maquina hace otra cosa es peor que no decir nada.
-        { "En un pad con instrumento, mantener es tocar: su ficha se abre desde PAD", "",
-          "On an instrument pad, holding plays: open its settings from PAD",
-          "在乐器音垫上，长按即演奏：从 PAD 打开其设置",
-          "في باد الآلة، الضغط المطول يعزف: افتح إعداداته من PAD" },
+        //  Y LA EXCEPCION SE RETIRA, porque dejo de haberla. Esta linea decia
+        //  que en un pad con instrumento mantener es tocar y que ahi la ficha
+        //  se abre por la pestaña PAD: era verdad mientras `PadButton` no
+        //  arrancaba el temporizador en modo tecla, y llego del telefono que
+        //  «no es la misma logica». Ahora los dieciseis pads hacen lo mismo, y
+        //  lo que la linea dice es lo unico que cambia: la nota no se corta.
+        //  Con la CLAVE cambiada a la vez que el texto, que es el fallo que
+        //  `lang.py` ya cazo cuatro veces en este mismo fichero.
+        { "En un pad con instrumento, mantener suena hasta que levantas el dedo", "",
+          "on an instrument pad, holding sounds until you lift your finger",
+          "在乐器音垫上，长按会一直发声直到抬起手指",
+          "في باد الآلة، الضغط المطول يظل يعزف حتى ترفع إصبعك" },
         { "PADS Y BANCOS", "",
           "PADS AND BANKS",
           "音垫与音库", "الوسادات والبنوك" },

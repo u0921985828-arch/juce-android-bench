@@ -70,9 +70,10 @@ MainComponent::MainComponent()
             //  Por la MISMA puerta que la pestaña PAD y no con la decision
             //  escrita otra vez: dos sitios que eligen ficha por su cuenta se
             //  separan, y el sintoma seria «mantener abre una y la pestaña
-            //  otra». Hoy este camino no llega nunca con un instrumento -en
-            //  modo tecla no hay mantener- y por eso mismo tiene que ser el
-            //  mismo codigo: si algun dia llega, ya esta bien.
+            //  otra». Y desde que el temporizador corre tambien en modo tecla
+            //  (ver `PadButton`), este camino SI llega con un instrumento: abre
+            //  su ficha, y por estar escrito una vez no hizo falta tocar nada
+            //  aqui.
             abreFichaDelPad();
             status.setText (T ("PAD %1", juce::String (i + 1)), juce::dontSendNotification);
         };
@@ -180,17 +181,16 @@ MainComponent::MainComponent()
         //  toque: hasta aqui vivia detras de EL PAD · RIG · INSTRUMENTO, o sea
         //  tres toques con la rejilla de pads tapada todo el rato.
         //
-        //  Y NO se resuelve con MANTENER, que es lo primero que sale: un pad
-        //  de instrumento va en modo tecla y ahi `PadButton` no arranca el
-        //  temporizador a proposito -`if (! modoNota ...) startTimer`-, porque
-        //  una nota de mas de 420 ms abriria la ficha a media frase. Medido en
-        //  el codigo antes de escribir una linea: mantener no puede ser la
-        //  puerta de un instrumento.
+        //  Y MANTENER LLEVA AL MISMO SITIO, que es lo que este parrafo negaba
+        //  con una razon que dejo de valer: decia que un pad de instrumento va
+        //  en modo tecla y ahi el temporizador no arranca, asi que la unica
+        //  puerta era esta pestaña. El coste de arreglarlo esta medido y
+        //  escrito en `PadButton::onHold`; lo que importa aqui es que las dos
+        //  puertas terminan en `abreFichaDelPad` y no cada una por su cuenta.
         //
-        //  No se pierde nada: los dos sentidos tienen su tapa -`vstPadBtn` en
-        //  la cabecera de la ficha del instrumento y `vstButton` en EL PAD-,
-        //  que es la regla de la casa: la que se va deja una puerta y nunca una
-        //  copia.
+        //  Y los dos sentidos tienen su tapa -`vstPadBtn` en la cabecera de la
+        //  ficha del instrumento y `vstButton` en EL PAD-, que es la regla de
+        //  la casa: la que se va deja una puerta y nunca una copia.
         padsButton.onClick = [this]
         {
             if (padSheet.isVisible() || vstSheet.isVisible()) { closeAllSheets(); return; }
@@ -1074,6 +1074,20 @@ MainComponent::MainComponent()
         litAccent (vstPadBtn);
         vstPadBtn.onClick = [this] { showPadPage (padPageSound); openSheet (padSheet, padsButton); };
         vstSheet.cuerpo.addAndMakeVisible (vstPadBtn);
+
+        //  Y LAS TRES PUERTAS DEL REPARTO. Ver el bloque de `vstCanalBtn` en la
+        //  cabecera: son las mismas acciones que la pagina RIG de EL PAD y no
+        //  una copia de su codigo - las dos tapas de cada par terminan en la
+        //  misma funcion.
+        for (auto* b : { &vstCanalBtn, &vstRackBtn, &vstPianoBtn })
+        {
+            styleButton (*b, kKey);
+            litAccent (*b);
+            vstSheet.cuerpo.addAndMakeVisible (b);
+        }
+        vstCanalBtn.onClick = [this] { abreCanalPicker (! canalPickAbierto); };
+        vstRackBtn .onClick = [this] { abreRackDelPad(); };
+        vstPianoBtn.onClick = [this] { abrePianoDelPad(); };
 
         vstSheet.hazDesplazable();
         addAndMakeVisible (vstSheet);
@@ -3461,12 +3475,7 @@ MainComponent::MainComponent()
         litAccent (pianoButton);
         //  Y la puerta lleva a la PAGINA del piano dentro de la ficha del
         //  secuenciador, que es donde vive ahora.
-        pianoButton.onClick = [this]
-        {
-            openSheet (seqSheet, secButton);
-            showSeqPage (seqPagePiano);
-            refreshPiano();
-        };
+        pianoButton.onClick = [this] { abrePianoDelPad(); };
         padSheet.addAndMakeVisible (pianoButton);
     }
 
@@ -3705,15 +3714,7 @@ MainComponent::MainComponent()
 
     styleButton (padRackBtn, kKey);
     litAccent (padRackBtn);
-    padRackBtn.onClick = [this]
-    {
-        //  El canal ya lo puso `selectPad`: la puerta lleva al rack DEL CANAL
-        //  de este pad, que es lo que hace que abrirla desde aqui signifique
-        //  algo. Con un canal propio del rack, esta puerta habria abierto la
-        //  fila de otro.
-        openSheet (rackSheet, mixButton);
-        refreshRack();
-    };
+    padRackBtn.onClick = [this] { abreRackDelPad(); };
     padSheet.addAndMakeVisible (padRackBtn);
 
     styleButton (undoButton, ZatiColours::red);
@@ -3976,6 +3977,8 @@ void MainComponent::ponIconos()
         //  La cara: las seis pestanas de modulo y el transporte.
         { &padsButton, Iconos::Id::pads },        { &secButton,  Iconos::Id::sec },
         { &vstPadBtn,  Iconos::Id::pads },
+        { &vstRackBtn, Iconos::Id::rack },   { &vstPianoBtn, Iconos::Id::piano },
+        { &vstCanalBtn, Iconos::Id::mezcla },
         { &mixButton,  Iconos::Id::mezcla },      { &songButton, Iconos::Id::cancion },
         { &xyButton,   Iconos::Id::xy },          { &setButton,  Iconos::Id::ajustes },
         { &rackButton, Iconos::Id::rack },        { &manualButton, Iconos::Id::manual },
@@ -6993,7 +6996,12 @@ bool MainComponent::tocaPadDetras (juce::Point<int> p)
 void MainComponent::refrescaCanalDelPad()
 {
     const int c = engine.getPadCanal (selectedPad);
-    padCanalBtn.setButtonText (T ("CANAL") + " " + Lang::ltr (juce::String (c + 1).paddedLeft ('0', 2)));
+    //  LAS DOS TAPAS DE CANAL DICEN LO MISMO, y lo dicen desde aqui: la de EL
+    //  PAD y la de la ficha del instrumento son dos puertas a la misma rejilla,
+    //  asi que su rotulo se escribe una vez o un dia una se queda vieja.
+    const auto texto = T ("CANAL") + " " + Lang::ltr (juce::String (c + 1).paddedLeft ('0', 2));
+    padCanalBtn.setButtonText (texto);
+    vstCanalBtn.setButtonText (texto);
     for (int i = 0; i < canalBtns.size(); ++i)
         canalBtns[i]->setToggleState (i == c, juce::dontSendNotification);
 }
@@ -7891,6 +7899,8 @@ void MainComponent::retranslateUi()
     //  cuesta una letra MENOS que el plural.
     padsButton  .setButtonText (T ("PAD"));
     vstPadBtn   .setButtonText (T ("PAD"));
+    vstRackBtn  .setButtonText (T ("RACK"));
+    vstPianoBtn .setButtonText (T ("PIANO"));
     secButton   .setButtonText (T ("SEC"));
     songButton  .setButtonText (T ("SONG"));
     xyButton    .setButtonText (T ("XY"));
@@ -14222,6 +14232,26 @@ void MainComponent::refrescaMandosVst()
 // ----------------------------------------------------------------------------
 //  LA FICHA DEL INSTRUMENTO.
 // ----------------------------------------------------------------------------
+//  EL RACK DE ESTE PAD, y el PIANO de este pad. Una accion, un dueño: las
+//  piden la pagina RIG de EL PAD y la ficha del instrumento, y escritas dos
+//  veces se separarian - el sintoma seria «desde una puerta abre el rack de
+//  este canal y desde la otra el de otro».
+void MainComponent::abreRackDelPad()
+{
+    //  El canal ya lo puso `selectPad`: la puerta lleva al rack DEL CANAL de
+    //  este pad, que es lo que hace que abrirla desde aqui signifique algo. Con
+    //  un canal propio del rack, esta puerta habria abierto la fila de otro.
+    openSheet (rackSheet, mixButton);
+    refreshRack();
+}
+
+void MainComponent::abrePianoDelPad()
+{
+    openSheet (seqSheet, secButton);
+    showSeqPage (seqPagePiano);
+    refreshPiano();
+}
+
 //  QUE FICHA EDITA EL PAD ELEGIDO. Una decision y un dueño: la pestaña PAD de
 //  la cara y el mantener de un pad preguntan aqui, y no cada uno por su cuenta.
 void MainComponent::abreFichaDelPad()

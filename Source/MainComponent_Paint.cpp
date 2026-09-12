@@ -2523,7 +2523,7 @@ void MainComponent::paintVstSheetContent (juce::Graphics& g)
     {
         juce::Array<juce::Rectangle<int>> grupos;
         for (const auto& r : { vstPanelCab, vstPanelPre, vstPanelTec,
-                               vstPanelForma, vstPanelMandos })
+                               vstPanelForma, vstPanelMandos, vstPanelRig })
             if (! r.isEmpty()) grupos.add (r);
         //  Y EL FILO LLEVA EL COLOR DEL PAD, que es lo unico que esta ficha
         //  puede decir y ninguna otra: las nueve que agrupan controles son de

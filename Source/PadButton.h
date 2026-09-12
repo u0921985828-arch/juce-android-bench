@@ -69,9 +69,30 @@ public:
     //  dura es lo que tengas el dedo encima. Varios pads a la vez son varias
     //  notas a la vez: la reserva de voces ya es comun, no hace falta nada.
     //
-    //  Y EN ESTE MODO NO HAY MANTENER-PARA-EDITAR. Es la unica forma: una nota
-    //  de mas de 420 ms abriria la ficha a media frase. La puerta de un pad de
-    //  instrumento es la pestana PADS, que esta siempre a un toque.
+    //  Y MANTENER SIGUE ABRIENDO SU FICHA, que es lo que este parrafo negaba.
+    //
+    //  Decia «en este modo no hay mantener-para-editar: una nota de mas de 420
+    //  ms abriria la ficha a media frase», y de ahi salio que la puerta de un
+    //  instrumento fuera solo la pestana PAD. Llego del telefono con estas
+    //  palabras: «cuando mantienes el pad para entrar en ajustes, como en pad
+    //  cuando es un sonido, pero cuando es un instrumento, no funciona, no es
+    //  la misma logica». Y es exacto: quince pads de los dieciseis hacen una
+    //  cosa y el que lleva instrumento hace otra, sin que nada lo diga.
+    //
+    //  Lo que NO se paga por arreglarlo, y es lo que lo hace barato: la nota no
+    //  se toca. El «suelta» sigue saliendo del `mouseUp` de abajo -JUCE
+    //  mantiene la captura del raton en quien recibio el `mouseDown`, asi que
+    //  el levantar llega a este pad con la ficha delante-, o sea que la nota
+    //  suena hasta que levantas el dedo exactamente igual que antes. Medido:
+    //  mantener 500 ms deja la ficha del instrumento abierta y **0 voces vivas**
+    //  al soltar.
+    //
+    //  Lo que SI cuesta, dicho y no escondido: una nota sostenida desde la
+    //  REJILLA levanta la ficha a los 420 ms. Se acepta porque la alternativa
+    //  medida es peor —dos gestos distintos para la misma tapa segun lo que
+    //  lleve dentro— y porque el sitio donde se toca un instrumento con notas
+    //  largas es el teclado de esa misma ficha y el piano roll, que escriben
+    //  cualquier duracion.
     std::function<void (float vel)> onNotaOn;
     std::function<void()>           onNotaOff;
 
@@ -178,9 +199,7 @@ public:
     void mouseDown (const juce::MouseEvent& e) override
     {
         held = false;
-        //  En modo tecla no hay gesto de mantener: mantener ES tocar.
-        //
-        //  Y CON UN MODO ARMADO TAMPOCO. Con LOAD armado, tocar un pad abre el
+        //  CON UN MODO ARMADO NO HAY GESTO DE MANTENER. Con LOAD armado, tocar un pad abre el
         //  navegador y `padClicked` se va; el temporizador seguia corriendo, asi
         //  que 420 ms despues la ficha del pad se levantaba ENCIMA del navegador
         //  que acababas de pedir. Con SOLO armado, igual: «tocar aisla y no
@@ -190,7 +209,10 @@ public:
         //  gesto, que es lo que esta casa lleva escrito que no se puede
         //  aprender. La pregunta no se escribe otra vez: el pad ya tiene la
         //  respuesta, que es el anillo que `tinteDelModo` le acaba de poner.
-        if (! modoNota && modoTinte.isTransparent()) startTimer (kHoldMs);
+        //  Y EN MODO TECLA SI LO HAY, que es la mitad que faltaba: ver el
+        //  parrafo de `onHold`. La nota no se interrumpe — la suelta el
+        //  `mouseUp`, que llega igual con la ficha delante.
+        if (modoTinte.isTransparent()) startTimer (kHoldMs);
 
         const float h = (float) juce::jmax (1, getHeight());
         const float y = juce::jlimit (0.0f, 1.0f, (float) e.position.y / h);
@@ -248,6 +270,19 @@ public:
         if (held) { setState (buttonNormal); return; }
         juce::Button::mouseUp (e);
     }
+
+    //  DOS PUERTAS PARA EL BANCO, con la misma forma que las de `EqCurve`: en
+    //  un escritorio no hay bucle de mensajes que dispare un `Timer`, asi que
+    //  sin esto el mantener solo se puede medir llamando a `onHold` -que es
+    //  justo donde el fallo no existe, porque se salta el `startTimer` que lo
+    //  decide-. La primera dice si el reloj quedo armado y la segunda lo vence
+    //  como lo venceria el sistema.
+    bool mantenerArmado() const noexcept { return isTimerRunning(); }
+    //  Y VENCE SOLO SI ESTABA ARMADO, que es lo que hace que la cifra de la
+    //  ficha diga algo: un reloj que no corre no vence nunca, asi que con el
+    //  gesto quitado a proposito el banco tiene que ver lo que ve el dedo
+    //  -que no se abre nada- y no una ficha abierta a mano por la prueba.
+    void venceElMantener()               { if (isTimerRunning()) timerCallback(); }
 
     //  Which signal the last strike came from, so the app can say so once
     //  rather than leaving the player to guess why the pads got expressive.

@@ -184,6 +184,8 @@ def corre (dirtemp):
         elif d.get ("instr") == "destino": extra["destino"] = d
         elif d.get ("instr") == "receta":  extra["receta"] = d
         elif d.get ("instr") == "pestana": extra["pestana"] = d
+        elif d.get ("instr") == "mantener": extra["mantener"] = d
+        elif d.get ("instr") == "puertas":  extra["puertas"] = d
         elif d.get ("instr") == "error":  extra["error"] = d.get ("que", "")
     return filas, extra
 
@@ -480,6 +482,71 @@ def main():
             if pe["vuelta"] != "pad":
                 fallos.append ("la puerta de la ficha del instrumento no lleva a EL PAD: "
                                "la ganancia, el pan y el filtro se quedan sin camino")
+
+        # ---- Y MANTENER ABRE LA MISMA FICHA -----------------------------
+        #
+        #  «Cuando mantienes el pad para entrar en ajustes, como en pad cuando
+        #  es un sonido, pero cuando es un instrumento, no funciona»: quince
+        #  pads hacian una cosa y el del instrumento otra. Ninguna de las
+        #  quince reglas de expo.py puede verlo — un pad al que le falta un
+        #  gesto se maqueta perfecto.
+        #
+        #  CUATRO cifras, que una sola se engaña por los dos lados: que el pad
+        #  este en modo TECLA -o sea que se mide el caso que fallaba-, que el
+        #  reloj se ARME -y no que alguien llame a onHold, que es donde el
+        #  fallo no existe-, que abra la ficha del instrumento, y que la NOTA
+        #  no se pague por ello: suena con la ficha delante y se suelta al
+        #  levantar el dedo.
+        ma = extra.get ("mantener")
+        if ma is None:
+            fallos.append ("no hay linea de mantener: nadie mide el gesto en un instrumento")
+        else:
+            print ("\nmantener un pad de instrumento: tecla %d, reloj armado %d, abre %s, "
+                   "suena %d voces con la ficha delante y %d al soltar"
+                   % (ma["tecla"], ma["armado"], ma["ficha"], ma["sonando"], ma["al_soltar"]))
+            if not ma["tecla"]:
+                fallos.append ("el pad del instrumento no esta en modo tecla: "
+                               "esta prueba no mide el caso que fallaba")
+            if not ma["armado"]:
+                fallos.append ("mantener un pad de instrumento no arma el reloj: "
+                               "el gesto no existe ahi")
+            if ma["ficha"] != "vst":
+                fallos.append ("mantener un pad de instrumento abre %s y no su ficha"
+                               % ma["ficha"])
+            if ma["sonando"] < 1:
+                fallos.append ("abrir la ficha corta la nota: %d voces con el dedo encima"
+                               % ma["sonando"])
+            if ma["al_soltar"] != 0:
+                fallos.append ("al soltar quedan %d voces: la ficha se comio el suelta"
+                               % ma["al_soltar"])
+
+        # ---- Y LAS TRES PUERTAS DEL REPARTO -----------------------------
+        #
+        #  «La mayoria de opciones y botones de envios o cosas que hay en pad
+        #  settings y no hay en la pantalla del plugin instrumento». Son
+        #  PUERTAS y no copias: los nueve deslizadores siguen teniendo un dueño
+        #  -EL PAD- y su puerta en la cabecera. Lo que no tenia camino es el
+        #  reparto, que estaba a TRES toques.
+        pu = extra.get ("puertas")
+        if pu is None:
+            fallos.append ("no hay linea de puertas: nadie mide el reparto desde el instrumento")
+        else:
+            print ("las tres puertas: %s, RACK -> %s, PIANO -> %s, y el canal abre su rejilla %d"
+                   % (pu["canal"], pu["rack"], pu["piano"], pu["picker"]))
+            if not pu["hay"]:
+                fallos.append ("la ficha del instrumento no trae las tres puertas del reparto")
+            if pu["rack"] != "rack":
+                fallos.append ("la puerta RACK de la ficha del instrumento abre %s" % pu["rack"])
+            if pu["piano"] != "piano":
+                fallos.append ("la puerta PIANO de la ficha del instrumento abre %s" % pu["piano"])
+            if not pu["picker"]:
+                fallos.append ("la puerta CANAL no abre la rejilla de canales")
+            #  Y LAS DOS DICEN LO MISMO, que es lo que separa dos puertas de dos
+            #  reglas: el rotulo del canal se escribe en un sitio o un dia una
+            #  de las dos se queda vieja.
+            if pu["canal"] != pu["canalPad"]:
+                fallos.append ("las dos tapas de canal no dicen lo mismo: «%s» en el "
+                               "instrumento y «%s» en EL PAD" % (pu["canal"], pu["canalPad"]))
 
         if "bancoD" in extra:
             print ("\nllenar el banco D con los 16: %.0f ms" % extra["bancoD"])

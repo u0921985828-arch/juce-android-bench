@@ -606,7 +606,7 @@ namespace
             "Manten un pad para abrir su ficha: el golpe suena igual",
             //  Y la excepcion, aqui y no en otro capitulo: el gesto se aprende
             //  en el primero, asi que su excepcion va al lado o no se lee.
-            "En un pad con instrumento, mantener es tocar: su ficha se abre desde PAD",
+            "En un pad con instrumento, mantener suena hasta que levantas el dedo",
             nullptr } },
         { "PADS Y BANCOS", {
             "Cuatro bancos de dieciseis pads: los otros 48 siguen sonando",

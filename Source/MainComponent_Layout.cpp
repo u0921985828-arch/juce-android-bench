@@ -3073,6 +3073,7 @@ void MainComponent::resized()
                                                   + Metrics::sm + filaM * filasG
                                                   + Metrics::sm + filaM * filasG
                                                   + Metrics::sm + Metrics::hit
+                                                  + Metrics::sm + Metrics::hit
                                                   + Metrics::sm + Metrics::hit);
 
         auto titleRow = inner.removeFromTop (Metrics::hit);
@@ -3236,6 +3237,30 @@ void MainComponent::resized()
             vstVolver.setBounds (Lang::takeStart (filaV, juce::jmin (Metrics::hit * 3,
                                                                      filaV.getWidth() / 3))
                                      .withHeight (Metrics::hit));
+        }
+        inner.removeFromTop (Metrics::sm);
+
+        //  Y LAS TRES PUERTAS DEL REPARTO, en su propio panel.
+        //
+        //  Se pidio que esta ficha tuviera «la mayoria de opciones y botones de
+        //  envios o cosas que hay en pad settings», y medido: desde aqui el
+        //  RACK estaba a TRES toques -PAD, RIG, RACK- y el canal y el piano
+        //  igual. Son PUERTAS y no copias: los nueve deslizadores de EL PAD
+        //  siguen teniendo un dueño y su propia puerta en la cabecera.
+        //
+        //  Y un panel, porque son otra pregunta: los ocho mandos de arriba son
+        //  COMO SUENA este preset y estas tres son A DONDE VA este pad y con
+        //  que se escribe. Un panel no dice «estos van juntos», dice «estos y
+        //  aquellos no son lo mismo».
+        //
+        //  Cuesta `Metrics::sm + Metrics::hit` en la unica ficha de la casa que
+        //  ya se desplazaba, que es la moneda barata: aqui no hay una sola
+        //  rejilla a la que quitarle un pixel.
+        {
+            auto banda = inner.removeFromTop (Metrics::hit);
+            vstPanelRig = banda.reduced (Metrics::md, 0);
+            juce::TextButton* pb[3] = { &vstCanalBtn, &vstRackBtn, &vstPianoBtn };
+            layoutModuleBar (banda.reduced (Metrics::lg, 0), pb, 0, 3);
         }
         inner.removeFromTop (Metrics::sm);
         //  Y EL PIE LO COLOCA EL MAQUETADO, no el pintor. Lo calculaba el

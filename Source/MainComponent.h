@@ -2250,6 +2250,34 @@ private:
     //  no se veia: los ocho se leian como una lista plana.
     juce::Rectangle<int> vstPanelForma, vstPanelMandos, vstPieArea;
 
+    //  Y LAS TRES PUERTAS DEL RIG, que es lo otro que se pidio: «la mayoria de
+    //  opciones y botones de envios o cosas que hay en pad settings y no hay en
+    //  la pantalla del plugin instrumento».
+    //
+    //  PUERTAS Y NO COPIAS, que es la regla de la casa y aqui ademas la unica
+    //  forma: la ganancia, el pan, el filtro y la envolvente de un pad de
+    //  instrumento son los mismos mandos que los de una muestra, y duplicar
+    //  nueve deslizadores serian nueve sitios que un dia dicen cosas distintas.
+    //  Esos ya tienen su puerta -`vstPadBtn`, en la cabecera- y su dueño: EL
+    //  PAD. Lo que NO tenia puerta es el reparto: desde esta ficha, el RACK
+    //  estaba a TRES toques -PAD, RIG, RACK- y el canal y el piano a tres
+    //  tambien. Ahora a uno.
+    //
+    //  Las tres son ACCIONES y no interruptores, que es por lo que 16 NIVELES
+    //  no entra: es un `toggle`, y un toggle en dos sitios son dos estados que
+    //  mantener en acuerdo - el fallo que ya costo una medida en `showMixBank`.
+    //  Y CHOP, MIC y REMUESTREAR tampoco: las tres ESCRIBEN una muestra en el
+    //  pad, o sea que se llevarian por delante el instrumento que esta ficha
+    //  edita.
+    juce::TextButton vstCanalBtn { "CANAL" }, vstRackBtn { "RACK" }, vstPianoBtn { "PIANO" };
+    juce::Rectangle<int> vstPanelRig;
+    //  Y LAS DOS ACCIONES, escritas una vez porque ahora las piden dos tapas.
+    //  Dos caminos que abren la misma ficha por su cuenta se separan, y el
+    //  sintoma seria «desde EL PAD lleva al rack de este canal y desde el
+    //  instrumento al de otro».
+    void abreRackDelPad();
+    void abrePianoDelPad();
+
     void abreFichaDelPad();
     void abreVst();
     //  QUE PADS SE TOCAN COMO TECLAS y cual esta sonando por cual. Ver

@@ -1271,6 +1271,120 @@ void MainComponent::auditInstr()
     }
 
     // ------------------------------------------------------------------
+    //  Y QUE MANTENER ABRA ESA MISMA FICHA, que es la mitad que faltaba.
+    //
+    //  Llego del telefono: «cuando mantienes el pad para entrar en ajustes,
+    //  como en pad cuando es un sonido, pero cuando es un instrumento, no
+    //  funciona, no es la misma logica». Y ninguna de las quince reglas de
+    //  `expo.py` puede verlo: un pad al que le falta un gesto se maqueta
+    //  perfecto -no solapa, no se sale, no corta un rotulo, no mide cero y esta
+    //  traducido-. Es la familia de los cinco fallos del compas del piano.
+    //
+    //  POR EL GESTO: se construye un `MouseEvent` y se llama a
+    //  `PadButton::mouseDown`, que es donde vive el `startTimer` que decide, y
+    //  se vence el reloj como lo venceria el sistema. Llamar a `onHold` por
+    //  dentro se salta exactamente la linea del fallo, o sea que saldria verde
+    //  con el codigo roto.
+    //
+    //  Y CON CUATRO CIFRAS, que una sola se engaña por los dos lados: que el
+    //  pad este en MODO TECLA -o sea que se mide el caso que fallaba y no un
+    //  pad de muestra-, que el reloj se ARME, que abra la ficha del INSTRUMENTO
+    //  y que la NOTA no se pague por ello - suena con la ficha delante y se
+    //  suelta al levantar. «Abre la ficha» lo cumple igual un arreglo que corte
+    //  la nota a los 420 ms, y «la nota sigue» lo cumple el codigo de ayer, que
+    //  no abria nada.
+    {
+        engine.prepareToPlay (48000.0, 128);
+        juce::AudioBuffer<float> b (2, 128);
+        auto vivas = [&]
+        {
+            b.clear();
+            engine.renderNextBlock (b, 0, 128);
+            return engine.getActiveVoiceCount();
+        };
+
+        closeAllSheets();
+        const int pad = kBancoInstr * kPadsPerBank + 7;
+        selectPad (pad);
+        refreshModoNota();
+        engine.postPanic();
+        vivas();
+
+        auto* p = pads[pad];
+        const int tecla = (p != nullptr && p->enModoNota()) ? 1 : 0;
+        const auto punto = juce::Point<float> ((float) (p->getWidth()  / 2),
+                                               (float) (p->getHeight() / 2));
+        const auto ahora = juce::Time::getCurrentTime();
+        juce::MouseEvent ev (juce::Desktop::getInstance().getMainMouseSource(),
+                             punto, juce::ModifierKeys(), 1.0f,
+                             0.0f, 0.0f, 0.0f, 0.0f,
+                             p, p, ahora, punto, ahora, 1, false);
+
+        p->mouseDown (ev);
+        const int armado = p->mantenerArmado() ? 1 : 0;
+        p->venceElMantener();
+        const juce::String q = vstSheet.isVisible() ? "vst"
+                                                    : (padSheet.isVisible() ? "pad" : "ninguna");
+        const int sonando = vivas();
+        p->mouseUp (ev);
+        //  Y SE DEJA CAER ANTES DE CONTAR, que es la lección que este banco ya
+        //  tiene escrita con otra pieza: soltar una nota ABRE LA CAIDA, no
+        //  corta - y un pad de instrumento nace con 180 ms de suelta, o sea 68
+        //  bloques de 128. Preguntar en el bloque siguiente devuelve 1 con el
+        //  codigo perfecto. Trescientos milisegundos, que es de sobra.
+        for (int i = 0; i < 120; ++i) vivas();
+        const int alSoltar = vivas();
+        closeAllSheets();
+
+        std::cout << "{\"instr\":\"mantener\",\"tecla\":" << tecla
+                  << ",\"armado\":" << armado << ",\"ficha\":\"" << q
+                  << "\",\"sonando\":" << sonando
+                  << ",\"al_soltar\":" << alSoltar << "}" << std::endl;
+    }
+
+    // ------------------------------------------------------------------
+    //  Y LAS TRES PUERTAS DEL REPARTO, que era la otra mitad de lo que se
+    //  pidio: «la mayoria de opciones y botones de envios o cosas que hay en
+    //  pad settings y no hay en la pantalla del plugin instrumento».
+    //
+    //  POR LA TAPA -`onClick`- y no llamando a `abreRackDelPad` por dentro, que
+    //  es justo donde no existe el fallo: lo que se mide es que la tapa ESTE y
+    //  lleve donde dice. Y las tres desde la ficha del instrumento abierta, que
+    //  es el estado en el que se pidieron.
+    {
+        const int pad = kBancoInstr * kPadsPerBank + 7;
+        auto abre = [this, pad] { closeAllSheets(); selectPad (pad); abreVst(); };
+
+        abre();
+        const int hay = (vstRackBtn.isVisible() && vstPianoBtn.isVisible()
+                             && vstCanalBtn.isVisible()) ? 1 : 0;
+        //  Y QUE EL CANAL DIGA EL DEL PAD: las dos tapas de canal son dos
+        //  puertas a la misma rejilla, asi que un rotulo escrito dos veces es
+        //  el que un dia se queda viejo.
+        const juce::String canal = vstCanalBtn.getButtonText();
+        const juce::String canalPad = padCanalBtn.getButtonText();
+
+        if (vstRackBtn.onClick)  vstRackBtn.onClick();
+        const juce::String qr = rackSheet.isVisible() ? "rack" : "ninguna";
+
+        abre();
+        if (vstPianoBtn.onClick) vstPianoBtn.onClick();
+        const juce::String qp = (seqSheet.isVisible() && seqPage == seqPagePiano)
+                                    ? "piano" : "ninguna";
+
+        abre();
+        if (vstCanalBtn.onClick) vstCanalBtn.onClick();
+        const int qc = canalSheet.isVisible() ? 1 : 0;
+        abreCanalPicker (false);
+        closeAllSheets();
+
+        std::cout << "{\"instr\":\"puertas\",\"hay\":" << hay
+                  << ",\"canal\":\"" << canal << "\",\"canalPad\":\"" << canalPad
+                  << "\",\"rack\":\"" << qr
+                  << "\",\"piano\":\"" << qp << "\",\"picker\":" << qc << "}" << std::endl;
+    }
+
+    // ------------------------------------------------------------------
     //  Y QUE EL DESTINO SE ELIJA DE VERDAD.
     //
     //  Era el pad del mismo numero que la familia dentro del banco D, asi que
