@@ -103,9 +103,12 @@ namespace FxVisor
     //  LOS QUE DIBUJAN UNA ONDA. BIT desde que su visor pasa la onda por
     //  `crush`, y RNG porque su curva ES la portadora: los dos tienen amplitud
     //  en el eje vertical, asi que su capa viva es la onda que de verdad sale.
+    //  Y OCT, que dibuja lo que su rectificador y su divisor le hacen a una
+    //  onda: su eje vertical es amplitud, igual que los otros dos.
     inline bool deOnda (int f) noexcept
     {
-        return f == AudioEngine::kFxBit || f == AudioEngine::kFxRng;
+        return f == AudioEngine::kFxBit || f == AudioEngine::kFxRng
+            || f == AudioEngine::kFxOct;
     }
 
     //  Y LOS QUE DIBUJAN FRECUENCIA. FLT y HPF desde el principio; WID y EXC
@@ -114,7 +117,8 @@ namespace FxVisor
     inline bool deFrecuencia (int f) noexcept
     {
         return f == AudioEngine::kFxFlt || f == AudioEngine::kFxHpf
-            || f == AudioEngine::kFxWid || f == AudioEngine::kFxExc;
+            || f == AudioEngine::kFxWid || f == AudioEngine::kFxExc
+            || f == AudioEngine::kFxWah;
     }
 
     //  LA QUINTA FAMILIA: MODULACION. Su forma es el LFO, y sale de
@@ -189,6 +193,17 @@ namespace FxVisor
             case AudioEngine::kFxExc:
             case AudioEngine::kFxTrn:
             case AudioEngine::kFxFrz: return { true,  true  };
+            //  WAH: los DOS, y eso obligo a decidir QUE se dibuja. La respuesta
+            //  EN REPOSO solo depende de BASE -con la envolvente a cero el
+            //  centro ES la base, y SENS no moveria un pixel- asi que lo que se
+            //  dibuja es el RECORRIDO: la banda donde arranca y la banda donde
+            //  llega con el filtro abierto del todo. Los dos mandos lo mueven y
+            //  ademas es lo que un wah hace; donde esta la banda AHORA lo dice
+            //  la capa viva, que es el espectro de lo que sale.
+            case AudioEngine::kFxWah: return { true,  true  };
+            //  OCT: los dos niveles cambian la onda que sale, que es lo que su
+            //  visor dibuja pasandola por `AudioEngine::octava`.
+            case AudioEngine::kFxOct: return { true,  true  };
             default:                  return { false, false };
         }
     }
@@ -262,6 +277,54 @@ namespace FxVisor
             return;
         }
 
+
+        //  OCT SE DIBUJA PASANDO UNA ONDA POR EL EFECTO DE VERDAD, igual que
+        //  BIT y por lo mismo: la unica forma de que el dibujo no sea una
+        //  formula parecida escrita al lado es que sea la MISMA funcion.
+        //  `AudioEngine::octava` nacio compartida el dia que se escribio.
+        //
+        //  Y SE DEJA ASENTAR antes de dibujar: el biestable arranca donde
+        //  arranque y el seguidor en cero -y su caida son cuarenta
+        //  milisegundos- asi que los primeros ciclos de cualquier octavador no
+        //  se parecen al regimen. Se simulan OCHO ciclos y se dibujan los DOS
+        //  ultimos.
+        //
+        //  Y LOS CICLOS SE CUENTAN, no se escriben: la primera version puso 512
+        //  muestras diciendo «cuatro ciclos» y a 200 Hz sobre 48 kHz son 2.13,
+        //  asi que se dibujaba una ventana de 1.07 ciclos. El banco lo canto
+        //  contra el motor con **3.7 dB** de desvio y la forma era la correcta:
+        //  lo que no cuadraba era la ventana. Por eso `kCiclo` sale de la
+        //  division y `kN` de multiplicarlo.
+        if (fx == AudioEngine::kFxOct)
+        {
+            constexpr float kFs = 48000.0f;
+            constexpr float kHz = 200.0f;           // por debajo del corte del detector
+            constexpr int kCiclo = (int) (kFs / kHz);
+            constexpr int kVent  = kCiclo * 2;      // lo que se dibuja: dos ciclos
+            constexpr int kN     = kCiclo * 8;      // lo que se simula
+            const float cLp  = 1.0f - Dinamica::coefDe (0.25f, kFs);
+            const float aEnv = Dinamica::coefDe (2.0f,  kFs);
+            const float rEnv = Dinamica::coefDe (40.0f, kFs);
+
+            AudioEngine::OctEstado st;
+            std::array<float, kN> salida {};
+            for (int n = 0; n < kN; ++n)
+            {
+                const float x = std::sin (juce::MathConstants<float>::twoPi
+                                          * kHz * (float) n / kFs);
+                salida[(size_t) n] = AudioEngine::octava (x, st, p0, p1, cLp, aEnv, rEnv);
+            }
+
+            float pico = 1.0e-4f;
+            for (int n = kN - kVent; n < kN; ++n) pico = juce::jmax (pico, std::abs (salida[(size_t) n]));
+
+            for (int i = 0; i < kPuntos; ++i)
+            {
+                const int n = kN - kVent + juce::jlimit (0, kVent - 1, i * kVent / kPuntos);
+                pon (i, 0.5f + 0.45f * salida[(size_t) n] / pico);
+            }
+            return;
+        }
 
         //  ==================================================================
         //  LOS SEIS DE CARACTER. Cuatro traen su propio eje y se escriben
@@ -420,6 +483,24 @@ namespace FxVisor
                 case AudioEngine::kFxHpf:
                     pon (i, dbAAlto (AudioEngine::svfDb (hzDe (t), p0, p1, true)));
                     break;
+
+                //  WAH: EL RECORRIDO, o sea la banda en reposo y la banda con el
+                //  filtro abierto del todo. Las dos salen de `svfBandaDb` con el
+                //  centro que `wahCentro` da a envolvente 0 y a envolvente 1, o
+                //  sea de las MISMAS dos funciones que corren en el hilo de
+                //  audio. Dibujar solo la de reposo dejaria SENS sin mover un
+                //  pixel; dibujar una media seria una forma que el filtro no
+                //  tiene nunca.
+                case AudioEngine::kFxWah:
+                {
+                    const float hz = hzDe (t);
+                    const float a = AudioEngine::svfBandaDb (hz,
+                                      AudioEngine::wahCentro (p1, p0, 0.0f), AudioEngine::kWahQ);
+                    const float b = AudioEngine::svfBandaDb (hz,
+                                      AudioEngine::wahCentro (p1, p0, 1.0f), AudioEngine::kWahQ);
+                    pon (i, dbAAlto (juce::jmax (a, b)));
+                    break;
+                }
 
                 case AudioEngine::kFxDrv:
                 {

@@ -362,6 +362,7 @@ UNTRANSLATED_OK = {
     "CMP", "GTE", "DSS", "LIM",                # la familia de dinamica, tres letras cada una
     "CHO", "FLA", "PHA", "TRM",                # la de modulacion, igual: tres letras
     "RNG", "PIT", "WID", "EXC", "TRN", "FRZ",  # la de caracter, igual
+    "WAH", "OCT",   # y los dos que se pidieron, por lo mismo: son tres letras
     "RATIO",                                   # se escribe igual en las dos lenguas
     "FREQ",                                    # la abreviatura de frecuencia, la misma
     "AUTO",                                    # la abreviatura de automatizacion, igual en las cuatro

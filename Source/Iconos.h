@@ -67,6 +67,7 @@ namespace Iconos
         midi, medir, altavoz, mano, momentaneo, niveles,
         cho, fla, pha, trm,
         rng, pit, wid, exc, trn, frz,
+        wah, oct,
         //  --- LOS SEIS QUE FALTABAN, y por que faltaban ------------------
         //
         //  No se eligieron mirando: salieron de `Tests/planos.py`, que dibuja
@@ -212,6 +213,7 @@ namespace Iconos
             case Id::rng: return "rng";                case Id::pit: return "pit";
             case Id::wid: return "wid";                case Id::exc: return "exc";
             case Id::trn: return "trn";                case Id::frz: return "frz";
+            case Id::wah: return "wah";                case Id::oct: return "oct";
             case Id::mic: return "mic";                case Id::remuestrear: return "remuestrear";
             case Id::bombeo: return "bombeo";          case Id::autocut: return "autocut";
             case Id::sistema: return "sistema";        case Id::cadena: return "cadena";
@@ -939,6 +941,50 @@ namespace Iconos
                 linea (L, 12.0f, 21.0f, 12.0f, 8.5f);
                 linea (L, 3.0f,  4.0f, 21.0f,  4.0f);
                 break;
+
+            //  ==================================================================
+            //  LOS DOS QUE SE PIDIERON.
+
+            //  WAH: la banda estrecha Y EL RECORRIDO POR EL QUE VIAJA. El pico
+            //  solo no valdria -a trece pixeles es un palo, o sea `rng` con una
+            //  punta- y una curva de respuesta lo dejaria a un pelo de `flt` y
+            //  de `eq`. Lo que lo hace suyo son las DOS marcas de los extremos:
+            //  dicen que esa banda no esta quieta, que es toda la diferencia
+            //  entre un wah y un filtro de banda.
+            case Id::wah:
+                linea (L, 2.0f, 19.0f, 22.0f, 19.0f);
+                L.startNewSubPath (8.5f, 19.0f);
+                L.quadraticTo (10.5f, 4.0f, 12.0f, 4.0f);
+                L.quadraticTo (13.5f, 4.0f, 15.5f, 19.0f);
+                linea (L, 3.5f, 16.0f, 3.5f, 10.5f);
+                linea (L, 20.5f, 16.0f, 20.5f, 10.5f);
+                break;
+
+            //  OCT: UNA onda y su mitad, una encima de la otra. Es literalmente
+            //  lo que el efecto hace -una octava arriba y una abajo- y es lo que
+            //  lo separa de `cho`, que son dos ondas del MISMO periodo
+            //  desplazadas, y de `pit`, que es una sola que se aprieta. La de
+            //  arriba lleva cuatro ciclos y la de abajo uno: a trece pixeles lo
+            //  que se lee es la RELACION, no los ciclos.
+            case Id::oct:
+            {
+                //  Y LOS PUNTOS DE CONTROL CUENTAN: `Path::getBounds` acota una
+                //  cuadratica por ellos y no por el trazo, asi que la primera
+                //  version -con el control de abajo en 23.5- salio de la caja de
+                //  24 por tres decimas. Lo canto `iconos.py` en la primera
+                //  corrida: `1.6 .. 24.3 FUERA`.
+                L.startNewSubPath (2.0f, 7.5f);
+                for (int i = 0; i < 4; ++i)
+                {
+                    const float x = 2.0f + (float) i * 5.0f;
+                    L.quadraticTo (x + 1.25f, 3.0f,  x + 2.5f, 7.5f);
+                    L.quadraticTo (x + 3.75f, 12.0f, x + 5.0f, 7.5f);
+                }
+                L.startNewSubPath (2.0f, 16.5f);
+                L.quadraticTo (7.0f,  11.5f, 12.0f, 16.5f);
+                L.quadraticTo (17.0f, 21.5f, 22.0f, 16.5f);
+                break;
+            }
 
             //  EXC: el destello que se anade encima de la banda. La estrella
             //  de cuatro puntas no la lleva nadie mas en la tabla, y va a la

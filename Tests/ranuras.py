@@ -200,14 +200,19 @@ def main():
     #     con la geometria de cada pantalla. Lo que se exige de las dos: que lo
     #     pedido quepa en la tarjeta y que la celda llegue al dedo.
     print()
-    print ("pantalla   hoy            a 21           tope")
+    #  Y LA SEGUNDA COLUMNA ES «CON UNO MAS» Y NO «A 21»: un numero clavado
+    #  en la prueba vale lo mismo que uno clavado en el codigo, y este valia
+    #  `kNumFx` el dia que se escribio. Lo que hay que saber es si el menu
+    #  sigue cabiendo el dia que entre el siguiente tipo.
+    tipos = r["tipos"]
+    print ("pantalla   hoy (%d)       con uno mas (%d)  tope" % (tipos, tipos + 1))
     for size in SIZES:
         g = corre ({"ZATI_SIZE": size})
         if g is None:
             malas.append ("%s no contesto" % size);  continue
         tope = g["tope_tarjeta"]
-        linea = "%-10s %-14s %-14s %4d" % (size, g["forma"], g["forma21"], tope)
-        for cual in ("forma", "forma21"):
+        linea = "%-10s %-14s %-14s %4d" % (size, g["forma"], g["formaMas"], tope)
+        for cual in ("forma", "formaMas"):
             cols, filas, pide, celda = leeForma (g[cual])
             if pide > tope:
                 malas.append ("%s: %s pide %d px y la tarjeta da %d"
@@ -225,7 +230,8 @@ def main():
         for m in malas: print ("FALLA  " + m)
         return 1
     print ("las seis ranuras: el menu, la accion unica, un tipo una ranura, "
-           "vaciar apaga, los defectos cuadran y la rejilla cabe a 21")
+           "vaciar apaga, los defectos cuadran y la rejilla cabe a %d y a %d"
+           % (tipos, tipos + 1))
     return 0
 
 

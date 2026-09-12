@@ -48,7 +48,7 @@ llevar un **instrumento**: dieciséis familias sintetizadas de dieciséis preset
 cada una, multizona, que se tocan con el dedo como una tecla.
 
 Encima de eso hay un secuenciador de ocho patrones con cadena y una canción de
-cuatro carriles por sesenta y cuatro compases, veintiun efectos en seis ranuras
+cuatro carriles por sesenta y cuatro compases, veintitrés efectos en seis ranuras
 **por canal**, una mesa de treinta y dos canales con máster, y una exportación que
 saca el máster o las pistas por separado.
 
@@ -272,7 +272,7 @@ Un efecto contra los sesenta y cuatro pads. El selector de pad es una rejilla de
 cuatro por cuatro por banco —dieciséis en fila no caben: en 280 px les tocan 26—
 y debajo las seis filas del pad elegido, con la de un efecto apagado atenuada:
 *lo que pongas ahora es lo que usará cuando lo enciendas*. Cada fila dice de qué
-familia es su efecto: de los veintiun tipos, **dieciseis son insertos** —subir el fader
+familia es su efecto: de los veintitrés tipos, **dieciocho son insertos** —subir el fader
 le quita señal seca al pad— y sólo DLY y REV suman encima. Lo que hay DENTRO se
 ve en el plato de la cara, con los números de ahora: el dibujo sale de la MISMA
 fórmula que suena (`FxVisor::muestrea`, que llama a `svfDb`, `saturaDe`,
@@ -456,7 +456,7 @@ inclina con la fuerza del golpe, fundidos de canto en coseno alzado, ancho
 estéreo en medio/lado **antes** del pan, y pan de potencia constante que desliza
 en exactamente un bloque.
 
-### Los veintiun efectos
+### Los veintitrés efectos
 
 | | mando 1 | mando 2 | mando 3 |
 |---|---|---|---|
@@ -481,6 +481,8 @@ en exactamente un bloque.
 | **EXC** | CRUCE 1–10 kHz | FUERZA | MIX |
 | **TRN** | ATAQUE −1…+1 | CAIDA −1…+1 | MIX |
 | **FRZ** | VENTANA 20–500 ms | SUAVE | MIX |
+| **WAH** | SENS | BASE 200–1200 Hz | MIX |
+| **OCT** | ARRIBA | ABAJO | MIX |
 
 FLT es un barrido bidireccional con zona muerta: negativo cierra por arriba,
 positivo abre por abajo, el centro se salta la etapa. HPF tiene **su propio**

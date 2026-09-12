@@ -814,7 +814,8 @@ inline Iconos::Id iconoDeFx (int f) noexcept
                                       Iconos::Id::pha, Iconos::Id::trm,
                                       Iconos::Id::rng, Iconos::Id::pit,
                                       Iconos::Id::wid, Iconos::Id::exc,
-                                      Iconos::Id::trn, Iconos::Id::frz };
+                                      Iconos::Id::trn, Iconos::Id::frz,
+                                      Iconos::Id::wah, Iconos::Id::oct };
     //  UNA FILA POR TIPO, y que lo diga el compilador. Es la misma lista corta
     //  en silencio que ya costo `fxSustituye` y `fxMixNow`: aqui el sintoma seria
     //  una fila con un hueco -o sea lo que `Tests/planos.py` existe para cazar-

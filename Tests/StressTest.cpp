@@ -3876,6 +3876,14 @@ int main()
             const Caso casos[] = {
                 { AudioEngine::kFxFlt, "FLT: dibujo contra el filtro", -0.55f, 1.6f },
                 { AudioEngine::kFxHpf, "HPF: dibujo contra el filtro", 800.0f, 2.2f },
+                //  WAH CON SENS A CERO, que no es aflojar la medida sino donde
+                //  la pregunta tiene respuesta: con la envolvente fuera del
+                //  juego el centro ES la base, asi que la banda esta quieta y el
+                //  dibujo -que es el RECORRIDO, o sea el maximo de la banda en
+                //  reposo y abierta- se reduce a esa misma banda. Con SENS
+                //  puesto, el dibujo es la union de dos posiciones y la medida
+                //  seria la de una: dos cosas distintas y ninguna mal.
+                { AudioEngine::kFxWah, "WAH: dibujo contra la banda", 0.0f, 600.0f },
             };
 
             for (const auto& c : casos)
@@ -4233,6 +4241,84 @@ int main()
                          "BIT: dibujo contra el crusher", relacion, m.second, d.second,
                          ok ? "OK" : zatiFalla());
         }
+
+        //  ------------------------------------------------------------------
+        //  5. OCT, que es el otro cuyo dibujo es una ONDA.
+        //
+        //  Y se juzga por DONDE esta la energia y no punto a punto, por lo
+        //  mismo que BIT: el dibujo sale normalizado a su pico y el bus no, asi
+        //  que restar muestra a muestra mediria la normalizacion. Lo que define
+        //  un octavador es la RELACION entre lo que pone una octava arriba y lo
+        //  que pone una abajo, y esa cifra se puede sacar igual de las cuarenta
+        //  y ocho columnas que de lo que sale del motor.
+        //
+        //  Con los dos mandos a media altura a proposito: con uno de los dos a
+        //  cero la relacion se va al infinito por los dos lados y la
+        //  comparacion diria que si sin mirar nada.
+        //  ------------------------------------------------------------------
+        {
+            const float arriba = 0.7f, abajo = 0.7f;
+            FxVisor::Curva curva {};
+            FxVisor::muestrea (AudioEngine::kFxOct, arriba, abajo, curva);
+
+            //  La proyeccion sobre `ciclos` ciclos de la ventana, que es el
+            //  mismo Goertzel de arriba escrito para un vector normalizado.
+            auto proy = [] (const std::vector<float>& x, double ciclos)
+            {
+                double re = 0.0, im = 0.0;
+                const double n = (double) x.size();
+                for (size_t i = 0; i < x.size(); ++i)
+                {
+                    const double w = juce::MathConstants<double>::twoPi * ciclos * (double) i / n;
+                    re += (double) x[i] * std::cos (w);
+                    im += (double) x[i] * std::sin (w);
+                }
+                return 2.0 * std::sqrt (re * re + im * im) / n;
+            };
+
+            //  El dibujo: su ventana son DOS ciclos de la entrada -ver
+            //  `FxVisor::muestrea`- asi que la octava alta cae en cuatro y la
+            //  baja en uno. Se quita el renglon del medio, que es el cero.
+            std::vector<float> dib;
+            for (float y : curva) dib.push_back (y * 2.0f - 1.0f);
+            const double dAlta = proy (dib, 4.0), dBaja = proy (dib, 1.0);
+
+            //  El motor, con el mismo tono de 200 Hz que el visor simula.
+            std::vector<float> v;
+            corre (AudioEngine::kFxOct, arriba, abajo, 200.0f, 0.60f, v);
+            //  CUATROCIENTAS OCHENTA MUESTRAS, que a 48 kHz y 200 Hz son los
+            //  MISMOS dos ciclos de entrada que dibuja el visor. Y por eso los
+            //  dos numeros son los mismos cuatro y uno: los ciclos de la
+            //  ventana no dependen de cuantas muestras se tomen de ella.
+            //
+            //  Aqui es donde esta medida mintio: se escribieron cuarenta y diez
+            //  -«diez veces mas muestras por ciclo»- y salio un desvio de
+            //  **74.0 dB** con el dibujo correcto, porque se estaba proyectando
+            //  sobre dos frecuencias que no existen en la señal. Primero se duda
+            //  de la prueba.
+            //  Y CON EL MISMO SUBMUESTREO QUE EL DIBUJO, que es lo que hace
+            //  esta comparacion justa: una onda cuadrada tiene armonicos hasta
+            //  arriba y a cuarenta y ocho puntos se pliegan, asi que medir el
+            //  motor con las 480 muestras y el dibujo con 48 compara dos
+            //  plegados distintos — salia 3.6 dB de desvio con las dos formas
+            //  identicas. Es la misma decision que la fila de BIT.
+            const size_t base = v.size() - (size_t) FxVisor::kPuntos * 10;
+            std::vector<float> mues;
+            for (int i = 0; i < FxVisor::kPuntos; ++i)
+                mues.push_back (v[base + (size_t) i * 10]);
+            const double mAlta = proy (mues, 4.0), mBaja = proy (mues, 1.0);
+
+            const double dRel = 20.0 * std::log10 (juce::jmax (1.0e-9, dAlta)
+                                                   / juce::jmax (1.0e-9, dBaja));
+            const double mRel = 20.0 * std::log10 (juce::jmax (1.0e-9, mAlta)
+                                                   / juce::jmax (1.0e-9, mBaja));
+            const double d = std::abs (dRel - mRel);
+            const bool ok = (d <= 4.0);
+            std::printf ("%-34s arriba/abajo dibujado %+.1f dB  medido %+.1f dB  "
+                         "desvio %.1f dB (tope 4.00)   %s\n",
+                         "OCT: dibujo contra el octavador", dRel, mRel, d,
+                         ok ? "OK" : zatiFalla());
+        }
     }
 
     //  LA AUTOMATIZACION, con TRES cifras y no una.
@@ -4352,7 +4438,7 @@ int main()
         //  esta casa ya pago con el limitador.
         auto corre = [&tono] (int fx, float p0, float p1, float mix,
                               std::vector<float>& salida, int bloques = 120,
-                              float hz = 440.0f)
+                              float hz = 440.0f, float amp = 0.5f)
         {
             AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
             e.setPadGain (0, 1.0f);
@@ -4363,7 +4449,10 @@ int main()
                 e.setFxParam (0, fx, 2, mix);
                 e.setCanalSend (0, fx, 1.0f);
             }
-            e.publishSample (0, tono (kFs, 2.5, hz, 0.5f));
+            //  LA AMPLITUD ES UN PARAMETRO desde que hay un efecto cuyo mando
+            //  lo mueve la SEÑAL: sin ella, WAH solo se puede medir a un nivel
+            //  y «sigue la envolvente» no se puede ni afirmar ni negar.
+            e.publishSample (0, tono (kFs, 2.5, hz, amp));
 
             juce::AudioBuffer<float> b (2, kBs);
             for (int i = 0; i < 30; ++i) { b.clear(); e.renderNextBlock (b, 0, kBs); }
@@ -4873,6 +4962,74 @@ int main()
             const bool ok = (vivo > 0.05) && (mudo < 1.0e-4) && (peor < 1.0e-3);
             std::printf ("%-34s al segundo %.5f (sin FRZ %.5f)   dos vueltas difieren %.6f   %s\n",
                          "FRZ", vivo, mudo, peor, ok ? "OK" : zatiFalla());
+        }
+
+        // ====================================================================
+        //  LOS DOS QUE SE PIDIERON: WAH y OCT.
+        // ====================================================================
+
+        // --- WAH --------------------------------------------------------------
+        //
+        //  El unico de los veintitres cuyo mando lo mueve la SEÑAL, asi que sus
+        //  dos cifras son las dos mitades de eso:
+        //
+        //  (1) CON SEÑAL FUERTE la banda se abre: el mismo tono de 1600 Hz pasa
+        //      +X dB con SENS a tope que con SENS a cero -donde el centro se
+        //      queda clavado en BASE, 400 Hz, y 1600 cae dos octavas arriba-.
+        //  (2) CON SEÑAL FLOJA no se mueve: la misma comparacion da CERO. Sin
+        //      esta, «se abre» lo cumple igual un filtro con el centro puesto
+        //      mas arriba, que es un filtro de banda y no un wah; y sin la
+        //      primera, «no se mueve» lo cumple un mando que no esta conectado.
+        {
+            std::vector<float> fuerteSens, fuerteQuieto, flojaSens, flojaQuieto;
+            const float base = 400.0f, prueba = 1600.0f;
+            corre (AudioEngine::kFxWah, 1.0f, base, 1.0f, fuerteSens,   120, prueba, 0.90f);
+            corre (AudioEngine::kFxWah, 0.0f, base, 1.0f, fuerteQuieto, 120, prueba, 0.90f);
+            corre (AudioEngine::kFxWah, 1.0f, base, 1.0f, flojaSens,    120, prueba, 0.02f);
+            corre (AudioEngine::kFxWah, 0.0f, base, 1.0f, flojaQuieto,  120, prueba, 0.02f);
+
+            const size_t a = (size_t) kBs * 40, b = fuerteSens.size();
+            const double abre  = db (amp (fuerteSens, a, b, prueba),
+                                     amp (fuerteQuieto, a, b, prueba));
+            const double queda = db (amp (flojaSens, a, b, prueba),
+                                     amp (flojaQuieto, a, b, prueba));
+
+            const bool ok = (abre > 9.0) && (std::abs (queda) < 1.0);
+            std::printf ("%-34s con señal fuerte %+.1f dB   con señal floja %+.1f dB   %s\n",
+                         "WAH", abre, queda, ok ? "OK" : zatiFalla());
+        }
+
+        // --- OCT --------------------------------------------------------------
+        //
+        //  TRES cifras, porque las dos primeras son cada una la mitad del
+        //  efecto y la tercera es la que dice que las dos SALEN DE AHI:
+        //
+        //  (1) con ARRIBA solo, de un tono de 220 sale un 440 -la rectificacion
+        //      de onda completa dobla la frecuencia-;
+        //  (2) con ABAJO solo, sale un 110 -el biestable divide por dos-;
+        //  (3) y con los dos a cero el bus se queda MUDO. Sin la tercera, las
+        //      otras dos las cumple igual un octavador que ademas deja pasar el
+        //      original, y entonces «suena» no dice de donde sale lo que suena.
+        //
+        //  Y no es PIT con el mando en -12: esto lo hacen un rectificador y un
+        //  divisor, que es por lo que el 440 sale CON la fundamental de 220
+        //  hundida y el 110 sale como un cuadrado.
+        {
+            std::vector<float> arriba, abajo, nada;
+            const float f0 = 220.0f;
+            corre (AudioEngine::kFxOct, 1.0f, 0.0f, 1.0f, arriba, 120, f0, 0.70f);
+            corre (AudioEngine::kFxOct, 0.0f, 1.0f, 1.0f, abajo,  120, f0, 0.70f);
+            corre (AudioEngine::kFxOct, 0.0f, 0.0f, 1.0f, nada,   120, f0, 0.70f);
+
+            const size_t a = (size_t) kBs * 40, b = arriba.size();
+            const double alta = db (amp (arriba, a, b, 440.0), amp (arriba, a, b, f0));
+            const double baja = db (amp (abajo,  a, b, 110.0), amp (abajo,  a, b, f0));
+            const double mudo = rms (nada, a, b);
+
+            const bool ok = (alta > 6.0) && (baja > 6.0) && (mudo < 1.0e-3);
+            std::printf ("%-34s ARRIBA 440/220 %+.1f dB   ABAJO 110/220 %+.1f dB   "
+                         "con los dos a cero %.5f   %s\n",
+                         "OCT", alta, baja, mudo, ok ? "OK" : zatiFalla());
         }
     }
 

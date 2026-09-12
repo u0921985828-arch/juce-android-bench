@@ -3843,7 +3843,14 @@ void MainComponent::auditRanuras()
               << ",\"params\":\""   << claves  << "\""
               << ",\"nombres\":\""  << nombres << "\""
               << ",\"forma\":\""          << forma (kNumFx) << "\""
-              << ",\"forma21\":\""        << forma (21) << "\""
+              //  Y LA FORMA CON UN TIPO MAS, que es la pregunta que de verdad
+              //  importa: el dia que entre el siguiente, sigue cabiendo el
+              //  menu? Estaba escrita como `forma21` -un numero clavado que
+              //  valia lo mismo que `kNumFx` el dia que se escribio- y en
+              //  cuanto entraron WAH y OCT paso a probar una cuenta que la
+              //  app ya no tiene, con el veredicto del script diciendo «cabe
+              //  a 21» para siempre. Una afirmacion sin medida, en la prueba.
+              << ",\"formaMas\":\""       << forma (kNumFx + 1) << "\""
               << ",\"tope_tarjeta\":"    << topeR
               << ",\"defectos_cruzados\":" << defectosQueNoCuadran
               << ",\"canales\":"           << kNumCanales

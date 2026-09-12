@@ -2658,6 +2658,144 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     }
                 }
             }
+
+            // --- 7f. WAH Y OCT. ------------------------------------------
+            //
+            //  Los dos SUSTITUYEN y los dos son de CANAL, como los dieciseis de
+            //  arriba. Van en su propio bloque y no dentro del de caracter
+            //  porque no comparten con ellos ni una pieza: `carVivo` es un array
+            //  de seis y meterlos ahi seria un array de ocho con dos filas que
+            //  no significan lo que dice el comentario de encima.
+            {
+                const float kBlockC = kBlock;
+
+                // --- WAH: la banda que la abre lo que entra. -------------
+                //
+                //  Es el unico de los veintitres cuyo mando lo mueve la SEÑAL.
+                //  Un wah de LFO seria FLT con un barrido automatico -o sea lo
+                //  que FLT ya hace, con un mando distinto- y lo que separa un
+                //  auto-wah de eso es que responde a como tocas: cada golpe abre
+                //  su propia vocal, que es por lo que suena a funk en una caja y
+                //  no en un colchon.
+                //
+                //  Y ES UNA BANDA Y NO UN PASO BAJO, que es la otra mitad: lo
+                //  que hace la vocal es que por debajo del centro tambien cae.
+                //  Con un paso bajo barrido saldria un filtro barrido, que es
+                //  FLT otra vez.
+                {
+                    const bool vivo = live (kFxWah);
+                    const float se = juce::jlimit (0.0f, 1.0f, P (kFxWah, 0));
+                    const float ba = juce::jlimit (200.0f, 1200.0f, P (kFxWah, 1));
+                    I.smWahSens += kBlockC * (se - I.smWahSens);
+                    I.smWahBase += kBlockC * (ba - I.smWahBase);
+
+                    //  El flanco limpia el filtro Y el seguidor: sin el, al
+                    //  reabrirlo la banda arranca donde la dejo la vez anterior
+                    //  y el primer golpe suena con el barrido de hace un minuto.
+                    if (vivo && ! I.wahWasActive)
+                    {
+                        I.wahEnv = 0.0f;
+                        I.wahSt[0] = {};
+                        I.wahSt[1] = {};
+                    }
+                    I.wahWasActive = vivo;
+
+                    if (vivo)
+                    {
+                        //  Los dos coeficientes salen de `Dinamica::coefDe`, que
+                        //  es la misma cuenta que usan los cuatro de dinamica y
+                        //  el moldeador de transitorios: una constante de tiempo
+                        //  escrita dos veces son dos reglas. Cinco milisegundos
+                        //  de ataque -el wah tiene que llegar con el golpe- y
+                        //  ochenta de caida, que es lo que dura la vocal.
+                        const float aEnv = Dinamica::coefDe (5.0f,  systemSampleRate);
+                        const float rEnv = Dinamica::coefDe (80.0f, systemSampleRate);
+
+                        float* w0 = fxBus[busIdx (kFxWah)].getWritePointer (0, startSample);
+                        float* w1 = (chans > 1) ? fxBus[busIdx (kFxWah)].getWritePointer (1, startSample) : w0;
+                        float hz = I.smWahBase;
+
+                        for (int i = 0; i < numSamples; ++i)
+                        {
+                            //  ENLAZADO sobre el maximo de los dos canales, por
+                            //  lo mismo que la deteccion de `Dinamica`: con un
+                            //  seguidor por canal el lado que pega abre su banda
+                            //  y el otro no, y el barrido se oye desplazandose.
+                            const float pico = juce::jmax (std::abs (w0[i]), std::abs (w1[i]));
+                            I.wahEnv = (pico > I.wahEnv) ? aEnv * I.wahEnv + (1.0f - aEnv) * pico
+                                                         : rEnv * I.wahEnv + (1.0f - rEnv) * pico;
+
+                            hz = wahCentro (I.smWahBase, I.smWahSens, I.wahEnv);
+                            const auto c = Dinamica::polosEn (hz, 1.0f / kWahQ, systemSampleRate);
+
+                            for (int ch = 0; ch < chans; ++ch)
+                            {
+                                float* w = fxBus[busIdx (kFxWah)].getWritePointer (ch, startSample);
+                                float lp = 0.0f, hp = 0.0f, bp = 0.0f;
+                                Dinamica::svf (w[i], I.wahSt[ch], c.a1, c.a2, c.a3, c.k, lp, hp, bp);
+                                //  Por `k`, o sea por 1/Q: la banda de un SVF
+                                //  sale con pico Q y el visor la dibuja
+                                //  normalizada a uno. Sin esto el efecto sonaria
+                                //  diez decibelios por encima de lo que dibuja.
+                                w[i] = bp * c.k;
+                            }
+                        }
+                        //  Donde quedo la banda, para la capa viva del visor.
+                        I.wahHz.store (hz, std::memory_order_relaxed);
+                        returnBus (kFxWah);
+                    }
+                }
+
+                // --- OCT: rectificador y divisor, no un remuestreo. ------
+                //
+                //  Esto NO es PIT con el mando en -12. Un afinador granular lee
+                //  la linea a otra velocidad y conserva el timbre; un octavador
+                //  de pedal hace dos cosas que no se parecen a eso: RECTIFICA la
+                //  onda entera -lo que dobla la frecuencia y se lleva la
+                //  fundamental por delante- y DIVIDE por flanco, que es un
+                //  cuadrado clavado a la mitad. Dos algoritmos y dos sonidos.
+                //
+                //  Y LA ENTRADA ES LA SUMA MONO. Un octavador necesita UNA
+                //  fundamental que seguir: con un biestable por canal, dos
+                //  cruces por cero que no coinciden dan dos cuadrados en
+                //  contrafase y una imagen que baila con cada nota. Es la misma
+                //  leccion que la deteccion enlazada de `Dinamica`, llevada al
+                //  extremo que un conmutador duro obliga.
+                {
+                    const bool vivo = live (kFxOct);
+                    const float ar = juce::jlimit (0.0f, 1.0f, P (kFxOct, 0));
+                    const float ab = juce::jlimit (0.0f, 1.0f, P (kFxOct, 1));
+                    I.smOctArriba += kBlockC * (ar - I.smOctArriba);
+                    I.smOctAbajo  += kBlockC * (ab - I.smOctAbajo);
+
+                    if (vivo && ! I.octWasActive) I.oct = {};
+                    I.octWasActive = vivo;
+
+                    if (vivo)
+                    {
+                        //  El detector filtra a un cuarto de milisegundo -unos
+                        //  640 Hz-, que es donde vive la fundamental de un bajo
+                        //  o de una linea grave. Los dos seguidores, por
+                        //  `Dinamica::coefDe` como todo lo demas.
+                        const float cLp = 1.0f - Dinamica::coefDe (0.25f, systemSampleRate);
+                        const float aEnv = Dinamica::coefDe (2.0f,  systemSampleRate);
+                        const float rEnv = Dinamica::coefDe (40.0f, systemSampleRate);
+
+                        float* w0 = fxBus[busIdx (kFxOct)].getWritePointer (0, startSample);
+                        float* w1 = (chans > 1) ? fxBus[busIdx (kFxOct)].getWritePointer (1, startSample) : w0;
+
+                        for (int i = 0; i < numSamples; ++i)
+                        {
+                            const float mono = 0.5f * (w0[i] + w1[i]);
+                            const float y = octava (mono, I.oct, I.smOctArriba, I.smOctAbajo,
+                                                    cLp, aEnv, rEnv);
+                            for (int ch = 0; ch < chans; ++ch)
+                                fxBus[busIdx (kFxOct)].getWritePointer (ch, startSample)[i] = y;
+                        }
+                        returnBus (kFxOct);
+                    }
+                }
+            }
         }
         canalEtapa = 0;
     }

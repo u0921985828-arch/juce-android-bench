@@ -309,24 +309,39 @@ struct Dinamica
 
     //  Los coeficientes del cruce, que los dos clientes necesitan igual.
     struct Cruce { float a1, a2, a3, k; };
-    static Cruce cruceEn (float hz, double fs) noexcept
+    static Cruce cruceEn (float hz, double fs) noexcept { return polosEn (hz, kQ, fs); }
+
+public:
+    //  LOS POLOS CON SU AMORTIGUAMIENTO POR PARAMETRO, que es lo que hizo
+    //  falta el dia que WAH necesito una banda RESONANTE: el cruce del
+    //  de-esser y del excitador va clavado en Butterworth -las dos ramas tienen
+    //  que sumar planas- y un wah va en Q 3.2. Escribir los tres coeficientes
+    //  otra vez al lado serian dos reglas, que es el fallo que este proyecto
+    //  lleva contado nueve veces con los visores. `k` es el amortiguamiento, o
+    //  sea 1/Q: `cruceEn` pasa `kQ` y por eso da Butterworth.
+    static Cruce polosEn (float hz, float k, double fs) noexcept
     {
         const float g = std::tan (juce::MathConstants<float>::pi
                                     * juce::jlimit (20.0f, (float) fs * 0.45f, hz) / (float) fs);
         Cruce c;
-        c.a1 = 1.0f / (1.0f + g * (g + kQ));
+        c.k  = juce::jmax (0.02f, k);
+        c.a1 = 1.0f / (1.0f + g * (g + c.k));
         c.a2 = g * c.a1;
         c.a3 = g * c.a2;
-        c.k  = kQ;
         return c;
     }
 
-public:
     //  Un filtro de variable de estado por transposicion. Devuelve las dos
     //  salidas de una vez porque el cruce necesita las dos y calcularlas por
     //  separado seria correr el mismo filtro dos veces.
+    //  Y LA BANDA TAMBIEN, que es el tercer numerador del MISMO denominador:
+    //  `v1` ya se calculaba aqui dentro y no salia, asi que WAH habria tenido
+    //  que escribir el nucleo otra vez al lado. Sale SIN normalizar -su pico
+    //  vale Q, o sea 1/k- porque quien la usa sabe con que Q la pidio; el visor
+    //  la dibuja con `AudioEngine::svfBandaDb`, que si normaliza, y por eso la
+    //  etapa multiplica por `k`.
     static void svf (float x, Svf& st, float a1, float a2, float a3, float k,
-                     float& lp, float& hp) noexcept
+                     float& lp, float& hp, float& bp) noexcept
     {
         const float v3 = x - st.s2;
         const float v1 = a1 * st.s1 + a2 * v3;
@@ -335,6 +350,7 @@ public:
         st.s2 = 2.0f * v2 - st.s2;
         lp = v2;
         hp = x - k * v1 - v2;
+        bp = v1;
     }
 
     //  EL CRUCE, con las DOS ramas y en cuarto orden. Ver el parrafo de
@@ -344,11 +360,11 @@ public:
                        float a1, float a2, float a3, float k,
                        float& lp, float& hp) noexcept
     {
-        float l1 = 0.0f, h1 = 0.0f, l2 = 0.0f, h2 = 0.0f;
-        svf (x,  alta[0], a1, a2, a3, k, l1, h1);
-        svf (h1, alta[1], a1, a2, a3, k, l2, hp);
-        svf (x,  baja[0], a1, a2, a3, k, l1, h2);
-        svf (l1, baja[1], a1, a2, a3, k, lp, h2);
+        float l1 = 0.0f, h1 = 0.0f, l2 = 0.0f, h2 = 0.0f, b = 0.0f;
+        svf (x,  alta[0], a1, a2, a3, k, l1, h1, b);
+        svf (h1, alta[1], a1, a2, a3, k, l2, hp, b);
+        svf (x,  baja[0], a1, a2, a3, k, l1, h2, b);
+        svf (l1, baja[1], a1, a2, a3, k, lp, h2, b);
     }
 
 private:

@@ -44,7 +44,7 @@ El repositorio se compila de dos formas y las dos importan:
   **canal**: hay dieciséis en la mesa, cada pad elige el suyo en sus ajustes, y
   cambiar de pad cambia la fila de efectos de la cara. En el RACK cada canal
   decide cuánto de él **pasa por** cada uno, lo cambia, lo vacía y lo **apaga**,
-  y la fila **dibuja** de qué familia es: dieciséis de los veintiuno son
+  y la fila **dibuja** de qué familia es: dieciocho de los veintitrés son
   **insertos** —la señal atraviesa la caja, y sustituyen el sonido seco— y cinco
   **suman** encima —la señal sigue de largo y una rama baja a la caja—: DLY, REV
   y los tres de modulación que sólo existen como suma, porque el peine de un

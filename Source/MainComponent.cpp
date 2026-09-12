@@ -4487,6 +4487,30 @@ const MainComponent::FxDef MainComponent::fxDefs[MainComponent::kNumFx] =
       { {   20.0,   500.0, 1.00,  180.0,   180.0, 3 },
         {    0.0,     1.0, 0.01,    0.0,    0.35, 2 },
         {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
+
+    //  WAH: SENS es cuanto abre la envolvente y BASE donde empieza el barrido.
+    //  No hay mando de FRECUENCIA porque no lo mueve el dedo: lo mueve la
+    //  señal, que es toda la diferencia entre esto y FLT — con un mando de
+    //  centro esto seria un filtro de banda y no un wah.
+    //
+    //  Y BASE va de 200 a 1200 Hz porque es el recorrido de un pedal de verdad:
+    //  el tope de arriba lo pone `AudioEngine::wahCentro` en cinco veces la
+    //  base, acotado a 3 kHz. Por encima de ahi una banda resonante deja de
+    //  sonar a vocal y suena a silbido.
+    { "WAH",  { "SENS", "BASE", "MIX" },
+      { {    0.0,     1.0, 0.01,    0.0,    0.60, 2 },
+        {  200.0,  1200.0, 1.00,  400.0,   400.0, 0 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
+
+    //  OCT: los dos mandos son los dos NIVELES, y no hay uno de «cuantas
+    //  octavas»: un octavador de pedal genera las dos a la vez y lo que se
+    //  dosifica es cuanto de cada una. A los dos en cero el bus se queda mudo
+    //  y eso es correcto -un octavador sin octavas no tiene nada que dar- por
+    //  eso nace con las dos puestas.
+    { "OCT",  { "ARRIBA", "ABAJO", "MIX" },
+      { {    0.0,     1.0, 0.01,    0.0,    0.70, 2 },
+        {    0.0,     1.0, 0.01,    0.0,    0.50, 2 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
 };
 
 // The readout always carries a unit, so a number means something on its own.

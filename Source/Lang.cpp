@@ -1255,6 +1255,13 @@ namespace
         { "GRANO",          "",         "GRAIN",      "颗粒",        "الحبيبة" },
         { "CRUCE",          "",         "CROSS",      "分频",        "التقاطع" },
         { "VENTANA",        "",         "WINDOW",     "窗口",        "النافذة" },
+        //  Los cuatro de WAH y OCT. SENS es la sensibilidad del seguidor -lo que
+        //  abre la banda con lo que entra- y BASE donde arranca el barrido;
+        //  ARRIBA y ABAJO son los dos niveles de octava.
+        { "SENS",           "",         "SENS",       "灵敏度",      "الحساسية" },
+        { "BASE",           "",         "BASE",       "基频",        "الأساس" },
+        { "ARRIBA",         "",         "UP",         "高八度",      "أعلى" },
+        { "ABAJO",          "",         "DOWN",       "低八度",      "أسفل" },
         { "SUAVE",          "",         "SMOOTH",     "平滑",        "النعومة" },
         { "GUARDAR KIT",    "",         "SAVE KIT",   "保存音色组",   "حفظ الطقم" },
         { "Guardando kit",  "",         "Saving kit", "正在保存音色组", "جارٍ حفظ الطقم" },

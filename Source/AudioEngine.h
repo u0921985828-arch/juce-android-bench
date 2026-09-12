@@ -74,7 +74,24 @@ public:
     //  escrito dos veces o privado (`Estereo::ancho` salia de dos copias en
     //  linea de `Voice.h`, y `Dinamica::cruza` y `coefDe` eran privadas) y
     //  tres se escriben de cero.
-    static constexpr int kNumFx         = 21;
+    //  Y VEINTITRES con WAH y OCT, que se pidieron juntos y entran juntos por
+    //  una razon y no por contarlos de dos en dos: los dos son ALGORITMO y no
+    //  numeros movidos sobre algo que ya existe, que es lo unico que separa un
+    //  efecto nuevo de una copia — la leccion que ya costo rehacer METALES,
+    //  CAMPANAS y LEADS en la tabla de instrumentos.
+    //
+    //    · WAH es lo unico de los veintitres cuyo mando lo mueve la SEÑAL. Hay
+    //      un filtro con barrido (FLT), un temblor con LFO (TRM) y cuatro de
+    //      modulacion, y ninguno sigue la envolvente: un auto-wah no es FLT con
+    //      un LFO encima -eso es un filtro barrido, y ya esta- sino una banda
+    //      resonante que se abre con lo que entra, que es por lo que suena a
+    //      funk en una caja y no en un colchon.
+    //    · OCT NO es PIT con el mando en -12. Un afinador granular remuestrea;
+    //      un octavador de pedal rectifica -la onda entera, que sube una octava
+    //      y se lleva la fundamental por delante- y DIVIDE por flanco, que es
+    //      un cuadrado a la mitad de la frecuencia. Son dos algoritmos
+    //      distintos y suenan a dos cosas distintas.
+    static constexpr int kNumFx         = 23;
     //  Que indice es cada uno de los cuatro de dinamica, escrito UNA vez: los
     //  usa el bucle de la etapa, `setFxParam` y la cara para saber de cual
     //  leer la reduccion.
@@ -88,6 +105,8 @@ public:
     //  Y LOS SEIS DE CARACTER.
     static constexpr int kFxRng = 15, kFxPit = 16, kFxWid = 17,
                          kFxExc = 18, kFxTrn = 19, kFxFrz = 20;
+    //  Y LOS DOS QUE SE PIDIERON: el wah y el octavador.
+    static constexpr int kFxWah = 21, kFxOct = 22;
 
     //  DIECISEIS CANALES, que es la mesa entre los pads y los efectos.
     //
@@ -237,6 +256,8 @@ public:
         {  4000.0f,    0.50f, 0.0f },   // EXC  cruce, fuerza, mix
         {     0.60f,    0.00f, 0.0f },   // TRN  ataque, caida, mix
         {   180.0f,    0.35f, 0.0f },   // FRZ  ventana ms, suave, mix
+        {    0.60f,   400.0f, 0.0f },   // WAH  sensibilidad, base Hz, mix
+        {    0.70f,    0.50f, 0.0f },   // OCT  arriba, abajo, mix
     };
     static constexpr int kNumSteps      = 64;   // max steps per pattern (length is variable, see below)
     static constexpr int kMinPatLen     = 16;
@@ -1253,8 +1274,13 @@ public:
     //  `fs` por parametro y con defecto de 48 kHz: el visor no tiene motor al
     //  que preguntarle la ruta, y a 44.1 kHz la diferencia solo se ve pegada a
     //  Nyquist. El banco mide a 48 k, que es donde las dos cuentas coinciden.
-    static float svfDb (float hz, float corte, float q, bool alto,
-                        float fs = 48000.0f) noexcept
+    //  Y LOS TRES MODULOS DE UNA VEZ, que es lo que un filtro de variable de
+    //  estado ES: un solo denominador y tres numeradores. Se parte asi el dia
+    //  que WAH necesito la BANDA y no el bajo ni el alto — escribir el
+    //  denominador otra vez al lado seria la misma regla dos veces, que es el
+    //  fallo que este fichero lleva contado nueve veces con los visores.
+    static void svfMods (float hz, float corte, float q, float fs,
+                         float& bajo, float& alto, float& banda) noexcept
     {
         const float nyq = fs * 0.5f;
         const float f   = juce::jlimit (1.0f, nyq * 0.999f, hz);
@@ -1264,9 +1290,106 @@ public:
         const float x   = w / juce::jmax (1.0e-9f, wc);
         const float re  = 1.0f - x * x;
         const float im  = x / juce::jmax (0.05f, q);
-        const float den = std::sqrt (re * re + im * im);
-        const float mag = (alto ? x * x : 1.0f) / juce::jmax (1.0e-6f, den);
-        return juce::Decibels::gainToDecibels (juce::jmax (1.0e-5f, mag));
+        const float den = juce::jmax (1.0e-6f, std::sqrt (re * re + im * im));
+        bajo  = 1.0f  / den;
+        alto  = x * x / den;
+        banda = im    / den;
+    }
+
+    static float svfDb (float hz, float corte, float q, bool alto,
+                        float fs = 48000.0f) noexcept
+    {
+        float lo = 0.0f, hi = 0.0f, bp = 0.0f;
+        svfMods (hz, corte, q, fs, lo, hi, bp);
+        return juce::Decibels::gainToDecibels (juce::jmax (1.0e-5f, alto ? hi : lo));
+    }
+
+    //  LA BANDA, que es la forma de un wah: por eso su dibujo no se puede
+    //  sacar de `svfDb` con un `alto` u otro.
+    static float svfBandaDb (float hz, float corte, float q,
+                             float fs = 48000.0f) noexcept
+    {
+        float lo = 0.0f, hi = 0.0f, bp = 0.0f;
+        svfMods (hz, corte, q, fs, lo, hi, bp);
+        return juce::Decibels::gainToDecibels (juce::jmax (1.0e-5f, bp));
+    }
+
+    //  ==================================================================
+    //  EL WAH Y EL OCTAVADOR, escritos UNA vez: los corre el hilo de audio y
+    //  los dibuja el visor.
+    //  ==================================================================
+    //
+    //  Es la misma extraccion que `barridoDe`, `bajaDb`, `Fdn::tauSegundos` y
+    //  `FxVisor::muestrea`, hecha ANTES de pagarla: nueve de once visores
+    //  dibujaban una formula parecida escrita al lado, y REV llevaba tres
+    //  constantes que no existen en la reverb.
+
+    //  EL CENTRO DEL WAH: donde cae la banda con la envolvente en `env`.
+    //  400 Hz de base y hasta cinco veces arriba es el recorrido de un pedal
+    //  de verdad -de unos 400 Hz a algo mas de 2 kHz-, y por eso el tope no es
+    //  un numero redondo sino `base * kWahVeces` acotado a 3 kHz: por encima
+    //  de ahi una banda resonante deja de sonar a «wah» y suena a silbido.
+    static constexpr float kWahVeces = 5.0f;
+    static constexpr float kWahQ     = 3.2f;    // la Q de un wah, no la de un filtro
+    static float wahCentro (float base, float sens, float env) noexcept
+    {
+        const float b = juce::jlimit (200.0f, 1200.0f, base);
+        const float e = juce::jlimit (0.0f, 1.0f, env);
+        return juce::jlimit (200.0f, 3000.0f,
+                             b * (1.0f + juce::jlimit (0.0f, 1.0f, sens) * (kWahVeces - 1.0f) * e));
+    }
+
+    //  EL OCTAVADOR. Su estado es secuencial -un biestable y dos seguidores-
+    //  asi que va en un struct propio y no en tres flotantes sueltos: el visor
+    //  lo corre sobre una onda sintetica y necesita el suyo.
+    struct OctEstado
+    {
+        float flip = 1.0f;      // el biestable: cambia en cada cruce por cero
+        float prev = 0.0f;      // la muestra anterior YA filtrada, para el cruce
+        float lp   = 0.0f;      // el paso bajo del detector
+        float env  = 0.0f;      // el seguidor que le da dinamica al cuadrado
+        float dc   = 0.0f;      // el bloqueo de continua del rectificador
+    };
+
+    //  UNA MUESTRA. `x` es la entrada MONO -ver la etapa: un octavador necesita
+    //  UNA fundamental que seguir, y dos divisores con cruces por cero
+    //  distintos dan una imagen que baila-.
+    static float octava (float x, OctEstado& st, float arriba, float abajo,
+                         float cLp, float aEnv, float rEnv) noexcept
+    {
+        //  EL DETECTOR VA FILTRADO. Sin paso bajo, cualquier armonico cruza el
+        //  cero y el biestable conmuta a la frecuencia del ruido en vez de a la
+        //  de la nota: el divisor «octava abajo» pasa a ser un generador de
+        //  basura. Es la misma razon por la que un detector de golpes lleva
+        //  puerta de nivel ademas de flujo.
+        st.lp += cLp * (x - st.lp);
+
+        //  ARRIBA: rectificacion de onda COMPLETA. El valor absoluto de un seno
+        //  tiene el doble de frecuencia -y se lleva la fundamental por delante,
+        //  que es lo que hace que un octavador de pedal suene a octavador y no
+        //  a un afinador-. Lo que sobra es la continua, y eso lo quita el
+        //  bloqueo de abajo.
+        const float rect = std::abs (x);
+        st.dc += 0.0008f * (rect - st.dc);
+        const float up = (rect - st.dc) * 2.2f;
+
+        //  ABAJO: un biestable que conmuta en cada flanco de SUBIDA. Dos
+        //  flancos por ciclo de entrada son un ciclo de salida, o sea la mitad
+        //  de la frecuencia por construccion y no por una cuenta.
+        if (st.prev <= 0.0f && st.lp > 0.0f) st.flip = -st.flip;
+        st.prev = st.lp;
+
+        //  Y EL CUADRADO LLEVA LA DINAMICA DE LO QUE ENTRA. Sin el seguidor, un
+        //  divisor suena igual de fuerte con un golpe que con la cola, o sea
+        //  que deja de ser un instrumento: lo que se oye es un zumbido con la
+        //  nota debajo.
+        const float pico = std::abs (x);
+        st.env = (pico > st.env) ? aEnv * st.env + (1.0f - aEnv) * pico
+                                 : rEnv * st.env + (1.0f - rEnv) * pico;
+        const float down = st.flip * st.env;
+
+        return juce::jlimit (0.0f, 1.0f, arriba) * up
+             + juce::jlimit (0.0f, 1.0f, abajo)  * down;
     }
 
     //  A QUE CANAL VA ESTE PAD. Es lo unico que el pad decide del reparto: el
@@ -2455,7 +2578,17 @@ private:
                                                   //  portadora deja la fundamental
                                                   //  intacta, que es justo lo que un
                                                   //  ring mod existe para quitar.
-                                                  true, true, true, true, true, true };
+                                                  true, true, true, true, true, true,
+                                                  //  Y LOS DOS NUEVOS, los dos
+                                                  //  INSERTOS. Un wah que deja el
+                                                  //  original al lado no barre nada
+                                                  //  -la suma devuelve la banda que
+                                                  //  el filtro quito- y un octavador
+                                                  //  con el seco encima es el seco
+                                                  //  con una octava de adorno: lo que
+                                                  //  decide cuanto original queda es
+                                                  //  el MIX, que es para lo que esta.
+                                                  true, true };
     //  Y NO SE PUEDE QUEDAR CORTA EN SILENCIO. Una lista de inicializacion de
     //  agregado rellena con `false` lo que no se nombre, asi que un tipo nuevo
     //  al que se le olvide su fila aqui entraria como ENVIO —sumando encima en
@@ -2494,7 +2627,7 @@ private:
     //  `fxSustituye` y el `static_assert` de debajo de la clase los contrasta.
     //  Aqui dentro no se puede llamar -la clase todavia esta incompleta en el
     //  punto en el que haria falta el valor- y ahi fuera si.
-    static constexpr int kNumIns = 16;
+    static constexpr int kNumIns = 18;
     static constexpr int contarInsertos() noexcept
     {
         int n = 0;
@@ -2630,6 +2763,23 @@ private:
         //  a abrirse: sin el, un efecto que se reabre suena con la cola de la
         //  vez anterior. Es lo mismo que `modWasActive` y por lo mismo.
         std::array<bool, 6> carWasActive {};
+
+        //  WAH: la banda resonante y el seguidor que la mueve. El seguidor es
+        //  UNO y no dos -enlazado sobre el maximo de los dos canales- por lo
+        //  mismo que la deteccion de `Dinamica`: con uno por canal, el lado que
+        //  pega abre su filtro y el otro no, y el barrido se oye desplazandose.
+        Dinamica::Svf wahSt[2];
+        float wahEnv = 0.0f;
+        float smWahSens = 0.0f, smWahBase = 400.0f;
+        bool  wahWasActive = false;
+        //  Donde esta la banda AHORA, para la capa viva del visor.
+        std::atomic<float> wahHz { 400.0f };
+
+        //  OCT: el biestable, los dos seguidores y el bloqueo de continua. Uno
+        //  solo, no dos: la entrada del octavador es la suma MONO.
+        OctEstado oct;
+        float smOctArriba = 0.0f, smOctAbajo = 0.0f;
+        bool  octWasActive = false;
 
         //  LOS SUAVIZADOS ARRANCAN YA EN SU DESTINO, y esto vive AQUI y no
         //  suelto en `copyStateFrom` por la razon que ese sitio ya lleva
