@@ -40,6 +40,14 @@ SHEETS = ["", "plato", "songm", "pads", "pad2", "pad3", "sec", "secp", "paso", "
                     "llena", "llena-song", "llena-sec",
                     "llena-piano", "llena-proj", "llena-mix"]
 
+#  EL CONTRATO DE LA ANATOMIA, importado de quien lo lee. `Tests/maqueta.py`
+#  parsea `Tests/maqueta.md` y lo resuelve contra la tabla de `Metrics`; aqui
+#  solo se usa. Escribir los valores otra vez serian dos contratos, que es lo
+#  que ya costo la Z de `marcaCelda` saliendo en rojo contra un icono correcto.
+from maqueta import contrato, tokens as _tokensMetrics                  # noqa: E402
+
+CONTRATO = {}    # lo llena main() antes de la primera corrida
+
 MIN_TOUCH = 40   # Metrics::hit — Android's own guideline is 48dp, this is the floor
 #  LO QUE SE DIBUJA Y SE TOCA IGUAL.
 #
@@ -746,6 +754,74 @@ def judge_marco(rows, size, lang, sheet):
     return out
 
 
+# ============================================================================
+#  TODAS LAS FICHAS TIENEN LA MISMA ANATOMIA.
+#
+#  De las diecinueve reglas duras, NINGUNA comparaba una ficha con OTRA:
+#  `MARCO`, `CABECERA`, `TARJETA`, `ASOMA`, `FILA` y los cuatro criterios de
+#  `paneles.py` miden cada ficha contra si misma, asi que veintiuna anatomias
+#  distintas -cada una coherente consigo misma- las pasaban las diecinueve. La
+#  queja llego con esas palabras: «quiero que todos los pop ups guarden aire y
+#  demas factores en proporciones muy similares».
+#
+#  El contrato lo dice `Tests/maqueta.md` y lo que vale cada token lo dice
+#  `Metrics`; aqui se compara con lo que la app DIBUJO. Censado antes de poner
+#  el liston, que es la regla de la casa y no una formalidad -`paneles.py` tiro
+#  tres reglas por saltarsela-: el papel `titulo` salia con CUATRO alturas y no
+#  porque la maqueta estuviera mal, sino porque tres cosas distintas
+#  compartian el papel -el titulo de la ficha, la CHAPA de familia del
+#  instrumento y el rotulo de un grupo de AUTO CHOP-. Un papel que significa
+#  tres cosas no se puede juzgar: es la marca `valor` de los iconos contada
+#  desde el otro lado. Con los tres papeles honestos, las cinco piezas salen a
+#  UN valor cada una.
+#
+#  LA CARA NO ES UNA FICHA y se queda fuera por la capa, no por una lista: su
+#  banda es la marca serigrafiada en el chasis -«ZATI SAMPLER», 24 px- y
+#  compararla con el titulo de una tarjeta seria comparar dos cosas distintas.
+#
+#  Y EL ROTULO DE SECCION SE IMPRIME Y NO SE JUZGA. Tiene dos formas legitimas
+#  y el volcado no las separa: encima de un grupo es una banda de
+#  `bandaSubtitulo`, y al LADO de una fila de chips ocupa el renglon entero
+#  -son los 40 px de las siete filas de AJUSTES-. Un numero que no separa el
+#  fallo del caso legitimo no puede ser un veredicto, que es la leccion de
+#  TARJETA y antes la del porcentaje de iconos.
+# ============================================================================
+#  Que papel del volcado es cada pieza del contrato.
+PAPEL = {"titulo": "titulo", "subtitulo": "subtitulo", "dato": "pie"}
+
+
+def judge_anatomia(rows, size, lang, sheet, piezas):
+    out = []
+    donde = f"{size}/{lang}/{sheet or 'face'}"
+    for r in rows:
+        capa = r.get("capa", 0)
+        if capa <= 0:
+            continue
+        if r.get("tarjeta") and r.get("w", 0) > 0:
+            for pieza in ("marcoX", "marcoY"):
+                quiere = piezas[pieza][1]
+                if r[pieza] != quiere:
+                    out.append(("ANATOMIA", donde,
+                                f'el marco {pieza[-1].lower()} de la ficha mide {r[pieza]} px '
+                                f'y el contrato dice {quiere} (Metrics::{piezas[pieza][0]})', 0))
+        if "rotulo" in r:
+            pieza = PAPEL.get(r.get("tipo"))
+            if pieza is None:
+                continue
+            tok, quiere = piezas[pieza]
+            #  Y POR LINEA: el pie de la ficha del instrumento son tres
+            #  renglones, o sea tres bandas. Cuantas son lo dice la app -lo
+            #  publica `pintaAyuda`, que es quien las dibuja- y no una cuenta
+            #  aqui: un banco que adivina el reparto no prueba el reparto.
+            quiere *= max(1, r.get("lineas", 1))
+            if r["h"] != quiere:
+                out.append(("ANATOMIA", donde,
+                            f'la banda de {pieza} mide {r["h"]} px y el contrato dice '
+                            f'{quiere} (Metrics::{tok} x{max(1, r.get("lineas", 1))}): '
+                            f'"{r["rotulo"][:28]}"', 0))
+    return out
+
+
 #  UNA FILA DE TAPAS LLENA EL RECTANGULO QUE SE LE DIO.
 #
 #  Cada tapa de una fila se recorta por los lados -es el hueco que la separa de
@@ -1032,6 +1108,7 @@ def _corre_y_juzga(combo, casa):
     quien = collections.Counter()
     chips, chipsVistos = judge_chips(rows, size, lang, sheet)
     return (judge(rows, size, lang, sheet) + judge_tapado(rows, size, lang, sheet)
+                                           + judge_anatomia(rows, size, lang, sheet, CONTRATO)
                                            + judge_tarjeta(rows, size, lang, sheet)
                                            + judge_marco(rows, size, lang, sheet)
                                            + judge_cara(rows, size, lang, sheet)
@@ -1039,7 +1116,10 @@ def _corre_y_juzga(combo, casa):
                                            + judge_cabecera(rows, size, lang, sheet)
                                            + chips,
             (rows if lang in ("es", "en") else []), (puestos, pintados),
-            mide_aire(rows, quien, sheet), quien, chipsVistos)
+            mide_aire(rows, quien, sheet), quien, chipsVistos,
+            collections.Counter((r["h"], sheet or "cara") for r in rows
+                                if "rotulo" in r and r.get("tipo") == "seccion"
+                                and r.get("capa", 0)))
 
 
 def paginas():
@@ -1073,12 +1153,26 @@ def main():
                  "salen vacias y parece que la app esta rota.\n"
                  "    Xvfb :99 -screen 0 1920x1080x24 &" % PANTALLA)
 
+    #  EL CONTRATO, ANTES DE LAS 1456 CORRIDAS. Si no se puede leer o nombra
+    #  un token que `Metrics` no tiene, `ANATOMIA` compararia contra un
+    #  diccionario vacio y las 1456 saldrian verdes sin haber preguntado nada.
+    global CONTRATO
+    _met, _ = _tokensMetrics()
+    piezas, huerfanos = contrato(_met) if _met else (None, None)
+    if not piezas or huerfanos:
+        sys.exit("no puedo leer el contrato de Tests/maqueta.md%s: ANATOMIA no mide nada"
+                 % ("" if not huerfanos else
+                    " (nombra tokens que Metrics no tiene: %s)"
+                    % ", ".join(t for _p, t in huerfanos)))
+    CONTRATO = piezas
+
     only = sys.argv[1:]
     allf = []
     pairs = collections.defaultdict(dict)
     iconos = collections.defaultdict(lambda: [0, 0])
     aire   = collections.Counter()
     quien  = collections.Counter()
+    secciones = collections.Counter()
     runs = fails = chipsVistos = 0
 
     combos = [(size, lang, sheet)
@@ -1106,8 +1200,9 @@ def main():
                 futuros[pool.submit(corre_y_juzga, c, casa)] = c
             for fut in concurrent.futures.as_completed(futuros):
                 size, lang, sheet = futuros[fut]
-                findings, rows, ico, aireRun, quienRun, chipsRun = fut.result()
+                findings, rows, ico, aireRun, quienRun, chipsRun, secRun = fut.result()
                 chipsVistos += chipsRun
+                secciones += secRun
                 iconos[size][0] += ico[0]
                 iconos[size][1] += ico[1]
                 aire += aireRun
@@ -1171,6 +1266,23 @@ def main():
         if p:
             print("  %-9s %4d de %4d   %3.0f%%" % (size, d, p, 100.0 * d / p))
 
+    #  EL ROTULO DE SECCION, que se imprime y no se juzga. Tiene DOS formas
+    #  legitimas y el volcado no las separa: encima de un grupo es una banda de
+    #  `bandaSubtitulo`, y al LADO de una fila de chips ocupa el renglon entero
+    #  -los 40 px de las siete filas de AJUSTES-. Un liston ahi suspenderia a la
+    #  mitad de la app por maquetar bien, que es la leccion de TARJETA.
+    if secciones:
+        porAlto = collections.Counter()
+        quienSec = collections.defaultdict(set)
+        for (h, sh), k in secciones.items():
+            porAlto[h] += k
+            quienSec[h].add(sh)
+        print()
+        print("banda del rotulo de seccion (%d rotulos, %d alturas; se imprime, no se juzga):"
+              % (sum(porAlto.values()), len(porAlto)))
+        for h in sorted(porAlto):
+            print("  %3d px x%-5d %s" % (h, porAlto[h], ", ".join(sorted(quienSec[h]))[:70]))
+
     #  Y EL AIRE ENTRE FILAS HERMANAS, que se imprime y no se juzga. Ver
     #  mide_aire: quince valores distintos y ningun liston con poblacion que lo
     #  respalde todavia.
@@ -1209,7 +1321,7 @@ def main():
     duros = [k for k in ("TRUNC", "SQUEEZE", "OVERLAP", "OFFSCREEN", "CELDA",
                          "UNTRANSLATED", "CERO", "TAPADO", "SPRITE", "CORTADO", "PISADO",
                          "FILA", "CUADRADA", "ASOMA", "CABECERA", "MARCO", "CARA",
-                         "CHIPS", "CRASH") if by.get(k)]
+                         "CHIPS", "ANATOMIA", "CRASH") if by.get(k)]
     if resto:
         duros.append("RESIDUO")
     print()

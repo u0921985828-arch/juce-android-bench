@@ -345,6 +345,67 @@ inline juce::Rectangle<int> centraEnRenglon (juce::Rectangle<int> banda, int alt
 }
 
 
+//  EL CROMO DE UNA FICHA, QUE ESTABA ESCRITO A MANO EN VEINTIUN SITIOS.
+//
+//  Marco, renglon de cabecera y frontera con el cuerpo es el prefijo de la
+//  peticion de CUALQUIER ficha, y cada una lo sumaba por su cuenta. De ahi
+//  salia la mitad de la dispersion que se ve al pasar de un pop-up a otro:
+//
+//    - el marco vertical como `Metrics::md * 2` en vez de `2 * margenFichaY`,
+//      veintiuna veces. Valen lo mismo HOY y son dos reglas: el dia que el
+//      marco cambie, esas veintiuna se quedan con el de ayer y nada falla.
+//    - la banda de titulo como `16` a pelo y la de subtitulo como `14`, trece
+//      veces, mientras el pintor de al lado las pide por su nombre.
+//    - y la frontera bajo la cabecera como `md` (12) en el PRESUPUESTO donde
+//      la colocacion pone `sm` (8): cuatro fichas pidiendo cuatro pixeles que
+//      no colocan.
+//
+//  El comentario de la peticion del selector de pads lo deletreaba el solo -
+//  «2*12 + 40 + 12 + 4*44 + 3*4 + 8 + 40 = 312»- y esa MISMA funcion coloca
+//  ocho doce lineas mas abajo.
+//
+//  Que token lleva cada pieza lo dice `Tests/maqueta.md` y lo que vale lo dice
+//  `Metrics`; aqui solo se suman. El subtitulo NO aparece porque no cuesta
+//  alto: vive dentro del renglon de cabecera, centrado junto al titulo por
+//  `centraEnRenglon`, que es lo que hace que una ficha con dos lineas y otra
+//  con una midan lo mismo por arriba.
+namespace Ficha
+{
+    //  El marco de la tarjeta, arriba y abajo.
+    inline constexpr int marco = 2 * Metrics::margenFichaY;
+
+    //  Marco + cabecera + frontera. El prefijo de toda peticion.
+    inline constexpr int cromo = marco + Metrics::hit + Metrics::sm;
+
+    //  Y con su fila de pestanas, debajo de la cabecera. `tabsH` es la fila
+    //  CON su frontera -una fila o dos segun quepan los rotulos, mas el `sm`
+    //  que la separa del cuerpo-, que es exactamente como la calculan las dos
+    //  fichas que la tienen: se pasa medida en vez de que esto la adivine.
+    inline constexpr int cromoConPestanas (int tabsH) noexcept
+    { return marco + Metrics::hit + Metrics::sm + tabsH; }
+
+    //  LA CABECERA DESNUDA. Una ficha cuyo renglon de titulo no lleva mas que
+    //  la cruz no reserva renglon: la cruz baja a la fila de pestanas y el
+    //  titulo ocupa lo que mide. Es AJUSTES y esta medido -veinticuatro pixeles
+    //  menos de tarjeta- y no vale para las otras tres que tienen pestanas,
+    //  porque en esas el renglon del titulo lleva ademas el selector de pad, el
+    //  interruptor de vista o la ventana de pistas.
+    inline constexpr int cromoDesnudo (int tabsH, bool subtitulo) noexcept
+    {
+        return marco + Metrics::bandaTitulo
+             + (subtitulo ? Metrics::bandaSubtitulo : 0)
+             + Metrics::sm + tabsH;
+    }
+
+    //  EL RENGLON DE AYUDA DEL FONDO: su frontera y una banda por linea. Lo
+    //  reserva el MAQUETADO y no el pintor - cuando lo talla el pintor de
+    //  `inner`, el presupuesto no se entera y la ficha ocupa mas de lo que
+    //  pide, que es la familia de la fila de CADENA.
+    inline constexpr int pie (int lineas = 1) noexcept
+    { return Metrics::sm + lineas * Metrics::bandaSubtitulo; }
+}
+
+
 //  SI UN ROTULO PINTADO CABE ENTERO EN SU BANDA.
 //
 //  `drawFittedText` no dice que no: aprieta hasta el minimo que se le pasa y a
@@ -853,7 +914,7 @@ inline Iconos::Id iconoDeFx (int f) noexcept
 //  sobra ancho y falta alto, que es la regla de siempre.
 inline int menuRanuraPide (int filas, bool conVaciar) noexcept
 {
-    return 2 * Metrics::md + Metrics::hit + Metrics::md
+    return Ficha::cromo
            + filas * Metrics::btn + (filas - 1) * Metrics::xs
            + (conVaciar ? Metrics::sm + Metrics::btn : 0);
 }

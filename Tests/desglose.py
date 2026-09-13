@@ -128,7 +128,7 @@ def una (clave):
     #  Los minimos.
     txt = {f["rotulo_es"] for f in filas}
     falta = []
-    if clave:
+    if clave and capaFicha:
         if not any (r.get ("tipo") == "titulo" for r in rotulos):
             falta.append ("titulo")
         #  LA CRUZ SE ESCRIBE DE DOS FORMAS, y la primera version de esta
@@ -232,6 +232,21 @@ def main():
     #  Una medida que no puede decir que no vale tan poco como una que no se ha
     #  corregido antes de creerla: si ninguna pantalla falla ningun minimo, o
     #  esta todo bien o la comprobacion no esta enchufada.
+    #  Y AHORA DEVUELVE CODIGO DE SALIDA, que es lo que le faltaba para valer.
+    #
+    #  Los minimos estaban escritos aqui con su razon al lado desde que existe
+    #  el fichero -«sin el no se sabe donde estas», «salir no puede depender de
+    #  tocar fuera de la tarjeta»- y el veredicto lo daba un ojo humano leyendo
+    #  texto: `return 0` pasara lo que pasara, y ningun workflow lo corria. Es
+    #  *una linea que imprime OK* aplicada a la lista de normas de un pop-up, y
+    #  es la cuarta vez que esta casa lo paga -antes fueron `expo.py`,
+    #  `session.py`, `apk.py` y `plano.py`-.
+    #
+    #  DOS de los cuatro minimos son veredicto y dos se imprimen:
+    #    - TITULO y la forma de la CRUZ son exactos y salen a cero y a uno.
+    #    - el DEDO ya lo cuenta `expo.py` con su escalera medida, y PLAY a mano
+    #      es una lista de paginas escrita aqui: un liston sobre una lista de
+    #      gustos no es un veredicto.
     sinTitulo = [k for k in claves if hechos.get (k) and "titulo" in hechos[k]["falta"]]
     sinCerrar = [k for k in claves if hechos.get (k) and "cerrar" in hechos[k]["falta"]]
     sinPlay   = [k for k in claves if hechos.get (k) and "transporte" in hechos[k]["falta"]]
@@ -253,6 +268,24 @@ def main():
             print ("   %r  en %d fichas: %s" % (c, len (ks), ", ".join (ks)[:60]))
     print ("escriben sonido y no tienen PLAY a mano: %s"
            % (", ".join (k or "cara" for k in sinPlay) or "ninguna"))
+
+    mal = 0
+    if sinTitulo:
+        mal = 1
+        print ("FALLA  %d fichas sin titulo: se abren y no dicen donde estas" % len (sinTitulo))
+    if len (cruces) > 1:
+        mal = 1
+        print ("FALLA  la cruz de cerrar se escribe de %d formas: es el mismo"
+               " control con dos caracteres" % len (cruces))
+    #  Y LA CADENA DE CONTROL: si no se vio ni una ficha, esto no ha medido
+    #  nada y decir «ninguna sin titulo» seria dar verde por no haber mirado.
+    if not cruces:
+        mal = 1
+        print ("FALLA  ninguna ficha publico su cruz de cerrar: no mide nada")
+    if mal:
+        return 1
+    print ("VEREDICTO: OK  las %d fichas tienen titulo y la cruz se escribe de una forma"
+           % sum (1 for k in claves if hechos.get (k) and hechos[k].get ("cruz")))
     return 0
 
 

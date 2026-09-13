@@ -55,7 +55,7 @@ void MainComponent::layoutModuleBar (juce::Rectangle<int> row, juce::TextButton*
     //  Donde SI hace falta el aire completo es donde se DECIDE - moduleBarFits
     //  y el suelo del dedo de abajo - porque alli la pregunta es "¿cabe?" y no
     //  "¿cuanto le toca?".
-    constexpr int kChrome = 2 * Metrics::sm + 2 * (Metrics::halfGap / 2) + 2 * Metrics::margenTapa;
+    constexpr int kChrome = 2 * Metrics::sm + 2 * Metrics::aireTapa + 2 * Metrics::margenTapa;
     int need[12] {}; int total = 0;
     for (int i = 0; i < kMods; ++i)
     {
@@ -132,14 +132,14 @@ void MainComponent::layoutModuleBar (juce::Rectangle<int> row, juce::TextButton*
     //  parte en dos. Lo unico que cambia es que los cuatro pixeles se reparten
     //  entre las tapas en vez de tirarse por los bordes.
     const auto dada = row;
-    row = row.expanded (Metrics::halfGap / 2, 0);
+    row = row.expanded (Metrics::aireTapa, 0);
 
     const int spare = juce::jmax (0, row.getWidth() - total);
     for (int i = 0; i < kMods; ++i)
     {
         const int w = need[i] + spare * need[i] / juce::jmax (1, total);
         mb[i]->setBounds ((i < kMods - 1 ? row.removeFromLeft (juce::jmax (24, w)) : row)
-                              .reduced (Metrics::halfGap / 2, vInset));
+                              .reduced (Metrics::aireTapa, vInset));
     }
 
     {
@@ -1206,8 +1206,8 @@ void MainComponent::resized()
     {
         //  Lo que pide, sumado y no probado: dos margenes, la cabecera, el aire,
         //  cuatro filas de tapa con sus tres huecos, el aire y la fila de
-        //  bancos. 2*12 + 40 + 12 + 4*44 + 3*4 + 8 + 40 = 312.
-        const int quiere = 2 * Metrics::md + Metrics::hit + Metrics::md
+        //  bancos: Ficha::cromo + 4*44 + 3*4 + 8 + 40 = 308.
+        const int quiere = Ficha::cromo
                            + 4 * Metrics::btn + 3 * Metrics::xs
                            + Metrics::sm + Metrics::hit;
         auto inner = sheetFromBottom (padPickSheet, quiere);
@@ -1258,10 +1258,10 @@ void MainComponent::resized()
     //  se alcanzan con un chip, exactamente como los pads llegan a sesenta y
     //  cuatro con A B C D. Dieciseis en fila ya estan medidos y no caben -26 px
     //  en 280- y treinta y dos menos, asi que la rejilla no crece: crece el
-    //  numero de bancos. 2*12 + 40 + 12 + 4*44 + 3*4 + 8 + 40 = 312.
+    //  numero de bancos: Ficha::cromo + 4*44 + 3*4 + 8 + 40 = 308.
     if (canalPickAbierto)
     {
-        const int quiere = 2 * Metrics::md + Metrics::hit + Metrics::md
+        const int quiere = Ficha::cromo
                            + 4 * Metrics::btn + 3 * Metrics::xs
                            + Metrics::sm + Metrics::hit;
         auto inner = sheetFromBottom (canalSheet, quiere);
@@ -1318,9 +1318,9 @@ void MainComponent::resized()
     if (midiSheet.isVisible())
     {
         auto inner = sheetFromBottom (midiSheet,
-                                      Metrics::md * 2 + Metrics::hit + Metrics::sm
-                                        + Metrics::hit + Metrics::sm
-                                        + Metrics::hit + Metrics::sm + Metrics::hit);
+                                      Ficha::cromo
+                                        + Metrics::bandaSubtitulo + Metrics::sm
+                                        + Metrics::hit + Metrics::sm + Metrics::bandaSubtitulo);
 
         auto titleRow = inner.removeFromTop (Metrics::hit);
         midiCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
@@ -1332,9 +1332,8 @@ void MainComponent::resized()
         //  El renglon de ayuda, que dice la convencion: sin el, «do central» y
         //  «una semicorchea por paso» son dos cosas que hay que adivinar
         //  probando, y probando se pierde el patron que tenias escrito.
-        midiAyudaArea = inner.removeFromTop (Metrics::hit)
-                            .reduced (Metrics::lg, 0)
-                            .withHeight (Metrics::bandaSubtitulo);
+        midiAyudaArea = inner.removeFromTop (Metrics::bandaSubtitulo)
+                            .reduced (Metrics::lg, 0);
         inner.removeFromTop (Metrics::sm);
 
         {
@@ -1346,9 +1345,8 @@ void MainComponent::resized()
         inner.removeFromTop (Metrics::sm);
         //  Y EL PARTE, en su propia banda y publicada por el maquetado: es la
         //  tercera vez que esta casa paga que el pintor se invente una banda.
-        midiParteArea = inner.removeFromTop (Metrics::hit)
-                            .reduced (Metrics::lg, 0)
-                            .withHeight (Metrics::bandaSubtitulo);
+        midiParteArea = inner.removeFromTop (Metrics::bandaSubtitulo)
+                            .reduced (Metrics::lg, 0);
     }
     else
     {
@@ -1435,8 +1433,14 @@ void MainComponent::resized()
     //  las filas de chips de TIPO y el mando Q con su lectura.
     if (eqBandaSheet.isVisible())
     {
-        const int filasTipo = 2;                       // cinco chips no caben en una
-        const int quiere = 2 * Metrics::md + Metrics::hit + Metrics::md
+        //  Las dos filas y su reparto son UN dato y no dos: el presupuesto
+        //  decia «dos filas» y la colocacion partia 3 + 2 doce lineas mas
+        //  abajo, unidos por un comentario. Si alguna vez son tres tipos mas,
+        //  esto para la compilacion en vez de pedir una fila de menos.
+        constexpr int filasTipo = 2, tiposArriba = 3, tiposAbajo = 2;
+        static_assert (tiposArriba + tiposAbajo == Eq5::kNumTipos,
+                       "los tipos de banda del EQ no caben en las filas que se piden");
+        const int quiere = Ficha::cromo
                            + filasTipo * Metrics::btn + Metrics::xs
                            + Metrics::sm + ZatiLookAndFeel::kKnobRow;
         auto inner = sheetFromBottom (eqBandaSheet, quiere);
@@ -1460,10 +1464,10 @@ void MainComponent::resized()
         //  sube el suelo al dedo cuando cabe.
         //  En dos filas siempre: cinco tapas en una sola le tocan 45 px en
         //  280x653 y «PASO ALTO» pide mas. Tres arriba y dos abajo.
-        juce::TextButton* arriba[3] = { eqTipoBtns[0], eqTipoBtns[1], eqTipoBtns[2] };
-        juce::TextButton* abajo [2] = { eqTipoBtns[3], eqTipoBtns[4] };
-        layoutModuleBar (inner.removeFromTop (Metrics::btn + Metrics::xs), arriba, Metrics::xs, 3);
-        layoutModuleBar (inner.removeFromTop (Metrics::btn), abajo, 0, 2);
+        juce::TextButton* arriba[tiposArriba] = { eqTipoBtns[0], eqTipoBtns[1], eqTipoBtns[2] };
+        juce::TextButton* abajo [tiposAbajo]  = { eqTipoBtns[3], eqTipoBtns[4] };
+        layoutModuleBar (inner.removeFromTop (Metrics::btn + Metrics::xs), arriba, Metrics::xs, tiposArriba);
+        layoutModuleBar (inner.removeFromTop (Metrics::btn), abajo, 0, tiposAbajo);
     }
     else if (! eqBandaSheet.sheetBounds.isEmpty())
     {
@@ -1486,7 +1490,7 @@ void MainComponent::resized()
     // va a usar, asi que la ficha encoge cuando lo de dentro ocupa menos - la
     // de EL PAD no arrastra el hueco de la onda, que no lleva.
     {
-        constexpr int secH = 15 + 2 * ZatiLookAndFeel::kTextPad;
+        constexpr int secH = Metrics::bandaSubtitulo;
         //  644 y 418 salen de sumar lo que lleva cada pagina, no de probar:
         //  ver el desglose de cada bloque mas abajo.
         const int sheetInnerW = anchoTarjetaInterior (full.getWidth());
@@ -1526,7 +1530,7 @@ void MainComponent::resized()
         auto titleRow = inner.removeFromTop (Metrics::hit);
         padCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
         Lang::takeEnd (titleRow, Metrics::xs);
-        previewButton.setBounds (Lang::takeEnd (titleRow, 68).reduced (0, 0));
+        previewButton.setBounds (Lang::takeEnd (titleRow, 68));
         //  LA PUERTA A LA REJILLA DE DIECISEIS, en la cabecera y a la derecha,
         //  igual que en la pagina del piano: las dos fichas que editan "el pad
         //  que tengas elegido" lo cambian desde el mismo sitio. Ver
@@ -2115,9 +2119,10 @@ void MainComponent::resized()
         const int gestPieH = Metrics::hit + Metrics::sm;
         //  La pagina de MIDI: dos bloques de rotulo + tapa + selector, y el
         //  texto que explica la nota de cada pad.
-        const int midiH = Metrics::md * 2 + Metrics::hit + Metrics::sm + tabsH
-                            + (14 + Metrics::hit + Metrics::xs + Metrics::hit + Metrics::sm) * 2
-                            + 40 + Metrics::sm;
+        const int midiH = Ficha::cromoDesnudo (tabsH, false)
+                            + (Metrics::bandaSubtitulo + Metrics::hit + Metrics::xs
+                               + Metrics::hit + Metrics::sm) * 2
+                            + Metrics::hit + Metrics::sm;
         //  LOS CHIPS DE IDIOMA Y CARCASA NO CABEN A CUARTOS.
         //
         //  La fila reparte el ancho a partes iguales, y en 280x653 a cada uno
@@ -2140,8 +2145,9 @@ void MainComponent::resized()
         //  alto y dos para colocarlo, con dos aritmeticas distintas- y es
         //  exactamente el tipo de numero que se queda viejo en tres sitios de
         //  cuatro. Es cuanto texto pinta paintAudioInfo, o sea suyo.
-        const int estAltoAudio = 16 + Metrics::sm + tabsH + kAltoAudioInfo + Metrics::xs + filasChips
-                               + Metrics::xs + 14 + Metrics::hit + Metrics::sm;
+        const int estAltoAudio = Metrics::bandaTitulo + Metrics::sm + tabsH
+                               + kAltoAudioInfo + Metrics::xs + filasChips
+                               + Metrics::xs + Metrics::bandaSubtitulo + Metrics::hit + Metrics::sm;
         //  DOS COLUMNAS CUANDO LA DE UNA NO CABE, y la pregunta es esa y no
         //  otra. La condicion anterior comparaba la altura consigo misma menos
         //  dos filas -"346 < 334"- y era falsa siempre por doce pixeles, asi
@@ -2156,7 +2162,8 @@ void MainComponent::resized()
         //  como se llega a una fila de altura cero.
         const int topeCarta = altoTarjeta (full) - 2 * Metrics::margenFichaY;
         const bool dosColumnasSet = setInnerW >= 560 && estAltoAudio > topeCarta;
-        const int anchoChip = (dosColumnasSet ? setInnerW / 2 - Metrics::sm : setInnerW) - 44;
+        const int anchoChip = (dosColumnasSet ? setInnerW / 2 - Metrics::sm : setInnerW)
+                            - Metrics::canalonSeccion;
         auto chipsCaben = [this, anchoChip] (juce::OwnedArray<juce::TextButton>& btns)
         {
             juce::TextButton* arr[8] {};
@@ -2181,18 +2188,19 @@ void MainComponent::resized()
 
         const int wanted = onMidi ? midiH
             : onAudio
-            ? Metrics::md * 2 + 16 + Metrics::sm + tabsH + kAltoAudioInfo + Metrics::xs
-                + 14 + Metrics::hit + Metrics::sm
+            ? Ficha::cromoDesnudo (tabsH, false)
+                + kAltoAudioInfo + Metrics::xs
+                + Metrics::bandaSubtitulo + Metrics::hit + Metrics::sm
                 + (Metrics::hit + Metrics::xs) * kFilasChipsAudio + Metrics::sm
             : onAsp
-              ? Metrics::md * 2 + 16 + Metrics::sm + tabsH
+              ? Ficha::cromoDesnudo (tabsH, false)
                   + (Metrics::hit + Metrics::xs) * 3 + filasExtra + Metrics::sm
             : onGest
-              ? Metrics::md * 2 + 16 + Metrics::sm + tabsH
+              ? Ficha::cromoDesnudo (tabsH, false)
                   + kNumGestures * gestRowH + gestPieH + Metrics::sm
-              : Metrics::md * 2 + 16 + 14 + Metrics::sm + tabsH
-                  + Metrics::hit + 14 + Metrics::sm
-                  + Metrics::btn * 2 + Metrics::xs * 2 + 8 + listH + Metrics::sm;
+              : Ficha::cromoDesnudo (tabsH, true)
+                  + Metrics::hit + Metrics::bandaSubtitulo + Metrics::sm
+                  + Metrics::btn * 2 + Metrics::xs * 2 + Metrics::sm + listH + Metrics::sm;
 
         auto inner = sheetFromBottom (setSheet, wanted);
 
@@ -2566,7 +2574,7 @@ void MainComponent::resized()
             projNameRowArea = inner.removeFromTop (Metrics::hit);
             {
                 auto r = projNameRowArea;
-                Lang::takeStart (r, 60);
+                Lang::takeStart (r, Metrics::canalonSeccion);
                 //  Aire SOLO a los lados. El renglon mide Metrics::hit -40, el
                 //  minimo- y quitarle cuatro por arriba y cuatro por abajo
                 //  dejaba la caja donde se escribe el nombre del proyecto en
@@ -2616,7 +2624,10 @@ void MainComponent::resized()
         //  la primera corrida: la tapa salia a 28 px de alto en las siete
         //  pantallas -pedida sin ella, `removeFromBottom` devuelve lo que
         //  queda- o sea 28 TOUCH nuevos de un solo control.
-        auto inner = sheetFromBottom (exportSheet, 32 + 96 + Metrics::hit + Metrics::sm
+        //  Y LA CABECERA PEDIDA ES LA QUE SE COLOCA: pedia 32 y dos lineas mas
+        //  abajo coloca `Metrics::hit`, o sea ocho pixeles que la tarjeta no
+        //  sabia que iba a ocupar.
+        auto inner = sheetFromBottom (exportSheet, Metrics::hit + 96 + Metrics::hit + Metrics::sm
                                                      + Metrics::btn * 2 + Metrics::sm * 2
                                                      + Metrics::hit + Metrics::sm);
         exportGrupos.clear();
@@ -2708,7 +2719,7 @@ void MainComponent::resized()
         //  es exactamente como se acaba pintando encima de algo. La cruz mide
         //  un dedo y manda sobre el alto de la banda; el texto cabe debajo.
         const int cabecera = juce::jmax (Metrics::hit, 16 + 14);
-        auto inner = sheetFromBottom (rackSheet, Metrics::md * 2 + cabecera
+        auto inner = sheetFromBottom (rackSheet, Ficha::marco + cabecera
                                                    + (chipRowH + Metrics::xs) * 4
                                                    + Metrics::hit + Metrics::xs
                                                    + Metrics::sm + kNumRanuras * filaFx + Metrics::sm);
@@ -2883,13 +2894,12 @@ void MainComponent::resized()
         //  entero, el dibujo de 18 al lado y 76 px de sobra. Cuesta cuatro
         //  filas mas, que es alto y no ancho, y esta ficha ya se desplaza.
         const int alto2col = (Metrics::hit + Metrics::xs) * 8;
-        auto inner = sheetFromBottom (instSheet, Metrics::md * 2 + Metrics::hit
-                                                   + Metrics::md + filaPack
+        auto inner = sheetFromBottom (instSheet, Ficha::cromo + filaPack
                                                    + Metrics::sm
                                                    + (rejilla ? (Metrics::hit + Metrics::sm
                                                                  + alto4x4 + Metrics::md + alto2col)
                                                               : (filaInst + Metrics::xs) * filas)
-                                                   + Metrics::sm + 40);
+                                                   + Ficha::pie (2));
         auto titleRow = inner.removeFromTop (Metrics::hit);
         instCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
                                        .withSizeKeepingCentre (Metrics::hit, Metrics::hit));
@@ -3018,7 +3028,7 @@ void MainComponent::resized()
         //  regla que ya costo el titulo y el nombre del pack: una cuenta, un
         //  dueno, y el dueno es quien coloca.
         inner.removeFromTop (Metrics::sm);
-        instPieArea = inner.removeFromTop (Metrics::hit);
+        instPieArea = inner.removeFromTop (Ficha::pie (2) - Metrics::sm);
     }
 
     // ------------------------------------------------------------------
@@ -3123,15 +3133,14 @@ void MainComponent::resized()
         //  ocho, igual que CANCELAR se queda fuera del panel de EXPORTAR.
         const int filasG = juce::jmax (1, filasM / 2);
 
-        auto inner = sheetFromBottom (vstSheet, Metrics::md * 2 + Metrics::hit
-                                                  + Metrics::md + cabecera
+        auto inner = sheetFromBottom (vstSheet, Ficha::cromo + cabecera
                                                   + (presetArriba ? 0 : Metrics::xs + filaP)
                                                   + Metrics::sm + Metrics::hit + teclas
                                                   + Metrics::sm + filaM * filasG
                                                   + Metrics::sm + filaM * filasG
                                                   + Metrics::sm + Metrics::hit
                                                   + Metrics::sm + Metrics::hit
-                                                  + Metrics::sm + Metrics::hit);
+                                                  + Ficha::pie (3));
 
         auto titleRow = inner.removeFromTop (Metrics::hit);
         vstCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
@@ -3327,7 +3336,7 @@ void MainComponent::resized()
         //  una ficha de este proyecto -ya paso con el titulo y el nombre del
         //  pack de INSTRUMENTOS- y la regla es la misma: la banda la publica
         //  quien coloca.
-        vstPieArea = inner.removeFromTop (Metrics::hit);
+        vstPieArea = inner.removeFromTop (Ficha::pie (3) - Metrics::sm);
     }
 
     // AUTO CHOP sheet: how many pieces, where they land, and one red verb.
@@ -3336,9 +3345,9 @@ void MainComponent::resized()
         const int explainH = 40, plannedH = 40;
         //  Una fila mas que antes: la de COMO se corta, encima de la de en
         //  cuantos trozos, porque el modo cambia lo que significa el numero.
-        auto inner = sheetFromBottom (chopSheet, Metrics::md * 2 + Metrics::hit + explainH
-                                                   + Metrics::md + 14 + Metrics::hit
-                                                   + Metrics::md + 14 + Metrics::hit
+        auto inner = sheetFromBottom (chopSheet, Ficha::marco + Metrics::hit + explainH
+                                                   + Metrics::sm + Metrics::bandaSubtitulo + Metrics::hit
+                                                   + Metrics::sm + Metrics::bandaSubtitulo + Metrics::hit
                                                    + Metrics::sm + Metrics::hit
                                                    + Metrics::md + plannedH
                                                    //  Y LA VISTA PREVIA, que si no se pide no existe.
@@ -3598,7 +3607,7 @@ void MainComponent::resized()
                           + filasHerr + filasModo + filasUtil + Metrics::sm * 2;
             juce::ignoreUnused (col);
             const int rej = Playlist::kLanes * laneH;
-            return Metrics::md * 2 + Metrics::hit
+            return Ficha::marco + Metrics::hit
                  + (wideFace ? juce::jmax (col, rej + pie) : col + Metrics::sm + pie + rej);
         };
 
@@ -3640,7 +3649,7 @@ void MainComponent::resized()
         //  carriles, acotado por arriba. Donde no sobra nada, el suelo, que es
         //  exactamente lo que habia en las dos pantallas estrechas.
         {
-            const int pedidoConSuelo = Metrics::md * 2 + Metrics::hit
+            const int pedidoConSuelo = Ficha::marco + Metrics::hit
                                      + (wideFace ? juce::jmax (altoCol, Playlist::kLanes * laneMin + altoPie)
                                                  : altoCol + Metrics::sm + altoPie
                                                    + Playlist::kLanes * laneMin);
@@ -3650,7 +3659,7 @@ void MainComponent::resized()
         }
         const int altoRej  = Playlist::kLanes * laneH;
         auto inner = sheetFromBottom (songSheet,
-                                      Metrics::md * 2 + Metrics::hit
+                                      Ficha::marco + Metrics::hit
                                         + (wideFace ? juce::jmax (altoCol, altoRej + altoPie)
                                                     : altoCol + Metrics::sm + altoPie + altoRej));
         auto titleRow = inner.removeFromTop (Metrics::hit);
@@ -4008,7 +4017,7 @@ void MainComponent::resized()
         //  asi que si no entra en la cuenta se la come al Viewport y la mesa
         //  pierde media fila de canal en las pantallas justas.
         const int masterH = Metrics::btn + Metrics::xs;
-        const int mixFurniture = Metrics::md * 2 + Metrics::hit + Metrics::sm + tabsH
+        const int mixFurniture = Ficha::cromoConPestanas (tabsH)
                                + Metrics::btn + masterH + Metrics::lg;
         auto inner = sheetFromBottom (mixSheet,
                                       mixFurniture + (wideFace ? kMixFilas / 2 : kMixFilas) * rowH);
@@ -4061,13 +4070,13 @@ void MainComponent::resized()
         if (mixPage == mixPageCanales)
         {
             rackButton.setBounds (bottom.reduced (Metrics::halfGap,
-                                                  (Metrics::btn - Metrics::hit) / 2));
+                                                  Metrics::centraDedo));
         }
         else
         {
             rackButton.setBounds (bottom.removeFromRight (bottom.getWidth() / 3)
-                                      .reduced (Metrics::halfGap, (Metrics::btn - Metrics::hit) / 2));
-            mixClearSolo.setBounds (bottom.reduced (Metrics::halfGap, (Metrics::btn - Metrics::hit) / 2));
+                                      .reduced (Metrics::halfGap, Metrics::centraDedo));
+            mixClearSolo.setBounds (bottom.reduced (Metrics::halfGap, Metrics::centraDedo));
         }
         inner.removeFromBottom (Metrics::xs);
 
@@ -4088,7 +4097,7 @@ void MainComponent::resized()
             const bool cabeCifra = fila.getWidth() - Metrics::gap - 52 >= 70;
             masterFader.setTextBoxStyle (cabeCifra ? juce::Slider::TextBoxRight : juce::Slider::NoTextBox,
                                          false, 52, Metrics::readout);
-            masterFader.setBounds (fila.reduced (Metrics::aireTapa, (Metrics::btn - Metrics::hit) / 2));
+            masterFader.setBounds (fila.reduced (Metrics::aireTapa, Metrics::centraDedo));
             inner.removeFromBottom (Metrics::xs);
         }
 
@@ -4249,9 +4258,9 @@ void MainComponent::resized()
         //  Ahora el lado del cuadrado sale del ancho -que es lo que sobra en
         //  vertical- y la altura del panel sale del lado. Sin centrar, sin
         //  hueco: si no cabe, el que se recorta es el mando.
-        const int fixed = 2 * Metrics::md          // margenes de arriba y abajo
+        const int fixed = Ficha::marco             // margenes de arriba y abajo
                         + Metrics::hit             // titulo
-                        + 14                       // que hace soltar el dedo
+                        + Metrics::bandaSubtitulo  // que hace soltar el dedo
                         + Metrics::sm
                         + Metrics::hit             // las seis ranuras, en UNA fila
                         + Metrics::sm;
@@ -4280,7 +4289,7 @@ void MainComponent::resized()
             const int w = juce::jlimit (88, juce::jmax (88, titleRow.getWidth() / 2),
                                         (int) std::ceil (juce::GlyphArrangement::getStringWidth (
                                             capFont, xyLatchButton.getButtonText())) + 2 * Metrics::md);
-            xyLatchButton.setBounds (Lang::takeEnd (titleRow, w).reduced (0, 0));
+            xyLatchButton.setBounds (Lang::takeEnd (titleRow, w));
         }
         inner.removeFromTop (Metrics::bandaSubtitulo);              // pintado: que hace soltar el dedo
         inner.removeFromTop (Metrics::sm);
@@ -4292,7 +4301,7 @@ void MainComponent::resized()
             auto row = inner.removeFromTop (Metrics::hit);
             for (int f = 0; f < xyFxButtons.size(); ++f)
                 xyFxButtons[f]->setBounds (Lang::takeStart (row, row.getWidth() / (kNumRanuras - f))
-                                             .reduced (Metrics::halfGap / 2, 0));
+                                             .reduced (Metrics::aireTapa, 0));
             inner.removeFromTop (Metrics::sm);
         }
 
@@ -4308,7 +4317,7 @@ void MainComponent::resized()
     // for why it stopped being one card.
     {
         const int lanes = StepGrid::kLanes;
-        constexpr int nameH = 14 + ZatiLookAndFeel::kTextPad;
+        constexpr int nameH = Metrics::bandaSubtitulo;
         //  A named control is three things: its name, itself, and the air under
         //  it. Budget the band, never the control on its own.
         constexpr int bandH = nameH + Metrics::hit + Metrics::sm;
@@ -4334,11 +4343,7 @@ void MainComponent::resized()
         //  cuando la tarjeta iba a medir 371: cincuenta px de menos, y de ahi
         //  sale la altura del carril de la rejilla.
         const int capH   = altoTarjeta (full);
-        const int chrome = Metrics::md * 2          // the card's own margins
-                         + Metrics::hit             // title row
-                         + Metrics::sm
-                         + Metrics::tab             // the two tabs
-                         + Metrics::sm;
+        const int chrome = Ficha::cromoConPestanas (Metrics::tab + Metrics::sm);
 
         //  Rotated, the card is short and wide: sixteen lanes cannot share 200
         //  px of height AND leave room for four stacked controls under them.
@@ -5882,7 +5887,7 @@ void MainComponent::resized()
         UiAudit::tourMixPag  = (mixPage == mixPageCanales ? 1 : 0);
 
         const int anchoDock = getWidth();
-        const int alto = Metrics::md * 2 + 16 + Metrics::xs
+        const int alto = Ficha::marco + Metrics::bandaTitulo + Metrics::xs
                        + tourBodyHeight (anchoDock - 2 * Metrics::margenFichaX)
                        + Metrics::sm + Metrics::hit;
 
@@ -5908,6 +5913,16 @@ void MainComponent::resized()
         const int altoDock = juce::jmin (alto, tope);
         tourDock = objetivoArriba ? ventana.removeFromBottom (altoDock)
                                   : ventana.removeFromTop (altoDock);
+        //  Y EL MUELLE TAMBIEN SE APUNTA. Es la unica tarjeta de la casa que
+        //  no pasa por `sheetFromBottom`, asi que era la unica que no disparaba
+        //  `UiAudit::tarjeta`: su recorte propio al 55 % era invisible para el
+        //  banco -ni `TARJETA` ni `MARCO` ni `ANATOMIA` le aplicaban- desde el
+        //  dia que existe. No lleva suelo abajo: no es una tarjeta centrada
+        //  sobre la maquina sino un muelle pegado a un borde, asi que la regla
+        //  ASOMA no es suya.
+        UiAudit::tarjeta (alto, tope, false, -1, 0, tourDock,
+                          Metrics::margenFichaX, Metrics::margenFichaY,
+                          (int) tourSheet.getProperties()["capa"]);
         //  Y si aun asi se solapan -un objetivo que ocupa media pantalla-, manda
         //  el texto: sin leerlo el foco no explica nada.
         auto inner = tourDock.reduced (Metrics::margenFichaX, Metrics::margenFichaY);

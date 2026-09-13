@@ -164,7 +164,8 @@ namespace UiAudit
     //  censo que filtre «tiene la clave cuerpo» mezcla las dos lineas y saca
     //  un cuerpo de letra de 736. El espacio de claves del volcado es PLANO,
     //  que es lo que ya costo `on`, `lit` y `fila` en la tanda de los chips.
-    struct Rotulo { int x, y, w, h; juce::String texto, tipo; int capa; int pide; float cuerpoLetra; };
+    struct Rotulo { int x, y, w, h; juce::String texto, tipo; int capa; int pide;
+                    float cuerpoLetra; int lineas; };
     inline std::vector<Rotulo> rotulos;
 
     //  EN QUE CAPA SE ESTA PINTANDO.
@@ -192,12 +193,12 @@ namespace UiAudit
     inline bool midiendo = false;
 
     inline void rotulo (juce::Rectangle<int> r, const juce::String& t, const char* tipo,
-                        int pide = 0, float cuerpo = 0.0f)
+                        int pide = 0, float cuerpo = 0.0f, int lineas = 1)
     {
         if (! midiendo || t.isEmpty()) return;
         r += origenPintado;
         rotulos.push_back ({ r.getX(), r.getY(), r.getWidth(), r.getHeight(), t, tipo, capaActual,
-                             pide, cuerpo });
+                             pide, cuerpo, lineas });
     }
 
     //  LOS PANELES DE GRUPO, apuntados igual que los rotulos y por lo mismo:
@@ -1125,7 +1126,8 @@ namespace UiAudit
                       << ",\"w\":" << r.w << ",\"h\":" << r.h
                       << ",\"capa\":" << r.capa
                       << ",\"pide\":" << r.pide
-                      << ",\"cuerpoLetra\":" << juce::String (r.cuerpoLetra, 2) << "}" << std::endl;
+                      << ",\"cuerpoLetra\":" << juce::String (r.cuerpoLetra, 2)
+                      << ",\"lineas\":" << r.lineas << "}" << std::endl;
 
         for (const auto& p : paneles)
             std::cout << "{\"panel\":1"

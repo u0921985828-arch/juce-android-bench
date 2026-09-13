@@ -584,6 +584,31 @@ namespace Metrics
     //  fila y `FILA` no dispare.
     static constexpr int aireTapaDensa = aireTapa / 2;
 
+    //  LO QUE SOBRA AL CENTRAR UN CONTROL DE DEDO EN UNA FILA COMODA.
+    //
+    //  No es `aireTapa` aunque hoy valga lo mismo: aquel es el aire ENTRE dos
+    //  tapas de la misma fila y este es lo que deja un `hit` dentro de un
+    //  `btn`. Dos papeles distintos con el mismo numero son dos tokens, o el
+    //  dia que uno de los dos se mueva se lleva al otro por delante — que es
+    //  la misma razon por la que `margenFichaY` existe aunque valga `md`.
+    //
+    //  Estaba escrito `(Metrics::btn - Metrics::hit) / 2` en cuatro sitios de
+    //  la mesa, tres de ellos seguidos.
+    static constexpr int centraDedo = (btn - hit) / 2;
+
+    //  LA CRUZ DE CERRAR, escrita UNA vez.
+    //
+    //  Estaba escrita DIECISEIS y en DOS caracteres distintos: catorce fichas
+    //  con el signo de multiplicar y dos -MANUAL y RACK- con una equis normal.
+    //  Se lee igual y no es el mismo control, que es la version mas pequena de
+    //  «una funcion, un dueño». Lo llevaba cantando `Tests/desglose.py` -«la
+    //  cruz de cerrar se escribe de 2 formas»- y no lo miraba nadie porque esa
+    //  prueba terminaba en `return 0` pasara lo que pasara.
+    //
+    //  No pasa por `T()`: es el mismo caracter en los cuatro idiomas, como el
+    //  signo de un par que sube y baja.
+    inline constexpr const char* cruz = "\xc3\x97";   // U+00D7
+
     //  EL MARGEN DE DENTRO DE UNA TAPA, y es UNO.
     //
     //  Era `jlimit (3, 5, ancho / 14)`, o sea una proporcion del ancho, y de

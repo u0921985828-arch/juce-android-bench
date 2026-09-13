@@ -260,6 +260,25 @@ jobs:
       - name: Los planos de cada pantalla
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/planos.py
+      #  Y LOS MINIMOS DE UN POP-UP, que es una TERCERA prueba sobre las mismas
+      #  pantallas: `plano.py` mira los titulos, `planos.py` las filas y esta
+      #  mira si a una ficha le falta algo para poder usarse -titulo, cruz de
+      #  cerrar, el dedo y PLAY donde se escribe sonido-. La lista estaba
+      #  escrita con su razon al lado desde que existe el fichero y terminaba
+      #  en `return 0` pasara lo que pasara, y no la corria nadie: *una linea
+      #  que imprime OK* aplicada a las normas de un pop-up. Veinticinco
+      #  segundos.
+      - name: Los minimos de cada pop-up
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/desglose.py
+      #  Y QUE EL DIBUJANTE NO SE SEPARE DE LA APP. `maquetas.py` dibuja una
+      #  pantalla PROPUESTA y llevaba la aritmetica de la tarjeta copiada: el
+      #  tope de pie escrito `0.78` cuando la app lo deriva -803 px en 412x915
+      #  contra los 713 que dibujaba-. Su modo `--contraste` existia justo para
+      #  cazarlo y no lo corria nadie. Nueve segundos.
+      - name: El dibujante contra la app
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/maquetas.py --contraste
       - name: Las fotos de la ficha de Play
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/store.py

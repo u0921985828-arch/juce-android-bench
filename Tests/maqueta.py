@@ -57,6 +57,13 @@ import sys
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CABECERA = os.path.join(RAIZ, "Source", "ZatiLookAndFeel.h")
 
+#  EL CONTRATO. Vive al lado de la prueba y dentro del repositorio, que es lo
+#  que hace que la prueba pueda leerlo: la misma decision que `Tests/marcas.md`
+#  y por la misma razon —una lista que vive en un documento que no se versiona
+#  es una prueba que no corre—. No lleva un solo pixel dentro: dice que PIEZA
+#  usa que TOKEN, y cuanto vale el token lo dice `Metrics`.
+CONTRATO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "maqueta.md")
+
 #  Los ficheros que MAQUETAN. Se dejan fuera los tres que dibujan un simbolo
 #  dentro de la caja que les dan -`Iconos.h`, `PadArt.h`, `StoreArt.h`-: alli
 #  los numeros son coordenadas de un dibujo en su propia rejilla de 24 unidades
@@ -199,6 +206,39 @@ def tokens():
     return (met or None), (laf or None)
 
 
+def contrato(met):
+    """La anatomia de una ficha, leida de `Tests/maqueta.md` y resuelta.
+
+    Anclada en el titulo de la seccion y en la forma de la tabla, como las dos
+    regex de `marcas.py`: si el documento cambia de forma esto devuelve vacio y
+    quien llama FALLA, en vez de dar verde con el contrato corto — que es como
+    una prueba de esta clase se muere sin ruido.
+
+    Devuelve {pieza: (token, valor)} y la lista de tokens que el documento
+    nombra y `Metrics` no tiene. Lo segundo es lo que separa «el contrato esta
+    viejo» de «la tabla esta viva»: un documento que nombra un token retirado
+    describe una app que ya no existe.
+    """
+    if not os.path.exists(CONTRATO):
+        return None, None
+    txt = open(CONTRATO, encoding="utf-8").read()
+    sec = re.search(r"^##\s*\d+\.\s*La anatomia, pieza por pieza\s*$(.*?)(?=^##\s|\Z)",
+                    txt, re.S | re.M)
+    if sec is None:
+        return None, None
+    filas = re.findall(r"^\|\s*`(\w+)`\s*\|\s*`(\w+)`\s*\|\s*$",
+                       sec.group(1), re.M)
+    if not filas:
+        return None, None
+    piezas, huerfanos = {}, []
+    for pieza, tok in filas:
+        if tok not in met:
+            huerfanos.append((pieza, tok))
+        else:
+            piezas[pieza] = (tok, met[tok])
+    return piezas, huerfanos
+
+
 def coma(args):
     #  Solo las comas de primer nivel: `(a, (b - c) / 2)` son DOS argumentos.
     out, hondo, act = [], 0, ""
@@ -270,6 +310,22 @@ def main():
         return 1
     print("tabla de tokens: %d en Metrics, %d en ZatiLookAndFeel"
           % (len(met), len(laf or {})))
+
+    #  EL CONTRATO, antes que nada: es el documento del que cuelga la regla
+    #  ANATOMIA de `expo.py`, que lo importa de aqui. Una lista, un dueño.
+    piezas, huerfanos = contrato(met)
+    if not piezas:
+        print("FALLA  no puedo leer el contrato de Tests/maqueta.md:"
+              " no mide nada")
+        return 1
+    if huerfanos:
+        print("FALLA  el contrato nombra %d tokens que Metrics no tiene: %s"
+              % (len(huerfanos),
+                 ", ".join("%s -> Metrics::%s" % (p, t) for p, t in huerfanos)))
+        return 1
+    print("contrato: %d piezas  %s"
+          % (len(piezas),
+             "  ".join("%s=%d" % (p, v) for p, (_t, v) in sorted(piezas.items()))))
 
     #  El vocabulario tiene que existir. Sin esto, renombrar un token deja la
     #  segunda pregunta sin nada que mirar y la prueba sale verde por no haber

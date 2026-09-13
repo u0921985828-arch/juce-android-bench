@@ -329,7 +329,7 @@ private:
     //  Es un Sheet y no una clase nueva: asi trae ya su capa para el banco -lo
     //  mismo que le faltaba a XyPanel-, su velo, y el cierre al tocar fuera.
     Sheet padPickSheet;
-    juce::TextButton padPickCloseBtn { juce::CharPointer_UTF8 ("\xc3\x97") };
+    juce::TextButton padPickCloseBtn { juce::CharPointer_UTF8 (Metrics::cruz) };
     juce::OwnedArray<juce::TextButton> padPickBtns;
     //  Y LOS CUATRO BANCOS DEBAJO, porque si no la rejilla llega a dieciseis
     //  pads y no a sesenta y cuatro - y PAD -/+, que es lo que viene a
@@ -357,7 +357,7 @@ private:
     //  puertas. Encima cuesta CERO de alto permanente y una tapa en la fila que
     //  ya estaba.
     Sheet canalSheet;
-    juce::TextButton canalCloseBtn { juce::CharPointer_UTF8 ("\xc3\x97") };
+    juce::TextButton canalCloseBtn { juce::CharPointer_UTF8 (Metrics::cruz) };
     juce::OwnedArray<juce::TextButton> canalBtns;
     //  LOS DOS CHIPS DE BANCO, que es lo que treinta y dos canales obligan a
     //  tener: la rejilla enseña dieciseis y el resto sigue estando. El indice
@@ -869,7 +869,7 @@ private:
     //  y NINGUNO del otro - 112 hallazgos, 46x16 px de solape.
     juce::Rectangle<int> apunta (juce::Graphics& g, juce::Rectangle<int> caja,
                                  const juce::String& texto, const char* tipo,
-                                 float minimo = 1.0f);
+                                 float minimo = 1.0f, int lineas = 1);
     void ponTransporte (bool on);
     void ponModoCancion (bool on);
     //  `apretar` a cero deja el `drawText` de siempre; por encima de cero se
@@ -890,9 +890,14 @@ private:
     //  ninguna se lee como una pantalla limpia — el manual lo dice todo entero.
     //  Devuelve si se dibujo, que es lo que hace falta cuando debajo hay algo
     //  que ocupa su sitio.
+    //  Y DE CUANTAS LINEAS. Los pies de INSTRUMENTOS y de la ficha del
+    //  instrumento se dibujaban con `drawFittedText` a pelo -dos y tres
+    //  renglones- asi que no pasaban por aqui: sin `apunta`, los dos eran
+    //  invisibles para CORTADO, TAPADO y PISADO, que es la misma falta que ya
+    //  costo que la mesa estuviera titulada «MIX» a mano durante meses.
     bool pintaAyuda (juce::Graphics& g, juce::Rectangle<int> banda,
                      const juce::String& texto, juce::Justification justif,
-                     float apreton = Metrics::apretonAyuda);
+                     float apreton = Metrics::apretonAyuda, int lineas = 1);
 
     juce::Rectangle<int> pintaTitulo (juce::Graphics& g, juce::Rectangle<int> caja,
                                       const juce::String& texto, const char* tipo = "titulo",
@@ -989,7 +994,7 @@ private:
     };
     ProjectList  projModel;
     juce::ListBox projList { "proyectos", &projModel };
-    juce::TextButton setCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
+    juce::TextButton setCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
     juce::TextButton projSaveButton { "GUARDAR" };
     juce::TextButton projLoadButton { "ABRIR" };
     juce::TextButton projNewButton  { "NUEVO" };
@@ -1114,7 +1119,7 @@ private:
     //  The bounce runs on its own thread through a clone of the engine (see
     //  Exporter.h). The UI only starts it, polls its progress from the timer
     //  that is already running, and reports what came out.
-    juce::TextButton exportCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
+    juce::TextButton exportCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
     juce::TextButton exportMasterButton { "MASTER" };
     juce::TextButton exportStemsButton  { "PISTAS" };
     juce::TextButton exportCancelButton { "CANCELAR" };
@@ -1643,7 +1648,7 @@ private:
     };
     std::unique_ptr<FiltroBrowse>   browseFilter;   // declared first: outlives the browser
     std::unique_ptr<juce::FileBrowserComponent> browser;
-    juce::TextButton browseCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
+    juce::TextButton browseCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
     juce::TextButton browseLoadButton  { "CARGAR" };
     //  CARGAR UNA CARPETA ENTERA COMO KIT. Dieciseis samples es un kit, y
     //  montarlo de uno en uno son dieciseis viajes a la biblioteca por cada
@@ -1697,7 +1702,7 @@ private:
     //  fire on one tap, always cut sixteen ways, and write over all sixteen
     //  pads including everything already on them. Now it asks: how many, and
     //  whether pads that already hold a sound are off limits.
-    juce::TextButton chopCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") },
+    juce::TextButton chopCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) },
                      chopGoButton    { "CORTAR" },
                      chopSafeButton  { "RESPETAR PADS CON SONIDO" };
     juce::OwnedArray<juce::TextButton> chopCountBtns;
@@ -1950,7 +1955,7 @@ private:
     XyPad xyPad;
     juce::OwnedArray<juce::TextButton> xyFxButtons;   // que efecto toca el panel
     juce::TextButton xyLatchButton { "FIJO" };
-    juce::TextButton xyCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
+    juce::TextButton xyCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
     int  xyFx = 0;                 // el efecto que el panel esta tocando
     bool xyLatch = false;          // false = momentaneo (entra al tocar, sale al soltar)
     bool xyWasOn = false;          // como estaba el efecto antes de apoyar el dedo
@@ -1997,7 +2002,7 @@ private:
     //  porque darle a play en la pagina de la cancion y que suene el patron
     //  suelto es la respuesta a una pregunta que nadie hizo.
     juce::TextButton songPlayBtn { "PLAY" };
-    juce::TextButton songCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
+    juce::TextButton songCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
     juce::Slider     songLenSlider;
     //  LA BARRA DE LA LINEA DE TIEMPO, donde estaba la fila de paginas
     //  -1, 9, 17...-. Ocho tapas numeradas saltaban de pagina en pagina, asi
@@ -2144,9 +2149,9 @@ private:
     void ponLargoBloque (int carril, int cabeza, int nuevo, bool apunta = true);
     void toggleSongLane (int lane);
     juce::TextButton setButton      { "SET" };   // skins + proyectos (spec: SET)
-    juce::TextButton seqCloseButton   { juce::CharPointer_UTF8 ("\xc3\x97") },
-                     padCloseButton   { juce::CharPointer_UTF8 ("\xc3\x97") },
-                     mixCloseButton   { juce::CharPointer_UTF8 ("\xc3\x97") };
+    juce::TextButton seqCloseButton   { juce::CharPointer_UTF8 (Metrics::cruz) },
+                     padCloseButton   { juce::CharPointer_UTF8 (Metrics::cruz) },
+                     mixCloseButton   { juce::CharPointer_UTF8 (Metrics::cruz) };
     //  A studio is where a track gets finished, and nothing gets finished
     //  without balancing it. One strip per pad: level, mute, solo.
     juce::OwnedArray<juce::Slider>     mixFaders, mixPans, mixAnchos;
@@ -2154,7 +2159,8 @@ private:
     //  The rack: one pad's six sends, opened from the mixer. An effect here
     //  is not on or off, it is how much of THIS channel goes into it - which
     //  is the only place where "the delay belongs to the snare" can be said.
-    juce::TextButton rackButton { "RACK" }, rackCloseButton { "x" };
+    juce::TextButton rackButton { "RACK" },
+                 rackCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
     juce::OwnedArray<juce::TextButton> rackPadBtns;
     //  Y sus dos chips de banco. Ver `canalBankBtns`: el indice es compartido.
     juce::OwnedArray<juce::TextButton> rackBankBtns;
@@ -2196,7 +2202,7 @@ private:
     //  caja negra sirvio para algo. Es ademas el idioma que la app ya usa para
     //  lo mismo - PAD -/+ en el piano - y aguanta cualquier numero de packs.
     Sheet instSheet;
-    juce::TextButton instCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
+    juce::TextButton instCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
     juce::TextButton instPackDownBtn { "PACK -" }, instPackUpBtn { "PACK +" };
     juce::OwnedArray<juce::TextButton> instBtns;      // los instrumentos: lista o rejilla
     //  LA REJILLA DEL DESTINO: los dieciseis pads de un banco, cada uno con el
@@ -2233,7 +2239,7 @@ private:
     //  al final de un desplazamiento.
     juce::TextButton vstPreDown { "-" }, vstPreUp { "+" };
     juce::Rectangle<int> vstPreArea;
-    juce::TextButton vstCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
+    juce::TextButton vstCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
     //  LA PUERTA A EL PAD, en la cabecera y del lado del cierre, que es donde
     //  esta ficha ya tiene sus tapas. Existe desde que la pestaña PAD de la
     //  cara abre LO QUE EL PAD ES: un pad de instrumento llega aqui y no a EL
@@ -2324,7 +2330,7 @@ private:
     juce::TextButton midiBtn { "MIDI" };
     Sheet midiSheet;
     juce::TextButton midiExportBtn { "EXPORTAR" }, midiImportBtn { "IMPORTAR" };
-    juce::TextButton midiCloseButton { juce::CharPointer_UTF8 ("\xc3\x97") };
+    juce::TextButton midiCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
     juce::Rectangle<int> midiTitleArea, midiAyudaArea, midiParteArea, midiPanel;
     //  Lo ultimo que paso, para que la ficha lo diga donde se actua y no en el
     //  renglon de estado de la cara, que queda detras de la tarjeta.
@@ -2614,7 +2620,8 @@ private:
     ManualBody     manualBody;
     juce::Viewport manualScroll;
     Sheet          manualSheet;
-    juce::TextButton manualButton { "MANUAL" }, manualCloseButton { "x" };
+    juce::TextButton manualButton { "MANUAL" },
+                 manualCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
 
     //  EL TOUR DE BIENVENIDA, que no es el manual.
     //
@@ -2921,7 +2928,7 @@ private:
     //  banco -lo que le faltaba a XyPanel-, su velo y el cierre al tocar
     //  fuera.
     Sheet ranuraSheet;
-    juce::TextButton ranuraCloseBtn { juce::CharPointer_UTF8 ("\xc3\x97") };
+    juce::TextButton ranuraCloseBtn { juce::CharPointer_UTF8 (Metrics::cruz) };
     juce::OwnedArray<juce::TextButton> ranuraBtns;     // un tipo por celda
     juce::TextButton ranuraVaciarBtn { "VACIAR" };
     int  ranuraEditada = -1;               // que ranura se esta eligiendo, o -1
@@ -3220,7 +3227,7 @@ private:
     int   eqBandaSel = 0;
     juce::OwnedArray<juce::TextButton> eqTipoBtns;
     juce::Slider eqQKnob;
-    juce::TextButton eqBandaCloseBtn { juce::CharPointer_UTF8 ("\xc3\x97") };
+    juce::TextButton eqBandaCloseBtn { juce::CharPointer_UTF8 (Metrics::cruz) };
     juce::Rectangle<int> eqBandaTituloBanda;
     void abreBandaEq (int b);
     void refrescaBandaEq();

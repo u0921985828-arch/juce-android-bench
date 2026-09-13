@@ -6101,7 +6101,7 @@ void MainComponent::releaseResources()
 //  titulada "MIX" a mano durante meses.
 juce::Rectangle<int> MainComponent::apunta (juce::Graphics& g, juce::Rectangle<int> caja,
                                             const juce::String& texto, const char* tipo,
-                                            float minimo)
+                                            float minimo, int lineas)
 {
     auto real = caja;
     const int pide  = (int) std::ceil (juce::GlyphArrangement::getStringWidth (
@@ -6117,20 +6117,34 @@ juce::Rectangle<int> MainComponent::apunta (juce::Graphics& g, juce::Rectangle<i
     //  Y el CUERPO con el que se acaba de dibujar, que es lo que hace posible
     //  censar cuantos hay por papel. Lo dice `g` y no una tabla al lado: el
     //  tamano de media docena de rotulos se calcula al vuelo.
-    UiAudit::rotulo (real, texto, tipo, (int) std::ceil (pide * minimo),
-                     g.getCurrentFont().getHeight());
+    //  Y DE CUANTAS LINEAS ES: un pie de tres renglones mide tres bandas, y
+    //  sin decirlo su alto no se puede juzgar contra el contrato.
+    //
+    //  Y LO QUE PIDE SE REPARTE ENTRE ELLAS. `CORTADO` pregunta si el texto
+    //  cabe en UNA linea, y con tres eso es la pregunta equivocada: el pie de
+    //  la ficha del instrumento salio con «pide 515 tiene 291» en las cuatro
+    //  lenguas el dia que dejo de dibujarse con `drawFittedText` a pelo y
+    //  empezo a apuntarse. Repartido es una condicion NECESARIA -un texto de
+    //  ancho W no cabe en N renglones de menos de W/N- asi que no puede dar un
+    //  falso positivo por el reparto de palabras, que es el lado seguro.
+    UiAudit::rotulo (real, texto, tipo,
+                     (int) std::ceil (pide * minimo / juce::jmax (1, lineas)),
+                     g.getCurrentFont().getHeight(), lineas);
     return real;
 }
 
 bool MainComponent::pintaAyuda (juce::Graphics& g, juce::Rectangle<int> banda,
                                 const juce::String& texto, juce::Justification justif,
-                                float apreton)
+                                float apreton, int lineas)
 {
-    if (! cabeEntero (g, banda, texto, apreton))
+    //  «Cabe entero» de una sola linea, que es lo que esta funcion existia
+    //  para preguntar. Con varias, `drawFittedText` reparte por palabras y la
+    //  pregunta la contesta el propio reparto.
+    if (lineas <= 1 && ! cabeEntero (g, banda, texto, apreton))
         return false;
 
-    apunta (g, banda, texto, "dato", apreton);
-    g.drawFittedText (texto, banda, justif, 1, apreton);
+    apunta (g, banda, texto, "dato", apreton, lineas);
+    g.drawFittedText (texto, banda, justif, lineas, apreton);
     return true;
 }
 
@@ -6403,7 +6417,7 @@ bool MainComponent::moduleBarFits (int rowWidth, juce::TextButton** mb, int coun
     //  justas. Es el tercer arreglo de maquetado que esta casa deshace por
     //  medirlo, y va escrito para no volver a intentarlo.
     const auto capFont = ZatiColours::monoFont (11.0f, true).withExtraKerningFactor (0.06f);
-    constexpr int kChrome = 2 * Metrics::sm + 2 * (Metrics::halfGap / 2) + 2 * Metrics::margenTapa;
+    constexpr int kChrome = 2 * Metrics::sm + 2 * Metrics::aireTapa + 2 * Metrics::margenTapa;
     int total = 0;
     //  Doce, el mismo tope que layoutModuleBar: si esta contase ocho y aquella
     //  colocase nueve, la respuesta "cabe" seria sobre una fila que no es la

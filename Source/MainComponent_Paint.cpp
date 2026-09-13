@@ -779,9 +779,9 @@ void MainComponent::paintBrowseSheetContent (juce::Graphics& g)
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
         hayBrowseSub = cabeEntero (g, browseSubRow, sub, Metrics::apretonAyuda);
     }
-    const int desplazaBrowse = (Metrics::hit - altoCabecera (hayBrowseSub)) / 2;
-    browseTitleRow = browseTitleRow.translated (0, desplazaBrowse);
-    browseSubRow   = browseSubRow.translated   (0, desplazaBrowse);
+    const int cabBrowse = altoCabecera (hayBrowseSub);
+    browseTitleRow = centraEnRenglon (browseTitleRow, cabBrowse);
+    browseSubRow   = centraEnRenglon (browseSubRow,   cabBrowse);
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
@@ -889,7 +889,13 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
     const int sp = juce::jmax (0, selectedPad);
     auto inner = chopSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
 
-    auto titleRow = inner.removeFromTop (32).withTrimmedTop (Metrics::sm);
+    //  LA UNICA CABECERA QUE SE TALLABA UN 32 A MANO. El maquetado le reserva
+    //  `Metrics::hit` -40- y el pintor se quedaba con 32 menos la frontera, o
+    //  sea una banda de 24 en y 8..32: ocho pixeles del renglon sin usar por
+    //  abajo y el titulo cuatro por encima de donde lo pone cualquier otra
+    //  ficha. Por la puerta, como las veinte restantes.
+    auto titleRow = centraEnRenglon (inner.removeFromTop (Metrics::hit)
+                                          .withHeight (Metrics::bandaTitulo));
     //  Y de la puerta a la rejilla de dieciseis, que vive en este mismo
     //  renglon desde que esta ficha tambien puede cambiar de pad.
     titleRow = antesDe (antesDe (titleRow, chopCloseButton), chopPadPickBtn);
@@ -923,7 +929,7 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
     inner.removeFromTop (Metrics::sm);
     g.setColour (ZatiColours::ink.withAlpha (0.75f));
     g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.16f));
-    pintaTitulo (g, inner.removeFromTop (Metrics::bandaSubtitulo), T ("COMO"));
+    pintaTitulo (g, inner.removeFromTop (Metrics::bandaSubtitulo), T ("COMO"), "seccion");
     inner.removeFromTop (Metrics::hit + Metrics::sm);
 
     g.setColour (ZatiColours::ink.withAlpha (0.75f));
@@ -1022,9 +1028,16 @@ void MainComponent::paintExportSheetContent (juce::Graphics& g)
     //  Con los dos numeros a mano -un 2 de arriba y una banda de 18- el titulo
     //  caia NUEVE pixeles por encima del centro de la cruz. Ninguno de los dos
     //  decidia nada que el maquetado no hubiera decidido ya.
-    pintaTitulo (g, antesDe (centraEnRenglon (inner.removeFromTop (Metrics::bandaTitulo)),
+    //  EL RENGLON ENTERO, que es lo que el maquetado consume dos funciones mas
+    //  alla. Aqui se comian 16 de titulo y 14 de nada -treinta- mientras
+    //  `resized()` avanzaba `Metrics::hit`: diez pixeles de desfase entre las
+    //  dos pasadas sobre el MISMO rectangulo, y el bloque pintado empezaba
+    //  arriba de donde la ficha le habia reservado sitio. Con el renglon
+    //  entero, los 96 px que el maquetado reserva son exactamente los 96 que
+    //  este pintor dibuja.
+    pintaTitulo (g, antesDe (centraEnRenglon (inner.removeFromTop (Metrics::hit)
+                                                   .withHeight (Metrics::bandaTitulo)),
                              exportCloseButton), T ("EXPORTAR"));
-    inner.removeFromTop (Metrics::bandaSubtitulo);
 
     // What is going to be rendered, and how long it will be. Stated before
     // you press, not after: a bounce is the one action here you cannot undo
@@ -1084,7 +1097,7 @@ void MainComponent::paintExportSheetContent (juce::Graphics& g)
     // Progress, then the verdict.
     if (exportJob != nullptr)
     {
-        auto bar = inner.removeFromTop (8).reduced (0, 0);
+        auto bar = inner.removeFromTop (Metrics::sm);
         //  El canal de la barra de progreso es un hueco; lo que lo llena es el
         //  acento. Con padBorder el canal salia mas claro que el relleno en las
         //  dos carcasas oscuras, y la barra parecia ir al reves.
@@ -1283,7 +1296,8 @@ void MainComponent::paintInstSheetContent (juce::Graphics& g)
     {
         pie = T ("Elige el pad arriba y el instrumento abajo. Va al pad %1.",
                  Lang::ltr (juce::String (instDestPad + 1)));
-        g.drawFittedText (pie, inner.removeFromTop (40), Lang::start (juce::Justification::top), 2, 1.0f);
+        pintaAyuda (g, inner.removeFromTop (2 * Metrics::bandaSubtitulo), pie,
+                    Lang::start (juce::Justification::top), 1.0f, 2);
         return;
     }
 
@@ -1902,9 +1916,9 @@ void MainComponent::paintPianoSheetContent (juce::Graphics& g)
                                         "   " + dot + "   ", 0.8f);
     g.setFont (fuenteTit);
 
-    const int desplaza = (Metrics::hit - altoCabecera (ayudaPiano.isNotEmpty())) / 2;
-    titulo = titulo.translated (0, desplaza);
-    ayuda  = ayuda.translated  (0, desplaza);
+    const int cabPiano = altoCabecera (ayudaPiano.isNotEmpty());
+    titulo = centraEnRenglon (titulo, cabPiano);
+    ayuda  = centraEnRenglon (ayuda,  cabPiano);
     //  Y CAE POR CAMPOS: primero el nombre del pad —que se lee en el propio pad,
     //  ahi abajo— y despues «PAD nn», que lo dice la tapa del selector. Queda
     //  «PIANO», que es lo unico que no se puede deducir mirando la maquina. Ver
@@ -1983,14 +1997,14 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
         auto r = projNameRowArea;
         g.setColour (ZatiColours::inkDim);
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
-        pintaTitulo (g, Lang::takeStart (r, 60), T ("NOMBRE"), "seccion");
+        pintaTitulo (g, Lang::takeStart (r, Metrics::canalonSeccion), T ("NOMBRE"), "seccion");
     }
     if (! projPathRowArea.isEmpty())
     {
         auto r = projPathRowArea;
         g.setColour (ZatiColours::inkDim.withAlpha (0.75f));
         g.setFont (ZatiColours::monoFont (Metrics::fFine, false));
-        pintaTitulo (g, Lang::takeStart (r, 60), T ("CARPETA"), "seccion");
+        pintaTitulo (g, Lang::takeStart (r, Metrics::canalonSeccion), T ("CARPETA"), "seccion");
         //  Y ESTA TAMBIEN SE CACHEA, por lo mismo que `destinoCache` ocho
         //  cientas lineas mas arriba y con el mismo fallo: `ProjectStore::root
         //  ()` es `sub("Projects")`, y `sub` hace `createDirectory()`. O sea un
@@ -2042,9 +2056,9 @@ void MainComponent::paintRackSheetContent (juce::Graphics& g)
         hayAyudaRack = cabeEntero (g, bandaRack, ayudaRack, Metrics::apretonAyuda);
         g.setFont (fuenteTit);
     }
-    const int desplazaRack = (Metrics::hit - altoCabecera (hayAyudaRack)) / 2;
-    titleRow  = titleRow.translated  (0, desplazaRack);
-    bandaRack = bandaRack.translated (0, desplazaRack);
+    const int cabRack = altoCabecera (hayAyudaRack);
+    titleRow  = centraEnRenglon (titleRow,  cabRack);
+    bandaRack = centraEnRenglon (bandaRack, cabRack);
     pintaTitulo (g, titleRow,
                  T ("RACK") + "  " + dot + "  " + T ("CANAL %1", Lang::ltr (juce::String (canalActual + 1)))
                 + "  " + dot + "  " + padsTexto (cuantos), "titulo", true);
@@ -2397,7 +2411,9 @@ void MainComponent::paintSongSheetContent (juce::Graphics& g)
     //  asi que «CANCION» caia encima de «toca un compas...» 46x16 px, en las
     //  cuatro lenguas por veintiocho pantallas. `antesDe` decide el lado
     //  comparando los centros, asi que vale tambien en arabe.
-    auto hintRow = antesDe (renglon, tituloReal);
+    auto hintRow = antesDe (renglon, tituloReal)
+                     .withSizeKeepingCentre (antesDe (renglon, tituloReal).getWidth(),
+                                             Metrics::bandaSubtitulo);
 
     //  Y DONDE NO CABE ENTERA NO SALE. Media frase de ayuda no ayuda: se lee
     //  como un fallo, y esta es SOLO ayuda -no lleva ningun dato que no se vea
@@ -2611,7 +2627,7 @@ void MainComponent::paintVstSheetContent (juce::Graphics& g)
         g.setFont (fuenteFamilia (vstNombreArea.getHeight()));
         pintaTitulo (g, vstNombreArea.withSizeKeepingCentre (vstNombreArea.getWidth(), 30),
                      fam >= 0 ? T (Sintes::tabla()[fam].nombre) : juce::String ("-"),
-                     "titulo", true);
+                     "chapa", true);
     }
 
     //  LA PANTALLA DEL PRESET, entre las dos flechas.
@@ -2642,7 +2658,7 @@ void MainComponent::paintVstSheetContent (juce::Graphics& g)
                                       (int) std::ceil (juce::GlyphArrangement::getStringWidth (
                                                            g.getCurrentFont(), txt)));
         UiAudit::rotulo (vstPreArea.withSizeKeepingCentre (usado, vstPreArea.getHeight()),
-                         txt, "dato",
+                         txt, "cristal",
                          (int) std::ceil (juce::GlyphArrangement::getStringWidth (
                                               g.getCurrentFont(), txt)),
                          g.getCurrentFont().getHeight());
@@ -2731,10 +2747,11 @@ void MainComponent::paintVstSheetContent (juce::Graphics& g)
         //  sola: siete familias de las dieciseis no sostienen, asi que «suena
         //  mientras lo tengas tocado» era falso en casi la mitad de la ficha.
         const bool sost = (fam >= 0) && Sintes::tabla()[fam].sostiene;
-        g.drawFittedText (sost
-                              ? T ("El teclado suena mientras lo tengas tocado. Los ocho mandos afinan este preset y VOLVER lo devuelve.")
-                              : T ("El teclado suena y cada nota se acaba sola. Los ocho mandos afinan este preset y VOLVER lo devuelve."),
-                          vstPieArea, Lang::start (juce::Justification::top), 3, 1.0f);
+        pintaAyuda (g, vstPieArea,
+                    sost
+                      ? T ("El teclado suena mientras lo tengas tocado. Los ocho mandos afinan este preset y VOLVER lo devuelve.")
+                      : T ("El teclado suena y cada nota se acaba sola. Los ocho mandos afinan este preset y VOLVER lo devuelve."),
+                    Lang::start (juce::Justification::top), 1.0f, 3);
     }
 }
 

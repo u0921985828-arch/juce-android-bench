@@ -55,6 +55,9 @@ codigo.
 | repintados, coste de la cara | `Tests/cpu.py` **sola** (ver abajo) |
 | la tasa de refresco, cualquier constante de tiempo visual | `Tests/fps.py` |
 | titulos y rotulos pintados, los gestos escondidos | `Tests/plano.py` |
+| la ANATOMIA de una ficha: marco, cabecera, pie | `Tests/maqueta.py` **y** `expo.py` (regla `ANATOMIA`) |
+| los minimos de un pop-up: titulo, cruz, dedo, PLAY | `Tests/desglose.py` |
+| una pantalla PROPUESTA, antes de escribirla | `Tests/maquetas.py --contraste` |
 | nombres visibles, comentarios, cualquier texto de `Source/` | `Tests/marcas.py` |
 | la ficha de Play | `Tests/store.py` |
 | afinar una receta de la fabrica | `Tests/analiza.py` |
@@ -132,6 +135,15 @@ creerla no es una medida.
 - **Los umbrales y las respuestas van en la prueba, no en el codigo que se
   prueba.** Una prueba que lee la constante que juzga cambia de opinion a la vez
   que el fallo.
+- **Y su reverso: lo que la app SABE lo dice la app.** Cuantas lineas tiene un
+  pie, que lado mide un icono, cuantas columnas dibuja una rejilla, de que
+  papel es un rotulo. Un banco que repite la constante del codigo no prueba el
+  codigo — `Tests/icono.py` dio verde dos veces con la mascara del lanzador
+  rota, y `Tests/maquetas.py` llevaba tandas dibujando una tarjeta noventa
+  pixeles mas corta que la de la app por haber copiado el tope.
+- **La ANATOMIA de una ficha vive en `Tests/maqueta.md`** y dice que PIEZA usa
+  que TOKEN, nunca cuanto vale: el valor lo tiene `Metrics`. `maqueta.py` lo
+  parsea y `expo.py` lo importa de ahi. Una lista, un dueño.
 - **Los coeficientes se escriben desde la norma**, no se copian del C++, y la
   FFT del banco esta escrita ahi y no importada: el banco no puede depender de
   un paquete que puede no estar en la maquina que lo corre.

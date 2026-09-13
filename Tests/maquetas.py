@@ -10,10 +10,15 @@ Lo que separa esto de un dibujo bonito es que HACE LA CUENTA y se NIEGA a
 dibujar lo que no cabe. Los numeros no se inventan: salen de donde los saca la
 app.
 
-  tarjeta   ancho  = ancho de ventana x 0.92        (anchoTarjeta)
-            alto   = min(pedido, alto x 0.78)       (sheetFromBottom)
-                     x 0.90 apaisado, que es la rama que ya existe
-            dentro = la tarjeta menos (16, 12)      (Metrics::lg, md)
+  tarjeta   los cuatro numeros -ancho, tope de alto y los dos del marco- LOS
+            DICE LA APP y no se copian aqui. Se copiaban, y se quedaron
+            viejos: el tope de pie estaba escrito `0.78` y la app lo DERIVA
+            desde la tanda en que se midio que por debajo de la tarjeta tiene
+            que asomar un pad entero -`h - 2*(kStatus + hit)`-, o sea 803 px
+            en 412x915 contra los 713 que este fichero venia dibujando.
+            Noventa pixeles de tarjeta que no existian, en todas las
+            propuestas, durante tandas. Un banco que repite la constante del
+            codigo no prueba el codigo.
   fila de tapas     Metrics::btn + xs = 48
   fila de pestanas  Metrics::tab = 44
   dedo minimo       Metrics::hit = 40
@@ -36,6 +41,28 @@ BTN, TAB, HIT, GAP = 44, 44, 40, 8
 FILA   = BTN + XS      # 48: lo que cuesta una fila de tapas con su aire
 CELDA_PASO, CELDA_NOTA = 12, 16
 
+#  LO QUE LA APP DICE DE SU TARJETA, preguntado una vez y cacheado.
+_CACHE = {}
+
+
+def deLaApp (W, H):
+    """El tope de alto y el marco de una tarjeta, del volcado y no de aqui.
+
+    Se abre una ficha cualquiera al tamano que se pide y se lee la linea
+    `tarjeta`, que publica `sheetFromBottom` con el tope YA aplicado. Asi el
+    dibujante no puede separarse de la app: si manana el tope cambia, estas
+    maquetas cambian con el.
+    """
+    clave = (W, H)
+    if clave not in _CACHE:
+        tope, mx, my = 0, LG, MD
+        for r in (corre ("pads", "%dx%d" % (W, H), "es", {"ZATI_SKIN": "0"}) or []):
+            if r.get ("tarjeta") and r.get ("capa", 0):
+                tope, mx, my = r["tope"], r["marcoX"], r["marcoY"]
+                break
+        _CACHE[clave] = (tope or int (H * 0.78), mx, my)
+    return _CACHE[clave]
+
 
 def tarjeta (W, H, pedido):
     """El rectangulo interior de una ficha, con la cuenta de la app.
@@ -44,12 +71,12 @@ def tarjeta (W, H, pedido):
     --contraste existe. Si las dos se separan, todas las maquetas heredan el
     error y ninguna de las cuentas de abajo vale nada.
     """
-    tope = 0.90 if W > H else 0.78
-    h = min (pedido, int (H * tope))
+    tope, mx, my = deLaApp (W, H)
+    h = min (pedido, tope)
     w = int (W * 0.92)
     x = (W - w) // 2
     y = (H - h) // 2
-    return (x + LG, y + MD, w - 2 * LG, h - 2 * MD), (x, y, w, h)
+    return (x + mx, y + my, w - 2 * mx, h - 2 * my), (x, y, w, h)
 
 
 # ---------------------------------------------------------------------------
@@ -334,6 +361,18 @@ def contraste():
     """
     print ("%-10s %-16s %-16s %s" % ("ficha", "dibujante", "la app", ""))
     malos = 0
+    #  EL TOPE DE ALTO, que es por donde se separaron. El ancho sale de 0.92 y
+    #  no se ha movido nunca, asi que preguntar solo por el ancho daba verde
+    #  con la tarjeta noventa pixeles corta: una comprobacion que no cruza el
+    #  sitio del fallo es una linea que imprime OK.
+    for tam in ("412x915", "280x653", "915x412"):
+        W, H = (int (v) for v in tam.split ("x"))
+        tope, mx, my = deLaApp (W, H)
+        (_dx, _dy, _dw, dh), _ = tarjeta (W, H, 10000)
+        mal = dh + 2 * my != tope
+        malos += mal
+        print ("%-10s tope  %-10d tope  %-10d %s"
+               % (tam, dh + 2 * my, tope, "<-- NO CUADRA" if mal else "ok"))
     for k in ("pads", "pad2", "song", "mix", "paso", "vst"):
         filas = corre (k, "412x915", "es", {"ZATI_SKIN": "0"})
         c = [r for r in filas if "path" in r and r["w"] > 0 and r["h"] > 0]

@@ -98,6 +98,33 @@ Y dos reglas de diseño que explican la mitad de las decisiones:
   reparten lo que queda; una fila de tapas no. Donde no cabe todo, se cae por
   orden y se dice cuál.
 
+### La anatomía de una ficha
+
+Las veintiuna tarjetas se leen igual porque miden lo mismo por arriba y por
+abajo. El contrato vive en **`Tests/maqueta.md`** —dice qué pieza usa qué token,
+nunca cuánto vale: el valor lo tiene `Metrics`— y la regla `ANATOMIA` de
+`expo.py` lo compara con lo que la app dibujó.
+
+| pieza | token | hoy |
+|---|---|---|
+| marco de la tarjeta | `margenFichaX` / `margenFichaY` | 16 / 12 |
+| renglón de cabecera | `hit` | 40 |
+| banda de título / subtítulo | `bandaTitulo` / `bandaSubtitulo` | 16 / 14 |
+| fila de pestañas | `tab` | 44 |
+| frontera entre grupos | `sm` | 8 |
+| aire entre filas de un grupo | `xs` | 4 |
+| rótulo de sección | `bandaSubtitulo` | 14 |
+| renglón de ayuda, por línea | `bandaSubtitulo` | 14 |
+| canalón de sección | `canalonSeccion` | 44 |
+
+Tres cosas que la tabla no dice: **el subtítulo no cuesta alto** —vive dentro
+del renglón de cabecera, centrado junto al título—; **el pie lo reserva el
+maquetado y no el pintor**, porque cuando lo talla el pintor el presupuesto no
+se entera; y **cada rótulo pintado lleva el papel que hace** —`titulo`,
+`subtitulo`, `dato`, `seccion`, `chapa`, `cristal`—, sin lo cual la anatomía no
+se puede medir: el papel `titulo` llegó a significar cuatro cosas y salía con
+cuatro alturas.
+
 ---
 
 ## 3. La cara
@@ -939,18 +966,23 @@ rompiendo el código a propósito y comprobando que sale FALLA con el número qu
 esperaba. Y su hermana: **cuando una prueba falle, primero se duda de la
 prueba** — ha pasado diez veces.
 
-### Las diez reglas duras
+### Las catorce reglas duras
 
 `Tests/expo.py` monta la app **1456 veces** —siete pantallas por cuatro idiomas
 por cincuenta y dos fichas— y cada una tiene que dar cero en: solapes entre hermanos,
 controles fuera de la ventana, celdas de rejilla por debajo de su suelo, rótulos
 cortados o apretados, textos sin traducir, controles encendidos que miden cero,
-rótulos pintados debajo de un control, arranques caídos, y residuo al cambiar de
-página. Los incumplimientos del dedo mínimo se cuentan y **no fallan**: son una
-escalera medida y escrita, y hoy son 3726 — de los cuales 2888 son las 1148
-corridas de antes de que entraran las siete pantallas con la app LLENA, `songm`
-y `tour3`, y 3736 los de antes de que la tapa de modo dejara de decir la
-palabra de la ficha que hay al lado.
+rótulos pintados debajo de un control, dibujos que no miden el lado único, filas
+de tapas que no llenan el rectángulo que se les dio, celdas de paso que no son
+cuadradas, tarjetas que no dejan asomar un pad, controles metidos en el marco de
+su propia ficha, la cara reservando lo que no coloca, filas de radio con dos
+encendidas, **piezas de la anatomía que no miden lo que dice el contrato**,
+arranques caídos, y residuo al cambiar de página.
+
+Los incumplimientos del dedo mínimo se cuentan y **no fallan**: son una escalera
+medida y escrita, y hoy son **3370** — el mismo número antes y después de que
+las veintiuna fichas pasaran por una sola anatomía, que es lo que dice que
+igualarlas no costó un dedo.
 
 Nueve de las cincuenta y dos son un ESTADO y no una ficha: `llena`, `llena-song`,
 `llena-songa`, `llena-sec`, `llena-piano`, `llena-proj` y `llena-mix` abren la
@@ -967,7 +999,7 @@ a 14.4 y la línea de tiempo a 10— que nadie podía ver con un patrón de un c
 | `Soak` | **mucha gente, que no es lo mismo que mucha carga**: cada sesión es una semilla —un aparato de los que hay en la calle, sonidos de formas distintas y una tirada de acciones— y se comprueba lo único que no puede pasar nunca: NaN, salida fuera de rango y voz colgada tras el pánico |
 | `Cpu` | el coste por etapa, con la **mediana** de dos mil bloques y no la media, contra el presupuesto de 2.67 ms de un bloque de 128 a 48 kHz |
 
-### Los treinta y nueve de Python
+### Los cuarenta y uno de Python
 
 `analiza` lo que cada sonido de fábrica es de verdad · `apk` una APK **o un AAB**
 sin herramientas de Android · `arr` las ocho herramientas de arreglo, dos de
@@ -977,13 +1009,18 @@ cada pantalla, cuántos tienen nombre para un lector de pantalla, y **lo único
 que juzga: que la máquina suene al primer toque** · `clips` la banda de audio,
 por el gesto · `cpu` lo que la app cuesta quieta **y sonando**, contando píxeles
 y no llamadas · `cuenta` la cuenta atrás y el metrónomo · `desglose` qué
-controles tiene cada pantalla y qué está repetido · `dinamica` los veintiún tipos y
+controles tiene cada pantalla, qué está repetido y **los mínimos de un pop-up**
+—título, cruz de cerrar, dedo y PLAY donde se escribe sonido— · `dinamica` los veintiún tipos y
 la reducción que se lee · `dlc` el catálogo y el candado por sus dos mitades ·
 `eq` la curva por el gesto en píxeles · `export` máster, pistas, OGG y destino ·
-`expo` la maqueta · `fps` que la app se vea igual a 60 y a 120 · `fuentes` que
+`expo` la maqueta · `fps` que la app se vea igual a 60 y a 120 ·
+`maqueta` que ningún literal de aire tenga ya un token, que la frontera vertical
+use la escala de espaciado, y **que el contrato de `Tests/maqueta.md` se pueda
+leer** · `fuentes` que
 las dos listas de ficheros, los módulos y los atributos del `.jucer` digan lo
 mismo · `icono` el icono del lanzador · `iconos` que no haya dos dibujos iguales
-· `informe` y `maquetas`, que dibujan · `instr` los 256 instrumentos y sus
+· `informe`, que dibuja, y `maquetas`, que dibuja una pantalla
+PROPUESTA y **contrasta su aritmética contra la de la app** · `instr` los 256 instrumentos y sus
 32 640 pares · `kit` guardar un kit, juzgado leyendo de vuelta del **disco** ·
 `kits` los 64 de fábrica por **sonoridad y no por pico** · `lang` la tabla de
 idiomas · `marcas` que no haya una marca ajena en lo que se publica · `modos`
@@ -1130,6 +1167,7 @@ de las correcciones de arriba movió un píxel.
 | ¿cómo se corre el banco y cómo se juzga? | `.claude/skills/banco/SKILL.md` |
 | ¿qué defectos se encontraron en agosto? | `AUDITORIA-2026-08.md` |
 | ¿qué marcas ajenas no pueden volver a entrar? | `Tests/marcas.md` |
+| ¿qué anatomía tiene una ficha y quién está exento? | `Tests/maqueta.md` |
 | ¿qué lleva dentro que no es nuestro? | `THIRD-PARTY.md` |
 | ¿qué se le dice a quien la instala? | `PRIVACY.md` |
 | ¿cómo se compila y qué hace el proyecto? | `README.md` |
