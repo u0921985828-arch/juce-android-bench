@@ -186,6 +186,9 @@ def corre (dirtemp):
         elif d.get ("instr") == "pestana": extra["pestana"] = d
         elif d.get ("instr") == "mantener": extra["mantener"] = d
         elif d.get ("instr") == "puertas":  extra["puertas"] = d
+        elif d.get ("instr") == "abre":     extra["abre"] = d
+        elif d.get ("instr") == "teclado":  extra["teclado"] = d
+        elif d.get ("instr") == "piano":    extra["piano"] = d
         elif d.get ("instr") == "error":  extra["error"] = d.get ("que", "")
     return filas, extra
 
@@ -547,6 +550,127 @@ def main():
             if pu["canal"] != pu["canalPad"]:
                 fallos.append ("las dos tapas de canal no dicen lo mismo: «%s» en el "
                                "instrumento y «%s» en EL PAD" % (pu["canal"], pu["canalPad"]))
+
+        # ---- LA FICHA ABRE EN EL PAD DEL QUE VIENES ---------------------
+        #
+        #  Llego del telefono: «seleccionas el pad seis y le das a CARGAR; se
+        #  abre la pestaña, le das INSTRUMENTO y se te abre automaticamente en
+        #  el cuarenta y nueve». Era exacto y de una linea: `openInstSheet` no
+        #  leia `selectedPad` en ninguna, asi que la ficha abria con lo que
+        #  `instDestPad` llevara dentro, y su unico valor de arranque era el
+        #  literal 48 -que se pinta «PAD 49»-.
+        #
+        #  CON CUATRO CIFRAS, que cada una sola se engaña:
+        #   - `destino == vengoDe` es lo que se pidio;
+        #   - `vengoDe != 48` porque pedir justo el pad clavado sale verde con
+        #     el fallo puesto;
+        #   - `lleno == 1` porque la frase dice *este libre o no*: con un pad
+        #     vacio, sembrar con `firstEmptyPad` pasaria igual;
+        #   - y `banco == destino / 16`, que es la invariante que `instg`
+        #     rompia cuando el banco se guardaba aparte.
+        ab = extra.get ("abre")
+        if ab is None:
+            fallos.append ("no hay linea de abre: nadie mide con que pad abre la ficha")
+        else:
+            print ("\nvengo del pad %d (lleno %d) y la ficha abre en el %d, banco %d (ficha %d)"
+                   % (ab["vengoDe"], ab["lleno"], ab["destino"], ab["banco"], ab["abierta"]))
+            if not ab["abierta"]:
+                fallos.append ("el gesto no dejo abierta la ficha de instrumentos: no mide nada")
+            if ab["destino"] != ab["vengoDe"]:
+                fallos.append ("vengo del pad %d y la ficha abre en el %d"
+                               % (ab["vengoDe"] + 1, ab["destino"] + 1))
+            if ab["vengoDe"] == 48:
+                fallos.append ("la prueba viene justo del pad clavado: no mide nada")
+            if not ab["lleno"]:
+                fallos.append ("el pad del que se viene esta vacio: «este libre o no» "
+                               "no se estaria midiendo")
+            if ab["banco"] != ab["destino"] // 16:
+                fallos.append ("banco %d con destino %d: el banco no se deriva del pad"
+                               % (ab["banco"], ab["destino"]))
+
+        # ---- OIR UNA TECLA SUENA EL PAD COMO ESTA AFINADO ---------------
+        #
+        #  `abreVst` ponia la base del teclado en la octava de `padPitch` con
+        #  este argumento: «abrir siempre en el cero dejaria un bajo afinado dos
+        #  octavas abajo sonando en un sitio que no es el suyo». Leido el camino
+        #  entero, la frase esta del reves:
+        #
+        #     Teclado::notaEn   ->  base + blancas[i]
+        #     vstTeclado.onNota ->  postNoteOnAt (vstPad, semis, …)
+        #     AudioEngine       ->  semis = padPitch[slot] + extraSemis
+        #
+        #  `postNoteOnAt` es RELATIVO al pad por diseño medido -es la puerta que
+        #  existe para que oir una tecla no AFINE el pad- asi que la base se
+        #  SUMABA al pitch que el motor ya aplica: con el pad a +12 la tecla C
+        #  sonaba +24, y con el pad a −24, −48.
+        #
+        #  SE MIDE POR IDENTIDAD Y BIT A BIT, que es lo unico que hay: no existe
+        #  un accesor al semitono que una voz acabo usando. La tecla cero tiene
+        #  que sonar EXACTAMENTE igual que `postNoteOnAt (pad, 0)`, y con OCTAVA
+        #  subida una vez, igual que `postNoteOnAt (pad, 12)` — o sea que la tapa
+        #  sigue haciendo su trabajo, que es la mitad que una sola cifra no ve.
+        #  Y con el pad a +12 y no en cero, que ahi las dos formas dan lo mismo.
+        #
+        #  Con una cifra de CONTROL: las dos referencias tienen que DIFERIR
+        #  entre si, o «bit a bit igual» lo cumpliria tambien un motor que
+        #  ignora el semitono del comando.
+        te = extra.get ("teclado")
+        if te is None:
+            fallos.append ("no hay linea de teclado: nadie mide lo que suena una tecla")
+        else:
+            print ("teclado: base %d, tras OCTAVA + %d; la tecla cero difiere de "
+                   "postNoteOnAt en %d muestras y tras subir en %d (control %d)"
+                   % (te["base"], te["baseArriba"], te["difA"], te["difB"], te["control"]))
+            if te["control"] == 0:
+                fallos.append ("las dos referencias del teclado son identicas: "
+                               "el semitono del comando no llega, no se mide nada")
+            if te["base"] != 0:
+                fallos.append ("la ficha abre el teclado en la base %d: con el pad afinado "
+                               "eso se SUMA al pitch y la tecla suena el doble" % te["base"])
+            if te["difA"] != 0:
+                fallos.append ("la tecla cero no suena el pad como esta afinado: "
+                               "%d muestras de diferencia" % te["difA"])
+            if te["baseArriba"] != 12:
+                fallos.append ("la tapa OCTAVA + deja la base en %d y no en 12"
+                               % te["baseArriba"])
+            if te["difB"] != 0:
+                fallos.append ("con OCTAVA subida la tecla cero no suena +12: "
+                               "%d muestras de diferencia" % te["difB"])
+
+        # ---- LA PUERTA AL PIANO ES EL PIANO Y NO UN CLON ----------------
+        #
+        #  La otra mitad de lo que se pidio: *«mejor no clonar esa pestaña —
+        #  que sea el piano roll, conectado y sincronizado, en los pads que
+        #  selecciones»*. Medido, ya lo era: hay UNA sola `pianoGrid` y
+        #  `abrePianoDelPad` es una PUERTA. Lo que no habia era una cifra —se
+        #  podia romper para que abriera el piano de otro pad y las 1428
+        #  corridas seguian en verde.
+        #
+        #  Se mide POR EL GESTO -`pianoGrid.gesto` en pixeles- y no llamando a
+        #  `pianoCellToggled`, que es justo donde ninguno de los cinco fallos
+        #  del compas existia. Y con un TESTIGO en el pad 0 en la MISMA
+        #  columna: es lo unico que separa «escribio» de «escribio donde
+        #  tocaba», porque un piano apuntando al pad de por defecto borraria la
+        #  nota del testigo en vez de dejar de escribir.
+        pi = extra.get ("piano")
+        if pi is None:
+            fallos.append ("no hay linea de piano: nadie mide que pad edita la puerta")
+        else:
+            print ("la puerta al piano: la ficha edita el pad %d y el piano el %d; "
+                   "la nota cayo en el patron (%d, nota %d) y el testigo sigue en %d"
+                   % (pi["vstPad"], pi["pianoPad"], pi["puesto"], pi["nota"], pi["testigo"]))
+            if pi["vstPad"] == 0:
+                fallos.append ("la ficha edita el pad 0: el piano por defecto daria "
+                               "verde sin haber medido nada")
+            if pi["pianoPad"] != pi["vstPad"]:
+                fallos.append ("la ficha del instrumento edita el pad %d y el piano el %d"
+                               % (pi["vstPad"], pi["pianoPad"]))
+            if not pi["puesto"]:
+                fallos.append ("la nota escrita desde esa puerta no esta en el patron "
+                               "del pad del instrumento")
+            if pi["testigo"] != 9:
+                fallos.append ("el testigo del pad 0 quedo en %d y se escribio con 9: "
+                               "el piano escribio en el pad equivocado" % pi["testigo"])
 
         if "bancoD" in extra:
             print ("\nllenar el banco D con los 16: %.0f ms" % extra["bancoD"])

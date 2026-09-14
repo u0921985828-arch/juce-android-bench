@@ -1401,8 +1401,7 @@ void MainComponent::auditInstr()
         const int familia = 11;                         // CUERDA PULS
         const int clavado = kBancoInstr * kPadsPerBank + familia;
         const int pedido  = 2 * kPadsPerBank + 5;       // otro banco Y otra casilla
-        instDestPad   = pedido;
-        instBancoDest = pedido / kPadsPerBank;
+        instDestPad = pedido;
         cargaInstrumento (familia);
 
         int fue = -1;
@@ -1413,6 +1412,236 @@ void MainComponent::auditInstr()
                   << ",\"fue\":" << fue << ",\"clavado\":" << clavado << "}" << std::endl;
     }
 
+
+    // ------------------------------------------------------------------
+    //  Y QUE LA FICHA ABRA EN EL PAD DEL QUE VIENES, ESTE LIBRE O NO.
+    //
+    //  Llego del telefono: «seleccionas el pad seis y le das a CARGAR; se abre
+    //  la pestaña, le das INSTRUMENTO y se te abre automaticamente en el
+    //  cuarenta y nueve». Y ninguna de las quince reglas de `expo.py` puede
+    //  verlo: una rejilla que marca la celda equivocada se maqueta perfecta -no
+    //  solapa, no se sale, no corta un rotulo, no mide cero y esta traducida-.
+    //  Es la familia de los cinco fallos del compas del piano.
+    //
+    //  POR EL GESTO ENTERO -se arma LOAD por su tapa, se toca el pad con un
+    //  `MouseEvent` construido y se pulsa INSTRUMENTOS-, porque el pad moria
+    //  justo en el eslabon del medio: `browseFactoryButton.onClick` es una
+    //  lambda SIN argumentos. Llamar a `openInstSheet()` por dentro es
+    //  exactamente el sitio donde el fallo no existe.
+    //
+    //  Y el destino se deja ANTES en el 48, que es el valor de ayer: sin eso,
+    //  un resto de la comprobacion anterior podria dar la respuesta correcta
+    //  sin que nadie la hubiera sembrado.
+    //
+    //  Con CUATRO cifras, que cada una sola se engaña: que `vengoDe` NO sea el
+    //  48 -pedir «que abra en el 49» saldria verde con el fallo puesto-, que
+    //  ese pad este LLENO -que es la mitad que la queja dice con sus palabras,
+    //  este libre o no, y la que una siembra con `firstEmptyPad` incumple-, la
+    //  invariante del BANCO derivado -lo que `instg` rompia- y que la ficha
+    //  quede ABIERTA, o las otras tres las cumple igual un camino que no llego
+    //  a abrir nada.
+    {
+        closeAllSheets();
+        const int vengoDe = 2 * kPadsPerBank + 5;      // C06, y con sonido de fabrica
+        selectPad (0);
+        instDestPad = kBancoInstr * kPadsPerBank;      // el 48 de ayer
+
+        pulsaTapa (&loadButton);
+
+        auto* p = pads[vengoDe];
+        const auto punto = juce::Point<float> ((float) (p->getWidth()  / 2),
+                                               (float) (p->getHeight() / 2));
+        const auto ahora = juce::Time::getCurrentTime();
+        juce::MouseEvent ev (juce::Desktop::getInstance().getMainMouseSource(),
+                             punto, juce::ModifierKeys(), 1.0f,
+                             0.0f, 0.0f, 0.0f, 0.0f,
+                             p, p, ahora, punto, ahora, 1, false);
+        p->mouseDown (ev);
+        p->mouseUp (ev);
+
+        pulsaTapa (&browseFactoryButton);
+
+        const int abierta = instSheet.isVisible() ? 1 : 0;
+        const int lleno   = padHasSample[(size_t) vengoDe] ? 1 : 0;
+        std::cout << "{\"instr\":\"abre\",\"vengoDe\":" << vengoDe
+                  << ",\"destino\":" << instDestPad
+                  << ",\"banco\":" << bancoDestino()
+                  << ",\"lleno\":" << lleno
+                  << ",\"abierta\":" << abierta << "}" << std::endl;
+        closeAllSheets();
+    }
+
+    // ------------------------------------------------------------------
+    //  Y QUE OIR UNA TECLA SUENE EL PAD COMO ESTA AFINADO, y no una octava de
+    //  mas. `abreVst` ponia la base del teclado en la octava de `padPitch` con
+    //  este argumento al lado: «abrir siempre en el cero dejaria un bajo
+    //  afinado dos octavas abajo sonando en un sitio que no es el suyo». Leido
+    //  el camino entero, la frase esta del reves:
+    //
+    //      Teclado::notaEn   ->  base + blancas[i]
+    //      vstTeclado.onNota ->  postNoteOnAt (vstPad, semis, ...)
+    //      AudioEngine       ->  semis = padPitch[slot] + extraSemis
+    //
+    //  `postNoteOnAt` es RELATIVO al pad POR DISEÑO MEDIDO -es la puerta que
+    //  existe para que oir una tecla no afine el pad- asi que la base se SUMA
+    //  al pitch que el motor ya aplica: con el pad a +12 la tecla C sonaba +24.
+    //
+    //  Y SE MIDE POR IDENTIDAD Y BIT A BIT, que es lo unico que no obliga a
+    //  inventarse un accesor al semitono que una voz acabo usando: la tecla
+    //  cero tiene que dar EXACTAMENTE el mismo audio que `postNoteOnAt (pad, 0)`
+    //  -«el pad como esta afinado»- y, subida una octava, el de
+    //  `postNoteOnAt (pad, 12)`. «Casi lo mismo» es justo lo que dejaria pasar
+    //  un doble conteo suave.
+    //
+    //  Con el pad a +12 y no en cero, que ahi las dos formas coinciden y la
+    //  prueba diria que si sin haber medido. Y con una cifra de CONTROL -que
+    //  las dos referencias se separen entre si-, o las dos comparaciones
+    //  saldrian verdes comparando silencio con silencio.
+    {
+        const int pad = kBancoInstr * kPadsPerBank + 11;
+        ponInstrumentoEnPad (pad, 4, 0);
+        engine.setPadPitch (pad, 12);
+
+        closeAllSheets();
+        selectPad (pad);
+        abreVst();
+        const int base0 = vstTeclado.getBase();
+
+        engine.prepareToPlay (48000.0, 128);
+        juce::AudioBuffer<float> b (2, 128);
+        constexpr int kBloques = 48;
+
+        auto rinde = [&] (std::function<void()> disparo)
+        {
+            engine.postPanic();
+            for (int i = 0; i < 8; ++i) { b.clear(); engine.renderNextBlock (b, 0, 128); }
+            disparo();
+            juce::AudioBuffer<float> out (2, kBloques * 128);
+            for (int i = 0; i < kBloques; ++i)
+            {
+                b.clear();
+                engine.renderNextBlock (b, 0, 128);
+                out.copyFrom (0, i * 128, b, 0, 0, 128);
+                out.copyFrom (1, i * 128, b, 1, 0, 128);
+            }
+            return out;
+        };
+        auto difieren = [] (const juce::AudioBuffer<float>& x, const juce::AudioBuffer<float>& y)
+        {
+            int n = 0;
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < x.getNumSamples(); ++i)
+                    if (x.getReadPointer (ch)[i] != y.getReadPointer (ch)[i]) ++n;
+            return n;
+        };
+
+        //  La tecla cero es la primera blanca: por debajo de la banda de las
+        //  negras, que se preguntan antes porque estan encima.
+        auto tocaDo = [this]
+        {
+            const float ancho = (float) juce::jmax (8, vstTeclado.getWidth() - 2) / 8.0f;
+            const auto q = juce::Point<float> (1.0f + ancho * 0.5f,
+                                               (float) vstTeclado.getHeight() * 0.85f);
+            const auto t = juce::Time::getCurrentTime();
+            juce::MouseEvent me (juce::Desktop::getInstance().getMainMouseSource(),
+                                 q, juce::ModifierKeys(), 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                 &vstTeclado, &vstTeclado, t, q, t, 1, false);
+            vstTeclado.mouseDown (me);
+        };
+        auto suelta = [this]
+        {
+            const auto q = juce::Point<float> (0.0f, 0.0f);
+            const auto t = juce::Time::getCurrentTime();
+            juce::MouseEvent me (juce::Desktop::getInstance().getMainMouseSource(),
+                                 q, juce::ModifierKeys(), 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                 &vstTeclado, &vstTeclado, t, q, t, 1, false);
+            vstTeclado.mouseUp (me);
+        };
+
+        const auto refA = rinde ([&] { engine.postNoteOnAt (pad, 0, 0.9f, AudioEngine::kSostenida); });
+        engine.postNoteOff (pad);
+        const auto tecA = rinde ([&] { tocaDo(); });
+        suelta();
+
+        if (vstOctUp.onClick) vstOctUp.onClick();
+        const int base1 = vstTeclado.getBase();
+
+        const auto refB = rinde ([&] { engine.postNoteOnAt (pad, 12, 0.9f, AudioEngine::kSostenida); });
+        engine.postNoteOff (pad);
+        const auto tecB = rinde ([&] { tocaDo(); });
+        suelta();
+        engine.postPanic();
+        closeAllSheets();
+
+        std::cout << "{\"instr\":\"teclado\",\"base\":" << base0
+                  << ",\"baseArriba\":" << base1
+                  << ",\"difA\":" << difieren (refA, tecA)
+                  << ",\"difB\":" << difieren (refB, tecB)
+                  << ",\"control\":" << difieren (refA, refB) << "}" << std::endl;
+    }
+
+    // ------------------------------------------------------------------
+    //  Y QUE LA PUERTA AL PIANO SEA EL PIANO Y NO UN CLON.
+    //
+    //  Se pidio con esa duda: «igual mejor clonar esa pestaña... no, no,
+    //  porque sera el piano rol, que este conectado, sincronizado con el otro,
+    //  en los pads que selecciones». Medido, no hay nada que deshacer: hay UNA
+    //  sola `pianoGrid` y `abrePianoDelPad` es una PUERTA. Lo que no habia era
+    //  una cifra que lo dijera - hoy se puede romper para que abra el piano de
+    //  otro pad y las 1428 corridas y las treinta y tantas pruebas siguen en
+    //  verde.
+    //
+    //  Se mide POR EL GESTO -`pianoGrid.gesto` en pixeles- y no llamando a
+    //  `pianoCellToggled`, que es justo donde vivian los cinco fallos del
+    //  compas, y con un TESTIGO en el pad 0 en la MISMA columna: sin el,
+    //  «escribio» no separa de «escribio en el pad de por defecto», que es
+    //  exactamente el fallo que se busca. Las dos cifras se leen juntas - la
+    //  nota en el pad del instrumento Y el testigo intacto.
+    {
+        const int pad = kBancoInstr * kPadsPerBank + 9;
+        ponInstrumentoEnPad (pad, 2, 0);
+        closeAllSheets();
+        selectPad (pad);
+        abreVst();
+        const int quien = vstPad;
+
+        const int b = selectedPattern, col = 4;
+        engine.setPatternLength (b, 16);
+        engine.clearPattern (b);
+        for (int st = 0; st < kNumSteps; ++st)
+            for (int q = 0; q < kNumPads; ++q)
+                pattern[(size_t) b][(size_t) st][(size_t) q] = false;
+        seqPrimerPaso = 0;
+        pattern[(size_t) b][(size_t) col][0] = true;
+        engine.setStep (b, col, 0, true);
+        engine.setStepNote (b, col, 0, 9);
+
+        if (vstPianoBtn.onClick) vstPianoBtn.onClick();
+        resized();
+        refreshPiano();
+        const int pianoPad = selectedPad;
+
+        const int filas = juce::jmax (1, pianoGrid.getFilas());
+        const float altoFila = (float) pianoGrid.getHeight() / (float) filas;
+        const float anchoCol = (float) (pianoGrid.getWidth() - PianoRoll::kGutter)
+                                 / (float) AudioEngine::kBarSteps;
+        pianoGrid.gesto ((float) PianoRoll::kGutter + ((float) col + 0.5f) * anchoCol,
+                         ((float) (filas / 2) + 0.5f) * altoFila, false);
+        pianoGrid.suelta();
+
+        const int puesto  = pattern[(size_t) b][(size_t) col][(size_t) quien] ? 1 : 0;
+        const int nota    = engine.getStepNote (b, col, quien);
+        const int testigo = engine.getStepNote (b, col, 0);
+        closeAllSheets();
+
+        std::cout << "{\"instr\":\"piano\",\"vstPad\":" << quien
+                  << ",\"pianoPad\":" << pianoPad
+                  << ",\"puesto\":" << puesto
+                  << ",\"nota\":" << nota
+                  << ",\"testigo\":" << testigo << "}" << std::endl;
+    }
+
+    // ------------------------------------------------------------------
     //  Y LO QUE CUESTA LLENAR EL BANCO D, que es la cifra que decide si los
     //  dieciseis pueden venir puestos de fabrica o hay que ir a buscarlos.
     const double t0 = juce::Time::getMillisecondCounterHiRes();

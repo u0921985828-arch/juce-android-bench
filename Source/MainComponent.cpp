@@ -885,7 +885,7 @@ MainComponent::MainComponent()
             litAccent (*b);
             b->onClick = [this, i]
             {
-                instDestPad = instBancoDest * kPadsPerBank + i;
+                instDestPad = bancoDestino() * kPadsPerBank + i;
                 refreshInst();
                 instSheet.repaint();
             };
@@ -899,10 +899,10 @@ MainComponent::MainComponent()
             litAccent (*b);
             b->onClick = [this, b4]
             {
-                instBancoDest = b4;
                 //  El destino se arrastra con el banco y se queda en la misma
                 //  casilla: cambiar de banco no puede dejar apuntando a un pad
-                //  que ya no se ve.
+                //  que ya no se ve. Y como el banco SALE del destino, moverlo
+                //  es la unica escritura que hace falta.
                 instDestPad = b4 * kPadsPerBank + instDestPad % kPadsPerBank;
                 refreshInst();
                 resized();
@@ -13913,6 +13913,32 @@ void MainComponent::openInstSheet()
     //  por cable, o lo deja la tienda mientras esto esta en segundo plano.
     instCatalogo = Instrumentos::lee();
     instPack = juce::jlimit (0, juce::jmax (0, (int) instCatalogo.size() - 1), instPack);
+
+    //  EL DESTINO ES EL PAD DEL QUE VIENES, ESTE LIBRE O NO.
+    //
+    //  `instDestPad` nacia clavado en el pad 01 del banco D -el 48, que se
+    //  pinta como «PAD 49»- y nadie lo sembraba nunca: eliges el pad 6, pulsas
+    //  CARGAR, tocas el pad, le das a INSTRUMENTOS y la ficha abre marcando el
+    //  49. El pad elegido viajaba por `selectedPad` hasta `openBrowseForPad` y
+    //  moria ahi, porque `browseFactoryButton.onClick` es una lambda sin
+    //  argumentos. Aquel 48 era el ultimo resto vivo de «el instrumento n va al
+    //  pad n del banco D», que el reparto ya no cumple desde que el destino se
+    //  elige (ver cargaInstrumento).
+    //
+    //  Y de `selectedPad` y no de `browseTargetPad`: el unico llamante de
+    //  interfaz es el navegador, que ya hace `selectPad (index)`, y lo que la
+    //  peticion dice es «el pad que tienes elegido». `browseTargetPad` es del
+    //  navegador y no sobreviviria a ningun otro camino.
+    //
+    //  Nada de `firstEmptyPad`, que es la otra forma de escribirlo y la que la
+    //  queja descarta con sus palabras -este libre o no-: ademas es la que
+    //  pasaria una prueba escrita sobre un pad vacio.
+    //
+    //  Al ABRIR y no en cada refresco: dentro de la ficha el destino se mueve
+    //  tocando una celda o un pad que asoma, y sembrar en `refreshInst` se
+    //  comeria esa eleccion en el siguiente tic.
+    instDestPad = juce::jlimit (0, kNumPads - 1, selectedPad);
+
     refreshInst();
     closeAllSheets();
 
@@ -13925,8 +13951,7 @@ void MainComponent::openInstSheet()
     {
         const int i = padDetras (p);
         if (i < 0) return false;
-        instDestPad   = i;
-        instBancoDest = i / kPadsPerBank;
+        instDestPad = i;
         refreshInst();
         resized();
         repaint();
@@ -13993,11 +14018,10 @@ void MainComponent::refreshInst()
     //  LA REJILLA DEL DESTINO: cada celda es un pad y lleva el dibujo de lo que
     //  ya tiene. Un pad con muestra normal enseña su numero y nada mas; solo un
     //  instrumento tiene dibujo, que es lo que hace que el mapa se lea.
-    instDestPad   = juce::jlimit (0, kNumPads - 1, instDestPad);
-    instBancoDest = juce::jlimit (0, kNumBanks - 1, instBancoDest);
+    instDestPad = juce::jlimit (0, kNumPads - 1, instDestPad);
     for (int i = 0; i < instDestBtns.size(); ++i)
     {
-        const int pad = instBancoDest * kPadsPerBank + i;
+        const int pad = bancoDestino() * kPadsPerBank + i;
         instDestBtns[i]->setButtonText (juce::String (pad + 1).paddedLeft ('0', 2));
         const auto id = padEsInstrumento (pad)
                             ? Iconos::deFamilia (uiSample[(size_t) pad]->familia)
@@ -14009,7 +14033,7 @@ void MainComponent::refreshInst()
         instDestBtns[i]->getProperties().set ("dato", 1);
     }
     for (int b4 = 0; b4 < instBancoBtns.size(); ++b4)
-        instBancoBtns[b4]->setToggleState (b4 == instBancoDest, juce::dontSendNotification);
+        instBancoBtns[b4]->setToggleState (b4 == bancoDestino(), juce::dontSendNotification);
 
     //  EL CANDADO SE VE, no se esconde. Un pack cerrado que no aparece no se
     //  compra nunca: lo que hace falta es que se vea QUE hay y que al tocarlo
@@ -14075,8 +14099,9 @@ void MainComponent::cargaInstrumento (int idx)
         //  EL DESTINO SE ELIGE, no viene dado por la familia. Era el pad de su
         //  mismo numero en el banco D, que hacia el mapa previsible y tambien
         //  imposible: no se podian tener dos CUERDAS ni dejar un pad de
-        //  percusion en medio del banco melodico. El banco D sigue siendo por
-        //  donde ABRE la ficha, que es lo que valia de aquello.
+        //  percusion en medio del banco melodico. Y la ficha ABRE en el pad
+        //  del que vienes -ver openInstSheet-, que es lo que hacia el banco D
+        //  y ahora lo hace la seleccion.
         const int pad = juce::jlimit (0, kNumPads - 1, instDestPad);
 
         pushUndo (T ("INSTRUMENTOS"));
@@ -14134,18 +14159,16 @@ void MainComponent::cargaInstrumento (int idx)
 }
 
 // ----------------------------------------------------------------------------
-//  UN PRESET VA A UN PAD, y siempre al MISMO pad.
+//  UN PRESET SE ELIGE SOBRE EL PAD QUE YA LO LLEVA, y por eso esto no elige
+//  destino ninguno: actua sobre `vstPad`, que es el pad cuya ficha esta
+//  delante. Elegir el instrumento y elegir su sonido son dos decisiones y en
+//  dos momentos -al cargar no has oido ninguno-, asi que la primera vive en
+//  INSTRUMENTOS y la segunda aqui, con el teclado a un dedo.
 //
-//  El instrumento numero n va al pad n del banco D. Que este clavado no es una
-//  limitacion, es la funcion: los otros tres bancos son percusion y este es el
-//  melodico -ya lo era, se llamaba TONOS-, asi que las dieciseis casillas de la
-//  rejilla son los dieciseis instrumentos y el 07 esta donde la mano lo busca
-//  sin acordarse de donde lo dejo. Es la misma decision que hizo que el
-//  selector del RACK dejara de ser una fila de dieciseis y pasara a tener la
-//  forma de la cara.
-//
-//  Y se cambia de banco Y se elige el pad: cargar algo donde no se ve es la
-//  forma mas rapida de que parezca que no ha pasado nada.
+//  (Aqui se leia que «el instrumento numero n va al pad n del banco D». Eso
+//  dejo de ser verdad el dia que el destino se eligio en la rejilla de arriba
+//  de INSTRUMENTOS, y la prosa se quedo: un documento que nombra una regla que
+//  ya no esta manda a buscar.)
 // ----------------------------------------------------------------------------
 void MainComponent::eligePreset (int pre)
 {
@@ -14544,11 +14567,24 @@ void MainComponent::abreVst()
 {
     if (! padEsInstrumento (selectedPad)) return;
     vstPad = selectedPad;
-    //  El teclado empieza en el tono que el pad tiene puesto, redondeado a la
-    //  octava: abrir siempre en el cero dejaria un bajo afinado dos octavas
-    //  abajo sonando en un sitio que no es el suyo.
-    const int t = (int) std::lround (padPitch[(size_t) vstPad]);
-    vstTeclado.setBase (juce::jlimit (-24, 12, (t >= 0 ? t / 12 : (t - 11) / 12) * 12));
+    //  EL TECLADO EMPIEZA EN CERO, Y NO EN LA OCTAVA DEL PAD. Aqui habia un
+    //  `setBase` con la octava de `padPitch` y este argumento al lado: «abrir
+    //  siempre en el cero dejaria un bajo afinado dos octavas abajo sonando en
+    //  un sitio que no es el suyo». Es una afirmacion sin medida y ademas del
+    //  reves — leido el camino entero:
+    //
+    //      Teclado::notaEn   ->  base + blancas[i]
+    //      vstTeclado.onNota ->  postNoteOnAt (vstPad, semis, ...)
+    //      AudioEngine       ->  semis = padPitch[slot] + extraSemis
+    //
+    //  `postNoteOnAt` es RELATIVO al pad por diseño medido -es la puerta que
+    //  existe para que oir una tecla no afine el pad, y el piano roll la usa
+    //  igual- asi que la base se SUMABA al pitch que el motor ya aplica: con el
+    //  pad a +12 la tecla C sonaba +24, y con el pad a −24, −48. En cero la
+    //  tecla C suena el pad exactamente como esta afinado, que es lo correcto.
+    //  Las dos tapas de OCTAVA se quedan: mueven la base a mano, y eso si es
+    //  pedir otro registro.
+    vstTeclado.setBase (0);
     refreshVst();
 
     //  POR EL EMBUDO Y NO A MANO. Esta ficha se abria con `closeAllSheets()` y
@@ -14580,8 +14616,9 @@ void MainComponent::abreVst()
         //  destruye el objeto que se esta ejecutando.
         selectPad (i);
         vstPad = i;
-        const int t = (int) std::lround (padPitch[(size_t) vstPad]);
-        vstTeclado.setBase (juce::jlimit (-24, 12, (t >= 0 ? t / 12 : (t - 11) / 12) * 12));
+        //  Y la base a cero por lo mismo que arriba: el semitono de la tecla es
+        //  RELATIVO al pad, asi que reponerla aqui suma la octava dos veces.
+        vstTeclado.setBase (0);
         refreshVst();
         resized();
         repaint();

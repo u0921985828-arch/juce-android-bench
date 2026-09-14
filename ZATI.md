@@ -613,13 +613,16 @@ el sonido sea estacionario. Los LFO siguen con el tiempo de verdad.
 
 **Las cifras que gobiernan el diseño**: diez zonas de tres segundos serían 5.7 MB
 por pad, así que las zonas se acotan; sueltos por los sesenta y cuatro pads el
-peor caso serían **147 MB** y confinados a un banco son **29.5 MB**. Por eso el
-instrumento número *n* va siempre al pad *n* del **banco D**, que ya era el
-melódico: que esté clavado es la función —el 07 está donde la mano lo busca— y
-además acota la memoria. Llenar el banco entero cuesta **1238 ms**, o sea 77 ms
-por pad, y por eso los instrumentos **no vienen puestos de fábrica**: el proyecto
-se restaura sintetizando, así que venir puestos costaría ese segundo en cada
-arranque y no sólo el primero.
+peor caso serían **147 MB** y dieciséis son **29.5 MB**. El instrumento número
+*n* iba clavado al pad *n* del **banco D**, y eso acotaba la memoria *y* hacía
+imposible tener dos CUERDAS o dejar un pad de percusión en medio del banco
+melódico: **el destino se elige** en la rejilla de arriba de INSTRUMENTOS, y la
+ficha abre en el pad del que vienes. Así que el techo ya no lo pone el banco
+—llenar los sesenta y cuatro es el peor caso otra vez— sino que nadie carga
+sesenta y cuatro instrumentos a mano. Llenar dieciséis cuesta **1238 ms**, o sea
+77 ms por pad, y por eso los instrumentos **no vienen puestos de fábrica**: el
+proyecto se restaura sintetizando, así que venir puestos costaría ese segundo en
+cada arranque y no sólo el primero.
 
 Un proyecto guarda la **receta** —familia y preset— y no el audio. Escribir el
 WAV devolvería un pad que suena parecido y que ha dejado de ser un instrumento:

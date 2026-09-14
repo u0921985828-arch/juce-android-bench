@@ -344,7 +344,6 @@ inline juce::Rectangle<int> centraEnRenglon (juce::Rectangle<int> banda, int alt
     return banda.translated (0, (Metrics::hit - total) / 2);
 }
 
-
 //  EL CROMO DE UNA FICHA, QUE ESTABA ESCRITO A MANO EN VEINTIUN SITIOS.
 //
 //  Marco, renglon de cabecera y frontera con el cuerpo es el prefijo de la

@@ -2211,7 +2211,16 @@ private:
     juce::OwnedArray<juce::TextButton> instDestBtns;
     juce::OwnedArray<juce::TextButton> instBancoBtns;   // A B C D, para el destino
     int instDestPad  = AudioEngine::kNumBanks * AudioEngine::kPadsPerBank - 16;   // D01
-    int instBancoDest = AudioEngine::kNumBanks - 1;
+    //  EL BANCO DEL DESTINO SE DERIVA Y NO SE GUARDA. Era un campo, y los seis
+    //  sitios que lo escribian tenian que acordarse de escribirlo derivado: el
+    //  chip de celda, el de banco -que arrastra el destino a proposito-, la
+    //  siembra al abrir, el toque a un pad de detras y los dos ganchos del
+    //  banco. Cinco lo cumplian y el sexto -`instg`- escribia solo el destino,
+    //  asi que funcionaba por casualidad mientras el inicializador era el banco
+    //  D y su pedido tambien; con la siembra puesta habria dibujado el banco
+    //  del pad elegido y perdido en silencio justo el estado que existe para
+    //  medir. Derivado no hay nada que acordarse: una regla, un dueno.
+    int bancoDestino() const noexcept { return instDestPad / AudioEngine::kPadsPerBank; }
     std::vector<Instrumentos::Pack> instCatalogo;
     int instPack = 0;
 

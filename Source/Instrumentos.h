@@ -217,9 +217,10 @@ namespace Instrumentos
     //
     //  Dieciseis familias, y cada una con dieciseis presets: el mismo numero
     //  que tiene el banco, para que la rejilla del menu y la rejilla de pads
-    //  sean la MISMA forma. El instrumento numero n vive siempre en el pad n
-    //  del banco D, asi que el 07 esta donde la mano ya lo busca - la misma
-    //  razon por la que el selector del RACK dejo de ser una fila de dieciseis.
+    //  sean la MISMA forma - la misma razon por la que el selector del RACK
+    //  dejo de ser una fila de dieciseis. Donde CAE cada uno no lo decide esta
+    //  tabla: el destino se elige en la rejilla de arriba del menu, y la ficha
+    //  abre en el pad del que vienes (ver MainComponent::openInstSheet).
     inline Pack sintes()
     {
         Pack p;
