@@ -65,7 +65,26 @@ jobs:
             8
             17
 
+      #  `packages:` VA PUESTO A MANO porque su DEFECTO esta podrido. La
+      #  accion trae `packages: 'tools platform-tools'`, y `tools` -el SDK
+      #  Tools clasico, el de `android`/`ddms`- Google lo retiro del manifiesto
+      #  de su repositorio. El paso murio en 5-9 segundos con
+      #      Warning: Failed to find package 'tools'
+      #      Error: ...cmdline-tools/16.0/bin/sdkmanager failed with exit code 1
+      #  y los pasos 6 al 21 salieron `skipped`: la compilacion NO LLEGO A
+      #  EMPEZAR. Dos intentos de la misma corrida (34904781348), identicos.
+      #
+      #  Y no lo rompio nada de esta casa: la accion sigue clavada en el mismo
+      #  SHA que ayer construyo. Lo que cambio esta aguas arriba, en una lista
+      #  de paquetes que se descarga en cada corrida -- la misma figura que
+      #  `JUCE_SHA`, solo que aqui el puntero movible es de Google y no se
+      #  puede clavar: lo unico que se puede es DEJAR DE PEDIR lo que ya no
+      #  existe. `platform-tools` si sigue, y todo lo que el build necesita de
+      #  verdad -plataforma, build-tools, NDK y cmake- lo instala el paso de
+      #  abajo con su version escrita.
       - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407   # v3
+        with:
+          packages: platform-tools
 
       - name: Install Android SDK packages (NDK, cmake, platform)
         run: |
