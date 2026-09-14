@@ -1,8 +1,11 @@
 # De donde salen estas habilidades
 
-*(Este fichero nombra `CLAUDE.md`, que es el cuaderno de bitacora de la casa y
-manda sobre todo lo de aqui. No se versiona: vive en el disco de quien trabaja
-en esto y no en el repositorio, asi que un clon limpio no lo trae.)*
+*(Este fichero nombra `CLAUDE.md`, que lleva las reglas de la casa y manda
+sobre todo lo de aqui, y `BITACORA.md`, que es el cuaderno de bitacora. Los dos
+se separaron el dia que se midio lo que costaba el segundo: 750 KB entrando en
+CADA peticion, del orden de 200 000 tokens por turno, con el 98.8 % siendo
+historia y no instruccion. Ninguno se versiona: viven en el disco de quien
+trabaja en esto, asi que un clon limpio no los trae.)*
 
 `banco` es de la casa. Las otras son de fuera, copiadas **sin tocar** para
 poder actualizarlas desde su origen:
@@ -35,9 +38,11 @@ que los dos se contradigan.
   negra (`Source/Bitacora.h`) para el unico fallo que solo pasa en el
   telefono, pero escrito como metodo y no como una clase suelta.
 - `writing-for-agents` — como se escribe un documento que lee un agente.
-  Aplica directamente a `CLAUDE.md`, que es el documento mas grande de este
-  proyecto y el que mas riesgo tiene de **sedimentar**: capas viejas que se
-  quedan porque anadir parece seguro y quitar parece arriesgado.
+  Aplico directamente a `CLAUDE.md`, que era el documento mas grande de este
+  proyecto y el que mas riesgo tenia de **sedimentar**: capas viejas que se
+  quedan porque anadir parece seguro y quitar parece arriesgado. El aviso
+  llevaba ahi 11 860 lineas sin que nadie lo midiera; medido, la historia se
+  fue a `BITACORA.md` y las reglas quedaron en 9 KB.
 
 **Se quedan fuera, y por que:**
 

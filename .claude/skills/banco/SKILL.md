@@ -7,7 +7,7 @@ description: Correr el banco de pruebas de ZATI y juzgar lo que sale. Usar SIEMP
 
 Nada se entrega sin medirlo. Este proyecto tiene banco propio y existe porque
 cada fallo serio que ha aparecido lo encontro una medida y no una captura de
-pantalla. El cuaderno de bitacora cuenta QUE encontro cada prueba; esto es
+pantalla. `BITACORA.md` cuenta QUE encontro cada prueba; esto es
 como se corren y como se juzgan.
 
 ## Antes de nada
