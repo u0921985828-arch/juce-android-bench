@@ -123,6 +123,24 @@ def main():
                 f"origin {lado} apunta a {tiene or '(ninguno)'} y el publico es "
                 f"{url}: arreglalo con  git remote set-url origin {url}")
 
+    #  3 . Y LA VISTA LOCAL DICE LO MISMO QUE EL PUBLICO.
+    #
+    #  Empujar por URL explicita -que es lo correcto, porque no depende de que
+    #  `.git/config` haya sobrevivido- NO actualiza `refs/remotes/origin/main`.
+    #  Con la referencia vieja, `git status` dice «ahead by 1» y cualquier
+    #  guardia que compare contra ella avisa de un commit sin empujar que SI
+    #  esta empujado. Paso: el commit estaba en el publico y la vista local lo
+    #  daba por pendiente. Se dice y no se arregla -`git fetch` es una linea- por
+    #  lo mismo que la pregunta 2: una prueba que repara lo que mide deja de
+    #  poder decir que no.
+    rc, seguim, _ = git("rev-parse", "--verify", "--quiet", "origin/main")
+    if rc == 0 and seguim:
+        print(f"origin/main {seguim}")
+        if seguim != alla:
+            fallos.append(
+                f"la vista local de origin/main esta en {seguim[:7]} y el publico "
+                f"en {alla[:7]}: refrescala con  git fetch origin")
+
     for f in fallos:
         print("FALLA  " + f)
     print("VEREDICTO:", "FALLA" if fallos else "OK")
