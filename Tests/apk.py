@@ -10,7 +10,7 @@ en `base/manifest/`, la .so en `base/lib/`- y cambia la firma, que en un bundle
 es de `jarsigner` y no el bloque v2 de un APK. La alineacion no aplica: de un
 bundle Play GENERA los APK, asi que quien decide el alineado es Play con las
 banderas del enlazador, y esas se comprueban sobre el APK de al lado."""
-import os, re, sys, zipfile, struct
+import hashlib, os, re, sys, zipfile, struct
 
 sys.path.insert (0, os.path.dirname (os.path.abspath (__file__)))
 from marcas import prohibido
@@ -49,6 +49,7 @@ cd_off = struct.unpack_from('<I', raw, eocd + 16)[0]
 magic = raw[cd_off - 16:cd_off]
 v2 = magic == b'APK Sig Block 42'
 esquemas = []
+bloques = {}
 if v2:
     tam = struct.unpack_from('<Q', raw, cd_off - 24)[0]
     ini = cd_off - 8 - tam
@@ -59,6 +60,7 @@ if v2:
             break
         ident = struct.unpack_from('<I', raw, p + 8)[0]
         esquemas.append(ident)
+        bloques[ident] = raw[p + 12: p + 8 + n]
         p += 8 + n
 
 if BUNDLE:
@@ -68,6 +70,68 @@ else:
 for i in esquemas:
     nom = {0x7109871a: 'v2', 0xf05368c0: 'v3', 0x1b93ad61: 'sello v3.1/otros'}.get(i, hex(i))
     print(f"  bloque {nom}")
+
+# --- 1b. CON QUE CLAVE, que es lo que decide si una APK actualiza a la otra --
+#
+#  Hasta aqui se comprobaba que la firma EXISTE y -en el workflow- que no es la
+#  de depuracion, y nadie comprobaba que sea la MISMA que la de la release
+#  anterior. Android compara el CERTIFICADO del firmante: si cambia, la
+#  instalacion se niega con «package signature mismatch» y hay que DESINSTALAR,
+#  o sea que se pierden la sesion y los proyectos de quien ya la tuviera. Un
+#  cambio de clave compila, pasa las tres comprobaciones de siempre y se
+#  publica — un numero que nadie mira se publica, en el unico fichero que sale
+#  de aqui hacia un telefono.
+#
+#  La huella es la del CERTIFICADO y no la del bloque: el bloque cambia con
+#  cada compilacion porque lleva los digests del contenido.
+#
+#  Del bundle no se saca: un AAB va firmado como un jar y ademas Play lo
+#  REFIRMA con su propia clave, asi que la huella de aqui no seria la que llega
+#  al telefono. Ahi la pregunta no tiene respuesta local.
+
+def huellaFirmante (bloques):
+    """SHA-256 del primer certificado del primer firmante del bloque v2 (o v3)."""
+    def lv (b, o):
+        n = struct.unpack_from('<I', b, o)[0]
+        return b[o + 4: o + 4 + n], o + 4 + n
+    for ident in (0x7109871a, 0xf05368c0):
+        val = bloques.get(ident)
+        if not val:
+            continue
+        try:
+            firmantes, _ = lv(val, 0)
+            f1, _        = lv(firmantes, 0)
+            firmado, _   = lv(f1, 0)
+            _, o         = lv(firmado, 0)      # los digests, que se saltan
+            certs, _     = lv(firmado, o)
+            c1, _        = lv(certs, 0)
+            return hashlib.sha256(c1).hexdigest()
+        except Exception:
+            return None
+    return None
+
+def firmanteEsperado ():
+    """La huella declarada, leida de su unico dueno.
+
+    Escrita aqui serian dos reglas. Y si el fichero cambia de forma FALLA, en
+    vez de dar verde sin comparar: la cadena de control que `marcas.py`,
+    `suministro.py` y `entrega.py` ya tienen.
+    """
+    d = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'apk.md')
+    if not os.path.exists(d):
+        return False, None
+    with open(d, encoding='utf-8') as f:
+        for linea in f:
+            m = re.match(r'^firmante:\s*([0-9a-fA-F]{64})\s*$', linea)
+            if m:
+                return True, m.group(1).lower()
+            if re.match(r'^firmante:\s*\(sin declarar\)\s*$', linea):
+                return True, None
+    return False, None
+
+firmante = None if BUNDLE else huellaFirmante(bloques)
+if not BUNDLE:
+    print(f"certificado del firmante: {firmante or '(no se pudo leer)'}")
 
 # --- 2. El manifiesto: paquete y permisos ----------------------------------
 #
@@ -251,6 +315,24 @@ if sobran:     mal.append("permisos de mas: " + ", ".join(sobran))
 if not any(p == 'com.artifacts.zati' for p in paquete):
     mal.append("el paquete no es com.artifacts.zati")
 if not visto:  mal.append("el barrido no ve el texto de la app: no mide nada")
+
+#  Y LA HUELLA, con TRES respuestas y no dos. Una primera corrida no puede
+#  fallar por no tener con que comparar, asi que «sin declarar» se imprime y se
+#  pide; lo que si falla es que este declarada y NO coincida, y que el fichero
+#  que la declara no se pueda leer.
+if not BUNDLE:
+    legible, esperada = firmanteEsperado()
+    if not legible:
+        mal.append("no puedo leer la huella esperada de Tests/apk.md: no mide nada")
+    elif firmante is None:
+        mal.append("no se pudo leer el certificado del firmante")
+    elif esperada is None:
+        print(f"  la huella no esta declarada todavia. Ponla en Tests/apk.md:")
+        print(f"      firmante: {firmante}")
+    elif esperada != firmante:
+        mal.append(f"la APK va firmada con {firmante[:16]}… y se esperaba "
+                   f"{esperada[:16]}…: NO puede actualizar a la anterior, el "
+                   f"telefono pedira desinstalar")
 if escrito:    mal.append("escrito dentro: " + "; ".join(escrito))
 
 print("VEREDICTO:", "OK" if not mal else "REVISAR — " + "; ".join(mal))
