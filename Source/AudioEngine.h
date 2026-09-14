@@ -966,6 +966,42 @@ public:
     //  Los NUEVE campos de un paso a su defecto, sin tocar si suena o no. Ver
     //  su comentario: habia tres sitios vaciando tres subconjuntos distintos.
     void vaciaPaso (int patternIdx, int step, int pad) noexcept;
+
+    //  UN PASO ENTERO, PARA QUIEN LO COPIA.
+    //
+    //  `vaciaPaso` puso la lista canonica en un sitio para los tres que la
+    //  VACIABAN, y los que la COPIAN se quedaron fuera de aquel repaso: COPIAR
+    //  PATRON llevaba TRES de los nueve -el "suena", la nota raiz y el largo
+    //  del patron- y DESPLAZAR y DOBLAR, cuatro. La queja llego con las dos
+    //  mitades: "la velocidad no se copia" y "de un acorde de tres notas solo
+    //  se pega una", que es exactamente lo que pasa cuando viaja `stepNote` -la
+    //  raiz- y no `stepChord`, donde viven las otras tres.
+    //
+    //  Y la mitad que no se ve: quien pegaba escribia ENCIMA sin vaciar lo que
+    //  no copiaba, asi que el destino se quedaba con su fuerza, su acorde y sus
+    //  bloqueos viejos. No es que no se pegue: es que queda MEZCLADO, la figura
+    //  nueva con los parametros de la vieja.
+    //
+    //  Por eso `escribePaso` escribe los NUEVE, el "suena" incluido: un paso
+    //  pegado tiene que ser el paso entero y no una capa encima de lo que
+    //  hubiera. Y `Paso` NO vale a ceros -`vel` es 127, `roll` 1, `corte`
+    //  kNoLock y `largo` kLenSuelto-, asi que solo se escribe lo que se acaba
+    //  de leer.
+    struct Paso
+    {
+        bool          on       = false;
+        std::int8_t   nota     = 0;
+        std::int8_t   empujon  = 0;
+        std::int8_t   corte    = (std::int8_t) kNoLock;
+        std::uint8_t  vel      = 127;
+        std::uint8_t  roll     = 1;
+        std::uint8_t  largo    = (std::uint8_t) kLenSuelto;
+        std::uint32_t acorde   = 0;
+        std::uint32_t bloqueos = 0;
+    };
+
+    Paso leePaso      (int patternIdx, int step, int pad) const noexcept;
+    void escribePaso  (int patternIdx, int step, int pad, const Paso& s) noexcept;
     std::uint32_t getStepChordRaw (int patternIdx, int step, int pad) const noexcept
     {
         if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps

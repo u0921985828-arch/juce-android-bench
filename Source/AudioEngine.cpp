@@ -3780,6 +3780,47 @@ void AudioEngine::vaciaPaso (int patternIdx, int step, int pad) noexcept
     setStepPLockRaw (patternIdx, step, pad, 0);
 }
 
+//  LEER Y ESCRIBIR UN PASO ENTERO. Ver el comentario de `Paso` en la cabecera:
+//  los que VACIABAN ya tenian su lista en un sitio y los que COPIAN seguian
+//  con una propia -tres campos COPIAR PATRON, cuatro DESPLAZAR y DOBLAR- y
+//  ninguna prueba los ejecutaba.
+//
+//  `escribePaso` escribe tambien el "suena", al reves que `vaciaPaso`: alli
+//  quien llama decide si el paso suena porque EUCLIDES enciende justo despues,
+//  y aqui lo que se pega ES el paso de origen, encendido incluido. Eso es lo
+//  que hace que pegar deje el destino limpio en vez de una capa encima.
+AudioEngine::Paso AudioEngine::leePaso (int patternIdx, int step, int pad) const noexcept
+{
+    Paso s;
+    if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps
+        || pad < 0 || pad >= kNumPads) return s;
+
+    const std::uint64_t bit = (std::uint64_t) 1u << pad;
+    s.on       = (patternBank[(size_t) patternIdx][(size_t) step].load (std::memory_order_relaxed) & bit) != 0;
+    s.nota     = (std::int8_t)   getStepNote  (patternIdx, step, pad);
+    s.empujon  = (std::int8_t)   getStepNudge (patternIdx, step, pad);
+    s.corte    = (std::int8_t)   getStepLock  (patternIdx, step, pad);
+    s.vel      = (std::uint8_t)  getStepVel   (patternIdx, step, pad);
+    s.roll     = (std::uint8_t)  getStepRoll  (patternIdx, step, pad);
+    s.largo    = (std::uint8_t)  getStepLen   (patternIdx, step, pad);
+    s.acorde   = getStepChordRaw (patternIdx, step, pad);
+    s.bloqueos = getStepPLockRaw (patternIdx, step, pad);
+    return s;
+}
+
+void AudioEngine::escribePaso (int patternIdx, int step, int pad, const Paso& s) noexcept
+{
+    setStep         (patternIdx, step, pad, s.on);
+    setStepNote     (patternIdx, step, pad, s.nota);
+    setStepVel      (patternIdx, step, pad, s.vel);
+    setStepRoll     (patternIdx, step, pad, s.roll);
+    setStepLen      (patternIdx, step, pad, s.largo);
+    setStepNudge    (patternIdx, step, pad, s.empujon);
+    setStepLock     (patternIdx, step, pad, s.corte);
+    setStepChordRaw (patternIdx, step, pad, s.acorde);
+    setStepPLockRaw (patternIdx, step, pad, s.bloqueos);
+}
+
 //  Velocity and roll, same shape as the note. Zero means "never set" in both,
 //  which is what every pattern written before they existed says - and it has
 //  to keep meaning full level and one hit, or old patterns would come back

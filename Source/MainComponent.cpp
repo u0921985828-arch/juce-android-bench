@@ -8555,16 +8555,24 @@ void MainComponent::tapTempo()
                     juce::dontSendNotification);
 }
 
+//  COPIAR Y PEGAR UN PATRON: los NUEVE campos de cada paso.
+//
+//  Llevaba TRES -el "suena", la nota raiz y el largo del patron- y la queja
+//  llego con las dos mitades que eso produce: "la velocidad no se copia" y "de
+//  un acorde de tres notas solo se pega una". La segunda es exacta: la raiz
+//  viaja en `stepNote` y las otras tres viven en `stepChord`, que no se
+//  copiaba.
+//
+//  Y `pastePattern` escribia ENCIMA sin vaciar lo que no copiaba, asi que el
+//  patron destino se quedaba con su fuerza, su acorde, su largo y sus bloqueos
+//  viejos: la figura nueva sonando con los parametros de la vieja. Por eso se
+//  escribe el paso ENTERO con `escribePaso` y no una capa de dos campos.
 void MainComponent::copyPattern()
 {
     patClipLen = engine.getPatternLength (selectedPattern);
     for (int st = 0; st < AudioEngine::kNumSteps; ++st)
         for (int p = 0; p < kNumPads; ++p)
-        {
-            patClip[(size_t) st][(size_t) p] = pattern[(size_t) selectedPattern][(size_t) st][(size_t) p];
-            patClipNote[(size_t) st][(size_t) p] =
-                (signed char) engine.getStepNote (selectedPattern, st, p);
-        }
+            patClip[(size_t) st][(size_t) p] = engine.leePaso (selectedPattern, st, p);
     patClipFull = true;
     pastePatBtn.setEnabled (true);
     status.setText (T ("P%1 copiado", juce::String (selectedPattern + 1)),
@@ -8583,12 +8591,12 @@ void MainComponent::pastePattern()
     for (int st = 0; st < AudioEngine::kNumSteps; ++st)
         for (int p = 0; p < kNumPads; ++p)
         {
-            const bool on = patClip[(size_t) st][(size_t) p];
-            pattern[(size_t) selectedPattern][(size_t) st][(size_t) p] = on;
-            engine.setStep (selectedPattern, st, p, on);
-            engine.setStepNote (selectedPattern, st, p, patClipNote[(size_t) st][(size_t) p]);
+            const auto& s = patClip[(size_t) st][(size_t) p];
+            pattern[(size_t) selectedPattern][(size_t) st][(size_t) p] = s.on;
+            engine.escribePaso (selectedPattern, st, p, s);
         }
     refreshStepGrid();
+    refreshPiano (false);
     seqSheet.repaint();
     status.setText (T ("Pegado en P%1", juce::String (selectedPattern + 1)),
                     juce::dontSendNotification);
@@ -10732,15 +10740,7 @@ void MainComponent::copiarFila()
     const int b = selectedPattern, p = selectedPad;
 
     for (int st = 0; st < kNumSteps; ++st)
-        filaPortapapeles[(size_t) st] = { pattern[(size_t) b][(size_t) st][(size_t) p],
-                                          engine.getStepNote (b, st, p),
-                                          engine.getStepVel  (b, st, p),
-                                          engine.getStepRoll (b, st, p),
-                                          engine.getStepLen  (b, st, p),
-                                          engine.getStepNudge (b, st, p),
-                                          engine.getStepLock (b, st, p),
-                                          engine.getStepChordRaw (b, st, p),
-                                          engine.getStepPLockRaw (b, st, p) };
+        filaPortapapeles[(size_t) st] = engine.leePaso (b, st, p);
     filaCopiada = true;
     pasteRowBtn.setEnabled (true);
     status.setText (T ("Fila del pad %1 copiada", juce::String (p + 1)), juce::dontSendNotification);
@@ -10757,15 +10757,7 @@ void MainComponent::pegarFila()
     {
         const auto& f = filaPortapapeles[(size_t) st];
         pattern[(size_t) b][(size_t) st][(size_t) p] = f.on;
-        engine.setStep      (b, st, p, f.on);
-        engine.setStepNote  (b, st, p, f.nota);
-        engine.setStepVel   (b, st, p, f.vel);
-        engine.setStepRoll  (b, st, p, f.roll);
-        engine.setStepLen   (b, st, p, f.largo);
-        engine.setStepNudge (b, st, p, f.empujon);
-        engine.setStepLock  (b, st, p, f.corte);
-        engine.setStepChordRaw (b, st, p, f.acorde);
-        engine.setStepPLockRaw (b, st, p, f.bloqueos);
+        engine.escribePaso (b, st, p, f);
     }
 
     refreshStepGrid();
@@ -10868,16 +10860,13 @@ void MainComponent::rotatePattern (int by)
 
     pushUndo (T ("DESPLAZAR"));
 
-    struct Paso { bool on; int nota, vel, roll; };
-    std::vector<Paso> copia ((size_t) len * (size_t) kNumPads);
+    //  El paso ENTERO y no cuatro campos: desplazar un patron con acordes los
+    //  dejaba atras mientras la raiz se movia.
+    std::vector<AudioEngine::Paso> copia ((size_t) len * (size_t) kNumPads);
 
     for (int st = 0; st < len; ++st)
         for (int p = 0; p < kNumPads; ++p)
-            copia[(size_t) (st * kNumPads + p)] =
-                { pattern[(size_t) selectedPattern][(size_t) st][(size_t) p],
-                  engine.getStepNote (selectedPattern, st, p),
-                  engine.getStepVel  (selectedPattern, st, p),
-                  engine.getStepRoll (selectedPattern, st, p) };
+            copia[(size_t) (st * kNumPads + p)] = engine.leePaso (selectedPattern, st, p);
 
     for (int st = 0; st < len; ++st)
     {
@@ -10886,14 +10875,12 @@ void MainComponent::rotatePattern (int by)
         {
             const auto& s = copia[(size_t) (src * kNumPads + p)];
             pattern[(size_t) selectedPattern][(size_t) st][(size_t) p] = s.on;
-            engine.setStep     (selectedPattern, st, p, s.on);
-            engine.setStepNote (selectedPattern, st, p, s.nota);
-            engine.setStepVel  (selectedPattern, st, p, s.vel);
-            engine.setStepRoll (selectedPattern, st, p, s.roll);
+            engine.escribePaso (selectedPattern, st, p, s);
         }
     }
 
     refreshStepGrid();
+    refreshPiano (false);
     seqSheet.repaint();
     status.setText (by > 0 ? T ("Patron un paso a la derecha")
                            : T ("Patron un paso a la izquierda"),
@@ -10916,15 +10903,14 @@ void MainComponent::doublePattern()
 
     pushUndo (T ("DOBLAR"));
 
+    //  El paso ENTERO: la segunda mitad tiene que sonar como la primera, con su
+    //  acorde, su largo y sus bloqueos, o "doblar" devuelve otra cosa.
     for (int st = 0; st < len; ++st)
         for (int p = 0; p < kNumPads; ++p)
         {
-            const bool on = pattern[(size_t) selectedPattern][(size_t) st][(size_t) p];
-            pattern[(size_t) selectedPattern][(size_t) (len + st)][(size_t) p] = on;
-            engine.setStep     (selectedPattern, len + st, p, on);
-            engine.setStepNote (selectedPattern, len + st, p, engine.getStepNote (selectedPattern, st, p));
-            engine.setStepVel  (selectedPattern, len + st, p, engine.getStepVel  (selectedPattern, st, p));
-            engine.setStepRoll (selectedPattern, len + st, p, engine.getStepRoll (selectedPattern, st, p));
+            const auto s = engine.leePaso (selectedPattern, st, p);
+            pattern[(size_t) selectedPattern][(size_t) (len + st)][(size_t) p] = s.on;
+            engine.escribePaso (selectedPattern, len + st, p, s);
         }
 
     engine.setPatternLength (selectedPattern, len * 2);

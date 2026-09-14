@@ -99,10 +99,30 @@ BLOQUE = {
     "y contra el vecino": [[0,1,1000,1000,2,0,0,0]] + [[0]*8]*3,
 }
 
-#  El patron: [paso, pad, nota, fuerza, repeticiones].
-PAT_INICIAL  = [[0,0,5,90,1], [3,1,0,127,4]]
-PAT_ADELANTE = [[1,0,5,90,1], [4,1,0,127,4]]
-PAT_DOBLADO  = [[0,0,5,90,1], [3,1,0,127,4], [16,0,5,90,1], [19,1,0,127,4]]
+#  UN PASO SON NUEVE CAMPOS, y hasta aqui esto medi­a tres.
+#
+#  [paso, pad, nota, fuerza, repeticion, largo, empujon, corte, acorde, bloqueos]
+#
+#  La queja llego del telefono con las dos mitades: «cuando copio un patron y
+#  lo pego, la velocidad no se copia» y «de un acorde de tres notas solo se
+#  pega la tonica». Las dos son la misma causa -COPIAR PATRON llevaba el
+#  «suena», la nota raiz y el largo del patron, y nada mas- y ninguna se podia
+#  ver desde aqui, porque el volcado sacaba nota, fuerza y repeticion.
+#
+#  Los nueve van DISTINTOS de su defecto a proposito: con un campo en su valor
+#  de fabrica, «se copio» y «el destino ya valia eso» dan el mismo numero.
+#  Defectos: vel 127, roll 1, largo 0, empujon 0, corte -1, acorde [] y los
+#  cuatro bloqueos en -1.
+PASO_A       = [5,90,3,9,-25,33,[4,7],[11,22,44,88]]
+PASO_B       = [0,127,4,0,0,-1,[],[-1,-1,-1,-1]]
+PAT_INICIAL  = [[0,0] + PASO_A, [3,1] + PASO_B]
+PAT_ADELANTE = [[1,0] + PASO_A, [4,1] + PASO_B]
+PAT_DOBLADO  = [[0,0] + PASO_A, [3,1] + PASO_B, [16,0] + PASO_A, [19,1] + PASO_B]
+
+#  El paso que se ensucia a mano en el patron DESTINO antes de pegar, en una
+#  casilla donde el origen esta APAGADO, y lo que tiene que quedar despues.
+BASURA       = [5,0,0,40,1,7,0,-1,[2,9],[-1,-1,-1,-1]]
+LIMPIO       = [5,0] + [0,127,1,0,0,-1,[],[-1,-1,-1,-1]]
 
 
 def main():
@@ -166,6 +186,28 @@ def main():
           pat["atras"]["largo"], 16)
     mira ("doblar el patron", pat["doblado"]["pasos"], PAT_DOBLADO,
           pat["doblado"]["largo"], 32)
+
+    #  COPIAR Y PEGAR EL PATRON, con DOS cifras y no una.
+    #
+    #  La primera dice lo que VIAJA: el patron pegado tiene que ser el de
+    #  partida, los nueve campos. Sin ella, «pega» lo cumple un codigo que solo
+    #  mueve el encendido - que es lo que habia, y por eso la velocidad no se
+    #  copiaba y del acorde solo llegaba la tonica.
+    #
+    #  La segunda dice lo que se LIMPIA, y es la mitad invisible: quien pegaba
+    #  escribia ENCIMA sin vaciar lo que no copiaba, asi que el destino se
+    #  quedaba con su fuerza y su acorde viejos. El paso 5 del pad 0 se ensucia
+    #  a mano y el origen lo tiene APAGADO: despues de pegar tiene que valer su
+    #  defecto y no lo que habia. Sin esta, «los nueve viajan» lo cumple el
+    #  codigo de antes con una capa nueva encima de la basura vieja.
+    mira ("el destino, ensuciado", song["basura en el destino"]["paso"], BASURA)
+    mira ("pegar el patron",       pat["pegado"]["pasos"], PAT_INICIAL,
+          pat["pegado"]["largo"], 16)
+    mira ("y limpia lo que habia", song["tras pegar"]["paso"], LIMPIO)
+
+    #  Y COPIAR / PEGAR LA FILA DE UN PAD: el unico camino que ya se llevaba
+    #  los nueve y que no ejecutaba NINGUNA prueba.
+    mira ("copiar y pegar la fila", song["fila pegada"]["paso"], [0,2] + PASO_A)
 
     #  Lo que no se guarda se pierde sin avisar. El silenciado de carriles y
     #  el tramo en bucle van por el mismo arbol que escribe el proyecto.

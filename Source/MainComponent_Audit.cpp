@@ -80,34 +80,131 @@ void MainComponent::auditArrange()
         for (int p = 0; p < kNumPads; ++p)
             pattern[0][(size_t) st][(size_t) p] = false;
 
+    //  Y los NUEVE campos, todos DISTINTOS de su defecto y con un acorde de
+    //  verdad. Con solo nota y fuerza no se podia ver lo que la queja decia:
+    //  que copiar un patron se dejaba la velocidad y que de un acorde de tres
+    //  notas solo se pegaba la tonica.
     engine.setPatternLength (0, 16);
     pattern[0][0][0] = true;  engine.setStep (0, 0, 0, true);
-    engine.setStepNote (0, 0, 0, 5);  engine.setStepVel (0, 0, 0, 90);
+    engine.setStepNote  (0, 0, 0, 5);
+    engine.setStepVel   (0, 0, 0, 90);
+    engine.setStepRoll  (0, 0, 0, 3);
+    engine.setStepLen   (0, 0, 0, 9);
+    engine.setStepNudge (0, 0, 0, -25);
+    engine.setStepLock  (0, 0, 0, 33);
+    engine.setStepExtra (0, 0, 0, 0, 4, true);
+    engine.setStepExtra (0, 0, 0, 1, 7, true);
+    engine.setStepPLock (0, 0, 0, AudioEngine::plockAtaque, 11);
+    engine.setStepPLock (0, 0, 0, AudioEngine::plockCaida,  22);
+    engine.setStepPLock (0, 0, 0, AudioEngine::plockInicio, 44);
+    engine.setStepPLock (0, 0, 0, AudioEngine::plockPan,    88);
     pattern[0][3][1] = true;  engine.setStep (0, 3, 1, true);
     engine.setStepRoll (0, 3, 1, 4);
 
-    auto patron = [this] (const char* que)
+    //  Las notas de mas del acorde, en una lista: es lo que la queja nombra
+    //  -«de tres notas solo se pega una»- y en crudo son un entero opaco.
+    auto acordeDe = [this] (int b, int st, int p)
     {
-        const int len = engine.getPatternLength (0);
+        juce::String t = "[";
+        bool primera = true;
+        for (int i = 0; i < AudioEngine::kExtraNotes; ++i)
+        {
+            const int semi = engine.getStepExtra (b, st, p, i);
+            if (semi == -128) continue;
+            t << (primera ? "" : ",") << semi;
+            primera = false;
+        }
+        return (t + "]").toStdString();
+    };
+
+    auto plocksDe = [this] (int b, int st, int p)
+    {
+        juce::String t = "[";
+        for (int i = 0; i < 4; ++i)
+            t << (i ? "," : "") << engine.getStepPLock (b, st, p, i);
+        return (t + "]").toStdString();
+    };
+
+    auto patron = [this, acordeDe, plocksDe] (const char* que, int b = 0)
+    {
+        const int len = engine.getPatternLength (b);
         std::cout << "{\"pat\":\"" << que << "\",\"largo\":" << len << ",\"pasos\":[";
         bool first = true;
         for (int st = 0; st < len; ++st)
             for (int p = 0; p < kNumPads; ++p)
-                if (pattern[0][(size_t) st][(size_t) p])
+                if (pattern[(size_t) b][(size_t) st][(size_t) p])
                 {
                     std::cout << (first ? "" : ",") << "[" << st << "," << p << ","
-                              << engine.getStepNote (0, st, p) << ","
-                              << engine.getStepVel  (0, st, p) << ","
-                              << engine.getStepRoll (0, st, p) << "]";
+                              << engine.getStepNote  (b, st, p) << ","
+                              << engine.getStepVel   (b, st, p) << ","
+                              << engine.getStepRoll  (b, st, p) << ","
+                              << engine.getStepLen   (b, st, p) << ","
+                              << engine.getStepNudge (b, st, p) << ","
+                              << engine.getStepLock  (b, st, p) << ","
+                              << acordeDe (b, st, p) << "," << plocksDe (b, st, p) << "]";
                     first = false;
                 }
         std::cout << "]}" << std::endl;
     };
 
     patron ("inicial");
+
+    //  COPIAR Y PEGAR EL PATRON, con DOS cifras y no una.
+    //
+    //  La primera dice lo que VIAJA: los nueve campos del patron 0 tienen que
+    //  aparecer en el 1. Sin ella, "pega" lo cumple un codigo que solo mueve el
+    //  encendido, que es lo que habia.
+    //
+    //  La segunda dice lo que se LIMPIA, y es la mitad invisible del fallo: el
+    //  destino se ensucia A MANO antes de pegar, en un paso donde el origen
+    //  esta APAGADO. Quien pegaba escribia encima sin vaciar, asi que ese paso
+    //  se quedaba con la fuerza y el acorde del patron anterior - la figura
+    //  nueva sonando con los parametros de la vieja. Tiene que volver a su
+    //  defecto.
+    auto crudo = [this, acordeDe, plocksDe] (const char* que, int b, int st, int p)
+    {
+        std::cout << "{\"arr\":\"" << que << "\",\"paso\":[" << st << "," << p << ","
+                  << engine.getStepNote  (b, st, p) << ","
+                  << engine.getStepVel   (b, st, p) << ","
+                  << engine.getStepRoll  (b, st, p) << ","
+                  << engine.getStepLen   (b, st, p) << ","
+                  << engine.getStepNudge (b, st, p) << ","
+                  << engine.getStepLock  (b, st, p) << ","
+                  << acordeDe (b, st, p) << "," << plocksDe (b, st, p) << "]}" << std::endl;
+    };
+
+    selectedPattern = 0;
+    copyPattern();
+
+    engine.clearPattern (1);
+    for (int st = 0; st < AudioEngine::kNumSteps; ++st)
+        for (int p = 0; p < kNumPads; ++p)
+            pattern[1][(size_t) st][(size_t) p] = false;
+    engine.setStepVel   (1, 5, 0, 40);
+    engine.setStepExtra (1, 5, 0, 0, 2, true);
+    engine.setStepExtra (1, 5, 0, 1, 9, true);
+    engine.setStepLen   (1, 5, 0, 7);
+    crudo ("basura en el destino", 1, 5, 0);
+
+    selectedPattern = 1;
+    pastePattern();
+    patron ("pegado", 1);
+    crudo ("tras pegar", 1, 5, 0);
+
+    selectedPattern = 0;
     rotatePattern (+1);   patron ("adelante");
     rotatePattern (-1);   patron ("atras");
     doublePattern();      patron ("doblado");
+
+    //  Y COPIAR / PEGAR LA FILA DE UN PAD, que es el camino que esta casa da
+    //  por bueno desde hace tandas y que no ejecutaba NINGUNA prueba. Va aqui
+    //  y no antes: hecho antes, el pad 2 sale en los tres volcados de arriba y
+    //  lo que se mide deja de ser la rotacion.
+    selectedPad = 0;
+    copiarFila();
+    selectedPad = 2;
+    pegarFila();
+    crudo ("fila pegada", 0, 0, 2);
 
     //  RECORTAR Y ALARGAR UN BLOQUE. Un patron de dos compases puesto en el
     //  compas 1: acortarlo a uno tiene que tirar la cola, alargarlo a tres

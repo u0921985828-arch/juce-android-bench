@@ -611,9 +611,10 @@ private:
     //  copiar el bombo del patron 1 al 3 obligaba a copiar el BANCO entero -y
     //  con el los otros quince pads- o a ir casilla por casilla.
     juce::TextButton copyRowBtn { "COPIAR FILA" }, pasteRowBtn { "PEGAR FILA" };
-    struct PasoFila { bool on; int nota, vel, roll, largo, empujon, corte;
-                      std::uint32_t acorde, bloqueos; };
-    std::array<PasoFila, AudioEngine::kNumSteps> filaPortapapeles {};
+    //  El paso entero lo define AudioEngine::Paso: esta lista estuvo escrita
+    //  aqui y era la unica completa de la app, asi que COPIAR PATRON,
+    //  DESPLAZAR y DOBLAR tenian cada uno la suya, mas corta.
+    std::array<AudioEngine::Paso, AudioEngine::kNumSteps> filaPortapapeles {};
     bool filaCopiada = false;
     void copiarFila();
     void pegarFila();
@@ -1827,8 +1828,8 @@ private:
     //  un secuenciador de ocho bancos.
     juce::TextButton copyPatBtn { "COPIAR" }, pastePatBtn { "PEGAR" };
     bool patClipFull = false;
-    std::array<std::array<bool, AudioEngine::kNumPads>, AudioEngine::kNumSteps> patClip {};
-    std::array<std::array<signed char, AudioEngine::kNumPads>, AudioEngine::kNumSteps> patClipNote {};
+    std::array<std::array<AudioEngine::Paso, AudioEngine::kNumPads>,
+               AudioEngine::kNumSteps> patClip {};
     int patClipLen = 16;
     void copyPattern();
     void pastePattern();
