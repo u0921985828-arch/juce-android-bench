@@ -52,6 +52,7 @@ codigo.
 | el arranque, la portada, los margenes del sistema, la caja negra | `Tests/arranque.py` |
 | iconos, la marca, la textura del chasis | `Tests/iconos.py` |
 | una APK | `Tests/apk.py <fichero>` |
+| cerrar una tanda, antes de la APK | `Tests/entrega.py` (donde acabo el empujon) |
 | repintados, coste de la cara | `Tests/cpu.py` **sola** (ver abajo) |
 | la tasa de refresco, cualquier constante de tiempo visual | `Tests/fps.py` |
 | titulos y rotulos pintados, los gestos escondidos | `Tests/plano.py` |
