@@ -2273,6 +2273,44 @@ void MainComponent::auditOpen (const juce::String& pedido)
         engine.setStepExtra (0, 0, selectedPad, 1, 7, true);
         openSheet (seqSheet, secButton); showSeqPage (seqPagePiano); refreshPiano();
     }
+    //  EL PIANO CON LA SELECCION PUESTA, que es el estado en el que existe la
+    //  TIRA DE ACCIONES —COPIAR, CORTE, PEGAR, BORRAR— y sin esta entrada no lo
+    //  mide nadie.
+    //
+    //  Es la leccion de `secp`, `eqb`, `instp`, `rackf` y `ranural`, la sexta
+    //  vez: una tira que solo aparece con algo puesto se mide SIEMPRE vacia si
+    //  el banco solo sabe abrir la pagina recien abierta. Y aqui son cuatro
+    //  tapas mas y una fila mas de alto, o sea la clase de cosa que rompe un
+    //  reparto sin que nadie se entere.
+    //
+    //  CON PORTAPAPELES TAMBIEN, que es la quinta tapa: PEGAR solo existe si se
+    //  ha copiado algo, asi que sin copiar antes esta entrada mediria una tira
+    //  de cuatro y la de cinco no la veria nunca — el mismo agujero una capa
+    //  mas abajo. Se copia y se vuelve a seleccionar, que es ademas el camino
+    //  que hace una persona.
+    else if (which == "pianosel")
+    {
+        selectedPattern = 0;
+        engine.setPatternLength (0, 16);
+        selectPad (0);
+        const struct { int paso, semi, cuartos; } melodia[5] =
+            { { 0, 0, 8 }, { 4, 4, 2 }, { 6, 7, 4 }, { 8, 12, 16 }, { 13, -5, 1 } };
+        for (auto& n : melodia)
+        {
+            pattern[0][(size_t) n.paso][(size_t) selectedPad] = true;
+            engine.setStep     (0, n.paso, selectedPad, true);
+            engine.setStepNote (0, n.paso, selectedPad, n.semi);
+            engine.setStepLen  (0, n.paso, selectedPad, n.cuartos);
+        }
+        openSheet (seqSheet, secButton); showSeqPage (seqPagePiano);
+        pianoGrid.setHerramienta (PianoRoll::sel);
+        pianoSelBtn.setToggleState (true, juce::dontSendNotification);
+        //  La banda cubre las cinco: se mide la tira, no cuantas caen dentro.
+        pianoBanda (0, -12, 15, 12);
+        pianoCopiaSel();          // ...y asi PEGAR tambien existe
+        pianoBanda (0, -12, 15, 12);
+        refreshPiano();
+    }
     //  LA REJILLA DE DIECISEIS PARA ELEGIR PAD, que se dibuja ENCIMA de la
     //  ficha del secuenciador y por tanto es un estado propio: sin esta entrada
     //  el banco no la mide nunca, y una capa que se pone sobre otra es

@@ -1296,6 +1296,17 @@ namespace
           "\xd8\xaa\xd9\x85 \xd9\x86\xd8\xb3\xd8\xae %1 \xd9\x86\xd9\x88\xd8\xaa\xd8\xa9" },
         { "1 nota copiada", "",         "1 note copied",   "已复制 1 个音符",
           "\xd8\xaa\xd9\x85 \xd9\x86\xd8\xb3\xd8\xae \xd9\x86\xd9\x88\xd8\xaa\xd8\xa9 \xd9\x88\xd8\xa7\xd8\xad\xd8\xaf\xd8\xa9" },
+        //  Y las dos parejas de la tira de acciones, con su singular: el plural
+        //  se resuelve FUERA de T() -ver el parrafo de «1 PADS»- porque una
+        //  regla de plural por idioma no cabe en una tabla de cinco columnas.
+        { "%1 notas cortadas", "",      "%1 notes cut",    "已剪切 %1 个音符",
+          "\xd8\xaa\xd9\x85 \xd9\x82\xd8\xb5 %1 \xd9\x86\xd9\x88\xd8\xaa\xd8\xa9" },
+        { "1 nota cortada", "",         "1 note cut",      "已剪切 1 个音符",
+          "\xd8\xaa\xd9\x85 \xd9\x82\xd8\xb5 \xd9\x86\xd9\x88\xd8\xaa\xd8\xa9 \xd9\x88\xd8\xa7\xd8\xad\xd8\xaf\xd8\xa9" },
+        { "%1 notas borradas", "",      "%1 notes deleted", "已删除 %1 个音符",
+          "\xd8\xaa\xd9\x85 \xd8\xad\xd8\xb0\xd9\x81 %1 \xd9\x86\xd9\x88\xd8\xaa\xd8\xa9" },
+        { "1 nota borrada", "",         "1 note deleted",  "已删除 1 个音符",
+          "\xd8\xaa\xd9\x85 \xd8\xad\xd8\xb0\xd9\x81 \xd9\x86\xd9\x88\xd8\xaa\xd8\xa9 \xd9\x88\xd8\xa7\xd8\xad\xd8\xaf\xd8\xa9" },
         { "2 OCTAVAS",      "",         "2 OCTAVES",  "2 个八度",     "أوكتافان" },
         { "%1 pasos",       "",         "%1 steps",   "%1 步",          "%1 خطوة" },
         { "sin cadena - repite P%1", "sin cadena · repite P%1", "no chain · P%1 repeats",

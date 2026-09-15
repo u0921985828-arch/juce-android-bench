@@ -453,6 +453,11 @@ private:
     void pianoVaciaSel();
     void pianoCopiaSel();
     void pianoPegaSel();
+    //  CORTE es COPIAR y BORRAR seguidos, y se escribe asi -llamando a las dos-
+    //  y no repitiendo el bucle: dos caminos que hacen lo mismo por su cuenta
+    //  se separan, que es lo que ya costo sacar `repartePorBanco` de dentro.
+    void pianoCortaSel();
+    void pianoBorraSel();
 
     //  EL PORTAPAPELES DE NOTAS, RELATIVO a la esquina de arriba a la
     //  izquierda de lo copiado: pegar tiene que caer donde toques y no donde se
@@ -461,7 +466,10 @@ private:
     struct NotaPeg { int dPaso; int semi; int cuartos; };
     std::vector<NotaPeg> pianoPortapapeles;
 
-    juce::TextButton pianoSelBtn { "SEL" }, pianoCopiaBtn { "COPIAR" }, pianoPegaBtn { "PEGAR" };
+    //  LA TIRA DE ACCIONES DE LA SELECCION. Ver el reparto en
+    //  MainComponent_Layout.cpp: solo existe con notas seleccionadas.
+    juce::TextButton pianoSelBtn { "SEL" }, pianoCopiaBtn { "COPIAR" }, pianoPegaBtn { "PEGAR" },
+                     pianoCorteSelBtn { "CORTE" }, pianoBorraSelBtn { "BORRAR" };
 
     //  CUANTAS COLUMNAS SE VEN. Ocho es medio compas con celdas del doble de
     //  ancho -para escribir en 1/32-, dieciseis es el compas de siempre y

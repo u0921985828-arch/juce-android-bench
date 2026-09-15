@@ -45,7 +45,7 @@ MINIMOS = [
 #  LAS PAGINAS QUE ESCRIBEN ALGO QUE SUENA, o sea donde no tener PLAY al lado
 #  obliga a cerrar la ficha para oir lo que acabas de escribir. No es una lista
 #  de gustos: son las tres rejillas de LIENZO mas las dos que editan un sonido.
-SUENAN = {"sec", "secp", "paso", "piano", "pianod", "song", "pads", "pad2", "vst"}
+SUENAN = {"sec", "secp", "paso", "piano", "pianod", "pianosel", "song", "pads", "pad2", "vst"}
 
 #  Y LA QUE NO LLEVA TRANSPORTE A PROPOSITO, con su razon y su linea.
 #

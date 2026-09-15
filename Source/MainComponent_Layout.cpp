@@ -4767,11 +4767,25 @@ void MainComponent::resized()
             //  Apaisado no hay fila de tapas que pedir: se van a la columna
             //  de al lado. Pedir una fila que luego no se coloca es pedir 48 px
             //  de mas de lo unico que escasea girado.
+            //  Y LA TIRA DE ACCIONES ES UNA FILA MAS, Y SE PIDE.
+            //
+            //  Es la regla que el parrafo de arriba ya tiene escrita —«pedir
+            //  una fila y colocar dos es como la rejilla del piano se queda sin
+            //  sitio»— aplicada a la tira que aparece con la seleccion. Sin
+            //  esta linea la tarjeta pide el alto de antes, la tira se coloca
+            //  igual, y los 44 px salen de lo unico que en esta pagina no
+            //  sobra: la fila de nota.
+            //
+            //  Solo de pie: apaisado las tapas van a su columna y no hay fila
+            //  que pedir, que es la misma razon por la que `filasTapas` vale
+            //  cero ahi.
             const int filasTapas = wideFace ? 0 : (moduleBarFits (anchoDeLaTarjeta, pb5, 11) ? 1 : 2);
             filasTapasPiano = filasTapas;
+            const int filaAcciones = (! wideFace && ! pianoSel.empty()) ? 1 : 0;
             wanted = chrome + pianoGrid.getFilas() * PianoRoll::kAltoObjetivo + Metrics::sm + 14
-                   + filasTapas * Metrics::hit
-                   + juce::jmax (0, filasTapas - 1) * Metrics::halfGap;
+                   + (filasTapas + filaAcciones) * Metrics::hit
+                   + juce::jmax (0, filasTapas - 1) * Metrics::halfGap
+                   + filaAcciones * Metrics::sm;
         }
 
         auto inner = sheetFromBottom (seqSheet, wanted);
@@ -5039,6 +5053,34 @@ void MainComponent::resized()
             }
             inner.removeFromTop (Metrics::bandaSubtitulo);                 // pintado: que se esta mirando
 
+            //  QUE TAPAS DE LA TIRA DE SELECCION EXISTEN, Y SE DECIDE UNA VEZ.
+            //
+            //  Estaba resuelto DENTRO del reparto de pie, asi que apaisado
+            //  -donde las tapas van a su columna- nadie tocaba su visibilidad y
+            //  la columna colocaba lo que hubiera quedado de la ultima vez que
+            //  se miro de pie. Es la misma clase de fallo que `CERO 224`: un
+            //  estado que solo se pone en una de las dos ramas.
+            //
+            //  Las cuatro solo existen con seleccion —la regla de la tira del
+            //  paso, «un control que no puede hacer nada no es informacion, es
+            //  ruido»— y PEGAR ademas pide portapapeles: pegar lo que no se ha
+            //  copiado no es nada.
+            const bool haySel = ! pianoSel.empty();
+            const bool hayPeg = ! pianoPortapapeles.empty();
+            {
+                juce::TextButton* pbSel[4] = { &pianoCopiaBtn, &pianoCorteSelBtn,
+                                               &pianoPegaBtn,  &pianoBorraSelBtn };
+                const bool vive[4] = { haySel, haySel, hayPeg, haySel };
+                for (int i = 0; i < 4; ++i)
+                {
+                    pbSel[i]->setVisible (vive[i]);
+                    //  APAGAR Y VACIAR, LAS DOS COSAS: una tapa invisible con
+                    //  los limites de la vez anterior sigue contando como
+                    //  colocada para el banco.
+                    if (! vive[i]) pbSel[i]->setBounds ({});
+                }
+            }
+
             //  APAISADO LAS CINCO TAPAS SE VAN A SU COLUMNA, que es la misma
             //  regla que ya usa la pagina de la rejilla y por el mismo motivo:
             //  girado sobra ancho y falta alto, y una fila de tapas cuesta 48
@@ -5137,23 +5179,53 @@ void MainComponent::resized()
             //  Y LAS CUATRO NUEVAS TAMBIEN VAN A LA COLUMNA. Sin ellas aqui
             //  salian visibles y de 0x0 apaisado -48 hallazgos del banco-,
             //  porque esta es la unica lista que las coloca girado.
-            juce::TextButton* pbCol[13] = { &seqModoBtn, &seqPlayBtn,
+            //  APAISADO LAS CUATRO DE LA SELECCION VAN TAMBIEN A LA COLUMNA, y
+            //  al final: girado no hay fila de pie donde poner una tira —esa es
+            //  justo la razon por la que existe esta columna— asi que se
+            //  agrupan al final de ella, que es lo mas parecido a una tira que
+            //  este reparto admite sin robarle alto a la rejilla.
+            juce::TextButton* pbCol[15] = { &seqModoBtn, &seqPlayBtn,
                                             &pianoOctDownBtn, &pianoOctUpBtn, &pianoVerBtn,
                                             &pianoZoomBtn,
                                             &pianoClearBtn, &pianoLapizBtn, &pianoGomaBtn,
                                             &pianoCorteBtn, &pianoSelBtn,
-                                            &pianoCopiaBtn, &pianoPegaBtn };
+                                            &pianoCopiaBtn, &pianoCorteSelBtn,
+                                            &pianoPegaBtn, &pianoBorraSelBtn };
             const auto altoDe = [] (int n) { return n * Metrics::hit + (n - 1) * Metrics::halfGap; };
             int nVisibles = 0;
             for (auto* b2 : pbCol) if (b2->isVisible()) ++nVisibles;
 
-            const int porColumna = (wideFace && inner.getHeight() < altoDe (nVisibles))
-                                     ? (nVisibles + 1) / 2 : nVisibles;
-            const int columnas   = (porColumna > 0 && porColumna < nVisibles) ? 2 : 1;
-            //  Las dos columnas caben en el ancho de UNA: partir la altura no
-            //  puede costar el doble de ancho, que es de lo que vive la rejilla
-            //  girada. Una tapa queda en 110 px y "OCTAVA -" pide 90 con su aire.
-            const int anchoCol   = columnas > 1 ? (sideCol - Metrics::gap) / 2 : sideCol;
+            //  LAS COLUMNAS QUE HAGAN FALTA, Y NO DOS CLAVADAS.
+            //
+            //  El «dos» estaba escrito a mano y con su razon al lado —«apaisado
+            //  lo que sobra es ANCHO, asi que dos columnas y no que se caiga una
+            //  tapa»—, que es el argumento correcto con el numero congelado en
+            //  el caso que habia: siete tapas. Con la tira de la seleccion son
+            //  TRECE visibles girado, siete por columna piden 304 px de alto y
+            //  la tarjeta apaisada da menos: la condicion salia que no, las
+            //  trece se iban a la fila del fondo y la rejilla pasaba de
+            //  **533x232 a 769x136** — la fila de nota a **10 px**, que es lo
+            //  que el banco canto como `CELDA 4` en 915x412.
+            //
+            //  Se pide el reparto mas estrecho que CABE, que es el mismo
+            //  argumento sin el numero: mientras sobre ancho, una columna mas
+            //  es gratis para la rejilla y una fila de pie no lo es nunca. El
+            //  tope lo pone el ancho, no un numero escrito aqui: se para en
+            //  cuanto la columna se queda por debajo de un dedo, porque una
+            //  tapa mas estrecha que eso no se puede tocar.
+            int columnas = 1;
+            while (wideFace && inner.getHeight() < altoDe ((nVisibles + columnas - 1) / columnas)
+                            && (sideCol - columnas * Metrics::gap) / (columnas + 1) >= Metrics::hit)
+                ++columnas;
+            const int porColumna = (nVisibles + columnas - 1) / columnas;
+            //  TODAS las columnas caben en el ancho de UNA: partir la altura no
+            //  puede costar mas ancho, que es de lo que vive la rejilla girada.
+            //  Con dos, una tapa queda en 110 px y "OCTAVA -" pide 90 con su
+            //  aire; con tres, en 72, y por eso el bucle de arriba se para en
+            //  cuanto la columna baja del dedo.
+            const int anchoCol   = columnas > 1
+                                     ? (sideCol - (columnas - 1) * Metrics::gap) / columnas
+                                     : sideCol;
             const int anchoLado  = anchoCol * columnas + (columnas - 1) * Metrics::gap;
 
             if (wideFace && inner.getHeight() >= altoDe (porColumna)
@@ -5171,7 +5243,7 @@ void MainComponent::resized()
                 //  el par MONITOR/CUENTA de AJUSTES. Uno, deducido de lo que se
                 //  acaba de colocar, asi que no cuesta un pixel.
                 juce::Rectangle<int> grupo;
-                for (int i = 0; i < 13; ++i)
+                for (int i = 0; i < 15; ++i)
                 {
                     if (! pbCol[i]->isVisible()) continue;
                     if (puestas == porColumna)
@@ -5190,6 +5262,31 @@ void MainComponent::resized()
             }
             else
             {
+                //  LA TIRA DE ACCIONES DE LA SELECCION, LA PRIMERA DE ABAJO.
+                //
+                //  Llego del telefono: «cuando seleccionas unas notas con SEL,
+                //  deberia de salir un menu para copiar cortar y demas». Las
+                //  dos que habia —COPIAR y PEGAR— EXISTIAN y no se encontraban,
+                //  que es distinto de no estar: se colaban sueltas en la fila de
+                //  herramientas, entre VACIAR, LAPIZ, GOMA, TIJERAS y SEL.
+                //
+                //  Y ADEMAS PARTIAN ESA FILA. Con las nueve de siempre la fila
+                //  cabe de una pieza; al seleccionar entraba una decima y en
+                //  media pantalla dejaba de caber, asi que se repartia en DOS
+                //  filas y la rejilla perdia 44 px —`hit` mas `xs`— en el
+                //  momento exacto en el que estas mirando las notas que acabas
+                //  de seleccionar. Sacadas de ahi, la fila de herramientas ya no
+                //  se mueve nunca y el alto que cuesta la tira es el mismo 44 y
+                //  siempre el mismo.
+                //
+                //  Va DEBAJO de la barra de la ventana y encima de las
+                //  herramientas: es lo que se hace con lo seleccionado, no una
+                //  herramienta mas, y separarla lo dice sin una palabra.
+                //  Se coloca DESPUES de las herramientas, mas abajo en esta
+                //  misma funcion: `removeFromBottom` reparte de abajo hacia
+                //  arriba, asi que lo que se pide primero queda mas abajo — y
+                //  las herramientas son las de mas abajo.
+
                 //  La fila de tapas se aparta ANTES: es lo que no puede encoger.
                 auto tapas = inner.removeFromBottom (Metrics::hit);
                 inner.removeFromBottom (Metrics::sm);
@@ -5228,8 +5325,9 @@ void MainComponent::resized()
                 pbTodas[nb++] = &pianoGomaBtn;
                 pbTodas[nb++] = &pianoCorteBtn;
                 pbTodas[nb++] = &pianoSelBtn;
-                if (haySel) pbTodas[nb++] = &pianoCopiaBtn;
-                if (hayPeg && nb < 12) pbTodas[nb++] = &pianoPegaBtn;
+                //  COPIAR y PEGAR YA NO ESTAN AQUI: se fueron a su tira, mas
+                //  abajo. Con eso esta fila se queda en NUEVE pase lo que pase
+                //  y deja de partirse en dos al seleccionar.
                 juce::TextButton** pb = pbTodas;
                 if (moduleBarFits (tapas.getWidth(), pb, nb))
                 {
@@ -5269,6 +5367,32 @@ void MainComponent::resized()
                     //  tira del paso, que eran tres paneles tocandose y paso a
                     //  ser uno.
                     pianoGrupos.add (tapas.getUnion (fila2));
+                }
+
+                //  Y AHORA SI, LA TIRA DE ACCIONES: encima de las herramientas
+                //  porque se pide DESPUES que ellas. Ver el parrafo de arriba.
+                //
+                //  Con su propio panel, que es la mitad del hallazgo: son un
+                //  grupo distinto —lo que le haces a lo que has seleccionado— y
+                //  un panel aparte lo dice sin gastar una palabra ni una fila
+                //  de rotulo. Entre los dos paneles hay `Metrics::sm` y cada uno
+                //  se sale `panelAireY`, asi que NO salen tocandose: es la
+                //  cuenta que ya obligo a fundir en uno las dos filas de
+                //  herramientas, y aqui sale al reves porque el hueco es `sm` y
+                //  no `xs`.
+                if (haySel)
+                {
+                    auto acc = inner.removeFromBottom (Metrics::hit);
+                    inner.removeFromBottom (Metrics::sm);
+
+                    juce::TextButton* pbAcc[4];
+                    int na = 0;
+                    pbAcc[na++] = &pianoCopiaBtn;
+                    pbAcc[na++] = &pianoCorteSelBtn;
+                    if (hayPeg) pbAcc[na++] = &pianoPegaBtn;
+                    pbAcc[na++] = &pianoBorraSelBtn;
+                    layoutModuleBar (acc, pbAcc, 0, na);
+                    pianoGrupos.add (acc);
                 }
             }
 

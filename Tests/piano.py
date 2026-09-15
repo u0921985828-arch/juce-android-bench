@@ -397,6 +397,33 @@ else:
           not mala,
           "ventana 0 %s, ventana 2 %s" % (v0, v2))
 
+#  LA SELECCION SE TIÑE, Y ESO SE LEE DEL CODIGO PORQUE EL BANCO NO VE EL PIXEL.
+#
+#  Llego del telefono: «esas notas se colorearan temporalmente hasta dejar de
+#  estar seleccionadas». Estaba hecho con DOS ANILLOS de 1.4 y 1.6 px alrededor
+#  de la barra, y tiene su cifra: en 412x915 con dos octavas una fila de nota
+#  mide 15 px y una nota de un paso 21 de ancho, asi que tres pixeles de anillo
+#  por lado son mas de la mitad de la barra — lo que se veia era el anillo.
+#
+#  Ninguna de las diecinueve reglas de `expo.py` puede verlo: una nota
+#  seleccionada con anillo se maqueta exactamente igual que una rellena, mismo
+#  rectangulo y mismo sitio. Es la misma figura que `Cifras::dibuja` sacando su
+#  ancho de la fuente, y se mide igual: leyendo el fuente, que es donde vive la
+#  decision. `maqueta.py` y `suministro.py` ya tienen esta forma.
+#
+#  Roto a proposito -dejando solo los `drawRect`- dice «la seleccion del piano
+#  no se rellena: vuelve a ser un anillo».
+fuente = open (os.path.join (ROOT, "Source", "PianoRoll.h"), encoding="utf8").read()
+bloque = fuente.split ("estaSel != nullptr && estaSel (c, semi)", 1)
+if len (bloque) < 2:
+    mide ("la seleccion se dibuja", False, "no encuentro el bloque de estaSel")
+else:
+    cuerpo = bloque[1][:600]
+    mide ("la seleccion del piano se RELLENA y no solo se rodea",
+          "fillRect" in cuerpo,
+          "fillRect " + ("si" if "fillRect" in cuerpo else "NO")
+          + ", drawRect " + ("si" if "drawRect" in cuerpo else "no"))
+
 print()
 print ("piano: %d comprobaciones, %d FALLA" % (len (hechas), len (fallos)))
 sys.exit (1 if fallos else 0)

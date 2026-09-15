@@ -3506,13 +3506,27 @@ MainComponent::MainComponent()
         //  que es la regla de la tira del paso - un control que no puede hacer
         //  nada no es informacion, es ruido - y ademas es lo que hace que no
         //  cuesten sitio en una fila de nueve tapas que ya se parte en dos.
-        for (juce::TextButton* b : { &pianoCopiaBtn, &pianoPegaBtn })
+        //  Y LAS CUATRO SON UNA TIRA, que es lo que llego del telefono:
+        //  «cuando seleccionas unas notas con SEL, deberia de salir un menu
+        //  para copiar cortar y demas». Las dos que habia existian y no se
+        //  encontraban: aparecian sueltas dentro de una fila de NUEVE tapas
+        //  -VACIAR, LAPIZ, GOMA, TIJERAS, SEL...- que ademas se parte en dos
+        //  justo al aparecer ellas. Una accion sobre lo que acabas de
+        //  seleccionar no se busca entre las herramientas: sale donde miras.
+        for (juce::TextButton* b : { &pianoCopiaBtn, &pianoCorteSelBtn,
+                                     &pianoPegaBtn, &pianoBorraSelBtn })
         {
             styleButton (*b, kKey);
             seqSheet.addChildComponent (*b);
         }
-        pianoCopiaBtn.onClick = [this] { pianoCopiaSel(); };
-        pianoPegaBtn.onClick  = [this] { pianoPegaSel(); };
+        //  BORRAR en rojo, que es el unico de los cuatro que se lleva algo por
+        //  delante. Es el tono de la casa para eso -rojo = se pierde- y el
+        //  mismo que ya llevan las otras tapas que borran.
+        styleButton (pianoBorraSelBtn, kRec);
+        pianoCopiaBtn.onClick    = [this] { pianoCopiaSel(); };
+        pianoCorteSelBtn.onClick = [this] { pianoCortaSel(); };
+        pianoPegaBtn.onClick     = [this] { pianoPegaSel(); };
+        pianoBorraSelBtn.onClick = [this] { pianoBorraSel(); };
 
         //  EL ZOOM HORIZONTAL. Ocho columnas son medio compas con celdas del
         //  doble de ancho -que es lo que hace falta para escribir en 1/32- y
@@ -5724,7 +5738,8 @@ void MainComponent::showSeqPage (int page)
                                  //  ademas dejaban sus coordenadas puestas al
                                  //  volver, que es la regla del RESIDUO: 24.
                                  &pianoSelBtn, &pianoZoomBtn,
-                                 &pianoCopiaBtn, &pianoPegaBtn })
+                                 &pianoCopiaBtn, &pianoCorteSelBtn,
+                                 &pianoPegaBtn, &pianoBorraSelBtn })
     {
         b->setVisible (onPiano);
         if (! onPiano) b->setBounds ({});
@@ -8311,6 +8326,14 @@ void MainComponent::retranslateUi()
     pianoSelBtn    .setButtonText (T ("SEL"));
     pianoCopiaBtn  .setButtonText (T ("COPIAR"));
     pianoPegaBtn   .setButtonText (T ("PEGAR"));
+    //  CORTE y no «CORTAR», que en esta app ya significa TROCEAR un sample
+    //  -CHOP, 切片- y traducirlo asi aqui diria otra cosa en tres idiomas de
+    //  cuatro. Y no choca con TIJERAS: en esta pagina las HERRAMIENTAS se
+    //  llaman por el aparato -LAPIZ, GOMA, TIJERAS- y las ACCIONES por lo que
+    //  hacen. TIJERAS parte el largo de una nota; CORTE se la lleva al
+    //  portapapeles.
+    pianoCorteSelBtn.setButtonText (T ("CORTE"));
+    pianoBorraSelBtn.setButtonText (T ("BORRAR"));
     //  El rotulo dice CUANTO se ve, no un verbo: es la misma gramatica que
     //  pianoVerBtn y que la tapa de vista de la cancion.
     pianoZoomBtn   .setButtonText (pianoCols == 8  ? T ("1/2 COMPAS")
@@ -11754,6 +11777,50 @@ void MainComponent::pianoPegaSel()
         pianoSel.push_back ({ n.dPaso, n.semi });
     }
     refreshPiano (false);
+}
+
+//  BORRAR LA SELECCION. Un `pushUndo` para el bloque entero, por lo mismo que
+//  `pianoMueveSel`: deshacer doce notas doce veces no es deshacer, es contar.
+//
+//  Y LA SELECCION SE VACIA DESPUES. Dejarla puesta sobre notas que ya no
+//  existen deja una marca sin dueño y la tira ofreciendo COPIAR de la nada, que
+//  es la misma figura que «una tapa que no puede hacer nada no es informacion».
+void MainComponent::pianoBorraSel()
+{
+    if (pianoSel.empty()) return;
+    const int base = seqPrimerPaso;
+
+    pushUndo (T ("BORRAR"));
+    for (const auto& n : pianoSel) pianoEscribe (base + n.paso, n.semi, false, 0);
+
+    status.setText (pianoSel.size() == 1
+                        ? T ("1 nota borrada")
+                        : T ("%1 notas borradas",
+                             Lang::ltr (juce::String ((int) pianoSel.size()))),
+                    juce::dontSendNotification);
+    pianoSel.clear();
+    moviendoSel = false;
+    refreshPiano (false);
+    resized();      // la tira se va con la seleccion
+}
+
+//  CORTAR, que es copiar y borrar seguidos y se escribe LLAMANDO A LAS DOS.
+//
+//  Repetir aqui el bucle de `pianoCopiaSel` seria la tercera vez que esta casa
+//  paga lo mismo: dos caminos que hacen el mismo trabajo por su cuenta acaban
+//  separandose y el sintoma es «cortar y copiar no pegan igual» sin poder decir
+//  por que. El orden importa y es este: primero se lee lo que hay -con su
+//  largo- y despues se quita.
+void MainComponent::pianoCortaSel()
+{
+    if (pianoSel.empty()) return;
+    pianoCopiaSel();
+    pianoBorraSel();
+    status.setText (pianoPortapapeles.size() == 1
+                        ? T ("1 nota cortada")
+                        : T ("%1 notas cortadas",
+                             Lang::ltr (juce::String ((int) pianoPortapapeles.size()))),
+                    juce::dontSendNotification);
 }
 
 void MainComponent::pianoCellToggled (int paso, int semi)

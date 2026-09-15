@@ -64,6 +64,7 @@ NOMBRES = {
     "paso":     ("SEC · PATRON",             "pestana SEC, pagina PATRON"),
     "piano":    ("SEC · PIANO ROLL",         "pestana SEC, pagina PIANO"),
     "pianod":   ("SEC · PIANO con notas",    "el piano con cinco notas y un acorde escritos"),
+    "pianosel": ("SEC · PIANO con seleccion", "el piano con cinco notas seleccionadas y la tira de acciones"),
     "song":     ("CANCION",                  "pestana CANCION"),
     "mix":      ("MEZCLA",                   "pestana MEZCLA"),
     "xy":       ("XY",                       "pestana XY"),

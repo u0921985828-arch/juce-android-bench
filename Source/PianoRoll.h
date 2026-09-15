@@ -351,14 +351,32 @@ public:
                     //  Y LO SELECCIONADO SE VE. Una seleccion que no se dibuja
                     //  no es una seleccion: mover en bloque sin saber que
                     //  bloque se mueve es mover a ciegas. Con la misma marca
-                    //  que el clip elegido de la banda de audio - anillo de
+                    //  que el clip elegido de la banda de audio - el color de
                     //  cabezal - para no inventar un tercer idioma.
+                    //
+                    //  SE TIÑE LA NOTA, no se le pone un anillo alrededor.
+                    //
+                    //  Eran dos anillos de 1.4 y 1.6 px, y llego del telefono
+                    //  que no se ve: «esas notas se colorearan temporalmente
+                    //  hasta dejar de estar seleccionadas». Tiene su cifra —en
+                    //  412x915 con dos octavas una fila de nota mide **15 px**
+                    //  y una nota de un paso **21 px de ancho**, asi que tres
+                    //  pixeles de anillo por lado son mas de la mitad de la
+                    //  barra: lo que se veia era el anillo, no la nota, y dos
+                    //  notas vecinas seleccionadas se leian como un bloque
+                    //  rayado. Rellena, la marca crece con la nota en vez de
+                    //  competir con ella.
+                    //
+                    //  Y ENCIMA DEL COLOR DEL ZATI, no en su lugar: el tono
+                    //  dice de que pad es la nota y eso no se puede perder por
+                    //  estar seleccionada. Se mezcla, asi que una nota
+                    //  seleccionada sigue siendo reconociblemente suya.
                     if (estaSel != nullptr && estaSel (c, semi))
                     {
-                        g.setColour (ZatiColours::playheadEdge);
-                        g.drawRect (barra.expanded (1.0f), 1.4f);
+                        g.setColour (ZatiColours::playhead.withAlpha (0.55f));
+                        g.fillRect (barra);
                         g.setColour (ZatiColours::playhead);
-                        g.drawRect (barra, 1.6f);
+                        g.drawRect (barra, 1.0f);
                     }
                 }
             }
