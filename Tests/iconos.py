@@ -147,6 +147,15 @@ def caja (m, n, umbral=0.15):
     return (max (xs) - min (xs) + 1), (max (ys) - min (ys) + 1)
 
 
+def centroTinta (m, n, umbral=0.15):
+    """El centro de la CAJA de tinta, en pixeles de la rejilla de `n`."""
+    xs = [x for y in range (n) for x in range (n) if m[y*n+x] > umbral]
+    ys = [y for y in range (n) for x in range (n) if m[y*n+x] > umbral]
+    if not xs:
+        return n / 2.0, n / 2.0
+    return ((min (xs) + max (xs) + 1) / 2.0, (min (ys) + max (ys) + 1) / 2.0)
+
+
 #  ==========================================================================
 #  EL DIBUJO Y LA PALABRA COMPARTEN RENGLON.
 #
@@ -168,6 +177,12 @@ def caja (m, n, umbral=0.15):
 #  tapa se lee igual de mal, y es lo que habia: 1.80 alturas de letra en una
 #  pestana de 26 px contra 1.32 en una tapa de 48.
 TAPA_DESVIO = 0.50         # px entre el centro de tinta del dibujo y el del rotulo
+#  Y EL DESVIO DENTRO DE LA PROPIA CAJA, en pixeles de la rejilla de 24.
+#
+#  Se imprime en la primera corrida antes de fijarlo, que es como esta casa
+#  pone un liston: la cifra sale de la poblacion y no de una idea. Ver el
+#  bloque de `centroTinta`.
+CENTRO_MAX  = 1.50
 #
 #  Y LA PROPORCION DEJA DE SER LA PREGUNTA: lo es el LADO.
 #
@@ -241,7 +256,8 @@ def main():
 
     fallos = []
     print ("== %d iconos, rasterizados a %dx%d ==" % (len (iconos), N, N))
-    print ("%-14s %6s %6s   %s" % ("icono", "tinta", "llena", "caja en la rejilla de 24"))
+    print ("%-14s %6s %6s %5s   %s"
+           % ("icono", "tinta", "llena", "centro", "caja en la rejilla de 24"))
 
     mapas, borrosos = {}, {}
     for d in iconos:
@@ -253,6 +269,28 @@ def main():
         tinta = sum (m) / len (m)
         w, h = caja (m, n)
         llena = max (w, h) / float (n)
+        #  Y DONDE CAE LA TINTA DENTRO DE SU CAJA, que es lo que ninguna de las
+        #  cuatro miraba.
+        #
+        #  Llego del telefono -«asegurate tambien que todos los sprites de los
+        #  efectos estan centrados, hay algunos que falla»- y al ir a buscarlo
+        #  salio que el banco no podia verlo: `SPRITE` en `expo.py` da CERO en
+        #  las 1456 corridas y las cuatro de aqui pasan, porque CABE mira si el
+        #  trazo se sale, TINTA cuanto pinta, LLENA cuanto ocupa y DISTINTOS si
+        #  dos se parecen. Un dibujo que llena su caja y esta desplazado dos
+        #  pixeles a la derecha las cumple las cuatro.
+        #
+        #  Y se ve enseguida, porque un icono no se mira solo: `reparteTapa`
+        #  centra la CAJA en la tapa, asi que lo que el ojo compara en una fila
+        #  es donde cae la tinta DENTRO de esa caja. Dos iconos con la misma
+        #  caja y la tinta en distinto sitio se leen como una fila torcida.
+        #
+        #  Se mide con el centro de la caja de tinta y no con el centroide: el
+        #  centroide lo mueve un relleno grande en una esquina -REC es un anillo
+        #  y STOP un bloque- y eso es peso, no posicion. Lo que el ojo alinea son
+        #  los filos.
+        cx, cy = centroTinta (m, n)
+        desvio = max (abs (cx - n / 2.0), abs (cy - n / 2.0)) * 24.0 / n
 
         x0, y0 = d["x"], d["y"]
         x1, y1 = x0 + d["w"], y0 + d["h"]
@@ -264,9 +302,13 @@ def main():
         if tinta < TINTA_MIN:  marca += " SIN_TINTA"; fallos.append ("%s casi no pinta (%.3f)" % (nombre, tinta))
         if tinta > TINTA_MAX:  marca += " MANCHA"; fallos.append ("%s es una mancha (%.3f)" % (nombre, tinta))
         if llena < LLENA_MIN:  marca += " PEQUENO"; fallos.append ("%s no llena su caja (%.2f)" % (nombre, llena))
+        if desvio > CENTRO_MAX:
+            marca += " DESCENTRADO"
+            fallos.append ("%s tiene la tinta a %.1f px del centro de su caja (tope %.1f)"
+                           % (nombre, desvio, CENTRO_MAX))
 
-        print ("%-14s %6.3f %6.2f   %5.1f %5.1f %5.1f %5.1f%s"
-               % (nombre, tinta, llena, x0, y0, d["w"], d["h"], marca))
+        print ("%-14s %6.3f %6.2f %5.1f   %5.1f %5.1f %5.1f %5.1f%s"
+               % (nombre, tinta, llena, desvio, x0, y0, d["w"], d["h"], marca))
 
     #  --- los que se parecen, AL TAMANO AL QUE SE LEEN ----------------------
     lee = iconos[0].get ("min") or 13

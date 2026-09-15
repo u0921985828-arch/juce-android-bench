@@ -1300,6 +1300,17 @@ void MainComponent::resized()
         }
 
         {
+            //  Y SIN CANAL COMPARTE EL RENGLON DE LOS BANCOS, que es el unico
+            //  sitio donde no cuesta un pixel: la rejilla es de cuatro por
+            //  cuatro y esta medida, y una quinta fila se la quitaria a las
+            //  celdas -que son lo que se toca- en las dos pantallas cortas.
+            //
+            //  La mitad para ella y la otra para los bancos: no es un banco mas
+            //  -pasear por bancos es MIRAR y esto TOCA- pero si es la otra cosa
+            //  que se hace en esta rejilla sin ser una celda.
+            canalNingunoBtn.setVisible (true);
+            canalNingunoBtn.setBounds (Lang::takeEnd (bancos, bancos.getWidth() / 2)
+                                         .reduced (Metrics::aireTapaDensa, 0));
             const int w = bancos.getWidth() / kNumCanalBancos;
             for (int b = 0; b < kNumCanalBancos; ++b)
                 canalBankBtns[b]->setBounds ((b < kNumCanalBancos - 1 ? bancos.removeFromLeft (w) : bancos)

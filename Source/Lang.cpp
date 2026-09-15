@@ -1099,6 +1099,7 @@ namespace
           "Samples come from %1",
           "音色来自 %1", "الأصوات من %1" },
         { "SONIDOS", "",  "SAMPLES", "音色", "أصوات" },
+        { "SIN CANAL", "",  "NO CHANNEL", "无通道", "بلا قناة" },
 
         //  EL TOUR DE BIENVENIDA. ATRAS y EMPEZAR llevan clave propia porque
         //  esas dos palabras ya existen en la tabla con OTRO sentido - ATRAS

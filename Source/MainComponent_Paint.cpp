@@ -1474,7 +1474,16 @@ void MainComponent::paintMixRows (juce::Graphics& g)
         int cuentan[kNumCanales] = {};
         for (int p = 0; p < kNumPads; ++p)
             if (padHasSample[(size_t) p])
-                ++cuentan[juce::jlimit (0, kNumCanales - 1, engine.getPadCanal (p))];
+            {
+                //  Y UN PAD SIN CANAL NO CUENTA EN NINGUNA TIRA, que es lo que
+                //  el `jlimit` de antes hacia mal: clampaba el centinela al
+                //  canal 31 y ese canal decia tener sesenta y cuatro pads que no
+                //  le entran. La cuenta existe para separar un canal vacio de
+                //  uno que suena y no se oye; sumarle lo que no es suyo la
+                //  convierte en lo contrario.
+                const int c = engine.getPadCanal (p);
+                if (AudioEngine::tieneCanal (c)) ++cuentan[c];
+            }
 
         for (int c = 0; c < kNumCanales; ++c)
         {

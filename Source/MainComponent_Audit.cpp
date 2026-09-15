@@ -986,7 +986,10 @@ void MainComponent::auditDlc()
         //  distintas -«hereda el reparto de ayer» y «el mando dice lo que el
         //  motor tiene»- y meterlas en un contador deja una sin poder fallar
         //  sola.
-        canalMax = juce::jmax (canalMax, engine.getPadCanal (i));
+        //  El centinela de «sin canal» no es un canal: metido en un maximo
+        //  diria que el reparto llega al 255. Ver AudioEngine::kSinCanal.
+        if (AudioEngine::tieneCanal (engine.getPadCanal (i)))
+            canalMax = juce::jmax (canalMax, engine.getPadCanal (i));
         corteMin = juce::jmin (corteMin, engine.getPadCutoff (i));
         if (padReverse[(size_t) i]) ++revesN;
         if (padChokeUI[(size_t) i] != 0) ++chokeN;
@@ -2024,9 +2027,19 @@ void MainComponent::auditNuevo()
 
         //  Y EL REPARTO ENTERO, que es lo que un camino puede heredar del otro:
         //  a que canal va cada pad, y el fader y el mute de los dieciseis.
-        int canalMax = 0, muteN = 0;
+        //  Y CUANTOS PADS NO ESTAN EN NINGUNA TIRA, que en un proyecto nuevo
+        //  tienen que ser los SESENTA Y CUATRO. Es la cifra de la tanda: antes
+        //  nacian todos en el canal 0 -o sea la mesa entera en una tira- y
+        //  `canalMax 0` no distinguia eso de lo que hay ahora. Ver
+        //  AudioEngine::kSinCanal.
+        int canalMax = 0, muteN = 0, sinCanalN = 0;
         double ganSuma = 0.0;
-        for (int i = 0; i < kNumPads; ++i) canalMax = juce::jmax (canalMax, engine.getPadCanal (i));
+        for (int i = 0; i < kNumPads; ++i)
+        {
+            const int c = engine.getPadCanal (i);
+            if (AudioEngine::tieneCanal (c)) canalMax = juce::jmax (canalMax, c);
+            else                             ++sinCanalN;
+        }
         for (int c = 0; c < kNumCanales; ++c)
         {
             ganSuma += engine.getCanalGain (c);
@@ -2049,6 +2062,7 @@ void MainComponent::auditNuevo()
                   << ",\"envmax\":" << envMax << ",\"envsuma\":" << envSuma
                   << ",\"canalmax\":" << canalMax << ",\"cgansuma\":" << ganSuma
                   << ",\"cmuten\":" << muteN
+                  << ",\"sincanal\":" << sinCanalN
                   << ",\"ranuras\":[" << ranuras << "]"
                   << ",\"largo\":" << engine.getSongLength() << ",\"carriles\":[";
         for (int ln = 0; ln < AudioEngine::kSongLanes; ++ln)

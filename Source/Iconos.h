@@ -858,25 +858,45 @@ namespace Iconos
             //  FLA: el peine. Muescas EQUIESPACIADAS sobre el renglon, que es
             //  lo que hace un retardo corto sumado al seco — y lo que lo
             //  separa de PHA, cuyas muescas ni son tantas ni estan repartidas.
+            //  Y LOS DIENTES BAJAN DESDE y=8, no desde y=6.
+            //
+            //  Los dos peines de esta familia -FLA y PHA- colgaban de una linea
+            //  alta y su tinta se quedaba en la mitad de arriba de la caja:
+            //  medido, el centro de lo que se PINTA caia a **4.0 px** del centro
+            //  de la rejilla, contra 0.0 en ochenta y nueve iconos y 0.5 en
+            //  veinte. `reparteTapa` centra la CAJA en la tapa, asi que en una
+            //  fila con sus vecinos los dos se leian subidos. Ver
+            //  Tests/iconos.py, regla del centro.
+            //
+            //  Y los dientes pasan a ser RECTOS y no curvas: el limite de una
+            //  curva lo marcan sus puntos de control -y=20 para una tinta que
+            //  llegaba a 13- asi que la caja que el volcado publica no era la
+            //  que se pinta, y la regla del centro habria medido una y la de
+            //  CABE la otra. Con lineas, lo declarado y lo dibujado son lo
+            //  mismo. Un peine de dientes rectos ademas es lo que un flanger
+            //  hace: ceros regulares, no ondas.
             case Id::fla:
-                linea (L, 2.0f, 6.0f, 22.0f, 6.0f);
+                linea (L, 2.0f, 8.0f, 22.0f, 8.0f);
                 for (int i = 0; i < 5; ++i)
                 {
                     const float x = 4.0f + (float) i * 4.2f;
-                    L.startNewSubPath (x - 1.6f, 6.0f);
-                    L.quadraticTo (x, 20.0f, x + 1.6f, 6.0f);
+                    L.startNewSubPath (x - 1.7f, 8.0f);
+                    L.lineTo (x, 16.0f);
+                    L.lineTo (x + 1.7f, 8.0f);
                 }
                 break;
 
             //  PHA: DOS muescas anchas y separadas sobre una linea plana. Un
             //  phaser no peina: pone unos pocos ceros y los pasea.
             case Id::pha:
-                L.startNewSubPath (2.0f, 7.0f);
-                L.lineTo (5.0f, 7.0f);
-                L.quadraticTo (7.5f, 19.5f, 10.0f, 7.0f);
-                L.lineTo (13.0f, 7.0f);
-                L.quadraticTo (16.0f, 21.0f, 19.0f, 7.0f);
-                L.lineTo (22.0f, 7.0f);
+                L.startNewSubPath (2.0f, 8.0f);
+                L.lineTo (5.0f, 8.0f);
+                L.lineTo (7.5f, 16.0f);
+                L.lineTo (10.0f, 8.0f);
+                L.lineTo (13.0f, 8.0f);
+                L.lineTo (16.0f, 16.0f);
+                L.lineTo (19.0f, 8.0f);
+                L.lineTo (22.0f, 8.0f);
                 break;
 
             //  TRM: la ENVOLVENTE que late. El relleno dice amplitud y no

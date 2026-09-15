@@ -119,22 +119,33 @@ def main():
             fallos.append ("%s: las %d filas de efectos abren en %s y se esperaban vacias"
                            % (que, d["canales"], d.get ("ranuras", "?")))
 
-        #  Y EL REPARTO POR CANALES, con las TRES cifras que lo definen: los 64
-        #  pads en el canal 0 -uno solo en el 3 basta para que canalmax salga 3-,
-        #  los dieciseis faders en uno -o sea suma 16- y ningun mute puesto. Un
-        #  proyecto vacio que hereda la mesa del anterior es exactamente la
-        #  herencia que ya se pago con los envios y con la linea de tiempo.
+        #  Y EL REPARTO POR CANALES, con las CUATRO cifras que lo definen: los 64
+        #  pads SIN CANAL, ninguno repartido, los faders en uno -o sea suma 32- y
+        #  ningun mute puesto. Un proyecto vacio que hereda la mesa del anterior
+        #  es exactamente la herencia que ya se pago con los envios y con la
+        #  linea de tiempo.
+        #
+        #  Y «sin canal» y no «en el cero», que es lo que cambio en esta tanda y
+        #  la razon por la que hace falta una cuarta cifra. `canalmax 0` decia
+        #  las dos cosas a la vez -«los 64 en el 0» y «los 64 en ninguno»- asi
+        #  que sola no puede ver la diferencia, que es justo el fallo: con los 64
+        #  en el canal 0 la mesa arranca con TODO en una tira, ese fader mueve
+        #  los sesenta y cuatro y su mute calla la maquina entera.
+        if d["sincanal"] != 64:
+            fallos.append ("%s: solo %d de los 64 pads abren sin canal; los demas "
+                           "nacen metidos en una tira que nadie eligio"
+                           % (que, d["sincanal"]))
         if d["canalmax"] != 0:
             fallos.append ("%s: hay pads repartidos hasta el canal %d y se "
-                           "esperaban los 64 en el 0" % (que, d["canalmax"]))
+                           "esperaban los 64 sin canal" % (que, d["canalmax"]))
         if abs (d["cgansuma"] - d["canales"]) > 0.01 or d["cmuten"] != 0:
             fallos.append ("%s: los %d canales abren con suma de ganancia "
                            "%.2f y %d mutes puestos"
                            % (que, d["canales"], d["cgansuma"], d["cmuten"]))
 
-        print ("%-10s %2d pads   envios max %.2f suma %.2f   canal max %d gan %.1f "
-               "mutes %d   ranuras %s   carril 0 %s"
-               % (que, d["pads"], d["envmax"], d["envsuma"],
+        print ("%-10s %2d pads   envios max %.2f suma %.2f   sin canal %d/64   "
+               "canal max %d gan %.1f mutes %d   ranuras %s   carril 0 %s"
+               % (que, d["pads"], d["envmax"], d["envsuma"], d["sincanal"],
                   d["canalmax"], d["cgansuma"], d["cmuten"],
                   "todas vacias" if d.get ("ranuras") == vacias else d.get ("ranuras", "?"),
                   carriles[0]))

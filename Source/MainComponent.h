@@ -366,6 +366,10 @@ private:
     //  despues de mover un pad al canal 20 enseñaria la rejilla del 1 al 16 con
     //  el elegido fuera de ella.
     juce::OwnedArray<juce::TextButton> canalBankBtns;
+    //  La celda de SALIR de la mesa. Aparte de las treinta y dos a proposito:
+    //  no es un canal numero cero, es no estar en ninguno. Ver
+    //  AudioEngine::kSinCanal.
+    juce::TextButton canalNingunoBtn { "SIN CANAL" };
     juce::TextButton padCanalBtn { "CANAL" };
     int  canalBanco = 0;
     void ponCanalBanco (int b);

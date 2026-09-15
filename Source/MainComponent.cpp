@@ -321,6 +321,32 @@ MainComponent::MainComponent()
             canalBtns.add (b);
         }
 
+        //  Y LA CELDA DE SALIR, que es la que hace que la rejilla no sea un
+        //  camino de ida.
+        //
+        //  Desde que un pad nace SIN canal hay un estado mas que elegir, y sin
+        //  esta tapa se puede entrar en una tira y no volver: la rejilla tiene
+        //  treinta y dos celdas y ninguna dice «ninguna». Va aparte de las
+        //  treinta y dos a proposito -no es un canal numero cero- y al lado de
+        //  los chips de banco, que es la fila de lo que no es una celda.
+        styleButton (canalNingunoBtn, kKey);
+        litAccent (canalNingunoBtn);
+        canalNingunoBtn.setClickingTogglesState (true);
+        canalNingunoBtn.onClick = [this]
+        {
+            pushUndo (T ("CANAL"));
+            engine.setPadCanal (selectedPad, AudioEngine::kSinCanal);
+            //  La fila de la cara NO se mueve: `ponCanalActual` pide un canal
+            //  que exista, y sacar un pad de su tira no cambia que tira se esta
+            //  mirando. Lo demas se relee igual que al entrar.
+            refrescaRanuras();
+            refrescaCanalDelPad();
+            if (rackSheet.isVisible()) refreshRack();
+            refreshMixStrip();
+            abreCanalPicker (false);
+        };
+        canalSheet.addAndMakeVisible (canalNingunoBtn);
+
         //  LOS DOS CHIPS DE BANCO. Pasear por los bancos es MIRAR y elegir una
         //  celda es TOCAR, que es la misma separacion que la fila A B C D de la
         //  cara tiene con los pads: `ponCanalBanco` no mueve el canal del pad.
@@ -7167,11 +7193,22 @@ void MainComponent::refrescaCanalDelPad()
     //  LAS DOS TAPAS DE CANAL DICEN LO MISMO, y lo dicen desde aqui: la de EL
     //  PAD y la de la ficha del instrumento son dos puertas a la misma rejilla,
     //  asi que su rotulo se escribe una vez o un dia una se queda vieja.
-    const auto texto = T ("CANAL") + " " + Lang::ltr (juce::String (c + 1).paddedLeft ('0', 2));
+    //
+    //  Y AHORA UN PAD PUEDE NO TENER CANAL, que es como nacen los sesenta y
+    //  cuatro. La tapa lo DICE en vez de inventarse un numero: «CANAL 01» sobre
+    //  un pad que no esta en ninguna tira es la app afirmando una agrupacion que
+    //  nadie hizo, que es el fallo entero de esta tanda escrito en un rotulo.
+    const auto texto = AudioEngine::tieneCanal (c)
+                         ? T ("CANAL") + " " + Lang::ltr (juce::String (c + 1).paddedLeft ('0', 2))
+                         : T ("SIN CANAL");
     padCanalBtn.setButtonText (texto);
     vstCanalBtn.setButtonText (texto);
     for (int i = 0; i < canalBtns.size(); ++i)
         canalBtns[i]->setToggleState (i == c, juce::dontSendNotification);
+    //  Y LA CELDA DE QUITARLO, encendida cuando no hay ninguno: sin ella se
+    //  puede entrar en una tira y no salir, que deja la rejilla siendo un
+    //  camino de ida.
+    canalNingunoBtn.setToggleState (! AudioEngine::tieneCanal (c), juce::dontSendNotification);
 }
 
 //  LA REJILLA DE CANALES, ABIERTA O CERRADA.
@@ -7189,7 +7226,10 @@ void MainComponent::abreCanalPicker (bool abrir)
         //  `retranslateUi` desde el CONSTRUCTOR y `ponCanalBanco` termina en
         //  `resized()` — un `resized` anidado desde ahi es como se cerro la app
         //  una vez (`CAIDA senal 11 en arranque`).
-        ponCanalBanco (engine.getPadCanal (selectedPad) / kCanalesPorBanco);
+        //  Y si no tiene canal se abre en el banco A, que es de donde se
+        //  elige el primero: dividir el centinela daria un banco que no existe.
+        ponCanalBanco (AudioEngine::tieneCanal (engine.getPadCanal (selectedPad))
+                         ? engine.getPadCanal (selectedPad) / kCanalesPorBanco : 0);
         refrescaCanalDelPad();
     }
     else
@@ -7198,6 +7238,8 @@ void MainComponent::abreCanalPicker (bool abrir)
         //  SEGUIR visible y de 0x0 desde el primer dia.
         for (auto* b : canalBtns)     if (b != nullptr) b->setBounds ({});
         for (auto* b : canalBankBtns) if (b != nullptr) b->setBounds ({});
+        canalNingunoBtn.setVisible (false);
+        canalNingunoBtn.setBounds ({});
         canalCloseBtn.setBounds ({});
         canalSheet.sheetBounds = {};
     }
@@ -7865,14 +7907,19 @@ void MainComponent::ponPadPorDefecto (int i)
     engine.setPadReso       (i, 0.0f);
     engine.setPadFadeIn     (i, 0.0f);
     engine.setPadFadeOut    (i, 0.0f);
-    //  Y EL REPARTO: el canal 0 y el recorte NEUTRO.
+    //  Y EL REPARTO: SIN CANAL y el recorte NEUTRO.
     //
-    //  Era `setPadSend (i, f, 0.0f)` y el cero se ha mudado: quien manda ahora
-    //  es `canalSend`, que nace a cero, y el recorte del pad es lo que
-    //  MULTIPLICA. Dejarlo en cero aqui haria un pad al que ningun canal puede
-    //  llegar — un valor por defecto que ademas es valido, que es el fallo del
-    //  `brillo` del `Recipe` y el del cero de `padAncho`.
-    engine.setPadCanal (i, 0);
+    //  El recorte a uno y no a cero por lo de siempre: quien manda es
+    //  `canalSend` -que nace a cero- y el recorte MULTIPLICA, asi que a cero
+    //  aqui haria un pad al que ningun canal puede llegar, un defecto que ademas
+    //  es valido — el fallo del `brillo` del `Recipe` y el del cero de
+    //  `padAncho`.
+    //
+    //  Y el canal deja de ser el CERO, que es la peticion del telefono y un
+    //  fallo de verdad: con los 64 ahi la mesa arrancaba con todo en una tira
+    //  -ese fader movia los sesenta y cuatro- o sea nombrando una agrupacion que
+    //  nadie habia hecho. Ver AudioEngine::kSinCanal.
+    engine.setPadCanal (i, AudioEngine::kSinCanal);
     for (int f = 0; f < AudioEngine::kNumFx; ++f) engine.setPadRecorte (i, f, 1.0f);
 }
 
@@ -8240,6 +8287,7 @@ void MainComponent::retranslateUi()
     browseLoadButton  .setButtonText (T ("CARGAR"));
     browseUseDirBtn   .setButtonText (T ("USAR ESTA CARPETA"));
     exportDirBtn      .setButtonText (T ("CAMBIAR"));
+    canalNingunoBtn   .setButtonText (T ("SIN CANAL"));
     projDirBtn        .setButtonText (T ("PROYECTOS"));
     samplesDirBtn     .setButtonText (T ("SONIDOS"));
     browseKitButton   .setButtonText (T ("CARGAR KIT"));
@@ -10028,7 +10076,16 @@ void MainComponent::applyState (const juce::ValueTree& s)
             //  EL CANAL DEL PAD. Sin la propiedad, el 0: es donde `applyState`
             //  pone la fila de siempre y los envios de un proyecto anterior, o
             //  sea el unico canal que en aquel fichero significaba algo.
-            engine.setPadCanal (i, (int) p.getProperty ("canal", 0));
+            //  Y EL DEFECTO ES «SIN CANAL» Y NO EL CERO, que es lo que decide
+            //  como suena un fichero de ANTES de esta tanda.
+            //
+            //  Los proyectos viejos SI llevan su `canal` escrito -los 64, casi
+            //  todos a cero- asi que vuelven exactamente como se guardaron y no
+            //  cambian de sonido. El defecto solo aplica a un atributo que
+            //  falte, y ahi «sin canal» es la respuesta segura: meter un pad en
+            //  el canal 0 porque su linea estaba rota es justo la agrupacion que
+            //  esta tanda quita. Ver AudioEngine::kSinCanal.
+            engine.setPadCanal (i, (int) p.getProperty ("canal", AudioEngine::kSinCanal));
 
             //  Y `sends` PASA A SER EL RECORTE, que es lo que hace que un
             //  proyecto anterior suene igual.
@@ -10679,11 +10736,12 @@ void MainComponent::padPorDefecto (int i)
     engine.setPadFadeOut    (i, 0.0f);
     engine.setPadMute       (i, false);
     engine.setPadSolo       (i, false);
-    //  El canal 0 y el recorte NEUTRO. El cero que hace que una mezcla se haga
-    //  subiendo lo que quieres vive ahora en `canalSend`, que es su dueño; el
-    //  recorte multiplica, asi que a cero aqui el pad no llegaria a ningun
-    //  canal. Ver Tests/nuevo.py.
-    engine.setPadCanal (i, 0);
+    //  SIN CANAL y el recorte NEUTRO. El cero que hace que una mezcla se haga
+    //  subiendo lo que quieres vive en `canalSend`, que es su dueño; el recorte
+    //  multiplica, asi que a cero aqui el pad no llegaria a ningun canal. Y el
+    //  canal es NINGUNO, no el cero: ver el parrafo gemelo en `padDeFabrica` y
+    //  Tests/nuevo.py, que lo mide con `sincanal 64/64`.
+    engine.setPadCanal (i, AudioEngine::kSinCanal);
     for (int f = 0; f < AudioEngine::kNumFx; ++f) engine.setPadRecorte (i, f, 1.0f);
 }
 
