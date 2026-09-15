@@ -1906,3 +1906,269 @@ namespace Iconos
         return false;
     }
 }
+
+// ============================================================================
+//  LAS CIFRAS DIBUJADAS.
+//
+//  Del telefono: «en los botones donde hay numeros no sean numeros de fuente de
+//  texto, sino que hagas unos sprites con numeros un poco mas currados. Las
+//  letras si que sean de texto, pero los numeros no, para dar un toque diferente
+//  a la app».
+//
+//  Y es una decision que se sostiene sola: en esta maquina un numero casi nunca
+//  es una palabra. Es la chapa de un pad, el indice de un canal, el compas, la
+//  octava — cosas que se leen de un vistazo en una rejilla, no que se leen
+//  leyendo. Un juego propio los hace reconocibles a tamano pequeno y le pone
+//  cara a la app, que es lo que se pidio.
+//
+//  TRES REGLAS, y las tres salen de lo que este proyecto ya pago con los 112
+//  iconos:
+//
+//   1. **El ancho lo sigue diciendo la FUENTE.** Cada cifra se dibuja dentro de
+//      la celda que la fuente le habria dado, asi que lo que `expo.py` mide con
+//      `GlyphArrangement::getStringWidth` y lo que se pinta son el mismo numero.
+//      Un juego con su propio avance serian dos reglas, y la que se quedara
+//      vieja dejaria `TRUNC` y `SQUEEZE` midiendo un rotulo que no existe.
+//
+//   2. **Tabular por construccion.** Todas las celdas miden lo mismo, asi que
+//      «09» y «10» ocupan igual y una columna de cifras no baila. Es la misma
+//      razon por la que la fuente mono de esta casa es mono.
+//
+//   3. **Se escriben en una rejilla y no a mano**, como los iconos: diez de
+//      ancho por catorce de alto, trazo con juntas redondeadas, y el grosor
+//      derivado del cuerpo. Nada de aqui sabe a que tamano se va a pintar.
+namespace Cifras
+{
+    //  La rejilla. Diez por catorce es la proporcion de un digito de verdad
+    //  -mas alto que ancho, y no cuadrado como un icono- y deja el hueco
+    //  entre cifras fuera del glifo, que es donde la celda lo pone.
+    inline constexpr float kW = 10.0f;
+    inline constexpr float kH = 14.0f;
+
+    //  Y EL SUELO, por lo mismo que `Iconos::kLadoMin`: por debajo de esto un
+    //  trazo con antialias es una mancha y la fuente lee mejor. Quien dibuje
+    //  pregunta antes; ver `ZatiLookAndFeel::drawButtonText`.
+    inline constexpr float kAltoMin = 9.0f;
+
+    //  EL TRAZO DE UNA CIFRA, en la rejilla de 10x14.
+    //
+    //  Geometricas y de un solo grosor: la app es un chasis acromatico con
+    //  esquinas rectas, y una cifra con remates o con modulacion de grosor
+    //  seria de otra maquina. Los ceros y los ochos se cierran con esquinas
+    //  chaflanadas —ni redondas ni rectas— que es lo que las separa de una
+    //  fuente cualquiera sin inventarse una forma que no se lea.
+    inline juce::Path glifo (juce::juce_wchar c)
+    {
+        juce::Path p;
+        const float x0 = 1.0f, x1 = kW - 1.0f, xm = kW * 0.5f;
+        const float y0 = 1.0f, y1 = kH - 1.0f, ym = kH * 0.5f;
+        const float ch = 2.2f;          // el chaflan de las esquinas
+
+        auto caja = [&] (juce::Path& q)
+        {
+            //  Un rectangulo con las cuatro esquinas cortadas. Es la forma del
+            //  chasis y la que hace que el 0 no se lea como una O.
+            q.startNewSubPath (x0 + ch, y0);
+            q.lineTo (x1 - ch, y0);  q.lineTo (x1, y0 + ch);
+            q.lineTo (x1, y1 - ch);  q.lineTo (x1 - ch, y1);
+            q.lineTo (x0 + ch, y1);  q.lineTo (x0, y1 - ch);
+            q.lineTo (x0, y0 + ch);  q.closeSubPath();
+        };
+
+        switch (c)
+        {
+            case '0':
+                caja (p);
+                //  La barra: sin ella un 0 a trece pixeles es una D o una O.
+                p.startNewSubPath (x0 + 1.4f, y1 - 1.4f);
+                p.lineTo (x1 - 1.4f, y0 + 1.4f);
+                break;
+
+            case '1':
+                //  Con base, que es lo que impide que a tamano pequeno se lea
+                //  como el palo de un 4 o como una I.
+                p.startNewSubPath (x0 + 0.6f, y0 + 3.0f);
+                p.lineTo (xm, y0);
+                p.lineTo (xm, y1);
+                p.startNewSubPath (x0 + 0.8f, y1);
+                p.lineTo (x1 - 0.8f, y1);
+                break;
+
+            case '2':
+                p.startNewSubPath (x0, y0 + ch);
+                p.lineTo (x0 + ch, y0);   p.lineTo (x1 - ch, y0);
+                p.lineTo (x1, y0 + ch);   p.lineTo (x1, ym - 1.0f);
+                p.lineTo (x0, y1);        p.lineTo (x1, y1);
+                break;
+
+            case '3':
+                p.startNewSubPath (x0, y0);
+                p.lineTo (x1 - ch, y0);   p.lineTo (x1, y0 + ch);
+                p.lineTo (x1, ym - ch * 0.5f);
+                p.lineTo (x1 - ch * 0.7f, ym);
+                p.lineTo (x1, ym + ch * 0.5f);
+                p.lineTo (x1, y1 - ch);   p.lineTo (x1 - ch, y1);
+                p.lineTo (x0, y1);
+                p.startNewSubPath (x0 + 1.6f, ym);
+                p.lineTo (x1 - ch * 0.7f, ym);
+                break;
+
+            case '4':
+                p.startNewSubPath (x1 - 2.0f, y0);
+                p.lineTo (x0, y1 - 4.0f);
+                p.lineTo (x1, y1 - 4.0f);
+                p.startNewSubPath (x1 - 2.0f, y0);
+                p.lineTo (x1 - 2.0f, y1);
+                break;
+
+            case '5':
+                p.startNewSubPath (x1, y0);
+                p.lineTo (x0, y0);        p.lineTo (x0, ym - 0.6f);
+                p.lineTo (x1 - ch, ym - 0.6f);
+                p.lineTo (x1, ym - 0.6f + ch);
+                p.lineTo (x1, y1 - ch);   p.lineTo (x1 - ch, y1);
+                p.lineTo (x0 + ch, y1);   p.lineTo (x0, y1 - ch);
+                break;
+
+            case '6':
+                p.startNewSubPath (x1 - 0.6f, y0);
+                p.lineTo (x0 + ch, y0);   p.lineTo (x0, y0 + ch);
+                p.lineTo (x0, y1 - ch);   p.lineTo (x0 + ch, y1);
+                p.lineTo (x1 - ch, y1);   p.lineTo (x1, y1 - ch);
+                p.lineTo (x1, ym + 0.4f); p.lineTo (x1 - ch, ym - 0.6f);
+                p.lineTo (x0, ym - 0.6f);
+                break;
+
+            case '7':
+                p.startNewSubPath (x0, y0);
+                p.lineTo (x1, y0);
+                p.lineTo (x0 + 2.4f, y1);
+                //  La travesana. En una rejilla es lo que separa el 7 del 1 de
+                //  un vistazo, que es como se leen aqui.
+                p.startNewSubPath (x0 + 1.4f, ym);
+                p.lineTo (x1 - 1.8f, ym);
+                break;
+
+            case '8':
+                caja (p);
+                p.startNewSubPath (x0, ym - 0.6f);
+                p.lineTo (x1, ym - 0.6f);
+                break;
+
+            case '9':
+                p.startNewSubPath (x0 + 0.6f, y1);
+                p.lineTo (x1 - ch, y1);   p.lineTo (x1, y1 - ch);
+                p.lineTo (x1, y0 + ch);   p.lineTo (x1 - ch, y0);
+                p.lineTo (x0 + ch, y0);   p.lineTo (x0, y0 + ch);
+                p.lineTo (x0, ym - 0.4f); p.lineTo (x0 + ch, ym + 0.6f);
+                p.lineTo (x1, ym + 0.6f);
+                break;
+
+            case '-':
+                p.startNewSubPath (x0 + 0.5f, ym);
+                p.lineTo (x1 - 0.5f, ym);
+                break;
+
+            default: break;
+        }
+        return p;
+    }
+
+    //  Si esta cadena se puede dibujar entera con el juego. Una sola letra y se
+    //  pinta con la fuente: *entre una cifra dibujada y una palabra a medias no
+    //  hay duda*, y mezclar los dos en un rotulo seria lo segundo.
+    inline bool soloCifras (const juce::String& s)
+    {
+        if (s.isEmpty()) return false;
+        for (auto c : s)
+            if (! (juce::CharacterFunctions::isDigit (c) || c == '-'))
+                return false;
+        return true;
+    }
+
+    //  El grosor, derivado del alto como el de los iconos: un trazo fijo se ve
+    //  gordo en la chapa de un pad y se pierde en un readout de 22 px.
+    inline float grosor (float alto) noexcept
+    {
+        return juce::jlimit (1.1f, 3.4f, alto * 0.115f);
+    }
+
+    //  DIBUJA `s` EN `r`, con el ancho que la FUENTE le habria dado.
+    //
+    //  El ancho se pide a `f` y no se inventa: ver la regla 1 de arriba. El
+    //  alto sale de ese ancho y de la proporcion de la rejilla, y se acota al
+    //  hueco, asi que una cifra en una caja baja encoge en vez de salirse.
+    inline void dibuja (juce::Graphics& g, const juce::String& s,
+                        juce::Rectangle<float> r, const juce::Font& f,
+                        juce::Justification just, juce::Colour c)
+    {
+        if (s.isEmpty() || r.isEmpty()) return;
+
+        const float anchoTexto = juce::GlyphArrangement::getStringWidth (f, s);
+        if (anchoTexto <= 0.0f) return;
+        const float celda = anchoTexto / (float) s.length();
+
+        //  El glifo ocupa el 82% de su celda a lo ancho: el resto es el hueco
+        //  entre cifras, que en una fuente vive dentro del avance y aqui
+        //  tambien. Sin el, «11» sale pegado y se lee como una H.
+        float alto = celda * 0.82f * (kH / kW);
+        alto = juce::jmin (alto, r.getHeight());
+        const float ancho = alto * (kW / kH) / 0.82f * (float) s.length();
+
+        float x = r.getX();
+        if (just.testFlags (juce::Justification::horizontallyCentred))
+            x = r.getCentreX() - ancho * 0.5f;
+        else if (just.testFlags (juce::Justification::right))
+            x = r.getRight() - ancho;
+        const float y = r.getCentreY() - alto * 0.5f;
+
+        const float esc = alto / kH;
+        const float paso = ancho / (float) s.length();
+        const float dentro = (paso - kW * esc) * 0.5f;
+
+        g.setColour (c);
+        const juce::PathStrokeType trazo (grosor (alto),
+                                          juce::PathStrokeType::curved,
+                                          juce::PathStrokeType::rounded);
+        for (int i = 0; i < s.length(); ++i)
+        {
+            auto p = glifo (s[i]);
+            if (p.isEmpty()) continue;
+            p.applyTransform (juce::AffineTransform::scale (esc)
+                                .translated (x + (float) i * paso + dentro, y));
+            g.strokePath (p, trazo);
+        }
+    }
+
+    //  Y LAS CIFRAS EN UNA REJILLA DE ALFAS, que es lo que el banco compara.
+    //  Mismo motivo que `Iconos::rasteriza`: lo que se juzga es lo que la app
+    //  dibuja, no una idea de lo que dibuja.
+    inline std::vector<juce::uint8> rasteriza (juce::juce_wchar c, int n)
+    {
+        juce::Image img (juce::Image::ARGB, n, n, true);
+        {
+            juce::Graphics g (img);
+            auto p = glifo (c);
+            if (! p.isEmpty())
+            {
+                const auto caja = juce::Rectangle<float> (0.0f, 0.0f, (float) n, (float) n);
+                const float esc = juce::jmin (caja.getWidth() * 0.9f / kW,
+                                              caja.getHeight() * 0.9f / kH);
+                p.applyTransform (juce::AffineTransform::scale (esc)
+                                    .translated (caja.getCentreX() - kW * esc * 0.5f,
+                                                 caja.getCentreY() - kH * esc * 0.5f));
+                g.setColour (juce::Colours::white);
+                g.strokePath (p, juce::PathStrokeType (grosor ((float) n * 0.9f),
+                                                       juce::PathStrokeType::curved,
+                                                       juce::PathStrokeType::rounded));
+            }
+        }
+
+        std::vector<juce::uint8> px ((size_t) (n * n), 0);
+        juce::Image::BitmapData bd (img, juce::Image::BitmapData::readOnly);
+        for (int y = 0; y < n; ++y)
+            for (int x = 0; x < n; ++x)
+                px[(size_t) (y * n + x)] = bd.getPixelColour (x, y).getAlpha();
+        return px;
+    }
+}

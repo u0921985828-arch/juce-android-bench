@@ -465,6 +465,45 @@ namespace UiAudit
                       << ",\"px\":\"" << hex << "\"}" << std::endl;
         }
 
+        //  Y LAS ONCE CIFRAS, por la misma puerta y con el mismo formato.
+        //
+        //  Diez digitos y el signo son once dibujos nuevos, y un dibujo nuevo
+        //  sin las cuatro reglas de `iconos.py` es exactamente lo que este
+        //  proyecto ya pago con los sesenta y cuatro bombos iguales: que no
+        //  esten vacios, que no sean manchas, que llenen su caja y sobre todo
+        //  que **no sean dos el mismo** — un 6 y un 9 mal escritos se
+        //  distinguen por donde se cierra el bucle y nada mas, y a trece
+        //  pixeles eso es un pixel.
+        //
+        //  Se emiten con la clave `icono` a proposito: la prueba que los juzga
+        //  es la misma y no hay que escribirla dos veces. El nombre lleva
+        //  prefijo para que un fallo diga «cifra 8» y no «8».
+        for (const char* c : { "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "-" })
+        {
+            const auto px = Cifras::rasteriza ((juce::juce_wchar) c[0], n);
+            juce::String hex;
+            hex.preallocateBytes ((size_t) (n * n * 2 + 8));
+            for (auto v : px) hex << juce::String::toHexString ((int) v).paddedLeft ('0', 2);
+
+            //  Los limites del glifo en SU rejilla de 10x14, llevados a la de
+            //  24 en la que la regla de la caja pregunta: el trazo se ensancha
+            //  al pintar, asi que se cuenta con su grosor puesto, igual que
+            //  `Iconos::limites`.
+            auto p = Cifras::glifo ((juce::juce_wchar) c[0]);
+            const float m = Cifras::grosor (Cifras::kH) * 0.5f;
+            const auto lim = p.isEmpty() ? juce::Rectangle<float>()
+                                         : p.getBounds().expanded (m);
+            const float esc = 24.0f / Cifras::kH;
+
+            std::cout << "{\"icono\":\"cifra " << c << "\""
+                      << ",\"n\":" << n
+                      << ",\"min\":" << (int) Cifras::kAltoMin
+                      << ",\"x\":" << juce::String (lim.getX() * esc, 2)
+                      << ",\"y\":" << juce::String (lim.getY() * esc, 2)
+                      << ",\"w\":" << juce::String (lim.getWidth() * esc, 2)
+                      << ",\"h\":" << juce::String (lim.getHeight() * esc, 2)
+                      << ",\"px\":\"" << hex << "\"}" << std::endl;
+        }
     }
 
 

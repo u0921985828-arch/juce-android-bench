@@ -255,6 +255,34 @@ def main():
         sys.exit ("FALLA  la app no volco ningun icono")
 
     fallos = []
+
+    #  ==========================================================================
+    #  EL ANCHO DE UNA CIFRA LO DICE LA FUENTE, y esto lo lee del FUENTE.
+    #
+    #  Las cifras dibujadas tienen una regla que ninguna medida de pixeles puede
+    #  ver: cada una ocupa la celda que la fuente le habria dado, para que lo que
+    #  `expo.py` mide con `getStringWidth` y lo que se pinta sean el mismo numero.
+    #  Con un avance propio, un rotulo de cifras cabria en la cuenta y no en la
+    #  pantalla —o al reves— y las reglas TRUNC, SQUEEZE y CORTADO estarian
+    #  midiendo un ancho que no existe.
+    #
+    #  Y SALIO MEDIDO que hacia falta escribirlo: con `Cifras::dibuja` cambiado a
+    #  un ancho fijo de 9 px por cifra, las 1456 corridas de `expo.py` siguen
+    #  dando **los mismos 3346 TOUCH y cero en las diecinueve duras**, porque el
+    #  banco mide el rotulo con la fuente y la fuente no cambio. Una regla que
+    #  solo vive en un comentario no protege nada, asi que se lee del codigo —la
+    #  misma figura que `maqueta.py` con los tokens de `Metrics` y `suministro.py`
+    #  con los SHA de las acciones.
+    ico = os.path.join (ROOT, "Source", "Iconos.h")
+    try:
+        fuente = open (ico, encoding="utf-8").read()
+    except OSError:
+        sys.exit ("FALLA  no puedo leer Source/Iconos.h: la regla del ancho no mide nada")
+    cuerpo = fuente.split ("namespace Cifras", 1)[-1]
+    if "GlyphArrangement::getStringWidth" not in cuerpo:
+        fallos.append ("Cifras::dibuja no saca su ancho de la fuente: lo medido y lo "
+                       "dibujado dejan de ser el mismo numero")
+
     print ("== %d iconos, rasterizados a %dx%d ==" % (len (iconos), N, N))
     print ("%-14s %6s %6s %5s   %s"
            % ("icono", "tinta", "llena", "centro", "caja en la rejilla de 24"))
@@ -301,7 +329,14 @@ def main():
         if se_sale:            marca += " FUERA"; fallos.append ("%s se sale de su caja" % nombre)
         if tinta < TINTA_MIN:  marca += " SIN_TINTA"; fallos.append ("%s casi no pinta (%.3f)" % (nombre, tinta))
         if tinta > TINTA_MAX:  marca += " MANCHA"; fallos.append ("%s es una mancha (%.3f)" % (nombre, tinta))
-        if llena < LLENA_MIN:  marca += " PEQUENO"; fallos.append ("%s no llena su caja (%.2f)" % (nombre, llena))
+        #  LLENA no aplica al SIGNO, y es una excepcion declarada y no una
+        #  rebaja del liston: un menos ES una barra corta. La regla existe
+        #  porque un dibujo centrado al 50 % se lee como si estuviera mas lejos
+        #  que sus vecinos, y eso vale para un icono —que dice una cosa entera—
+        #  y no para un signo, cuya forma es justamente ocupar poco. Exigirle
+        #  que llene seria pedirle que deje de ser un menos.
+        if llena < LLENA_MIN and nombre != "cifra -":
+            marca += " PEQUENO"; fallos.append ("%s no llena su caja (%.2f)" % (nombre, llena))
         if desvio > CENTRO_MAX:
             marca += " DESCENTRADO"
             fallos.append ("%s tiene la tinta a %.1f px del centro de su caja (tope %.1f)"

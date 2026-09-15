@@ -1651,8 +1651,16 @@ public:
             auto area = b.getLocalBounds();
             auto strip = area.removeFromBottom (16);
             g.setColour (off);
-            g.setFont (ZatiColours::displayFont (juce::jmin (48.0f, (float) b.getHeight() * 0.44f)));
-            g.drawText (t, area, juce::Justification::centred);
+            const auto fPad = ZatiColours::displayFont (juce::jmin (48.0f, (float) b.getHeight() * 0.44f));
+            g.setFont (fPad);
+            //  LA CHAPA DEL PAD, CON EL JUEGO PROPIO. Es la cifra mas grande de
+            //  la app y la que mas se mira, asi que es la primera que gana
+            //  dibujo. Ver Cifras::dibuja: el ancho lo sigue diciendo la fuente,
+            //  o sea que el banco mide lo mismo que se pinta.
+            if (Cifras::soloCifras (t) && (float) area.getHeight() >= Cifras::kAltoMin)
+                Cifras::dibuja (g, t, area.toFloat(), fPad, juce::Justification::centred, off);
+            else
+                g.drawText (t, area, juce::Justification::centred);
 
             const auto fn = b.getProperties().getWithDefault ("fn", juce::String()).toString();
             if (fn.isNotEmpty())
@@ -1705,9 +1713,22 @@ public:
         //  Con dibujo, el rotulo se pega a EL y no se centra en el hueco: el
         //  grupo ya viene centrado de reparteTapa, y volver a centrar el texto
         //  dentro de su mitad separaria los dos otra vez.
-        g.drawFittedText (t, area, rep.id != Iconos::Id::ninguno
-                                       ? juce::Justification::centredLeft
-                                       : juce::Justification::centred, 2, 0.9f);
+        const auto just = rep.id != Iconos::Id::ninguno ? juce::Justification::centredLeft
+                                                        : juce::Justification::centred;
+        //  Y SI EL ROTULO ES SOLO CIFRAS, se dibuja con el juego propio.
+        //
+        //  «Las letras si que sean de texto, pero los numeros no»: una sola
+        //  letra y esto se cae al texto entero, que es lo correcto — mezclar
+        //  una cifra dibujada con una palabra de fuente en el mismo rotulo
+        //  serian dos alfabetos en una tapa.
+        //
+        //  Y con SUELO, como los iconos: por debajo de `kAltoMin` un trazo con
+        //  antialias es una mancha y la fuente lee mejor. *Donde no cabe, no
+        //  sale* — la misma decision que `reparteTapa` toma con el dibujo.
+        if (Cifras::soloCifras (t) && (float) area.getHeight() >= Cifras::kAltoMin)
+            Cifras::dibuja (g, t, area.toFloat(), rep.fuente, just, col);
+        else
+            g.drawFittedText (t, area, just, 2, 0.9f);
     }
 
     juce::Font getLabelFont (juce::Label&) override
