@@ -4146,10 +4146,15 @@ void MainComponent::resized()
         const int anchoCol = rows.getWidth() / columnas;
         juce::Rectangle<int> columna;
 
-        //  LAS DIECISEIS TIRAS DE CANAL, con la misma fila menos el pan y el
-        //  solo: el sitio en la imagen es del PAD -es lo que se coloca- y el
-        //  solo se queda en el pad, que es donde `effectiveGain` lo resuelve.
-        //  En su hueco va la cuenta de pads, que la pinta `paintMixRows`.
+        //  LAS TIRAS DE CANAL, con la misma fila menos el pan: el sitio en la
+        //  imagen es del PAD -es lo que se coloca- y en su hueco va la cuenta de
+        //  pads, que la pinta `paintMixRows`.
+        //
+        //  Y CON SOLO, que es lo que este parrafo decia que no. Las dos tapas se
+        //  piden en el MISMO orden que en la fila de un pad -S y luego M leidas
+        //  desde la derecha- porque es la misma mano la que las busca: cambiar
+        //  el orden entre las dos paginas de la misma ficha es pedirle a quien
+        //  toca que mire antes de apretar, en la pagina que se usa sonando.
         if (mixPage == mixPageCanales)
         {
             for (int c = 0; c < kNumCanales; ++c)
@@ -4163,6 +4168,8 @@ void MainComponent::resized()
                 row.removeFromLeft (juce::jlimit (48, 92, columna.getWidth() * 24 / 100));
 
                 canMutes[c]->setBounds (row.removeFromRight (Metrics::hit).reduced (0, Metrics::aireTapaDensa));
+                row.removeFromRight (Metrics::aireTapaDensa);
+                canSolos[c]->setBounds (row.removeFromRight (Metrics::hit).reduced (0, Metrics::aireTapaDensa));
                 row.removeFromRight (Metrics::halfGap);
 
                 auto faderCell = row.reduced (Metrics::aireTapa, Metrics::aireTapaDensa);

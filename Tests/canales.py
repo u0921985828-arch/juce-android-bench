@@ -222,6 +222,63 @@ def main():
     if r["mute_canal6"] != 1:
         malas.append ("el mute del canal 6 no llego al motor")
 
+    #  5b. Y EL SOLO DEL CANAL, por la misma puerta y con TRES cifras.
+    #
+    #      Llego del telefono —«modo solo por canal en el Mixer de canales
+    #      tambien»— y hasta esta tanda el solo era del PAD y solo del pad. Un
+    #      canal es un GRUPO: aislar la bateria con el solo del pad pide acertar
+    #      los once pads que la forman y apagarlos de uno en uno.
+    #
+    #      Las tres, y ninguna sobra. `solo_canal7` dice que el bit se guardo;
+    #      `hay_solo` dice que el bit CACHEADO —el que el hilo de audio lee de
+    #      verdad, una vez por pad y por bloque— se entero. Sin la segunda, la
+    #      primera la cumple un `setCanalSolo` que se olvida de
+    #      `refreshCanalSolo`, y entonces la tapa se enciende y no calla a nadie:
+    #      la app diciendo que si por fuera y muda por dentro. Y `solo_tras_apagar`
+    #      es la vuelta, que es donde vive el fallo contrario: un solo que no se
+    #      puede quitar deja los otros treinta y uno callados para siempre.
+    print ("mesa     solo del canal 7: bit %s, hay_solo %s, y al apagarlo %s"
+           % (r["solo_canal7"], r["hay_solo"], r["solo_tras_apagar"]))
+    if r["solo_canal7"] != 1:
+        malas.append ("la tapa SOLO del canal 7 no llego al motor")
+    if r["hay_solo"] != 1:
+        malas.append ("el solo del canal 7 se guardo pero anyCanalSolo dice que no "
+                      "hay ninguno: el hilo de audio lee ESE bit, asi que la tapa "
+                      "se enciende y no calla a nadie")
+    if r["solo_tras_apagar"] != 0:
+        malas.append ("apagar el solo del canal 7 dejo anyCanalSolo en %s: los otros "
+                      "treinta y uno se quedan callados" % r["solo_tras_apagar"])
+
+    #  5c. UN EFECTO ENTRA SONANDO, que es la otra peticion de la misma tanda:
+    #      «el envio predeterminado al mixer del efecto debe ser al 100 como
+    #      Default, pero que este activado tambien el efecto cuando se mete en el
+    #      Slot».
+    #
+    #      Poner un efecto en una ranura dejaba el interruptor apagado y
+    #      `canalSend` en su cero de fabrica, o sea que abrir el menu, elegir DRV
+    #      y cerrar no movia un decibelio. Es de los que no fallan: la tapa se
+    #      pinta LLENA y suena igual que vacia.
+    #
+    #      TRES cifras. El envio y el interruptor son las dos mitades —encenderlo
+    #      sin envio deja un efecto al que no le llega nada, y para un ENVIO eso
+    #      es silencio literal; el envio sin encenderlo deja el bus alimentando un
+    #      aparato parado—. Y la tercera, el VECINO, es la que impide que «entra
+    #      al maximo» lo cumpla un codigo que lo sube en los treinta y dos: eso
+    #      meteria en la reverb treinta y un canales que nadie mando.
+    print ("ranura   DRV al entrar en el canal 2: envio %.2f, encendido %s, "
+           "y el canal 3 en %.2f"
+           % (r["envio_al_entrar"], r["encendido_al_entrar"], r["envio_del_vecino"]))
+    if abs (r["envio_al_entrar"] - 1.0) > 0.001:
+        malas.append ("poner DRV en una ranura dejo su envio en %.2f y no en 1.00: "
+                      "la tapa se pinta llena y no suena" % r["envio_al_entrar"])
+    if r["encendido_al_entrar"] != 1:
+        malas.append ("poner DRV en una ranura lo dejo APAGADO: el gesto entero no "
+                      "mueve un decibelio")
+    if r["envio_del_vecino"] > 0.001:
+        malas.append ("poner DRV en el canal 2 subio tambien el envio del canal 3 a "
+                      "%.2f: un envio es de todos pero canalSend es por canal"
+                      % r["envio_del_vecino"])
+
     #  6. EL BANCO DE LA REJILLA: que se llegue a los de detras.
     #
     #     Con treinta y dos canales la rejilla sigue siendo de cuatro por cuatro

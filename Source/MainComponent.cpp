@@ -2682,6 +2682,29 @@ MainComponent::MainComponent()
         m->onClick = [this, c, m] { engine.setCanalMute (c, m->getToggleState()); refreshMixStrip(); };
         mixRows.addAndMakeVisible (m);
         canMutes.add (m);
+
+        //  Y EL SOLO DEL CANAL, al lado de su mute y con el mismo gesto.
+        //
+        //  Llego del telefono —«modo solo por canal en el Mixer de canales
+        //  tambien»— y donde estaba escrito que no iba es en el comentario de
+        //  `MixPage`, que decia «menos SOLO, que se queda en el pad». Aquello
+        //  era cierto con dieciseis canales recien estrenados y dejo de serlo
+        //  con treinta y dos: un canal es un GRUPO, y aislar la bateria con el
+        //  solo del pad pide acertar los once pads que la forman.
+        //
+        //  AMARILLO y no rojo, que es la unica forma de que las dos tapas se
+        //  lean sin leerlas: el rojo de esta casa es GRABANDO y ya lo lleva el
+        //  mute; el solo no calla este canal, calla los demas. Dos tapas del
+        //  mismo color en la misma fila son una tapa con dos letras.
+        auto* s = new juce::TextButton ("S");
+        styleButton (*s, kStepOff);
+        s->setColour (juce::TextButton::buttonOnColourId, ZatiColours::yellow);
+        s->setColour (juce::TextButton::textColourOnId,
+                      ZatiColours::textOn (ZatiColours::yellow));
+        s->setClickingTogglesState (true);
+        s->onClick = [this, c, s] { engine.setCanalSolo (c, s->getToggleState()); refreshMixStrip(); };
+        mixRows.addAndMakeVisible (s);
+        canSolos.add (s);
     }
 
     //  EL INTERRUPTOR DE VISTA, en el renglon del titulo y no en la fila de
@@ -4905,7 +4928,49 @@ void MainComponent::ponEnRanura (int ranura, int fx)
           && (AudioEngine::sustituye (salia) || canalDeFx (salia) < 0))
         setFxEnabled (salia, false);
 
+    //  Y EL QUE ENTRA, ENTRA SONANDO: encendido y con el envio de ESTE canal
+    //  al maximo.
+    //
+    //  Llego del telefono -«el envio predeterminado al mixer del efecto debe
+    //  ser al 100 como Default, pero que este activado tambien el efecto cuando
+    //  se mete en el Slot»- y es de los fallos que no fallan: poner un efecto en
+    //  una ranura dejaba el interruptor apagado y `canalSend` en su cero de
+    //  fabrica, o sea que el gesto entero -abrir el menu, elegir DRV, cerrar- no
+    //  movia un decibelio. Dos toques mas escondidos en otra ficha para que lo
+    //  que acabas de pedir empiece a hacer algo, y sin nada que lo diga: la tapa
+    //  se pinta LLENA y suena igual que vacia.
+    //
+    //  Las DOS y no una, que es lo que hacia falta ver junto: encenderlo sin el
+    //  envio deja un efecto en linea al que no le llega nada -para un ENVIO es
+    //  silencio literal- y el envio sin encenderlo deja el bus alimentando un
+    //  aparato parado. El estado util es el unico que se puede pedir.
+    //
+    //  AL MAXIMO, y vale para las dos familias: en un ENVIO es cuanto de este
+    //  canal entra al bus, y en un INSERTO el hilo de audio hace
+    //  `dry *= (1 - g)` -ver `AudioEngine::sustituye`-, o sea todo humedo, que
+    //  es como se enchufa un compresor o un ecualizador. Quien quiera menos lo
+    //  baja, y ese mando esta a la vista en la misma ficha.
+    //
+    //  Y SOLO EN EL CANAL QUE SE EDITA. Un envio tiene UNA fila para toda la
+    //  mesa pero `canalSend` es por canal: subirlo en los treinta y dos meteria
+    //  en la reverb treinta y un canales que nadie mando, que es la misma razon
+    //  por la que el parrafo de arriba no apaga un envio que otro canal usa.
+    //
+    //  Y NO se toca lo que ya estaba: si la ranura ya tenia este mismo tipo -o
+    //  si vuelve a ponerse el que salia- respetar su envio es respetar una
+    //  decision de quien toca. Solo se siembra lo que entra de nuevo.
+    if (fx != kSlotVacia && fx != salia)
+    {
+        engine.setCanalSend ((int) c, fx, 1.0f);
+        if (! fxEncendido (fx))
+            setFxEnabled (fx, true);
+    }
+
     refrescaRanuras();
+    //  Y la ficha del RACK se relee, que es de donde sale el fader del envio:
+    //  sin esto el motor ya manda el 100 y el mando sigue pintando el cero de
+    //  antes. Es la misma figura de siempre - lo que la app SABE lo dice la app.
+    refreshRack();
 }
 
 //  EL CANAL DE DELANTE, POR UNA PUERTA — y los sesenta y tres mandos detras.
@@ -5859,11 +5924,12 @@ void MainComponent::showMixPage (MixPage p)
         const bool on = (p == mixPageCanales);
         if (auto* f = canFaders[c]) { f->setVisible (on); if (! on) f->setBounds ({}); }
         if (auto* m = canMutes[c])  { m->setVisible (on); if (! on) m->setBounds ({}); }
+        if (auto* s = canSolos[c])  { s->setVisible (on); if (! on) s->setBounds ({}); }
     }
-    //  Y SIN SOLO tampoco: el solo es de un PAD, y en la pagina de CANALES no
-    //  hay una sola tapa de solo que quitar. Un control que no puede hacer
-    //  nada visible en la pagina donde esta es lo que esta casa llama ruido.
-    //  Apagar *Y* vaciar los limites, las dos cosas.
+    //  Y VACIAR SOLO se queda en la pagina de PADS, que es donde sigue estando
+    //  su lista: la de CANALES tiene sus propias tapas de solo y quien las
+    //  encendio las ve encendidas delante. Apagar *Y* vaciar los limites, las
+    //  dos cosas.
     mixClearSolo.setVisible (p == mixPagePads);
     if (p != mixPagePads) mixClearSolo.setBounds ({});
 
@@ -7966,6 +8032,7 @@ void MainComponent::refreshAccessibleNames()
         const auto ch = juce::String (c + 1);
         if (auto* f = canFaders[c]) { f->setTitle (T ("Ganancia canal %1", ch)); f->setDescription (T ("del mezclador")); }
         if (auto* m = canMutes[c])  { m->setTitle (T ("Silencio canal %1", ch)); }
+        if (auto* s = canSolos[c])  { s->setTitle (T ("Solo canal %1", ch)); }
     }
 }
 
@@ -12035,6 +12102,8 @@ void MainComponent::refreshMixStrip()
             f->setValue (dbFromGain (engine.getCanalGain (c)), juce::dontSendNotification);
         if (auto* m = canMutes[c])
             m->setToggleState (engine.getCanalMute (c), juce::dontSendNotification);
+        if (auto* s = canSolos[c])
+            s->setToggleState (engine.getCanalSolo (c), juce::dontSendNotification);
     }
 
     const bool any = engine.anySolo();

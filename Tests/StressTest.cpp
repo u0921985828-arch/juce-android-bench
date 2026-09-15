@@ -5529,6 +5529,138 @@ int main()
                      "repartir por canales no cuesta", distintas, (int) uno.size(),
                      ok ? "OK" : zatiFalla());
     }
+
+    //  EL SOLO DEL CANAL, que es lo que la mesa no tenia.
+    //
+    //  Llego del telefono -«modo solo por canal en el Mixer de canales
+    //  tambien»- y donde estaba escrito que no iba era en un comentario que
+    //  decia «dos ambitos de solo son dos respuestas a la misma pregunta».
+    //  Dejo de ser cierto con treinta y dos canales: un canal es un GRUPO, y
+    //  aislar la bateria con el solo del PAD pide acertar sus once pads.
+    //
+    //  CON DOS CIFRAS, porque una sola se engaña por los dos lados:
+    //
+    //    1. Poner SOLO en el canal 4 tiene que salir **bit a bit** igual que
+    //       MUTEAR los otros treinta y uno. Bit a bit y no «parecido»: las dos
+    //       cosas caen en el mismo `gCan` con el mismo suavizado de `kSend`, asi
+    //       que si el camino es el mismo el resultado es identico; cualquier
+    //       diferencia dice que el solo se metio por otro sitio -una rama nueva
+    //       en el bucle, un salto sin suavizar-, que es exactamente el chasquido
+    //       que no se puede permitir un control que se toca sonando.
+    //
+    //    2. Y tiene que salir DISTINTO de no poner nada. Sin esta, la primera la
+    //       cumple un `setCanalSolo` que no hace absolutamente nada: si el solo
+    //       se ignora, «solo en el 4» y «mute en los otros 31» solo coinciden
+    //       cuando los dos son el silencio... y no, coinciden cuando los dos son
+    //       el sonido entero. Una prueba que pasa con la funcion vacia no es una
+    //       prueba.
+    {
+        enum Modo { nada, conSolo, conMutes };
+        auto corre = [&tonoPlano] (Modo m, std::vector<float>& out)
+        {
+            AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (64, 2);
+            for (int p = 0; p < AudioEngine::kNumPads; ++p)
+            {
+                e.setPadGain (p, 0.5f);
+                e.setPadCanal (p, p % AudioEngine::kNumCanales);
+                e.publishSample (p, tonoPlano (kFs, 0.20, 200.0 + 10.0 * (double) p));
+            }
+            if (m == conSolo)  e.setCanalSolo (4, true);
+            if (m == conMutes)
+                for (int c = 0; c < AudioEngine::kNumCanales; ++c)
+                    if (c != 4) e.setCanalMute (c, true);
+
+            juce::AudioBuffer<float> b (2, kBs);
+            out.clear();
+            const int total = (int) (kFs * 1.0) / kBs;
+            for (int i = 0; i < total; ++i)
+            {
+                if (i == 30)
+                    for (int p = 0; p < AudioEngine::kNumPads; ++p) e.postNoteOn (p, 1.0f);
+                b.clear(); e.renderNextBlock (b, 0, kBs);
+                for (int n = 0; n < kBs; ++n) out.push_back (b.getSample (0, n));
+            }
+        };
+
+        std::vector<float> libre, solo, mutes;
+        corre (nada, libre); corre (conSolo, solo); corre (conMutes, mutes);
+        int difMute = 0, difLibre = 0;
+        for (size_t i = 0; i < solo.size(); ++i)
+        {
+            if (i < mutes.size() && solo[i] != mutes[i]) ++difMute;
+            if (i < libre.size() && solo[i] != libre[i]) ++difLibre;
+        }
+        const bool ok = difMute == 0 && difLibre > 0 && ! solo.empty();
+        std::printf ("%-34s %d contra mutear los otros, %d contra no hacer nada   %s\n",
+                     "solo de canal", difMute, difLibre, ok ? "OK" : zatiFalla());
+    }
+
+    //  EL REBOTE SE LLEVA EL SOLO. No era un fallo: era un descubierto.
+    //
+    //  Esta comprobacion nacio de una afirmacion equivocada —«`copyStateFrom`
+    //  copia `padSolo` pero no `soloActive`, asi que un rebote con un pad en
+    //  SOLO sale con los sesenta y cuatro sonando»— y la rotura a proposito la
+    //  desmintio en la primera pasada: quitar el `refreshSolo` que se acababa de
+    //  añadir no cambiaba una sola muestra, porque `copyStateFrom` YA llamaba a
+    //  `refreshSolo` veinte lineas mas abajo. *Primero se duda de la prueba*, y
+    //  aqui de quien la escribio.
+    //
+    //  Se queda porque lo que mide no lo media nadie, y ahora hay DOS bits
+    //  cacheados que mantener en pie -`soloActive` y `canalSoloActive`- donde
+    //  antes habia uno. Rota de verdad -comentando las dos lineas de
+    //  `copyStateFrom`- sale 9589 contra el original y 0 contra uno sin solo,
+    //  o sea el rebote exportando la cancion entera con un pad aislado en
+    //  pantalla. Es la figura de «la mascara con los envios» que este fichero ya
+    //  tiene escrita dos veces: todo dato que decida si algo SUENA tiene que
+    //  viajar con el que dice cuanto.
+    //
+    //  Con DOS cifras y las dos hacen falta: el rebote tiene que salir IGUAL que
+    //  el motor de origen -eso es lo que un rebote significa- y DISTINTO de un
+    //  motor sin el solo puesto, que es lo que impide que la primera la cumpla
+    //  un codigo que ignora el solo en los dos lados.
+    {
+        auto siembra = [&tonoPlano] (AudioEngine& e, bool conSolo)
+        {
+            e.prepareToPlay (kFs, kBs); e.setPolyphony (64, 2);
+            for (int p = 0; p < AudioEngine::kNumPads; ++p)
+            {
+                e.setPadGain (p, 0.5f);
+                e.publishSample (p, tonoPlano (kFs, 0.20, 200.0 + 10.0 * (double) p));
+            }
+            if (conSolo) { e.setPadSolo (3, true); e.setCanalSolo (0, true); }
+        };
+        auto suena = [] (AudioEngine& e, std::vector<float>& out)
+        {
+            juce::AudioBuffer<float> b (2, kBs);
+            out.clear();
+            const int total = (int) (kFs * 1.0) / kBs;
+            for (int i = 0; i < total; ++i)
+            {
+                if (i == 30)
+                    for (int p = 0; p < AudioEngine::kNumPads; ++p) e.postNoteOn (p, 1.0f);
+                b.clear(); e.renderNextBlock (b, 0, kBs);
+                for (int n = 0; n < kBs; ++n) out.push_back (b.getSample (0, n));
+            }
+        };
+
+        AudioEngine origen; siembra (origen, true);
+        AudioEngine rebote; siembra (rebote, false);
+        rebote.copyStateFrom (origen);
+        AudioEngine sinSolo; siembra (sinSolo, false);
+
+        std::vector<float> vOrigen, vRebote, vSinSolo;
+        suena (origen, vOrigen); suena (rebote, vRebote); suena (sinSolo, vSinSolo);
+        int difOrigen = 0, difSin = 0;
+        for (size_t i = 0; i < vRebote.size(); ++i)
+        {
+            if (i < vOrigen.size()  && vRebote[i] != vOrigen[i])  ++difOrigen;
+            if (i < vSinSolo.size() && vRebote[i] != vSinSolo[i]) ++difSin;
+        }
+        const bool ok = difOrigen == 0 && difSin > 0 && ! vRebote.empty();
+        std::printf ("%-34s %d contra el original, %d contra uno sin solo   %s\n",
+                     "el rebote se lleva el solo", difOrigen, difSin,
+                     ok ? "OK" : zatiFalla());
+    }
     }
 
     // -----------------------------------------------------------------

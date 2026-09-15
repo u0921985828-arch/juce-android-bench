@@ -1464,9 +1464,44 @@ public:
     //  del canal las multiplica ahi y no hay una etapa nueva en el hilo de
     //  audio.
     //
-    //  Y SOLO se queda en el PAD. Acaba de entrar en la cara como modo hermano
-    //  de REC y `effectiveGain` lo resuelve en una lectura; dos ambitos de solo
-    //  son dos respuestas a «oye solo esto».
+    //  Y SOLO YA NO SE QUEDA EN EL PAD, que es lo que decia esta linea.
+    //
+    //  Decia: «dos ambitos de solo son dos respuestas a "oye solo esto"», y era
+    //  cierto el dia que se escribio y dejo de serlo cuando la mesa gano sus
+    //  treinta y dos canales. Un canal es un GRUPO -la bateria, las voces, la
+    //  linea de bajo- y aislar un grupo no es la misma pregunta que aislar un
+    //  pad: para oir la bateria sola con el solo del pad hay que acertar los
+    //  once pads que la forman y luego apagarlos uno a uno. Llego del telefono
+    //  -«modo solo por canal en el Mixer de canales tambien»- y es lo que hace
+    //  una mesa.
+    //
+    //  No son dos respuestas contradictorias porque se resuelven en el MISMO
+    //  sitio y en cadena: el pad tiene que pasar su filtro -`effectiveGain`- y
+    //  el canal el suyo -aqui abajo, en la ganancia que ya lleva el mute-. Cada
+    //  uno contesta por su ambito y ninguno reinterpreta al otro.
+    //
+    //  Y se apaga solo al vaciar, como el del pad: `clearSolo` los quita los
+    //  dos. Un solo que sobrevive a lo que lo hacia util es la app callada sin
+    //  que nadie sepa por que.
+    void setCanalSolo (int canal, bool s) noexcept
+    {
+        if (canal < 0 || canal >= kNumCanales) return;
+        canalSolo[(size_t) canal].store (s, std::memory_order_relaxed);
+        refreshCanalSolo();
+    }
+    bool getCanalSolo (int canal) const noexcept
+    {
+        if (canal < 0 || canal >= kNumCanales) return false;
+        return canalSolo[(size_t) canal].load (std::memory_order_relaxed);
+    }
+    bool anyCanalSolo() const noexcept
+    { return canalSoloActive.load (std::memory_order_relaxed); }
+    void clearCanalSolo() noexcept
+    {
+        for (auto& s : canalSolo) s.store (false, std::memory_order_relaxed);
+        refreshCanalSolo();
+    }
+
     void setCanalGain (int canal, float g) noexcept
     {
         if (canal < 0 || canal >= kNumCanales) return;
@@ -2865,6 +2900,17 @@ private:
     std::array<std::array<std::atomic<float>, kNumFx>, kNumCanales> canalSend {};
     std::array<std::atomic<float>, kNumCanales> canalGain {};
     std::array<std::atomic<bool>,  kNumCanales> canalMute {};
+    std::array<std::atomic<bool>,  kNumCanales> canalSolo {};
+    //  Cacheado igual que `soloActive`: el hilo de audio pregunta «¿hay algun
+    //  solo?» una vez por pad y por bloque, y recorrer treinta y dos atomicos
+    //  ahi seria treinta y dos lecturas para contestar un bit.
+    std::atomic<bool> canalSoloActive { false };
+    void refreshCanalSolo() noexcept
+    {
+        bool any = false;
+        for (auto& s : canalSolo) any = any || s.load (std::memory_order_relaxed);
+        canalSoloActive.store (any, std::memory_order_relaxed);
+    }
     //  Ver `miraCanal`: cual se mide y cuanto ha dado desde que se leyo.
     std::atomic<int>   canalMirado { -1 };
     std::atomic<float> canalPico   { 0.0f };

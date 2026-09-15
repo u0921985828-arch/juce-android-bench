@@ -1720,6 +1720,7 @@ namespace
         { "Ancho pad %1",  "",        "Width pad %1",  "音垫 %1 宽度", "عرض الباد %1" },
         { "Ganancia canal %1", "",    "Gain channel %1", "通道 %1 增益", "كسب القناة %1" },
         { "Silencio canal %1", "",    "Mute channel %1", "通道 %1 静音", "كتم القناة %1" },
+        { "Solo canal %1", "",    "Solo channel %1", "通道 %1 独奏", "منفرد القناة %1" },
         { "semitonos",      "",         "semitones",  "半音",       "أنصاف نغمات" },
         { "centesimas",     "",         "cents",      "音分",       "سنتات" },
         { "del pad",        "",         "of the pad", "音垫的",     "للباد" },

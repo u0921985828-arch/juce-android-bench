@@ -3931,6 +3931,42 @@ void MainComponent::auditCanales()
                                   if (canMutes[6]->onClick) canMutes[6]->onClick(); }
     const int muteCanal6 = engine.getCanalMute (6) ? 1 : 0;
 
+    //  5b. Y EL SOLO DEL CANAL, por la misma puerta. Con DOS cifras, que una
+    //      sola se engaña: que el motor lo SEPA -`getCanalSolo`- y que sepa que
+    //      HAY alguno -`anyCanalSolo`, el bit cacheado que el hilo de audio lee
+    //      de verdad-. Sin la segunda, la primera la cumple un `setCanalSolo`
+    //      que guarda el bit y se olvida de `refreshCanalSolo`, y entonces el
+    //      solo se ve encendido en la tapa y no calla a nadie: la app muda por
+    //      dentro con la cara diciendo que si.
+    if (canSolos[7] != nullptr) { canSolos[7]->setToggleState (true, juce::dontSendNotification);
+                                  if (canSolos[7]->onClick) canSolos[7]->onClick(); }
+    const int soloCanal7 = engine.getCanalSolo (7) ? 1 : 0;
+    const int haySolo    = engine.anyCanalSolo()   ? 1 : 0;
+    if (canSolos[7] != nullptr) { canSolos[7]->setToggleState (false, juce::dontSendNotification);
+                                  if (canSolos[7]->onClick) canSolos[7]->onClick(); }
+    const int soloTrasApagar = engine.anyCanalSolo() ? 1 : 0;
+
+    //  5c. UN EFECTO ENTRA SONANDO: encendido y con el envio de su canal al
+    //      maximo.
+    //
+    //      Del telefono: «el envio predeterminado al mixer del efecto debe ser
+    //      al 100 como Default, pero que este activado tambien el efecto cuando
+    //      se mete en el Slot». Poner un efecto dejaba las dos cosas donde
+    //      estaban -apagado y el envio en su cero de fabrica- asi que el gesto
+    //      entero no movia un decibelio y la tapa se pintaba llena.
+    //
+    //      TRES cifras: el envio, el interruptor, y que **el canal de al lado NO
+    //      se entere**. Sin la tercera, «el envio entra al maximo» lo cumple un
+    //      codigo que lo sube en los treinta y dos, que meteria en la reverb
+    //      treinta y un canales que nadie mando.
+    for (auto& f : slotFx) f.fill (kSlotVacia);
+    setFxEnabled (AudioEngine::kFxDrv, false);
+    ponCanalActual (2);
+    ponEnRanura (0, AudioEngine::kFxDrv);
+    const double envioAlEntrar = (double) engine.getCanalSend (2, AudioEngine::kFxDrv);
+    const int    encendidoAlEntrar = fxEncendido (AudioEngine::kFxDrv) ? 1 : 0;
+    const double envioDelVecino = (double) engine.getCanalSend (3, AudioEngine::kFxDrv);
+
     //  6. EL BANCO DE LA REJILLA: que se llegue a los dieciseis de detras.
     //
     //  Desde que hay treinta y dos canales la rejilla sigue siendo de cuatro
@@ -4024,6 +4060,12 @@ void MainComponent::auditCanales()
               << ",\"inserto_tras_quitar\":" << insertoTrasQuitar
               << ",\"gan_canal6\":" << ganCanal6
               << ",\"mute_canal6\":" << muteCanal6
+              << ",\"solo_canal7\":" << soloCanal7
+              << ",\"hay_solo\":" << haySolo
+              << ",\"solo_tras_apagar\":" << soloTrasApagar
+              << ",\"envio_al_entrar\":" << envioAlEntrar
+              << ",\"encendido_al_entrar\":" << encendidoAlEntrar
+              << ",\"envio_del_vecino\":" << envioDelVecino
               << "}" << std::endl;
 }
 

@@ -2448,12 +2448,18 @@ private:
     //  banco son `Metrics::tab` con su grupo de radio, asi que la pagina no
     //  cuesta un pixel de mueble nuevo.
     //
-    //  Y los dieciseis canales tienen las MISMAS cuatro cosas que un pad
-    //  —color, nombre, fader y mute— menos SOLO, que se queda en el pad: acaba
-    //  de entrar en la cara como modo hermano de REC y `effectiveGain` lo
-    //  resuelve en una lectura, y dos ambitos de solo son dos respuestas a «oye
-    //  solo esto». En su sitio va la cuenta de PADS que le entran, que es lo
-    //  que un canal vacio necesita decir de si mismo.
+    //  Y los canales tienen las MISMAS cinco cosas que un pad: color, nombre,
+    //  fader, mute y SOLO. Mas la cuenta de PADS que le entran, que es lo que un
+    //  canal vacio necesita decir de si mismo.
+    //
+    //  Aqui decia «menos SOLO, que se queda en el pad… dos ambitos de solo son
+    //  dos respuestas a "oye solo esto"», y era cierto con dieciseis canales
+    //  recien estrenados. Con treinta y dos dejo de serlo: un canal es un GRUPO
+    //  —la bateria, las voces, el bajo— y aislar un grupo con el solo del pad
+    //  pide acertar los once pads que lo forman y apagarlos de uno en uno. No
+    //  son dos respuestas contradictorias porque no se pisan: el pad pasa su
+    //  filtro en `effectiveGain` y el canal el suyo en la ganancia del bloque,
+    //  cada uno en su ambito. Ver `AudioEngine::setCanalSolo`.
     enum MixPage { mixPagePads = 0, mixPageCanales };
     MixPage mixPage = mixPagePads;
     //  UNA tapa y no dos pestanas, que es la leccion que la ficha de CANCION
@@ -2465,6 +2471,7 @@ private:
     void showMixPage (MixPage p);
     juce::OwnedArray<juce::Slider>     canFaders;
     juce::OwnedArray<juce::TextButton> canMutes;
+    juce::OwnedArray<juce::TextButton> canSolos;
     //  Donde empieza cada tira, por lo mismo que `mixRowX`: el chip de color, el
     //  numero y la cuenta de pads se PINTAN, asi que el pintor necesita saber
     //  donde el maquetado los dejo.

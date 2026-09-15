@@ -91,6 +91,7 @@ AudioEngine::AudioEngine()
     for (auto& ch : canalSend) for (auto& s : ch) s.store (0.0f, std::memory_order_relaxed);
     for (auto& g : canalGain)  g.store (1.0f, std::memory_order_relaxed);
     for (auto& m : canalMute)  m.store (false, std::memory_order_relaxed);
+    clearCanalSolo();
     padSendMask.store (0, std::memory_order_relaxed);
     //  The SMOOTHER, though, starts closed. What it follows is the pad send
     //  times the effect's own MIX, and every MIX starts at zero - starting it
@@ -776,10 +777,17 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         //  Y el suavizado es el MISMO `kSend` de 20 ms que los envios: un fader
         //  sin suavizar da un salto de nivel en el borde del bloque, que es
         //  exactamente el chasquido que la constante existe para no tener.
+        //  Y EL SOLO DEL CANAL, por la misma puerta que el mute y por la misma
+        //  razon: cae dentro de `gCan`, o sea del fader que ya se suaviza con
+        //  `kSend`, asi que no hay etapa nueva, ni rama en el bucle de
+        //  muestras, ni un salto de nivel en el borde del bloque. Un solo que
+        //  chasquea al pulsarlo no sirve para lo que sirve un solo.
         const int   canal = (int) padCanal[(size_t) p].load (std::memory_order_relaxed);
-        const float gCan  = canalMute[(size_t) canal].load (std::memory_order_relaxed)
-                              ? 0.0f
-                              : canalGain[(size_t) canal].load (std::memory_order_relaxed);
+        const bool  calla = canalMute[(size_t) canal].load (std::memory_order_relaxed)
+                              || (canalSoloActive.load (std::memory_order_relaxed)
+                                   && ! canalSolo[(size_t) canal].load (std::memory_order_relaxed));
+        const float gCan  = calla ? 0.0f
+                                  : canalGain[(size_t) canal].load (std::memory_order_relaxed);
         float& smCan = smCanalDePad[(size_t) p];
         smCan += kSend * (gCan - smCan);
         const bool canalHot = std::abs (smCan - gCan) > 0.0005f;
@@ -3970,6 +3978,7 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     for (size_t i = 0; i < canalSend.size(); ++i) copyArr (canalSend[i], s.canalSend[i]);
     copyArr (canalGain, s.canalGain);
     copyArr (canalMute, s.canalMute);
+    copyArr (canalSolo, s.canalSolo);
     smCanalDePad = s.smCanalDePad;
     //  Y LA MASCARA CON ELLOS. El motor del rebote no pasa nunca por
     //  setCanalSend - se le copia el estado entero de golpe - asi que sin esta
@@ -3978,7 +3987,23 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     //  se PROCESA tiene que viajar con el que dice cuanto.
     smSendHot = s.smSendHot;
     padSendMask.store (s.padSendMask.load (std::memory_order_relaxed), std::memory_order_relaxed);
+    //  LOS DOS BITS CACHEADOS DE SOLO SE RECALCULAN, y los dos AQUI.
+    //
+    //  `refreshSolo` ya estaba y el del canal se pone a su lado, que es lo que
+    //  esta linea tuvo que aprender a golpes: la primera version lo escribio
+    //  junto a su `copyArr`, veinte lineas mas arriba, y ademas anadio un
+    //  segundo `refreshSolo` alli con un comentario que afirmaba un fallo — «el
+    //  rebote salia con los sesenta y cuatro sonando». **Era falso**, y lo dijo
+    //  la rotura a proposito: quitar el `refreshSolo` nuevo no cambiaba una
+    //  muestra, porque el de aqui abajo seguia corriendo. Una afirmacion sin
+    //  medida y la misma regla escrita dos veces, en el mismo parrafo.
+    //
+    //  Se recalculan y no se copian porque son DERIVADOS de sus arrays —copiar
+    //  los dos serian dos verdades que un dia se separan— y `effectiveGain` lee
+    //  `soloActive` mientras el bucle de canal lee `canalSoloActive`, asi que
+    //  sin ellos el rebote tendria el estado y no la pregunta que lo usa.
     refreshSolo();
+    refreshCanalSolo();
 
     bpm.store (s.bpm.load (std::memory_order_relaxed), std::memory_order_relaxed);
     stepBeats.store (s.stepBeats.load (std::memory_order_relaxed), std::memory_order_relaxed);
