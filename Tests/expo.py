@@ -498,11 +498,53 @@ def judge_tapado(rows, size, lang, sheet):
 #  puede arreglar: hay que saber CUALES. Es la leccion que esta casa ya pago con
 #  el residuo al cambiar de pagina, que paso de «8 solapes» a `1 @35,320 39x36`.
 #
-#  Los dos extremos y no todos: el CERO -dos filas pegadas- y lo que pase de un
-#  `Metrics::lg`, que es donde vive «espacio de mas». La banda de en medio son
-#  los dos valores de la escala y no hay nada que mirar. Y agregado por PAR, que
-#  el mismo par sale en siete pantallas por cuatro idiomas y son un solo sitio
-#  del fuente.
+#  Y AGREGADO POR PAR, que el mismo par sale en siete pantallas por cuatro
+#  idiomas y son un solo sitio del fuente.
+#
+#  ------------------------------------------------------------------------
+#  Y DOS NUMEROS Y NO UNO, que es lo que hacia que estos 27 valores no se
+#  pudieran arreglar.
+#
+#  Aqui decia «los dos extremos y no todos: el CERO y lo que pase de un
+#  `Metrics::lg`. La banda de en medio son los dos valores de la escala y no hay
+#  nada que mirar». Es una AFIRMACION SIN MEDIDA y medida es falsa: de los
+#  16 489 huecos de la corrida, **7 357 -el 45 %- caen en esa banda y NO son de
+#  la escala**, y el monton mas grande de todo el histograma vive justo ahi
+#  -14 px x4883, el 30 % del aire de la app-. O sea que la lista de culpables
+#  era ciega precisamente donde estaba la masa.
+#
+#  Y la causa de los 27 valores es aritmetica. Lo que se publicaba era
+#      hueco_de_maqueta + aire_de_pintado_de_arriba + aire_de_pintado_de_abajo
+#  porque el descuento de abajo -que existe por una buena razon, ver mas
+#  abajo- se aplicaba ANTES de contar. Una fila de 40 px con una tapa deja
+#  (40 - 40*0.75)/2 = 5 px por lado, asi que:
+#
+#      14 x4883 = maqueta  4 (Metrics::xs) + 5 + 5      dos tapas de 40
+#      18 x1046 = maqueta  8 (Metrics::sm) + 5 + 5
+#      10 x944  = maqueta  0                + 5 + 5
+#       8 x3850 = maqueta  8                + 0 + 0      dos filas de <= 26
+#       4 x1748 = maqueta  4                + 0 + 0
+#      13/15/5/9 = maqueta 8/10/0/4         + 5 + 0      UNA tapa y la otra no
+#
+#  Los impares no eran un `/ 2` perdiendo un pixel: son los pares en los que
+#  solo un lado es una tapa. Y ninguna de las dos preguntas se podia contestar
+#  con la suma:
+#
+#    - **CUANTO SE SEPARO** es una decision de MAQUETA, la escribe una linea de
+#      `resized()`, tiene un dueño por sitio y se puede contrastar contra la
+#      escala de `Metrics`. Es `crudo`.
+#    - **CUANTO SE VE** es lo que el ojo nota en el telefono y es donde vive la
+#      queja. Es `visto`, el de siempre.
+#
+#  Es la misma figura que `ensureDirectory` y que `origin`: *lo que importa no
+#  es lo que devuelve la orden sino donde acabo el fichero*. Mezcladas en un
+#  numero, 27 valores que parecian caos y son cuatro huecos de maqueta vistos a
+#  traves de un descuento que depende del alto de cada vecino.
+#
+#  Y LA LISTA DEJA DE ESTAR CORTADA. Estaba en `[:24]`, y las 24 que salian eran
+#  todas `x28` -7 pantallas por 4 idiomas, o sea un solo sitio del fuente cada
+#  una-: 672 huecos mostrados de los 3 226 que cumplian la condicion, el **79 %
+#  oculto**. Un monton no se puede arreglar: hay que saber CUALES.
 def quienEs(r):
     #  EL INDICE DE HERMANO Y LA CLASE — `root/64:e10TextButtonE` sale «64
     #  TextButton» — que es lo unico que nombra un control y aguanta la
@@ -546,9 +588,67 @@ def quienEs(r):
     return ("%s %s" % (idx, "::".join(tramos) or hoja))[:22]
 
 
-def mide_aire(rows, quien=None, ficha=""):
-    aire = collections.Counter()
+#  LA ESCALA DE `Metrics` -xs, sm, md, lg, xl- mas el cero, que es pegar dos
+#  filas a proposito. Un hueco de MAQUETA que no este aqui lo escribio alguien a
+#  mano. Se LEE de `Metrics` y no se copia, que es lo que `ANATOMIA` ya hace con
+#  `Tests/maqueta.md`: dos listas de numeros son dos contratos, y la segunda es
+#  la que un dia se queda con la escala de ayer.
+#
+#  Y con CADENA DE CONTROL: si la tabla no se puede leer, esto se queda en `[0]`
+#  y entonces TODO hueco saldria «fuera de la escala» — una lista de mil
+#  culpables que no mide nada. `main()` lo comprueba y para, igual que hace con
+#  el contrato de la anatomia.
+def _escala():
+    met, _ = _tokensMetrics()
+    if not met:
+        return None
+    vals = [met.get(k) for k in ("xs", "sm", "md", "lg", "xl")]
+    return None if any(v is None for v in vals) else sorted({0} | set(vals))
+
+
+ESCALA = _escala() or [0]
+
+
+def mide_aire(rows, quien=None, ficha="", size=""):
+    #  DOS contadores: `visto` es lo que el ojo ve -con el descuento del
+    #  pintado- y `crudo` es lo que la maqueta separo. Ver el bloque de arriba.
+    aire  = collections.Counter()
+    crudo = collections.Counter()
     comps = [r for r in rows if "path" in r and r.get("hit") and r["w"] > 0 and r["h"] > 0]
+    #  Y LO QUE SE PINTA EN MEDIO, QUE NO ES AIRE.
+    #
+    #  Tercera vez que la misma leccion sale en esta funcion: *se mide lo que se
+    #  DIBUJA y no lo que se reserva*. Un hueco de 22 px entre dos filas de `sec`
+    #  parecia un numero a mano fuera de la escala y salio en las cuatro
+    #  pantallas medidas -393x851, 412x915, 360x640 y 800x1280- identico, o sea
+    #  escrito. Y esta escrito, pero no es aire: es
+    #      inner.removeFromTop (Metrics::sm);                 //  8
+    #      inner.removeFromTop (Metrics::bandaSubtitulo);     // 14  <- rotulo
+    #  o sea ocho de aire y catorce de un ROTULO PINTADO, que no es un
+    #  componente y por eso no estaba en la cuenta. Medir eso como «22 px de
+    #  aire» y mandarlo a la escala habria movido un rotulo para cuadrar un
+    #  numero. Eran 680 huecos, el 18 % de todo lo que salia fuera de escala.
+    #
+    #  Asi que un hueco con algo pintado dentro NO se cuenta: no es aire, esta
+    #  ocupado. Se mira en la MISMA capa, que la cara sigue maquetada debajo de
+    #  cada ficha.
+    #
+    #  Y SOLO POR LA VERTICAL, que el primer intento pedia ademas solape
+    #  HORIZONTAL con el par y salio medido: en `xy` el hueco de 22 px queda
+    #  entre MOMENTANEO -al final de la fila del titulo, en x 231..319- y la
+    #  ultima de las seis tapas de efecto -x 309..361-, y el renglon que lo
+    #  llena, «entra al tocar y sale al soltar», se pinta en x 30..202. El
+    #  rotulo llena la banda de lado a lado como concepto y su TINTA no llega
+    #  hasta la derecha, asi que el solape horizontal daba -29 y el hueco salia
+    #  como aire. Una banda reservada para un rotulo no es aire para ninguna
+    #  pareja de esa franja, llegue la tinta donde llegue: el aire se mide por
+    #  la vertical y la ocupacion tambien.
+    pintado = [r for r in rows
+               if not r.get("hit") and r.get("h", 0) > 0 and r.get("w", 0) > 0
+               and "x" in r and "y" in r]
+    porCapa = collections.defaultdict(list)
+    for r in pintado:
+        porCapa[r.get("capa", 0)].append(r)
     fam = collections.defaultdict(list)
     for r in comps:
         fam[r["path"].rsplit("/", 1)[0]].append(r)
@@ -566,26 +666,56 @@ def mide_aire(rows, quien=None, ficha=""):
         #  con diez pixeles a la vista, y esa sola pareja de la cara era 1232 de
         #  los 1312 huecos «a cero» del histograma. Es el mismo descuento que
         #  `ctrlSeamTop` hace para colocar las palabras grabadas.
+        #  Cada fila lleva CUATRO filos y no dos: los de lo dibujado -con el
+        #  descuento- y los del rectangulo que la maqueta reservo. El agrupado
+        #  en filas se hace por lo DIBUJADO, que es como estaba: dos controles
+        #  se leen como una fila si sus tintas comparten banda, no si sus
+        #  reservas se rozan.
         filas = []
         for r in sorted(hermanos, key=lambda r: (r["y"], r["x"])):
             ar = r.get("aire", 0)
             arriba, abajo = r["y"] + ar, r["y"] + r["h"] - ar
             if filas and arriba < filas[-1][1]:
                 filas[-1][1] = max(filas[-1][1], abajo)
-                filas[-1][3] = r
+                filas[-1][3] = max(filas[-1][3], r["y"] + r["h"])
+                filas[-1][5] = r
             else:
-                filas.append([arriba, abajo, r, r])
+                filas.append([arriba, abajo, r["y"], r["y"] + r["h"], r, r])
         for a, b in zip(filas, filas[1:]):
             hueco = b[0] - a[1]
             #  Por encima de un dedo ya no es aire entre filas, es una fila que
             #  falta o una banda pintada en medio.
-            if 0 <= hueco <= 48:
-                aire[hueco] += 1
-                if quien is not None and (hueco == 0 or hueco > 16):
-                    quien["%-9s %2d px  %s | %s"
-                          % (ficha or "cara", hueco,
-                             quienEs(a[2]), quienEs(b[2]))] += 1
-    return aire
+            if not 0 <= hueco <= 48:
+                continue
+            #  El de MAQUETA sale de los filos sin descontar. Puede ser
+            #  negativo -dos reservas que se pisan mientras sus tintas no-, y
+            #  entonces no es aire: es un solape que ya cazan OVERLAP y PISADO,
+            #  asi que no se cuenta aqui como si fuera un hueco.
+            seco = b[2] - a[3]
+            if seco < 0:
+                continue
+            #  ¿Hay algo PINTADO dentro del hueco? Entonces no es aire, y no
+            #  entra en NINGUNO de los dos histogramas: un rotulo entre dos
+            #  filas no lo ve el ojo como espacio ni lo escribio nadie como tal.
+            if any(p["y"] >= a[3] and p["y"] + p["h"] <= b[2]
+                   for p in porCapa.get(a[4].get("capa", 0), ())):
+                continue
+            aire[hueco] += 1
+            crudo[seco] += 1
+            #  Y AHORA SE APUNTAN TODOS, que la condicion de antes
+            #  -`hueco == 0 or hueco > 16`- dejaba sin nombre los 7 357 de la
+            #  banda de en medio. El corte se hace al IMPRIMIR, donde se sabe
+            #  contra que; aqui se recoge.
+            #
+            #  Y CON LA PANTALLA EN LA CLAVE, que es lo que separa un numero
+            #  ESCRITO de un sobrante ELASTICO sin inventarse un liston: un
+            #  hueco que vale lo mismo en las siete pantallas lo escribio
+            #  alguien; uno que cambia con la ventana es lo que quedo despues de
+            #  repartir, y *una fila elastica acaba donde acaba*.
+            if quien is not None:
+                quien[(ficha or "cara", quienEs(a[4]), quienEs(b[5]),
+                       seco, size)] += 1
+    return aire, crudo
 
 
 #  LO QUE UNA TARJETA PIDE Y LO QUE HAY. Se imprime, no se juzga.
@@ -1116,7 +1246,7 @@ def _corre_y_juzga(combo, casa):
                                            + judge_cabecera(rows, size, lang, sheet)
                                            + chips,
             (rows if lang in ("es", "en") else []), (puestos, pintados),
-            mide_aire(rows, quien, sheet), quien, chipsVistos,
+            mide_aire(rows, quien, sheet, size), quien, chipsVistos,   # (visto, crudo)
             collections.Counter((r["h"], sheet or "cara") for r in rows
                                 if "rotulo" in r and r.get("tipo") == "seccion"
                                 and r.get("capa", 0)))
@@ -1157,6 +1287,9 @@ def main():
     #  un token que `Metrics` no tiene, `ANATOMIA` compararia contra un
     #  diccionario vacio y las 1456 saldrian verdes sin haber preguntado nada.
     global CONTRATO
+    if _escala() is None:
+        sys.exit("no puedo leer la escala de espaciado de Metrics: "
+                 "el histograma de maqueta no mide nada")
     _met, _ = _tokensMetrics()
     piezas, huerfanos = contrato(_met) if _met else (None, None)
     if not piezas or huerfanos:
@@ -1171,6 +1304,7 @@ def main():
     pairs = collections.defaultdict(dict)
     iconos = collections.defaultdict(lambda: [0, 0])
     aire   = collections.Counter()
+    crudo  = collections.Counter()
     quien  = collections.Counter()
     secciones = collections.Counter()
     runs = fails = chipsVistos = 0
@@ -1205,7 +1339,8 @@ def main():
                 secciones += secRun
                 iconos[size][0] += ico[0]
                 iconos[size][1] += ico[1]
-                aire += aireRun
+                aire  += aireRun[0]
+                crudo += aireRun[1]
                 quien += quienRun
                 runs += 1
                 if rows is None:
@@ -1283,17 +1418,74 @@ def main():
         for h in sorted(porAlto):
             print("  %3d px x%-5d %s" % (h, porAlto[h], ", ".join(sorted(quienSec[h]))[:70]))
 
-    #  Y EL AIRE ENTRE FILAS HERMANAS, que se imprime y no se juzga. Ver
-    #  mide_aire: quince valores distintos y ningun liston con poblacion que lo
-    #  respalde todavia.
+    #  Y EL AIRE ENTRE FILAS HERMANAS. DOS histogramas y no uno -ver mide_aire-:
+    #  el de MAQUETA, que es el judiciable porque cada hueco lo escribe una
+    #  linea de `resized()`, y el VISTO, que es lo que el ojo nota y sigue
+    #  imprimiendose sin juzgarse porque depende del alto de los dos vecinos.
+    def pinta(nombre, cont):
+        print()
+        print("aire vertical %s (%d huecos, %d valores distintos):"
+              % (nombre, sum(cont.values()), len(cont)))
+        print("  " + "   ".join("%d px x%d" % (h, n) for h, n in sorted(cont.items())))
+
+    pinta("de MAQUETA entre filas hermanas", crudo)
+    fuera = sum(n for h, n in crudo.items() if h not in ESCALA)
+    total = max(1, sum(crudo.values()))
+    print("  en la escala %s: %d de %d (%.0f%%); fuera: %d"
+          % (ESCALA, total - fuera, total, 100.0 * (total - fuera) / total, fuera))
+    pinta("VISTO entre filas hermanas (maqueta + lo que cada tapa deja al pintarse)", aire)
+
+    #  LA LISTA, con el corte hecho AQUI y no al recoger -el `[:24]` de antes
+    #  ocultaba el 79 %- y con los pares partidos en DOS FAMILIAS, que es lo
+    #  unico que separa el fallo del caso legitimo sin inventarse un liston:
+    #
+    #    ESCRITO   el mismo hueco en las SIETE pantallas. Lo puso una linea de
+    #              `resized()`, tiene un dueño, y tiene que valer un token.
+    #    ELASTICO  el hueco cambia con la ventana. Es lo que quedo despues de
+    #              repartir -la rejilla de pads centrada con
+    #              `withSizeKeepingCentre`, el sobrante del presupuesto de la
+    #              cara- y *una fila elastica acaba donde acaba*.
+    #
+    #  Medido, y por eso se escribe: el par `64 TextButton | 15 PadButton` sale
+    #  a 9 px en unas pantallas y a 10 en otras -750 y 300 huecos- porque el
+    #  resto de centrar la rejilla es impar; el par de `sec` sale a 22 en
+    #  393x851, 412x915, 360x640 y 800x1280, identico, porque esta escrito. Sin
+    #  esta division las dos salian en la misma lista y la primera no se puede
+    #  arreglar: forzar el residuo a un token es dejar de centrar la rejilla.
+    porPar = collections.defaultdict(lambda: [collections.Counter(), set()])
+    for (fic, a, b, seco, size), n in quien.items():
+        e = porPar[(fic, a, b)]
+        e[0][seco] += n
+        e[1].add(size)
+    #  ESCRITO pide las DOS cosas: un solo valor Y haber salido en las SIETE
+    #  pantallas. La primera version pedia solo lo primero y salio medido: el
+    #  par `88 juce::Slider | 98 HoldButton` aparecia con «40 px, 2 de 7» en
+    #  once fichas y se clasificaba como escrito, cuando es el sobrante elastico
+    #  de la cara que en las otras cinco pantallas vale 33, 37 o 43 — no se ve
+    #  cambiar porque en esas cinco el par ni siquiera llega a existir. Un valor
+    #  constante medido en dos pantallas no es una constante: es una muestra de
+    #  dos.
+    escritos = {k: v for k, v in porPar.items()
+                if len(v[0]) == 1 and len(v[1]) == len(SIZES)}
+    elasticos = len(porPar) - len(escritos)
+    malos = {k: v for k, v in escritos.items() if next(iter(v[0])) not in ESCALA}
     print()
-    print("aire vertical entre filas hermanas (%d huecos, %d valores distintos):"
-          % (sum(aire.values()), len(aire)))
-    print("  " + "   ".join("%d px x%d" % (h, n) for h, n in sorted(aire.items())))
-    if quien:
-        print("  los dos extremos, por par (0 px = pegadas, > 16 px = de mas):")
-        for k, n in sorted(quien.items(), key=lambda kv: (-kv[1], kv[0]))[:24]:
-            print("    x%-4d %s" % (n, k))
+    print("  %d pares: %d ESCRITOS (el mismo hueco en las %d pantallas)"
+          " y %d sin demostrar constantes (cambian con la ventana, o no salen en"
+          " las siete; no se juzgan)"
+          % (len(porPar), len(escritos), len(SIZES), elasticos))
+    if malos:
+        print("  ESCRITOS fuera de la escala — %d huecos en %d pares:"
+              % (sum(sum(v[0].values()) for v in malos.values()), len(malos)))
+        print("    %-6s %-7s %-11s %-22s %-22s %s"
+              % ("huecos", "maqueta", "pantallas", "arriba", "abajo", "ficha"))
+        for (fic, a, b), (cnt, sizes) in sorted(
+                malos.items(), key=lambda kv: (-sum(kv[1][0].values()), kv[0])):
+            print("    x%-5d %3d px   %2d de %-4d %-22s %-22s %s"
+                  % (sum(cnt.values()), next(iter(cnt)), len(sizes), len(SIZES),
+                     a, b, fic))
+    else:
+        print("  todos los huecos ESCRITOS valen un token de la escala")
 
     #  Y el residuo al cambiar de pagina, que ninguna de las 476 corridas de
     #  arriba puede ver porque cada una abre una ficha y se va.

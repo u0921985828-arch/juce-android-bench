@@ -2663,8 +2663,27 @@ void MainComponent::resized()
         //  cuarta palabra en esa fila le quitaria ancho a las tres que ya estan
         //  medidas -se reparten por el texto-.
         {
-            auto fila = inner.removeFromBottom (Metrics::hit);
+            //  EL AIRE SE QUITA ANTES DE LA FILA Y NO DESPUES, que con
+            //  `removeFromBottom` es lo que decide de que LADO cae.
+            //
+            //  Estaba escrito al reves y el resultado eran DOS PIXELES entre EN
+            //  VIVO y la fila de WAV / MASTER / PISTAS, en las siete pantallas y
+            //  los cuatro idiomas -medido: 28 huecos de 2 px, el unico numero
+            //  escrito a mano fuera de la escala que quedaba en toda la app-.
+            //  Los ocho se estaban gastando por ARRIBA, entre EN VIVO y lo que
+            //  hubiera encima, donde ya hay hueco de sobra.
+            //
+            //  Y dos pixeles no es poco aire: es el fallo que `Metrics::gap`
+            //  describe en su propio comentario -«two things that touch read as
+            //  one thing»-. Cuatro tapas de accion pegadas se leen como una sola
+            //  barra de cuatro celdas, y EN VIVO no es una cuarta forma de
+            //  exportar: es otro MODO, que es justo lo que el parrafo de abajo
+            //  dice que hay que poder distinguir.
+            //
+            //  El presupuesto no cambia -el `sm` se pedia y se sigue pidiendo-,
+            //  solo de que lado del renglon cae.
             inner.removeFromBottom (Metrics::sm);
+            auto fila = inner.removeFromBottom (Metrics::hit);
             juce::TextButton* lb[1] = { &exportLiveButton };
             layoutModuleBar (fila, lb, 0, 1);
         }
