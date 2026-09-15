@@ -858,6 +858,9 @@ private:
     int shownChainPattern = -2;
 
     void openSheet (Sheet& s, juce::TextButton& toggle);
+    //  De donde venias al abrir esta ficha, para la profundidad. Se llama
+    //  ANTES de cerrar nada; ver su definicion.
+    void apuntaApertura (Sheet& s);
     void closeAllSheets();
     void paintAudioSheetContent (juce::Graphics& g);
     void paintSeqSheetContent (juce::Graphics& g);

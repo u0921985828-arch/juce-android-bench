@@ -47,6 +47,58 @@ MINIMOS = [
 #  de gustos: son las tres rejillas de LIENZO mas las dos que editan un sonido.
 SUENAN = {"sec", "secp", "paso", "piano", "pianod", "song", "pads", "pad2", "vst"}
 
+#  Y LA QUE NO LLEVA TRANSPORTE A PROPOSITO, con su razon y su linea.
+#
+#  Una excepcion declarada y no una rebaja: `MainComponent.cpp:5728` dice «en
+#  PATRON no: esa pagina actua sobre el patron entero y no se toca mientras
+#  suena». Escrita aqui, la regla puede subir a veredicto sin perdonar a nadie
+#  mas; sin escribirla, o se perdona a las nueve o se suspende a una que esta
+#  bien.
+SIN_TRANSPORTE = {"paso": "actua sobre el patron entero, no se toca sonando"}
+
+#  LAS QUE EDITAN EL SONIDO DE UN PAD, que son las unicas para las que el pad
+#  que asoma por debajo vale como camino para oir.
+#
+#  Es la correccion que hace que este minimo pueda fallar, y salio de medirlo:
+#  con el camino escrito como «asoma un pad», `asomaUnPad` daba **True en las
+#  NUEVE** -libre entre 85 y 210 px contra un suelo de 56- porque que asome un
+#  pad entero lo GARANTIZA `ASOMA`, que ya es regla de veredicto y lleva 1456
+#  corridas a cero. Un minimo cuya condicion la asegura otra regla que ya esta
+#  en verde no puede suspender a nadie: es la version con tres caminos de *una
+#  linea que imprime OK*. Se vio al romper `altoTarjeta` a proposito -tope al
+#  98 % de la ventana- y comprobar que la lista seguia vacia: las tarjetas se
+#  miden por su contenido y ni siquiera llegan al tope, asi que subirlo no
+#  movio un pixel.
+#
+#  Y preguntado bien el pad que asoma no vale para todas: tocarlo suena ESE
+#  PAD. Eso ES oir lo que acabas de escribir en `pads`, `pad2` o `vst` -que
+#  editan el sonido de un pad- y NO lo es en `sec` o `song`, donde lo que
+#  acabas de escribir es un patron y tocar un pad suelto no lo toca. Las de
+#  patron necesitan transporte de verdad, y lo tienen.
+EDITAN_UN_PAD = {"pads", "pad2", "vst"}
+
+
+def asomaUnPad (volcado):
+    """Si la tarjeta deja un pad ENTERO asomando, o sea tocable.
+
+    Lo dicen las dos cifras que la app ya publica para `ASOMA` en `expo.py`:
+    `libre` es el hueco que quedo con la tarjeta colocada y `suelo` lo que un
+    pad pide para poder acertarse. Apaisado `suelo` vale cero porque alli no hay
+    pad debajo, y entonces esto no cuenta como camino.
+    """
+    for r in volcado:
+        if not r.get ("tarjeta"):
+            continue
+        libre, suelo = r.get ("libre", -1), r.get ("suelo", 0)
+        if libre >= 0 and suelo > 0 and libre >= suelo:
+            return True
+    return False
+
+
+def tieneTeclado (dentro):
+    """Si la ficha trae un teclado: tocarlo ES oirlo."""
+    return any ("Teclado" in clase (r) or "PianoRoll" in clase (r) for r in dentro)
+
 
 def filas_de (comps):
     """Agrupa por PADRE y banda de y, que es lo que hace una fila de verdad.
@@ -139,7 +191,37 @@ def una (clave):
         #  hallazgo aparte, y se cuenta: ver `cruces`.
         if not ({"×", "x", "X"} & txt):
             falta.append ("cerrar")
-        if clave in SUENAN and not ({"PLAY", "STOP"} & txt):
+        #  OIRLO, QUE ES LO QUE EL MINIMO QUERIA DECIR Y NO DECIA.
+        #
+        #  Preguntaba por PLAY o STOP y con eso sacaba cuatro nombres —`pads`,
+        #  `pad2`, `paso` y `vst`— que llevaban tandas impresos como si fueran
+        #  cuatro huecos. **Fue a arreglarlos y ninguno lo era**, que es la
+        #  cuarta vez que en este banco *primero se duda de la prueba*:
+        #
+        #   - `paso` no lleva transporte A PROPOSITO y con su razon escrita en
+        #     `MainComponent.cpp:5728`: «esa pagina actua sobre el patron entero
+        #     y no se toca mientras suena».
+        #   - `pads`, `pad2` y `vst` SI se pueden oir: las tres editan el
+        #     SONIDO DE UN PAD, y `openSheet` cablea `onFuera` en todas las
+        #     fichas -`MainComponent.cpp:5586`-, asi que el pad que asoma por
+        #     debajo de la tarjeta se toca y suena: tocarlo ES oir la edicion.
+        #     Que asome un pad entero lo garantiza `ASOMA`, que existe -dice su
+        #     comentario- justo «para que `tocaPadDetras` pueda acertarse».
+        #   - `vst` ademas trae su propio teclado.
+        #
+        #  Asi que el minimo no era «tiene PLAY», era **«se puede oir sin
+        #  cerrarla»**. Preguntado bien la lista sale VACIA — y una lista vacia
+        #  si puede ser un veredicto, que es lo que este minimo llevaba sin
+        #  poder ser desde que se escribio.
+        #
+        #  CON EL CAMINO DEL PAD ACOTADO A `EDITAN_UN_PAD`, que es lo que hace
+        #  que el liston pueda suspender: ver el comentario de esa lista. Sin
+        #  acotar valia para las nueve y el veredicto no podia dar rojo nunca.
+        oye = ({"PLAY", "STOP"} & txt) \
+              or SIN_TRANSPORTE.get (clave) \
+              or (clave in EDITAN_UN_PAD and asomaUnPad (es)) \
+              or tieneTeclado (dentro)
+        if clave in SUENAN and not oye:
             falta.append ("transporte")
     bajos = [f for f in filas if f["bajo_el_dedo"]]
     if bajos:
@@ -242,11 +324,16 @@ def main():
     #  es la cuarta vez que esta casa lo paga -antes fueron `expo.py`,
     #  `session.py`, `apk.py` y `plano.py`-.
     #
-    #  DOS de los cuatro minimos son veredicto y dos se imprimen:
+    #  TRES de los cuatro minimos son veredicto y uno se imprime:
     #    - TITULO y la forma de la CRUZ son exactos y salen a cero y a uno.
-    #    - el DEDO ya lo cuenta `expo.py` con su escalera medida, y PLAY a mano
-    #      es una lista de paginas escrita aqui: un liston sobre una lista de
-    #      gustos no es un veredicto.
+    #    - OIRLO SIN CERRARLA sube a veredicto en esta tanda. Estaba impreso
+    #      con su razon -«un liston sobre una lista de gustos no es un
+    #      veredicto»- y era cierta MIENTRAS la lista tuviera cuatro nombres.
+    #      Preguntado por lo que el minimo queria decir -ver el bloque de
+    #      arriba: transporte propio, O un pad que asoma, O un teclado- la
+    #      lista sale a CERO, y un liston sobre una lista vacia si es exacto.
+    #    - el DEDO sigue impreso: ya lo cuenta `expo.py` con su escalera medida,
+    #      y contarlo dos veces con dos varas distintas son dos reglas.
     sinTitulo = [k for k in claves if hechos.get (k) and "titulo" in hechos[k]["falta"]]
     sinCerrar = [k for k in claves if hechos.get (k) and "cerrar" in hechos[k]["falta"]]
     sinPlay   = [k for k in claves if hechos.get (k) and "transporte" in hechos[k]["falta"]]
@@ -266,10 +353,23 @@ def main():
         print ("la cruz de cerrar se escribe de %d formas:" % len (cruces))
         for c, ks in sorted (cruces.items(), key=lambda q: -len (q[1])):
             print ("   %r  en %d fichas: %s" % (c, len (ks), ", ".join (ks)[:60]))
-    print ("escriben sonido y no tienen PLAY a mano: %s"
+    print ("escriben sonido y no se pueden oir sin cerrarlas: %s"
            % (", ".join (k or "cara" for k in sinPlay) or "ninguna"))
 
     mal = 0
+    if sinPlay:
+        mal = 1
+        print ("FALLA  %d fichas escriben sonido y hay que cerrarlas para oirlo:"
+               " %s" % (len (sinPlay), ", ".join (k or "cara" for k in sinPlay)))
+    #  Y LA CADENA DE CONTROL DE ESTE MINIMO, que es la mitad que falta cuando
+    #  un liston sale a cero: si el volcado no trajo NI UNA de las fichas que
+    #  escriben sonido, «ninguna» no es verde, es no haber mirado. Es la misma
+    #  figura que `if not cruces` de abajo.
+    vistasSuenan = sorted (SUENAN & {k for k in claves if hechos.get (k)})
+    if not vistasSuenan:
+        mal = 1
+        print ("FALLA  no se abrio ninguna de las %d fichas que escriben sonido:"
+               " el minimo de oirlas no mide nada" % len (SUENAN))
     if sinTitulo:
         mal = 1
         print ("FALLA  %d fichas sin titulo: se abren y no dicen donde estas" % len (sinTitulo))
@@ -284,8 +384,10 @@ def main():
         print ("FALLA  ninguna ficha publico su cruz de cerrar: no mide nada")
     if mal:
         return 1
-    print ("VEREDICTO: OK  las %d fichas tienen titulo y la cruz se escribe de una forma"
-           % sum (1 for k in claves if hechos.get (k) and hechos[k].get ("cruz")))
+    print ("VEREDICTO: OK  las %d fichas tienen titulo, la cruz se escribe de una"
+           " forma y las %d que escriben sonido se oyen sin cerrarlas"
+           % (sum (1 for k in claves if hechos.get (k) and hechos[k].get ("cruz")),
+              len (vistasSuenan)))
     return 0
 
 

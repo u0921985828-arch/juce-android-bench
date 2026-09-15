@@ -1567,7 +1567,33 @@ void MainComponent::paintMixSheetContent (juce::Graphics& g)
                                        .reduced (Metrics::margenFichaX, Metrics::margenFichaY)
                                        .removeFromTop (Metrics::bandaTitulo)),
                                    mixCloseButton);
-        const auto txt = engine.anySolo() ? T ("MIX") + "  " + dot + "  " + T ("SOLO ACTIVO") : T ("MIX");
+        //  Y EN CANALES, CUANTOS PADS NO ESTAN EN NINGUNA TIRA.
+        //
+        //  La tira ya dice lo suyo -la cuenta de los que le entran, o una raya
+        //  si no le entra ninguno- y eso esta bien. Lo que no decia nadie es el
+        //  OTRO lado, y desde que un pad nace sin canal es el caso normal: se
+        //  abre un proyecto, se va a la mesa y son treinta y dos tiras con una
+        //  raya cada una y ni una pista de donde estan los sonidos.
+        //
+        //  Va en el TITULO y no en una fila propia: la mesa es la pantalla del
+        //  reparto entero, asi que la cifra pertenece a su cabecera, y ahi
+        //  cuesta cero pixeles de mueble. Es ademas el patron que esta misma
+        //  linea ya tiene con SOLO ACTIVO — el titulo dice lo que hay que saber
+        //  antes de mirar las filas.
+        //
+        //  Y solo en CANALES: en la pagina de PADS cada tira ES un pad, asi que
+        //  «cuantos estan fuera» no es una pregunta de esa pantalla.
+        juce::String txt = T ("MIX");
+        if (engine.anySolo()) txt += "  " + dot + "  " + T ("SOLO ACTIVO");
+        if (mixPage == mixPageCanales)
+        {
+            int fuera = 0;
+            for (int p = 0; p < kNumPads; ++p)
+                if (padHasSample[(size_t) p] && ! AudioEngine::tieneCanal (engine.getPadCanal (p)))
+                    ++fuera;
+            if (fuera > 0)
+                txt += "  " + dot + "  " + padsTexto (fuera) + " " + T ("SIN CANAL");
+        }
         pintaTitulo (g, caja, txt);
     }
 }

@@ -98,6 +98,8 @@ def main():
     #     abrio el menu» de «no hizo nada».
     print ("menu     sobre vacia %-3s  sobre llena %-3s  y la llena enciende %s"
            % (r["menu_tras_vacia"], r["menu_tras_llena"], r["enciende_al_tocar"]))
+    print ("         y al ENTRAR ya venia encendida: %s   (al elegir en el menu: %s)"
+           % (r["enciende_al_entrar"], r["enciende_al_elegir"]))
     if r["menu_tras_vacia"] != 0:
         malas.append ("tocar el «+» de la ranura 0 no abrio su menu (%s)"
                       % r["menu_tras_vacia"])
@@ -105,8 +107,20 @@ def main():
         malas.append ("tocar una ranura LLENA abrio el menu (%s): entonces no hay "
                       "forma de encender un efecto desde la cara"
                       % r["menu_tras_llena"])
-    if r["enciende_al_tocar"] != 1:
-        malas.append ("tocar una ranura llena no encendio su efecto")
+    #  LAS DOS CIFRAS, Y NO UNA. Esto pedia «tocar una ranura llena la
+    #  enciende» y era cierto mientras un efecto entrara APAGADO. Desde que se
+    #  pidio que entre sonando -«que este activado tambien el efecto cuando se
+    #  mete en el Slot»- el primer toque lo APAGA, que es lo que un interruptor
+    #  hace, y esta linea daba FALLA sobre lo correcto: la prueba se quedo
+    #  vieja al cambiar lo que mide. Se pregunta entero -entra encendida, Y la
+    #  tapa conmuta- porque «entra encendida» sola la cumple tambien una tapa
+    #  muerta, y «conmuta» sola la cumple una que entra apagada.
+    if r["enciende_al_entrar"] != 1:
+        malas.append ("poner un efecto en una ranura no lo dejo encendido: la "
+                      "tapa se pinta LLENA y no mueve un decibelio")
+    if r["enciende_al_tocar"] != 0:
+        malas.append ("tocar una ranura llena y encendida no la apago (%s): esa "
+                      "tapa tiene que conmutar" % r["enciende_al_tocar"])
 
     #  2. ACCION UNICA. Elegir en el menu llena la ranura y la cierra, y a
     #     partir de ahi esa tapa ENCIENDE: no vuelve a ofrecer el menu nunca.
@@ -120,8 +134,11 @@ def main():
                       % r["tras_elegir"])
     if r["menu_tras_elegir"] != -1:
         malas.append ("el menu no se cerro al elegir (%s)" % r["menu_tras_elegir"])
-    if r["enciende_despues"] != 1:
-        malas.append ("la ranura recien llena no enciende su efecto al tocarla")
+    if r["enciende_al_elegir"] != 1:
+        malas.append ("elegir un efecto en el menu no lo dejo encendido")
+    if r["enciende_despues"] != 0:
+        malas.append ("volver a tocar la ranura recien llena no la apago (%s)"
+                      % r["enciende_despues"])
     if r["mapa_despues"] != r["tras_elegir"]:
         malas.append ("volver a tocar la ranura cambio lo que hay dentro: %s -> %s"
                       % (r["tras_elegir"], r["mapa_despues"]))

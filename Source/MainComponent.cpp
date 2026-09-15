@@ -385,7 +385,14 @@ MainComponent::MainComponent()
             //  Elegir y cerrar, como la rejilla de pads: el menu existe para
             //  llenar la ranura de un gesto, y dejarlo abierto despues de
             //  acertar es un segundo toque para volver a lo que hacias.
-            b->onClick = [this, f] { ponEnRanura (ranuraEditada, f); abreMenuRanura (-1); };
+            //  Y PASA POR DESHACER. Poner un efecto SUSTITUYE lo que hubiera
+            //  en la ranura -y ademas se lo quita a la ranura del mismo canal
+            //  que lo tuviera, ver `ponEnRanura`-, asi que un toque puede
+            //  mover dos ranuras y no habia vuelta. La foto va en la tapa y no
+            //  dentro de `ponEnRanura`, que la llama tambien el banco y el
+            //  vaciado de NUEVO -dieciseis canales por seis ranuras serian
+            //  noventa y seis fotos en un proyecto nuevo-.
+            b->onClick = [this, f] { pushUndo (T ("EFECTO")); ponEnRanura (ranuraEditada, f); abreMenuRanura (-1); };
             ranuraSheet.addAndMakeVisible (b);
             ranuraBtns.add (b);
         }
@@ -397,6 +404,7 @@ MainComponent::MainComponent()
         styleButton (ranuraVaciarBtn, kKey);
         ranuraVaciarBtn.onClick = [this]
         {
+            pushUndo (T ("VACIAR"));
             ponEnRanura (ranuraEditada, kSlotVacia);
             abreMenuRanura (-1);
         };
@@ -5566,6 +5574,8 @@ void MainComponent::openSheet (Sheet& s, juce::TextButton& toggle)
     //  identifica.
     Bitacora::paso ((juce::String ("ficha ") + s.nombre).toRawUTF8());
 
+    apuntaApertura (s);      // ver abajo: la profundidad, y ANTES de cerrar nada
+
     closeAllSheets();
     if (selectedPad < 0) selectPad (0);
     toggle.setToggleState (true, juce::dontSendNotification);
@@ -6064,6 +6074,33 @@ bool MainComponent::caraTapada()
             && (dynamic_cast<Sheet*> (c) != nullptr || c == static_cast<juce::Component*> (&xyPanel)))
             return true;
     return false;
+}
+
+//  DE DONDE VENIAS AL ABRIR ESTA FICHA, que es la mitad que hace medible la
+//  PROFUNDIDAD. Ver UiAudit::apertura.
+//
+//  La primera version preguntaba por la capa de la TAPA que abre —`openSheet`
+//  la recibe— y la respuesta fue **cero en las doce**: los treinta y tantos
+//  `openSheet` de la app pasan todos una tapa de la CARA -`setButton`,
+//  `mixButton`, `padsButton`, `secButton`, `songButton`-, incluso cuando la
+//  ficha se abre desde dentro de otra. Un histograma en el que todo vale uno
+//  no es un reparto, es una constante con forma de medida: la misma figura que
+//  el camino «asoma un pad» de `desglose.py`, que valia para las nueve.
+//
+//  Lo que de verdad dice la hondura es QUE HABIA ABIERTO en el momento de
+//  abrir esta, y eso no hay que declararlo: se lee de los hijos de la cara,
+//  que es donde viven las fichas, justo ANTES de `closeAllSheets`. Cero es la
+//  cara, o sea un toque.
+void MainComponent::apuntaApertura (Sheet& s)
+{
+    int deDonde = 0;
+    for (auto* c : getChildren())
+        if (c != &s && c->isVisible() && c->getProperties().contains ("capa"))
+        {
+            deDonde = (int) c->getProperties()["capa"];
+            break;
+        }
+    UiAudit::apertura (s.nombre, deDonde, (int) s.getProperties()["capa"]);
 }
 
 void MainComponent::closeAllSheets()
@@ -7134,8 +7171,28 @@ void MainComponent::selectPad (int index)
     //  Y el RACK con ellos, que es ademas el desajuste que ya existia: su
     //  `rackPad` era suyo y `selectPad` no lo tocaba, asi que tocar un pad que
     //  asoma detras de la tarjeta dejaba el rack enseñando los envios de otro.
+    //  Y UN PAD SIN CANAL NO MUEVE EL CANAL, que es el fallo que esta tanda
+    //  encontro con el banco y que explica la queja de «meto un efecto en la
+    //  ranura y no hace nada».
+    //
+    //  `getPadCanal` devuelve `kSinCanal` -0xFF, o sea 255- desde que los
+    //  sesenta y cuatro pads nacen sin tira, y esto se lo pasaba tal cual a
+    //  `ponCanalActual`, que lo recorta a `kNumCanales - 1`: **31**. O sea que
+    //  elegir cualquier pad recien nacido llevaba la fila de efectos, el rack
+    //  y los tres mandos al canal 31 sin decirlo, y todo lo que pusieras ahi
+    //  iba a un bus por el que no pasa ni un pad. Se veia la tapa LLENA, el
+    //  envio al maximo y el interruptor encendido — y silencio.
+    //
+    //  Medido por `Tests/ranuras.py`, que lee `slotFx[0]`: elegir BIT en la
+    //  ranura 2 dejaba `[-1,-1,-1,-1,-1,-1]` en vez de `[-1,-1,4,-1,-1,-1]`,
+    //  porque el 4 habia caido en la fila 31. Cuatro FALLA de la misma causa.
+    //
+    //  Sin canal se QUEDA donde estabas y no se recorta a ninguno: no tener
+    //  tira no es estar en la ultima, es no haber elegido. Quien elige la tira
+    //  de un pad es la mesa, y hasta que alguien la elija el rack sigue
+    //  enseñando el canal en el que estabas trabajando.
     const int canalDelPad = engine.getPadCanal (index);
-    if (canalDelPad != canalActual)
+    if (AudioEngine::tieneCanal (canalDelPad) && canalDelPad != canalActual)
     {
         ponCanalActual (canalDelPad);
         refrescaRanuras();
@@ -9161,6 +9218,7 @@ void MainComponent::openBrowseForFolder (ProjectStore::Carpeta que)
     browseModo = browseCarpeta;
     browseTargetPad = -1;
     auditionedFile = juce::File();
+    apuntaApertura (browseSheet);   // antes de cerrar: ver su definicion
     closeAllSheets();
     browseSheet.setVisible (true);
     browseSheet.toFront (false);
@@ -9252,6 +9310,7 @@ void MainComponent::openBrowseForPad (int index)
     preAuditionSample = uiSample[(size_t) index];
     preAuditionName   = padName[(size_t) index];
     selectPad (index);                       // the target pad reads as selected behind the sheet
+    apuntaApertura (browseSheet);   // antes de cerrar: ver su definicion
     closeAllSheets();
     browseSheet.setVisible (true);
     browseSheet.toFront (false);
@@ -10073,19 +10132,30 @@ void MainComponent::applyState (const juce::ValueTree& s)
                 }
             }
 
-            //  EL CANAL DEL PAD. Sin la propiedad, el 0: es donde `applyState`
-            //  pone la fila de siempre y los envios de un proyecto anterior, o
-            //  sea el unico canal que en aquel fichero significaba algo.
-            //  Y EL DEFECTO ES «SIN CANAL» Y NO EL CERO, que es lo que decide
-            //  como suena un fichero de ANTES de esta tanda.
+            //  EL CANAL DEL PAD, Y SIN LA PROPIEDAD EL CERO.
             //
-            //  Los proyectos viejos SI llevan su `canal` escrito -los 64, casi
-            //  todos a cero- asi que vuelven exactamente como se guardaron y no
-            //  cambian de sonido. El defecto solo aplica a un atributo que
-            //  falte, y ahi «sin canal» es la respuesta segura: meter un pad en
-            //  el canal 0 porque su linea estaba rota es justo la agrupacion que
-            //  esta tanda quita. Ver AudioEngine::kSinCanal.
-            engine.setPadCanal (i, (int) p.getProperty ("canal", AudioEngine::kSinCanal));
+            //  Aqui ponia `kSinCanal` con esta razon escrita al lado: «los
+            //  proyectos viejos SI llevan su canal escrito -los 64, casi todos
+            //  a cero- asi que vuelven exactamente como se guardaron». Era una
+            //  AFIRMACION SIN MEDIDA, y los seis proyectos congelados de
+            //  `Tests/session.py` —guardados antes de que la propiedad
+            //  existiera— la desmienten: no la llevan, y volvian con
+            //  `canal 255` en vez de `canal 0`. O sea que un fichero de antes
+            //  perdia su fila de efectos y sus envios enteros, que es
+            //  exactamente el «cambian de sonido» que el parrafo prometia
+            //  evitar.
+            //
+            //  Que falte la propiedad ES la marca del fichero viejo, y no hace
+            //  falta ninguna otra: desde esta tanda se escribe para los
+            //  SESENTA Y CUATRO pads —ver `captureState`— con su 255 incluido,
+            //  asi que un proyecto nuevo sin tira dice que no la tiene y solo
+            //  uno anterior calla. Y el dia que se guardo, los 64 pads
+            //  alimentaban el canal 0: es el unico canal que en aquel fichero
+            //  significaba algo.
+            //
+            //  El defecto de «sin canal» es el de un proyecto NUEVO y vive
+            //  donde le toca, en `padPorDefecto` y en `newProject`.
+            engine.setPadCanal (i, (int) p.getProperty ("canal", 0));
 
             //  Y `sends` PASA A SER EL RECORTE, que es lo que hace que un
             //  proyecto anterior suene igual.
@@ -13726,6 +13796,14 @@ void MainComponent::launchSystemPicker()
 
             closeAllSheets();
             const juce::String fileName = url.getFileName();
+            //  LA TERCERA PUERTA AL MISMO PAD, y tampoco tenia red. El
+            //  selector del sistema aterriza donde aterrizan el navegador y el
+            //  doble toque, y sin esto de las tres formas de cargar un fichero
+            //  encima de un pad ninguna se podia deshacer. La foto va ANTES de
+            //  pedir nada: aqui todavia no se ha tocado el pad, y tomarla
+            //  dentro de la respuesta del cargador la dejaria a merced de que
+            //  la lectura tarde.
+            pushUndo (T ("CARGAR"));
             status.setText (T ("Cargando pad %1...", juce::String (index + 1)), juce::dontSendNotification);
 
             //  BRING IT INTO THE LIBRARY, do not just read it where it lies.
@@ -14114,6 +14192,7 @@ void MainComponent::openInstSheet()
     instDestPad = juce::jlimit (0, kNumPads - 1, selectedPad);
 
     refreshInst();
+    apuntaApertura (instSheet);   // antes de cerrar: ver su definicion
     closeAllSheets();
 
     //  Y EL TOQUE AL PAD DE DETRAS. Esta ficha tampoco pasa por `openSheet`, y
@@ -14311,7 +14390,18 @@ void MainComponent::cargaInstrumento (int idx)
     {
         //  LA FABRICA NO SON FICHEROS. Se sintetiza o sale de los recursos
         //  incrustados, asi que entra por su propia puerta y no por el reparto.
+        //
+        //  Y POR ESA PUERTA SE PERDIA LA RED. Las dos ramas de esta misma
+        //  funcion se llevan dieciseis pads por delante, y la de ficheros
+        //  -`repartePorBanco`- toma la foto en su primera linea con la razon
+        //  escrita al lado -«sobrescribe dieciseis pads: pasa por deshacer»-
+        //  mientras que esta no la tomaba: el `armConfirm` de arriba te
+        //  pregunta, pero preguntar no es poder volver. La foto va AQUI y no
+        //  dentro de `cargaFabricaEnBanco`, porque a esa la llama tambien
+        //  `loadFactoryKits` -cuatro bancos seguidos la primera vez que se abre
+        //  la app- y alli no hay nada que deshacer y serian cuatro fotos.
         closeAllSheets();
+        pushUndo (T ("FABRICA"));
         cargaFabricaEnBanco (in.bancoFabrica, currentBank);
         status.setText (T ("Banco %1: %2",
                            juce::String::charToString ((juce::juce_wchar) ('A' + currentBank)),
@@ -14708,6 +14798,7 @@ void MainComponent::openBrowseForMidi()
     browseModo = browseMidi;
     browseTargetPad = -1;
     auditionedFile = juce::File();
+    apuntaApertura (browseSheet);   // antes de cerrar: ver su definicion
     closeAllSheets();
     browseSheet.setVisible (true);
     browseSheet.toFront (false);
@@ -14824,6 +14915,11 @@ void MainComponent::refreshVst()
 void MainComponent::loadBrowserSelection()
 {
     // Confirming keeps the audition: drop the undo snapshot.
+    //  ...pero lo de antes se guarda un momento: hace falta para la foto de
+    //  deshacer, y hasta esta tanda no la hacia nadie. Ver abajo.
+    auto       antesSb  = preAuditionSample;
+    const auto antesNom = preAuditionName;
+    const bool huboEscucha = (auditionedFile != juce::File());
     auditionedFile = juce::File();
     preAuditionSample = nullptr;
 
@@ -14833,6 +14929,37 @@ void MainComponent::loadBrowserSelection()
 
     const int index = browseTargetPad;
     const juce::String fileName = f.getFileName();
+
+    //  CARGAR UN FICHERO ENCIMA DE UN PAD PASA POR DESHACER, Y NO PASABA.
+    //
+    //  `pushUndo` tenia veinticinco clientes -PEGAR, MOVER, VACIAR, DOBLAR,
+    //  HUMANIZAR, EUCLIDES, AUTO CHOP, REMUESTREAR...- y justo este no, siendo
+    //  de las acciones mas frecuentes de la app y de las mas destructivas: se
+    //  lleva la muestra, el nombre, el recorte y los ajustes del pad y no hay
+    //  vuelta. Cargar un kit entero -`repartePorBanco`- SI lo tenia, asi que
+    //  dieciseis pads a la vez se podian deshacer y uno solo no.
+    //
+    //  Y LA FOTO NO ES DE AHORA, ES DE ANTES DE LA ESCUCHA. Para cuando se
+    //  pulsa CARGAR, el pad YA lleva la muestra que se estaba oyendo -ver
+    //  `browserSelectionChanged`: un toque en la lista la carga y la dispara-,
+    //  asi que retratar el momento habria dejado un DESHACER que devuelve la
+    //  escucha, o sea otro fichero que tampoco es el tuyo. Se devuelve lo que
+    //  habia, se toma la foto, y se vuelve a poner lo escuchado: en pantalla no
+    //  se ve nada porque la carga lo sustituye a continuacion, y es el mismo
+    //  viaje de ida y vuelta que ya hace la x al cancelar una escucha.
+    if (huboEscucha && antesSb != nullptr)
+    {
+        auto       oido  = uiSample[(size_t) index];
+        const auto oidoN = padName[(size_t) index];
+        assignSampleToPad (index, antesSb, antesNom);
+        pushUndo (T ("CARGAR"));
+        assignSampleToPad (index, oido, oidoN);
+    }
+    else
+    {
+        pushUndo (T ("CARGAR"));
+    }
+
     closeAllSheets();
 
     status.setText (T ("Cargando pad %1...", juce::String (index + 1)), juce::dontSendNotification);
@@ -15527,6 +15654,13 @@ void MainComponent::toggleMicSampling()
         micButton.setButtonText (T ("GRABAR MIC"));
         if (sb != nullptr)
         {
+            //  Y PASA POR DESHACER, como su gemela. REMUESTREAR aterriza
+            //  exactamente igual -`finishRecording` y a un pad- y llevaba su
+            //  `pushUndo` desde el principio; grabar del micro, que es la otra
+            //  mitad de la misma accion, no. Dos caminos que hacen lo mismo y
+            //  solo uno con red: el sintoma habria sido «el micro no se puede
+            //  deshacer y el remuestreo si» sin poder decir por que.
+            pushUndo (T ("GRABAR MIC"));
             //  «TOMA 3» y no «REC 34»: el numero que importa es cual de tus
             //  tomas es y no en que hueco del banco cayo, que eso ya lo dice el
             //  pad donde esta. Dieciseis pads con nombre en un banco son la
@@ -16048,7 +16182,29 @@ void MainComponent::pintaCuadro (double dtMs)
             //  quieta: lo que sobra es el latido, no la informacion de que ese
             //  efecto esta puesto. Apagarla del todo convertiria «no quiero que
             //  parpadee» en «no se cual esta sonando».
-            const double want = fxEncendido (f) ? (movimiento ? lit : 1.0) : 0.0;
+            //
+            //  Y LATE UNA SOLA, LA DEL EFECTO QUE MIRAS. El mismo argumento de
+            //  arriba llevado hasta el final: si «encendida y quieta» ya dice
+            //  que el efecto esta puesto —y lo dice, por eso es lo que queda
+            //  con el movimiento apagado— entonces el latido de las otras
+            //  cinco no informa de nada y solo repinta.
+            //
+            //  Lo canto `Tests/cpu.py` sobre `rackf` —el rack con las seis
+            //  ranuras llenas— en **15.76 ventanas equivalentes en 8 s contra
+            //  un tope de 3**: 382 repintados de unos 15 550 px, que son
+            //  ~2 590 por lampara y seis lamparas. El tope estaba calibrado
+            //  sobre el caso de DOS que su propio comentario cuenta, y nunca
+            //  hubo una pagina con seis hasta esta tanda: antes el rack
+            //  apuntaba al canal 31 por el fallo de `selectPad` y no encendia
+            //  ninguna. Con una sola latiendo baja a 2.62, por debajo del tope
+            //  y en el mismo orden que el caso de dos.
+            //
+            //  Es ademas la misma regla que el motor ya aplica al visor -«se
+            //  captura el que se mira y ya»-: se anima lo que estas mirando.
+            const bool laQueMiras = (f == focusedFx);
+            const double want = fxEncendido (f)
+                                  ? ((movimiento && laQueMiras) ? lit : 1.0)
+                                  : 0.0;
             const double had  = (double) b->getProperties().getWithDefault ("pulse", 0.0);
             if (std::abs (want - had) < 0.004) continue;
 
@@ -16126,10 +16282,30 @@ void MainComponent::pintaCuadro (double dtMs)
                 //  ya hace la unica traduccion que hay entre las dos
                 //  numeraciones, asi que no hace falta una segunda.
                 const int dd = dinamicaDeFx (platoMini.tipo());
+                //  Y LA FASE DEL LFO SOLO SI HAY SEÑAL, que es lo que impide
+                //  que el plato repinte para siempre sin nada que enseñar.
+                //
+                //  El LFO del motor corre entre a nada, asi que su fase avanza
+                //  con el bus en silencio: el plato de un efecto modulado se
+                //  repintaba treinta veces por segundo con la ficha quieta y
+                //  la maquina callada. Medido por `Tests/cpu.py` sobre `rackf`
+                //  —el rack con las seis ranuras llenas— **15.80 ventanas
+                //  equivalentes en 8 s contra un tope de 3**, y se veia ahora
+                //  y no antes porque hasta esta tanda el rack apuntaba al
+                //  canal 31 por el fallo de `selectPad` y no dibujaba un plato.
+                //
+                //  Y no es solo el gasto: la linea de abajo estaba pintando el
+                //  plato como NO VIVO -`fxScopeVivo()` es falso sin envios- y
+                //  moviendolo igual, o sea una animacion sobre un visor que se
+                //  declara apagado. Quieto dice la verdad y ademas se asienta,
+                //  que es la regla de `FxMini::setMuestras`: «solo si se
+                //  movio».
+                const bool vivo = engine.fxScopeVivo();
                 platoMini.setMuestras (eqPreTmp, eqPostTmp, nScope, dtMs,
                                        dd >= 0 ? engine.getDynReduccion (canalActual, dd) : 0.0f,
-                                       engine.getLfoFase (canalActual, platoMini.tipo()));
-                platoMini.ponVivo (engine.fxScopeVivo());
+                                       vivo ? engine.getLfoFase (canalActual, platoMini.tipo())
+                                            : 0.0f);
+                platoMini.ponVivo (vivo);
             }
         }
         else if (platoMini.isVisible())

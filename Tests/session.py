@@ -405,7 +405,22 @@ def main():
                     #  0.75 que el proyecto ANTERIOR le dejo, ni en el canal 5
                     #  donde lo dejo.
                     and abs (d["recorte20"] - 1.0) < 0.01
-                    and d["canal20"] == 0
+                    #  Y SU CANAL ES «NINGUNO» Y NO EL CERO. Esta linea pedia
+                    #  el 0 desde que se escribio y era exacta mientras un pad
+                    #  naciera en el canal 0; desde que se pidio que el
+                    #  proyecto empiece con los sesenta y cuatro SIN tira, el
+                    #  que NACE nace sin ella. El parrafo de arriba ya lo dice
+                    #  -«vuelve como nace»- y lo que cambio es como se nace.
+                    #
+                    #  Y no cambia como suena ninguno de los seis: el pad 20 no
+                    #  esta en ningun fichero, o sea que no tiene muestra que
+                    #  sonar. Lo que SI importaba —los pads que el fichero SI
+                    #  trae y que no llevan `canal` escrito— es otra cosa y se
+                    #  arreglo en el lector, no aqui: volvian sin tira y por
+                    #  tanto con los envios a cero, y es lo que esta misma
+                    #  corrida cazo como `envio0 0.00` donde el fichero pedia
+                    #  1.00.
+                    and d["canal20"] == 255
                     #  Y la cancion: sin <song> tiene que quedar VACIA. Con el
                     #  fallo, abrir un proyecto sin linea de tiempo dejaba
                     #  sonando el arreglo del que estuviera abierto.

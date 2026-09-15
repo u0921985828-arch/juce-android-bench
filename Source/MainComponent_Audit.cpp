@@ -2136,10 +2136,23 @@ void MainComponent::auditOpen (const juce::String& pedido)
     //  paginas y otra por accion en el fuzz, asi que sin esto la lista crece
     //  con cada llamada. Es el mismo cuidado que `resized()` tiene con
     //  `UiAudit::tarjetas`.
+    //  Y EL ARBOL ENTERO, QUE ES DONDE ESTAN. Este bucle recorria los hijos
+    //  DIRECTOS de la cara, y con eso cubria nueve de las diez tapas de
+    //  mantener que tiene la app: `autoBtn` vive dentro de `songSheet` -es
+    //  hija de una ficha, no de la cara- asi que era invisible para la regla
+    //  que existe justo para que ningun gesto se quede sin fila. La regla
+    //  decia «se buscan, no se enumeran» y buscaba en un solo piso.
     UiAudit::mantener.clear();
-    for (auto* hijo : getChildren())
-        if (auto* h = dynamic_cast<HoldButton*> (hijo))
-            UiAudit::gestoDe (h->getButtonText(), fxButtons.contains (h) ? 1 : 0);
+    std::function<void (juce::Component&)> recorre = [&] (juce::Component& c)
+    {
+        for (auto* hijo : c.getChildren())
+        {
+            if (auto* h = dynamic_cast<HoldButton*> (hijo))
+                UiAudit::gestoDe (h->getButtonText(), fxButtons.contains (h) ? 1 : 0);
+            recorre (*hijo);
+        }
+    };
+    recorre (*this);
 
     //  Y LA APP CON TRABAJO DENTRO, ANTES de abrir nada.
     //
@@ -4140,6 +4153,17 @@ void MainComponent::auditRanuras()
     abreMenuRanura (-1);
 
     ponEnRanura (0, 0);
+    //  Y LO QUE VALE ANTES DE TOCARLA, que es la cifra que faltaba.
+    //
+    //  Desde que se pidio que «el efecto este activado tambien cuando se mete
+    //  en el Slot», `ponEnRanura` lo deja ENCENDIDO, asi que el primer toque
+    //  en esa tapa lo APAGA — que es lo que un interruptor hace. La prueba
+    //  seguia pidiendo «tocar una ranura llena la enciende», que era cierto
+    //  cuando entraban apagadas: se quedo vieja al cambiar lo que mide, y daba
+    //  FALLA sobre un comportamiento correcto. Con las DOS cifras la pregunta
+    //  se contesta entera -entra encendida, y la tapa conmuta- y ninguna de
+    //  las dos la cumple sola.
+    const int enciendeAlEntrar = fxEncendido (0) ? 1 : 0;
     pulsaTapa (fxButtons[0]);
     const int menuTrasLlena = ranuraEditada;
     const int encendioAlTocar = fxEncendido (0) ? 1 : 0;
@@ -4153,7 +4177,10 @@ void MainComponent::auditRanuras()
     pulsaTapa (ranuraBtns[4]);                      // se elige BIT
     const juce::String trasElegir = mapa();
     const int menuTrasElegir = ranuraEditada;   // se cierra sola
-    pulsaTapa (fxButtons[2]);                       // y ahora ese boton enciende
+    //  Igual que arriba: elegir en el menu la deja ENCENDIDA, asi que el
+    //  estado que hay que mirar antes de conmutar es este.
+    const int enciendeAlElegir = fxEncendido (4) ? 1 : 0;
+    pulsaTapa (fxButtons[2]);                       // y ahora ese boton CONMUTA
     const int enciendeDespues = fxEncendido (4) ? 1 : 0;
     const juce::String mapaDespues = mapa();    // que no ha cambiado
     setFxEnabled (4, false);
@@ -4244,6 +4271,8 @@ void MainComponent::auditRanuras()
               << ",\"canales_raros\":"     << canalesRaros
               << ",\"menu_tras_vacia\":"   << menuTrasVacia
               << ",\"menu_tras_llena\":"   << menuTrasLlena
+              << ",\"enciende_al_entrar\":" << enciendeAlEntrar
+              << ",\"enciende_al_elegir\":" << enciendeAlElegir
               << ",\"enciende_al_tocar\":" << encendioAlTocar
               << ",\"tras_elegir\":\""     << trasElegir << "\""
               << ",\"menu_tras_elegir\":"  << menuTrasElegir
@@ -4468,8 +4497,19 @@ void MainComponent::auditRack()
 
             auto lee = [&] (bool conSenal, int tics)
             {
-                //  Los 64 pads nacen en el canal 0, asi que cerrar el envio
-                //  del canal los cierra a los 64: es lo que la mesa hace.
+                //  EL PAD 0 SE PONE EN EL CANAL 0, Y ESTE PARRAFO DECIA LO
+                //  CONTRARIO: «los 64 pads nacen en el canal 0». Lo hacian, y
+                //  dejaron de hacerlo cuando se pidio que el proyecto empiece
+                //  con los sesenta y cuatro SIN CANAL. Sin esta linea el envio
+                //  se abre en un bus por el que no pasa ningun pad, no llega
+                //  señal a ninguna capa y las 22 salen «un adorno»: 22 de 22
+                //  FALLA con el codigo intacto. Es el mismo andamio que hizo
+                //  falta en `StressTest` -`enCanalCero`- y por la misma causa.
+                //
+                //  Y aqui y no fuera: `lee` se llama cuatro veces por efecto y
+                //  el reparto no se toca entre medias, asi que ponerlo donde
+                //  se abre el envio deja las dos mitades juntas.
+                engine.setPadCanal (0, 0);
                 engine.setCanalSend (0, f, 0.0f);
                 if (conSenal)
                 {
@@ -5063,6 +5103,15 @@ void MainComponent::auditDinamica()
         sb->sourceSampleRate = 48000.0;
         engine.publishSample (0, SampleBuffer::Ptr (sb));
     }
+
+    //  Y EL PAD 0 EN EL CANAL 0, que es la premisa que este andamio da por
+    //  hecha mas abajo -«el pad 0 vive en el canal cero»- y que dejo de ser
+    //  cierta cuando se pidio que el proyecto empiece con los sesenta y cuatro
+    //  SIN tira. Sin esta linea el tono no llega a ningun bus, el limitador
+    //  del canal 0 no ve una muestra y la prueba decia «quita 0.00 dB: no esta
+    //  limitando» con el motor perfecto. Tercera vez en esta tanda que la
+    //  misma premisa vieja suspende un andamio: ver `rack` y `StressTest`.
+    engine.setPadCanal (0, 0);
 
     //  Y EL ENVIO SE ASIENTA ANTES DE DISPARAR: se cruza con el camino seco en
     //  20 ms, asi que disparar y leer enseguida mide la mitad de un pad que

@@ -201,6 +201,44 @@ namespace UiAudit
                              pide, cuerpo, lineas });
     }
 
+    //  CUANTOS TOQUES DESDE LA CARA, QUE ES LA CIFRA QUE DEFINE «INTUITIVO» Y
+    //  NO LA MEDIA NADIE.
+    //
+    //  El banco tenia diecinueve reglas de GEOMETRIA -dedo, solapes, ventana,
+    //  celda, rotulo cortado- y ni una de CAMINO: una ficha a cuatro toques de
+    //  la cara pasa las diecinueve y aun asi nadie la encuentra. La app tiene
+    //  46 pantallas y hasta esta tanda no habia forma de decir cuantas estan
+    //  lejos, ni de que una nueva se fuera al fondo sin que saltara nada.
+    //
+    //  Y SE DERIVA, NO SE DECLARA, que es lo que la hace util el segundo año:
+    //  `openSheet (Sheet& s, juce::TextButton& toggle)` ya recibe las DOS
+    //  mitades -la ficha y la tapa que la abrio- asi que apuntar el par cuesta
+    //  esta linea, y la capa en la que vive esa tapa la publica ya el volcado.
+    //  Una ficha nueva aparece sola, sin que nadie se acuerde de anotarla — la
+    //  misma razon por la que las tapas de mantener «se buscan, no se
+    //  enumeran» en `auditOpen`.
+    //
+    //  `tapa` es la capa de la TAPA, no la de la ficha: capa 0 es la cara, o
+    //  sea un toque; una tapa que vive dentro de otra ficha son los toques de
+    //  aquella mas uno. El grafo lo resuelve `Tests/profundidad.py`, que es
+    //  donde hay las 46 corridas a la vez.
+    struct Apertura { juce::String ficha; int tapa, capa; };
+    inline std::vector<Apertura> aperturas;
+
+    //  Y LA PUERTA ES `enabled()`, NO `midiendo`. Escrito con `midiendo` -que
+    //  es lo que usan `rotulo` y `panel`- esto no apunto ni una: esa bandera
+    //  solo esta puesta durante la pasada de pintado de `recogeRotulos`, y una
+    //  ficha se abre mucho antes de que nadie pinte. Salieron cuatro corridas
+    //  con la lista vacia y sin fallar nada, que es la forma que tiene una
+    //  instrumentacion de mentir: no da un numero malo, no da ninguno.
+    inline void apertura (const juce::String& ficha, int tapa, int capa)
+    {
+        if (! enabled()) return;
+        for (const auto& a : aperturas)
+            if (a.ficha == ficha && a.tapa == tapa) return;   // una vez basta
+        aperturas.push_back ({ ficha, tapa, capa });
+    }
+
     //  LOS PANELES DE GRUPO, apuntados igual que los rotulos y por lo mismo:
     //  son pintados, no son componentes, y lo que no se apunta no se mide. Un
     //  panel es la unica cosa de esta app que se dibuja ALREDEDOR de otras, asi
@@ -1167,6 +1205,11 @@ namespace UiAudit
                       << ",\"pide\":" << r.pide
                       << ",\"cuerpoLetra\":" << juce::String (r.cuerpoLetra, 2)
                       << ",\"lineas\":" << r.lineas << "}" << std::endl;
+
+        for (const auto& a : aperturas)
+            std::cout << "{\"apertura\":\"" << a.ficha.toRawUTF8() << "\""
+                      << ",\"tapa\":" << a.tapa
+                      << ",\"capa\":" << a.capa << "}" << std::endl;
 
         for (const auto& p : paneles)
             std::cout << "{\"panel\":1"

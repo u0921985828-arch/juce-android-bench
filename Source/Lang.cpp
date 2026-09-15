@@ -29,6 +29,8 @@ namespace
         { "DESHACER",       "",         "UNDO",       "撤销",       "تراجع" },
         { "REHACER",        "",         "REDO",       "重做",       "إعادة" },
         { "EFECTOS",        "",         "EFFECTS",    "效果",       "مؤثرات" },
+        //  En singular es la etiqueta de DESHACER al poner uno en una ranura.
+        { "EFECTO",         "",         "EFFECT",     "效果",       "مؤثر" },
         { "CTRL %1",        "",         "CTRL %1",    "旋钮 %1",    "مقبض %1" },
         { "ESPECTRO",       "",         "SPECTRUM",   "频谱",       "الطيف" },
         { "CTRL -> %1",     "",         "CTRL -> %1", "旋钮 -> %1", "المقابض ← %1" },
