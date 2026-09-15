@@ -1160,6 +1160,21 @@ private:
     //  Y la unica accion del modo MIDI: traerse el fichero senalado.
     juce::TextButton browseMidiBtn { "IMPORTAR" };
     juce::TextButton exportDirBtn { "CAMBIAR" };
+    //  LAS DOS CARPETAS QUE SE PIDIERON DESPUES, y la que las tres comparten.
+    //
+    //  «Molaria poder elegir cual es la carpeta predeterminada para apertura y
+    //  guardar proyectos, abrir y guardar samples». El rebote ya se podia
+    //  dirigir desde la primera tanda que lo pidio; estas dos son las mismas
+    //  tres preguntas —donde empieza el navegador, que se escribe al aceptar, a
+    //  que ficha se vuelve— asi que van por el MISMO gesto: ver
+    //  `openBrowseForFolder` y `ProjectStore::Carpeta`.
+    juce::TextButton projDirBtn    { "PROYECTOS" };
+    juce::TextButton samplesDirBtn { "SONIDOS" };
+    //  Cual de las tres se esta eligiendo. El navegador es uno solo, asi que
+    //  sin esto «usar esta carpeta» tendria que adivinar de donde vino — que es
+    //  como estaba y por eso el destino estaba escrito dentro de la funcion.
+    ProjectStore::Carpeta carpetaQueSeElige = ProjectStore::Carpeta::exports;
+    void openBrowseForFolder (ProjectStore::Carpeta que);
     void openBrowseForExportDir();
     //  Deja el rebote donde cualquier gestor lo vea. Ver MediaStore.
     void publicarExport (const juce::File& carpeta);

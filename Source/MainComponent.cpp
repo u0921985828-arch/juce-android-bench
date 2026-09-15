@@ -1403,6 +1403,22 @@ MainComponent::MainComponent()
         exportDirBtn.onClick = [this] { openBrowseForExportDir(); };
         exportSheet.addAndMakeVisible (exportDirBtn);
 
+        //  Y LAS DOS DE LA PAGINA DE PROYECTOS, por el mismo gesto. Cuelgan de
+        //  `setSheet` y no de `exportSheet`: viven donde se ve la ruta.
+        const std::pair<juce::TextButton*, ProjectStore::Carpeta> dosCarpetas[2] =
+        {
+            { &projDirBtn,    ProjectStore::Carpeta::proyectos },
+            { &samplesDirBtn, ProjectStore::Carpeta::samples   }
+        };
+        for (const auto& par : dosCarpetas)
+        {
+            auto* b = par.first;
+            const auto que = par.second;
+            styleButton (*b, kKey);
+            b->onClick = [this, que] { openBrowseForFolder (que); };
+            exportSheet.addAndMakeVisible (*b);
+        }
+
         //  EL TERCER MODO: la cancion suena y lo que suena se escribe. Ver
         //  MainComponent.h y `RebotVivo`.
         styleButton (exportLiveButton, kKey);
@@ -4089,6 +4105,8 @@ void MainComponent::ponIconos()
         { &exportMasterButton, Iconos::Id::exportar },
         { &exportStemsButton, Iconos::Id::exportar },
         { &exportDirBtn, Iconos::Id::carpeta },
+        { &projDirBtn, Iconos::Id::carpeta },
+        { &samplesDirBtn, Iconos::Id::carpeta },
 
         //  El navegador. Cinco tapas en una fila, cinco dibujos distintos: si
         //  tres de ellas llevaran la misma carpeta, el dibujo no diria nada
@@ -8222,6 +8240,8 @@ void MainComponent::retranslateUi()
     browseLoadButton  .setButtonText (T ("CARGAR"));
     browseUseDirBtn   .setButtonText (T ("USAR ESTA CARPETA"));
     exportDirBtn      .setButtonText (T ("CAMBIAR"));
+    projDirBtn        .setButtonText (T ("PROYECTOS"));
+    samplesDirBtn     .setButtonText (T ("SONIDOS"));
     browseKitButton   .setButtonText (T ("CARGAR KIT"));
     browseFactoryButton.setButtonText (T ("INSTRUMENTOS"));
     vstButton.setButtonText (T ("PRESETS"));
@@ -9079,17 +9099,26 @@ void MainComponent::cancelAudition()
 
 //  EL MISMO NAVEGADOR, ELIGIENDO CARPETA. Ver ModoBrowse: cambia lo que se
 //  acepta al final, no la lista ni el gesto.
-void MainComponent::openBrowseForExportDir()
+//  ELEGIR UNA CARPETA — LA QUE SEA, que es lo que esta funcion tuvo que
+//  aprender cuando dejaron de ser una.
+//
+//  Nacio para el rebote y solo para el: el nombre lo decia y el destino estaba
+//  escrito dentro. Ahora hay TRES -proyectos, samples y el rebote- y la unica
+//  diferencia entre ellas es DONDE empieza el navegador y QUE se escribe al
+//  aceptar. Tres copias de este gesto habrian sido tres sitios donde arreglar
+//  el dia que el permiso de almacenamiento cambie otra vez.
+void MainComponent::openBrowseForFolder (ProjectStore::Carpeta que)
 {
+    carpetaQueSeElige = que;
     browseModo = browseCarpeta;
     browseTargetPad = -1;
     auditionedFile = juce::File();
     closeAllSheets();
     browseSheet.setVisible (true);
     browseSheet.toFront (false);
-    //  Empieza donde ya cae hoy, que es de donde se sale para cambiarlo.
+    //  Empieza donde esta hoy, que es de donde se sale para cambiarlo.
     if (browser != nullptr)
-        browser->setRoot (ProjectStore::exports());
+        browser->setRoot (ProjectStore::carpeta (que));
     resized();
     repaint();
 
@@ -9097,6 +9126,11 @@ void MainComponent::openBrowseForExportDir()
     {
         if (browser != nullptr) browser->refresh();
     });
+}
+
+void MainComponent::openBrowseForExportDir()
+{
+    openBrowseForFolder (ProjectStore::Carpeta::exports);
 }
 
 void MainComponent::usarCarpetaDeExport()
@@ -9119,7 +9153,7 @@ void MainComponent::usarCarpetaDeExport()
     //  la exportacion es la unica accion de esta app que no se deshace tocando
     //  otra vez. ProjectStore::canReallyWriteInto deja un fichero de un byte y
     //  lo vuelve a leer, que es la unica prueba que no miente.
-    if (! ProjectStore::setExports (elegida))
+    if (! ProjectStore::setCarpeta (carpetaQueSeElige, elegida))
     {
         status.setText (T ("Esa carpeta no deja escribir - prueba otra"),
                         juce::dontSendNotification);
@@ -9129,9 +9163,36 @@ void MainComponent::usarCarpetaDeExport()
     browseModo = browsePad;
     closeAllSheets();
     destinoCache = juce::File();
-    openSheet (exportSheet, setButton);
-    status.setText (T ("El rebote caera en %1", elegida.getFileName()),
-                    juce::dontSendNotification);
+    //  Y SE VUELVE A LA FICHA DE DONDE SE SALIO, no siempre a la del rebote.
+    //  Aterrizar en EXPORTAR despues de cambiar la carpeta de proyectos seria
+    //  el mismo gesto contestando otra pregunta.
+    switch (carpetaQueSeElige)
+    {
+        case ProjectStore::Carpeta::exports:
+            openSheet (exportSheet, setButton);
+            status.setText (T ("El rebote caera en %1", elegida.getFileName()),
+                            juce::dontSendNotification);
+            break;
+
+        case ProjectStore::Carpeta::proyectos:
+            //  Y LA LISTA SE RELEE, que es la mitad sin la cual el cambio no se
+            //  ve: `projList` cachea su raiz -ver `raizCache`- asi que sin esto
+            //  AJUSTES · PROYECTOS seguiria enseñando los de la carpeta anterior
+            //  mientras GUARDAR ya escribe en la nueva. Dos verdades en la misma
+            //  pantalla, que es como se pierde un proyecto sin que falle nada.
+            raizCache = juce::File();
+            refreshProjectList();
+            openSheet (exportSheet, setButton);
+            status.setText (T ("Los proyectos viven en %1", elegida.getFileName()),
+                            juce::dontSendNotification);
+            break;
+
+        case ProjectStore::Carpeta::samples:
+            openSheet (exportSheet, setButton);
+            status.setText (T ("Los sonidos salen de %1", elegida.getFileName()),
+                            juce::dontSendNotification);
+            break;
+    }
 }
 
 void MainComponent::openBrowseForPad (int index)

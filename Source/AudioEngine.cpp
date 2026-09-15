@@ -87,7 +87,12 @@ AudioEngine::AudioEngine()
     //  pasara con el canal, que es un valor por defecto que ademas es valido:
     //  el mismo fallo que el `brillo` del `Recipe` y el cero de `padAncho`.
     for (auto& pad : padRecorte) for (auto& s : pad) s.store (1.0f, std::memory_order_relaxed);
-    for (auto& c : padCanal)   c.store (0, std::memory_order_relaxed);
+    //  SIN CANAL y no en el cero, que es lo que pidio el telefono y lo que
+    //  arregla un fallo de verdad: con los 64 en el canal 0, la mesa arrancaba
+    //  con TODO en una tira -mover ese fader movia los sesenta y cuatro y su
+    //  mute callaba la maquina entera- y «canal 1» decia una agrupacion que
+    //  nadie habia hecho. Ver AudioEngine::kSinCanal.
+    for (auto& c : padCanal)   c.store ((juce::uint8) kSinCanal, std::memory_order_relaxed);
     for (auto& ch : canalSend) for (auto& s : ch) s.store (0.0f, std::memory_order_relaxed);
     for (auto& g : canalGain)  g.store (1.0f, std::memory_order_relaxed);
     for (auto& m : canalMute)  m.store (false, std::memory_order_relaxed);
@@ -782,12 +787,18 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         //  `kSend`, asi que no hay etapa nueva, ni rama en el bucle de
         //  muestras, ni un salto de nivel en el borde del bloque. Un solo que
         //  chasquea al pulsarlo no sirve para lo que sirve un solo.
-        const int   canal = (int) padCanal[(size_t) p].load (std::memory_order_relaxed);
-        const bool  calla = canalMute[(size_t) canal].load (std::memory_order_relaxed)
-                              || (canalSoloActive.load (std::memory_order_relaxed)
-                                   && ! canalSolo[(size_t) canal].load (std::memory_order_relaxed));
+        const int  canal = (int) padCanal[(size_t) p].load (std::memory_order_relaxed);
+        //  Y UN PAD PUEDE NO TENER CANAL, que es como nacen los sesenta y
+        //  cuatro. Va derecho al maestro: ganancia uno, sin mute, sin solo y
+        //  sin envios -la mascara ya lo deja fuera en `refrescaSendMask`-. La
+        //  guarda es ademas lo que impide indexar `canalGain[255]`.
+        const bool en   = AudioEngine::tieneCanal (canal);
+        const bool calla = en && (canalMute[(size_t) canal].load (std::memory_order_relaxed)
+                                   || (canalSoloActive.load (std::memory_order_relaxed)
+                                        && ! canalSolo[(size_t) canal].load (std::memory_order_relaxed)));
         const float gCan  = calla ? 0.0f
-                                  : canalGain[(size_t) canal].load (std::memory_order_relaxed);
+                          : en    ? canalGain[(size_t) canal].load (std::memory_order_relaxed)
+                                  : 1.0f;
         float& smCan = smCanalDePad[(size_t) p];
         smCan += kSend * (gCan - smCan);
         const bool canalHot = std::abs (smCan - gCan) > 0.0005f;

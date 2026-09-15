@@ -1091,6 +1091,14 @@ namespace
         { "El rebote caera en %1", "",
           "The bounce will land in %1",
           "导出将写入 %1", "سيقع التصدير في %1" },
+        //  Las dos hermanas, de la misma tanda: ver ProjectStore::Carpeta.
+        { "Los proyectos viven en %1", "",
+          "Projects live in %1",
+          "项目保存在 %1", "المشاريع في %1" },
+        { "Los sonidos salen de %1", "",
+          "Samples come from %1",
+          "音色来自 %1", "الأصوات من %1" },
+        { "SONIDOS", "",  "SAMPLES", "音色", "أصوات" },
 
         //  EL TOUR DE BIENVENIDA. ATRAS y EMPEZAR llevan clave propia porque
         //  esas dos palabras ya existen en la tabla con OTRO sentido - ATRAS

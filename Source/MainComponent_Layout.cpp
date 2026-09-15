@@ -2584,8 +2584,8 @@ void MainComponent::resized()
             }
             projPathRowArea = inner.removeFromTop (Metrics::bandaSubtitulo);
             //  El nombre del proyecto y la ruta donde vive son UNA cosa; las
-            //  seis tapas de abajo, otra. Sin panel, la caja de escribir se
-            //  leia como una fila mas de la lista que hay debajo.
+            //  tapas de abajo, otra. Sin panel, la caja de escribir se leia como
+            //  una fila mas de la lista que hay debajo.
             setGrupos.add (projNameRowArea.getUnion (projPathRowArea));
             inner.removeFromTop (Metrics::sm);
 
@@ -2627,7 +2627,11 @@ void MainComponent::resized()
         //  Y LA CABECERA PEDIDA ES LA QUE SE COLOCA: pedia 32 y dos lineas mas
         //  abajo coloca `Metrics::hit`, o sea ocho pixeles que la tarjeta no
         //  sabia que iba a ocupar.
+        //  Con las DOS filas de carpetas contadas, que es la leccion que esta
+        //  misma ficha ya lleva escrita dos veces aqui arriba: pedir sin una
+        //  fila y colocarla igual es como una fila se queda con altura cero.
         auto inner = sheetFromBottom (exportSheet, Metrics::hit + 96 + Metrics::hit + Metrics::sm
+                                                     + (Metrics::hit + Metrics::sm) * 2
                                                      + Metrics::btn * 2 + Metrics::sm * 2
                                                      + Metrics::hit + Metrics::sm);
         exportGrupos.clear();
@@ -2647,6 +2651,53 @@ void MainComponent::resized()
             layoutModuleBar (Lang::takeEnd (fila, juce::jmin (fila.getWidth(),
                                                               juce::jmax (110, fila.getWidth() / 3))),
                              db, 0, 1);
+            //  Y LAS OTRAS DOS CARPETAS, EN ESTA FICHA Y NO EN PROYECTOS.
+            //
+            //  Empezaron en AJUSTES · PROYECTOS, que es donde se ve la ruta y
+            //  parecia su sitio, y salieron medidas y mal las DOS veces: en fila
+            //  propia costaban cuarenta pixeles que la ficha no tiene en
+            //  360x640 -`MARCO 186`, `TAPADO 25`, `CABECERA 3`- y metidas en la
+            //  fila de EXPORTAR y KIT dejaban cuatro rotulos repartidos por el
+            //  texto donde caben dos: `TRUNC 4` y `SQUEEZE 6`. *Cambiar un
+            //  apreton por un corte no es un arreglo*, y aqui las dos opciones
+            //  eran eso.
+            //
+            //  Aqui si caben, y ademas es donde ya vive la pregunta: esta ficha
+            //  lleva desde su primera tanda decidiendo DONDE cae lo que sale, y
+            //  las tres son la misma -donde se abre, donde se guarda, donde se
+            //  rebota-. Tres filas de una tapa, una por carpeta, con el mismo
+            //  reparto que la de arriba.
+            //  Y CON LA ESCALERA DE SIEMPRE, que la primera version no tenia y
+            //  salio medido: en 915x412 la tarjeta da 370 px para 432 pedidos, y
+            //  lo que falta se lo come LO ULTIMO que se maqueta — o sea EN
+            //  VIVO, que salia a **809x6** en los cuatro idiomas. Cuatro TOUCH
+            //  nuevos sobre 3370, y *un numero que empeora es un fallo aunque el
+            //  resto pase*.
+            //
+            //  Lo que cede es lo de MENOS uso: elegir una carpeta se hace una
+            //  vez y EN VIVO es una tapa que se toca sonando. Se apagan **Y** se
+            //  les vacian los limites, las dos cosas, que es la regla que esta
+            //  casa ya tiene escrita en `seqZoomBtn` y en `seqPistasBtn`.
+            //
+            //  Y se pregunta por lo que QUEDA para las filas de abajo, no por el
+            //  tamano de la ventana: es la misma cuenta que decide si cabe, no
+            //  una lista de pantallas que un dia se queda corta.
+            {
+                const int abajo = Metrics::btn * 2 + Metrics::xs + Metrics::hit + Metrics::sm;
+                const int piden = (Metrics::hit + Metrics::sm) * 2;
+                const bool caben = inner.getHeight() - piden >= abajo;
+                for (auto* b : { &projDirBtn, &samplesDirBtn })
+                {
+                    b->setVisible (caben);
+                    if (! caben) { b->setBounds ({}); continue; }
+                    inner.removeFromTop (Metrics::sm);
+                    auto f2 = inner.removeFromTop (Metrics::hit);
+                    juce::TextButton* uno[1] = { b };
+                    layoutModuleBar (Lang::takeEnd (f2, juce::jmin (f2.getWidth(),
+                                                                    juce::jmax (110, f2.getWidth() / 3))),
+                                     uno, 0, 1);
+                }
+            }
             //  Y EL DESTINO NO LLEVA PANEL, que es la misma decision que la
             //  pagina de ASPECTO y la pagina SONIDO de EL PAD: es UNA tapa, y
             //  un panel alrededor de un solo control no agrupa nada — con el

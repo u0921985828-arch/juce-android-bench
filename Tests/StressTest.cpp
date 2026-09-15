@@ -31,6 +31,24 @@ using Clock = std::chrono::steady_clock;
 //  sampler ever plays and which puts the master saturator into permanent
 //  action - a bench that measures its own test signal. Each pad gets its own
 //  phase and a noise floor, so the sum behaves like sixteen real one-shots.
+//  UN MOTOR DE PRUEBA CON LOS PADS EN EL CANAL 0.
+//
+//  Desde que un pad nace SIN canal -ver `AudioEngine::kSinCanal`- «recien
+//  encendido» ya no quiere decir «todo entra en el canal 0», y eso dejo
+//  TREINTA Y CUATRO comprobaciones de este fichero midiendo el camino de un
+//  efecto con pads que no mandaban a ningun bus: el delay sin cola, el EQ sin
+//  cambiar una muestra, el compresor a +0.00 dB. Ninguna era un fallo del
+//  motor — era el andamio dando por hecho un defecto que cambio, que es
+//  exactamente lo que esta casa llama medir el estado de la corrida de antes.
+//
+//  Se pone AQUI y no en cada sitio a mano porque lo que estas pruebas miden es
+//  el EFECTO y no el enrutado: quien quiera medir el enrutado pone sus canales
+//  despues, que es lo que hacen las tres que lo hacen.
+static void enCanalCero (AudioEngine& e) noexcept
+{
+    for (int p = 0; p < AudioEngine::kNumPads; ++p) e.setPadCanal (p, 0);
+}
+
 static SampleBuffer::Ptr makeSample (double sr, double seconds, float freq, bool decay = true)
 {
     auto* sb = new SampleBuffer();
@@ -173,6 +191,7 @@ int main()
     const long rssMotor = zatiRssKb();
     e.prepareToPlay (sr, bs);
     e.setPolyphony (32, 4);
+    enCanalCero (e);
 
     {
         const long rssTras = zatiRssKb();
@@ -257,6 +276,7 @@ int main()
         AudioEngine d;
         d.prepareToPlay (sr, bs);
         d.setPolyphony (32, 4);
+        enCanalCero (d);
         d.setPadGain (0, 0.85f);
         //  Flat, not decaying: a sample that fades on its own would make the
         //  "did the level come back" answer depend on when it was asked.
@@ -305,6 +325,7 @@ int main()
         AudioEngine r;
         r.prepareToPlay (sr, bs);
         r.setPolyphony (32, 4);
+        enCanalCero (r);
         r.setPadGain (0, 0.85f);
         r.publishSample (0, makeSample (48000.0, 4.0, 220.0f, false));
         juce::AudioBuffer<float> rb (2, bs);
@@ -347,6 +368,7 @@ int main()
         AudioEngine e2;
         e2.prepareToPlay (sr, b);
         e2.setPolyphony (32, 4);
+        enCanalCero (e2);
         for (int p = 0; p < 16; ++p) { e2.setPadGain (p, 0.85f); e2.publishSample (p, makeSample (44100.0, 1.2, 110.0f * (float) (p + 1))); }
         juce::AudioBuffer<float> bb (2, b);
         runBlocks (e2, bb, b, 4);
@@ -369,6 +391,7 @@ int main()
     //  no se oye.
     {
         AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (16, 4);
+ enCanalCero (e);
         e.setMidiOutEnabled (true);
         for (int p = 0; p < 4; ++p) { e.setPadGain (p, 1.0f); e.publishSample (p, makeSample (48000.0, 0.1, 200.0f)); }
         //  El pad 5 se queda sin muestra: no debe mandar nada.
@@ -439,6 +462,7 @@ int main()
     //  se come la interpolacion.
     {
         AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+ enCanalCero (e);
         //  33.34375 ms x 48 kHz = 1600.5 muestras: media muestra EXACTA de parte
         //  fraccionaria, que es el peor caso de la interpolacion. El primer
         //  intento uso 100 ms, que son 4800 muestras clavadas - fraccion cero -
@@ -495,6 +519,7 @@ int main()
     //  descubre aqui y no en un directo.
     {
         AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+ enCanalCero (e);
         //  Solo el bus de reverb: mezcla al maximo y un pad que le manda todo.
         e.setRevMix (1.0f); e.setRevSize (0.6f); e.setRevDamp (0.4f);
         //  La ganancia del pad, que por defecto es cero: la primera version de
@@ -751,6 +776,7 @@ int main()
             AudioEngine e;
             e.prepareToPlay (48000.0, 512);
             e.setPolyphony (8, 2);
+            enCanalCero (e);
             e.setPadGain (0, 1.0f);
             e.setSafetyLimiter (limiter);
 
@@ -828,6 +854,7 @@ int main()
         AudioEngine e;
         e.prepareToPlay (48000.0, 512);
         e.setPolyphony (8, 2);
+        enCanalCero (e);
         e.setPadGain (0, 1.0f);
         e.setCanalSend (0, 3, 1.0f);
         e.setCanalSend (0, 5, 1.0f);
@@ -887,6 +914,7 @@ int main()
         AudioEngine e;
         e.prepareToPlay (48000.0, 512);
         e.setPolyphony (16, 2);
+        enCanalCero (e);
 
         for (int p = 0; p < 5; ++p)
         {
@@ -964,6 +992,7 @@ int main()
         AudioEngine e;
         e.prepareToPlay (48000.0, 64);
         e.setPolyphony (8, 2);
+        enCanalCero (e);
 
         SampleBuffer::Ptr sb = new SampleBuffer();
         sb->buffer.setSize (2, 48000);
@@ -1022,6 +1051,7 @@ int main()
             AudioEngine e;
             e.prepareToPlay (48000.0, 64);
             e.setPolyphony (8, 2);
+            enCanalCero (e);
             for (int p = 0; p < 2; ++p)
             {
                 SampleBuffer::Ptr sb = new SampleBuffer();
@@ -1063,6 +1093,7 @@ int main()
         AudioEngine e;
         e.prepareToPlay (48000.0, 64);
         e.setPolyphony (8, 2);
+        enCanalCero (e);
         for (int p = 0; p < 2; ++p)
         {
             SampleBuffer::Ptr sb = new SampleBuffer();
@@ -1101,6 +1132,7 @@ int main()
             AudioEngine e;
             e.prepareToPlay (48000.0, 64);
             e.setPolyphony (8, 2);
+            enCanalCero (e);
             SampleBuffer::Ptr sb = new SampleBuffer();
             sb->buffer.setSize (2, 4800);
             for (int ch = 0; ch < 2; ++ch)
@@ -1170,6 +1202,7 @@ int main()
                                     juce::AudioBuffer<float>& keep, bool* nanOut)
         {
             AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+ enCanalCero (e);
             e.setPadGain (0, 1.0f);
             e.setPadCutoff (0, cutoff);
             e.setPadReso   (0, reso);
@@ -1349,6 +1382,7 @@ int main()
     //  crispado y no hay mando que lo arregle.
     {
         AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (48, 8);
+ enCanalCero (e);
         for (int p = 0; p < 16; ++p)
         {
             e.setPadGain (p, 1.0f);
@@ -1430,6 +1464,7 @@ int main()
         };
 
         AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+ enCanalCero (e);
         e.setPadGain (0, 1.0f);
         e.setPadPitch (0, 12.0f);                 // una octava arriba: delta = 2
         e.publishSample (0, tone (48000.0, 1.0, 5000.0f));
@@ -1613,6 +1648,7 @@ int main()
         auto corre = [&corte] (float ms, juce::AudioBuffer<float>& cap)
         {
             AudioEngine e; e.prepareToPlay (48000.0, 256); e.setPolyphony (8, 2);
+ enCanalCero (e);
             e.setPadGain (0, 1.0f);
             //  Ataque a cero: lo que se mide es el borde del RECORTE, y un
             //  ataque de 2 ms taparia justo lo que se quiere ver.
@@ -1698,6 +1734,7 @@ int main()
     //  apagado en el dibujo".
     {
         AudioEngine e; e.prepareToPlay (48000.0, 256); e.setPolyphony (32, 4);
+ enCanalCero (e);
         for (int p = 0; p < 4; ++p)
         {
             e.setPadGain (p, 0.8f);
@@ -1881,6 +1918,7 @@ int main()
     //  mirar nada.
     {
         AudioEngine e; e.prepareToPlay (48000.0, 256); e.setPolyphony (32, 8);
+ enCanalCero (e);
         e.setPadGain (0, 0.8f);
         e.publishSample (0, makeSample (48000.0, 1.0, 220.0f));
         juce::AudioBuffer<float> b (2, 256);
@@ -1941,6 +1979,7 @@ int main()
     //  el motor no cuenta voces por pad; con el setup fijo la suma vale.
     {
         AudioEngine e; e.prepareToPlay (48000.0, 256); e.setPolyphony (32, 8);
+ enCanalCero (e);
         e.setPadGain (0, 0.8f);
         e.setPadGain (1, 0.8f);
         e.publishSample (0, makeSample (48000.0, 1.0, 110.0f));
@@ -2000,6 +2039,7 @@ int main()
     //  octava recorre la fuente al doble de velocidad: la voz dura la mitad.
     {
         AudioEngine e; e.prepareToPlay (48000.0, 256); e.setPolyphony (16, 4);
+ enCanalCero (e);
         e.setPadGain (0, 0.9f);
         e.publishSample (0, makeSample (48000.0, 1.0, 220.0f));
         juce::AudioBuffer<float> b (2, 256);
@@ -2046,6 +2086,7 @@ int main()
     //  maximo y el primero en cero, que es el peor escalon posible.
     {
         AudioEngine e; e.prepareToPlay (48000.0, 256); e.setPolyphony (8, 4);
+ enCanalCero (e);
         e.setPadGain (0, 0.9f);
         auto* sb = new SampleBuffer();
         const int n = 4800;                     // 100 ms
@@ -2092,6 +2133,7 @@ int main()
     //  hace nada mas que redondear.
     {
         AudioEngine e; e.prepareToPlay (48000.0, 64); e.setPolyphony (16, 4);
+ enCanalCero (e);
         e.setPadGain (0, 0.9f);
         //  Sin decaimiento: una muestra que se apaga sola mide su envolvente y
         //  no el largo. Cuatro segundos, de sobra para cualquier paso.
@@ -2141,6 +2183,7 @@ int main()
     //  en muestras contando cuantos bloques tarda en sonar el pad.
     {
         AudioEngine e; e.prepareToPlay (48000.0, 64); e.setPolyphony (16, 4);
+ enCanalCero (e);
         e.setPadGain (0, 0.9f);
         e.publishSample (0, makeSample (48000.0, 0.2, 440.0f));
         juce::AudioBuffer<float> b (2, 64);
@@ -2189,6 +2232,7 @@ int main()
     //  pasar un bloqueo que no hace nada.
     {
         AudioEngine e; e.prepareToPlay (48000.0, 128); e.setPolyphony (16, 4);
+ enCanalCero (e);
         e.setPadGain (0, 0.9f);
         //  Ruido, no un tono: para medir cuanto agudo queda hace falta que
         //  haya agudo que quitar en todas las frecuencias.
@@ -2256,6 +2300,7 @@ int main()
     //  Voice::panPropio el bloqueo duraba 128 muestras y luego se deshacia.
     {
         AudioEngine e; e.prepareToPlay (48000.0, 128); e.setPolyphony (16, 4);
+ enCanalCero (e);
         e.setPadGain (0, 0.9f);
         //  Media muestra en silencio y media con tono: asi el bloqueo de
         //  INICIO se mide por lo unico que no admite discusion - si empieza en
@@ -2447,6 +2492,7 @@ int main()
         auto cola = [] (float envio)
         {
             AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+ enCanalCero (e);
             e.setDlyMix (1.0f); e.setDlyTime (100.0f); e.setDlyFb (0.5f);
             e.setPadGain (0, 1.0f);
             //  Menos de cero significa "no se toca": asi la corrida de control
@@ -2596,6 +2642,7 @@ int main()
         auto picoCon = [] (float master)
         {
             AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+ enCanalCero (e);
             e.setMasterUser (master);
             e.setPadGain (0, 0.1f);
             e.publishSample (0, makeSample (48000.0, 1.0, 400.0f));
@@ -2937,6 +2984,7 @@ int main()
     //  cumple una maquina en la que las cuatro de la primera siguen sonando.
     {
         AudioEngine e; e.prepareToPlay (48000.0, 256); e.setPolyphony (32, 8);
+ enCanalCero (e);
         e.setPadGain (0, 0.8f);
         //  BAJOS DUB, que sostiene: es el caso que la queja describe.
         e.publishSample (0, Sintes::sintetiza (0, 0));
@@ -2989,6 +3037,7 @@ int main()
     //  antes del siguiente y no es una nota.
     {
         AudioEngine e; e.prepareToPlay (48000.0, 64); e.setPolyphony (32, 8);
+ enCanalCero (e);
         e.setPadGain (0, 0.8f);
         e.setPadRelease (0, 5.0f);          // que la caida no cuente como nota
         e.publishSample (0, Sintes::sintetiza (0, 0));
@@ -3037,6 +3086,7 @@ int main()
         auto corre = [] (float fin, std::vector<float>& dst) noexcept
         {
             AudioEngine e; e.prepareToPlay (48000.0, 256); e.setPolyphony (32, 8);
+ enCanalCero (e);
             e.setSafetyLimiter (false);
             auto sb = Sintes::sintetiza (0, 0);                 // BAJOS DUB, sostiene
             const int len = sb->buffer.getNumSamples();
@@ -3513,6 +3563,7 @@ int main()
         auto corre = [] (bool conEq, std::vector<float>& salida)
         {
             AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+ enCanalCero (e);
             e.setPadGain (0, 1.0f);
             if (conEq)
             {
@@ -3618,6 +3669,7 @@ int main()
                                    std::vector<float>& salida, int bloques = 40)
         {
             AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+ enCanalCero (e);
             e.setPadGain (0, 1.0f);
             if (fx >= 0)
             {
@@ -3797,6 +3849,7 @@ int main()
                               std::vector<float>& out, int bloques = 24)
         {
             AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+ enCanalCero (e);
             e.setPadGain (0, 1.0f);
             e.setPadAttack (0, 0.0f);
             if (fx >= 0)
@@ -4043,6 +4096,7 @@ int main()
                                           bool abierto = true)
             {
                 AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+ enCanalCero (e);
                 e.setPadGain (0, 1.0f);
                 e.setPadAttack (0, 0.0f);
                 if (abierto)
@@ -4335,6 +4389,7 @@ int main()
     //  ese parametro suene ya lo miden las once filas de efectos de arriba.
     {
         AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+ enCanalCero (e);
         e.setSongMode (true);
         e.setSongLength (4);
 
@@ -4441,6 +4496,7 @@ int main()
                               float hz = 440.0f, float amp = 0.5f)
         {
             AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+ enCanalCero (e);
             e.setPadGain (0, 1.0f);
             if (fx >= 0)
             {
@@ -4739,6 +4795,7 @@ int main()
             auto correLR = [&ruidoLR] (float ancho, std::vector<float>& L, std::vector<float>& R)
             {
                 AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+ enCanalCero (e);
                 e.setPadGain (0, 1.0f);
                 e.setFxParam (0, AudioEngine::kFxWid, 0, ancho);
                 e.setFxParam (0, AudioEngine::kFxWid, 1, 120.0f);
@@ -4805,6 +4862,7 @@ int main()
             auto correExc = [&dosTonos] (float fuerza, std::vector<float>& v)
             {
                 AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+ enCanalCero (e);
                 e.setPadGain (0, 1.0f);
                 e.setFxParam (0, AudioEngine::kFxExc, 0, 1000.0f);
                 e.setFxParam (0, AudioEngine::kFxExc, 1, fuerza);
@@ -4861,6 +4919,7 @@ int main()
             auto correTrn = [&golpe] (float at, std::vector<float>& v)
             {
                 AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+ enCanalCero (e);
                 e.setPadGain (0, 1.0f);
                 e.setFxParam (0, AudioEngine::kFxTrn, 0, at);
                 e.setFxParam (0, AudioEngine::kFxTrn, 1, 0.0f);
@@ -4922,6 +4981,7 @@ int main()
             auto correFrz = [&corto] (bool puesto, std::vector<float>& v)
             {
                 AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+ enCanalCero (e);
                 e.setPadGain (0, 1.0f);
                 if (puesto)
                 {
@@ -5072,6 +5132,7 @@ int main()
         auto cola = [&tonoPlano] (int canalDelPad)
         {
             AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+ enCanalCero (e);
             e.setPadGain (0, 1.0f);
             e.setPadCanal (0, canalDelPad);
             e.setFxParam (0, AudioEngine::kFxDly, 0, 250.0f);
@@ -5131,6 +5192,7 @@ int main()
         auto mide = [&tonoPlano] (int canalMirado)
         {
             AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+ enCanalCero (e);
             e.setPadGain (0, 1.0f);
             e.setPadCanal (0, 1);            // el pad suena en el canal 1
             e.miraCanal (canalMirado);
@@ -5163,6 +5225,7 @@ int main()
         auto corre = [&tonoPlano] (float gan, double& seco, double& colaOut)
         {
             AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+ enCanalCero (e);
             e.setPadGain (0, 1.0f);
             e.setCanalGain (0, gan);
             e.setFxParam (0, AudioEngine::kFxDly, 0, 250.0f);
@@ -5240,6 +5303,7 @@ int main()
         auto seco = [&tonoPlano] (float gan)
         {
             AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+ enCanalCero (e);
             e.setPadGain (0, 1.0f);
             e.setCanalGain (0, gan);
             e.publishSample (0, tonoPlano (kFs, 0.40, 440.0));
@@ -5274,6 +5338,7 @@ int main()
         auto corre = [&tonoPlano] (bool porCanal, std::vector<float>& out)
         {
             AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+ enCanalCero (e);
             e.setPadGain (0, 1.0f);
             e.setFxParam (0, AudioEngine::kFxDly, 0, 180.0f);
             e.setFxParam (0, AudioEngine::kFxDly, 1, 0.5f);
@@ -5343,6 +5408,7 @@ int main()
         auto rmsDe = [&tonoPlano] (int pad, bool conEq)
         {
             AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+ enCanalCero (e);
             //  Y CON MARGEN DE SOBRA, que es lo que la primera corrida
             //  enseño: con el pad a uno, +12 dB sobre un tono de 0.5 son 1.99
             //  de pico y el saturador del master se los come — salia +10.4 dB
@@ -5427,6 +5493,7 @@ int main()
         };
 
         AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+ enCanalCero (e);
         e.setPadGain (0, 1.0f);
         e.setPadCanal (0, 0);
         e.setFxParam (0, AudioEngine::kFxDly, 0, 180.0f);   // el canal 0 pide 180 ms
@@ -5484,6 +5551,7 @@ int main()
         auto corre = [&tonoPlano] (bool reparte, std::vector<float>& out)
         {
             AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (64, 2);
+ enCanalCero (e);
             for (int c = 0; c < AudioEngine::kNumCanales; ++c)
             {
                 e.setCanalSend (c, AudioEngine::kFxDly, 0.5f);
@@ -5559,6 +5627,7 @@ int main()
         auto corre = [&tonoPlano] (Modo m, std::vector<float>& out)
         {
             AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (64, 2);
+ enCanalCero (e);
             for (int p = 0; p < AudioEngine::kNumPads; ++p)
             {
                 e.setPadGain (p, 0.5f);
@@ -5622,6 +5691,7 @@ int main()
         auto siembra = [&tonoPlano] (AudioEngine& e, bool conSolo)
         {
             e.prepareToPlay (kFs, kBs); e.setPolyphony (64, 2);
+ enCanalCero (e);
             for (int p = 0; p < AudioEngine::kNumPads; ++p)
             {
                 e.setPadGain (p, 0.5f);

@@ -1428,18 +1428,51 @@ public:
              + juce::jlimit (0.0f, 1.0f, abajo)  * down;
     }
 
+    //  SIN CANAL, que es como empieza un pad y no existia.
+    //
+    //  Del telefono: «empezaria el proyecto default con los 64 pads sin ningun
+    //  link a ningun canal... en vez de canal 1, canal 2, hasta 32, que ponga
+    //  SIN CANAL y que se pueda elegir uno de esos 32».
+    //
+    //  Y la peticion senala un fallo de verdad y no una preferencia. Los 64
+    //  pads nacian en el canal 0, o sea que la mesa arrancaba con TODO metido
+    //  en una tira: mover ese fader movia los sesenta y cuatro, su mute callaba
+    //  la maquina entera y poner una reverb en el canal 1 no la oia nadie.
+    //  «Canal 1» decia una agrupacion que nadie habia hecho, y encima era la
+    //  peor posible — la que no separa nada.
+    //
+    //  Un pad SIN canal va derecho al maestro: ni fader, ni mute, ni solo, ni
+    //  envios de canal. Es exactamente lo que hacia un proyecto nuevo con los
+    //  defectos de fabrica -ganancia 1, sin mute, envios a cero- con la unica
+    //  diferencia que importa: ahora nada de la mesa lo toca hasta que alguien
+    //  lo mete en una tira.
+    //
+    //  El centinela es 0xFF y no -1 porque `padCanal` es `uint8` y sigue
+    //  siendolo: sesenta y cuatro bytes, uno por pad, leidos una vez por pad y
+    //  por bloque. Cualquier valor fuera de rango cuenta como «sin canal», que
+    //  es lo que hace que un proyecto viejo con un canal que ya no existe caiga
+    //  del lado seguro en vez de indexar fuera.
+    static constexpr int kSinCanal = 0xFF;
+    static bool tieneCanal (int c) noexcept { return c >= 0 && c < kNumCanales; }
+
     //  A QUE CANAL VA ESTE PAD. Es lo unico que el pad decide del reparto: el
     //  cuanto lo dice el canal.
     void setPadCanal (int slot, int canal) noexcept
     {
         if (slot < 0 || slot >= kNumPads) return;
-        padCanal[(size_t) slot].store ((juce::uint8) juce::jlimit (0, kNumCanales - 1, canal),
+        //  Y NO SE CLAMPA, que es lo que hacia antes: `jlimit (0, 31, canal)`
+        //  convertia «sin canal» en el canal 0, o sea justo lo que esta tanda
+        //  quita. Lo que no es un canal se guarda como el centinela.
+        padCanal[(size_t) slot].store ((juce::uint8) (tieneCanal (canal) ? canal : kSinCanal),
                                        std::memory_order_relaxed);
         refrescaSendMask();
     }
+    //  Devuelve `kSinCanal` para un pad que no esta en ninguna tira. Quien lo
+    //  llame tiene que preguntar con `tieneCanal` antes de indexar: es la unica
+    //  forma de que el compilador no pueda ayudar y por eso se dice aqui.
     int getPadCanal (int slot) const noexcept
     {
-        if (slot < 0 || slot >= kNumPads) return 0;
+        if (slot < 0 || slot >= kNumPads) return kSinCanal;
         return (int) padCanal[(size_t) slot].load (std::memory_order_relaxed);
     }
 
@@ -2938,6 +2971,9 @@ private:
         for (int p = 0; p < kNumPads; ++p)
         {
             const int c = (int) padCanal[(size_t) p].load (std::memory_order_relaxed);
+            //  Un pad SIN canal no manda a ningun bus: el envio es del canal y
+            //  no tiene. Sin esta guarda ademas se indexaria `canalSend[255]`.
+            if (! tieneCanal (c)) continue;
             for (int f = 0; f < kNumFx; ++f)
                 if (canalSend[(size_t) c][(size_t) f].load (std::memory_order_relaxed) > 0.0f
                     && padRecorte[(size_t) p][(size_t) f].load (std::memory_order_relaxed) > 0.0f)

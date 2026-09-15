@@ -160,7 +160,18 @@ public:
         return cached;
     }
 
-    static juce::File samples()    { return sub ("Samples"); }
+    //  DE DONDE SE CARGA UN SONIDO Y DONDE CAE UNO GRABADO, y se puede elegir.
+    //
+    //  Del telefono, en la misma frase que la de proyectos. Es la carpeta del
+    //  navegador de muestras y la que recibe lo que REC captura, o sea las dos
+    //  puntas del mismo camino, y por eso es UNA: quien tiene su banco de
+    //  sonidos en la carpeta de descargas la quiere para las dos cosas.
+    //
+    //  Y cae al defecto si la elegida ya no acepta escritura, que en un movil no
+    //  es raro -una tarjeta desmontada, un permiso revocado-: `carpeta` lo
+    //  comprueba escribiendo un byte cada vez. Un navegador que abre en una
+    //  carpeta muerta se lee como que la app perdio los sonidos.
+    static juce::File samples()    { return carpeta (Carpeta::samples); }
     static juce::File presets()    { return sub ("Presets"); }
     //  LOS KITS QUE HACE LA PERSONA, en la biblioteca y no dentro de un
     //  proyecto: un kit existe para usarse en OTRO proyecto, que es lo que lo
@@ -180,24 +191,51 @@ public:
     static juce::File instrumentos() { return sub ("Instrumentos"); }
     static juce::File recordings() { return sub ("Recordings"); }
 
-    //  DONDE CAE EL REBOTE, Y SE PUEDE ELEGIR.
+    //  LAS TRES CARPETAS QUE SE PUEDEN ELEGIR, Y UN SOLO MECANISMO.
     //
-    //  Cargar un sonido abre un navegador y se elige de donde; sacarlo no
-    //  preguntaba nada y lo dejaba siempre en ZATI/Exports. Es la unica funcion
-    //  de la app cuyo resultado sale del telefono, asi que es justo la que mas
-    //  falta hace poder dirigir - a la carpeta que el movil sincroniza, a la
-    //  tarjeta, a donde la persona ya tiene su musica.
+    //  Empezo con UNA -donde cae el rebote-: cargar un sonido abre un navegador
+    //  y se elige de donde, y sacarlo no preguntaba nada. Llego del telefono la
+    //  otra mitad -«molaria poder elegir cual es la carpeta predeterminada para
+    //  apertura y guardar proyectos, abrir y guardar samples»- y con eso son
+    //  TRES, que es justo el numero a partir del cual copiar el mecanismo deja
+    //  de ser barato: *una regla escrita tres veces son tres reglas, y la
+    //  tercera es la que un dia se escribe mal*. La comprobacion de escritura,
+    //  la vuelta al defecto y el fichero de preferencia son los mismos para las
+    //  tres, asi que se escriben una vez.
     //
     //  La eleccion es de la PERSONA y no del proyecto, asi que vive donde el
     //  idioma y la carcasa: en el directorio interno de la app, legible antes
     //  de que nadie haya decidido donde esta la biblioteca.
-    static juce::File exportPrefFile()
+    //
+    //  Y NO ES LO MISMO QUE `home()`. La biblioteca se ANCLA y no se mueve
+    //  -esa es la invariante que costo una sesion huerfana- y esto es otra
+    //  cosa: una preferencia por encima de ella, que si no vale se cae al
+    //  defecto de siempre sin tocar el ancla. Un fichero por carpeta y no uno
+    //  con tres lineas, que asi borrar una eleccion no puede llevarse las otras
+    //  dos por delante.
+    enum class Carpeta { proyectos, samples, exports };
+
+    static const char* nombreDe (Carpeta q) noexcept
     {
-        return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-                   .getChildFile ("zati-exportar.txt");
+        switch (q)
+        {
+            case Carpeta::proyectos: return "Projects";
+            case Carpeta::samples:   return "Samples";
+            case Carpeta::exports:   break;
+        }
+        return "Exports";
     }
 
-    static juce::File exportsPorDefecto() { return sub ("Exports"); }
+    static juce::File prefDe (Carpeta q)
+    {
+        const char* f = q == Carpeta::proyectos ? "zati-proyectos.txt"
+                      : q == Carpeta::samples   ? "zati-samples.txt"
+                                                : "zati-exportar.txt";
+        return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                   .getChildFile (f);
+    }
+
+    static juce::File porDefecto (Carpeta q) { return sub (nombreDe (q)); }
 
     //  La elegida SI SIGUE VALIENDO, y si no la de siempre. Se comprueba cada
     //  vez y no solo al elegirla: una carpeta de una tarjeta que ya no esta
@@ -206,9 +244,14 @@ public:
     //  escritura. Comprobar es barato - un fichero de un byte - y equivocarse
     //  aqui cuesta la unica accion de esta app que no se deshace tocando otra
     //  vez.
-    static juce::File exports()
+    //
+    //  Y AHORA TAMBIEN CUESTA UN PROYECTO. Con la carpeta de proyectos elegida
+    //  fuera, esta misma pregunta es la que decide si GUARDAR encuentra donde
+    //  escribir: caer al defecto es peor que fallar solo si nadie lo dice, asi
+    //  que el que llama se entera por `elegidaVale`.
+    static juce::File carpeta (Carpeta q)
     {
-        const auto f = exportPrefFile();
+        const auto f = prefDe (q);
         if (f.existsAsFile())
         {
             const auto ruta = f.loadFileAsString().trim();
@@ -219,23 +262,44 @@ public:
                     return elegida;
             }
         }
-        return exportsPorDefecto();
+        return porDefecto (q);
+    }
+
+    //  Si hay una elegida Y sigue aceptando escritura. Es lo que separa «no has
+    //  elegido» de «elegiste una que ya no esta», que para quien mira la ficha
+    //  son dos frases distintas.
+    static bool elegidaVale (Carpeta q)
+    {
+        const auto f = prefDe (q);
+        if (! f.existsAsFile()) return false;
+        const auto ruta = f.loadFileAsString().trim();
+        return ruta.isNotEmpty() && canReallyWriteInto (juce::File (ruta));
     }
 
     //  Devuelve false si la carpeta no acepta una escritura de verdad, que en
     //  Android es la mitad de las que se pueden LISTAR: el navegador entra en
     //  ellas y el sistema no deja dejar nada dentro. Se dice al elegirla y no
     //  al terminar el rebote.
-    static bool setExports (const juce::File& dir)
+    static bool setCarpeta (Carpeta q, const juce::File& dir)
     {
         if (! canReallyWriteInto (dir)) return false;
-        exportPrefFile().getParentDirectory().createDirectory();
-        exportPrefFile().replaceWithText (dir.getFullPathName());
+        prefDe (q).getParentDirectory().createDirectory();
+        prefDe (q).replaceWithText (dir.getFullPathName());
         return true;
     }
 
-    static void clearExports() { exportPrefFile().deleteFile(); }
-    static bool exportsElegida() { return exportPrefFile().existsAsFile(); }
+    static void olvidaCarpeta (Carpeta q) { prefDe (q).deleteFile(); }
+    static bool hayElegida (Carpeta q)    { return prefDe (q).existsAsFile(); }
+
+    //  Los tres nombres de antes, que siguen valiendo y no se tocan: quince
+    //  sitios llaman a `exports()` y renombrarlos seria un cambio de esta tanda
+    //  que no arregla nada. Lo que era un mecanismo pasa a ser una ventana.
+    static juce::File exportPrefFile()     { return prefDe (Carpeta::exports); }
+    static juce::File exportsPorDefecto()  { return porDefecto (Carpeta::exports); }
+    static juce::File exports()            { return carpeta (Carpeta::exports); }
+    static bool setExports (const juce::File& dir) { return setCarpeta (Carpeta::exports, dir); }
+    static void clearExports()             { olvidaCarpeta (Carpeta::exports); }
+    static bool exportsElegida()           { return hayElegida (Carpeta::exports); }
 
     // Creates the whole tree. Safe to call every launch.
     static void ensureTree()
@@ -244,7 +308,20 @@ public:
             home().getChildFile (n).createDirectory();
     }
 
-    static juce::File root() { return sub ("Projects"); }
+    //  DONDE VIVEN LOS PROYECTOS, y se puede elegir.
+    //
+    //  Del telefono: «molaria poder elegir cual es la carpeta predeterminada
+    //  para apertura y guardar proyectos». Es la misma carpeta para las dos
+    //  cosas a proposito y no por ahorro: abrir de un sitio y guardar en otro
+    //  es como se pierde un proyecto sin que falle nada -lo guardas, la lista
+    //  no lo enseña, y no hay nada que mirar-.
+    //
+    //  Y ESTO NO MUEVE LA BIBLIOTECA. `home()` se ancla y no se mueve, que es
+    //  la invariante que costo una sesion huerfana; esto es una preferencia
+    //  POR ENCIMA de ella, que se cae al defecto sin tocar el ancla. Un
+    //  proyecto guardado en la carpeta de antes sigue donde estaba: lo que
+    //  cambia es donde se busca a partir de ahora, que es lo que se pidio.
+    static juce::File root() { return carpeta (Carpeta::proyectos); }
 
     static juce::File folderFor (const juce::String& name)
     {
