@@ -83,9 +83,33 @@ target_link_libraries(Zati PRIVATE
     juce::juce_dsp
     juce::juce_gui_extra
     juce::juce_recommended_config_flags
-    juce::juce_recommended_lto_flags
     juce::juce_recommended_warning_flags
 )
+
+#  --- EL ENLACE, QUE ERA CUARENTA MINUTOS POR BINARIO ------------------------
+#
+#  `juce_recommended_lto_flags` pone `-flto` a secas, y GCC lo resuelve con
+#  «using serial compilation of 121 LTRANS jobs»: ciento veintiun trabajos EN
+#  SERIE, un solo hilo, con las otras tres CPU paradas. Medido: cuarenta minutos
+#  de enlace contra dos de compilacion, y el banco se corre varias veces por
+#  tanda, asi que el coste no es el enlace sino las iteraciones que no se hacen.
+#
+#  Se reparte entre los nucleos en vez de quitarlo: la optimizacion es la misma,
+#  lo que cambia es que la haga uno o la hagan todos. El APK que sale del CI la
+#  lleva igual, que es lo que importaba conservar.
+#
+#  Solo GCC y Clang; en el resto se deja `-flto` tal cual, que es lo que habia.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    include(ProcessorCount)
+    ProcessorCount(ZATI_NPROC)
+    if(ZATI_NPROC EQUAL 0)
+        set(ZATI_NPROC 1)
+    endif()
+    target_compile_options(Zati PRIVATE -flto=${ZATI_NPROC})
+    target_link_options   (Zati PRIVATE -flto=${ZATI_NPROC})
+else()
+    target_link_libraries(Zati PRIVATE juce::juce_recommended_lto_flags)
+endif()
 
 # ---------------------------------------------------------------------------
 #  The bench.
