@@ -5505,6 +5505,29 @@ void MainComponent::xyTouched (bool down)
 void MainComponent::refreshXyPad()
 {
     const auto& d = fxDefs[juce::jlimit (0, kNumFx - 1, xyFx)];
+
+    //  Y SIN EFECTO PUESTO, EL PANEL TAMPOCO NOMBRA NINGUNO.
+    //
+    //  El titulo ya dice «PON UN EFECTO» -ver paintXySheetContent- y el panel
+    //  seguia dibujando «BARRIDO fuera» y «RESO Q 0.71», que son los ejes de
+    //  FLT, el tipo 0. O sea la misma pantalla diciendo dos cosas: arriba que
+    //  no hay efecto y dentro los mandos de uno concreto con sus numeros. Un
+    //  arreglo a medias es peor que ninguno, porque el que lo lee se fia.
+    //
+    //  Los dos ejes se vacian y los valores tambien: lo que queda es la rejilla
+    //  sola, que es lo que hay de verdad. Los rotulos de los ejes los pinta
+    //  XyPad y NO pasan por `UiAudit::rotulo`, asi que esto no lo puede ver
+    //  ninguna regla del banco — se anota como lo que es.
+    if (! fxEstaPuesto (xyFx))
+    {
+        xyPad.setAxisNames  ({}, {});
+        xyPad.setAxisValues ({}, {});
+        xyPad.setPosition (0.5f, 0.5f);
+        xyLatchButton.setButtonText (xyLatch ? T ("FIJO") : T ("MOMENTANEO"));
+        xyPanel.repaint();
+        return;
+    }
+
     xyPad.setAxisNames  (T (d.param[0]), T (d.param[1]));
     xyPad.setAxisValues (fxFormat (d.spec[0], fxParam (xyFx, 0).getValue()),
                          fxFormat (d.spec[1], fxParam (xyFx, 1).getValue()));
