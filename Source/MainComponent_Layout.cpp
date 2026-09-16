@@ -3004,7 +3004,18 @@ void MainComponent::resized()
         //  que el titulo caia encima de la primera tapa y el nombre del pack
         //  encima de la segunda. Es la misma regla que ya siguen las bandas de
         //  AJUSTES y los paneles del secuenciador: una cuenta, un dueno.
-        instTitleArea = centraEnRenglon (titleRow.reduced (Metrics::lg, 0).withHeight (Metrics::bandaTitulo));
+        //  Y AL FILO DE SUS PROPIAS TAPAS, no dieciseis pixeles mas adentro.
+        //
+        //  Llevaba un `reduced (Metrics::lg, 0)` que las tapas de debajo NO
+        //  llevan, asi que el titulo empezaba en 49 y la primera fila en 33:
+        //  medido sobre las 53 pantallas, 35 fichas ponen su titulo en 33 —el
+        //  margen de ficha— y esta era de las seis que no. Un titulo que no
+        //  arranca donde arranca su contenido es la version entre renglones de
+        //  «la pagina esta torcida»: se ve y no se puede senalar.
+        //
+        //  La cruz de cerrar ya se aparto de `titleRow` justo aqui arriba, asi
+        //  que quitar el margen no la toca.
+        instTitleArea = centraEnRenglon (titleRow.withHeight (Metrics::bandaTitulo));
         inner.removeFromTop (Metrics::sm);
 
         //  MENOS Y MAS EN LOS EXTREMOS y el nombre del pack pintado en medio.
