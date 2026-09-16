@@ -5684,6 +5684,158 @@ int main()
     }
 
     // ------------------------------------------------------------------
+    //  Y LOS CUATRO DE MODULACION: CADA CANAL CON SU VELOCIDAD, Y SIN
+    //  SEPARARSE NUNCA.
+    //
+    //  Del telefono: «que el chorus, el phaser y el flanger puedan funcionar a
+    //  diferentes velocidades, pero sincronizados». Son DOS cosas y se miden por
+    //  separado, porque una sin la otra no vale nada: un LFO por canal cumple la
+    //  primera y suspende la segunda —se separan—, y un LFO compartido cumple la
+    //  segunda y suspende la primera —van todos igual—.
+    //
+    //  SE MIDE CON TRM porque es el unico de los cuatro cuya envolvente ES el
+    //  LFO: un tremolo modula la ganancia, asi que el periodo se lee del audio
+    //  sin inventar nada. Los otros tres llaman a `pasoMod` en la misma linea,
+    //  o sea que comparten reloj por construccion y no por coincidencia.
+    //
+    //  Y LA TERCERA CIFRA ES LA QUE IMPORTA: a los SESENTA SEGUNDOS, uno a 1 Hz
+    //  lleva 60 vueltas y otro a 4 Hz lleva 240, y los dos tienen que estar en
+    //  el mismo sitio de la vuelta —el valle— en la MISMA muestra. Con fases
+    //  acumuladas por separado, ahi es donde se ve la deriva: cada una arrastra
+    //  su propio error de coma flotante durante 2.8 millones de muestras.
+    {
+        //  La envolvente por ventanas de un ciclo del tono, igual que la de TRM
+        //  de mas arriba y por lo mismo: una ventana mas corta que un ciclo mide
+        //  por donde cayo la ventana.
+        const int vent = (int) (kFs / 300.0);
+
+        auto tono = [] (double sr, double seg, double hz)
+        {
+            auto* sb = new SampleBuffer();
+            const int n = (int) (sr * seg);
+            sb->buffer.setSize (2, n);
+            for (int i = 0; i < n; ++i)
+            {
+                const float x = 0.50f * (float) std::sin (2.0 * juce::MathConstants<double>::pi
+                                                            * hz * (double) i / sr);
+                sb->buffer.setSample (0, i, x);
+                sb->buffer.setSample (1, i, x);
+            }
+            sb->sourceSampleRate = sr;
+            return SampleBuffer::Ptr (sb);
+        };
+
+        //  `tarde` son los segundos que el efecto tarda en ENCENDERSE, y es la
+        //  mitad que hace que esto mida algo: con una fase acumulada por canal,
+        //  encender el segundo tres segundos despues lo deja desfasado para
+        //  siempre —el flanco de subida llamaba a `reinicia()`—. Con la fase
+        //  derivada del reloj, encenderlo tarde no mueve donde esta.
+        auto corre = [&tono, vent] (int canal, float rate, double segs, double tarde,
+                                       std::vector<double>& env)
+        {
+            AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+            enCanalCero (e);
+            e.setPadGain (0, 0.50f);
+            e.setPadCanal (0, canal);
+            e.setFxParam (canal, AudioEngine::kFxTrm, 0, rate);
+            e.setFxParam (canal, AudioEngine::kFxTrm, 1, 1.0f);   // PROF al maximo: el valle es cero
+            e.setFxParam (canal, AudioEngine::kFxTrm, 2, 1.0f);
+            if (tarde <= 0.0) e.setCanalSend (canal, AudioEngine::kFxTrm, 1.0f);
+            e.publishSample (0, tono (kFs, segs + 1.0, 300.0));
+
+            juce::AudioBuffer<float> b (2, kBs);
+            b.clear(); e.renderNextBlock (b, 0, kBs);
+            e.postNoteOn (0, 1.0f);
+            const int bloqueEnciende = (int) (tarde * kFs) / kBs;
+
+            //  La envolvente se calcula al vuelo: sesenta segundos guardados
+            //  serian 46 MB por corrida y lo que hace falta son 53000 dobles.
+            env.clear();
+            double acc = 0.0; int n = 0;
+            const int total = (int) (kFs * segs) / kBs;
+            for (int blk = 0; blk < total; ++blk)
+            {
+                if (tarde > 0.0 && blk == bloqueEnciende)
+                    e.setCanalSend (canal, AudioEngine::kFxTrm, 1.0f);
+                b.clear(); e.renderNextBlock (b, 0, kBs);
+                for (int i = 0; i < kBs; ++i)
+                {
+                    const double x = b.getSample (0, i);
+                    acc += x * x;
+                    if (++n == vent) { env.push_back (std::sqrt (acc / n)); acc = 0.0; n = 0; }
+                }
+            }
+        };
+
+        //  El periodo, contado en cruces de la envolvente por su punto medio.
+        auto hzDe = [vent] (const std::vector<double>& env)
+        {
+            double pico = 0.0, valle = 1.0e9;
+            for (double x : env) { pico = juce::jmax (pico, x); valle = juce::jmin (valle, x); }
+            const double medio = 0.5 * (pico + valle);
+            int primero = -1, ultimo = -1, vueltas = 0;
+            for (size_t i = 1; i < env.size(); ++i)
+                if (env[i - 1] >= medio && env[i] < medio)
+                { if (primero < 0) primero = (int) i; else { ultimo = (int) i; ++vueltas; } }
+            const double segs = (vueltas > 0 && ultimo > primero)
+                                  ? (double) (ultimo - primero) * vent / kFs / vueltas : 0.0;
+            return segs > 0.0 ? 1.0 / segs : 0.0;
+        };
+
+        //  DONDE CAE EL VALLE, en muestras desde que arranco la envolvente. Se
+        //  busca el valle MAS TARDIO de la corrida —el que ha tenido sesenta
+        //  segundos para irse de sitio— y se compara con el del otro canal.
+        //
+        //  Y se comparan entre SI y no contra una marca elegida: la primera
+        //  version medía la distancia al segundo 60 y salia FALLA con el motor
+        //  bien, porque el valle de un tremolo no cae en fase cero sino en 0.75
+        //  —`valorEn(0)` es cero, no menos uno—. La prueba estaba mal, no el
+        //  motor. Lo que importa no es donde cae el valle sino que los dos caigan
+        //  en el mismo sitio.
+        auto valleTardio = [vent] (const std::vector<double>& env)
+        {
+            double pico = 0.0, valle = 1.0e9;
+            for (double x : env) { pico = juce::jmax (pico, x); valle = juce::jmin (valle, x); }
+            const double umbral = valle + 0.05 * (pico - valle);
+            int mejor = -1;
+            for (int i = (int) env.size() - 1; i > 0; --i)
+                if (env[(size_t) i] <= umbral) { mejor = i; break; }
+            return mejor * vent;
+        };
+
+        const double kSegs = 60.0;
+        std::vector<double> envA, envB, envC;
+        corre (0, 1.0f, kSegs + 0.5, 0.0, envA);
+        corre (4, 4.0f, kSegs + 0.5, 0.0, envB);
+        //  Y EL TERCERO ES EL QUE MIDE LA SINCRONIA: misma velocidad que el
+        //  primero, pero encendido MAS TARDE. Su valle tardio tiene que caer
+        //  donde el del primero. Con una fase por canal no caeria: arrancaria en
+        //  el flanco de subida y quedaria corrido para siempre.
+        //
+        //  Y EL RETRASO NO ES REDONDO A PROPOSITO. La primera version ponia
+        //  TRES segundos, que a 1 Hz son tres vueltas EXACTAS: una fase por
+        //  canal arrancada tres segundos tarde cae en el mismo sitio de la
+        //  vuelta, asi que la prueba daba 480 muestras y casi pasaba con el
+        //  defecto dentro. Con 3.25 el retraso es tres vueltas y CUARTO, o sea
+        //  12000 muestras de desfase que no se pueden confundir con nada.
+        corre (7, 1.0f, kSegs + 0.5, 3.25, envC);
+
+        const double hzA = hzDe (envA);
+        const double hzB = hzDe (envB);
+        const int    vA  = valleTardio (envA);
+        const int    vC  = valleTardio (envC);
+        const int    desfase = vC - vA;
+
+        //  El suelo es UNA ventana de envolvente -160 muestras a 48 kHz, o sea
+        //  3.3 ms-. Un arranque tardio de tres segundos son 144000.
+        const bool ok = std::abs (hzA - 1.0) < 0.10 && std::abs (hzB - 4.0) < 0.20
+                     && std::abs (desfase) <= vent;
+        std::printf ("%-34s canal 0 %.2f Hz   canal 4 %.2f Hz   encendido 3.25 s tarde se desfasa %d muestras   %s\n",
+                     "cada canal su velocidad, y a una",
+                     hzA, hzB, desfase, ok ? "OK" : zatiFalla());
+    }
+
+    // ------------------------------------------------------------------
     //  LA FILA DE CONTROL, que es la que sostiene todo lo demas: los 64 pads
     //  en el canal 0 contra los mismos 64 repartidos por los dieciseis CON LOS
     //  MISMOS AJUSTES. Con los dieciseis canales diciendo lo mismo, repartir es

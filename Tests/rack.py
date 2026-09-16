@@ -101,15 +101,21 @@ def main ():
     #  detras, asi que lo unico que hace falta aqui es que la fila del rack y
     #  el reparto del motor cuenten lo mismo: el dia que un tipo nuevo entre
     #  como envio y alguien lo sume a `kNumIns` a mano, esto lo dice.
-    print ("forma      %d insertos · %d envios · %d canales · %d buses"
-           % (r["insertos"], r["tipos"] - r["insertos"], r["canales"], r["buses"]))
+    print ("forma      %d insertos · %d por canal · %d de la mesa · %d canales · %d buses"
+           % (r["insertos"], r["porcanal"], r["tipos"] - r["porcanal"],
+              r["canales"], r["buses"]))
     if r["insertos"] != r["dibujo"].count (1):
         malo.append ("el motor reserva %d insertos y la fila del rack cuenta %d"
                      % (r["insertos"], r["dibujo"].count (1)))
-    if r["buses"] != r["tipos"] + r["insertos"] * r["canales"]:
+    #  Y LA FORMULA VA CON `porcanal` Y NO CON `insertos`, que es lo que esta
+    #  tanda separo: quien tiene un bus por canal es el que es DE su canal, no
+    #  el que resta seco. Con `insertos` aqui, esto salia FALLA en cuanto CHO,
+    #  FLA y PHA pasaron a tener el suyo — «el motor dice 695 buses y 23 + 18 x
+    #  32 son 599»— y tenia razon: la cuenta estaba escrita con la tabla vieja.
+    if r["buses"] != r["tipos"] + r["porcanal"] * r["canales"]:
         malo.append ("el motor dice %d buses y %d + %d x %d son %d"
-                     % (r["buses"], r["tipos"], r["insertos"], r["canales"],
-                        r["tipos"] + r["insertos"] * r["canales"]))
+                     % (r["buses"], r["tipos"], r["porcanal"], r["canales"],
+                        r["tipos"] + r["porcanal"] * r["canales"]))
 
     #  2. EL VISOR LEE LOS NUMEROS DE AHORA, con DOS cifras.
     #

@@ -28,6 +28,13 @@ AudioEngine::AudioEngine()
     //  quince canales sin bus.
     static_assert (contarInsertos() == kNumIns,
                    "kNumIns se ha quedado por detras de fxSustituye");
+    //  Y la hermana, por lo mismo: el dia que un tipo nuevo sea de su canal y a
+    //  `kNumPorCanal` se le olvide subir, esto deja de compilar en vez de dejar
+    //  treinta y un canales indexando el bus de otro.
+    static_assert (contarPorCanal() == kNumPorCanal,
+                   "kNumPorCanal se ha quedado por detras de fxPorCanal");
+    static_assert (insertoImplicaCanal(),
+                   "un inserto tiene que ser de su canal: su estado en el motor es uno");
 
     //  LOS PARAMETROS DE LOS EFECTOS, DE SU TABLA. Estaban en diecinueve
     //  llaves de inicializacion repartidas por la cabecera mas dos arrays de
@@ -38,8 +45,16 @@ AudioEngine::AudioEngine()
     //  ecualizador en mitad de una sesion.
     for (auto& fila : fxP)
         for (int f = 0; f < kNumFx; ++f)
+        {
             for (int par = 0; par < 3; ++par)
                 fila[(size_t) f][(size_t) par].store (kFxDef[f][par], std::memory_order_relaxed);
+            //  Y EL CUARTO NACE EN CERO, o sea LIBRE. `kFxDef` sigue teniendo
+            //  tres columnas a proposito: el enganche no es un valor de fabrica
+            //  del efecto -no lo ensena ningun mando de los tres- y darle una
+            //  fila alli obligaria a `Tests/ranuras.py` a comparar contra un
+            //  cuarto `spec` que la cara no tiene.
+            fila[(size_t) f][3].store (0.0f, std::memory_order_relaxed);
+        }
     //  Y el EQ, que ademas los APLICA: ver setFxParam. En los DIECISEIS, que
     //  un inserto es de un canal y los quince que nadie ha tocado todavia
     //  tienen que nacer donde nace el cero.
@@ -215,18 +230,13 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize, int inputC
     delayLine.setMaximumDelayInSamples (juce::jmax (1, (int) (systemSampleRate * 1.0)));
     delayLine.reset();
 
-    //  Las dos lineas de la familia de modulacion. Cortas: 30 ms de coro y 10
-    //  de flanger. Ver AudioEngine.h.
-    choLine.prepare (spec);
-    choLine.setMaximumDelayInSamples ((int) (systemSampleRate * 0.030) + 4);
-    choLine.reset();
-    flaLine.prepare (spec);
-    flaLine.setMaximumDelayInSamples ((int) (systemSampleRate * 0.010) + 4);
-    flaLine.reset();
-    for (auto& fila : phaZ) for (auto& z : fila) z = 0.0f;
-    flaFbZ[0] = flaFbZ[1] = 0.0f;
-    modWasActive.fill (false);
-    for (auto& l : mod) l.reinicia();
+    //  Y EL RELOJ DE LA MODULACION ARRANCA EN CERO. Es lo unico que hay que
+    //  poner: las fases NO se guardan, se calculan a partir de aqui, asi que un
+    //  `prepare` que se olvidara de reiniciar una de las noventa y seis no
+    //  puede existir. Ver `pasoMod`.
+    relojSeg  = 0.0;
+    relojPaso = 0.0;
+    for (auto& f : modFase) f.store (0.0f, std::memory_order_relaxed);
 
     //  Y LOS DIECISEIS INSERTOS, en un bucle y no dieciseis veces a mano.
     //  Es la razon entera por la que `Inserto` existe: cada uno de estos
@@ -243,8 +253,21 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize, int inputC
         I.hpFilter.reset();
         I.hpFilter.setType (juce::dsp::StateVariableTPTFilterType::highpass);
 
-        I.modTrm.reinicia();
         I.trmWasActive = false;
+
+        //  Y LAS DOS LINEAS DE LA FAMILIA DE MODULACION, que desde esta tanda
+        //  son de cada canal. Cortas a proposito: 30 ms de coro y 10 de
+        //  flanger. Son 11.3 KiB y 3.8 KiB por canal, o sea 468 KiB mas en los
+        //  treinta y dos — un 2.2 % sobre lo que este `prepare` ya reservaba.
+        I.choLine.prepare (spec);
+        I.choLine.setMaximumDelayInSamples ((int) (systemSampleRate * 0.030) + 4);
+        I.choLine.reset();
+        I.flaLine.prepare (spec);
+        I.flaLine.setMaximumDelayInSamples ((int) (systemSampleRate * 0.010) + 4);
+        I.flaLine.reset();
+        for (auto& fila : I.phaZ) for (auto& z : fila) z = 0.0f;
+        I.flaFbZ[0] = I.flaFbZ[1] = 0.0f;
+        I.modWasActive.fill (false);
 
         //  La familia de CARACTER. La linea de PIT se dimensiona al grano mas
         //  largo por DOS -las dos cabezas van desfasadas medio grano y la de
@@ -1649,6 +1672,14 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         //  buffers que leia: la fila de control del banco sale bit a bit.
         int canalEtapa = 0;
 
+        //  EL RELOJ AVANZA UNA VEZ POR BLOQUE, y aqui y no dentro de una etapa:
+        //  las cuatro de modulacion leen la MISMA marca de tiempo, que es lo que
+        //  hace que un coro a 0.25 Hz y otro a 4 Hz sean dos funciones del mismo
+        //  reloj y no dos osciladores que empezaron juntos. Avanzarlo por etapa
+        //  las separaria un bloque, que es el fallo en pequeño.
+        relojSeg  += (double) numSamples / juce::jmax (8000.0, systemSampleRate);
+        relojPaso += (double) numSamples / juce::jmax (1.0, negrasPorMuestraInv());
+
         auto busIdx = [&canalEtapa] (int f) noexcept { return (size_t) busDe (canalEtapa, f); };
 
         //  EL PARAMETRO DEL CANAL QUE SE ESTA PROCESANDO. Las etapas no
@@ -2105,8 +2136,21 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         //  que hace que la capa viva del visor se quede quieta sin señal, que
         //  es la mitad que `Tests/rack.py` exige -una capa que se mueve sin
         //  señal esta dibujando ruido-.
+        //  Y LOS CUATRO EN EL BUCLE DE CANALES, que es el cambio de esta
+        //  tanda. Antes CHO, FLA y PHA corrian UNA vez con `canalEtapa` en cero
+        //  —un coro para toda la mesa— y solo TRM tenia su bucle. La tabla que
+        //  decidia eso era `fxSustituye`, o sea la pregunta equivocada: lo que
+        //  manda para tener aparato propio es de QUIEN es, no si resta seco.
+        //  Ver `fxPorCanal`.
+        for (int canal = 0; canal < kNumCanales; ++canal)
         {
+            canalEtapa = canal;
+            Inserto& I = ins[(size_t) canal];
             const float fsF = (float) systemSampleRate;
+            //  Y EL VISOR DIBUJA LA FASE DE UN SOLO CANAL: el que la cara tiene
+            //  abierto. Con treinta y dos velocidades distintas, publicar «la»
+            //  fase sin decir de quien es dibujar la de cualquiera.
+            const int canalEnLaCara = (miraCan >= 0) ? miraCan : 0;
 
             //  Y AL CALLARSE, LA FASE VUELVE A CERO. El LFO solo avanza con el
             //  bus vivo -eso es lo que hace que el punto del visor se pare sin
@@ -2121,53 +2165,53 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             //  visor dice mientras no pasa nada, que es «el LFO esta en su
             //  sitio» en vez de «esta a mitad de vuelta».
             for (int m = 0; m < kNumModEnvio; ++m)
-                if (! live (modIdx (m)) && modWasActive[(size_t) m])
+                if (! live (modIdx (m)) && I.modWasActive[(size_t) m])
                     modFase[(size_t) m].store (0.0f, std::memory_order_relaxed);
             // --- CHO: retardo corto barrido, sin realimentacion. -----------
             {
                 const int m = modDe (kFxCho);
                 const float prof = juce::jlimit (0.0f, 1.0f,
                                      P (kFxCho, 1));
-                smChoProf += kBlock * (prof - smChoProf);
+                I.smChoProf += kBlock * (prof - I.smChoProf);
 
                 const bool ahora = live (kFxCho);
                 //  El flanco limpia la linea: sin esto, volver a abrir el coro
                 //  suena con la cola de la vez anterior. Es lo mismo que hacen
                 //  DRV con su paso bajo y BIT con su retenedor.
-                if (ahora && ! modWasActive[(size_t) m]) { choLine.reset(); mod[(size_t) m].reinicia(); }
-                modWasActive[(size_t) m] = ahora;
+                if (ahora && ! I.modWasActive[(size_t) m]) I.choLine.reset();
+                I.modWasActive[(size_t) m] = ahora;
 
                 if (ahora)
                 {
-                    mod[(size_t) m].ponPaso (P (kFxCho, 0), systemSampleRate);
+                    auto fm = pasoMod (canal, kFxCho);
                     //  Centro y recorrido en MILISEGUNDOS y convertidos aqui:
                     //  doce milisegundos es un coro en cualquier aparato, y en
                     //  muestras seria un numero que cambia con la ruta.
                     const float centro = 0.012f * fsF;
-                    const float amp    = 0.005f * fsF * smChoProf;
+                    const float amp    = 0.005f * fsF * I.smChoProf;
                     float* w0 = fxBus[busIdx (kFxCho)].getWritePointer (0, startSample);
                     float* w1 = (chans > 1) ? fxBus[busIdx (kFxCho)].getWritePointer (1, startSample) : w0;
 
                     for (int i = 0; i < numSamples; ++i)
                     {
-                        const float v = mod[(size_t) m].avanza();
-                        const float q = (chans > 1) ? mod[(size_t) m].enCuadratura() : v;
+                        const float v = Lfo::valorEn (fm.fase); fm.fase += fm.paso;
+                        const float q = (chans > 1) ? Lfo::valorEn (fm.fase + Lfo::kCuadratura) : v;
                         const float x0 = w0[i], x1 = w1[i];
 
-                        choLine.pushSample (0, std::isfinite (x0) ? x0 : 0.0f);
-                        choLine.setDelay (juce::jmax (1.0f, centro + amp * v));
-                        const float d0 = choLine.popSample (0);
+                        I.choLine.pushSample (0, std::isfinite (x0) ? x0 : 0.0f);
+                        I.choLine.setDelay (juce::jmax (1.0f, centro + amp * v));
+                        const float d0 = I.choLine.popSample (0);
 
                         if (chans > 1)
                         {
-                            choLine.pushSample (1, std::isfinite (x1) ? x1 : 0.0f);
-                            choLine.setDelay (juce::jmax (1.0f, centro + amp * q));
-                            const float d1 = choLine.popSample (1);
+                            I.choLine.pushSample (1, std::isfinite (x1) ? x1 : 0.0f);
+                            I.choLine.setDelay (juce::jmax (1.0f, centro + amp * q));
+                            const float d1 = I.choLine.popSample (1);
                             w1[i] = std::isfinite (d1) ? d1 : 0.0f;
                         }
                         w0[i] = std::isfinite (d0) ? d0 : 0.0f;
                     }
-                    modFase[(size_t) m].store (mod[(size_t) m].fase, std::memory_order_relaxed);
+                    if (canal == canalEnLaCara) modFase[(size_t) m].store (fm.fase - std::floor (fm.fase), std::memory_order_relaxed);
                     returnBus (kFxCho);
                 }
             }
@@ -2177,18 +2221,18 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 const int m = modDe (kFxFla);
                 const float fb = juce::jlimit (-kFlaFbMax, kFlaFbMax,
                                    (P (kFxFla, 1) * 2.0f - 1.0f) * kFlaFbMax);
-                smFlaFb += kBlock * (fb - smFlaFb);
+                I.smFlaFb += kBlock * (fb - I.smFlaFb);
 
                 const bool ahora = live (kFxFla);
-                if (ahora && ! modWasActive[(size_t) m])
+                if (ahora && ! I.modWasActive[(size_t) m])
                 {
-                    flaLine.reset(); flaFbZ[0] = flaFbZ[1] = 0.0f; mod[(size_t) m].reinicia();
+                    I.flaLine.reset(); I.flaFbZ[0] = I.flaFbZ[1] = 0.0f;
                 }
-                modWasActive[(size_t) m] = ahora;
+                I.modWasActive[(size_t) m] = ahora;
 
                 if (ahora)
                 {
-                    mod[(size_t) m].ponPaso (P (kFxFla, 0), systemSampleRate);
+                    auto fm = pasoMod (canal, kFxFla);
                     //  De 0.5 a 6 ms: por debajo de un milisegundo la primera
                     //  muesca se va por encima de la banda y el peine deja de
                     //  oirse; por encima de seis ya es un coro.
@@ -2199,21 +2243,21 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
 
                     for (int i = 0; i < numSamples; ++i)
                     {
-                        const float v = mod[(size_t) m].avanza();
+                        const float v = Lfo::valorEn (fm.fase); fm.fase += fm.paso;
                         const float dl = juce::jmax (1.0f, centro + amp * v);
 
                         for (int ch = 0; ch < chans; ++ch)
                         {
                             float* w = (ch == 0) ? w0 : w1;
-                            const float in = w[i] + smFlaFb * flaFbZ[ch];
-                            flaLine.pushSample (ch, std::isfinite (in) ? in : 0.0f);
-                            flaLine.setDelay (dl);
-                            const float d = flaLine.popSample (ch);
-                            flaFbZ[ch] = std::isfinite (d) ? d : 0.0f;
-                            w[i] = flaFbZ[ch];
+                            const float in = w[i] + I.smFlaFb * I.flaFbZ[ch];
+                            I.flaLine.pushSample (ch, std::isfinite (in) ? in : 0.0f);
+                            I.flaLine.setDelay (dl);
+                            const float d = I.flaLine.popSample (ch);
+                            I.flaFbZ[ch] = std::isfinite (d) ? d : 0.0f;
+                            w[i] = I.flaFbZ[ch];
                         }
                     }
-                    modFase[(size_t) m].store (mod[(size_t) m].fase, std::memory_order_relaxed);
+                    if (canal == canalEnLaCara) modFase[(size_t) m].store (fm.fase - std::floor (fm.fase), std::memory_order_relaxed);
                     returnBus (kFxFla);
                 }
             }
@@ -2228,27 +2272,26 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 const int m = modDe (kFxPha);
                 const float prof = juce::jlimit (0.0f, 1.0f,
                                      P (kFxPha, 1));
-                smPhaProf += kBlock * (prof - smPhaProf);
+                I.smPhaProf += kBlock * (prof - I.smPhaProf);
 
                 const bool ahora = live (kFxPha);
-                if (ahora && ! modWasActive[(size_t) m])
+                if (ahora && ! I.modWasActive[(size_t) m])
                 {
-                    for (auto& fila : phaZ) for (auto& z : fila) z = 0.0f;
-                    mod[(size_t) m].reinicia();
+                    for (auto& fila : I.phaZ) for (auto& z : fila) z = 0.0f;
                 }
-                modWasActive[(size_t) m] = ahora;
+                I.modWasActive[(size_t) m] = ahora;
 
                 if (ahora)
                 {
-                    mod[(size_t) m].ponPaso (P (kFxPha, 0), systemSampleRate);
+                    auto fm = pasoMod (canal, kFxPha);
                     for (int i = 0; i < numSamples; ++i)
                     {
-                        const float v = mod[(size_t) m].avanza();
+                        const float v = Lfo::valorEn (fm.fase); fm.fase += fm.paso;
                         //  La esquina se barre en OCTAVAS y no en Hz: 300 Hz
                         //  arriba de 300 son una octava y 300 arriba de 3000
                         //  no se oyen, que es la misma razon por la que
                         //  `barridoDe` reparte el filtro exponencialmente.
-                        const float hz = 300.0f * std::pow (8.0f, 0.5f * smPhaProf * (v + 1.0f));
+                        const float hz = 300.0f * std::pow (8.0f, 0.5f * I.smPhaProf * (v + 1.0f));
                         const float t  = std::tan (juce::MathConstants<float>::pi
                                                      * juce::jlimit (20.0f, fsF * 0.45f, hz) / fsF);
                         const float a  = (t - 1.0f) / (t + 1.0f);
@@ -2259,28 +2302,23 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                             float x = w[i];
                             for (int e = 0; e < kPhaEtapas; ++e)
                             {
-                                const float y = a * x + phaZ[ch][e];
-                                phaZ[ch][e] = x - a * y;
+                                const float y = a * x + I.phaZ[ch][e];
+                                I.phaZ[ch][e] = x - a * y;
                                 x = y;
                             }
                             w[i] = std::isfinite (x) ? x : 0.0f;
                         }
                     }
-                    modFase[(size_t) m].store (mod[(size_t) m].fase, std::memory_order_relaxed);
+                    if (canal == canalEnLaCara) modFase[(size_t) m].store (fm.fase - std::floor (fm.fase), std::memory_order_relaxed);
                     returnBus (kFxPha);
                 }
             }
 
             // --- TRM: ganancia por muestra. --------------------------------
             //
-            //  EN LOS DIECISEIS CANALES, que es lo que lo separa de sus tres
-            //  hermanos: TRM SUSTITUYE y ellos SUMAN, asi que su bus es uno por
-            //  canal y su LFO vive en el inserto.
-            for (int canal = 0; canal < kNumCanales; ++canal)
+            //  Ya no abre bucle: esta DENTRO del de sus tres hermanos, que es
+            //  donde tenia que estar desde que los cuatro son de su canal.
             {
-                canalEtapa = canal;
-                Inserto& I = ins[(size_t) canal];
-
                 //  Y AL CALLARSE, LA FASE VUELVE A CERO, igual que los tres de
                 //  arriba: sin esto el punto del visor se queda parado DONDE LA
                 //  MUSICA LO DEJO, que es a media curva sin nada pasando.
@@ -2292,12 +2330,11 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     I.smTrmProf += kBlock * (prof - I.smTrmProf);
 
                     const bool ahora = live (kFxTrm);
-                    if (ahora && ! I.trmWasActive) I.modTrm.reinicia();
                     I.trmWasActive = ahora;
 
                     if (ahora)
                     {
-                        I.modTrm.ponPaso (P (kFxTrm, 0), systemSampleRate);
+                        auto fm = pasoMod (canal, kFxTrm);
                         for (int i = 0; i < numSamples; ++i)
                         {
                             //  Solo hacia ABAJO: la ganancia va de 1 a 1-prof y
@@ -2305,14 +2342,15 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                             //  encima de lo que la persona puso y el margen del
                             //  master no es nuestro para gastarlo -es la misma
                             //  regla que ya tiene HUMANIZAR con la fuerza-.
-                            const float g = 1.0f - I.smTrmProf * 0.5f * (1.0f - I.modTrm.avanza());
+                            const float g = 1.0f - I.smTrmProf * 0.5f * (1.0f - Lfo::valorEn (fm.fase));
+                            fm.fase += fm.paso;
                             for (int ch = 0; ch < chans; ++ch)
                             {
                                 float* w = fxBus[busIdx (kFxTrm)].getWritePointer (ch, startSample);
                                 w[i] *= g;
                             }
                         }
-                        I.trmFase.store (I.modTrm.fase, std::memory_order_relaxed);
+                        I.trmFase.store (fm.fase - std::floor (fm.fase), std::memory_order_relaxed);
                         returnBus (kFxTrm);
                     }
                 }
@@ -4204,9 +4242,18 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     smDlyMix  = dlyMix.load   (std::memory_order_relaxed);
     smDlyFb   = dlyFb.load    (std::memory_order_relaxed);
     smDlySamp = (float) (dlyTime.load (std::memory_order_relaxed) * 0.001 * systemSampleRate);
-    smChoProf = fxParamDe (0, kFxCho, 1).load (std::memory_order_relaxed);
-    smFlaFb   = (fxParamDe (0, kFxFla, 1).load (std::memory_order_relaxed) * 2.0f - 1.0f) * kFlaFbMax;
-    smPhaProf = fxParamDe (0, kFxPha, 1).load (std::memory_order_relaxed);
+    //  Y LOS TRES DE MODULACION SE CEBAN POR CANAL, que es donde viven desde
+    //  esta tanda. Antes eran tres lineas leyendo el canal cero —cuando el coro
+    //  era uno para toda la mesa— y dejarlas asi habria cebado los treinta y dos
+    //  con el ajuste del cero: el rebote arrancaria con la profundidad de otro
+    //  canal hasta que el suavizado alcanzara la suya.
+    for (int c = 0; c < kNumCanales; ++c)
+    {
+        Inserto& I = ins[(size_t) c];
+        I.smChoProf = fxParamDe (c, kFxCho, 1).load (std::memory_order_relaxed);
+        I.smFlaFb   = (fxParamDe (c, kFxFla, 1).load (std::memory_order_relaxed) * 2.0f - 1.0f) * kFlaFbMax;
+        I.smPhaProf = fxParamDe (c, kFxPha, 1).load (std::memory_order_relaxed);
+    }
 }
 
 int AudioEngine::lengthInSteps() const noexcept

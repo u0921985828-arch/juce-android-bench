@@ -4820,6 +4820,13 @@ void MainComponent::auditRack()
               << ",\"dichos\":["  << dichos .joinIntoString (",") << "]"
               << ",\"tipos\":" << kNumFx
               << ",\"insertos\":"  << AudioEngine::numInsertos()
+              //  Y LA TERCERA, QUE AHORA NO ES LA MISMA. `insertos` cuenta los
+              //  que RESTAN SECO —18— y `porcanal` los que tienen UNO POR CANAL
+              //  —21—. Eran el mismo numero mientras `fxSustituye` contestaba
+              //  las dos preguntas; desde que CHO, FLA y PHA suman pero son de
+              //  su canal, la formula de los buses usa esta y la fila del rack
+              //  usa aquella. Con una sola, `rack.py` cuadraba una cuenta falsa.
+              << ",\"porcanal\":"  << AudioEngine::numPorCanal()
               << ",\"canales\":"   << AudioEngine::kNumCanales
               << ",\"buses\":"     << AudioEngine::numBuses()
               << ",\"fader\":[" << fader.getWidth() << "," << fader.getHeight() << "]"

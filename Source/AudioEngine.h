@@ -195,6 +195,14 @@ public:
     static constexpr int numInsertos() noexcept;
     static constexpr int numBuses()    noexcept;
 
+    //  Y LA TERCERA, QUE ANTES ERA LA PRIMERA. `numInsertos` cuenta los que
+    //  RESTAN SECO —18— y esto cuenta los que tienen UNO POR CANAL —21—. Eran
+    //  el mismo numero mientras una sola tabla contestaba las dos preguntas, y
+    //  desde que CHO, FLA y PHA suman pero son de su canal ya no lo son. El
+    //  banco publica las DOS porque la formula de los buses usa esta y la de la
+    //  cara usa aquella; con una sola, `rack.py` cuadraba una cuenta falsa.
+    static constexpr int numPorCanal() noexcept;
+
     //  Y LO QUE PESA UN CANAL, que es la cifra sobre la que se decide si algun
     //  dia hay mas: la parte estatica de un `Inserto`, sin lo que `frzVent` y
     //  `pitLine` reservan en `prepareToPlay`. La cuenta la hace el compilador,
@@ -202,10 +210,16 @@ public:
     //  este fichero un «1.3 MB por canal» que nunca fue verdad.
     static constexpr std::size_t bytesPorCanal() noexcept;
 
+    //  Y AQUI TAMBIEN MANDA `fxPorCanal`. Un parametro vive en el canal cuando
+    //  el APARATO vive en el canal, que no es lo mismo que «resta seco»: el
+    //  RATE de un coro tiene que poder ser distinto en cada tira —«que puedan
+    //  funcionar a diferentes velocidades»— aunque el coro sume. Con
+    //  `fxSustituye` aqui, escribirlo en el canal cuatro lo colapsaba al cero y
+    //  la peticion no se podia ni expresar.
     static constexpr int canalDeParam (int canal, int fx) noexcept
     {
         if (! (fx >= 0 && fx < kNumFx)) return 0;
-        return (fxSustituye[fx] && canal > 0 && canal < kNumCanales) ? canal : 0;
+        return (fxPorCanal[fx] && canal > 0 && canal < kNumCanales) ? canal : 0;
     }
 
     //  Los valores de fabrica de los tres parametros de cada tipo, en una
@@ -648,7 +662,7 @@ public:
     //  los 1008 numeros es el motor.
     float getFxParam (int canal, int fx, int par) const noexcept
     {
-        if (! juce::isPositiveAndBelow (fx, kNumFx) || ! juce::isPositiveAndBelow (par, 3))
+        if (! juce::isPositiveAndBelow (fx, kNumFx) || ! juce::isPositiveAndBelow (par, 4))
             return 0.0f;
         return fxParamDe (canal, fx, par).load (std::memory_order_relaxed);
     }
@@ -2441,7 +2455,13 @@ private:
     //  Los CINCO ENVIOS no: una linea de retardo es de todos, asi que su fila
     //  vive en el canal cero y los quince restantes no se leen nunca. Quien
     //  escribe esa regla UNA vez es `fxParamDe`, y nadie mas indexa `fxP`.
-    std::array<std::array<std::array<std::atomic<float>, 3>, kNumFx>, kNumCanales> fxP;
+    //  CUATRO Y NO TRES. El cuarto es el ENGANCHE del modulador -cero libre en
+    //  Hz, mayor que cero la division del compas- y va aqui y no en una tabla
+    //  aparte por lo que cuenta el parrafo de arriba: `fxP` existe justo para
+    //  que un parametro de efecto tenga UN sitio. Una tabla paralela que el
+    //  fichero de proyecto, la automatizacion y la cara tuviesen que aprender
+    //  por separado es la deuda que este array salda. Son 2.9 KB.
+    std::array<std::array<std::array<std::atomic<float>, 4>, kNumFx>, kNumCanales> fxP;
 
     //  LA PUERTA UNICA. `sustituye` decide si el canal cuenta: escrito en cada
     //  sitio de lectura serian cincuenta copias de la misma condicion y la que
@@ -2548,7 +2568,75 @@ private:
     //  su LFO vive en `Inserto` -uno por canal- y aqui se quedan los tres que
     //  SUMAN. Dejar el hueco de TRM sin escribir habria sido estado muerto, que
     //  es lo que este fichero ya llama por su nombre con `fxType` y `fxDry`.
-    std::array<Lfo, 3> mod;
+    //  Y AHORA UNA SOLA FASE PARA TODOS, DERIVADA Y NO ACUMULADA.
+    //
+    //  Llego del telefono: «que el chorus, el phaser y el flanger puedan
+    //  funcionar a diferentes velocidades, pero sincronizados». Lo ingenuo es
+    //  un `Lfo` por canal y por tipo —noventa y seis acumuladores—, y eso es
+    //  exactamente el fallo que `Lfo.h` ya tiene escrito para el ancho del
+    //  coro: «con un LFO por canal las dos fases se separan con el tiempo,
+    //  acumulan su propio error y arrancan donde les toque». A lo ancho de la
+    //  mesa pasa lo mismo y peor, porque son treinta y dos.
+    //
+    //  Asi que no se acumula: se CALCULA. Un solo reloj y una relacion por
+    //  canal, `fase = frac (reloj x relacion)`. Dos velocidades distintas
+    //  siguen siendo dos funciones del mismo reloj, asi que cruzan el cero
+    //  juntas en la muestra uno y en la del minuto cuarenta — que es lo que
+    //  «sincronizados» quiere decir.
+    //
+    //  EN `double` Y SIN ENVOLVER. En `float`, a la hora de rodaje el producto
+    //  `t x 40 Hz` vale 144000 y ahi la resolucion de un `float` es 0.0078, o
+    //  sea que la fase saldria a escalones. Un `double` lleva los segundos con
+    //  precision de nanosegundo durante años, y envolver el reloj para
+    //  ahorrarlo romperia justo la propiedad por la que existe.
+    double relojSeg = 0.0;      // audio thread only: segundos desde prepareToPlay
+    double relojPaso = 0.0;     // audio thread only: negras desde que arranco el transporte
+
+    //  LA FASE DE UN MODULADOR Y SU PASO, EN UNA SOLA PUERTA.
+    //
+    //  Devuelve por donde va la fase AL EMPEZAR ESTE BLOQUE y cuanto avanza por
+    //  muestra, y la etapa la recorre como recorria la de `Lfo`. La diferencia
+    //  es que se RE-ANCLA al reloj en cada bloque en vez de acumular para
+    //  siempre: dentro de un bloque son 512 muestras de deriva -nada- y entre
+    //  bloques es exacta, asi que dos canales a velocidades distintas siguen
+    //  siendo dos funciones del mismo reloj.
+    //
+    //  El cuarto parametro de `fxP` es el ENGANCHE: cero es libre y el mando
+    //  dice Hz; mayor que cero es la division del compas y entonces la fase sale
+    //  de la posicion musical, asi que 1/4 y 1/16 caen juntos en cada negra.
+    struct FaseMod { float fase; float paso; };
+
+    FaseMod pasoMod (int canal, int fx) const noexcept
+    {
+        const float div = fxParamDe (canal, fx, 3).load (std::memory_order_relaxed);
+        double ciclos = 0.0, porMuestra = 0.0;
+
+        if (div > 0.5f)
+        {
+            //  AL TEMPO. `div` es el denominador: 4 son negras, 16 semicorcheas.
+            //  Una vuelta del LFO por figura, o sea `4/div` vueltas por negra.
+            const double vueltasPorNegra = 4.0 / (double) div;
+            ciclos     = relojPaso * vueltasPorNegra;
+            porMuestra = vueltasPorNegra / juce::jmax (1.0, negrasPorMuestraInv());
+        }
+        else
+        {
+            const double hz = (double) juce::jlimit (0.0f, 40.0f,
+                                 fxParamDe (canal, fx, 0).load (std::memory_order_relaxed));
+            ciclos     = relojSeg * hz;
+            porMuestra = hz / juce::jmax (8000.0, systemSampleRate);
+        }
+        return { (float) (ciclos - std::floor (ciclos)), (float) porMuestra };
+    }
+
+    //  Muestras por negra, que es lo que convierte el paso musical en paso por
+    //  muestra. Se deriva de `samplesPerStepNow` -muestras por 1/16- y no se
+    //  vuelve a escribir la cuenta del tempo, que ya vive alli.
+    double negrasPorMuestraInv() const noexcept { return samplesPerStepNow() * 4.0; }
+
+    //  Y LA FASE QUE EL VISOR DIBUJA, del canal que la cara esta mirando. Antes
+    //  eran tres acumuladores publicados; ahora es una funcion del reloj, asi
+    //  que se publica el resultado y no el estado.
     static constexpr int modIdx (int m) noexcept { return kFxCho + m; }
     static constexpr int kNumModEnvio = 3;
     //  Cual de los cuatro es un tipo, o -1. La usan la etapa y `getLfoFase`.
@@ -2560,6 +2648,9 @@ private:
     //  PERIODOS, asi que RATE no cabe en la curva -eso lo declara
     //  `FxVisor::mandosDe`- y donde se ve es en el punto viajando a la
     //  velocidad de verdad. La escribe el hilo de audio, la lee la cara.
+    //  La fase que el visor dibuja, del canal que la cara mira. Sale del reloj
+    //  por `pasoMod`, asi que esto publica un RESULTADO y no un estado: antes
+    //  eran tres acumuladores y ahora son tres lecturas.
     std::array<std::atomic<float>, 3> modFase { { { 0.0f }, { 0.0f }, { 0.0f } } };
 
     //  Las dos lineas de retardo de CHO y FLA. Del MISMO tipo que la de DLY
@@ -2568,21 +2659,21 @@ private:
     //  0.7 con Lagrange de tercer orden. Cortas a proposito: 30 ms de coro y
     //  10 de flanger son los recorridos del sector, y reservar un segundo como
     //  DLY seria pagar 96000 muestras por canal para usar mil.
-    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> choLine { 4096 };
-    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> flaLine { 2048 };
+    //  Y ESTAS DOS SE MUDARON A `Inserto`, que es donde viven ahora: desde que
+    //  CHO y FLA son de su canal, su linea de retardo tambien lo es. Ver
+    //  `Inserto::choLine` y `Inserto::flaLine`, y la cuenta de lo que costo:
+    //  11.3 KiB de coro y 3.8 de flanger por canal, o sea 468 KiB mas sobre los
+    //  21.7 MiB que el motor ya reservaba — un 2.2 %.
+    //
     //  EL TOPE DE LA REALIMENTACION DE FLA, medido y no elegido. A 0.95 el
     //  peine sale de 14.32 dB y el nivel MEDIO de la banda sube +5.13: eso es
     //  margen del master gastado por abrir un efecto, y el margen del master
     //  no es nuestro -es la misma regla que ya tiene HUMANIZAR con la fuerza y
     //  el tope de 0 dB del fader-.
     static constexpr float kFlaFbMax = 0.85f;
-    float smChoProf = 0.0f, smFlaFb = 0.0f, smPhaProf = 0.0f;
-    std::array<bool, 3> modWasActive {};
     //  Los cuatro allpass de PHA, uno por etapa y por canal. Estado de primer
     //  orden: una muestra cada uno.
     static constexpr int kPhaEtapas = 4;
-    float phaZ[2][kPhaEtapas] {};
-    float flaFbZ[2] {};
 
     //  LA FAMILIA DE CARACTER: RNG · PIT · WID · EXC · TRN · FRZ.
     //
@@ -2712,6 +2803,52 @@ private:
                    "kFxDef tiene que tener una fila por tipo");
 
     //  ============================================================
+    //  Y LA OTRA PREGUNTA, QUE NO ES LA MISMA
+    //  ============================================================
+    //
+    //  `fxSustituye` contestaba DOS cosas a la vez y por eso no se podia tener
+    //  un coro por canal:
+    //
+    //    1. ¿SUSTITUYE O SUMA? — el `dry *= (1 - g)` del reparto.
+    //    2. ¿UNO POR CANAL O UNO PARA LA MESA? — `busDe`, `insIdx` y el
+    //       colapso al canal cero de `fxParamDe`.
+    //
+    //  Un coro contesta SUMA a la primera y POR CANAL a la segunda, y llego del
+    //  telefono: «que el chorus, el phaser y el flanger puedan funcionar a
+    //  diferentes velocidades, pero sincronizados». Con una sola tabla eso no se
+    //  puede escribir: volverlos insertos les cambiaria el SONIDO —ver el
+    //  parrafo de arriba, el peine y las muescas salen de sumar— y dejarlos como
+    //  estaban les niega el canal.
+    //
+    //  Asi que la primera pregunta se queda en `fxSustituye` y la segunda vive
+    //  aqui. Los tres unicos que difieren son CHO, FLA y PHA: suman y son de su
+    //  canal. DLY y REV siguen siendo de la mesa entera, que ademas es lo que se
+    //  pidio —«que el reverb y el delay fuese el mismo, para que todo este en el
+    //  mismo espacio»— y lo que un envio significa.
+    static constexpr bool fxPorCanal[kNumFx] = { true, true, true, false, true, false, true,
+                                                 true, true, true, true,
+                                                 //  CHO, FLA y PHA: SUMAN y son de SU canal.
+                                                 true, true, true, true,
+                                                 true, true, true, true, true, true,
+                                                 true, true };
+    static_assert (sizeof (fxPorCanal) / sizeof (fxPorCanal[0]) == kNumFx,
+                   "fxPorCanal tiene que tener una fila por tipo");
+
+    //  Y LA RELACION ENTRE LAS DOS, VIGILADA POR EL COMPILADOR: un inserto no
+    //  puede NO ser de su canal. Su estado en el motor es uno —un filtro, un
+    //  compresor, un congelador—, asi que dos canales con el mismo inserto
+    //  compartido serian dos ventanas al mismo aparato con dos interruptores que
+    //  se contradicen. Al reves si se puede, y son justo los tres de arriba.
+    static constexpr bool insertoImplicaCanal() noexcept
+    {
+        for (int f = 0; f < kNumFx; ++f)
+            if (fxSustituye[f] && ! fxPorCanal[f]) return false;
+        return true;
+    }
+    //  El `static_assert` vive fuera de la clase, al lado del de `kNumIns` y
+    //  por lo mismo: aqui dentro la clase esta incompleta y no se puede llamar.
+
+    //  ============================================================
     //  EL INDICE DEL BUS: UN INSERTO ES DE UN CANAL, UN ENVIO ES DE TODOS
     //  ============================================================
     //
@@ -2755,6 +2892,26 @@ private:
         return n;
     }
 
+    //  Y LO MISMO PARA LA OTRA PREGUNTA, que es la que indexa los buses desde
+    //  que CHO, FLA y PHA son de su canal. `kNumIns` sigue contando los que
+    //  RESTAN SECO —lo publica el banco y lo usa el reparto— y esto cuenta los
+    //  que tienen UNO POR CANAL. Eran el mismo numero y ya no lo son: 18 y 21.
+    static constexpr int kNumPorCanal = 21;
+    static constexpr int contarPorCanal() noexcept
+    {
+        int n = 0;
+        for (int f = 0; f < kNumFx; ++f) if (fxPorCanal[f]) ++n;
+        return n;
+    }
+
+    static constexpr int canalIdx (int f) noexcept
+    {
+        if (f < 0 || f >= kNumFx || ! fxPorCanal[f]) return -1;
+        int n = 0;
+        for (int i = 0; i < f; ++i) if (fxPorCanal[i]) ++n;
+        return n;
+    }
+
     //  EL ORDEN DE LAS ETAPAS SE QUEDA INTACTO, y ese es el argumento fuerte y
     //  no la memoria. Los primeros `kNumFx` huecos siguen indexados POR TIPO
     //  -o sea `busDe (c, f) == f` para los cinco envios- y los insertos se
@@ -2766,12 +2923,15 @@ private:
     //  de «rompi un inserto». Con este orden, `live` es falso en los quince
     //  canales vacios y la secuencia de `out.addFrom` es identica muestra a
     //  muestra.
-    static constexpr int kNumBuses = kNumFx + kNumIns * kNumCanales;
+    //  Y AQUI MANDA `fxPorCanal` Y NO `fxSustituye`, que es el cambio: quien
+    //  decide si hay un bus por canal es «¿de quien es este aparato?» y no
+    //  «¿resta seco?». Los tres de modulacion suman y tienen el suyo.
+    static constexpr int kNumBuses = kNumFx + kNumPorCanal * kNumCanales;
 
     static constexpr int busDe (int canal, int fx) noexcept
     {
-        const int i = insIdx (fx);
-        if (i < 0) return fx;                       // un envio es de todos
+        const int i = canalIdx (fx);
+        if (i < 0) return fx;                       // DLY y REV son de todos
         const int c = (canal < 0 || canal >= kNumCanales) ? 0 : canal;
         return kNumFx + i * kNumCanales + c;
     }
@@ -2835,14 +2995,36 @@ private:
         //  Lo que esta bajando cada uno, para la casilla de lectura de CTRL 3.
         std::array<std::atomic<float>, 4> dynRed { { { 0.0f }, { 0.0f }, { 0.0f }, { 0.0f } } };
 
-        //  TRM: el UNICO de los cuatro de modulacion que SUSTITUYE, asi que la
-        //  familia se parte 3/1. CHO, FLA y PHA suman y su LFO se queda en la
-        //  clase; el de TRM viene aqui, con su fase para el punto de trabajo
-        //  del visor.
-        Lfo   modTrm;
+        //  LOS CUATRO DE MODULACION, Y AHORA LOS CUATRO AQUI.
+        //
+        //  La familia estaba partida 3/1: TRM vivia aqui porque SUSTITUYE y los
+        //  otros tres se quedaban en la clase porque SUMAN. Eran dos preguntas
+        //  contestadas por una tabla —ver `fxPorCanal`— y la que decidia esto
+        //  era la equivocada: lo que manda para tener un aparato propio no es si
+        //  resta seco, es de quien es. Los cuatro son de su canal.
+        //
+        //  Y NINGUNO TRAE SU LFO. La fase sale del reloj de la clase
+        //  (`relojSeg`, `relojPaso`) por una relacion, asi que lo unico que se
+        //  guarda por canal es lo que el efecto ARRASTRA de un bloque al otro:
+        //  su linea, su suavizado y si estaba encendido. Cuatro acumuladores de
+        //  fase por canal serian ciento veintiocho fases separandose.
         float smTrmProf = 0.0f;
         bool  trmWasActive = false;
         std::atomic<float> trmFase { 0.0f };
+
+        //  CHO y FLA: sus lineas de retardo, del MISMO tipo que la de DLY
+        //  -`Lagrange3rd`- porque un retardo que se barre y no interpola
+        //  crepita, y este proyecto ya lo tiene medido: 5.9 dB de perdida con
+        //  lineal contra 0.7 con Lagrange de tercer orden. Cortas a proposito:
+        //  30 ms de coro y 10 de flanger son los recorridos del sector, y
+        //  reservar un segundo como DLY seria pagar 96000 muestras por canal
+        //  para usar mil.
+        juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> choLine { 4096 };
+        juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> flaLine { 2048 };
+        float smChoProf = 0.0f, smFlaFb = 0.0f, smPhaProf = 0.0f;
+        std::array<bool, 3> modWasActive {};
+        float phaZ[2][kPhaEtapas] {};
+        float flaFbZ[2] {};
 
         //  RNG: su oscilador es de AUDIO -llega a 4 kHz- y por eso no es un
         //  `Lfo`, que acota a 40 Hz a proposito.
@@ -2901,7 +3083,7 @@ private:
         //  Un motor vivo desliza en ~20 ms porque un mando acaba de moverse; un
         //  rebote no tiene ese pasado, y deslizar desde los defectos meteria el
         //  filtro en el primer compas de cada exportacion.
-        void cebaSuavizados (const std::array<std::array<std::atomic<float>, 3>, kNumFx>& fila) noexcept
+        void cebaSuavizados (const std::array<std::array<std::atomic<float>, 4>, kNumFx>& fila) noexcept
         {
             const auto v = [&fila] (int f, int par) noexcept
             { return fila[(size_t) f][(size_t) par].load (std::memory_order_relaxed); };
@@ -3036,6 +3218,7 @@ private:
 //  Y sus dos cuerpos, aqui: dentro de la clase `kNumIns` todavia no esta
 //  declarado en el punto en el que hace falta su VALOR para un constexpr.
 constexpr int AudioEngine::numInsertos() noexcept { return kNumIns; }
+constexpr int AudioEngine::numPorCanal() noexcept { return kNumPorCanal; }
 constexpr int AudioEngine::numBuses()    noexcept { return kNumBuses; }
 constexpr std::size_t AudioEngine::bytesPorCanal() noexcept { return sizeof (Inserto); }
 
