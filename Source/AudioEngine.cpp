@@ -717,11 +717,42 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     //  literal de once cargas atomicas, o sea un sitio mas que escribir a mano
     //  por cada tipo nuevo — y el peor de los tres, porque lo que falta se
     //  inicializa a 0.0f y un efecto MUDO no da ningun aviso. Ver `fxP`.
-    //  Del canal cero mientras el envio de un pad no sabe de canal: la fase 3
-    //  lo hace `[canal][tipo]`, que es donde 336 cargas sustituyen a 1344.
-    float fxMixNow[kNumFx];
+    //  Y POR CANAL, QUE ES LA FASE 3 QUE ESTE RENGLON LLEVABA ANOTADA Y NADIE
+    //  HIZO. Decia: «del canal cero mientras el envio de un pad no sabe de
+    //  canal: la fase 3 lo hace `[canal][tipo]`». Los canales llegaron, y esto
+    //  se quedo leyendo el CERO clavado.
+    //
+    //  Lo que costaba, llegado del telefono: «meto una caja en el pad 2, lo
+    //  linkeo al canal 3, pongo el EQ en el 3, y ese EQ ni analiza nada ni
+    //  modifica nada». El enrutado estaba entero —pad en el 3, cara en el 3, EQ
+    //  en el 3, envio 1.00, mezcla 1.00, el bit de `padSendMask` puesto— y el
+    //  reparto leia la mezcla del canal CERO, que sigue en su cero de fabrica.
+    //  `target` sale cero, `sendGain` cero, `busFed` no se pone, `live()` da
+    //  falso y **la etapa del efecto ni se ejecuta**: por eso tampoco analiza,
+    //  que el visor lee ese mismo bus muerto.
+    //
+    //  Y NO ERA SOLO EL EQ: le pasaba a los DIECIOCHO insertos. Los cinco
+    //  envios se salvaban de casualidad, porque su parametro es uno para toda
+    //  la mesa y el canal cero es tan bueno como cualquier otro — que es
+    //  exactamente por lo que se rellenan una vez y no treinta y dos.
+    float fxMixNow[kNumCanales][kNumFx];
     for (int f = 0; f < kNumFx; ++f)
-        fxMixNow[f] = juce::jlimit (0.0f, 1.0f, fxParamDe (0, f, 2).load (std::memory_order_relaxed));
+    {
+        if (! sustituye (f))
+        {
+            //  UN ENVIO: su mezcla es de la mesa entera, asi que se lee UNA vez.
+            const float m = juce::jlimit (0.0f, 1.0f,
+                                          fxParamDe (0, f, 2).load (std::memory_order_relaxed));
+            for (int c = 0; c < kNumCanales; ++c) fxMixNow[c][f] = m;
+        }
+        else
+        {
+            //  UN INSERTO: uno por canal, y hay que preguntarle a cada uno.
+            for (int c = 0; c < kNumCanales; ++c)
+                fxMixNow[c][f] = juce::jlimit (0.0f, 1.0f,
+                                               fxParamDe (c, f, 2).load (std::memory_order_relaxed));
+        }
+    }
 
     float sendGain[kNumPads][kNumFx];
     float dryGain[kNumPads];
@@ -831,12 +862,36 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         float dry = 1.0f;
         bool  any = false;
         bool  hot = canalHot;
+        //  Y SIN CANAL NO SE INDEXA NADA, que era un desbordamiento de verdad y
+        //  no una hipotesis: aqui abajo se lee `canalSend[canal]` y ahora
+        //  tambien `fxMixNow[canal]`, y `canal` vale `kSinCanal` -o sea 255-
+        //  para un pad que no esta en ninguna tira. El `continue` de arriba tapa
+        //  el caso normal, pero no el de un pad al que se le acaba de QUITAR el
+        //  canal: `smSendHot` sigue puesto mientras el envio baja, y por ahi se
+        //  entra con 255. Un pad sin canal no manda a nadie, que ademas es la
+        //  respuesta correcta y no solo la segura.
+        if (! en)
+        {
+            for (int f = 0; f < kNumFx; ++f)
+            {
+                float& sm = smSend[(size_t) p][(size_t) f];
+                sm += kSend * (0.0f - sm);
+                const float g = (sm < 0.0005f) ? 0.0f : sm;
+                sendGain[p][f] = g * smCan;
+                if (sm != 0.0f) hot = true;
+            }
+            dryGain[p]  = smCan;
+            canalDePad[p] = canal;
+            padSplit[p] = filtered || canalHot || std::abs (smCan - 1.0f) > 0.0005f;
+            smSendHot[(size_t) p] = hot;
+            continue;
+        }
         for (int f = 0; f < kNumFx; ++f)
         {
             //  EL PRODUCTO DE TRES: la mezcla del efecto, lo que el CANAL manda
             //  y el recorte con el que el pad se guardo. Los dos ultimos son la
             //  linea entera del cambio: el envio dejo de ser del pad.
-            const float target = fxMixNow[f]
+            const float target = fxMixNow[(size_t) canal][(size_t) f]
                                    * canalSend[(size_t) canal][(size_t) f].load (std::memory_order_relaxed)
                                    * padRecorte[(size_t) p][(size_t) f].load (std::memory_order_relaxed);
             float& sm = smSend[(size_t) p][(size_t) f];

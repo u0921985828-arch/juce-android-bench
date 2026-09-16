@@ -279,6 +279,54 @@ def main():
                       "%.2f: un envio es de todos pero canalSend es por canal"
                       % r["envio_del_vecino"])
 
+    #      Y LA CUARTA, QUE ES LA QUE FALTABA Y LA QUE SE PAGO: que el PAD acabe
+    #      mandando de verdad.
+    #
+    #      Las tres de arriba salian en verde y el efecto NO SONABA. El envio se
+    #      escribe en el CANAL y quien tiene que mandar es el pad, que nace SIN
+    #      canal -los sesenta y cuatro-: `refrescaSendMask` lo dice entero, «un
+    #      pad SIN canal no manda a ningun bus». O sea interruptor encendido,
+    #      envio al maximo, y un bus al que no llega una muestra.
+    #
+    #      Llego del telefono como «el EQ no funciona o el envio no termina en el
+    #      efecto», y las dos mitades de la frase eran la misma cosa.
+    #
+    #      Se mide sobre `padSendMask` —lo que el hilo de audio lee— y no sobre
+    #      el canal del pad: tener canal es el MEDIO, tener el bit puesto es el
+    #      fin. Preguntando por el canal, esto lo cumpliria un `setPadCanal` a un
+    #      canal que no manda a ningun efecto.
+    #
+    #      Rota a proposito quitando la linea que mete el pad en el canal:
+    #      `envio 1, encendido 1, MANDA 0`.
+    print ("ranura   y el pad elegido manda a algun bus: %s" % r["manda_al_entrar"])
+    if r["manda_al_entrar"] != 1:
+        malas.append ("poner DRV en una ranura dejo al pad elegido SIN mandar a "
+                      "ningun bus: el envio y el interruptor estan puestos y la "
+                      "senal no llega, que es «el efecto no hace nada»")
+
+    #      Y LA SECUENCIA DEL TELEFONO ENTERA, con sus cinco cifras.
+    #
+    #      «Meto un sonido, pongo una caja en el pad 2, que esta sin canal. Lo
+    #      linkeo al 3, pongo el EQ en el 3, en el slot 1, y ese EQ ni analiza
+    #      nada ni modifica nada.»
+    #
+    #      Con una sola cifra no se sabe DONDE se rompe, asi que van las cinco
+    #      del camino: en que canal quedo el pad, cual edita la cara, en que
+    #      canal acabo el EQ, si el pad manda, y si la mezcla y el envio
+    #      llegaron al canal donde el efecto esta puesto. La primera corrida las
+    #      dio TODAS bien —3, 3, 3, manda, 1.00, 1.00— y por eso se supo que el
+    #      fallo estaba mas abajo, en el hilo de audio y no en el enrutado.
+    print ("ranura   la secuencia del telefono: pad en %s, cara en %s, EQ en %s, "
+           "manda %s, mezcla %s, envio %s"
+           % (r["tf_canal_pad"], r["tf_canal_cara"], r["tf_canal_eq"],
+              r["tf_manda"], r["tf_mezcla"], r["tf_envio"]))
+    if (r["tf_canal_pad"] != 3 or r["tf_canal_cara"] != 3 or r["tf_canal_eq"] != 3
+            or r["tf_manda"] != 1 or r["tf_mezcla"] < 0.99 or r["tf_envio"] < 0.99):
+        malas.append ("la secuencia del telefono no acaba con el EQ enrutado: "
+                      "pad %s, cara %s, EQ %s, manda %s, mezcla %.2f, envio %.2f"
+                      % (r["tf_canal_pad"], r["tf_canal_cara"], r["tf_canal_eq"],
+                         r["tf_manda"], r["tf_mezcla"], r["tf_envio"]))
+
     #  6. EL BANCO DE LA REJILLA: que se llegue a los de detras.
     #
     #     Con treinta y dos canales la rejilla sigue siendo de cuatro por cuatro

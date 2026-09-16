@@ -1455,6 +1455,13 @@ public:
     static constexpr int kSinCanal = 0xFF;
     static bool tieneCanal (int c) noexcept { return c >= 0 && c < kNumCanales; }
 
+    //  QUE PADS MANDAN A ALGUN BUS, que es lo unico que el hilo de audio mira
+    //  antes de repartir. Lo lee el banco: «el pad tiene canal» es el MEDIO y
+    //  «el bit esta puesto» es el fin — un canal que no manda a ningun efecto
+    //  cumple lo primero y no lo segundo. Ver refrescaSendMask.
+    std::uint64_t getPadSendMask() const noexcept
+    { return padSendMask.load (std::memory_order_relaxed); }
+
     //  A QUE CANAL VA ESTE PAD. Es lo unico que el pad decide del reparto: el
     //  cuanto lo dice el canal.
     void setPadCanal (int slot, int canal) noexcept

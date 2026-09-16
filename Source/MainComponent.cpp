@@ -5116,6 +5116,41 @@ void MainComponent::ponEnRanura (int ranura, int fx)
         engine.setCanalSend ((int) c, fx, 1.0f);
         if (! fxEncendido (fx))
             setFxEnabled (fx, true);
+
+        //  Y EL PAD ENTRA EN EL CANAL, que era el tramo que faltaba del mismo
+        //  camino y sin el las dos lineas de arriba no sirven de nada.
+        //
+        //  Llego del telefono otra vez: «el EQ no funciona o el envio no
+        //  termina en el efecto». Las dos cosas y la misma: el envio se escribe
+        //  en `canalActual` y quien tiene que MANDAR es el pad, que nace SIN
+        //  canal —los sesenta y cuatro—. `refrescaSendMask` lo dice con todas
+        //  las letras: «un pad SIN canal no manda a ningun bus». Asi que se
+        //  encendia el efecto, se subia su envio al maximo, y el bus no recibia
+        //  una muestra: `live()` daba falso y la etapa ni corria.
+        //
+        //  Y ESTO YA ESTABA MEDIDO, por este banco, hace tandas. `StressTest`
+        //  lleva escrito que el cambio de «los pads nacen en el canal 0» dejo
+        //  TREINTA Y CUATRO comprobaciones midiendo el camino de un efecto con
+        //  pads que no mandaban a ningun bus —«el delay sin cola, el EQ sin
+        //  cambiar una muestra, el compresor a +0.00 dB»— y se arreglo poniendo
+        //  los pads en el canal 0 EN EL ANDAMIO. Se arreglo la prueba y se dejo
+        //  la app: la medida estaba, y decia esto, y nadie la leyo como lo que
+        //  era. *Una prueba que se adapta al defecto deja de medirlo.*
+        //
+        //  Se hace AQUI, con el mismo argumento que las dos lineas de encima:
+        //  el estado util es el unico que se puede pedir. Poner un efecto en una
+        //  ranura es pedir que ESTE pad suene con el; si no esta en ninguna
+        //  tira, la accion de ponerlo es la que crea la relacion.
+        //
+        //  Solo si NO tiene: un pad que ya vive en el canal cuatro no se muda
+        //  al que estes mirando, que seria decidir por quien toca.
+        if (selectedPad >= 0 && ! AudioEngine::tieneCanal (engine.getPadCanal (selectedPad)))
+        {
+            pushUndo (T ("CANAL"));
+            engine.setPadCanal (selectedPad, (int) c);
+            refreshMixStrip();
+            if (auto* b = pads[selectedPad]) b->repaint();
+        }
     }
 
     refrescaRanuras();
@@ -15765,15 +15800,26 @@ void MainComponent::finishSessionRestore (const juce::ValueTree& tree, int resto
     //  These buffers came off this very folder: nothing to write back.
     session.adopt (uiSample.data(), kNumPads);
 
+    //  Y LA CUENTA DE PADS SALE DE AQUI, que ya la dice la banda de continuidad.
+    //
+    //  La frase larga —«Sesion recuperada  [64 pads]»— pide 175 px y la barra de
+    //  estado a 280 de ancho deja 152 en cuanto DESHACER se arma, porque las dos
+    //  tapas se llevan su trozo de la tira. Salio en el banco como un TRUNC en
+    //  cuanto poner un efecto en una ranura empezo a tomar foto, que es la unica
+    //  ficha donde antes no habia nada que deshacer.
+    //
+    //  Se quita la CIFRA y no la frase, y se quita porque esta escrita dos veces:
+    //  la banda de continuidad dice «· 64 PADS» siempre, no solo al recuperar.
+    //  Lo que no duplica nadie es cuantos volvieron MUDOS, y eso se queda.
+    //  Derivar el ancho de las dos tapas no bastaba: al rotulo le quedarian 36 px
+    //  para «DESHACER», asi que el arreglo estaba en el texto y no en la tira.
     if (missing > 0)
-        status.setText (T ("Sesion recuperada  [%1 pads, %2 sin audio]",
-                           juce::String (restored), juce::String (missing)),
+        status.setText (T ("Sesion recuperada  [%1 sin audio]", juce::String (missing)),
                         juce::dontSendNotification);
     else if (restored > 0 || currentProject.isNotEmpty())
         status.setText (currentProject.isNotEmpty()
                             ? T ("Sesion recuperada - %1", currentProject)
-                            : (restored == 1 ? T ("Sesion recuperada  [1 pad]")
-                                             : T ("Sesion recuperada  [%1 pads]", juce::String (restored))),
+                            : T ("Sesion recuperada"),
                         juce::dontSendNotification);
 
     //  Y SI LA VEZ ANTERIOR NO ACABO BIEN, se dice. Una app que se cierra sola

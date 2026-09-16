@@ -4044,13 +4044,58 @@ void MainComponent::auditCanales()
     //      se entere**. Sin la tercera, «el envio entra al maximo» lo cumple un
     //      codigo que lo sube en los treinta y dos, que meteria en la reverb
     //      treinta y un canales que nadie mando.
+    //      Y UNA CUARTA, que es la que faltaba y la que se pago: que el PAD
+    //      acabe mandando de verdad.
+    //
+    //      Las tres de arriba se cumplian y el efecto no sonaba, porque el
+    //      envio se escribe en el CANAL y quien tiene que mandar es el pad —que
+    //      nace SIN canal, los sesenta y cuatro—. `refrescaSendMask` lo dice
+    //      entero: «un pad SIN canal no manda a ningun bus». O sea que el
+    //      interruptor encendido y el envio al maximo alimentaban un bus al que
+    //      no llegaba una muestra.
+    //
+    //      Se mide sobre `padSendMask`, que es lo que el hilo de audio lee de
+    //      verdad, y no sobre `getPadCanal`: que el pad tenga canal es el medio,
+    //      que el bit este puesto es el fin. Preguntando por el canal, esta
+    //      comprobacion la cumpliria un `setPadCanal` a un canal que no manda a
+    //      ningun efecto.
     for (auto& f : slotFx) f.fill (kSlotVacia);
     setFxEnabled (AudioEngine::kFxDrv, false);
     ponCanalActual (2);
+    engine.setPadCanal (selectedPad >= 0 ? selectedPad : 0, AudioEngine::kSinCanal);
     ponEnRanura (0, AudioEngine::kFxDrv);
     const double envioAlEntrar = (double) engine.getCanalSend (2, AudioEngine::kFxDrv);
     const int    encendidoAlEntrar = fxEncendido (AudioEngine::kFxDrv) ? 1 : 0;
     const double envioDelVecino = (double) engine.getCanalSend (3, AudioEngine::kFxDrv);
+    const int    mandaAlEntrar = (selectedPad >= 0
+                                    && ((engine.getPadSendMask() >> (unsigned) selectedPad) & 1ull)) ? 1 : 0;
+
+    //  5b. LA SECUENCIA DEL TELEFONO, PASO POR PASO.
+    //
+    //      «Meto un sonido, pongo una caja en el pad 2, que esta sin canal. Lo
+    //      linkeo al 3, pongo el EQ en el 3, en el slot 1, y ese EQ ni analiza
+    //      nada ni modifica nada.»
+    //
+    //      Las cinco cifras que hacen falta para saber DONDE se rompe, porque
+    //      con una sola no se puede: en que canal quedo el pad, cual esta
+    //      editando la cara, en que canal acabo el EQ, si el pad manda, y si la
+    //      mezcla del efecto llego al canal donde esta puesto.
+    for (auto& f : slotFx) f.fill (kSlotVacia);
+    setFxEnabled (AudioEngine::kFxEq, false);
+    for (int p = 0; p < kNumPads; ++p) engine.setPadCanal (p, AudioEngine::kSinCanal);
+    selectPad (2);
+    ponCanalActual (3);
+    engine.setPadCanal (2, 3);      // «lo linkeo al 3»
+    selectPad (2);                  // y se vuelve a el, como al cerrar la ficha
+    ponEnRanura (1, AudioEngine::kFxEq);
+    const int    tfCanalPad   = engine.getPadCanal (2);
+    const int    tfCanalCara  = canalActual;
+    const int    tfCanalDelEq = canalDeFx (AudioEngine::kFxEq);
+    const int    tfManda      = (int) ((engine.getPadSendMask() >> 2u) & 1ull);
+    const double tfMezcla     = (double) engine.getFxParam (tfCanalDelEq >= 0 ? tfCanalDelEq : 0,
+                                                            AudioEngine::kFxEq, 2);
+    const double tfEnvio      = (double) engine.getCanalSend (tfCanalDelEq >= 0 ? tfCanalDelEq : 0,
+                                                              AudioEngine::kFxEq);
 
     //  6. EL BANCO DE LA REJILLA: que se llegue a los dieciseis de detras.
     //
@@ -4151,6 +4196,13 @@ void MainComponent::auditCanales()
               << ",\"envio_al_entrar\":" << envioAlEntrar
               << ",\"encendido_al_entrar\":" << encendidoAlEntrar
               << ",\"envio_del_vecino\":" << envioDelVecino
+              << ",\"manda_al_entrar\":" << mandaAlEntrar
+              << ",\"tf_canal_pad\":" << tfCanalPad
+              << ",\"tf_canal_cara\":" << tfCanalCara
+              << ",\"tf_canal_eq\":" << tfCanalDelEq
+              << ",\"tf_manda\":" << tfManda
+              << ",\"tf_mezcla\":" << juce::String (tfMezcla, 2)
+              << ",\"tf_envio\":" << juce::String (tfEnvio, 2)
               << "}" << std::endl;
 }
 

@@ -38,10 +38,10 @@ namespace
           "Pads respond to how hard you hit them",
           "打击力度感应已启用",
           "الوسادات تستجيب لقوة الضغط" },
-        { "Sesion recuperada  [%1 pads, %2 sin audio]", "",
-          "Session recovered  [%1 pads, %2 without audio]",
-          "会话已恢复  [%1 个音垫，%2 个缺少音频]",
-          "استُعيدت الجلسة  [%1 باد، %2 بلا صوت]" },
+        { "Sesion recuperada  [%1 sin audio]", "",
+          "Session recovered  [%1 without audio]",
+          "会话已恢复  [%1 个缺少音频]",
+          "استُعيدت الجلسة  [%1 بلا صوت]" },
         // --- GESTOS (la tercera pagina de AJUSTES) --------------------------
         { "GESTOS",             "",  "GESTURES",  "手势",   "إيماءات" },
         //  La pestana donde vive la ayuda entera: la tabla de gestos, el manual
@@ -1474,8 +1474,7 @@ namespace
         { "Guardando proyecto", "",     "Saving project",    "正在保存工程", "جارٍ حفظ المشروع" },
         { "Espera a que termine %1", "", "Wait until %1 finishes", "请等待%1结束", "انتظر حتى ينتهي %1" },
         { "Sesion recuperada - %1", "", "Session restored - %1", "会话已恢复 — %1", "استُعيدت الجلسة — %1" },
-        { "Sesion recuperada  [%1 pads]", "", "Session restored  [%1 pads]", "会话已恢复 [%1 个音垫]", "استُعيدت الجلسة [%1 باد]" },
-        { "Sesion recuperada  [1 pad]", "", "Session restored  [1 pad]", "会话已恢复 [1 个音垫]", "استُعيدت الجلسة [باد واحد]" },
+        { "Sesion recuperada", "", "Session restored", "会话已恢复", "استُعيدت الجلسة" },
 
         // --- Browser -------------------------------------------------------
         // --- Los sonidos de fabrica (Kits.h) --------------------------------

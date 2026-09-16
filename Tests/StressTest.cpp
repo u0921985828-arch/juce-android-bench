@@ -5535,6 +5535,155 @@ int main()
     }
 
     // ------------------------------------------------------------------
+    //  Y LA MEDIDA QUE NO TENIA NADIE EN TODO EL BANCO: QUE UN INSERTO CAMBIE
+    //  EL AUDIO EN UN CANAL QUE NO SEA EL CERO.
+    //
+    //  Viene de una queja de uso -«pongo el EQ en el canal 3, toco las cinco
+    //  bandas y no hace nada»- y el fallo estaba en una linea: el reparto seco
+    //  contra mojado leia la MEZCLA del efecto SIEMPRE del canal cero
+    //  (`fxMixNow[kNumFx]`, una fila y no una tabla), asi que poner un inserto
+    //  en el canal 3 escribia su mezcla en el 3 y el bloque de audio preguntaba
+    //  al 0, que sigue con el defecto de fabrica: cero. Con la mezcla a cero el
+    //  envio queda a cero, el bus no se marca como alimentado, la etapa NO SE
+    //  EJECUTA — y por eso tampoco el analizador enseñaba nada, que lee ese bus
+    //  muerto. Los CINCO que suman se salvaban por casualidad: su parametro es
+    //  uno para toda la mesa, asi que el canal cero era la respuesta correcta.
+    //
+    //  Lo que este banco tenia y no bastaba: el camino de cada efecto medido
+    //  EN EL CANAL 0 -que era justo el unico que funcionaba- y el enrutado
+    //  medido por ESTADO. Las dos daban verde con el fallo dentro.
+    //
+    //  TRES cifras, y la primera es la que impide que esto se cumpla solo:
+    //    · el efecto se OYE en el canal 0. Es el control; sin el, un tipo
+    //      configurado en neutro cumpliria las otras dos sin hacer nada.
+    //    · se oye en el canal 4, que es donde estaba el fallo.
+    //    · y las dos salidas son LA MISMA, bit a bit: un inserto es el mismo
+    //      aparato en los dos sitios, asi que el canal es un re-indice.
+    {
+        static constexpr const char* kNombre[AudioEngine::kNumFx] =
+        { "FLT", "HPF", "DRV", "DLY", "BIT", "REV", "EQ", "CMP", "GTE", "DSS",
+          "LIM", "CHO", "FLA", "PHA", "TRM", "RNG", "PIT", "WID", "EXC", "TRN",
+          "FRZ", "WAH", "OCT" };
+
+        //  Un tono con las dos mitades DISTINTAS. Con L == R el lado es cero y
+        //  un ensanchador -que escala justo el lado- no cambiaria una muestra:
+        //  saldria «no se oye» y no seria un fallo del motor sino de la fuente.
+        auto estereo = [] (double sr, double seg, double hz)
+        {
+            auto* sb = new SampleBuffer();
+            const int n = (int) (sr * seg);
+            sb->buffer.setSize (2, n);
+            for (int i = 0; i < n; ++i)
+            {
+                const double t = 2.0 * juce::MathConstants<double>::pi * hz * (double) i / sr;
+                sb->buffer.setSample (0, i, 0.50f * (float) std::sin (t));
+                sb->buffer.setSample (1, i, 0.45f * (float) std::sin (t + 0.7));
+            }
+            sb->sourceSampleRate = sr;
+            return SampleBuffer::Ptr (sb);
+        };
+
+        //  LOS AJUSTES QUE HACEN QUE CADA TIPO SE OIGA, y solo los que el
+        //  defecto de fabrica deja en neutro: un barrido en 0 no filtra, un
+        //  techo en -1 dB no recorta un tono a -16 dBFS y una puerta en -40 dB
+        //  no cierra. Los demas van con `kFxDef`, que es lo que la app carga.
+        auto ajusta = [] (AudioEngine& e, int canal, int fx)
+        {
+            switch (fx)
+            {
+                case AudioEngine::kFxFlt: e.setFxParam (canal, fx, 0, -0.60f); break;
+                case AudioEngine::kFxHpf: e.setFxParam (canal, fx, 0, 1200.0f); break;
+                case AudioEngine::kFxGte: e.setFxParam (canal, fx, 0,  -6.0f); break;
+                //  Y EL COMPRESOR CON UMBRAL DE VERDAD: con el de fabrica
+                //  -18 dB sobre un tono a -19.5 dBFS RMS, la primera corrida
+                //  daba 0.6 % de cambio, o sea por debajo del suelo de «se
+                //  oye». No era un fallo del motor: era que la prueba lo tenia
+                //  casi en reposo. Primero se duda de la prueba.
+                case AudioEngine::kFxCmp: e.setFxParam (canal, fx, 0, -40.0f);
+                                          e.setFxParam (canal, fx, 1,   8.0f); break;
+                case AudioEngine::kFxLim: e.setFxParam (canal, fx, 0, -30.0f); break;
+                //  El EQ no tiene sus bandas en `fxP`: las guarda el `Eq5` del
+                //  canal. Es la misma banda que la queja movia.
+                case AudioEngine::kFxEq:  e.setEqBand (canal, 2, 300.0f, +12.0f); break;
+                default: break;
+            }
+        };
+
+        auto corre = [&estereo, &ajusta] (int fx, int canal, std::vector<float>& out)
+        {
+            AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+            enCanalCero (e);
+            e.setPadGain (0, 0.30f);
+            e.setPadCanal (0, canal);
+            if (fx >= 0)
+            {
+                ajusta (e, canal, fx);
+                e.setFxParam (canal, fx, 2, 1.0f);
+                e.setCanalSend (canal, fx, 1.0f);
+            }
+            e.publishSample (0, estereo (kFs, 0.80, 300.0));
+
+            juce::AudioBuffer<float> b (2, kBs);
+            b.clear(); e.renderNextBlock (b, 0, kBs);
+            e.postNoteOn (0, 1.0f);
+
+            out.clear();
+            for (int blk = 0; blk < 28; ++blk)
+            {
+                b.clear(); e.renderNextBlock (b, 0, kBs);
+                //  Los ocho primeros fuera: el envio sube con 20 ms de
+                //  constante y ahi las dos corridas comparten la rampa.
+                if (blk < 8) continue;
+                for (int i = 0; i < kBs; ++i) out.push_back (b.getSample (0, i));
+            }
+        };
+
+        auto dif = [] (const std::vector<float>& a, const std::vector<float>& b)
+        {
+            const size_t n = juce::jmin (a.size(), b.size());
+            double d = 0.0, r = 0.0;
+            for (size_t i = 0; i < n; ++i)
+            { const double e = (double) a[i] - (double) b[i]; d += e * e; r += (double) b[i] * (double) b[i]; }
+            return std::sqrt (d / juce::jmax (1.0, (double) n))
+                 / juce::jmax (1.0e-9, std::sqrt (r / juce::jmax (1.0, (double) n)));
+        };
+
+        std::vector<float> seco0, seco4, con0, con4;
+        corre (-1, 0, seco0);
+        corre (-1, 4, seco4);
+
+        int suena0 = 0, suena4 = 0, iguales = 0, insertos = 0;
+        for (int f = 0; f < AudioEngine::kNumFx; ++f)
+        {
+            if (! AudioEngine::sustituye (f)) continue;   // los cinco que suman son de toda la mesa
+            ++insertos;
+            corre (f, 0, con0);
+            corre (f, 4, con4);
+            const double d0 = dif (con0, seco0);
+            const double d4 = dif (con4, seco4);
+            const double ig = dif (con4, con0);
+
+            //  El 2 % es el suelo de «se oye»: por debajo de eso lo que se
+            //  estaria midiendo es el ruido de la suavizacion, no el efecto.
+            const bool bien = d0 > 0.02 && d4 > 0.02 && ig < 1.0e-6;
+            if (bien) { ++suena0; ++suena4; ++iguales; }
+            else
+            {
+                if (d0 > 0.02) ++suena0;
+                if (d4 > 0.02) ++suena4;
+                if (ig < 1.0e-6) ++iguales;
+                std::printf ("   %-4s canal 0 cambia %.1f %%   canal 4 cambia %.1f %%   se separan %.2e\n",
+                             kNombre[f], 100.0 * d0, 100.0 * d4, ig);
+            }
+        }
+
+        const bool ok = suena0 == insertos && suena4 == insertos && iguales == insertos;
+        std::printf ("%-34s se oyen en el 0: %d/%d   en el 4: %d/%d   iguales: %d/%d   %s\n",
+                     "un inserto cambia el audio", suena0, insertos, suena4, insertos,
+                     iguales, insertos, ok ? "OK" : zatiFalla());
+    }
+
+    // ------------------------------------------------------------------
     //  LA FILA DE CONTROL, que es la que sostiene todo lo demas: los 64 pads
     //  en el canal 0 contra los mismos 64 repartidos por los dieciseis CON LOS
     //  MISMOS AJUSTES. Con los dieciseis canales diciendo lo mismo, repartir es
