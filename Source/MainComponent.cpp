@@ -1585,6 +1585,31 @@ MainComponent::MainComponent()
             list->setRowHeight (Metrics::row);
         browseSheet.addAndMakeVisible (*browser);
 
+        //  Y ENCIMA DE EL, lo que dice que la carpeta esta vacia. Anadido
+        //  DESPUES del navegador a proposito: los hermanos se pintan en orden y
+        //  este tiene que quedar por encima. Y sin comerse el dedo — lo que hay
+        //  debajo se sigue tocando y arrastrando igual.
+        browseVacio.setJustificationType (juce::Justification::centred);
+        //  Y NO SE APRIETA: parte en dos renglones antes que comprimir.
+        //
+        //  `drawFittedText` comprime hasta `minimumHorizontalScale` -0.7 por
+        //  defecto- ANTES de partir, asi que en 280x653 la frase salia estrujada
+        //  de borde a borde: `SQUEEZE "aqui no hay sonidos, entra en otra
+        //  carpeta" needs 224 has 221`, tres pixeles. Con la escala a 1.0 no le
+        //  queda mas remedio que usar el alto, que aqui sobra -el rotulo ocupa
+        //  la caja entera del navegador-.
+        //
+        //  Se comprobo mirando la pantalla y no suponiendo: la primera lectura
+        //  fue que la regla medi­a mal un rotulo de varias lineas, y la foto
+        //  enseño que no, que se apretaba de verdad.
+        browseVacio.setMinimumHorizontalScale (1.0f);
+        browseVacio.setInterceptsMouseClicks (false, false);
+        browseVacio.setColour (juce::Label::textColourId, ZatiColours::inkDim);
+        browseVacio.setFont (ZatiColours::monoFont (Metrics::fMeta, true)
+                                 .withExtraKerningFactor (0.08f));
+        browseVacio.setVisible (false);
+        browseSheet.addAndMakeVisible (browseVacio);
+
         styleButton (browseCloseButton, kKey);
         browseCloseButton.onClick = [this] { cancelAudition(); closeAllSheets(); };
         browseSheet.addAndMakeVisible (browseCloseButton);
@@ -9439,6 +9464,58 @@ void MainComponent::openBrowseForPad (int index)
 }
 
 // A file is only loadable once one is actually picked (folders don't count).
+//  ¿HAY ALGO EN ESTA CARPETA?
+//
+//  Se pregunta a la lista del navegador y no al disco: quien ya lo sabe es el
+//  que acaba de leerla, y un `getNumberOfChildFiles` aqui seria una segunda
+//  respuesta que se puede quedar vieja — y ademas E/S dentro de un tick.
+//
+//  Y SE ESPERA A QUE TERMINE DE LEER, que es la mitad sin la cual esto miente:
+//  `DirectoryContentsList` escanea en su propio hilo, asi que recien cambiada
+//  de carpeta hay CERO ficheros aunque este llena. Sin el `isStillLoading` el
+//  rotulo daria por vacia cualquier carpeta durante el primer parpadeo, que es
+//  justo cuando se esta mirando.
+void MainComponent::refrescaBrowseVacio()
+{
+    if (browser == nullptr || ! browseSheet.isVisible())
+    {
+        browseVacio.setVisible (false);
+        return;
+    }
+
+    auto* disp = browser->getDisplayComponent();
+    if (disp == nullptr) { browseVacio.setVisible (false); return; }
+
+    auto& lista = disp->directoryContentsList;
+    const bool vacia = ! lista.isStillLoading() && lista.getNumFiles() == 0;
+
+    //  Lo que se dice depende de a que has entrado, que es lo mismo que decide
+    //  el titulo: buscando un sonido la salida es entrar en otra carpeta;
+    //  eligiendo el destino del rebote, esta carpeta vacia SIRVE — y decir
+    //  «no hay nada» sin mas se leeria como que no se puede usar.
+    //  CORTO, porque el hueco mas estrecho manda.
+    //
+    //  La primera version decia «aqui no hay sonidos, entra en otra carpeta» y
+    //  en 280x653 salia estrujada: `SQUEEZE needs 224 has 221`, tres pixeles.
+    //  Se intento dejarla larga y que partiera en dos renglones -y parte, con
+    //  `setMinimumHorizontalScale (1.0f)`- pero entonces la regla seguia
+    //  diciendo lo mismo, porque `UiAudit` mide un `Label` como UNA linea. Y
+    //  ensenarle a medir uno alto que reparte resulto ser una regla que imita a
+    //  `drawFittedText` y se va a desviar de el: la escala efectiva y el numero
+    //  de renglones se deciden entre si. Eso es una tanda de instrumentacion y
+    //  no un remate, y va apuntado en vez de hecho a medias.
+    //
+    //  Lo que si es cierto hoy: el resto de la app cabe en un renglon en la
+    //  pantalla mas estrecha, y este rotulo tambien puede. «prueba en otra
+    //  carpeta» dice las dos cosas —que aqui no vale y que hacer— en la mitad.
+    const auto texto = (browseModo == browseCarpeta)
+                         ? T ("vacia, pero vale")
+                         : T ("prueba en otra carpeta");
+
+    if (vacia && browseVacio.getText() != texto) browseVacio.setText (texto, juce::dontSendNotification);
+    if (browseVacio.isVisible() != vacia)        browseVacio.setVisible (vacia);
+}
+
 void MainComponent::selectionChanged()
 {
     const bool ready = browser != nullptr
@@ -13436,6 +13513,13 @@ void MainComponent::pollExport()
         }
     }
     if (measuring && ! engine.isProbing()) finishMeasure();
+
+    //  Y SI LA CARPETA DEL NAVEGADOR ESTA VACIA, QUE LO DIGA. Aqui y no en
+    //  `browserRootChanged`, que es lo que parecia su sitio: ese aviso llega
+    //  cuando la raiz CAMBIA, o sea antes de que la lista se haya leido, y la
+    //  respuesta de entonces es «cero ficheros» siempre. La pregunta hay que
+    //  hacerla cuando el escaneo puede haber terminado, y eso es un latido.
+    refrescaBrowseVacio();
 
     if (exportJob == nullptr) return;
 

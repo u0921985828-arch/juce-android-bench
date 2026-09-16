@@ -1733,6 +1733,25 @@ void MainComponent::paintEqBandaContent (juce::Graphics& g)
                  "EQ " + dot + " " + T ("BANDA %1", juce::String (b + 1))
                        + " " + dot + " " + Lang::ltr (fr),
                  "titulo", true);
+
+    //  Y EL MANDO DICE DE QUE ES, que es lo unico que le faltaba a esta ficha.
+    //
+    //  Salia un dial con «0.70» debajo y ni una palabra: el unico mando de toda
+    //  la app sin su nombre encima. Y no por no tenerlo — `tablaDeMandos` ya lo
+    //  declara como ANCHO y `retranslateUi` se lo da a TalkBack, asi que quien
+    //  no ve la pantalla si sabia de que era y quien la ve no. El pintor de esta
+    //  ficha simplemente nunca dibujo esa banda.
+    //
+    //  Con la MISMA figura que los catorce del pad -`claveDeMando` y
+    //  `bandAbove`- y no con un literal aqui: lo que se ve y lo que lee el
+    //  lector de pantalla no pueden ser dos cadenas mantenidas a mano.
+    if (const char* clave = claveDeMando (eqQKnob))
+    {
+        g.setColour (ZatiColours::ink.withAlpha (0.55f));
+        g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
+        g.drawText (T (clave), bandAbove (eqQKnob, ZatiLookAndFeel::kKnobName, 2, 6),
+                    juce::Justification::centred);
+    }
 }
 
 void MainComponent::paintPadSheetContent (juce::Graphics& g)

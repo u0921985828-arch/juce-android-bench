@@ -291,14 +291,40 @@ public:
                                : ZatiColours::markOn (ZatiColours::chassisTop, 0.10f));
             g.fillRect (tecla);
 
-            //  El DO de cada octava lleva su nombre; las demas no, que
-            //  veinticinco rotulos en una columna de 34 px es una mancha.
-            if (((semi % 12) + 12) % 12 == 0)
+            //  El DO de cada octava lleva su nombre SIEMPRE; las blancas, su
+            //  letra cuando la fila da alto para leerla.
+            //
+            //  Aqui solo se rotulaba el DO, con su razon escrita: «veinticinco
+            //  rotulos en una columna de 34 px es una mancha». El argumento es
+            //  del ANCHO y vale para las NEGRAS —«C#» son dos signos y un
+            //  sostenido a ese cuerpo de letra es un borron— pero no para las
+            //  blancas, que son UNA letra: C D E F G A B. En 34 px una letra
+            //  cabe de sobra.
+            //
+            //  Lo que costaba no decirlo: con dos octavas a la vista habia TRES
+            //  referencias en veinticinco filas -C-1, C y C+1- asi que para
+            //  saber donde cae un FA habia que contar filas desde el DO. Quien
+            //  ya produce las cuenta sin pensar; quien no, no sabe que se
+            //  cuentan.
+            //
+            //  Y SE PREGUNTA POR EL ALTO DE LA FILA, no por cuantas octavas se
+            //  ven: con cuatro octavas la fila baja de ocho pixeles y ahi la
+            //  letra si seria la mancha que el comentario de antes describia.
+            //  El liston es el cuerpo de letra con su interlinea, o sea lo que
+            //  hace falta para LEERLA, derivado y no escrito.
+            const bool cabeLetra = altoFila >= (float) Metrics::fTiny * 1.35f;
+            if (((semi % 12) + 12) % 12 == 0 || (! negra && cabeLetra))
             {
                 g.setColour (ZatiColours::textOn (negra ? ZatiColours::groove (0.72f)
                                                         : ZatiColours::chassisTop));
                 g.setFont (ZatiColours::monoFont (Metrics::fTiny, true));
-                g.drawText (nombreDe (semi), tecla, juce::Justification::centred);
+                //  El DO dice ademas su octava -es la referencia- y las otras
+                //  seis solo su letra: repetir el numero en las siete es
+                //  gastar la columna en decir siete veces lo mismo.
+                const auto txt = (((semi % 12) + 12) % 12 == 0)
+                                   ? nombreDe (semi)
+                                   : nombreDe (semi).substring (0, 1);
+                g.drawText (txt, tecla, juce::Justification::centred);
             }
 
             for (int c = 0; c < nPasos; ++c)

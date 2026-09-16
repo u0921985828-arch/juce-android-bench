@@ -1696,6 +1696,10 @@ namespace
         //  LAS DOS DEL XY SIN EFECTO PUESTO. Ver paintXySheetContent: la
         //  pagina decia «XY · FLT · EN ESPERA» con las seis ranuras a «+».
         { "PON UN EFECTO",  "",         "ADD AN EFFECT", "放一个效果", "أضف تأثيرًا" },
+        //  LAS DOS DEL NAVEGADOR VACIO. Ver refrescaBrowseVacio: dos tercios
+        //  de ficha en negro y ni una linea se leen como que la app no cargo.
+        { "prueba en otra carpeta", "", "try another folder", "请试其他文件夹", "جرّب مجلدًا آخر" },
+        { "vacia, pero vale",      "", "empty, but it works", "为空，但可用", "فارغ، لكنه يعمل" },
         { "toca una ranura de la cara para poner uno", "",
           "tap a slot on the machine to add one", "点击面板上的插槽来添加", "المس فتحة في الواجهة لإضافة واحد" },
         { "COMPARTIR",      "",         "SHARE",      "分享",        "مشاركة" },

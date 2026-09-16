@@ -1704,6 +1704,18 @@ private:
     };
     std::unique_ptr<FiltroBrowse>   browseFilter;   // declared first: outlives the browser
     std::unique_ptr<juce::FileBrowserComponent> browser;
+    //  LO QUE DICE UNA CARPETA VACIA, que es lo unico que el navegador no
+    //  decia. Dos tercios de la ficha en negro y ni una linea se leen como que
+    //  la app no cargo, y la respuesta —«aqui no hay nada, entra en otra»— es
+    //  justo la que hace falta ahi. AJUSTES · PROYECTOS ya lo hace en el mismo
+    //  estado («sin proyectos · GUARDAR crea el primero»): la figura existia en
+    //  esta casa y faltaba en la ficha de al lado.
+    //
+    //  Es un rotulo ENCIMA del navegador y no texto pintado por la ficha, por
+    //  dos razones: lo que pinta `paintBrowseSheetContent` queda DEBAJO del
+    //  navegador -es un hijo suyo- y ademas un componente lo ve el banco.
+    juce::Label browseVacio;
+    void refrescaBrowseVacio();
     juce::TextButton browseCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
     juce::TextButton browseLoadButton  { "CARGAR" };
     //  CARGAR UNA CARPETA ENTERA COMO KIT. Dieciseis samples es un kit, y

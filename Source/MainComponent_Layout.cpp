@@ -2080,6 +2080,9 @@ void MainComponent::resized()
         }
         inner.removeFromBottom (Metrics::sm);
         if (browser != nullptr) browser->setBounds (inner);
+        //  El rotulo de vacio ocupa la MISMA caja que el navegador y se centra
+        //  en ella: es lo que sustituye a la lista, no una nota al pie.
+        browseVacio.setBounds (inner);
     }
 
     // PROJECT sheet: list of saved projects + the four actions.
@@ -4192,8 +4195,6 @@ void MainComponent::resized()
             inner.removeFromBottom (Metrics::xs);
         }
 
-        mixScroll.setBounds (inner);
-
         //  APAISADO, DOS COLUMNAS DE OCHO.
         //
         //  Dieciseis canales apilados son 792 px de contenido, y girado la
@@ -4209,6 +4210,26 @@ void MainComponent::resized()
         const int cuantas  = mixPage == mixPageCanales ? kNumCanales : kPadsPerBank;
         const int porCol   = cuantas / columnas;
         const int contentH = porCol * rowH;
+        //  Y EL CAJON ENCAJA A UN NUMERO ENTERO DE FILAS.
+        //
+        //  `inner` da el alto que sobre, que no tiene por que ser multiplo de
+        //  `rowH`, asi que en reposo la ultima fila salia PARTIDA POR LA MITAD:
+        //  la tira 14 en MEZCLA y la 15 en MEZCLA · CANALES. Un cajon con
+        //  arrastre puede acabar en cualquier sitio MIENTRAS SE ARRASTRA, pero
+        //  la posicion de reposo es la que se ve al abrir y la que sale en toda
+        //  foto, y ahi media fila se lee como un fallo de pintado y no como
+        //  «hay mas debajo».
+        //
+        //  Solo cuando HAY arrastre: sin el, recortar el alto seria regalar
+        //  pixeles por una fila que no existe. Y lo que sobra se lo queda el
+        //  aire de abajo, que es donde ya hay una frontera.
+        if (contentH > inner.getHeight())
+        {
+            const int sobra = inner.getHeight() % rowH;
+            if (sobra > 0) inner.removeFromBottom (sobra);
+        }
+        mixScroll.setBounds (inner);
+
         //  Leave the bar its width only when there IS a bar, or every row is
         //  eight pixels short on the screens that did not need one.
         const int barW = contentH > inner.getHeight() ? mixScroll.getScrollBarThickness() : 0;
