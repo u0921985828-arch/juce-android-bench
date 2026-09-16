@@ -34,7 +34,29 @@ namespace MediaStore
     //  corre, asi que si el almacen de medios dice que no, lo peor que pasa es
     //  que el fichero se queda donde estaba. Un fallo aqui no puede costar el
     //  trabajo.
+    //  `uriOut`, si se pasa, recibe el `content://` de la fila publicada. Es lo
+    //  unico que `comparte` necesita y no habia forma de sacarlo: la URI era una
+    //  referencia local de JNI que moria al volver. Opcional a proposito — los
+    //  que solo publican no cambian ni una linea.
     juce::String publicar (const juce::File& local,
                            const juce::String& subcarpeta,
-                           const juce::String& mime);
+                           const juce::String& mime,
+                           juce::String* uriOut = nullptr);
+
+    //  MANDARLO A OTRA APP, que es lo que convierte un rebote en algo que
+    //  existe para los demas.
+    //
+    //  Exportabas y tenias que salir a un gestor de ficheros a buscarlo: para
+    //  alguien que no es tecnico, un rebote que no se puede mandar por WhatsApp
+    //  es un rebote que no existe. No habia `ACTION_SEND` en todo el proyecto.
+    //
+    //  Se comparte la URI del ALMACEN DE MEDIOS y no un fichero de la carpeta
+    //  privada, que es lo que evita tener que declarar un `FileProvider`: esa
+    //  fila ya es publica y legible por quien la reciba, asi que basta con
+    //  pasarla. Por eso `publicar` tenia que devolverla.
+    //
+    //  Devuelve false si no se pudo —en escritorio siempre— y quien llama lo
+    //  dice: un boton que no hace nada y no lo cuenta se lee como que la app
+    //  esta rota.
+    bool comparte (const juce::String& contentUri, const juce::String& mime);
 }

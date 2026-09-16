@@ -2746,8 +2746,18 @@ void MainComponent::resized()
             //  solo de que lado del renglon cae.
             inner.removeFromBottom (Metrics::sm);
             auto fila = inner.removeFromBottom (Metrics::hit);
-            juce::TextButton* lb[1] = { &exportLiveButton };
-            layoutModuleBar (fila, lb, 0, 1);
+            //  Y COMPARTIR COMPARTE ESTA FILA, que es la unica forma de meterlo
+            //  sin fila propia: la ficha ya pide Metrics::hit*4 + btn*2 + sm*4 y
+            //  en 915x412 la tarjeta da 370 px para 432 pedidos -lo que falta se
+            //  lo come lo ultimo que se maqueta, que ya costo una vez EN VIVO a
+            //  809x6-. Solo esta cuando hay un `content://` que mandar, asi que
+            //  la fila es de UNA tapa mientras no haya rebote publicado y de dos
+            //  justo despues: el reparto se pide por lo que se ve, no por lo
+            //  declarado.
+            juce::TextButton* lb[2] = { &exportLiveButton, &exportShareBtn };
+            const int cuantas = exportShareBtn.isVisible() ? 2 : 1;
+            if (! exportShareBtn.isVisible()) exportShareBtn.setBounds ({});
+            layoutModuleBar (fila, lb, 0, cuantas);
         }
         //  Tres tapas: el formato primero porque se elige ANTES de decidir si
         //  es master o pistas, y repartidas por el texto - "PISTAS" y "MASTER"

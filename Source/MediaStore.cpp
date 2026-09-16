@@ -48,6 +48,26 @@ namespace juce
         STATICFIELD (sdkInt, "SDK_INT", "I")
     DECLARE_JNI_CLASS (ZatiBuildVersion, "android/os/Build$VERSION")
     #undef JNI_CLASS_MEMBERS
+
+    //  Y lo que hace falta para MANDARLO a otra app. Ver MediaStore::comparte.
+    #define JNI_CLASS_MEMBERS(METHOD, STATICMETHOD, FIELD, STATICFIELD, CALLBACK) \
+        METHOD (constructor,   "<init>",        "(Ljava/lang/String;)V") \
+        METHOD (setType,       "setType",       "(Ljava/lang/String;)Landroid/content/Intent;") \
+        METHOD (putExtraParcel,"putExtra",      "(Ljava/lang/String;Landroid/os/Parcelable;)Landroid/content/Intent;") \
+        METHOD (addFlags,      "addFlags",      "(I)Landroid/content/Intent;") \
+        STATICMETHOD (createChooser, "createChooser", "(Landroid/content/Intent;Ljava/lang/CharSequence;)Landroid/content/Intent;")
+    DECLARE_JNI_CLASS (ZatiIntent, "android/content/Intent")
+    #undef JNI_CLASS_MEMBERS
+
+    #define JNI_CLASS_MEMBERS(METHOD, STATICMETHOD, FIELD, STATICFIELD, CALLBACK) \
+        STATICMETHOD (parse, "parse", "(Ljava/lang/String;)Landroid/net/Uri;")
+    DECLARE_JNI_CLASS (ZatiUri, "android/net/Uri")
+    #undef JNI_CLASS_MEMBERS
+
+    #define JNI_CLASS_MEMBERS(METHOD, STATICMETHOD, FIELD, STATICFIELD, CALLBACK) \
+        METHOD (startActivity, "startActivity", "(Landroid/content/Intent;)V")
+    DECLARE_JNI_CLASS (ZatiActivity, "android/app/Activity")
+    #undef JNI_CLASS_MEMBERS
 }
 
 namespace MediaStore
@@ -64,7 +84,8 @@ namespace MediaStore
 
     juce::String publicar (const juce::File& local,
                            const juce::String& subcarpeta,
-                           const juce::String& mime)
+                           const juce::String& mime,
+                           juce::String* uriOut)
     {
         //  RELATIVE_PATH es de API 29. Por debajo no hace falta esto: el permiso
         //  de escritura sigue valiendo y ProjectStore ya escribe directamente en
@@ -180,7 +201,71 @@ namespace MediaStore
             return {};
         }
 
+        //  Y la URI para quien la quiera. Aqui y no antes: solo se devuelve la
+        //  de una fila que quedo PUBLICADA, que es lo unico que otra app puede
+        //  abrir. Es la misma figura que el resto del fichero -lo que importa
+        //  es donde acabo, no lo que devolvio la orden-.
+        //  Con `LocalRef` y no a pelo: `CallObjectMethod` devuelve una
+        //  referencia local que vive hasta que se desmonte el marco JNI, y en
+        //  una actividad nativa ese marco es la sesion entera. Una por fichero
+        //  publicado no se nota; la costumbre de no envolverlas, si.
+        if (uriOut != nullptr)
+        {
+            juce::LocalRef<jobject> clase (env->GetObjectClass (uri.get()));
+            juce::LocalRef<jstring> texto ((jstring) env->CallObjectMethod (
+                uri.get(), env->GetMethodID ((jclass) clase.get(),
+                                             "toString", "()Ljava/lang/String;")));
+            if (env->ExceptionCheck()) { env->ExceptionClear(); *uriOut = {}; }
+            else                        *uriOut = juce::juceString (texto.get());
+        }
+
         return rel + "/" + local.getFileName();
+    }
+
+    bool comparte (const juce::String& contentUri, const juce::String& mime)
+    {
+        if (contentUri.isEmpty()) return false;
+
+        auto* env = juce::getEnv();
+        if (env == nullptr) return false;
+
+        //  La ACTIVIDAD y no el contexto: `startActivity` desde un contexto de
+        //  aplicacion exige FLAG_ACTIVITY_NEW_TASK y abre el selector fuera de
+        //  la pila de la app, o sea que volver de WhatsApp no te devuelve aqui.
+        auto actividad = juce::getCurrentActivity();
+        if (actividad.get() == nullptr) return false;
+
+        juce::LocalRef<jobject> uri (env->CallStaticObjectMethod (
+            juce::ZatiUri, juce::ZatiUri.parse, juce::javaString (contentUri).get()));
+        if (env->ExceptionCheck()) { env->ExceptionClear(); return false; }
+        if (uri.get() == nullptr) return false;
+
+        juce::LocalRef<jobject> intent (env->NewObject (
+            juce::ZatiIntent, juce::ZatiIntent.constructor,
+            juce::javaString ("android.intent.action.SEND").get()));
+        if (env->ExceptionCheck() || intent.get() == nullptr) { env->ExceptionClear(); return false; }
+
+        env->CallObjectMethod (intent.get(), juce::ZatiIntent.setType,
+                               juce::javaString (mime).get());
+        if (env->ExceptionCheck()) { env->ExceptionClear(); return false; }
+
+        env->CallObjectMethod (intent.get(), juce::ZatiIntent.putExtraParcel,
+                               juce::javaString ("android.intent.extra.STREAM").get(), uri.get());
+        if (env->ExceptionCheck()) { env->ExceptionClear(); return false; }
+
+        //  FLAG_GRANT_READ_URI_PERMISSION = 1. Sin el, la app que recibe la URI
+        //  no puede leerla y el envio llega vacio — que es peor que no llegar.
+        env->CallObjectMethod (intent.get(), juce::ZatiIntent.addFlags, (jint) 1);
+        if (env->ExceptionCheck()) { env->ExceptionClear(); return false; }
+
+        juce::LocalRef<jobject> chooser (env->CallStaticObjectMethod (
+            juce::ZatiIntent, juce::ZatiIntent.createChooser, intent.get(),
+            juce::javaString ("ZATI").get()));
+        if (env->ExceptionCheck() || chooser.get() == nullptr) { env->ExceptionClear(); return false; }
+
+        env->CallVoidMethod (actividad.get(), juce::ZatiActivity.startActivity, chooser.get());
+        if (env->ExceptionCheck()) { env->ExceptionClear(); return false; }
+        return true;
     }
 }
 
@@ -189,7 +274,13 @@ namespace MediaStore
 namespace MediaStore
 {
     int sdk() { return 0; }
-    juce::String publicar (const juce::File&, const juce::String&, const juce::String&) { return {}; }
+    juce::String publicar (const juce::File&, const juce::String&, const juce::String&,
+                           juce::String*) { return {}; }
+    //  En escritorio no hay a quien mandarlo. Devuelve false y quien llama lo
+    //  DICE: ver `comparteExport`. Un boton que no hace nada y no lo cuenta se
+    //  lee como que la app esta rota, que es justo lo contrario de lo que esta
+    //  tanda persigue.
+    bool comparte (const juce::String&, const juce::String&) { return false; }
 }
 
 #endif

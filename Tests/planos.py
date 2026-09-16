@@ -90,6 +90,31 @@ NOMBRES = {
     "tour6":    ("TOUR · paso 7",            "el tour, dentro de SEC"),
     "tour10":   ("TOUR · paso 11",           "el tour, dentro de EL PAD"),
     "tourf":    ("TOUR · ultimo paso",       "el tour, al final"),
+
+    #  LAS DIECIOCHO QUE NO TENIAN NOMBRE, y por eso ningun plano se llamaba de
+    #  nada: `NOMBRES.get(clave, (clave.upper(), ""))` las dibujaba con la clave
+    #  en mayusculas y el renglon de «como se llega» VACIO. No falla nada y ese
+    #  es el problema: son justo las pantallas a las que nadie ha mirado con
+    #  calma -la mesa con cien controles, los dos del EQ, los dos selectores, y
+    #  las seis de la app llena, que es el unico estado donde se ve trabajo-.
+    "songm":    ("CANCION · modo cancion",       "CANCION, tapa MODO"),
+    "eq":       ("EL EQ DE CINCO BANDAS",        "cara, ranura con EQ, tocar el plato"),
+    "eqb":      ("EL EQ · una banda abierta",    "el EQ, tocar la banda 3"),
+    "pick":     ("SELECTOR DE PAD",              "SEC · PIANO, tapa del pad"),
+    "midf":     ("MIDI · filtro de canal",       "AJUSTES · MIDI, tapa FILTRO"),
+    "lang":     ("ASPECTO tras cambiar de idioma", "AJUSTES · ASPECTO, otra lengua"),
+    "mixc":     ("MEZCLA · CANALES",             "MEZCLA, pagina CANALES"),
+    "canal":    ("SELECTOR DE CANAL",            "EL PAD · ENVIOS, tapa del canal"),
+    "ranura":   ("MENU DE RANURA · vacia",       "cara, tocar una ranura sin efecto"),
+    "ranural":  ("MENU DE RANURA · llena",       "cara, mantener una ranura con efecto"),
+    "vstm":     ("EL INSTRUMENTO · mando al tope", "EL INSTRUMENTO, primer mando arriba"),
+    "tour3":    ("TOUR · paso 4, la puerta",     "el tour, el paso que sale a la app"),
+    "llena":    ("LA CARA CON TRABAJO DENTRO",   "la maquina llena, sin ficha"),
+    "llena-song":  ("CANCION LLENA",             "la maquina llena, pestana CANCION"),
+    "llena-sec":   ("SEC · PASOS, llena",        "la maquina llena, pestana SEC"),
+    "llena-piano": ("SEC · PIANO, llena",        "la maquina llena, pagina PIANO"),
+    "llena-proj":  ("AJUSTES · PROYECTOS, llena", "la maquina llena, tapa PROYECTOS"),
+    "llena-mix":   ("MEZCLA LLENA",              "la maquina llena, pestana MEZCLA"),
 }
 
 #  Las tres que se pintan enteras, con la cuenta de su celda. Es la MISMA de
@@ -915,6 +940,24 @@ def main():
     if not display_alive():
         sys.exit ("la pantalla virtual no responde:  Xvfb :99 -screen 0 1920x1080x24 &")
 
+    #  Y ANTES DE DIBUJAR NADA, QUE TODAS TENGAN NOMBRE.
+    #
+    #  `NOMBRES.get(clave, (clave.upper(), ""))` tapaba el hueco: una pantalla
+    #  sin fila salia con la clave en mayusculas y el renglon de «como se llega»
+    #  VACIO, y el plano se publicaba igual. Eran DIECIOCHO de 53 —songm, eq,
+    #  eqb, pick, midf, lang, mixc, canal, ranura, ranural, vstm, tour3 y las
+    #  seis de la app llena— y no lo canto nadie en ninguna tanda. Un dibujo que
+    #  no dice de que pantalla es ni como se llega a ella es un dibujo.
+    #
+    #  Se pregunta por SHEETS entera y no por lo que se pidio en la linea de
+    #  ordenes: pedir una sola pantalla no puede apagar el veredicto.
+    sinNombre = [(k or "cara") for k in SHEETS if k not in NOMBRES]
+    if sinNombre:
+        for k in sinNombre:
+            print ("  SIN NOMBRE  %s" % k)
+        print ("FALLA: %d pantallas sin nombre en NOMBRES" % len (sinNombre))
+        return 1
+
     solo = sys.argv[1:]
     claves = [s for s in SHEETS if not solo or (s or "cara") in solo]
     os.makedirs (SALIDA, exist_ok=True)
@@ -975,7 +1018,12 @@ def main():
     #  El indice lateral se escribe al final porque necesita las cifras, y va
     #  DELANTE en el documento: una lista de treinta y dos pantallas detras de
     #  treinta y dos pantallas no es un indice.
-    indice = ['<nav class="indice" aria-label="las pantallas"><p class="rot">32 pantallas</p><ol>']
+    #  Y LA CUENTA DEL INDICE SE DERIVA, que estaba escrita a mano en «32
+    #  pantallas» cuando ya son 53: el documento mentia en su propia cabecera
+    #  desde la tanda en que se anadieron las seis de la app llena. Se deriva,
+    #  no se declara.
+    indice = ['<nav class="indice" aria-label="las pantallas"><p class="rot">%d pantallas</p><ol>'
+              % len (claves)]
     for clave in claves:
         dibujo, _png, (si, no), _r, _p = hechos.get (clave, (None, None, (0, 0), [], []))
         if dibujo is None:

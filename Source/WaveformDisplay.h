@@ -135,6 +135,52 @@ public:
     //  between finding the downbeat by eye and finding it by ear.
     std::function<void (float pos01)> onAudition;
 
+    //  EL MODO MARCAS, que es lo que hizo desaparecer a `ChopPreview`.
+    //
+    //  CORTAR tenia su propio visor de 201 lineas —onda con una marca por corte
+    //  y las marcas arrastrables— y ese visor NO tenia zoom, ni pellizco, ni
+    //  arrastre de la vista, ni audicion, y dibujaba solo el canal 0. Este los
+    //  tiene los cuatro desde hace tandas. Era *una funcion, dos duenos*: el
+    //  mismo trabajo hecho dos veces y una de las dos a medias, con el sintoma
+    //  de que en una muestra de veinte segundos en un movil ajustar una marca a
+    //  la muestra era imposible.
+    //
+    //  Es un MODO y no un visor aparte porque lo unico que cambia es que agarra
+    //  el dedo: con recorte agarra las dos asas, con marcas agarra las marcas.
+    //  Todo lo demas —onda, zoom, pellizco, arrastre, audicion al soltar— es
+    //  identico y no se escribe dos veces.
+    enum Modo { recorte = 0, marcas };
+    void setModo (Modo m)
+    {
+        if (modo == m) return;
+        modo = m;
+        repaint();
+    }
+
+    //  Los cortes, EN MUESTRAS y en coordenadas del buffer entero, que es como
+    //  los tiene quien manda (`chopCortes`). Aqui no se guarda una segunda
+    //  lista que mantener al dia: se dibuja la suya.
+    void setMarcas (const std::vector<int>& m) { marcasSrc = m; repaint(); }
+
+    //  Se avisa al dueno y NO se toca la lista aqui, que era ya la regla del
+    //  visor que esto sustituye: los cortes son suyos -los usa `applyAutoChop`-
+    //  y dos copias de la misma lista son dos sitios donde una se queda vieja.
+    std::function<void (int idx, int muestra)> onMarcaMueve;
+    std::function<void (int muestra)>          onMarcaAnade;
+    std::function<void (int idx)>              onMarcaQuita;
+
+    //  Lo que un trozo no puede bajar: por debajo de esto no es un corte, es un
+    //  click. Es el mismo numero que el recorte minimo de un pad, y viene del
+    //  visor que esto sustituye.
+    static constexpr int kMinTrozo = 256;
+
+    //  Y LO QUE EL MODO MARCAS NO TIENE: la AUDICION al soltar. En modo recorte
+    //  un toque en aguas abiertas suena; aqui un toque en aguas abiertas ANADE
+    //  UNA MARCA, que es el gesto que traia el visor anterior. Los dos no caben
+    //  en el mismo dedo -seria la cuarta cosa que significa soltar- asi que
+    //  CORTAR gana zoom, pellizco, arrastre de la vista y los dos canales, y no
+    //  gana audicion. Se dice aqui para que nadie lo cuente de mas.
+
     //  EL ZOOM, HASTA x64.
     //
     //  La pantalla mide unos 300 px y una muestra de cinco segundos son 220500
@@ -253,10 +299,57 @@ public:
         //  centesima estan a 190 px, y con el margen medido sobre el fichero
         //  entero cualquier toque cerca del centro agarraba una de las dos.
         const float grab = 24.0f / juce::jmax (1.0f, (float) waveArea().getWidth() * zoom);
+
+        //  EN MODO MARCAS EL DEDO AGARRA MARCAS Y NO ASAS. El margen es el
+        //  mismo `grab`, o sea VEINTICUATRO PIXELES DE PANTALLA y no una
+        //  fraccion del fichero: es la razon escrita tres lineas mas arriba y
+        //  vale igual aqui —con x64, dos marcas separadas por una centesima
+        //  estan a 190 px—. El visor que esto sustituye lo media en pixeles por
+        //  lo mismo, asi que la cuenta no cambia de casa.
+        if (modo == marcas)
+        {
+            marcaViva = marcaEn (t, grab);
+            marcaMovida = false;
+            dragging = 0;
+            panFrom = t;
+            panView = view0;
+            panned  = false;
+            return;
+        }
+
         dragging = (juce::jmin (ds, de) > grab) ? 0 : (ds <= de ? 1 : 2);
         panFrom = t;
         panView = view0;
         panned  = false;
+    }
+
+    //  Cual esta debajo del dedo, o -1. LA CERO NO SE AGARRA, que es la regla
+    //  que traia el visor anterior con su razon escrita: no es un corte que
+    //  alguien haya puesto, es donde empieza la muestra. Moverla o quitarla
+    //  dejaria la cabeza del sonido fuera de todos los pads.
+    int marcaEn (float t01, float grab) const
+    {
+        const int len = largoFuente();
+        if (len < 2) return -1;
+        int mejor = -1;
+        float dm = grab;
+        for (size_t i = 1; i < marcasSrc.size(); ++i)
+        {
+            const float d = std::abs (t01 - (float) marcasSrc[i] / (float) len);
+            if (d <= dm) { dm = d; mejor = (int) i; }
+        }
+        return mejor;
+    }
+
+    int largoFuente() const noexcept
+    {
+        return sample != nullptr ? sample->buffer.getNumSamples() : 0;
+    }
+
+    int muestraDe (float t01) const noexcept
+    {
+        const int len = largoFuente();
+        return len < 2 ? 0 : juce::jlimit (0, len - 1, (int) (t01 * (float) len));
     }
 
     void mouseDrag (const juce::MouseEvent& e) override
@@ -280,6 +373,16 @@ public:
         //  Aguas abiertas y ampliado: el dedo ARRASTRA LA VISTA. Es el gesto
         //  que ya hace la rejilla de pads para cambiar de banco, y es el unico
         //  que no gasta pantalla en barras de desplazamiento.
+        //  Arrastrar una marca. Antes que el arrastre de la vista, que es lo
+        //  que hace que una marca agarrada no pasee la onda.
+        if (modo == marcas && marcaViva > 0)
+        {
+            if (std::abs ((float) e.x - (float) e.getMouseDownX()) > 4.0f) marcaMovida = true;
+            if (marcaMovida && onMarcaMueve)
+                onMarcaMueve (marcaViva, muestraDe (xToNorm ((float) e.x)));
+            return;
+        }
+
         if (dragging == 0)
         {
             if (zoom <= 1.0f) return;
@@ -327,6 +430,23 @@ public:
             //  siempre y la onda dejaba de responder a los arrastres, sin nada
             //  que lo explicara y sin forma de recuperarla salvo reiniciar.
             if (numTouches() < 2) pinching = false;
+            dragging = 0;
+            panned = false;
+            return;
+        }
+
+        //  En modo marcas, soltar SIN mover es la otra mitad del gesto: sobre
+        //  una marca la quita, en aguas abiertas anade una. Las dos cosas las
+        //  decide el dueno de la lista, que aqui solo se avisa.
+        if (modo == marcas)
+        {
+            if (! marcaMovida && ! panned)
+            {
+                if (marcaViva > 0)      { if (onMarcaQuita) onMarcaQuita (marcaViva); }
+                else if (marcaViva < 0) { if (onMarcaAnade) onMarcaAnade (muestraDe (xToNorm ((float) e.x))); }
+            }
+            marcaViva = -1;
+            marcaMovida = false;
             dragging = 0;
             panned = false;
             return;
@@ -556,6 +676,42 @@ public:
             }
         }
 
+        //  LAS MARCAS DE CORTE, y el numero del trozo encima de cada una.
+        //
+        //  Las dos cosas vienen del visor que esto sustituye y las dos tenian
+        //  su razon escrita: la marca CERO se dibuja mas apagada porque no se
+        //  puede agarrar -no es un corte que nadie haya puesto, es donde
+        //  empieza-, y el numero esta porque sin el la vista dice donde se
+        //  corta y no QUE PAD sale de cada corte.
+        //
+        //  Lo que es nuevo es que se dibujan con `normToX`, o sea a traves del
+        //  zoom y de la vista: por eso ahora se puede ampliar x128 y poner una
+        //  marca en la muestra exacta, que es lo que antes no se podia.
+        if (modo == marcas && ! marcasSrc.empty())
+        {
+            const int len = largoFuente();
+            if (len >= 2)
+                for (size_t i = 0; i < marcasSrc.size(); ++i)
+                {
+                    const float mx = normToX ((float) marcasSrc[i] / (float) len);
+                    if (mx < wave.getX() - 2.0f || mx > wave.getRight() + 2.0f) continue;
+
+                    const bool fija = (i == 0);
+                    g.setColour (ZatiColours::playhead.withAlpha (fija ? 0.40f : 0.95f));
+                    g.fillRect (mx - (fija ? 0.5f : 1.0f), wave.getY(),
+                                fija ? 1.0f : 2.0f, wave.getHeight());
+
+                    if (i < 99)
+                    {
+                        g.setColour (ZatiColours::textOn (ZatiColours::screenBg).withAlpha (0.75f));
+                        g.setFont (ZatiColours::monoFont (Metrics::fMeta - 1.0f, false));
+                        g.drawText (juce::String ((int) i + 1),
+                                    (int) mx + 3, wave.getY() + 2, 22, 12,
+                                    juce::Justification::topLeft);
+                    }
+                }
+        }
+
         //  The read head, and behind it the ground it has covered. A line
         //  alone says where; the trail says how far through, which is what
         //  "progress" means and what a bare cursor never showed.
@@ -758,6 +914,14 @@ private:
     int dragging = 0;   // 0 none, 1 start, 2 end
     float panFrom = 0.0f, panView = 0.0f;
     bool  panned = false;
+
+    //  El modo marcas y su gesto en curso. `marcaViva` es el indice que se
+    //  arrastra, -1 ninguno; `marcaMovida` separa arrastrar de tocar, que es lo
+    //  unico que distingue mover una marca de quitarla.
+    Modo modo = recorte;
+    std::vector<int> marcasSrc;
+    int  marcaViva = -1;
+    bool marcaMovida = false;
     float zoom = 1.0f;      // 1 = el fichero entero
     float view0 = 0.0f;     // borde izquierdo de lo que se ve, 0..1
     int   visIni = 0, visFin = 0;   // ver setVentana

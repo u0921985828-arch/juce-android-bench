@@ -1178,6 +1178,16 @@ void MainComponent::paintGesturesPage (juce::Graphics& g, juce::Rectangle<int> a
     //  Con seis filas pedia 144 px donde la maqueta dejaba 140, asi que las
     //  cinco primeras se llevaban 120 y a la sexta le quedaban VEINTE. Quien
     //  sabe cuanto alto hay es la maqueta; aqui solo se reparte.
+    //  Y LA TABLA DICE QUE ES, ahora que la pagina se llama AYUDA. El
+    //  comentario de arriba contaba que aqui hubo un segundo «GESTOS» y se
+    //  quito por ser dos titulos para una pagina; con la pagina llamandose
+    //  AYUDA ya no es un duplicado sino el nombre de una de sus tres partes,
+    //  que es lo que un encabezado de seccion hace en las otras paginas.
+    {
+        auto cab = area.removeFromTop (Metrics::bandaSubtitulo);
+        pintaTitulo (g, cab, T ("GESTOS"), "seccion", false, 0.75f);
+    }
+
     const int rowH = juce::jmax (1, area.getHeight() / kNumGestures);
 
     for (int i = 0; i < kNumGestures; ++i)
@@ -2381,7 +2391,20 @@ void MainComponent::paintSetTitle (juce::Graphics& g)
     const char* pag = setPage == pageAudio ? "AUDIO"
                     : setPage == pageMidi  ? "MIDI"
                     : setPage == pageAspecto ? "ASPECTO"
-                    : setPage == pageProjects ? "PROYECTOS" : "GESTOS";
+    //  AYUDA Y NO «GESTOS», que es lo que esta pagina de verdad es.
+    //
+    //  Aqui viven las tres cosas que alguien perdido busca —la tabla de gestos,
+    //  el MANUAL de diez capitulos y el TOUR de quince pasos— y la pestana se
+    //  llamaba por la mas pequena de las tres. El estudio lo midio asi: para
+    //  llegar a la ayuda hay que entrar en AJUSTES y ADIVINAR que «GESTOS» es
+    //  donde vive, que es justo lo que alguien que no produce no puede hacer.
+    //
+    //  Cambiar el nombre cuesta CERO pixeles, que es la razon por la que se
+    //  arregla asi y no con un «?» en la cara: la fila de modulos ya esta a
+    //  26 px y subirla esta medido y cerrado dos veces -deja los pads en 27-.
+    //  La tabla de gestos no pierde su nombre: pasa a ser una SECCION de esta
+    //  pagina, que es lo que era.
+                    : setPage == pageProjects ? "PROYECTOS" : "AYUDA";
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));

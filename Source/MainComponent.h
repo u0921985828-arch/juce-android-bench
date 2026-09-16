@@ -5,7 +5,6 @@
 #include "AudioEngine.h"
 #include "SampleLoader.h"
 #include "WaveformDisplay.h"
-#include "ChopPreview.h"
 #include "SpectrumDisplay.h"
 #include "ZatiLookAndFeel.h"
 #include "PadButton.h"
@@ -1153,6 +1152,11 @@ private:
     //  texto y una cuarta palabra le quita ancho a las tres que ya estan
     //  medidas.
     juce::TextButton exportLiveButton { "EN VIVO" };
+    //  COMPARTIR comparte fila con EN VIVO y solo aparece cuando hay un
+    //  `content://` que mandar. Fila propia no cabia: la ficha ya pide
+    //  Metrics::hit*4 + btn*2 y en 915x412 la tarjeta da 370 px para 432
+    //  pedidos — lo que falta se lo come lo ultimo que se maqueta.
+    juce::TextButton exportShareBtn { "COMPARTIR" };
     std::unique_ptr<RebotVivo> vivoJob;
     juce::File vivoFichero;
     void alternaRebotVivo();
@@ -1227,8 +1231,22 @@ private:
     void   keepChosenRate();
     juce::String exportStatus;
     bool         exportOk = false;
+    //  Lo que hace falta para MANDAR el rebote, capturado en `publicarExport`:
+    //  el `content://` del primer fichero publicado y su MIME. Sin esto el
+    //  rebote quedaba visible en Music/ZATI y punto — habia que salir a un
+    //  gestor de ficheros para compartirlo, que es el unico camino que la app
+    //  no tenia. El selector de Android manda un fichero por vez, asi que en
+    //  PISTAS se queda con el master, que es el primero de la lista.
+    juce::String exportUri, exportMime;
     void startExport (bool stems);
     void pollExport();
+    //  ABRIR la ficha EN LIMPIO, que son cinco renglones y estaban copiados en
+    //  dos sitios -el boton de AJUSTES y el paso 13 del tour-. Con COMPARTIR
+    //  pasaban a ser siete, y el que se olvidara uno dejaria la tapa ofreciendo
+    //  mandar el rebote ANTERIOR: una funcion, un dueño. Volver del navegador
+    //  de carpetas NO pasa por aqui a proposito: ahi la ficha se reabre con lo
+    //  que ya decia, que es el mismo gesto contestando otra pregunta.
+    void openExportSheet();
     //  Lo que dice el recuadro de AUDIO de la ficha AJUSTES, en numeros, para
     //  no repintar la ficha -y con ella la ventana entera- treinta veces por
     //  segundo diciendo lo mismo. Ver pollExport.
@@ -1638,6 +1656,13 @@ private:
     static constexpr double kSyncSesionMs   = 2000.0;   // los pads al escritor
     static constexpr double kEstadoSesionMs = 20000.0;  // y el estado entero
     static constexpr double kConfirmMs      = 3000.0;   // un SEGURO? sin contestar
+    //  CUANTO DURA EL «A SALVO» de la banda de continuidad. Ver
+    //  `lineaDeContinuidad`: es un estado binario y no un contador, asi que
+    //  esta cifra es lo unico que hay que elegir. Treinta segundos son quince
+    //  veces `kSyncSesionMs`: con el escritor vivo el campo no se apaga nunca, y
+    //  si se apaga es que de verdad hace medio minuto que no se escribe nada —
+    //  que es exactamente cuando la persona tiene que enterarse.
+    static constexpr juce::int64 kASalvoMs = 30000;
     void audioFocusDucked() override;
     void audioFocusLost (bool permanently) override;
     void audioFocusGained() override;
@@ -1768,7 +1793,11 @@ private:
     static constexpr int kChopVistaH = 96;
 
     std::vector<int> chopCortes;
-    ChopPreview      chopVista;
+    //  EL MISMO VISOR QUE EL RECORTE, en modo marcas. Era un `ChopPreview`
+    //  propio de 201 lineas sin zoom, sin pellizco, sin arrastre de la vista y
+    //  sin audicion — o sea el mismo trabajo hecho dos veces y una de las dos a
+    //  medias. Ver `WaveformDisplay::Modo`.
+    WaveformDisplay  chopVista;
     void recalculaCortes();
     int chopHitsFor = -1;              // para que pad se calcularon
     void refreshChopHits();

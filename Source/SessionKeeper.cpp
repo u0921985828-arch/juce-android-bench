@@ -171,6 +171,13 @@ void SessionKeeper::writeState (const juce::ValueTree& state, const juce::String
     //  temporal validado y NO existia la sesion. Justo lo que este fichero
     //  entero se escribio para que no pasara.
     tmp.moveFileTo (stateFile());
+
+    //  Y QUEDA APUNTADO, que es lo que la banda de continuidad lee para poder
+    //  decir «GUARDADO HACE 3 s». Aqui y no al entrar: lo que tranquiliza es lo
+    //  que acabo en disco, no lo que se intento — es la misma figura que
+    //  `ensureDirectory` contra `canReallyWriteInto`. Las dos salidas de error
+    //  de arriba vuelven sin tocarlo a proposito.
+    escrituraMs.store (juce::Time::currentTimeMillis(), std::memory_order_relaxed);
 }
 
 bool SessionKeeper::isIdle() const
@@ -290,6 +297,9 @@ void SessionKeeper::run()
         }
 
         sb = nullptr;               // release it here, off the message thread
+
+        //  Un pad escrito tambien es trabajo a salvo. Ver ultimaEscrituraMs().
+        escrituraMs.store (juce::Time::currentTimeMillis(), std::memory_order_relaxed);
 
         {
             const juce::ScopedLock sl (lock);

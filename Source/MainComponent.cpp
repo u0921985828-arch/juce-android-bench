@@ -629,10 +629,34 @@ MainComponent::MainComponent()
                 projNameBox.setText (projModel.names[row], juce::dontSendNotification);
         };
 
+        //  ABRIR SE CONFIRMA, COMO NUEVO — y por las dos puertas.
+        //
+        //  NUEVO preguntaba «BORRA TODO?» desde siempre y ABRIR no preguntaba
+        //  NADA: un doble toque en la lista y el trabajo que tenias delante se
+        //  iba. La asimetria castiga justo al que no sabe lo que va a pasar, que
+        //  es el que hace doble toque en una lista para ver que hay. Lo salva la
+        //  sesion invisible, pero la persona no lo sabe — y de eso va esta tanda
+        //  entera.
+        //
+        //  El aviso arma la tapa ABRIR y no una tarjeta nueva: `armConfirm` pide
+        //  un `TextButton&` porque lo que hace es ponerlo rojo y cambiarle el
+        //  rotulo, que es el vocabulario que esta ficha ya usa seis veces. Asi
+        //  que el doble toque no abre: ELIGE y ARMA, y la tapa se pone roja
+        //  diciendo que va a abrir. Dos toques en la lista y uno en ABRIR, y en
+        //  medio la app dice en voz alta lo que esta a punto de hacer.
+        //
+        //  Y NO va dentro de `loadProject`: por ahi entra tambien la
+        //  recuperacion de sesion al arrancar, y preguntarle a alguien si quiere
+        //  recuperar lo que acaba de perder es la peor version de esto. Mismo
+        //  reparto que `pushUndo`, que por lo mismo no se metio dentro de
+        //  `assignSampleToPad`.
         projModel.onChosen = [this] (int row)
         {
-            if (juce::isPositiveAndBelow (row, projModel.names.size()))
-                loadProject (projModel.names[row]);
+            if (! juce::isPositiveAndBelow (row, projModel.names.size())) return;
+            const auto nombre = projModel.names[row];
+            projNameBox.setText (nombre, juce::dontSendNotification);
+            if (! armConfirm (projLoadButton, T ("ABRIR %1?", nombre))) return;
+            loadProject (nombre);
         };
         setSheet.cuerpo.addAndMakeVisible (projList);
 
@@ -644,8 +668,16 @@ MainComponent::MainComponent()
         projSaveButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
         //  The name box. It fills itself from whatever you have selected or
         //  open, so GUARDAR still overwrites the obvious thing by default -
-        //  but now you can type over it, which is how you rename, how you
-        //  save-as, and how a project ends up called what it is.
+        //  but now you can type over it, which is how you save-as and how a
+        //  project ends up called what it is.
+        //
+        //  Y NO ES COMO SE RENOMBRA, que es lo que decia y es falso: teclear
+        //  otro nombre y GUARDAR escribe un proyecto NUEVO y deja el viejo
+        //  donde estaba, o sea DOS. Renombrar de verdad no existe todavia -no
+        //  cabe en la fila de cuatro y la salida natural es mantener pulsada
+        //  una fila de projList, o sea un gesto, y los gestos piden fila en
+        //  GESTOS-. Una regla que el codigo no cumple deja de proteger nada, y
+        //  un comentario que promete lo que el codigo no hace es lo mismo.
         projNameBox.setMultiLine (false);
         projNameBox.setReturnKeyStartsNewLine (false);
         projNameBox.setJustification (juce::Justification::centredLeft);
@@ -692,8 +724,13 @@ MainComponent::MainComponent()
         projLoadButton.onClick = [this]
         {
             const int sel = projList.getSelectedRow();
-            if (juce::isPositiveAndBelow (sel, projModel.names.size()))
-                loadProject (projModel.names[sel]);
+            if (! juce::isPositiveAndBelow (sel, projModel.names.size())) return;
+            const auto nombre = projModel.names[sel];
+            //  La otra puerta del mismo aviso. Ver `projModel.onChosen`: si el
+            //  doble toque en la fila ya lo armo, este es el segundo toque y
+            //  abre; si vienes directo a la tapa, este es el primero y arma.
+            if (! armConfirm (projLoadButton, T ("ABRIR %1?", nombre))) return;
+            loadProject (nombre);
         };
         setSheet.cuerpo.addAndMakeVisible (projLoadButton);
 
@@ -727,10 +764,7 @@ MainComponent::MainComponent()
         styleButton (projExportButton, kKey);
         projExportButton.onClick = [this]
         {
-            exportStatus.clear();
-            exportOk = false;
-            destinoCache = juce::File();
-            openSheet (exportSheet, setButton);
+            openExportSheet();
             //  Y se pide el permiso AL ABRIR la ficha, no al pulsar EXPORTAR:
             //  el dialogo del sistema encima de un rebote que ya arranco es la
             //  forma de que la persona lo cierre sin leerlo. En Android 10 y
@@ -1194,22 +1228,22 @@ MainComponent::MainComponent()
         //  LOS TRES GESTOS DE LA VISTA. Mover y quitar comparten el toque
         //  inicial y se separan al soltar, por la distancia recorrida: en una
         //  marca de dos pixeles no hay sitio para dos zonas distintas.
-        chopVista.onMueve = [this] (int idx, int muestra)
+        chopVista.onMarcaMueve = [this] (int idx, int muestra)
         {
             if (idx <= 0 || idx >= (int) chopCortes.size()) return;   // la cero es el principio
             //  Acotado entre sus vecinas y con el trozo minimo por lado, o una
             //  marca arrastrada encima de otra deja un trozo de cero muestras
             //  -que es un click, no un sonido- y ademas se cruzan de orden.
-            const int lo = chopCortes[(size_t) (idx - 1)] + ChopPreview::kMinMuestras;
+            const int lo = chopCortes[(size_t) (idx - 1)] + WaveformDisplay::kMinTrozo;
             const int hi = (idx + 1 < (int) chopCortes.size()
                               ? chopCortes[(size_t) (idx + 1)]
-                              : padSourceLength (selectedPad)) - ChopPreview::kMinMuestras;
+                              : padSourceLength (selectedPad)) - WaveformDisplay::kMinTrozo;
             if (hi <= lo) return;
             chopCortes[(size_t) idx] = juce::jlimit (lo, hi, muestra);
-            chopVista.setCortes (chopCortes);
+            chopVista.setMarcas (chopCortes);
         };
 
-        chopVista.onAnade = [this] (int muestra)
+        chopVista.onMarcaAnade = [this] (int muestra)
         {
             const int len = padSourceLength (selectedPad);
             if (len < 2 || chopCortes.empty()) return;
@@ -1221,13 +1255,13 @@ MainComponent::MainComponent()
                 return;
             }
             for (int c : chopCortes)
-                if (std::abs (c - muestra) < ChopPreview::kMinMuestras) return;
+                if (std::abs (c - muestra) < WaveformDisplay::kMinTrozo) return;
             chopCortes.push_back (juce::jlimit (0, len - 1, muestra));
             std::sort (chopCortes.begin(), chopCortes.end());
             refreshChopSheet();
         };
 
-        chopVista.onQuita = [this] (int idx)
+        chopVista.onMarcaQuita = [this] (int idx)
         {
             if (idx <= 0 || idx >= (int) chopCortes.size()) return;
             chopCortes.erase (chopCortes.begin() + idx);
@@ -1438,7 +1472,12 @@ MainComponent::MainComponent()
         exportSheet.addAndMakeVisible (exportDirBtn);
 
         //  Y LAS DOS DE LA PAGINA DE PROYECTOS, por el mismo gesto. Cuelgan de
-        //  `setSheet` y no de `exportSheet`: viven donde se ve la ruta.
+        //  `exportSheet` como la de arriba, y el comentario decia `setSheet`:
+        //  el codigo de aqui debajo y la maqueta -MainComponent_Layout.cpp, la
+        //  ficha EXPORTAR- las ponen en esta, que es donde ya vive la pregunta
+        //  de donde cae lo que sale. Se intentaron en AJUSTES · PROYECTOS dos
+        //  veces y las dos salieron medidas y mal (MARCO 186, TAPADO 25 en un
+        //  caso; TRUNC 4, SQUEEZE 6 en el otro).
         const std::pair<juce::TextButton*, ProjectStore::Carpeta> dosCarpetas[2] =
         {
             { &projDirBtn,    ProjectStore::Carpeta::proyectos },
@@ -1462,6 +1501,28 @@ MainComponent::MainComponent()
         styleButton (exportStemsButton, kKey);
         exportStemsButton.onClick = [this] { startExport (true); };
         exportSheet.addAndMakeVisible (exportStemsButton);
+
+        //  MANDAR EL REBOTE, que era la unica salida que la app no tenia: no
+        //  habia ACTION_SEND, ni createChooser, ni FileProvider en todo el
+        //  repositorio. Se exportaba y habia que salir a un gestor de ficheros.
+        //
+        //  Aparece SOLO cuando hay un `content://` publicado -la regla de la
+        //  tira del paso, la misma que gobierna PEGAR y las cuatro de la
+        //  seleccion del piano-: un control que no puede hacer nada no es
+        //  informacion, es ruido. Y por eso no existe si la carpeta la eligio
+        //  la persona: ahi no se publica nada y no hay URI que mandar.
+        styleButton (exportShareBtn, kKey);
+        exportShareBtn.onClick = [this]
+        {
+            //  En el escritorio no hay Intent, y el camino lo DICE en vez de no
+            //  hacer nada: una tapa que se aprieta y no contesta se lee como
+            //  rota. Ver MediaStore::comparte, que devuelve false ahi.
+            if (! MediaStore::comparte (exportUri, exportMime))
+                exportStatus = T ("compartir es del telefono");
+            exportSheet.repaint();
+        };
+        exportSheet.addAndMakeVisible (exportShareBtn);
+        exportShareBtn.setVisible (false);
 
         styleButton (exportCancelButton, kRec);
         //  El formato, al lado de los dos verbos y no en AJUSTES: se elige
@@ -8256,7 +8317,9 @@ void MainComponent::retranslateUi()
             b->setTitle (T ("Banco de tomas %1",
                             juce::String::charToString ((juce::juce_wchar) ('A' + i))));
     pageProjBtn .setButtonText (T ("PROYECTOS"));
-    pageGestBtn .setButtonText (T ("GESTOS"));
+    //  AYUDA y no GESTOS: ver el parrafo de `paintSetTitle`. La pestana se
+    //  llamaba por la mas pequena de las tres cosas que hay dentro.
+    pageGestBtn .setButtonText (T ("AYUDA"));
     pageMidiBtn .setButtonText (T ("MIDI"));
     manualButton.setButtonText (T ("MANUAL"));
     tourButton  .setButtonText (T ("TOUR"));
@@ -8404,6 +8467,7 @@ void MainComponent::retranslateUi()
     //  «EN VIVO» a mitad de una toma dejaria la tapa mintiendo. Es la misma
     //  guarda que ya lleva la del microfono.
     exportLiveButton  .setButtonText (T (vivoJob != nullptr ? "PARAR" : "EN VIVO"));
+    exportShareBtn    .setButtonText (T ("COMPARTIR"));
     exportCancelButton.setButtonText (T ("CANCELAR"));
 
     rackButton   .setButtonText (T ("RACK"));
@@ -9027,8 +9091,10 @@ void MainComponent::recalculaCortes()
 
 void MainComponent::refreshChopSheet()
 {
-    chopVista.setFuente (selectedPad >= 0 ? uiSample[(size_t) selectedPad] : nullptr);
-    chopVista.setCortes (chopCortes);
+    //  El mismo visor que el recorte, en modo marcas. Ver WaveformDisplay::Modo.
+    chopVista.setModo (WaveformDisplay::marcas);
+    chopVista.setSample (selectedPad >= 0 ? uiSample[(size_t) selectedPad] : nullptr);
+    chopVista.setMarcas (chopCortes);
 
     const int fits = chopTargets (chopSlices, chopOnlyEmpty).size();
     //  En GOLPES manda lo que hay en el sonido, no lo que pide el boton: el
@@ -10707,12 +10773,50 @@ juce::String MainComponent::lineaDeContinuidad (int anchoDisponible,
 
     const juce::String sep = juce::String::fromUTF8 ("  \xc2\xb7  ");
 
-    //  Los pads llenos, del mismo array que la tira de zatis de la banda de
-    //  abajo: cero E/S y cero estado nuevo que mantener al dia.
     int llenos = 0;
     for (int i = 0; i < kNumPads; ++i)
         if (padHasSample[(size_t) i]) ++llenos;
 
+    //  Y QUE TU TRABAJO ESTA A SALVO, que es lo que la app hacia y no decia.
+    //
+    //  `SessionKeeper` escribe los pads cada dos segundos y el estado entero
+    //  cada veinte, y la interfaz no lo contaba en ningun sitio: ni indicador,
+    //  ni punto, ni estado sucio. El unico mensaje que existia salia al
+    //  RECUPERAR, o sea cuando ya te habias llevado el susto. Quien no produce
+    //  musica no sabe que esta a salvo, asi que o guarda compulsivamente o no
+    //  guarda nunca — y las dos son culpa de que nadie se lo haya dicho.
+    //
+    //  BINARIO Y NO UN CONTADOR DE SEGUNDOS, que es la parte que importa del
+    //  como. Un «GUARDADO HACE 3 s» cambia de texto cada segundo, o sea repinta
+    //  la banda sesenta veces por minuto para no decir nada nuevo: eso es
+    //  exactamente lo que `Tests/cpu.py` llama «se repinta sola» y lo que ya
+    //  costo una medida en la curva del EQ y otra en el plato del rack. Esto
+    //  cambia dos veces por sesion como mucho.
+    //
+    //  Y VA EL PRIMERO DE LOS TRES CAMPOS, no detras de la cuenta de pads.
+    //
+    //  Estaba escrito el tercero y en el telefono NO SALIA NUNCA: la banda mide
+    //  192 px de texto a 412 px de ancho y «SIN GUARDAR  ·  64 PADS» ya ocupa
+    //  los 192 enteros, asi que `cabe` decia que no y el campo se caia. A 915
+    //  px salia perfecto -medido: 275 px de 275- o sea que la unica pantalla
+    //  donde funcionaba era la que nadie usa. *Un campo que solo aparece si
+    //  sobra sitio se cae justo donde hace falta.*
+    //
+    //  El orden ES la prioridad, porque los tres se piden con el texto ya
+    //  puesto: el primero que no quepa se cae y los de detras tambien. De los
+    //  tres, este es el que mas tranquiliza -la fecha dice cuando guardaste TU
+    //  y la cuenta dice cuanto hay, pero solo este dice que no vas a perder
+    //  nada aunque no hayas guardado jamas-, y ademas es el mas corto: siete
+    //  letras contra las nueve de «64 PADS» con su separador.
+    if (session.ultimaEscrituraMs() > 0
+          && juce::Time::currentTimeMillis() - session.ultimaEscrituraMs() < kASalvoMs)
+    {
+        const auto salvo = T ("A SALVO");
+        if (cabe (linea + sep + salvo)) linea += sep + salvo;
+    }
+
+    //  Los pads llenos, del mismo array que la tira de zatis de la banda de
+    //  abajo: cero E/S y cero estado nuevo que mantener al dia.
     if (llenos > 0)
     {
         const auto pads = padsTexto (llenos, true);
@@ -12997,8 +13101,7 @@ void MainComponent::tourPrepara (int paso)
         case 11: showMixPage (mixPageCanales); refreshMixStrip();
                  openSheet (mixSheet, mixButton);  break;
         case 12: openSheet (songSheet, songButton); break;
-        case 13: exportStatus.clear(); exportOk = false; destinoCache = juce::File();
-                 openSheet (exportSheet, setButton); break;
+        case 13: openExportSheet(); break;
         //  El ultimo paso explica el IDIOMA y la CARCASA, que desde que tienen
         //  pagina propia ya no estan en AUDIO: abrir AUDIO dejaba el anillo
         //  alrededor de nada, que es exactamente lo que tourObjetivo evita
@@ -13087,6 +13190,7 @@ void MainComponent::startExport (bool stems)
     exportMasterButton.setVisible (false);
     exportStemsButton.setVisible (false);
     exportLiveButton.setVisible (false);
+    exportShareBtn.setVisible (false);
     exportFmtBtn.setVisible (false);
     //  Y CAMBIAR, que a mitad de un rebote dejaria las pistas repartidas en dos
     //  carpetas: el hilo ya tiene su destino y no lo vuelve a mirar.
@@ -13222,13 +13326,21 @@ void MainComponent::publicarExport (const juce::File& carpeta)
     const juce::String sub = "ZATI/" + carpeta.getFileName();
     int puestos = 0;
     juce::String donde;
+    //  Y SE GUARDA LA URI DEL PRIMERO, que es lo que COMPARTIR manda. El
+    //  primero y no todos: un rebote por pistas son dieciseis ficheros y el
+    //  selector de Android manda de uno en uno — mandar «el rebote» es mandar
+    //  el master, y las pistas se van a buscar a la carpeta como siempre.
+    exportUri.clear();
+    exportMime.clear();
     for (auto& f : hechos)
     {
-        const auto ruta = MediaStore::publicar (f, sub,
-                                                f.hasFileExtension ("ogg") ? "audio/ogg" : "audio/wav");
+        const juce::String mime = f.hasFileExtension ("ogg") ? "audio/ogg" : "audio/wav";
+        juce::String uri;
+        const auto ruta = MediaStore::publicar (f, sub, mime, &uri);
         if (ruta.isNotEmpty())
         {
             ++puestos;
+            if (exportUri.isEmpty()) { exportUri = uri; exportMime = mime; }
             if (donde.isEmpty()) donde = "Music/" + sub;
             //  El original se borra SOLO cuando la copia esta puesta: el sitio
             //  nuevo es estrictamente mas alcanzable que el viejo, y dejar los
@@ -13246,6 +13358,20 @@ void MainComponent::publicarExport (const juce::File& carpeta)
         if (carpeta.getNumberOfChildFiles (juce::File::findFilesAndDirectories) == 0)
             carpeta.deleteRecursively();
     }
+}
+
+void MainComponent::openExportSheet()
+{
+    exportStatus.clear();
+    exportOk = false;
+    destinoCache = juce::File();
+    //  Y EL REBOTE ANTERIOR NO SE HEREDA: sin esto COMPARTIR seguia visible al
+    //  reabrir la ficha, apuntando al `content://` de la vez pasada. Un control
+    //  que ofrece mandar un fichero que no acabas de hacer miente.
+    exportUri.clear();
+    exportMime.clear();
+    exportShareBtn.setVisible (false);
+    openSheet (exportSheet, setButton);
 }
 
 void MainComponent::pollExport()
@@ -13324,9 +13450,16 @@ void MainComponent::pollExport()
     exportMasterButton.setVisible (true);
     exportStemsButton.setVisible (true);
     exportLiveButton.setVisible (true);
+    exportShareBtn.setVisible (exportUri.isNotEmpty());
     exportFmtBtn.setVisible (true);
     exportDirBtn.setVisible (true);
     exportCancelButton.setVisible (false);
+    //  Y SE REMAQUETA, que es la mitad sin la cual COMPARTIR no aparece: la
+    //  fila de EN VIVO se reparte entre una tapa o dos segun lo que se VE, y
+    //  eso se decidio al abrir la ficha -cuando todavia no habia rebote-. Sin
+    //  esto la tapa queda visible con los limites vacios, que es exactamente el
+    //  fallo del rotulo a 28 px que esta misma ficha ya lleva escrito.
+    resized();
     exportSheet.repaint();
 }
 

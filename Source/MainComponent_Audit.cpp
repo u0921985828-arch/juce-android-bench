@@ -2627,6 +2627,26 @@ void MainComponent::auditOpen (const juce::String& pedido)
     //  la fila de acciones cambia de cuatro tapas a una, y una fila que solo
     //  existe en un modo es una fila que el banco no mide si no se la pide.
     else if (which == "browsedir") openBrowseForExportDir();
+    //  LA CARA CON LA SESION YA ESCRITA, que es el unico estado donde la banda
+    //  de continuidad puede decir «A SALVO» — y sin esta entrada NO SE MEDIA.
+    //
+    //  El campo lo gobierna `SessionKeeper::ultimaEscrituraMs()`, que vale cero
+    //  hasta que algo acaba en disco. Una corrida del banco dura menos que los
+    //  dos segundos de `kSyncSesionMs`, asi que las 53 pantallas medidas lo
+    //  daban por ausente y una regla que lo pidiera no habria podido verlo
+    //  jamas: exactamente el liston que no puede fallar que `asomaUnPad` ya
+    //  costo en `desglose.py`.
+    //
+    //  Se escribe DE VERDAD -autosave y flush- y no se falsea el reloj: lo que
+    //  se quiere medir es que el campo sale cuando el fichero esta en disco, y
+    //  poner el instante a mano mediria el `if` y no la escritura.
+    else if (which == "salvo")
+    {
+        closeAllSheets();
+        autosave();
+        session.flush (2000);
+        repaint();
+    }
 }
 
 //  EL PIANO ROLL, MEDIDO.

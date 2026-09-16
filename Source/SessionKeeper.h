@@ -69,6 +69,26 @@ public:
     //  Ya no hay sesion, y el siguiente arranque empieza limpio.
     void clear();
 
+    //  CUANDO SE ESCRIBIO POR ULTIMA VEZ, para que la interfaz lo pueda DECIR.
+    //
+    //  Esto guarda los pads cada dos segundos y el estado entero cada veinte, y
+    //  hasta ahora no lo contaba nadie: no habia indicador, ni punto, ni estado
+    //  sucio. Quien no produce musica no sabe que esta a salvo, asi que o guarda
+    //  compulsivamente o no guarda nunca — y el unico mensaje que existia salia
+    //  al RECUPERAR, o sea cuando ya te habias llevado el susto.
+    //
+    //  Es un instante y no un booleano «guardando»: lo que tranquiliza no es que
+    //  este ocupado ahora, es cuanto hace que lo que tienes delante quedo
+    //  escrito. Ver `lineaDeContinuidad`.
+    //
+    //  ATOMICO Y SIN CERROJO porque lo escribe el hilo del escritor y lo lee el
+    //  temporizador de la interfaz. Coger `lock` para leer una pista desde el
+    //  hilo que casi siempre lo tiene es como `flush` acabaria esperandose a si
+    //  mismo — el mismo razonamiento que ya tiene `hurry` tres lineas mas abajo.
+    //  Cero es «todavia no ha escrito nada».
+    juce::int64 ultimaEscrituraMs() const noexcept
+        { return escrituraMs.load (std::memory_order_relaxed); }
+
 private:
     void run() override;
     bool isIdle() const;
@@ -100,6 +120,12 @@ private:
     //  el cerrojo para leer una pista desde el hilo que lo tiene casi siempre es
     //  como un flush acaba esperandose a si mismo.
     std::atomic<bool> hurry { false };
+
+    //  Ver ultimaEscrituraMs(). La ponen los DOS caminos que dejan algo escrito
+    //  en disco -el estado en `writeState` y cada pad en `run`- porque las dos
+    //  cosas son «tu trabajo esta a salvo» y contar solo una mentiria la mitad
+    //  del tiempo.
+    std::atomic<juce::int64> escrituraMs { 0 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SessionKeeper)
 };

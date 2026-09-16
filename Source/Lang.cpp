@@ -44,6 +44,9 @@ namespace
           "استُعيدت الجلسة  [%1 باد، %2 بلا صوت]" },
         // --- GESTOS (la tercera pagina de AJUSTES) --------------------------
         { "GESTOS",             "",  "GESTURES",  "手势",   "إيماءات" },
+        //  La pestana donde vive la ayuda entera: la tabla de gestos, el manual
+        //  y el tour. Antes se llamaba por la primera de las tres.
+        { "AYUDA",              "",  "HELP",      "帮助",   "مساعدة" },
         //  La seccion de AUDIO donde viven CUADRAR, MEDIR y TEST. Estaban
         //  colgando del renglon del titulo, al lado de la x.
         { "PRUEBAS",            "",  "TESTS",     "测试",   "اختبارات" },
@@ -1371,6 +1374,10 @@ namespace
         { "EXPORTAR",       "",         "EXPORT",     "导出",       "تصدير" },
         { "CONTROL",        "",         "CONTROL",    "控制",       "تحكم" },
         { "SIN GUARDAR",    "",         "UNSAVED",    "未保存",     "غير محفوظ" },
+        //  El companero del de arriba en la banda de continuidad: «SIN GUARDAR»
+        //  dice que no hay proyecto y «A SALVO» que aun asi no vas a perder
+        //  nada. Los dos juntos son la frase entera.
+        { "A SALVO",        "",         "SAFE",       "已保存",     "محفوظ" },
 
         //  EL RENGLON DE CONTINUIDAD. Tres campos con clave PROPIA y no
         //  reaprovechada: «PADS» ya existe como el nombre de una ficha y
@@ -1383,6 +1390,9 @@ namespace
         { "HACE %1 H|cont", "",         "%1 H AGO",   "%1 小时前",  "قبل %1 س" },
         { "HACE %1 D|cont", "",         "%1 D AGO",   "%1 天前",    "قبل %1 ي" },
         { "BORRA TODO?",    "",         "ERASE ALL?", "全部清空？", "مسح الكل؟" },
+        //  El aviso de ABRIR, que nombra el proyecto que va a entrar: la tapa
+        //  armada tiene que decir QUE abre, como la de BORRAR dice que borra.
+        { "ABRIR %1?",      "",         "OPEN %1?",   "打开 %1？", "فتح %1؟" },
         { "BORRAR %1?",     "",         "DELETE %1?", "删除 %1？", "حذف %1؟" },
         { "sin proyectos - GUARDAR crea el primero", "", "no projects - SAVE makes the first one",
                                         "没有工程 — 保存即可新建",
@@ -1683,6 +1693,8 @@ namespace
         //  EL REBOTE EN VIVO, que es el tercer modo de EXPORTAR: la cancion
         //  SUENA y lo que suena se escribe. Ver RebotVivo en Exporter.h.
         { "EN VIVO",        "",         "LIVE",       "实时",        "مباشر" },
+        { "COMPARTIR",      "",         "SHARE",      "分享",        "مشاركة" },
+        { "compartir es del telefono", "", "sharing is a phone thing", "分享需要手机", "المشاركة من الهاتف" },
         { "grabando en vivo...", "",    "recording live...", "正在实时录制…",
                                         "جارٍ التسجيل المباشر…" },
         { "En vivo: %1",    "",         "Live: %1",   "实时：%1",     "مباشر: %1" },

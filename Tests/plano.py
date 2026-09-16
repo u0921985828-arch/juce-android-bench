@@ -25,7 +25,7 @@ El plano se lee de arriba abajo, que es como se lee la pantalla:
     python3 Tests/plano.py              todas las fichas
     python3 Tests/plano.py set mix      solo esas
 """
-import json, os, re, shutil, subprocess, sys, tempfile
+import glob, json, os, re, shutil, subprocess, sys, tempfile
 
 #  LA PANTALLA QUE SE COMPRUEBA ES LA QUE SE USA: `PANTALLA` vive en
 #  `kits.py`, al lado de `display_alive`, y quien arranca la app la escribe
@@ -78,7 +78,17 @@ FICHAS = [
     ("mixc",   "MEZCLA"),
     ("vst",    "INSTRUMENTO"),
     ("inst",   "INSTRUMENTOS"),
+    #  Y LA CARA CON LA SESION YA ESCRITA, que es el unico estado donde la banda
+    #  de continuidad puede decir «A SALVO». Ver la regla de abajo.
+    ("salvo",  "la cara"),
 ]
+
+
+#  «A SALVO» en las cuatro lenguas, copiado de Lang.cpp. Es la unica forma de
+#  preguntar por el campo en las cuatro compilaciones: el volcado da el rotulo
+#  YA traducido, que es lo correcto -es lo que se ve- y obliga a esta tabla.
+SALVO = { "es": "A SALVO", "en": "SAFE",
+          "zh": "\u5df2\u4fdd\u5b58", "ar": "\u0645\u062d\u0641\u0648\u0638" }
 
 
 def corre (sheet, size, lang):
@@ -110,6 +120,62 @@ def corre (sheet, size, lang):
 def main():
     if not os.path.exists (APP): sys.exit ("no hay binario: compila primero")
     if not display_alive(): sys.exit ("la pantalla virtual no responde")
+
+    #  UN SOLO VISOR DE ONDA EN TODO EL ARBOL.
+    #
+    #  Habia DOS y el bueno no lo usaba CORTAR: `WaveformDisplay` (818 lineas)
+    #  con zoom x128, pellizco, arrastre de la vista y audicion al tocar, y
+    #  `ChopPreview` (201) sin NINGUNA de las cuatro, dibujando solo el canal 0.
+    #  Ajustar una marca en una muestra de 20 s en un movil era imposible. Una
+    #  funcion, dos duenos — la misma figura que `assignSampleToPad` ya cerro.
+    #
+    #  Se deriva y no se declara: se busca QUIEN dibuja una envolvente de
+    #  muestra, o sea quien declara el par `mins, maxs`, que es lo que un visor
+    #  de onda tiene y ninguna otra cosa de esta app necesita. Preguntar por el
+    #  NOMBRE del fichero no serviria: el segundo visor se llamaba ChopPreview y
+    #  el tercero se llamara de otra forma.
+    fuentes = sorted (glob.glob (os.path.join (ROOT, "Source", "*.h"))
+                      + glob.glob (os.path.join (ROOT, "Source", "*.cpp")))
+    visores = [os.path.basename (f) for f in fuentes
+               if re.search (r"juce::Array\s*<\s*float\s*>\s*mins\s*,\s*maxs", 
+                             open (f, encoding="utf8", errors="replace").read())]
+    print ("visores de onda en el arbol: %s" % (", ".join (visores) or "(ninguno)"))
+    if len (visores) != 1:
+        print ("FALLA  %d componentes dibujan la envolvente de una muestra, y tiene "
+               "que ser UNO" % len (visores))
+        return 1
+
+    #  Y COMPARTIR SOLO EXISTE CUANDO HAY ALGO QUE MANDAR.
+    #
+    #  Es la regla de la tira del paso, la que ya gobierna PEGAR y las cuatro de
+    #  la seleccion del piano: *un control que no puede hacer nada no es
+    #  informacion, es ruido*. La tapa manda el `content://` que `publicarExport`
+    #  captura, asi que sin rebote publicado no tiene nada que mandar y apretarla
+    #  no haria nada.
+    #
+    #  ESTO SE DERIVA Y NO SE MIDE ABRIENDO LA FICHA, y se dice por que: para
+    #  ver la tapa PUESTA haria falta un rebote de verdad -un hilo, un WAV y una
+    #  fila en el almacen de medios- dentro de una corrida del banco. Lo que si
+    #  se puede medir sin eso es la unica forma en que la regla se rompe: que
+    #  alguien escriba `setVisible (true)` a pelo. Se pide que TODA visibilidad
+    #  de la tapa la decida `exportUri`, o sea `false` o la pregunta por la URI.
+    #
+    #  Lo que esto NO cubre, dicho: que el selector de Android se abra. Un
+    #  `Intent` no existe en el escritorio y ninguna regla de este banco puede
+    #  verlo. Es la excepcion declarada de esta tanda y se comprueba a mano.
+    mc = open (os.path.join (ROOT, "Source", "MainComponent.cpp"),
+               encoding="utf8", errors="replace").read()
+    vis = re.findall (r"exportShareBtn\.setVisible\s*\(([^)]*)\)", mc)
+    print ("exportShareBtn.setVisible: %s" % (", ".join (v.strip() for v in vis) or "(nunca)"))
+    malas = [v.strip() for v in vis
+             if v.strip() != "false" and "exportUri" not in v]
+    if not vis:
+        print ("FALLA  nadie decide si COMPARTIR se ve: la regla no mide nada")
+        return 1
+    if malas:
+        print ("FALLA  %d veces se ensena COMPARTIR sin preguntar por exportUri: %s"
+               % (len (malas), ", ".join (malas)))
+        return 1
 
     size = os.environ.get ("ZATI_SIZE", "412x915")
     lang = os.environ.get ("ZATI_LANG", "es")
@@ -218,8 +284,49 @@ def main():
                 if quien not in texto:
                     avisos.append ("gest: MANTENER %s no tiene fila en GESTOS" % quien)
 
+        #  LA BANDA DICE QUE TU TRABAJO ESTA A SALVO.
+        #
+        #  `SessionKeeper` escribe los pads cada dos segundos y el estado entero
+        #  cada veinte, y la interfaz no lo contaba en ningun sitio: ni
+        #  indicador, ni punto, ni estado sucio. El unico mensaje que existia
+        #  salia al RECUPERAR, o sea cuando ya te habias llevado el susto.
+        #
+        #  Se pregunta por el ROTULO PINTADO -tipo «proyecto», el renglon de
+        #  continuidad- y no por un componente: esta linea se dibuja con
+        #  `drawText` a pelo, asi que ninguna de las 19 reglas de expo.py la ve.
+        #
+        #  Y se pregunta en `salvo` y NO en la cara: en la cara recien abierta
+        #  el campo no puede salir -no se ha escrito nada todavia- y pedirlo
+        #  alli seria una regla que falla siempre. Al reves tampoco vale: si se
+        #  pidiera en todas, las 53 pantallas irian en rojo por decir la verdad.
+        #  Una pantalla, un estado, una pregunta.
+        #
+        #  La palabra se pide TRADUCIDA a la lengua de la corrida, que es la
+        #  leccion de las tres pestanas de AJUSTES: comparar contra el literal
+        #  espanol da verde en es y rojo en las otras tres, o al reves.
+        if sheet == "salvo":
+            cont = [r for r in rot if r["tipo"] == "proyecto"]
+            quiere = SALVO.get (lang, "A SALVO")
+            dicen  = " ".join (r["rotulo"] for r in cont)
+            print ("  la banda de continuidad dice: %s" % (dicen or "(nada)"))
+            if not cont:
+                avisos.append ("salvo: la banda de continuidad no se publica")
+            elif quiere not in dicen:
+                avisos.append ("salvo: la sesion esta escrita y la banda no dice «%s»"
+                               % quiere)
+
         #  LA PREGUNTA QUE ESTO EXISTE PARA CONTESTAR.
-        if sheet and not titulos:
+        #
+        #  Se pregunta por FICHAS abiertas y no por «tiene clave»: `salvo` es un
+        #  ESTADO de la cara -la sesion ya escrita- y no una ficha, asi que no
+        #  tiene titulo propio y no puede tenerlo. Quien lo dice es la tabla de
+        #  arriba, que ya declara de donde se abre cada una: «la cara» es la
+        #  respuesta para las dos. Lo anadi con clave y salio «salvo no tiene
+        #  titulo: se abre y no dice donde estas», que es cierto por la letra y
+        #  falso por lo que se quiere saber.
+        if sheet and tapa == "la cara":
+            pass
+        elif sheet and not titulos:
             avisos.append ("%s no tiene titulo: se abre y no dice donde estas" % nombre)
         elif sheet and tapa not in ("la cara",):
             t0 = titulos[0]["rotulo"].split ("  ")[0].strip() if titulos else ""
