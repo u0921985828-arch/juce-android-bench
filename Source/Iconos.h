@@ -1240,15 +1240,46 @@ namespace Iconos
                 break;
 
             //  Y el abierto se abre DE VERDAD: el arco se levanta y se va a
-            //  la derecha, que es el gesto de soltar. Con el arco en el mismo
-            //  sitio y solo un lado suelto, los dos candados median 0.086 de
-            //  distancia - o sea el mismo dibujo - y ademas no se veia cual
-            //  estaba abierto a 18 px.
+            //  la derecha, que es el gesto de soltar.
+            //
+            //  El comentario que habia aqui decia que el cuerpo se separo
+            //  porque con el arco en el mismo sitio los dos candados median
+            //  0.086 y `Tests/iconos.py` los daba por el mismo dibujo. Eso ya
+            //  no es cierto y por eso se reescribe: la prueba tiene desde
+            //  entonces la tabla `ESTADOS`, que exime a este par exacto con su
+            //  razon —«dos estados de un mismo mando SI pueden parecerse»—. O
+            //  sea que el dibujo se estaba pagando para contentar a una regla
+            //  que ya no lo pedia.
+            //
+            //  EL CUERPO ES EL MISMO QUE EL DE `fijo`, Y ESO NO ES UNA COPIA:
+            //  es un candado en dos ESTADOS, no dos candados. Lo tenia distinto
+            //  en las tres cosas que se pueden tener distintas, y medido con
+            //  `ZATI_ICONOS` a 24 px salia asi:
+            //
+            //      fijo        caja x  3..20   ancho 18   tinta 0.3572
+            //      momentaneo  caja x  1..22   ancho 22   tinta 0.3871
+            //
+            //  o sea que al conmutar la tapa el cuerpo encogia de 17.0 a 15.0,
+            //  se corria 2.5 px a la izquierda -centro 12.0 contra 9.5-, perdia
+            //  el relleno y la caja entera crecia CUATRO pixeles, dos por lado.
+            //  Un estado que salta de sitio y de tamaño no se lee como el mismo
+            //  objeto: se lee como que la tapa cambio de icono.
+            //
+            //  Lo unico que cambia es el ARCO, que es lo unico que cambia en un
+            //  candado de verdad. Medido con el cuerpo ya igualado: caja x
+            //  4..19 contra 3..20, alto 20 los dos, tinta 0.3416 contra 0.3572
+            //  — o sea el mismo objeto en dos estados, que es lo que es.
+            //
+            //  Se probo ademas la version canonica de una sola pata -la derecha
+            //  anclada y el extremo libre colgando a la izquierda- y salio
+            //  PEOR: `momentaneo se sale de su caja`, con el trazo en -0.4. Se
+            //  descarto por eso y no por gusto.
             case Id::momentaneo:
-                R.addRoundedRectangle (2.0f, 11.5f, 15.0f, 10.5f, 1.8f);
-                L.startNewSubPath (5.5f, 11.5f);
-                L.lineTo (5.5f, 8.5f);
-                L.cubicTo (5.5f, 1.5f, 21.5f, 2.5f, 21.0f, 9.0f);
+                R.addRoundedRectangle (3.5f, 10.5f, 17.0f, 11.5f, 1.8f);
+                t.lleno = 0.88f;
+                L.startNewSubPath (7.5f, 10.5f);
+                L.lineTo (7.5f, 7.0f);
+                L.cubicTo (7.5f, 1.0f, 17.5f, 1.0f, 19.5f, 6.5f);
                 break;
 
             //  MIDI: la clavija de cinco patillas, que es como se reconoce sin
