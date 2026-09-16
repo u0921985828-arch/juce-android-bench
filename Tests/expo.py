@@ -455,7 +455,23 @@ def judge_tapado(rows, size, lang, sheet):
     #     regla de solapes recorre componentes y un rotulo no lo es, asi que el
     #     renglon de ayuda de CANCION llevaba metido 46x16 px debajo de su
     #     propio titulo en las cuatro lenguas sin que nada fallara.
-    pin = [r for r in rows if r.get("rotulo") and r.get("w", 0) > 0 and r.get("h", 0) > 0]
+    #  Y EL FILTRO PEDIA `w > 0`, QUE ES JUSTO EL CASO QUE HAY QUE CAZAR.
+    #
+    #  Un rotulo con ancho CERO se caia de la lista antes de llegar a CORTADO,
+    #  asi que la unica regla que pregunta «¿cabe?» no veia al que no cabe NADA.
+    #  Medido: **89 rotulos pintados con ancho cero** en cuatro de los siete
+    #  tamaños y los cuatro idiomas — el titulo de las cuatro pantallas de SEC,
+    #  su renglon de cadena, y el del PIANO en chino. En el telefono la ficha
+    #  SEC se abre SIN TITULO y ninguna de las diecinueve reglas duras podia
+    #  verlo: un rectangulo de ancho cero no solapa, no se sale, no se corta a
+    #  media palabra y no encoge la letra. Se publicaba, y `plano.py` contestaba
+    #  que la ficha tiene titulo porque el rotulo existe en el volcado.
+    #
+    #  El filtro se escribio para saltarse lo que no se pinta, y de paso se
+    #  tragaba lo que se pinta en cero pixeles. Lo que dice «esto no es un
+    #  rotulo» es el ALTO; el ancho es lo que se esta midiendo. La exencion de
+    #  elidir sigue valiendo sola: `pide == 0` nunca dispara `pide > w`.
+    pin = [r for r in rows if r.get("rotulo") and r.get("h", 0) > 0]
     for r in pin:
         if r.get("pide", 0) > r["w"]:
             out.append(("CORTADO", f"{size}/{lang}/{sheet or 'face'}",

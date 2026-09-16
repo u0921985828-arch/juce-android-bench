@@ -304,6 +304,72 @@ if (! tapa.isVisible()) return banda;
 return antesDe (banda, tapa.getBounds(), aire);
 }
 
+//  Y LA MISMA PARA VARIAS TAPAS A LA VEZ, que es la que hay que usar en cuanto
+//  hay mas de una — y la razon es un fallo medido, no una comodidad.
+//
+//  1. ENCADENAR `antesDe (antesDe (antesDe (...)))` SE CIERRA SOBRE SI MISMO.
+//     Cada llamada decide el lado comparando con el centro de la banda QUE LE
+//     LLEGA, y ese centro se mueve con cada corte, asi que a partir del tercero
+//     se juzga contra una referencia que ya no es la del renglon. En la
+//     cabecera de SEC, a 412x915: entraba 33..379, MIDI caia a la izquierda del
+//     centro ya movido (144 < 160) asi que cortaba por la IZQUIERDA y la banda
+//     saltaba a 172..288 —o sea al hueco ENTRE las tapas— y las dos ultimas la
+//     cerraban a 172..172.
+//
+//  2. Y REPARTIR POR LADOS TAMPOCO VALE, que fue el primer arreglo y se midio
+//     igual de mal: las cinco tapas de SEC RODEAN el centro del renglon -MIDI y
+//     1:1 a la izquierda de 206, las otras tres a la derecha- asi que cortando
+//     una vez por lado la banda vuelve a quedar atrapada entre los dos grupos,
+//     224..224. El hueco de verdad esta en el EXTREMO, 33..116.
+//
+//  Lo que se pregunta es lo unico que no depende de donde caiga el centro de
+//  nada: **cual es el hueco mas ancho que queda en el renglon** una vez quitado
+//  lo que ocupan las tapas. Con eso SEC sale 33..116, 83 px, que es lo que hay
+//  de verdad — y sigue valiendo espejado, porque un hueco no tiene idioma.
+//
+//  El titulo pedia 29 px y recibia 0: se publicaba, `plano.py` decia que la
+//  ficha tiene titulo, y en el telefono no habia titulo. **89 rotulos con ancho
+//  cero** en cuatro tamaños y los cuatro idiomas.
+inline juce::Rectangle<int> dejaSitio (juce::Rectangle<int> banda,
+                                       std::initializer_list<const juce::Component*> tapas,
+                                       int aire = Metrics::xs)
+{
+//  Sin reservas: el renglon de una cabecera no lleva mas tapas que estas.
+static constexpr int kMaxTapas = 12;
+std::array<std::pair<int, int>, kMaxTapas> ocupa {};
+int n = 0;
+
+for (auto* t : tapas)
+{
+    if (t == nullptr || ! t->isVisible() || n >= kMaxTapas) continue;
+    const auto b = t->getBounds();
+    if (b.isEmpty()) continue;
+    //  El aire se le suma a la TAPA y no se le resta al hueco: asi el margen
+    //  vale igual por los dos lados sin tener que saber por cual se corta.
+    ocupa[(size_t) n++] = { b.getX() - aire, b.getRight() + aire };
+}
+
+if (n == 0) return banda;
+
+std::sort (ocupa.begin(), ocupa.begin() + n);
+
+//  Barrido de izquierda a derecha quedandose con el hueco mas ancho.
+int mejorX = banda.getX(), mejorW = 0, libre = banda.getX();
+auto mira = [&] (int hasta)
+{
+    if (hasta - libre > mejorW) { mejorW = hasta - libre; mejorX = libre; }
+};
+
+for (int i = 0; i < n; ++i)
+{
+    mira (juce::jmin (ocupa[(size_t) i].first, banda.getRight()));
+    libre = juce::jmax (libre, ocupa[(size_t) i].second);
+}
+mira (banda.getRight());
+
+return banda.withX (mejorX).withWidth (juce::jmax (0, mejorW));
+}
+
 //  LA CABECERA DE UNA FICHA, CENTRADA EN EL RENGLON QUE `resized()` RESERVO.
 //
 //  Llego mirando la foto de una ficha: «el espacio que hay entre el texto de

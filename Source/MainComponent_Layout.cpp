@@ -4932,9 +4932,31 @@ void MainComponent::resized()
             //  escalera y no esta.
             const int parDelPiano = (seqPage == seqPagePiano) ? Metrics::hit * 2 : 0;
 
+            //  Y SE PIDE POR EL MAS LARGO DE LOS DOS RENGLONES, no solo por el
+            //  titulo.
+            //
+            //  De este hueco salen DOS cosas y la cuenta solo miraba una: el
+            //  titulo arriba y el renglon de la cadena debajo -«sin cadena»,
+            //  «no chain», «بلا سلسلة»- que es MAS LARGO que la palabra del
+            //  titulo en las cuatro lenguas. Reservando 29 px para «PASOS» el
+            //  de abajo se quedaba con 35 pidiendo 56: veinte `CORTADO` en
+            //  360x640 y 280x653, que hasta hoy no los cantaba nadie porque la
+            //  regla se tragaba el caso -ver el filtro de `expo.py`-.
+            //
+            //  Los dos salen del MISMO hueco, asi que lo que hay que reservar
+            //  es el maximo. Y se mide cada uno con SU fuente: el titulo va en
+            //  `labelFont` al 85 %, el renglon de datos en mono `fMeta` con su
+            //  kerning, y medirlos con la misma seria la misma regla escrita
+            //  con dos numeros.
+            const auto fDato = ZatiColours::monoFont (Metrics::fMeta, true)
+                                   .withExtraKerningFactor (0.10f);
+            const int pideCadena = (seqPage == seqPagePiano) ? 0
+                : (int) std::ceil (juce::GlyphArrangement::getStringWidth (fDato, T ("sin cadena")));
+
             const bool cabe = titleRow.getWidth() >= Metrics::hit + Metrics::xs
                                                        + parDelPiano
-                                                       + Metrics::sm + pideTitulo;
+                                                       + Metrics::sm
+                                                       + juce::jmax (pideTitulo, pideCadena);
             midiBtn.setVisible (cabe);
             if (cabe)
             {

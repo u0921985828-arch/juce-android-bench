@@ -898,7 +898,7 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
                                           .withHeight (Metrics::bandaTitulo));
     //  Y de la puerta a la rejilla de dieciseis, que vive en este mismo
     //  renglon desde que esta ficha tambien puede cambiar de pad.
-    titleRow = antesDe (antesDe (titleRow, chopCloseButton), chopPadPickBtn);
+    titleRow = dejaSitio (titleRow, { &chopCloseButton, &chopPadPickBtn });
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
     pintaTitulo (g, titleRow,
@@ -1272,7 +1272,7 @@ void MainComponent::paintInstSheetContent (juce::Graphics& g)
         //  Se para antes de CADA tapa y en el lado en el que esta: recortar
         //  por ANCHO da igual en las dos, y en arabe PACK + esta a la
         //  izquierda, asi que el nombre del pack se le metia debajo.
-        auto fila = antesDe (antesDe (instPackArea, instPackDownBtn), instPackUpBtn);
+        auto fila = dejaSitio (instPackArea, { &instPackDownBtn, &instPackUpBtn });
         g.setColour (ZatiColours::ink.withAlpha (0.9f));
         g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.10f));
         const auto nombre = instCatalogo.empty() ? juce::String ("-")
@@ -1752,8 +1752,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
     //  Y DE LA TERCERA TAPA DE LA FILA: la puerta de la rejilla de dieciseis
     //  pads. Sin ella el titulo -"PAD 64 · ARP"- se le metia debajo en 280x653,
     //  doce hallazgos. Es la misma cuenta que ya hacian las otras dos.
-    padTitleRow = antesDe (antesDe (antesDe (padTitleRow, previewButton), padPadPickBtn),
-                           padCloseButton);
+    padTitleRow = dejaSitio (padTitleRow, { &previewButton, &padPadPickBtn, &padCloseButton });
     //  Ellipsised rather than squeezed: a name long enough to need shrinking
     //  is long enough that shrinking will not save it, and a sentence cut off
     //  mid-letter reads as a bug where "..." reads as a long name.
@@ -1928,12 +1927,9 @@ void MainComponent::paintPianoSheetContent (juce::Graphics& g)
     //  Y de la QUINTA, la puerta del MIDI, que entro en esa misma cabecera:
     //  cada tapa que se deja fuera de la cadena saca su propio hallazgo, y
     //  esta costo 48 de los 174 de su primera corrida.
-    auto titulo = antesDe (antesDe (antesDe (antesDe (antesDe (inner.removeFromTop (Metrics::bandaTitulo),
-                                                               seqCloseButton,  Metrics::sm),
-                                                      pianoPadPickBtn, Metrics::sm),
-                                             midiBtn,         Metrics::sm),
-                                    pianoPadDownBtn, Metrics::sm),
-                           pianoPadUpBtn,   Metrics::sm);
+    auto titulo = dejaSitio (inner.removeFromTop (Metrics::bandaTitulo),
+                             { &seqCloseButton, &pianoPadPickBtn, &midiBtn,
+                               &pianoPadDownBtn, &pianoPadUpBtn }, Metrics::sm);
     const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
 
     //  Y LA SEGUNDA LINEA SE DECIDE ANTES DE COLOCAR LA PRIMERA.
@@ -2189,12 +2185,10 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     //  con la tapa puesta. Es la cadena de siempre y no una cuenta nueva -cada
     //  tapa que se deja fuera saca su propio hallazgo- y `antesDe` decide el
     //  lado comparando los centros, que es lo unico que vale en arabe.
-    auto tituloRow = antesDe (antesDe (antesDe (antesDe (antesDe (centraEnRenglon (inner.removeFromTop (Metrics::bandaTitulo), Metrics::bandaTitulo + Metrics::bandaSubtitulo),
-                                                                  seqCloseButton, Metrics::sm),
-                                                         pianoPadPickBtn, Metrics::sm),
-                                                midiBtn, Metrics::sm),
-                                       seqPistasBtn, Metrics::sm),
-                              seqZoomBtn, Metrics::sm);
+    auto tituloRow = dejaSitio (centraEnRenglon (inner.removeFromTop (Metrics::bandaTitulo),
+                                                 Metrics::bandaTitulo + Metrics::bandaSubtitulo),
+                                { &seqCloseButton, &pianoPadPickBtn, &midiBtn,
+                                  &seqPistasBtn, &seqZoomBtn }, Metrics::sm);
     //  Y CAE POR CAMPOS, como el del piano: el nombre del pad se lee en el pad,
     //  «PAD nn» en la tapa del selector y «P1» en la paleta de patrones, asi que
     //  los tres se piden con el TEXTO puesto y se caen por orden. Queda PASOS o
@@ -2227,12 +2221,10 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     //  Lo que se queda es lo que no se puede deducir mirando la maquina: que
     //  no hay cadena. Que repite el patron puesto lo dice la paleta, donde P1
     //  esta encendido.
-    seqChainBand = antesDe (antesDe (antesDe (antesDe (antesDe (centraEnRenglon (inner.removeFromTop (Metrics::bandaSubtitulo), Metrics::bandaTitulo + Metrics::bandaSubtitulo),
-                                                                seqPistasBtn,    Metrics::sm),
-                                                       seqCloseButton,  Metrics::sm),
-                                              pianoPadPickBtn, Metrics::sm),
-                                     midiBtn,         Metrics::sm),
-                            seqZoomBtn, Metrics::sm);
+    seqChainBand = dejaSitio (centraEnRenglon (inner.removeFromTop (Metrics::bandaSubtitulo),
+                                               Metrics::bandaTitulo + Metrics::bandaSubtitulo),
+                              { &seqPistasBtn, &seqCloseButton, &pianoPadPickBtn,
+                                &midiBtn, &seqZoomBtn }, Metrics::sm);
 
     juce::String chainStr;
     if (engine.getChainLength() <= 0)
@@ -2429,11 +2421,10 @@ void MainComponent::paintSongSheetContent (juce::Graphics& g)
     //  la tapa anterior. La cuenta estaba escrita para dos tapas y ahora son
     //  tres: se encadena una llamada mas, y `antesDe` decide el lado
     //  comparando los centros, asi que sigue valiendo en los cuatro idiomas.
-    auto renglon = antesDe (antesDe (centraEnRenglon (songSheet.sheetBounds
-                                         .reduced (Metrics::margenFichaX, Metrics::margenFichaY)
-                                         .removeFromTop (Metrics::bandaTitulo)),
-                                     songCloseButton),
-                            songZoomBtn);
+    auto renglon = dejaSitio (centraEnRenglon (songSheet.sheetBounds
+                                   .reduced (Metrics::margenFichaX, Metrics::margenFichaY)
+                                   .removeFromTop (Metrics::bandaTitulo)),
+                              { &songCloseButton, &songZoomBtn });
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
@@ -2646,7 +2637,7 @@ void MainComponent::paintVstSheetContent (juce::Graphics& g)
                       fam >= 0 ? Zati::colour (Zati::forPad (vstPad)) : juce::Colour());
     }
 
-    auto titleRow = antesDe (antesDe (vstTitleArea, vstCloseButton), vstPadBtn);
+    auto titleRow = dejaSitio (vstTitleArea, { &vstCloseButton, &vstPadBtn });
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
     pintaTitulo (g, titleRow,
@@ -2860,17 +2851,38 @@ void MainComponent::paintXySheetContent (juce::Graphics& g)
         //  -catorce pixeles a la derecha y seis mas abajo- que es justo la
         //  trampa contra la que avisa el comentario que habia aqui, escrita al
         //  reves.
-        row = antesDe (antesDe (row, xyLatchButton), xyCloseButton);
+        row = dejaSitio (row, { &xyLatchButton, &xyCloseButton });
+
+        //  Y SI NO HAY EFECTO EN NINGUNA RANURA, LO DICE.
+        //
+        //  `xyFx` arranca en 0 -o sea FLT- y el titulo lo nombraba pasara lo
+        //  que pasara, asi que con la maquina recien abierta la pagina decia
+        //  «XY · FLT · EN ESPERA» con las seis ranuras a «+». Nombra un efecto
+        //  que no esta puesto, y las seis tapas de debajo lo desmienten en la
+        //  misma pantalla: dos verdades a la vez es como se pierde la confianza
+        //  en lo que dice la maquina. Es la misma figura que el canal 31
+        //  fantasma — un mando apuntando a algo que no esta.
+        //
+        //  Lo que se dice es lo que hay que hacer, no un hueco: «PON UN EFECTO»
+        //  contesta la unica pregunta que tiene sentido en ese estado.
+        const bool hayQueTocar = fxEstaPuesto (xyFx);
         pintaTitulo (g, row,
-                 T ("XY") + "  " + dot + "  " + juce::String (fxDefs[xyFx].name)
-                      + "  " + dot + "  " + (fxEncendido (xyFx) ? T ("SUENA") : T ("EN ESPERA")), "titulo", true);
+                 hayQueTocar
+                   ? T ("XY") + "  " + dot + "  " + juce::String (fxDefs[xyFx].name)
+                       + "  " + dot + "  " + (fxEncendido (xyFx) ? T ("SUENA") : T ("EN ESPERA"))
+                   : T ("XY") + "  " + dot + "  " + T ("PON UN EFECTO"), "titulo", true);
     }
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
     {
-        const auto ayuda = xyLatch ? T ("se queda donde lo dejes")
-                                   : T ("entra al tocar y sale al soltar");
+        //  Y LA AYUDA, IGUAL: con las seis ranuras vacias, «entra al tocar y sale
+        //  al soltar» describe algo que no va a pasar. Se dice como se llega a
+        //  que pase, que es lo que hace falta en esa pantalla.
+        const auto ayuda = ! fxEstaPuesto (xyFx)
+                             ? T ("toca una ranura de la cara para poner uno")
+                             : xyLatch ? T ("se queda donde lo dejes")
+                                       : T ("entra al tocar y sale al soltar");
         //  Y en la banda que el maquetado le reservo DEBAJO del renglon del
         //  titulo, no dentro de el: el pintor se comia el renglon en 16 px y
         //  dibujaba esta linea a la altura de las tapas, dejando muertos los

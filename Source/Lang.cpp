@@ -1693,6 +1693,11 @@ namespace
         //  EL REBOTE EN VIVO, que es el tercer modo de EXPORTAR: la cancion
         //  SUENA y lo que suena se escribe. Ver RebotVivo en Exporter.h.
         { "EN VIVO",        "",         "LIVE",       "实时",        "مباشر" },
+        //  LAS DOS DEL XY SIN EFECTO PUESTO. Ver paintXySheetContent: la
+        //  pagina decia «XY · FLT · EN ESPERA» con las seis ranuras a «+».
+        { "PON UN EFECTO",  "",         "ADD AN EFFECT", "放一个效果", "أضف تأثيرًا" },
+        { "toca una ranura de la cara para poner uno", "",
+          "tap a slot on the machine to add one", "点击面板上的插槽来添加", "المس فتحة في الواجهة لإضافة واحد" },
         { "COMPARTIR",      "",         "SHARE",      "分享",        "مشاركة" },
         { "compartir es del telefono", "", "sharing is a phone thing", "分享需要手机", "المشاركة من الهاتف" },
         { "grabando en vivo...", "",    "recording live...", "正在实时录制…",

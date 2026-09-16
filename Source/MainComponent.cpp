@@ -16652,7 +16652,20 @@ void MainComponent::pintaCuadro (double dtMs)
         //  lo unico que lo apaga solo: con una ficha abierta encima el medidor
         //  no se ve, y medirlo igual pagaria el camino largo de esos pads para
         //  dibujar algo que esta tapado. -1 es «ninguno». Ver `miraCanal`.
-        const int canalVisto = animar ? engine.getPadCanal (selectedPad) : -1;
+        //  Y UN PAD SIN CANAL ES -1, NO 255.
+        //
+        //  `getPadCanal` devuelve `kSinCanal` (0xFF) para un pad que no esta en
+        //  ninguna tira, que es el caso por defecto: los pads NO nacen en el
+        //  canal 0. `miraCanal` lo acota solo -por eso el motor no medi­a nada-
+        //  pero al medidor se le pasaba el 255 crudo, y su guarda es `>= 0`:
+        //  pintaba «CANAL 256» con la tira clavada en el suelo. Las dos mitades
+        //  mal — un canal que no existe (hay 32) y un medidor a cero, que este
+        //  mismo fichero dice que se lee como un canal MUDO y no como uno que no
+        //  esta. Es la tercera vez que la premisa «255 es ninguno» se aplica en
+        //  un sitio y se olvida en el de al lado; ver el canal 31 fantasma.
+        const int canalDelPad = animar ? engine.getPadCanal (selectedPad)
+                                       : AudioEngine::kSinCanal;
+        const int canalVisto = AudioEngine::tieneCanal (canalDelPad) ? canalDelPad : -1;
         engine.miraCanal (canalVisto);
 
         //  Misma balistica que la aguja del master, y por lo mismo: es una
