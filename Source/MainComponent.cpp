@@ -2267,8 +2267,22 @@ MainComponent::MainComponent()
     //  SWING is the whole pattern's, not one step's: it is a feel, and a feel
     //  you can set per step is just a step in the wrong place.
     swingSlider.setSliderStyle (juce::Slider::LinearHorizontal);
-    swingSlider.setRange (50.0, 75.0, 1.0);
-    swingSlider.setValue (50.0, juce::dontSendNotification);
+    //  DE 0 A 100 Y NO DE 50 A 75, que es lo que el fader decia.
+    //
+    //  Por dentro el swing es una RAZON -0.50 es recto, 0.75 el maximo, y en
+    //  medio 0.667 es el tresillo-, y el fader la ensenaba cruda: «50 %» con el
+    //  swing apagado y «75 %» con el a tope. Los dos numeros son ciertos y
+    //  ninguno de los dos es el que alguien espera leer, porque nadie piensa
+    //  «quiero un swing del cincuenta y ocho por ciento»: se piensa en cuanto
+    //  swing hay, de nada a todo. Llego del telefono asi: «en el swing, que el
+    //  fader vaya de 0 % a 100 %».
+    //
+    //  El motor no se toca. Lo unico que cambia es el reparto, aqui y en la
+    //  vuelta del proyecto — un mando y su motor pueden hablar en unidades
+    //  distintas mientras la conversion viva en UN sitio, que es la misma razon
+    //  por la que `barridoDe` existe.
+    swingSlider.setRange (0.0, 100.0, 1.0);
+    swingSlider.setValue (0.0, juce::dontSendNotification);
     swingSlider.setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
     swingSlider.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
     swingSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
@@ -2279,9 +2293,11 @@ MainComponent::MainComponent()
     //  any other; the only reason it slipped is that it is written inside a
     //  lambda instead of next to a setButtonText.
     swingSlider.textFromValueFunction = [] (double v)
-    { return (v <= 50.5) ? T ("recto") : (juce::String ((int) v) + " %"); };
+    { return (v <= 0.5) ? T ("recto") : (juce::String ((int) v) + " %"); };
     swingSlider.updateText();
-    swingSlider.onValueChange = [this] { engine.setSwing ((float) (swingSlider.getValue() / 100.0)); };
+    //  Y LA CONVERSION, EN UN SITIO. 0 % es 0.50 y 100 % es 0.75.
+    swingSlider.onValueChange = [this]
+    { engine.setSwing (AudioEngine::kSwingRecto + (float) (swingSlider.getValue() / 100.0) * AudioEngine::kSwingRango); };
     seqSheet.addAndMakeVisible (swingSlider);
 
     //  LA REJILLA. Un paso duraba una semicorchea y no habia otra: ni un
@@ -9994,7 +10010,13 @@ void MainComponent::applyState (const juce::ValueTree& s)
     bpmSlider.setValue ((double) s.getProperty ("bpm", 120.0), juce::sendNotification);
     //  Straight is the default, so a project written before swing existed
     //  comes back playing exactly as it did.
-    swingSlider.setValue ((double) s.getProperty ("swing", 0.5) * 100.0, juce::sendNotification);
+    //  Y la vuelta: la razon que el proyecto guarda -0.50 a 0.75- al tanto por
+    //  ciento que el fader ensena. Un fichero anterior trae la misma razon, asi
+    //  que abre en el mismo sitio; lo que cambia es el numero que se lee.
+    swingSlider.setValue (juce::jlimit (0.0, 100.0,
+                            (((double) s.getProperty ("swing", (double) AudioEngine::kSwingRecto)
+                                - (double) AudioEngine::kSwingRecto) / (double) AudioEngine::kSwingRango) * 100.0),
+                          juce::sendNotification);
     gridSlider.setValue ((double) (int) s.getProperty ("gridres", 2), juce::sendNotification);
 
     //  Y LO MISMO CON LOS EFECTOS: sin <FX>, los seis se quedaban donde los
@@ -15799,6 +15821,22 @@ void MainComponent::finishSessionRestore (const juce::ValueTree& tree, int resto
 
     //  These buffers came off this very folder: nothing to write back.
     session.adopt (uiSample.data(), kNumPads);
+
+    //  LA CUENTA, COMO CIFRA Y NO DENTRO DE UNA FRASE.
+    //
+    //  `Tests/session.py` sacaba cuantos pads volvieron BUSCANDO UN DIGITO en la
+    //  linea de estado —con tres ramas de idioma, «recuperada», «restored» y
+    //  «已恢复»—, asi que al quitarle la cifra a la frase por el TRUNC, las ocho
+    //  corridas pasaron a decir `recuperados=-1`. La prueba tenia razon: la app
+    //  dejo de publicar lo que ella comprobaba.
+    //
+    //  El arreglo no es devolver el numero a la frase. Sacar una cifra parseando
+    //  una frase TRADUCIDA es fragil por construccion —el propio parser lo
+    //  confiesa con sus tres idiomas— y ademas ata el texto que se lee a la
+    //  medida que lo cuenta. La cifra se publica como cifra y la frase dice lo
+    //  que tenga que decir.
+    if (std::getenv ("ZATI_AUDIT") != nullptr)
+        std::printf ("sesion recuperados %d sin_audio %d\n", restored, missing);
 
     //  Y LA CUENTA DE PADS SALE DE AQUI, que ya la dice la banda de continuidad.
     //

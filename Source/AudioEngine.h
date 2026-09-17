@@ -1136,7 +1136,17 @@ public:
     int  getStepRoll  (int patternIdx, int step, int pad) const noexcept;
 
     //  0.5 straight .. 0.75 hard shuffle.
-    void  setSwing (float s) noexcept { swing.store (juce::jlimit (0.5f, 0.75f, s), std::memory_order_relaxed); }
+    //  LOS DOS EXTREMOS DEL SWING, ESCRITOS UNA VEZ. Eran el 0.5 y el 0.75 de
+    //  esta linea y el 50 y el 75 del fader de la cara: cuatro numeros para dos
+    //  hechos, y el dia que el maximo cambie hay que acordarse de los otros
+    //  tres. Desde que el fader va de 0 a 100 la conversion los necesita, asi
+    //  que se declaran donde vive la regla y la cara los lee.
+    static constexpr float kSwingRecto = 0.50f;   // recto
+    static constexpr float kSwingRango = 0.25f;   // lo que hay hasta el maximo
+
+    void  setSwing (float s) noexcept
+    { swing.store (juce::jlimit (kSwingRecto, kSwingRecto + kSwingRango, s),
+                   std::memory_order_relaxed); }
     float getSwing() const noexcept   { return swing.load (std::memory_order_relaxed); }
     int  getStepNote  (int patternIdx, int step, int pad) const noexcept;
 

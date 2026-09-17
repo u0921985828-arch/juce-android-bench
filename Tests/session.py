@@ -181,11 +181,20 @@ def main():
         #  Segunda corrida sobre la misma casa: la que de verdad importa, que
         #  es si la app se encuentra a si misma al volver.
         back = one (home, {})
+        #  DE LA CIFRA Y NO DE LA FRASE.
+        #
+        #  Esto buscaba un digito dentro de la linea de ESTADO, con tres ramas
+        #  de idioma -«recuperada», «restored», «已恢复»- porque la frase esta
+        #  traducida. El dia que a la frase se le quito la cifra -sobraba, la
+        #  dice la banda de continuidad, y a 280 px no cabia- las ocho corridas
+        #  pasaron a `recuperados=-1` sin que la sesion hubiera perdido nada.
+        #
+        #  Una medida que depende de como esta REDACTADO lo que mide no mide
+        #  eso: mide la redaccion. La app publica ahora la cifra aparte.
         restored = -1
         for line in back.splitlines():
-            if "recuperada" in line or "restored" in line or "已恢复" in line:
-                for tok in line.replace ("[", " ").replace ("]", " ").split():
-                    if tok.isdigit(): restored = int (tok); break
+            if line.startswith ("sesion recuperados "):
+                restored = int (line.split()[2])
 
         ok = (len (wavs) == EXPECTED and not leftovers and restored == EXPECTED)
         if not ok:
