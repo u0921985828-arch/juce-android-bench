@@ -1719,13 +1719,18 @@ public:
     //  verdad. Hermana de `getDynReduccion`, y por lo mismo.
     float getLfoFase (int canal, int f) const noexcept
     {
-        //  TRM SUSTITUYE, asi que su LFO vive en `Inserto` y los otros tres
-        //  -que SUMAN- en la clase. La familia se parte 3/1 y esta es la unica
-        //  puerta que tiene que saberlo.
+        //  LOS CUATRO POR CANAL, que es lo coherente desde que cada tira lleva
+        //  su velocidad. TRM ya lo era; los otros tres leian UNA fase para toda
+        //  la mesa, y con el reloj nuevo eso dejo el punto del visor quieto en
+        //  cuanto el efecto vivia en un canal que no fuera el publicado: seis de
+        //  veintidos capas vivas sin moverse con señal, que es lo que
+        //  `Tests/rack.py` llama «un adorno». Publicar «la» fase cuando hay
+        //  treinta y dos es publicar la de cualquiera.
         if (f == kFxTrm) return insDe (canal).trmFase.load (std::memory_order_relaxed);
         const int m = modDe (f);
         return (m >= 0 && m < kNumModEnvio)
-             ? modFase[(size_t) m].load (std::memory_order_relaxed) : -1.0f;
+             ? modFase[(size_t) juce::jlimit (0, kNumCanales - 1, canal)][(size_t) m]
+                 .load (std::memory_order_relaxed) : -1.0f;
     }
     //  Si el bus MIRADO ha dado señal hace poco. Sin esto la cara no sabe
     //  distinguir «nada suena» de «nada pasa por aqui», y una mancha clavada en
@@ -2682,7 +2687,7 @@ private:
     //  La fase que el visor dibuja, del canal que la cara mira. Sale del reloj
     //  por `pasoMod`, asi que esto publica un RESULTADO y no un estado: antes
     //  eran tres acumuladores y ahora son tres lecturas.
-    std::array<std::atomic<float>, 3> modFase { { { 0.0f }, { 0.0f }, { 0.0f } } };
+    std::array<std::array<std::atomic<float>, 3>, kNumCanales> modFase {};
 
     //  Las dos lineas de retardo de CHO y FLA. Del MISMO tipo que la de DLY
     //  -`Lagrange3rd`- porque un retardo que se barre y no interpola crepita, y

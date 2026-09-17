@@ -241,7 +241,7 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize, int inputC
     //  puede existir. Ver `pasoMod`.
     relojSeg  = 0.0;
     relojPaso = 0.0;
-    for (auto& f : modFase) f.store (0.0f, std::memory_order_relaxed);
+    for (auto& fila : modFase) for (auto& f : fila) f.store (0.0f, std::memory_order_relaxed);
 
     //  Y LOS DIECISEIS INSERTOS, en un bucle y no dieciseis veces a mano.
     //  Es la razon entera por la que `Inserto` existe: cada uno de estos
@@ -1750,10 +1750,54 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         auto P = [this, &canalEtapa] (int f, int par) noexcept
         { return fxParamDe (canalEtapa, f, par).load (std::memory_order_relaxed); };
 
+        //  LO QUE ENTRA AL BUS MIRADO, Y AQUI Y NO ANTES DE LAS ETAPAS.
+        //
+        //  Se leia UNA vez, antes de que ninguna etapa tocara nada, con este
+        //  argumento: «en este punto los once buses llevan exactamente lo que
+        //  los pads les mandaron, asi que una sola linea vale para los once».
+        //  Con una CADENA deja de ser verdad: a un eslabon no le entra lo que
+        //  los pads mandaron, le entra lo que le paso el anterior — y a DLY y
+        //  REV, que ahora se alimentan del final de la tira, en ese punto no les
+        //  ha entrado nada todavia.
+        //
+        //  Lo canto `Tests/rack.py`: «6 de 22 capas vivas no se mueven con
+        //  señal», y los seis eran DLY, REV, CMP, GTE, DSS y LIM. La capa no
+        //  estaba rota: estaba leyendo un bus vacio porque se leia demasiado
+        //  pronto. Ahora se lee cuando la etapa PIDE su bloque, que es
+        //  literalmente el instante en que «lo que entra» existe.
+        //  Si el bus MIRADO ha llegado a correr este bloque. Lo levanta `pre`,
+        //  que es lo unico que se llama con el bus vivo Y siendo el mirado.
+        bool miradoVivo = false;
+        //  Y SI EL BUS MIRADO NO SACA NADA ESTE BLOQUE, hay que escribirlo.
+        //  Ver el vaciado al final de esta seccion.
+        bool miradoSalida = false;
+
+        auto pre = [&] (int f) noexcept
+        {
+            if (f != mirado.load (std::memory_order_relaxed)) return;
+            //  UNA SOLA VEZ POR BLOQUE. `live` se llama mas de una vez para el
+            //  mismo tipo -la familia de caracter resuelve sus seis de golpe y
+            //  el tremolo pregunta dos veces-, y una segunda foto tomada despues
+            //  de que la etapa haya escrito ya no es «lo que entra»: es lo que
+            //  sale, y entonces el visor compara una cosa consigo misma.
+            if (miradoVivo) return;
+            miradoVivo = true;
+            const auto& bus = fxBus[busIdx (f)];
+            const float* l = bus.getReadPointer (0, startSample);
+            const float* r = chans > 1 ? bus.getReadPointer (1, startSample) : l;
+            const int wi = mirWrite.load (std::memory_order_relaxed);
+            for (int i = 0; i < numSamples; ++i)
+                mirPre[(size_t) ((wi + i) & (kFxScope - 1))] = 0.5f * (l[i] + r[i]);
+        };
+
         auto live = [&] (int f) noexcept
         {
             const auto b = busIdx (f);
-            return busFed[b] || busRinging[b];
+            const bool vivo = busFed[b] || busRinging[b];
+            //  Y AQUI SE FOTOGRAFIA LO QUE ENTRA, porque `live` es lo unico que
+            //  TODA etapa llama antes de escribir una muestra. Ver `pre`.
+            if (vivo) pre (f);
+            return vivo;
         };
 
         auto blockFor = [this, &busIdx, startSample, numSamples, chans] (int f) noexcept
@@ -1761,6 +1805,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             return juce::dsp::AudioBlock<float> (fxBus[busIdx (f)].getArrayOfWritePointers(),
                                                  (size_t) chans, (size_t) startSample, (size_t) numSamples);
         };
+
 
         //  Return the bus to the master and decide whether it is still alive.
         //  The threshold is far below anything audible; it exists so a reverb
@@ -1789,6 +1834,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     mirPost[(size_t) ((wi + i) & (kFxScope - 1))] = m;
                     pico = juce::jmax (pico, std::abs (m));
                 }
+                miradoSalida = true;
                 mirWrite.store ((wi + numSamples) & (kFxScope - 1), std::memory_order_release);
 
                 //  Vivo mientras haya señal, y a la baja: un booleano se
@@ -1826,6 +1872,18 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 //  dejaba de mover nada y solo contaba el MIX. Un mando que no
                 //  hace nada no es informacion, es ruido. Va DENTRO de la
                 //  mezcla del eslabon, o sea «cuanto de este eslabon».
+                //  Y LA MEZCLA SE HACE SIEMPRE, con cadena y sin ella.
+                //
+                //  Aqui hubo una guarda que se saltaba la mezcla cuando el canal
+                //  tenia un solo eslabon, con el argumento de que `secoDeCanal`
+                //  se quedaba rancio. NO se queda: se siembra arriba para TODO
+                //  canal que tenga un primer eslabon, tenga uno o seis. Y
+                //  saltarsela costaba lo que el banco canto —«FLA peine 12.62 dB»
+                //  y «PHA muescas 0.00 dB»—: un eslabon suelto que SUMA se
+                //  quedaba sin su seco, porque el reparto ya se lo habia quitado
+                //  al camino directo (`dry *= 1 - g`) y nadie se lo devolvia. Un
+                //  flanger sin seco con el que interferir no tiene peine, y un
+                //  phaser sin el no tiene muescas.
                 const float mix = juce::jlimit (0.0f, 1.0f, P (f, 2))
                                     * juce::jlimit (0.0f, 1.0f,
                                         canalSend[(size_t) juce::jlimit (0, kNumCanales - 1, canalEtapa)]
@@ -1919,51 +1977,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         //  MONO -la media de los dos canales- porque nada de lo que se dibuja
         //  aqui habla de la imagen estereo, y dos anillos por lado serian el
         //  doble de memoria y el doble de analisis para pintar lo mismo.
-        {
-            const int fm = mirado.load (std::memory_order_relaxed);
-            if (fm >= 0)
-            {
-                if (live (fm))
-                {
-                    const float* l = fxBus[busIdx (fm)].getReadPointer (0, startSample);
-                    const float* r = chans > 1 ? fxBus[busIdx (fm)].getReadPointer (1, startSample) : l;
-                    const int wi = mirWrite.load (std::memory_order_relaxed);
-                    for (int i = 0; i < numSamples; ++i)
-                        mirPre[(size_t) ((wi + i) & (kFxScope - 1))] = 0.5f * (l[i] + r[i]);
-                }
-                else
-                {
-                    //  Y CON EL BUS MUERTO LO QUE SALE DE EL ES SILENCIO, Y HAY
-                    //  QUE ESCRIBIRLO.
-                    //
-                    //  `returnBus` es quien avanza el anillo, y no se llama
-                    //  cuando el bus no esta vivo: los dos anillos se quedaban
-                    //  congelados con lo ULTIMO que paso, asi que el visor
-                    //  seguia dibujando esa cola para siempre. Con casi todos
-                    //  no se notaba porque lo ultimo ya era casi silencio -el
-                    //  envio se suaviza en 20 ms y la nota se apaga-, y FRZ lo
-                    //  saco: se corta a nivel PLENO, asi que el dibujo se
-                    //  quedaba en su ultimo trozo. El banco lo canto con su
-                    //  nombre: `ruidosos [20]`, la columna 1 a 0.4095.
-                    const int wi = mirWrite.load (std::memory_order_relaxed);
-                    for (int i = 0; i < numSamples; ++i)
-                    {
-                        mirPre [(size_t) ((wi + i) & (kFxScope - 1))] = 0.0f;
-                        mirPost[(size_t) ((wi + i) & (kFxScope - 1))] = 0.0f;
-                    }
-                    mirWrite.store ((wi + numSamples) & (kFxScope - 1), std::memory_order_release);
 
-                    //  Y EL TESTIGO BAJA TAMBIEN CON EL BUS MUERTO, que es lo
-                    //  que le faltaba a la version del EQ: la cuenta atras
-                    //  vivia DENTRO de su rama, asi que en cuanto el bus se
-                    //  declaraba muerto dejaba de bajar y el analizador se
-                    //  quedaba diciendo «vivo» para siempre sobre un dibujo
-                    //  congelado.
-                    const int h = mirHot.load (std::memory_order_relaxed);
-                    mirHot.store (juce::jmax (0, h - 1), std::memory_order_relaxed);
-                }
-            }
-        }
 
         //  === LOS DIECISEIS CANALES. ===================================
         //
@@ -2250,10 +2264,6 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             canalEtapa = canal;
             Inserto& I = ins[(size_t) canal];
             const float fsF = (float) systemSampleRate;
-            //  Y EL VISOR DIBUJA LA FASE DE UN SOLO CANAL: el que la cara tiene
-            //  abierto. Con treinta y dos velocidades distintas, publicar «la»
-            //  fase sin decir de quien es dibujar la de cualquiera.
-            const int canalEnLaCara = (miraCan >= 0) ? miraCan : 0;
 
             //  Y AL CALLARSE, LA FASE VUELVE A CERO. El LFO solo avanza con el
             //  bus vivo -eso es lo que hace que el punto del visor se pare sin
@@ -2267,9 +2277,30 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             //  de subida- asi que esto no cambia como suena: cambia lo que el
             //  visor dice mientras no pasa nada, que es «el LFO esta en su
             //  sitio» en vez de «esta a mitad de vuelta».
+            //  ¿ENTRA ALGO EN CADA UNO? Y se mide en el bus ANTES de que su
+            //  etapa escriba: despues, lo que el bus lleva es lo que ella puso.
+            //
+            //  `live` dejo de valer para esta pregunta con la cadena. Contesta
+            //  «este bus esta enrutado» —`busFed`—, y para el PRIMER eslabon de
+            //  un canal eso es cierto en cuanto la ranura esta puesta, suene
+            //  algo o no, porque el pad entra ENTERO. El punto del visor seguia
+            //  entonces dando vueltas con la maquina parada: `Tests/rack.py`,
+            //  «18 de 22 quietos sin señal» —CHO, FLA, PHA y TRM— con la fase
+            //  en 0.0000 antes de sonar y en 0.4813 despues de callar.
+            //
+            //  Y se gobierna lo que se PUBLICA, no el reloj: el reloj tiene que
+            //  correr siempre o los canales dejan de ir sincronizados, que es
+            //  justo lo que esta tanda vino a arreglar.
+            bool modEntra[kNumModEnvio] = {};
             for (int m = 0; m < kNumModEnvio; ++m)
-                if (! live (modIdx (m)) && I.modWasActive[(size_t) m])
-                    modFase[(size_t) m].store (0.0f, std::memory_order_relaxed);
+                modEntra[(size_t) m] = live (modIdx (m))
+                    && fxBus[busIdx (modIdx (m))].getMagnitude (startSample, numSamples) > 1.0e-5f;
+            const bool trmEntra = live (kFxTrm)
+                    && fxBus[busIdx (kFxTrm)].getMagnitude (startSample, numSamples) > 1.0e-5f;
+
+            for (int m = 0; m < kNumModEnvio; ++m)
+                if (! modEntra[(size_t) m])
+                    modFase[(size_t) canal][(size_t) m].store (0.0f, std::memory_order_relaxed);
             // --- CHO: retardo corto barrido, sin realimentacion. -----------
             {
                 const int m = modDe (kFxCho);
@@ -2314,7 +2345,9 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                         }
                         w0[i] = std::isfinite (d0) ? d0 : 0.0f;
                     }
-                    if (canal == canalEnLaCara) modFase[(size_t) m].store (fm.fase - std::floor (fm.fase), std::memory_order_relaxed);
+                    modFase[(size_t) canal][(size_t) m].store (
+                        modEntra[(size_t) m] ? fm.fase - std::floor (fm.fase) : 0.0f,
+                        std::memory_order_relaxed);
                     returnBus (kFxCho);
                 }
             }
@@ -2360,7 +2393,9 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                             w[i] = I.flaFbZ[ch];
                         }
                     }
-                    if (canal == canalEnLaCara) modFase[(size_t) m].store (fm.fase - std::floor (fm.fase), std::memory_order_relaxed);
+                    modFase[(size_t) canal][(size_t) m].store (
+                        modEntra[(size_t) m] ? fm.fase - std::floor (fm.fase) : 0.0f,
+                        std::memory_order_relaxed);
                     returnBus (kFxFla);
                 }
             }
@@ -2412,7 +2447,9 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                             w[i] = std::isfinite (x) ? x : 0.0f;
                         }
                     }
-                    if (canal == canalEnLaCara) modFase[(size_t) m].store (fm.fase - std::floor (fm.fase), std::memory_order_relaxed);
+                    modFase[(size_t) canal][(size_t) m].store (
+                        modEntra[(size_t) m] ? fm.fase - std::floor (fm.fase) : 0.0f,
+                        std::memory_order_relaxed);
                     returnBus (kFxPha);
                 }
             }
@@ -2425,7 +2462,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 //  Y AL CALLARSE, LA FASE VUELVE A CERO, igual que los tres de
                 //  arriba: sin esto el punto del visor se queda parado DONDE LA
                 //  MUSICA LO DEJO, que es a media curva sin nada pasando.
-                if (! live (kFxTrm) && I.trmWasActive)
+                if (! trmEntra)
                     I.trmFase.store (0.0f, std::memory_order_relaxed);
                 {
                     const float prof = juce::jlimit (0.0f, 1.0f,
@@ -2453,7 +2490,8 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                                 w[i] *= g;
                             }
                         }
-                        I.trmFase.store (fm.fase - std::floor (fm.fase), std::memory_order_relaxed);
+                        I.trmFase.store (trmEntra ? fm.fase - std::floor (fm.fase) : 0.0f,
+                                         std::memory_order_relaxed);
                         returnBus (kFxTrm);
                     }
                 }
@@ -3095,6 +3133,38 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             }
         }
 
+        //  EL ANILLO DEL VISOR SE VACIA CUANDO EL EFECTO MIRADO NO SACA NADA.
+        //
+        //  `mirPre` y `mirPost` solo se escriben mientras la etapa corre, y el
+        //  indice solo avanza en `returnBus`. Cuando un bus muere, la ventana se
+        //  queda CONGELADA con lo ultimo que salio — para siempre, hasta que
+        //  vuelva a sonar. En la cara eso es un dibujo clavado; en el banco lo
+        //  canto `Tests/rack.py` con «20 de 22 quietos sin señal», FRZ y WAH.
+        //
+        //  Antes no se veia porque el bus no moria de golpe: lo mataba el fader de
+        //  envio bajando, y `smSend` tarda decenas de bloques en llegar a cero, asi
+        //  que la etapa seguia corriendo y llenaba el anillo de lo que quedaba.
+        //  Con la cadena el pad entra ENTERO en el primer eslabon y el bus se
+        //  declara muerto en UN bloque: media ventana se quedaba con el ultimo
+        //  golpe, y de ahi el 0.157 de RMS que el diagnostico midio con el pad
+        //  callado y el 0.4095 de diferencia de curva entre dos lecturas que
+        //  tenian que ser identicas.
+        //
+        //  Cuesta un bucle de `numSamples` sobre dos anillos de 1024, y solo
+        //  cuando el mirado esta callado. Ni una reserva ni un cerrojo.
+        if (! miradoSalida)
+        {
+            const int wi = mirWrite.load (std::memory_order_relaxed);
+            for (int i = 0; i < numSamples; ++i)
+            {
+                const size_t k = (size_t) ((wi + i) & (kFxScope - 1));
+                mirPre [k] = 0.0f;
+                mirPost[k] = 0.0f;
+            }
+            mirWrite.store ((wi + numSamples) & (kFxScope - 1), std::memory_order_release);
+            mirHot.store (juce::jmax (0, mirHot.load (std::memory_order_relaxed) - 1),
+                          std::memory_order_relaxed);
+        }
     }
 
     //  5d-mon. EL MONITOR, justo encima de la barrera y del limitador.

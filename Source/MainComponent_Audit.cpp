@@ -4624,6 +4624,8 @@ void MainComponent::auditRack()
             refreshMacroValues();
             resized();
 
+            double diagPre = 0.0, diagPost = 0.0; int diagVivo = 0;
+            double diagPre1 = 0.0, diagPost1 = 0.0; int diagVivo1 = 0;
             auto lee = [&] (bool conSenal, int tics)
             {
                 //  EL PAD 0 SE PONE EN EL CANAL 0, Y ESTE PARRAFO DECIA LO
@@ -4639,7 +4641,17 @@ void MainComponent::auditRack()
                 //  el reparto no se toca entre medias, asi que ponerlo donde
                 //  se abre el envio deja las dos mitades juntas.
                 engine.setPadCanal (0, 0);
-                engine.setCanalSend (0, f, 0.0f);
+                //  Y EL CANAL 0 SE VACIA ENTERO, no solo este tipo.
+                //
+                //  Esto ponia `canalSend[0][f] = 1` en cada vuelta y NUNCA
+                //  limpiaba el de la vuelta anterior, asi que el canal 0 iba
+                //  acumulando efectos. Daba igual mientras cada uno recibia su
+                //  copia del pad; con la cadena en serie deja de darlo — al
+                //  llegar a DLY el canal ya tenia un inserto delante y DLY no era
+                //  el primer eslabon. El banco lo canto con `mudos [3, 5]`, y no
+                //  era el visor: era el andamio midiendo con un canal sucio.
+                for (int k = 0; k < AudioEngine::kNumFx; ++k)
+                    engine.setCanalSend (0, k, 0.0f);
                 if (conSenal)
                 {
                     engine.setPadGain (0, 1.0f);
@@ -4657,6 +4669,15 @@ void MainComponent::auditRack()
                                            engine.getLfoFase (canalActual, f));
                 }
                 platoMini.ponVivo (engine.fxScopeVivo());
+                {
+                    double sp = 0.0, sq = 0.0;
+                    for (int i = 0; i < kFxScopeBanco; ++i)
+                    { sp += (double) pre[(size_t) i] * pre[(size_t) i];
+                      sq += (double) post[(size_t) i] * post[(size_t) i]; }
+                    diagPre  = std::sqrt (sp / kFxScopeBanco);
+                    diagPost = std::sqrt (sq / kFxScopeBanco);
+                    diagVivo = engine.fxScopeVivo() ? 1 : 0;
+                }
                 return std::make_pair (platoMini.vivos(),
                                        juce::Point<float> (platoMini.puntoX(), platoMini.puntoY()));
             };
@@ -4692,12 +4713,36 @@ void MainComponent::auditRack()
 
             //  Y QUIETA SIN SEÑAL, con el mismo asentado delante: una capa que
             //  dibuja ruido falla aqui, y una que se ha parado no.
+            diagPre1 = diagPre; diagPost1 = diagPost; diagVivo1 = diagVivo;
             lee (false, 80);
             const auto otra = lee (false, 5);
             if (! distinto (callado, otra)) ++quietosSinSenal;
             else
             {
-                vivoRuido.add (juce::String (f));
+                //  Y CON LAS DOS LECTURAS AL LADO, que es lo que faltaba para
+                //  no tener que adivinar: un indice solo dice QUE capa, y lo que
+                //  hace falta saber es CUANTO se movio y en que eje.
+                //  Y CON LAS DOS LECTURAS AL LADO, que es lo que faltaba para
+                //  no tener que adivinar: el indice dice QUE capa y no CUANTO se
+                //  movio ni en que eje. Va entrecomillado porque este array se
+                //  emite crudo —era una lista de numeros— y sin comillas rompe
+                //  el JSON entero: «la app no publico la linea del rack».
+                float peor = 0.0f; int donde = -1;
+                for (int i = 0; i < FxVisor::kPuntos; ++i)
+                {
+                    const float d = std::abs (callado.first[(size_t) i] - otra.first[(size_t) i]);
+                    if (d > peor) { peor = d; donde = i; }
+                }
+                vivoRuido.add ("\"" + juce::String (f) + "="
+                                 + juce::String (callado.second.x, 4) + ","
+                                 + juce::String (callado.second.y, 4) + ","
+                                 + juce::String (otra.second.x, 4) + ","
+                                 + juce::String (otra.second.y, 4)
+                                 + " curva " + juce::String (peor, 4) + "@" + juce::String (donde)
+                                 + " son1 " + juce::String (diagPre1, 6) + "/" + juce::String (diagPost1, 6)
+                                 + "/" + juce::String (diagVivo1)
+                                 + " q " + juce::String (diagPre, 6) + "/" + juce::String (diagPost, 6)
+                                 + "/" + juce::String (diagVivo) + "\"");
             }
         }
 
