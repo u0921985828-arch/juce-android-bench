@@ -224,6 +224,7 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize, int inputC
     padScratch.setSize (2, juce::jmax (1, maxBlock));
     padScratch.clear();
     for (auto& b : fxBus) { b.setSize (2, juce::jmax (1, maxBlock)); b.clear(); }
+    for (auto& b : secoDeCanal) { b.setSize (2, juce::jmax (1, maxBlock)); b.clear(); }
     busRinging.fill (false);
 
     delayLine.prepare (spec);
@@ -909,25 +910,52 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             smSendHot[(size_t) p] = hot;
             continue;
         }
+        //  EL PAD ENTRA ENTERO EN EL PRIMER ESLABON, que es la cadena.
+        //
+        //  Antes este bucle daba a CADA efecto su fraccion del pad y le restaba
+        //  esa fraccion al camino seco: correcto para un efecto y falso para
+        //  dos, porque los dos recibian el pad y sus salidas se sumaban. Ahora
+        //  el pad va completo al primero de la cadena de su canal, cada eslabon
+        //  se lo pasa al siguiente -ver `returnBus`- y el MIX de cada ranura se
+        //  aplica ALLI, alrededor de su etapa, que es donde significa algo.
+        //
+        //  Los CINCO de la mesa -DLY, REV, CHO y compania no: solo DLY y REV
+        //  desde esta tanda- siguen recibiendo su copia del pad cuando el canal
+        //  no tiene cadena; cuando la tiene, la copia sale del final de la
+        //  cadena, que es lo que hace una mesa.
+        const int primero = primerFxDe (canal);
+
         for (int f = 0; f < kNumFx; ++f)
         {
-            //  EL PRODUCTO DE TRES: la mezcla del efecto, lo que el CANAL manda
-            //  y el recorte con el que el pad se guardo. Los dos ultimos son la
-            //  linea entera del cambio: el envio dejo de ser del pad.
-            const float target = fxMixNow[(size_t) canal][(size_t) f]
-                                   * canalSend[(size_t) canal][(size_t) f].load (std::memory_order_relaxed)
-                                   * padRecorte[(size_t) p][(size_t) f].load (std::memory_order_relaxed);
+            float target = 0.0f;
+            if (f == primero)
+            {
+                //  El primer eslabon recibe el pad ENTERO. El recorte del pad
+                //  -el envio por pad de los ficheros viejos- se queda como lo
+                //  que siempre fue, un factor heredado, y no puede recortar un
+                //  inserto: el aparato es del canal, no del pad.
+                target = 1.0f;
+            }
+            else if (! fxPorCanal[f])
+            {
+                //  Y LOS DE LA MESA, solo si el canal no tiene cadena. Si la
+                //  tiene, la derivacion se hace al final y no aqui.
+                target = (primero < 0)
+                           ? fxMixNow[(size_t) canal][(size_t) f]
+                               * canalSend[(size_t) canal][(size_t) f].load (std::memory_order_relaxed)
+                               * padRecorte[(size_t) p][(size_t) f].load (std::memory_order_relaxed)
+                           : 0.0f;
+            }
             float& sm = smSend[(size_t) p][(size_t) f];
             sm += kSend * (target - sm);
             const float g = (sm < 0.0005f && target < 0.0005f) ? 0.0f : sm;
             sendGain[p][f] = g * smCan;
             if (sendGain[p][f] > 0.0f) { any = true; busFed[(size_t) busDe (canal, f)] = true; }
             if (sm != 0.0f) hot = true;      // aun no ha terminado de bajar
-            //  La resta del seco va con la parte SIN la ganancia del canal: lo
-            //  que el inserto se lleva es una fraccion del pad, y el fader del
-            //  canal escala las dos mitades por igual mas abajo. Con `g * smCan`
-            //  aqui, bajar el canal a la mitad devolveria seco al pad.
-            if (fxSustituye[f]) dry *= (1.0f - g);
+            //  Y EL SECO SE LO LLEVA LA CADENA ENTERA: lo que entra en el primer
+            //  eslabon deja de ir por el camino seco, porque va a salir por el
+            //  ultimo. Con un canal sin cadena, `dry` se queda en uno.
+            if (f == primero) dry *= (1.0f - g);
         }
         dryGain[p]  = dry * smCan;
         canalDePad[p] = canal;
@@ -1672,6 +1700,22 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         //  buffers que leia: la fila de control del banco sale bit a bit.
         int canalEtapa = 0;
 
+        //  EL SECO DEL PRIMER ESLABON, que es lo que los pads acaban de meterle.
+        //
+        //  Cada eslabon mezcla su salida contra LO QUE LE ENTRO, y al primero le
+        //  entra la suma de los pads de su canal. Se copia aqui, con las voces ya
+        //  renderizadas y antes de que ninguna etapa toque nada: hacerlo dentro
+        //  de una etapa seria copiar lo que esa etapa ya escribio.
+        for (int c = 0; c < kNumCanales; ++c)
+        {
+            const int pf = primerFxDe (c);
+            if (pf < 0) continue;
+            const auto& src = fxBus[(size_t) busDe (c, pf)];
+            auto& dst = secoDeCanal[(size_t) c];
+            for (int ch = 0; ch < chans; ++ch)
+                dst.copyFrom (ch, startSample, src, ch, startSample, numSamples);
+        }
+
         //  EL RELOJ AVANZA UNA VEZ POR BLOQUE, y aqui y no dentro de una etapa:
         //  las cuatro de modulacion leen la MISMA marca de tiempo, que es lo que
         //  hace que un coro a 0.25 Hz y otro a 4 Hz sean dos funciones del mismo
@@ -1704,7 +1748,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         //  Return the bus to the master and decide whether it is still alive.
         //  The threshold is far below anything audible; it exists so a reverb
         //  tail is not processed forever after it has decayed to nothing.
-        auto returnBus = [this, &out, &busIdx, startSample, numSamples, chans] (int f) noexcept
+        auto returnBus = [&] (int f) noexcept
         {
             auto& bus = fxBus[busIdx (f)];
 
@@ -1737,6 +1781,111 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 const int h = mirHot.load (std::memory_order_relaxed);
                 mirHot.store (pico > 1.0e-5f ? 100 : juce::jmax (0, h - 1),
                               std::memory_order_relaxed);
+            }
+
+            //  ============================================================
+            //  Y AQUI ES DONDE LA CADENA ES UNA CADENA
+            //  ============================================================
+            //
+            //  Esta linea hacia UN `out.addFrom` y ya esta: cada etapa volvia al
+            //  master por su cuenta, o sea que seis ranuras eran seis caminos en
+            //  PARALELO y no una cadena. EQ en la 1 y CMP en la 2, los dos al
+            //  100 %, daban `EQ(pad) + CMP(pad)` en vez de `CMP(EQ(pad))`.
+            //
+            //  Ahora un tipo DE CANAL no vuelve: se mezcla con su seco segun el
+            //  MIX de su ranura y se lo pasa al siguiente eslabon. Solo el
+            //  ULTIMO de la cadena vuelve al master, y por el camino deja su
+            //  copia en los buses de la mesa —DLY y REV— si el canal les manda.
+            if (fxPorCanal[f])
+            {
+                //  EL MIX DE LA RANURA, alrededor de la etapa. Antes se aplicaba
+                //  mandando una fraccion del pad al bus y restandosela al seco;
+                //  eso es correcto con un efecto y falso con dos, porque el
+                //  segundo recibia el pad y no la salida del primero.
+                //  Y EL FADER DE LA RANURA SIGUE SIENDO UN FADER. `canalSend`
+                //  era «cuanto manda este canal a este bus» y en una cadena
+                //  podria haberse quedado en un interruptor —presente o no—,
+                //  que es lo que la primera version hacia: el fader del RACK
+                //  dejaba de mover nada y solo contaba el MIX. Un mando que no
+                //  hace nada no es informacion, es ruido. Va DENTRO de la
+                //  mezcla del eslabon, o sea «cuanto de este eslabon».
+                const float mix = juce::jlimit (0.0f, 1.0f, P (f, 2))
+                                    * juce::jlimit (0.0f, 1.0f,
+                                        canalSend[(size_t) juce::jlimit (0, kNumCanales - 1, canalEtapa)]
+                                          [(size_t) f].load (std::memory_order_relaxed));
+                auto& sec = secoDeCanal[(size_t) juce::jlimit (0, kNumCanales - 1, canalEtapa)];
+
+                //  Y AQUI `fxSustituye` HACE EXACTAMENTE SU TRABAJO, que es para
+                //  lo que se separo de `fxPorCanal`:
+                //
+                //    · un INSERTO se FUNDE con su seco —`mix x humedo +
+                //      (1 - mix) x seco`— porque su resultado ES la señal.
+                //    · uno que SUMA se AÑADE —`seco + mix x humedo`— porque su
+                //      resultado es material nuevo encima del original.
+                //
+                //  La primera version fundia los dos y lo canto el banco en el
+                //  acto: PHA con «muescas 0.00 dB» y FLA con el peine de 13.95 a
+                //  12.62. Las muescas de un phaser y el peine de un flanger SALEN
+                //  de sumar la copia procesada con la seca; fundidas a mezcla uno
+                //  no queda seco con el que interferir y lo que sale es un
+                //  allpass puro, que no suena a nada. Estaba escrito tres parrafos
+                //  mas arriba, en `fxSustituye`, desde antes de esta tanda.
+                if (fxSustituye[f])
+                {
+                    if (mix < 0.9995f)
+                        for (int ch = 0; ch < chans; ++ch)
+                        {
+                            float* w = bus.getWritePointer (ch, startSample);
+                            const float* d = sec.getReadPointer (ch, startSample);
+                            for (int i = 0; i < numSamples; ++i)
+                                w[i] = mix * w[i] + (1.0f - mix) * d[i];
+                        }
+                }
+                else
+                {
+                    for (int ch = 0; ch < chans; ++ch)
+                    {
+                        float* w = bus.getWritePointer (ch, startSample);
+                        const float* d = sec.getReadPointer (ch, startSample);
+                        for (int i = 0; i < numSamples; ++i)
+                            w[i] = d[i] + mix * w[i];
+                    }
+                }
+
+                const int sig = siguienteFxDe (canalEtapa, f);
+                if (sig >= 0)
+                {
+                    //  Al siguiente, y su seco es LO QUE LE ENTRA: cada eslabon
+                    //  mezcla contra lo que recibio, no contra lo que el pad
+                    //  tenia. Es la diferencia entre una cadena y seis copias.
+                    auto& dst = fxBus[(size_t) busDe (canalEtapa, sig)];
+                    for (int ch = 0; ch < chans; ++ch)
+                    {
+                        dst.copyFrom (ch, startSample, bus, ch, startSample, numSamples);
+                        sec.copyFrom (ch, startSample, bus, ch, startSample, numSamples);
+                    }
+                    busFed[(size_t) busDe (canalEtapa, sig)] = true;
+                    busRinging[busIdx (f)] = (bus.getMagnitude (startSample, numSamples) > 1.0e-5f);
+                    return;
+                }
+
+                //  Y EL ULTIMO DERIVA A LA MESA ANTES DE VOLVER. Un envio se
+                //  toma del final de la tira y no del pad, que es lo que hace
+                //  que la reverb oiga el canal ECUALIZADO y no el pad crudo.
+                for (int m = 0; m < kNumFx; ++m)
+                    if (! fxPorCanal[m])
+                    {
+                        const float env = juce::jlimit (0.0f, 1.0f, fxMixNow[0][(size_t) m])
+                                            * canalSend[(size_t) canalEtapa][(size_t) m]
+                                                .load (std::memory_order_relaxed);
+                        if (env > 0.0005f)
+                        {
+                            auto& bm = fxBus[(size_t) busDe (canalEtapa, m)];
+                            for (int ch = 0; ch < chans; ++ch)
+                                bm.addFrom (ch, startSample, bus, ch, startSample, numSamples, env);
+                            busFed[(size_t) busDe (canalEtapa, m)] = true;
+                        }
+                    }
             }
 
             for (int ch = 0; ch < chans; ++ch)

@@ -5328,9 +5328,23 @@ int main()
     }
 
     {
-        //  Y LA CORRIDA DE CONTROL, que es la que hace creible todo lo demas:
-        //  con los 64 pads en el canal 0 y el canal 0 mandando lo que ayer
-        //  mandaba cada pad, la salida tiene que ser BIT A BIT la de antes.
+        //  EL RECORTE DEL PAD YA NO PUEDE RECORTAR UN INSERTO, y esta medida
+        //  dice ESO en vez de lo que decia.
+        //
+        //  Decia: «el canal mandando lo que ayer mandaba cada pad da la salida
+        //  BIT A BIT de antes», y era cierto mientras cada efecto recibia su
+        //  fraccion del pad. Desde que las ranuras son una CADENA no puede
+        //  serlo: un inserto es del CANAL —su estado en el motor es uno— y el
+        //  pad entra entero en el primer eslabon, asi que un numero por pad no
+        //  tiene donde aplicarse. La medida salio en rojo con 32256 de 47616
+        //  muestras distintas, y tenia razon: lo que cambio es el motor.
+        //
+        //  Lo que se mide ahora es lo unico que sigue siendo verdad y que
+        //  importa: que el recorte del pad NO se ignora en silencio. Un fichero
+        //  anterior con envios distintos por pad abre, suena, y sus numeros
+        //  pasan a ser del canal —se anota en la bitacora y la barra de estado
+        //  lo dice—. Lo que no puede pasar es que el recorte mueva algo a medias
+        //  y nadie sepa cual de los dos manda.
         //
         //  «Casi lo mismo» es justo lo que dejaria pasar una capa que escala de
         //  mas o de menos — es la misma comparacion que el filtro del pad
@@ -5381,9 +5395,129 @@ int main()
         int distintas = 0;
         for (size_t i = 0; i < a.size() && i < c.size(); ++i)
             if (a[i] != c[i]) ++distintas;
-        const bool ok = distintas == 0 && ! a.empty();
-        std::printf ("%-34s %d de %d muestras cambian   %s\n",
-                     "canal y recorte dan lo mismo", distintas, (int) a.size(), ok ? "OK" : zatiFalla());
+
+        //  El de la izquierda manda por el CANAL y el de la derecha por el
+        //  RECORTE del pad. Que salgan distintos es el resultado correcto desde
+        //  la cadena; lo que NO puede salir es que el recorte se coma el sonido
+        //  —el pad tiene que seguir sonando con su cadena entera— asi que la
+        //  segunda cifra es el nivel, que es lo que una regresion silenciosa
+        //  dejaria en cero.
+        double picoRecorte = 0.0;
+        for (float x : c) picoRecorte = juce::jmax (picoRecorte, (double) std::abs (x));
+
+        const bool ok = distintas > 0 && ! a.empty() && picoRecorte > 0.05;
+        std::printf ("%-34s el recorte ya no recorta: %d de %d cambian, y sigue sonando a %.3f   %s\n",
+                     "el recorte del pad es de ayer", distintas, (int) a.size(),
+                     picoRecorte, ok ? "OK" : zatiFalla());
+    }
+
+    // ------------------------------------------------------------------
+    //  Y LAS RANURAS SON UNA CADENA, que es la queja con la que empezo esto:
+    //  «meto un EQ y los sonidos que llegan a ese canal pasan primero por ese
+    //  EQ».
+    //
+    //  No pasaban. Cada etapa tomaba una copia del PAD y volvia al master por
+    //  su cuenta, asi que dos ranuras al 100 % daban `EQ(pad) + CMP(pad)` en vez
+    //  de `CMP(EQ(pad))`. Con UN efecto es identico y por eso vivio tanto.
+    //
+    //  SE MIDE CON EL NIVEL Y NO CON EL ESPECTRO. En paralelo las dos copias se
+    //  SUMAN, asi que sale del orden de seis dB de mas; en cadena el compresor
+    //  ve la señal ya ecualizada y la baja. Son dos numeros muy separados y no
+    //  hace falta mirar ninguna frecuencia para distinguirlos.
+    //
+    //  Y LA SEGUNDA CIFRA ES LA QUE IMPIDE QUE SE CUMPLA SOLA: las mismas dos
+    //  ranuras AL REVES tienen que sonar distinto. En paralelo la suma es
+    //  conmutativa y las dos corridas salen identicas; en cadena, ecualizar
+    //  antes de comprimir no es comprimir antes de ecualizar.
+    {
+        auto corre = [] (int primero, int segundo, std::vector<float>& out)
+        {
+            AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+            enCanalCero (e);
+            e.setPadGain (0, 0.30f);
+            e.setPadCanal (0, 3);
+
+            //  Una campana de +12 dB en el EQ y un compresor con umbral bajo:
+            //  el orden importa porque el segundo VE lo que el primero hizo.
+            e.setEqMix (3, 1.0f);
+            e.setEqBand (3, 2, 300.0f, +12.0f);
+            e.setFxParam (3, AudioEngine::kFxCmp, 0, -40.0f);
+            e.setFxParam (3, AudioEngine::kFxCmp, 1,   8.0f);
+            e.setFxParam (3, AudioEngine::kFxCmp, 2,  1.0f);
+            e.setCanalSend (3, primero, 1.0f);
+            e.setCanalSend (3, segundo, 1.0f);
+
+            auto* sb = new SampleBuffer();
+            const int n = (int) (kFs * 0.80);
+            sb->buffer.setSize (2, n);
+            for (int i = 0; i < n; ++i)
+            {
+                const float x = 0.50f * (float) std::sin (2.0 * juce::MathConstants<double>::pi
+                                                            * 300.0 * (double) i / kFs);
+                sb->buffer.setSample (0, i, x);
+                sb->buffer.setSample (1, i, x);
+            }
+            sb->sourceSampleRate = kFs;
+            e.publishSample (0, SampleBuffer::Ptr (sb));
+
+            juce::AudioBuffer<float> b (2, kBs);
+            b.clear(); e.renderNextBlock (b, 0, kBs);
+            e.postNoteOn (0, 1.0f);
+            out.clear();
+            for (int blk = 0; blk < 28; ++blk)
+            {
+                b.clear(); e.renderNextBlock (b, 0, kBs);
+                if (blk < 8) continue;          // el envio se asienta en 20 ms
+                for (int i = 0; i < kBs; ++i) out.push_back (b.getSample (0, i));
+            }
+        };
+
+        auto rms = [] (const std::vector<float>& v)
+        {
+            double a = 0.0;
+            for (float x : v) a += (double) x * (double) x;
+            return std::sqrt (a / juce::jmax ((size_t) 1, v.size()));
+        };
+
+        std::vector<float> uno, dos, solo;
+        corre (AudioEngine::kFxEq,  AudioEngine::kFxCmp, uno);
+        corre (AudioEngine::kFxCmp, AudioEngine::kFxEq,  dos);
+        //  Y la referencia: SOLO el EQ, o sea un eslabon. Es contra lo que se
+        //  mide «cuanto de mas», porque en paralelo el compresor anade una
+        //  copia entera del pad encima.
+        corre (AudioEngine::kFxEq,  AudioEngine::kFxEq,  solo);
+
+        const double dB = 20.0 * std::log10 (juce::jmax (1.0e-12, rms (uno))
+                                               / juce::jmax (1.0e-12, rms (solo)));
+        int distintas = 0;
+        for (size_t i = 0; i < uno.size() && i < dos.size(); ++i)
+            if (uno[i] != dos[i]) ++distintas;
+
+        //  LAS DOS CIFRAS, MEDIDAS Y NO PREVISTAS: en CADENA sale -27.65 dB
+        //  —el compresor ve la señal ya ecualizada y la aplasta— y en PARALELO
+        //  sale +0.30 —las dos copias se suman, pero la del compresor viene
+        //  aplastada y casi no aporta—. Veintiocho decibelios de separacion.
+        //
+        //  El umbral va en -10 dB, a medio camino. La primera version lo puso en
+        //  +3 «porque en paralelo sube unos seis dB», que era una prevision y no
+        //  una medida: con el defecto dentro salia +0.30 y la prueba decia OK.
+        //  Una prueba cuyo umbral se elige antes de ver las dos cifras no separa
+        //  nada.
+        //
+        //  Y LA SEGUNDA CIFRA SE IMPRIME Y NO SE JUZGA, con su razon: hoy las
+        //  etapas corren en el orden CANONICO de los tipos y no en el de las
+        //  ranuras —los veintitres cuerpos estan escritos en linea y en orden
+        //  fijo dentro de `renderNextBlock`—, asi que EQ va antes que CMP se
+        //  ponga donde se ponga y las dos corridas salen identicas. Sacarlos a
+        //  funciones para poder ejecutarlos en el orden en el que la persona
+        //  arrastra es la tanda siguiente, y esta cifra es la que se pondra en
+        //  verde entonces. Juzgarla hoy seria pedirle al banco que mida algo que
+        //  todavia no se ha construido; no decirla seria fingir que la lista ya
+        //  manda. Es el mismo trato que el contador TOUCH.
+        const bool ok = dB < -10.0;
+        std::printf ("%-34s EQ+CMP contra solo EQ %+.2f dB   (el orden de ranura llega en la tanda que viene: cambian %d de %d)   %s\n",
+                     "las ranuras son una cadena", dB, distintas, (int) uno.size(),
+                     ok ? "OK" : zatiFalla());
     }
 
     // ------------------------------------------------------------------

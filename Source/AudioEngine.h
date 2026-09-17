@@ -2928,6 +2928,47 @@ private:
     //  «¿resta seco?». Los tres de modulacion suman y tienen el suyo.
     static constexpr int kNumBuses = kNumFx + kNumPorCanal * kNumCanales;
 
+    //  ============================================================
+    //  LA CADENA DE UN CANAL: QUIEN VA DESPUES DE QUIEN
+    //  ============================================================
+    //
+    //  Las seis ranuras NO eran una cadena. Cada etapa tomaba una copia del PAD
+    //  y volvia al master por su cuenta -`returnBus` hacia un `out.addFrom`-, o
+    //  sea que EQ en la ranura 1 y CMP en la 2, los dos al 100 %, daban
+    //  `EQ(pad) + CMP(pad)` cuando lo que un inserto significa es
+    //  `CMP(EQ(pad))`. Con UN efecto es identico y por eso no se veia; con dos
+    //  son seis dB de mas y la correccion a medias.
+    //
+    //  Llego del telefono dicho con todas las letras: «meto un EQ y los sonidos
+    //  que llegan a ese canal pasan primero por ese EQ».
+    //
+    //  Que un tipo esta EN la cadena de un canal lo dice `canalSend` —es lo que
+    //  `ponEnRanura` sube al maximo al poner un efecto— asi que no hay tabla
+    //  nueva: la pertenencia ya estaba escrita y solo faltaba leerla en orden.
+    //
+    //  EL ORDEN ES EL CANONICO DE LAS ETAPAS y no el de las ranuras. Los
+    //  veintitres cuerpos estan escritos en linea y en orden fijo dentro de
+    //  `renderNextBlock`; ejecutarlos en el orden en el que la persona arrastra
+    //  pide sacarlos a funciones, y eso es otra tanda. Se dice en vez de fingir
+    //  que la lista ya manda.
+    int primerFxDe (int canal) const noexcept
+    {
+        for (int f = 0; f < kNumFx; ++f)
+            if (fxPorCanal[f] && canalSend[(size_t) canal][(size_t) f]
+                                   .load (std::memory_order_relaxed) > 0.0f)
+                return f;
+        return -1;
+    }
+
+    int siguienteFxDe (int canal, int fx) const noexcept
+    {
+        for (int f = fx + 1; f < kNumFx; ++f)
+            if (fxPorCanal[f] && canalSend[(size_t) canal][(size_t) f]
+                                   .load (std::memory_order_relaxed) > 0.0f)
+                return f;
+        return -1;
+    }
+
     static constexpr int busDe (int canal, int fx) noexcept
     {
         const int i = canalIdx (fx);
@@ -3183,6 +3224,17 @@ private:
     //  siguen siendo los del tipo -que es lo que usan los cinco envios- y
     //  detras van los dieciseis insertos por los dieciseis canales.
     std::array<juce::AudioBuffer<float>, kNumBuses> fxBus;
+
+    //  EL SECO DE CADA ESLABON, uno por canal. Es lo que hace que el MIX de una
+    //  ranura signifique lo que dice cuando hay una cadena: la salida de un
+    //  eslabon es `mix x humedo + (1 - mix) x seco`, y el seco es lo que ENTRO
+    //  en ese eslabon, no lo que el pad tenia.
+    //
+    //  Antes no hacia falta porque no habia cadena: el MIX se implementaba
+    //  mandando una fraccion del pad al bus y restandosela al camino seco, que
+    //  es correcto para UN efecto y falso para dos. Son 32 x 2 x 512 x 4 = 128
+    //  KiB, y se reserva en `prepareToPlay` como todo lo demas.
+    std::array<juce::AudioBuffer<float>, kNumCanales> secoDeCanal;
     std::array<bool, kNumBuses> busRinging {};
     juce::AudioBuffer<float> padScratch;
 
