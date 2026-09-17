@@ -3238,13 +3238,77 @@ void MainComponent::resized()
         //  ocho, igual que CANCELAR se queda fuera del panel de EXPORTAR.
         const int filasG = juce::jmax (1, filasM / 2);
 
+        //  CUANTO ALTO PIDE LA FICHA DEPENDE DE SI VOLVER CABE ARRIBA, y eso
+        //  hay que saberlo ANTES de pedirlo — si se decide despues, la ficha se
+        //  reserva un renglon de menos y el contenido se sale por abajo.
+        //
+        //  El ancho del renglon del titulo sale del de la ficha menos su cromo,
+        //  que se conoce aqui, asi que la cuenta se hace una vez y la usan las
+        //  dos: la del alto y la de la escalera.
+        //  Y LA PALABRA SE MIDE CON LA LETRA QUE LA DIBUJA, no con una parecida.
+        //
+        //  Esto llevaba `monoFont (fMeta, true)` escrito a mano, y la tapa no
+        //  usa esa: `reparteTapa` saca la letra del alto de la CAPA -no del
+        //  componente- y recorta `margenTapa` y `keyAir`. Con la copia salia
+        //  justo la tapa de 40 px que `expo.py` canto: «VOLVER needs 35 has
+        //  34», un pixel. Es la misma leccion que `UiAudit` ya tiene escrita
+        //  encima de `reparteTapa` — *una regla duplicada que no se contrasta
+        //  son dos reglas*.
+        const auto capaV = ZatiLookAndFeel::capaDe (
+                             juce::Rectangle<float> (0.0f, 0.0f,
+                                                     (float) Metrics::hit, (float) Metrics::hit));
+        //  Y NUNCA POR DEBAJO DEL DEDO: en chino la palabra son dos signos y
+        //  la tapa salia de 26 px de ancha, o sea una diana mas estrecha que el
+        //  minimo que esta casa exige en toda la app. El rotulo decide cuanto
+        //  MAS que un dedo mide, no cuanto menos.
+        const int pideVolver = juce::jmax (Metrics::hit,
+                                 (int) std::ceil (juce::GlyphArrangement::getStringWidth
+                                   (ZatiLookAndFeel::letraDeTapa (capaV.getHeight()), T ("VOLVER")))
+                                   + 2 * Metrics::margenTapa);
+
+        //  Y EL ANCHO DEL RENGLON SALE DE DONDE SALE EL DE LA FICHA.
+        //
+        //  Decia `vstSheet.getWidth()`, que en este punto es la VENTANA entera
+        //  -`sheetFromBottom` empieza con `setBounds (getLocalBounds())`- y no
+        //  la tarjeta: la guarda creia tener cincuenta pixeles de mas. El
+        //  camino de verdad es `anchoTarjeta` menos los dos margenes, y menos
+        //  la barra de desplazamiento, que se reserva SIEMPRE: si sobra, VOLVER
+        //  baja a su fila en una pantalla donde habria cabido arriba, y si
+        //  falta se aprieta. De los dos errores solo el segundo se ve.
+        const int anchoTitulo = anchoTarjeta (full.getWidth())
+                                  - 2 * Metrics::margenFichaX
+                                  - vstSheet.vista.getScrollBarThickness();
+
+        //  Y LA GUARDA RESERVA EL TITULO, que es lo que le faltaba. Pedia sitio
+        //  para las TAPAS -VOLVER, PAD y la cruz- y no para la palabra, asi que
+        //  a 412 px entraban las tres y el titulo se quedaba sin aire: «SQUEEZE
+        //  28, ANATOMIA 28». Es la misma cuenta que la escalera del titulo de
+        //  MIDI hace con `pideTitulo`, y por la misma razon.
+        const auto fTit = ZatiColours::labelFont (Metrics::fLabel, 0.14f);
+        const int pideTit = (int) std::ceil (juce::GlyphArrangement::getStringWidth
+                              (fTit, T ("INSTRUMENTO") + "  " + juce::String (juce::CharPointer_UTF8 ("\xc2\xb7"))
+                                       + "  " + T ("PAD %1", juce::String ("64"))))
+                              + 2 * Metrics::lg;
+        //  Y LA CUENTA ES LA DEL RENGLON, ENTERA: la cruz, su aire, PAD, su
+        //  aire, VOLVER y lo que el titulo pide. Los dos `xs` faltaban, que es
+        //  la otra mitad del pixel de «needs 35 has 34».
+        const bool volverArriba = vstVolver.isVisible()
+                                    && anchoTitulo >= Metrics::hit * 2 + 2 * Metrics::xs
+                                                        + pideVolver + pideTit;
         auto inner = sheetFromBottom (vstSheet, Ficha::cromo + cabecera
                                                   + (presetArriba ? 0 : Metrics::xs + filaP)
                                                   + Metrics::sm + Metrics::hit + teclas
                                                   + Metrics::sm + filaM * filasG
                                                   + Metrics::sm + filaM * filasG
                                                   + Metrics::sm + Metrics::hit
-                                                  + Metrics::sm + Metrics::hit
+                                                  //  Y de la fila de VOLVER se descuenta el ALTO, no el
+                                                  //  aire: el `Metrics::sm` se quita de `inner` con fila y
+                                                  //  sin ella —esta escrito fuera del `if`— asi que
+                                                  //  descontarlo dejaba la ficha pidiendo 8 px de menos, y
+                                                  //  esos 8 se los come lo ultimo que se maqueta, que es la
+                                                  //  banda de pie: «la banda de pie mide 34 px y el
+                                                  //  contrato dice 42», 22 veces en `expo.py`.
+                                                  + Metrics::sm + (volverArriba ? 0 : Metrics::hit)
                                                   + Ficha::pie (3));
 
         auto titleRow = inner.removeFromTop (Metrics::hit);
@@ -3262,6 +3326,31 @@ void MainComponent::resized()
                                           .withSizeKeepingCentre (Metrics::hit, Metrics::hit)
                                       : juce::Rectangle<int>());
         }
+        //  Y VOLVER AQUI, que es donde tenia que estar.
+        //
+        //  Se llevaba una FILA ENTERA -44 px mas su aire- para una tapa de un
+        //  tercio, y ademas solo existe con la receta movida: la ficha daba un
+        //  SALTO en cuanto tocabas un mando, porque le crecia un renglon por
+        //  debajo. Un boton que aparece no deberia mover lo que ya estabas
+        //  mirando.
+        //
+        //  Llego del telefono: «el boton que aparece cuando modificas algo, como
+        //  VOLVER, que seria como un reset en verdad». Y eso es lo que es — la
+        //  vuelta a la fila de la tabla— asi que vive donde viven las acciones
+        //  de la ficha, en el renglon del titulo, al lado de la cruz y de PAD.
+        //  Alli el renglon existe siempre, asi que aparecer ya no mueve nada.
+        {
+            Lang::takeEnd (titleRow, Metrics::xs);
+            //  Y SI NO CABE, NO DESAPARECE: BAJA. Esconderla dejaria un RESET
+            //  inalcanzable en las pantallas estrechas, que es peor que la fila
+            //  que se queria ahorrar. Es la escalera que el titulo de MIDI ya
+            //  usa y por lo mismo: una tapa que no cabe en su renglon se busca
+            //  otro, no se borra. La cuenta se hizo arriba, con el alto.
+            if (volverArriba)
+                vstVolver.setBounds (Lang::takeEnd (titleRow, pideVolver)
+                                       .withSizeKeepingCentre (pideVolver, Metrics::hit));
+        }
+
         vstTitleArea = centraEnRenglon (titleRow.reduced (Metrics::lg, 0).withHeight (Metrics::bandaTitulo));
         inner.removeFromTop (Metrics::sm);
 
@@ -3399,15 +3488,14 @@ void MainComponent::resized()
             vstPanelMandos = ponGrupo (inner, filasG * colsM);
             inner.removeFromTop (Metrics::sm);
 
-            //  VOLVER se lleva un tercio: lleva la palabra, y las dos tapas de
-            //  al lado de esta ficha que tambien la llevan -OCT - y OCT +- ya
-            //  estan medidas en un tercio por la misma razon. Y fuera de los
-            //  dos paneles: no es un mando de forma ni uno comun, es la vuelta
-            //  atras de los ocho.
-            auto filaV = inner.removeFromTop (Metrics::hit).reduced (Metrics::lg, 0);
-            vstVolver.setBounds (Lang::takeStart (filaV, juce::jmin (Metrics::hit * 3,
-                                                                     filaV.getWidth() / 3))
-                                     .withHeight (Metrics::hit));
+            //  Y AQUI SOLO SI ARRIBA NO CABIA. Ver el renglon del titulo.
+            if (! volverArriba && vstVolver.isVisible())
+            {
+                auto filaV = inner.removeFromTop (Metrics::hit).reduced (Metrics::lg, 0);
+                vstVolver.setBounds (Lang::takeStart (filaV, juce::jmin (Metrics::hit * 3,
+                                                                         filaV.getWidth() / 3))
+                                         .withHeight (Metrics::hit));
+            }
         }
         inner.removeFromTop (Metrics::sm);
 

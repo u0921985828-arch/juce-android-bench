@@ -2656,7 +2656,12 @@ void MainComponent::paintVstSheetContent (juce::Graphics& g)
                       fam >= 0 ? Zati::colour (Zati::forPad (vstPad)) : juce::Colour());
     }
 
-    auto titleRow = dejaSitio (vstTitleArea, { &vstCloseButton, &vstPadBtn });
+    //  Y VOLVER CUENTA, que es la tapa que esta tanda subio a este renglon: sin
+    //  nombrarla aqui el titulo se pinta DEBAJO de ella. `expo.py` lo canto con
+    //  «SQUEEZE 28, ANATOMIA 28» —siete medidas por cuatro idiomas, o sea esta
+    //  ficha en todas—. Es exactamente el fallo que `dejaSitio` existe para no
+    //  tener, y solo protege de lo que se le nombra.
+    auto titleRow = dejaSitio (vstTitleArea, { &vstCloseButton, &vstPadBtn, &vstVolver });
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
     pintaTitulo (g, titleRow,
