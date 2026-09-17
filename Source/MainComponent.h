@@ -2880,6 +2880,11 @@ private:
     //  escrita dos veces son dos reglas.
     static constexpr int kNumFx      = AudioEngine::kNumFx;
     static constexpr int kNumRanuras = 6;
+    //  CUANTOS PARAMETROS TIENE UN EFECTO, escrito una vez. Eran tres -p0, p1 y
+    //  mezcla- y desde el enganche del modulador son cuatro; el numero aparecia
+    //  a mano en el guardado, en la carga y en el volcado del proyecto, que son
+    //  tres sitios donde acordarse.
+    static constexpr int kParamsPorFx = 4;
     struct FxDef
     {
         const char* name;                  // face button

@@ -9723,8 +9723,12 @@ juce::ValueTree MainComponent::captureState() const
         for (int c = 0; c < kNumCanales; ++c)
         {
             juce::StringArray r;
+            //  CUATRO Y NO TRES desde que existe el ENGANCHE del modulador
+            //  -cero libre en Hz, mayor que cero la division del compas-. La
+            //  fila pasa de 69 numeros a 92, y el lector de abajo admite las
+            //  dos anchuras.
             for (int f = 0; f < kNumFx; ++f)
-                for (int pi = 0; pi < 3; ++pi)
+                for (int pi = 0; pi < kParamsPorFx; ++pi)
                     r.add (juce::String (engine.getFxParam (c, f, pi), 4));
             filas.add (r.joinIntoString (","));
         }
@@ -9765,14 +9769,21 @@ juce::ValueTree MainComponent::captureState() const
 
     //  El fader y el mute de cada canal, dos listas cortas y no dispersas.
     {
-        juce::StringArray g, m;
+        juce::StringArray g, m, pn, an;
         for (int c = 0; c < kNumCanales; ++c)
         {
             g.add (juce::String (engine.getCanalGain (c), 3));
             m.add (engine.getCanalMute (c) ? "1" : "0");
+            pn.add (juce::String (engine.getCanalPan (c), 3));
+            an.add (juce::String (engine.getCanalAncho (c), 3));
         }
         fx.setProperty ("cgain", g.joinIntoString (","), nullptr);
         fx.setProperty ("cmute", m.joinIntoString (","), nullptr);
+        //  El pan y el ancho del canal. Propiedades NUEVAS: un proyecto
+        //  anterior no las trae y entonces valen centrado y uno, que es
+        //  exactamente como sonaba el dia que se guardo.
+        fx.setProperty ("cpan",  pn.joinIntoString (","), nullptr);
+        fx.setProperty ("canc",  an.joinIntoString (","), nullptr);
     }
     //  LAS CINCO BANDAS DEL EQ, DISPERSAS Y EN UNA SOLA PROPIEDAD, por lo
     //  mismo que el acorde y el empujon: son diez numeros y casi ningun
@@ -10071,10 +10082,23 @@ void MainComponent::applyState (const juce::ValueTree& s)
                 juce::StringArray r;
                 if (c < filas.size()) r.addTokens (filas[c], ",", "");
 
+                //  LAS DOS ANCHURAS, que es lo que hace que un proyecto
+                //  anterior abra sin perder nada. Un fichero de antes trae 69
+                //  numeros por canal -tres por tipo- y uno de ahora 92; el
+                //  ancho se DERIVA de lo que la fila trae en vez de declararse,
+                //  que es la misma figura que la rama de compatibilidad de
+                //  `csends`. Con el ancho equivocado no falta un valor: se leen
+                //  todos corridos y cada efecto se queda con el parametro del
+                //  vecino, que es un fallo mucho peor que un defecto.
+                const int porFx = (r.size() >= kNumFx * kParamsPorFx) ? kParamsPorFx : 3;
+
                 for (int f = 0; f < kNumFx; ++f)
-                    for (int pi = 0; pi < 3; ++pi)
+                    for (int pi = 0; pi < kParamsPorFx; ++pi)
                     {
-                        const int k = f * 3 + pi;
+                        //  El cuarto de un fichero viejo no existe: vale CERO,
+                        //  o sea libre, que es como se comportaba.
+                        if (pi >= porFx) { engine.setFxParam (c, f, pi, 0.0f); continue; }
+                        const int k = f * porFx + pi;
                         //  Un canal que no esta en el fichero -o un valor que
                         //  falta dentro de su fila- vale lo que el MANDO acaba
                         //  de resolver arriba, que ya sabe poner el defecto de
@@ -10214,10 +10238,17 @@ void MainComponent::applyState (const juce::ValueTree& s)
             juce::StringArray gs, ms;
             gs.addTokens (fx.getProperty ("cgain", juce::String()).toString(), ",", "");
             ms.addTokens (fx.getProperty ("cmute", juce::String()).toString(), ",", "");
+            juce::StringArray ps, as;
+            ps.addTokens (fx.getProperty ("cpan", juce::String()).toString(), ",", "");
+            as.addTokens (fx.getProperty ("canc", juce::String()).toString(), ",", "");
             for (int c = 0; c < kNumCanales; ++c)
             {
                 engine.setCanalGain (c, c < gs.size() ? gs[c].getFloatValue() : 1.0f);
                 engine.setCanalMute (c, c < ms.size() && ms[c].getIntValue() != 0);
+                //  Sin la propiedad, centrado y uno: un fichero de antes del pan
+                //  del canal suena igual que el dia que se guardo.
+                engine.setCanalPan   (c, c < ps.size() ? ps[c].getFloatValue() : 0.0f);
+                engine.setCanalAncho (c, c < as.size() ? as[c].getFloatValue() : 1.0f);
             }
         }
 

@@ -327,6 +327,19 @@ def main():
                       % (r["tf_canal_pad"], r["tf_canal_cara"], r["tf_canal_eq"],
                          r["tf_manda"], r["tf_mezcla"], r["tf_envio"]))
 
+    #      Y EL PAN DEL CANAL VUELVE DEL FICHERO.
+    #
+    #      `cpan` y `canc` son propiedades NUEVAS, y una propiedad que nadie
+    #      mide es una que se pierde en la primera tanda que toque el guardado
+    #      -acaba de pasar con la cifra de pads recuperados, que llevaba una
+    #      tanda rota-. Se guarda -0.75 y 1.60 porque ninguno de los dos puede
+    #      salir de un defecto: el pan nace centrado y el ancho en uno.
+    print ("canal    el pan del canal vuelve del fichero: %s y ancho %s"
+           % (r["pan_vuelve"], r["anc_vuelve"]))
+    if abs (r["pan_vuelve"] + 0.75) > 0.01 or abs (r["anc_vuelve"] - 1.60) > 0.01:
+        malas.append ("el pan del canal no vuelve del proyecto: %s y %s en vez de "
+                      "-0.75 y 1.60" % (r["pan_vuelve"], r["anc_vuelve"]))
+
     #  6. EL BANCO DE LA REJILLA: que se llegue a los de detras.
     #
     #     Con treinta y dos canales la rejilla sigue siendo de cuatro por cuatro

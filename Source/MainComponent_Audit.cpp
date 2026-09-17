@@ -4067,6 +4067,23 @@ void MainComponent::auditCanales()
     const double envioAlEntrar = (double) engine.getCanalSend (2, AudioEngine::kFxDrv);
     const int    encendidoAlEntrar = fxEncendido (AudioEngine::kFxDrv) ? 1 : 0;
     const double envioDelVecino = (double) engine.getCanalSend (3, AudioEngine::kFxDrv);
+    //  6b. Y EL PAN DEL CANAL VUELVE DEL FICHERO.
+    //
+    //  Es una propiedad NUEVA -`cpan`, `canc`- y una propiedad que nadie mide es
+    //  una que se pierde en la primera tanda que toque el guardado. Se hace por
+    //  el camino de verdad: `captureState` y `applyState`, que es el mismo que
+    //  la cuenta de los pads de los bancos altos uso para salir.
+    engine.setCanalPan   (7, -0.75f);
+    engine.setCanalAncho (7,  1.60f);
+    const auto arbolPan = captureState();
+    engine.setCanalPan   (7, 0.0f);
+    engine.setCanalAncho (7, 1.0f);
+    applyState (arbolPan);
+    const double panVuelve = (double) engine.getCanalPan (7);
+    const double ancVuelve = (double) engine.getCanalAncho (7);
+    engine.setCanalPan   (7, 0.0f);
+    engine.setCanalAncho (7, 1.0f);
+
     const int    mandaAlEntrar = (selectedPad >= 0
                                     && ((engine.getPadSendMask() >> (unsigned) selectedPad) & 1ull)) ? 1 : 0;
 
@@ -4197,6 +4214,8 @@ void MainComponent::auditCanales()
               << ",\"encendido_al_entrar\":" << encendidoAlEntrar
               << ",\"envio_del_vecino\":" << envioDelVecino
               << ",\"manda_al_entrar\":" << mandaAlEntrar
+              << ",\"pan_vuelve\":" << juce::String (panVuelve, 2)
+              << ",\"anc_vuelve\":" << juce::String (ancVuelve, 2)
               << ",\"tf_canal_pad\":" << tfCanalPad
               << ",\"tf_canal_cara\":" << tfCanalCara
               << ",\"tf_canal_eq\":" << tfCanalDelEq
