@@ -411,6 +411,79 @@ MainComponent::MainComponent()
         ranuraSheet.addAndMakeVisible (ranuraVaciarBtn);
     }
 
+    //  LA FICHA DE PRESETS DE UN EFECTO. Ver presetSheet en la cabecera.
+    {
+        //  La puerta: en el renglon del titulo del menu de ranura, al lado de
+        //  la cruz. Solo con un tipo puesto.
+        styleButton (ranuraPresetsBtn, kKey);
+        ranuraPresetsBtn.onClick = [this]
+        {
+            const int fx = juce::isPositiveAndBelow (ranuraEditada, kNumRanuras)
+                             ? enRanura (ranuraEditada) : kSlotVacia;
+            if (fx >= 0) { abreMenuRanura (-1); abreMenuPresets (fx); }
+        };
+        ranuraSheet.addAndMakeVisible (ranuraPresetsBtn);
+
+        addAndMakeVisible (presetSheet);
+        presetSheet.setVisible (false);
+        presetSheet.nombre       = "preset";
+        presetSheet.onDismiss    = [this] { abreMenuPresets (-1); };
+        presetSheet.paintContent = [this] (juce::Graphics& g) { paintPresetContent (g); };
+        styleButton (presetCloseBtn, kKey);
+        presetCloseBtn.onClick = [this] { abreMenuPresets (-1); };
+        presetSheet.addAndMakeVisible (presetCloseBtn);
+
+        //  LAS CELDAS SE CREAN TODAS Y DE UNA VEZ, y las que sobran se apagan
+        //  *y* se quedan sin limites. Crearlas al abrir seria reservar memoria
+        //  en el camino de un toque, y ademas un control que aparece y
+        //  desaparece del arbol no lo puede medir el volcado de la interfaz.
+        for (int i = 0; i < FxPresets::kPresets + kFxPresetsTuyosMax; ++i)
+        {
+            auto* b = new juce::TextButton ("");
+            styleButton (*b, kStepOff);
+            litAccent (*b);
+            b->onClick = [this, i]
+            {
+                if (! juce::isPositiveAndBelow (presetEditado, kNumFx)) return;
+                pushUndo (T ("PRESET"));
+                if (i < FxPresets::kPresets) aplicaFxPreset (presetEditado, i);
+                else
+                {
+                    const int t = i - FxPresets::kPresets;
+                    if (t < presetTuyosVistos.size())
+                        aplicaFxPresetTuyo (presetEditado, presetTuyosVistos[t]);
+                }
+                abreMenuPresets (-1);
+            };
+            presetSheet.addAndMakeVisible (b);
+            presetBtns.add (b);
+        }
+
+        //  GUARDAR LO QUE HAY PUESTO, con su nombre. La carpeta `ZATI/Presets`
+        //  existia desde siempre, se creaba en cada arranque y no la llamaba
+        //  nadie: esta es la tapa que le da dueno.
+        presetNombreBox.setMultiLine (false);
+        presetNombreBox.setReturnKeyStartsNewLine (false);
+        presetNombreBox.setTextToShowWhenEmpty (T ("NOMBRE"),
+                                                ZatiColours::ink.withAlpha (0.45f));
+        presetSheet.addAndMakeVisible (presetNombreBox);
+
+        styleButton (presetGuardarBtn, kKey);
+        presetGuardarBtn.onClick = [this]
+        {
+            if (! juce::isPositiveAndBelow (presetEditado, kNumFx)) return;
+            const auto nombre = presetNombreBox.getText().trim();
+            //  Y LO QUE DICE LA BARRA SALE DE DONDE ACABO EL FICHERO, no de que
+            //  la orden no fallara: `guardaFxPresetTuyo` solo devuelve cierto
+            //  despues de `isAChildOf` y de releer lo escrito.
+            const bool ok = guardaFxPresetTuyo (presetEditado, nombre);
+            status.setText (ok ? T ("Preset guardado") : T ("Ponle nombre primero"),
+                            juce::dontSendNotification);
+            if (ok) { presetNombreBox.clear(); abreMenuPresets (-1); }
+        };
+        presetSheet.addAndMakeVisible (presetGuardarBtn);
+    }
+
     //  LA FICHA DE UNA BANDA DEL EQ. Ver eqBandaSheet en la cabecera.
     {
         addAndMakeVisible (eqBandaSheet);
@@ -4794,10 +4867,18 @@ juce::String MainComponent::fxFormat (const FxDef::Spec& sp, double v)
 }
 
 // Slider -> engine, in the same order as the table above.
-void MainComponent::pushFxParam (int f, int pi)
+//  LAS DOS LINEAS QUE DE VERDAD ESCRIBEN, un piso por debajo del mando.
+//
+//  `pushFxParam` lee del deslizador, y el deslizador solo existe para los TRES
+//  primeros: el cuarto -el enganche del modulador- lo guarda el motor y no
+//  tiene mando. Un preset escribe los cuatro, asi que necesitaba una puerta que
+//  no pasara por un mando que no hay. Copiar las dos lineas habria sido la
+//  misma regla en dos sitios, que es justo lo que el parrafo de abajo cuenta
+//  que ya paso una vez con el `switch` de veintiun casos.
+void MainComponent::escribeFxParam (int f, int pi, float v)
 {
-    if (! juce::isPositiveAndBelow (f, kNumFx) || ! juce::isPositiveAndBelow (pi, 3)) return;
-    const float v = (float) fxParam (f, pi).getValue();
+    if (! juce::isPositiveAndBelow (f, kNumFx)
+        || ! juce::isPositiveAndBelow (pi, kParamsPorFx)) return;
 
     //  UNA SOLA TRADUCCION, y vive en el MOTOR. Aqui habia un switch de
     //  veintiun casos y era correcto mientras el unico que movia un parametro
@@ -4808,9 +4889,288 @@ void MainComponent::pushFxParam (int f, int pi)
 
     //  Y SI ESTA ARMADO, SE ESCRIBE. Aqui y no en `onValueChange` del mando:
     //  por esta funcion pasan TODOS los caminos que mueven un parametro -el
-    //  mando, el pad XY, la curva del EQ y el interruptor- y escribir en cada
-    //  uno serian cuatro reglas.
+    //  mando, el pad XY, la curva del EQ, el interruptor y ahora un preset- y
+    //  escribir en cada uno serian cinco reglas.
     anotaAutomacion (canalActual, f, pi, v);
+
+    //  Y POR LO MISMO, EL PRESET DEJA DE SER EL QUE ERA. Por aqui pasan los
+    //  cinco caminos, asi que la marca va aqui y no en cada uno; la unica
+    //  excepcion es el propio preset, que se anuncia con la guarda.
+    if (! aplicandoFxPreset) marcaFxMovido (f);
+}
+
+void MainComponent::marcaFxMovido (int f)
+{
+    if (! juce::isPositiveAndBelow (f, kNumFx)) return;
+    fxPresetPuesto[(size_t) canalActual][(size_t) f] = kFxPresetMovido;
+    fxPresetTuyo  [(size_t) canalActual][(size_t) f] = {};
+}
+
+void MainComponent::pushFxParam (int f, int pi)
+{
+    if (! juce::isPositiveAndBelow (f, kNumFx) || ! juce::isPositiveAndBelow (pi, 3)) return;
+    const float v = (float) fxParam (f, pi).getValue();
+
+    escribeFxParam (f, pi, v);
+}
+
+// ---------------------------------------------------------------------------
+//  LOS PRESETS DE EFECTO. Ver Source/FxPresets.h y Source/FxPresets.inc.
+// ---------------------------------------------------------------------------
+//
+//  Llego del telefono: «1 tipo de cada, si que podriamos preparar presets para
+//  cada efecto, estudialo». Hasta aqui un efecto arrancaba en su fila de
+//  `kFxDef` y a partir de ahi se movia a mano: veintitres tipos por cuatro
+//  parametros por treinta y dos canales.
+
+//  ACOTAR EN LA PUERTA, que es la mitad del molde de los instrumentos.
+//
+//  Copia literal de la forma de `Sintes::acota`, incluido el `isfinite`
+//  EXPLICITO: un NaN no lo tapa `jlimit`, porque comparar con NaN siempre es
+//  falso y las dos ramas del limite salen falsas. Sin esto, un fichero de
+//  preset escrito a mano o de otra epoca mete un NaN en el motor y la etapa se
+//  queda muda hasta que alguien cambie de ruta.
+//
+//  Y LOS RANGOS NO SE DECLARAN OTRA VEZ: salen de `fxDefs[f].spec[pi]`, que es
+//  donde el numero esta razonado. El cuarto parametro no tiene `spec` -no es un
+//  mando- asi que se acota contra lo que significa: cero es libre y el resto es
+//  la division del compas, que llega hasta el compas entero.
+double MainComponent::acotaFxPreset (int f, int pi, double v) const
+{
+    if (! juce::isPositiveAndBelow (f, kNumFx)
+        || ! juce::isPositiveAndBelow (pi, kParamsPorFx)) return 0.0;
+
+    if (pi >= 3)
+        return std::isfinite (v) ? juce::jlimit (0.0, (double) AudioEngine::kEngancheMax,
+                                                 std::floor (v + 0.5)) : 0.0;
+
+    const auto& sp = fxDefs[f].spec[pi];
+    return std::isfinite (v) ? juce::jlimit (sp.lo, sp.hi, v) : sp.def;
+}
+
+//  PONER UN PRESET ES ESCRIBIR SUS CUATRO NUMEROS, y por el camino de verdad.
+//
+//  Los tres primeros pasan por el deslizador que los guarda -si no, el mando
+//  ensena una cosa y el motor tiene otra en cuanto vuelves a la ficha- y el
+//  cuarto va directo, que es para lo que existe `escribeFxParam`.
+void MainComponent::aplicaFxPreset (int f, int k)
+{
+    if (! juce::isPositiveAndBelow (f, kNumFx)) return;
+    k = juce::jlimit (0, FxPresets::cuantos() - 1, k);
+
+    const juce::ScopedValueSetter<bool> puesto (aplicandoFxPreset, true);
+
+    for (int pi = 0; pi < kParamsPorFx; ++pi)
+    {
+        const double v = acotaFxPreset (f, pi, (double) FxPresets::valor (f, k, pi));
+        if (pi < 3) fxParam (f, pi).setValue (v, juce::dontSendNotification);
+        escribeFxParam (f, pi, (float) v);
+    }
+
+    //  Y LAS CINCO BANDAS, solo en el EQ. Su estado no vive en `fxP` sino en
+    //  `Eq5`, que es exactamente por lo que el EQ es el unico efecto con
+    //  superficie propia: veinte numeros no caben en dos mandos.
+    if (const char* bandas = FxPresets::bandas (f, k))
+        aplicaBandasEq (bandas);
+
+    //  EL MIX ES TAMBIEN EL INTERRUPTOR de la ranura, asi que ponerlo tiene que
+    //  mover la luz igual que la mueve el mando. Sin esto queda una tapa
+    //  apagada sobre un efecto que suena, que es la mitad del fallo que
+    //  `macroMoved` ya tenia escrito.
+    {
+        const bool on = FxPresets::valor (f, k, 2) > 0.001f;
+        if (on != fxEncendido (f))
+        {
+            ponFxEncendido (f, on);
+            if (const int sl = slotDeFx (f); sl >= 0)
+                fxButtons[sl]->setToggleState (on, juce::dontSendNotification);
+        }
+    }
+
+    fxPresetPuesto[(size_t) canalActual][(size_t) f] = k;
+    fxPresetTuyo  [(size_t) canalActual][(size_t) f] = {};
+
+    if (f == focusedFx) { refreshMacroValues(); refrescaVisorPlato(); }
+    refrescaRanuras();
+    repaint (bandaMandos());
+}
+
+//  LAS CINCO BANDAS DE UN PRESET DE EQ, EN EL FORMATO QUE EL PROYECTO YA USA.
+//
+//  `hz:dB:tipo:Q` por banda y punto y coma entre bandas, que es literalmente la
+//  propiedad `eqc` de `captureState`. Un segundo formato para lo mismo es un
+//  segundo sitio donde equivocarse al leer, y ya paso con el recorte del pad.
+//
+//  Y se escribe en el MOTOR y se relee el espejo con `refrescaEq`, porque quien
+//  acota es `Eq5::ponBanda`: preguntarle a el es lo unico que garantiza que la
+//  curva dibuje lo que de verdad se quedo puesto.
+void MainComponent::aplicaBandasEq (const juce::String& txt)
+{
+    auto filas = juce::StringArray::fromTokens (txt, ";", "");
+    filas.removeEmptyStrings();
+    for (int b = 0; b < Eq5::kBands && b < filas.size(); ++b)
+    {
+        auto t = juce::StringArray::fromTokens (filas[b], ":", "");
+        if (t.size() < 4) continue;
+        //  Y POR LAS TRES PUERTAS, no por el motor. El comentario de
+        //  `ponBandaEq` lo dejo escrito antes de que existiera esto: «escrito
+        //  en el callback de la curva serian dos caminos el dia que un preset
+        //  o el fichero de proyecto pongan una banda».
+        ponBandaEq (b, t[0].getFloatValue(), t[1].getFloatValue());
+        ponTipoEq  (b, t[2].getIntValue());
+        ponQEq     (b, t[3].getFloatValue());
+    }
+    refrescaEq();
+}
+
+//  LO QUE LA FICHA ENSENA, y es UNA cifra y no dos: o el nombre del preset, o
+//  MOVIDO. Un rotulo que dice «PLACA» con el audio ya cambiado miente, y en
+//  esta casa un control que dice lo que no hace vale menos que uno que no dice
+//  nada. Es el patron de `padRecetaMovida`.
+juce::String MainComponent::fxPresetNombre (int f) const
+{
+    if (! juce::isPositiveAndBelow (f, kNumFx)) return {};
+    const auto& tuyo = fxPresetTuyo[(size_t) canalActual][(size_t) f];
+    if (tuyo.isNotEmpty()) return tuyo;
+    const int k = fxPresetPuesto[(size_t) canalActual][(size_t) f];
+    if (k == kFxPresetMovido) return T ("MOVIDO");
+    return FxPresets::nombre (f, k);
+}
+
+// ---------------------------------------------------------------------------
+//  LOS TUYOS, EN `ZATI/Presets`.
+// ---------------------------------------------------------------------------
+//
+//  `ProjectStore::presets()` existia, se creaba en cada arranque con el resto
+//  del arbol y NO LA LLAMABA NADIE: una carpeta declarada, documentada como
+//  «saved pad settings» y sin dueno, que es el mismo hallazgo que `chopGrupos`.
+//  *Una regla que el codigo no cumple deja de proteger nada*, asi que o se le
+//  da dueno o se borra. Esto es lo primero.
+//
+//  Una carpeta por TIPO y un fichero por preset: `ZATI/Presets/EQ/MI VOZ.txt`.
+//  Por tipo y no todos juntos porque un preset de DLY no significa nada en FLT
+//  -sus dos numeros son otra cosa- y una lista mezclada obligaria a leer
+//  veintitres veces mas ficheros para ensenar seis.
+juce::File MainComponent::carpetaFxPresets (int f)
+{
+    if (! juce::isPositiveAndBelow (f, kNumFx)) return {};
+    return ProjectStore::presets().getChildFile (fxDefs[f].name);
+}
+
+//  GUARDAR: el molde de `recetaATexto` y el saneado de `guardarKit`, los dos
+//  tal cual.
+//
+//  Cuatro numeros por espacio con seis decimales -no tres: el cuarto es el
+//  enganche del modulador y es parte del sonido- y, solo en el EQ, un segundo
+//  renglon con sus cinco bandas en el formato que el proyecto ya escribe.
+bool MainComponent::guardaFxPresetTuyo (int f, const juce::String& nombre)
+{
+    if (! juce::isPositiveAndBelow (f, kNumFx)) return false;
+
+    //  LA MISMA CADENA DE TRES PASOS QUE `guardarKit`, y por las mismas
+    //  razones: `createLegalFileName` quita las barras pero DEJA los puntos, y
+    //  `getChildFile` resuelve `..` subiendo un nivel — un preset llamado `..`
+    //  escribiria fuera de la biblioteca. Sesenta caracteres de tope.
+    const auto limpio = ProjectStore::componente (
+                            juce::File::createLegalFileName (nombre.trim()).substring (0, 60));
+    if (limpio.isEmpty()) return false;
+
+    const auto dir = carpetaFxPresets (f);
+    //  Y LA POSTCONDICION, que son sus dos mitades: `isAChildOf` es lo que no
+    //  se puede sortear con otro nombre raro, y `ensureDirectory` comprueba que
+    //  la carpeta EXISTE en vez de creerse lo que devolvio `createDirectory`.
+    if (! dir.isAChildOf (ProjectStore::presets())
+        || ! ProjectStore::ensureDirectory (dir)) return false;
+
+    const auto dest = dir.getChildFile (limpio + ".txt");
+    if (! dest.isAChildOf (dir)) return false;
+
+    juce::StringArray nums;
+    for (int pi = 0; pi < kParamsPorFx; ++pi)
+        nums.add (juce::String (engine.getFxParam (canalActual, f, pi), 6));
+
+    juce::String texto = nums.joinIntoString (" ");
+    if (f == kFxEq)
+    {
+        juce::StringArray e;
+        for (int b = 0; b < Eq5::kBands; ++b)
+            e.add (juce::String (engine.getEqFreq (canalActual, b), 1) + ":"
+                     + juce::String (engine.getEqGain (canalActual, b), 2) + ":"
+                     + juce::String (engine.getEqTipo (canalActual, b)) + ":"
+                     + juce::String (engine.getEqQ (canalActual, b), 2));
+        texto << juce::newLine << e.joinIntoString (";");
+    }
+
+    //  `escribeTexto` y no `replaceWithText`: se escribe al lado, se valida y
+    //  se mueve encima. Ver ProjectStore — una escritura que se queda sin
+    //  espacio a mitad renombraba un fichero truncado encima de uno bueno.
+    if (! ProjectStore::escribeTexto (dest, texto,
+            [] (const juce::File& t) { return t.loadFileAsString().isNotEmpty(); }))
+        return false;
+
+    fxPresetTuyo  [(size_t) canalActual][(size_t) f] = limpio;
+    fxPresetPuesto[(size_t) canalActual][(size_t) f] = kFxPresetMovido;
+    refrescaRanuras();
+    return true;
+}
+
+juce::StringArray MainComponent::fxPresetsTuyos (int f) const
+{
+    juce::StringArray out;
+    const auto dir = carpetaFxPresets (f);
+    if (! dir.isDirectory()) return out;
+    for (const auto& e : juce::RangedDirectoryIterator (dir, false, "*.txt",
+                                                        juce::File::findFiles))
+        out.add (e.getFile().getFileNameWithoutExtension());
+    out.sortNatural();
+    return out;
+}
+
+//  LEER: partir del DEFECTO y re-acotar en la puerta, igual que
+//  `recetaDeTexto`. Un fichero truncado deja los que faltan en fabrica y no en
+//  cero, y un numero de otra epoca no entra en el motor tal cual.
+void MainComponent::aplicaFxPresetTuyo (int f, const juce::String& nombre)
+{
+    if (! juce::isPositiveAndBelow (f, kNumFx) || nombre.isEmpty()) return;
+    const auto file = carpetaFxPresets (f).getChildFile (nombre + ".txt");
+    if (! file.existsAsFile()) return;
+
+    auto lineas = juce::StringArray::fromLines (file.loadFileAsString());
+    lineas.removeEmptyStrings();
+    if (lineas.isEmpty()) return;
+
+    auto toks = juce::StringArray::fromTokens (lineas[0], " ", "");
+    toks.removeEmptyStrings();
+
+    const juce::ScopedValueSetter<bool> puesto (aplicandoFxPreset, true);
+
+    for (int pi = 0; pi < kParamsPorFx; ++pi)
+    {
+        const double crudo = pi < toks.size() ? toks[pi].getDoubleValue()
+                                              : (double) FxPresets::valor (f, 0, pi);
+        const double v = acotaFxPreset (f, pi, crudo);
+        if (pi < 3) fxParam (f, pi).setValue (v, juce::dontSendNotification);
+        escribeFxParam (f, pi, (float) v);
+    }
+
+    if (f == kFxEq && lineas.size() > 1) aplicaBandasEq (lineas[1]);
+
+    {
+        const bool on = engine.getFxParam (canalActual, f, 2) > 0.001f;
+        if (on != fxEncendido (f))
+        {
+            ponFxEncendido (f, on);
+            if (const int sl = slotDeFx (f); sl >= 0)
+                fxButtons[sl]->setToggleState (on, juce::dontSendNotification);
+        }
+    }
+
+    fxPresetPuesto[(size_t) canalActual][(size_t) f] = kFxPresetMovido;
+    fxPresetTuyo  [(size_t) canalActual][(size_t) f] = nombre;
+
+    if (f == focusedFx) { refreshMacroValues(); refrescaVisorPlato(); }
+    refrescaRanuras();
+    repaint (bandaMandos());
 }
 
 //  UN EVENTO POR PASO Y POR PARAMETRO, y el ultimo gana.
@@ -4923,6 +5283,11 @@ void MainComponent::ponBandaEq (int b, float hz, float dB)
 {
     eqEspejo.ponBanda (b, hz, dB);
     engine.setEqBand  (canalActual, b, hz, dB);
+    //  Y el preset deja de ser el que era. Las bandas NO pasan por
+    //  `escribeFxParam` -su estado vive en `Eq5` y no en `fxP`-, asi que la
+    //  marca hay que ponerla tambien en estas tres puertas. Es la misma
+    //  excepcion que hace del EQ el unico efecto con superficie propia.
+    if (! aplicandoFxPreset) marcaFxMovido (kFxEq);
     eqCurva.repaint();
 }
 
@@ -4933,6 +5298,7 @@ void MainComponent::ponTipoEq (int b, int t)
 {
     eqEspejo.ponTipo (b, t);
     engine.setEqTipo  (canalActual, b, t);
+    if (! aplicandoFxPreset) marcaFxMovido (kFxEq);
     eqCurva.repaint();
 }
 
@@ -4940,6 +5306,7 @@ void MainComponent::ponQEq (int b, float q)
 {
     eqEspejo.ponQ (b, q);
     engine.setEqQ  (canalActual, b, q);
+    if (! aplicandoFxPreset) marcaFxMovido (kFxEq);
     eqCurva.repaint();
 }
 
@@ -5429,6 +5796,70 @@ void MainComponent::refrescaMenuRanura()
         }
 
     ranuraVaciarBtn.setVisible (puesto >= 0);
+}
+
+//  LA FICHA DE PRESETS DE UN EFECTO. Ver FxPresets.h.
+void MainComponent::abreMenuPresets (int fx)
+{
+    const bool abrir = juce::isPositiveAndBelow (fx, kNumFx);
+    presetEditado = abrir ? fx : -1;
+    presetSheet.setVisible (abrir);
+
+    if (abrir)
+    {
+        //  LOS TUYOS SE LEEN AL ABRIR y no en cada repintado: es E/S, y en el
+        //  hilo de mensajes una lectura de directorio por fotograma es lo que
+        //  dejo la lista del navegador parpadeando. Se guarda lo que se
+        //  ensena, que es ademas lo que la tapa necesita para saber a cual
+        //  llamar.
+        presetTuyosVistos = fxPresetsTuyos (fx);
+        while (presetTuyosVistos.size() > kFxPresetsTuyosMax) presetTuyosVistos.remove (kFxPresetsTuyosMax);
+        presetSheet.toFront (false);
+        refrescaMenuPresets();
+    }
+    else
+    {
+        //  APAGAR *Y* VACIAR LOS LIMITES, las dos cosas. Un control encendido
+        //  de 0x0 pasa las ocho reglas de geometria y el banco lo canto con
+        //  807 CERO.
+        for (auto* b : presetBtns) if (b != nullptr) b->setBounds ({});
+        presetCloseBtn.setBounds ({});
+        presetNombreBox.setBounds ({});
+        presetGuardarBtn.setBounds ({});
+        presetSheet.sheetBounds = {};
+        presetTituloBanda = {};
+    }
+
+    resized();
+    repaint();
+}
+
+void MainComponent::refrescaMenuPresets()
+{
+    const int f = presetEditado;
+    if (! juce::isPositiveAndBelow (f, kNumFx)) return;
+
+    const int puesto = fxPresetPuesto[(size_t) canalActual][(size_t) f];
+    const auto& tuyo = fxPresetTuyo  [(size_t) canalActual][(size_t) f];
+
+    for (int i = 0; i < presetBtns.size(); ++i)
+    {
+        auto* b = presetBtns[i];
+        if (b == nullptr) continue;
+
+        const bool deFabrica = i < FxPresets::kPresets;
+        const int  t = i - FxPresets::kPresets;
+        const bool hay = deFabrica || t < presetTuyosVistos.size();
+
+        b->setVisible (hay);
+        if (! hay) { b->setBounds ({}); continue; }
+
+        b->setButtonText (deFabrica ? juce::String (FxPresets::nombre (f, i))
+                                    : presetTuyosVistos[t]);
+        b->setToggleState (deFabrica ? (tuyo.isEmpty() && i == puesto)
+                                     : (tuyo == presetTuyosVistos[t]),
+                           juce::dontSendNotification);
+    }
 }
 
 void MainComponent::ranuraTocada (int ranura)
@@ -6310,6 +6741,9 @@ void MainComponent::closeAllSheets()
     //  Y EL MENU DE UNA RANURA, por lo mismo: tambien vive ENCIMA de todo, asi
     //  que sin esto se queda flotando sobre la ficha que se acaba de abrir.
     if (ranuraEditada >= 0) abreMenuRanura (-1);
+    //  Y la de presets, que vive igual: encima de todo y abierta desde el menu
+    //  de ranura.
+    if (presetEditado >= 0) abreMenuPresets (-1);
 
     //  CERRAR LA FICHA XY EN MOMENTANEO TIENE QUE APAGAR EL EFECTO.
     //
@@ -8577,6 +9011,14 @@ void MainComponent::retranslateUi()
     //  banco en la primera corrida con la ficha nueva puesta, «VACIAR
     //  identical in es and en», siete veces.
     ranuraVaciarBtn.setButtonText (T ("VACIAR"));
+    //  Y LAS DOS DE LOS PRESETS, por lo mismo: el rotulo de una tapa se pone
+    //  AQUI y no en el constructor, que es donde el idioma todavia no se ha
+    //  elegido. `expo.py` lo canto con «GUARDAR identical in es and en», 98
+    //  veces, y ademas con el rotulo espanol midiendo 45 px en una tapa de 34.
+    ranuraPresetsBtn.setButtonText (T ("PRESETS"));
+    presetGuardarBtn.setButtonText (T ("GUARDAR"));
+    presetNombreBox.setTextToShowWhenEmpty (T ("NOMBRE"),
+                                            ZatiColours::ink.withAlpha (0.45f));
     //  Las tres del modo dicen el ESTADO, no un verbo: ver modoTapa.
     for (juce::TextButton* b2 : { &songModeBtn, &modoBtn, &seqModoBtn })
         modoTapa (*b2, engine.isSongMode());
@@ -9753,6 +10195,42 @@ juce::ValueTree MainComponent::captureState() const
         fx.setProperty ("slots", filas.joinIntoString (";"), nullptr);
     }
 
+    //  QUE PRESET LLEVA PUESTO CADA EFECTO DE CADA CANAL. Ver FxPresets.h.
+    //
+    //  `-1` es MOVIDO, que es tambien lo que un proyecto ANTERIOR a esto tiene
+    //  que dar: sus numeros se pusieron a mano y no hay preset que los nombre.
+    //  Y con la misma forma que sus vecinas -comas dentro del canal, punto y
+    //  coma entre canales- porque la anchura se DERIVA del tamano de la fila al
+    //  leer, que es la leccion de `fxp`: con el ancho equivocado no falta un
+    //  valor, se leen todos corridos y cada efecto se queda con el del vecino.
+    {
+        juce::StringArray filas;
+        for (int c = 0; c < kNumCanales; ++c)
+        {
+            juce::StringArray r;
+            for (int f = 0; f < kNumFx; ++f)
+                r.add (juce::String (fxPresetPuesto[(size_t) c][(size_t) f]));
+            filas.add (r.joinIntoString (","));
+        }
+        fx.setProperty ("fxpr", filas.joinIntoString (";"), nullptr);
+    }
+
+    //  Y EL NOMBRE, solo donde el puesto es uno TUYO de `ZATI/Presets`.
+    //
+    //  DISPERSA de verdad: son 736 casillas y la inmensa mayoria no llevan
+    //  ninguno, asi que escribir 736 campos vacios seria engordar el fichero
+    //  para decir que no hay nada. Cada entrada es `canal:efecto:nombre`, con
+    //  barra entre entradas — el `;` y la `,` ya estan cogidos por las vecinas.
+    {
+        juce::StringArray tuyos;
+        for (int c = 0; c < kNumCanales; ++c)
+            for (int f = 0; f < kNumFx; ++f)
+                if (const auto& n = fxPresetTuyo[(size_t) c][(size_t) f]; n.isNotEmpty())
+                    tuyos.add (juce::String (c) + ":" + juce::String (f) + ":" + n);
+        if (! tuyos.isEmpty())
+            fx.setProperty ("fxprn", tuyos.joinIntoString ("|"), nullptr);
+    }
+
     //  Y LOS ENVIOS DEL CANAL, con la misma forma: veintiun numeros por canal,
     //  los canales por punto y coma. Es lo que ANTES vivia en cada `<PAD>` como
     //  `sends`, y esa propiedad ya no se escribe — ver la rama de lectura.
@@ -10168,6 +10646,60 @@ void MainComponent::applyState (const juce::ValueTree& s)
                             repe = slotFx[(size_t) c][(size_t) t] == v;
                         if (repe) slotFx[(size_t) c][(size_t) s] = kSlotVacia;
                     }
+            }
+
+            //  QUE PRESET LLEVA PUESTO CADA EFECTO. Ver FxPresets.h.
+            //
+            //  El defecto es MOVIDO y no DEFECTO, y eso NO es prudencia: un
+            //  proyecto anterior a esto tiene los numeros que alguien puso a
+            //  mano, y llamarlos «DEFECTO» seria la ficha diciendo un nombre
+            //  que no describe lo que suena. Es el mismo criterio que `slots`
+            //  ya usa con su defecto antiguo: *lo que manda no es cual es el
+            //  defecto de hoy sino como sonaba el dia que se guardo.*
+            for (auto& fila : fxPresetPuesto) fila.fill (kFxPresetMovido);
+            for (auto& fila : fxPresetTuyo)   for (auto& n : fila) n.clear();
+
+            if (fx.hasProperty ("fxpr"))
+            {
+                juce::StringArray filas;
+                filas.addTokens (fx.getProperty ("fxpr").toString(), ";", "");
+                for (int c = 0; c < kNumCanales && c < filas.size(); ++c)
+                {
+                    juce::StringArray r;
+                    r.addTokens (filas[c], ",", "");
+                    for (int f = 0; f < kNumFx; ++f)
+                    {
+                        const int v = f < r.size() ? r[f].getIntValue() : kFxPresetMovido;
+                        //  ACOTADO EN LA PUERTA: un fichero de otra epoca puede
+                        //  traer un indice que ya no existe, y un indice fuera
+                        //  de la tabla se lee como basura en vez de como
+                        //  «ninguno». Todo lo que no sea un preset valido es
+                        //  MOVIDO, que es lo unico que siempre es cierto.
+                        fxPresetPuesto[(size_t) c][(size_t) f] =
+                            juce::isPositiveAndBelow (v, FxPresets::cuantos()) ? v : kFxPresetMovido;
+                    }
+                }
+            }
+
+            //  Y los tuyos, que van dispersos: `canal:efecto:nombre` con barra
+            //  entre entradas.
+            if (fx.hasProperty ("fxprn"))
+            {
+                juce::StringArray tuyos;
+                tuyos.addTokens (fx.getProperty ("fxprn").toString(), "|", "");
+                for (const auto& e : tuyos)
+                {
+                    const int dosp = e.indexOfChar (':');
+                    if (dosp < 0) continue;
+                    const int dosp2 = e.indexOfChar (dosp + 1, ':');
+                    if (dosp2 < 0) continue;
+                    const int c = e.substring (0, dosp).getIntValue();
+                    const int f = e.substring (dosp + 1, dosp2).getIntValue();
+                    const auto n = e.substring (dosp2 + 1);
+                    if (! juce::isPositiveAndBelow (c, kNumCanales)
+                        || ! juce::isPositiveAndBelow (f, kNumFx) || n.isEmpty()) continue;
+                    fxPresetTuyo[(size_t) c][(size_t) f] = n;
+                }
             }
 
             //  Y un efecto que quedo ENCENDIDO en el fichero y cuya ranura ya

@@ -1398,6 +1398,44 @@ void MainComponent::resized()
         auto titleRow = inner.removeFromTop (Metrics::hit);
         ranuraCloseBtn.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
                                     .withSizeKeepingCentre (Metrics::hit, Metrics::hit));
+
+        //  LA PUERTA A LOS PRESETS, y en este renglon porque es el unico sitio
+        //  de este camino donde sobra ancho: la fila del rack esta llena y
+        //  medida -el fader se queda en 119 px a 280x653- y otra tapa de
+        //  cuarenta la dejaria en 79.
+        //
+        //  Solo con un tipo PUESTO: sobre una ranura vacia no hay presets que
+        //  elegir, que es la misma regla que ya tiene VACIAR ahi abajo. Y con
+        //  la escalera del renglon, igual que VOLVER en la ficha del
+        //  instrumento: si no cabe con el titulo, no se esconde -se queda
+        //  fuera y el titulo manda-, porque un menu sin titulo no dice de que
+        //  ranura es.
+        {
+            const int puestoR = conVaciar ? enRanura (ranuraEditada) : kSlotVacia;
+            const auto fPre = ZatiLookAndFeel::letraDeTapa (
+                                  ZatiLookAndFeel::capaDe (juce::Rectangle<float> (
+                                      0.0f, 0.0f, (float) Metrics::hit, (float) Metrics::hit))
+                                  .getHeight());
+            const int pidePre = juce::jmax (Metrics::hit,
+                                  (int) std::ceil (juce::GlyphArrangement::getStringWidth
+                                    (fPre, ranuraPresetsBtn.getButtonText())) + 2 * Metrics::margenTapa);
+            const auto fTitR = ZatiColours::labelFont (Metrics::fLabel, 0.14f);
+            const int pideTitR = (int) std::ceil (juce::GlyphArrangement::getStringWidth
+                                   (fTitR, T ("PRESETS"))) + 2 * Metrics::lg;
+            const bool cabePre = puestoR >= 0
+                                   && titleRow.getWidth() >= Metrics::xs + pidePre + pideTitR;
+            ranuraPresetsBtn.setVisible (cabePre);
+            if (cabePre)
+            {
+                Lang::takeEnd (titleRow, Metrics::xs);
+                ranuraPresetsBtn.setBounds (Lang::takeEnd (titleRow, pidePre)
+                                              .withSizeKeepingCentre (pidePre, Metrics::hit));
+            }
+            else
+            {
+                ranuraPresetsBtn.setBounds ({});
+            }
+        }
         //  El titulo se queda con lo que sobra del renglon, y lo PUBLICA para
         //  que el pintor no vuelva a calcularlo: una banda deducida dos veces
         //  son dos bandas.
@@ -1437,6 +1475,70 @@ void MainComponent::resized()
                 if (f == ranuraBtns.size() - 1) break;
             }
             inner.removeFromTop (Metrics::xs);
+        }
+    }
+
+    //  LA FICHA DE PRESETS DE UN EFECTO. Ver abreMenuPresets.
+    //
+    //  Misma maquinaria que el menu de ranura y no una nueva: `sheetFromBottom`
+    //  para la tarjeta y su tope, y `menuRanuraColumnas` para repartir las
+    //  celdas. Lo unico que cambia es CUANTAS son —seis de fabrica mas los
+    //  tuyos, contra veintitres tipos— y que la fila de abajo no es VACIAR sino
+    //  la caja del nombre con GUARDAR.
+    if (presetEditado >= 0)
+    {
+        const int celdas = juce::jmax (1, FxPresets::kPresets + presetTuyosVistos.size());
+
+        const auto zonaP = safeArea();
+        const int topeAltoP = altoTarjeta (zonaP);
+        const int anchoDentroP = anchoTarjeta (zonaP.getWidth()) - 2 * Metrics::margenFichaX;
+        const int colsP  = menuRanuraColumnas (celdas, topeAltoP, anchoDentroP, true);
+        const int filasP = (celdas + colsP - 1) / colsP;
+        auto innerP = sheetFromBottom (presetSheet, menuRanuraPide (filasP, true));
+
+        auto titleRowP = innerP.removeFromTop (Metrics::hit);
+        presetCloseBtn.setBounds (Lang::takeEnd (titleRowP, Metrics::hit)
+                                    .withSizeKeepingCentre (Metrics::hit, Metrics::hit));
+        presetTituloBanda = centraEnRenglon (titleRowP.withHeight (Metrics::bandaTitulo));
+        innerP.removeFromTop (Metrics::sm);
+
+        //  LA FILA DE GUARDAR SE APARTA PRIMERO, que es la regla de la casa:
+        //  una fila de tapas no encoge y las filas de la rejilla si.
+        {
+            auto filaG = innerP.removeFromBottom (Metrics::btn);
+            innerP.removeFromBottom (Metrics::sm);
+            const auto fG = ZatiLookAndFeel::letraDeTapa (
+                                ZatiLookAndFeel::capaDe (juce::Rectangle<float> (
+                                    0.0f, 0.0f, (float) Metrics::btn, (float) Metrics::btn))
+                                .getHeight());
+            const int pideG = juce::jmax (Metrics::hit,
+                                (int) std::ceil (juce::GlyphArrangement::getStringWidth
+                                  (fG, presetGuardarBtn.getButtonText())) + 2 * Metrics::margenTapa);
+            presetGuardarBtn.setBounds (Lang::takeEnd (filaG, pideG));
+            Lang::takeEnd (filaG, Metrics::xs);
+            presetNombreBox.setBounds (filaG);
+        }
+
+        const int filaHP = juce::jmax (Metrics::hit,
+                                       (innerP.getHeight() - (filasP - 1) * Metrics::xs) / filasP);
+        for (int r = 0; r < filasP; ++r)
+        {
+            auto row = innerP.removeFromTop (filaHP);
+            const int w = row.getWidth() / colsP;
+            for (int c = 0; c < colsP; ++c)
+            {
+                const int i = r * colsP + c;
+                if (i >= celdas) break;
+                //  Una fila incompleta reparte sus celdas al ANCHO DE COLUMNA y
+                //  no se reparte lo que queda entre las que hay, igual que el
+                //  menu de ranura y por lo mismo.
+                const bool ultima = (i == celdas - 1) || (c == colsP - 1);
+                presetBtns[i]->setBounds ((ultima && c == colsP - 1 ? row
+                                                                    : row.removeFromLeft (w))
+                                            .reduced (Metrics::aireTapaDensa, 0));
+                if (i == celdas - 1) break;
+            }
+            innerP.removeFromTop (Metrics::xs);
         }
     }
 

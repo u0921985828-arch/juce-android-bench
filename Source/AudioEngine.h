@@ -92,6 +92,18 @@ public:
     //      un cuadrado a la mitad de la frecuencia. Son dos algoritmos
     //      distintos y suenan a dos cosas distintas.
     static constexpr int kNumFx         = 23;
+    //  CUANTOS PARAMETROS TIENE UN EFECTO, y aqui y no en la cara: el motor es
+    //  quien los guarda. Estaba escrito como un `4` literal en el tipo de `fxP`
+    //  y otra vez en el de `cebaSuavizados`, y la cara llevaba su propia
+    //  `kParamsPorFx` al lado — tres sitios donde acordarse el dia que sean
+    //  cinco. La cara lee esta, igual que ya lee `kNumFx`.
+    static constexpr int kNumParFx      = 4;
+    //  Y HASTA DONDE LLEGA EL CUARTO. Cero es libre en Hz; por encima es el
+    //  denominador de la division —ver `pasoMod`, donde `vueltasPorNegra` sale
+    //  de `4 / div`—: 1 semicorchea, 2 corchea, 4 negra, 8 blanca y 16 el
+    //  compas entero. El tope vive aqui y no en la cara porque lo que decide
+    //  que significa el numero es `pasoMod`, que es del motor.
+    static constexpr int kEngancheMax   = 16;
     //  Que indice es cada uno de los cuatro de dinamica, escrito UNA vez: los
     //  usa el bucle de la etapa, `setFxParam` y la cara para saber de cual
     //  leer la reduccion.
@@ -662,7 +674,7 @@ public:
     //  los 1008 numeros es el motor.
     float getFxParam (int canal, int fx, int par) const noexcept
     {
-        if (! juce::isPositiveAndBelow (fx, kNumFx) || ! juce::isPositiveAndBelow (par, 4))
+        if (! juce::isPositiveAndBelow (fx, kNumFx) || ! juce::isPositiveAndBelow (par, kNumParFx))
             return 0.0f;
         return fxParamDe (canal, fx, par).load (std::memory_order_relaxed);
     }
@@ -2497,7 +2509,7 @@ private:
     //  que un parametro de efecto tenga UN sitio. Una tabla paralela que el
     //  fichero de proyecto, la automatizacion y la cara tuviesen que aprender
     //  por separado es la deuda que este array salda. Son 2.9 KB.
-    std::array<std::array<std::array<std::atomic<float>, 4>, kNumFx>, kNumCanales> fxP;
+    std::array<std::array<std::array<std::atomic<float>, kNumParFx>, kNumFx>, kNumCanales> fxP;
 
     //  LA PUERTA UNICA. `sustituye` decide si el canal cuenta: escrito en cada
     //  sitio de lectura serian cincuenta copias de la misma condicion y la que
@@ -3160,7 +3172,7 @@ private:
         //  Un motor vivo desliza en ~20 ms porque un mando acaba de moverse; un
         //  rebote no tiene ese pasado, y deslizar desde los defectos meteria el
         //  filtro en el primer compas de cada exportacion.
-        void cebaSuavizados (const std::array<std::array<std::atomic<float>, 4>, kNumFx>& fila) noexcept
+        void cebaSuavizados (const std::array<std::array<std::atomic<float>, kNumParFx>, kNumFx>& fila) noexcept
         {
             const auto v = [&fila] (int f, int par) noexcept
             { return fila[(size_t) f][(size_t) par].load (std::memory_order_relaxed); };

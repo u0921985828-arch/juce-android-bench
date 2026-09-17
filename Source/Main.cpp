@@ -550,6 +550,11 @@ public:
                     {
                         c2->auditRack();
                     }
+                    //  LOS PRESETS DE CADA EFECTO. Ver Tests/presets.py.
+                    else if (UiAudit::env ("ZATI_PRESETS").isNotEmpty())
+                    {
+                        c2->auditFxPresets();
+                    }
                     //  LOS MODOS ARMADOS: SOLO desde la cara, y que el LIENZO
                     //  diga que hay un modo puesto. Ver Tests/modos.py.
                     else if (UiAudit::env ("ZATI_MODOS").isNotEmpty())

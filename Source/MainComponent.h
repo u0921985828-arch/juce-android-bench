@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include <vector>
 #include "AudioEngine.h"
+#include "FxPresets.h"
 #include "SampleLoader.h"
 #include "WaveformDisplay.h"
 #include "SpectrumDisplay.h"
@@ -1547,6 +1548,8 @@ public:
     void auditRanuras();
     void auditCanales();
     void auditRack();
+    //  LOS PRESETS DE CADA EFECTO. Ver Tests/presets.py.
+    void auditFxPresets();
     //  SOLO desde la cara y el modo visto en el lienzo. Ver Tests/modos.py.
     void auditModos();
     void auditEq();
@@ -2884,7 +2887,7 @@ private:
     //  mezcla- y desde el enganche del modulador son cuatro; el numero aparecia
     //  a mano en el guardado, en la carga y en el volcado del proyecto, que son
     //  tres sitios donde acordarse.
-    static constexpr int kParamsPorFx = 4;
+    static constexpr int kParamsPorFx = AudioEngine::kNumParFx;
     struct FxDef
     {
         const char* name;                  // face button
@@ -3030,6 +3033,37 @@ private:
     void paintRanuraContent (juce::Graphics& g);
     juce::Rectangle<int> ranuraTituloBanda;
 
+    //  LA FICHA DE PRESETS DE UN EFECTO. Ver FxPresets.h.
+    //
+    //  Se abre desde el RENGLON DEL TITULO del menu de ranura y no desde una
+    //  tapa nueva en la fila del rack: esa fila ya esta llena y medida -canalon
+    //  52, apagar 40 y el fader 249 en 412x915 pero **119 en 280x653**- y otra
+    //  tapa de cuarenta la dejaria en 79. Cero gestos nuevos y cero pixeles
+    //  nuevos donde no hay.
+    Sheet presetSheet;
+    juce::TextButton presetCloseBtn { juce::CharPointer_UTF8 (Metrics::cruz) };
+    //  Y la puerta, en el renglon del titulo del menu de ranura. Solo con un
+    //  tipo puesto: sobre una ranura vacia no hay presets que elegir, que es la
+    //  misma regla que ya tiene VACIAR.
+    juce::TextButton ranuraPresetsBtn { "PRESETS" };
+
+    //  CUANTOS TUYOS CABEN EN LA LISTA. Un tope y no una lista sin fin: la
+    //  rejilla se reparte en columnas con `menuRanuraColumnas`, que pide el
+    //  numero de celdas, y sin tope una carpeta con doscientos ficheros
+    //  devuelve una ficha de mil pixeles que `sheetFromBottom` recorta en
+    //  silencio — que es la causa de la fila de CADENA y de la REJILLA a 217x0.
+    static constexpr int kFxPresetsTuyosMax = 12;
+    juce::OwnedArray<juce::TextButton> presetBtns;   // 6 de fabrica + los tuyos
+    juce::TextEditor presetNombreBox;
+    juce::TextButton presetGuardarBtn { "GUARDAR" };
+    int presetEditado = -1;                 // que efecto se esta eligiendo, o -1
+    juce::StringArray presetTuyosVistos;    // los que la rejilla esta ensenando
+    juce::Rectangle<int> presetTituloBanda;
+
+    void abreMenuPresets (int fx);
+    void refrescaMenuPresets();
+    void paintPresetContent (juce::Graphics& g);
+
     juce::OwnedArray<juce::TextButton> fxButtons;
 
     std::vector<AudioEngine::EventoAuto> autoEventos;
@@ -3047,7 +3081,41 @@ private:
     void setFxEnabled (int fx, bool on);
     void focusFx (int fx);
     void pushFxParam (int fx, int p);              // slider -> engine
+    //  EL EMBUDO DE VERDAD, y esta un piso por debajo de `pushFxParam`.
+    //
+    //  `pushFxParam` lee del deslizador, y el deslizador solo existe para los
+    //  TRES primeros parametros: el cuarto -el enganche del modulador- lo
+    //  guarda el motor y no tiene mando. Un preset escribe los cuatro, asi que
+    //  necesita una puerta que no pase por un mando que no hay. Las dos lineas
+    //  que de verdad importan -escribir en el motor y anotar la automatizacion-
+    //  viven aqui y no se copian.
+    void escribeFxParam (int fx, int p, float v);
     juce::Slider& fxParam (int fx, int p) { return *fxParams[fx * 3 + p]; }
+
+    //  LOS PRESETS DE EFECTO. Ver Source/FxPresets.h.
+    //
+    //  `fxPreset[canal][fx]` es CUAL esta puesto, y `-1` es MOVIDO: el patron
+    //  exacto de `padRecetaMovida`, y por la misma razon — una ficha que dice
+    //  «PLACA» con el audio ya cambiado miente, y mentir sobre lo que suena es
+    //  peor que no decir nada.
+    static constexpr int kFxPresetMovido = -1;
+    //  Y la guarda que impide que poner un preset se marque a si mismo como
+    //  MOVIDO: `escribeFxParam` es el embudo de los dos caminos.
+    bool aplicandoFxPreset = false;
+    void marcaFxMovido (int fx);
+    std::array<std::array<int, kNumFx>, kNumCanales> fxPresetPuesto {};
+    //  Y el nombre, cuando el puesto es uno TUYO de `ZATI/Presets`. Disperso a
+    //  proposito: la inmensa mayoria de las casillas no llevan ninguno.
+    std::array<std::array<juce::String, kNumFx>, kNumCanales> fxPresetTuyo;
+
+    double acotaFxPreset (int fx, int p, double v) const;
+    void   aplicaFxPreset (int fx, int k);
+    void   aplicaBandasEq (const juce::String& txt);
+    void   aplicaFxPresetTuyo (int fx, const juce::String& nombre);
+    bool   guardaFxPresetTuyo (int fx, const juce::String& nombre);
+    juce::StringArray fxPresetsTuyos (int fx) const;
+    static juce::File carpetaFxPresets (int fx);
+    juce::String      fxPresetNombre (int fx) const;   // lo que la ficha ensena
     static juce::String fxFormat (const FxDef::Spec& sp, double v);
 
     // Dynamic knob labels (spec Zone 4): at rest the knob shows its permanent

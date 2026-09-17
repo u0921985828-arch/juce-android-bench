@@ -29,7 +29,7 @@ SIZES = [
     ("915x412",  "LANDSCAPE — the orientation nobody tests"),
 ]
 LANGS = ["es", "en", "zh", "ar"]
-SHEETS = ["", "plato", "songm", "pads", "pad2", "pad3", "sec", "secp", "paso", "eq", "eqb", "song", "piano", "pianod", "pianosel", "pick", "mix", "xy", "set", "asp", "proj", "gest", "midi", "midf", "lang", "manual", "mixc", "canal", "rack", "rackf", "ranura", "ranural", "chop", "inst", "instd", "instg", "vst", "vstm", "expo", "tour", "tour1", "tour3", "tour6", "tour10", "tourf", "browse", "browsedir",
+SHEETS = ["", "plato", "songm", "pads", "pad2", "pad3", "sec", "secp", "paso", "eq", "eqb", "song", "piano", "pianod", "pianosel", "pick", "mix", "xy", "set", "asp", "proj", "gest", "midi", "midf", "lang", "manual", "mixc", "canal", "rack", "rackf", "ranura", "ranural", "preset", "preseteq", "chop", "inst", "instd", "instg", "vst", "vstm", "expo", "tour", "tour1", "tour3", "tour6", "tour10", "tourf", "browse", "browsedir",
 #  Y LA MISMA MAQUINA CON TRABAJO DENTRO. Todo lo de arriba se mide con
 #  un proyecto vacio o con el kit de fabrica, y casi todo lo que un
 #  rotulo puede romper solo aparece lleno: un nombre de pad que es el
@@ -398,6 +398,53 @@ UNTRANSLATED_OK = {
     "file:",
     "\u4e2d\u6587", "\u0627\u0644\u0639\u0631\u0628\u064a\u0629",   # each language names itself, in itself
 }
+#  Y LOS NOMBRES DE PRESET DE EFECTO, que NO se traducen a proposito: son
+#  nombres propios, igual que `Sintes::Preset::nombre` y que los veintitres
+#  nombres de efecto que ya estan aqui arriba. Traducir «PLACA» lo convierte en
+#  otro preset.
+#
+#  SE LEEN DEL FUENTE Y NO SE ESCRIBEN AQUI. Ciento quince nombres copiados a
+#  mano son ciento quince sitios donde esta lista se queda vieja el dia que uno
+#  se renombra, y entonces la regla dice que hay un rotulo sin traducir donde
+#  solo hay un nombre cambiado. Es lo mismo que `marcas.py` hace con `fxDefs`:
+#  se parsean, **se cuentan contra lo que el fuente declara**, y si la cuenta no
+#  sale la prueba FALLA en vez de seguir con media lista.
+def _presetsDeFabrica ():
+    raiz = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
+    inc  = os.path.join (raiz, "Source", "FxPresets.inc")
+    hdr  = os.path.join (raiz, "Source", "FxPresets.h")
+    eng  = os.path.join (raiz, "Source", "AudioEngine.h")
+    try:
+        texto = open (inc, encoding="utf8").read()
+        cab   = open (hdr, encoding="utf8").read()
+        mot   = open (eng, encoding="utf8").read()
+    except OSError:
+        return None
+
+    #  `{ "NOMBRE", numero, ...` — el mismo ancla que marcas.py usa con fxDefs,
+    #  y con el espacio admitido dentro del nombre: «OCHO BITS» y «MAS GOLPE»
+    #  son dos palabras.
+    nombres = re.findall (r'\{\s*"([A-Z0-9 ]{1,16})"\s*,\s*[-0-9]', texto)
+
+    mEsc = re.search (r'kEscritos\s*=\s*(\d+)', cab)
+    mFx  = re.search (r'kNumFx\s*=\s*(\d+)', mot)
+    if mEsc is None or mFx is None:
+        return None
+    esperados = int (mEsc.group (1)) * int (mFx.group (1))
+    if len (nombres) != esperados:
+        return None            # la cuenta no sale: que lo diga el veredicto
+
+    #  Y el cero, que no esta en la tabla porque se deriva de `kFxDef`.
+    return set (nombres) | {"DEFECTO"}
+
+
+PRESETS_FABRICA = _presetsDeFabrica ()
+if PRESETS_FABRICA is None:
+    print ("FALLA: no se pudieron leer los presets de FxPresets.inc; "
+           "esta regla no mide nada asi")
+    sys.exit (1)
+UNTRANSLATED_OK |= PRESETS_FABRICA
+
 #  A number with a unit welded to it - "0 st", "120 bpm", "2 ms", "0 c" - is
 #  the same string in every language and always will be.
 UNTRANSLATED_UNIT = re.compile(r'^[+\-]?[0-9][0-9.,]*\s*(st|c|ms|s|bpm|dB|Hz|kHz|%|x)?$', re.I)

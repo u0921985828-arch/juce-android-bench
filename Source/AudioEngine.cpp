@@ -3813,7 +3813,19 @@ void AudioEngine::renderClips (juce::AudioBuffer<float>& out, int offset, int n,
 //   · La mezcla se acota a 0..1 en la puerta, como hacia `setDynMix`.
 void AudioEngine::setFxParam (int canal, int fx, int par, float v) noexcept
 {
-    if (! juce::isPositiveAndBelow (fx, kNumFx) || ! juce::isPositiveAndBelow (par, 3)) return;
+    //  CUATRO Y NO TRES, y esto era un parametro que NO SE PODIA ESCRIBIR.
+    //
+    //  El cuarto -el enganche del modulador- se anadio con el reloj derivado:
+    //  el motor le hizo sitio en `fxP`, el fichero de proyecto pasó a guardar
+    //  cuatro por tipo y `getFxParam` ya contestaba por los cuatro. Esta
+    //  guarda se quedó en tres, asi que TODO el que intentaba escribirlo
+    //  -incluido `applyState` al abrir un proyecto- se iba por el `return` sin
+    //  que nada fallara: el enganche estaba vivo, medido y era de solo
+    //  lectura. Lo canto `Tests/presets.py` con «PHA repite los numeros de
+    //  CORCHEA»: dos presets que solo se diferencian en la division del compas
+    //  salian identicos, con el cuarto en 0.000000 en los dos.
+    if (! juce::isPositiveAndBelow (fx, kNumFx)
+        || ! juce::isPositiveAndBelow (par, kNumParFx)) return;
 
     //  `fxParamDe` es quien sabe que un envio ignora el canal, asi que aqui no
     //  hay una segunda copia de esa condicion.

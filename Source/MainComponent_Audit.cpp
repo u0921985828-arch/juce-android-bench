@@ -2448,6 +2448,12 @@ void MainComponent::auditOpen (const juce::String& pedido)
     //  tanto pide una fila mas y mide otra cosa.
     else if (which == "ranura")  { ponEnRanura (0, kSlotVacia); abreMenuRanura (0); }
     else if (which == "ranural") { ponEnRanura (0, 3);          abreMenuRanura (0); }
+    //  LA FICHA DE PRESETS, con un tipo que TRAE los suyos y con el EQ, que es
+    //  el unico cuyo preset lleva ademas cinco bandas. Dos entradas y no una:
+    //  la excepcion declarada tiene que verse en la matriz de `expo.py` como se
+    //  ve la ficha del instrumento con la receta movida.
+    else if (which == "preset")  { ponEnRanura (0, 3);  abreMenuPresets (3); }
+    else if (which == "preseteq"){ ponEnRanura (0, kFxEq); abreMenuPresets (kFxEq); }
     //  LA FICHA DE INSTRUMENTOS, en sus dos estados: con el pack de dentro
     //  -cuatro tapas de cuatro- y con uno de disco lleno y CERRADO, que es
     //  donde los rotulos llevan el candado delante y por tanto miden otra cosa.
@@ -6123,4 +6129,233 @@ void MainComponent::auditTomas()
 
     std::cout << "{\"tomas\":3,\"antes\":" << antesDeGuardar
               << ",\"vuelven\":" << vuelven << "}" << std::endl;
+}
+
+//  ==========================================================================
+//  LOS PRESETS DE CADA EFECTO. Ver Tests/presets.py y Source/FxPresets.h.
+//  ==========================================================================
+//
+//  Esta funcion NO JUZGA NADA: rinde. Es la misma doctrina que `auditInstr` —
+//  la ponderacion y los listones viven en Python, y escribirlos en C++ seria la
+//  misma regla en dos sitios. Aqui se pone cada preset, se mide lo que sale y
+//  se publica una linea por caso.
+//
+//  Y SE MIDE EN UN CANAL QUE NO ES EL CERO, que es la leccion que costo
+//  dieciocho efectos mudos: el banco medía el camino de cada efecto en el canal
+//  0 -que era justo el unico que funcionaba- y las dos medidas salian verdes
+//  con el fallo dentro. Aqui el pad va al canal 4.
+void MainComponent::auditFxPresets()
+{
+    constexpr int kCanal = 4;
+    constexpr int kBloque = 128;
+    //  SEISCIENTOS OCHENTA MILISEGUNDOS, y la cifra viene de una medida y no
+    //  de un numero redondo: con 24 bloques -64 ms- salian SIETE presets
+    //  «mudos» y cuatro de ellos eran los del delay, con sus tiempos en 90,
+    //  250, 375 y 500 ms. El eco no llegaba dentro de la ventana. La ventana
+    //  tiene que cubrir el parametro mas largo que un preset pone, que es el
+    //  medio segundo de DLY LARGO, y con margen para su cola.
+    constexpr int kBloques = 256;
+
+    engine.prepareToPlay (48000.0, kBloque);
+
+    //  UN RUIDO Y NO UN TONO: un seno deja fuera casi todo el espectro, y
+    //  entonces «este preset no cambia nada» diria mas de donde cayo el tono
+    //  que del preset. Es la misma razon por la que la capa viva del rack se
+    //  mide con ruido.
+    auto ruido = []
+    {
+        auto* sb = new SampleBuffer();
+        const int n = 24000;
+        sb->buffer.setSize (2, n);
+        juce::Random r (20260917);
+        for (int c = 0; c < 2; ++c)
+            for (int i = 0; i < n; ++i)
+                sb->buffer.setSample (c, i, 0.5f * (r.nextFloat() * 2.0f - 1.0f));
+        sb->sourceSampleRate = 48000.0;
+        return SampleBuffer::Ptr (sb);
+    };
+
+    closeAllSheets();
+    engine.setPadCanal (0, kCanal);
+    engine.setPadGain  (0, 1.0f);
+    engine.publishSample (0, ruido());
+
+    //  Rendir una tirada entera con el efecto puesto y devolver lo que sale.
+    auto rinde = [&] (juce::AudioBuffer<float>& out)
+    {
+        engine.postPanic();
+        out.setSize (2, kBloque * kBloques, false, false, true);
+        out.clear();
+        //  Un golpe y luego se deja correr: lo que se compara es la MISMA
+        //  entrada pasada por dos ajustes, asi que el disparo va una vez y en
+        //  el mismo sitio de las dos tiradas.
+        engine.postNoteOn (0, 1.0f);
+        juce::AudioBuffer<float> b (2, kBloque);
+        for (int i = 0; i < kBloques; ++i)
+        {
+            b.clear();
+            engine.renderNextBlock (b, 0, kBloque);
+            for (int ch = 0; ch < 2; ++ch)
+                out.copyFrom (ch, i * kBloque, b, ch, 0, kBloque);
+        }
+    };
+
+    juce::AudioBuffer<float> seco, mojado;
+
+    for (int f = 0; f < kNumFx; ++f)
+    {
+        //  EL CANAL SE VACIA ENTERO EN CADA VUELTA. Con la cadena en serie, no
+        //  limpiar el tipo anterior deja al de ahora con un inserto delante y
+        //  entonces no mide lo que dice medir. Es la figura de `enCanalCero`:
+        //  *una prueba que arrastra estado mide otra cosa.*
+        for (int k = 0; k < kNumRanuras; ++k) slotFx[(size_t) kCanal][(size_t) k] = kSlotVacia;
+        for (int k = 0; k < kNumFx; ++k) engine.setCanalSend (kCanal, k, 0.0f);
+
+        ponCanalActual (kCanal);
+        ponEnRanura (0, f);
+        engine.setCanalSend (kCanal, f, 1.0f);
+
+        //  LA REFERENCIA ES EL EFECTO EN NEUTRO, no el pad sin efecto: asi la
+        //  cifra dice «este preset cambia el audio» y no «el efecto esta
+        //  puesto», que lo cumpliria tambien un preset identico al de al lado.
+        escribeFxParam (f, 2, 0.0f);
+        rinde (seco);
+
+        for (int k = 0; k < FxPresets::cuantos(); ++k)
+        {
+            aplicaFxPreset (f, k);
+            rinde (mojado);
+
+            //  DOS CIFRAS Y NO UNA: cuantas muestras cambian y cuanto. Solo
+            //  «cambian» lo cumple un preset que mete un ruido de un bit, y
+            //  solo «cuanto» lo cumple uno que desplaza el nivel entero sin
+            //  tocar la forma.
+            int distintas = 0;
+            double e1 = 0.0, e2 = 0.0;
+            const int n = juce::jmin (seco.getNumSamples(), mojado.getNumSamples());
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < n; ++i)
+                {
+                    const float a = seco.getSample (ch, i), b = mojado.getSample (ch, i);
+                    if (std::abs (a - b) > 1.0e-5f) ++distintas;
+                    e1 += (double) a * a;
+                    e2 += (double) b * b;
+                }
+
+            juce::StringArray p;
+            for (int pi = 0; pi < kParamsPorFx; ++pi)
+                p.add (juce::String (engine.getFxParam (kCanal, f, pi), 6));
+
+            juce::String bandas;
+            if (f == kFxEq)
+            {
+                juce::StringArray e;
+                for (int b = 0; b < Eq5::kBands; ++b)
+                    e.add (juce::String (engine.getEqFreq (kCanal, b), 1) + ":"
+                             + juce::String (engine.getEqGain (kCanal, b), 2) + ":"
+                             + juce::String (engine.getEqTipo (kCanal, b)) + ":"
+                             + juce::String (engine.getEqQ (kCanal, b), 2));
+                bandas = e.joinIntoString (";");
+            }
+
+            std::cout << "{\"preset\":1,\"fx\":" << f
+                      << ",\"tipo\":\"" << fxDefs[f].name << "\""
+                      << ",\"k\":" << k
+                      << ",\"nombre\":\"" << FxPresets::nombre (f, k) << "\""
+                      << ",\"p\":[" << p.joinIntoString (",") << "]"
+                      << ",\"bandas\":\"" << bandas << "\""
+                      << ",\"distintas\":" << distintas
+                      << ",\"muestras\":" << (n * 2)
+                      << ",\"rms_seco\":" << juce::String (std::sqrt (e1 / juce::jmax (1, n * 2)), 6)
+                      << ",\"rms_fx\":" << juce::String (std::sqrt (e2 / juce::jmax (1, n * 2)), 6)
+                      << "}" << std::endl;
+        }
+    }
+
+    //  LA FILA DE FABRICA DEL MOTOR, para que Python pueda comprobar que el
+    //  preset cero ES `kFxDef` y no una tercera tabla de defectos.
+    for (int f = 0; f < kNumFx; ++f)
+    {
+        juce::StringArray d;
+        for (int pi = 0; pi < 3; ++pi) d.add (juce::String (AudioEngine::kFxDef[f][pi], 6));
+        std::cout << "{\"kfxdef\":1,\"fx\":" << f
+                  << ",\"d\":[" << d.joinIntoString (",") << "]}" << std::endl;
+    }
+
+    //  Y LOS RANGOS QUE LA CARA DECLARA, que es contra lo que un preset tiene
+    //  que caber. No se copian a Python: se publican.
+    for (int f = 0; f < kNumFx; ++f)
+        for (int pi = 0; pi < 3; ++pi)
+            std::cout << "{\"spec\":1,\"fx\":" << f << ",\"p\":" << pi
+                      << ",\"lo\":" << juce::String (fxDefs[f].spec[pi].lo, 6)
+                      << ",\"hi\":" << juce::String (fxDefs[f].spec[pi].hi, 6)
+                      << "}" << std::endl;
+
+    //  GUARDAR UNO TUYO, Y CON UN NOMBRE QUE INTENTA SALIRSE.
+    //
+    //  `../fuera` es el caso que `ProjectStore::componente` existe para parar:
+    //  `getChildFile` resuelve `..` subiendo un nivel, y un preset llamado asi
+    //  escribiria en la biblioteca y no en su carpeta. Lo que se publica no es
+    //  lo que devolvio la orden sino DONDE ACABO EL FICHERO.
+    {
+        ponCanalActual (kCanal);
+        ponEnRanura (0, AudioEngine::kFxDly);
+        aplicaFxPreset (AudioEngine::kFxDly, 2);
+
+        //  PRIMERO LA MARCA, Y SOBRE UN PRESET DE FABRICA.
+        //
+        //  Esto se medía despues de guardar uno tuyo, y guardar pone la casilla
+        //  en MOVIDO por su cuenta: la cifra salia -1 con el codigo roto Y con
+        //  el codigo bueno. *Una prueba que nunca se ha visto fallar no es una
+        //  prueba.* Ahora se mide con el preset 2 puesto, que es un indice de
+        //  verdad, y mover el mando tiene que convertirlo en -1.
+        const int puestoAntes = fxPresetPuesto[(size_t) kCanal][(size_t) AudioEngine::kFxDly];
+        {
+            const auto& sp0 = fxDefs[AudioEngine::kFxDly].spec[0];
+            const double hoy = engine.getFxParam (kCanal, AudioEngine::kFxDly, 0);
+            const double lejos0 = (hoy - sp0.lo) > (sp0.hi - hoy) ? sp0.lo : sp0.hi;
+            fxParam (AudioEngine::kFxDly, 0).setValue (lejos0, juce::dontSendNotification);
+            escribeFxParam (AudioEngine::kFxDly, 0, (float) lejos0);
+        }
+        const int marcaTrasMando = fxPresetPuesto[(size_t) kCanal][(size_t) AudioEngine::kFxDly];
+        aplicaFxPreset (AudioEngine::kFxDly, 2);
+
+        const bool ok = guardaFxPresetTuyo (AudioEngine::kFxDly, "MI ECO");
+        const auto dir = carpetaFxPresets (AudioEngine::kFxDly);
+        const auto mio = dir.getChildFile ("MI ECO.txt");
+
+        const bool okFuera = guardaFxPresetTuyo (AudioEngine::kFxDly, "../fuera");
+        int fueraDeSitio = 0;
+        for (const auto& e : juce::RangedDirectoryIterator (ProjectStore::presets(), true, "*.txt",
+                                                            juce::File::findFiles))
+            if (! e.getFile().isAChildOf (dir) && e.getFile().getFileName().contains ("fuera"))
+                ++fueraDeSitio;
+
+        //  Y LA VUELTA: se mueve un mando, se relee el fichero y tienen que
+        //  volver los cuatro numeros. Se mueve al extremo MAS LEJANO del valor
+        //  de hoy, que es el cuarto truco de `auditInstr`: mover a un tope
+        //  escrito sale verde si ya estaba en el tope.
+        const double antes = engine.getFxParam (kCanal, AudioEngine::kFxDly, 0);
+        const auto& sp = fxDefs[AudioEngine::kFxDly].spec[0];
+        const double lejos = (antes - sp.lo) > (sp.hi - antes) ? sp.lo : sp.hi;
+        fxParam (AudioEngine::kFxDly, 0).setValue (lejos, juce::dontSendNotification);
+        escribeFxParam (AudioEngine::kFxDly, 0, (float) lejos);
+        const int movido = fxPresetPuesto[(size_t) kCanal][(size_t) AudioEngine::kFxDly];
+
+        aplicaFxPresetTuyo (AudioEngine::kFxDly, "MI ECO");
+        const double vuelve = engine.getFxParam (kCanal, AudioEngine::kFxDly, 0);
+
+        std::cout << "{\"tuyo\":1,\"guardado\":" << (ok ? 1 : 0)
+                  << ",\"existe\":" << (mio.existsAsFile() ? 1 : 0)
+                  << ",\"dentro\":" << (mio.isAChildOf (ProjectStore::presets()) ? 1 : 0)
+                  << ",\"fuera_ok\":" << (okFuera ? 1 : 0)
+                  << ",\"fuera_de_sitio\":" << fueraDeSitio
+                  << ",\"puesto_antes\":" << puestoAntes
+                  << ",\"marca_tras_mando\":" << marcaTrasMando
+                  << ",\"movido\":" << movido
+                  << ",\"antes\":" << juce::String (antes, 6)
+                  << ",\"lejos\":" << juce::String (lejos, 6)
+                  << ",\"vuelve\":" << juce::String (vuelve, 6)
+                  << ",\"nombre\":\"" << fxPresetNombre (AudioEngine::kFxDly) << "\"}" << std::endl;
+    }
 }

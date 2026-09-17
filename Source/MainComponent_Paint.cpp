@@ -1712,6 +1712,27 @@ void MainComponent::paintRanuraContent (juce::Graphics& g)
                  "titulo", true);
 }
 
+//  EL TITULO DICE DE QUE EFECTO SON Y CUAL LLEVA PUESTO -«EQ · SONRISA»-,
+//  porque los seis nombres de un tipo no dicen de cual son y el mismo nombre
+//  aparece en dos tipos distintos: «SUAVE» esta en CMP, en DSS, en PHA y en
+//  WAH. Y el puesto al lado, que es la unica forma de que la lista diga donde
+//  estas sin tener que leer las seis tapas.
+void MainComponent::paintPresetContent (juce::Graphics& g)
+{
+    if (presetSheet.sheetBounds.isEmpty() || presetTituloBanda.isEmpty()) return;
+    if (! juce::isPositiveAndBelow (presetEditado, kNumFx)) return;
+
+    const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
+    auto titulo = antesDe (presetTituloBanda, presetCloseBtn.getBounds());
+
+    g.setColour (ZatiColours::ink.withAlpha (0.9f));
+    g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
+    pintaTitulo (g, titulo,
+                 juce::String (fxDefs[presetEditado].name) + "  " + dot + "  "
+                   + fxPresetNombre (presetEditado),
+                 "titulo", true);
+}
+
 //  EL TITULO DICE LA BANDA Y SU FRECUENCIA -«EQ · BANDA 3 · 1.0 kHz»- porque
 //  las cinco se parecen y el numero solo no dice cual estas tocando. Se aparta
 //  de la cruz con `antesDe`, que decide el lado comparando los CENTROS: en

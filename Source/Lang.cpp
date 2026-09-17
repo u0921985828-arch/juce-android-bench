@@ -96,6 +96,13 @@ namespace
           "上方选择音垫，下方选择乐器。放入音垫 %1。",
           "اختر الباد في الأعلى والآلة في الأسفل. ينتقل إلى باد %1." },
         { "PRESETS",     "",  "PRESETS",    "预设",   "إعدادات" },
+        //  Lo que la ficha de un efecto ensena cuando lo que suena ya no es
+        //  ningun preset: se ha movido un mando. Ver FxPresets.h — un rotulo
+        //  que dice «PLACA» con el audio cambiado miente.
+        { "MOVIDO",      "",  "EDITED",     "已改",   "معدّل" },
+        //  Lo que DESHACER dice que va a deshacer al poner un preset.
+        { "PRESET",      "",  "PRESET",     "预设",   "إعداد" },
+        { "Preset guardado", "", "Preset saved", "预设已保存", "تم حفظ الإعداد" },
         { "OCT",         "",  "OCT",        "八度",   "أوكتاف" },
         { "INSTRUMENTO", "",  "INSTRUMENT", "乐器",   "آلة" },
         //  LAS DIECISEIS FAMILIAS DE Sintes.h. Son nombres COMUNES -una familia

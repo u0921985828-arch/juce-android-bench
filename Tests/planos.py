@@ -107,6 +107,8 @@ NOMBRES = {
     "canal":    ("SELECTOR DE CANAL",            "EL PAD · ENVIOS, tapa del canal"),
     "ranura":   ("MENU DE RANURA · vacia",       "cara, tocar una ranura sin efecto"),
     "ranural":  ("MENU DE RANURA · llena",       "cara, mantener una ranura con efecto"),
+    "preset":   ("PRESETS · un efecto",          "menu de ranura, tapa PRESETS"),
+    "preseteq": ("PRESETS · el EQ",              "lo mismo con el EQ, que ademas trae sus cinco bandas"),
     "vstm":     ("EL INSTRUMENTO · mando al tope", "EL INSTRUMENTO, primer mando arriba"),
     "tour3":    ("TOUR · paso 4, la puerta",     "el tour, el paso que sale a la app"),
     "llena":    ("LA CARA CON TRABAJO DENTRO",   "la maquina llena, sin ficha"),
