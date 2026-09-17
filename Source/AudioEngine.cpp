@@ -110,6 +110,10 @@ AudioEngine::AudioEngine()
     for (auto& c : padCanal)   c.store ((juce::uint8) kSinCanal, std::memory_order_relaxed);
     for (auto& ch : canalSend) for (auto& s : ch) s.store (0.0f, std::memory_order_relaxed);
     for (auto& g : canalGain)  g.store (1.0f, std::memory_order_relaxed);
+    //  El pan nace CENTRADO y el ancho en UNO: un canal recien creado no puede
+    //  mover de sitio lo que le echen.
+    for (auto& p : canalPan)   p.store (0.0f, std::memory_order_relaxed);
+    for (auto& a : canalAncho) a.store (1.0f, std::memory_order_relaxed);
     for (auto& m : canalMute)  m.store (false, std::memory_order_relaxed);
     clearCanalSolo();
     padSendMask.store (0, std::memory_order_relaxed);
@@ -785,6 +789,10 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     //  lleven su parte -con `dryGain` un inserto al 100% dejaria el medidor a
     //  cero justo cuando el canal mas trabaja-.
     float canGain[kNumPads];
+    //  El pan y el ancho QUE EL CANAL APORTA, resueltos por pad y por bloque
+    //  igual que su ganancia: multiplicar o sumar algo que ya se calculaba no
+    //  es una etapa nueva.
+    float canPan[kNumPads], canAnc[kNumPads];
     //  ALIMENTADOS POR BUS Y NO POR TIPO, que es el cambio entero de esta
     //  tanda visto desde aqui: un inserto tiene un bus por canal. Ver `busDe`.
     bool  busFed[kNumBuses] = {};
@@ -862,6 +870,8 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         //  quince. Ver `miraCanal` — son los pads de UN canal, no los 64.
         const bool medido = (canal == miraCan);
         canGain[p] = smCan;
+        canPan[p]  = en ? canalPan[(size_t) canal].load (std::memory_order_relaxed)   : 0.0f;
+        canAnc[p]  = en ? canalAncho[(size_t) canal].load (std::memory_order_relaxed) : 1.0f;
 
         if (! listed && ! smSendHot[(size_t) p] && ! medido)
         {
@@ -987,8 +997,15 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             {
                 padTouched[vc.slot] = true;
                 padGainNow[vc.slot] = effectiveGain (vc.slot);
-                padPanNow [vc.slot] = padPan[(size_t) vc.slot].load (std::memory_order_relaxed);
-                padAnchoNow[vc.slot] = padAncho[(size_t) vc.slot].load (std::memory_order_relaxed);
+                //  EL DEL PAD MAS EL DEL CANAL. El pad dice donde esta dentro
+                //  del grupo y el canal mueve el grupo entero; acotado porque
+                //  dos mandos al maximo no pueden sacar la señal del estereo.
+                padPanNow [vc.slot] = juce::jlimit (-1.0f, 1.0f,
+                                        padPan[(size_t) vc.slot].load (std::memory_order_relaxed)
+                                          + canPan[vc.slot]);
+                padAnchoNow[vc.slot] = juce::jlimit (0.0f, 2.0f,
+                                        padAncho[(size_t) vc.slot].load (std::memory_order_relaxed)
+                                          * canAnc[vc.slot]);
             }
 
             // Control-rate retarget: a looping or long voice keeps following
@@ -2145,69 +2162,6 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
 
         }
         canalEtapa = 0;
-        // --- 5. DELAY. Time is smoothed PER SAMPLE: a per-block jump through
-        //        a linear-interp line is a hard discontinuity (crackle on
-        //        every TIME move).
-        {
-            const float fbT  = juce::jlimit (0.0f, 0.95f, dlyFb.load (std::memory_order_relaxed));
-            const float dsT  = juce::jlimit (1.0f, (float) (systemSampleRate - 1.0),
-                                             dlyTime.load (std::memory_order_relaxed) * (float) systemSampleRate / 1000.0f);
-            smDlyFb  += kBlock * (fbT  - smDlyFb);
-            if (smDlySamp <= 0.0f) smDlySamp = dsT;            // first block: no sweep from 0
-            const float kSamp = 1.0f - std::exp (-1.0f / (0.020f * (float) systemSampleRate));
-
-            if (live (3))
-            {
-                float* w0 = fxBus[busIdx (kFxDly)].getWritePointer (0, startSample);
-                float* w1 = (chans > 1) ? fxBus[busIdx (kFxDly)].getWritePointer (1, startSample) : w0;
-                for (int i = 0; i < numSamples; ++i)
-                {
-                    smDlySamp += kSamp * (dsT - smDlySamp);
-                    delayLine.setDelay (smDlySamp);
-                    for (int ch = 0; ch < chans; ++ch)
-                    {
-                        float* w = (ch == 0) ? w0 : w1;
-                        const float in = w[i];
-                        const float d  = delayLine.popSample (ch);
-                        //  LA CUARTA BARRERA, que faltaba: esta linea se
-                        //  realimenta, asi que un NaN que entre una vez da
-                        //  vueltas para siempre y el delay se queda mudo hasta
-                        //  que alguien cambie de ruta -prepareToPlay es lo
-                        //  unico que lo limpia-. Las otras tres protegen lo que
-                        //  sale; un estado con memoria hay que protegerlo por
-                        //  dentro. Se pregunta por lo finito porque comparar
-                        //  con NaN siempre es falso.
-                        const float realim = in + d * smDlyFb;
-                        delayLine.pushSample (ch, std::isfinite (realim) ? realim : 0.0f);
-                        w[i] = std::isfinite (d) ? d : 0.0f;
-                    }
-                }
-                returnBus (3);
-            }
-        }
-
-        // --- 6. REVERB. Wet only: the dry it would mix back already reached
-        //        the master by the direct path, and adding it twice would
-        //        only comb-filter the sound.
-        {
-            //  live(5) OR la energia interna de la FDN, y no dentro del if:
-            //  poner al dia busRinging solo cuando ya se procesa es un candado
-            //  - en cuanto el bus se declara muerto una vez, no vuelve a
-            //  procesarse y no puede volver a declararse vivo. Con Freeverb no
-            //  se notaba porque siempre sacaba algo en la primera muestra.
-            if (live (5) || reverb.ringing())
-            {
-                reverb.setParameters (rvSize.load (std::memory_order_relaxed),
-                                      rvDamp.load (std::memory_order_relaxed));
-                reverb.process (fxBus[busIdx (kFxRev)], startSample, numSamples);
-                returnBus (5);
-                //  ...y la reverb manda sobre lo que returnBus acaba de
-                //  deducir: la cola esta dentro de las lineas antes de estar en
-                //  la salida. Ver Fdn::ringing.
-                busRinging[busIdx (kFxRev)] = busRinging[busIdx (kFxRev)] || reverb.ringing();
-            }
-        }
-
         //  === LOS DIECISEIS CANALES. ===================================
         //
         //  Un inserto es de UN canal, asi que su etapa corre dieciseis veces:
@@ -3059,6 +3013,88 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             }
         }
         canalEtapa = 0;
+
+        //  === Y LOS DOS DE LA MESA, AL FINAL ===========================
+        //
+        //  DLY y REV corrian AQUI ARRIBA, antes de los insertos, y desde que las
+        //  ranuras son una cadena eso no puede ser: la copia para el envio se
+        //  toma del FINAL de la tira -para que la reverb oiga el canal ya
+        //  ecualizado y ya paneado- y si su etapa ya ha pasado, esa copia cae en
+        //  un bus que nadie procesa y se borra al empezar el bloque siguiente.
+        //  Lo canto el banco en el acto: «la cola se inclina x0.00», o sea que
+        //  la reverb no recibia NADA en cuanto el canal tenia un eslabon.
+        //
+        //  Y ademas es lo que la cabecera decia que eran desde el principio:
+        //  «Reverb, last in the chain so everything ahead of it lands in the
+        //  room». Estaba escrito como intencion y el orden decia otra cosa.
+        //
+        //  MOVERLAS CAMBIA EL ORDEN DE LA SUMA y eso esta advertido en
+        //  `AudioEngine.h`: la fila de control compara DOS corridas del MISMO
+        //  binario, asi que sigue valiendo -las dos se mueven igual-, y lo que
+        //  no se puede es comparar contra una salida guardada de antes.
+        // --- 5. DELAY. Time is smoothed PER SAMPLE: a per-block jump through
+        //        a linear-interp line is a hard discontinuity (crackle on
+        //        every TIME move).
+        {
+            const float fbT  = juce::jlimit (0.0f, 0.95f, dlyFb.load (std::memory_order_relaxed));
+            const float dsT  = juce::jlimit (1.0f, (float) (systemSampleRate - 1.0),
+                                             dlyTime.load (std::memory_order_relaxed) * (float) systemSampleRate / 1000.0f);
+            smDlyFb  += kBlock * (fbT  - smDlyFb);
+            if (smDlySamp <= 0.0f) smDlySamp = dsT;            // first block: no sweep from 0
+            const float kSamp = 1.0f - std::exp (-1.0f / (0.020f * (float) systemSampleRate));
+
+            if (live (3))
+            {
+                float* w0 = fxBus[busIdx (kFxDly)].getWritePointer (0, startSample);
+                float* w1 = (chans > 1) ? fxBus[busIdx (kFxDly)].getWritePointer (1, startSample) : w0;
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    smDlySamp += kSamp * (dsT - smDlySamp);
+                    delayLine.setDelay (smDlySamp);
+                    for (int ch = 0; ch < chans; ++ch)
+                    {
+                        float* w = (ch == 0) ? w0 : w1;
+                        const float in = w[i];
+                        const float d  = delayLine.popSample (ch);
+                        //  LA CUARTA BARRERA, que faltaba: esta linea se
+                        //  realimenta, asi que un NaN que entre una vez da
+                        //  vueltas para siempre y el delay se queda mudo hasta
+                        //  que alguien cambie de ruta -prepareToPlay es lo
+                        //  unico que lo limpia-. Las otras tres protegen lo que
+                        //  sale; un estado con memoria hay que protegerlo por
+                        //  dentro. Se pregunta por lo finito porque comparar
+                        //  con NaN siempre es falso.
+                        const float realim = in + d * smDlyFb;
+                        delayLine.pushSample (ch, std::isfinite (realim) ? realim : 0.0f);
+                        w[i] = std::isfinite (d) ? d : 0.0f;
+                    }
+                }
+                returnBus (3);
+            }
+        }
+
+        // --- 6. REVERB. Wet only: the dry it would mix back already reached
+        //        the master by the direct path, and adding it twice would
+        //        only comb-filter the sound.
+        {
+            //  live(5) OR la energia interna de la FDN, y no dentro del if:
+            //  poner al dia busRinging solo cuando ya se procesa es un candado
+            //  - en cuanto el bus se declara muerto una vez, no vuelve a
+            //  procesarse y no puede volver a declararse vivo. Con Freeverb no
+            //  se notaba porque siempre sacaba algo en la primera muestra.
+            if (live (5) || reverb.ringing())
+            {
+                reverb.setParameters (rvSize.load (std::memory_order_relaxed),
+                                      rvDamp.load (std::memory_order_relaxed));
+                reverb.process (fxBus[busIdx (kFxRev)], startSample, numSamples);
+                returnBus (5);
+                //  ...y la reverb manda sobre lo que returnBus acaba de
+                //  deducir: la cola esta dentro de las lineas antes de estar en
+                //  la salida. Ver Fdn::ringing.
+                busRinging[busIdx (kFxRev)] = busRinging[busIdx (kFxRev)] || reverb.ringing();
+            }
+        }
+
     }
 
     //  5d-mon. EL MONITOR, justo encima de la barrera y del limitador.

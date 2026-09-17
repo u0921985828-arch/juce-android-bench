@@ -1561,6 +1561,27 @@ public:
         if (canal < 0 || canal >= kNumCanales) return;
         canalGain[(size_t) canal].store (juce::jlimit (0.0f, 4.0f, g), std::memory_order_relaxed);
     }
+    void setCanalPan (int canal, float p) noexcept
+    {
+        if (canal < 0 || canal >= kNumCanales) return;
+        canalPan[(size_t) canal].store (juce::jlimit (-1.0f, 1.0f, p), std::memory_order_relaxed);
+    }
+    float getCanalPan (int canal) const noexcept
+    {
+        if (canal < 0 || canal >= kNumCanales) return 0.0f;
+        return canalPan[(size_t) canal].load (std::memory_order_relaxed);
+    }
+    void setCanalAncho (int canal, float a) noexcept
+    {
+        if (canal < 0 || canal >= kNumCanales) return;
+        canalAncho[(size_t) canal].store (juce::jlimit (0.0f, 2.0f, a), std::memory_order_relaxed);
+    }
+    float getCanalAncho (int canal) const noexcept
+    {
+        if (canal < 0 || canal >= kNumCanales) return 1.0f;
+        return canalAncho[(size_t) canal].load (std::memory_order_relaxed);
+    }
+
     float getCanalGain (int canal) const noexcept
     {
         if (canal < 0 || canal >= kNumCanales) return 1.0f;
@@ -3162,6 +3183,19 @@ private:
     std::array<std::atomic<juce::uint8>, kNumPads> padCanal {};
     std::array<std::array<std::atomic<float>, kNumFx>, kNumCanales> canalSend {};
     std::array<std::atomic<float>, kNumCanales> canalGain {};
+    //  Y EL CANAL SE PANEA Y SE ABRE, que era lo que le faltaba a la tira.
+    //
+    //  Llego del telefono: «en el mixer de canales deberia haber la opcion de
+    //  panear tambien, ¿no?». Medido: un canal tenia ganancia, mute y solo y
+    //  nada mas, asi que para mover de sitio un grupo entero habia que panear
+    //  sus pads uno a uno — y entonces ya no se mueven juntos, que es justo lo
+    //  que un canal existe para hacer.
+    //
+    //  Se SUMAN al del pad en vez de sustituirlo, y por la misma razon por la
+    //  que `canalGain` multiplica al del pad: el pad dice donde esta DENTRO del
+    //  grupo y el canal mueve el grupo. Son 128 B cada uno.
+    std::array<std::atomic<float>, kNumCanales> canalPan {};
+    std::array<std::atomic<float>, kNumCanales> canalAncho {};
     std::array<std::atomic<bool>,  kNumCanales> canalMute {};
     std::array<std::atomic<bool>,  kNumCanales> canalSolo {};
     //  Cacheado igual que `soloActive`: el hilo de audio pregunta «¿hay algun

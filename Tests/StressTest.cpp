@@ -5521,6 +5521,109 @@ int main()
     }
 
     // ------------------------------------------------------------------
+    //  Y EL CANAL SE PANEA, con la cola de reverb detras.
+    //
+    //  Del telefono: «en el mixer de canales deberia haber la opcion de panear
+    //  tambien, ¿no?». No la habia: un canal tenia ganancia, mute y solo.
+    //
+    //  DOS cifras, y la segunda es la que impide que se cumpla a medias: el
+    //  derecho en cero es lo facil, y que la COLA DE REVERB de ese canal tambien
+    //  se vaya a la izquierda es lo que dice que la derivacion al envio sale
+    //  DESPUES del pan. Si la cola vuelve centrada, el envio se toma del pad
+    //  crudo y el pan del canal no es un pan de canal: es un pan de lo seco.
+    {
+        //  DOS CORRIDAS Y NO UNA. El seco se mide SIN reverb y la cola CON
+        //  ella: con el envio abierto la sala ya esta sonando encima del golpe
+        //  -sale 0.2439 contra 0.1603 con el canal del todo a la izquierda- y lo
+        //  que se media como «seco» era seco mas cola.
+        auto corre = [] (float pan, bool conRev, double& izq, double& der, double& colaDer)
+        {
+            AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+            enCanalCero (e);
+            e.setPadGain (0, 0.50f);
+            e.setPadCanal (0, 5);
+            e.setCanalPan (5, pan);
+            //  Y una reverb con envio abierto, que es la que tiene que heredar
+            //  el sitio. Tamaño grande para que la cola dure despues del golpe.
+            e.setFxParam (0, AudioEngine::kFxRev, 0, 0.90f);
+            e.setFxParam (0, AudioEngine::kFxRev, 2, 1.00f);
+            //  Y EL CANAL LLEVA UN INSERTO, aunque sea neutro: sin cadena la
+            //  copia de la reverb sale del PAD -que ya venia paneado- y la
+            //  medida pasaria sin tocar el camino nuevo. Con un eslabon dentro,
+            //  la copia se toma del final de la cadena, que es lo que hay que
+            //  comprobar.
+            e.setEqMix (5, 1.0f);
+            e.setCanalSend (5, AudioEngine::kFxEq, 1.0f);
+            if (conRev) e.setCanalSend (5, AudioEngine::kFxRev, 1.0f);
+
+            auto* sb = new SampleBuffer();
+            sb->buffer.setSize (2, 4096);
+            sb->buffer.clear();
+            //  La muestra dura CUATRO MIL muestras y no cuatrocientas: el pan
+            //  de una voz se desliza al re-apuntar, asi que en el primer bloque
+            //  todavia esta a medio camino -salia 0.3640 contra 0.2679 con el
+            //  canal del todo a la izquierda- y lo que se media era el
+            //  deslizamiento, no el pan.
+            for (int i = 1; i < 4000; ++i)
+            {
+                const float x = 0.8f * (float) std::sin (2.0 * juce::MathConstants<double>::pi
+                                                           * 440.0 * (double) i / kFs);
+                sb->buffer.setSample (0, i, x);
+                sb->buffer.setSample (1, i, x);
+            }
+            sb->sourceSampleRate = kFs;
+            e.publishSample (0, SampleBuffer::Ptr (sb));
+
+            juce::AudioBuffer<float> b (2, kBs);
+            for (int i = 0; i < 30; ++i) { b.clear(); e.renderNextBlock (b, 0, kBs); }
+            e.postNoteOn (0, 1.0f);
+
+            //  EL SECO SE MIDE EN EL PRIMER BLOQUE y la COLA a partir del
+            //  veinte. Medir el pico de la corrida entera mezclaba los dos y el
+            //  derecho no bajaba nunca: la reverb ya estaba sonando encima.
+            izq = der = colaDer = 0.0;
+            double colaIzq = 0.0;
+            for (int blk = 0; blk < 120; ++blk)
+            {
+                b.clear(); e.renderNextBlock (b, 0, kBs);
+                for (int i = 0; i < kBs; ++i)
+                {
+                    const double l = std::abs ((double) b.getSample (0, i));
+                    const double r = std::abs ((double) b.getSample (1, i));
+                    if (blk >= 4 && blk <= 7) { izq = juce::jmax (izq, l); der = juce::jmax (der, r); }
+                    if (blk >= 20)
+                    {
+                        colaIzq = juce::jmax (colaIzq, l);
+                        colaDer = juce::jmax (colaDer, r);
+                    }
+                }
+            }
+            //  Y lo que se devuelve como «cola» es el DESEQUILIBRIO de la cola,
+            //  no su nivel: una reverb estereo ESPARCE —eso es lo que hace una
+            //  sala— asi que pedirle silencio en un lado seria pedirle que no
+            //  fuera una reverb. Lo que dice de donde se tomo la copia es que la
+            //  cola salga mas fuerte del lado al que el canal esta paneado.
+            colaDer = colaIzq / juce::jmax (1.0e-9, colaDer);
+        };
+
+        double i0 = 0, d0 = 0, c0 = 0, iL = 0, dL = 0, cL = 0, nada = 0;
+        corre ( 0.0f, false, i0, d0, nada);   // seco centrado
+        corre (-1.0f, false, iL, dL, nada);   // seco a la izquierda
+        corre ( 0.0f, true,  nada, nada, c0); // cola centrada
+        corre (-1.0f, true,  nada, nada, cL); // cola a la izquierda
+
+        //  Centrado los dos lados son iguales y la cola equilibrada -razon uno-;
+        //  del todo a la izquierda el derecho SECO se cae y la cola se inclina.
+        const bool ok = std::abs (i0 - d0) < 0.01
+                     && std::abs (c0 - 1.0) < 0.15
+                     && dL < 0.02 * juce::jmax (1.0e-9, iL)
+                     && cL > 1.20;
+        std::printf ("%-34s seco centrado %.4f/%.4f   a la izquierda %.4f/%.4f   y la cola se inclina x%.2f (centrada x%.2f)   %s\n",
+                     "el canal se panea, cola incluida",
+                     i0, d0, iL, dL, cL, c0, ok ? "OK" : zatiFalla());
+    }
+
+    // ------------------------------------------------------------------
     //  Y EL EQ ES DE CADA CANAL, que es la queja con la que empieza esta tanda
     //  dicha en decibelios: «solo es posible que funcione y sea colocado en un
     //  canal solo, deberia haber un plugin de cada tipo para cada canal».
