@@ -406,10 +406,29 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01,
 
     if (instrum)
     {
-        //  La capa: dos, y el corte a la mitad. Un cruce entre capas seria mas
-        //  suave y necesita dos voces por nota, o sea el doble de pool por un
-        //  matiz - y este motor tiene dieciseis voces en un telefono flojo.
-        const int capaQuiere = (vel >= 0.5f) ? 1 : 0;
+        //  LA CAPA: TRES, y los cortes en 0.33 y 0.66.
+        //
+        //  Con dos y el corte a la mitad, el salto medido era de **2.0 dB y
+        //  x1.12 de agudos de golpe** en mitad del recorrido de fuerza: una
+        //  rampa sonaba a escalon. Con tres entre los mismos extremos cada
+        //  escalon vale ~1.0 dB, por debajo del JND de sonoridad.
+        //
+        //  Y CUANTAS CAPAS HAY SE LE PREGUNTA A LA MUESTRA, no a `Sintes`.
+        //
+        //  Escrito contra la constante, el motor y el generador serian dos
+        //  reglas: el dia que la gama baja rinda menos capas -o que vuelva un
+        //  proyecto guardado con las de antes- el motor pediria una capa que ese
+        //  buffer no tiene y la puntuacion de abajo la cobraria como error de
+        //  mil. Derivado, cada muestra reparte el recorrido entre LAS SUYAS.
+        //
+        //  Un cruce entre capas seria aun mas suave y necesita dos voces por
+        //  nota, o sea el doble de pool por un matiz - y este motor tiene
+        //  dieciseis voces en un telefono flojo.
+        int capasHay = 1;
+        for (int z = 0; z < zonas && z < SampleBuffer::kMaxZonas; ++z)
+            capasHay = juce::jmax (capasHay, sb->zonas[(size_t) z].capa + 1);
+        const int capaQuiere = juce::jlimit (0, capasHay - 1,
+                                             (int) (vel * (float) capasHay));
 
         int mejor = 0; int coste = 1 << 30;
         for (int z = 0; z < zonas && z < SampleBuffer::kMaxZonas; ++z)

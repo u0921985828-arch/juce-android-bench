@@ -1161,6 +1161,20 @@ void MainComponent::auditInstr()
         return;
     }
 
+    //  EL COSTE, EN PROPORCION Y NO EN MILISEGUNDOS ABSOLUTOS.
+    //
+    //  La doctrina de `Cpu.cpp`, citada: *el valor absoluto no dice si va a ir;
+    //  la proporcion si viaja*. La referencia es un golpe de fabrica rendido en
+    //  ESTA misma corrida y en ESTA misma maquina, que es lo unico que hace
+    //  comparable un numero medido en un portatil con uno medido en el CI.
+    {
+        const double t0 = juce::Time::getMillisecondCounterHiRes();
+        auto ref0 = Kits::render (0);
+        const double msRef = juce::Time::getMillisecondCounterHiRes() - t0;
+        juce::ignoreUnused (ref0);
+        std::cout << "{\"instr\":\"ref\",\"msKits\":" << juce::String (msRef, 2) << "}" << std::endl;
+    }
+
     for (int f = 0; f < Sintes::kFamilias; ++f)
     {
         const auto& F = Sintes::tabla()[f];
@@ -1171,9 +1185,14 @@ void MainComponent::auditInstr()
             const double ms = juce::Time::getMillisecondCounterHiRes() - t0;
             if (sb == nullptr) continue;
 
+            //  LA ZONA DE REFERENCIA SALE CON SUS DOS CANALES, que es lo unico
+            //  que permite medir el ancho: con la mezcla ya hecha, `r` valdria
+            //  1.000 siempre y la regla del ancho mediria su propia suma.
             const auto& Z = sb->zonas[(size_t) Sintes::kZonaRef];
-            juce::AudioBuffer<float> ref (1, Z.fin - Z.ini);
-            ref.copyFrom (0, 0, sb->buffer, 0, Z.ini, Z.fin - Z.ini);
+            const int nCh = sb->buffer.getNumChannels();
+            juce::AudioBuffer<float> ref (nCh, Z.fin - Z.ini);
+            for (int ch = 0; ch < nCh; ++ch)
+                ref.copyFrom (ch, 0, sb->buffer, ch, Z.ini, Z.fin - Z.ini);
             ProjectStore::writeSample (dir.getChildFile (juce::String::formatted ("ref-%02d-%02d.wav", f, pr)),
                                        ref, sb->sourceSampleRate);
 
@@ -1187,13 +1206,22 @@ void MainComponent::auditInstr()
                       << ",\"sostiene\":" << (F.sostiene ? 1 : 0)
                       << ",\"zonas\":" << sb->nZonas
                       << ",\"muestras\":" << sb->buffer.getNumSamples()
+                      << ",\"canales\":" << nCh
+                      << ",\"forma\":" << (int) F.forma
                       << ",\"ms\":" << juce::String (ms, 1)
                       << ",\"mapa\":[";
             for (int z = 0; z < sb->nZonas; ++z)
             {
                 const auto& q = sb->zonas[(size_t) z];
+                //  Y LA VELOCIDAD DEL LFO YA CUADRADA, que no se puede deducir
+                //  del audio sin volver a estimarla -y estimarla es otra regla,
+                //  con su propio error-. Ver `Sintes::lfoDeZona`.
+                double lfoHz = -1.0, bucleSeg = 0.0;
+                Sintes::lfoDeZona (f, pr, F.p[pr], (q.raiz + 24) / 12, 1.00, &lfoHz, &bucleSeg);
                 std::cout << (z ? "," : "") << "[" << q.raiz << "," << q.capa << ","
-                          << q.ini << "," << q.fin << "," << q.bucleIni << "," << q.bucleFin << "]";
+                          << q.ini << "," << q.fin << "," << q.bucleIni << "," << q.bucleFin
+                          << "," << juce::String (lfoHz, 6)
+                          << "," << juce::String (bucleSeg, 6) << "]";
             }
             std::cout << "]}" << std::endl;
         }

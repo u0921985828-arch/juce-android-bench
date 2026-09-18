@@ -67,7 +67,22 @@ namespace Sintes
     static constexpr int kFamilias = 16;
     static constexpr int kPresets  = 16;
     static constexpr int kRaices   = 5;    // -24 -12 0 +12 +24
-    static constexpr int kCapas    = 2;    // suave / fuerte
+    //  TRES CAPAS DE FUERZA Y NO DOS, y el numero que lo decide es el salto.
+    //
+    //  Con dos, el motor cambia de capa a mitad de recorrido y el salto medido
+    //  es de **2.0 dB y x1.12 de agudos de golpe**: una rampa de fuerza suena
+    //  a escalon, que es exactamente lo que un instrumento no puede hacer. Con
+    //  tres entre los MISMOS extremos cada escalon vale ~1.0 dB y x1.06, por
+    //  debajo del JND de sonoridad.
+    //
+    //  Se paga en memoria y en tiempo de sintesis -x1.5- y CERO en el hilo de
+    //  audio, que es el unico presupuesto que no se puede gastar. Por eso no se
+    //  hace lo otro que sale: mezclar dos capas en la voz serian cuatro
+    //  `hermite4` por muestra y por voz, y este motor tiene sesenta y cuatro.
+    //
+    //  Quince zonas de las dieciseis que `kMaxZonas` permite. La dieciseisava
+    //  no se gasta.
+    static constexpr int kCapas    = 3;    // suave / media / fuerte
     static constexpr int kZonas    = kRaices * kCapas;
 
     static_assert (kZonas <= SampleBuffer::kMaxZonas, "no caben las zonas");
@@ -77,7 +92,7 @@ namespace Sintes
     //  que un pad tiene que cubrir sin cambiar de preset.
     static constexpr double kHzRaiz = 130.8127827;
     static constexpr int    kRaiz[kRaices] = { -24, -12, 0, 12, 24 };
-    static constexpr int    kZonaRef = 2 * kCapas + 1;   // raiz 0, capa fuerte
+    static constexpr int    kZonaRef = 2 * kCapas + (kCapas - 1);   // raiz 0, capa fuerte
 
     //  Las dieciseis formas. No son dieciseis juegos de parametros sobre el
     //  mismo oscilador: son dieciseis ALGORITMOS. Con un solo motor y los
@@ -112,9 +127,28 @@ namespace Sintes
     const Familia* tabla();          // 16 familias
     juce::String   nombreDe (int familia, int preset);
 
-    //  Sintetiza un preset entero -diez zonas- en un solo buffer con su tabla.
+    //  LO QUE LA GAMA DEL APARATO SE PUEDE PERMITIR, y lo que NO puede cambiar.
+    //
+    //  Un proyecto tiene que sonar **peor, no distinto**, en un telefono flojo:
+    //  el mapa de zonas, las raices, las capas y la afinacion en cents son
+    //  identicos en las cuatro gamas. Lo unico que esto mueve son los canales y
+    //  el largo del cuerpo del bucle, que es memoria y no musica. Si moviera una
+    //  zona, la misma cancion abierta en otro aparato tocaria otras notas.
+    //
+    //  Va POR ARGUMENTO y con su valor puesto, no por un ajuste global que haya
+    //  que acordarse de poner antes: quien no diga nada se lleva la calidad
+    //  entera, que es el fallo seguro de los dos. `DeviceTier` es del lado de la
+    //  app y `Sintes` no lo conoce -el banco no enlaza ese fichero-, asi que el
+    //  que sabe en que aparato esta es quien llama.
+    struct Gama
+    {
+        bool   estereo   = true;
+        double cuerpoSeg = 1.00;
+    };
+
+    //  Sintetiza un preset entero -quince zonas- en un solo buffer con su tabla.
     //  HILO DE FONDO: reserva memoria y tarda. Nunca desde el de audio.
-    SampleBuffer::Ptr sintetiza (int familia, int preset);
+    SampleBuffer::Ptr sintetiza (int familia, int preset, Gama g = {});
 
     // ------------------------------------------------------------------------
     //  Y UNA RECETA SE PUEDE MOVER, que es lo que separa «elegir un sonido» de
@@ -172,5 +206,39 @@ namespace Sintes
     //  Y la puerta de verdad: rinde LA RECETA QUE SE LE DE. `preset` se queda
     //  para decir de que fila salio, que es lo que el fichero guarda y lo que
     //  el interruptor de presets mueve.
-    SampleBuffer::Ptr sintetiza (int familia, int preset, const Preset& receta);
+    SampleBuffer::Ptr sintetiza (int familia, int preset, const Preset& receta, Gama g = {});
+
+    // ------------------------------------------------------------------------
+    //  PARA EL BANCO: una zona suelta, al factor de sobremuestreo que se pida.
+    //
+    //  Existe para que la regla del pliegue pueda comparar **el producto contra
+    //  si mismo**: la misma zona rendida a 4x -lo que se entrega- y a 16x -el
+    //  patron-, y lo que el primero tiene de mas en una banda es lo que se
+    //  plego. Sin esto habria que medir «energia que no esta en k*f0», y eso
+    //  marcaria a CAMPANAS, MAZOS y ARPAS, que son inarmonicos A PROPOSITO:
+    //  obligaria a repetir en Python una lista de familias armonicas que ya vive
+    //  en la tabla, y *una regla duplicada que no se contrasta son dos reglas*.
+    //
+    //  Y es la MISMA funcion generadora con otro numero, no una rama aparte: una
+    //  rama para el patron mediria la rama y no el producto.
+    //
+    //  Rinde el REGIMEN -se salta el ataque- para que lo que se compare sea el
+    //  cuerpo y no la subida. HILO DE FONDO: reserva y tarda.
+    void rindeZona (int familia, int preset, const Preset& receta,
+                    int raiz, int capa, float* destino, int len, int os);
+
+    //  PARA EL BANCO: a que velocidad va el LFO de esta zona DESPUES de cuadrarlo
+    //  con el largo del bucle, y cuanto dura ese bucle en segundos.
+    //
+    //  Existe porque el cuadre del LFO no se puede deducir del audio sin volver a
+    //  estimar la velocidad -y estimarla es otra regla, con su propio error-. Lo
+    //  que la regla quiere comprobar es exactamente lo que el generador decidio:
+    //  `lfoHz * bucleSeg` entero, o cero si se congelo.
+    //
+    //  Cero en `lfoHz` significa CONGELADO, que es una respuesta y no un fallo:
+    //  un LFO que no da ni una vuelta dentro del cuerpo no es deriva, es una
+    //  rampa, y una rampa en bucle es un diente de sierra a la cadencia del
+    //  bucle. Ver `largoBucle`.
+    void lfoDeZona (int familia, int preset, const Preset& receta, int raiz,
+                    double cuerpoSeg, double* lfoHz, double* bucleSeg);
 }

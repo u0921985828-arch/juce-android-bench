@@ -375,8 +375,27 @@ struct Voice
         if (winStart < 1)          winStart = 1;
         if (winEnd   > srcLen - 2) winEnd   = srcLen - 2;
         if (winStart >= winEnd)    { active = false; return; }
-        if (pos < (double) winStart)        pos = (double) winStart;
-        if (pos > (double) (winEnd - 1))    pos = (double) (winEnd - 1);
+
+        //  HASTA DONDE SE LEE ANTES DE DAR LA VUELTA, y por que no es lo mismo
+        //  que el final de la ventana.
+        //
+        //  Sin bucle, la ultima posicion que existe es `winEnd - 1`: pasado eso
+        //  no hay mas sonido. CON bucle hacia delante la muestra del indice
+        //  `winEnd` SI existe -es, por definicion del bucle, la del punto de
+        //  vuelta- asi que el tramo `[winEnd-1, winEnd)` es senal y no sobra.
+        //  Pararse en `winEnd - 1` se saltaba ese tramo entero **una vez por
+        //  vuelta**, que es un hueco de hasta una muestra a la cadencia del
+        //  bucle: exactamente el defecto que esta tanda venia a quitar.
+        //
+        //  Quien escribe la muestra de `winEnd` -y la de `winEnd + 1`, que
+        //  `hermite4` tambien mira- es `Sintes::kGuardas`. Y para todo lo demas
+        //  el recorte global de arriba ya garantiza `winEnd <= srcLen - 2`, o
+        //  sea que los dos indices caen dentro del buffer pase lo que pase.
+        const bool   vueltaAdelante = loop && ! reverse;
+        const double tope = (double) winEnd - (vueltaAdelante ? 0.0 : 1.0);
+
+        if (pos < (double) winStart)   pos = (double) winStart;
+        if (pos >= tope)               pos = (double) (winEnd - 1);
 
         const float* srcL = sb->buffer.getReadPointer (0);
         const float* srcR = (srcCh > 1) ? sb->buffer.getReadPointer (1) : nullptr;
@@ -610,7 +629,7 @@ struct Voice
             // How far to the edge of the window, and therefore how many
             // samples can run before anything needs deciding again.
             const double dist = reverse ? (pos - (double) winStart)
-                                        : ((double) (winEnd - 1) - pos);
+                                        : (tope - pos);
             if (dist <= 0.0)
             {
                 if (! loop) { active = false; break; }
@@ -630,12 +649,54 @@ struct Voice
                 //  one sample forever".
                 if (winEnd - winStart < 2) { active = false; break; }
 
-                pos = reverse ? (double) (winEnd - 1)
-                              : (loopFrom >= 0 ? (double) loopFrom : (double) winStart);
+                //  Y LA VUELTA CONSERVA LA PARTE FRACCIONARIA.
+                //
+                //  Esto era `pos = (double) loopFrom`, un ENTERO, y con ello se
+                //  tiraba la fraccion que la lectura traia. Con cualquier nota
+                //  que no caiga clavada en una raiz -o sea casi todas- cada
+                //  vuelta metia un salto de fase de hasta una muestra entera.
+                //
+                //  Lo que costaba, con su cifra: en la raiz +24 el periodo son
+                //  91.7 muestras, asi que una muestra de salto es un indice de
+                //  modulacion de 2*pi/91.7 = 0.0685 rad. La primera banda lateral
+                //  vale J1(0.0685)/J0(0.0685) = 0.0343, o sea **-29.3 dB por
+                //  debajo del fundamental, a la cadencia del bucle**. Eso es
+                //  literalmente «se oye la vuelta».
+                //
+                //  Restar el largo en vez de asignar el principio conserva la
+                //  fraccion y la fase sigue siendo continua. El `while` cubre el
+                //  caso de un `delta` mayor que el cuerpo entero.
+                if (reverse) { pos = (double) (winEnd - 1); continue; }
+
+                //  Y EL LARGO ES `winEnd - destino` Y NO UNO MENOS.
+                //
+                //  El cuerpo tiene EXACTAMENTE ese numero de muestras: la que
+                //  vendria en `winEnd` es la de `destino` -eso es lo que el
+                //  fundido cruzado construye, y lo que `Sintes::kGuardas`
+                //  escribe-. Restar una menos adelanta la lectura **una muestra
+                //  por vuelta**, que no mueve el nivel ni un decibelio y por eso
+                //  la regla del rizo no lo veia: a las cinco vueltas el bucle ya
+                //  iba cinco muestras por delante del cuerpo pegado a mano. Lo
+                //  caza la regla «la vuelta no salta de fase», que compara las
+                //  dos señales muestra a muestra y pide **-60 dB**.
+                const double destino = (loopFrom >= 0) ? (double) loopFrom : (double) winStart;
+                const double largo   = (double) winEnd - destino;
+                if (largo <= 0.0) { pos = destino; continue; }
+                while (pos >= (double) winEnd) pos -= largo;
+                //  Y NUNCA POR DEBAJO DEL DESTINO: `hermite4` lee `y[idx-1]`, asi
+                //  que un `pos` por delante del principio del cuerpo saldria del
+                //  buffer. Es la misma guarda que ya protege el arranque.
+                if (pos < destino) pos = destino;
                 continue;
             }
 
-            int run = (int) (dist / step) + 1;
+            //  CUANTAS MUESTRAS CABEN SIN VOLVER A DECIDIR, y el techo es
+            //  ESTRICTO: `ceil` y no `+1`. Con el `+1` la ultima muestra del
+            //  tramo podia caer JUSTO en `tope`, y con bucle hacia delante eso
+            //  es `pos == winEnd`: `hermite4` leeria `winEnd + 2` y ahi solo hay
+            //  dos guardas. Con `ceil`, `(run-1)*step < dist` siempre, o sea
+            //  `pos < tope` siempre, y los cuatro puntos caen dentro.
+            int run = (int) std::ceil (dist / step);
             if (run > num - i) run = num - i;
             if (run < 1)       run = 1;
 

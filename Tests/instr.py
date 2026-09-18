@@ -56,8 +56,11 @@ from kits import (APP, BANDS, ENVBINS, FLOOR, NFFT, MAX_LOUD_SPREAD_DB,
                   distancia, fft, load, loudness)
 
 RAICES   = [-24, -12, 0, 12, 24]
-CAPAS    = 2
+#  TRES CAPAS. Ver `Sintes::kCapas`: con dos, el motor cambiaba de capa a mitad
+#  del recorrido de fuerza y el salto era de 2.0 dB de golpe.
+CAPAS    = 3
 ZONAS    = len (RAICES) * CAPAS
+RAIZ_HZ  = 130.8127827      # DO3, la raiz central. Ver Sintes.h
 SR       = 48000.0
 
 #  LOS DOS LISTONES, Y DE DONDE SALEN.
@@ -75,8 +78,13 @@ PAR_FAM  = 3.0     # dos FAMILIAS por debajo de esto son el mismo algoritmo
 PAR_PRE  = 1.5     # dos presets de una familia son variaciones: menos exige
 
 #  Las dos capas. Los dos numeros a la vez o no vale.
-CAPA_DB  = 2.0     # decibelios entre suave y fuerte
+CAPA_DB  = 2.0     # decibelios entre la PRIMERA capa y la ULTIMA
 CAPA_HZ  = 1.12    # y los agudos, en RAZON: 12% de energia alta de mas
+#  Y EL SALTO ENTRE DOS CAPAS CONTIGUAS, que es la razon de que haya tres.
+#  Derivado y no escrito a ojo: `CAPA_DB / 2 + 0.3`, o sea la mitad del
+#  recorrido total mas el margen de medida. Por encima de esto una rampa de
+#  fuerza vuelve a sonar a escalon, que es el fallo que la tercera capa quita.
+CAPA_PASO = CAPA_DB / 2.0 + 0.3
 #  Y ENTRE OCTAVAS DE UN MISMO PRESET. Este si puede fallar: la ganancia se
 #  saca de UNA zona -la raiz 0, capa fuerte- y se aplica a las diez, asi que si
 #  una octava sale mucho mas sonora que otra, el instrumento pega un salto al
@@ -91,6 +99,144 @@ OCTAVA_DB = 3.0
 #  pendiente maxima que una senal limitada en banda puede tener, y es el mismo
 #  numero que kits.py usa para los chasquidos.
 SALTO_MAX = 2.0
+
+#  ============================ EL ANCHO =====================================
+#
+#  DOS NUMEROS Y NO UNO, y los dos se derivan el uno del otro, que es lo que
+#  hace que juntos acoten el intervalo entero de «ancho de verdad sin fase».
+#
+#  Para dos canales del mismo nivel con correlacion r, la suma en mono conserva
+#  (1+r)/2 de la energia. O sea:
+#
+#    · perdida >= -1.5 dB   ES   r >= 0.416   -- el limite de abajo: por debajo
+#      de ahi el instrumento se cae al sumarse, y un groovebox se toca en el
+#      altavoz de un telefono.
+#    · r <= 0.98            ES   perdida <= -0.04 dB -- el limite de arriba: por
+#      encima de 0.98 los dos canales son el mismo canal y el mando ANCHO no
+#      tiene nada que abrir. Es el lado a -20 dB del medio.
+#
+#  Las dos juntas dejan r en [0.42, 0.98].
+ANCHO_R_MAX  = 0.98
+ANCHO_MONO   = -1.5
+#  Y BAJOS Y SUBS AL REVES, con su propio liston y no con una excepcion: tienen
+#  que ser MONO BIT A BIT. Un grave descorrelado pierde hasta 3 dB en la suma y
+#  mueve de sitio lo unico que tiene que estar clavado en el centro. Ver
+#  `Sintes::monoDeVerdad`.
+MONO_FAMS    = (0, 1)
+MONO_R_MIN   = 0.9999
+
+#  ============================ LO QUE FALTABA ================================
+#
+#  De pureza espectral, afinacion fina, ruido y coste la cobertura era
+#  literalmente nula. Cada liston de aqui esta heredado y se dice de donde.
+
+#  DC del cuerpo contra su pico. `FLOOR = -60.0` de `kits.py` -«por debajo de
+#  esto ya es silencio y no forma»-, heredado literal. Una continua no se oye:
+#  se come margen de pico y descuadra el limitador del master.
+DC_DBFS   = -60.0
+
+#  AFINACION. 2-3 cents es el JND de dos notas SIMULTANEAS -y cruzar la costura
+#  entre dos zonas en un pasaje ligado es exactamente ese caso-; 5 el de notas
+#  sucesivas. El relativo es el que no depende del estimador, porque el sesgo se
+#  cancela al dividir; el absoluto solo se juzga donde el pico cae cerca del
+#  fundamental, que es donde «el pico» y «la nota» son la misma cosa.
+CENTS_REL = 3.0
+CENTS_ABS = 5.0
+
+#  DERIVA dentro del cuerpo: primer cuarto contra ultimo cuarto, en tercios de
+#  octava. Heredado del 1.0 dB de la regla del pliegue, que a su vez es el JND
+#  de una banda critica. Un cuerpo que deriva es un cuerpo que al dar la vuelta
+#  pega un salto.
+DERIVA_DB = 1.0
+
+#  CUADRE DEL LFO: `lfoHz * bucleSeg` entero, o exactamente 0 si se congelo.
+#  Cuatro veces mas estricto que el 0.02 de ciclos de la raiz, y se dice por
+#  que: siete grados de la raiz son un salto de FASE y siete grados de un LFO
+#  son un salto de TIMBRE.
+LFO_SOBRA = 0.005
+
+#  COSTE, en proporcion y no en milisegundos: la doctrina de `Cpu.cpp` citada,
+#  *el valor absoluto no dice si va a ir; la proporcion si viaja*.
+COSTE_MED = 60.0
+COSTE_PEOR = 100.0
+
+
+def carga2 (path):
+    """LOS DOS CANALES. `kits.load` devuelve el izquierdo -se salta el resto de
+    cada trama- y eso vale para todo lo que mide TIMBRE, porque el timbre es el
+    mismo en los dos. Para el ANCHO no vale: mediria su propia eleccion de
+    canal."""
+    import wave
+    w = wave.open (path, "rb")
+    n, sw, ch = w.getnframes(), w.getsampwidth(), w.getnchannels()
+    raw = w.readframes (n); w.close()
+    esc = float (1 << (8 * sw - 1))
+    izq, der = [], []
+    paso = sw * ch
+    for i in range (0, len (raw) - paso + 1, paso):
+        izq.append (int.from_bytes (raw[i:i + sw], "little", signed=True) / esc)
+        j = i + sw if ch > 1 else i
+        der.append (int.from_bytes (raw[j:j + sw], "little", signed=True) / esc)
+    return izq, der
+
+
+def goertzel (x, f, sr=48000.0):
+    """Potencia de UNA frecuencia. Dos multiplicaciones por muestra, que es lo
+    que permite barrer una rejilla de un cent sin pagar una FFT por punto."""
+    w = 2.0 * math.pi * f / sr
+    c = 2.0 * math.cos (w)
+    s1 = s2 = 0.0
+    for v in x:
+        s0 = v + c * s1 - s2
+        s2 = s1; s1 = s0
+    return s1 * s1 + s2 * s2 - c * s1 * s2
+
+
+def afina (x, esperada, n=4096):
+    """LA FRECUENCIA DEL PARCIAL DOMINANTE, en Hz, con rejilla de un cent.
+
+    Grueso por FFT -una sola- y fino con Goertzel sobre +-80 cents alrededor del
+    pico. La FFT sola no llega: a 130.8 Hz un bin de 5.86 Hz son 77 cents, o sea
+    veinticinco veces el liston."""
+    if len (x) < n: return 0.0
+    #  Desde un cuarto del cuerpo, que es donde el ataque ya no manda.
+    ini = len (x) // 4
+    seg = x[ini:ini + n]
+    if len (seg) < n: seg = x[:n]
+    mejor, mejorP = esperada, -1.0
+    #  Barrido de +-80 cents en pasos de un cent alrededor de la esperada: lo
+    #  que se quiere medir es el desafine de la SINTESIS, y ochenta cents es
+    #  mucho mas de lo que cualquiera de estos fallos ha producido nunca.
+    for c in range (-80, 81):
+        f = esperada * (2.0 ** (c / 1200.0))
+        p = goertzel (seg, f)
+        if p > mejorP: mejorP, mejor = p, f
+    return mejor
+
+
+def cents (a, b):
+    if a <= 0.0 or b <= 0.0: return 0.0
+    return 1200.0 * math.log (a / b, 2.0)
+
+
+def ancho (izq, der):
+    """La correlacion de los dos canales y lo que se pierde al sumarlos."""
+    n = min (len (izq), len (der))
+    if n < 16: return 1.0, 0.0
+    sa = sb = sab = 0.0
+    for i in range (n):
+        a, b = izq[i], der[i]
+        sa += a * a; sb += b * b; sab += a * b
+    if sa < 1e-20 or sb < 1e-20: return 1.0, 0.0
+    r = sab / math.sqrt (sa * sb)
+    #  La energia de la suma en mono contra la media de las dos, que es lo que
+    #  vale `10*log10((1+r)/2)` cuando los dos canales miden lo mismo — y esto
+    #  lo mide sin suponerlo.
+    sm = 0.0
+    for i in range (n):
+        m = 0.5 * (izq[i] + der[i]); sm += m * m
+    ref = 0.5 * (sa + sb)
+    return r, 10.0 * math.log10 (max (1e-30, sm) / max (1e-30, ref))
 
 
 def agudos (x):
@@ -180,6 +326,7 @@ def corre (dirtemp):
         except Exception: continue
         if d.get ("instr") == "preset": filas.append (d)
         elif d.get ("instr") == "bancoD": extra["bancoD"] = d["ms"]
+        elif d.get ("instr") == "ref":    extra["msKits"] = d["msKits"]
         elif d.get ("instr") == "vuelta": extra["vuelta"] = d
         elif d.get ("instr") == "destino": extra["destino"] = d
         elif d.get ("instr") == "receta":  extra["receta"] = d
@@ -222,6 +369,16 @@ def main():
                 fallos.append ("%s: las capas son %s" % (etiq, sorted (set (z[1] for z in mapa))))
             #  Ventanas seguidas, sin solapes y dentro del buffer: un mapa que
             #  se sale no suena mal, suena a la zona de al lado.
+            #
+            #  Y CON LAS DOS MUESTRAS DE GUARDA EN MEDIO. Detras del final de una
+            #  zona que da vueltas van escritas las dos primeras muestras de su
+            #  cuerpo: `hermite4` mira una por delante y dos por detras, asi que
+            #  sin ellas la ultima fraccion antes de dar la vuelta se interpolaba
+            #  contra la octava de al lado. Ver `Sintes::kGuardas`. O sea que
+            #  `ini` de la siguiente NO es `fin` de la anterior: son dos mas.
+            #  Se comprueba que la separacion sea EXACTAMENTE esa, que es lo que
+            #  distingue una guarda de un hueco.
+            GUARDAS = 2
             prev = 0
             for z in mapa:
                 if z[2] != prev or z[3] <= z[2] or z[3] > d["muestras"]:
@@ -254,10 +411,33 @@ def main():
                                        "(%.0f grados de desfase al dar la vuelta)"
                                        % (etiq, z[0], ciclos, 360.0 * sobra))
                         break
-                prev = z[3]
+                #  Y EL LFO CUADRA CON EL BUCLE, o esta congelado.
+                #
+                #  El LFO solo existe mientras se rinde: una vez la zona es un
+                #  buffer, su movimiento esta horneado y dar vueltas lo repite
+                #  igual. Si no cae en un numero entero de vueltas, la costura
+                #  parte el movimiento por la mitad y eso se oye como un salto
+                #  de TIMBRE una vez por vuelta. Ver `Sintes::largoBucle`.
+                #
+                #  Cero significa CONGELADO y es una respuesta: un LFO que no da
+                #  ni una vuelta dentro del cuerpo no es deriva, es una rampa, y
+                #  una rampa en bucle es un diente de sierra.
+                if d["sostiene"] and len (z) >= 8:
+                    lfoHz, bucleSeg = z[6], z[7]
+                    if lfoHz > 0.0 and bucleSeg > 0.0:
+                        vueltas = lfoHz * bucleSeg
+                        sobra = abs (vueltas - round (vueltas))
+                        if sobra > LFO_SOBRA:
+                            fallos.append ("%s: el LFO de la raiz %+d da %.4f vueltas por bucle "
+                                           "(sobra %.4f, liston %.3f)"
+                                           % (etiq, z[0], vueltas, sobra, LFO_SOBRA))
+                            break
+
+                prev = z[3] + GUARDAS
 
         # ---- LOS 256, UNO A UNO ------------------------------------------
         descs = []
+        peorDC = (-999.0, "")
         for d in filas:
             f, p = d["fam"], d["pre"]
             etiq = "%s %s" % (d["familia"], d["nombre"])
@@ -271,6 +451,60 @@ def main():
             if pico < MIN_PEAK: fallos.append ("%s mudo (pico %.4f)" % (etiq, pico))
             if son  < MIN_LOUD: fallos.append ("%s no suena (sonoridad %.4f)" % (etiq, son))
             if pico > MAX_PEAK: fallos.append ("%s sin margen (pico %.3f)" % (etiq, pico))
+
+            #  DC DEL CUERPO, contra su propio pico. Se mide DESDE el punto de
+            #  bucle: el ataque de una campana tiene un desplazamiento legitimo
+            #  mientras el filtro se asienta, y medirlo entero seria acusar a la
+            #  fisica. Ver DC_DBFS.
+            zref = [z for z in d["mapa"] if z[1] == CAPAS - 1 and z[0] == 0]
+            ini  = (zref[0][4] - zref[0][2]) if (zref and d["sostiene"]) else 0
+            cuerpo = x[ini:] if ini < len (x) - 16 else x
+            media = sum (cuerpo) / float (len (cuerpo))
+            dc = 20.0 * math.log10 (max (1e-12, abs (media)) / max (1e-12, pico))
+            if dc > DC_DBFS:
+                fallos.append ("%s: %.1f dBFS de continua (liston %.0f)" % (etiq, dc, DC_DBFS))
+            if dc > peorDC[0]: peorDC = (dc, etiq)
+
+        print ("continua: la peor %.1f dBFS (%s)" % (peorDC[0], peorDC[1]))
+
+        # ---- EL COSTE, EN PROPORCION -------------------------------------
+        msRef = extra.get ("msKits", 0.0)
+        mss = sorted (d["ms"] for d in filas)
+        if msRef > 0.01 and mss:
+            med  = mss[len (mss) // 2] / msRef
+            peor = mss[-1] / msRef
+            print ("coste: mediana x%.1f   peor x%.1f   (un golpe de fabrica %.1f ms)"
+                   % (med, peor, msRef))
+            if med > COSTE_MED:
+                fallos.append ("sintetizar cuesta x%.1f la mediana (liston x%.0f)" % (med, COSTE_MED))
+            if peor > COSTE_PEOR:
+                fallos.append ("el preset mas caro cuesta x%.1f (liston x%.0f)" % (peor, COSTE_PEOR))
+
+        # ---- EL ANCHO DE LOS 256 -----------------------------------------
+        peorR, peorMono, quienR, quienMono = -1.0, 99.0, "", ""
+        for d in filas:
+            f, p = d["fam"], d["pre"]
+            etiq = "%s %s" % (d["familia"], d["nombre"])
+            if d.get ("canales", 1) < 2:
+                fallos.append ("%s: la muestra sale con %d canal" % (etiq, d.get ("canales", 1)))
+                continue
+            izq, der = carga2 (os.path.join (dirtemp, "ref-%02d-%02d.wav" % (f, p)))
+            r, mono = ancho (izq, der)
+            if f in MONO_FAMS:
+                if r < MONO_R_MIN:
+                    fallos.append ("%s tenia que ser mono bit a bit y mide r=%.6f" % (etiq, r))
+                if mono < -0.001:
+                    fallos.append ("%s pierde %.3f dB al sumarse en mono" % (etiq, mono))
+                continue
+            if r > ANCHO_R_MAX:
+                fallos.append ("%s no tiene ancho: r=%.4f (liston %.2f)" % (etiq, r, ANCHO_R_MAX))
+            if mono < ANCHO_MONO:
+                fallos.append ("%s se cae %.2f dB al sumarse en mono (liston %.1f)"
+                               % (etiq, mono, ANCHO_MONO))
+            if r > peorR:       peorR, quienR = r, etiq
+            if mono < peorMono: peorMono, quienMono = mono, etiq
+        print ("ancho: r peor %.4f (%s)   mono peor %+.2f dB (%s)"
+               % (peorR, quienR, peorMono, quienMono))
 
         #  LOS 256 ENTRE SI. Sale clavado a cero casi siempre porque la
         #  ganancia se calcula para dejarlo asi: lo que esta linea caza no es un
@@ -315,7 +549,7 @@ def main():
             #  LAS DOS CAPAS DE LA RAIZ CENTRAL, en dos numeros.
             zs = [z for z in mapa if z[0] == 0]
             suave = [z for z in zs if z[1] == 0][0]
-            duro  = [z for z in zs if z[1] == 1][0]
+            duro  = [z for z in zs if z[1] == CAPAS - 1][0]
             a = x[suave[2]:suave[3]]; b = x[duro[2]:duro[3]]
             la, lb = loudness (a), loudness (b)
             ca, cb = agudos (a), agudos (b)
@@ -328,6 +562,76 @@ def main():
             if raz < CAPA_HZ:
                 fallos.append ("%s: las dos capas suenan igual de brillantes (x%.2f): "
                                "es un fader, no una capa" % (etiq, raz))
+
+            #  LA AFINACION, EN CENTS Y NO EN BANDAS.
+            #
+            #  La regla de octavas compara bandas logaritmicas y CATORCE CENTS
+            #  CABEN DENTRO DE UNA: el desafine del Karplus-Strong -que valia
+            #  -14.4 cents en toda la octava alta de CUERDA PULS- paso por
+            #  delante de ella sin que se moviera. Se mide la frecuencia del
+            #  parcial dominante con rejilla de un cent.
+            #
+            #  El RELATIVO es el que manda -el sesgo del estimador se cancela al
+            #  dividir- y el ABSOLUTO solo se juzga donde el pico cae cerca del
+            #  fundamental: en CAMPANAS, MAZOS y ARPAS el parcial que mas suena
+            #  no es la nota a proposito, y exigirselo seria inventarse una regla
+            #  que la tabla no dice.
+            zc = [z for z in mapa if z[1] == CAPAS - 1]
+            z0  = [z for z in zc if z[0] == 0]
+            z12 = [z for z in zc if z[0] == 12]
+            if z0 and z12:
+                f0  = afina (x[z0[0][2]:z0[0][3]],  RAIZ_HZ)
+                f12 = afina (x[z12[0][2]:z12[0][3]], RAIZ_HZ * 2.0)
+                rel = cents (f12 / 2.0, f0)
+                abs0 = cents (f0, RAIZ_HZ)
+                cerca = abs (abs0) < 50.0
+                print ("%-12s afina: raiz 0 %+.1f cents%s   la octava %+.1f cents"
+                       % (etiq, abs0, "" if cerca else " (el pico no es el fundamental)", rel))
+                if abs (rel) > CENTS_REL:
+                    fallos.append ("%s: la octava de arriba desafina %+.1f cents contra la raiz "
+                                   "(liston %.0f)" % (etiq, rel, CENTS_REL))
+                if cerca and abs (abs0) > CENTS_ABS:
+                    fallos.append ("%s: la raiz 0 desafina %+.1f cents (liston %.0f)"
+                                   % (etiq, abs0, CENTS_ABS))
+
+            #  LA DERIVA DENTRO DEL CUERPO: primer cuarto contra ultimo cuarto.
+            #
+            #  Lo que se congela en el punto de bucle son las envolventes, y esta
+            #  es la regla que lo comprueba desde fuera: si algo sigue cayendo
+            #  ahi dentro, cada vuelta lo reinicia y eso es un «wah» a la
+            #  velocidad del bucle.
+            if d["sostiene"] and z0:
+                cb = x[z0[0][4]:z0[0][5]]
+                q = len (cb) // 4
+                if q > 2048:
+                    ba, bb = bandas (cb[:q]), bandas (cb[-q:])
+                    dif = max (abs (a - b) for a, b in zip (ba, bb))
+                    print ("%-12s deriva: %.2f dB entre el primer cuarto y el ultimo" % (etiq, dif))
+                    if dif > DERIVA_DB:
+                        fallos.append ("%s: el cuerpo deriva %.2f dB (liston %.1f): cada vuelta "
+                                       "reinicia lo que se estuviera moviendo" % (etiq, dif))
+
+            #  Y EL TERCER NUMERO: NINGUN ESCALON ENTRE CAPAS CONTIGUAS.
+            #
+            #  Los dos de arriba miden el RECORRIDO entero y saldrian iguales
+            #  con dos capas que con tres: lo que la tercera capa arregla no es
+            #  cuanto se abre el instrumento, es que no se abra de golpe.
+            sons = []
+            for c in range (CAPAS):
+                zc = [z for z in zs if z[1] == c]
+                if not zc: continue
+                sons.append (loudness (x[zc[0][2]:zc[0][3]]))
+            pasos = []
+            for i in range (1, len (sons)):
+                if sons[i - 1] > 1e-9 and sons[i] > 1e-9:
+                    pasos.append (20.0 * math.log10 (sons[i] / sons[i - 1]))
+            if pasos:
+                print ("%-12s escalones: %s dB" % (etiq, " ".join ("%+.2f" % v for v in pasos)))
+                peor = max (abs (v) for v in pasos)
+                if peor > CAPA_PASO:
+                    fallos.append ("%s: un escalon de %.2f dB entre capas contiguas "
+                                   "(liston %.2f): una rampa de fuerza suena a escalon"
+                                   % (etiq, peor, CAPA_PASO))
 
             #  LAS CINCO OCTAVAS, EN SONORIDAD. La ganancia sale de una sola
             #  zona, asi que esto SI puede desmadrarse - y es lo que la linea de

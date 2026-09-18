@@ -8483,9 +8483,13 @@ int MainComponent::padSourceLength (int pad) const
 static void rindeFabrica (int primero, int cuantos, SampleBuffer::Ptr* salida)
 {
     const int hilos = juce::jlimit (1, 4, juce::SystemStats::getNumCpus());
+    //  LA GAMA SE LEE UNA VEZ Y FUERA DE LAS HEBRAS: `DeviceTier::profile()`
+    //  inicializa un estatico local la primera vez, y cuatro hilos entrando a la
+    //  vez a inicializarlo es exactamente el caso que no hace falta correr.
+    const bool est = DeviceTier::profile().instrumentoEstereo;
     if (hilos <= 1 || cuantos <= 1)
     {
-        for (int i = 0; i < cuantos; ++i) salida[i] = Kits::render (primero + i);
+        for (int i = 0; i < cuantos; ++i) salida[i] = Kits::render (primero + i, est);
         return;
     }
 
@@ -8496,7 +8500,7 @@ static void rindeFabrica (int primero, int cuantos, SampleBuffer::Ptr* salida)
         hebras.emplace_back ([&]
         {
             for (int i = siguiente.fetch_add (1); i < cuantos; i = siguiente.fetch_add (1))
-                salida[i] = Kits::render (primero + i);
+                salida[i] = Kits::render (primero + i, est);
         });
     for (auto& x : hebras) x.join();
 }
@@ -15431,6 +15435,19 @@ void MainComponent::eligePreset (int pre)
     status.setText (Sintes::nombreDe (fam, pre), juce::dontSendNotification);
 }
 
+//  LO QUE ESTE APARATO SE PUEDE PERMITIR, en un sitio y no en tres.
+//
+//  Escrito en cada llamada serian tres reglas, y la que se quedara vieja
+//  rendiria un pad en estereo en la gama que no puede pagarlo -o al reves, uno
+//  en mono en un aparato de sobra-. Ver `DeviceTier::instrumentoEstereo` para
+//  la cuenta de memoria y para la regla que no se puede romper: lo unico que
+//  esto mueve son canales y largo de cuerpo, nunca el mapa de zonas.
+static Sintes::Gama gamaDeAqui()
+{
+    const auto& dev = DeviceTier::profile();
+    return { dev.instrumentoEstereo, dev.cuerpoSeg };
+}
+
 //  SINTETIZAR TARDA, asi que esto no puede vivir en el hilo de audio ni en una
 //  respuesta a un toque que tenga que pintar antes. Corre en el de mensajes -
 //  como leer un WAV - y por eso la ficha se cierra primero: lo que se ve es la
@@ -15447,7 +15464,7 @@ void MainComponent::ponInstrumentoEnPad (int pad, int familia, int preset,
     padReceta[(size_t) pad] = Sintes::acota (fam, receta != nullptr ? *receta
                                                                    : Sintes::tabla()[fam].p[pre]);
     padRecetaMovida[(size_t) pad] = (receta != nullptr && movida);
-    auto sb = Sintes::sintetiza (fam, pre, padReceta[(size_t) pad]);
+    auto sb = Sintes::sintetiza (fam, pre, padReceta[(size_t) pad], gamaDeAqui());
     if (sb == nullptr) return;
 
     assignSampleToPad (pad, sb, Sintes::nombreDe (familia, preset));
@@ -15501,7 +15518,7 @@ void MainComponent::resintetizaInstrumento (int pad)
     auto* viejo = uiSample[(size_t) pad].get();
     const int fam = viejo->familia, pre = viejo->preset;
 
-    auto sb = Sintes::sintetiza (fam, pre, padReceta[(size_t) pad]);
+    auto sb = Sintes::sintetiza (fam, pre, padReceta[(size_t) pad], gamaDeAqui());
     if (sb == nullptr) return;
 
     //  SE SUELTA LO QUE ESTE SONANDO ANTES DE CAMBIAR LA MUESTRA, por lo mismo
@@ -16294,7 +16311,7 @@ void MainComponent::stepPadJob()
             padReceta[(size_t) i]       = recetaDeTexto (fam, pre, txt);
             padRecetaMovida[(size_t) i] = txt.isNotEmpty();
 
-            if (auto sb = Sintes::sintetiza (fam, pre, padReceta[(size_t) i]))
+            if (auto sb = Sintes::sintetiza (fam, pre, padReceta[(size_t) i], gamaDeAqui()))
             {
                 assignSampleToPad (i, sb, Sintes::nombreDe (fam, pre));
                 ++padJob->restored;

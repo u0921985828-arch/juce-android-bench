@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <JuceHeader.h>
 #include "SampleBuffer.h"
+#include "Diezmador.h"
 #include <array>
 #include <cmath>
 #include <vector>
@@ -103,14 +104,28 @@ namespace Kits
         //  viven los barridos de esta tabla. Da los tres tipos a la vez, que es
         //  justo lo que hace falta cuando un mismo sonido quiere banda para el
         //  cuerpo y alto para el aire.
+        //
+        //  Y LLEVA SU PROPIA TASA, que no es una comodidad sino una guarda.
+        //
+        //  `set` leia `kRate` directamente, y eso estaba bien mientras todo se
+        //  rendia a 48 kHz. Desde que la sintesis corre a 4x, un `Svf` que no
+        //  sepa a que tasa vive **filtra cuatro veces mas abajo de lo que dice**:
+        //  un paso bajo pedido en 8 kHz corta en 2. El sintoma no es un ruido ni
+        //  un fallo, es que TODO SUENA APAGADO, y no hay nada en la salida que
+        //  lo cante. Por eso la tasa es un miembro con su defecto puesto y
+        //  `prepara` la cambia: quien se olvide de llamarla se queda en 48 kHz,
+        //  que es el valor con el que esta casa ha funcionado siempre.
         struct Svf
         {
             float ic1 = 0.0f, ic2 = 0.0f, g = 0.0f, k = 2.0f, a1 = 0.0f, a2 = 0.0f, a3 = 0.0f;
+            double fs = kRate;
+
+            void prepara (double tasa) noexcept { fs = juce::jmax (1000.0, tasa); }
 
             void set (double hz, float q) noexcept
             {
-                const double f = juce::jlimit (20.0, kRate * 0.49, hz);
-                g  = (float) std::tan (juce::MathConstants<double>::pi * f / kRate);
+                const double f = juce::jlimit (20.0, fs * 0.49, hz);
+                g  = (float) std::tan (juce::MathConstants<double>::pi * f / fs);
                 k  = 1.0f / juce::jmax (0.05f, q);
                 a1 = 1.0f / (1.0f + g * (g + k));
                 a2 = g * a1;
@@ -178,6 +193,83 @@ namespace Kits
             return x - (x * x * x) * 0.16666667f + (x * x * x * x * x) * 0.008f;
         }
 
+        //  CUANTA APERTURA LLEVA UN REPARTO, y por que no es 1.0.
+        //
+        //  Repartir del -1 al +1 pone las piezas de las puntas EN UN SOLO
+        //  CANAL, y como esas piezas no estan correlacionadas entre si, la suma
+        //  en mono se cae 3 dB. Se midio: METALES MUTED BR daba **-3.05 dB**
+        //  contra un liston de -1.5. Con 0.85 el ancho sigue siendo ancho -la
+        //  correlacion de CUERDAS queda en 0.73, muy por debajo del 0.98 que
+        //  exige la regla- y la perdida en mono baja a **-0.66 dB**.
+        static constexpr double kApertura = 0.85;
+
+        //  Y LA CORRELACION DEL AIRE, que es la otra mitad del mismo numero.
+        //
+        //  Dos sorteos independientes dan correlacion CERO y eso son -3.01 dB
+        //  exactos al sumarse en mono, por muy bien repartidos que esten los
+        //  osciladores: en las nueve formas con soplo mandaba el ruido. Lo que
+        //  se hace es lo que hace una sala: una parte COMUN y una parte propia,
+        //  con la correlacion escrita. 0.65 deja la perdida en mono en -0.85 dB
+        //  y sigue sonando a dos microfonos y no a uno.
+        static constexpr float kCorrAire = 0.65f;
+
+        //  CUANTO DE UNA PIEZA SUENA EN ESTE CANAL, y como se hace el ancho.
+        //
+        //  La regla entera es una: **lo que ya es plural se reparte; lo que es
+        //  singular saca el ancho del ruido y de las envolventes**. Seis
+        //  parciales de un platillo no necesitan que nadie invente nada, solo
+        //  que salgan de sitios distintos del disco.
+        //
+        //  Lo que NO se hace, y va escrito porque es lo primero que sale:
+        //   · retardo entre canales — es un peine en cuanto alguien escucha en
+        //     mono, y un groovebox se toca en el altavoz de un telefono;
+        //   · todo-paso de fase aleatoria — es el coro barato, y se oye;
+        //   · copiar y desafinar — eso es un chorus, no un sonido ancho.
+        //
+        //  Potencia constante, y con la raiz de dos delante a proposito: una
+        //  pieza CENTRADA (x = 0) sale con ganancia 1.0 en los dos canales, o
+        //  sea exactamente lo que salia en mono, y una pieza abierta del todo
+        //  reparte la misma energia en un solo lado.
+        //
+        //  Vive aqui y no en `Sintes` porque los dos lo usan y `Sintes` ya hace
+        //  `using namespace Kits::detail`: *una regla duplicada que no se
+        //  contrasta son dos reglas*.
+        inline float ladoDe (int canal, double x) noexcept
+        {
+            const double a = juce::MathConstants<double>::pi * 0.25
+                           * (1.0 + juce::jlimit (-1.0, 1.0, x));
+            return (float) ((canal == 1) ? std::sin (a) : std::cos (a))
+                 * juce::MathConstants<float>::sqrt2;
+        }
+
+        //  EL AIRE DE UN CANAL: una parte comun y una propia. Ver `kCorrAire`.
+        //
+        //  `comun()` aparte, para lo que NO es señal: la cadencia de un crujido
+        //  de vinilo o el instante de un grano son SUCESOS, no ruido, y tienen
+        //  que caer en el mismo sitio en los dos canales -es el mismo surco y es
+        //  la misma bolita-. Lo que cambia es el ruido de debajo. Sorteandolos
+        //  del flujo mezclado, ademas, la distribucion dejaria de ser uniforme y
+        //  la densidad de la maraca cambiaria sin que nadie lo pidiera.
+        struct Aire
+        {
+            Rng   comun, propio;
+            float k = 1.0f, s = 0.0f;
+
+            Aire (int semilla, int canal, bool ancho)
+                : comun (semilla), propio (semilla ^ (canal == 1 ? 0x5F3A : 0x2D19))
+            {
+                if (ancho) { k = std::sqrt (kCorrAire); s = std::sqrt (1.0f - kCorrAire); }
+            }
+
+            float operator()() noexcept
+            {
+                const float a = comun(), b = propio();
+                return (s > 0.0f) ? (k * a + s * b) : a;
+            }
+            //  El sorteo COMUN, sin mezclar: mismo valor en los dos canales.
+            float suceso() noexcept { const float a = comun(); propio(); return a; }
+        };
+
         //  UN CUERPO CON MODOS, que es lo que separa un tom de un pitido.
         //
         //  Un parche no vibra a UNA frecuencia: vibra a varias que no guardan
@@ -186,6 +278,11 @@ namespace Kits
         struct Modes
         {
             double ph[3] {};
+            //  LA TASA, por la misma razon que `Svf::prepara`: a 4x sin esto los
+            //  modos irian a un cuarto de su frecuencia y un tom sonaria dos
+            //  octavas por debajo sin que nada lo cante.
+            double fs = kRate;
+            void prepara (double tasa) noexcept { fs = juce::jmax (1000.0, tasa); }
             static constexpr double ratio[3] = { 1.0, 1.593, 2.135 };   // modos de una membrana circular
             static constexpr float  amp[3]   = { 1.0f, 0.42f, 0.22f };
             float next (double hz, float t, float tau) noexcept
@@ -193,7 +290,7 @@ namespace Kits
                 float s = 0.0f;
                 for (int i = 0; i < 3; ++i)
                 {
-                    ph[i] += 2.0 * juce::MathConstants<double>::pi * hz * ratio[i] / kRate;
+                    ph[i] += 2.0 * juce::MathConstants<double>::pi * hz * ratio[i] / fs;
                     //  Cada modo con su propia caida: los agudos se van antes.
                     s += amp[i] * (float) std::sin (ph[i]) * env (t, tau / (1.0f + (float) i * 1.6f));
                 }
@@ -216,18 +313,30 @@ namespace Kits
             static constexpr double fMaquina[9] = { 205.3, 304.4, 369.6, 522.7, 540.0, 800.0, 0.0, 0.0, 0.0 };
             static constexpr double fLaton[9] = { 311.0, 437.7, 591.3, 728.9, 941.0, 1183.0, 1601.0, 2087.0, 2749.0 };
             int juego = 0;
+            double fs = kRate;
+            void prepara (double tasa) noexcept { fs = juce::jmax (1000.0, tasa); }
             int cuantos() const noexcept { return juego == 0 ? 6 : 9; }
-            float next (double mul) noexcept
+
+            //  Y EL REPARTO ES POR PARCIAL. Un platillo suena ancho porque sus
+            //  modos salen de sitios distintos del disco, no porque nadie le
+            //  meta un retardo. `canal < 0` es «no repartas»: lo piden las
+            //  formas que se quedan mono.
+            float next (double mul, int canal = -1) noexcept
             {
                 const double* f = (juego == 0) ? fMaquina : fLaton;
                 const int nf = cuantos();
                 float s = 0.0f;
                 for (int i = 0; i < nf; ++i)
                 {
-                    const double inc = f[i] * mul / kRate;
+                    const double inc = f[i] * mul / fs;
                     ph[i] += inc;
                     if (ph[i] >= 1.0) ph[i] -= 1.0;
-                    s += sqrBl (ph[i], inc);
+                    //  Alternando lado y abriendose segun suben, con el mas
+                    //  grave centrado: es el mismo reparto que ARPAS.
+                    const double x = (canal < 0 || i == 0) ? 0.0
+                        : (((i & 1) != 0) ? 1.0 : -1.0)
+                          * juce::jmin (1.0, (double) i / (double) juce::jmax (1, nf - 1));
+                    s += (canal < 0 ? 1.0f : ladoDe (canal, x)) * sqrBl (ph[i], inc);
                 }
                 return s / (float) nf;
             }
@@ -464,6 +573,61 @@ namespace Kits
         return (loud > 1.0e-7f) ? kTargetLufsish / loud : 1.0f;
     }
 
+    //  LA MISMA, PARA DOS CANALES, y no es la media de dos llamadas.
+    //
+    //  BS.1770 suma las ENERGIAS de los canales y saca UNA raiz: promediar dos
+    //  sonoridades daria otro numero en cuanto los dos canales no midan lo
+    //  mismo, que es justo el caso en cuanto hay ancho. Y devuelve **una sola
+    //  ganancia para los dos**: dos ganancias distintas moverian la imagen de
+    //  sitio, o sea que la igualacion por sonoridad se convertiria en un
+    //  panoramico que nadie pidio.
+    //
+    //  Y sale +3.01 dB mas alta que la mono para la misma señal duplicada, que
+    //  es la cuenta de la norma y no un error: dos canales con lo mismo suenan
+    //  el doble de energia. Por eso lo que se compara entre zonas es la
+    //  ganancia estereo contra la estereo, nunca una contra la otra.
+    inline float gananciaSonoridad (const float* l, const float* r, int len)
+    {
+        if (l == nullptr || r == nullptr || len <= 0) return 1.0f;
+
+        struct Biquad
+        {
+            double b0, b1, b2, a1, a2, x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+            double operator() (double x) noexcept
+            {
+                const double y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+                x2 = x1; x1 = x; y2 = y1; y1 = y;
+                return std::isfinite (y) ? y : 0.0;
+            }
+        };
+        Biquad shelfL { 1.53512485958697, -2.69169618940638, 1.19839281085285,
+                       -1.69065929318241,  0.73248077421585 };
+        Biquad hpfL   { 1.0, -2.0, 1.0, -1.99004745483398, 0.99007225036621 };
+        Biquad shelfR = shelfL, hpfR = hpfL;
+
+        const int win = juce::jmin (len, (int) (kRate * 0.400));
+        double run = 0.0, best = 0.0;
+        std::vector<double> sq ((size_t) len);
+        for (int n = 0; n < len; ++n)
+        {
+            const double a = hpfL (shelfL ((double) l[n]));
+            const double b = hpfR (shelfR ((double) r[n]));
+            sq[(size_t) n] = a * a + b * b;
+            run += sq[(size_t) n];
+            if (n >= win) run -= sq[(size_t) (n - win)];
+            if (n >= win - 1) best = juce::jmax (best, run);
+        }
+        if (win >= len) best = juce::jmax (best, run);
+
+        const float loud = (float) std::sqrt (best / juce::jmax (1, win));
+        //  El objetivo se sube 3.01 dB -la raiz de dos- para que una señal
+        //  duplicada en los dos canales salga al MISMO nivel que salia en mono.
+        //  Sin esto los 256 instrumentos bajarian de golpe 3 dB respecto a la
+        //  fabrica, que sigue siendo mono.
+        const float objetivo = kTargetLufsish * juce::MathConstants<float>::sqrt2;
+        return (loud > 1.0e-7f) ? objetivo / loud : 1.0f;
+    }
+
     //  El techo, DESPUES de la sonoridad: al reves, el limitador decidiria
     //  cuanto suena cada cosa. 0.80 deja margen para tocar cuatro pads a la vez
     //  sin llegar al limitador del master, y lo que se pase se dobla en vez de
@@ -503,11 +667,46 @@ namespace Kits
         aplicaGanancia (d, len, gananciaSonoridad (d, len));
     }
 
-    inline SampleBuffer::Ptr render (int index)
+    //  LAS DOS FORMAS QUE SE QUEDAN EN MONO, BIT A BIT, y por que.
+    //
+    //  Un grave descorrelado pierde hasta 3 dB al sumarse en mono -que es lo que
+    //  hace el altavoz de un telefono, y un groovebox se toca ahi- y ademas
+    //  mueve de sitio lo unico que tiene que estar clavado en el centro. Es la
+    //  misma regla y la misma razon que `Sintes::monoDeVerdad` para BAJOS y
+    //  SUBS. `fm` se apunta con ellos porque es un solo operador sobre un solo
+    //  portador: no hay nada plural que repartir, y abrirlo seria inventarse un
+    //  ancho que el sonido no tiene.
+    inline bool monoDeVerdad (Shape f) noexcept
+    {
+        return f == drum || f == skin || f == fm;
+    }
+
+    //  EL GENERADOR, A LA TASA QUE SE LE PIDA Y PARA UN CANAL.
+    //
+    //  Ver `Diezmador.h` para el porque del 4x: `soft()` es un polinomio de
+    //  quinto orden aplicado por muestra en media tabla y los flancos de
+    //  `sqrBl`/`sawBl` solo estan limitados en banda ANTES del saturador.
+    //
+    //  `fs` entra por argumento y no por constante, que es lo mismo que ya hace
+    //  `Sintes::rindeCrudo` y por la misma razon.
+    inline void renderCrudo (float* d, int len, const Recipe& r, int index,
+                             double fs, int canal)
     {
         using namespace detail;
 
-        const auto& r = table()[juce::jlimit (0, kNumSounds - 1, index)];
+        //  DOS SEMILLAS DE RUIDO, que es la descorrelacion mas honesta que hay.
+        //  Las formas mono se quedan con la misma; ver `monoDeVerdad`.
+        const bool anchoOk = ! monoDeVerdad (r.shape);
+        Aire rnd (1000 + index * 37, canal, anchoOk);
+        //  Y a quien reparte piezas se le pasa el canal; `-1` es «no repartas».
+        const int lado = anchoOk ? canal : -1;
+
+        //  CUANTO MAS LARGO ES UN INTERVALO MEDIDO EN MUESTRAS. Todo evento cuya
+        //  cadencia se escribio en muestras a 48 kHz -los crujidos del vinilo,
+        //  el hueco entre granos- se CUADRUPLICA de frecuencia a 4x si no se
+        //  escala: el vinilo saldria cuatro veces mas sucio y la maraca cuatro
+        //  veces mas densa, y ninguna de las dos cosas la canta nada.
+        const double esc = fs / kRate;
 
         //  LA FABRICA ES ENTERA NUESTRA, y eso es una decision legal antes
         //  que sonora. Treinta y una de estas filas venian de grabaciones de
@@ -521,14 +720,6 @@ namespace Kits
         //  sobre un tope de 6.0. Lo que se gano: cada sonido dura lo que duraba
         //  el suyo. Ver el comentario de `decay` mas abajo.
 
-        const int len = juce::jmax (1024, (int) (kRate * juce::jmin (3.0f, r.decay * 5.0f)));
-
-        SampleBuffer::Ptr sb = new SampleBuffer();
-        sb->sourceSampleRate = kRate;
-        sb->buffer.setSize (1, len);
-        float* d = sb->buffer.getWritePointer (0);
-
-        Rng rnd (1000 + index * 37);
         Metal met;
         met.juego = juce::jlimit (0, 1, r.juego);
         //  Cero no es "cerrado del todo" sino "el de siempre": los sesenta y
@@ -536,13 +727,19 @@ namespace Kits
         const float brillo = (r.brillo > 0.0f) ? r.brillo : 1.0f;
         Modes body, body2;
         Svf f1, f2, f3;
+        //  SIN ESTO TODO FILTRA Y VIBRA CUATRO VECES MAS ABAJO. Ver `Svf` y
+        //  `Modes`: el sintoma no es un ruido, es que la fabrica entera suena
+        //  dos octavas por debajo y apagada.
+        f1.prepara (fs); f2.prepara (fs); f3.prepara (fs);
+        body.prepara (fs); body2.prepara (fs);
+        met.prepara (fs);
         double ph = 0.0, ph2 = 0.0, ph3 = 0.0, phs = 0.0;
         int nextClick = 0;
         float clickAmp = 0.0f;
 
         for (int n = 0; n < len; ++n)
         {
-            const float t = (float) n / (float) kRate;
+            const float t = (float) n / (float) fs;
             float v = 0.0f;
 
             switch (r.shape)
@@ -552,7 +749,7 @@ namespace Kits
                     //  La afinacion cae - eso ES el bombo - y el cuerpo lleva
                     //  modos, que es lo que lo separa de un pitido.
                     const double f = r.hz * (1.0 + r.p1 * std::exp (-t / r.p2));
-                    ph += 2.0 * juce::MathConstants<double>::pi * f / kRate;
+                    ph += 2.0 * juce::MathConstants<double>::pi * f / fs;
                     const float fund = (float) std::sin (ph) * env (t, r.decay);
                     const float mds  = body.next (r.hz * 2.6, t, r.decay * 0.5f) * 0.16f;
                     v = soft (1.15f * (fund + mds));
@@ -583,7 +780,7 @@ namespace Kits
                     //  maquina es al reves y por eso suena a maquina.
                     const float aire = (met.juego == 1) ? 0.22f : 0.55f;
                     const float src = (r.p2 > 0.5f) ? rnd()
-                                                    : (aire * rnd() + (1.0f - aire) * met.next (1.0));
+                                                    : (aire * rnd() + (1.0f - aire) * met.next (1.0, lado));
                     v = f1.hp (src) * 1.7f * env (t, r.decay);
                     break;
                 }
@@ -594,7 +791,7 @@ namespace Kits
                     //  p1 = donde canta, p2 = cuanta campana tiene.
                     f1.set (r.p1, r.p2);
                     f2.set (r.p1 * 0.42, r.p2 * 0.8f);
-                    const float m = met.next (r.hz);
+                    const float m = met.next (r.hz, lado);
                     v = (f1.bpf (m) * 1.4f + f2.bpf (m) * 0.8f) * env (t, r.decay);
                     break;
                 }
@@ -606,11 +803,17 @@ namespace Kits
                     //  corto, no una palmada.
                     f1.set (r.p2, r.p1);
                     const float nz = f1.bpf (rnd()) * 2.2f;
+                    //  Y CADA MANO EN UN SITIO DISTINTO, que es literalmente lo
+                    //  que una palmada de varias personas ES. Aqui el reparto no
+                    //  es una licencia: es la descripcion del sonido. La cola
+                    //  queda centrada -es la sala- y solo se abren los golpes.
                     float e = env (juce::jmax (0.0f, t - 0.026f), r.decay) * 0.85f;
                     for (int k = 0; k < 3; ++k)
                     {
                         const float dt = t - (float) k * 0.0085f;
-                        if (dt >= 0.0f) e += env (dt, 0.005f);
+                        if (dt >= 0.0f)
+                            e += (lado < 0 ? 1.0f : ladoDe (lado, -0.8 + 0.8 * (double) k))
+                                 * env (dt, 0.005f);
                     }
                     v = nz * juce::jmin (2.4f, e) * 0.55f;
                     break;
@@ -622,11 +825,15 @@ namespace Kits
                     //  seno; p2 = 1 lo hace sostenido en vez de percusivo. Y un
                     //  paso bajo que se cierra con la nota, que es lo que hace
                     //  que un bajo suene a bajo y no a zumbido.
-                    const double inc = r.hz / kRate;
+                    const double inc = r.hz / fs;
                     ph += inc; if (ph >= 1.0) ph -= 1.0;
                     const float s   = (float) std::sin (2.0 * juce::MathConstants<double>::pi * ph);
                     const float saw = sawBl (ph, inc);
-                    const float mix = (1.0f - r.p1) * s + r.p1 * saw * 0.7f;
+                    //  EL SENO CENTRADO Y LA SIERRA ABRIENDO. Lo que lleva el
+                    //  grave se queda en el medio -misma razon que `drum`- y lo
+                    //  que lleva los armonicos es lo unico que se abre.
+                    const float mix = (1.0f - r.p1) * s
+                                    + r.p1 * (lado < 0 ? 1.0f : ladoDe (lado, 0.45)) * saw * 0.7f;
                     const float e   = (r.p2 > 0.5f) ? ad (t, 0.05f, r.decay) : env (t, r.decay);
                     f1.set (juce::jlimit (200.0, 16000.0, r.hz * brillo * (3.0 + 9.0 * (double) e)), 0.9f);
                     v = soft (1.25f * f1.lp (mix) * e);
@@ -638,12 +845,15 @@ namespace Kits
                     //  Tres notas, y las tres con un poco de sierra: tres senos
                     //  puros suenan a organillo de juguete.
                     const double third = (r.p1 < 0.5f) ? 1.2599 : (r.p1 < 1.5f ? 1.1892 : 1.4983);
-                    const double i1 = r.hz / kRate, i2 = r.hz * third / kRate, i3 = r.hz * 1.4983 / kRate;
+                    const double i1 = r.hz / fs, i2 = r.hz * third / fs, i3 = r.hz * 1.4983 / fs;
                     ph  += i1; if (ph  >= 1.0) ph  -= 1.0;
                     ph2 += i2; if (ph2 >= 1.0) ph2 -= 1.0;
                     ph3 += i3; if (ph3 >= 1.0) ph3 -= 1.0;
                     const float e = (r.p2 > 0.5f) ? ad (t, 0.09f, r.decay) : env (t, r.decay);
-                    const float mix = 0.30f * (sawBl (ph, i1) + sawBl (ph2, i2) + sawBl (ph3, i3));
+                    //  Tres notas, tres sitios, con la fundamental centrada.
+                    const float mix = 0.30f * (sawBl (ph, i1)
+                        + (lado < 0 ? 1.0f : ladoDe (lado, -0.7)) * sawBl (ph2, i2)
+                        + (lado < 0 ? 1.0f : ladoDe (lado,  0.7)) * sawBl (ph3, i3));
                     f1.set (juce::jlimit (300.0, 14000.0, r.hz * brillo * (4.0 + 7.0 * (double) e)), 0.8f);
                     v = soft (1.1f * f1.lp (mix) * e);
                     break;
@@ -670,7 +880,7 @@ namespace Kits
                     //  aplauso y solo el grave es un bombo.
                     f1.set (1100.0, 0.7f);
                     const float nz = f1.lp (rnd());
-                    ph += 2.0 * juce::MathConstants<double>::pi * r.hz * (1.0 + r.p1 * std::exp (-t / 0.07f)) / kRate;
+                    ph += 2.0 * juce::MathConstants<double>::pi * r.hz * (1.0 + r.p1 * std::exp (-t / 0.07f)) / fs;
                     v = soft (1.3f * (0.42f * nz + 0.85f * (float) std::sin (ph)) * env (t, r.decay));
                     break;
                 }
@@ -688,8 +898,14 @@ namespace Kits
                     float s = f1.lp (rnd()) * (r.p1 > 0.5f ? 0.006f : 0.14f);
                     if (n >= nextClick)
                     {
-                        clickAmp = 0.5f + 0.5f * std::abs (rnd());
-                        nextClick = n + 220 + (int) (std::abs (rnd()) * (r.p1 > 0.5f ? 950.0f : 3200.0f));
+                        //  DEL SORTEO COMUN: el crujido esta en el mismo sitio
+                        //  en los dos canales -es el mismo surco- y lo que
+                        //  cambia es el ruido de debajo. Ver `Aire::suceso`.
+                        clickAmp = 0.5f + 0.5f * std::abs (rnd.suceso());
+                        //  LA CADENCIA VA EN MUESTRAS y por eso se escala: sin
+                        //  el `esc`, a 4x el vinilo cruje cuatro veces mas.
+                        nextClick = n + (int) (esc * (220.0 + (double) std::abs (rnd.suceso())
+                                                             * (r.p1 > 0.5f ? 950.0 : 3200.0)));
                     }
                     if (clickAmp > 0.001f) { s += clickAmp * rnd(); clickAmp *= 0.55f; }
                     v = s * ad (t, 0.008f, r.decay);
@@ -712,12 +928,16 @@ namespace Kits
                     //  pandereta tiene chapas y las chapas son metal.
                     if (n >= nextClick)
                     {
-                        clickAmp = 0.45f + 0.55f * std::abs (rnd());
-                        const float medio = kRate / juce::jmax (20.0f, r.p1);
+                        //  Del sorteo comun: es la misma bolita. Ver `vinyl`.
+                        clickAmp = 0.45f + 0.55f * std::abs (rnd.suceso());
+                        const float medio = (float) fs / juce::jmax (20.0f, r.p1);
                         //  El hueco entre 0.35 y 1.65 veces el medio: dispersion
                         //  de sobra para que no se oiga el patron y no tanta como
                         //  para que se hagan huecos de silencio.
-                        nextClick = n + juce::jmax (12, (int) (medio * (0.35f + 1.3f * std::abs (rnd()))));
+                        //  El suelo de doce muestras tambien es un largo, asi
+                        //  que escala con la tasa igual que el medio.
+                        nextClick = n + juce::jmax ((int) (12.0 * esc),
+                                                    (int) (medio * (0.35f + 1.3f * std::abs (rnd.suceso()))));
                     }
                     if (clickAmp > 0.0005f)
                     {
@@ -730,7 +950,7 @@ namespace Kits
                         if (r.p2 > 0.01f)
                         {
                             f2.set (r.hz * 1.9, 1.4f);
-                            g += f2.bpf (met.next (2.6)) * clickAmp * r.p2 * 2.2f;
+                            g += f2.bpf (met.next (2.6, lado)) * clickAmp * r.p2 * 2.2f;
                         }
                         v = g;
                     }
@@ -793,19 +1013,77 @@ namespace Kits
                 {
                     //  Dos operadores, y el indice CAE: un ataque brillante que
                     //  no se apaga suena a sintetizador barato.
-                    ph2 += 2.0 * juce::MathConstants<double>::pi * r.hz * r.p2 / kRate;
+                    ph2 += 2.0 * juce::MathConstants<double>::pi * r.hz * r.p2 / fs;
                     const double mod = std::sin (ph2) * r.p1 * env (t, r.decay * 0.40f);
-                    ph  += 2.0 * juce::MathConstants<double>::pi * r.hz / kRate;
+                    ph  += 2.0 * juce::MathConstants<double>::pi * r.hz / fs;
                     v = (float) std::sin (ph + mod) * env (t, r.decay);
                     break;
                 }
             }
 
-            juce::ignoreUnused (phs);
+            juce::ignoreUnused (phs, lado);
             d[n] = std::isfinite (v) ? v : 0.0f;
         }
+    }
 
-        normaliza (d, len);
+    //  LA PUERTA: se genera a 4x, se baja y se iguala por sonoridad.
+    //
+    //  El coste, medido y aceptado: el primer arranque de la fabrica pasa de
+    //  ~370 ms a segundos, y la RAM de los sesenta y cuatro se dobla porque cada
+    //  uno lleva dos canales. Lo que se gana es que los flancos y el saturador
+    //  dejen de escribir pliegue DENTRO de la muestra, que es lo que no hay
+    //  filtro que quite despues.
+    //  `estereo` va por argumento y con su valor puesto, igual que
+    //  `Sintes::Gama` y por la misma razon: la gama del aparato la conoce la
+    //  app, no `Kits`, y quien no diga nada se lleva la calidad entera.
+    inline SampleBuffer::Ptr render (int index, bool estereo = true)
+    {
+        using namespace detail;
+
+        const auto& r = table()[juce::jlimit (0, kNumSounds - 1, index)];
+        const int len = juce::jmax (1024, (int) (kRate * juce::jmin (3.0f, r.decay * 5.0f)));
+
+        SampleBuffer::Ptr sb = new SampleBuffer();
+        sb->sourceSampleRate = kRate;
+        sb->buffer.setSize (estereo ? 2 : 1, len);
+        sb->buffer.clear();
+        float* dL = sb->buffer.getWritePointer (0);
+        float* dR = estereo ? sb->buffer.getWritePointer (1) : dL;
+
+        const int mitad    = Diezmador::mitadDe (Diezmador::kOs);
+        const int crudoLen = Diezmador::largoDeRender (len);
+        std::vector<float> crudo ((size_t) crudoLen, 0.0f);
+
+        //  LA CABECERA ES SILENCIO DE VERDAD: antes del golpe no hay golpe. Ver
+        //  el mismo argumento en `Sintes::rinde`.
+        renderCrudo (crudo.data() + mitad, crudoLen - mitad, r, index,
+                     kRate * (double) Diezmador::kOs, 0);
+        Diezmador::diezma (crudo.data(), dL, len);
+
+        if (! estereo)
+        {
+            //  Nada que hacer: la gama baja rinde un canal. Ver `DeviceTier`.
+        }
+        else if (monoDeVerdad (r.shape))
+        {
+            //  Se COPIA y no se vuelve a generar: es lo unico que garantiza
+            //  `L == R` bit a bit el dia que alguien meta un sorteo mas.
+            std::memcpy (dR, dL, sizeof (float) * (size_t) len);
+        }
+        else
+        {
+            std::fill (crudo.begin(), crudo.end(), 0.0f);
+            renderCrudo (crudo.data() + mitad, crudoLen - mitad, r, index,
+                         kRate * (double) Diezmador::kOs, 1);
+            Diezmador::diezma (crudo.data(), dR, len);
+        }
+
+        //  Y LA MISMA GANANCIA A LOS DOS, medida sumando energias como manda
+        //  BS.1770. Ver `gananciaSonoridad` de dos canales.
+        const float g = estereo ? gananciaSonoridad (dL, dR, len)
+                                : gananciaSonoridad (dL, len);
+        aplicaGanancia (dL, len, g);
+        if (estereo) aplicaGanancia (dR, len, g);
 
         return sb;
     }

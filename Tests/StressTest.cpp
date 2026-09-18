@@ -13,6 +13,7 @@
 #include "../Source/Kits.h"
 #include "../Source/Onsets.h"
 #include "../Source/Sintes.h"
+#include "../Source/Diezmador.h"
 #include "../Source/Eq5.h"
 #include "../Source/FxVisor.h"
 #include <chrono>
@@ -1426,6 +1427,435 @@ int main()
                      (! nan && pct < 0.01 && pk < 0.99) ? "OK" : zatiFalla());
     }
 
+    //  LA VUELTA DEL BUCLE NO SE OYE: el nivel no late a su cadencia.
+    //
+    //  Del telefono: «que no se escuche nada de repeticiones forzadas». Esta es
+    //  la medida de esa queja.
+    //
+    //  Y ES EN EL TIEMPO Y NO EN LA FRECUENCIA, y eso se aprendio midiendo. La
+    //  primera version buscaba bandas laterales en f0 +- k/L con un Goertzel. Dio
+    //  **-11.0 dB** con ORGANOS -que lleva un leslie a 5.6 Hz y mete bandas
+    //  laterales A PROPOSITO- y **-3.7 dB** con BAJOS, que no lleva LFO ninguno.
+    //  Barrido el entorno del fundamental, lo que habia no eran picos discretos
+    //  sino una falda simetrica que cae veinte decibelios en seis hercios: la
+    //  resolucion que hace falta para separar bandas a un hercio de una nota real
+    //  de ocho segundos no la da esta sonda. *Cuando una prueba falla, primero se
+    //  duda de la prueba* — y aqui la prueba estaba midiendo su propia ventana.
+    //
+    //  Lo que la persona oye no es una banda lateral: es que **el nivel late**.
+    //  Asi que se mide el nivel: RMS en ventanas de 50 ms a lo largo de ocho
+    //  vueltas, y se publica cuanto sube y baja. Un bucle cuya costura salta -de
+    //  fase, de envolvente o de LFO- lo enseña ahi y no hace falta nada mas.
+    //
+    //  EL LISTON, 1.5 dB de subida y bajada, sale de la regla de al lado: «la
+    //  nota sostenida no re-ataca» acepta un bache de hasta 12 dB porque mide el
+    //  MINIMO absoluto de un ataque incluido. Aqui se mide el regimen, donde no
+    //  hay ataque que valga, y 1.5 dB es el escalon mas pequeño de nivel que esta
+    //  casa considera audible — el mismo 1.5 que `instr.py` usa para separar dos
+    //  presets (`PAR_PRE`).
+    {
+        AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+        enCanalCero (e);
+        e.setSafetyLimiter (false);
+        e.setPadGain (0, 1.0f);
+        //  BAJOS SAW BS: sostiene, es de los mas tonales que hay y **no lleva
+        //  LFO ninguno**, asi que lo unico que puede mover el nivel es la vuelta.
+        e.publishSample (0, Sintes::sintetiza (0, 0));
+        //  +7 SEMITONOS -delta 1.4983- y no la raiz: en la raiz delta vale 1.0
+        //  clavada, la lectura no tiene parte fraccionaria y el defecto que esto
+        //  busca no puede aparecer. Es la misma trampa del +12 de la sonda de
+        //  aliasing, evitada por la misma razon.
+        e.setPadPitch (0, 7.0f);
+
+        juce::AudioBuffer<float> b (2, 512);
+        b.clear(); e.renderNextBlock (b, 0, 512);
+        //  SOSTENIDA, y esto costo una corrida: con `postNoteOn` la audicion
+        //  dura 1.2 s, la nota se acaba a mitad de la medida y el nivel se movio
+        //  **151.86 dB** -que es el silencio, no un bucle-. Es exactamente la
+        //  misma nota al pie que ya lleva escrita «la nota sostenida no
+        //  re-ataca», y se volvio a pisar por no leerla.
+        e.postNoteOnAt (0, 0, 1.0f, AudioEngine::kSostenida);
+
+        constexpr int kSalta = 94;              // ~1 s: fuera el ataque
+        constexpr int kMide  = 8 * 94;          // ocho vueltas de un cuerpo de 1 s
+        for (int blk = 0; blk < kSalta; ++blk) { b.clear(); e.renderNextBlock (b, 0, 512); }
+
+        juce::AudioBuffer<float> cap (1, 512 * kMide);
+        for (int blk = 0; blk < kMide; ++blk)
+        {
+            b.clear();
+            e.renderNextBlock (b, 0, 512);
+            cap.copyFrom (0, blk * 512, b, 0, 0, 512);
+        }
+
+        const float* d = cap.getReadPointer (0);
+        const int n = 512 * kMide;
+        const int ven = (int) (48000.0 * 0.050);          // 50 ms
+        double lo = 1.0e30, hi = 0.0;
+        for (int i = 0; i + ven <= n; i += ven)
+        {
+            double sum = 0.0;
+            for (int k = 0; k < ven; ++k) sum += (double) d[i + k] * d[i + k];
+            const double r = std::sqrt (sum / ven);
+            if (r > hi) hi = r;
+            if (r < lo) lo = r;
+        }
+
+        const double db = 20.0 * std::log10 (juce::jmax (1.0e-9, hi) / juce::jmax (1.0e-9, lo));
+        std::printf ("%-34s +7 st, 8 vueltas: el nivel se mueve %.2f dB   %s\n",
+                     "la vuelta del bucle no se oye", db,
+                     db <= 1.5 ? "OK" : zatiFalla());
+
+        //  Y LA OTRA MITAD: QUE LA VUELTA NO SALTE DE FASE.
+        //
+        //  El nivel caza los saltos de envolvente y de LFO, y NO caza un salto
+        //  de fase: una modulacion de fase no mueve el nivel. Se vio rompiendo a
+        //  proposito la vuelta para que tirara la parte fraccionaria -el defecto
+        //  que esta tanda arregla- y la cifra de arriba se quedo en **0.14 dB,
+        //  identica**. Una prueba en la que el defecto que motivo el arreglo no
+        //  mueve el numero no cubre ese arreglo.
+        //
+        //  Lo que si lo caza, y es exacto: **el mismo cuerpo repetido a mano**.
+        //  El fundido cruzado hace que la muestra del final del bucle sea la del
+        //  principio, asi que pegar ocho copias del cuerpo una detras de otra da
+        //  EXACTAMENTE la misma señal que dar ocho vueltas — si la vuelta es
+        //  continua. Se toca la misma nota sobre las dos y se restan.
+        //
+        //  Y ESTA PRUEBA HUBO QUE CORREGIRLA DOS VECES ANTES DE CREERLA, que es
+        //  la regla de la casa y aqui volvio a pagar: el primer -18.5 dB no era
+        //  del bucle sino de que la referencia se construia con la zona de otra
+        //  octava (ver abajo), y el segundo -27.6 dB tampoco era del bucle sino
+        //  de dos muestras de guarda que se escribian antes de la ganancia por
+        //  octava (ver `Sintes::kGuardas`). Lo que quedo al final -96.2 dB- son
+        //  **una sola muestra** de las 240 640, la primera del ataque, donde la
+        //  referencia lee su relleno de ceros y el original lee la cola de la
+        //  zona de al lado. Eso es de la referencia, no de la vuelta.
+        {
+            auto orig = Sintes::sintetiza (0, 0);
+            //  LA ZONA QUE EL MOTOR VA A ELEGIR, y no la que parece.
+            //
+            //  Se escribio «la de la raiz 0, capa fuerte: es la que +7 elige» y
+            //  es FALSO: `AudioEngine` puntua `|round(semis) - raiz|`, y a +7 la
+            //  mas cercana de -24/-12/0/+12/+24 es **+12** (distancia 5, contra
+            //  7 de la raiz 0). La referencia se construia con el cuerpo de otra
+            //  octava, asi que las dos señales diferian **desde la muestra 1, en
+            //  pleno ataque**, mucho antes de que hubiera ninguna vuelta: -21.1
+            //  dB constantes por tramo. La prueba medía su propia eleccion.
+            //
+            //  Se replica la regla del motor en vez de escribir «12» a mano:
+            //  *una regla duplicada que no se contrasta son dos reglas*, y esta
+            //  se contrasta sola en cuanto alguien mueva `kRaiz`.
+            //  Y LA CAPA TAMBIEN SALE DE LA MUESTRA, no de un numero escrito.
+            //  Con `capa != 1` la prueba cogia la capa DEL MEDIO desde que hay
+            //  tres, mientras el motor -que reparte el recorrido entre las que
+            //  la muestra traiga- tocaba la de arriba: -7.4 dB de diferencia que
+            //  no eran del bucle sino de comparar dos capas distintas.
+            constexpr float kSemis = 7.0f;
+            constexpr float kVel   = 1.0f;
+            int capasHay = 1;
+            for (int i = 0; i < orig->nZonas; ++i)
+                capasHay = juce::jmax (capasHay, orig->zonas[(size_t) i].capa + 1);
+            const int capaQuiere = juce::jlimit (0, capasHay - 1, (int) (kVel * (float) capasHay));
+
+            int z = -1, coste = 1 << 30;
+            for (int i = 0; i < orig->nZonas; ++i)
+            {
+                const auto& q = orig->zonas[(size_t) i];
+                const int c = std::abs ((int) std::lround (kSemis) - q.raiz)
+                            + (q.capa != capaQuiere ? 1000 : 0);
+                if (c < coste) { coste = c; z = i; }
+            }
+
+            if (z >= 0 && orig->zonas[(size_t) z].bucleFin > orig->zonas[(size_t) z].bucleIni)
+            {
+                const auto& Z = orig->zonas[(size_t) z];
+                const int cuerpo = Z.bucleFin - Z.bucleIni;
+                const int copias = 8;
+
+                //  Un buffer de UNA zona: el ataque y luego el cuerpo pegado
+                //  ocho veces, sin bucle. Mismo canal, misma tasa.
+                //  Y LA ZONA EMPIEZA EN 1 Y ACABA DOS ANTES DEL FINAL, que no es
+                //  un adorno: `Voice::start` acota `winStart` a `[1, ...]` y
+                //  `winEnd` a `srcLen - 2` porque `hermite4` mira una muestra
+                //  por delante y dos por detras. Con la zona pegada al cero del
+                //  buffer, `winStart` subia a 1 **y la referencia entera sonaba
+                //  una muestra antes que el original**: 1.4983 de paso a +7
+                //  semitonos, o sea otra fase en todas y cada una de las
+                //  muestras. Se midio -18.5 dB y no era el bucle, era esto.
+                auto* rec = new SampleBuffer();
+                rec->sourceSampleRate = orig->sourceSampleRate;
+                const int ataque = Z.bucleIni - Z.ini;
+                const int util   = ataque + cuerpo * copias;
+                const int largo  = 1 + util + 2;
+                rec->buffer.setSize (orig->buffer.getNumChannels(), largo);
+                rec->buffer.clear();
+                for (int ch = 0; ch < orig->buffer.getNumChannels(); ++ch)
+                {
+                    rec->buffer.copyFrom (ch, 1, *&orig->buffer, ch, Z.ini, ataque);
+                    for (int c = 0; c < copias; ++c)
+                        rec->buffer.copyFrom (ch, 1 + ataque + c * cuerpo,
+                                              *&orig->buffer, ch, Z.bucleIni, cuerpo);
+                }
+                rec->zonas[0] = { Z.raiz, capaQuiere, 1, 1 + util, 0, 0 };
+                rec->nZonas = 1;
+
+                auto toca = [&] (SampleBuffer::Ptr sb, int bloques)
+                {
+                    AudioEngine m; m.prepareToPlay (48000.0, 512); m.setPolyphony (8, 2);
+                    enCanalCero (m);
+                    m.setSafetyLimiter (false);
+                    m.setPadGain (0, 1.0f);
+                    m.publishSample (0, sb);
+                    m.setPadPitch (0, kSemis);
+                    juce::AudioBuffer<float> t (2, 512);
+                    t.clear(); m.renderNextBlock (t, 0, 512);
+                    m.postNoteOnAt (0, 0, 1.0f, AudioEngine::kSostenida);
+                    juce::AudioBuffer<float> c (1, 512 * bloques);
+                    for (int blk = 0; blk < bloques; ++blk)
+                    { t.clear(); m.renderNextBlock (t, 0, 512); c.copyFrom (0, blk * 512, t, 0, 0, 512); }
+                    return c;
+                };
+
+                //  Cinco vueltas, que caben de sobra dentro de las ocho copias.
+                const int bl = 5 * 94;
+                const auto A = toca (orig, bl), B = toca (SampleBuffer::Ptr (rec), bl);
+                double difE = 0.0, refE = 0.0;
+                for (int i = 0; i < 512 * bl; ++i)
+                {
+                    const double d1 = (double) A.getSample (0, i) - (double) B.getSample (0, i);
+                    difE += d1 * d1;
+                    refE += (double) B.getSample (0, i) * B.getSample (0, i);
+                }
+                const double dbDif = 10.0 * std::log10 (juce::jmax (1.0e-20, difE)
+                                                        / juce::jmax (1.0e-20, refE));
+                //  LISTON -60 dB, heredado del `FLOOR = -60.0` de `kits.py`
+                //  -«por debajo de esto ya es silencio y no forma»-. La vuelta
+                //  tiene que ser indistinguible del cuerpo pegado, no parecida.
+                std::printf ("%-34s el bucle contra el cuerpo pegado: %+.1f dB   %s\n",
+                             "la vuelta no salta de fase", dbDif,
+                             dbDif < -60.0 ? "OK" : zatiFalla());
+            }
+        }
+    }
+
+    //  EL DIEZMADOR, COMO CELULA. Impulso dentro, espectro fuera.
+    //
+    //  La regla del pliegue mide el SISTEMA; esta mide la PIEZA. Existe porque
+    //  el filtro entregado tiene que ser el filtro diseñado: sus tres numeros
+    //  -rizo de paso, atenuacion de rechazo y planitud del retardo de grupo- son
+    //  la especificacion escrita en `Diezmador.h`, y sin esto serian una
+    //  afirmacion en un comentario.
+    //
+    //  Los tres listones son los tres parametros de diseño y no se negocian:
+    //  rizo <= 0.01 dB hasta 19 200, rechazo >= 120 dB desde 24 000, y retardo de
+    //  grupo constante dentro de 0.01 muestra -que es lo que garantiza que el
+    //  punto de bucle caiga donde `pre` dice-.
+    {
+        const auto& h = Diezmador::coeficientes (Diezmador::kOs);
+        const int taps  = Diezmador::tapsDe (Diezmador::kOs);
+        const int mitad = Diezmador::mitadDe (Diezmador::kOs);
+        const double fsr = 48000.0 * (double) Diezmador::kOs;
+
+        auto Hf = [&] (double f)
+        {
+            double re = 0.0, im = 0.0;
+            for (int i = 0; i < taps; ++i)
+            {
+                const double w = -juce::MathConstants<double>::twoPi * f * (double) (i - mitad) / fsr;
+                re += h[(size_t) i] * std::cos (w);
+                im += h[(size_t) i] * std::sin (w);
+            }
+            return std::hypot (re, im);
+        };
+
+        double rizo = 0.0;
+        for (double f = 0.0; f <= Diezmador::kBandaHz; f += 200.0)
+            rizo = juce::jmax (rizo, std::abs (20.0 * std::log10 (juce::jmax (1.0e-12, Hf (f)))));
+
+        double rech = 0.0;
+        for (double f = Diezmador::kParoHz; f <= fsr * 0.5; f += 200.0)
+            rech = juce::jmax (rech, Hf (f));
+        const double rechDb = 20.0 * std::log10 (juce::jmax (1.0e-12, rech));
+
+        //  LA PLANITUD DEL RETARDO SALE DE LA SIMETRIA y se mide asi: un filtro
+        //  simetrico tiene retardo de grupo exactamente `mitad` muestras, y
+        //  cualquier asimetria lo mueve. Se mide la asimetria, que es la causa,
+        //  en vez de derivar la fase, que es el efecto.
+        double asim = 0.0;
+        for (int i = 0; i < mitad; ++i)
+            asim = juce::jmax (asim, std::abs (h[(size_t) i] - h[(size_t) (taps - 1 - i)]));
+        //  Traducida a muestras de retardo: la asimetria relativa al pico.
+        const double desvio = asim / juce::jmax (1.0e-12, std::abs (h[(size_t) mitad])) * (double) mitad;
+
+        const bool ok = rizo <= 0.01 && rechDb <= -120.0 && desvio <= 0.01;
+        std::printf ("%-34s rizo %.5f dB   rechazo %.1f dB   retardo +-%.5f muestras   %s\n",
+                     "el diezmador entregado", rizo, rechDb, desvio, ok ? "OK" : zatiFalla());
+    }
+
+    //  EL PLIEGUE DE LA SINTESIS, contra el mismo generador a 16x.
+    //
+    //  ESTO NO LO MEDIA NADIE. `instr.py` juzga estructura, pares espectrales,
+    //  capas, octavas y el click de la costura; de PUREZA ESPECTRAL la cobertura
+    //  era cero. Y hacia falta: `limita()` es `soft()`, un polinomio de quinto
+    //  orden por muestra en trece de las dieciseis formas, y la FM de PIANO ELEC
+    //  y CAMPANAS no tiene limite de banda ninguno.
+    //
+    //  SE COMPARA EL PRODUCTO CONSIGO MISMO y no contra «energia que no esta en
+    //  k*f0». Esa segunda medida marcaria a CAMPANAS, MAZOS y ARPAS, que son
+    //  inarmonicos A PROPOSITO, y obligaria a escribir aqui una lista de
+    //  familias armonicas que ya vive en la tabla — *una regla duplicada que no
+    //  se contrasta son dos reglas*. La inarmonicidad de diseño sale igual en los
+    //  dos rendidos y se cancela sola.
+    //
+    //  EL LISTON: **1.0 dB en cualquier banda de 1/6 de octava**. No es un numero
+    //  redondo elegido a ojo: es el JND de sonoridad de una banda critica, o sea
+    //  exactamente el mismo argumento con el que `instr.py` justifica su
+    //  `CAPA_DB = 2.0` como «dos veces el JND». Heredado de ahi y dicho.
+    //
+    //  Y la mediana aparte del peor, porque solo el peor lo cumple un sonido que
+    //  esta plegado en todas partes por igual.
+    {
+        constexpr int kN = 1 << 15;                  // 0.68 s de regimen
+
+        //  LAS DIEZ ZONAS DURAS, y duras por una razon escrita en cada una: son
+        //  las que llevan FM sin limite de banda o saturacion fuerte, en la raiz
+        //  +24, que es donde el modulador se va mas arriba. Diez y no 2560
+        //  porque 2560 FFT no mejoran el liston y si tardan trece minutos.
+        struct Zona { int fam, pre; const char* por; };
+        const Zona duras[] =
+        {
+            { 2,  4, "FM razon 28, el modulador en 14.65 kHz" },   // PIANO ELEC GLASS
+            { 2,  9, "FM, indice alto" },                          // PIANO ELEC
+            { 7,  3, "FM inarmonica" },                            // CAMPANAS
+            { 7, 11, "FM inarmonica" },                            // CAMPANAS
+            { 0, 12, "sierra saturada, brillo 4.50" },              // BAJOS HARD
+            { 0,  9, "FM de bajo" },                               // BAJOS FM BS
+            { 9,  5, "pulso + quinta, saturado" },                 // LEADS
+            { 13, 2, "pulso muy estrecho por un paso banda" },     // CLAVES
+            { 6,  7, "pluck saturado" },                           // PLUCKS
+            { 15, 9, "aditivo pulsado de doce armonicos" },        // ARPAS
+        };
+
+        juce::dsp::FFT fft (15);
+        auto esp = [&] (const std::vector<float>& x)
+        {
+            std::vector<float> buf ((size_t) kN * 2, 0.0f);
+            for (int i = 0; i < kN; ++i)
+            {
+                const float w = 0.5f * (1.0f - std::cos (juce::MathConstants<float>::twoPi
+                                                          * (float) i / (float) (kN - 1)));
+                buf[(size_t) i] = x[(size_t) i] * w;
+            }
+            fft.performFrequencyOnlyForwardTransform (buf.data());
+            return buf;
+        };
+
+        double peorGlobal = -1.0e9, medianaPeor = -1.0e9, desvioCentro = 0.0;
+        int    quienPeor = 0; double hzPeor = 0.0;
+
+        for (int z = 0; z < (int) (sizeof (duras) / sizeof (duras[0])); ++z)
+        {
+            const auto& Z = duras[z];
+            const auto R = Sintes::tabla()[Z.fam].p[Z.pre];
+            std::vector<float> prod ((size_t) kN), patr ((size_t) kN);
+            Sintes::rindeZona (Z.fam, Z.pre, R, 4, 1, prod.data(), kN, Diezmador::kOs);
+            Sintes::rindeZona (Z.fam, Z.pre, R, 4, 1, patr.data(), kN, Diezmador::kOsPatron);
+            const auto A = esp (prod), B = esp (patr);
+
+            //  LAS BANDAS SE MIDEN DOS VECES: la primera para saber cual es la
+            //  mas fuerte de ESTE sonido, la segunda para juzgar.
+            //
+            //  Un umbral ABSOLUTO -`eb < 1e-14`, que es lo que habia- deja
+            //  entrar bandas que estan ochenta decibelios por debajo del
+            //  instrumento: ahi la razon entre producto y patron es enorme y no
+            //  significa nada, porque no hay nada que plegar. Se vio al abrir el
+            //  estereo: repartir los dos parciales de CAMPANAS movio energia de
+            //  un hueco entre parciales y el peor salto de **+0.74 a +1.17 dB**
+            //  sin que el pliegue hubiera cambiado. La regla estaba midiendo un
+            //  hueco.
+            //
+            //  Y EL SUELO SE LE PONE AL PRODUCTO Y NO AL PATRON, que es la
+            //  segunda correccion y la que de verdad decide.
+            //
+            //  Poniendoselo al patron, la regla dejaba de ver la rotura 1 -el
+            //  producto generado SIN sobremuestrear-: se midio, y el peor exceso
+            //  se quedaba en **+0.00 dB con `kOs = 1`**, porque el pliegue
+            //  aterriza justo en las bandas donde el patron no tiene nada. Una
+            //  regla que se calla cuando el fallo que la motivo esta puesto no
+            //  es una regla.
+            //
+            //  Lo que importa es si LO QUE APARECE se oye, o sea `ea`. Suelo a
+            //  -60 dB de la banda mas fuerte del propio sonido: el `FLOOR =
+            //  -60.0` de `kits.py` -«por debajo de esto ya es silencio y no
+            //  forma»- heredado literal. Con el, la rotura 1 sale a **+107.91 dB
+            //  en 3175 Hz** y el codigo bueno a +0.00.
+            auto energias = [&] (const std::vector<float>& E, double lo, double hi)
+            {
+                double e = 0.0;
+                for (int k = (int) (lo * kN / 48000.0); k < (int) (hi * kN / 48000.0) && k < kN / 2; ++k)
+                    e += (double) E[(size_t) k] * E[(size_t) k];
+                return e;
+            };
+            const double kPaso = std::pow (2.0, 1.0 / 6.0);
+            double techo = 0.0;
+            for (double lo = 1000.0; lo < 20000.0; lo *= kPaso)
+                techo = juce::jmax (techo, energias (B, lo, lo * kPaso));
+
+            std::vector<double> ex;
+            for (double lo = 1000.0; lo < 20000.0; lo *= kPaso)
+            {
+                const double hi = lo * kPaso;
+                const double ea = energias (A, lo, hi), eb = energias (B, lo, hi);
+                if (ea < techo * 1.0e-6) continue;
+                //  Y el denominador con suelo, porque energia que aparece donde
+                //  el patron no tenia NADA es el caso mas grave y no una
+                //  division por cero que haya que saltarse.
+                const double d = 10.0 * std::log10 (ea / juce::jmax (eb, techo * 1.0e-16));
+                ex.push_back (d);
+                if (d > peorGlobal) { peorGlobal = d; quienPeor = z; hzPeor = lo; }
+            }
+            if (! ex.empty())
+            {
+                std::sort (ex.begin(), ex.end());
+                medianaPeor = juce::jmax (medianaPeor, ex[ex.size() / 2]);
+            }
+
+            //  Y EL CENTROIDE, QUE ES LA SEGUNDA CIFRA Y NO UN ADORNO.
+            //
+            //  El pliegue solo caza lo que APARECE donde no habia nada. Hay una
+            //  clase entera de fallo que no aparece: que un filtro corte donde no
+            //  debe. Se vio rompiendo a proposito el `prepara` del `Svf` en
+            //  ARPAS -que a 4x lo deja filtrando cuatro veces mas abajo- y el
+            //  pliegue no se movio **ni una centesima**: +0.74 dB con el codigo
+            //  bueno y +0.74 con el roto. No era que la rotura fuera inocua: era
+            //  que la regla no miraba eso.
+            //
+            //  El centroide del producto contra el del patron lo dice con un
+            //  numero. Liston 2 %, que es la mitad del x1.06 que `instr.py` pide
+            //  entre dos capas contiguas: si media capa de diferencia se oye,
+            //  esto tiene que quedar muy por debajo.
+            auto centroide = [&] (const std::vector<float>& E)
+            {
+                double num = 0.0, den = 0.0;
+                for (int k = 1; k < kN / 2; ++k)
+                {
+                    const double e = (double) E[(size_t) k] * E[(size_t) k];
+                    num += e * (double) k; den += e;
+                }
+                return den > 1.0e-20 ? num / den : 0.0;
+            };
+            const double cA = centroide (A), cB = centroide (B);
+            if (cB > 1.0e-9)
+                desvioCentro = juce::jmax (desvioCentro, std::abs (cA / cB - 1.0));
+        }
+
+        const bool ok = peorGlobal <= 1.0 && medianaPeor <= 0.3 && desvioCentro <= 0.02;
+        std::printf ("%-34s peor %+.2f dB (fam %d pre %d, %.0f Hz)   mediana %+.2f dB   centroide %.2f%%   %s\n",
+                     "el pliegue de la sintesis", peorGlobal,
+                     duras[quienPeor].fam, duras[quienPeor].pre, hzPeor, medianaPeor,
+                     100.0 * desvioCentro, ok ? "OK" : zatiFalla());
+    }
+
     //  ALIASING AL SUBIR EL TONO, que es la otra forma de sonar crispado.
     //
     //  Leer mas rapido que la fuente sube el espectro entero y lo que pasa de
@@ -1433,11 +1863,32 @@ int main()
     //  un silbido metalico encima de la nota. Voice tiene un paso bajo de UN
     //  polo para eso, que a 6 dB por octava es poca pared.
     //
-    //  Se mide con un seno solo: a +12 semitonos, un seno de 5 kHz de una
-    //  fuente a 48 kHz deberia salir a 10 kHz y nada mas. Todo lo que aparezca
-    //  LEJOS de 10 kHz es material plegado, y se mide como la energia fuera de
-    //  una ventana estrecha alrededor del tono esperado, en dB por debajo del
-    //  tono. Un seno puro no tiene armonicos que confundir con el pliegue.
+    //  Se mide con un seno solo: un seno de la fuente sube por el transporte y
+    //  deberia salir en su sitio y nada mas. Todo lo que aparezca LEJOS del tono
+    //  esperado es material plegado, y se mide como la energia fuera de una
+    //  ventana estrecha alrededor de el, en dB por debajo del tono. Un seno puro
+    //  no tiene armonicos que confundir con el pliegue.
+    //
+    //  ESTA SONDA LLEVABA TANDAS SIN MEDIR NADA, y por DOS motivos a la vez.
+    //
+    //  El primero era que imprimia la cadena "FLOJO" y no llamaba a
+    //  `zatiFalla()`: el veredicto solo lo suma esa funcion, asi que la linea
+    //  **no podia suspender el banco jamas** por mucho que empeorara.
+    //
+    //  El segundo es peor y es el que importa: media a `setPadPitch (0, 12.0f)`,
+    //  o sea **delta = 2.0 exacta**. Con delta entera `frac` vale 0 en TODAS las
+    //  muestras y `hermite4` devuelve `y[idx]` sin interpolar ni una vez. No es
+    //  que estuviera desarmada: es que apuntaba al vacio. Medido rompiendo
+    //  `hermite4` a proposito para que devolviera el vecino mas cercano: la
+    //  cifra salio **-49.8 dB en los dos casos, identica hasta el decimal**. Una
+    //  prueba en la que destrozar lo que mide no mueve el numero no es una
+    //  prueba.
+    //
+    //  Ahora se mide a +7 -delta 1.4983, fraccion distinta en cada muestra- y a
+    //  +24 -delta 4, el caso duro-, y el veredicto suma. El liston es **lo que
+    //  el codigo cumple hoy menos tres decibelios**, que es lo que hace que la
+    //  regla proteja el estado de hoy contra una regresion en vez de ser un
+    //  deseo.
     {
         auto tone = [] (double sr, double secs, float hz)
         {
@@ -1463,40 +1914,76 @@ int main()
             return s1 * s1 + s2 * s2 - c * s1 * s2;
         };
 
-        AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
- enCanalCero (e);
-        e.setPadGain (0, 1.0f);
-        e.setPadPitch (0, 12.0f);                 // una octava arriba: delta = 2
-        e.publishSample (0, tone (48000.0, 1.0, 5000.0f));
-
-        juce::AudioBuffer<float> b (2, 512);
-        b.clear(); e.renderNextBlock (b, 0, 512);
-        e.postNoteOn (0, 1.0f);
-
-        juce::AudioBuffer<float> cap (1, 512 * 30);
-        for (int blk = 0; blk < 30; ++blk)
+        //  UNA CORRIDA, dado el transporte y el tono de la fuente. Devuelve el
+        //  pliegue peor en dB por debajo del tono esperado, y donde cayo.
+        auto pliegue = [&] (float semis, float srcHz, double& worstHzOut)
         {
-            b.clear();
-            e.renderNextBlock (b, 0, 512);
-            cap.copyFrom (0, blk * 512, b, 0, 0, 512);
-        }
-        //  Sin el ataque ni el final: solo el regimen.
-        const float* d = cap.getReadPointer (0) + 512 * 5;
-        const int n = 512 * 20;
+            AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+            enCanalCero (e);
+            e.setPadGain (0, 1.0f);
+            e.setPadPitch (0, semis);
+            e.publishSample (0, tone (48000.0, 1.0, srcHz));
 
-        const double wanted = power (d, n, 48000.0, 10000.0);
-        double worst = 0.0; double worstHz = 0.0;
-        for (double hz = 200.0; hz < 22000.0; hz += 100.0)
-        {
-            if (std::abs (hz - 10000.0) < 400.0) continue;      // el tono y su falda
-            const double p = power (d, n, 48000.0, hz);
-            if (p > worst) { worst = p; worstHz = hz; }
-        }
+            juce::AudioBuffer<float> b (2, 512);
+            b.clear(); e.renderNextBlock (b, 0, 512);
+            e.postNoteOn (0, 1.0f);
 
-        const double db = 10.0 * std::log10 (juce::jmax (1.0e-12, worst) / juce::jmax (1.0e-12, wanted));
-        std::printf ("%-34s +12 st: pliegue peor %+.1f dB en %.0f Hz   %s\n",
-                     "aliasing al subir el tono", db, worstHz,
-                     db < -40.0 ? "OK" : "FLOJO");
+            juce::AudioBuffer<float> cap (1, 512 * 30);
+            for (int blk = 0; blk < 30; ++blk)
+            {
+                b.clear();
+                e.renderNextBlock (b, 0, 512);
+                cap.copyFrom (0, blk * 512, b, 0, 0, 512);
+            }
+            //  Sin el ataque ni el final: solo el regimen.
+            const float* d = cap.getReadPointer (0) + 512 * 5;
+            const int n = 512 * 20;
+
+            const double esperado = (double) srcHz * std::pow (2.0, (double) semis / 12.0);
+            const double wanted = power (d, n, 48000.0, esperado);
+            double worst = 0.0; worstHzOut = 0.0;
+            for (double hz = 200.0; hz < 22000.0; hz += 100.0)
+            {
+                if (std::abs (hz - esperado) < 400.0) continue;    // el tono y su falda
+                const double p = power (d, n, 48000.0, hz);
+                if (p > worst) { worst = p; worstHzOut = hz; }
+            }
+            return 10.0 * std::log10 (juce::jmax (1.0e-12, worst) / juce::jmax (1.0e-12, wanted));
+        };
+
+        //  EL LISTON ES LO QUE EL CODIGO YA CUMPLE MENOS TRES DECIBELIOS.
+        //
+        //  Medido con la sonda ya arreglada: **-50.6 dB a +7** y **-51.7 dB a
+        //  +23**. Menos tres y redondeado a la baja. Eso es lo que separa una
+        //  regla que protege de un deseo: si alguien toca el interpolador o el
+        //  paso bajo y el pliegue empeora tres decibelios, esta linea lo dice.
+        constexpr double kPliegue7  = -47.0;
+        constexpr double kPliegue23 = -48.0;
+
+        //  +7 Y NO +12: delta 1.4983, o sea fraccion distinta en cada muestra.
+        //  Con +12 la delta es 2.0 exacta y el interpolador no llega a correr.
+        double hz7 = 0.0;
+        const double db7 = pliegue (7.0f, 5000.0f, hz7);
+        std::printf ("%-34s +7 st: pliegue peor %+.1f dB en %.0f Hz   %s\n",
+                     "aliasing al subir el tono", db7, hz7,
+                     db7 < kPliegue7 ? "OK" : zatiFalla());
+
+        //  Y EL CASO DURO, que es donde el paso bajo de un polo se queda corto.
+        //
+        //  +23 Y NO +24, y esto es la misma trampa otra vez: delta a +24 vale
+        //  **4.0 exacta**, o sea `frac` cero en todas las muestras y el
+        //  interpolador sin correr, igual que el +12 de antes. Se vio en la
+        //  rotura a proposito: con `hermite4` devolviendo el vecino mas cercano,
+        //  el +7 se movio de -50.6 a **-38.4 dB** y el +24 se quedo clavado en
+        //  -49.1. A +23 la delta es 3.8459 y la fraccion cambia en cada muestra.
+        //
+        //  Con 3 kHz de fuente el tono esperado cae en 11.5 kHz, dentro de la
+        //  banda y con sitio de sobra para que el pliegue se vea.
+        double hz23 = 0.0;
+        const double db23 = pliegue (23.0f, 3000.0f, hz23);
+        std::printf ("%-34s +23 st: pliegue peor %+.1f dB en %.0f Hz   %s\n",
+                     "aliasing al subir el tono", db23, hz23,
+                     db23 < kPliegue23 ? "OK" : zatiFalla());
     }
 
     //  EL TROCEADO POR GOLPES, contra un break del que se sabe la verdad.

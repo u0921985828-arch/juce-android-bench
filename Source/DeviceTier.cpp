@@ -48,6 +48,12 @@ namespace
                 p.sampleBudgetMB = 64;
                 p.bufferBursts = 2;
                 p.padWaveformArt = false;
+                //  MONO Y CUERPO DE 0.60 s. Ver `instrumentoEstereo`: un pad de
+                //  instrumento pasa de 7.5 MB a **2.6**, y los dieciseis de un
+                //  banco de 120 a 41. Sin esto, tres instrumentos agotan los 64
+                //  MB de presupuesto y el cuarto no entra.
+                p.instrumentoEstereo = false;
+                p.cuerpoSeg = 0.60;
                 break;
 
             case Tier::mid:

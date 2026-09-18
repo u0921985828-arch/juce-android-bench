@@ -87,6 +87,28 @@ namespace DeviceTier
         //  Si las tapas de los pads dibujan su onda. Dieciseis envolventes
         //  repintadas en cada destello es trabajo de verdad sin GPU.
         bool padWaveformArt = true;
+
+        //  ============ LO QUE LA SINTESIS SE PUEDE PERMITIR ============
+        //
+        //  Y AQUI VA UNA REGLA QUE NO SE PUEDE ROMPER, escrita antes que los
+        //  numeros: un proyecto tiene que sonar **peor, no distinto**, en un
+        //  telefono flojo. O sea que el mapa de zonas, las raices, las capas y
+        //  la afinacion en cents son IDENTICOS en las cuatro gamas; lo unico
+        //  que puede cambiar es cuantos canales lleva cada zona y cuanto dura
+        //  el cuerpo del bucle. Si cambiara una zona, la misma cancion abierta
+        //  en otro aparato tocaria otras notas.
+        //
+        //  La cuenta que obliga a esto: `sampleBudgetMB` vale 64 en la gama
+        //  baja, y solo la fabrica -sesenta y cuatro golpes, ahora a dos
+        //  canales- se lleva 40.6 MB antes de que nadie cargue nada. Con
+        //  estereo y un segundo de cuerpo, un pad de instrumento son 7.5 MB:
+        //  tres pads y el presupuesto esta gastado.
+        bool   instrumentoEstereo = true;
+
+        //  El cuerpo del bucle, en segundos. Un segundo es lo que hace que la
+        //  vuelta deje de ser un ritmo y pase a ser una textura; 0.60 se sigue
+        //  oyendo bien y cuesta un 40 % menos de memoria.
+        double cuerpoSeg = 1.00;
     };
 
     //  Se clasifica una vez; las siguientes llamadas devuelven lo mismo.

@@ -1,4 +1,5 @@
 #include "Sintes.h"
+#include "Diezmador.h"
 
 #include <cmath>
 #include <cstring>
@@ -11,6 +12,77 @@ namespace Sintes
 {
     using namespace Kits::detail;
     static constexpr double kRate = Kits::kRate;
+
+    //  LA TASA A LA QUE SE GENERA, que no es a la que se guarda.
+    //
+    //  Ver `Diezmador.h` para el porque entero. El resumen con su cifra: PIANO
+    //  ELEC / GLASS pone el modulador de su FM en 14.65 kHz en la raiz +24, y su
+    //  banda lateral de orden dos caia plegada en 18.7 kHz DENTRO de la muestra.
+    //  Generando a 4x cabe, y el diezmador la tira antes de guardar.
+    static constexpr int    kOs     = Diezmador::kOs;
+    static constexpr double kRender = kRate * (double) kOs;
+
+    //  DOS MUESTRAS DE GUARDA DETRAS DE CADA ZONA QUE DA VUELTAS.
+    //
+    //  El cuerpo del bucle tiene periodo exacto `bucleFin - bucleIni`: el
+    //  fundido cruzado hace que la muestra que vendria en `bucleFin` sea la de
+    //  `bucleIni`. Pero esa muestra NO ESTABA ESCRITA: lo que hay en el indice
+    //  `bucleFin` es la primera muestra de la zona siguiente, o sea otra octava.
+    //  Y `hermite4` lee `idx-1 .. idx+2`, asi que la ultima fraccion de muestra
+    //  antes de dar la vuelta se interpolaba contra material de otra nota.
+    //
+    //  Medido contra **el mismo cuerpo pegado ocho veces a mano** -que es la
+    //  señal que un bucle continuo tiene que dar por definicion-: con las dos
+    //  guardas, el largo de vuelta arreglado en `Voice` y el tope de lectura en
+    //  `winEnd`, la diferencia cae a **-96.2 dB** contra un liston de -60, y de
+    //  las 240 640 muestras solo una difiere -y es de la referencia-. Sin las
+    //  guardas, la ultima fraccion antes de la vuelta se interpolaba contra la
+    //  octava de al lado.
+    //
+    //  Dos y no una porque `hermite4` mira dos por delante. No son una copia de
+    //  la continuacion cruda -`tmp[zonaLen + k]`- sino de **la cabeza ya
+    //  fundida** (`tmp[pre + k]`), que es la muestra que la vuelta va a leer de
+    //  verdad: en `k = 0` las dos coinciden por construccion, en `k = 1` ya no.
+    static constexpr int kGuardas = 2;
+
+    //  EL RUIDO SE SORTEA A LA TASA DE SALIDA Y SE MANTIENE.
+    //
+    //  Lo primero que sale es generarlo a 4x y compensar los 6.02 dB que el
+    //  diezmado le quita. Se hizo, y la medida lo tumbo: el patron a 16x llama
+    //  al sorteo dieciseis veces por muestra y el producto cuatro, asi que **el
+    //  ruido de los dos no es el mismo ruido** y la regla del pliegue medía esa
+    //  diferencia en vez del pliegue. Medido en PIANO ELEC / GLASS: mediana
+    //  **+3.11 dB** de exceso con el sonido ya identico -rms 0.523070 contra
+    //  0.523068-, o sea que todo el exceso era la semilla.
+    //
+    //  Sorteado a 48 kHz y mantenido entre medias, el flujo de la semilla es
+    //  funcion pura del indice de SALIDA: el mismo ruido a cualquier factor, sin
+    //  compensacion que ajustar y sin una constante que la regla pueda estar
+    //  midiendo por error. El escalon del mantenedor le mete su propia caida
+    //  -3.9 dB en 24 kHz- y es la MISMA a los dos factores, asi que no entra en
+    //  la comparacion.
+    //
+    //  Y ademas es lo correcto por si solo: el ruido de un instrumento es aire y
+    //  raspado, no material de banda ancha hasta 96 kHz.
+    struct RuidoMantenido
+    {
+        //  EL AIRE DE LOS DOS CANALES NO ES EL MISMO AIRE, PERO TAMPOCO SON DOS.
+        //  Ver `Kits::detail::kCorrAire` y `Kits::detail::Aire`: la correlacion
+        //  se declara, no sale a cero por descuido.
+        Aire  r;
+        int   paso = 1, quedan = 0;
+        float v = 0.0f;
+
+        RuidoMantenido (int semilla, int canal, bool ancho, double fs)
+            : r (semilla, canal, ancho), paso (juce::jmax (1, (int) std::lround (fs / kRate))) {}
+
+        float operator()() noexcept
+        {
+            if (quedan <= 0) { v = r(); quedan = paso; }
+            --quedan;
+            return v;
+        }
+    };
 
     #include "SintesTabla.inc"
     #include "SintesMandos.inc"
@@ -167,6 +239,41 @@ namespace Sintes
         constexpr float kDesigual[8] =
             { 0.0f, -1.000f, 0.618f, -0.414f, 0.883f, -0.732f, 0.271f, -0.947f };
 
+        //  CUANTO DE UNA PIEZA SUENA EN ESTE CANAL, y como se hace el ancho.
+        //
+        //  La regla entera es una: **lo que ya es plural se reparte; lo que es
+        //  singular saca el ancho del ruido y de las envolventes**. Siete
+        //  sierras desafinadas no necesitan que nadie invente nada, solo que se
+        //  sienten en sitios distintos del atril.
+        //
+        //  Lo que NO se hace, y va escrito porque es lo primero que sale:
+        //   · retardo entre canales — es un peine en cuanto alguien escucha en
+        //     mono, y un groovebox se toca en el altavoz de un telefono;
+        //   · todo-paso de fase aleatoria — es el coro barato, y se oye;
+        //   · copiar y desafinar — eso es un chorus, no un instrumento ancho.
+        //
+        //  Potencia constante, y con la raiz de dos delante a proposito: una
+        //  pieza CENTRADA (x = 0) sale con ganancia 1.0 en los dos canales, o
+        //  sea **exactamente lo que salia en mono**, y una pieza abierta del
+        //  todo reparte la misma energia en un solo lado. Sin la raiz de dos,
+        //  poner ancho bajaria el volumen de todo el instrumento 3 dB.
+        inline float ladoDe (int canal, double x) noexcept
+        {
+            const double a = juce::MathConstants<double>::pi * 0.25
+                           * (1.0 + juce::jlimit (-1.0, 1.0, x));
+            return (float) ((canal == 1) ? std::sin (a) : std::cos (a))
+                 * juce::MathConstants<float>::sqrt2;
+        }
+
+        //  LAS DOS FORMAS QUE SE QUEDAN EN MONO, BIT A BIT, y por que.
+        //
+        //  Un grave descorrelado pierde hasta 3 dB al sumarse en mono -que es lo
+        //  que hace el altavoz de un telefono, y un groovebox se toca ahi- y
+        //  ademas mueve de sitio el unico elemento que tiene que estar clavado
+        //  en el centro. No es una excepcion a la regla del ancho: es una regla
+        //  con su propio liston (`r >= 0.9999` y perdida en mono 0.00 dB).
+        inline bool monoDeVerdad (Forma f) noexcept { return f == fBajo || f == fSub; }
+
         //  Y las fases de arranque por la proporcion aurea: arrancar todos en
         //  cero es un pico enorme en la primera muestra y ademas los pone de
         //  acuerdo justo cuando el ataque los esta destapando.
@@ -174,6 +281,30 @@ namespace Sintes
         {
             const double x = 0.6180339887 * (double) (k + 1);
             return x - std::floor (x);
+        }
+
+        //  A QUE VELOCIDAD VA EL LFO DE ESTA FAMILIA, escrito UNA vez.
+        //
+        //  Estaba metido dentro de cada rama del `switch` -`5.6 / fs` en el
+        //  organo, `P.p3 / fs` en las cuerdas...- y ahora hacen falta DOS sitios
+        //  mas que lo sepan: el que cuadra el largo del bucle con su periodo y
+        //  el que decide si se congela. Escrito en tres sitios serian tres
+        //  reglas, y la que se quedara vieja dejaria un bucle cuadrado contra
+        //  una velocidad que el generador ya no usa.
+        //
+        //  Cero significa «esta forma no lleva LFO».
+        inline double lfoHzDe (Forma forma, const Preset& P) noexcept
+        {
+            switch (forma)
+            {
+                case fOrgano:  return 5.6;
+                case fCuerdas: return (double) P.p3;
+                case fColchon: return (double) P.p2 * 0.7;
+                case fLead:    return 4.2;
+                case fCoro:    return 5.1;
+                case fFlauta:  return 5.4;
+                default:       return 0.0;
+            }
         }
 
         inline float limita (float x) noexcept
@@ -199,26 +330,83 @@ namespace Sintes
     //  que hace que un piano electrico responda al toque en vez de sonar igual
     //  mas bajo. La prueba lo mide con dos numeros por esto mismo.
     // ------------------------------------------------------------------------
-    static void rinde (float* d, int len, const Familia& F, const Preset& P,
-                       double hz, int capa, int semilla, float congelaEn = -1.0f)
+    //  EL GENERADOR, A LA TASA QUE SE LE DIGA.
+    //
+    //  `fs` entra POR ARGUMENTO y no por miembro ni por constante, que es la
+    //  misma razon ya escrita en `Voice::updateAntiAlias`: *un orden que hay que
+    //  respetar es un fallo esperando*. Y ademas hace que la auditoria pueda
+    //  pedir el MISMO generador a 16x para usarlo de patron sin una sola rama
+    //  nueva — una rama aparte para el patron mediria la rama y no el producto.
+    //  Y `canal` -0 izquierda, 1 derecha- porque el ANCHO SE GENERA, no se
+    //  procesa. Ver `ladoDe`: cada forma reparte SUS PROPIAS piezas entre los
+    //  dos lados, asi que un canal es una pasada entera del generador con otro
+    //  reparto y otra semilla de ruido. Cuesta el doble de tiempo de sintesis y
+    //  esa era la decision; lo que no cuesta es una sola multiplicacion en el
+    //  hilo de audio, porque `Voice` ya sabia leer dos canales.
+    static void rindeCrudo (float* d, int len, const Familia& F, const Preset& P,
+                            double hz, int capa, int semilla, float congelaEn,
+                            double fs, double lfoHz = -1.0, int canal = 0)
     {
-        Rng rnd (semilla);
-        Svf f1, f2, f3;
+        //  DOS SEMILLAS DE RUIDO, que es la descorrelacion mas honesta que hay:
+        //  el aire de los dos canales no es el mismo aire. En las nueve formas
+        //  con ruido esto es TODO el ancho que hace falta, y no cuesta nada.
+        //
+        //  BAJOS y SUBS se quedan con la misma: ver `monoDeVerdad`.
+        const bool  anchoOk = ! monoDeVerdad (F.forma);
+        RuidoMantenido rnd (semilla, canal, anchoOk, fs);
 
-        const bool  duro   = (capa == 1);
-        const float fuerza = duro ? 1.00f : 0.52f;
-        const float brillo = P.brillo * (duro ? 1.00f : 0.45f);
-        const float indice = duro ? 1.00f : 0.42f;
+        //  Y LA PUA DE LA CUERDA TIENE SU PROPIO SORTEO, compartido por los dos
+        //  canales. El estado inicial del retardo de Karplus-Strong no es aire:
+        //  es LA CUERDA. Sorteandolo del mismo `rnd` que el aire, los dos
+        //  canales tendrian cuerdas distintas -o sea dos guitarras- en vez de
+        //  una guitarra con dos micros, que es lo que se busca.
+        Rng pua (semilla ^ 0x7C4B);
+
+        //  EL LFO, CUADRADO O CONGELADO. Ver `largoBucle` para el porque.
+        //
+        //  Quien llama puede pasar la velocidad ya CUADRADA con el largo del
+        //  bucle -de modo que el cuerpo sea periodico tambien para el LFO- y un
+        //  cero significa CONGELADO. Sin argumento se usa la de la tabla, que es
+        //  lo que quieren las siete formas que no sostienen.
+        const double lfoUsa = (lfoHz >= 0.0) ? lfoHz : lfoHzDe (F.forma, P);
+        const double incLfo = lfoUsa / fs;
+        Svf f1, f2, f3;
+        //  SIN ESTO EL FILTRO CORTA CUATRO VECES MAS ABAJO de lo que se le pide
+        //  y todo suena apagado sin que nada lo cante. Ver `Kits::detail::Svf`.
+        f1.prepara (fs); f2.prepara (fs); f3.prepara (fs);
+
+        //  LA CAPA ES UNA FRACCION Y NO UNA BANDERA.
+        //
+        //  Con `duro = (capa == 1)` la tercera capa habria salido identica a la
+        //  segunda -y el banco lo habria cantado como dos zonas iguales-. Los
+        //  cuatro numeros se interpolan entre los MISMOS extremos que tenian:
+        //  `cap = 0` da exactamente la suave de antes y `cap = 1` la fuerte, asi
+        //  que las dos puntas del recorrido no se mueven y lo unico que aparece
+        //  es el escalon del medio.
+        const float cap    = (kCapas > 1) ? (float) capa / (float) (kCapas - 1) : 1.0f;
+        const float fuerza = 0.52f + 0.48f * cap;
+        const float brillo = P.brillo * (0.45f + 0.55f * cap);
+        const float indice = 0.42f + 0.58f * cap;
         //  Y EL TERCER MANDO DE LA CAPA, que hizo falta despues de medir: en
         //  media familia el filtro no puede cambiar el timbre porque no hay
         //  nada que filtrar -un seno, tres parciales, ocho barras- y con la
         //  capa metida solo en el corte, seis familias median centroide x1.00.
         //  Esto escala el CONTENIDO: armonicos de mas, ruido de mas, parciales
         //  de mas. Ver Tests/instr.py, que mide las dos cosas a la vez.
-        const float capaMix = duro ? 1.00f : 0.30f;
+        const float capaMix = 0.30f + 0.70f * cap;
 
-        const double inc  = hz / kRate;
-        const double nyq  = kRate * 0.48;
+        const double inc  = hz / fs;
+
+        //  EL TECHO DE PARCIALES NO SUBE CON LA TASA, y eso es una decision.
+        //
+        //  `nyq` valia `kRate * 0.48` y lo primero que sale es ponerlo en
+        //  `fs * 0.48`. No vale: un parcial por encima de la banda util es CPU
+        //  tirada -el diezmador lo va a borrar- y uno que caiga DENTRO de la
+        //  transicion del filtro saldria a medio volumen segun el numero de
+        //  taps, o sea que el timbre dependeria del largo del filtro. El limite
+        //  lo pone un numero con razon -la banda de paso, que es el Nyquist del
+        //  render entre el orden de `soft()`- y no la pared de un filtro.
+        const double nyq  = Diezmador::bandaHz (kRate);
 
         double ph = 0.0, ph2 = 0.0, ph3 = 0.0, ph4 = 0.0, phm = 0.0, lfo = 0.0;
         double arm[16] = {};                      // fases de los aditivos
@@ -227,21 +415,78 @@ namespace Sintes
         int    ksPos = 0, ksLen = 0;
         float  ksPrev = 0.0f;
 
+        //  La cuerda: perdida por vuelta, paso bajo del bucle y todo paso que
+        //  afina. Los tres se mueven con la tasa; ver el bloque de `fGuitarra`.
+        float ksPerd = 1.0f, ksLp = 1.0f, ksAp = 0.0f;
+        float ksApX = 0.0f, ksApY = 0.0f;
+
         if (F.forma == fGuitarra)
         {
-            ksLen = juce::jmax (2, (int) std::lround (kRate / juce::jmax (20.0, hz)));
+            //  EL PERIODO DEL BUCLE SE REPARTE ENTRE TRES PIEZAS, y hasta ahora
+            //  solo se contaba una.
+            //
+            //  `lround (fs/hz)` cuantizaba el periodo a muestra entera, y encima
+            //  el promediador `0.5*(x + ksPrev)` añadia MEDIA MUESTRA de retardo
+            //  que nadie restaba. En la raiz +24 salian 92 + 0.5 = 92.5 muestras,
+            //  o sea 518.9 Hz contra los 523.25 que tocaban: **-14.4 cents en
+            //  toda la octava alta**. La prueba de octavas no lo veia porque
+            //  compara bandas logaritmicas y catorce cents caben dentro de una.
+            //
+            //  Ahora el periodo se reparte: el retardo entero, mas el retardo de
+            //  grupo del paso bajo -que se CALCULA en vez de suponerse-, mas un
+            //  todo paso de primer orden que se come lo que sobra. Asi la cuerda
+            //  afina a cualquier tasa y a cualquier raiz.
+            const double periodo = fs / juce::jmax (20.0, hz);
+
+            //  EL PASO BAJO DEL BUCLE, CON SU CORTE EN HERCIOS.
+            //
+            //  Era `0.5*(x + ksPrev)`, cuyo -3 dB cae en `fs/4`: a 48 kHz son
+            //  12 kHz, y a 4x se iria a 48, o sea que la cuerda saldria mucho
+            //  mas brillante y con otro decaimiento por armonico solo por
+            //  cambiar la tasa. Se fija en los 12 kHz que el promediador tenia a
+            //  la tasa de salida: el timbre no se mueve y ya no depende de fs.
+            const double a = 1.0 - std::exp (-juce::MathConstants<double>::twoPi * 12000.0 / fs);
+            ksLp = (float) a;
+            const double gdLp = (1.0 - a) / a;      // retardo de grupo en continua
+
+            //  Lo que queda para el todo paso, dejado entre 0.5 y 1.5 muestras,
+            //  que es donde un todo paso de primer orden es exacto y estable.
+            ksLen = juce::jmax (2, (int) std::floor (periodo - gdLp - 0.5));
+            const double frac = juce::jlimit (0.1, 1.9, periodo - gdLp - (double) ksLen);
+            ksAp = (float) ((1.0 - frac) / (1.0 + frac));
+
             cuerda.assign ((size_t) ksLen, 0.0f);
-            //  La pua: ruido en toda la cuerda, y un peine que dice DONDE se
-            //  pulsa. Sin el peine todas las pulsaciones suenan al mismo sitio.
+
+            //  LA PUA SE GENERA A 48 kHz Y SE SUBE, y esto no es un detalle.
+            //
+            //  `cuerda[i] = rnd()` no es señal muestreada: es el ESTADO INICIAL
+            //  de un retardo. A 4x tendria cuatro veces mas muestras y su
+            //  espectro seria blanco hasta 96 kHz en vez de hasta 24, o sea que
+            //  la cuerda arrancaria con un chasquido que hoy no tiene. Se sortea
+            //  a la tasa de salida y se interpola, que es lo que conserva el
+            //  color de la pua.
+            for (int i = 0; i < ksLen; ++i) cuerda[(size_t) i] = pua();
+            //  El peine que dice DONDE se pulsa. Sin el, todas las pulsaciones
+            //  suenan al mismo sitio. `pos` es una fraccion de la cuerda, asi
+            //  que escala sola con la tasa.
             const int pos = juce::jlimit (1, ksLen - 1, (int) (P.p2 * (float) ksLen));
-            for (int i = 0; i < ksLen; ++i) cuerda[(size_t) i] = rnd();
             for (int i = ksLen - 1; i >= pos; --i)
                 cuerda[(size_t) i] -= cuerda[(size_t) (i - pos)];
+
+            //  Y LA PERDIDA, QUE ES POR MUESTRA Y NO POR SEGUNDO.
+            //
+            //  `0.998 - p1*0.05` se aplica una vez por vuelta del retardo, y a
+            //  4x el retardo da cuatro veces mas vueltas en el mismo tiempo: la
+            //  cuerda se apagaria **cuatro veces mas rapido**. No truena, no
+            //  suena mal: solo se queda corta, que es el peor sitio donde puede
+            //  esconderse un fallo. La raiz cuarta lo deja igual en tiempo real:
+            //  0.998 pasa a 0.99950.
+            ksPerd = (float) std::pow ((double) (0.998f - P.p1 * 0.05f), kRate / fs);
         }
 
         for (int n = 0; n < len; ++n)
         {
-            const float t = (float) n / (float) kRate;
+            const float t = (float) n / (float) fs;
 
             //  LO QUE SOSTIENE, SOSTIENE DE VERDAD.
             //
@@ -316,14 +561,19 @@ namespace Sintes
                     //  FM de dos operadores. p1 razon, p2 indice, p3 caida del
                     //  indice, p4 martillo. El indice cayendo es lo que hace
                     //  que un Rhodes empiece con campana y acabe con seno.
+                    //  UN SOLO OSCILADOR: el ancho sale de separar la CAIDA
+                    //  DEL INDICE y el martillo un 4% entre los dos lados. Es lo
+                    //  que separa dos microfonos delante de la misma pua, y no
+                    //  un chorus: la nota es la misma nota en los dos canales.
+                    const float sesgo = (canal == 1) ? 1.04f : 0.96f;
                     phm += inc * (double) P.p1; if (phm >= 1.0) phm -= 1.0;
-                    const float ei = env (te, juce::jmax (0.02f, P.p3));
+                    const float ei = env (te, juce::jmax (0.02f, P.p3 * sesgo));
                     const double mod = (double) (P.p2 * indice * ei)
                                      * std::sin (juce::MathConstants<double>::twoPi * phm);
                     ph += inc; if (ph >= 1.0) ph -= 1.0;
                     v = (float) std::sin (juce::MathConstants<double>::twoPi * ph + mod);
                     f1.set (juce::jlimit (200.0, nyq, 3000.0 * (double) brillo), 1.2f);
-                    v += P.p4 * f1.bpf (rnd()) * env (te, 0.006f) * 2.4f * fuerza;
+                    v += P.p4 * f1.bpf (rnd()) * env (te, 0.006f * sesgo) * 2.4f * fuerza;
                     break;
                 }
 
@@ -332,16 +582,22 @@ namespace Sintes
                     //  Aditivo de ocho barras. p1 inclinacion (brillo), p2
                     //  balance impares/pares, p3 percusion del 3er armonico,
                     //  p4 leslie.
-                    lfo += 5.6 / kRate; if (lfo >= 1.0) lfo -= 1.0;
+                    lfo += incLfo; if (lfo >= 1.0) lfo -= 1.0;
+                    //  EL LESLIE GIRA, o sea que los dos lados no lo ven a la
+                    //  vez. 0.15 de vuelta entre canales y no 0.5: media vuelta
+                    //  es CONTRAFASE, y en cuanto alguien escucha en mono el
+                    //  vibrato se cancela solo. 0.15 se oye girar y sobrevive a
+                    //  la suma.
+                    const double gira = lfo + ((canal == 1) ? 0.075 : -0.075);
                     const double vib = 1.0 + (double) P.p4 * 0.004
-                                             * std::sin (juce::MathConstants<double>::twoPi * lfo);
+                                             * std::sin (juce::MathConstants<double>::twoPi * gira);
                     static const int mult[8] = { 1, 2, 3, 4, 6, 8, 12, 16 };
                     float suma = 0.0f;
                     for (int k = 0; k < 8; ++k)
                     {
                         const double fk = hz * (double) mult[k] * vib;
                         if (fk >= nyq) continue;
-                        arm[k] += fk / kRate; if (arm[k] >= 1.0) arm[k] -= 1.0;
+                        arm[k] += fk / fs; if (arm[k] >= 1.0) arm[k] -= 1.0;
                         const float par = (mult[k] % 2 == 0) ? (1.0f - P.p2) : P.p2;
                         //  Y la capa fuerte tira de las barras de arriba, que
                         //  es lo que hace un organista al empujar: con la
@@ -351,6 +607,11 @@ namespace Sintes
                         const float a = std::pow ((float) (k + 1), incl) * (0.55f + par);
                         float g = a;
                         if (k == 2) g *= 1.0f + P.p3 * 6.0f * env (te, 0.09f) * fuerza;
+                        //  Y LAS BARRAS SE REPARTEN 1-3-6-12 contra 2-4-8-16,
+                        //  que es como estan cableadas de verdad las dos mitades
+                        //  de un tirador: no es un reparto inventado, es el que
+                        //  la tabla `mult` ya tenia.
+                        g *= ladoDe (canal, (k % 2 == 0) ? -0.55 : 0.55);
                         suma += g * (float) std::sin (juce::MathConstants<double>::twoPi * arm[k]);
                     }
                     f1.set (juce::jlimit (200.0, nyq, 2200.0 * (double) brillo), 0.7f);
@@ -362,7 +623,7 @@ namespace Sintes
                 {
                     //  Siete sierras desafinadas. p1 dispersion en cents, p2
                     //  vibrato, p3 su velocidad, p4 ruido de arco.
-                    lfo += (double) P.p3 / kRate; if (lfo >= 1.0) lfo -= 1.0;
+                    lfo += incLfo; if (lfo >= 1.0) lfo -= 1.0;
                     const double vib = std::pow (2.0, (double) P.p2 * 0.01
                                         * std::sin (juce::MathConstants<double>::twoPi * lfo));
                     float suma = 0.0f;
@@ -371,7 +632,12 @@ namespace Sintes
                         const double det = std::pow (2.0, (double) P.p1 * (double) kDesigual[k] / 1200.0);
                         const double ik = inc * det * vib;
                         arm[k] += ik; if (arm[k] >= 1.0) arm[k] -= 1.0;
-                        suma += sawBl (arm[k], ik);
+                        //  LOS SIETE ATRILES. Se reparten por `kDesigual`, que es
+                        //  **el mismo vector que ya decide su desafinacion**: el
+                        //  que suena mas arriba se sienta mas a un lado, que es
+                        //  lo que pasa en una cuerda de verdad. Cero osciladores
+                        //  nuevos.
+                        suma += ladoDe (canal, kApertura * (double) kDesigual[k]) * sawBl (arm[k], ik);
                     }
                     f1.set (juce::jlimit (200.0, nyq, hz * 9.0 * (double) brillo), 0.6f);
                     f2.set (juce::jlimit (400.0, nyq, 2600.0), 0.8f);
@@ -384,7 +650,7 @@ namespace Sintes
                 {
                     //  Cuatro pulsos con el ancho moviendose. p1 profundidad,
                     //  p2 velocidad, p3 paso alto, p4 dispersion.
-                    lfo += (double) P.p2 * 0.7 / kRate; if (lfo >= 1.0) lfo -= 1.0;
+                    lfo += incLfo; if (lfo >= 1.0) lfo -= 1.0;
                     //  Y el ancho lo estrecha la capa fuerte: un pulso ancho
                     //  es casi un seno y uno estrecho tiene todos los armonicos,
                     //  asi que aqui es donde se oye el toque. Con el ancho fijo
@@ -403,7 +669,9 @@ namespace Sintes
                         const double det = std::pow (2.0, (double) P.p4 * (double) kDesigual[k] / 1200.0);
                         const double ik = inc * det;
                         arm[k] += ik; if (arm[k] >= 1.0) arm[k] -= 1.0;
-                        suma += pulsoBl (arm[k], ik, ancho);
+                        //  Los cuatro pulsos, repartidos por el mismo vector que
+                        //  los desafina. Ver CUERDAS.
+                        suma += ladoDe (canal, kApertura * (double) kDesigual[k]) * pulsoBl (arm[k], ik, ancho);
                     }
                     f1.set (juce::jlimit (200.0, nyq, hz * 7.0 * (double) brillo), 0.5f);
                     f2.set (juce::jlimit (30.0, 900.0, hz * (double) P.p3 * 2.0 + 40.0), 0.7f);
@@ -419,7 +687,10 @@ namespace Sintes
                     ph2 += inc * 0.5; if (ph2 >= 1.0) ph2 -= 1.0;
                     const float osc = (1.0f - P.p1) * sawBl (ph, inc) + P.p1 * sqrBl (ph, inc)
                                     + P.p4 * sawBl (ph2, inc * 0.5) * 0.6f;
-                    const float ef = env (te, juce::jmax (0.01f, P.p2));
+                    //  DOS PASTILLAS: la envolvente del filtro cae un 3%
+                    //  distinta en cada lado. Un solo oscilador no se puede
+                    //  repartir, asi que el ancho sale de lo unico que se mueve.
+                    const float ef = env (te, juce::jmax (0.01f, P.p2 * ((canal == 1) ? 1.03f : 0.97f)));
                     f1.set (juce::jlimit (60.0, nyq, hz * brillo * (1.0 + 14.0 * (double) ef)), P.p3);
                     v = limita (1.2f * f1.lp (osc));
                     break;
@@ -442,11 +713,15 @@ namespace Sintes
                     //  son multiplos de nada, y el "tono" se lo pone el oido.
                     //  Con estos al 0.42 y al 0.26 esto era un piano electrico
                     //  con la caida larga - medido, 2.05 dB contra VINTAGE.
+                    //  El fundamental CENTRADO y los dos parciales a un lado
+                    //  cada uno: una campana suena ancha porque sus parciales
+                    //  salen de sitios distintos del bronce, no porque nadie le
+                    //  meta un retardo.
                     if (hz * (double) P.p3 < nyq)
-                        v += 0.95f * env (te, P.dec * 0.80f)
+                        v += 0.95f * ladoDe (canal, -0.70) * env (te, P.dec * 0.80f)
                              * (float) std::sin (juce::MathConstants<double>::twoPi * ph2);
                     if (hz * (double) P.p4 < nyq)
-                        v += 0.70f * env (te, P.dec * 0.55f)
+                        v += 0.70f * ladoDe (canal, 0.70) * env (te, P.dec * 0.55f)
                              * (float) std::sin (juce::MathConstants<double>::twoPi * ph3);
                     //  Y el fundamental se apaga antes que ellos, que es lo que
                     //  hace que una campana "cante" mas agudo segun decae.
@@ -475,7 +750,8 @@ namespace Sintes
                         const double det = std::pow (2.0, (double) P.p3 * (double) kDesigual[k] / 1200.0);
                         const double ik = inc * det;
                         arm[k] += ik; if (arm[k] >= 1.0) arm[k] -= 1.0;
-                        suma += pulsoBl (arm[k], ik, ancho);
+                        //  Los tres, repartidos por el vector que los desafina.
+                        suma += ladoDe (canal, kApertura * (double) kDesigual[k]) * pulsoBl (arm[k], ik, ancho);
                     }
                     f1.set (juce::jlimit (120.0, nyq, hz * brillo * (1.5 + 7.0 * (double) over)), 1.1f);
                     f2.set (juce::jlimit (600.0, nyq, 3400.0), 1.0f);
@@ -488,7 +764,7 @@ namespace Sintes
                 {
                     //  p1 ancho del pulso, p2 su modulacion, p3 resonancia,
                     //  p4 sub cuadrada.
-                    lfo += 4.2 / kRate; if (lfo >= 1.0) lfo -= 1.0;
+                    lfo += incLfo; if (lfo >= 1.0) lfo -= 1.0;
                     const double ancho = juce::jlimit (0.04, 0.96, (double) P.p1
                         + (double) P.p2 * 0.4 * std::sin (juce::MathConstants<double>::twoPi * lfo));
                     //  Y UNA QUINTA ENCIMA, fija. Un pulso con filtro es lo
@@ -500,8 +776,11 @@ namespace Sintes
                     ph  += inc;       if (ph  >= 1.0) ph  -= 1.0;
                     ph2 += inc * 0.5; if (ph2 >= 1.0) ph2 -= 1.0;
                     ph3 += i3;        if (ph3 >= 1.0) ph3 -= 1.0;
+                    //  LA QUINTA A UN LADO y la nota en el centro. El sub se
+                    //  queda centrado a proposito: es grave, y lo grave no se
+                    //  abre (ver `monoDeVerdad`).
                     const float osc = pulsoBl (ph, inc, ancho)
-                                    + 0.42f * pulsoBl (ph3, i3, ancho * 0.7)
+                                    + 0.42f * ladoDe (canal, -0.60) * pulsoBl (ph3, i3, ancho * 0.7)
                                     + P.p4 * sqrBl (ph2, inc * 0.5) * 0.5f;
                     f1.set (juce::jlimit (120.0, nyq, hz * brillo * 3.0), P.p3);
                     v = limita (0.62f * f1.lp (osc));
@@ -513,7 +792,7 @@ namespace Sintes
                     //  Tres formantes sobre un pulso. p1 vocal, p2 aire, p3
                     //  vibrato, p4 dispersion. Lo que hace voz a una voz no es
                     //  la forma de onda, son las tres bandas fijas.
-                    lfo += 5.1 / kRate; if (lfo >= 1.0) lfo -= 1.0;
+                    lfo += incLfo; if (lfo >= 1.0) lfo -= 1.0;
                     const double vib = std::pow (2.0, (double) P.p3 * 0.008
                                         * std::sin (juce::MathConstants<double>::twoPi * lfo));
                     float suma = 0.0f;
@@ -522,7 +801,9 @@ namespace Sintes
                         const double det = std::pow (2.0, (double) P.p4 * (double) kDesigual[k] / 1200.0);
                         const double ik = inc * det * vib;
                         arm[k] += ik; if (arm[k] >= 1.0) arm[k] -= 1.0;
-                        suma += sawBl (arm[k], ik);
+                        //  Tres voces, tres sitios. Y el aire ya viene de su
+                        //  propia semilla, que en un coro es la mitad del ancho.
+                        suma += ladoDe (canal, kApertura * (double) kDesigual[k]) * sawBl (arm[k], ik);
                     }
                     suma = suma * 0.33f + P.p2 * rnd() * 0.5f * fuerza;
                     const int vocal = juce::jlimit (0, 4, (int) std::lround ((double) P.p1 * 4.0));
@@ -540,12 +821,20 @@ namespace Sintes
                     //  se pierde en cada vuelta (p1) y donde se pulso (p2, ya
                     //  metido en el peine de arriba). p3 cuerpo, p4 ruido.
                     const float x = cuerda[(size_t) ksPos];
-                    const float filtrado = 0.5f * (x + ksPrev);
-                    ksPrev = x;
-                    const float perd = 0.998f - P.p1 * 0.05f;
-                    cuerda[(size_t) ksPos] = filtrado * perd;
+                    //  Paso bajo del bucle -corte en Hz, ver arriba- y detras el
+                    //  todo paso que afina. El orden importa: el todo paso tiene
+                    //  que ver lo mismo que va a dar la vuelta.
+                    ksPrev += ksLp * (x - ksPrev);
+                    const float apY = ksAp * ksPrev + ksApX - ksAp * ksApY;
+                    ksApX = ksPrev; ksApY = apY;
+                    cuerda[(size_t) ksPos] = apY * ksPerd;
                     ksPos = (ksPos + 1) % ksLen;
-                    f1.set (juce::jlimit (90.0, nyq, 220.0 + 900.0 * (double) P.p3), 2.4f);
+                    //  UNA SOLA CUERDA, CENTRADA -ver `pua`-, y el CUERPO
+                    //  con su resonancia un 2% distinta a cada lado. Una caja de
+                    //  madera no resuena igual por los dos costados, y eso es
+                    //  ancho de verdad sin tocar la cuerda.
+                    f1.set (juce::jlimit (90.0, nyq, (220.0 + 900.0 * (double) P.p3)
+                                                      * ((canal == 1) ? 1.02 : 0.98)), 2.4f);
                     v = x + P.p3 * f1.bpf (x) * 0.8f;
                     v += P.p4 * rnd() * env (te, 0.004f) * 0.7f * fuerza;
                     f2.set (juce::jlimit (400.0, nyq, hz * 12.0 * (double) brillo), 0.6f);
@@ -566,11 +855,13 @@ namespace Sintes
                     //  con ellos fijos las dos capas median centroide x1.00, o
                     //  sea que el toque solo cambiaba el volumen.
                     const float par = P.p4 * (0.25f + 1.30f * capaMix);
+                    //  Fundamental centrado, los dos inarmonicos a un lado cada
+                    //  uno. Misma figura que CAMPANAS y por la misma razon.
                     if (hz * (double) P.p1 < nyq)
-                        v += par * env (te, P.dec * 0.30f)
+                        v += par * ladoDe (canal, -0.65) * env (te, P.dec * 0.30f)
                              * (float) std::sin (juce::MathConstants<double>::twoPi * ph2);
                     if (hz * (double) P.p2 < nyq)
-                        v += par * 0.45f * env (te, P.dec * 0.14f)
+                        v += par * 0.45f * ladoDe (canal, 0.65) * env (te, P.dec * 0.14f)
                              * (float) std::sin (juce::MathConstants<double>::twoPi * ph3);
                     f1.set (juce::jlimit (400.0, nyq, 2800.0 * (double) brillo), 1.4f);
                     v += P.p3 * f1.bpf (rnd()) * env (te, 0.005f) * 3.0f * (0.2f + 1.1f * capaMix);
@@ -584,7 +875,15 @@ namespace Sintes
                     //  resonancia encima. p1 ancho, p2 centro, p3 Q, p4 muerte.
                     ph += inc; if (ph >= 1.0) ph -= 1.0;
                     const float osc = pulsoBl (ph, inc, juce::jlimit (0.02, 0.45, (double) P.p1));
-                    f1.set (juce::jlimit (150.0, nyq, hz * (double) P.p2 * (double) brillo), P.p3);
+                    //  DOS PASTILLAS otra vez, y aqui un 1.5% basta: el paso
+                    //  banda es muy estrecho (Q alta), asi que mover el centro
+                    //  poco ya descorrela mucho. Con el 3% de PLUCKS se oiria
+                    //  como dos notas distintas.
+                    //  Y EL SESGO VA DESPUES DEL ACOTADO. Dentro, los dos
+                    //  canales caian en el mismo tope y CLAVES OCT CLV medía
+                    //  **r = 1.0000**: un ancho que el limite se comia.
+                    f1.set (juce::jlimit (150.0, nyq, hz * (double) P.p2 * (double) brillo)
+                              * ((canal == 1) ? 1.015 : 0.985), P.p3);
                     const float ef = env (te, juce::jmax (0.02f, P.dec * 0.5f));
                     v = limita (1.5f * f1.bpf (osc) * (0.35f + 0.65f * ef));
                     v += P.p4 * rnd() * env (te, 0.003f) * fuerza;
@@ -596,7 +895,7 @@ namespace Sintes
                     //  Seno con AIRE, que es lo unico que separa una flauta de
                     //  un seno. p1 cuanto aire, p2 vibrato, p3 cuando entra,
                     //  p4 segundo armonico.
-                    lfo += 5.4 / kRate; if (lfo >= 1.0) lfo -= 1.0;
+                    lfo += incLfo; if (lfo >= 1.0) lfo -= 1.0;
                     const float entra = juce::jmin (1.0f, juce::jmax (0.0f, te - P.p3) / 0.35f);
                     const double vib = std::pow (2.0, (double) (P.p2 * entra) * 0.006
                                         * std::sin (juce::MathConstants<double>::twoPi * lfo));
@@ -639,14 +938,20 @@ namespace Sintes
                                           * std::sqrt (1.0 + (double) P.p3 * (double) (k * k));
                         const double fk = hz * mult;
                         if (fk >= nyq) break;
-                        arm[k] += fk / kRate; if (arm[k] >= 1.0) arm[k] -= 1.0;
+                        arm[k] += fk / fs; if (arm[k] >= 1.0) arm[k] -= 1.0;
                         const float tau = P.dec / (1.0f + P.p1 * (float) k);
                         //  Y la inclinacion del reparto tambien: pulsar fuerte
                         //  no solo saca mas parciales, los saca menos apagados.
                         //  Con 1/k fijo, doce armonicos contra siete median x1.10
                         //  - los de arriba pesan demasiado poco para notarse.
                         const float amp = std::pow ((float) (k + 1), -1.0f + 0.45f * capaMix);
-                        suma += amp * env (te, tau)
+                        //  EL FUNDAMENTAL CENTRADO Y LOS PARCIALES ABRIENDOSE
+                        //  SEGUN SUBEN, alternando lado. Es lo que hace un arpa
+                        //  de verdad: el tono viene de una cuerda y el brillo de
+                        //  las que vibran por simpatia a los lados.
+                        const double x = (k == 0) ? 0.0
+                            : (((k & 1) != 0) ? 1.0 : -1.0) * juce::jmin (1.0, (double) k / 11.0);
+                        suma += ladoDe (canal, x) * amp * env (te, tau)
                                 * (float) std::sin (juce::MathConstants<double>::twoPi * arm[k]);
                     }
                     f1.set (juce::jlimit (400.0, nyq, 3000.0 * (double) brillo), 1.0f);
@@ -661,6 +966,64 @@ namespace Sintes
         }
 
         juce::ignoreUnused (ph4);
+    }
+
+    // ------------------------------------------------------------------------
+    //  LA PUERTA: se genera a 4x y se baja. Es la unica que el resto llama.
+    //
+    //  El retardo del filtro se compensa RINDIENDO DE MAS por delante y tirando
+    //  esa cabecera, que es lo unico que deja el punto de bucle donde `pre` dice
+    //  que esta. Rellenar con ceros seria meter un flanco, y un flanco es
+    //  exactamente lo que este filtro esta aqui para no dejar pasar.
+    //
+    //  La memoria: para una zona de 1.3 s el intermedio son 1.3 * 192000 * 4 B =
+    //  un mega. Se reserva por zona y se suelta al salir, en el hilo del
+    //  cargador y jamas en el de audio.
+    // ------------------------------------------------------------------------
+    static void rinde (float* dL, float* dR, int len, const Familia& F, const Preset& P,
+                       double hz, int capa, int semilla, float congelaEn = -1.0f,
+                       double lfoHz = -1.0)
+    {
+        const int crudoLen = Diezmador::largoDeRender (len);
+        std::vector<float> crudo ((size_t) crudoLen, 0.0f);
+
+        //  LA CABECERA ES SILENCIO DE VERDAD Y NO SEÑAL ADELANTADA.
+        //
+        //  El centro del filtro cae en `kMitad`, asi que la muestra 0 de la
+        //  salida se forma alrededor de la muestra `kMitad` del render. Si la
+        //  generacion empezara en la muestra 0 del buffer intermedio, TODAS las
+        //  envolventes saldrian 1.33 ms adelantadas y -peor- `congelaEn`
+        //  congelaria en un sitio distinto del que el punto de bucle dice.
+        //
+        //  Asi que la generacion empieza en `kMitad` y lo de delante se queda a
+        //  cero. Y eso no es un apaño: antes de que la nota arranque **no hay
+        //  sonido**, o sea que los ceros son la verdad y no un relleno. Lo que
+        //  el filtro hace con ellos es darle al ataque su subida natural.
+        const int mitad = Diezmador::mitadDe (Diezmador::kOs);
+        rindeCrudo (crudo.data() + mitad, crudoLen - mitad,
+                    F, P, hz, capa, semilla, congelaEn, kRender, lfoHz, 0);
+        Diezmador::diezma (crudo.data(), dL, len);
+
+        //  Y EL DERECHO. Las dos formas que se quedan en mono se COPIAN y no se
+        //  vuelven a generar: ademas de ahorrar la mitad del tiempo, es lo unico
+        //  que garantiza `L == R` **bit a bit**, que es lo que su regla pide.
+        //  Generar dos veces con la misma semilla tambien daria lo mismo hoy, y
+        //  dejaria de darlo el dia que alguien meta un sorteo mas en medio: una
+        //  regla que depende de que nadie toque nada no protege nada.
+        //  `dR` nulo es «la gama de este aparato rinde en mono»: ni se genera
+        //  ni se copia. Ver `Sintes::Gama`.
+        if (dR == nullptr) return;
+
+        if (monoDeVerdad (F.forma))
+        {
+            std::memcpy (dR, dL, sizeof (float) * (size_t) len);
+            return;
+        }
+
+        std::fill (crudo.begin(), crudo.end(), 0.0f);
+        rindeCrudo (crudo.data() + mitad, crudoLen - mitad,
+                    F, P, hz, capa, semilla, congelaEn, kRender, lfoHz, 1);
+        Diezmador::diezma (crudo.data(), dR, len);
     }
 
     // ------------------------------------------------------------------------
@@ -683,10 +1046,26 @@ namespace Sintes
     //  Y con la fase cuadrada el fundido cruzado deja de cancelar y pasa a ser
     //  lo que era: un seguro para las familias desafinadas, que no tienen
     //  periodo comun y por eso no se pueden arreglar solo con esto.
-    static int largoBucle (double hz, double segundos)
+    static int largoBucle (double hz, double lfoHz, double segundos, double* lfoCuadrado)
     {
         const double P = kRate / juce::jmax (1.0, hz);        // muestras por ciclo
         const double objetivo = kRate * segundos;
+
+        //  EL LFO TAMBIEN ES FASE, y por eso pesa lo mismo que la raiz.
+        //
+        //  El cuerpo ya cerraba en un numero entero de ciclos de la fundamental
+        //  y aun asi la vuelta se oia: el LFO seguia corriendo con el tiempo de
+        //  verdad y su fase NO cuadraba con el largo. Un leslie de 5.6 Hz en un
+        //  cuerpo de 1.0091 s da **5.65 vueltas**, o sea que en cada vuelta del
+        //  bucle el timbre salta de golpe a un sitio distinto del barrido. Siete
+        //  grados de la raiz son un salto de fase; siete grados de un LFO son un
+        //  salto de TIMBRE, y eso se oye mucho antes.
+        //
+        //  Asi que se busca un largo que sea a la vez numero entero de ciclos de
+        //  la raiz Y del LFO, con el segundo termino pesando lo mismo que el
+        //  primero — la filosofia de esta funcion no cambia: *la fase pesa mil
+        //  veces mas que la duracion*, y el LFO es fase.
+        const double Q = (lfoHz > 1.0e-6) ? kRate / lfoHz : 0.0;   // muestras por vuelta
 
         int mejor = (int) std::lround (objetivo);
         double coste = 1.0e30;
@@ -696,13 +1075,43 @@ namespace Sintes
         for (int n = nMin; n <= nMax; ++n)
         {
             const double L = (double) n * P;
-            //  La fase que sobra pesa mil veces mas que la duracion: lo que no
-            //  se puede negociar es la fase, y el largo si.
-            const double c = std::abs (L - (double) std::lround (L)) * 1000.0
-                           + std::abs (L - objetivo) / kRate;
+            double c = std::abs (L - (double) std::lround (L)) * 1000.0
+                     + std::abs (L - objetivo) / kRate;
+            if (Q > 0.0)
+            {
+                const double m = std::round (L / Q);
+                //  Si el LFO no llega a dar una vuelta entera dentro del cuerpo
+                //  no hay nada que cuadrar: se congela, y de eso se encarga
+                //  quien llama. Aqui solo se evita pedirle lo imposible.
+                if (m >= 1.0) c += std::abs (L - m * Q) / Q * 1000.0;
+            }
             if (c < coste) { coste = c; mejor = (int) std::lround (L); }
         }
-        return juce::jmax (256, mejor);
+
+        const int largo = juce::jmax (256, mejor);
+
+        //  Y SE DEVUELVE LA VELOCIDAD QUE EL BUCLE ADMITE, no la de la tabla.
+        //
+        //  Cero quiere decir CONGELADO, y le toca a catorce de los dieciseis
+        //  COLCHONES: su `p2*0.7` va de 0.028 a 0.70 Hz, o sea que en un cuerpo
+        //  de un segundo no dan ni una vuelta. Un LFO que no cierra no es deriva,
+        //  es una RAMPA, y una rampa en bucle es un diente de sierra a la
+        //  cadencia del bucle — exactamente el defecto que ya se arreglo para la
+        //  envolvente del filtro («un wah a la velocidad del bucle»).
+        //
+        //  El precio esta dicho: DRIFT deja de moverse dentro del cuerpo. Pero
+        //  con 0.028 Hz -un ciclo de treinta y seis segundos- hoy tampoco deriva;
+        //  hoy reinicia un trozo de rampa en cada vuelta, que es peor.
+        if (lfoCuadrado != nullptr)
+        {
+            if (Q <= 0.0) { *lfoCuadrado = 0.0; }
+            else
+            {
+                const double m = std::round ((double) largo / Q);
+                *lfoCuadrado = (m >= 1.0) ? m * kRate / (double) largo : 0.0;
+            }
+        }
+        return largo;
     }
 
     // ------------------------------------------------------------------------
@@ -722,15 +1131,19 @@ namespace Sintes
     //  por lo mismo - dos caminos que rinden por su cuenta se separan, y el
     //  sintoma seria «el preset y el editado no suenan igual» sin poder decir
     //  por que.
-    SampleBuffer::Ptr sintetiza (int familia, int preset)
+    SampleBuffer::Ptr sintetiza (int familia, int preset, Gama g)
     {
         const int fi = juce::jlimit (0, kFamilias - 1, familia);
         const int pi = juce::jlimit (0, kPresets  - 1, preset);
-        return sintetiza (fi, pi, kTabla[fi].p[pi]);
+        return sintetiza (fi, pi, kTabla[fi].p[pi], g);
     }
 
-    SampleBuffer::Ptr sintetiza (int familia, int preset, const Preset& receta)
+    SampleBuffer::Ptr sintetiza (int familia, int preset, const Preset& receta, Gama g)
     {
+        //  LA GAMA SE ACOTA DONDE SE ENTRA, igual que la receta: llega de
+        //  `DeviceTier` pero tambien podria llegar de un banco o de un fichero.
+        const double cuerpoSeg = juce::jlimit (0.30, 2.00, g.cuerpoSeg);
+        const bool   est       = g.estereo;
         const int fi = juce::jlimit (0, kFamilias - 1, familia);
         const int pi = juce::jlimit (0, kPresets  - 1, preset);
         const auto& F = kTabla[fi];
@@ -744,21 +1157,50 @@ namespace Sintes
         //  tres segundos son 5.7 MB por pad, y este buffer se queda en memoria
         //  mientras el pad exista.
         const int pre  = F.sostiene ? (int) (kRate * juce::jlimit (0.06f, 0.70f, P.atk + 0.10f)) : 0;
-        const int cruce = F.sostiene ? (int) (kRate * 0.045) : 0;
+
+        //  EL FUNDIDO CRUZADO, Y NO ES UNO SOLO.
+        //
+        //  Cuarenta y cinco milisegundos LINEALES siguen siendo lo correcto para
+        //  las cinco familias sin conjunto desafinado: con el cuerpo periodico
+        //  el fundido es solo un seguro, y su material a los dos lados esta
+        //  correlacionado -es la misma muestra-, que es el argumento ya escrito
+        //  en `Sintes.h`.
+        //
+        //  Pero CUERDAS, COLCHONES, METALES y COROS llevan conjuntos de tres a
+        //  siete osciladores desafinados entre si, y a **un segundo** de
+        //  distancia un conjunto desafinado YA NO ESTA CORRELACIONADO consigo
+        //  mismo: el fundido lineal le mete un hoyo en mitad de la costura. Esos
+        //  cuatro llevan **150 ms en raiz-coseno** -potencia constante-, y los
+        //  150 no son redondos: son **4.9 periodos de la raiz mas grave** (32.7
+        //  Hz, 30.6 ms), o sea que hasta el bajo tiene ciclos enteros dentro del
+        //  fundido.
+        const bool conjunto = (F.forma == fCuerdas || F.forma == fColchon
+                            || F.forma == fMetales || F.forma == fCoro);
+        const int cruce = F.sostiene ? (int) (kRate * (conjunto ? 0.150 : 0.045)) : 0;
 
         //  EL LARGO ES DE CADA RAIZ, no de todas. El bucle mide un numero
         //  entero de ciclos y un ciclo dura lo que dura, asi que la zona de
         //  DO1 y la de DO5 no pueden medir lo mismo. Ver largoBucle.
         int cuerpoDe[kRaices] {}, zonaDe[kRaices] {};
+        //  La velocidad que el bucle de CADA raiz admite para el LFO. Cero es
+        //  congelado. Es por raiz porque el largo del cuerpo es por raiz.
+        double lfoDe[kRaices] {};
         int total = 0;
         for (int r = 0; r < kRaices; ++r)
         {
             const double hz = kHzRaiz * std::pow (2.0, (double) kRaiz[r] / 12.0);
+            //  UN SEGUNDO DE CUERPO, Y NO 0.42.
+            //
+            //  Con 0.42 s el cuerpo daba **2.4 vueltas por segundo**, y eso se
+            //  oye como lo que es: una repeticion. El oido perdona mucho peor un
+            //  periodo corto que uno largo, y a un segundo la vuelta deja de ser
+            //  un ritmo y pasa a ser una textura. Cuesta memoria -ver la cuenta
+            //  en la cabecera- y esa era la decision a tomar.
             cuerpoDe[r] = F.sostiene
-                ? largoBucle (hz, 0.42)
+                ? largoBucle (hz, lfoHzDe (F.forma, P), cuerpoSeg, &lfoDe[r])
                 : (int) (kRate * juce::jlimit (0.25f, 1.80f, P.atk + P.dec * 2.2f + P.rel));
             zonaDe[r] = pre + cuerpoDe[r];
-            total += zonaDe[r] * kCapas;
+            total += (zonaDe[r] + kGuardas) * kCapas;
         }
 
         auto sb = new SampleBuffer();
@@ -767,13 +1209,17 @@ namespace Sintes
         //  receta en vez del audio. Ver MainComponent::captureState.
         sb->familia = fi;
         sb->preset  = pi;
-        sb->buffer.setSize (1, total);
+        //  DOS CANALES. Ver `ladoDe`: el ancho se genera, no se procesa. Uno
+        //  solo en la gama baja, donde el presupuesto de muestra son 64 MB y la
+        //  fabrica ya se lleva cuarenta: ver `DeviceTier::instrumentoEstereo`.
+        sb->buffer.setSize (est ? 2 : 1, total);
         sb->buffer.clear();
-        float* dst = sb->buffer.getWritePointer (0);
+        float* dstL = sb->buffer.getWritePointer (0);
+        float* dstR = est ? sb->buffer.getWritePointer (1) : dstL;
 
         int maxRinde = 0;
         for (int r = 0; r < kRaices; ++r) maxRinde = juce::jmax (maxRinde, zonaDe[r] + cruce);
-        std::vector<float> tmp ((size_t) maxRinde);
+        std::vector<float> tmpL ((size_t) maxRinde), tmpR ((size_t) maxRinde);
 
         int z = 0, off = 0;
         for (int r = 0; r < kRaices; ++r)
@@ -788,12 +1234,14 @@ namespace Sintes
                 //  suena distinto al abrirlo. Es la misma razon por la que
                 //  HUMANIZAR se escribe en vez de sortearse.
                 const int semilla = ((fi * 97 + pi) * 13 + r) * 7 + c + 1;
-                std::fill (tmp.begin(), tmp.end(), 0.0f);
+                std::fill (tmpL.begin(), tmpL.end(), 0.0f);
+                std::fill (tmpR.begin(), tmpR.end(), 0.0f);
                 //  Se congela EN EL PUNTO DE BUCLE: de ahi en adelante el
                 //  sonido tiene que ser estacionario o cada vuelta reinicia lo
                 //  que se estuviera moviendo. Lo que no sostiene no se congela.
-                rinde (tmp.data(), rindeLen, F, P, hz, c, semilla,
-                       F.sostiene ? (float) pre / (float) kRate : -1.0f);
+                rinde (tmpL.data(), est ? tmpR.data() : nullptr, rindeLen, F, P, hz, c, semilla,
+                       F.sostiene ? (float) pre / (float) kRate : -1.0f,
+                       F.sostiene ? lfoDe[r] : -1.0);
 
                 //  EL FUNDIDO CRUZADO DEL BUCLE. Ver Sintes.h: en la costura
                 //  las dos mitades son la misma muestra, asi que la union es
@@ -801,12 +1249,29 @@ namespace Sintes
                 if (cruce > 0)
                     for (int i = 0; i < cruce; ++i)
                     {
+                        //  Los dos canales con LA MISMA curva: dos curvas
+                        //  distintas serian un panoramico moviendose en cada
+                        //  vuelta del bucle.
                         const float x = (float) i / (float) cruce;
-                        tmp[(size_t) (pre + i)] = tmp[(size_t) (pre + i)] * x
-                                                + tmp[(size_t) (zonaLen + i)] * (1.0f - x);
+                        //  LINEAL cuando el material de los dos lados esta
+                        //  correlacionado, RAIZ-COSENO cuando no. Ver el porque
+                        //  de `conjunto` arriba: a un segundo de distancia siete
+                        //  sierras desafinadas ya no se parecen a si mismas, y el
+                        //  lineal -que suma amplitudes- les mete un hoyo en mitad
+                        //  de la costura. El de potencia constante suma ENERGIAS,
+                        //  que es lo que hay que sumar cuando no hay fase comun.
+                        const float a = conjunto ? std::sin (0.5f * juce::MathConstants<float>::pi * x) : x;
+                        const float b = conjunto ? std::cos (0.5f * juce::MathConstants<float>::pi * x) : (1.0f - x);
+                        tmpL[(size_t) (pre + i)] = tmpL[(size_t) (pre + i)] * a
+                                                 + tmpL[(size_t) (zonaLen + i)] * b;
+                        if (est)
+                            tmpR[(size_t) (pre + i)] = tmpR[(size_t) (pre + i)] * a
+                                                     + tmpR[(size_t) (zonaLen + i)] * b;
                     }
 
-                std::memcpy (dst + off, tmp.data(), sizeof (float) * (size_t) zonaLen);
+                std::memcpy (dstL + off, tmpL.data(), sizeof (float) * (size_t) zonaLen);
+                if (est)
+                    std::memcpy (dstR + off, tmpR.data(), sizeof (float) * (size_t) zonaLen);
 
                 auto& Z = sb->zonas[(size_t) z];
                 Z.raiz     = kRaiz[r];
@@ -815,7 +1280,7 @@ namespace Sintes
                 Z.fin      = off + zonaLen;
                 Z.bucleIni = F.sostiene ? (off + pre) : 0;
                 Z.bucleFin = F.sostiene ? (off + zonaLen) : 0;
-                off += zonaLen;
+                off += zonaLen + kGuardas;
             }
         }
         sb->nZonas = kZonas;
@@ -836,15 +1301,111 @@ namespace Sintes
         //  que tiene que existir, que es la del golpe.
         for (int r = 0; r < kRaices; ++r)
         {
-            const auto& Zf = sb->zonas[(size_t) (r * kCapas + 1)];   // la capa fuerte manda
-            const float g = Kits::gananciaSonoridad (dst + Zf.ini, Zf.fin - Zf.ini);
+            const auto& Zf = sb->zonas[(size_t) (r * kCapas + (kCapas - 1))];   // la capa fuerte manda
+            //  Y LA MISMA GANANCIA A LOS DOS CANALES, medida sumando sus
+            //  energias como manda BS.1770. Ver `Kits::gananciaSonoridad`.
+            //  En mono la de un canal da EL MISMO numero: la estereo suma las
+            //  dos energias y sube el objetivo la raiz de dos, asi que con
+            //  `L == R` las dos cuentas coinciden. Se llama a la que toca en vez
+            //  de duplicar el buffer para que la de dos canales sirva.
+            const float gz = est
+                ? Kits::gananciaSonoridad (dstL + Zf.ini, dstR + Zf.ini, Zf.fin - Zf.ini)
+                : Kits::gananciaSonoridad (dstL + Zf.ini, Zf.fin - Zf.ini);
             for (int c = 0; c < kCapas; ++c)
             {
                 const auto& Z = sb->zonas[(size_t) (r * kCapas + c)];
-                Kits::aplicaGanancia (dst + Z.ini, Z.fin - Z.ini, g, false);
+                Kits::aplicaGanancia (dstL + Z.ini, Z.fin - Z.ini, gz, false);
+                if (est) Kits::aplicaGanancia (dstR + Z.ini, Z.fin - Z.ini, gz, false);
             }
         }
 
+        //  Y LAS GUARDAS SE ESCRIBEN AL FINAL, DESPUES DE LA GANANCIA.
+        //
+        //  Ver `kGuardas` para que son. Escribirlas dentro del bucle de arriba
+        //  -que fue la primera version- las dejaba **sin la ganancia por
+        //  octava**, porque `aplicaGanancia` corre sobre `Z.fin - Z.ini` y las
+        //  guardas viven justo detras de `Z.fin`. El resultado medido: en la
+        //  vuelta, dos muestras crudas contra un cuerpo escalado por 0.09, o sea
+        //  un pico de **-0.549 donde la señal valia -0.045**. Un chasquido de
+        //  libro, una vez por vuelta, puesto por el arreglo que venia a quitar
+        //  los chasquidos. Copiando despues, la guarda es por construccion la
+        //  misma muestra que el cuerpo ya publicado.
+        //
+        //  Lo que no da vueltas las deja a cero -el buffer ya viene limpio-, que
+        //  es la verdad: detras del final de una campana no hay campana.
+        if (F.sostiene)
+            for (int q = 0; q < kZonas; ++q)
+            {
+                const auto& Z = sb->zonas[(size_t) q];
+                std::memcpy (dstL + Z.fin, dstL + Z.bucleIni,
+                             sizeof (float) * (size_t) kGuardas);
+                if (est)
+                    std::memcpy (dstR + Z.fin, dstR + Z.bucleIni,
+                                 sizeof (float) * (size_t) kGuardas);
+            }
+
         return SampleBuffer::Ptr (sb);
+    }
+
+    void lfoDeZona (int familia, int preset, const Preset& receta, int raiz,
+                    double cuerpoSeg, double* lfoHz, double* bucleSeg)
+    {
+        const int fi = juce::jlimit (0, kFamilias - 1, familia);
+        const int ri = juce::jlimit (0, kRaices   - 1, raiz);
+        juce::ignoreUnused (preset);
+        const auto& F = kTabla[fi];
+        const Preset P = acota (fi, receta);
+
+        if (! F.sostiene) { if (lfoHz) *lfoHz = -1.0; if (bucleSeg) *bucleSeg = 0.0; return; }
+
+        const double hz = kHzRaiz * std::pow (2.0, (double) kRaiz[ri] / 12.0);
+        double lfo = 0.0;
+        const int cuerpo = largoBucle (hz, lfoHzDe (F.forma, P),
+                                       juce::jlimit (0.30, 2.00, cuerpoSeg), &lfo);
+        if (lfoHz)    *lfoHz = lfo;
+        if (bucleSeg) *bucleSeg = (double) cuerpo / kRate;
+    }
+
+    // ------------------------------------------------------------------------
+    //  UNA ZONA SUELTA, AL FACTOR QUE SE PIDA. Ver Sintes.h.
+    // ------------------------------------------------------------------------
+    void rindeZona (int familia, int preset, const Preset& receta,
+                    int raiz, int capa, float* destino, int len, int os)
+    {
+        if (destino == nullptr || len <= 0) return;
+
+        const int fi = juce::jlimit (0, kFamilias - 1, familia);
+        const int pi = juce::jlimit (0, kPresets  - 1, preset);
+        const int ri = juce::jlimit (0, kRaices   - 1, raiz);
+        const int ci = juce::jlimit (0, kCapas    - 1, capa);
+        const auto& F = kTabla[fi];
+        const Preset P = acota (fi, receta);
+
+        const double hz = kHzRaiz * std::pow (2.0, (double) kRaiz[ri] / 12.0);
+        const double fs = kRate * (double) os;
+
+        //  LA MISMA SEMILLA QUE EL PRODUCTO, o el patron mediria otro ruido y la
+        //  diferencia entre los dos seria el ruido y no el pliegue.
+        const int semilla = ((fi * 97 + pi) * 13 + ri) * 7 + ci + 1;
+
+        //  SE SALTA EL ATAQUE: lo que se compara es el cuerpo. El salto es el
+        //  mismo `pre` que usa `sintetiza`, para que las dos miren el mismo
+        //  trozo del mismo sonido.
+        const int pre = F.sostiene
+            ? (int) (kRate * juce::jlimit (0.06f, 0.70f, P.atk + 0.10f))
+            : (int) (kRate * juce::jmin (0.30f, P.atk + 0.02f));
+
+        const int salida   = pre + len;
+        const int crudoLen = Diezmador::largoDeRender (salida, os);
+        const int mitad    = Diezmador::mitadDe (os);
+
+        std::vector<float> crudo ((size_t) crudoLen, 0.0f);
+        std::vector<float> baja  ((size_t) salida,   0.0f);
+
+        rindeCrudo (crudo.data() + mitad, crudoLen - mitad, F, P, hz, ci, semilla,
+                    F.sostiene ? (float) pre / (float) kRate : -1.0f, fs);
+        Diezmador::diezma (crudo.data(), baja.data(), salida, os);
+
+        std::memcpy (destino, baja.data() + pre, sizeof (float) * (size_t) len);
     }
 }
