@@ -5536,6 +5536,27 @@ void MainComponent::ponEnRanura (int ranura, int fx)
         }
     }
 
+    //  Y LOS TRES MANDOS SE LOS QUEDA EL QUE ACABA DE ENTRAR.
+    //
+    //  Llego del telefono: «cuando inserto un efecto en uno de los slots, hasta
+    //  que no voy al mixer, a rack, y toco el fader de 0 a 100, no puedo tocar
+    //  los parametros; es como que estan bloqueados». Y lo estaban: esta
+    //  funcion escribia `slotFx`, el envio al 100, la MEZCLA, `fxOn` y hasta el
+    //  canal del pad —todo menos el FOCO—, asi que CTRL 1-3 seguian apuntando
+    //  al tipo anterior, que en una instalacion limpia es el 0 y no esta puesto
+    //  en ninguna ranura. `refrescaPlato` los apaga por eso, y con razon: el
+    //  fallo no era el apagado sino que el efecto que entra no pedia el sitio.
+    //
+    //  FUERA del `if (fx != salia)` de arriba: volver a elegir el mismo tipo
+    //  tambien es pedir tocarlo, y alli no entra. Y no en la rama de vaciar,
+    //  que es donde el apagado es la respuesta correcta.
+    //
+    //  Aqui y no en quien llama porque son TRES puertas -la celda del menu de
+    //  la cara, la del canalon del rack y el banco- y escrito en las tres serian
+    //  tres reglas, con la que se quedara vieja dejando los mandos en el efecto
+    //  de antes.
+    if (fx != kSlotVacia) focusFx (fx);
+
     refrescaRanuras();
     //  Y la ficha del RACK se relee, que es de donde sale el fader del envio:
     //  sin esto el motor ya manda el 100 y el mando sigue pintando el cero de
@@ -5718,16 +5739,6 @@ void MainComponent::refrescaRanuras()
         }
     }
 
-    //  Y LOS TRES MANDOS SE APAGAN CUANDO NO HAY NADA QUE TOCAR. Con la fila
-    //  entera vacia -que es como abre un proyecto nuevo- CTRL 1-3 seguirian
-    //  moviendo el parametro de un efecto que no esta puesto: un mando que se
-    //  mueve y no hace nada es peor que no tenerlo, que es lo mismo que ya se
-    //  decidio con los mandos de recorte en un pad de instrumento.
-    const bool hayAlguno = fxEstaPuesto (focusedFx);
-    macroCtrl1.setEnabled (hayAlguno);
-    macroCtrl2.setEnabled (hayAlguno);
-    macroCtrl3.setEnabled (hayAlguno);
-
     refrescaPlato();
 }
 
@@ -5742,6 +5753,32 @@ void MainComponent::refrescaRanuras()
 //  plato con la curva de un efecto que ya no esta puesto.
 void MainComponent::refrescaPlato()
 {
+    //  Y LOS TRES MANDOS SE APAGAN CUANDO NO HAY NADA QUE TOCAR. Con la fila
+    //  entera vacia -que es como abre un proyecto nuevo- CTRL 1-3 seguirian
+    //  moviendo el parametro de un efecto que no esta puesto: un mando que se
+    //  mueve y no hace nada es peor que no tenerlo, que es lo mismo que ya se
+    //  decidio con los mandos de recorte en un pad de instrumento.
+    //
+    //  ESTAS TRES LINEAS VIVIAN EN `refrescaRanuras` Y ESE ERA EL FALLO, no un
+    //  detalle de orden. Son las UNICAS de toda la app que encienden o apagan
+    //  CTRL 1-3, y `focusFx` -que es quien cambia de inquilino- no llama a
+    //  `refrescaRanuras`, ni `fxTapped` ni `fxFocusOnly` tampoco. Asi que el
+    //  foco se movia y los mandos se quedaban como estaban: puesto un efecto
+    //  desde la cara, los tres seguian apagados, y lo unico que los devolvia
+    //  era ABRIR el rack -`refreshRack` termina en `refrescaRanuras`-. Llego
+    //  del telefono como «hasta que no entro al mixer, al rack, y toco el fader
+    //  de 0 a 100, ese efecto no lo puedo modificar con los tres knobs»: el
+    //  fader no pintaba nada -su `canalSend` ya valia 1.00 desde `ponEnRanura`-
+    //  y lo que curaba era haber abierto la ficha.
+    //
+    //  Aqui y no alli porque esta funcion existe EXACTAMENTE por esto, y su
+    //  propio comentario de encima ya lo decia: lo mueven dos cosas, cambiar de
+    //  efecto con el dedo y vaciar la ranura donde vivia, y las dos la llaman.
+    const bool hayAlguno = fxEstaPuesto (focusedFx);
+    macroCtrl1.setEnabled (hayAlguno);
+    macroCtrl2.setEnabled (hayAlguno);
+    macroCtrl3.setEnabled (hayAlguno);
+
     const bool conCara = fxEstaPuesto (focusedFx) && fxTraeCara (focusedFx);
     const bool cambia  = (conCara != eqCurva.isVisible());
     eqCurva.setVisible (conCara);

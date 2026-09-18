@@ -4336,6 +4336,201 @@ void MainComponent::auditRanuras()
     ponEnRanura (3, kSlotVacia);
     const int trasVaciar = fxEncendido (3) ? 1 : 0;
 
+    //  4b. EL GESTO ENTERO CONTRA EL AUDIO — la medida que no tenia nadie.
+    //
+    //  Llego del telefono: «cuando inserto un efecto en uno de los slots, hasta
+    //  que no voy al mixer, a rack, y toco el fader de 0 a 100, no puedo tocar
+    //  los parametros; es como que estan bloqueados». Lo estaban, por dos
+    //  sitios a la vez -`ponEnRanura` no pedia el foco y el `setEnabled` de los
+    //  tres mandos vivia en una funcion que `focusFx` no llama- y el banco
+    //  entero dijo que si con el fallo dentro. La razon, contada en columnas:
+    //
+    //    medida                       gesto     mide audio   abre el envio
+    //    auditCanales 5c + telefono   casi        NO            no
+    //    auditRanuras 1-4             SI          NO            no
+    //    auditRack capa viva          casi        si            SI
+    //    StressTest un inserto        no          si            SI
+    //    auditFxPresets               casi        si            SI
+    //
+    //  «Mide audio» y «no abre el envio» no coinciden en ninguna fila. Las tres
+    //  que rinden bloques se ponen el envio y el canal del pad a mano -es el
+    //  andamio de `enCanalCero`- y por eso no pueden ver un camino que nace
+    //  cerrado: *una prueba que se adapta al defecto deja de medirlo.* Esta es
+    //  la que junta las dos mitades, y para eso NO toca `setCanalSend` ni
+    //  `setPadCanal` despues del gesto: el andamio solo pone el estado de
+    //  FABRICA -pad SIN canal, ranuras vacias, los envios a cero- y a partir de
+    //  ahi todo lo hace la tapa.
+    //
+    //  En el canal 4 y no en el 0, que es la leccion de `dff3c09`: el cero era
+    //  justo el unico que funcionaba.
+    int    gestoFoco = -1, gestoMandos = -1, gestoCanalPad = -1;
+    int    mantenFoco = -1, mantenMandos = -1, mantenApagados = -1;
+    double gestoEnvio = -1.0, gestoCambia = -1.0, mandoCambia = -1.0;
+    double rmsAntes = 0.0, rmsDespues = 0.0;
+    {
+        constexpr int kCanalG  = 4;
+        constexpr int kBloque  = 128;
+        //  La misma ventana que `auditFxPresets` derivo alli -683 ms- y por la
+        //  misma razon: *el liston de una prueba no se reinventa en la de al
+        //  lado*. Con 64 ms el eco de un DLY no entra y sale «mudo».
+        constexpr int kBloques = 256;
+        const int fG = AudioEngine::kFxDrv;
+
+        engine.prepareToPlay (48000.0, kBloque);
+
+        //  UN RUIDO Y NO UN TONO: un seno deja fuera casi todo el espectro y
+        //  entonces «no cambia nada» diria mas de donde cayo el tono que del
+        //  efecto. Es el mismo ruido que usan la capa viva del rack y los
+        //  presets, con su semilla escrita.
+        auto ruido = []
+        {
+            auto* sb = new SampleBuffer();
+            const int n = 24000;
+            sb->buffer.setSize (2, n);
+            juce::Random r (20260918);
+            for (int c = 0; c < 2; ++c)
+                for (int i = 0; i < n; ++i)
+                    sb->buffer.setSample (c, i, 0.5f * (r.nextFloat() * 2.0f - 1.0f));
+            sb->sourceSampleRate = 48000.0;
+            return SampleBuffer::Ptr (sb);
+        };
+
+        //  DOS TIRADAS Y SE GUARDA LA SEGUNDA, y esto es una medida y no una
+        //  precaucion: con una sola, dos tiradas IDENTICAS salian distintas en
+        //  el **25.00 %** de las muestras. Los parametros del motor van
+        //  suavizados, asi que la primera tirada despues de poner un efecto
+        //  todavia esta llegando a su sitio y la siguiente ya no. Esa deriva se
+        //  comia la rotura a proposito de `macroMoved`: con el mando
+        //  desconectado del motor la cifra salia 25 % —muy por encima del 2 %—
+        //  y la prueba decia OK. *Una prueba que nunca se ha visto fallar no es
+        //  una prueba.*
+        auto rinde = [&] (juce::AudioBuffer<float>& out)
+        {
+            out.setSize (2, kBloque * kBloques, false, false, true);
+            juce::AudioBuffer<float> b (2, kBloque);
+            for (int pasada = 0; pasada < 2; ++pasada)
+            {
+                engine.postPanic();
+                out.clear();
+                engine.postNoteOn (0, 1.0f);
+                for (int i = 0; i < kBloques; ++i)
+                {
+                    b.clear();
+                    engine.renderNextBlock (b, 0, kBloque);
+                    for (int ch = 0; ch < 2; ++ch)
+                        out.copyFrom (ch, i * kBloque, b, ch, 0, kBloque);
+                }
+            }
+        };
+
+        auto compara = [] (const juce::AudioBuffer<float>& a,
+                           const juce::AudioBuffer<float>& b)
+        {
+            const int n = juce::jmin (a.getNumSamples(), b.getNumSamples());
+            if (n <= 0) return 0.0;
+            int distintas = 0;
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < n; ++i)
+                    if (std::abs (a.getSample (ch, i) - b.getSample (ch, i)) > 1.0e-5f)
+                        ++distintas;
+            return 100.0 * (double) distintas / (double) (2 * n);
+        };
+
+        auto rms = [] (const juce::AudioBuffer<float>& a)
+        {
+            const int n = a.getNumSamples();
+            if (n <= 0) return 0.0;
+            double e = 0.0;
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < n; ++i) e += (double) a.getSample (ch, i) * a.getSample (ch, i);
+            return std::sqrt (e / (double) (2 * n));
+        };
+
+        //  EL ESTADO DE FABRICA, y ni una linea mas. `kSinCanal` es donde nacen
+        //  los sesenta y cuatro y el cero es donde nacen los envios: ponerlos
+        //  ahi no es abrir nada, es deshacer lo que las comprobaciones de
+        //  arriba dejaron puesto. *Una prueba que arrastra estado mide otra
+        //  cosa.*
+        closeAllSheets();
+        abreMenuRanura (-1);
+        for (int c = 0; c < kNumCanales; ++c)
+            for (int k = 0; k < kNumRanuras; ++k) slotFx[(size_t) c][(size_t) k] = kSlotVacia;
+        for (int c = 0; c < kNumCanales; ++c)
+            for (int k = 0; k < kNumFx; ++k) engine.setCanalSend (c, k, 0.0f);
+        for (int k = 0; k < kNumFx; ++k) ponFxEncendido (k, false);
+        engine.setPadCanal (0, AudioEngine::kSinCanal);
+        engine.setPadGain  (0, 1.0f);
+        engine.publishSample (0, ruido());
+        selectPad (0);
+        ponCanalActual (kCanalG);
+        refrescaRanuras();
+
+        juce::AudioBuffer<float> antes, despues, movido;
+        rinde (antes);
+
+        //  EL GESTO, y nada mas que el gesto: el «+» de la ranura 0 y la celda
+        //  de DRV en el menu que se abre. Dos toques, los mismos dos que hace
+        //  un dedo.
+        pulsaTapa (fxButtons[0]);
+        pulsaTapa (ranuraBtns[fG]);
+
+        gestoFoco     = focusedFx;
+        gestoMandos   = (macroCtrl1.isEnabled() ? 1 : 0)
+                      + (macroCtrl2.isEnabled() ? 1 : 0)
+                      + (macroCtrl3.isEnabled() ? 1 : 0);
+        gestoCanalPad = engine.getPadCanal (0);
+        gestoEnvio    = (double) engine.getCanalSend (kCanalG, fG);
+
+        rinde (despues);
+        gestoCambia = compara (antes, despues);
+        rmsAntes    = rms (antes);
+        rmsDespues  = rms (despues);
+
+        //  Y LA OTRA MITAD DEL SINTOMA, que tampoco medía nadie: que MOVER uno
+        //  de los tres mandos cambie el audio. `macroCtrl1/2` se usan en cuatro
+        //  auditorias y las cuatro comparan contra estado o contra el visor;
+        //  ninguna llega a `renderNextBlock`. Se mueve por su propio
+        //  `onValueChange` -o sea pasando por `macroMoved`- y no escribiendo el
+        //  parametro por dentro, que es lo unico que recorre el camino entero.
+        {
+            const auto& sp = fxDefs[fG].spec[0];
+            const double hoy = macroCtrl1.getValue();
+            const double a   = std::abs (sp.hi - hoy) >= std::abs (hoy - sp.lo) ? sp.hi : sp.lo;
+            macroCtrl1.setValue (a, juce::sendNotificationSync);
+        }
+        rinde (movido);
+        mandoCambia = compara (despues, movido);
+
+        //  Y LA SEGUNDA GRIETA, que este mismo gesto NO puede ver.
+        //
+        //  El `setEnabled` de los tres mandos vivia en `refrescaRanuras`, y
+        //  `focusFx` no la llama -ni `fxTapped` ni `fxFocusOnly` tampoco-. Con
+        //  el foco ya arreglado eso no se nota poniendo un efecto, porque
+        //  `ponEnRanura` termina en `refrescaRanuras` de todos modos: hace
+        //  falta un camino que mueva el foco SIN pasar por ella. Es MANTENER
+        //  pulsada una ranura llena, que es el gesto de «dame los mandos sin
+        //  apagarlo».
+        //
+        //  Y hace falta llegar con los mandos APAGADOS, o la cifra no puede
+        //  fallar: se vacia la ranura del efecto enfocado -que los apaga, y con
+        //  razon- dejando la otra llena. De ahi el rodeo de tres pasos.
+        ponEnRanura (1, AudioEngine::kFxCmp);       // el foco se va al CMP
+        ponEnRanura (1, kSlotVacia);                // y se queda sin sitio: mandos OFF
+        mantenApagados = (macroCtrl1.isEnabled() ? 1 : 0)
+                       + (macroCtrl2.isEnabled() ? 1 : 0)
+                       + (macroCtrl3.isEnabled() ? 1 : 0);
+        //  `fxButtons` es un `OwnedArray<TextButton>` y el gesto vive en
+        //  `HoldButton`, que es quien lo declara: se baja el tipo para
+        //  llamar al MISMO `onHold` que dispara un dedo, y no a
+        //  `ranuraMantenida` por dentro, que se saltaria justo la puerta.
+        if (auto* b = dynamic_cast<HoldButton*> (fxButtons[0]))
+            if (b->onHold) b->onHold();
+        mantenFoco   = focusedFx;
+        mantenMandos = (macroCtrl1.isEnabled() ? 1 : 0)
+                     + (macroCtrl2.isEnabled() ? 1 : 0)
+                     + (macroCtrl3.isEnabled() ? 1 : 0);
+    }
+
     //  5. LA REJILLA, Y NO SOLO LA DE HOY.
     //
     //  Con once tipos la rejilla son tres columnas y cuatro filas en las siete
@@ -4416,6 +4611,19 @@ void MainComponent::auditRanuras()
               << ",\"tras_mover\":\""      << trasMover << "\""
               << ",\"antes_de_vaciar\":"   << antesDeVaciar
               << ",\"tras_vaciar\":"       << trasVaciar
+              //  EL GESTO ENTERO, siete cifras. Ver el bloque 4b.
+              << ",\"gesto_foco\":"        << gestoFoco
+              << ",\"gesto_drv\":"         << AudioEngine::kFxDrv
+              << ",\"gesto_mandos\":"      << gestoMandos
+              << ",\"gesto_canal_pad\":"   << gestoCanalPad
+              << ",\"gesto_envio\":"       << juce::String (gestoEnvio, 3)
+              << ",\"gesto_cambia\":"      << juce::String (gestoCambia, 3)
+              << ",\"gesto_rms_antes\":"   << juce::String (rmsAntes, 6)
+              << ",\"gesto_rms_despues\":" << juce::String (rmsDespues, 6)
+              << ",\"mando_cambia\":"      << juce::String (mandoCambia, 3)
+              << ",\"manten_apagados\":"  << mantenApagados
+              << ",\"manten_foco\":"      << mantenFoco
+              << ",\"manten_mandos\":"    << mantenMandos
               << "}" << std::endl;
 }
 

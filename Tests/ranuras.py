@@ -48,6 +48,11 @@ sys.path.insert (0, os.path.dirname (os.path.abspath (__file__)))
 from expo import SIZES as _SIZES
 SIZES = [w for w, _ in _SIZES]
 DEDO  = 40
+#  EL MINIMO DE «CAMBIA EL AUDIO», heredado y no inventado: es el 2 % de
+#  muestras distintas que `StressTest` usa en `un inserto cambia el audio`.
+#  Dos pruebas con dos listones para la misma pregunta son dos reglas, y la
+#  que se quede vieja deja de proteger nada.
+MIN_CAMBIA = 2.0
 
 
 def leeForma (s):
@@ -201,6 +206,89 @@ def main():
                       "canal 0: los quince que nadie ha tocado tienen que nacer "
                       "donde nace el cero"
                       % (r["canales_raros"], r["canales"] * r["tipos"]))
+
+    #  5c. EL GESTO ENTERO CONTRA EL AUDIO — la medida que no tenia nadie.
+    #
+    #      Del telefono: «cuando inserto un efecto en uno de los slots, hasta
+    #      que no voy al mixer, a rack, y toco el fader de 0 a 100, no puedo
+    #      tocar los parametros; es como que estan bloqueados». Y el banco
+    #      entero dijo que si con el fallo dentro, por una razon que se puede
+    #      poner en columnas:
+    #
+    #        medida                       gesto     mide audio   abre el envio
+    #        auditCanales 5c + telefono   casi        NO            no
+    #        auditRanuras 1-4             SI          NO            no
+    #        auditRack capa viva          casi        si            SI
+    #        StressTest un inserto        no          si            SI
+    #        auditFxPresets               casi        si            SI
+    #
+    #      «Mide audio» y «no abre el envio» no coinciden en NINGUNA fila. Las
+    #      tres que rinden bloques se ponen el envio y el canal del pad a mano
+    #      -el andamio de `enCanalCero`- y por eso no pueden ver un camino que
+    #      nace cerrado: *una prueba que se adapta al defecto deja de medirlo.*
+    #      Y las cuatro cifras de arriba son de ESTADO: la 1 dice «no mueve un
+    #      decibelio» y lo que mira es un booleano de la cara.
+    #
+    #      Esta junta las dos mitades: dos toques -el «+» de la ranura 0 y la
+    #      celda de DRV- y a partir de ahi NADA a mano. Por eso `gesto_envio` y
+    #      `gesto_canal_pad` son veredictos y no adorno: son lo que el gesto
+    #      tiene que sembrar solo.
+    print ()
+    print ("gesto    foco %s (DRV %s)  mandos %s/3  pad al canal %s  envio %.2f"
+           % (r["gesto_foco"], r["gesto_drv"], r["gesto_mandos"],
+              r["gesto_canal_pad"], r["gesto_envio"]))
+    print ("         el audio cambia en %.2f%% de las muestras  (rms %.4f -> %.4f)"
+           % (r["gesto_cambia"], r["gesto_rms_antes"], r["gesto_rms_despues"]))
+    print ("         y mover CTRL 1 lo cambia otro %.2f%%" % r["mando_cambia"])
+    if r["gesto_foco"] != r["gesto_drv"]:
+        malas.append ("poner un efecto en una ranura dejo los tres mandos "
+                      "apuntando al tipo %s y no al %s que se acaba de poner"
+                      % (r["gesto_foco"], r["gesto_drv"]))
+    if r["gesto_mandos"] != 3:
+        malas.append ("despues del gesto solo %d de los 3 mandos se pueden "
+                      "tocar: el efecto esta puesto y sus parametros estan "
+                      "bloqueados" % r["gesto_mandos"])
+    if r["gesto_canal_pad"] != 4:
+        malas.append ("poner un efecto no metio el pad elegido en el canal "
+                      "(%s): el envio esta al 100 y no le llega una muestra"
+                      % r["gesto_canal_pad"])
+    if r["gesto_envio"] < 0.99:
+        malas.append ("poner un efecto dejo su envio en %.2f y no al maximo"
+                      % r["gesto_envio"])
+    #  EL LISTON ES EL DE `un inserto cambia el audio` de `StressTest` -2 %- y
+    #  no uno nuevo: *el liston de una prueba no se reinventa en la de al lado*.
+    if r["gesto_cambia"] < MIN_CAMBIA:
+        malas.append ("el gesto entero -poner DRV en la ranura 0 y nada mas- "
+                      "cambio el %.2f%% de las muestras, por debajo del %.1f%%: "
+                      "la tapa se pinta LLENA y no mueve un decibelio"
+                      % (r["gesto_cambia"], MIN_CAMBIA))
+    if r["mando_cambia"] < MIN_CAMBIA:
+        malas.append ("mover CTRL 1 despues del gesto cambio el %.2f%% de las "
+                      "muestras, por debajo del %.1f%%: el mando se mueve y no "
+                      "llega al efecto que acabas de poner"
+                      % (r["mando_cambia"], MIN_CAMBIA))
+
+    #      Y LA SEGUNDA GRIETA, que el gesto de arriba NO puede ver: el
+    #      `setEnabled` de los tres mandos vivia en `refrescaRanuras` y
+    #      `focusFx` no la llama. Poniendo un efecto eso no se nota -
+    #      `ponEnRanura` termina en `refrescaRanuras` de todos modos- asi que
+    #      hace falta un camino que mueva el foco sin pasar por ella: MANTENER
+    #      pulsada una ranura llena. Y hace falta llegar con los mandos
+    #      apagados, o la cifra no puede fallar; de ahi `manten_apagados`, que
+    #      es la mitad sin la que esto seria una linea que imprime OK.
+    print ("manten   se llega con %s/3 apagados  ->  foco %s  mandos %s/3"
+           % (3 - r["manten_apagados"], r["manten_foco"], r["manten_mandos"]))
+    if r["manten_apagados"] != 0:
+        malas.append ("la medida de mantener no llego con los tres mandos "
+                      "apagados (%s/3 encendidos): no mide nada"
+                      % r["manten_apagados"])
+    if r["manten_foco"] != r["gesto_drv"]:
+        malas.append ("mantener una ranura llena no movio el foco (%s)"
+                      % r["manten_foco"])
+    if r["manten_mandos"] != 3:
+        malas.append ("mantener una ranura llena movio el foco y dejo %d de 3 "
+                      "mandos tocables: el efecto esta puesto, es el que tiene "
+                      "los mandos, y estan bloqueados" % r["manten_mandos"])
 
     #  6. LA REJILLA DEL MENU, EN LAS SIETE PANTALLAS — Y NO SOLO LA DE HOY.
     #
