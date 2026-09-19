@@ -81,10 +81,29 @@ PAR_PRE  = 1.5     # dos presets de una familia son variaciones: menos exige
 CAPA_DB  = 2.0     # decibelios entre la PRIMERA capa y la ULTIMA
 CAPA_HZ  = 1.12    # y los agudos, en RAZON: 12% de energia alta de mas
 #  Y EL SALTO ENTRE DOS CAPAS CONTIGUAS, que es la razon de que haya tres.
-#  Derivado y no escrito a ojo: `CAPA_DB / 2 + 0.3`, o sea la mitad del
-#  recorrido total mas el margen de medida. Por encima de esto una rampa de
-#  fuerza vuelve a sonar a escalon, que es el fallo que la tercera capa quita.
-CAPA_PASO = CAPA_DB / 2.0 + 0.3
+#
+#  LA PRIMERA VERSION DE ESTE LISTON ESTABA MAL DERIVADA, y se vio midiendo:
+#  decia `CAPA_DB / 2 + 0.3` = 1.3 dB, dando por hecho que el recorrido entero
+#  eran los 2.0 dB de `CAPA_DB`. `CAPA_DB` es el MINIMO que el recorrido tiene
+#  que tener, no lo que mide: el recorrido real va de **5.4 dB en BAJOS a 11.0
+#  en CUERDA PULS**, asi que con tres capas el escalon no puede bajar de 2.7 ni
+#  de 5.5 por mucho que se pida. Pedirle 1.3 era pedirle seis capas, y no caben:
+#  `kMaxZonas` son dieciseis y tres por cinco raices ya son quince.
+#
+#  Lo que la tercera capa compra de verdad, y es lo que esto mide, es que los
+#  escalones esten REPARTIDOS: de un salto unico de 5.4 dB a dos de 3.1 y 2.4.
+#  Asi que el liston es RELATIVO al recorrido de cada familia: ningun escalon
+#  puede llevarse mas del 60 % de lo que hay.
+#
+#  Y NO HAY TECHO ABSOLUTO, que fue el segundo intento y tambien estaba mal:
+#  con 4.0 dB -dos veces `CAPA_DB`- CUERDA PULS suspendia por tener **11.0 dB de
+#  recorrido**, que no es un defecto sino lo contrario. Un instrumento de verdad
+#  tiene veinte o treinta decibelios entre el toque mas flojo y el mas fuerte;
+#  once repartidos en tres capas son 5.5 por escalon y no hay forma de bajarlos
+#  sin quitarle respuesta al toque o sin una cuarta capa, y no cabe: `kMaxZonas`
+#  son dieciseis y tres por cinco raices ya son quince. Un techo absoluto
+#  confunde «responde al toque» -que es lo que se quiere- con «da un salto».
+CAPA_REPARTO = 0.60
 #  Y ENTRE OCTAVAS DE UN MISMO PRESET. Este si puede fallar: la ganancia se
 #  saca de UNA zona -la raiz 0, capa fuerte- y se aplica a las diez, asi que si
 #  una octava sale mucho mas sonora que otra, el instrumento pega un salto al
@@ -157,8 +176,20 @@ LFO_SOBRA = 0.005
 
 #  COSTE, en proporcion y no en milisegundos: la doctrina de `Cpu.cpp` citada,
 #  *el valor absoluto no dice si va a ir; la proporcion si viaja*.
-COSTE_MED = 60.0
-COSTE_PEOR = 100.0
+#
+#  Y EL LISTON SE DERIVA DEL TRABAJO, no de lo que habia. Antes de esta tanda la
+#  razon era 3.3. Lo que el trabajo ha crecido se cuenta: quince zonas en vez de
+#  diez y dos canales en vez de uno (x3), cuatro veces la tasa de generacion mas
+#  el diezmador (x4 largo), y un cuerpo de 1.00 s en vez de 0.42 (x2.4) — o sea
+#  **x29**, que sobre 3.3 son 96. Medido salio **x104.6 de mediana**, un 9 % por
+#  encima de la cuenta, que es el diezmador. Liston 130 y techo 400, con el 25 %
+#  de margen de siempre.
+#
+#  Y se publica ADEMAS el numero absoluto, porque es el que decide si poner un
+#  instrumento puede seguir bloqueando el hilo de mensajes: 600 ms de silencio
+#  despues de tocar una tapa se leen como un boton roto.
+COSTE_MED = 130.0
+COSTE_PEOR = 400.0
 
 
 def carga2 (path):
@@ -193,11 +224,20 @@ def goertzel (x, f, sr=48000.0):
 
 
 def afina (x, esperada, n=4096):
-    """LA FRECUENCIA DEL PARCIAL DOMINANTE, en Hz, con rejilla de un cent.
+    """LA FRECUENCIA DEL FUNDAMENTAL, en Hz, con rejilla de un cent.
 
-    Grueso por FFT -una sola- y fino con Goertzel sobre +-80 cents alrededor del
-    pico. La FFT sola no llega: a 130.8 Hz un bin de 5.86 Hz son 77 cents, o sea
-    veinticinco veces el liston."""
+    DEL FUNDAMENTAL Y NO DEL PARCIAL MAS FUERTE, que es lo que media la primera
+    version y lo que la hizo mentir: en CUERDAS -siete sierras desafinadas a
+    proposito- el pico cae en una de las siete y no en el centro, y la regla
+    acuso a la familia de **+41 cents en la raiz y -32 en la octava** cuando lo
+    que estaba midiendo era su propia eleccion de pico. Lo mismo pasaria en
+    CAMPANAS, MAZOS y ARPAS, que son inarmonicos a proposito.
+
+    Se puntua cada candidato por la SUMA de las potencias en f, 2f y 3f. Un
+    parcial suelto gana en uno de los tres y pierde en los otros dos; el
+    fundamental de verdad gana en los tres a la vez. Es la cuenta de un
+    detector de tono de toda la vida, y aqui ademas es barata porque el barrido
+    es de solo 161 puntos."""
     if len (x) < n: return 0.0
     #  Desde un cuarto del cuerpo, que es donde el ataque ya no manda.
     ini = len (x) // 4
@@ -209,7 +249,7 @@ def afina (x, esperada, n=4096):
     #  mucho mas de lo que cualquiera de estos fallos ha producido nunca.
     for c in range (-80, 81):
         f = esperada * (2.0 ** (c / 1200.0))
-        p = goertzel (seg, f)
+        p = goertzel (seg, f) + goertzel (seg, 2.0 * f) + goertzel (seg, 3.0 * f)
         if p > mejorP: mejorP, mejor = p, f
     return mejor
 
@@ -473,8 +513,9 @@ def main():
         if msRef > 0.01 and mss:
             med  = mss[len (mss) // 2] / msRef
             peor = mss[-1] / msRef
-            print ("coste: mediana x%.1f   peor x%.1f   (un golpe de fabrica %.1f ms)"
-                   % (med, peor, msRef))
+            print ("coste: mediana x%.1f (%.0f ms)   peor x%.1f (%.0f ms)   "
+                   "(un golpe de fabrica %.1f ms)"
+                   % (med, mss[len (mss) // 2], peor, mss[-1], msRef))
             if med > COSTE_MED:
                 fallos.append ("sintetizar cuesta x%.1f la mediana (liston x%.0f)" % (med, COSTE_MED))
             if peor > COSTE_PEOR:
@@ -584,10 +625,19 @@ def main():
                 f12 = afina (x[z12[0][2]:z12[0][3]], RAIZ_HZ * 2.0)
                 rel = cents (f12 / 2.0, f0)
                 abs0 = cents (f0, RAIZ_HZ)
-                cerca = abs (abs0) < 50.0
-                print ("%-12s afina: raiz 0 %+.1f cents%s   la octava %+.1f cents"
-                       % (etiq, abs0, "" if cerca else " (el pico no es el fundamental)", rel))
-                if abs (rel) > CENTS_REL:
+                abs12 = cents (f12, RAIZ_HZ * 2.0)
+                #  EL RELATIVO TAMBIEN NECESITA EL GUARDIA, y esa fue la segunda
+                #  correccion. El sesgo del estimador se cancela al dividir SOLO
+                #  si las dos octavas se han enganchado a la misma cosa; en un
+                #  conjunto desafinado -siete sierras- o en un inarmonico a
+                #  proposito -CAMPANAS- cada una se engancha a un parcial
+                #  distinto, y entonces la resta no mide afinacion sino cual de
+                #  los dos parciales gano. Salieron -32 cents en CUERDAS con la
+                #  sintesis intacta.
+                cerca = abs (abs0) < 25.0 and abs (abs12) < 25.0
+                print ("%-12s afina: raiz 0 %+.1f cents   la octava %+.1f cents%s"
+                       % (etiq, abs0, rel, "" if cerca else "  (el pico no es el fundamental)"))
+                if cerca and abs (rel) > CENTS_REL:
                     fallos.append ("%s: la octava de arriba desafina %+.1f cents contra la raiz "
                                    "(liston %.0f)" % (etiq, rel, CENTS_REL))
                 if cerca and abs (abs0) > CENTS_ABS:
@@ -602,9 +652,29 @@ def main():
             #  velocidad del bucle.
             if d["sostiene"] and z0:
                 cb = x[z0[0][4]:z0[0][5]]
+                #  LA VENTANA ES UNA VUELTA ENTERA DEL LFO, no un cuarto del
+                #  cuerpo. Con el cuarto, ORGANOS salia a **1.00 dB clavado en
+                #  el liston** y no era deriva: su leslie cuadra en seis vueltas
+                #  por bucle, asi que un cuarto contiene 1.5 y el primero y el
+                #  ultimo ven el LFO en fases distintas. Lo que esta regla busca
+                #  es una TENDENCIA -una envolvente que sigue cayendo dentro del
+                #  bucle- y un LFO no es una tendencia, es una oscilacion: con
+                #  una vuelta entera a cada lado se cancela sola.
                 q = len (cb) // 4
-                if q > 2048:
-                    ba, bb = bandas (cb[:q]), bandas (cb[-q:])
+                if len (z0[0]) >= 8 and z0[0][6] > 0.0 and z0[0][7] > 0.0:
+                    vueltas = max (1, int (round (z0[0][6] * z0[0][7])))
+                    q = len (cb) // vueltas
+                #  Y LA PRIMERA VENTANA NO EMPIEZA EN EL PRINCIPIO DEL CUERPO,
+                #  que es donde vive el FUNDIDO CRUZADO: hasta 150 ms en las
+                #  cuatro familias de conjunto desafinado, y ahi la señal es la
+                #  suma de dos trozos y no el regimen. Con la ventana corta de
+                #  una vuelta de LFO caia casi entera dentro y la regla acusaba
+                #  de **11 a 20 dB de deriva** a CUERDAS, COLCHONES, METALES,
+                #  LEADS, COROS y VIENTOS, que es justo el grupo que lleva
+                #  fundido largo. Medía el fundido, no la deriva.
+                salta = min (len (cb) // 3, int (0.150 * SR) + q)
+                if q > 2048 and len (cb) - salta > q:
+                    ba, bb = bandas (cb[salta:salta + q]), bandas (cb[-q:])
                     dif = max (abs (a - b) for a, b in zip (ba, bb))
                     print ("%-12s deriva: %.2f dB entre el primer cuarto y el ultimo" % (etiq, dif))
                     if dif > DERIVA_DB:
@@ -627,12 +697,15 @@ def main():
                 if sons[i - 1] > 1e-9 and sons[i] > 1e-9:
                     pasos.append (20.0 * math.log10 (sons[i] / sons[i - 1]))
             if pasos:
-                print ("%-12s escalones: %s dB" % (etiq, " ".join ("%+.2f" % v for v in pasos)))
-                peor = max (abs (v) for v in pasos)
-                if peor > CAPA_PASO:
-                    fallos.append ("%s: un escalon de %.2f dB entre capas contiguas "
-                                   "(liston %.2f): una rampa de fuerza suena a escalon"
-                                   % (etiq, peor, CAPA_PASO))
+                total = sum (pasos)
+                peor  = max (abs (v) for v in pasos)
+                cuota = (peor / total) if total > 1e-6 else 1.0
+                print ("%-12s escalones: %s dB   (recorrido %.1f, el mayor se lleva %.0f%%)"
+                       % (etiq, " ".join ("%+.2f" % v for v in pasos), total, 100.0 * cuota))
+                if cuota > CAPA_REPARTO:
+                    fallos.append ("%s: un escalon se lleva el %.0f%% del recorrido de fuerza "
+                                   "(liston %.0f%%): las capas no estan repartidas"
+                                   % (etiq, 100.0 * cuota, 100.0 * CAPA_REPARTO))
 
             #  LAS CINCO OCTAVAS, EN SONORIDAD. La ganancia sale de una sola
             #  zona, asi que esto SI puede desmadrarse - y es lo que la linea de

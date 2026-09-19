@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstring>
 #include <vector>
+#include <thread>
+#include <atomic>
 
 // ============================================================================
 //  Sintes — la parte que suena. Ver Sintes.h para el porque de las zonas.
@@ -384,7 +386,13 @@ namespace Sintes
         //  que las dos puntas del recorrido no se mueven y lo unico que aparece
         //  es el escalon del medio.
         const float cap    = (kCapas > 1) ? (float) capa / (float) (kCapas - 1) : 1.0f;
-        const float fuerza = 0.52f + 0.48f * cap;
+        //  LA FUERZA INTERPOLA EN GEOMETRICO Y NO EN LINEAL, y la razon es que
+        //  el oido cuenta en decibelios. Lineal, 0.52 -> 0.76 -> 1.00 son
+        //  **+3.3 dB y luego +2.4**: el primer escalon se lleva el 57 % del
+        //  recorrido y el segundo el 43, o sea que la tercera capa reparte peor
+        //  de lo que podria. Geometrico, 0.52 -> 0.721 -> 1.00 son +2.85 y
+        //  +2.85, clavados.
+        const float fuerza = 0.52f * std::pow (1.0f / 0.52f, cap);
         const float brillo = P.brillo * (0.45f + 0.55f * cap);
         const float indice = 0.42f + 0.58f * cap;
         //  Y EL TERCER MANDO DE LA CAPA, que hizo falta despues de medir: en
@@ -396,6 +404,10 @@ namespace Sintes
         const float capaMix = 0.30f + 0.70f * cap;
 
         const double inc  = hz / fs;
+
+        //  El estado del quita-continua. Ver abajo, donde se aplica.
+        const float dcR = (float) (1.0 - juce::MathConstants<double>::twoPi * 5.0 / fs);
+        float dcX = 0.0f, dcY = 0.0f;
 
         //  EL TECHO DE PARCIALES NO SUBE CON LA TASA, y eso es una decision.
         //
@@ -899,7 +911,16 @@ namespace Sintes
                     //  el fundamental y los dos inarmonicos ya abiertos del todo
                     //  no llegaban: **r = 0.9804** contra un liston de 0.98.
                     f2.set (juce::jlimit (60.0, nyq, hz * ((canal == 1) ? 1.10 : 0.90)), 3.0f);
-                    v = fund + 0.30f * f2.bpf (fund);
+                    //  Y CUANTO TUBO LO DICE EL PRESET, no una constante.
+                    //
+                    //  Con 0.30 fijo el tubo pesaba tanto que aplanaba las
+                    //  diferencias de la familia: SOFT MAL contra TUNED median
+                    //  **0.99 dB** de distancia contra un liston de 1.5, o sea el
+                    //  mismo sonido. Con 0.15 fijo seguian en 1.02. Colgado del
+                    //  balance de parciales -que es lo que separa una marimba de
+                    //  un bloque de madera- el tubo acompaña al preset en vez de
+                    //  taparlo, y sigue dando el ancho que hacia falta.
+                    v = fund + (0.06f + 0.30f * P.p4) * f2.bpf (fund);
                     //  Los dos parciales de arriba los saca la BAQUETA DURA:
                     //  con ellos fijos las dos capas median centroide x1.00, o
                     //  sea que el toque solo cambiaba el volumen.
@@ -1024,7 +1045,28 @@ namespace Sintes
 
             //  La forma ya trae su propia caida cuando no sostiene (arm/env
             //  por parcial); `amp` es el ataque y el sobre general.
-            d[n] = v * amp * fuerza;
+            //
+            //  Y EL QUITA-CONTINUA, que hizo falta despues de medir.
+            //
+            //  Una suma de senos no tiene continua, y `soft()` es un polinomio
+            //  IMPAR, asi que tampoco deberia crearla. La crea igual: un
+            //  polinomio impar sobre una onda ASIMETRICA de media cero devuelve
+            //  media distinta de cero, porque comprime mas el lado que llega mas
+            //  lejos. Medido en ORGANOS -ocho barras aditivas con las fases de la
+            //  proporcion aurea, que es asimetrico por construccion-: **VOX sale
+            //  a -20.5 dBFS de continua contra un liston de -60**, y ROCK ORG a
+            //  -22.3. Con un pico de 0.0657, esos 0.0062 son el **9 %** del
+            //  margen, tirado en un desplazamiento que no se oye.
+            //
+            //  Un polo a 5 Hz: a 32.7 Hz -la raiz mas grave- eso son 0.1 dB de
+            //  atenuacion y 8.7 grados de fase, y a los 130 Hz de la raiz
+            //  central ni eso. Y se asienta en 32 ms, o sea mucho antes del
+            //  punto de bucle, asi que el cuerpo sigue siendo estacionario y la
+            //  vuelta sigue siendo continua.
+            const float x = v * amp * fuerza;
+            dcY = x - dcX + dcR * dcY;
+            dcX = x;
+            d[n] = dcY;
         }
 
         juce::ignoreUnused (ph4);
@@ -1281,15 +1323,45 @@ namespace Sintes
 
         int maxRinde = 0;
         for (int r = 0; r < kRaices; ++r) maxRinde = juce::jmax (maxRinde, zonaDe[r] + cruce);
-        std::vector<float> tmpL ((size_t) maxRinde), tmpR ((size_t) maxRinde);
 
-        int z = 0, off = 0;
-        for (int r = 0; r < kRaices; ++r)
+        //  EL MAPA SE ESCRIBE ANTES DE RENDIR, y las quince zonas se rinden en
+        //  PARALELO. Son independientes -cada una lleva su propia semilla, su
+        //  propio buffer y su propio sitio en el destino- asi que repartirlas no
+        //  cambia ni una muestra: el determinismo sale de la semilla y no del
+        //  orden. Lo que cambia es el reloj.
+        //
+        //  Hacia falta, medido: un preset costaba **x104.6 un golpe de fabrica**
+        //  de mediana y **x343.2 el peor**, o sea 1.7 s y 5.6 s. Quince zonas
+        //  por dos canales a 4x son treinta veces el trabajo que habia, y eso no
+        //  se negocia -es lo que compra la calidad-; lo que si se puede es no
+        //  hacerlo en un solo nucleo.
         {
+            int z0 = 0, off0 = 0;
+            for (int r = 0; r < kRaices; ++r)
+                for (int c = 0; c < kCapas; ++c, ++z0)
+                {
+                    auto& Z = sb->zonas[(size_t) z0];
+                    Z.raiz     = kRaiz[r];
+                    Z.capa     = c;
+                    Z.ini      = off0;
+                    Z.fin      = off0 + zonaDe[r];
+                    Z.bucleIni = F.sostiene ? (off0 + pre) : 0;
+                    Z.bucleFin = F.sostiene ? (off0 + zonaDe[r]) : 0;
+                    off0 += zonaDe[r] + kGuardas;
+                }
+        }
+        sb->nZonas = kZonas;
+
+        const int hilos = juce::jlimit (1, 4, juce::SystemStats::getNumCpus());
+        std::atomic<int> siguiente { 0 };
+        auto unaZona = [&] (int z)
+        {
+            const int r = z / kCapas, c = z % kCapas;
             const double hz = kHzRaiz * std::pow (2.0, (double) kRaiz[r] / 12.0);
             const int zonaLen  = zonaDe[r];
             const int rindeLen = zonaLen + cruce;
-            for (int c = 0; c < kCapas; ++c, ++z)
+            const int off      = sb->zonas[(size_t) z].ini;
+            std::vector<float> tmpL ((size_t) maxRinde), tmpR ((size_t) maxRinde);
             {
                 //  SEMILLA FIJA por familia, preset, raiz y capa: dos arranques
                 //  tienen que dar el MISMO instrumento, o un proyecto guardado
@@ -1334,18 +1406,51 @@ namespace Sintes
                 std::memcpy (dstL + off, tmpL.data(), sizeof (float) * (size_t) zonaLen);
                 if (est)
                     std::memcpy (dstR + off, tmpR.data(), sizeof (float) * (size_t) zonaLen);
-
-                auto& Z = sb->zonas[(size_t) z];
-                Z.raiz     = kRaiz[r];
-                Z.capa     = c;
-                Z.ini      = off;
-                Z.fin      = off + zonaLen;
-                Z.bucleIni = F.sostiene ? (off + pre) : 0;
-                Z.bucleFin = F.sostiene ? (off + zonaLen) : 0;
-                off += zonaLen + kGuardas;
             }
+        };
+
+        if (hilos <= 1)
+        {
+            for (int z = 0; z < kZonas; ++z) unaZona (z);
         }
-        sb->nZonas = kZonas;
+        else
+        {
+            std::vector<std::thread> hebras;
+            hebras.reserve ((size_t) hilos);
+            for (int h = 0; h < hilos; ++h)
+                hebras.emplace_back ([&]
+                {
+                    for (int z = siguiente.fetch_add (1); z < kZonas; z = siguiente.fetch_add (1))
+                        unaZona (z);
+                });
+            for (auto& x : hebras) x.join();
+        }
+
+        //  Y LA CONTINUA QUE QUEDA SE RESTA, que es exacto y sale gratis.
+        //
+        //  El quita-continua de `rindeCrudo` baja el grueso -de -20.5 dBFS a
+        //  -52- y no llega al liston de -60 en cinco presets: un polo a 5 Hz
+        //  tarda 32 ms en asentarse y lo que el saturador mete no es constante,
+        //  es una media que se mueve despacio. Aqui la muestra ya esta escrita y
+        //  es finita, asi que la media del CUERPO se puede medir y restar sin
+        //  filtro, sin fase y sin margen de error. Solo en lo que da vueltas:
+        //  restarle una constante a una campana que decae a cero dejaria un
+        //  escalon al final, que es un chasquido.
+        if (F.sostiene)
+            for (int q = 0; q < kZonas; ++q)
+            {
+                const auto& Z = sb->zonas[(size_t) q];
+                const int n = Z.bucleFin - Z.bucleIni;
+                if (n <= 0) continue;
+                for (int ch = 0; ch < (est ? 2 : 1); ++ch)
+                {
+                    float* d = (ch == 0) ? dstL : dstR;
+                    double suma = 0.0;
+                    for (int i = Z.bucleIni; i < Z.bucleFin; ++i) suma += d[i];
+                    const float media = (float) (suma / (double) n);
+                    for (int i = Z.ini; i < Z.fin; ++i) d[i] -= media;
+                }
+            }
 
         //  UNA GANANCIA POR OCTAVA, Y LAS DOS CAPAS DE ESA OCTAVA LA COMPARTEN.
         //
