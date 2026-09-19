@@ -565,7 +565,28 @@ namespace Sintes
                     //  DEL INDICE y el martillo un 4% entre los dos lados. Es lo
                     //  que separa dos microfonos delante de la misma pua, y no
                     //  un chorus: la nota es la misma nota en los dos canales.
+                    //  Y LA FASE DEL MODULADOR, que es lo que de verdad abre
+                    //  un solo portador. Con el 4% de la caida del indice como
+                    //  unico ancho, los dieciseis PIANO ELEC median **r = 0.999**:
+                    //  un ancho que no existe. Un cuarto de ciclo de modulador
+                    //  cambia la FORMA de onda sin mover ni un cent la
+                    //  afinacion -las bandas laterales estan en las mismas
+                    //  frecuencias, con otra fase- y no es ni un retardo ni un
+                    //  desafine. El portador arranca igual en los dos, asi que
+                    //  el fundamental sigue sumandose en fase en mono.
                     const float sesgo = (canal == 1) ? 1.04f : 0.96f;
+                    //  0.12 de ciclo, y los dos extremos estan medidos: con
+                    //  0.25 la onda de los dos canales ya no se parecia en nada
+                    //  -r = 0.078 y **-2.68 dB** al sumarse en mono- y con
+                    //  0.0625 se quedaba corta en los presets de indice bajo
+                    //  -MELLOW a r = 0.9902, por encima del liston-.
+                    //  Y ESCALADA CON EL INDICE, que es lo que decide cuantas
+                    //  bandas laterales hay que mover. Con 0.12 fijo, los
+                    //  presets de indice alto -DX7 con 5.6, HARD EP con 7.4- se
+                    //  pasaban al otro lado del intervalo: **-1.64 dB** en mono.
+                    //  0.144/indice deja MELLOW (1.2) en 0.12 y HARD EP en 0.02.
+                    if (n == 0 && canal == 1)
+                        phm = juce::jlimit (0.02, 0.15, 0.144 / (double) juce::jmax (0.2f, P.p2));
                     phm += inc * (double) P.p1; if (phm >= 1.0) phm -= 1.0;
                     const float ei = env (te, juce::jmax (0.02f, P.p3 * sesgo));
                     const double mod = (double) (P.p2 * indice * ei)
@@ -685,12 +706,18 @@ namespace Sintes
                     //  resonancia, p4 cuerpo una octava abajo.
                     ph  += inc;       if (ph  >= 1.0) ph  -= 1.0;
                     ph2 += inc * 0.5; if (ph2 >= 1.0) ph2 -= 1.0;
+                    //  El cuerpo de una octava abajo a un lado: es lo unico
+                    //  plural que un pluck tiene.
                     const float osc = (1.0f - P.p1) * sawBl (ph, inc) + P.p1 * sqrBl (ph, inc)
-                                    + P.p4 * sawBl (ph2, inc * 0.5) * 0.6f;
+                                    + P.p4 * ladoDe (canal, -0.75) * sawBl (ph2, inc * 0.5) * 0.6f;
                     //  DOS PASTILLAS: la envolvente del filtro cae un 3%
                     //  distinta en cada lado. Un solo oscilador no se puede
                     //  repartir, asi que el ancho sale de lo unico que se mueve.
-                    const float ef = env (te, juce::jmax (0.01f, P.p2 * ((canal == 1) ? 1.03f : 0.97f)));
+                    //  Un 22% y no un 3%: con el 3% los dieciseis PLUCKS median
+                    //  r = 0.99 -dos canales iguales- y con el 12% cuatro se
+                    //  quedaban en 0.984, justo por encima del liston. Dos
+                    //  pastillas de verdad no se parecen tanto.
+                    const float ef = env (te, juce::jmax (0.01f, P.p2 * ((canal == 1) ? 1.22f : 0.78f)));
                     f1.set (juce::jlimit (60.0, nyq, hz * brillo * (1.0 + 14.0 * (double) ef)), P.p3);
                     v = limita (1.2f * f1.lp (osc));
                     break;
@@ -833,11 +860,24 @@ namespace Sintes
                     //  con su resonancia un 2% distinta a cada lado. Una caja de
                     //  madera no resuena igual por los dos costados, y eso es
                     //  ancho de verdad sin tocar la cuerda.
+                    //  Un 12% y no un 2%, y ademas el cuerpo se reparte: con el
+                    //  2% los dieciseis CUERDA PULS median **r = 0.999**. Una
+                    //  caja de madera no resuena igual por los dos costados, y
+                    //  esa es toda la diferencia que hay entre una guitarra con
+                    //  dos micros y una con uno.
                     f1.set (juce::jlimit (90.0, nyq, (220.0 + 900.0 * (double) P.p3)
-                                                      * ((canal == 1) ? 1.02 : 0.98)), 2.4f);
-                    v = x + P.p3 * f1.bpf (x) * 0.8f;
+                                                      * ((canal == 1) ? 1.12 : 0.88)), 2.4f);
+                    v = x + P.p3 * ladoDe (canal, -0.5) * f1.bpf (x) * 0.8f;
                     v += P.p4 * rnd() * env (te, 0.004f) * 0.7f * fuerza;
-                    f2.set (juce::jlimit (400.0, nyq, hz * 12.0 * (double) brillo), 0.6f);
+                    //  Y EL PASO BAJO DE SALIDA TAMBIEN SE SEPARA, un 10%.
+                    //
+                    //  Con el cuerpo solo -12% y repartido- los dieciseis CUERDA
+                    //  PULS seguian midiendo **r = 0.99**: en la mitad de los
+                    //  presets `p3` vale casi cero, o sea que el cuerpo no pesa y
+                    //  la unica diferencia entre canales se quedaba sin sonar. El
+                    //  filtro de salida lo ve TODO, asi que ahi si se nota.
+                    f2.set (juce::jlimit (400.0, nyq, hz * 12.0 * (double) brillo)
+                              * ((canal == 1) ? 1.18 : 0.82), 0.6f);
                     v = limita (f2.lp (v) * 1.4f);
                     break;
                 }
@@ -850,7 +890,16 @@ namespace Sintes
                     ph  += inc;                 if (ph  >= 1.0) ph  -= 1.0;
                     ph2 += inc * (double) P.p1; if (ph2 >= 1.0) ph2 -= 1.0;
                     ph3 += inc * (double) P.p2; if (ph3 >= 1.0) ph3 -= 1.0;
-                    v = (float) std::sin (juce::MathConstants<double>::twoPi * ph);
+                    const float fund = (float) std::sin (juce::MathConstants<double>::twoPi * ph);
+                    //  EL TUBO RESONADOR, y uno por canal con un 10% de
+                    //  diferencia. Una marimba de verdad lleva un tubo debajo de
+                    //  cada barra, asi que esto no es un adorno para ensanchar:
+                    //  es lo que faltaba. Hacia falta porque en los presets de
+                    //  balance bajo -SOFT MAL, con p4 = 0.18 y p3 = 0.05- manda
+                    //  el fundamental y los dos inarmonicos ya abiertos del todo
+                    //  no llegaban: **r = 0.9804** contra un liston de 0.98.
+                    f2.set (juce::jlimit (60.0, nyq, hz * ((canal == 1) ? 1.10 : 0.90)), 3.0f);
+                    v = fund + 0.30f * f2.bpf (fund);
                     //  Los dos parciales de arriba los saca la BAQUETA DURA:
                     //  con ellos fijos las dos capas median centroide x1.00, o
                     //  sea que el toque solo cambiaba el volumen.
@@ -858,13 +907,13 @@ namespace Sintes
                     //  Fundamental centrado, los dos inarmonicos a un lado cada
                     //  uno. Misma figura que CAMPANAS y por la misma razon.
                     if (hz * (double) P.p1 < nyq)
-                        v += par * ladoDe (canal, -0.65) * env (te, P.dec * 0.30f)
+                        v += par * ladoDe (canal, -1.00) * env (te, P.dec * 0.30f)
                              * (float) std::sin (juce::MathConstants<double>::twoPi * ph2);
                     if (hz * (double) P.p2 < nyq)
-                        v += par * 0.45f * ladoDe (canal, 0.65) * env (te, P.dec * 0.14f)
+                        v += par * 0.45f * ladoDe (canal, 1.00) * env (te, P.dec * 0.14f)
                              * (float) std::sin (juce::MathConstants<double>::twoPi * ph3);
                     f1.set (juce::jlimit (400.0, nyq, 2800.0 * (double) brillo), 1.4f);
-                    v += P.p3 * f1.bpf (rnd()) * env (te, 0.005f) * 3.0f * (0.2f + 1.1f * capaMix);
+                    v += P.p3 * ladoDe (canal, 0.80) * f1.bpf (rnd()) * env (te, 0.005f) * 3.0f * (0.2f + 1.1f * capaMix);
                     break;
                 }
 
@@ -875,15 +924,23 @@ namespace Sintes
                     //  resonancia encima. p1 ancho, p2 centro, p3 Q, p4 muerte.
                     ph += inc; if (ph >= 1.0) ph -= 1.0;
                     const float osc = pulsoBl (ph, inc, juce::jlimit (0.02, 0.45, (double) P.p1));
-                    //  DOS PASTILLAS otra vez, y aqui un 1.5% basta: el paso
-                    //  banda es muy estrecho (Q alta), asi que mover el centro
-                    //  poco ya descorrela mucho. Con el 3% de PLUCKS se oiria
-                    //  como dos notas distintas.
+                    //  DOS PASTILLAS otra vez, y aqui el numero no es fijo.
                     //  Y EL SESGO VA DESPUES DEL ACOTADO. Dentro, los dos
                     //  canales caian en el mismo tope y CLAVES OCT CLV medía
                     //  **r = 1.0000**: un ancho que el limite se comia.
+                    //  Y EL DESPLAZAMIENTO SE MIDE EN ANCHOS DE BANDA Y NO EN
+                    //  FRECUENCIA, que es la unica forma de que un numero valga
+                    //  para los dieciseis: el ancho de un paso banda es `f/Q`,
+                    //  asi que un 6% fijo mueve medio ancho en CLAV (Q = 2) y
+                    //  siete anchos en RES CLV (Q = 10). Se midio: con el 6%
+                    //  fijo, WAH CLV se caia a **-2.15 dB** en mono y RES CLV a
+                    //  **-3.17**, mientras CLAV seguia corto con el 1.5%.
+                    //  0.20 y no 0.30: con 0.30, RES CLV -Q = 10 sobre un
+                    //  parcial casi puro- se quedaba en **-1.67 dB** en mono.
+                    //  Una resonancia estrecha descorrela con muy poco.
+                    const double sep = juce::jlimit (0.015, 0.08, 0.20 / (double) juce::jmax (0.5f, P.p3));
                     f1.set (juce::jlimit (150.0, nyq, hz * (double) P.p2 * (double) brillo)
-                              * ((canal == 1) ? 1.015 : 0.985), P.p3);
+                              * (1.0 + (canal == 1 ? sep : -sep)), P.p3);
                     const float ef = env (te, juce::jmax (0.02f, P.dec * 0.5f));
                     v = limita (1.5f * f1.bpf (osc) * (0.35f + 0.65f * ef));
                     v += P.p4 * rnd() * env (te, 0.003f) * fuerza;
@@ -907,8 +964,13 @@ namespace Sintes
                     //  soplo fuerte SOBREsopla -sube el segundo armonico- que es
                     //  lo que hace de verdad un instrumento de viento y lo que
                     //  separa las dos capas, porque un seno no se filtra.
+                    //  Y EL SOBRESOPLO A UN LADO. El tubo es uno y el
+                    //  fundamental se queda centrado, pero lo que el labio saca
+                    //  de mas no sale del mismo sitio. Sin esto VIENTOS media
+                    //  **r = 0.99** aunque el aire fuera de dos sorteos: el seno
+                    //  se comia la cuenta.
                     v = (float) std::sin (juce::MathConstants<double>::twoPi * ph)
-                      + (P.p4 + 0.55f * capaMix)
+                      + (P.p4 + 0.55f * capaMix) * ladoDe (canal, 0.70)
                             * (float) std::sin (juce::MathConstants<double>::twoPi * ph2);
                     //  Banda ANCHA y alrededor del tercer armonico: el aire de
                     //  una flauta no esta en su fundamental, esta arriba.
@@ -950,7 +1012,7 @@ namespace Sintes
                         //  de verdad: el tono viene de una cuerda y el brillo de
                         //  las que vibran por simpatia a los lados.
                         const double x = (k == 0) ? 0.0
-                            : (((k & 1) != 0) ? 1.0 : -1.0) * juce::jmin (1.0, (double) k / 11.0);
+                            : (((k & 1) != 0) ? 1.0 : -1.0) * juce::jmin (1.0, (double) k / 2.0);
                         suma += ladoDe (canal, x) * amp * env (te, tau)
                                 * (float) std::sin (juce::MathConstants<double>::twoPi * arm[k]);
                     }

@@ -201,7 +201,13 @@ namespace Kits
         //  contra un liston de -1.5. Con 0.85 el ancho sigue siendo ancho -la
         //  correlacion de CUERDAS queda en 0.73, muy por debajo del 0.98 que
         //  exige la regla- y la perdida en mono baja a **-0.66 dB**.
-        static constexpr double kApertura = 0.85;
+        //
+        //  Con 0.85 todavia quedaban tres por debajo del liston -COROS BASS CH
+        //  a -2.15 dB, COLCHONES VOICES a -1.78 y METALES BRASS a -1.47-, asi
+        //  que baja a 0.72; y con 0.72 aun quedaba METALES MUTED BR -que lleva
+        //  la desafinacion al maximo, o sea tres pulsos sin nada en comun- a
+        //  -1.78 dB. 0.62.
+        static constexpr double kApertura = 0.62;
 
         //  Y LA CORRELACION DEL AIRE, que es la otra mitad del mismo numero.
         //
@@ -209,9 +215,12 @@ namespace Kits
         //  exactos al sumarse en mono, por muy bien repartidos que esten los
         //  osciladores: en las nueve formas con soplo mandaba el ruido. Lo que
         //  se hace es lo que hace una sala: una parte COMUN y una parte propia,
-        //  con la correlacion escrita. 0.65 deja la perdida en mono en -0.85 dB
-        //  y sigue sonando a dos microfonos y no a uno.
-        static constexpr float kCorrAire = 0.65f;
+        //  con la correlacion escrita. Y sube a 0.80 por lo medido: en las
+        //  familias donde el soplo manda -COROS BASS CH, VIENTOS- era el ruido y
+        //  no el reparto lo que se llevaba la perdida en mono por delante. Con
+        //  0.80 el aire puro pierde 0.46 dB al sumarse y sigue sonando a dos
+        //  microfonos y no a uno.
+        static constexpr float kCorrAire = 0.80f;
 
         //  CUANTO DE UNA PIEZA SUENA EN ESTE CANAL, y como se hace el ancho.
         //
