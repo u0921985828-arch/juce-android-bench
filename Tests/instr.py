@@ -634,7 +634,12 @@ def main():
                 #  distinto, y entonces la resta no mide afinacion sino cual de
                 #  los dos parciales gano. Salieron -32 cents en CUERDAS con la
                 #  sintesis intacta.
-                cerca = abs (abs0) < 25.0 and abs (abs12) < 25.0
+                #  DIEZ CENTS Y NO VEINTICINCO: con veinticinco, CAMPANAS
+                #  -inarmonica a proposito- colaba el guardia y la regla juzgaba
+                #  la resta de dos parciales distintos, +6 cents con la sintesis
+                #  intacta. Si el pico esta a mas de diez cents del fundamental es
+                #  que el pico NO es el fundamental.
+                cerca = abs (abs0) < 10.0 and abs (abs12) < 10.0
                 print ("%-12s afina: raiz 0 %+.1f cents   la octava %+.1f cents%s"
                        % (etiq, abs0, rel, "" if cerca else "  (el pico no es el fundamental)"))
                 if cerca and abs (rel) > CENTS_REL:
@@ -685,7 +690,15 @@ def main():
                 fin   = (len (cb) // q) * q
                 if q > 2048 and fin - salta >= 2 * q:
                     ba, bb = bandas (cb[salta:salta + q]), bandas (cb[fin - q:fin])
-                    dif = max (abs (a - b) for a, b in zip (ba, bb))
+                    #  Y SOLO LAS BANDAS QUE SUENAN. `bandas` devuelve dB
+                    #  relativos al pico y con suelo en FLOOR, asi que una banda
+                    #  cuarenta decibelios por debajo es un hueco entre parciales:
+                    #  ahi la razon entre dos ventanas es enorme y no significa
+                    #  nada. Sin este suelo la regla acusaba de 8 a 15 dB a las
+                    #  familias con LFO, que son las que mueven un filtro y por lo
+                    #  tanto las que tienen huecos que se mueven.
+                    dif = max ((abs (a - b) for a, b in zip (ba, bb)
+                                if a > -40.0 or b > -40.0), default=0.0)
                     print ("%-12s deriva: %.2f dB entre el primer cuarto y el ultimo" % (etiq, dif))
                     if dif > DERIVA_DB:
                         fallos.append ("%s: el cuerpo deriva %.2f dB (liston %.1f): cada vuelta "
