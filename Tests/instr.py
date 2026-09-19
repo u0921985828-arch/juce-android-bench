@@ -609,7 +609,8 @@ def main():
                     print ("%-12s deriva: %.2f dB entre el primer cuarto y el ultimo" % (etiq, dif))
                     if dif > DERIVA_DB:
                         fallos.append ("%s: el cuerpo deriva %.2f dB (liston %.1f): cada vuelta "
-                                       "reinicia lo que se estuviera moviendo" % (etiq, dif))
+                                       "reinicia lo que se estuviera moviendo"
+                                       % (etiq, dif, DERIVA_DB))
 
             #  Y EL TERCER NUMERO: NINGUN ESCALON ENTRE CAPAS CONTIGUAS.
             #
