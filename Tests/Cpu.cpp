@@ -127,7 +127,8 @@ static const char* nombreDeFx (int f) noexcept
                                //  `Soak` y este mismo con `ZatiData`.
                                "RNG ring mod", "PIT pitch", "WID ancho",
                                "EXC excitador", "TRN transitorios", "FRZ congelador",
-                               "WAH auto-wah", "OCT octavador" };
+                               "WAH auto-wah", "OCT octavador",
+                               "AMB ambiente" };
     static_assert (sizeof (n) / sizeof (n[0]) == (size_t) AudioEngine::kNumFx,
                    "nombreDeFx tiene que tener una fila por tipo");
     return juce::isPositiveAndBelow (f, (int) (sizeof (n) / sizeof (n[0]))) ? n[f] : "?";
