@@ -1495,21 +1495,55 @@ namespace Sintes
         //  que tiene que existir, que es la del golpe.
         for (int r = 0; r < kRaices; ++r)
         {
-            const auto& Zf = sb->zonas[(size_t) (r * kCapas + (kCapas - 1))];   // la capa fuerte manda
             //  Y LA MISMA GANANCIA A LOS DOS CANALES, medida sumando sus
             //  energias como manda BS.1770. Ver `Kits::gananciaSonoridad`.
             //  En mono la de un canal da EL MISMO numero: la estereo suma las
             //  dos energias y sube el objetivo la raiz de dos, asi que con
             //  `L == R` las dos cuentas coinciden. Se llama a la que toca en vez
             //  de duplicar el buffer para que la de dos canales sirva.
-            const float gz = est
-                ? Kits::gananciaSonoridad (dstL + Zf.ini, dstR + Zf.ini, Zf.fin - Zf.ini)
-                : Kits::gananciaSonoridad (dstL + Zf.ini, Zf.fin - Zf.ini);
+            float gCapa[kCapas] = {};
             for (int c = 0; c < kCapas; ++c)
             {
                 const auto& Z = sb->zonas[(size_t) (r * kCapas + c)];
-                Kits::aplicaGanancia (dstL + Z.ini, Z.fin - Z.ini, gz, false);
-                if (est) Kits::aplicaGanancia (dstR + Z.ini, Z.fin - Z.ini, gz, false);
+                gCapa[c] = est
+                    ? Kits::gananciaSonoridad (dstL + Z.ini, dstR + Z.ini, Z.fin - Z.ini)
+                    : Kits::gananciaSonoridad (dstL + Z.ini, Z.fin - Z.ini);
+            }
+            const float gz = gCapa[kCapas - 1];                 // la capa fuerte manda
+
+            //  EL ESCALON DE UNA CAPA A OTRA SE REPARTE, y no se deja al azar
+            //  de la forma.
+            //
+            //  Los escalares de capa -`fuerza`, `brillo`, `indice`, `capaMix`-
+            //  son geometricos, o sea parejos en decibelios, pero lo que la
+            //  forma HACE con ellos no lo es: medido en la raiz 0, CUERDA PULS
+            //  subia **+3.71 dB y luego +1.02** -el primer escalon se llevaba el
+            //  78 % del recorrido- porque el brillo abre el filtro de la cuerda
+            //  y ahi satura, y CLAVES **+1.73 y luego +3.41** -66 %- porque su
+            //  paso de banda se lleva el centro con el brillo y ahi arranca
+            //  tarde. Los dos torcidos, y en sentidos contrarios: no hay un
+            //  escalar comun que los enderece a la vez.
+            //
+            //  Lo que se corrige es el resultado medido, que es lo unico que las
+            //  dos formas comparten. Los EXTREMOS no se tocan -la capa suave y
+            //  la fuerte se quedan donde la receta las puso, o sea el recorrido
+            //  entero del toque es el que era- y las de en medio se colocan en
+            //  la escalera geometrica que va de una a otra. Con tres capas eso
+            //  es UNA ganancia que se mueve, y CUERDA PULS pasa a +2.36 +2.36.
+            const bool  medible = (gCapa[0] > 0.0f && gz > 0.0f);
+            const float razon   = medible ? (gz / gCapa[0]) : 1.0f;   // sonoridad suave/fuerte
+
+            for (int c = 0; c < kCapas; ++c)
+            {
+                const auto& Z = sb->zonas[(size_t) (r * kCapas + c)];
+                float gAplica = gz;
+                if (medible && gCapa[c] > 0.0f && kCapas > 1)
+                {
+                    const float t = (float) (kCapas - 1 - c) / (float) (kCapas - 1);
+                    gAplica = gCapa[c] * std::pow (razon, t);
+                }
+                Kits::aplicaGanancia (dstL + Z.ini, Z.fin - Z.ini, gAplica, false);
+                if (est) Kits::aplicaGanancia (dstR + Z.ini, Z.fin - Z.ini, gAplica, false);
             }
         }
 
