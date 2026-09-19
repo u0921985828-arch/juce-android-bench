@@ -900,8 +900,8 @@ void MainComponent::auditDlc()
         //  Dos toques, que es lo que pide la confirmacion. Si el candado deja
         //  pasar, el segundo reparte. Y el candado se mira ANTES de armar, asi
         //  que con el puesto ni siquiera se arma.
-        cargaInstrumento (0);
-        cargaInstrumento (0);
+        cargaInstrumento (0); esperaInstrumentos();
+        cargaInstrumento (0); esperaInstrumentos();
     }
     std::cout << "{\"dlc\":\"cerrado\",\"reparto\":" << (int) undoStack.size() << "}" << std::endl;
 
@@ -970,7 +970,7 @@ void MainComponent::auditDlc()
     }
 
     cargaInstrumento (2);      // TEXTURA, que vive en el banco C
-    cargaInstrumento (2);
+    cargaInstrumento (2); esperaInstrumentos();
     int deFabrica = 0;
     for (int i = 0; i < kPadsPerBank; ++i) if (padHasSample[(size_t) i]) ++deFabrica;
     std::cout << "{\"dlc\":\"fabrica\",\"pads\":" << deFabrica << "}" << std::endl;
@@ -1241,7 +1241,7 @@ void MainComponent::auditInstr()
     //  guardado, es que nadie lo quito.
     {
         const int pad = kBancoInstr * kPadsPerBank + 3;
-        ponInstrumentoEnPad (pad, 3, 5);
+        ponInstrumentoYEspera (pad, 3, 5);
         const auto arbol = captureState();
 
         uiSample[(size_t) pad] = nullptr;
@@ -1252,7 +1252,7 @@ void MainComponent::auditInstr()
         readInstMap (arbol, mapa);
         const int receta = mapa[(size_t) pad];
         if (receta >= 0)
-            ponInstrumentoEnPad (pad, receta / Sintes::kPresets, receta % Sintes::kPresets);
+            ponInstrumentoYEspera (pad, receta / Sintes::kPresets, receta % Sintes::kPresets);
 
         auto* sb = uiSample[(size_t) pad].get();
         std::cout << "{\"instr\":\"vuelta\",\"receta\":" << receta
@@ -1296,7 +1296,7 @@ void MainComponent::auditInstr()
             return d;
         };
 
-        ponInstrumentoEnPad (pad, fam, pre);
+        ponInstrumentoYEspera (pad, fam, pre);
         auto tabla = uiSample[(size_t) pad];
 
         //  Al extremo MAS LEJANO del valor de hoy y no a un tope escrito: si
@@ -1306,12 +1306,12 @@ void MainComponent::auditInstr()
         const auto rg = Sintes::rango (fam, 0);
         const float v0 = Sintes::valor (r, 0);
         Sintes::ponValor (r, 0, std::abs (v0 - rg.lo) > std::abs (v0 - rg.hi) ? rg.lo : rg.hi);
-        ponInstrumentoEnPad (pad, fam, pre, &r, true);
+        ponInstrumentoYEspera (pad, fam, pre, &r, true);
         auto movido = uiSample[(size_t) pad];
         const int suena = difieren (tabla.get(), movido.get());
 
         //  Y VOLVER devuelve la fila, bit a bit.
-        ponInstrumentoEnPad (pad, fam, pre);
+        ponInstrumentoYEspera (pad, fam, pre);
         const int vuelve = difieren (tabla.get(), uiSample[(size_t) pad].get());
 
         //  Y AHORA LA IDA Y VUELTA POR EL FICHERO, con el mismo arbol que lo
@@ -1322,7 +1322,7 @@ void MainComponent::auditInstr()
         //
         //  Y BORRANDO EL PAD Y SU RECETA A MANO entre medias: si al volver
         //  siguen puestos no es que se hayan guardado, es que nadie los quito.
-        ponInstrumentoEnPad (pad, fam, pre, &r, true);
+        ponInstrumentoYEspera (pad, fam, pre, &r, true);
         const auto arbol = captureState();
 
         uiSample[(size_t) pad] = nullptr;
@@ -1530,7 +1530,7 @@ void MainComponent::auditInstr()
         const int clavado = kBancoInstr * kPadsPerBank + familia;
         const int pedido  = 2 * kPadsPerBank + 5;       // otro banco Y otra casilla
         instDestPad = pedido;
-        cargaInstrumento (familia);
+        cargaInstrumento (familia); esperaInstrumentos();
 
         int fue = -1;
         for (int i = 0; i < kNumPads; ++i)
@@ -1627,7 +1627,7 @@ void MainComponent::auditInstr()
     //  saldrian verdes comparando silencio con silencio.
     {
         const int pad = kBancoInstr * kPadsPerBank + 11;
-        ponInstrumentoEnPad (pad, 4, 0);
+        ponInstrumentoYEspera (pad, 4, 0);
         engine.setPadPitch (pad, 12);
 
         closeAllSheets();
@@ -1727,7 +1727,7 @@ void MainComponent::auditInstr()
     //  nota en el pad del instrumento Y el testigo intacto.
     {
         const int pad = kBancoInstr * kPadsPerBank + 9;
-        ponInstrumentoEnPad (pad, 2, 0);
+        ponInstrumentoYEspera (pad, 2, 0);
         closeAllSheets();
         selectPad (pad);
         abreVst();
@@ -2498,7 +2498,7 @@ void MainComponent::auditOpen (const juce::String& pedido)
     //  justo el estado que no hay que medir. Lo mismo que hizo falta con secp.
     else if (which == "instg")
     {
-        ponInstrumentoEnPad (kBancoInstr * kPadsPerBank + 6, 11, 0);   // CUERDA PULS
+        ponInstrumentoYEspera (kBancoInstr * kPadsPerBank + 6, 11, 0);   // CUERDA PULS
         instPack = 0;
         openInstSheet();
         instDestPad = kBancoInstr * kPadsPerBank + 9;
@@ -2561,7 +2561,7 @@ void MainComponent::auditOpen (const juce::String& pedido)
         }
 
         const int pad = kBancoInstr * kPadsPerBank + fam;
-        ponInstrumentoEnPad (pad, fam, pre);
+        ponInstrumentoYEspera (pad, fam, pre);
         selectBank (kBancoInstr);
         selectPad (pad);
         abreVst();

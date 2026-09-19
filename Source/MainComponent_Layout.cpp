@@ -2156,11 +2156,13 @@ void MainComponent::resized()
         //  que estas viendo, las tuyas, y el selector del sistema.
         //
         //  Y se parte 2+3 y no 3+2 porque los rotulos largos van donde se
-        //  reparte entre menos. Antes el mas largo era "CARGAR KIT" -75 px con
-        //  74, y 83 con 80 en arabe-; desde que FABRICA es la puerta de
-        //  INSTRUMENTOS el mas largo es ese, que en 280x653 pide 90 y tenia 79:
-        //  el unico rotulo CORTADO de las 812 corridas. Sube al par y CARGAR
-        //  KIT baja al trio, donde sus 75 caben en 79.
+        //  reparte entre menos. El mas largo fue "CARGAR KIT" -75 px con 74, y
+        //  83 con 80 en arabe- y despues "INSTRUMENTOS", que en 280x653 pedia
+        //  90 con 79 y fue el unico rotulo CORTADO de las 812 corridas. Con
+        //  EXTRAS en su sitio -seis letras- el largo vuelve a ser CARGAR KIT,
+        //  pero el reparto se queda: sigue siendo el que le da mas ancho al
+        //  rotulo mas largo, y cambiarlo seria mover la maqueta por un numero
+        //  que ya no aprieta.
         juce::TextButton* pb[5] = { &browseLoadButton, &browseFactoryButton,
                                     &browseKitButton, &browseKitsDirButton,
                                     &browseSystemButton };
@@ -3089,7 +3091,13 @@ void MainComponent::resized()
         //  En dos columnas la celda pasa a 173 px y la caja a 163: el nombre
         //  entero, el dibujo de 18 al lado y 76 px de sobra. Cuesta cuatro
         //  filas mas, que es alto y no ancho, y esta ficha ya se desplaza.
-        const int alto2col = (Metrics::hit + Metrics::xs) * 8;
+        //  Y CUATRO BANDAS DE CATEGORIA repartidas entre las ocho filas: las
+        //  dieciseis familias van por tipo -ver `Sintes::ordenDeMenu`- y una
+        //  lista agrupada sin rotulo de grupo es una lista barajada de otra
+        //  forma. Cada banda cuesta lo que un titulo de seccion.
+        const int altoCat  = Metrics::bandaTitulo + Metrics::xs;
+        const int alto2col = (Metrics::hit + Metrics::xs) * 8
+                                + altoCat * Sintes::kCategorias;
         auto inner = sheetFromBottom (instSheet, Ficha::cromo + filaPack
                                                    + Metrics::sm
                                                    + (rejilla ? (Metrics::hit + Metrics::sm
@@ -3172,22 +3180,31 @@ void MainComponent::resized()
         //  Son dos preguntas distintas y ahora tambien se ven distintas, que
         //  era la otra mitad del problema: dos rejillas de cuatro por cuatro,
         //  una encima de la otra, se leen como dos mitades de lo mismo.
-        auto pon2col = [] (juce::Rectangle<int> caja, juce::OwnedArray<juce::TextButton>& bs)
+        auto pon2col = [this] (juce::Rectangle<int> caja, juce::OwnedArray<juce::TextButton>& bs)
         {
             const int n = juce::jmin (16, bs.size());
-            for (int r = 0; r < 8; ++r)
+            //  Cuatro por categoria, o sea dos filas de dos debajo de cada
+            //  rotulo. El numero sale del reparto y no se escribe aparte: ver
+            //  `Sintes::ordenDeMenu`, que es quien lo decide.
+            const int porCat = Sintes::kFamilias / Sintes::kCategorias;
+            int i = 0;
+            for (int cat = 0; cat < Sintes::kCategorias; ++cat)
             {
-                auto row = caja.removeFromTop (Metrics::hit);
-                const int w = row.getWidth() / 2;
-                for (int c = 0; c < 2; ++c)
-                {
-                    const int i = r * 2 + c;
-                    if (i >= n) continue;
-                    bs[i]->setVisible (true);
-                    bs[i]->setBounds ((c == 0 ? row.removeFromLeft (w) : row)
-                                      .reduced (Metrics::aireTapaDensa, 0));
-                }
+                instCatArea[(size_t) cat] = caja.removeFromTop (Metrics::bandaTitulo);
                 caja.removeFromTop (Metrics::xs);
+                for (int r = 0; r < porCat / 2; ++r)
+                {
+                    auto row = caja.removeFromTop (Metrics::hit);
+                    const int w = row.getWidth() / 2;
+                    for (int c = 0; c < 2; ++c, ++i)
+                    {
+                        if (i >= n) continue;
+                        bs[i]->setVisible (true);
+                        bs[i]->setBounds ((c == 0 ? row.removeFromLeft (w) : row)
+                                          .reduced (Metrics::aireTapaDensa, 0));
+                    }
+                    caja.removeFromTop (Metrics::xs);
+                }
             }
         };
 
@@ -3215,6 +3232,12 @@ void MainComponent::resized()
         }
         else
         {
+            //  UN PACK DE DISCO NO TIENE CATEGORIAS, asi que las bandas se
+            //  vacian: dejarlas con los limites de la ultima vez las pintaria
+            //  encima de la lista, que es exactamente el fallo que ya costo el
+            //  titulo de esta misma ficha.
+            for (auto& r : instCatArea) r = {};
+
             for (int i = 0; i < instBtns.size(); ++i)
             {
                 if (i >= cuantos) break;

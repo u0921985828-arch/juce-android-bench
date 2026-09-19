@@ -214,6 +214,49 @@ namespace Sintes
         return juce::String (kTabla[f].nombre) + " " + kTabla[f].p[p].nombre;
     }
 
+    //  LAS CUATRO CATEGORIAS Y EL ORDEN DE MENU. Ver la declaracion.
+    //
+    //  El reparto es por FUENTE y no por registro: donde nace el sonido, que es
+    //  lo que alguien busca cuando abre el menu -«un piano», «algo de cuerda»-.
+    //  Por registro saldria BAJOS con CUERDA PULS y SUBS con MAZOS, que es una
+    //  lista de graves y no una familia de instrumentos.
+    //
+    //  ARCO Y PUA y no «CUERDAS»: CUERDAS es el nombre de UNA de las cuatro que
+    //  contiene, y una categoria que se llama igual que su primera fila no se
+    //  lee como categoria.
+    namespace
+    {
+        const char* const kCatNombres[kCategorias] =
+            { "SINTESIS", "TECLAS", "ARCO Y PUA", "SOPLO Y METAL" };
+
+        //  Indices de `kTabla`, en el orden en que se enseñan.
+        constexpr int kOrden[kFamilias] =
+        {
+            0, 1, 9, 5,      // SINTESIS      BAJOS SUBS LEADS COLCHONES
+            2, 3, 13, 12,    // TECLAS        PIANO ELEC ORGANOS CLAVES MAZOS
+            4, 6, 11, 15,    // ARCO Y PUA    CUERDAS PLUCKS CUERDA PULS ARPAS
+            14, 10, 8, 7     // SOPLO Y METAL VIENTOS COROS METALES CAMPANAS
+        };
+
+        //  Y la vuelta, que es la que contesta `categoriaDe`. Se deriva de
+        //  `kOrden` en vez de escribirse: dos tablas que dicen lo mismo son dos
+        //  reglas, y la que se quede vieja pondria un nombre en el grupo
+        //  equivocado sin que nada falle.
+        int catDe (int familia)
+        {
+            for (int i = 0; i < kFamilias; ++i)
+                if (kOrden[i] == familia) return i / (kFamilias / kCategorias);
+            return 0;
+        }
+    }
+
+    const char* const* categorias()      { return kCatNombres; }
+    const int*         ordenDeMenu()     { return kOrden; }
+    int                categoriaDe (int familia)
+    {
+        return catDe (juce::jlimit (0, kFamilias - 1, familia));
+    }
+
     namespace
     {
         //  Pulso limitado en banda a partir de DOS sierras. Es el mismo truco

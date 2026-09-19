@@ -1260,7 +1260,7 @@ void MainComponent::paintInstSheetContent (juce::Graphics& g)
                          && ! instCatalogo[(size_t) instPack].instr.empty()
                          && instCatalogo[(size_t) instPack].instr[0].familiaSintes >= 0);
     pintaTitulo (g, titleRow,
-                 T ("INSTRUMENTOS") + "  " + dot + "  "
+                 T ("EXTRAS") + "  " + dot + "  "
                      + (aUnPad ? T ("PAD %1", Lang::ltr (juce::String (instDestPad + 1)))
                                : T ("BANCO %1", juce::String::charToString ((juce::juce_wchar) ('A' + currentBank)))),
                  "titulo", true);
@@ -1282,6 +1282,25 @@ void MainComponent::paintInstSheetContent (juce::Graphics& g)
         //  lista de los que no se traducen- y los de disco son dato.
         pintaTitulo (g, fila, nombre, "seccion", true);
     }
+    //  LOS CUATRO ROTULOS DE CATEGORIA, sobre sus cuatro parejas de filas.
+    //
+    //  Pintados y no componentes, por lo mismo que el nombre del pack: un
+    //  rotulo que solo se lee no necesita ser una tapa, y siendolo le quitaria
+    //  el ancho a las dos que si se tocan. Las bandas salen del maquetado y
+    //  vienen vacias cuando el pack de delante no es el de familias.
+    //  Y CON SU TINTA PUESTA, no con la que quedara de lo anterior. El rotulo
+    //  de grupo va POR DEBAJO del nombre del pack -es de dentro de la lista- y
+    //  por eso `inkDim` y no `ink`: dos rotulos con el mismo peso en la misma
+    //  ficha se leen como dos titulos y no como titulo y subtitulo.
+    g.setColour (ZatiColours::inkDim);
+    g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.16f));
+    for (int cat = 0; cat < Sintes::kCategorias; ++cat)
+    {
+        const auto banda = instCatArea[(size_t) cat];
+        if (banda.isEmpty()) continue;
+        pintaTitulo (g, banda, T (Sintes::categorias()[cat]), "seccion", true);
+    }
+
     //  Y el pie se cuelga de la banda que el maquetado publico, no de una
     //  cuenta paralela. Ver resized: la que habia aqui solo valia para la
     //  lista, asi que con la rejilla puesta el pie caia fuera del cuerpo.

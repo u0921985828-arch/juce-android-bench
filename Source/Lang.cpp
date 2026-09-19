@@ -661,6 +661,14 @@ namespace
         { "Quitando ruido", "",         "removing noise", "降噪中", "إزالة الضجيج" },
         { "Exportando",     "",         "exporting",  "导出中",     "جارٍ التصدير" },
         { "Repartiendo kit","",         "spreading kit", "分配套件", "توزيع الطقم" },
+        { "Creando instrumento", "",   "building instrument", "生成乐器中", "إنشاء الآلة" },
+        //  LAS CUATRO CATEGORIAS DE LA LISTA DE INSTRUMENTOS. Ver
+        //  `Sintes::ordenDeMenu`: cuatro grupos de cuatro, por fuente.
+        { "EXTRAS",         "",         "EXTRAS",     "附加",       "إضافات" },
+        { "SINTESIS",       "",         "SYNTH",      "合成",       "توليف" },
+        { "TECLAS",         "",         "KEYS",       "键盘",       "مفاتيح" },
+        { "ARCO Y PUA",     "",         "BOW & PICK", "弓与拨",     "قوس وريشة" },
+        { "SOPLO Y METAL",  "",         "WIND & BRASS", "管与铜",   "نفخ ونحاس" },
         { "REJILLA",        "",         "GRID",       "网格",       "الشبكة" },
         { "Un paso dura %1", "",         "one step lasts %1",
                                         "每步时值 %1", "الخطوة تساوي %1" },

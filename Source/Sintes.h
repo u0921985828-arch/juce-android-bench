@@ -127,6 +127,30 @@ namespace Sintes
     const Familia* tabla();          // 16 familias
     juce::String   nombreDe (int familia, int preset);
 
+    // ------------------------------------------------------------------------
+    //  LAS DIECISEIS, POR TIPO.
+    //
+    //  La tabla esta en el orden en que se fueron escribiendo las formas, que
+    //  es el orden de quien las hizo y no el de quien las busca: BAJOS, SUBS,
+    //  PIANO ELEC, ORGANOS, CUERDAS... Un menu de dieciseis nombres sin agrupar
+    //  se lee entero cada vez, porque no hay forma de saltarse la mitad.
+    //
+    //  CUATRO GRUPOS DE CUATRO, y el reparto sale redondo sin inventarse nada:
+    //  las dieciseis familias se reparten cuatro y cuatro por como SUENAN -por
+    //  la fuente, no por el registro-, asi que ningun grupo hay que rellenarlo
+    //  y ninguno sobra. Si hubiera salido 5-4-4-3 la respuesta seria escribir
+    //  la familia que falta, no apretar el reparto hasta que cuadre.
+    //
+    //  El orden de la TABLA no se toca: la familia se guarda por su indice en
+    //  proyectos y sesiones, y reordenarla cambiaria el sonido de todo lo
+    //  guardado. Lo que se ordena es como se ENSEÑA.
+    static constexpr int kCategorias = 4;
+    const char* const* categorias();                 // 4 nombres, para T()
+    int         categoriaDe (int familia);           // 0..3
+    //  Las dieciseis en orden de menu: primero las cuatro de la categoria 0,
+    //  etc. Devuelve indices de la tabla.
+    const int*  ordenDeMenu();                       // 16
+
     //  LO QUE LA GAMA DEL APARATO SE PUEDE PERMITIR, y lo que NO puede cambiar.
     //
     //  Un proyecto tiene que sonar **peor, no distinto**, en un telefono flojo:

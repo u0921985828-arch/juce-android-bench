@@ -228,9 +228,18 @@ namespace Instrumentos
         p.nombre = "SINTES";
         p.dentro = true;
         p.abierto = true;
-        for (int f = 0; f < Sintes::kFamilias; ++f)
+        //  EN ORDEN DE MENU Y NO EN ORDEN DE TABLA. Ver `Sintes::ordenDeMenu`:
+        //  la tabla esta en el orden en que se escribieron las formas, y aqui
+        //  se enseñan por tipo, cuatro categorias de cuatro. Lo que viaja a los
+        //  proyectos es `familiaSintes`, que sigue siendo el indice de la
+        //  tabla, asi que reordenar esta lista no toca nada guardado.
+        const int* orden = Sintes::ordenDeMenu();
+        for (int i = 0; i < Sintes::kFamilias; ++i)
+        {
+            const int f = orden[i];
             p.instr.push_back ({ juce::String (Sintes::tabla()[f].nombre), {}, -1,
                                  Sintes::kPresets, f });
+        }
         return p;
     }
 

@@ -2478,6 +2478,13 @@ private:
     //  diez zonas dos veces para dejar el pad como se queria a la primera.
     void ponInstrumentoEnPad (int pad, int familia, int preset,
                               const Sintes::Preset* receta = nullptr, bool movida = false);
+    //  LA MISMA, PERO ESPERANDO A QUE ESTE. Existe para el banco: la de arriba
+    //  devuelve con el pad todavia vacio -rinde en otro hilo- y una medida que
+    //  lea el pad justo despues leeria el hueco. Ver `esperaInstrumentos`.
+    void ponInstrumentoYEspera (int pad, int familia, int preset,
+                                const Sintes::Preset* receta = nullptr, bool movida = false);
+    void esperaInstrumentos();
+    void montaInstrumentoRendido (int pad, SampleBuffer::Ptr sb, const juce::String& nombre);
     void paintInstSheetContent (juce::Graphics& g);
 
     //  EL MASTER, y vive en la mesa por la misma razon que los faders: es el
@@ -3148,6 +3155,11 @@ private:
     juce::Rectangle<int> pruebasLabelArea;
     //  Las dos bandas pintadas de INSTRUMENTOS, publicadas por resized().
     juce::Rectangle<int> instTitleArea, instPackArea, instPieArea;
+    //  LAS CUATRO BANDAS DE CATEGORIA de la lista de SINTES. Las publica el
+    //  maquetado y las pinta el pintor, que es la regla que ya costo el titulo
+    //  y el nombre del pack: una cuenta, un dueno. Vacias cuando el pack de
+    //  delante no es el de familias -un pack de disco no tiene categorias-.
+    std::array<juce::Rectangle<int>, (size_t) Sintes::kCategorias> instCatArea {};
     //  La carpeta de destino, resuelta al ABRIR la ficha y no en cada
     //  repintado: preguntarla escribe en disco. Ver paintExportSheetContent.
     juce::File destinoCache;
@@ -3293,6 +3305,35 @@ private:
     //  ensena el cartel de "la aplicacion no responde" a los cinco.
     juce::ThreadPool denoisePool { 1 };
     bool denoiseBusy = false;
+
+    //  Y OTRO PARA SINTETIZAR, por lo mismo y con una cifra propia: rendir un
+    //  instrumento cuesta **473 ms de mediana y 1.6 s el peor** en el hilo de
+    //  mensajes -medido en `Tests/instr.py`, quince zonas a cuatro veces la
+    //  tasa-, asi que poner un instrumento en un pad congelaba la interfaz ese
+    //  tiempo y sin decir nada. La barra de trabajo ya existia pero no se
+    //  llegaba a pintar: `beginBusy` solo pide un repintado, y un repintado
+    //  pedido desde el hilo que se va a bloquear no ocurre hasta que el bloqueo
+    //  termina, o sea justo cuando ya no hace falta.
+    //
+    //  Uno solo y en cola: dos sintesis a la vez se pelearian por los hilos que
+    //  `Sintes` ya reparte por zonas.
+    juce::ThreadPool sintesPool { 1 };
+    //  QUIEN PIDIO LO QUE VUELVE. Si mientras se rendia el pad cambio de
+    //  instrumento -dos toques seguidos en la lista-, lo que llega es de nadie
+    //  y se tira; pisarlo pondria el penultimo elegido.
+    std::array<int, (size_t) kNumPads> sintesMarca {};
+    //  LO RENDIDO ESPERA AQUI, y no viaja dentro del `callAsync`.
+    //
+    //  Parece dar igual y no lo da: con el buffer dentro del mensaje, la unica
+    //  forma de cobrarlo es que el bucle de mensajes corra, y el banco NO lo
+    //  hace correr -va de arriba a abajo por ese mismo hilo-. `JUCE_MODAL_LOOPS`
+    //  esta a cero en esta app a proposito, asi que `runDispatchLoopUntil` no
+    //  existe y no hay forma de bombearlo. Con el buzon, el que espera lo vacia
+    //  el mismo y el mensaje se encuentra la bandeja limpia.
+    struct Rendido { int pad = -1, marca = 0; SampleBuffer::Ptr sb; juce::String nombre; };
+    juce::CriticalSection  sintesLock;
+    std::vector<Rendido>   sintesHechos;
+    void drenaInstrumentos();
 
     //  Los tres del zoom, encima de la propia onda y no en una fila suya: la
     //  ficha ya iba justa de alto y una fila mas se la habria quitado a lo

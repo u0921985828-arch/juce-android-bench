@@ -9008,7 +9008,12 @@ void MainComponent::retranslateUi()
     projDirBtn        .setButtonText (T ("PROYECTOS"));
     samplesDirBtn     .setButtonText (T ("SONIDOS"));
     browseKitButton   .setButtonText (T ("CARGAR KIT"));
-    browseFactoryButton.setButtonText (T ("INSTRUMENTOS"));
+    //  EXTRAS Y NO "INSTRUMENTOS": es la puerta del CONTENIDO -los 256 de
+    //  SINTES, los 64 de fabrica y los packs que haya en el disco-, y al lado
+    //  de MIS KITS se lee por lo que es, que es la pareja que se pidio: lo tuyo
+    //  a un lado y lo que viene con la app o se compra al otro. "INSTRUMENTOS"
+    //  ademas nombraba solo la mitad de lo que hay dentro.
+    browseFactoryButton.setButtonText (T ("EXTRAS"));
     vstButton.setButtonText (T ("PRESETS"));
     //  SOLO EL SIGNO, sin la palabra. El nombre del preset se pinta ENTRE las
     //  dos flechas, asi que repetirlo en cada tapa es decirlo tres veces - y
@@ -15464,10 +15469,67 @@ void MainComponent::ponInstrumentoEnPad (int pad, int familia, int preset,
     padReceta[(size_t) pad] = Sintes::acota (fam, receta != nullptr ? *receta
                                                                    : Sintes::tabla()[fam].p[pre]);
     padRecetaMovida[(size_t) pad] = (receta != nullptr && movida);
-    auto sb = Sintes::sintetiza (fam, pre, padReceta[(size_t) pad], gamaDeAqui());
-    if (sb == nullptr) return;
 
-    assignSampleToPad (pad, sb, Sintes::nombreDe (familia, preset));
+    //  Y SE RINDE EN OTRO HILO, con la barra de trabajo puesta.
+    //
+    //  Cuesta **473 ms de mediana y 1.6 s el peor** medidos en `Tests/instr.py`
+    //  -quince zonas rendidas a cuatro veces la tasa y diezmadas-, y hasta esta
+    //  tanda corria aqui mismo: elegir un instrumento congelaba la interfaz ese
+    //  tiempo entero. Poner un `beginBusy` delante no arreglaba nada, y esa fue
+    //  la primera version: `beginBusy` PIDE un repintado, y el repintado lo
+    //  atiende el hilo de mensajes, que es justo el que iba a quedarse
+    //  bloqueado. La barra aparecia cuando el trabajo ya habia terminado.
+    //
+    //  `Sintes::sintetiza` no toca nada de la app -entra una receta, sale un
+    //  buffer- asi que el unico cuidado es el de siempre: lo que vuelve se
+    //  monta en el hilo de mensajes, porque `assignSampleToPad` habla con la
+    //  interfaz y con el motor.
+    const auto rec   = padReceta[(size_t) pad];
+    const auto gama  = gamaDeAqui();
+    const int  marca = ++sintesMarca[(size_t) pad];
+    const auto nombre = Sintes::nombreDe (familia, preset);
+
+    beginBusy (T ("Creando instrumento"));
+
+    sintesPool.addJob ([this, pad, fam, pre, rec, gama, marca, nombre]
+    {
+        Rendido r;
+        r.pad = pad; r.marca = marca; r.nombre = nombre;
+        r.sb = Sintes::sintetiza (fam, pre, rec, gama);
+
+        { const juce::ScopedLock sl (sintesLock); sintesHechos.push_back (std::move (r)); }
+
+        juce::MessageManager::callAsync ([this] { drenaInstrumentos(); });
+    });
+}
+
+//  EL BUZON SE VACIA AQUI, y siempre en el hilo de mensajes: lo llama el
+//  `callAsync` que deja la sintesis, y lo llama `esperaInstrumentos` cuando el
+//  que espera ES el hilo de mensajes y por eso ese mensaje no va a llegar nunca.
+void MainComponent::drenaInstrumentos()
+{
+    std::vector<Rendido> lote;
+    { const juce::ScopedLock sl (sintesLock); lote.swap (sintesHechos); }
+
+    for (auto& r : lote)
+    {
+        endBusy();
+        //  La marca dice quien pidio esto. Si el pad cambio de instrumento
+        //  mientras se rendia -dos toques seguidos en la lista- lo que ha
+        //  llegado es del penultimo elegido y pisarlo seria poner el que la
+        //  persona acaba de descartar.
+        if (r.sb == nullptr || ! juce::isPositiveAndBelow (r.pad, kNumPads)) continue;
+        if (sintesMarca[(size_t) r.pad] != r.marca) continue;
+        montaInstrumentoRendido (r.pad, r.sb, r.nombre);
+    }
+}
+
+//  LO QUE SE HACE CON EL INSTRUMENTO YA RENDIDO. Vive aparte porque lo comparten
+//  el camino normal -que vuelve del hilo de sintesis- y el del banco, que espera.
+void MainComponent::montaInstrumentoRendido (int pad, SampleBuffer::Ptr sb,
+                                             const juce::String& nombre)
+{
+    assignSampleToPad (pad, sb, nombre);
 
     //  Y NACE CON EL RECORTE ENTERO Y SIN BUCLE DE PAD: las zonas mandan sobre
     //  las dos cosas dentro del motor -triggerPad las ignora- pero la interfaz
@@ -15494,6 +15556,43 @@ void MainComponent::ponInstrumentoEnPad (int pad, int familia, int preset,
     engine.setPadKeepLength (pad, false);
 
     refreshPad (pad);
+}
+
+//  ESPERAR A QUE LA SINTESIS ESTE, que es lo que el banco necesita y la app no.
+//
+//  La app no espera nunca: pide, sigue pintando, y monta lo que vuelve. Una
+//  medida no puede hacer eso -corre en el hilo de mensajes de arriba a abajo y
+//  no vuelve al bucle hasta el final-, asi que aqui se hacen las dos mitades a
+//  mano: se espera a que el hilo de sintesis vacie su cola y despues se bombea
+//  el bucle de mensajes para que corran los `callAsync` que dejo puestos. Sin
+//  lo segundo la cola estaria vacia y el pad seguiria sin instrumento, que es
+//  exactamente el fallo que esto viene a no tener.
+void MainComponent::esperaInstrumentos()
+{
+    //  Diez segundos de tope: el peor medido es 1.6 s por instrumento. Un tope
+    //  y no un bucle abierto porque una medida que se cuelga no dice nada, y
+    //  una que sale por el tope deja el pad vacio y hace fallar a quien lo lea.
+    const double topeMs = 10000.0;
+    const double t0 = juce::Time::getMillisecondCounterHiRes();
+
+    for (;;)
+    {
+        drenaInstrumentos();
+
+        bool queda = (sintesPool.getNumJobs() > 0);
+        if (! queda) { const juce::ScopedLock sl (sintesLock); queda = ! sintesHechos.empty(); }
+        if (! queda) return;
+
+        if (juce::Time::getMillisecondCounterHiRes() - t0 >= topeMs) return;
+        juce::Thread::sleep (2);
+    }
+}
+
+void MainComponent::ponInstrumentoYEspera (int pad, int familia, int preset,
+                                           const Sintes::Preset* receta, bool movida)
+{
+    ponInstrumentoEnPad (pad, familia, preset, receta, movida);
+    esperaInstrumentos();
 }
 
 // ----------------------------------------------------------------------------
