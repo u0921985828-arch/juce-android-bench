@@ -1530,7 +1530,16 @@ void MainComponent::auditInstr()
         const int clavado = kBancoInstr * kPadsPerBank + familia;
         const int pedido  = 2 * kPadsPerBank + 5;       // otro banco Y otra casilla
         instDestPad = pedido;
-        cargaInstrumento (familia); esperaInstrumentos();
+        //  LA CELDA Y NO LA FAMILIA. `cargaInstrumento` recibe el sitio en el
+        //  MENU, y desde que el menu se ordena por tipos la celda 11 ya no es
+        //  la familia 11: CUERDA PULS esta en ARCO Y PUA, tercera de su grupo.
+        //  Escrito como `cargaInstrumento (familia)` la medida cargaba ARPAS y
+        //  despues buscaba CUERDA PULS, que no estaba en ningun pad: «se pidio
+        //  el pad 37 y el instrumento fue al -1». Ver `Sintes::ordenDeMenu`.
+        int celda = 0;
+        for (int i = 0; i < (int) instCatalogo[0].instr.size(); ++i)
+            if (instCatalogo[0].instr[(size_t) i].familiaSintes == familia) { celda = i; break; }
+        cargaInstrumento (celda); esperaInstrumentos();
 
         int fue = -1;
         for (int i = 0; i < kNumPads; ++i)

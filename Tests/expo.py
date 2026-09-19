@@ -371,6 +371,8 @@ UNTRANSLATED_OK = {
     "CHO", "FLA", "PHA", "TRM",                # la de modulacion, igual: tres letras
     "RNG", "PIT", "WID", "EXC", "TRN", "FRZ",  # la de caracter, igual
     "WAH", "OCT",   # y los dos que se pidieron, por lo mismo: son tres letras
+    "AMB",          # el ambiente, el que cerro el reparto por tipos: tres letras
+    "EXTRAS",       # la puerta del contenido: la palabra es la misma en las dos
     "RATIO",                                   # se escribe igual en las dos lenguas
     "FREQ",                                    # la abreviatura de frecuencia, la misma
     "AUTO",                                    # la abreviatura de automatizacion, igual en las cuatro
