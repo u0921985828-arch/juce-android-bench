@@ -413,15 +413,21 @@ namespace Sintes
         //  de lo que podria. Geometrico, 0.52 -> 0.721 -> 1.00 son +2.85 y
         //  +2.85, clavados.
         const float fuerza = 0.52f * std::pow (1.0f / 0.52f, cap);
-        const float brillo = P.brillo * (0.45f + 0.55f * cap);
-        const float indice = 0.42f + 0.58f * cap;
+        //  Y LOS TRES DE TIMBRE, EN GEOMETRICO TAMBIEN. Con la fuerza
+        //  geometrica y estos lineales seguian saliendo escalones de 82 y 85 %
+        //  del recorrido en CLAVES y CUERDA PULS, que son las dos familias donde
+        //  el nivel lo pone el CONTENIDO -cuanta cuerda se excita, cuanto pulso
+        //  pasa el paso banda- y no la ganancia. El oido cuenta en razones para
+        //  todo, no solo para el volumen.
+        const float brillo = P.brillo * (0.45f * std::pow (1.0f / 0.45f, cap));
+        const float indice = 0.42f * std::pow (1.0f / 0.42f, cap);
         //  Y EL TERCER MANDO DE LA CAPA, que hizo falta despues de medir: en
         //  media familia el filtro no puede cambiar el timbre porque no hay
         //  nada que filtrar -un seno, tres parciales, ocho barras- y con la
         //  capa metida solo en el corte, seis familias median centroide x1.00.
         //  Esto escala el CONTENIDO: armonicos de mas, ruido de mas, parciales
         //  de mas. Ver Tests/instr.py, que mide las dos cosas a la vez.
-        const float capaMix = 0.30f + 0.70f * cap;
+        const float capaMix = 0.30f * std::pow (1.0f / 0.30f, cap);
 
         const double inc  = hz / fs;
 
@@ -949,10 +955,10 @@ namespace Sintes
                     //  Fundamental centrado, los dos inarmonicos a un lado cada
                     //  uno. Misma figura que CAMPANAS y por la misma razon.
                     if (hz * (double) P.p1 < nyq)
-                        v += par * ladoDe (canal, -1.00) * env (te, P.dec * 0.30f)
+                        v += par * ladoDe (canal, -0.70) * env (te, P.dec * 0.30f)
                              * (float) std::sin (juce::MathConstants<double>::twoPi * ph2);
                     if (hz * (double) P.p2 < nyq)
-                        v += par * 0.45f * ladoDe (canal, 1.00) * env (te, P.dec * 0.14f)
+                        v += par * 0.45f * ladoDe (canal, 0.70) * env (te, P.dec * 0.14f)
                              * (float) std::sin (juce::MathConstants<double>::twoPi * ph3);
                     f1.set (juce::jlimit (400.0, nyq, 2800.0 * (double) brillo), 1.4f);
                     v += P.p3 * ladoDe (canal, 0.80) * f1.bpf (rnd()) * env (te, 0.005f) * 3.0f * (0.2f + 1.1f * capaMix);
