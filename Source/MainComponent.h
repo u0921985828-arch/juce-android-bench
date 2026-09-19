@@ -2904,6 +2904,36 @@ private:
     };
     static const FxDef fxDefs[kNumFx];
 
+    //  LOS VEINTICUATRO, POR TIPO Y NO POR ETAPA.
+    //
+    //  `fxDefs` esta en el orden de la CADENA -filtro, saturacion, retardo...-
+    //  que es el orden en el que el motor los ejecuta y el que los proyectos
+    //  guardan. Un menu en ese orden deja el wah a nueve sitios del filtro y
+    //  el octavador a siete del afinador, o sea que para encontrar un filtro
+    //  hay que leerse la lista entera.
+    //
+    //  SEIS FAMILIAS DE CUATRO, y de ahi el cuarto efecto:
+    //
+    //      FILTRO       FLT HPF WAH EQ
+    //      SATURACION   DRV BIT RNG EXC
+    //      MODULACION   CHO FLA PHA TRM
+    //      ESPACIO      DLY REV WID AMB
+    //      DINAMICA     CMP GTE LIM DSS
+    //      TIEMPO       PIT OCT TRN FRZ
+    //
+    //  Con veintitres no habia reparto igual posible -es primo-, asi que
+    //  ESPACIO se quedaba en tres. Se escribio el que faltaba (AMB) en vez de
+    //  apretar el reparto hasta que cuadrara, que es lo mismo que se decidio
+    //  con las familias de Sintes cuando salieron cuatro y cuatro.
+    //
+    //  Y CADA FILA DEL MENU ES UNA FAMILIA porque el menu pide cuatro columnas
+    //  (ver `menuRanuraColumnas`): sin eso el orden esta pero no se ve.
+    static constexpr int kFxPorTipo = 4;
+    static const int* ordenFx();          // kNumFx indices de `fxDefs`
+    //  Y LA VUELTA: en que celda del menu esta un tipo. La usa el banco, que
+    //  pulsa tapas de verdad y tiene el indice del tipo, no el de la celda.
+    static int celdaDeFx (int fx);
+
     //  Que efecto trae su propia superficie, escrito UNA vez. Hoy es uno; el
     //  dia que sean cuatro esto es una tabla y no cuatro `if` repartidos por
     //  el maquetado, el pintor y el foco.

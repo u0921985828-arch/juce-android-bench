@@ -203,6 +203,18 @@ inline constexpr Preset kTabla[AudioEngine::kNumFx][kEscritos] =
       { "LAS DOS",   0.70f, 0.70f, 1.00f, 0.0f },
       { "SUB",       0.15f, 0.90f, 1.00f, 0.0f },
       { "BRILLO",    0.90f, 0.25f, 1.00f, 0.0f } },
+
+    //  AMB  tamano 0..1, previo 0..120 ms
+    //
+    //  Los cinco son sitios y no ajustes: lo que un ambiente hace es PONER el
+    //  sonido en algun lado, asi que el nombre tiene que decir donde. CABINA es
+    //  el previo a cero -pegado a la pared- y ESCENARIO el previo largo, que es
+    //  lo que separa estar contra el fondo de estar delante.
+    { { "CABINA",     0.20f,   0.0f, 0.25f, 0.0f },
+      { "CUARTO",     0.40f,   8.0f, 0.30f, 0.0f },
+      { "ESTUDIO",    0.60f,  20.0f, 0.30f, 0.0f },
+      { "NAVE",       0.90f,  35.0f, 0.35f, 0.0f },
+      { "ESCENARIO",  0.75f,  90.0f, 0.30f, 0.0f } },
 };
 
 //  LAS CINCO BANDAS DE CADA PRESET DE EQ, y solo del EQ.

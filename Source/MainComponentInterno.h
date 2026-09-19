@@ -941,7 +941,8 @@ inline Iconos::Id iconoDeFx (int f) noexcept
                                       Iconos::Id::rng, Iconos::Id::pit,
                                       Iconos::Id::wid, Iconos::Id::exc,
                                       Iconos::Id::trn, Iconos::Id::frz,
-                                      Iconos::Id::wah, Iconos::Id::oct };
+                                      Iconos::Id::wah, Iconos::Id::oct,
+                                      Iconos::Id::amb };
     //  UNA FILA POR TIPO, y que lo diga el compilador. Es la misma lista corta
     //  en silencio que ya costo `fxSustituye` y `fxMixNow`: aqui el sintoma seria
     //  una fila con un hueco -o sea lo que `Tests/planos.py` existe para cazar-
@@ -984,7 +985,18 @@ inline int menuRanuraPide (int filas, bool conVaciar) noexcept
            + (conVaciar ? Metrics::sm + Metrics::btn : 0);
 }
 
-inline int menuRanuraColumnas (int n, int topeAlto, int anchoDentro, bool conVaciar) noexcept
+//  Y CON UN NUMERO DE COLUMNAS PEDIDO, que es de quien llama y no de aqui.
+//
+//  El menu de efectos los enseña POR TIPO -seis familias de cuatro, ver
+//  `MainComponent::ordenFx`- y eso solo se lee si cada fila ES una familia, o
+//  sea con cuatro columnas. Con las tres que esta funcion prefiere, las seis
+//  familias se parten por la mitad y la lista vuelve a leerse como veinticuatro
+//  nombres sueltos. No es una excepcion a la regla de «menos columnas es
+//  mejor»: es que aqui el reparto lo decide el CONTENIDO y no solo la pantalla,
+//  y ademas sale mas corto -seis filas contra ocho-, asi que cabe donde cabia.
+//  Si no cabe, se cae a la busqueda de siempre.
+inline int menuRanuraColumnas (int n, int topeAlto, int anchoDentro, bool conVaciar,
+                               int pedido = 0) noexcept
 {
     if (n <= 0) return 1;
 
@@ -1008,6 +1020,8 @@ inline int menuRanuraColumnas (int n, int topeAlto, int anchoDentro, bool conVac
     //  MENOS COLUMNAS ES MEJOR: la rejilla mas alta que quepa es la que se
     //  recorre con el pulgar sin cruzar la pantalla, y es la forma que el
     //  telefono pide.
+    if (pedido > 0 && vale (pedido)) return pedido;
+
     int elegido = 0;
     for (int c = 3; c <= n && elegido == 0; ++c)
         if (vale (c)) elegido = c;

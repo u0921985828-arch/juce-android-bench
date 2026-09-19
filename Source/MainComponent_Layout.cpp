@@ -1390,7 +1390,10 @@ void MainComponent::resized()
         const auto zona = safeArea();
         const int topeAlto = altoTarjeta (zona);
         const int anchoDentro = anchoTarjeta (zona.getWidth()) - 2 * Metrics::margenFichaX;
-        const int cols  = menuRanuraColumnas (kNumFx, topeAlto, anchoDentro, conVaciar);
+        //  CUATRO COLUMNAS PEDIDAS: cada fila es una familia de efectos. Ver
+        //  `MainComponent::ordenFx` y `menuRanuraColumnas`.
+        const int cols  = menuRanuraColumnas (kNumFx, topeAlto, anchoDentro, conVaciar,
+                                              kFxPorTipo);
         const int filas = (kNumFx + cols - 1) / cols;
         const int quiere = menuRanuraPide (filas, conVaciar);
         auto inner = sheetFromBottom (ranuraSheet, quiere);

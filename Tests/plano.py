@@ -77,7 +77,7 @@ FICHAS = [
     #  una pagina sin medir.
     ("mixc",   "MEZCLA"),
     ("vst",    "INSTRUMENTO"),
-    ("inst",   "INSTRUMENTOS"),
+    ("inst",   "EXTRAS"),
     #  Y LA CARA CON LA SESION YA ESCRITA, que es el unico estado donde la banda
     #  de continuidad puede decir «A SALVO». Ver la regla de abajo.
     ("salvo",  "la cara"),

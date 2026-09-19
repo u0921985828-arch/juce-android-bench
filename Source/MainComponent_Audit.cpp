@@ -4337,7 +4337,7 @@ void MainComponent::auditRanuras()
     //     esa tapa pasa a encender y apagar. Es la ACCION UNICA que se pidio.
     for (int s = 0; s < kNumRanuras; ++s) ponEnRanura (s, kSlotVacia);
     pulsaTapa (fxButtons[2]);                       // el «+» de la ranura 2
-    pulsaTapa (ranuraBtns[4]);                      // se elige BIT
+    pulsaTapa (ranuraBtns[celdaDeFx (AudioEngine::kFxBit)]);   // se elige BIT
     const juce::String trasElegir = mapa();
     const int menuTrasElegir = ranuraEditada;   // se cierra sola
     //  Igual que arriba: elegir en el menu la deja ENCENDIDA, asi que el
@@ -4353,7 +4353,7 @@ void MainComponent::auditRanuras()
     //     ventanas al mismo aparato del motor.
     for (int s = 0; s < kNumRanuras; ++s) ponEnRanura (s, s);
     abreMenuRanura (0);
-    pulsaTapa (ranuraBtns[3]);
+    pulsaTapa (ranuraBtns[celdaDeFx (3)]);
     const juce::String trasMover = mapa();
 
     //  4. VACIAR UNA RANURA APAGA SU EFECTO. Un efecto encendido cuya tapa
@@ -4500,7 +4500,7 @@ void MainComponent::auditRanuras()
         //  de DRV en el menu que se abre. Dos toques, los mismos dos que hace
         //  un dedo.
         pulsaTapa (fxButtons[0]);
-        pulsaTapa (ranuraBtns[fG]);
+        pulsaTapa (ranuraBtns[celdaDeFx (fG)]);
 
         gestoFoco     = focusedFx;
         gestoMandos   = (macroCtrl1.isEnabled() ? 1 : 0)
@@ -5479,9 +5479,9 @@ void MainComponent::auditDinamica()
     //  2. CADA TIPO LLEGA A SU RANURA POR EL GESTO. Se pone CMP en la 0 y LIM
     //     en la 1 pulsando las tapas del menu, que es donde vive el indice.
     abreMenuRanura (0);
-    pulsaTapa (ranuraBtns[AudioEngine::kFxCmp]);
+    pulsaTapa (ranuraBtns[celdaDeFx (AudioEngine::kFxCmp)]);
     abreMenuRanura (1);
-    pulsaTapa (ranuraBtns[AudioEngine::kFxLim]);
+    pulsaTapa (ranuraBtns[celdaDeFx (AudioEngine::kFxLim)]);
     const int enRanura0 = slotFx[0][0];
     const int enRanura1 = slotFx[0][1];
 

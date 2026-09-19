@@ -73,6 +73,12 @@ namespace FxVisor
     static constexpr float kVentanaFrz = 1000.0f;
     //  Y la de TRN, que es lo que dura un golpe con su cola.
     static constexpr float kVentanaTrn = 300.0f;
+    //  Y la de AMB, que NO es la de DLY y REV aunque los tres sean tiempo: lo
+    //  mas largo que este llega a poner son 120 ms de previo mas 98.7 de la
+    //  ultima toma. Con los dos segundos compartidos, las ocho reflexiones
+    //  caerian en la primera novena parte del dibujo -y varias en la misma
+    //  columna, o sea un mando que se mueve y no mueve nada-.
+    static constexpr float kVentanaAmb = 250.0f;
 
     //  LOS DOS QUE SUMAN DIBUJAN TIEMPO Y LOS NUEVE QUE SUSTITUYEN DIBUJAN
     //  NIVEL. No es la misma pregunta que `AudioEngine::sustituye` aunque hoy
@@ -93,6 +99,7 @@ namespace FxVisor
             case AudioEngine::kFxRev: return kVentanaMs;
             case AudioEngine::kFxPit: return kVentanaPit;
             case AudioEngine::kFxTrn: return kVentanaTrn;
+            case AudioEngine::kFxAmb: return kVentanaAmb;
             case AudioEngine::kFxFrz: return kVentanaFrz;
             default:                  return 0.0f;
         }
@@ -204,6 +211,9 @@ namespace FxVisor
             //  OCT: los dos niveles cambian la onda que sale, que es lo que su
             //  visor dibuja pasandola por `AudioEngine::octava`.
             case AudioEngine::kFxOct: return { true,  true  };
+            //  AMB: el tamano estira las ocho reflexiones y el previo las
+            //  desplaza enteras, asi que los dos mandos mueven el dibujo.
+            case AudioEngine::kFxAmb: return { true,  true  };
             default:                  return { false, false };
         }
     }
@@ -245,6 +255,35 @@ namespace FxVisor
                 const int i = juce::jlimit (0, kPuntos - 1,
                                             (int) std::round (seg / kVentanaMs * (float) (kPuntos - 1)));
                 out[(size_t) i] = juce::jmax (out[(size_t) i], std::pow (fbk, (float) (k - 1)));
+            }
+            return;
+        }
+
+        //  AMB SE DIBUJA COMO SUS REFLEXIONES, que es la misma figura que DLY
+        //  y por la misma razon: lo que un ambiente hace es poner ocho ecos en
+        //  ocho sitios, asi que su dibujo son ocho puntos y no una curva.
+        //
+        //  Y LOS OCHO NUMEROS SON LOS DEL MOTOR, no unos parecidos escritos
+        //  aqui: `AudioEngine::kAmbMsL` y `kAmbGan`. La diferencia con DLY es
+        //  que alli la formula no se puede compartir -en el motor eso es un
+        //  bucle de tres lineas- y aqui la tabla si.
+        //
+        //  Se dibuja el canal IZQUIERDO. Los dos juegos estan corridos entre si
+        //  unos dos milisegundos, que a esta escala es menos de una columna: un
+        //  dibujo con los dieciseis puntos seria el mismo dibujo con el doble
+        //  de tinta.
+        if (fx == AudioEngine::kFxAmb)
+        {
+            out.fill (0.0f);
+            const float escala = AudioEngine::ambEscala (p0);
+            const float pre    = juce::jlimit (0.0f, 120.0f, p1);
+            for (int t = 0; t < AudioEngine::kAmbTomas; ++t)
+            {
+                const float seg = pre + AudioEngine::kAmbMsL[t] * escala;
+                if (seg > kVentanaAmb) break;
+                const int i = juce::jlimit (0, kPuntos - 1,
+                                            (int) std::round (seg / kVentanaAmb * (float) (kPuntos - 1)));
+                out[(size_t) i] = juce::jmax (out[(size_t) i], AudioEngine::kAmbGan[t]);
             }
             return;
         }

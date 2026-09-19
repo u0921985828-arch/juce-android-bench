@@ -91,7 +91,13 @@ public:
     //      y se lleva la fundamental por delante- y DIVIDE por flanco, que es
     //      un cuadrado a la mitad de la frecuencia. Son dos algoritmos
     //      distintos y suenan a dos cosas distintas.
-    static constexpr int kNumFx         = 23;
+    //    · AMB no es REV con el tamano bajo. Una reverb es una COLA -una red
+    //      realimentada que devuelve energia durante segundos- y un ambiente
+    //      son las PRIMERAS reflexiones: ocho ecos sueltos, sin realimentacion
+    //      ninguna, que es lo que dice de que tamano es la sala antes de que
+    //      llegue la cola. Puestos uno al lado del otro se oyen como dos cosas
+    //      distintas: AMB coloca y REV envuelve.
+    static constexpr int kNumFx         = 24;
     //  CUANTOS PARAMETROS TIENE UN EFECTO, y aqui y no en la cara: el motor es
     //  quien los guarda. Estaba escrito como un `4` literal en el tipo de `fxP`
     //  y otra vez en el de `cebaSuavizados`, y la cara llevaba su propia
@@ -119,6 +125,15 @@ public:
                          kFxExc = 18, kFxTrn = 19, kFxFrz = 20;
     //  Y LOS DOS QUE SE PIDIERON: el wah y el octavador.
     static constexpr int kFxWah = 21, kFxOct = 22;
+    //  Y EL QUE CIERRA EL REPARTO POR TIPOS: el ambiente.
+    //
+    //  Va AL FINAL y no al lado de REV, que es donde su sitio en la cadena
+    //  diria. El indice de un efecto viaja a los proyectos y a los presets
+    //  -`fxp` guarda `kNumFx` filas por canal, en orden-, asi que meterlo en el
+    //  hueco 6 correria los diecisiete de detras y cambiaria el efecto de cada
+    //  ranura de todo lo guardado. Donde se ENSEÑA lo decide la cara, que ya
+    //  ordena por tipo; donde se GUARDA no se toca.
+    static constexpr int kFxAmb = 23;
 
     //  DIECISEIS CANALES, que es la mesa entre los pads y los efectos.
     //
@@ -259,6 +274,35 @@ public:
     static constexpr double kPitGranoMax   = 0.120;   // segundos
     static constexpr double kFrzVentanaMax = 0.500;   // segundos
 
+    //  LAS OCHO TOMAS DEL AMBIENTE, publicas por lo mismo que las dos de
+    //  arriba: las pide el VISOR. El dibujo de AMB son sus reflexiones -es la
+    //  respuesta al impulso, igual que la de DLY son sus ecos- y escribir los
+    //  ocho numeros otra vez dentro de `FxVisor` seria la figura que esta casa
+    //  ya ha pagado varias veces: el dibujo se quedaria en la sala de ayer el
+    //  dia que alguien mueva una toma.
+    //
+    //  Primas entre si en milisegundos, y las del canal derecho CORRIDAS: dos
+    //  juegos iguales dejarian las ocho reflexiones en el centro, o sea una
+    //  sala de un solo punto. Ni un retardo entre canales, que en mono es un
+    //  peine: cada canal tiene sus PROPIAS reflexiones del MISMO directo.
+    static constexpr int kAmbTomas = 8;
+    static constexpr float kAmbMsL[kAmbTomas] = { 11.3f, 19.7f, 28.1f, 37.9f,
+                                                  49.3f, 61.7f, 76.1f, 92.3f };
+    static constexpr float kAmbMsR[kAmbTomas] = { 13.7f, 22.3f, 31.1f, 41.7f,
+                                                  53.9f, 67.3f, 82.1f, 98.7f };
+    //  Y las ganancias caen con la toma y suman UNO en energia: con ocho tomas
+    //  a ganancia entera el ambiente saldria nueve decibelios por encima de lo
+    //  que entra, o sea un envio que hay que bajar a mano cada vez.
+    static constexpr float kAmbGan[kAmbTomas] = { 0.4699f, 0.4142f, 0.3775f, 0.3502f,
+                                                 0.3287f, 0.3110f, 0.2960f, 0.2831f };
+    //  El tamano no va de cero: una sala de tamano cero no es una sala, son
+    //  ocho ecos pegados al directo -o sea un peine-. De un cuarto a uno, que
+    //  es de un armario a una nave.
+    static constexpr float ambEscala (float tam) noexcept
+    {
+        return 0.25f + 0.75f * (tam < 0.0f ? 0.0f : (tam > 1.0f ? 1.0f : tam));
+    }
+
     static constexpr float kFxDef[kNumFx][3] =
     {
         {     0.0f,   0.707f, 0.0f },   // FLT  barrido, reso, mix
@@ -284,6 +328,7 @@ public:
         {   180.0f,    0.35f, 0.0f },   // FRZ  ventana ms, suave, mix
         {    0.60f,   400.0f, 0.0f },   // WAH  sensibilidad, base Hz, mix
         {    0.70f,    0.50f, 0.0f },   // OCT  arriba, abajo, mix
+        {    0.55f,   20.0f, 0.0f },   // AMB  tamano, previo ms, mix
     };
     static constexpr int kNumSteps      = 64;   // max steps per pattern (length is variable, see below)
     static constexpr int kMinPatLen     = 16;
@@ -2559,6 +2604,21 @@ private:
     juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> delayLine { 96000 };
     std::atomic<float>& dlyTime = fxP[0][kFxDly][0];   // ms
     std::atomic<float>& dlyFb   = fxP[0][kFxDly][1];   // 0..0.95
+
+    //  EL AMBIENTE: una linea y ocho tomas, sin realimentacion ninguna.
+    //
+    //  32768 muestras son 683 ms a 48 kHz y 341 a 96, y lo mas largo que se
+    //  pide son 120 ms de previo mas 99 de la ultima toma: sobra a las dos
+    //  tasas. Un cuarto de mega por los dos canales, que es la mitad de lo que
+    //  ya cuesta `pitLine` por canal de inserto.
+    //
+    //  SIN INTERPOLAR, y por eso `None`: las tomas son fijas -no barren- asi
+    //  que un Lagrange de tercer orden por toma serian ocho filtros de cuatro
+    //  puntos por muestra para leer la misma muestra entera. `delayLine` si lo
+    //  necesita porque su TIME se suaviza por muestra.
+    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::None> ambLine { 32768 };
+    std::atomic<float>& ambTam  = fxP[0][kFxAmb][0];   // 0..1
+    std::atomic<float>& ambPre  = fxP[0][kFxAmb][1];   // ms
     std::atomic<float>& dlyMix  = fxP[0][kFxDly][2];   // 0..1
 
     // ISO wet/dry, so the low-pass can be blended rather than only replacing.
@@ -2838,7 +2898,14 @@ private:
                                                   //  con una octava de adorno: lo que
                                                   //  decide cuanto original queda es
                                                   //  el MIX, que es para lo que esta.
-                                                  true, true };
+                                                  true, true,
+                                                  //  Y AMB SUMA, como DLY y REV: lo que
+                                                  //  vuelve son las reflexiones y nada
+                                                  //  mas. El directo ya llego al master
+                                                  //  por su camino, y mandarlo otra vez
+                                                  //  por aqui seria el mismo peine que
+                                                  //  el comentario de la reverb explica.
+                                                  false };
     //  Y NO SE PUEDE QUEDAR CORTA EN SILENCIO. Una lista de inicializacion de
     //  agregado rellena con `false` lo que no se nombre, asi que un tipo nuevo
     //  al que se le olvide su fila aqui entraria como ENVIO —sumando encima en
@@ -2878,7 +2945,12 @@ private:
                                                  //  CHO, FLA y PHA: SUMAN y son de SU canal.
                                                  true, true, true, true,
                                                  true, true, true, true, true, true,
-                                                 true, true };
+                                                 true, true,
+                                                 //  AMB es de la mesa, como DLY y REV: un
+                                                 //  ambiente por canal serian dieciseis salas
+                                                 //  distintas sonando a la vez, que es justo lo
+                                                 //  contrario de lo que un ambiente hace.
+                                                 false };
     static_assert (sizeof (fxPorCanal) / sizeof (fxPorCanal[0]) == kNumFx,
                    "fxPorCanal tiene que tener una fila por tipo");
 

@@ -235,6 +235,14 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize, int inputC
     delayLine.setMaximumDelayInSamples (juce::jmax (1, (int) (systemSampleRate * 1.0)));
     delayLine.reset();
 
+    //  Y LA DEL AMBIENTE, que es la misma figura con otro tope: lo mas largo
+    //  que se le pide son 120 ms de previo mas los 98.7 de la ultima toma.
+    //  Se pide medio segundo y se limita a lo que la linea tiene: a 96 kHz
+    //  medio segundo son 48000 muestras y la linea son 32768.
+    ambLine.prepare (spec);
+    ambLine.setMaximumDelayInSamples (juce::jmin (32767, juce::jmax (1, (int) (systemSampleRate * 0.5))));
+    ambLine.reset();
+
     //  Y EL RELOJ DE LA MODULACION ARRANCA EN CERO. Es lo unico que hay que
     //  poner: las fases NO se guardan, se calculan a partir de aqui, asi que un
     //  `prepare` que se olvidara de reiniciar una de las noventa y seis no
@@ -3149,6 +3157,74 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 //  deducir: la cola esta dentro de las lineas antes de estar en
                 //  la salida. Ver Fdn::ringing.
                 busRinging[busIdx (kFxRev)] = busRinging[busIdx (kFxRev)] || reverb.ringing();
+            }
+        }
+
+        // --- 6b. AMBIENTE. Las primeras reflexiones y nada mas: ocho ecos
+        //         sueltos por canal, sin una sola realimentacion.
+        //
+        //  NO ES UNA REVERB PEQUEÑA. Una reverb es una red realimentada que
+        //  devuelve energia durante segundos; esto son ocho tomas de una linea
+        //  que no se realimenta, asi que la cola dura exactamente lo que la
+        //  ultima toma -99 ms con el tamano al maximo- y ni una muestra mas.
+        //  Es lo que dice de que tamano es la sala ANTES de que llegue la cola,
+        //  y por eso se usan juntos y no uno en lugar del otro.
+        //
+        //  Y SIN REALIMENTACION NO HACE FALTA LA CUARTA BARRERA que el delay
+        //  si necesita: un NaN que entre aqui sale por la ultima toma y se va.
+        //  Lo que no se puede es que entre en la linea, asi que se limpia lo
+        //  que se escribe, que es la barrera barata.
+        //
+        //  LAS TOMAS SON PRIMAS ENTRE SI en milisegundos -11.3, 19.7, 28.1...-
+        //  y las del canal derecho estan corridas: dos juegos iguales darian
+        //  ocho ecos en el centro, o sea una sala de un solo punto. Corridos,
+        //  la sala tiene ancho sin un solo retardo entre canales, que es lo que
+        //  esta casa ya tiene escrito que no se hace -un retardo entre canales
+        //  es un peine en cuanto alguien escucha en mono-: aqui cada canal
+        //  tiene sus PROPIAS reflexiones del MISMO directo, que es como suena
+        //  una sala de verdad.
+        {
+            //  Las ocho tomas, sus ganancias y la escala viven en la
+            //  cabecera: las comparte el VISOR. Ver `kAmbMsL`.
+            constexpr int kTomas = kAmbTomas;
+
+            if (live (kFxAmb))
+            {
+                const float tam = juce::jlimit (0.0f, 1.0f,
+                                                ambTam.load (std::memory_order_relaxed));
+                const float preMs = juce::jlimit (0.0f, 120.0f,
+                                                  ambPre.load (std::memory_order_relaxed));
+                const float escala = ambEscala (tam);
+                const float porMs  = (float) systemSampleRate / 1000.0f;
+                const float pre    = preMs * porMs;
+                const float tope   = (float) (ambLine.getMaximumDelayInSamples() - 1);
+
+                float* w0 = fxBus[busIdx (kFxAmb)].getWritePointer (0, startSample);
+                float* w1 = (chans > 1) ? fxBus[busIdx (kFxAmb)].getWritePointer (1, startSample) : w0;
+
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    for (int ch = 0; ch < chans; ++ch)
+                    {
+                        float* w = (ch == 0) ? w0 : w1;
+                        const float in = std::isfinite (w[i]) ? w[i] : 0.0f;
+                        ambLine.pushSample (ch, in);
+
+                        const float* ms = (ch == 0) ? kAmbMsL : kAmbMsR;
+                        float suma = 0.0f;
+                        for (int t = 0; t < kTomas; ++t)
+                        {
+                            const float d = juce::jlimit (1.0f, tope, pre + ms[t] * escala * porMs);
+                            suma += kAmbGan[t] * ambLine.popSample (ch, d, false);
+                        }
+                        w[i] = suma;
+                    }
+                    //  El puntero de lectura avanza UNA vez por muestra y no
+                    //  una por toma: `popSample` con `false` lee sin moverlo,
+                    //  que es justo para lo que esta.
+                    for (int ch = 0; ch < chans; ++ch) ambLine.popSample (ch, 1.0f, true);
+                }
+                returnBus (kFxAmb);
             }
         }
 

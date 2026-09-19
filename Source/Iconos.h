@@ -67,7 +67,7 @@ namespace Iconos
         midi, medir, altavoz, mano, momentaneo, niveles,
         cho, fla, pha, trm,
         rng, pit, wid, exc, trn, frz,
-        wah, oct,
+        wah, oct, amb,
         //  --- LOS SEIS QUE FALTABAN, y por que faltaban ------------------
         //
         //  No se eligieron mirando: salieron de `Tests/planos.py`, que dibuja
@@ -214,6 +214,7 @@ namespace Iconos
             case Id::wid: return "wid";                case Id::exc: return "exc";
             case Id::trn: return "trn";                case Id::frz: return "frz";
             case Id::wah: return "wah";                case Id::oct: return "oct";
+            case Id::amb: return "amb";
             case Id::mic: return "mic";                case Id::remuestrear: return "remuestrear";
             case Id::bombeo: return "bombeo";          case Id::autocut: return "autocut";
             case Id::sistema: return "sistema";        case Id::cadena: return "cadena";
@@ -1005,6 +1006,25 @@ namespace Iconos
                 L.quadraticTo (17.0f, 21.5f, 22.0f, 16.5f);
                 break;
             }
+
+            //  AMB: LA SALA, y no otra reverb. `rev` son tres arcos que se
+            //  abren -la cola, o sea algo que ya no tiene sitio-; un ambiente
+            //  ES el sitio, asi que lo que se dibuja son las PAREDES con la
+            //  fuente dentro y dos rayos que rebotan en ellas. Es el unico
+            //  icono de la tabla con un recinto cerrado, asi que se separa de
+            //  `rev` a trece pixeles sin mirarlo dos veces.
+            //
+            //  Y el rayo TOCA la pared y vuelve, que es lo que lo hace legible:
+            //  dos rayas sueltas dentro de un rectangulo son un rectangulo con
+            //  dos rayas.
+            case Id::amb:
+                L.addRectangle (2.0f, 4.0f, 20.0f, 16.0f);
+                R.addEllipse (6.5f, 10.5f, 3.0f, 3.0f);
+                linea (L, 8.0f, 12.0f, 17.0f,  5.0f);
+                linea (L, 17.0f, 5.0f, 20.5f, 11.5f);
+                linea (L, 8.0f, 12.0f, 16.0f, 19.0f);
+                linea (L, 16.0f, 19.0f, 20.5f, 14.5f);
+                break;
 
             //  EXC: el destello que se anade encima de la banda. La estrella
             //  de cuatro puntas no la lleva nadie mas en la tabla, y va a la

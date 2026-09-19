@@ -6840,6 +6840,116 @@ int main()
                      tomaDistintas, (int) tomaSin.size(), ok ? "OK" : zatiFalla());
     }
 
+    //  ------------------------------------------------------------------
+    //  EL AMBIENTE PONE SUS OCHO REFLEXIONES DONDE DICE, y las mueve con los
+    //  dos mandos.
+    //
+    //  El visor de AMB dibuja las ocho tomas de `AudioEngine::kAmbMsL`, o sea
+    //  que la cara AFIRMA donde estan. Esto lo comprueba contra el audio: se
+    //  mete un CLIC de una muestra por el envio y se buscan los picos.
+    //
+    //  Un clic y no un tono a proposito: con un tono sostenido las ocho
+    //  reflexiones se suman con el directo y lo que sale es un peine, del que
+    //  no se puede leer DONDE esta cada una. La respuesta al impulso si.
+    //
+    //  Y SE MIDE DOS VECES, con el tamano al minimo y al maximo: una sola
+    //  medida la cumple tambien una linea de retardo fija, que es justo lo que
+    //  esto no puede ser.
+    {
+        auto reflexiones = [] (float tam, float preMs, std::vector<float>& out)
+        {
+            AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+            enCanalCero (e);
+            e.setPadGain (0, 1.0f);
+            e.setFxParam (0, AudioEngine::kFxAmb, 0, tam);
+            e.setFxParam (0, AudioEngine::kFxAmb, 1, preMs);
+            e.setFxParam (0, AudioEngine::kFxAmb, 2, 1.0f);
+            e.setCanalSend (0, AudioEngine::kFxAmb, 1.0f);
+
+            //  UN GOLPE DE DOS MILISEGUNDOS y no una muestra suelta: la voz
+            //  entra con su rampa -milisegundos- asi que un impulso de una
+            //  muestra sale multiplicado por casi cero y la medida no media
+            //  nada. Medido: con una muestra el pico de toda la corrida no
+            //  llegaba a 0.05 y la busqueda del directo devolvia -1.
+            //
+            //  Dos milisegundos siguen siendo corto contra la separacion entre
+            //  tomas, que con el tamano a la mitad es de cinco.
+            auto* sb = new SampleBuffer();
+            sb->buffer.setSize (2, 4800);
+            sb->buffer.clear();
+            for (int c = 0; c < 2; ++c)
+                for (int i = 0; i < 96; ++i) sb->buffer.setSample (c, i, 1.0f);
+            sb->sourceSampleRate = 48000.0;
+            e.publishSample (0, SampleBuffer::Ptr (sb));
+
+            juce::AudioBuffer<float> b (2, 512);
+            //  El envio se asienta antes de disparar: se cruza en 20 ms.
+            for (int i = 0; i < 30; ++i) { b.clear(); e.renderNextBlock (b, 0, 512); }
+            e.postNoteOn (0, 1.0f);
+            out.clear();
+            for (int i = 0; i < 40; ++i)
+            {
+                b.clear();
+                e.renderNextBlock (b, 0, 512);
+                for (int n = 0; n < 512; ++n) out.push_back (std::abs (b.getSample (0, n)));
+            }
+        };
+
+        //  Donde cae el pico mas alto dentro de una ventana de +-1 ms alrededor
+        //  de la muestra esperada. Mas estrecho seria pedirle a un clic que
+        //  pase por la interpolacion de un pad sin correrse ni una muestra.
+        auto hayPicoEn = [] (const std::vector<float>& v, int cero, double ms, float minimo)
+        {
+            const int c = cero + (int) std::lround (ms * 48.0);
+            const int r = 72;   // +-1.5 ms
+            float m = 0.0f;
+            for (int i = juce::jmax (0, c - r); i < juce::jmin ((int) v.size(), c + r); ++i)
+                m = juce::jmax (m, v[(size_t) i]);
+            return m >= minimo;
+        };
+
+        auto ceroDe = [] (const std::vector<float>& v)
+        {
+            for (size_t i = 0; i < v.size(); ++i) if (v[i] > 0.05f) return (int) i;
+            return -1;
+        };
+
+        int aciertos = 0, esperados = 0;
+        double primeraCorta = 0.0, primeraLarga = 0.0;
+
+        for (int caso = 0; caso < 2; ++caso)
+        {
+            //  MEDIO Y ENTERO, y no cero y entero: con el tamano al minimo
+            //  las ocho tomas caen entre 2.8 y 23 ms -dos milisegundos de
+            //  separacion- y el golpe de prueba ya dura dos. A la mitad la
+            //  separacion es de cinco y se leen sueltas.
+            const float tam = (caso == 0) ? 0.5f : 1.0f;
+            std::vector<float> v;
+            reflexiones (tam, 0.0f, v);
+            const int cero = ceroDe (v);
+            if (cero < 0) { ++esperados; continue; }
+
+            const double esc = (double) AudioEngine::ambEscala (tam);
+            (caso == 0 ? primeraCorta : primeraLarga) = AudioEngine::kAmbMsL[0] * esc;
+
+            for (int t = 0; t < AudioEngine::kAmbTomas; ++t)
+            {
+                ++esperados;
+                //  El liston es la mitad de la ganancia de la toma: por el
+                //  camino hay un pad, un canal y el cruce del envio, y lo que
+                //  se mide es que la reflexion ESTA ahi y no cuanto pesa.
+                if (hayPicoEn (v, cero, AudioEngine::kAmbMsL[t] * esc,
+                               0.5f * AudioEngine::kAmbGan[t]))
+                    ++aciertos;
+            }
+        }
+
+        const bool ok = (aciertos == esperados) && (primeraLarga > primeraCorta * 1.5);
+        std::printf ("%-34s %d de %d reflexiones en su sitio, la primera de %.1f a %.1f ms   %s\n",
+                     "el ambiente y sus ocho tomas", aciertos, esperados,
+                     primeraCorta, primeraLarga, ok ? "OK" : zatiFalla());
+    }
+
     std::printf ("\n%-34s %d FALLA\n", "motor", zatiFallos);
     return zatiFallos > 0 ? 1 : 0;
 }

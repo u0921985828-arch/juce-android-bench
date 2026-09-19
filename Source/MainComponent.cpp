@@ -376,8 +376,13 @@ MainComponent::MainComponent()
         ranuraCloseBtn.onClick = [this] { abreMenuRanura (-1); };
         ranuraSheet.addAndMakeVisible (ranuraCloseBtn);
 
-        for (int f = 0; f < kNumFx; ++f)
+        //  EN ORDEN DE MENU -por tipo- y no en el de la tabla. La tapa `i`
+        //  ensena y pone el tipo `ordenFx()[i]`: el indice que viaja al motor y
+        //  a los proyectos sigue siendo el de la tabla, lo que cambia es donde
+        //  se toca. Ver `MainComponent::ordenFx`.
+        for (int i = 0; i < kNumFx; ++i)
         {
+            const int f = ordenFx()[i];
             auto* b = new juce::TextButton (fxDefs[f].name);
             styleButton (*b, kStepOff);
             litAccent (*b);
@@ -4615,6 +4620,29 @@ const char* MainComponent::gridName (int i)
 }
 
 
+//  EL ORDEN DE MENU. Ver la declaracion: por tipo y no por etapa.
+const int* MainComponent::ordenFx()
+{
+    using AE = AudioEngine;
+    static const int kOrden[kNumFx] =
+    {
+        AE::kFxFlt, AE::kFxHpf, AE::kFxWah, AE::kFxEq,    // FILTRO
+        AE::kFxDrv, AE::kFxBit, AE::kFxRng, AE::kFxExc,   // SATURACION
+        AE::kFxCho, AE::kFxFla, AE::kFxPha, AE::kFxTrm,   // MODULACION
+        AE::kFxDly, AE::kFxRev, AE::kFxWid, AE::kFxAmb,   // ESPACIO
+        AE::kFxCmp, AE::kFxGte, AE::kFxLim, AE::kFxDss,   // DINAMICA
+        AE::kFxPit, AE::kFxOct, AE::kFxTrn, AE::kFxFrz    // TIEMPO
+    };
+    return kOrden;
+}
+
+int MainComponent::celdaDeFx (int fx)
+{
+    const int* o = ordenFx();
+    for (int i = 0; i < kNumFx; ++i) if (o[i] == fx) return i;
+    return 0;
+}
+
 // Everything the UI knows about the six effects, in signal order. One table,
 // so the wiring below can be read against it line for line.
 const MainComponent::FxDef MainComponent::fxDefs[MainComponent::kNumFx] =
@@ -4820,6 +4848,19 @@ const MainComponent::FxDef MainComponent::fxDefs[MainComponent::kNumFx] =
       { {    0.0,     1.0, 0.01,    0.0,    0.70, 2 },
         {    0.0,     1.0, 0.01,    0.0,    0.50, 2 },
         {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
+
+    //  AMB: LAS PRIMERAS REFLEXIONES, y por eso comparte SIZE con REV -es el
+    //  mismo numero: de que tamano es la sala- y no comparte TIME con DLY, que
+    //  es el tiempo del eco y no el que tarda la sala en contestar. PREVIO es
+    //  ese: cuanto pasa desde el directo hasta la primera pared, que es lo que
+    //  separa un sonido puesto CONTRA la pared de uno puesto en medio.
+    //
+    //  Mezcla de fabrica 0.30, la de REV: son un envio y el que manda es el
+    //  fader del canal.
+    { "AMB",  { "SIZE", "PREVIO", "MIX" },
+      { {    0.0,     1.0, 0.01,    0.0,    0.55, 2 },
+        {    0.0,   120.0, 1.00,    0.0,    20.0, 3 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 0.30 },
 };
 
 // The readout always carries a unit, so a number means something on its own.
@@ -5818,9 +5859,14 @@ void MainComponent::refrescaMenuRanura()
     const int puesto = juce::isPositiveAndBelow (ranuraEditada, kNumRanuras)
                          ? enRanura (ranuraEditada) : kSlotVacia;
 
-    for (int f = 0; f < ranuraBtns.size() && f < kNumFx; ++f)
-        if (auto* b = ranuraBtns[f])
+    //  LA TAPA `i` ES EL TIPO `ordenFx()[i]` desde que el menu se ordena por
+    //  familias. Recorrer con el indice de la tabla dejaba a cada tapa
+    //  contestando por el efecto de otra: la marcada no era la puesta y las
+    //  apagadas no eran las ocupadas.
+    for (int i = 0; i < ranuraBtns.size() && i < kNumFx; ++i)
+        if (auto* b = ranuraBtns[i])
         {
+            const int f = ordenFx()[i];
             //  LO QUE YA ESTA PUESTO EN OTRA RANURA NO SE OFRECE, y se apaga
             //  en vez de esconderse: media rejilla con celdas y media sin
             //  ellas se lee como una celda rota, y ademas el sitio de cada
