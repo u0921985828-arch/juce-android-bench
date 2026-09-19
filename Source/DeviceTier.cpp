@@ -67,6 +67,21 @@ namespace
                 break;
 
             case Tier::high:
+                //  Y EL CUERPO CRECE CON EL PRESUPUESTO, que es la otra mitad
+                //  de lo que la gama baja hace al reves.
+                //
+                //  Un segundo de cuerpo es una vuelta por segundo. La queja de
+                //  la que salio toda esta tanda fue «que no se escuche nada de
+                //  repeticiones forzadas», y lo unico que aleja la vuelta es
+                //  que el cuerpo dure mas: 1.25 s es una vuelta cada segundo y
+                //  cuarto, 1.60 una cada segundo y medio largo.
+                //
+                //  Y NO CAMBIA NADA MAS. La regla que no se puede romper sigue
+                //  intacta: el mapa de zonas, las raices, las capas y la
+                //  afinacion son identicos en las cuatro gamas -un proyecto
+                //  suena PEOR, no distinto, en un telefono flojo- y lo unico
+                //  que se mueve es cuanto dura el cuerpo del bucle.
+                p.cuerpoSeg = 1.25;
                 p.voices = 48;  p.voicesPerPad = 8;
                 p.relojMs = 40;
                 p.scopePoints = 1024;
@@ -88,6 +103,8 @@ namespace
                 //  visibilidad, `EqCurve` opaca) y que nadie volvio a mirar
                 //  despues. Los paneles de hoy son de 90 y 120 Hz. Ya no
                 //  decide la tasa: decide el SUELO.
+                //  El cuerpo mas largo de las cuatro gamas: ver `Tier::high`.
+                p.cuerpoSeg = 1.60;
                 p.voices = 64;  p.voicesPerPad = 12;
                 p.relojMs = 33;
                 p.scopePoints = 1024;

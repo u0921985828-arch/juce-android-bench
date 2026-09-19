@@ -48,10 +48,10 @@
 #
 #      python3 Tests/instr.py
 # ============================================================================
-import json, math, os, shutil, subprocess, sys, tempfile
+import json, math, os, re, shutil, subprocess, sys, tempfile
 
 sys.path.insert (0, os.path.dirname (os.path.abspath (__file__)))
-from kits import (APP, BANDS, ENVBINS, FLOOR, NFFT, MAX_LOUD_SPREAD_DB,
+from kits import (APP, ROOT, BANDS, ENVBINS, FLOOR, NFFT, MAX_LOUD_SPREAD_DB,
                   MAX_PEAK, MIN_LOUD, MIN_PEAK, PANTALLA, descriptor, display_alive,
                   distancia, fft, load, loudness)
 
@@ -1110,6 +1110,56 @@ def main():
             if pi["testigo"] != 9:
                 fallos.append ("el testigo del pad 0 quedo en %d y se escribio con 9: "
                                "el piano escribio en el pad equivocado" % pi["testigo"])
+
+        #  R9 · EL CUERPO DE CADA GAMA CONTRA SU PRESUPUESTO.
+        #
+        #  `DeviceTier` es lo unico que puede cambiar entre dos telefonos, y lo
+        #  que cambia es cuanto dura el cuerpo del bucle y si va en estereo. Un
+        #  cuerpo mas largo aleja la vuelta -que es de lo que salio esta tanda-
+        #  y cuesta memoria EXACTAMENTE en proporcion: el doble de cuerpo es el
+        #  doble de muestras por zona, y las zonas no cambian entre gamas.
+        #
+        #  Asi que la pregunta se contesta con una RAZON y no con megas: cuanto
+        #  cuerpo pide cada gama por cada mega que se ha dado. Ninguna puede
+        #  pedir mas que la media, que es la que esta medida -los 16 del banco
+        #  ocupan lo que esta linea de arriba dice, con su cuerpo y sus
+        #  canales-. Una gama que suba el cuerpo sin subir el presupuesto se
+        #  queda con menos pads que la media, que es al reves de lo que su
+        #  nombre promete.
+        #
+        #  Se lee del fuente y no del binario a proposito: esto se rompe
+        #  ESCRIBIENDO un numero, no ejecutando nada, y la corrida de hoy solo
+        #  pasa por la gama de esta maquina.
+        gamas = {}
+        try:
+            dt = open (os.path.join (ROOT, "Source", "DeviceTier.cpp"),
+                       encoding="utf-8").read()
+            for m in re.finditer (r"case Tier::(\w+):(.*?)break;", dt, re.S):
+                cuerpo = re.search (r"p\.cuerpoSeg\s*=\s*([0-9.]+)", m.group (2))
+                pres   = re.search (r"p\.sampleBudgetMB\s*=\s*([0-9]+)", m.group (2))
+                est    = re.search (r"p\.instrumentoEstereo\s*=\s*(true|false)", m.group (2))
+                gamas[m.group (1)] = (float (cuerpo.group (1)) if cuerpo else 1.00,
+                                      int (pres.group (1)) if pres else 0,
+                                      2 if (est is None or est.group (1) == "true") else 1)
+        except OSError:
+            gamas = {}
+
+        if len (gamas) != 4:
+            fallos.append ("no se pueden leer las cuatro gamas de DeviceTier.cpp: "
+                           "nadie mide el cuerpo contra el presupuesto")
+        else:
+            razones = {}
+            for g, (cuerpo, pres, canales) in gamas.items():
+                razones[g] = (cuerpo * canales) / float (max (1, pres))
+            print ("\ngamas: " + "   ".join (
+                "%s cuerpo %.2f x%d en %d MB (razon %.5f)"
+                % (g, gamas[g][0], gamas[g][2], gamas[g][1], razones[g])
+                for g in ("low", "mid", "high", "ultra") if g in gamas))
+            for g in ("low", "high", "ultra"):
+                if g in razones and razones[g] > razones.get ("mid", 0.0) + 1e-9:
+                    fallos.append ("la gama %s pide %.5f de cuerpo por mega y la media "
+                                   "%.5f: el cuerpo subio y el presupuesto no"
+                                   % (g, razones[g], razones["mid"]))
 
         if "bancoD" in extra:
             print ("\nllenar el banco D con los 16: %.0f ms" % extra["bancoD"])
