@@ -672,9 +672,19 @@ def main():
                 #  de **11 a 20 dB de deriva** a CUERDAS, COLCHONES, METALES,
                 #  LEADS, COROS y VIENTOS, que es justo el grupo que lleva
                 #  fundido largo. Medía el fundido, no la deriva.
-                salta = min (len (cb) // 3, int (0.150 * SR) + q)
-                if q > 2048 and len (cb) - salta > q:
-                    ba, bb = bandas (cb[salta:salta + q]), bandas (cb[-q:])
+                #  Y LAS DOS VENTANAS SON UNA VUELTA ENTERA CADA UNA, colocadas
+                #  en un MULTIPLO de la vuelta. Recortar «un poco despues» no
+                #  vale: si las ventanas no caen en fase con el LFO, lo que se
+                #  mide es el LFO -salieron de 8 a 18 dB en las seis familias que
+                #  lo llevan, con la sintesis intacta-.
+                #  Y LAS DOS VENTANAS ALINEADAS AL MISMO MULTIPLO de la vuelta:
+                #  con la ultima pegada al final del cuerpo, el resto de la
+                #  division la dejaba en otra fase del LFO y la regla volvia a
+                #  medir el LFO -de 8 a 15 dB en las seis familias que lo llevan-.
+                salta = q * max (1, int (math.ceil (0.150 * SR / q)))
+                fin   = (len (cb) // q) * q
+                if q > 2048 and fin - salta >= 2 * q:
+                    ba, bb = bandas (cb[salta:salta + q]), bandas (cb[fin - q:fin])
                     dif = max (abs (a - b) for a, b in zip (ba, bb))
                     print ("%-12s deriva: %.2f dB entre el primer cuarto y el ultimo" % (etiq, dif))
                     if dif > DERIVA_DB:

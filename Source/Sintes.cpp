@@ -241,6 +241,26 @@ namespace Sintes
         constexpr float kDesigual[8] =
             { 0.0f, -1.000f, 0.618f, -0.414f, 0.883f, -0.732f, 0.271f, -0.947f };
 
+        //  Y CENTRADO, que es lo que faltaba y lo que el banco encontro.
+        //
+        //  Estos ocho numeros son inconmensurables a proposito -ver arriba- pero
+        //  NO SUMAN CERO, y cada familia usa un trozo distinto: los siete
+        //  primeros suman -0.374, los cuatro primeros -0.796 y los tres primeros
+        //  -0.382. O sea que el conjunto entero sale desafinado EN BLOQUE, tanto
+        //  mas cuanta mas dispersion tenga el preset. Medido: **CUERDAS -11
+        //  cents en la raiz** y **COLCHONES +14**, con un liston de 5.
+        //
+        //  No se toca la tabla -los batidos son lo que son- sino que se le resta
+        //  la media del TROZO QUE SE USA, que es lo unico que deja el centro del
+        //  conjunto donde dice la nota. Un instrumento once cents bajo no suena
+        //  mal solo: suena mal CONTRA los demas.
+        inline float desigual (int k, int n) noexcept
+        {
+            float media = 0.0f;
+            for (int i = 0; i < n; ++i) media += kDesigual[i];
+            return kDesigual[juce::jlimit (0, 7, k)] - media / (float) juce::jmax (1, n);
+        }
+
         //  CUANTO DE UNA PIEZA SUENA EN ESTE CANAL, y como se hace el ancho.
         //
         //  La regla entera es una: **lo que ya es plural se reparte; lo que es
@@ -662,7 +682,7 @@ namespace Sintes
                     float suma = 0.0f;
                     for (int k = 0; k < 7; ++k)
                     {
-                        const double det = std::pow (2.0, (double) P.p1 * (double) kDesigual[k] / 1200.0);
+                        const double det = std::pow (2.0, (double) P.p1 * (double) desigual (k, 7) / 1200.0);
                         const double ik = inc * det * vib;
                         arm[k] += ik; if (arm[k] >= 1.0) arm[k] -= 1.0;
                         //  LOS SIETE ATRILES. Se reparten por `kDesigual`, que es
@@ -699,7 +719,7 @@ namespace Sintes
                     float suma = 0.0f;
                     for (int k = 0; k < 4; ++k)
                     {
-                        const double det = std::pow (2.0, (double) P.p4 * (double) kDesigual[k] / 1200.0);
+                        const double det = std::pow (2.0, (double) P.p4 * (double) desigual (k, 4) / 1200.0);
                         const double ik = inc * det;
                         arm[k] += ik; if (arm[k] >= 1.0) arm[k] -= 1.0;
                         //  Los cuatro pulsos, repartidos por el mismo vector que
@@ -786,7 +806,7 @@ namespace Sintes
                     float suma = 0.0f;
                     for (int k = 0; k < 3; ++k)
                     {
-                        const double det = std::pow (2.0, (double) P.p3 * (double) kDesigual[k] / 1200.0);
+                        const double det = std::pow (2.0, (double) P.p3 * (double) desigual (k, 3) / 1200.0);
                         const double ik = inc * det;
                         arm[k] += ik; if (arm[k] >= 1.0) arm[k] -= 1.0;
                         //  Los tres, repartidos por el vector que los desafina.
@@ -837,7 +857,7 @@ namespace Sintes
                     float suma = 0.0f;
                     for (int k = 0; k < 3; ++k)
                     {
-                        const double det = std::pow (2.0, (double) P.p4 * (double) kDesigual[k] / 1200.0);
+                        const double det = std::pow (2.0, (double) P.p4 * (double) desigual (k, 3) / 1200.0);
                         const double ik = inc * det * vib;
                         arm[k] += ik; if (arm[k] >= 1.0) arm[k] -= 1.0;
                         //  Tres voces, tres sitios. Y el aire ya viene de su
@@ -910,7 +930,12 @@ namespace Sintes
                     //  balance bajo -SOFT MAL, con p4 = 0.18 y p3 = 0.05- manda
                     //  el fundamental y los dos inarmonicos ya abiertos del todo
                     //  no llegaban: **r = 0.9804** contra un liston de 0.98.
-                    f2.set (juce::jlimit (60.0, nyq, hz * ((canal == 1) ? 1.10 : 0.90)), 3.0f);
+                    //  Y EL TUBO SE AFINA CON EL PRESET, no solo se dosifica:
+                    //  un tubo de marimba se corta a la medida de SU barra, asi
+                    //  que va donde el primer inarmonico del preset dice.
+                    f2.set (juce::jlimit (60.0, nyq,
+                                          hz * (0.5 + 0.5 * (double) P.p1)
+                                             * ((canal == 1) ? 1.25 : 0.80)), 3.0f);
                     //  Y CUANTO TUBO LO DICE EL PRESET, no una constante.
                     //
                     //  Con 0.30 fijo el tubo pesaba tanto que aplanaba las
