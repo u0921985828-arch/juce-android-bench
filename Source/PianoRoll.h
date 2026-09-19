@@ -102,7 +102,10 @@ public:
     static constexpr int kMaxNotas = 4;     // raiz + tres del acorde
 
     //  (paso, semitono) — quien la usa decide si pone o quita.
-    std::function<void (int paso, int semi)> onCelda;
+    //  Con el gesto al lado, por lo mismo que `StepGrid::onCell`: un arrastre
+    //  escribe una nota por columna y deshacer tiene que desandar el dedo
+    //  entero y no la ultima casilla.
+    std::function<void (int paso, int semi, bool arrastrando)> onCelda;
     //  Un toque en el teclado: suena esa nota sin escribir nada, que es como
     //  se busca una melodia antes de escribirla.
     std::function<void (int semi)> onTecla;
@@ -609,7 +612,7 @@ public:
         const int clave = fila * 1000 + paso;
         if (arrastrando && clave == ultima) return;
         ultima = clave;
-        onCelda (paso, semi);
+        onCelda (paso, semi, arrastrando);
     }
 
     void suelta() { ultima = -1; filaIni = pasoIni = -1; ultimoLargo = -1; moviendo = false; dPaso = dSemi = 0; }

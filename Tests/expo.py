@@ -372,6 +372,8 @@ UNTRANSLATED_OK = {
     "RNG", "PIT", "WID", "EXC", "TRN", "FRZ",  # la de caracter, igual
     "WAH", "OCT",   # y los dos que se pidieron, por lo mismo: son tres letras
     "AMB",          # el ambiente, el que cerro el reparto por tipos: tres letras
+    "FRM", "FLD", "ROT", "PNG", "DUC", "REP",   # los seis que llevan el
+                    # catalogo a cinco por familia, por lo mismo: tres letras
     "EXTRAS",       # la puerta del contenido: la palabra es la misma en las dos
     "RATIO",                                   # se escribe igual en las dos lenguas
     "FREQ",                                    # la abreviatura de frecuencia, la misma

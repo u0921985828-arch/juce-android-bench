@@ -62,8 +62,14 @@ SIN_RED = {
     "cargaFabricaEnBanco":  "la foto la toma quien llama: loadFactoryKits -primera"
                             " vez que se abre la app- no la quiere y la ficha de"
                             " instrumentos si",
-    "ponInstrumentoEnPad":  "igual: onInstElegido y eligePreset la toman antes de"
-                            " llamar, y el banco llama sin cara que deshacer",
+    #  Se llamaba `ponInstrumentoEnPad` hasta que la sintesis se fue a su
+    #  propio hilo -473 ms de mediana congelaban la cara-. Ahora esa funcion
+    #  encola y NO pisa el pad; quien lo pisa es el que vacia el buzon, y la
+    #  foto se sigue tomando en el mismo sitio: ANTES de encolar.
+    "montaInstrumentoRendido": "lo saca del buzon en el hilo de mensajes:"
+                            " onInstElegido y eligePreset toman la foto antes"
+                            " de encolar la sintesis, y el banco llama sin cara"
+                            " que deshacer",
     "resintetizaInstrumento": "la toman los dos que llaman: el arrastre de un mando"
                               " en onDragStart -una sola por arrastre- y VOLVER",
 }

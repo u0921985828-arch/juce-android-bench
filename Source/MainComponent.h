@@ -430,7 +430,7 @@ private:
     //  porque lo preguntan dos sitios -quien reparte el alto y quien coloca la
     //  costura- y la misma regla escrita dos veces son dos reglas.
     static constexpr int kBankSeamWant = Metrics::hit + Metrics::gap + ZatiLookAndFeel::kPlateLip;
-    void pianoCellToggled (int paso, int semi);
+    void pianoCellToggled (int paso, int semi, bool arrastrando = false);
 
     //  ------------------------------------------------------------------
     //  LA SELECCION DEL PIANO, y lo que se puede hacer con ella.
@@ -1748,7 +1748,7 @@ private:
     int browseTargetPad = -1;
 
     void padClicked (int index);
-    void stepCellToggled (int pad, int step);
+    void stepCellToggled (int pad, int step, bool arrastrando = false);
     void refreshPad (int index);
     void refreshPadArt (int index);   // rebuild the tile waveform for its trim window
     void selectPad (int index);
@@ -2914,12 +2914,12 @@ private:
     //
     //  SEIS FAMILIAS DE CUATRO, y de ahi el cuarto efecto:
     //
-    //      FILTRO       FLT HPF WAH EQ
-    //      SATURACION   DRV BIT RNG EXC
-    //      MODULACION   CHO FLA PHA TRM
-    //      ESPACIO      DLY REV WID AMB
-    //      DINAMICA     CMP GTE LIM DSS
-    //      TIEMPO       PIT OCT TRN FRZ
+    //      FILTRO       FLT HPF WAH EQ  FRM
+    //      SATURACION   DRV BIT RNG EXC FLD
+    //      MODULACION   CHO FLA PHA TRM ROT
+    //      ESPACIO      DLY REV WID AMB PNG
+    //      DINAMICA     CMP GTE LIM DSS DUC
+    //      TIEMPO       PIT OCT TRN FRZ REP
     //
     //  Con veintitres no habia reparto igual posible -es primo-, asi que
     //  ESPACIO se quedaba en tres. Se escribio el que faltaba (AMB) en vez de
@@ -2928,7 +2928,10 @@ private:
     //
     //  Y CADA FILA DEL MENU ES UNA FAMILIA porque el menu pide cuatro columnas
     //  (ver `menuRanuraColumnas`): sin eso el orden esta pero no se ve.
-    static constexpr int kFxPorTipo = 4;
+    //  CINCO desde que entraron FRM, FLD, ROT, PNG, DUC y REP: uno por
+    //  familia, para que el reparto siguiera cuadrando. El menu pide ese mismo
+    //  numero de columnas, asi que cada fila sigue siendo una familia.
+    static constexpr int kFxPorTipo = 5;
     static const int* ordenFx();          // kNumFx indices de `fxDefs`
     //  Y LA VUELTA: en que celda del menu esta un tipo. La usa el banco, que
     //  pulsa tapas de verdad y tiene el indice del tipo, no el de la celda.
@@ -3139,6 +3142,9 @@ private:
     //  Y la guarda que impide que poner un preset se marque a si mismo como
     //  MOVIDO: `escribeFxParam` es el embudo de los dos caminos.
     bool aplicandoFxPreset = false;
+    //  Puesta mientras `applyState` repone: lo que se mueve desde ahi no es una
+    //  accion de la persona y no lleva foto de deshacer. Ver gridSlider.
+    bool aplicandoEstado = false;
     void marcaFxMovido (int fx);
     std::array<std::array<int, kNumFx>, kNumCanales> fxPresetPuesto {};
     //  Y el nombre, cuando el puesto es uno TUYO de `ZATI/Presets`. Disperso a
@@ -3403,6 +3409,9 @@ private:
     //  y 1/32 hay uno de 2. Un dial con esos cinco puntos seria un dial que
     //  hay que acertar; dos teclas los recorren y ademas dicen cual es.
     juce::Slider gridSlider;
+    //  El indice que la rejilla tenia antes del aviso: la foto de deshacer se
+    //  toma con el, porque `onValueChange` llega con el nuevo ya puesto.
+    int gridIdxAnterior = 2;                 // 1/16, el mismo con el que nace
     static constexpr int kNumGrids = 7;
     //  En negras por paso, en el mismo orden que los nombres de abajo.
     //  SIETE. Faltaban el tresillo de fusa y la semifusa: con 1/32 como paso

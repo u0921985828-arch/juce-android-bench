@@ -7,6 +7,7 @@
 // out is checked for the three things that end a demo — silence, a NaN, and a
 // block that took longer than it had.
 #include <JuceHeader.h>
+#include <functional>
 #include "../Source/AudioEngine.h"
 #include "../Source/Denoise.h"
 #include "../Source/MidiIo.h"
@@ -6948,6 +6949,291 @@ int main()
         std::printf ("%-34s %d de %d reflexiones en su sitio, la primera de %.1f a %.1f ms   %s\n",
                      "el ambiente y sus ocho tomas", aciertos, esperados,
                      primeraCorta, primeraLarga, ok ? "OK" : zatiFalla());
+    }
+
+    //  ------------------------------------------------------------------
+    //  LOS SEIS QUE LLEVAN EL CATALOGO A CINCO POR FAMILIA.
+    //
+    //  Cada uno se mide por lo que lo SEPARA del que ya existia, que es la
+    //  unica pregunta que importa: si FLD se puede confundir con DRV o REP con
+    //  FRZ, el efecto no hacia falta. Y cada medida cruza DOS ajustes, porque
+    //  una sola la cumple tambien un efecto que no hace nada.
+    {
+        //  Un motor con un pad enrutado al efecto que toque y la salida
+        //  recogida entera. `hazMuestra` decide que suena.
+        auto corre6 = [] (int fx, float p0, float p1,
+                          const std::function<void (juce::AudioBuffer<float>&, double)>& hazMuestra,
+                          std::vector<float>& sL, std::vector<float>& sR, int bloques = 40)
+        {
+            AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+            enCanalCero (e);
+            e.setPadGain (0, 1.0f);
+            e.setFxParam (0, fx, 0, p0);
+            e.setFxParam (0, fx, 1, p1);
+            e.setFxParam (0, fx, 2, 1.0f);      // MIX al maximo
+            e.setCanalSend (0, fx, 1.0f);
+
+            auto* sb = new SampleBuffer();
+            sb->buffer.setSize (2, 96000);
+            sb->buffer.clear();
+            hazMuestra (sb->buffer, 48000.0);
+            sb->sourceSampleRate = 48000.0;
+            e.publishSample (0, SampleBuffer::Ptr (sb));
+
+            juce::AudioBuffer<float> b (2, 512);
+            //  El envio se cruza en 20 ms: se asienta antes de disparar.
+            for (int i = 0; i < 30; ++i) { b.clear(); e.renderNextBlock (b, 0, 512); }
+            e.postNoteOn (0, 1.0f);
+            sL.clear(); sR.clear();
+            for (int i = 0; i < bloques; ++i)
+            {
+                b.clear();
+                e.renderNextBlock (b, 0, 512);
+                for (int n = 0; n < 512; ++n) { sL.push_back (b.getSample (0, n)); sR.push_back (b.getSample (1, n)); }
+            }
+        };
+
+        auto tono = [] (float hz) {
+            return [hz] (juce::AudioBuffer<float>& b, double sr)
+            {
+                for (int c = 0; c < 2; ++c)
+                    for (int i = 0; i < b.getNumSamples(); ++i)
+                        b.setSample (c, i, 0.6f * std::sin (juce::MathConstants<float>::twoPi
+                                                            * hz * (float) i / (float) sr));
+            };
+        };
+
+        //  La energia de una banda estrecha, por Goertzel. Se mide sobre el
+        //  regimen -la segunda mitad- y no sobre el ataque.
+        auto energiaEn = [] (const std::vector<float>& v, float hz)
+        {
+            const size_t a = v.size() / 2;
+            const double w = 2.0 * juce::MathConstants<double>::pi * hz / 48000.0;
+            const double coef = 2.0 * std::cos (w);
+            double s1 = 0.0, s2 = 0.0;
+            for (size_t i = a; i < v.size(); ++i)
+            {
+                const double s = (double) v[i] + coef * s1 - s2;
+                s2 = s1; s1 = s;
+            }
+            return std::sqrt (s1 * s1 + s2 * s2 - coef * s1 * s2) / (double) (v.size() - a);
+        };
+
+        std::vector<float> aL, aR, bL, bR;
+
+        // --- FRM: la vocal MUEVE los formantes. -----------------------
+        //
+        //  Con la A (vocal 0) el primer formante esta en 730 Hz y con la I
+        //  (vocal 0.5) en 270. Se pasan los DOS tonos por las DOS vocales y lo
+        //  que tiene que cruzarse es cual pasa mas: si el filtro estuviera
+        //  clavado, el mismo tono ganaria las dos veces.
+        {
+            double a730 = 0.0, a270 = 0.0, i730 = 0.0, i270 = 0.0;
+            corre6 (AudioEngine::kFxFrm, 0.00f, 2.5f, tono (730.0f), aL, aR); a730 = energiaEn (aL, 730.0f);
+            corre6 (AudioEngine::kFxFrm, 0.00f, 2.5f, tono (270.0f), aL, aR); a270 = energiaEn (aL, 270.0f);
+            corre6 (AudioEngine::kFxFrm, 0.50f, 2.5f, tono (730.0f), bL, bR); i730 = energiaEn (bL, 730.0f);
+            corre6 (AudioEngine::kFxFrm, 0.50f, 2.5f, tono (270.0f), bL, bR); i270 = energiaEn (bL, 270.0f);
+
+            const bool ok = (a730 > a270 * 1.5) && (i270 > i730 * 1.5);
+            std::printf ("%-34s A: 730Hz %.4f / 270Hz %.4f   I: 730Hz %.4f / 270Hz %.4f   %s\n",
+                         "la vocal de FRM se mueve", a730, a270, i730, i270, ok ? "OK" : zatiFalla());
+        }
+
+        // --- FLD: pliega, no recorta. ---------------------------------
+        //
+        //  Se cuentan los CRUCES POR CERO de un seno. Un recortador no anade
+        //  ni uno -aplana las puntas y la onda sigue cruzando dos veces por
+        //  periodo- y un plegador los multiplica, porque cada pliegue devuelve
+        //  la onda hacia el otro lado. Es la medida que separa FLD de DRV.
+        {
+            auto cruces = [] (const std::vector<float>& v)
+            {
+                int n = 0;
+                for (size_t i = v.size() / 2 + 1; i < v.size(); ++i)
+                    if ((v[i - 1] <= 0.0f) != (v[i] <= 0.0f)) ++n;
+                return n;
+            };
+            corre6 (AudioEngine::kFxFld, 0.0f, 20000.0f, tono (220.0f), aL, aR);
+            corre6 (AudioEngine::kFxFld, 1.0f, 20000.0f, tono (220.0f), bL, bR);
+            //  EL LISTON SALE DE LO QUE ESTO AFIRMA y no de lo que salio.
+            //
+            //  Un recortador da EXACTAMENTE los mismos cruces que la onda
+            //  limpia -aplana las puntas y sigue cruzando dos veces por
+            //  periodo-, o sea razon 1.00 clavada. Asi que lo que prueba que
+            //  esto pliega es que la razon se despegue de uno, y el doble es el
+            //  margen que un recuento no alcanza por ruido.
+            //
+            //  Estuvo en x3 y salio x3.0 -281 contra 282 pedidos-, o sea un
+            //  liston puesto a ojo que suspendia por un cruce a un efecto que
+            //  funciona. Un numero elegido sin derivar es un numero que un dia
+            //  dice que no por su cuenta.
+            const int c0 = cruces (aL), c1 = cruces (bL);
+            const bool ok = (c0 > 0) && (c1 >= c0 * 2);
+            std::printf ("%-34s sin pliegue %d cruces, plegado %d (x%.1f)   %s\n",
+                         "FLD pliega y no recorta", c0, c1,
+                         c0 > 0 ? (double) c1 / (double) c0 : 0.0, ok ? "OK" : zatiFalla());
+        }
+
+        // --- ROT: dos altavoces y no uno. -----------------------------
+        //
+        //  Lo que separa una Leslie de un tremolo con panoramica es que los dos
+        //  lados van en CONTRA: cuando la bocina viene por la izquierda, se va
+        //  por la derecha. Se mide la correlacion de las dos envolventes y
+        //  tiene que salir NEGATIVA; con un solo altavoz saldria positiva.
+        {
+            auto envolvente = [] (const std::vector<float>& v, std::vector<double>& out)
+            {
+                out.clear();
+                const size_t paso = 64;
+                for (size_t i = v.size() / 2; i + paso < v.size(); i += paso)
+                {
+                    double m = 0.0;
+                    for (size_t k = 0; k < paso; ++k) m = juce::jmax (m, (double) std::abs (v[i + k]));
+                    out.push_back (m);
+                }
+            };
+            corre6 (AudioEngine::kFxRot, 5.5f, 1.0f, tono (440.0f), aL, aR);
+            std::vector<double> eL, eR;
+            envolvente (aL, eL); envolvente (aR, eR);
+
+            double mL = 0.0, mR = 0.0;
+            for (auto v : eL) mL += v;  mL /= juce::jmax ((size_t) 1, eL.size());
+            for (auto v : eR) mR += v;  mR /= juce::jmax ((size_t) 1, eR.size());
+            double num = 0.0, dL = 0.0, dR = 0.0;
+            for (size_t i = 0; i < eL.size() && i < eR.size(); ++i)
+            {
+                num += (eL[i] - mL) * (eR[i] - mR);
+                dL  += (eL[i] - mL) * (eL[i] - mL);
+                dR  += (eR[i] - mR) * (eR[i] - mR);
+            }
+            const double r = (dL > 1.0e-12 && dR > 1.0e-12) ? num / std::sqrt (dL * dR) : 1.0;
+            const bool ok = r < -0.3;
+            std::printf ("%-34s las dos envolventes correlan %+.3f (liston -0.30)   %s\n",
+                         "ROT lleva dos altavoces", r, ok ? "OK" : zatiFalla());
+        }
+
+        // --- PNG: el eco cambia de lado. ------------------------------
+        //
+        //  Un golpe SOLO por la izquierda. Con DLY las dos repeticiones
+        //  saldrian por la izquierda; aqui la primera sale por la izquierda y
+        //  la segunda por la derecha, que es el efecto entero.
+        {
+            auto clicIzq = [] (juce::AudioBuffer<float>& b, double sr)
+            {
+                juce::ignoreUnused (sr);
+                for (int i = 0; i < 96; ++i) b.setSample (0, i, 1.0f);
+            };
+            corre6 (AudioEngine::kFxPng, 200.0f, 0.80f, clicIzq, aL, aR);
+
+            auto picoEn = [] (const std::vector<float>& v, int cero, double ms)
+            {
+                const int c = cero + (int) std::lround (ms * 48.0);
+                const int r = 240;   // +-5 ms
+                float m = 0.0f;
+                for (int i = juce::jmax (0, c - r); i < juce::jmin ((int) v.size(), c + r); ++i)
+                    m = juce::jmax (m, std::abs (v[(size_t) i]));
+                return m;
+            };
+            int cero = -1;
+            for (size_t i = 0; i < aL.size(); ++i) if (std::abs (aL[i]) > 0.05f) { cero = (int) i; break; }
+
+            const float uno  = (cero >= 0) ? picoEn (aL, cero, 200.0) : 0.0f;   // izquierda a 200 ms
+            const float unoD = (cero >= 0) ? picoEn (aR, cero, 200.0) : 0.0f;
+            const float dos  = (cero >= 0) ? picoEn (aR, cero, 400.0) : 0.0f;   // derecha a 400 ms
+            const bool ok = cero >= 0 && uno > 0.05f && dos > 0.05f && uno > unoD * 3.0f;
+            std::printf ("%-34s 200ms izq %.3f der %.3f, 400ms der %.3f   %s\n",
+                         "PNG rebota de lado", uno, unoD, dos, ok ? "OK" : zatiFalla());
+        }
+
+        // --- DUC: el bombeo baja lo que dice. -------------------------
+        //
+        //  Con un tono sostenido, la envolvente tiene que caer a `1-prof` y
+        //  volver. Se mide el recorrido y se contrasta con la cuenta: a 0.70 la
+        //  razon entre lo alto y lo bajo es 1/0.30, o sea 3.33.
+        {
+            //  SE GRABA MAS DE UN CICLO, que es lo que la primera version no
+            //  hacia: cuarenta bloques son 0.43 s y a 2 Hz un ciclo dura 0.5,
+            //  asi que la ventana no llegaba a contener el valle y el pico a la
+            //  vez. Salia x1.93 contra la cuenta de 3.33 y parecia un fallo del
+            //  efecto. Ciento cincuenta bloques son 1.6 s, o sea tres ciclos, y
+            //  se mide el recorrido ENTERO: asi no hace falta saber donde
+            //  empieza el ciclo, que es una cuenta que el reloj del motor no
+            //  tiene por que compartir con esto.
+            auto recorrido = [] (const std::vector<float>& v, double& alto, double& bajo)
+            {
+                alto = 0.0; bajo = 1.0e9;
+                const size_t paso = 256;
+                for (size_t i = v.size() / 3; i + paso < v.size(); i += paso)
+                {
+                    double m = 0.0;
+                    for (size_t k = 0; k < paso; ++k) m = juce::jmax (m, (double) std::abs (v[i + k]));
+                    alto = juce::jmax (alto, m);
+                    bajo = juce::jmin (bajo, m);
+                }
+            };
+            double a0 = 0.0, b0 = 0.0, a7 = 0.0, b7 = 0.0;
+            corre6 (AudioEngine::kFxDuc, 2.0f, 0.0f,  tono (440.0f), aL, aR, 150); recorrido (aL, a0, b0);
+            corre6 (AudioEngine::kFxDuc, 2.0f, 0.70f, tono (440.0f), bL, bR, 150); recorrido (bL, a7, b7);
+
+            const double r0 = (b0 > 1.0e-9) ? a0 / b0 : 0.0;
+            const double r7 = (b7 > 1.0e-9) ? a7 / b7 : 0.0;
+            const bool ok = r0 < 1.30 && r7 > 2.50;
+            std::printf ("%-34s sin bombeo x%.2f, al 0.70 x%.2f (cuenta 3.33)   %s\n",
+                         "DUC baja lo que dice", r0, r7, ok ? "OK" : zatiFalla());
+        }
+
+        // --- REP: repite lo que acaba de pasar. -----------------------
+        //
+        //  SE BUSCA LA REPETICION EXACTA, que es literalmente lo que esto
+        //  afirma. Se manda RUIDO -una secuencia que no se repite nunca por su
+        //  cuenta- y se cuentan las muestras que salen identicas a las de hace
+        //  `lag`. Con el efecto puesto, el trozo grabado vuelve a salir bit a
+        //  bit y aparecen miles; sin el, ninguna.
+        //
+        //  La primera version mandaba una RAMPA y contaba las caidas, y no
+        //  podia funcionar: con el trozo a 0.4 de un ciclo de 12000 muestras,
+        //  la rampa de un segundo solo sube 0.09 dentro del trozo, o sea que el
+        //  reinicio nunca llegaba al liston de 0.20. La medida decia «1 contra
+        //  1» con el efecto funcionando — lo confirmo una sonda que enseño el
+        //  cambio a repetir en la muestra 9090 de cada vuelta.
+        {
+            auto ruido = [] (juce::AudioBuffer<float>& b, double sr)
+            {
+                juce::ignoreUnused (sr);
+                //  Semilla fija: dos corridas tienen que dar el mismo ruido, o
+                //  lo que se compara son dos ruidos distintos.
+                juce::Random r (20260919);
+                for (int i = 0; i < b.getNumSamples(); ++i)
+                {
+                    const float v = 0.6f * (2.0f * r.nextFloat() - 1.0f);
+                    b.setSample (0, i, v);
+                    b.setSample (1, i, v);
+                }
+            };
+            //  El trozo dura `1 - cantidad` de la vuelta: a 4 Hz son 12000
+            //  muestras por vuelta y con 0.60 se graban 4800. Se barre un
+            //  entorno porque el corte cae donde el reloj lo ponga, no en una
+            //  muestra que esto pueda calcular.
+            auto repeticiones = [] (const std::vector<float>& v)
+            {
+                int mejor = 0;
+                for (int lag = 4600; lag <= 5000; ++lag)
+                {
+                    int n = 0;
+                    for (size_t i = (size_t) lag + v.size() / 3; i < v.size(); ++i)
+                        if (std::abs (v[i] - v[i - (size_t) lag]) < 1.0e-7f) ++n;
+                    mejor = juce::jmax (mejor, n);
+                }
+                return mejor;
+            };
+            corre6 (AudioEngine::kFxRep, 4.0f, 0.00f, ruido, aL, aR, 150);
+            corre6 (AudioEngine::kFxRep, 4.0f, 0.60f, ruido, bL, bR, 150);
+
+            const int sinRep = repeticiones (aL), conRep = repeticiones (bL);
+            const bool ok = sinRep < 100 && conRep > 1000;
+            std::printf ("%-34s el ruido se repite en %d muestras sin el y %d con el   %s\n",
+                         "REP repite el trozo", sinRep, conRep, ok ? "OK" : zatiFalla());
+        }
     }
 
     std::printf ("\n%-34s %d FALLA\n", "motor", zatiFallos);

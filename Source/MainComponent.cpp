@@ -99,7 +99,8 @@ MainComponent::MainComponent()
     }
     bankButtons[0]->setToggleState (true, juce::dontSendNotification);
 
-    stepGrid.onCell = [this] (int lane, int step) { stepCellToggled (currentBank * kPadsPerBank + lane, step); };
+    stepGrid.onCell = [this] (int lane, int step, bool arr)
+    { stepCellToggled (currentBank * kPadsPerBank + lane, step, arr); };
     seqSheet.addAndMakeVisible (stepGrid);
 
     //  LA BARRA, QUE SUSTITUYE A LA FILA DE COMPASES.
@@ -2399,6 +2400,33 @@ MainComponent::MainComponent()
     gridSlider.onValueChange = [this]
     {
         const int i = juce::jlimit (0, kNumGrids - 1, (int) gridSlider.getValue());
+
+        //  Y ESTO TAMBIEN SE DESHACE. Cambiar la rejilla reparte el patron
+        //  entero por otro reloj -un paso pasa de semicorchea a tresillo- asi
+        //  que es de los cambios que mas se oyen y no habia forma de volver.
+        //
+        //  LA FOTO ES DE ANTES, Y CUANDO AVISA EL MANDO YA SE HA MOVIDO. Un
+        //  `onValueChange` llega con el valor NUEVO puesto, asi que un
+        //  `pushUndo` a secas guarda el estado que se acaba de crear: deshacer
+        //  reponia la rejilla que ya estaba y el banco lo saco en la primera
+        //  corrida -«tras deshacer 0.3333» donde tenia que decir 0.5-. Se
+        //  devuelve el indice el tiempo que dura la foto, sin avisar, y se
+        //  vuelve a poner: la unica otra salida es que cada mando de la app
+        //  recuerde su valor anterior, y eso es un dato mas que mantener por
+        //  cada uno.
+        //
+        //  MENOS CUANDO ES `applyState` QUIEN LO MUEVE, que es la otra trampa:
+        //  deshacer llama a `applyState`, `applyState` repone la rejilla CON
+        //  aviso -lo necesita, es quien llama a `setStepBeats`- y la foto se
+        //  apilaria encima de la pila que se esta desapilando. Es el mismo
+        //  perdon que `Tests/deshacer.py` le da a `restorePads`.
+        if (! aplicandoEstado && i != gridIdxAnterior)
+        {
+            gridSlider.setValue ((double) gridIdxAnterior, juce::dontSendNotification);
+            pushUndo (T ("REJILLA"));
+            gridSlider.setValue ((double) i, juce::dontSendNotification);
+        }
+        gridIdxAnterior = i;
         engine.setStepBeats (kGridBeats[i]);
         status.setText (T ("Un paso dura %1", Lang::ltr (gridName (i))), juce::dontSendNotification);
         stepGrid.repaint();
@@ -3552,9 +3580,9 @@ MainComponent::MainComponent()
         //  el 2, y refreshPiano volvia a pintar el 2 sin la nota. Y la
         //  proteccion de pianoCellToggled -paso >= largo del patron- tampoco
         //  saltaba, porque una columna siempre vale menos de dieciseis.
-        pianoGrid.onCelda = [this] (int paso, int semi)
+        pianoGrid.onCelda = [this] (int paso, int semi, bool arr)
         {
-            pianoCellToggled (seqPrimerPaso + paso, semi);
+            pianoCellToggled (seqPrimerPaso + paso, semi, arr);
         };
         //  ESTIRAR UNA NOTA. El largo es del PASO y no de cada nota del acorde:
         //  las cuatro notas de una columna son un acorde y un acorde dura lo
@@ -4626,12 +4654,12 @@ const int* MainComponent::ordenFx()
     using AE = AudioEngine;
     static const int kOrden[kNumFx] =
     {
-        AE::kFxFlt, AE::kFxHpf, AE::kFxWah, AE::kFxEq,    // FILTRO
-        AE::kFxDrv, AE::kFxBit, AE::kFxRng, AE::kFxExc,   // SATURACION
-        AE::kFxCho, AE::kFxFla, AE::kFxPha, AE::kFxTrm,   // MODULACION
-        AE::kFxDly, AE::kFxRev, AE::kFxWid, AE::kFxAmb,   // ESPACIO
-        AE::kFxCmp, AE::kFxGte, AE::kFxLim, AE::kFxDss,   // DINAMICA
-        AE::kFxPit, AE::kFxOct, AE::kFxTrn, AE::kFxFrz    // TIEMPO
+        AE::kFxFlt, AE::kFxHpf, AE::kFxWah, AE::kFxEq,  AE::kFxFrm,   // FILTRO
+        AE::kFxDrv, AE::kFxBit, AE::kFxRng, AE::kFxExc, AE::kFxFld,   // SATURACION
+        AE::kFxCho, AE::kFxFla, AE::kFxPha, AE::kFxTrm, AE::kFxRot,   // MODULACION
+        AE::kFxDly, AE::kFxRev, AE::kFxWid, AE::kFxAmb, AE::kFxPng,   // ESPACIO
+        AE::kFxCmp, AE::kFxGte, AE::kFxLim, AE::kFxDss, AE::kFxDuc,   // DINAMICA
+        AE::kFxPit, AE::kFxOct, AE::kFxTrn, AE::kFxFrz, AE::kFxRep    // TIEMPO
     };
     return kOrden;
 }
@@ -4861,6 +4889,53 @@ const MainComponent::FxDef MainComponent::fxDefs[MainComponent::kNumFx] =
       { {    0.0,     1.0, 0.01,    0.0,    0.55, 2 },
         {    0.0,   120.0, 1.00,    0.0,    20.0, 3 },
         {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 0.30 },
+
+    //  LOS SEIS QUE LLEVAN EL CATALOGO A CINCO POR FAMILIA.
+    //
+    //  FRM: VOCAL de cero a uno es el barrido A-E-I-O-U entero, y por eso no
+    //  lleva unidad: no es una frecuencia sino una posicion de la boca. RESO
+    //  comparte rango y clave con los demas filtros.
+    { "FRM",  { "VOCAL", "RESO", "MIX" },
+      { {    0.0,     1.0, 0.01,    0.0,     0.0, 2 },
+        {    0.3,     4.0, 0.01,    0.0,    1.20, 1 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
+
+    //  FLD: el TONO es el mismo mando que el de DRV -y la misma clave- porque
+    //  hace lo mismo y por la misma razon: plegar sin sitio donde poner los
+    //  armonicos es solo aspereza.
+    { "FLD",  { "PLIEGUE", "TONE|fx", "MIX" },
+      { {    0.0,     1.0, 0.01,    0.0,    0.30, 2 },
+        {  200.0, 20000.0, 1.00, 2000.0,  8000.0, 0 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 0.80 },
+
+    //  ROT: su RATE lleva `|lfo` como los cuatro de modulacion, y arranca alto
+    //  -5.5 Hz- porque una Leslie en rapido es donde se reconoce.
+    { "ROT",  { "RATE|lfo", "PROF", "MIX" },
+      { {   0.05,     8.0, 0.01,    1.0,    5.50, 10 },
+        {    0.0,     1.0, 0.01,    0.0,    0.70, 2 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
+
+    //  PNG: los mismos dos mandos que DLY y el mismo recorrido, que es lo
+    //  correcto: lo que cambia no es que se pide sino a donde va la vuelta.
+    { "PNG",  { "TIME", "FBK", "MIX" },
+      { {   20.0,  1000.0, 1.00,    0.0,   300.0, 3 },
+        {    0.0,    0.95, 0.01,    0.0,    0.45, 2 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 0.35 },
+
+    //  DUC: dos negras por segundo de fabrica, que son 120 pulsos por minuto.
+    //  Con el enganche al tempo cae en cada figura y el mando deja de contar.
+    { "DUC",  { "RATE|lfo", "PROF", "MIX" },
+      { {   0.05,     8.0, 0.01,    1.0,    2.00, 10 },
+        {    0.0,     1.0, 0.01,    0.0,    0.70, 2 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
+
+    //  REP: CANTIDAD es que parte de la vuelta se repite. A cero pasa todo de
+    //  largo -el efecto puesto y sin tocar nada- y a uno repite desde el
+    //  principio; el gesto que se usa esta en medio.
+    { "REP",  { "RATE|lfo", "CANTIDAD", "MIX" },
+      { {   0.05,     8.0, 0.01,    1.0,    2.00, 10 },
+        {    0.0,     1.0, 0.01,    0.0,    0.60, 2 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
 };
 
 // The readout always carries a unit, so a number means something on its own.
@@ -7509,9 +7584,25 @@ void MainComponent::refrescaTiraPaso()
                              juce::dontSendNotification);
 }
 
-void MainComponent::stepCellToggled (int pad, int step)
+void MainComponent::stepCellToggled (int pad, int step, bool arrastrando)
 {
     if (step >= engine.getPatternLength (selectedPattern)) return;
+
+    //  LA FOTO, Y UNA POR GESTO.
+    //
+    //  `pushUndo` cubria PEGAR, MOVER, DOBLAR, HUMANIZAR y EUCLIDES -las que se
+    //  piden por una tapa- y se dejaba fuera la accion mas frecuente de toda la
+    //  app: encender un paso con el dedo. Deshacer saltaba por encima de veinte
+    //  toques hasta la ultima tapa que alguien hubiera pulsado, o sea que
+    //  desandaba lo que no se pedia y no desandaba lo que si.
+    //
+    //  Y `arrastrando` es la mitad que no se ve: la rejilla avisa celda a celda
+    //  mientras el dedo pinta, asi que una foto por aviso deja dieciseis pasos
+    //  de pila para UN gesto. La toma solo el `mouseDown` -el unico aviso que
+    //  llega sin arrastre- que es el mismo reparto que ya usan el bloque de la
+    //  cancion y la seleccion del piano: «un solo pushUndo para el bloque
+    //  entero».
+    if (! arrastrando) pushUndo (T ("PASO"));
     //  El PRIMER paso que se toca hace aparecer la tira de debajo de la
     //  rejilla, y eso es un cambio de maqueta y no de contenido: sin este
     //  resized la tira no sale hasta que algo mas la provoque - girar el
@@ -10582,6 +10673,13 @@ void MainComponent::applyState (const juce::ValueTree& s)
 {
     if (! s.hasType ("ZATI") && ! s.hasType ("COLORS")) return;   // COLORS: proyectos anteriores al renombrado
 
+    //  MIENTRAS ESTO REPONE, NADIE TOMA FOTOS. Los faders de aqui se reponen
+    //  CON aviso -es el aviso el que llama al motor- y desde que la rejilla
+    //  toma foto en el suyo, deshacer se apilaba a si mismo: una pasada por
+    //  aqui dejaba una entrada nueva en la pila que se estaba desapilando.
+    //  Es la bandera hermana de `aplicandoFxPreset`.
+    const juce::ScopedValueSetter<bool> reponiendo (aplicandoEstado, true);
+
     //  NOT the skin. It used to be applied from here, so opening a project
     //  made on another phone repainted your machine to somebody else's taste,
     //  and a session with no skin property reset it on every launch. The
@@ -10598,7 +10696,13 @@ void MainComponent::applyState (const juce::ValueTree& s)
                             (((double) s.getProperty ("swing", (double) AudioEngine::kSwingRecto)
                                 - (double) AudioEngine::kSwingRecto) / (double) AudioEngine::kSwingRango) * 100.0),
                           juce::sendNotification);
-    gridSlider.setValue ((double) (int) s.getProperty ("gridres", 2), juce::sendNotification);
+    //  SINCRONO, y es la mitad que hace falta desde que la rejilla toma foto
+    //  de deshacer. `sendNotification` en un `Slider` es ASINCRONO -JUCE lo
+    //  despacha por `triggerAsyncUpdate`-, asi que el aviso llegaria despues de
+    //  que `applyState` haya vuelto y la bandera `aplicandoEstado` ya estuviera
+    //  baja: deshacer repondria la rejilla Y apilaria una foto nueva encima de
+    //  la pila que se esta desapilando, o sea deshacer que no termina nunca.
+    gridSlider.setValue ((double) (int) s.getProperty ("gridres", 2), juce::sendNotificationSync);
 
     //  Y LO MISMO CON LOS EFECTOS: sin <FX>, los seis se quedaban donde los
     //  dejo el proyecto anterior. El arbol invalido responde que no a
@@ -12739,9 +12843,15 @@ void MainComponent::pianoCortaSel()
                     juce::dontSendNotification);
 }
 
-void MainComponent::pianoCellToggled (int paso, int semi)
+void MainComponent::pianoCellToggled (int paso, int semi, bool arrastrando)
 {
     if (selectedPad < 0 || paso < 0 || paso >= engine.getPatternLength (selectedPattern)) return;
+
+    //  La misma foto que la rejilla de pasos, y por lo mismo: el piano y la
+    //  rejilla son DOS VISTAS del mismo patron, asi que una nota escrita en el
+    //  piano se deshace igual que un paso encendido en la rejilla o deshacer
+    //  contestaria distinto segun por que pestaña se escribio.
+    if (! arrastrando) pushUndo (T ("NOTA"));
 
     const int b = selectedPattern, p = selectedPad;
     const bool sonando = pattern[(size_t) b][(size_t) paso][(size_t) p];

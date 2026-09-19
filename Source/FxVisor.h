@@ -100,6 +100,14 @@ namespace FxVisor
             case AudioEngine::kFxPit: return kVentanaPit;
             case AudioEngine::kFxTrn: return kVentanaTrn;
             case AudioEngine::kFxAmb: return kVentanaAmb;
+            //  PNG comparte la ventana de DLY y REV porque ES un eco: dos
+            //  visores de la misma familia con dos escalas se leen como si el
+            //  segundo durase menos. DUC y REP tambien: lo que dibujan es
+            //  cuantas vueltas caben en dos segundos, que es lo que el mando
+            //  mueve.
+            case AudioEngine::kFxPng:
+            case AudioEngine::kFxDuc:
+            case AudioEngine::kFxRep: return kVentanaMs;
             case AudioEngine::kFxFrz: return kVentanaFrz;
             default:                  return 0.0f;
         }
@@ -125,7 +133,8 @@ namespace FxVisor
     {
         return f == AudioEngine::kFxFlt || f == AudioEngine::kFxHpf
             || f == AudioEngine::kFxWid || f == AudioEngine::kFxExc
-            || f == AudioEngine::kFxWah;
+            || f == AudioEngine::kFxWah
+            || f == AudioEngine::kFxFrm;
     }
 
     //  LA QUINTA FAMILIA: MODULACION. Su forma es el LFO, y sale de
@@ -214,6 +223,20 @@ namespace FxVisor
             //  AMB: el tamano estira las ocho reflexiones y el previo las
             //  desplaza enteras, asi que los dos mandos mueven el dibujo.
             case AudioEngine::kFxAmb: return { true,  true  };
+            //  FRM: la vocal mueve los dos formantes y la resonancia su ancho.
+            case AudioEngine::kFxFrm: return { true,  true  };
+            //  FLD: la transferencia es el pliegue; el TONO es un filtro
+            //  DESPUES y una transferencia no tiene eje de frecuencia, igual
+            //  que en DRV.
+            case AudioEngine::kFxFld: return { true,  false };
+            //  ROT: como los cuatro de modulacion, su RATE es un tiempo y la
+            //  ventana se mide en periodos, asi que no cabe en la curva.
+            case AudioEngine::kFxRot: return { false, true  };
+            //  PNG, DUC y REP dibujan TIEMPO, y los dos mandos lo mueven: el
+            //  primero cuantas vueltas caben y el segundo la forma de cada una.
+            case AudioEngine::kFxPng:
+            case AudioEngine::kFxDuc:
+            case AudioEngine::kFxRep: return { true,  true  };
             default:                  return { false, false };
         }
     }
@@ -243,7 +266,11 @@ namespace FxVisor
         //  con amplitud `fb^(k-1)`. Escrito aqui y no compartido porque no hay
         //  con que compartirlo: en el motor eso no es una formula, es lo que
         //  hace un bucle de tres lineas. Lo que si hay ahora es la medida.
-        if (fx == AudioEngine::kFxDly)
+        //  PNG SE DIBUJA COMO DLY porque su respuesta al impulso es la misma:
+        //  un eco cada `T` con `fbk` elevado a la vuelta. Lo que PNG cambia es
+        //  a que LADO va cada uno, y eso un dibujo de una sola curva no lo
+        //  puede decir — decirlo a medias seria peor que no decirlo.
+        if (fx == AudioEngine::kFxDly || fx == AudioEngine::kFxPng)
         {
             out.fill (0.0f);
             const float ms  = juce::jlimit (20.0f, 1000.0f, p0);
@@ -284,6 +311,56 @@ namespace FxVisor
                 const int i = juce::jlimit (0, kPuntos - 1,
                                             (int) std::round (seg / kVentanaAmb * (float) (kPuntos - 1)));
                 out[(size_t) i] = juce::jmax (out[(size_t) i], AudioEngine::kAmbGan[t]);
+            }
+            return;
+        }
+
+        //  DUC: LA CURVA DEL BOMBEO, que es exactamente la que la etapa
+        //  calcula -cae en el uno y vuelve, cuadratica- recorrida sobre la
+        //  ventana. RATE mueve cuantas vueltas caben y PROF cuanto baja.
+        if (fx == AudioEngine::kFxDuc)
+        {
+            const float hz = juce::jlimit (0.05f, 8.0f, p0);
+            const float pr = juce::jlimit (0.0f, 1.0f, p1);
+            for (int i = 0; i < kPuntos; ++i)
+            {
+                const float seg  = (float) i / (float) (kPuntos - 1) * kVentanaMs * 0.001f;
+                const float ciclo = seg * hz;
+                const float fase = ciclo - std::floor (ciclo);
+                const float q = 1.0f - fase;
+                pon (i, 1.0f - pr * q * q);
+            }
+            return;
+        }
+
+        //  REP: DONDE SE CORTA LA VUELTA. Arriba mientras pasa lo que suena y
+        //  abajo mientras se repite lo grabado, que es literalmente lo que el
+        //  mando CANTIDAD decide. No se dibuja el audio repetido porque no se
+        //  sabe cual va a ser: lo unico que el preset determina es DONDE corta.
+        if (fx == AudioEngine::kFxRep)
+        {
+            const float hz = juce::jlimit (0.05f, 8.0f, p0);
+            const float ca = juce::jlimit (0.0f, 1.0f, p1);
+            for (int i = 0; i < kPuntos; ++i)
+            {
+                const float seg  = (float) i / (float) (kPuntos - 1) * kVentanaMs * 0.001f;
+                const float ciclo = seg * hz;
+                const float fase = ciclo - std::floor (ciclo);
+                pon (i, (fase <= 1.0f - ca) ? 0.88f : 0.30f);
+            }
+            return;
+        }
+
+        //  ROT: LA BOCINA, que es la capa que se oye venir y volver. El tambor
+        //  va a otra velocidad y dibujar los dos encima daria una linea que no
+        //  se parece a ninguno de los dos.
+        if (fx == AudioEngine::kFxRot)
+        {
+            const float pr = juce::jlimit (0.0f, 1.0f, p1);
+            for (int i = 0; i < kPuntos; ++i)
+            {
+                const float t = (float) i / (float) (kPuntos - 1);
+                pon (i, 0.5f + 0.45f * pr * std::sin (juce::MathConstants<float>::twoPi * t));
             }
             return;
         }
@@ -538,6 +615,30 @@ namespace FxVisor
                     const float b = AudioEngine::svfBandaDb (hz,
                                       AudioEngine::wahCentro (p1, p0, 1.0f), AudioEngine::kWahQ);
                     pon (i, dbAAlto (juce::jmax (a, b)));
+                    break;
+                }
+
+                //  FRM: LOS DOS FORMANTES, con la MISMA `frmHz` que corre en
+                //  el hilo de audio y el mismo `svfBandaDb` que dibuja WAH. El
+                //  segundo pesa menos que el primero -0.62, o sea -4.2 dB- que
+                //  es lo que la etapa le da y lo que mide una voz.
+                case AudioEngine::kFxFrm:
+                {
+                    float f1 = 0.0f, f2 = 0.0f;
+                    AudioEngine::frmHz (p0, f1, f2);
+                    const float hz = hzDe (t);
+                    const float a = AudioEngine::svfBandaDb (hz, f1, p1);
+                    const float b = AudioEngine::svfBandaDb (hz, f2, p1) - 4.2f;
+                    pon (i, dbAAlto (juce::jmax (a, b)));
+                    break;
+                }
+
+                //  FLD: la transferencia, con el MISMO pliegue que suena. Ver
+                //  `AudioEngine::pliega`.
+                case AudioEngine::kFxFld:
+                {
+                    const float x = -1.0f + 2.0f * t;
+                    pon (i, 0.5f + 0.5f * AudioEngine::pliega (x, AudioEngine::fldGanancia (p0)));
                     break;
                 }
 

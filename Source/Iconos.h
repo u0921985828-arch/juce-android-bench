@@ -67,7 +67,7 @@ namespace Iconos
         midi, medir, altavoz, mano, momentaneo, niveles,
         cho, fla, pha, trm,
         rng, pit, wid, exc, trn, frz,
-        wah, oct, amb,
+        wah, oct, amb, frm, fld, rot, png, duc, rep,
         //  --- LOS SEIS QUE FALTABAN, y por que faltaban ------------------
         //
         //  No se eligieron mirando: salieron de `Tests/planos.py`, que dibuja
@@ -214,7 +214,10 @@ namespace Iconos
             case Id::wid: return "wid";                case Id::exc: return "exc";
             case Id::trn: return "trn";                case Id::frz: return "frz";
             case Id::wah: return "wah";                case Id::oct: return "oct";
-            case Id::amb: return "amb";
+            case Id::amb: return "amb";                case Id::frm: return "frm";
+            case Id::fld: return "fld";                case Id::rot: return "rot";
+            case Id::png: return "png";                case Id::duc: return "duc";
+            case Id::rep: return "rep";
             case Id::mic: return "mic";                case Id::remuestrear: return "remuestrear";
             case Id::bombeo: return "bombeo";          case Id::autocut: return "autocut";
             case Id::sistema: return "sistema";        case Id::cadena: return "cadena";
@@ -1017,6 +1020,84 @@ namespace Iconos
             //  Y el rayo TOCA la pared y vuelve, que es lo que lo hace legible:
             //  dos rayas sueltas dentro de un rectangulo son un rectangulo con
             //  dos rayas.
+            //  FRM: LAS DOS RESONANCIAS, que es lo que hay que ver para que no
+            //  se confunda con `eq` -una curva con nodos- ni con `flt`. Dos
+            //  picos estrechos sobre el mismo renglon, el segundo mas alto y
+            //  mas fino: es literalmente lo que la vocal hace con el espectro,
+            //  y es el unico icono de la tabla con dos puntas.
+            case Id::frm:
+                linea (L, 2.0f, 20.5f, 22.0f, 20.5f);
+                L.startNewSubPath (3.0f, 20.5f);
+                L.quadraticTo (6.5f,  20.0f,  7.5f,  9.0f);
+                L.quadraticTo (8.5f,  20.0f, 12.0f, 19.5f);
+                L.quadraticTo (14.5f, 19.5f, 15.5f,  4.5f);
+                L.quadraticTo (16.5f, 19.5f, 21.0f, 20.0f);
+                break;
+
+            //  FLD: LA ONDA REBOTANDO CONTRA EL TECHO. El techo se dibuja -dos
+            //  renglones- porque sin el no se entiende que la onda esta
+            //  chocando, y lo que la separa de `drv` es justo eso: alli la onda
+            //  se aplana contra el techo y aqui se DA LA VUELTA.
+            case Id::fld:
+                linea (L, 2.0f,  6.0f, 22.0f,  6.0f);
+                linea (L, 2.0f, 18.0f, 22.0f, 18.0f);
+                L.startNewSubPath (2.0f, 18.0f);
+                L.lineTo (6.0f,  6.0f);
+                L.lineTo (10.0f, 18.0f);
+                L.lineTo (14.0f,  6.0f);
+                L.lineTo (18.0f, 18.0f);
+                L.lineTo (22.0f,  6.0f);
+                break;
+
+            //  ROT: EL ALTAVOZ QUE GIRA. Una flecha que da la vuelta alrededor
+            //  del cono. `rev` son tres arcos que se ABREN -la cola- y esto es
+            //  UNO cerrado con punta: lo que se dibuja no es el sonido, es el
+            //  aparato, que es lo que lo separa de todo lo demas de la familia.
+            case Id::rot:
+                R.addEllipse (10.0f, 10.0f, 4.0f, 4.0f);
+                L.addCentredArc (12.0f, 12.0f, 7.5f, 7.5f, 0.0f,
+                                 0.5f, juce::MathConstants<float>::twoPi - 0.9f, true);
+                linea (L, 16.0f,  6.6f, 19.2f,  6.0f);
+                linea (L, 16.0f,  6.6f, 17.6f,  9.4f);
+                break;
+
+            //  PNG: EL ECO QUE REBOTA. Dos paredes y el camino en zigzag entre
+            //  ellas, con el golpe relleno y los rebotes a trazo. `dly` son
+            //  ecos que caen en LINEA RECTA; aqui lo que se ve es que cambian
+            //  de lado, que es todo lo que hay que entender.
+            case Id::png:
+                linea (L,  3.0f,  4.0f,  3.0f, 20.0f);
+                linea (L, 21.0f,  4.0f, 21.0f, 20.0f);
+                R.addEllipse (1.6f,  5.6f, 2.8f, 2.8f);
+                linea (L,  3.0f,  7.0f, 21.0f, 11.0f);
+                linea (L, 21.0f, 11.0f,  3.0f, 15.0f);
+                linea (L,  3.0f, 15.0f, 21.0f, 18.5f);
+                break;
+
+            //  DUC: LA CURVA DEL BOMBEO. Cae de golpe y vuelve despacio, dos
+            //  veces: es la forma exacta que la etapa calcula, y es lo que la
+            //  separa de `cmp` -una transferencia, o sea nivel contra nivel- y
+            //  de `trm`, que sube y baja igual de rapido en las dos mitades.
+            case Id::duc:
+                linea (L, 2.0f, 20.5f, 22.0f, 20.5f);
+                L.startNewSubPath (2.0f, 5.0f);
+                L.lineTo (2.0f, 17.0f);
+                L.quadraticTo (6.0f, 16.0f, 12.0f, 5.0f);
+                L.lineTo (12.0f, 17.0f);
+                L.quadraticTo (16.0f, 16.0f, 22.0f, 5.0f);
+                break;
+
+            //  REP: EL TROZO QUE SE REPITE. El primero relleno -lo que se
+            //  grabo- y los dos de detras a trazo -lo que se devuelve-, que es
+            //  la misma regla que separa el golpe de sus ecos en `dly`. Y son
+            //  BLOQUES y no picos, porque lo que se repite es un trozo entero
+            //  de audio y no un golpe.
+            case Id::rep:
+                R.addRectangle ( 3.0f,  7.0f, 4.5f, 10.0f);
+                L.addRectangle ( 9.75f, 7.0f, 4.5f, 10.0f);
+                L.addRectangle (16.5f,  7.0f, 4.5f, 10.0f);
+                break;
+
             case Id::amb:
                 L.addRectangle (2.0f, 4.0f, 20.0f, 16.0f);
                 R.addEllipse (6.5f, 10.5f, 3.0f, 3.0f);

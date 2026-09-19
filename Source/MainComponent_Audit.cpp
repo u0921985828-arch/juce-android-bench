@@ -617,6 +617,156 @@ void MainComponent::auditArrange()
                   << ",\"mudo\":[" << mudo1 << "," << mudo2 << "]"
                   << ",\"con lapiz pinta\":" << pintado << "}" << std::endl;
     }
+
+    //  ------------------------------------------------------------------
+    //  LA RED DEBAJO DE LO QUE SE ESCRIBE EN EL SECUENCIADOR
+    //  ------------------------------------------------------------------
+    //
+    //  `pushUndo` cubria las nueve acciones que se piden por una TAPA -PEGAR,
+    //  MOVER, DOBLAR, HUMANIZAR, EUCLIDES...- y se dejaba fuera las dos que se
+    //  hacen con el dedo mil veces por sesion: encender un paso en la rejilla y
+    //  escribir una nota en el piano. Deshacer saltaba por encima de todo lo
+    //  tocado hasta la ultima tapa pulsada.
+    //
+    //  Y `Tests/deshacer.py` no puede ver esto: aquella regla deriva del EMBUDO
+    //  de los pads -`assignSampleToPad`- y un paso no ocupa ningun pad. Es la
+    //  misma figura que ya se pago con el visor del rack: una regla perfecta de
+    //  otra cosa.
+    //
+    //  CUATRO CIFRAS Y NO UNA, porque cada una sola se engaña sola:
+    //    - `pintados` dice que el gesto escribio -sin esto, una foto que
+    //      congela la rejilla tambien saldria verde-;
+    //    - `entradas` dice que el arrastre dejo UNA foto y no una por celda;
+    //    - `tras deshacer` dice que la foto valia; y
+    //    - `tras rehacer` que la rama de rehacer sigue viva, que es lo que se
+    //      pierde si alguien apila una foto mientras se repone.
+    {
+        openSheet (seqSheet, secButton);
+        showSeqPage (seqPageGrid);
+        resized();
+
+        selectedPattern = 0;
+        currentBank = 0;
+        seqPrimerPaso = 0;
+        for (int st = 0; st < AudioEngine::kNumSteps; ++st)
+            for (int p = 0; p < kNumPads; ++p)
+            { pattern[0][(size_t) st][(size_t) p] = false; engine.setStep (0, st, p, false); }
+        selectedPad = 0;
+        refreshStepGrid();
+        resized();
+
+        auto encendidos = [this]
+        {
+            int n = 0;
+            for (int st = 0; st < AudioEngine::kNumSteps; ++st)
+                for (int p = 0; p < kNumPads; ++p)
+                    if (pattern[0][(size_t) st][(size_t) p]) ++n;
+            return n;
+        };
+
+        const auto cuando = juce::Time::getCurrentTime();
+        auto evento = [&] (juce::Component& c, juce::Point<float> pt)
+        {
+            return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(),
+                                     pt, juce::ModifierKeys(), 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                     &c, &c, cuando, pt, cuando, 1, false);
+        };
+
+        //  POR EL GESTO Y NO POR DENTRO: lo que se mide es que un ARRASTRE deje
+        //  una sola foto, y eso solo lo puede decir el camino del dedo entero
+        //  -`mouseDrag` marca `arrastrando` y la rejilla lo reenvia-. Llamando a
+        //  `stepCellToggled` por dentro saldria verde con el aviso sin cablear.
+        //  Y LA CELDA SE MIDE ANTES DE CADA EVENTO, no una vez. El primer paso
+        //  tocado hace aparecer la tira de debajo de la rejilla -es un cambio de
+        //  MAQUETA, y `stepCellToggled` pide el `resized` el mismo-, asi que la
+        //  celda encoge a mitad del gesto. Con las medidas tomadas una sola vez
+        //  el arrastre caia dos veces en la misma columna y esta medida saco
+        //  «pintados 3» de cuatro eventos con el codigo correcto: primero se
+        //  duda de la prueba.
+        auto celda = [this] (int col)
+        {
+            return juce::Point<float> ((float) StepGrid::kGutter
+                                         + stepGrid.celdaAnchoPx() * ((float) col + 0.5f),
+                                       stepGrid.celdaAltoPx() * 0.5f);
+        };
+
+        //  Y LA PILA SE VACIA ANTES DE CADA MEDIDA. Tiene fondo -`kUndoDepth`,
+        //  dieciseis- y al llegar al tope `pushUndo` tira la mas vieja, asi que
+        //  el tamaño deja de crecer: contando por tamaño, «tomo la foto» y «tomo
+        //  la foto y se cayo la de abajo» dan el mismo numero. Esta medida saco
+        //  «entradas 0» con la foto puesta y el codigo correcto — la pila estaba
+        //  llena de las quince acciones de las medidas de arriba.
+        undoStack.clear(); redoStack.clear();
+        const int undo0 = (int) undoStack.size();
+        stepGrid.mouseDown (evento (stepGrid, celda (0)));
+        for (int c = 1; c < 4; ++c) stepGrid.mouseDrag (evento (stepGrid, celda (c)));
+        const int pintados      = encendidos();
+        const int entradasPaso  = (int) undoStack.size() - undo0;
+        performUndo();
+        const int trasDeshacer  = encendidos();
+        performRedo();
+        const int trasRehacer   = encendidos();
+
+        std::cout << "{\"arr\":\"deshacer pasos\",\"pintados\":" << pintados
+                  << ",\"entradas\":" << entradasPaso
+                  << ",\"tras deshacer\":" << trasDeshacer
+                  << ",\"tras rehacer\":" << trasRehacer << "}" << std::endl;
+
+        //  EL PIANO, QUE ES LA OTRA VISTA DEL MISMO PATRON. En diagonal: por la
+        //  MISMA fila un arrastre ESTIRA la nota -es el gesto de cualquier piano
+        //  roll- y lo que aqui se mide es el de pintar.
+        showSeqPage (seqPagePiano);
+        refreshPiano();
+        resized();
+
+        for (int st = 0; st < AudioEngine::kNumSteps; ++st)
+            for (int p = 0; p < kNumPads; ++p)
+            { pattern[0][(size_t) st][(size_t) p] = false; engine.setStep (0, st, p, false); }
+        refreshPiano();
+
+        auto tecla = [this] (int col, int fila)
+        {
+            return juce::Point<float> ((float) pianoGrid.canalIzq()
+                                         + pianoGrid.celdaAnchoPx() * ((float) col + 0.5f),
+                                       pianoGrid.celdaAltoPx() * ((float) fila + 0.5f));
+        };
+
+        undoStack.clear(); redoStack.clear();
+        const int undoP = (int) undoStack.size();
+        pianoGrid.mouseDown (evento (pianoGrid, tecla (0, 6)));
+        pianoGrid.mouseDrag (evento (pianoGrid, tecla (1, 5)));
+        pianoGrid.mouseDrag (evento (pianoGrid, tecla (2, 4)));
+        const int escritas     = encendidos();
+        const int entradasNota = (int) undoStack.size() - undoP;
+        performUndo();
+        const int notasTrasDeshacer = encendidos();
+
+        std::cout << "{\"arr\":\"deshacer notas\",\"escritas\":" << escritas
+                  << ",\"entradas\":" << entradasNota
+                  << ",\"tras deshacer\":" << notasTrasDeshacer << "}" << std::endl;
+
+        //  Y LA REJILLA -cuantos cuadrados dura un pulso-, que reparte el patron
+        //  entero por otro reloj y hasta hoy no tenia vuelta. La segunda cifra
+        //  es la que caza la trampa de tomar la foto en un `onValueChange`:
+        //  deshacer repone el mando CON aviso, asi que sin la bandera de
+        //  `applyState` la pila crece mientras se desapila y «deshacer» se
+        //  queda dando vueltas sobre si mismo.
+        undoStack.clear(); redoStack.clear();
+        const float beatsAntes = engine.getStepBeats();
+        const int   undoR      = (int) undoStack.size();
+        gridSlider.setValue (gridSlider.getValue() == 0.0 ? 1.0 : 0.0, juce::sendNotificationSync);
+        const float beatsTras  = engine.getStepBeats();
+        const int   entradasRej = (int) undoStack.size() - undoR;
+        performUndo();
+        const float beatsVuelta = engine.getStepBeats();
+        const int   pilaTrasDeshacer = (int) undoStack.size();
+
+        std::cout << "{\"arr\":\"deshacer rejilla\",\"antes\":" << juce::String (beatsAntes, 4)
+                  << ",\"tras el mando\":" << juce::String (beatsTras, 4)
+                  << ",\"entradas\":" << entradasRej
+                  << ",\"tras deshacer\":" << juce::String (beatsVuelta, 4)
+                  << ",\"pila\":[" << undoR << "," << pilaTrasDeshacer << "]}" << std::endl;
+    }
 }
 
 // ============================================================================
@@ -3073,7 +3223,7 @@ void MainComponent::auditPiano()
 
     //  Una nota testigo en el compas 0, misma columna: es la que delata que se
     //  escribe o se borra en el compas equivocado.
-    if (pianoGrid.onCelda) pianoGrid.onCelda (3, 9);
+    if (pianoGrid.onCelda) pianoGrid.onCelda (3, 9, false);
 
     //  Y AHORA AL COMPAS 1, POR LA BARRA y no moviendo `seqPrimerPaso` a
     //  mano: mover la variable por dentro se salta el codigo que decide cuanto
@@ -3081,7 +3231,7 @@ void MainComponent::auditPiano()
     //  los cinco fallos. Un toque en la PISTA, mas alla del pulgar, salta una
     //  pagina — o sea las columnas que se ven, que aqui son dieciseis.
     tocaBarra (seqBarra, 1.0f);
-    if (pianoGrid.onCelda) pianoGrid.onCelda (3, 5);
+    if (pianoGrid.onCelda) pianoGrid.onCelda (3, 5, false);
 
     //  Y LA VENTANA SE PUBLICA, que es lo que esta medida daba por hecho y
     //  dejo de ser verdad.
@@ -4941,13 +5091,30 @@ void MainComponent::auditRack()
             //  desplaza una columna cada 42 ms, asi que dos lecturas seguidas
             //  despues de un golpe salen distintas porque tienen que salirlo.
             //
-            //  Ochenta tics son 2.6 s: mas que los dos segundos que la ventana
-            //  de la cola tarda en vaciarse enteros y mas de veinte veces la
-            //  constante de 115 ms del analizador. Lo que se mide asi es lo
-            //  que de verdad importa — que se asiente y se PARE — que es
-            //  ademas lo unico que impide que esto repinte para siempre, que
-            //  es el fallo que `Tests/cpu.py` ya cazo en la curva del EQ.
-            lee (false, 80);
+            //  DOSCIENTOS TICS SON 6.6 s, y ochenta -2.6 s- se quedaban
+            //  cortos en cuanto entro PNG: el banco saco «1 de 29 capas vivas
+            //  se mueven sin señal» con `27=... curva 0.5649@47`, y la columna
+            //  47 es la MAS VIEJA de la cola. No dibujaba ruido — dibujaba la
+            //  cola de verdad del ping-pong, y el experimento lo confirmo:
+            //  con `if (false && live (kFxPng))` salieron «29 de 29 quietos
+            //  sin ella» y, a cambio, «1 de 29 no se mueven con señal».
+            //
+            //  El numero se deriva y no se elige. Son DOS tiempos en serie:
+            //    - la cola del efecto, con la realimentacion de fabrica de PNG
+            //      -0.45 cada 300 ms-: bajar del pico -que entra recortado a
+            //      1.0 desde un RMS de 4.8- a los 0.01 del liston de `distinto`
+            //      pide log(0.01/8)/log(0.45) = 8.4 repeticiones = 2.5 s;
+            //    - y la CINTA del dibujo, que son `kPuntos` columnas a
+            //      `kVentanaMs/(kPuntos-1)` = 42.6 ms, o sea 2.04 s mas, porque
+            //      hasta que no sale por la derecha la ultima columna cargada
+            //      el dibujo sigue moviendose aunque el audio ya este mudo.
+            //  Son 4.6 s = 139 tics de 33 ms; 200 deja el margen.
+            //
+            //  Lo que se mide asi sigue siendo lo que importa — que se asiente
+            //  y se PARE — que es ademas lo unico que impide que esto repinte
+            //  para siempre, que es el fallo que `Tests/cpu.py` ya cazo en la
+            //  curva del EQ.
+            lee (false, 200);
             const auto callado = lee (false, 5);
             const auto sonando = lee (true, 12);
             auto distinto = [] (const std::pair<FxVisor::Curva, juce::Point<float>>& a,
@@ -4965,7 +5132,7 @@ void MainComponent::auditRack()
             //  Y QUIETA SIN SEÑAL, con el mismo asentado delante: una capa que
             //  dibuja ruido falla aqui, y una que se ha parado no.
             diagPre1 = diagPre; diagPost1 = diagPost; diagVivo1 = diagVivo;
-            lee (false, 80);
+            lee (false, 200);
             const auto otra = lee (false, 5);
             if (! distinto (callado, otra)) ++quietosSinSenal;
             else

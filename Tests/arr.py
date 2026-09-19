@@ -394,11 +394,80 @@ def main():
         if her["con lapiz pinta"] == 0:
             malas.append ("con el LAPIZ armado el mismo toque ya no pinta: la herramienta no decide")
 
+    #  ------------------------------------------------------------------
+    #  LA RED DEBAJO DE LO QUE SE ESCRIBE CON EL DEDO
+    #  ------------------------------------------------------------------
+    #
+    #  `Tests/deshacer.py` mide la otra mitad -todo lo que ocupa un PAD toma
+    #  foto- y no puede ver esta: un paso encendido no ocupa ningun pad, asi que
+    #  aquella regla daba verde con las dos acciones mas frecuentes de la app
+    #  sin red. Las tapas del secuenciador -PEGAR, DOBLAR, EUCLIDES- si la
+    #  tenian desde el principio, que es lo que hacia el agujero invisible:
+    #  deshacer respondia, solo que saltandose todo lo tocado con el dedo.
+    #
+    #  Y las cifras van en pares por el motivo de siempre. «Se deshace» lo
+    #  cumple igual una rejilla que no escribe nada, asi que se mira lo escrito
+    #  Y lo que queda al deshacer; y una foto por celda tambien deshace, solo
+    #  que dieciseis veces, asi que se mira ademas cuantas entradas dejo UN
+    #  gesto.
+    pas = song.get ("deshacer pasos")
+    if not pas:
+        print ("%-22s %s" % ("deshacer pasos", "MAL - sin respuesta")); malas.append ("deshacer pasos")
+    else:
+        print ("%-22s el arrastre pinta %d, deja %d foto(s), deshacer %d, rehacer %d"
+               % ("pasos", pas["pintados"], pas["entradas"],
+                  pas["tras deshacer"], pas["tras rehacer"]))
+        #  Cuatro eventos -un mouseDown y tres mouseDrag- sobre cuatro columnas.
+        if pas["pintados"] != 4:
+            malas.append ("el arrastre por cuatro columnas enciende %d pasos" % pas["pintados"])
+        if pas["entradas"] != 1:
+            malas.append ("un arrastre por la rejilla deja %d entradas de deshacer y tiene que dejar 1"
+                          % pas["entradas"])
+        if pas["tras deshacer"] != 0:
+            malas.append ("deshacer deja %d pasos encendidos: la foto no es de antes del gesto"
+                          % pas["tras deshacer"])
+        if pas["tras rehacer"] != 4:
+            malas.append ("rehacer devuelve %d pasos de 4" % pas["tras rehacer"])
+
+    nts = song.get ("deshacer notas")
+    if not nts:
+        print ("%-22s %s" % ("deshacer notas", "MAL - sin respuesta")); malas.append ("deshacer notas")
+    else:
+        print ("%-22s el toque escribe %d, deja %d foto(s), deshacer %d"
+               % ("notas", nts["escritas"], nts["entradas"], nts["tras deshacer"]))
+        if nts["escritas"] != 1:
+            malas.append ("el toque en el piano escribe %d notas" % nts["escritas"])
+        if nts["entradas"] != 1:
+            malas.append ("escribir una nota deja %d entradas de deshacer" % nts["entradas"])
+        if nts["tras deshacer"] != 0:
+            malas.append ("deshacer deja %d notas escritas" % nts["tras deshacer"])
+
+    rej = song.get ("deshacer rejilla")
+    if not rej:
+        print ("%-22s %s" % ("deshacer rejilla", "MAL - sin respuesta")); malas.append ("deshacer rejilla")
+    else:
+        print ("%-22s %.4f negras por paso -> %.4f, %d foto(s), deshacer %.4f   pila %s"
+               % ("rejilla", rej["antes"], rej["tras el mando"], rej["entradas"],
+                  rej["tras deshacer"], rej["pila"]))
+        if abs (rej["tras el mando"] - rej["antes"]) < 1e-6:
+            malas.append ("mover la REJILLA no cambia lo que dura un paso: sigue en %.4f" % rej["antes"])
+        if rej["entradas"] != 1:
+            malas.append ("cambiar la REJILLA deja %d entradas de deshacer" % rej["entradas"])
+        if abs (rej["tras deshacer"] - rej["antes"]) > 1e-6:
+            malas.append ("deshacer deja la REJILLA en %.4f y tenia que volver a %.4f"
+                          % (rej["tras deshacer"], rej["antes"]))
+        #  Y la pila no puede crecer al deshacer: `applyState` repone el mando
+        #  CON aviso, asi que sin la bandera la foto se apila sobre la pila que
+        #  se esta desapilando y deshacer no termina nunca.
+        if rej["pila"][1] > rej["pila"][0]:
+            malas.append ("deshacer la REJILLA apila otra foto: la pila pasa de %d a %d"
+                          % (rej["pila"][0], rej["pila"][1]))
+
     print()
     if malas:
         print ("FALLA:", ", ".join (malas))
         return 1
-    print ("las operaciones de arreglo hacen lo que dicen")
+    print ("las operaciones de arreglo hacen lo que dicen, y lo que se escribe con el dedo se deshace")
     return 0
 
 

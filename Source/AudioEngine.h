@@ -97,7 +97,12 @@ public:
     //      ninguna, que es lo que dice de que tamano es la sala antes de que
     //      llegue la cola. Puestos uno al lado del otro se oyen como dos cosas
     //      distintas: AMB coloca y REV envuelve.
-    static constexpr int kNumFx         = 24;
+    //    · Y LOS SEIS QUE CIERRAN EL HUECO. El catalogo tenia cuatro por
+    //      familia y faltaba lo primero que se busca en una maquina como esta:
+    //      no habia forma de hacer un BOMBEO ni un STUTTER, que son dos de los
+    //      gestos mas usados en electronica. Entran uno por familia, para que
+    //      el reparto por tipos siga cuadrando, y quedan cinco por familia.
+    static constexpr int kNumFx         = 30;
     //  CUANTOS PARAMETROS TIENE UN EFECTO, y aqui y no en la cara: el motor es
     //  quien los guarda. Estaba escrito como un `4` literal en el tipo de `fxP`
     //  y otra vez en el de `cebaSuavizados`, y la cara llevaba su propia
@@ -134,6 +139,17 @@ public:
     //  ranura de todo lo guardado. Donde se ENSEÑA lo decide la cara, que ya
     //  ordena por tipo; donde se GUARDA no se toca.
     static constexpr int kFxAmb = 23;
+    //  Y LOS SEIS QUE LLEVAN EL CATALOGO A CINCO POR FAMILIA. Al final y por lo
+    //  mismo que AMB: el indice viaja a los proyectos.
+    //
+    //    FRM  formante      un par de resonancias de vocal, barridas A-E-I-O-U
+    //    FLD  plegador      la onda rebota contra el techo en vez de recortarse
+    //    ROT  giratorio     dos bocinas a distinta velocidad, con su rampa
+    //    PNG  ping-pong     el eco que rebota de un canal al otro
+    //    DUC  bombeo        el sidechain al tempo de toda la electronica
+    //    REP  repetidor     corta un trozo al tempo y lo repite
+    static constexpr int kFxFrm = 24, kFxFld = 25, kFxRot = 26,
+                         kFxPng = 27, kFxDuc = 28, kFxRep = 29;
 
     //  DIECISEIS CANALES, que es la mesa entre los pads y los efectos.
     //
@@ -285,6 +301,45 @@ public:
     //  juegos iguales dejarian las ocho reflexiones en el centro, o sea una
     //  sala de un solo punto. Ni un retardo entre canales, que en mono es un
     //  peine: cada canal tiene sus PROPIAS reflexiones del MISMO directo.
+    //  LAS CINCO VOCALES DE FRM, publicas porque las pide el VISOR.
+    //
+    //  Son los dos primeros formantes medidos de A, E, I, O y U en una voz
+    //  media. Dos y no tres: el tercero esta por encima de 2.5 kHz en las
+    //  cinco y lo que separa una vocal de otra son estos dos. El mando barre
+    //  ENTRE ellas -no salta-, que es lo que hace que suene a alguien hablando
+    //  y no a cinco filtros conmutados.
+    static constexpr int kFrmVocales = 5;
+    static constexpr float kFrmF1[kFrmVocales] = {  730.0f,  530.0f,  270.0f,  570.0f,  300.0f };
+    static constexpr float kFrmF2[kFrmVocales] = { 1090.0f, 1840.0f, 2290.0f,  840.0f,  870.0f };
+
+    //  El par de formantes del mando, interpolado. Escrito aqui y no en la
+    //  etapa porque lo dibuja el visor: dos cuentas para lo mismo es como una
+    //  se queda vieja.
+    static void frmHz (float vocal, float& f1, float& f2) noexcept
+    {
+        const float v = juce::jlimit (0.0f, 1.0f, vocal) * (float) (kFrmVocales - 1);
+        const int   a = juce::jlimit (0, kFrmVocales - 1, (int) v);
+        const int   b = juce::jlimit (0, kFrmVocales - 1, a + 1);
+        const float t = v - (float) a;
+        f1 = kFrmF1[a] + t * (kFrmF1[b] - kFrmF1[a]);
+        f2 = kFrmF2[a] + t * (kFrmF2[b] - kFrmF2[a]);
+    }
+
+    //  EL CRUCE DE ROT y LO QUE DURA EL TROZO DE REP, publicos por lo mismo.
+    //
+    //  800 Hz es donde una Leslie parte de verdad: la bocina de arriba lleva lo
+    //  que esta por encima y el tambor de abajo lo que esta por debajo, y giran
+    //  a velocidades distintas. Un solo altavoz girando seria un tremolo con
+    //  panoramica, que es TRM y WID juntos.
+    static constexpr float kRotCruceHz = 800.0f;
+    //  Y el tambor gira mas despacio que la bocina: es lo que hace que el
+    //  sonido se descomponga en dos capas en vez de balancearse entero.
+    static constexpr float kRotTambor  = 0.72f;
+    //  250 ms de trozo: una semicorchea a 60 negras por minuto. Mas largo que
+    //  eso ya es congelar, y congelar lo hace FRZ. Son 12000 muestras por canal
+    //  a 48 kHz, o sea 96 KB por canal de mesa con los dos lados.
+    static constexpr double kRepMaxSeg = 0.250;
+
     static constexpr int kAmbTomas = 8;
     static constexpr float kAmbMsL[kAmbTomas] = { 11.3f, 19.7f, 28.1f, 37.9f,
                                                   49.3f, 61.7f, 76.1f, 92.3f };
@@ -329,6 +384,12 @@ public:
         {    0.60f,   400.0f, 0.0f },   // WAH  sensibilidad, base Hz, mix
         {    0.70f,    0.50f, 0.0f },   // OCT  arriba, abajo, mix
         {    0.55f,   20.0f, 0.0f },   // AMB  tamano, previo ms, mix
+        {     0.0f,    1.20f, 0.0f },   // FRM  vocal, reso, mix
+        {    0.30f,  8000.0f, 0.0f },   // FLD  pliegue, tono, mix
+        {    5.50f,    0.70f, 0.0f },   // ROT  rate, profundidad, mix
+        {   300.0f,    0.45f, 0.0f },   // PNG  tiempo, realimentacion, mix
+        {    2.00f,    0.70f, 0.0f },   // DUC  rate, profundidad, mix
+        {    2.00f,    0.60f, 0.0f },   // REP  rate, cantidad, mix
     };
     static constexpr int kNumSteps      = 64;   // max steps per pattern (length is variable, see below)
     static constexpr int kMinPatLen     = 16;
@@ -1355,6 +1416,28 @@ public:
         return { 1.0f + d * 24.0f, 1.0f / (1.0f + d * 2.5f) };
     }
     static float saturaDe (float x, Drive dr) noexcept { return fastTanh (dr.k * x) * dr.mk; }
+
+    //  EL PLIEGUE DE FLD, compartido con el VISOR y por la misma razon que
+    //  `saturaDe`: el dibujo de una transferencia tiene que ser LA MISMA
+    //  funcion que suena, o el dia que alguien la retoque el visor dibuja la de
+    //  ayer y nadie lo ve.
+    //
+    //  Es un triangulo exacto -`x` reflejado en +-1- hecho con un `floor` y un
+    //  `abs`, sin una transcendental por muestra. Con `g` a uno es la
+    //  identidad dentro de +-1, que es lo que hace que el mando a cero deje la
+    //  señal como estaba. Y se compensa por la raiz de `g`: a ocho pliegues la
+    //  señal pasa mas tiempo cerca de cero y sin esto el efecto sonaria mas
+    //  bajo que el original, o sea un mando que hay que corregir a mano.
+    static float pliega (float x, float g) noexcept
+    {
+        const float f = x * g;
+        const float u = f * 0.25f + 0.25f;
+        const float y = 4.0f * (std::abs (u - std::floor (u + 0.5f)) - 0.25f);
+        return y / std::sqrt (juce::jmax (1.0f, g));
+    }
+    //  De cero a uno del mando, de uno a ocho pliegues.
+    static float fldGanancia (float pliegue) noexcept
+    { return 1.0f + 7.0f * juce::jlimit (0.0f, 1.0f, pliegue); }
 
     //  BIT: cuantos escalones de amplitud, y el retenedor.
     static float nivelesDe (float bits) noexcept
@@ -2617,6 +2700,20 @@ private:
     //  puntos por muestra para leer la misma muestra entera. `delayLine` si lo
     //  necesita porque su TIME se suaviza por muestra.
     juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::None> ambLine { 32768 };
+
+    //  PNG: la linea del ping-pong. Del mismo tipo que la de DLY -Lagrange de
+    //  tercer orden- porque su TIME tambien se suaviza por muestra y un retardo
+    //  que se barre sin interpolar crepita: 5.9 dB de perdida con lineal contra
+    //  0.7 con Lagrange, medido en esta casa.
+    //
+    //  Y ES UNA SOLA LINEA CON DOS CANALES Y LA REALIMENTACION CRUZADA, que es
+    //  lo unico que separa esto de DLY: lo que sale por la izquierda vuelve a
+    //  entrar por la derecha. Con dos lineas independientes saldrian dos ecos
+    //  paralelos, o sea DLY en estereo.
+    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> pngLine { 96000 };
+    std::atomic<float>& pngTime = fxP[0][kFxPng][0];   // ms
+    std::atomic<float>& pngFb   = fxP[0][kFxPng][1];   // 0..0.95
+    float smPngSamp = 0.0f, smPngFb = 0.0f;
     std::atomic<float>& ambTam  = fxP[0][kFxAmb][0];   // 0..1
     std::atomic<float>& ambPre  = fxP[0][kFxAmb][1];   // ms
     std::atomic<float>& dlyMix  = fxP[0][kFxDly][2];   // 0..1
@@ -2905,7 +3002,14 @@ private:
                                                   //  por su camino, y mandarlo otra vez
                                                   //  por aqui seria el mismo peine que
                                                   //  el comentario de la reverb explica.
-                                                  false };
+                                                  false,
+                                                  //  Y LOS SEIS NUEVOS. Cinco SUSTITUYEN
+                                                  //  -una vocal, un pliegue, una bocina, un
+                                                  //  bombeo y un trozo repetido con el
+                                                  //  original al lado no hacen ninguna de
+                                                  //  las cinco cosas- y PNG suma, porque es
+                                                  //  un eco y los ecos son envios.
+                                                  true, true, true, false, true, true };
     //  Y NO SE PUEDE QUEDAR CORTA EN SILENCIO. Una lista de inicializacion de
     //  agregado rellena con `false` lo que no se nombre, asi que un tipo nuevo
     //  al que se le olvide su fila aqui entraria como ENVIO —sumando encima en
@@ -2950,7 +3054,10 @@ private:
                                                  //  ambiente por canal serian dieciseis salas
                                                  //  distintas sonando a la vez, que es justo lo
                                                  //  contrario de lo que un ambiente hace.
-                                                 false };
+                                                 false,
+                                                 //  Los cinco nuevos que sustituyen son de SU
+                                                 //  canal; PNG es de la mesa, como DLY y REV.
+                                                 true, true, true, false, true, true };
     static_assert (sizeof (fxPorCanal) / sizeof (fxPorCanal[0]) == kNumFx,
                    "fxPorCanal tiene que tener una fila por tipo");
 
@@ -2995,7 +3102,7 @@ private:
     //  `fxSustituye` y el `static_assert` de debajo de la clase los contrasta.
     //  Aqui dentro no se puede llamar -la clase todavia esta incompleta en el
     //  punto en el que haria falta el valor- y ahi fuera si.
-    static constexpr int kNumIns = 18;
+    static constexpr int kNumIns = 23;
     static constexpr int contarInsertos() noexcept
     {
         int n = 0;
@@ -3016,7 +3123,7 @@ private:
     //  que CHO, FLA y PHA son de su canal. `kNumIns` sigue contando los que
     //  RESTAN SECO —lo publica el banco y lo usa el reparto— y esto cuenta los
     //  que tienen UNO POR CANAL. Eran el mismo numero y ya no lo son: 18 y 21.
-    static constexpr int kNumPorCanal = 21;
+    static constexpr int kNumPorCanal = 26;
     static constexpr int contarPorCanal() noexcept
     {
         int n = 0;
@@ -3234,6 +3341,49 @@ private:
         OctEstado oct;
         float smOctArriba = 0.0f, smOctAbajo = 0.0f;
         bool  octWasActive = false;
+
+        //  FRM: las dos bandas de la vocal. Dos SVF por canal, uno por
+        //  formante, con el mismo `Dinamica::Svf` que usan WAH y el cruce de
+        //  WID: una banda mas es un filtro mas, no una pieza nueva.
+        Dinamica::Svf frmUno[2], frmDos[2];
+        float smFrmVocal = 0.0f, smFrmReso = 1.20f;
+        bool  frmWasActive = false;
+
+        //  FLD: el plegador y el paso bajo que va detras, por la misma razon
+        //  que DRV lo lleva -plegar sin sitio donde poner los armonicos es solo
+        //  aspereza- y con el mismo polo de un solo coeficiente.
+        float smFldPliegue = 0.0f, smFldTono = 20000.0f;
+        float fldLp[2] { 0.0f, 0.0f };
+        bool  fldWasActive = false;
+
+        //  ROT: el cruce de la bocina y el tambor. El MISMO Linkwitz-Riley que
+        //  ya usan WID y EXC, que es la tercera vez que sirve.
+        Dinamica::Svf rotAlta[2][2], rotBaja[2][2];
+        float smRotProf = 0.0f;
+        bool  rotWasActive = false;
+        //  Por donde va la bocina, para la capa viva del visor.
+        std::atomic<float> rotFase { 0.0f };
+
+        //  DUC: no guarda ni un filtro. La curva del bombeo es una funcion de
+        //  la FASE, y la fase sale del reloj por `pasoMod` como la de los
+        //  cuatro de modulacion, asi que lo unico que se arrastra es el
+        //  suavizado del mando y lo que el visor lee.
+        float smDucProf = 0.0f;
+        bool  ducWasActive = false;
+        std::atomic<float> ducGan { 1.0f };
+
+        //  REP: el trozo capturado y por donde va su lectura. Es la misma forma
+        //  que `frzVent` y a proposito: los dos guardan una ventana y la
+        //  repiten. Lo que los separa es QUIEN decide cuando se captura -aqui
+        //  el reloj, alli el dedo- y por eso no se comparte el buffer: dos
+        //  efectos en la misma ranura no pueden ser, pero en dos ranuras
+        //  distintas del mismo canal si.
+        std::array<std::vector<float>, 2> repVent;
+        int   repLargo = 0, repEscritas = 0;
+        float repLee = 0.0f;
+        float smRepCantidad = 0.0f;
+        bool  repWasActive = false;
+        float repFaseAnt = 0.0f;
 
         //  LOS SUAVIZADOS ARRANCAN YA EN SU DESTINO, y esto vive AQUI y no
         //  suelto en `copyStateFrom` por la razon que ese sitio ya lleva

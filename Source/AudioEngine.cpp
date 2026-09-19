@@ -243,6 +243,14 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize, int inputC
     ambLine.setMaximumDelayInSamples (juce::jmin (32767, juce::jmax (1, (int) (systemSampleRate * 0.5))));
     ambLine.reset();
 
+    //  Y la del ping-pong, con el mismo tope que la de DLY: su mando llega a
+    //  un segundo.
+    pngLine.prepare (spec);
+    pngLine.setMaximumDelayInSamples (juce::jmax (1, (int) (systemSampleRate * 1.0)));
+    pngLine.reset();
+    smPngFb   = pngFb.load (std::memory_order_relaxed);
+    smPngSamp = (float) (pngTime.load (std::memory_order_relaxed) * 0.001 * systemSampleRate);
+
     //  Y EL RELOJ DE LA MODULACION ARRANCA EN CERO. Es lo unico que hay que
     //  poner: las fases NO se guardan, se calculan a partir de aqui, asi que un
     //  `prepare` que se olvidara de reiniciar una de las noventa y seis no
@@ -301,6 +309,22 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize, int inputC
         I.frzEscritas = 0; I.frzLee = 0.0f; I.frzLlena = false; I.frzOyo = false;
         I.frzLargo = (int) (systemSampleRate * 0.180);
         I.carWasActive.fill (false);
+
+        //  Y LOS CINCO INSERTOS NUEVOS, por lo mismo: lo que se reserva se
+        //  reserva AQUI. La ventana de REP al tope de su trozo -250 ms, ver
+        //  `kRepMaxSeg`- y los filtros de FRM y ROT a cero, que es lo que hace
+        //  que un cambio de ruta no arrastre la cola de la ruta anterior.
+        for (auto& st : I.frmUno) st = {};
+        for (auto& st : I.frmDos) st = {};
+        for (auto& fila : I.rotAlta) for (auto& st : fila) st = {};
+        for (auto& fila : I.rotBaja) for (auto& st : fila) st = {};
+        I.fldLp[0] = I.fldLp[1] = 0.0f;
+        for (auto& c : I.repVent) c.assign ((size_t) (systemSampleRate * kRepMaxSeg) + 4, 0.0f);
+        I.repLargo = (int) (systemSampleRate * 0.125);
+        I.repEscritas = 0; I.repLee = 0.0f; I.repFaseAnt = 0.0f;
+        I.frmWasActive = I.fldWasActive = I.rotWasActive = false;
+        I.ducWasActive = I.repWasActive = false;
+        I.ducGan.store (1.0f, std::memory_order_relaxed);
 
         //  El EQ toma la frecuencia nueva y limpia sus diez estados; las bandas
         //  NO se tocan, que esto corre en cada cambio de ruta. Ver Eq5::prepare.
@@ -3076,6 +3100,297 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     }
                 }
             }
+
+            // --- 7g. LOS CINCO INSERTOS QUE CIERRAN EL REPARTO. -----------
+            //
+            //  FRM, FLD, ROT, DUC y REP. Los cinco SUSTITUYEN y los cinco son
+            //  de su canal, asi que su sitio es este. Bloque propio por lo
+            //  mismo que 7f: no comparten estado con los de arriba, y meterlos
+            //  dentro seria un array de banderas que ya no dice lo que su
+            //  comentario promete.
+            {
+                const float kBlockG = kBlock;
+
+                // --- FRM: la vocal. -------------------------------------
+                //
+                //  Dos bandas y no un paso banda barrido: lo que hace que suene
+                //  a alguien y no a un filtro es que hay DOS resonancias y su
+                //  distancia cambia con la vocal. Con una sola sale WAH.
+                //
+                //  El mando barre ENTRE las cinco -ver `frmHz`- y no salta: el
+                //  salto se oye como cinco ajustes y el barrido como una boca.
+                {
+                    const bool vivo = live (kFxFrm);
+                    const float vo = juce::jlimit (0.0f, 1.0f, P (kFxFrm, 0));
+                    const float re = juce::jlimit (0.3f, 4.0f, P (kFxFrm, 1));
+                    I.smFrmVocal += kBlockG * (vo - I.smFrmVocal);
+                    I.smFrmReso  += kBlockG * (re - I.smFrmReso);
+
+                    if (vivo && ! I.frmWasActive)
+                        for (int ch = 0; ch < 2; ++ch) { I.frmUno[ch] = {}; I.frmDos[ch] = {}; }
+                    I.frmWasActive = vivo;
+
+                    if (vivo)
+                    {
+                        float f1 = 0.0f, f2 = 0.0f;
+                        frmHz (I.smFrmVocal, f1, f2);
+                        const auto c1 = Dinamica::polosEn (f1, 1.0f / I.smFrmReso, systemSampleRate);
+                        const auto c2 = Dinamica::polosEn (f2, 1.0f / I.smFrmReso, systemSampleRate);
+
+                        for (int ch = 0; ch < chans; ++ch)
+                        {
+                            float* w = fxBus[busIdx (kFxFrm)].getWritePointer (ch, startSample);
+                            for (int i = 0; i < numSamples; ++i)
+                            {
+                                float lp = 0.0f, hp = 0.0f, b1 = 0.0f, b2 = 0.0f;
+                                Dinamica::svf (w[i], I.frmUno[ch], c1.a1, c1.a2, c1.a3, c1.k, lp, hp, b1);
+                                Dinamica::svf (w[i], I.frmDos[ch], c2.a1, c2.a2, c2.a3, c2.k, lp, hp, b2);
+                                //  Por `k`, o sea por 1/Q, igual que WAH: la
+                                //  banda de un SVF sale con pico Q y sin esto el
+                                //  efecto sonaria muy por encima de lo que
+                                //  dibuja. El segundo formante pesa menos que el
+                                //  primero, que es lo que mide una voz.
+                                w[i] = b1 * c1.k + 0.62f * b2 * c2.k;
+                            }
+                        }
+                        returnBus (kFxFrm);
+                    }
+                }
+
+                // --- FLD: el plegador. ----------------------------------
+                //
+                //  NO ES DRV CON MAS GANANCIA. Un recortador aplana lo que pasa
+                //  del techo -y a partir de ahi todo suena igual de fuerte-;
+                //  un plegador lo REFLEJA hacia dentro, asi que subir el mando
+                //  no satura mas: cambia el timbre entero, y por eso es lo que
+                //  se usa en sintesis y no en una mesa.
+                //
+                //  El pliegue es un triangulo exacto -`x` reflejado en +-1- y
+                //  se hace con un `floor` y un `abs`, sin una sola
+                //  transcendental por muestra.
+                {
+                    const bool vivo = live (kFxFld);
+                    const float pl = juce::jlimit (0.0f, 1.0f, P (kFxFld, 0));
+                    const float to = juce::jlimit (200.0f, 20000.0f, P (kFxFld, 1));
+                    I.smFldPliegue += kBlockG * (pl - I.smFldPliegue);
+                    I.smFldTono    += kBlockG * (to - I.smFldTono);
+
+                    if (vivo && ! I.fldWasActive) I.fldLp[0] = I.fldLp[1] = 0.0f;
+                    I.fldWasActive = vivo;
+
+                    if (vivo)
+                    {
+                        //  De uno a ocho pliegues. Con ganancia uno no dobla
+                        //  nada -el triangulo es la identidad en +-1- asi que el
+                        //  mando a cero deja la señal como estaba, que es lo que
+                        //  un mando a cero tiene que hacer.
+                        const float g = fldGanancia (I.smFldPliegue);
+                        const float cLp = 1.0f - std::exp (-juce::MathConstants<float>::twoPi
+                                                           * I.smFldTono / (float) systemSampleRate);
+
+                        for (int ch = 0; ch < chans; ++ch)
+                        {
+                            float* w = fxBus[busIdx (kFxFld)].getWritePointer (ch, startSample);
+                            for (int i = 0; i < numSamples; ++i)
+                            {
+                                const float y = pliega (w[i], g);
+                                I.fldLp[ch] += cLp * (y - I.fldLp[ch]);
+                                w[i] = I.fldLp[ch];
+                            }
+                        }
+                        returnBus (kFxFld);
+                    }
+                }
+
+                // --- ROT: la bocina y el tambor. ------------------------
+                //
+                //  NO ES TRM CON PANORAMICA. Lo que hace que una Leslie suene a
+                //  Leslie es que son DOS altavoces: la bocina de arriba lleva
+                //  los agudos y gira rapido, el tambor de abajo lleva los graves
+                //  y gira mas despacio -ver `kRotTambor`-, asi que el sonido se
+                //  descompone en dos capas que no van juntas. Con un solo
+                //  altavoz saldria un balanceo entero, que es TRM y WID a la vez
+                //  y ya se puede hacer con lo que hay.
+                //
+                //  El cruce es el MISMO Linkwitz-Riley de WID y EXC, que es la
+                //  tercera vez que sirve.
+                {
+                    const bool vivo = live (kFxRot);
+                    const float pr = juce::jlimit (0.0f, 1.0f, P (kFxRot, 1));
+                    I.smRotProf += kBlockG * (pr - I.smRotProf);
+
+                    if (vivo && ! I.rotWasActive)
+                    {
+                        for (auto& fila : I.rotAlta) for (auto& st : fila) st = {};
+                        for (auto& fila : I.rotBaja) for (auto& st : fila) st = {};
+                    }
+                    I.rotWasActive = vivo;
+
+                    if (vivo && chans > 1)
+                    {
+                        auto fm = pasoMod (canal, kFxRot);
+                        float fase = fm.fase;
+                        const auto cX = Dinamica::polosEn (kRotCruceHz, juce::MathConstants<float>::sqrt2,
+                                                           systemSampleRate);
+
+                        float* w0 = fxBus[busIdx (kFxRot)].getWritePointer (0, startSample);
+                        float* w1 = fxBus[busIdx (kFxRot)].getWritePointer (1, startSample);
+
+                        for (int i = 0; i < numSamples; ++i)
+                        {
+                            const float ang  = juce::MathConstants<float>::twoPi * fase;
+                            //  La bocina y el tambor, cada uno a lo suyo y en
+                            //  contrafase: cuando una viene, el otro se va.
+                            const float gB = std::sin (ang);
+                            const float gT = std::sin (ang * kRotTambor
+                                                       + juce::MathConstants<float>::pi);
+
+                            for (int ch = 0; ch < 2; ++ch)
+                            {
+                                float* w = (ch == 0) ? w0 : w1;
+                                float lp = 0.0f, hp = 0.0f, bp = 0.0f;
+                                Dinamica::svf (w[i], I.rotAlta[ch][0], cX.a1, cX.a2, cX.a3, cX.k, lp, hp, bp);
+                                float lp2 = 0.0f, hp2 = 0.0f, bp2 = 0.0f;
+                                Dinamica::svf (hp,   I.rotAlta[ch][1], cX.a1, cX.a2, cX.a3, cX.k, lp2, hp2, bp2);
+                                const float alta = hp2;
+
+                                float lb = 0.0f, hb = 0.0f, bb = 0.0f;
+                                Dinamica::svf (w[i], I.rotBaja[ch][0], cX.a1, cX.a2, cX.a3, cX.k, lb, hb, bb);
+                                float lb2 = 0.0f, hb2 = 0.0f, bb2 = 0.0f;
+                                Dinamica::svf (lb,   I.rotBaja[ch][1], cX.a1, cX.a2, cX.a3, cX.k, lb2, hb2, bb2);
+                                const float baja = lb2;
+
+                                //  El lado decide el signo: la bocina que se
+                                //  acerca por la izquierda se aleja por la
+                                //  derecha. Es la misma figura que el ancho de
+                                //  Kits, sin un solo retardo entre canales.
+                                const float lado = (ch == 0) ? 1.0f : -1.0f;
+                                w[i] = alta * (1.0f + I.smRotProf * lado * gB)
+                                     + baja * (1.0f + 0.60f * I.smRotProf * lado * gT);
+                            }
+                            fase += fm.paso;
+                            if (fase >= 1.0f) fase -= std::floor (fase);
+                        }
+                        I.rotFase.store (fase, std::memory_order_relaxed);
+                        returnBus (kFxRot);
+                    }
+                }
+
+                // --- DUC: el bombeo. ------------------------------------
+                //
+                //  Es el sidechain de toda la electronica y no se podia hacer:
+                //  ni comprimiendo -CMP baja con lo que ENTRA, no con el compas-
+                //  ni con TRM, que sube y baja igual de rapido en las dos
+                //  mitades. Lo que hace un bombeo es caer de golpe en el uno y
+                //  volver despacio, y eso es una funcion del RELOJ.
+                //
+                //  Por eso la fase sale de `pasoMod`, exactamente como la de los
+                //  cuatro de modulacion: con el enganche al tempo cae en cada
+                //  figura, y en libre cae a los hercios que diga el mando.
+                //
+                //  La forma es fija -cuadratica- y no un mando, por lo mismo que
+                //  el ataque y la caida de CMP: con MIX ocupando uno de los tres
+                //  no entra, y lo que se pide de un bombeo es cuanto y cada
+                //  cuanto, no de que curva.
+                {
+                    const bool vivo = live (kFxDuc);
+                    const float pr = juce::jlimit (0.0f, 1.0f, P (kFxDuc, 1));
+                    I.smDucProf += kBlockG * (pr - I.smDucProf);
+                    I.ducWasActive = vivo;
+
+                    if (vivo)
+                    {
+                        auto fm = pasoMod (canal, kFxDuc);
+                        float fase = fm.fase;
+                        float g = 1.0f;
+
+                        for (int i = 0; i < numSamples; ++i)
+                        {
+                            //  Cae en el uno y vuelve: en fase cero la ganancia
+                            //  es 1 - profundidad, y al llegar al final del ciclo
+                            //  ha vuelto a uno.
+                            const float q = 1.0f - fase;
+                            g = 1.0f - I.smDucProf * q * q;
+                            for (int ch = 0; ch < chans; ++ch)
+                                fxBus[busIdx (kFxDuc)].getWritePointer (ch, startSample)[i] *= g;
+                            fase += fm.paso;
+                            if (fase >= 1.0f) fase -= std::floor (fase);
+                        }
+                        I.ducGan.store (g, std::memory_order_relaxed);
+                        returnBus (kFxDuc);
+                    }
+                }
+
+                // --- REP: el repetidor. ---------------------------------
+                //
+                //  NO ES FRZ AL TEMPO. El congelador captura UNA vez cuando se
+                //  le dice y repite esa ventana para siempre; esto vuelve a
+                //  capturar en cada vuelta del reloj, asi que lo que se repite
+                //  es siempre lo que acaba de pasar. Es la diferencia entre un
+                //  colchon y un tartamudeo.
+                //
+                //  El mando CANTIDAD dice que parte de la vuelta se repite: a
+                //  cero pasa todo de largo -el efecto puesto y sin tocar nada- y
+                //  a uno se repite desde el principio. En medio es el gesto que
+                //  se usa de verdad: el ultimo tercio del compas repitiendo.
+                {
+                    const bool vivo = live (kFxRep);
+                    const float ca = juce::jlimit (0.0f, 1.0f, P (kFxRep, 1));
+                    I.smRepCantidad += kBlockG * (ca - I.smRepCantidad);
+
+                    if (vivo && ! I.repWasActive)
+                    {
+                        I.repEscritas = 0; I.repLee = 0.0f; I.repFaseAnt = 1.0f;
+                        for (auto& c : I.repVent) std::fill (c.begin(), c.end(), 0.0f);
+                    }
+                    I.repWasActive = vivo;
+
+                    if (vivo)
+                    {
+                        auto fm = pasoMod (canal, kFxRep);
+                        float fase = fm.fase;
+                        const int tope = (int) I.repVent[0].size() - 1;
+
+                        for (int i = 0; i < numSamples; ++i)
+                        {
+                            //  LA VUELTA SE DETECTA POR EL SALTO DE FASE y no
+                            //  por un contador propio: el reloj se re-ancla en
+                            //  cada bloque -ver `pasoMod`- asi que un contador
+                            //  se separaria de el, que es justo lo que esa
+                            //  funcion existe para no tener.
+                            if (fase < I.repFaseAnt) { I.repEscritas = 0; I.repLee = 0.0f; }
+                            I.repFaseAnt = fase;
+
+                            //  Cuanto de la vuelta se graba antes de empezar a
+                            //  repetir. Con cantidad a cero se graba entera y no
+                            //  se repite nunca.
+                            const float vivo01 = 1.0f - I.smRepCantidad;
+                            const bool grabando = (fase <= vivo01) || I.repEscritas == 0;
+
+                            for (int ch = 0; ch < chans; ++ch)
+                            {
+                                float* w = fxBus[busIdx (kFxRep)].getWritePointer (ch, startSample);
+                                if (grabando)
+                                {
+                                    if (I.repEscritas < tope)
+                                        I.repVent[(size_t) ch][(size_t) I.repEscritas] = w[i];
+                                }
+                                else if (I.repEscritas > 0)
+                                {
+                                    const int pos = (int) I.repLee % I.repEscritas;
+                                    w[i] = I.repVent[(size_t) ch][(size_t) pos];
+                                }
+                            }
+                            if (grabando) { if (I.repEscritas < tope) ++I.repEscritas; }
+                            else          { I.repLee += 1.0f; }
+
+                            fase += fm.paso;
+                            if (fase >= 1.0f) fase -= std::floor (fase);
+                        }
+                        returnBus (kFxRep);
+                    }
+                }
+            }
         }
         canalEtapa = 0;
 
@@ -3225,6 +3540,59 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     for (int ch = 0; ch < chans; ++ch) ambLine.popSample (ch, 1.0f, true);
                 }
                 returnBus (kFxAmb);
+            }
+        }
+
+        // --- 6c. PING-PONG. El eco que rebota de un lado al otro.
+        //
+        //  NO ES DLY EN ESTEREO. Un delay con dos canales son dos ecos
+        //  paralelos, cada uno en su lado y con su propia cola; esto es UNA
+        //  cola que cruza: lo que sale por la izquierda vuelve a entrar por la
+        //  derecha, asi que la repeticion va saltando de lado. Con los mismos
+        //  dos mandos el resultado no se parece, y es lo que se pone en un eco
+        //  cuando se quiere que abra la mezcla en vez de engordar el centro.
+        //
+        //  El tiempo se suaviza POR MUESTRA, por lo mismo que en DLY: un salto
+        //  por bloque a traves de una linea interpolada es una discontinuidad
+        //  dura, o sea un chasquido en cada movimiento del mando.
+        {
+            const float fbT = juce::jlimit (0.0f, 0.95f, pngFb.load (std::memory_order_relaxed));
+            const float dsT = juce::jlimit (1.0f, (float) (systemSampleRate - 1.0),
+                                            pngTime.load (std::memory_order_relaxed)
+                                              * (float) systemSampleRate / 1000.0f);
+            smPngFb += kBlock * (fbT - smPngFb);
+            if (smPngSamp <= 0.0f) smPngSamp = dsT;
+            const float kSamp = 1.0f - std::exp (-1.0f / (0.020f * (float) systemSampleRate));
+
+            if (live (kFxPng))
+            {
+                float* w0 = fxBus[busIdx (kFxPng)].getWritePointer (0, startSample);
+                float* w1 = (chans > 1) ? fxBus[busIdx (kFxPng)].getWritePointer (1, startSample) : w0;
+
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    smPngSamp += kSamp * (dsT - smPngSamp);
+                    pngLine.setDelay (smPngSamp);
+
+                    const float dL = pngLine.popSample (0);
+                    const float dR = (chans > 1) ? pngLine.popSample (1) : dL;
+
+                    //  EL CRUCE. Y la misma barrera que DLY: esta linea se
+                    //  realimenta, asi que un NaN que entre una vez da vueltas
+                    //  para siempre. Se pregunta por lo finito porque comparar
+                    //  con NaN siempre es falso.
+                    const float aL = w0[i] + (chans > 1 ? dR : dL) * smPngFb;
+                    pngLine.pushSample (0, std::isfinite (aL) ? aL : 0.0f);
+                    if (chans > 1)
+                    {
+                        const float aR = w1[i] + dL * smPngFb;
+                        pngLine.pushSample (1, std::isfinite (aR) ? aR : 0.0f);
+                    }
+
+                    w0[i] = std::isfinite (dL) ? dL : 0.0f;
+                    if (chans > 1) w1[i] = std::isfinite (dR) ? dR : 0.0f;
+                }
+                returnBus (kFxPng);
             }
         }
 

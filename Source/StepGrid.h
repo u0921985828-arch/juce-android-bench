@@ -136,7 +136,13 @@ public:
     { return getHeight() > 0 && altoCelda() * z >= (float) Metrics::celdaPaso; }
 
     // Called with the absolute step index (bar offset already applied).
-    std::function<void (int pad, int step)> onCell;
+    //
+    //  Y CON EL GESTO, que es lo que necesita quien toma la foto de deshacer:
+    //  un arrastre pinta una celda por columna y son DIECISEIS avisos, asi que
+    //  sin este `arrastrando` deshacer tendria que darse dieciseis veces para
+    //  desandar UN dedo. La rejilla ya lo sabe -lo usa para no repintar la
+    //  misma celda- y nadie mas puede saberlo.
+    std::function<void (int pad, int step, bool arrastrando)> onCell;
 
     void setSource (const bool* cells,          // [step][pad] flattened, stride = kLanes
                     const int*  zati,           // per pad
@@ -463,7 +469,7 @@ private:
         const int key = lane * 1000 + step;
         if (dragging && key == lastKey) return;
         lastKey = key;
-        onCell (lane, step);
+        onCell (lane, step, dragging);
     }
 
     const bool* data = nullptr;

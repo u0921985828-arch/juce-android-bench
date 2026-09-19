@@ -215,6 +215,54 @@ inline constexpr Preset kTabla[AudioEngine::kNumFx][kEscritos] =
       { "ESTUDIO",    0.60f,  20.0f, 0.30f, 0.0f },
       { "NAVE",       0.90f,  35.0f, 0.35f, 0.0f },
       { "ESCENARIO",  0.75f,  90.0f, 0.30f, 0.0f } },
+
+    //  FRM  vocal 0..1 (A E I O U), reso 0.3..4
+    //
+    //  Los cinco son POSICIONES y no ajustes: lo que se elige es que vocal, y
+    //  el nombre lo dice. HABLA barre entre dos y es el que se automatiza.
+    { { "A",          0.00f, 1.20f, 1.00f, 0.0f },
+      { "E",          0.25f, 1.40f, 1.00f, 0.0f },
+      { "I",          0.50f, 1.80f, 1.00f, 0.0f },
+      { "O",          0.75f, 1.20f, 1.00f, 0.0f },
+      { "HABLA",      0.38f, 2.60f, 1.00f, 0.0f } },
+
+    //  FLD  pliegue 0..1, tono 200..20000
+    { { "CALIENTE",   0.15f, 6000.0f, 1.00f, 0.0f },
+      { "CRISTAL",    0.35f, 12000.0f, 1.00f, 0.0f },
+      { "METAL",      0.60f, 9000.0f, 1.00f, 0.0f },
+      { "SINTE",      0.85f, 7000.0f, 1.00f, 0.0f },
+      { "ROTO",       1.00f, 3000.0f, 1.00f, 0.0f } },
+
+    //  ROT  rate 0.05..8 Hz, profundidad 0..1
+    //
+    //  LENTO y RAPIDO son las dos velocidades que una Leslie tiene de verdad
+    //  -el conmutador del organo- y por eso son las dos primeras.
+    { { "LENTO",      0.80f, 0.70f, 1.00f, 0.0f },
+      { "RAPIDO",     6.50f, 0.70f, 1.00f, 0.0f },
+      { "SUAVE",      3.00f, 0.35f, 1.00f, 0.0f },
+      { "ORGANO",     5.50f, 0.90f, 1.00f, 0.0f },
+      { "VERTIGO",    8.00f, 1.00f, 1.00f, 0.0f } },
+
+    //  PNG  tiempo 20..1000 ms, realimentacion 0..0.95
+    { { "CORTO",     120.0f, 0.35f, 0.30f, 0.0f },
+      { "MEDIO",     300.0f, 0.45f, 0.35f, 0.0f },
+      { "ANCHO",     450.0f, 0.60f, 0.35f, 0.0f },
+      { "LARGO",     700.0f, 0.70f, 0.30f, 0.0f },
+      { "INFINITO",  380.0f, 0.92f, 0.25f, 0.0f } },
+
+    //  DUC  rate 0.05..8 Hz, profundidad 0..1
+    { { "SUAVE",       2.00f, 0.35f, 1.00f, 0.0f },
+      { "CLASICO",     2.00f, 0.70f, 1.00f, 0.0f },
+      { "BOMBEO",      2.00f, 0.90f, 1.00f, 0.0f },
+      { "CORCHEAS",    4.00f, 0.65f, 1.00f, 0.0f },
+      { "LENTO",       1.00f, 0.80f, 1.00f, 0.0f } },
+
+    //  REP  rate 0.05..8 Hz, cantidad 0..1
+    { { "UN TERCIO",   2.00f, 0.33f, 1.00f, 0.0f },
+      { "LA MITAD",    2.00f, 0.50f, 1.00f, 0.0f },
+      { "TARTAMUDO",   4.00f, 0.75f, 1.00f, 0.0f },
+      { "METRALLA",    8.00f, 0.85f, 1.00f, 0.0f },
+      { "ENTERO",      1.00f, 0.95f, 1.00f, 0.0f } },
 };
 
 //  LAS CINCO BANDAS DE CADA PRESET DE EQ, y solo del EQ.

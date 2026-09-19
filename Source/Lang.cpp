@@ -776,6 +776,9 @@ namespace
         { "SIZE",           "",         "SIZE",       "空间",       "حجم" },
         { "DAMP",           "",         "DAMP",       "阻尼",       "تخميد" },
         { "PREVIO",         "",         "PREDELAY",   "预延迟",     "تأخير أولي" },
+        { "VOCAL",          "",         "VOWEL",      "元音",       "حرف علة" },
+        { "PLIEGUE",        "",         "FOLD",       "折叠",       "طي" },
+        { "CANTIDAD",       "",         "AMOUNT",     "数量",       "المقدار" },
         //  Los dos del EQ. ANCHO ya tiene fila -es la misma palabra y el mismo
         //  sentido que el ancho estereo de un pad: cuanto ocupa- asi que se
         //  reaprovecha; SALIDA no la tenia. Ver fxDefs.
