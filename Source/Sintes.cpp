@@ -503,20 +503,7 @@ namespace Sintes
             //  la cuerda arrancaria con un chasquido que hoy no tiene. Se sortea
             //  a la tasa de salida y se interpola, que es lo que conserva el
             //  color de la pua.
-            //  LA PUA METE LA MISMA ENERGIA EN TODAS LAS OCTAVAS.
-            //
-            //  Rellenar el retardo entero de ruido da energia inicial
-            //  proporcional a `ksLen`, o sea a 1/hz: entre la raiz -24 y la +24
-            //  hay dieciseis veces mas muestras, que son **12 dB**. Medido con la
-            //  regla de octavas: CUERDA PULS bailaba **12.3 dB entre sus cinco
-            //  octavas** contra un liston de 3. Eso no es fisica de la cuerda
-            //  -una pua le da el mismo empujon a una cuerda corta que a una
-            //  larga- sino un artefacto de como se excita el retardo.
-            //
-            //  La raiz de la razon porque lo que se iguala es ENERGIA y el ruido
-            //  suma en cuadratura.
-            const float puaG = std::sqrt ((float) (kRate / kHzRaiz) / (float) ksLen);
-            for (int i = 0; i < ksLen; ++i) cuerda[(size_t) i] = pua() * puaG;
+            for (int i = 0; i < ksLen; ++i) cuerda[(size_t) i] = pua();
             //  El peine que dice DONDE se pulsa. Sin el, todas las pulsaciones
             //  suenan al mismo sitio. `pos` es una fraccion de la cuerda, asi
             //  que escala sola con la tasa.
