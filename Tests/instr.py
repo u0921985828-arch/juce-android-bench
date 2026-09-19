@@ -765,7 +765,15 @@ def main():
             #  arriba no puede ver, porque los 256 salen clavados por
             #  construccion.
             porOctava = []
-            for z in [q for q in mapa if q[1] == 1]:
+            #  LA CAPA DE LA QUE SALE LA GANANCIA, y no la numero 1.
+            #
+            #  Con dos capas eran la misma cosa; con tres, `q[1] == 1` es la del
+            #  MEDIO y la ganancia se mide en la de arriba. La regla acusaba a
+            #  CUERDA PULS de **12.4 dB entre sus octavas** y lo que comparaba era
+            #  una capa que nadie habia igualado: medidas las de arriba, las cinco
+            #  raices caen dentro de 1.4 dB. Que el escalon de una capa a otra sea
+            #  parejo ya lo mira `CAPA_REPARTO`, que es su sitio.
+            for z in [q for q in mapa if q[1] == CAPAS - 1]:
                 porOctava.append ((z[0], loudness (x[z[2]:z[3]])))
             vivos = [v for _, v in porOctava if v > 1e-9]
             if len (vivos) == len (porOctava) and vivos:
