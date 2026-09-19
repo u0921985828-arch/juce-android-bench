@@ -922,30 +922,26 @@ namespace Sintes
                     ph  += inc;                 if (ph  >= 1.0) ph  -= 1.0;
                     ph2 += inc * (double) P.p1; if (ph2 >= 1.0) ph2 -= 1.0;
                     ph3 += inc * (double) P.p2; if (ph3 >= 1.0) ph3 -= 1.0;
-                    const float fund = (float) std::sin (juce::MathConstants<double>::twoPi * ph);
-                    //  EL TUBO RESONADOR, y uno por canal con un 10% de
-                    //  diferencia. Una marimba de verdad lleva un tubo debajo de
-                    //  cada barra, asi que esto no es un adorno para ensanchar:
-                    //  es lo que faltaba. Hacia falta porque en los presets de
-                    //  balance bajo -SOFT MAL, con p4 = 0.18 y p3 = 0.05- manda
-                    //  el fundamental y los dos inarmonicos ya abiertos del todo
-                    //  no llegaban: **r = 0.9804** contra un liston de 0.98.
-                    //  Y EL TUBO SE AFINA CON EL PRESET, no solo se dosifica:
-                    //  un tubo de marimba se corta a la medida de SU barra, asi
-                    //  que va donde el primer inarmonico del preset dice.
-                    f2.set (juce::jlimit (60.0, nyq,
-                                          hz * (0.5 + 0.5 * (double) P.p1)
-                                             * ((canal == 1) ? 1.25 : 0.80)), 3.0f);
-                    //  Y CUANTO TUBO LO DICE EL PRESET, no una constante.
+                    //  Y LOS DOS INARMONICOS ARRANCAN CON OTRA FASE EN EL
+                    //  CANAL DERECHO, que es lo unico que abre un golpe que es
+                    //  casi un seno.
                     //
-                    //  Con 0.30 fijo el tubo pesaba tanto que aplanaba las
-                    //  diferencias de la familia: SOFT MAL contra TUNED median
-                    //  **0.99 dB** de distancia contra un liston de 1.5, o sea el
-                    //  mismo sonido. Con 0.15 fijo seguian en 1.02. Colgado del
-                    //  balance de parciales -que es lo que separa una marimba de
-                    //  un bloque de madera- el tubo acompaña al preset en vez de
-                    //  taparlo, y sigue dando el ancho que hacia falta.
-                    v = fund + (0.06f + 0.30f * P.p4) * f2.bpf (fund);
+                    //  El intento anterior fue un TUBO RESONADOR -que una
+                    //  marimba lleva de verdad- y hubo que quitarlo: con el, dos
+                    //  presets de la familia pasaban a ser el mismo sonido -SOFT
+                    //  MAL contra TUNED, **1.12 dB** contra un liston de 1.5-
+                    //  porque un filtro les ponia el mismo color a los dieciseis.
+                    //  La fase no toca el espectro -la distancia entre presets no
+                    //  se mueve ni una centesima- y descorrela igual: en SOFT MAL
+                    //  los inarmonicos valen el 28 % de la amplitud, que es de
+                    //  sobra para bajar de **r = 0.9806** al intervalo.
+                    //
+                    //  Y no es un desafine ni un retardo: las frecuencias son las
+                    //  mismas y el fundamental arranca igual en los dos, asi que
+                    //  la nota sigue sumandose en fase en mono.
+                    if (n == 0 && canal == 1) { ph2 += 0.31; ph3 += 0.62; }
+                    const float fund = (float) std::sin (juce::MathConstants<double>::twoPi * ph);
+                    v = fund;
                     //  Los dos parciales de arriba los saca la BAQUETA DURA:
                     //  con ellos fijos las dos capas median centroide x1.00, o
                     //  sea que el toque solo cambiaba el volumen.
