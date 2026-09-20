@@ -107,6 +107,34 @@ d = una ("sin raiz")
 mide ("sin raiz", d is not None and sorted (d["notas"]) == [4, 7],
        "" if d is None else str (d["notas"]))
 
+#  OCHO NOTAS EN UN PASO Y LA NOVENA FUERA.
+#
+#  El tope era CUATRO y la queja fue literal - "solo se pueden poner cuatro
+#  notas en el mismo acorde, no podemos estar tan limitados" -. La celda del
+#  motor paso de 32 a 64 bits y con ella el tope a ocho. Dos cifras y no una:
+#  que entren las ocho, y que la novena NO entre; con solo la primera, una
+#  rejilla sin tope ninguno tambien saldria verde y esa se come las voces del
+#  pad - un pad da ocho voces en la gama alta y cuatro en la baja.
+d = una ("acorde ocho")
+if d is None:
+    mide ("acorde ocho", False, "no salio")
+else:
+    mide ("acorde ocho", sorted (d["notas"]) == [0, 2, 4, 5, 7, 9, 11, 12] and d["tope"] == 8,
+           "%d notas en el paso, tope %d: %s" % (len (d["notas"]), d["tope"], d["notas"]))
+
+d = una ("acorde nueve")
+mide ("acorde nueve", d is not None and len (d["notas"]) == 8 and 14 not in d["notas"],
+       "" if d is None else "%d notas tras pedir la novena: %s" % (len (d["notas"]), d["notas"]))
+
+#  Y QUE LO DIGA. El toque rebotado en silencio se lee como que la rejilla no
+#  responde, y la cuenta de arriba no puede verlo: sin el tope de la rejilla la
+#  novena la tira igual la celda del motor y la lista sale identica. Se mira el
+#  renglon de estado, y que lleve el OCHO - un aviso que dice "cuatro" es el
+#  mismo fallo contado por el otro lado.
+mide ("acorde nueve avisa",
+       d is not None and d["aviso"].strip() != "" and "8" in d["aviso"],
+       "" if d is None else "aviso: %r" % d["aviso"])
+
 d = una ("pads")
 #  Un kit de tres sonidos -0, 5 y 33- y las tapas saltan los sesenta huecos.
 mide ("pads", d is not None and (d["tras1"], d["tras2"], d["banco2"], d["atras"]) == (5, 33, 2, 5),

@@ -2405,14 +2405,25 @@ int main()
     //  mismo pad ponen el mismo bit - la prueba obvia habria dicho que si sin
     //  mirar nada.
     {
-        AudioEngine e; e.prepareToPlay (48000.0, 256); e.setPolyphony (32, 8);
+        //  CON EL TOPE POR PAD DE LA GAMA BAJA -cuatro- y no con ocho: el
+        //  suelo de voces por pad se deriva del acorde (ver setPolyphony), y
+        //  pidiendo ocho aqui la prueba no podria ver si esa derivacion
+        //  existe. Medido sin ella: un acorde de ocho notas daba SIETE voces
+        //  de pico -no cuatro: robar una voz es un fundido, y la robada sigue
+        //  viva mientras se apaga-, o sea que en tres de las cuatro gamas la
+        //  nota se escribia, se veia en la rejilla y se comia a su hermana.
+        AudioEngine e; e.prepareToPlay (48000.0, 256); e.setPolyphony (32, 4);
  enCanalCero (e);
         e.setPadGain (0, 0.8f);
         e.publishSample (0, makeSample (48000.0, 1.0, 220.0f));
         juce::AudioBuffer<float> b (2, 256);
         runBlocks (e, b, 256, 4);
 
-        auto vivas = [&] (bool conAcorde) noexcept
+        //  `extras` y no un booleano: la prueba vieja preguntaba por CUATRO
+        //  notas, que era el tope entero, asi que no podia distinguir "suena
+        //  el acorde" de "suena lo que cabe". Con el tope en ocho hace falta
+        //  pedir las dos cifras al mismo sitio.
+        auto vivas = [&] (int extras) noexcept
         {
             e.setSongMode (false);
             e.clearPattern (0);
@@ -2420,12 +2431,11 @@ int main()
             e.setStep (0, 0, 0, true);
             e.setStepNote (0, 0, 0, 0);
             e.clearStepExtras (0, 0, 0);
-            if (conAcorde)
-            {
-                e.setStepExtra (0, 0, 0, 0, 4, true);    // tercera mayor
-                e.setStepExtra (0, 0, 0, 1, 7, true);    // quinta
-                e.setStepExtra (0, 0, 0, 2, 12, true);   // octava
-            }
+            //  Una escala, que es lo que se puede apilar sin repetir semitono:
+            //  dos notas iguales son una sola voz y la cuenta mentiria.
+            const int semis[] = { 4, 7, 12, 2, 5, 9, 11 };
+            for (int i = 0; i < extras && i < AudioEngine::kExtraNotes; ++i)
+                e.setStepExtra (0, 0, 0, i, semis[i], true);
             e.setBpm (120.0);
             e.setPlaying (true);
             int pico = 0;
@@ -2440,11 +2450,20 @@ int main()
             return pico;
         };
 
-        const int sola = vivas (false);
-        const int acorde = vivas (true);
-        const bool ok = sola == 1 && acorde == 4;
-        std::printf ("%-34s una nota %d voz   acorde de cuatro %d voces   %s\n",
-                     "acorde en un paso", sola, acorde, ok ? "OK" : zatiFalla());
+        const int sola   = vivas (0);
+        const int acorde = vivas (3);
+        //  EL ACORDE ENTERO, que es lo que la queja pedia: ocho notas tienen
+        //  que dar OCHO voces. Esta es la que caza el tope por pad, que estaba
+        //  en 4 en la gama baja y 6 en la media: la nota se escribe, se ve en
+        //  la rejilla y no se oye. Medido con setPolyphony(32,4) antes de
+        //  derivar el suelo del acorde: 8 notas daban 7 voces.
+        //  SIETE extras y OCHO voces, escritos a mano y no leidos de
+        //  kExtraNotes: una prueba que lee la constante que juzga cambia de
+        //  opinion a la vez que el fallo, y bajar el tope saldria verde.
+        const int ocho = vivas (7);
+        const bool ok = sola == 1 && acorde == 4 && ocho == 8;
+        std::printf ("%-34s una nota %d voz   cuatro %d voces   ocho %d voces   %s\n",
+                     "acorde en un paso", sola, acorde, ocho, ok ? "OK" : zatiFalla());
     }
 
     //  EL MISMO ACORDE, PERO CON OTRO PAD EN EL PASO.

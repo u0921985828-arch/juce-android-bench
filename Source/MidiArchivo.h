@@ -160,8 +160,8 @@ namespace MidiArchivo
                 todo.addSequence (*s, 0.0);
         todo.updateMatchedPairs();
 
-        //  Cuantas hay ya en cada columna: el motor guarda una raiz y TRES
-        //  notas de mas -`stepChord`-, o sea cuatro voces por paso. La quinta
+        //  Cuantas hay ya en cada columna: el motor guarda una raiz y SIETE
+        //  notas de mas -`stepChord`-, o sea ocho voces por paso. La novena
         //  no se pierde en silencio.
         std::vector<int> enPaso ((size_t) juce::jmax (1, maxPasos), 0);
 

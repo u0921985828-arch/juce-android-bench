@@ -5,6 +5,15 @@
 #include <thread>
 #include <vector>
 
+//  EL TOPE DEL ACORDE, ESCRITO UNA VEZ. La rejilla del piano guarda su propio
+//  kMaxNotas -no incluye el motor- y el motor guarda kExtraNotes. Son el mismo
+//  numero contado desde dos sitios, y un tope escrito dos veces son dos topes:
+//  el dia que uno suba sin el otro, la rejilla se tragaria notas que el motor
+//  si guarda, o dejaria escribir notas que el motor no puede sostener. Esto es
+//  lo unico que ata los dos, y lo hace el compilador.
+static_assert (PianoRoll::kMaxNotas == AudioEngine::kExtraNotes + 1,
+               "la rejilla del piano y la celda del acorde tienen que decir el mismo tope");
+
 MainComponent::MainComponent()
 {
     setLookAndFeel (&lnf);
@@ -3632,7 +3641,7 @@ MainComponent::MainComponent()
             pianoCellToggled (seqPrimerPaso + paso, semi, arr);
         };
         //  ESTIRAR UNA NOTA. El largo es del PASO y no de cada nota del acorde:
-        //  las cuatro notas de una columna son un acorde y un acorde dura lo
+        //  las notas de una columna son un acorde y un acorde dura lo
         //  que dura, no cuatro cosas distintas.
         pianoGrid.onLargo = [this] (int paso, int, int cuartos)
         {
@@ -11536,8 +11545,14 @@ void MainComponent::applyState (const juce::ValueTree& s)
             {
                 const auto ch = tripletes ("chords");
                 for (int i2 = 0; i2 + 2 < ch.size(); i2 += 3)
+                    //  getHexValue64 y no getHexValue32: la celda del acorde
+                    //  paso de 32 a 64 bits al subir el tope a ocho notas, y
+                    //  recortarla aqui habria devuelto las cuatro primeras
+                    //  notas y tirado las otras cuatro al abrir el proyecto.
+                    //  Se guardaba ya en hexadecimal de 64, asi que un
+                    //  proyecto escrito antes vuelve identico.
                     engine.setStepChordRaw (b, ch[i2].getIntValue(), ch[i2 + 1].getIntValue(),
-                                            (std::uint32_t) ch[i2 + 2].getHexValue64());
+                                            (std::uint64_t) ch[i2 + 2].getHexValue64());
 
                 const auto nu = tripletes ("nudges");
                 for (int i2 = 0; i2 + 2 < nu.size(); i2 += 3)
@@ -12863,7 +12878,7 @@ void MainComponent::pianoStepPad (int dir)
 
 //  PONER Y QUITAR UNA NOTA.
 //
-//  El conjunto de notas de un paso es la RAIZ mas hasta tres del acorde, y la
+//  El conjunto de notas de un paso es la RAIZ mas hasta siete del acorde, y la
 //  raiz es la que el resto de la app ya conoce - la que mueve el mando NOTA de
 //  la pagina PASO y la que se guarda en el proyecto. Asi que quitar la raiz no
 //  puede dejar el acorde huerfano: asciende la primera de las extras.
@@ -13130,8 +13145,9 @@ void MainComponent::pianoCellToggled (int paso, int semi, bool arrastrando)
     else if (notas.size() < PianoRoll::kMaxNotas) notas.add (semi);
     else
     {
-        //  Cuatro es el tope del motor. Decirlo es mejor que tragarse el toque
-        //  en silencio, que se lee como que la rejilla no responde.
+        //  Ocho es el tope del motor -una celda de 64 bits, ver
+        //  AudioEngine::kExtraNotes-. Decirlo es mejor que tragarse el toque en
+        //  silencio, que se lee como que la rejilla no responde.
         status.setText (T ("Un paso admite %1 notas", juce::String (PianoRoll::kMaxNotas)),
                         juce::dontSendNotification);
         return;
@@ -16138,12 +16154,12 @@ std::vector<MidiArchivo::Nota> MainComponent::notasDelPatron (int patron, int pa
         n.largo = engine.getStepLen  (patron, paso, pad);
         notas.push_back (n);
 
-        //  Y LAS TRES DE MAS, que son lo que hace que un acorde sea un acorde.
+        //  Y LAS SIETE DE MAS, que son lo que hace que un acorde sea un acorde.
         //  Sin ellas el fichero saldria con la raiz sola y «se exporta el piano
         //  roll» seria verdad a la cuarta parte — que es exactamente el fallo
         //  que ya costo una medida cuando un acorde volvia del proyecto siendo
         //  una nota.
-        for (int i = 0; i < 3; ++i)
+        for (int i = 0; i < AudioEngine::kExtraNotes; ++i)
         {
             const int ex = engine.getStepExtra (patron, paso, pad, i);
             if (ex == -128) continue;
@@ -16242,7 +16258,7 @@ void MainComponent::importaMidiPatron (const juce::File& f)
     if (pide > engine.getPatternLength (selectedPattern))
         engine.setPatternLength (selectedPattern, pide);
 
-    //  La PRIMERA de cada columna es la raiz y las otras tres van aparte, que
+    //  La PRIMERA de cada columna es la raiz y las otras siete van aparte, que
     //  es como el motor guarda un acorde: `stepNote` mas `stepChord`.
     std::array<int, AudioEngine::kNumSteps> puestas {};
     for (const auto& n : notas)

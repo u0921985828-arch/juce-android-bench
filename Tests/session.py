@@ -297,7 +297,10 @@ def main():
     #  que la app sabia escribir y no sabia recordar - un acorde de cuatro notas
     #  volvia siendo una - y que hasta ahora solo se comprobaban a mano.
     d = pr.get ("disperso", {})
-    disp_ok = (d.get ("nota") == 7 and d.get ("acorde") == [4, 12, -128]
+    #  La cuarta cifra es la SEPTIMA extra, la que vive en los bits altos de la
+    #  celda de 64: con solo las dos bajas, un lector que recorte a 32 bits sale
+    #  verde. Ver el volcado.
+    disp_ok = (d.get ("nota") == 7 and d.get ("acorde") == [4, 12, -128, -5]
                and d.get ("empujon") == -25 and d.get ("bloqueo") == 33
                and d.get ("largo") == 9
                #  Y los otros cuatro bloqueos, que viven EMPAQUETADOS en un

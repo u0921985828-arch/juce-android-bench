@@ -640,8 +640,23 @@ public:
     //  them except the audio thread, and it reads them after they are set.
     void setPolyphony (int totalVoices, int perPad) noexcept
     {
-        voiceLimit     = juce::jlimit (4, kNumVoices, totalVoices);
-        maxVoicesOnPad = juce::jlimit (2, voiceLimit, perPad);
+        voiceLimit = juce::jlimit (4, kNumVoices, totalVoices);
+        //  EL SUELO SALE DEL ACORDE Y NO DE LA GAMA. Un acorde escrito en la
+        //  rejilla suena entero o la rejilla miente, y el tope por pad estaba
+        //  en 4 en la gama baja y 6 en la media: al subir el acorde a ocho
+        //  notas, tres de las cuatro gamas se comian las ultimas sin que nada
+        //  lo dijera - la nota se escribe, se ve y no se oye, que es el peor
+        //  de los fallos porque no deja rastro. Medido en StressTest con
+        //  setPolyphony(32,4): un acorde de ocho daba SIETE voces de pico y no
+        //  ocho. Siete y no cuatro porque robar una voz es un fundido y no un
+        //  corte: la robada sigue viva unos milisegundos y el pico la cuenta.
+        //  O sea que la cifra que delata el tope es UNA voz de menos, no
+        //  cuatro - la comprobacion barata no lo habria visto.
+        //
+        //  Salvo que el aparato no de ni para eso: con un pool de 4 voces el
+        //  suelo es el pool, porque un pad no puede llevarse mas de lo que hay.
+        const int piso = juce::jmin (voiceLimit, kExtraNotes + 1);
+        maxVoicesOnPad = juce::jlimit (piso, voiceLimit, juce::jmax (perPad, piso));
     }
     int getPolyphony() const noexcept { return voiceLimit; }
 
@@ -1088,10 +1103,19 @@ public:
     //  (message thread). Lets one pad's sample play a melody across the
     //  16-step grid instead of one fixed pitch per pad.
     void setStepNote (int patternIdx, int step, int pad, int semis) noexcept;
-    //  LAS TRES NOTAS DE MAS. Ver stepChord. La raiz es setStepNote; estas son
-    //  las que la acompanan, e `indice` va de 0 a 2. Un semitono fuera de
+    //  LAS SIETE NOTAS DE MAS. Ver stepChord. La raiz es setStepNote; estas
+    //  son las que la acompanan, e `indice` va de 0 a 6. Un semitono fuera de
     //  rango o `puesta = false` apagan esa voz del acorde.
-    static constexpr int kExtraNotes = 3;
+    //
+    //  ERAN TRES -cuatro notas por paso- y la queja fue "solo se pueden poner
+    //  cuatro notas en el mismo acorde, no podemos estar tan limitados". El
+    //  tope no lo habia elegido nadie: era lo que cabia en el uint32 de
+    //  stepChord, tres bytes de semitono mas tres bits de presencia, 27 de 32.
+    //  En un uint64 caben SIETE bytes mas siete bits de presencia -63 de 64- y
+    //  ocho notas por paso son una novena con tension o dos triadas apiladas,
+    //  que es donde el tope deja de estorbar. Un numero elegido sin derivar es
+    //  un numero que un dia dice que no por su cuenta: este sale de la celda.
+    static constexpr int kExtraNotes = 7;
     void setStepExtra (int patternIdx, int step, int pad, int indice, int semis, bool puesta) noexcept;
     int  getStepExtra (int patternIdx, int step, int pad, int indice) const noexcept;   // -128 = ninguna
     void clearStepExtras (int patternIdx, int step, int pad) noexcept;
@@ -1107,7 +1131,7 @@ public:
     //  del patron- y DESPLAZAR y DOBLAR, cuatro. La queja llego con las dos
     //  mitades: "la velocidad no se copia" y "de un acorde de tres notas solo
     //  se pega una", que es exactamente lo que pasa cuando viaja `stepNote` -la
-    //  raiz- y no `stepChord`, donde viven las otras tres.
+    //  raiz- y no `stepChord`, donde viven las otras siete.
     //
     //  Y la mitad que no se ve: quien pegaba escribia ENCIMA sin vaciar lo que
     //  no copiaba, asi que el destino se quedaba con su fuerza, su acorde y sus
@@ -1128,19 +1152,19 @@ public:
         std::uint8_t  vel      = 127;
         std::uint8_t  roll     = 1;
         std::uint8_t  largo    = (std::uint8_t) kLenSuelto;
-        std::uint32_t acorde   = 0;
+        std::uint64_t acorde   = 0;
         std::uint32_t bloqueos = 0;
     };
 
     Paso leePaso      (int patternIdx, int step, int pad) const noexcept;
     void escribePaso  (int patternIdx, int step, int pad, const Paso& s) noexcept;
-    std::uint32_t getStepChordRaw (int patternIdx, int step, int pad) const noexcept
+    std::uint64_t getStepChordRaw (int patternIdx, int step, int pad) const noexcept
     {
         if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps
             || pad < 0 || pad >= kNumPads) return 0;
         return stepChord[(size_t) patternIdx][(size_t) step][(size_t) pad].load (std::memory_order_relaxed);
     }
-    void setStepChordRaw (int patternIdx, int step, int pad, std::uint32_t v) noexcept
+    void setStepChordRaw (int patternIdx, int step, int pad, std::uint64_t v) noexcept
     {
         if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps
             || pad < 0 || pad >= kNumPads) return;
@@ -2429,11 +2453,26 @@ private:
     //  estaba, asi que todo lo que ya lee y escribe patrones -el fichero de
     //  proyecto, el secuenciador, la ficha PASO- sigue funcionando sin tocarlo
     //  y un patron viejo vuelve exactamente igual. Tres extras empaquetadas en
-    //  un entero: un byte por nota y tres bits que dicen cuales estan puestas,
+    //  un entero: un byte por nota y un bit por nota que dice si esta puesta,
     //  porque el cero es un semitono valido y no puede significar "ninguna".
-    //  Cuatro notas es un acorde de verdad y son 64 KB; ocho serian 128 y no
-    //  hay dedos para escribirlas en una rejilla de telefono.
-    std::array<std::array<std::array<std::atomic<std::uint32_t>, kNumPads>, kNumSteps>, kNumPatterns> stepChord {};
+    //
+    //  UN UINT64 Y NO UN UINT32. Con 32 bits cabian tres extras -tres bytes
+    //  mas tres bits de presencia, 27 de 32- y ese, y no una decision, era el
+    //  tope de cuatro notas por paso del que llego la queja. Con 64 caben
+    //  siete: siete bytes en los bits 0..55 y la presencia en los 56..62, 63
+    //  de 64. Cuesta 256 KB de tabla en vez de 128, que es lo que vale poder
+    //  escribir un acorde de ocho notas; el comentario anterior decia que "no
+    //  hay dedos para escribirlas en una rejilla de telefono" y el telefono
+    //  contesto que si los hay.
+    //
+    //  Y TIENE QUE SER SIN CERROJO: el hilo de audio lee esta celda una vez
+    //  por paso. En arm64 -la unica arquitectura que compila el APK- un
+    //  atomic<uint64_t> es una instruccion; el static_assert esta para que si
+    //  algun dia se vuelve a compilar para 32 bits la compilacion pare aqui y
+    //  no la descubra un xrun.
+    static_assert (std::atomic<std::uint64_t>::is_always_lock_free,
+                   "stepChord lo lee el hilo de audio: un atomic con cerrojo dentro lo rompe");
+    std::array<std::array<std::array<std::atomic<std::uint64_t>, kNumPads>, kNumSteps>, kNumPatterns> stepChord {};
     //  El empujon de cada paso. Ver setStepNudge. Cero es "en su sitio", que
     //  es lo que dice un patron escrito antes de que esto existiera.
     std::array<std::array<std::array<std::atomic<std::int8_t>, kNumPads>, kNumSteps>, kNumPatterns> stepNudge {};

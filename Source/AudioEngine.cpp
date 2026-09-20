@@ -1328,10 +1328,11 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 const int   hits = rawR <= 0 ? 1    : juce::jlimit (1, 8, rawR);
 
                 //  LAS NOTAS DE MAS DEL ACORDE, leidas una vez por paso y no
-                //  por repeticion: un redoble de cuatro golpes sobre un acorde
-                //  de cuatro notas son dieciseis disparos, y la cola tiene 96
-                //  huecos para los dieciseis pads.
-                const std::uint32_t acorde = stepChord[(size_t) bank][(size_t) stepInPattern][(size_t) p]
+                //  por repeticion: un redoble de ocho golpes sobre un acorde
+                //  de ocho notas son sesenta y cuatro disparos, y la cola tiene
+                //  512 huecos para los sesenta y cuatro pads. Una sola lectura
+                //  atomica de 64 bits, que en arm64 es una instruccion.
+                const std::uint64_t acorde = stepChord[(size_t) bank][(size_t) stepInPattern][(size_t) p]
                                                  .load (std::memory_order_relaxed);
 
                 //  EL EMPUJON DE ESTE PASO, encima del swing. El swing es una
@@ -1395,12 +1396,12 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     //  en la rejilla poniendo las notas en pasos distintos.
                     for (int e = 0; e < kExtraNotes; ++e)
                     {
-                        if ((acorde & (1u << (24u + (unsigned) e))) == 0) continue;
+                        if ((acorde & ((std::uint64_t) 1u << (56u + (unsigned) e))) == 0) continue;
                         if (numPending >= (int) pending.size())
                             { droppedCommands.fetch_add (1, std::memory_order_relaxed); break; }
                         const int extra = (int) (std::int8_t) ((acorde >> ((unsigned) e * 8u)) & 0xFFu);
                         //  Sin cortar: el autocorte del pad esta puesto por
-                        //  defecto y con el las tres notas de mas mueren antes
+                        //  defecto y con el las notas de mas mueren antes
                         //  de sonar. Medido: cuatro notas daban UNA voz viva.
                         pending[(size_t) numPending++] = { at, p, extra, vel, false, gate, plock };
                     }
@@ -4424,7 +4425,7 @@ void AudioEngine::clearPattern (int patternIdx) noexcept
     if (patternIdx < 0 || patternIdx >= kNumPatterns) return;
     for (auto& m : patternBank[(size_t) patternIdx]) m.store (0, std::memory_order_relaxed);
     //  Y las notas de mas del acorde: vaciar un patron y que siguiera sonando
-    //  un acorde de tres notas encima de nada es lo que pasaba sin esto.
+    //  un acorde encima de nada es lo que pasaba sin esto.
     for (auto& fila : stepChord[(size_t) patternIdx])
         for (auto& celda : fila) celda.store (0, std::memory_order_relaxed);
     for (auto& fila : stepNudge[(size_t) patternIdx])
@@ -4563,8 +4564,8 @@ int AudioEngine::getStepPLock (int patternIdx, int step, int pad, int cual) cons
     return byte <= 0 ? kNoPLock : byte - 1;
 }
 
-//  LAS TRES NOTAS DE MAS. Ver stepChord: un byte por nota en los bits bajos y
-//  un bit de presencia por nota en los bits 24..26, porque el cero es un
+//  LAS SIETE NOTAS DE MAS. Ver stepChord: un byte por nota en los bits 0..55 y
+//  un bit de presencia por nota en los bits 56..62, porque el cero es un
 //  semitono valido -la nota tal cual- y no puede significar "ninguna".
 void AudioEngine::setStepExtra (int patternIdx, int step, int pad, int indice, int semis, bool puesta) noexcept
 {
@@ -4572,11 +4573,11 @@ void AudioEngine::setStepExtra (int patternIdx, int step, int pad, int indice, i
         || pad < 0 || pad >= kNumPads || indice < 0 || indice >= kExtraNotes) return;
 
     auto& celda = stepChord[(size_t) patternIdx][(size_t) step][(size_t) pad];
-    std::uint32_t v = celda.load (std::memory_order_relaxed);
+    std::uint64_t v = celda.load (std::memory_order_relaxed);
     const unsigned sh = (unsigned) indice * 8u;
-    v &= ~(0xFFu << sh);
-    v |= ((std::uint32_t) (std::uint8_t) (std::int8_t) juce::jlimit (-24, 24, semis)) << sh;
-    const std::uint32_t bit = 1u << (24u + (unsigned) indice);
+    v &= ~((std::uint64_t) 0xFFu << sh);
+    v |= ((std::uint64_t) (std::uint8_t) (std::int8_t) juce::jlimit (-24, 24, semis)) << sh;
+    const std::uint64_t bit = (std::uint64_t) 1u << (56u + (unsigned) indice);
     if (puesta) v |= bit; else v &= ~bit;
     celda.store (v, std::memory_order_relaxed);
 }
@@ -4585,7 +4586,7 @@ int AudioEngine::getStepExtra (int patternIdx, int step, int pad, int indice) co
 {
     if (indice < 0 || indice >= kExtraNotes) return -128;
     const auto v = getStepChordRaw (patternIdx, step, pad);
-    if ((v & (1u << (24u + (unsigned) indice))) == 0) return -128;
+    if ((v & ((std::uint64_t) 1u << (56u + (unsigned) indice))) == 0) return -128;
     return (int) (std::int8_t) ((v >> ((unsigned) indice * 8u)) & 0xFFu);
 }
 

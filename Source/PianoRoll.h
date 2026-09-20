@@ -99,7 +99,15 @@ public:
     //  26 px sigue cabiendo el nombre de la octava, que es lo unico que se
     //  escribe ahi y solo en las filas de DO.
     static constexpr int kGutter   = Metrics::canalPiano;   // la columna del teclado
-    static constexpr int kMaxNotas = 4;     // raiz + tres del acorde
+    //  RAIZ MAS SIETE. Eran cuatro en total y la queja fue literal: "solo se
+    //  pueden poner cuatro notas en el mismo acorde, no podemos estar tan
+    //  limitados". El tope lo ponia la celda del motor -ver
+    //  AudioEngine::kExtraNotes- y no la rejilla; al ensancharla a 64 bits
+    //  caben ocho. El numero NO se repite a mano: MainComponent tiene un
+    //  static_assert que ata este a kExtraNotes + 1, porque un tope escrito
+    //  dos veces son dos topes y el dia que uno suba sin el otro la rejilla
+    //  se traga notas que el motor si guarda.
+    static constexpr int kMaxNotas = 8;
 
     //  (paso, semitono) — quien la usa decide si pone o quita.
     //  Con el gesto al lado, por lo mismo que `StepGrid::onCell`: un arrastre

@@ -3206,6 +3206,29 @@ void MainComponent::auditPiano()
     pianoCellToggled (4, 0);
     std::cout << "{\"piano\":\"sin raiz\",\"notas\":" << notasDe (4, selectedPad) << "}" << std::endl;
 
+    //  OCHO NOTAS EN UN PASO, y la novena rebotada.
+    //
+    //  La triada de arriba pasaba igual con el tope viejo -tres notas caben en
+    //  cuatro- asi que no media el tope, solo que el acorde existe. Esta si: se
+    //  escriben OCHO por la rejilla, que es el maximo, y detras una NOVENA que
+    //  tiene que rebotar. Las dos cifras hacen falta: "caben ocho" lo cumpliria
+    //  una rejilla sin tope ninguno, y esa se comeria las voces del pad.
+    //
+    //  Por la rejilla y no por setStepExtra: el tope de la rejilla y el de la
+    //  celda del motor son numeros distintos atados por un static_assert, y
+    //  llamar a la API salta justo el camino que la persona usa.
+    for (int semi : { 0, 2, 4, 5, 7, 9, 11, 12 }) pianoCellToggled (6, semi);
+    std::cout << "{\"piano\":\"acorde ocho\",\"notas\":" << notasDe (6, selectedPad)
+              << ",\"tope\":" << PianoRoll::kMaxNotas << "}" << std::endl;
+    status.setText ({}, juce::dontSendNotification);
+    pianoCellToggled (6, 14);
+    //  Y CON EL AVISO, que es la mitad que se ve: un toque tragado en silencio
+    //  se lee como que la rejilla no responde. La cuenta de notas sola no puede
+    //  cazarlo -con el tope quitado, la novena la tira igual la celda del motor
+    //  y la lista sale identica-, asi que lo que se mide es lo que la app DICE.
+    std::cout << "{\"piano\":\"acorde nueve\",\"notas\":" << notasDe (6, selectedPad)
+              << ",\"aviso\":\"" << status.getText().toStdString() << "\"}" << std::endl;
+
     //  CAMBIAR DE PAD CON LA FICHA ABIERTA, saltando los sesenta huecos.
     showSeqPage (seqPagePiano);
     pianoStepPad (1);
@@ -3497,6 +3520,17 @@ void MainComponent::auditPiano()
         //  2. MOVER: se agarra una nota YA seleccionada y se arrastra dos
         //  columnas a la derecha y una fila arriba. Tienen que llegar las tres,
         //  con sus tres largos y sus distancias intactas.
+        //
+        //  LA PILA SE VACIA ANTES, como en las otras tres medidas de deshacer
+        //  de este mismo fichero. La pila tiene tope -kUndoDepth = 16- y este
+        //  bloque corre detras de todo lo que el volcado del piano ya escribio:
+        //  llena, `size()` deja de crecer y la resta da CERO aunque se haya
+        //  apuntado la entrada. Paso: al subir el tope del acorde a ocho, el
+        //  volcado gano nueve toques mas -ocho notas y la novena rebotada- y
+        //  esta regla se puso roja sin que el codigo que mide hubiera cambiado.
+        //  La prueba estaba midiendo el crecimiento de una pila con tope, que
+        //  es una cifra distinta de "cuantas entradas apunto el movimiento".
+        undoStack.clear(); redoStack.clear();
         const int undoAntes = (int) undoStack.size();
 
         float cx = 0.0f, cy = 0.0f, dx = 0.0f, dy = 0.0f;
@@ -3872,6 +3906,12 @@ void MainComponent::auditProject()
     engine.setStepNote  (0, 0, 0, 7);
     engine.setStepExtra (0, 0, 0, 0, 4, true);
     engine.setStepExtra (0, 0, 0, 1, 12, true);
+    //  Y LA SEPTIMA EXTRA, que es la que vive en la mitad alta de la celda.
+    //  El acorde se guarda en un uint64 desde que el tope subio a ocho notas,
+    //  y el lector del fichero recortaba a uint32: con solo dos extras -bits
+    //  bajos- ese recorte salia verde. Esta cae en los bits 48..55 y el de
+    //  presencia en el 62, asi que un proyecto que vuelva recortado la pierde.
+    engine.setStepExtra (0, 0, 0, AudioEngine::kExtraNotes - 1, -5, true);
     engine.setStepNudge (0, 0, 0, -25);
     engine.setStepLock  (0, 0, 0, 33);
     engine.setStepLen   (0, 0, 0, 9);
@@ -3942,7 +3982,8 @@ void MainComponent::auditProject()
     std::cout << "{\"disperso\":1,\"nota\":" << engine.getStepNote (0, 0, 0)
               << ",\"acorde\":[" << engine.getStepExtra (0, 0, 0, 0) << ","
                                   << engine.getStepExtra (0, 0, 0, 1) << ","
-                                  << engine.getStepExtra (0, 0, 0, 2) << "]"
+                                  << engine.getStepExtra (0, 0, 0, 2) << ","
+                                  << engine.getStepExtra (0, 0, 0, AudioEngine::kExtraNotes - 1) << "]"
               << ",\"empujon\":" << engine.getStepNudge (0, 0, 0)
               << ",\"bloqueo\":" << engine.getStepLock (0, 0, 0)
               << ",\"largo\":" << engine.getStepLen (0, 0, 0)
