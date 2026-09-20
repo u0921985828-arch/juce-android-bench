@@ -1360,6 +1360,20 @@ public:
     struct Reparto
     {
         juce::Rectangle<int> icono, texto;
+        //  LA COLA: la banda de abajo de la tapa que NO es del rotulo.
+        //
+        //  La pide la ficha de presets, donde cada celda dice dos cosas —el
+        //  nombre del preset y la curva que va a poner— y las dos tienen que
+        //  caber en UN objetivo: partir la celda en dos controles dejaria la
+        //  mitad de abajo sin gesto, y la mitad de abajo es justo la que la
+        //  persona apunta cuando lo que esta mirando es el dibujo.
+        //
+        //  Se reparte AQUI y no en quien coloca, por lo mismo que la letra y el
+        //  icono: `UiAudit::captionOf` mide el rotulo por esta funcion, asi que
+        //  una banda descontada por fuera seria un rotulo que el banco cree mas
+        //  alto de lo que es. *Una regla duplicada que no se contrasta son dos
+        //  reglas.*
+        juce::Rectangle<int> cola;
         Iconos::Id id = Iconos::Id::ninguno;
         juce::Font fuente { juce::FontOptions {} };
     };
@@ -1374,6 +1388,12 @@ public:
         r.fuente = letraDeTapa (tapa.getHeight());
 
         r.texto = tapa.getSmallestIntegerContainer().reduced (Metrics::margenTapa, Metrics::keyAir);
+
+        //  Y LA COLA SE APARTA ANTES QUE NADA, que es lo que la convierte en
+        //  sitio de otro: el rotulo se centra en lo que QUEDA, y el icono —que
+        //  se pide despues y sobre `r.texto`— se cae solo donde ya no cabe.
+        if (const int cola = (int) b.getProperties().getWithDefault ("cola", 0); cola > 0)
+            r.cola = r.texto.removeFromBottom (juce::jmin (cola, r.texto.getHeight()));
 
         const auto id = (Iconos::Id) (int) b.getProperties().getWithDefault ("icono", 0);
         if (id == Iconos::Id::ninguno || id == Iconos::Id::kNum) return r;

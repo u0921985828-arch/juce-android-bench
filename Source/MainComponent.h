@@ -563,7 +563,12 @@ private:
     //  tandas existiendo sin fila en la unica pagina que los enumera. Ver
     //  paintGesturesPage, y la regla de `Tests/plano.py` que exige que cada
     //  HoldButton de la cara tenga la suya.
-    static constexpr int kNumGestures = 8;
+    //
+    //  Y NUEVE desde que el canalon del rack abre los presets del efecto que
+    //  lleva: es la puerta que se pidio -«el tema de los presets no esta muy
+    //  accesible ni legible»- y es un gesto sin marca en la cara, que es la
+    //  unica clase de gesto que esta pagina tiene que enumerar.
+    static constexpr int kNumGestures = 9;
     void showSetPage (int page);
 
     //  THE SEQUENCER CARD HAS TWO PAGES, and it has them because measuring it
@@ -2231,6 +2236,76 @@ private:
     //  without balancing it. One strip per pad: level, mute, solo.
     juce::OwnedArray<juce::Slider>     mixFaders, mixPans, mixAnchos;
 
+    //  A cap with two gestures: tap, and hold.
+    //
+    //  It used to decide WHICH on release - mouseUp compared the length of the
+    //  press against the threshold. That is a hold you cannot feel: you press,
+    //  you wait, nothing on screen changes, and the only way to find out
+    //  whether the gesture took is to let go. Held over a running effect while
+    //  the sequencer plays, it reads as a button that does nothing, so you tap
+    //  instead and switch the effect off - which is the complaint.
+    //
+    //  Now a timer fires AT the threshold, with the finger still down. The
+    //  three knobs re-range under your thumb the instant the gesture lands,
+    //  which is the feedback; the release afterwards is swallowed so the hold
+    //  never also counts as a tap. A finger that slides off the cap cancels
+    //  it, the same as every other press on the face.
+    class HoldButton : public juce::TextButton,
+                       private juce::Timer
+    {
+    public:
+        using juce::TextButton::TextButton;
+        std::function<void()> onHold;
+        //  Long enough not to fire on a firm tap, short enough that it lands
+        //  while you still think of yourself as pressing. Android's own
+        //  long-press is 500; a control you play with wants to be under it.
+        static constexpr int kHoldMs = Metrics::holdMs;
+
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            held = false;
+            startTimer (kHoldMs);
+            juce::TextButton::mouseDown (e);
+        }
+
+        void mouseDrag (const juce::MouseEvent& e) override
+        {
+            if (! getLocalBounds().contains (e.getPosition()))
+                stopTimer();
+            juce::TextButton::mouseDrag (e);
+        }
+
+        void mouseUp (const juce::MouseEvent& e) override
+        {
+            stopTimer();
+            if (held)
+            {
+                setState (buttonNormal);   // swallow the click this press would fire
+                return;
+            }
+            juce::TextButton::mouseUp (e);
+        }
+
+        bool wasHeld() const { return held; }
+
+    private:
+        void timerCallback() override
+        {
+            stopTimer();
+            held = true;
+            if (onHold) onHold();
+        }
+
+        bool held = false;
+    };
+
+    //  Y VIVE AQUI ARRIBA, no donde nacio.
+    //
+    //  Nacio para las ranuras de la cara y hoy la usan tambien los canalones
+    //  del RACK, que se declaran antes: un tipo anidado tiene que estar
+    //  completo donde se nombra. Es una mudanza y no un cambio - el cuerpo es
+    //  el mismo, incluido el temporizador que dispara CON el dedo puesto.
+
     //  The rack: one pad's six sends, opened from the mixer. An effect here
     //  is not on or off, it is how much of THIS channel goes into it - which
     //  is the only place where "the delay belongs to the snare" can be said.
@@ -2244,7 +2319,20 @@ private:
     //  del efecto y su dibujo- y ahora es una tapa, porque el RACK pasa a ser
     //  el sitio donde se cambia lo que hay en una ranura: la fila del rack es
     //  una RANURA y no un efecto.
-    juce::OwnedArray<juce::TextButton> rackSlotBtns;
+    //  Y CON DOS GESTOS DESDE ESTA TANDA: toque cambia lo que hay en la
+    //  ranura -que es para lo que nacio- y MANTENER abre sus presets.
+    //
+    //  Del telefono: *«hay que mejorar el tema de los presets para los
+    //  efectos, porque no esta muy accesible o legible que digamos»*. La unica
+    //  puerta que habia estaba dos toques adentro y en un sitio que no se
+    //  adivina: abrir el menu de TIPOS de la ranura y pulsar PRESETS en el
+    //  renglon del titulo, o sea pasar por la pantalla de cambiar el efecto
+    //  para no cambiarlo. El rack es donde ya estas cuando piensas en ese
+    //  efecto, y mantener pulsado es el gesto que esta casa ya usa para «lo
+    //  mismo, pero a fondo»: la ranura de la cara, el pad de instrumento, SOLO
+    //  y AUTO. Cero tapas nuevas y cero pixeles nuevos, que es lo que hizo
+    //  falta la primera vez para NO poner la puerta aqui.
+    juce::OwnedArray<HoldButton> rackSlotBtns;
     //  Y LA TAPA DE APAGAR, al lado del canalon.
     //
     //  Se pidio con esas palabras -«al lado del boton del plugin, una opcion
@@ -2805,68 +2893,6 @@ private:
     // A slot has two gestures on one target: tap = fire, long press =
     // reassign. TextButton only reports the click, so the press duration is
     // measured here and a long hold suppresses the click that would follow.
-    //  A cap with two gestures: tap, and hold.
-    //
-    //  It used to decide WHICH on release - mouseUp compared the length of the
-    //  press against the threshold. That is a hold you cannot feel: you press,
-    //  you wait, nothing on screen changes, and the only way to find out
-    //  whether the gesture took is to let go. Held over a running effect while
-    //  the sequencer plays, it reads as a button that does nothing, so you tap
-    //  instead and switch the effect off - which is the complaint.
-    //
-    //  Now a timer fires AT the threshold, with the finger still down. The
-    //  three knobs re-range under your thumb the instant the gesture lands,
-    //  which is the feedback; the release afterwards is swallowed so the hold
-    //  never also counts as a tap. A finger that slides off the cap cancels
-    //  it, the same as every other press on the face.
-    class HoldButton : public juce::TextButton,
-                       private juce::Timer
-    {
-    public:
-        using juce::TextButton::TextButton;
-        std::function<void()> onHold;
-        //  Long enough not to fire on a firm tap, short enough that it lands
-        //  while you still think of yourself as pressing. Android's own
-        //  long-press is 500; a control you play with wants to be under it.
-        static constexpr int kHoldMs = Metrics::holdMs;
-
-        void mouseDown (const juce::MouseEvent& e) override
-        {
-            held = false;
-            startTimer (kHoldMs);
-            juce::TextButton::mouseDown (e);
-        }
-
-        void mouseDrag (const juce::MouseEvent& e) override
-        {
-            if (! getLocalBounds().contains (e.getPosition()))
-                stopTimer();
-            juce::TextButton::mouseDrag (e);
-        }
-
-        void mouseUp (const juce::MouseEvent& e) override
-        {
-            stopTimer();
-            if (held)
-            {
-                setState (buttonNormal);   // swallow the click this press would fire
-                return;
-            }
-            juce::TextButton::mouseUp (e);
-        }
-
-        bool wasHeld() const { return held; }
-
-    private:
-        void timerCallback() override
-        {
-            stopTimer();
-            held = true;
-            if (onHold) onHold();
-        }
-
-        bool held = false;
-    };
 
     // --- The six effects --------------------------------------------------
     //  One row, six buttons, one effect each: FLT, HPF, DRV, DLY, BIT, REV.
@@ -3094,10 +3120,31 @@ private:
     //  silencio — que es la causa de la fila de CADENA y de la REJILLA a 217x0.
     static constexpr int kFxPresetsTuyosMax = 12;
     juce::OwnedArray<juce::TextButton> presetBtns;   // 6 de fabrica + los tuyos
+    //  Y LA CURVA DE CADA UNO, que es la mitad legible de la ficha.
+    //
+    //  Del telefono: *«hay que mejorar el tema de los presets para los efectos,
+    //  porque no esta muy accesible o legible que digamos»*. Lo que habia eran
+    //  dieciocho celdas con un nombre —«CIERRA», «TAPA», «TELEFONO»— y un
+    //  nombre no dice si eso va a cerrar el filtro un poco o del todo: para
+    //  saberlo habia que ponerlo y oirlo, uno por uno, perdiendo por el camino
+    //  lo que tenias puesto.
+    //
+    //  ES `FxMini` Y NO UN DIBUJO NUEVO: la miniatura de la cara ya sabe pintar
+    //  los treinta tipos a partir de tres numeros —`FxVisor::muestrea`— y aqui
+    //  los tres numeros son los del PRESET y no los del motor, que es la unica
+    //  diferencia. Un segundo dibujante para lo mismo seria la misma regla
+    //  escrita dos veces, y esta casa ya sabe como acaba eso.
+    juce::OwnedArray<FxMini> presetCurvas;
     juce::TextEditor presetNombreBox;
     juce::TextButton presetGuardarBtn { "GUARDAR" };
     int presetEditado = -1;                 // que efecto se esta eligiendo, o -1
     juce::StringArray presetTuyosVistos;    // los que la rejilla esta ensenando
+    //  Y SUS TRES NUMEROS, leidos cuando se leyo la carpeta y no en cada
+    //  repintado: dibujar la curva de un preset tuyo pide sus parametros, y
+    //  pedirlos al fichero desde `paint` seria una lectura de disco por
+    //  fotograma — que es literalmente lo que dejo la lista del navegador
+    //  parpadeando y por lo que `presetTuyosVistos` ya se guarda aqui.
+    std::vector<std::array<float, 3>> presetTuyosP;
     juce::Rectangle<int> presetTituloBanda;
 
     void abreMenuPresets (int fx);
@@ -3155,6 +3202,14 @@ private:
     void   aplicaFxPreset (int fx, int k);
     void   aplicaBandasEq (const juce::String& txt);
     void   aplicaFxPresetTuyo (int fx, const juce::String& nombre);
+    //  LEER UN PRESET TUYO DEL DISCO, y nada mas. Es el embudo de los DOS que
+    //  lo necesitan —ponerlo y DIBUJARLO— y por eso sale de `aplicaFxPresetTuyo`
+    //  en vez de copiarse: el que dibuja la curva de la ficha y el que la
+    //  escribe en el motor tienen que leer el mismo fichero de la misma manera,
+    //  incluido el acotado en la puerta, o la ficha ensena una curva y suena
+    //  otra cosa. Devuelve falso si no hay fichero.
+    bool   leeFxPresetTuyo (int fx, const juce::String& nombre,
+                            double p[kParamsPorFx], juce::String* bandasEq = nullptr) const;
     bool   guardaFxPresetTuyo (int fx, const juce::String& nombre);
     juce::StringArray fxPresetsTuyos (int fx) const;
     static juce::File carpetaFxPresets (int fx);

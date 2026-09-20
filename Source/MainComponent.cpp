@@ -463,6 +463,18 @@ MainComponent::MainComponent()
             };
             presetSheet.addAndMakeVisible (b);
             presetBtns.add (b);
+
+            //  Y SU CURVA, una por celda y creada aqui por lo mismo que la
+            //  celda: crearla al abrir seria reservar memoria en el camino de
+            //  un toque. No intercepta el raton —`FxMini` nace asi— de modo
+            //  que el dedo cae en la tapa que hay debajo y la celda sigue
+            //  siendo UN objetivo y no dos.
+            auto* v = new FxMini();
+            //  APAGADA AL NACER -`addChildComponent`- y no encendida y sin
+            //  limites: las dieciocho celdas existen desde el arranque y solo
+            //  se encienden las que la ficha ensena. Ver refrescaMenuPresets.
+            presetSheet.addChildComponent (v);
+            presetCurvas.add (v);
         }
 
         //  GUARDAR LO QUE HAY PUESTO, con su nombre. La carpeta `ZATI/Presets`
@@ -964,10 +976,23 @@ MainComponent::MainComponent()
             //  con ella vacia y se va en cuanto se elige-, asi que este es el
             //  unico sitio desde el que se cambia o se quita lo que ya esta.
             //  Una funcion, un dueño.
-            auto* g = new juce::TextButton();
+            auto* g = new HoldButton();
             styleButton (*g, kStepOff);
             litAccent (*g);
             g->onClick = [this, f] { abreMenuRanura (f); };
+            //  Y MANTENER ABRE SUS PRESETS. Ver rackSlotBtns en la cabecera.
+            //
+            //  Sobre una ranura VACIA no hace nada, que es la misma regla que
+            //  ya tienen VACIAR y la tapa de apagar de al lado: no hay presets
+            //  de un efecto que no esta puesto. El toque de esa misma ranura
+            //  sigue abriendo el menu de tipos, que es lo que ahi hace falta.
+            g->onHold = [this, f]
+            {
+                const int fx = enRanura (f);
+                if (fx < 0) return;
+                closeAllSheets();
+                abreMenuPresets (fx);
+            };
             rackSheet.cuerpo.addAndMakeVisible (g);
             rackSlotBtns.add (g);
 
@@ -5245,31 +5270,53 @@ juce::StringArray MainComponent::fxPresetsTuyos (int f) const
 //  LEER: partir del DEFECTO y re-acotar en la puerta, igual que
 //  `recetaDeTexto`. Un fichero truncado deja los que faltan en fabrica y no en
 //  cero, y un numero de otra epoca no entra en el motor tal cual.
-void MainComponent::aplicaFxPresetTuyo (int f, const juce::String& nombre)
+//
+//  Y ESTO ES SOLO LEER, que es lo que lo hace un embudo: desde que la ficha
+//  DIBUJA la curva de cada preset hay dos que necesitan estos cuatro numeros
+//  —ponerlos en el motor y pintarlos— y son los dos que no pueden discrepar. Si
+//  el que dibuja leyera por su cuenta, el dia que cambie el acotado la ficha
+//  ensenaria una curva y sonaria otra cosa, que es exactamente la clase de
+//  mentira que esta casa persigue desde `padRecetaMovida`.
+bool MainComponent::leeFxPresetTuyo (int f, const juce::String& nombre,
+                                     double p[kParamsPorFx], juce::String* bandasEq) const
 {
-    if (! juce::isPositiveAndBelow (f, kNumFx) || nombre.isEmpty()) return;
+    if (! juce::isPositiveAndBelow (f, kNumFx) || nombre.isEmpty()) return false;
     const auto file = carpetaFxPresets (f).getChildFile (nombre + ".txt");
-    if (! file.existsAsFile()) return;
+    if (! file.existsAsFile()) return false;
 
     auto lineas = juce::StringArray::fromLines (file.loadFileAsString());
     lineas.removeEmptyStrings();
-    if (lineas.isEmpty()) return;
+    if (lineas.isEmpty()) return false;
 
     auto toks = juce::StringArray::fromTokens (lineas[0], " ", "");
     toks.removeEmptyStrings();
-
-    const juce::ScopedValueSetter<bool> puesto (aplicandoFxPreset, true);
 
     for (int pi = 0; pi < kParamsPorFx; ++pi)
     {
         const double crudo = pi < toks.size() ? toks[pi].getDoubleValue()
                                               : (double) FxPresets::valor (f, 0, pi);
-        const double v = acotaFxPreset (f, pi, crudo);
-        if (pi < 3) fxParam (f, pi).setValue (v, juce::dontSendNotification);
-        escribeFxParam (f, pi, (float) v);
+        p[pi] = acotaFxPreset (f, pi, crudo);
     }
 
-    if (f == kFxEq && lineas.size() > 1) aplicaBandasEq (lineas[1]);
+    if (bandasEq != nullptr && f == kFxEq && lineas.size() > 1) *bandasEq = lineas[1];
+    return true;
+}
+
+void MainComponent::aplicaFxPresetTuyo (int f, const juce::String& nombre)
+{
+    double p[kParamsPorFx] {};
+    juce::String bandas;
+    if (! leeFxPresetTuyo (f, nombre, p, &bandas)) return;
+
+    const juce::ScopedValueSetter<bool> puesto (aplicandoFxPreset, true);
+
+    for (int pi = 0; pi < kParamsPorFx; ++pi)
+    {
+        if (pi < 3) fxParam (f, pi).setValue (p[pi], juce::dontSendNotification);
+        escribeFxParam (f, pi, (float) p[pi]);
+    }
+
+    if (bandas.isNotEmpty()) aplicaBandasEq (bandas);
 
     {
         const bool on = engine.getFxParam (canalActual, f, 2) > 0.001f;
@@ -5809,7 +5856,19 @@ void MainComponent::refrescaRanuras()
                 rb->getProperties().remove ("valor");
             }
             rb->setToggleState (fx >= 0 && fxEncendido (fx), juce::dontSendNotification);
-            rb->setTitle (fx < 0 ? T ("VACIA") : juce::String (fxDefs[fx].name));
+            //  Y EL ROTULO HABLADO DICE TAMBIEN QUE PRESET LLEVA.
+            //
+            //  Es la unica de las tres ventanas de una ranura que tiene la
+            //  puerta de los presets -mantener pulsado- y una puerta que no se
+            //  anuncia no existe para quien no ve la pantalla. El nombre del
+            //  preset NO cabe pintado en el canalon -52 px medidos en 280x653,
+            //  donde «REP» ya lo llena- y por eso va aqui y no en el rotulo:
+            //  *donde no cabe, no sale*, que es la misma decision que
+            //  `reparteTapa` toma con el dibujo.
+            rb->setTitle (fx < 0 ? T ("VACIA")
+                                 : juce::String (fxDefs[fx].name) + " "
+                                   + juce::String::charToString ((juce::juce_wchar) 0x00B7) + " "
+                                   + fxPresetNombre (fx));
         }
 
         //  Y LA TAPA DE APAGAR DE ESA MISMA FILA, aqui y no en `refreshRack`:
@@ -5972,6 +6031,17 @@ void MainComponent::abreMenuPresets (int fx)
         //  llamar.
         presetTuyosVistos = fxPresetsTuyos (fx);
         while (presetTuyosVistos.size() > kFxPresetsTuyosMax) presetTuyosVistos.remove (kFxPresetsTuyosMax);
+
+        //  Y SUS TRES NUMEROS EN LA MISMA PASADA, que es la razon de que esto
+        //  se lea al abrir: la curva de un preset tuyo sale de su fichero, y
+        //  el sitio donde ya se estaba pagando la E/S es este.
+        presetTuyosP.assign ((size_t) presetTuyosVistos.size(), { 0.0f, 0.0f, 0.0f });
+        for (int t = 0; t < presetTuyosVistos.size(); ++t)
+        {
+            double p[kParamsPorFx] {};
+            if (! leeFxPresetTuyo (fx, presetTuyosVistos[t], p)) continue;
+            for (int pi = 0; pi < 3; ++pi) presetTuyosP[(size_t) t][(size_t) pi] = (float) p[pi];
+        }
         presetSheet.toFront (false);
         refrescaMenuPresets();
     }
@@ -5981,6 +6051,9 @@ void MainComponent::abreMenuPresets (int fx)
         //  de 0x0 pasa las ocho reglas de geometria y el banco lo canto con
         //  807 CERO.
         for (auto* b : presetBtns) if (b != nullptr) b->setBounds ({});
+        //  Las curvas, lo mismo y por lo mismo: un control encendido de 0x0
+        //  pasa las ocho reglas de geometria, que es el `807 CERO` de al lado.
+        for (auto* v : presetCurvas) if (v != nullptr) { v->setBounds ({}); v->ponTipo (-1); }
         presetCloseBtn.setBounds ({});
         presetNombreBox.setBounds ({});
         presetGuardarBtn.setBounds ({});
@@ -6017,6 +6090,43 @@ void MainComponent::refrescaMenuPresets()
         b->setToggleState (deFabrica ? (tuyo.isEmpty() && i == puesto)
                                      : (tuyo == presetTuyosVistos[t]),
                            juce::dontSendNotification);
+
+        //  Y LA CURVA DE ESA CELDA, con los tres numeros DEL PRESET.
+        //
+        //  No los del motor: lo que esta celda tiene que contestar es «como
+        //  sonaria si lo pongo», y preguntarselo al motor dibujaria treinta
+        //  veces lo que suena AHORA. Es la misma distincion que separa el
+        //  icono del tipo —CUAL es— de la miniatura —COMO esta puesto—.
+        if (auto* v = (i < presetCurvas.size() ? presetCurvas[i] : nullptr))
+        {
+            if (! hay) { v->setVisible (false); v->setBounds ({}); v->ponTipo (-1); continue; }
+
+            //  El EQ se lleva el plato entero con su curva y `fxTraeCara` le
+            //  manda -1 a la miniatura justo por eso: cinco bandas no caben en
+            //  dos mandos, asi que aqui tampoco. La celda se queda con su
+            //  nombre, que es lo que habia antes de esta tanda.
+            v->ponTipo (fxTraeCara (f) ? -1 : f);
+
+            //  Y APAGADA SI NO HAY NADA QUE DIBUJAR, no solo sin limites.
+            //
+            //  El EQ se lleva el plato entero con su curva y aqui su celda se
+            //  queda con el nombre; dejarla ENCENDIDA y de 0x0 es el `807
+            //  CERO` de la ficha de al lado otra vez, y esta vez costo **840**
+            //  en `expo.py`: un control encendido que no ocupa un pixel pasa
+            //  las ocho reglas de geometria porque no solapa, no se sale y no
+            //  corta ningun rotulo. Las dos mitades: apagar *y* vaciar.
+            v->setVisible (v->tipo() >= 0);
+            if (v->tipo() < 0) { v->setBounds ({}); continue; }
+
+            if (deFabrica)
+                v->refresca (FxPresets::valor (f, i, 0),
+                             FxPresets::valor (f, i, 1),
+                             FxPresets::valor (f, i, 2));
+            else if ((size_t) t < presetTuyosP.size())
+                v->refresca (presetTuyosP[(size_t) t][0],
+                             presetTuyosP[(size_t) t][1],
+                             presetTuyosP[(size_t) t][2]);
+        }
     }
 }
 

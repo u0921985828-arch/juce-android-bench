@@ -3,6 +3,13 @@ build/
 cmake-build-*/
 out/
 
+#  Y los arboles de compilacion AUXILIARES, que solo `build/` no cubre: una
+#  corrida con el desinfectante deja `build-asan/` -690 MB- sin ignorar, y el
+#  guardia de la sesion la canto como fichero sin seguir justo cuando mover
+#  HEAD habria roto la postcondicion de entrega contra la APK que el CI estaba
+#  compilando. Un arbol de compilacion no se versiona, se llame como se llame.
+build-*/
+
 # JUCE is fetched via FetchContent into the build tree — never vendored
 _deps/
 

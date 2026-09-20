@@ -2334,8 +2334,15 @@ void MainComponent::auditOpen (const juce::String& pedido)
     {
         for (auto* hijo : c.getChildren())
         {
+            //  Y LOS CANALONES DEL RACK SON FAMILIA, igual que las seis
+            //  ranuras de la cara: su fila es «MANTEN UNA RANURA DEL RACK» y
+            //  no las nombra una por una. Sin esto la regla pediria una fila
+            //  para «DLY», otra para «REV» y otra para «+», que es el nombre
+            //  de lo que hay DENTRO de la ranura y no de la tapa — seis filas
+            //  que ademas cambiarian al cambiar de efecto.
             if (auto* h = dynamic_cast<HoldButton*> (hijo))
-                UiAudit::gestoDe (h->getButtonText(), fxButtons.contains (h) ? 1 : 0);
+                UiAudit::gestoDe (h->getButtonText(),
+                                  (fxButtons.contains (h) || rackSlotBtns.contains (h)) ? 1 : 0);
             recorre (*hijo);
         }
     };
@@ -6769,5 +6776,135 @@ void MainComponent::auditFxPresets()
                   << ",\"lejos\":" << juce::String (lejos, 6)
                   << ",\"vuelve\":" << juce::String (vuelve, 6)
                   << ",\"nombre\":\"" << fxPresetNombre (AudioEngine::kFxDly) << "\"}" << std::endl;
+    }
+
+    //  ========================================================================
+    //  LA FICHA DE PRESETS: LA PUERTA Y LO QUE SE VE EN ELLA.
+    //  ========================================================================
+    //
+    //  Del telefono, con la ficha del RACK delante: *«hay que mejorar el tema
+    //  de los presets para los efectos, porque no esta muy accesible o legible
+    //  que digamos»*. Son DOS cosas y se miden las dos, porque arreglar una no
+    //  ensena la otra:
+    //
+    //    · ACCESIBLE es que haya puerta donde estas -mantener el canalon del
+    //      rack- y que NO la haya donde no significa nada, que es una ranura
+    //      vacia;
+    //    · LEGIBLE es que la celda diga algo mas que un nombre. «TELEFONO» no
+    //      dice cuanto cierra el filtro, y para saberlo habia que ponerlo y
+    //      oirlo, perdiendo por el camino lo que tenias puesto.
+    //
+    //  Y LA SEGUNDA SE MIDE POR LA CURVA Y NO POR «HAY UN DIBUJO»: seis celdas
+    //  con el MISMO dibujo son seis celdas que no informan, que es justo lo que
+    //  pasaria si alguien las alimentara del motor en vez del preset. Se cuenta
+    //  cuantas de las seis son distintas entre si.
+    {
+        closeAllSheets();
+        ponCanalActual (kCanal);
+
+        //  LA PUERTA, POR EL GESTO Y NO POR LA FUNCION.
+        //
+        //  Se llama al `onHold` de la tapa -que es lo que el temporizador de
+        //  `HoldButton` dispara con el dedo puesto- y no a `abreMenuPresets`:
+        //  lo que se mide es el CABLE, y llamar a la funcion de destino saldria
+        //  verde con la tapa sin cable. El temporizador en si es de JUCE y lo
+        //  mide JUCE; aqui no hay bucle de mensajes que lo deje correr.
+        for (int k = 0; k < kNumRanuras; ++k) slotFx[(size_t) kCanal][(size_t) k] = kSlotVacia;
+        refrescaRanuras();
+
+        auto* canalon = rackSlotBtns.isEmpty() ? nullptr : rackSlotBtns[0];
+        const int cable = (canalon != nullptr && canalon->onHold != nullptr) ? 1 : 0;
+
+        //  PRIMERO SOBRE LA RANURA VACIA, que es la mitad que un cable pelado
+        //  cumpliria igual: abrir la ficha de presets del efecto -1.
+        if (cable != 0) canalon->onHold();
+        const int abreVacia = presetSheet.isVisible() ? 1 : 0;
+        abreMenuPresets (-1);
+
+        //  Y AHORA CON UN EFECTO PUESTO, y uno que NO es el que la cara tiene
+        //  enfocado por defecto: si coincidieran, «abre los presets de ESTA
+        //  ranura» y «abre los del efecto de siempre» darian el mismo numero.
+        ponEnRanura (0, AudioEngine::kFxDly);
+        refrescaRanuras();
+        if (cable != 0) canalon->onHold();
+        const int abrePuesta = presetSheet.isVisible() ? 1 : 0;
+        const int editado    = presetEditado;
+        resized();
+
+        //  Y LAS CELDAS, con la ficha ya colocada: cuantas tienen curva y de
+        //  que tamano. Una curva de 0x0 pasa las ocho reglas de geometria.
+        int conCurva = 0, curvaCero = 0;
+        for (int i = 0; i < FxPresets::kPresets && i < presetCurvas.size(); ++i)
+            if (auto* v = presetCurvas[i])
+            {
+                if (v->tipo() >= 0 && ! v->getBounds().isEmpty()) ++conCurva;
+                if (v->isVisible() && v->getBounds().isEmpty() && v->tipo() >= 0) ++curvaCero;
+            }
+
+        std::cout << "{\"pficha\":1,\"cable\":" << cable
+                  << ",\"abre_vacia\":" << abreVacia
+                  << ",\"abre_puesta\":" << abrePuesta
+                  << ",\"editado\":" << editado
+                  << ",\"dly\":" << (int) AudioEngine::kFxDly
+                  << ",\"con_curva\":" << conCurva
+                  << ",\"curva_cero\":" << curvaCero
+                  << ",\"celdas\":" << FxPresets::kPresets << "}" << std::endl;
+
+        abreMenuPresets (-1);
+
+        //  Y LA CUENTA DE CURVAS DISTINTAS, tipo por tipo.
+        for (int f = 0; f < kNumFx; ++f)
+        {
+            ponCanalActual (kCanal);
+            abreMenuPresets (f);
+            refrescaMenuPresets();
+
+            //  La curva de cada preset, muestreada por la misma funcion que
+            //  dibuja la de la cara. Dos presets con la misma curva son dos
+            //  celdas que dicen lo mismo.
+            std::vector<FxVisor::Curva> vistas;
+            int dibujadas = 0;
+            for (int i = 0; i < FxPresets::kPresets && i < presetCurvas.size(); ++i)
+            {
+                auto* v = presetCurvas[i];
+                if (v == nullptr || v->tipo() < 0) continue;
+                ++dibujadas;
+                vistas.push_back (v->puntos());
+            }
+
+            int distintas = 0;
+            for (size_t a = 0; a < vistas.size(); ++a)
+            {
+                bool repetida = false;
+                for (size_t b = 0; b < a && ! repetida; ++b)
+                    repetida = (vistas[a] == vistas[b]);
+                if (! repetida) ++distintas;
+            }
+
+            //  Y QUE MANDOS MUEVEN SU DIBUJO, que es lo que convierte esta
+            //  cifra en un veredicto.
+            //
+            //  Seis celdas con la misma curva son seis celdas que no informan
+            //  —y es lo que saldria si alguien las alimentara del motor en vez
+            //  del preset— pero «distintas == 6» NO es la regla: hay visores
+            //  que declaran, con su razon escrita, que uno de los dos mandos
+            //  no cabe en su eje. RNG es el caso: su FREQ es un tiempo y la
+            //  ventana se mide en periodos, asi que GRAVE, METAL y CAMPANA
+            //  —que solo se diferencian en FREQ— dibujan lo mismo y TIENEN que
+            //  dibujar lo mismo. Lo que se publica es la materia prima; la
+            //  cuenta la hace Python con los valores de los presets, que ya
+            //  tiene. *El banco no adivina lo que la app puede decir.*
+            const auto mm = FxVisor::mandosDe (f);
+            std::cout << "{\"pcurva\":1,\"fx\":" << f
+                      << ",\"tipo\":\"" << fxDefs[f].name << "\""
+                      << ",\"m0\":" << (mm.p0 ? 1 : 0)
+                      << ",\"m1\":" << (mm.p1 ? 1 : 0)
+                      << ",\"cara\":" << (fxTraeCara (f) ? 1 : 0)
+                      << ",\"dibujadas\":" << dibujadas
+                      << ",\"distintas\":" << distintas
+                      << ",\"celdas\":" << FxPresets::kPresets << "}" << std::endl;
+
+            abreMenuPresets (-1);
+        }
     }
 }

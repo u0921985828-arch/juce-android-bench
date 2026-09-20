@@ -1495,9 +1495,19 @@ void MainComponent::resized()
         const auto zonaP = safeArea();
         const int topeAltoP = altoTarjeta (zonaP);
         const int anchoDentroP = anchoTarjeta (zonaP.getWidth()) - 2 * Metrics::margenFichaX;
-        const int colsP  = menuRanuraColumnas (celdas, topeAltoP, anchoDentroP, true);
+        //  LA CELDA DE UN PRESET SON DOS RENGLONES: el nombre y su curva.
+        //
+        //  Y el alto de la curva es `Metrics::btn` y no un numero nuevo: es el
+        //  renglon de esta casa, el mismo que ocupa el nombre encima, y por
+        //  debajo del dedo minimo una curva deja de ser una curva y es una
+        //  raya. Lo que crece son las celdas, asi que `menuRanuraColumnas`
+        //  tiene que preguntar con ESE alto o contestaria que caben el doble de
+        //  filas de las que caben — y lo que no cabe en esta ficha no se
+        //  alcanza arrastrando, porque no se desplaza.
+        const int altoCeldaP = Metrics::btn + Metrics::btn;
+        const int colsP  = menuRanuraColumnas (celdas, topeAltoP, anchoDentroP, true, 0, altoCeldaP);
         const int filasP = (celdas + colsP - 1) / colsP;
-        auto innerP = sheetFromBottom (presetSheet, menuRanuraPide (filasP, true));
+        auto innerP = sheetFromBottom (presetSheet, menuRanuraPide (filasP, true, altoCeldaP));
 
         auto titleRowP = innerP.removeFromTop (Metrics::hit);
         presetCloseBtn.setBounds (Lang::takeEnd (titleRowP, Metrics::hit)
@@ -1522,7 +1532,7 @@ void MainComponent::resized()
             presetNombreBox.setBounds (filaG);
         }
 
-        const int filaHP = juce::jmax (Metrics::hit,
+        const int filaHP = juce::jmax (altoCeldaP,
                                        (innerP.getHeight() - (filasP - 1) * Metrics::xs) / filasP);
         for (int r = 0; r < filasP; ++r)
         {
@@ -1536,9 +1546,35 @@ void MainComponent::resized()
                 //  no se reparte lo que queda entre las que hay, igual que el
                 //  menu de ranura y por lo mismo.
                 const bool ultima = (i == celdas - 1) || (c == colsP - 1);
-                presetBtns[i]->setBounds ((ultima && c == colsP - 1 ? row
-                                                                    : row.removeFromLeft (w))
-                                            .reduced (Metrics::aireTapaDensa, 0));
+                auto celda = (ultima && c == colsP - 1 ? row : row.removeFromLeft (w))
+                               .reduced (Metrics::aireTapaDensa, 0);
+
+                //  LA TAPA SE QUEDA LA CELDA ENTERA y la curva se dibuja en su
+                //  mitad de abajo, encima. No son dos objetivos: `FxMini` no
+                //  intercepta el raton, asi que el dedo que cae sobre la curva
+                //  cae en la tapa. Partir la celda en dos controles dejaria la
+                //  mitad de cada celda sin gesto, que es la mitad que la
+                //  persona apunta cuando lo que mira es el dibujo.
+                const int alto = juce::jmin (Metrics::btn, celda.getHeight() / 2);
+                presetBtns[i]->setBounds (celda);
+                //  Y DONDE CAE LA CURVA LO DICE `reparteTapa` Y NO ESTA FUNCION.
+                //
+                //  Es la banda que el rotulo NO se queda, medida sobre la CAPA
+                //  -que no es el componente: la capa va `kCapLift` por encima y
+                //  baja al pulsarla-. Restarla aqui a mano pondria el dibujo
+                //  donde el rotulo se centra, que es como se solapan dos cosas
+                //  que cada una cree que tiene sitio.
+                presetBtns[i]->getProperties().set ("cola", alto);
+                if (auto* v = (i < presetCurvas.size() ? presetCurvas[i] : nullptr))
+                {
+                    const auto rep = ZatiLookAndFeel::reparteTapa (*presetBtns[i]);
+                    v->setBounds (v->tipo() < 0 || rep.cola.isEmpty()
+                                    ? juce::Rectangle<int>()
+                                    : rep.cola.translated (presetBtns[i]->getX(),
+                                                           presetBtns[i]->getY())
+                                              .reduced (Metrics::margenPlato,
+                                                        Metrics::margenPlato / 2));
+                }
                 if (i == celdas - 1) break;
             }
             innerP.removeFromTop (Metrics::xs);

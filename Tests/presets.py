@@ -67,7 +67,8 @@ def corre ():
         print ("la app no termino")
         return None
 
-    filas = {"preset": [], "kfxdef": [], "spec": [], "tuyo": []}
+    filas = {"preset": [], "kfxdef": [], "spec": [], "tuyo": [],
+             "pficha": [], "pcurva": []}
     for line in out.splitlines ():
         line = line.strip ()
         if not (line.startswith ("{") and line.endswith ("}")):
@@ -267,6 +268,100 @@ def main ():
         if t["nombre"] != "MI ECO":
             fallos.append ("la ficha dice «%s» y el preset puesto es MI ECO"
                            % t["nombre"])
+
+    # ------------------------------------------------------------------
+    #  7. LA PUERTA: MANTENER EL CANALON DEL RACK ABRE SUS PRESETS.
+    #
+    #  Del telefono, con el rack delante: «hay que mejorar el tema de los
+    #  presets para los efectos, porque no esta muy accesible o legible que
+    #  digamos». Accesible es que la puerta este donde ya estas, y hasta esta
+    #  tanda estaba dos toques adentro: abrir el menu de TIPOS de la ranura y
+    #  pulsar PRESETS en el renglon de su titulo, o sea entrar en la pantalla
+    #  de cambiar el efecto para NO cambiarlo.
+    #
+    #  Y LAS DOS MITADES, porque un cable pelado cumpliria la primera: que
+    #  abra con un efecto puesto Y QUE NO ABRA sobre una ranura vacia, donde
+    #  no hay presets que elegir. Es la misma regla que ya tienen VACIAR y la
+    #  tapa de apagar de al lado.
+    # ------------------------------------------------------------------
+    if not r["pficha"]:
+        fallos.append ("la app no publico la linea de la ficha de presets")
+    else:
+        pf = r["pficha"][0]
+        print ("puerta     mantener el canalon: cable %d, sobre ranura vacia abre %d, "
+               "con efecto abre %d (editado %d, DLY %d)"
+               % (pf["cable"], pf["abre_vacia"], pf["abre_puesta"],
+                  pf["editado"], pf["dly"]))
+        print ("celdas     %d de %d con curva, %d con curva de 0x0"
+               % (pf["con_curva"], pf["celdas"], pf["curva_cero"]))
+        if not pf["cable"]:
+            fallos.append ("el canalon del rack no tiene gesto de mantener")
+        if pf["abre_vacia"]:
+            fallos.append ("mantener una ranura VACIA abrio la ficha de presets")
+        if not pf["abre_puesta"]:
+            fallos.append ("mantener una ranura con efecto no abrio sus presets")
+        if pf["editado"] != pf["dly"]:
+            fallos.append ("abrio los presets del efecto %d y en la ranura habia el %d"
+                           % (pf["editado"], pf["dly"]))
+        #  Y QUE SE VEAN: una curva de 0x0 pasa las ocho reglas de geometria.
+        if pf["con_curva"] != pf["celdas"]:
+            fallos.append ("%d de %d celdas se quedaron sin curva"
+                           % (pf["celdas"] - pf["con_curva"], pf["celdas"]))
+        if pf["curva_cero"]:
+            fallos.append ("%d curvas encendidas y de 0x0" % pf["curva_cero"])
+
+    # ------------------------------------------------------------------
+    #  8. Y LEGIBLE: DOS PRESETS DISTINTOS NO DIBUJAN LO MISMO.
+    #
+    #  Seis celdas con la misma curva son seis celdas que no informan, y es
+    #  exactamente lo que saldria si alguien las alimentara del MOTOR en vez
+    #  del preset: dibujarian treinta veces lo que suena ahora.
+    #
+    #  PERO EL LISTON NO ES SEIS, y eso es lo que esta regla tuvo que
+    #  aprender antes de creerse: hay visores que declaran, con su razon
+    #  escrita en `FxVisor::mandosDe`, que uno de sus dos mandos no cabe en su
+    #  eje. RNG es el caso extremo -su FREQ es un tiempo y la ventana se mide
+    #  en periodos- asi que GRAVE, METAL y CAMPANA, que solo se diferencian en
+    #  FREQ, dibujan lo mismo y TIENEN que dibujar lo mismo: exigirles seis
+    #  seria pedirle al dibujo que mienta. Lo que se exige es que salgan
+    #  tantas curvas distintas como combinaciones distintas hay EN LOS MANDOS
+    #  QUE LA APP DICE QUE MUEVEN EL DIBUJO. La cuenta se hace aqui con los
+    #  valores que la tabla ya publico; la app solo dice cuales cuentan.
+    # ------------------------------------------------------------------
+    if not r["pcurva"]:
+        fallos.append ("la app no publico las curvas de la ficha de presets")
+    else:
+        conCurva = 0
+        for c in r["pcurva"]:
+            f = c["fx"]
+            if c["cara"]:
+                #  El EQ se lleva el plato entero con su curva y `fxTraeCara`
+                #  le manda -1 al visor justo por eso: cinco bandas no caben
+                #  en dos mandos. Su celda se queda con el nombre.
+                if c["dibujadas"]:
+                    fallos.append ("%s trae cara propia y dibujo %d curvas"
+                                   % (c["tipo"], c["dibujadas"]))
+                continue
+
+            conCurva += 1
+            if c["dibujadas"] != c["celdas"]:
+                fallos.append ("%s dibujo %d curvas de %d"
+                               % (c["tipo"], c["dibujadas"], c["celdas"]))
+
+            #  Las combinaciones que el visor de ESE tipo puede distinguir.
+            vistos = set ()
+            for d in porTipo.get (f, []):
+                clave = tuple (round (d["p"][i], 6) for i in (0, 1)
+                               if c["m%d" % i])
+                vistos.add (clave)
+            esperadas = max (1, len (vistos))
+            if c["distintas"] != esperadas:
+                fallos.append ("%s dibuja %d curvas distintas y sus presets se "
+                               "diferencian en %d por los mandos que mueven el dibujo"
+                               % (c["tipo"], c["distintas"], esperadas))
+
+        print ("curvas     %d tipos dibujan una curva por preset; el EQ se queda "
+               "con su nombre, que trae cara propia" % conCurva)
 
     # ------------------------------------------------------------------
     if fallos:

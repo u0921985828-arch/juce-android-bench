@@ -210,6 +210,18 @@ namespace
                                      "empties the automation",
                                      "清空自动化",
                                      "يفرغ الأتمتة" },
+        //  Y EL NOVENO, que es el de esta tanda. Del telefono: «hay que
+        //  mejorar el tema de los presets para los efectos, porque no esta muy
+        //  accesible o legible que digamos». La puerta nueva -mantener el
+        //  canalon de una fila del rack- es un gesto que no deja marca en la
+        //  cara, que es exactamente para lo que esta pagina existe: sin fila
+        //  aqui, la unica forma de encontrarlo es tropezarse con el.
+        { "MANTEN UNA RANURA DEL RACK", "", "HOLD A RACK SLOT",
+                                     "长按机架槽位", "اضغط خانة الراك مطولًا" },
+        { "abre los presets de ese efecto", "",
+                                     "opens that effect's presets",
+                                     "打开该效果的预设",
+                                     "يفتح إعدادات ذلك المؤثر الجاهزة" },
         { "Todo parado",        "",  "Everything stopped",
                                      "全部停止", "توقف كل شيء" },
 

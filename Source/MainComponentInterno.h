@@ -981,10 +981,19 @@ inline Iconos::Id iconoDeFx (int f) noexcept
 //  se prueban antes los divisores. Con 21 eso da **3 columnas x 7 filas de
 //  pie** y **7 x 3 apaisado**, que es la misma rejilla transpuesta; girado
 //  sobra ancho y falta alto, que es la regla de siempre.
-inline int menuRanuraPide (int filas, bool conVaciar) noexcept
+//  Y EL ALTO DE FILA SE PIDE, que es la tercera cosa que estaba clavada.
+//
+//  Lo pidio la ficha de presets: una celda que solo dice «CIERRA» no informa de
+//  nada -del telefono, «el tema de los presets no esta muy accesible ni legible
+//  que digamos»- asi que cada celda pasa a ser DOS renglones, el nombre y su
+//  curva dibujada. La curva toma el alto del nombre y no un numero nuevo:
+//  `Metrics::btn` es el renglon de esta casa y por debajo del dedo minimo una
+//  curva deja de ser una curva y es una raya.
+inline int menuRanuraPide (int filas, bool conVaciar,
+                           int altoFila = Metrics::btn) noexcept
 {
     return Ficha::cromo
-           + filas * Metrics::btn + (filas - 1) * Metrics::xs
+           + filas * altoFila + (filas - 1) * Metrics::xs
            + (conVaciar ? Metrics::sm + Metrics::btn : 0);
 }
 
@@ -999,7 +1008,7 @@ inline int menuRanuraPide (int filas, bool conVaciar) noexcept
 //  y ademas sale mas corto -seis filas contra ocho-, asi que cabe donde cabia.
 //  Si no cabe, se cae a la busqueda de siempre.
 inline int menuRanuraColumnas (int n, int topeAlto, int anchoDentro, bool conVaciar,
-                               int pedido = 0) noexcept
+                               int pedido = 0, int altoFila = Metrics::btn) noexcept
 {
     if (n <= 0) return 1;
 
@@ -1016,7 +1025,7 @@ inline int menuRanuraColumnas (int n, int topeAlto, int anchoDentro, bool conVac
         if (c < 1 || c > n) return false;
         const int filas = (n + c - 1) / c;
         return filas >= 2
-                 && menuRanuraPide (filas, conVaciar) <= topeAlto
+                 && menuRanuraPide (filas, conVaciar, altoFila) <= topeAlto
                  && anchoDentro / c >= Metrics::hit;
     };
 

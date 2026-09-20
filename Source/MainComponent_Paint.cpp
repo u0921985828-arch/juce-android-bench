@@ -1168,6 +1168,7 @@ void MainComponent::paintGesturesPage (juce::Graphics& g, juce::Rectangle<int> a
         { "MANTEN AUTO",        "vacia la automatizacion" },
         { "ARRASTRA LA PANTALLA", "cambia de patron" },
         { "GOLPEA ARRIBA O ABAJO", "toca mas fuerte o mas flojo" },
+        { "MANTEN UNA RANURA DEL RACK", "abre los presets de ese efecto" },
     };
 
     //  SE REPARTE LO QUE HAY, no se pide un suelo.
