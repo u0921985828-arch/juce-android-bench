@@ -138,7 +138,7 @@ MainComponent::MainComponent()
     //  de pestaña no te mueva de sitio. Dos variables serian dos reglas.
     seqBarra.onMueve = [this] (int primero)
     {
-        seqPrimerPaso = primero;
+        seqPrimerCelda = primero;
         //  LA QUE SE ESTA VIENDO, y no siempre la rejilla. La FICHA no es la
         //  PAGINA: el mismo fallo que ya tuvo el cabezal del piano.
         if (seqPage == seqPagePiano) refreshPiano();
@@ -2292,7 +2292,7 @@ MainComponent::MainComponent()
         velSlider.setValue  (127.0, juce::dontSendNotification);
         rollSlider.setValue (1.0, juce::dontSendNotification);
         lengthSlider.setValue (engine.getPatternLength (selectedPattern), juce::dontSendNotification);
-        seqPrimerPaso = 0;
+        seqPrimerCelda = 0;
         resized();
         refreshStepGrid();
         seqSheet.repaint();   // sheet card itself can grow/shrink with the bank's LEN
@@ -2304,14 +2304,21 @@ MainComponent::MainComponent()
     // one row of 8 at a time. Changing it reflows the step grid itself
     // (more/fewer rows), so it forces a full resized(), not just a repaint.
     lengthSlider.setSliderStyle (juce::Slider::LinearHorizontal);
-    lengthSlider.setRange ((double) kMinPatLen, (double) kMaxPatLen, (double) kStepCols);   // whole bars
-    lengthSlider.setValue ((double) kMinPatLen, juce::dontSendNotification);
+    reajustaMandoLargo();
     lengthSlider.setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
     lengthSlider.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
     lengthSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     lengthSlider.setColour (juce::Slider::trackColourId, ZatiColours::accent);
     lengthSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 72, Metrics::readout);
-    lengthSlider.textFromValueFunction = [] (double v) { return T ("%1 pasos", juce::String ((int) v)); };
+    //  EN COMPASES Y NO EN PASOS. El mando ya se movia de compas en compas y
+    //  el numero que ensenaba eran PASOS GUARDADOS, que desde que la rejilla es
+    //  una vista aparte no son los cuadraditos que se ven: con la rejilla en
+    //  1/8 sobre pasos de 1/16, el mando decia «16 pasos» sobre ocho casillas
+    //  dibujadas. Dos verdades a la vez. Un compas es un compas en las siete
+    //  rejillas y con cualquier paso guardado, que es justo lo que este mando
+    //  elige - y es ademas el nombre que ya tenia en la lista de accesibilidad.
+    lengthSlider.textFromValueFunction = [this] (double v)
+    { return T ("%1 compases", juce::String (juce::jmax (1, (int) v / engine.pasosPorCompas()))); };
     lengthSlider.updateText();
     lengthSlider.onValueChange = [this]
     {
@@ -2467,9 +2474,72 @@ MainComponent::MainComponent()
     {
         const int i = juce::jlimit (0, kNumGrids - 1, (int) gridSlider.getValue());
 
-        //  Y ESTO TAMBIEN SE DESHACE. Cambiar la rejilla reparte el patron
-        //  entero por otro reloj -un paso pasa de semicorchea a tresillo- asi
-        //  que es de los cambios que mas se oyen y no habia forma de volver.
+        //  LA REJILLA ES LO QUE MIDE EL CUADRADITO Y NADA MAS.
+        //
+        //  Tres versiones de esto han estado mal y las tres por la misma
+        //  razon. `setStepBeats` a secas dejaba el golpe en su paso y cambiaba
+        //  lo que vale un paso: el patron entero se oia al doble o a la mitad.
+        //  Remapear cada golpe al paso del mismo pulso arreglaba eso y
+        //  estrenaba el siguiente: al ENGORDAR la rejilla hay menos casillas
+        //  que golpes, asi que unos se perdian y otros se salian de su pulso
+        //  -21 de 42 idas y vueltas medidas, todas engordando-, que es la
+        //  queja «se deforman los patrones».
+        //
+        //  Lo que estaba mal de raiz es que la rejilla fuese TAMBIEN el paso
+        //  guardado. Ahora no lo es: el motor guarda el patron con su propio
+        //  paso (`AudioEngine::pasoUnidades`) y esto solo dice cuantos de esos
+        //  pasos pinta una casilla. Mirar mas gordo no toca la tabla -cero
+        //  golpes movidos, cero perdidos- y la vuelta es exacta siempre.
+        //
+        //  EL PASO GUARDADO SI SE MUEVE, pero solo para poder DECIR la rejilla
+        //  que se pide, y con un factor ENTERO: el maximo comun divisor entre
+        //  la casilla pedida y todo lo que ya hay escrito. De 1/16 a 1/16T el
+        //  paso se afina a 1/48 de pulso -los indices por tres, exacto- y de
+        //  vuelta a 1/16 se engorda otra vez porque todo lo escrito es
+        //  multiplo de tres. Ni una cuenta con decimales en todo el camino.
+        //
+        //  MENOS CUANDO ES `applyState` QUIEN MUEVE EL MANDO: el proyecto trae
+        //  su paso guardado aparte y sus patrones YA estan escritos con el.
+        //  Tocarlos aqui los moveria una segunda vez, que es el mismo perdon
+        //  que necesita la foto de deshacer cuatro parrafos mas abajo.
+        int objetivo = engine.pasoUnidades();
+
+        if (! aplicandoEstado)
+        {
+            const int pasoViejo = engine.pasoUnidades();
+            objetivo = AudioEngine::mcd (rejillaU (i), pasoViejo * engine.mcdOcupacion());
+
+            //  Y SI NO CABE, NO SE CAMBIA DE REJILLA Y SE DICE EL NUMERO.
+            //
+            //  La maquina guarda 192 pasos por patron, que es un compas con
+            //  el paso mas fino que hace falta para mezclar recto y tresillo.
+            //  Lo que no cabe es esa mezcla sobre VARIOS compases, y la
+            //  salida de la version anterior -tirar lo que sobra- es cambiar
+            //  la musica en silencio: el mismo fallo que el acorde que
+            //  cargaba solo la tonica.
+            //
+            //  SE MIDE ANTES DE LA FOTO, que es la razon de que `midePaso` y
+            //  `remapeaPaso` sean dos funciones: apilar un deshacer para un
+            //  cambio que no llega a ocurrir deja la pila diciendo que paso
+            //  algo. Y el mando vuelve a su sitio SIN aviso, que si no este
+            //  mismo lambda se llamaria a si mismo.
+            const AudioEngine::RemapeoPaso prueba = engine.midePaso (pasoViejo, objetivo);
+
+            if (! prueba.cabe)
+            {
+                gridSlider.setValue ((double) vistaRejilla, juce::dontSendNotification);
+                status.setText (T ("%1 pediria %2 pasos y la maquina guarda %3",
+                                   Lang::ltr (gridName (i)),
+                                   Lang::ltr (juce::String (prueba.pasosPedidos)),
+                                   Lang::ltr (juce::String (AudioEngine::kNumSteps))),
+                                juce::dontSendNotification);
+                return;
+            }
+        }
+
+        //  Y ESTO TAMBIEN SE DESHACE. Cambiar la rejilla se oye -y cuando
+        //  ademas afina el paso guardado, reescribe los ocho patrones- asi que
+        //  es de los cambios que mas hacen falta poder volver.
         //
         //  LA FOTO ES DE ANTES, Y CUANDO AVISA EL MANDO YA SE HA MOVIDO. Un
         //  `onValueChange` llega con el valor NUEVO puesto, asi que un
@@ -2483,66 +2553,62 @@ MainComponent::MainComponent()
         //
         //  MENOS CUANDO ES `applyState` QUIEN LO MUEVE, que es la otra trampa:
         //  deshacer llama a `applyState`, `applyState` repone la rejilla CON
-        //  aviso -lo necesita, es quien llama a `setStepBeats`- y la foto se
-        //  apilaria encima de la pila que se esta desapilando. Es el mismo
-        //  perdon que `Tests/deshacer.py` le da a `restorePads`.
-        if (! aplicandoEstado && i != gridIdxAnterior)
+        //  aviso -lo necesita- y la foto se apilaria encima de la pila que se
+        //  esta desapilando. Es el mismo perdon que `Tests/deshacer.py` le da
+        //  a `restorePads`.
+        if (! aplicandoEstado && i != vistaRejilla)
         {
-            gridSlider.setValue ((double) gridIdxAnterior, juce::dontSendNotification);
+            gridSlider.setValue ((double) vistaRejilla, juce::dontSendNotification);
             pushUndo (T ("REJILLA"));
             gridSlider.setValue ((double) i, juce::dontSendNotification);
         }
-        gridIdxAnterior = i;
 
-        //  LA REJILLA ES UN ZOOM Y NO UN RELOJ NUEVO. Ver
-        //  `AudioEngine::reajustaRejilla`: `setStepBeats` a solas dejaba cada
-        //  golpe en su paso y cambiaba lo que vale un paso, o sea que el
-        //  patron entero se oia al doble o a la mitad. Ahora el golpe se muda
-        //  al paso que cae en el MISMO pulso, y lo unico que cambia es cuantos
-        //  cuadraditos hay entre dos golpes. El tempo no se toca aqui.
-        //
-        //  MENOS CUANDO ES `applyState` QUIEN MUEVE EL MANDO, que es la misma
-        //  trampa que la foto de deshacer: `applyState` repone la rejilla CON
-        //  aviso y los patrones que acaba de cargar YA estan en la rejilla
-        //  buena. Remapearlos otra vez los movia una segunda vez, y deshacer
-        //  un cambio de rejilla habria dejado el patron corrido.
-        const float beatsViejo = engine.getStepBeats();
-        engine.setStepBeats (kGridBeats[i]);
-        const AudioEngine::RemapeoRejilla remapeo
-            = aplicandoEstado ? AudioEngine::RemapeoRejilla{}
-                              : engine.reajustaRejilla (beatsViejo, kGridBeats[i]);
-
-        //  Y EL ESPEJO DE LA CARA VA DETRAS. `pattern[banco][paso][pad]` es la
-        //  copia con la que se PINTA la rejilla y con la que la pagina CANCION
-        //  dibuja los bloques; el remapeo mueve el motor y no la toca, asi que
-        //  sin esto la rejilla seguiria ensenando los golpes en el sitio
-        //  viejo mientras suenan en el nuevo - dos verdades a la vez, que es
-        //  la peor forma de un fallo. Se relee del motor, que es el dueño.
         if (! aplicandoEstado)
-            for (int b = 0; b < kNumPatterns; ++b)
-                for (int st = 0; st < AudioEngine::kNumSteps; ++st)
-                    for (int pd = 0; pd < kNumPads; ++pd)
-                        pattern[(size_t) b][(size_t) st][(size_t) pd] = engine.leePaso (b, st, pd).on;
+        {
+            const int pasoViejo = engine.pasoUnidades();
+            const AudioEngine::RemapeoPaso rem = engine.remapeaPaso (pasoViejo, objetivo);
 
-        //  Y SE DICEN LAS DOS CUENTAS. Entre una rejilla y su tresillo la
-        //  razon es 4/3 y un paso cae entre dos casillas: unos golpes no
-        //  caben y otros se quedan pero fuera de su pulso. Callar cualquiera
-        //  de las dos seria cambiar la musica en silencio, que es justo el
-        //  fallo que acaba de costar una tanda con el acorde. Y van en el
-        //  mismo renglon porque son la misma pregunta -«que le ha pasado a
-        //  mi patron»- y porque deshacer devuelve las dos.
-        status.setText (remapeo.perdidos > 0 || remapeo.movidos > 0
-                          ? T ("Un paso dura %1 · %2 golpes no caben, %3 se ajustan",
-                               Lang::ltr (gridName (i)),
-                               Lang::ltr (juce::String (remapeo.perdidos)),
-                               Lang::ltr (juce::String (remapeo.movidos)))
-                          : T ("Un paso dura %1", Lang::ltr (gridName (i))),
-                        juce::dontSendNotification);
-        //  Y LARGO ensena el resultado: el remapeo escala el largo del patron
-        //  -16 pasos de 1/16 son cuatro pulsos y a 1/8 los mismos cuatro
-        //  pulsos son 8 pasos- y un mando que no se entera se queda diciendo
-        //  el numero de antes.
-        lengthSlider.setValue (engine.getPatternLength (selectedPattern), juce::dontSendNotification);
+            //  Y EL ESPEJO DE LA CARA VA DETRAS. `pattern[banco][paso][pad]` es
+            //  la copia con la que se PINTA la rejilla y con la que la pagina
+            //  CANCION dibuja los bloques; el remapeo mueve el motor y no la
+            //  toca, asi que sin esto la rejilla seguiria ensenando los golpes
+            //  en el sitio viejo mientras suenan en el nuevo - dos verdades a
+            //  la vez, que es la peor forma de un fallo. Se relee del motor,
+            //  que es el dueño.
+            if (objetivo != pasoViejo)
+                for (int b = 0; b < kNumPatterns; ++b)
+                    for (int st = 0; st < AudioEngine::kNumSteps; ++st)
+                        for (int pd = 0; pd < kNumPads; ++pd)
+                            pattern[(size_t) b][(size_t) st][(size_t) pd] = engine.leePaso (b, st, pd).on;
+
+            //  LO UNICO QUE SE CUENTA ES EL RECORTE, y solo porque existe: el
+            //  largo de una nota y su empujon tienen techo -63 cuartos de paso
+            //  y media casilla- y al afinar el paso pueden no caber. Ni un
+            //  golpe se mueve de pulso por esto; lo que se acorta es cuanto
+            //  suena. Callarlo seria cambiar la musica en silencio.
+            status.setText (rem.recortados > 0
+                              ? T ("Un cuadradito mide %1 · %2 notas se acortan",
+                                   Lang::ltr (gridName (i)),
+                                   Lang::ltr (juce::String (rem.recortados)))
+                              : T ("Un cuadradito mide %1", Lang::ltr (gridName (i))),
+                            juce::dontSendNotification);
+        }
+
+        vistaRejilla = i;
+
+        //  Y LA VENTANA SE REACOTA: las casillas acaban de cambiar de tamano,
+        //  asi que la primera que se ve -que se cuenta en casillas- puede
+        //  apuntar fuera del patron. Sin esto, engordar la rejilla con la
+        //  vista en el ultimo compas la dejaba en blanco.
+        seqPrimerCelda = juce::jlimit (0, juce::jmax (0, celdasDePatron (selectedPattern) - 1),
+                                       seqPrimerCelda);
+
+        //  Y EL MANDO DE LARGO SE REHACE, porque un compas ya no vale lo mismo
+        //  en pasos guardados: a 1/16 son dieciseis y a 1/48 de pulso son
+        //  cuarenta y ocho.
+        reajustaMandoLargo();
+        refreshStepGrid();
+        if (seqPage == seqPagePiano) refreshPiano();
         stepGrid.repaint();
     };
     seqSheet.addAndMakeVisible (gridSlider);
@@ -3696,7 +3762,7 @@ MainComponent::MainComponent()
         //  saltaba, porque una columna siempre vale menos de dieciseis.
         pianoGrid.onCelda = [this] (int paso, int semi, bool arr)
         {
-            pianoCellToggled (seqPrimerPaso + paso, semi, arr);
+            pianoCellToggled (pasoDeColumna (paso), semi, arr);
         };
         //  ESTIRAR UNA NOTA. El largo es del PASO y no de cada nota del acorde:
         //  las notas de una columna son un acorde y un acorde dura lo
@@ -3704,9 +3770,13 @@ MainComponent::MainComponent()
         pianoGrid.onLargo = [this] (int paso, int, int cuartos)
         {
             if (selectedPad < 0) return;
-            const int st = seqPrimerPaso + paso;
+            const int st = pasoDeColumna (paso);
             if (st < 0 || st >= engine.getPatternLength (selectedPattern)) return;
-            engine.setStepLen (selectedPattern, st, selectedPad, cuartos);
+            //  EL DEDO ESTIRA CASILLAS DE LA VISTA Y EL MOTOR GUARDA CUARTOS DE
+            //  PASO. Con la rejilla en 1/8 sobre pasos de 1/16, estirar dos
+            //  casillas son cuatro pasos: sin multiplicar, la nota salia
+            //  durando la mitad de lo que el dedo habia dibujado.
+            engine.setStepLen (selectedPattern, st, selectedPad, cuartos * pasosPorCelda());
             refreshPiano();
         };
         //  El teclado SUENA y no escribe: buscar la nota antes de ponerla es
@@ -3891,7 +3961,7 @@ MainComponent::MainComponent()
         pianoGrid.onBorrar = [this] (int paso, int semi)
         {
             if (selectedPad < 0) return;
-            const int st = seqPrimerPaso + paso;
+            const int st = pasoDeColumna (paso);
             if (st < 0 || st >= engine.getPatternLength (selectedPattern)) return;
 
             bool tenia = false;
@@ -3910,9 +3980,10 @@ MainComponent::MainComponent()
         pianoGrid.onCortar = [this] (int paso, int cuartos)
         {
             if (selectedPad < 0) return;
-            const int st = seqPrimerPaso + paso;
+            const int st = pasoDeColumna (paso);
             if (st < 0 || st >= engine.getPatternLength (selectedPattern)) return;
-            engine.setStepLen (selectedPattern, st, selectedPad, cuartos);
+            //  Ver onLargo: la tijera corta en casillas de la vista.
+            engine.setStepLen (selectedPattern, st, selectedPad, cuartos * pasosPorCelda());
             refreshPiano();
         };
 
@@ -7922,9 +7993,18 @@ void MainComponent::refrescaTiraPaso()
                              juce::dontSendNotification);
 }
 
-void MainComponent::stepCellToggled (int pad, int step, bool arrastrando)
+//  LLEGA UNA CASILLA DE LA VISTA, NO UN PASO GUARDADO. Ver
+//  `MainComponent::pasosPorCelda`: con la rejilla en 1/8 sobre un patron
+//  escrito en 1/16, cada casilla son DOS pasos, y el dedo tiene que poder
+//  apagar el golpe que este en cualquiera de los dos - si no, un golpe que se
+//  ve encendido no se puede borrar, que es la definicion de «la rejilla no
+//  responde».
+void MainComponent::stepCellToggled (int pad, int celda, bool arrastrando)
 {
-    if (step >= engine.getPatternLength (selectedPattern)) return;
+    const int ppc  = pasosPorCelda();
+    const int len  = engine.getPatternLength (selectedPattern);
+    const int step = pasoDeCelda (celda);
+    if (step < 0 || step >= len) return;
 
     //  LA FOTO, Y UNA POR GESTO.
     //
@@ -7946,13 +8026,35 @@ void MainComponent::stepCellToggled (int pad, int step, bool arrastrando)
     //  resized la tira no sale hasta que algo mas la provoque - girar el
     //  telefono, cambiar de pagina - o sea nunca, mirandolo desde el dedo.
     const bool teniaPaso = (selectedStep >= 0);
-    selectedStep = step;
+
+    //  LO QUE SE ENCIENDE ES EL PRIMER PASO DE LA CASILLA; LO QUE SE APAGA SON
+    //  TODOS LOS QUE HAYA DENTRO. No es simetrico a proposito: escribir en el
+    //  sitio mas gordo que se este mirando es lo que la rejilla significa, y
+    //  borrar tiene que llevarse lo que se ve, venga de donde venga.
+    int primero = -1;
+    for (int k = 0; k < ppc && step + k < len; ++k)
+        if (pattern[(size_t) selectedPattern][(size_t) (step + k)][(size_t) pad])
+        { primero = step + k; break; }
+
+    const bool nv = (primero < 0);
+    if (nv)
+    {
+        pattern[(size_t) selectedPattern][(size_t) step][(size_t) pad] = true;
+        engine.setStep (selectedPattern, step, pad, true);
+        selectedStep = step;
+    }
+    else
+    {
+        for (int k = 0; k < ppc && step + k < len; ++k)
+        {
+            pattern[(size_t) selectedPattern][(size_t) (step + k)][(size_t) pad] = false;
+            engine.setStep (selectedPattern, step + k, pad, false);
+        }
+        selectedStep = primero;
+    }
+
     selectPad (pad);                 // the lane you touched becomes the pad you edit
     refrescaTiraPaso();
-
-    const bool nv = ! pattern[(size_t) selectedPattern][(size_t) step][(size_t) pad];
-    pattern[(size_t) selectedPattern][(size_t) step][(size_t) pad] = nv;
-    engine.setStep (selectedPattern, step, pad, nv);
     refreshStepGrid();
     if (! teniaPaso) resized();
     seqSheet.repaint();
@@ -7990,12 +8092,18 @@ void MainComponent::seguirCompas (int ps)
     //  si se sale, salta a la pagina que lo contiene. Cuantas columnas son una
     //  pagina lo dice la rejilla que se este mirando, que es quien conoce su
     //  ancho y su zoom.
-    const int cols = juce::jmax (1, (seqPage == seqPagePiano) ? pianoGrid.numPasos()
-                                                             : stepGrid.numCols());
-    if (ps >= seqPrimerPaso && ps < seqPrimerPaso + cols) return;
+    //  Y `ps` LLEGA EN PASOS GUARDADOS -es el cabezal del motor- mientras que
+    //  la ventana se cuenta en casillas de la vista. Compararlos a pelo era
+    //  correcto cuando eran la misma cosa; con la rejilla en 1/8 sobre un
+    //  patron de 1/16 el cabezal del paso 30 decia «estoy en la columna 30» y
+    //  la vista saltaba a una pagina que no existe.
+    const int cols   = juce::jmax (1, (seqPage == seqPagePiano) ? pianoGrid.numPasos()
+                                                                : stepGrid.numCols());
+    const int celda  = celdaDePaso (ps);
+    if (celda >= seqPrimerCelda && celda < seqPrimerCelda + cols) return;
 
-    const int len = engine.getPatternLength (selectedPattern);
-    seqPrimerPaso = juce::jlimit (0, juce::jmax (0, len - cols), (ps / cols) * cols);
+    const int celdas = celdasDePatron (selectedPattern);
+    seqPrimerCelda = juce::jlimit (0, juce::jmax (0, celdas - cols), (celda / cols) * cols);
 }
 
 void MainComponent::refreshStepGrid()
@@ -8006,11 +8114,34 @@ void MainComponent::refreshStepGrid()
     //  the sixteen you can currently reach with a thumb.
     const int base = currentBank * kPadsPerBank;
 
-    for (int st = 0; st < kNumSteps; ++st)
+    //  Y LO QUE SE LE DA A LA REJILLA SON CASILLAS DE LA VISTA, NO PASOS
+    //  GUARDADOS. Con la rejilla en 1/8 sobre un patron escrito en 1/16 cada
+    //  casilla son dos pasos: se enciende si hay algo en CUALQUIERA de los
+    //  dos, porque un golpe que no se ve es un golpe que suena y no se puede
+    //  borrar. La nota que se ensena es la del primero que este encendido -
+    //  una casilla dibuja un numero, no dos.
+    const int ppc    = pasosPorCelda();
+    const int celdas = celdasDePatron (selectedPattern);
+
+    for (int c = 0; c < kNumSteps; ++c)
         for (int p = 0; p < kPadsPerBank; ++p)
         {
-            gridCells[st * kPadsPerBank + p] = pattern[(size_t) selectedPattern][(size_t) st][(size_t) (base + p)];
-            gridNotes[st * kPadsPerBank + p] = (signed char) engine.getStepNote (selectedPattern, st, base + p);
+            bool on = false;
+            signed char nota = 0;
+
+            if (c < celdas)
+                for (int k = 0; k < ppc; ++k)
+                {
+                    const int st = c * ppc + k;
+                    if (st >= kNumSteps) break;
+                    if (! pattern[(size_t) selectedPattern][(size_t) st][(size_t) (base + p)]) continue;
+                    on   = true;
+                    nota = (signed char) engine.getStepNote (selectedPattern, st, base + p);
+                    break;
+                }
+
+            gridCells[c * kPadsPerBank + p] = on;
+            gridNotes[c * kPadsPerBank + p] = nota;
         }
 
     for (int p = 0; p < kPadsPerBank; ++p)
@@ -8030,10 +8161,19 @@ void MainComponent::refreshStepGrid()
         transporte (seqPlayBtn, rodando);
     }
 
+    //  EL CABEZAL TAMBIEN SE TRADUCE, Y SU FASE CON EL. La fase que da el
+    //  motor va DENTRO de un paso guardado; dentro de una casilla de dos pasos,
+    //  el cabezal que la cruza tiene que ir de 0 a 1 una sola vez y no dos, o
+    //  la barra viva salta hacia atras a mitad de casilla.
+    const int   psCelda = (ps >= 0) ? celdaDePaso (ps) : -1;
+    const float fase    = (ps >= 0)
+                            ? ((float) (ps % ppc) + engine.getStepPhase()) / (float) ppc
+                            : 0.0f;
+
     stepGrid.setSource (gridCells, gridZati, gridLoaded, gridNotes,
-                        engine.getPatternLength (selectedPattern),
-                        seqPrimerPaso, ps, selectedPad - base,
-                        ps >= 0 ? engine.getStepPhase() : 0.0f,
+                        celdas,
+                        seqPrimerCelda, psCelda, selectedPad - base,
+                        fase,
                         base);   // el pad del carril 0, para que el canalon diga 17..32 en el banco B
 
     //  Y LA BARRA DICE DONDE ESTA LA VENTANA Y DONDE EL CABEZAL.
@@ -8044,10 +8184,9 @@ void MainComponent::refreshStepGrid()
     //  editabas el 1 y sonaba el 3. La barra lo dice sobre el TOTAL, que es
     //  ademas lo que la fila de tapas no podia decir.
     {
-        const int len  = engine.getPatternLength (selectedPattern);
         const int cols = stepGrid.numCols();
-        seqBarra.ponRango (seqPrimerPaso, cols, len);
-        seqBarra.ponCabezal (ps);
+        seqBarra.ponRango (seqPrimerCelda, cols, celdas);
+        seqBarra.ponCabezal (psCelda);
     }
 }
 
@@ -9943,6 +10082,61 @@ void MainComponent::pastePattern()
                     juce::dontSendNotification);
 }
 
+//  CASILLA DE LA VISTA CONTRA PASO GUARDADO. Ver `MainComponent::vistaRejilla`
+//  y `AudioEngine::remapeaPaso`.
+//
+//  `pasosPorCelda` es SIEMPRE entero y SIEMPRE por lo menos uno, y no por
+//  prudencia: el mando de REJILLA solo deja llegar a estados en los que el
+//  paso guardado divide a la casilla de la vista -es literalmente como elige
+//  el paso, con un maximo comun divisor- asi que la division es exacta por
+//  construccion. El guardia esta para que una vista imposible dibuje una
+//  casilla por paso en vez de dividir por cero.
+int MainComponent::pasosPorCelda() const
+{
+    const int paso    = engine.pasoUnidades();
+    const int casilla = rejillaU (vistaRejilla);
+    return (paso > 0 && casilla >= paso && casilla % paso == 0) ? casilla / paso : 1;
+}
+
+//  CUANTAS CASILLAS OCUPA EL PATRON. Hacia ARRIBA: un patron de 12 pasos
+//  mirado con casillas de 8 son dos casillas y no una y media, y la segunda
+//  esta a medias. Redondear hacia abajo la escondia entera - con ella los
+//  golpes que hubiera dentro.
+int MainComponent::celdasDePatron (int pat) const
+{
+    const int ppc = pasosPorCelda();
+    return juce::jmax (1, (engine.getPatternLength (pat) + ppc - 1) / ppc);
+}
+
+int MainComponent::pasoDeCelda (int celda) const { return celda * pasosPorCelda(); }
+int MainComponent::celdaDePaso (int paso)  const { return paso  / pasosPorCelda(); }
+int MainComponent::pasoDeColumna (int columna) const
+{ return pasoDeCelda (seqPrimerCelda + columna); }
+
+//  EL MANDO DE LARGO SE MUEVE DE COMPAS EN COMPAS, Y UN COMPAS DEPENDE DE LA
+//  REJILLA.
+//
+//  Estaba escrito `setRange (16, 64, 16)` una sola vez al arrancar, con el
+//  comentario «whole bars». Dieciseis pasos son un compas a 1/16 y nada mas:
+//  a 1/8 un compas son ocho pasos y a 1/16T son veinticuatro. Asi que en
+//  cuanto se tocaba la rejilla el mando dejaba de poder decir «un compas» y
+//  el patron salia del remapeo con un largo que el mando no sabia ensenar
+//  -motor en 8, mando en 16-, que son dos verdades a la vez.
+//
+//  El tope tambien sale de ahi: lo que la maquina guarda son 192 pasos, y a
+//  1/16T un compas son 24, asi que ocho compases justos y no ocho y pico.
+void MainComponent::reajustaMandoLargo()
+{
+    const int compas = engine.pasosPorCompas();
+    const int tope   = juce::jmax (compas, (AudioEngine::kMaxPatLen / compas) * compas);
+
+    lengthSlider.setRange ((double) compas, (double) tope, (double) compas);
+    lengthSlider.setValue ((double) juce::jlimit (compas, tope,
+                                                  engine.getPatternLength (selectedPattern)),
+                           juce::dontSendNotification);
+    lengthSlider.updateText();
+}
+
 void MainComponent::pushUndo (const juce::String& what)
 {
     Snapshot snap;
@@ -10663,6 +10857,19 @@ juce::ValueTree MainComponent::captureState() const
     //  proyecto que luego hay que volver a casar con uno de los cinco valores
     //  es una comparacion de flotantes esperando a fallar por un bit.
     s.setProperty ("gridres", (int) gridSlider.getValue(), nullptr);
+    //  Y EL PASO GUARDADO APARTE, porque ya no se deduce de la rejilla.
+    //
+    //  Eran la misma cosa y un numero bastaba. Desde que la rejilla es una
+    //  VISTA, el patron puede estar escrito con un paso mas fino que ella -de
+    //  hecho lo esta cada vez que se mira mas gordo- y un proyecto que solo
+    //  guardase la rejilla volveria con los golpes repartidos por otro reloj:
+    //  la misma deformacion que esta tanda arregla, cometida al abrir.
+    //
+    //  En unidades de 1/48 de pulso, que es la moneda en la que las siete
+    //  rejillas son enteras. Un proyecto escrito antes de esto no lo lleva y
+    //  el defecto es la rejilla que si lleva, que es exactamente lo que
+    //  significaba entonces.
+    s.setProperty ("paso", engine.pasoUnidades(), nullptr);
     s.setProperty ("bpm", bpmSlider.getValue(), nullptr);
     //  The skin is deliberately NOT captured: it belongs to the person, not
     //  to the song. Old projects that carry one are simply ignored.
@@ -10941,6 +11148,20 @@ juce::ValueTree MainComponent::captureState() const
         //
         //  El motor ya guardaba la mascara en uint64 (ver patternBank); lo que
         //  se quedo en 32 fue el fichero.
+        //  Y LA NOTA, LA VELOCIDAD Y EL REDOBLE, DISPERSAS COMO TODO LO DEMAS.
+        //
+        //  Eran tres tablas ENTERAS: 4096 numeros por banco cada una, casi
+        //  todos el valor por defecto, y eso multiplicado por ocho bancos y
+        //  por las dieciseis fotos de deshacer. Al subir el patron de 64 a 192
+        //  pasos habrian sido 12288 por tabla y la pila de deshacer se habria
+        //  ido a dos digitos de megas por nada. En tripletes "paso pad valor",
+        //  como el acorde y el empujon, un patron normal escribe unas docenas.
+        //
+        //  `dispersos` dice de que forma son. Un proyecto anterior no lo trae
+        //  y entonces se leen enteras, que es como se escribieron. No es la
+        //  propiedad `version` otra vez -aquella mentia porque la app la
+        //  reescribia sin tocar el formato-: esta la escribe el mismo bucle
+        //  que escribe los datos, asi que no puede quedarse vieja.
         juce::String steps, notes, vels, rolls;
         for (int st = 0; st < kNumSteps; ++st)
         {
@@ -10951,18 +11172,19 @@ juce::ValueTree MainComponent::captureState() const
 
             for (int p = 0; p < kNumPads; ++p)
             {
-                notes << engine.getStepNote (b, st, p) << " ";
-                vels  << engine.getStepVel  (b, st, p) << " ";
-                rolls << engine.getStepRoll (b, st, p) << " ";
+                if (const int n = engine.getStepNote (b, st, p); n != 0)
+                    notes << st << " " << p << " " << n << " ";
+                if (const int v = engine.getStepVel (b, st, p); v != 127)
+                    vels  << st << " " << p << " " << v << " ";
+                if (const int r = engine.getStepRoll (b, st, p); r != 1)
+                    rolls << st << " " << p << " " << r << " ";
             }
         }
         bk.setProperty ("steps", steps.trim(), nullptr);
         bk.setProperty ("notes", notes.trim(), nullptr);
-        //  New in this version. A project written before them simply has no
-        //  such property, and the loader falls back to full level and one hit
-        //  - which is exactly how those patterns already sounded.
         bk.setProperty ("vels",  vels.trim(),  nullptr);
         bk.setProperty ("rolls", rolls.trim(), nullptr);
+        bk.setProperty ("dispersos", 1, nullptr);
 
         //  Y LO QUE NO SE GUARDABA: el acorde, el empujon, el bloqueo del corte
         //  y el largo de la nota. Cuatro cosas que la app sabe escribir y no
@@ -11040,7 +11262,15 @@ void MainComponent::applyState (const juce::ValueTree& s)
     //  que `applyState` haya vuelto y la bandera `aplicandoEstado` ya estuviera
     //  baja: deshacer repondria la rejilla Y apilaria una foto nueva encima de
     //  la pila que se esta desapilando, o sea deshacer que no termina nunca.
-    gridSlider.setValue ((double) (int) s.getProperty ("gridres", 2), juce::sendNotificationSync);
+    //  EL PASO GUARDADO VA ANTES QUE LA VISTA, y no al reves: el aviso del
+    //  mando de rejilla lee el paso para saber cuantos pasos pinta una casilla.
+    //  Puesto despues, la primera pintada salia con el paso del proyecto
+    //  anterior.
+    {
+        const int vista = juce::jlimit (0, kNumGrids - 1, (int) s.getProperty ("gridres", 2));
+        engine.setPasoUnidades ((int) s.getProperty ("paso", rejillaU (vista)));
+        gridSlider.setValue ((double) vista, juce::sendNotificationSync);
+    }
 
     //  Y LO MISMO CON LOS EFECTOS: sin <FX>, los seis se quedaban donde los
     //  dejo el proyecto anterior. El arbol invalido responde que no a
@@ -11571,12 +11801,17 @@ void MainComponent::applyState (const juce::ValueTree& s)
             if (auto* btn = patternButtons[b])
                 btn->setToggleState (patternActiveUI[(size_t) b], juce::dontSendNotification);
 
+            //  Ver captureState: sin `dispersos` las tres tablas vienen
+            //  enteras, que es como las escribio la version anterior.
+            const bool dispersos = (bool) bk.getProperty ("dispersos", false);
+
             juce::StringArray st, nt, vl, rl;
             st.addTokens (bk.getProperty ("steps", "").toString(), " ", "");
             nt.addTokens (bk.getProperty ("notes", "").toString(), " ", "");
             vl.addTokens (bk.getProperty ("vels",  "").toString(), " ", "");
             rl.addTokens (bk.getProperty ("rolls", "").toString(), " ", "");
             st.removeEmptyStrings(); nt.removeEmptyStrings();
+            vl.removeEmptyStrings(); rl.removeEmptyStrings();
 
             for (int s2 = 0; s2 < kNumSteps; ++s2)
             {
@@ -11595,9 +11830,9 @@ void MainComponent::applyState (const juce::ValueTree& s)
                     engine.setStep (b, s2, p, on);
 
                     const int ni = s2 * kNumPads + p;
-                    engine.setStepNote (b, s2, p, ni < nt.size() ? nt[ni].getIntValue() : 0);
-                    engine.setStepVel  (b, s2, p, ni < vl.size() ? vl[ni].getIntValue() : 127);
-                    engine.setStepRoll (b, s2, p, ni < rl.size() ? rl[ni].getIntValue() : 1);
+                    engine.setStepNote (b, s2, p, (! dispersos && ni < nt.size()) ? nt[ni].getIntValue() : 0);
+                    engine.setStepVel  (b, s2, p, (! dispersos && ni < vl.size()) ? vl[ni].getIntValue() : 127);
+                    engine.setStepRoll (b, s2, p, (! dispersos && ni < rl.size()) ? rl[ni].getIntValue() : 1);
                     //  Lo disperso se pone a su defecto antes de leerlo: si no,
                     //  abrir un proyecto encima de otro deja el acorde y el
                     //  empujon del anterior donde el nuevo no dice nada.
@@ -11619,6 +11854,21 @@ void MainComponent::applyState (const juce::ValueTree& s)
                 t.removeEmptyStrings();
                 return t;
             };
+            //  Las tres que acaban de pasar a dispersas van por el mismo
+            //  camino, y solo cuando el proyecto dice que lo son: los valores
+            //  por defecto ya quedaron puestos arriba.
+            if (dispersos)
+            {
+                for (int i2 = 0; i2 + 2 < nt.size(); i2 += 3)
+                    engine.setStepNote (b, nt[i2].getIntValue(), nt[i2 + 1].getIntValue(),
+                                        nt[i2 + 2].getIntValue());
+                for (int i2 = 0; i2 + 2 < vl.size(); i2 += 3)
+                    engine.setStepVel (b, vl[i2].getIntValue(), vl[i2 + 1].getIntValue(),
+                                       vl[i2 + 2].getIntValue());
+                for (int i2 = 0; i2 + 2 < rl.size(); i2 += 3)
+                    engine.setStepRoll (b, rl[i2].getIntValue(), rl[i2 + 1].getIntValue(),
+                                        rl[i2 + 2].getIntValue());
+            }
             {
                 const auto ch = tripletes ("chords");
                 for (int i2 = 0; i2 + 2 < ch.size(); i2 += 3)
@@ -13038,13 +13288,12 @@ void MainComponent::pianoBanda (int paso0, int semi0, int paso1, int semi1)
     const int b = selectedPattern, p = juce::jmax (0, selectedPad);
     const int pa = juce::jmin (paso0, paso1), pb = juce::jmax (paso0, paso1);
     const int sa = juce::jmin (semi0, semi1), sb = juce::jmax (semi0, semi1);
-    const int base = seqPrimerPaso;
     const int len  = engine.getPatternLength (b);
 
     pianoSel.clear();
     for (int c = pa; c <= pb; ++c)
     {
-        const int st = base + c;
+        const int st = pasoDeColumna (c);
         if (st < 0 || st >= len) continue;
         if (! pattern[(size_t) b][(size_t) st][(size_t) p]) continue;
 
@@ -13078,7 +13327,6 @@ void MainComponent::pianoMueveSel (int dPaso, int dSemi)
     if (pianoSel.empty() || (dPaso == 0 && dSemi == 0)) return;
 
     const int b = selectedPattern;
-    const int base = seqPrimerPaso;
     const int len  = engine.getPatternLength (b);
 
     //  Lo que no cabe no se mueve, y entonces NO se mueve nada: mover medio
@@ -13086,7 +13334,7 @@ void MainComponent::pianoMueveSel (int dPaso, int dSemi)
     for (const auto& n : pianoSel)
     {
         const int np = n.paso + dPaso, ns = n.semi + dSemi;
-        if (np < 0 || base + np >= len) return;
+        if (np < 0 || pasoDeColumna (np) >= len) return;
         if (ns < -24 || ns > 24) return;
     }
 
@@ -13096,15 +13344,15 @@ void MainComponent::pianoMueveSel (int dPaso, int dSemi)
     std::vector<int> largos;
     largos.reserve (pianoSel.size());
     for (const auto& n : pianoSel)
-        largos.push_back (engine.getStepLen (b, base + n.paso, juce::jmax (0, selectedPad)));
+        largos.push_back (engine.getStepLen (b, pasoDeColumna (n.paso), juce::jmax (0, selectedPad)));
 
-    for (const auto& n : pianoSel) pianoEscribe (base + n.paso, n.semi, false, 0);
+    for (const auto& n : pianoSel) pianoEscribe (pasoDeColumna (n.paso), n.semi, false, 0);
 
     for (size_t i = 0; i < pianoSel.size(); ++i)
     {
         pianoSel[i].paso += dPaso;
         pianoSel[i].semi += dSemi;
-        pianoEscribe (base + pianoSel[i].paso, pianoSel[i].semi, true, largos[i]);
+        pianoEscribe (pasoDeColumna (pianoSel[i].paso), pianoSel[i].semi, true, largos[i]);
     }
     refreshPiano (false);
 }
@@ -13116,7 +13364,6 @@ void MainComponent::pianoCopiaSel()
 {
     if (pianoSel.empty()) return;
     const int b = selectedPattern, p = juce::jmax (0, selectedPad);
-    const int base = seqPrimerPaso;
 
     int p0 = pianoSel[0].paso;
     for (const auto& n : pianoSel) p0 = juce::jmin (p0, n.paso);
@@ -13124,7 +13371,7 @@ void MainComponent::pianoCopiaSel()
     pianoPortapapeles.clear();
     for (const auto& n : pianoSel)
         pianoPortapapeles.push_back ({ n.paso - p0, n.semi,
-                                       engine.getStepLen (b, base + n.paso, p) });
+                                       engine.getStepLen (b, pasoDeColumna (n.paso), p) });
 
     status.setText (pianoPortapapeles.size() == 1
                         ? T ("1 nota copiada")
@@ -13141,14 +13388,13 @@ void MainComponent::pianoPegaSel()
 {
     if (pianoPortapapeles.empty()) return;
     const int b = selectedPattern;
-    const int base = seqPrimerPaso;
     const int len  = engine.getPatternLength (b);
 
     pushUndo (T ("PEGAR"));
     pianoSel.clear();
     for (const auto& n : pianoPortapapeles)
     {
-        const int st = base + n.dPaso;
+        const int st = pasoDeColumna (n.dPaso);
         if (st < 0 || st >= len) continue;
         if (n.semi < -24 || n.semi > 24) continue;
         pianoEscribe (st, n.semi, true, n.cuartos);
@@ -13166,10 +13412,8 @@ void MainComponent::pianoPegaSel()
 void MainComponent::pianoBorraSel()
 {
     if (pianoSel.empty()) return;
-    const int base = seqPrimerPaso;
-
     pushUndo (T ("BORRAR"));
-    for (const auto& n : pianoSel) pianoEscribe (base + n.paso, n.semi, false, 0);
+    for (const auto& n : pianoSel) pianoEscribe (pasoDeColumna (n.paso), n.semi, false, 0);
 
     status.setText (pianoSel.size() == 1
                         ? T ("1 nota borrada")
@@ -13262,7 +13506,6 @@ void MainComponent::pianoCellToggled (int paso, int semi, bool arrastrando)
 void MainComponent::refreshPiano (bool repintarTarjeta)
 {
     const int b = selectedPattern, p = juce::jmax (0, selectedPad);
-    const int len = engine.getPatternLength (b);
 
     //  El compas que se mira lo decide SEGUIR, y en esta pagina tambien: ver
     //  seguirCompas. ANTES de calcular la base, que es de donde sale.
@@ -13280,10 +13523,15 @@ void MainComponent::refreshPiano (bool repintarTarjeta)
     //  cuando le toca y esto treinta veces por segundo, asi que un patron que
     //  acaba de encoger -de 32 pasos a 16- deja la ventana apuntando fuera de
     //  la tabla.
-    seqPrimerPaso = juce::jlimit (0, juce::jmax (0, len - verCols), seqPrimerPaso);
+    //  EN CASILLAS DE LA VISTA, que es en lo que se cuenta la ventana. Con la
+    //  rejilla en 1/8 sobre un patron de 1/16 el largo en PASOS es el doble
+    //  que en casillas, asi que acotar contra el largo en pasos dejaba la
+    //  ventana pasarse de la mitad del patron hacia la derecha - columnas
+    //  vacias dibujadas como si hubiera patron detras.
+    const int celdas = celdasDePatron (b);
+    seqPrimerCelda = juce::jlimit (0, juce::jmax (0, celdas - verCols), seqPrimerCelda);
 
-    const int base = seqPrimerPaso;
-    const int cols = juce::jlimit (0, verCols, len - base);
+    const int cols = juce::jlimit (0, verCols, celdas - seqPrimerCelda);
 
     //  Y SE VACIAN LAS DIECISEIS, no solo las que se rellenan.
     //
@@ -13303,11 +13551,26 @@ void MainComponent::refreshPiano (bool repintarTarjeta)
         pianoLargos[c] = 0;
     }
 
+    //  UNA COLUMNA SON `ppc` PASOS GUARDADOS, y la columna ensena el primero
+    //  que tenga algo escrito: mismo reparto que la rejilla de pasos. Y el
+    //  LARGO va al reves -el motor lo guarda en cuartos de PASO y el piano
+    //  dibuja cuartos de CASILLA-, asi que se divide: sin eso, con la rejilla
+    //  en 1/8 sobre pasos de 1/16 una negra se dibujaba el doble de larga que
+    //  el compas.
+    const int ppc = pasosPorCelda();
+
     for (int c = 0; c < cols; ++c)
     {
-        const int st = base + c;   // ya vaciadas arriba, las dieciseis
+        int st = -1;
+        for (int k = 0; k < ppc; ++k)
+        {
+            const int cand = pasoDeColumna (c) + k;
+            if (cand >= AudioEngine::kNumSteps) break;
+            if (pattern[(size_t) b][(size_t) cand][(size_t) p]) { st = cand; break; }
+        }
+        if (st < 0) st = juce::jmin (pasoDeColumna (c), AudioEngine::kNumSteps - 1);
 
-        pianoLargos[c] = (unsigned char) engine.getStepLen (b, st, p);
+        pianoLargos[c] = (unsigned char) (engine.getStepLen (b, st, p) / ppc);
 
         int n = 0;
         if (pattern[(size_t) b][(size_t) st][(size_t) p])
@@ -13319,8 +13582,10 @@ void MainComponent::refreshPiano (bool repintarTarjeta)
         }
     }
 
+    //  EL CABEZAL, EN COLUMNAS DE ESTA VENTANA: el motor lo da en pasos
+    //  guardados, asi que primero a casilla y luego relativo al primer visible.
     const int ps = (engine.isPlaying() && engine.getPlayingPattern() == b)
-                     ? engine.getPlayStep() - base : -1;
+                     ? celdaDePaso (engine.getPlayStep()) - seqPrimerCelda : -1;
 
     //  Ver UiAudit::cabezalPiano: se cuenta cuando CAMBIA de columna, que es
     //  lo que separa una barra viva de una dibujada.
@@ -13340,16 +13605,16 @@ void MainComponent::refreshPiano (bool repintarTarjeta)
                          (ps >= 0 && ps < cols) ? ps : -1,
                          padZati[(size_t) p],
                          ps >= 0 ? engine.getStepPhase() : 0.0f,
-                         pianoLargos, base);
+                         pianoLargos, seqPrimerCelda);
 
     //  LAS DOS BARRAS. La horizontal es la MISMA que la de la rejilla —una
     //  ventana, un dueño— y solo cambia cuantas columnas caben; la vertical es
     //  del tono, y su total son las cuarenta y nueve posiciones que `setStepNote`
     //  admite (-24..+24) contadas desde cero, que es lo unico que una barra sabe
     //  manejar.
-    seqBarra.ponRango (base, verCols, juce::jmax (1, len));
+    seqBarra.ponRango (seqPrimerCelda, verCols, juce::jmax (1, celdas));
     seqBarra.ponCabezal (engine.isPlaying() && engine.getPlayingPattern() == b
-                             ? engine.getPlayStep() : -1);
+                             ? celdaDePaso (engine.getPlayStep()) : -1);
     pianoBarra.ponRango (pianoBase + 24, pianoGrid.getFilas(), 49);
 
     //  El transporte de esta ficha es seqPlayBtn, que vive en la pagina de la
@@ -14201,7 +14466,8 @@ void MainComponent::aplicaZoomPasos (float z)
     seqZoomBtn.setButtonText (Lang::ltr (seqZoomW > 1.5f ? "2:1"
                                        : seqZoomW < 0.9f ? "3:4" : "1:1"));
     const int len = engine.getPatternLength (selectedPattern);
-    seqPrimerPaso = juce::jlimit (0, juce::jmax (0, len - stepGrid.numCols()), seqPrimerPaso);
+    seqPrimerCelda = juce::jlimit (0, juce::jmax (0, celdasDePatron (selectedPattern) - stepGrid.numCols()),
+                                   seqPrimerCelda);
     refreshStepGrid();
 }
 

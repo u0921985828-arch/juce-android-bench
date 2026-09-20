@@ -64,7 +64,7 @@ AudioEngine::AudioEngine()
         I.eqFx.ponSalida (kFxDef[kFxEq][1]);
     }
 
-    for (auto& l : patternLength) l.store (kMinPatLen, std::memory_order_relaxed);
+    for (auto& l : patternLength) l.store (kLargoPorDefecto, std::memory_order_relaxed);
 
     //  -1 is "silent". Zero-initialised would mean "parked at the very start",
     //  and the UI would draw a read head on a pad that has never played.
@@ -4459,7 +4459,7 @@ void AudioEngine::setPatternLength (int patternIdx, int len) noexcept
 
 int AudioEngine::getPatternLength (int patternIdx) const noexcept
 {
-    if (patternIdx < 0 || patternIdx >= kNumPatterns) return kMinPatLen;
+    if (patternIdx < 0 || patternIdx >= kNumPatterns) return kLargoPorDefecto;
     return patternLength[(size_t) patternIdx].load (std::memory_order_relaxed);
 }
 
@@ -4664,44 +4664,90 @@ void AudioEngine::escribePaso (int patternIdx, int step, int pad, const Paso& s)
     setStepPLockRaw (patternIdx, step, pad, s.bloqueos);
 }
 
-//  EL REMAPEO DE LA REJILLA. Ver el comentario de `reajustaRejilla` en la
-//  cabecera: lo que se conserva es el pulso en el que cae cada golpe.
-//
-//  SE LEE LA COLUMNA ENTERA DE UN PAD, SE VACIA, Y SE VUELVE A ESCRIBIR. La
-//  otra forma -mover paso a paso en el sitio- tiene que ir de atras hacia
-//  delante al afinar y al reves al ensanchar, porque si no un paso pisa a otro
-//  que aun no se ha leido; son dos recorridos, dos razones para equivocarse y
-//  cero motivo, porque la columna de un pad son 64 pasos y cabe en la pila.
-AudioEngine::RemapeoRejilla AudioEngine::reajustaRejilla (float beatsViejo, float beatsNuevo) noexcept
+//  EL MAXIMO COMUN DIVISOR DE TODO LO ESCRITO. Ver `mcdOcupacion` en la
+//  cabecera: dice hasta donde se puede ENGORDAR el paso guardado sin perder
+//  nada. El indice 0 no se mira porque el mcd con cero es el otro numero, o
+//  sea que un patron que solo tiene el golpe del uno diria «cualquiera», que
+//  es justo lo que es.
+int AudioEngine::mcdOcupacion() const noexcept
 {
-    RemapeoRejilla cuenta;
-    if (beatsViejo <= 0.0f || beatsNuevo <= 0.0f || beatsViejo == beatsNuevo) return cuenta;
-
-    const double razon = (double) beatsViejo / (double) beatsNuevo;
+    int g = 0;
 
     for (int p = 0; p < kNumPatterns; ++p)
     {
-        //  El largo tambien es tiempo: un patron de 16 pasos de 1/16 dura
-        //  cuatro pulsos, y para durar los mismos cuatro a 1/8 tiene que
-        //  pasar a 8. El suelo de `setPatternLength` es `kMinPatLen` y ahi
-        //  se acota solo; cuando muerde, el bucle dura mas y el renglon de
-        //  estado lo dice, porque LARGO lo ensena en compases y se ve.
-        //
-        //  Y SE REDONDEA A COMPASES ENTEROS, HACIA ARRIBA. Escalarlo a pelo
-        //  da largos que la app no sabe decir: de 1/12 a 1/16 la razon es 4/3
-        //  y 16 pasos salen 21, mientras `lengthSlider` va de 16 en 16 -un
-        //  patron es siempre un compas entero-, asi que el mando habria
-        //  ensenado 16 o 32 mientras el motor tocaba 21: dos verdades a la
-        //  vez. Hacia arriba porque redondear a la baja deja los golpes del
-        //  final fuera del bucle, y eso es perder notas.
-        const int largoViejo  = getPatternLength (p);
-        const int compases    = (int) std::ceil (((double) largoViejo * razon)
-                                                 / (double) kBarSteps);
-        const int largoNuevo  = juce::jlimit (kMinPatLen, kMaxPatLen, compases * kBarSteps);
+        //  EL LARGO CUENTA IGUAL QUE UN GOLPE. Un patron de 12 pasos con todo
+        //  en indices pares no se puede engordar al doble: el bucle acabaria
+        //  en el paso 6, que es el mismo sitio, pero un largo IMPAR en pasos
+        //  nuevos no existe. Dejarlo fuera fue el primer borrador y partia el
+        //  bucle por la mitad en las rejillas de tresillo.
+        g = mcd (g, getPatternLength (p));
 
+        for (int s = 1; s < kNumSteps; ++s)
+            for (int pad = 0; pad < kNumPads; ++pad)
+                if (leePaso (p, s, pad).on) { g = mcd (g, s); break; }
+    }
+
+    return g > 0 ? g : 1;
+}
+
+//  EL REMAPEO DEL PASO GUARDADO. Ver `remapeaPaso` en la cabecera.
+//
+//  DOS RECORRIDOS Y NO UNO: el primero no escribe NADA y solo comprueba que
+//  todas las cuentas salen enteras y que el resultado cabe en `kNumSteps`. La
+//  version anterior mezclaba comprobar y escribir, asi que cuando algo no
+//  cabia ya habia medio patron movido y lo que sobraba se tiraba en silencio -
+//  el mismo fallo que el acorde que cargaba solo la tonica. Ahora, o entra
+//  entero o no se ha tocado un byte.
+//
+//  Y SE LEE LA COLUMNA ENTERA DE UN PAD, SE VACIA, Y SE VUELVE A ESCRIBIR. La
+//  otra forma -mover paso a paso en el sitio- tiene que ir de atras hacia
+//  delante al afinar y al reves al engordar, porque si no un paso pisa a otro
+//  que aun no se ha leido; son dos recorridos, dos razones para equivocarse y
+//  cero motivo, porque la columna de un pad son 192 pasos y cabe en la pila.
+AudioEngine::RemapeoPaso AudioEngine::midePaso (int unidadesViejas, int unidadesNuevas) const noexcept
+{
+    RemapeoPaso r;
+    if (unidadesViejas <= 0 || unidadesNuevas <= 0) return r;
+    if (unidadesViejas == unidadesNuevas) { r.cabe = true; return r; }
+
+    //  Y LA CUENTA SE TERMINA AUNQUE YA SE SEPA QUE NO VALE. Devolver en
+    //  cuanto una division no salia entera dejaba `pasosPedidos` en cero, y
+    //  el renglon de estado decia «pediria 0 pasos», que no es un numero: es
+    //  la ausencia de uno. Lo canto una rotura a proposito.
+    int  pedidos = 0;
+    bool exacto  = true;
+
+    for (int p = 0; p < kNumPatterns; ++p)
+    {
+        const long long largo = (long long) getPatternLength (p) * unidadesViejas;
+        if (largo % unidadesNuevas != 0) exacto = false;
+        pedidos = juce::jmax (pedidos, (int) ((largo + unidadesNuevas - 1) / unidadesNuevas));
+
+        for (int s = 0; s < kNumSteps; ++s)
+            for (int pad = 0; pad < kNumPads; ++pad)
+                if (leePaso (p, s, pad).on)
+                {
+                    const long long sitio = (long long) s * unidadesViejas;
+                    if (sitio % unidadesNuevas != 0) exacto = false;
+                    pedidos = juce::jmax (pedidos, (int) (sitio / unidadesNuevas) + 1);
+                }
+    }
+
+    r.pasosPedidos = pedidos;
+    r.cabe = (exacto && pedidos <= kNumSteps && pedidos >= kMinPatLen);
+    return r;
+}
+
+AudioEngine::RemapeoPaso AudioEngine::remapeaPaso (int unidadesViejas, int unidadesNuevas) noexcept
+{
+    RemapeoPaso r = midePaso (unidadesViejas, unidadesNuevas);
+    if (! r.cabe || unidadesViejas == unidadesNuevas) return r;
+
+    for (int p = 0; p < kNumPatterns; ++p)
+    {
         for (int pad = 0; pad < kNumPads; ++pad)
         {
-            //  La columna de un pad cabe en la pila: 64 pasos por 24 bytes.
+            //  La columna de un pad cabe en la pila: 192 pasos por 24 bytes.
             Paso col[kNumSteps];
             bool hay = false;
             for (int s = 0; s < kNumSteps; ++s)
@@ -4722,36 +4768,47 @@ AudioEngine::RemapeoRejilla AudioEngine::reajustaRejilla (float beatsViejo, floa
                     setStep (p, s, pad, false);
                 }
 
-            //  Lo ocupado se apunta para que dos pasos viejos que caen en el
-            //  mismo nuevo no se pisen EN SILENCIO: el segundo se cuenta.
-            bool ocupado[kNumSteps] = {};
             for (int s = 0; s < kNumSteps; ++s)
             {
                 if (! col[s].on) continue;
-                const int d = (int) std::lround ((double) s * razon);
-                if (d < 0 || d >= kNumSteps || d >= largoNuevo || ocupado[d])
-                { ++cuenta.perdidos; continue; }
-                ocupado[d] = true;
-                escribePaso (p, d, pad, col[s]);
+                //  Exacto por construccion: el recorrido de arriba ya se nego
+                //  si esta division no era entera.
+                const int d = (int) (((long long) s * unidadesViejas) / unidadesNuevas);
 
-                //  Y SE COMPARA EL PULSO, que es la unica forma de saber si
-                //  el golpe se ha quedado donde estaba. El paso de destino
-                //  siempre existe; lo que no siempre existe es su SITIO: de
-                //  1/12 a 1/16 el paso 1 -pulso 0.0833- solo tiene el paso 1
-                //  -pulso 0.0625- donde caer. La holgura es 1e-4 pulsos, muy
-                //  por debajo de lo que separa dos casillas de la rejilla mas
-                //  fina (0.0625) y muy por encima de lo que un float de
-                //  `stepBeats` puede arrastrar de error.
-                const double pulsoViejo = (double) s * (double) beatsViejo;
-                const double pulsoNuevo = (double) d * (double) beatsNuevo;
-                if (std::abs (pulsoNuevo - pulsoViejo) > 1.0e-4) ++cuenta.movidos;
+                //  EL LARGO Y EL EMPUJON SE MIDEN EN PASOS, ASI QUE TAMBIEN SE
+                //  ESCALAN. `largo` son cuartos de paso y `empujon` centesimas
+                //  de paso: si el paso se parte en dos y el numero se queda
+                //  igual, una nota de dos pasos pasa a durar uno y el empujon
+                //  de un golpe humanizado se queda en la mitad de milisegundos.
+                //  Dejarlo asi fue el primer borrador y era la deformacion de
+                //  siempre escrita en otro sitio.
+                //
+                //  Y LOS DOS TIENEN TECHO -63 cuartos y media casilla-, asi que
+                //  al afinar puede no caber. Se recorta y SE CUENTA: negarse
+                //  a cambiar de rejilla porque una nota dura mucho seria peor
+                //  que la nota, y callarlo es cambiar la musica en silencio.
+                Paso nuevo = col[s];
+                const auto escala = [unidadesViejas, unidadesNuevas] (int v)
+                { return (int) (((long long) v * unidadesViejas) / unidadesNuevas); };
+
+                const int largoPedido = escala ((int) col[s].largo);
+                const int empujePedido = escala ((int) col[s].empujon);
+                if (largoPedido > kLenMax || empujePedido > 50 || empujePedido < -50)
+                    ++r.recortados;
+                nuevo.largo   = (std::uint8_t) juce::jlimit (0, kLenMax, largoPedido);
+                nuevo.empujon = (std::int8_t)  juce::jlimit (-50, 50, empujePedido);
+
+                escribePaso (p, d, pad, nuevo);
             }
         }
 
-        setPatternLength (p, largoNuevo);
+        setPatternLength (p, (int) (((long long) getPatternLength (p) * unidadesViejas)
+                                        / unidadesNuevas));
     }
 
-    return cuenta;
+    setPasoUnidades (unidadesNuevas);
+    r.cabe = true;
+    return r;
 }
 
 //  Velocity and roll, same shape as the note. Zero means "never set" in both,

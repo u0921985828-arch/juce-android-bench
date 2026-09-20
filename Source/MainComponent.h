@@ -1853,6 +1853,10 @@ private:
     juce::Rectangle<int> langRowArea;
 
 
+    //  Rehace el rango del mando de LARGO con el compas de la rejilla de
+    //  ahora: un compas son cuatro pulsos y cuantos pasos sean depende de
+    //  cuanto dura un paso. Ver el cuerpo.
+    void reajustaMandoLargo();
     void pushUndo (const juce::String& what);   // snapshot before a destructive action
     //  Y que la tapa DIGA que. Ver refrescaNombresDeshacer.
     void refrescaNombresDeshacer();
@@ -2002,7 +2006,10 @@ private:
     //  EL PRIMER PASO DE LA VENTANA, continuo y no en multiplos de dieciseis.
     //  Lo comparten la rejilla y el piano porque son dos vistas del mismo
     //  patron: cambiar de pestaña no puede moverte de sitio.
-    int   seqPrimerPaso = 0;
+    //  LA PRIMERA CASILLA QUE SE VE, EN CASILLAS DE LA VISTA y no en pasos
+    //  guardados. Se llamaba `seqPrimerPaso` y cuando la vista y el paso
+    //  dejaron de ser lo mismo el nombre paso a decir dos cosas.
+    int   seqPrimerCelda = 0;
     //  El ancho de la celda contra su alto, que es el zoom horizontal de la
     //  rejilla de pasos. Uno es CUADRADO, que es como arranca. Ver seqZoomBtn.
     float seqZoomW = 1.0f;
@@ -3516,9 +3523,18 @@ private:
     //  y 1/32 hay uno de 2. Un dial con esos cinco puntos seria un dial que
     //  hay que acertar; dos teclas los recorren y ademas dicen cual es.
     juce::Slider gridSlider;
-    //  El indice que la rejilla tenia antes del aviso: la foto de deshacer se
-    //  toma con el, porque `onValueChange` llega con el nuevo ya puesto.
-    int gridIdxAnterior = 2;                 // 1/16, el mismo con el que nace
+    //  LA REJILLA QUE SE MIRA, QUE NO ES EL PASO QUE SE GUARDA.
+    //
+    //  Ver `AudioEngine::remapeaPaso`: el motor guarda el patron con un paso
+    //  propio -el grano de la tabla- y esto es solo el tamano del cuadradito.
+    //  Una casilla de la vista son `pasosPorCelda()` pasos guardados, entero,
+    //  y mirar mas gordo no toca la tabla. Eran la misma variable y por eso
+    //  elegir 1/8 reescribia el patron con la mitad de casillas.
+    //
+    //  Y ADEMAS es el indice que la rejilla tenia antes del aviso: la foto de
+    //  deshacer se toma con el, porque `onValueChange` llega con el nuevo ya
+    //  puesto. No son dos datos: es la vista vigente leida en dos momentos.
+    int vistaRejilla = 2;                    // 1/16, la misma con la que nace
     static constexpr int kNumGrids = 7;
     //  En negras por paso, en el mismo orden que los nombres de abajo.
     //  SIETE. Faltaban el tresillo de fusa y la semifusa: con 1/32 como paso
@@ -3527,7 +3543,30 @@ private:
     //  1/64 son 0.0625.
     static constexpr float kGridBeats[kNumGrids] =
         { 0.5f, 1.0f / 3.0f, 0.25f, 1.0f / 6.0f, 0.125f, 1.0f / 12.0f, 0.0625f };
+    //  LA MISMA TABLA EN LA MONEDA DEL MOTOR (1/48 de pulso), DERIVADA. Las
+    //  siete rejillas son enteros ahi -24, 16, 12, 8, 6, 4, 3- y por eso las
+    //  cuentas del remapeo salen sin epsilon. Escribir los siete numeros a
+    //  mano seria una segunda tabla que dice lo mismo, y la que se quedara
+    //  vieja pondria un golpe en el pulso equivocado sin que nada fallara.
+    static constexpr int rejillaU (int i)
+    {
+        return (int) (kGridBeats[i < 0 ? 0 : (i >= kNumGrids ? kNumGrids - 1 : i)]
+                        * (float) AudioEngine::kUnidadesPorPulso + 0.5f);
+    }
     static const char* gridName (int i);
+
+    //  LAS CUATRO CUENTAS QUE CONVIERTEN CASILLA DE LA VISTA EN PASO GUARDADO.
+    //  Viven aqui y en ningun otro sitio: la cara tiene diecisiete puntos que
+    //  hacian `seqPrimerPaso + columna`, y diecisiete copias de una conversion
+    //  son diecisiete sitios donde olvidarla - que es literalmente como se
+    //  escribio cinco veces el fallo del compas en la pagina del piano.
+    int pasosPorCelda() const;
+    int celdasDePatron (int pat) const;
+    int pasoDeCelda (int celda) const;
+    int celdaDePaso (int paso) const;
+    //  LA COLUMNA QUE SE VE -0 es la primera de la ventana- EN PASO GUARDADO.
+    //  Es la unica forma de escribir `seqPrimerCelda + columna` en esta app.
+    int pasoDeColumna (int columna) const;
     juce::TextButton chainClearButton { "QUITAR CADENA" };
     juce::Slider macroCtrl1, macroCtrl2, macroCtrl3;   // CTRL 1-3, bank-dependent
 

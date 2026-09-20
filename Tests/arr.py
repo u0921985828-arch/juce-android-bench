@@ -446,16 +446,25 @@ def main():
     if not rej:
         print ("%-22s %s" % ("deshacer rejilla", "MAL - sin respuesta")); malas.append ("deshacer rejilla")
     else:
-        print ("%-22s %.4f negras por paso -> %.4f, %d foto(s), deshacer %.4f   pila %s"
+        #  Y SE JUZGA LA VISTA. Aqui se comparaban negras por paso, que era lo
+        #  mismo mientras la rejilla ERA el paso guardado; ahora ensanchar la
+        #  rejilla no mueve el paso ni un bit -ese es el arreglo- y la regla
+        #  vieja habria dado MAL por funcionar bien.
+        print ("%-22s vista %d -> %d, %d foto(s), deshacer %d   paso %s   pila %s"
                % ("rejilla", rej["antes"], rej["tras el mando"], rej["entradas"],
-                  rej["tras deshacer"], rej["pila"]))
-        if abs (rej["tras el mando"] - rej["antes"]) < 1e-6:
-            malas.append ("mover la REJILLA no cambia lo que dura un paso: sigue en %.4f" % rej["antes"])
+                  rej["tras deshacer"], rej["paso"], rej["pila"]))
+        if rej["tras el mando"] == rej["antes"]:
+            malas.append ("mover la REJILLA no cambia la vista: sigue en %d" % rej["antes"])
         if rej["entradas"] != 1:
             malas.append ("cambiar la REJILLA deja %d entradas de deshacer" % rej["entradas"])
-        if abs (rej["tras deshacer"] - rej["antes"]) > 1e-6:
-            malas.append ("deshacer deja la REJILLA en %.4f y tenia que volver a %.4f"
+        if rej["tras deshacer"] != rej["antes"]:
+            malas.append ("deshacer deja la REJILLA en %d y tenia que volver a %d"
                           % (rej["tras deshacer"], rej["antes"]))
+        #  Y el paso guardado tambien vuelve: si el cambio lo afino, deshacer
+        #  tiene que engordarlo otra vez o el patron se queda reescrito.
+        if abs (rej["paso"][0] - rej["paso"][1]) > 1e-6:
+            malas.append ("deshacer deja el paso guardado en %.4f y tenia que volver a %.4f"
+                          % (rej["paso"][1], rej["paso"][0]))
         #  Y la pila no puede crecer al deshacer: `applyState` repone el mando
         #  CON aviso, asi que sin la bandera la foto se apila sobre la pila que
         #  se esta desapilando y deshacer no termina nunca.
@@ -463,7 +472,7 @@ def main():
             malas.append ("deshacer la REJILLA apila otra foto: la pila pasa de %d a %d"
                           % (rej["pila"][0], rej["pila"][1]))
 
-    #  LA REJILLA ES UN ZOOM Y NO UN RELOJ NUEVO.
+    #  LA REJILLA MIDE EL CUADRADITO Y NO TOCA EL PATRON.
     #
     #  Esta es la regla que no se puede escribir contando golpes: al cambiar de
     #  rejilla los tres seguian encendidos y en los mismos pasos, y lo que
@@ -473,17 +482,31 @@ def main():
     #  que ser IGUALES. La queja fue literal: "eso que cambias es la medida del
     #  cuadradito, con lo cual no deberia cambiarse ni el tiempo, ni los BPM,
     #  ni nada del proyecto, solo lo visual".
+    #
+    #  Y LA SEGUNDA MITAD, QUE ES LA QUE CAMBIO ESTA TANDA: lo que TIENE que
+    #  moverse son las CASILLAS. Antes la prueba pedia que se moviera el paso
+    #  guardado -"sin esto, una app que ignorase el mando saldria verde"- y
+    #  ese era justamente el fallo: mover el paso guardado es reescribir el
+    #  patron. Ahora se exige lo contrario, que el paso NO se mueva, y el
+    #  guardia de "el mando hace algo" se muda a las casillas, que es donde de
+    #  verdad se ve el cuadradito.
     zoom = song.get ("la rejilla es un zoom")
     if not zoom:
         print ("%-22s %s" % ("rejilla zoom", "MAL - sin respuesta")); malas.append ("la rejilla es un zoom")
     else:
-        print ("%-22s paso %.4f -> %.4f   pulsos %s -> %s   bpm %s   largo %s"
-               % ("rejilla zoom", zoom["paso antes"], zoom["paso despues"],
+        print ("%-22s paso %.4f -> %.4f   celdas %s   pulsos %s -> %s   bpm %s   largo %s"
+               % ("rejilla zoom", zoom["paso antes"], zoom["paso despues"], zoom["celdas"],
                   zoom["pulsos antes"], zoom["pulsos despues"], zoom["bpm"], zoom["largo"]))
-        #  Que la rejilla se haya movido de verdad: sin esto, una app que
-        #  ignorase el mando saldria verde con las dos listas iguales.
-        if abs (zoom["paso despues"] - zoom["paso antes"]) < 1e-6:
-            malas.append ("la REJILLA no se movio: el paso sigue en %.4f" % zoom["paso antes"])
+        #  UNO · el cuadradito se hace mas gordo de verdad. Sin esto, un mando
+        #  desconectado saldria verde con todo lo demas igual.
+        if zoom["celdas"][1] >= zoom["celdas"][0]:
+            malas.append ("ensanchar la REJILLA deja las casillas en %d de %d: el mando no hace nada"
+                          % (zoom["celdas"][1], zoom["celdas"][0]))
+        #  DOS · y el paso GUARDADO no se mueve, que es lo contrario de lo que
+        #  esta misma prueba pedia antes de la tanda.
+        if abs (zoom["paso despues"] - zoom["paso antes"]) > 1e-6:
+            malas.append ("ensanchar la REJILLA mueve el paso guardado de %.4f a %.4f: eso es "
+                          "reescribir el patron" % (zoom["paso antes"], zoom["paso despues"]))
         if len (zoom["pulsos antes"]) != 3:
             malas.append ("la medida escribio %d golpes y tenian que ser 3"
                           % len (zoom["pulsos antes"]))
@@ -498,12 +521,16 @@ def main():
         if abs (zoom["bpm"][0] - zoom["bpm"][1]) > 1e-6:
             malas.append ("cambiar la REJILLA toca el tempo: %.2f -> %.2f"
                           % (zoom["bpm"][0], zoom["bpm"][1]))
+        if zoom["largo"][0] != zoom["largo"][1]:
+            malas.append ("cambiar la REJILLA cambia el bucle: %d pasos -> %d"
+                          % (zoom["largo"][0], zoom["largo"][1]))
 
     #  EL TRESILLO, QUE ES DONDE LA REJILLA DEJA DE SALIR REDONDA.
     #
-    #  La regla de arriba mide 1/16 -> 1/8, razon 2, y una app que remapease
-    #  SOLO las razones enteras saldria verde con ella. Aqui van los dos casos
-    #  que faltan.
+    #  La regla de arriba mide 1/16 -> 1/8, donde una rejilla y la otra son
+    #  multiplos, y una app que solo supiera con eso saldria verde. Aqui van
+    #  los dos casos que faltan, y el segundo es el que cambio de veredicto en
+    #  esta tanda: los golpes que SOLO existen en el tresillo ya no se pierden.
     tres = song.get ("la rejilla y el tresillo")
     if not tres:
         print ("%-22s %s" % ("rejilla tresillo", "MAL - sin respuesta"))
@@ -512,14 +539,13 @@ def main():
         print ("%-22s recto %s -> tresillo %s -> vuelta %s   largo %s"
                % ("rejilla tresillo", tres["pulsos recto"], tres["pulsos tresillo"],
                   tres["pulsos vuelta"], tres["largo tresillo"]))
-        print ("%-22s del tresillo %s -> recto %s   largo %s   dice: %s"
+        print ("%-22s del tresillo %s -> recto %s   bucle %.4f de %d   dice: %s"
                % ("rejilla aprieta", tres["pulsos solo tresillo"], tres["pulsos apretados"],
-                  tres["largo apretado"], tres["dicho"]))
+                  tres["bucle"], tres["compas"], tres["dicho"]))
 
-        #  UNO · IDA Y VUELTA POR EL TRESILLO. Razon 3/2 y luego 2/3 -ni
-        #  entera ni su inversa-, y los tres golpes tienen que volver a su
-        #  pulso clavados las dos veces: que la razon no sea entera no es
-        #  excusa para mover un golpe.
+        #  UNO · IDA Y VUELTA POR EL TRESILLO. Entre una rejilla y su tresillo
+        #  no hay factor entero, y los tres golpes tienen que volver a su pulso
+        #  clavados las dos veces.
         if len (tres["pulsos recto"]) != 3:
             malas.append ("la medida del tresillo escribio %d golpes y tenian que ser 3"
                           % len (tres["pulsos recto"]))
@@ -534,29 +560,124 @@ def main():
                         malas.append ("pasar por el TRESILLO mueve el golpe %d del pulso "
                                       "%.4f al %.4f (%s)" % (k, a1, b1, cual))
 
-        #  DOS · LO QUE NO CABE SE DICE. Los pasos 0, 1 y 2 de 1/16T son
-        #  pulsos que una rejilla de 1/16 no sabe decir: uno se pierde encima
-        #  de otro y el que queda cambia de sitio. Las dos cosas pasan; la
-        #  que se juzga es que el renglon de estado LLEVE LA CUENTA. Un
-        #  remapeo que se come notas en silencio es el fallo del acorde.
-        perdidos = len (tres["pulsos solo tresillo"]) - len (tres["pulsos apretados"])
-        movidos  = sum (1 for a1, b1 in zip (tres["pulsos solo tresillo"][1:],
-                                             tres["pulsos apretados"])
-                        if abs (a1 - b1) > 1e-6)
-        if perdidos <= 0 and movidos <= 0:
-            malas.append ("la medida de lo que no cabe no aprieta nada: %s -> %s"
-                          % (tres["pulsos solo tresillo"], tres["pulsos apretados"]))
-        elif "\u00b7" not in tres["dicho"] or not any (c.isdigit()
-                                                      for c in tres["dicho"].split ("\u00b7")[-1]):
-            malas.append ("apretar la REJILLA pierde o mueve golpes y el renglon no lo dice: %r"
-                          % tres["dicho"])
+        #  DOS · Y LOS QUE SOLO EXISTEN EN EL TRESILLO TAMPOCO SE PIERDEN.
+        #
+        #  Aqui la prueba decia lo contrario: los pulsos 0.0833 y 0.3333 no se
+        #  pueden decir con casillas de 0.25, asi que uno caia encima de otro y
+        #  lo unico que se exigia era que el renglon de estado LLEVARA LA
+        #  CUENTA. Desde que la casilla es solo lo que se dibuja y el patron se
+        #  guarda con su propio paso, no hay nada que contar: los tres golpes
+        #  siguen en su pulso mirandolos por donde se mire. Una prueba que
+        #  sigue pidiendo que se pierdan notas es una prueba que defiende el
+        #  fallo.
+        if len (tres["pulsos solo tresillo"]) != 3:
+            malas.append ("la medida de lo que no cabe escribio %d golpes y tenian que ser 3"
+                          % len (tres["pulsos solo tresillo"]))
+        elif len (tres["pulsos apretados"]) != 3:
+            malas.append ("mirar el tresillo con la rejilla recta pierde %d de los 3 golpes: %s"
+                          % (3 - len (tres["pulsos apretados"]), tres["pulsos apretados"]))
+        else:
+            for k, (a1, b1) in enumerate (zip (tres["pulsos solo tresillo"],
+                                               tres["pulsos apretados"])):
+                if abs (a1 - b1) > 1e-6:
+                    malas.append ("mirar el tresillo con la rejilla recta mueve el golpe %d "
+                                  "del pulso %.4f al %.4f" % (k, a1, b1))
+        #  Y el renglon dice el cuadradito y no un aviso de que algo no cupo.
+        if "1/16" not in tres["dicho"]:
+            malas.append ("el renglon no dice que cuadradito hay puesto: %r" % tres["dicho"])
 
-        #  Y el largo del patron sigue siendo compases ENTEROS en los dos
-        #  casos: el mando de LARGO va de 16 en 16, y un motor tocando 21 con
-        #  el mando diciendo 16 son dos verdades a la vez.
-        for cual in ("largo tresillo", "largo apretado"):
-            if tres[cual] % 16 != 0:
-                malas.append ("el %s es %d y no es un compas entero" % (cual, tres[cual]))
+        #  Y EL BUCLE SIGUE SIENDO COMPASES ENTEROS. Se mide en PULSOS y no en
+        #  pasos: "16 pasos" solo era un compas con la rejilla en 1/16, que es
+        #  el numero escrito a mano que deformaba los patrones. Un compas son
+        #  cuatro pulsos en las siete rejillas y con cualquier paso guardado.
+        if abs (tres["bucle"] / 4.0 - round (tres["bucle"] / 4.0)) > 1e-4 or tres["bucle"] <= 0:
+            malas.append ("el bucle dura %.4f pulsos y no son compases enteros" % tres["bucle"])
+        if tres["largo apretado"] % tres["compas"] != 0:
+            malas.append ("el largo apretado es %d pasos y un compas son %d"
+                          % (tres["largo apretado"], tres["compas"]))
+
+    #  Y QUE EL PASO GUARDADO NO SE ATASQUE FINO.
+    #
+    #  Las 42 parejas salen de un compas limpio cada una, asi que no ven lo que
+    #  pasa tocando el mando siete veces seguidas. El paso guardado se AFINA
+    #  para poder decir cada rejilla; si no se volviera a ENGORDAR cuando los
+    #  datos lo permiten, acabaria en 1/48 de pulso -un compas son entonces los
+    #  192 pasos enteros que la maquina guarda- y el siguiente cambio ya no
+    #  cabria. No se pierde ni un golpe por el camino, asi que las reglas de
+    #  pulsos dan verde mientras la app se queda sin mando.
+    atasco = song.get ("la rejilla no se atasca")
+    if not atasco:
+        print ("%-22s %s" % ("rejilla atasco", "MAL - sin respuesta"))
+        malas.append ("la rejilla no se atasca")
+    else:
+        print ("%-22s pasos %s   largos %s   %d negadas   vuelve a %s   pulsos %s"
+               % ("rejilla atasco", atasco["pasos"], atasco["largos"], atasco["negadas"],
+                  atasco["paso final"], atasco["pulsos"]))
+        #  12 unidades de 1/48 de pulso son 1/16, que es donde empezo la ruta.
+        if atasco["paso final"] != 12:
+            malas.append ("tras recorrer las siete rejillas el paso guardado se queda en %d/48 "
+                          "de pulso y tenia que volver a 12" % atasco["paso final"])
+        if atasco["negadas"]:
+            malas.append ("recorrer las siete rejillas seguidas niega %d cambios" % atasco["negadas"])
+        if [round (x, 4) for x in atasco["pulsos"]] != [0.0, 0.25, 0.5]:
+            malas.append ("recorrer las siete rejillas deja los golpes en %s y estaban en "
+                          "[0.0, 0.25, 0.5]" % atasco["pulsos"])
+
+    #  LAS SIETE REJILLAS CONTRA LAS SIETE, IDA Y VUELTA.
+    #
+    #  Las dos reglas de arriba miden tres parejas escogidas a mano, y con las
+    #  tres en verde la queja siguio siendo "se deforman los patrones". Lo que
+    #  no median es la ida y vuelta COMPLETA de las 42 parejas: la primera vez
+    #  que se midieron fallaban 41, y con el suelo del largo arreglado seguian
+    #  fallando 21, todas al ENGORDAR la rejilla.
+    #
+    #  Se mide lo que se OYE y no los pasos: el pulso de cada golpe y el largo
+    #  del bucle en pulsos, que es lo unico que no depende de la rejilla con la
+    #  que se mire. Y el veredicto es CERO: una sola pareja que no devuelva el
+    #  patron es un patron que se deforma.
+    siete = song.get ("las siete rejillas")
+    NOMBRES = ["1/8", "1/8T", "1/16", "1/16T", "1/32", "1/32T", "1/64"]
+    if not siete:
+        print ("%-22s %s" % ("siete rejillas", "MAL - sin respuesta"))
+        malas.append ("las siete rejillas")
+    else:
+        vueltas = siete["vueltas"]
+        malPulsos, malBucle, negadas = [], [], []
+        for v in vueltas:
+            antes, vuelta = v["antes"], v["vuelta"]
+            a, _, c = v["bucle"]
+            par = "%s->%s" % (NOMBRES[v["de"]], NOMBRES[v["a"]])
+            if v.get ("negada"): negadas.append (par)
+            if len (antes) != len (vuelta) or any (abs (x - y) > 1e-6
+                                                   for x, y in zip (antes, vuelta)):
+                malPulsos.append ("%s %s -> %s" % (par, antes, vuelta))
+            if abs (a - c) > 1e-6:
+                malBucle.append ("%s bucle %.4f -> %.4f" % (par, a, c))
+
+        print ("%-22s %d parejas, %d con pulsos malos, %d con bucle malo, %d negadas"
+               % ("siete rejillas", len (vueltas), len (malPulsos), len (malBucle), len (negadas)))
+
+        #  Las 42 tienen que estar: 7x7 menos las 7 de una rejilla consigo
+        #  misma. Una medida que se deje parejas fuera es una medida que
+        #  aprueba lo que no mira.
+        if len (vueltas) != 42:
+            malas.append ("la medida de las siete rejillas trae %d parejas y son 42" % len (vueltas))
+        for m in malPulsos[:6]:
+            malas.append ("ida y vuelta de rejilla que deforma el patron: %s" % m)
+        if len (malPulsos) > 6:
+            malas.append ("...y %d parejas mas con los golpes movidos" % (len (malPulsos) - 6))
+        for m in malBucle[:6]:
+            malas.append ("ida y vuelta de rejilla que cambia el bucle: %s" % m)
+        if len (malBucle) > 6:
+            malas.append ("...y %d parejas mas con el bucle cambiado" % (len (malBucle) - 6))
+        #  Y NINGUNA SE NIEGA. Negarse no deforma nada -es la salida honrada
+        #  cuando el patron no cabe en los pasos que la maquina guarda- pero
+        #  saliendo de UN compas limpio tienen que caber las 42, que es para lo
+        #  que el patron paso de 64 pasos a 192. Si vuelve a haber negativas,
+        #  alguien bajo ese numero.
+        if negadas:
+            malas.append ("saliendo de un compas limpio se niegan %d cambios de rejilla: %s"
+                          % (len (negadas), ", ".join (negadas[:6])))
 
     print()
     if malas:

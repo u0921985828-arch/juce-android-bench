@@ -706,15 +706,27 @@ namespace
         { "DINAMICA",       "",         "DYNAMICS",   "动态",       "ديناميك" },
         { "TIEMPO",         "",         "TIME",       "时间",       "زمن" },
         { "REJILLA",        "",         "GRID",       "网格",       "الشبكة" },
-        { "Un paso dura %1", "",         "one step lasts %1",
-                                        "每步时值 %1", "الخطوة تساوي %1" },
-        //  LO QUE NO CABE AL CAMBIAR DE REJILLA. Entre 1/16 y su tresillo la
-        //  razon es 1.5 y un paso impar cae entre dos casillas: el que no
-        //  encuentra sitio se cuenta y se dice aqui.
-        { "Un paso dura %1 · %2 golpes no caben, %3 se ajustan", "",
-                                        "one step lasts %1 · %2 hits do not fit, %3 snap",
-                                        "每步时值 %1 · %2 个音放不下，%3 个已对齐",
-                                        "الخطوة تساوي %1 · %2 نقرة لا تتسع و%3 انضبطت" },
+        //  EL CUADRADITO, Y NO «UN PASO»: desde que la rejilla es una vista, el
+        //  paso guardado puede ser mas fino que lo que se ve, asi que el
+        //  renglon hablaba de algo que no es lo que el mando acaba de mover.
+        { "Un cuadradito mide %1", "",  "one square is %1",
+                                        "每格时值 %1", "المربع يساوي %1" },
+        //  LO QUE SE RECORTA AL AFINAR EL PASO GUARDADO. El largo de una nota
+        //  y su empujon tienen techo -63 cuartos de paso y media casilla- y al
+        //  partir el paso en tres pueden no caber. Ni un golpe se mueve de
+        //  pulso por esto; lo que se acorta es cuanto suena.
+        { "Un cuadradito mide %1 · %2 notas se acortan", "",
+                                        "one square is %1 · %2 notes get shorter",
+                                        "每格时值 %1 · %2 个音变短",
+                                        "المربع يساوي %1 · %2 نغمة صارت أقصر" },
+        //  Y LO QUE NO CABE DE NINGUNA MANERA. La maquina guarda 192 pasos por
+        //  patron -un compas con el paso mas fino-, asi que lo que no cabe es
+        //  un patron de varios compases mezclando recto y tresillo. Antes se
+        //  resolvia tirando lo que sobraba, en silencio.
+        { "%1 pediria %2 pasos y la maquina guarda %3", "",
+                                        "%1 would need %2 steps and the machine holds %3",
+                                        "%1 需要 %2 步，而机器只存 %3",
+                                        "%1 يحتاج %2 خطوة والجهاز يحفظ %3" },
         { "Rejilla",        "",         "Grid",       "网格",       "الشبكة" },
         { "cuanto dura un paso", "",    "how long a step lasts",
                                         "每一步的时值", "مدة الخطوة الواحدة" },
@@ -1395,6 +1407,10 @@ namespace
           "\xd8\xaa\xd9\x85 \xd8\xad\xd8\xb0\xd9\x81 \xd9\x86\xd9\x88\xd8\xaa\xd8\xa9 \xd9\x88\xd8\xa7\xd8\xad\xd8\xaf\xd8\xa9" },
         { "2 OCTAVAS",      "",         "2 OCTAVES",  "2 个八度",     "أوكتافان" },
         { "%1 pasos",       "",         "%1 steps",   "%1 步",          "%1 خطوة" },
+        //  EL LARGO DE UN PATRON SE DICE EN COMPASES. Ver lengthSlider: el
+        //  mando ya se movia de compas en compas y ensenaba pasos guardados,
+        //  que no son los cuadraditos que se ven.
+        { "%1 compases",    "",         "%1 bars",    "%1 小节",        "%1 مازورة" },
         { "sin cadena - repite P%1", "sin cadena · repite P%1", "no chain · P%1 repeats",
                                         "无链接 · 重复 P%1",
                                         "بلا سلسلة · تكرار P%1" },

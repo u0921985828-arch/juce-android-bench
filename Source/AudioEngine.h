@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <cmath>
 #include "Voice.h"
 #include "SampleBuffer.h"
 #include "CommandFifo.h"
@@ -391,9 +392,46 @@ public:
         {    2.00f,    0.70f, 0.0f },   // DUC  rate, profundidad, mix
         {    2.00f,    0.60f, 0.0f },   // REP  rate, cantidad, mix
     };
-    static constexpr int kNumSteps      = 64;   // max steps per pattern (length is variable, see below)
-    static constexpr int kMinPatLen     = 16;
-    static constexpr int kMaxPatLen     = kNumSteps;   // 64 = four bars of 16
+    //  CIENTO NOVENTA Y DOS PASOS, QUE ES UN COMPAS CON EL PASO MAS FINO.
+    //
+    //  Eran 64 y ese numero decidia, sin decirlo, que rejillas se pueden
+    //  mezclar. Desde que la rejilla es una VISTA y el paso guardado se afina
+    //  solo para poder decir lo que se pide (ver `remapeaPaso`), escribir un
+    //  tresillo encima de un compas recto pide un paso que divida a los dos:
+    //  1/48 de pulso. Un compas son cuatro pulsos, o sea 192 de esos pasos.
+    //  Con 64 la cuenta no cabia y la app tenia que NEGARSE - medidas las 42
+    //  parejas de rejillas saliendo de un compas limpio, 12 se negaban, y
+    //  entre ellas 1/32 contra su tresillo, que es como se escribe medio trap.
+    //  Con 192 se niegan CERO.
+    //
+    //  Y de paso el tope sube donde no estorbaba: a 1/16 un patron puede
+    //  durar doce compases en vez de cuatro.
+    //
+    //  LO QUE CUESTA, MEDIDO: las tablas por paso son 18 bytes por pad, o sea
+    //  18 x 64 x 192 x 8 = 1.7 MB frente a 0.6 MB. Lo que NO cuesta es el
+    //  fichero ni la pila de deshacer, porque en la misma tanda las notas, las
+    //  velocidades y los redobles pasaron a escribirse dispersos: antes eran
+    //  4096 numeros por banco estuvieran o no puestos.
+    static constexpr int kNumSteps      = 192;  // max steps per pattern (length is variable, see below)
+    //  EL SUELO DEL LARGO ES UN PASO, NO DIECISEIS.
+    //
+    //  Valia 16 porque «un compas son dieciseis pasos», y eso solo es cierto
+    //  con la rejilla en 1/16: a 1/8 un compas son OCHO pasos y a 1/32 son
+    //  treinta y dos. Con el suelo clavado en 16, cambiar de 1/16 a 1/8
+    //  dejaba el bucle en dieciseis pasos de 1/8 -o sea el DOBLE de largo, con
+    //  la musica en la primera mitad- y la vuelta lo dejaba en 32. Medido con
+    //  las siete rejillas contra las siete: 41 de 42 idas y vueltas no
+    //  devolvian el patron. La queja fue «se deforman los patrones».
+    //
+    //  Quien decide que un patron sea compases enteros es el mando de LARGO,
+    //  que se mueve de compas en compas y sabe cuanto vale un compas AHORA
+    //  (`pasosPorCompas`). El motor solo necesita que no sea cero, porque
+    //  divide por el.
+    static constexpr int kMinPatLen     = 1;
+    static constexpr int kMaxPatLen     = kNumSteps;   // lo que la maquina guarda
+    //  Un compas a la rejilla de arranque (1/16), que es con lo que nace un
+    //  patron y lo que vale un proyecto sin `len` escrito.
+    static constexpr int kLargoPorDefecto = 16;
     static constexpr int kNumPatterns   = 8;    // pattern banks
     static constexpr int kMaxChain      = 16;   // chain slots (pattern indices, in play order)
 
@@ -1405,44 +1443,97 @@ public:
     void  setStepBeats (float b) noexcept { stepBeats.store (juce::jlimit (0.02f, 4.0f, b), std::memory_order_relaxed); }
     float getStepBeats() const noexcept   { return stepBeats.load (std::memory_order_relaxed); }
 
-    //  Y CAMBIAR DE REJILLA NO MUEVE UN SOLO GOLPE DE SITIO.
+    //  CUANTOS PASOS SON UN COMPAS CON LA REJILLA DE AHORA. Un compas son
+    //  cuatro pulsos SIEMPRE -eso es lo que un compas es-, y lo que cambia con
+    //  la rejilla es en cuantas casillas se parten: dieciseis a 1/16, ocho a
+    //  1/8, veinticuatro a 1/16T. El 16 escrito a mano decia las dos cosas a
+    //  la vez y solo acertaba en una rejilla.
+    int pasosPorCompas() const noexcept
+    {
+        const double b = (double) getStepBeats();
+        return (b > 0.0) ? juce::jmax (1, (int) std::lround (4.0 / b)) : kLargoPorDefecto;
+    }
+
+    //  LA REJILLA QUE SE MIRA Y EL PASO QUE SE GUARDA SON DOS COSAS.
     //
-    //  `setStepBeats` a solas reparte el patron entero por otro reloj: el
-    //  golpe se queda en el paso 4 y el paso 4 pasa de valer un pulso a valer
-    //  dos, asi que lo que se oye es el patron al doble o a la mitad de
-    //  velocidad. La queja fue literal: «eso que cambias es la medida del
-    //  cuadradito, con lo cual no deberia cambiarse ni el tiempo, ni los BPM,
-    //  ni nada del proyecto, solo lo visual».
+    //  Eran una sola: `stepBeats` valia a la vez «lo que dura una casilla en
+    //  pantalla» y «lo que dura una casilla en la tabla», asi que elegir una
+    //  rejilla mas GORDA obligaba a reescribir el patron con menos casillas y
+    //  lo que no cabia se perdia. Medido con las siete rejillas contra las
+    //  siete: 41 de 42 idas y vueltas no devolvian el patron, y con el suelo
+    //  del largo arreglado seguian fallando 21 - todas por lo mismo, todas al
+    //  ENGORDAR. La queja fue «se deforman los patrones», y antes «eso que
+    //  cambias es la medida del cuadradito, con lo cual no deberia cambiarse
+    //  ni el tiempo, ni los BPM, ni nada del proyecto, solo lo visual».
     //
-    //  Asi que la rejilla es un ZOOM y lo que se conserva es el SITIO EN EL
-    //  TIEMPO: al pasar de 1/16 a 1/8 el golpe del paso 4 -pulso 1.0- se muda
-    //  al paso 2, que con el paso nuevo vale el mismo pulso 1.0. Los
-    //  cuadraditos entre dos golpes cambian; los golpes no. El tempo no se
-    //  toca: esto no mira `bpm` ni una vez.
+    //  Asi que `stepBeats` se queda siendo UNA sola cosa -el PASO GUARDADO, el
+    //  grano de la tabla- y la rejilla que se mira vive en la cara
+    //  (`MainComponent::vistaRejilla`). Una casilla de la vista son N pasos
+    //  guardados, N entero, y mirar mas gordo no toca la tabla: cero golpes
+    //  movidos, cero perdidos, la vuelta exacta siempre.
     //
-    //  LO QUE NO SALE REDONDO SE CUENTA, Y SON DOS CUENTAS Y NO UNA. Entre
-    //  una rejilla y su tresillo la razon es 4/3 o 3/4 y un paso cae entre
-    //  dos casillas, asi que:
+    //  EL PASO GUARDADO SOLO SE MUEVE PARA PODER DECIR MAS, NUNCA MENOS, y es
+    //  `remapeaPaso` quien lo mueve con un factor ENTERO en las dos
+    //  direcciones. Afinar (1/16 -> 1/48 de pulso) multiplica los indices;
+    //  engordar solo se hace cuando TODO lo escrito es multiplo del paso
+    //  nuevo, o sea cuando no se pierde nada. Las dos son exactas por
+    //  construccion y la funcion se niega -sin tocar nada- si alguna cuenta no
+    //  saliera redonda.
     //
-    //   - `perdidos` son los golpes que DESAPARECEN: el paso de destino se
-    //     sale del patron, o ya lo habia ocupado otro golpe.
-    //   - `movidos` son los que siguen ahi pero YA NO EN SU PULSO, porque la
-    //     rejilla nueva no sabe decir ese sitio: de 1/12 a 1/16 el golpe del
-    //     pulso 0.0833 acaba en el 0.0625. Se quedan -tirarlos seria perder
-    //     musica- y se quedan CONTADOS.
+    //  LA MONEDA ES 1/48 DE PULSO porque es la unica en la que las siete
+    //  rejillas son numeros enteros: 1/8 son 24, 1/8T son 16, 1/16 son 12,
+    //  1/16T son 8, 1/32 son 6, 1/32T son 4 y 1/64 son 3. Con negras en coma
+    //  flotante, «1/3 de pulso» no es divisible por nada sin un epsilon, y un
+    //  epsilon en la posicion de un golpe es un golpe que se mueve solo.
+    static constexpr int kUnidadesPorPulso = 48;
+
+    int  pasoUnidades() const noexcept
+    {
+        return juce::jmax (1, (int) std::lround ((double) getStepBeats() * kUnidadesPorPulso));
+    }
+    void setPasoUnidades (int u) noexcept
+    {
+        setStepBeats ((float) ((double) juce::jmax (1, u) / (double) kUnidadesPorPulso));
+    }
+
+    //  EL MAXIMO COMUN DIVISOR DE TODO LO ESCRITO, en indices de paso: el mcd
+    //  de los indices ocupados de los ocho patrones y de sus ocho largos. Es
+    //  lo que dice hasta donde se puede ENGORDAR el paso guardado sin perder
+    //  nada - si todo cae en indices pares, el paso puede valer el doble.
+    int mcdOcupacion() const noexcept;
+
+    //  EL REMAPEO, Y LO PRIMERO QUE HACE ES NO HACERLO.
     //
-    //  Un solo numero para las dos era la version anterior y mentia justo en
-    //  el caso que importa: de tresillo a recto no se pierde NI UNO y sin
-    //  embargo se mueven todos, o sea que el renglon de estado decia «0 no
-    //  caben» mientras el patron entero cambiaba de sitio. Y remapear
-    //  perdiendo o moviendo notas EN SILENCIO es peor que no remapear: es el
-    //  mismo fallo que el acorde que cargaba solo la tonica.
-    struct RemapeoRejilla { int perdidos = 0; int movidos = 0; };
+    //  `cabe` en falso significa que NO SE HA TOCADO NADA: o alguna cuenta no
+    //  salia entera, o el patron necesitaria mas de `kNumSteps` pasos. Antes
+    //  esto no existia y el caso «no cabe» se resolvia tirando los golpes que
+    //  sobraban, en silencio, que es el mismo fallo que el acorde que cargaba
+    //  solo la tonica. `pasosPedidos` dice cuantos harian falta, para que el
+    //  renglon de estado pueda decir el numero en vez de «no se puede».
+    //  `recortados` son los pasos cuyo largo o cuyo empujon no cabia en el
+    //  techo al afinar (63 cuartos de paso, media casilla). Se recortan y se
+    //  cuentan; el golpe NO se mueve de sitio.
+    struct RemapeoPaso { bool cabe = false; int pasosPedidos = 0; int recortados = 0; };
 
     //  Lo llama el hilo de mensajes -el mando de REJILLA- y nunca el de audio:
     //  recorre los ocho patrones enteros por los 64 pads. Sin reservas de
     //  memoria aun asi, que la columna de un pad cabe en la pila.
-    RemapeoRejilla reajustaRejilla (float beatsViejo, float beatsNuevo) noexcept;
+    RemapeoPaso remapeaPaso (int unidadesViejas, int unidadesNuevas) noexcept;
+
+    //  LA MITAD QUE SOLO MIDE, y existe porque quien pregunta tiene que poder
+    //  decidir ANTES de tocar nada: la cara apila una foto de deshacer para el
+    //  cambio de rejilla, y apilarla para un cambio que luego no cabe deja la
+    //  pila diciendo que paso algo que no paso.
+    RemapeoPaso midePaso (int unidadesViejas, int unidadesNuevas) const noexcept;
+
+    //  El maximo comun divisor, publico porque la cara lo necesita para elegir
+    //  el paso nuevo y no hay dos maneras de calcularlo.
+    static int mcd (int a, int b) noexcept
+    {
+        a = a < 0 ? -a : a;  b = b < 0 ? -b : b;
+        while (b != 0) { const int t = a % b; a = b; b = t; }
+        return a;
+    }
 
     void setLiveQuantise (bool on) noexcept { liveQuant.store (on, std::memory_order_relaxed); }
     bool getLiveQuantise() const noexcept { return liveQuant.load (std::memory_order_relaxed); }
