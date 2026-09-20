@@ -1407,10 +1407,6 @@ namespace
           "\xd8\xaa\xd9\x85 \xd8\xad\xd8\xb0\xd9\x81 \xd9\x86\xd9\x88\xd8\xaa\xd8\xa9 \xd9\x88\xd8\xa7\xd8\xad\xd8\xaf\xd8\xa9" },
         { "2 OCTAVAS",      "",         "2 OCTAVES",  "2 个八度",     "أوكتافان" },
         { "%1 pasos",       "",         "%1 steps",   "%1 步",          "%1 خطوة" },
-        //  EL LARGO DE UN PATRON SE DICE EN COMPASES. Ver lengthSlider: el
-        //  mando ya se movia de compas en compas y ensenaba pasos guardados,
-        //  que no son los cuadraditos que se ven.
-        { "%1 compases",    "",         "%1 bars",    "%1 小节",        "%1 مازورة" },
         { "sin cadena - repite P%1", "sin cadena · repite P%1", "no chain · P%1 repeats",
                                         "无链接 · 重复 P%1",
                                         "بلا سلسلة · تكرار P%1" },
@@ -1823,6 +1819,12 @@ namespace
         { "fuente",         "",         "source",     "来源",       "المصدر" },
         { "duracion",       "",         "length",     "时长",       "المدة" },
         { "pistas",         "",         "tracks",     "轨道",       "المسارات" },
+        //  Y ESTA FILA LA COMPARTE `lengthSlider`, que desde que la rejilla
+        //  es una vista dice el largo del patron en compases y no en pasos
+        //  guardados -que no son los cuadraditos que se ven-. Se escribio
+        //  una segunda copia aqui arriba y `Tests/lang.py` la canto: «fila
+        //  duplicada, la segunda no se usa nunca». T() busca por la cadena
+        //  en espanol, asi que una fila sirve a los dos sitios.
         { "%1 compases",    "",         "%1 bars",    "%1 小节",    "%1 مازورة" },
         { "1 compas",       "",         "1 bar",      "1 小节",     "مازورة واحدة" },
         { "vacio",          "",         "empty",      "空",         "فارغ" },
