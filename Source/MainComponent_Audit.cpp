@@ -2340,9 +2340,16 @@ void MainComponent::auditOpen (const juce::String& pedido)
             //  para «DLY», otra para «REV» y otra para «+», que es el nombre
             //  de lo que hay DENTRO de la ranura y no de la tapa — seis filas
             //  que ademas cambiarian al cambiar de efecto.
+            //  Y LA TAPA DEL PRESET DE CADA FILA, por lo mismo y con MAS
+            //  razon: su rotulo es el nombre del preset puesto -«CAMPANA»,
+            //  «MI ECO», «MOVIDO»- o sea que la fila que la regla pediria
+            //  cambiaria al girar un mando. Su mantener hace EXACTAMENTE lo
+            //  que la fila que ya existe promete -abrir los presets de ese
+            //  efecto-, asi que es la misma familia y no una fila nueva.
             if (auto* h = dynamic_cast<HoldButton*> (hijo))
                 UiAudit::gestoDe (h->getButtonText(),
-                                  (fxButtons.contains (h) || rackSlotBtns.contains (h)) ? 1 : 0);
+                                  (fxButtons.contains (h) || rackSlotBtns.contains (h)
+                                     || rackPresetBtns.contains (h)) ? 1 : 0);
             recorre (*hijo);
         }
     };
@@ -2627,6 +2634,37 @@ void MainComponent::auditOpen (const juce::String& pedido)
         for (int s = 0; s < kNumRanuras; ++s)
             engine.setCanalSend (0, s, 0.15f + 0.15f * (float) s);
         ponCanalActual (0);
+        //  Y CON UN PRESET PUESTO EN CADA UNA, EL DE NOMBRE MAS LARGO.
+        //
+        //  Sin esto las seis tapas de preset decian «MOVIDO» —`needW` 35.2
+        //  contra `haveW` 36.0 en 280x653, o sea cabe por seis decimas— y la
+        //  regla de rotulo cortado de `expo.py` estaba mirando el unico estado
+        //  del rack que no se rompe: con «DEFECTO» puesto son 41.1 contra 36.0
+        //  y salen puntos suspensivos. *El banco no adivina lo que la app
+        //  puede decir*, asi que se le da el caso peor.
+        //
+        //  Y el peor se BUSCA en la tabla, no se escribe aqui: hoy el nombre
+        //  mas largo es «SUB CENTRO», diez letras, y el dia que entre uno de
+        //  doce esta linea lo mide sola. Es lo mismo que hace la regla de
+        //  curvas de `Tests/presets.py` con el numero de combinaciones.
+        for (int s = 0; s < kNumRanuras; ++s)
+            if (const int fx = enRanura (s); fx >= 0)
+            {
+                //  Y DE LOS ESCRITOS, que el cero es DEFECTO y lo llevan los
+                //  treinta efectos igual: sembrando el mas largo a secas, DRV
+                //  y DLY -cuyos nombres propios son todos mas cortos que esa
+                //  palabra- acababan los dos diciendo «DEFECTO» con el mismo
+                //  dibujo al lado, y `planos.py` lo canto como par de tapas
+                //  gemelas. Tenia razon: en una pantalla de banco dos filas
+                //  identicas no dicen cual es cual.
+                int peor = 1;
+                for (int k = 1; k < FxPresets::cuantos(); ++k)
+                    if (juce::String (FxPresets::nombre (fx, k)).length()
+                          > juce::String (FxPresets::nombre (fx, peor)).length())
+                        peor = k;
+                aplicaFxPreset (fx, peor);
+            }
+
         //  Y CON LA ULTIMA ENFOCADA, que es lo que hace medible la cuña.
         //  `plato` la deja en la ranura 0 y sin un segundo estado «apunta a la
         //  ranura enfocada» lo cumple igual una cuña clavada en la primera
@@ -6906,5 +6944,105 @@ void MainComponent::auditFxPresets()
 
             abreMenuPresets (-1);
         }
+    }
+
+    //  ========================================================================
+    //  LA FILA DEL RACK: EL PRESET SE VE, SE CAMBIA, Y LA LUZ NO MIENTE
+    //  ========================================================================
+    //
+    //  Del telefono, con la foto del rack delante y por partes:
+    //
+    //    · *«ahi falta un cuadrado o un visor en el que tu puedas cambiar el
+    //      preset sin tener que entrar al propio efecto»* — o sea que la fila
+    //      DIGA que preset lleva y se pueda tocar. Mantener el canalon ya
+    //      abria la rejilla desde la tanda anterior y un gesto que no se ve no
+    //      lo encuentra nadie.
+    //    · *«el boton de encender y apagar, que a veces se peta y no se
+    //      mantiene en negro»* — y eso no era un pintado raro: `setFxEnabled`
+    //      encendia UNA de las tres ventanas de una ranura.
+    //
+    //  Las dos se miden aqui porque las dos viven en la misma fila, y la
+    //  segunda solo se ve DESDE el rack: la tapa de la cara si se encendia.
+    {
+        closeAllSheets();
+        ponCanalActual (kCanal);
+        for (int k = 0; k < kNumRanuras; ++k) slotFx[(size_t) kCanal][(size_t) k] = kSlotVacia;
+        ponEnRanura (0, AudioEngine::kFxDly);
+        refrescaRanuras();
+        openSheet (rackSheet, mixButton);
+        refreshRack();
+        resized();
+
+        const int dly = AudioEngine::kFxDly;
+        auto* pb    = rackPresetBtns.isEmpty()      ? nullptr : rackPresetBtns[0];
+        auto* pbVac = rackPresetBtns.size() > 1     ? rackPresetBtns[1] : nullptr;
+
+        //  EL CABLE, y los dos gestos: el toque pasa al siguiente y el
+        //  mantener abre la rejilla. Medir la funcion de destino saldria verde
+        //  con la tapa sin cable, que es el fallo que esta regla existe para
+        //  cazar.
+        const int cable = (pb != nullptr && pb->onClick != nullptr && pb->onHold != nullptr) ? 1 : 0;
+        const int seVe  = (pb != nullptr && pb->isVisible() && ! pb->getBounds().isEmpty()) ? 1 : 0;
+        const int anchoP = pb != nullptr ? pb->getWidth()  : 0;
+        const int altoP  = pb != nullptr ? pb->getHeight() : 0;
+        //  Y LA DE UNA RANURA VACIA, APAGADA Y VACIADA: las dos cosas, que
+        //  encendida y de 0x0 pasa las ocho reglas de geometria sin rozarlas.
+        const int vacApagada = (pbVac != nullptr && ! pbVac->isVisible()) ? 1 : 0;
+        const int vacVaciada = (pbVac != nullptr && pbVac->getBounds().isEmpty()) ? 1 : 0;
+        const int diceNombre = (pb != nullptr
+                                  && pb->getButtonText() == fxPresetNombre (dly)) ? 1 : 0;
+
+        //  EL PASEO: tantos toques como presets hay tienen que recorrerlos
+        //  todos y volver al primero. Se cuenta paso a paso y no solo la
+        //  vuelta, que quedarse quieto en el cero tambien vuelve al cero.
+        aplicaFxPreset (dly, 0);
+        int pasos = 0;
+        for (int i = 0; i < FxPresets::cuantos(); ++i)
+        {
+            if (cable != 0) pb->onClick();
+            if (fxPresetPuesto[(size_t) kCanal][(size_t) dly] == (i + 1) % FxPresets::cuantos())
+                ++pasos;
+        }
+        const int vuelve = (fxPresetPuesto[(size_t) kCanal][(size_t) dly] == 0) ? 1 : 0;
+
+        //  Y EL TOQUE SOBRE UNA RANURA VACIA NO MUEVE NADA, que es la mitad
+        //  que un cable pelado cumpliria igual.
+        const int antes = fxPresetPuesto[(size_t) kCanal][(size_t) dly];
+        if (pbVac != nullptr && pbVac->onClick != nullptr) pbVac->onClick();
+        const int quieto = (fxPresetPuesto[(size_t) kCanal][(size_t) dly] == antes) ? 1 : 0;
+
+        //  LA LUZ DE LA FILA, CUATRO VECES: encender, apagar, encender,
+        //  apagar. Una sola pasada no distingue «no se entera» de «se entero
+        //  al reves», y el fallo del telefono era intermitente porque lo
+        //  curaba cualquier cosa que volviera a abrir el rack.
+        auto* mute = rackMuteBtns.isEmpty()  ? nullptr : rackMuteBtns[0];
+        auto* can  = rackSlotBtns.isEmpty()  ? nullptr : rackSlotBtns[0];
+        int luzOk = 0, luzMal = 0;
+        for (int t = 0; t < 4; ++t)
+        {
+            if (mute != nullptr && mute->onClick != nullptr) mute->onClick();
+            const bool suena = fxEncendido (dly);
+            const bool dm = (mute != nullptr && mute->getToggleState());
+            const bool dc = (can  != nullptr && can->getToggleState());
+            if (dm == suena && dc == suena) ++luzOk; else ++luzMal;
+        }
+
+        std::cout << "{\"prack\":1,\"cable\":" << cable
+                  << ",\"se_ve\":" << seVe
+                  << ",\"ancho\":" << anchoP
+                  << ",\"alto\":" << altoP
+                  << ",\"dedo\":" << Metrics::hit
+                  << ",\"dice_nombre\":" << diceNombre
+                  << ",\"vac_apagada\":" << vacApagada
+                  << ",\"vac_vaciada\":" << vacVaciada
+                  << ",\"pasos\":" << pasos
+                  << ",\"presets\":" << FxPresets::cuantos()
+                  << ",\"vuelve\":" << vuelve
+                  << ",\"quieto\":" << quieto
+                  << ",\"luz_ok\":" << luzOk
+                  << ",\"luz_mal\":" << luzMal
+                  << ",\"luces\":4}" << std::endl;
+
+        closeAllSheets();
     }
 }

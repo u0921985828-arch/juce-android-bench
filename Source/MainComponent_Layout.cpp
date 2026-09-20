@@ -2944,7 +2944,27 @@ void MainComponent::resized()
         //  el canalon, y la fila entera perdia el orden que tenia. Y ademas el
         //  sitio era el equivocado: lo que dice QUE ES un efecto va donde el EQ
         //  ya lo dice, o sea en el PLATO. Ver FxMini.h y layoutFace.
-        const int filaFx = 48;
+        //  PERO GANA UNA TAPA MAS, que es la del preset, y EN LA MISMA FILA.
+        //
+        //  Y no es la vuelta de aquella miniatura: aquello era un DIBUJO
+        //  flotando sobre el fader, sin alinear con el canalon y sin poderse
+        //  tocar. Esto es una TAPA en la hilera, con el dedo entero de alto y
+        //  su sitio contado en el reparto.
+        //
+        //  Estuvo media tanda en un SEGUNDO renglon de lado a lado, y eso
+        //  costaba 48 px por fila -de 48 a 96, 288 px de ficha- y dejaba un
+        //  hueco vacio por cada ranura sin efecto. No hacia falta: medido en
+        //  280x653 la fila reparte 215 px y, quitado el canalon -54- y la tapa
+        //  de apagar -42-, quedan 119 para el fader, de los que 44 son el
+        //  cuadrito del numero. Lo que se le quita al fader es RECORRIDO, y el
+        //  recorrido es lo que sobra: de 0 a 100 en 75 px se anda con el mismo
+        //  dedo que en 31, mientras que el hueco de un segundo renglon no se
+        //  recupera.
+        //
+        //  Y EL NUMERO SE DERIVA. `48` estaba escrito a mano y es
+        //  `hit + 2*halfGap`: el dedo y el aire que la fila le deja por arriba
+        //  y por abajo.
+        const int filaFx = Metrics::hit + 2 * Metrics::halfGap;
 
         //  Y LA CABECERA RESERVA LO QUE SE PINTA.
         //
@@ -3040,8 +3060,9 @@ void MainComponent::resized()
         //  Seis pixeles arriba y abajo de una fila de 48 dejan el fader en 36,
         //  cuatro por debajo del dedo. El aire entre filas ya lo da la fila
         //  siguiente; el que se le quita al control sale del control.
-        auto colocaFilaRack = [this] (int s, juce::Rectangle<int> row)
+        auto colocaFilaRack = [this] (int s, juce::Rectangle<int> fila)
         {
+            auto row = fila;
             auto canalon = Lang::takeStart (row, 54);
             if (rackSlotBtns[s] != nullptr)
                 rackSlotBtns[s]->setBounds (canalon.reduced (Metrics::aireTapaDensa, Metrics::halfGap));
@@ -3061,6 +3082,52 @@ void MainComponent::resized()
             auto mute = Lang::takeStart (row, Metrics::hit + 2);
             if (rackMuteBtns[s] != nullptr)
                 rackMuteBtns[s]->setBounds (mute.reduced (Metrics::aireTapaDensa, Metrics::halfGap));
+
+            //  Y LA TAPA DEL PRESET, entre la de apagar y el fader.
+            //
+            //  Aqui y no al final de la fila: el fader y su cuadrito del numero
+            //  son UN mando -el mando y lo que marca-, y meter una tapa entre
+            //  los dos los separa. A la izquierda queda la hilera de tapas
+            //  -que efecto, encendido, que preset- y a la derecha el mando con
+            //  su lectura, que es como se lee la fila de un mezclador.
+            //
+            //  EL ANCHO SE DERIVA DE LO QUE SOBRA, con suelo y techo:
+            //    · suelo `hit + xs` = 44, que es justo lo que mide el cuadrito
+            //      del numero del fader (linea 943). Los dos visores de la fila
+            //      miden lo mismo por construccion, y 44 es el dedo mas el aire
+            //      mas pequeno, no un numero elegido.
+            //    · techo `btn * 2` = 88, que es donde cabe el nombre mas largo
+            //      de la tabla -«SUB CENTRO», diez letras-: darle mas es
+            //      recorrido de fader tirado.
+            //    · y entre medias, un TERCIO de lo que le quedaba al fader, que
+            //      es lo que reparte igual de bien en 280 -119/3, al suelo- que
+            //      en 412 -241/3 = 80- sin escribir una talla por pantalla.
+            //
+            //  APAGADA Y VACIADA cuando la ranura no tiene efecto, las dos
+            //  cosas: un control encendido y de 0x0 pasa las ocho reglas de
+            //  geometria sin rozarlas. Quien decide si se ve es
+            //  `refrescaRanuras`; aqui solo se le dan -o se le quitan- los
+            //  limites, que es el mismo reparto que el plato y su curva.
+            if (auto* pb = (s < rackPresetBtns.size() ? rackPresetBtns[s] : nullptr))
+            {
+                if (pb->isVisible())
+                {
+                    const int anchoPreset = juce::jlimit (Metrics::hit + Metrics::xs,
+                                                          Metrics::btn * 2,
+                                                          row.getWidth() / 3);
+                    pb->setBounds (Lang::takeStart (row, anchoPreset)
+                                       .reduced (Metrics::aireTapaDensa, Metrics::halfGap));
+                    //  Y CON EL ANCHO YA PUESTO, que rotule lo que quepa: el
+                    //  nombre del preset donde entra y su numero donde no.
+                    //  Esto es lo unico que puede decidirlo aqui, porque el
+                    //  ancho sale del reparto de esta misma fila.
+                    if (const int fx = enRanura (s); fx >= 0)
+                        rotulaFxPreset (*pb, fx);
+                }
+                else
+                    pb->setBounds ({});
+            }
+
             if (rackSends[s] != nullptr)
                 rackSends[s]->setBounds (row.reduced (Metrics::aireTapaDensa, Metrics::halfGap));
         };

@@ -68,7 +68,7 @@ def corre ():
         return None
 
     filas = {"preset": [], "kfxdef": [], "spec": [], "tuyo": [],
-             "pficha": [], "pcurva": []}
+             "pficha": [], "pcurva": [], "prack": []}
     for line in out.splitlines ():
         line = line.strip ()
         if not (line.startswith ("{") and line.endswith ("}")):
@@ -362,6 +362,78 @@ def main ():
 
         print ("curvas     %d tipos dibujan una curva por preset; el EQ se queda "
                "con su nombre, que trae cara propia" % conCurva)
+
+    # ------------------------------------------------------------------
+    #  9. Y ACCESIBLE DE VERDAD: LA FILA DEL RACK DICE EL PRESET Y SE TOCA.
+    #
+    #  La tanda anterior puso la puerta en MANTENER el canalon y llego del
+    #  telefono, con la foto delante, que eso no se encuentra: *«ahi falta un
+    #  cuadrado o un visor en el que tu puedas cambiar el preset sin tener que
+    #  entrar al propio efecto»*. Un gesto escondido y una tapa que se ve no
+    #  son lo mismo aunque hagan lo mismo.
+    #
+    #  Y SE MIDE EL PASEO ENTERO Y NO LA VUELTA: quedarse quieto en el cero
+    #  tambien acaba en el cero. Seis toques, seis presets, cada uno el
+    #  siguiente del anterior.
+    # ------------------------------------------------------------------
+    if not r["prack"]:
+        fallos.append ("la app no publico la fila del rack")
+    else:
+        pr = r["prack"][0]
+        print ("fila rack  la tapa del preset: cable %d, se ve %d (%dx%d, dedo %d), "
+               "dice el nombre %d" % (pr["cable"], pr["se_ve"], pr["ancho"],
+                                      pr["alto"], pr["dedo"], pr["dice_nombre"]))
+        print ("paseo      %d de %d toques pasan al siguiente, vuelve al primero %d, "
+               "sobre ranura vacia se queda quieto %d"
+               % (pr["pasos"], pr["presets"], pr["vuelve"], pr["quieto"]))
+        print ("luz        %d de %d veredictos: la tapa de apagar y el canalon dicen "
+               "lo que suena" % (pr["luz_ok"], pr["luces"]))
+
+        if not pr["cable"]:
+            fallos.append ("la tapa del preset del rack no tiene los dos gestos")
+        if not pr["se_ve"]:
+            fallos.append ("la tapa del preset no se ve en una ranura con efecto")
+        #  Y CON EL DEDO ENTERO. Es una tapa, no un rotulo: el suelo es el
+        #  mismo `Metrics::hit` que `expo.py` exige en toda la app, y se lee
+        #  de la propia app para que no haya dos numeros.
+        if pr["se_ve"] and (pr["ancho"] < pr["dedo"] or pr["alto"] < pr["dedo"]):
+            fallos.append ("la tapa del preset mide %dx%d y el dedo son %d"
+                           % (pr["ancho"], pr["alto"], pr["dedo"]))
+        if not pr["dice_nombre"]:
+            fallos.append ("la tapa del preset no dice el nombre del preset puesto")
+        #  LAS DOS MITADES de una ranura vacia: apagada Y vaciada. Encendida y
+        #  de 0x0 pasa las ocho reglas de geometria sin rozarlas -es el
+        #  `CERO 840` que costo las celdas de la rejilla hace una tanda-.
+        if not pr["vac_apagada"]:
+            fallos.append ("la tapa del preset de una ranura VACIA se queda encendida")
+        if not pr["vac_vaciada"]:
+            fallos.append ("la tapa del preset de una ranura VACIA se queda con limites")
+        if pr["pasos"] != pr["presets"]:
+            fallos.append ("%d de %d toques no pasaron al preset siguiente"
+                           % (pr["presets"] - pr["pasos"], pr["presets"]))
+        if not pr["vuelve"]:
+            fallos.append ("dar la vuelta entera no volvio al primer preset")
+        if not pr["quieto"]:
+            fallos.append ("tocar el preset de una ranura VACIA cambio el de otra")
+
+    # ------------------------------------------------------------------
+    #  10. Y LA LUZ DE LA FILA NO MIENTE.
+    #
+    #  Del telefono: *«el boton de encender y apagar, que a veces se peta y no
+    #  se mantiene en negro»*. No era un pintado raro ni el `toggle` de JUCE:
+    #  `setFxEnabled` encendia UNA de las TRES ventanas que tiene una ranura
+    #  -la tapa de la fila de la cara- y las otras dos se quedaban con el
+    #  estado de antes. Desde el rack se veia entero porque el fader SI se
+    #  atenuaba: ese lo pinta `paintRackSheetContent` leyendo `fxEncendido`.
+    #
+    #  Cuatro veredictos y no uno: una sola pasada no distingue «no se entera»
+    #  de «se entero al reves».
+    # ------------------------------------------------------------------
+    if r["prack"]:
+        pr = r["prack"][0]
+        if pr["luz_mal"]:
+            fallos.append ("%d de %d veces la fila del rack dijo lo contrario de "
+                           "lo que sonaba" % (pr["luz_mal"], pr["luces"]))
 
     # ------------------------------------------------------------------
     if fallos:

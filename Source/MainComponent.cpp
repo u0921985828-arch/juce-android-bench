@@ -1015,6 +1015,28 @@ MainComponent::MainComponent()
             };
             rackSheet.cuerpo.addAndMakeVisible (m);
             rackMuteBtns.add (m);
+
+            //  Y LA TAPA DEL PRESET, en el renglon de abajo. Ver MainComponent.h.
+            //
+            //  APAGADA AL NACER -`addChildComponent`- porque una ranura vacia
+            //  no tiene preset que ensenar y se queda *apagada Y vaciada*: las
+            //  dos cosas, que encendida y de 0x0 pasa las ocho reglas de
+            //  geometria sin rozarlas. Es el mismo `CERO 840` que costo las
+            //  dieciocho celdas de la rejilla de presets hace una tanda.
+            auto* pr = new HoldButton();
+            styleButton (*pr, kStepOff);
+            litAccent (*pr);
+            pr->getProperties().set ("icono", (int) Iconos::Id::lista);
+            pr->onClick = [this, f] { pasaFxPreset (f); };
+            pr->onHold  = [this, f]
+            {
+                const int fx = enRanura (f);
+                if (fx < 0) return;
+                closeAllSheets();
+                abreMenuPresets (fx);
+            };
+            rackSheet.cuerpo.addChildComponent (pr);
+            rackPresetBtns.add (pr);
         }
 
         styleButton (rackCloseButton, kKey);
@@ -5119,13 +5141,12 @@ void MainComponent::aplicaFxPreset (int f, int k)
     //  apagada sobre un efecto que suena, que es la mitad del fallo que
     //  `macroMoved` ya tenia escrito.
     {
+        //  Y LA LUZ LA REPARTE EL EMBUDO, que corre al final de esta misma
+        //  funcion: encender aqui la tapa de la cara y ninguna de las otras
+        //  tres era media regla, la misma media que `setFxEnabled` tenia.
         const bool on = FxPresets::valor (f, k, 2) > 0.001f;
         if (on != fxEncendido (f))
-        {
             ponFxEncendido (f, on);
-            if (const int sl = slotDeFx (f); sl >= 0)
-                fxButtons[sl]->setToggleState (on, juce::dontSendNotification);
-        }
     }
 
     fxPresetPuesto[(size_t) canalActual][(size_t) f] = k;
@@ -5134,6 +5155,83 @@ void MainComponent::aplicaFxPreset (int f, int k)
     if (f == focusedFx) { refreshMacroValues(); refrescaVisorPlato(); }
     refrescaRanuras();
     repaint (bandaMandos());
+}
+
+//  PASAR AL SIGUIENTE PRESET DE FABRICA, que es el gesto de la tapa del rack.
+//
+//  Va por `aplicaFxPreset` y no por su propio camino al motor: poner un preset
+//  toca tres parametros, las cinco bandas del EQ, el MIX -que es tambien el
+//  interruptor de la ranura- y la marca de cual esta puesto. Un segundo camino
+//  seria la misma regla escrita dos veces, y la que se quedara vieja dejaria la
+//  fila diciendo un nombre con otro sonido puesto.
+//  QUE ENSENA LA TAPA DEL PRESET DE UNA FILA DEL RACK, que es el nombre
+//  mientras el nombre quepa.
+//
+//  Hace falta porque esa tapa vive en la fila mas estrecha de la app: en
+//  280x653 le tocan 42 px y su caja de rotulo son 36, y «DEFECTO» pide 41.1
+//  —medido—, o sea puntos suspensivos. Y un rotulo cortado es justo la queja
+//  que abrio esta tanda: *«no son legibles de primera vez»*. Donde no cabe el
+//  nombre sale su NUMERO —el mismo orden que tienen las celdas de la rejilla
+//  de presets, asi que «P3» es la tercera—, y donde no cabe ni eso se queda
+//  solo el dibujo, que sigue diciendo para que es la tapa. El nombre entero no
+//  se pierde: esta en `setTitle` —que es lo que lee quien no ve la pantalla— y
+//  en la linea de estado en cuanto se toca.
+//
+//  SE MIDE CON LA MISMA CUENTA QUE DIBUJA. `ZatiLookAndFeel::reparteTapa` es
+//  el unico sitio donde se decide la letra y el hueco de un rotulo, y es la
+//  que usa `UiAudit::captionOf` para el `needW`/`haveW` que juzga `expo.py`.
+//  Medirlo aqui por nuestra cuenta seria la misma regla escrita dos veces, y
+//  la copia es la que un dia dice que cabe cuando el dibujo dice que no.
+//
+//  Y NO HAY UN NUMERO PARA TODO: un preset TUYO no tiene orden -son ficheros
+//  de una carpeta- y MOVIDO tampoco es una fila de la tabla, asi que esos dos
+//  caen directamente al dibujo cuando su palabra no entra.
+void MainComponent::rotulaFxPreset (HoldButton& b, int fx)
+{
+    if (! juce::isPositiveAndBelow (fx, kNumFx)) return;
+
+    const auto nombre = fxPresetNombre (fx);
+    b.setTitle (juce::String (fxDefs[fx].name) + " "
+                  + juce::String::charToString ((juce::juce_wchar) 0x00B7) + " " + nombre);
+    b.setButtonText (nombre);
+
+    //  Sin colocar todavia no hay nada que medir: `resized` vuelve por aqui en
+    //  cuanto le da sus limites.
+    if (b.getWidth() <= 0 || b.getHeight() <= 0) return;
+
+    const auto rep = ZatiLookAndFeel::reparteTapa (b);
+    if (rep.texto.isEmpty()) return;
+    const float hay = (float) rep.texto.getWidth();
+    if (juce::GlyphArrangement::getStringWidth (rep.fuente, nombre) <= hay) return;
+
+    const int  k    = fxPresetPuesto[(size_t) canalActual][(size_t) fx];
+    const bool tuyo = fxPresetTuyo[(size_t) canalActual][(size_t) fx].isNotEmpty();
+    const juce::String corto = (tuyo || k == kFxPresetMovido)
+                                 ? juce::String()
+                                 : "P" + juce::String (k + 1);
+
+    b.setButtonText (corto.isNotEmpty()
+                       && juce::GlyphArrangement::getStringWidth (rep.fuente, corto) <= hay
+                         ? corto : juce::String());
+}
+
+void MainComponent::pasaFxPreset (int ranura)
+{
+    const int fx = enRanura (ranura);
+    if (fx < 0) return;                 // ranura vacia: no hay preset que pasar
+
+    const bool tuyo = fxPresetTuyo[(size_t) canalActual][(size_t) fx].isNotEmpty();
+    const int  k    = fxPresetPuesto[(size_t) canalActual][(size_t) fx];
+    const int  sig  = (tuyo || k == kFxPresetMovido) ? 0
+                                                     : (k + 1) % FxPresets::cuantos();
+    aplicaFxPreset (fx, sig);           // y el termina en refrescaRanuras
+
+    //  Y LO DICE, que es la mitad del gesto: la tapa cambia de rotulo pero el
+    //  dedo la esta tapando justo cuando lo hace.
+    status.setText (juce::String (fxDefs[fx].name) + " "
+                      + juce::String::charToString ((juce::juce_wchar) 0x00B7) + " "
+                      + fxPresetNombre (fx),
+                    juce::dontSendNotification);
 }
 
 //  LAS CINCO BANDAS DE UN PRESET DE EQ, EN EL FORMATO QUE EL PROYECTO YA USA.
@@ -5418,11 +5516,23 @@ void MainComponent::setFxEnabled (int f, bool on)
 {
     if (! juce::isPositiveAndBelow (f, kNumFx)) return;
     ponFxEncendido (f, on);
-    //  La luz va a la RANURA donde este ese tipo, que ya no es su indice. Un
-    //  tipo que no esta puesto no tiene tapa que encender, y no se pierde
-    //  nada: `refrescaRanuras` vuelve a pintar las seis desde `slotFx`.
-    if (const int s = slotDeFx (f); s >= 0)
-        fxButtons[s]->setToggleState (on, juce::dontSendNotification);
+    //  Y LA LUZ POR EL EMBUDO, que es lo que aqui llevaba sin hacerse.
+    //
+    //  Esta linea encendia UNA ventana -la tapa de la fila de la cara- y una
+    //  ranura tiene TRES: la cara, el rack y el XY. Desde el rack se ve
+    //  entero: `fxTapped` llama aqui, el efecto se apaga de verdad -el fader
+    //  se atenua, que eso lo pinta `paintRackSheetContent` leyendo
+    //  `fxEncendido`- y la tapa de apagar de esa misma fila se quedaba con el
+    //  estado de antes, o sea pulsada sobre un efecto apagado y sin acento
+    //  sobre uno que suena. Del telefono: *«el boton de encender y apagar, que
+    //  a veces se peta y no se mantiene en negro»*. Lo curaba abrir el rack
+    //  otra vez, porque `refreshRack` termina en `refrescaRanuras`.
+    //
+    //  El embudo ya existia y ya repartia las tres -y desde esta tanda cuatro,
+    //  con la del preset-: lo que habia aqui era la mitad de esa regla escrita
+    //  por segunda vez, y de las dos copias la buena era la otra. Es la misma
+    //  figura que `refrescaPlato`, que nacio por esto mismo.
+    refrescaRanuras();
     fxParam (f, 2).setValue (on ? fxDefs[f].onMix : 0.0, juce::dontSendNotification);
     pushFxParam (f, 2);
     refreshMacroValues();
@@ -5793,6 +5903,10 @@ void MainComponent::recargaFxDelCanal()
 //  una ranura puede vaciar otra.
 void MainComponent::refrescaRanuras()
 {
+    //  Ver la tapa del preset, mas abajo: si alguna se enciende o se apaga hay
+    //  que volver a maquetar, porque quien le da limites es `resized`.
+    bool cambiaRackPreset = false;
+
     for (int s = 0; s < fxButtons.size() && s < kNumRanuras; ++s)
     {
         const int fx = enRanura (s);
@@ -5871,6 +5985,32 @@ void MainComponent::refrescaRanuras()
                                    + fxPresetNombre (fx));
         }
 
+        //  Y LA TAPA DEL PRESET DE ESA MISMA FILA.
+        //
+        //  Se apaga Y SE VACIA cuando la ranura esta vacia -las dos cosas- y
+        //  quien la coloca es `resized`, que es el unico que sabe cuanto ancho
+        //  le queda a la fila despues del canalon, la tapa de apagar y el
+        //  fader. Por eso aqui solo se cambia si SE VE, y un cambio de eso
+        //  pide maquetar otra vez: es el mismo `cambia` que `refrescaPlato`
+        //  usa con la curva del EQ.
+        //
+        //  EL ROTULO VA POR `rotulaFxPreset` y no se escribe aqui a mano: lo
+        //  que la tapa ensena depende del ancho que tenga puesto, y eso lo
+        //  saben esta funcion -despues de un cambio de preset- y `resized`
+        //  -despues de un cambio de tamano-. Las dos llaman al mismo sitio.
+        if (auto* pb = (s < rackPresetBtns.size() ? rackPresetBtns[s] : nullptr))
+        {
+            const bool hay = fx >= 0;
+            if (hay != pb->isVisible()) { pb->setVisible (hay); cambiaRackPreset = true; }
+            if (hay)
+                rotulaFxPreset (*pb, fx);
+            else
+            {
+                pb->setBounds ({});
+                pb->setButtonText ({});
+            }
+        }
+
         //  Y LA TAPA DE APAGAR DE ESA MISMA FILA, aqui y no en `refreshRack`:
         //  este es el UNICO punto de reparto a las ventanas de una ranura, y
         //  escribirlo en los dos seria la misma regla dos veces con una que un
@@ -5913,6 +6053,8 @@ void MainComponent::refrescaRanuras()
             xb->setEnabled (fx >= 0);
         }
     }
+
+    if (cambiaRackPreset) resized();
 
     refrescaPlato();
 }

@@ -2346,6 +2346,39 @@ private:
     //  estado y `refrescaRanuras` ya las reparte. Un segundo camino a
     //  `setFxEnabled` seria la misma regla escrita dos veces.
     juce::OwnedArray<juce::TextButton> rackMuteBtns;
+    //  Y LA TAPA DEL PRESET, EN LA MISMA FILA.
+    //
+    //  Del telefono, con la foto del rack delante: *«ahi falta un cuadrado o
+    //  un visor en el que tu puedas cambiar el preset sin tener que entrar al
+    //  propio efecto»*. Mantener el canalon ya abria la rejilla de presets
+    //  desde la tanda anterior, y un gesto que no se ve no lo encuentra nadie:
+    //  lo que faltaba era que la fila DIJERA que preset lleva y se pudiera
+    //  tocar.
+    //
+    //  DOS GESTOS, y son los dos que hacen falta: el TOQUE pasa al siguiente
+    //  de fabrica -con el sonido puesto, sin abrir nada, que es lo que se hace
+    //  con la musica sonando- y MANTENER abre la rejilla entera, que es donde
+    //  estan los tuyos y donde cada celda dibuja su curva.
+    //
+    //  Y EN LA MISMA LINEA que el canalon, la tapa de apagar y el fader, con
+    //  el ancho sacado del FADER. Estuvo media tanda en un segundo renglon
+    //  -«el ancho no estaba»- y eso subia la fila de 48 a 96 px y dejaba un
+    //  hueco por cada ranura vacia; del telefono, con la ficha delante: *«?por
+    //  que dejas los huecos? Puede hacerse la misma linea. Acorta mas el fader
+    //  y entra ahi perfectamente»*. Tiene razon y la cuenta lo dice: en
+    //  280x653 el fader reparte 119 px, de los que 44 son el cuadrito del
+    //  numero, y lo que se le quita es RECORRIDO -de 75 px a 31-, que en un
+    //  mando de 0 a 100 se anda igual con el mismo dedo. El reparto y sus dos
+    //  topes estan en `colocaFilaRack`.
+    juce::OwnedArray<HoldButton> rackPresetBtns;
+    //  PASAR AL SIGUIENTE PRESET DE FABRICA de la ranura `s` del canal actual.
+    //  Desde MOVIDO o desde uno tuyo vuelve al primero: los tuyos no tienen
+    //  orden -son ficheros de una carpeta- y pasearlos con el dedo seria un
+    //  recorrido que cambia segun lo que hayas guardado.
+    void pasaFxPreset (int ranura);
+    //  Y QUE ENSENA ESA TAPA, que depende del ancho que le haya tocado:
+    //  el nombre, su numero, o solo el dibujo. Ver el cuerpo.
+    void rotulaFxPreset (HoldButton& b, int fx);
     void refreshRack();
     juce::OwnedArray<juce::TextButton> mixMutes, mixSolos;
     juce::TextButton mixClearSolo { "SIN SOLO" };
