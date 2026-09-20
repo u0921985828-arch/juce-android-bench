@@ -2309,7 +2309,11 @@ MainComponent::MainComponent()
     lengthSlider.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
     lengthSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     lengthSlider.setColour (juce::Slider::trackColourId, ZatiColours::accent);
-    lengthSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 72, Metrics::readout);
+    //  OCHENTA Y OCHO Y NO SETENTA Y DOS, que es lo que mide este mismo texto
+    //  en `songLenSlider`. Con 72 el hueco que quedaba tras el maquetado eran
+    //  68 px y «1 compases» pide 72: `Tests/expo.py` lo saco 28 veces en
+    //  360x640. Las dos casillas dicen compases, asi que miden igual.
+    lengthSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 88, Metrics::readout);
     //  EN COMPASES Y NO EN PASOS. El mando ya se movia de compas en compas y
     //  el numero que ensenaba eran PASOS GUARDADOS, que desde que la rejilla es
     //  una vista aparte no son los cuadraditos que se ven: con la rejilla en
@@ -2318,7 +2322,15 @@ MainComponent::MainComponent()
     //  rejillas y con cualquier paso guardado, que es justo lo que este mando
     //  elige - y es ademas el nombre que ya tenia en la lista de accesibilidad.
     lengthSlider.textFromValueFunction = [this] (double v)
-    { return T ("%1 compases", juce::String (juce::jmax (1, (int) v / engine.pasosPorCompas()))); };
+    {
+        //  Y EL SINGULAR APARTE, que es el mismo arreglo que «1 PADS»: el
+        //  plural de una lengua no sale de meter el numero en la cadena. Un
+        //  patron nace de un compas, asi que «1 compases» era lo primero que
+        //  se leia al abrir la ficha.
+        const int compases = juce::jmax (1, (int) v / engine.pasosPorCompas());
+        return compases == 1 ? T ("1 compas")
+                             : T ("%1 compases", Lang::ltr (juce::String (compases)));
+    };
     lengthSlider.updateText();
     lengthSlider.onValueChange = [this]
     {
