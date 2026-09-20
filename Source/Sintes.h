@@ -5,7 +5,7 @@
 #include "SampleBuffer.h"
 
 // ============================================================================
-//  Sintes — dieciseis instrumentos de dieciseis presets, para UN pad.
+//  Sintes — veinticuatro instrumentos de dieciseis presets, para UN pad.
 //
 //  UN PAD SE CONVIERTE EN UN INSTRUMENTO. Hasta aqui un pad era un golpe: una
 //  muestra que suena entera cada vez que se toca, y el PIANO ROLL -que es de un
@@ -41,7 +41,7 @@
 //  prometer es lo que la persona pidio: no un Kontakt, pero con calidad.
 //
 //  Y SE SINTETIZAN AL PONERLOS EN UN PAD, no al arrancar. Los 64 de fabrica se
-//  generan en el arranque porque son 64 golpes cortos; esto son 256 presets de
+//  generan en el arranque porque son 64 golpes cortos; esto son 384 presets de
 //  diez zonas cada uno, o sea dos ordenes de magnitud mas. Se genera el que se
 //  usa, en el hilo del cargador y jamas en el de audio.
 //
@@ -64,7 +64,7 @@
 // ============================================================================
 namespace Sintes
 {
-    static constexpr int kFamilias = 16;
+    static constexpr int kFamilias = 24;
     static constexpr int kPresets  = 16;
     static constexpr int kRaices   = 5;    // -24 -12 0 +12 +24
     //  TRES CAPAS DE FUERZA Y NO DOS, y el numero que lo decide es el salto.
@@ -94,15 +94,23 @@ namespace Sintes
     static constexpr int    kRaiz[kRaices] = { -24, -12, 0, 12, 24 };
     static constexpr int    kZonaRef = 2 * kCapas + (kCapas - 1);   // raiz 0, capa fuerte
 
-    //  Las dieciseis formas. No son dieciseis juegos de parametros sobre el
-    //  mismo oscilador: son dieciseis ALGORITMOS. Con un solo motor y los
+    //  Las veinticuatro formas. No son veinticuatro juegos de parametros sobre
+    //  el mismo oscilador: son veinticuatro ALGORITMOS. Con un solo motor y los
     //  numeros movidos pasaria lo que ya paso con los bancos A y B de la
     //  fabrica -seis sonidos que eran literalmente el mismo generador- y la
     //  prueba de pares lo cazaria igual que lo cazo alli.
+    //
+    //  LAS OCHO ULTIMAS VAN AL FINAL Y NO EN SU SITIO «LOGICO», y esa es la
+    //  unica decision de esta lista: el pad guarda `familiaSintes`, que es el
+    //  INDICE de la tabla, asi que meter `fPiano` al lado de `fEp` correria
+    //  trece familias una posicion y todo proyecto guardado sonaria con otro
+    //  instrumento sin que nada fallara. Lo que se ordena es `kOrden`, que es
+    //  como se ENSEÑA; la tabla es identidad y no se toca nunca.
     enum Forma
     {
         fBajo, fSub, fEp, fOrgano, fCuerdas, fColchon, fPluck, fCampana,
-        fMetales, fLead, fCoro, fGuitarra, fMazo, fClav, fFlauta, fArpa
+        fMetales, fLead, fCoro, fGuitarra, fMazo, fClav, fFlauta, fArpa,
+        fFm, fSync, fPiano, fAcordeon, fSitar, fCello, fCana, fTubo
     };
 
     struct Preset
@@ -124,22 +132,26 @@ namespace Sintes
         Preset      p[kPresets];
     };
 
-    const Familia* tabla();          // 16 familias
+    const Familia* tabla();          // 24 familias
     juce::String   nombreDe (int familia, int preset);
 
     // ------------------------------------------------------------------------
-    //  LAS DIECISEIS, POR TIPO.
+    //  LAS VEINTICUATRO, POR TIPO.
     //
     //  La tabla esta en el orden en que se fueron escribiendo las formas, que
     //  es el orden de quien las hizo y no el de quien las busca: BAJOS, SUBS,
-    //  PIANO ELEC, ORGANOS, CUERDAS... Un menu de dieciseis nombres sin agrupar
-    //  se lee entero cada vez, porque no hay forma de saltarse la mitad.
+    //  PIANO ELEC, ORGANOS, CUERDAS... Un menu de veinticuatro nombres sin
+    //  agrupar se lee entero cada vez, porque no hay forma de saltarse la mitad.
     //
-    //  CUATRO GRUPOS DE CUATRO, y el reparto sale redondo sin inventarse nada:
-    //  las dieciseis familias se reparten cuatro y cuatro por como SUENAN -por
+    //  CUATRO GRUPOS DE SEIS, y el reparto sale redondo sin inventarse nada:
+    //  las veinticuatro familias se reparten seis y seis por como SUENAN -por
     //  la fuente, no por el registro-, asi que ningun grupo hay que rellenarlo
-    //  y ninguno sobra. Si hubiera salido 5-4-4-3 la respuesta seria escribir
+    //  y ninguno sobra. Si hubiera salido 7-6-6-5 la respuesta seria escribir
     //  la familia que falta, no apretar el reparto hasta que cuadre.
+    //
+    //  Eran cuatro grupos de CUATRO y ahora son de seis: las ocho nuevas
+    //  entraron dos por grupo a proposito, que es lo unico que mantiene el
+    //  reparto redondo y la rejilla del menu sin un hueco.
     //
     //  El orden de la TABLA no se toca: la familia se guarda por su indice en
     //  proyectos y sesiones, y reordenarla cambiaria el sonido de todo lo
@@ -147,9 +159,9 @@ namespace Sintes
     static constexpr int kCategorias = 4;
     const char* const* categorias();                 // 4 nombres, para T()
     int         categoriaDe (int familia);           // 0..3
-    //  Las dieciseis en orden de menu: primero las cuatro de la categoria 0,
+    //  Las veinticuatro en orden de menu: primero las seis de la categoria 0,
     //  etc. Devuelve indices de la tabla.
-    const int*  ordenDeMenu();                       // 16
+    const int*  ordenDeMenu();                       // 24
 
     //  LO QUE LA GAMA DEL APARATO SE PUEDE PERMITIR, y lo que NO puede cambiar.
     //
@@ -202,7 +214,7 @@ namespace Sintes
     //     Su significado es de la forma -«razon del modulador» no es «mas» de
     //     nada fuera de lo que esa forma admite- asi que la poblacion que lo
     //     define son sus propios presets.
-    //   · ataque, caida, suelta y brillo, del rango de las 256. Ahi el limite
+    //   · ataque, caida, suelta y brillo, del rango de las 384. Ahi el limite
     //     es MUSICAL y no de la forma: un bajo con dos segundos de ataque es un
     //     bajo con dos segundos de ataque, y negarselo seria inventarse una
     //     regla que la tabla no dice.

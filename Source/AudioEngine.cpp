@@ -4664,6 +4664,96 @@ void AudioEngine::escribePaso (int patternIdx, int step, int pad, const Paso& s)
     setStepPLockRaw (patternIdx, step, pad, s.bloqueos);
 }
 
+//  EL REMAPEO DE LA REJILLA. Ver el comentario de `reajustaRejilla` en la
+//  cabecera: lo que se conserva es el pulso en el que cae cada golpe.
+//
+//  SE LEE LA COLUMNA ENTERA DE UN PAD, SE VACIA, Y SE VUELVE A ESCRIBIR. La
+//  otra forma -mover paso a paso en el sitio- tiene que ir de atras hacia
+//  delante al afinar y al reves al ensanchar, porque si no un paso pisa a otro
+//  que aun no se ha leido; son dos recorridos, dos razones para equivocarse y
+//  cero motivo, porque la columna de un pad son 64 pasos y cabe en la pila.
+AudioEngine::RemapeoRejilla AudioEngine::reajustaRejilla (float beatsViejo, float beatsNuevo) noexcept
+{
+    RemapeoRejilla cuenta;
+    if (beatsViejo <= 0.0f || beatsNuevo <= 0.0f || beatsViejo == beatsNuevo) return cuenta;
+
+    const double razon = (double) beatsViejo / (double) beatsNuevo;
+
+    for (int p = 0; p < kNumPatterns; ++p)
+    {
+        //  El largo tambien es tiempo: un patron de 16 pasos de 1/16 dura
+        //  cuatro pulsos, y para durar los mismos cuatro a 1/8 tiene que
+        //  pasar a 8. El suelo de `setPatternLength` es `kMinPatLen` y ahi
+        //  se acota solo; cuando muerde, el bucle dura mas y el renglon de
+        //  estado lo dice, porque LARGO lo ensena en compases y se ve.
+        //
+        //  Y SE REDONDEA A COMPASES ENTEROS, HACIA ARRIBA. Escalarlo a pelo
+        //  da largos que la app no sabe decir: de 1/12 a 1/16 la razon es 4/3
+        //  y 16 pasos salen 21, mientras `lengthSlider` va de 16 en 16 -un
+        //  patron es siempre un compas entero-, asi que el mando habria
+        //  ensenado 16 o 32 mientras el motor tocaba 21: dos verdades a la
+        //  vez. Hacia arriba porque redondear a la baja deja los golpes del
+        //  final fuera del bucle, y eso es perder notas.
+        const int largoViejo  = getPatternLength (p);
+        const int compases    = (int) std::ceil (((double) largoViejo * razon)
+                                                 / (double) kBarSteps);
+        const int largoNuevo  = juce::jlimit (kMinPatLen, kMaxPatLen, compases * kBarSteps);
+
+        for (int pad = 0; pad < kNumPads; ++pad)
+        {
+            //  La columna de un pad cabe en la pila: 64 pasos por 24 bytes.
+            Paso col[kNumSteps];
+            bool hay = false;
+            for (int s = 0; s < kNumSteps; ++s)
+            {
+                col[s] = leePaso (p, s, pad);
+                hay = hay || col[s].on;
+            }
+            if (! hay) continue;
+
+            //  `vaciaPaso` no apaga la casilla a proposito -lo dice su
+            //  comentario-, asi que el apagado va aparte: sin el, un golpe
+            //  que se muda deja encendido el paso de origen y el patron sale
+            //  con el doble de golpes, todos mudos menos uno.
+            for (int s = 0; s < kNumSteps; ++s)
+                if (col[s].on)
+                {
+                    vaciaPaso (p, s, pad);
+                    setStep (p, s, pad, false);
+                }
+
+            //  Lo ocupado se apunta para que dos pasos viejos que caen en el
+            //  mismo nuevo no se pisen EN SILENCIO: el segundo se cuenta.
+            bool ocupado[kNumSteps] = {};
+            for (int s = 0; s < kNumSteps; ++s)
+            {
+                if (! col[s].on) continue;
+                const int d = (int) std::lround ((double) s * razon);
+                if (d < 0 || d >= kNumSteps || d >= largoNuevo || ocupado[d])
+                { ++cuenta.perdidos; continue; }
+                ocupado[d] = true;
+                escribePaso (p, d, pad, col[s]);
+
+                //  Y SE COMPARA EL PULSO, que es la unica forma de saber si
+                //  el golpe se ha quedado donde estaba. El paso de destino
+                //  siempre existe; lo que no siempre existe es su SITIO: de
+                //  1/12 a 1/16 el paso 1 -pulso 0.0833- solo tiene el paso 1
+                //  -pulso 0.0625- donde caer. La holgura es 1e-4 pulsos, muy
+                //  por debajo de lo que separa dos casillas de la rejilla mas
+                //  fina (0.0625) y muy por encima de lo que un float de
+                //  `stepBeats` puede arrastrar de error.
+                const double pulsoViejo = (double) s * (double) beatsViejo;
+                const double pulsoNuevo = (double) d * (double) beatsNuevo;
+                if (std::abs (pulsoNuevo - pulsoViejo) > 1.0e-4) ++cuenta.movidos;
+            }
+        }
+
+        setPatternLength (p, largoNuevo);
+    }
+
+    return cuenta;
+}
+
 //  Velocity and roll, same shape as the note. Zero means "never set" in both,
 //  which is what every pattern written before they existed says - and it has
 //  to keep meaning full level and one hit, or old patterns would come back

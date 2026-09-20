@@ -331,6 +331,38 @@ def main():
         print (linea)
 
     print()
+    #  ============ LOS SEIS ROTULOS DE FAMILIA ============
+    #
+    #  El menu son treinta tapas y el orden YA las agrupaba -seis familias de
+    #  cinco, `MainComponent::ordenFx`- pero los nombres vivian en un
+    #  comentario del codigo fuente, o sea en el unico sitio donde no los lee
+    #  quien tiene el telefono en la mano.
+    #
+    #  Y no basta con contar cuantos hay: un rotulo sobre la fila equivocada
+    #  pasa esa cuenta y ademas MIENTE -diria que FLT es una saturacion-, asi
+    #  que lo que se mide es que cada banda quede por encima de la primera tapa
+    #  de SU fila. Los seis nombres van literales: una prueba que lee la tabla
+    #  que juzga cambia de opinion a la vez que el fallo.
+    ESPERADAS = ["FILTRO", "SATURACION", "MODULACION", "ESPACIO", "DINAMICA", "TIEMPO"]
+    fam = [t.split (":") for t in r.get ("familias", "").split (",") if ":" in t]
+    nombres = [t[0] for t in fam]
+    sobre = r.get ("bandas_sobre", 0)
+    if nombres != ESPERADAS:
+        malas.append ("las familias del menu son %s y no %s" % (nombres, ESPERADAS))
+    if sobre != len (ESPERADAS):
+        malas.append ("solo %d de %d rotulos de familia estan sobre su fila"
+                      % (sobre, len (ESPERADAS)))
+    #  Y CERRADO EL MENU, NINGUNA BANDA SOBREVIVE. Son bandas pintadas: sin
+    #  componente que apagar, una que se quede con los limites de la ultima vez
+    #  se pinta encima de lo que haya debajo. Es la septima regla del banco.
+    if r.get ("bandas_zombis", -1) != 0:
+        malas.append ("%s bandas de familia siguen puestas con el menu cerrado"
+                      % r.get ("bandas_zombis", "?"))
+    print ("familias del menu de efectos: %s   %d de %d sobre su fila, %s zombis"
+           % (", ".join (nombres) if nombres else "NINGUNA",
+              sobre, len (ESPERADAS), r.get ("bandas_zombis", "?")))
+
+    print()
     if malas:
         for m in malas: print ("FALLA  " + m)
         return 1

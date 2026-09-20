@@ -29,7 +29,7 @@
 #
 #      python3 Tests/dlc.py
 # ============================================================================
-import json, os, shutil, subprocess, sys, tempfile
+import io, json, os, re, shutil, subprocess, sys, tempfile
 
 #  LA PANTALLA QUE SE COMPRUEBA ES LA QUE SE USA: `PANTALLA` vive en
 #  `kits.py`, al lado de `display_alive`, y quien arranca la app la escribe
@@ -72,6 +72,25 @@ def corre(abrir="pads"):
     return packs, filas, r.stdout
 
 
+#  CUANTOS INSTRUMENTOS TRAE EL PACK DE DENTRO, leido de `Sintes.h` y no
+#  escrito aqui. Estaba clavado a mano en 16 y al subir las familias a 24 esta
+#  prueba salio FALLA con la app perfecta -«SINTES dentro=1 instr=24»-, que es
+#  el coste de tener el mismo numero en dos sitios: *dos tablas que dicen lo
+#  mismo son dos reglas*, y la que se queda vieja no protege, estorba. Lo que
+#  aqui se mide es que el catalogo ensene TODAS las familias que hay, sean las
+#  que sean.
+def familiasDeLaTabla():
+    ruta = os.path.join (ROOT, "Source", "Sintes.h")
+    m = re.search (r"kFamilias\s*=\s*(\d+)", io.open (ruta, encoding="utf-8").read())
+    if not m:
+        print ("sin kFamilias en Source/Sintes.h")
+        sys.exit (1)
+    return int (m.group (1))
+
+
+FAMILIAS = familiasDeLaTabla()
+
+
 fallos, hechas = [], []
 def mide (nombre, ok, texto=""):
     hechas.append (nombre)
@@ -103,9 +122,9 @@ mide ("cuatro packs", len (packs) == 4, "%d packs: %s" % (len (packs), ", ".join
 #  banco entero.
 mide ("los instrumentos primero",
        packs and packs[0]["id"] == "SINTES" and packs[0]["dentro"] == 1
-             and packs[0]["instr"] == 16,
-       "" if not packs else "%s dentro=%d instr=%d"
-                            % (packs[0]["id"], packs[0]["dentro"], packs[0]["instr"]))
+             and packs[0]["instr"] == FAMILIAS,
+       "" if not packs else "%s dentro=%d instr=%d (la tabla dice %d)"
+                            % (packs[0]["id"], packs[0]["dentro"], packs[0]["instr"], FAMILIAS))
 #  Cuatro instrumentos y no sesenta y cuatro sonidos: los cuatro bancos de
 #  fabrica YA eran cuatro instrumentos de dieciseis presets, solo que no habia
 #  donde ensenarlos.

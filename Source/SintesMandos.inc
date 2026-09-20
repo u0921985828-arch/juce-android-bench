@@ -9,14 +9,17 @@
 //  `param[]` de un efecto.
 //
 //  Y el vocabulario se REPITE a proposito: RESO es el mismo mando en un bajo,
-//  en un pluck y en un lead, y AIRE lo mismo en un sub, en un coro y en una
-//  flauta. Cuarenta y seis palabras para sesenta y cuatro huecos es lo que
-//  hace que las dieciseis se lean como una maquina y no como dieciseis.
+//  en un pluck y en un lead, AIRE lo mismo en un sub, en un coro y en una
+//  flauta, y LENGUETA lo mismo en un acordeon y en un oboe -que es la misma
+//  pieza de verdad-. Sesenta y pico palabras para noventa y seis huecos es lo
+//  que hace que las veinticuatro se lean como una maquina y no como
+//  veinticuatro.
 //
 //  El orden es el de `enum Forma`, y un `static_assert` lo vigila: una fila de
 //  mas o de menos aqui pondria los nombres de una forma en la de al lado, que
 //  es exactamente la clase de fallo que ninguna de las reglas del banco puede
-//  ver -un mando bien maquetado con el rotulo de otro-.
+//  ver -un mando bien maquetado con el rotulo de otro-. Las ocho ultimas van al
+//  final por lo mismo que en la tabla: el orden ES la identidad.
 //  ============================================================================
 static const char* const kMandosDeForma[kFamilias][4] =
 {
@@ -36,9 +39,17 @@ static const char* const kMandosDeForma[kFamilias][4] =
     /* fClav     */ { "ANCHO|ins",    "CENTRO|ins",  "Q|ins",         "MUERTE|ins"    },
     /* fFlauta   */ { "AIRE|ins",     "VIBRATO|ins", "ENTRADA|ins",   "ARMONICO|ins"  },
     /* fArpa     */ { "INCLINA|ins",  "CUANTOS|ins", "INARMONICO|ins","DEDO|ins"      },
+    /* fFm       */ { "RAZON A|ins",  "INDICE|ins",  "RAZON B|ins",   "REALIMENTA|ins"},
+    /* fSync     */ { "RAZON|ins",    "BARRIDO|ins", "VENTANA|ins",   "SUB|ins"       },
+    /* fPiano    */ { "INARMONICO|ins","GEMELA|ins", "MARTILLO|ins",  "CAJA|ins"      },
+    /* fAcordeon */ { "MUSETTE|ins",  "ANCHO|ins",   "LENGUETA|ins",  "FUELLE|ins"    },
+    /* fSitar    */ { "ZUMBIDO|ins",  "CAIDA|ins",   "SIMPATICAS|ins","DRON|ins"      },
+    /* fCello    */ { "ARCO|ins",     "CUERPO|ins",  "VIBRATO|ins",   "CRIN|ins"      },
+    /* fCana     */ { "CIERRE|ins",   "ALIENTO|ins", "TUBO|ins",      "LENGUETA|ins"  },
+    /* fTubo     */ { "MEZCLA|ins",   "CHIFF|ins",   "VIENTO|ins",    "QUINTA|ins"    },
 };
 
-//  Y LOS CUATRO DE ATRAS, que son los mismos en las dieciseis: es lo que los
-//  separa de los de forma y por lo que su rango sale de las 256 y no de las 16.
+//  Y LOS CUATRO DE ATRAS, que son los mismos en las veinticuatro: es lo que los
+//  separa de los de forma y por lo que su rango sale de las 384 y no de las 16.
 static const char* const kMandosComunes[4] =
     { "ATAQUE|ins", "CAIDA ENV|ins", "SUELTA|ins", "BRILLO|ins" };

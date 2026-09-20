@@ -989,11 +989,19 @@ inline Iconos::Id iconoDeFx (int f) noexcept
 //  curva dibujada. La curva toma el alto del nombre y no un numero nuevo:
 //  `Metrics::btn` es el renglon de esta casa y por debajo del dedo minimo una
 //  curva deja de ser una curva y es una raya.
+//
+//  Y CON `bandas`, que son los rotulos de familia del menu de efectos. Van en
+//  el mismo sitio que todo lo demas porque el tope de la tarjeta se decide
+//  AQUI: cederles alto en `resized` sin contarlos aqui daria una tarjeta que
+//  cree que caben seis filas y pinta seis filas mas seis rotulos, o sea la
+//  ultima fila fuera. Es la misma figura que `altoFila` con las curvas de los
+//  presets.
 inline int menuRanuraPide (int filas, bool conVaciar,
-                           int altoFila = Metrics::btn) noexcept
+                           int altoFila = Metrics::btn, int bandas = 0) noexcept
 {
     return Ficha::cromo
            + filas * altoFila + (filas - 1) * Metrics::xs
+           + bandas * (Metrics::bandaTitulo + Metrics::xs)
            + (conVaciar ? Metrics::sm + Metrics::btn : 0);
 }
 
@@ -1024,8 +1032,13 @@ inline int menuRanuraColumnas (int n, int topeAlto, int anchoDentro, bool conVac
     {
         if (c < 1 || c > n) return false;
         const int filas = (n + c - 1) / c;
+        //  Y los rotulos de familia solo existen cuando cada fila ES una
+        //  familia -o sea con el numero de columnas pedido-, asi que solo ese
+        //  candidato paga su alto. Cobrarselo a todos dejaria fuera rejillas
+        //  que caben y que no van a llevar rotulo ninguno.
+        const int bandas = (pedido > 0 && c == pedido) ? filas : 0;
         return filas >= 2
-                 && menuRanuraPide (filas, conVaciar, altoFila) <= topeAlto
+                 && menuRanuraPide (filas, conVaciar, altoFila, bandas) <= topeAlto
                  && anchoDentro / c >= Metrics::hit;
     };
 

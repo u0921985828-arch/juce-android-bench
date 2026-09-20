@@ -463,6 +463,101 @@ def main():
             malas.append ("deshacer la REJILLA apila otra foto: la pila pasa de %d a %d"
                           % (rej["pila"][0], rej["pila"][1]))
 
+    #  LA REJILLA ES UN ZOOM Y NO UN RELOJ NUEVO.
+    #
+    #  Esta es la regla que no se puede escribir contando golpes: al cambiar de
+    #  rejilla los tres seguian encendidos y en los mismos pasos, y lo que
+    #  cambiaba era lo que VALE un paso - o sea que el patron entero se oia al
+    #  doble de velocidad y ninguna cuenta de notas lo veia. La cifra es el
+    #  PULSO en el que cae cada golpe, antes y despues, y las dos listas tienen
+    #  que ser IGUALES. La queja fue literal: "eso que cambias es la medida del
+    #  cuadradito, con lo cual no deberia cambiarse ni el tiempo, ni los BPM,
+    #  ni nada del proyecto, solo lo visual".
+    zoom = song.get ("la rejilla es un zoom")
+    if not zoom:
+        print ("%-22s %s" % ("rejilla zoom", "MAL - sin respuesta")); malas.append ("la rejilla es un zoom")
+    else:
+        print ("%-22s paso %.4f -> %.4f   pulsos %s -> %s   bpm %s   largo %s"
+               % ("rejilla zoom", zoom["paso antes"], zoom["paso despues"],
+                  zoom["pulsos antes"], zoom["pulsos despues"], zoom["bpm"], zoom["largo"]))
+        #  Que la rejilla se haya movido de verdad: sin esto, una app que
+        #  ignorase el mando saldria verde con las dos listas iguales.
+        if abs (zoom["paso despues"] - zoom["paso antes"]) < 1e-6:
+            malas.append ("la REJILLA no se movio: el paso sigue en %.4f" % zoom["paso antes"])
+        if len (zoom["pulsos antes"]) != 3:
+            malas.append ("la medida escribio %d golpes y tenian que ser 3"
+                          % len (zoom["pulsos antes"]))
+        if len (zoom["pulsos antes"]) != len (zoom["pulsos despues"]):
+            malas.append ("cambiar la REJILLA deja %d golpes de los %d que habia"
+                          % (len (zoom["pulsos despues"]), len (zoom["pulsos antes"])))
+        else:
+            for k, (a1, b1) in enumerate (zip (zoom["pulsos antes"], zoom["pulsos despues"])):
+                if abs (a1 - b1) > 1e-6:
+                    malas.append ("cambiar la REJILLA mueve el golpe %d del pulso %.4f al %.4f"
+                                  % (k, a1, b1))
+        if abs (zoom["bpm"][0] - zoom["bpm"][1]) > 1e-6:
+            malas.append ("cambiar la REJILLA toca el tempo: %.2f -> %.2f"
+                          % (zoom["bpm"][0], zoom["bpm"][1]))
+
+    #  EL TRESILLO, QUE ES DONDE LA REJILLA DEJA DE SALIR REDONDA.
+    #
+    #  La regla de arriba mide 1/16 -> 1/8, razon 2, y una app que remapease
+    #  SOLO las razones enteras saldria verde con ella. Aqui van los dos casos
+    #  que faltan.
+    tres = song.get ("la rejilla y el tresillo")
+    if not tres:
+        print ("%-22s %s" % ("rejilla tresillo", "MAL - sin respuesta"))
+        malas.append ("la rejilla y el tresillo")
+    else:
+        print ("%-22s recto %s -> tresillo %s -> vuelta %s   largo %s"
+               % ("rejilla tresillo", tres["pulsos recto"], tres["pulsos tresillo"],
+                  tres["pulsos vuelta"], tres["largo tresillo"]))
+        print ("%-22s del tresillo %s -> recto %s   largo %s   dice: %s"
+               % ("rejilla aprieta", tres["pulsos solo tresillo"], tres["pulsos apretados"],
+                  tres["largo apretado"], tres["dicho"]))
+
+        #  UNO · IDA Y VUELTA POR EL TRESILLO. Razon 3/2 y luego 2/3 -ni
+        #  entera ni su inversa-, y los tres golpes tienen que volver a su
+        #  pulso clavados las dos veces: que la razon no sea entera no es
+        #  excusa para mover un golpe.
+        if len (tres["pulsos recto"]) != 3:
+            malas.append ("la medida del tresillo escribio %d golpes y tenian que ser 3"
+                          % len (tres["pulsos recto"]))
+        else:
+            for cual in ("pulsos tresillo", "pulsos vuelta"):
+                if len (tres[cual]) != 3:
+                    malas.append ("pasar por el TRESILLO deja %d golpes de los 3 que habia (%s)"
+                                  % (len (tres[cual]), cual))
+                    continue
+                for k, (a1, b1) in enumerate (zip (tres["pulsos recto"], tres[cual])):
+                    if abs (a1 - b1) > 1e-6:
+                        malas.append ("pasar por el TRESILLO mueve el golpe %d del pulso "
+                                      "%.4f al %.4f (%s)" % (k, a1, b1, cual))
+
+        #  DOS · LO QUE NO CABE SE DICE. Los pasos 0, 1 y 2 de 1/16T son
+        #  pulsos que una rejilla de 1/16 no sabe decir: uno se pierde encima
+        #  de otro y el que queda cambia de sitio. Las dos cosas pasan; la
+        #  que se juzga es que el renglon de estado LLEVE LA CUENTA. Un
+        #  remapeo que se come notas en silencio es el fallo del acorde.
+        perdidos = len (tres["pulsos solo tresillo"]) - len (tres["pulsos apretados"])
+        movidos  = sum (1 for a1, b1 in zip (tres["pulsos solo tresillo"][1:],
+                                             tres["pulsos apretados"])
+                        if abs (a1 - b1) > 1e-6)
+        if perdidos <= 0 and movidos <= 0:
+            malas.append ("la medida de lo que no cabe no aprieta nada: %s -> %s"
+                          % (tres["pulsos solo tresillo"], tres["pulsos apretados"]))
+        elif "\u00b7" not in tres["dicho"] or not any (c.isdigit()
+                                                      for c in tres["dicho"].split ("\u00b7")[-1]):
+            malas.append ("apretar la REJILLA pierde o mueve golpes y el renglon no lo dice: %r"
+                          % tres["dicho"])
+
+        #  Y el largo del patron sigue siendo compases ENTEROS en los dos
+        #  casos: el mando de LARGO va de 16 en 16, y un motor tocando 21 con
+        #  el mando diciendo 16 son dos verdades a la vez.
+        for cual in ("largo tresillo", "largo apretado"):
+            if tres[cual] % 16 != 0:
+                malas.append ("el %s es %d y no es un compas entero" % (cual, tres[cual]))
+
     print()
     if malas:
         print ("FALLA:", ", ".join (malas))

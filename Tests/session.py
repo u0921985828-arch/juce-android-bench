@@ -108,6 +108,7 @@ def proyecto():
         if "paso0" in d:  filas["pasos"] = d
         if "disperso" in d: filas["disperso"] = d
         if "clips" in d: filas["clips"] = d
+        if "viejo" in d: filas["viejo"] = d
     return filas or None
 
 
@@ -320,6 +321,33 @@ def main():
               d.get ("ranuras", "?"),
               "correcto" if disp_ok else "NO VUELVEN"))
 
+    #  ============ UN PROYECTO ESCRITO CON EL TOPE DE CUATRO ============
+    #
+    #  La de arriba mide una ida y vuelta CON LA MISMA COMPILACION: escribe con
+    #  el formato de hoy y lo lee con el formato de hoy. Eso no mide
+    #  compatibilidad, mide que el codigo es consistente consigo mismo, y le
+    #  cuadra cualquier cambio de empaquetado. Le cuadro uno: subir el acorde de
+    #  cuatro notas a ocho mudo los bits de presencia del 24..26 al 56..62, y
+    #  los proyectos guardados con la version anterior pasaron a cargar SOLO LA
+    #  TONICA -"tenia guardados unos acordes y se han cargado solo la nota
+    #  tonica"- con estas 44 comprobaciones y el banco entero en verde.
+    #
+    #  Aqui la entrada la escribio la version VIEJA: la celda 0x070c0704, tres
+    #  semitonos en los bytes bajos y su presencia en el 24, 25 y 26.
+    #
+    #  Los tres numeros van LITERALES y no leidos de ninguna constante del
+    #  codigo: una prueba que lee la constante que juzga cambia de opinion a la
+    #  vez que el fallo.
+    #  `acorde4_ok` y no `viejo_ok`: ese nombre ya lo usa la regla de los
+    #  proyectos de otra epoca, unas lineas mas abajo, y reusarlo lo habria
+    #  pisado. El veredicto habria contestado por esta y no por aquella -o al
+    #  reves- sin que nada fallara.
+    v = pr.get ("viejo", {})
+    acorde4_ok = v.get ("acorde") == [4, 7, 12]
+    print ("un acorde guardado con el tope de cuatro: %s   %s"
+           % (v.get ("acorde", "?"),
+              "vuelve entero" if acorde4_ok else "SE PIERDEN LAS NOTAS DE MAS"))
+
     #  Y LOS CLIPS DE AUDIO DE LA LINEA DE TIEMPO, que es lo ultimo que ha
     #  entrado en el fichero de proyecto. Se escriben dos con valores distintos
     #  entre si -un cruce de campos dentro de la fila se lee en el numero-, se
@@ -477,7 +505,7 @@ def main():
     #  dijera nada. Una comprobacion que no puede suspender es una linea que
     #  imprime OK.
     return 1 if (bad or not chop_ok or not pat_ok or not proj_ok or not disp_ok
-                 or not clip_ok or not viejo_ok) else 0
+                 or not clip_ok or not viejo_ok or not acorde4_ok) else 0
 
 
 if __name__ == "__main__":

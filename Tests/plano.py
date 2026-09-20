@@ -71,6 +71,13 @@ FICHAS = [
     #  ficha donde era falsa. Roto a proposito devolviendo su drawText:
     #  `tour no tiene titulo: se abre y no dice donde estas`.
     ("tour",   "AJUSTES"),
+    #  Y EL MENU DE LA RANURA, que desde que tiene cabeceras de seccion pinta
+    #  seis rotulos que NADIE miraba. `Tests/ranuras.py` mide la BANDA -donde
+    #  cae, que este sobre su fila, que no quede ninguna al cerrar- y eso es
+    #  maquetado: quitando la llamada a `pintaTitulo` y dejando las bandas
+    #  puestas, ranuras.py seguia en verde y el menu salia sin una sola
+    #  palabra. Medir el hueco no es medir el rotulo.
+    ("ranura", "MEZCLA"),
     #  Y LA PAGINA DE CANALES DE LA MESA: la misma ficha con otro contenido no
     #  es el mismo estado —su fila de chips lleva dos tapas en vez de cinco y
     #  sus tiras pierden el pan y el solo—, y una pagina que el banco no abre es
@@ -314,6 +321,32 @@ def main():
             elif quiere not in dicen:
                 avisos.append ("salvo: la sesion esta escrita y la banda no dice «%s»"
                                % quiere)
+
+        #  LAS SEIS SECCIONES DEL MENU DE EFECTOS, PINTADAS Y EN ORDEN.
+        #
+        #  `Tests/ranuras.py` ya mide las BANDAS: que haya seis, que cada una
+        #  caiga sobre su fila y que no quede ninguna al cerrar el menu. Eso es
+        #  maquetado. Roto a proposito -quitando la llamada a `pintaTitulo` y
+        #  dejando las bandas puestas- ranuras.py seguia en VERDE y el menu se
+        #  abria con seis huecos en blanco y treinta tapas sin agrupar: *medir
+        #  el hueco no es medir el rotulo*. Aqui se pregunta por el rotulo.
+        #
+        #  Y EN ORDEN, que es la mitad que importa: seis nombres presentes en
+        #  cualquier orden serian seis cabeceras puestas sobre la familia
+        #  equivocada, que es peor que no ponerlas -un nombre mal puesto se cree-.
+        #
+        #  Los nombres se piden en ESPANOL porque `plano.py` corre en los cuatro
+        #  idiomas y esta lista es la clave de `T()`, no su traduccion; la
+        #  comparacion se hace solo en la corrida espanola por lo mismo que
+        #  `salvo` pide la palabra traducida: una pantalla, un estado, una
+        #  pregunta.
+        if sheet == "ranura" and lang == "es":
+            QUIERE = ["FILTRO", "SATURACION", "MODULACION", "ESPACIO", "DINAMICA", "TIEMPO"]
+            secc = [r["rotulo"] for r in rot if r["tipo"] == "seccion"]
+            print ("  las secciones del menu: %s" % (", ".join (secc) or "(ninguna)"))
+            if secc != QUIERE:
+                avisos.append ("ranura: las secciones pintadas son %s y tenian que ser %s"
+                               % (secc or "(ninguna)", QUIERE))
 
         #  LA PREGUNTA QUE ESTO EXISTE PARA CONTESTAR.
         #

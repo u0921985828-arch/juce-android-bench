@@ -1,7 +1,7 @@
 //  LOS PRESETS DE FABRICA DE CADA EFECTO.
 //
 //  Se incluye DENTRO del namespace desde `FxPresets.h`, que es la misma forma
-//  que `SintesTabla.inc` tiene desde que hay dieciseis familias: una tabla de
+//  que `SintesTabla.inc` tiene desde que hay veinticuatro familias: una tabla de
 //  datos no es una cabecera, y si se pudiera incluir desde dos sitios habria
 //  dos tablas.
 //

@@ -33,7 +33,7 @@ namespace FxPresets
 {
     //  CUANTOS HAY POR TIPO, contando el cero.
     //
-    //  Rectangular y no irregular, igual que las dieciseis familias por dieciseis
+    //  Rectangular y no irregular, igual que las veinticuatro familias por dieciseis
     //  presets de los instrumentos: una tabla rectangular la comprueba el
     //  compilador con un `static_assert`; una irregular hay que creersela.
     static constexpr int kEscritos = 5;          // las filas que hay en el `.inc`

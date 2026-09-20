@@ -64,6 +64,11 @@ namespace Iconos
         insBajo, insSub, insEp, insOrgano, insCuerdas, insColchon, insPluck,
         insCampana, insMetales, insLead, insCoro, insGuitarra, insMazo,
         insClav, insFlauta, insArpa,
+        //  Y LOS OCHO DE LAS FAMILIAS NUEVAS. Mismo criterio: por lo que el
+        //  instrumento ES. Los dos que no son un instrumento -FM y SYNC- se
+        //  dibujan por su ALGORITMO, que es lo que son: una pila de operadores
+        //  y una onda que se reinicia.
+        insFm, insSync, insPiano, insAcordeon, insSitar, insCello, insCana, insTubo,
         midi, medir, altavoz, mano, momentaneo, niveles,
         cho, fla, pha, trm,
         rng, pit, wid, exc, trn, frz,
@@ -234,6 +239,10 @@ namespace Iconos
             case Id::insCoro: return "insCoro";        case Id::insGuitarra: return "insGuitarra";
             case Id::insMazo: return "insMazo";        case Id::insClav: return "insClav";
             case Id::insFlauta: return "insFlauta";    case Id::insArpa: return "insArpa";
+            case Id::insFm: return "insFm";            case Id::insSync: return "insSync";
+            case Id::insPiano: return "insPiano";      case Id::insAcordeon: return "insAcordeon";
+            case Id::insSitar: return "insSitar";      case Id::insCello: return "insCello";
+            case Id::insCana: return "insCana";        case Id::insTubo: return "insTubo";
             case Id::aspecto: return "aspecto";        case Id::reves: return "reves";
             case Id::ruido: return "ruido";            case Id::sinsolo: return "sinsolo";
             case Id::comprimir: return "comprimir";    case Id::mandar: return "mandar";
@@ -1804,6 +1813,104 @@ namespace Iconos
                 linea (L, 17.0f, 4.5f, 17.0f, 21.0f);
                 break;
 
+            //  FM: la PILA DE OPERADORES, que es lo que esta forma es. No hay
+            //  instrumento que dibujar -nadie ha visto una FM- asi que se
+            //  dibuja el algoritmo: dos cajas, una encima de otra, y el cable
+            //  que baja de la de arriba a la de abajo. Es como se ha dibujado
+            //  la FM desde que existe.
+            case Id::insFm:
+                L.addRoundedRectangle (6.5f, 2.5f, 11.0f, 7.5f, 2.0f);
+                linea (L, 12.0f, 10.0f, 12.0f, 13.5f);
+                L.addRoundedRectangle (6.5f, 13.5f, 11.0f, 7.5f, 2.0f);
+                R.addEllipse (10.7f, 5.0f, 2.6f, 2.6f);
+                break;
+
+            //  SYNC: la onda que se REINICIA. Tres rampas cortadas en seco, y
+            //  la barra rellena de la izquierda es el maestro que las corta.
+            //  Y va en RAMPAS y no en barras verticales a proposito: CLAVES ya
+            //  es un peine de barras, y desenfocados serian el mismo dibujo -
+            //  que es lo que la prueba de pares no perdona.
+            case Id::insSync:
+                L.startNewSubPath (5.0f, 20.5f);
+                L.lineTo (10.5f, 4.5f);  L.lineTo (10.5f, 20.5f);
+                L.lineTo (16.0f, 4.5f);  L.lineTo (16.0f, 20.5f);
+                L.lineTo (21.5f, 4.5f);  L.lineTo (21.5f, 20.5f);
+                R.addRoundedRectangle (2.0f, 4.0f, 1.8f, 16.5f, 0.9f);
+                break;
+
+            //  PIANOS: el de cola VISTO DESDE ARRIBA -el ala y el teclado- y no
+            //  un teclado de frente, que es PIANO ELEC. Un instrumento no se
+            //  reconoce por su teclado cuando hay otro al lado con el mismo.
+            case Id::insPiano:
+                L.startNewSubPath (3.0f, 21.0f);
+                L.lineTo (3.0f, 8.0f);
+                L.cubicTo (8.0f, 2.0f, 17.0f, 2.5f, 21.0f, 9.5f);
+                L.lineTo (21.0f, 21.0f);
+                L.closeSubPath();
+                R.addRoundedRectangle (5.0f, 16.8f, 14.0f, 3.2f, 0.8f);
+                break;
+
+            //  ACORDEON: las dos cajas y el FUELLE en medio. El zigzag es todo
+            //  el dibujo: no hay otro instrumento que se pliegue.
+            case Id::insAcordeon:
+                L.addRoundedRectangle (1.5f, 4.0f, 4.5f, 16.0f, 1.2f);
+                L.addRoundedRectangle (18.0f, 4.0f, 4.5f, 16.0f, 1.2f);
+                L.startNewSubPath (6.0f, 4.5f);
+                L.lineTo (10.0f, 19.5f); L.lineTo (14.0f, 4.5f); L.lineTo (18.0f, 19.5f);
+                R.addEllipse (19.6f, 7.0f, 1.8f, 1.8f);
+                R.addEllipse (19.6f, 11.0f, 1.8f, 1.8f);
+                break;
+
+            //  SITAR: la calabaza y el mastil LARGO Y EN DIAGONAL, mas la
+            //  segunda calabaza arriba. La diagonal es lo que lo separa de
+            //  CUERDA PULS, que es una caja de frente.
+            case Id::insSitar:
+                L.addEllipse (1.5f, 12.5f, 10.0f, 9.0f);
+                L.startNewSubPath (8.6f, 15.4f);
+                L.lineTo (19.0f, 2.8f); L.lineTo (21.4f, 4.8f); L.lineTo (11.0f, 17.4f);
+                L.closeSubPath();
+                R.addEllipse (18.6f, 1.2f, 4.4f, 4.4f);
+                break;
+
+            //  CELLOS: la caja de ocho y EL ARCO cruzandola. El arco es lo que
+            //  dice que esto se toca frotando y no pulsando, que es la unica
+            //  diferencia que importa entre esta familia y las de al lado.
+            case Id::insCello:
+                L.startNewSubPath (12.0f, 2.2f);
+                L.cubicTo (16.6f, 4.0f, 16.6f, 8.2f, 13.4f, 10.2f);
+                L.cubicTo (18.6f, 11.8f, 18.6f, 19.2f, 12.0f, 21.6f);
+                L.cubicTo (5.4f, 19.2f, 5.4f, 11.8f, 10.6f, 10.2f);
+                L.cubicTo (7.4f, 8.2f, 7.4f, 4.0f, 12.0f, 2.2f);
+                L.closeSubPath();
+                linea (L, 1.8f, 18.4f, 22.2f, 5.6f);
+                break;
+
+            //  CANAS: el tubo DE PIE, con su pabellon abierto abajo y la caña
+            //  arriba. VIENTOS es un tubo tumbado; de pie y con campana es otro
+            //  dibujo, y ademas es como se sostiene un oboe.
+            case Id::insCana:
+                R.addRoundedRectangle (10.7f, 1.2f, 2.6f, 2.4f, 0.7f);
+                L.startNewSubPath (10.2f, 4.0f);
+                L.lineTo (10.6f, 15.5f); L.lineTo (6.2f, 21.5f); L.lineTo (17.8f, 21.5f);
+                L.lineTo (13.4f, 15.5f); L.lineTo (13.8f, 4.0f);
+                L.closeSubPath();
+                R.addEllipse (11.0f, 6.4f, 2.0f, 2.0f);
+                R.addEllipse (11.0f, 10.2f, 2.0f, 2.0f);
+                break;
+
+            //  TUBOS: los cinco tubos del organo, en MONTE y no en escalera.
+            //  Rellenos y simetricos: CLAVES es un peine de barras de altura
+            //  creciente dibujado a linea, y desenfocada una escalera de tubos
+            //  seria el mismo icono.
+            case Id::insTubo:
+                R.addRoundedRectangle ( 2.4f, 11.5f, 2.8f,  9.0f, 1.4f);
+                R.addRoundedRectangle ( 6.6f,  7.5f, 2.8f, 13.0f, 1.4f);
+                R.addRoundedRectangle (10.8f,  3.5f, 2.8f, 17.0f, 1.4f);
+                R.addRoundedRectangle (15.0f,  7.5f, 2.8f, 13.0f, 1.4f);
+                R.addRoundedRectangle (19.2f, 11.5f, 2.8f,  9.0f, 1.4f);
+                t.lleno = 0.90f;
+                break;
+
             case Id::ninguno:
             case Id::kNum:
             default:
@@ -1815,16 +1922,34 @@ namespace Iconos
 
     //  DE QUE FAMILIA ES CADA DIBUJO. Una tabla y no un switch repartido: quien
     //  pinta un pad no tiene por que saber como se llama el icono.
+    //  LA TABLA, A LA VISTA Y NO DENTRO DE LA FUNCION, para poder contarla.
+    //
+    //  EL LARGO SALE DE ELLA Y NO DE UN 16 ESCRITO DOS VECES. Antes habia un
+    //  `t[16]` y un `familia < 16`: dos topes, y al subir las familias a
+    //  veinticuatro el segundo habria devuelto `ninguno` para las ocho nuevas
+    //  sin que nada fallara -ocho pads con el dibujo vacio, que ninguna regla
+    //  del banco mira-. Un tope escrito dos veces son dos topes.
+    inline constexpr Id kDibujoDeFamilia[] =
+    {
+        Id::insBajo, Id::insSub, Id::insEp, Id::insOrgano,
+        Id::insCuerdas, Id::insColchon, Id::insPluck, Id::insCampana,
+        Id::insMetales, Id::insLead, Id::insCoro, Id::insGuitarra,
+        Id::insMazo, Id::insClav, Id::insFlauta, Id::insArpa,
+        Id::insFm, Id::insSync, Id::insPiano, Id::insAcordeon,
+        Id::insSitar, Id::insCello, Id::insCana, Id::insTubo
+    };
+
+    //  Y SE PUBLICA CUANTAS SON, que es lo que permite que quien conoce los dos
+    //  numeros -`MainComponent`, que incluye Sintes.h y esto- exija que sean el
+    //  mismo EN TIEMPO DE COMPILACION. Aqui no se puede: Iconos no sabe nada de
+    //  Sintes, y no tiene por que saberlo.
+    inline constexpr int kFamiliasConDibujo =
+        (int) (sizeof (kDibujoDeFamilia) / sizeof (kDibujoDeFamilia[0]));
+
     inline Id deFamilia (int familia) noexcept
     {
-        static const Id t[16] =
-        {
-            Id::insBajo, Id::insSub, Id::insEp, Id::insOrgano,
-            Id::insCuerdas, Id::insColchon, Id::insPluck, Id::insCampana,
-            Id::insMetales, Id::insLead, Id::insCoro, Id::insGuitarra,
-            Id::insMazo, Id::insClav, Id::insFlauta, Id::insArpa
-        };
-        return (familia >= 0 && familia < 16) ? t[familia] : Id::ninguno;
+        return juce::isPositiveAndBelow (familia, kFamiliasConDibujo)
+                 ? kDibujoDeFamilia[familia] : Id::ninguno;
     }
 
     //  LA MARCA. Una tapa de pad con la Z cortada dentro, que es lo que esta

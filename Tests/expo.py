@@ -442,6 +442,42 @@ def _presetsDeFabrica ():
     return set (nombres) | {"DEFECTO"}
 
 
+#  Y LOS QUE `Lang.cpp` DECLARA IGUALES EN LAS DOS LENGUAS, leidos de la tabla
+#  y no copiados aqui. El comentario de arriba ya parte el caso en dos: o el
+#  texto paso por `T()` y las dos lenguas coinciden -legitimo- o no paso por
+#  `T()` -fallo-. Lo unico que sabe cual de los dos es, es la propia tabla de
+#  traduccion, asi que se le pregunta a ella.
+#
+#  Hizo falta al entrar las ocho familias nuevas: `FM`, `SYNC` y `PIANOS` se
+#  escriben igual en espanol y en ingles y salieron 39 veces como sin traducir
+#  con la app perfecta. Escribirlas a mano aqui habria sido la tercera tabla
+#  que dice lo mismo que `Lang.cpp` -y la que se queda vieja el dia que a
+#  `PIANOS` se le ponga un ingles propio, callando un fallo de verdad-.
+def _declaradosIguales ():
+    raiz = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
+    try:
+        texto = open (os.path.join (raiz, "Source", "Lang.cpp"), encoding="utf8").read()
+    except OSError:
+        return None
+
+    #  `{ "CLAVE", "es o vacio", "en", "zh", "ar" }`. Con el segundo campo
+    #  vacio el espanol ES la clave, que es como esta escrita casi toda la
+    #  tabla.
+    fila = re.compile (r'\{\s*"((?:[^"\\]|\\.)*)"\s*,\s*"((?:[^"\\]|\\.)*)"\s*,'
+                       r'\s*"((?:[^"\\]|\\.)*)"\s*,')
+    iguales = set()
+    for clave, es, en in fila.findall (texto):
+        if en and en == (es or clave): iguales.add (en)
+    return iguales or None
+
+
+DECLARADOS_IGUALES = _declaradosIguales ()
+if DECLARADOS_IGUALES is None:
+    print ("FALLA: no se pudo leer Lang.cpp; esta regla no mide nada asi")
+    sys.exit (1)
+UNTRANSLATED_OK |= DECLARADOS_IGUALES
+
+
 PRESETS_FABRICA = _presetsDeFabrica ()
 if PRESETS_FABRICA is None:
     print ("FALLA: no se pudieron leer los presets de FxPresets.inc; "

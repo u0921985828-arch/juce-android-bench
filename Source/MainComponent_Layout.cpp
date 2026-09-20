@@ -1395,7 +1395,23 @@ void MainComponent::resized()
         const int cols  = menuRanuraColumnas (kNumFx, topeAlto, anchoDentro, conVaciar,
                                               kFxPorTipo);
         const int filas = (kNumFx + cols - 1) / cols;
-        const int quiere = menuRanuraPide (filas, conVaciar);
+        //  LOS ROTULOS DE FAMILIA, y solo si cada fila ES una familia.
+        //
+        //  El reparto por familias existe desde que `ordenFx` puso los treinta
+        //  en seis grupos de cinco, pero los nombres vivian en un comentario
+        //  del codigo. Ahora salen a la ficha — «organiza el pop-up de efectos
+        //  por categorias o secciones como esta el de los instrumentos» — y
+        //  ni una tapa cambia de sitio: el rotulo se mete ENTRE filas, no
+        //  reordena la rejilla, que es lo que hace que se pueda aprender donde
+        //  esta cada efecto.
+        //
+        //  Y con la condicion, que es la parte honesta: si la pantalla no da
+        //  para cinco columnas, `menuRanuraColumnas` cae a otra cuenta y una
+        //  familia deja de ser una fila. Un rotulo encima de una fila que no
+        //  es su familia miente, asi que ahi no se pinta ninguno.
+        const bool conFamilias = (cols == kFxPorTipo) && (filas == kFxCategorias);
+        const int quiere = menuRanuraPide (filas, conVaciar, Metrics::btn,
+                                           conFamilias ? filas : 0);
         auto inner = sheetFromBottom (ranuraSheet, quiere);
 
         auto titleRow = inner.removeFromTop (Metrics::hit);
@@ -1457,10 +1473,25 @@ void MainComponent::resized()
             ranuraVaciarBtn.setBounds ({});
         }
 
+        //  Las bandas se apartan del alto disponible ANTES de repartir las
+        //  filas: si no, `filaH` cree que tiene todo el hueco y la ultima fila
+        //  se sale por abajo.
+        const int altoBandas = conFamilias ? filas * (Metrics::bandaTitulo + Metrics::xs) : 0;
         const int filaH = juce::jmax (Metrics::hit,
-                                      (inner.getHeight() - (filas - 1) * Metrics::xs) / filas);
+                                      (inner.getHeight() - altoBandas
+                                         - (filas - 1) * Metrics::xs) / filas);
+        //  VACIAS POR DEFECTO, no con los limites de la ultima vez: una banda
+        //  que sobrevive a un cambio de pantalla se pinta encima de la rejilla,
+        //  que es el mismo fallo que ya costo el titulo de la ficha del
+        //  instrumento.
+        for (auto& rr : ranuraCatArea) rr = {};
         for (int r = 0; r < filas; ++r)
         {
+            if (conFamilias && r < (int) ranuraCatArea.size())
+            {
+                ranuraCatArea[(size_t) r] = inner.removeFromTop (Metrics::bandaTitulo);
+                inner.removeFromTop (Metrics::xs);
+            }
             auto row = inner.removeFromTop (filaH);
             const int w = row.getWidth() / cols;
             for (int c = 0; c < cols; ++c)
@@ -3198,7 +3229,7 @@ void MainComponent::resized()
         //  entero, el dibujo de 18 al lado y 76 px de sobra. Cuesta cuatro
         //  filas mas, que es alto y no ancho, y esta ficha ya se desplaza.
         //  Y CUATRO BANDAS DE CATEGORIA repartidas entre las ocho filas: las
-        //  dieciseis familias van por tipo -ver `Sintes::ordenDeMenu`- y una
+        //  veinticuatro familias van por tipo -ver `Sintes::ordenDeMenu`- y una
         //  lista agrupada sin rotulo de grupo es una lista barajada de otra
         //  forma. Cada banda cuesta lo que un titulo de seccion.
         const int altoCat  = Metrics::bandaTitulo + Metrics::xs;
@@ -3430,7 +3461,7 @@ void MainComponent::resized()
         auto* sbCab = uiSample[(size_t) juce::jlimit (0, kNumPads - 1, vstPad)].get();
         const int famCab = (sbCab != nullptr) ? sbCab->familia : -1;
         //  Y EL CRISTAL PIDE LO QUE SU PEOR CADENA MIDE, no un numero redondo.
-        //  Estaba en `hit * 4` -160 px escritos a mano- y el peor de los 256 es
+        //  Estaba en `hit * 4` -160 px escritos a mano- y el peor de los 384 es
         //  «16/16   BRIGHT GT», DIECISIETE caracteres: en 280x653 el cristal
         //  salia a 85 px pidiendo 97, o sea CORTADO, y las dos flechas se
         //  llevaban 48 cada una teniendo el dedo en 40. Lo que no puede encoger
@@ -3594,7 +3625,7 @@ void MainComponent::resized()
         //  zatis, elegido a mano y sin una prueba que lo mida- ni el zati del
         //  pad como senal de familia, que el zati contesta QUE PAD y no que
         //  instrumento: los pads 49 y 57 comparten color con dos familias
-        //  distintas. Lo que SI separa dieciseis familias y ya existe es el
+        //  distintas. Lo que SI separa veinticuatro familias y ya existe es el
         //  DIBUJO (Iconos::deFamilia), que `Tests/iconos.py` ya juzga contra
         //  los otros 109. Era un adorno de 48 px en un rincon de una banda de
         //  56; ahora se lleva el alto ENTERO de la cabecera.
@@ -3713,7 +3744,7 @@ void MainComponent::resized()
             //  El orden no cambia con las columnas: los de FORMA primero y los
             //  COMUNES detras, asi que con dos columnas la mitad de arriba
             //  sigue siendo la forma y la de abajo lo que comparten las
-            //  dieciseis familias. Lo que cambia es que ahora eso se VE.
+            //  veinticuatro familias. Lo que cambia es que ahora eso se VE.
             vstPanelForma  = ponGrupo (inner, 0);
             inner.removeFromTop (Metrics::sm);
             vstPanelMandos = ponGrupo (inner, filasG * colsM);

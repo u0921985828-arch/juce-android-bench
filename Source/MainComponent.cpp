@@ -14,6 +14,16 @@
 static_assert (PianoRoll::kMaxNotas == AudioEngine::kExtraNotes + 1,
                "la rejilla del piano y la celda del acorde tienen que decir el mismo tope");
 
+//  Y EL OTRO NUMERO CONTADO DESDE DOS SITIOS: cuantas familias de instrumento
+//  hay y cuantas tienen dibujo. `Iconos` no sabe nada de `Sintes` -y no tiene
+//  por que- asi que el unico sitio donde los dos numeros se ven a la vez es
+//  aqui, que incluye los dos. Sin esto, subir las familias y olvidarse de los
+//  iconos deja pads con el hueco del dibujo vacio: no truena, no suena mal, y
+//  ninguna regla del banco lo mira -`Tests/iconos.py` juzga los dibujos que
+//  EXISTEN, no los que faltan-. Paso al subir de dieciseis a veinticuatro.
+static_assert (Iconos::kFamiliasConDibujo == Sintes::kFamilias,
+               "cada familia de instrumento tiene que tener su dibujo");
+
 MainComponent::MainComponent()
 {
     setLookAndFeel (&lnf);
@@ -2483,8 +2493,56 @@ MainComponent::MainComponent()
             gridSlider.setValue ((double) i, juce::dontSendNotification);
         }
         gridIdxAnterior = i;
+
+        //  LA REJILLA ES UN ZOOM Y NO UN RELOJ NUEVO. Ver
+        //  `AudioEngine::reajustaRejilla`: `setStepBeats` a solas dejaba cada
+        //  golpe en su paso y cambiaba lo que vale un paso, o sea que el
+        //  patron entero se oia al doble o a la mitad. Ahora el golpe se muda
+        //  al paso que cae en el MISMO pulso, y lo unico que cambia es cuantos
+        //  cuadraditos hay entre dos golpes. El tempo no se toca aqui.
+        //
+        //  MENOS CUANDO ES `applyState` QUIEN MUEVE EL MANDO, que es la misma
+        //  trampa que la foto de deshacer: `applyState` repone la rejilla CON
+        //  aviso y los patrones que acaba de cargar YA estan en la rejilla
+        //  buena. Remapearlos otra vez los movia una segunda vez, y deshacer
+        //  un cambio de rejilla habria dejado el patron corrido.
+        const float beatsViejo = engine.getStepBeats();
         engine.setStepBeats (kGridBeats[i]);
-        status.setText (T ("Un paso dura %1", Lang::ltr (gridName (i))), juce::dontSendNotification);
+        const AudioEngine::RemapeoRejilla remapeo
+            = aplicandoEstado ? AudioEngine::RemapeoRejilla{}
+                              : engine.reajustaRejilla (beatsViejo, kGridBeats[i]);
+
+        //  Y EL ESPEJO DE LA CARA VA DETRAS. `pattern[banco][paso][pad]` es la
+        //  copia con la que se PINTA la rejilla y con la que la pagina CANCION
+        //  dibuja los bloques; el remapeo mueve el motor y no la toca, asi que
+        //  sin esto la rejilla seguiria ensenando los golpes en el sitio
+        //  viejo mientras suenan en el nuevo - dos verdades a la vez, que es
+        //  la peor forma de un fallo. Se relee del motor, que es el dueño.
+        if (! aplicandoEstado)
+            for (int b = 0; b < kNumPatterns; ++b)
+                for (int st = 0; st < AudioEngine::kNumSteps; ++st)
+                    for (int pd = 0; pd < kNumPads; ++pd)
+                        pattern[(size_t) b][(size_t) st][(size_t) pd] = engine.leePaso (b, st, pd).on;
+
+        //  Y SE DICEN LAS DOS CUENTAS. Entre una rejilla y su tresillo la
+        //  razon es 4/3 y un paso cae entre dos casillas: unos golpes no
+        //  caben y otros se quedan pero fuera de su pulso. Callar cualquiera
+        //  de las dos seria cambiar la musica en silencio, que es justo el
+        //  fallo que acaba de costar una tanda con el acorde. Y van en el
+        //  mismo renglon porque son la misma pregunta -«que le ha pasado a
+        //  mi patron»- y porque deshacer devuelve las dos.
+        status.setText (remapeo.perdidos > 0 || remapeo.movidos > 0
+                          ? T ("Un paso dura %1 · %2 golpes no caben, %3 se ajustan",
+                               Lang::ltr (gridName (i)),
+                               Lang::ltr (juce::String (remapeo.perdidos)),
+                               Lang::ltr (juce::String (remapeo.movidos)))
+                          : T ("Un paso dura %1", Lang::ltr (gridName (i))),
+                        juce::dontSendNotification);
+        //  Y LARGO ensena el resultado: el remapeo escala el largo del patron
+        //  -16 pasos de 1/16 son cuatro pulsos y a 1/8 los mismos cuatro
+        //  pulsos son 8 pasos- y un mando que no se entera se queda diciendo
+        //  el numero de antes.
+        lengthSlider.setValue (engine.getPatternLength (selectedPattern), juce::dontSendNotification);
         stepGrid.repaint();
     };
     seqSheet.addAndMakeVisible (gridSlider);
@@ -4720,6 +4778,20 @@ const int* MainComponent::ordenFx()
     return kOrden;
 }
 
+//  LOS SEIS NOMBRES DE FAMILIA, en el mismo orden que `ordenFx`.
+//
+//  Una sola tabla y la fila `i` del menu es la familia `i`: no hay una segunda
+//  lista que diga a que grupo pertenece cada efecto, porque *dos tablas que
+//  dicen lo mismo son dos reglas, y la que se quede vieja pone un nombre en el
+//  grupo equivocado sin que nada falle*. Es exactamente como lo resolvio
+//  `Sintes::catDe`, que tampoco escribe la vuelta: la deriva del orden.
+const char* const* MainComponent::categoriasFx()
+{
+    static const char* const kNombres[kFxCategorias] =
+        { "FILTRO", "SATURACION", "MODULACION", "ESPACIO", "DINAMICA", "TIEMPO" };
+    return kNombres;
+}
+
 int MainComponent::celdaDeFx (int fx)
 {
     const int* o = ordenFx();
@@ -6133,6 +6205,11 @@ void MainComponent::abreMenuRanura (int ranura)
         ranuraVaciarBtn.setBounds ({});
         ranuraSheet.sheetBounds = {};
         ranuraTituloBanda = {};
+        //  Y LOS SEIS ROTULOS DE FAMILIA, que son bandas pintadas y no
+        //  componentes: no hay `setBounds({})` que los apague, asi que se
+        //  vacian a mano o el pintor los seguiria dibujando con la ficha ya
+        //  cerrada.
+        for (auto& r : ranuraCatArea) r = {};
     }
 
     resized();
@@ -9406,7 +9483,7 @@ void MainComponent::retranslateUi()
     projDirBtn        .setButtonText (T ("PROYECTOS"));
     samplesDirBtn     .setButtonText (T ("SONIDOS"));
     browseKitButton   .setButtonText (T ("CARGAR KIT"));
-    //  EXTRAS Y NO "INSTRUMENTOS": es la puerta del CONTENIDO -los 256 de
+    //  EXTRAS Y NO "INSTRUMENTOS": es la puerta del CONTENIDO -los 384 de
     //  SINTES, los 64 de fabrica y los packs que haya en el disco-, y al lado
     //  de MIS KITS se lee por lo que es, que es la pareja que se pidio: lo tuyo
     //  a un lado y lo que viene con la app o se compra al otro. "INSTRUMENTOS"
@@ -11549,10 +11626,24 @@ void MainComponent::applyState (const juce::ValueTree& s)
                     //  paso de 32 a 64 bits al subir el tope a ocho notas, y
                     //  recortarla aqui habria devuelto las cuatro primeras
                     //  notas y tirado las otras cuatro al abrir el proyecto.
-                    //  Se guardaba ya en hexadecimal de 64, asi que un
-                    //  proyecto escrito antes vuelve identico.
+                    //
+                    //  Y MIGRADA, que es la mitad que faltaba. Aqui ponia que
+                    //  "un proyecto escrito antes vuelve identico" y era FALSO:
+                    //  vuelve el numero, no el acorde. Los bits de presencia se
+                    //  mudaron del 24..26 al 56..62 con el tope, asi que un
+                    //  proyecto de ayer cargaba SOLO LA TONICA -las notas de mas
+                    //  se descartaban sin decir nada- y el banco lo dio verde
+                    //  porque `session.py` escribia y leia con la MISMA
+                    //  compilacion: una ida y vuelta consigo mismo cuadra
+                    //  siempre, mida el formato que mida.
+                    //
+                    //  Este es el unico embudo por donde entra la celda: el
+                    //  fichero de proyecto, la sesion recuperada -restoreSession
+                    //  acaba en applyState- y el deshacer. Migrar aqui los cubre
+                    //  los tres; migrar en cada sitio serian tres reglas.
                     engine.setStepChordRaw (b, ch[i2].getIntValue(), ch[i2 + 1].getIntValue(),
-                                            (std::uint64_t) ch[i2 + 2].getHexValue64());
+                                            AudioEngine::migraAcordeDeCuatro (
+                                                (std::uint64_t) ch[i2 + 2].getHexValue64()));
 
                 const auto nu = tripletes ("nudges");
                 for (int i2 = 0; i2 + 2 < nu.size(); i2 += 3)

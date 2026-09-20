@@ -2992,6 +2992,21 @@ private:
     //  numero de columnas, asi que cada fila sigue siendo una familia.
     static constexpr int kFxPorTipo = 5;
     static const int* ordenFx();          // kNumFx indices de `fxDefs`
+    //  Y SUS NOMBRES, que hasta ahora vivian en un comentario de `ordenFx`.
+    //
+    //  Un reparto que solo esta en el codigo fuente no lo ve nadie con el
+    //  telefono en la mano: la rejilla eran treinta tapas seguidas y habia que
+    //  leerlas todas para encontrar una. Del telefono, "organiza el pop-up de
+    //  efectos por categorias o secciones como esta el de los instrumentos".
+    //
+    //  El numero SE DERIVA y no se escribe: son las familias que salen de
+    //  `kNumFx` y `kFxPorTipo`, que es quien decide el reparto. Escribir el
+    //  seis aqui serian dos topes, y el dia que entrara un efecto mas uno de
+    //  los dos se quedaria viejo sin que nada fallara.
+    static constexpr int kFxCategorias = kNumFx / kFxPorTipo;
+    static_assert (kNumFx % kFxPorTipo == 0,
+                   "cada familia de efectos tiene que ser una fila entera del menu");
+    static const char* const* categoriasFx();   // kFxCategorias nombres, para T()
     //  Y LA VUELTA: en que celda del menu esta un tipo. La usa el banco, que
     //  pulsa tapas de verdad y tiene el indice del tipo, no el de la celda.
     static int celdaDeFx (int fx);
@@ -3284,6 +3299,10 @@ private:
     //  y el nombre del pack: una cuenta, un dueno. Vacias cuando el pack de
     //  delante no es el de familias -un pack de disco no tiene categorias-.
     std::array<juce::Rectangle<int>, (size_t) Sintes::kCategorias> instCatArea {};
+    //  Y LAS SEIS DEL MENU DE EFECTOS, por lo mismo: un rotulo que solo se lee
+    //  no necesita ser una tapa, y siendolo le quitaria ancho a las cinco que
+    //  si se tocan. Vienen vacias cuando la rejilla no sale a cinco columnas.
+    std::array<juce::Rectangle<int>, (size_t) kFxCategorias> ranuraCatArea {};
     //  La carpeta de destino, resuelta al ABRIR la ficha y no en cada
     //  repintado: preguntarla escribe en disco. Ver paintExportSheetContent.
     juce::File destinoCache;

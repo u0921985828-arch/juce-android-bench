@@ -1164,6 +1164,44 @@ public:
             || pad < 0 || pad >= kNumPads) return 0;
         return stepChord[(size_t) patternIdx][(size_t) step][(size_t) pad].load (std::memory_order_relaxed);
     }
+    //  LA CELDA DE UN PROYECTO ESCRITO CON EL TOPE DE CUATRO.
+    //
+    //  Subir el acorde de cuatro notas a ocho movio los BITS DE PRESENCIA -los
+    //  que dicen "esta nota existe", que hacen falta porque 0 es un semitono
+    //  valido- del 24..26 al 56..62. El numero vuelve identico del fichero;
+    //  lo que cambio es lo que SIGNIFICA. El lector nuevo miraba 56..62, en un
+    //  numero viejo esos bits estan a cero, y las notas de mas se descartaban
+    //  EN SILENCIO: del acorde guardado ayer cargaba solo la tonica -que vive
+    //  en `stepNote` y por eso sobrevivia-. La queja llego asi: "tenia
+    //  guardados unos acordes y se han cargado solo la nota tonica".
+    //
+    //  SE RECONOCE POR EL CONTENIDO Y NO POR UN NUMERO DE VERSION, que es la
+    //  decision que hay que justificar porque la otra parece la obvia. La
+    //  propiedad `version` del arbol esta clavada en 1, y la app con el fallo
+    //  YA HA REESCRITO ficheros -la sesion automatica se guarda cada veinte
+    //  segundos- con el formato nuevo y ese mismo 1. Un discriminador que dice
+    //  1 sobre datos de los dos formatos no discrimina nada. Aqui no hay
+    //  ambiguedad posible: un numero viejo NUNCA tiene un bit por encima del
+    //  26, y un numero nuevo con alguna nota de mas SIEMPRE tiene uno en
+    //  56..62.
+    static constexpr std::uint64_t migraAcordeDeCuatro (std::uint64_t v) noexcept
+    {
+        constexpr std::uint64_t presenciaNueva = 0x7FULL << 56;   // bits 56..62
+        constexpr std::uint64_t presenciaVieja = 0x07ULL << 24;   // bits 24..26
+
+        if ((v & presenciaNueva) != 0) return v;                  // ya es de ocho
+        if ((v & presenciaVieja) == 0) return v;                  // sin notas de mas
+
+        std::uint64_t n = 0;
+        for (unsigned e = 0; e < 3u; ++e)
+            if ((v & (1ULL << (24u + e))) != 0)
+            {
+                n |= ((v >> (e * 8u)) & 0xFFULL) << (e * 8u);
+                n |= 1ULL << (56u + e);
+            }
+        return n;
+    }
+
     void setStepChordRaw (int patternIdx, int step, int pad, std::uint64_t v) noexcept
     {
         if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps
@@ -1366,6 +1404,45 @@ public:
     //  fallo de sincronia esperando a que alguien encadene.
     void  setStepBeats (float b) noexcept { stepBeats.store (juce::jlimit (0.02f, 4.0f, b), std::memory_order_relaxed); }
     float getStepBeats() const noexcept   { return stepBeats.load (std::memory_order_relaxed); }
+
+    //  Y CAMBIAR DE REJILLA NO MUEVE UN SOLO GOLPE DE SITIO.
+    //
+    //  `setStepBeats` a solas reparte el patron entero por otro reloj: el
+    //  golpe se queda en el paso 4 y el paso 4 pasa de valer un pulso a valer
+    //  dos, asi que lo que se oye es el patron al doble o a la mitad de
+    //  velocidad. La queja fue literal: «eso que cambias es la medida del
+    //  cuadradito, con lo cual no deberia cambiarse ni el tiempo, ni los BPM,
+    //  ni nada del proyecto, solo lo visual».
+    //
+    //  Asi que la rejilla es un ZOOM y lo que se conserva es el SITIO EN EL
+    //  TIEMPO: al pasar de 1/16 a 1/8 el golpe del paso 4 -pulso 1.0- se muda
+    //  al paso 2, que con el paso nuevo vale el mismo pulso 1.0. Los
+    //  cuadraditos entre dos golpes cambian; los golpes no. El tempo no se
+    //  toca: esto no mira `bpm` ni una vez.
+    //
+    //  LO QUE NO SALE REDONDO SE CUENTA, Y SON DOS CUENTAS Y NO UNA. Entre
+    //  una rejilla y su tresillo la razon es 4/3 o 3/4 y un paso cae entre
+    //  dos casillas, asi que:
+    //
+    //   - `perdidos` son los golpes que DESAPARECEN: el paso de destino se
+    //     sale del patron, o ya lo habia ocupado otro golpe.
+    //   - `movidos` son los que siguen ahi pero YA NO EN SU PULSO, porque la
+    //     rejilla nueva no sabe decir ese sitio: de 1/12 a 1/16 el golpe del
+    //     pulso 0.0833 acaba en el 0.0625. Se quedan -tirarlos seria perder
+    //     musica- y se quedan CONTADOS.
+    //
+    //  Un solo numero para las dos era la version anterior y mentia justo en
+    //  el caso que importa: de tresillo a recto no se pierde NI UNO y sin
+    //  embargo se mueven todos, o sea que el renglon de estado decia «0 no
+    //  caben» mientras el patron entero cambiaba de sitio. Y remapear
+    //  perdiendo o moviendo notas EN SILENCIO es peor que no remapear: es el
+    //  mismo fallo que el acorde que cargaba solo la tonica.
+    struct RemapeoRejilla { int perdidos = 0; int movidos = 0; };
+
+    //  Lo llama el hilo de mensajes -el mando de REJILLA- y nunca el de audio:
+    //  recorre los ocho patrones enteros por los 64 pads. Sin reservas de
+    //  memoria aun asi, que la columna de un pad cabe en la pila.
+    RemapeoRejilla reajustaRejilla (float beatsViejo, float beatsNuevo) noexcept;
 
     void setLiveQuantise (bool on) noexcept { liveQuant.store (on, std::memory_order_relaxed); }
     bool getLiveQuantise() const noexcept { return liveQuant.load (std::memory_order_relaxed); }

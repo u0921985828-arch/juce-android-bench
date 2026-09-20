@@ -150,8 +150,8 @@ namespace Sintes
         static const Tabla tablaRango = []
         {
             Tabla t {};
-            //  Los cuatro comunes, de las 256: significan lo mismo en las
-            //  dieciseis formas, asi que su limite es musical y no de la forma.
+            //  Los cuatro comunes, de las 384: significan lo mismo en las
+            //  veinticuatro formas, asi que su limite es musical y no de la forma.
             Rango comun[4];
             for (int k = 0; k < 4; ++k) comun[k] = { 1.0e30f, -1.0e30f };
             for (int f = 0; f < kFamilias; ++f)
@@ -232,10 +232,10 @@ namespace Sintes
         //  Indices de `kTabla`, en el orden en que se enseñan.
         constexpr int kOrden[kFamilias] =
         {
-            0, 1, 9, 5,      // SINTESIS      BAJOS SUBS LEADS COLCHONES
-            2, 3, 13, 12,    // TECLAS        PIANO ELEC ORGANOS CLAVES MAZOS
-            4, 6, 11, 15,    // ARCO Y PUA    CUERDAS PLUCKS CUERDA PULS ARPAS
-            14, 10, 8, 7     // SOPLO Y METAL VIENTOS COROS METALES CAMPANAS
+            0, 1, 9, 5, 16, 17,      // SINTESIS      BAJOS SUBS LEADS COLCHONES FM SYNC
+            2, 3, 13, 12, 18, 19,    // TECLAS        PIANO ELEC ORGANOS CLAVES MAZOS PIANOS ACORDEON
+            4, 6, 11, 15, 20, 21,    // ARCO Y PUA    CUERDAS PLUCKS CUERDA PULS ARPAS SITAR CELLOS
+            14, 10, 8, 7, 22, 23     // SOPLO Y METAL VIENTOS COROS METALES CAMPANAS CANAS TUBOS
         };
 
         //  Y la vuelta, que es la que contesta `categoriaDe`. Se deriva de
@@ -368,6 +368,11 @@ namespace Sintes
                 case fLead:    return 4.2;
                 case fCoro:    return 5.1;
                 case fFlauta:  return 5.4;
+                //  Y las dos nuevas que llevan LFO. CELLOS vibra como cualquier
+                //  instrumento de arco; TUBOS no vibra: le TIEMBLA EL VIENTO, y
+                //  por eso va a menos de un hercio -un fuelle no es un vibrato-.
+                case fCello:   return 4.8;
+                case fTubo:    return 0.8;
                 default:       return 0.0;
             }
         }
@@ -501,6 +506,13 @@ namespace Sintes
         float ksPerd = 1.0f, ksLp = 1.0f, ksAp = 0.0f;
         float ksApX = 0.0f, ksApY = 0.0f;
 
+        //  LA MUESTRA ANTERIOR DEL PORTADOR DE FM. De las veinticuatro formas es
+        //  la unica que necesita su propia salida de vuelta: un operador que se
+        //  modula a si mismo pasa de seno a sierra de forma continua, y eso no
+        //  hay indice ni filtro que lo imite. Vive aqui y no dentro del `case`
+        //  porque el `switch` se ejecuta una vez por muestra.
+        float fbFm = 0.0f;
+
         if (F.forma == fGuitarra)
         {
             //  EL PERIODO DEL BUCLE SE REPARTE ENTRE TRES PIEZAS, y hasta ahora
@@ -563,6 +575,26 @@ namespace Sintes
             //  esconderse un fallo. La raiz cuarta lo deja igual en tiempo real:
             //  0.998 pasa a 0.99950.
             ksPerd = (float) std::pow ((double) (0.998f - P.p1 * 0.05f), kRate / fs);
+        }
+
+        //  Y EL TUBO TAPADO DE LAS CANAS, QUE NO ES UN FILTRO SINO UN PEINE.
+        //
+        //  Un tubo cerrado por un extremo solo deja vivir los armonicos
+        //  IMPARES: es lo que hace que un clarinete suene hueco y no brillante,
+        //  y es geometria, no timbre. Restar la senal retrasada MEDIO PERIODO
+        //  cancela exactamente los pares y dobla los impares, que es la misma
+        //  cuenta con otro nombre.
+        //
+        //  Hacia delante y sin realimentacion a proposito: un peine realimentado
+        //  es un modelo de guia de ondas -lo que ya es `fGuitarra`- y ahi la
+        //  estabilidad depende de la perdida por vuelta, o sea que un preset mal
+        //  puesto entre los 384 se iria a infinito sin que nadie lo viera hasta
+        //  oirlo. Este no puede: lo que sale es a lo sumo el doble de lo que
+        //  entra, siempre.
+        if (F.forma == fCana)
+        {
+            ksLen = juce::jmax (2, (int) std::lround (fs / juce::jmax (20.0, hz) * 0.5));
+            cuerda.assign ((size_t) ksLen, 0.0f);
         }
 
         for (int n = 0; n < len; ++n)
@@ -1109,6 +1141,460 @@ namespace Sintes
                     }
                     f1.set (juce::jlimit (400.0, nyq, 3000.0 * (double) brillo), 1.0f);
                     v = limita (1.1f * suma + P.p4 * f1.bpf (rnd()) * env (te, 0.004f) * 1.8f * fuerza);
+                    break;
+                }
+
+                // ============================================================
+                //  LAS OCHO NUEVAS. Dos por categoria, y OCHO ALGORITMOS y no
+                //  ocho juegos de numeros: `Sintes.h` ya cuenta que rellenar una
+                //  familia con variantes de un generador que existe es lo que
+                //  paso con los bancos A y B de la fabrica -seis sonidos que
+                //  eran literalmente el mismo- y que la prueba de pares lo caza.
+                //  Cada una de estas ocho hace algo que ninguna de las dieciseis
+                //  de antes hacia, y en el comentario esta escrito QUE.
+                // ============================================================
+
+                case fFm:
+                {
+                    //  FM DE TRES OPERADORES EN CADENA, CON REALIMENTACION.
+                    //  p1 razon del modulador A, p2 indice, p3 razon del B -que
+                    //  modula al A, no al portador-, p4 realimentacion.
+                    //
+                    //  NO ES PIANO ELEC CON OTROS NUMEROS, y las dos diferencias
+                    //  son de algoritmo: alli el indice CAE -por eso empieza en
+                    //  campana y acaba en seno- y aqui SOSTIENE, que es lo que
+                    //  hace que una pila de FM suene a metal y no a martillo; y
+                    //  alli hay UN modulador y aqui hay dos en cadena mas la
+                    //  realimentacion, que es lo unico que mueve un espectro de
+                    //  FM sin tocar el indice.
+                    ph4 += inc * (double) P.p3; if (ph4 >= 1.0) ph4 -= 1.0;
+                    const double modB = (double) (P.p2 * indice * 0.55f)
+                                      * std::sin (juce::MathConstants<double>::twoPi * ph4);
+                    phm += inc * (double) P.p1; if (phm >= 1.0) phm -= 1.0;
+                    const double modA = (double) (P.p2 * indice)
+                                      * std::sin (juce::MathConstants<double>::twoPi * phm + modB);
+                    ph += inc; if (ph >= 1.0) ph -= 1.0;
+                    //  EL ANCHO SALE DE LA PILA Y NO DE UN DESAFINE. Los dos
+                    //  moduladores arrancan con otra fase en el canal derecho y
+                    //  la realimentacion vale un 25 % menos: las bandas
+                    //  laterales caen en las MISMAS frecuencias con otra fase y
+                    //  otro peso, o sea otra forma de onda sin mover un cent.
+                    //  Un desafine aqui seria un chorus, y ademas partiria el
+                    //  bucle, que en esta forma sostiene.
+                    //  Y EL DESFASE SE ESCALA CON EL INDICE, que es la misma
+                    //  cuenta que ya esta escrita en PIANO ELEC y por la misma
+                    //  razon medida: con un cuarto de ciclo fijo, los catorce
+                    //  presets de indice alto se iban al otro lado del intervalo
+                    //  -hasta **-4.03 dB** al sumarse en mono, contra un liston
+                    //  de -1.5-. Cuantas mas bandas laterales hay, menos hay que
+                    //  moverlas. 0.06/indice deja SOFT FM (0.6) en 0.10 y HARSH
+                    //  (8.0) en 0.0075. El numero de arriba salio de tres
+                    //  medidas seguidas del mismo preset: HARSH -indice 8, el
+                    //  mas alto de los dieciseis- iba **-2.78 dB** con 0.02 de
+                    //  desfase, **-2.02** con 0.0125 y entra con 0.0075. La
+                    //  relacion es lineal en el desfase, no en el indice.
+                    if (n == 0 && canal == 1)
+                    {
+                        const double sep = juce::jlimit (0.006, 0.15,
+                                               0.06 / (double) juce::jmax (0.2f, P.p2));
+                        phm += sep; ph4 += sep * 1.4;
+                    }
+                    const float rea = P.p4 * 0.5f * ((canal == 1) ? 0.94f : 1.0f);
+                    const float y = (float) std::sin (juce::MathConstants<double>::twoPi * ph
+                                                      + modA + (double) (rea * fbFm));
+                    //  Y LA REALIMENTACION SE PROMEDIA CON LA ANTERIOR. Sin
+                    //  esto, un operador realimentado por encima de ~0.6 entra
+                    //  en caos y deja de tener tono; el promedio es el paso bajo
+                    //  de un polo que todos los motores de FM le ponen, y lo que
+                    //  hace es que el tope de 0.5 sea de verdad un tope.
+                    fbFm = 0.5f * (fbFm + y);
+                    //  Y UN PASO BAJO A LA SALIDA, que no esta por gusto: sin
+                    //  el, BRILLO -que es uno de los cuatro mandos comunes a las
+                    //  veinticuatro- no tendria nada que mover en esta forma,
+                    //  porque una pila de FM no lleva filtro. Un mando que no se
+                    //  mueve es peor que no tenerlo, y esa regla ya esta escrita
+                    //  arriba para los rangos de la tabla.
+                    f1.set (juce::jlimit (300.0, nyq, hz * 10.0 * (double) brillo + 400.0), 0.7f);
+                    v = f1.lp (y);
+                    break;
+                }
+
+                case fSync:
+                {
+                    //  EL FORMANTE QUE BARRE: un grano de seno dentro de una
+                    //  ventana que dura una fraccion del periodo. p1 la razon
+                    //  del formante, p2 cuanto la barre la envolvente, p3 el
+                    //  ancho de la ventana, p4 el sub.
+                    //
+                    //  ESTO ES UN SYNC SIN DOBLEZ, y esa es toda la decision.
+                    //  Un oscilador esclavo reiniciado por el maestro tiene un
+                    //  salto vertical en cada reinicio, o sea armonicos hasta el
+                    //  infinito que ni el 4x ni los 513 taps del diezmador
+                    //  pueden quitar, porque no estan por encima de Nyquist:
+                    //  vuelven doblados y caen inarmonicos. La ventana de Hann
+                    //  vale cero en los dos extremos del grano, asi que la
+                    //  costura es continua POR CONSTRUCCION y el pico del
+                    //  espectro se coloca donde diga la razon - que es lo que un
+                    //  sync hace y lo que el oido oye de el.
+                    //
+                    //  Y el tono lo pone el periodo del grano, no el seno: la
+                    //  razon puede barrer del 1 al 12 sin desafinar ni un cent.
+                    //  Por eso BRILLO multiplica la RAZON y no un corte: en una
+                    //  forma sin filtro, subir el formante ES subir el brillo, y
+                    //  un mando comun que no mueva nada seria peor que no estar.
+                    const float ef = env (te, juce::jmax (0.02f, P.dec * 0.6f));
+                    //  El barrido va con el INDICE y no plano: es el mando de
+                    //  capa que le toca -un sync pulsado fuerte barre mas- y sin
+                    //  el las tres capas medirian el mismo centroide.
+                    const double razonBase = juce::jlimit (1.0, 24.0,
+                        (double) P.p1 * (double) brillo * (1.0 + (double) (P.p2 * indice * ef)));
+                    //  EL ANCHO SE PONE DESPUES DEL ACOTADO Y ES INVERSO A LA
+                    //  RAZON, y las dos mitades salieron de medir.
+                    //
+                    //  Dentro del `jlimit`, CHIRP -razon 11 por brillo 3.4- caia
+                    //  en el tope de 24 por los dos canales y media **r = 0.9808**:
+                    //  un ancho que el limite se comia, que es exactamente lo que
+                    //  ya le paso a CLAVES. Y con un 1.5 % fijo, los de razon
+                    //  baja -SUB S, WIDE, SOFT S- se quedaban en 0.98 y pico
+                    //  mientras SIREN se caia **-1.50 dB** en mono: un formante
+                    //  bajo casi no tiene bandas que mover y uno alto las tiene
+                    //  todas, asi que el mismo porcentaje no vale para los dos.
+                    const double sep = juce::jlimit (0.010, 0.090, 0.09 / razonBase);
+                    const double razon = razonBase * (1.0 + (canal == 1 ? sep : -sep));
+                    const double anchoV = juce::jlimit (0.08, 1.0, (double) P.p3)
+                                            * ((canal == 1) ? 0.90 : 1.10);
+                    ph  += inc;       if (ph  >= 1.0) ph  -= 1.0;
+                    ph2 += inc * 0.5; if (ph2 >= 1.0) ph2 -= 1.0;
+                    float grano = 0.0f;
+                    if (ph < anchoV)
+                    {
+                        const double g = ph / anchoV;
+                        const float ven = 0.5f * (1.0f - (float) std::cos (
+                                              juce::MathConstants<double>::twoPi * g));
+                        grano = ven * (float) std::sin (
+                                    juce::MathConstants<double>::twoPi * razon * ph);
+                    }
+                    //  El sub centrado, que es grave y lo grave no se abre.
+                    v = limita (1.4f * grano + P.p4 * 0.45f * sqrBl (ph2, inc * 0.5));
+                    break;
+                }
+
+                case fPiano:
+                {
+                    //  PIANO ACUSTICO. p1 inarmonicidad, p2 el desafine de la
+                    //  cuerda gemela en cents, p3 el martillo, p4 la caja.
+                    //
+                    //  POR QUE NO ES ARPAS CON OTROS NUMEROS, que es la pregunta
+                    //  que esta familia tiene que contestar porque las dos son
+                    //  aditivas y pulsadas. Tres cosas, y las tres son del
+                    //  instrumento y no del ajuste:
+                    //   · CADA NOTA SON DOS O TRES CUERDAS, afinadas casi igual.
+                    //     Eso no es un coro: es lo que hace que un piano tenga
+                    //     una caida en dos tiempos y un latido lento encima.
+                    //   · LA CAIDA ES DOBLE. Un parcial de piano se cae rapido
+                    //     y luego se queda -el "aftersound"-, que es exactamente
+                    //     lo que un arpa no hace.
+                    //   · Y LA CAJA, dos resonancias fijas que no se mueven con
+                    //     la nota: un arpa no tiene tabla armonica.
+                    //
+                    //  Los parciales van ESTIRADOS por la rigidez de la cuerda
+                    //  -la misma cuenta que `fArpa`- porque eso si es fisica
+                    //  compartida: una cuerda tensa no da multiplos exactos.
+                    const int cuantos = juce::jlimit (2, 14,
+                        (int) std::lround (11.0 * (double) (0.55f + 0.75f * capaMix)));
+                    //  El desafine de la gemela, EN HERCIOS sobre el fundamental.
+                    const double dHz = hz * (std::pow (2.0, (double) P.p2 / 1200.0) - 1.0);
+                    float suma = 0.0f;
+                    for (int k = 0; k < cuantos; ++k)
+                    {
+                        const double mult = (double) (k + 1)
+                                          * std::sqrt (1.0 + (double) P.p1 * (double) (k * k));
+                        const double fk = hz * mult;
+                        if (fk >= nyq) break;
+                        arm[k] += fk / fs; if (arm[k] >= 1.0) arm[k] -= 1.0;
+                        //  LA GEMELA SIN UN SEGUNDO OSCILADOR, y no es una
+                        //  aproximacion: cos(a) + cos(b) ES 2 cos((a+b)/2)
+                        //  cos((a-b)/2), o sea que multiplicar un parcial por un
+                        //  coseno lento da EXACTAMENTE los dos parciales
+                        //  separados. Doce osciladores mas por nota habrian sido
+                        //  el doble de tiempo de sintesis para escribir la misma
+                        //  igualdad.
+                        const float bat = (float) std::cos (
+                            juce::MathConstants<double>::pi * dHz * mult * (double) te);
+                        //  LA CAIDA DOBLE, que es la firma del piano.
+                        const float tau = P.dec / (1.0f + 0.85f * (float) k);
+                        const float dob = 0.72f * env (te, tau) + 0.28f * env (te, tau * 4.5f);
+                        //  Y el reparto de los parciales lo mueve la capa, como
+                        //  en ARPAS: golpear fuerte saca parciales que golpear
+                        //  flojo no saca.
+                        const float amp = std::pow ((float) (k + 1), -1.25f + 0.55f * capaMix);
+                        const double x = (k == 0) ? 0.0
+                            : (((k & 1) != 0) ? 1.0 : -1.0) * juce::jmin (1.0, (double) k / 3.0);
+                        suma += ladoDe (canal, x * 0.6) * amp * dob * bat
+                                * (float) std::sin (juce::MathConstants<double>::twoPi * arm[k]);
+                    }
+                    //  LA TABLA ARMONICA: dos resonancias en HERCIOS FIJOS y no
+                    //  en multiplos de la nota. Una caja de madera resuena donde
+                    //  resuena toque uno lo que toque, y eso es lo que hace que
+                    //  las notas graves y las agudas de un piano suenen al mismo
+                    //  instrumento.
+                    f1.set (juce::jlimit (90.0,  nyq,  190.0 * (double) brillo), 1.6f);
+                    f2.set (juce::jlimit (300.0, nyq, 1350.0 * (double) brillo), 1.1f);
+                    f3.set (juce::jlimit (500.0, nyq, 2600.0 * (double) brillo), 1.3f);
+                    v = limita (1.15f * suma
+                                + P.p4 * (0.9f * f1.bpf (suma) + 0.6f * f2.bpf (suma))
+                                + P.p3 * f3.bpf (rnd()) * env (te, 0.008f) * 2.2f
+                                       * (0.25f + 1.1f * capaMix));
+                    break;
+                }
+
+                case fAcordeon:
+                {
+                    //  LENGUETA LIBRE. p1 el musette en cents, p2 el ancho del
+                    //  pulso, p3 cuanto pega la lengueta, p4 el fuelle.
+                    //
+                    //  Tres lenguetas y no una: un acordeon de verdad lleva dos
+                    //  o tres por nota, deliberadamente desafinadas, y ESE
+                    //  latido es el instrumento. Sin el, esto seria un organo.
+                    //
+                    //  Y LO QUE LO SEPARA DE COLCHONES -que tambien son pulsos
+                    //  desafinados- no es el ajuste: alli el ancho lo mueve un
+                    //  LFO y el sonido es un filtro pasa bajo; aqui el ancho no
+                    //  se mueve y el timbre lo pone un TOPE -la lengueta que
+                    //  choca- mas una resonancia fija. Un tope no es un filtro:
+                    //  crea armonicos en vez de quitarlos, y por eso una
+                    //  lengueta suena aspera con la nota quieta.
+                    const double anchoL = juce::jlimit (0.06, 0.45, (double) P.p2);
+                    float suma = 0.0f;
+                    for (int k = 0; k < 3; ++k)
+                    {
+                        const double det = std::pow (2.0, (double) P.p1 * (double) desigual (k, 3) / 1200.0);
+                        const double ik = inc * det;
+                        arm[k] += ik; if (arm[k] >= 1.0) arm[k] -= 1.0;
+                        //  Las tres, repartidas por el mismo vector que las
+                        //  desafina. Ver CUERDAS: cero osciladores nuevos.
+                        //  DOS QUINTOS DE APERTURA Y NO LA ENTERA. Con la de CUERDAS
+                        //  -que son siete y estas son tres- DRY se caia **-2.35
+                        //  dB** al sumarse en mono: tres piezas repartidas a lo
+                        //  ancho dejan cada lado casi solo con una.
+                        suma += ladoDe (canal, 0.42 * kApertura * (double) kDesigual[k])
+                                * pulsoBl (arm[k], ik, anchoL);
+                    }
+                    //  EL TOPE. Con la capa metida dentro, porque apretar el
+                    //  fuelle es exactamente esto: la lengueta llega mas lejos y
+                    //  choca mas.
+                    const float lengueta = soft (0.45f * suma * (1.0f + P.p3 * 3.2f * (0.4f + 0.9f * capaMix)));
+                    //  Y LA CAJA DE LA LENGUETA, en Hercios fijos como la tabla
+                    //  de un piano y por lo mismo.
+                    //  Y LA CAJA DE LA LENGUETA RESUENA UN 12 % DISTINTA A CADA
+                    //  LADO, que es lo que le faltaba a CLARIN: con el musette a
+                    //  cero las tres lenguetas son la misma onda y el reparto no
+                    //  tiene nada que repartir -**r = 0.9818**-. Una caja de
+                    //  madera no resuena igual por los dos costados; misma figura
+                    //  que el cuerpo de CUERDA PULS.
+                    f1.set (juce::jlimit (300.0, nyq, 1250.0 * (double) brillo
+                                                        * ((canal == 1) ? 1.12 : 0.88)), 1.9f);
+                    f2.set (juce::jlimit (800.0, nyq, 2900.0), 1.2f);
+                    v = limita (0.85f * lengueta + 0.55f * f1.bpf (lengueta)
+                                + P.p4 * f2.bpf (rnd()) * (0.25f + 1.0f * capaMix) * 1.6f);
+                    break;
+                }
+
+                case fSitar:
+                {
+                    //  EL PUENTE PLANO. p1 el zumbido, p2 la caida del filtro,
+                    //  p3 las simpaticas, p4 el dron.
+                    //
+                    //  Un sitar no suena asi por el filtro: suena asi porque el
+                    //  puente es ANCHO Y PLANO y la cuerda rebota contra el en
+                    //  cada vuelta. Eso es un PLEGADO -la onda se dobla sobre si
+                    //  misma cuando se pasa- y no hay filtro que lo imite,
+                    //  porque un filtro solo puede quitar armonicos y esto los
+                    //  crea. Es la unica de las veinticuatro con un plegador.
+                    //
+                    //  Y detras van las SIMPATICAS, que en un sitar son once o
+                    //  trece cuerdas que nadie toca y que suenan solas: dos
+                    //  parciales de caida larga en quinta y octava, uno a cada
+                    //  lado, mas el dron una octava abajo. Eso es lo que hace que
+                    //  una sola nota suene a instrumento entero.
+                    ph  += inc;       if (ph  >= 1.0) ph  -= 1.0;
+                    ph2 += inc * 1.5; if (ph2 >= 1.0) ph2 -= 1.0;
+                    ph3 += inc * 2.0; if (ph3 >= 1.0) ph3 -= 1.0;
+                    ph4 += inc * 0.5; if (ph4 >= 1.0) ph4 -= 1.0;
+                    const float ef = env (te, juce::jmax (0.02f, P.p2));
+                    //  El plegado, y su fuerza la manda la capa: pulsar fuerte
+                    //  hace que la cuerda llegue al puente y pulsar flojo no.
+                    //  Y EL PLEGADO PEGA UN 7 % DISTINTO A CADA LADO. Es lo
+                    //  unico que MUTED tiene -sin simpaticas y sin dron media
+                    //  **r = 0.9997**, o sea un solo canal- y ademas es lo que
+                    //  mas rinde: un plegador es no lineal, asi que un 7 % de
+                    //  entrada cambia CUANTOS armonicos salen, no cuanto suenan.
+                    //  Y por eso es 7 y no 10: con el 10, JAWARI y BUZZ S -los
+                    //  dos de mas zumbido- se pasaban al otro lado y se caian
+                    //  **-1.76 dB** en mono. El intervalo es estrecho porque la
+                    //  pieza es no lineal.
+                    const float pega = (1.0f + P.p1 * 5.0f * (0.35f + 0.9f * capaMix))
+                                       * ((canal == 1) ? 1.07f : 0.93f);
+                    const float z = (float) std::sin (juce::MathConstants<double>::halfPi
+                                                      * (double) (pega * sawBl (ph, inc)));
+                    //  Y detras el pasa bajo que se cierra, que es lo que hace
+                    //  que el zumbido dure menos que la nota.
+                    f1.set (juce::jlimit (200.0, nyq, hz * (double) brillo * (2.0 + 16.0 * (double) ef))
+                              * ((canal == 1) ? 1.12 : 0.88), 1.0f);
+                    const float sim = P.p3
+                        * (0.55f * ladoDe (canal, -0.75) * env (te, P.dec * 1.4f)
+                                 * (float) std::sin (juce::MathConstants<double>::twoPi * ph2)
+                         + 0.40f * ladoDe (canal,  0.75) * env (te, P.dec * 1.1f)
+                                 * (float) std::sin (juce::MathConstants<double>::twoPi * ph3));
+                    //  El dron CENTRADO: es lo mas grave que hay aqui y lo grave
+                    //  no se abre. Ver `monoDeVerdad`.
+                    const float dron = P.p4 * 0.45f * env (te, P.dec * 2.0f)
+                                     * (float) std::sin (juce::MathConstants<double>::twoPi * ph4);
+                    v = limita (1.1f * f1.lp (z) + sim + dron);
+                    break;
+                }
+
+                case fCello:
+                {
+                    //  ARCO SOLO. p1 la presion del arco, p2 el cuerpo, p3 el
+                    //  vibrato, p4 la crin.
+                    //
+                    //  CUERDAS son siete atriles desafinados: un conjunto. Esto
+                    //  es UNA cuerda, y lo que la hace sonar a instrumento y no
+                    //  a sierra filtrada son dos resonancias del cajon en
+                    //  Hercios fijos -las de un violonchelo de verdad, sobre los
+                    //  220 y los 600- mas la crin, que en un arco es la mitad
+                    //  del sonido y en un conjunto no se oye porque se promedia.
+                    //
+                    //  Y ese cajon es tambien el ancho: una caja de madera no
+                    //  resuena igual por los dos costados. Es la misma figura que
+                    //  el cuerpo de CUERDA PULS y por la misma razon -un solo
+                    //  oscilador no se puede repartir-.
+                    lfo += incLfo; if (lfo >= 1.0) lfo -= 1.0;
+                    const double vib = std::pow (2.0, (double) P.p3 * 0.009
+                                        * std::sin (juce::MathConstants<double>::twoPi * lfo));
+                    const double i1 = inc * vib;
+                    ph += i1; if (ph >= 1.0) ph -= 1.0;
+                    //  LA PRESION DEL ARCO NO ES VOLUMEN: aprieta la onda contra
+                    //  el tope, o sea que le mete diente. Un arco flojo da casi
+                    //  un seno y uno fuerte raspa, y eso no es un filtro.
+                    const float diente = soft (sawBl (ph, i1) * (0.8f + P.p1 * 2.4f)) * 0.8f;
+                    const double lado = (canal == 1) ? 1.10 : 0.90;
+                    f1.set (juce::jlimit (90.0,  nyq, 220.0 * (double) P.p2 * lado), 2.2f);
+                    //  UNA resonancia de cajon y no dos, y el segundo filtro se
+                    //  gasta en el paso bajo de BRILLO: con los dos formantes,
+                    //  el unico mando comun que quedaba vivo era el ruido del
+                    //  arco, o sea que BRILLO movia el 10 % del sonido.
+                    f2.set (juce::jlimit (300.0, nyq, hz * 7.0 * (double) brillo + 900.0), 0.8f);
+                    f3.set (juce::jlimit (800.0, nyq, hz * 6.0 * (double) brillo + 1800.0), 1.2f);
+                    v = limita (f2.lp (0.55f * diente + 0.95f * f1.bpf (diente))
+                                + P.p4 * f3.bpf (rnd()) * (0.25f + 1.2f * capaMix) * 2.0f);
+                    break;
+                }
+
+                case fCana:
+                {
+                    //  DOBLE LENGUETA Y TUBO TAPADO. p1 el cierre de la caña,
+                    //  p2 el aliento, p3 cuanto tapa el tubo, p4 la lengueta.
+                    //
+                    //  Lo que separa esto de VIENTOS y de METALES no es el
+                    //  ajuste: VIENTOS es un seno con aire -un tubo abierto, sin
+                    //  caña- y METALES es un pulso con el filtro pegando un
+                    //  empujon. Aqui el timbre lo pone la GEOMETRIA: el peine de
+                    //  medio periodo de arriba borra los armonicos pares, que es
+                    //  literalmente lo que hace un tubo cerrado por un extremo, y
+                    //  eso ningun filtro lo puede fingir porque no es una banda:
+                    //  son uno si, uno no, hasta arriba.
+                    ph += inc; if (ph >= 1.0) ph -= 1.0;
+                    //  La caña abre y cierra: cuanto mas cerrada, mas estrecho el
+                    //  pulso y mas armonicos hay que tapar.
+                    float pulso = pulsoBl (ph, inc, juce::jlimit (0.06, 0.45, (double) P.p1));
+                    //  Y la lengueta CHOCA, que es un tope y no un filtro. Con
+                    //  la capa dentro: soplar fuerte la cierra del todo.
+                    pulso = soft (pulso * (1.0f + P.p4 * 3.0f * (0.4f + 0.9f * capaMix)));
+                    const float viejo = cuerda[(size_t) ksPos];
+                    cuerda[(size_t) ksPos] = pulso;
+                    ksPos = (ksPos + 1) % ksLen;
+                    //  UN 6 % DE PROFUNDIDAD DE DIFERENCIA ENTRE CANALES. El
+                    //  peine es la unica pieza que esta forma tiene y no se puede
+                    //  repartir -es una sola columna de aire-, asi que el ancho
+                    //  sale de que tape un poco distinto a cada lado. No es un
+                    //  retardo: las dos senales son la misma en el tiempo.
+                    //  UN 15 % Y NO UN 6 %: con el 6, TIGHT -poco aliento y el
+                    //  peine a medio tapar- media **r = 0.9962**. Lo que el
+                    //  peine tapa es armonicos enteros, asi que para que se note
+                    //  tiene que tapar bastante mas a un lado que al otro.
+                    const float prof = juce::jlimit (0.0f, 0.97f,
+                                            P.p3 * ((canal == 1) ? 1.15f : 0.85f));
+                    const float tubo = pulso - prof * viejo;
+                    //  Y EL PASO BAJO DE SALIDA TAMBIEN SE SEPARA, un 10 %: lo
+                    //  ve TODO, que es lo que ya hizo falta en CUERDA PULS
+                    //  cuando el cuerpo solo no llegaba.
+                    f1.set ((juce::jlimit (200.0, nyq, hz * 4.0 * (double) brillo + 300.0))
+                              * ((canal == 1) ? 1.10 : 0.90), 0.9f);
+                    f2.set (juce::jlimit (600.0, nyq, 2200.0), 1.4f);
+                    //  El aliento entra con el ataque y se queda: una caña sopla
+                    //  todo el rato, no solo al principio.
+                    v = limita (0.75f * f1.lp (tubo)
+                                + P.p2 * f2.bpf (rnd()) * (0.30f + 1.1f * capaMix)
+                                       * (0.70f + 0.30f * env (te, 0.02f)) * 2.4f);
+                    break;
+                }
+
+                case fTubo:
+                {
+                    //  FLAUTADO TAPADO DE ORGANO. p1 la mezcla, p2 el chiff,
+                    //  p3 el viento, p4 la quinta.
+                    //
+                    //  ORGANOS son ocho barras en 1 2 3 4 6 8 12 16, o sea que
+                    //  los PARES mandan, y llevan leslie. Esto es un tubo TAPADO:
+                    //  solo impares -1 3 5 7 9 11-, que es la razon de que un
+                    //  bordon suene hueco y un principal no. Y no lleva leslie
+                    //  sino CHIFF -el golpe de aire del primer instante, que es
+                    //  como se reconoce un organo de tubos de uno electronico- y
+                    //  un viento que tiembla por debajo del hercio.
+                    lfo += incLfo; if (lfo >= 1.0) lfo -= 1.0;
+                    //  El viento no es constante y por eso un organo respira.
+                    //  1.5 por mil: mas seria un vibrato, y un fuelle no vibra.
+                    const double viento = 1.0 + (double) P.p3 * 0.0015
+                                        * std::sin (juce::MathConstants<double>::twoPi * lfo);
+                    //  CUANTOS REGISTROS, y la capa manda: abrir mas registros es
+                    //  literalmente lo que hace un organista para tocar fuerte.
+                    //  Con el numero fijo las tres capas medirian el mismo
+                    //  centroide, que es el fallo que ya cazo la prueba en ARPAS.
+                    //  Y BRILLO ABRE REGISTROS en vez de mover un corte, que es
+                    //  lo que un organista hace de verdad para sonar mas claro.
+                    //  `brillo` ya lleva la capa multiplicada dentro, asi que la
+                    //  capa fuerte saca registros por si sola.
+                    const int ranks = juce::jlimit (2, 6,
+                        (int) std::lround (1.5 + (double) P.p1 * 3.5 * (double) brillo));
+                    float suma = 0.0f;
+                    for (int k = 0; k < ranks; ++k)
+                    {
+                        const double mult = (double) (2 * k + 1);
+                        const double fk = hz * mult * viento;
+                        if (fk >= nyq) break;
+                        arm[k] += fk / fs; if (arm[k] >= 1.0) arm[k] -= 1.0;
+                        const float amp = std::pow ((float) (2 * k + 1), -1.1f + 0.4f * capaMix);
+                        //  Cada registro sale de un tubo distinto, o sea de un
+                        //  sitio distinto del mueble. El fundamental centrado.
+                        const double x = (k == 0) ? 0.0 : (((k & 1) != 0) ? 0.8 : -0.8);
+                        suma += ladoDe (canal, x) * amp
+                                * (float) std::sin (juce::MathConstants<double>::twoPi * arm[k]);
+                    }
+                    //  Y EL NAZARDO, que es la quinta de la octava de arriba y el
+                    //  registro que le da a un organo el color que no tiene
+                    //  ningun otro instrumento. Templada -2.9966 y no 3- porque
+                    //  un tubo se afina a mano y contra los demas.
+                    ph2 += inc * 2.9966 * viento; if (ph2 >= 1.0) ph2 -= 1.0;
+                    suma += P.p4 * 0.5f * ladoDe (canal, -0.45)
+                            * (float) std::sin (juce::MathConstants<double>::twoPi * ph2);
+                    f1.set (juce::jlimit (800.0, nyq, hz * 6.0 * (double) brillo + 1500.0), 1.2f);
+                    f2.set (juce::jlimit (400.0, nyq, 1800.0), 0.8f);
+                    v = limita (0.85f * suma
+                                + P.p2 * f1.bpf (rnd()) * env (te, 0.02f) * 3.0f
+                                       * (0.3f + 1.0f * capaMix)
+                                + P.p3 * f2.bpf (rnd()) * 0.5f);
                     break;
                 }
             }

@@ -215,10 +215,11 @@ namespace Instrumentos
 
     //  Y EL PACK DE INSTRUMENTOS, que es el que va A UN PAD.
     //
-    //  Dieciseis familias, y cada una con dieciseis presets: el mismo numero
-    //  que tiene el banco, para que la rejilla del menu y la rejilla de pads
-    //  sean la MISMA forma - la misma razon por la que el selector del RACK
-    //  dejo de ser una fila de dieciseis. Donde CAE cada uno no lo decide esta
+    //  Veinticuatro familias, y cada una con dieciseis presets. La rejilla del
+    //  menu sigue siendo la del banco -cuatro columnas- y lo que crece es el
+    //  alto: seis filas por categoria en vez de cuatro. El numero NO se
+    //  escribe aqui, sale de `Sintes::kFamilias`, que es lo que hizo que subir
+    //  de 16 a 24 no dejara ocho familias fuera del catalogo. Donde CAE cada uno no lo decide esta
     //  tabla: el destino se elige en la rejilla de arriba del menu, y la ficha
     //  abre en el pad del que vienes (ver MainComponent::openInstSheet).
     inline Pack sintes()
@@ -230,7 +231,7 @@ namespace Instrumentos
         p.abierto = true;
         //  EN ORDEN DE MENU Y NO EN ORDEN DE TABLA. Ver `Sintes::ordenDeMenu`:
         //  la tabla esta en el orden en que se escribieron las formas, y aqui
-        //  se enseñan por tipo, cuatro categorias de cuatro. Lo que viaja a los
+        //  se enseñan por tipo, cuatro categorias de seis. Lo que viaja a los
         //  proyectos es `familiaSintes`, que sigue siendo el indice de la
         //  tabla, asi que reordenar esta lista no toca nada guardado.
         const int* orden = Sintes::ordenDeMenu();

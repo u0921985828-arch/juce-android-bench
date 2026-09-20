@@ -15,7 +15,7 @@
 #  escrito no suena mal: suena a otra octava, y eso no lo caza ninguna medida
 #  de nivel.
 #
-#  QUE NINGUNO ESTE MUDO, QUE LOS 256 ESTEN IGUALADOS Y QUE HAYA MARGEN. Las
+#  QUE NINGUNO ESTE MUDO, QUE LOS 384 ESTEN IGUALADOS Y QUE HAYA MARGEN. Las
 #  mismas tres que la fabrica, con la misma ponderacion K de BS.1770 y la misma
 #  ventana de 400 ms - importadas de Tests/kits.py, no reescritas: el liston de
 #  una prueba no se reinventa en la de al lado.
@@ -66,16 +66,35 @@ SR       = 48000.0
 #  LOS DOS LISTONES, Y DE DONDE SALEN.
 #
 #  kits.py usa 4.0 dB para sesenta y cuatro golpes de percusion, y su mediana de
-#  pares es 28 dB. Aqui la poblacion es otra -256 sonidos TONALES, todos
-#  armonicos y todos sostenidos- y la mediana se queda en 19.6: la escala esta
+#  pares es 28 dB. Aqui la poblacion es otra -384 sonidos TONALES, todos
+#  armonicos y todos sostenidos- y la mediana se queda en 19.0: la escala esta
 #  comprimida porque todo se parece mas de partida. El liston equivalente es el
-#  mismo numero en proporcion, 4.0 x 19.6/28 = 2.8, y de ahi los 3.0.
+#  mismo numero en proporcion, 4.0 x 19.0/28 = 2.7, y de ahi los 3.0.
+#
+#  Y LA MEDIANA CASI NO SE MOVIO AL PASAR DE 256 A 384 -19.6 a 19.0, con ocho
+#  familias nuevas y 73 536 pares en vez de 32 640-, que es la unica prueba de
+#  que las ocho son familias y no rellenos: si hubieran sido variantes de las
+#  que ya habia, la mediana se habria caido y el liston habria dejado de
+#  separar nada.
 #
 #  No es bajar el liston para que pase: es medirlo en la misma escala. Un liston
 #  copiado de otra poblacion dice que si o que no por la poblacion, no por el
 #  sonido.
 PAR_FAM  = 3.0     # dos FAMILIAS por debajo de esto son el mismo algoritmo
-PAR_PRE  = 1.5     # dos presets de una familia son variaciones: menos exige
+#  PAR_PRE SUBE DE 1.5 A 2.5 PORQUE 1.5 DEJABA PASAR GEMELOS.
+#
+#  Medido con el liston en 1.5: de las veinticuatro familias, TRECE tenian su
+#  par mas cercano por debajo de 2.5 dB -CLAVES 1.63, METALES 1.83, COLCHONES
+#  1.84, CELLOS 1.89- o sea trece familias donde dos de las dieciseis tapas
+#  son practicamente la misma. La queja fue "que tengan mas personalidad, mas
+#  cuerpo, mas diferencias, y no diferencias por diferencias sino notorias".
+#  Un liston es la unica forma de que eso sea una medida y no una opinion.
+#
+#  Y NO SUBE HASTA PAR_FAM (3.0), que es la otra tentacion: dos presets de una
+#  familia SON el mismo algoritmo con otros numeros, y pedirles lo mismo que a
+#  dos algoritmos distintos seria borrar la diferencia entre "variacion" y
+#  "familia". 2.5 es audible y deja sitio a la familia.
+PAR_PRE  = 2.5     # dos presets de una familia son variaciones: menos exige
 
 #  Las dos capas. Los dos numeros a la vez o no vale.
 CAPA_DB  = 2.0     # decibelios entre la PRIMERA capa y la ULTIMA
@@ -348,7 +367,7 @@ def corre (dirtemp):
         #  DISPLAY va PUESTA: `display_alive` cae a ":99" cuando el entorno no
         #  la trae, asi que sin esta linea la comprobacion decia que si contra
         #  una pantalla y la app arrancaba sin ninguna — `salieron 0 presets y
-        #  son 256` con el binario bueno. Ver `PANTALLA` en `kits.py`.
+        #  son 384` con el binario bueno. Ver `PANTALLA` en `kits.py`.
         env.update ({"DISPLAY": PANTALLA,
                      "HOME": casa, "XDG_DATA_HOME": os.path.join (casa, ".local", "share"),
                      "ZATI_AUDIT": "1", "ZATI_SIZE": "412x915", "ZATI_LANG": "es",
@@ -365,7 +384,9 @@ def corre (dirtemp):
         try:    d = json.loads (linea)
         except Exception: continue
         if d.get ("instr") == "preset": filas.append (d)
-        elif d.get ("instr") == "bancoD": extra["bancoD"] = d["ms"]
+        elif d.get ("instr") == "bancoD":
+            extra["bancoD"] = d["ms"]
+            extra["cuales"] = d.get ("cuales", "")
         elif d.get ("instr") == "ref":    extra["msKits"] = d["msKits"]
         elif d.get ("instr") == "vuelta": extra["vuelta"] = d
         elif d.get ("instr") == "destino": extra["destino"] = d
@@ -391,8 +412,8 @@ def main():
         filas, extra = corre (dirtemp)
         if "error" in extra:
             print ("FALLA  la app no pudo escribir: %s" % extra["error"]); return 1
-        if len (filas) != 256:
-            print ("FALLA  salieron %d presets y son 256" % len (filas)); return 1
+        if len (filas) != 384:
+            print ("FALLA  salieron %d presets y son 384" % len (filas)); return 1
 
         fallos, medidas = [], []
 
@@ -475,7 +496,7 @@ def main():
 
                 prev = z[3] + GUARDAS
 
-        # ---- LOS 256, UNO A UNO ------------------------------------------
+        # ---- LOS 384, UNO A UNO ------------------------------------------
         descs = []
         peorDC = (-999.0, "")
         for d in filas:
@@ -521,7 +542,7 @@ def main():
             if peor > COSTE_PEOR:
                 fallos.append ("el preset mas caro cuesta x%.1f (liston x%.0f)" % (peor, COSTE_PEOR))
 
-        # ---- EL ANCHO DE LOS 256 -----------------------------------------
+        # ---- EL ANCHO DE LOS 384 -----------------------------------------
         peorR, peorMono, quienR, quienMono = -1.0, 99.0, "", ""
         for d in filas:
             f, p = d["fam"], d["pre"]
@@ -564,7 +585,7 @@ def main():
         print ("ancho: r peor %.4f (%s)   mono peor %+.2f dB (%s)"
                % (peorR, quienR, peorMono, quienMono))
 
-        #  LOS 256 ENTRE SI. Sale clavado a cero casi siempre porque la
+        #  LOS 384 ENTRE SI. Sale clavado a cero casi siempre porque la
         #  ganancia se calcula para dejarlo asi: lo que esta linea caza no es un
         #  desajuste de mezcla sino que el limitador de aplicaGanancia MUERDA -
         #  un preset que necesita mucha ganancia se dobla en el codo y se queda
@@ -573,7 +594,7 @@ def main():
         sons = [m[2] for m in medidas if m[2] > 1e-9]
         if sons:
             spread = 20.0 * math.log10 (max (sons) / min (sons))
-            print ("sonoridad: baila %.1f dB entre los 256" % spread)
+            print ("sonoridad: baila %.1f dB entre los 384" % spread)
             if spread > MAX_LOUD_SPREAD_DB:
                 fallos.append ("la sonoridad baila %.1f dB entre el mas y el menos sonoro" % spread)
 
@@ -581,10 +602,15 @@ def main():
         pares = []
         for i in range (len (descs)):
             for j in range (i + 1, len (descs)):
+                #  El indice de familia viaja con el par: la etiqueta es
+                #  "FAMILIA NOMBRE" y hay familias de dos palabras -CUERDA
+                #  PULS, PIANO ELEC-, asi que deducir la familia partiendo el
+                #  rotulo por el primer espacio las parte por la mitad.
                 pares.append ((distancia (descs[i][2], descs[j][2]),
-                               descs[i][0] == descs[j][0], descs[i][1], descs[j][1]))
+                               descs[i][0] == descs[j][0], descs[i][1], descs[j][1],
+                               descs[i][0]))
         pares.sort (key=lambda t: t[0])
-        for dist, misma, a, b in pares:
+        for dist, misma, a, b, _fam in pares:
             liston = PAR_PRE if misma else PAR_FAM
             if dist < liston:
                 fallos.append ("%s y %s son el mismo sonido (%.2f dB, liston %.1f)"
@@ -592,8 +618,25 @@ def main():
         print ("pares: %d, el mas cercano %.2f dB (%s / %s), mediana %.2f"
                % (len (pares), pares[0][0], pares[0][2], pares[0][3],
                   pares[len (pares) // 2][0]))
-        for dist, misma, a, b in pares[:5]:
+        for dist, misma, a, b, _fam in pares[:5]:
             print ("   %6.2f dB  %-24s %-24s %s" % (dist, a, b, "misma familia" if misma else ""))
+
+        #  Y EL CARACTER DE CADA FAMILIA POR SEPARADO, que es lo que la cifra
+        #  global esconde: "el par mas cercano de las 384" es UNA familia, y
+        #  las otras veintitres pueden estar planas sin que se note. Aqui sale
+        #  el par mas cercano DENTRO de cada una, ordenado, y la de arriba es
+        #  la que hay que reescribir cuando la queja sea "los presets suenan
+        #  todos igual". Se publica siempre, como el histograma de aire: un
+        #  numero que sube es lo unico que convierte "mas personalidad" en algo
+        #  que se puede comprobar.
+        porFamilia = {}
+        for dist, misma, a2, b2, fam in pares:
+            if not misma: continue
+            if fam not in porFamilia: porFamilia[fam] = (dist, a2, b2)
+        orden = sorted (porFamilia.items(), key=lambda kv: kv[1][0])
+        print ("caracter dentro de cada familia, de la mas plana a la mas variada:")
+        for fam, (dist, a2, b2) in orden:
+            print ("   %6.2f dB  %s / %s" % (dist, a2, b2))
 
         # ---- ESTRUCTURA: capas, octavas y bucle --------------------------
         for d in filas:
@@ -762,7 +805,7 @@ def main():
 
             #  LAS CINCO OCTAVAS, EN SONORIDAD. La ganancia sale de una sola
             #  zona, asi que esto SI puede desmadrarse - y es lo que la linea de
-            #  arriba no puede ver, porque los 256 salen clavados por
+            #  arriba no puede ver, porque los 384 salen clavados por
             #  construccion.
             porOctava = []
             #  LA CAPA DE LA QUE SALE LA GANANCIA, y no la numero 1.
@@ -1162,16 +1205,23 @@ def main():
                                    % (g, razones[g], razones["mid"]))
 
         if "bancoD" in extra:
-            print ("\nllenar el banco D con los 16: %.0f ms" % extra["bancoD"])
-        mega = sum (d["muestras"] for d in filas if d["pre"] == 0) * 4 / 1048576.0
-        print ("los 16 del banco D ocupan %.1f MB" % mega)
+            print ("\nllenar el banco D con los que caben: %.0f ms" % extra["bancoD"])
+        #  LOS QUE CABEN EN EL BANCO Y NO LAS VEINTICUATRO FAMILIAS. Desde que
+        #  hay 24 y un banco tiene 16 casillas, sumar un preset 0 por familia
+        #  daba los megas de un banco y medio y lo seguia llamando «los 16».
+        #  La lista la dice la app -`cuales`- porque es la que sabe en que orden
+        #  se ensenan.
+        cuales = [int (x) for x in extra.get ("cuales", "").split (",") if x != ""]
+        mega = sum (d["muestras"] for d in filas
+                    if d["pre"] == 0 and (not cuales or d["fam"] in cuales)) * 4 / 1048576.0
+        print ("los %d del banco D ocupan %.1f MB" % (len (cuales) or 16, mega))
 
         print()
         if fallos:
             for f in fallos[:40]: print ("FALLA  " + f)
             if len (fallos) > 40: print ("...y %d mas" % (len (fallos) - 40))
             return 1
-        print ("256 instrumentos: ninguno mudo, ninguno repetido, y las octavas cuadran")
+        print ("384 instrumentos: ninguno mudo, ninguno repetido, y las octavas cuadran")
         return 0
     finally:
         shutil.rmtree (dirtemp, ignore_errors=True)

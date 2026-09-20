@@ -611,7 +611,7 @@ public:
                     {
                         c2->auditNiveles();
                     }
-                    //  LOS 256 INSTRUMENTOS. Ver Tests/instr.py. La variable
+                    //  LOS 384 INSTRUMENTOS. Ver Tests/instr.py. La variable
                     //  lleva LA CARPETA donde dejar los ficheros, no un uno:
                     //  son 66 MB de temporales y el banco quiere ponerlos donde
                     //  los va a borrar.

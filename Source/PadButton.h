@@ -111,8 +111,8 @@ public:
         //  Y SI ES UN INSTRUMENTO, SU DIBUJO EN VEZ DE LA ONDA.
         //
         //  La onda de un instrumento no dice nada: son diez zonas pegadas, asi
-        //  que el garabato que sale es el mismo para los 256 y ademas no se
-        //  parece a lo que suena. El dibujo si dice cual de las dieciseis
+        //  que el garabato que sale es el mismo para los 384 y ademas no se
+        //  parece a lo que suena. El dibujo si dice cual de las veinticuatro
         //  familias es, que es lo unico que hace falta saber de un vistazo -y
         //  cabe donde el nombre no: "CUERDA PULS ENSEMBLE" en una tapa de 60 px
         //  sale cortado a la mitad.

@@ -204,6 +204,40 @@ def main():
         mandos.update (re.findall (r'"((?:[^"\\]|\\.)+)"', blkm))
     used |= mandos
 
+    #  UN NOMBRE, UNA COSA.
+    #
+    #  Las 384 tapas de sonido y las 24 de familia salen de la misma tabla y
+    #  se leen en el mismo menu, y habia VEINTICINCO nombres puestos dos
+    #  veces: un CELLO en CUERDAS y otro en CELLOS, un CLARINET en VIENTOS y
+    #  otro en CANAS, un SITAR dentro de CUERDA PULS cuando SITAR es ademas
+    #  una familia entera. Ninguna prueba lo veia -las dos filas son legales
+    #  por separado- y en el telefono son dos cosas distintas que se llaman
+    #  igual, que es lo que costo la queja: "ya habia un nombre para dos
+    #  cosas".
+    #
+    #  La excepcion es la tapa que lleva el nombre de SU PROPIA familia -el
+    #  SITAR de SITAR-, que no son dos cosas: es la voz canonica de la
+    #  familia y asi lo escribe cualquier sampler.
+    tab = sin_comentarios (open (os.path.join (SRC, "SintesTabla.inc"), encoding="utf8").read())
+    familia, tapas, familias = None, [], []
+    for linea in tab.splitlines():
+        m = re.match (r'\s*\{\s*"([^"]+)",\s*f[A-Z]', linea)
+        if m:
+            familia = m.group (1); familias.append (familia); continue
+        m = re.match (r'\s*\{\s*"([^"]+)",\s*-?[0-9]', linea)
+        if m and familia is not None:
+            tapas.append ((familia, m.group (1)))
+
+    vistas = {}
+    for f, n in tapas:
+        if n in vistas:
+            bad.append ("el nombre %r esta en dos sonidos: %s y %s" % (n, vistas[n], f))
+        vistas[n] = f
+    for f, n in tapas:
+        if n in familias and n != f:
+            bad.append ("el sonido %s de %s se llama como la familia %s" % (n, f, n))
+    print ("%d familias y %d sonidos, un nombre cada uno" % (len (familias), len (tapas)))
+
     for k in sorted (used - set (keys)):
         bad.append ("clave usada y NO en la tabla (sale en espanol en los cuatro): %r" % k)
 

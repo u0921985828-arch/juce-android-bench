@@ -105,11 +105,11 @@ namespace
         { "Preset guardado", "", "Preset saved", "预设已保存", "تم حفظ الإعداد" },
         { "OCT",         "",  "OCT",        "八度",   "أوكتاف" },
         { "INSTRUMENTO", "",  "INSTRUMENT", "乐器",   "آلة" },
-        //  LAS DIECISEIS FAMILIAS DE Sintes.h. Son nombres COMUNES -una familia
+        //  LAS VEINTICUATRO FAMILIAS DE Sintes.h. Son nombres COMUNES -una familia
         //  de instrumentos, no un modelo- asi que se traducen, igual que se
         //  traducen ACUSTICA, MAQUINA, TEXTURA y TONOS. Lo que no se traduce es
         //  el nombre de cada preset: "RHODES" o "SAW BS" son nombres propios de
-        //  un sonido, y ademas serian 256 filas.
+        //  un sonido, y ademas serian 384 filas.
         { "BAJOS",       "",  "BASSES",     "贝斯",   "باس" },
         { "SUBS",        "",  "SUB BASS",   "超低音", "سب باس" },
         { "PIANO ELEC",  "",  "E.PIANO",    "电钢琴", "بيانو كهربائي" },
@@ -126,6 +126,17 @@ namespace
         { "CLAVES",      "",  "CLAVS",      "击弦",   "كلاف" },
         { "VIENTOS",     "",  "WINDS",      "管乐",   "نفخ" },
         { "ARPAS",       "",  "HARPS",      "竖琴",   "قيثارة" },
+        //  Y LAS OCHO NUEVAS, dos por categoria. Mismo criterio que las
+        //  dieciseis de arriba: el nombre de la FAMILIA se traduce -es un
+        //  nombre comun- y el de cada preset no.
+        { "FM",          "",  "FM",         "调频",   "إف إم" },
+        { "SYNC",        "",  "SYNC",       "同步",   "مزامنة" },
+        { "PIANOS",      "",  "PIANOS",     "钢琴",   "بيانو" },
+        { "ACORDEON",    "",  "ACCORDION",  "手风琴", "أكورديون" },
+        { "SITAR",       "",  "SITAR",      "西塔琴", "سيتار" },
+        { "CELLOS",      "",  "CELLOS",     "大提琴", "تشيلو" },
+        { "CANAS",       "",  "REEDS",      "簧管",   "مزامير" },
+        { "TUBOS",       "",  "PIPES",      "管风琴", "أنابيب" },
         //  Y el nombre del pack, que tampoco se traduce por lo mismo que ZATI:
         //  es como se llama, no lo que es.
         { "SINTES",      "",  "SINTES",     "SINTES", "SINTES" },
@@ -681,9 +692,29 @@ namespace
         { "TECLAS",         "",         "KEYS",       "键盘",       "مفاتيح" },
         { "ARCO Y PUA",     "",         "BOW & PICK", "弓与拨",     "قوس وريشة" },
         { "SOPLO Y METAL",  "",         "WIND & BRASS", "管与铜",   "نفخ ونحاس" },
+        //  LAS SEIS FAMILIAS DEL BANCO DE EFECTOS. Ver `MainComponent::
+        //  ordenFx`: seis grupos de cinco, por lo que le HACEN al sonido.
+        //  Existian desde el dia que el menu se ordeno, pero solo como
+        //  comentario del codigo fuente — o sea en el unico sitio donde no las
+        //  lee quien tiene el telefono en la mano. La queja fue "organiza el
+        //  pop-up de efectos por categorias o secciones como esta el de los
+        //  instrumentos", y no hubo que inventar el reparto: estaba escrito.
+        { "FILTRO",         "",         "FILTER",     "滤波",       "مرشح" },
+        { "SATURACION",     "",         "DRIVE",      "失真",       "تشبع" },
+        { "MODULACION",     "",         "MODULATION", "调制",       "تضمين" },
+        { "ESPACIO",        "",         "SPACE",      "空间",       "فضاء" },
+        { "DINAMICA",       "",         "DYNAMICS",   "动态",       "ديناميك" },
+        { "TIEMPO",         "",         "TIME",       "时间",       "زمن" },
         { "REJILLA",        "",         "GRID",       "网格",       "الشبكة" },
         { "Un paso dura %1", "",         "one step lasts %1",
                                         "每步时值 %1", "الخطوة تساوي %1" },
+        //  LO QUE NO CABE AL CAMBIAR DE REJILLA. Entre 1/16 y su tresillo la
+        //  razon es 1.5 y un paso impar cae entre dos casillas: el que no
+        //  encuentra sitio se cuenta y se dice aqui.
+        { "Un paso dura %1 · %2 golpes no caben, %3 se ajustan", "",
+                                        "one step lasts %1 · %2 hits do not fit, %3 snap",
+                                        "每步时值 %1 · %2 个音放不下，%3 个已对齐",
+                                        "الخطوة تساوي %1 · %2 نقرة لا تتسع و%3 انضبطت" },
         { "Rejilla",        "",         "Grid",       "网格",       "الشبكة" },
         { "cuanto dura un paso", "",    "how long a step lasts",
                                         "每一步的时值", "مدة الخطوة الواحدة" },
@@ -845,33 +876,45 @@ namespace
     //  familias. Es el mecanismo de `TONE|fx` y de `RATE|lfo`, aplicado de
     //  una vez a una familia entera en vez de fila a fila cuando duela.
     { "AIRE|ins",            "",           "AIR",          "气声",          "هواء" },
+    { "ALIENTO|ins",           "",           "BREATH",       "气息",           "نفَس" },
     { "ANCHO|ins",           "",           "WIDTH",        "宽度",          "عرض" },
     { "ARCO|ins",            "",           "BOW",          "弓压",          "قوس" },
     { "ARMONICO|ins",        "",           "HARM",         "泛音",          "توافقي" },
     { "ATAQUE|ins",          "",           "ATTACK",       "起音",          "هجوم" },
     { "BALANCE|ins",         "",           "BALANCE",      "平衡",          "توازن" },
+    { "BARRIDO|ins",           "",           "SWEEP",        "扫频",           "مسح" },
     { "BRILLO|ins",          "",           "TONE",         "亮度",          "سطوع" },
     { "CAIDA|ins",           "",           "DECAY",        "衰减",          "تلاشٍ" },
     { "CAIDA ENV|ins",       "",           "DECAY",        "包络衰减",        "تلاشي الغلاف" },
     { "CAIDA TONO|ins",      "",           "PITCH DEC",    "音高衰减",        "تلاشي النغمة" },
+    { "CAJA|ins",              "",           "BOARD",        "音板",           "لوح" },
     { "CENTRO|ins",          "",           "CENTRE",       "中心",          "مركز" },
+    { "CHIFF|ins",             "",           "CHIFF",        "气声",           "نفخة" },
+    { "CIERRE|ins",            "",           "CLOSE",        "闭合",           "إغلاق" },
+    { "CRIN|ins",              "",           "HAIR",         "弓毛",           "شعر" },
     { "CUANTOS|ins",         "",           "COUNT",        "数量",          "عدد" },
     { "CUERPO|ins",          "",           "BODY",         "共鸣",          "جسم" },
     { "DEDO|ins",            "",           "PLUCK",        "拨弦",          "نقر" },
     { "DESAFINE|ins",        "",           "DETUNE",       "失谐",          "إزاحة" },
     { "DISPERSA|ins",        "",           "SPREAD",       "扩散",          "انتشار" },
+    { "DRON|ins",              "",           "DRONE",        "持续音",          "درون" },
     { "ENTRADA|ins",         "",           "BREATH",       "吹入",          "نفَس" },
     { "FILTRO|ins",          "",           "FILTER",       "滤波",          "مرشّح" },
     { "FORMA|ins",           "",           "SHAPE",        "波形",          "شكل" },
+    { "FUELLE|ins",            "",           "BELLOWS",      "风箱",           "منفاخ" },
+    { "GEMELA|ins",            "",           "TWIN",         "双弦",           "توأم" },
     { "GOLPE|ins",           "",           "STRIKE",       "敲击",          "ضربة" },
     { "IMPARES|ins",         "",           "ODD",          "奇次",          "فردي" },
     { "INARMONICO|ins",      "",           "INHARM",       "非谐",          "لاتوافقي" },
     { "INCLINA|ins",         "",           "TILT",         "倾斜",          "ميل" },
     { "INDICE|ins",          "",           "INDEX",        "指数",          "مؤشر" },
+    { "LENGUETA|ins",          "",           "REED",         "簧片",           "ريشة" },
     { "LESLIE|ins",          "",           "LESLIE",       "旋转",          "ليزلي" },
     { "MARTILLO|ins",        "",           "HAMMER",       "音锤",          "مطرقة" },
+    { "MEZCLA|ins",            "",           "MIXTURE",      "混合",           "مزيج" },
     { "MODULA|ins",          "",           "MOD",          "调制",          "تعديل" },
     { "MUERTE|ins",          "",           "MUTE",         "制音",          "كتم" },
+    { "MUSETTE|ins",           "",           "MUSETTE",      "颤音",           "موزيت" },
     { "PARCIAL 1|ins",       "",           "PART 1",       "分音 1",        "جزئي 1" },
     { "PARCIAL 2|ins",       "",           "PART 2",       "分音 2",        "جزئي 2" },
     { "PASO ALTO|ins",       "",           "HI PASS",      "高通",          "تمرير عال" },
@@ -880,20 +923,29 @@ namespace
     { "PROFUNDO|ins",        "",           "DEPTH",        "深度",          "عمق" },
     { "PULSO|ins",           "",           "PULSE",        "脉宽",          "نبضة" },
     { "Q|ins",               "",           "Q",            "Q",           "Q" },
+    { "QUINTA|ins",            "",           "FIFTH",        "五度",           "خامسة" },
     { "RAZON|ins",           "",           "RATIO",        "比率",          "نسبة" },
     { "RAZON 1|ins",         "",           "RATIO 1",      "比率 1",        "نسبة 1" },
     { "RAZON 2|ins",         "",           "RATIO 2",      "比率 2",        "نسبة 2" },
+    { "RAZON A|ins",           "",           "RATIO A",      "比率 A",         "نسبة أ" },
+    { "RAZON B|ins",           "",           "RATIO B",      "比率 B",         "نسبة ب" },
+    { "REALIMENTA|ins",        "",           "FEEDBACK",     "反馈",           "تغذية" },
     { "RESO|ins",            "",           "RESO",         "共振",          "رنين" },
     { "RUIDO|ins",           "",           "NOISE",        "噪声",          "ضجيج" },
     { "SATURA|ins",          "",           "DRIVE",        "驱动",          "إشباع" },
+    { "SIMPATICAS|ins",        "",           "SYMPATH",      "共鸣弦",          "متعاطفة" },
     { "SOBREPASO|ins",       "",           "OVERSHOOT",    "超冲",          "تجاوز" },
     { "SOPLO|ins",           "",           "BLOW",         "气流",          "نفخ" },
     { "SUB|ins",             "",           "SUB",          "超低",          "تحت" },
     { "SUELTA|ins",          "",           "RELEASE",      "释音",          "إفلات" },
     { "TIEMPO|ins",          "",           "TIME",         "时间",          "زمن" },
+    { "TUBO|ins",              "",           "TUBE",         "管身",           "أنبوب" },
     { "VELOCIDAD|ins",       "",           "SPEED",        "速度",          "سرعة" },
+    { "VENTANA|ins",           "",           "WINDOW",       "窗宽",           "نافذة" },
     { "VIBRATO|ins",         "",           "VIBRATO",      "颤音",          "فيبراتو" },
+    { "VIENTO|ins",            "",           "WIND",         "风压",           "رياح" },
     { "VOCAL|ins",           "",           "VOWEL",        "元音",          "حرف علة" },
+    { "ZUMBIDO|ins",           "",           "BUZZ",         "嗡鸣",           "طنين" },
         //  AUTO no pasa por T() como palabra traducida sino como CLAVE: en las
         //  cuatro lenguas se dice igual y es la abreviatura que cualquier
         //  aparato usa para la automatizacion, como MIDI o XY.

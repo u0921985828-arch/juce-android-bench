@@ -766,6 +766,161 @@ void MainComponent::auditArrange()
                   << ",\"entradas\":" << entradasRej
                   << ",\"tras deshacer\":" << juce::String (beatsVuelta, 4)
                   << ",\"pila\":[" << undoR << "," << pilaTrasDeshacer << "]}" << std::endl;
+
+        //  LA REJILLA ES UN ZOOM, Y ESO SE MIDE EN PULSOS Y NO EN PASOS.
+        //
+        //  El fallo que esto caza no se ve contando golpes: al cambiar de
+        //  rejilla los tres seguian encendidos, en los mismos pasos, y lo que
+        //  cambiaba era lo que VALE un paso - o sea que el patron entero se
+        //  oia al doble de velocidad. La queja fue «no deberia cambiarse ni el
+        //  tiempo, ni los BPM, ni nada del proyecto, solo lo visual». Asi que
+        //  la cifra es el PULSO en el que cae cada golpe -paso por lo que dura
+        //  un paso- antes y despues, y las dos listas tienen que ser iguales.
+        //
+        //  Y el tempo al lado, que es la otra mitad de la queja y la que una
+        //  medida de pulsos sola no ve: si el remapeo saliera bien y ademas
+        //  alguien tocara los BPM, los pulsos cuadrarian y la musica no.
+        {
+            for (int st = 0; st < AudioEngine::kNumSteps; ++st)
+                for (int pd = 0; pd < kNumPads; ++pd)
+                { pattern[0][(size_t) st][(size_t) pd] = false; engine.setStep (0, st, pd, false); }
+
+            //  Se parte de 1/16 -indice 2- y se va a 1/8, que es el caso de la
+            //  queja: la rejilla se ENSANCHA y el paso 4 tiene que mudarse al
+            //  2 para seguir cayendo en el pulso 1.
+            gridSlider.setValue (2.0, juce::sendNotificationSync);
+            const int pasos[3] = { 0, 4, 8 };
+            for (int k = 0; k < 3; ++k)
+            { pattern[0][(size_t) pasos[k]][0] = true; engine.setStep (0, pasos[k], 0, true); }
+
+            const float beats0 = engine.getStepBeats();
+            const double bpm0  = (double) engine.getBpm();
+            const int    largo0 = engine.getPatternLength (0);
+
+            auto pulsos = [this] (juce::Array<double>& out)
+            {
+                out.clearQuick();
+                const double b = (double) engine.getStepBeats();
+                for (int st = 0; st < AudioEngine::kNumSteps; ++st)
+                    if (engine.leePaso (0, st, 0).on) out.add ((double) st * b);
+            };
+
+            juce::Array<double> antes, despues;
+            pulsos (antes);
+            gridSlider.setValue (0.0, juce::sendNotificationSync);       // 1/8
+            pulsos (despues);
+
+            auto lista = [] (const juce::Array<double>& a)
+            {
+                juce::String t;
+                for (int k = 0; k < a.size(); ++k) t << (k ? "," : "") << juce::String (a[k], 4);
+                return t;
+            };
+
+            //  Y EL LARGO DEL PATRON, que es la consecuencia que no se ve en
+            //  los pulsos: 16 pasos de 1/16 son cuatro pulsos, y para durar
+            //  los mismos cuatro a 1/8 harian falta 8 pasos. El suelo del
+            //  motor son 16 -`kMinPatLen`, que es lo que hace que un patron
+            //  sea siempre un compas entero-, asi que ahi el bucle pasa a
+            //  durar el doble con la musica en la primera mitad. Se publica
+            //  para que sea una decision visible y no una sorpresa.
+            std::cout << "{\"arr\":\"la rejilla es un zoom\""
+                      << ",\"largo\":[" << largo0 << "," << engine.getPatternLength (0) << "]"
+                      << ",\"paso antes\":" << juce::String (beats0, 4)
+                      << ",\"paso despues\":" << juce::String (engine.getStepBeats(), 4)
+                      << ",\"pulsos antes\":[" << lista (antes) << "]"
+                      << ",\"pulsos despues\":[" << lista (despues) << "]"
+                      << ",\"bpm\":[" << juce::String (bpm0, 2) << ","
+                                      << juce::String ((double) engine.getBpm(), 2) << "]}"
+                      << std::endl;
+        }
+
+        //  Y EL TRESILLO, QUE ES EL CASO QUE NO SALE REDONDO Y POR ESO ES EL
+        //  QUE HAY QUE MEDIR. Van los dos sentidos, y no son el mismo:
+        //
+        //   - DE RECTO A TRESILLO Y VUELTA los pulsos se conservan CLAVADOS
+        //     aunque la razon sea 3/4 y luego 4/3. Una razon que no es entera
+        //     no es excusa para mover un golpe, y la regla de 1/16 a 1/8
+        //     -razon 2- no puede ver eso.
+        //   - DE TRESILLO A RECTO CON GOLPES QUE SOLO EXISTEN EN EL TRESILLO
+        //     no hay sitio: el pulso 0.0833 no se puede decir con casillas de
+        //     0.25. Uno cae encima de otro y se pierde, y el que queda ya no
+        //     esta en su pulso. La app tiene que DECIR las dos cosas: un
+        //     patron que cambia de musica en silencio es el fallo que costo
+        //     el acorde de la tonica.
+        //
+        //  Se publica el renglon de estado literal, que es lo que lee la
+        //  persona, y no el numero por dentro: *medir el numero y no el
+        //  rotulo* es como esta casa se ha comido ya dos fallos.
+        {
+            auto limpia = [this]
+            {
+                for (int st = 0; st < AudioEngine::kNumSteps; ++st)
+                    for (int pd = 0; pd < kNumPads; ++pd)
+                    { pattern[0][(size_t) st][(size_t) pd] = false; engine.setStep (0, st, pd, false); }
+            };
+            auto siembra = [this] (const int* pasos, int cuantos)
+            {
+                for (int k = 0; k < cuantos; ++k)
+                { pattern[0][(size_t) pasos[k]][0] = true; engine.setStep (0, pasos[k], 0, true); }
+            };
+            auto pulsos = [this] (juce::Array<double>& out)
+            {
+                out.clearQuick();
+                const double b = (double) engine.getStepBeats();
+                for (int st = 0; st < AudioEngine::kNumSteps; ++st)
+                    if (engine.leePaso (0, st, 0).on) out.add ((double) st * b);
+            };
+            auto lista = [] (const juce::Array<double>& a)
+            {
+                juce::String t;
+                for (int k = 0; k < a.size(); ++k) t << (k ? "," : "") << juce::String (a[k], 4);
+                return t;
+            };
+
+            //  IDA Y VUELTA POR EL TRESILLO, con golpes que los dos saben
+            //  decir: los pasos 0, 4 y 8 de 1/16 son los 0, 6 y 12 de 1/16T.
+            //  La razon es 3/2 y su vuelta 2/3 -ni entera ni su inversa-, que
+            //  es lo que la regla de 1/16 a 1/8 (razon 2) no puede ver.
+            limpia();
+            gridSlider.setValue (2.0, juce::sendNotificationSync);       // 1/16
+            const int rectos[3] = { 0, 4, 8 };
+            siembra (rectos, 3);
+
+            juce::Array<double> recto, tresillo, vuelta;
+            pulsos (recto);
+            gridSlider.setValue (3.0, juce::sendNotificationSync);       // 1/16T
+            pulsos (tresillo);
+            const int largoTresillo = engine.getPatternLength (0);
+            gridSlider.setValue (2.0, juce::sendNotificationSync);       // 1/16 otra vez
+            pulsos (vuelta);
+
+            //  Y LO QUE NO CABE: golpes que SOLO existen en el tresillo. Los
+            //  pasos 0, 1 y 2 de 1/16T son los pulsos 0, 0.1667 y 0.3333, y
+            //  en casillas de 0.25 el segundo cae encima del primero -se
+            //  pierde- y el tercero acaba en 0.25 -se mueve-.
+            limpia();
+            gridSlider.setValue (3.0, juce::sendNotificationSync);       // 1/16T
+            const int solosDelTresillo[3] = { 0, 1, 2 };
+            siembra (solosDelTresillo, 3);
+
+            juce::Array<double> soloTres, apretados;
+            pulsos (soloTres);
+            gridSlider.setValue (2.0, juce::sendNotificationSync);       // 1/16
+            pulsos (apretados);
+            const juce::String dicho = status.getText();
+
+            std::cout << "{\"arr\":\"la rejilla y el tresillo\""
+                      << ",\"pulsos recto\":[" << lista (recto) << "]"
+                      << ",\"pulsos tresillo\":[" << lista (tresillo) << "]"
+                      << ",\"pulsos vuelta\":[" << lista (vuelta) << "]"
+                      << ",\"largo tresillo\":" << largoTresillo
+                      << ",\"pulsos solo tresillo\":[" << lista (soloTres) << "]"
+                      << ",\"pulsos apretados\":[" << lista (apretados) << "]"
+                      << ",\"largo apretado\":" << engine.getPatternLength (0)
+                      << ",\"dicho\":\"" << dicho.replace ("\"", "'") << "\"}"
+                      << std::endl;
+        }
     }
 }
 
@@ -1291,15 +1446,15 @@ void MainComponent::auditExportAsync (bool cancelar)
 //  volverlos a escribir en C++ seria la misma regla en dos sitios, que es el
 //  fallo que este banco lleva encontrando desde el principio.
 //
-//  Y no se escriben los 256 enteros: son 2.3 MB cada uno, o sea 590 MB de
+//  Y no se escriben los 384 enteros: son 2.3 MB cada uno, o sea 880 MB de
 //  temporales. Se escribe
 //
-//    - LA ZONA DE REFERENCIA de los 256 (raiz 0, capa fuerte): con eso se mide
-//      que ninguno este mudo, que los 256 esten igualados y que no haya dos que
+//    - LA ZONA DE REFERENCIA de los 384 (raiz 0, capa fuerte): con eso se mide
+//      que ninguno este mudo, que los 384 esten igualados y que no haya dos que
 //      sean el mismo sonido, que son las cuatro que necesitan a TODOS.
 //    - EL PRESET ENTERO del primero de cada familia: con eso se miden las
 //      cosas que son ESTRUCTURA -la costura entre octavas, la del bucle y las
-//      dos capas- y para eso no hacen falta los 256, hace falta uno por
+//      dos capas- y para eso no hacen falta los 384, hace falta uno por
 //      algoritmo.
 // ============================================================================
 void MainComponent::auditInstr()
@@ -1931,10 +2086,24 @@ void MainComponent::auditInstr()
     // ------------------------------------------------------------------
     //  Y LO QUE CUESTA LLENAR EL BANCO D, que es la cifra que decide si los
     //  dieciseis pueden venir puestos de fabrica o hay que ir a buscarlos.
+    //
+    //  DIECISEIS Y NO VEINTICUATRO, y ese numero sale del BANCO y no de la
+    //  tabla: un banco tiene `kPadsPerBank` casillas, asi que desde que hay
+    //  veinticuatro familias el banco D ya no las puede traer todas. Recorrer
+    //  `kFamilias` media el coste de llenar un banco y medio, que no es una
+    //  cifra de nada. Se llenan las dieciseis PRIMERAS DEL MENU, que son las
+    //  que vendrian puestas.
     const double t0 = juce::Time::getMillisecondCounterHiRes();
-    for (int f = 0; f < Sintes::kFamilias; ++f) Sintes::sintetiza (f, 0);
+    for (int i = 0; i < kPadsPerBank; ++i) Sintes::sintetiza (Sintes::ordenDeMenu()[i], 0);
+    //  Y QUIENES SON, que es la otra mitad: la prueba suma los megas de los
+    //  que caben en el banco y sin esta lista tendria que adivinar cuales son
+    //  -sumaba los de las veinticuatro familias y lo llamaba «los 16»-.
+    juce::String cuales;
+    for (int i = 0; i < kPadsPerBank; ++i)
+        cuales << (i > 0 ? "," : "") << Sintes::ordenDeMenu()[i];
     std::cout << "{\"instr\":\"bancoD\",\"ms\":"
-              << juce::String (juce::Time::getMillisecondCounterHiRes() - t0, 1) << "}" << std::endl;
+              << juce::String (juce::Time::getMillisecondCounterHiRes() - t0, 1)
+              << ",\"cuales\":\"" << cuales << "\"}" << std::endl;
 }
 
 //  GUARDAR EL BANCO DE DELANTE COMO KIT.
@@ -2743,11 +2912,11 @@ void MainComponent::auditOpen (const juce::String& pedido)
         //  renglon de la cabecera, y si el nombre se corta- y es CUERDA PULS,
         //  once caracteres. El preset decide el ancho de la pantalla, y el
         //  gancho pedia el 0: "1/16 NYLON", DOCE caracteres, cuando el peor de
-        //  los 256 son DIECISIETE. O sea que la regla del rotulo cortado se le
+        //  los 384 son DIECISIETE. O sea que la regla del rotulo cortado se le
         //  hacia a la cadena mas corta posible - una linea que imprime OK.
         //
         //  La cuenta es la del pintor MENOS lo que es constante: "/16" y los
-        //  tres espacios valen lo mismo en las 256, asi que lo que separa a una
+        //  tres espacios valen lo mismo en las 384, asi que lo que separa a una
         //  de otra son las cifras del numero y las letras del nombre. Y sale 17
         //  clavados, o sea el peor de la tabla entera: "16/16   BRIGHT GT".
         int fam = 0;
@@ -2764,7 +2933,13 @@ void MainComponent::auditOpen (const juce::String& pedido)
             if (n > peor) { peor = n; pre = i; }
         }
 
-        const int pad = kBancoInstr * kPadsPerBank + fam;
+        //  Y EL PAD SE DA LA VUELTA CON EL BANCO, que hasta las veinticuatro
+        //  familias no hacia falta: `kBancoInstr * 16 + fam` con `fam` en
+        //  0..15 caia dentro del banco D, y con `fam` llegando a 23 se sale de
+        //  los 64 pads que hay. No habria fallado ruidosamente: `selectPad`
+        //  acota, o sea que la medida se habria hecho sobre OTRO pad sin que
+        //  nadie lo viera. Es la misma figura que el `t[16]` de `deFamilia`.
+        const int pad = kBancoInstr * kPadsPerBank + (fam % kPadsPerBank);
         ponInstrumentoYEspera (pad, fam, pre);
         selectBank (kBancoInstr);
         selectPad (pad);
@@ -3995,6 +4170,39 @@ void MainComponent::auditProject()
                                    << slotFx[0][3] << "," << slotFx[0][4] << "," << slotFx[0][5] << "]"
               << "}" << std::endl;
 
+    //  ============ UN PROYECTO ESCRITO CON EL TOPE DE CUATRO ============
+    //
+    //  Y ESTA ES LA QUE FALTABA, que es la parte que importa de todo el bloque.
+    //  Lo de arriba es una ida y vuelta CON LA MISMA COMPILACION: escribe con
+    //  el formato de hoy y lee con el formato de hoy, asi que le cuadra
+    //  cualquier formato mientras sea consistente consigo mismo. Un cambio de
+    //  empaquetado le sale verde por construccion, y le salio: subir el acorde
+    //  a ocho notas mudo los bits de presencia del 24..26 al 56..62 y los
+    //  proyectos guardados con la version anterior empezaron a cargar SOLO LA
+    //  TONICA, con el banco entero en verde y 46 de 46.
+    //
+    //  La entrada NO LA ESCRIBE ESTA COMPILACION: es la cadena literal que
+    //  escribia la version vieja. Paso 0, pad 0, y la celda 0x070c0704:
+    //      byte 0 = 0x04 -> +4 semitonos      bit 24 -> la primera existe
+    //      byte 1 = 0x07 -> +7 semitonos      bit 25 -> la segunda existe
+    //      byte 2 = 0x0c -> +12 semitonos     bit 26 -> la tercera existe
+    //  o sea un acorde mayor con la octava. Por el camino de verdad -el arbol
+    //  que lee el fichero de proyecto- y no llamando a la migracion a mano:
+    //  *lo que importa no es lo que devuelve la orden sino que acabo en el
+    //  motor.*
+    {
+        auto arbol = captureState();
+        if (auto banks = arbol.getChildWithName ("BANKS"); banks.isValid() && banks.getNumChildren() > 0)
+            banks.getChild (0).setProperty ("chords", "0 0 70c0704", nullptr);
+
+        applyState (arbol);
+
+        std::cout << "{\"viejo\":1,\"acorde\":[" << engine.getStepExtra (0, 0, 0, 0) << ","
+                                                    << engine.getStepExtra (0, 0, 0, 1) << ","
+                                                    << engine.getStepExtra (0, 0, 0, 2) << "]}"
+                  << std::endl;
+    }
+
     //  Y SE BOMBEA UN TICK DE AUDIO ANTES DE PREGUNTARLE AL MOTOR. La tabla de
     //  clips se publica por intercambio de punteros -el hilo de mensajes deja
     //  la nueva en `pendingClips` y quien la ADOPTA es el hilo de audio, que es
@@ -4816,12 +5024,23 @@ void MainComponent::auditRanuras()
     const auto zonaR    = safeArea();
     const int  topeR    = altoTarjeta (zonaR);
     const int  anchoR   = anchoTarjetaInterior (zonaR.getWidth());
-    auto forma = [&] (int n)
+    //  Y CON EL NUMERO DE COLUMNAS PEDIDO, que es la mitad que faltaba y que
+    //  hacia que esta medida contestara por OTRA rejilla. `resized()` llama
+    //  con `kFxPorTipo` -cada fila es una familia de efectos- y aqui se
+    //  llamaba sin el, asi que la tabla publicaba 3x10 a 412x915 mientras la
+    //  app pintaba 5x6. Una medida que no llama igual que el codigo que mide
+    //  no mide ese codigo: mide otro. Salio a la luz al poner los rotulos de
+    //  familia, que solo existen cuando cada fila ES una familia.
+    auto forma = [&] (int n, int pedido)
     {
-        const int c = menuRanuraColumnas (n, topeR, anchoR, true);
+        const int c = menuRanuraColumnas (n, topeR, anchoR, true, pedido);
         const int f = (n + c - 1) / c;
+        //  Y las bandas de familia se cuentan cuando las hay, por lo mismo:
+        //  el alto que publica esta linea tiene que ser el que la tarjeta
+        //  pide de verdad.
+        const int bandas = (c == pedido && f == kFxCategorias) ? f : 0;
         return juce::String (c) + "x" + juce::String (f) + ":"
-                 + juce::String (menuRanuraPide (f, true)) + ":"
+                 + juce::String (menuRanuraPide (f, true, Metrics::btn, bandas)) + ":"
                  + juce::String (anchoR / c);
     };
 
@@ -4855,11 +5074,49 @@ void MainComponent::auditRanuras()
         }
     }
 
+    //  6. LOS SEIS ROTULOS DE FAMILIA, Y QUE CADA UNO ESTE SOBRE LA SUYA.
+    //
+    //  Que existan no basta: un rotulo colocado sobre la fila equivocada pasa
+    //  cualquier regla que solo cuente cuantos hay, y seria peor que no
+    //  tenerlo -diria que FLT es una saturacion-. Asi que se publica, por
+    //  familia, el nombre, si la banda tiene limites, y si esa banda queda POR
+    //  ENCIMA de la primera tapa de su fila. Se abre el menu de verdad y se
+    //  deja que `resized()` reparta: los limites salen del maquetado, que es
+    //  el unico que sabe donde acabaron.
+    abreMenuRanura (0);
+    resized();
+    juce::String familias;
+    int bandasPuestas = 0, bandasSobreSuFila = 0;
+    for (int cat = 0; cat < kFxCategorias; ++cat)
+    {
+        const auto banda = ranuraCatArea[(size_t) cat];
+        const int celda = cat * kFxPorTipo;
+        const bool hay = ! banda.isEmpty();
+        const bool sobre = hay && celda < ranuraBtns.size() && ranuraBtns[celda] != nullptr
+                             && ! ranuraBtns[celda]->getBounds().isEmpty()
+                             && banda.getBottom() <= ranuraBtns[celda]->getY();
+        if (hay) ++bandasPuestas;
+        if (sobre) ++bandasSobreSuFila;
+        familias << (cat ? "," : "") << categoriasFx()[cat] << ":" << (sobre ? 1 : 0);
+    }
+    abreMenuRanura (-1);
+    //  Y CERRADO EL MENU, LAS BANDAS TIENEN QUE QUEDAR VACIAS. Son bandas
+    //  PINTADAS y no componentes, asi que no hay `setBounds({})` que las
+    //  apague: si sobreviven al cierre, el pintor las sigue dibujando encima
+    //  de lo que haya debajo. Es el mismo fallo que ya costo el titulo de la
+    //  ficha del instrumento, y la septima regla del banco existe por el.
+    int bandasQueSobreviven = 0;
+    for (const auto& r : ranuraCatArea) if (! r.isEmpty()) ++bandasQueSobreviven;
+
     std::cout << "{\"ranuras\":1"
+              << ",\"familias\":\"" << familias << "\""
+              << ",\"bandas\":" << bandasPuestas
+              << ",\"bandas_sobre\":" << bandasSobreSuFila
+              << ",\"bandas_zombis\":" << bandasQueSobreviven
               << ",\"tipos\":"     << kNumFx
               << ",\"params\":\""   << claves  << "\""
               << ",\"nombres\":\""  << nombres << "\""
-              << ",\"forma\":\""          << forma (kNumFx) << "\""
+              << ",\"forma\":\""          << forma (kNumFx, kFxPorTipo) << "\""
               //  Y LA FORMA CON UN TIPO MAS, que es la pregunta que de verdad
               //  importa: el dia que entre el siguiente, sigue cabiendo el
               //  menu? Estaba escrita como `forma21` -un numero clavado que
@@ -4867,7 +5124,10 @@ void MainComponent::auditRanuras()
               //  cuanto entraron WAH y OCT paso a probar una cuenta que la
               //  app ya no tiene, con el veredicto del script diciendo «cabe
               //  a 21» para siempre. Una afirmacion sin medida, en la prueba.
-              << ",\"formaMas\":\""       << forma (kNumFx + 1) << "\""
+              //  Con un tipo mas las familias dejan de salir de cinco -31 no
+              //  es multiplo de 5-, asi que esa pregunta se hace SIN pedido:
+              //  es la rejilla que quedaria, no la de familias.
+              << ",\"formaMas\":\""       << forma (kNumFx + 1, 0) << "\""
               << ",\"tope_tarjeta\":"    << topeR
               << ",\"defectos_cruzados\":" << defectosQueNoCuadran
               << ",\"canales\":"           << kNumCanales

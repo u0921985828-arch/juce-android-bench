@@ -631,7 +631,7 @@ namespace Kits
         const float loud = (float) std::sqrt (best / juce::jmax (1, win));
         //  El objetivo se sube 3.01 dB -la raiz de dos- para que una señal
         //  duplicada en los dos canales salga al MISMO nivel que salia en mono.
-        //  Sin esto los 256 instrumentos bajarian de golpe 3 dB respecto a la
+        //  Sin esto los 384 instrumentos bajarian de golpe 3 dB respecto a la
         //  fabrica, que sigue siendo mono.
         const float objetivo = kTargetLufsish * juce::MathConstants<float>::sqrt2;
         return (loud > 1.0e-7f) ? objetivo / loud : 1.0f;

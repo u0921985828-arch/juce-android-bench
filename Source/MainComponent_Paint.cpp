@@ -1730,6 +1730,27 @@ void MainComponent::paintRanuraContent (juce::Graphics& g)
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
     pintaTitulo (g, titulo, T ("RANURA %1", juce::String (ranuraEditada + 1)),
                  "titulo", true);
+
+    //  LAS SEIS FAMILIAS, sobre sus seis filas.
+    //
+    //  Pintadas y no componentes, igual que las cuatro del menu de
+    //  instrumentos: un rotulo que solo se lee no necesita ser una tapa, y
+    //  siendolo le quitaria ancho a las cinco que si se tocan.
+    //
+    //  Y CON SU TINTA PUESTA, `inkDim` y no `ink`: el nombre de familia va por
+    //  debajo del titulo de la ficha, y dos rotulos con el mismo peso en la
+    //  misma tarjeta se leen como dos titulos y no como titulo y subtitulo.
+    //
+    //  Las bandas vienen vacias cuando la rejilla no sale a cinco columnas,
+    //  que es cuando una fila deja de ser una familia y el rotulo mentiria.
+    g.setColour (ZatiColours::inkDim);
+    g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.16f));
+    for (int cat = 0; cat < kFxCategorias; ++cat)
+    {
+        const auto banda = ranuraCatArea[(size_t) cat];
+        if (banda.isEmpty()) continue;
+        pintaTitulo (g, banda, T (categoriasFx()[cat]), "seccion", true);
+    }
 }
 
 //  EL TITULO DICE DE QUE EFECTO SON Y CUAL LLEVA PUESTO -«EQ · SONRISA»-,

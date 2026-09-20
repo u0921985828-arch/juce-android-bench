@@ -87,7 +87,7 @@ namespace Diezmador
 
     //  DONDE ACABA LA BANDA UTIL, y la razon no es el oido.
     //
-    //  `soft()` -el saturador de trece de las dieciseis formas- es un polinomio
+    //  `soft()` -el saturador de la mitad larga de las veinticuatro formas- es un polinomio
     //  de QUINTO orden, y un orden cinco sobre una entrada acotada a B produce
     //  hasta 5B. A 4x el Nyquist del render son 96 kHz, y **96/5 = 19.2**. Por
     //  encima de eso lo que hay es producto del saturador y no señal.
