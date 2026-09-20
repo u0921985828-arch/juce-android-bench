@@ -7,6 +7,17 @@
 // out is checked for the three things that end a demo — silence, a NaN, and a
 // block that took longer than it had.
 #include <JuceHeader.h>
+//  EL MOTOR VA EN EL MONTON Y NO EN LA PILA.
+//
+//  `AudioEngine` ocupa 2199 KB desde que un patron guarda 192 pasos en vez de
+//  64 -lo imprime el primer renglon de esta misma prueba-, y estos ficheros lo
+//  declaraban como variable local en 93 sitios, unos cuantos anidados. La pila
+//  de un hilo son 8 MB: StressTest se caia con SIGSEGV antes de imprimir nada,
+//  y con `ulimit -s unlimited` pasaba entero - o sea que lo que estaba mal no
+//  era el motor sino DONDE se ponia. La app nunca lo tuvo en la pila
+//  (MainComponent lo lleva dentro y MainComponent es del monton), asi que esto
+//  no medía un riesgo real de la app: medía el suyo propio.
+#include <memory>
 #include <functional>
 #include "../Source/AudioEngine.h"
 #include "../Source/Denoise.h"
@@ -189,7 +200,8 @@ int main()
     //  cuesta y no sobre lo que costaba.
     const long rssAntes = zatiRssKb();
 
-    AudioEngine e;
+    const auto monton_e = std::make_unique<AudioEngine>();
+    AudioEngine& e = *monton_e;
     const long rssMotor = zatiRssKb();
     e.prepareToPlay (sr, bs);
     e.setPolyphony (32, 4);
@@ -275,7 +287,8 @@ int main()
     //     the master is a click, which is louder than the notification that
     //     caused it.
     {
-        AudioEngine d;
+        const auto monton_d = std::make_unique<AudioEngine>();
+        AudioEngine& d = *monton_d;
         d.prepareToPlay (sr, bs);
         d.setPolyphony (32, 4);
         enCanalCero (d);
@@ -324,7 +337,8 @@ int main()
     //     to be what came out, at the level it came out at, and it must not
     //     also contain the microphone.
     {
-        AudioEngine r;
+        const auto monton_r = std::make_unique<AudioEngine>();
+        AudioEngine& r = *monton_r;
         r.prepareToPlay (sr, bs);
         r.setPolyphony (32, 4);
         enCanalCero (r);
@@ -367,7 +381,8 @@ int main()
     //    one, because that is the one that makes the app feel like hardware.
     for (int b : { 64, 96, 128, 192, 256, 480, 512 })
     {
-        AudioEngine e2;
+        const auto monton_e2 = std::make_unique<AudioEngine>();
+        AudioEngine& e2 = *monton_e2;
         e2.prepareToPlay (sr, b);
         e2.setPolyphony (32, 4);
         enCanalCero (e2);
@@ -392,7 +407,8 @@ int main()
     //  pad sin sonido hace que el modulo de al lado toque algo que en esta app
     //  no se oye.
     {
-        AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (16, 4);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 512); e.setPolyphony (16, 4);
  enCanalCero (e);
         e.setMidiOutEnabled (true);
         for (int p = 0; p < 4; ++p) { e.setPadGain (p, 1.0f); e.publishSample (p, makeSample (48000.0, 0.1, 200.0f)); }
@@ -463,7 +479,8 @@ int main()
     //  nivel con el que la realimentacion sola predice. Lo que sobra es lo que
     //  se come la interpolacion.
     {
-        AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
  enCanalCero (e);
         //  33.34375 ms x 48 kHz = 1600.5 muestras: media muestra EXACTA de parte
         //  fraccionaria, que es el peor caso de la interpolacion. El primer
@@ -520,7 +537,8 @@ int main()
     //  dB, si crece en vez de caer, y si produce NaN. Una FDN mal escalada se
     //  descubre aqui y no en un directo.
     {
-        AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
  enCanalCero (e);
         //  Solo el bus de reverb: mezcla al maximo y un pad que le manda todo.
         e.setRevMix (1.0f); e.setRevSize (0.6f); e.setRevDamp (0.4f);
@@ -775,7 +793,8 @@ int main()
         for (const bool limiter : { true, false })
         for (const auto& c : cases)
         {
-            AudioEngine e;
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e;
             e.prepareToPlay (48000.0, 512);
             e.setPolyphony (8, 2);
             enCanalCero (e);
@@ -853,7 +872,8 @@ int main()
     //  seco sonaria igual con el bus muerto, asi que lo que separa las dos
     //  cosas es lo que suena cuando la muestra ya se ha acabado.
     {
-        AudioEngine e;
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e;
         e.prepareToPlay (48000.0, 512);
         e.setPolyphony (8, 2);
         enCanalCero (e);
@@ -913,7 +933,8 @@ int main()
     //  ese mismo bloque- y no por el contador: contar diria que si aunque el
     //  comando se hubiera perdido, porque lo que se cuenta es lo tirado.
     {
-        AudioEngine e;
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e;
         e.prepareToPlay (48000.0, 512);
         e.setPolyphony (16, 2);
         enCanalCero (e);
@@ -958,7 +979,8 @@ int main()
     //  64 de golpe. Aqui se cargan los 64 pads dos veces sin recoger entre
     //  medias, que es exactamente ese caso.
     {
-        AudioEngine e;
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e;
         e.prepareToPlay (48000.0, 512);
         juce::AudioBuffer<float> b (2, 512);
         for (int vuelta = 0; vuelta < 2; ++vuelta)
@@ -991,7 +1013,8 @@ int main()
     //  tiene que seguir donde estaba Y el bloqueo tiene que sonar. Solo lo
     //  primero lo cumple un bloqueo desconectado.
     {
-        AudioEngine e;
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e;
         e.prepareToPlay (48000.0, 64);
         e.setPolyphony (8, 2);
         enCanalCero (e);
@@ -1050,7 +1073,8 @@ int main()
     {
         auto pico = [] (bool bombeando)
         {
-            AudioEngine e;
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e;
             e.prepareToPlay (48000.0, 64);
             e.setPolyphony (8, 2);
             enCanalCero (e);
@@ -1092,7 +1116,8 @@ int main()
     //  valores al azar y sin afirmar nada del resultado-. Un charles abierto
     //  que no se calla al cerrarlo es la mitad de una bateria.
     {
-        AudioEngine e;
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e;
         e.prepareToPlay (48000.0, 64);
         e.setPolyphony (8, 2);
         enCanalCero (e);
@@ -1131,7 +1156,8 @@ int main()
     {
         auto bloqueDelGolpe = [] (bool cuant)
         {
-            AudioEngine e;
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e;
             e.prepareToPlay (48000.0, 64);
             e.setPolyphony (8, 2);
             enCanalCero (e);
@@ -1203,7 +1229,8 @@ int main()
         auto runTone = [&pureTone] (float hz, float cutoff, float reso,
                                     juce::AudioBuffer<float>& keep, bool* nanOut)
         {
-            AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
  enCanalCero (e);
             e.setPadGain (0, 1.0f);
             e.setPadCutoff (0, cutoff);
@@ -1383,7 +1410,8 @@ int main()
     //  master. Un instrumento que satura en su patron mas simple suena a
     //  crispado y no hay mando que lo arregle.
     {
-        AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (48, 8);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 512); e.setPolyphony (48, 8);
  enCanalCero (e);
         for (int p = 0; p < 16; ++p)
         {
@@ -1455,7 +1483,8 @@ int main()
     //  casa considera audible — el mismo 1.5 que `instr.py` usa para separar dos
     //  presets (`PAR_PRE`).
     {
-        AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
         enCanalCero (e);
         e.setSafetyLimiter (false);
         e.setPadGain (0, 1.0f);
@@ -1602,7 +1631,8 @@ int main()
 
                 auto toca = [&] (SampleBuffer::Ptr sb, int bloques)
                 {
-                    AudioEngine m; m.prepareToPlay (48000.0, 512); m.setPolyphony (8, 2);
+                    const auto monton_m = std::make_unique<AudioEngine>();
+                    AudioEngine& m = *monton_m; m.prepareToPlay (48000.0, 512); m.setPolyphony (8, 2);
                     enCanalCero (m);
                     m.setSafetyLimiter (false);
                     m.setPadGain (0, 1.0f);
@@ -1919,7 +1949,8 @@ int main()
         //  pliegue peor en dB por debajo del tono esperado, y donde cayo.
         auto pliegue = [&] (float semis, float srcHz, double& worstHzOut)
         {
-            AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
             enCanalCero (e);
             e.setPadGain (0, 1.0f);
             e.setPadPitch (0, semis);
@@ -2135,7 +2166,8 @@ int main()
 
         auto corre = [&corte] (float ms, juce::AudioBuffer<float>& cap)
         {
-            AudioEngine e; e.prepareToPlay (48000.0, 256); e.setPolyphony (8, 2);
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 256); e.setPolyphony (8, 2);
  enCanalCero (e);
             e.setPadGain (0, 1.0f);
             //  Ataque a cero: lo que se mide es el borde del RECORTE, y un
@@ -2221,7 +2253,8 @@ int main()
     //  unico que distingue "el carril esta apagado" de "el carril esta
     //  apagado en el dibujo".
     {
-        AudioEngine e; e.prepareToPlay (48000.0, 256); e.setPolyphony (32, 4);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 256); e.setPolyphony (32, 4);
  enCanalCero (e);
         for (int p = 0; p < 4; ++p)
         {
@@ -2412,7 +2445,8 @@ int main()
         //  de pico -no cuatro: robar una voz es un fundido, y la robada sigue
         //  viva mientras se apaga-, o sea que en tres de las cuatro gamas la
         //  nota se escribia, se veia en la rejilla y se comia a su hermana.
-        AudioEngine e; e.prepareToPlay (48000.0, 256); e.setPolyphony (32, 4);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 256); e.setPolyphony (32, 4);
  enCanalCero (e);
         e.setPadGain (0, 0.8f);
         e.publishSample (0, makeSample (48000.0, 1.0, 220.0f));
@@ -2485,7 +2519,8 @@ int main()
     //  que la reordenacion muerda. Y se cuentan las voces totales -1 + 4- porque
     //  el motor no cuenta voces por pad; con el setup fijo la suma vale.
     {
-        AudioEngine e; e.prepareToPlay (48000.0, 256); e.setPolyphony (32, 8);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 256); e.setPolyphony (32, 8);
  enCanalCero (e);
         e.setPadGain (0, 0.8f);
         e.setPadGain (1, 0.8f);
@@ -2545,7 +2580,8 @@ int main()
     //  con el motor ya arreglado. En CINTA, que es como nace un pad, subir una
     //  octava recorre la fuente al doble de velocidad: la voz dura la mitad.
     {
-        AudioEngine e; e.prepareToPlay (48000.0, 256); e.setPolyphony (16, 4);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 256); e.setPolyphony (16, 4);
  enCanalCero (e);
         e.setPadGain (0, 0.9f);
         e.publishSample (0, makeSample (48000.0, 1.0, 220.0f));
@@ -2592,7 +2628,8 @@ int main()
     //  La fuente es media onda de 110 Hz: al volver, el ultimo dato esta en el
     //  maximo y el primero en cero, que es el peor escalon posible.
     {
-        AudioEngine e; e.prepareToPlay (48000.0, 256); e.setPolyphony (8, 4);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 256); e.setPolyphony (8, 4);
  enCanalCero (e);
         e.setPadGain (0, 0.9f);
         auto* sb = new SampleBuffer();
@@ -2639,7 +2676,8 @@ int main()
     //  dure menos que uno - porque solo el primero lo pasa un largo que no
     //  hace nada mas que redondear.
     {
-        AudioEngine e; e.prepareToPlay (48000.0, 64); e.setPolyphony (16, 4);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 64); e.setPolyphony (16, 4);
  enCanalCero (e);
         e.setPadGain (0, 0.9f);
         //  Sin decaimiento: una muestra que se apaga sola mide su envolvente y
@@ -2689,7 +2727,8 @@ int main()
     //  empujon que no mueve nada es un numero guardado, no un groove. Se mide
     //  en muestras contando cuantos bloques tarda en sonar el pad.
     {
-        AudioEngine e; e.prepareToPlay (48000.0, 64); e.setPolyphony (16, 4);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 64); e.setPolyphony (16, 4);
  enCanalCero (e);
         e.setPadGain (0, 0.9f);
         e.publishSample (0, makeSample (48000.0, 0.2, 440.0f));
@@ -2738,7 +2777,8 @@ int main()
     //  corte alto baja el total muy poco y "casi lo mismo" es lo que deja
     //  pasar un bloqueo que no hace nada.
     {
-        AudioEngine e; e.prepareToPlay (48000.0, 128); e.setPolyphony (16, 4);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 128); e.setPolyphony (16, 4);
  enCanalCero (e);
         e.setPadGain (0, 0.9f);
         //  Ruido, no un tono: para medir cuanto agudo queda hace falta que
@@ -2806,7 +2846,8 @@ int main()
     //  bloque para que un fader de la mesa mueva lo que suena, asi que sin
     //  Voice::panPropio el bloqueo duraba 128 muestras y luego se deshacia.
     {
-        AudioEngine e; e.prepareToPlay (48000.0, 128); e.setPolyphony (16, 4);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 128); e.setPolyphony (16, 4);
  enCanalCero (e);
         e.setPadGain (0, 0.9f);
         //  Media muestra en silencio y media con tono: asi el bloqueo de
@@ -2998,7 +3039,8 @@ int main()
     {
         auto cola = [] (float envio)
         {
-            AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
  enCanalCero (e);
             e.setDlyMix (1.0f); e.setDlyTime (100.0f); e.setDlyFb (0.5f);
             e.setPadGain (0, 1.0f);
@@ -3042,7 +3084,8 @@ int main()
     //  estuviera a la mitad. Se comprueban las tres cosas de golpe, que por
     //  separado cualquiera de ellas pasa con la version rota.
     {
-        AudioEngine e;
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e;
         const float puesto = 0.50f;
         e.setMasterUser (puesto);
         const float solo    = e.getMasterGain();
@@ -3100,7 +3143,8 @@ int main()
     //  proporcion. Sin esa cuarta cifra, subir el tope habria dejado la
     //  notificacion sonando a todo volumen.
     {
-        AudioEngine e;
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e;
         const float tope = AudioEngine::kMasterMaxGain;
 
         e.setMasterUser (1.0f);
@@ -3148,7 +3192,8 @@ int main()
     {
         auto picoCon = [] (float master)
         {
-            AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
  enCanalCero (e);
             e.setMasterUser (master);
             e.setPadGain (0, 0.1f);
@@ -3227,7 +3272,8 @@ int main()
 
         auto brillo = [&] (float vel)
         {
-            AudioEngine e;
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e;
             e.prepareToPlay (48000.0, 512);
             e.setSafetyLimiter (false);      // el saturador tambien cambia el brillo
             e.publishSample (0, ruidoBlanco());
@@ -3311,7 +3357,8 @@ int main()
 
         auto conInstrumento = [&] (int semis, int bloques)
         {
-            AudioEngine e;
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e;
             e.prepareToPlay (48000.0, 512);
             e.setSafetyLimiter (false);
             e.publishSample (0, Sintes::sintetiza (10, 0));   // COROS AAH
@@ -3321,7 +3368,8 @@ int main()
 
         auto conFamilia = [&] (int fam, int semis, int bloques)
         {
-            AudioEngine e;
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e;
             e.prepareToPlay (48000.0, 512);
             e.setSafetyLimiter (false);
             e.publishSample (0, Sintes::sintetiza (fam, 0));
@@ -3369,7 +3417,8 @@ int main()
     //  vuelve a tocar sola cada medio segundo: se ve como un bache en la
     //  envolvente. Con el ataque lento de un colchon el bache es enorme.
     {
-        AudioEngine e;
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e;
         e.prepareToPlay (48000.0, 512);
         e.setSafetyLimiter (false);
         e.publishSample (0, Sintes::sintetiza (5, 0));    // COLCHONES PWM PAD
@@ -3422,7 +3471,8 @@ int main()
     //  verde con el codigo roto, porque una voz que se esta apagando sigue
     //  activa.
     {
-        AudioEngine e;
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e;
         e.prepareToPlay (48000.0, 512);
         e.setSafetyLimiter (false);
         //  COLCHONES PWM PAD en tres pads: sostiene, que es el caso que importa.
@@ -3490,7 +3540,8 @@ int main()
     //  terminado. Sin el, "en la segunda vuelta suenan cuatro" tambien lo
     //  cumple una maquina en la que las cuatro de la primera siguen sonando.
     {
-        AudioEngine e; e.prepareToPlay (48000.0, 256); e.setPolyphony (32, 8);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 256); e.setPolyphony (32, 8);
  enCanalCero (e);
         e.setPadGain (0, 0.8f);
         //  BAJOS DUB, que sostiene: es el caso que la queja describe.
@@ -3543,7 +3594,8 @@ int main()
     //  "se acabo antes del siguiente": un largo de una muestra tambien acaba
     //  antes del siguiente y no es una nota.
     {
-        AudioEngine e; e.prepareToPlay (48000.0, 64); e.setPolyphony (32, 8);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 64); e.setPolyphony (32, 8);
  enCanalCero (e);
         e.setPadGain (0, 0.8f);
         e.setPadRelease (0, 5.0f);          // que la caida no cuente como nota
@@ -3592,7 +3644,8 @@ int main()
     {
         auto corre = [] (float fin, std::vector<float>& dst) noexcept
         {
-            AudioEngine e; e.prepareToPlay (48000.0, 256); e.setPolyphony (32, 8);
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 256); e.setPolyphony (32, 8);
  enCanalCero (e);
             e.setSafetyLimiter (false);
             auto sb = Sintes::sintetiza (0, 0);                 // BAJOS DUB, sostiene
@@ -3672,7 +3725,8 @@ int main()
 
         auto mide = [&] (float ancho)
         {
-            AudioEngine e;
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e;
             e.prepareToPlay (48000.0, 512);
             e.setSafetyLimiter (false);
             e.publishSample (0, dosRuidos());
@@ -3749,7 +3803,8 @@ int main()
 
         auto panoramico = [&] (float ancho)
         {
-            AudioEngine e;
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e;
             e.prepareToPlay (48000.0, 512);
             e.setSafetyLimiter (false);
             e.publishSample (0, unRuidoMono());
@@ -3807,7 +3862,8 @@ int main()
             return SampleBuffer::Ptr (sb);
         };
 
-        AudioEngine e;
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e;
         e.prepareToPlay (48000.0, 512);
         e.setSafetyLimiter (false);
         e.setBpm (120.0f);
@@ -3863,7 +3919,8 @@ int main()
     //  A 120 BPM en semicorcheas una negra son cuatro pasos, o sea 24 000
     //  muestras; el hueco se mira a mitad de camino.
     {
-        AudioEngine e;
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e;
         e.prepareToPlay (48000.0, 512);
         e.setSafetyLimiter (false);
         e.setBpm (120.0f);
@@ -3901,7 +3958,8 @@ int main()
     //  tiene que moverse. Solo lo primero lo cumple un metronomo sin cuenta
     //  atras, y solo lo segundo lo cumple un transporte parado.
     {
-        AudioEngine e;
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e;
         e.prepareToPlay (48000.0, 512);
         e.setSafetyLimiter (false);
         e.setBpm (120.0f);
@@ -3950,11 +4008,13 @@ int main()
     //  solo se descubre cuando ya has mandado el fichero con un metronomo
     //  encima.
     {
-        AudioEngine a;
+        const auto monton_a = std::make_unique<AudioEngine>();
+        AudioEngine& a = *monton_a;
         a.prepareToPlay (48000.0, 512);
         a.setClick (true);
 
-        AudioEngine b;
+        const auto monton_b = std::make_unique<AudioEngine>();
+        AudioEngine& b = *monton_b;
         b.prepareToPlay (48000.0, 512);
         b.copyStateFrom (a);
 
@@ -4069,7 +4129,8 @@ int main()
     {
         auto corre = [] (bool conEq, std::vector<float>& salida)
         {
-            AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
  enCanalCero (e);
             e.setPadGain (0, 1.0f);
             if (conEq)
@@ -4175,7 +4236,8 @@ int main()
         auto corre = [&tonoPlano] (int fx, float nivel, float hz, float p0, float p1,
                                    std::vector<float>& salida, int bloques = 40)
         {
-            AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
  enCanalCero (e);
             e.setPadGain (0, 1.0f);
             if (fx >= 0)
@@ -4355,7 +4417,8 @@ int main()
         auto corre = [&seno] (int fx, float p0, float p1, float hz, float amp,
                               std::vector<float>& out, int bloques = 24)
         {
-            AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
  enCanalCero (e);
             e.setPadGain (0, 1.0f);
             e.setPadAttack (0, 0.0f);
@@ -4602,7 +4665,8 @@ int main()
                                           std::vector<float>& out, double segs,
                                           bool abierto = true)
             {
-                AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+                const auto monton_e = std::make_unique<AudioEngine>();
+                AudioEngine& e = *monton_e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
  enCanalCero (e);
                 e.setPadGain (0, 1.0f);
                 e.setPadAttack (0, 0.0f);
@@ -4895,7 +4959,8 @@ int main()
     //  vigila es que el evento llegue a `setFxParam` en el borde de paso; que
     //  ese parametro suene ya lo miden las once filas de efectos de arriba.
     {
-        AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
  enCanalCero (e);
         e.setSongMode (true);
         e.setSongLength (4);
@@ -5002,7 +5067,8 @@ int main()
                               std::vector<float>& salida, int bloques = 120,
                               float hz = 440.0f, float amp = 0.5f)
         {
-            AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
  enCanalCero (e);
             e.setPadGain (0, 1.0f);
             if (fx >= 0)
@@ -5301,7 +5367,8 @@ int main()
 
             auto correLR = [&ruidoLR] (float ancho, std::vector<float>& L, std::vector<float>& R)
             {
-                AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+                const auto monton_e = std::make_unique<AudioEngine>();
+                AudioEngine& e = *monton_e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
  enCanalCero (e);
                 e.setPadGain (0, 1.0f);
                 e.setFxParam (0, AudioEngine::kFxWid, 0, ancho);
@@ -5368,7 +5435,8 @@ int main()
             };
             auto correExc = [&dosTonos] (float fuerza, std::vector<float>& v)
             {
-                AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+                const auto monton_e = std::make_unique<AudioEngine>();
+                AudioEngine& e = *monton_e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
  enCanalCero (e);
                 e.setPadGain (0, 1.0f);
                 e.setFxParam (0, AudioEngine::kFxExc, 0, 1000.0f);
@@ -5425,7 +5493,8 @@ int main()
             };
             auto correTrn = [&golpe] (float at, std::vector<float>& v)
             {
-                AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+                const auto monton_e = std::make_unique<AudioEngine>();
+                AudioEngine& e = *monton_e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
  enCanalCero (e);
                 e.setPadGain (0, 1.0f);
                 e.setFxParam (0, AudioEngine::kFxTrn, 0, at);
@@ -5487,7 +5556,8 @@ int main()
             };
             auto correFrz = [&corto] (bool puesto, std::vector<float>& v)
             {
-                AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+                const auto monton_e = std::make_unique<AudioEngine>();
+                AudioEngine& e = *monton_e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
  enCanalCero (e);
                 e.setPadGain (0, 1.0f);
                 if (puesto)
@@ -5638,7 +5708,8 @@ int main()
         //  suena DESPUES.
         auto cola = [&tonoPlano] (int canalDelPad)
         {
-            AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
  enCanalCero (e);
             e.setPadGain (0, 1.0f);
             e.setPadCanal (0, canalDelPad);
@@ -5698,7 +5769,8 @@ int main()
         //  algo.
         auto mide = [&tonoPlano] (int canalMirado)
         {
-            AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
  enCanalCero (e);
             e.setPadGain (0, 1.0f);
             e.setPadCanal (0, 1);            // el pad suena en el canal 1
@@ -5731,7 +5803,8 @@ int main()
         //  segundo una puesta en el envio.
         auto corre = [&tonoPlano] (float gan, double& seco, double& colaOut)
         {
-            AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
  enCanalCero (e);
             e.setPadGain (0, 1.0f);
             e.setCanalGain (0, gan);
@@ -5809,7 +5882,8 @@ int main()
         //  vive, que es una maquina sin un solo envio.
         auto seco = [&tonoPlano] (float gan)
         {
-            AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
  enCanalCero (e);
             e.setPadGain (0, 1.0f);
             e.setCanalGain (0, gan);
@@ -5858,7 +5932,8 @@ int main()
         //  apagado y el orden del ancho estereo.
         auto corre = [&tonoPlano] (bool porCanal, std::vector<float>& out)
         {
-            AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
  enCanalCero (e);
             e.setPadGain (0, 1.0f);
             e.setFxParam (0, AudioEngine::kFxDly, 0, 180.0f);
@@ -5939,7 +6014,8 @@ int main()
     {
         auto corre = [] (int primero, int segundo, std::vector<float>& out)
         {
-            AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
             enCanalCero (e);
             e.setPadGain (0, 0.30f);
             e.setPadCanal (0, 3);
@@ -6045,7 +6121,8 @@ int main()
         //  que se media como «seco» era seco mas cola.
         auto corre = [] (float pan, bool conRev, double& izq, double& der, double& colaDer)
         {
-            AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
             enCanalCero (e);
             e.setPadGain (0, 0.50f);
             e.setPadCanal (0, 5);
@@ -6151,7 +6228,8 @@ int main()
     {
         auto rmsDe = [&tonoPlano] (int pad, bool conEq)
         {
-            AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
  enCanalCero (e);
             //  Y CON MARGEN DE SOBRA, que es lo que la primera corrida
             //  enseño: con el pad a uno, +12 dB sobre un tono de 0.5 son 1.99
@@ -6236,7 +6314,8 @@ int main()
             return SampleBuffer::Ptr (sb);
         };
 
-        AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
  enCanalCero (e);
         e.setPadGain (0, 1.0f);
         e.setPadCanal (0, 0);
@@ -6355,7 +6434,8 @@ int main()
 
         auto corre = [&estereo, &ajusta] (int fx, int canal, std::vector<float>& out)
         {
-            AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
             enCanalCero (e);
             e.setPadGain (0, 0.30f);
             e.setPadCanal (0, canal);
@@ -6477,7 +6557,8 @@ int main()
         auto corre = [&tono, vent] (int canal, float rate, double segs, double tarde,
                                        std::vector<double>& env)
         {
-            AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
             enCanalCero (e);
             e.setPadGain (0, 0.50f);
             e.setPadCanal (0, canal);
@@ -6595,7 +6676,8 @@ int main()
     {
         auto corre = [&tonoPlano] (bool reparte, std::vector<float>& out)
         {
-            AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (64, 2);
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e; e.prepareToPlay (kFs, kBs); e.setPolyphony (64, 2);
  enCanalCero (e);
             for (int c = 0; c < AudioEngine::kNumCanales; ++c)
             {
@@ -6671,7 +6753,8 @@ int main()
         enum Modo { nada, conSolo, conMutes };
         auto corre = [&tonoPlano] (Modo m, std::vector<float>& out)
         {
-            AudioEngine e; e.prepareToPlay (kFs, kBs); e.setPolyphony (64, 2);
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e; e.prepareToPlay (kFs, kBs); e.setPolyphony (64, 2);
  enCanalCero (e);
             for (int p = 0; p < AudioEngine::kNumPads; ++p)
             {
@@ -6758,10 +6841,13 @@ int main()
             }
         };
 
-        AudioEngine origen; siembra (origen, true);
-        AudioEngine rebote; siembra (rebote, false);
+        const auto monton_origen = std::make_unique<AudioEngine>();
+        AudioEngine& origen = *monton_origen; siembra (origen, true);
+        const auto monton_rebote = std::make_unique<AudioEngine>();
+        AudioEngine& rebote = *monton_rebote; siembra (rebote, false);
         rebote.copyStateFrom (origen);
-        AudioEngine sinSolo; siembra (sinSolo, false);
+        const auto monton_sinSolo = std::make_unique<AudioEngine>();
+        AudioEngine& sinSolo = *monton_sinSolo; siembra (sinSolo, false);
 
         std::vector<float> vOrigen, vRebote, vSinSolo;
         suena (origen, vOrigen); suena (rebote, vRebote); suena (sinSolo, vSinSolo);
@@ -6803,7 +6889,8 @@ int main()
         auto corre = [] (float monitor, std::vector<float>& salida,
                          std::vector<float>& toma)
         {
-            AudioEngine e; e.prepareToPlay (kFs, kBs, 1);
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e; e.prepareToPlay (kFs, kBs, 1);
             e.setMonitor (monitor);
             e.startRecording (0);
 
@@ -6878,7 +6965,8 @@ int main()
     {
         auto reflexiones = [] (float tam, float preMs, std::vector<float>& out)
         {
-            AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
             enCanalCero (e);
             e.setPadGain (0, 1.0f);
             e.setFxParam (0, AudioEngine::kFxAmb, 0, tam);
@@ -6984,7 +7072,8 @@ int main()
                           const std::function<void (juce::AudioBuffer<float>&, double)>& hazMuestra,
                           std::vector<float>& sL, std::vector<float>& sR, int bloques = 40)
         {
-            AudioEngine e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
             enCanalCero (e);
             e.setPadGain (0, 1.0f);
             e.setFxParam (0, fx, 0, p0);

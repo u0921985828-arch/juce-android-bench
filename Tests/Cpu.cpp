@@ -17,6 +17,17 @@
 //   cmake -B build -DZATI_BENCH=ON && cmake --build build --target Cpu
 //   ./build/Cpu_artefacts/Cpu
 #include <JuceHeader.h>
+//  EL MOTOR VA EN EL MONTON Y NO EN LA PILA.
+//
+//  `AudioEngine` ocupa 2199 KB desde que un patron guarda 192 pasos en vez de
+//  64 -lo imprime el primer renglon de esta misma prueba-, y estos ficheros lo
+//  declaraban como variable local en 93 sitios, unos cuantos anidados. La pila
+//  de un hilo son 8 MB: StressTest se caia con SIGSEGV antes de imprimir nada,
+//  y con `ulimit -s unlimited` pasaba entero - o sea que lo que estaba mal no
+//  era el motor sino DONDE se ponia. La app nunca lo tuvo en la pila
+//  (MainComponent lo lleva dentro y MainComponent es del monton), asi que esto
+//  no medía un riesgo real de la app: medía el suyo propio.
+#include <memory>
 #include "../Source/AudioEngine.h"
 #include <algorithm>
 #include <chrono>
@@ -149,7 +160,8 @@ int main()
     //     cuesta el bloque por existir -limpiar, mirar las colas, repartir
     //     envios- y es la linea de la que cuelgan todas las demas.
     {
-        AudioEngine e; prepara (e);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; prepara (e);
         corre (e, buf, 64);
         const auto m = corre (e, buf, 2000);
         base = m.medianaMs;
@@ -168,7 +180,8 @@ int main()
     //      tuviera un solo envio abierto. Sin la fila, ese coste se escondia
     //      entre dos medidas que no lo miraban.
     {
-        AudioEngine e; prepara (e);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; prepara (e);
         e.setDlyTime (280.0f); e.setDlyFb (0.45f); e.setDlyMix (1.0f);
         corre (e, buf, 64);
         fila ("silencio con UN efecto abierto", corre (e, buf, 2000));
@@ -180,7 +193,8 @@ int main()
     //      se multiplicaba la salida entera por uno, en los dos canales, en
     //      cada bloque y para siempre.
     {
-        AudioEngine e; prepara (e);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; prepara (e);
         e.setDuckPad (0);
         corre (e, buf, 64);
         fila ("silencio con el bombeo armado", corre (e, buf, 2000));
@@ -191,7 +205,8 @@ int main()
     //  1. CINTA A TONO NATURAL. delta = 1.0 exacto, que es el camino corto:
     //     ni interpolacion ni granos.
     {
-        AudioEngine e; prepara (e);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; prepara (e);
         for (int p = 0; p < 16; ++p) { e.setPadPitch (p, 0.0f); e.setPadLoop (p, true); }
         corre (e, buf, 64, [&e] (int b) { if (b == 0) for (int p = 0; p < 16; ++p) e.postNoteOn (p, 0.9f); });
         fila ("16 voces cinta, 0 st", corre (e, buf, 2000));
@@ -201,7 +216,8 @@ int main()
     //     muestra y por canal: cuatro multiplicaciones y tres sumas donde
     //     antes habia una lectura.
     {
-        AudioEngine e; prepara (e);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; prepara (e);
         for (int p = 0; p < 16; ++p) { e.setPadPitch (p, 7.0f); e.setPadLoop (p, true); }
         corre (e, buf, 64, [&e] (int b) { if (b == 0) for (int p = 0; p < 16; ++p) e.postNoteOn (p, 0.9f); });
         fila ("16 voces cinta, +7 st", corre (e, buf, 2000));
@@ -210,7 +226,8 @@ int main()
     //  3. TONO. La sospecha principal: dos granos por muestra -o sea DOS
     //     Hermite por canal- mas la busqueda WSOLA cada medio grano.
     {
-        AudioEngine e; prepara (e, true);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; prepara (e, true);
         for (int p = 0; p < 16; ++p) { e.setPadPitch (p, 7.0f); e.setPadLoop (p, true); }
         corre (e, buf, 64, [&e] (int b) { if (b == 0) for (int p = 0; p < 16; ++p) e.postNoteOn (p, 0.9f); });
         fila ("16 voces TONO, +7 st", corre (e, buf, 2000));
@@ -218,7 +235,8 @@ int main()
 
     //  3b. Una sola voz en tono, para saber cuanto cuesta UNA y poder dividir.
     {
-        AudioEngine e; prepara (e, true);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; prepara (e, true);
         e.setPadPitch (0, 7.0f); e.setPadLoop (0, true);
         corre (e, buf, 64, [&e] (int b) { if (b == 0) e.postNoteOn (0, 0.9f); });
         fila ("1 voz TONO, +7 st", corre (e, buf, 2000));
@@ -231,7 +249,8 @@ int main()
     //     filtro Y el desvio, y esta fila los mide juntos porque juntos es
     //     como ocurren.
     {
-        AudioEngine e; prepara (e);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; prepara (e);
         for (int p = 0; p < 16; ++p)
         {
             e.setPadPitch (p, 0.0f); e.setPadLoop (p, true);
@@ -257,7 +276,8 @@ int main()
     //  tal y como lo enciende una persona.
     for (int f = 0; f < AudioEngine::kNumFx; ++f)
     {
-        AudioEngine e; prepara (e);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; prepara (e);
         e.setFxParam (0, f, 0, AudioEngine::kFxDef[f][0]);
         e.setFxParam (0, f, 1, AudioEngine::kFxDef[f][1]);
         e.setFxParam (0, f, 2, 1.0f);
@@ -278,7 +298,8 @@ int main()
     //     scratch y se reparte, asi que el desvio se paga una sola vez. La
     //     diferencia entre esta fila y esa suma es lo que ahorra el reparto.
     {
-        AudioEngine e; prepara (e);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; prepara (e);
         for (int f = 0; f < AudioEngine::kNumFx; ++f)
         {
             e.setFxParam (0, f, 0, AudioEngine::kFxDef[f][0]);
@@ -302,7 +323,8 @@ int main()
     //  envios, todos en el canal 0- y no contra un numero absoluto, que es como
     //  se leen todas las filas de este banco.
     {
-        AudioEngine e; prepara (e);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; prepara (e);
         for (int f = 0; f < AudioEngine::kNumFx; ++f)
         {
             e.setFxParam (0, f, 0, AudioEngine::kFxDef[f][0]);
@@ -331,7 +353,8 @@ int main()
     //  media. Se lee CONTRA la fila de al lado -los mismos dieciseis pads sin
     //  mirar ningun canal- y no contra un numero absoluto.
     {
-        AudioEngine e; prepara (e);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; prepara (e);
         for (int p = 0; p < 16; ++p) { e.setPadPitch (p, 0.0f); e.setPadLoop (p, true); }
         corre (e, buf, 64, [&e] (int b) { if (b == 0) for (int p = 0; p < 16; ++p) e.postNoteOn (p, 0.9f); });
         fila ("16 pads, sin mirar ningun canal", corre (e, buf, 2000));
@@ -345,7 +368,8 @@ int main()
     //     paso, y ese troceo tiene su propio coste aparte de las voces que
     //     dispara.
     {
-        AudioEngine e; prepara (e);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; prepara (e);
         for (int p = 0; p < 16; ++p) e.setPadPitch (p, 0.0f);
         for (int st = 0; st < 16; ++st)
             for (int p = 0; p < 16; ++p)
@@ -361,7 +385,8 @@ int main()
     //     tono. Es la unica fila que se compara con el presupuesto de
     //     verdad; las de arriba son para saber a quien culpar.
     {
-        AudioEngine e; prepara (e);
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; prepara (e);
         //  Seis abiertos, que es lo que una sesion tiene puesto a la vez —no
         //  los quince: la fila de la cara son seis ranuras.
         for (int f = 0; f < 6; ++f)

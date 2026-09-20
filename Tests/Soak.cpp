@@ -32,6 +32,17 @@
 //      ./build/Soak_artefacts/Soak [personas] [hilos]
 // ============================================================================
 #include <JuceHeader.h>
+//  EL MOTOR VA EN EL MONTON Y NO EN LA PILA.
+//
+//  `AudioEngine` ocupa 2199 KB desde que un patron guarda 192 pasos en vez de
+//  64 -lo imprime el primer renglon de esta misma prueba-, y estos ficheros lo
+//  declaraban como variable local en 93 sitios, unos cuantos anidados. La pila
+//  de un hilo son 8 MB: StressTest se caia con SIGSEGV antes de imprimir nada,
+//  y con `ulimit -s unlimited` pasaba entero - o sea que lo que estaba mal no
+//  era el motor sino DONDE se ponia. La app nunca lo tuvo en la pila
+//  (MainComponent lo lleva dentro y MainComponent es del monton), asi que esto
+//  no medía un riesgo real de la app: medía el suyo propio.
+#include <memory>
 #include "../Source/AudioEngine.h"
 #include <atomic>
 #include <cstdio>
@@ -103,7 +114,8 @@ namespace
         juce::Random r ((juce::int64) semilla);
         const auto& ap = kAparatos[r.nextInt (juce::numElementsInArray (kAparatos))];
 
-        AudioEngine e;
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e;
         e.prepareToPlay (ap.rate, ap.bloque);
         e.setPolyphony (r.nextInt ({ 8, 49 }), r.nextInt ({ 2, 9 }));
 
