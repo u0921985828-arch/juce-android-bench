@@ -4073,9 +4073,23 @@ void MainComponent::resized()
         //  pagina existe. El tope existe porque un carril de doscientos pixeles
         //  no es mas util que uno de setenta: lo que sobra por encima se lo
         //  queda la maquina, que se sigue viendo detras de la tarjeta.
-        const int laneMin = juce::jmax (Metrics::celdaCancion, 34);
+        //  Y SON DOS SUELOS Y NO UNO, QUE ES LO QUE ERA.
+        //
+        //  `jmax (celdaCancion, 34)` es el suelo declarado -veinte, el de una
+        //  celda de lienzo, que es el que el banco juzga- tapado por un
+        //  TREINTA Y CUATRO escrito a mano que nadie midio. Dos numeros para
+        //  la misma regla son dos reglas, y la que mandaba era la de a mano:
+        //  en 412x480 la pagina pedia 490 px sobre 368 por no bajar de 34, y
+        //  `sheetFromBottom` recortaba en silencio hasta dejar la celda en
+        //  SEIS - por debajo del suelo de verdad y por debajo de todo.
+        //
+        //  El comodo se pide mientras haya; el declarado es hasta donde se
+        //  puede ceder. Un carril de veinte se pinta con el dedo -es la misma
+        //  celda que la rejilla de pasos- y uno de seis no.
+        const int laneComodo = 34;
+        const int laneMin = Metrics::celdaCancion;
         const int laneMax = 72;
-        int laneH = laneMin;
+        int laneH = laneComodo;
         //  Y la fila de modos puede ser DOS desde que son cuatro tapas, asi que
         //  la altura que se pide lo cuenta: pedirla de una y usar dos es como
         //  un control se queda con altura cero.
@@ -4090,9 +4104,44 @@ void MainComponent::resized()
         //  Y la de herramientas puede ser dos por lo mismo: son cinco tapas y
         //  en arabe INSERTAR y QUITAR piden bastante mas ancho que en ingles.
         int filasUtil = Metrics::hit;
-        //  El ancho de la COLUMNA, decidido aqui arriba porque de el depende en
-        //  cuantas filas caen las tapas y de eso depende la altura que se pide.
-        const int colUtil = wideFace ? juce::jlimit (200, 340, full.getWidth() / 3) : 0;
+        //  EL ANCHO DE LA COLUMNA SE DERIVA DE LO QUE SUS FILAS NECESITAN, y
+        //  no de un tercio de la ventana.
+        //
+        //  Era `jlimit (200, 340, ancho / 3)`. En 640x360 ese tercio son 213 y
+        //  a las tapas les quedan 181: la fila de modos no cabe -pide 280
+        //  medidos con sus rotulos- y la de arreglo se parte en CUATRO, asi
+        //  que la columna pedia 360 px de alto sobre una tarjeta de 324 y
+        //  `sheetFromBottom` se comia 36 en silencio. Ensanchar la columna
+        //  cuesta ancho de la linea de tiempo, que ahi sobra, y le devuelve
+        //  132 px de alto, que es lo unico que girado no hay.
+        //
+        //  Se pregunta con `moduleBarFits` -lo mismo que decide las filas- y
+        //  se para en cuanto la linea de tiempo bajaria de su celda declarada:
+        //  los compases que se ven por `celdaCancion`. Preguntar si cabe antes
+        //  de repartir es la regla de la casa; un reparto que se pasa en
+        //  silencio no protege, esconde.
+        const int interiorFicha = anchoTarjetaInterior (safeArea().getWidth());
+        const int anchoRejMin   = juce::jmax (1, songGrid.getCompasesVista())
+                                    * Metrics::celdaCancion;
+        //  DOS COLUMNAS SE DECIDE POR LA FORMA DE LA TARJETA. Ver
+        //  MainComponent::tarjetaAncha: `wideFace` pide ademas 556 px de area
+        //  segura y eso es una pregunta sobre la CARA, no sobre esta ficha.
+        int colUtil = 0;
+        if (tarjetaAncha (full))
+        {
+            juce::TextButton* sm5[5] = { &songPadModeBtn, &songRecBtn, &songClickBtn,
+                                         (juce::TextButton*) &autoBtn, &songModeBtn };
+            //  El techo: lo que se puede dar sin dejar la rejilla por debajo
+            //  de su celda. El suelo: los 200 de siempre, que es lo que hace
+            //  falta para que una tapa de la columna siga siendo tocable.
+            const int techo = interiorFicha - Metrics::gap - anchoRejMin;
+            for (int w = 200; w <= juce::jmin (340, techo); w += Metrics::xs)
+            {
+                colUtil = w;
+                if (moduleBarFits (w - 2 * Metrics::margenFichaX, sm5, 5)) break;
+            }
+        }
+        const bool songDosCol = colUtil > 0;
         {
             //  Y ESTE es el ancho con el que se cuentan las filas: girado, las
             //  tapas no cruzan la tarjeta, viven en una columna de 300 px. Se
@@ -4102,7 +4151,7 @@ void MainComponent::resized()
             //  el pie entero -PLAY, el largo y las paginas- quedaba en 72x0:
             //  la ficha de CANCION no tenia boton de play en apaisado, que es
             //  justo la orientacion en la que se pidio.
-            const int anchoUtil = wideFace ? colUtil - 2 * Metrics::margenFichaX
+            const int anchoUtil = songDosCol ? colUtil - 2 * Metrics::margenFichaX
                                            : anchoTarjetaInterior (safeArea().getWidth());
             //  LA MISMA FILA QUE SE VA A MAQUETAR, y no otra parecida: en la
             //  vista de audio son CINCO -las dos brochas, GRABAR, el clic y el
@@ -4155,7 +4204,7 @@ void MainComponent::resized()
         //  a 9 px por carril en 280x653: la cuarta parte del suelo. Es el mismo
         //  fallo que ya costo el TEMPO del secuenciador y la fila de
         //  herramientas de esta misma ficha, contado por tercera vez.
-        const int anchoPaleta = wideFace ? colUtil - 2 * Metrics::margenFichaX
+        const int anchoPaleta = songDosCol ? colUtil - 2 * Metrics::margenFichaX
                                          : anchoTarjetaInterior (safeArea().getWidth());
 
         //  LA FILA DE PAGINAS -1, 9, 17...- PASA A SER UNA BARRA QUE SE ARRASTRA.
@@ -4201,7 +4250,7 @@ void MainComponent::resized()
             juce::ignoreUnused (col);
             const int rej = Playlist::kLanes * laneH;
             return Ficha::marco + Metrics::hit
-                 + (wideFace ? juce::jmax (col, rej + pie) : col + Metrics::sm + pie + rej);
+                 + (songDosCol ? juce::jmax (col, rej + pie) : col + Metrics::sm + pie + rej);
         };
 
         //  Y LA LINEA DE TIEMPO MANDA SOBRE LA PALETA.
@@ -4233,9 +4282,57 @@ void MainComponent::resized()
         const int porFilaPal  = kNumPatterns / juce::jmax (1, filasPaleta);
 
         const int altoPie  = altoBarraVista + Metrics::xs + Metrics::btn + Metrics::xs;
-        const int altoCol  = filasPaleta * Metrics::hit
-                           + (filasPaleta - 1) * Metrics::halfGap + Metrics::xs   // paleta
-                           + filasHerr + filasModo + filasUtil + Metrics::sm * 2;
+        //  ESCRITA UNA VEZ Y PREGUNTADA TRES, que es la unica forma de que la
+        //  respuesta valga: la columna con y sin la fila de arreglo, y la
+        //  ficha entera con el carril que se le pase.
+        const auto colCon = [&] (int fu, int fm)
+        {
+            return filasPaleta * Metrics::hit
+                 + (filasPaleta - 1) * Metrics::halfGap + Metrics::xs   // paleta
+                 + filasHerr + fm + fu + Metrics::sm * 2;
+        };
+        const auto pideSong = [&] (int fu, int fm, int lane)
+        {
+            const int rej = Playlist::kLanes * lane + altoPie;
+            return Ficha::marco + Metrics::hit + Metrics::panelAireY
+                 + (songDosCol ? juce::jmax (colCon (fu, fm), rej)
+                               : colCon (fu, fm) + Metrics::sm + rej);
+        };
+
+        //  Y SI NI CON EL CARRIL EN SU SUELO CABE, SE CAE LA FILA DE ARREGLO.
+        //
+        //  Medido en 412x480 -la pantalla partida-: la tarjeta es 379x368 y
+        //  ancha, pero no da para dos columnas -la linea de tiempo se quedaria
+        //  en 27 px de ancho, por debajo de una celda- asi que la pagina va en
+        //  una y pide 434 con el carril ya en veinte. Faltan 66 y no hay de
+        //  donde: el resto son la paleta -QUE se pinta-, las brochas -CON QUE-
+        //  y el pie con PLAY.
+        //
+        //  Las diez de arreglo son lo unico que actua sobre lo que YA esta
+        //  puesto, o sea lo unico que no hace falta para escribir una cancion:
+        //  se cae esa, que son 84 px, y la pagina queda en 350. Es el mismo
+        //  orden que la pagina del PASO ya tiene escrito -«primero la banda de
+        //  los cuatro bloqueos y despues la CADENA»-, y como alli, lo que se
+        //  cae se APAGA y se le vacian los limites: una tapa invisible que
+        //  conserva su sitio sigue contando como colocada.
+        songUtilAqui = (pideSong (filasUtil, filasModo, laneMin) <= topeCancion);
+        //  Y EL SEGUNDO ESCALON: LA FILA DE MODOS.
+        //
+        //  Con la cancion LLENA aparece la barra que la recorre -la cancion es
+        //  mas larga que la vista- y el pie pasa de 52 px a 92. En 412x480 eso
+        //  deja la pagina en 390 sobre 368 con la fila de arreglo YA caida y
+        //  el carril ya en veinte: faltan 22 y ninguna pieza mide 22.
+        //
+        //  El orden lo da para que existe la pagina, que es PINTAR la cancion:
+        //  la paleta dice QUE se pinta y las brochas CON QUE, y el pie la
+        //  recorre y la toca. Los MODOS -uno o clip, cancion o patron, GRABAR,
+        //  CLIC- eligen como se comporta la pagina, no ponen ni quitan nada
+        //  del arreglo, asi que son lo siguiente en caer despues de las
+        //  herramientas. Cuarenta px, y la pagina queda en 350.
+        songModosAqui = songUtilAqui
+                     || (pideSong (0, filasModo, laneMin) <= topeCancion);
+        const int altoCol = colCon (songUtilAqui ? filasUtil : 0,
+                                    songModosAqui ? filasModo : 0);
         //  Y AQUI SE REPARTE LO QUE SOBRA. Se pide la ficha con el carril en
         //  su SUELO -que es lo que el resto de la maqueta necesita para caber-
         //  y lo que quede hasta el tope de la tarjeta se lo llevan los cuatro
@@ -4246,19 +4343,40 @@ void MainComponent::resized()
             //  titulo para que su panel no lo pise; sin contarlo aqui, lo que
             //  cuesta se lo comen los carriles, que es lo unico para lo que
             //  existe esta pagina.
-            const int pedidoConSuelo = Ficha::marco + Metrics::hit + Metrics::panelAireY
-                                     + (wideFace ? juce::jmax (altoCol, Playlist::kLanes * laneMin + altoPie)
-                                                 : altoCol + Metrics::sm + altoPie
-                                                   + Playlist::kLanes * laneMin);
-            const int sobra = topeCancion - pedidoConSuelo;
-            if (sobra > 0)
-                laneH = juce::jmin (laneMax, laneMin + sobra / Playlist::kLanes);
+            //  Y SE PREGUNTA CON EL CARRIL COMODO, no con el suelo.
+            //
+            //  Con el suelo, lo que sobra se cuenta sobre veinte y el reparto
+            //  sale MAS BAJO que antes de que el suelo bajase: en 915x412 la
+            //  columna es la que manda -272 px contra 188- asi que `sobra` no
+            //  depende del carril, y repartirlo desde veinte daba 28 px donde
+            //  el codigo de antes daba 42. Se pide lo comodo y se reparte la
+            //  diferencia, que puede ser negativa: eso es ceder.
+            const int pedidoConSuelo = pideSong (songUtilAqui ? filasUtil : 0,
+                                                 songModosAqui ? filasModo : 0, laneComodo);
+            //  Y CUANDO NO SOBRA, SE CEDE: el reparto es el mismo en los dos
+            //  sentidos. Antes solo subia -`if (sobra > 0)`- y el carril se
+            //  quedaba en su alto comodo pidiendo mas tarjeta de la que hay,
+            //  que es como en 412x480 la celda acabo en SEIS px: lo que la
+            //  cuenta no cedia se lo quitaba `sheetFromBottom` de golpe y a lo
+            //  ultimo que se maqueta. Se cede hasta el suelo declarado y ni un
+            //  pixel mas.
+            //  Y EL REPARTO SE REDONDEA HACIA ABAJO TAMBIEN CUANDO ES
+            //  NEGATIVO, que la division entera de C++ no lo hace.
+            //
+            //  Trunca hacia CERO: -38 entre cuatro son -9 y no -10, asi que
+            //  cediendo se cede de menos y la ficha vuelve a pedir mas de lo
+            //  que hay. Medido en 412x480: 370 px sobre una tarjeta de 368,
+            //  dos pixeles que `sheetFromBottom` se comia en silencio del
+            //  ultimo carril. Es la misma trampa que el suelo de la fila del
+            //  piano, por el otro lado.
+            const int sobra   = topeCancion - pedidoConSuelo;
+            const int reparto = (int) std::floor ((double) sobra / Playlist::kLanes);
+            laneH = juce::jlimit (laneMin, laneMax, laneComodo + reparto);
         }
         const int altoRej  = Playlist::kLanes * laneH;
         auto inner = sheetFromBottom (songSheet,
-                                      Ficha::marco + Metrics::hit + Metrics::panelAireY
-                                        + (wideFace ? juce::jmax (altoCol, altoRej + altoPie)
-                                                    : altoCol + Metrics::sm + altoPie + altoRej));
+                                      pideSong (songUtilAqui ? filasUtil : 0,
+                                                songModosAqui ? filasModo : 0, laneH));
         auto titleRow = inner.removeFromTop (Metrics::hit);
         songCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
 
@@ -4300,9 +4418,9 @@ void MainComponent::resized()
         //  linea de tiempo se queda con el ancho que sobra Y CON TODO EL ALTO.
         //  Es la misma decision que ya tomo la ficha del secuenciador, y por
         //  la misma razon: la pantalla tiene la forma que tiene.
-        auto columna = wideFace ? Lang::takeStart (inner, colUtil) : juce::Rectangle<int>();
-        if (wideFace) Lang::takeStart (inner, Metrics::gap);
-        auto& panel = wideFace ? columna : inner;
+        auto columna = songDosCol ? Lang::takeStart (inner, colUtil) : juce::Rectangle<int>();
+        if (songDosCol) Lang::takeStart (inner, Metrics::gap);
+        auto& panel = songDosCol ? columna : inner;
 
         //  LOS GRUPOS DE ESTA FICHA, y SIN ROTULO. Las otras dos los heredan de
         //  bandas de nombre que ya estaban reservadas; aqui no hay ninguna, y
@@ -4479,7 +4597,16 @@ void MainComponent::resized()
             juce::TextButton* sb[5] = { &songPadModeBtn, &songRecBtn, &songClickBtn,
                                         (juce::TextButton*) &autoBtn, &songModeBtn };
             const int nBrochas = 5;
-            if (moduleBarFits (panel.getWidth(), sb, nBrochas))
+            //  APAGADAS Y SIN SITIO donde la fila no cabe. Ver songModosAqui:
+            //  apagar sin vaciar los limites deja cinco tapas invisibles con
+            //  las coordenadas de la ultima ventana, que para todo lo que mide
+            //  geometria siguen estando ahi.
+            for (auto* b : sb) b->setVisible (songModosAqui);
+            if (! songModosAqui)
+            {
+                for (auto* b : sb) b->setBounds ({});
+            }
+            else if (moduleBarFits (panel.getWidth(), sb, nBrochas))
             {
                 layoutModuleBar (panel.removeFromTop (Metrics::hit), sb, 0, nBrochas);
             }
@@ -4525,6 +4652,8 @@ void MainComponent::resized()
                                          &songLongBtn, &songInsertBtn, &songRemoveBtn,
                                          &songCopyBtn, &songPasteBtn, &songLoopBtn,
                                          &songDoubleBtn };
+            //  APAGADAS Y SIN SITIO donde la fila no cabe. Ver songUtilAqui.
+            for (auto* b : su) b->setVisible (songUtilAqui);
             //  La MISMA pregunta que decidio la altura y no otra parecida: por
             //  el DEDO, que estas nueve son iconos sin rotulo y `moduleBarFits`
             //  mide rotulos. Pedir con una cuenta y colocar con otra es como
@@ -4536,7 +4665,12 @@ void MainComponent::resized()
             const int filas = (panel.getWidth() >= 10 * Metrics::hit) ? 1
                             : (panel.getWidth() >= 5  * Metrics::hit) ? 2 : 4;
             int puesto = 0;
-            for (int f = 0; f < filas; ++f)
+            //  Y donde la fila se cayo no se recorre: un bucle que coloca cero
+            //  tapas sigue gastando `removeFromTop (hit)` por vuelta, o sea
+            //  que la ficha reservaria el alto que la cuenta ya no pide - la
+            //  misma figura de reservar y tirar que esta ficha ya pago dos
+            //  veces.
+            for (int f = 0; songUtilAqui && f < filas; ++f)
             {
                 const int quedan = 10 - puesto;
                 const int enEsta = (quedan + (filas - f) - 1) / (filas - f);
@@ -4544,6 +4678,8 @@ void MainComponent::resized()
                 puesto += enEsta;
                 if (f < filas - 1) panel.removeFromTop (Metrics::halfGap);
             }
+            if (! songUtilAqui)
+                for (auto* b : su) b->setBounds ({});
             cierraSong (gUtil);
             panel.removeFromTop (Metrics::sm);
         }
@@ -4551,7 +4687,7 @@ void MainComponent::resized()
         //  EL TRANSPORTE y el largo, en la misma fila: PLAY primero porque es
         //  lo que se toca mas, y el largo con lo que sobre. Girado va DEBAJO DE
         //  LA LINEA DE TIEMPO y no al final de la columna - ver la altura.
-        auto& pie = wideFace ? inner : panel;
+        auto& pie = songDosCol ? inner : panel;
         auto bottom = pie.removeFromBottom (Metrics::btn);
         {
             const int pw = juce::jmax (Metrics::hit * 2, bottom.getWidth() / 4);
@@ -4974,6 +5110,25 @@ void MainComponent::resized()
         const int capH   = altoTarjeta (full);
         const int chrome = Ficha::cromoConPestanas (Metrics::tab + Metrics::sm);
 
+        //  LA PAGINA DEL PASO SE PARTE EN DOS POR LA FORMA DE LA TARJETA.
+        //
+        //  Lo decidia `wideFace`, que ademas pide unos 556 px de area segura
+        //  porque es la pregunta de si la CARA cabe en dos columnas. En
+        //  412x480 -la pantalla partida- sale que no, y sin embargo la tarjeta
+        //  mide 379x368: mas ancha que alta. En una columna esta pagina pide
+        //  430 px sobre 368 CON la banda de bloqueos y la cadena ya caidas, o
+        //  sea que su escalera se queda sin escalones y `sheetFromBottom`
+        //  recorta 62 px en silencio de lo ultimo que se maqueta -que aqui es
+        //  REJILLA-. Partida, pide la columna mas alta: 178 px, y la ficha
+        //  entera 332.
+        //
+        //  Solo la del PASO: la del PIANO tambien mira `wideFace` y ahi es la
+        //  pregunta correcta -sus tapas se van a una columna de 150 px y la
+        //  rejilla se queda con el ancho que sobre, que en 412x480 son 189 px
+        //  para dieciseis columnas-. Una respuesta buena para una pagina no lo
+        //  es para las tres.
+        const bool pasoDosCol = tarjetaAncha (full);
+
         //  Rotated, the card is short and wide: sixteen lanes cannot share 200
         //  px of height AND leave room for four stacked controls under them.
         //  So in landscape the grid takes the whole height of the card and the
@@ -5147,7 +5302,7 @@ void MainComponent::resized()
             //  ficha de CANCION: aqui todavia no existe `inner`, y estimarlo
             //  a ojo es como se pide una altura que luego no vale.
             const int anchoDeLaTarjeta = anchoTarjetaInterior (safeArea().getWidth());
-            const int anchoCol = wideFace ? (anchoDeLaTarjeta - Metrics::gap) / 2 : anchoDeLaTarjeta;
+            const int anchoCol = pasoDosCol ? (anchoDeLaTarjeta - Metrics::gap) / 2 : anchoDeLaTarjeta;
             //  Una fila si las ocho caben, dos si caben de cuatro en cuatro, y
             //  si no, tres: tres, tres y dos. `filasUtil` es lo que se paga DE
             //  MAS sobre la primera fila, que ya la cuenta bandH.
@@ -5249,7 +5404,7 @@ void MainComponent::resized()
             };
             auto pide = [&] (int lc, int cadena)
             {
-                return chrome + (wideFace ? juce::jmax (colACon (cadena), colBCon (lc))
+                return chrome + (pasoDosCol ? juce::jmax (colACon (cadena), colBCon (lc))
                                           : stepBandsCon (lc, cadena))
                               + Metrics::sm + kSeqFootH;
             };
@@ -5323,10 +5478,67 @@ void MainComponent::resized()
             const int filasTapas = wideFace ? 0 : (moduleBarFits (anchoDeLaTarjeta, pb5, 11) ? 1 : 2);
             filasTapasPiano = filasTapas;
             const int filaAcciones = (! wideFace && ! pianoSel.empty()) ? 1 : 0;
-            wanted = chrome + pianoGrid.getFilas() * PianoRoll::kAltoObjetivo + Metrics::sm + 14
-                   + (filasTapas + filaAcciones) * Metrics::hit
-                   + juce::jmax (0, filasTapas - 1) * Metrics::halfGap
-                   + filaAcciones * Metrics::sm;
+
+            //  Y LA REJILLA PIDE LO QUE VA A CABER, NO SU DESEO ENTERO.
+            //
+            //  Pedia `filas * kAltoObjetivo` pasara lo que pasara, y
+            //  `sheetFromBottom` recorta con un `jmin` que no se queja: en
+            //  640x360 la tarjeta es 588x324, esta pagina pedia 588 y las filas
+            //  salian a CATORCE pixeles; en 412x480 pedia 672 -720 con la tira
+            //  de seleccion- sobre 368. Catorce es por debajo del suelo de
+            //  dieciseis que el banco ya juzga, o sea que la nota que pones no
+            //  es la que querias.
+            //
+            //  El deseo cuando cabe y el suelo cuando no, que es la misma
+            //  figura que la pagina del PASO ya tiene tres lineas mas arriba:
+            //  se pregunta con `topeSeq`, el MISMO numero que aplica
+            //  sheetFromBottom, porque preguntar con una cuenta y colocar con
+            //  otra es como se llega a un control de altura cero.
+            //  Todo lo que no es rejilla, que es contra lo que se mide lo que
+            //  queda.
+            //
+            //  Y ES `bandaSubtitulo` Y NO UN `14` A MANO, Y SIN EL `sm` QUE
+            //  NADIE COLOCA. La banda que dice que se esta mirando se aparta
+            //  quince lineas mas abajo con `removeFromTop (bandaSubtitulo)` y
+            //  nada mas: el `Metrics::sm` que esta cuenta le sumaba delante son
+            //  OCHO pixeles pedidos que no se colocan, que es exactamente la
+            //  familia que `Tests/maqueta.md` ya tiene apuntada -«la frontera
+            //  bajo la cabecera como md en el PRESUPUESTO donde la colocacion
+            //  pone sm: cuatro fichas pidiendo cuatro pixeles que no
+            //  colocan»-. Ocho pixeles de tarjeta que no hacian falta, y en
+            //  640x360 son media fila de nota.
+            //  Y LA FILA DE TAPAS SE CUENTA CON LOS HUECOS QUE SE COLOCAN.
+            //
+            //  Pedia `halfGap` entre las dos filas y nada delante; abajo se
+            //  coloca `removeFromBottom (hit)`, `sm`, `removeFromBottom (hit)`
+            //  y `xs`, o sea 92 px donde la cuenta decia 84. Ocho de menos, y
+            //  en 412x480 salen justo de lo unico que no sobra: la rejilla
+            //  pedia nueve filas de dieciseis y se colocaba a QUINCE -por
+            //  debajo del suelo de celdaNota-, que es lo que el banco canto
+            //  como `CELDA 18x15` en veinte corridas. Pedir con una cuenta y
+            //  colocar con otra, una vez mas.
+            const int sinLienzo = chrome + Metrics::bandaSubtitulo
+                                + (filasTapas + filaAcciones) * Metrics::hit
+                                + (filasTapas > 0 ? Metrics::sm : 0)
+                                + juce::jmax (0, filasTapas - 1) * Metrics::xs
+                                + filaAcciones * Metrics::sm;
+            const int paraLienzo = juce::jmax (0, altoTarjeta (full) - sinLienzo);
+
+            //  Y CUANTAS FILAS CABEN SE MIDE AQUI, que es el unico sitio que
+            //  sabe contra que.
+            //
+            //  Trece por el suelo de dieciseis son 208 px de lienzo y en
+            //  640x360 quedan 186: por muchas vueltas que se le de, trece
+            //  filas tocables no caben ahi. Pedirlas igual es lo que hacia
+            //  esto hasta ahora, y `sheetFromBottom` las recortaba en silencio
+            //  a catorce pixeles por fila. Se pide lo que se va a colocar:
+            //  once filas de dieciseis en 640x360, nueve en 412x480 y seis con
+            //  la tira de seleccion puesta.
+            pianoGrid.acota (paraLienzo / PianoRoll::kAltoMin);
+            const int filasPiano = juce::jmax (1, pianoGrid.getFilas());
+            const int porFila = juce::jlimit (PianoRoll::kAltoMin, PianoRoll::kAltoObjetivo,
+                                              paraLienzo / filasPiano);
+            wanted = sinLienzo + filasPiano * porFila;
         }
 
         auto inner = sheetFromBottom (seqSheet, wanted);
@@ -5680,7 +5892,7 @@ void MainComponent::resized()
                 if (! cabe)
                 {
                     pianoVerBtn.setBounds ({});
-                    if (pianoGrid.getFilas() != PianoRoll::kFilasMin)
+                    if (pianoGrid.getFilasPedidas() != PianoRoll::kFilasMin)
                     {
                         pianoGrid.setFilas (PianoRoll::kFilasMin);
                         pianoBase = juce::jlimit (-24, pianoGrid.baseMax(), pianoBase);
@@ -5704,6 +5916,27 @@ void MainComponent::resized()
             {
                 const int libre = inner.getWidth() - PianoRoll::kGutter - BarraVista::kGrueso;
                 pianoHayBarraVert = libre / juce::jmax (1, pianoCols) >= Metrics::celdaPaso;
+
+                //  Y SI LA TARJETA HA RECORTADO LAS FILAS, LA BARRA NO ES
+                //  OPCIONAL.
+                //
+                //  El par de OCTAVA mueve `pianoBase` de DOCE en doce, y eso
+                //  solo cubre la escala entera mientras se vean doce filas o
+                //  mas: con once -lo que cabe en 640x360- las ventanas son
+                //  -24..-14, -12..-2, 0..10 y 12..22, o sea que los semitonos
+                //  -13, -1, 11 y 23 no se alcanzan desde ningun paso del
+                //  boton. Una fila que no se puede alcanzar es una fila que
+                //  miente, que es la misma razon por la que `setFilas` solo
+                //  admite trece o veinticinco.
+                //
+                //  La barra recorre la base semitono a semitono, asi que con
+                //  ella puesta no hay hueco. Cuesta ANCHO -`kGrueso`- y estas
+                //  son justo las pantallas donde sobra ancho y falta alto; si
+                //  con eso la columna se queda estrecha, quien se cae es una
+                //  COLUMNA de paso, que la ventana horizontal ya sabe
+                //  recorrer.
+                if (pianoGrid.getFilas() < pianoGrid.getFilasPedidas())
+                    pianoHayBarraVert = true;
             }
             pianoOctDownBtn.setVisible (! pianoHayBarraVert);
             pianoOctUpBtn  .setVisible (! pianoHayBarraVert);
@@ -6389,9 +6622,9 @@ void MainComponent::resized()
 
             //  Two columns rotated, one stacked upright - the same four groups
             //  either way, so the card never has to be taller than it is wide.
-            auto colA = wideFace ? inner.removeFromLeft ((inner.getWidth() - Metrics::gap) / 2) : inner;
-            auto colB = wideFace ? inner.withTrimmedLeft (Metrics::gap) : juce::Rectangle<int>();
-            auto& second = wideFace ? colB : colA;
+            auto colA = pasoDosCol ? inner.removeFromLeft ((inner.getWidth() - Metrics::gap) / 2) : inner;
+            auto colB = pasoDosCol ? inner.withTrimmedLeft (Metrics::gap) : juce::Rectangle<int>();
+            auto& second = pasoDosCol ? colB : colA;
 
             if (seqCadenaAqui)
             {

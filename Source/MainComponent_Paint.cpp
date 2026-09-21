@@ -283,9 +283,46 @@ void MainComponent::paint (juce::Graphics& g)
                 //  el suelo esta en cuatro: por debajo el triangulo se lee como
                 //  una mota. Medido en las siete: 10x6 en cinco y **8x4** en las
                 //  dos estrechas, con el hueco en 10.5 px y en 5.5.
-                const float alto  = juce::jmin (6.0f, tapaInk - arriba - 1.0f);
+                //  Y EL HUECO SE PAGA UNA VEZ Y NO DOS. Esto descontaba un
+                //  pixel por arriba -`bandaEfectos.getEnd() + 1`- y otro por
+                //  abajo -este `- 1.0f`-, o sea dos separaciones para un solo
+                //  dibujo. Apaisado la cara parte en dos columnas y la fila de
+                //  las seis ranuras baja de los cuarenta de `kFxRow` a 28, asi
+                //  que entre la ultima tinta del rayado y la primera de la tapa
+                //  quedan CINCO pixeles: menos las dos separaciones son tres, y
+                //  el suelo de la cuña son cuatro. Resultado medido en 640x360:
+                //  la cuña NO SE DIBUJABA, ni en `plato` ni en `rackf`, o sea
+                //  que en esa pantalla nada decia cual de las seis ranuras
+                //  tiene los tres mandos - exactamente el problema por el que
+                //  la cuña existe, y el que su propio comentario dice que no se
+                //  podia devolver.
+                //
+                //  Se conserva la de ARRIBA, que es la que el banco juzga -la
+                //  cuña no puede tocar el rayado- y se suelta la de abajo: la
+                //  punta de una flecha llegando al filo de lo que señala no es
+                //  un defecto, es lo que hace una flecha. Medido despues: 10x6
+                //  donde ya cabia, 8x5 en las dos estrechas -era 8x4- y 8x4 en
+                //  640x360, que antes era nada.
+                const float alto  = juce::jmin (6.0f, tapaInk - arriba);
                 const float medio = alto * (5.0f / 6.0f);
-                if (alto >= 4.0f)
+                //  Y EL SUELO BAJA DE CUATRO A TRES, que es lo que hay.
+                //
+                //  El cuatro se eligio midiendo las siete pantallas de
+                //  entonces, donde el hueco valia 10.5 px o 5.5. Apaisado la
+                //  cara parte en dos columnas y la fila de las seis ranuras NO
+                //  mide los cuarenta de `kFxRow`: mide 28, asi que la tinta de
+                //  la tapa empieza un pixel dentro de la fila en vez de cinco.
+                //  Medido en 640x360: banda 277.5..288.5, tapa a 293, hueco de
+                //  3.5 px - y con el suelo en cuatro la cuña NO SE DIBUJABA, ni
+                //  en `plato` ni en `rackf`. Nada en esa pantalla decia cual de
+                //  las seis ranuras tiene los tres mandos.
+                //
+                //  Una cuña de 5x3 es pequena; ninguna es el fallo que esta
+                //  cuña existe para arreglar, y eso lo dice el comentario de
+                //  aqui arriba con sus cifras. Entre pequena y ninguna, gana
+                //  pequena. Las demas pantallas no se mueven: siguen en 10x6 y
+                //  8x5, que el `jmin` de seis ya acotaba.
+                if (alto >= 3.0f)
                 {
                     const float cx = (float) fb->getBounds().getCentreX();
                     const float y  = arriba + (tapaInk - arriba - alto) * 0.5f + alto;

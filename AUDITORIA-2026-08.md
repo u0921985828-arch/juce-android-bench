@@ -307,6 +307,23 @@ Los dos tamaños quedan declarados en `SIN_DISENO` de `expo.py`: se imprimen con
 su cuenta en cada corrida y no se juzgan hasta que exista la tarjeta de dos
 columnas. Misma figura que `profundidad` y `APRETADA`.
 
+**CERRADO en la tanda 8, con el número de después.** Las cuatro fichas derivan
+ahora del alto que hay en vez de pedir un alto fijo: el piano acota sus filas al
+hueco (once en 640x360, nueve en 412x480, seis con la tira de selección, todas
+de 16 px) y guarda aparte la elección; CANCIÓN deriva el ancho de la columna con
+`moduleBarFits` (308 px, no los 213 de `ancho/3`), devuelve al carril su suelo
+declarado —`celdaCancion`, 20— y tiene dos escalones que caen en orden (los diez
+iconos de arreglo y después las cinco tapas de modos); PASO parte en dos con
+`tarjetaAncha`, que es la pregunta de la tarjeta, y no con `wideFace`, que es la
+de la cara. `TARJETA` y `CERO` salen a **cero en las nueve pantallas**, y los
+131 hallazgos de esas dos bajan a **45**. La excepción deja de ser la pantalla
+entera y pasa a ser `SIN_DISENO_REGLAS = {CELDA, TRUNC, SQUEEZE}`: lo demás de
+esas dos pantallas ya se juzga, así que una regresión se ve. Lo que queda dentro
+de la excepción sí es un encargo de diseño y no de reparto —16 carriles a 12 px
+de suelo son 192 de alto y un compás de 16 pasos son 192 de ancho, y la tarjeta
+da 136 después del cromo— más los rótulos que no caben en 640x360 (`"120"` pide
+22 y tiene 16, `"1 COMPAS"` 47 sobre 38).
+
 **E2. La alineación de 16 KB se comprueba sobre un fichero que después se
 reescribe.** El paso «Páginas de 16 KB» corre antes de «Re-sign the release
 APK», que reconstruye el zip: lo verificado no es lo que se sube. Y el `.aab`

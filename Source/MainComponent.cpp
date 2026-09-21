@@ -4013,7 +4013,7 @@ MainComponent::MainComponent()
         styleButton (pianoVerBtn, kKey);
         pianoVerBtn.onClick = [this]
         {
-            aplicaFilasPiano (pianoGrid.getFilas() >= PianoRoll::kFilasMax
+            aplicaFilasPiano (pianoGrid.getFilasPedidas() >= PianoRoll::kFilasMax
                                 ? PianoRoll::kFilasMin : PianoRoll::kFilasMax);
             savePianoPref();
         };
@@ -9665,7 +9665,7 @@ void MainComponent::retranslateUi()
     //  "1 OCTAVA" en espanol dentro de una compilacion en ingles - que es
     //  exactamente el fallo que la prueba comparativa de idiomas existe para
     //  cazar, y lo cazaria.
-    pianoVerBtn    .setButtonText (pianoGrid.getFilas() >= PianoRoll::kFilasMax
+    pianoVerBtn    .setButtonText (pianoGrid.getFilasPedidas() >= PianoRoll::kFilasMax
                                      ? T ("2 OCTAVAS") : T ("1 OCTAVA"));
     denoiseButton.setButtonText (T ("QUITAR RUIDO"));
     recorteButton.setButtonText (T ("RECORTAR"));
@@ -14673,7 +14673,7 @@ juce::File MainComponent::pianoPrefFile()
 
 void MainComponent::savePianoPref() const
 {
-    ProjectStore::escribeTexto (pianoPrefFile(), juce::String (pianoGrid.getFilas()));
+    ProjectStore::escribeTexto (pianoPrefFile(), juce::String (pianoGrid.getFilasPedidas()));
 }
 
 void MainComponent::loadPianoPref()
@@ -14694,7 +14694,7 @@ void MainComponent::aplicaFilasPiano (int filas)
 {
     pianoGrid.setFilas (filas);
     pianoBase = juce::jlimit (-24, pianoGrid.baseMax(), pianoBase);
-    pianoVerBtn.setButtonText (pianoGrid.getFilas() >= PianoRoll::kFilasMax
+    pianoVerBtn.setButtonText (pianoGrid.getFilasPedidas() >= PianoRoll::kFilasMax
                                  ? T ("2 OCTAVAS") : T ("1 OCTAVA"));
     resized();
     refreshPiano();

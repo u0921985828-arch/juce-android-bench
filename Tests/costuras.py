@@ -66,16 +66,19 @@ from kits import PANTALLA                                          # noqa: E402
 ROOT = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
 APP  = os.path.join (ROOT, "build", "Zati_artefacts", "Release", "Zati")
 sys.path.insert (0, os.path.join (ROOT, "Tests"))
-from expo import SIZES, SIN_DISENO         # una lista de pantallas, un dueño
+from expo import SIZES                     # una lista de pantallas, un dueño
 
-#  Y LAS DOS QUE SE MIDEN Y NO SE JUZGAN, del mismo dueño que la lista. Ver
-#  el comentario de SIN_DISENO en expo.py: la tarjeta girada es mas ancha que
-#  alta y las fichas maquetan en una columna, asi que juzgarlas hoy seria
-#  juzgar un diseño que no existe. Aqui se corren igual -sus cifras se
-#  imprimen- pero no suman al veredicto, y las cadenas de control cuentan
-#  contra las pantallas que SI tienen diseño, o un cero de ellas dos taparia
-#  una medida muerta en las otras siete.
-DISENO = [s for s in SIZES if s[0] not in SIN_DISENO]
+#  Y AQUI YA NO HAY EXCEPCION: LAS NUEVE SUMAN.
+#
+#  La habia -`DISENO`, las siete con diseño- mientras la tarjeta ancha y baja
+#  se maquetaba en una sola columna y las dos nuevas sacaban 131 hallazgos que
+#  eran uno con nombre. Eso esta cerrado y medido: cero TARJETA y cero CERO en
+#  las nueve. Lo que queda en expo.py es una excepcion por REGLA -CELDA, TRUNC
+#  y SQUEEZE- y no por pantalla, y ninguna de esas tres la mide este fichero:
+#  aqui se miden costuras, filas de medidor y cuñas, y esas nunca fallaron en
+#  las dos. Una excepcion que ya no excluye nada deja de proteger y solo
+#  esconde, asi que se va y las cadenas de control vuelven a contar las nueve.
+DISENO = SIZES
 
 #  Lo que separa el chasis de lo que hay encima. El cuerpo lleva un degradado
 #  vertical, asi que dos filas seguidas de chasis se diferencian en uno o dos
@@ -269,88 +272,72 @@ def main():
     if not display_alive():      sys.exit ("la pantalla virtual no responde")
 
     malas, medidas, sin_medir, filas, rotulos = 0, 0, 0, 0, []
-    malasSin = 0
     cunasVistas = 0
     for size, _nombre in SIZES:
-        #  LO QUE ENCUENTRE UNA PANTALLA SIN DISEÑO SE IMPRIME Y NO SE SUMA.
-        #  Ver DISENO. El `try/finally` es lo que hace que valga tambien para
-        #  el camino que sale por `continue` -la pantalla sin foto-, que es el
-        #  unico sitio donde este cuerpo se va antes de tiempo.
-        antes = (malas, medidas, sin_medir, filas, cunasVistas)
-        try:
-            m, cent = cunas (size)
-            malas += m
-            cunasVistas += len (cent)
-            dump = corre (size, None)
-            cost = [d for d in dump if "costura" in d]
+        m, cent = cunas (size)
+        malas += m
+        cunasVistas += len (cent)
+        dump = corre (size, None)
+        cost = [d for d in dump if "costura" in d]
 
-            #  Y EL ROTULO DE LA TERCERA FILA CABE EN LA CAJA DONDE CAYO. La app
-            #  publica lo que DIBUJA y su caja, no la palabra larga y la celda
-            #  ancha pase lo que pase: la rama corta mete dos cifras en un canalon
-            #  de diez pixeles, que es la unica de las dos que de verdad puede no
-            #  caber. Se imprime ademas por cual salio, que hoy es siempre la
-            #  larga -de 24 px en chino a 37 en ingles contra los 68 de la celda-
-            #  y sin eso la escalera no se ha visto caer.
-            for r in [d for d in dump if d.get ("vurot")]:
-                rotulos.append ((size, r["texto"], r["pide"], r["tiene"]))
-                if r["pide"] > r["tiene"]:
-                    malas += 1
-                    print ("%-9s FALLA  el rotulo del medidor dice %s, pide %d px y tiene %d"
-                           % (size, r["texto"], r["pide"], r["tiene"]))
-
-            #  EL MEDIDOR CABE ENTERO. Sin el cristal no hay contra que medir, asi
-            #  que su ausencia es un fallo y no un caso que se salta.
-            vus  = [d for d in dump if d.get ("vu")]
-            cris = next ((v for v in vus if v["que"] == "cristal"), None)
-            if cris is None:
-                print ("%-9s el cristal no se publica: el medidor no se mide" % size)
+        #  Y EL ROTULO DE LA TERCERA FILA CABE EN LA CAJA DONDE CAYO. La app
+        #  publica lo que DIBUJA y su caja, no la palabra larga y la celda
+        #  ancha pase lo que pase: la rama corta mete dos cifras en un canalon
+        #  de diez pixeles, que es la unica de las dos que de verdad puede no
+        #  caber. Se imprime ademas por cual salio, que hoy es siempre la
+        #  larga -de 24 px en chino a 37 en ingles contra los 68 de la celda-
+        #  y sin eso la escalera no se ha visto caer.
+        for r in [d for d in dump if d.get ("vurot")]:
+            rotulos.append ((size, r["texto"], r["pide"], r["tiene"]))
+            if r["pide"] > r["tiene"]:
                 malas += 1
-            else:
-                for v in vus:
-                    if v["que"] == "cristal": continue
-                    filas += 1
-                    fuera = (v["y"] + v["h"]) - (cris["y"] + cris["h"])
-                    if fuera > 0 or v["y"] < cris["y"]:
-                        malas += 1
-                        print ("%-9s FALLA  la fila %s del medidor va de %d a %d y el cristal"
-                               " mide %d: se sale %d px"
-                               % (size, v["que"], v["y"], v["y"] + v["h"], cris["h"], fuera))
-            png  = os.path.join (tempfile.mkdtemp (prefix="zati-shot-"), "cara.png")
-            corre (size, png)
-            if not os.path.exists (png):
-                print ("%-9s no salio la foto" % size); malas += 1; continue
-            w, h, bpp, px = lee_png (png)
+                print ("%-9s FALLA  el rotulo del medidor dice %s, pide %d px y tiene %d"
+                       % (size, r["texto"], r["pide"], r["tiene"]))
 
-            for c in cost:
-                y, x0, x1 = c["y"], c["x0"], c["x1"]
-                if not (4 < y < h - 4): sin_medir += 1; continue
-                #  Desde DENTRO del hueco y no desde el rayado: la tinta del propio
-                #  rayado seria el primer borde y esto mediria cero siempre.
-                arriba, abajo = hueco (px, w, bpp, x0, x1, y)
-                if arriba is None or abajo is None:
-                    sin_medir += 1
-                    continue
-                centro = (arriba + 1 + abajo) / 2.0
-                desvio = abs (centro - y)
-                medidas += 1
-                if desvio > LISTON:
+        #  EL MEDIDOR CABE ENTERO. Sin el cristal no hay contra que medir, asi
+        #  que su ausencia es un fallo y no un caso que se salta.
+        vus  = [d for d in dump if d.get ("vu")]
+        cris = next ((v for v in vus if v["que"] == "cristal"), None)
+        if cris is None:
+            print ("%-9s el cristal no se publica: el medidor no se mide" % size)
+            malas += 1
+        else:
+            for v in vus:
+                if v["que"] == "cristal": continue
+                filas += 1
+                fuera = (v["y"] + v["h"]) - (cris["y"] + cris["h"])
+                if fuera > 0 or v["y"] < cris["y"]:
                     malas += 1
-                    print ("%-9s FALLA  hueco %d..%d centro %.1f  rayado en %d  (%.1f px)"
-                           % (size, arriba + 1, abajo - 1, centro, y, desvio))
+                    print ("%-9s FALLA  la fila %s del medidor va de %d a %d y el cristal"
+                           " mide %d: se sale %d px"
+                           % (size, v["que"], v["y"], v["y"] + v["h"], cris["h"], fuera))
+        png  = os.path.join (tempfile.mkdtemp (prefix="zati-shot-"), "cara.png")
+        corre (size, png)
+        if not os.path.exists (png):
+            print ("%-9s no salio la foto" % size); malas += 1; continue
+        w, h, bpp, px = lee_png (png)
 
-        finally:
-            #  Y TAMPOCO SUMAN A LAS CADENAS DE CONTROL, que es la mitad que se
-            #  olvida: si las corridas de estas dos contaran, un cero de
-            #  costuras en las siete con diseño se taparia con lo que midieran
-            #  ellas, y la cadena dejaria de proteger lo que existe para
-            #  proteger. Lo suyo se imprime aparte.
-            if size in SIN_DISENO:
-                malasSin += malas - antes[0]
-                malas, medidas, sin_medir, filas, cunasVistas = antes
+        for c in cost:
+            y, x0, x1 = c["y"], c["x0"], c["x1"]
+            if not (4 < y < h - 4): sin_medir += 1; continue
+            #  Desde DENTRO del hueco y no desde el rayado: la tinta del propio
+            #  rayado seria el primer borde y esto mediria cero siempre.
+            arriba, abajo = hueco (px, w, bpp, x0, x1, y)
+            if arriba is None or abajo is None:
+                sin_medir += 1
+                continue
+            centro = (arriba + 1 + abajo) / 2.0
+            desvio = abs (centro - y)
+            medidas += 1
+            if desvio > LISTON:
+                malas += 1
+                print ("%-9s FALLA  hueco %d..%d centro %.1f  rayado en %d  (%.1f px)"
+                       % (size, arriba + 1, abajo - 1, centro, y, desvio))
+
 
     #  CADENA DE CONTROL. Un banco que no encuentra un solo hueco daria verde
     #  sin haber mirado nada, que es la peor forma de pasar. La cara tiene tres
-    #  costuras y siete pantallas: si no se miden al menos dos por pantalla, lo
+    #  costuras y nueve pantallas: si no se miden al menos dos por pantalla, lo
     #  que falla es la medida y no la app.
     if medidas < 2 * len (DISENO):
         print ("la foto no encuentra los huecos: %d costuras medidas de %d"
@@ -392,9 +379,6 @@ def main():
     print()
     print ("%d costuras medidas, %d sin borde a la vista, %d filas de medidor,"
            " %d cuñas" % (medidas, sin_medir, filas, cunasVistas))
-    if malasSin:
-        print ("SIN DISEÑO (%s): %d hallazgo(s), se imprimen arriba y no se juzgan"
-               % (", ".join (sorted (SIN_DISENO)), malasSin))
     if rotulos:
         cortos = [r for r in rotulos if len (r[1]) <= 2]
         print ("el rotulo de la tercera fila: %d con la palabra entera, %d con las dos"

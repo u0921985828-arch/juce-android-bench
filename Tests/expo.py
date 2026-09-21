@@ -35,33 +35,48 @@ SIZES = [
     ("640x360",  "LANDSCAPE de un telefono pequeño — justo sobre el umbral"),
     ("412x480",  "pantalla partida, la que el propio codigo cita"),
 ]
-#  Y LAS DOS QUE SE MIDEN Y NO SE JUZGAN, POR AHORA Y CON SU CIFRA.
+#  LAS DOS QUE ENTRARON SIN DISEÑO, Y LO QUE QUEDA DE AQUELLO.
 #
 #  Entraron en la tanda 7 para medir el umbral del apaisado y pagaron en la
 #  primera corrida: sacaron el panel que se unia solo por arriba, la ficha de
 #  EXPORTAR que se pasaba del tope y la banda de la cara que metia seis
-#  pestañas en 184 px -AJUSTES salia a 0x40-. Todo eso esta arreglado.
+#  pestañas en 184 px -AJUSTES salia a 0x40-.
 #
-#  Lo que queda son 132 hallazgos y NO son 132 fallos: son UNO, con nombre.
-#  Girada, la tarjeta de una ficha es MAS ANCHA QUE ALTA -589x324 en 640x360-
-#  y las fichas siguen maquetando en UNA sola columna, asi que piden 588 px de
-#  alto donde hay 324. `sheetFromBottom` recorta en silencio y lo que se cae es
-#  lo ultimo que se coloca: la onda de RECORTE sale a 556x0, las filas del
-#  piano a 14 px -el minimo son 16- y la celda de la cancion a 6.
+#  Detras quedaron 131 hallazgos que NO eran 131 fallos: eran UNO, con nombre.
+#  Girada, la tarjeta de una ficha es MAS ANCHA QUE ALTA -588x324 en 640x360,
+#  379x368 en 412x480- y las fichas maquetaban en UNA sola columna, asi que
+#  pedian mas alto del que hay: piano 588 y 672, cancion 426 y 490, paso 430,
+#  pad 538, recorte 484. `sheetFromBottom` recorta con un `jmin` que no se
+#  queja y lo que falta se lo come lo ULTIMO que se coloca: la onda de RECORTE
+#  salia a 556x0, las filas del piano a 14 px -el suelo son 16- y la celda de
+#  la cancion a 6, con el suelo en 20.
 #
-#  Juzgarlo hoy seria juzgar un diseño que no existe: la tarjeta ancha-y-baja
-#  -dos columnas- no esta escrita, y ninguna de estas cifras se arregla con un
-#  parche porque las cuatro fichas que fallan -seqSheet, padSheet, songSheet y
-#  chopSheet- pintan su contenido FUERA del cuerpo desplazable, o sea que ni
-#  siquiera pueden desplazarse sin mudar cuarenta y dos hijos. Es la misma
-#  figura que `profundidad` y que `APRETADA`: se IMPRIME y no se juzga, porque
-#  un liston sobre un reparto que se ve por primera vez seria un numero elegido
-#  a ojo.
+#  ESO ESTA CERRADO y se mide: cero TARJETA y cero CERO en las nueve
+#  pantallas. Las fichas de controles se desplazan, el piano pide las filas que
+#  caben, la cancion deriva el ancho de su columna y cede el carril hasta su
+#  suelo declarado, y el paso se parte en dos por la FORMA de la tarjeta y no
+#  por `wideFace`. De 131 quedan 45.
 #
-#  No se sacan de la lista, que es lo que las dejaria olvidadas: cada corrida
-#  las imprime con su cuenta, y el dia que la tarjeta ancha-y-baja exista esta
-#  linea se borra y pasan a juzgarse con las otras siete.
+#  LO QUE QUEDA SON TRES REGLAS Y NO DOS PANTALLAS, y por eso la excepcion ya
+#  no es la pantalla entera: todo lo demas de estas dos SE JUZGA desde hoy, que
+#  es lo que hace que una vuelta atras se cante. Las tres:
+#
+#    CELDA 20   la rejilla de dieciseis PASOS. Son dieciseis carriles y un
+#               compas entero a lo ancho: 16 x 12 son 192 px de alto y 192 de
+#               ancho, y en 412x480 la tarjeta da 368 menos 124 de cromo. No
+#               cabe por reparto, hace falta decidir que ensena esa pagina en
+#               una ventana asi, que es diseño y no un numero.
+#    TRUNC 25   y SQUEEZE 5: rotulos que no caben en su tapa en 640x360
+#               -«120» pide 22 con 16, «VACIAR» 35 con 28-. Es la escalera de
+#               siempre y se arregla tapa a tapa, no aqui.
+#
+#  Cada corrida las imprime con su cuenta. El dia que esas tres lleguen a cero
+#  esta lista se borra.
 SIN_DISENO = {"640x360", "412x480"}
+#  Y LAS REGLAS QUE ESA EXCEPCION CUBRE, que antes era «todas». Una excepcion
+#  del tamaño de una pantalla tapa tambien lo que ya funciona: con la anterior,
+#  volver a romper TARJETA en 640x360 no lo cantaba nadie.
+SIN_DISENO_REGLAS = {"CELDA", "TRUNC", "SQUEEZE"}
 
 LANGS = ["es", "en", "zh", "ar"]
 SHEETS = ["", "plato", "songm", "pads", "pad2", "pad3", "sec", "secp", "paso", "eq", "eqb", "song", "piano", "pianod", "pianosel", "pick", "mix", "xy", "set", "asp", "proj", "gest", "midi", "midf", "lang", "manual", "mixc", "canal", "rack", "rackf", "ranura", "ranural", "preset", "preseteq", "chop", "inst", "instd", "instg", "vst", "vstm", "expo", "tour", "tour1", "tour3", "tour6", "tour10", "tourf", "browse", "browsedir",
@@ -1525,10 +1540,11 @@ def main():
     #  diseño se imprimen y no se juzgan. `CHIPS` lleva la etiqueta "control" y
     #  no una pantalla, asi que cae del lado juzgado, que es donde tiene que
     #  estar: es una regla sobre la app entera y no sobre una ventana.
-    juzgado = collections.Counter(f[0] for f in allf
-                                  if f[1].split("/")[0] not in SIN_DISENO)
-    sinJuzgar = collections.Counter(f[0] for f in allf
-                                    if f[1].split("/")[0] in SIN_DISENO)
+    def sinDiseno(f):
+        return (f[1].split("/")[0] in SIN_DISENO
+                and f[0] in SIN_DISENO_REGLAS)
+    juzgado = collections.Counter(f[0] for f in allf if not sinDiseno(f))
+    sinJuzgar = collections.Counter(f[0] for f in allf if sinDiseno(f))
     print(f"\n=== {runs} runs, {fails} produced nothing ===")
     print("findings:", dict(by))
     # Group identical messages across the matrix so one bug is one line.
@@ -1656,30 +1672,38 @@ def main():
     #  TOUCH no cuenta: el dedo por debajo del minimo es una escalera conocida
     #  -seis efectos por cuarenta no caben en un Fold cerrado- y esta medido con
     #  su cifra. Lo que no puede pasar de cero es lo demas.
+    #  Y `TARJETA` ES LA QUE FALTABA EN ESTA LISTA, que es la misma figura una
+    #  vez mas: la regla existe, se calcula, se imprime con su numero... y no
+    #  juzga nada. Medido: devolviendo el piano a su pedido rigido a proposito,
+    #  el volcado canta `pide 580 px y la tarjeta da 324` en veinte corridas,
+    #  672 sobre 368 en dieciseis y 720 sobre 368 en cuatro -cuarenta hallazgos
+    #  nombrando la ficha y las dos pantallas- y `expo.py` salia rc=0 diciendo
+    #  "cero en las demas reglas". Una prueba que no se ha visto fallar es una
+    #  linea que imprime OK, y esta ni con el codigo roto a mano fallaba.
     duros = [k for k in ("TRUNC", "SQUEEZE", "OVERLAP", "OFFSCREEN", "CELDA",
                          "UNTRANSLATED", "CERO", "TAPADO", "SPRITE", "CORTADO", "PISADO",
                          "FILA", "CUADRADA", "ASOMA", "CABECERA", "MARCO", "CARA",
-                         "CHIPS", "ANATOMIA", "CRASH") if juzgado.get(k)]
+                         "CHIPS", "ANATOMIA", "TARJETA", "CRASH") if juzgado.get(k)]
     if resto:
         duros.append("RESIDUO")
     print()
     #  LO QUE SE MIDE Y NO SE JUZGA, con su cuenta y en cada corrida. Ver
     #  SIN_DISENO.
     pendiente = {k: n for k, n in sorted(sinJuzgar.items())
-                 if k not in ("TOUCH", "APRETADA", "TARJETA", "FILO")}
+                 if k not in ("TOUCH", "APRETADA", "FILO")}
     if pendiente:
-        print("SIN DISEÑO (%s), se imprime y no se juzga: %s"
+        print("SIN DISEÑO (%s, solo %s), se imprime y no se juzga: %s"
               % (", ".join(sorted(SIN_DISENO)),
+                 "/".join(sorted(SIN_DISENO_REGLAS)),
                  ", ".join("%s %d" % kv for kv in pendiente.items())))
-        print("  una tarjeta mas ancha que alta maquetada en una sola columna;"
+        print("  la rejilla de dieciseis pasos y los rotulos que no caben;"
               " ver el comentario de SIN_DISENO")
         print()
     if duros:
         print("FALLA: " + ", ".join("%s %d" % (k, juzgado.get(k, len(resto))) for k in duros))
         return 1
     print("expo: %d corridas, %d TOUCH conocidos, cero en las demas reglas"
-          " de las %d pantallas con diseño" % (runs, by.get("TOUCH", 0),
-                                               len(SIZES) - len(SIN_DISENO)))
+          " de las %d pantallas" % (runs, by.get("TOUCH", 0), len(SIZES)))
     return 0
 
 #  Con guarda, que sin ella IMPORTAR este fichero corre el banco entero. La

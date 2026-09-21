@@ -79,8 +79,34 @@ public:
     //  veinticinco: -24..0 y 0..24.
     static constexpr int kFilasMin = 13;   // una octava y su raiz
     static constexpr int kFilasMax = 25;   // dos octavas y su raiz
-    void setFilas (int n) { filas = (n >= kFilasMax) ? kFilasMax : kFilasMin; repaint(); }
+    //  LO QUE SE ELIGE Y LO QUE CABE SON DOS NUMEROS, Y ERAN UNO.
+    //
+    //  `filas` valia trece o veinticinco y nada mas, asi que la ficha pedia
+    //  `filas * kAltoObjetivo` pasara lo que pasara y `sheetFromBottom`
+    //  recortaba con un `jmin` que no se queja: en 640x360 la tarjeta es
+    //  588x324, la pagina pedia 588 y las filas salian a CATORCE pixeles; en
+    //  412x480 pedia 672 -720 con la tira de seleccion- sobre 368. Catorce es
+    //  por debajo del suelo de dieciseis que el banco ya juzga: la nota que
+    //  pones no es la que querias.
+    //
+    //  Ahora `filasPedidas` es la eleccion -la que guarda el fichero de
+    //  preferencias y la que dice el rotulo de VER- y `tope` lo que el
+    //  maquetado ha medido que cabe a `kAltoMin` por fila. `filas` es el
+    //  minimo de los dos, que es lo unico que se dibuja. Ensenar menos filas
+    //  no es un estado nuevo: la ventana vertical continua existe desde que
+    //  `BarraVista` recorre `pianoBase` semitono a semitono.
+    void setFilas (int n) { filasPedidas = (n >= kFilasMax) ? kFilasMax : kFilasMin; ajusta(); }
+    //  CUANTAS CABEN, que lo dice quien maqueta y no esto. `jmax (1, ...)`
+    //  porque una tarjeta de cero alto existe -es el primer `resized` antes de
+    //  que la ventana tenga tamaño- y una rejilla de cero filas divide entre
+    //  cero tres lineas mas abajo.
+    void acota (int caben) { tope = juce::jmax (1, caben); ajusta(); }
     int  getFilas() const noexcept { return filas; }
+    //  La ELECCION, no lo que se ve. La guarda el fichero de preferencias y la
+    //  lee el rotulo de VER: con `getFilas()` en una pantalla donde el tope
+    //  manda, la tapa diria «2 OCT» estando en once filas y la preferencia se
+    //  escribiria con un numero que nadie pidio.
+    int  getFilasPedidas() const noexcept { return filasPedidas; }
     //  El semitono mas alto que puede quedar abajo, para que el de arriba caiga
     //  clavado en el +24 que setStepNote admite y ni uno mas.
     int  baseMax()  const noexcept { return 24 - (filas - 1); }
@@ -91,6 +117,23 @@ public:
     //  pantalla los tiene, asi que la tarjeta quedaria clavada en su tope en
     //  las siete y el numero dejaria de decir nada.
     static constexpr int kAltoObjetivo = 34;
+    //  Y EL SUELO, QUE NO ES EL MISMO NUMERO Y HASTA AHORA NO EXISTIA.
+    //
+    //  `kAltoObjetivo` es un DESEO -lo dice el parrafo de arriba: «no es un
+    //  suelo ... quien manda es el alto de la tarjeta»- y la ficha lo pedia
+    //  entero pasara lo que pasara. Mientras la tarjeta dio para tanto, daba
+    //  igual; con las dos pantallas que el barrido gano -640x360 y 412x480- la
+    //  tarjeta es 588x324 y 379x368, la ficha pedia 588 y 672, y
+    //  `sheetFromBottom` recorta con un `jmin` que no se queja: las filas
+    //  salian a CATORCE pixeles.
+    //
+    //  Dieciseis es el suelo que el banco ya juzga para una fila de nota
+    //  -`MIN_NOTE` de Tests/expo.py- y no un numero nuevo: poner una nota a
+    //  ojo en catorce pixeles es escribir la de al lado, que es exactamente la
+    //  queja que bajo las filas de veinticinco a trece. Pedir el deseo cuando
+    //  cabe y el suelo cuando no es lo que separa «pide de mas y que lo recorte
+    //  otro» de «pide lo que va a colocar».
+    static constexpr int kAltoMin = 16;
     //  VEINTISEIS Y NO TREINTA Y CUATRO. La columna del teclado sale del ancho
     //  de la rejilla, asi que cada pixel suyo es un pixel que no tiene la
     //  casilla del paso: en el Fold cerrado -225 px de tarjeta- con 34 la
@@ -637,6 +680,15 @@ private:
     const unsigned char* cuartos = nullptr;
     std::vector<unsigned char> sombraLargos;
     int filas = kFilasMin;              // ver setFilas
+    //  La eleccion y el tope que el maquetado midio. Ver setFilas / acota.
+    int filasPedidas = kFilasMin, tope = kFilasMax;
+    void ajusta()
+    {
+        const int n = juce::jlimit (1, kFilasMax, juce::jmin (filasPedidas, tope));
+        if (n == filas) return;
+        filas = n;
+        repaint();
+    }
     int nPasos = 16, semiBase = -12, tocando = -1, color = 0, ultima = -1;
     //  El paso del patron de la primera columna. Lo mismo que `StepGrid`
     //  llama asi, y por lo mismo.

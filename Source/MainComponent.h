@@ -1010,6 +1010,25 @@ private:
                            zona.getHeight() - 2 * (ZatiLookAndFeel::kStatus + Metrics::hit));
     }
 
+    //  Y SI LA TARJETA ES MAS ANCHA QUE ALTA, que NO es la misma pregunta
+    //  que `wideFace`.
+    //
+    //  `wideFace` pide ademas unos 556 px de area segura -es «la CARA cabe en
+    //  dos columnas»- y una ficha no es la cara: lo unico que decide si su
+    //  contenido se puede partir en dos es la forma del rectangulo en el que
+    //  va a caber. En 412x480 -la pantalla partida- `wideFace` es falso y la
+    //  tarjeta mide 379x368, o sea mas ancha que alta, y las fichas la
+    //  maquetaban en UNA columna: CANCION pedia 490 px sobre 368 y
+    //  `sheetFromBottom` recortaba en silencio, que es como la celda de la
+    //  linea de tiempo acabo en 6 px.
+    //
+    //  Se pregunta con los MISMOS dos numeros con los que se va a dibujar la
+    //  tarjeta -`anchoTarjeta` y `altoTarjeta`- y no con los de la ventana:
+    //  preguntar con una cuenta y colocar con otra es de donde sale la mitad
+    //  de los comentarios de este fichero.
+    static bool tarjetaAncha (juce::Rectangle<int> zona) noexcept
+    { return anchoTarjeta (zona.getWidth()) > altoTarjeta (zona); }
+
     //  Lo que mide el recuadro de AUDIO, que es texto pintado y por tanto no
     //  lo dice ningun componente. Ver estAltoAudio: estaba escrito a mano en
     //  cuatro sitios.
@@ -2918,6 +2937,15 @@ private:
     bool seqLocksAqui = false;
     //  Y si se quedo con la fila de la CADENA. Misma razon.
     bool seqCadenaAqui = true;
+    //  Y si la pagina de CANCION se quedo con su fila de herramientas de
+    //  arreglo. Misma razon, y ver donde se decide: en 412x480 la pagina pide
+    //  434 px sobre una tarjeta de 368 con el carril YA en su suelo, asi que
+    //  algo se tiene que caer, y lo prescindible es lo que actua sobre lo que
+    //  ya esta puesto -no lo que lo pone-.
+    bool songUtilAqui = true;
+    //  Y el segundo escalon de la misma escalera: la fila de MODOS. Ver donde
+    //  se decide.
+    bool songModosAqui = true;
     //  Y NO ES UNA PILA DE TARJETAS, ES UN FOCO.
     //
     //  La primera version eran cinco tarjetas con texto, y explicaban la app
