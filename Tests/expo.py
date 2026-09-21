@@ -932,6 +932,43 @@ def judge_tarjeta(rows, size, lang, sheet):
     return out
 
 
+#  UNA CELDA QUE MIDE LO QUE SOBRABA Y NO LO QUE PIDE: la regla SOBRA.
+#
+#  Se llama SOBRA y no CELDA porque CELDA ya existe -es el cuadradito de la
+#  rejilla de pasos- y ademas esta exenta en las dos pantallas sin diseño. Dos
+#  reglas con el mismo nombre son una sola, y la que se pierde es la nueva.
+#
+#  Es la queja «¿esto dices que esta arreglado?» sobre la ficha del pad, y la
+#  foto tenia razon: con CHOKE solo en su renglon, su celda era la FILA ENTERA
+#  -lo que sobraba por no haber nadie mas- y la casilla del deslizador salia de
+#  347 px en 412x915, contra las NUEVE casillas de 107 px de la misma ficha. Un
+#  "off" de tres letras en un campo tres veces mas ancho que cualquier otro.
+#
+#  Y las veinte reglas de arriba lo daban por bueno, porque un control demasiado
+#  ANCHO no solapa, no se sale del marco, no corta su rotulo, no mide cero y
+#  esta traducido. El barrido mide esa pantalla 1980 veces y salia verde.
+#
+#  SIN UMBRAL, que es como esta casa ya se equivoco tres veces -el maximo entre
+#  paneles, el aire vertical, el aire contra el token-: aqui no se decide cuanto
+#  sobra es demasiado. La app publica lo que la celda PIDE, que es el mismo
+#  numero con el que decidio bajar el control de fila, y lo que se le DIO. Dos
+#  cifras de la misma funcion, y la pregunta es si son la misma.
+#
+#  `da < pide` es la otra mitad y tambien es fallo: una celda por debajo de lo
+#  que pidio es lo que las reglas de rotulo ven como SQUEEZE cuando hay letra
+#  dentro, y como nada cuando no la hay.
+def judge_celda(rows, size, lang, sheet):
+    out = []
+    for r in rows:
+        if not r.get("celda"):
+            continue
+        if r["da"] != r["pide"]:
+            out.append(("SOBRA", f"{size}/{lang}/{sheet or 'face'}",
+                        f'la celda de {r["celda"]} pide {r["pide"]} px y se le dan {r["da"]}',
+                        abs(r["da"] - r["pide"])))
+    return out
+
+
 #  EL PRESUPUESTO DE LA CARA CONTRA LO QUE LA CARA COLOCA.
 #
 #  Ninguna de las catorce reglas de arriba puede verlo, y por una razon de
@@ -1395,6 +1432,7 @@ def _corre_y_juzga(combo, casa):
                                            + judge_tarjeta(rows, size, lang, sheet)
                                            + judge_marco(rows, size, lang, sheet)
                                            + judge_cara(rows, size, lang, sheet)
+                                           + judge_celda(rows, size, lang, sheet)
                                            + judge_fila(rows, size, lang, sheet)
                                            + judge_cabecera(rows, size, lang, sheet)
                                            + chips,
@@ -1683,7 +1721,7 @@ def main():
     duros = [k for k in ("TRUNC", "SQUEEZE", "OVERLAP", "OFFSCREEN", "CELDA",
                          "UNTRANSLATED", "CERO", "TAPADO", "SPRITE", "CORTADO", "PISADO",
                          "FILA", "CUADRADA", "ASOMA", "CABECERA", "MARCO", "CARA",
-                         "CHIPS", "ANATOMIA", "TARJETA", "CRASH") if juzgado.get(k)]
+                         "CHIPS", "ANATOMIA", "TARJETA", "SOBRA", "CRASH") if juzgado.get(k)]
     if resto:
         duros.append("RESIDUO")
     print()

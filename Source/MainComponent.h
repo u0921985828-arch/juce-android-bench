@@ -750,6 +750,35 @@ private:
     //  412x915: 499 px pedidos para 365 de contenido, 134 de hueco al final de
     //  la ficha. La misma regla escrita dos veces son dos reglas.
     int  altoContenidoElPad (int ancho) const;
+    //  Y LA PAGINA DE SONIDO, QUE ERA LA UNICA DE LAS TRES CON SU PEDIDO A
+    //  MANO. `wantH` decia `438 + secH + 2 * panelAireY`, con el desglose solo
+    //  en un comentario: «116 + secH + 86 + 86 + 86 + 56 + 8». Medido en
+    //  412x915, la pagina PIDE 500 px y COLOCA 490, y los diez que sobran se
+    //  quedan dentro del panel de abajo -entre NORMALIZAR, que acaba en 627, y
+    //  la banda de CHOKE, que empieza en 639-, que es el agujero que se ve en
+    //  la foto del telefono.
+    //
+    //  Los diez son dos errores de suma que el comentario tapaba: el `+ 8` es
+    //  el `Metrics::sm` de debajo de las pestañas, que YA estaba contado dentro
+    //  de los 116, y `panelAireY` se pedia dos veces donde el maquetado reserva
+    //  uno solo (`inner.removeFromBottom (Metrics::panelAireY)`).
+    //
+    //  Es el mismo fallo que ya se pago en EL PAD -499 pedidos para 365 de
+    //  contenido- y se arregla igual: la peticion y el maquetado preguntan a la
+    //  MISMA funcion. Una regla escrita dos veces son dos reglas.
+    int  altoContenidoPadSonido (int ancho) const;
+    //  LO QUE PIDE LA CELDA DE CHOKE, escrito UNA vez.
+    //
+    //  Estaba escrito en la condicion que decide si CHOKE se va solo a su fila,
+    //  y no en la que le da el ancho: cuando se iba solo, la celda se quedaba
+    //  `r3` ENTERA -lo que sobraba- y la casilla del deslizador salia de 347 px
+    //  en 412x915, contra los 107 de las otras nueve casillas de la ficha. Un
+    //  control no mide lo que sobra: mide lo que pide.
+    //
+    //  Los 34 son el suelo de la casilla -dice tambien "off", y en arabe مغلق
+    //  pide 28 px de letra- y los 12, el aire que el rotulo necesita para no
+    //  pegarse a la tecla.
+    static constexpr int chokeCeldaPide = 12 + 34 + Metrics::gap + 2 * Metrics::stepKey;
     bool padPuertasWraps (int rowWidth) const;
     //  Y LA DE LA MUESTRA: REV, BUCLE, QUITAR RUIDO y RECORTAR.
     //  Cuatro tapas con dos rotulos largos no caben en un movil
@@ -757,6 +786,8 @@ private:
     //  alto de la pagina y al colocar la fila- que tienen que
     //  contestar lo mismo.
     bool padMuestraWraps (int rowWidth) const;
+    //  Y LA DE CHOKE. Ver altoContenidoPadSonido y chokeCeldaPide.
+    bool padChokeSolo (int rowWidth) const;
     bool setTabsFit (int rowWidth) const;
     bool padRowFits (int rowWidth, std::initializer_list<const juce::TextButton*> bs) const;
     //  El reparto apretado de EL PAD, decidido en resized() y necesario en

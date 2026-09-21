@@ -264,6 +264,12 @@ void MainComponent::resized()
     //  juzgaria una ficha que ya no esta abierta.
     UiAudit::tarjetas.clear();
     UiAudit::filas.clear();
+    //  Y las celdas AQUI y no en `paint()`, que es donde estaban un rato: las
+    //  escribe esta funcion, asi que vaciarlas en la pasada de pintado -que
+    //  corre DESPUES- borraba lo que se acababa de apuntar y el volcado salia
+    //  sin una sola fila. Una medida que no llega al volcado es una regla que
+    //  no falla nunca. `vuRotulos` si se vacia alli porque alli se escribe.
+    UiAudit::celdas.clear();
 
     //  Height reserved on a seam that carries an engraved name.
     constexpr int kSeamLabelH = 12;
@@ -1774,9 +1780,23 @@ void MainComponent::resized()
         //  estaba escrito en MainComponent.h al declarar la funcion y nadie lo
         //  cerro. Ver anchoTarjetaInterior.
         const int anchoFila3 = sheetInnerW;
-        const bool chokeSolo = ! padRowFits (anchoFila3 * 68 / 100, { &modeButton, &normButton })
-                             || anchoFila3 * 32 / 100 < 12 + 34 + Metrics::gap + 2 * Metrics::stepKey;
-        //  438 y no 352: la fila del filtro son 86 mas. Ver el desglose.
+        //  Y LA PREGUNTA SE HACE UNA VEZ Y EN UN SITIO. Estaba escrita aqui a
+        //  pelo, asi que el presupuesto la usaba y el reparto de la celda de
+        //  abajo no se enteraba de que CHOKE tenia la fila para el solo.
+        const bool chokeSolo = padChokeSolo (anchoFila3);
+        //  EL PEDIDO DE SONIDO LO DICE LA MISMA FUNCION QUE LO COLOCA.
+        //
+        //  Era `438 + secH + 2 * panelAireY`, con el desglose en el comentario
+        //  de arriba y no en el codigo, y de las dos sumas SOBRABAN DIEZ: el
+        //  `+ 8` del desglose es el `Metrics::sm` de debajo de las pestañas,
+        //  que ya esta contado dentro de los 116, y `panelAireY` se pedia dos
+        //  veces donde el maquetado reserva uno. Diez pixeles que `wantH` pide,
+        //  `sheetFromBottom` concede -caben, asi que `TARJETA` calla- y nadie
+        //  coloca: se quedan de aire muerto DENTRO del panel de abajo, entre la
+        //  fila de MODO/NORMALIZAR y la banda de CHOKE. Medido en 412x915: pide
+        //  500, coloca 490, y el hueco va de 627 a 639.
+        //  Los 116 siguen siendo el cromo de la ficha -dos margenes, el titulo,
+        //  el aire y las pestañas- y son comunes a las tres paginas.
         //  Y EL AIRE DEL PANEL ENTRA EN EL PRESUPUESTO. `pintaPaneles` hace un
         //  `expanded (panelAireX, panelAireY)` incondicional, asi que un grupo
         //  que se pega a lo de arriba se dibuja panelAireY POR DENTRO del
@@ -1785,8 +1805,7 @@ void MainComponent::resized()
         //  del numero de los tres mandos, que es la queja «sigue habiendo ese
         //  error de diseno en pad settings». Son 2 x panelAireY porque el panel
         //  crece por arriba y por abajo. Ver Tests/paneles.py, regla AJENO.
-        const int wantH = (padPage == padPageSound) ? 438 + secH + 2 * Metrics::panelAireY
-                                                    + (chokeSolo ? Metrics::hit + Metrics::halfGap : 0)
+        const int wantH = (padPage == padPageSound) ? 116 + altoContenidoPadSonido (anchoFila3)
                         : (padPage == padPageTrim)  ? 436 + secH + 2 * (ZatiLookAndFeel::kTrimRow + Metrics::xs)
                                                     //  Y la fila de la muestra puede ser DOS desde que
                                                     //  esta RECORTAR: la misma pregunta que la coloca.
@@ -2068,7 +2087,21 @@ void MainComponent::resized()
             //  reparten POR EL TEXTO QUE LLEVAN, que es lo mismo que hacen
             //  las barras de modulos y lo unico que se ajusta solo en cuatro
             //  idiomas.
-            const int w3 = chokeSolo ? r3.getWidth() : r3.getWidth() * 32 / 100;
+            //  Y CUANDO VA SOLO, LA CELDA ES LA QUE PIDE Y NO LA FILA.
+            //
+            //  Era `r3.getWidth()` entera: CHOKE bajaba a su propio renglon
+            //  porque los tres no caben, y alli se quedaba TODO el ancho por no
+            //  haber nadie mas. La casilla del deslizador sale de restarle a la
+            //  celda las dos teclas, asi que en 412x915 media 347 px contra los
+            //  107 de las otras nueve casillas de la ficha - un "off" de tres
+            //  letras en un campo tres veces mas ancho que cualquier otro, con
+            //  las teclas desterradas al filo. Un control mide lo que pide.
+            //
+            //  `chokeCeldaPide` es lo que pide, y es el MISMO numero con el que
+            //  se decidio bajarlo de fila: si no caben tres celdas de ese ancho,
+            //  se baja; y abajo se le da ese ancho, no el que sobre.
+            const int w3 = chokeSolo ? juce::jmin (chokeCeldaPide, r3.getWidth())
+                                     : r3.getWidth() * 32 / 100;
             //  Sin recorte vertical: la fila mide Metrics::hit justo, que es
             //  el dedo minimo, y quitarle 3 arriba y 3 abajo dejaba tres
             //  controles de 34 px que el banco saca como TOUCH. Encima hay 16
@@ -2090,9 +2123,36 @@ void MainComponent::resized()
             //
             //  Y la celda gana los dos pixeles, que en la fila mas apretada de
             //  la ficha no sobran: CHOKE se queda con su tercio escaso.
-            auto celdaChoke = r3.removeFromLeft (w3);
+            //  Y POR EL BORDE DE ENTRADA, NO CENTRADA.
+            //
+            //  Centrarla parecia lo natural -un mando solo en su renglon- y el
+            //  banco la tumbo en el sitio: `Tests/paneles.py`, regla FILAS, 24
+            //  hallazgos en las seis pantallas por los dos idiomas que llegan a
+            //  esta rama, «filas que empiezan en 4/110 px». Las dos filas de un
+            //  panel empiezan donde empieza el panel, y eso no tiene excepcion
+            //  legitima: MODO y NORMALIZAR arrancan en el filo y CHOKE tiene
+            //  que arrancar con ellas.
+            //
+            //  `Lang::takeStart` y no `removeFromLeft`, que es la mitad que se
+            //  olvida: en arabe el borde de entrada es el DERECHO -FILAS lo mide
+            //  asi a proposito- y morder por la izquierda habria dado por bueno
+            //  en tres idiomas lo que se rechaza en el cuarto.
+            auto celdaChoke = Lang::takeStart (r3, w3);
             auto chokeCell = chokeSolo ? celdaChoke
                                        : celdaChoke.withTrimmedRight (Metrics::aireTapa);
+            //  LO QUE PIDE CONTRA LO QUE SE LE DA, publicado por quien lo sabe.
+            //  Ver Tests/expo.py, regla SOBRA.
+            //
+            //  Y SOLO EN LA RAMA DE LA FILA PROPIA, que es donde la pregunta
+            //  significa algo. Cuando los tres comparten renglon, la celda es
+            //  un TERCIO REPARTIDO -en 915x412 son 254 px contra los 134 que
+            //  pide- y eso no es quedarse lo que sobra: es el reparto de una
+            //  fila de tres, y de que la fila se llene ya se ocupa `FILA`.
+            //  Publicarlo en las dos ramas sacaba un hallazgo por cada pantalla
+            //  apaisada con la maqueta correcta, que es como esta casa ya se
+            //  comio 644 hallazgos de una regla equivocada.
+            if (chokeSolo)
+                UiAudit::celda ("choke", chokeCeldaPide, chokeCell.getWidth());
             //  JUCE stacks a slider's +/- buttons whenever the space left for
             //  them is taller than it is wide, and on a narrow screen the
             //  readout was eating enough of the cell to trigger exactly that -
@@ -2138,6 +2198,22 @@ void MainComponent::resized()
                                                                         inner.getY() - gBajo))
                              : filaBaja);
         }
+
+        //  Y LO QUE LA PAGINA PIDIO CONTRA LO QUE ACABA DE COLOCAR.
+        //
+        //  `inner` es lo que queda despues de repartirlo todo, asi que su alto
+        //  es el aire que la ficha pidio y no uso. Con la misma pieza que la
+        //  celda -lo que pide contra lo que se le da- porque es la misma
+        //  pregunta: `TARJETA` no puede hacerla aqui, y no por descuido sino
+        //  porque esta ficha SE DESPLAZA y una ficha que se desplaza puede
+        //  pedir lo que quiera. Eso la deja sin la unica regla que mira su
+        //  presupuesto: con el `438` a mano pedia 500 y colocaba 490, y los
+        //  diez se quedaban de aire muerto DENTRO del panel de abajo.
+        //
+        //  Se mide lo que se COLOCO -no la formula otra vez- o esto seria la
+        //  prueba repitiendo la constante del codigo, que es como `icono.py`
+        //  dio verde dos veces con la mascara del lanzador rota.
+        UiAudit::celda ("pad/sonido", wantH - juce::jmax (0, inner.getHeight()), wantH);
 
         padSectionArea[1] = {};
 

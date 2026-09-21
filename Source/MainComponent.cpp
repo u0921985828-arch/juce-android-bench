@@ -7041,6 +7041,35 @@ int MainComponent::altoContenidoElPad (int ancho) const
          + secH + srcH         + Metrics::sm + Metrics::chip;
 }
 
+//  LO QUE PIDE LA PAGINA DE SONIDO, sumado donde se coloca y no en un
+//  comentario. Ver MainComponent::altoContenidoPadSonido en la cabecera para
+//  los diez pixeles que costo tenerlo escrito dos veces.
+//
+//  El orden es el del maquetado, renglon por renglon: la banda de subtitulo,
+//  las tres filas de mandos, el aire que el panel de abajo se come por arriba,
+//  la fila de CHOKE con su rotulo, y -cuando los tres no caben juntos- el
+//  renglon propio al que bajan MODO y NORMALIZAR.
+int MainComponent::altoContenidoPadSonido (int ancho) const
+{
+    return Metrics::bandaSubtitulo
+         + 3 * ZatiLookAndFeel::kKnobRow
+         + Metrics::panelAireY
+         + ZatiLookAndFeel::kKnobName + Metrics::hit
+         + (padChokeSolo (ancho) ? Metrics::xs + Metrics::hit : 0);
+}
+
+//  ¿SE VA CHOKE SOLO A SU FILA?
+//
+//  La misma figura que `padSourceWraps` y `padMuestraWraps`: se pregunta al
+//  presupuestar el alto y al colocar la fila, y las dos tienen que contestar lo
+//  mismo. Estaba escrita a pelo en `resized()`, asi que el presupuesto la
+//  llamaba y el reparto de la celda no.
+bool MainComponent::padChokeSolo (int rowWidth) const
+{
+    return ! padRowFits (rowWidth * 68 / 100, { &modeButton, &normButton })
+         || rowWidth * 32 / 100 < chokeCeldaPide;
+}
+
 //  ¿CABEN LAS TRES PALABRAS DE FUENTE EN UNA FILA?
 //
 //  Se pregunta dos veces - al presupuestar la altura de la pagina y al colocar

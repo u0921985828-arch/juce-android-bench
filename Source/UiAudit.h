@@ -393,6 +393,26 @@ namespace UiAudit
     //  la escalera seria una linea que imprime OK. Se publica y no se juzga,
     //  como TOUCH: las dos ramas son correctas y lo que importa es que el
     //  banco pueda decir cual se tomo y verla caer al romperla.
+    //  UNA CELDA QUE PIDE Y LO QUE SE LE DIO.
+    //
+    //  Ninguna de las veinte reglas puede ver a un control que se quedo con lo
+    //  que SOBRABA en vez de con lo que pide: no solapa, no se sale, no corta
+    //  el rotulo, no mide cero y esta traducido. Se ve de lejos y no se mide de
+    //  cerca, que es la peor clase de fallo que tiene esta app.
+    //
+    //  Lo vivo cuando esto se escribio: con CHOKE solo en su fila, su celda era
+    //  la fila ENTERA y la casilla del deslizador salia de 347 px en 412x915,
+    //  contra las nueve casillas de 107 de la misma ficha. Un "off" de tres
+    //  letras en un campo tres veces mas ancho que cualquier otro.
+    //
+    //  Y lo dice QUIEN LO SABE -el maquetado, que es el unico que tiene el
+    //  numero que pidio- y no un script adivinando desde el volcado cual de dos
+    //  anchos era el correcto. Es la misma pieza que `vuRotulo` y que `fila`.
+    struct Celda { juce::String quien; int pide, da; };
+    inline std::vector<Celda> celdas;
+    inline void celda (const juce::String& quien, int pide, int da)
+    { if (enabled()) celdas.push_back ({ quien, pide, da }); }
+
     struct VuRot { juce::String texto; int pide, tiene; };
     inline std::vector<VuRot> vuRotulos;
     inline void vuRotulo (const juce::String& t, int pide, int tiene)
@@ -1271,6 +1291,10 @@ namespace UiAudit
         for (const auto& r : vuRotulos)
             std::cout << "{\"vurot\":1,\"texto\":\"" << r.texto.toRawUTF8() << "\""
                       << ",\"pide\":" << r.pide << ",\"tiene\":" << r.tiene << "}" << std::endl;
+
+        for (const auto& c : celdas)
+            std::cout << "{\"celda\":\"" << c.quien.toRawUTF8() << "\""
+                      << ",\"pide\":" << c.pide << ",\"da\":" << c.da << "}" << std::endl;
 
         for (const auto& v : vus)
             std::cout << "{\"vu\":1,\"que\":\"" << v.que << "\""
