@@ -1,14 +1,23 @@
 #!/usr/bin/env python3
 """ZATI — el banco de los paneles de grupo.
 
-Un panel no se puede salir de la ventana, no solapa a nadie y no lleva texto,
-asi que NINGUNA de las seis reglas de expo.py le aplica: la geometria que
-vigilan es la de los controles, y un panel es lo que se dibuja ALREDEDOR de
-ellos. Se anadieron a cuatro fichas y el banco entero seguia en verde con el
-aire repartido a ojo.
+Un panel no lleva texto y no es un componente, asi que NINGUNA de las reglas
+de expo.py le aplica: la geometria que vigilan es la de los controles, y un
+panel es lo que se dibuja ALREDEDOR de ellos. Se anadieron a cuatro fichas y el
+banco entero seguia en verde con el aire repartido a ojo.
 
-Lo unico que un panel puede hacer mal es el REPARTO DEL AIRE, y son dos cosas
-distintas:
+AQUI DECIA «lo unico que un panel puede hacer mal es el REPARTO DEL AIRE» Y ERA
+FALSO, y lo desmintieron dos quejas del telefono con dos capturas: «sigue
+habiendo ese error de diseno en pad settings» -el panel de CINTA pisando los
+rotulos de CORTE, RESON y ANCHO- y «como tambien en el apartado de ayuda» -la
+pagina de GESTOS con dos paneles de OTRA pagina encima de la lista-. Las dos
+llevaban meses a la vista, y las dos eran invisibles porque la premisa de esta
+prueba decia que no habia nada mas que preguntar. Un panel SI puede solapar -lo
+que NO envuelve, que es distinto de lo que envuelve- y SI puede salirse -del
+marco de su ficha, que no es la ventana-. Son las reglas AJENO y MARCO de mas
+abajo.
+
+El reparto del aire son dos cosas distintas:
 
   1. Que no envuelva lo que dice envolver -un control fuera del panel, o el
      panel mas grande que su grupo-, que es un fallo de que `resized()` cerro
@@ -55,8 +64,12 @@ LANGS = ["es", "en", "zh", "ar"]
 #  tarjeta- y no publicaban `UiAudit::panel`, asi que eran invisibles para la
 #  unica prueba que mide un panel. Desde que pasan por `pintaPaneles` se pueden
 #  medir, y son cuatro y no tres: la cabecera y el preset son UNO.
+#  Y `gest`, la pagina de AYUDA de AJUSTES, que faltaba: la app la abre desde
+#  siempre -ZATI_OPEN=gest- y esta lista no la nombraba, asi que los dos
+#  paneles que se le pintan encima no los medía nadie. Una ficha que no se
+#  abre no puede fallar.
 SHEETS = ["pads", "pad2", "pad3", "sec", "secp", "paso", "piano", "song", "set", "asp",
-          "proj", "midi", "expo", "chop", "vst"]
+          "proj", "midi", "expo", "chop", "vst", "gest"]
 
 #  El aire que la app dice que deja. Se lee del fichero y no se copia: una
 #  prueba que lleva su propia copia del numero pasa cuando el numero cambia.
@@ -110,9 +123,33 @@ def juzga (rows, tag, lang):
             if r.get ("kind") in ("button", "slider", "editor", "combo")
             and r.get ("w", 0) > 0 and r.get ("h", 0) > 0]
 
+    #  EL RECTANGULO DE CADA FICHA, por capa. `sheetFromBottom` publica la
+    #  tarjeta YA COLOCADA, asi que no hay que repetir ninguna cuenta del C++.
+    #
+    #  Y CONTRA LA TARJETA Y NO CONTRA EL HUECO UTIL, que es lo que la primera
+    #  version preguntaba y saco **644 hallazgos sin un solo fallo**: un panel
+    #  se dibuja con un `expanded (panelAireX, panelAireY)` incondicional, asi
+    #  que un grupo que ocupa el ancho del contenido deja el panel 4 px dentro
+    #  del margen de la ficha A PROPOSITO -es el aire del panel, y el margen de
+    #  la tarjeta existe justo para que quepa-. Preguntar eso es preguntar si un
+    #  `expanded` expande, que es la misma forma de mentir que ya costo el aire
+    #  vertical retirado mas abajo. Lo que no tiene lectura legitima es salirse
+    #  de la TARJETA: eso ya no esta en la ficha.
+    #
+    #  Y SOLO LAS QUE NO SE DESPLAZAN. En una ficha desplazable el contenido
+    #  mide lo que pidio y lo que sobra se alcanza arrastrando, asi que un
+    #  panel por debajo del filo es el funcionamiento y no el fallo.
+    marcos = {}
+    for t in rows:
+        if not t.get ("tarjeta"): continue
+        if t.get ("desplaza"): continue
+        if t.get ("w", 0) <= 0 or t.get ("h", 0) <= 0: continue
+        marcos[t.get ("capa", 0)] = (t["x"], t["y"], t["w"], t["h"])
+
     for pa in paneles:
         px, py, pw, ph = pa["x"], pa["y"], pa["w"], pa["h"]
         capa = pa.get ("capa", 0)
+        quien = pa.get ("nombre") or f"panel en {px},{py}"
 
         #  QUIEN VIVE DENTRO: por el CENTRO y no por el solape. Un control que
         #  asoma medio pixel por el borde de un panel vecino contaria en los
@@ -124,7 +161,7 @@ def juzga (rows, tag, lang):
         if not dentro:
             #  Un panel vacio es un grupo que se cerro sobre nada: se dibuja una
             #  losa detras de un rotulo pintado y de nada mas.
-            fallos.append (("VACIO", tag, f"panel {pw}x{ph} en {px},{py} no envuelve ningun control"))
+            fallos.append (("VACIO", tag, f"{quien} {pw}x{ph} en {px},{py} no envuelve ningun control"))
             continue
 
         izq = min (c["x"] for c in dentro)
@@ -133,8 +170,58 @@ def juzga (rows, tag, lang):
         #  1. QUE ENVUELVA. Un control que se sale del panel por los lados.
         if izq < px or der > px + pw:
             fallos.append (("FUERA", tag,
-                            f"panel [{px},{px+pw}] no cubre [{izq},{der}]"))
+                            f"{quien} [{px},{px+pw}] no cubre [{izq},{der}]"))
             continue
+
+        #  1 bis. QUE NO PISE LO QUE NO ENVUELVE.
+        #
+        #     Esta es la queja «sigue habiendo ese error de diseno en pad
+        #     settings» y estuvo meses a la vista. Un panel se dibuja ALREDEDOR
+        #     de su grupo, asi que solapar a los suyos es lo que hace; lo que
+        #     no tiene lectura legitima ninguna es tocar a un control cuyo
+        #     centro cae FUERA, que es un grupo que se cerro sobre un
+        #     rectangulo mas grande que lo que hay dentro. La pertenencia se
+        #     decide por el centro, igual que arriba, y por eso la pregunta se
+        #     puede hacer sin umbral: o el centro esta dentro o esta fuera.
+        #
+        #     Y contra OVERLAP de expo.py, que seria la forma perezosa de
+        #     medirlo: alli un solape entre dos cosas que se tocan es un fallo
+        #     SIEMPRE, y un panel solapa a los suyos por definicion. Dar `hit`
+        #     a las filas de panel habria sacado un hallazgo por cada control
+        #     de cada panel de la app - una medida que miente por el otro lado,
+        #     que es la que da tantos numeros que nadie los lee.
+        ajenos = []
+        for c in ctrl:
+            if c.get ("capa", 0) != capa: continue
+            cx, cy = c["x"] + c["w"] // 2, c["y"] + c["h"] // 2
+            if px <= cx <= px + pw and py <= cy <= py + ph: continue
+            if c["x"] >= px + pw or c["x"] + c["w"] <= px: continue
+            if c["y"] >= py + ph or c["y"] + c["h"] <= py: continue
+            ajenos.append (c)
+        if ajenos:
+            c = ajenos[0]
+            fallos.append (("AJENO", tag,
+                            f"{quien} [{px},{py},{pw}x{ph}] pisa {len (ajenos)} "
+                            f"control(es) que no envuelve, el primero "
+                            f"{c.get ('path', c.get ('kind', '?'))} en "
+                            f"{c['x']},{c['y']} de {c['w']}x{c['h']}"))
+
+        #  1 ter. QUE NO SE SALGA DEL MARCO DE SU FICHA.
+        #
+        #     La otra mitad de la misma tanda: un panel puede caber en la
+        #     ventana -asi que OFFSCREEN no lo ve- y aun asi salirse del hueco
+        #     util de su tarjeta, porque `pintaPaneles` hace un `expanded`
+        #     incondicional de panelAireX x panelAireY y el presupuesto de la
+        #     ficha no cuenta esos cuatro pixeles. Se mide contra lo que la app
+        #     publica -el rectangulo de la tarjeta- y no contra una constante
+        #     copiada aqui.
+        marco = marcos.get (capa)
+        if marco is not None:
+            mx, my, mw, mh = marco
+            if px < mx or py < my or px + pw > mx + mw or py + ph > my + mh:
+                fallos.append (("MARCO", tag,
+                                f"{quien} [{px},{py},{px+pw},{py+ph}] se sale del marco "
+                                f"[{mx},{my},{mx+mw},{my+mh}]"))
 
         #  2. QUE LAS FILAS DE DENTRO EMPIECEN Y ACABEN EN LA MISMA X.
         #
@@ -180,7 +267,7 @@ def juzga (rows, tag, lang):
         entradas = sorted ({(px + pw - f[2]) if rtl else (f[0] - px) for f in filas})
         if len (entradas) > 1:
             fallos.append (("FILAS", tag,
-                            f"panel en {px},{py}: filas que empiezan en "
+                            f"{quien}: filas que empiezan en "
                             + "/".join (str (e) for e in entradas) + " px"))
 
     #  3. LOS PANELES DE LA MISMA COLUMNA COMPARTEN BORDES, y no se tocan.
@@ -285,7 +372,7 @@ def main():
     porclase = defaultdict (list)
     for kind, tag, que in todos: porclase[kind].append ((tag, que))
 
-    for kind in ("CRASH", "VACIO", "FUERA", "FILAS", "PEGADOS"):
+    for kind in ("CRASH", "VACIO", "FUERA", "AJENO", "MARCO", "FILAS", "PEGADOS"):
         if not porclase[kind]: continue
         print (f"\n{kind}  ({len (porclase[kind])})")
         #  Uno por texto distinto: el mismo panel torcido sale en 28 corridas y

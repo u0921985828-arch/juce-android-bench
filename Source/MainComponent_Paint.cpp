@@ -882,7 +882,7 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
 {
     //  Ver pintaPaneles: los dos grupos -COMO y TROZOS- los publica `resized()`
     //  desde las bandas que ya reserva, asi que no cuestan un pixel de alto.
-    pintaPaneles (g, chopGrupos);
+    pintaPaneles (g, chopGrupos, "chopGrupos");
     if (chopSheet.sheetBounds.isEmpty()) return;
 
     const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
@@ -1018,7 +1018,7 @@ void MainComponent::paintExportSheetContent (juce::Graphics& g)
 {
     //  Ver pintaPaneles: los grupos los publica `resized()`, asi que no
     //  cuestan un pixel de alto.
-    pintaPaneles (g, exportGrupos);
+    pintaPaneles (g, exportGrupos, "exportGrupos");
     if (exportSheet.sheetBounds.isEmpty()) return;
 
     auto inner = exportSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
@@ -1846,7 +1846,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
     //  ACABA: en la pagina del RECORTE, "RECORTE" nombraba las cuatro asas y
     //  tambien la fila de REV/BUCLE/RUIDO que hay debajo, que es de otra cosa.
     //  Ver pintaPaneles.
-    pintaPaneles (g, padGrupos);
+    pintaPaneles (g, padGrupos, "padGrupos");
 
     {
         //  Group headers, each with a hairline running out to the right edge -
@@ -1997,7 +1997,7 @@ void MainComponent::paintPianoSheetContent (juce::Graphics& g)
     //  un movil grande. Es el camino de `padGrupos` y `songGrupos`, que nacio
     //  por lo mismo. Y los nombres no hacen falta aqui: las cuatro
     //  herramientas se llaman LAPIZ, GOMA, TIJERAS y SEL en su propia tapa.
-    pintaPaneles (g, pianoGrupos);
+    pintaPaneles (g, pianoGrupos, "pianoGrupos");
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
@@ -2401,7 +2401,7 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
             if (! unido) { bloques.add (b); grupoDe.add (lb.grupo); }
         }
 
-        pintaPaneles (g, bloques);
+        pintaPaneles (g, bloques, "seqBloques");
 
         g.setColour (ZatiColours::inkDim);
         g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.20f));
@@ -2492,7 +2492,7 @@ void MainComponent::paintSongSheetContent (juce::Graphics& g)
     //  las brochas COMO se pinta y las nueve herramientas que le pasa a lo que
     //  ya esta puesto, y las tres filas se leian como una escalera de tapas
     //  porque estan una debajo de otra. Ver pintaPaneles.
-    pintaPaneles (g, songGrupos);
+    pintaPaneles (g, songGrupos, "songGrupos");
 
     //  Y DE LA TERCERA, que es la que este renglon acaba de ganar: el zoom de
     //  compases vive aqui desde que la vista dejo de estar clavada en ocho. El
@@ -2658,7 +2658,7 @@ void MainComponent::paintMidiSheetContent (juce::Graphics& g)
     {
         juce::Array<juce::Rectangle<int>> grupos;
         grupos.add (midiPanel);
-        pintaPaneles (g, grupos);
+        pintaPaneles (g, grupos, "midiPanel");
     }
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
@@ -2714,7 +2714,7 @@ void MainComponent::paintVstSheetContent (juce::Graphics& g)
         //  puede decir y ninguna otra: las nueve que agrupan controles son de
         //  la maquina y esta es de UN pad. Ver pintaPaneles: el tinte es el
         //  zati que ese pad ya tiene en la cara, y el lado se mide.
-        pintaPaneles (g, grupos,
+        pintaPaneles (g, grupos, "vstGrupos",
                       fam >= 0 ? Zati::colour (Zati::forPad (vstPad)) : juce::Colour());
     }
 

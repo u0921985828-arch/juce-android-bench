@@ -79,17 +79,26 @@ public:
                    "un carril es una pista: si dejan de ser el mismo numero, "
                    "la rejilla dibujaria clips en carriles que no existen");
 
-    //  Un clip, tal y como esta rejilla necesita verlo: EN COMPASES. El motor
-    //  lo guarda en muestras -el audio mide lo que mide- y traducirlo pide el
-    //  tempo, que es cosa del motor y no de un componente que dibuja. Quien
-    //  sabe cuantas muestras son un compas lo traduce y pasa esto, igual que la
-    //  tabla de zatis se pasa en vez de preguntarle al motor por cada bloque.
+    //  Un clip, tal y como esta rejilla necesita verlo: EN PASOS GUARDADOS.
+    //  El motor lo guarda en muestras -el audio mide lo que mide- y traducirlo
+    //  pide el tempo, que es cosa del motor y no de un componente que dibuja.
+    //  Quien sabe cuantas muestras son un paso lo traduce y pasa esto, igual
+    //  que la tabla de zatis se pasa en vez de preguntarle al motor por bloque.
+    //
+    //  EN PASOS Y NO EN COMPASES, que es lo que cambio: mientras la unidad fue
+    //  el compas, un clip solo podia empezar en un filo de compas y colocar
+    //  una toma donde de verdad entra -a la mitad, en el contratiempo- no
+    //  existia como gesto. Medio compas a 120 son 1000 ms. El paso absoluto es
+    //  `compas * pasosPorCompas() + paso`, o sea una sola cifra, que es lo que
+    //  evita que el dibujo y el dedo hagan la cuenta cada uno por su lado -la
+    //  leccion de la canaleta- y lo que deja que el ZOOM de la rejilla cambie
+    //  la division sin tocar ni un clip.
     struct ClipVista
     {
-        int pista  = 0;      // 0..kAudioLanes-1
-        int desde  = 0;      // primer compas que ocupa
-        int hasta  = 1;      // el primero que YA NO ocupa, o sea [desde, hasta)
-        int pad    = 0;      // de que pad salio, que es de donde sale su color
+        int pista     = 0;   // 0..kAudioLanes-1
+        int desdePaso = 0;   // primer paso absoluto que ocupa
+        int hastaPaso = 1;   // el primero que YA NO ocupa, o sea [desde, hasta)
+        int pad       = 0;   // de que pad salio, que es de donde sale su color
     };
 
     // (lane, bar) — the host decides what to place or whether to clear.
@@ -114,14 +123,17 @@ public:
     std::function<void (int lane, int cabeza, int carrilNuevo, int compasNuevo, bool primero)> onMueveBloque;
     std::function<void (int lane, int cabeza)> onMuteBloque;
     //  UN HUECO DE LA BANDA DE AUDIO: aqui no habia nada, pon lo que tengas.
-    std::function<void (int pista, int compas)> onClipNuevo;
+    //  El sitio llega en PASO ABSOLUTO y ya PEGADO a la division que se ve
+    //  dibujada: pegar aqui y no en el anfitrion es lo que garantiza que el
+    //  clip caiga en la raya que la persona tenia debajo del dedo.
+    std::function<void (int pista, int paso)> onClipNuevo;
     //  Y UN CLIP QUE SE ARRASTRA. El indice es el de la tabla que se paso, no
     //  una identidad: quien la publica es quien la ordena.
-    std::function<void (int indice, int pista, int compas)> onClipMueve;
+    std::function<void (int indice, int pista, int paso)> onClipMueve;
     std::function<void (int indice)> onClipQuita;
-    //  Y EL LARGO, arrastrando un filo. Llega en COMPASES porque es lo que
-    //  esta rejilla sabe: quien traduce a muestras es quien tiene el tempo.
-    std::function<void (int indice, int desdeCompas, int hastaCompas)> onClipLargo;
+    //  Y EL LARGO, arrastrando un filo. Llega en PASOS porque es lo que esta
+    //  rejilla sabe: quien traduce a muestras es quien tiene el tempo.
+    std::function<void (int indice, int desdePaso, int hastaPaso)> onClipLargo;
     //  Un toque en la canaleta del carril: lo silencia. Ver mouseDown.
     std::function<void (int lane)> onLane;
 
@@ -146,6 +158,63 @@ public:
     //  Lo mas corto que puede llevar asas. Con dos compases, las dos asas son
     //  el clip entero y no quedaria medio que agarrar para moverlo.
     static constexpr int kCompasesConAsa = 3;
+
+    //  CUANTOS PASOS GUARDADOS TIENE UN COMPAS, que lo dice el MOTOR.
+    //
+    //  Escribir aqui un dieciseis seria la tercera copia de esa regla, y ya
+    //  costo una: `AudioEngine::kBarSteps` y `StepGrid::kBarSteps` valian 16 a
+    //  mano mientras `pasosPorCompas()` devolvia entre 8 y 64 segun la rejilla,
+    //  asi que fuera de 1/16 el clip sonaba donde no se dibujaba. El dueño es
+    //  `pasosPorCompas()` y aqui solo se guarda lo que el diga.
+    void setPasosCompas (int n) noexcept
+    {
+        n = juce::jlimit (1, 256, n);
+        if (n == pasosCompas) return;
+        pasosCompas = n;
+        repaint();
+    }
+    int getPasosCompas() const noexcept { return pasosCompas; }
+
+    //  LA DIVISION QUE SE DIBUJA Y A LA QUE SE PEGA, en pasos. La MISMA para
+    //  las dos cosas a proposito: una raya que se ve y a la que no se puede
+    //  pegar miente, y pegarse a una que no se ve es un clip que salta solo.
+    //
+    //  No es `pasosCompas` a secas porque con la rejilla en 1/64 y ocho
+    //  compases a la vista salen 512 rayas en ~370 px -1.4 px cada una, o sea
+    //  un tramado gris- y ademas ningun dedo acierta una. Se va dividiendo por
+    //  dos -que respeta los tresillos: 12 da 6, 3 y 1, todos divisores- hasta
+    //  que la celda llega al aire de la casa, que es el minimo por debajo del
+    //  cual dos rayas dejan de leerse como dos.
+    int divisionPaso() const noexcept
+    {
+        const int pc   = juce::jmax (1, pasosCompas);
+        const float bW = (float) juce::jmax (0, getWidth() - kGutter)
+                       / (float) juce::jmax (1, barsView);
+        int d = pc;
+        while (d > 1 && bW / (float) d < (float) Metrics::gap)
+            d = (d % 2 == 0) ? d / 2 : 1;
+        return juce::jmax (1, pc / juce::jmax (1, d));
+    }
+
+    //  EL PASO ABSOLUTO QUE CAE BAJO UNA X, sin pegar. Lo usan el dedo y las
+    //  asas; quien quiera el sitio donde se suelta pide `pasoPegado`.
+    int pasoDeX (int x) const noexcept
+    {
+        auto r = getLocalBounds();
+        const int   pc   = juce::jmax (1, pasosCompas);
+        const float pasoW = (float) (r.getWidth() - kGutter)
+                          / (float) juce::jmax (1, barsView) / (float) pc;
+        if (pasoW <= 0.0f) return primerCompas * pc;
+        return primerCompas * pc
+             + juce::jlimit (0, barsView * pc - 1,
+                             (int) ((float) (x - r.getX() - kGutter) / pasoW));
+    }
+
+    int pasoPegado (int x) const noexcept
+    {
+        const int u = juce::jmax (1, divisionPaso());
+        return (pasoDeX (x) / u) * u;
+    }
 
     //  La tabla se PRESTA, no se copia: la publica quien la tiene y vive lo que
     //  dure la llamada del temporizador, igual que `data` y `zati`.
@@ -508,6 +577,31 @@ public:
         //  patron de debajo sigue sonando, que es lo que el motor hace desde
         //  que los dos se renderizan en el mismo bucle de segmento, y lo que no
         //  puede pasar es que el dibujo diga una cosa y el toque haga otra.
+        //  LA REJILLA DENTRO DEL COMPAS, que es lo que se pidio: «en la
+        //  playlist tambien poder editar las cuadriculas».
+        //
+        //  Debajo de los clips y encima de las celdas: son la referencia con
+        //  la que se coloca una toma, asi que taparlas con el clip que se esta
+        //  colocando seria dibujar justo lo contrario de lo que sirve. Y la
+        //  division sale de `divisionPaso()`, la MISMA que usa el dedo: la
+        //  leccion de la canaleta es que cuando el dibujo y el toque hacen la
+        //  cuenta cada uno por su lado, un dia dejan de coincidir.
+        {
+            const int pc = juce::jmax (1, pasosCompas);
+            const int u  = juce::jmax (1, divisionPaso());
+            if (u < pc)
+            {
+                const float w = barW * (float) u / (float) pc;
+                g.setColour (ZatiColours::markOn (ZatiColours::chassisTop, 0.10f));
+                for (int c = 0; c < barsView; ++c)
+                {
+                    const float x0 = (float) r.getX() + gutter + barW * (float) c;
+                    for (float k = w; k < barW - 0.5f; k += w)
+                        g.fillRect (x0 + k, (float) r.getY(), 1.0f, (float) r.getHeight());
+                }
+            }
+        }
+
         pintaClips (g);
 
         // Bar numbers along the top edge of the first lane.
@@ -570,10 +664,8 @@ public:
         const float pistaH = (float) r.getHeight() / (float) kAudioLanes;
         const float barW   = (float) (r.getWidth() - kGutter) / (float) barsView;
         if (barW <= 0.0f || pistaH <= 0.0f) return false;
-        const int pista  = juce::jlimit (0, kAudioLanes - 1, (int) ((float) (e.y - r.getY()) / pistaH));
-        const int compas = primerCompas
-                         + juce::jlimit (0, barsView - 1, (int) ((float) (e.x - r.getX() - kGutter) / barW));
-        return clipEn (pista, compas) >= 0;
+        const int pista = juce::jlimit (0, kAudioLanes - 1, (int) ((float) (e.y - r.getY()) / pistaH));
+        return clipEn (pista, pasoDeX (e.x)) >= 0;
     }
 
     bool tocaAlClip (const juce::MouseEvent& e) const
@@ -730,13 +822,17 @@ public:
     //  vista de patrones. Escrita una vez y usada por el pintado y por el
     //  gesto, que es la leccion de la canaleta: cuando el dibujo y el toque
     //  hacen la cuenta cada uno por su lado, un dia dejan de coincidir.
-    juce::Rectangle<float> celdaAudio (int pista, int compas) const
+    juce::Rectangle<float> cajaPaso (int pista, int desdePaso, int hastaPaso) const
     {
         auto r = getLocalBounds();
+        const int   pc     = juce::jmax (1, pasosCompas);
         const float pistaH = (float) r.getHeight() / (float) kAudioLanes;
         const float barW   = (float) (r.getWidth() - kGutter) / (float) barsView;
-        return { (float) r.getX() + (float) kGutter + barW * (float) (compas - primerCompas),
-                 (float) r.getY() + pistaH * (float) pista, barW, pistaH };
+        const float pasoW  = barW / (float) pc;
+        return { (float) r.getX() + (float) kGutter
+                     + pasoW * (float) (desdePaso - primerCompas * pc),
+                 (float) r.getY() + pistaH * (float) pista,
+                 pasoW * (float) juce::jmax (1, hastaPaso - desdePaso), pistaH };
     }
 
     //  LOS CLIPS, DESPUES DE LOS BLOQUES y no celda a celda: un clip de cuatro
@@ -746,19 +842,26 @@ public:
     void pintaClips (juce::Graphics& g)
     {
         auto r = getLocalBounds();
-        const float barW = (float) (r.getWidth() - kGutter) / (float) barsView;
-        const int   base = primerCompas;
+        const int pc   = juce::jmax (1, pasosCompas);
+        const int base = primerCompas * pc;
+        const int tope = base + barsView * pc;
 
         for (int i = 0; i < numClips; ++i)
         {
             const ClipVista& c = clips[i];
             if (! juce::isPositiveAndBelow (c.pista, kAudioLanes)) continue;
-            const int d = juce::jmax (c.desde, base);
-            const int h = juce::jmin (c.hasta, base + barsView);
+            const int d = juce::jmax (c.desdePaso, base);
+            const int h = juce::jmin (c.hastaPaso, tope);
             if (h <= d) continue;                       // no cae en esta pagina
 
-            auto caja = celdaAudio (c.pista, d)
-                            .withWidth (barW * (float) (h - d)).reduced (1.5f);
+            //  EL AIRE SE ENCOGE ANTES QUE EL CLIP. Con la unidad en compases
+            //  un clip nunca bajaba de una celda entera, asi que quitarle 1.5
+            //  px por lado era gratis; en pasos, un clip de una division en
+            //  1/64 mide ~5 px y los tres px de aire lo dejaban en dos -o en
+            //  ancho negativo, que JUCE dibuja como nada. Un clip invisible es
+            //  un clip que no se puede agarrar para deshacerlo.
+            auto caja = cajaPaso (c.pista, d, h);
+            caja = caja.reduced (juce::jmin (1.5f, caja.getWidth() * 0.25f), 1.5f);
             const auto col = (zati != nullptr && juce::isPositiveAndBelow (c.pad, zatis))
                                  ? Zati::colour (zati[c.pad]) : Zati::colour (c.pad);
             const bool mudo = (mudoAudio & (1u << (unsigned) c.pista)) != 0;
@@ -785,7 +888,7 @@ public:
             //  en el primer y el ultimo compas. Un asa que existe y no se ve es
             //  un gesto que nadie encuentra, y una que se ve donde no existe
             //  -en un clip corto- es peor.
-            if ((c.hasta - c.desde) >= kCompasesConAsa)
+            if ((c.hastaPaso - c.desdePaso) >= kCompasesConAsa * pc)
             {
                 g.setColour (ZatiColours::bestOn (col, ZatiColours::ink, juce::Colours::white)
                                  .withAlpha (0.55f));
@@ -800,13 +903,14 @@ public:
         }
     }
 
-    //  Que clip cae bajo (pista, compas). El PRIMERO que lo contenga: dos clips
+    //  Que clip cae bajo (pista, paso). El PRIMERO que lo contenga: dos clips
     //  encima no es un estado que esta app produzca, y elegir "el de arriba"
     //  sin que haya arriba seria inventarse una regla.
-    int clipEn (int pista, int compas) const
+    int clipEn (int pista, int paso) const
     {
         for (int i = 0; i < numClips; ++i)
-            if (clips[i].pista == pista && compas >= clips[i].desde && compas < clips[i].hasta)
+            if (clips[i].pista == pista
+                && paso >= clips[i].desdePaso && paso < clips[i].hastaPaso)
                 return i;
         return -1;
     }
@@ -818,14 +922,22 @@ public:
         const float barW   = (float) (r.getWidth() - kGutter) / (float) barsView;
         if (barW <= 0.0f || pistaH <= 0.0f) return;
 
+        const int pc = juce::jmax (1, pasosCompas);
+        const int u  = juce::jmax (1, divisionPaso());
         const int pista  = juce::jlimit (0, kAudioLanes - 1, (int) ((float) (e.y - r.getY()) / pistaH));
-        const int compas = primerCompas
-                         + juce::jlimit (0, barsView - 1, (int) ((float) (e.x - r.getX() - kGutter) / barW));
-        if (compas >= totalBars) return;
+        //  DOS CIFRAS Y NO UNA: donde esta el dedo y donde se SUELTA.
+        //
+        //  El dedo sin pegar es lo que decide que hay debajo -un asa, el
+        //  interior del clip, un hueco- y el pegado es lo unico que se escribe.
+        //  Confundirlas hace que agarrar un clip por su mitad lo mueva media
+        //  division antes de que nadie arrastre nada.
+        const int paso   = pasoDeX (e.x);
+        const int pegado = (paso / u) * u;
+        if (paso / pc >= totalBars) return;
 
         if (! arrastrando)
         {
-            arrastrado = clipEn (pista, compas);
+            arrastrado = clipEn (pista, paso);
             asa = 0;
             if (arrastrado >= 0)
             {
@@ -839,26 +951,38 @@ public:
                 //  DE TRES COMPASES no hay asas: ahi el gesto solo mueve, que
                 //  es lo que se quiere de un clip corto. La escalera de
                 //  siempre, y el banco la mide.
+                //  EL ASA MIDE UN COMPAS, no una division. Con la unidad en
+                //  pasos, «el primer paso» seria un asa de 5 px en 1/64 - o
+                //  sea, un asa que no se puede coger. Un tercio del clip por
+                //  lado y como mucho un compas, que en compases enteros da
+                //  exactamente lo de siempre -el primer compas y el ultimo- y
+                //  en sub-compas deja el asa del tamaño del dedo.
                 const auto& c = clips[arrastrado];
-                const int  ancho = c.hasta - c.desde;
-                if (ancho >= kCompasesConAsa)
+                const int  ancho = c.hastaPaso - c.desdePaso;
+                if (ancho >= kCompasesConAsa * pc)
                 {
-                    if (compas == c.desde)          asa = -1;
-                    else if (compas == c.hasta - 1) asa = +1;
+                    const int asaP = juce::jlimit (1, juce::jmax (1, ancho / 3), pc);
+                    if (paso < c.desdePaso + asaP)      asa = -1;
+                    else if (paso >= c.hastaPaso - asaP) asa = +1;
                 }
             }
             if (arrastrado < 0)
             {
                 //  Un hueco: aqui no hay nada que mover, asi que el gesto solo
                 //  puede significar poner algo.
-                if (onClipNuevo) onClipNuevo (pista, compas);
+                if (onClipNuevo) onClipNuevo (pista, pegado);
                 return;
             }
-            //  DONDE SE AGARRO, en compases desde el principio del clip. Sin
+            //  DONDE SE AGARRO, en DIVISIONES desde el principio del clip. Sin
             //  esto, arrastrar un clip de cuatro compases por su tercer compas
             //  lo pega de un salto por su primero: el bloque se mueve un trozo
             //  que la persona no pidio, y es lo primero que se nota.
-            agarre = compas - clips[arrastrado].desde;
+            //
+            //  Y redondeado a la division y no al paso suelto: el destino sale
+            //  de restar el agarre al paso pegado, asi que un agarre en pasos
+            //  crudos devolveria un sitio que no cae en ninguna raya - el clip
+            //  se quedaria a un paso de la rejilla que se ve.
+            agarre = ((paso - clips[arrastrado].desdePaso) / u) * u;
             //  Y LA GOMA LO QUITA, que es la misma herramienta que borra un
             //  bloque: una funcion, un dueño. `borrando` sigue valiendo porque
             //  la brocha VACIAR y la GOMA son la misma cosa vista desde dos
@@ -876,17 +1000,17 @@ public:
         if (asa != 0)
         {
             const auto& c = clips[arrastrado];
-            int d = c.desde, h = c.hasta;
-            if (asa < 0) d = juce::jmin (compas, h - 1);
-            else         h = juce::jmax (compas + 1, d + 1);
-            if (d == c.desde && h == c.hasta) return;
+            int d = c.desdePaso, h = c.hastaPaso;
+            if (asa < 0) d = juce::jmin (pegado, h - u);
+            else         h = juce::jmax (pegado + u, d + u);
+            if (d == c.desdePaso && h == c.hastaPaso) return;
             if (onClipLargo) onClipLargo (arrastrado, d, h);
             return;
         }
 
-        const int nuevoCompas = juce::jmax (0, compas - agarre);
-        if (nuevoCompas == clips[arrastrado].desde && pista == clips[arrastrado].pista) return;
-        if (onClipMueve) onClipMueve (arrastrado, pista, nuevoCompas);
+        const int nuevoPaso = juce::jmax (0, pegado - agarre);
+        if (nuevoPaso == clips[arrastrado].desdePaso && pista == clips[arrastrado].pista) return;
+        if (onClipMueve) onClipMueve (arrastrado, pista, nuevoPaso);
     }
 
     //  LA HERRAMIENTA ARMADA, que es lo que hace que el gesto sea inequivoco.
@@ -1072,6 +1196,9 @@ private:
 
     //  Los pasos de los ocho patrones, y que pads usa cada uno.
     int barsView = kBarsViewDef;
+    //  Lo que diga `pasosPorCompas()`. El 16 de arranque es el paso guardado
+    //  por defecto y se sustituye en el primer `refreshSong`.
+    int pasosCompas = 16;
 
     static constexpr int kMaxPat = 8;
     //  Por debajo de esto no cabe rotulo Y miniatura, asi que el bloque se

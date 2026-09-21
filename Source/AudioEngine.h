@@ -450,7 +450,22 @@ public:
     static constexpr int kAudioTracks = 4;
     static constexpr int kMaxClips    = 64;
     static constexpr int kSongBars  = 64;
-    static constexpr int kBarSteps  = 16;
+    //  AQUI HABIA UN `kBarSteps = 16` Y SE FUE, porque decia lo mismo que
+    //  `pasosPorCompas()` y solo acertaba en una rejilla.
+    //
+    //  Un compas son cuatro pulsos SIEMPRE; cuantos PASOS GUARDADOS son eso
+    //  depende del paso guardado, que desde la tanda de la rejilla puede bajar
+    //  hasta 1/48 de pulso. Con el 16 a mano, afinar el paso a 1/64 dejaba el
+    //  «compas» de la cancion valiendo un CUARTO de compas: `muestrasPorCompas`
+    //  devolvia un cuarto de lo que debe -o sea el clip sonaba donde no se
+    //  dibuja, justo el fallo que su propio comentario dice que existe para
+    //  evitar-, la cuenta atras contaba un cuarto, y los carriles leian su
+    //  celda cuatro veces por compas. La correccion se hizo en el mando de
+    //  LARGO y no aqui, que es la mitad que se olvido. Ninguna prueba lo
+    //  medía: ahora si, `Tests/cancion.py`.
+    //
+    //  Las dieciseis COLUMNAS de la rejilla de pasos siguen existiendo y se
+    //  llaman `StepGrid::kBarSteps`: eso es lo que se MIRA, y es otra cosa.
 
     //  Cell encoding, kept as one int so the audio thread reads it atomically:
     //     0            empty
@@ -757,6 +772,18 @@ public:
         SampleBuffer* fuente = nullptr;
         int   pista  = 0;         // 0..kAudioTracks-1
         int   compas = 0;         // donde empieza, en compases de la cancion
+        //  Y EN QUE PASO GUARDADO DE ESE COMPAS, que es la mitad que faltaba.
+        //
+        //  Con solo el compas, una toma caia siempre en el filo: grabar una
+        //  voz que entra a la mitad del compas 3 y colocarla donde entra era
+        //  imposible -«colocarlo donde debe», textual- porque el unico sitio
+        //  donde se podia soltar era el 3 o el 4, o sea medio compas de error,
+        //  que a 120 son 1000 ms. El desfase va en PASOS GUARDADOS y no en
+        //  muestras por lo mismo que el compas va en compases: es tiempo
+        //  musical y se mueve con el tempo, mientras que el audio del clip
+        //  mide lo que mide. Cuanto dura un paso lo dice `pasosPorCompas()`,
+        //  que es la unica dueña de esa cuenta desde la tanda de la rejilla.
+        int   paso   = 0;         // 0..pasosPorCompas()-1 dentro de ese compas
         int   desde  = 0;         // primera muestra de la fuente que suena
         int   largo  = 0;         // cuantas muestras suenan
         float gain   = 1.0f;
@@ -957,7 +984,7 @@ public:
     //  frecuencia: la misma cuenta hecha en la cara con `getBpm` y una
     //  frecuencia supuesta es la regla duplicada de siempre, y el sintoma
     //  seria un clip dibujado donde no suena.
-    double muestrasPorCompas() const noexcept { return samplesPerStepNow() * (double) kBarSteps; }
+    double muestrasPorCompas() const noexcept { return samplesPerStepNow() * (double) pasosPorCompas(); }
 
     //  EL METRONOMO. Una ayuda para tocar y no parte de la cancion: ver
     //  copyStateFrom, donde deliberadamente NO viaja.
@@ -968,7 +995,7 @@ public:
     //  no avanza; al acabar, el transporte arranca solo.
     void armaCuentaAtras (int compases) noexcept
     {
-        cuentaPasos.store (juce::jlimit (0, 8, compases) * kBarSteps, std::memory_order_relaxed);
+        cuentaPasos.store (juce::jlimit (0, 8, compases) * pasosPorCompas(), std::memory_order_relaxed);
     }
     bool enCuentaAtras() const noexcept { return cuentaPasos.load (std::memory_order_relaxed) > 0; }
 
@@ -2493,9 +2520,10 @@ private:
     std::atomic<float> duckAmt { 0.55f };     // cuanto se agacha, 0..1
     std::atomic<float> duckRel { 180.0f };    // ms de recuperacion
     float duckEnv = 0.0f;                     // solo hilo de audio
-    //  Muestras por paso de 1/16 al tempo actual. Se necesita en la seccion 3
-    //  - la cuantizacion del disparo en directo - y alli todavia no se ha
-    //  calculado el transporte, que va en la 4+5.
+    //  Muestras por PASO GUARDADO al tempo actual -que es 1/16 mientras nadie
+    //  afine la rejilla, y no siempre-. Se necesita en la seccion 3 - la
+    //  cuantizacion del disparo en directo - y alli todavia no se ha calculado
+    //  el transporte, que va en la 4+5.
     double samplesPerStepNow() const noexcept
     {
         const double bpmNow = juce::jmax (20.0, (double) bpm.load (std::memory_order_relaxed));
@@ -3042,9 +3070,20 @@ private:
     }
 
     //  Muestras por negra, que es lo que convierte el paso musical en paso por
-    //  muestra. Se deriva de `samplesPerStepNow` -muestras por 1/16- y no se
-    //  vuelve a escribir la cuenta del tempo, que ya vive alli.
-    double negrasPorMuestraInv() const noexcept { return samplesPerStepNow() * 4.0; }
+    //  muestra. Se deriva de `samplesPerStepNow` y no se vuelve a escribir la
+    //  cuenta del tempo, que ya vive alli.
+    //
+    //  Y EL FACTOR ES `1 / stepBeats` Y NO UN CUATRO. El cuatro decia
+    //  «un paso es 1/16 de compas», que es la misma suposicion que costo el
+    //  compas de la cancion: con el paso guardado afinado a 1/48 de pulso,
+    //  esto devolvia doce veces menos de lo que debe y el reloj sincronizado
+    //  de los efectos corria doce veces mas rapido. `stepBeats` esta acotado
+    //  por `setStepBeats` a 0.02 como minimo, asi que la division no explota.
+    double negrasPorMuestraInv() const noexcept
+    {
+        const double b = juce::jmax (0.02, (double) stepBeats.load (std::memory_order_relaxed));
+        return samplesPerStepNow() / b;
+    }
 
     //  Y LA FASE QUE EL VISOR DIBUJA, del canal que la cara esta mirando. Antes
     //  eran tres acumuladores publicados; ahora es una funcion del reloj, asi

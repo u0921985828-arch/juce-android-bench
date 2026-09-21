@@ -475,7 +475,7 @@ private:
     //  ancho -para escribir en 1/32-, dieciseis es el compas de siempre y
     //  treinta y dos son dos compases para ver la frase. Con el suelo de la
     //  celda decidiendo, como todo lo demas.
-    int pianoCols = AudioEngine::kBarSteps;
+    int pianoCols = StepGrid::kBarSteps;
     juce::TextButton pianoZoomBtn { "1 COMPAS" };
     void paintPianoSheetContent (juce::Graphics& g);
 
@@ -811,8 +811,12 @@ private:
     //  llevan las nueve fichas que agrupan controles. Con un color puesto el
     //  filo lo toma del PAD, que es la unica ficha donde eso significa algo:
     //  ver paintVstSheetContent.
+    //  Y `nombre` es el del array que se le pasa: el volcado apunta
+    //  `padGrupos[2]` en vez de un rectangulo anonimo, que es lo que separa un
+    //  fallo que se va a arreglar de uno que hay que buscar primero. Ver
+    //  UiAudit::panel.
     void pintaPaneles (juce::Graphics& g, const juce::Array<juce::Rectangle<int>>& grupos,
-                       juce::Colour tinte = {}) const;
+                       const char* nombre = nullptr, juce::Colour tinte = {}) const;
 
     //  ...y los grupos de las tres fichas que no son el secuenciador. Uno por
     //  ficha y no uno compartido: resized() maqueta TODAS las fichas en la
@@ -2180,10 +2184,14 @@ private:
     //  rehace en refreshSong y vive aqui porque el componente la presta, no la
     //  copia - lo mismo que songCells.
     std::vector<Playlist::ClipVista> songClipsVista;
-    void ponClip   (int pista, int compas);
-    void mueveClip (int indice, int pista, int compas);
+    //  Los tres reciben PASOS ABSOLUTOS de la cancion -`compas * pasosPorCompas()
+    //  + paso`- y no compases: la rejilla ya los entrega pegados a la division
+    //  que dibuja, y partirlos en dos numeros en el camino es la forma de que
+    //  uno de los dos se quede sin acotar.
+    void ponClip   (int pista, int paso);
+    void mueveClip (int indice, int pista, int paso);
     void quitaClip (int indice);
-    void largoClip (int indice, int desdeCompas, int hastaCompas);
+    void largoClip (int indice, int desdePaso, int hastaPaso);
     int songCells[Playlist::kLanes * AudioEngine::kSongBars] {};
     //  Y CUANTOS PASOS DURA CADA PATRON, al lado de las celdas y por lo mismo:
     //  la rejilla guarda el PUNTERO -no copia- asi que un array local se
@@ -3709,6 +3717,11 @@ private:
         int   pad    = -1;      // de que pad sale el audio
         int   pista  = 0;       // 0..kAudioTracks-1
         int   compas = 0;       // donde empieza en la cancion
+        //  Y EN QUE PASO GUARDADO DE ESE COMPAS. Ver `AudioEngine::ClipAudio`:
+        //  con solo el compas, una toma que entra a la mitad del 3 no se podia
+        //  colocar donde entra -medio compas a 120 son 1000 ms- y eso era
+        //  exactamente lo que se pidio poder hacer.
+        int   paso   = 0;       // 0..pasosPorCompas()-1
         int   desde  = 0;       // primera muestra que suena
         int   largo  = 0;       // cuantas
         float gain   = 1.0f;

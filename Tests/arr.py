@@ -623,6 +623,77 @@ def main():
             malas.append ("recorrer las siete rejillas deja los golpes en %s y estaban en "
                           "[0.0, 0.25, 0.5]" % atasco["pulsos"])
 
+    #  Y EL COMPAS DE LA CANCION SIGUE SIENDO UN COMPAS.
+    #
+    #  Todo lo de arriba mide el PATRON. La CANCION no la tocaba nadie, y es
+    #  donde la correccion del compas se habia quedado a medias: el motor
+    #  llevaba un `kBarSteps = 16` escrito a mano AL LADO de `pasosPorCompas()`,
+    #  que lo deriva -dos tablas que dicen lo mismo son dos reglas-. Con el paso
+    #  guardado en 1/16 las dos coinciden, y por eso ninguna prueba lo vio en
+    #  siete tandas. Afinando el paso, el "compas" de la linea de tiempo valia
+    #  un cuarto de compas: `muestrasPorCompas()` devolvia un cuarto, o sea el
+    #  clip sonaba donde no se dibuja.
+    #
+    #  Se pregunta lo unico que la rejilla NO puede cambiar: cuanto dura un
+    #  compas. Las siete cifras tienen que ser la MISMA, y no hace falta el
+    #  tempo ni la frecuencia de muestreo para decirlo - que es lo que separa
+    #  esto de repetir aqui la cuenta del C++.
+    comp = song.get ("el compas de la cancion")
+    if not comp:
+        print ("%-22s %s" % ("compas cancion", "MAL - sin respuesta"))
+        malas.append ("el compas de la cancion")
+    else:
+        print ("%-22s paso %s   pasos/compas %s   muestras/compas %s   clip en %s"
+               % ("compas cancion", comp["pasos"], comp["compas pasos"],
+                  comp["compas muestras"], comp["clip compas"]))
+        distintas = sorted (set (comp["compas muestras"]))
+        if len (distintas) != 1:
+            malas.append ("un compas dura %s muestras segun la rejilla que se mire, "
+                          "y el tempo no lo toca ninguna" % distintas)
+        #  Y la otra mitad: pasos por compas es el paso guardado al reves. 48
+        #  unidades son un pulso y un compas son cuatro, o sea 192 / paso.
+        for u, pc in zip (comp["pasos"], comp["compas pasos"]):
+            if pc != 192 // u:
+                malas.append ("con el paso en %d/48 de pulso el compas dice %d pasos "
+                              "y son %d" % (u, pc, 192 // u))
+        if any (c != 3 for c in comp["clip compas"]):
+            malas.append ("el clip estaba en el compas 3 y las siete rejillas lo "
+                          "dejan en %s" % comp["clip compas"])
+
+    #  Y EL CLIP SUENA DONDE SE DIBUJA, CON EL COMPAS EMPEZADO.
+    #
+    #  La regla de arriba mide el COMPAS, que es lo que habia. Desde que un
+    #  clip lleva desfase dentro del compas eso deja de bastar: un motor que
+    #  ignore el paso pinta la toma a un cuarto del compas 3 y la toca en el
+    #  filo, o sea medio compas de error -1000 ms a 120- sin que nada falle y
+    #  sin que se vea hasta que suena. Es la misma figura que "el clip suena
+    #  donde no se dibuja" que costo la tanda anterior, en un sitio nuevo.
+    #
+    #  TRES cifras. La primera es el CONTROL: la misma corrida sin clip tiene
+    #  que ser silencio (-1), porque si no cualquier cosa que sonara -un patron
+    #  que quedo puesto, la cola de un pad- se leeria como "el clip". La
+    #  segunda es donde la rejilla lo DIBUJA, que sale de la tabla que la
+    #  rejilla recibe y no de los campos del clip: comparar el clip consigo
+    #  mismo no compara nada. Y la tercera es donde SUENA, buscando la primera
+    #  muestra que no es silencio en el bus.
+    son = song.get ("el clip suena donde se dibuja")
+    if son is None:
+        print ("%-22s %s" % ("clip sub-compas", "MAL - sin respuesta"))
+        malas.append ("el clip suena donde se dibuja")
+    else:
+        print ("%-22s dibuja %s   suena %s   sin clip %s   paso %s muestras"
+               % ("clip sub-compas", son["dibuja paso"], son["suena paso"],
+                  son["sin clip"], son["muestras paso"]))
+        if son["sin clip"] != -1:
+            malas.append ("sin clip la cancion no esta en silencio: suena en la "
+                          "muestra %s, asi que la medida no mide el clip"
+                          % son["sin clip"])
+        elif abs (float (son["suena paso"]) - float (son["dibuja paso"])) > 0.05:
+            malas.append ("el clip se dibuja en el paso %s y suena en el %s, o sea "
+                          "%.2f pasos de donde se ve"
+                          % (son["dibuja paso"], son["suena paso"],
+                             float (son["suena paso"]) - float (son["dibuja paso"])))
+
     #  LAS SIETE REJILLAS CONTRA LAS SIETE, IDA Y VUELTA.
     #
     #  Las dos reglas de arriba miden tres parejas escogidas a mano, y con las

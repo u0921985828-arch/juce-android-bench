@@ -85,7 +85,17 @@
 // ============================================================================
 namespace Instrumentos
 {
-    static constexpr int kMaxInstr = 16;   // por pack: la rejilla es de 4x4
+    //  LO QUE UN PACK PUEDE TRAER, Y LO DECIDE EL QUE MAS TRAE.
+    //
+    //  Era 16 «por pack: la rejilla es de 4x4», y la rejilla de 4x4 dejo de
+    //  ser la forma de este menu hace dos tandas: los instrumentos salen en
+    //  DOS columnas con banda de categoria, y son `Sintes::kFamilias` = 24.
+    //  El 16 se quedo escrito y la consecuencia era exacta y visible - «sigue
+    //  habiendo 16 instrumentos, no 24 como te pedi»-: el pozo de tapas medía
+    //  dieciseis, asi que la cuarta categoria entera -VIENTOS, COROS, METALES,
+    //  CAMPANAS, CAÑAS y TUBOS- no se podia tocar. Existian, sonaban y estaban
+    //  en el catalogo; lo que no habia era tapa.
+    static constexpr int kMaxInstr = Sintes::kFamilias;
     static constexpr int kPresets  = Kits::kPadsPerBank;   // 16 = un banco
 
     struct Instrumento
@@ -102,7 +112,7 @@ namespace Instrumentos
         //  sonido tocable con dieciseis variantes y va a UN pad: es un
         //  instrumento. La misma rejilla sirve para los dos porque el gesto es
         //  el mismo -elegir-, pero el destino no puede serlo.
-        int          familiaSintes = -1;  // 0..15 si lo sintetiza Sintes
+        int          familiaSintes = -1;  // 0..kFamilias-1 si lo sintetiza Sintes
     };
 
     struct Pack

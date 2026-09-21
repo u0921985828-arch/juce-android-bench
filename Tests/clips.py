@@ -151,7 +151,24 @@ def main():
            d.get ("carril_mudo") == 1 and d.get ("pista_muda") == 1,
            "carril %s  pista %s" % (d.get ("carril_mudo"), d.get ("pista_muda")))
 
-    #  9. Y LA CELDA, contra el dedo. Esta banda existe porque ocho carriles no
+    #  9. EL SUB-COMPAS, que es lo que esta tanda añade y la queja que lo
+    #  pidio: «en la playlist tambien poder editar las cuadriculas [...] para
+    #  poder cortarlo y colocarlo donde debe». Un toque en la SEGUNDA division
+    #  del compas 6 tiene que dejar el clip en el compas 6 Y en esa division.
+    #
+    #  TRES cifras y ninguna sobra. Con solo el compas, un codigo que ignore el
+    #  sub-compas entero -el de antes de esta tanda- sale en verde: el clip cae
+    #  en el 6 igual. Con solo el paso, una rejilla que no se subdivida
+    #  (division == pasos por compas) daria paso 0 y tambien pasaria, diciendo
+    #  que si a no hacer nada. La tercera es la que cierra la puerta: que la
+    #  division sea de verdad MAS FINA que el compas.
+    pc  = d.get ("pasos_compas", 0)
+    div = d.get ("division", 0)
+    juzga ("el clip cae dentro del compas",
+           0 < div < pc and d.get ("sub_paso") == [3, 6, div],
+           "%s  division %s de %s" % (d.get ("sub_paso"), div, pc))
+
+    #  10. Y LA CELDA, contra el dedo. Esta banda existe porque ocho carriles no
     #  caben -20.2 px en 280x653, medido- asi que la cifra que la justifica hay
     #  que mirarla: si un dia vuelve a bajar del dedo, la decision se cae.
     celda = d.get ("celda") or [0, 0]
@@ -160,7 +177,7 @@ def main():
 
     print()
     print ("la banda de audio hace lo que dice" if malas == 0
-           else "%d de 9 no" % malas)
+           else "%d de 10 no" % malas)
     return 1 if malas else 0
 
 

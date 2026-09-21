@@ -1022,6 +1022,185 @@ void MainComponent::auditArrange()
                       << ",\"paso final\":" << engine.pasoUnidades() << "}" << std::endl;
         }
 
+        //  Y EL COMPAS DE LA CANCION SIGUE SIENDO UN COMPAS.
+        //
+        //  Las reglas de arriba miden el PATRON y ninguna toca la CANCION, que
+        //  es donde la correccion del compas no se hizo: `AudioEngine` llevaba
+        //  un `kBarSteps = 16` escrito a mano al lado de `pasosPorCompas()`,
+        //  que lo deriva. Con el paso guardado en 1/16 los dos coinciden y por
+        //  eso nadie lo vio; en cuanto el mando de rejilla afina el paso -y
+        //  desde la tanda anterior puede bajar a 1/48 de pulso- el «compas» de
+        //  la linea de tiempo pasaba a valer un CUARTO de compas y
+        //  `muestrasPorCompas()` devolvia un cuarto de lo que debe: el clip
+        //  suena donde no se dibuja, que es literalmente el fallo que el
+        //  comentario de esa funcion dice que existe para evitar.
+        //
+        //  Se mide lo que no puede cambiar: **un compas dura lo que dura**.
+        //  Las muestras por compas tienen que salir IGUALES con las siete
+        //  rejillas, porque el tempo no lo toca ninguna. No hace falta ni la
+        //  frecuencia de muestreo ni el tempo para preguntarlo - solo que las
+        //  siete cifras sean la misma-, que es lo que separa esta pregunta de
+        //  repetir la cuenta del C++.
+        {
+            for (int b = 0; b < AudioEngine::kNumPatterns; ++b)
+                for (int st = 0; st < AudioEngine::kNumSteps; ++st)
+                    for (int pd = 0; pd < kNumPads; ++pd)
+                    { pattern[b][(size_t) st][(size_t) pd] = false; engine.setStep (b, st, pd, false); }
+
+            engine.setPasoUnidades (rejillaU (2));           // 1/16
+            for (int b = 0; b < AudioEngine::kNumPatterns; ++b)
+                engine.setPatternLength (b, engine.pasosPorCompas());
+            vistaRejilla = 2;
+            gridSlider.setValue (2.0, juce::dontSendNotification);
+            reajustaMandoLargo();
+
+            engine.setSongLength (8);
+            //  Un clip de UN compas en el compas 3 de la pista 1, puesto con
+            //  la misma cuenta que usa la cara: su largo en MUESTRAS sale de
+            //  `muestrasPorCompas()`, que es la traduccion que esta regla mide.
+            clips.clear();
+            {
+                ClipUI c;
+                c.pad = 0; c.pista = 1; c.compas = 3; c.desde = 0;
+                c.largo = (int) engine.muestrasPorCompas();
+                c.gain = 1.0f;
+                clips.push_back (c);
+            }
+            publicaClips();
+
+            juce::String pasos, compasPasos, compasMuestras, dibujado;
+            for (int i = 0; i < 7; ++i)
+            {
+                gridSlider.setValue ((double) i, juce::sendNotificationSync);
+                pasos          << (i ? "," : "") << engine.pasoUnidades();
+                compasPasos    << (i ? "," : "") << engine.pasosPorCompas();
+                compasMuestras << (i ? "," : "") << juce::String (engine.muestrasPorCompas(), 1);
+                dibujado       << (i ? "," : "") << (clips.empty() ? -1 : clips[0].compas);
+            }
+
+            std::cout << "{\"arr\":\"el compas de la cancion\""
+                      << ",\"pasos\":[" << pasos << "]"
+                      << ",\"compas pasos\":[" << compasPasos << "]"
+                      << ",\"compas muestras\":[" << compasMuestras << "]"
+                      << ",\"clip compas\":[" << dibujado << "]"
+                      << ",\"largo cancion\":" << engine.getSongLength() << "}" << std::endl;
+
+            clips.clear();
+            publicaClips();
+        }
+
+        //  Y EL CLIP SUENA DONDE SE DIBUJA, CON EL COMPAS EMPEZADO.
+        //
+        //  La regla de arriba mide el COMPAS, que es lo que habia; desde que
+        //  un clip lleva desfase dentro del compas eso deja de bastar: un
+        //  motor que ignore el paso pinta el clip a la mitad del compas 3 y lo
+        //  toca en el filo, o sea medio compas de error -1000 ms a 120- sin
+        //  que nada falle y sin que se vea hasta que suena. Es exactamente la
+        //  figura que `muestrasPorCompas()` documenta y la que esta tanda
+        //  acaba de poder cometer en un sitio nuevo.
+        //
+        //  Se mide LO QUE SALE POR EL BUS y no la cuenta: se arranca el
+        //  transporte en modo cancion sobre una cancion vacia -asi lo unico
+        //  que puede sonar es el clip- y se busca la primera muestra que no es
+        //  silencio. El sitio donde se DIBUJA sale de `songClipsVista`, que es
+        //  lo que la rejilla recibe, y no de los campos del clip: comparar el
+        //  clip consigo mismo no compara nada.
+        {
+            engine.clearSong();
+            engine.setSongLength (8);
+            engine.setClick (false);
+            //  Y SIN TRAMO EN BUCLE, que lo dejo puesto una medida de antes.
+            //  Con el bucle en [2,5) el transporte ARRANCA DENTRO del tramo,
+            //  asi que el compas 3 llega al oido en el paso 20 de la corrida y
+            //  no en el 52: la primera version de esta regla salio en rojo con
+            //  el codigo perfecto. Primero se duda de la prueba.
+            engine.setSongLoop (0, 0);
+            engine.setPasoUnidades (rejillaU (2));           // 1/16
+            vistaRejilla = 2;
+            gridSlider.setValue (2.0, juce::dontSendNotification);
+
+            const int    pc = juce::jmax (1, engine.pasosPorCompas());
+            constexpr int kPasoDelClip = 4;                  // 1/4 de compas en 1/16
+
+            clips.clear();
+            {
+                ClipUI c;
+                c.pad = 0; c.pista = 1; c.compas = 3; c.paso = kPasoDelClip;
+                c.desde = 0; c.largo = (int) engine.muestrasPorCompas();
+                c.gain = 1.0f;
+                clips.push_back (c);
+            }
+            publicaClips();
+            refreshSong (false);
+            const int dibuja = songClipsVista.empty() ? -1 : songClipsVista[0].desdePaso;
+
+            //  El aparato del banco, que aqui no hay tarjeta. Mismas cifras que
+            //  `bombeaAudioDePrueba` para no inventarse un segundo contrato.
+            constexpr int    kRafaga = 128;
+            constexpr double kRate   = 48000.0;
+            juce::AudioBuffer<float> bloque (2, kRafaga);
+            engine.prepareToPlay (kRate, kRafaga);
+            enginePreparedRate  = kRate;
+            enginePreparedBlock = kRafaga;
+
+            //  Y LA CUENTA DE MUESTRAS SE PIDE DESPUES DE `prepareToPlay`, que
+            //  es quien fija la frecuencia: preguntarla antes devolvia la de la
+            //  sesion -44100- mientras el bucle renderiza a 48000, o sea una
+            //  regla de tres con dos relojes distintos.
+            const double porPaso = engine.muestrasPorCompas() / (double) pc;
+
+            engine.setSongMode (true);
+            engine.setPlaying (false);
+            bloque.clear(); engine.renderNextBlock (bloque, 0, kRafaga);
+            engine.setPlaying (true);
+
+            //  Cinco compases de margen: el clip entra en el 3, asi que si no
+            //  ha sonado en cinco es que no va a sonar.
+            const int tope = (int) (engine.muestrasPorCompas() * 5.0) / kRafaga + 2;
+            std::int64_t sonoEn = -1;
+            for (int b = 0; b < tope && sonoEn < 0; ++b)
+            {
+                bloque.clear();
+                engine.renderNextBlock (bloque, 0, kRafaga);
+                for (int i = 0; i < kRafaga; ++i)
+                    if (std::abs (bloque.getSample (0, i)) > 1.0e-4f
+                        || std::abs (bloque.getSample (1, i)) > 1.0e-4f)
+                    { sonoEn = (std::int64_t) b * kRafaga + i; break; }
+            }
+            engine.setPlaying (false);
+
+            //  EL CONTROL: la misma corrida SIN clip tiene que ser silencio.
+            //  Sin el, cualquier cosa que sonara -un patron que quedo puesto,
+            //  la cola de un pad, el metronomo- se leeria como «el clip» y la
+            //  regla mediria el ruido de fondo.
+            clips.clear();
+            publicaClips();
+            engine.setPlaying (true);
+            std::int64_t ruidoEn = -1;
+            for (int b = 0; b < tope && ruidoEn < 0; ++b)
+            {
+                bloque.clear();
+                engine.renderNextBlock (bloque, 0, kRafaga);
+                for (int i = 0; i < kRafaga; ++i)
+                    if (std::abs (bloque.getSample (0, i)) > 1.0e-4f
+                        || std::abs (bloque.getSample (1, i)) > 1.0e-4f)
+                    { ruidoEn = (std::int64_t) b * kRafaga + i; break; }
+            }
+            engine.setPlaying (false);
+            engine.setSongMode (false);
+
+            const double suena = (sonoEn < 0) ? -1.0 : (double) sonoEn / porPaso;
+            std::cout << "{\"arr\":\"el clip suena donde se dibuja\""
+                      << ",\"dibuja paso\":" << dibuja
+                      << ",\"suena paso\":" << juce::String (suena, 2)
+                      << ",\"pasos compas\":" << pc
+                      << ",\"muestras paso\":" << juce::String (porPaso, 1)
+                      << ",\"sin clip\":" << (int) ruidoEn << "}" << std::endl;
+
+            clips.clear();
+            publicaClips();
+        }
+
         //  LAS SIETE CONTRA LAS SIETE, IDA Y VUELTA.
         //
         //  Las dos reglas de arriba miden tres pares escogidos a mano, y con
@@ -2260,7 +2439,7 @@ void MainComponent::auditInstr()
         const int filas = juce::jmax (1, pianoGrid.getFilas());
         const float altoFila = (float) pianoGrid.getHeight() / (float) filas;
         const float anchoCol = (float) (pianoGrid.getWidth() - PianoRoll::kGutter)
-                                 / (float) AudioEngine::kBarSteps;
+                                 / (float) StepGrid::kBarSteps;
         pianoGrid.gesto ((float) PianoRoll::kGutter + ((float) col + 0.5f) * anchoCol,
                          ((float) (filas / 2) + 0.5f) * altoFila, false);
         pianoGrid.suelta();
@@ -3293,11 +3472,26 @@ void MainComponent::auditClips()
     const float pistaH = (float) rej.getHeight() / (float) Playlist::kAudioLanes;
     const float barW   = (float) (rej.getWidth() - gutter) / (float) songGrid.getCompasesVista();
 
-    auto punto = [&] (int pista, int compas)
+    //  EL DEDO CAE EN UNA DIVISION Y NO EN EL CENTRO DEL COMPAS.
+    //
+    //  Con la banda pegada al compas, «el centro del compas 3» y «el compas 3»
+    //  eran lo mismo. En cuanto la rejilla se subdivide dejan de serlo: el
+    //  centro del compas 3 es la division de la mitad, o sea que las cinco
+    //  medidas de siempre habrian cambiado de cifra sin que nada estuviera
+    //  roto. Se apunta al CENTRO DE LA PRIMERA DIVISION del compas, que es el
+    //  mismo sitio de antes para una rejilla sin subdividir y el sitio que la
+    //  persona quiere decir cuando dice «el compas 3».
+    const int pasosCompas = juce::jmax (1, engine.pasosPorCompas());
+    const int division    = juce::jmax (1, songGrid.divisionPaso());
+    const float pasoW     = barW / (float) pasosCompas;
+
+    auto puntoPaso = [&] (int pista, int pasoAbs)
     {
-        return juce::Point<float> ((float) gutter + barW * ((float) compas + 0.5f),
+        return juce::Point<float> ((float) gutter
+                                       + pasoW * ((float) pasoAbs + (float) division * 0.5f),
                                    pistaH * ((float) pista + 0.5f));
     };
+    auto punto = [&] (int pista, int compas) { return puntoPaso (pista, compas * pasosCompas); };
     auto evento = [&] (juce::Point<float> pt)
     {
         const auto ahora = juce::Time::getCurrentTime();
@@ -3311,10 +3505,22 @@ void MainComponent::auditClips()
         return "[" + juce::String (clips[(size_t) i].pista) + ","
                    + juce::String (clips[(size_t) i].compas) + "]";
     };
+    //  El largo SIGUE DICIENDOSE EN COMPASES aunque la vista lo guarde en
+    //  pasos: es lo que la regla del banco juzga y lo que una persona cuenta.
     auto compasesDe = [&] (int i)
     {
         if (! juce::isPositiveAndBelow (i, (int) songClipsVista.size())) return 0;
-        return songClipsVista[(size_t) i].hasta - songClipsVista[(size_t) i].desde;
+        return (songClipsVista[(size_t) i].hastaPaso
+                    - songClipsVista[(size_t) i].desdePaso) / pasosCompas;
+    };
+    //  Y LA CIFRA NUEVA: pista, compas Y PASO dentro del compas, que es lo que
+    //  `fila` no podia decir porque no existia.
+    auto filaPaso = [&] (int i)
+    {
+        if (! juce::isPositiveAndBelow (i, (int) clips.size())) return juce::String ("[]");
+        return "[" + juce::String (clips[(size_t) i].pista) + ","
+                   + juce::String (clips[(size_t) i].compas) + ","
+                   + juce::String (clips[(size_t) i].paso) + "]";
     };
     //  CADA MEDIDA PARTE DE UN ESTADO PUESTO A MANO, y no del que dejo la
     //  anterior. La primera version las encadenaba y en cuanto las asas
@@ -3331,11 +3537,15 @@ void MainComponent::auditClips()
         publicaClips();
         refreshSong (false);
     };
+    auto arrastraPaso = [&] (int p0, int s0, int p1, int s1)
+    {
+        auto d = evento (puntoPaso (p0, s0));  rej.mouseDown (d);
+        auto m = evento (puntoPaso (p1, s1));  rej.mouseDrag (m);
+        auto u = evento (puntoPaso (p1, s1));  rej.mouseUp (u);
+    };
     auto arrastra = [&] (int p0, int c0, int p1, int c1)
     {
-        auto d = evento (punto (p0, c0));  rej.mouseDown (d);
-        auto m = evento (punto (p1, c1));  rej.mouseDrag (m);
-        auto u = evento (punto (p1, c1));  rej.mouseUp (u);
+        arrastraPaso (p0, c0 * pasosCompas, p1, c1 * pasosCompas);
     };
 
     //  1. PONER: un toque en un hueco deja el clip en ESA pista y ESE compas.
@@ -3374,6 +3584,15 @@ void MainComponent::auditClips()
     const int largoFuente = (uiSample[0] != nullptr) ? uiSample[0]->buffer.getNumSamples() : 0;
     const int largoClip   = clips.empty() ? 0 : clips[0].largo;
 
+    //  Y EL SUB-COMPAS, que es lo que esta tanda añade: un toque en la SEGUNDA
+    //  division del compas 6 tiene que dejar el clip ahi y no en el filo del
+    //  compas. Con la banda pegada al compas esto devolvia paso 0 -medio
+    //  compas de error a 120, o sea 1000 ms- y no habia forma de verlo: las
+    //  ocho reglas de esta prueba solo miraban el compas.
+    clips.clear(); publicaClips(); refreshSong (false);
+    { auto e = evento (puntoPaso (3, 6 * pasosCompas + division)); rej.mouseDown (e); }
+    const auto subPaso = filaPaso (0);
+
     //  2. MOVER agarrando por su PRIMER compas: de (2,3) a (1,5).
     //
     //  CON LA MANO ARMADA, que es lo que cambio al fundir las dos vistas: en
@@ -3404,8 +3623,16 @@ void MainComponent::auditClips()
     //  se coge su ultimo compas -el 2- y se lleva al 4, y tiene que quedar de
     //  CINCO compases SIN moverse de sitio. Las dos cifras, porque un asa que
     //  ademas mueve pasa cualquier prueba que solo mire el largo.
+    //
+    //  Y SE SUELTA EN LA ULTIMA DIVISION DEL COMPAS 4 y no en la primera: el
+    //  filo derecho se pega a la division que hay bajo el dedo MAS una, asi
+    //  que apuntando al principio del 4 el clip acabaria en 4 compases y una
+    //  division. Es la mejora entera de esta tanda -antes el filo solo podia
+    //  caer en un multiplo de compas- y la prueba sigue diciendo CINCO porque
+    //  se apunta al sitio que en compases enteros significa «hasta el final
+    //  del compas 4».
     pon (1, 0, 3);
-    arrastra (1, 2, 1, 4);
+    arrastraPaso (1, 2 * pasosCompas, 1, 5 * pasosCompas - division);
     const auto trasAsa = fila (0);
     const int compasesTrasAsa = compasesDe (0);
 
@@ -3463,6 +3690,9 @@ void MainComponent::auditClips()
               << ",\"pincel\":" << pincel
               << ",\"carril_mudo\":" << carrilMudo
               << ",\"pista_muda\":" << pistaMuda
+              << ",\"sub_paso\":" << subPaso
+              << ",\"pasos_compas\":" << pasosCompas
+              << ",\"division\":" << division
               << ",\"celda\":[" << (int) barW << "," << (int) pistaH << "]"
               << "}" << std::endl;
 }
@@ -3761,10 +3991,10 @@ void MainComponent::auditPiano()
     engine.setPatternLength (0, 16);
     refreshPiano();
     int viejas = 0;
-    for (int c = 0; c < AudioEngine::kBarSteps; ++c)
+    for (int c = 0; c < StepGrid::kBarSteps; ++c)
         for (int k = 0; k < PianoRoll::kMaxNotas; ++k)
             if (pianoCells[c * PianoRoll::kMaxNotas + k] != -128) ++viejas;
-    std::cout << "{\"piano\":\"encoge\",\"sel\":" << (seqPrimerCelda / AudioEngine::kBarSteps)
+    std::cout << "{\"piano\":\"encoge\",\"sel\":" << (seqPrimerCelda / StepGrid::kBarSteps)
               << ",\"puestas\":" << viejas
               << ",\"col3\":" << (int) pianoCells[3 * PianoRoll::kMaxNotas] << "}" << std::endl;
 
@@ -3796,7 +4026,7 @@ void MainComponent::auditPiano()
     const int filas = pianoGrid.getFilas();
     const float altoFila = (float) pianoGrid.getHeight() / (float) juce::jmax (1, filas);
     const float anchoCol = (float) (pianoGrid.getWidth() - PianoRoll::kGutter)
-                             / (float) AudioEngine::kBarSteps;
+                             / (float) StepGrid::kBarSteps;
     auto punto = [&] (int col, int fila, float& x, float& y)
     {
         x = (float) PianoRoll::kGutter + ((float) col + 0.5f) * anchoCol;
@@ -3943,7 +4173,7 @@ void MainComponent::auditPiano()
         //  mira y no donde se copio.
         pianoCopiaSel();
         const int copiadas = (int) pianoPortapapeles.size();
-        seqPrimerCelda = AudioEngine::kBarSteps;
+        seqPrimerCelda = StepGrid::kBarSteps;
         engine.setPatternLength (0, 32);
         refreshPiano();
         pianoPegaSel();
@@ -3972,7 +4202,7 @@ void MainComponent::auditPiano()
         //  mide la ESCALERA: el ciclo salta el paso que no cabe, y llamando a
         //  `pianoCols = 32` por dentro eso no se ve nunca. Tres pulsaciones,
         //  que es la vuelta completa del ciclo.
-        pianoCols = AudioEngine::kBarSteps;
+        pianoCols = StepGrid::kBarSteps;
         refreshPiano(); resized();
         juce::String anchos = "[";
         juce::String cols   = "[";
@@ -3985,7 +4215,7 @@ void MainComponent::auditPiano()
             cols   << (i ? "," : "") << nc;
         }
         anchos << "]"; cols << "]";
-        pianoCols = AudioEngine::kBarSteps;
+        pianoCols = StepGrid::kBarSteps;
         refreshPiano();
 
         std::cout << "{\"piano\":\"zoom\",\"cols\":" << cols
@@ -4298,8 +4528,15 @@ void MainComponent::auditProject()
     //  una lista que solo sabe guardar el primero se lee igual que una que
     //  funciona.
     clips.clear();
-    clips.push_back ({ /*pad*/ 0,  /*pista*/ 1, /*compas*/ 3, /*desde*/ 100, /*largo*/ 4800, 0.75f });
-    clips.push_back ({ /*pad*/ 16, /*pista*/ 2, /*compas*/ 7, /*desde*/ 250, /*largo*/ 9600, 0.50f });
+    //  Y CON EL PASO DENTRO DEL COMPAS DISTINTO DE CERO en los dos, que es el
+    //  campo nuevo: escrito al FINAL de la fila del fichero para no correr los
+    //  seis de antes, asi que la unica forma de saber que se lee es ponerlo a
+    //  un valor que no sea el defecto. Con cero, un lector que lo ignorara
+    //  entero pasaria la prueba.
+    clips.push_back ({ /*pad*/ 0,  /*pista*/ 1, /*compas*/ 3, /*paso*/ 5,
+                       /*desde*/ 100, /*largo*/ 4800, 0.75f });
+    clips.push_back ({ /*pad*/ 16, /*pista*/ 2, /*compas*/ 7, /*paso*/ 11,
+                       /*desde*/ 250, /*largo*/ 9600, 0.50f });
     publicaClips();
 
     //  Y UN MAPA DE RANURAS RECONOCIBLE, que no es la identidad ni el vacio:
@@ -4413,7 +4650,8 @@ void MainComponent::auditProject()
     {
         const auto& c = clips[i];
         std::cout << (i ? "," : "") << "[" << c.pad << "," << c.pista << "," << c.compas
-                  << "," << c.desde << "," << c.largo << "," << c.gain << "]";
+                  << "," << c.desde << "," << c.largo << "," << c.gain
+                  << "," << c.paso << "]";
     }
     std::cout << "],\"motor\":" << engine.numClips() << "}" << std::endl;
 

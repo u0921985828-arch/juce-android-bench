@@ -185,17 +185,23 @@ mide ("y ninguno ensena su numero", d is not None and d["conNombre"] == 16,
 #  Se cuenta lo que se PINTA -reparteTapa, la misma funcion que dibuja- y no lo
 #  que la tapa tiene guardado: el rotulo puede estar puesto y no salir, que es
 #  como el fallo pudo durar una tanda entera sin que ninguna regla lo dijera.
+#
+#  Y SON `FAMILIAS` Y NO DIECISEIS, que es la segunda mitad de la misma queja y
+#  la que esta prueba estaba CIMENTANDO: preguntar por 16 daba verde con ocho
+#  familias sin una sola tapa, o sea que la regla protegia el fallo. El numero
+#  sale de `Sintes.h`, como el del catalogo. La distincion que faltaba: que 384
+#  sonidos EXISTAN no es que 24 familias se puedan TOCAR.
 menu = filas.get ("menu")
-mide ("los dieciseis dicen su nombre",
-       menu is not None and menu["conNombre"] == 16,
-       "" if menu is None else "%d de 16 con nombre, celda %dx%d"
-                               % (menu["conNombre"], menu["celdaW"], menu["celdaH"]))
+mide ("todas dicen su nombre",
+       menu is not None and menu["conNombre"] == FAMILIAS,
+       "" if menu is None else "%d de %d con nombre, celda %dx%d"
+                               % (menu["conNombre"], FAMILIAS, menu["celdaW"], menu["celdaH"]))
 #  Y LAS DOS COSAS. Quedarse con la palabra y soltar el dibujo es lo que hacia
 #  la lista de antes, y entonces sobra haberlos dibujado; el arreglo es que
 #  quepan los dos, y eso solo lo dice contarlos a la vez.
 mide ("y ademas su dibujo",
-       menu is not None and menu["conDibujo"] == 16,
-       "" if menu is None else "%d de 16 con dibujo" % menu["conDibujo"])
+       menu is not None and menu["conDibujo"] == FAMILIAS,
+       "" if menu is None else "%d de %d con dibujo" % (menu["conDibujo"], FAMILIAS))
 #  Y EL PIE, DENTRO DEL CUERPO. Las dos frases que explican la ficha -elige el
 #  pad arriba y el instrumento abajo- las colocaba el PINTOR con una cuenta que
 #  solo valia para la lista: con la rejilla puesta caian 704 px mas abajo, o sea

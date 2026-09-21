@@ -1420,11 +1420,17 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             //  otros tres. Un metronomo de un solo tono dice que hay pulso y no
             //  dice DONDE estas, que es la mitad para la que se enciende antes
             //  de grabar.
+            //  Y EL PULSO SALE DE LA REJILLA GUARDADA, no de un cuatro. Con
+            //  el paso en 1/16 un pulso son cuatro pasos; con el paso en 1/48
+            //  de pulso son doce, y el metronomo escrito con el 4 sonaba doce
+            //  veces por pulso. Es la misma correccion que el compas.
             if (clickOn.load (std::memory_order_relaxed))
             {
-                if (clicPaso % 4 == 0)
+                const int pasosCompas = pasosPorCompas();
+                const int pasosPulso  = juce::jmax (1, pasosCompas / 4);
+                if (clicPaso % pasosPulso == 0)
                 {
-                    clickHz    = (clicPaso % kBarSteps == 0) ? 1600.0f : 1050.0f;
+                    clickHz    = (clicPaso % pasosCompas == 0) ? 1600.0f : 1050.0f;
                     clickPhase = 0.0f;
                     clickEnv   = 0.42f;
                 }
@@ -1461,8 +1467,9 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 //  porque quien pregunta -la cara, al parar- necesita saber
                 //  donde empezo y no donde acabo.
                 const int bars  = juce::jlimit (1, kSongBars, songBars.load (std::memory_order_relaxed));
-                const int total = bars * kBarSteps;
-                compasGrabado.store (((songStep + 1) % total) / kBarSteps, std::memory_order_relaxed);
+                const int pasosCompas = pasosPorCompas();
+                const int total = bars * pasosCompas;
+                compasGrabado.store (((songStep + 1) % total) / pasosCompas, std::memory_order_relaxed);
                 recordPos.store (0, std::memory_order_relaxed);
                 recording.store (true, std::memory_order_release);
             }
@@ -1473,7 +1480,10 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             if (songMode.load (std::memory_order_relaxed))
             {
                 const int bars = juce::jlimit (1, kSongBars, songBars.load (std::memory_order_relaxed));
-                const int total = bars * kBarSteps;
+                //  Una sola vez por borde de paso: la cuenta es una division y
+                //  un redondeo, y aqui dentro se necesita seis veces.
+                const int pasosCompas = pasosPorCompas();
+                const int total = bars * pasosCompas;
 
                 //  EL BUCLE DE UN TRAMO. Ver setSongLoop. Se aplica sobre el
                 //  paso YA avanzado y no sobre el compas: saltar al principio
@@ -1486,8 +1496,8 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 const int lb = songLoopB.load (std::memory_order_relaxed);
                 if (lb > la)
                 {
-                    const int desde = juce::jmin (la, bars - 1) * kBarSteps;
-                    const int hasta = juce::jmin (lb, bars)     * kBarSteps;
+                    const int desde = juce::jmin (la, bars - 1) * pasosCompas;
+                    const int hasta = juce::jmin (lb, bars)     * pasosCompas;
                     if (hasta > desde && (songStep < desde || songStep >= hasta))
                     {
                         songStep = desde;
@@ -1498,7 +1508,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     }
                 }
 
-                const int bar = songStep / kBarSteps;
+                const int bar = songStep / pasosCompas;
                 songBar.store (bar, std::memory_order_relaxed);
 
                 //  LA AUTOMATIZACION, EN EL BORDE DE PASO y no por bloque: si
@@ -1515,7 +1525,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 aplicaAutomacion (songStep);
 
                 // At the top of a bar, read what each lane starts here.
-                if (songStep % kBarSteps == 0)
+                if (songStep % pasosCompas == 0)
                 {
                     for (int ln = 0; ln < kSongLanes; ++ln)
                     {
@@ -1593,13 +1603,13 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     //  si ocupa mas, da la vuelta dentro del bloque, que es lo
                     //  unico que puede significar un bloque de ocho compases
                     //  con un patron de cuatro.
-                    const int suyos = juce::jmax (1, laneBars[ln]) * kBarSteps;
+                    const int suyos = juce::jmax (1, laneBars[ln]) * pasosCompas;
                     if (off >= suyos) { lanePattern[ln] = -1; continue; }
                     firePatternStep (bank, off % len);
                     if (ln == 0) playingPattern.store (bank, std::memory_order_relaxed);
                 }
 
-                currentStep = songStep % kBarSteps;
+                currentStep = songStep % pasosCompas;
                 playStep.store (currentStep, std::memory_order_relaxed);
                 return;
             }
@@ -1714,7 +1724,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             if (songMode.load (std::memory_order_relaxed) && songStep >= 0)
                 renderClips (out, offset, seg,
                              (double) songStep * samplesPerStep + stepAccum,
-                             samplesPerStep * (double) kBarSteps);
+                             samplesPerStep * (double) pasosPorCompas());
 
             //  Y EL METRONOMO, en el mismo segmento y por la misma razon: se
             //  redispara en el borde de paso, asi que pintarlo una vez por
@@ -4226,6 +4236,14 @@ void AudioEngine::renderClips (juce::AudioBuffer<float>& out, int offset, int n,
     const auto ini = (std::int64_t) pos;
     const auto fin = ini + n;
 
+    //  LO QUE DURA UN PASO, para el desfase dentro del compas. Se saca de
+    //  `porCompas` y de `pasosPorCompas()` y no de `samplesPerStepNow()`: son
+    //  la misma cifra, pero derivarla de la que ya llego es lo que garantiza
+    //  que el clip suene EXACTAMENTE donde el dibujo lo pone -que es la cuenta
+    //  que `refreshSong` hace con las mismas dos- en vez de a un redondeo de
+    //  distancia. Fuera del bucle porque no depende del clip.
+    const double porPaso = porCompas / (double) juce::jmax (1, pasosPorCompas());
+
     for (int i = 0; i < clips->n; ++i)
     {
         const ClipAudio& c = clips->c[(size_t) i];
@@ -4233,7 +4251,8 @@ void AudioEngine::renderClips (juce::AudioBuffer<float>& out, int offset, int n,
         if (pistaMute[(size_t) juce::jlimit (0, kAudioTracks - 1, c.pista)]
                 .load (std::memory_order_relaxed)) continue;
 
-        const auto cIni = (std::int64_t) ((double) c.compas * porCompas);
+        const auto cIni = (std::int64_t) ((double) c.compas * porCompas
+                                          + (double) c.paso * porPaso);
         const auto cFin = cIni + c.largo;
         if (fin <= cIni || ini >= cFin) continue;          // no toca este segmento
 
@@ -5147,7 +5166,7 @@ int AudioEngine::lengthInSteps() const noexcept
             for (int b = 0; b < bars; ++b)
                 if (songCell[(size_t) ln][(size_t) b].load (std::memory_order_relaxed) != 0)
                     last = juce::jmax (last, b);
-        return (last < 0) ? 0 : (last + 1) * kBarSteps;
+        return (last < 0) ? 0 : (last + 1) * pasosPorCompas();
     }
 
     const int chainLen = chainLength.load (std::memory_order_relaxed);

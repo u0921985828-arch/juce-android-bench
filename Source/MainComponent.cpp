@@ -606,7 +606,7 @@ MainComponent::MainComponent()
             //  pintaPaneles - esta ficha tenia cuatro paginas de filas sueltas
             //  con su nombre a la izquierda, y BUFER se leia como de la misma
             //  familia que RELOJ solo porque una fila esta debajo de la otra.
-            pintaPaneles (g, setGrupos);
+            pintaPaneles (g, setGrupos, "setGrupos");
             if      (setPage == pageMidi)     paintMidiPage (g, midiArea);
             else if (setPage == pageAudio)    paintAudioSheetContent (g);
             else if (setPage == pageAspecto)  paintAspectoPage (g);
@@ -1072,11 +1072,12 @@ MainComponent::MainComponent()
 
         // --- INSTRUMENTOS: el contenido, y la fabrica dentro de el -------
         //
-        //  DIECISEIS TAPAS FIJAS Y NO UNA POR INSTRUMENTO. Cuantos hay depende
+        //  UN POZO FIJO DE TAPAS Y NO UNA POR INSTRUMENTO. Cuantos hay depende
         //  de lo que haya en el disco, y crear tapas al vuelo desde resized()
         //  es lo que cerro la app entera la primera vez que la caja negra
         //  sirvio para algo: `CAIDA senal 11 en arranque`. El pack no puede
-        //  traer mas de dieciseis -Instrumentos::kMaxInstr- asi que el pozo es
+        //  traer mas de `Instrumentos::kMaxInstr` -que son las 24 familias de
+        //  Sintes y no los 16 de antes- asi que el pozo es
         //  fijo y las que sobran se apagan Y se quedan sin limites, las dos
         //  cosas, que es lo que la regla dice y lo que media app hacia a medias.
         for (int i = 0; i < Instrumentos::kMaxInstr; ++i)
@@ -3642,8 +3643,8 @@ MainComponent::MainComponent()
         songSheet.addAndMakeVisible (autoBtn);
     }
 
-    songGrid.onClipNuevo = [this] (int pista, int compas) { ponClip (pista, compas); };
-    songGrid.onClipMueve = [this] (int i, int pista, int compas) { mueveClip (i, pista, compas); };
+    songGrid.onClipNuevo = [this] (int pista, int paso) { ponClip (pista, paso); };
+    songGrid.onClipMueve = [this] (int i, int pista, int paso) { mueveClip (i, pista, paso); };
     songGrid.onClipQuita = [this] (int i) { quitaClip (i); };
     songGrid.onClipLargo = [this] (int i, int d, int h) { largoClip (i, d, h); };
 
@@ -3736,7 +3737,11 @@ MainComponent::MainComponent()
         else if (songBrush > 0)
         {
             const int bank = songBrush - 1;
-            const int bars = juce::jmax (1, (engine.getPatternLength (bank) + AudioEngine::kBarSteps - 1) / AudioEngine::kBarSteps);
+            //  PASOS GUARDADOS a compases, o sea `pasosPorCompas()`: con el
+            //  16 a mano esto decia «cuatro compases» de un patron de un
+            //  compas en cuanto el paso guardado se afinaba.
+            const int pc = juce::jmax (1, engine.pasosPorCompas());
+            const int bars = juce::jmax (1, (engine.getPatternLength (bank) + pc - 1) / pc);
             engine.setSongCell (lane, bar, songBrush);
             for (int b = bar + 1; b < bar + bars && b < engine.getSongLength(); ++b)
                 engine.setSongCell (lane, b, AudioEngine::kContinued);
@@ -3945,8 +3950,8 @@ MainComponent::MainComponent()
             //  se pueden escribir. Donde no caben, el ciclo salta a 8.
             const int util = pianoGrid.getWidth() - PianoRoll::kGutter;
             const bool caben32 = util >= 32 * Metrics::celdaPaso;
-            pianoCols = (pianoCols == 8) ? AudioEngine::kBarSteps
-                      : (pianoCols == AudioEngine::kBarSteps && caben32) ? 32 : 8;
+            pianoCols = (pianoCols == 8) ? StepGrid::kBarSteps
+                      : (pianoCols == StepGrid::kBarSteps && caben32) ? 32 : 8;
             pianoVaciaSel();
             refreshPiano (true);
             resized();
@@ -7599,6 +7604,7 @@ juce::Rectangle<int> MainComponent::pintaTitulo (juce::Graphics& g, juce::Rectan
 //  losa, que es lo mismo que se lee sin dibujar nada.
 void MainComponent::pintaPaneles (juce::Graphics& g,
                                   const juce::Array<juce::Rectangle<int>>& grupos,
+                                  const char* nombre,
                                   juce::Colour tinte) const
 {
     const auto relleno = ZatiColours::groupOn (ZatiColours::chassisTop, Metrics::panelHondura);
@@ -7631,15 +7637,20 @@ void MainComponent::pintaPaneles (juce::Graphics& g,
         filo = ZatiColours::bestOn (sobre, tinte.brighter (0.55f), tinte.darker (0.55f));
     }
 
-    for (const auto& e : grupos)
+    for (int i = 0; i < grupos.size(); ++i)
     {
+        const auto& e = grupos.getReference (i);
         if (e.isEmpty()) continue;
         const auto caja = e.expanded (Metrics::panelAireX, Metrics::panelAireY);
-        //  Apuntado para que el banco pueda medir el aire de los cuatro lados.
-        //  Ver Tests/paneles.py: un panel no se puede salir ni solapar -las seis
-        //  reglas no le aplican- asi que su unico fallo posible es el reparto
-        //  del aire, y eso no lo ve ninguna de las que ya hay.
-        UiAudit::panel (caja);
+        //  Apuntado para que el banco pueda medir el aire de los cuatro lados,
+        //  Y ADEMAS que no pise lo que no envuelve y que no se salga del marco
+        //  de su ficha. Las dos ultimas nacieron de dos quejas del telefono que
+        //  ninguna regla podia ver -la ficha del pad y la pagina de AYUDA- y
+        //  desmienten lo que aqui estaba escrito, que era que el aire era el
+        //  unico fallo posible. Ver Tests/paneles.py y UiAudit::panel.
+        UiAudit::panel (caja, nombre != nullptr
+                                  ? juce::String (nombre) + "[" + juce::String (i) + "]"
+                                  : juce::String());
         g.setColour (relleno);
         g.fillRoundedRectangle (caja.toFloat(), (float) Metrics::sm);
         g.setColour (filo);
@@ -10844,8 +10855,15 @@ juce::ValueTree MainComponent::captureState() const
         {
             juce::String filas;
             for (const auto& c : clips)
+                //  EL PASO VA AL FINAL Y NO AL LADO DEL COMPAS, que es donde
+                //  «pertenece»: los seis campos de antes ya estan escritos en
+                //  todos los proyectos que existen, y meter uno en medio
+                //  convierte el largo de cada clip guardado en su ganancia.
+                //  Al final, un fichero viejo trae seis campos y vuelve con el
+                //  paso en cero, que es exactamente como sonaba.
                 filas << c.pad << " " << c.pista << " " << c.compas << " "
-                      << c.desde << " " << c.largo << " " << juce::String (c.gain, 4) << ";";
+                      << c.desde << " " << c.largo << " " << juce::String (c.gain, 4)
+                      << " " << c.paso << ";";
             song.setProperty ("clips", filas, nullptr);
         }
 
@@ -12025,6 +12043,8 @@ void MainComponent::applyState (const juce::ValueTree& s)
             c.desde  = n[3].getIntValue();
             c.largo  = n[4].getIntValue();
             c.gain   = n[5].getFloatValue();
+            //  Septimo campo y opcional: ver el comentario de la escritura.
+            c.paso   = (n.size() >= 7) ? n[6].getIntValue() : 0;
             //  Se acota EN LA PUERTA, que es donde entra un fichero que puede
             //  venir de otra epoca o corrupto: cada consumidor volviendo a
             //  validar es como el color de un bloque acabo leyendo fuera del
@@ -12034,6 +12054,10 @@ void MainComponent::applyState (const juce::ValueTree& s)
             c.pista  = juce::jlimit (0, AudioEngine::kAudioTracks - 1, c.pista);
             c.compas = juce::jlimit (0, AudioEngine::kSongBars - 1, c.compas);
             c.desde  = juce::jmax (0, c.desde);
+            //  Acotado contra el paso guardado de AHORA. Un proyecto escrito
+            //  con la rejilla en 1/64 y abierto en 1/8 traeria un paso 47 en
+            //  un compas de 8, que renderClips sumaria como seis compases.
+            c.paso   = juce::jlimit (0, juce::jmax (0, engine.pasosPorCompas() - 1), c.paso);
             c.gain   = juce::jlimit (0.0f, 4.0f, c.gain);
             if ((int) clips.size() < AudioEngine::kMaxClips) clips.push_back (c);
         }
@@ -12056,7 +12080,7 @@ void MainComponent::applyState (const juce::ValueTree& s)
             const int paso = n[0].getIntValue();
             const int fx   = n[1].getIntValue();
             const int par  = n[2].getIntValue();
-            if (paso < 0 || paso >= AudioEngine::kSongBars * AudioEngine::kBarSteps) continue;
+            if (paso < 0 || paso >= AudioEngine::kSongBars * engine.pasosPorCompas()) continue;
             if (! juce::isPositiveAndBelow (fx, kNumFx) || ! juce::isPositiveAndBelow (par, 3)) continue;
             if ((int) autoEventos.size() >= AudioEngine::kMaxAuto) break;
             //  EL CANAL VA AL FINAL y no en su sitio, que es lo que hace que un
@@ -12402,7 +12426,8 @@ void MainComponent::deleteProject (const juce::String& name)
 void MainComponent::songPorDefecto()
 {
     engine.clearSong();
-    const int bars = juce::jmax (1, (engine.getPatternLength (0) + AudioEngine::kBarSteps - 1) / AudioEngine::kBarSteps);
+    const int pc = juce::jmax (1, engine.pasosPorCompas());
+    const int bars = juce::jmax (1, (engine.getPatternLength (0) + pc - 1) / pc);
     engine.setSongCell (0, 0, 1);
     for (int b = 1; b < bars && b < engine.getSongLength(); ++b)
         engine.setSongCell (0, b, AudioEngine::kContinued);
@@ -13750,7 +13775,10 @@ void MainComponent::grabaAlArreglo()
         {
             const int guarda = selectedPad;
             selectedPad = recordingSlot;      // ponClip pone LO QUE SUENA en el pad elegido
-            ponClip (pistaGrabacion, compas);
+            //  En PASOS y no en compases: `ponClip` recibe el paso absoluto
+            //  desde que un clip puede caer dentro del compas. Una toma que se
+            //  arma al empezar un compas entra en su primer paso.
+            ponClip (pistaGrabacion, compas * juce::jmax (1, engine.pasosPorCompas()));
             selectedPad = guarda;
         }
         styleButton (songRecBtn, kKey);
@@ -13826,7 +13854,7 @@ void MainComponent::grabaAlArreglo()
 //  disco. Y el largo es el de la MUESTRA y no un compas: un clip que se corta
 //  al final del compas no es una toma, es un golpe - y para eso ya estan los
 //  golpes sueltos de la otra vista.
-void MainComponent::ponClip (int pista, int compas)
+void MainComponent::ponClip (int pista, int paso)
 {
     const int pad = selectedPad;
     if (! juce::isPositiveAndBelow (pad, kNumPads)) return;
@@ -13848,10 +13876,16 @@ void MainComponent::ponClip (int pista, int compas)
     const int ini   = juce::jlimit (0, total, (int) (padStart01[(size_t) pad] * (float) total));
     const int fin   = juce::jlimit (ini + 1, total, (int) (padEnd01[(size_t) pad] * (float) total));
 
+    //  EL SITIO LLEGA EN PASOS ABSOLUTOS y se parte aqui, que es el unico
+    //  sitio que conoce a la vez el numero que llego y lo que vale un compas.
+    const int pc = juce::jmax (1, engine.pasosPorCompas());
+    const int p  = juce::jlimit (0, AudioEngine::kSongBars * pc - 1, paso);
+
     ClipUI c;
     c.pad    = pad;
     c.pista  = juce::jlimit (0, AudioEngine::kAudioTracks - 1, pista);
-    c.compas = juce::jlimit (0, AudioEngine::kSongBars - 1, compas);
+    c.compas = p / pc;
+    c.paso   = p % pc;
     c.desde  = ini;
     c.largo  = fin - ini;
     c.gain   = 1.0f;
@@ -13860,41 +13894,52 @@ void MainComponent::ponClip (int pista, int compas)
     refreshSong (false);
 }
 
-void MainComponent::mueveClip (int indice, int pista, int compas)
+void MainComponent::mueveClip (int indice, int pista, int paso)
 {
     if (! juce::isPositiveAndBelow (indice, (int) clips.size())) return;
+    const int pc = juce::jmax (1, engine.pasosPorCompas());
+    const int p  = juce::jlimit (0, AudioEngine::kSongBars * pc - 1, paso);
     clips[(size_t) indice].pista  = juce::jlimit (0, AudioEngine::kAudioTracks - 1, pista);
-    clips[(size_t) indice].compas = juce::jlimit (0, AudioEngine::kSongBars - 1, compas);
+    clips[(size_t) indice].compas = p / pc;
+    clips[(size_t) indice].paso   = p % pc;
     publicaClips();
     refreshSong (false);
 }
 
-//  EL LARGO DE UN CLIP, arrastrando un filo. Llega en COMPASES -es lo que la
+//  EL LARGO DE UN CLIP, arrastrando un filo. Llega en PASOS -es lo que la
 //  rejilla sabe- y aqui se traduce a muestras, que es donde vive el audio: la
-//  cuenta la hace `engine.muestrasPorCompas()`, que es la unica dueña de esa
-//  regla y la misma que usa el motor para reproducirlos.
+//  cuenta sale de `engine.muestrasPorCompas()` partido por `pasosPorCompas()`,
+//  que son las dos unicas dueñas de esa regla y las mismas que usa el motor
+//  para reproducirlos. Con la unidad en compases, recortar el filo de un clip
+//  solo podia dejarlo en multiplos de compas: un golpe de 250 ms se convertia
+//  en dos segundos.
 //
 //  Y el filo de la IZQUIERDA mueve tambien el punto de la fuente: acortar un
 //  clip por delante es empezar mas tarde dentro del sonido, no dejar un hueco.
-void MainComponent::largoClip (int indice, int desdeCompas, int hastaCompas)
+void MainComponent::largoClip (int indice, int desdePaso, int hastaPaso)
 {
     if (! juce::isPositiveAndBelow (indice, (int) clips.size())) return;
     auto& c = clips[(size_t) indice];
 
     const double porCompas = juce::jmax (1.0, engine.muestrasPorCompas());
-    const int d = juce::jlimit (0, AudioEngine::kSongBars - 1, desdeCompas);
-    const int h = juce::jlimit (d + 1, AudioEngine::kSongBars, hastaCompas);
+    const int    pc        = juce::jmax (1, engine.pasosPorCompas());
+    const double porPaso   = porCompas / (double) pc;
+    const int    tope      = AudioEngine::kSongBars * pc;
+    const int d = juce::jlimit (0, tope - 1, desdePaso);
+    const int h = juce::jlimit (d + 1, tope, hastaPaso);
 
-    if (d != c.compas)
+    const int actual = c.compas * pc + c.paso;
+    if (d != actual)
     {
         //  Lo que se recorta por delante se le quita al principio de la fuente,
         //  acotado en cero: arrastrar mas alla del principio no puede empezar a
         //  leer antes del fichero.
-        const int mueve = (int) ((double) (d - c.compas) * porCompas);
+        const int mueve = (int) ((double) (d - actual) * porPaso);
         c.desde = juce::jmax (0, c.desde + mueve);
-        c.compas = d;
+        c.compas = d / pc;
+        c.paso   = d % pc;
     }
-    c.largo = juce::jmax (1, (int) ((double) (h - d) * porCompas));
+    c.largo = juce::jmax (1, (int) ((double) (h - d) * porPaso));
 
     publicaClips();
     refreshSong (false);
@@ -13975,27 +14020,39 @@ void MainComponent::refreshSong (bool repintarTarjeta)
                         engine.getSongLoopFrom(), engine.getSongLoopTo(),
                         bmudos);
 
-    //  LOS CLIPS, TRADUCIDOS A COMPASES. La rejilla dibuja compases y el motor
+    //  LOS CLIPS, TRADUCIDOS A PASOS. La rejilla dibuja pasos y el motor
     //  guarda muestras, asi que alguien traduce; se hace aqui y con
-    //  `engine.muestrasPorCompas()`, que es la unica cuenta de esa regla - la
-    //  misma que usa renderClips. Repetirla con getBpm y una frecuencia
-    //  supuesta dibujaria el clip donde no suena.
+    //  `engine.muestrasPorCompas()` partido por `pasosPorCompas()`, que son la
+    //  unica cuenta de esa regla - la misma que usa renderClips. Repetirla con
+    //  getBpm y una frecuencia supuesta dibujaria el clip donde no suena.
     //
-    //  Y REDONDEANDO HACIA ARRIBA el compas final, no hacia abajo: un clip que
-    //  acaba a la mitad del compas 3 OCUPA el compas 3, y truncando se dibujaria
+    //  EN PASOS Y NO EN COMPASES desde que un clip puede caer dentro del
+    //  compas. Con la unidad en compases el dibujo REDONDEABA: un clip puesto
+    //  en la mitad del 3 se pintaba pegado al filo del 3, o sea medio compas
+    //  -1000 ms a 120- donde no estaba.
+    //
+    //  Y REDONDEANDO HACIA ARRIBA el paso final, no hacia abajo: un clip que
+    //  acaba a la mitad de un paso OCUPA ese paso, y truncando se dibujaria
     //  terminando donde todavia suena. Con el suelo en uno, que un clip mas
-    //  corto que un compas sigue siendo un clip y sin el saldria de ancho cero
+    //  corto que un paso sigue siendo un clip y sin el saldria de ancho cero
     //  - invisible e imposible de agarrar.
     {
         const double porCompas = juce::jmax (1.0, engine.muestrasPorCompas());
+        const int    pc        = juce::jmax (1, engine.pasosPorCompas());
+        const double porPaso   = porCompas / (double) pc;
+        //  Y LA REJILLA SE ENTERA DE CUANTO VALE UN COMPAS antes de recibir
+        //  los clips: si se lo dijeramos despues, un cambio de rejilla dibuja
+        //  un fotograma entero con los pasos nuevos y la division vieja.
+        songGrid.setPasosCompas (pc);
         songClipsVista.clear();
         for (const auto& c : clips)
         {
             Playlist::ClipVista v;
-            v.pista = c.pista;
-            v.pad   = c.pad;
-            v.desde = c.compas;
-            v.hasta = c.compas + juce::jmax (1, (int) std::ceil ((double) c.largo / porCompas));
+            v.pista     = c.pista;
+            v.pad       = c.pad;
+            v.desdePaso = c.compas * pc + juce::jlimit (0, pc - 1, c.paso);
+            v.hastaPaso = v.desdePaso
+                        + juce::jmax (1, (int) std::ceil ((double) c.largo / porPaso));
             songClipsVista.push_back (v);
         }
         unsigned mudosAudio = 0;
@@ -14049,6 +14106,7 @@ void MainComponent::refreshMixStrip()
 void MainComponent::publicaClips()
 {
     std::array<AudioEngine::ClipAudio, AudioEngine::kMaxClips> tabla {};
+    const int pc = juce::jmax (1, engine.pasosPorCompas());
     int n = 0;
     for (const auto& c : clips)
     {
@@ -14061,6 +14119,7 @@ void MainComponent::publicaClips()
         d.fuente = fuente;
         d.pista  = juce::jlimit (0, AudioEngine::kAudioTracks - 1, c.pista);
         d.compas = juce::jlimit (0, AudioEngine::kSongBars - 1, c.compas);
+        d.paso   = juce::jlimit (0, pc - 1, c.paso);
         d.desde  = juce::jmax (0, c.desde);
         d.largo  = c.largo;
         d.gain   = c.gain;
@@ -15845,7 +15904,7 @@ void MainComponent::llenaDePrueba()
     for (int pista = 0; pista < 4; ++pista)
     {
         selectedPad = pista * 4;
-        ponClip (pista, pista * 8);
+        ponClip (pista, pista * 8 * juce::jmax (1, engine.pasosPorCompas()));
     }
     selectedPad = guardado;
 
@@ -15888,10 +15947,16 @@ void MainComponent::plantaPacksDePrueba()
     //  Nombres LARGOS a proposito en uno de los dos: el rotulo de una tapa de
     //  una rejilla de cuatro por cuatro es lo primero que se corta en 280 px,
     //  y un pack real se llamara "ELECTRIC PIANO" y no "EP".
-    static const char* kNombres[Instrumentos::kMaxInstr] =
+    //  Y EL LARGO ES EL DE LA LISTA, no `kMaxInstr`. Estaba dimensionado por
+    //  el pozo de tapas, y el dia que el pozo paso de 16 a 24 este array se
+    //  quedo con ocho punteros NULOS que el bucle de abajo iba a desreferenciar
+    //  para hacer una carpeta. Un pack de disco no tiene por que llenar el
+    //  pozo: son dieciseis porque estos dos packs de prueba traen dieciseis.
+    static const char* kNombres[] =
     { "SUBBASS", "ELECTRIC PIANO", "STRINGS", "BRASS", "CHOIR", "MARIMBA",
       "SYNTH LEAD", "PLUCK", "ORGAN", "CLAV", "FLUTE", "BELL",
       "PAD WARM", "SAW STACK", "UPRIGHT BASS", "GLASS" };
+    constexpr int kCuantosDePrueba = (int) (sizeof (kNombres) / sizeof (kNombres[0]));
 
     for (int p = 0; p < 2; ++p)
     {
@@ -15902,7 +15967,7 @@ void MainComponent::plantaPacksDePrueba()
         pack.getChildFile ("pack.txt")
             .replaceWithText (p == 0 ? "nombre=DEMO\n" : "nombre=ESTUDIO\npago=1\n");
 
-        for (int i = 0; i < Instrumentos::kMaxInstr; ++i)
+        for (int i = 0; i < kCuantosDePrueba; ++i)
         {
             auto dir = pack.getChildFile (juce::String (i + 1).paddedLeft ('0', 2)
                                           + " " + kNombres[i]);

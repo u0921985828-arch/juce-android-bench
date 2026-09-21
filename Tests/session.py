@@ -360,7 +360,12 @@ def main():
     #  publica nunca -la linea de tiempo volveria dibujada y muda-, y solo lo
     #  segundo lo cumple un motor que se quedo con la tabla de antes de vaciar.
     c = pr.get ("clips", {})
-    ESPERADAS = [[0, 1, 3, 100, 4800, 0.75], [16, 2, 7, 250, 9600, 0.50]]
+    #  El septimo campo es el PASO dentro del compas, que se guarda al final de
+    #  la fila para no correr los seis de antes: un proyecto escrito antes de
+    #  que existiera trae seis y vuelve con el paso en cero. Los dos valen algo
+    #  distinto de cero a proposito - con cero, un lector que lo ignorase
+    #  entero pasaria igual.
+    ESPERADAS = [[0, 1, 3, 100, 4800, 0.75, 5], [16, 2, 7, 250, 9600, 0.50, 11]]
     clip_ok = c.get ("filas") == ESPERADAS and c.get ("motor") == 2
     print ("clips de audio: %s   motor %s   %s"
            % (c.get ("filas", "?"), c.get ("motor", "?"),

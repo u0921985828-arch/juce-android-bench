@@ -245,14 +245,28 @@ namespace UiAudit
     //  que su fallo no es solaparse ni salirse - es que el aire que deja no sea
     //  el mismo por los cuatro lados, y eso solo se ve con las dos cifras al
     //  lado. Ver Tests/paneles.py.
-    struct Panel { int x, y, w, h; int capa; };
+    //
+    //  Y ESO ERA FALSO, y costo dos quejas del telefono que ninguna regla podia
+    //  ver: «sigue habiendo ese error de diseno en pad settings» y «como
+    //  tambien en el apartado de ayuda». Un panel SI puede solaparse -con lo
+    //  que NO envuelve- y SI puede salirse -del marco de su ficha-, y las dos
+    //  cosas estaban pasando a la vista de todos. El parrafo de arriba se
+    //  quedo escrito porque describe por que la prueba nacio; lo que no se
+    //  queda es la conclusion, que era que no habia nada mas que preguntar.
+    //
+    //  Y CON NOMBRE, que es la mitad que faltaba para poder senalar: un fallo
+    //  que dice «panel 212x96 en 74,318» obliga a abrir la maqueta y contar
+    //  rectangulos. Con `padGrupos[2]` se va al sitio. El nombre es el del
+    //  array que `resized()` publica mas su indice, o sea lo que el codigo ya
+    //  sabe y la prueba no tenia forma de adivinar.
+    struct Panel { juce::String nombre; int x, y, w, h; int capa; };
     inline std::vector<Panel> paneles;
 
-    inline void panel (juce::Rectangle<int> r)
+    inline void panel (juce::Rectangle<int> r, const juce::String& nombre = {})
     {
         if (! midiendo) return;
         r += origenPintado;
-        paneles.push_back ({ r.getX(), r.getY(), r.getWidth(), r.getHeight(), capaActual });
+        paneles.push_back ({ nombre, r.getX(), r.getY(), r.getWidth(), r.getHeight(), capaActual });
     }
 
     //  LO QUE UNA TARJETA PIDE Y LO QUE HAY.
@@ -1213,6 +1227,7 @@ namespace UiAudit
 
         for (const auto& p : paneles)
             std::cout << "{\"panel\":1"
+                      << ",\"nombre\":\"" << p.nombre.toRawUTF8() << "\""
                       << ",\"x\":" << p.x << ",\"y\":" << p.y
                       << ",\"w\":" << p.w << ",\"h\":" << p.h
                       << ",\"capa\":" << p.capa << "}" << std::endl;

@@ -1697,16 +1697,31 @@ void MainComponent::resized()
         //  suyo: donde los tres no caben, CHOKE se queda una fila entera y las
         //  otras dos bajan. Es lo que ya hacen las pestanas de AJUSTES y la
         //  barra de modulos del pad.
-        const int anchoFila3 = sheetInnerW - 2 * Metrics::margenFichaX;
+        //  Y `sheetInnerW` YA ES EL INTERIOR: restarle otra vez el margen
+        //  quitaba 2 x margenFichaX = 28 px que no existen, asi que esta
+        //  pregunta se contestaba con una fila mas estrecha que la que se
+        //  coloca y CHOKE se iba a un renglon propio -y la ficha pedia
+        //  hit + halfGap de mas- en pantallas donde los tres caben. El fallo
+        //  estaba escrito en MainComponent.h al declarar la funcion y nadie lo
+        //  cerro. Ver anchoTarjetaInterior.
+        const int anchoFila3 = sheetInnerW;
         const bool chokeSolo = ! padRowFits (anchoFila3 * 68 / 100, { &modeButton, &normButton })
                              || anchoFila3 * 32 / 100 < 12 + 34 + Metrics::gap + 2 * Metrics::stepKey;
         //  438 y no 352: la fila del filtro son 86 mas. Ver el desglose.
-        const int wantH = (padPage == padPageSound) ? 438 + secH
+        //  Y EL AIRE DEL PANEL ENTRA EN EL PRESUPUESTO. `pintaPaneles` hace un
+        //  `expanded (panelAireX, panelAireY)` incondicional, asi que un grupo
+        //  que se pega a lo de arriba se dibuja panelAireY POR DENTRO del
+        //  ultimo mando. Medido en 360x640: el panel de abajo empezaba en 446 y
+        //  la fila de CORTE, RESON y ANCHO acababa en 448 - dos pixeles encima
+        //  del numero de los tres mandos, que es la queja «sigue habiendo ese
+        //  error de diseno en pad settings». Son 2 x panelAireY porque el panel
+        //  crece por arriba y por abajo. Ver Tests/paneles.py, regla AJENO.
+        const int wantH = (padPage == padPageSound) ? 438 + secH + 2 * Metrics::panelAireY
                                                     + (chokeSolo ? Metrics::hit + Metrics::halfGap : 0)
                         : (padPage == padPageTrim)  ? 436 + secH + 2 * (ZatiLookAndFeel::kTrimRow + Metrics::xs)
                                                     //  Y la fila de la muestra puede ser DOS desde que
                                                     //  esta RECORTAR: la misma pregunta que la coloca.
-                                                    + (padMuestraWraps (sheetInnerW - 2 * Metrics::margenFichaX)
+                                                    + (padMuestraWraps (sheetInnerW)
                                                          ? Metrics::hit + Metrics::halfGap : 0)
                                                     : rigH;
         auto inner = sheetFromBottom (padSheet, wantH);
@@ -1917,6 +1932,11 @@ void MainComponent::resized()
         //  se arregla igual - se reserva lo que no puede encoger y los mandos,
         //  que SI pueden (tienen suelo de 60), se reparten el resto.
         auto filaBaja = inner.removeFromBottom (ZatiLookAndFeel::kKnobName + Metrics::hit);
+        //  Y EL AIRE DEL PANEL, reservado aqui y no supuesto. El grupo de abajo
+        //  lo pinta `pintaPaneles` con un `expanded` incondicional, asi que sin
+        //  estos dos pixeles el panel se mete dentro de la fila de mandos que
+        //  tiene encima - que es lo que se veia en la captura del telefono.
+        inner.removeFromBottom (Metrics::panelAireY);
 
         {
             const int forKnobs = inner.getHeight();
@@ -2026,10 +2046,17 @@ void MainComponent::resized()
             //  renglon propio que sale de lo que quedaba de `inner` - o sea
             //  ENCIMA de filaBaja. El grupo es la union de los dos, que es lo
             //  que se lee: las tres cosas que no son mandos.
-            const int gBajo = inner.getY();
+            //  Y `gBajo` SE TOMA DESPUES DEL AIRE, no antes. Leido arriba, el
+            //  grupo empezaba Metrics::xs = 4 px mas alto que la primera cosa
+            //  que lleva dentro, y el panel anade otros panelAireY: seis
+            //  pixeles de losa por encima de MODO, dentro de la fila de mandos.
+            //  Es el mismo fallo que `ensureDirectory` - lo que importa no es
+            //  lo que devuelve la orden sino donde acabo el rectangulo.
+            int gBajo = inner.getY();
             if (chokeSolo)
             {
                 inner.removeFromTop (Metrics::xs);
+                gBajo = inner.getY();
                 layoutModuleBar (inner.removeFromTop (Metrics::hit), r3b, 0, 2);
             }
             else
@@ -2293,7 +2320,15 @@ void MainComponent::resized()
         const int tabsH = (tabsFitH ? Metrics::tab : Metrics::tab * 2 + Metrics::xs) + Metrics::sm;
         //  The gestures page is a printed list: one row per gesture, and the
         //  card is exactly as tall as the list is. See paintGesturesPage.
-        const int gestRowH = 30;
+        //
+        //  Y EL TREINTA SALE DE LOS TOKENS, no de la mano. Una fila de esta
+        //  lista lleva dos columnas de texto y el aire que la separa de la
+        //  siguiente: `readout` es el alto de una banda de texto en esta casa y
+        //  `gap` es lo que hay entre dos cosas que no son la misma. Son los
+        //  mismos 30 px de antes -no cambia un pixel- y ahora se mueven cuando
+        //  la escala se mueva, que es lo que `Tests/maqueta.py` existe para
+        //  pedir.
+        const int gestRowH = Metrics::readout + Metrics::gap;
         //  Y LA FILA DE MANUAL/TOUR SE PIDE AQUI, que es donde no se pedia.
         //
         //  Se le quitaba al mismo rectangulo cien lineas mas abajo, con un
@@ -2384,7 +2419,12 @@ void MainComponent::resized()
               ? Ficha::cromoDesnudo (tabsH, false)
                   + (Metrics::hit + Metrics::xs) * 3 + filasExtra + Metrics::sm
             : onGest
+              //  Con la banda del encabezado GESTOS contada, que es lo que
+              //  `paintGesturesPage` se lleva de `area` antes de repartir: sin
+              //  ella la lista tenia 14 px menos de los que pide y el reparto
+              //  se los quitaba a las nueve filas por igual.
               ? Ficha::cromoDesnudo (tabsH, false)
+                  + Metrics::bandaSubtitulo
                   + kNumGestures * gestRowH + gestPieH + Metrics::sm
               : Ficha::cromoDesnudo (tabsH, true)
                   + Metrics::hit + Metrics::bandaSubtitulo + Metrics::sm
@@ -2755,7 +2795,19 @@ void MainComponent::resized()
             //  mismo que no dibujar nada. Un panel dice "estos van juntos y
             //  esos no", y aqui sigue sin haber esos.
         }
-        else
+        //  Y ESTA RAMA ES LA DE PROYECTOS, dicho con su nombre.
+        //
+        //  Era el `else` final de la cadena, asi que la quinta pagina -GESTOS-
+        //  caia dentro y HEREDABA su maquetado entero: los dos paneles de
+        //  PROYECTOS se pintaban encima de la lista de gestos, que es la queja
+        //  «como tambien en el apartado de ayuda». Lo que se veia eran dos
+        //  renglones con banda, cuatro sin y tres con, y la banda no significa
+        //  NADA: es un grupo de otra pagina. Los controles si estaban
+        //  apagados -`muestra` los apaga y les vacia los limites- pero un panel
+        //  no es un control: es un rectangulo que `resized()` publica y que
+        //  `paintContent` pinta, y nadie lo apagaba. `onProj` ya estaba
+        //  calculado desde siempre y no se usaba de guardia.
+        else if (onProj)
         {
             midiArea = {};
             skinRowArea = {};
@@ -2800,6 +2852,16 @@ void MainComponent::resized()
 
             projList.setBounds (inner);
             bufRowArea = rateRowArea = langRowArea = movRowArea = audioInfoArea = {};
+        }
+        else
+        {
+            //  GESTOS. La lista es pintada -no hay un solo control que colocar-
+            //  asi que esta rama existe para VACIAR: sin ella, las bandas de la
+            //  pagina anterior se quedan publicadas y se pintan encima.
+            midiArea = skinRowArea = {};
+            projNameRowArea = projPathRowArea = {};
+            bufRowArea = rateRowArea = langRowArea = movRowArea = audioInfoArea = {};
+            projList.setBounds ({});
         }
     }
 
@@ -3233,7 +3295,14 @@ void MainComponent::resized()
         //  lista agrupada sin rotulo de grupo es una lista barajada de otra
         //  forma. Cada banda cuesta lo que un titulo de seccion.
         const int altoCat  = Metrics::bandaTitulo + Metrics::xs;
-        const int alto2col = (Metrics::hit + Metrics::xs) * 8
+        //  Y LAS FILAS SALEN DE LAS FAMILIAS, no de un ocho escrito a mano.
+        //
+        //  Veinticuatro familias en dos columnas son DOCE filas, y aqui habia
+        //  ocho: se reservaban 432 px para 608 de contenido, o sea 176 px -
+        //  cuatro filas- de menos, que es exactamente la cuarta categoria. Con
+        //  el ocho, subir de 16 a 24 familias cambiaba el catalogo y no la
+        //  ficha, que es como se puede tener 384 sonidos y ver 16.
+        const int alto2col = (Metrics::hit + Metrics::xs) * (Sintes::kFamilias / 2)
                                 + altoCat * Sintes::kCategorias;
         auto inner = sheetFromBottom (instSheet, Ficha::cromo + filaPack
                                                    + Metrics::sm
@@ -3319,7 +3388,14 @@ void MainComponent::resized()
         //  una encima de la otra, se leen como dos mitades de lo mismo.
         auto pon2col = [this] (juce::Rectangle<int> caja, juce::OwnedArray<juce::TextButton>& bs)
         {
-            const int n = juce::jmin (16, bs.size());
+            //  Y EL TOPE ES EL POZO DE TAPAS, no un 16 escrito aqui. Con el
+            //  16 esta lambda colocaba seis, seis, cuatro y CERO: la cuarta
+            //  categoria se quedaba sin una sola tapa y, como su banda salia
+            //  vacia, `paintInstSheetContent` se saltaba tambien su titulo
+            //  -«if (banda.isEmpty()) continue»- asi que la pagina no decia ni
+            //  que faltara nada. Es la queja del telefono, y el numero es
+            //  `Sintes::kFamilias` por la misma razon que en `Instrumentos.h`.
+            const int n = juce::jmin (Instrumentos::kMaxInstr, bs.size());
             //  Cuatro por categoria, o sea dos filas de dos debajo de cada
             //  rotulo. El numero sale del reparto y no se escribe aparte: ver
             //  `Sintes::ordenDeMenu`, que es quien lo decide.
@@ -4104,7 +4180,11 @@ void MainComponent::resized()
         //  carriles, acotado por arriba. Donde no sobra nada, el suelo, que es
         //  exactamente lo que habia en las dos pantallas estrechas.
         {
-            const int pedidoConSuelo = Ficha::marco + Metrics::hit
+            //  El `panelAireY` es el que la paleta se aparta del renglon del
+            //  titulo para que su panel no lo pise; sin contarlo aqui, lo que
+            //  cuesta se lo comen los carriles, que es lo unico para lo que
+            //  existe esta pagina.
+            const int pedidoConSuelo = Ficha::marco + Metrics::hit + Metrics::panelAireY
                                      + (wideFace ? juce::jmax (altoCol, Playlist::kLanes * laneMin + altoPie)
                                                  : altoCol + Metrics::sm + altoPie
                                                    + Playlist::kLanes * laneMin);
@@ -4114,7 +4194,7 @@ void MainComponent::resized()
         }
         const int altoRej  = Playlist::kLanes * laneH;
         auto inner = sheetFromBottom (songSheet,
-                                      Ficha::marco + Metrics::hit
+                                      Ficha::marco + Metrics::hit + Metrics::panelAireY
                                         + (wideFace ? juce::jmax (altoCol, altoRej + altoPie)
                                                     : altoCol + Metrics::sm + altoPie + altoRej));
         auto titleRow = inner.removeFromTop (Metrics::hit);
@@ -4178,6 +4258,13 @@ void MainComponent::resized()
 
         //  El borde de arriba del panel de LA BROCHA, que empieza en la paleta
         //  y acaba en la fila de modos. Ver el cierre, dos bloques mas abajo.
+        //
+        //  Y CON EL AIRE DEL PANEL POR DELANTE. La paleta empezaba justo donde
+        //  acaba el renglon del titulo, y `pintaPaneles` expande panelAireY
+        //  hacia arriba: medido en 360x640, el panel empezaba en 106 y la tapa
+        //  del zoom acababa en 108 - la losa cruzando por dentro de una tapa
+        //  que no envuelve. Ver Tests/paneles.py, regla AJENO.
+        panel.removeFromTop (Metrics::panelAireY);
         const int gBrocha = panel.getY();
 
         // Palette: P1..P8.
@@ -4945,7 +5032,7 @@ void MainComponent::resized()
             const int sinBarra = juce::jmin (Metrics::hit,
                                              juce::jmin ((capH - chrome - stacked) / lanes,
                                                          (anchoRejilla - StepGrid::kGutter)
-                                                           / juce::jmax (1, AudioEngine::kBarSteps)));
+                                                           / juce::jmax (1, StepGrid::kBarSteps)));
             seqHayBarra = colsCon (juce::jmax (1, sinBarra)) < patLen;
             if (seqHayBarra) stacked += costeBarra;
 
@@ -4971,7 +5058,7 @@ void MainComponent::resized()
             //  compas entra entero y lo que sobra de alto se lo queda la
             //  maquina, que se sigue viendo detras de la tarjeta.
             const int ladoPorAncho = (anchoRejilla - StepGrid::kGutter)
-                                       / juce::jmax (1, AudioEngine::kBarSteps);
+                                       / juce::jmax (1, StepGrid::kBarSteps);
             laneH  = juce::jmin (Metrics::hit,
                                  juce::jmin ((capH - chrome - stacked) / lanes,
                                              ladoPorAncho));
