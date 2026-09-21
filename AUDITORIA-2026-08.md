@@ -283,6 +283,30 @@ y los bloques se unían por el renglón de arriba sin mirar el de abajo—; y en
 **apagando las dos tapas de carpeta**, o sea que girar quitaba dos funciones.
 Ahora esa ficha se desplaza y las coloca siempre.
 
+Con los dos tamaños dentro, `expo.py` entero sacó **TRUNC 300, SQUEEZE 115,
+CELDA 64 y CERO 91**, todo de ellos dos y nada de las siete de siempre. La
+mayor parte era una tercera cosa que el apaisado daba por hecha: la banda de
+módulos y el transporte comparten renglón **siempre** girado, y eso sólo es
+cierto en 915x412 —la columna de la cara son 595 px y el 60 % de las seis
+pestañas, 357—. En 640x360 esa columna son 306 y el 60 %, **184**: AJUSTES
+salía a **0x40** y XY a 8x40. La pregunta ya la sabía contestar
+`moduleBarFits`, y la segunda banda cabe —la cara termina con 70 px libres y
+una banda vale 26—. Con eso: TRUNC 300 → 25, SQUEEZE 117 → 7, CERO 91 → 36, y
+el testigo del presupuesto pasa a decir «a los pads les sobran **0 px**».
+
+**E1b. Lo que queda abierto es uno solo: la tarjeta girada es más ancha que
+alta y las fichas maquetan en una columna.** En 640x360 la tarjeta mide 589x324
+y `seqSheet` pide 588, `padSheet` 538, `songSheet` 426 y `chopSheet` 484.
+`sheetFromBottom` recorta en silencio y lo que se cae es lo último que se
+coloca: la onda de RECORTE a **556x0**, las filas del piano a **14 px** (el
+mínimo son 16) y la celda de la canción a **6**. No se parchea: esas cuatro
+fichas **pintan su contenido fuera del cuerpo desplazable**, o sea que ni
+siquiera pueden desplazarse sin mudar los 42 hijos que cuelgan de ellas, y
+subir el tope girado de 0.90 a la altura entera da 36 px de los 264 que faltan.
+Los dos tamaños quedan declarados en `SIN_DISENO` de `expo.py`: se imprimen con
+su cuenta en cada corrida y no se juzgan hasta que exista la tarjeta de dos
+columnas. Misma figura que `profundidad` y `APRETADA`.
+
 **E2. La alineación de 16 KB se comprueba sobre un fichero que después se
 reescribe.** El paso «Páginas de 16 KB» corre antes de «Re-sign the release
 APK», que reconstruye el zip: lo verificado no es lo que se sube. Y el `.aab`
