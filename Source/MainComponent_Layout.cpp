@@ -376,6 +376,29 @@ void MainComponent::resized()
     //  PADS y la tira del paso: sube a cuarenta donde el cristal puede pagarlo
     //  sin bajar de SU suelo, y se queda en veintiseis donde no.
     int moduleH = ZatiLookAndFeel::kModule;
+    //  Y SI APAISADO LAS DOS BANDAS CABEN EN UN RENGLON, que hasta ahora se
+    //  daba por hecho.
+    //
+    //  El comentario de la rama decia «girado, las dos bandas se hacen una:
+    //  las ocho tapas tienen ancho para ello», y era cierto para el UNICO
+    //  apaisado que el banco medía: en 915x412 la columna de la cara son
+    //  595 px y el 60 % que se llevan las seis pestañas, 357. En 640x360 esa
+    //  columna son 306 px y el 60 %, 184: a las seis les tocan 30 px cada una,
+    //  asi que AJUSTES salia a CERO de ancho y XY a ocho. Un boton de 0x40 no
+    //  se ve, no se toca y no dice que falte - solo desaparece.
+    //
+    //  La pregunta ya la sabia contestar `moduleBarFits`, que existe justo para
+    //  esto: «reparte lo que hay y no se niega nunca; el que llama es el unico
+    //  que sabe si tiene una segunda fila que ofrecer». Aqui la hay - medido,
+    //  en 640x360 la cara termina con 70 px libres y una banda de modulos vale
+    //  26 - asi que se ofrece.
+    bool caraUnaFila = true;
+    if (wideFace)
+    {
+        juce::TextButton* mbCabe[6] = { &padsButton, &secButton, &songButton,
+                                        &mixButton, &xyButton, &setButton };
+        caraUnaFila = moduleBarFits (faceColumn.getWidth() * 6 / 10, mbCabe, 6);
+    }
     {
         //  Spelled out term by term and in layout order, because this used to
         //  be two hand-totalled constants that had drifted: the header was
@@ -405,12 +428,19 @@ void MainComponent::resized()
         //  que se VE es el reservado MAS los cinco de la tapa. Se descuentan,
         //  que es lo que iguala el ritmo: quince, diez y quince pasan a diez,
         //  diez y diez.
-        auto belowScreenCon = [this] (int mh)
+        auto belowScreenCon = [this, caraUnaFila] (int mh)
         {
             const int tapa = ZatiLookAndFeel::aireTapaVertical (ZatiLookAndFeel::kTransport);
-            const int arriba = wideFace ? tapa : ZatiLookAndFeel::aireTapaVertical (mh);
+            //  Y LA BANDA DE MODULOS CUESTA ALTO TAMBIEN APAISADO cuando no
+            //  cabe en el renglon del transporte. El `wideFace` pelado daba
+            //  por hecho que girado son SIEMPRE una sola banda, y en 640x360
+            //  no lo son: el presupuesto reservaba un renglon y la cara
+            //  colocaba dos, o sea 26 px que la rejilla de pads pagaba sin que
+            //  nadie los hubiera pedido. Ver caraUnaFila.
+            const bool unaBanda = wideFace && caraUnaFila;
+            const int arriba = unaBanda ? tapa : ZatiLookAndFeel::aireTapaVertical (mh);
             return juce::jmax (0, ZatiLookAndFeel::kAir - arriba)
-                 + (wideFace ? ZatiLookAndFeel::kTransport
+                 + (unaBanda ? ZatiLookAndFeel::kTransport
                              : mh + ZatiLookAndFeel::kTransport)
                  + juce::jmax (0, ZatiLookAndFeel::kAir - tapa);
         };
@@ -540,7 +570,11 @@ void MainComponent::resized()
         //  Un pad de 27 es peor negocio que una pestana de 26: el pad es con lo
         //  que se toca. Se queda como esta, y ahora con la cifra al lado para
         //  que el siguiente que lo vea no repita la medida.
-        if (! wideFace
+        //  Y LA MISMA PREGUNTA APAISADO CUANDO LA BANDA ES SUYA: en una sola
+        //  banda `moduleH` no se usa -las pestañas van en el renglon del
+        //  transporte y miden lo que mide el- pero en dos si, y ahi la fila de
+        //  modulos merece el dedo por la misma razon que de pie.
+        if ((! wideFace || ! caraUnaFila)
             && area.getHeight() - aboveScreen - belowScreenCon (Metrics::hit)
                  - bottomStrip - bodyNeed >= kMinScreen)
         {
@@ -658,14 +692,27 @@ void MainComponent::resized()
     //  lighter than the transport - they are narrower, not just shorter.
     if (wideFace)
     {
-        auto row = area.removeFromTop (ZatiLookAndFeel::kTransport);
-        tabBarArea = row;
-        //  Mismo reparto proporcional que en vertical, y por la misma razon:
-        //  a partes iguales entre seis, CANCION pedia 36 px y tenia 32 en el
-        //  unico sitio donde la barra comparte fila con el transporte.
-        auto tabs = row.removeFromLeft (row.getWidth() * 6 / 10);
         juce::TextButton* mb[6] = { &padsButton, &secButton, &songButton, &mixButton, &xyButton, &setButton };
-        layoutModuleBar (tabs, mb, ZatiLookAndFeel::kAir / 2);
+        juce::Rectangle<int> row;
+        if (caraUnaFila)
+        {
+            row = area.removeFromTop (ZatiLookAndFeel::kTransport);
+            tabBarArea = row;
+            //  Mismo reparto proporcional que en vertical, y por la misma razon:
+            //  a partes iguales entre seis, CANCION pedia 36 px y tenia 32 en el
+            //  unico sitio donde la barra comparte fila con el transporte.
+            auto tabs = row.removeFromLeft (row.getWidth() * 6 / 10);
+            layoutModuleBar (tabs, mb, ZatiLookAndFeel::kAir / 2);
+        }
+        else
+        {
+            //  DOS BANDAS, COMO DE PIE, porque el renglon compartido no da.
+            //  Ver caraUnaFila: en 640x360 el 60 % de la columna son 184 px
+            //  para seis rotulos y AJUSTES salia a 0x40.
+            tabBarArea = area.removeFromTop (moduleH);
+            layoutModuleBar (tabBarArea, mb, 0);
+            row = area.removeFromTop (ZatiLookAndFeel::kTransport);
+        }
 
         //  CUATRO DONDE CABEN: el interruptor de modo entra a la IZQUIERDA de
         //  PLAY y se lleva la mitad de su ancho, que es de donde sale. Ver
