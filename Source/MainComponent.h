@@ -255,6 +255,26 @@ private:
         //  Donde se anaden los hijos: el cuerpo si se desplaza, la ficha si no.
         juce::Component& donde() { return desplazable ? (juce::Component&) cuerpo : (juce::Component&) *this; }
 
+        //  Y EL MISMO RECTANGULO QUE RECIBIO EL MAQUETADO, para quien PINTA.
+        //
+        //  `sheetFromBottom` devuelve `cuerpo.getLocalBounds()` cuando la ficha
+        //  se desplaza y `sheetBounds.reduced (margenes)` cuando no, y los
+        //  dibujantes de contenido repetian la segunda mitad a mano. Mientras
+        //  no hubo ninguna ficha desplazable con rotulo pintado las dos cuentas
+        //  dieron lo mismo; en cuanto EXPORTAR paso a desplazarse, el rotulo se
+        //  pintaba en coordenadas de ventana y sus tapas vivian en el cuerpo,
+        //  que empieza en (0,0): el banco lo canto como `CABECERA 20` en las
+        //  cinco pantallas de pie -«EXPORTAR ocupa 244..260 y su fila de tapas
+        //  252..292»- y el desvio era distinto en cada una, que es la firma de
+        //  dos origenes y no de un margen mal puesto.
+        //
+        //  Dos tablas que dicen lo mismo son dos reglas. Esta es la unica.
+        juce::Rectangle<int> areaContenido() const
+        {
+            return desplazable ? cuerpo.getLocalBounds()
+                               : sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
+        }
+
         //  UN TOQUE FUERA DE LA TARJETA, ANTES DE CERRAR.
         //
         //  La tarjeta se centra al 78 % para que la maquina se siga viendo por

@@ -736,7 +736,7 @@ void MainComponent::paintBrowseSheetContent (juce::Graphics& g)
 {
     if (browseSheet.sheetBounds.isEmpty()) return;
 
-    auto inner = browseSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
+    auto inner = browseSheet.areaContenido();
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
     //  Y EL ENCABEZADO DICE A QUE SE HA ENTRADO. El mismo navegador sirve para
@@ -887,7 +887,7 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
 
     const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
     const int sp = juce::jmax (0, selectedPad);
-    auto inner = chopSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
+    auto inner = chopSheet.areaContenido();
 
     //  LA UNICA CABECERA QUE SE TALLABA UN 32 A MANO. El maquetado le reserva
     //  `Metrics::hit` -40- y el pintor se quedaba con 32 menos la frontera, o
@@ -1021,7 +1021,7 @@ void MainComponent::paintExportSheetContent (juce::Graphics& g)
     pintaPaneles (g, exportGrupos, "exportGrupos");
     if (exportSheet.sheetBounds.isEmpty()) return;
 
-    auto inner = exportSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
+    auto inner = exportSheet.areaContenido();
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
@@ -1428,7 +1428,7 @@ void MainComponent::paintManualSheetContent (juce::Graphics& g)
 {
     if (manualSheet.sheetBounds.isEmpty()) return;
 
-    auto inner = manualSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
+    auto inner = manualSheet.areaContenido();
     //  Se para antes del boton de cerrar, como todas las demas fichas - y por
     //  el lado en el que ESTE, que en arabe es el izquierdo.
     auto titleRow = antesDe (centraEnRenglon (inner.removeFromTop (Metrics::bandaTitulo), Metrics::bandaTitulo + Metrics::bandaSubtitulo),
@@ -1677,7 +1677,7 @@ void MainComponent::paintCanalPickContent (juce::Graphics& g)
 {
     if (canalSheet.sheetBounds.isEmpty()) return;
 
-    auto inner = canalSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
+    auto inner = canalSheet.areaContenido();
     auto titulo = antesDe (centraEnRenglon (inner.removeFromTop (Metrics::hit)
                                                  .withHeight (Metrics::bandaTitulo)),
                            canalCloseBtn, Metrics::sm);
@@ -1695,7 +1695,7 @@ void MainComponent::paintPadPickContent (juce::Graphics& g)
 {
     if (padPickSheet.sheetBounds.isEmpty()) return;
 
-    auto inner = padPickSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
+    auto inner = padPickSheet.areaContenido();
     //  El titulo se aparta de la cruz por `antesDe`, que decide el lado
     //  comparando los CENTROS. Estaba escrito a mano preguntando por el idioma,
     //  que es la cuenta que ya se arreglo seis veces y luego cinco mas: quien
@@ -1986,7 +1986,7 @@ void MainComponent::paintPianoSheetContent (juce::Graphics& g)
 {
     if (seqSheet.sheetBounds.isEmpty()) return;
 
-    auto inner = seqSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
+    auto inner = seqSheet.areaContenido();
     const int sp = juce::jmax (0, selectedPad);
 
     //  Y LOS GRUPOS, que esta pagina era la unica de las tres sin ninguno.
@@ -2235,7 +2235,7 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
 
     const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
     const int sp = juce::jmax (0, selectedPad);
-    auto inner = seqSheet.sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
+    auto inner = seqSheet.areaContenido();
 
     //  La pagina del piano tiene su propia cabecera - dice de que PAD son las
     //  notas, que es lo unico que hace falta saber ahi - y su propia ayuda.
