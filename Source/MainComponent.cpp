@@ -217,6 +217,29 @@ MainComponent::MainComponent()
             abreFichaDelPad();
         };
 
+        //  Y LA FICHA DEL PAD SE DESPLAZA, que es de lo que vive esta tanda.
+        //
+        //  Medido con las dos pantallas que la tanda anterior metio en el
+        //  barrido: en 640x360 la tarjeta mide 588x324 y la pagina del pad pide
+        //  538 -456 la de sonido y 347 la del rig-, y en 412x480 la tarjeta es
+        //  379x368 y pide 538 igual. `sheetFromBottom` recorta con un `jmin`
+        //  que no se queja y lo que falta se lo come lo ULTIMO que se coloca.
+        //
+        //  No es una ficha de lienzo: son once controles y una onda, o sea
+        //  exactamente el caso para el que `hazDesplazable` existe -«solo las
+        //  de CONTROLES»-. Lo que faltaba no era la decision sino que sus
+        //  veinte hijos colgaban de la ficha y no de `cuerpo`, que empieza en
+        //  (0,0): por eso estaban los veinte pasando ahora por `donde()`.
+        //
+        //  `seqSheet` NO, y esta en el mismo bucle a proposito para que se vea:
+        //  es de lienzo -se escriben notas con el dedo arrastrado- y un
+        //  arrastre que a veces escribe y a veces mueve la pagina es un gesto
+        //  que no se puede aprender. La suya se arregla en su sitio, derivando
+        //  las filas del alto que hay.
+        padSheet.hazDesplazable();
+        chopSheet.hazDesplazable();
+        canalSheet.hazDesplazable();
+
         juce::TextButton* cb[2] = { &padCloseButton, &seqCloseButton };
         std::function<void (juce::Graphics&)> pc[2] =
         {
@@ -232,7 +255,7 @@ MainComponent::MainComponent()
             s->paintContent = pc[i];
             styleButton (*cb[i], kKey);
             cb[i]->onClick = [this] { closeAllSheets(); };
-            s->addAndMakeVisible (cb[i]);
+            s->donde().addAndMakeVisible (cb[i]);
         }
     }
 
@@ -301,8 +324,8 @@ MainComponent::MainComponent()
             b->onClick = [this] { abrePadPicker (! padPickAbierto); };
         }
         seqSheet.addAndMakeVisible (pianoPadPickBtn);
-        padSheet.addAndMakeVisible (padPadPickBtn);
-        chopSheet.addAndMakeVisible (chopPadPickBtn);
+        padSheet.donde().addAndMakeVisible (padPadPickBtn);
+        chopSheet.donde().addAndMakeVisible (chopPadPickBtn);
     }
 
     //  LA REJILLA DE DIECISEIS PARA ELEGIR CANAL. Ver canalSheet en la cabecera.
@@ -313,7 +336,7 @@ MainComponent::MainComponent()
         canalSheet.paintContent = [this] (juce::Graphics& g) { paintCanalPickContent (g); };
         styleButton (canalCloseBtn, kKey);
         canalCloseBtn.onClick = [this] { abreCanalPicker (false); };
-        canalSheet.addAndMakeVisible (canalCloseBtn);
+        canalSheet.donde().addAndMakeVisible (canalCloseBtn);
 
         for (int i = 0; i < kNumCanales; ++i)
         {
@@ -337,7 +360,7 @@ MainComponent::MainComponent()
                 refreshMixStrip();
                 abreCanalPicker (false);
             };
-            canalSheet.addAndMakeVisible (b);
+            canalSheet.donde().addAndMakeVisible (b);
             canalBtns.add (b);
         }
 
@@ -365,7 +388,7 @@ MainComponent::MainComponent()
             refreshMixStrip();
             abreCanalPicker (false);
         };
-        canalSheet.addAndMakeVisible (canalNingunoBtn);
+        canalSheet.donde().addAndMakeVisible (canalNingunoBtn);
 
         //  LOS DOS CHIPS DE BANCO. Pasear por los bancos es MIRAR y elegir una
         //  celda es TOCAR, que es la misma separacion que la fila A B C D de la
@@ -377,13 +400,13 @@ MainComponent::MainComponent()
             litAccent (*t);
             t->setClickingTogglesState (true);
             t->onClick = [this, b] { ponCanalBanco (b); };
-            canalSheet.addAndMakeVisible (t);
+            canalSheet.donde().addAndMakeVisible (t);
             canalBankBtns.add (t);
         }
 
         styleButton (padCanalBtn, kKey);
         padCanalBtn.onClick = [this] { abreCanalPicker (! canalPickAbierto); };
-        padSheet.addAndMakeVisible (padCanalBtn);
+        padSheet.donde().addAndMakeVisible (padCanalBtn);
     }
 
     //  EL MENU DE UNA RANURA. Ver ranuraSheet en la cabecera.
@@ -1134,7 +1157,7 @@ MainComponent::MainComponent()
         styleButton (vstButton, kKey);
         vstButton.onClick = [this] { abreVst(); };
 
-        padSheet.addAndMakeVisible (vstButton);
+        padSheet.donde().addAndMakeVisible (vstButton);
 
         instPackDownBtn.onClick = [this] { pasoPack (-1); };
         instPackUpBtn  .onClick = [this] { pasoPack ( 1); };
@@ -1349,7 +1372,7 @@ MainComponent::MainComponent()
             b->setClickingTogglesState (true);
             filaDeRadio (*b, "chop trozos", 7301);
             b->onClick = [this, n] { chopSlices = n; recalculaCortes(); refreshChopSheet(); };
-            chopSheet.addAndMakeVisible (b);
+            chopSheet.donde().addAndMakeVisible (b);
             chopCountBtns.add (b);
         }
 
@@ -1362,7 +1385,7 @@ MainComponent::MainComponent()
             litAccent (*b);
             b->setClickingTogglesState (true);
             filaDeRadio (*b, "chop modo", 7302);
-            chopSheet.addAndMakeVisible (b);
+            chopSheet.donde().addAndMakeVisible (b);
         }
         //  Cambiar de modo REHACE la lista: son dos formas de proponer los
         //  cortes, no dos listas que convivan. Lo que la persona haya movido a
@@ -1413,7 +1436,7 @@ MainComponent::MainComponent()
             chopCortes.erase (chopCortes.begin() + idx);
             refreshChopSheet();
         };
-        chopSheet.addAndMakeVisible (chopVista);
+        chopSheet.donde().addAndMakeVisible (chopVista);
 
         styleButton (chopSafeButton, kKey);
         chopSafeButton.setClickingTogglesState (true);
@@ -1424,16 +1447,16 @@ MainComponent::MainComponent()
             chopOnlyEmpty = chopSafeButton.getToggleState();
             refreshChopSheet();
         };
-        chopSheet.addAndMakeVisible (chopSafeButton);
+        chopSheet.donde().addAndMakeVisible (chopSafeButton);
 
         styleButton (chopGoButton, ZatiColours::red);
         chopGoButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
         chopGoButton.onClick = [this] { applyAutoChop(); };
-        chopSheet.addAndMakeVisible (chopGoButton);
+        chopSheet.donde().addAndMakeVisible (chopGoButton);
 
         styleButton (chopCloseButton, kKey);
         chopCloseButton.onClick = [this] { closeAllSheets(); };
-        chopSheet.addAndMakeVisible (chopCloseButton);
+        chopSheet.donde().addAndMakeVisible (chopCloseButton);
         addAndMakeVisible (chopSheet);
         chopSheet.setVisible (false);
         chopSheet.onDismiss = [this] { closeAllSheets(); };
@@ -1908,11 +1931,11 @@ MainComponent::MainComponent()
 
     styleButton (micButton, kKey);
     micButton.onClick = [this] { toggleMicSampling(); };
-    padSheet.addAndMakeVisible (micButton);
+    padSheet.donde().addAndMakeVisible (micButton);
 
     styleButton (resampleButton, kKey);
     resampleButton.onClick = [this] { toggleResample(); };
-    padSheet.addAndMakeVisible (resampleButton);
+    padSheet.donde().addAndMakeVisible (resampleButton);
 
     //  The zati row is painted, not built out of components: eight swatches
     //  in a strip of chip height. See paintPadSheetContent.
@@ -2210,7 +2233,7 @@ MainComponent::MainComponent()
         engine.setPadKeepLength (selectedPad, keep);
         modeButton.setButtonText (keep ? T ("TONO") : T ("CINTA"));
     };
-    padSheet.addAndMakeVisible (modeButton);
+    padSheet.donde().addAndMakeVisible (modeButton);
 
     startSlider.onValueChange = [this]
     {
@@ -2273,7 +2296,7 @@ MainComponent::MainComponent()
                            : T ("Bombeo apagado"),
                         juce::dontSendNotification);
     };
-    padSheet.addAndMakeVisible (duckButton);
+    padSheet.donde().addAndMakeVisible (duckButton);
     autocutButton.onClick = [this]
     {
         if (selectedPad < 0) return;
@@ -4040,7 +4063,7 @@ MainComponent::MainComponent()
         //  Y la puerta lleva a la PAGINA del piano dentro de la ficha del
         //  secuenciador, que es donde vive ahora.
         pianoButton.onClick = [this] { abrePianoDelPad(); };
-        padSheet.addAndMakeVisible (pianoButton);
+        padSheet.donde().addAndMakeVisible (pianoButton);
     }
 
     styleButton (songButton, kKey);
@@ -4144,7 +4167,7 @@ MainComponent::MainComponent()
     };
 
     addAndMakeVisible (cristal);
-    padSheet.addAndMakeVisible (waveform);
+    padSheet.donde().addAndMakeVisible (waveform);
 
     //  There is no skin picker. ZATI has one look; a strip of alternative
     //  accents sitting on top of the project menu was a preference masquerading
@@ -4160,8 +4183,8 @@ MainComponent::MainComponent()
                                 (juce::Component*) &startSlider, (juce::Component*) &endSlider,
                                 (juce::Component*) &reverseButton, (juce::Component*) &loopButton,
                                 (juce::Component*) &autocutButton })
-        padSheet.addAndMakeVisible (c);
-    padSheet.addAndMakeVisible (chopButton);
+        padSheet.donde().addAndMakeVisible (c);
+    padSheet.donde().addAndMakeVisible (chopButton);
 
     //  Play what is on screen. It sits on the sheet's own title row rather
     //  than in a row of its own, because the one thing this sheet is short of
@@ -4178,32 +4201,32 @@ MainComponent::MainComponent()
         else
             engine.postNoteOn (selectedPad);
     };
-    padSheet.addAndMakeVisible (previewButton);
+    padSheet.donde().addAndMakeVisible (previewButton);
 
     //  NORMALIZAR ocupa la tercera celda de la fila de CHOKE y MODO, que
     //  estaba vacia: una fila de tres con dos controles dentro.
     styleButton (normButton, kKey);
     normButton.onClick = [this] { normalisePad(); };
-    padSheet.addAndMakeVisible (normButton);
+    padSheet.donde().addAndMakeVisible (normButton);
 
     //  QUITAR RUIDO va con REV y LOOP, en la fila que hay justo encima de la
     //  onda: las tres son cosas de la MUESTRA que se esta mirando.
     styleButton (denoiseButton, kKey);
     denoiseButton.onClick = [this] { denoisePad(); };
-    padSheet.addAndMakeVisible (denoiseButton);
+    padSheet.donde().addAndMakeVisible (denoiseButton);
 
     //  RECORTAR va en esa misma fila: las cuatro son cosas de la MUESTRA que
     //  se esta mirando, y esta ademas actua sobre lo que las asas de justo
     //  debajo estan marcando.
     styleButton (recorteButton, kKey);
     recorteButton.onClick = [this] { recortaPad(); };
-    padSheet.addAndMakeVisible (recorteButton);
+    padSheet.donde().addAndMakeVisible (recorteButton);
 
     //  El zoom. Tres tapas sobre la esquina de la pantalla: menos, cuanto, mas.
     //  La del medio dice a que aumento se esta y vuelve al fichero entero.
     {
         juce::TextButton* zb[3] = { &zoomOutButton, &zoomFitButton, &zoomInButton };
-        for (auto* b : zb) { styleButton (*b, kKey); padSheet.addAndMakeVisible (b); }
+        for (auto* b : zb) { styleButton (*b, kKey); padSheet.donde().addAndMakeVisible (b); }
         //  SE AMPLIA SOBRE EL RECORTE, no sobre lo que se este mirando.
         //
         //  Ampliar alrededor del centro de la vista es lo que hace un visor de
@@ -4253,7 +4276,7 @@ MainComponent::MainComponent()
             filaDeRadio (*pb[i], "pagina pad", 8804);
             litAccent (*pb[i]);
             pb[i]->onClick = [this, i] { showPadPage (i); };
-            padSheet.addAndMakeVisible (pb[i]);
+            padSheet.donde().addAndMakeVisible (pb[i]);
         }
         padSoundBtn.setToggleState (true, juce::dontSendNotification);
     }
@@ -4274,12 +4297,12 @@ MainComponent::MainComponent()
                                 : T ("16 NIVELES OFF"), juce::dontSendNotification);
         repaint();
     };
-    padSheet.addAndMakeVisible (nivelesButton);
+    padSheet.donde().addAndMakeVisible (nivelesButton);
 
     styleButton (padRackBtn, kKey);
     litAccent (padRackBtn);
     padRackBtn.onClick = [this] { abreRackDelPad(); };
-    padSheet.addAndMakeVisible (padRackBtn);
+    padSheet.donde().addAndMakeVisible (padRackBtn);
 
     styleButton (undoButton, ZatiColours::red);
     undoButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
@@ -4433,7 +4456,7 @@ MainComponent::MainComponent()
                                 (juce::Component*) &chokeSlider,  (juce::Component*) &startSlider,
                                 (juce::Component*) &endSlider,
                                 (juce::Component*) &fadeInSlider, (juce::Component*) &fadeOutSlider })
-        padSheet.addAndMakeVisible (c);
+        padSheet.donde().addAndMakeVisible (c);
 
     showSeqPage (seqPageGrid);
     showPadPage (padPageSound);

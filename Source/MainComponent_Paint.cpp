@@ -1831,8 +1831,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
     //  The pad's name is a file name and files are named by whoever made
     //  them, so this line has no length it can count on. Stop it before the
     //  close button and let it shrink rather than run underneath.
-    auto padTitleRow = centraEnRenglon (padSheet.sheetBounds
-                                            .reduced (Metrics::margenFichaX, Metrics::margenFichaY)
+    auto padTitleRow = centraEnRenglon (padSheet.areaContenido()
                                             .removeFromTop (Metrics::bandaTitulo));
     //  Y DE LA TERCERA TAPA DE LA FILA: la puerta de la rejilla de dieciseis
     //  pads. Sin ella el titulo -"PAD 64 · ARP"- se le metia debajo en 280x653,
