@@ -1596,6 +1596,18 @@ MainComponent::MainComponent()
     // EXPORT sheet — the only door out of the app. Two products: the master,
     // or the master plus one file per loaded pad.
     {
+        //  EXPORTAR SE DESPLAZA, y lo dijo la medida al entrar los dos tamanos
+        //  nuevos: en 915x412 esta ficha pide 432 px dentro de una tarjeta que
+        //  da 370 -62 de mas- y lo que faltaba se lo comia una escalera escrita
+        //  a mano que APAGABA las dos tapas de carpeta. O sea que girar el
+        //  telefono te quitaba dos funciones, que es justo la queja que abrio
+        //  esta tanda. De las cuatro fichas que se pasan del tope girado -el
+        //  piano (+218), la ficha del pad (+168 y +86), CORTAR (+114) y esta
+        //  (+62)- es la UNICA que no tiene dentro una onda que se arrastra:
+        //  las otras tres son lienzo y un arrastre vertical que a veces mueve
+        //  la pagina y a veces mueve un asa es un gesto que no se puede
+        //  aprender. Ver Sheet::hazDesplazable.
+        exportSheet.hazDesplazable();
         addAndMakeVisible (exportSheet);
         exportSheet.setVisible (false);
         exportSheet.onDismiss = [this] { if (exportJob == nullptr) closeAllSheets(); };
@@ -1603,19 +1615,19 @@ MainComponent::MainComponent()
 
         styleButton (exportCloseButton, kKey);
         exportCloseButton.onClick = [this] { if (exportJob == nullptr) closeAllSheets(); };
-        exportSheet.addAndMakeVisible (exportCloseButton);
+        exportSheet.cuerpo.addAndMakeVisible (exportCloseButton);
 
         styleButton (exportMasterButton, kAccent);
         exportMasterButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
         exportMasterButton.onClick = [this] { startExport (false); };
-        exportSheet.addAndMakeVisible (exportMasterButton);
+        exportSheet.cuerpo.addAndMakeVisible (exportMasterButton);
 
         //  CAMBIAR el destino, al lado de la linea que lo dice. Cargar un
         //  sonido abre un navegador y se elige de donde; esto es lo mismo por
         //  el otro lado y hasta ahora no existia.
         styleButton (exportDirBtn, kKey);
         exportDirBtn.onClick = [this] { openBrowseForExportDir(); };
-        exportSheet.addAndMakeVisible (exportDirBtn);
+        exportSheet.cuerpo.addAndMakeVisible (exportDirBtn);
 
         //  Y LAS DOS DE LA PAGINA DE PROYECTOS, por el mismo gesto. Cuelgan de
         //  `exportSheet` como la de arriba, y el comentario decia `setSheet`:
@@ -1635,18 +1647,18 @@ MainComponent::MainComponent()
             const auto que = par.second;
             styleButton (*b, kKey);
             b->onClick = [this, que] { openBrowseForFolder (que); };
-            exportSheet.addAndMakeVisible (*b);
+            exportSheet.cuerpo.addAndMakeVisible (*b);
         }
 
         //  EL TERCER MODO: la cancion suena y lo que suena se escribe. Ver
         //  MainComponent.h y `RebotVivo`.
         styleButton (exportLiveButton, kKey);
         exportLiveButton.onClick = [this] { alternaRebotVivo(); };
-        exportSheet.addAndMakeVisible (exportLiveButton);
+        exportSheet.cuerpo.addAndMakeVisible (exportLiveButton);
 
         styleButton (exportStemsButton, kKey);
         exportStemsButton.onClick = [this] { startExport (true); };
-        exportSheet.addAndMakeVisible (exportStemsButton);
+        exportSheet.cuerpo.addAndMakeVisible (exportStemsButton);
 
         //  MANDAR EL REBOTE, que era la unica salida que la app no tenia: no
         //  habia ACTION_SEND, ni createChooser, ni FileProvider en todo el
@@ -1667,7 +1679,7 @@ MainComponent::MainComponent()
                 exportStatus = T ("compartir es del telefono");
             exportSheet.repaint();
         };
-        exportSheet.addAndMakeVisible (exportShareBtn);
+        exportSheet.cuerpo.addAndMakeVisible (exportShareBtn);
         exportShareBtn.setVisible (false);
 
         styleButton (exportCancelButton, kRec);
@@ -1682,13 +1694,13 @@ MainComponent::MainComponent()
             exportFmtBtn.setButtonText (exportOgg ? "OGG" : "WAV");
             exportSheet.repaint();
         };
-        exportSheet.addAndMakeVisible (exportFmtBtn);
+        exportSheet.cuerpo.addAndMakeVisible (exportFmtBtn);
 
         exportCancelButton.onClick = [this]
         {
             if (exportJob != nullptr) exportJob->signalThreadShouldExit();
         };
-        exportSheet.addAndMakeVisible (exportCancelButton);
+        exportSheet.cuerpo.addAndMakeVisible (exportCancelButton);
         exportCancelButton.setVisible (false);
     }
 
@@ -3647,6 +3659,18 @@ MainComponent::MainComponent()
     songGrid.onClipMueve = [this] (int i, int pista, int paso) { mueveClip (i, pista, paso); };
     songGrid.onClipQuita = [this] (int i) { quitaClip (i); };
     songGrid.onClipLargo = [this] (int i, int d, int h) { largoClip (i, d, h); };
+    songGrid.onClipParte = [this] (int i, int paso) { parteClip (i, paso); };
+    //  EL ATAJO A CORTAR. `selectedPad` es lo que `openChopSheet` mira -es la
+    //  ficha del pad elegido- asi que sembrarlo con el del clip es todo lo que
+    //  hace falta: la puerta ya existe y lo que no existia era el camino.
+    songGrid.onClipChop = [this] (int i)
+    {
+        if (! juce::isPositiveAndBelow (i, (int) clips.size())) return;
+        const int pad = clips[(size_t) i].pad;
+        if (! juce::isPositiveAndBelow (pad, kNumPads)) return;
+        selectPad (pad);
+        openChopSheet();
+    };
 
 
     //  EL FILO DE UN BLOQUE LO ESTIRA, por el MISMO camino que las tapas
@@ -13674,7 +13698,7 @@ void MainComponent::refreshPiano (bool repintarTarjeta)
 //  dedo estaba en la rejilla y no en la tapa.
 void MainComponent::ponHerramienta (int h)
 {
-    songHerramienta = juce::jlimit (0, (int) Playlist::hMute, h);
+    songHerramienta = juce::jlimit (0, (int) Playlist::hTijeras, h);
     songGrid.herramienta = songHerramienta;
 
     if (songHerramienta == Playlist::hGoma)      songBrush = 0;
@@ -13945,6 +13969,44 @@ void MainComponent::largoClip (int indice, int desdePaso, int hastaPaso)
     refreshSong (false);
 }
 
+//  PARTIR UN CLIP POR DONDE CAYO EL DEDO.
+//
+//  Es la mitad que faltaba de «que las tomas que se graben se vea el audio
+//  facil para poder cortarlo»: el troceado de la ficha produce PADS -N copias
+//  del mismo sonido, cada una con su fichero- y ademas solo se llega a el
+//  cerrando la playlist. Aqui no nace nada: el segundo clip apunta al mismo
+//  pad con la ventana corrida, que es exactamente lo que un clip es.
+void MainComponent::parteClip (int indice, int paso)
+{
+    if (! juce::isPositiveAndBelow (indice, (int) clips.size())) return;
+    if ((int) clips.size() >= AudioEngine::kMaxClips) return;
+
+    const double porCompas = juce::jmax (1.0, engine.muestrasPorCompas());
+    const int    pc        = juce::jmax (1, engine.pasosPorCompas());
+    const double porPaso   = porCompas / (double) pc;
+
+    auto& c = clips[(size_t) indice];
+    const int ini   = c.compas * pc + c.paso;
+    const int corte = (int) ((double) (paso - ini) * porPaso);
+
+    //  Y UN CORTE EN EL FILO NO ES UN CORTE. Sin esto, tocar el primer paso de
+    //  un clip lo dejaria en dos trozos de los cuales uno mide cero muestras:
+    //  un clip invisible que no se puede coger y que la tabla del motor
+    //  igualmente publica.
+    if (corte <= 0 || corte >= c.largo) return;
+
+    ClipUI b = c;
+    b.compas = paso / pc;
+    b.paso   = paso % pc;
+    b.desde  = c.desde + corte;
+    b.largo  = c.largo - corte;
+    c.largo  = corte;
+    clips.push_back (b);
+
+    publicaClips();
+    refreshSong (false);
+}
+
 void MainComponent::quitaClip (int indice)
 {
     if (! juce::isPositiveAndBelow (indice, (int) clips.size())) return;
@@ -14045,14 +14107,52 @@ void MainComponent::refreshSong (bool repintarTarjeta)
         //  un fotograma entero con los pasos nuevos y la division vieja.
         songGrid.setPasosCompas (pc);
         songClipsVista.clear();
-        for (const auto& c : clips)
+        songClipsOnda.resize (clips.size());
+        for (size_t i = 0; i < clips.size(); ++i)
         {
+            const auto& c = clips[i];
             Playlist::ClipVista v;
             v.pista     = c.pista;
             v.pad       = c.pad;
             v.desdePaso = c.compas * pc + juce::jlimit (0, pc - 1, c.paso);
             v.hastaPaso = v.desdePaso
                         + juce::jmax (1, (int) std::ceil ((double) c.largo / porPaso));
+
+            //  Y LA ONDA DE SU VENTANA DE RECORTE, no la del pad entero: el
+            //  clip suena `[desde, desde+largo)` y dibujar el fichero completo
+            //  enseñaria una forma que no es la que se oye - el mismo fallo que
+            //  «el clip toma el recorte del pad» arreglo en el motor.
+            auto& onda = songClipsOnda[i];
+            if (onda.pad != c.pad || onda.desde != c.desde || onda.largo != c.largo)
+            {
+                onda.pad = c.pad; onda.desde = c.desde; onda.largo = c.largo;
+                onda.mm.clearQuick();
+                auto* buf = juce::isPositiveAndBelow (c.pad, kNumPads)
+                                ? uiSample[(size_t) c.pad].get() : nullptr;
+                if (buf != nullptr && buf->buffer.getNumSamples() > 0
+                    && buf->buffer.getNumChannels() > 0)
+                {
+                    const int total = buf->buffer.getNumSamples();
+                    const int a = juce::jlimit (0, total - 1, c.desde);
+                    const int n = juce::jlimit (1, total - a, c.largo);
+                    const float* d = buf->buffer.getReadPointer (0);
+
+                    //  NORMALIZADA A SU PROPIO PICO, igual que la tapa del pad
+                    //  y por la misma razon medida alli: una toma de voz suave
+                    //  al lado de un bombo se dibujaria como una raya, y la
+                    //  onda esta aqui para decir DONDE entra el golpe.
+                    float pico = 0.0f;
+                    for (int k = a; k < a + n; ++k) pico = juce::jmax (pico, std::abs (d[k]));
+                    const float norm = pico > 1.0e-4f ? 0.95f / pico : 0.0f;
+
+                    juce::Array<float> mn, mx;
+                    Onda::envolvente (d, total, a, n, kColumnasOndaClip, mn, mx, norm);
+                    for (int k = 0; k < mn.size(); ++k) { onda.mm.add (mn[k]); onda.mm.add (mx[k]); }
+                }
+            }
+            v.onda     = onda.mm.isEmpty() ? nullptr : onda.mm.getRawDataPointer();
+            v.columnas = onda.mm.size() / 2;
+
             songClipsVista.push_back (v);
         }
         unsigned mudosAudio = 0;

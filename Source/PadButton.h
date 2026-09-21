@@ -492,16 +492,15 @@ private:
         for (int i = a; i < b; ++i) peak = juce::jmax (peak, std::abs (d[i]));
         const float norm = peak > 1.0e-4f ? 0.95f / peak : 1.4f;
 
+        //  La cuenta la hace `Onda::envolvente` y aqui solo se intercala: era
+        //  el mismo bucle que el del visor grande escrito por segunda vez, con
+        //  dos diferencias que ademas eran fallos -centinelas en cero, que
+        //  dibujan media onda de mas en una señal con continua, y ninguna
+        //  guarda para la columna vacia-.
         const int cols = 44;
-        for (int c = 0; c < cols; ++c)
-        {
-            const int i0 = a + (int) ((juce::int64) c       * n / cols);
-            const int i1 = a + (int) ((juce::int64) (c + 1) * n / cols);
-            float mn = 0.0f, mx = 0.0f;
-            for (int i = i0; i < i1 && i < b; ++i) { mn = juce::jmin (mn, d[i]); mx = juce::jmax (mx, d[i]); }
-            spark.add (juce::jlimit (-1.0f, 1.0f, mn * norm));
-            spark.add (juce::jlimit (-1.0f, 1.0f, mx * norm));
-        }
+        juce::Array<float> mn, mx;
+        Onda::envolvente (d, b, a, n, cols, mn, mx, norm);
+        for (int c = 0; c < mn.size(); ++c) { spark.add (mn[c]); spark.add (mx[c]); }
     }
 
     int index = 0;

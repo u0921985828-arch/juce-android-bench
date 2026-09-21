@@ -168,7 +168,51 @@ def main():
            0 < div < pc and d.get ("sub_paso") == [3, 6, div],
            "%s  division %s de %s" % (d.get ("sub_paso"), div, pc))
 
-    #  10. Y LA CELDA, contra el dedo. Esta banda existe porque ocho carriles no
+    #  10. EL BLOQUE ENSEÑA LA ONDA DE SU VENTANA DE RECORTE.
+    #
+    #  «Que las tomas que se graben se vea el audio facil»: el bloque era un
+    #  rectangulo liso con el numero del pad, que no dice donde entra el golpe.
+    #  Se mide la FIRMA de la envolvente que la rejilla recibe -columnas y area
+    #  encerrada- y no que exista un array: un bloque liso tiene tambien su
+    #  array, lleno de ceros.
+    #
+    #  Y con DOS ventanas de recorte del mismo pad, que tienen que dar firmas
+    #  DISTINTAS. Con una sola, «dibuja la onda» lo cumple igual un codigo que
+    #  dibuje siempre la del fichero entero - el mismo fallo que la regla 4
+    #  arreglo en el motor, reaparecido en el dibujo.
+    mitad, entera = d.get ("onda_mitad") or [0, 0], d.get ("onda_entera") or [0, 0]
+    juzga ("el bloque dibuja su onda",
+           mitad[0] > 0 and mitad[1] > 0.0 and entera[1] > 0.0 and mitad != entera,
+           "media %s  entera %s" % (mitad, entera))
+
+    #  11. LAS TIJERAS PARTEN EN DOS QUE SUMAN EL ORIGINAL.
+    #
+    #  «Para poder cortarlo y colocarlo donde debe». El troceado que ya existia
+    #  produce PADS -N copias del mismo sonido con su fichero cada una- y solo
+    #  se llega a el cerrando la playlist; aqui no nace nada, el segundo clip
+    #  apunta al mismo pad con la ventana corrida.
+    #
+    #  TRES cifras y ninguna sobra: cuantos quedan lo cumple igual un codigo
+    #  que duplique el clip entero; donde empieza cada uno lo cumple uno que
+    #  parta y pierda la cola; y que los largos SUMEN es lo unico que dice que
+    #  no se invento ni se tiro audio.
+    juzga ("las tijeras parten en dos",
+           d.get ("tras_tijeras") == 2
+           and d.get ("tijera_a") == [1, 0, 0] and d.get ("tijera_b") == [1, 2, 0]
+           and d.get ("suma_largos") == d.get ("largo_antes") and d.get ("largo_antes", 0) > 0,
+           "%s y %s, %s de %s" % (d.get ("tijera_a"), d.get ("tijera_b"),
+                                  d.get ("suma_largos"), d.get ("largo_antes")))
+
+    #  12. Y EL ATAJO A CORTAR: un doble toque en un clip abre el troceado CON
+    #  EL PAD DEL CLIP. Hoy el camino son cuatro pasos -cerrar la playlist,
+    #  buscar el pad, ficha, pagina RIG- para algo que se esta mirando. Las dos
+    #  cifras, porque «se abrio algo» lo cumple igual una ficha abierta sobre el
+    #  pad que ya estaba elegido: el clip es del pad 6 y se entra desde el 1.
+    juzga ("el doble toque abre CORTAR",
+           d.get ("chop_tras_doble") == 1 and d.get ("pad_tras_doble") == 5,
+           "ficha %s  pad %s" % (d.get ("chop_tras_doble"), d.get ("pad_tras_doble")))
+
+    #  13. Y LA CELDA, contra el dedo. Esta banda existe porque ocho carriles no
     #  caben -20.2 px en 280x653, medido- asi que la cifra que la justifica hay
     #  que mirarla: si un dia vuelve a bajar del dedo, la decision se cae.
     celda = d.get ("celda") or [0, 0]
@@ -177,7 +221,7 @@ def main():
 
     print()
     print ("la banda de audio hace lo que dice" if malas == 0
-           else "%d de 10 no" % malas)
+           else "%d de 13 no" % malas)
     return 1 if malas else 0
 
 

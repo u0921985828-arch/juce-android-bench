@@ -233,6 +233,12 @@ namespace
                                      "opens that effect's presets",
                                      "打开该效果的预设",
                                      "يفتح إعدادات ذلك المؤثر الجاهزة" },
+        { "DOBLE TOQUE EN UN CLIP", "", "DOUBLE-TAP A CLIP",
+                                     "双击片段", "انقر المقطع نقرًا مزدوجًا" },
+        { "abre CORTAR con su sonido", "",
+                                     "opens CUT with its sound",
+                                     "用它的声音打开切片",
+                                     "يفتح القص بصوته" },
         { "Todo parado",        "",  "Everything stopped",
                                      "全部停止", "توقف كل شيء" },
 

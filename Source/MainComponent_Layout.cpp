@@ -310,11 +310,33 @@ void MainComponent::resized()
     //  never get squeezed into a strip.
     faceColumn = {};
     juce::Rectangle<int> padCol;
-    wideFace = area.getWidth() >= area.getHeight() * 5 / 4 && area.getWidth() >= 560;
+
+    //  EL UMBRAL SALE DE LO QUE LA CARA APAISADA COLOCA, y no de un 560.
+    //
+    //  Era el UNICO numero del apaisado sin una medida al lado -a diferencia de
+    //  `kSueloCristal`, `kTopeCristal`, `moduleH` o `kBankSeamWant`- y lo que
+    //  hay debajo de el no es un tamaño de telefono sino una suma: la columna
+    //  de pads no baja de `kPadColMin` porque la rejilla de dentro es cuadrada,
+    //  la de la cara no baja de `kFaceColMin` porque si no el cristal y los
+    //  mandos se quedan en una tira, y entre las dos va el aire. Los dos
+    //  numeros YA estaban escritos tres lineas mas abajo, en el `jlimit`: el
+    //  560 era una tercera copia de la misma regla redondeada hacia arriba.
+    //
+    //  Importa porque el que se pasa de largo cae en la rama VERTICAL, y ahi
+    //  un apaisado tiene 360 px de alto: deficit de 691 px y pads dibujados
+    //  fuera de la ventana, que es el fallo que `layoutPadGrid:190-192` ya
+    //  documenta como ocurrido. Un telefono de 640 dp girado con barra lateral
+    //  se queda en ~562, o sea a dos pixeles del 560.
+    static constexpr int kPadColMin  = 220;
+    static constexpr int kFaceColMin = 320;
+    wideFace = area.getWidth() >= area.getHeight() * 5 / 4
+            && area.getWidth() >= kPadColMin + kFaceColMin + ZatiLookAndFeel::kAir * 2;
 
     if (wideFace)
     {
-        const int want = juce::jlimit (220, juce::jmax (220, area.getWidth() - 320), area.getHeight());
+        const int want = juce::jlimit (kPadColMin,
+                                       juce::jmax (kPadColMin, area.getWidth() - kFaceColMin),
+                                       area.getHeight());
         padCol = area.removeFromRight (want);
         area.removeFromRight (ZatiLookAndFeel::kAir * 2);
         faceColumn = area;
@@ -2917,36 +2939,29 @@ void MainComponent::resized()
             //  las tres son la misma -donde se abre, donde se guarda, donde se
             //  rebota-. Tres filas de una tapa, una por carpeta, con el mismo
             //  reparto que la de arriba.
-            //  Y CON LA ESCALERA DE SIEMPRE, que la primera version no tenia y
-            //  salio medido: en 915x412 la tarjeta da 370 px para 432 pedidos, y
-            //  lo que falta se lo come LO ULTIMO que se maqueta — o sea EN
-            //  VIVO, que salia a **809x6** en los cuatro idiomas. Cuatro TOUCH
-            //  nuevos sobre 3370, y *un numero que empeora es un fallo aunque el
-            //  resto pase*.
+            //  LAS DOS CARPETAS YA NO SE APAGAN, y eso es una vuelta atras
+            //  medida. Aqui habia una escalera: en 915x412 la tarjeta da 370 px
+            //  para los 432 que esta ficha pide, y como lo que falta se lo come
+            //  LO ULTIMO que se maqueta -EN VIVO salio una vez a **809x6** en
+            //  los cuatro idiomas- se apagaban las dos tapas de carpeta, que es
+            //  lo de menos uso.
             //
-            //  Lo que cede es lo de MENOS uso: elegir una carpeta se hace una
-            //  vez y EN VIVO es una tapa que se toca sonando. Se apagan **Y** se
-            //  les vacian los limites, las dos cosas, que es la regla que esta
-            //  casa ya tiene escrita en `seqZoomBtn` y en `seqPistasBtn`.
-            //
-            //  Y se pregunta por lo que QUEDA para las filas de abajo, no por el
-            //  tamano de la ventana: es la misma cuenta que decide si cabe, no
-            //  una lista de pantallas que un dia se queda corta.
+            //  Cedia la funcion equivocada por la razon correcta: girar el
+            //  telefono te quitaba DOS cosas que de pie si estan, y la queja
+            //  que abrio esta tanda es exactamente esa. Ahora la ficha se
+            //  desplaza -ver el `hazDesplazable` de su constructor- asi que el
+            //  cuerpo mide los 432 que pidio y no hay nada que recortar: las
+            //  dos filas se colocan SIEMPRE y lo que no cabe en la tarjeta se
+            //  alcanza arrastrando.
+            for (auto* b : { &projDirBtn, &samplesDirBtn })
             {
-                const int abajo = Metrics::btn * 2 + Metrics::xs + Metrics::hit + Metrics::sm;
-                const int piden = (Metrics::hit + Metrics::sm) * 2;
-                const bool caben = inner.getHeight() - piden >= abajo;
-                for (auto* b : { &projDirBtn, &samplesDirBtn })
-                {
-                    b->setVisible (caben);
-                    if (! caben) { b->setBounds ({}); continue; }
-                    inner.removeFromTop (Metrics::sm);
-                    auto f2 = inner.removeFromTop (Metrics::hit);
-                    juce::TextButton* uno[1] = { b };
-                    layoutModuleBar (Lang::takeEnd (f2, juce::jmin (f2.getWidth(),
-                                                                    juce::jmax (110, f2.getWidth() / 3))),
-                                     uno, 0, 1);
-                }
+                b->setVisible (true);
+                inner.removeFromTop (Metrics::sm);
+                auto f2 = inner.removeFromTop (Metrics::hit);
+                juce::TextButton* uno[1] = { b };
+                layoutModuleBar (Lang::takeEnd (f2, juce::jmin (f2.getWidth(),
+                                                                juce::jmax (110, f2.getWidth() / 3))),
+                                 uno, 0, 1);
             }
             //  Y EL DESTINO NO LLEVA PANEL, que es la misma decision que la
             //  pagina de ASPECTO y la pagina SONIDO de EL PAD: es UNA tapa, y

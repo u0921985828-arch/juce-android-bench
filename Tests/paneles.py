@@ -52,7 +52,11 @@ APP  = os.path.join (HERE, "..", "build", "Zati_artefacts", "Release", "Zati")
 
 #  Las mismas siete pantallas y los mismos cuatro idiomas que expo.py: una
 #  pantalla que alli se mide y aqui no es una pantalla donde esto no se sabe.
-SIZES = ["360x640", "393x851", "412x915", "344x882", "280x653", "800x1280", "915x412"]
+#  Y los dos de en medio, por lo mismo que en `expo.py`: `wideFace` se decide
+#  en ~556 px de area segura y el barrido no tenia nada a los dos lados de esa
+#  raya. 640x360 cae justo encima -segunda cara- y 412x480 debajo.
+SIZES = ["360x640", "393x851", "412x915", "344x882", "280x653", "800x1280",
+         "915x412", "640x360", "412x480"]
 LANGS = ["es", "en", "zh", "ar"]
 #  Solo las fichas que llevan paneles. Abrir las otras veintitantas seria
 #  cuadruplicar el tiempo para leer cero paneles en cada una.
@@ -349,21 +353,41 @@ def una (combo):
 def main():
     if not os.path.exists (APP):
         sys.exit ("no esta compilado: " + APP)
-    casas = tempfile.mkdtemp()
+    casas = tempfile.mkdtemp (prefix="zati-paneles-")
+    #  UN HOME POR TRABAJADOR, NO POR CORRIDA, y es una medida y no un gusto.
+    #
+    #  Lo que hay que evitar es que DOS PROCESOS A LA VEZ escriban el mismo
+    #  `.sesion/samples`, que es la carrera que Tests/session.py existe para
+    #  cazar; para eso basta con que no haya dos corridas simultaneas en la
+    #  misma casa, y el reparto por indice de trabajador ya lo garantiza -es lo
+    #  que hace Tests/expo.py:1442 desde que se escribio-.
+    #
+    #  Una casa por corrida costaba lo que nadie habia sumado: la app siembra
+    #  la biblioteca de fabrica en cada HOME nuevo -64 WAV, ~18 MB- asi que las
+    #  612 combinaciones de nueve pantallas pedian ~11 GB de disco de usar y
+    #  tirar, y no se liberaba ni uno hasta el `rmtree` del final. Con siete
+    #  pantallas eran 476 casas y entraba raspando; los dos tamanos que entran
+    #  en esta tanda lo pasaron de largo y el contenedor se quedo SIN DISCO a
+    #  mitad de corrida -«No space left on device», 0 B libres de 252 GB-, que
+    #  no se lee como un fallo del banco sino como que todo deja de funcionar.
+    #  Con una casa por trabajador son `nproc` casas y el pico no depende del
+    #  numero de pantallas.
+    #  Y el reparto vale porque el pool despacha EN ORDEN y con un trabajo por
+    #  trabajador: las corridas vivas a la vez son una ventana de `trabajos`
+    #  indices consecutivos, o sea `trabajos` casas distintas.
+    trabajos = max (1, os.cpu_count() or 4)
+    for i in range (trabajos):
+        os.makedirs (os.path.join (casas, "c%02d" % i), exist_ok=True)
     combos = []
-    for i, size in enumerate (SIZES):
+    for size in SIZES:
         for lang in LANGS:
             for sheet in SHEETS:
-                #  Un HOME por corrida: dos procesos creando .sesion/samples a
-                #  la vez es exactamente la carrera que Tests/session.py existe
-                #  para cazar.
-                casa = os.path.join (casas, f"{size}_{lang}_{sheet}")
-                os.makedirs (casa, exist_ok=True)
+                casa = os.path.join (casas, "c%02d" % (len (combos) % trabajos))
                 combos.append ((size, lang, sheet, casa))
 
     todos, paneles, corridas = [], 0, 0
     try:
-        with ProcessPoolExecutor (max_workers=os.cpu_count() or 4) as ex:
+        with ProcessPoolExecutor (max_workers=trabajos) as ex:
             for f, n in ex.map (una, combos):
                 todos += f; paneles += n; corridas += 1
     finally:

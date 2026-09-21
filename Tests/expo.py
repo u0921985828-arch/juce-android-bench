@@ -27,6 +27,13 @@ SIZES = [
     ("280x653",  "Galaxy Fold FRONT screen — the worst case anyone ships"),
     ("800x1280", "tablet portrait"),
     ("915x412",  "LANDSCAPE — the orientation nobody tests"),
+    #  Y LOS DOS DE EN MEDIO, que es donde el apaisado se parte en dos ramas.
+    #  `wideFace` pide ancho >= padCol + faceColumn + aire, o sea ~556 px de
+    #  area segura: por encima hay segunda cara y por debajo se cae a la rama
+    #  vertical con 360 px de alto. El barrido tenia 915x412 -holgado- y nada
+    #  entre las dos ramas, asi que el borde no lo medía nadie.
+    ("640x360",  "LANDSCAPE de un telefono pequeño — justo sobre el umbral"),
+    ("412x480",  "pantalla partida, la que el propio codigo cita"),
 ]
 LANGS = ["es", "en", "zh", "ar"]
 SHEETS = ["", "plato", "songm", "pads", "pad2", "pad3", "sec", "secp", "paso", "eq", "eqb", "song", "piano", "pianod", "pianosel", "pick", "mix", "xy", "set", "asp", "proj", "gest", "midi", "midf", "lang", "manual", "mixc", "canal", "rack", "rackf", "ranura", "ranural", "preset", "preseteq", "chop", "inst", "instd", "instg", "vst", "vstm", "expo", "tour", "tour1", "tour3", "tour6", "tour10", "tourf", "browse", "browsedir",

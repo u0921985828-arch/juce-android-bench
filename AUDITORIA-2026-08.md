@@ -260,12 +260,28 @@ toggle corren seis veces —una por efecto— al abrir un proyecto.
 
 ## E · Empaquetado
 
-**E1. La app está clavada en VERTICAL y una séptima parte del banco mide
-apaisado.** `Zati.jucer` dice `androidScreenOrientation="portrait"`; `expo.py`
-mide `915x412` como una de sus siete pantallas (~128 corridas) y el cuaderno de
-bitácora dedica cinco párrafos al girado. En un teléfono ese trabajo es inalcanzable; en
-tableta y plegable con `targetSdk 36` Android **ignora** la restricción, así que
-gira justo donde nadie decidió que girara. Una de las dos cosas sobra.
+**E1. ~~La app está clavada en VERTICAL~~ — CERRADO en `842f058`.** Este
+párrafo decía lo contrario de lo que hace el repositorio y es el documento que
+hacía creer que el apaisado estaba prohibido. `Zati.jucer:79` dice
+`androidScreenOrientation="unspecified"` desde aquel commit, Projucer escribe
+`configChanges` con `orientation|screenSize` —así que girar no reinicia la
+Activity— y `wideFace` es una segunda cara entera, consultada 62 veces. Medido
+en 640x360: pads de **67x67 cuadrados** y `freeH` **+70 px**, contra los 77x41 y
+los **66 px sobresuscritos** de 360x640 de pie. Girado es hoy el caso holgado y
+no el degradado.
+
+Lo que sí faltaba y se cerró en la tanda 7: el umbral de `wideFace` era el único
+número del apaisado sin una medida al lado —un `560` a mano— y ahora sale de lo
+que la cara coloca (`kPadColMin + kFaceColMin + kAir * 2`); y el barrido de
+`expo.py` y `paneles.py` medía `915x412` —holgado— pero **nada entre las dos
+ramas**, así que entraron `640x360` y `412x480`. Los dos tamaños nuevos pagaron
+en la primera corrida: en `640x360` la ficha PASO sacaba `AJENO 1` —el panel
+`[38,128,564x146]` se comía seis píxeles de un mando de 270x40 porque PATRON se
+parte en tres filas cuando su columna es estrecha y el de al lado sigue en una,
+y los bloques se unían por el renglón de arriba sin mirar el de abajo—; y en
+`915x412` la ficha EXPORTAR pedía 432 px contra 370 de tarjeta y lo pagaba
+**apagando las dos tapas de carpeta**, o sea que girar quitaba dos funciones.
+Ahora esa ficha se desplaza y las coloca siempre.
 
 **E2. La alineación de 16 KB se comprueba sobre un fichero que después se
 reescribe.** El paso «Páginas de 16 KB» corre antes de «Re-sign the release
@@ -336,10 +352,10 @@ constantes muertos, el 0.92 y el 158 unificados, `static_assert` para
 `kContinued` y `kMaxPads`, la E/S fuera del `paint` de EXPORTAR y el `for`
 cerrado donde dice la sangría.
 
-**5 · Publicación** (medio día). Decidir el giro —recomendación: **quitar el
-`portrait`**, que el trabajo apaisado ya está hecho y medido y en tableta gira
-igual—, y medir la latencia con el botón que la app ya tiene, escribiendo el
-número en el `README` con teléfono, versión y tamaño de bloque.
+**5 · Publicación** (medio día). ~~Decidir el giro~~ —hecho en `842f058`: el
+`portrait` se quitó y el umbral de la segunda cara se derivó en la tanda 7—, y
+medir la latencia con el botón que la app ya tiene, escribiendo el número en el
+`README` con teléfono, versión y tamaño de bloque.
 
 Fuera de esta lista y sin cambiar: licencia de JUCE, clave de subida y secretos,
 política de privacidad publicada, y renombrar el repositorio.

@@ -568,7 +568,7 @@ private:
     //  lleva: es la puerta que se pidio -«el tema de los presets no esta muy
     //  accesible ni legible»- y es un gesto sin marca en la cara, que es la
     //  unica clase de gesto que esta pagina tiene que enumerar.
-    static constexpr int kNumGestures = 9;
+    static constexpr int kNumGestures = 10;
     void showSetPage (int page);
 
     //  THE SEQUENCER CARD HAS TWO PAGES, and it has them because measuring it
@@ -2184,6 +2184,24 @@ private:
     //  rehace en refreshSong y vive aqui porque el componente la presta, no la
     //  copia - lo mismo que songCells.
     std::vector<Playlist::ClipVista> songClipsVista;
+
+    //  LA ONDA DE CADA CLIP, CALCULADA UNA VEZ Y GUARDADA.
+    //
+    //  `refreshSong` corre treinta veces por segundo con la ficha CANCION
+    //  delante; resumir varios segundos de audio por clip en cada tick es la
+    //  misma clase de derroche que `setSource` y `setAudio` ya evitan con su
+    //  comparacion. Se recalcula SOLO cuando cambia lo que la onda dibuja -que
+    //  pad, y que ventana de ese pad- y no cuando cambia donde esta puesto.
+    struct OndaClip
+    {
+        int pad = -1, desde = -1, largo = -1;
+        juce::Array<float> mm;      // intercalada min,max por columna
+    };
+    std::vector<OndaClip> songClipsOnda;
+    //  Sesenta y cuatro columnas: un bloque de clip mide entre 23 px -un
+    //  compas con la vista en dieciseis- y unos 300, asi que una cifra fija en
+    //  medio dibuja la forma en los dos casos sin recalcular al mover la vista.
+    static constexpr int kColumnasOndaClip = 64;
     //  Los tres reciben PASOS ABSOLUTOS de la cancion -`compas * pasosPorCompas()
     //  + paso`- y no compases: la rejilla ya los entrega pegados a la division
     //  que dibuja, y partirlos en dos numeros en el camino es la forma de que
@@ -2192,6 +2210,11 @@ private:
     void mueveClip (int indice, int pista, int paso);
     void quitaClip (int indice);
     void largoClip (int indice, int desdePaso, int hastaPaso);
+    //  PARTIR UN CLIP EN DOS por un paso absoluto de la cancion. Los dos
+    //  trozos SUMAN el original: no se escribe audio, no nace un pad y no hay
+    //  un fichero nuevo que limpiar - un clip es una referencia, y partir una
+    //  referencia es quedarse con dos ventanas de la misma fuente.
+    void parteClip (int indice, int paso);
     int songCells[Playlist::kLanes * AudioEngine::kSongBars] {};
     //  Y CUANTOS PASOS DURA CADA PATRON, al lado de las celdas y por lo mismo:
     //  la rejilla guarda el PUNTERO -no copia- asi que un array local se

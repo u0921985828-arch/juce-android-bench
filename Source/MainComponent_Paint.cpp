@@ -1169,6 +1169,10 @@ void MainComponent::paintGesturesPage (juce::Graphics& g, juce::Rectangle<int> a
         { "ARRASTRA LA PANTALLA", "cambia de patron" },
         { "GOLPEA ARRIBA O ABAJO", "toca mas fuerte o mas flojo" },
         { "MANTEN UNA RANURA DEL RACK", "abre los presets de ese efecto" },
+        //  El atajo de la playlist, que no deja marca en la cara -ni tapa, ni
+        //  herramienta armada- y por eso tiene que estar aqui: sin fila, la
+        //  unica forma de encontrarlo es tropezarse con el.
+        { "DOBLE TOQUE EN UN CLIP", "abre CORTAR con su sonido" },
     };
 
     //  SE REPARTE LO QUE HAY, no se pide un suelo.
@@ -2390,9 +2394,23 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
                 //  tira del paso son tres filas a cuatro pixeles y tres paneles
                 //  ahi salen tocandose, que se lee igual que no dibujar
                 //  ninguno.
+                //  Y CON EL MISMO ALTO, que es lo que faltaba. Unir por el
+                //  renglon de arriba y nada mas da un panel tan alto como el
+                //  mas alto de los dos, y el de al lado no llega ahi: lo que
+                //  hay debajo de la columna corta queda TAPADO por un panel
+                //  que no lo envuelve. Medido en 640x360 -una de las dos
+                //  pantallas que entraron en esta tanda- con la ficha PASO:
+                //  PATRON se parte en tres filas porque su columna es estrecha
+                //  y LARGO, a su lado, sigue en una, asi que el panel
+                //  [38,128,564x146] se comia seis pixeles del mando de 270x40
+                //  que empieza en y=268. En las siete pantallas de antes
+                //  PATRON cabia en una fila y los dos altos coincidian, o sea
+                //  que el fallo estaba escrito desde el primer dia y no habia
+                //  ventana donde se viera.
                 if ((lb.grupo != 0 && lb.grupo == grupoDe[i])
                     || (lb.grupo == 0 && grupoDe[i] == 0
-                        && std::abs (bloques.getReference (i).getY() - b.getY()) < 3))
+                        && std::abs (bloques.getReference (i).getY() - b.getY()) < 3
+                        && std::abs (bloques.getReference (i).getBottom() - b.getBottom()) < 3))
                 {
                     bloques.getReference (i) = bloques.getReference (i).getUnion (b);
                     unido = true;

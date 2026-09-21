@@ -950,19 +950,11 @@ private:
         const juce::int64 span = juce::jmax ((juce::int64) W,
                                              (juce::int64) ((float) len / zoom));
 
-        for (int x = 0; x < W; ++x)
-        {
-            int a = (int) juce::jlimit ((juce::int64) 0, (juce::int64) (len - 1),
-                                        from + (juce::int64) x * span / W);
-            int e = (int) juce::jlimit ((juce::int64) 1, (juce::int64) len,
-                                        from + (juce::int64) (x + 1) * span / W);
-            if (e <= a) e = a + 1;
-            if (e > len) e = len;
-            float mn = 1.0f, mx = -1.0f;
-            for (int i = a; i < e; ++i) { const float s = d[i]; mn = juce::jmin (mn, s); mx = juce::jmax (mx, s); }
-            mins.add (juce::jlimit (-1.0f, 1.0f, mn));
-            maxs.add (juce::jlimit (-1.0f, 1.0f, mx));
-        }
+        //  La cuenta la hace `Onda::envolvente`, que es la unica dueña: la
+        //  hacian tres bucles distintos -este, el de la tapa del pad y, desde
+        //  esta tanda, el del bloque de clip- y tres copias de una cuenta son
+        //  tres reglas.
+        Onda::envolvente (d, len, from, span, W, mins, maxs);
     }
 
     juce::Colour activeColour (juce::Colour fallback) const

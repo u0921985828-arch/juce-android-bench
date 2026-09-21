@@ -99,6 +99,18 @@ public:
         int desdePaso = 0;   // primer paso absoluto que ocupa
         int hastaPaso = 1;   // el primero que YA NO ocupa, o sea [desde, hasta)
         int pad       = 0;   // de que pad salio, que es de donde sale su color
+        //  Y LA ONDA DE SU VENTANA DE RECORTE, intercalada min,max por columna.
+        //
+        //  Se PRESTA igual que la tabla entera: la calcula quien tiene el
+        //  buffer -`refreshSong`, en el hilo de mensajes- y la cachea, que es
+        //  lo que hace que esto no cueste nada. Recalcularla en `paint` seria
+        //  recorrer varios segundos de audio treinta veces por segundo.
+        //
+        //  Es lo que se pidio: «que las tomas que se graben se vea el audio
+        //  facil para poder cortarlo y colocarlo donde debe». Un rectangulo
+        //  liso con el numero del pad no dice donde entra el golpe.
+        const float* onda = nullptr;
+        int columnas      = 0;
     };
 
     // (lane, bar) — the host decides what to place or whether to clear.
@@ -131,6 +143,15 @@ public:
     //  una identidad: quien la publica es quien la ordena.
     std::function<void (int indice, int pista, int paso)> onClipMueve;
     std::function<void (int indice)> onClipQuita;
+    //  PARTIR UN CLIP POR UN PASO ABSOLUTO. Lo que sale son dos clips que
+    //  suman el original: ni se reescribe audio ni se crea un pad, que es lo
+    //  que el troceado de la ficha si hace y por lo que no vale aqui.
+    std::function<void (int indice, int paso)> onClipParte;
+    //  Y EL ATAJO A CORTAR con un doble toque. Hoy el camino desde un bloque
+    //  de la cancion hasta el troceado de su sonido es cerrar la playlist,
+    //  buscar el pad, abrir su ficha y bajar a la pagina RIG: cuatro pasos
+    //  para una cosa que se esta mirando.
+    std::function<void (int indice)> onClipChop;
     //  Y EL LARGO, arrastrando un filo. Llega en PASOS porque es lo que esta
     //  rejilla sabe: quien traduce a muestras es quien tiene el tempo.
     std::function<void (int indice, int desdePaso, int hastaPaso)> onClipLargo;
@@ -670,7 +691,8 @@ public:
 
     bool tocaAlClip (const juce::MouseEvent& e) const
     {
-        if (herramienta == hMano || herramienta == hGoma) return clipBajoElDedo (e);
+        if (herramienta == hMano || herramienta == hGoma || herramienta == hTijeras)
+            return clipBajoElDedo (e);
         //  Con el LAPIZ y la brocha en CLIP, un hueco suelta un clip; encima de
         //  uno que ya esta, el lapiz no tiene nada que decir.
         if (herramienta == hLapiz && pincelClip) return ! clipBajoElDedo (e);
@@ -697,6 +719,29 @@ public:
         ultima = { -1, -1 };
         arrastrado = -1;
         enClip = false;
+    }
+
+    //  DOBLE TOQUE EN UN CLIP: abre CORTAR con SU sonido.
+    //
+    //  Doble toque y no mantener, que es el gesto que esta rejilla no usa para
+    //  nada: mantener ya lo ha pedido el bloque de patron, y arrastrar es
+    //  pintar. Y no es una herramienta mas porque no es un MODO -no se repite,
+    //  se hace una vez y se cambia de pantalla-, que es la misma razon por la
+    //  que COPIAR y PEGAR son tapas y no herramientas.
+    //
+    //  Funciona con cualquier herramienta armada a proposito: el camino de hoy
+    //  -cerrar la playlist, buscar el pad, ficha, pagina RIG- son cuatro pasos
+    //  para una cosa que se esta mirando, y obligar ademas a armar una
+    //  herramienta serian cinco.
+    void mouseDoubleClick (const juce::MouseEvent& e) override
+    {
+        if (! clipBajoElDedo (e)) return;
+        auto r = getLocalBounds();
+        const float pistaH = (float) r.getHeight() / (float) kAudioLanes;
+        if (pistaH <= 0.0f) return;
+        const int pista = juce::jlimit (0, kAudioLanes - 1, (int) ((float) (e.y - r.getY()) / pistaH));
+        const int i = clipEn (pista, pasoDeX (e.x));
+        if (i >= 0 && onClipChop) onClipChop (i);
     }
 
     void toca (const juce::MouseEvent& e, bool arrastrando)
@@ -896,6 +941,37 @@ public:
                 g.fillRect (caja.getRight() - 4.0f, caja.getY() + 3.0f, 2.0f, caja.getHeight() - 6.0f);
             }
 
+            //  LA ONDA, DENTRO DEL BLOQUE Y SOBRE EL CLIP ENTERO.
+            //
+            //  Las columnas se reparten sobre la caja del clip COMPLETO y no
+            //  sobre el trozo visible: si se repartieran sobre lo que se ve, el
+            //  mismo clip dibujaria una onda distinta segun por donde este
+            //  cortado por el borde de la pagina, que es justo lo que impide
+            //  usarla para colocar nada. Las columnas que caen fuera se saltan.
+            if (c.onda != nullptr && c.columnas > 0)
+            {
+                const auto todo = cajaPaso (c.pista, c.desdePaso, c.hastaPaso);
+                const float w   = todo.getWidth() / (float) c.columnas;
+                if (w > 0.05f)
+                {
+                    const float medio = caja.getCentreY();
+                    const float alto  = caja.getHeight() * 0.5f - 2.0f;
+                    g.setColour ((mudo ? col : ZatiColours::bestOn (col, ZatiColours::ink,
+                                                                   juce::Colours::white))
+                                     .withAlpha (0.55f));
+                    for (int k = 0; k < c.columnas; ++k)
+                    {
+                        const float x = todo.getX() + w * (float) k;
+                        if (x + w <= caja.getX() || x >= caja.getRight()) continue;
+                        const float lo = c.onda[k * 2], hi = c.onda[k * 2 + 1];
+                        const float y0 = medio - hi * alto;
+                        const float y1 = medio - lo * alto;
+                        g.fillRect (x, y0, juce::jmax (1.0f, w - 0.5f),
+                                    juce::jmax (1.0f, y1 - y0));
+                    }
+                }
+            }
+
             g.setColour (mudo ? col.withAlpha (0.85f)
                               : ZatiColours::bestOn (col, ZatiColours::ink, juce::Colours::white));
             g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
@@ -983,6 +1059,16 @@ public:
             //  crudos devolveria un sitio que no cae en ninguna raya - el clip
             //  se quedaria a un paso de la rejilla que se ve.
             agarre = ((paso - clips[arrastrado].desdePaso) / u) * u;
+            //  LAS TIJERAS PARTEN POR DONDE CAYO EL DEDO, pegado a la misma
+            //  division que se ve. Y ANTES que la goma, que si no un toque con
+            //  las tijeras encima de un clip con la brocha en VACIAR lo
+            //  borraria en vez de partirlo.
+            if (herramienta == hTijeras)
+            {
+                if (onClipParte) onClipParte (arrastrado, pegado);
+                arrastrado = -1;
+                return;
+            }
             //  Y LA GOMA LO QUITA, que es la misma herramienta que borra un
             //  bloque: una funcion, un dueño. `borrando` sigue valiendo porque
             //  la brocha VACIAR y la GOMA son la misma cosa vista desde dos
@@ -1024,7 +1110,10 @@ public:
     //  la quinta, no un gesto nuevo.
     //  Con prefijo: `mute` a secas choca con la mascara de carriles
     //  silenciados, que se llama asi desde que existe.
-    enum Herramienta { hLapiz = 0, hGoma, hMano, hMute };
+    //  Y LAS TIJERAS, que es la quinta y no un gesto nuevo: un clip se parte
+    //  por donde cae el dedo, que es lo que se pidio -«para poder cortarlo y
+    //  colocarlo donde debe»-. El vocabulario ya existia en el piano.
+    enum Herramienta { hLapiz = 0, hGoma, hMano, hMute, hTijeras };
     int herramienta = hLapiz;
 
     //  Lo que la brocha VACIAR pone: quien la lleva es la ficha, y aqui solo se

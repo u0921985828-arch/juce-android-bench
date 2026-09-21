@@ -1161,5 +1161,6 @@ inline constexpr HerramientaCancion kHerramientas[] = {
     { "LAPIZ",     Iconos::Id::lapiz,  Playlist::hLapiz },
     { "GOMA",      Iconos::Id::goma,   Playlist::hGoma  },
     { "SILENCIAR", Iconos::Id::apagar, Playlist::hMute  },
+    { "TIJERAS",   Iconos::Id::tijeras, Playlist::hTijeras },
 };
 inline constexpr int kNumHerramientas = (int) (sizeof (kHerramientas) / sizeof (kHerramientas[0]));

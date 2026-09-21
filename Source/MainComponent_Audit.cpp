@@ -3593,6 +3593,72 @@ void MainComponent::auditClips()
     { auto e = evento (puntoPaso (3, 6 * pasosCompas + division)); rej.mouseDown (e); }
     const auto subPaso = filaPaso (0);
 
+    //  Y LA ONDA DEL BLOQUE, que es lo otro que se pidio: «que las tomas que se
+    //  graben se vea el audio facil». Se mide la firma de la envolvente que la
+    //  rejilla RECIBE -columnas y area- y no que exista un array: un bloque
+    //  liso tiene tambien su array, lleno de ceros.
+    //
+    //  DOS VENTANAS DE RECORTE DISTINTAS del mismo pad, y las dos firmas tienen
+    //  que salir distintas. Con una sola, «dibuja la onda» lo cumple igual un
+    //  codigo que dibuje siempre la del fichero entero - que es exactamente el
+    //  fallo que «el clip toma el recorte del pad» arreglo en el motor y que
+    //  aqui volveria a aparecer en el dibujo.
+    auto ondaDe = [&] (int i)
+    {
+        if (! juce::isPositiveAndBelow (i, (int) songClipsVista.size()))
+            return juce::String ("[0,0.000]");
+        const auto& v = songClipsVista[(size_t) i];
+        double suma = 0.0;
+        for (int k = 0; k < v.columnas && v.onda != nullptr; ++k)
+            suma += (double) (v.onda[k * 2 + 1] - v.onda[k * 2]);
+        return "[" + juce::String (v.columnas) + "," + juce::String (suma, 3) + "]";
+    };
+    auto ponConRecorte = [&] (float a, float b)
+    {
+        padStart01[0] = a; padEnd01[0] = b;
+        clips.clear(); publicaClips();
+        selectedPad = 0;
+        ponClip (1, 0);
+        refreshSong (false);
+        return ondaDe (0);
+    };
+    const auto ondaMitad = ponConRecorte (0.0f, 0.5f);
+    const auto ondaEntera = ponConRecorte (0.0f, 1.0f);
+
+    //  Y LAS TIJERAS. Un clip de cuatro compases en (1,0) partido por el
+    //  compas 2: dos clips que SUMAN el original. Las tres cifras -cuantos
+    //  quedan, donde empieza cada uno y que los largos sumen- porque cada una
+    //  sola la cumple media maquina: partir y perder la cola pasa «quedan 2»,
+    //  y duplicar el clip entero pasa «quedan 2» y «suman» no.
+    padStart01[0] = 0.0f; padEnd01[0] = 1.0f;
+    pon (1, 0, 4);
+    const int largoAntes = clips.empty() ? 0 : clips[0].largo;
+    ponHerramienta (Playlist::hTijeras);
+    { auto e = evento (punto (1, 2)); rej.mouseDown (e); }
+    const int trasTijeras = (int) clips.size();
+    const auto tijeraA = filaPaso (0);
+    const auto tijeraB = filaPaso (1);
+    int sumaLargos = 0;
+    for (const auto& c : clips) sumaLargos += c.largo;
+
+    //  Y EL ATAJO A CORTAR: un doble toque en un clip abre la ficha del
+    //  troceado CON EL PAD DEL CLIP puesto. Dos cifras, porque «se abrio algo»
+    //  lo cumple igual una ficha abierta sobre el pad que ya estaba elegido.
+    clips.clear(); publicaClips();
+    selectedPad = 0;
+    ponHerramienta (Playlist::hLapiz);
+    {
+        ClipUI c;
+        c.pad = 5; c.pista = 1; c.compas = 1; c.paso = 0; c.desde = 0;
+        c.largo = (int) engine.muestrasPorCompas(); c.gain = 1.0f;
+        clips.push_back (c);
+        publicaClips(); refreshSong (false);
+    }
+    { auto e = evento (punto (1, 1)); rej.mouseDoubleClick (e); }
+    const int padTrasDoble  = selectedPad;
+    const int chopTrasDoble = chopSheet.isVisible() ? 1 : 0;
+    clips.clear(); publicaClips(); refreshSong (false);
+
     //  2. MOVER agarrando por su PRIMER compas: de (2,3) a (1,5).
     //
     //  CON LA MANO ARMADA, que es lo que cambio al fundir las dos vistas: en
@@ -3691,6 +3757,15 @@ void MainComponent::auditClips()
               << ",\"carril_mudo\":" << carrilMudo
               << ",\"pista_muda\":" << pistaMuda
               << ",\"sub_paso\":" << subPaso
+              << ",\"onda_mitad\":" << ondaMitad
+              << ",\"onda_entera\":" << ondaEntera
+              << ",\"tras_tijeras\":" << trasTijeras
+              << ",\"tijera_a\":" << tijeraA
+              << ",\"tijera_b\":" << tijeraB
+              << ",\"largo_antes\":" << largoAntes
+              << ",\"suma_largos\":" << sumaLargos
+              << ",\"pad_tras_doble\":" << padTrasDoble
+              << ",\"chop_tras_doble\":" << chopTrasDoble
               << ",\"pasos_compas\":" << pasosCompas
               << ",\"division\":" << division
               << ",\"celda\":[" << (int) barW << "," << (int) pistaH << "]"
