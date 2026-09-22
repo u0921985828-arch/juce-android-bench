@@ -652,6 +652,16 @@ namespace Metrics
     //  escrito: *entre un rotulo apretado y uno cortado no hay duda*.
     static constexpr int canalonSeccion = 44;
 
+    //  Y SE INTENTO `lg + halfGap` PARA QUE LA LOSA NO CRUZARA EL MARGEN, y
+    //  el banco lo tumbo. El razonamiento era bueno -la losa de grupo era el
+    //  unico elemento de la app que se salia del margen de su propia tarjeta-
+    //  pero el remedio lo pagaba la app ENTERA: ocho pixeles de ancho util en
+    //  las 55 fichas para arreglar cuatro en una. Medido: expo.py paso de cero
+    //  a CATORCE `CORTADO` -«BRIGHT GT» pide 97 y tiene 93, el subtitulo del
+    //  manual 176 contra 173- todos en 280x653, y `CELDA` se duplico de 20 a
+    //  40, con la rejilla de pasos a 7x7 px por celda en 412x480. El aire se
+    //  da donde falta, no restandoselo a todo el mundo: ver `panelAireX`, que
+    //  es quien lo tenia mal.
     static constexpr int margenFichaX = lg;
     static constexpr int margenFichaY = md;
 
@@ -696,8 +706,21 @@ namespace Metrics
     //  EL AIRE QUE UN PANEL DE GRUPO DEJA ALREDEDOR DE LO QUE ENVUELVE, y por
     //  que NO es el mismo por los cuatro lados.
     //
-    //  A lo ancho no hay nada al lado del panel, asi que se le da `halfGap`
-    //  como a cualquier celda vecina. A lo alto SI hay algo: entre grupo y
+    //  A lo ancho el panel no expande NADA, y esa es la correccion. Tenia
+    //  `halfGap` «como cualquier celda vecina», y la frase escondia que un
+    //  panel no tiene celda vecina a los lados: tiene el MARGEN DE LA TARJETA.
+    //  Los grupos ocupan el ancho del contenido, asi que expandir cuatro
+    //  pixeles sacaba la losa cuatro pixeles FUERA del margen -medido en
+    //  412x915, ficha del pad: tarjeta 17..396, contenido 33..380 y panel
+    //  29..384, o sea a DOCE del filo contra los dieciseis de todo lo demas- y
+    //  no era un caso sino la regla: 225 de 225 paneles con exactamente esa
+    //  holgura. Es la queja «el area donde esta el otro color no es el
+    //  correcto, por los lados tiene que tener mas aire sino queda feo».
+    //
+    //  Con cero, la losa cae EXACTAMENTE en la columna de contenido y se
+    //  alinea con las tapas, los mandos y las pestanas de su ficha, a los
+    //  mismos dieciseis del filo. No cuesta un pixel de ancho a nadie, que es
+    //  lo que sí costaba subir el margen. Ver `Tests/paneles.py`, regla FILO. A lo alto SI hay algo: entre grupo y
     //  grupo la maqueta deja exactamente `Metrics::sm`, asi que dos paneles
     //  con `halfGap` arriba y abajo se comen los ocho pixeles enteros y quedan
     //  TOCANDOSE - que se lee igual que no dibujar ninguno, y es el intento
@@ -705,77 +728,36 @@ namespace Metrics
     //  vertical es la MITAD del horizontal por esa razon y no por gusto, y sale
     //  de `sm` en vez de estar escrito a mano: el dia que la separacion entre
     //  grupos cambie, esto la sigue.
-    static constexpr int panelAireX = halfGap;
+    static constexpr int panelAireX = 0;
     static constexpr int panelAireY = sm / 4;
-
-    // ------------------------------------------------------------------
-    //  LA FORMA DEL CHASIS: el radio de esquina y el grosor de filo.
-    //
-    //  POR QUE EXISTEN, y es el fallo que motivo la tanda entera. Este
-    //  fichero declara que "si un valor no esta abajo, esta mal", y la regla
-    //  de la casa dice que ningun numero de maquetado se escribe a mano. Se
-    //  cumplia para el AIRE y no para la FORMA: `Tests/maqueta.py` solo caza
-    //  literales enteros dentro de `reduced`/`expanded`/`translated`, asi que
-    //  los radios y los filos -que son `float` y viven dentro de
-    //  `fillRoundedRectangle`- se colaron TODOS. Censados: **60 radios y 42
-    //  filos escritos a mano en 12 ficheros**, con cinco radios distintos
-    //  (1.5, 2.0, 3.0, 4.0 y `sm`) y siete grosores (1.0 a 2.0), ninguno con
-    //  nombre.
-    //
-    //  Y ESO SE VE. Una esquina de 2 px sobre una tarjeta de 400 no es una
-    //  esquina redonda: es un rectangulo limado. Con un filo de 1.0 a 1.8
-    //  alrededor de casi todo -y en los dos platos, DOS filos concentricos,
-    //  `reduced(0.5f)` y `reduced(1.6f)` sobre la misma caja- el resultado es
-    //  el aspecto duro que se lleva varias tandas sin corregir. No lo
-    //  corrigio ninguna porque el banco pregunta geometria -si cabe, si se
-    //  sale, si se pisa- y "duro" no es una pregunta de geometria.
-    //
-    //  Y HABIA UNA INVERSION: el panel de grupo valia `sm` (8) y la TARJETA
-    //  que lo contiene valia 2.0. El interior era cuatro veces mas redondo
-    //  que su continente, que es justo al reves de como se lee una caja
-    //  dentro de otra.
-    //
-    //  LOS CUATRO SALEN DE LA ESCALA DE ESPACIADO y no de gusto, igual que
-    //  `halfGap` sale de `gap`: el dia que la escala se mueva, la forma la
-    //  sigue.
-    static constexpr int radioChip    = xs;               // 4  celdas, chips, cristales
-    static constexpr int radioTapa    = (xs + sm) / 2;    // 6  botones y pads
-    static constexpr int radioPanel   = sm;               // 8  panel de grupo
-    static constexpr int radioTarjeta = (sm + md) / 2;    // 10 tarjeta de ficha y platos
-
-    //  EL FILO BAJA DE SIETE VALORES A DOS, y la division no es de estilo:
-    //  un filo o SEPARA dos superficies -y entonces basta con que se vea- o
-    //  SEÑALA un estado -foco, seleccion, pad sonando- y entonces tiene que
-    //  ganarle a la superficie. Son dos trabajos distintos y por eso son dos
-    //  numeros distintos.
-    //
-    //  El 0.8 no es 1.0 por una razon medible: JUCE centra el trazo sobre el
-    //  camino, asi que un filo de 1.0 sobre `reduced(0.5f)` cae justo en el
-    //  anillo de pixeles del borde y se pinta opaco. Por debajo de 1.0 el
-    //  suavizado lo reparte entre dos filas y el borde se lee como un limite
-    //  y no como una linea dibujada, que es exactamente la diferencia entre
-    //  "placa" y "recorte".
-    static constexpr float filo     = 0.8f;
-    static constexpr float filoFoco = 1.6f;
 
     //  Y CUANTO SE SEPARA DEL FONDO. Es el numero que Tests/skins.py vigila
     //  como PANEL_ALPHA contra el mismo liston que el hueco de una celda, asi
     //  que vive aqui y no dentro del pintor. Ver ZatiColours::groupOn.
+    //  EL GROSOR DE UN FILO DE CHASIS, UNO PARA TODA LA APP.
     //
-    //  BAJO DE 0.16 A 0.10, y es la mitad "de color" del chasis suave: el
-    //  radio y el filo quitan el RECORTE y esto quita el ESCALON. Medido en
-    //  dE del panel contra su tarjeta, con el liston de `MIN_WELL = 6.0` que
-    //  `skins.py` le exige al hueco de una celda -el liston de una prueba no
-    //  se reinventa en la de al lado-:
+    //  `Metrics` tenia cuarenta tokens de espacio, tamano y tipografia y NI UNO
+    //  de trazo, asi que el grosor se escribia a mano en cada pintor. Contado
+    //  sobre el arbol entero: NUEVE grosores distintos en 53 sitios de doce
+    //  ficheros -1.0 x23, 1.2 x8, 1.4 x7, 1.5 x5, 1.6 x4, 1.8 x2, 2.0 x2,
+    //  3.0 x1 y 1.1 x1-. Nadie los decidio: cada uno se escribio el dia que se
+    //  escribio su pintor, y por eso la misma tapa se ve mas marcada en una
+    //  ficha que en otra. Es la queja «hay zonas donde exageras el borde».
     //
-    //      0.16   PAPEL 13.54  GRAFITO 16.45  ACERO 13.51  LACA 12.39
-    //      0.10   PAPEL  8.45  GRAFITO 10.32  ACERO  8.46  LACA  7.79
+    //  DOS y no uno, porque un filo hace dos trabajos distintos: o SEPARA dos
+    //  superficies -y entonces basta con que se vea- o SENALA un estado -foco,
+    //  seleccion, cabezal- y entonces tiene que ganarle al de al lado. Un solo
+    //  numero para los dos obliga a elegir entre un chasis duro y una seleccion
+    //  que no se ve.
     //
-    //  O sea **37 % menos de escalon** en la peor carcasa y 1.79 de margen
-    //  sobre el suelo. No se baja mas porque a 0.08 LACA cae a 6.07 y a 0.07
-    //  a 5.58, que es por debajo: el sitio que hay son seis centesimas y se
-    //  gastan cuatro. Las cuatro carcasas medidas y no una.
-    static constexpr float panelHondura = 0.10f;
+    //  1.0 y no 0.8: el 1.0 es el que ya estaba en 23 de los 53 sitios -la
+    //  mitad larga-, asi que ningun filo se ENGORDA y los siete que pasaban de
+    //  el adelgazan. Bajarlo mas era la otra mitad de un cambio que se rechazo
+    //  entero, y el filo no era lo que sobraba de aquel: era el radio.
+    static constexpr float filo     = 1.0f;
+    static constexpr float filoFoco = 1.6f;
+
+    static constexpr float panelHondura = 0.16f;
 
     //  ...y EL BORDE. Un panel relleno y nada mas se lee como una mancha; con
     //  un filo de un pixel se lee como una placa, que es lo que es. Va en la
@@ -793,25 +775,7 @@ namespace Metrics
     //  Y NO CUESTA AIRE: el trazo va centrado en un camino metido medio pixel,
     //  asi que pinta exactamente el anillo de pixeles de fuera del panel. Ni lo
     //  agranda ni le come el margen de dentro.
-    //  Y BAJA A 0.11 CON EL RELLENO, no por simetria sino porque la medida
-    //  lo permite y la anterior ya no vale: el 0.12 se eligio contra un
-    //  relleno de 0.16 y el relleno ya no es ese. Medido de nuevo, borde
-    //  contra su propio relleno con la hondura ya en 0.10:
-    //
-    //      0.12   PAPEL 9.37  GRAFITO 10.53  ACERO 9.37  LACA 8.51
-    //      0.11   PAPEL 8.64  GRAFITO  9.67  ACERO 8.64  LACA 7.72
-    //      0.10   PAPEL 7.62  GRAFITO  8.81  ACERO 7.84  LACA 6.84
-    //
-    //  Se queda en 0.11: LACA a 7.72 deja 1.72 de margen, que es el mismo que
-    //  el del relleno -1.79- y no un numero distinto para cada mitad. A 0.10
-    //  el margen baja a 0.84, que es pasar raspando en la carcasa de fabrica.
-    //
-    //  Y UN DETALLE QUE ENGAÑA SI NO SE DICE: el numero de esta fila casi no
-    //  se mueve -7.69 antes, 7.72 ahora- y no es que el cambio no haya hecho
-    //  nada. Es que el borde se mide contra el RELLENO, y bajar los dos a la
-    //  vez se compensa. Lo que se ve bajar es el relleno contra la tarjeta,
-    //  que es la fila de al lado.
-    static constexpr float panelBorde = 0.11f;
+    static constexpr float panelBorde = 0.12f;
 
     //  EL DIBUJO CRECE CON LA PALABRA Y NO CON LA TAPA.
     //
@@ -1094,6 +1058,20 @@ public:
     //  en cinco sitios se separaron sin que nadie lo decidiera.
     static constexpr int kKnobRow   = kCtrlPlate;   // mando + nombre + numero
     static constexpr int kKnobName  = kCtrlName;    // ...de los cuales el nombre
+    //  Y LOS OTROS DOS NUMEROS DEL TITULO DE UN MANDO, que estaban escritos a
+    //  mano en los CUATRO pintores que lo dibujan. `bandAbove (c, alto, hueco,
+    //  desborde)` recibia `(kKnobName, 2, 6)` en tres sitios -la curva del EQ,
+    //  los nueve mandos de la ficha del pad y los de la cara- y `(kKnobName, 3,
+    //  6)` en el cuarto, que es MODO. Un pixel de diferencia que nadie decidio:
+    //  es el del dia que se escribio ese pintor. Aqui valen lo mismo los
+    //  cuatro, que es la peticion «que en todo lugar el tema de diseno sea el
+    //  mismo».
+    //
+    //  El DESBORDE existe porque el rotulo es mas ancho que su mando -«GANANCIA»
+    //  pide mas que el dial- y sin el se truncaba; no es aire, es sitio para la
+    //  palabra, y por eso no sale de la escala de espaciado.
+    static constexpr int kKnobNameGap   = 2;
+    static constexpr int kKnobNameBleed = 6;
     //  CUARENTA, no 34. Una regla de recorte es un deslizador horizontal de
     //  ancho completo y 34 px de alto: cuatro por debajo del dedo minimo, y
     //  el banco las cazo las cuatro -START, END, SUAVE IN y SUAVE OUT- con el
@@ -1173,7 +1151,7 @@ public:
         auto mark = r.removeFromLeft (h).reduced ((h - 9) / 2);
         g.setColour (isDirectory ? (onAccent ? fg : ZatiColours::accent) : fg.withAlpha (0.45f));
         if (isDirectory) g.fillRect (mark);
-        else             g.drawRect (mark.toFloat(), Metrics::filo);
+        else             g.drawRect (mark, Metrics::filo);
 
         // Size on the right for files (folders have none).
         auto sizeArea = r.removeFromRight (72);
@@ -1310,7 +1288,7 @@ public:
         const auto track = juce::Rectangle<float> ((float) x, (float) y + (float) h * 0.5f - 2.0f,
                                                    (float) w, 4.0f);
         g.setColour (s.findColour (juce::Slider::backgroundColourId));
-        g.fillRoundedRectangle (track, track.getHeight() * 0.5f);
+        g.fillRoundedRectangle (track, 2.0f);
 
         const float centre = (float) x + (float) w * 0.5f;
         g.setColour (s.findColour (juce::Slider::trackColourId));
@@ -1609,7 +1587,7 @@ public:
         //  read as a phone app; a hard offset reads as an object that was
         //  screen-printed, which is the whole C40 idea.
         const float lift = kCapLift;
-        const float rad  = (float) Metrics::radioTapa;            // Metrics::radioTapa, no un 3 a mano
+        const float rad  = 3.0f;                                  // drawn, not rounded off
         const bool  on   = b.getToggleState();
 
         //  Ver capaDe: el blanco del dedo es el componente entero y la tapa se

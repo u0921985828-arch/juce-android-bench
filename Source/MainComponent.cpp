@@ -7054,6 +7054,13 @@ int MainComponent::altoContenidoPadSonido (int ancho) const
 {
     return Metrics::bandaSubtitulo
          + 3 * ZatiLookAndFeel::kKnobRow
+         //  Y EL AIRE ENTRE LAS TRES FILAS, dos huecos de `sm`. Ver el
+         //  comentario del reparto en MainComponent_Layout: el rotulo de una
+         //  fila quedaba a TRES pixeles de la chapa de la de encima y a diez de
+         //  su propio mando. Pedirlo aqui es lo que separa un hueco de un
+         //  recorte: sin estos dieciseis, `sheetFromBottom` se los quita a lo
+         //  ultimo que se maqueta y en silencio.
+         + 2 * Metrics::sm
          + Metrics::panelAireY
          + ZatiLookAndFeel::kKnobName + Metrics::hit
          + (padChokeAcompanan (ancho) < 2 ? Metrics::xs + Metrics::hit : 0);
@@ -7767,9 +7774,9 @@ void MainComponent::pintaPaneles (juce::Graphics& g,
                                   ? juce::String (nombre) + "[" + juce::String (i) + "]"
                                   : juce::String());
         g.setColour (relleno);
-        g.fillRoundedRectangle (caja.toFloat(), (float) Metrics::radioPanel);
+        g.fillRoundedRectangle (caja.toFloat(), (float) Metrics::sm);
         g.setColour (filo);
-        g.drawRoundedRectangle (caja.toFloat().reduced (0.5f), (float) Metrics::radioPanel, Metrics::filo);
+        g.drawRoundedRectangle (caja.toFloat().reduced (0.5f), (float) Metrics::sm, Metrics::filo);
     }
 }
 
@@ -7795,7 +7802,7 @@ void MainComponent::Sheet::paint (juce::Graphics& g)
     //  does the work - they say "this is a panel of an instrument" with four
     //  lines and no texture at all.
     const auto card = sheetBounds.toFloat();
-    constexpr float rad = (float) Metrics::radioTarjeta;
+    constexpr float rad = 2.0f;
 
     //  El bloque bajo la tarjeta, como el de cualquier tapa: oscuro. Escrito
     //  con la tinta salia crema en LACA y hueso en GRAFITO - una tarjeta con

@@ -70,7 +70,7 @@ namespace PadArt
                        bool conBloque = true)
     {
         const float lift = ZatiLookAndFeel::kCapLift * escala;
-        const float rad  = (float) Metrics::radioTapa * escala;
+        const float rad  = 3.0f * escala;
 
         //  El bloque de profundidad: OSCURO y no con la tinta. Con
         //  ZatiColours::ink salia crema en LACA y hueso en GRAFITO, o sea un
@@ -116,7 +116,7 @@ namespace PadArt
                        float escala)
     {
         g.setColour (edge);
-        g.drawRoundedRectangle (r.reduced (0.5f * escala), (float) Metrics::radioTapa * escala,
+        g.drawRoundedRectangle (r.reduced (0.5f * escala), 3.0f * escala,
                                 (cargado ? kBordeGrosor : Metrics::filo) * escala);
     }
 

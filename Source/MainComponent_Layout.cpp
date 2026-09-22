@@ -2033,7 +2033,26 @@ void MainComponent::resized()
         inner.removeFromBottom (Metrics::panelAireY);
 
         {
-            const int forKnobs = inner.getHeight();
+            //  AIRE ENTRE LAS TRES FILAS DE MANDOS.
+            //
+            //  Las tres se apilaban pegadas -`removeFromTop (knobH)` tres
+            //  veces- y el nombre de cada fila se pinta en los kKnobName de
+            //  ARRIBA de su propia celda, asi que el rotulo quedaba mas cerca
+            //  de la chapa de la fila de encima que de su propio mando. Medido
+            //  a pixel en 412x915, columna de PITCH: rotulo 355..360, hueco de
+            //  DIEZ, mando 371..405, hueco de DIEZ, chapa 416..437, y hueco de
+            //  TRES hasta el rotulo PAN en 441. Diez por dentro y tres por
+            //  fuera es la proximidad al reves: «PAN» se leia como pie de «0
+            //  st» y no como nombre del mando que tiene debajo. Es la queja «no
+            //  hay casi aire entre los knobs y los textos».
+            //
+            //  Con `sm` entre filas el hueco de fuera pasa a ONCE y el de
+            //  dentro se queda en diez, que es el orden que la vista necesita.
+            //  Y sale del reparto ANTES de dividir, no despues: sumarselo a
+            //  cada fila lo convertiria en otro clamp hacia arriba de los que
+            //  esta pagina ya ha pagado dos veces.
+            const int aireFilas = 2 * Metrics::sm;
+            const int forKnobs = juce::jmax (0, inner.getHeight() - aireFilas);
             //  SE PIDE LO QUE HAY. `jlimit (60, kKnobRow, forKnobs/3)` es un
             //  clamp HACIA ARRIBA disfrazado de suelo -el fallo mas repetido de
             //  esta casa, ya pagado en layoutPadGrid con `jmax (24, ...)` y en
@@ -2058,7 +2077,9 @@ void MainComponent::resized()
             //  mas apretada de la ficha.
             juce::Slider* k3[3] = { &cutSlider, &resoSlider, &anchoSlider };
             placeKnobRow (inner.removeFromTop (knobH), k1);
+            inner.removeFromTop (Metrics::sm);
             placeKnobRow (inner.removeFromTop (knobH), k2);
+            inner.removeFromTop (Metrics::sm);
             placeKnobRow (inner.removeFromTop (knobH), k3);
         }
         //  UN SOLO PANEL EN ESTA PAGINA, y es el de ABAJO. Los nueve mandos

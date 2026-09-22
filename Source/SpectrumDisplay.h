@@ -235,11 +235,11 @@ public:
 
         // LCD panel (square) + subtle top scan glow.
         g.setColour (ZatiColours::screenBg);
-        g.fillRoundedRectangle (b, (float) Metrics::radioChip);
+        g.fillRoundedRectangle (b, 2.0f);
         juce::ColourGradient glow (ZatiColours::lcdFg.withAlpha (0.05f), b.getCentreX(), b.getY(),
                                    ZatiColours::screenBg.withAlpha (0.0f), b.getCentreX(), b.getY() + b.getHeight() * 0.6f, false);
         g.setGradientFill (glow);
-        g.fillRoundedRectangle (b, (float) Metrics::radioChip);
+        g.fillRoundedRectangle (b, 2.0f);
 
         //  Scan lines. A black rectangle on paper reads as a hole cut in the
         //  panel; the same rectangle with a line structure in it reads as a
@@ -565,7 +565,7 @@ public:
 
         // LCD inner bezel.
         g.setColour (ZatiColours::knobEdge.withAlpha (0.25f));
-        g.drawRoundedRectangle (b.reduced (1.0f), (float) Metrics::radioChip, Metrics::filo);
+        g.drawRoundedRectangle (b.reduced (1.0f), 2.0f, Metrics::filo);
     }
 
 private:

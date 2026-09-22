@@ -88,12 +88,21 @@ def tokens():
     m = re.search (r'int\s+xs\s*=\s*(\d+),\s*sm\s*=\s*(\d+)', src)
     if m is None: sys.exit ("no encuentro Metrics::sm")
     sm = int (m.group (2))
-    g = re.search (r'int\s+gap\s*=\s*(\d+)', src)
-    if g is None: sys.exit ("no encuentro Metrics::gap")
-    halfGap = int (g.group (1)) // 2
-    return halfGap, sm // 4, sm
+    #  Y EL AIRE DEL PANEL SE LEE, no se deriva. Estaba escrito aqui como
+    #  `gap // 2` porque asi lo definia el C++, y el dia que `panelAireX` paso
+    #  a cero -para que la losa dejara de cruzar el margen de la tarjeta- esta
+    #  prueba habria seguido midiendo contra un 4 que ya no existe, que es
+    #  exactamente la forma de mentir que su propia cabecera dice evitar.
+    px = re.search (r'int\s+panelAireX\s*=\s*(\d+)', src)
+    if px is None: sys.exit ("no encuentro Metrics::panelAireX")
+    halfGap = int (px.group (1))
+    #  Y `lg`, que es el aire que la casa deja en el filo de una tarjeta. Sale
+    #  de la misma linea de cinco tokens que `sm`.
+    l = re.search (r'int\s+xs\s*=\s*\d+,\s*sm\s*=\s*\d+,\s*md\s*=\s*\d+,\s*lg\s*=\s*(\d+)', src)
+    if l is None: sys.exit ("no encuentro Metrics::lg")
+    return halfGap, sm // 4, sm, int (l.group (1))
 
-AIRE_X, AIRE_Y, SEPARACION = tokens()
+AIRE_X, AIRE_Y, SEPARACION, FILO_TARJETA = tokens()
 
 
 def run (size, lang, sheet, casa):
@@ -149,6 +158,16 @@ def juzga (rows, tag, lang):
         if t.get ("desplaza"): continue
         if t.get ("w", 0) <= 0 or t.get ("h", 0) <= 0: continue
         marcos[t.get ("capa", 0)] = (t["x"], t["y"], t["w"], t["h"])
+
+    #  Y LOS MISMOS RECTANGULOS SIN LA EXENCION DE DESPLAZAR, para la pregunta
+    #  de los LADOS. Una ficha que se desplaza lo hace en vertical: por abajo un
+    #  panel puede asomar y es el funcionamiento; por los costados no se
+    #  desplaza nada, asi que alli la exencion no tiene lectura.
+    costados = {}
+    for t in rows:
+        if not t.get ("tarjeta"): continue
+        if t.get ("w", 0) <= 0 or t.get ("h", 0) <= 0: continue
+        costados[t.get ("capa", 0)] = (t["x"], t["w"])
 
     for pa in paneles:
         px, py, pw, ph = pa["x"], pa["y"], pa["w"], pa["h"]
@@ -226,6 +245,34 @@ def juzga (rows, tag, lang):
                 fallos.append (("MARCO", tag,
                                 f"{quien} [{px},{py},{px+pw},{py+ph}] se sale del marco "
                                 f"[{mx},{my},{mx+mw},{my+mh}]"))
+
+        #  1 quater. QUE POR LOS LADOS DEJE EL AIRE DEL FILO.
+        #
+        #     Caber dentro de la tarjeta no es estar bien puesto. `MARCO` mide
+        #     lo primero -si el panel se SALE- y por eso dejaba pasar la queja
+        #     «el area donde esta el otro color no es el correcto, por los lados
+        #     tiene que tener mas aire sino queda feo»: la losa cabia de sobra y
+        #     aun asi era el UNICO elemento de la app que cruzaba el margen de
+        #     su propia tarjeta. Medido en 412x915, ficha del pad: tarjeta
+        #     17..396, contenido 33..380 -dieciseis de margen- y panel 29..384,
+        #     o sea a DOCE del filo contra los dieciseis de todo lo demas.
+        #     `pintaPaneles` expande `panelAireX` sin condicion y el margen no
+        #     lo llevaba dentro, asi que no era un caso: eran 225 de 225.
+        #
+        #     Y ESTA PRUEBA LO DIJO Y SE RETRACTO. Mas arriba esta escrito que
+        #     preguntar esto «es preguntar si un expanded expande». Era cierto
+        #     mientras el margen valia `lg` pelado -la respuesta estaba
+        #     forzada- y dejo de serlo en cuanto el margen paso a
+        #     `lg + halfGap`: ahora la respuesta puede salir mal, que es la
+        #     unica condicion para que una pregunta sea una prueba.
+        lado = costados.get (capa)
+        if lado is not None:
+            mx2, mw2 = lado
+            izqT, derT = px - mx2, (mx2 + mw2) - (px + pw)
+            if min (izqT, derT) < FILO_TARJETA:
+                fallos.append (("FILO", tag,
+                                f"{quien} deja {izqT}/{derT} px contra la tarjeta "
+                                f"[{mx2},{mx2+mw2}] y el filo pide {FILO_TARJETA}"))
 
         #  2. QUE LAS FILAS DE DENTRO EMPIECEN Y ACABEN EN LA MISMA X.
         #
