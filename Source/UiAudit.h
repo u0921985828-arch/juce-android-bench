@@ -913,7 +913,14 @@ namespace UiAudit
     //  What a component would need to draw its caption without clipping, and
     //  what it actually has. Sliders are excluded: their caption is a number
     //  in a box the layout sized on purpose.
-    struct Caption { bool has = false; float needW = 0.0f; float haveW = 0.0f; juce::String text; };
+    //  Y LA ESCALA MINIMA A LA QUE SE VA A APRETAR, que es lo que separa un
+    //  rotulo apretado de uno CORTADO y no era el mismo numero para todos: la
+    //  tapa la dibuja `drawButtonText` de esta casa con 0.9 y la Label la
+    //  dibuja JUCE con `getMinimumHorizontalScale()`, que vale cero y en
+    //  `drawFittedText` significa el 0.7 por defecto. `expo.py` usaba 0.9 para
+    //  las dos y llamaba CORTADO a lo que la Label todavia aprieta.
+    struct Caption { bool has = false; float needW = 0.0f; float haveW = 0.0f;
+                     float escala = 0.9f; juce::String text; };
 
     inline Caption captionOf (juce::Component& c)
     {
@@ -982,6 +989,10 @@ namespace UiAudit
             r.needW = juce::GlyphArrangement::getStringWidth (laf.getLabelFont (*l), r.text);
             r.haveW = (float) laf.getLabelBorderSize (*l)
                                  .subtractedFrom (l->getLocalBounds()).getWidth();
+            //  Cero no es cero: `Graphics::drawFittedText` lo lee como «el
+            //  minimo por defecto», que son 0.7.
+            const float esc = l->getMinimumHorizontalScale();
+            r.escala = esc > 0.0f ? esc : 0.7f;
         }
 
         return r;
@@ -1099,7 +1110,8 @@ namespace UiAudit
         if (cap.has && cap.text.isNotEmpty())
             line << ",\"text\":\"" << esc (cap.text) << "\""
                  << ",\"needW\":" << juce::String (cap.needW, 1)
-                 << ",\"haveW\":" << juce::String (cap.haveW, 1);
+                 << ",\"haveW\":" << juce::String (cap.haveW, 1)
+                 << ",\"escala\":" << juce::String (cap.escala, 2);
 
         //  LO QUE VIENE DE FUERA NO SE TRADUCE.
         //
@@ -1517,16 +1529,26 @@ namespace UiAudit
     //  dentro de `dump` la lamina saldria con las bandas vacias sin marcar y
     //  seria una lamina que no enseña lo que se ha venido a ver.
     //
-    //  El radio es el de la esquina con la que `pintaPaneles` redondea
-    //  (`Metrics::sm`); una tarjeta se dibuja con esquinas cuadradas, asi que
-    //  ahi no hay esquina que excluir.
+    //  EL RADIO ES EL QUE `pintaPaneles` USA HOY, Y SE LEE DEL TOKEN. Decia
+    //  `Metrics::sm` -ocho- y era cierto mientras el panel se redondeaba con un
+    //  token de ESPACIADO por no haber ninguno de radio. Desde que lo hay,
+    //  `pintaPaneles` redondea con `Metrics::radio` -tres- y esta linea se
+    //  quedo midiendo la esquina de antes: `mideTinta` hace
+    //  `reduced (jmax (kFilo, radio), kFilo)`, o sea que el banco descontaba
+    //  OCHO pixeles por costado donde solo hay tres y miraba la tinta de cada
+    //  panel en una caja DIEZ px mas estrecha que el panel. La tinta que se
+    //  mete en esa franja no la veia nadie. Escrito con el token y no con un
+    //  ocho, mover el radio mueve la medida.
+    //
+    //  Una tarjeta se dibuja con esquinas cuadradas, asi que ahi no hay esquina
+    //  que excluir.
     inline void mideTodaLaTinta (juce::Component& root)
     {
         recogeRotulos (root);
 
         for (const auto& p : paneles)
             mideTinta (p.nombre.isNotEmpty() ? p.nombre : juce::String ("panel"),
-                       { p.x, p.y, p.w, p.h }, Metrics::sm);
+                       { p.x, p.y, p.w, p.h }, (int) Metrics::radio);
         for (size_t i = 0; i < tarjetas.size(); ++i)
         {
             const auto& t = tarjetas[i];

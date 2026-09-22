@@ -809,22 +809,35 @@ namespace StoreArt
         //  placa hundida, un escalon de tono por encima. Con ella el color es
         //  el que se ve en la app.
         //
-        //  Las mismas tres pasadas que pinta la cara: relleno, filo y el labio
-        //  que coge la luz. Y la fila invisible de alrededor deja de ser aire
-        //  vacio para ser el chasis asomando por fuera de la placa, que es
-        //  exactamente lo que se ve al mirar la maquina.
+        //  DOS PASADAS Y NO TRES, que es lo que pinta la cara. Esto decia «las
+        //  mismas tres pasadas que pinta la cara: relleno, filo y el labio que
+        //  coge la luz» y llevaba una tanda siendo mentira: los dos platos de
+        //  la cara perdieron el labio -un contorno blanco al 55 % a 1.1 px del
+        //  filo- porque dos lineas concentricas tan juntas no se leen como un
+        //  bisel sino como un borde grueso y sucio, y era la queja «hay zonas
+        //  donde exageras el borde muchisimo». Era el ULTIMO contorno doble de
+        //  la casa, y encima en el icono del lanzador, que es lo primero que se
+        //  ve. La placa ya se distingue por RELLENO -`plate` contra el chasis
+        //  son tokens distintos-, asi que el labio no sostenia nada.
+        //
+        //  Y el radio sale del token: `4.0f` era el ultimo cuatro que quedaba
+        //  de las cuatro esquinas que tenia el chasis, y una marca mas redonda
+        //  que la tarjeta que la contiene se nota justo por estar al lado.
+        //
+        //  La fila invisible de alrededor deja de ser aire vacio para ser el
+        //  chasis asomando por fuera de la placa, que es exactamente lo que se
+        //  ve al mirar la maquina.
         const auto placa = juce::Rectangle<float> (x0, y0, paso * (float) Iconos::kLadoMarca,
                                                    paso * (float) Iconos::kLadoMarca)
                                .reduced (hueco * 0.5f)
                                .expanded (hueco);
         {
-            const float rp = 4.0f * escala;
+            const float rp = Metrics::radio * escala;
             g.setColour (ZatiColours::plate);
             g.fillRoundedRectangle (placa, rp);
             g.setColour (ZatiColours::plateEdge);
-            g.drawRoundedRectangle (placa.reduced (0.5f * escala), rp, 1.0f * escala);
-            g.setColour (ZatiColours::white.withAlpha (0.55f));
-            g.drawRoundedRectangle (placa.reduced (1.6f * escala), rp, 1.0f * escala);
+            g.drawRoundedRectangle (placa.reduced (0.5f * escala), rp,
+                                    Metrics::filo * escala);
         }
 
         //  LA TIRA DE OCHO COLORES, que es la firma de la caja: en la app va

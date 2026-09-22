@@ -196,6 +196,24 @@ void MainComponent::layoutModuleBar (juce::Rectangle<int> row, juce::TextButton*
     filaDeIconos (mb, kMods);
 }
 
+//  EL ANCHO DE LA COLUMNA DE NOMBRE de la mesa, en un sitio y no en tres.
+//
+//  Lo usan el rotulo MASTER, la fila de cada canal y la cabecera, y tiene que
+//  valer lo mismo en los tres o el fader del master no empieza donde empiezan
+//  los otros dieciseis: una mesa se lee por donde estan los pomos, y uno
+//  desalineado se lee como otra cosa.
+//
+//  CINCUENTA Y OCHO DE SUELO, no 48. El 48 se eligio contra la palabra corta:
+//  «الماستر» mide 42.2 px con la fuente con la que se dibuja y una Label se
+//  cobra diez de borde, asi que en 280x653 el rotulo tenia 40 utiles para 42.2
+//  de palabra. Tres corridas de SQUEEZE que nadie veia porque el banco media
+//  los rotulos de Label con el sans de 15 que JUCE deja puesto y no con el
+//  mono de 13 con el que `drawLabel` escribe. Ver ZatiLookAndFeel::kRotuloMargen.
+static int anchoNombreCanal (int anchoFila)
+{
+    return juce::jlimit (58, 92, anchoFila * 24 / 100);
+}
+
 // Flat-style overlay rings (drawn over the step buttons' plain fill, never
 // blended into it): yellow marks the step selected for NOTE editing, red
 // marks the live playhead — only when viewing the pattern that's actually
@@ -5127,7 +5145,7 @@ void MainComponent::resized()
             //  el fader del master empiece donde empiezan los otros dieciseis:
             //  una mesa se lee por donde estan los pomos, y uno desalineado se
             //  lee como otra cosa.
-            masterLabel.setBounds (Lang::takeStart (fila, juce::jlimit (48, 92, fila.getWidth() * 24 / 100))
+            masterLabel.setBounds (Lang::takeStart (fila, anchoNombreCanal (fila.getWidth()))
                                        .reduced (Metrics::aireTapa, 0));
             //  Y el numero cae si no cabe, con el mismo criterio que los
             //  canales: un fader que no se puede apuntar es peor que un fader
@@ -5202,7 +5220,7 @@ void MainComponent::resized()
 
                 auto row = columna.removeFromTop (rowH).reduced (columnas > 1 ? Metrics::halfGap : 0, Metrics::aireTapaDensa);
                 canRowX[(size_t) c] = row.getX();
-                row.removeFromLeft (juce::jlimit (48, 92, columna.getWidth() * 24 / 100));
+                row.removeFromLeft (anchoNombreCanal (columna.getWidth()));
 
                 canMutes[c]->setBounds (row.removeFromRight (Metrics::hit).reduced (0, Metrics::aireTapaDensa));
                 row.removeFromRight (Metrics::aireTapaDensa);
@@ -5226,7 +5244,7 @@ void MainComponent::resized()
 
             auto row = columna.removeFromTop (rowH).reduced (columnas > 1 ? Metrics::halfGap : 0, Metrics::aireTapaDensa);
             mixRowX[(size_t) i] = row.getX();
-            row.removeFromLeft (juce::jlimit (48, 92, columna.getWidth() * 24 / 100));   // chip + number + name
+            row.removeFromLeft (anchoNombreCanal (columna.getWidth()));   // chip + number + name
             //  Padding here is not decoration, it is the hit area coming off
             //  the control. The pan was losing twelve pixels of a forty-pixel
             //  row to margins and ending up shorter than the M and S beside it.
@@ -6945,13 +6963,27 @@ void MainComponent::resized()
                                          .reduced (Metrics::aireTapa, 0);
                         //  El mando primero y el numero con lo que quede, que es
                         //  la misma cuenta que ya hacen GOLPE y REPETIR: un
-                        //  giratorio por debajo de 24 px no se agarra, y donde
-                        //  no quepan los dos el numero se va - dice OFF o los
-                        //  milisegundos, y las dos cosas caben en el rotulo.
+                        //  giratorio por debajo de Metrics::chip no se agarra, y
+                        //  donde no quepan los dos el numero se va - dice OFF o
+                        //  los milisegundos, y las dos cosas caben en el rotulo.
+                        //
+                        //  Y LA CASILLA PIDE LO QUE ESCRIBE, que aqui es una
+                        //  PALABRA: «مغلق» mide 27.8 px con la fuente con la que
+                        //  se dibuja y una Label se cobra diez de borde, asi que
+                        //  con el suelo de 34 a mano tenia 25 utiles para 27.8.
+                        //  Cuatro corridas en 412x915/ar que el banco no veia
+                        //  por medir con otra fuente. Los cuatro pixeles salen
+                        //  del dial: 311 px para cuatro bloqueos no dan para
+                        //  dial de cuarenta Y palabra arabe, y entre un dial de
+                        //  36 y un bloqueo cuyo valor no se lee no hay duda.
+                        const int minCaja = (int) std::ceil (juce::GlyphArrangement::getStringWidth
+                                                (ZatiColours::monoFont (Metrics::fValue, true), T ("off")))
+                                          + ZatiLookAndFeel::kRotuloMargen;
                         const int paraNum = celda.getWidth() - Metrics::hit;
-                        cuatro[i]->setTextBoxStyle (paraNum >= 34 ? juce::Slider::TextBoxRight
-                                                                  : juce::Slider::NoTextBox,
-                                                    false, juce::jmax (34, paraNum), Metrics::readout);
+                        cuatro[i]->setTextBoxStyle (celda.getWidth() - minCaja >= Metrics::chip
+                                                        ? juce::Slider::TextBoxRight
+                                                        : juce::Slider::NoTextBox,
+                                                    false, juce::jmax (minCaja, paraNum), Metrics::readout);
                         cuatro[i]->setBounds (celda);
                         cuatro[i]->setVisible (true);
                     }
@@ -7227,10 +7259,30 @@ void MainComponent::resized()
                 {
                     auto celda = Lang::takeStart (row, row.getWidth() / (4 - i))
                                      .reduced (Metrics::aireTapa, 0);
+                    //  Y LA CASILLA PIDE LO QUE ESCRIBE, que aqui es una
+                    //  PALABRA y no una cifra: el extremo de abajo dice «off»,
+                    //  y «مغلق» mide 27.8 px con la fuente con la que se
+                    //  dibuja. El suelo era 34 a mano y una Label se cobra diez
+                    //  de borde, asi que en 412x915 la casilla tenia 25 utiles
+                    //  para 27.8 de palabra: cuatro corridas que el banco no
+                    //  veia por medir con otra fuente.
+                    //
+                    //  Y los cuatro pixeles salen del DIAL y no del renglon,
+                    //  que es la eleccion que hay: 311 px para cuatro bloqueos
+                    //  no dan para dial de cuarenta Y palabra arabe, y entre un
+                    //  dial de 36 y un bloqueo cuyo valor no se lee no hay duda
+                    //  - el renglon sigue midiendo Metrics::hit de alto, que es
+                    //  la mitad del dedo que cuesta fallar. Por debajo de
+                    //  Metrics::chip de dial la casilla se cae entera, que es
+                    //  lo que este bloque ya hacia.
+                    const int minCaja = (int) std::ceil (juce::GlyphArrangement::getStringWidth
+                                            (ZatiColours::monoFont (Metrics::fValue, true), T ("off")))
+                                      + ZatiLookAndFeel::kRotuloMargen;
                     const int paraNum = celda.getWidth() - Metrics::hit;
-                    cuatro[i]->setTextBoxStyle (paraNum >= 34 ? juce::Slider::TextBoxRight
-                                                              : juce::Slider::NoTextBox,
-                                                false, juce::jmax (34, paraNum), Metrics::readout);
+                    cuatro[i]->setTextBoxStyle (celda.getWidth() - minCaja >= Metrics::chip
+                                                    ? juce::Slider::TextBoxRight
+                                                    : juce::Slider::NoTextBox,
+                                                false, juce::jmax (minCaja, paraNum), Metrics::readout);
                     cuatro[i]->setBounds (celda);
                     cuatro[i]->setVisible (true);
                 }

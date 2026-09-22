@@ -363,7 +363,18 @@ def judge(rows, size, lang, sheet):
         if "needW" in r and r["haveW"] > 0 and not r.get("text", "").startswith("/"):
             over = r["needW"] - r["haveW"]
             if over > 0.5:
-                kind = "TRUNC" if r["needW"] > r["haveW"] / 0.9 else "SQUEEZE"
+                #  Y EL 0.9 NO VALE PARA TODOS. Es la escala minima con la
+                #  que `drawButtonText` de esta casa aprieta una tapa, y una
+                #  `juce::Label` la dibuja JUCE con `getMinimumHorizontalScale`,
+                #  que vale cero y en `drawFittedText` significa 0.7. Con 0.9
+                #  para las dos, esta regla llamaba CORTADO a lo que la Label
+                #  todavia aprieta y se lee: cuatro «off» en arabe que pedian
+                #  27.8 sobre 25 salian como TRUNC cuando el limite de verdad
+                #  eran 35.7. El volcado publica la escala de cada rotulo
+                #  desde la tanda 14; el 0.9 se queda de respaldo para un
+                #  volcado viejo.
+                esc = r.get("escala") or 0.9
+                kind = "TRUNC" if r["needW"] > r["haveW"] / esc else "SQUEEZE"
                 findings.append((kind, tag, f'"{r.get("text","")}" needs {r["needW"]:.0f} has {r["haveW"]:.0f}', -over))
 
     # 4. Interactive siblings must not overlap. Only siblings: a sheet sits

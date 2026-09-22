@@ -2486,7 +2486,13 @@ MainComponent::MainComponent()
     swingSlider.setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
     swingSlider.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
     swingSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    swingSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 54, Metrics::readout);
+    //  SESENTA Y DOS, no 54. La caja escribe una PALABRA y no una cifra -
+    //  «recto» / «straight» / «مستقيم» - y «straight» mide 47.3 px con la
+    //  fuente con la que se dibuja: en 54 le quedan 44 utiles una vez que la
+    //  Label se cobra su borde de diez. Nueve corridas de SQUEEZE, y no se
+    //  veian porque el banco media los rotulos de Label con otra fuente. Ver
+    //  ZatiLookAndFeel::kRotuloMargen.
+    swingSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 62, Metrics::readout);
     //  T(), not the bare word. The row for it has been in Lang.cpp since the
     //  four languages went in - straight / 平直 / مستقيم - and the slider was
     //  printing the Spanish literal over it in all four. A readout is text like
