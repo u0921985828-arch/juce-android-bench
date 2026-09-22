@@ -474,7 +474,7 @@ public:
         // LCD panel.
         g.setGradientFill (juce::ColourGradient (juce::Colour (0xff112232), b.getCentreX(), b.getY(),
                                                  ZatiColours::screenBg, b.getCentreX(), b.getBottom(), false));
-        g.fillRoundedRectangle (b, 2.0f);
+        g.fillRoundedRectangle (b, (float) Metrics::radioChip);
 
         const auto lcdFg = ZatiColours::lcdFg, lcdDim = ZatiColours::lcdDim;
         // Fallback trace when nothing carries a zati yet: the LCD's own
@@ -488,7 +488,7 @@ public:
             g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.18f));
             g.drawText (T ("TAP A PAD TO LOAD ITS WAVEFORM"), getLocalBounds(), juce::Justification::centred);
             g.setColour (ZatiColours::knobEdge.withAlpha (0.25f));
-            g.drawRoundedRectangle (b.reduced (1.0f), 2.0f, 1.2f);
+            g.drawRoundedRectangle (b.reduced (1.0f), (float) Metrics::radioChip, Metrics::filo);
             return;
         }
 
@@ -796,7 +796,7 @@ public:
         }
 
         g.setColour (ZatiColours::knobEdge.withAlpha (0.25f));
-        g.drawRoundedRectangle (b.reduced (1.0f), 2.0f, 1.2f);
+        g.drawRoundedRectangle (b.reduced (1.0f), (float) Metrics::radioChip, Metrics::filo);
     }
 
     void resized() override { computeMinMax(); repaint(); }

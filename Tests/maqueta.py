@@ -89,6 +89,74 @@ SEPARADOR = re.compile(r"^\s*\w+\.removeFrom(?:Top|Bottom|Left|Right)\s*\(\s*-?\
 LIT = re.compile(r"^-?\d+$")
 
 # ============================================================================
+#  Y LA TERCERA: EL ASPECTO. RADIO DE ESQUINA Y GROSOR DE FILO.
+#
+#  Las dos preguntas de arriba miran el AIRE, y con las dos en verde llego
+#  «llevo unas cuantas sesiones para corregir ciertas pestanas y seguimos
+#  igual». Medido, la causa no era que las fichas estuvieran mal maquetadas:
+#  era que NADIE MIRABA ESTE EJE. `Metrics` tenia 40 tokens de espacio, tamano
+#  y tipografia y CERO de aspecto -radio de esquina no existia como nombre,
+#  grosor de filo tampoco-, asi que los 60 radios y los 42 filos estaban
+#  escritos a mano en 12 ficheros: cinco radios distintos (1.5/2/3/4/8) y siete
+#  grosores (1.0/1.1/1.2/1.3/1.4/1.5/1.8) sin que ninguno tuviera nombre.
+#
+#  Y esta prueba no podia verlos: `LIT` casa ENTEROS -`^-?\d+$`- y `porValor`
+#  filtra `isinstance(v, int)`, porque un token float no es un numero de aire
+#  que nadie escriba en un `reduced`. Todo radio y todo filo es un float dentro
+#  de un `fillRoundedRectangle`, asi que se colaron los 102. Corregir fichas
+#  medidas no converge nunca en «suave» porque son ejes distintos, y la prueba
+#  daba verde con razon: preguntaba por el aire, y el aire cumplia.
+#
+#  El sintoma mas caro era estructural y estaba a la vista: el PANEL de grupo
+#  tenia radio 8 y la TARJETA que lo contiene 2.0, o sea la caja de dentro
+#  cuatro veces mas redonda que la de fuera. Nadie escribe eso a proposito; se
+#  escribe cuando el numero no tiene nombre y cada sitio elige el suyo.
+#
+#  LA PREGUNTA QUE SE PUEDE HACER, ahora que los tokens existen: un literal
+#  pelado en la posicion de radio o de grosor de una CAJA esta mal escrito por
+#  definicion, igual que un literal de aire dentro de un `reduced`. No hace
+#  falta saber cuanto vale: las dos cantidades ya tienen nombre y ningun valor
+#  a mano es legitimo.
+#
+#  Y JUZGA LA CAJA Y NO EL DIBUJO, que es lo que la deja sin falsos positivos —
+#  la misma linea que separa el AIRE del TAMANO mas arriba. Un rectangulo,
+#  redondeado o no, es vocabulario de CHASIS: tarjetas, paneles, tapas, chips,
+#  platos. Nadie pinta una onda con `fillRoundedRectangle`. Un `drawLine`, un
+#  `drawEllipse` o un `strokePath` son vocabulario de DIBUJO: la curva de un
+#  ecualizador, la retícula de un XY, la aguja de un mando, el trazo de una
+#  forma de onda. Ese grosor no separa dos superficies ni senala un estado —es
+#  el contenido— y forzarle `Metrics::filo` seria escribir una mentira.
+#  Medido: de los 17 grosores a mano que quedaban al cerrar la sustitucion, 14
+#  eran dibujo y 3 caja. Una regla que sacara los 17 tendria un 82 % de ruido y
+#  duraria una tanda, que es la leccion de TARJETA otra vez.
+#
+#  Es una clase de LLAMADA y no una lista de excepciones, igual que `DIBUJAN`
+#  es una clase de fichero: el dia que alguien anada una caja nueva, entra sola.
+# ============================================================================
+#  La posicion depende de la aridad porque JUCE tiene las dos formas, con
+#  rectangulo y con cuatro numeros sueltos. Una aridad que no este aqui -las
+#  formas de `addRoundedRectangle` con banderas de esquina, de nueve y diez
+#  argumentos- no se mira: mejor no preguntar que preguntar por el argumento
+#  equivocado.
+CAJA = {
+    "fillRoundedRectangle": {2: {1: "radio"}, 5: {4: "radio"}},
+    "drawRoundedRectangle": {3: {1: "radio", 2: "filo"}, 6: {4: "radio", 5: "filo"}},
+    "addRoundedRectangle": {2: {1: "radio"}, 5: {4: "radio"}},
+    "drawRect": {2: {1: "filo"}, 5: {4: "filo"}},
+}
+PINTA = re.compile(r"\b(" + "|".join(CAJA) + r")\s*\(((?:[^()]|\([^()]*\))*)\)")
+#  Entero Y float, que es lo que esta regla anade sobre `LIT`. Un `2` en un
+#  `drawRect` es exactamente el mismo fallo que un `2.0f`, y ademas peor: el
+#  desbordamiento de la forma entera redondea `filo` (0.8) a CERO, o sea que
+#  el sitio que lo use se queda sin linea en vez de con una fina.
+NUM = re.compile(r"^-?\d+(?:\.\d*)?f?$")
+#  Lo que SI vale: cualquier cosa que no sea un numero pelado. Un token
+#  (`Metrics::radioTapa`), un casteo (`(float) Metrics::radioPanel`) y sobre
+#  todo una cuenta -`bar.getHeight() * 0.5f` para una pildora, `rad - 1.5f`
+#  para una caja de dentro- pasan solas por no ser literales, que es justo lo
+#  que se quiere: una pildora DERIVADA de su alto no es un radio a mano.
+
+# ============================================================================
 #  Y LA SEGUNDA PREGUNTA: ¿EL MISMO SITIO USA SIEMPRE EL MISMO NOMBRE?
 #
 #  La de arriba pregunta si un literal ya tiene nombre, y con eso el fichero
@@ -265,7 +333,7 @@ def barre(met, laf):
             if isinstance(v, int) and v > 0:
                 porValor.setdefault(v, []).append(pref + k)
 
-    fallas, sueltos, tam, fronteras = [], {}, {}, []
+    fallas, sueltos, tam, fronteras, aspecto = [], {}, {}, [], []
     src = os.path.join(RAIZ, "Source")
     ficheros = [f for f in sorted(os.listdir(src))
                 if (f.endswith(".h") or f.startswith("MainComponent"))
@@ -284,6 +352,15 @@ def barre(met, laf):
             v = VERTICAL.match(linea)
             if v and v.group(1) in ESPACIADO + CONTROL and v.group(1) not in FRONTERA:
                 fronteras.append((f, n, v.group(1), crudo[n - 1].strip()[:90]))
+            #  La tercera pregunta. Ver la cabecera de CAJA.
+            for m in PINTA.finditer(linea):
+                args = [a.strip() for a in coma(m.group(2))]
+                mapa = CAJA[m.group(1)].get(len(args))
+                if mapa:
+                    for i, que in mapa.items():
+                        if NUM.match(args[i]):
+                            aspecto.append((f, n, m.group(1), que, args[i],
+                                            crudo[n - 1].strip()[:90]))
             for m in CALL.finditer(linea):
                 for arg in coma(m.group(2)):
                     arg = arg.strip()
@@ -299,7 +376,7 @@ def barre(met, laf):
                                        crudo[n - 1].strip()[:90]))
                     else:
                         tam.setdefault(v, []).append("%s:%d" % (f, n))
-    return fallas, sueltos, tam, porValor, fronteras
+    return fallas, sueltos, tam, porValor, fronteras, aspecto
 
 
 def main():
@@ -336,7 +413,19 @@ def main():
               % ", ".join(sorted(set(faltan))))
         return 1
 
-    fallas, sueltos, tam, porValor, fronteras = barre(met, laf or {})
+    #  El vocabulario del aspecto, igual que el de la frontera: si alguien
+    #  retira un token de radio o de filo, la tercera pregunta se queda sin
+    #  nada que ofrecer como alternativa y todo literal pasaria a ser
+    #  incorregible. FALLA antes que mirar.
+    ASPECTO = ("radioChip", "radioTapa", "radioPanel", "radioTarjeta",
+               "filo", "filoFoco")
+    faltan = [k for k in ASPECTO if k not in met]
+    if faltan:
+        print("FALLA  la tabla ya no tiene %s: la regla del aspecto no mide nada"
+              % ", ".join(sorted(set(faltan))))
+        return 1
+
+    fallas, sueltos, tam, porValor, fronteras, aspecto = barre(met, laf or {})
 
     #  Los TAMANOS que coinciden con un token: se imprimen y no se juzgan.
     print()
@@ -360,6 +449,14 @@ def main():
         for f, n, call, v, nombres, linea in fallas:
             print("  Source/%s:%d  %s(%d)  es %s" % (f, n, call, v, " / ".join(nombres)))
             print("      %s" % linea)
+    if aspecto:
+        mal = 1
+        print("FALLA  %d radios o filos de CAJA escritos a mano (Metrics tiene"
+              " radioChip/radioTapa/radioPanel/radioTarjeta y filo/filoFoco):"
+              % len(aspecto))
+        for f, n, call, que, lit, linea in aspecto:
+            print("  Source/%s:%d  %s  %s = %s" % (f, n, call, que, lit))
+            print("      %s" % linea)
     if fronteras:
         mal = 1
         print("FALLA  %d separadores verticales no usan la escala de espaciado"
@@ -370,7 +467,8 @@ def main():
     if mal:
         return 1
     print("VEREDICTO: OK  ningun literal de AIRE vale lo que un token,"
-          " y la frontera vertical es %s" % " o ".join(FRONTERA))
+          " la frontera vertical es %s, y ninguna CAJA lleva radio ni filo"
+          " a mano" % " o ".join(FRONTERA))
     return 0
 
 

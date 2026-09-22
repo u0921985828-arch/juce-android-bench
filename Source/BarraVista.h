@@ -152,14 +152,14 @@ public:
         auto cara = p.withTrimmedBottom (lift);
 
         g.setColour (ZatiColours::groove (0.42f));
-        g.fillRoundedRectangle (cara.translated (0.0f, lift), 3.0f);
+        g.fillRoundedRectangle (cara.translated (0.0f, lift), (float) Metrics::radioTapa);
         g.setColour (ZatiColours::key);
-        g.fillRoundedRectangle (cara, 3.0f);
+        g.fillRoundedRectangle (cara, (float) Metrics::radioTapa);
         //  Y una tapa APAGADA lleva una RANURA y no un filo claro: es lo que
         //  la casa dibuja en el estado apagado y lo que separa un pulgar de
         //  una tapa encendida en las cuatro carcasas.
         g.setColour (ZatiColours::groove (0.42f));
-        g.drawRoundedRectangle (cara.reduced (0.5f), 3.0f, 1.0f);
+        g.drawRoundedRectangle (cara.reduced (0.5f), (float) Metrics::radioTapa, Metrics::filo);
 
         //  Y LAS ESTRIAS SON LAS DE UN MANDO, o sea la tinta MEDIDA sobre la
         //  cara de la tapa y no un gris elegido: es la misma pareja

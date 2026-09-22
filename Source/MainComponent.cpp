@@ -7728,9 +7728,9 @@ void MainComponent::pintaPaneles (juce::Graphics& g,
                                   ? juce::String (nombre) + "[" + juce::String (i) + "]"
                                   : juce::String());
         g.setColour (relleno);
-        g.fillRoundedRectangle (caja.toFloat(), (float) Metrics::sm);
+        g.fillRoundedRectangle (caja.toFloat(), (float) Metrics::radioPanel);
         g.setColour (filo);
-        g.drawRoundedRectangle (caja.toFloat().reduced (0.5f), (float) Metrics::sm, 1.0f);
+        g.drawRoundedRectangle (caja.toFloat().reduced (0.5f), (float) Metrics::radioPanel, Metrics::filo);
     }
 }
 
@@ -7756,7 +7756,7 @@ void MainComponent::Sheet::paint (juce::Graphics& g)
     //  does the work - they say "this is a panel of an instrument" with four
     //  lines and no texture at all.
     const auto card = sheetBounds.toFloat();
-    constexpr float rad = 2.0f;
+    constexpr float rad = (float) Metrics::radioTarjeta;
 
     //  El bloque bajo la tarjeta, como el de cualquier tapa: oscuro. Escrito
     //  con la tinta salia crema en LACA y hueso en GRAFITO - una tarjeta con
@@ -7767,7 +7767,7 @@ void MainComponent::Sheet::paint (juce::Graphics& g)
     g.setColour (ZatiColours::chassisTop);
     g.fillRoundedRectangle (card, rad);
     g.setColour (ZatiColours::ink.withAlpha (0.85f));
-    g.drawRoundedRectangle (card.reduced (0.75f), rad, 1.5f);
+    g.drawRoundedRectangle (card.reduced (0.75f), rad, Metrics::filo);
 
     {
         auto b = card.reduced (5.0f);
@@ -7782,8 +7782,8 @@ void MainComponent::Sheet::paint (juce::Graphics& g)
             const float dx = right  ? -arm : arm;
             const float dy = bottom ? -arm : arm;
 
-            g.drawLine (x, y, x + dx, y, 1.2f);
-            g.drawLine (x, y, x, y + dy, 1.2f);
+            g.drawLine (x, y, x + dx, y, Metrics::filo);
+            g.drawLine (x, y, x, y + dy, Metrics::filo);
         }
     }
 

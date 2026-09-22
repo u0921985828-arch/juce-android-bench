@@ -708,10 +708,74 @@ namespace Metrics
     static constexpr int panelAireX = halfGap;
     static constexpr int panelAireY = sm / 4;
 
+    // ------------------------------------------------------------------
+    //  LA FORMA DEL CHASIS: el radio de esquina y el grosor de filo.
+    //
+    //  POR QUE EXISTEN, y es el fallo que motivo la tanda entera. Este
+    //  fichero declara que "si un valor no esta abajo, esta mal", y la regla
+    //  de la casa dice que ningun numero de maquetado se escribe a mano. Se
+    //  cumplia para el AIRE y no para la FORMA: `Tests/maqueta.py` solo caza
+    //  literales enteros dentro de `reduced`/`expanded`/`translated`, asi que
+    //  los radios y los filos -que son `float` y viven dentro de
+    //  `fillRoundedRectangle`- se colaron TODOS. Censados: **60 radios y 42
+    //  filos escritos a mano en 12 ficheros**, con cinco radios distintos
+    //  (1.5, 2.0, 3.0, 4.0 y `sm`) y siete grosores (1.0 a 2.0), ninguno con
+    //  nombre.
+    //
+    //  Y ESO SE VE. Una esquina de 2 px sobre una tarjeta de 400 no es una
+    //  esquina redonda: es un rectangulo limado. Con un filo de 1.0 a 1.8
+    //  alrededor de casi todo -y en los dos platos, DOS filos concentricos,
+    //  `reduced(0.5f)` y `reduced(1.6f)` sobre la misma caja- el resultado es
+    //  el aspecto duro que se lleva varias tandas sin corregir. No lo
+    //  corrigio ninguna porque el banco pregunta geometria -si cabe, si se
+    //  sale, si se pisa- y "duro" no es una pregunta de geometria.
+    //
+    //  Y HABIA UNA INVERSION: el panel de grupo valia `sm` (8) y la TARJETA
+    //  que lo contiene valia 2.0. El interior era cuatro veces mas redondo
+    //  que su continente, que es justo al reves de como se lee una caja
+    //  dentro de otra.
+    //
+    //  LOS CUATRO SALEN DE LA ESCALA DE ESPACIADO y no de gusto, igual que
+    //  `halfGap` sale de `gap`: el dia que la escala se mueva, la forma la
+    //  sigue.
+    static constexpr int radioChip    = xs;               // 4  celdas, chips, cristales
+    static constexpr int radioTapa    = (xs + sm) / 2;    // 6  botones y pads
+    static constexpr int radioPanel   = sm;               // 8  panel de grupo
+    static constexpr int radioTarjeta = (sm + md) / 2;    // 10 tarjeta de ficha y platos
+
+    //  EL FILO BAJA DE SIETE VALORES A DOS, y la division no es de estilo:
+    //  un filo o SEPARA dos superficies -y entonces basta con que se vea- o
+    //  SEÑALA un estado -foco, seleccion, pad sonando- y entonces tiene que
+    //  ganarle a la superficie. Son dos trabajos distintos y por eso son dos
+    //  numeros distintos.
+    //
+    //  El 0.8 no es 1.0 por una razon medible: JUCE centra el trazo sobre el
+    //  camino, asi que un filo de 1.0 sobre `reduced(0.5f)` cae justo en el
+    //  anillo de pixeles del borde y se pinta opaco. Por debajo de 1.0 el
+    //  suavizado lo reparte entre dos filas y el borde se lee como un limite
+    //  y no como una linea dibujada, que es exactamente la diferencia entre
+    //  "placa" y "recorte".
+    static constexpr float filo     = 0.8f;
+    static constexpr float filoFoco = 1.6f;
+
     //  Y CUANTO SE SEPARA DEL FONDO. Es el numero que Tests/skins.py vigila
     //  como PANEL_ALPHA contra el mismo liston que el hueco de una celda, asi
     //  que vive aqui y no dentro del pintor. Ver ZatiColours::groupOn.
-    static constexpr float panelHondura = 0.16f;
+    //
+    //  BAJO DE 0.16 A 0.10, y es la mitad "de color" del chasis suave: el
+    //  radio y el filo quitan el RECORTE y esto quita el ESCALON. Medido en
+    //  dE del panel contra su tarjeta, con el liston de `MIN_WELL = 6.0` que
+    //  `skins.py` le exige al hueco de una celda -el liston de una prueba no
+    //  se reinventa en la de al lado-:
+    //
+    //      0.16   PAPEL 13.54  GRAFITO 16.45  ACERO 13.51  LACA 12.39
+    //      0.10   PAPEL  8.45  GRAFITO 10.32  ACERO  8.46  LACA  7.79
+    //
+    //  O sea **37 % menos de escalon** en la peor carcasa y 1.79 de margen
+    //  sobre el suelo. No se baja mas porque a 0.08 LACA cae a 6.07 y a 0.07
+    //  a 5.58, que es por debajo: el sitio que hay son seis centesimas y se
+    //  gastan cuatro. Las cuatro carcasas medidas y no una.
+    static constexpr float panelHondura = 0.10f;
 
     //  ...y EL BORDE. Un panel relleno y nada mas se lee como una mancha; con
     //  un filo de un pixel se lee como una placa, que es lo que es. Va en la
@@ -729,7 +793,25 @@ namespace Metrics
     //  Y NO CUESTA AIRE: el trazo va centrado en un camino metido medio pixel,
     //  asi que pinta exactamente el anillo de pixeles de fuera del panel. Ni lo
     //  agranda ni le come el margen de dentro.
-    static constexpr float panelBorde = 0.12f;
+    //  Y BAJA A 0.11 CON EL RELLENO, no por simetria sino porque la medida
+    //  lo permite y la anterior ya no vale: el 0.12 se eligio contra un
+    //  relleno de 0.16 y el relleno ya no es ese. Medido de nuevo, borde
+    //  contra su propio relleno con la hondura ya en 0.10:
+    //
+    //      0.12   PAPEL 9.37  GRAFITO 10.53  ACERO 9.37  LACA 8.51
+    //      0.11   PAPEL 8.64  GRAFITO  9.67  ACERO 8.64  LACA 7.72
+    //      0.10   PAPEL 7.62  GRAFITO  8.81  ACERO 7.84  LACA 6.84
+    //
+    //  Se queda en 0.11: LACA a 7.72 deja 1.72 de margen, que es el mismo que
+    //  el del relleno -1.79- y no un numero distinto para cada mitad. A 0.10
+    //  el margen baja a 0.84, que es pasar raspando en la carcasa de fabrica.
+    //
+    //  Y UN DETALLE QUE ENGAÑA SI NO SE DICE: el numero de esta fila casi no
+    //  se mueve -7.69 antes, 7.72 ahora- y no es que el cambio no haya hecho
+    //  nada. Es que el borde se mide contra el RELLENO, y bajar los dos a la
+    //  vez se compensa. Lo que se ve bajar es el relleno contra la tarjeta,
+    //  que es la fila de al lado.
+    static constexpr float panelBorde = 0.11f;
 
     //  EL DIBUJO CRECE CON LA PALABRA Y NO CON LA TAPA.
     //
@@ -1091,7 +1173,7 @@ public:
         auto mark = r.removeFromLeft (h).reduced ((h - 9) / 2);
         g.setColour (isDirectory ? (onAccent ? fg : ZatiColours::accent) : fg.withAlpha (0.45f));
         if (isDirectory) g.fillRect (mark);
-        else             g.drawRect (mark, 1);
+        else             g.drawRect (mark.toFloat(), Metrics::filo);
 
         // Size on the right for files (folders have none).
         auto sizeArea = r.removeFromRight (72);
@@ -1228,7 +1310,7 @@ public:
         const auto track = juce::Rectangle<float> ((float) x, (float) y + (float) h * 0.5f - 2.0f,
                                                    (float) w, 4.0f);
         g.setColour (s.findColour (juce::Slider::backgroundColourId));
-        g.fillRoundedRectangle (track, 2.0f);
+        g.fillRoundedRectangle (track, track.getHeight() * 0.5f);
 
         const float centre = (float) x + (float) w * 0.5f;
         g.setColour (s.findColour (juce::Slider::trackColourId));
@@ -1527,7 +1609,7 @@ public:
         //  read as a phone app; a hard offset reads as an object that was
         //  screen-printed, which is the whole C40 idea.
         const float lift = kCapLift;
-        const float rad  = 3.0f;                                  // drawn, not rounded off
+        const float rad  = (float) Metrics::radioTapa;            // Metrics::radioTapa, no un 3 a mano
         const bool  on   = b.getToggleState();
 
         //  Ver capaDe: el blanco del dedo es el componente entero y la tapa se
@@ -1635,7 +1717,7 @@ public:
             const bool darkCap = base.getPerceivedBrightness() < 0.5f;
             g.setColour (darkCap ? ZatiColours::inkLight.withAlpha (0.55f)
                                  : juce::Colours::black.withAlpha (0.55f));
-            g.drawRoundedRectangle (r.reduced (0.6f), rad, 1.4f);
+            g.drawRoundedRectangle (r.reduced (0.6f), rad, Metrics::filo);
         }
         else
         {
@@ -1655,7 +1737,7 @@ public:
             //  cuatro: dos son claras y dos son oscuras, pero en las cuatro la
             //  tapa es mas clara que su propia sombra.
             g.setColour (ZatiColours::groove (0.42f));
-            g.drawRoundedRectangle (r.reduced (0.5f), rad, 1.0f);
+            g.drawRoundedRectangle (r.reduced (0.5f), rad, Metrics::filo);
         }
     }
 

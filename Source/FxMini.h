@@ -268,9 +268,9 @@ public:
         //  que es lo que es. Y no son tokens nuevos: `Tests/skins.py` ya mide
         //  ese par en las cuatro carcasas.
         g.setColour (ZatiColours::screenBg);
-        g.fillRoundedRectangle (r, 2.0f);
+        g.fillRoundedRectangle (r, (float) Metrics::radioChip);
         g.setColour (ZatiColours::lcdDim.withAlpha (0.55f));
-        g.drawRoundedRectangle (r.reduced (0.5f), 2.0f, 1.0f);
+        g.drawRoundedRectangle (r.reduced (0.5f), (float) Metrics::radioChip, Metrics::filo);
 
         //  Y EL CRISTAL SE DIBUJA AUNQUE NO HAYA EFECTO, que es la queja y
         //  no un adorno. `fx < 0` es una instalacion limpia -ninguna ranura

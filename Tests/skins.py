@@ -79,13 +79,33 @@ MIN_CHROMA  = 1.00
 #  Los alfas con los que la app dibuja cada una de esas tres cosas.
 SECTION_ALPHA = 0.55   # paintPadSheetContent
 KNOB_ALPHA    = 0.85   # drawRotarySlider
-#  ...y el del PANEL que agrupa varios controles. Ver MainComponent::pintaPaneles.
-PANEL_ALPHA   = 0.16
+
+#  LOS DOS DEL PANEL SE LEEN DE `Metrics`, NO SE ESCRIBEN AQUI.
+#
+#  Estaban copiados -`PANEL_ALPHA = 0.16` y `BORDE_ALPHA = 0.12`- y esa copia
+#  es la clase de fallo que no falla: el dia que `Metrics::panelHondura` se
+#  mueva, esta prueba sigue midiendo el 0.16 de ayer, sale VERDE, y lo que
+#  dice el verde es que la TABLA cumple un liston que la app ya no usa. Es la
+#  misma figura que copiar los coeficientes de `Eq5.h` dentro de su prueba:
+#  la errata viaja con la copia y las dos mitades salen de acuerdo estando las
+#  dos mal.
+#
+#  Y se leen con `maqueta.tokens`, que ya sabe hacerlo -resuelve `halfGap =
+#  gap / 2` y coacciona por el tipo declarado- en vez de con un `grep` nuevo:
+#  una lista, un dueño. `expo.py` importa de ahi por la misma razon.
+from maqueta import tokens as _tokensMetrics                    # noqa: E402
+
+_MET, _ = _tokensMetrics()
+if not _MET or "panelHondura" not in _MET or "panelBorde" not in _MET:
+    sys.exit ("FALLA: no se pueden leer panelHondura/panelBorde de Metrics")
+
+#  El del PANEL que agrupa varios controles. Ver MainComponent::pintaPaneles.
+PANEL_ALPHA   = _MET["panelHondura"]
 #  ...y el de su BORDE, que se pinta ENCIMA del relleno y en la misma direccion.
 #  Un panel relleno y nada mas se lee como una mancha; con un filo se lee como
 #  una placa. Si esto se queda corto, el borde existe en la tabla y no en la
 #  pantalla - que es la clase de fallo que no falla, se publica.
-BORDE_ALPHA   = 0.12
+BORDE_ALPHA   = _MET["panelBorde"]
 
 #  Los ocho fragmentos, LEIDOS DE Zati.h. No dependen de la carcasa - el color
 #  es del sistema de zatis y de nada mas - asi que un paso puesto lleva siempre

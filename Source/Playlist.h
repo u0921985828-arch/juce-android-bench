@@ -501,7 +501,7 @@ public:
                         g.setColour (ZatiColours::groove (0.30f));
                         g.fillRect (cell);
                         g.setColour (col.withAlpha (0.70f));
-                        g.drawRect (cell, 1.4f);
+                        g.drawRect (cell, Metrics::filo);
                     }
                     else
                     {
@@ -517,7 +517,7 @@ public:
                         if (cabeMini (cell))
                         {
                             g.setColour (col.withAlpha (0.85f));
-                            g.drawRect (cell, 1.2f);
+                            g.drawRect (cell, Metrics::filo);
                         }
                     }
 
@@ -554,9 +554,9 @@ public:
                     //  than in the recording one. Ink outside, white inside,
                     //  so it reads on a pale card and on a filled block alike.
                     g.setColour (ZatiColours::playheadEdge);
-                    g.drawRect (cell.expanded (1.0f), 1.4f);
+                    g.drawRect (cell.expanded (1.0f), Metrics::filo);
                     g.setColour (ZatiColours::playhead);
-                    g.drawRect (cell, 1.6f);
+                    g.drawRect (cell, Metrics::filoFoco);
                 }
             }
         }
@@ -587,7 +587,7 @@ public:
         {
             const float x = (float) r.getX() + gutter + barW * (float) (cursor - base);
             g.setColour (ZatiColours::ink.withAlpha (0.85f));
-            g.drawRect (juce::Rectangle<float> (x, (float) r.getY(), barW, (float) r.getHeight()), 2.0f);
+            g.drawRect (juce::Rectangle<float> (x, (float) r.getY(), barW, (float) r.getHeight()), Metrics::filoFoco);
         }
 
         //  Y LOS CLIPS ENCIMA, en los MISMOS carriles.
@@ -643,7 +643,7 @@ public:
         auto marco = getLocalBounds().toFloat().reduced (0.75f);
         marco.setLeft (marco.getX() + (float) kGutter);
         g.setColour (modoTinte.withAlpha (0.9f));
-        g.drawRect (marco, 1.5f);
+        g.drawRect (marco, Metrics::filo);
     }
 
     //  SE PINTA CON EL DEDO ARRASTRADO, como la rejilla de pasos y como el
@@ -914,7 +914,7 @@ public:
             if (mudo)
             {
                 g.setColour (ZatiColours::groove (0.30f)); g.fillRect (caja);
-                g.setColour (col.withAlpha (0.70f));       g.drawRect (caja, 1.4f);
+                g.setColour (col.withAlpha (0.70f));       g.drawRect (caja, Metrics::filo);
             }
             else
             {
@@ -925,8 +925,8 @@ public:
             //  de cuatro pistas es soltar y buscar cual se movio.
             if (i == clipSel)
             {
-                g.setColour (ZatiColours::playheadEdge); g.drawRect (caja.expanded (1.0f), 1.4f);
-                g.setColour (ZatiColours::playhead);     g.drawRect (caja, 1.6f);
+                g.setColour (ZatiColours::playheadEdge); g.drawRect (caja.expanded (1.0f), Metrics::filo);
+                g.setColour (ZatiColours::playhead);     g.drawRect (caja, Metrics::filoFoco);
             }
 
             //  Y LAS ASAS SE DIBUJAN donde se pueden coger: dos filos verticales

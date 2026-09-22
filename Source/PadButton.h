@@ -297,7 +297,7 @@ public:
         //  gained depth the two would read as belonging to different machines.
         const float lift = ZatiLookAndFeel::kCapLift;
         auto r = getLocalBounds().toFloat().reduced (0.5f).withTrimmedBottom (lift);
-        const float rad = 3.0f;   // square, not rounded — matches the flat button caps
+        const float rad = (float) Metrics::radioTapa;   // la misma esquina que una tapa
 
         if (down) r = r.translated (0.0f, lift);
 
@@ -439,14 +439,14 @@ public:
             //  y sobre un fragmento claro el anillo desaparecia justo en el
             //  pad que estabas eligiendo.
             g.setColour (ZatiColours::textOn (base).withAlpha (0.85f));
-            g.drawRoundedRectangle (r.reduced (2.4f), juce::jmax (1.0f, rad - 1.5f), 1.4f);
+            g.drawRoundedRectangle (r.reduced (2.4f), juce::jmax (1.0f, rad - 1.5f), Metrics::filoFoco);
         }
 
         // Playing: brighten the pad's own colour rather than adding another.
         if (playing)
         {
             g.setColour ((loaded ? frag : ZatiColours::ink).brighter (0.45f).withAlpha (0.6f));
-            g.drawRoundedRectangle (r.reduced (0.6f), rad, 1.8f);
+            g.drawRoundedRectangle (r.reduced (0.6f), rad, Metrics::filoFoco);
         }
 
         //  EL MODO ARMADO, EL ULTIMO Y POR FUERA. Va encima de todo porque es
@@ -456,7 +456,7 @@ public:
         if (! modoTinte.isTransparent())
         {
             g.setColour (modoTinte.withAlpha (0.85f));
-            g.drawRoundedRectangle (r.reduced (0.9f), rad, 1.8f);
+            g.drawRoundedRectangle (r.reduced (0.9f), rad, Metrics::filoFoco);
         }
     }
 

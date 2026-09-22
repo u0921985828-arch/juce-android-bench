@@ -62,9 +62,9 @@ public:
         //  que se mira mientras se toca, igual que el LCD, y comparte su tinta
         //  para que se lea como el mismo material y no como un widget pegado.
         g.setColour (ZatiColours::screenBg);
-        g.fillRoundedRectangle (r, 3.0f);
+        g.fillRoundedRectangle (r, (float) Metrics::radioChip);
         g.setColour (ZatiColours::ink.withAlpha (0.85f));
-        g.drawRoundedRectangle (r.reduced (0.5f), 3.0f, 1.2f);
+        g.drawRoundedRectangle (r.reduced (0.5f), (float) Metrics::radioChip, Metrics::filo);
 
         auto in = r.reduced (kInset);
 
@@ -80,7 +80,7 @@ public:
             g.drawLine (in.getX(), fy, in.getRight(), fy, 1.0f);
         }
         g.setColour (ZatiColours::lcdDim.withAlpha (0.55f));
-        g.drawRect (in, 1.0f);
+        g.drawRect (in, Metrics::filo);
 
         const float cx = in.getX() + in.getWidth()  * px;
         const float cy = in.getBottom() - in.getHeight() * py;

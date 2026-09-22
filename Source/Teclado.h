@@ -77,9 +77,9 @@ public:
             //  con blanco desapareceria.
             const auto cara = on ? ZatiColours::accent : ZatiColours::key;
             g.setColour (cara);
-            g.fillRoundedRectangle (k, 2.0f);
+            g.fillRoundedRectangle (k, (float) Metrics::radioChip);
             g.setColour (ZatiColours::groove (0.35f));
-            g.drawRoundedRectangle (k, 2.0f, 1.0f);
+            g.drawRoundedRectangle (k, (float) Metrics::radioChip, Metrics::filo);
         }
 
         for (int i = 0; i < 5; ++i)
@@ -91,7 +91,7 @@ public:
                                                    anchoB * 0.60f, altoN);
             const bool on = (viva == base + negras[i]);
             g.setColour (on ? ZatiColours::accent : ZatiColours::groove (0.85f));
-            g.fillRoundedRectangle (k, 2.0f);
+            g.fillRoundedRectangle (k, (float) Metrics::radioChip);
         }
 
         //  Y DONDE ESTA EL CERO, que sin eso una octava suelta no dice en que

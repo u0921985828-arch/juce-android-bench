@@ -419,7 +419,7 @@ public:
                     g.setColour (tinta);
                     g.fillRect (barra);
                     g.setColour (ZatiColours::ink.withAlpha (0.35f));
-                    g.drawRect (barra, 1.0f);
+                    g.drawRect (barra, Metrics::filo);
                     //  Y el ARRANQUE marcado, que en una barra de cuatro
                     //  casillas es lo unico que dice donde empieza la nota.
                     if (cu > 4)
@@ -456,7 +456,7 @@ public:
                         g.setColour (ZatiColours::playhead.withAlpha (0.55f));
                         g.fillRect (barra);
                         g.setColour (ZatiColours::playhead);
-                        g.drawRect (barra, 1.0f);
+                        g.drawRect (barra, Metrics::filo);
                     }
                 }
             }
@@ -510,7 +510,7 @@ public:
             auto marco = r.toFloat().reduced (0.75f);
             marco.setLeft (marco.getX() + (float) kGutter);
             g.setColour (ZatiColours::accent.withAlpha (0.9f));
-            g.drawRect (marco, 1.5f);
+            g.drawRect (marco, Metrics::filo);
         }
     }
 
