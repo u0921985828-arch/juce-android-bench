@@ -46,6 +46,35 @@ en verde, porque escrito-y-sin-medir es cero en esta casa. Si la tanda no
 tiene lista, se cuenta sobre las fases del plan. Nunca se inventa el numero
 ni se sube «porque va avanzando».
 
+**Y TIENE QUE SER REALISTA DE 0 A 100**, que es la mitad que faltaba y lo dijo
+quien manda con esas palabras. La regla de arriba es correcta y daba un numero
+inutil: la tanda 11 declaro SEIS pasos, cerro cinco en la primera mitad y se
+paso la segunda entera —`expo.py` 35 min, `limites.py` en tres carcasas otros
+45, las 165 laminas, `cpu.py` sola, bitacora, empujon, y once minutos de CI—
+diciendo **83 % siete veces seguidas**. Un numero que no se mueve durante la
+mitad mas larga del trabajo no informa de nada: dice cuantas casillas hay
+tachadas, no cuanto queda.
+
+La causa no es la formula sino la LISTA, asi que se arregla la lista:
+
+- **Un paso es UNA MEDIDA, no un capitulo.** Si para cerrarlo hacen falta seis
+  pruebas distintas, son seis pasos. «Banco entero, carcasas, laminas,
+  BITACORA, push y APK» no es un paso: son `expo`, `paneles`, `costuras`,
+  `limites`, `skins`, `cpu`, las carcasas, las laminas, la bitacora, el
+  empujon con su `entrega.py`, y la APK con su `apk.py`.
+- **Ningun paso vale mas del 20 % de la lista.** Si al declararlo ya se ve que
+  uno solo se va a llevar media tanda, se parte ANTES de empezar. Partirlo a
+  mitad de camino seria mover la porteria, que es justo lo que la regla de «no
+  se inventa el numero» prohibe.
+- **El cierre se declara desglosado desde el principio.** Es el paso que
+  siempre se subestima —es rutina, y por eso no se piensa— y es el que mas
+  tiempo se lleva.
+
+Con eso el numero sube mientras corre lo largo, que es cuando hace falta, y
+sigue siendo lo mismo que antes: medidas en verde entre medidas declaradas.
+Nada de ponderar por duracion estimada; una estimacion es un numero inventado
+y aqui no entran.
+
 Cuando la persona SI pregunta -«como va»- se contesta en UNA linea con las
 cifras y se sigue en el mismo modo, sin volver a narrar el plan.
 
